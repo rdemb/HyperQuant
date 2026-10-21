@@ -1,0 +1,163 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#060911"/>
+      <stop offset="50%" stop-color="#0A1120"/>
+      <stop offset="100%" stop-color="#05080F"/>
+    </linearGradient>
+    <radialGradient id="heroGlow" cx="68%" cy="48%" r="52%">
+      <stop offset="0%" stop-color="#06B6D4" stop-opacity="0.18"/>
+      <stop offset="45%" stop-color="#3B82F6" stop-opacity="0.07"/>
+      <stop offset="100%" stop-color="#060911" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="cyanGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#22D3EE"/>
+      <stop offset="100%" stop-color="#3B82F6"/>
+    </linearGradient>
+    <linearGradient id="bidFill" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#10B981" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#10B981" stop-opacity="0.04"/>
+    </linearGradient>
+    <linearGradient id="askFill" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#F43F5E" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#F43F5E" stop-opacity="0.04"/>
+    </linearGradient>
+    <linearGradient id="coneFill" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#22D3EE" stop-opacity="0.28"/>
+      <stop offset="100%" stop-color="#A855F7" stop-opacity="0.04"/>
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="5" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+  </defs>
+
+  <!-- Base Canvas -->
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect width="1200" height="630" fill="url(#heroGlow)"/>
+
+  <!-- Outer Frame Border -->
+  <rect x="24" y="24" width="1152" height="582" rx="16" fill="none" stroke="#1E293B" stroke-width="1.5"/>
+
+  <!-- 3D Isometric Perspective Floor Grid (Right Side Stage) -->
+  <g stroke="#1E293B" stroke-width="1" opacity="0.65">
+    <line x1="520" y1="490" x2="820" y2="230"/>
+    <line x1="620" y1="490" x2="850" y2="230"/>
+    <line x1="720" y1="490" x2="880" y2="230"/>
+    <line x1="820" y1="490" x2="910" y2="230"/>
+    <line x1="920" y1="490" x2="940" y2="230"/>
+    <line x1="1020" y1="490" x2="970" y2="230"/>
+    <line x1="1120" y1="490" x2="1000" y2="230"/>
+
+    <line x1="520" y1="490" x2="1130" y2="490"/>
+    <line x1="565" y1="440" x2="1110" y2="440"/>
+    <line x1="610" y1="390" x2="1090" y2="390"/>
+    <line x1="655" y1="340" x2="1070" y2="340"/>
+    <line x1="700" y1="290" x2="1050" y2="290"/>
+    <line x1="745" y1="240" x2="1030" y2="240"/>
+  </g>
+
+  <!-- HTF Shaakuni Reference Planes on 3D Stage -->
+  <g font-family="Consolas, 'Courier New', monospace" font-size="11" font-weight="700">
+    <!-- PDH Plane -->
+    <line x1="560" y1="220" x2="1120" y2="220" stroke="#F59E0B" stroke-width="1.5" stroke-dasharray="6,4" opacity="0.85"/>
+    <rect x="1018" y="203" width="102" height="20" rx="4" fill="#1E1B18" stroke="#F59E0B" stroke-width="1"/>
+    <text x="1069" y="217" fill="#FBBF24" text-anchor="middle">PDH LIQUIDITY</text>
+
+    <!-- D-EQ 50% Equilibrium Plane -->
+    <line x1="540" y1="325" x2="1120" y2="325" stroke="#38BDF8" stroke-width="1.5" stroke-dasharray="4,4" opacity="0.85"/>
+    <rect x="1018" y="308" width="102" height="20" rx="4" fill="#0C1928" stroke="#38BDF8" stroke-width="1"/>
+    <text x="1069" y="322" fill="#38BDF8" text-anchor="middle">D-EQ 50%PIVOT</text>
+
+    <!-- PDL Plane -->
+    <line x1="520" y1="445" x2="1120" y2="445" stroke="#10B981" stroke-width="1.5" stroke-dasharray="6,4" opacity="0.85"/>
+    <rect x="1018" y="428" width="102" height="20" rx="4" fill="#09221C" stroke="#10B981" stroke-width="1"/>
+    <text x="1069" y="442" fill="#34D399" text-anchor="middle">PDL SWEEP ZONE</text>
+  </g>
+
+  <!-- 3D L2 Orderbook Bid & Ask Depth Topography -->
+  <path d="M 535 490 L 535 410 Q 590 385 635 395 T 730 335 T 825 310 L 825 490 Z" fill="url(#bidFill)"/>
+  <path d="M 535 410 Q 590 385 635 395 T 730 335 T 825 310" fill="none" stroke="#10B981" stroke-width="3" filter="url(#glow)"/>
+
+  <path d="M 825 310 Q 885 280 940 250 T 1045 205 T 1120 180 L 1120 490 L 825 490 Z" fill="url(#askFill)"/>
+  <path d="M 825 310 Q 885 280 940 250 T 1045 205 T 1120 180" fill="none" stroke="#F43F5E" stroke-width="3" filter="url(#glow)"/>
+
+  <!-- 3D Volume / Liquidation Hologram Pillars -->
+  <g opacity="0.88">
+    <rect x="575" y="395" width="14" height="95" rx="2" fill="#10B981" opacity="0.45"/>
+    <rect x="615" y="370" width="14" height="120" rx="2" fill="#10B981" opacity="0.6"/>
+    <rect x="655" y="410" width="14" height="80" rx="2" fill="#06B6D4" opacity="0.5"/>
+    <rect x="695" y="345" width="14" height="145" rx="2" fill="#10B981" opacity="0.75"/>
+    <rect x="735" y="325" width="14" height="165" rx="2" fill="#22D3EE" opacity="0.85"/>
+    <rect x="775" y="355" width="14" height="135" rx="2" fill="#10B981" opacity="0.65"/>
+    <rect x="855" y="295" width="14" height="195" rx="2" fill="#F43F5E" opacity="0.7"/>
+    <rect x="895" y="265" width="14" height="225" rx="2" fill="#F43F5E" opacity="0.8"/>
+    <rect x="935" y="240" width="14" height="250" rx="2" fill="#EC4899" opacity="0.75"/>
+    <rect x="975" y="275" width="14" height="215" rx="2" fill="#F43F5E" opacity="0.55"/>
+  </g>
+
+  <!-- Merton Jump-Diffusion Monte Carlo Forecast Cone -->
+  <path d="M 825 310 Q 920 235 1015 195 L 1015 395 Q 920 365 825 310 Z" fill="url(#coneFill)"/>
+  <path d="M 825 310 Q 920 265 1015 235" fill="none" stroke="#22D3EE" stroke-width="2" stroke-dasharray="5,4"/>
+  <path d="M 825 310 Q 920 315 1015 322" fill="none" stroke="#A855F7" stroke-width="2" stroke-dasharray="5,4"/>
+  <circle cx="825" cy="310" r="6" fill="#22D3EE" filter="url(#glow)"/>
+
+  <!-- Left Column: Brand Identity & Institutional Typography -->
+  <!-- Top Status Pill -->
+  <rect x="68" y="64" width="386" height="36" rx="18" fill="#0D1829" stroke="#1E3A8A" stroke-width="1.5"/>
+  <circle cx="90" cy="82" r="5" fill="#10B981"/>
+  <text x="106" y="87" fill="#93C5FD" font-family="Segoe UI, Inter, -apple-system, sans-serif" font-size="13" font-weight="700" letter-spacing="1.2">
+    HYPERLIQUID L1 LIVE · WEBGL 3D QUANT DESK
+  </text>
+
+  <!-- Main Title -->
+  <text x="68" y="168" fill="#FFFFFF" font-family="Segoe UI, Inter, -apple-system, sans-serif" font-size="60" font-weight="800" letter-spacing="-1">
+    HyperQuant <tspan fill="url(#cyanGrad)">3D Desk</tspan>
+  </text>
+
+  <!-- Subtitle -->
+  <text x="68" y="214" fill="#CBD5E1" font-family="Segoe UI, Inter, -apple-system, sans-serif" font-size="22" font-weight="500">
+    BTCUSD-PERP Order Flow, SMC Liquidity &amp; 3D Volatility Surface
+  </text>
+
+  <!-- Technical Spec Highlights (Left Side Cards) -->
+  <g transform="translate(68, 252)" font-family="Segoe UI, Inter, -apple-system, sans-serif">
+    <!-- Card 1 -->
+    <rect x="0" y="0" width="420" height="54" rx="8" fill="#0B1220" stroke="#1E293B" stroke-width="1.2"/>
+    <circle cx="22" cy="27" r="4" fill="#22D3EE"/>
+    <text x="38" y="23" fill="#F8FAFC" font-size="14" font-weight="700">5 Interactive Three.js &amp; D3 3D Engines</text>
+    <text x="38" y="42" fill="#94A3B8" font-size="12" font-family="Consolas, monospace">L2 Liquidity · Vortex · Delta Fluid · Risk Magnet · Vol Surface</text>
+
+    <!-- Card 2 -->
+    <rect x="0" y="66" width="420" height="54" rx="8" fill="#0B1220" stroke="#1E293B" stroke-width="1.2"/>
+    <circle cx="22" cy="93" r="4" fill="#34D399"/>
+    <text x="38" y="89" fill="#F8FAFC" font-size="14" font-weight="700">Shaakuni v1.4.2 HTF Liquidity &amp; Order Blocks</text>
+    <text x="38" y="108" fill="#94A3B8" font-size="12" font-family="Consolas, monospace">Live PDH / PDL / PWH / PWL Sweeps · D-EQ 50% · ATR OB Zones</text>
+
+    <!-- Card 3 -->
+    <rect x="0" y="132" width="420" height="54" rx="8" fill="#0B1220" stroke="#1E293B" stroke-width="1.2"/>
+    <circle cx="22" cy="159" r="4" fill="#FBBF24"/>
+    <text x="38" y="155" fill="#F8FAFC" font-size="14" font-weight="700">Institutional Microstructure &amp; Stochastic Math</text>
+    <text x="38" y="174" fill="#94A3B8" font-size="12" font-family="Consolas, monospace">600-Path Merton Jump-Diffusion · Hawkes · Kyle&apos;s λ · VPIN</text>
+  </g>
+
+  <!-- Bottom Feature Badges Row (Generous Widths - Zero Clipping) -->
+  <g transform="translate(68, 532)" font-family="Consolas, 'Courier New', monospace" font-size="13" font-weight="700">
+    <rect x="0" y="0" width="185" height="38" rx="8" fill="#0F172A" stroke="#06B6D4" stroke-width="1.2"/>
+    <text x="92.5" y="24" fill="#38BDF8" text-anchor="middle">Three.js WebGL 3D</text>
+
+    <rect x="200" y="0" width="205" height="38" rx="8" fill="#0F172A" stroke="#10B981" stroke-width="1.2"/>
+    <text x="302.5" y="24" fill="#34D399" text-anchor="middle">Shaakuni HTF Levels</text>
+
+    <rect x="420" y="0" width="205" height="38" rx="8" fill="#0F172A" stroke="#EC4899" stroke-width="1.2"/>
+    <text x="522.5" y="24" fill="#F472B6" text-anchor="middle">AggrBTCv5 Orderflow</text>
+
+    <rect x="640" y="0" width="205" height="38" rx="8" fill="#0F172A" stroke="#F59E0B" stroke-width="1.2"/>
+    <text x="742.5" y="24" fill="#FBBF24" text-anchor="middle">Merton Monte Carlo</text>
+  </g>
+
+  <!-- Bottom Right Live URL Badge -->
+  <text x="1132" y="556" fill="#94A3B8" font-family="Consolas, 'Courier New', monospace" font-size="15" font-weight="700" text-anchor="end">
+    rdemb.github.io/HyperQuant
+  </text>
+</svg>
