@@ -6,26 +6,17 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { BokehPass } from 'three/addons/postprocessing/BokehPass.js';
 import * as d3 from 'd3';
-import {
-  Camera,
-  ChevronDown,
-  ChevronUp,
-  Flame,
-  Focus,
-  Magnet,
-  Maximize2,
-  Minimize2,
-  Mountain,
-  RotateCcw,
-  Zap,
-} from 'lucide-react';
+import { ClipboardList, Focus, Maximize2, Minimize2, RotateCcw } from 'lucide-react';
 import {
   L2OrderbookLevel,
   LiquidationHeatmapCell,
   QuantMathMetrics,
   ShaakuniState,
 } from '../types/trading';
+import { GLOW, T3, T3_CSS, isNarrowViewport, labFov, labPixelRatio } from '../views/lab/tokens3d';
+import { DockPresets, DockSlider, DockToggle, HoverCard, HudButton, HudHeader, SCENE_FRAME, SceneDock } from '../views/lab/hud';
 
+// Scena „Liquidation Risk (szacunek)”: teren heurystycznego szacunku poziomów likwidacji (nie realne pozycje)
 interface ThreeQuantumRiskHeatmap3DProps {
   currentPrice: number;
   shaakuni: ShaakuniState;
@@ -47,12 +38,49 @@ type RiskTopoPreset = 'iso' | 'shortsqueeze' | 'longcascade' | 'topcontour';
 interface HoveredMagnetPeak {
   title: string;
   priceLevel: string;
-  totalLiqUsd: string;
+  strength: string;
   leverageTier: string;
-  magnetPullPct: string;
   sideLabel: string;
   accentColor: string;
 }
+
+// Zwalnia materiał wraz ze wszystkimi teksturami, do których się odwołuje (map, envMap, normalMap itd.).
+// Zbiór `disposed` chroni przed wielokrotnym dispose materiałów współdzielonych przez wiele meshy.
+const disposeMaterialDeep = (
+  material: THREE.Material,
+  disposed: Set<THREE.Material>
+) => {
+  if (disposed.has(material)) return;
+  disposed.add(material);
+  Object.values(material).forEach((value) => {
+    if (value instanceof THREE.Texture) value.dispose();
+  });
+  material.dispose();
+};
+
+// Przechodzi po całym grafie sceny i zwalnia geometrie, materiały (także tablice materiałów),
+// ich tekstury oraz mapy cieni świateł.
+const disposeSceneGraph = (
+  root: THREE.Object3D,
+  disposedMaterials: Set<THREE.Material>
+) => {
+  const disposedGeometries = new Set<THREE.BufferGeometry>();
+  root.traverse((obj) => {
+    const mesh = obj as THREE.Mesh;
+    if (mesh.geometry && !disposedGeometries.has(mesh.geometry)) {
+      disposedGeometries.add(mesh.geometry);
+      mesh.geometry.dispose();
+    }
+    if (mesh.material) {
+      const materials = Array.isArray(mesh.material)
+        ? mesh.material
+        : [mesh.material];
+      materials.forEach((m) => disposeMaterialDeep(m, disposedMaterials));
+    }
+    const light = obj as THREE.DirectionalLight;
+    if (light.isLight && light.shadow) light.shadow.dispose();
+  });
+};
 
 export const ThreeQuantumRiskHeatmap3D: React.FC<
   ThreeQuantumRiskHeatmap3DProps
@@ -70,13 +98,14 @@ export const ThreeQuantumRiskHeatmap3D: React.FC<
   const canvasMountRef = useRef<HTMLDivElement | null>(null);
 
   const [preset, setPreset] = useState<RiskTopoPreset>('iso');
-  const [dofEnabled, setDofEnabled] = useState<boolean>(true);
+  // Głębia ostrości domyślnie wyłączona — czytelność danych ważniejsza od efektu
+  const [dofEnabled, setDofEnabled] = useState<boolean>(false);
   const [dofFocus, setDofFocus] = useState<number>(22);
-  const [dofAperture, setDofAperture] = useState<number>(1.8);
+  const [dofAperture] = useState<number>(1.8);
   const [topoElevationGain, setTopoElevationGain] = useState<number>(1.3);
   const [showContourWireframe, setShowContourWireframe] =
     useState<boolean>(true);
-  const [dockCollapsed, setDockCollapsed] = useState<boolean>(false);
+  const [dockCollapsed, setDockCollapsed] = useState<boolean>(isNarrowViewport);
   const [hoveredPeak, setHoveredPeak] = useState<HoveredMagnetPeak | null>(
     null
   );
@@ -122,6 +151,14 @@ export const ThreeQuantumRiskHeatmap3D: React.FC<
     topoElevationGain,
     showContourWireframe,
   ]);
+
+  // Flaga "dane zmienione": klastry, beacony i teren są przeliczane tylko gdy zmieniły się dane,
+  // z których powstają — nie przy każdym ticku timera
+  const dirtyRef = useRef<boolean>(true);
+
+  useEffect(() => {
+    dirtyRef.current = true;
+  }, [currentPrice, shaakuni, quant, topoElevationGain]);
 
   const targetCamRef = useRef<{
     pos: THREE.Vector3;
@@ -187,10 +224,8 @@ export const ThreeQuantumRiskHeatmap3D: React.FC<
     });
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.2;
-    renderer.setPixelRatio(
-      isSoftwareGl ? 1 : Math.min(window.devicePixelRatio, 2)
-    );
+    renderer.toneMappingExposure = 1.0;
+    renderer.setPixelRatio(labPixelRatio(isSoftwareGl));
     renderer.setSize(width, height);
     renderer.shadowMap.enabled = !isSoftwareGl;
     renderer.shadowMap.type = THREE.PCFShadowMap;
@@ -199,15 +234,20 @@ export const ThreeQuantumRiskHeatmap3D: React.FC<
     container.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x060911);
-    scene.fog = new THREE.FogExp2(0x060911, 0.014);
+    scene.background = new THREE.Color(T3.bg);
+    scene.fog = new THREE.FogExp2(T3.bg, 0.014);
 
     // 2. Studio Environment Map (RoomEnvironment + PMREMGenerator)
     const pmrem = new THREE.PMREMGenerator(renderer);
-    scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    // Trzymamy render target PMREM, aby zwolnić mapę środowiskową przy odmontowaniu;
+    // RoomEnvironment (geometrie + materiały) jest potrzebny tylko do wygenerowania mapy
+    const roomEnvironment = new RoomEnvironment();
+    const envRenderTarget = pmrem.fromScene(roomEnvironment, 0.04);
+    scene.environment = envRenderTarget.texture;
     pmrem.dispose();
+    roomEnvironment.dispose();
 
-    const camera = new THREE.PerspectiveCamera(42, width / height, 0.5, 165);
+    const camera = new THREE.PerspectiveCamera(labFov(width / height), width / height, 0.5, 165);
     camera.position.set(0, 15.5, 22.5);
 
     const controls = new OrbitControls(camera, renderer.domElement);
@@ -223,7 +263,7 @@ export const ThreeQuantumRiskHeatmap3D: React.FC<
     });
 
     // 3. Three-Point Warm/Cool Studio Lighting
-    const hemiLight = new THREE.HemisphereLight(0x38bdf8, 0x060911, 0.95);
+    const hemiLight = new THREE.HemisphereLight(0xc8d4e3, T3.bg, 0.85);
     scene.add(hemiLight);
 
     const keyLight = new THREE.DirectionalLight(0xfffbeb, 2.3);
@@ -232,33 +272,33 @@ export const ThreeQuantumRiskHeatmap3D: React.FC<
     keyLight.shadow.mapSize.set(1024, 1024);
     scene.add(keyLight);
 
-    const blueFillLight = new THREE.PointLight(0x2563eb, 4.0, 36);
+    const blueFillLight = new THREE.PointLight(T3.ink2, 1.2, 36);
     blueFillLight.position.set(-14, 7, -8);
     scene.add(blueFillLight);
 
-    const redMagnetLight = new THREE.PointLight(0xef4444, 4.8, 36);
+    const redMagnetLight = new THREE.PointLight(T3.zone, 1.2, 36);
     redMagnetLight.position.set(14, 9, 8);
     scene.add(redMagnetLight);
 
-    // 4. D3 Blue-to-Red Color Gradient Scale based on Total USD Liquidation Size
-    // 0.0 (Low USD Liq) = Deep Blue (#1e3a8a / #2563eb)
-    // 0.35 (Medium Liq) = Cyan-Blue (#0284c7 / #06b6d4)
-    // 0.68 (High Liq Cluster) = Amber-Orange (#f59e0b / #f97316)
-    // 1.0 (Extreme Magnet Peak) = Crimson-Red (#e11d48 / #ff1e42)
+    // 4. Skala sekwencyjna jednego odcienia (zone): ciemno = słaby szacunek, jasno = silny.
+    // Wartość to względna siła heurystyki (0..1), nie kwota w USD.
     const d3BlueToRedScale = d3
       .scaleSequential<string>((t) =>
-        d3.interpolateRgbBasis([
-          '#172554', // Deep Midnight Blue (Minimal Liquidation)
-          '#1d4ed8', // Royal Cobalt Blue
-          '#0284c7', // Electric Sky Blue
-          '#06b6d4', // Cyan Transition
-          '#f59e0b', // High Leverage Amber Cluster
-          '#f97316', // Intense Orange Ridge
-          '#ef4444', // Crimson Liquidation Magnet Peak
-          '#ff1e42', // Ultra-Dense Red Magnet Core
-        ])(t)
+        d3.interpolateRgbBasis(['#101826', '#232c4a', '#3f3f7a', '#6a62b8', '#9085e9', '#cdc7f7'])(t)
       )
       .domain([0, 1]);
+
+    // LUT kolorów (256 wpisów RGB) budowana raz z tego samego interpolatora D3 —
+    // zastępuje konwersję D3 → string CSS → THREE.Color dla każdego wierzchołka
+    const LIQ_COLOR_LUT_SIZE = 256;
+    const liqColorLut = new Float32Array(LIQ_COLOR_LUT_SIZE * 3);
+    const _lutColor = new THREE.Color();
+    for (let k = 0; k < LIQ_COLOR_LUT_SIZE; k++) {
+      _lutColor.set(d3BlueToRedScale(k / (LIQ_COLOR_LUT_SIZE - 1)));
+      liqColorLut[k * 3] = _lutColor.r;
+      liqColorLut[k * 3 + 1] = _lutColor.g;
+      liqColorLut[k * 3 + 2] = _lutColor.b;
+    }
 
     // 5. 3D Topographic Terrain Mesh (68 Price Columns x 48 Leverage-Depth Rows)
     const segX = 68;
@@ -293,26 +333,26 @@ export const ThreeQuantumRiskHeatmap3D: React.FC<
 
     // Topographic Iso-Contour Wireframe Overlay
     const contourWireMat = new THREE.MeshBasicMaterial({
-      color: 0x93c5fd,
+      color: T3.ink3,
       wireframe: true,
       transparent: true,
-      opacity: 0.16,
+      opacity: 0.12,
     });
     const contourWireMesh = new THREE.Mesh(terrainGeo, contourWireMat);
     contourWireMesh.position.y = -2.585;
     scene.add(contourWireMesh);
 
     // Reference Base Floor Grid
-    const baseGrid = new THREE.GridHelper(28, 28, 0x1e293b, 0x0f172a);
+    const baseGrid = new THREE.GridHelper(28, 28, T3.lineStrong, T3.line);
     baseGrid.position.y = -2.65;
     scene.add(baseGrid);
 
     // Spot Price Center Laser Wall (Marks Current BTC Price = 0 on X axis)
     const spotPlaneGeo = new THREE.PlaneGeometry(0.08, 6.2, 1, 1);
     const spotPlaneMat = new THREE.MeshBasicMaterial({
-      color: 0x22d3ee,
+      color: T3.ink1,
       transparent: true,
-      opacity: 0.75,
+      opacity: 0.6,
       side: THREE.DoubleSide,
     });
     const spotLaserMesh = new THREE.Mesh(spotPlaneGeo, spotPlaneMat);
@@ -323,10 +363,20 @@ export const ThreeQuantumRiskHeatmap3D: React.FC<
     const magnetPeaksGroup = new THREE.Group();
     scene.add(magnetPeaksGroup);
 
+    // Materiały per-rebuild usunięte ze sceny — zwalniane dopiero po kolejnym renderze,
+    // gdy nowe materiały trzymają już referencję do tych samych programów shaderów
+    // (natychmiastowy dispose usunąłby program beaconów i wymusił ponowną kompilację)
+    const pendingMaterialDisposal: THREE.Material[] = [];
+
     const clearGroup = (grp: THREE.Group) => {
       while (grp.children.length > 0) {
         const c = grp.children[0] as THREE.Mesh;
         if (c.geometry) c.geometry.dispose();
+        // Wszystkie materiały beaconów i pierścieni są tworzone per-rebuild
+        if (c.material) {
+          const materials = Array.isArray(c.material) ? c.material : [c.material];
+          pendingMaterialDisposal.push(...materials);
+        }
         grp.remove(c);
       }
     };
@@ -335,8 +385,7 @@ export const ThreeQuantumRiskHeatmap3D: React.FC<
     interface MagnetCluster {
       normX: number; // -13 to +13 on terrain
       normZ: number; // -9 to +9 on terrain (leverage tier)
-      intensity: number; // 0..1 normalized USD liquidation size
-      usdPoolM: number; // $M liquidation pool
+      intensity: number; // 0..1 względna siła szacunku (nie kwota USD)
       price: number;
       leverageLabel: string;
       isShortSqueeze: boolean;
@@ -345,6 +394,58 @@ export const ThreeQuantumRiskHeatmap3D: React.FC<
 
     let activeClusters: MagnetCluster[] = [];
     let lastRebuildTime = -10;
+
+    // Wysokości, kolory (LUT) i normalne terenu zależą tylko od danych (activeClusters) —
+    // przeliczane wyłącznie przy przebudowie, nie w każdej klatce.
+    // Wysokości bez mnożnika gain: gain nakładany przez scale.y siatki w pętli renderu.
+    const rebuildTerrainSurface = () => {
+      // 1. Update 3D Topographic Vertices & Blue-to-Red Color Gradient from Liquidation Clusters
+      const posAttr = terrainGeo.attributes.position;
+      const colAttr = terrainGeo.attributes.color;
+
+      for (let i = 0; i < posAttr.count; i++) {
+        const vx = posAttr.getX(i);
+        const vz = posAttr.getZ(i);
+
+        let liqDensity = 0.04; // Baseline blue valley floor
+
+        for (let c = 0; c < activeClusters.length; c++) {
+          const cl = activeClusters[c];
+          const dx = vx - cl.normX;
+          const dz = vz - cl.normZ;
+          // Anisotropic Gaussian ridge (sharper along price X, elongated along leverage Z)
+          const distSq = (dx * dx) / 2.3 + (dz * dz) / 5.2;
+          if (distSq < 6.5) {
+            const contrib = cl.intensity * Math.exp(-distSq);
+            if (contrib > liqDensity) {
+              liqDensity = contrib;
+            } else {
+              liqDensity = Math.min(1.0, liqDensity + contrib * 0.28);
+            }
+          }
+        }
+
+        const normVal = Math.max(0, Math.min(1, liqDensity));
+
+        // Elevation Y proportional to USD Liquidation size
+        posAttr.setY(i, Math.pow(normVal, 1.35) * 4.8);
+
+        // Blue-to-Red gradient color lookup
+        // Indeks LUT 0..255 (NaN → 0, bez wyjścia poza tablicę)
+        const lutIdx =
+          (normVal > 0 ? (normVal < 1 ? Math.round(normVal * 255) : 255) : 0) * 3;
+        colAttr.setXYZ(
+          i,
+          liqColorLut[lutIdx],
+          liqColorLut[lutIdx + 1],
+          liqColorLut[lutIdx + 2]
+        );
+      }
+
+      posAttr.needsUpdate = true;
+      colAttr.needsUpdate = true;
+      terrainGeo.computeVertexNormals();
+    };
 
     const rebuildMagnetClustersAndBeacons = () => {
       const {
@@ -379,59 +480,63 @@ export const ThreeQuantumRiskHeatmap3D: React.FC<
         const normZ =
           levOffset + Math.sin(idx * 1.7) * 2.1;
 
-        const usdPoolM = Number(
-          Math.max(
-            0.8,
-            (bucket.liquidationPoolUsd / 1e6) * 2.4 +
-              bucket.gravityPotential * 14.5
-          ).toFixed(2)
-        );
-
-        const intensity = Math.min(
-          1.0,
-          Math.max(0.12, bucket.gravityPotential * 0.92 + (idx % 3 === 0 ? 0.12 : 0))
-        );
+        // Siła = U(p) z profilu (bez sztucznych podbić); oś Z = umowny podział na dźwignię
+        const intensity = Math.min(1.0, Math.max(0.12, bucket.gravityPotential * 0.92));
 
         clusters.push({
           normX,
           normZ,
           intensity,
-          usdPoolM,
           price: bucket.price,
-          leverageLabel:
-            levOffset > 2
-              ? '100x High-Leverage Cluster'
-              : levOffset === 0
-              ? '20x Swing Leverage Pool'
-              : '5x Institutional Margin Wall',
+          leverageLabel: levOffset > 2 ? '~100× (umownie)' : levOffset === 0 ? '~20× (umownie)' : '~5× (umownie)',
           isShortSqueeze: isShort,
           tag: bucket.isPOC
-            ? 'POC + LIQ MAGNET'
+            ? 'POC + szacunek likwidacji'
             : Math.abs(bucket.price - curQuant.primaryMagnetPrice) < 35
-            ? 'PRIMARY MAGNET U(p)'
+            ? 'Najsilniejsze U(p)'
             : isShort
-            ? 'SHORT SQUEEZE POOL'
-            : 'LONG CASCADE POOL',
+            ? 'Szac. likwidacje shortów'
+            : 'Szac. likwidacje longów',
         });
       });
 
+      // Intensywność PDH/PDL z danych: pula likwidacji najbliższego kubełka profilu
+      // znormalizowana przez maksymalną pulę w profilu (0 gdy profil pusty / brak puli)
+      const maxProfilePoolUsd = profile.reduce(
+        (acc, b) => Math.max(acc, b.liquidationPoolUsd),
+        0
+      );
+      const levelIntensityFromProfile = (levelPrice: number) => {
+        if (profile.length === 0 || !(maxProfilePoolUsd > 0)) return 0;
+        let nearest = profile[0];
+        for (let k = 1; k < profile.length; k++) {
+          if (
+            Math.abs(profile[k].price - levelPrice) <
+            Math.abs(nearest.price - levelPrice)
+          ) {
+            nearest = profile[k];
+          }
+        }
+        const ratio = nearest.liquidationPoolUsd / maxProfilePoolUsd;
+        return ratio > 0 ? Math.min(1, ratio) : 0;
+      };
+
       // 2. Ensure Shaakuni PDH and PDL are represented as major 3D Magnet Ridges
+      // Strona z danych: poziom powyżej ceny = szacowane likwidacje shortów, poniżej = longów
       if (curShaakuni.pdh) {
         const nx = Math.max(
           -12,
           Math.min(12, ((curShaakuni.pdh - spot) / priceSpan) * 12)
         );
+        const pdhAbove = curShaakuni.pdh >= spot;
         clusters.push({
           normX: nx,
           normZ: 1.2,
-          intensity: 0.96,
-          usdPoolM: Number(
-            Math.max(16.4, curQuant.shortSqueezeFuelUsd / 1e5).toFixed(1)
-          ),
+          intensity: levelIntensityFromProfile(curShaakuni.pdh),
           price: curShaakuni.pdh,
-          leverageLabel: '20x–100x PDH Stop-Loss Cluster',
-          isShortSqueeze: true,
-          tag: 'PDH MAGNET PEAK',
+          leverageLabel: 'pula stopów przy PDH (założenie)',
+          isShortSqueeze: pdhAbove,
+          tag: 'PDH',
         });
       }
 
@@ -440,58 +545,62 @@ export const ThreeQuantumRiskHeatmap3D: React.FC<
           -12,
           Math.min(12, ((curShaakuni.pdl - spot) / priceSpan) * 12)
         );
+        const pdlAbove = curShaakuni.pdl >= spot;
         clusters.push({
           normX: nx,
           normZ: -1.2,
-          intensity: 0.94,
-          usdPoolM: Number(
-            Math.max(15.2, curQuant.longCascadeFuelUsd / 1e5).toFixed(1)
-          ),
+          intensity: levelIntensityFromProfile(curShaakuni.pdl),
           price: curShaakuni.pdl,
-          leverageLabel: '20x–100x PDL Stop-Loss Cluster',
-          isShortSqueeze: false,
-          tag: 'PDL MAGNET PEAK',
+          leverageLabel: 'pula stopów przy PDL (założenie)',
+          isShortSqueeze: pdlAbove,
+          tag: 'PDL',
         });
       }
 
       activeClusters = clusters;
+      // Teren zależy tylko od klastrów — przeliczany raz na przebudowę
+      rebuildTerrainSurface();
 
       // 3. Rebuild 3D Magnet Peak Beacons & Target Rings for Top 6 Magnet Clusters
       clearGroup(magnetPeaksGroup);
-      const topMagnets = [...clusters]
-        .sort((a, b) => b.intensity - a.intensity)
-        .slice(0, 6);
+      // 6 najsilniejszych szacunków + zawsze PDH/PDL (opis sceny obiecuje złote znaczniki poziomów)
+      const isLevelTag = (c: MagnetCluster) => c.tag === 'PDH' || c.tag === 'PDL';
+      const topMagnets = [
+        ...clusters
+          .filter((c) => !isLevelTag(c))
+          .sort((a, b) => b.intensity - a.intensity)
+          .slice(0, 6),
+        ...clusters.filter(isLevelTag),
+      ];
 
       topMagnets.forEach((m) => {
         const peakY =
           -2.6 + Math.pow(m.intensity, 1.35) * 4.8 * gain;
 
-        // Glowing Red/Amber Peak Beacon Sphere
+        // Znacznik szczytu: PDH/PDL w kolorze poziomu, pozostałe — jasny odcień skali
         const beaconGeo = new THREE.OctahedronGeometry(0.34, 1);
-        const colHex = m.intensity >= 0.75 ? 0xff1e42 : 0xf97316;
+        const isLevel = m.tag === 'PDH' || m.tag === 'PDL';
+        const colHex = isLevel ? T3.level : m.intensity >= 0.75 ? T3.ink1 : T3.zone;
         const beaconMat = new THREE.MeshStandardMaterial({
           color: colHex,
           emissive: colHex,
-          emissiveIntensity: 0.95,
-          roughness: 0.15,
-          metalness: 0.8,
+          emissiveIntensity: GLOW,
+          roughness: 0.4,
+          metalness: 0.3,
         });
         const beaconMesh = new THREE.Mesh(beaconGeo, beaconMat);
         beaconMesh.position.set(m.normX, peakY + 0.45, m.normZ);
         beaconMesh.layers.enable(1);
 
         beaconMesh.userData = {
-          title: `${m.tag} ($${Math.round(m.price).toLocaleString()})`,
-          priceLevel: `$${m.price.toFixed(1)} (${
-            m.price >= spot ? '+' : ''
-          }${(((m.price - spot) / spot) * 100).toFixed(2)}%)`,
-          totalLiqUsd: `$${m.usdPoolM.toFixed(2)}M USD`,
+          title: `${m.tag} · ${Math.round(m.price).toLocaleString('en-US')} ${m.isShortSqueeze ? '▲' : '▼'}`,
+          priceLevel: `${m.price.toFixed(1)} (${m.price >= spot ? '+' : '−'}${Math.abs(((m.price - spot) / spot) * 100).toFixed(2)}%)`,
+          strength: `${Math.round(m.intensity * 100)}% maks.`,
           leverageTier: m.leverageLabel,
-          magnetPullPct: `${Math.round(m.intensity * 100)}% Gravity Pull`,
           sideLabel: m.isShortSqueeze
-            ? 'Short Liquidation Magnet (Upward Pull)'
-            : 'Long Liquidation Magnet (Downward Pull)',
-          accentColor: m.intensity >= 0.75 ? '#ef4444' : '#f97316',
+            ? 'Nad ceną: szacowane likwidacje shortów'
+            : 'Pod ceną: szacowane likwidacje longów',
+          accentColor: isLevel ? T3_CSS.level : T3_CSS.zone,
         } satisfies HoveredMagnetPeak;
 
         magnetPeaksGroup.add(beaconMesh);
@@ -500,9 +609,9 @@ export const ThreeQuantumRiskHeatmap3D: React.FC<
         const ringGeo = new THREE.TorusGeometry(0.68, 0.035, 10, 32);
         ringGeo.rotateX(Math.PI / 2);
         const ringMat = new THREE.MeshBasicMaterial({
-          color: m.intensity >= 0.75 ? 0xef4444 : 0xfacc15,
+          color: isLevel ? T3.level : T3.ink3,
           transparent: true,
-          opacity: 0.85,
+          opacity: 0.6,
         });
         const ringMesh = new THREE.Mesh(ringGeo, ringMat);
         ringMesh.position.set(m.normX, peakY + 0.15, m.normZ);
@@ -511,6 +620,8 @@ export const ThreeQuantumRiskHeatmap3D: React.FC<
     };
 
     rebuildMagnetClustersAndBeacons();
+    // Scena zbudowana z bieżących danych — kolejna przebudowa dopiero po zmianie propsów
+    dirtyRef.current = false;
 
     // Post-Processing Bokeh Depth of Field
     let composer: EffectComposer | null = null;
@@ -558,19 +669,30 @@ export const ThreeQuantumRiskHeatmap3D: React.FC<
       const w = Math.max(320, container.clientWidth);
       const h = Math.max(280, container.clientHeight);
       camera.aspect = w / h;
+      camera.fov = labFov(w / h);
       camera.updateProjectionMatrix();
       renderer.setSize(w, h);
       if (composer) composer.setSize(w, h);
     };
     window.addEventListener('resize', handleResize);
 
-    // Pre-allocated THREE.Color for zero GC inside render loop
-    const _tmpColor = new THREE.Color();
     const startTimeMs = performance.now();
     let prevTimeMs = startTimeMs;
-    let frameId = 0;
+    // Osobne identyfikatory dla requestAnimationFrame i setTimeout — każdy anulowany właściwą funkcją
+    let rafId = 0;
+    let timeoutId = 0;
     let isDisposed = false;
     let isVisible = true;
+    // Karta w tle: pętla renderu stoi całkowicie (bez timerów), wznowienie po powrocie
+    let pausedHidden = false;
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== 'hidden' && pausedHidden && !isDisposed) {
+        pausedHidden = false;
+        prevTimeMs = performance.now();
+        tick();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
 
     const io =
       typeof IntersectionObserver !== 'undefined'
@@ -586,7 +708,7 @@ export const ThreeQuantumRiskHeatmap3D: React.FC<
     function afterDraw(cb: () => void) {
       const gl = renderer.getContext() as WebGL2RenderingContext;
       if (!gl || !gl.fenceSync) {
-        frameId = window.setTimeout(cb, 80);
+        timeoutId = window.setTimeout(cb, 80);
         return;
       }
       const sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
@@ -595,29 +717,35 @@ export const ThreeQuantumRiskHeatmap3D: React.FC<
         if (isDisposed) return;
         const state = sync && gl.getSyncParameter(sync, gl.SYNC_STATUS);
         if (state === gl.UNSIGNALED) {
-          frameId = window.setTimeout(poll, 5);
+          timeoutId = window.setTimeout(poll, 5);
         } else {
           if (sync) gl.deleteSync(sync);
-          frameId = window.setTimeout(cb, 80);
+          timeoutId = window.setTimeout(cb, 80);
         }
       };
-      frameId = window.setTimeout(poll, 5);
+      timeoutId = window.setTimeout(poll, 5);
     }
 
     function tick() {
       if (isDisposed) return;
+      if (document.visibilityState === 'hidden') {
+        pausedHidden = true;
+        return;
+      }
       const nowMs = performance.now();
       const dt = Math.min(0.1, (nowMs - prevTimeMs) / 1000);
       prevTimeMs = nowMs;
       const elapsed = (nowMs - startTimeMs) / 1000;
 
       if (!isVisible) {
-        frameId = window.setTimeout(tick, 250);
+        timeoutId = window.setTimeout(tick, 250);
         return;
       }
 
-      if (elapsed - lastRebuildTime > 0.8) {
+      // Przebudowa tylko gdy dane faktycznie się zmieniły (dirtyRef), z zachowanym throttlingiem 800 ms
+      if (dirtyRef.current && elapsed - lastRebuildTime > 0.8) {
         lastRebuildTime = elapsed;
+        dirtyRef.current = false;
         rebuildMagnetClustersAndBeacons();
       }
 
@@ -627,58 +755,15 @@ export const ThreeQuantumRiskHeatmap3D: React.FC<
       } = latestRef.current;
 
       contourWireMesh.visible = showWire;
+      // Mnożnik wysokości jako skala Y siatki — suwak działa natychmiast, bez przeliczania wierzchołków
+      terrainMesh.scale.y = curGain;
+      contourWireMesh.scale.y = curGain;
 
-      // 1. Update 3D Topographic Vertices & Blue-to-Red Color Gradient from Liquidation Clusters
-      const posAttr = terrainGeo.attributes.position;
-      const colAttr = terrainGeo.attributes.color;
-
-      for (let i = 0; i < posAttr.count; i++) {
-        const vx = posAttr.getX(i);
-        const vz = posAttr.getZ(i);
-
-        let liqDensity = 0.04; // Baseline blue valley floor
-
-        for (let c = 0; c < activeClusters.length; c++) {
-          const cl = activeClusters[c];
-          const dx = vx - cl.normX;
-          const dz = vz - cl.normZ;
-          // Anisotropic Gaussian ridge (sharper along price X, elongated along leverage Z)
-          const distSq = (dx * dx) / 2.3 + (dz * dz) / 5.2;
-          if (distSq < 6.5) {
-            const contrib = cl.intensity * Math.exp(-distSq);
-            if (contrib > liqDensity) {
-              liqDensity = contrib;
-            } else {
-              liqDensity = Math.min(1.0, liqDensity + contrib * 0.28);
-            }
-          }
-        }
-
-        // Subtle quantum harmonic pulse on high-density magnet peaks
-        const pulse =
-          liqDensity > 0.55
-            ? Math.sin(elapsed * 2.6 + vx * 0.5) * 0.045 * liqDensity
-            : 0;
-        const normVal = Math.max(0, Math.min(1, liqDensity + pulse));
-
-        // Elevation Y proportional to USD Liquidation size
-        const elevY = Math.pow(normVal, 1.35) * 4.8 * curGain;
-        posAttr.setY(i, elevY);
-
-        // Blue-to-Red gradient color lookup
-        const cssHex = d3BlueToRedScale(normVal);
-        _tmpColor.set(cssHex);
-        colAttr.setXYZ(i, _tmpColor.r, _tmpColor.g, _tmpColor.b);
-      }
-
-      posAttr.needsUpdate = true;
-      colAttr.needsUpdate = true;
-      terrainGeo.computeVertexNormals();
-
-      // 2. Rotate Magnet Peak Beacons
+      // Teren nie pulsuje — dane nie powinny „falować” bez zmiany wartości.
+      // Znaczniki szczytów obracają się powoli (ruch liniowy), żeby było widać, że są interaktywne.
       for (let i = 0; i < magnetPeaksGroup.children.length; i++) {
         const obj = magnetPeaksGroup.children[i];
-        obj.rotation.y += dt * 1.1;
+        obj.rotation.y += dt * 0.4;
       }
 
       // 3. Smooth Camera Damping
@@ -727,25 +812,30 @@ export const ThreeQuantumRiskHeatmap3D: React.FC<
 
       controls.update();
 
-      if (bokehPass && composer) {
+      // Głębia ostrości tylko gdy włączona — inaczej render bez post-processingu (taniej)
+      if (bokehPass && composer && latestRef.current.dofEnabled) {
         const uniforms = bokehPass.uniforms as Record<string, { value: number }>;
         if (uniforms['focus']) {
           uniforms['focus'].value = latestRef.current.dofFocus;
         }
         if (uniforms['aperture']) {
-          uniforms['aperture'].value = latestRef.current.dofEnabled
-            ? latestRef.current.dofAperture * 0.0001
-            : 0;
+          uniforms['aperture'].value = latestRef.current.dofAperture * 0.0001;
         }
         composer.render();
       } else {
         renderer.render(scene, camera);
       }
 
+      // Odroczone zwolnienie materiałów z poprzedniej przebudowy (po renderze nowej sceny)
+      if (pendingMaterialDisposal.length > 0) {
+        pendingMaterialDisposal.forEach((m) => m.dispose());
+        pendingMaterialDisposal.length = 0;
+      }
+
       if (isSoftwareGl) {
         afterDraw(tick);
       } else {
-        frameId = requestAnimationFrame(tick);
+        rafId = requestAnimationFrame(tick);
       }
     }
 
@@ -754,258 +844,121 @@ export const ThreeQuantumRiskHeatmap3D: React.FC<
     return () => {
       isDisposed = true;
       io?.disconnect();
-      cancelAnimationFrame(frameId);
-      clearTimeout(frameId);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      cancelAnimationFrame(rafId);
+      clearTimeout(timeoutId);
       window.removeEventListener('resize', handleResize);
       renderer.domElement.removeEventListener('pointermove', onPointerMove);
       controls.dispose();
+
+      // Post-processing: EffectComposer.dispose() nie zwalnia dodanych passów (BokehPass, RenderPass)
+      if (composer) {
+        composer.passes.forEach((pass) => pass.dispose());
+        composer.dispose();
+      }
+
+      // Geometrie, materiały i tekstury całej sceny + materiały czekające na odroczony dispose
+      const disposedMaterials = new Set<THREE.Material>();
+      disposeSceneGraph(scene, disposedMaterials);
+      pendingMaterialDisposal.forEach((m) =>
+        disposeMaterialDeep(m, disposedMaterials)
+      );
+      pendingMaterialDisposal.length = 0;
+
+      // Mapa środowiskowa PMREM
+      scene.environment = null;
+      envRenderTarget.dispose();
+
       renderer.dispose();
+      renderer.forceContextLoss();
     };
   }, []);
 
+  const magnetAbove = quant.primaryMagnetPrice >= currentPrice;
+  const fuelTotal = quant.shortSqueezeFuelUsd + quant.longCascadeFuelUsd;
+  const fuelAbovePct = fuelTotal > 0 ? Math.round((quant.shortSqueezeFuelUsd / fuelTotal) * 100) : null;
+
   return (
-    <div className="relative w-full h-full min-h-[480px] bg-[#060911] overflow-hidden select-none border border-slate-800/80 rounded-xl shadow-2xl">
-      {/* Isolated WebGL Mount Container */}
+    <div className={SCENE_FRAME}>
+      {/* Kontener WebGL */}
       <div ref={canvasMountRef} className="w-full h-full" />
 
-      {/* Top-Left Glass-Morphism Telemetry Header */}
-      <div className="absolute top-3 left-3 z-10 pointer-events-none flex flex-col gap-1.5 bg-[#090D16]/85 backdrop-blur-md border border-slate-800 px-3.5 py-2.5 rounded-lg max-w-xl">
-        <div className="flex items-center gap-2 text-xs font-bold text-white font-display">
-          <Mountain className="w-4 h-4 text-rose-400" />
-          <span>
-            3D Quantum Risk Heatmap // Orderbook Liquidation Topography & Price Action Magnets
-          </span>
-        </div>
+      <HudHeader title="Liquidation Risk (szacunek) · teren szacowanych poziomów likwidacji">
+        Najsilniejsze U(p) {quant.primaryMagnetPrice.toLocaleString('en-US')} {magnetAbove ? '▲' : '▼'} · udział szacunku nad / pod ceną{' '}
+        {fuelAbovePct !== null ? `${fuelAbovePct}% / ${100 - fuelAbovePct}%` : '—'}
+        <span className="flex items-center gap-2 pt-1 font-sans text-ink-3">
+          słaby
+          <span
+            className="w-28 h-1.5 rounded-full"
+            style={{ background: 'linear-gradient(90deg,#101826,#3f3f7a,#9085e9,#cdc7f7)' }}
+            aria-hidden="true"
+          />
+          silny · względna siła, nie kwota USD
+        </span>
+      </HudHeader>
 
-        <div className="text-[11px] text-slate-300 font-mono tabular-nums">
-          Primary Magnet U(p):{' '}
-          <strong className="text-rose-400">
-            ${quant.primaryMagnetPrice.toLocaleString()}
-          </strong>{' '}
-          · Short Squeeze Fuel (+1.5%):{' '}
-          <strong className="text-amber-300">
-            ${(quant.shortSqueezeFuelUsd / 1e6).toFixed(2)}M
-          </strong>{' '}
-          · Long Cascade Fuel (-1.5%):{' '}
-          <strong className="text-cyan-300">
-            ${(quant.longCascadeFuelUsd / 1e6).toFixed(2)}M
-          </strong>
-        </div>
-
-        {/* Blue-to-Red Color Scale Legend Bar */}
-        <div className="flex items-center gap-2 text-[10px] font-mono text-slate-400 pt-0.5">
-          <span className="text-blue-400">Low Liq ($0.5M)</span>
-          <div className="w-36 h-2 rounded-xs bg-gradient-to-r from-blue-900 via-sky-500 via-amber-500 to-rose-600 border border-slate-700/60" />
-          <span className="text-rose-400 font-semibold">
-            Magnet Peak ($25M+ USD)
-          </span>
-        </div>
-      </div>
-
-      {/* Top-Right Action Buttons */}
       <div className="absolute top-3 right-3 z-10 flex items-center gap-1.5">
         {onTriggerMagnetSignal && (
-          <button
-            type="button"
-            onClick={() => {
-              const isUpMagnet = quant.primaryMagnetPrice >= currentPrice;
+          <HudButton
+            emphasis
+            onClick={() =>
               onTriggerMagnetSignal(
-                isUpMagnet ? 'LONG' : 'SHORT',
-                isUpMagnet
-                  ? `QUANTUM RISK MAGNET LONG // TARGET PEAK $${quant.primaryMagnetPrice}`
-                  : `QUANTUM RISK MAGNET SHORT // TARGET PEAK $${quant.primaryMagnetPrice}`,
-                `3D Quantum Risk Topographic Heatmap identified an extreme crimson liquidation magnet peak at $${quant.primaryMagnetPrice} (Short Squeeze Fuel: $${(
-                  quant.shortSqueezeFuelUsd / 1e6
-                ).toFixed(2)}M vs Long Cascade Fuel: $${(
-                  quant.longCascadeFuelUsd / 1e6
-                ).toFixed(2)}M).`
-              );
-            }}
-            className="px-2.5 py-1.5 text-xs font-semibold bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 rounded-md flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
-          >
-            <Magnet className="w-3.5 h-3.5" />
-            <span>Magnet Sweep Signal</span>
-          </button>
+                magnetAbove ? 'LONG' : 'SHORT',
+                `Liquidation Risk (szacunek): najsilniejsze U(p) ${magnetAbove ? 'nad' : 'pod'} ceną`,
+                `Poziom ${quant.primaryMagnetPrice} · udział szacunku nad/pod ceną ${
+                  fuelAbovePct !== null ? `${fuelAbovePct}%/${100 - fuelAbovePct}%` : 'n/a'
+                } · szacunek z wolumenu, nie realne pozycje`
+              )
+            }
+            icon={<ClipboardList className="w-3.5 h-3.5" aria-hidden="true" />}
+            label={`Przekaż do planu · ${magnetAbove ? '▲ Long' : '▼ Short'}`}
+            title="Przekazuje stronę najsilniejszego U(p) do Analizatora planu — plan ocenisz tam"
+          />
         )}
-
-        <button
-          type="button"
-          onClick={() => applyPreset('iso')}
-          className="px-2.5 py-1.5 text-xs font-medium text-slate-300 bg-[#090D16]/90 hover:bg-slate-800 border border-slate-800 rounded-md flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
-        >
-          <RotateCcw className="w-3.5 h-3.5 text-cyan-400" />
-          <span>Reset Map</span>
-        </button>
-
+        <HudButton onClick={() => applyPreset('iso')} icon={<RotateCcw className="w-3.5 h-3.5" aria-hidden="true" />} label="Reset kamery" />
         {onToggleExpand && (
-          <button
-            type="button"
+          <HudButton
             onClick={onToggleExpand}
-            className="px-2.5 py-1.5 text-xs font-medium text-slate-300 bg-[#090D16]/90 hover:bg-slate-800 border border-slate-800 rounded-md flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
-          >
-            {isExpanded ? (
-              <>
-                <Minimize2 className="w-3.5 h-3.5 text-cyan-400" />
-                <span>Split View</span>
-              </>
-            ) : (
-              <>
-                <Maximize2 className="w-3.5 h-3.5 text-cyan-400" />
-                <span>Full 3D Stage</span>
-              </>
-            )}
-          </button>
+            icon={isExpanded ? <Minimize2 className="w-3.5 h-3.5" aria-hidden="true" /> : <Maximize2 className="w-3.5 h-3.5" aria-hidden="true" />}
+            label={isExpanded ? 'Widok dzielony' : 'Pełny ekran'}
+          />
         )}
       </div>
 
-      {/* Raycasted Magnet Peak Hover Card */}
       {hoveredPeak && (
-        <div className="absolute top-28 left-3 z-10 pointer-events-none bg-[#090D16]/95 border border-rose-500/50 px-3.5 py-2.5 rounded-lg shadow-2xl max-w-xs font-mono text-xs">
-          <div className="font-sans font-bold text-white flex items-center gap-2">
-            <Flame className="w-3.5 h-3.5 text-rose-400 shrink-0" />
-            <span>{hoveredPeak.title}</span>
-          </div>
-          <div className="text-[11px] text-slate-300 mt-0.5">
-            {hoveredPeak.sideLabel}
-          </div>
-          <div className="mt-2 pt-2 border-t border-slate-800 grid grid-cols-2 gap-2 text-[10px]">
-            <div>
-              <span className="text-slate-500 block">Price Level</span>
-              <span className="text-white font-semibold">
-                {hoveredPeak.priceLevel}
-              </span>
-            </div>
-            <div>
-              <span className="text-slate-500 block">Total Liq Pool</span>
-              <span className="text-rose-400 font-bold">
-                {hoveredPeak.totalLiqUsd}
-              </span>
-            </div>
-            <div>
-              <span className="text-slate-500 block">Leverage Cluster</span>
-              <span className="text-amber-300">{hoveredPeak.leverageTier}</span>
-            </div>
-            <div>
-              <span className="text-slate-500 block">Magnet Gravity</span>
-              <span className="text-cyan-300 font-semibold">
-                {hoveredPeak.magnetPullPct}
-              </span>
-            </div>
-          </div>
-        </div>
+        <HoverCard
+          swatch={hoveredPeak.accentColor}
+          title={hoveredPeak.title}
+          subtitle={hoveredPeak.sideLabel}
+          rows={[
+            { k: 'Cena', v: hoveredPeak.priceLevel },
+            { k: 'Siła szacunku', v: hoveredPeak.strength },
+            { k: 'Dźwignia', v: hoveredPeak.leverageTier },
+          ]}
+        />
       )}
 
-      {/* Unified Collapsible Bottom Control Dock */}
-      <div className="absolute left-1/2 -translate-x-1/2 bottom-3 z-10 max-w-[calc(100%-24px)] w-auto flex flex-col items-center">
-        <button
-          type="button"
-          onClick={() => setDockCollapsed((v) => !v)}
-          className={`px-3 py-1 text-[11px] font-medium text-slate-300 bg-[#0B101B]/95 hover:bg-slate-800 border border-slate-800 shadow-xl flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors ${
-            dockCollapsed ? 'rounded-md' : 'rounded-t-md border-b-0'
-          }`}
-        >
-          {dockCollapsed ? (
-            <>
-              <ChevronUp className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Pokaż kontrolki 3D Quantum Risk</span>
-            </>
-          ) : (
-            <>
-              <ChevronDown className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Ukryj kontrolki</span>
-            </>
-          )}
-        </button>
-
-        {!dockCollapsed && (
-          <div className="bg-[#0B101B]/95 backdrop-blur-md border border-slate-800 rounded-b-lg rounded-tl-lg px-3.5 py-2.5 shadow-2xl flex flex-wrap items-center justify-center gap-2.5 max-w-full">
-            {/* Camera Presets */}
-            <div className="flex items-center gap-1 bg-[#070A12] p-1 rounded-md border border-slate-800/80">
-              <Camera className="w-3.5 h-3.5 text-slate-400 ml-1.5 mr-1 shrink-0" />
-              {(
-                [
-                  { id: 'iso', label: 'Topographic Iso' },
-                  { id: 'shortsqueeze', label: 'Short Squeeze' },
-                  { id: 'longcascade', label: 'Long Cascade' },
-                  { id: 'topcontour', label: 'Top-Down Contour' },
-                ] as const
-              ).map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => applyPreset(item.id)}
-                  className={`px-2 py-1 text-[11px] font-medium rounded transition-colors whitespace-nowrap shrink-0 ${
-                    preset === item.id
-                      ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-
-            {/* Elevation & Bokeh DOF Sliders */}
-            <div className="flex flex-wrap items-center gap-2.5 text-[11px]">
-              <label className="flex items-center gap-1 text-slate-300 whitespace-nowrap">
-                <Zap className="w-3.5 h-3.5 text-rose-400" />
-                <span className="text-slate-400">Wysokość:</span>
-                <input
-                  type="range"
-                  min={0.6}
-                  max={2.2}
-                  step={0.05}
-                  value={topoElevationGain}
-                  onChange={(e) => setTopoElevationGain(Number(e.target.value))}
-                  className="w-14 accent-rose-500 cursor-pointer"
-                />
-                <span className="font-mono text-rose-300 w-8">
-                  {topoElevationGain.toFixed(2)}x
-                </span>
-              </label>
-
-              <button
-                type="button"
-                onClick={() => setShowContourWireframe((v) => !v)}
-                className={`px-2 py-1 rounded font-medium border transition-colors whitespace-nowrap shrink-0 ${
-                  showContourWireframe
-                    ? 'bg-cyan-500/15 text-cyan-300 border-cyan-500/40'
-                    : 'bg-slate-900 text-slate-400 border-slate-800'
-                }`}
-              >
-                Iso: {showContourWireframe ? 'ON' : 'OFF'}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setDofEnabled((v) => !v)}
-                className={`px-2 py-1 rounded font-medium flex items-center gap-1 border transition-colors whitespace-nowrap shrink-0 ${
-                  dofEnabled
-                    ? 'bg-amber-500/15 text-amber-300 border-amber-500/40'
-                    : 'bg-slate-900 text-slate-400 border-slate-800'
-                }`}
-              >
-                <Focus className="w-3.5 h-3.5" />
-                <span>DOF: {dofEnabled ? 'ON' : 'OFF'}</span>
-              </button>
-
-              <label className="flex items-center gap-1 text-slate-300 whitespace-nowrap">
-                <span className="text-slate-400">Focus:</span>
-                <input
-                  type="range"
-                  min={10}
-                  max={40}
-                  step={1}
-                  value={dofFocus}
-                  onChange={(e) => setDofFocus(Number(e.target.value))}
-                  className="w-12 accent-cyan-400 cursor-pointer"
-                />
-                <span className="font-mono text-cyan-300 w-6">{dofFocus}m</span>
-              </label>
-            </div>
-          </div>
-        )}
-      </div>
+      <SceneDock collapsed={dockCollapsed} onToggle={() => setDockCollapsed((v) => !v)}>
+        <DockPresets<RiskTopoPreset>
+          ariaLabel="Kamera"
+          value={preset}
+          onChange={applyPreset}
+          options={[
+            { id: 'iso', label: 'Izometria' },
+            { id: 'shortsqueeze', label: 'Nad ceną' },
+            { id: 'longcascade', label: 'Pod ceną' },
+            { id: 'topcontour', label: 'Z góry' },
+          ]}
+        />
+        <DockSlider label="Wysokość" min={0.6} max={2.2} step={0.05} value={topoElevationGain} onChange={setTopoElevationGain} format={(v) => `${v.toFixed(2)}×`} />
+        <DockToggle on={showContourWireframe} onClick={() => setShowContourWireframe((v) => !v)}>
+          Siatka
+        </DockToggle>
+        <DockToggle on={dofEnabled} onClick={() => setDofEnabled((v) => !v)}>
+          <Focus className="w-3 h-3" aria-hidden="true" /> Głębia ostrości
+        </DockToggle>
+        {dofEnabled && <DockSlider label="Ostrość" min={10} max={40} step={1} value={dofFocus} onChange={setDofFocus} format={(v) => `${v} m`} />}
+      </SceneDock>
     </div>
   );
 };

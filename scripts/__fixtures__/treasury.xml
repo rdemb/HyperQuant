@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<feed xml:base="https://home.treasury.gov/resource-center/data-chart-center/interest-rates/" xmlns:d="http://schemas.microsoft.com/ado/2007/08/dataservices" xmlns:m="http://schemas.microsoft.com/ado/2007/08/dataservices/metadata" xmlns="http://www.w3.org/2005/Atom">
+<title type="text">DailyTreasuryYieldCurveRateData</title>
+<id>https://home.treasury.gov/x</id>
+<updated>2026-10-21T02:03:31Z</updated>
+<entry>
+<id>https://home.treasury.gov/x(328)</id>
+<title type="text"></title>
+<updated>2026-10-21T02:03:31Z</updated>
+<author><name /></author>
+<category term="TreasuryDataWarehouseModel.DailyTreasuryYieldCurveRateDatum" scheme="http://schemas.microsoft.com/ado/2007/08/dataservices/scheme" />
+<content type="application/xml"><m:properties>
+<d:Id m:type="Edm.Int32">328</d:Id>
+<d:NEW_DATE m:type="Edm.DateTime">2026-10-01T00:00:00</d:NEW_DATE>
+<d:BC_1MONTH m:type="Edm.Double">4.12</d:BC_1MONTH>
+<d:BC_2YEAR m:type="Edm.Double">4.78</d:BC_2YEAR>
+<d:BC_10YEAR m:type="Edm.Double">5.24</d:BC_10YEAR>
+<d:BC_30YEAR m:type="Edm.Double">5.41</d:BC_30YEAR>
+</m:properties></content>
+</entry>
+<entry>
+<id>https://home.treasury.gov/x(329)</id>
+<content type="application/xml"><m:properties>
+<d:Id m:type="Edm.Int32">329</d:Id>
+<d:NEW_DATE m:type="Edm.DateTime">2026-10-02T00:00:00</d:NEW_DATE>
+<d:BC_2YEAR m:type="Edm.Double">4.81</d:BC_2YEAR>
+<d:BC_10YEAR m:type="Edm.Double" m:null="true" />
+</m:properties></content>
+</entry>
+</feed>

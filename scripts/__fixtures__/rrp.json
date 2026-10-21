@@ -1,0 +1,5 @@
+{"repo":{"operations":[
+{"operationId":"RP 102126 26","auctionStatus":"Results","operationDate":"2026-10-21","operationType":"Reverse Repo","totalAmtSubmitted":237000000,"totalAmtAccepted":237000000,"details":[{"securityType":"Treasury","amtAccepted":237000000}]},
+{"operationId":"RP 102026 26","auctionStatus":"Results","operationDate":"2026-10-20","operationType":"Reverse Repo","totalAmtSubmitted":227000000,"totalAmtAccepted":227000000,"details":[]},
+{"operationId":"RP 102026 27","auctionStatus":"Results","operationDate":"2026-10-20","operationType":"Reverse Repo","totalAmtSubmitted":3000000,"totalAmtAccepted":3000000,"details":[]}
+]}}

@@ -1,0 +1,5 @@
+{"query_details":{"title":"(bitcoin OR btc) sourcelang:english","date_resolution":"15m"},"timeline":[{"series":"Average Tone","data":[
+{"date":"20261020T000000Z","value":-1.0},
+{"date":"20261020T001500Z","value":-2.0},
+{"date":"20261020T010000Z","value":0.5}
+]}]}

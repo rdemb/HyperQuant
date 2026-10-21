@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+<title>Example Atom</title>
+<link href="https://example.org/" rel="alternate"/>
+<entry>
+<title type="html">Ethereum &lt;b&gt;upgrade&lt;/b&gt; goes live</title>
+<link rel="self" href="https://example.org/api/1"/>
+<link rel="alternate" type="text/html" href="https://example.org/news/eth-upgrade?utm_campaign=x&amp;ref=home"/>
+<id>urn:1</id>
+<updated>2026-10-20T09:30:00Z</updated>
+<summary>Summary not stored</summary>
+</entry>
+</feed>

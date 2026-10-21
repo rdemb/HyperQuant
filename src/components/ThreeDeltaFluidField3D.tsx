@@ -6,18 +6,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { BokehPass } from 'three/addons/postprocessing/BokehPass.js';
 import * as d3 from 'd3';
-import {
-  Activity,
-  Camera,
-  ChevronDown,
-  ChevronUp,
-  Focus,
-  Maximize2,
-  Minimize2,
-  RotateCcw,
-  Waves,
-  Zap,
-} from 'lucide-react';
+import { ClipboardList, Focus, Maximize2, Minimize2, RotateCcw } from 'lucide-react';
 import {
   AggrTradeTick,
   OFIMomentumSummary,
@@ -25,6 +14,8 @@ import {
   QuantMathMetrics,
   ShaakuniState,
 } from '../types/trading';
+import { GLOW, T3, T3_CSS, isNarrowViewport, labFov, labPixelRatio } from '../views/lab/tokens3d';
+import { DockPresets, DockSlider, DockToggle, HoverCard, HudButton, HudHeader, SCENE_FRAME, SceneDock } from '../views/lab/hud';
 
 interface ThreeDeltaFluidField3DProps {
   bars: OHLCVBar[];
@@ -53,6 +44,44 @@ interface HoveredFluidCell {
   accentColor: string;
 }
 
+// Zwalnia materiał wraz ze wszystkimi teksturami, do których się odwołuje (map, envMap, normalMap itd.).
+// Zbiór `disposed` chroni przed wielokrotnym dispose materiałów współdzielonych przez wiele meshy.
+const disposeMaterialDeep = (
+  material: THREE.Material,
+  disposed: Set<THREE.Material>
+) => {
+  if (disposed.has(material)) return;
+  disposed.add(material);
+  Object.values(material).forEach((value) => {
+    if (value instanceof THREE.Texture) value.dispose();
+  });
+  material.dispose();
+};
+
+// Przechodzi po całym grafie sceny i zwalnia geometrie, materiały (także tablice materiałów),
+// ich tekstury oraz mapy cieni świateł.
+const disposeSceneGraph = (
+  root: THREE.Object3D,
+  disposedMaterials: Set<THREE.Material>
+) => {
+  const disposedGeometries = new Set<THREE.BufferGeometry>();
+  root.traverse((obj) => {
+    const mesh = obj as THREE.Mesh;
+    if (mesh.geometry && !disposedGeometries.has(mesh.geometry)) {
+      disposedGeometries.add(mesh.geometry);
+      mesh.geometry.dispose();
+    }
+    if (mesh.material) {
+      const materials = Array.isArray(mesh.material)
+        ? mesh.material
+        : [mesh.material];
+      materials.forEach((m) => disposeMaterialDeep(m, disposedMaterials));
+    }
+    const light = obj as THREE.DirectionalLight;
+    if (light.isLight && light.shadow) light.shadow.dispose();
+  });
+};
+
 export const ThreeDeltaFluidField3D: React.FC<ThreeDeltaFluidField3DProps> = ({
   bars,
   trades,
@@ -67,12 +96,13 @@ export const ThreeDeltaFluidField3D: React.FC<ThreeDeltaFluidField3DProps> = ({
   const canvasMountRef = useRef<HTMLDivElement | null>(null);
 
   const [preset, setPreset] = useState<FluidCameraPreset>('collision');
-  const [dofEnabled, setDofEnabled] = useState<boolean>(true);
+  // Głębia ostrości domyślnie wyłączona — czytelność danych ważniejsza od efektu
+  const [dofEnabled, setDofEnabled] = useState<boolean>(false);
   const [dofFocus, setDofFocus] = useState<number>(22);
-  const [dofAperture, setDofAperture] = useState<number>(2.0);
+  const [dofAperture] = useState<number>(2.0);
   const [pressureGain, setPressureGain] = useState<number>(1.35);
   const [viscosityDamping, setViscosityDamping] = useState<number>(0.45);
-  const [dockCollapsed, setDockCollapsed] = useState<boolean>(false);
+  const [dockCollapsed, setDockCollapsed] = useState<boolean>(isNarrowViewport);
   const [hoveredCell, setHoveredCell] = useState<HoveredFluidCell | null>(null);
 
   const latestRef = useRef({
@@ -116,6 +146,14 @@ export const ThreeDeltaFluidField3D: React.FC<ThreeDeltaFluidField3DProps> = ({
     pressureGain,
     viscosityDamping,
   ]);
+
+  // Flaga "dane zmienione": filary ciśnienia są przebudowywane tylko gdy zmieniły się dane,
+  // z których powstają (OFI, quant, cena, gain) — nie przy każdym ticku timera
+  const dirtyRef = useRef<boolean>(true);
+
+  useEffect(() => {
+    dirtyRef.current = true;
+  }, [ofiSummary, quant, currentPrice, pressureGain]);
 
   const targetCamRef = useRef<{
     pos: THREE.Vector3;
@@ -181,10 +219,8 @@ export const ThreeDeltaFluidField3D: React.FC<ThreeDeltaFluidField3DProps> = ({
     });
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.18;
-    renderer.setPixelRatio(
-      isSoftwareGl ? 1 : Math.min(window.devicePixelRatio, 2)
-    );
+    renderer.toneMappingExposure = 1.0;
+    renderer.setPixelRatio(labPixelRatio(isSoftwareGl));
     renderer.setSize(width, height);
     renderer.shadowMap.enabled = !isSoftwareGl;
     renderer.shadowMap.type = THREE.PCFShadowMap;
@@ -193,15 +229,20 @@ export const ThreeDeltaFluidField3D: React.FC<ThreeDeltaFluidField3DProps> = ({
     container.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x060911);
-    scene.fog = new THREE.FogExp2(0x060911, 0.014);
+    scene.background = new THREE.Color(T3.bg);
+    scene.fog = new THREE.FogExp2(T3.bg, 0.014);
 
     // 2. Studio Environment Map (RoomEnvironment + PMREMGenerator)
     const pmrem = new THREE.PMREMGenerator(renderer);
-    scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    // Trzymamy render target PMREM, aby zwolnić mapę środowiskową przy odmontowaniu;
+    // RoomEnvironment (geometrie + materiały) jest potrzebny tylko do wygenerowania mapy
+    const roomEnvironment = new RoomEnvironment();
+    const envRenderTarget = pmrem.fromScene(roomEnvironment, 0.04);
+    scene.environment = envRenderTarget.texture;
     pmrem.dispose();
+    roomEnvironment.dispose();
 
-    const camera = new THREE.PerspectiveCamera(42, width / height, 0.5, 160);
+    const camera = new THREE.PerspectiveCamera(labFov(width / height), width / height, 0.5, 160);
     camera.position.set(0, 14.5, 22.5);
 
     const controls = new OrbitControls(camera, renderer.domElement);
@@ -217,7 +258,7 @@ export const ThreeDeltaFluidField3D: React.FC<ThreeDeltaFluidField3DProps> = ({
     });
 
     // 3. Three-Point Warm/Cool Studio Lighting
-    const hemiLight = new THREE.HemisphereLight(0x38bdf8, 0x060911, 0.95);
+    const hemiLight = new THREE.HemisphereLight(0xc8d4e3, T3.bg, 0.85);
     scene.add(hemiLight);
 
     const keyLight = new THREE.DirectionalLight(0xfffbeb, 2.2);
@@ -226,25 +267,24 @@ export const ThreeDeltaFluidField3D: React.FC<ThreeDeltaFluidField3DProps> = ({
     keyLight.shadow.mapSize.set(1024, 1024);
     scene.add(keyLight);
 
-    const buyRimLight = new THREE.PointLight(0x06b6d4, 4.5, 32);
+    const buyRimLight = new THREE.PointLight(T3.buy, 1.5, 32);
     buyRimLight.position.set(-12, 6, 0);
     scene.add(buyRimLight);
 
-    const sellRimLight = new THREE.PointLight(0xf43f5e, 4.5, 32);
+    const sellRimLight = new THREE.PointLight(T3.sell, 1.5, 32);
     sellRimLight.position.set(12, 6, 0);
     scene.add(sellRimLight);
 
-    // 4. D3 Scales & Color Interpolator for Pressure-Sensitive Displacement Mesh
-    // Maps normalized pressure [-1 (Extreme Sell Cavitation) .. 0 (Shock Boundary) .. +1 (Extreme Buy Crest)]
+    // 4. Skala rozbieżna: dwa bieguny (sprzedaż / kupno) + szary środek (styleguide §dataviz)
+    // Znormalizowana presja: −1 (przewaga sprzedających) .. 0 (równowaga) .. +1 (przewaga kupujących)
     const d3PressureColor = d3
       .scaleSequential<string>((t) =>
         d3.interpolateRgbBasis([
-          '#be123c', // Deep Crimson Sell Trough
-          '#f43f5e', // Aggressive Market Sell Wave
-          '#475569', // Neutral Laminar Equilibrium
-          '#facc15', // Collision Shockwave Boundary (Gold)
-          '#06b6d4', // Aggressive Market Buy Wave
-          '#10b981', // High-Intensity Purchase Crest
+          '#f07c55', // sell-ink — skrajna presja sprzedaży
+          '#d9582e', // sell
+          '#3a4658', // neutralny środek
+          '#19a88e', // buy
+          '#35c9a8', // buy-ink — skrajna presja kupna
         ])(t)
       )
       .domain([-1, 1]);
@@ -286,17 +326,17 @@ export const ThreeDeltaFluidField3D: React.FC<ThreeDeltaFluidField3DProps> = ({
 
     // Subtle Wireframe Overlay on the Fluid Surface for Precision Topographic Reading
     const wireMat = new THREE.MeshBasicMaterial({
-      color: 0x38bdf8,
+      color: T3.ink3,
       wireframe: true,
       transparent: true,
-      opacity: 0.16,
+      opacity: 0.1,
     });
     const wireMesh = new THREE.Mesh(fluidGeo, wireMat);
     wireMesh.position.y = 0.015;
     scene.add(wireMesh);
 
     // Ground Reference Grid Pedestal
-    const gridHelper = new THREE.GridHelper(28, 28, 0x1e293b, 0x0f172a);
+    const gridHelper = new THREE.GridHelper(28, 28, T3.lineStrong, T3.line);
     gridHelper.position.y = -3.4;
     scene.add(gridHelper);
 
@@ -305,7 +345,7 @@ export const ThreeDeltaFluidField3D: React.FC<ThreeDeltaFluidField3DProps> = ({
     const pressurePillarsGroup = new THREE.Group();
     scene.add(shockLineGroup, pressurePillarsGroup);
 
-    // Create 36 Advected Fluid Stream Spheres (18 Buyer Cyan Jets moving right, 18 Seller Crimson Jets moving left)
+    // 16 znaczników kierunku (8 kupna → w prawo, 8 sprzedaży → w lewo); tempo zależy od stosunku kupno/sprzedaż
     const streamParticlesGroup = new THREE.Group();
     scene.add(streamParticlesGroup);
 
@@ -318,14 +358,14 @@ export const ThreeDeltaFluidField3D: React.FC<ThreeDeltaFluidField3DProps> = ({
     }[] = [];
 
     const partGeo = new THREE.SphereGeometry(0.14, 10, 10);
-    for (let i = 0; i < 36; i++) {
-      const isBuyer = i < 18;
+    for (let i = 0; i < 16; i++) {
+      const isBuyer = i < 8;
       const partMat = new THREE.MeshStandardMaterial({
-        color: isBuyer ? 0x22d3ee : 0xf43f5e,
-        emissive: isBuyer ? 0x06b6d4 : 0xe11d48,
-        emissiveIntensity: 0.9,
-        roughness: 0.15,
-        metalness: 0.6,
+        color: isBuyer ? T3.buy : T3.sell,
+        emissive: isBuyer ? T3.buy : T3.sell,
+        emissiveIntensity: GLOW * 2,
+        roughness: 0.35,
+        metalness: 0.3,
       });
       const partMesh = new THREE.Mesh(partGeo, partMat);
       streamParticlesGroup.add(partMesh);
@@ -334,24 +374,49 @@ export const ThreeDeltaFluidField3D: React.FC<ThreeDeltaFluidField3DProps> = ({
         mesh: partMesh,
         isBuyer,
         x: isBuyer
-          ? -meshWidth * 0.48 + (i % 9) * 1.3
-          : meshWidth * 0.48 - (i % 9) * 1.3,
-        z: ((i % 6) - 2.5) * 2.7,
+          ? -meshWidth * 0.48 + (i % 8) * 1.5
+          : meshWidth * 0.48 - (i % 8) * 1.5,
+        z: ((i % 4) - 1.5) * 3.6,
         speed: 2.2 + (i % 5) * 0.45,
       });
     }
+
+    // Materiał wstęgi shockfrontu tworzony raz i współdzielony między przebudowami
+    // (wstęga odświeża się co 0.45 s) — zwalniany dopiero przy odmontowaniu
+    const shockTubeMat = new THREE.MeshStandardMaterial({
+      color: T3.ink1,
+      emissive: T3.ink1,
+      emissiveIntensity: GLOW,
+      roughness: 0.4,
+      metalness: 0.3,
+    });
+    const sharedMaterials = new Set<THREE.Material>([shockTubeMat]);
+    // Materiały per-rebuild usunięte ze sceny — zwalniane dopiero po kolejnym renderze,
+    // gdy nowe materiały trzymają już referencję do tych samych programów shaderów
+    // (natychmiastowy dispose usunąłby program i wymusił ponowną kompilację)
+    const pendingMaterialDisposal: THREE.Material[] = [];
 
     const clearGroup = (grp: THREE.Group) => {
       while (grp.children.length > 0) {
         const c = grp.children[0] as THREE.Mesh;
         if (c.geometry) c.geometry.dispose();
+        // Materiały per-rebuild → kolejka odroczonego dispose; współdzielone (cache) zostają
+        if (c.material) {
+          const materials = Array.isArray(c.material) ? c.material : [c.material];
+          materials.forEach((m) => {
+            if (!sharedMaterials.has(m)) pendingMaterialDisposal.push(m);
+          });
+        }
         grp.remove(c);
       }
     };
 
     // Rebuild Discrete Price-Tick Pressure Pillars & Collision Shock Ribbon
     let lastOverlayRebuild = 0;
-    const rebuildPressurePillarsAndShockLine = (elapsed: number) => {
+    const rebuildPressurePillarsAndShockLine = (
+      elapsed: number,
+      rebuildPillars = true
+    ) => {
       const {
         ofiSummary: curOfi,
         quant: curQuant,
@@ -360,7 +425,7 @@ export const ThreeDeltaFluidField3D: React.FC<ThreeDeltaFluidField3DProps> = ({
       } = latestRef.current;
 
       clearGroup(shockLineGroup);
-      clearGroup(pressurePillarsGroup);
+      if (rebuildPillars) clearGroup(pressurePillarsGroup);
 
       // Shockfront X position shifts with net aggressive dominance (-4 to +4)
       const shockOffsetX = Math.max(
@@ -388,24 +453,20 @@ export const ThreeDeltaFluidField3D: React.FC<ThreeDeltaFluidField3DProps> = ({
         8,
         false
       );
-      const shockTubeMat = new THREE.MeshStandardMaterial({
-        color: 0xfacc15,
-        emissive: 0xf59e0b,
-        emissiveIntensity: 0.85,
-        roughness: 0.2,
-        metalness: 0.8,
-      });
       const shockTubeMesh = new THREE.Mesh(shockTubeGeo, shockTubeMat);
       shockTubeMesh.layers.enable(1);
       shockTubeMesh.userData = {
-        title: `Delta Collision Shockfront ($${curPx.toFixed(1)})`,
-        subtitle: `Hawkes Dominance: ${(curQuant.hawkesNetDominance * 100).toFixed(1)}% · B/S Ratio: ${curOfi.overallBuySellRatio}x`,
-        buyPressurePsi: `${curQuant.hawkesBuyIntensity.toFixed(1)}k Ψ`,
-        sellPressurePsi: `${curQuant.hawkesSellIntensity.toFixed(1)}k Ψ`,
+        title: `Linia styku · cena ${curPx.toFixed(1)}`,
+        subtitle: `Przewaga netto (Hawkes) ${(curQuant.hawkesNetDominance * 100).toFixed(1)}% · kupno/sprzedaż ${curOfi.overallBuySellRatio}×`,
+        buyPressurePsi: `λ ${curQuant.hawkesBuyIntensity.toFixed(2)}`,
+        sellPressurePsi: `λ ${curQuant.hawkesSellIntensity.toFixed(2)}`,
         netDeltaUsd: `OFI ${curOfi.overallOfiPct >= 0 ? '+' : ''}${curOfi.overallOfiPct}%`,
-        accentColor: '#facc15',
+        accentColor: T3_CSS.ink2,
       };
       shockLineGroup.add(shockTubeMesh);
+
+      // Filary ciśnienia zależą wyłącznie od danych — budowane tylko gdy dane się zmieniły
+      if (!rebuildPillars) return;
 
       // Build Raycastable Tick Pressure Nodes from ofiSummary.ticks
       const ticks = curOfi.ticks.slice(0, 16);
@@ -419,40 +480,43 @@ export const ThreeDeltaFluidField3D: React.FC<ThreeDeltaFluidField3DProps> = ({
         const h = Math.max(0.35, Math.min(3.4, Math.abs(netPressure) * 2.4 + 0.5));
 
         const nodeGeo = new THREE.CylinderGeometry(0.18, 0.24, h, 12);
+        // Wyczerpanie przepływu = jasny słupek (ink-1); poza tym strona OFI (kupno/sprzedaż)
         const colHex =
           t.exhaustionState !== 'NONE'
-            ? 0xfacc15
+            ? T3.ink1
             : t.ofiNormalized >= 0
-            ? 0x06b6d4
-            : 0xf43f5e;
+            ? T3.buy
+            : T3.sell;
         const nodeMat = new THREE.MeshStandardMaterial({
           color: colHex,
           emissive: colHex,
-          emissiveIntensity: 0.5,
-          roughness: 0.2,
-          metalness: 0.85,
+          emissiveIntensity: GLOW,
+          roughness: 0.4,
+          metalness: 0.35,
         });
         const nodeMesh = new THREE.Mesh(nodeGeo, nodeMat);
         nodeMesh.position.set(x, -3.2 + h * 0.5, z);
         nodeMesh.layers.enable(1);
         nodeMesh.userData = {
-          title: `Tick $${t.price.toFixed(1)} (${t.side}) Pressure Node`,
-          subtitle: `Buy/Sell Ratio: ${t.buySellRatio.toFixed(2)}x · Exhaustion: ${t.exhaustionScore}%`,
-          buyPressurePsi: `$${(t.aggressiveBuyUsd / 1000).toFixed(0)}K Buy`,
-          sellPressurePsi: `$${(t.aggressiveSellUsd / 1000).toFixed(0)}K Sell`,
-          netDeltaUsd: `${t.deltaUsd >= 0 ? '+' : ''}$${(t.deltaUsd / 1000).toFixed(0)}K`,
+          title: `Poziom ${t.price.toFixed(1)} (${t.side}) ${t.ofiNormalized >= 0 ? '▲' : '▼'}`,
+          subtitle: `Kupno/sprzedaż ${t.buySellRatio.toFixed(2)}× · wyczerpanie ${t.exhaustionScore}%`,
+          buyPressurePsi: `$${(t.aggressiveBuyUsd / 1000).toFixed(0)}K`,
+          sellPressurePsi: `$${(t.aggressiveSellUsd / 1000).toFixed(0)}K`,
+          netDeltaUsd: `${t.deltaUsd >= 0 ? '+' : '−'}$${(Math.abs(t.deltaUsd) / 1000).toFixed(0)}K`,
           accentColor:
             t.exhaustionState !== 'NONE'
-              ? '#facc15'
+              ? '#eef2f7'
               : t.ofiNormalized >= 0
-              ? '#22d3ee'
-              : '#f43f5e',
+              ? T3_CSS.buy
+              : T3_CSS.sell,
         };
         pressurePillarsGroup.add(nodeMesh);
       });
     };
 
     rebuildPressurePillarsAndShockLine(0);
+    // Filary zbudowane z bieżących danych — kolejna przebudowa dopiero po zmianie propsów
+    dirtyRef.current = false;
 
     // Post-Processing Bokeh Depth of Field
     let composer: EffectComposer | null = null;
@@ -503,6 +567,7 @@ export const ThreeDeltaFluidField3D: React.FC<ThreeDeltaFluidField3DProps> = ({
       const w = Math.max(320, container.clientWidth);
       const h = Math.max(280, container.clientHeight);
       camera.aspect = w / h;
+      camera.fov = labFov(w / h);
       camera.updateProjectionMatrix();
       renderer.setSize(w, h);
       if (composer) composer.setSize(w, h);
@@ -511,11 +576,37 @@ export const ThreeDeltaFluidField3D: React.FC<ThreeDeltaFluidField3DProps> = ({
 
     // Pre-allocated Color object for zero GC inside render loop
     const _tmpColor = new THREE.Color();
+
+    // LUT kolorów ciśnienia (256 wpisów RGB) budowana raz z tego samego interpolatora D3 —
+    // zastępuje konwersję D3 → string CSS → THREE.Color dla każdego wierzchołka w każdej klatce
+    const PRESSURE_LUT_SIZE = 256;
+    const pressureColorLut = new Float32Array(PRESSURE_LUT_SIZE * 3);
+    for (let k = 0; k < PRESSURE_LUT_SIZE; k++) {
+      _tmpColor.set(d3PressureColor(-1 + (2 * k) / (PRESSURE_LUT_SIZE - 1)));
+      pressureColorLut[k * 3] = _tmpColor.r;
+      pressureColorLut[k * 3 + 1] = _tmpColor.g;
+      pressureColorLut[k * 3 + 2] = _tmpColor.b;
+    }
+    // Licznik klatek do rzadszego przeliczania normalnych powierzchni
+    let normalsFrameCounter = 0;
+
     const startTimeMs = performance.now();
     let prevTimeMs = startTimeMs;
-    let frameId = 0;
+    // Osobne identyfikatory dla requestAnimationFrame i setTimeout — każdy anulowany właściwą funkcją
+    let rafId = 0;
+    let timeoutId = 0;
     let isDisposed = false;
     let isVisible = true;
+    // Karta w tle: pętla renderu stoi całkowicie (bez timerów), wznowienie po powrocie
+    let pausedHidden = false;
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== 'hidden' && pausedHidden && !isDisposed) {
+        pausedHidden = false;
+        prevTimeMs = performance.now();
+        tick();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
 
     const io =
       typeof IntersectionObserver !== 'undefined'
@@ -531,7 +622,7 @@ export const ThreeDeltaFluidField3D: React.FC<ThreeDeltaFluidField3DProps> = ({
     function afterDraw(cb: () => void) {
       const gl = renderer.getContext() as WebGL2RenderingContext;
       if (!gl || !gl.fenceSync) {
-        frameId = window.setTimeout(cb, 80);
+        timeoutId = window.setTimeout(cb, 80);
         return;
       }
       const sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
@@ -540,30 +631,38 @@ export const ThreeDeltaFluidField3D: React.FC<ThreeDeltaFluidField3DProps> = ({
         if (isDisposed) return;
         const state = sync && gl.getSyncParameter(sync, gl.SYNC_STATUS);
         if (state === gl.UNSIGNALED) {
-          frameId = window.setTimeout(poll, 5);
+          timeoutId = window.setTimeout(poll, 5);
         } else {
           if (sync) gl.deleteSync(sync);
-          frameId = window.setTimeout(cb, 80);
+          timeoutId = window.setTimeout(cb, 80);
         }
       };
-      frameId = window.setTimeout(poll, 5);
+      timeoutId = window.setTimeout(poll, 5);
     }
 
     function tick() {
       if (isDisposed) return;
+      if (document.visibilityState === 'hidden') {
+        pausedHidden = true;
+        return;
+      }
       const nowMs = performance.now();
       const dt = Math.min(0.1, (nowMs - prevTimeMs) / 1000);
       prevTimeMs = nowMs;
       const elapsed = (nowMs - startTimeMs) / 1000;
 
       if (!isVisible) {
-        frameId = window.setTimeout(tick, 250);
+        timeoutId = window.setTimeout(tick, 250);
         return;
       }
 
       if (elapsed - lastOverlayRebuild > 0.45) {
         lastOverlayRebuild = elapsed;
-        rebuildPressurePillarsAndShockLine(elapsed);
+        // Wstęga shockfrontu jest animowana w czasie (elapsed), więc nadal odświeża się co 0.45 s;
+        // filary ciśnienia przebudowywane tylko gdy dane się zmieniły (dirtyRef)
+        const pillarsDirty = dirtyRef.current;
+        dirtyRef.current = false;
+        rebuildPressurePillarsAndShockLine(elapsed, pillarsDirty);
       }
 
       const {
@@ -632,14 +731,26 @@ export const ThreeDeltaFluidField3D: React.FC<ThreeDeltaFluidField3DProps> = ({
         posAttr.setY(i, displacedY);
 
         // Map pressure to RGB color via D3 interpolator
-        const cssCol = d3PressureColor(netPressureNorm);
-        _tmpColor.set(cssCol);
-        colAttr.setXYZ(i, _tmpColor.r, _tmpColor.g, _tmpColor.b);
+        // Kolor z prekomputowanej LUT: [-1, 1] → indeks 0..255 (NaN → 0, bez wyjścia poza tablicę)
+        const lutT = (netPressureNorm + 1) * 0.5;
+        const lutIdx =
+          (lutT > 0 ? (lutT < 1 ? Math.round(lutT * 255) : 255) : 0) * 3;
+        colAttr.setXYZ(
+          i,
+          pressureColorLut[lutIdx],
+          pressureColorLut[lutIdx + 1],
+          pressureColorLut[lutIdx + 2]
+        );
       }
 
       posAttr.needsUpdate = true;
       colAttr.needsUpdate = true;
-      fluidGeo.computeVertexNormals();
+      // Wysokości animują się co klatkę, ale normalne liczymy co 3. klatkę —
+      // computeVertexNormals() jest kosztowne, a różnica oświetlenia jest niezauważalna
+      if (normalsFrameCounter % 3 === 0) {
+        fluidGeo.computeVertexNormals();
+      }
+      normalsFrameCounter++;
 
       // 2. Advect Hydrodynamic Stream Particles across the Displacement Field
       for (let i = 0; i < fluidParticles.length; i++) {
@@ -708,25 +819,30 @@ export const ThreeDeltaFluidField3D: React.FC<ThreeDeltaFluidField3DProps> = ({
 
       controls.update();
 
-      if (bokehPass && composer) {
+      // Głębia ostrości tylko gdy włączona — inaczej render bez post-processingu (taniej)
+      if (bokehPass && composer && latestRef.current.dofEnabled) {
         const uniforms = bokehPass.uniforms as Record<string, { value: number }>;
         if (uniforms['focus']) {
           uniforms['focus'].value = latestRef.current.dofFocus;
         }
         if (uniforms['aperture']) {
-          uniforms['aperture'].value = latestRef.current.dofEnabled
-            ? latestRef.current.dofAperture * 0.0001
-            : 0;
+          uniforms['aperture'].value = latestRef.current.dofAperture * 0.0001;
         }
         composer.render();
       } else {
         renderer.render(scene, camera);
       }
 
+      // Odroczone zwolnienie materiałów z poprzedniej przebudowy (po renderze nowej sceny)
+      if (pendingMaterialDisposal.length > 0) {
+        pendingMaterialDisposal.forEach((m) => m.dispose());
+        pendingMaterialDisposal.length = 0;
+      }
+
       if (isSoftwareGl) {
         afterDraw(tick);
       } else {
-        frameId = requestAnimationFrame(tick);
+        rafId = requestAnimationFrame(tick);
       }
     }
 
@@ -735,266 +851,113 @@ export const ThreeDeltaFluidField3D: React.FC<ThreeDeltaFluidField3DProps> = ({
     return () => {
       isDisposed = true;
       io?.disconnect();
-      cancelAnimationFrame(frameId);
-      clearTimeout(frameId);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      cancelAnimationFrame(rafId);
+      clearTimeout(timeoutId);
       window.removeEventListener('resize', handleResize);
       renderer.domElement.removeEventListener('pointermove', onPointerMove);
       controls.dispose();
+
+      // Post-processing: EffectComposer.dispose() nie zwalnia dodanych passów (BokehPass, RenderPass)
+      if (composer) {
+        composer.passes.forEach((pass) => pass.dispose());
+        composer.dispose();
+      }
+
+      // Geometrie, materiały i tekstury całej sceny + materiały współdzielone
+      // + materiały czekające na odroczony dispose
+      const disposedMaterials = new Set<THREE.Material>();
+      disposeSceneGraph(scene, disposedMaterials);
+      sharedMaterials.forEach((m) => disposeMaterialDeep(m, disposedMaterials));
+      pendingMaterialDisposal.forEach((m) =>
+        disposeMaterialDeep(m, disposedMaterials)
+      );
+      pendingMaterialDisposal.length = 0;
+
+      // Mapa środowiskowa PMREM
+      scene.environment = null;
+      envRenderTarget.dispose();
+
       renderer.dispose();
+      renderer.forceContextLoss();
     };
   }, []);
 
+  const fluidIsBull = ofiSummary.overallBuySellRatio >= 1.0;
+
   return (
-    <div className="relative w-full h-full min-h-[460px] bg-[#060911] overflow-hidden select-none border border-slate-800/80 rounded-lg">
-      {/* Isolated WebGL Mount Container */}
+    <div className={SCENE_FRAME}>
+      {/* Kontener WebGL */}
       <div ref={canvasMountRef} className="w-full h-full" />
 
-      {/* Top-Left Glass-Morphism Telemetry Header */}
-      <div className="absolute top-3 left-3 z-10 pointer-events-none flex flex-col gap-1 bg-[#090D16]/85 backdrop-blur-md border border-slate-800 px-3.5 py-2.5 rounded-lg max-w-xl">
-        <div className="flex items-center gap-2 text-xs font-bold text-white font-display">
-          <Waves className="w-4 h-4 text-cyan-400" />
-          <span>
-            3D Delta Flow Mapping // D3 + Three.js Pressure-Sensitive Fluid Displacement Mesh
-          </span>
-        </div>
-        <div className="text-[11px] text-slate-300 font-mono tabular-nums">
-          Buyer Pressure (λ_buy):{' '}
-          <strong className="text-cyan-300">
-            {quant.hawkesBuyIntensity.toFixed(1)}k Ψ
-          </strong>{' '}
-          vs Seller Pressure (λ_sell):{' '}
-          <strong className="text-rose-400">
-            {quant.hawkesSellIntensity.toFixed(1)}k Ψ
-          </strong>{' '}
-          · Net OFI:{' '}
-          <strong
-            className={
-              ofiSummary.overallOfiPct >= 0 ? 'text-emerald-400' : 'text-rose-400'
-            }
-          >
-            {ofiSummary.overallOfiPct >= 0 ? '+' : ''}
-            {ofiSummary.overallOfiPct}% ({ofiSummary.overallBuySellRatio}x B/S)
-          </strong>
-        </div>
-        <div className="text-[10px] text-slate-400">
-          Cyan/Emerald crests = Aggressive Market Buy pressure wave · Crimson troughs = Market Sell cavitation · Gold ribbon = Zero-Delta Shockfront
-        </div>
-      </div>
+      <HudHeader title="Delta Fluid · presja agresywnych kupujących vs sprzedających">
+        λ kupno <span className="text-buy-ink">▲ {quant.hawkesBuyIntensity.toFixed(2)}</span> · λ sprzedaż{' '}
+        <span className="text-sell-ink">▼ {quant.hawkesSellIntensity.toFixed(2)}</span> · OFI {ofiSummary.overallOfiPct >= 0 ? '+' : ''}
+        {ofiSummary.overallOfiPct}% ({ofiSummary.overallBuySellRatio}× K/S)
+        <span className="block text-ink-3 font-sans">Lewo: kupno · prawo: sprzedaż · jasna linia: styk stron. Fale są efektem wizualnym.</span>
+      </HudHeader>
 
-      {/* Top-Right Action Buttons */}
       <div className="absolute top-3 right-3 z-10 flex items-center gap-1.5">
         {onTriggerFluidSignal && (
-          <button
-            type="button"
-            onClick={() => {
-              const isBull = ofiSummary.overallBuySellRatio >= 1.0;
+          <HudButton
+            emphasis
+            onClick={() =>
               onTriggerFluidSignal(
-                isBull ? 'LONG' : 'SHORT',
-                isBull
-                  ? `HYPERLIQUID 3D DELTA FLUID LONG // BUY PRESSURE WAVE ${ofiSummary.overallBuySellRatio}x`
-                  : `HYPERLIQUID 3D DELTA FLUID SHORT // SELL SHOCKWAVE ${ofiSummary.overallBuySellRatio}x`,
-                `3D Delta Flow Fluid Field detected net ${
-                  isBull ? 'Buyer' : 'Seller'
-                } hydrodynamic pressure dominance (OFI ${
-                  ofiSummary.overallOfiPct
-                }%, Hawkes λ=${quant.hawkesBranchingRatio.toFixed(2)}).`
-              );
-            }}
-            className="px-2.5 py-1.5 text-xs font-semibold bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 rounded-md flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
-          >
-            <Zap className="w-3.5 h-3.5" />
-            <span>Delta Shock Signal</span>
-          </button>
+                fluidIsBull ? 'LONG' : 'SHORT',
+                `Delta Fluid: przewaga ${fluidIsBull ? 'kupujących' : 'sprzedających'}`,
+                `Kupno/sprzedaż ${ofiSummary.overallBuySellRatio}× · OFI ${ofiSummary.overallOfiPct}% · η Hawkesa ${
+                  // null = współczynnik rozgałęzienia nieestymowany → "n/a"
+                  quant.hawkesBranchingRatio !== null ? quant.hawkesBranchingRatio.toFixed(2) : 'n/a'
+                }`
+              )
+            }
+            icon={<ClipboardList className="w-3.5 h-3.5" aria-hidden="true" />}
+            label={`Przekaż do planu · ${fluidIsBull ? '▲ Long' : '▼ Short'}`}
+            title="Przekazuje kierunek przewagi przepływu do Analizatora planu — plan ocenisz tam"
+          />
         )}
-
-        <button
-          type="button"
-          onClick={() => applyPreset('collision')}
-          className="px-2.5 py-1.5 text-xs font-medium text-slate-300 bg-[#090D16]/90 hover:bg-slate-800 border border-slate-800 rounded-md flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
-        >
-          <RotateCcw className="w-3.5 h-3.5 text-cyan-400" />
-          <span>Reset Field</span>
-        </button>
-
+        <HudButton onClick={() => applyPreset('collision')} icon={<RotateCcw className="w-3.5 h-3.5" aria-hidden="true" />} label="Reset kamery" />
         {onToggleExpand && (
-          <button
-            type="button"
+          <HudButton
             onClick={onToggleExpand}
-            className="px-2.5 py-1.5 text-xs font-medium text-slate-300 bg-[#090D16]/90 hover:bg-slate-800 border border-slate-800 rounded-md flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
-          >
-            {isExpanded ? (
-              <>
-                <Minimize2 className="w-3.5 h-3.5 text-cyan-400" />
-                <span>Split View</span>
-              </>
-            ) : (
-              <>
-                <Maximize2 className="w-3.5 h-3.5 text-cyan-400" />
-                <span>Full 3D Stage</span>
-              </>
-            )}
-          </button>
+            icon={isExpanded ? <Minimize2 className="w-3.5 h-3.5" aria-hidden="true" /> : <Maximize2 className="w-3.5 h-3.5" aria-hidden="true" />}
+            label={isExpanded ? 'Widok dzielony' : 'Pełny ekran'}
+          />
         )}
       </div>
 
-      {/* Raycasted Hover Tooltip */}
       {hoveredCell && (
-        <div className="absolute top-24 left-3 z-10 pointer-events-none bg-[#090D16]/95 border border-slate-700 px-3.5 py-2.5 rounded-md shadow-2xl max-w-xs font-mono text-xs">
-          <div className="font-sans font-semibold text-white flex items-center gap-2">
-            <span
-              className="inline-block w-2 h-2 rounded-xs"
-              style={{ backgroundColor: hoveredCell.accentColor }}
-            />
-            <span>{hoveredCell.title}</span>
-          </div>
-          <div className="text-[11px] text-slate-400 mt-0.5">
-            {hoveredCell.subtitle}
-          </div>
-          <div className="mt-1.5 pt-1.5 border-t border-slate-800 grid grid-cols-3 gap-2 text-[10px]">
-            <div>
-              <span className="text-slate-500 block">Mkt Buy</span>
-              <span className="text-cyan-300 font-semibold">
-                {hoveredCell.buyPressurePsi}
-              </span>
-            </div>
-            <div>
-              <span className="text-slate-500 block">Mkt Sell</span>
-              <span className="text-rose-400 font-semibold">
-                {hoveredCell.sellPressurePsi}
-              </span>
-            </div>
-            <div>
-              <span className="text-slate-500 block">Net Delta</span>
-              <span className="text-amber-300 font-semibold">
-                {hoveredCell.netDeltaUsd}
-              </span>
-            </div>
-          </div>
-        </div>
+        <HoverCard
+          swatch={hoveredCell.accentColor}
+          title={hoveredCell.title}
+          subtitle={hoveredCell.subtitle}
+          rows={[
+            { k: 'Kupno ▲', v: hoveredCell.buyPressurePsi },
+            { k: 'Sprzedaż ▼', v: hoveredCell.sellPressurePsi },
+            { k: 'Netto', v: hoveredCell.netDeltaUsd },
+          ]}
+        />
       )}
 
-      {/* Unified Collapsible Bottom Control Dock */}
-      <div
-        className="absolute left-1/2 -translate-x-1/2 bottom-3 z-10 transition-transform duration-200"
-        style={{
-          maxWidth: 'min(940px, 95%)',
-          width: '100%',
-          transform: dockCollapsed
-            ? 'translate(-50%, calc(100% - 28px))'
-            : 'translate(-50%, 0)',
-        }}
-      >
-        <div className="flex justify-center">
-          <button
-            type="button"
-            onClick={() => setDockCollapsed((v) => !v)}
-            className="px-3 py-1 text-[11px] font-medium text-slate-300 bg-[#0B101B] hover:bg-slate-800 border border-b-0 border-slate-800 rounded-t-md flex items-center gap-1.5 whitespace-nowrap shrink-0"
-          >
-            {dockCollapsed ? (
-              <>
-                <ChevronUp className="w-3.5 h-3.5 text-cyan-400" />
-                <span>Show 3D Delta Fluid Controls</span>
-              </>
-            ) : (
-              <>
-                <ChevronDown className="w-3.5 h-3.5 text-cyan-400" />
-                <span>Hide Controls</span>
-              </>
-            )}
-          </button>
-        </div>
-
-        <div className="bg-[#0B101B]/95 backdrop-blur-md border border-slate-800 rounded-lg px-3.5 py-2.5 shadow-2xl flex flex-wrap items-center justify-between gap-3">
-          {/* Camera Presets */}
-          <div className="flex items-center gap-1 bg-[#070A12] p-1 rounded-md border border-slate-800/80">
-            <Camera className="w-3.5 h-3.5 text-slate-400 ml-1.5 mr-1 shrink-0" />
-            {(
-              [
-                { id: 'collision', label: 'Fluid Collision Iso' },
-                { id: 'buywave', label: 'Buyer Wavefront' },
-                { id: 'sellwave', label: 'Seller Shockwave' },
-                { id: 'topmap', label: 'Top-Down Pressure' },
-              ] as const
-            ).map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => applyPreset(item.id)}
-                className={`px-2.5 py-1 text-[11px] font-medium rounded transition-colors whitespace-nowrap shrink-0 ${
-                  preset === item.id
-                    ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Fluid Displacement & Bokeh DOF Controls */}
-          <div className="flex flex-wrap items-center gap-3 text-[11px]">
-            <label className="flex items-center gap-1.5 text-slate-300 whitespace-nowrap">
-              <Activity className="w-3.5 h-3.5 text-cyan-400" />
-              <span className="text-slate-400">Pressure Gain:</span>
-              <input
-                type="range"
-                min={0.5}
-                max={2.4}
-                step={0.05}
-                value={pressureGain}
-                onChange={(e) => setPressureGain(Number(e.target.value))}
-                className="w-16 accent-cyan-400 cursor-pointer"
-              />
-              <span className="font-mono text-cyan-300 w-9">
-                {pressureGain.toFixed(2)}x
-              </span>
-            </label>
-
-            <label className="flex items-center gap-1.5 text-slate-300 whitespace-nowrap">
-              <span className="text-slate-400">Viscosity (μ):</span>
-              <input
-                type="range"
-                min={0.1}
-                max={1.0}
-                step={0.05}
-                value={viscosityDamping}
-                onChange={(e) => setViscosityDamping(Number(e.target.value))}
-                className="w-14 accent-cyan-400 cursor-pointer"
-              />
-              <span className="font-mono text-amber-300 w-8">
-                {viscosityDamping.toFixed(2)}
-              </span>
-            </label>
-
-            <button
-              type="button"
-              onClick={() => setDofEnabled((v) => !v)}
-              className={`px-2.5 py-1 rounded font-medium flex items-center gap-1.5 border transition-colors whitespace-nowrap shrink-0 ${
-                dofEnabled
-                  ? 'bg-amber-500/15 text-amber-300 border-amber-500/40'
-                  : 'bg-slate-900 text-slate-400 border-slate-800'
-              }`}
-            >
-              <Focus className="w-3.5 h-3.5" />
-              <span>DOF: {dofEnabled ? 'ON' : 'OFF'}</span>
-            </button>
-
-            <label className="flex items-center gap-1.5 text-slate-300 whitespace-nowrap">
-              <span className="text-slate-400">Focus:</span>
-              <input
-                type="range"
-                min={10}
-                max={40}
-                step={1}
-                value={dofFocus}
-                onChange={(e) => setDofFocus(Number(e.target.value))}
-                className="w-14 accent-cyan-400 cursor-pointer"
-              />
-              <span className="font-mono text-cyan-300 w-7">{dofFocus}m</span>
-            </label>
-          </div>
-        </div>
-      </div>
+      <SceneDock collapsed={dockCollapsed} onToggle={() => setDockCollapsed((v) => !v)}>
+        <DockPresets<FluidCameraPreset>
+          ariaLabel="Kamera"
+          value={preset}
+          onChange={applyPreset}
+          options={[
+            { id: 'collision', label: 'Izometria' },
+            { id: 'buywave', label: 'Strona kupna' },
+            { id: 'sellwave', label: 'Strona sprzedaży' },
+            { id: 'topmap', label: 'Z góry' },
+          ]}
+        />
+        <DockSlider label="Wzmocnienie (wizualne)" min={0.5} max={2.4} step={0.05} value={pressureGain} onChange={setPressureGain} format={(v) => `${v.toFixed(2)}×`} />
+        <DockSlider label="Tłumienie (wizualne)" min={0.1} max={1} step={0.05} value={viscosityDamping} onChange={setViscosityDamping} format={(v) => v.toFixed(2)} />
+        <DockToggle on={dofEnabled} onClick={() => setDofEnabled((v) => !v)}>
+          <Focus className="w-3 h-3" aria-hidden="true" /> Głębia ostrości
+        </DockToggle>
+        {dofEnabled && <DockSlider label="Ostrość" min={10} max={40} step={1} value={dofFocus} onChange={setDofFocus} format={(v) => `${v} m`} />}
+      </SceneDock>
     </div>
   );
 };

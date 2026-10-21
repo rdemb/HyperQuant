@@ -37,3 +37,9 @@ coverage/
 
 # Studio internal artifacts
 .aistudio/
+
+# Dane generowane przez scripts/fetch-public-data.mjs (katalog utrzymuje .gitkeep)
+public/data/feeds/*.json
+
+# Notatki robocze (plan, wnioski) — tylko lokalnie
+tasks/

@@ -47,6 +47,8 @@ export interface OHLCVBar {
   kalmanEstimate: number;
   kalmanVelocity: number;
   atr: number;
+  // true = podział buy/sell z realnych transakcji WS (strona agresora); false/brak = estymata BVC ze świecy
+  realFlow?: boolean;
 }
 
 export type LevelStatus = 'Active' | 'Sweep !' | 'Break';
@@ -147,6 +149,8 @@ export interface AggrTradeTick {
   sizeBtc: number;
   isLiquidation: boolean;
   tier: 'normal' | 'threshold' | 'significant' | 'huge' | 'rare';
+  // true = tick wygenerowany przez model (tryb HL Live + Aggr Model), nie realna transakcja
+  isSynthetic?: boolean;
 }
 
 export interface L2OrderbookLevel {
@@ -220,19 +224,14 @@ export interface BackendQuantTelemetry {
     probTouchPDH2h: number;
     probTouchPDL2h: number;
     probTouchDEQ2h: number;
-    expectedMinsToPDH: number;
-    expectedMinsToPDL: number;
-    expectedMinsToDEQ: number;
+    // null = żadna ścieżka nie dotknęła poziomu w horyzoncie 2h
+    expectedMinsToPDH: number | null;
+    expectedMinsToPDL: number | null;
+    expectedMinsToDEQ: number | null;
     sampledPaths: {
       id: string;
       type: 'bull' | 'bear' | 'mean_revert';
       points: { step: number; price: number }[];
-    }[];
-    surfaceGrid: {
-      strikeOffsetPct: number;
-      horizonMins: number;
-      impliedVol: number;
-      gammaExposure: number;
     }[];
   };
 }
@@ -240,14 +239,15 @@ export interface BackendQuantTelemetry {
 export interface QuantMathMetrics {
   // Ornstein-Uhlenbeck Mean Reversion Process: dX_t = theta * (mu - X_t) dt + sigma dW_t
   ouTheta: number; // Mean reversion speed
-  ouHalfLifeBars: number; // ln(2) / theta
+  ouHalfLifeBars: number; // ln(2) / theta; Infinity gdy brak powrotu do średniej (theta = 0)
   ouEquilibriumPrice: number; // Anchor (weighted D-EQ & W-EQ)
   ouZScore: number; // Standardized price deviation from equilibrium
 
   // Hawkes Self-Exciting Point Process: lambda(t) = mu + sum alpha * exp(-beta * (t - t_i))
   hawkesBuyIntensity: number;
   hawkesSellIntensity: number;
-  hawkesBranchingRatio: number; // alpha / beta (criticality > 0.85 signals cascade)
+  // null: współczynnik rozgałęzienia wymaga estymacji MLE na znacznikach czasu transakcji — nieestymowany
+  hawkesBranchingRatio: number | null;
   hawkesNetDominance: number; // -1 to +1
 
   // Combinatorics & Information Theory
@@ -260,8 +260,10 @@ export interface QuantMathMetrics {
 
   // Pioneering Liquidity Microstructure Telemetry (VPIN, Kyle's Lambda, Liquidation Fuel)
   vpinToxicity: number; // 0..1 Volume-Synchronized Probability of Informed Trading
-  kyleLambdaUp: number; // USD required to push price +$10 upward
-  kyleLambdaDown: number; // USD required to push price -$10 downward
+  bookDepthAskUsd: number; // Suma płynności po stronie ASK (12 poziomów L2), USD
+  bookDepthBidUsd: number; // Suma płynności po stronie BID (12 poziomów L2), USD
+  // Lambda Kyle'a: regresja OLS ΔP na netto przepływie agresora ($ ruchu na $1M netto); null gdy < 10 świec z realnym przepływem
+  kyleLambdaPer1M: number | null;
   shortSqueezeFuelUsd: number; // Total resting short liquidation fuel within +1.5%
   longCascadeFuelUsd: number; // Total resting long liquidation fuel within -1.5%
   pocPrice: number; // Volume Profile Point of Control
@@ -280,7 +282,7 @@ export interface QuantMathMetrics {
     | 'Liquidation Cascade Squeeze';
 
   // Neural Time-Series Prediction (Multi-Horizon Attention Model)
-  neuralConfidence: number; // 0..100%
+  neuralConfidence: number; // 0..100 — siła heurystyki (|bias|), NIE skalibrowane prawdopodobieństwo
   neuralDirectionBias: number; // -1 (Strong Short) to +1 (Strong Long)
   neuralAttentionWeights: {
     shaakuniOBProximity: number;
@@ -300,30 +302,6 @@ export interface QuantMathMetrics {
   }[];
 }
 
-export interface TradingSignal {
-  id: string;
-  timestamp: number;
-  direction: 'LONG' | 'SHORT';
-  title: string;
-  triggerReason: string;
-  entryPrice: number;
-  stopLoss: number;
-  takeProfit1: number; // D-EQ or nearest structural magnet
-  takeProfit2: number; // PDH / PDL or PWH / PWL
-  riskRewardRatio: number;
-  confidence: number; // 0..100
-  kellyOptimalLeverage: number; // Recommended leverage on Hyperliquid
-  shaakuniContext: string;
-  quantConfluence: string[];
-  status: 'ACTIVE' | 'TARGET_HIT' | 'INVALIDATED';
-}
-
-export type DeskLayoutMode =
-  | 'stack' // Vertical Stack - Grand full-width modules (recommended by user)
-  | 'split' // 3-column classic split
-  | 'focus_2d' // Maximized 2D Chart Focus
-  | 'focus_3d'; // Maximized 3D Holo-Desk
-
 export interface OptionVolSurfacePoint {
   strike: number;
   expiryDays: number;
@@ -331,7 +309,7 @@ export interface OptionVolSurfacePoint {
   moneyness: number; // K / Spot
   impliedVol: number; // IV in % (e.g. 52.4%)
   delta: number; // -1 to +1
-  gammaExposureUsd: number; // GEX in $M
+  gammaUsdPer1Pct: number; // Gamma modelu w $ na ruch 1% na 1 BTC nominału (bez OI — nie jest to GEX dealerów)
   vanna: number;
   charm: number;
   isMaxPain: boolean;

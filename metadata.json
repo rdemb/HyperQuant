@@ -1,5 +1,5 @@
 {
-  "name": "HyperQuant 3D Desk",
-  "description": "Experimental open-source 3D quantitative order flow & market microstructure analytics desk for BTCUSD on Hyperliquid, uniting L2 orderbook topologies, Shaakuni HTF liquidity levels, Aggr.trade multi-venue delta, and Merton Jump-Diffusion Monte Carlo simulations.",
+  "name": "HyperQuant",
+  "description": "Open-source BTC day-trading desk for Hyperliquid: live order-flow heatmap, footprint and volume profile, a plan analyzer instead of signals, cross-market context from public Hyperliquid data, official US macro calendar. Real data only; models are labelled.",
   "requestFramePermissions": []
 }

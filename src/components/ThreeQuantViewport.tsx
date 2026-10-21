@@ -5,18 +5,7 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { BokehPass } from 'three/addons/postprocessing/BokehPass.js';
-import {
-  Camera,
-  ChevronDown,
-  ChevronUp,
-  Eye,
-  Focus,
-  Layers,
-  Maximize2,
-  Minimize2,
-  RotateCcw,
-  Sliders,
-} from 'lucide-react';
+import { Eye, Focus, Layers, Maximize2, Minimize2, RotateCcw } from 'lucide-react';
 import {
   L2OrderbookLevel,
   LiquidationHeatmapCell,
@@ -24,6 +13,9 @@ import {
   QuantMathMetrics,
   ShaakuniState,
 } from '../types/trading';
+import { candlesLabel } from '../views/micro/horizon';
+import { GLOW, T3, T3_CSS, isNarrowViewport, labFov, labPixelRatio } from '../views/lab/tokens3d';
+import { DockPresets, DockSlider, DockToggle, HoverCard, HudButton, HudHeader, SCENE_FRAME, SceneDock } from '../views/lab/hud';
 
 interface ThreeQuantViewportProps {
   bars: OHLCVBar[];
@@ -36,7 +28,7 @@ interface ThreeQuantViewportProps {
   onToggleExpand?: () => void;
 }
 
-type CameraPreset = 'isometric' | 'canyon' | 'neural' | 'topdown';
+type CameraPreset = 'isometric' | 'canyon' | 'trajectory' | 'topdown';
 
 interface HoveredTensorNode {
   title: string;
@@ -45,6 +37,44 @@ interface HoveredTensorNode {
   metricValue: string;
   accentColor: string;
 }
+
+// Zwalnia materiał wraz ze wszystkimi teksturami, do których się odwołuje (map, envMap, normalMap itd.).
+// Zbiór `disposed` chroni przed wielokrotnym dispose materiałów współdzielonych przez wiele meshy.
+const disposeMaterialDeep = (
+  material: THREE.Material,
+  disposed: Set<THREE.Material>
+) => {
+  if (disposed.has(material)) return;
+  disposed.add(material);
+  Object.values(material).forEach((value) => {
+    if (value instanceof THREE.Texture) value.dispose();
+  });
+  material.dispose();
+};
+
+// Przechodzi po całym grafie sceny i zwalnia geometrie, materiały (także tablice materiałów),
+// ich tekstury oraz mapy cieni świateł.
+const disposeSceneGraph = (
+  root: THREE.Object3D,
+  disposedMaterials: Set<THREE.Material>
+) => {
+  const disposedGeometries = new Set<THREE.BufferGeometry>();
+  root.traverse((obj) => {
+    const mesh = obj as THREE.Mesh;
+    if (mesh.geometry && !disposedGeometries.has(mesh.geometry)) {
+      disposedGeometries.add(mesh.geometry);
+      mesh.geometry.dispose();
+    }
+    if (mesh.material) {
+      const materials = Array.isArray(mesh.material)
+        ? mesh.material
+        : [mesh.material];
+      materials.forEach((m) => disposeMaterialDeep(m, disposedMaterials));
+    }
+    const light = obj as THREE.DirectionalLight;
+    if (light.isLight && light.shadow) light.shadow.dispose();
+  });
+};
 
 export const ThreeQuantViewport: React.FC<ThreeQuantViewportProps> = ({
   bars,
@@ -60,13 +90,14 @@ export const ThreeQuantViewport: React.FC<ThreeQuantViewportProps> = ({
 
   // Interactive 3D & Depth of Field (DOF) state controlled via Collapsible Bottom Dock
   const [cameraPreset, setCameraPreset] = useState<CameraPreset>('isometric');
-  const [dofEnabled, setDofEnabled] = useState<boolean>(true);
+  // Głębia ostrości domyślnie wyłączona — czytelność danych ważniejsza od efektu
+  const [dofEnabled, setDofEnabled] = useState<boolean>(false);
   const [dofFocus, setDofFocus] = useState<number>(26);
   const [dofAperture, setDofAperture] = useState<number>(1.8); // x 0.0001
   const [explodedScale, setExplodedScale] = useState<number>(1.0);
   const [showOBVolumes, setShowOBVolumes] = useState<boolean>(true);
   const [showNeuralSurface, setShowNeuralSurface] = useState<boolean>(true);
-  const [dockCollapsed, setDockCollapsed] = useState<boolean>(false);
+  const [dockCollapsed, setDockCollapsed] = useState<boolean>(isNarrowViewport);
   const [hoveredNode, setHoveredNode] = useState<HoveredTensorNode | null>(null);
 
   // Store latest props & controls in refs so React updates never tear down the WebGL canvas
@@ -115,6 +146,24 @@ export const ThreeQuantViewport: React.FC<ThreeQuantViewportProps> = ({
     showNeuralSurface,
   ]);
 
+  // Flaga "dane zmienione": scena 3D jest przebudowywana tylko gdy zmieniły się dane
+  // lub opcje wpływające na geometrię (suwaki DOF działają przez uniformy, bez przebudowy)
+  const dirtyRef = useRef<boolean>(true);
+
+  useEffect(() => {
+    dirtyRef.current = true;
+  }, [
+    bars,
+    shaakuni,
+    heatmap,
+    quant,
+    bids,
+    asks,
+    explodedScale,
+    showOBVolumes,
+    showNeuralSurface,
+  ]);
+
   const targetCamRef = useRef<{
     pos: THREE.Vector3;
     lookAt: THREE.Vector3;
@@ -139,7 +188,7 @@ export const ThreeQuantViewport: React.FC<ThreeQuantViewportProps> = ({
         lookAt: new THREE.Vector3(-2, 0.5, 0),
         active: true,
       };
-    } else if (preset === 'neural') {
+    } else if (preset === 'trajectory') {
       targetCamRef.current = {
         pos: new THREE.Vector3(8, 10, 22),
         lookAt: new THREE.Vector3(7, 0.5, 0),
@@ -179,8 +228,8 @@ export const ThreeQuantViewport: React.FC<ThreeQuantViewportProps> = ({
     });
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.12;
-    renderer.setPixelRatio(isSoftwareGl ? 1 : Math.min(window.devicePixelRatio, 2));
+    renderer.toneMappingExposure = 1.0;
+    renderer.setPixelRatio(labPixelRatio(isSoftwareGl));
     renderer.setSize(width, height);
     renderer.shadowMap.enabled = !isSoftwareGl;
     renderer.shadowMap.type = THREE.PCFShadowMap;
@@ -189,15 +238,20 @@ export const ThreeQuantViewport: React.FC<ThreeQuantViewportProps> = ({
     container.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x070a12);
-    scene.fog = new THREE.FogExp2(0x070a12, 0.015);
+    scene.background = new THREE.Color(T3.bg);
+    scene.fog = new THREE.FogExp2(T3.bg, 0.015);
 
     // 2. Mandatory Studio Environment Reflection (RoomEnvironment + PMREMGenerator)
     const pmremGenerator = new THREE.PMREMGenerator(renderer);
-    scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
+    // Trzymamy render target PMREM, aby zwolnić mapę środowiskową przy odmontowaniu;
+    // RoomEnvironment (geometrie + materiały) jest potrzebny tylko do wygenerowania mapy
+    const roomEnvironment = new RoomEnvironment();
+    const envRenderTarget = pmremGenerator.fromScene(roomEnvironment, 0.04);
+    scene.environment = envRenderTarget.texture;
     pmremGenerator.dispose();
+    roomEnvironment.dispose();
 
-    const camera = new THREE.PerspectiveCamera(42, width / height, 0.5, 160);
+    const camera = new THREE.PerspectiveCamera(labFov(width / height), width / height, 0.5, 160);
     camera.position.set(20, 14, 24);
 
     const controls = new OrbitControls(camera, renderer.domElement);
@@ -213,7 +267,7 @@ export const ThreeQuantViewport: React.FC<ThreeQuantViewportProps> = ({
     });
 
     // 3. Three-Point Studio Lighting (Warm Key, Cool Hemisphere Fill, Cyan Rim)
-    const hemiLight = new THREE.HemisphereLight(0x38bdf8, 0x090d16, 0.85);
+    const hemiLight = new THREE.HemisphereLight(0xc8d4e3, T3.bg, 0.8);
     scene.add(hemiLight);
 
     const keyLight = new THREE.DirectionalLight(0xfff3e0, 2.2);
@@ -228,7 +282,7 @@ export const ThreeQuantViewport: React.FC<ThreeQuantViewportProps> = ({
     keyLight.shadow.normalBias = 0.02;
     scene.add(keyLight);
 
-    const rimLight = new THREE.DirectionalLight(0x06b6d4, 1.45);
+    const rimLight = new THREE.DirectionalLight(T3.accent, 0.8);
     rimLight.position.set(-20, 14, -16);
     scene.add(rimLight);
 
@@ -238,16 +292,16 @@ export const ThreeQuantViewport: React.FC<ThreeQuantViewportProps> = ({
 
     const basePlateGeo = new THREE.BoxGeometry(36, 0.3, 22);
     const basePlateMat = new THREE.MeshStandardMaterial({
-      color: 0x0b101d,
-      roughness: 0.35,
-      metalness: 0.75,
+      color: T3.panel,
+      roughness: 0.6,
+      metalness: 0.4,
     });
     const basePlate = new THREE.Mesh(basePlateGeo, basePlateMat);
     basePlate.position.set(0, -4.2, 0);
     basePlate.receiveShadow = true;
     platformGroup.add(basePlate);
 
-    const gridHelper = new THREE.GridHelper(34, 34, 0x1e293b, 0x111827);
+    const gridHelper = new THREE.GridHelper(34, 34, T3.lineStrong, T3.line);
     gridHelper.position.set(0, -4.02, 0);
     platformGroup.add(gridHelper);
 
@@ -278,69 +332,88 @@ export const ThreeQuantViewport: React.FC<ThreeQuantViewportProps> = ({
     let lastRaycastTime = 0;
 
     // Shared Materials (PBR with calibrated roughness & metalness variation >= 0.25)
+    // Świece: kupno/sprzedaż w tokenach; drugi kanał = kierunek korpusu względem knota
     const bullCandleMat = new THREE.MeshStandardMaterial({
-      color: 0x38bdf8,
-      emissive: 0x0284c7,
-      emissiveIntensity: 0.22,
-      roughness: 0.22,
-      metalness: 0.78,
+      color: T3.buy,
+      emissive: T3.buy,
+      emissiveIntensity: GLOW,
+      roughness: 0.4,
+      metalness: 0.35,
     });
     const bearCandleMat = new THREE.MeshStandardMaterial({
-      color: 0xf43f5e,
-      emissive: 0xbe123c,
-      emissiveIntensity: 0.22,
-      roughness: 0.48,
-      metalness: 0.52,
+      color: T3.sell,
+      emissive: T3.sell,
+      emissiveIntensity: GLOW,
+      roughness: 0.55,
+      metalness: 0.3,
     });
     const wickMat = new THREE.MeshStandardMaterial({
-      color: 0x94a3b8,
-      roughness: 0.3,
-      metalness: 0.85,
+      color: T3.ink3,
+      roughness: 0.5,
+      metalness: 0.4,
     });
 
+    // Strefy OB w kolorze „zone”; strona (popyt/podaż) rozróżniona kolorem krawędzi i podpowiedzią
     const bullOBGlassMat = new THREE.MeshPhysicalMaterial({
-      color: 0x2979ff,
-      emissive: 0x1d4ed8,
-      emissiveIntensity: 0.25,
+      color: T3.zone,
+      emissive: T3.zone,
+      emissiveIntensity: 0.06,
       roughness: 0.15,
       metalness: 0.1,
       transmission: isSoftwareGl ? 0 : 0.82,
       transparent: true,
-      opacity: isSoftwareGl ? 0.38 : 0.88,
+      opacity: isSoftwareGl ? 0.3 : 0.8,
       ior: 1.52,
       thickness: 1.2,
       depthWrite: false,
     });
 
     const bearOBGlassMat = new THREE.MeshPhysicalMaterial({
-      color: 0xff7043,
-      emissive: 0xc2410c,
-      emissiveIntensity: 0.25,
+      color: T3.zone,
+      emissive: T3.zone,
+      emissiveIntensity: 0.06,
       roughness: 0.15,
       metalness: 0.1,
       transmission: isSoftwareGl ? 0 : 0.82,
       transparent: true,
-      opacity: isSoftwareGl ? 0.38 : 0.88,
+      opacity: isSoftwareGl ? 0.3 : 0.8,
       ior: 1.52,
       thickness: 1.2,
       depthWrite: false,
     });
 
+    // Ściany arkusza: BID bliżej (z = 3.2), ASK dalej (z = 4.2) — pozycja jako drugi kanał
     const bidWallMat = new THREE.MeshStandardMaterial({
-      color: 0x10b981,
-      emissive: 0x059669,
-      emissiveIntensity: 0.2,
-      roughness: 0.28,
-      metalness: 0.72,
+      color: T3.buy,
+      emissive: T3.buy,
+      emissiveIntensity: GLOW,
+      roughness: 0.45,
+      metalness: 0.35,
     });
 
     const askWallMat = new THREE.MeshStandardMaterial({
-      color: 0xf43f5e,
-      emissive: 0xe11d48,
-      emissiveIntensity: 0.2,
-      roughness: 0.28,
-      metalness: 0.72,
+      color: T3.sell,
+      emissive: T3.sell,
+      emissiveIntensity: GLOW,
+      roughness: 0.45,
+      metalness: 0.35,
     });
+
+    // Materiały współdzielone między przebudowami sceny — clearGroup ich nie zwalnia,
+    // są zwalniane dopiero przy odmontowaniu komponentu
+    const sharedMaterials = new Set<THREE.Material>([
+      bullCandleMat,
+      bearCandleMat,
+      wickMat,
+      bullOBGlassMat,
+      bearOBGlassMat,
+      bidWallMat,
+      askWallMat,
+    ]);
+    // Materiały tworzone per-rebuild, usunięte ze sceny — zwalniane dopiero po kolejnym renderze,
+    // gdy nowe materiały trzymają już referencję do tych samych programów shaderów
+    // (natychmiastowy dispose usunąłby program i wymusił ponowną kompilację przy każdej przebudowie)
+    const pendingMaterialDisposal: THREE.Material[] = [];
 
     // Post-Processing Composer & BokehPass (Depth of Field)
     let composer: EffectComposer | null = null;
@@ -364,6 +437,15 @@ export const ThreeQuantViewport: React.FC<ThreeQuantViewportProps> = ({
       while (group.children.length > 0) {
         const child = group.children[0] as THREE.Mesh;
         if (child.geometry) child.geometry.dispose();
+        // Materiały per-rebuild → kolejka odroczonego dispose; współdzielone (cache) zostają
+        if (child.material) {
+          const materials = Array.isArray(child.material)
+            ? child.material
+            : [child.material];
+          materials.forEach((m) => {
+            if (!sharedMaterials.has(m)) pendingMaterialDisposal.push(m);
+          });
+        }
         group.remove(child);
       }
     };
@@ -428,11 +510,11 @@ export const ThreeQuantViewport: React.FC<ThreeQuantViewportProps> = ({
         bodyMesh.castShadow = true;
         bodyMesh.layers.enable(1);
         bodyMesh.userData = {
-          title: `BTC-PERP Bar #${idx + 1}`,
-          subtitle: `${new Date(b.time).toLocaleTimeString()} · Close $${b.close.toFixed(1)}`,
-          metricLabel: 'Net Perp/Spot Delta',
-          metricValue: `${b.vbuy - b.vsell >= 0 ? '+' : ''}$${((b.vbuy - b.vsell) / 1000).toFixed(0)}K`,
-          accentColor: isBull ? '#38bdf8' : '#f43f5e',
+          title: `Świeca ${new Date(b.time).toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' })} ${isBull ? '▲' : '▼'}`,
+          subtitle: `O ${b.open.toFixed(1)} · H ${b.high.toFixed(1)} · L ${b.low.toFixed(1)} · C ${b.close.toFixed(1)}`,
+          metricLabel: 'Delta (kupno − sprzedaż)',
+          metricValue: `${b.vbuy - b.vsell >= 0 ? '+' : '−'}$${(Math.abs(b.vbuy - b.vsell) / 1000).toFixed(0)}K`,
+          accentColor: isBull ? T3_CSS.buy : T3_CSS.sell,
         };
         candlesGroup.add(bodyMesh);
 
@@ -461,11 +543,11 @@ export const ThreeQuantViewport: React.FC<ThreeQuantViewportProps> = ({
         const curve = new THREE.CatmullRomCurve3(kalmanPoints);
         const tubeGeo = new THREE.TubeGeometry(curve, 48, 0.06, 8, false);
         const tubeMat = new THREE.MeshStandardMaterial({
-          color: 0xfbbf24,
-          emissive: 0xd97706,
-          emissiveIntensity: 0.45,
-          roughness: 0.2,
-          metalness: 0.8,
+          color: T3.accent,
+          emissive: T3.accent,
+          emissiveIntensity: GLOW,
+          roughness: 0.35,
+          metalness: 0.4,
         });
         const tubeMesh = new THREE.Mesh(tubeGeo, tubeMat);
         candlesGroup.add(tubeMesh);
@@ -506,18 +588,18 @@ export const ThreeQuantViewport: React.FC<ThreeQuantViewportProps> = ({
           obMesh.renderOrder = 5;
           obMesh.layers.enable(1);
           obMesh.userData = {
-            title: `Shaakuni ${ob.type === 'bull' ? 'Bullish' : 'Bearish'} ${ob.label}`,
-            subtitle: `Range: $${ob.bottom.toFixed(1)} – $${ob.top.toFixed(1)}`,
-            metricLabel: 'Impulse Multiple',
-            metricValue: `${ob.impulseAtrMultiple}x ATR · Unmitigated`,
-            accentColor: ob.type === 'bull' ? '#2979ff' : '#ff7043',
+            title: `Strefa OB ${ob.type === 'bull' ? 'popytowa ▲' : 'podażowa ▼'} (${ob.label})`,
+            subtitle: `Zakres ${ob.bottom.toFixed(1)} – ${ob.top.toFixed(1)}`,
+            metricLabel: 'Impuls · stan',
+            metricValue: `${ob.impulseAtrMultiple}× ATR · nietestowana`,
+            accentColor: T3_CSS.zone,
           };
           orderBlocksGroup.add(obMesh);
 
           // Wireframe metallic trim around the Order Block
           const edgesGeo = new THREE.EdgesGeometry(obGeo);
           const edgesMat = new THREE.LineBasicMaterial({
-            color: ob.type === 'bull' ? 0x60a5fa : 0xfb923c,
+            color: ob.type === 'bull' ? T3.buy : T3.sell,
           });
           const edgesLine = new THREE.LineSegments(edgesGeo, edgesMat);
           edgesLine.position.copy(obMesh.position);
@@ -534,30 +616,30 @@ export const ThreeQuantViewport: React.FC<ThreeQuantViewportProps> = ({
         status?: string;
       }[] = [
         {
-          label: 'PDH (Prev Day High)',
+          label: 'PDH (szczyt poprzedniego dnia)',
           price: curShaakuni.pdh,
-          color: 0xff8c00,
-          hex: '#ff8c00',
+          color: T3.level,
+          hex: T3_CSS.level,
           status: curShaakuni.pdhStatus,
         },
         {
-          label: 'PDL (Prev Day Low)',
+          label: 'PDL (dołek poprzedniego dnia)',
           price: curShaakuni.pdl,
-          color: 0x0096c8,
-          hex: '#0096c8',
+          color: T3.level,
+          hex: T3_CSS.level,
           status: curShaakuni.pdlStatus,
         },
         {
-          label: 'D-EQ (Daily 50%)',
+          label: 'D-EQ (50% dnia)',
           price: curShaakuni.deq,
-          color: 0x00e5ff,
-          hex: '#00e5ff',
+          color: T3.ink2,
+          hex: T3_CSS.ink2,
         },
         {
-          label: 'W-EQ (Weekly 50%)',
+          label: 'W-EQ (50% tygodnia)',
           price: curShaakuni.weq,
-          color: 0xffd700,
-          hex: '#ffd700',
+          color: T3.ink3,
+          hex: T3_CSS.ink3,
         },
       ];
 
@@ -571,42 +653,38 @@ export const ThreeQuantViewport: React.FC<ThreeQuantViewportProps> = ({
         const beamMat = new THREE.MeshStandardMaterial({
           color: lvl.color,
           emissive: lvl.color,
-          emissiveIntensity: 0.65,
-          roughness: 0.2,
-          metalness: 0.8,
+          emissiveIntensity: 0.2,
+          roughness: 0.4,
+          metalness: 0.3,
         });
         const beamMesh = new THREE.Mesh(beamGeo, beamMat);
         beamMesh.position.set(0, y, -0.5);
         beamMesh.layers.enable(1);
         beamMesh.userData = {
-          title: `Shaakuni ${lvl.label}`,
-          subtitle: `Price Level: $${lvl.price.toFixed(1)}`,
-          metricLabel: 'Liquidity Status',
-          metricValue: lvl.status ?? 'Equilibrium Magnet',
+          title: lvl.label,
+          subtitle: `Poziom ${lvl.price.toFixed(1)}`,
+          metricLabel: 'Stan',
+          metricValue: lvl.status ?? 'poziom równowagi',
           accentColor: lvl.hex,
         };
         levelsGroup.add(beamMesh);
       });
 
-      // 4. AggrBTCv5 Liquidation Heatmap Towers (5x, 20x, 100x Leverage Clusters)
+      // 4. Szacunek likwidacji z wolumenu (założone dźwignie 5×/20×/100×) — siła jako krycie, jeden odcień
       curHeatmap.slice(0, 14).forEach((cell) => {
         const y = priceToY(cell.priceLevel);
         if (y < -3.8 || y > 4.8) return;
 
         const lengthX = 0.8 + cell.intensityRatio * 3.8;
         const barGeo = new THREE.BoxGeometry(lengthX, 0.16, 0.42);
-        const colHex =
-          cell.intensityRatio > 0.72
-            ? 0xf0da18
-            : cell.intensityRatio > 0.45
-            ? 0x4c9886
-            : 0x26828c;
         const barMat = new THREE.MeshStandardMaterial({
-          color: colHex,
-          emissive: colHex,
-          emissiveIntensity: 0.35 + cell.intensityRatio * 0.4,
-          roughness: 0.2,
-          metalness: 0.6,
+          color: T3.zone,
+          emissive: T3.zone,
+          emissiveIntensity: GLOW,
+          roughness: 0.45,
+          metalness: 0.3,
+          transparent: true,
+          opacity: 0.35 + cell.intensityRatio * 0.6,
         });
         const barMesh = new THREE.Mesh(barGeo, barMat);
         barMesh.position.set(
@@ -616,11 +694,11 @@ export const ThreeQuantViewport: React.FC<ThreeQuantViewportProps> = ({
         );
         barMesh.layers.enable(1);
         barMesh.userData = {
-          title: `Aggr Liquidation Cluster (${cell.leverage}x)`,
-          subtitle: `Zone: $${cell.bottom.toFixed(0)} – $${cell.top.toFixed(0)}`,
-          metricLabel: 'Cluster Strength',
-          metricValue: `${(cell.intensityRatio * 100).toFixed(0)}% Intensity (${cell.count} hits)`,
-          accentColor: '#f0da18',
+          title: `Szacunek likwidacji (założone ${cell.leverage}×)`,
+          subtitle: `Zakres ${cell.bottom.toFixed(0)} – ${cell.top.toFixed(0)} · nie są to realne pozycje`,
+          metricLabel: 'Siła szacunku',
+          metricValue: `${(cell.intensityRatio * 100).toFixed(0)}% maks.`,
+          accentColor: T3_CSS.zone,
         };
         heatmapGroup.add(barMesh);
       });
@@ -635,11 +713,11 @@ export const ThreeQuantViewport: React.FC<ThreeQuantViewportProps> = ({
         mesh.castShadow = true;
         mesh.layers.enable(1);
         mesh.userData = {
-          title: `Hyperliquid + Aggr L2 Bid Wall`,
-          subtitle: `Price: $${bid.price.toFixed(1)} (${bid.exchangeCount} venues)`,
-          metricLabel: 'Resting Bid Depth',
+          title: `Arkusz HL · BID ▲ (poziom ${idx + 1})`,
+          subtitle: `Cena ${bid.price.toFixed(1)} · liczba zleceń na poziomie: ${bid.exchangeCount}`,
+          metricLabel: 'Płynność',
           metricValue: `$${(bid.sizeUsd / 1000).toFixed(1)}K (${bid.sizeBtc} BTC)`,
-          accentColor: '#10b981',
+          accentColor: T3_CSS.buy,
         };
         l2CanyonGroup.add(mesh);
       });
@@ -652,11 +730,11 @@ export const ThreeQuantViewport: React.FC<ThreeQuantViewportProps> = ({
         mesh.castShadow = true;
         mesh.layers.enable(1);
         mesh.userData = {
-          title: `Hyperliquid + Aggr L2 Ask Wall`,
-          subtitle: `Price: $${ask.price.toFixed(1)} (${ask.exchangeCount} venues)`,
-          metricLabel: 'Resting Ask Depth',
+          title: `Arkusz HL · ASK ▼ (poziom ${idx + 1})`,
+          subtitle: `Cena ${ask.price.toFixed(1)} · liczba zleceń na poziomie: ${ask.exchangeCount}`,
+          metricLabel: 'Płynność',
           metricValue: `$${(ask.sizeUsd / 1000).toFixed(1)}K (${ask.sizeBtc} BTC)`,
-          accentColor: '#f43f5e',
+          accentColor: T3_CSS.sell,
         };
         l2CanyonGroup.add(mesh);
       });
@@ -672,19 +750,14 @@ export const ThreeQuantViewport: React.FC<ThreeQuantViewportProps> = ({
           if (y < -3.8 || y > 4.8) return;
           const lengthX = 0.5 + (bucket.totalVolumeUsd / maxBucketVol) * 3.4;
           const profGeo = new THREE.BoxGeometry(lengthX, 0.2, 0.35);
-          const colHex = bucket.isPOC
-            ? 0xfacc15
-            : bucket.gravityPotential > 0.75
-            ? 0x22d3ee
-            : bucket.isValueArea
-            ? 0x3b82f6
-            : 0x334155;
+          // POC = akcent, Value Area = jaśniejszy ink, reszta = linia; bez neonów
+          const colHex = bucket.isPOC ? T3.accent : bucket.isValueArea ? T3.ink3 : T3.lineStrong;
           const profMat = new THREE.MeshStandardMaterial({
             color: colHex,
             emissive: colHex,
-            emissiveIntensity: bucket.isPOC ? 0.65 : 0.28,
-            roughness: 0.25,
-            metalness: 0.75,
+            emissiveIntensity: bucket.isPOC ? 0.2 : 0.06,
+            roughness: 0.45,
+            metalness: 0.3,
           });
           const profMesh = new THREE.Mesh(profGeo, profMat);
           profMesh.position.set(
@@ -694,21 +767,17 @@ export const ThreeQuantViewport: React.FC<ThreeQuantViewportProps> = ({
           );
           profMesh.layers.enable(1);
           profMesh.userData = {
-            title: bucket.isPOC
-              ? `Volume Profile POC ($${bucket.price})`
-              : `Liquidity Profile Bucket ($${bucket.price})`,
-            subtitle: `Vol: $${(bucket.totalVolumeUsd / 1000000).toFixed(2)}M · Liq Fuel: $${(
-              bucket.liquidationPoolUsd / 1000000
-            ).toFixed(2)}M`,
-            metricLabel: 'Gravitational Pull U(p)',
-            metricValue: `${(bucket.gravityPotential * 100).toFixed(0)}% Magnet Strength`,
-            accentColor: bucket.isPOC ? '#facc15' : '#22d3ee',
+            title: bucket.isPOC ? `Profil wolumenu · POC (${bucket.price})` : `Profil wolumenu (${bucket.price})`,
+            subtitle: `Wolumen $${(bucket.totalVolumeUsd / 1000000).toFixed(2)}M${bucket.isValueArea ? ' · Value Area' : ''}`,
+            metricLabel: 'Przyciąganie U(p) (heurystyka)',
+            metricValue: `${(bucket.gravityPotential * 100).toFixed(0)}%`,
+            accentColor: bucket.isPOC ? T3_CSS.accent : T3_CSS.ink3,
           };
           l2CanyonGroup.add(profMesh);
         });
       }
 
-      // 6. 3D Neural Time-Series Prediction Cone & Attention Tensor Nodes
+      // 6. Trajektoria heurystyczna (Kalman + OU + ważona suma cech) z pasmem ±1σ
       if (showNeural && curQuant.forecastHorizon.length > 0) {
         const lastBar = visibleBars[visibleBars.length - 1];
         const anchorX = startX + (sliceCount - 1) * stepX;
@@ -729,21 +798,21 @@ export const ThreeQuantViewport: React.FC<ThreeQuantViewportProps> = ({
           ringGeo.rotateY(Math.PI / 2);
           const isBullForecast = fh.predictedPrice >= lastBar.close;
           const ringMat = new THREE.MeshStandardMaterial({
-            color: isBullForecast ? 0x10b981 : 0xf43f5e,
-            emissive: isBullForecast ? 0x059669 : 0xe11d48,
-            emissiveIntensity: 0.6,
-            roughness: 0.2,
-            metalness: 0.8,
+            color: isBullForecast ? T3.buy : T3.sell,
+            emissive: isBullForecast ? T3.buy : T3.sell,
+            emissiveIntensity: GLOW,
+            roughness: 0.4,
+            metalness: 0.3,
           });
           const ringMesh = new THREE.Mesh(ringGeo, ringMat);
           ringMesh.position.set(fx, fy, 0);
           ringMesh.layers.enable(1);
           ringMesh.userData = {
-            title: `Neural Forecast Horizon (${fh.label})`,
-            subtitle: `1σ Band: $${fh.lower1Sigma.toFixed(0)} – $${fh.upper1Sigma.toFixed(0)}`,
-            metricLabel: 'Predicted BTC Price',
-            metricValue: `$${fh.predictedPrice.toFixed(1)} (${curQuant.neuralConfidence}% Conf)`,
-            accentColor: isBullForecast ? '#10b981' : '#f43f5e',
+            title: `Trajektoria heurystyczna (${candlesLabel(fh.stepBars)}) ${isBullForecast ? '▲' : '▼'}`,
+            subtitle: `Pasmo ±1σ: ${fh.lower1Sigma.toFixed(0)} – ${fh.upper1Sigma.toFixed(0)}`,
+            metricLabel: 'Wartość heurystyki (nieskalibrowana)',
+            metricValue: `${fh.predictedPrice.toFixed(1)}`,
+            accentColor: isBullForecast ? T3_CSS.buy : T3_CSS.sell,
           };
           neuralSurfaceGroup.add(ringMesh);
         });
@@ -751,11 +820,11 @@ export const ThreeQuantViewport: React.FC<ThreeQuantViewportProps> = ({
         const fCurve = new THREE.CatmullRomCurve3(pts);
         const fTubeGeo = new THREE.TubeGeometry(fCurve, 32, 0.09, 12, false);
         const fTubeMat = new THREE.MeshStandardMaterial({
-          color: curQuant.neuralDirectionBias >= 0 ? 0x34d399 : 0xfb7185,
-          emissive: curQuant.neuralDirectionBias >= 0 ? 0x10b981 : 0xf43f5e,
-          emissiveIntensity: 0.8,
-          roughness: 0.15,
-          metalness: 0.85,
+          color: curQuant.neuralDirectionBias >= 0 ? T3.buy : T3.sell,
+          emissive: curQuant.neuralDirectionBias >= 0 ? T3.buy : T3.sell,
+          emissiveIntensity: GLOW,
+          roughness: 0.35,
+          metalness: 0.3,
         });
         const fTube = new THREE.Mesh(fTubeGeo, fTubeMat);
         neuralSurfaceGroup.add(fTube);
@@ -763,6 +832,8 @@ export const ThreeQuantViewport: React.FC<ThreeQuantViewportProps> = ({
     };
 
     rebuildMarketScene();
+    // Scena zbudowana z bieżących danych — kolejna przebudowa dopiero po zmianie propsów
+    dirtyRef.current = false;
 
     if (!isSoftwareGl) {
       renderer.compile(scene, camera);
@@ -798,6 +869,7 @@ export const ThreeQuantViewport: React.FC<ThreeQuantViewportProps> = ({
       const w = Math.max(300, container.clientWidth);
       const h = Math.max(260, container.clientHeight);
       camera.aspect = w / h;
+      camera.fov = labFov(w / h);
       camera.updateProjectionMatrix();
       renderer.setSize(w, h);
       if (composer) composer.setSize(w, h);
@@ -807,9 +879,21 @@ export const ThreeQuantViewport: React.FC<ThreeQuantViewportProps> = ({
     // Animation loop with IntersectionObserver visibility guard & Software WebGL fenceSync pacing
     let startTimeMs = performance.now();
     let prevTimeMs = startTimeMs;
-    let frameId = 0;
+    // Osobne identyfikatory dla requestAnimationFrame i setTimeout — każdy anulowany właściwą funkcją
+    let rafId = 0;
+    let timeoutId = 0;
     let isDisposed = false;
     let isVisible = true;
+    // Karta w tle: pętla renderu stoi całkowicie (bez timerów), wznowienie po powrocie
+    let pausedHidden = false;
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== 'hidden' && pausedHidden && !isDisposed) {
+        pausedHidden = false;
+        prevTimeMs = performance.now();
+        tick();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
 
     const io =
       typeof IntersectionObserver !== 'undefined'
@@ -825,7 +909,7 @@ export const ThreeQuantViewport: React.FC<ThreeQuantViewportProps> = ({
     function afterDraw(cb: () => void) {
       const gl = renderer.getContext() as WebGL2RenderingContext;
       if (!gl || !gl.fenceSync) {
-        frameId = window.setTimeout(cb, 80);
+        timeoutId = window.setTimeout(cb, 80);
         return;
       }
       const sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
@@ -834,30 +918,36 @@ export const ThreeQuantViewport: React.FC<ThreeQuantViewportProps> = ({
         if (isDisposed) return;
         const state = sync && gl.getSyncParameter(sync, gl.SYNC_STATUS);
         if (state === gl.UNSIGNALED) {
-          frameId = window.setTimeout(poll, 5);
+          timeoutId = window.setTimeout(poll, 5);
         } else {
           if (sync) gl.deleteSync(sync);
-          frameId = window.setTimeout(cb, 80);
+          timeoutId = window.setTimeout(cb, 80);
         }
       };
-      frameId = window.setTimeout(poll, 5);
+      timeoutId = window.setTimeout(poll, 5);
     }
 
     function tick() {
       if (isDisposed) return;
+      if (document.visibilityState === 'hidden') {
+        pausedHidden = true;
+        return;
+      }
       const nowMs = performance.now();
       const delta = Math.min(0.1, (nowMs - prevTimeMs) / 1000);
       prevTimeMs = nowMs;
       const elapsed = (nowMs - startTimeMs) / 1000;
 
       if (!isVisible) {
-        frameId = window.setTimeout(tick, 250);
+        timeoutId = window.setTimeout(tick, 250);
         return;
       }
 
       // Rebuild 3D geometry periodically as new live trades arrive
-      if (elapsed - lastSceneBuildTick > 0.45) {
+      // Przebudowa tylko gdy dane faktycznie się zmieniły (dirtyRef), z zachowanym throttlingiem 450 ms
+      if (dirtyRef.current && elapsed - lastSceneBuildTick > 0.45) {
         lastSceneBuildTick = elapsed;
+        dirtyRef.current = false;
         rebuildMarketScene();
       }
 
@@ -907,26 +997,30 @@ export const ThreeQuantViewport: React.FC<ThreeQuantViewportProps> = ({
 
       controls.update();
 
-      // Update BokehPass Depth of Field uniforms dynamically
-      if (bokehPass && composer) {
+      // Głębia ostrości tylko gdy włączona — inaczej render bez post-processingu (taniej)
+      if (bokehPass && composer && latestDataRef.current.dofEnabled) {
         const uniforms = bokehPass.uniforms as Record<string, { value: number }>;
         if (uniforms['focus']) {
           uniforms['focus'].value = latestDataRef.current.dofFocus;
         }
         if (uniforms['aperture']) {
-          uniforms['aperture'].value = latestDataRef.current.dofEnabled
-            ? latestDataRef.current.dofAperture * 0.0001
-            : 0;
+          uniforms['aperture'].value = latestDataRef.current.dofAperture * 0.0001;
         }
         composer.render();
       } else {
         renderer.render(scene, camera);
       }
 
+      // Odroczone zwolnienie materiałów z poprzedniej przebudowy (po renderze nowej sceny)
+      if (pendingMaterialDisposal.length > 0) {
+        pendingMaterialDisposal.forEach((m) => m.dispose());
+        pendingMaterialDisposal.length = 0;
+      }
+
       if (isSoftwareGl) {
         afterDraw(tick);
       } else {
-        frameId = requestAnimationFrame(tick);
+        rafId = requestAnimationFrame(tick);
       }
     }
 
@@ -935,233 +1029,97 @@ export const ThreeQuantViewport: React.FC<ThreeQuantViewportProps> = ({
     return () => {
       isDisposed = true;
       io?.disconnect();
-      cancelAnimationFrame(frameId);
-      clearTimeout(frameId);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      cancelAnimationFrame(rafId);
+      clearTimeout(timeoutId);
       window.removeEventListener('resize', handleResize);
       renderer.domElement.removeEventListener('pointermove', onPointerMove);
       controls.dispose();
+
+      // Post-processing: EffectComposer.dispose() nie zwalnia dodanych passów (BokehPass, RenderPass)
+      if (composer) {
+        composer.passes.forEach((pass) => pass.dispose());
+        composer.dispose();
+      }
+
+      // Geometrie, materiały i tekstury całej sceny + materiały współdzielone (mogą być poza sceną)
+      // + materiały czekające na odroczony dispose
+      const disposedMaterials = new Set<THREE.Material>();
+      disposeSceneGraph(scene, disposedMaterials);
+      sharedMaterials.forEach((m) => disposeMaterialDeep(m, disposedMaterials));
+      pendingMaterialDisposal.forEach((m) =>
+        disposeMaterialDeep(m, disposedMaterials)
+      );
+      pendingMaterialDisposal.length = 0;
+
+      // Mapa środowiskowa PMREM
+      scene.environment = null;
+      envRenderTarget.dispose();
+
       renderer.dispose();
+      renderer.forceContextLoss();
     };
   }, []);
 
   return (
-    <div className="relative w-full h-full min-h-[360px] bg-[#070A12] overflow-hidden select-none border border-slate-800/80 rounded-lg">
-      {/* Dedicated WebGL Mount Container */}
+    <div className={SCENE_FRAME}>
+      {/* Kontener WebGL */}
       <div ref={canvasMountRef} className="w-full h-full" />
 
-      {/* Top-Left Minimal Spec Header (No backdrop-filter over WebGL per Three.js skill) */}
-      <div className="absolute top-3 left-3 z-10 pointer-events-none flex flex-col gap-1 bg-[#090D16]/90 border border-slate-800 px-3 py-2 rounded-md">
-        <div className="flex items-center gap-2 text-xs font-semibold text-slate-100">
-          <span>3D Liquidity, Order Block & Neural Tensor</span>
-          <span className="text-slate-500">·</span>
-          <span className="font-mono text-cyan-400">Bokeh DOF Engine</span>
-        </div>
-        <div className="text-[11px] text-slate-400 font-mono tabular-nums">
-          L2 Micro-Price: ${quant.l2MicroPrice.toFixed(1)} · OB Imbalance:{' '}
-          {(quant.l2OrderbookImbalance * 100).toFixed(1)}% · Hurst H={quant.hurstExponent}
-        </div>
-      </div>
+      <HudHeader title="Liquidity Canyon · świece, arkusz L2, profil i strefy OB">
+        Micro-price {Number.isFinite(quant.l2MicroPrice) ? quant.l2MicroPrice.toFixed(1) : '—'} · Nierównowaga L2{' '}
+        {(quant.l2OrderbookImbalance * 100).toFixed(1)}% · Hurst {quant.hurstExponent}
+      </HudHeader>
 
-      {/* Top-Right Expand / Reset Controls */}
       <div className="absolute top-3 right-3 z-10 flex items-center gap-1.5">
-        <button
-          type="button"
-          onClick={() => applyCameraPreset('isometric')}
-          className="px-2.5 py-1.5 text-xs font-medium text-slate-300 bg-[#090D16]/90 hover:bg-slate-800 border border-slate-800 rounded-md flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
-          title="Reset Camera"
-        >
-          <RotateCcw className="w-3.5 h-3.5 text-cyan-400" />
-          <span>Reset Orbit</span>
-        </button>
+        <HudButton onClick={() => applyCameraPreset('isometric')} icon={<RotateCcw className="w-3.5 h-3.5" aria-hidden="true" />} label="Reset kamery" />
         {onToggleExpand && (
-          <button
-            type="button"
+          <HudButton
             onClick={onToggleExpand}
-            className="px-2.5 py-1.5 text-xs font-medium text-slate-300 bg-[#090D16]/90 hover:bg-slate-800 border border-slate-800 rounded-md flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
-          >
-            {isExpanded ? (
-              <>
-                <Minimize2 className="w-3.5 h-3.5 text-cyan-400" />
-                <span>Split View</span>
-              </>
-            ) : (
-              <>
-                <Maximize2 className="w-3.5 h-3.5 text-cyan-400" />
-                <span>Full 3D Stage</span>
-              </>
-            )}
-          </button>
+            icon={isExpanded ? <Minimize2 className="w-3.5 h-3.5" aria-hidden="true" /> : <Maximize2 className="w-3.5 h-3.5" aria-hidden="true" />}
+            label={isExpanded ? 'Widok dzielony' : 'Pełny ekran'}
+          />
         )}
       </div>
 
-      {/* Raycasted 3D Object Hover Inspection Card */}
       {hoveredNode && (
-        <div className="absolute top-16 left-3 z-10 pointer-events-none bg-[#090D16]/95 border border-slate-700 px-3.5 py-2.5 rounded-md shadow-xl max-w-xs">
-          <div className="text-xs font-semibold text-white flex items-center gap-2">
-            <span
-              className="inline-block w-2 h-2 rounded-xs"
-              style={{ backgroundColor: hoveredNode.accentColor }}
-            />
-            <span>{hoveredNode.title}</span>
-          </div>
-          <div className="text-[11px] text-slate-400 mt-0.5 font-mono">
-            {hoveredNode.subtitle}
-          </div>
-          <div className="mt-1.5 pt-1.5 border-t border-slate-800 flex items-center justify-between gap-4 text-[11px] font-mono">
-            <span className="text-slate-400">{hoveredNode.metricLabel}</span>
-            <span className="text-cyan-300 font-semibold">{hoveredNode.metricValue}</span>
-          </div>
-        </div>
+        <HoverCard
+          swatch={hoveredNode.accentColor}
+          title={hoveredNode.title}
+          subtitle={hoveredNode.subtitle}
+          rows={[{ k: hoveredNode.metricLabel, v: hoveredNode.metricValue }]}
+        />
       )}
 
-      {/* Unified Collapsible Bottom Control Dock (Mandatory Three.js Skill Layout) */}
-      <div
-        className="absolute left-1/2 -translate-x-1/2 bottom-3 z-10 transition-transform duration-200"
-        style={{
-          maxWidth: 'min(920px, 95%)',
-          width: '100%',
-          transform: dockCollapsed
-            ? 'translate(-50%, calc(100% - 28px))'
-            : 'translate(-50%, 0)',
-        }}
-      >
-        {/* Collapse / Expand Toggle Handle */}
-        <div className="flex justify-center">
-          <button
-            type="button"
-            onClick={() => setDockCollapsed((prev) => !prev)}
-            className="px-3 py-1 text-[11px] font-medium text-slate-300 bg-[#0B101B] hover:bg-slate-800 border border-b-0 border-slate-800 rounded-t-md flex items-center gap-1.5 whitespace-nowrap shrink-0"
-          >
-            {dockCollapsed ? (
-              <>
-                <ChevronUp className="w-3.5 h-3.5 text-cyan-400" />
-                <span>Show 3D & Depth-of-Field Controls</span>
-              </>
-            ) : (
-              <>
-                <ChevronDown className="w-3.5 h-3.5 text-cyan-400" />
-                <span>Hide Controls</span>
-              </>
-            )}
-          </button>
-        </div>
-
-        {/* Main Dock Body (Solid dark surface without backdrop-filter to prevent WebGL stall) */}
-        <div className="bg-[#0B101B]/95 border border-slate-800 rounded-lg px-3.5 py-2.5 shadow-2xl flex flex-wrap items-center justify-between gap-3">
-          {/* Camera Presets */}
-          <div className="flex items-center gap-1 bg-[#070A12] p-1 rounded-md border border-slate-800/80">
-            <Camera className="w-3.5 h-3.5 text-slate-400 ml-1.5 mr-1 shrink-0" />
-            {(
-              [
-                { id: 'isometric', label: 'Isometric' },
-                { id: 'canyon', label: 'L2 & OB Canyon' },
-                { id: 'neural', label: 'Neural Cone' },
-                { id: 'topdown', label: 'Top Liquidity' },
-              ] as const
-            ).map((preset) => (
-              <button
-                key={preset.id}
-                type="button"
-                onClick={() => applyCameraPreset(preset.id)}
-                className={`px-2.5 py-1 text-[11px] font-medium rounded transition-colors whitespace-nowrap shrink-0 ${
-                  cameraPreset === preset.id
-                    ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                {preset.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Bokeh Depth of Field (DOF) Sliders */}
-          <div className="flex items-center gap-3 text-[11px]">
-            <button
-              type="button"
-              onClick={() => setDofEnabled((v) => !v)}
-              className={`px-2.5 py-1 rounded font-medium flex items-center gap-1.5 border transition-colors whitespace-nowrap shrink-0 ${
-                dofEnabled
-                  ? 'bg-amber-500/15 text-amber-300 border-amber-500/40'
-                  : 'bg-slate-900 text-slate-400 border-slate-800'
-              }`}
-            >
-              <Focus className="w-3.5 h-3.5" />
-              <span>Bokeh DOF: {dofEnabled ? 'ON' : 'OFF'}</span>
-            </button>
-
-            <label className="flex items-center gap-1.5 text-slate-300 whitespace-nowrap">
-              <span className="text-slate-400">Focus:</span>
-              <input
-                type="range"
-                min={8}
-                max={48}
-                step={1}
-                value={dofFocus}
-                onChange={(e) => setDofFocus(Number(e.target.value))}
-                className="w-16 accent-cyan-400 cursor-pointer"
-              />
-              <span className="font-mono text-cyan-300 w-7">{dofFocus}m</span>
-            </label>
-
-            <label className="flex items-center gap-1.5 text-slate-300 whitespace-nowrap">
-              <span className="text-slate-400">Aperture:</span>
-              <input
-                type="range"
-                min={0.4}
-                max={4.5}
-                step={0.2}
-                value={dofAperture}
-                onChange={(e) => setDofAperture(Number(e.target.value))}
-                className="w-16 accent-cyan-400 cursor-pointer"
-              />
-              <span className="font-mono text-cyan-300 w-8">f/{dofAperture.toFixed(1)}</span>
-            </label>
-          </div>
-
-          {/* Exploded Z-Separation & Layer Toggles */}
-          <div className="flex items-center gap-2.5 text-[11px]">
-            <label className="flex items-center gap-1.5 text-slate-300 whitespace-nowrap">
-              <Sliders className="w-3.5 h-3.5 text-cyan-400" />
-              <span className="text-slate-400">Z-Spread:</span>
-              <input
-                type="range"
-                min={0.5}
-                max={2.0}
-                step={0.1}
-                value={explodedScale}
-                onChange={(e) => setExplodedScale(Number(e.target.value))}
-                className="w-14 accent-cyan-400 cursor-pointer"
-              />
-            </label>
-
-            <button
-              type="button"
-              onClick={() => setShowOBVolumes((v) => !v)}
-              className={`px-2 py-1 rounded text-[11px] font-medium border transition-colors whitespace-nowrap shrink-0 flex items-center gap-1 ${
-                showOBVolumes
-                  ? 'bg-blue-500/20 text-blue-300 border-blue-500/40'
-                  : 'bg-slate-900 text-slate-500 border-slate-800'
-              }`}
-            >
-              <Layers className="w-3 h-3" />
-              <span>3D OBs</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setShowNeuralSurface((v) => !v)}
-              className={`px-2 py-1 rounded text-[11px] font-medium border transition-colors whitespace-nowrap shrink-0 flex items-center gap-1 ${
-                showNeuralSurface
-                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                  : 'bg-slate-900 text-slate-500 border-slate-800'
-              }`}
-            >
-              <Eye className="w-3 h-3" />
-              <span>Neural Cone</span>
-            </button>
-          </div>
-        </div>
-      </div>
+      <SceneDock collapsed={dockCollapsed} onToggle={() => setDockCollapsed((prev) => !prev)}>
+        <DockPresets<CameraPreset>
+          ariaLabel="Kamera"
+          value={cameraPreset}
+          onChange={applyCameraPreset}
+          options={[
+            { id: 'isometric', label: 'Izometria' },
+            { id: 'canyon', label: 'Kanion L2' },
+            { id: 'trajectory', label: 'Trajektoria' },
+            { id: 'topdown', label: 'Z góry' },
+          ]}
+        />
+        <DockToggle on={showOBVolumes} onClick={() => setShowOBVolumes((v) => !v)}>
+          <Layers className="w-3 h-3" aria-hidden="true" /> Strefy OB
+        </DockToggle>
+        <DockToggle on={showNeuralSurface} onClick={() => setShowNeuralSurface((v) => !v)}>
+          <Eye className="w-3 h-3" aria-hidden="true" /> Trajektoria
+        </DockToggle>
+        <DockSlider label="Rozsunięcie Z" min={0.5} max={2} step={0.1} value={explodedScale} onChange={setExplodedScale} format={(v) => `${v.toFixed(1)}×`} />
+        <DockToggle on={dofEnabled} onClick={() => setDofEnabled((v) => !v)}>
+          <Focus className="w-3 h-3" aria-hidden="true" /> Głębia ostrości
+        </DockToggle>
+        {dofEnabled && (
+          <>
+            <DockSlider label="Ostrość" min={8} max={48} step={1} value={dofFocus} onChange={setDofFocus} format={(v) => `${v} m`} />
+            <DockSlider label="Przysłona" min={0.4} max={4.5} step={0.2} value={dofAperture} onChange={setDofAperture} format={(v) => `f/${v.toFixed(1)}`} />
+          </>
+        )}
+      </SceneDock>
     </div>
   );
 };

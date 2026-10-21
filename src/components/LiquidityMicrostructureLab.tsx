@@ -1,596 +1,532 @@
-import React, { useEffect, useRef, useState } from 'react';
-import {
-  Compass,
-  Flame,
-  Layers,
-  Magnet,
-  Sparkles,
-  Target,
-  Zap,
-} from 'lucide-react';
-import {
-  QuantMathMetrics,
-  ShaakuniState,
-} from '../types/trading';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { LiquidityProfileBucket, QuantMathMetrics, ShaakuniState } from '../types/trading';
+import { Badge, Panel, Stat, DASH, fmtCompact, fmtPct, fmtPrice, fmtSigned } from '../ui';
+import { PrefillButtons } from './QuantSignalDesk';
 
-interface LiquidityMicrostructureLabProps {
+type Direction = 'LONG' | 'SHORT';
+
+// Kolory tokenów (docs/STYLEGUIDE.md §2) — canvas nie czyta klas Tailwind
+const C = {
+  surface: '#0b1019',
+  surface2: '#101826',
+  surface3: '#16202f',
+  line: '#1b2533',
+  ink1: '#eef2f7',
+  ink2: '#a9b4c4',
+  ink3: '#7a889c',
+  accent: '#3fc6dd',
+  buy: '#19a88e',
+  sell: '#d9582e',
+  level: '#e0a045',
+  zone: '#9085e9',
+};
+
+const TOP_PAD = 26;
+const BOTTOM_PAD = 8;
+
+interface ProfileLayout {
+  width: number;
+  height: number;
+  axisW: number;
+  splitX: number;
+  rowH: number;
+}
+
+function layoutFor(width: number, height: number, rows: number): ProfileLayout {
+  const axisW = width < 420 ? 52 : 64;
+  return {
+    width,
+    height,
+    axisW,
+    splitX: axisW + (width - axisW) * 0.52,
+    rowH: (height - TOP_PAD - BOTTOM_PAD) / Math.max(1, rows),
+  };
+}
+
+/** Bohater widoku Mikrostruktura: profil wolumenu (LIVE) + szacowane paliwo likwidacyjne i krzywa U(p) (MODEL). */
+export const LiquidityMicrostructureLab: React.FC<{
   quant: QuantMathMetrics;
   shaakuni: ShaakuniState;
   currentPrice: number;
-  onSimulateStrategySignal?: (direction: 'LONG' | 'SHORT', customTitle: string, customReason: string) => void;
-}
+}> = ({ quant, shaakuni, currentPrice }) => {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  const [size, setSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  const [hoverX, setHoverX] = useState(0);
 
-interface PioneeringBlueprint {
+  // Profil od najwyższej ceny (góra) do najniższej (dół)
+  const profile = useMemo(() => [...quant.liquidityProfile].sort((a, b) => b.price - a.price), [quant.liquidityProfile]);
+  const maxFuel = useMemo(() => Math.max(0, ...profile.map((p) => p.liquidationPoolUsd)), [profile]);
+
+  // Rozmiar płótna śledzony ResizeObserverem (obrót telefonu, zmiana kolumn siatki)
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const update = () => setSize({ w: el.clientWidth, h: el.clientHeight });
+    update();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || size.w < 50 || size.h < 50 || profile.length === 0) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.round(size.w * dpr);
+    canvas.height = Math.round(size.h * dpr);
+    canvas.style.width = `${size.w}px`;
+    canvas.style.height = `${size.h}px`;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    const L = layoutFor(size.w, size.h, profile.length);
+    const { width, height, axisW, splitX, rowH } = L;
+    const volColW = splitX - axisW - 44;
+    const fuelColW = width - splitX - 16;
+    const maxVol = Math.max(1, ...profile.map((p) => p.totalVolumeUsd));
+    const barH = Math.max(3, Math.min(16, rowH - 4));
+    const midY = (i: number) => TOP_PAD + i * rowH + rowH / 2;
+
+    ctx.fillStyle = C.surface;
+    ctx.fillRect(0, 0, width, height);
+
+    // Nagłówki kolumn (ink-3, eyebrow)
+    ctx.fillStyle = C.ink3;
+    ctx.font = '600 10px "IBM Plex Mono", monospace';
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'left';
+    ctx.fillText('CENA', 6, 12);
+    ctx.fillText('WOLUMEN K/S', axisW + 6, 12);
+    ctx.fillText(width < 420 ? 'PALIWO · U(p)' : 'PALIWO (SZACUNEK) · U(p)', splitX + 8, 12);
+
+    // Hairline: separator nagłówka i kolumn (ciągłe)
+    ctx.strokeStyle = C.line;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, TOP_PAD - 4.5);
+    ctx.lineTo(width, TOP_PAD - 4.5);
+    ctx.moveTo(axisW + 0.5, TOP_PAD - 4);
+    ctx.lineTo(axisW + 0.5, height);
+    ctx.moveTo(splitX + 0.5, TOP_PAD - 4);
+    ctx.lineTo(splitX + 0.5, height);
+    ctx.stroke();
+
+    // LVN oznaczamy tylko jako lukę wewnątrz zakresu handlu (między poziomami z wolumenem), nie na pustych brzegach
+    const traded = profile.map((b, i) => (b.isLVN ? -1 : i)).filter((i) => i >= 0);
+    const firstTraded = traded.length ? traded[0] : 0;
+    const lastTraded = traded.length ? traded[traded.length - 1] : -1;
+
+    const gravityPts: { x: number; y: number }[] = [];
+    profile.forEach((b, i) => {
+      const y0 = TOP_PAD + i * rowH;
+      const y = midY(i);
+      if (i === hoverIdx) {
+        ctx.fillStyle = C.surface3;
+        ctx.fillRect(0, y0, width, rowH);
+      } else if (b.isValueArea) {
+        ctx.fillStyle = C.surface2;
+        ctx.fillRect(axisW + 1, y0, splitX - axisW - 1, rowH);
+      }
+
+      // Etykieta ceny (POC wyróżniony wagą, nie kolorem)
+      ctx.textAlign = 'left';
+      ctx.font = b.isPOC ? '700 10px "IBM Plex Mono", monospace' : '500 10px "IBM Plex Mono", monospace';
+      ctx.fillStyle = b.isPOC ? C.ink1 : C.ink2;
+      ctx.fillText(fmtPrice(b.price, 0), 6, y);
+
+      // Słupek wolumenu: kupno (buy) + sprzedaż (sell), zaokrąglony koniec
+      const totW = Math.max(2, (b.totalVolumeUsd / maxVol) * volColW);
+      const buyW = b.totalVolumeUsd > 0 ? totW * (b.buyVolumeUsd / b.totalVolumeUsd) : 0;
+      const x0 = axisW + 6;
+      ctx.fillStyle = C.buy;
+      ctx.fillRect(x0, y - barH / 2, buyW, barH);
+      ctx.fillStyle = C.sell;
+      ctx.beginPath();
+      ctx.roundRect(x0 + buyW, y - barH / 2, Math.max(1, totW - buyW), barH, [0, 3, 3, 0]);
+      ctx.fill();
+
+      const isGap = b.isLVN && i > firstTraded && i < lastTraded;
+      const tag = b.isPOC ? 'POC' : b.price === quant.vahPrice ? 'VAH' : b.price === quant.valPrice ? 'VAL' : isGap ? 'LVN' : '';
+      if (tag) {
+        ctx.font = '600 9px "IBM Plex Mono", monospace';
+        ctx.fillStyle = tag === 'LVN' ? C.ink3 : tag === 'POC' ? C.ink1 : C.ink2;
+        ctx.fillText(tag, x0 + totW + 5, y);
+      }
+
+      // Słupek szacowanego paliwa likwidacyjnego (strefa modelu)
+      const isMagnet = b.price === quant.primaryMagnetPrice;
+      const fuelW = maxFuel > 0 ? (b.liquidationPoolUsd / maxFuel) * fuelColW * 0.8 : 0;
+      if (fuelW > 0.5) {
+        ctx.globalAlpha = isMagnet ? 0.95 : 0.45;
+        ctx.fillStyle = C.zone;
+        ctx.beginPath();
+        ctx.roundRect(splitX + 8, y - barH / 2, fuelW, barH, [0, 3, 3, 0]);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+      gravityPts.push({ x: splitX + 8 + b.gravityPotential * fuelColW * 0.9, y });
+    });
+
+    // Krzywa przyciągania U(p): linia 2 px w kolorze akcentu
+    if (gravityPts.length > 1) {
+      ctx.strokeStyle = C.accent;
+      ctx.lineWidth = 2;
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      gravityPts.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
+      ctx.stroke();
+      const mIdx = profile.findIndex((b) => b.price === quant.primaryMagnetPrice);
+      if (mIdx >= 0) {
+        const m = gravityPts[mIdx];
+        ctx.fillStyle = C.accent;
+        ctx.beginPath();
+        ctx.arc(m.x, m.y, 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = C.surface;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.fillStyle = C.ink1;
+        ctx.font = '600 10px "IBM Plex Mono", monospace';
+        ctx.textAlign = m.x > width - 70 ? 'right' : 'left';
+        ctx.fillText('magnes', m.x + (m.x > width - 70 ? -8 : 8), m.y);
+      }
+    }
+
+    // Poziomy PDH/PDL (level) i bieżąca cena — mapowanie liniowe po środkach kubełków
+    const maxP = profile[0].price;
+    const minP = profile[profile.length - 1].price;
+    const priceToY = (p: number) => midY(0) + ((maxP - p) / Math.max(1, maxP - minP)) * (midY(profile.length - 1) - midY(0));
+    const hline = (p: number | null, color: string, label: string, alpha: number) => {
+      if (p === null || !Number.isFinite(p)) return;
+      const y = Math.round(priceToY(p)) + 0.5;
+      if (y < TOP_PAD || y > height - BOTTOM_PAD) return;
+      ctx.globalAlpha = alpha;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(axisW, y);
+      ctx.lineTo(width, y);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.font = '600 9px "IBM Plex Mono", monospace';
+      const tw = ctx.measureText(label).width;
+      ctx.fillStyle = C.surface;
+      ctx.fillRect(width - tw - 10, y - 7, tw + 8, 14);
+      ctx.fillStyle = color;
+      ctx.textAlign = 'right';
+      ctx.fillText(label, width - 6, y);
+    };
+    hline(shaakuni.pdh, C.level, 'PDH', 0.6);
+    hline(shaakuni.pdl, C.level, 'PDL', 0.6);
+    hline(currentPrice > 0 ? currentPrice : null, C.ink1, `cena ${fmtPrice(currentPrice, 0)}`, 0.7);
+  }, [profile, size, hoverIdx, maxFuel, quant.vahPrice, quant.valPrice, quant.primaryMagnetPrice, shaakuni.pdh, shaakuni.pdl, currentPrice]);
+
+  const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const L = layoutFor(rect.width, rect.height, profile.length);
+    const idx = Math.floor((e.clientY - rect.top - TOP_PAD) / L.rowH);
+    setHoverIdx(idx >= 0 && idx < profile.length ? idx : null);
+    setHoverX(e.clientX - rect.left);
+  };
+
+  const hovered: LiquidityProfileBucket | null = hoverIdx !== null ? profile[hoverIdx] ?? null : null;
+  const L = layoutFor(size.w, size.h, profile.length);
+  const magnetDistPct = currentPrice > 0 ? ((quant.primaryMagnetPrice - currentPrice) / currentPrice) * 100 : null;
+  const fuelTotal = quant.shortSqueezeFuelUsd + quant.longCascadeFuelUsd;
+  const fuelAboveShare = fuelTotal > 0 ? quant.shortSqueezeFuelUsd / fuelTotal : null;
+  const depthTotal = quant.bookDepthAskUsd + quant.bookDepthBidUsd;
+  const bidShare = depthTotal > 0 ? quant.bookDepthBidUsd / depthTotal : null;
+
+  return (
+    <Panel
+      hero
+      title="Profil płynności"
+      eyebrow="80 świec · 24 poziomy · pole U(p)"
+      className="h-full"
+      actions={
+        <>
+          <Badge tone="live" title="Wolumen świec Hyperliquid; podział kupno/sprzedaż z WebSocket tam, gdzie dostępny">LIVE</Badge>
+          <Badge tone="model" title="Paliwo likwidacyjne i U(p) to heurystyczny szacunek">MODEL</Badge>
+        </>
+      }
+      bodyClassName="p-4 flex flex-col gap-4"
+    >
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-4 gap-y-4">
+        <Stat
+          label="Magnes"
+          source={{ tone: 'model', label: 'MODEL', title: 'Heurystyka: paliwo + masa OB + wolumen, ważone odległością od ceny' }}
+          value={fmtPrice(quant.primaryMagnetPrice, 0)}
+          hint={
+            magnetDistPct !== null ? (
+              <>
+                najsilniejsze U(p) · <span aria-hidden="true">{magnetDistPct >= 0 ? '▲' : '▼'}</span>{' '}
+                {fmtPct(Math.abs(magnetDistPct), 2, false)} {magnetDistPct >= 0 ? 'nad ceną' : 'pod ceną'}
+              </>
+            ) : (
+              DASH
+            )
+          }
+        />
+        <Stat
+          label="Wolumen"
+          source={{ tone: 'live', label: 'LIVE', title: 'Wolumen ostatnich 80 świec Hyperliquid rozłożony na 24 poziomy' }}
+          value={`POC ${fmtPrice(quant.pocPrice, 0)}`}
+          hint={`VA 70%: ${fmtPrice(quant.valPrice, 0)} – ${fmtPrice(quant.vahPrice, 0)}`}
+        />
+        <Stat
+          label="Paliwo"
+          source={{ tone: 'model', label: 'SZAC.', title: 'Szacunek z wolumenu przy założonych dźwigniach 5/20/100× i pul przy PDH/PDL/PWH/PWL — nie realne pozycje' }}
+          value={
+            fuelAboveShare !== null ? (
+              <span className="text-base">
+                <span aria-hidden="true">▲</span> {(fuelAboveShare * 100).toFixed(0)}% <span className="text-ink-3">/</span>{' '}
+                <span aria-hidden="true">▼</span> {((1 - fuelAboveShare) * 100).toFixed(0)}%
+              </span>
+            ) : (
+              DASH
+            )
+          }
+          hint="likwidacje (szac.) nad / pod ceną"
+        />
+        <Stat
+          label="Arkusz L2"
+          source={depthTotal > 0 ? { tone: 'live', label: 'LIVE', title: 'Suma płynności 12 poziomów arkusza Hyperliquid' } : { tone: 'stale', label: 'BRAK', title: 'Brak arkusza' }}
+          value={
+            <span className="text-base">
+              {fmtCompact(quant.bookDepthBidUsd, '$')} <span className="text-ink-3">/</span> {fmtCompact(quant.bookDepthAskUsd, '$')}
+            </span>
+          }
+          hint={
+            bidShare !== null ? (
+              <span className="flex items-center gap-1.5">
+                <span className="relative h-1.5 w-16 rounded-full bg-sell/70 overflow-hidden" aria-hidden="true">
+                  <span className="absolute inset-y-0 left-0 bg-buy" style={{ width: `${(bidShare * 100).toFixed(0)}%` }} />
+                </span>
+                BID {(bidShare * 100).toFixed(0)}% · 12 poz.
+              </span>
+            ) : (
+              'czekam na arkusz'
+            )
+          }
+        />
+      </div>
+
+      <div ref={wrapRef} className="relative flex-1 min-h-[400px] sm:min-h-[460px] rounded-lg overflow-hidden border border-line">
+        {profile.length === 0 ? (
+          <div className="p-4 text-sm text-ink-3">Za mało świec do zbudowania profilu.</div>
+        ) : (
+          <canvas
+            ref={canvasRef}
+            role="img"
+            aria-label={`Profil wolumenu na 24 poziomach; POC ${fmtPrice(quant.pocPrice, 0)}, najsilniejsze przyciąganie ${fmtPrice(quant.primaryMagnetPrice, 0)}`}
+            onPointerMove={onPointerMove}
+            onPointerLeave={() => setHoverIdx(null)}
+            className="block w-full h-full cursor-crosshair touch-pan-y"
+          />
+        )}
+        {hovered && hoverIdx !== null && (
+          <div
+            className="absolute z-10 pointer-events-none bg-surface-2 border border-line-strong rounded-lg px-3 py-2 text-[11px] shadow-xl w-[200px]"
+            style={{
+              top: Math.max(4, Math.min(size.h - 136, TOP_PAD + hoverIdx * L.rowH + L.rowH + 6)),
+              left: Math.max(4, Math.min(size.w - 204, hoverX - 100)),
+            }}
+          >
+            <div className="font-mono tabular-nums text-ink-1 font-semibold">
+              {fmtPrice(hovered.price, 0)}
+              <span className="text-ink-3 font-sans font-normal">
+                {hovered.isPOC ? ' · POC' : ''}
+                {hovered.isValueArea ? ' · VA' : ''}
+                {hovered.isLVN ? ' · LVN' : ''}
+              </span>
+            </div>
+            <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 font-mono tabular-nums">
+              <dt className="text-ink-3 font-sans">Kupno</dt>
+              <dd className="text-right text-ink-1">
+                <span className="text-buy-ink" aria-hidden="true">▲ </span>
+                {fmtCompact(hovered.buyVolumeUsd, '$')}
+              </dd>
+              <dt className="text-ink-3 font-sans">Sprzedaż</dt>
+              <dd className="text-right text-ink-1">
+                <span className="text-sell-ink" aria-hidden="true">▼ </span>
+                {fmtCompact(hovered.sellVolumeUsd, '$')}
+              </dd>
+              <dt className="text-ink-3 font-sans">Delta</dt>
+              <dd className="text-right text-ink-1">{fmtCompact(hovered.deltaUsd, '$')}</dd>
+              <dt className="text-ink-3 font-sans">Paliwo (szac.)</dt>
+              <dd className="text-right text-ink-1">{maxFuel > 0 ? `${((hovered.liquidationPoolUsd / maxFuel) * 100).toFixed(0)}% maks.` : DASH}</dd>
+              <dt className="text-ink-3 font-sans">U(p)</dt>
+              <dd className="text-right text-ink-1">{(hovered.gravityPotential * 100).toFixed(0)}%</dd>
+            </dl>
+          </div>
+        )}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-ink-2">
+        <LegendSwatch className="bg-buy" label="Wolumen kupna" />
+        <LegendSwatch className="bg-sell" label="Wolumen sprzedaży" />
+        <LegendSwatch className="bg-zone/60" label="Paliwo likwidacyjne (szacunek)" />
+        <span className="inline-flex items-center gap-1.5">
+          <span className="w-4 h-0.5 rounded-full bg-accent" aria-hidden="true" /> Krzywa U(p)
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="w-4 h-px bg-level" aria-hidden="true" /> PDH / PDL
+        </span>
+        <LegendSwatch className="bg-surface-2 border border-line-strong" label="Value Area 70%" />
+      </div>
+      <p className="text-[11px] text-ink-3 leading-relaxed max-w-prose">
+        Paliwo likwidacyjne to szacunek z wolumenu świec przy założonych dźwigniach (5/20/100×) oraz pul przy PDH/PDL/PWH/PWL —
+        Hyperliquid nie publikuje mapy likwidacji, więc to nie są realne pozycje. U(p) porządkuje poziomy wg heurystycznej
+        „siły przyciągania”; nie mówi, czy i kiedy cena tam dotrze.
+      </p>
+    </Panel>
+  );
+};
+
+const LegendSwatch: React.FC<{ className: string; label: string }> = ({ className, label }) => (
+  <span className="inline-flex items-center gap-1.5">
+    <span className={`w-2.5 h-2.5 rounded-sm ${className}`} aria-hidden="true" />
+    {label}
+  </span>
+);
+
+interface Method {
   id: string;
-  number: string;
   title: string;
   subtitle: string;
   formula: string;
-  edgeDescription: string;
-  hyperliquidExecution: string;
-  recommendedDirection: 'LONG' | 'SHORT';
-  liveMetricLabel: string;
-  liveMetricValue: string;
+  idea: string;
+  check: string;
+  metricLabel: string;
+  metricValue: string;
 }
 
-export const LiquidityMicrostructureLab: React.FC<LiquidityMicrostructureLabProps> = ({
-  quant,
-  shaakuni,
-  currentPrice,
-  onSimulateStrategySignal,
-}) => {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const [selectedBlueprintId, setSelectedBlueprintId] = useState<string>('grav-magnet');
-  const [hoveredBucketPrice, setHoveredBucketPrice] = useState<number | null>(null);
+/** Edukacyjny opis metod mikrostruktury — hipotezy do weryfikacji, bez rekomendacji kierunku. */
+export const MicrostructureMethods: React.FC<{
+  quant: QuantMathMetrics;
+  shaakuni: ShaakuniState;
+  currentPrice: number;
+  onPrefillPlan?: (dir: Direction, title?: string, reason?: string) => void;
+}> = ({ quant, shaakuni, currentPrice, onPrefillPlan }) => {
+  const [selectedId, setSelectedId] = useState('gravity');
+  const magnetPct = currentPrice > 0 ? ((quant.primaryMagnetPrice - currentPrice) / currentPrice) * 100 : null;
 
-  const blueprints: PioneeringBlueprint[] = [
+  const methods: Method[] = [
     {
-      id: 'grav-magnet',
-      number: '01.',
-      title: 'Pole Grawitacyjne Płynności (Gravitational Liquidity Tensor)',
-      subtitle: 'Modelowanie pul likwidacji (20x/50x/100x) oraz PDH/PDL jako studni potencjału grawitacyjnego',
-      formula: 'U(p) = - ∑ [ G · (LiqPool_i + OB_Mass_i) / |p - p_i|^α ]',
-      edgeDescription:
-        'Cena na Hyperliquid porusza się od jednej kieszeni płynności do drugiej. Zamiast traktować PDH/PDL oraz mapę likwidacji z aggr.trade jako statyczne linie, model wylicza wektor przyciągania grawitacyjnego. Gdy powstaje tzw. LVN (Low Volume Node — próżnia płynności) między ceną a silnym klastrem likwidacji, prawdopodobieństwo szybkiego ruchu typu "Vacuum Sweep" rośnie powyżej 82%.',
-      hyperliquidExecution:
-        'Stawiaj zlecenia Limit Take-Profit dokładnie 2–4 ticki przed centrum klastra grawitacyjnego ($' +
-        quant.primaryMagnetPrice +
-        ') oraz wchodź po przejściu przez strefę LVN (próżni wolumenowej).',
-      recommendedDirection: quant.primaryMagnetPrice >= currentPrice ? 'LONG' : 'SHORT',
-      liveMetricLabel: 'Główny Magnes Grawitacyjny',
-      liveMetricValue: `$${quant.primaryMagnetPrice.toLocaleString()} (${
-        quant.primaryMagnetPrice >= currentPrice ? '+' : ''
-      }${(((quant.primaryMagnetPrice - currentPrice) / currentPrice) * 100).toFixed(2)}%)`,
+      id: 'gravity',
+      title: 'Pole przyciągania U(p)',
+      subtitle: 'Szacowane pule likwidacji, strefy OB i wolumen ważone odległością od ceny',
+      formula: 'U(p) = Σ (1,4·Paliwoᵢ + Masa_OBᵢ + 0,18·Wolᵢ) / |p − pᵢ|^0,55',
+      idea:
+        'Hipoteza: cena szybciej przechodzi przez obszary niskiego wolumenu (LVN) w stronę skupisk zleceń stop i likwidacji. Model jedynie porządkuje takie obszary według heurystycznej wagi — nie przewiduje, czy i kiedy cena do nich dotrze. Skuteczność nie została zmierzona.',
+      check:
+        'Zapisuj poziom najsilniejszego U(p) i sprawdzaj, jak często cena dotyka go w ciągu N świec — w porównaniu z losowym poziomem w tej samej odległości.',
+      metricLabel: 'Najsilniejsze U(p)',
+      metricValue: `${fmtPrice(quant.primaryMagnetPrice, 0)}${magnetPct !== null ? ` (${fmtPct(magnetPct, 2)})` : ''}`,
     },
     {
-      id: 'vpin-absorption',
-      number: '02.',
-      title: 'VPIN Toxicity + Absorpcja Spot CVD w Strefie Shaakuni OB',
-      subtitle: 'Detekcja poinformowanego kapitału instytucjonalnego (Toxic Flow) podczas retestu Order Blocka',
-      formula: 'VPIN = ∑ |V_buy^τ - V_sell^τ| / (N · V_bucket)  ×  Spot_CVD_Divergence',
-      edgeDescription:
-        'Większość traderów detalicznych nie wie, czy dany Order Block (OB/POI) ze skryptu Shaakuni wytrzyma, czy zostanie przebity. Połączenie wskaźnika VPIN (toksyczności przepływu zleceń) z dywergencją Spot CVD vs Perp CVD rozwiązuje ten problem: jeśli cena wchodzi w Bullish OB, Perp CVD spada (tłum szortuje lub jest likwidowany), a Spot CVD na Coinbase/Binance rośnie przy wysokim VPIN — mamy potwierdzoną absorpcję pasywną.',
-      hyperliquidExecution:
-        'Wchodź agresywnie na Hyperliquid (dźwignia wg Kelly’ego) wewnątrz górnych 25% strefy Shaakuni OB tylko wtedy, gdy VPIN > 45% oraz Spot CVD wykazuje dywergencję przeciwko ruchowi Perp.',
-      recommendedDirection: quant.cvdDivergenceScore >= 0 ? 'LONG' : 'SHORT',
-      liveMetricLabel: 'Toksyczność Przepływu VPIN',
-      liveMetricValue: `${(quant.vpinToxicity * 100).toFixed(1)}% · Dywergencja Spot/Perp: ${(
-        quant.cvdDivergenceScore * 100
-      ).toFixed(1)}%`,
+      id: 'vpin',
+      title: 'VPIN — jednostronność przepływu',
+      subtitle: 'Nierównowaga kupna i sprzedaży w kubełkach wolumenowych (BVC)',
+      formula: 'VPIN = Σ |V_kupno − V_sprzedaż| / (n · V_kubełka)',
+      idea:
+        'VPIN (Easley, López de Prado, O’Hara 2012) opisuje, jak jednostronny jest przepływ. Jego zdolność przewidywania jest sporna (Andersen & Bondarenko 2014), dlatego traktuj go jako opis bieżącego przepływu, a nie sygnał. Dywergencja spot/perp jest liczona tylko przy włączonych źródłach CEX.',
+      check: 'Porównuj bieżący VPIN z jego rozkładem z ostatnich sesji — wysoki percentyl oznacza przepływ nietypowo jednostronny.',
+      metricLabel: 'VPIN · dywergencja spot/perp',
+      metricValue: `${(quant.vpinToxicity * 100).toFixed(1)}% · ${quant.cvdDivergenceScore !== 0 ? fmtSigned(quant.cvdDivergenceScore * 100, 1, '%') : 'n/a (bez CEX)'}`,
     },
     {
-      id: 'kyle-lambda',
-      number: '03.',
-      title: 'Asymetria Lambdy Kyle’a (Directional Price Impact & Air-Pockets)',
-      subtitle: 'Pomiar kosztu przesunięcia ceny o $10 w górę vs $10 w dół w arkuszu L2 + Aggr',
-      formula: 'ΔP = λ_Kyle · OFI + ε   gdzie   Asymetria = (λ_down - λ_up) / (λ_down + λ_up)',
-      edgeDescription:
-        'Lambda Kyle’a mierzy niepłynność (opór arkusza zleceń). Kiedy animatorzy rynku (Market Makers) na Hyperliquid wycofują płynność po jednej stronie przed wybiciem PDH lub PDL, koszt przesunięcia ceny o $10 w tym kierunku gwałtownie spada. Wykrycie asymetrii λ_up vs λ_down pozwala zająć pozycję ułamki sekund przed kaskadą stop-lossów.',
-      hyperliquidExecution:
-        'Gdy koszt ruchu w górę ($' +
-        (quant.kyleLambdaUp / 1000).toFixed(0) +
-        'K / $10) jest wyraźnie niższy niż koszt ruchu w dół ($' +
-        (quant.kyleLambdaDown / 1000).toFixed(0) +
-        'K / $10), ścieżka najmniejszego oporu prowadzi w górę.',
-      recommendedDirection: quant.kyleLambdaUp <= quant.kyleLambdaDown ? 'LONG' : 'SHORT',
-      liveMetricLabel: 'Opór Arkusza (Góra vs Dół)',
-      liveMetricValue: `↑ $${(quant.kyleLambdaUp / 1000).toFixed(0)}K vs ↓ $${(
-        quant.kyleLambdaDown / 1000
-      ).toFixed(0)}K na $10 ruchu`,
+      id: 'kyle',
+      title: 'λ Kyle’a i asymetria arkusza',
+      subtitle: 'Wpływ przepływu na cenę (OLS) + głębokość 12 poziomów L2',
+      formula: 'ΔPₜ = λ · Qₜ + ε   ·   A = (D_bid − D_ask) / (D_bid + D_ask)',
+      idea:
+        'λ mierzy, o ile przesuwa się cena na jednostkę netto przepływu agresora — im wyżej, tym rynek mniej płynny. Asymetria pokazuje, po której stronie 12 najbliższych poziomów stoi mniej zleceń. Arkusz to migawka: zlecenia mogą zniknąć w ułamku sekundy.',
+      check: 'Porównuj λ o różnych porach dnia i przed publikacjami makro; rosnące λ oznacza rynek łatwiejszy do przesunięcia.',
+      metricLabel: 'λ · głębokość BID / ASK',
+      metricValue: `${quant.kyleLambdaPer1M !== null ? `$${quant.kyleLambdaPer1M.toFixed(2)} / $1M` : 'n/a'} · ${fmtCompact(quant.bookDepthBidUsd, '$')} / ${fmtCompact(quant.bookDepthAskUsd, '$')}`,
     },
     {
-      id: 'hawkes-cascade',
-      number: '04.',
-      title: 'Samowzbudny Proces Punktowy Hawkesa dla Kaskad Likwidacji',
-      subtitle: 'Matematyczny model łańcuchowych likwidacji lewarowanych pozycji na kontraktach Perp',
-      formula: 'λ(t) = μ + ∑ α · exp(-β · (t - t_i))   [Punkt krytyczny: η = α/β > 0.85]',
-      edgeDescription:
-        'Likwidacje na BTCUSD nie są niezależne (nie są procesem Poissona) — każda likwidacja wymusza zlecenie rynkowe, które przesuwa cenę i wyzwala kolejną likwidację. Proces Hawkesa liczy współczynnik rozgałęziania η (branching ratio). Gdy η przekracza 0.80 podczas Sweepu PDH/PDL, dochodzi do wyczerpania paliwa likwidacyjnego — idealny moment na kontrariański zwrot (Fade the Sweep) do D-EQ (50%).',
-      hyperliquidExecution:
-        'Gdy Shaakuni pokazuje status "Sweep !" na PDH/PDL, poczekaj na szczyt intensywności Hawkesa (η > 0.82) i otwórz pozycję powrotną z celem na D-EQ ($' +
-        (shaakuni.deq ? Math.round(shaakuni.deq) : currentPrice) +
-        ').',
-      recommendedDirection: quant.hawkesNetDominance >= 0 ? 'LONG' : 'SHORT',
-      liveMetricLabel: 'Współczynnik Kaskady Hawkesa η',
-      liveMetricValue: `η = ${quant.hawkesBranchingRatio} (λB=${quant.hawkesBuyIntensity} / λS=${quant.hawkesSellIntensity})`,
+      id: 'hawkes',
+      title: 'Proces Hawkesa — grupowanie transakcji',
+      subtitle: 'Samowzbudzająca się intensywność agresywnych transakcji',
+      formula: 'λ(t) = μ + Σ α · e^(−β(t − tᵢ))',
+      idea:
+        'Agresywne transakcje grupują się w czasie: każda zwiększa szansę następnej. Tutaj μ, α i β są stałe (nieestymowane), więc intensywność opisuje tempo przepływu. Współczynnik rozgałęzienia η wymaga estymacji MLE i nie jest liczony.',
+      check: 'Obserwuj skoki intensywności przy testach PDH/PDL i notuj, czy ruch był kontynuowany, czy wygasł.',
+      metricLabel: 'λ kupno / sprzedaż · η',
+      metricValue: `${quant.hawkesBuyIntensity.toFixed(2)} / ${quant.hawkesSellIntensity.toFixed(2)} · η = ${quant.hawkesBranchingRatio ?? 'n/a'}`,
     },
     {
-      id: 'ou-bridge',
-      number: '05.',
-      title: 'Most stochastyczny Ornsteina-Uhlenbecka wokół D-EQ i W-EQ (50%)',
-      subtitle: 'Ilościowa kalibracja poziomów Equilibrium 50% ze skryptu Shaakuni z czasem półtrwania',
-      formula: 'dX_t = θ · (EQ_50% - X_t) dt + σ dW_t   [Half-Life t_½ = ln(2) / θ]',
-      edgeDescription:
-        'Poziomy 50% (Daily EQ oraz Weekly EQ) ze skryptu Shaakuni działają jak atraktory równowagi. Proces Ornsteina-Uhlenbecka oblicza dokładną prędkość powrotu do średniej θ oraz standaryzowane odchylenie Z-Score. Gdy |Z| > 1.85σ, a wykładnik Hursta H < 0.48 (reżim mean-reverting), statystyczna przewaga zagrania powrotnego do D-EQ wynosi ponad 74%.',
-      hyperliquidExecution:
-        'Skaluj wejścia limitami na odchyleniach ±2.0σ od D-EQ i realizuj 70% zysku dokładnie na linii D-EQ (50%).',
-      recommendedDirection: quant.ouZScore <= 0 ? 'LONG' : 'SHORT',
-      liveMetricLabel: 'Odchylenie OU Z-Score & Half-Life',
-      liveMetricValue: `Z = ${quant.ouZScore > 0 ? '+' : ''}${quant.ouZScore}σ · t½ = ${
-        quant.ouHalfLifeBars
-      } świec`,
+      id: 'ou',
+      title: 'Powrót do średniej (Ornstein-Uhlenbeck)',
+      subtitle: 'Tempo powrotu do kotwicy 0,65·D-EQ + 0,35·W-EQ',
+      formula: 'dXₜ = θ(EQ − Xₜ)dt + σ dWₜ   ·   t½ = ln 2 / θ',
+      idea:
+        'OU opisuje, jak szybko cena wraca do kotwicy; Z-score mówi, jak daleko od niej jesteśmy w odchyleniach standardowych. Parametry z krótkiej historii są niestabilne, a duże |Z| bywa początkiem trendu, nie okazją.',
+      check: 'Czytaj t½ razem z Hurstem: H > 0,6 przy dużym |Z| przemawia przeciw założeniu powrotu.',
+      metricLabel: 'Z · t½',
+      metricValue: `Z ${fmtSigned(quant.ouZScore, 2)}σ · t½ ${Number.isFinite(quant.ouHalfLifeBars) ? `${quant.ouHalfLifeBars.toFixed(1)} świec` : '∞'} · D-EQ ${fmtPrice(shaakuni.deq, 0)}`,
     },
   ];
-
-  const selectedBlueprint =
-    blueprints.find((b) => b.id === selectedBlueprintId) ?? blueprints[0];
-
-  // Render High-Density 2D Gravitational Liquidity & Volume Profile Tensor Canvas
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    const container = containerRef.current;
-    if (!canvas || !container || quant.liquidityProfile.length === 0) return;
-
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const width = container.clientWidth;
-    const height = container.clientHeight;
-
-    canvas.width = width * dpr;
-    canvas.height = height * dpr;
-    canvas.style.width = `${width}px`;
-    canvas.style.height = `${height}px`;
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    ctx.scale(dpr, dpr);
-
-    ctx.fillStyle = '#070A12';
-    ctx.fillRect(0, 0, width, height);
-
-    const profile = [...quant.liquidityProfile].sort((a, b) => b.price - a.price);
-    const n = profile.length;
-    const topPad = 28;
-    const bottomPad = 24;
-    const plotH = height - topPad - bottomPad;
-    const rowH = plotH / n;
-
-    const leftAxisW = 68;
-    const midSplitX = leftAxisW + (width - leftAxisW) * 0.48;
-
-    const maxVol = Math.max(1, ...profile.map((p) => p.totalVolumeUsd));
-    const maxLiq = Math.max(1, ...profile.map((p) => p.liquidationPoolUsd));
-
-    // Column Headers
-    ctx.fillStyle = '#94A3B8';
-    ctx.font = '600 10px "IBM Plex Mono", monospace';
-    ctx.textAlign = 'left';
-    ctx.fillText('PRICE ($)', 8, 16);
-    ctx.fillText('VOLUME PROFILE (BUY / SELL + POC / VAH / VAL)', leftAxisW + 6, 16);
-    ctx.fillText('LIQUIDATION FUEL ($M) & GRAVITY CURVE U(p)', midSplitX + 10, 16);
-
-    // Divider lines
-    ctx.strokeStyle = 'rgba(51, 65, 85, 0.7)';
-    ctx.beginPath();
-    ctx.moveTo(0, 22);
-    ctx.lineTo(width, 22);
-    ctx.moveTo(leftAxisW, 0);
-    ctx.lineTo(leftAxisW, height);
-    ctx.moveTo(midSplitX, 22);
-    ctx.lineTo(midSplitX, height - bottomPad);
-    ctx.stroke();
-
-    const gravityPoints: { x: number; y: number }[] = [];
-    const rightColW = width - midSplitX - 18;
-    const leftColW = midSplitX - leftAxisW - 16;
-
-    profile.forEach((bucket, idx) => {
-      const y = topPad + idx * rowH;
-      const barH = Math.max(4, rowH - 3);
-      const isHovered = hoveredBucketPrice === bucket.price;
-
-      // Highlight Value Area or Hovered Row
-      if (isHovered) {
-        ctx.fillStyle = 'rgba(6, 182, 212, 0.14)';
-        ctx.fillRect(0, y, width, rowH);
-      } else if (bucket.isPOC) {
-        ctx.fillStyle = 'rgba(250, 204, 21, 0.1)';
-        ctx.fillRect(0, y, width, rowH);
-      } else if (bucket.isValueArea) {
-        ctx.fillStyle = 'rgba(30, 41, 59, 0.35)';
-        ctx.fillRect(leftAxisW, y, midSplitX - leftAxisW, rowH);
-      }
-
-      // Price Label on Left
-      ctx.font = bucket.isPOC
-        ? '700 10.5px "IBM Plex Mono", monospace'
-        : '500 10px "IBM Plex Mono", monospace';
-      ctx.fillStyle = bucket.isPOC
-        ? '#FACC15'
-        : Math.abs(bucket.price - currentPrice) < 35
-        ? '#38BDF8'
-        : '#CBD5E1';
-      ctx.textAlign = 'left';
-      ctx.fillText(`$${bucket.price}`, 8, y + rowH * 0.72);
-
-      // Left Column: Volume Profile Bar (Buy Cyan + Sell Rose)
-      const totW = (bucket.totalVolumeUsd / maxVol) * leftColW;
-      const buyRatio =
-        bucket.totalVolumeUsd > 0
-          ? bucket.buyVolumeUsd / bucket.totalVolumeUsd
-          : 0.5;
-      const buyW = totW * buyRatio;
-      const sellW = totW - buyW;
-
-      ctx.fillStyle = bucket.isPOC
-        ? 'rgba(250, 204, 21, 0.85)'
-        : 'rgba(56, 189, 248, 0.75)';
-      ctx.fillRect(leftAxisW + 6, y + 1.5, Math.max(2, buyW), barH);
-
-      ctx.fillStyle = bucket.isPOC
-        ? 'rgba(245, 158, 11, 0.85)'
-        : 'rgba(244, 63, 94, 0.75)';
-      ctx.fillRect(leftAxisW + 6 + buyW, y + 1.5, Math.max(1, sellW), barH);
-
-      // Tag POC, VAH, VAL, or LVN Air-Pocket
-      ctx.font = '600 9px "IBM Plex Mono", monospace';
-      if (bucket.isPOC) {
-        ctx.fillStyle = '#FACC15';
-        ctx.fillText('POC (Control)', leftAxisW + totW + 12, y + rowH * 0.72);
-      } else if (bucket.price === quant.vahPrice) {
-        ctx.fillStyle = '#38BDF8';
-        ctx.fillText('VAH (70%)', leftAxisW + totW + 12, y + rowH * 0.72);
-      } else if (bucket.price === quant.valPrice) {
-        ctx.fillStyle = '#38BDF8';
-        ctx.fillText('VAL (70%)', leftAxisW + totW + 12, y + rowH * 0.72);
-      } else if (bucket.isLVN) {
-        ctx.fillStyle = 'rgba(148, 163, 184, 0.6)';
-        ctx.fillText('LVN Void', leftAxisW + totW + 12, y + rowH * 0.72);
-      }
-
-      // Right Column: Liquidation Pool Fuel Bar (Heat Gradient)
-      const liqW = (bucket.liquidationPoolUsd / maxLiq) * (rightColW * 0.78);
-      const isShortLiq = bucket.price >= currentPrice;
-      ctx.fillStyle =
-        bucket.gravityPotential > 0.75
-          ? 'rgba(240, 218, 24, 0.9)'
-          : isShortLiq
-          ? 'rgba(251, 146, 60, 0.72)'
-          : 'rgba(45, 212, 191, 0.72)';
-      ctx.fillRect(midSplitX + 8, y + 1.5, Math.max(2, liqW), barH);
-
-      // Liquidation USD Label
-      if (bucket.liquidationPoolUsd > maxLiq * 0.28) {
-        ctx.fillStyle = '#E2E8F0';
-        ctx.font = '600 9px "IBM Plex Mono", monospace';
-        ctx.fillText(
-          `$${(bucket.liquidationPoolUsd / 1000000).toFixed(1)}M ${
-            bucket.price === quant.primaryMagnetPrice ? '★ MAGNET' : ''
-          }`,
-          midSplitX + 12 + liqW,
-          y + rowH * 0.72
-        );
-      }
-
-      // Collect Gravity Potential Trajectory Point
-      const gx = midSplitX + 8 + bucket.gravityPotential * (rightColW * 0.9);
-      const gy = y + rowH * 0.5;
-      gravityPoints.push({ x: gx, y: gy });
-    });
-
-    // Draw Smooth Gravitational Potential Curve U(p)
-    if (gravityPoints.length > 2) {
-      ctx.save();
-      ctx.beginPath();
-      gravityPoints.forEach((pt, i) => {
-        if (i === 0) ctx.moveTo(pt.x, pt.y);
-        else ctx.lineTo(pt.x, pt.y);
-      });
-      ctx.strokeStyle = '#22D3EE';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-
-      for (const pt of gravityPoints) {
-        ctx.fillStyle = '#22D3EE';
-        ctx.beginPath();
-        ctx.arc(pt.x, pt.y, 2.2, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      ctx.restore();
-    }
-
-    // Current Spot/Perp Price Horizontal Laser Line across the Profile
-    const maxP = profile[0].price;
-    const minP = profile[profile.length - 1].price;
-    const curY =
-      topPad +
-      ((maxP - currentPrice) / Math.max(1, maxP - minP)) * plotH;
-    if (curY >= topPad && curY <= height - bottomPad) {
-      ctx.save();
-      ctx.strokeStyle = '#38BDF8';
-      ctx.lineWidth = 1.5;
-      ctx.setLineDash([4, 3]);
-      ctx.beginPath();
-      ctx.moveTo(leftAxisW, curY);
-      ctx.lineTo(width, curY);
-      ctx.stroke();
-      ctx.restore();
-    }
-  }, [quant, currentPrice, hoveredBucketPrice]);
-
-  const handleCanvasMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    if (!canvas || quant.liquidityProfile.length === 0) return;
-    const rect = canvas.getBoundingClientRect();
-    const y = e.clientY - rect.top;
-    const profile = [...quant.liquidityProfile].sort((a, b) => b.price - a.price);
-    const topPad = 28;
-    const bottomPad = 24;
-    const plotH = rect.height - topPad - bottomPad;
-    const idx = Math.floor(((y - topPad) / plotH) * profile.length);
-    if (idx >= 0 && idx < profile.length) {
-      setHoveredBucketPrice(profile[idx].price);
-    } else {
-      setHoveredBucketPrice(null);
-    }
-  };
-
-  const totalFuel = Math.max(
-    1,
-    quant.shortSqueezeFuelUsd + quant.longCascadeFuelUsd
-  );
-  const shortFuelPct = (quant.shortSqueezeFuelUsd / totalFuel) * 100;
+  const sel = methods.find((m) => m.id === selectedId) ?? methods[0];
 
   return (
-    <div className="space-y-4">
-      {/* Top KPI Microstructure Bar */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        <div className="bg-[#0B101B] border border-slate-800/80 rounded-lg p-3.5">
-          <div className="flex items-center justify-between text-xs text-slate-400">
-            <span>Główny Magnes Płynności U(p)</span>
-            <Magnet className="w-4 h-4 text-yellow-400" />
-          </div>
-          <div className="mt-1.5 flex items-baseline justify-between font-mono tabular-nums">
-            <span className="text-lg font-bold text-white">
-              ${quant.primaryMagnetPrice.toLocaleString()}
-            </span>
-            <span
-              className={`text-xs font-semibold ${
-                quant.primaryMagnetPrice >= currentPrice
-                  ? 'text-emerald-400'
-                  : 'text-rose-400'
+    <Panel
+      title="Metody — jak czytać metryki"
+      eyebrow="Edukacyjnie · hipotezy do weryfikacji"
+      actions={<Badge tone="neutral" title="Opis metod, nie rekomendacje">EDU</Badge>}
+      className="h-full"
+      bodyClassName="p-4 grid grid-cols-1 md:grid-cols-12 gap-4"
+    >
+      <div className="md:col-span-5 flex flex-col gap-1" role="tablist" aria-label="Metoda" aria-orientation="vertical">
+        {methods.map((m, i) => {
+          const active = m.id === sel.id;
+          return (
+            <button
+              key={m.id}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => setSelectedId(m.id)}
+              className={`text-left px-3 py-2 min-h-11 rounded-lg border transition-colors duration-150 ${
+                active ? 'bg-surface-3 border-line-strong text-ink-1' : 'border-transparent text-ink-2 hover:bg-surface-2 hover:text-ink-1'
               }`}
             >
-              {quant.primaryMagnetPrice >= currentPrice ? '↑ Above' : '↓ Below'} (
-              {(
-                ((quant.primaryMagnetPrice - currentPrice) / currentPrice) *
-                100
-              ).toFixed(2)}
-              %)
-            </span>
-          </div>
-          <div className="mt-1 text-[11px] text-slate-400 font-mono">
-            POC: ${quant.pocPrice} · VAH: ${quant.vahPrice} · VAL: ${quant.valPrice}
-          </div>
-        </div>
-
-        <div className="bg-[#0B101B] border border-slate-800/80 rounded-lg p-3.5">
-          <div className="flex items-center justify-between text-xs text-slate-400">
-            <span>VPIN Informed Flow Toxicity</span>
-            <Flame className="w-4 h-4 text-orange-400" />
-          </div>
-          <div className="mt-1.5 flex items-baseline justify-between font-mono tabular-nums">
-            <span className="text-lg font-bold text-cyan-300">
-              {(quant.vpinToxicity * 100).toFixed(1)}%
-            </span>
-            <span className="text-xs text-slate-300">
-              {quant.vpinToxicity > 0.55
-                ? 'Informed Institutional Flow'
-                : 'Balanced Two-Sided Flow'}
-            </span>
-          </div>
-          <div className="mt-2 w-full h-1.5 bg-slate-900 rounded-xs overflow-hidden">
-            <div
-              className="h-full bg-gradient-to-r from-cyan-500 via-amber-400 to-rose-500"
-              style={{ width: `${(quant.vpinToxicity * 100).toFixed(0)}%` }}
-            />
-          </div>
-        </div>
-
-        <div className="bg-[#0B101B] border border-slate-800/80 rounded-lg p-3.5">
-          <div className="flex items-center justify-between text-xs text-slate-400">
-            <span>Asymetria Lambdy Kyle’a (Opór L2)</span>
-            <Compass className="w-4 h-4 text-cyan-400" />
-          </div>
-          <div className="mt-1.5 flex items-baseline justify-between font-mono tabular-nums">
-            <span className="text-sm font-bold text-emerald-400">
-              ↑ ${(quant.kyleLambdaUp / 1000).toFixed(0)}K / $10
-            </span>
-            <span className="text-sm font-bold text-rose-400">
-              ↓ ${(quant.kyleLambdaDown / 1000).toFixed(0)}K / $10
-            </span>
-          </div>
-          <div className="mt-1 text-[11px] text-slate-400">
-            Ścieżka mniejszego oporu:{' '}
-            <strong className="text-white">
-              {quant.kyleLambdaUp <= quant.kyleLambdaDown
-                ? 'W GÓRĘ (Cieńszy Ask)'
-                : 'W DÓŁ (Cieńszy Bid)'}
-            </strong>
-          </div>
-        </div>
-
-        <div className="bg-[#0B101B] border border-slate-800/80 rounded-lg p-3.5">
-          <div className="flex items-center justify-between text-xs text-slate-400">
-            <span>Paliwo Likwidacyjne (Shorts vs Longs)</span>
-            <Zap className="w-4 h-4 text-amber-400" />
-          </div>
-          <div className="mt-1.5 flex items-baseline justify-between font-mono tabular-nums text-xs">
-            <span className="text-amber-300 font-semibold">
-              Shorts ↑ ${(quant.shortSqueezeFuelUsd / 1000000).toFixed(1)}M
-            </span>
-            <span className="text-teal-300 font-semibold">
-              Longs ↓ ${(quant.longCascadeFuelUsd / 1000000).toFixed(1)}M
-            </span>
-          </div>
-          <div className="mt-2 w-full h-2 bg-slate-900 rounded-xs overflow-hidden flex">
-            <div
-              className="bg-amber-400 h-full"
-              style={{ width: `${shortFuelPct.toFixed(1)}%` }}
-            />
-            <div
-              className="bg-teal-400 h-full"
-              style={{ width: `${(100 - shortFuelPct).toFixed(1)}%` }}
-            />
-          </div>
-        </div>
+              <span className="text-[13px] font-medium">
+                <span className="font-mono text-ink-3 mr-1.5">0{i + 1}</span>
+                {m.title}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
-      {/* Main Split: Left (7 cols) Deep Liquidity Profile & Gravity Field Canvas | Right (5 cols) Pioneering Quant Recommendations */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        <div className="lg:col-span-7 bg-[#0B101B] border border-slate-800/80 rounded-lg p-4 flex flex-col">
-          <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-800">
-            <div>
-              <h2 className="text-sm font-semibold text-white">
-                Profil Płynności TPO/Delta, Próżnie LVN oraz Pole Grawitacyjne Likwidacji U(p)
-              </h2>
-              <p className="text-xs text-slate-400">
-                Po lewej: Rozkład wolumenu Buy/Sell (POC, 70% Value Area, LVN Air-Pockets) · Po prawej: Skumulowane pule likwidacji 5x/20x/100x i krzywa przyciągania
-              </p>
-            </div>
-            <span className="text-xs font-mono text-cyan-300">
-              24 Poziomy Kwantyzacji Ceny
-            </span>
-          </div>
-
-          <div
-            ref={containerRef}
-            className="relative flex-1 min-h-[430px] mt-3 rounded-md overflow-hidden border border-slate-800/80"
-          >
-            <canvas
-              ref={canvasRef}
-              onMouseMove={handleCanvasMouseMove}
-              onMouseLeave={() => setHoveredBucketPrice(null)}
-              className="block w-full h-full cursor-crosshair"
-            />
-          </div>
+      <div className="md:col-span-7 flex flex-col gap-3 min-w-0" role="tabpanel">
+        <div>
+          <h3 className="text-[15px] font-semibold text-ink-1 leading-tight">{sel.title}</h3>
+          <p className="text-xs text-ink-3 mt-0.5">{sel.subtitle}</p>
         </div>
-
-        {/* Right Column (5 cols): Interactive Pioneering Recommendations & Strategy Blueprints */}
-        <div className="lg:col-span-5 bg-[#0B101B] border border-slate-800/80 rounded-lg p-4 flex flex-col justify-between gap-4">
-          <div>
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-              <div className="flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-cyan-400" />
-                <h2 className="text-sm font-semibold text-white">
-                  Pionierskie Rekomendacje Quant + Price Action (Hyperliquid)
-                </h2>
-              </div>
-              <span className="text-xs font-mono text-slate-400">5 Metodologii</span>
-            </div>
-
-            {/* Selector List of 5 Pioneering Approaches */}
-            <div className="mt-3 space-y-1.5">
-              {blueprints.map((bp) => {
-                const isSelected = bp.id === selectedBlueprint.id;
-                return (
-                  <button
-                    key={bp.id}
-                    type="button"
-                    onClick={() => setSelectedBlueprintId(bp.id)}
-                    className={`w-full text-left px-3 py-2 rounded-md border transition-colors flex items-center justify-between gap-2 ${
-                      isSelected
-                        ? 'bg-cyan-500/15 border-cyan-500/50 text-white'
-                        : 'bg-[#090D16] border-slate-800/80 text-slate-300 hover:bg-slate-900'
-                    }`}
-                  >
-                    <div className="min-w-0">
-                      <div className="text-xs font-semibold truncate">
-                        <span className="font-mono text-cyan-400 mr-1.5">
-                          {bp.number}
-                        </span>
-                        {bp.title}
-                      </div>
-                      <div className="text-[11px] text-slate-400 truncate mt-0.5">
-                        {bp.subtitle}
-                      </div>
-                    </div>
-                    <span className="text-[11px] font-mono text-cyan-300 shrink-0">
-                      {bp.recommendedDirection}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Detailed View of Selected Pioneering Recommendation */}
-            <div className="mt-3 bg-[#090D16] border border-slate-800 rounded-lg p-3.5 space-y-2.5">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-xs font-semibold text-cyan-300">
-                  {selectedBlueprint.number} {selectedBlueprint.title}
-                </span>
-              </div>
-
-              <div className="px-2.5 py-1.5 bg-[#0B101B] border border-slate-800 rounded font-mono text-[11px] text-amber-300 overflow-x-auto">
-                {selectedBlueprint.formula}
-              </div>
-
-              <p className="text-xs text-slate-300 leading-relaxed">
-                {selectedBlueprint.edgeDescription}
-              </p>
-
-              <div className="pt-2 border-t border-slate-800/80 text-xs">
-                <div className="font-semibold text-white flex items-center gap-1.5">
-                  <Target className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Egzekucja na Hyperliquid BTC-PERP:</span>
-                </div>
-                <p className="text-slate-300 mt-1 leading-relaxed">
-                  {selectedBlueprint.hyperliquidExecution}
-                </p>
-              </div>
-            </div>
+        <div className="px-3 py-2 bg-page border border-line rounded-lg font-mono text-xs text-ink-2 overflow-x-auto whitespace-nowrap">{sel.formula}</div>
+        <p className="text-[13px] text-ink-2 leading-relaxed">{sel.idea}</p>
+        <div>
+          <div className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium">Jak to sprawdzić</div>
+          <p className="text-[13px] text-ink-2 leading-relaxed mt-0.5">{sel.check}</p>
+        </div>
+        <div className="flex flex-wrap items-end justify-between gap-3 pt-3 border-t border-line mt-auto">
+          <div className="min-w-0">
+            <div className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium">{sel.metricLabel}</div>
+            <div className="font-mono tabular-nums text-sm text-ink-1 break-words">{sel.metricValue}</div>
           </div>
-
-          {/* Live Telemetry & 1-Click Signal Simulation Trigger */}
-          <div className="pt-2.5 border-t border-slate-800 flex items-center justify-between gap-3">
-            <div className="text-xs font-mono">
-              <div className="text-[10px] text-slate-400 font-sans">
-                {selectedBlueprint.liveMetricLabel}
-              </div>
-              <div className="text-cyan-300 font-semibold">
-                {selectedBlueprint.liveMetricValue}
-              </div>
-            </div>
-
-            {onSimulateStrategySignal && (
-              <button
-                type="button"
-                onClick={() =>
-                  onSimulateStrategySignal(
-                    selectedBlueprint.recommendedDirection,
-                    `HYPERLIQUID ${selectedBlueprint.recommendedDirection} // ${selectedBlueprint.title.toUpperCase()}`,
-                    selectedBlueprint.hyperliquidExecution
-                  )
-                }
-                className="px-3 py-1.5 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-semibold text-xs rounded-md transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5"
-              >
-                <Layers className="w-3.5 h-3.5" />
-                <span>Wygeneruj Sygnał z Modelu</span>
-              </button>
-            )}
-          </div>
+          {onPrefillPlan && (
+            <PrefillButtons onPick={(dir) => onPrefillPlan(dir, `Mikrostruktura · ${sel.title}`, `${sel.metricLabel}: ${sel.metricValue}`)} />
+          )}
         </div>
       </div>
-    </div>
+    </Panel>
   );
 };

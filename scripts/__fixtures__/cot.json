@@ -1,0 +1,4 @@
+[
+{"id":"261013133741F","market_and_exchange_names":"BITCOIN - CHICAGO MERCANTILE EXCHANGE","report_date_as_yyyy_mm_dd":"2026-10-13T00:00:00.000","cftc_contract_market_code":"133741","open_interest_all":"20752","dealer_positions_long_all":"6646","dealer_positions_short_all":"4805","asset_mgr_positions_long":"5079","asset_mgr_positions_short":"1437","lev_money_positions_long":"5520","lev_money_positions_short":"11364","contract_units":"(5 Bitcoins)"},
+{"id":"261006133741F","market_and_exchange_names":"BITCOIN - CHICAGO MERCANTILE EXCHANGE","report_date_as_yyyy_mm_dd":"2026-10-06T00:00:00.000","cftc_contract_market_code":"133741","open_interest_all":"21432","dealer_positions_long_all":"6974","dealer_positions_short_all":"4635","asset_mgr_positions_long":"5174","asset_mgr_positions_short":"1642","lev_money_positions_long":"5731","lev_money_positions_short":"12583","contract_units":"(5 Bitcoins)"}
+]

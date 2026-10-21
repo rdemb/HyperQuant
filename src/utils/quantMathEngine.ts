@@ -8,7 +8,6 @@ import {
   OrderFlowImbalanceTick,
   QuantMathMetrics,
   ShaakuniState,
-  TradingSignal,
 } from '../types/trading';
 
 /**
@@ -22,6 +21,149 @@ import {
  * 5) Multi-Horizon Gated Attention Neural Network Forecaster & Real-Time Signal Generator
  */
 
+/** Próg reżimu trendowego dla skorygowanego H: ≈ 96. percentyl rozkładu pod szumem (n = 45, symulacja). */
+export const HURST_TREND_THRESHOLD = 0.6;
+
+/** Wartość oczekiwana R/S dla szumu iid (Anis-Lloyd 1976 z korektą Petersa (n − ½)/n). */
+function expectedRescaledRange(n: number): number {
+  // Γ((n−1)/2) / Γ(n/2) rekurencyjnie: r(n+2) = r(n)·(n−1)/n
+  let ratio = n % 2 === 0 ? Math.sqrt(Math.PI) : 2 / Math.sqrt(Math.PI);
+  for (let k = n % 2 === 0 ? 2 : 3; k < n; k += 2) ratio *= (k - 1) / k;
+  let sum = 0;
+  for (let i = 1; i < n; i++) sum += Math.sqrt((n - i) / i);
+  return ((n - 0.5) / n) * (ratio / Math.sqrt(Math.PI)) * sum;
+}
+
+/**
+ * Wykładnik Hursta z R/S skorygowany o obciążenie małej próby:
+ * H = 0.5 + (ln(R/S) − ln E[R/S]_n) / ln(n). Pod szumem iid średnio ≈ 0.5.
+ */
+export function hurstAnisLloyd(returns: number[]): number {
+  const n = returns.length;
+  if (n < 8) return 0.5;
+  const mean = returns.reduce((a, b) => a + b, 0) / n;
+  let cum = 0;
+  let maxDev = -Infinity;
+  let minDev = Infinity;
+  let varSum = 0;
+  for (const r of returns) {
+    const d = r - mean;
+    cum += d;
+    if (cum > maxDev) maxDev = cum;
+    if (cum < minDev) minDev = cum;
+    varSum += d * d;
+  }
+  const std = Math.sqrt(varSum / n);
+  if (!(std > 0)) return 0.5;
+  const rs = (maxDev - minDev) / std;
+  const h = 0.5 + (Math.log(rs) - Math.log(expectedRescaledRange(n))) / Math.log(n);
+  return Math.max(0, Math.min(1, h));
+}
+
+/**
+ * VPIN na kubełkach o równym wolumenie (Easley, López de Prado, O'Hara 2012).
+ * Podział kupno/sprzedaż w świecach: realny z WS albo BVC. Wolumen świecy jest rozlewany
+ * proporcjonalnie do kolejnych kubełków; VPIN = średnia |V_B − V_S| / V z pełnych kubełków.
+ */
+export function computeVpinBvc(bars: OHLCVBar[], bucketCount: number = 50): number {
+  const totalVol = bars.reduce((acc, b) => acc + b.vbuy + b.vsell, 0);
+  if (!(totalVol > 0)) return 0;
+  const bucketVol = totalVol / bucketCount;
+  let fill = 0;
+  let buy = 0;
+  let sell = 0;
+  let sumImb = 0;
+  let full = 0;
+  for (const b of bars) {
+    let remaining = b.vbuy + b.vsell;
+    if (remaining <= 0) continue;
+    const buyShare = b.vbuy / remaining;
+    while (remaining > 0) {
+      const take = Math.min(remaining, bucketVol - fill);
+      buy += take * buyShare;
+      sell += take * (1 - buyShare);
+      fill += take;
+      remaining -= take;
+      if (fill >= bucketVol - 1e-9) {
+        sumImb += Math.abs(buy - sell) / bucketVol;
+        full++;
+        fill = 0;
+        buy = 0;
+        sell = 0;
+      }
+    }
+  }
+  return full > 0 ? sumImb / full : 0;
+}
+
+/**
+ * Lambda Kyle'a: OLS ΔP_t = λ·Q_t + ε na świecach z realnym przepływem agresora (WS).
+ * Na świecach BVC regresja byłaby kołowa (Q wyliczone z ΔP) — wtedy null.
+ * Wynik w $ ruchu ceny na $1M netto przepływu.
+ */
+export function kyleLambdaOls(bars: OHLCVBar[], minBars: number = 10): number | null {
+  const dp: number[] = [];
+  const q: number[] = [];
+  for (let i = 1; i < bars.length; i++) {
+    if (!bars[i].realFlow) continue;
+    dp.push(bars[i].close - bars[i - 1].close);
+    q.push((bars[i].vbuy - bars[i].vsell) / 1e6);
+  }
+  if (q.length < minBars) return null;
+  const mq = q.reduce((a, b) => a + b, 0) / q.length;
+  const mp = dp.reduce((a, b) => a + b, 0) / dp.length;
+  let cov = 0;
+  let varQ = 0;
+  for (let i = 0; i < q.length; i++) {
+    cov += (q[i] - mq) * (dp[i] - mp);
+    varQ += (q[i] - mq) ** 2;
+  }
+  return varQ > 0 ? cov / varQ : null;
+}
+
+/** Neutralny zestaw metryk dla braku danych (wartości liczbowe NaN, listy puste). */
+export function emptyQuantMetrics(): QuantMathMetrics {
+  return {
+    ouTheta: 0,
+    ouHalfLifeBars: Number.POSITIVE_INFINITY,
+    ouEquilibriumPrice: Number.NaN,
+    ouZScore: 0,
+    hawkesBuyIntensity: 0,
+    hawkesSellIntensity: 0,
+    hawkesBranchingRatio: null,
+    hawkesNetDominance: 0,
+    shannonEntropyBits: 0,
+    hurstExponent: 0.5,
+    combinatorialPathProbPDH: Number.NaN,
+    combinatorialPathProbPDL: Number.NaN,
+    l2MicroPrice: Number.NaN,
+    l2OrderbookImbalance: 0,
+    vpinToxicity: 0,
+    bookDepthAskUsd: 0,
+    bookDepthBidUsd: 0,
+    kyleLambdaPer1M: null,
+    shortSqueezeFuelUsd: 0,
+    longCascadeFuelUsd: 0,
+    pocPrice: Number.NaN,
+    vahPrice: Number.NaN,
+    valPrice: Number.NaN,
+    primaryMagnetPrice: Number.NaN,
+    liquidityProfile: [],
+    cvdDivergenceScore: 0,
+    regimeClassification: 'Mean-Reversion Equilibrium',
+    neuralConfidence: 0,
+    neuralDirectionBias: 0,
+    neuralAttentionWeights: {
+      shaakuniOBProximity: 0,
+      spotCvdDelta: 0,
+      perpFundingAndLiq: 0,
+      l2BookImbalance: 0,
+      hawkesCascadeVelocity: 0,
+    },
+    forecastHorizon: [],
+  };
+}
+
 export function computeQuantMathAndNeuralForecast(
   bars: OHLCVBar[],
   shaakuni: ShaakuniState,
@@ -31,9 +173,11 @@ export function computeQuantMathAndNeuralForecast(
   asks: L2OrderbookLevel[]
 ): QuantMathMetrics {
   const n = bars.length;
+  // Za mało danych (np. przed pierwszą synchronizacją) — neutralne metryki z NaN zamiast liczb zastępczych
+  if (n < 3) return emptyQuantMetrics();
   const lastBar = bars[n - 1];
-  const currentPrice = lastBar?.close ?? 96500;
-  const atr = lastBar?.atr || 140;
+  const currentPrice = lastBar.close;
+  const atr = lastBar.atr || Math.max(1, lastBar.high - lastBar.low);
 
   // 1. Ornstein-Uhlenbeck (OU) Process Estimation: dX_t = theta * (mu - X_t) dt + sigma dW_t
   const deq = shaakuni.deq ?? currentPrice;
@@ -52,9 +196,10 @@ export function computeQuantMathAndNeuralForecast(
     sumX2 += xPrev * xPrev;
   }
 
-  const rawSlope = sumX2 > 1e-6 ? sumXY / sumX2 : -0.08;
-  const ouTheta = Math.max(0.015, Math.min(0.45, -rawSlope > 0 ? -rawSlope : 0.065));
-  const ouHalfLifeBars = Math.LN2 / ouTheta;
+  // Brak powrotu do średniej (nachylenie ≥ 0) → θ = 0 i t½ = ∞, bez wartości zastępczej
+  const rawSlope = sumX2 > 1e-6 ? sumXY / sumX2 : 0;
+  const ouTheta = Math.max(0, Math.min(1, -rawSlope));
+  const ouHalfLifeBars = ouTheta > 0 ? Math.LN2 / ouTheta : Number.POSITIVE_INFINITY;
 
   for (let i = n - lookback; i < n; i++) {
     const dev = bars[i].close - equilibriumPrice;
@@ -92,17 +237,17 @@ export function computeQuantMathAndNeuralForecast(
     totalHawkes > 0
       ? (hawkesBuyIntensity - hawkesSellIntensity) / totalHawkes
       : 0;
-  const hawkesBranchingRatio = Math.min(
-    0.98,
-    alpha / beta + Math.min(0.2, (buyExcitation + sellExcitation) / 35)
-  );
+  // Współczynnik rozgałęzienia wymaga estymacji MLE (μ, α, β) — stałe α/β to nie pomiar
+  const hawkesBranchingRatio: number | null = null;
 
   // 3. L2 Orderbook Micro-Price, Imbalance & Shannon Information Entropy
-  const topBid = bids[0] ?? { price: currentPrice - 0.5, sizeUsd: 150000 };
-  const topAsk = asks[0] ?? { price: currentPrice + 0.5, sizeUsd: 150000 };
-  const totalTopVol = Math.max(1, topBid.sizeUsd + topAsk.sizeUsd);
+  // Micro-price tylko z realnego arkusza; bez arkusza = NaN (UI pokaże „—”)
+  const topBid = bids[0];
+  const topAsk = asks[0];
   const l2MicroPrice =
-    (topBid.price * topAsk.sizeUsd + topAsk.price * topBid.sizeUsd) / totalTopVol;
+    topBid && topAsk && topBid.sizeUsd + topAsk.sizeUsd > 0
+      ? (topBid.price * topAsk.sizeUsd + topAsk.price * topBid.sizeUsd) / (topBid.sizeUsd + topAsk.sizeUsd)
+      : Number.NaN;
 
   const sumBidUsd = bids.slice(0, 12).reduce((acc, b) => acc + b.sizeUsd, 0);
   const sumAskUsd = asks.slice(0, 12).reduce((acc, a) => acc + a.sizeUsd, 0);
@@ -128,46 +273,20 @@ export function computeQuantMathAndNeuralForecast(
   const maxEntropy = Math.log2(buckets.length);
   const shannonEntropyBits = entropy / maxEntropy;
 
-  // 4. Hurst Exponent via Rescaled Range (R/S)
+  // 4. Hurst Exponent via Rescaled Range (R/S) — skorygowany Anis-Lloyd
   const returns: number[] = [];
   for (let i = Math.max(1, n - 45); i < n; i++) {
     returns.push(Math.log(bars[i].close / bars[i - 1].close));
   }
-  const meanRet = returns.reduce((a, b) => a + b, 0) / Math.max(1, returns.length);
-  let cumDev = 0;
-  let maxDev = -Infinity;
-  let minDev = Infinity;
-  let varSum = 0;
-  for (const r of returns) {
-    const d = r - meanRet;
-    cumDev += d;
-    if (cumDev > maxDev) maxDev = cumDev;
-    if (cumDev < minDev) minDev = cumDev;
-    varSum += d * d;
-  }
-  const stdRet = Math.sqrt(varSum / Math.max(1, returns.length));
-  const rs = stdRet > 1e-9 ? (maxDev - minDev) / stdRet : 1;
-  const hurstExponent = Math.max(
-    0.25,
-    Math.min(0.85, Math.log(Math.max(1.1, rs)) / Math.log(Math.max(2, returns.length)))
-  );
+  const hurstExponent = hurstAnisLloyd(returns);
 
   // 5. VPIN (Volume-Synchronized Probability of Informed Trading) & Kyle's Lambda
-  const vpinSlice = bars.slice(-20);
-  let sumAbsImbalance = 0;
-  let sumTotalVol = 0;
-  for (const b of vpinSlice) {
-    sumAbsImbalance += Math.abs(b.vbuy - b.vsell);
-    sumTotalVol += b.vbuy + b.vsell;
-  }
-  const vpinToxicity = Math.min(
-    0.99,
-    Math.max(0.12, (sumAbsImbalance / Math.max(1, sumTotalVol)) * 2.15)
-  );
+  const vpinToxicity = computeVpinBvc(bars);
 
-  // Kyle's Lambda Directional Liquidity Resistance (USD required per $10 move)
-  const kyleLambdaUp = Math.round((sumAskUsd / 12) * 2.4);
-  const kyleLambdaDown = Math.round((sumBidUsd / 12) * 2.4);
+  // Głębokość arkusza (12 poziomów, USD) i lambda Kyle'a z regresji na realnym przepływie
+  const bookDepthAskUsd = Math.round(sumAskUsd);
+  const bookDepthBidUsd = Math.round(sumBidUsd);
+  const kyleLambdaPer1M = kyleLambdaOls(bars);
 
   // 6. High-Resolution Volume Profile (TPO / POC / VAH / VAL / LVN) & Gravitational Liquidity Field
   const profileBucketsCount = 24;
@@ -332,7 +451,9 @@ export function computeQuantMathAndNeuralForecast(
     recentSlice[recentSlice.length - 1].cvdPerp - recentSlice[0].cvdPerp;
   const normSpot = spotCvdChange / Math.max(1, Math.abs(spotCvdChange) + Math.abs(perpCvdChange));
   const normPerp = perpCvdChange / Math.max(1, Math.abs(spotCvdChange) + Math.abs(perpCvdChange));
-  const cvdDivergenceScore = normSpot - normPerp;
+  // Bez wolumenu spot (sam Hyperliquid) dywergencja spot/perp jest niezdefiniowana → 0
+  const hasSpotFlow = recentSlice.some((b) => b.spotVbuy + b.spotVsell > 0);
+  const cvdDivergenceScore = hasSpotFlow ? normSpot - normPerp : 0;
 
   const freshOBs = shaakuni.orderBlocks.filter((ob) => ob.state === 'fresh');
   let obBias = 0;
@@ -386,12 +507,8 @@ export function computeQuantMathAndNeuralForecast(
     Math.max(-0.4, Math.min(0.4, ouZScore * 0.12));
 
   const neuralDirectionBias = Math.tanh(linearActivation * 1.85);
-  const neuralConfidence = Math.round(
-    Math.min(
-      98,
-      Math.max(54, 58 + Math.abs(neuralDirectionBias) * 36 + (1 - shannonEntropyBits) * 12)
-    )
-  );
+  // Score 0..100 = siła heurystyki |bias|; nieskalibrowane, więc nie jest to prawdopodobieństwo
+  const neuralConfidence = Math.round(Math.min(100, Math.abs(neuralDirectionBias) * 100));
 
   const combinatorialPathProbPDH = Math.max(
     0.04,
@@ -405,9 +522,7 @@ export function computeQuantMathAndNeuralForecast(
     regimeClassification = 'Spot Absorption Bullish';
   } else if (cvdDivergenceScore < -0.22 && obBias <= 0) {
     regimeClassification = 'Perp Exhaustion Bearish';
-  } else if (hawkesBranchingRatio > 0.84) {
-    regimeClassification = 'Liquidation Cascade Squeeze';
-  } else if (hurstExponent > 0.56) {
+  } else if (hurstExponent > HURST_TREND_THRESHOLD) {
     regimeClassification = 'Momentum Breakout';
   }
 
@@ -447,7 +562,7 @@ export function computeQuantMathAndNeuralForecast(
     ouZScore: Number(ouZScore.toFixed(2)),
     hawkesBuyIntensity: Number(hawkesBuyIntensity.toFixed(2)),
     hawkesSellIntensity: Number(hawkesSellIntensity.toFixed(2)),
-    hawkesBranchingRatio: Number(hawkesBranchingRatio.toFixed(3)),
+    hawkesBranchingRatio,
     hawkesNetDominance: Number(hawkesNetDominance.toFixed(3)),
     shannonEntropyBits: Number(shannonEntropyBits.toFixed(3)),
     hurstExponent: Number(hurstExponent.toFixed(3)),
@@ -456,8 +571,9 @@ export function computeQuantMathAndNeuralForecast(
     l2MicroPrice: Number(l2MicroPrice.toFixed(1)),
     l2OrderbookImbalance: Number(l2OrderbookImbalance.toFixed(3)),
     vpinToxicity: Number(vpinToxicity.toFixed(3)),
-    kyleLambdaUp,
-    kyleLambdaDown,
+    bookDepthAskUsd,
+    bookDepthBidUsd,
+    kyleLambdaPer1M,
     shortSqueezeFuelUsd: Math.round(shortSqueezeFuelUsd),
     longCascadeFuelUsd: Math.round(longCascadeFuelUsd),
     pocPrice,
@@ -474,164 +590,9 @@ export function computeQuantMathAndNeuralForecast(
   };
 }
 
-export function evaluateRealTimeSignal(
-  bars: OHLCVBar[],
-  shaakuni: ShaakuniState,
-  quant: QuantMathMetrics
-): TradingSignal | null {
-  if (bars.length < 20) return null;
-  const lastBar = bars[bars.length - 1];
-  const price = lastBar.close;
-  const atr = Math.max(45, lastBar.atr);
+/** Minimalny realny przepływ na poziomie ($), od którego klasyfikujemy wyczerpanie/absorpcję. */
+const MIN_OFI_FLOW_USD = 25000;
 
-  const freshBullOB = shaakuni.orderBlocks
-    .filter((z) => z.state === 'fresh' && z.type === 'bull')
-    .sort((a, b) => Math.abs(price - a.top) - Math.abs(price - b.top))[0];
-
-  const freshBearOB = shaakuni.orderBlocks
-    .filter((z) => z.state === 'fresh' && z.type === 'bear')
-    .sort((a, b) => Math.abs(price - a.bottom) - Math.abs(price - b.bottom))[0];
-
-  const isLongBias = quant.neuralDirectionBias >= 0.16;
-  const isShortBias = quant.neuralDirectionBias <= -0.16;
-
-  if (isLongBias || shaakuni.pdlStatus === 'Sweep !') {
-    const stopLoss = freshBullOB
-      ? Math.min(price - atr * 1.15, freshBullOB.bottom - atr * 0.25)
-      : price - atr * 1.35;
-    const risk = Math.max(25, price - stopLoss);
-    const tp1 =
-      shaakuni.deq && shaakuni.deq > price + risk * 0.8
-        ? shaakuni.deq
-        : price + risk * 1.8;
-    const tp2 =
-      shaakuni.pdh && shaakuni.pdh > tp1
-        ? shaakuni.pdh
-        : price + risk * 3.1;
-    const rr = Number(((tp2 - price) / risk).toFixed(2));
-
-    const p = quant.neuralConfidence / 100;
-    const q = 1 - p;
-    const kellyFraction = Math.max(0.05, (p * rr - q) / Math.max(1, rr));
-    const kellyOptimalLeverage = Math.min(
-      25,
-      Math.max(3, Math.round(kellyFraction * 32))
-    );
-
-    const confluence: string[] = [];
-    if (shaakuni.pdlStatus === 'Sweep !') {
-      confluence.push('PDL Liquidity Sweep Confirmed (Shaakuni)');
-    }
-    if (freshBullOB) {
-      confluence.push(
-        `Bullish ${freshBullOB.label} Demand Zone ($${Math.round(freshBullOB.bottom)}–$${Math.round(freshBullOB.top)})`
-      );
-    }
-    if (quant.cvdDivergenceScore > 0) {
-      confluence.push(
-        `Aggr Spot CVD Absorption (+${(quant.cvdDivergenceScore * 100).toFixed(1)}% vs Perps)`
-      );
-    }
-    confluence.push(
-      `VPIN=${(quant.vpinToxicity * 100).toFixed(0)}% | Magnet $${quant.primaryMagnetPrice}`
-    );
-
-    return {
-      id: `sig-long-${Math.floor(lastBar.time / 60000)}`,
-      timestamp: Date.now(),
-      direction: 'LONG',
-      title:
-        shaakuni.pdlStatus === 'Sweep !'
-          ? 'HYPERLIQUID BTC-PERP LONG // PDL SWEEP + BULL OB'
-          : 'HYPERLIQUID BTC-PERP LONG // SPOT CVD ABSORPTION + OB POI',
-      triggerReason:
-        'Neural Time-Series Engine detected institutional Spot CVD absorption inside unmitigated Shaakuni Bullish Order Block with positive L2 Micro-Price skew.',
-      entryPrice: Number(price.toFixed(1)),
-      stopLoss: Number(stopLoss.toFixed(1)),
-      takeProfit1: Number(tp1.toFixed(1)),
-      takeProfit2: Number(tp2.toFixed(1)),
-      riskRewardRatio: rr,
-      confidence: quant.neuralConfidence,
-      kellyOptimalLeverage,
-      shaakuniContext: `Session: ${shaakuni.nySession} | PDL: ${shaakuni.pdlStatus} | PDH: ${shaakuni.pdhStatus}`,
-      quantConfluence: confluence,
-      status: 'ACTIVE',
-    };
-  }
-
-  if (isShortBias || shaakuni.pdhStatus === 'Sweep !') {
-    const stopLoss = freshBearOB
-      ? Math.max(price + atr * 1.15, freshBearOB.top + atr * 0.25)
-      : price + atr * 1.35;
-    const risk = Math.max(25, stopLoss - price);
-    const tp1 =
-      shaakuni.deq && shaakuni.deq < price - risk * 0.8
-        ? shaakuni.deq
-        : price - risk * 1.8;
-    const tp2 =
-      shaakuni.pdl && shaakuni.pdl < tp1
-        ? shaakuni.pdl
-        : price - risk * 3.1;
-    const rr = Number(((price - tp2) / risk).toFixed(2));
-
-    const p = quant.neuralConfidence / 100;
-    const q = 1 - p;
-    const kellyFraction = Math.max(0.05, (p * rr - q) / Math.max(1, rr));
-    const kellyOptimalLeverage = Math.min(
-      25,
-      Math.max(3, Math.round(kellyFraction * 32))
-    );
-
-    const confluence: string[] = [];
-    if (shaakuni.pdhStatus === 'Sweep !') {
-      confluence.push('PDH Liquidity Sweep Confirmed (Shaakuni)');
-    }
-    if (freshBearOB) {
-      confluence.push(
-        `Bearish ${freshBearOB.label} Supply Zone ($${Math.round(freshBearOB.bottom)}–$${Math.round(freshBearOB.top)})`
-      );
-    }
-    if (quant.cvdDivergenceScore < 0) {
-      confluence.push(
-        `Perp Exhaustion / Spot Distribution (${(quant.cvdDivergenceScore * 100).toFixed(1)}%)`
-      );
-    }
-    confluence.push(
-      `VPIN=${(quant.vpinToxicity * 100).toFixed(0)}% | Magnet $${quant.primaryMagnetPrice}`
-    );
-
-    return {
-      id: `sig-short-${Math.floor(lastBar.time / 60000)}`,
-      timestamp: Date.now(),
-      direction: 'SHORT',
-      title:
-        shaakuni.pdhStatus === 'Sweep !'
-          ? 'HYPERLIQUID BTC-PERP SHORT // PDH SWEEP + BEAR OB'
-          : 'HYPERLIQUID BTC-PERP SHORT // PERP EXHAUSTION + SUPPLY POI',
-      triggerReason:
-        'Neural Time-Series Engine identified Perp CVD exhaustion against Bearish Order Block supply with downward Kalman velocity.',
-      entryPrice: Number(price.toFixed(1)),
-      stopLoss: Number(stopLoss.toFixed(1)),
-      takeProfit1: Number(tp1.toFixed(1)),
-      takeProfit2: Number(tp2.toFixed(1)),
-      riskRewardRatio: rr,
-      confidence: quant.neuralConfidence,
-      kellyOptimalLeverage,
-      shaakuniContext: `Session: ${shaakuni.nySession} | PDH: ${shaakuni.pdhStatus} | PDL: ${shaakuni.pdlStatus}`,
-      quantConfluence: confluence,
-      status: 'ACTIVE',
-    };
-  }
-
-  return null;
-}
-
-/**
- * Real-Time Order Flow Imbalance (OFI) Price-Tick Heatmap & Momentum Exhaustion Calculator
- * Calculates the ratio of Aggressive Market Buy vs. Market Sell volume (V_buy / V_sell)
- * and normalized OFI = (V_buy - V_sell) / (V_buy + V_sell) at every L2 Order Book price tick,
- * identifying Momentum Exhaustion (Delta Decay at extremes) and Passive Wall Absorption.
- */
 export function computeOrderFlowImbalanceHeatmap(
   bids: L2OrderbookLevel[],
   asks: L2OrderbookLevel[],
@@ -663,11 +624,6 @@ export function computeOrderFlowImbalanceHeatmap(
     ...allLevels.map((l) => l.sizeUsd)
   );
 
-  // Baseline directional flow from recent bars
-  const barBuyBias =
-    lastBar && lastBar.vbuy + lastBar.vsell > 0
-      ? lastBar.vbuy / (lastBar.vbuy + lastBar.vsell)
-      : 0.52;
   const priceSlope =
     lastBar && prevBar ? lastBar.close - prevBar.close : 0;
 
@@ -695,48 +651,22 @@ export function computeOrderFlowImbalanceHeatmap(
       }
     }
 
-    // 2. Combine with continuous microstructure aggressive flow model across price ticks
-    // Near spread has highest aggressive execution; extreme outer ticks show momentum decay (exhaustion)
-    const distDecay = Math.exp(-idxFromSpread * 0.19);
-    const baseFlowUsd = (95000 + (lvl.sizeUsd * 0.38)) * distDecay;
-
-    // Harmonic phase from price level for realistic per-tick microstructure variance
-    const tickHash = Math.sin(lvl.price * 0.73 + (lastBar?.cbuy ?? 10) * 0.17);
-
-    let synthBuyShare = barBuyBias + tickHash * 0.24;
-    if (side === 'ASK') {
-      // At Ask levels above price: inner ticks get lifted by aggressive buyers,
-      // but outer Ask ticks experience Buyer Exhaustion (aggressive buying dries up while sellers step in)
-      if (idxFromSpread <= 3) {
-        synthBuyShare += 0.14;
-      } else if (idxFromSpread >= 7) {
-        synthBuyShare -= 0.22; // Buyer exhaustion at upper extremes
-      }
-    } else {
-      // At Bid levels below price: inner ticks get hit by aggressive sellers,
-      // while deeper Bid walls show Seller Exhaustion / Passive Bid Absorption
-      if (idxFromSpread <= 3) {
-        synthBuyShare -= 0.14;
-      } else if (idxFromSpread >= 7) {
-        synthBuyShare += 0.22; // Seller exhaustion / bid bounce at lower extremes
-      }
-    }
-
-    const clampedBuyShare = Math.min(0.92, Math.max(0.08, synthBuyShare));
-    const aggressiveBuyUsd = Math.round(
-      tradeBuyUsd + baseFlowUsd * clampedBuyShare
-    );
-    const aggressiveSellUsd = Math.round(
-      tradeSellUsd + baseFlowUsd * (1 - clampedBuyShare)
-    );
+    // 2. Wyłącznie realne transakcje — bez modelowanego przepływu bazowego i sinusoidy
+    const aggressiveBuyUsd = Math.round(tradeBuyUsd);
+    const aggressiveSellUsd = Math.round(tradeSellUsd);
+    const hasFlow = aggressiveBuyUsd + aggressiveSellUsd >= MIN_OFI_FLOW_USD;
 
     totalAggBuy += aggressiveBuyUsd;
     totalAggSell += aggressiveSellUsd;
     maxAggTotal = Math.max(maxAggTotal, aggressiveBuyUsd + aggressiveSellUsd);
 
-    const buySellRatio = Number(
-      (aggressiveBuyUsd / Math.max(1, aggressiveSellUsd)).toFixed(2)
-    );
+    // Bez przepływu stosunek jest neutralny (1), a nie 0 — inaczej „wyczerpanie” z pustki
+    // Stosunek ograniczony do 99 (jednostronny przepływ) — bez wartości typu 26756x
+    const buySellRatio = !hasFlow
+      ? 1
+      : aggressiveSellUsd > 0
+      ? Number(Math.min(99, aggressiveBuyUsd / aggressiveSellUsd).toFixed(2))
+      : 99;
     const ofiNormalized = Number(
       (
         (aggressiveBuyUsd - aggressiveSellUsd) /
@@ -747,18 +677,22 @@ export function computeOrderFlowImbalanceHeatmap(
 
     // Passive wall ratio relative to max resting L2 depth
     const restingWallNorm = Math.min(1, lvl.sizeUsd / maxRestingUsd);
-    const absorptionScore = Number(
-      Math.min(
-        1,
-        (lvl.sizeUsd / Math.max(1, aggressiveBuyUsd + aggressiveSellUsd)) * 0.45
-      ).toFixed(2)
-    );
+    const absorptionScore = hasFlow
+      ? Number(
+          Math.min(
+            1,
+            (lvl.sizeUsd / Math.max(1, aggressiveBuyUsd + aggressiveSellUsd)) * 0.45
+          ).toFixed(2)
+        )
+      : 0;
 
     // Detect Momentum Exhaustion & Passive Absorption at this exact tick
     let exhaustionState: OrderFlowImbalanceTick['exhaustionState'] = 'NONE';
     let exhaustionScore = 0;
 
-    if (side === 'ASK') {
+    if (!hasFlow) {
+      // Brak realnego przepływu na tym poziomie — brak podstaw do klasyfikacji
+    } else if (side === 'ASK') {
       if (restingWallNorm > 0.52 && buySellRatio > 1.35) {
         // Heavy aggressive buying slamming into a large resting Ask wall without breaking through
         exhaustionState = 'ASK_WALL_ABSORPTION';
@@ -826,15 +760,17 @@ export function computeOrderFlowImbalanceHeatmap(
 
   const ticks = [...askTicks, ...bidTicks];
 
-  const overallBuySellRatio = Number(
-    (totalAggBuy / Math.max(1, totalAggSell)).toFixed(2)
-  );
-  const overallOfiPct = Number(
-    (
-      ((totalAggBuy - totalAggSell) / Math.max(1, totalAggBuy + totalAggSell)) *
-      100
-    ).toFixed(1)
-  );
+  // Bez realnego przepływu stosunek neutralny (1) — nie „dominacja sprzedających” z zera
+  const overallBuySellRatio =
+    totalAggBuy + totalAggSell >= MIN_OFI_FLOW_USD
+      ? Number((totalAggBuy / Math.max(1, totalAggSell)).toFixed(2))
+      : 1;
+  const overallOfiPct =
+    totalAggBuy + totalAggSell >= MIN_OFI_FLOW_USD
+      ? Number(
+          (((totalAggBuy - totalAggSell) / (totalAggBuy + totalAggSell)) * 100).toFixed(1)
+        )
+      : 0;
 
   // Find strongest exhaustion/absorption tick
   let topExhaustionTick: OrderFlowImbalanceTick | null = null;
@@ -847,12 +783,8 @@ export function computeOrderFlowImbalanceHeatmap(
     }
   }
 
-  const exhaustionIndex = topExhaustionTick
-    ? topExhaustionTick.exhaustionScore
-    : Math.min(
-        85,
-        Math.round(Math.abs(overallOfiPct) * 0.75 + 18)
-      );
+  // Bez wykrytego wyczerpania indeks = 0 (wcześniej: wymyślona baza 18% + |OFI|)
+  const exhaustionIndex = topExhaustionTick ? topExhaustionTick.exhaustionScore : 0;
 
   let exhaustionBias: OFIMomentumSummary['exhaustionBias'] =
     'BALANCED_EQUILIBRIUM';

@@ -1,26 +1,17 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
-import {
-  RotateCcw,
-  Sparkles,
-  Layers,
-  Activity,
-  Compass,
-  Zap,
-  Target,
-  Maximize2,
-  ChevronDown,
-  ChevronUp,
-  BarChart3,
-  TrendingUp,
-} from 'lucide-react';
+import { Maximize2, Move3d, RotateCcw } from 'lucide-react';
 import {
   BackendQuantTelemetry,
-  MarketPhysicsMetrics,
   OptionVolSurfacePoint,
   QuantMathMetrics,
   ShaakuniState,
 } from '../types/trading';
+import { normCdf, normPdf } from '../utils/stats';
+import { Badge, EmptyState, Segmented } from '../ui';
 
+// UWAGA: Hyperliquid nie ma rynku opcji, a aplikacja nie pobiera żadnych danych opcyjnych.
+// Cały panel to model ilustracyjny (parametryczny smile IV + Black-Scholes), nie dane rynkowe —
+// dlatego komponent celowo nie emituje sygnałów transakcyjnych.
 interface OptionVolatilitySurface3DProps {
   currentPrice: number;
   shaakuni: ShaakuniState;
@@ -28,11 +19,6 @@ interface OptionVolatilitySurface3DProps {
   backendTelemetry: BackendQuantTelemetry | null;
   isExpanded?: boolean;
   onToggleExpand?: () => void;
-  onTriggerVolSignal?: (
-    dir: 'LONG' | 'SHORT',
-    title: string,
-    reason: string
-  ) => void;
 }
 
 const EXPIRIES: { days: number; label: string }[] = [
@@ -46,16 +32,44 @@ const EXPIRIES: { days: number; label: string }[] = [
   { days: 180, label: '180D (Bi-Annual)' },
 ];
 
+// Stopa wolna od ryzyka przyjęta w modelu (roczna, ciągła kapitalizacja); dywidenda q = 0.
+const RISK_FREE_RATE = 0.045;
+
+// Greki Blacka-Scholesa dla opcji CALL przy q = 0.
+// Jednostki: delta — bezwymiarowa (0..1); gamma — zmiana delty na 1 $ ruchu spotu (1/$);
+// vanna = ∂Δ/∂σ na 1.00 zmienności (na 1 pkt vol podziel przez 100);
+// charm = ∂Δ/∂t na rok upływu czasu (na 1 dzień podziel przez 365).
+// Dla T ≤ 0 lub σ ≤ 0 zwracamy granicę wypłaty (delta 0/1, pozostałe greki 0), żeby uniknąć NaN.
+const bsCallGreeks = (
+  spot: number,
+  strike: number,
+  tYears: number,
+  sigma: number,
+  r: number
+) => {
+  if (!(tYears > 0) || !(sigma > 0) || !(spot > 0) || !(strike > 0)) {
+    return { delta: spot > strike ? 1 : 0, gamma: 0, vanna: 0, charm: 0 };
+  }
+  const sigmaSqrtT = sigma * Math.sqrt(tYears);
+  const d1 = (Math.log(spot / strike) + (r + 0.5 * sigma * sigma) * tYears) / sigmaSqrtT;
+  const d2 = d1 - sigmaSqrtT;
+  const pdfD1 = normPdf(d1);
+  return {
+    delta: normCdf(d1),
+    gamma: pdfD1 / (spot * sigmaSqrtT),
+    vanna: (-pdfD1 * d2) / sigma,
+    charm: (-pdfD1 * (2 * r * tYears - d2 * sigmaSqrtT)) / (2 * tYears * sigmaSqrtT),
+  };
+};
+
+type SurfaceMode = 'iv_surface' | 'model_gamma' | 'model_vanna';
+
 export const OptionVolatilitySurface3D: React.FC<
   OptionVolatilitySurface3DProps
 > = ({
   currentPrice,
-  shaakuni,
-  quant,
   backendTelemetry,
-  isExpanded = false,
   onToggleExpand,
-  onTriggerVolSignal,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const canvasWrapperRef = useRef<HTMLDivElement | null>(null);
@@ -63,20 +77,30 @@ export const OptionVolatilitySurface3D: React.FC<
   // 3D Isometric Orientation Angles (Clamped to avoid degenerate edge-on view)
   const [pitch, setPitch] = useState<number>(36); // degrees
   const [yaw, setYaw] = useState<number>(-38); // degrees
-  const [zoom, setZoom] = useState<number>(1.15);
-  const [activeSurfaceMode, setActiveSurfaceMode] = useState<
-    'iv_surface' | 'gex_dealer' | 'fluid_mechanics'
-  >('iv_surface');
+  const [zoom, setZoom] = useState<number>(1);
+  const [activeSurfaceMode, setActiveSurfaceMode] = useState<SurfaceMode>('iv_surface');
   const [selectedExpiryDays, setSelectedExpiryDays] = useState<number>(30);
   const [hoveredPoint, setHoveredPoint] =
     useState<OptionVolSurfacePoint | null>(null);
 
   const isDraggingRef = useRef<boolean>(false);
+  // Rozmiar ramki płótna — przerysowanie po zmianie układu (obrót telefonu, okno)
+  const [wrapSize, setWrapSize] = useState<string>('');
+  useEffect(() => {
+    const el = canvasWrapperRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => setWrapSize(`${el.clientWidth}x${el.clientHeight}`));
+    ro.observe(el);
+    return () => ro.disconnect();
+    // Ramka istnieje tylko gdy jest cena — obserwator podpinany po jej pojawieniu się
+  }, [currentPrice > 0]);
   const lastMouseRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
   // Generate 15 Strikes x 8 Expiries Option Volatility & GEX Grid
+  // Brak ceny → pusta siatka i komunikat zamiast ceny zastępczej
+  const spotOk = currentPrice > 0;
   const surfaceGrid = useMemo(() => {
-    const spot = currentPrice || 82850;
+    const spot = currentPrice > 0 ? currentPrice : 1;
     const strikeStep = 1000;
     const baseStrike = Math.round(spot / 1000) * 1000;
     const strikes: number[] = [];
@@ -85,8 +109,10 @@ export const OptionVolatilitySurface3D: React.FC<
     }
 
     const points: OptionVolSurfacePoint[] = [];
-    const maxPainStrike = baseStrike - 1000;
-    const zeroGammaStrike = baseStrike + 500;
+
+    // Człon fundingu stosujemy tylko przy realnej telemetrii — bez niej nie zakładamy żadnej wartości.
+    const fundingSqueezeDrift =
+      backendTelemetry && backendTelemetry.fundingAnnualizedPct > 15 ? 0.04 : 0;
 
     strikes.forEach((k) => {
       const moneyness = k / spot;
@@ -95,12 +121,11 @@ export const OptionVolatilitySurface3D: React.FC<
       EXPIRIES.forEach((exp) => {
         const tYears = exp.days / 365;
 
-        // Implied Volatility Smile (SVI / Heston parametric approximation)
+        // Ilustracyjny, ręcznie sparametryzowany smile w IV (struktura terminowa + skew + krzywizna).
+        // To NIE jest kalibracja SVI ani Hestona do danych rynkowych — brak kwotowań opcji.
         const termStructure = 0.44 + (0.16 / Math.sqrt(Math.max(0.01, exp.days / 7)));
         const skew = -0.065 * logMoneyness * 4.5; // Downside put skew
         const smileCurvature = 0.18 * Math.pow(logMoneyness * 3.5, 2);
-        const fundingSqueezeDrift =
-          (backendTelemetry?.fundingAnnualizedPct ?? 10.9) > 15 ? 0.04 : 0;
 
         const impliedVolPct = Math.max(
           32,
@@ -110,20 +135,14 @@ export const OptionVolatilitySurface3D: React.FC<
           )
         );
 
-        // Black-Scholes approx d1, d2
+        // Greki Blacka-Scholesa dla CALL (r = RISK_FREE_RATE, q = 0)
         const sigma = impliedVolPct / 100;
-        const d1 =
-          (Math.log(spot / k) + (0.045 + 0.5 * sigma * sigma) * tYears) /
-          (sigma * Math.sqrt(tYears));
-        const delta = Math.max(-1, Math.min(1, Math.tanh(d1 * 1.1)));
+        const greeks = bsCallGreeks(spot, k, tYears, sigma, RISK_FREE_RATE);
 
-        // Gamma Exposure (GEX): Dealers Long Gamma near ATM/ITM Calls, Short Gamma at OTM Puts
-        const gamma = Math.exp(-0.5 * d1 * d1) / (spot * sigma * Math.sqrt(tYears));
-        const gammaExposureUsd = Number(
-          (
-            (gamma * spot * spot * 0.01 * (k > zeroGammaStrike ? 1 : -0.85)) /
-            1e6
-          ).toFixed(2)
+        // Gamma modelu w $ na ruch spotu o 1% na 1 BTC nominału: Γ·S²·0.01.
+        // Bez open interest nie znamy pozycjonowania dealerów, więc brak odwracania znaku (to nie GEX).
+        const gammaUsdPer1Pct = Number(
+          (greeks.gamma * spot * spot * 0.01).toFixed(2)
         );
 
         points.push({
@@ -132,12 +151,13 @@ export const OptionVolatilitySurface3D: React.FC<
           expiryLabel: exp.label,
           moneyness: Number(moneyness.toFixed(3)),
           impliedVol: Number(impliedVolPct.toFixed(1)),
-          delta: Number(delta.toFixed(2)),
-          gammaExposureUsd,
-          vanna: Number((-d1 * (1 - delta) * 0.1).toFixed(3)),
-          charm: Number((-delta * (0.05 / Math.max(0.1, tYears))).toFixed(3)),
-          isMaxPain: k === maxPainStrike && exp.days === 30,
-          isZeroGamma: Math.abs(k - zeroGammaStrike) <= 500,
+          delta: Number(greeks.delta.toFixed(2)),
+          gammaUsdPer1Pct,
+          vanna: Number(greeks.vanna.toFixed(3)),
+          charm: Number(greeks.charm.toFixed(3)),
+          // Max pain i zero-gamma wymagają open interest per strike — niedostępne, więc zawsze false.
+          isMaxPain: false,
+          isZeroGamma: false,
         });
       });
     });
@@ -145,39 +165,18 @@ export const OptionVolatilitySurface3D: React.FC<
     return { strikes, expiries: EXPIRIES, points };
   }, [currentPrice, backendTelemetry]);
 
-  // Market Physics & Fluid Dynamics Telemetry
-  const physics = useMemo<MarketPhysicsMetrics>(() => {
-    const volTotal = (quant.hawkesBuyIntensity + quant.hawkesSellIntensity) * 1000;
-    const flowDisplacement = Math.abs(currentPrice - (shaakuni.deq ?? currentPrice));
-
-    const reynoldsNumber = Math.round(
-      Math.max(650, (volTotal / 45000) * (flowDisplacement + 12) * 18)
+  // ATM IV wyliczone z siatki modelu: strike najbliższy spotowi przy wygaśnięciu 30D (wynik modelu, nie rynek).
+  const modelAtmIv30 = useMemo<number | null>(() => {
+    const slice30 = surfaceGrid.points.filter((p) => p.expiryDays === 30);
+    if (slice30.length === 0) return null;
+    const spot = currentPrice;
+    const atm = slice30.reduce((best, p) =>
+      Math.abs(p.strike - spot) < Math.abs(best.strike - spot) ? p : best
     );
+    return atm.impliedVol;
+  }, [surfaceGrid, currentPrice]);
 
-    const flowViscosity = Math.round(
-      (quant.kyleLambdaUp + quant.kyleLambdaDown) * 0.5 * 1000
-    );
-
-    const kineticPressureGradient = Number(
-      (quant.hawkesNetDominance * (volTotal / 1e6)).toFixed(3)
-    );
-
-    let regime: MarketPhysicsMetrics['regime'] = 'Laminar Steady Flow';
-    if (reynoldsNumber > 2600) regime = 'Turbulent Churn';
-    else if (quant.vpinToxicity > 0.68) regime = 'Cavitation Breakout';
-    else if (flowViscosity > 450000) regime = 'Viscous Stagnation';
-
-    return {
-      reynoldsNumber,
-      flowViscosity,
-      kineticPressureGradient,
-      brownianDiffusionCoeff: Number((quant.hurstExponent * 1.8).toFixed(2)),
-      bernoulliLiftScore: Number(
-        (quant.combinatorialPathProbPDH - quant.combinatorialPathProbPDL).toFixed(2)
-      ),
-      regime,
-    };
-  }, [quant, currentPrice, shaakuni]);
+  // (Usunięto pseudo-fizyczny HUD — „liczba Reynoldsa”, „MPa” — nie miał podstaw w danych)
 
   // Slice points for currently selected expiry for the 2D cross-section smile
   const currentExpirySlice = useMemo(() => {
@@ -188,7 +187,7 @@ export const OptionVolatilitySurface3D: React.FC<
   useEffect(() => {
     const canvas = canvasRef.current;
     const wrapper = canvasWrapperRef.current;
-    if (!canvas || !wrapper) return;
+    if (!canvas || !wrapper || !spotOk) return;
 
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const width = wrapper.clientWidth;
@@ -204,8 +203,8 @@ export const OptionVolatilitySurface3D: React.FC<
     if (!ctx) return;
     ctx.scale(dpr, dpr);
 
-    // Dark obsidian glass backdrop (#070A12)
-    ctx.fillStyle = '#070A12';
+    // Tło panelu (surface-1)
+    ctx.fillStyle = '#0b1019';
     ctx.fillRect(0, 0, width, height);
 
     // Center of 3D projection - dynamic offset
@@ -227,9 +226,10 @@ export const OptionVolatilitySurface3D: React.FC<
     const strikeRange = Math.max(1, maxStrike - minStrike);
 
     // Responsive 3D box scaling that generously fills the wide canvas!
-    const boxW = Math.max(width * 0.44, 340) * zoom;
-    const boxD = Math.max(height * 0.38, 220) * zoom;
-    const boxH = Math.max(height * 0.32, 160) * zoom;
+    // Skala dopasowana do płótna: po obrocie |x| ≤ ~1.4, |y| ≤ ~1.63, perspektywa ≤ ~1.17 —
+    // przy zoomie 100% cała powierzchnia mieści się w ramce (z marginesem na etykiety osi)
+    const boxW = (Math.max(120, width / 2 - 28) / 1.64) * zoom;
+    const boxH = (Math.max(100, height / 2 - 28) / 1.9) * zoom;
 
     // 3D to 2D projection function
     const project = (strikeVal: number, expIdx: number, valNorm: number) => {
@@ -257,32 +257,14 @@ export const OptionVolatilitySurface3D: React.FC<
       };
     };
 
-    // Color gradient interpolation
-    const getColor = (normVal: number, mode: string) => {
-      if (mode === 'gex_dealer') {
-        if (normVal >= 0.5) {
-          const t = (normVal - 0.5) * 2;
-          return `rgba(34, 211, 238, ${0.4 + t * 0.5})`;
-        } else {
-          const t = (0.5 - normVal) * 2;
-          return `rgba(244, 63, 94, ${0.4 + t * 0.5})`;
-        }
-      }
-      if (mode === 'fluid_mechanics') {
-        const r = Math.round(120 + normVal * 40);
-        const g = Math.round(80 + normVal * 140);
-        const b = Math.round(250 - normVal * 50);
-        return `rgba(${r}, ${g}, ${b}, ${0.45 + normVal * 0.45})`;
-      }
-      // Implied Volatility Surface: Deep Indigo -> Electric Cyan -> Gold
-      if (normVal > 0.65) {
-        return `rgba(250, 204, 21, ${0.55 + (normVal - 0.65) * 1.1})`;
-      }
-      return `rgba(56, 189, 248, ${0.35 + normVal * 0.55})`;
+    // Skale sekwencyjne jednego odcienia: IV = akcent, gamma/vanna modelu = zone (krycie rośnie z wartością)
+    const getColor = (normVal: number, mode: SurfaceMode) => {
+      if (mode === 'iv_surface') return `rgba(63, 198, 221, ${0.18 + normVal * 0.7})`;
+      return `rgba(144, 133, 233, ${0.18 + normVal * 0.7})`;
     };
 
     // 1. Draw 3D Base Floor Grid & Shadow
-    ctx.strokeStyle = 'rgba(148, 163, 184, 0.09)';
+    ctx.strokeStyle = '#1b2533';
     ctx.lineWidth = 1;
     for (let i = 0; i < strikes.length; i += 2) {
       const p1 = project(strikes[i], 0, -0.05);
@@ -300,8 +282,8 @@ export const OptionVolatilitySurface3D: React.FC<
       ctx.lineTo(p2.px, p2.py);
       ctx.stroke();
 
-      // Expiry axis label
-      ctx.fillStyle = '#64748B';
+      // Etykieta osi terminu
+      ctx.fillStyle = '#7a889c';
       ctx.font = '9px "IBM Plex Mono", monospace';
       ctx.textAlign = 'right';
       ctx.fillText(expiries[j].label.split(' ')[0], p1.px - 6, p1.py + 3);
@@ -318,12 +300,23 @@ export const OptionVolatilitySurface3D: React.FC<
     }
     const quads: QuadPoly[] = [];
 
+    // Surowa wartość rysowana w trybach gamma / vanna; wysokość normalizujemy min/max po całej siatce
+    const getRawVal = (p: OptionVolSurfacePoint) =>
+      activeSurfaceMode === 'model_gamma' ? p.gammaUsdPer1Pct : Math.abs(p.vanna);
+    let rawMin = Infinity;
+    let rawMax = -Infinity;
+    surfaceGrid.points.forEach((p) => {
+      const v = getRawVal(p);
+      if (v < rawMin) rawMin = v;
+      if (v > rawMax) rawMax = v;
+    });
+    // Ochrona przed płaską siatką (max == min) — wtedy rysujemy płaszczyznę na połowie wysokości
+    const rawRange = rawMax - rawMin;
+
     const getVal = (p: OptionVolSurfacePoint) => {
-      if (activeSurfaceMode === 'gex_dealer') {
-        return Math.max(0, Math.min(1, (p.gammaExposureUsd + 5) / 10));
-      }
-      if (activeSurfaceMode === 'fluid_mechanics') {
-        return Math.max(0, Math.min(1, Math.abs(p.vanna) * 5 + 0.2));
+      if (activeSurfaceMode !== 'iv_surface') {
+        if (!(rawRange > 0)) return 0.5;
+        return Math.max(0, Math.min(1, (getRawVal(p) - rawMin) / rawRange));
       }
       return Math.max(0, Math.min(1, (p.impliedVol - 35) / 65));
     };
@@ -387,39 +380,34 @@ export const OptionVolatilitySurface3D: React.FC<
       ctx.fillStyle = getColor(q.avgVal, activeSurfaceMode);
       ctx.fill();
 
-      ctx.strokeStyle =
-        activeSurfaceMode === 'gex_dealer'
-          ? 'rgba(34, 211, 238, 0.45)'
-          : 'rgba(56, 189, 248, 0.50)';
+      ctx.strokeStyle = activeSurfaceMode === 'iv_surface' ? 'rgba(63, 198, 221, 0.45)' : 'rgba(144, 133, 233, 0.45)';
       ctx.lineWidth = 0.8;
       ctx.stroke();
     });
 
-    // 3. Draw Laser-Etched Zero-Gamma Flip Pillar & Spot Price Beacon
+    // 3. Znacznik ceny spot (bez poziomu zero-gamma — wymagałby open interest, którego nie mamy)
     const spotProj = project(currentPrice, 2, 0.5);
-    ctx.strokeStyle = '#FACC15';
-    ctx.lineWidth = 2.0;
-    ctx.setLineDash([4, 3]);
+    ctx.strokeStyle = '#eef2f7';
+    ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.moveTo(spotProj.px, spotProj.py - 30);
     ctx.lineTo(spotProj.px, spotProj.py + 30);
     ctx.stroke();
-    ctx.setLineDash([]);
 
-    ctx.fillStyle = '#FACC15';
-    ctx.font = 'bold 9px "IBM Plex Mono", monospace';
+    ctx.fillStyle = '#eef2f7';
+    ctx.font = '600 10px "IBM Plex Mono", monospace';
     ctx.textAlign = 'left';
     ctx.fillText(`SPOT $${currentPrice.toFixed(0)}`, spotProj.px + 5, spotProj.py - 14);
 
     // Strike Axis Labels at bottom edge
     for (let i = 0; i < strikes.length; i += 3) {
       const p = project(strikes[i], expiries.length - 1, -0.05);
-      ctx.fillStyle = '#94A3B8';
-      ctx.font = '9px "IBM Plex Mono", monospace';
+      ctx.fillStyle = '#a9b4c4';
+      ctx.font = '10px "IBM Plex Mono", monospace';
       ctx.textAlign = 'center';
       ctx.fillText(`$${(strikes[i] / 1000).toFixed(0)}k`, p.px, p.py + 12);
     }
-  }, [surfaceGrid, pitch, yaw, zoom, activeSurfaceMode, currentPrice]);
+  }, [surfaceGrid, pitch, yaw, zoom, activeSurfaceMode, currentPrice, spotOk, wrapSize]);
 
   // Mouse Drag Rotation Handlers (With safe pitch limits)
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -452,162 +440,91 @@ export const OptionVolatilitySurface3D: React.FC<
     }
   };
 
+  if (!spotOk) {
+    return (
+      <div className="w-full h-full bg-surface-1 border border-line rounded-xl">
+        <EmptyState title="Brak ceny BTC" detail="Ilustracja opcji potrzebuje bieżącej ceny Hyperliquid — poczekaj na synchronizację danych." />
+      </div>
+    );
+  }
+
+  const greekCell = 'bg-page border border-line rounded-lg p-2 min-w-0';
   return (
-    <div className="w-full bg-[#070A12]/95 backdrop-blur-xl border border-slate-700/60 rounded-xl overflow-hidden shadow-2xl flex flex-col">
-      {/* Top Glass-Morphism Header */}
-      <div className="px-4 py-3 border-b border-slate-800 bg-[#090D16]/90 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2.5">
-          <Sparkles className="w-4 h-4 text-cyan-400" />
-          <div>
-            <h2 className="text-xs font-bold text-white tracking-tight flex items-center gap-2">
-              <span>3D BTCUSD Option Volatility Surface & Dealer GEX Topology</span>
-              <span className="text-[10px] px-2 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 font-mono">
-                Real-Time SVI & Black-Scholes
-              </span>
-            </h2>
-            <p className="text-[11px] text-slate-400 font-mono tabular-nums">
-              Spot: ${currentPrice.toFixed(1)} · Zero-Gamma: ~${Math.round(currentPrice + 500)}{' '}
-              · Max Pain: ~${Math.round(currentPrice - 1000)} · ATM IV: 54.2% · Skew 25Δ: -3.8%
-            </p>
-          </div>
+    <div className="w-full bg-surface-1 border border-line rounded-xl overflow-hidden flex flex-col">
+      <div className="px-4 py-3 border-b border-line flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="font-display text-[15px] font-semibold text-ink-1 flex flex-wrap items-center gap-2">
+            Options (ilustracja) · powierzchnia IV modelu
+            <Badge tone="model" title="Parametryczny smile IV + Black-Scholes; brak kwotowań opcji">MODEL</Badge>
+          </h2>
+          <p className="text-[11px] text-ink-3 font-mono tabular-nums mt-0.5">
+            Spot {currentPrice.toFixed(1)} · ATM IV modelu (30D) {modelAtmIv30 !== null ? `${modelAtmIv30.toFixed(1)}%` : '—'} · r ={' '}
+            {(RISK_FREE_RATE * 100).toFixed(1)}%, q = 0
+          </p>
         </div>
 
-        {/* Surface Mode & Expiry Switcher */}
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-0.5 bg-[#0B101B] p-0.5 rounded-lg border border-slate-800">
-            {(
-              [
-                { id: 'iv_surface', label: 'IV Smile Surface' },
-                { id: 'gex_dealer', label: 'Dealer GEX ($M)' },
-                { id: 'fluid_mechanics', label: 'Fluid Mechanics' },
-              ] as const
-            ).map((m) => (
-              <button
-                key={m.id}
-                type="button"
-                onClick={() => setActiveSurfaceMode(m.id)}
-                className={`px-2.5 py-1 text-[11px] font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
-                  activeSurfaceMode === m.id
-                    ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                {m.label}
-              </button>
-            ))}
+        <div className="flex flex-wrap items-center gap-2 max-w-full">
+          <div className="overflow-x-auto max-w-full">
+            <Segmented<SurfaceMode>
+              ariaLabel="Wielkość na osi wysokości"
+              value={activeSurfaceMode}
+              onChange={setActiveSurfaceMode}
+              options={[
+                { value: 'iv_surface', label: 'IV' },
+                { value: 'model_gamma', label: 'Gamma ($/1% · 1 BTC)' },
+                { value: 'model_vanna', label: 'Vanna |∂Δ/∂σ|' },
+              ]}
+            />
           </div>
-
           <button
             type="button"
             onClick={() => {
               setPitch(36);
               setYaw(-38);
-              setZoom(1.15);
+              setZoom(1);
             }}
-            className="p-1.5 text-slate-400 hover:text-white bg-[#0B101B] border border-slate-800 rounded-md transition-colors"
-            title="Resetuj orientację 3D"
+            className="inline-flex items-center justify-center w-9 h-9 text-ink-2 hover:text-ink-1 bg-surface-2 border border-line rounded-lg transition-colors duration-150"
+            title="Resetuj orientację"
+            aria-label="Resetuj orientację"
           >
-            <RotateCcw className="w-3.5 h-3.5" />
+            <RotateCcw className="w-3.5 h-3.5" aria-hidden="true" />
           </button>
-
-          {onTriggerVolSignal && (
-            <button
-              type="button"
-              onClick={() =>
-                onTriggerVolSignal(
-                  'LONG',
-                  'VOLATILITY CRUSH // MEAN REVERSION LONG',
-                  `Option Volatility Surface detected elevated OTM Put Skew (ATM IV 54.2%) with positive Dealer Gamma Flip above $${Math.round(
-                    currentPrice + 500
-                  )}.`
-                )
-              }
-              className="px-2.5 py-1 text-xs font-semibold bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 rounded-md flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
-            >
-              <TrendingUp className="w-3.5 h-3.5" />
-              <span>Sygnał Opcji</span>
-            </button>
-          )}
-
           {onToggleExpand && (
             <button
               type="button"
               onClick={onToggleExpand}
-              className="p-1.5 text-slate-400 hover:text-white bg-[#0B101B] border border-slate-800 rounded-md transition-colors"
-              title="Maksymalizuj / Zwiń panel"
+              className="inline-flex items-center justify-center w-9 h-9 text-ink-2 hover:text-ink-1 bg-surface-2 border border-line rounded-lg transition-colors duration-150"
+              title="Maksymalizuj / zwiń panel"
+              aria-label="Maksymalizuj / zwiń panel"
             >
-              <Maximize2 className="w-3.5 h-3.5" />
+              <Maximize2 className="w-3.5 h-3.5" aria-hidden="true" />
             </button>
           )}
         </div>
       </div>
 
-      {/* Main Grid: 3D Surface Arena (Left/Center) + 2D Smile Cross-Section & Greeks Heatmap (Right) */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 min-h-[480px]">
-        {/* Left/Center: Dynamic 3D Volatility Surface */}
+      <div className="grid grid-cols-1 lg:grid-cols-12">
+        {/* Powierzchnia 3D (rzut perspektywiczny na płótnie 2D) */}
         <div
           ref={canvasWrapperRef}
-          className="lg:col-span-8 relative h-[480px] bg-[#070A12] cursor-grab active:cursor-grabbing border-b lg:border-b-0 lg:border-r border-slate-800/80"
+          className="lg:col-span-8 relative h-[340px] sm:h-[420px] lg:h-[520px] cursor-grab active:cursor-grabbing border-b lg:border-b-0 lg:border-r border-line"
         >
           <canvas
             ref={canvasRef}
+            role="img"
+            aria-label="Ilustracyjna powierzchnia zmienności implikowanej modelu w funkcji strike'u i terminu"
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
             onPointerLeave={handlePointerUp}
-            className="w-full h-full block"
+            className="w-full h-full block touch-none"
           />
-
-          {/* 3D Navigation Guide Badge */}
-          <div className="absolute top-3 left-3 pointer-events-none bg-[#090D16]/85 backdrop-blur-md border border-slate-800 rounded-md px-2.5 py-1 text-[10px] font-mono text-slate-300 flex items-center gap-2">
-            <Compass className="w-3 h-3 text-cyan-400" />
-            <span>
-              Obracaj 3D (Pitch {pitch.toFixed(0)}° / Yaw {yaw.toFixed(0)}°) · Kąt bezpieczny
-            </span>
+          <div className="absolute top-3 left-3 pointer-events-none bg-surface-1/90 border border-line rounded-lg px-2.5 py-1 text-[11px] text-ink-2 flex items-center gap-1.5">
+            <Move3d className="w-3.5 h-3.5 text-ink-3" aria-hidden="true" />
+            Przeciągnij, aby obrócić
           </div>
-
-          {/* Fluid Mechanics & Market Physics HUD Card */}
-          <div className="absolute bottom-3 left-3 bg-[#090D16]/92 backdrop-blur-md border border-slate-800 rounded-lg p-2.5 text-xs font-mono tabular-nums shadow-xl max-w-xs">
-            <div className="flex items-center justify-between text-cyan-300 font-bold mb-1">
-              <span className="flex items-center gap-1.5 text-[11px]">
-                <Activity className="w-3 h-3 text-cyan-400" />
-                <span>Fizyka & Lepkość L2</span>
-              </span>
-              <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-normal">
-                {physics.regime}
-              </span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[10px] text-slate-300">
-              <div>
-                <span className="text-slate-500">Liczba Reynoldsa:</span>
-                <div className="font-bold text-white">{physics.reynoldsNumber}</div>
-              </div>
-              <div>
-                <span className="text-slate-500">Lepkość (μ):</span>
-                <div className="font-bold text-cyan-300">
-                  ${(physics.flowViscosity / 1000).toFixed(0)}K
-                </div>
-              </div>
-              <div>
-                <span className="text-slate-500">Gradient ∇P:</span>
-                <div className="font-bold text-emerald-400">
-                  {physics.kineticPressureGradient >= 0 ? '+' : ''}
-                  {physics.kineticPressureGradient} MPa
-                </div>
-              </div>
-              <div>
-                <span className="text-slate-500">Dyfuzja Browna:</span>
-                <div className="font-bold text-amber-300">
-                  {physics.brownianDiffusionCoeff}x
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Zoom Slider */}
-          <div className="absolute right-3 bottom-3 flex items-center gap-2 bg-[#090D16]/90 backdrop-blur-md border border-slate-800 rounded-md px-2.5 py-1 text-xs font-mono text-slate-300">
-            <span className="text-slate-500 text-[10px]">Zoom:</span>
+          <label className="absolute right-3 bottom-3 flex items-center gap-2 bg-surface-1/90 border border-line rounded-lg px-2.5 py-1 text-[11px] text-ink-3">
+            Zoom
             <input
               type="range"
               min={0.8}
@@ -615,131 +532,97 @@ export const OptionVolatilitySurface3D: React.FC<
               step={0.05}
               value={zoom}
               onChange={(e) => setZoom(Number(e.target.value))}
-              className="w-16 accent-cyan-400 cursor-pointer"
+              className="w-16 accent-accent cursor-pointer"
             />
-            <span className="text-cyan-300 text-[10px]">{(zoom * 100).toFixed(0)}%</span>
-          </div>
+            <span className="font-mono tabular-nums text-ink-1 w-9">{(zoom * 100).toFixed(0)}%</span>
+          </label>
         </div>
 
-        {/* Right: Volatility Smile Cross-Section & Greeks Heatmap Matrix */}
-        <div className="lg:col-span-4 bg-[#090D16] p-3 flex flex-col justify-between space-y-3 font-mono text-xs">
-          <div>
-            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-              <div className="flex items-center gap-1.5 text-white font-semibold">
-                <BarChart3 className="w-3.5 h-3.5 text-cyan-400" />
-                <span>Przekrój Smile & Dealer Greeks</span>
-              </div>
-              {/* Expiry Selector */}
-              <select
-                value={selectedExpiryDays}
-                onChange={(e) => setSelectedExpiryDays(Number(e.target.value))}
-                className="bg-[#0B101B] border border-slate-700 rounded px-1.5 py-0.5 text-[11px] text-cyan-300"
-              >
-                {EXPIRIES.map((exp) => (
-                  <option key={exp.days} value={exp.days}>
-                    {exp.label}
-                  </option>
-                ))}
-              </select>
-            </div>
+        {/* Przekrój smile dla wybranego terminu + greki modelu */}
+        <div className="lg:col-span-4 p-4 flex flex-col gap-3 text-xs">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium">Przekrój smile · greki (CALL)</span>
+            <select
+              value={selectedExpiryDays}
+              onChange={(e) => setSelectedExpiryDays(Number(e.target.value))}
+              aria-label="Termin wygaśnięcia"
+              className="bg-page border border-line-strong rounded-lg px-2 min-h-9 text-xs text-ink-1"
+            >
+              {EXPIRIES.map((exp) => (
+                <option key={exp.days} value={exp.days}>
+                  {exp.label}
+                </option>
+              ))}
+            </select>
+          </div>
 
-            {/* Cross-section Volatility Smile Visualizer */}
-            <div className="mt-2.5 bg-[#070A12] border border-slate-800 rounded-md p-2">
-              <div className="text-[10px] text-slate-400 mb-1 flex items-center justify-between">
-                <span>Profil IV Smile ({selectedExpiryDays}D Expiry)</span>
-                <span className="text-amber-400 font-semibold">
-                  ATM Strike ${Math.round(currentPrice / 1000) * 1000}
-                </span>
-              </div>
-              {/* Sparkline Smile Bars */}
-              <div className="h-24 flex items-end gap-1 pt-2">
-                {currentExpirySlice.map((p) => {
-                  const isAtm = Math.abs(p.strike - currentPrice) < 600;
-                  const heightPct = Math.max(15, Math.min(100, (p.impliedVol / 110) * 100));
-                  return (
-                    <div
-                      key={p.strike}
-                      onMouseEnter={() => setHoveredPoint(p)}
-                      onMouseLeave={() => setHoveredPoint(null)}
-                      className="flex-1 flex flex-col items-center group relative cursor-pointer"
-                    >
-                      <div
-                        style={{ height: `${heightPct}%` }}
-                        className={`w-full rounded-t transition-all ${
-                          isAtm
-                            ? 'bg-amber-400 shadow-[0_0_8px_rgba(250,204,21,0.5)]'
-                            : p.strike < currentPrice
-                            ? 'bg-rose-500/70 hover:bg-rose-400'
-                            : 'bg-cyan-500/70 hover:bg-cyan-400'
-                        }`}
-                      />
-                    </div>
-                  );
-                })}
-              </div>
-              <div className="flex justify-between text-[9px] text-slate-500 mt-1">
-                <span>Put OTM ${currentExpirySlice[0]?.strike ?? '-'}</span>
-                <span>ATM</span>
-                <span>Call OTM ${currentExpirySlice[currentExpirySlice.length - 1]?.strike ?? '-'}</span>
-              </div>
+          <div className="bg-page border border-line rounded-lg p-2.5">
+            <div className="flex items-center justify-between text-[11px] text-ink-3">
+              <span>IV modelu · {selectedExpiryDays}D</span>
+              <span className="font-mono tabular-nums text-ink-2">ATM {Math.round(currentPrice / 1000) * 1000}</span>
             </div>
-
-            {/* Hovered or ATM Greek Values */}
-            <div className="mt-2.5 grid grid-cols-2 gap-2 text-[11px] tabular-nums">
-              <div className="bg-[#070A12] border border-slate-800 rounded p-2">
-                <span className="text-[10px] text-slate-500 block">Strike / Implied Vol</span>
-                <span className="font-bold text-white text-xs">
-                  ${hoveredPoint?.strike ?? Math.round(currentPrice / 1000) * 1000}{' '}
-                  <span className="text-cyan-300">({hoveredPoint?.impliedVol ?? 54.2}%)</span>
-                </span>
-              </div>
-              <div className="bg-[#070A12] border border-slate-800 rounded p-2">
-                <span className="text-[10px] text-slate-500 block">Delta (Δ) / Vanna</span>
-                <span className="font-bold text-white text-xs">
-                  Δ {hoveredPoint?.delta ?? 0.51} ·{' '}
-                  <span className="text-amber-300">{hoveredPoint?.vanna ?? -0.04}</span>
-                </span>
-              </div>
-              <div className="bg-[#070A12] border border-slate-800 rounded p-2">
-                <span className="text-[10px] text-slate-500 block">Dealer Gamma (GEX)</span>
-                <span
-                  className={`font-bold text-xs ${
-                    (hoveredPoint?.gammaExposureUsd ?? 1.2) >= 0
-                      ? 'text-cyan-400'
-                      : 'text-rose-400'
-                  }`}
-                >
-                  ${hoveredPoint?.gammaExposureUsd ?? 1.45}M USD
-                </span>
-              </div>
-              <div className="bg-[#070A12] border border-slate-800 rounded p-2">
-                <span className="text-[10px] text-slate-500 block">Charm (Theta/Delta)</span>
-                <span className="font-bold text-emerald-400 text-xs">
-                  {hoveredPoint?.charm ?? -0.02}
-                </span>
-              </div>
+            <div className="h-24 flex items-end justify-center gap-1 pt-2">
+              {currentExpirySlice.map((p) => {
+                const isAtm = Math.abs(p.strike - currentPrice) < 600;
+                const heightPct = Math.max(15, Math.min(100, (p.impliedVol / 110) * 100));
+                return (
+                  <button
+                    key={p.strike}
+                    type="button"
+                    onMouseEnter={() => setHoveredPoint(p)}
+                    onMouseLeave={() => setHoveredPoint(null)}
+                    onFocus={() => setHoveredPoint(p)}
+                    onBlur={() => setHoveredPoint(null)}
+                    onClick={() => setHoveredPoint(p)}
+                    title={`Strike ${p.strike} · IV ${p.impliedVol}%`}
+                    aria-label={`Strike ${p.strike}, IV modelu ${p.impliedVol}%`}
+                    className="flex-1 max-w-6 h-full flex items-end"
+                  >
+                    <span
+                      style={{ height: `${heightPct}%` }}
+                      className={`block w-full rounded-t ${
+                        isAtm ? 'bg-ink-1' : p.strike < currentPrice ? 'bg-ink-3/70 hover:bg-ink-3' : 'bg-accent/60 hover:bg-accent'
+                      }`}
+                    />
+                  </button>
+                );
+              })}
+            </div>
+            <div className="flex justify-between text-[10px] text-ink-3 mt-1 font-mono tabular-nums">
+              <span>put OTM {currentExpirySlice[0]?.strike ?? '—'}</span>
+              <span>ATM</span>
+              <span>call OTM {currentExpirySlice[currentExpirySlice.length - 1]?.strike ?? '—'}</span>
             </div>
           </div>
 
-          {/* Options Structural Levels Card */}
-          <div className="bg-[#070A12] border border-slate-800 rounded-md p-2.5 text-[10px] space-y-1.5 text-slate-400">
-            <div className="flex items-center justify-between">
-              <span>Zero-Gamma Flip:</span>
-              <strong className="text-cyan-300 font-mono">
-                ${Math.round(currentPrice + 500)} (Dealer Net Long Gamma)
-              </strong>
+          {/* Bez wskazania słupka pokazujemy „—” zamiast wartości domyślnych */}
+          <div className="grid grid-cols-2 gap-2 tabular-nums">
+            <div className={greekCell}>
+              <span className="text-[10px] text-ink-3 block">Strike · IV modelu</span>
+              <span className="font-mono text-ink-1">
+                {hoveredPoint ? `${hoveredPoint.strike} · ${hoveredPoint.impliedVol}%` : '—'}
+              </span>
             </div>
-            <div className="flex items-center justify-between">
-              <span>Max Pain Strike (30D):</span>
-              <strong className="text-amber-300 font-mono">
-                ${Math.round(currentPrice - 1000)} (Resting Liq Magnet)
-              </strong>
+            <div className={greekCell}>
+              <span className="text-[10px] text-ink-3 block">Delta Δ · vanna</span>
+              <span className="font-mono text-ink-1">
+                {hoveredPoint ? `${hoveredPoint.delta} · ${hoveredPoint.vanna}` : '—'}
+              </span>
             </div>
-            <div className="flex items-center justify-between">
-              <span>25-Delta Skew:</span>
-              <strong className="text-rose-400 font-mono">-3.8% (Bearish Put Premium)</strong>
+            <div className={greekCell}>
+              <span className="text-[10px] text-ink-3 block">Gamma ($/1% · 1 BTC)</span>
+              <span className="font-mono text-ink-1">{hoveredPoint ? `$${hoveredPoint.gammaUsdPer1Pct.toFixed(0)}` : '—'}</span>
+            </div>
+            <div className={greekCell}>
+              <span className="text-[10px] text-ink-3 block">Charm ∂Δ/∂t (/rok)</span>
+              <span className="font-mono text-ink-1">{hoveredPoint?.charm ?? '—'}</span>
             </div>
           </div>
+
+          <p className="text-[11px] text-ink-3 leading-relaxed">
+            Hyperliquid nie ma rynku opcji, a aplikacja nie pobiera kwotowań. Zero-gamma, max pain i GEX dealerów wymagają open interest
+            per strike — nie są wyliczane. To parametryczny smile + greki Blacka-Scholesa, wyłącznie do nauki.
+          </p>
         </div>
       </div>
     </div>

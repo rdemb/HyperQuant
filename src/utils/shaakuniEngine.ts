@@ -71,6 +71,41 @@ export function getNYSessionInfo(
   return { session, formattedTime, mins };
 }
 
+/** Przesunięcie strefy czasowej względem UTC (minuty) w danej chwili — z Intl, więc z DST. */
+function timeZoneOffsetMinutes(timeZone: string, atMs: number): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: 'numeric',
+  }).formatToParts(new Date(atMs));
+  const get = (t: string) => Number(parts.find((p) => p.type === t)?.value ?? 0);
+  const asUtc = Date.UTC(get('year'), get('month') - 1, get('day'), get('hour') % 24, get('minute'));
+  return Math.round((asUtc - Math.floor(atMs / 60000) * 60000) / 60000);
+}
+
+/**
+ * Przelicza pełną godzinę NY na godzinę w innej strefie (np. Europe/Warsaw) dla danego dnia.
+ * Uwzględnia okresy, gdy DST w USA i UE nie pokrywają się (różnica 5h zamiast 6h).
+ */
+export function nyHourInTimeZone(
+  nyHour: number,
+  atMs: number = Date.now(),
+  timeZone: string = 'Europe/Warsaw'
+): { hour: number; label: string } {
+  const diffMin = timeZoneOffsetMinutes(timeZone, atMs) - timeZoneOffsetMinutes('America/New_York', atMs);
+  const totalMin = (((nyHour * 60 + diffMin) % 1440) + 1440) % 1440;
+  const hour = Math.floor(totalMin / 60);
+  const tzName =
+    new Intl.DateTimeFormat('en-GB', { timeZone, timeZoneName: 'short' })
+      .formatToParts(new Date(atMs))
+      .find((p) => p.type === 'timeZoneName')?.value ?? timeZone;
+  return { hour, label: tzName };
+}
+
 export function computeShaakuniIndicator(
   bars: OHLCVBar[],
   config: ShaakuniConfig,
@@ -81,20 +116,26 @@ export function computeShaakuniIndicator(
   const { session, formattedTime } = getNYSessionInfo(config.tzChoice);
 
   if (n < 20) {
+    // Za mało świec: tylko realne poziomy HTF (lub null), bez zakodowanych wartości
+    const finite = (v: number | undefined) => (v !== undefined && Number.isFinite(v) ? v : null);
+    const pdh0 = finite(realHtfLevels?.pdh);
+    const pdl0 = finite(realHtfLevels?.pdl);
+    const pwh0 = finite(realHtfLevels?.pwh);
+    const pwl0 = finite(realHtfLevels?.pwl);
     return {
-      pwh: realHtfLevels?.pwh ?? 84315,
-      pwl: realHtfLevels?.pwl ?? 80351,
-      weq: 82333,
-      pwh2: realHtfLevels?.pwh2 ?? 87235,
-      pwl2: realHtfLevels?.pwl2 ?? 82741,
-      pdh: realHtfLevels?.pdh ?? 83138,
-      pdl: realHtfLevels?.pdl ?? 81719,
-      deq: 82428.5,
+      pwh: pwh0,
+      pwl: pwl0,
+      weq: pwh0 !== null && pwl0 !== null ? (pwh0 + pwl0) / 2 : null,
+      pwh2: finite(realHtfLevels?.pwh2),
+      pwl2: finite(realHtfLevels?.pwl2),
+      pdh: pdh0,
+      pdl: pdl0,
+      deq: pdh0 !== null && pdl0 !== null ? (pdh0 + pdl0) / 2 : null,
       pdhStatus: 'Active',
       pdlStatus: 'Active',
       nySession: session,
       nyTimeFormatted: formattedTime,
-      atr14: 95,
+      atr14: n > 0 ? bars[n - 1].atr : 0,
       orderBlocks: [],
     };
   }
@@ -124,15 +165,15 @@ export function computeShaakuniIndicator(
     dHi = Math.max(realHtfLevels.dHi, lastBar.high);
     dLo = Math.min(realHtfLevels.dLo, lastBar.low);
   } else {
-    // Fallback to real Hyperliquid snapshot numbers if API hasn't resolved yet
-    pwh = 84315.0;
-    pwl = 80351.0;
-    pwh2 = 87235.0;
-    pwl2 = 82741.0;
-    pdh = 83138.0;
-    pdl = 81719.0;
-    dHi = Math.max(83425.0, lastBar.high);
-    dLo = Math.min(81171.0, lastBar.low);
+    // Brak danych HTF z API → poziomy nieznane (NaN → null na wyjściu), bez zakodowanych liczb
+    pwh = Number.NaN;
+    pwl = Number.NaN;
+    pwh2 = Number.NaN;
+    pwl2 = Number.NaN;
+    pdh = Number.NaN;
+    pdl = Number.NaN;
+    dHi = lastBar.high;
+    dLo = lastBar.low;
   }
 
   let pdhStatus: LevelStatus = 'Active';

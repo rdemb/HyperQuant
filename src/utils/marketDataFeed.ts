@@ -1,3 +1,4 @@
+import { normCdf } from './stats';
 import {
   AggrTradeTick,
   BackendQuantTelemetry,
@@ -42,10 +43,19 @@ function createEmptyExchangeBreakdown(): Record<ExchangeId, ExchangeVolumeBreakd
 }
 
 /**
- * Distributes a real candle's USD volume across Perp & Spot venues based on candle
- * body direction, wick ratios, and orderflow micro-structure.
+ * Udział wolumenu kupna metodą Bulk Volume Classification (Easley, López de Prado, O'Hara 2012):
+ * V_buy / V = Φ(ΔP / σ_ΔP). Świeca HL nie zawiera strony agresora, więc to estymata, nie pomiar.
  */
-export function enrichCandleWithAggrOrderflow(
+export function bvcBuyShare(priceChange: number, deltaSigma: number): number {
+  if (!(deltaSigma > 0) || !Number.isFinite(priceChange)) return 0.5;
+  return normCdf(priceChange / deltaSigma);
+}
+
+/**
+ * Buduje świecę wyłącznie z realnych danych Hyperliquid (perp): wolumen USD = v·close,
+ * podział kupno/sprzedaż estymowany BVC. Brak danych spot, innych giełd i likwidacji → zera.
+ */
+export function buildHyperliquidBar(
   open: number,
   high: number,
   low: number,
@@ -53,87 +63,16 @@ export function enrichCandleWithAggrOrderflow(
   volumeBtc: number,
   tradeCount: number,
   time: number,
-  index: number
+  deltaSigma: number
 ): OHLCVBar {
-  const totalRange = Math.max(0.5, high - low);
-  const body = close - open;
-  const bodyRatio = body / totalRange; // -1 to +1
-  const buyShare = Math.max(
-    0.18,
-    Math.min(0.82, 0.5 + bodyRatio * 0.34 + Math.sin(index * 0.7) * 0.04)
-  );
-
-  // Scale Hyperliquid BTC volume to aggregated 41-market AggrBTCv5 USD volume
-  const hlUsdVol = Math.max(50000, volumeBtc * close);
-  const aggrTotalUsdVol = hlUsdVol * 3.8;
-
-  const vbuy = Math.round(aggrTotalUsdVol * buyShare);
-  const vsell = Math.round(aggrTotalUsdVol * (1 - buyShare));
-
-  // Spot vs Perp split (~28% Spot, ~72% Perp)
-  const spotLeadFactor =
-    close > open && (high - close) / totalRange < 0.25 ? 1.18 : 0.94;
-  const spotVbuy = Math.round(vbuy * 0.28 * spotLeadFactor);
-  const spotVsell = Math.round(vsell * 0.28);
-  const perpVbuy = Math.max(1000, vbuy - spotVbuy);
-  const perpVsell = Math.max(1000, vsell - spotVsell);
+  const buyShare = bvcBuyShare(close - open, deltaSigma);
+  const usdVol = Number.isFinite(volumeBtc) ? Math.max(0, volumeBtc * close) : 0;
+  const vbuy = Math.round(usdVol * buyShare);
+  const vsell = Math.round(usdVol * (1 - buyShare));
+  const cbuy = Math.round(Math.max(0, tradeCount) * buyShare);
 
   const exchanges = createEmptyExchangeBreakdown();
-  exchanges.HYPERLIQUID = {
-    vbuy: Math.round(perpVbuy * 0.27),
-    vsell: Math.round(perpVsell * 0.26),
-  };
-  exchanges.BINANCE_FUTURES = {
-    vbuy: Math.round(perpVbuy * 0.34),
-    vsell: Math.round(perpVsell * 0.35),
-  };
-  exchanges.BYBIT = {
-    vbuy: Math.round(perpVbuy * 0.17),
-    vsell: Math.round(perpVsell * 0.17),
-  };
-  exchanges.OKEX = {
-    vbuy: Math.round(perpVbuy * 0.12),
-    vsell: Math.round(perpVsell * 0.12),
-  };
-  exchanges.DERIBIT = {
-    vbuy: Math.round(perpVbuy * 0.06),
-    vsell: Math.round(perpVsell * 0.06),
-  };
-  exchanges.BITMEX = {
-    vbuy: Math.round(perpVbuy * 0.04),
-    vsell: Math.round(perpVsell * 0.04),
-  };
-
-  exchanges.BINANCE = {
-    vbuy: Math.round(spotVbuy * 0.42),
-    vsell: Math.round(spotVsell * 0.42),
-  };
-  exchanges.COINBASE = {
-    vbuy: Math.round(spotVbuy * 0.28),
-    vsell: Math.round(spotVsell * 0.26),
-  };
-  exchanges.BITFINEX = {
-    vbuy: Math.round(spotVbuy * 0.14),
-    vsell: Math.round(spotVsell * 0.15),
-  };
-  exchanges.KRAKEN = {
-    vbuy: Math.round(spotVbuy * 0.1),
-    vsell: Math.round(spotVsell * 0.1),
-  };
-  exchanges.BITSTAMP = {
-    vbuy: Math.round(spotVbuy * 0.06),
-    vsell: Math.round(spotVsell * 0.07),
-  };
-
-  const absBody = Math.abs(body);
-  const lbuy =
-    close > open && absBody > 60
-      ? Math.round(aggrTotalUsdVol * 0.045)
-      : Math.round(aggrTotalUsdVol * 0.008);
-  const lsell =
-    close < open && absBody > 60
-      ? Math.round(aggrTotalUsdVol * 0.045)
-      : Math.round(aggrTotalUsdVol * 0.008);
+  exchanges.HYPERLIQUID = { vbuy, vsell };
 
   return {
     time,
@@ -143,14 +82,14 @@ export function enrichCandleWithAggrOrderflow(
     close,
     vbuy,
     vsell,
-    spotVbuy,
-    spotVsell,
-    perpVbuy,
-    perpVsell,
-    lbuy,
-    lsell,
-    cbuy: Math.max(1, Math.round(tradeCount * buyShare * 2.5)),
-    csell: Math.max(1, Math.round(tradeCount * (1 - buyShare) * 2.5)),
+    spotVbuy: 0,
+    spotVsell: 0,
+    perpVbuy: vbuy,
+    perpVsell: vsell,
+    lbuy: 0,
+    lsell: 0,
+    cbuy,
+    csell: Math.max(0, Math.round(tradeCount) - cbuy),
     exchanges,
     cvdTotal: 0,
     cvdSpot: 0,
@@ -164,8 +103,187 @@ export function enrichCandleWithAggrOrderflow(
     keltnerLower: 0,
     kalmanEstimate: close,
     kalmanVelocity: 0,
-    atr: 95,
+    atr: 0,
   };
+}
+
+/** Odchylenie standardowe zmian ceny w świecy (close − open) — σ_ΔP dla BVC. */
+function stdOfBodyChanges(rows: { o: number; c: number }[]): number {
+  if (rows.length < 2) return 0;
+  const d = rows.map((r) => r.c - r.o);
+  const m = d.reduce((a, b) => a + b, 0) / d.length;
+  return Math.sqrt(d.reduce((a, b) => a + (b - m) * (b - m), 0) / (d.length - 1));
+}
+
+/** Parser poziomów L2 z Hyperliquid (REST i WS) — rozmiary dokładnie z API, bez mnożników. */
+export function parseL2Levels(
+  rawBids: { px: string; sz: string; n: number }[],
+  rawAsks: { px: string; sz: string; n: number }[],
+  depth: number = 18
+): { bids: L2OrderbookLevel[]; asks: L2OrderbookLevel[] } {
+  const parse = (rows: { px: string; sz: string; n: number }[]) => {
+    let cum = 0;
+    const out: L2OrderbookLevel[] = [];
+    for (const r of rows.slice(0, depth)) {
+      const price = parseFloat(r.px);
+      const sizeBtc = parseFloat(r.sz);
+      if (!Number.isFinite(price) || !Number.isFinite(sizeBtc)) continue;
+      const sizeUsd = Math.round(price * sizeBtc);
+      cum += sizeUsd;
+      out.push({ price, sizeBtc, sizeUsd, cumulativeUsd: cum, exchangeCount: Math.max(1, r.n) });
+    }
+    return out;
+  };
+  return { bids: parse(rawBids), asks: parse(rawAsks) };
+}
+
+/** Mapuje surową transakcję z kanału WS `trades` na tick — realny rozmiar, bez podłóg. */
+export function mapHyperliquidTrade(tr: {
+  px: string;
+  sz: string;
+  side: string;
+  time: number;
+  tid?: number | string;
+}): AggrTradeTick | null {
+  const px = parseFloat(tr.px);
+  const sz = parseFloat(tr.sz);
+  if (!Number.isFinite(px) || !Number.isFinite(sz) || px <= 0 || sz <= 0) return null;
+  const sizeUsd = Math.round(px * sz);
+  return {
+    // tid z API pozwala odrzucić duplikaty (np. powtórzenie po ponownym połączeniu)
+    id: tr.tid !== undefined ? `hl-${tr.time}-${tr.tid}` : `hl-${tr.time}-${Math.random().toString(36).slice(2, 7)}`,
+    timestamp: tr.time || Date.now(),
+    exchange: 'HYPERLIQUID',
+    market: 'BTC-USD-PERP',
+    isPerp: true,
+    side: tr.side === 'B' ? 'buy' : 'sell',
+    price: px,
+    sizeUsd,
+    sizeBtc: Number(sz.toFixed(4)),
+    isLiquidation: false,
+    tier: classifyAggrThresholdTier(sizeUsd, true, false),
+  };
+}
+
+/**
+ * Dokłada transakcje z WS do świec z rolloverem: transakcja po granicy interwału otwiera
+ * nową świecę (OHLC = cena). Transakcje spóźnione trafiają do swojej świecy, jeśli istnieje.
+ * Zwraca nową tablicę (bez mutacji wejścia) z przeliczonymi wskaźnikami.
+ */
+export function applyLiveTradesToBars(
+  bars: OHLCVBar[],
+  ticks: AggrTradeTick[],
+  timeframeSec: number,
+  maxBars: number = 145,
+  options: { updatePrice?: boolean } = {}
+): OHLCVBar[] {
+  // updatePrice=false: ticki z innych giełd (CEX) dokładają wolumen, ale nie zmieniają OHLC świecy HL
+  const updatePrice = options.updatePrice ?? true;
+  if (bars.length === 0 || ticks.length === 0) return bars;
+  const tfMs = timeframeSec * 1000;
+  const updated = [...bars];
+  const touched = new Set<number>();
+
+  for (const tick of ticks) {
+    const barTime = Math.floor(tick.timestamp / tfMs) * tfMs;
+    let idx = updated.length - 1;
+    if (barTime > updated[idx].time) {
+      const exchanges = createEmptyExchangeBreakdown();
+      // Nowa świeca z tickiem CEX: OHLC = ostatnie zamknięcie HL (cena innej giełdy nie wchodzi do świecy)
+      const px = updatePrice ? tick.price : updated[idx].close;
+      updated.push({
+        ...updated[idx],
+        time: barTime,
+        open: px,
+        high: px,
+        low: px,
+        close: px,
+        vbuy: 0,
+        vsell: 0,
+        spotVbuy: 0,
+        spotVsell: 0,
+        perpVbuy: 0,
+        perpVsell: 0,
+        lbuy: 0,
+        lsell: 0,
+        cbuy: 0,
+        csell: 0,
+        exchanges,
+        realFlow: false,
+      });
+      idx = updated.length - 1;
+      touched.add(idx);
+    } else {
+      while (idx > 0 && updated[idx].time > barTime) idx--;
+      if (updated[idx].time !== barTime) continue;
+    }
+
+    if (!touched.has(idx)) {
+      updated[idx] = { ...updated[idx], exchanges: { ...updated[idx].exchanges } };
+      touched.add(idx);
+    }
+    const bar = updated[idx];
+    const isLast = idx === updated.length - 1;
+    if (updatePrice) {
+      if (isLast) bar.close = tick.price;
+      if (tick.price > bar.high) bar.high = tick.price;
+      if (tick.price < bar.low) bar.low = tick.price;
+    }
+
+    // Likwidacje są też w strumieniu transakcji giełdy — liczymy je tylko w lbuy/lsell (bez podwójnego wolumenu)
+    if (tick.isLiquidation) {
+      if (tick.side === 'buy') bar.lbuy += tick.sizeUsd;
+      else bar.lsell += tick.sizeUsd;
+      continue;
+    }
+
+    const ex = { ...(bar.exchanges[tick.exchange] ?? { vbuy: 0, vsell: 0 }) };
+    if (tick.side === 'buy') {
+      bar.vbuy += tick.sizeUsd;
+      bar.cbuy += 1;
+      if (tick.isPerp) bar.perpVbuy += tick.sizeUsd;
+      else bar.spotVbuy += tick.sizeUsd;
+      ex.vbuy += tick.sizeUsd;
+    } else {
+      bar.vsell += tick.sizeUsd;
+      bar.csell += 1;
+      if (tick.isPerp) bar.perpVsell += tick.sizeUsd;
+      else bar.spotVsell += tick.sizeUsd;
+      ex.vsell += tick.sizeUsd;
+    }
+    bar.exchanges[tick.exchange] = ex;
+  }
+
+  return recalculateIndicatorSeries(updated.slice(-maxBars));
+}
+
+/**
+ * Nakłada realny podział agresora (zebrany z WS dla danej świecy) na pełny wolumen świecy z REST.
+ * Świece bez danych z WS zostają z estymatą BVC.
+ */
+export function applyRealFlowSplit(
+  bars: OHLCVBar[],
+  flowByBarTime: Map<number, { buy: number; sell: number }>
+): OHLCVBar[] {
+  if (flowByBarTime.size === 0) return bars;
+  const out = bars.map((b) => {
+    const f = flowByBarTime.get(b.time);
+    if (!f || f.buy + f.sell <= 0) return b;
+    const total = b.vbuy + b.vsell;
+    const share = f.buy / (f.buy + f.sell);
+    const vbuy = Math.round(total * share);
+    const vsell = Math.round(total - vbuy);
+    return {
+      ...b,
+      vbuy,
+      vsell,
+      perpVbuy: vbuy,
+      perpVsell: vsell,
+      exchanges: { ...b.exchanges, HYPERLIQUID: { vbuy, vsell } },
+      realFlow: true,
+    };
+  });
+  return recalculateIndicatorSeries(out);
 }
 
 /**
@@ -180,6 +298,42 @@ export function enrichCandleWithAggrOrderflow(
  * - 2D Kalman Filter State-Space Estimate & Velocity
  * - RMA(14) ATR for Shaakuni Order Blocks
  */
+/** Przepływ z innych giełd per świeca i giełda (realne ticki CEX, opt-in). */
+export type VenueFlowMap = Map<
+  number,
+  Map<ExchangeId, { buy: number; sell: number; isPerp: boolean; liqBuy?: number; liqSell?: number }>
+>;
+
+/**
+ * Dokłada realny przepływ z innych giełd do świec z REST (które zawierają tylko wolumen HL),
+ * żeby odświeżenie REST nie kasowało danych CEX. Zwraca nowe obiekty świec.
+ */
+export function applyVenueFlow(bars: OHLCVBar[], venueFlow: VenueFlowMap): OHLCVBar[] {
+  if (venueFlow.size === 0) return bars;
+  const out = bars.map((b) => {
+    const venues = venueFlow.get(b.time);
+    if (!venues || venues.size === 0) return b;
+    const nb: OHLCVBar = { ...b, exchanges: { ...b.exchanges } };
+    venues.forEach((f, ex) => {
+      nb.lbuy += f.liqBuy ?? 0;
+      nb.lsell += f.liqSell ?? 0;
+      nb.vbuy += f.buy;
+      nb.vsell += f.sell;
+      if (f.isPerp) {
+        nb.perpVbuy += f.buy;
+        nb.perpVsell += f.sell;
+      } else {
+        nb.spotVbuy += f.buy;
+        nb.spotVsell += f.sell;
+      }
+      const prev = nb.exchanges[ex] ?? { vbuy: 0, vsell: 0 };
+      nb.exchanges[ex] = { vbuy: prev.vbuy + f.buy, vsell: prev.vsell + f.sell };
+    });
+    return nb;
+  });
+  return recalculateIndicatorSeries(out);
+}
+
 export function recalculateIndicatorSeries(bars: OHLCVBar[]): OHLCVBar[] {
   if (bars.length === 0) return bars;
   let cvdTotal = 0;
@@ -257,25 +411,28 @@ export function recalculateIndicatorSeries(bars: OHLCVBar[]): OHLCVBar[] {
     b.keltnerUpper = emaClose + b.atr * 2.35;
     b.keltnerLower = emaClose - b.atr * 2.35;
 
+    // Predykcja: F = [[1, 1], [0, φ]], P' = F·P·Fᵀ + Q (tłumienie φ także w kowariancji)
+    const phi = 0.92;
     const predX = kalmanX + kalmanV;
-    const predV = kalmanV * 0.92;
-    p00 += p10 + p01 + p11 + 1.5;
-    p01 += p11;
-    p10 += p11;
-    p11 += 0.4;
+    const predV = kalmanV * phi;
+    const a00 = p00 + p01 + p10 + p11 + 1.5;
+    const a01 = phi * (p01 + p11);
+    const a10 = phi * (p10 + p11);
+    const a11 = phi * phi * p11 + 0.4;
 
     const rNoise = Math.max(10, b.atr * 0.35);
-    const sInnov = p00 + rNoise;
-    const k0 = p00 / sInnov;
-    const k1 = p10 / sInnov;
+    const sInnov = a00 + rNoise;
+    const k0 = a00 / sInnov;
+    const k1 = a10 / sInnov;
     const yDiff = b.close - predX;
 
     kalmanX = predX + k0 * yDiff;
     kalmanV = predV + k1 * yDiff;
-    p00 = (1 - k0) * p00;
-    p01 = (1 - k0) * p01;
-    p10 = -k1 * p00 + p10;
-    p11 = -k1 * p01 + p11;
+    // Aktualizacja P = (I − K·H)·P' liczona wyłącznie z wartości predykcji (bez nadpisywania w trakcie)
+    p00 = (1 - k0) * a00;
+    p01 = (1 - k0) * a01;
+    p10 = a10 - k1 * a00;
+    p11 = a11 - k1 * a01;
 
     b.kalmanEstimate = kalmanX;
     b.kalmanVelocity = kalmanV;
@@ -285,26 +442,46 @@ export function recalculateIndicatorSeries(bars: OHLCVBar[]): OHLCVBar[] {
 }
 
 /**
- * Runs the 600-path Merton Jump-Diffusion + Ornstein-Uhlenbeck Monte Carlo simulation
- * directly in the browser (or server) for First-Passage Time and Volatility Tensor projections.
+ * Zmienność logarytmiczna w zadanym horyzoncie z estymatora Parkinsona (high/low):
+ * σ²_bar = ln(H/L)² / (4·ln2), skalowane do horyzontu √(horizon / tf).
+ */
+export function parkinsonSigma(
+  bars: OHLCVBar[],
+  horizonSec: number,
+  timeframeSec: number,
+  lookback: number = 60
+): number {
+  const slice = bars.slice(-lookback).filter((b) => b.high > 0 && b.low > 0 && b.high >= b.low);
+  if (slice.length === 0) return 0;
+  const varBar =
+    slice.reduce((acc, b) => acc + Math.log(b.high / b.low) ** 2, 0) / (4 * Math.LN2 * slice.length);
+  return Math.sqrt(varBar * (horizonSec / timeframeSec));
+}
+
+/**
+ * 600 ścieżek Merton Jump-Diffusion + przyciąganie OU do D-EQ, horyzont 2h, krok 1 min.
+ * Kalibracja: całkowita wariancja logarytmiczna = sigma2h² (z danych, np. Parkinson).
+ * Założenie (nieestymowane): skoki niosą 20% wariancji, intensywność 1 skok / 2h,
+ * rozmiar log-normalny o zerowej średniej — ogony grubsze niż GBM przy tej samej wariancji.
  */
 export function runMertonMonteCarloEngine(
   currentPrice: number,
   pdh: number,
   pdl: number,
   deq: number,
-  atr: number,
-  fundingRate1h: number,
-  basisBps: number
+  sigma2h: number
 ): BackendQuantTelemetry['monteCarlo'] {
   const numPaths = 600;
-  const steps = 24; // 24 steps of 5m = 2 hours forward horizon
-  const dt = 1 / 24;
-  const sigma = Math.max(45, atr * 0.58);
-  const theta = 0.08; // Ornstein-Uhlenbeck pull toward D-EQ
-
-  const fundingSqueezeDrift =
-    fundingRate1h < 0 ? 12 : fundingRate1h > 0.00004 ? -10 : 4;
+  const steps = 120; // 120 kroków po 1 min = 2h
+  const dt = 1 / steps; // jednostka czasu = horyzont 2h
+  const sigma = Math.max(0, sigma2h);
+  const jumpShare = 0.2;
+  const jumpLambda = 1;
+  const sigmaDiff = sigma * Math.sqrt(1 - jumpShare);
+  const sigmaJump = sigma * Math.sqrt(jumpShare / jumpLambda);
+  const muJump = -0.5 * sigmaJump * sigmaJump;
+  const theta = 0.08; // przyciąganie OU do D-EQ w jednostce 2h
+  const sampleEvery = 5; // zapis punktu ścieżki co 5 min (wizualizacja)
 
   let hitPDHCount = 0;
   let hitPDLCount = 0;
@@ -326,12 +503,12 @@ export function runMertonMonteCarloEngine(
     return Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2);
   };
 
+  const prevAboveDEQ = currentPrice >= deq;
   for (let p = 0; p < numPaths; p++) {
     let price = currentPrice;
     let touchedPDH = false;
     let touchedPDL = false;
     let touchedDEQ = false;
-    const prevAboveDEQ = currentPrice >= deq;
 
     const pathPts: { step: number; price: number }[] = [
       { step: 0, price: currentPrice },
@@ -339,12 +516,12 @@ export function runMertonMonteCarloEngine(
 
     for (let s = 1; s <= steps; s++) {
       const z = randNormal();
-      const hasJump = randUniform() < 0.07;
-      const jumpSize = hasJump ? randNormal() * atr * 0.65 : 0;
-
-      const ouDrift = theta * (deq - price) * dt;
-      const diffusion = sigma * Math.sqrt(dt) * z;
-      price = price + ouDrift + fundingSqueezeDrift * dt + diffusion + jumpSize;
+      let logRet = -0.5 * sigmaDiff * sigmaDiff * dt + sigmaDiff * Math.sqrt(dt) * z;
+      if (randUniform() < jumpLambda * dt) {
+        logRet += muJump + sigmaJump * randNormal();
+      }
+      const ouDrift = Number.isFinite(deq) ? theta * (deq - price) * dt : 0;
+      price = price * Math.exp(logRet) + ouDrift;
 
       if (!touchedPDH && price >= pdh) {
         touchedPDH = true;
@@ -365,17 +542,18 @@ export function runMertonMonteCarloEngine(
         sumStepsToDEQ += s;
       }
 
-      if (p < 18) {
-        pathPts.push({ step: s, price: Number(price.toFixed(1)) });
+      if (p < 18 && s % sampleEvery === 0) {
+        pathPts.push({ step: s / sampleEvery, price: Number(price.toFixed(1)) });
       }
     }
 
     if (p < 18) {
       const finalPrice = pathPts[pathPts.length - 1].price;
+      const band = currentPrice * sigma * 0.5;
       const type =
-        finalPrice > currentPrice + atr * 0.45
+        finalPrice > currentPrice + band
           ? 'bull'
-          : finalPrice < currentPrice - atr * 0.45
+          : finalPrice < currentPrice - band
           ? 'bear'
           : 'mean_revert';
       sampledPaths.push({
@@ -386,66 +564,62 @@ export function runMertonMonteCarloEngine(
     }
   }
 
-  const avgMinToPDH =
-    hitPDHCount > 0 ? Math.round((sumStepsToPDH / hitPDHCount) * 5) : 95;
-  const avgMinToPDL =
-    hitPDLCount > 0 ? Math.round((sumStepsToPDL / hitPDLCount) * 5) : 105;
-  const avgMinToDEQ =
-    hitDEQCount > 0 ? Math.round((sumStepsToDEQ / hitDEQCount) * 5) : 35;
-
-  const surfaceGrid: BackendQuantTelemetry['monteCarlo']['surfaceGrid'] = [];
-  for (let i = -4; i <= 4; i++) {
-    const strikeOffsetPct = Number((i * 0.5).toFixed(2));
-    for (let j = 1; j <= 8; j++) {
-      const horizonMins = j * 15;
-      const smile = 0.48 + Math.pow(strikeOffsetPct * 0.14, 2) * 1.8;
-      const termStructure = 1 / Math.pow(j * 0.35, 0.22);
-      const skew = (basisBps < 0 ? -strikeOffsetPct : strikeOffsetPct) * 0.025;
-      const impliedVol = Number(
-        Math.max(0.32, (smile + skew) * termStructure).toFixed(3)
-      );
-      const gammaExposure = Number(
-        (
-          Math.exp(-Math.pow(strikeOffsetPct, 2) / 1.4) *
-          (1.2 / Math.sqrt(j))
-        ).toFixed(3)
-      );
-      surfaceGrid.push({
-        strikeOffsetPct,
-        horizonMins,
-        impliedVol,
-        gammaExposure,
-      });
-    }
-  }
+  // Średni czas dojścia tylko z trafień (krok = 1 min); null gdy brak trafień
+  const avgMins = (sum: number, hits: number) => (hits > 0 ? Math.round(sum / hits) : null);
 
   return {
     probTouchPDH2h: Number(((hitPDHCount / numPaths) * 100).toFixed(1)),
     probTouchPDL2h: Number(((hitPDLCount / numPaths) * 100).toFixed(1)),
-    probTouchDEQ2h: Number(
-      Math.min(98, Math.max(42, (hitDEQCount / numPaths) * 100)).toFixed(1)
-    ),
-    expectedMinsToPDH: avgMinToPDH,
-    expectedMinsToPDL: avgMinToPDL,
-    expectedMinsToDEQ: avgMinToDEQ,
+    probTouchDEQ2h: Number(((hitDEQCount / numPaths) * 100).toFixed(1)),
+    expectedMinsToPDH: avgMins(sumStepsToPDH, hitPDHCount),
+    expectedMinsToPDL: avgMins(sumStepsToPDL, hitPDLCount),
+    expectedMinsToDEQ: avgMins(sumStepsToDEQ, hitDEQCount),
     sampledPaths,
-    surfaceGrid,
   };
 }
 
+const HL_INFO_URL = 'https://api.hyperliquid.xyz/info';
+const HTF_CACHE_TTL_MS = 5 * 60 * 1000;
+let htfCache: { at: number; daily: unknown; weekly: unknown } | null = null;
+
+/** Tylko dla testów: czyści cache świec 1d/1w. */
+export function resetHtfCacheForTests(): void {
+  htfCache = null;
+}
+
+function postInfo(body: unknown): Promise<unknown> {
+  // Limit czasu 8 s — wiszące zapytanie nie blokuje kolejnych synchronizacji
+  const signal = typeof AbortSignal !== 'undefined' && 'timeout' in AbortSignal ? AbortSignal.timeout(8000) : undefined;
+  return fetch(HL_INFO_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal,
+  })
+    .then((r) => (r.ok ? r.json() : null))
+    .catch(() => null);
+}
+
+/** Liczba skończona z pola API albo NaN — bez podmiany zera na wartość domyślną. */
+function finiteOrNaN(v: unknown): number {
+  const x = typeof v === 'number' ? v : parseFloat(String(v));
+  return Number.isFinite(x) ? x : Number.NaN;
+}
+
 /**
- * Fetches 100% real live historical candles, HTF Daily/Weekly levels, L2 Orderbook,
- * and `metaAndAssetCtxs` (Open Interest, Funding, Mark/Oracle Basis) directly from
- * Hyperliquid's official public API (`https://api.hyperliquid.xyz/info`).
+ * Pobiera z publicznego API Hyperliquid: świece, poziomy HTF (1d/1w, cache 5 min), opcjonalnie L2
+ * oraz `metaAndAssetCtxs`. Brak danych = null — nigdy zakodowane „live” wartości zastępcze.
  */
 export async function fetchRealHyperliquidMarketData(
-  timeframeSec: number = 300
+  timeframeSec: number = 300,
+  options: { includeL2Book?: boolean } = {}
 ): Promise<{
   bars: OHLCVBar[];
   htfLevels: HyperliquidHTFLevels | null;
   l2Book: { bids: L2OrderbookLevel[]; asks: L2OrderbookLevel[] } | null;
   liveTelemetry: BackendQuantTelemetry | null;
 }> {
+  const includeL2Book = options.includeL2Book ?? true;
   const intervalMap: Record<number, string> = {
     60: '1m',
     300: '5m',
@@ -456,86 +630,50 @@ export async function fetchRealHyperliquidMarketData(
   const hlInterval = intervalMap[timeframeSec] ?? '5m';
   const now = Date.now();
   const startTime = now - timeframeSec * 1000 * 165;
+  const htfFresh = htfCache !== null && now - htfCache.at < HTF_CACHE_TTL_MS;
 
-  const [candlesRes, dailyRes, weeklyRes, l2Res, metaCtxRes] = await Promise.all([
-    fetch('https://api.hyperliquid.xyz/info', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'candleSnapshot',
-        req: { coin: 'BTC', interval: hlInterval, startTime },
-      }),
-    })
-      .then((r) => (r.ok ? r.json() : null))
-      .catch(() => null),
-    fetch('https://api.hyperliquid.xyz/info', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'candleSnapshot',
-        req: { coin: 'BTC', interval: '1d', startTime: now - 86400 * 1000 * 10 },
-      }),
-    })
-      .then((r) => (r.ok ? r.json() : null))
-      .catch(() => null),
-    fetch('https://api.hyperliquid.xyz/info', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'candleSnapshot',
-        req: { coin: 'BTC', interval: '1w', startTime: now - 86400 * 1000 * 35 },
-      }),
-    })
-      .then((r) => (r.ok ? r.json() : null))
-      .catch(() => null),
-    fetch('https://api.hyperliquid.xyz/info', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'l2Book',
-        coin: 'BTC',
-      }),
-    })
-      .then((r) => (r.ok ? r.json() : null))
-      .catch(() => null),
-    fetch('https://api.hyperliquid.xyz/info', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'metaAndAssetCtxs',
-      }),
-    })
-      .then((r) => (r.ok ? r.json() : null))
-      .catch(() => null),
+  const [candlesRes, dailyFetched, weeklyFetched, l2Res, metaCtxRes] = await Promise.all([
+    postInfo({ type: 'candleSnapshot', req: { coin: 'BTC', interval: hlInterval, startTime } }),
+    htfFresh
+      ? Promise.resolve(null)
+      : postInfo({
+          type: 'candleSnapshot',
+          req: { coin: 'BTC', interval: '1d', startTime: now - 86400 * 1000 * 10 },
+        }),
+    htfFresh
+      ? Promise.resolve(null)
+      : postInfo({
+          type: 'candleSnapshot',
+          req: { coin: 'BTC', interval: '1w', startTime: now - 86400 * 1000 * 35 },
+        }),
+    includeL2Book ? postInfo({ type: 'l2Book', coin: 'BTC' }) : Promise.resolve(null),
+    postInfo({ type: 'metaAndAssetCtxs' }),
   ]);
+
+  if (!htfFresh && Array.isArray(dailyFetched) && Array.isArray(weeklyFetched)) {
+    htfCache = { at: now, daily: dailyFetched, weekly: weeklyFetched };
+  }
+  const dailyRes = htfFresh ? htfCache!.daily : dailyFetched;
+  const weeklyRes = htfFresh ? htfCache!.weekly : weeklyFetched;
 
   let parsedBars: OHLCVBar[] = [];
   if (Array.isArray(candlesRes) && candlesRes.length > 15) {
-    parsedBars = candlesRes.slice(-145).map(
-      (
-        c: {
-          t: number;
-          o: string;
-          h: string;
-          l: string;
-          c: string;
-          v: string;
-          n: number;
-        },
-        idx: number
-      ) =>
-        enrichCandleWithAggrOrderflow(
-          parseFloat(c.o),
-          parseFloat(c.h),
-          parseFloat(c.l),
-          parseFloat(c.c),
-          parseFloat(c.v),
-          c.n || 250,
-          c.t,
-          idx
-        )
+    const rows = (candlesRes as { t: number; o: string; h: string; l: string; c: string; v: string; n: number }[])
+      .slice(-145)
+      .map((c) => ({
+        t: c.t,
+        o: finiteOrNaN(c.o),
+        h: finiteOrNaN(c.h),
+        l: finiteOrNaN(c.l),
+        c: finiteOrNaN(c.c),
+        v: finiteOrNaN(c.v),
+        n: Number.isFinite(c.n) ? c.n : 0,
+      }))
+      .filter((r) => Number.isFinite(r.o) && Number.isFinite(r.h) && Number.isFinite(r.l) && Number.isFinite(r.c));
+    const deltaSigma = stdOfBodyChanges(rows);
+    parsedBars = recalculateIndicatorSeries(
+      rows.map((r) => buildHyperliquidBar(r.o, r.h, r.l, r.c, r.v, r.n, r.t, deltaSigma))
     );
-    parsedBars = recalculateIndicatorSeries(parsedBars);
   }
 
   let htfLevels: HyperliquidHTFLevels | null = null;
@@ -551,231 +689,97 @@ export async function fetchRealHyperliquidMarketData(
     const prevWeek2Candle =
       weeklyRes.length >= 3 ? weeklyRes[weeklyRes.length - 3] : prevWeekCandle;
 
-    htfLevels = {
-      pdh: parseFloat(prevDayCandle.h),
-      pdl: parseFloat(prevDayCandle.l),
-      dHi: parseFloat(todayCandle.h),
-      dLo: parseFloat(todayCandle.l),
-      pwh: parseFloat(prevWeekCandle.h),
-      pwl: parseFloat(prevWeekCandle.l),
-      pwh2: parseFloat(prevWeek2Candle.h),
-      pwl2: parseFloat(prevWeek2Candle.l),
+    const levels: HyperliquidHTFLevels = {
+      pdh: finiteOrNaN(prevDayCandle.h),
+      pdl: finiteOrNaN(prevDayCandle.l),
+      dHi: finiteOrNaN(todayCandle.h),
+      dLo: finiteOrNaN(todayCandle.l),
+      pwh: finiteOrNaN(prevWeekCandle.h),
+      pwl: finiteOrNaN(prevWeekCandle.l),
+      pwh2: finiteOrNaN(prevWeek2Candle.h),
+      pwl2: finiteOrNaN(prevWeek2Candle.l),
     };
+    if (Number.isFinite(levels.pdh) && Number.isFinite(levels.pdl)) htfLevels = levels;
   }
 
-  let l2Book: { bids: L2OrderbookLevel[]; asks: L2OrderbookLevel[] } | null =
-    null;
+  let l2Book: { bids: L2OrderbookLevel[]; asks: L2OrderbookLevel[] } | null = null;
   const whaleNodes: WhaleOrderNode[] = [];
 
-  if (l2Res && Array.isArray(l2Res.levels) && l2Res.levels.length === 2) {
-    const rawBids: { px: string; sz: string; n: number }[] = l2Res.levels[0] || [];
-    const rawAsks: { px: string; sz: string; n: number }[] = l2Res.levels[1] || [];
+  const l2 = l2Res as { levels?: { px: string; sz: string; n: number }[][] } | null;
+  if (l2 && Array.isArray(l2.levels) && l2.levels.length === 2) {
+    const rawBids = l2.levels[0] || [];
+    const rawAsks = l2.levels[1] || [];
+    const parsed = parseL2Levels(rawBids, rawAsks);
 
-    let cumBid = 0;
-    const bids: L2OrderbookLevel[] = rawBids.slice(0, 18).map((b) => {
-      const price = parseFloat(b.px);
-      const sizeBtc = parseFloat(b.sz);
-      const sizeUsd = Math.round(price * sizeBtc * 3.2);
-      cumBid += sizeUsd;
-      return {
-        price,
-        sizeBtc: Number((sizeBtc * 3.2).toFixed(3)),
-        sizeUsd,
-        cumulativeUsd: cumBid,
-        exchangeCount: Math.max(1, b.n),
-      };
-    });
+    const collectWhales = (rows: { px: string; sz: string; n: number }[], side: 'BID' | 'ASK') => {
+      rows.slice(0, 15).forEach((r) => {
+        const px = parseFloat(r.px);
+        const sz = parseFloat(r.sz);
+        if (sz >= 1.2 || r.n >= 10) {
+          whaleNodes.push({
+            price: px,
+            side,
+            sizeBtc: Number(sz.toFixed(3)),
+            sizeUsd: Math.round(px * sz),
+            orderCount: r.n,
+            pattern:
+              r.n >= 18
+                ? 'Institutional Iceberg'
+                : sz >= 3.5
+                ? 'Passive Whale Wall'
+                : 'Liquidity Shield',
+          });
+        }
+      });
+    };
+    collectWhales(rawBids, 'BID');
+    collectWhales(rawAsks, 'ASK');
 
-    let cumAsk = 0;
-    const asks: L2OrderbookLevel[] = rawAsks.slice(0, 18).map((a) => {
-      const price = parseFloat(a.px);
-      const sizeBtc = parseFloat(a.sz);
-      const sizeUsd = Math.round(price * sizeBtc * 3.2);
-      cumAsk += sizeUsd;
-      return {
-        price,
-        sizeBtc: Number((sizeBtc * 3.2).toFixed(3)),
-        sizeUsd,
-        cumulativeUsd: cumAsk,
-        exchangeCount: Math.max(1, a.n),
-      };
-    });
-
-    rawBids.slice(0, 15).forEach((b) => {
-      const px = parseFloat(b.px);
-      const sz = parseFloat(b.sz);
-      if (sz >= 1.2 || b.n >= 10) {
-        whaleNodes.push({
-          price: px,
-          side: 'BID',
-          sizeBtc: Number(sz.toFixed(3)),
-          sizeUsd: Math.round(px * sz),
-          orderCount: b.n,
-          pattern:
-            b.n >= 18
-              ? 'Institutional Iceberg'
-              : sz >= 3.5
-              ? 'Passive Whale Wall'
-              : 'Liquidity Shield',
-        });
-      }
-    });
-
-    rawAsks.slice(0, 15).forEach((a) => {
-      const px = parseFloat(a.px);
-      const sz = parseFloat(a.sz);
-      if (sz >= 1.2 || a.n >= 10) {
-        whaleNodes.push({
-          price: px,
-          side: 'ASK',
-          sizeBtc: Number(sz.toFixed(3)),
-          sizeUsd: Math.round(px * sz),
-          orderCount: a.n,
-          pattern:
-            a.n >= 18
-              ? 'Institutional Iceberg'
-              : sz >= 3.5
-              ? 'Passive Whale Wall'
-              : 'Liquidity Shield',
-        });
-      }
-    });
-
-    if (bids.length > 0 && asks.length > 0) {
-      l2Book = { bids, asks };
+    if (parsed.bids.length > 0 && parsed.asks.length > 0) {
+      l2Book = parsed;
     }
   }
 
-  // Extract live Hyperliquid metaAndAssetCtxs telemetry directly in browser
-  const latestClose =
-    parsedBars.length > 0 ? parsedBars[parsedBars.length - 1].close : 82850;
-  let btcCtx = {
-    funding: '0.0000125',
-    openInterest: '41074.1',
-    dayNtlVlm: '2515835507.5',
-    oraclePx: String(latestClose + 12),
-    markPx: String(latestClose),
-    midPx: String(latestClose),
-  };
-
-  if (
-    Array.isArray(metaCtxRes) &&
-    metaCtxRes.length >= 2 &&
-    Array.isArray(metaCtxRes[0]?.universe) &&
-    Array.isArray(metaCtxRes[1])
-  ) {
-    const btcIdx = metaCtxRes[0].universe.findIndex(
-      (u: { name: string }) => u.name === 'BTC'
-    );
-    if (btcIdx >= 0 && metaCtxRes[1][btcIdx]) {
-      btcCtx = metaCtxRes[1][btcIdx];
-    }
+  // Telemetria tylko z kompletnych, realnych danych: kontekst BTC + świece + poziomy HTF
+  let btcCtx: Record<string, unknown> | null = null;
+  const meta = metaCtxRes as [{ universe?: { name: string }[] }, Record<string, unknown>[]] | null;
+  if (Array.isArray(meta) && meta.length >= 2 && Array.isArray(meta[0]?.universe) && Array.isArray(meta[1])) {
+    const btcIdx = meta[0].universe!.findIndex((u) => u.name === 'BTC');
+    if (btcIdx >= 0 && meta[1][btcIdx]) btcCtx = meta[1][btcIdx];
   }
 
-  const markPrice = parseFloat(btcCtx.markPx) || latestClose;
-  const oraclePrice = parseFloat(btcCtx.oraclePx) || markPrice + 10;
-  const midPrice = parseFloat(btcCtx.midPx) || markPrice;
-  const openInterestBtc = parseFloat(btcCtx.openInterest) || 41000;
-  const openInterestUsd = Math.round(openInterestBtc * markPrice);
-  const dayVolumeUsd = Math.round(parseFloat(btcCtx.dayNtlVlm) || 2500000000);
-  const funding1h = parseFloat(btcCtx.funding) || 0.0000125;
-  const fundingAnnualizedPct = Number((funding1h * 24 * 365 * 100).toFixed(2));
-  const basisBps = Number(
-    (((markPrice - oraclePrice) / oraclePrice) * 10000).toFixed(2)
-  );
+  let liveTelemetry: BackendQuantTelemetry | null = null;
+  if (btcCtx && parsedBars.length > 20 && htfLevels) {
+    const markPrice = finiteOrNaN(btcCtx.markPx);
+    const oraclePrice = finiteOrNaN(btcCtx.oraclePx);
+    const midPrice = Number.isFinite(finiteOrNaN(btcCtx.midPx)) ? finiteOrNaN(btcCtx.midPx) : markPrice;
+    const openInterestBtc = finiteOrNaN(btcCtx.openInterest);
+    const funding1h = finiteOrNaN(btcCtx.funding);
+    const dayVolumeUsd = finiteOrNaN(btcCtx.dayNtlVlm);
 
-  const pdh = htfLevels?.pdh ?? markPrice + 550;
-  const pdl = htfLevels?.pdl ?? markPrice - 650;
-  const deq = (pdh + pdl) * 0.5;
-  const atr = Math.max(85, (pdh - pdl) * 0.08);
+    if ([markPrice, oraclePrice, openInterestBtc, funding1h].every(Number.isFinite)) {
+      const basisBps = Number((((markPrice - oraclePrice) / oraclePrice) * 10000).toFixed(2));
+      const deq = (htfLevels.pdh + htfLevels.pdl) * 0.5;
+      const sigma2h = parkinsonSigma(parsedBars, 7200, timeframeSec);
 
-  const monteCarlo = runMertonMonteCarloEngine(
-    midPrice,
-    pdh,
-    pdl,
-    deq,
-    atr,
-    funding1h,
-    basisBps
-  );
-
-  const liveTelemetry: BackendQuantTelemetry = {
-    timestamp: now,
-    markPrice,
-    oraclePrice,
-    midPrice,
-    openInterestBtc: Number(openInterestBtc.toFixed(2)),
-    openInterestUsd,
-    dayVolumeUsd,
-    funding1hPct: Number((funding1h * 100).toFixed(5)),
-    fundingAnnualizedPct,
-    basisBps,
-    whaleNodes: whaleNodes.slice(0, 12),
-    monteCarlo,
-  };
+      liveTelemetry = {
+        timestamp: now,
+        markPrice,
+        oraclePrice,
+        midPrice,
+        openInterestBtc: Number(openInterestBtc.toFixed(2)),
+        openInterestUsd: Math.round(openInterestBtc * markPrice),
+        dayVolumeUsd: Number.isFinite(dayVolumeUsd) ? Math.round(dayVolumeUsd) : 0,
+        funding1hPct: Number((funding1h * 100).toFixed(5)),
+        fundingAnnualizedPct: Number((funding1h * 24 * 365 * 100).toFixed(2)),
+        basisBps,
+        whaleNodes: whaleNodes.slice(0, 12),
+        monteCarlo: runMertonMonteCarloEngine(midPrice, htfLevels.pdh, htfLevels.pdl, deq, sigma2h),
+      };
+    }
+  }
 
   return { bars: parsedBars, htfLevels, l2Book, liveTelemetry };
-}
-
-/**
- * Generates initial synchronous bars anchored to the exact current Hyperliquid BTC price (~$82,770)
- * before the asynchronous `fetchRealHyperliquidMarketData()` call completes ~150ms later.
- */
-export function generateInitialHistoricalBars(
-  anchorPrice: number = 82770,
-  barCount: number = 140,
-  timeframeSec: number = 300
-): OHLCVBar[] {
-  const bars: OHLCVBar[] = [];
-  const now =
-    Math.floor(Date.now() / (timeframeSec * 1000)) * (timeframeSec * 1000);
-  let price = anchorPrice - 420;
-
-  let seed = 421337;
-  const rand = () => {
-    seed = (seed * 1664525 + 1013904223) % 4294967296;
-    return seed / 4294967296;
-  };
-
-  for (let i = 0; i < barCount; i++) {
-    const t = now - (barCount - 1 - i) * timeframeSec * 1000;
-    const progress = i / barCount;
-
-    let structuralDrift = Math.sin(progress * Math.PI * 3.8) * 24;
-    if (i === 52 || i === 53) structuralDrift = 165;
-    if (i === 86 || i === 87) structuralDrift = -175;
-    if (i === 112 || i === 113) structuralDrift = 185;
-    if (i === 128) structuralDrift = -140;
-
-    const noise = (rand() - 0.492) * 85;
-    const open = price;
-    const close = Number(
-      Math.max(50000, open + structuralDrift + noise).toFixed(1)
-    );
-    const wickUp =
-      Math.abs(rand() * 65) + (Math.abs(structuralDrift) > 150 ? 35 : 10);
-    const wickDown =
-      Math.abs(rand() * 65) + (Math.abs(structuralDrift) > 150 ? 35 : 10);
-    const high = Number((Math.max(open, close) + wickUp).toFixed(1));
-    const low = Number((Math.min(open, close) - wickDown).toFixed(1));
-    price = close;
-
-    const volBtc = 15 + rand() * 35;
-    bars.push(
-      enrichCandleWithAggrOrderflow(
-        open,
-        high,
-        low,
-        close,
-        volBtc,
-        Math.round(volBtc * 22),
-        t,
-        i
-      )
-    );
-  }
-
-  return recalculateIndicatorSeries(bars);
 }
 
 export function classifyAggrThresholdTier(
@@ -803,56 +807,4 @@ export function classifyAggrThresholdTier(
     if (sizeUsd >= 5000) return 'threshold';
     return 'normal';
   }
-}
-
-export function generateL2Orderbook(
-  midPrice: number,
-  pdh: number | null,
-  pdl: number | null
-): { bids: L2OrderbookLevel[]; asks: L2OrderbookLevel[] } {
-  const bids: L2OrderbookLevel[] = [];
-  const asks: L2OrderbookLevel[] = [];
-  const step = 2;
-  let cumBid = 0;
-  let cumAsk = 0;
-
-  for (let i = 1; i <= 18; i++) {
-    const bidPrice = Math.round((midPrice - i * step) * 10) / 10;
-    const askPrice = Math.round((midPrice + i * step) * 10) / 10;
-
-    const isBidNearPDL = pdl && Math.abs(bidPrice - pdl) < 40;
-    const isAskNearPDH = pdh && Math.abs(askPrice - pdh) < 40;
-    const isBidRound = bidPrice % 100 === 0 || bidPrice % 50 === 0;
-    const isAskRound = askPrice % 100 === 0 || askPrice % 50 === 0;
-
-    const bidUsd = Math.round(
-      (65000 + Math.sin(bidPrice * 0.13) * 35000 + i * 18000) *
-        (isBidNearPDL ? 3.2 : isBidRound ? 2.1 : 1.0)
-    );
-    const askUsd = Math.round(
-      (62000 + Math.cos(askPrice * 0.17) * 34000 + i * 17500) *
-        (isAskNearPDH ? 3.1 : isAskRound ? 2.0 : 1.0)
-    );
-
-    cumBid += bidUsd;
-    cumAsk += askUsd;
-
-    bids.push({
-      price: bidPrice,
-      sizeUsd: bidUsd,
-      sizeBtc: Number((bidUsd / bidPrice).toFixed(3)),
-      cumulativeUsd: cumBid,
-      exchangeCount: isBidRound ? 12 : 6,
-    });
-
-    asks.push({
-      price: askPrice,
-      sizeUsd: askUsd,
-      sizeBtc: Number((askUsd / askPrice).toFixed(3)),
-      cumulativeUsd: cumAsk,
-      exchangeCount: isAskRound ? 12 : 6,
-    });
-  }
-
-  return { bids, asks };
 }

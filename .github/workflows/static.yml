@@ -5,6 +5,9 @@ on:
     branches:
       - main
       - master
+  # Odświeżanie danych publicznych (best-effort: GitHub może opóźniać lub pomijać przebiegi z harmonogramu)
+  schedule:
+    - cron: '*/30 * * * *'
   workflow_dispatch:
 
 permissions:
@@ -14,7 +17,8 @@ permissions:
 
 concurrency:
   group: "pages"
-  cancel-in-progress: true
+  # Nie przerywaj trwającego wdrożenia (np. push nie może zostać anulowany przez przebieg z harmonogramu)
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -24,13 +28,25 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js 20
+      - name: Setup Node.js 22
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
+          cache: npm
 
       - name: Install Dependencies
-        run: npm install --legacy-peer-deps
+        run: npm ci --legacy-peer-deps
+
+      - name: Type Check
+        run: npm run lint
+
+      - name: Run Tests
+        run: npm test
+
+      # Dane publiczne bez kluczy API → public/data/feeds/*.json; błąd źródeł nie blokuje wdrożenia
+      - name: Fetch Public Data
+        run: node scripts/fetch-public-data.mjs
+        continue-on-error: true
 
       - name: Build Production Assets
         run: npm run build

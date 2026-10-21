@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:media="http://search.yahoo.com/mrss/" version="2.0">
+<channel>
+<title><![CDATA[CoinDesk: Bitcoin, Ethereum, Crypto News and Price Data]]></title>
+<link>https://www.coindesk.com</link>
+<atom:link href="https://www.coindesk.com/arc/outboundfeeds/rss/" rel="self" type="application/rss+xml"/>
+<item>
+<title><![CDATA[Bitcoin Holds $108K as Traders Eye FOMC &amp; CPI]]></title>
+<link>https://www.coindesk.com/markets/2026/10/20/bitcoin-holds-108k?utm_medium=referral&amp;utm_source=rss&amp;utm_campaign=headlines</link>
+<guid isPermaLink="false">abc-1</guid>
+<dc:creator><![CDATA[Jane Doe]]></dc:creator>
+<description><![CDATA[<p>Long copyrighted description that must not be stored.</p>]]></description>
+<pubDate>Tue, 20 Oct 2026 14:05:00 +0000</pubDate>
+<media:content url="https://example.com/img.jpg" medium="image"/>
+</item>
+<item>
+<title>SEC Delays Decision on Spot SOL ETF &#8217;Again&#8217;</title>
+<link>https://www.coindesk.com/policy/2026/10/20/sec-delays?utm_source=rss</link>
+<description>Another description.</description>
+<pubDate>Tue, 20 Oct 2026 12:00:00 GMT</pubDate>
+</item>
+<item>
+<title>No date item</title>
+<link>https://www.coindesk.com/x</link>
+</item>
+<item>
+<title>Bad link item</title>
+<link>javascript:alert(1)</link>
+<pubDate>Tue, 20 Oct 2026 11:00:00 GMT</pubDate>
+</item>
+</channel>
+</rss>

@@ -5,17 +5,7 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { BokehPass } from 'three/addons/postprocessing/BokehPass.js';
-import {
-  Camera,
-  ChevronDown,
-  ChevronUp,
-  Cpu,
-  Focus,
-  Maximize2,
-  Minimize2,
-  RotateCcw,
-  Sparkles,
-} from 'lucide-react';
+import { Cpu, Focus, Maximize2, Minimize2, RotateCcw } from 'lucide-react';
 import {
   BackendQuantTelemetry,
   ExchangeId,
@@ -23,6 +13,8 @@ import {
   QuantMathMetrics,
   ShaakuniState,
 } from '../types/trading';
+import { GLOW, T3, T3_CSS, isNarrowViewport, labFov, labPixelRatio } from '../views/lab/tokens3d';
+import { DockPresets, DockSlider, DockToggle, HoverCard, HudButton, HudHeader, SCENE_FRAME, SceneDock } from '../views/lab/hud';
 
 interface ThreeOrderflowVortex3DProps {
   latestBar: OHLCVBar;
@@ -33,7 +25,7 @@ interface ThreeOrderflowVortex3DProps {
   onToggleExpand?: () => void;
 }
 
-type VortexPreset = 'vortex' | 'montecarlo' | 'gammasurface' | 'icebergs';
+type VortexPreset = 'vortex' | 'montecarlo' | 'side' | 'top';
 
 interface HoveredVortexItem {
   title: string;
@@ -43,6 +35,7 @@ interface HoveredVortexItem {
   accentColor: string;
 }
 
+// Węzły tylko dla giełd z realnym źródłem: Hyperliquid (domyślnie) + 5 giełd CEX (opt-in, łączone z przeglądarki)
 const VENUE_NODES: {
   id: ExchangeId;
   name: string;
@@ -51,17 +44,61 @@ const VENUE_NODES: {
   radius: number;
 }[] = [
   { id: 'HYPERLIQUID', name: 'Hyperliquid Perp', isSpot: false, angle: 0, radius: 8.5 },
-  { id: 'BINANCE_FUTURES', name: 'Binance Futures', isSpot: false, angle: 0.57, radius: 9.2 },
-  { id: 'BYBIT', name: 'Bybit Perp', isSpot: false, angle: 1.14, radius: 8.8 },
-  { id: 'OKEX', name: 'OKX Swap', isSpot: false, angle: 1.71, radius: 9.0 },
-  { id: 'DERIBIT', name: 'Deribit Perp', isSpot: false, angle: 2.28, radius: 8.6 },
-  { id: 'BITMEX', name: 'BitMEX XBTUSD', isSpot: false, angle: 2.85, radius: 8.8 },
-  { id: 'COINBASE', name: 'Coinbase Spot', isSpot: true, angle: 3.42, radius: 9.4 },
-  { id: 'BINANCE', name: 'Binance Spot', isSpot: true, angle: 3.99, radius: 9.4 },
-  { id: 'BITFINEX', name: 'Bitfinex Spot', isSpot: true, angle: 4.56, radius: 8.9 },
-  { id: 'KRAKEN', name: 'Kraken Spot', isSpot: true, angle: 5.13, radius: 8.7 },
-  { id: 'BITSTAMP', name: 'Bitstamp Spot', isSpot: true, angle: 5.7, radius: 8.6 },
+  { id: 'BINANCE_FUTURES', name: 'Binance Futures', isSpot: false, angle: 1.05, radius: 9.0 },
+  { id: 'BYBIT', name: 'Bybit Perp', isSpot: false, angle: 2.09, radius: 8.8 },
+  { id: 'OKEX', name: 'OKX Swap', isSpot: false, angle: 3.14, radius: 9.0 },
+  { id: 'COINBASE', name: 'Coinbase Spot', isSpot: true, angle: 4.19, radius: 9.2 },
+  { id: 'BINANCE', name: 'Binance Spot', isSpot: true, angle: 5.24, radius: 9.0 },
 ];
+
+// Opis wzorca dużego zlecenia — heurystyka z liczby zleceń i wielkości poziomu, nie identyfikacja uczestnika
+const WHALE_PATTERN_PL: Record<string, string> = {
+  'Institutional Iceberg': 'Wiele zleceń na poziomie',
+  'Passive Whale Wall': 'Duża ściana (≥ 3,5 BTC)',
+  'Liquidity Shield': 'Skupisko płynności',
+};
+
+// Zwalnia materiał wraz ze wszystkimi teksturami, do których się odwołuje (map, envMap, normalMap itd.).
+// Zbiór `disposed` chroni przed wielokrotnym dispose materiałów współdzielonych przez wiele meshy.
+const disposeMaterialDeep = (
+  material: THREE.Material,
+  disposed: Set<THREE.Material>
+) => {
+  if (disposed.has(material)) return;
+  disposed.add(material);
+  Object.values(material).forEach((value) => {
+    if (value instanceof THREE.Texture) value.dispose();
+  });
+  material.dispose();
+};
+
+// Przechodzi po całym grafie sceny i zwalnia geometrie, materiały (także tablice materiałów),
+// ich tekstury oraz mapy cieni świateł.
+const disposeSceneGraph = (
+  root: THREE.Object3D,
+  disposedMaterials: Set<THREE.Material>
+) => {
+  const disposedGeometries = new Set<THREE.BufferGeometry>();
+  root.traverse((obj) => {
+    const mesh = obj as THREE.Mesh;
+    if (mesh.geometry && !disposedGeometries.has(mesh.geometry)) {
+      disposedGeometries.add(mesh.geometry);
+      mesh.geometry.dispose();
+    }
+    if (mesh.material) {
+      const materials = Array.isArray(mesh.material)
+        ? mesh.material
+        : [mesh.material];
+      materials.forEach((m) => disposeMaterialDeep(m, disposedMaterials));
+    }
+    const light = obj as THREE.DirectionalLight;
+    if (light.isLight && light.shadow) light.shadow.dispose();
+  });
+};
+
+// Czas pierwszego dotknięcia poziomu z Monte Carlo: null = żadna ścieżka nie dotknęła poziomu w 2h → "n/a"
+const formatFirstPassageMins = (mins: number | null) =>
+  mins === null || !Number.isFinite(mins) ? 'n/a' : `~${mins}m`;
 
 export const ThreeOrderflowVortex3D: React.FC<ThreeOrderflowVortex3DProps> = ({
   latestBar,
@@ -74,12 +111,13 @@ export const ThreeOrderflowVortex3D: React.FC<ThreeOrderflowVortex3DProps> = ({
   const canvasMountRef = useRef<HTMLDivElement | null>(null);
 
   const [preset, setPreset] = useState<VortexPreset>('vortex');
-  const [dofEnabled, setDofEnabled] = useState<boolean>(true);
+  // Głębia ostrości domyślnie wyłączona — czytelność danych ważniejsza od efektu
+  const [dofEnabled, setDofEnabled] = useState<boolean>(false);
   const [dofFocus, setDofFocus] = useState<number>(21);
-  const [dofAperture, setDofAperture] = useState<number>(2.0);
+  const [dofAperture] = useState<number>(2.0);
   const [pulseSpeed, setPulseSpeed] = useState<number>(1.2);
   const [showMonteCarloFan, setShowMonteCarloFan] = useState<boolean>(true);
-  const [dockCollapsed, setDockCollapsed] = useState<boolean>(false);
+  const [dockCollapsed, setDockCollapsed] = useState<boolean>(isNarrowViewport);
   const [hoveredItem, setHoveredItem] = useState<HoveredVortexItem | null>(null);
 
   const latestRef = useRef({
@@ -118,6 +156,14 @@ export const ThreeOrderflowVortex3D: React.FC<ThreeOrderflowVortex3DProps> = ({
     showMonteCarloFan,
   ]);
 
+  // Flaga "dane zmienione": nakładki dynamiczne są przebudowywane tylko gdy zmieniły się dane,
+  // z których powstają — nie przy każdym ticku timera
+  const dirtyRef = useRef<boolean>(true);
+
+  useEffect(() => {
+    dirtyRef.current = true;
+  }, [latestBar, shaakuni, backendTelemetry, showMonteCarloFan]);
+
   const targetCamRef = useRef<{
     pos: THREE.Vector3;
     lookAt: THREE.Vector3;
@@ -142,13 +188,13 @@ export const ThreeOrderflowVortex3D: React.FC<ThreeOrderflowVortex3DProps> = ({
         lookAt: new THREE.Vector3(3, 1.5, 0),
         active: true,
       };
-    } else if (p === 'gammasurface') {
+    } else if (p === 'side') {
       targetCamRef.current = {
         pos: new THREE.Vector3(-15, 11, 18),
         lookAt: new THREE.Vector3(0, -1.5, 0),
         active: true,
       };
-    } else if (p === 'icebergs') {
+    } else if (p === 'top') {
       targetCamRef.current = {
         pos: new THREE.Vector3(0, 24, 6),
         lookAt: new THREE.Vector3(0, 0, 0),
@@ -182,8 +228,8 @@ export const ThreeOrderflowVortex3D: React.FC<ThreeOrderflowVortex3DProps> = ({
     });
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.15;
-    renderer.setPixelRatio(isSoftwareGl ? 1 : Math.min(window.devicePixelRatio, 2));
+    renderer.toneMappingExposure = 1.0;
+    renderer.setPixelRatio(labPixelRatio(isSoftwareGl));
     renderer.setSize(width, height);
     renderer.shadowMap.enabled = !isSoftwareGl;
     renderer.shadowMap.type = THREE.PCFShadowMap;
@@ -192,15 +238,20 @@ export const ThreeOrderflowVortex3D: React.FC<ThreeOrderflowVortex3DProps> = ({
     container.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x060911);
-    scene.fog = new THREE.FogExp2(0x060911, 0.016);
+    scene.background = new THREE.Color(T3.bg);
+    scene.fog = new THREE.FogExp2(T3.bg, 0.016);
 
     // 2. Studio Environment Map (RoomEnvironment + PMREMGenerator)
     const pmrem = new THREE.PMREMGenerator(renderer);
-    scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    // Trzymamy render target PMREM, aby zwolnić mapę środowiskową przy odmontowaniu;
+    // RoomEnvironment (geometrie + materiały) jest potrzebny tylko do wygenerowania mapy
+    const roomEnvironment = new RoomEnvironment();
+    const envRenderTarget = pmrem.fromScene(roomEnvironment, 0.04);
+    scene.environment = envRenderTarget.texture;
     pmrem.dispose();
+    roomEnvironment.dispose();
 
-    const camera = new THREE.PerspectiveCamera(42, width / height, 0.5, 160);
+    const camera = new THREE.PerspectiveCamera(labFov(width / height), width / height, 0.5, 160);
     camera.position.set(0, 14, 21);
 
     const controls = new OrbitControls(camera, renderer.domElement);
@@ -216,7 +267,7 @@ export const ThreeOrderflowVortex3D: React.FC<ThreeOrderflowVortex3DProps> = ({
     });
 
     // 3. Three-Point Warm/Cool Studio Lighting
-    const hemiLight = new THREE.HemisphereLight(0x38bdf8, 0x060911, 0.9);
+    const hemiLight = new THREE.HemisphereLight(0xc8d4e3, T3.bg, 0.8);
     scene.add(hemiLight);
 
     const keyLight = new THREE.DirectionalLight(0xfffbeb, 2.3);
@@ -225,7 +276,7 @@ export const ThreeOrderflowVortex3D: React.FC<ThreeOrderflowVortex3DProps> = ({
     keyLight.shadow.mapSize.set(1024, 1024);
     scene.add(keyLight);
 
-    const rimLight = new THREE.DirectionalLight(0x22d3ee, 1.5);
+    const rimLight = new THREE.DirectionalLight(T3.accent, 0.8);
     rimLight.position.set(-18, 12, -14);
     scene.add(rimLight);
 
@@ -236,9 +287,9 @@ export const ThreeOrderflowVortex3D: React.FC<ThreeOrderflowVortex3DProps> = ({
     // Part 1: Inner Optical Crystal Octahedron
     const innerCoreGeo = new THREE.OctahedronGeometry(1.35, 1);
     const innerCoreMat = new THREE.MeshPhysicalMaterial({
-      color: 0x06b6d4,
-      emissive: 0x0891b2,
-      emissiveIntensity: 0.55,
+      color: T3.accent,
+      emissive: T3.accent,
+      emissiveIntensity: GLOW,
       roughness: 0.12,
       metalness: 0.15,
       transmission: isSoftwareGl ? 0 : 0.88,
@@ -255,11 +306,9 @@ export const ThreeOrderflowVortex3D: React.FC<ThreeOrderflowVortex3DProps> = ({
     // Part 2: Brushed Titanium Gimbal Ring 1 (D-EQ Equilibrium Ring)
     const ring1Geo = new THREE.TorusGeometry(2.1, 0.07, 16, 64);
     const ring1Mat = new THREE.MeshStandardMaterial({
-      color: 0x38bdf8,
-      emissive: 0x0284c7,
-      emissiveIntensity: 0.35,
-      roughness: 0.2,
-      metalness: 0.92,
+      color: T3.ink3,
+      roughness: 0.35,
+      metalness: 0.7,
     });
     const ring1Mesh = new THREE.Mesh(ring1Geo, ring1Mat);
     ring1Mesh.position.set(0, 1.2, 0);
@@ -268,11 +317,9 @@ export const ThreeOrderflowVortex3D: React.FC<ThreeOrderflowVortex3DProps> = ({
     // Part 3: Gold Anisotropic Gimbal Ring 2 (W-EQ Weekly Equilibrium Ring)
     const ring2Geo = new THREE.TorusGeometry(2.65, 0.055, 16, 64);
     const ring2Mat = new THREE.MeshStandardMaterial({
-      color: 0xfacc15,
-      emissive: 0xd97706,
-      emissiveIntensity: 0.3,
-      roughness: 0.25,
-      metalness: 0.88,
+      color: T3.lineStrong,
+      roughness: 0.4,
+      metalness: 0.7,
     });
     const ring2Mesh = new THREE.Mesh(ring2Geo, ring2Mat);
     ring2Mesh.position.set(0, 1.2, 0);
@@ -282,7 +329,7 @@ export const ThreeOrderflowVortex3D: React.FC<ThreeOrderflowVortex3DProps> = ({
     // Part 4: Grounded Reactor Base Pedestal
     const pedestalGeo = new THREE.CylinderGeometry(1.8, 2.4, 0.5, 32);
     const pedestalMat = new THREE.MeshStandardMaterial({
-      color: 0x0f172a,
+      color: T3.surface2,
       roughness: 0.35,
       metalness: 0.85,
     });
@@ -290,19 +337,15 @@ export const ThreeOrderflowVortex3D: React.FC<ThreeOrderflowVortex3DProps> = ({
     pedestalMesh.position.set(0, -2.5, 0);
     coreReactorGroup.add(pedestalMesh);
 
-    // 5. Animated 3D Volatility, Gamma & Funding Topographic Wave Surface
+    // 5. Statyczna siatka podłoża (dawniej animowana „fala gamma” bez danych — usunięta jako dekoracja)
     const planeSegments = 28;
     const wavePlaneGeo = new THREE.PlaneGeometry(28, 28, planeSegments, planeSegments);
     wavePlaneGeo.rotateX(-Math.PI / 2);
-    const wavePlaneMat = new THREE.MeshStandardMaterial({
-      color: 0x0ea5e9,
-      emissive: 0x0369a1,
-      emissiveIntensity: 0.22,
-      roughness: 0.35,
-      metalness: 0.65,
+    const wavePlaneMat = new THREE.MeshBasicMaterial({
+      color: T3.lineStrong,
       wireframe: true,
       transparent: true,
-      opacity: 0.42,
+      opacity: 0.6,
     });
     const waveSurfaceMesh = new THREE.Mesh(wavePlaneGeo, wavePlaneMat);
     waveSurfaceMesh.position.set(0, -2.8, 0);
@@ -338,18 +381,14 @@ export const ThreeOrderflowVortex3D: React.FC<ThreeOrderflowVortex3DProps> = ({
       const nodeGeo = v.isSpot
         ? new THREE.OctahedronGeometry(0.52, 0)
         : new THREE.CylinderGeometry(0.45, 0.45, 0.7, 16);
-      const nodeColor =
-        v.id === 'HYPERLIQUID'
-          ? 0x22d3ee
-          : v.isSpot
-          ? 0x38bdf8
-          : 0xc084fc;
+      // Kolor węzła ustawiany w przebudowie: kupno/sprzedaż z danych, szary = brak danych
+      const nodeColor = T3.lineStrong;
       const nodeMat = new THREE.MeshStandardMaterial({
         color: nodeColor,
         emissive: nodeColor,
-        emissiveIntensity: 0.4,
-        roughness: 0.22,
-        metalness: 0.8,
+        emissiveIntensity: GLOW,
+        roughness: 0.4,
+        metalness: 0.35,
       });
       const nodeMesh = new THREE.Mesh(nodeGeo, nodeMat);
       nodeMesh.castShadow = true;
@@ -359,12 +398,11 @@ export const ThreeOrderflowVortex3D: React.FC<ThreeOrderflowVortex3DProps> = ({
       // Node Orbital Ring
       const haloGeo = new THREE.TorusGeometry(0.75, 0.03, 12, 32);
       haloGeo.rotateX(Math.PI / 2);
+      // Pierścień: akcent dla Hyperliquid (źródło domyślne), linia dla CEX (opt-in)
       const haloMat = new THREE.MeshStandardMaterial({
-        color: nodeColor,
-        emissive: nodeColor,
-        emissiveIntensity: 0.5,
-        roughness: 0.2,
-        metalness: 0.9,
+        color: v.id === 'HYPERLIQUID' ? T3.accent : T3.lineStrong,
+        roughness: 0.4,
+        metalness: 0.5,
       });
       const haloMesh = new THREE.Mesh(haloGeo, haloMat);
       nodeGroup.add(haloMesh);
@@ -386,9 +424,9 @@ export const ThreeOrderflowVortex3D: React.FC<ThreeOrderflowVortex3DProps> = ({
 
       const conduitGeo = new THREE.TubeGeometry(curve, 28, 0.025, 6, false);
       const conduitMat = new THREE.MeshBasicMaterial({
-        color: v.isSpot ? 0x0284c7 : 0x7e22ce,
+        color: T3.lineStrong,
         transparent: true,
-        opacity: 0.35,
+        opacity: 0.7,
       });
       const conduitMesh = new THREE.Mesh(conduitGeo, conduitMat);
       venuesGroup.add(conduitMesh);
@@ -397,11 +435,11 @@ export const ThreeOrderflowVortex3D: React.FC<ThreeOrderflowVortex3DProps> = ({
       for (let p = 0; p < 2; p++) {
         const pulseGeo = new THREE.SphereGeometry(0.13, 12, 12);
         const pulseMat = new THREE.MeshStandardMaterial({
-          color: 0x38bdf8,
-          emissive: 0x38bdf8,
-          emissiveIntensity: 0.9,
-          roughness: 0.1,
-          metalness: 0.5,
+          color: T3.ink3,
+          emissive: T3.ink3,
+          emissiveIntensity: GLOW * 2,
+          roughness: 0.3,
+          metalness: 0.3,
         });
         const pulseMesh = new THREE.Mesh(pulseGeo, pulseMat);
         pulsesGroup.add(pulseMesh);
@@ -416,11 +454,23 @@ export const ThreeOrderflowVortex3D: React.FC<ThreeOrderflowVortex3DProps> = ({
       }
     });
 
+    // Materiały per-rebuild usunięte ze sceny — zwalniane dopiero po kolejnym renderze,
+    // gdy nowe materiały trzymają już referencję do tych samych programów shaderów
+    // (natychmiastowy dispose usunąłby program i wymusił ponowną kompilację)
+    const pendingMaterialDisposal: THREE.Material[] = [];
+
     // Helper to clear dynamic groups
     const clearGroup = (group: THREE.Group) => {
       while (group.children.length > 0) {
         const child = group.children[0] as THREE.Mesh;
         if (child.geometry) child.geometry.dispose();
+        // Wszystkie materiały w czyszczonych grupach (MC, whale) są tworzone per-rebuild
+        if (child.material) {
+          const materials = Array.isArray(child.material)
+            ? child.material
+            : [child.material];
+          pendingMaterialDisposal.push(...materials);
+        }
         group.remove(child);
       }
     };
@@ -439,69 +489,72 @@ export const ThreeOrderflowVortex3D: React.FC<ThreeOrderflowVortex3DProps> = ({
       const curPrice = curBar.close;
 
       // Update Central Core UserData
+      // Brak telemetrii backendu → "—" zamiast zakodowanych na sztywno wartości wyglądających na live
       innerCoreMesh.userData = {
-        title: `Hyperliquid BTC Oracle-Mark Reactor`,
-        subtitle: `Mid: $${curPrice.toFixed(1)} · Oracle: $${(
-          curBackend?.oraclePrice ?? curPrice
-        ).toFixed(1)} · Basis: ${curBackend?.basisBps ?? -1.5} bps`,
-        metricLabel: 'Open Interest & Funding',
-        metricValue: `$${(
-          (curBackend?.openInterestUsd ?? 3400000000) / 1e9
-        ).toFixed(2)}B OI · ${
-          curBackend?.fundingAnnualizedPct ?? 10.95
-        }% APR`,
-        accentColor: '#22d3ee',
+        title: `Hyperliquid BTC-PERP · mark / oracle`,
+        subtitle: `Mid: $${curPrice.toFixed(1)} · Oracle: ${
+          curBackend ? `$${curBackend.oraclePrice.toFixed(1)}` : '—'
+        } · Basis: ${curBackend ? `${curBackend.basisBps} bps` : '—'}`,
+        metricLabel: 'Open interest · funding (APR)',
+        metricValue: curBackend
+          ? `$${(curBackend.openInterestUsd / 1e9).toFixed(2)}B OI · ${
+              curBackend.fundingAnnualizedPct
+            }% APR`
+          : '— OI · — APR',
+        accentColor: T3_CSS.accent,
       };
 
       // Update Venue Node sizes & hover metadata from live exchange delta
       venueNodeMeshes.forEach(({ id, mesh, halo }, idx) => {
-        const exVol = curBar.exchanges[id] ?? { vbuy: 50000, vsell: 50000 };
+        // Brak danych giełdy → węzeł szary, impulsy ukryte (bez fikcyjnego przepływu)
+        const exVol = curBar.exchanges[id] ?? { vbuy: 0, vsell: 0 };
         const delta = exVol.vbuy - exVol.vsell;
+        const hasData = exVol.vbuy + exVol.vsell > 0;
         const tot = Math.max(1, exVol.vbuy + exVol.vsell);
-        const scale = Math.max(0.75, Math.min(1.85, 0.85 + tot / 1800000));
+        const scale = hasData ? Math.max(0.75, Math.min(1.85, 0.85 + tot / 1800000)) : 0.7;
         mesh.scale.setScalar(scale);
         halo.scale.setScalar(scale);
 
         const isNetBuy = delta >= 0;
+        const nodeHex = !hasData ? T3.lineStrong : isNetBuy ? T3.buy : T3.sell;
         const mat = mesh.material as THREE.MeshStandardMaterial;
-        mat.color.setHex(isNetBuy ? 0x38bdf8 : 0xf43f5e);
-        mat.emissive.setHex(isNetBuy ? 0x0284c7 : 0xbe123c);
+        mat.color.setHex(nodeHex);
+        mat.emissive.setHex(nodeHex);
 
-        // Update corresponding pulse packet direction & color
+        // Impulsy na przewodzie: kierunek = przewaga (do środka = kupno), kolor = strona
         const p1 = pulsePackets[idx * 2];
         const p2 = pulsePackets[idx * 2 + 1];
         if (p1 && p2) {
-          p1.inward = isNetBuy;
-          p2.inward = isNetBuy;
-          (p1.mesh.material as THREE.MeshStandardMaterial).color.setHex(
-            isNetBuy ? 0x22d3ee : 0xf43f5e
-          );
-          (p1.mesh.material as THREE.MeshStandardMaterial).emissive.setHex(
-            isNetBuy ? 0x22d3ee : 0xf43f5e
-          );
-          (p2.mesh.material as THREE.MeshStandardMaterial).color.setHex(
-            isNetBuy ? 0x22d3ee : 0xf43f5e
-          );
-          (p2.mesh.material as THREE.MeshStandardMaterial).emissive.setHex(
-            isNetBuy ? 0x22d3ee : 0xf43f5e
-          );
+          for (const p of [p1, p2]) {
+            p.inward = isNetBuy;
+            p.mesh.visible = hasData;
+            const pm = p.mesh.material as THREE.MeshStandardMaterial;
+            pm.color.setHex(isNetBuy ? T3.buy : T3.sell);
+            pm.emissive.setHex(isNetBuy ? T3.buy : T3.sell);
+          }
         }
 
+        const venue = VENUE_NODES[idx];
         mesh.userData = {
-          title: `${VENUE_NODES[idx].name} Orderflow Node`,
-          subtitle: `Buy: $${(exVol.vbuy / 1000).toFixed(0)}K · Sell: $${(
-            exVol.vsell / 1000
-          ).toFixed(0)}K`,
-          metricLabel: 'Venue Net Delta',
-          metricValue: `${delta >= 0 ? '+' : ''}$${(delta / 1000).toFixed(0)}K`,
-          accentColor: isNetBuy ? '#38bdf8' : '#f43f5e',
+          title: `${venue.name}${hasData ? (isNetBuy ? ' ▲' : ' ▼') : ''}`,
+          subtitle: hasData
+            ? `Bieżąca świeca · kupno $${(exVol.vbuy / 1000).toFixed(0)}K · sprzedaż $${(exVol.vsell / 1000).toFixed(0)}K`
+            : id === 'HYPERLIQUID'
+            ? 'Brak transakcji w bieżącej świecy'
+            : 'Brak danych — źródła CEX są wyłączone (opt-in w Źródłach)',
+          metricLabel: 'Delta netto',
+          metricValue: hasData ? `${delta >= 0 ? '+' : '−'}$${(Math.abs(delta) / 1000).toFixed(0)}K` : '—',
+          accentColor: !hasData ? T3_CSS.ink3 : isNetBuy ? T3_CSS.buy : T3_CSS.sell,
         };
       });
 
-      // Rebuild 3D Monte Carlo Jump-Diffusion Quantum Trajectories
+      // Ścieżki Monte Carlo (Merton jump-diffusion) — model, nie prognoza
       clearGroup(monteCarloGroup);
       if (showMC && curBackend?.monteCarlo?.sampledPaths) {
-        const atr = Math.max(60, curShaakuni.atr14);
+        // Math.max(60, NaN) = NaN — przy braku ATR używamy wartości minimalnej
+        const atr = Number.isFinite(curShaakuni.atr14)
+          ? Math.max(60, curShaakuni.atr14)
+          : 60;
         curBackend.monteCarlo.sampledPaths.slice(0, 14).forEach((path, pIdx) => {
           const pts: THREE.Vector3[] = [];
           const angleSpread = ((pIdx - 7) / 7) * 0.55;
@@ -510,22 +563,19 @@ export const ThreeOrderflowVortex3D: React.FC<ThreeOrderflowVortex3DProps> = ({
             const x = Math.cos(angleSpread) * r;
             const z = Math.sin(angleSpread) * r;
             const y = 1.2 + ((pt.price - curPrice) / (atr * 3)) * 2.8;
+            // Pomijamy punkty z NaN/Infinity — zepsułyby geometrię TubeGeometry
+            if (!Number.isFinite(y) || !Number.isFinite(r)) return;
             pts.push(new THREE.Vector3(x, Math.max(-2.4, Math.min(6.5, y)), z));
           });
 
           if (pts.length > 2) {
             const curve = new THREE.CatmullRomCurve3(pts);
             const tubeGeo = new THREE.TubeGeometry(curve, 20, 0.032, 6, false);
-            const col =
-              path.type === 'bull'
-                ? 0x10b981
-                : path.type === 'bear'
-                ? 0xf43f5e
-                : 0xfacc15;
+            const col = path.type === 'bull' ? T3.buy : path.type === 'bear' ? T3.sell : T3.ink3;
             const tubeMat = new THREE.MeshBasicMaterial({
               color: col,
               transparent: true,
-              opacity: 0.65,
+              opacity: 0.5,
             });
             const tubeMesh = new THREE.Mesh(tubeGeo, tubeMat);
             monteCarloGroup.add(tubeMesh);
@@ -533,7 +583,7 @@ export const ThreeOrderflowVortex3D: React.FC<ThreeOrderflowVortex3DProps> = ({
         });
       }
 
-      // Rebuild 3D Whale Iceberg & L2 Shield Pillars
+      // Duże zlecenia w arkuszu HL (próg: ≥ 1,2 BTC lub ≥ 10 zleceń na poziomie)
       clearGroup(whaleIcebergsGroup);
       const whaleList = curBackend?.whaleNodes ?? [];
       whaleList.forEach((w, wIdx) => {
@@ -545,33 +595,23 @@ export const ThreeOrderflowVortex3D: React.FC<ThreeOrderflowVortex3DProps> = ({
 
         const pillarGeo = new THREE.CylinderGeometry(0.18, 0.28, h, 6);
         const isBid = w.side === 'BID';
-        const col =
-          w.pattern === 'Institutional Iceberg'
-            ? 0xfacc15
-            : isBid
-            ? 0x10b981
-            : 0xf43f5e;
+        const col = isBid ? T3.buy : T3.sell;
         const pillarMat = new THREE.MeshStandardMaterial({
           color: col,
           emissive: col,
-          emissiveIntensity: 0.45,
-          roughness: 0.2,
-          metalness: 0.85,
+          emissiveIntensity: GLOW,
+          roughness: 0.4,
+          metalness: 0.35,
         });
         const pillarMesh = new THREE.Mesh(pillarGeo, pillarMat);
         pillarMesh.position.set(x, -2.5 + h / 2, z);
         pillarMesh.layers.enable(1);
         pillarMesh.userData = {
-          title: `Hyperliquid L2 ${w.pattern} (${w.side})`,
-          subtitle: `Price: $${w.price.toFixed(1)} · ${w.orderCount} resting orders`,
-          metricLabel: 'Resting Depth',
+          title: `Arkusz HL · ${isBid ? 'BID ▲' : 'ASK ▼'} · ${WHALE_PATTERN_PL[w.pattern] ?? 'Duże zlecenie'}`,
+          subtitle: `Cena ${w.price.toFixed(1)} · liczba zleceń na poziomie: ${w.orderCount}`,
+          metricLabel: 'Płynność na poziomie',
           metricValue: `${w.sizeBtc} BTC ($${(w.sizeUsd / 1000).toFixed(0)}K)`,
-          accentColor:
-            w.pattern === 'Institutional Iceberg'
-              ? '#facc15'
-              : isBid
-              ? '#10b981'
-              : '#f43f5e',
+          accentColor: isBid ? T3_CSS.buy : T3_CSS.sell,
         };
         whaleIcebergsGroup.add(pillarMesh);
       });
@@ -581,6 +621,8 @@ export const ThreeOrderflowVortex3D: React.FC<ThreeOrderflowVortex3DProps> = ({
     };
 
     rebuildDynamicOverlays();
+    // Nakładki zbudowane z bieżących danych — kolejna przebudowa dopiero po zmianie propsów
+    dirtyRef.current = false;
 
     // Post-Processing Bokeh Depth of Field
     let composer: EffectComposer | null = null;
@@ -631,6 +673,7 @@ export const ThreeOrderflowVortex3D: React.FC<ThreeOrderflowVortex3DProps> = ({
       const w = Math.max(300, container.clientWidth);
       const h = Math.max(260, container.clientHeight);
       camera.aspect = w / h;
+      camera.fov = labFov(w / h);
       camera.updateProjectionMatrix();
       renderer.setSize(w, h);
       if (composer) composer.setSize(w, h);
@@ -641,9 +684,21 @@ export const ThreeOrderflowVortex3D: React.FC<ThreeOrderflowVortex3DProps> = ({
     const _pulsePos = new THREE.Vector3();
     const startTimeMs = performance.now();
     let prevTimeMs = startTimeMs;
-    let frameId = 0;
+    // Osobne identyfikatory dla requestAnimationFrame i setTimeout — każdy anulowany właściwą funkcją
+    let rafId = 0;
+    let timeoutId = 0;
     let isDisposed = false;
     let isVisible = true;
+    // Karta w tle: pętla renderu stoi całkowicie (bez timerów), wznowienie po powrocie
+    let pausedHidden = false;
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== 'hidden' && pausedHidden && !isDisposed) {
+        pausedHidden = false;
+        prevTimeMs = performance.now();
+        tick();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
 
     const io =
       typeof IntersectionObserver !== 'undefined'
@@ -659,7 +714,7 @@ export const ThreeOrderflowVortex3D: React.FC<ThreeOrderflowVortex3DProps> = ({
     function afterDraw(cb: () => void) {
       const gl = renderer.getContext() as WebGL2RenderingContext;
       if (!gl || !gl.fenceSync) {
-        frameId = window.setTimeout(cb, 80);
+        timeoutId = window.setTimeout(cb, 80);
         return;
       }
       const sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
@@ -668,38 +723,42 @@ export const ThreeOrderflowVortex3D: React.FC<ThreeOrderflowVortex3DProps> = ({
         if (isDisposed) return;
         const state = sync && gl.getSyncParameter(sync, gl.SYNC_STATUS);
         if (state === gl.UNSIGNALED) {
-          frameId = window.setTimeout(poll, 5);
+          timeoutId = window.setTimeout(poll, 5);
         } else {
           if (sync) gl.deleteSync(sync);
-          frameId = window.setTimeout(cb, 80);
+          timeoutId = window.setTimeout(cb, 80);
         }
       };
-      frameId = window.setTimeout(poll, 5);
+      timeoutId = window.setTimeout(poll, 5);
     }
 
     function tick() {
       if (isDisposed) return;
+      if (document.visibilityState === 'hidden') {
+        pausedHidden = true;
+        return;
+      }
       const nowMs = performance.now();
       const dt = Math.min(0.1, (nowMs - prevTimeMs) / 1000);
       prevTimeMs = nowMs;
       const elapsed = (nowMs - startTimeMs) / 1000;
 
       if (!isVisible) {
-        frameId = window.setTimeout(tick, 250);
+        timeoutId = window.setTimeout(tick, 250);
         return;
       }
 
-      if (elapsed - lastDynamicRebuild > 0.6) {
+      // Przebudowa tylko gdy dane faktycznie się zmieniły (dirtyRef), z zachowanym throttlingiem 600 ms
+      if (dirtyRef.current && elapsed - lastDynamicRebuild > 0.6) {
         lastDynamicRebuild = elapsed;
+        dirtyRef.current = false;
         rebuildDynamicOverlays();
       }
 
-      // 1. Rotate Central Hyperliquid Oracle-Mark Core & Gimbal Rings
-      innerCoreMesh.rotation.y += dt * 0.65;
-      innerCoreMesh.rotation.x = Math.sin(elapsed * 1.2) * 0.25;
-      ring1Mesh.rotation.z += dt * 0.45;
-      ring1Mesh.rotation.x = Math.cos(elapsed * 0.8) * 0.4;
-      ring2Mesh.rotation.y -= dt * 0.55;
+      // 1. Powolny obrót rdzenia i pierścieni (ruch liniowy, spokojny)
+      innerCoreMesh.rotation.y += dt * 0.3;
+      ring1Mesh.rotation.z += dt * 0.2;
+      ring2Mesh.rotation.y -= dt * 0.25;
 
       // 2. Animate Orderflow Energy Pulses along Exchange-to-Core Conduits
       const speedMult = latestRef.current.pulseSpeed;
@@ -710,19 +769,6 @@ export const ThreeOrderflowVortex3D: React.FC<ThreeOrderflowVortex3DProps> = ({
         pkt.curve.getPointAt(t, _pulsePos);
         pkt.mesh.position.copy(_pulsePos);
       }
-
-      // 3. Animate 3D Volatility & Gamma Squeeze Topographic Wave Surface
-      const posAttr = wavePlaneGeo.attributes.position;
-      for (let i = 0; i < posAttr.count; i++) {
-        const vx = posAttr.getX(i);
-        const vz = posAttr.getZ(i);
-        const dist = Math.sqrt(vx * vx + vz * vz);
-        const waveY =
-          Math.sin(dist * 0.55 - elapsed * 2.1) * 0.38 +
-          Math.cos(vx * 0.35 + elapsed * 1.4) * 0.22;
-        posAttr.setY(i, waveY);
-      }
-      posAttr.needsUpdate = true;
 
       // 4. Smooth Camera Damping
       if (targetCamRef.current.active) {
@@ -770,25 +816,30 @@ export const ThreeOrderflowVortex3D: React.FC<ThreeOrderflowVortex3DProps> = ({
 
       controls.update();
 
-      if (bokehPass && composer) {
+      // Głębia ostrości tylko gdy włączona — inaczej render bez post-processingu (taniej)
+      if (bokehPass && composer && latestRef.current.dofEnabled) {
         const uniforms = bokehPass.uniforms as Record<string, { value: number }>;
         if (uniforms['focus']) {
           uniforms['focus'].value = latestRef.current.dofFocus;
         }
         if (uniforms['aperture']) {
-          uniforms['aperture'].value = latestRef.current.dofEnabled
-            ? latestRef.current.dofAperture * 0.0001
-            : 0;
+          uniforms['aperture'].value = latestRef.current.dofAperture * 0.0001;
         }
         composer.render();
       } else {
         renderer.render(scene, camera);
       }
 
+      // Odroczone zwolnienie materiałów z poprzedniej przebudowy (po renderze nowej sceny)
+      if (pendingMaterialDisposal.length > 0) {
+        pendingMaterialDisposal.forEach((m) => m.dispose());
+        pendingMaterialDisposal.length = 0;
+      }
+
       if (isSoftwareGl) {
         afterDraw(tick);
       } else {
-        frameId = requestAnimationFrame(tick);
+        rafId = requestAnimationFrame(tick);
       }
     }
 
@@ -797,208 +848,98 @@ export const ThreeOrderflowVortex3D: React.FC<ThreeOrderflowVortex3DProps> = ({
     return () => {
       isDisposed = true;
       io?.disconnect();
-      cancelAnimationFrame(frameId);
-      clearTimeout(frameId);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      cancelAnimationFrame(rafId);
+      clearTimeout(timeoutId);
       window.removeEventListener('resize', handleResize);
       renderer.domElement.removeEventListener('pointermove', onPointerMove);
       controls.dispose();
+
+      // Post-processing: EffectComposer.dispose() nie zwalnia dodanych passów (BokehPass, RenderPass)
+      if (composer) {
+        composer.passes.forEach((pass) => pass.dispose());
+        composer.dispose();
+      }
+
+      // Geometrie, materiały i tekstury całej sceny + materiały czekające na odroczony dispose
+      const disposedMaterials = new Set<THREE.Material>();
+      disposeSceneGraph(scene, disposedMaterials);
+      pendingMaterialDisposal.forEach((m) =>
+        disposeMaterialDeep(m, disposedMaterials)
+      );
+      pendingMaterialDisposal.length = 0;
+
+      // Mapa środowiskowa PMREM
+      scene.environment = null;
+      envRenderTarget.dispose();
+
       renderer.dispose();
+      renderer.forceContextLoss();
     };
   }, []);
 
   const mc = backendTelemetry?.monteCarlo;
 
   return (
-    <div className="relative w-full h-full min-h-[420px] bg-[#060911] overflow-hidden select-none border border-slate-800/80 rounded-lg">
-      {/* Isolated WebGL Mount Container */}
+    <div className={SCENE_FRAME}>
+      {/* Kontener WebGL */}
       <div ref={canvasMountRef} className="w-full h-full" />
 
-      {/* Top-Left Minimal Spec Header */}
-      <div className="absolute top-3 left-3 z-10 pointer-events-none flex flex-col gap-1 bg-[#090D16]/90 border border-slate-800 px-3 py-2 rounded-md">
-        <div className="flex items-center gap-2 text-xs font-semibold text-white">
-          <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
-          <span>3D Cross-Exchange Orderflow Vortex, Whale Icebergs & Monte Carlo Fan</span>
-        </div>
-        <div className="text-[11px] text-slate-400 font-mono tabular-nums">
-          HL Open Interest: $
-          {((backendTelemetry?.openInterestUsd ?? 3405000000) / 1e9).toFixed(3)}B (
-          {backendTelemetry?.openInterestBtc?.toLocaleString() ?? '41,074'} BTC) ·
-          Funding: {backendTelemetry?.fundingAnnualizedPct ?? 10.95}% APR · Basis:{' '}
-          {backendTelemetry?.basisBps ?? -1.6} bps
-        </div>
+      <HudHeader title="Orderflow Vortex · przepływ agresora per giełda (bieżąca świeca)">
+        {/* Brak telemetrii → „—” zamiast wartości wyglądających na live */}
+        OI {backendTelemetry ? `$${(backendTelemetry.openInterestUsd / 1e9).toFixed(2)}B` : '—'} · Funding{' '}
+        {backendTelemetry ? `${backendTelemetry.fundingAnnualizedPct}% APR` : '—'} · Basis{' '}
+        {backendTelemetry ? `${backendTelemetry.basisBps} bps` : '—'}
         {mc && (
-          <div className="text-[11px] text-cyan-300 font-mono tabular-nums">
-            Monte Carlo First-Passage Time: D-EQ ~{mc.expectedMinsToDEQ}m (
-            {mc.probTouchDEQ2h}%) · PDH ~{mc.expectedMinsToPDH}m ({mc.probTouchPDH2h}
-            %) · PDL ~{mc.expectedMinsToPDL}m ({mc.probTouchPDL2h}%)
-          </div>
+          <span className="block text-ink-3">
+            Monte Carlo (model), dotknięcie w 2 h: D-EQ {mc.probTouchDEQ2h}% ({formatFirstPassageMins(mc.expectedMinsToDEQ)}) · PDH{' '}
+            {mc.probTouchPDH2h}% ({formatFirstPassageMins(mc.expectedMinsToPDH)}) · PDL {mc.probTouchPDL2h}% (
+            {formatFirstPassageMins(mc.expectedMinsToPDL)})
+          </span>
         )}
-      </div>
+      </HudHeader>
 
-      {/* Top-Right Controls */}
       <div className="absolute top-3 right-3 z-10 flex items-center gap-1.5">
-        <button
-          type="button"
-          onClick={() => applyPreset('vortex')}
-          className="px-2.5 py-1.5 text-xs font-medium text-slate-300 bg-[#090D16]/90 hover:bg-slate-800 border border-slate-800 rounded-md flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
-        >
-          <RotateCcw className="w-3.5 h-3.5 text-cyan-400" />
-          <span>Reset Vortex</span>
-        </button>
+        <HudButton onClick={() => applyPreset('vortex')} icon={<RotateCcw className="w-3.5 h-3.5" aria-hidden="true" />} label="Reset kamery" />
         {onToggleExpand && (
-          <button
-            type="button"
+          <HudButton
             onClick={onToggleExpand}
-            className="px-2.5 py-1.5 text-xs font-medium text-slate-300 bg-[#090D16]/90 hover:bg-slate-800 border border-slate-800 rounded-md flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
-          >
-            {isExpanded ? (
-              <>
-                <Minimize2 className="w-3.5 h-3.5 text-cyan-400" />
-                <span>Split View</span>
-              </>
-            ) : (
-              <>
-                <Maximize2 className="w-3.5 h-3.5 text-cyan-400" />
-                <span>Full 3D Vortex</span>
-              </>
-            )}
-          </button>
+            icon={isExpanded ? <Minimize2 className="w-3.5 h-3.5" aria-hidden="true" /> : <Maximize2 className="w-3.5 h-3.5" aria-hidden="true" />}
+            label={isExpanded ? 'Widok dzielony' : 'Pełny ekran'}
+          />
         )}
       </div>
 
-      {/* Raycasted Hover Card */}
       {hoveredItem && (
-        <div className="absolute top-24 left-3 z-10 pointer-events-none bg-[#090D16]/95 border border-slate-700 px-3.5 py-2.5 rounded-md shadow-xl max-w-xs">
-          <div className="text-xs font-semibold text-white flex items-center gap-2">
-            <span
-              className="inline-block w-2 h-2 rounded-xs"
-              style={{ backgroundColor: hoveredItem.accentColor }}
-            />
-            <span>{hoveredItem.title}</span>
-          </div>
-          <div className="text-[11px] text-slate-400 mt-0.5 font-mono">
-            {hoveredItem.subtitle}
-          </div>
-          <div className="mt-1.5 pt-1.5 border-t border-slate-800 flex items-center justify-between gap-4 text-[11px] font-mono">
-            <span className="text-slate-400">{hoveredItem.metricLabel}</span>
-            <span className="text-cyan-300 font-semibold">
-              {hoveredItem.metricValue}
-            </span>
-          </div>
-        </div>
+        <HoverCard
+          swatch={hoveredItem.accentColor}
+          title={hoveredItem.title}
+          subtitle={hoveredItem.subtitle}
+          rows={[{ k: hoveredItem.metricLabel, v: hoveredItem.metricValue }]}
+        />
       )}
 
-      {/* Unified Collapsible Bottom Control Dock */}
-      <div className="absolute left-1/2 -translate-x-1/2 bottom-3 z-10 max-w-[calc(100%-20px)] w-auto flex flex-col items-center">
-        <button
-          type="button"
-          onClick={() => setDockCollapsed((v) => !v)}
-          className={`px-3 py-1 text-[11px] font-medium text-slate-300 bg-[#0B101B]/95 hover:bg-slate-800 border border-slate-800 shadow-xl flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors ${
-            dockCollapsed ? 'rounded-md' : 'rounded-t-md border-b-0'
-          }`}
-        >
-          {dockCollapsed ? (
-            <>
-              <ChevronUp className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Pokaż kontrolki 3D Vortex</span>
-            </>
-          ) : (
-            <>
-              <ChevronDown className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Ukryj kontrolki</span>
-            </>
-          )}
-        </button>
-
-        {!dockCollapsed && (
-          <div className="bg-[#0B101B]/95 border border-slate-800 rounded-b-lg rounded-tl-lg px-3 py-2 shadow-2xl flex flex-wrap items-center justify-center gap-2 max-w-full">
-            {/* Camera Presets */}
-            <div className="flex items-center gap-1 bg-[#070A12] p-1 rounded-md border border-slate-800/80">
-              <Camera className="w-3.5 h-3.5 text-slate-400 ml-1 mr-0.5 shrink-0" />
-              {(
-                [
-                  { id: 'vortex', label: '11-Venue' },
-                  { id: 'montecarlo', label: 'Monte Carlo' },
-                  { id: 'gammasurface', label: 'Gamma Wave' },
-                  { id: 'icebergs', label: 'L2 Icebergs' },
-                ] as const
-              ).map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => applyPreset(item.id)}
-                  className={`px-2 py-0.5 text-[11px] font-medium rounded transition-colors whitespace-nowrap shrink-0 ${
-                    preset === item.id
-                      ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-
-            {/* Bokeh Depth of Field & Speed Sliders */}
-            <div className="flex flex-wrap items-center gap-2 text-[11px]">
-              <button
-                type="button"
-                onClick={() => setDofEnabled((v) => !v)}
-                className={`px-2 py-0.5 rounded font-medium flex items-center gap-1 border transition-colors whitespace-nowrap shrink-0 ${
-                  dofEnabled
-                    ? 'bg-amber-500/15 text-amber-300 border-amber-500/40'
-                    : 'bg-slate-900 text-slate-400 border-slate-800'
-                }`}
-              >
-                <Focus className="w-3.5 h-3.5" />
-                <span>DOF: {dofEnabled ? 'ON' : 'OFF'}</span>
-              </button>
-
-              <label className="flex items-center gap-1 text-slate-300 whitespace-nowrap">
-                <span className="text-slate-400">Focus:</span>
-                <input
-                  type="range"
-                  min={8}
-                  max={42}
-                  step={1}
-                  value={dofFocus}
-                  onChange={(e) => setDofFocus(Number(e.target.value))}
-                  className="w-12 accent-cyan-400 cursor-pointer"
-                />
-                <span className="font-mono text-cyan-300 w-6">{dofFocus}m</span>
-              </label>
-
-              <label className="flex items-center gap-1 text-slate-300 whitespace-nowrap">
-                <span className="text-slate-400">Speed:</span>
-                <input
-                  type="range"
-                  min={0.3}
-                  max={3.0}
-                  step={0.1}
-                  value={pulseSpeed}
-                  onChange={(e) => setPulseSpeed(Number(e.target.value))}
-                  className="w-12 accent-cyan-400 cursor-pointer"
-                />
-                <span className="font-mono text-cyan-300 w-7">
-                  {pulseSpeed.toFixed(1)}x
-                </span>
-              </label>
-
-              <button
-                type="button"
-                onClick={() => setShowMonteCarloFan((v) => !v)}
-                className={`px-2 py-0.5 rounded text-[11px] font-medium border transition-colors whitespace-nowrap shrink-0 flex items-center gap-1 ${
-                  showMonteCarloFan
-                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                    : 'bg-slate-900 text-slate-500 border-slate-800'
-                }`}
-              >
-                <Cpu className="w-3 h-3" />
-                <span>MC Paths</span>
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
+      <SceneDock collapsed={dockCollapsed} onToggle={() => setDockCollapsed((v) => !v)}>
+        <DockPresets<VortexPreset>
+          ariaLabel="Kamera"
+          value={preset}
+          onChange={applyPreset}
+          options={[
+            { id: 'vortex', label: 'Giełdy' },
+            { id: 'montecarlo', label: 'Monte Carlo' },
+            { id: 'side', label: 'Z boku' },
+            { id: 'top', label: 'Z góry' },
+          ]}
+        />
+        <DockToggle on={showMonteCarloFan} onClick={() => setShowMonteCarloFan((v) => !v)}>
+          <Cpu className="w-3 h-3" aria-hidden="true" /> Ścieżki MC
+        </DockToggle>
+        <DockSlider label="Tempo impulsów" min={0.3} max={3} step={0.1} value={pulseSpeed} onChange={setPulseSpeed} format={(v) => `${v.toFixed(1)}×`} />
+        <DockToggle on={dofEnabled} onClick={() => setDofEnabled((v) => !v)}>
+          <Focus className="w-3 h-3" aria-hidden="true" /> Głębia ostrości
+        </DockToggle>
+        {dofEnabled && <DockSlider label="Ostrość" min={8} max={42} step={1} value={dofFocus} onChange={setDofFocus} format={(v) => `${v} m`} />}
+      </SceneDock>
     </div>
   );
 };
