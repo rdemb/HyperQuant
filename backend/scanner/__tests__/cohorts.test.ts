@@ -133,6 +133,16 @@ describe('CohortEngine — przepływy', () => {
     expect(f.totals.h1.rest).toMatchObject({ buy: 1_100_000, takerBuy: 0, takerHidden: 1, hidden: 0 });
   });
 
+  it('kubełek obserwowany tylko częściowo (silnik ruszył w jego trakcie) nie jest publikowany; since = początek obserwacji kohort', () => {
+    const e = new CohortEngine({ coin: 'BTC', isWhale: () => false });
+    for (let i = 0; i < 6; i++) e.onTrade(trade(A('R', i), A('S', i), 'B', 100_000, 1, T0 + 12 * MIN + i * 1000));
+    for (let i = 0; i < 6; i++) e.onTrade(trade(A('R', i), A('S', i), 'B', 100_000, 1, T0 + 20 * MIN + i * 1000));
+    e.housekeep(T0 + 31 * MIN);
+    const f = e.build(T0 + 31 * MIN, T0 - 60 * MIN); // ciągłość taśmy sięga wcześniej
+    expect(f.buckets.map((b) => b.t)).toEqual([T0 + 15 * MIN]);
+    expect(f.since).toBe(T0 + 12 * MIN);
+  });
+
   it('transakcja z samym sobą pominięta; kubełki sprzed okresu obserwacji nie są publikowane', () => {
     const e = new CohortEngine({ coin: 'BTC', isWhale: () => false });
     e.onTrade(trade(A('R', 1), A('R', 1), 'B', 100_000, 1, T0));

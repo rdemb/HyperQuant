@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
  * import bez rozszerzenia `.ts` albo składnia nieusuwalna (enum, parameter properties) we wspólnym kodzie przeszłaby
  * tsc, testy i build, a wywróciła skaner przy starcie.
  */
-const MODULES = ['scanner.ts', 'addressBook.ts', 'hl.ts', 'config.ts', 'rateLimiter.ts', 'seed.ts', 'r2.ts', 'sigv4.ts', 'positions.ts', 'gitPublish.ts', 'liqDetect.ts', 'cohortEngine.ts'];
+const MODULES = ['scanner.ts', 'addressBook.ts', 'hl.ts', 'config.ts', 'rateLimiter.ts', 'seed.ts', 'r2.ts', 'sigv4.ts', 'positions.ts', 'gitPublish.ts', 'liqDetect.ts', 'cohortEngine.ts', 'ots.ts', 'ledger.ts', 'ledgerStore.ts', 'forecaster.ts', 'ledgerRunner.ts'];
 
 describe('backend uruchamiany natywnie przez Node', () => {
   it('wszystkie moduły skanera (z kodem współdzielonym) ładują się bez kompilacji', () => {

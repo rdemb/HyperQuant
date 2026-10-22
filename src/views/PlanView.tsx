@@ -8,6 +8,7 @@ import { DayTradingPrepDesk } from '../components/DayTradingPrepDesk';
 import { PlanForm, PlanFormState } from './plan/PlanForm';
 import { PlanResult } from './plan/PlanResult';
 import { LedgerPanel } from './plan/LedgerPanel';
+import { DeskLedgerPanel } from './plan/DeskLedgerPanel';
 import { usePlanLedger } from './plan/usePlanLedger';
 import { parseNum, planSigma, useDebounced, usePlanMarket, useStoredString } from './plan/hooks';
 
@@ -254,6 +255,7 @@ const PlanView: React.FC = () => {
             </div>
           </Panel>
           <LedgerPanel ledger={ledger} />
+          <DeskLedgerPanel />
         </>
       ) : (
         <DayTradingPrepDesk shaakuni={shaakuni} quant={quant} currentPrice={feed.currentPrice} onPrefillPlan={prefillPlan} />

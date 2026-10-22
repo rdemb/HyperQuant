@@ -89,6 +89,12 @@ export class Scanner {
     return (this.d.now ?? Date.now)();
   }
 
+  /** Cena mark z kontekstu nie starszego niż 5 min; inaczej null (stara cena nie może udawać aktualnej). */
+  freshMarkPx(): number | null {
+    const c = this.ctx;
+    return c && c.markPx > 0 && this.now() - this.ctxAt <= CTX_MAX_AGE_MS ? c.markPx : null;
+  }
+
   setCtx(c: HlCtx): void {
     this.ctx = c;
     this.ctxAt = this.now();

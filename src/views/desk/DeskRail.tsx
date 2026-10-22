@@ -3,16 +3,33 @@ import { useDesk } from '../../state/DeskContext';
 import { Stat, fmtCompact, fmtPct, DASH } from '../../ui';
 import { FundingStrip } from '../market/FundingStrip';
 import { NextEventStat } from '../market/NextEventStat';
+import { useDeskLedger } from '../../state/useDeskLedger';
+import { calibrate } from '../../utils/deskLedger';
 
 /** Pas kontekstu pod wykresem: zasięg MC, głębokość arkusza, mikrostruktura, funding, najbliższe makro. */
 export const DeskRail: React.FC = () => {
   const { feed, quant, shaakuni } = useDesk();
   const mc = feed.backendTelemetry?.monteCarlo ?? null;
+  // Poziom już przekroczony (cena nad PDH / pod PDL) — „100%” byłoby pozorną prognozą
+  const lv = feed.realHtfLevels;
+  const px = feed.currentPrice;
+  const pdhCrossed = !!lv && px > 0 && lv.pdh <= px;
+  const pdlCrossed = !!lv && px > 0 && lv.pdl >= px;
+  const crossedNote = <div className="text-[10px] text-ink-3 font-sans" title="Cena jest już za poziomem — dotknięcie nie jest prognozą">za poziomem</div>;
   const depthAsk = quant.bookDepthAskUsd;
   const depthBid = quant.bookDepthBidUsd;
   const depthTotal = depthAsk + depthBid;
   const bidShare = depthTotal > 0 ? depthBid / depthTotal : null;
   const mins = (v: number | null | undefined) => (typeof v === 'number' ? `~${v} min` : 'n/a');
+  // Kalibracja z weryfikowalnego dziennika (izotonicznie na rozstrzygniętych prognozach tego samego silnika): tylko przy
+  // ≥ 300 ocenionych parach, aktualnym podsumowaniu i tej samej metodzie (mapa z HAR+FHS nie pasuje do zapasu Mertona)
+  const { status: ledgerStatus, summary } = useDeskLedger();
+  const cal =
+    summary && ledgerStatus !== 'expired' && mc?.method === 'fhs-har' && summary.scores.touch.pairs >= 300 ? summary.scores.touch.calibration : null;
+  const calText = (p: number | undefined) => {
+    const c = cal && typeof p === 'number' ? calibrate(cal, p / 100) : null;
+    return c === null ? null : `skal. ${Math.round(c * 100)}%`;
+  };
 
   return (
     <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
@@ -31,18 +48,33 @@ export const DeskRail: React.FC = () => {
             <div className="grid grid-cols-3 gap-2 text-sm font-mono tabular-nums">
               <div>
                 <div className="text-[10px] text-ink-3 font-sans">PDH</div>
-                <div>{mc ? `${mc.probTouchPDH2h}%` : DASH}</div>
-                <div className="text-[10px] text-ink-3">{mins(mc?.expectedMinsToPDH)}</div>
+                {pdhCrossed ? (
+                  crossedNote
+                ) : (
+                  <>
+                    <div>{mc ? `${mc.probTouchPDH2h}%` : DASH}</div>
+                    <div className="text-[10px] text-ink-3">{mins(mc?.expectedMinsToPDH)}</div>
+                    {calText(mc?.probTouchPDH2h) && <div className="text-[10px] text-accent" title="Skalibrowane na rozstrzygniętej historii (dziennik desku)">{calText(mc?.probTouchPDH2h)}</div>}
+                  </>
+                )}
               </div>
               <div>
                 <div className="text-[10px] text-ink-3 font-sans">D-EQ</div>
                 <div>{mc ? `${mc.probTouchDEQ2h}%` : DASH}</div>
                 <div className="text-[10px] text-ink-3">{mins(mc?.expectedMinsToDEQ)}</div>
+                {calText(mc?.probTouchDEQ2h) && <div className="text-[10px] text-accent" title="Skalibrowane na rozstrzygniętej historii (dziennik desku)">{calText(mc?.probTouchDEQ2h)}</div>}
               </div>
               <div>
                 <div className="text-[10px] text-ink-3 font-sans">PDL</div>
-                <div>{mc ? `${mc.probTouchPDL2h}%` : DASH}</div>
-                <div className="text-[10px] text-ink-3">{mins(mc?.expectedMinsToPDL)}</div>
+                {pdlCrossed ? (
+                  crossedNote
+                ) : (
+                  <>
+                    <div>{mc ? `${mc.probTouchPDL2h}%` : DASH}</div>
+                    <div className="text-[10px] text-ink-3">{mins(mc?.expectedMinsToPDL)}</div>
+                    {calText(mc?.probTouchPDL2h) && <div className="text-[10px] text-accent" title="Skalibrowane na rozstrzygniętej historii (dziennik desku)">{calText(mc?.probTouchPDL2h)}</div>}
+                  </>
+                )}
               </div>
             </div>
           }
