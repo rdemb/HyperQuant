@@ -117,7 +117,7 @@ export const ModelVsMarketPanel: React.FC = () => {
 const Row: React.FC<{ r: Hip4Row; now: number }> = ({ r, now }) => {
   const { q, quote, model } = r;
   const label = q.kind === 'above' ? `BTC > ${fmtPrice(q.K, 0)}` : `dotknie ${fmtPrice(q.K, 0)}`;
-  const src = q.source === 'pyth' ? 'Pyth' : q.source === 'trade' ? 'transakcja HL' : 'mark HL';
+  const src = q.source === 'pyth' ? 'Pyth' : q.source === 'trade' ? 'transakcja HL' : q.source === 'mark' ? 'mark HL' : 'inne źródło';
   const mid = quote?.liquid ? quote.mid : null;
   const diff = mid !== null && model !== null ? model - mid : null;
   return (

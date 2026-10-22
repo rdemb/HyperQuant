@@ -72,6 +72,27 @@ function quantileAt(taus, qs, tau) {
 }
 
 const r6 = (x) => Math.round(x * 1e6) / 1e6;
+/** „Blisko progu” rynku HIP-4 (względnie, 5 bp) — jak w skanerze */
+const MKT_NEAR = 0.0005;
+/** Płynność notowania jak w skanerze: spread ≤ 5 pp i ≥ 50 USDC w ±5 pp od środka po obu stronach */
+const MKT_MAX_SPREAD = 0.05;
+const MKT_MIN_DEPTH = 50;
+const SLOT_LEN_MS = 15 * 60_000;
+
+/** Niezmienniki rekordu „model vs rynek” (niezależnie od rozstrzygnięcia) — lista problemów. */
+function mktRecordProblems(fc) {
+  const out = [];
+  if (fc.t + fc.h * 60_000 !== fc.expiry) out.push(`${fc.id}: t + h ≠ termin rynku`);
+  if (fc.expiry !== fc.slot + SLOT_LEN_MS) out.push(`${fc.id}: termin rynku ≠ koniec slotu`);
+  if (!(fc.p >= 0 && fc.p <= 1)) out.push(`${fc.id}: p poza [0, 1]`);
+  if (fc.bid !== null && fc.ask !== null && !(fc.bid <= fc.ask)) out.push(`${fc.id}: bid > ask`);
+  if (typeof fc.depthBid === 'number' || typeof fc.depthAsk === 'number') {
+    const liquid =
+      fc.bid !== null && fc.ask !== null && fc.ask - fc.bid <= MKT_MAX_SPREAD + 1e-12 && fc.depthBid >= MKT_MIN_DEPTH && fc.depthAsk >= MKT_MIN_DEPTH;
+    if (liquid !== fc.liquid) out.push(`${fc.id}: liquid = ${fc.liquid} ≠ przeliczone ze spreadu i głębokości ${liquid}`);
+  }
+  return out;
+}
 
 /** Wynik dotknięć z max/min okna (ta sama reguła co w skanerze: D-EQ od strony ceny przy wydaniu). */
 function touchOutcome(fc, hi, lo) {
@@ -90,6 +111,18 @@ export function checkResolutions(records) {
     if (r.k !== 'r' || r.void) continue;
     const fc = f.get(r.id);
     if (!fc) continue;
+    if (fc.kind === 'mkt') {
+      out.push(...mktRecordProblems(fc));
+      if (!(r.c1 > 0)) {
+        out.push(`${r.id}: brak cen źródłowych (c1)`);
+        continue;
+      }
+      const y = r.c1 >= fc.K ? 1 : 0;
+      const near = Math.abs(r.c1 - fc.K) <= MKT_NEAR * fc.K ? 1 : 0;
+      if (r.y !== y) out.push(`${r.id}: y = ${r.y} ≠ [c1 ≥ K] = ${y}`);
+      if (r.near !== near) out.push(`${r.id}: near = ${r.near} ≠ przeliczone ${near}`);
+      continue;
+    }
     if (fc.kind === 'touch') {
       if (!(typeof r.hi === 'number' && typeof r.lo === 'number')) {
         out.push(`${r.id}: brak cen źródłowych (hi/lo)`);
@@ -181,21 +214,25 @@ export function checkOrdering(records, opts = {}) {
   return out;
 }
 
+/** Partia slotu: prognozy główne ('') i „model vs rynek” ('m', wydawane później w slocie — osobne pokwitowanie). */
+export const batchOf = (o) => (o.kind === 'mkt' ? 'm' : '');
+
 /**
- * Pokwitowania slotów: dla każdego slotu z prognozą musi istnieć `.ots`, a jego skrót = hash ostatniej prognozy slotu.
- * `getReceipt(slot)` → bajty pliku albo null.
+ * Pokwitowania slotów: dla każdej partii slotu z prognozą musi istnieć `.ots`, a jego skrót = hash ostatniej prognozy
+ * partii. `getReceipt(slot, batch)` → bajty pliku albo null.
  */
 export function checkReceipts(records, getReceipt) {
   const last = new Map();
-  for (const o of records) if (o.k === 'f') last.set(o.slot, o.hash);
+  for (const o of records) if (o.k === 'f') last.set(`${o.slot}|${batchOf(o)}`, { slot: o.slot, batch: batchOf(o), hash: o.hash });
   const out = [];
-  for (const [slot, hash] of last) {
-    const bytes = getReceipt(slot);
+  for (const { slot, batch, hash } of last.values()) {
+    const name = `slot ${new Date(slot).toISOString()}${batch ? ` (partia ${batch})` : ''}`;
+    const bytes = getReceipt(slot, batch);
     if (!bytes) {
-      out.push(`slot ${new Date(slot).toISOString()}: brak pokwitowania`);
+      out.push(`${name}: brak pokwitowania`);
       continue;
     }
-    if (otsDigestHex(bytes) !== hash) out.push(`slot ${new Date(slot).toISOString()}: skrót pokwitowania ≠ hash ostatniej prognozy slotu`);
+    if (otsDigestHex(bytes) !== hash) out.push(`${name}: skrót pokwitowania ≠ hash ostatniej prognozy partii`);
   }
   return out;
 }
@@ -292,13 +329,16 @@ export function checkMarket(records, candles) {
   for (const r of records) {
     if (r.k !== 'r') continue;
     const fc = f.get(r.id);
-    if (!fc || (fc.kind !== 'ret' && fc.kind !== 'touch')) continue;
+    if (!fc || (fc.kind !== 'ret' && fc.kind !== 'touch' && fc.kind !== 'mkt')) continue;
     eligible++;
     let market = null; // ceny z rynku albo null, gdy poza zakresem pobranych świec
     if (fc.kind === 'ret') {
       const a = byTime.get(fc.t - MIN_MS);
       const b = byTime.get(fc.t + fc.h * MIN_MS - MIN_MS);
       if (a && b) market = { c0: a.close, c1: b.close };
+    } else if (fc.kind === 'mkt') {
+      const b = byTime.get(fc.t + fc.h * MIN_MS - MIN_MS);
+      if (b) market = { c1: b.close };
     } else {
       const win = candles.filter((c) => c.time >= fc.t && c.time + MIN_MS <= fc.t + fc.h * MIN_MS);
       if (win.length >= fc.h) market = { hi: Math.max(...win.map((c) => c.high)), lo: Math.min(...win.map((c) => c.low)) };
@@ -307,6 +347,7 @@ export function checkMarket(records, candles) {
     checked++;
     if (r.void) problems.push(`${r.id}: unieważnione mimo kompletu świec rynku`);
     else if (fc.kind === 'ret' && (market.c0 !== r.c0 || market.c1 !== r.c1)) problems.push(`${r.id}: ceny ${r.c0}/${r.c1} ≠ świece ${market.c0}/${market.c1}`);
+    else if (fc.kind === 'mkt' && market.c1 !== r.c1) problems.push(`${r.id}: cena ${r.c1} ≠ świeca ${market.c1}`);
     else if (fc.kind === 'touch' && (market.hi !== r.hi || market.lo !== r.lo)) problems.push(`${r.id}: max/min ${r.hi}/${r.lo} ≠ świece ${market.hi}/${market.lo}`);
   }
   return { problems, checked, eligible };
@@ -380,6 +421,8 @@ export function recompute(records) {
   const ret = {};
   let touchN = 0;
   let brierSum = 0;
+  const market = { n: 0, brierModel: 0, brierMarket: 0 };
+  const marketTight = { n: 0, brierModel: 0, brierMarket: 0 };
   for (const [id, fc] of f) {
     const res = r.get(id);
     if (!res || res.void) continue;
@@ -389,6 +432,16 @@ export function recompute(records) {
       s.crps += crps(fc.taus, fc.q, res.y);
       s.crpsB += crps(fc.taus, fc.bq, res.y);
       s.in90 += res.y >= quantileAt(fc.taus, fc.q, 0.05) && res.y <= quantileAt(fc.taus, fc.q, 0.95) ? 1 : 0;
+    } else if (fc.kind === 'mkt') {
+      if (res.near !== 0 || fc.bid === null || fc.ask === null) continue;
+      const y = res.c1 >= fc.K ? 1 : 0;
+      const add = (acc) => {
+        acc.n++;
+        acc.brierModel += (fc.p - y) ** 2;
+        acc.brierMarket += ((fc.bid + fc.ask) / 2 - y) ** 2;
+      };
+      if (fc.ask - fc.bid <= MKT_MAX_SPREAD + 1e-12) add(marketTight);
+      if (fc.liquid) add(market);
     } else if (fc.kind === 'touch') {
       for (const l of ['pdh', 'pdl', 'deq']) {
         if (fc.p[l] === null) continue; // poziom już przekroczony przy wydaniu — nieoceniany
@@ -400,6 +453,12 @@ export function recompute(records) {
   return {
     ret: Object.fromEntries(Object.entries(ret).map(([h, s]) => [h, { n: s.n, crps: s.crps / s.n, crpss: 1 - s.crps / s.crpsB, cov90: s.in90 / s.n }])),
     touch: { levels: touchN, brier: touchN ? brierSum / touchN : null },
+    market: { n: market.n, brierModel: market.n ? market.brierModel / market.n : null, brierMarket: market.n ? market.brierMarket / market.n : null },
+    marketTight: {
+      n: marketTight.n,
+      brierModel: marketTight.n ? marketTight.brierModel / marketTight.n : null,
+      brierMarket: marketTight.n ? marketTight.brierMarket / marketTight.n : null,
+    },
     voided: [...r.values()].filter((x) => x.void).length,
     skipped: records.filter((o) => o.k === 's').reduce((n, o) => n + (typeof o.until === 'number' ? Math.round((o.until - o.slot) / SLOT_MS) + 1 : 1), 0),
   };
@@ -488,8 +547,6 @@ async function main() {
     const otsDir = path.join(local, 'BTC', 'ots');
     let daily = 0;
     let slots = 0;
-    const lastHashBySlot = new Map();
-    for (const o of records) if (o.k === 'f') lastHashBySlot.set(o.slot, o.hash);
     if (existsSync(otsDir)) {
       for (const f of readdirSync(otsDir).filter((x) => x.endsWith('.jsonl.ots'))) {
         const day = f.replace('.ots', '');
@@ -503,11 +560,12 @@ async function main() {
       }
     }
     // Pokwitowania wymagane dla każdego slotu z prognozą (brak = problem, nie „0 zgodnych”)
-    const receiptPath = (slot) => path.join(otsDir, 'slots', new Date(slot).toISOString().slice(0, 10), `${slot}.ots`);
-    const getReceipt = (slot) => (existsSync(receiptPath(slot)) ? readFileSync(receiptPath(slot)) : null);
+    const receiptPath = (slot, batch = '') => path.join(otsDir, 'slots', new Date(slot).toISOString().slice(0, 10), `${slot}${batch ? `-${batch}` : ''}.ots`);
+    const getReceipt = (slot, batch = '') => (existsSync(receiptPath(slot, batch)) ? readFileSync(receiptPath(slot, batch)) : null);
     const rec = checkReceipts(records, getReceipt);
-    slots = lastHashBySlot.size - rec.length;
-    console.log(rec.length ? `✗ pokwitowania slotów (${rec.length}): ${rec.slice(0, 5).join('; ')}` : `✓ pokwitowania slotów: ${slots}/${lastHashBySlot.size}`);
+    const groups = new Set(records.filter((o) => o.k === 'f').map((o) => `${o.slot}|${batchOf(o)}`)).size;
+    slots = groups - rec.length;
+    console.log(rec.length ? `✗ pokwitowania slotów (${rec.length}): ${rec.slice(0, 5).join('; ')}` : `✓ pokwitowania slotów (partie): ${slots}/${groups}`);
     if (rec.length) ok = false;
     console.log(`✓ kotwice dni zgodne: ${daily}`);
 
@@ -516,23 +574,24 @@ async function main() {
       // dowiedziona blokiem, gdy blok jest wcześniejszy niż koniec jej horyzontu. Dla 1 h blok często przychodzi później —
       // wtedy dowodem przed faktem są kalendarze (niezależni operatorzy), a blok potwierdza je później.
       const bySlot = new Map();
-      for (const o of records) if (o.k === 'f') bySlot.set(o.slot, [...(bySlot.get(o.slot) ?? []), o]);
+      for (const o of records) if (o.k === 'f') bySlot.set(`${o.slot}|${batchOf(o)}`, [...(bySlot.get(`${o.slot}|${batchOf(o)}`) ?? []), o]);
       const stat = {};
-      for (const [slot, fs] of bySlot) {
-        const bytes = getReceipt(slot);
+      for (const fs of bySlot.values()) {
+        const bytes = getReceipt(fs[0].slot, batchOf(fs[0]));
         if (!bytes) continue;
         const bt = await bitcoinTime(bytes);
         for (const fc of fs) {
-          const s = (stat[fc.h] ??= { n: 0, proven: 0, late: 0, pending: 0 });
+          const key = fc.kind === 'mkt' ? 'rynek HIP-4 (15 min)' : `horyzont ${fc.h} min`;
+          const s = (stat[key] ??= { n: 0, proven: 0, late: 0, pending: 0 });
           s.n++;
           if (bt === null) s.pending++;
           else if (bt + BLOCK_TIME_MARGIN_MS <= fc.t + fc.h * MIN_MS) s.proven++;
           else s.late++;
         }
       }
-      for (const [h, s] of Object.entries(stat)) {
+      for (const [label, s] of Object.entries(stat)) {
         console.log(
-          `ℹ horyzont ${h} min (${s.n}): blok Bitcoina przed rozstrzygnięciem (z zapasem 2 h na znacznik czasu bloku) ${s.proven}; ` +
+          `ℹ ${label} (${s.n}): blok Bitcoina przed rozstrzygnięciem (z zapasem 2 h na znacznik czasu bloku) ${s.proven}; ` +
             `blok później ${s.late} ` +
             `(przed faktem — tylko kalendarze OTS, zaufanie do ich operatorów); jeszcze bez bloku ${s.pending}`
         );

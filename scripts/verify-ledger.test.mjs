@@ -160,3 +160,66 @@ describe('verify-ledger — kolejność, pokwitowania, Bitcoin, rynek', () => {
     await expect(bitcoinTime(broken)).resolves.toBeNull();
   });
 });
+
+describe('verify-ledger — model vs rynek (HIP-4)', () => {
+  const M = 60_000;
+  const T = Date.UTC(2026, 9, 22, 12, 0, 0);
+  const fm = { k: 'f', id: `${T}-mkt7`, slot: T, ti: T + 6 * M, t: T + 7 * M, kind: 'mkt', h: 8, outcome: 7, K: 100_000, expiry: T + 15 * M, bid: 0.45, ask: 0.5, liquid: true, p: 0.6 };
+
+  it('checkResolutions: y = [c1 ≥ K], „blisko progu” z c1; brak c1 = problem', () => {
+    expect(checkResolutions([fm, { k: 'r', id: fm.id, c1: 100_100, y: 1, near: 0 }])).toEqual([]);
+    expect(checkResolutions([fm, { k: 'r', id: fm.id, c1: 100_100, y: 0, near: 0 }]).join(' ')).toMatch(/y/);
+    expect(checkResolutions([fm, { k: 'r', id: fm.id, c1: 100_010, y: 1, near: 0 }]).join(' ')).toMatch(/near/);
+    expect(checkResolutions([fm, { k: 'r', id: fm.id, y: 1, near: 0 }]).join(' ')).toMatch(/cen źródłowych/);
+  });
+
+  it('checkMarket: c1 = zamknięcie świecy 1m kończącej się w terminie', () => {
+    const candles = [{ time: T + 14 * M, high: 1, low: 1, close: 100_100 }];
+    expect(checkMarket([fm, { k: 'r', id: fm.id, c1: 100_100, y: 1, near: 0 }], candles)).toMatchObject({ problems: [], checked: 1 });
+    expect(checkMarket([fm, { k: 'r', id: fm.id, c1: 99_000, y: 0, near: 0 }], candles).problems.length).toBe(1);
+  });
+
+  it('checkReceipts: osobne pokwitowanie partii „m” (skrót = hash rekordu rynku), główna partia bez zmian', () => {
+    const recs = [
+      { k: 'f', id: `${T}-ret60`, slot: T, kind: 'ret', hash: 'aa'.repeat(32) },
+      { ...fm, hash: 'cc'.repeat(32) },
+    ];
+    const digest = (hex) => buildOtsFile(new Uint8Array(Buffer.from(hex, 'hex')), new Uint8Array(16), [new Uint8Array([0xf1, 1, 7, 0x08, 0x00, 0x83, 0xdf, 0xe3, 0x0d, 0x2e, 0xf9, 0x0c, 0x8e, 2, 1, 0x61])]);
+    const files = { [`${T}`]: digest('aa'.repeat(32)), [`${T}-m`]: digest('cc'.repeat(32)) };
+    expect(checkReceipts(recs, (slot, batch) => files[`${slot}${batch ? `-${batch}` : ''}`] ?? null)).toEqual([]);
+    expect(checkReceipts(recs, (slot, batch) => (batch ? null : files[`${slot}`])).join(' ')).toMatch(/brak pokwitowania/);
+  });
+
+  it('recompute: Brier modelu i rynku (płynne, z dala od progu)', () => {
+    const r = recompute([fm, { k: 'r', id: fm.id, c1: 100_100, y: 1, near: 0 }]);
+    expect(r.market.n).toBe(1);
+    expect(r.market.brierModel).toBeCloseTo(0.16, 12);
+    expect(r.market.brierMarket).toBeCloseTo(0.525 ** 2, 12);
+  });
+});
+
+describe('verify-ledger — model vs rynek: niezmienniki rekordu i płynność', () => {
+  const M = 60_000;
+  const T = Date.UTC(2026, 9, 22, 12, 0, 0);
+  const base = { k: 'f', id: `${T}-mkt7`, slot: T, ti: T + 6 * M, t: T + 7 * M, kind: 'mkt', h: 8, outcome: 7, K: 100_000, expiry: T + 15 * M, bid: 0.45, ask: 0.5, depthBid: 80, depthAsk: 60, liquid: true, p: 0.6 };
+  const res = { k: 'r', id: base.id, c1: 100_100, y: 1, near: 0 };
+
+  it('pasmo „blisko progu” 5 bp', () => {
+    expect(checkResolutions([base, { ...res, c1: 100_040, near: 1 }])).toEqual([]);
+    expect(checkResolutions([base, { ...res, c1: 100_040, near: 0 }]).join(' ')).toMatch(/near/);
+  });
+  it('płynność przeliczana ze spreadu i głębokości; t + h = termin = koniec slotu; bid ≤ ask; 0 ≤ p ≤ 1', () => {
+    expect(checkResolutions([base, res])).toEqual([]);
+    expect(checkResolutions([{ ...base, depthAsk: 10 }, res]).join(' ')).toMatch(/liquid/);
+    expect(checkResolutions([{ ...base, h: 9 }, res]).join(' ')).toMatch(/termin/);
+    expect(checkResolutions([{ ...base, expiry: T + 30 * M, h: 23 }, res]).join(' ')).toMatch(/koniec slotu/);
+    expect(checkResolutions([{ ...base, bid: 0.6 }, res]).join(' ')).toMatch(/bid/);
+    expect(checkResolutions([{ ...base, p: 1.2 }, res]).join(' ')).toMatch(/p /);
+  });
+  it('recompute: poziom ścisły i „wąski spread”', () => {
+    const thin = { ...base, id: 'b', depthAsk: 5, liquid: false };
+    const r = recompute([base, res, thin, { ...res, id: 'b' }]);
+    expect(r.market.n).toBe(1);
+    expect(r.marketTight.n).toBe(2);
+  });
+});
