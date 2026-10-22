@@ -138,3 +138,19 @@ describe('renderReport', () => {
     expect(report).not.toMatch(/\b\d{1,3}(\.\d{1,3}){3}\b/);
   });
 });
+
+describe('profil płynności (plik opcjonalny)', () => {
+  it('brak pliku nie jest alarmem; świeży — fakt w raporcie; nieaktualny > 30 min — problem', () => {
+    expect(assessHealth(input({ errors: { 'liquidity/BTC.json': 'HTTP 404' } }), NOW).ok).toBe(true);
+    const fresh = assessHealth(input({ liquidity: { v: 1, asOf: NOW - 5 * MIN } }), NOW);
+    expect(fresh.ok).toBe(true);
+    expect(fresh.facts.map((f) => f.label)).toContain('Wiek profilu płynności');
+    const stale = assessHealth(input({ liquidity: { v: 1, asOf: NOW - 45 * MIN } }), NOW);
+    expect(stale.ok).toBe(false);
+    expect(stale.problems.join(' ')).toMatch(/płynności/);
+    // profil świeży, ale rejestrator nie zapisuje minut (np. brak arkusza z WebSocket)
+    const stuck = assessHealth(input({ liquidity: { v: 1, asOf: NOW - 5 * MIN, last: NOW - 40 * MIN } }), NOW);
+    expect(stuck.ok).toBe(false);
+    expect(stuck.problems.join(' ')).toMatch(/nie zapisuje/);
+  });
+});
