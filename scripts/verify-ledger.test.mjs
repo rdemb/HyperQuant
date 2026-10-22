@@ -311,3 +311,97 @@ describe('ensemble: skaner vs niezależny weryfikator', () => {
     }
   });
 });
+
+import { checkVariants } from './verify-ledger.mjs';
+import { AB_EPOCH } from '../src/utils/abTest.ts';
+
+describe('A/B wersji modelu: wariant B = A × skala, skala ze wzoru na zapisanych σ', () => {
+  const A = { k: 'f', kind: 'ret', id: '900000-ret60', slot: 900000, ti: 900020, t: 960000, h: 60, px0: 80000, taus: [0.1, 0.5, 0.9], q: [-0.004, 0, 0.004], bq: [-0.005, 0, 0.005], aci: 0.1, model: 'ledger-har-fhs-v1' };
+  // √(½ + ½·0,002²·12·1 / σ_A²) = 1,25 ⇔ σ_A² = 2,4·10⁻⁵ / 1,0625
+  const B = {
+    ...A,
+    id: '900000-ret60b',
+    variant: 'B',
+    model: 'ledger-har-fhs-bocpd-v1',
+    scale: 1.25,
+    q: [-0.005, 0, 0.005],
+    regime: { sigma5: 0.002, run: 30, pChange: 0.01 },
+    sigmaA: Math.round(Math.sqrt(2.4e-5 / 1.0625) * 1e8) / 1e8,
+    seas: 1,
+  };
+  it('zgodny wariant B → bez problemów; liczba sprawdzonych', () => {
+    expect(checkVariants([A, B])).toEqual({ problems: [], checked: 1 });
+  });
+  it('kwantyle niezgodne ze skalą, inna chwila wydania albo brak wersji A → problem', () => {
+    expect(checkVariants([A, { ...B, q: [-0.006, 0, 0.005] }]).problems.join(' ')).toMatch(/kwantyle ≠ A × skala/);
+    expect(checkVariants([A, { ...B, ti: 900021 }]).problems.join(' ')).toMatch(/ti/);
+    expect(checkVariants([B]).problems.join(' ')).toMatch(/brak wersji A/);
+  });
+  it('skala niezgodna ze wzorem z zapisanych σ, poniżej √½, brak σ, zły horyzont lub model → problem', () => {
+    const q = (k) => A.q.map((v) => v * k);
+    expect(checkVariants([A, { ...B, scale: 1.3, q: q(1.3) }]).problems.join(' ')).toMatch(/skala ≠ wzór/);
+    expect(checkVariants([A, { ...B, scale: 0.6, q: q(0.6) }]).problems.join(' ')).toMatch(/skala < √½/);
+    expect(checkVariants([A, { ...B, sigmaA: undefined }]).problems.join(' ')).toMatch(/σ_A/);
+    const A4 = { ...A, id: '900000-ret240', h: 240 };
+    expect(checkVariants([A4, { ...B, id: '900000-ret240b', h: 240 }]).problems.join(' ')).toMatch(/horyzont/);
+    expect(checkVariants([A, { ...B, model: 'inny' }]).problems.join(' ')).toMatch(/model/);
+  });
+  it('recompute: wariant B osobno; okres oceny A/B w toku z parami od AB_EPOCH', () => {
+    const recs = [];
+    for (let k = 0; k < 4; k++) {
+      const slot = AB_EPOCH + k * 900_000;
+      const a = { ...A, id: `${slot}-ret60`, slot, ti: slot + 20_000, t: slot + 60_000 };
+      const b = { ...B, id: `${slot}-ret60b`, slot, ti: slot + 20_000, t: slot + 60_000 };
+      recs.push(a, b, { k: 'r', id: a.id, t: slot + 3_700_000, y: 0.004 }, { k: 'r', id: b.id, t: slot + 3_700_000, y: 0.004 });
+    }
+    const r = recompute(recs);
+    expect(r.ret['60'].n).toBe(4);
+    expect(r.ret['60-B'].n).toBe(4);
+    expect(r.ab.current).toMatchObject({ start: AB_EPOCH, n: 4, diff: null });
+    expect(r.ab.current.crpsA).toBeCloseTo(r.ret['60'].crps, 7);
+    expect(r.ab.current.crpsB).toBeCloseTo(r.ret['60-B'].crps, 7);
+  });
+});
+
+import { checkAbPlan } from './verify-ledger.mjs';
+import { AB_DESIGN } from '../src/utils/abTest.ts';
+import { createHash } from 'node:crypto';
+
+describe('A/B — recenzja: plan prerejestrowany, okres niepełny, σ_A wiarygodne', () => {
+  const TAUS = [0.025, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.975];
+  const normQ = (s) => TAUS.map((t) => s * (t === 0.025 ? -1.96 : t === 0.975 ? 1.96 : (t - 0.5) * 3));
+  const mk = (slot, sigmaA, scale = 1) => {
+    const a = { k: 'f', kind: 'ret', id: `${slot}-ret60`, slot, ti: slot + 20_000, t: slot + 60_000, h: 60, px0: 80000, taus: TAUS, q: normQ(0.005), bq: normQ(0.006), aci: 0.1, model: 'ledger-har-fhs-v1' };
+    const seas = 1;
+    const sigma5 = Math.sqrt(((scale ** 2 - 0.5) * 2 * sigmaA ** 2) / 12);
+    const b = { ...a, id: `${a.id}b`, variant: 'B', model: 'ledger-har-fhs-bocpd-v1', scale, q: a.q.map((v) => v * scale), regime: { sigma5, run: 10, pChange: 0 }, sigmaA, seas };
+    return [a, b];
+  };
+  const hash = createHash('sha256').update(canonical(AB_DESIGN)).digest('hex');
+  it('σ_A niezgodne z rozrzutem kwantyli A (poza [0,5; 2]) → problem; zgodne → bez problemu', () => {
+    expect(checkVariants(mk(900000, 0.005)).problems).toEqual([]);
+    expect(checkVariants(mk(900000, 0.02)).problems.join(' ')).toMatch(/σ_A niezgodne z kwantylami A/);
+  });
+  it('plan A/B: zgodny z kodem i przed wariantem B → ok; zmieniony plan albo B przed planem → problem', () => {
+    const p = { k: 'p', id: 'ab-v1', t: 1000, catalogHash: hash, catalog: AB_DESIGN };
+    const [a, b] = mk(2000, 0.005);
+    expect(checkAbPlan([p, a, b])).toMatchObject({ problems: [], registeredAt: 1000 });
+    const changed = { ...AB_DESIGN, blockDays: 7 };
+    const p2 = { ...p, catalog: changed, catalogHash: createHash('sha256').update(canonical(changed)).digest('hex') };
+    expect(checkAbPlan([p2, a, b]).problems.join(' ')).toMatch(/plan A\/B różni się od kodu/);
+    expect(checkAbPlan([a, b, { ...p, t: 3_000_000 }]).problems.join(' ')).toMatch(/wariant B przed prerejestracją/);
+    expect(checkAbPlan([a]).registeredAt).toBeNull();
+  });
+  it('recompute w trybie szybkim: okres zaczęty przed pierwszym pobranym dniem oznaczony jako niepełny, bez przedziału; voided bez wariantu B', () => {
+    const recs = [];
+    for (let k = 0; k < 4; k++) {
+      const slot = AB_EPOCH + k * 900_000;
+      const [a, b] = mk(slot, 0.005);
+      recs.push(a, b, { k: 'r', id: a.id, t: slot + 3_700_000, y: 0.001 }, { k: 'r', id: b.id, t: slot + 3_700_000, void: 'brak świec' });
+    }
+    const full = recompute(recs);
+    expect(full.voided).toBe(0);
+    const part = recompute(recs, { since: AB_EPOCH + 3_600_000 });
+    expect(part.ab.current).toMatchObject({ partial: true, diff: null });
+  });
+});

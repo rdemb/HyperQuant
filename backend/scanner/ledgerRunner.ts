@@ -1,3 +1,4 @@
+import { AB_DESIGN } from '../../src/utils/abTest.ts';
 import { fitEnsemble } from '../../src/utils/ensemble.ts';
 import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
@@ -15,6 +16,8 @@ import {
   ensPairs,
   makeMktForecast,
   makeRetForecast,
+  makeRetForecastB,
+  type Regime,
   makeTouchForecast,
   nextAci,
   resolveMkt,
@@ -24,6 +27,7 @@ import {
 } from './forecaster.ts';
 import type { MarketSnap } from './marketQuotes.ts';
 import { type CommitResult, type LedgerRepo, type LedgerStore, commitLedger, dayKey } from './ledgerStore.ts';
+import { canonicalJson } from './ledger.ts';
 import type { stampDigest } from './ots.ts';
 
 /**
@@ -43,6 +47,8 @@ const DAY = 24 * HOUR;
 const ISSUE_WINDOW = 5 * MIN;
 const RESOLVE_LAG = 90_000;
 const VOID_AFTER = 6 * HOUR;
+/** SHA-256 kanonicznego JSON planu oceny A/B — identyfikator prerejestracji w dzienniku */
+const AB_HASH = createHash('sha256').update(canonicalJson(AB_DESIGN)).digest('hex');
 const MODEL_MAX_AGE = 3 * HOUR;
 const KEEP = 31 * DAY;
 /** Okno wydania rekordu „model vs rynek” w slocie (od początku slotu): 5–10 min, czyli 5–10 min przed terminem rynku */
@@ -61,6 +67,10 @@ export interface LedgerData {
   refreshModel(now: number): Promise<void>;
   refreshLevels(now: number): Promise<void>;
   minuteCandles(from: number, now: number): Promise<RangeBar[]>;
+  /** Reżim zmienności (BOCPD na świecach 5m) do wariantu B — opcjonalny; B tylko z reżimem policzonym w slocie wydania */
+  regime?: Regime | null;
+  regimeAt?: number;
+  refreshRegime?(now: number): Promise<void>;
 }
 
 interface OtsEntry {
@@ -133,7 +143,7 @@ export class LedgerRunner {
     for (const k of st.skips) this.skips.set(k.slot as number, k as unknown as SkipRecord);
     this.preregs = st.preregs;
     for (const h of RET_HORIZONS) {
-      const ret = [...this.forecasts.values()].filter((f): f is RetForecast => f.kind === 'ret' && f.h === h).sort((a, b) => a.t - b.t);
+      const ret = [...this.forecasts.values()].filter((f): f is RetForecast => f.kind === 'ret' && !f.variant && f.h === h).sort((a, b) => a.t - b.t);
       const last = ret[ret.length - 1];
       if (!last) continue;
       let a = last.aci ?? ACI_ALPHA;
@@ -210,6 +220,15 @@ export class LedgerRunner {
     const { data } = this.d;
     await data.refreshModel(now);
     await data.refreshLevels(now);
+    // Reżim (wariant B) opcjonalny: błąd pobrania nie wstrzymuje wersji A — slot bez wariantu B
+    let regimeOk = !!data.refreshRegime;
+    if (data.refreshRegime) {
+      try {
+        await data.refreshRegime(now);
+      } catch {
+        regimeOk = false;
+      }
+    }
     let appended = 0;
 
     // 0. Rozliczenie poprzednich slotów: brak prognozy = jawny `skip` (z powodem albo „przerwa”)
@@ -226,6 +245,12 @@ export class LedgerRunner {
     this.add(skipBodies, ti);
     appended += skipBodies.length;
 
+    // Plan oceny A/B prerejestrowany w łańcuchu raz, zanim powstaną oceniane pary (wariant B włączony)
+    if (data.refreshRegime && !this.preregs.some((p) => p.catalogHash === AB_HASH)) {
+      this.add([{ k: 'p', id: AB_DESIGN.id, t: ti, catalogHash: AB_HASH, catalog: AB_DESIGN }], ti);
+      appended++;
+    }
+
     // 1. Wydanie prognoz w bieżącym slocie
     const issued: Record<string, unknown>[] = [];
     if (!this.forecasts.has(`${slot}-ret60`) && ti - slot < ISSUE_WINDOW) {
@@ -236,6 +261,11 @@ export class LedgerRunner {
       else {
         const tm = { slot, ti, t: Math.floor(ti / MIN) * MIN + MIN };
         for (const h of RET_HORIZONS) issued.push({ ...makeRetForecast(data.model!, tm, px!, h, data.sigma1h, this.aci[h] ?? ACI_ALPHA) });
+        // A/B: wariant B (σ z mieszaniny modelu i reżimu BOCPD) dla 1 h — ta sama chwila i partia pokwitowania co A
+        if (regimeOk && data.regime && data.regimeAt !== undefined && slotOf(data.regimeAt) === slot && data.regimeAt <= ti) {
+          const a = issued.find((f) => f.id === `${slot}-ret60`) as unknown as RetForecast | undefined;
+          if (a) issued.push({ ...makeRetForecastB(data.model!, a, data.regime) });
+        }
         const today = Math.floor(ti / DAY) * DAY;
         if (data.levels && data.levels.day === today - DAY) issued.push({ ...makeTouchForecast(data.model!, tm, px!, data.levels.pdh, data.levels.pdl) });
         this.add(issued, ti);
@@ -291,7 +321,7 @@ export class LedgerRunner {
         const r = f.kind === 'ret' ? resolveRet(f, candles, rNow) : f.kind === 'touch' ? resolveTouch(f, candles, rNow) : resolveMkt(f, candles, rNow);
         if (r) {
           resBodies.push({ ...r });
-          if (f.kind === 'ret' && 'inAci' in r) this.aci[f.h] = nextAci(this.aci[f.h] ?? ACI_ALPHA, r.inAci === 0);
+          if (f.kind === 'ret' && !f.variant && 'inAci' in r) this.aci[f.h] = nextAci(this.aci[f.h] ?? ACI_ALPHA, r.inAci === 0);
         } else if (rNow - (f.t + f.h * MIN) > VOID_AFTER) {
           resBodies.push({ k: 'r', id: f.id, t: rNow, void: 'no-data' });
         }
@@ -383,6 +413,7 @@ export class LedgerRunner {
       ots: this.ots.slice(-7),
       skips: [...this.skips.values()],
       slotStamps: this.slotStamps(now),
+      abRegisteredAt: (this.preregs.find((p) => p.catalogHash === AB_HASH)?.t as number | undefined) ?? null,
     });
   }
 }
