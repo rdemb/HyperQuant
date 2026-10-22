@@ -146,6 +146,15 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         caveat: 'Hyperliquid nie publikuje likwidacji wszystkich kont — tylko zmierzona część open interest; bez adresów, czas do minuty, rozmiar zaokrąglony, opóźnienie do kilku minut.',
       },
       {
+        metric: 'Przepływ kohort',
+        source: 'Skaner HyperQuant: WS trades BTC (pole users = [kupujący, sprzedający], side = strona agresora); pozycje i ranking kont z książki adresów',
+        method:
+          'Kohorty: market makerzy (≥ 80% nominału jako maker, ≥ 1 mln USD), poinformowani (markout 5 min istotnie > 0: test jednostronny, n ≥ 30, FDR Benjamini–Hochberg q = 10%, empiryczny Bayes), wieloryby (pozycja ≥ 1 mln USD lub konto ≥ 10 mln USD), reszta; netto = kupno − sprzedaż wszystkich fillów (suma po kohortach = 0), agresor = fille biorcy; markouty 1/5/60 min poza próbą',
+        kinds: ['LIVE', 'MODEL'],
+        refresh: 'co 2 min z mapą; kubełki 15 min; klasyfikacja co 10 min',
+        caveat: 'Wyłącznie agregaty; komórki z < 5 uczestnikami lub z jednym > 50% obrotu ukryte; „poinformowani” to wynik statystyczny z przeszłości, nie sygnał.',
+      },
+      {
         metric: 'Kaskada likwidacji',
         source: 'Mapa likwidacji, dzienna zmienność (model zmienności), obrót 24 h z API',
         method: 'Punkt stały: szok → likwidacje z mapy → wpływ Δp/p = Y·σ·√(Q/V) (Tóth i in. 2011) → kolejne likwidacje; Y = 1, pasmo 0.5–1.5',

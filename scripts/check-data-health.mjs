@@ -10,9 +10,9 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 export const DATA_BASE = 'https://raw.githubusercontent.com/rdemb/hyperquant-data/main';
-export const FILES = ['status.json', 'liq-map/BTC.json', 'liq-tape/BTC.json', 'README.md'];
+export const FILES = ['status.json', 'liq-map/BTC.json', 'liq-tape/BTC.json', 'cohorts/BTC.json', 'README.md'];
 /** Pliki, których brak nie jest alarmem (nowsze niż część wdrożeń skanera) — gdy są, przechodzą strażnika prywatności */
-export const OPTIONAL = new Set(['liq-tape/BTC.json']);
+export const OPTIONAL = new Set(['liq-tape/BTC.json', 'cohorts/BTC.json']);
 export const LIMITS = {
   /** Publikacja co 2 min (+ do 5 min pamięci podręcznej CDN) — 30 min to jednoznaczna awaria */
   maxAgeMin: 30,

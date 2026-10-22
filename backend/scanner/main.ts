@@ -9,6 +9,7 @@ import { AddressBook } from './addressBook.ts';
 import { loadConfig } from './config.ts';
 import { HlRest, HlStream } from './hl.ts';
 import { LiqConfirmer, PriceRange } from './liqDetect.ts';
+import { CohortEngine } from './cohortEngine.ts';
 import { WeightLimiter } from './rateLimiter.ts';
 import { Scanner } from './scanner.ts';
 import { fetchLeaderboardAccounts } from './seed.ts';
@@ -55,6 +56,17 @@ try {
   // brak stanu — nowa taśma
 }
 
+/** Przepływ kohort: statystyki per adres i kubełki (stan serwera — adresy nigdy nie są publikowane). */
+const cohortStatePath = join(cfg.stateDir, `cohorts-${cfg.coin}.json`);
+const COHORT_OPTS = { coin: cfg.coin, isWhale: (a: string) => book.isWhale(a) };
+let cohorts = new CohortEngine(COHORT_OPTS);
+try {
+  cohorts = CohortEngine.fromJSON(JSON.parse(readFileSync(cohortStatePath, 'utf8')), COHORT_OPTS);
+  log('wczytano stan kohort');
+} catch {
+  // brak stanu — nowe kohorty
+}
+
 function writeJsonAtomic(path: string, value: unknown): void {
   const tmp = `${path}.tmp`;
   writeFileSync(tmp, JSON.stringify(value));
@@ -64,10 +76,11 @@ function writeJsonAtomic(path: string, value: unknown): void {
 function saveState(): void {
   writeJsonAtomic(statePath, book.toJSON());
   writeJsonAtomic(liqStatePath, { savedAt: Date.now(), since: scanner.tapeSince, confirmer: scanner.confirmer.toJSON(), prices: scanner.prices.toJSON() });
+  writeJsonAtomic(cohortStatePath, cohorts.toJSON());
 }
 
 const rest = new HlRest(new WeightLimiter(cfg.weightPerMin));
-const scanner = new Scanner({ coin: cfg.coin, book, rest, outDir: cfg.outDir, r2: cfg.r2, confirmer, tapeSince, prices });
+const scanner = new Scanner({ coin: cfg.coin, book, rest, outDir: cfg.outDir, r2: cfg.r2, confirmer, tapeSince, prices, cohorts });
 let lastWsCtx = 0;
 /** Ostatnia wiadomość WebSocket (transakcje lub kontekst) — przerwa > 2 min zeruje okres obserwacji taśmy */
 let lastWsMsg = Date.now();
@@ -90,7 +103,10 @@ const stream = new HlStream(
       const px = Number(t.px);
       const sz = Number(t.sz);
       if (px > 0) scanner.recordTrade(px, t.time);
-      if (t.users && px > 0 && sz > 0) book.recordTrade(t.users, px * sz, t.time);
+      if (t.users && px > 0 && sz > 0) {
+        book.recordTrade(t.users, px * sz, t.time);
+        if (t.side === 'B' || t.side === 'A') cohorts.onTrade({ users: t.users, side: t.side, px, sz, time: t.time });
+      }
     }
   },
   (c) => {
@@ -118,6 +134,7 @@ const DATA_README = [
   '',
   '- `liq-map/BTC.json` — mapa likwidacji BTC z pozycji on-chain Hyperliquid: kubełki cen likwidacji, pokrycie open interest, wiek odczytów.',
   '- `liq-tape/BTC.json` — likwidacje śledzonych pozycji z 24 h, potwierdzone fillami z polem `liquidation`: czas, strona, rozmiar, cena, błąd mapy.',
+  '- `cohorts/BTC.json` — przepływ kohort (market makerzy, statystycznie poinformowani, wieloryby, reszta): kubełki 15 min z 24 h, markouty poza próbą; k-anonimowość (komórki z < 5 uczestnikami lub z dominującym uczestnikiem ukryte).',
   '- `status.json` — stan skanera (liczby adresów i pozycji, błędy API).',
   '',
   'Wyłącznie agregaty — bez adresów portfeli. Źródło: publiczne API Hyperliquid. Metoda: src/utils/liqMap.ts w repo HyperQuant.',
@@ -128,7 +145,7 @@ const DATA_README = [
 async function gitPublishTick(): Promise<void> {
   if (!cfg.git) return;
   const files: [string, string][] = [];
-  for (const key of [`liq-map/${cfg.coin}.json`, `liq-tape/${cfg.coin}.json`, 'status.json']) {
+  for (const key of [`liq-map/${cfg.coin}.json`, `liq-tape/${cfg.coin}.json`, `cohorts/${cfg.coin}.json`, 'status.json']) {
     try {
       files.push([key, readFileSync(join(cfg.outDir, key), 'utf8')]);
     } catch {
@@ -188,6 +205,8 @@ const timers = [
     );
   }), cfg.publishEveryS * 1000),
   setInterval(guarded('czyszczenie', () => book.prune(Date.now())), 10 * 60_000),
+  setInterval(guarded('markouty kohort', () => cohorts.settle(Date.now())), 5_000),
+  setInterval(guarded('klasyfikacja kohort', () => cohorts.classify(Date.now())), 10 * 60_000),
   setInterval(guarded('zapis stanu', saveState), 5 * 60_000),
   setInterval(guarded('zasiew', seedFromLeaderboard), 6 * 60 * 60_000),
   ...(cfg.git ? [setInterval(guarded('repo danych', gitPublishTick), cfg.git.everyS * 1000)] : []),

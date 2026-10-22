@@ -66,6 +66,8 @@ export class HlRest {
 
 export interface HlTrade {
   coin: string;
+  /** Strona agresora: B = kupujący (users[0]) jest biorcą, A = sprzedający (users[1]) */
+  side?: string;
   px: string;
   sz: string;
   time: number;

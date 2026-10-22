@@ -10,6 +10,8 @@ import { AddressBook } from '../addressBook.ts';
 import { Scanner } from '../scanner.ts';
 import { isLiqMap } from '../../../src/utils/liqMap.ts';
 import { isLiqTape } from '../../../src/utils/liqTape.ts';
+import { isCohortFlow } from '../../../src/utils/cohorts.ts';
+import { CohortEngine } from '../cohortEngine.ts';
 
 const R2 = { R2_ACCOUNT_ID: 'acc', R2_BUCKET: 'bkt', R2_ACCESS_KEY_ID: 'kid', R2_SECRET_ACCESS_KEY: 'sec' };
 
@@ -161,6 +163,31 @@ describe('Scanner — cykl skanu i publikacji', () => {
       'https://a.r2.cloudflarestorage.com/b/liq-tape/BTC.json',
       'https://a.r2.cloudflarestorage.com/b/status.json',
     ]);
+  });
+
+  it('z silnikiem kohort publikuje cohorts/BTC.json (agregaty bez adresów, ten sam okres obserwacji co taśma)', async () => {
+    const out = mkdtempSync(join(tmpdir(), 'hq-'));
+    const book = new AddressBook();
+    const cohorts = new CohortEngine({ coin: 'BTC', isWhale: (a) => book.isWhale(a) });
+    for (let i = 0; i < 6; i++) cohorts.onTrade({ users: [`0x${'a'.repeat(39)}${i}`, `0x${'b'.repeat(39)}${i}`], side: 'B', px: 83_000, sz: 1, time: 100_000 + i });
+    const scanner = new Scanner({
+      coin: 'BTC',
+      book,
+      rest: new HlRest(new WeightLimiter(240), (async () => new Response('null')) as unknown as typeof fetch, () => 0, async () => {}),
+      outDir: out,
+      r2: null,
+      now: () => 120_000,
+      tapeSince: 60_000,
+      cohorts,
+    });
+    scanner.setCtx({ markPx: 83000, oiBtc: 20, dayNtlVlm: 2e9 });
+    expect(await scanner.publish()).toBe(true);
+    const txt = readFileSync(join(out, 'cohorts', 'BTC.json'), 'utf8');
+    expect(txt).not.toMatch(/0x[0-9a-f]{40}/i);
+    const flow = JSON.parse(txt);
+    expect(isCohortFlow(flow)).toBe(true);
+    expect(flow.since).toBe(60_000);
+    expect(flow.totals.h24.rest.buy).toBe(6 * 83_000);
   });
 
   it('likwidacja śledzonej pozycji: kandydat po zniknięciu pozycji przy cenie likwidacji, potwierdzenie fillem, taśma bez adresów', async () => {

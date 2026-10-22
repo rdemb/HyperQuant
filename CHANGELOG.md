@@ -5,6 +5,7 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 ## [Unreleased]
 
 ### Dodane
+- **Przepływ kohort** (`backend/scanner/cohortEngine.ts`, `src/utils/cohorts.ts`, panel „Przepływ kohort” na Desku): strony każdej transakcji z publicznej taśmy przypisane do kohort — market makerzy, statystycznie poinformowani (markout biorcy po 5 min, test jednostronny, FDR Benjaminiego–Hochberga q = 10%, empiryczny Bayes), wieloryby, reszta. Przepływ netto (zmiana zapasów, suma po kohortach = 0) i agresywne CVD per kohorta w kubełkach 15 min z 24 h, markouty 1/5/60 min poza próbą; k-anonimowość z regułą dominacji; zero dodatkowych zapytań API.
 - **Nadzór danych** (`.github/workflows/data-health.yml`, `scripts/check-data-health.mjs`): co 30 min kontrola świeżości publikacji skanera, pokrycia open interest i opóźnienia odczytów pozycji oraz strażnik prywatności (alarm, gdyby w publikacji pojawił się adres portfela lub IP); problem otwiera zgłoszenie `alert-danych`, powrót danych je zamyka.
 
 - **Taśma zrealizowanych likwidacji** (`backend/scanner/liqDetect.ts`, `src/utils/liqTape.ts`, panel na Desku): skaner wykrywa zmniejszenie śledzonej pozycji w paśmie jej ceny likwidacji i potwierdza je w fillach konta (pole `liquidation`, metoda market/backstop; deduplikacja po fillach, faktyczna waga odpowiedzi w budżecie, wstrzymanie przy przeciążonym API); publikuje `liq-tape/BTC.json` — zdarzenia z 24 h (czas do minuty, rozmiar zaokrąglony), sumy 1 h / 24 h, kubełki 5 min — bez adresów i identyfikatorów transakcji.

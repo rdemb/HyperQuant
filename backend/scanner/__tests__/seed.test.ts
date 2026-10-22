@@ -70,4 +70,20 @@ describe('AddressBook.seed — zasiew dużych kont', () => {
     b.seed('0xbig', 5e6, 60_000);
     expect(b.due(120_000, 10)).toEqual([]);
   });
+
+  it('wartość konta z rankingu: zapamiętana (także dla znanego adresu), przetrwa zapis stanu; wieloryb wg pozycji lub konta', () => {
+    const b = new AddressBook();
+    b.recordTrade(['0xknown', '0xz'], 1, 0);
+    b.seed('0xrich', 12e6, 0);
+    b.seed('0xknown', 3e6, 0);
+    b.updatePosition('0xpos', { szi: 15, entryPx: 80_000, liqPx: 70_000, scannedAt: 0 }, 0);
+    expect(b.accountValue('0xrich')).toBe(12e6);
+    expect(b.accountValue('0xknown')).toBe(3e6);
+    expect(b.accountValue('0xz')).toBeNull();
+    const back = AddressBook.fromJSON(JSON.parse(JSON.stringify(b.toJSON())));
+    expect(back.accountValue('0xrich')).toBe(12e6);
+    expect(back.isWhale('0xrich')).toBe(true); // konto ≥ 10 mln
+    expect(back.isWhale('0xpos')).toBe(true); // pozycja 1.2 mln USD
+    expect(back.isWhale('0xknown')).toBe(false);
+  });
 });
