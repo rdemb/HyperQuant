@@ -53,11 +53,12 @@ export function olsFit(xs: number[], ys: number[]): OlsFit | null {
     sxy += dx * dy;
     syy += dy * dy;
   }
-  if (!(sxx > 0)) return null;
+  // Brak zmienności x albo y — zależności nie da się oszacować (R² nieokreślone)
+  if (!(sxx > 0) || !(syy > 0)) return null;
   const beta = sxy / sxx;
   const alpha = my - beta * mx;
   const sse = Math.max(0, syy - beta * sxy);
-  const r2 = syy > 0 ? 1 - sse / syy : 1;
+  const r2 = 1 - sse / syy;
   const seBeta = n > 2 ? Math.sqrt(sse / (n - 2) / sxx) : Number.NaN;
   return { alpha, beta, r2, n, seBeta };
 }
@@ -173,9 +174,14 @@ export function weightedMid(bid: number, bidSz: number, ask: number, askSz: numb
 
 /**
  * Empiryczna korekta mikroceny (Stoikov 2018, przybliżenie jednokrokowe): średnia przyszła zmiana mid w koszykach
- * nierównowagi I = bidSz/(bidSz + askSz) i R² tej predykcji. Mikrocena = mid + g(I).
+ * nierównowagi I = bidSz/(bidSz + askSz) i R² tej predykcji w próbie. Mikrocena = mid + g(I).
+ * `symmetric`: dokłada próbki lustrzane (1 − I, −Δmid), jak u Stoikova — dryf ceny niezwiązany z nierównowagą znosi się.
  */
-export function imbalanceAdjustment(samples: { imb: number; dmid: number }[], bins = 10): { g: (number | null)[]; n: number[]; r2: number | null } {
+export function imbalanceAdjustment(
+  samples: { imb: number; dmid: number }[],
+  bins = 10,
+  o: { symmetric?: boolean } = {}
+): { g: (number | null)[]; n: number[]; r2: number | null } {
   const sum = Array<number>(bins).fill(0);
   const cnt = Array<number>(bins).fill(0);
   const bin = (x: number) => Math.min(bins - 1, Math.max(0, Math.floor(x * bins)));
@@ -183,6 +189,10 @@ export function imbalanceAdjustment(samples: { imb: number; dmid: number }[], bi
     if (!Number.isFinite(s.imb) || !Number.isFinite(s.dmid)) continue;
     sum[bin(s.imb)] += s.dmid;
     cnt[bin(s.imb)]++;
+    if (o.symmetric) {
+      sum[bin(1 - s.imb)] -= s.dmid;
+      cnt[bin(1 - s.imb)]++;
+    }
   }
   const g = sum.map((v, i) => (cnt[i] ? v / cnt[i] : null));
   const valid = samples.filter((s) => Number.isFinite(s.imb) && Number.isFinite(s.dmid));
@@ -195,6 +205,24 @@ export function imbalanceAdjustment(samples: { imb: number; dmid: number }[], bi
     sse += (s.dmid - (g[bin(s.imb)] ?? m)) ** 2;
   }
   return { g, n: cnt, r2: sst > 0 ? 1 - sse / sst : null };
+}
+
+/**
+ * R² poza próbą: korekta g(I) dopasowana (symetrycznie) na `train`, oceniana na `test`; odniesienie = brak zmiany mid
+ * (martyngał): R² = 1 − Σ(Δmid − g)² / ΣΔmid². Ujemne = gorzej niż zakładanie braku zmiany. Pusta próba → null.
+ */
+export function oosR2(train: { imb: number; dmid: number }[], test: { imb: number; dmid: number }[], bins = 10): number | null {
+  if (train.length === 0 || test.length === 0) return null;
+  const { g } = imbalanceAdjustment(train, bins, { symmetric: true });
+  const bin = (x: number) => Math.min(bins - 1, Math.max(0, Math.floor(x * bins)));
+  let sse = 0;
+  let ss0 = 0;
+  for (const s of test) {
+    if (!Number.isFinite(s.imb) || !Number.isFinite(s.dmid)) continue;
+    sse += (s.dmid - (g[bin(s.imb)] ?? 0)) ** 2;
+    ss0 += s.dmid ** 2;
+  }
+  return ss0 > 0 ? 1 - sse / ss0 : null;
 }
 
 export interface BookSide {
@@ -212,24 +240,34 @@ export interface FlowParts {
  * Dodane / anulowane / wykonane (BTC) przy poziomach w paśmie ±bandBps od mid między dwiema migawkami arkusza.
  * Na poziomie: Δ = ilość_teraz − ilość_wcześniej; wykonanie = transakcje biorców po tej cenie (kupno trafia w ask,
  * sprzedaż w bid); dodane = max(0, Δ + wykonanie), anulowane = max(0, −Δ − wykonanie).
- * Migawki publicznego API nie pokazują zdarzeń między nimi — to bilans netto, nie zapis każdego zlecenia.
+ * Migawka z `maxLevels` poziomami jest ucięta — porównujemy tylko zakres widoczny w obu (poziom wyłaniający się na dnie
+ * widoku istniał wcześniej, to nie dodanie). Migawki publicznego API nie pokazują zdarzeń między nimi — to bilans netto,
+ * nie zapis każdego zlecenia.
  */
 export function addCancel(
   prev: { bids: BookSide[]; asks: BookSide[] },
   cur: { bids: BookSide[]; asks: BookSide[] },
   trades: { px: number; sz: number; side: 'buy' | 'sell' }[],
   mid: number,
-  bandBps: number
+  bandBps: number,
+  maxLevels = 20
 ): { bid: FlowParts; ask: FlowParts } {
-  const lo = mid * (1 - bandBps / 1e4);
-  const hi = mid * (1 + bandBps / 1e4);
+  const band = { lo: mid * (1 - bandBps / 1e4), hi: mid * (1 + bandBps / 1e4) };
   const side = (p: BookSide[], c: BookSide[], hitBy: 'buy' | 'sell'): FlowParts => {
-    const before = new Map(p.filter((l) => l.px >= lo && l.px <= hi).map((l) => [l.px, l.sz]));
-    const after = new Map(c.filter((l) => l.px >= lo && l.px <= hi).map((l) => [l.px, l.sz]));
+    const isBid = hitBy === 'sell';
+    // Granica widoczności ucięty migawki: dla bid najgłębszy (najniższy) poziom, dla ask najwyższy
+    const edge = (x: BookSide[]) =>
+      x.length >= maxLevels ? (isBid ? Math.min(...x.map((l) => l.px)) : Math.max(...x.map((l) => l.px))) : isBid ? -Infinity : Infinity;
+    const lo = isBid ? Math.max(band.lo, edge(p), edge(c)) : band.lo;
+    const hi = isBid ? band.hi : Math.min(band.hi, edge(p), edge(c));
+    const inRange = (px: number) => px >= lo && px <= hi;
+    const before = new Map(p.filter((l) => inRange(l.px)).map((l) => [l.px, l.sz]));
+    const after = new Map(c.filter((l) => inRange(l.px)).map((l) => [l.px, l.sz]));
     const exec = new Map<number, number>();
-    for (const t of trades) if (t.side === hitBy && t.px >= lo && t.px <= hi) exec.set(t.px, (exec.get(t.px) ?? 0) + t.sz);
+    for (const t of trades) if (t.side === hitBy && inRange(t.px)) exec.set(t.px, (exec.get(t.px) ?? 0) + t.sz);
     const out: FlowParts = { added: 0, cancelled: 0, executed: 0 };
-    for (const px of new Set([...before.keys(), ...after.keys()])) {
+    // Także poziomy tylko z wykonaniami (dodane i zjedzone między migawkami)
+    for (const px of new Set([...before.keys(), ...after.keys(), ...exec.keys()])) {
       const d = (after.get(px) ?? 0) - (before.get(px) ?? 0);
       const e = exec.get(px) ?? 0;
       out.added += Math.max(0, d + e);
@@ -253,36 +291,54 @@ export interface AbsorptionEvent {
   score: number;
 }
 
+const median = (xs: number[]): number => {
+  const s = [...xs].sort((a, b) => a - b);
+  const m = s.length >> 1;
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+};
+
+/** Estymator Theila–Sena: nachylenie = mediana nachyleń par, wyraz wolny = mediana reszt (odporny na punkty dźwigni). */
+export function theilSen(xs: number[], ys: number[]): { alpha: number; beta: number } | null {
+  const slopes: number[] = [];
+  for (let i = 0; i < xs.length; i++) for (let j = i + 1; j < xs.length; j++) if (xs[j] !== xs[i]) slopes.push((ys[j] - ys[i]) / (xs[j] - xs[i]));
+  if (slopes.length === 0) return null;
+  const beta = median(slopes);
+  return { beta, alpha: median(ys.map((y, i) => y - beta * xs[i])) };
+}
+
 /**
- * Absorpcja = „wysiłek vs efekt”: ΔP = α + λ·V (V — podpisany wolumen agresora w interwale), dopasowanie odporne
- * (drugi przebieg bez reszt > 3σ). Zdarzenie: |V| ≥ z·σ_V i reszta przeciwna do kierunku wysiłku o ≥ 2σ reszt.
+ * Absorpcja = „wysiłek vs efekt”: ΔP = α + λ·V (V — podpisany wolumen agresora w interwale), dopasowanie Theila–Sena
+ * (odporne także na punkty dźwigni — a interwały absorpcji są nimi z definicji). Skala reszt z MAD. Zdarzenie: duży
+ * wysiłek |V| ≥ z·RMS(V) (względem zera, nie średniej) i reszta przeciwna do kierunku wysiłku o ≥ 2σ, przy λ > 0.
  */
-export function absorption(intervals: { t: number; signedVol: number; dmid: number }[], z = 2): { lambda: number | null; r2: number | null; events: AbsorptionEvent[] } {
+export function absorption(
+  intervals: { t: number; signedVol: number; dmid: number }[],
+  z = 2
+): { lambda: number | null; r2: number | null; large: number; events: AbsorptionEvent[] } {
   const xs = intervals.map((i) => i.signedVol);
   const ys = intervals.map((i) => i.dmid);
-  const first = olsFit(xs, ys);
-  if (!first) return { lambda: null, r2: null, events: [] };
-  const res1 = intervals.map((i) => i.dmid - first.alpha - first.beta * i.signedVol);
-  const s1 = Math.sqrt(res1.reduce((a, r) => a + r * r, 0) / Math.max(1, res1.length - 2));
-  const keep = intervals.filter((_, k) => Math.abs(res1[k]) <= 3 * s1);
-  const fit =
-    olsFit(
-      keep.map((i) => i.signedVol),
-      keep.map((i) => i.dmid)
-    ) ?? first;
+  const fit = theilSen(xs, ys);
+  if (!fit) return { lambda: null, r2: null, large: 0, events: [] };
   const res = intervals.map((i) => i.dmid - fit.alpha - fit.beta * i.signedVol);
-  const inl = keep.map((i) => i.dmid - fit.alpha - fit.beta * i.signedVol);
-  const sRes = Math.sqrt(inl.reduce((a, r) => a + r * r, 0) / Math.max(1, inl.length - 2)) || 1e-12;
-  const mV = xs.reduce((a, b) => a + b, 0) / xs.length;
-  const sV = Math.sqrt(xs.reduce((a, b) => a + (b - mV) ** 2, 0) / Math.max(1, xs.length - 1)) || 1e-12;
+  const sRes = 1.4826 * median(res.map((r) => Math.abs(r - median(res)))) || 1e-12;
+  // R² bez wartości odstających (|reszta| ≤ 3σ): jaką część zmienności ruchu ceny wyjaśnia wolumen agresora
+  const inl = intervals.map((_, k) => k).filter((k) => Math.abs(res[k]) <= 3 * sRes);
+  const my = inl.reduce((a, k) => a + ys[k], 0) / Math.max(1, inl.length);
+  const sst = inl.reduce((a, k) => a + (ys[k] - my) ** 2, 0);
+  const sse = inl.reduce((a, k) => a + res[k] ** 2, 0);
+  const r2 = sst > 0 ? Math.max(0, 1 - sse / sst) : null;
+  const rms = Math.sqrt(xs.reduce((a, v) => a + v * v, 0) / xs.length) || 1e-12;
   const events: AbsorptionEvent[] = [];
+  let large = 0;
   intervals.forEach((iv, k) => {
-    if (Math.abs(iv.signedVol - mV) < z * sV) return;
+    if (Math.abs(iv.signedVol) < z * rms) return;
+    large++;
     const dir = Math.sign(iv.signedVol);
     const score = (dir * res[k]) / sRes;
-    if (score <= -2 && fit.beta * dir > 0) {
+    // λ > 0: wysiłek normalnie przesuwa cenę w swoją stronę (dla obu stron — kupna i sprzedaży)
+    if (score <= -2 && fit.beta > 0) {
       events.push({ t: iv.t, side: dir > 0 ? 'buy' : 'sell', signedVol: iv.signedVol, expected: fit.alpha + fit.beta * iv.signedVol, realized: iv.dmid, score });
     }
   });
-  return { lambda: fit.beta, r2: fit.r2, events };
+  return { lambda: fit.beta, r2, large, events };
 }

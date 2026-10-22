@@ -9,7 +9,11 @@ import {
   weightedMid,
   imbalanceAdjustment,
   absorption,
+  oosR2,
 } from '../microMechanics';
+
+/** Generator LCG (deterministyczny) */
+const lcg = (seed: number) => () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
 
 describe('OFI (Cont, Kukanov, Stoikov 2014)', () => {
   const q = (bid: number, bidSz: number, ask: number, askSz: number) => ({ bid, bidSz, ask, askSz });
@@ -98,6 +102,25 @@ describe('mikrocena i nierównowaga', () => {
     expect(a.g[0]).toBeCloseTo(-0.9, 9);
     expect(a.r2).toBeCloseTo(1, 9);
   });
+  it('symetryzacja Stoikova: sam dryf (bez związku z nierównowagą) nie tworzy korekty', () => {
+    const rnd = lcg(11);
+    const samples = Array.from({ length: 2000 }, () => ({ imb: rnd(), dmid: 0.8 + (rnd() - 0.5) * 0.1 }));
+    const raw = imbalanceAdjustment(samples, 10);
+    const sym = imbalanceAdjustment(samples, 10, { symmetric: true });
+    expect(raw.g[2]).toBeCloseTo(0.8, 1);
+    for (const g of sym.g) expect(Math.abs(g ?? 0)).toBeLessThan(0.05);
+  });
+  it('R² poza próbą (benchmark: brak zmiany): sygnał → wysoki; szum niezależny → ≤ ~0', () => {
+    const rnd = lcg(5);
+    const sig = Array.from({ length: 3000 }, () => {
+      const imb = rnd();
+      return { imb, dmid: (imb - 0.5) * 2 + (rnd() - 0.5) * 0.1 };
+    });
+    expect(oosR2(sig.slice(0, 2000), sig.slice(2000), 10)!).toBeGreaterThan(0.9);
+    const noise = Array.from({ length: 3000 }, () => ({ imb: rnd(), dmid: rnd() - 0.5 }));
+    expect(oosR2(noise.slice(0, 2000), noise.slice(2000), 10)!).toBeLessThan(0.02);
+    expect(oosR2([], noise, 10)).toBeNull();
+  });
 });
 
 describe('dodawanie i anulowanie zleceń', () => {
@@ -108,6 +131,20 @@ describe('dodawanie i anulowanie zleceń', () => {
     // bid 100: −7, z czego 2 wykonane → anulowano 5; bid 99: +3 dodane; ask 102: +6 dodane
     expect(r.bid).toEqual({ added: 3, cancelled: 5, executed: 2 });
     expect(r.ask).toEqual({ added: 6, cancelled: 0, executed: 0 });
+  });
+  it('ucięcie do 20 poziomów: poziom wyłaniający się na dnie widoku to nie dodanie (porównanie we wspólnym zakresie)', () => {
+    // Pełny arkusz co 1 USD; widoczne 20 najlepszych. Między migawkami anulowano 1 BTC na 100 000 —
+    // na dnie widoku pojawia się 99 980, który istniał wcześniej (ukryty).
+    const bids = (top: number) => Array.from({ length: 20 }, (_, i) => ({ px: top - i, sz: 1 }));
+    const asks = Array.from({ length: 20 }, (_, i) => ({ px: 100_001 + i, sz: 1 }));
+    const r = addCancel({ bids: bids(100_000), asks }, { bids: bids(99_999), asks }, [], 100_000, 10);
+    expect(r.bid).toEqual({ added: 0, cancelled: 1, executed: 0 });
+    expect(r.ask).toEqual({ added: 0, cancelled: 0, executed: 0 });
+  });
+  it('wykonanie na poziomie spoza obu migawek (dodany i zjedzony między nimi) jest liczony', () => {
+    const b = { bids: [{ px: 100, sz: 5 }], asks: [{ px: 101, sz: 5 }] };
+    const r = addCancel(b, b, [{ px: 100.5, sz: 2, side: 'sell' }], 100.5, 300);
+    expect(r.bid).toEqual({ added: 2, cancelled: 0, executed: 2 });
   });
 });
 
@@ -122,5 +159,32 @@ describe('absorpcja: wysiłek vs efekt', () => {
     expect(a.lambda).toBeCloseTo(0.5, 1);
     expect(a.events.map((e) => e.t)).toContain(200 * 10_000);
     expect(a.events.find((e) => e.t === 200 * 10_000)!.side).toBe('buy');
+  });
+  it('punkty dźwigni nie przestawiają nachylenia (Theil–Sen) i są wykrywane jako absorpcja', () => {
+    const rnd = lcg(9);
+    const iv = Array.from({ length: 27 }, (_, i) => {
+      const v = -5 + (10 * i) / 26;
+      return { t: i * 10_000, signedVol: v, dmid: 2 * v + (rnd() - 0.5) * 0.4 };
+    });
+    iv.push({ t: 27e4, signedVol: 20, dmid: -10 }, { t: 28e4, signedVol: -20, dmid: 10 }, { t: 29e4, signedVol: 20, dmid: -8 });
+    const a = absorption(iv, 2);
+    expect(a.lambda!).toBeGreaterThan(1.7);
+    expect(a.lambda!).toBeLessThan(2.3);
+    expect(a.events.map((e) => e.t).sort()).toEqual([27e4, 28e4, 29e4]);
+  });
+  it('mały wolumen przy przesuniętej średniej nie jest „dużym wysiłkiem” (rozmiar i strona względem zera)', () => {
+    const rnd = lcg(4);
+    const iv = Array.from({ length: 60 }, (_, i) => {
+      const v = 8 + (rnd() - 0.5) * 4;
+      return { t: i * 10_000, signedVol: v, dmid: 0.5 * v + (rnd() - 0.5) * 0.5 };
+    });
+    iv.push({ t: 60e4, signedVol: 0.5, dmid: -3 });
+    expect(absorption(iv, 2).events.map((e) => e.t)).not.toContain(60e4);
+  });
+});
+
+describe('przypadki brzegowe regresji', () => {
+  it('olsFit: stałe y (brak zmienności do wyjaśnienia) → null, nie R² = 1', () => {
+    expect(olsFit([1, 2, 3, 4], [5, 5, 5, 5])).toBeNull();
   });
 });

@@ -10,6 +10,7 @@ import {
   imbalanceAdjustment,
   ofiEvent,
   olsFit,
+  oosR2,
   weightedMid,
 } from './microMechanics';
 
@@ -26,7 +27,16 @@ const KEEP = 30 * 60_000;
 const FLOW_WINDOW = 5 * 60_000;
 const FLOW_BAND_BPS = 10;
 const MICRO_HORIZON = 5_000;
+/** Korekta mikroceny dopiero z 10 min danych (krótsza próba to głównie szum — nakładające się horyzonty 5 s) */
+const MICRO_MIN_SPAN = 10 * 60_000;
 const MAX_EVENTS = 3000;
+/** Hawkes od 300 zdarzeń — poniżej estymator n jest silnie obciążony */
+const HAWKES_MIN_EVENTS = 300;
+/** Migawki dalej niż ~2× rytm kanału (np. po ponownym połączeniu) nie są różnicowane */
+const MAX_BOOK_GAP = 12_000;
+/** Kwotowania starsze niż 15 s = kanał milczy */
+const STALE_AFTER = 15_000;
+const MAX_TIDS = 5000;
 
 type RawLevel = { px: string; sz: string; n?: number };
 type Q = { bid: number; bidSz: number; ask: number; askSz: number };
@@ -35,12 +45,18 @@ export interface MicroMetrics {
   /** OFI (CKS) w interwałach 10 s i regresja ΔP = α + β·OFI */
   ofi: { fit: OlsFit | null; intervals: number; last: number | null; lastZ: number | null; implied: number | null; points: { x: number; y: number }[] };
   hawkes: (HawkesFit & { at: number }) | null;
-  micro: { mid: number; weighted: number; imb: number; adj: number | null; r2: number | null; samples: number } | null;
+  /**
+   * Mikrocena: korekta g(I) z próbek symetryzowanych (Stoikov), od 10 min danych; R² poza próbą (ostatnia 1/3,
+   * odniesienie: brak zmiany mid). `span` — długość historii kwotowań (ms).
+   */
+  micro: { mid: number; weighted: number; imb: number; adj: number | null; r2Oos: number | null; samples: number; span: number } | null;
   /** Dodane / anulowane / wykonane w paśmie ±10 bp, ostatnie 5 min (BTC) */
   flow5m: { bid: FlowParts; ask: FlowParts };
-  absorption: { lambda: number | null; r2: number | null; events: AbsorptionEvent[] };
+  absorption: { lambda: number | null; r2: number | null; large: number; events: AbsorptionEvent[] };
   /** Pierwsza migawka arkusza w historii (od otwarcia strony) */
   since: number | null;
+  /** Kanał kwotowań milczy (> 15 s) — wartości mogą być nieaktualne */
+  stale: boolean;
 }
 
 interface Bucket {
@@ -59,7 +75,11 @@ export class MicroEngine {
   private buckets = new Map<number, Bucket>();
   private snaps: { t: number; mid: number; imb: number }[] = [];
   private flows: { t: number; bid: FlowParts; ask: FlowParts }[] = [];
-  private tradesSinceBook: { px: number; sz: number; side: 'buy' | 'sell' }[] = [];
+  /** Transakcje czekające na przypisanie do przedziału między migawkami (wg znacznika czasu) */
+  private pendingTrades: { t: number; px: number; sz: number; side: 'buy' | 'sell' }[] = [];
+  /** Identyfikatory przyjętych transakcji — powtórki po ponownym połączeniu są pomijane */
+  private seenTids = new Set<number>();
+  private tidOrder: number[] = [];
   private eventTimes: number[] = [];
   private hawkes: (HawkesFit & { at: number }) | null = null;
   private since: number | null = null;
@@ -104,28 +124,42 @@ export class MicroEngine {
     const asks = parse(msg.levels[1] ?? []);
     if (!bids.length || !asks.length || bids[0].px >= asks[0].px) return;
     const cur = { t, bids, asks };
-    if (this.book) {
-      const mid = (bids[0].px + asks[0].px) / 2;
-      this.flows.push({ t, ...addCancel(this.book, cur, this.tradesSinceBook, mid, FLOW_BAND_BPS) });
+    if (this.book && t > this.book.t) {
+      const prevT = this.book.t;
+      // Przedział (poprzednia migawka, ta migawka] — transakcje wg czasu wykonania, nie kolejności przyjścia
+      const trades = this.pendingTrades.filter((x) => x.t > prevT && x.t <= t);
+      if (t - prevT <= MAX_BOOK_GAP) {
+        const mid = (bids[0].px + asks[0].px) / 2;
+        this.flows.push({ t, ...addCancel(this.book, cur, trades, mid, FLOW_BAND_BPS) });
+      }
     }
-    this.tradesSinceBook = [];
+    this.pendingTrades = this.pendingTrades.filter((x) => x.t > t);
     this.book = cur;
     if (this.since === null || t < this.since) this.since = t;
     this.prune(t);
   }
 
-  onTrades(raw: { px: string; sz: string; side: string; time: number }[]): void {
+  onTrades(raw: { px: string; sz: string; side: string; time: number; tid?: number }[]): void {
     for (const r of raw) {
       const px = parseFloat(r.px);
       const sz = parseFloat(r.sz);
       if (!(px > 0) || !(sz > 0) || !Number.isFinite(r.time)) continue;
+      // Hyperliquid powtarza transakcje po ponownej subskrypcji — każdą liczymy raz
+      if (typeof r.tid === 'number') {
+        if (this.seenTids.has(r.tid)) continue;
+        this.seenTids.add(r.tid);
+        this.tidOrder.push(r.tid);
+        if (this.tidOrder.length > MAX_TIDS) this.seenTids.delete(this.tidOrder.shift()!);
+      }
       const side = r.side === 'B' ? 'buy' : 'sell';
-      this.tradesSinceBook.push({ px, sz, side });
+      this.pendingTrades.push({ t: r.time, px, sz, side });
       this.bucket(r.time).vol += side === 'buy' ? sz : -sz;
-      // Zdarzenie procesu Hawkesa = blok z transakcjami (fille jednego bloku mają ten sam czas)
-      if (this.eventTimes[this.eventTimes.length - 1] !== r.time) this.eventTimes.push(r.time);
+      // Zdarzenie procesu Hawkesa = blok z transakcjami (fille jednego bloku mają ten sam czas); czasy rosnące
+      const lastEv = this.eventTimes[this.eventTimes.length - 1];
+      if (lastEv === undefined || r.time > lastEv) this.eventTimes.push(r.time);
     }
     if (this.eventTimes.length > MAX_EVENTS) this.eventTimes.splice(0, this.eventTimes.length - MAX_EVENTS);
+    if (this.pendingTrades.length > MAX_TIDS) this.pendingTrades.splice(0, this.pendingTrades.length - MAX_TIDS);
   }
 
   private prune(now: number): void {
@@ -145,7 +179,7 @@ export class MicroEngine {
   refit(now: number): void {
     if (this.hawkes && now - this.hawkes.at < 25_000) return;
     const times = this.eventTimes.filter((t) => t >= now - KEEP).map((t) => t / 1000);
-    const f = fitHawkes(times);
+    const f = times.length >= HAWKES_MIN_EVENTS ? fitHawkes(times) : null;
     this.hawkes = f ? { ...f, at: now } : null;
   }
 
@@ -166,6 +200,8 @@ export class MicroEngine {
   }
 
   metrics(now: number): MicroMetrics {
+    // Przycinanie także tutaj — gdy kanał milknie, stare dane nie mogą udawać bieżących
+    this.prune(now);
     const iv = this.intervals(now);
     const fit = olsFit(
       iv.map((i) => i.ofi),
@@ -176,31 +212,37 @@ export class MicroEngine {
     const sO = iv.length > 1 ? Math.sqrt(iv.reduce((a, i) => a + (i.ofi - mO) ** 2, 0) / (iv.length - 1)) : 0;
 
     let micro: MicroMetrics['micro'] = null;
-    if (this.quote) {
+    if (this.quote && now - this.quote.t <= KEEP) {
       const b = this.quote;
       const mid = (b.bid + b.ask) / 2;
       const tot = b.bidSz + b.askSz;
       const imb = tot > 0 ? b.bidSz / tot : 0.5;
-      // Pary (nierównowaga teraz, zmiana mid po 5 s) z historii migawek
-      const samples: { imb: number; dmid: number }[] = [];
+      // Pary (nierównowaga teraz, zmiana mid po 5 s) z historii kwotowań — tylko zakończone horyzonty
+      const samples: { t: number; imb: number; dmid: number }[] = [];
       let j = 0;
       for (let i = 0; i < this.snaps.length; i++) {
         const s = this.snaps[i];
         if (j < i) j = i;
         while (j < this.snaps.length && this.snaps[j].t < s.t + MICRO_HORIZON) j++;
         if (j >= this.snaps.length) break;
-        samples.push({ imb: s.imb, dmid: this.snaps[j].mid - s.mid });
+        samples.push({ t: s.t, imb: s.imb, dmid: this.snaps[j].mid - s.mid });
       }
-      const adj = imbalanceAdjustment(samples, 10);
-      const g = adj.g[Math.min(9, Math.floor(imb * 10))];
-      micro = {
-        mid,
-        weighted: weightedMid(b.bid, b.bidSz, b.ask, b.askSz),
-        imb,
-        adj: samples.length >= 200 && g !== null ? g : null,
-        r2: samples.length >= 200 ? adj.r2 : null,
-        samples: samples.length,
-      };
+      const span = this.snaps.length ? this.snaps[this.snaps.length - 1].t - this.snaps[0].t : 0;
+      const ready = span >= MICRO_MIN_SPAN && samples.length > 0;
+      let adj: number | null = null;
+      let r2Oos: number | null = null;
+      if (ready) {
+        const g = imbalanceAdjustment(samples, 10, { symmetric: true }).g[Math.min(9, Math.floor(imb * 10))];
+        adj = g ?? null;
+        // Poza próbą: dopasowanie na starszych 2/3, ocena na ostatniej 1/3 (z przerwą = horyzont, bez nakładania)
+        const split = samples[0].t + ((samples[samples.length - 1].t - samples[0].t) * 2) / 3;
+        r2Oos = oosR2(
+          samples.filter((s) => s.t + MICRO_HORIZON <= split),
+          samples.filter((s) => s.t >= split + MICRO_HORIZON),
+          10
+        );
+      }
+      micro = { mid, weighted: weightedMid(b.bid, b.bidSz, b.ask, b.askSz), imb, adj, r2Oos, samples: samples.length, span };
     }
 
     const flow5m = { bid: zero(), ask: zero() };
@@ -215,7 +257,7 @@ export class MicroEngine {
     const r8 = (x: number) => Math.round(x * 1e8) / 1e8;
     for (const side of ['bid', 'ask'] as const) for (const k of ['added', 'cancelled', 'executed'] as const) flow5m[side][k] = r8(flow5m[side][k]);
 
-    const abs = iv.length >= 30 ? absorption(iv.map((i) => ({ t: i.t, signedVol: i.vol, dmid: i.dmid }))) : { lambda: null, r2: null, events: [] };
+    const abs = iv.length >= 30 ? absorption(iv.map((i) => ({ t: i.t, signedVol: i.vol, dmid: i.dmid }))) : { lambda: null, r2: null, large: 0, events: [] };
 
     return {
       ofi: {
@@ -231,6 +273,7 @@ export class MicroEngine {
       flow5m,
       absorption: abs,
       since: this.since,
+      stale: !this.quote || now - this.quote.t > STALE_AFTER,
     };
   }
 }

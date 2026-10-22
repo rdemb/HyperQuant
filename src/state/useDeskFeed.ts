@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { microEngine } from '../utils/microEngine';
 import {
   AggrTradeTick,
@@ -344,6 +344,13 @@ export function useDeskFeed(options: { cexEnabled: boolean }) {
     : 'LIVE';
 
 
+  // Stabilna referencja — nowy obiekt w każdym renderze unieważniał memoizację odbiorców (np. powierzchnia 3D)
+  const telemetry = useMemo(
+    () =>
+      backendTelemetry && backendTelemetry.whaleNodes.length === 0 && wsWhaleNodes.length > 0 ? { ...backendTelemetry, whaleNodes: wsWhaleNodes } : backendTelemetry,
+    [backendTelemetry, wsWhaleNodes]
+  );
+
   return {
     timeframeSec,
     setTimeframeSec,
@@ -353,7 +360,7 @@ export function useDeskFeed(options: { cexEnabled: boolean }) {
     lastSyncOkAt,
     nowTick,
     dataStatus,
-    backendTelemetry: backendTelemetry && backendTelemetry.whaleNodes.length === 0 && wsWhaleNodes.length > 0 ? { ...backendTelemetry, whaleNodes: wsWhaleNodes } : backendTelemetry,
+    backendTelemetry: telemetry,
     bars,
     latestBar,
     currentPrice,

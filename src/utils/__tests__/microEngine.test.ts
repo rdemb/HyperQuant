@@ -75,6 +75,61 @@ describe('MicroEngine — z migawek arkusza i taśmy', () => {
     expect(e.metrics(40 * 60 * S).ofi.intervals).toBe(0);
   });
 
+  it('transakcje powtórzone po ponownym połączeniu (ten sam tid) liczone raz', () => {
+    const e = new MicroEngine();
+    e.onBook(book(0, 99_999.5, 10, 100_000.5, 4));
+    const tr = { px: '100000.5', sz: '2', side: 'B', time: 500, tid: 7 };
+    e.onTrades([tr]);
+    e.onTrades([tr]);
+    e.onBook(book(1000, 99_999.5, 10, 100_000.5, 2));
+    expect(e.metrics(1000).flow5m.ask).toEqual({ added: 0, cancelled: 0, executed: 2 });
+  });
+
+  it('transakcje przypisane do przedziału między migawkami wg znacznika czasu, nie kolejności przyjścia', () => {
+    const e = new MicroEngine();
+    e.onBook(book(0, 99_999.5, 10, 100_000.5, 4));
+    // przychodzi przed migawką 1000, ale wykonana po niej → należy do następnego przedziału
+    e.onTrades([{ px: '100000.5', sz: '2', side: 'B', time: 1500, tid: 1 }]);
+    e.onBook(book(1000, 99_999.5, 10, 100_000.5, 4));
+    expect(e.metrics(1000).flow5m.ask.executed).toBe(0);
+    e.onBook(book(2000, 99_999.5, 10, 100_000.5, 2));
+    expect(e.metrics(2000).flow5m.ask).toEqual({ added: 0, cancelled: 0, executed: 2 });
+  });
+
+  it('luka między migawkami (> 12 s, np. ponowne połączenie) — bez różnicowania przestarzałego arkusza', () => {
+    const e = new MicroEngine();
+    e.onBook(book(0, 99_999.5, 10, 100_000.5, 4));
+    e.onBook(book(60 * S, 99_999.5, 1, 100_000.5, 4));
+    expect(e.metrics(60 * S).flow5m.bid).toEqual({ added: 0, cancelled: 0, executed: 0 });
+  });
+
+  it('po zatrzymaniu kanału dane się przedawniają: metrics() przycina historię i oznacza nieświeże kwotowania', () => {
+    const e = new MicroEngine();
+    for (let t = 0; t < 400 * S; t += 2 * S) e.onBbo(bbo(t, 99_999.5, 5, 100_000.5, 5));
+    expect(e.metrics(400 * S).stale).toBe(false);
+    expect(e.metrics(420 * S).stale).toBe(true);
+    const late = e.metrics(2 * 3600 * S);
+    expect(late.ofi.intervals).toBe(0);
+    expect(late.since).toBeNull();
+  });
+
+  it('korekta mikroceny dopiero po 10 min danych; R² liczone poza próbą', () => {
+    const e = new MicroEngine();
+    for (let t = 0; t <= 5 * 60 * S; t += 150) e.onBbo(bbo(t, 99_999.5, 5, 100_000.5, 5));
+    expect(e.metrics(5 * 60 * S).micro!.adj).toBeNull();
+    for (let t = 5 * 60 * S; t <= 11 * 60 * S; t += 150) e.onBbo(bbo(t, 99_999.5, 5, 100_000.5, 5));
+    const mc = e.metrics(11 * 60 * S).micro!;
+    expect(mc.adj).not.toBeNull();
+    expect(mc.r2Oos).toBeDefined();
+  });
+
+  it('Hawkes dopiero od 300 bloków z transakcjami', () => {
+    const e = new MicroEngine();
+    for (let i = 1; i <= 200; i++) e.onTrades([{ px: '100000', sz: '0.1', side: 'B', time: i * 700, tid: i }]);
+    e.refit(200 * 700);
+    expect(e.metrics(200 * 700).hawkes).toBeNull();
+  });
+
   it('arkusz l2Book nie wpływa na OFI (liczone z bbo), tylko na bilans dodań/anulowań', () => {
     const e = new MicroEngine();
     e.onBook(book(0, 99_999.5, 10, 100_000.5, 4));

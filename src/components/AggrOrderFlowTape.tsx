@@ -200,6 +200,11 @@ const DomRow: React.FC<{
 };
 
 const absTimeFmt = new Intl.DateTimeFormat('pl-PL', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+/** Kwota w pełnych dolarach ze znakiem; zero bez znaku (bez „-0 $”). */
+const signedUsd0 = (v: number) => {
+  const r = Math.round(v);
+  return `${r > 0 ? '+' : r < 0 ? '−' : ''}${Math.abs(r)} $`;
+};
 
 export const AggrOrderFlowTape: React.FC<AggrOrderFlowTapeProps> = ({
   trades,
@@ -404,9 +409,8 @@ export const AggrOrderFlowTape: React.FC<AggrOrderFlowTapeProps> = ({
                   {lastAbsorption && (
                     <p className="text-[11px] leading-snug mt-0.5 text-ink-1" title="Reszta odpornej regresji ruchu ceny na wolumenie agresora (interwały 10 s) — widok Mikrostruktura">
                       Absorpcja (regresja) {absTimeFmt.format(lastAbsorption.t)}: {lastAbsorption.side === 'buy' ? 'kupno' : 'sprzedaż'}{' '}
-                      {Math.abs(lastAbsorption.signedVol).toFixed(1)} BTC, oczekiwano {lastAbsorption.expected >= 0 ? '+' : ''}
-                      {lastAbsorption.expected.toFixed(0)} $, było {lastAbsorption.realized >= 0 ? '+' : ''}
-                      {lastAbsorption.realized.toFixed(0)} $
+                      {Math.abs(lastAbsorption.signedVol).toFixed(1)} BTC, oczekiwano {signedUsd0(lastAbsorption.expected)}, było{' '}
+                      {signedUsd0(lastAbsorption.realized)}
                     </p>
                   )}
                 </div>

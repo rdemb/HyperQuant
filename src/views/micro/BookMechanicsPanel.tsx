@@ -18,9 +18,16 @@ export const BookMechanicsPanel: React.FC = () => {
       eyebrow={`Z literatury · historia od otwarcia strony${m.since !== null ? ` (${minutes} min, maks. 30)` : ''}`}
       title="Mechanika arkusza"
       actions={
-        <Badge tone="model" title="Estymatory z publicznego arkusza i taśmy Hyperliquid — opis mechaniki, nie sygnał">
-          MODEL
-        </Badge>
+        <span className="flex items-center gap-1.5">
+          {m.stale && m.since !== null && (
+            <Badge tone="stale" title="Kanał kwotowań Hyperliquid milczy dłużej niż 15 s — wartości mogą być nieaktualne">
+              STALE
+            </Badge>
+          )}
+          <Badge tone="model" title="Estymatory z publicznego arkusza i taśmy Hyperliquid — opis mechaniki, nie sygnał">
+            MODEL
+          </Badge>
+        </span>
       }
     >
       <div className="grid gap-4 p-4 lg:grid-cols-2">
@@ -33,10 +40,11 @@ export const BookMechanicsPanel: React.FC = () => {
           <div className="text-ink-1 font-medium mb-1">Metoda</div>
           Publiczne kanały Hyperliquid od otwarcia tej strony (API nie udostępnia historii arkusza): <code>bbo</code> (najlepsze kwotowania, ok. co
           150 ms) do OFI i mikroceny, <code>l2Book</code> (migawka arkusza, ok. co 5 s) do bilansu zleceń, <code>trades</code> do wolumenu agresora i
-          procesu Hawkesa. Interwały 10 s. OFI według Cont, Kukanov &amp; Stoikov (2014). Hawkes z jądrem wykładniczym (MLE), gdzie
-          zdarzeniem jest blok z transakcjami (Filimonov &amp; Sornette 2012). Mikrocena: średnia ważona i empiryczna korekta wg nierównowagi
-          (Stoikov 2018). Dodania i anulowania to bilans netto między migawkami w paśmie ±10 bp, nie zapis każdego zlecenia. Absorpcja to reszta
-          odpornej regresji ruchu ceny na wolumenie agresora.
+          procesu Hawkesa (powtórki transakcji po ponownym połączeniu pomijane). Interwały 10 s. OFI według Cont, Kukanov &amp; Stoikov (2014).
+          Hawkes z jądrem wykładniczym (MLE), gdzie zdarzeniem jest blok z transakcjami (Filimonov &amp; Sornette 2012). Mikrocena: średnia
+          ważona i empiryczna korekta wg nierównowagi z próbek symetryzowanych (Stoikov 2018), R² poza próbą. Dodania i anulowania to bilans
+          netto między migawkami w paśmie ±10 bp, tylko w zakresie widocznym w obu migawkach (arkusz ucięty do 20 poziomów), nie zapis każdego
+          zlecenia. Absorpcja to reszta regresji Theila–Sena ruchu ceny na wolumenie agresora (odporna na wartości odstające).
         </div>
       </div>
     </Panel>
@@ -61,7 +69,11 @@ const OfiCard: React.FC<{ m: MicroMetrics }> = ({ m }) => {
   return (
     <Card title="OFI → zmiana ceny" cite="Cont, Kukanov & Stoikov 2014">
       {!fit ? (
-        <Collecting what={`potrzeba 30 interwałów 10 s (jest ${m.ofi.intervals})`} />
+        m.ofi.intervals >= 30 ? (
+          <div className="text-xs text-ink-3">Za mało zmienności w interwałach (cena albo OFI bez zmian) — zależności nie da się oszacować.</div>
+        ) : (
+          <Collecting what={`potrzeba 30 interwałów 10 s (jest ${m.ofi.intervals})`} />
+        )
       ) : (
         <>
           <div className="grid grid-cols-3 gap-3">
@@ -136,23 +148,40 @@ const HawkesCard: React.FC<{ m: MicroMetrics }> = ({ m }) => {
   return (
     <Card title="Endogeniczność transakcji" cite="Hawkes · Filimonov & Sornette 2012">
       {!h ? (
-        <Collecting what="potrzeba co najmniej 50 bloków z transakcjami (dopasowanie co 30 s)" />
+        <Collecting what="potrzeba co najmniej 300 bloków z transakcjami (dopasowanie co 30 s)" />
       ) : (
         <>
           <div className="flex items-baseline gap-3">
             <span className="text-2xl font-semibold font-mono tabular-nums text-ink-1">{h.branching.toFixed(2)}</span>
             <span className="text-xs text-ink-2">
-              ≈ {Math.round(h.branching * 100)}% transakcji to reakcje na wcześniejsze transakcje (współczynnik rozgałęzienia n)
+              współczynnik rozgałęzienia n: w modelu {Math.round(h.branching * 100)}% zdarzeń (bloków z transakcjami) przypisanych samopobudzeniu
             </span>
           </div>
+          {h.branching > 0.98 && (
+            <div className="text-[11px] text-warn leading-snug">
+              n na granicy 1 — typowe, gdy natężenie tła zmienia się w oknie (Filimonov &amp; Sornette 2015); to nie dowód krytyczności rynku.
+            </div>
+          )}
           <div className="relative h-2 rounded-full bg-surface-3" role="img" aria-label={`Współczynnik rozgałęzienia ${h.branching.toFixed(2)} na skali od 0 do 1`}>
             <div className="absolute inset-y-0 left-0 rounded-full bg-accent" style={{ width: `${Math.min(100, h.branching * 100)}%` }} />
             <div className="absolute -top-1 h-4 w-px bg-warn" style={{ left: '90%' }} title="n ≥ 0.9 — rynek blisko krytyczności (samonapędzający się)" />
           </div>
           <div className="grid grid-cols-3 gap-3 text-xs">
             <Stat label="Tło μ" value={<span className="font-mono tabular-nums text-base">{h.mu.toFixed(2)}</span>} hint="bloków/s z zewnątrz" />
-            <Stat label="Półokres" value={<span className="font-mono tabular-nums text-base">{h.halfLife < 1 ? `${Math.round(h.halfLife * 1000)} ms` : `${h.halfLife.toFixed(1)} s`}</span>} hint="wygasanie pobudzenia" />
+            <Stat
+              label="Półokres"
+              value={
+                <span className="font-mono tabular-nums text-base">
+                  {h.branching < 0.05 ? DASH : h.halfLife < 1 ? `${Math.round(h.halfLife * 1000)} ms` : `${h.halfLife.toFixed(1)} s`}
+                </span>
+              }
+              hint={h.branching < 0.05 ? 'przy n ≈ 0 nieokreślony' : 'wygasanie pobudzenia'}
+            />
             <Stat label="Zdarzenia" value={<span className="font-mono tabular-nums text-base">{h.n}</span>} hint={`dopasowanie ${timeFmt.format(h.at)}`} />
+          </div>
+          <div className="text-[11px] text-ink-3 leading-snug">
+            Zdarzenie to blok z transakcjami, nie pojedyncza transakcja: łączenie w bloki zaniża n, a zmienne tło je zawyża — czytaj jako opis
+            bieżącego okna, nie stałą rynku.
           </div>
         </>
       )}
@@ -177,12 +206,16 @@ const MicroCard: React.FC<{ m: MicroMetrics }> = ({ m }) => {
           <Stat
             label="Korekta empiryczna"
             value={<span className="font-mono tabular-nums text-base">{mc.adj === null ? DASH : usd(mc.adj, 2)}</span>}
-            hint={mc.adj === null ? `od 200 par (jest ${mc.samples})` : 'średnia zmiana mid po 5 s przy tej nierównowadze'}
+            hint={
+              mc.adj === null
+                ? `od 10 min kwotowań (jest ${Math.floor(mc.span / 60_000)} min)`
+                : 'średnia zmiana mid po 5 s przy tej nierównowadze (próbki symetryzowane)'
+            }
           />
           <Stat
-            label="R² predykcji"
-            value={<span className="font-mono tabular-nums text-base">{mc.r2 === null ? DASH : mc.r2.toFixed(3)}</span>}
-            hint="jak dużo zmiany mid wyjaśnia nierównowaga"
+            label="R² poza próbą"
+            value={<span className="font-mono tabular-nums text-base">{mc.r2Oos === null ? DASH : mc.r2Oos.toFixed(3)}</span>}
+            hint="ostatnia 1/3 historii vs założenie „mid się nie zmieni”; ≤ 0 = brak przewagi"
           />
         </div>
       )}
@@ -243,10 +276,16 @@ const AbsorptionCard: React.FC<{ m: MicroMetrics }> = ({ m }) => {
         <>
           <div className="grid grid-cols-2 gap-3">
             <Stat label="Wpływ λ" value={<span className="font-mono tabular-nums text-base">{usd(a.lambda, 2)}</span>} hint="na 1 BTC wolumenu agresora / 10 s" />
-            <Stat label="R²" value={<span className="font-mono tabular-nums text-base">{a.r2 === null ? DASH : a.r2.toFixed(2)}</span>} hint="dopasowanie odporne" />
+            <Stat label="R²" value={<span className="font-mono tabular-nums text-base">{a.r2 === null ? DASH : a.r2.toFixed(2)}</span>} hint="Theil–Sen, bez wartości odstających" />
           </div>
           {a.events.length === 0 ? (
-            <div className="text-xs text-ink-3">Brak zdarzeń absorpcji: duży wolumen agresora przesuwał cenę zgodnie z modelem.</div>
+            <div className="text-xs text-ink-3">
+              {!(a.lambda > 0)
+                ? 'Wpływ λ ≤ 0 — wolumen agresora nie przesuwał ceny w swoją stronę, więc zdarzeń absorpcji nie wyznaczam.'
+                : a.large === 0
+                ? 'Brak dużych interwałów wolumenu (≥ 2× typowej wielkości) — nie było czego pochłaniać.'
+                : `Brak zdarzeń absorpcji: ${a.large} ${a.large === 1 ? 'duży interwał przesunął' : 'duże interwały przesuwały'} cenę zgodnie z dopasowaniem.`}
+            </div>
           ) : (
             <ul className="flex flex-col gap-1 text-[11px] font-mono tabular-nums">
               {a.events
