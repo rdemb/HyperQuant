@@ -58,3 +58,65 @@ jobs:
           else
             gh issue create --title "Dane skanera: problem ze świeżością lub publikacją" --label "$LABEL" --body-file report.md
           fi
+
+  verify:
+    # Codzienna niezależna weryfikacja dziennika na infrastrukturze GitHuba (nie na serwerze skanera): klon gałęzi
+    # ledger, weryfikator z repo HyperQuant (łańcuch, historia git, kolejność, pokwitowania, wyniki, ceny ze świec),
+    # znaczek shields.io i podsumowanie dla strony w gałęzi health. Push wbudowanym tokenem nie uruchamia workflow ponownie.
+    name: Niezależna weryfikacja dziennika
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    concurrency:
+      group: ledger-verify
+      cancel-in-progress: true
+    steps:
+      - name: Weryfikator (HyperQuant, main)
+        uses: actions/checkout@v7
+        with:
+          repository: rdemb/HyperQuant
+          path: hq
+      - name: Gałąź ledger (pełna historia)
+        uses: actions/checkout@v7
+        with:
+          ref: ledger
+          path: ledger
+          fetch-depth: 0
+      - name: Gałąź health
+        uses: actions/checkout@v7
+        with:
+          ref: health
+          path: health
+      - name: Node.js 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Weryfikacja
+        id: v
+        run: |
+          set +e
+          node hq/scripts/verify-ledger.mjs --dir ledger --market > report.txt 2>&1
+          code=$?
+          cat report.txt
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+      - name: Znaczek i podsumowanie
+        env:
+          CODE: ${{ steps.v.outputs.code }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          mkdir -p health/badge health/verify
+          day=$(date -u +%Y-%m-%d)
+          if [ "$CODE" = "0" ]; then msg="zweryfikowany $day"; color=brightgreen; ok=true; else msg="problem $day"; color=red; ok=false; fi
+          jq -n --arg m "$msg" --arg c "$color" '{schemaVersion:1,label:"dziennik desku",message:$m,color:$c}' > health/badge/ledger.json
+          lines=$(grep -E '^(✓|✗|ℹ)' report.txt | head -40 | jq -R . | jq -s .)
+          jq -n --argjson ok "$ok" --arg run "$RUN_URL" --argjson lines "$lines" --argjson at "$(date +%s000)" '{v:1,ok:$ok,at:$at,run:$run,lines:$lines}' > health/verify/latest.json
+          cd health
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add badge verify
+          git diff --cached --quiet && exit 0
+          git commit -q -m "weryfikacja dziennika: $msg"
+          for i in 1 2 3; do git push -q origin HEAD:health && exit 0; git pull -q --rebase origin health; done
+          exit 1
