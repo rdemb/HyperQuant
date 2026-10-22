@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { modelProbabilities } from '../hip4Model';
+import { horizonSigmas, modelProbabilities } from '../hip4Model';
 import { buildVolModel, type RangeBar } from '../volatility';
 import type { BtcOutcome } from '../hip4';
 
@@ -34,6 +34,14 @@ const q = (id: number, kind: 'above' | 'touch', K: number, expiry: number): BtcO
 
 describe('modelProbabilities — prawdopodobieństwa modelu dla rynków HIP-4', () => {
   const model = buildVolModel(bars(1200, HOUR, NOW, 0.004), bars(2000, 5 * MIN, NOW, 0.0015, 7), NOW)!;
+
+  it('krótki horyzont ma dokładną długość: wariancja ∝ minutom (ostatni krok częściowy, nie zaokrąglony do 5 min)', () => {
+    const now = NOW - 2 * HOUR + 10 * MIN; // w obrębie jednej godziny prognozy (stała wariancja godzinowa)
+    const v = (h: number) => horizonSigmas(model, now, h).reduce((a, s) => a + s * s, 0);
+    expect(v(2) / v(5)).toBeCloseTo(0.4, 9);
+    expect(v(7) / v(5)).toBeCloseTo(1.4, 9);
+    expect(v(8) / v(5)).toBeCloseTo(1.6, 9);
+  });
 
   it('bez modelu albo ceny → same null', () => {
     expect(modelProbabilities([q(1, 'above', 100_000, NOW + HOUR)], null, 100_000, NOW)).toEqual([null]);

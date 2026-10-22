@@ -4,7 +4,8 @@ import { useHip4, type Hip4Row } from '../../state/useHip4';
 import { Badge, EmptyState, Panel, DASH, fmtPrice } from '../../ui';
 
 const whenFmt = new Intl.DateTimeFormat('pl-PL', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' });
-const pct = (p: number) => `${(p * 100).toFixed(p < 0.1 || p > 0.9 ? 1 : 0)}%`;
+/** Procent: całe punkty (błąd Monte Carlo modelu ~1 pp), przy skrajach jedno miejsce po przecinku */
+const pct = (p: number) => `${(p * 100).toFixed(p < 0.05 || p > 0.95 ? 1 : 0)}%`;
 
 /** Ile do terminu: „za 18 h”, „za 3 dni”. */
 function until(ms: number): string {
@@ -90,17 +91,19 @@ export const ModelVsMarketPanel: React.FC = () => {
             <summary className="cursor-pointer select-none text-ink-1 font-medium py-1">Jak czytać i zastrzeżenia</summary>
             <ul className="mt-1 list-disc pl-4 space-y-1">
               <li>
-                Rynek: najlepszy bid–ask strony „Tak” i jego środek; płynny = spread ≤ 5 pp i co najmniej 20 USDC w trzech najlepszych poziomach po obu
-                stronach. Cena rynku to nie czyste prawdopodobieństwo — zawiera premię za ryzyko i koszt kapitału.
+                Rynek: najlepszy bid–ask strony „Tak” i jego środek; płynny = spread ≤ 5 pp i co najmniej 50 USDC w zleceniach do ±5 pp od środka po
+                obu stronach (pojedyncze małe zlecenie nie ustala ceny). Cena rynku to nie czyste prawdopodobieństwo — zawiera premię za ryzyko i koszt
+                kapitału.
               </li>
               <li>
-                Model: ścieżki log-ceny z σ sezonowego log-HAR i innowacjami FHS (krok 5 min, powyżej doby 15 min), cena jako martyngał — bez założenia
-                kierunku. Dotknięcie z dokładnym ekstremum mostu Browna między krokami. Ponad 14 dni — „—”.
+                Model: 2000 ścieżek log-ceny z σ sezonowego log-HAR i innowacjami FHS (krok 5 min do doby, 15 min do 3 dni, 60 min dalej; horyzont
+                dokładny co do minuty), cena jako martyngał — bez założenia kierunku. Dotknięcie z dokładnym ekstremum mostu Browna między krokami. Błąd
+                Monte Carlo ok. ±1 pp, dlatego różnica w pełnych punktach. Ponad 14 dni — „—”.
               </li>
               <li>
                 Źródła cen rozliczenia różnią się: rynek dzienny i dotknięcia — mark BTC z HyperCore, drabinki „binaryPrice” — cena Pyth, mark albo cena
-                transakcji perpa HL w oknie z opisu rynku; model liczy na świecach Hyperliquid. Dotknięcie w rynku może wymagać utrzymania poziomu przez
-                kilka sekund.
+                transakcji perpa HL; opis rynku podaje też okno w sekundach, którego dokładne znaczenie nie jest oficjalnie udokumentowane. Model liczy na
+                świecach Hyperliquid — przy kilku minutach do terminu te różnice mają znaczenie.
               </li>
               <li>Różnica model − rynek to porównanie kalibracji dwóch źródeł prawdopodobieństwa, nie sygnał kupna ani sprzedaży.</li>
             </ul>
@@ -130,8 +133,10 @@ const Row: React.FC<{ r: Hip4Row; now: number }> = ({ r, now }) => {
         {whenFmt.format(q.expiry)} <span className="text-[10px] text-ink-3">{until(q.expiry - now)}</span>
       </td>
       <td className="py-1.5 pr-3 whitespace-nowrap font-mono tabular-nums">
-        {!quote ? (
-          <span className="text-ink-3 font-sans">brak arkusza</span>
+        {!r.bookOk ? (
+          <span className="text-warn font-sans">błąd pobierania</span>
+        ) : !quote ? (
+          <span className="text-ink-3 font-sans">brak notowania</span>
         ) : quote.liquid ? (
           <>
             <span className="text-ink-1">{pct(quote.mid)}</span>{' '}
@@ -147,7 +152,7 @@ const Row: React.FC<{ r: Hip4Row; now: number }> = ({ r, now }) => {
       </td>
       <td className="py-1.5 pr-3 font-mono tabular-nums text-ink-1">{model === null ? DASH : pct(model)}</td>
       <td className="py-1.5 font-mono tabular-nums text-ink-2">
-        {diff === null ? DASH : `${diff >= 0 ? '+' : '−'}${Math.abs(diff * 100).toFixed(1)} pp`}
+        {diff === null ? DASH : Math.round(Math.abs(diff * 100)) === 0 ? '0 pp' : `${diff >= 0 ? '+' : '−'}${Math.round(Math.abs(diff * 100))} pp`}
       </td>
     </tr>
   );

@@ -37,6 +37,13 @@ const EMPTY: AuctionContext = { status: 'loading', asOf: null, vwap: null, ib: n
 // Pamięć modułu: przełączanie widoków nie pobiera ponownie świec 1h (≈ 208 dni)
 let hourlyCache: { at: number; bars: VBar[] } | null = null;
 
+/** Tylko świece 1h zamknięte w chwili `asOf` (trwająca godzina zaniżałaby ekstrema i profil). */
+export const completeHourly = (bars: VBar[], asOf: number): VBar[] => bars.filter((b) => b.time + HOUR <= asOf);
+
+/** Pamięć świec 1h do odświeżenia: brak, starsza niż 30 min albo z poprzedniego dnia UTC (wczorajsza sesja niepełna). */
+export const hourlyStale = (cacheAt: number | null, now: number): boolean =>
+  cacheAt === null || now - cacheAt > 30 * MIN || dayStart(cacheAt) < dayStart(now);
+
 /** Wylicza kontekst aukcji ze świec 1m (bieżąca i poprzednia sesja) i 1h (statystyki). Czysta funkcja — testowalna. */
 export function computeAuctionContext(minute: VBar[], hourly: VBar[], now: number): AuctionContext {
   const d0 = dayStart(now);
@@ -78,8 +85,8 @@ async function refresh(): Promise<void> {
   inflight = true;
   const now = Date.now();
   try {
-    if (!hourlyCache || now - hourlyCache.at > 30 * MIN) {
-      const bars = await loadCandlesV('1h', now - 5000 * HOUR);
+    if (hourlyStale(hourlyCache?.at ?? null, now)) {
+      const bars = completeHourly(await loadCandlesV('1h', now - 5000 * HOUR), now);
       if (bars.length) hourlyCache = { at: now, bars };
     }
     const minute = await loadCandlesV('1m', dayStart(now) - DAY);

@@ -32,13 +32,19 @@ describe('HIP-4: rynki wynikowe BTC z outcomeMeta', () => {
     expect(parseBtcOutcomes(null, NOW)).toEqual([]);
   });
 
-  it('notowanie z arkusza: bid/ask/mid, spread i płynność (spread ≤ 0,05 i ≥ 20 USD w 3 poziomach po obu stronach)', () => {
+  it('notowanie z arkusza: bid/ask/mid, spread i płynność (spread ≤ 0,05 i ≥ 50 USDC w ±5 pp od środka po obu stronach)', () => {
     const lv = (px: number, sz: number) => ({ px: String(px), sz: String(sz), n: 1 });
     const liquid = bookQuote({ levels: [[lv(0.14, 1000), lv(0.13, 2000)], [lv(0.16, 900)]] });
     expect(liquid).toMatchObject({ bid: 0.14, ask: 0.16, liquid: true });
     expect(liquid!.mid).toBeCloseTo(0.15, 12);
     const empty = bookQuote({ levels: [[lv(0.0035, 5)], [lv(0.9967, 5000)]] });
     expect(empty!.liquid).toBe(false);
+    // Daleki „śmieciowy” poziom nie liczy się do głębokości (tylko ±5 pp od środka)
+    const junk = bookQuote({ levels: [[lv(0.4867, 21), lv(0.00226, 4868)], [lv(0.5, 200)]] });
+    expect(junk!.depthBid).toBeCloseTo(0.4867 * 21, 9);
+    expect(junk!.liquid).toBe(false);
+    // Pojedyncze zlecenie za ~16 USDC nie ustala ceny „rynku”
+    expect(bookQuote({ levels: [[lv(0.789, 20)], [lv(0.8, 500)]] })!.liquid).toBe(false);
     expect(bookQuote({ levels: [[], [lv(0.5, 10)]] })).toBeNull();
   });
 });
@@ -95,5 +101,18 @@ describe('HIP-4: prawdopodobieństwa modelu (Monte Carlo)', () => {
       { stepSigmas: () => [0.001], residuals: null, seed: 1 }
     );
     expect(r).toEqual([null, 1]);
+  });
+});
+
+import { rowsFrom } from '../hip4';
+
+describe('wiersze panelu: błąd pobierania ≠ brak arkusza', () => {
+  const q = parseBtcOutcomes(
+    { outcomes: [{ outcome: 7175, name: 'template:priceTouch', description: 'perp:BTC|priceDescription:BTC-USDC perp mark|seconds:3|target:92500|time:20261101-0000' }] },
+    Date.UTC(2026, 9, 22)
+  );
+  it('null z API = błąd pobierania; arkusz bez jednej strony = brak notowania', () => {
+    expect(rowsFrom(q, [null], [0.04])[0]).toMatchObject({ bookOk: false, quote: null, model: 0.04 });
+    expect(rowsFrom(q, [{ levels: [[], [{ px: '0.5', sz: '1' }]] }], [null])[0]).toMatchObject({ bookOk: true, quote: null, model: null });
   });
 });

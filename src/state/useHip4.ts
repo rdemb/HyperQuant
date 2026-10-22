@@ -1,17 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { postInfo } from '../utils/marketDataFeed';
-import { bookQuote, parseBtcOutcomes, type BtcOutcome, type Quote } from '../utils/hip4';
+import { parseBtcOutcomes, rowsFrom, type BtcOutcome, type Hip4Row } from '../utils/hip4';
 import { modelProbabilities } from '../utils/hip4Model';
 import type { VolModel } from '../utils/volatility';
 
 const MIN = 60_000;
 
-export interface Hip4Row {
-  q: BtcOutcome;
-  quote: Quote | null;
-  /** P(model) albo null (brak modelu / poza horyzontem) */
-  model: number | null;
-}
+export type { Hip4Row };
 
 export interface Hip4State {
   status: 'loading' | 'ready' | 'error';
@@ -30,7 +25,8 @@ function makeComputer(): { run: (qs: BtcOutcome[], model: VolModel | null, price
     worker = null;
   }
   let seq = 0;
-  const pending = new Map<number, (p: (number | null)[]) => void>();
+  // Wynik workera; [] = błąd workera (liczymy na miejscu); null = anulowane przy odmontowaniu (bez liczenia)
+  const pending = new Map<number, (p: (number | null)[] | null) => void>();
   if (worker) {
     worker.onmessage = (e: MessageEvent<{ id: number; probs: (number | null)[] }>) => {
       pending.get(e.data.id)?.(e.data.probs);
@@ -49,11 +45,17 @@ function makeComputer(): { run: (qs: BtcOutcome[], model: VolModel | null, price
       worker
         ? new Promise((resolve) => {
             const id = ++seq;
-            pending.set(id, (p) => resolve(p.length === qs.length ? p : modelProbabilities(qs, model, price, now)));
+            pending.set(id, (p) => resolve(p === null ? qs.map(() => null) : p.length === qs.length ? p : modelProbabilities(qs, model, price, now)));
             worker!.postMessage({ id, qs, model, price, now });
           })
         : Promise.resolve(modelProbabilities(qs, model, price, now)),
-    close: () => worker?.terminate(),
+    close: () => {
+      // Oczekujące obliczenia kończą się (bez wycieku obietnic przy odmontowaniu)
+      for (const r of pending.values()) r(null);
+      pending.clear();
+      worker?.terminate();
+      worker = null;
+    },
   };
 }
 
@@ -64,21 +66,30 @@ export function useHip4(model: VolModel | null, price: number): Hip4State {
   ref.current = { model, price };
   useEffect(() => {
     let alive = true;
+    let gen = 0;
     const computer = makeComputer();
     const run = async () => {
+      const my = ++gen;
       const now = Date.now();
+      // Starszy przebieg (np. zawieszone zapytanie) nie nadpisuje nowszego wyniku
+      const current = () => alive && my === gen;
       try {
         if (!metaCache || now - metaCache.at > 10 * MIN) {
           const meta = await postInfo({ type: 'outcomeMeta' });
           if (meta) metaCache = { at: now, meta };
         }
-        const qs = parseBtcOutcomes(metaCache?.meta ?? null, now);
+        if (!metaCache) {
+          // Błąd pobierania listy rynków — nie „brak rynków”
+          if (current()) setState((s) => (s.status === 'ready' ? s : { status: 'error', rows: [], asOf: null }));
+          return;
+        }
+        const qs = parseBtcOutcomes(metaCache.meta, now);
         const books = await Promise.all(qs.map((q) => postInfo({ type: 'l2Book', coin: q.coin })));
         const probs = await computer.run(qs, ref.current.model, ref.current.price, now);
-        if (!alive) return;
-        setState({ status: 'ready', rows: qs.map((q, i) => ({ q, quote: bookQuote(books[i]), model: probs[i] ?? null })), asOf: now });
+        if (!current()) return;
+        setState({ status: 'ready', rows: rowsFrom(qs, books, probs), asOf: now });
       } catch {
-        if (alive) setState((s) => (s.status === 'ready' ? s : { status: 'error', rows: [], asOf: null }));
+        if (current()) setState((s) => (s.status === 'ready' ? s : { status: 'error', rows: [], asOf: null }));
       }
     };
     void run();

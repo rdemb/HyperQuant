@@ -19,7 +19,7 @@ export interface BtcOutcome {
   expiry: number;
   /** Źródło ceny rozliczenia: mark perpa HL, cena transakcji perpa HL albo Pyth BTC/USD */
   source: 'mark' | 'trade' | 'pyth';
-  /** Okno z opisu rynku (s): uśrednianie (Pyth) albo utrzymanie (dotknięcie); null = brak */
+  /** Okno z opisu rynku (s) — znaczenie nieudokumentowane oficjalnie; null = brak */
   seconds: number | null;
   /** Rynek cykliczny (dzienny) */
   recurring: boolean;
@@ -80,15 +80,17 @@ export interface Quote {
   ask: number;
   mid: number;
   spread: number;
-  /** USDC w 3 najlepszych poziomach */
+  /** USDC w poziomach do ±5 pp od środka (dalekie „śmieciowe” zlecenia się nie liczą) */
   depthBid: number;
   depthAsk: number;
-  /** Arkusz pozwala czytać cenę: spread ≤ 0,05 i ≥ 20 USDC w 3 poziomach po obu stronach */
+  /** Arkusz pozwala czytać cenę: spread ≤ 5 pp i ≥ 50 USDC w ±5 pp od środka po obu stronach */
   liquid: boolean;
 }
 
 export const MAX_SPREAD = 0.05;
-export const MIN_DEPTH_USD = 20;
+export const MIN_DEPTH_USD = 50;
+/** Głębokość liczona do tej odległości od środka (w cenie udziału) */
+export const DEPTH_BAND = 0.05;
 
 /** Notowanie strony „Yes” z `l2Book`; brak którejś strony → null. */
 export function bookQuote(book: unknown): Quote | null {
@@ -101,13 +103,28 @@ export function bookQuote(book: unknown): Quote | null {
   const bids = side(lv[0]);
   const asks = side(lv[1]);
   if (!bids.length || !asks.length) return null;
-  const depth = (xs: { px: number; sz: number }[]) => xs.slice(0, 3).reduce((a, r) => a + r.px * r.sz, 0);
   const bid = bids[0].px;
   const ask = asks[0].px;
+  const mid = (bid + ask) / 2;
+  const depth = (xs: { px: number; sz: number }[]) => xs.filter((r) => Math.abs(r.px - mid) <= DEPTH_BAND).reduce((a, r) => a + r.px * r.sz, 0);
   const depthBid = depth(bids);
   const depthAsk = depth(asks);
   const spread = ask - bid;
-  return { bid, ask, mid: (bid + ask) / 2, spread, depthBid, depthAsk, liquid: spread <= MAX_SPREAD && depthBid >= MIN_DEPTH_USD && depthAsk >= MIN_DEPTH_USD };
+  return { bid, ask, mid, spread, depthBid, depthAsk, liquid: spread <= MAX_SPREAD && depthBid >= MIN_DEPTH_USD && depthAsk >= MIN_DEPTH_USD };
+}
+
+export interface Hip4Row {
+  q: BtcOutcome;
+  /** Arkusz pobrany (false = błąd zapytania — nie „brak arkusza”) */
+  bookOk: boolean;
+  quote: Quote | null;
+  /** P(model) albo null (brak modelu / poza horyzontem) */
+  model: number | null;
+}
+
+/** Wiersze panelu z odpowiedzi API (`null` = błąd pobierania arkusza) i prawdopodobieństw modelu. */
+export function rowsFrom(qs: BtcOutcome[], books: unknown[], probs: (number | null)[]): Hip4Row[] {
+  return qs.map((q, i) => ({ q, bookOk: books[i] !== null && books[i] !== undefined, quote: bookQuote(books[i]), model: probs[i] ?? null }));
 }
 
 export interface OutcomeQuestion {

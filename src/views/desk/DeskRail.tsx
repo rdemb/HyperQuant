@@ -34,6 +34,7 @@ export const DeskRail: React.FC = () => {
 
   // Kontekst aukcji sesji UTC (ten sam stan co panel w widoku Plan — jedno pobieranie)
   const auction = useAuctionContext();
+  const auctionStale = auction.asOf !== null && Date.now() - auction.asOf > 3 * 60_000;
   const vw = auction.vwap;
   const vwapZ = vw && vw.sd > 0 && px > 0 ? (px - vw.vwap) / vw.sd : null;
   const ibText = !auction.ib
@@ -135,7 +136,11 @@ export const DeskRail: React.FC = () => {
       <div className="bg-surface-1 border border-line rounded-xl p-3.5">
         <Stat
           label="Aukcja · sesja UTC"
-          source={{ tone: 'live', label: 'LIVE', title: 'VWAP sesji UTC ze świec 1m (cena typowa ważona wolumenem) i Initial Balance 00:00–01:00 UTC; szczegóły w widoku Plan' }}
+          source={
+            auctionStale
+              ? { tone: 'stale', label: 'STALE', title: 'Świece nie odświeżyły się od ponad 3 min' }
+              : { tone: 'live', label: 'LIVE', title: 'VWAP sesji UTC ze świec 1m (cena typowa ważona wolumenem) i Initial Balance 00:00–01:00 UTC; szczegóły w widoku Plan' }
+          }
           value={<span className="text-base">{vwapZ === null ? DASH : `${vwapZ >= 0 ? '+' : '−'}${Math.abs(vwapZ).toFixed(1)}σ`}</span>}
           hint={`od VWAP · ${ibText}`}
         />

@@ -7,6 +7,8 @@ import type { OpenLoc, Rate } from '../../utils/auction';
 const dayFmt = new Intl.DateTimeFormat('pl-PL', { day: 'numeric', month: 'short', timeZone: 'UTC' });
 /** Minimalna liczba sesji dla częstości — mniej to szum */
 const MIN_N = 30;
+/** Dane starsze niż 3 min (odświeżanie co minutę) = nieaktualne */
+export const STALE_MS = 3 * 60_000;
 
 const pct = (p: number) => `${Math.round(p * 100)}%`;
 /** „62% (55–69%) · n 180” albo „—” przy zbyt małej próbie */
@@ -29,15 +31,28 @@ export const AuctionContextPanel: React.FC = () => {
   const ctx = useAuctionContext();
   const { feed } = useDesk();
   const price = Number.isFinite(feed.currentPrice) && feed.currentPrice > 0 ? feed.currentPrice : null;
+  // Zegar dla oznaczenia nieaktualnych danych (gdy pobieranie świec zawodzi, stan się nie zmienia)
+  const [now, setNow] = React.useState(() => Date.now());
+  React.useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(id);
+  }, []);
+  const stale = ctx.asOf !== null && now - ctx.asOf > STALE_MS;
   return (
     <Panel
       eyebrow="Sesja UTC · świece 1m i 1h Hyperliquid · historycznie, nie prognoza"
       title="Kontekst aukcji"
       actions={
         ctx.status === 'ready' ? (
-          <Badge tone="live" title="Poziomy z publicznych świec Hyperliquid; częstości z ~200 pełnych sesji UTC">
-            LIVE
-          </Badge>
+          stale ? (
+            <Badge tone="stale" title="Świece nie odświeżyły się od ponad 3 min — poziomy mogą być nieaktualne">
+              STALE
+            </Badge>
+          ) : (
+            <Badge tone="live" title="Poziomy z publicznych świec Hyperliquid; częstości z ~200 pełnych sesji UTC">
+              LIVE
+            </Badge>
+          )
         ) : null
       }
     >
@@ -80,8 +95,10 @@ function levels(ctx: AuctionContext, price: number | null): Level[] {
   }
   if (ctx.prev) {
     const p = ctx.prev;
-    out.push({ label: 'PDH', px: p.high, tone: 'prev', note: p.poorHigh ? 'słaby szczyt' : undefined });
-    out.push({ label: 'PDL', px: p.low, tone: 'prev', note: p.poorLow ? 'słabe dno' : undefined });
+    // Słabość wg tej samej definicji co statystyka (świece 1h), żeby drabina i tabela się nie przeczyły
+    const h1 = ctx.today?.prev1h;
+    out.push({ label: 'PDH', px: p.high, tone: 'prev', note: h1?.poorHigh ? 'słaby szczyt' : undefined });
+    out.push({ label: 'PDL', px: p.low, tone: 'prev', note: h1?.poorLow ? 'słabe dno' : undefined });
     out.push({ label: 'VAH wczoraj', px: p.vah, tone: 'prev' }, { label: 'POC wczoraj', px: p.poc, tone: 'prev' }, { label: 'VAL wczoraj', px: p.val, tone: 'prev' });
   }
   if (price !== null) out.push({ label: 'Cena', px: price, tone: 'price' });
@@ -111,8 +128,11 @@ const Body: React.FC<{ ctx: AuctionContext; price: number | null }> = ({ ctx, pr
               cena vs VWAP: <span className="font-mono tabular-nums text-ink-1">{z === null ? DASH : `${z >= 0 ? '+' : '−'}${Math.abs(z).toFixed(1)}σ`}</span>
             </span>
             {t && (
-              <span>
-                otwarcie: <span className="text-ink-1">{LOC_LABEL[t.openLoc]}</span> wczoraj
+              <span title="Położenie otwarcia liczone tą samą metodą co częstości (profil wczorajszej sesji ze świec 1h)">
+                otwarcie: <span className="text-ink-1">{LOC_LABEL[t.openLoc]}</span> wczoraj{' '}
+                <span className="text-ink-3">
+                  (VA z 1h: {fmtPrice(t.prev1h.val, 0)}–{fmtPrice(t.prev1h.vah, 0)})
+                </span>
               </span>
             )}
           </div>
@@ -182,15 +202,25 @@ const Body: React.FC<{ ctx: AuctionContext; price: number | null }> = ({ ctx, pr
               </tbody>
             </table>
           )}
-          {st && st.poor.high.diff && st.poor.high.poor.n >= MIN_N && st.poor.high.strong.n >= MIN_N && (
-            <p className="mt-2 text-[11px] text-ink-2">
-              Słaby − mocny szczyt: <span className="font-mono tabular-nums">{signedPp(st.poor.high.diff.d)}</span>{' '}
-              <span className="text-ink-3">
-                (95%: {signedPp(st.poor.high.diff.lo)} … {signedPp(st.poor.high.diff.hi)})
-              </span>
-              {st.poor.high.diff.lo > 0 ? ' — różnica istotna.' : ' — przedział obejmuje zero: różnica nieudowodniona.'}
-            </p>
-          )}
+          {st &&
+            (['high', 'low'] as const).map((side) => {
+              const p = st.poor[side];
+              if (!p.diff || p.poor.n < MIN_N || p.strong.n < MIN_N) return null;
+              return (
+                <p key={side} className="mt-2 text-[11px] text-ink-2">
+                  {side === 'high' ? 'Słaby − mocny szczyt' : 'Słabe − mocne dno'} (przebicie):{' '}
+                  <span className="font-mono tabular-nums">{signedPp(p.diff.d)}</span>{' '}
+                  <span className="text-ink-3">
+                    (95%: {signedPp(p.diff.lo)} … {signedPp(p.diff.hi)})
+                  </span>
+                  {p.diff.lo > 0
+                    ? ' — słabe przebijane istotnie częściej.'
+                    : p.diff.hi < 0
+                    ? ' — słabe przebijane istotnie rzadziej.'
+                    : ' — przedział obejmuje zero: różnica nieudowodniona.'}
+                </p>
+              );
+            })}
         </section>
       </div>
       <details className="text-[11px] text-ink-2 leading-relaxed">
@@ -199,7 +229,8 @@ const Body: React.FC<{ ctx: AuctionContext; price: number | null }> = ({ ctx, pr
           Sesja = dzień UTC (otwarcie 00:00 UTC). VWAP z ceny typowej (H+L+C)/3 świec 1m ważonej wolumenem, pasma ±σ z ważonego odchylenia — cena
           typowa przybliża ceny transakcji. Initial Balance = zakres 00:00–01:00 UTC. Profil poprzedniego dnia: wolumen świecy 1m rozłożony
           równomiernie w jej zakresie, koszyki 10 USD, value area 70% od POC. Słaby szczyt/dno: ekstremum osiągnięte w co najmniej dwóch różnych
-          oknach 30 min (w odległości ≤ 0,02%) — płaskie zakończenie aukcji bez ekscesu.
+          godzinach (w odległości ≤ 0,02%) — płaskie zakończenie aukcji bez ekscesu, jak dwa TPO na skrajnym poziomie (wierzchołek na granicy
+          godzin też liczy się podwójnie, tak jak w Market Profile).
         </p>
         <p className="mt-1">
           Częstości liczone są ze świec 1h z ostatnich ~208 dni (tyle udostępnia API). Profil i słabość ekstremów są tam przybliżone (godziny zamiast

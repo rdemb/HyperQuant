@@ -16,6 +16,19 @@ export const MAX_MODEL_HORIZON_MIN = 14 * 24 * 60;
  */
 export const stepFor = (h: number) => (h <= 24 * 60 ? 5 : h <= 3 * 24 * 60 ? 15 : 60);
 
+/**
+ * σ kroków na dokładnie `h` minut: pełne kroki `stepFor(h)` i ostatni krok częściowy (reszta minut) — bez zaokrąglania
+ * horyzontu do całych kroków (przy 2 min do terminu krok 5 min zawyżałby σ o ~58%).
+ */
+export function horizonSigmas(model: VolModel, now: number, h: number): number[] {
+  const step = stepFor(h);
+  const full = Math.floor(h / step);
+  const rem = h - full * step;
+  const out = full > 0 ? horizonStepSigmas(model, now, full * step, step) : [];
+  if (rem > 0) out.push(...horizonStepSigmas(model, now + full * step * MIN, rem, rem));
+  return out;
+}
+
 /** Prawdopodobieństwa modelu dla rynków (ten sam silnik co dziennik desku); poza horyzontem / bez modelu → null. */
 export function modelProbabilities(qs: BtcOutcome[], model: VolModel | null, price: number, now: number): (number | null)[] {
   if (!model || !(price > 0)) return qs.map(() => null);
@@ -25,7 +38,7 @@ export function modelProbabilities(qs: BtcOutcome[], model: VolModel | null, pri
     qs.map((q, i) => ({ kind: q.kind, K: q.K, horizonMin: inRange[i] ? horizon(q) : 0 })),
     price,
     {
-      stepSigmas: (h) => horizonStepSigmas(model, now, h, stepFor(h)),
+      stepSigmas: (h) => horizonSigmas(model, now, h),
       residuals: model.residuals,
       seed: seedFrom(Math.floor(now / MIN)),
       paths: 2000,

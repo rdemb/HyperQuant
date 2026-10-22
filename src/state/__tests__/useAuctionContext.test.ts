@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { computeAuctionContext } from '../useAuctionContext';
+import { completeHourly, computeAuctionContext, hourlyStale } from '../useAuctionContext';
 import type { VBar } from '../../utils/auction';
 
 const MIN = 60_000;
@@ -11,6 +11,20 @@ const TODAY = Date.UTC(2026, 9, 22);
 function flat(from: number, n: number, step: number, mid: number): VBar[] {
   return Array.from({ length: n }, (_, i) => ({ time: from + i * step, open: mid, high: mid + 5, low: mid - 5, close: mid, volume: 1 }));
 }
+
+describe('świece 1h: tylko zamknięte; odświeżenie po zmianie dnia UTC', () => {
+  it('świeca godziny jeszcze trwającej w chwili pobrania jest odrzucana', () => {
+    const bars = flat(TODAY - 2 * H, 3, H, 100_000); // 22:00, 23:00, 00:00
+    expect(completeHourly(bars, TODAY - 20 * MIN).map((b) => b.time)).toEqual([TODAY - 2 * H]); // 23:00 trwa
+    expect(completeHourly(bars, TODAY + H).map((b) => b.time)).toEqual([TODAY - 2 * H, TODAY - H, TODAY]);
+  });
+  it('pamięć 1h nieaktualna po 30 min albo po północy UTC (wczorajsza sesja musi być kompletna)', () => {
+    expect(hourlyStale(null, TODAY)).toBe(true);
+    expect(hourlyStale(TODAY - 20 * MIN, TODAY + 5 * MIN)).toBe(true); // pobrane 23:40, teraz 00:05
+    expect(hourlyStale(TODAY + MIN, TODAY + 20 * MIN)).toBe(false);
+    expect(hourlyStale(TODAY + MIN, TODAY + 40 * MIN)).toBe(true);
+  });
+});
 
 describe('computeAuctionContext — poziomy i stan sesji ze świec', () => {
   const now = TODAY + 3 * H + 30 * MIN;

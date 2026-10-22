@@ -158,7 +158,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         metric: 'Model vs rynek (HIP-4, Rynek)',
         source: 'outcomeMeta i l2Book rynków wynikowych Hyperliquid (strona „Tak” = arkusz #<10·outcome>); model zmienności desku (świece 1h/5m)',
         method:
-          'Rynki BTC: cena powyżej progu w terminie (dzienny Recurring — mark HyperCore o 06:00 UTC; binaryPrice — mark, transakcja HL albo Pyth) i dotknięcie poziomu do terminu (priceTouch). Rynek: bid/ask/środek, płynny przy spreadzie ≤ 5 pp i ≥ 20 USDC w 3 poziomach. Model: 2000 ścieżek log-ceny (σ sezonowego log-HAR, innowacje FHS, krok 5/15/60 min, cena jako martyngał), dotknięcie z dokładnym ekstremum mostu Browna; Web Worker',
+          'Rynki BTC: cena powyżej progu w terminie (dzienny Recurring — mark HyperCore o 06:00 UTC; binaryPrice — mark, transakcja HL albo Pyth) i dotknięcie poziomu do terminu (priceTouch). Rynek: bid/ask/środek, płynny przy spreadzie ≤ 5 pp i ≥ 50 USDC w zleceniach do ±5 pp od środka po obu stronach. Model: 2000 ścieżek log-ceny (σ sezonowego log-HAR, innowacje FHS, krok 5/15/60 min, cena jako martyngał), dotknięcie z dokładnym ekstremum mostu Browna; Web Worker',
         kinds: ['LIVE', 'MODEL'],
         refresh: 'lista rynków co 10 min; arkusze i model co minutę',
         caveat: 'Cena rynku to nie czyste prawdopodobieństwo (premia za ryzyko, płynność); źródła cen rozliczenia różnią się od świec modelu; powyżej 14 dni brak wartości modelu. Porównanie kalibracji, nie sygnał.',

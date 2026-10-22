@@ -74,16 +74,21 @@ Fakty (sprawdzone 2026-10-22 na publicznym API): `{"type":"outcomeMeta"}` zwraca
 Ceny: `allMids` z kluczem `#<10·outcome + strona>` (strona 0 = Yes), arkusz `l2Book` z `coin: "#<…>"`.
 
 C1 (strona): panel „Model vs rynek” w widoku Rynek:
-- pytania BTC z płynnym arkuszem (spread ≤ 0,10 i ≥ 500 USD w 3 najlepszych poziomach po obu stronach); pozostałe
-  — „—” z adnotacją „arkusz pusty”;
+- pytania BTC z płynnym arkuszem (spread ≤ 5 pp i ≥ 50 USDC w zleceniach do ±5 pp od środka po obu stronach — decyzja
+  z realizacji: na żywych danych próg 500 USD wykluczał wszystkie rynki poza dziennym, a liczenie „3 najlepszych poziomów”
+  łapało dalekie śmieciowe zlecenia); pozostałe — „—” z adnotacją; błąd pobierania pokazywany jako błąd, nie brak rynku;
 - obok ceny rynku (bid/ask/mid) prawdopodobieństwo modelu z tego samego silnika co dziennik (HAR + FHS, Monte
   Carlo): P(S_T > K) z rozkładu zwrotu do T, P(dotknięcia K przed T) z symulacji ścieżek;
 - uczciwie: cena rynku to nie czyste prawdopodobieństwo (premia za ryzyko, płynność); różne źródła ceny
   (Pyth vs mark HL); różnica model − rynek to porównanie kalibracji, nie sygnał.
 
-C2 (dziennik skanera): co godzinę dla dziennego `Recurring` rekord z bid/ask/mid rynku i p modelu, rozstrzygnięcie
-o 06:00 UTC (świeca 1m HL; mark ≈ cena ostatnia — rozbieżność jawna); wyniki: Brier i log score modelu i rynku
-na tych samych pytaniach, różnica z bootstrapem. Weryfikator przelicza je jak resztę dziennika.
+C2 (dziennik skanera): Hyperliquid wystawia rolujący 15-minutowy rynek binarny na BTC (`binaryPrice`, mark perpa, próg =
+cena przy utworzeniu, termin = koniec kwadransa) — dokładnie jeden aktywny naraz, ~96 pytań dziennie z p blisko 0,5.
+W każdym slocie, 5–10 min przed terminem, skaner zapisuje w dzienniku rekord z bid/ask/mid strony „Tak” i p modelu
+(ten sam silnik, horyzont dokładny co do minuty); po terminie rozstrzygnięcie ze świecy 1m (zamknięcie minuty kończącej
+się w terminie) z flagą „blisko progu” (≤ 0,02% — mark ≠ cena transakcji). Wyniki: Brier i log score modelu i rynku
+na tych samych pytaniach (tylko płynne notowania), różnica z bootstrapem parowanym, liczności, przypadki blisko progu
+osobno. Weryfikator przelicza wynik z ceny i progu i sprawdza ceny ze świecami (`--market`).
 
 ## D. Rejestrator arkusza (VPS)
 
@@ -91,6 +96,17 @@ na tych samych pytaniach, różnica z bootstrapem. Weryfikator przelicza je jak 
   gzip, rotacja 7 dni, tylko na VPS (< 5 MB/dzień).
 - Publikowane wyłącznie agregaty (repo danych): profil głębokości wg godziny dnia, odporność płynności (czas
   powrotu głębokości po ruchu > 10 bp), β OFI→ΔP i n Hawkesa w czasie — historia, której strona sama nie ma.
+
+## Decyzje z realizacji (A, C1)
+
+- Horyzont modelu HIP-4 dokładny co do minuty (ostatni krok częściowy) — zaokrąglenie do kroków 5 min zawyżało σ przy
+  kilku minutach do terminu. Krok 5 min do doby, 15 min do 3 dni, 60 min dalej; innowacje FHS sumowane do długości kroku.
+- Obliczenia modelu w Web Workerze (~0,1–0,2 s co minutę poza wątkiem strony).
+- Pole `seconds` w opisie rynku nie ma oficjalnie udokumentowanego znaczenia — bez korekty na uśrednianie, jawnie w opisie.
+- Kontekst aukcji: świece 1h tylko zamknięte, odświeżane po północy UTC; słabość ekstremów i VA do warunków „dziś” z 1h
+  (ta sama definicja co statystyka). Wierzchołek na granicy godzin liczy się jako dwa okna — jak dwa TPO w Market Profile.
+- Ograniczenie próby: API daje ~208 dni świec 1h, więc część reguł (reguła 80%, słabe ekstrema) ma n ≈ 20 i pokazuje „—”.
+  Kierunek: archiwizacja świec 1h w repo danych przez skaner, żeby n rosło z czasem.
 
 ## Kolejność realizacji
 
