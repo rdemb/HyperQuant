@@ -363,3 +363,132 @@ describe('model vs rynek (HIP-4, 15 min)', () => {
   });
 });
 
+import { makeRetForecast, makeRetForecastB, regimeFrom5m } from '../forecaster.ts';
+import { horizonStepSigmas } from '../../../src/utils/volatility.ts';
+
+describe('A/B wersji modelu: wariant B z reżimem zmienności (BOCPD)', () => {
+  const H = 60 * MIN;
+  function series(n: number, end: number, sds: [number, number][]): RangeBar[] {
+    let s = 9;
+    const rnd = () => ((s = (s * 16807) % 2147483647) / 2147483647);
+    const g = () => Math.sqrt(-2 * Math.log(rnd() || 1e-12)) * Math.cos(2 * Math.PI * rnd());
+    let px = 100_000;
+    const out: RangeBar[] = [];
+    let k = 0;
+    for (const [cnt, sd] of sds)
+      for (let i = 0; i < cnt; i++, k++) {
+        const o = px;
+        px = o * Math.exp(sd * g());
+        out.push({ time: end - (n - k) * 5 * MIN, open: o, high: Math.max(o, px), low: Math.min(o, px), close: px });
+      }
+    return out;
+  }
+  const FLAT = Array(24).fill(1);
+  it('reżim z BOCPD na zwrotach 5m: po skoku zmienności σ reżimu bliska nowej, krótki przebieg', () => {
+    const bars = series(800, T0, [
+      [760, 0.0012],
+      [40, 0.005],
+    ]);
+    const r = regimeFrom5m(bars, FLAT, T0)!;
+    expect(r.sigma5).toBeGreaterThan(0.003);
+    expect(r.sigma5).toBeLessThan(0.008);
+    expect(r.run).toBeLessThan(60);
+    expect(regimeFrom5m(bars.slice(0, 10), FLAT, T0)).toBeNull();
+  });
+  it('reżim: świeca w toku pominięta (bez podglądania niezamkniętej ceny)', () => {
+    const bars = series(800, T0, [[800, 0.0012]]);
+    const last = bars[bars.length - 1];
+    const forming = { time: T0, open: last.close, high: last.close * 1.05, low: last.close, close: last.close * 1.05 };
+    expect(regimeFrom5m([...bars, forming], FLAT, T0 + 2 * MIN)).toEqual(regimeFrom5m(bars, FLAT, T0 + 2 * MIN));
+  });
+  it('reżim na zwrotach odsezonowanych profilem godzinowym: godzina o współczynniku 4 z 2× większymi zwrotami = brak zmiany', () => {
+    const base = series(800, T0, [[800, 0.0012]]);
+    const f = FLAT.map((_, h) => (h === 11 ? 4 : 1));
+    // Te same zwroty, ale w godzinie 11 UTC dwa razy większe (sezonowość) — po odsezonowaniu identyczne jak bazowe
+    const seasonal: RangeBar[] = [];
+    let px = base[0].close;
+    seasonal.push({ ...base[0] });
+    for (let i = 1; i < base.length; i++) {
+      const r = Math.log(base[i].close / base[i - 1].close) * (new Date(base[i].time).getUTCHours() === 11 ? 2 : 1);
+      const o = px;
+      px = o * Math.exp(r);
+      seasonal.push({ time: base[i].time, open: o, high: Math.max(o, px), low: Math.min(o, px), close: px });
+    }
+    const flat = regimeFrom5m(base, FLAT, T0)!;
+    const des = regimeFrom5m(seasonal, f, T0)!;
+    expect(des.sigma5).toBeCloseTo(flat.sigma5, 7);
+    expect(des.run).toBe(flat.run);
+  });
+  it('reżim: ponad połowa zwrotów zerowych (martwy rynek / dziury w danych) → null', () => {
+    const bars = series(300, T0, [[300, 0.0012]]).map((b, i) => (i % 5 === 0 ? b : { ...b, open: 100_000, high: 100_000, low: 100_000, close: 100_000 }));
+    expect(regimeFrom5m(bars, FLAT, T0)).toBeNull();
+  });
+  it('wariant B: te same chwile co A, kwantyle A × skala; σ reżimu na horyzont przez sumę współczynników godzin', () => {
+    const model = buildVolModel(bars1h(), bars5m(), T0)!;
+    const tm = { slot: T0, ti: T0 + 20_000, t: T0 + MIN };
+    const a = makeRetForecast(model, tm, 100_000, 60, 0.004, 0.1);
+    const reg = { sigma5: 0.003, run: 25, pChange: 0.02 };
+    const b = makeRetForecastB(model, a, reg);
+    const sA = Math.sqrt(horizonStepSigmas(model, tm.t, 60).reduce((s, x) => s + x * x, 0));
+    let fsum = 0;
+    for (let k = 0; k < 12; k++) fsum += model.profile.factors[new Date(tm.t + k * 5 * MIN).getUTCHours()];
+    const want = Math.sqrt(0.5 + (0.5 * 0.003 ** 2 * fsum) / sA ** 2);
+    expect(b).toMatchObject({ id: `${T0}-ret60b`, variant: 'B', slot: a.slot, ti: a.ti, t: a.t, h: 60, px0: a.px0, model: 'ledger-har-fhs-bocpd-v1' });
+    // Skala liczona z zapisanych (zaokrąglonych) σ_A i seas — zgodność z dokładnym wzorem do zaokrągleń
+    expect(b.scale).toBeCloseTo(want, 3);
+    expect(b.sigmaA).toBeCloseTo(sA, 8);
+    expect(b.seas).toBeCloseTo(fsum / 12, 6);
+    // Zapisane σ pozwalają odtworzyć skalę bez modelu
+    expect(Math.sqrt(0.5 + (0.5 * 0.003 ** 2 * 12 * b.seas!) / b.sigmaA! ** 2)).toBeCloseTo(b.scale!, 6);
+    b.q.forEach((v, i) => expect(v).toBeCloseTo(a.q[i] * b.scale!, 5));
+    expect(b.bq).toEqual(a.bq);
+    expect(b.regime).toEqual(reg);
+  });
+
+  function bars1h(): RangeBar[] {
+    return series(1200, T0, [[1200, 0.004]]).map((b, i) => ({ ...b, time: T0 - (1200 - i) * H }));
+  }
+  function bars5m(): RangeBar[] {
+    return series(2000, T0, [[2000, 0.0015]]);
+  }
+});
+
+import { AB_EPOCH } from '../../../src/utils/abTest.ts';
+import { isAb } from '../../../src/utils/deskLedger.ts';
+
+describe('podsumowanie: sekcja A/B i liczniki wersji głównej', () => {
+  const rr = (crps: number) => ({ k: 'r', id: 'x', t: 0, c0: 1, c1: 1, y: 0, crps, crpsB: 0.003, pit: 0.5, in90: 1, in60: 1, inAci: 1 }) as const;
+  it('pary A/B od AB_EPOCH trafiają do okresu w toku; B nie liczy się do oczekujących ani unieważnionych', () => {
+    const fs = new Map<string, Forecast>();
+    const rs = new Map<string, Resolution>();
+    for (let k = 0; k < 8; k++) {
+      const slot = AB_EPOCH + k * 15 * MIN;
+      const a = ret({ id: `${slot}-ret60`, slot, ti: slot + 20_000, t: slot + MIN });
+      const b = { ...a, id: `${slot}-ret60b`, variant: 'B' as const, scale: 1.1, regime: { sigma5: 0.001, run: 30, pChange: 0.02 }, sigmaA: 0.004, seas: 1 };
+      fs.set(a.id, a);
+      fs.set(b.id, b);
+      if (k < 6) {
+        rs.set(a.id, rr(0.002));
+        rs.set(b.id, rr(0.0019));
+      }
+    }
+    // unieważnione rozstrzygnięcie wariantu B
+    const last = `${AB_EPOCH + 7 * 15 * MIN}-ret60b`;
+    rs.set(last, { k: 'r', id: last, t: 0, void: 'brak świec' } as unknown as Resolution);
+    const s = buildSummary({ coin: 'BTC', now: AB_EPOCH + 3 * 3_600_000, head: { hash: 'h', lines: 1 }, forecasts: fs, resolutions: rs, aci: {}, ots: [], abRegisteredAt: AB_EPOCH - 3_600_000 });
+    expect(s.pending).toBe(2);
+    expect(s.voided).toBe(0);
+    expect(s.ab!.current).toMatchObject({ start: AB_EPOCH, n: 6, diff: null });
+    expect(s.ab!.current!.crpsB! - s.ab!.current!.crpsA!).toBeCloseTo(-0.0001, 8);
+    expect(s.ab!.last).toBeNull();
+    expect(s.ab!.latest!.scale).toBe(1.1);
+    expect(s.scores.ret['60'].n).toBe(6);
+    expect(isDeskLedgerSummary(s)).toBe(true);
+    expect(isAb(s.ab)).toBe(true);
+    expect(s.ab!.registeredAt).toBe(AB_EPOCH - 3_600_000);
+    // uszkodzona sekcja A/B: podsumowanie nadal ważne (panel dziennika widoczny), odrzucona tylko karta A/B
+    const broken = { ...s, ab: { ...s.ab, current: { n: 'x' } } };
+    expect(isDeskLedgerSummary(broken)).toBe(true);
+    expect(isAb(broken.ab)).toBe(false);
+  });
+});

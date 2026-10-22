@@ -1,3 +1,5 @@
+import { AB_BLOCK_DAYS, abBlocks, type AbRow } from '../../src/utils/abTest.ts';
+import { Bocpd } from '../../src/utils/bocpd.ts';
 import { ENS_PRIOR, REC_PRIOR, fitEnsemble, poolProb, type EnsPair, type EnsWeights } from '../../src/utils/ensemble.ts';
 import { type RangeBar, type VolModel, buildVolModel, horizonStepSigmas } from '../../src/utils/volatility.ts';
 import { forecastReturnQuantiles, runTouchMonteCarlo } from '../../src/utils/touchMc.ts';
@@ -31,6 +33,7 @@ export const ACI_ALPHA = 0.1;
 export const ACI_GAMMA = 0.005;
 const r6 = (x: number) => Math.round(x * 1e6) / 1e6;
 const r4 = (x: number) => Math.round(x * 1e4) / 1e4;
+const r8 = (x: number) => Math.round(x * 1e8) / 1e8;
 
 /** Czasy prognozy: slot 15 min (klucz), chwila wydania i początek horyzontu (pełna minuta po wydaniu — bez podglądania). */
 export interface ForecastTimes {
@@ -58,6 +61,73 @@ export interface RetForecast {
   /** α_t ACI w chwili wydania (przedział [q(α/2), q(1−α/2)]) */
   aci: number;
   model: string;
+  /**
+   * Wariant B (A/B wersji modelu): kwantyle A × `scale`, σ_B² = ½σ_A² + ½σ²_reżimu,h (BOCPD na odsezonowanych zwrotach
+   * 5m). Brak = wersja główna (A). Wariant B nie zmienia ACI wersji A.
+   */
+  variant?: 'B';
+  /** √(½ + ½·σ²_reżimu,h / σ_A²), σ²_reżimu,h = sigma5² · (h/5) · seas */
+  scale?: number;
+  regime?: Regime;
+  /** σ_A: odchylenie log-zwrotu na horyzoncie z modelu A (√ sumy wariancji kroków) */
+  sigmaA?: number;
+  /** Średni współczynnik sezonowy godzin na krokach 5m horyzontu (profil modelu A) */
+  seas?: number;
+}
+
+/**
+ * Reżim zmienności z BOCPD: σ odsezonowanego zwrotu 5m reżimu (godzina o współczynniku 1), najbardziej prawdopodobna
+ * długość (świece 5m, opisowo), P(zmiany w ostatnich 5 świecach)
+ */
+export interface Regime {
+  sigma5: number;
+  run: number;
+  pChange: number;
+}
+
+export const MODEL_B = 'ledger-har-fhs-bocpd-v1';
+/** Oczekiwana długość reżimu: doba świec 5m */
+const BOCPD_HAZARD = 1 / 288;
+
+/**
+ * Reżim zmienności z log-zwrotów 5m (zamknięte, ciągłe świece, do 3 dni), odsezonowanych profilem godzinowym modelu A
+ * (r / √f(godzina UTC świecy)) — inaczej zwykły rytm doby (otwarcie USA) wyglądałby jak zmiana reżimu. BOCPD (Adams &
+ * MacKay 2007) z priorem Gamma na precyzję: średnia a priori wariancji = odporna wariancja okna (mediana r² / 0,4549,
+ * nie mniej niż ¼ średniej r²). Świeca w toku pomijana; mniej niż 100 zwrotów albo ponad połowa zerowych → null.
+ */
+export function regimeFrom5m(bars: readonly RangeBar[], factors: readonly number[], now: number): Regime | null {
+  const b = bars.filter((x) => x.time + 5 * MIN <= now).sort((x, y) => x.time - y.time).slice(-865);
+  const r: number[] = [];
+  for (let i = 1; i < b.length; i++) {
+    if (b[i].time - b[i - 1].time !== 5 * MIN || !(b[i].close > 0) || !(b[i - 1].close > 0)) continue;
+    const f = factors[new Date(b[i].time).getUTCHours()];
+    r.push(Math.log(b[i].close / b[i - 1].close) / Math.sqrt(f > 0 ? f : 1));
+  }
+  if (r.length < 100 || r.filter((x) => x === 0).length * 2 > r.length) return null;
+  const sq = r.map((x) => x * x).sort((x, y) => x - y);
+  const mean = sq.reduce((s, x) => s + x, 0) / sq.length;
+  const v0 = Math.max(1e-10, sq[sq.length >> 1] / 0.4549, 0.25 * mean);
+  const det = new Bocpd({ hazard: BOCPD_HAZARD, alpha0: 2, beta0: v0, rMax: 600 });
+  for (const x of r) det.update(x);
+  const st = det.state();
+  return { sigma5: Math.round(st.sigma * 1e8) / 1e8, run: st.mapRun, pChange: r4(st.pRecent5) };
+}
+
+/**
+ * Wariant B prognozy zwrotu: te same chwile i benchmark co A, kwantyle A przeskalowane do σ z mieszaniny model/reżim.
+ * σ reżimu na horyzont: σ5² · Σ f(godzina kroku) po krokach 5m od `t` (ten sam profil, którym odsezonowano zwroty).
+ * Zapisane σ_A i średni współczynnik `seas` pozwalają weryfikatorowi odtworzyć skalę bez modelu.
+ */
+export function makeRetForecastB(model: VolModel, a: RetForecast, reg: Regime): RetForecast {
+  const sA2 = horizonStepSigmas(model, a.t, a.h).reduce((s, x) => s + x * x, 0);
+  const steps = Math.round(a.h / 5);
+  let fsum = 0;
+  for (let k = 0; k < steps; k++) fsum += model.profile.factors[new Date(a.t + k * 5 * MIN).getUTCHours()];
+  const sigmaA = r8(Math.sqrt(sA2));
+  const seas = r6(fsum / steps);
+  const regH2 = reg.sigma5 ** 2 * steps * seas;
+  const scale = r6(Math.sqrt(0.5 + (0.5 * regH2) / Math.max(sigmaA ** 2, 1e-18)));
+  return { ...a, id: `${a.id}b`, q: a.q.map((v) => r6(v * scale)), model: MODEL_B, variant: 'B', scale, regime: reg, sigmaA, seas };
 }
 
 export interface TouchForecast {
@@ -573,6 +643,8 @@ export interface SummaryInput {
   skips?: SkipRecord[];
   /** Liczba pokwitowań OpenTimestamps głowy łańcucha z ostatnich 24 h */
   slotStamps?: number;
+  /** Czas prerejestracji planu oceny A/B w dzienniku (null / brak = jeszcze nie) */
+  abRegisteredAt?: number | null;
 }
 
 /** Podsumowanie (30 dni) dla strony: najnowsze prognozy, wyniki, kalibracja Venna–Abersa najnowszych prawdopodobieństw. */
@@ -585,18 +657,20 @@ export function buildSummary(s: SummaryInput): DeskLedgerSummary {
   for (const f of fs) {
     const r = s.resolutions.get(f.id);
     if (!r) continue;
-    if (f.kind === 'ret' && 'crps' in r) retPairs.set(f.h, [...(retPairs.get(f.h) ?? []), { f, r }]);
+    if (f.kind === 'ret' && !f.variant && 'crps' in r) retPairs.set(f.h, [...(retPairs.get(f.h) ?? []), { f, r }]);
     if (f.kind === 'touch' && 'yv' in r) touchPairs.push({ f, r });
     if (f.kind === 'mkt' && 'near' in r) mktPairs.push({ f, r });
   }
   const latestMkt = [...fs].reverse().find((f): f is MktForecast => f.kind === 'mkt');
-  const latestRet = RET_HORIZONS.map((h) => [...fs].reverse().find((f) => f.kind === 'ret' && f.h === h) as RetForecast | undefined).filter(
+  const latestRet = RET_HORIZONS.map((h) => [...fs].reverse().find((f) => f.kind === 'ret' && !f.variant && f.h === h) as RetForecast | undefined).filter(
     (f): f is RetForecast => !!f
   );
   const latestTouch = [...fs].reverse().find((f) => f.kind === 'touch') as TouchForecast | undefined;
   const cal = touchPairsOf(touchPairs);
-  const pending = fs.filter((f) => !s.resolutions.has(f.id)).length;
+  // Liczniki wersji głównej — wariant B (A/B) ma własną sekcję
+  const pending = fs.filter((f) => !(f.kind === 'ret' && f.variant) && !s.resolutions.has(f.id)).length;
   const voided = fs.filter((f) => {
+    if (f.kind === 'ret' && f.variant) return false;
     const r = s.resolutions.get(f.id) as (Resolution & { void?: string }) | undefined;
     return !!r && typeof r.void === 'string';
   }).length;
@@ -662,7 +736,34 @@ export function buildSummary(s: SummaryInput): DeskLedgerSummary {
         ? { t: latestMkt.t, expiry: latestMkt.expiry, K: latestMkt.K, p: latestMkt.p, bid: latestMkt.bid, ask: latestMkt.ask, liquid: latestMkt.liquid, pe: latestMkt.pe ?? null }
         : null,
     },
+    ab: abSection(fs, s.resolutions, s.now, s.abRegisteredAt ?? null),
     method: 'hq-ledger-v1',
+  };
+}
+
+/**
+ * A/B wersji modelu (1 h): pary A i B z tego samego slotu, oba rozstrzygnięte (bez unieważnionych); okres oceny w toku
+ * i ostatni zakończony (bloki 14 dni od AB_EPOCH — patrz abTest.ts); najnowszy reżim i skala B.
+ */
+function abSection(fs: Forecast[], res: Map<string, Resolution>, now: number, registeredAt: number | null): NonNullable<DeskLedgerSummary['ab']> {
+  const rows: AbRow[] = [];
+  let latest: RetForecast | null = null;
+  const byId = new Map(fs.map((f) => [f.id, f]));
+  for (const f of fs) {
+    if (f.kind !== 'ret' || f.variant !== 'B' || f.h !== 60) continue;
+    latest = f;
+    const a = byId.get(f.id.slice(0, -1));
+    const ra = a ? res.get(a.id) : undefined;
+    const rb = res.get(f.id);
+    if (ra && rb && 'crps' in ra && 'crps' in rb) rows.push({ slot: f.slot, crpsA: ra.crps, crpsB: rb.crps });
+  }
+  return {
+    h: 60,
+    model: MODEL_B,
+    blockDays: AB_BLOCK_DAYS,
+    registeredAt,
+    ...abBlocks(rows, now),
+    latest: latest && latest.regime && latest.scale !== undefined ? { t: latest.t, scale: latest.scale, regime: latest.regime } : null,
   };
 }
 
@@ -703,6 +804,10 @@ export class ForecastData {
   private modelTriedAt = Number.NEGATIVE_INFINITY;
   levels: { pdh: number; pdl: number; day: number } | null = null;
   levelsAt = 0;
+  /** Reżim zmienności (BOCPD na świecach 5m z 3 dni) — liczony raz na slot, przed wydaniem prognoz slotu */
+  regime: Regime | null = null;
+  regimeAt = 0;
+  private regimeSlot = Number.NEGATIVE_INFINITY;
 
   constructor(d: ForecasterDeps) {
     this.d = d;
@@ -735,6 +840,21 @@ export class ForecastData {
     if (prev && prev.high > prev.low) {
       this.levels = { pdh: prev.high, pdl: prev.low, day: prev.time };
       this.levelsAt = now;
+    }
+  }
+
+  /**
+   * Reżim zmienności do wariantu B — raz na slot 15 min (świece 5m z 3 dni, ~35 wag), odsezonowany profilem bieżącego
+   * modelu A. Nieudana próba nie jest ponawiana w tym slocie: dziennik wydaje B tylko z reżimem policzonym w slocie wydania.
+   */
+  async refreshRegime(now: number): Promise<void> {
+    const slot = slotOf(now);
+    if (this.regimeSlot === slot || !this.model) return;
+    this.regimeSlot = slot;
+    const r = regimeFrom5m(await this.candles('5m', now - 866 * 5 * MIN, 866), this.model.profile.factors, now);
+    if (r) {
+      this.regime = r;
+      this.regimeAt = now;
     }
   }
 

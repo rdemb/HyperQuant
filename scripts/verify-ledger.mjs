@@ -18,6 +18,7 @@
  */
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { AB_DESIGN, abBlocks } from '../src/utils/abTest.ts';
 import { fitEnsemble } from '../src/utils/ensemble.ts';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -218,6 +219,76 @@ export function checkOrdering(records, opts = {}) {
   const fSlots = new Set([...f.values()].map((x) => x.slot));
   for (const [a, b] of skipped) for (const s of fSlots) if (s >= a && s <= b) out.push(`slot ${s}: jednocześnie prognoza i pominięcie`);
   return out;
+}
+
+/** Wersja modelu wariantu B (A/B z reżimem BOCPD) — tylko horyzont 1 h */
+const MODEL_B = 'ledger-har-fhs-bocpd-v1';
+
+/**
+ * A/B wersji modelu: wariant B prognozy zwrotu (`variant: 'B'`, id `<A>b`) musi mieć tę samą chwilę wydania, horyzont,
+ * cenę, poziomy τ, benchmark i ACI co wersja A z tego samego slotu, a kwantyle = A × `scale` (±2·10⁻⁶ z zaokrągleń).
+ * Skala wynika ze wzoru na zapisanych wielkościach: √(½ + ½·σ5²·(h/5)·seas / σ_A²) (±10⁻⁵ z zaokrągleń), więc ≥ √½;
+ * horyzont 1 h, model MODEL_B. σ_A musi być wiarygodne względem kwantyli A: (q₀.₉₇₅ − q₀.₀₂₅) / (3,92·σ_A) ∈ [0,5; 2]
+ * (rozkład FHS ma grubsze ogony niż normalny, ale nie dowolnie) — inaczej dowolne σ_A „zgadzałoby się” ze wzorem.
+ */
+export function checkVariants(records) {
+  const byId = new Map(records.filter((o) => o.k === 'f').map((o) => [o.id, o]));
+  const problems = [];
+  let checked = 0;
+  for (const b of byId.values()) {
+    if (b.variant !== 'B') continue;
+    const a = byId.get(String(b.id).slice(0, -1));
+    if (!a || a.variant) {
+      problems.push(`${b.id}: brak wersji A tego slotu`);
+      continue;
+    }
+    const bad = [];
+    for (const k of ['slot', 'ti', 't', 'h', 'px0', 'aci']) if (a[k] !== b[k]) bad.push(k);
+    if (canonical(a.taus) !== canonical(b.taus) || canonical(a.bq) !== canonical(b.bq)) bad.push('taus/bq');
+    if (b.kind !== 'ret') bad.push('kind');
+    if (b.h !== 60) bad.push('horyzont ≠ 60');
+    if (b.model !== MODEL_B) bad.push('model');
+    if (!(typeof b.scale === 'number' && b.scale > 0 && Number.isFinite(b.scale))) bad.push('scale');
+    else {
+      if (!Array.isArray(b.q) || b.q.length !== a.q.length || b.q.some((v, i) => Math.abs(v - a.q[i] * b.scale) > 2e-6)) bad.push('kwantyle ≠ A × skala');
+      if (b.scale < Math.SQRT1_2 - 1e-6) bad.push('skala < √½');
+    }
+    const regOk = !!b.regime && [b.regime.sigma5, b.regime.run, b.regime.pChange].every(Number.isFinite);
+    if (!regOk) bad.push('reżim');
+    if (!(typeof b.sigmaA === 'number' && b.sigmaA > 0) || !(typeof b.seas === 'number' && b.seas > 0)) bad.push('σ_A / seas');
+    else if (regOk && typeof b.scale === 'number' && b.h === 60) {
+      const want = Math.sqrt(0.5 + (0.5 * b.regime.sigma5 ** 2 * (b.h / 5) * b.seas) / b.sigmaA ** 2);
+      if (Math.abs(want - b.scale) > 1e-5 * Math.max(1, want)) bad.push('skala ≠ wzór z zapisanych σ');
+      const i025 = a.taus.indexOf(0.025);
+      const i975 = a.taus.indexOf(0.975);
+      if (i025 >= 0 && i975 >= 0) {
+        const ratio = (a.q[i975] - a.q[i025]) / (3.92 * b.sigmaA);
+        if (!(ratio >= 0.5 && ratio <= 2)) bad.push(`σ_A niezgodne z kwantylami A (stosunek ${ratio.toFixed(2)})`);
+      }
+    }
+    if (bad.length) problems.push(`${b.id}: ${bad.join(', ')}`);
+    else checked++;
+  }
+  return { problems, checked };
+}
+
+/**
+ * Plan oceny A/B (rekord `k: 'p'`, id AB_DESIGN.id): zapisany plan musi być identyczny z planem w kodzie (te same stałe
+ * oceny, więc publiczny kod liczy wynik tak, jak zarejestrowano), jeden hash dla identyfikatora, a każdy rekord
+ * wariantu B wydany po prerejestracji. Zwraca też czas rejestracji (null — brak planu w rekordach).
+ */
+export function checkAbPlan(records) {
+  const problems = [];
+  const plans = records.filter((o) => o.k === 'p' && o.id === AB_DESIGN.id);
+  const want = canonical(AB_DESIGN);
+  for (const p of plans) if (canonical(p.catalog) !== want) problems.push(`${p.id}: plan A/B różni się od kodu (src/utils/abTest.ts)`);
+  if (new Set(plans.map((p) => p.catalogHash)).size > 1) problems.push(`${AB_DESIGN.id}: kilka różnych planów pod jednym identyfikatorem`);
+  const registeredAt = plans.length && typeof plans[0].t === 'number' ? plans[0].t : null;
+  if (registeredAt !== null) {
+    const early = records.filter((o) => o.k === 'f' && o.variant === 'B' && o.ti < registeredAt);
+    if (early.length) problems.push(`wariant B przed prerejestracją planu: ${early.length} (np. ${early[0].id})`);
+  }
+  return { problems, registeredAt };
 }
 
 /**
@@ -509,7 +580,11 @@ export async function bitcoinTime(bytes) {
 }
 
 /** Wyniki opisowe przeliczone z rekordów. */
-export function recompute(records) {
+/**
+ * Wyniki przeliczone z rekordów. `since` (tryb szybki — tylko ostatnie dni): okresy A/B zaczęte przed pierwszym
+ * pobranym dniem oznaczone `partial` i bez przedziału (pełna ocena — z klonem `--dir`).
+ */
+export function recompute(records, { since } = {}) {
   const f = new Map();
   const r = new Map();
   for (const o of records) {
@@ -517,6 +592,10 @@ export function recompute(records) {
     else if (o.k === 'r') r.set(o.id, o);
   }
   const ret = {};
+  /** Pary A/B (1 h): CRPS z kwantyli obu wersji na tym samym zwrocie */
+  const abRows = [];
+  let lastT = 0;
+  for (const o of records) if (typeof o.t === 'number' && o.t > lastT) lastT = o.t;
   let touchN = 0;
   let brierSum = 0;
   const market = { n: 0, brierModel: 0, brierMarket: 0, nEns: 0, brierEns: 0 };
@@ -525,11 +604,17 @@ export function recompute(records) {
     const res = r.get(id);
     if (!res || res.void) continue;
     if (fc.kind === 'ret') {
-      const s = (ret[fc.h] ??= { n: 0, crps: 0, crpsB: 0, in90: 0 });
+      // Wariant B (A/B) osobno — wyniki wersji głównej bez niego, jak w podsumowaniu
+      const s = (ret[fc.variant === 'B' ? `${fc.h}-B` : fc.h] ??= { n: 0, crps: 0, crpsB: 0, in90: 0 });
       s.n++;
       s.crps += crps(fc.taus, fc.q, res.y);
       s.crpsB += crps(fc.taus, fc.bq, res.y);
       s.in90 += res.y >= quantileAt(fc.taus, fc.q, 0.05) && res.y <= quantileAt(fc.taus, fc.q, 0.95) ? 1 : 0;
+      if (fc.variant === 'B' && fc.h === 60) {
+        const a = f.get(String(id).slice(0, -1));
+        const ra = a ? r.get(a.id) : undefined;
+        if (a && ra && !ra.void) abRows.push({ slot: fc.slot, crpsA: crps(a.taus, a.q, ra.y), crpsB: crps(fc.taus, fc.q, res.y) });
+      }
     } else if (fc.kind === 'mkt') {
       if (res.near !== 0 || fc.bid === null || fc.ask === null) continue;
       const y = res.c1 >= fc.K ? 1 : 0;
@@ -569,7 +654,14 @@ export function recompute(records) {
       nEns: marketTight.nEns,
       brierEns: marketTight.nEns ? marketTight.brierEns / marketTight.nEns : null,
     },
-    voided: [...r.values()].filter((x) => x.void).length,
+    // Okresy oceny A/B (bloki 14 dni od AB_EPOCH) na chwilę ostatniego rekordu
+    ab: (() => {
+      const ab = abBlocks(abRows, lastT);
+      const cut = (b) => (b && since !== undefined && b.start < since ? { ...b, diff: null, partial: true } : b);
+      return { current: cut(ab.current), closing: cut(ab.closing), last: cut(ab.last) };
+    })(),
+    // Jak w podsumowaniu: unieważnienia wersji głównej (wariant B ma własną sekcję)
+    voided: [...r.values()].filter((x) => x.void && !f.get(x.id)?.variant).length,
     skipped: records.filter((o) => o.k === 's').reduce((n, o) => n + (typeof o.until === 'number' ? Math.round((o.until - o.slot) / SLOT_MS) + 1 : 1), 0),
   };
 }
@@ -654,6 +746,18 @@ async function main() {
         : `✓ ensemble: ${ens.checked} wydań — p_e i p_r zgodne z zapisanymi wagami${ens.refitted ? `; wagi ${ens.refitted} ostatnich wydań odtworzone ponownym dopasowaniem na pytaniach rozstrzygniętych przed wydaniem` : ''}`
     );
   if (ens.problems.length) ok = false;
+  const ab = checkVariants(records);
+  if (ab.checked || ab.problems.length)
+    console.log(ab.problems.length ? `✗ wariant B (${ab.problems.length}): ${ab.problems.slice(0, 5).join('; ')}` : `✓ A/B: ${ab.checked} prognoz wariantu B = wersja A × skala, te same chwile`);
+  if (ab.problems.length) ok = false;
+  const plan = checkAbPlan(records);
+  if (plan.registeredAt !== null || plan.problems.length)
+    console.log(
+      plan.problems.length
+        ? `✗ plan A/B (${plan.problems.length}): ${plan.problems.slice(0, 5).join('; ')}`
+        : `✓ plan A/B ${AB_DESIGN.id} prerejestrowany ${new Date(plan.registeredAt).toISOString().slice(0, 16)}Z, zgodny z kodem; wariant B wydawany po rejestracji`
+    );
+  if (plan.problems.length) ok = false;
   const pre = checkPreregs(records);
   if (pre.preregs.length || pre.problems.length)
     console.log(
@@ -707,6 +811,8 @@ async function main() {
         if (!bytes) continue;
         const bt = await bitcoinTime(bytes);
         for (const fc of fs) {
+          // Wariant B (A/B) dzieli pokwitowanie z wersją A — liczony raz, jako wersja główna
+          if (fc.variant) continue;
           const key = fc.kind === 'mkt' ? 'rynek HIP-4 (15 min)' : `horyzont ${fc.h} min`;
           const s = (stat[key] ??= { n: 0, proven: 0, late: 0, pending: 0 });
           s.n++;
@@ -762,7 +868,8 @@ async function main() {
       // brak podsumowania — nie wpływa na wynik
     }
   }
-  console.log('Wyniki przeliczone z rekordów:', JSON.stringify(recompute(records), null, 2));
+  const since = local ? undefined : Date.parse(`${files[0][0].slice(0, 10)}T00:00:00Z`);
+  console.log('Wyniki przeliczone z rekordów:', JSON.stringify(recompute(records, { since }), null, 2));
   if (!ok) process.exitCode = 1;
 }
 

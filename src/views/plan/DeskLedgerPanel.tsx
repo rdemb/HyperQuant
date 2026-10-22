@@ -1,9 +1,10 @@
 import React from 'react';
 import { useDeskLedger } from '../../state/useDeskLedger';
 import { LedgerVerifyCard } from './LedgerVerifyCard';
+import { ModelAbCard } from './ModelAbCard';
 import { LEDGER_BASE } from '../../state/usePublished';
 import { Badge, EmptyState, Panel, Stat, DASH, fmtPrice } from '../../ui';
-import { DeskLedgerSummary, MktScores, RetScores, TouchLevel } from '../../utils/deskLedger';
+import { DeskLedgerSummary, MktScores, RetScores, TouchLevel, isAb } from '../../utils/deskLedger';
 
 const timeFmt = new Intl.DateTimeFormat('pl-PL', { hour: '2-digit', minute: '2-digit' });
 const dateTimeFmt = new Intl.DateTimeFormat('pl-PL', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
@@ -72,6 +73,8 @@ const LedgerBody: React.FC<{ s: DeskLedgerSummary; stale: boolean; expired: bool
     <TouchCard s={s} />
 
     {s.market && <MarketCard m={s.market} />}
+
+    {s.ab && isAb(s.ab) && <ModelAbCard ab={s.ab} />}
 
     <div className="flex flex-col gap-2 rounded-md border border-line bg-surface-2/50 px-3 py-2.5 text-xs text-ink-2">
       <div className="flex flex-wrap gap-x-5 gap-y-1">

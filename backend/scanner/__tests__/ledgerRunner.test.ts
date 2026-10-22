@@ -7,6 +7,8 @@ import { buildVolModel, type RangeBar } from '../../../src/utils/volatility.ts';
 import { isDeskLedgerSummary } from '../../../src/utils/deskLedger.ts';
 import { LedgerRunner, type LedgerData } from '../ledgerRunner.ts';
 import { LedgerStore } from '../ledgerStore.ts';
+import { canonicalJson } from '../ledger.ts';
+import { AB_DESIGN } from '../../../src/utils/abTest.ts';
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -352,5 +354,74 @@ describe('prerejestracja a trwający przebieg dziennika', () => {
     await p;
     expect(lines(dir, '2026-10-22').filter((o) => o.k === 'p')).toHaveLength(0);
     expect(r.register({ id: 'lab-v1', catalogHash: 'd'.repeat(64), catalog: {} }, SLOT0 + 2 * MIN)).toMatchObject({ added: true });
+  });
+});
+
+describe('A/B wersji modelu: wariant B z reżimem BOCPD', () => {
+  it('przy świeżym reżimie wydaje ret60b w tej samej partii co A; B nie zmienia ACI wersji A; podsumowanie ma sekcję ab', async () => {
+    const data = fakeData() as ReturnType<typeof fakeData> & { regime?: unknown; regimeAt?: number; refreshRegime?: (now: number) => Promise<void> };
+    data.regime = { sigma5: 0.0015, run: 40, pChange: 0.01 };
+    data.regimeAt = SLOT0;
+    data.refreshRegime = async () => {};
+    const { r, dir, published } = runner({ data });
+    r.init(SLOT0);
+    await r.tick(SLOT0 + MIN);
+    const day = lines(dir, '2026-10-22');
+    const a = day.find((l) => l.id === `${SLOT0}-ret60`);
+    const b = day.find((l) => l.id === `${SLOT0}-ret60b`);
+    expect(b).toMatchObject({ variant: 'B', model: 'ledger-har-fhs-bocpd-v1', ti: a.ti, t: a.t, h: 60 });
+    // B zaraz po A (ta sama partia pokwitowania slotu)
+    expect(day.findIndex((l) => l.id === `${SLOT0}-ret60b`)).toBeGreaterThan(day.findIndex((l) => l.id === `${SLOT0}-ret60`));
+    // Rozstrzygnięcie po horyzoncie: ACI wersji A zmienia tylko rozstrzygnięcie A
+    await r.tick(SLOT0 + 2 * HOUR);
+    const summary = JSON.parse(published.at(-1)!);
+    expect(summary.ab).toMatchObject({ h: 60, model: 'ledger-har-fhs-bocpd-v1' });
+    expect(summary.ab.latest.regime).toEqual(data.regime);
+    expect(isDeskLedgerSummary(summary)).toBe(true);
+  });
+  it('błąd pobrania reżimu nie wstrzymuje wersji A — slot bez wariantu B', async () => {
+    const data = fakeData() as ReturnType<typeof fakeData> & { regime?: unknown; regimeAt?: number; refreshRegime?: (now: number) => Promise<void> };
+    data.regime = { sigma5: 0.0015, run: 40, pChange: 0.01 };
+    data.regimeAt = SLOT0;
+    data.refreshRegime = async () => {
+      throw new Error('HTTP 429');
+    };
+    const { r, dir } = runner({ data });
+    r.init(SLOT0);
+    await r.tick(SLOT0 + MIN);
+    const day = lines(dir, '2026-10-22');
+    expect(day.some((l) => l.id === `${SLOT0}-ret60`)).toBe(true);
+    expect(day.some((l) => String(l.id).endsWith('ret60b'))).toBe(false);
+  });
+  it('plan oceny A/B prerejestrowany raz w łańcuchu (hash kanonicznego planu); podsumowanie podaje czas rejestracji', async () => {
+    const data = fakeData() as ReturnType<typeof fakeData> & { regime?: unknown; regimeAt?: number; refreshRegime?: (now: number) => Promise<void> };
+    data.regime = { sigma5: 0.0015, run: 40, pChange: 0.01 };
+    data.regimeAt = SLOT0;
+    data.refreshRegime = async () => {};
+    const { r, dir, published } = runner({ data });
+    r.init(SLOT0);
+    await r.tick(SLOT0 + MIN);
+    await r.tick(SLOT0 + 16 * MIN);
+    const p = lines(dir, '2026-10-22').filter((l) => l.k === 'p');
+    expect(p).toHaveLength(1);
+    expect(p[0]).toMatchObject({ id: 'ab-v1', catalog: AB_DESIGN });
+    expect(p[0].catalogHash).toBe(createHash('sha256').update(canonicalJson(AB_DESIGN)).digest('hex'));
+    expect(JSON.parse(published.at(-1)!).ab.registeredAt).toBe(p[0].t);
+    // ponowne uruchomienie: plan już w dzienniku — bez drugiego rekordu
+    const again = new LedgerRunner({ coin: 'BTC', data, store: new LedgerStore({ dir, coin: 'BTC' }), repo: null, markPx: () => 100_000, publish: () => {} });
+    expect(again.init(SLOT0 + 20 * MIN).ok).toBe(true);
+    await again.tick(SLOT0 + 31 * MIN);
+    expect(lines(dir, '2026-10-22').filter((l) => l.k === 'p')).toHaveLength(1);
+  });
+  it('reżim z poprzedniego slotu (nawet sprzed 5 min) albo brak — bez wariantu B', async () => {
+    for (const at of [SLOT0 - 5 * MIN, SLOT0 - HOUR, undefined]) {
+      const data = fakeData() as ReturnType<typeof fakeData> & { regime?: unknown; regimeAt?: number };
+      data.regime = at === undefined ? null : { sigma5: 0.0015, run: 40, pChange: 0.01 };
+      data.regimeAt = at;
+      const { r, dir } = runner({ data });
+      r.init(SLOT0);
+      await r.tick(SLOT0 + MIN);
+      expect(lines(dir, '2026-10-22').some((l) => String(l.id).endsWith('ret60b'))).toBe(false);
+    }
   });
 });
