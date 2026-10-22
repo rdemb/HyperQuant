@@ -643,6 +643,8 @@ export interface SummaryInput {
   skips?: SkipRecord[];
   /** Liczba pokwitowań OpenTimestamps głowy łańcucha z ostatnich 24 h */
   slotStamps?: number;
+  /** Czas prerejestracji planu oceny A/B w dzienniku (null / brak = jeszcze nie) */
+  abRegisteredAt?: number | null;
 }
 
 /** Podsumowanie (30 dni) dla strony: najnowsze prognozy, wyniki, kalibracja Venna–Abersa najnowszych prawdopodobieństw. */
@@ -734,7 +736,7 @@ export function buildSummary(s: SummaryInput): DeskLedgerSummary {
         ? { t: latestMkt.t, expiry: latestMkt.expiry, K: latestMkt.K, p: latestMkt.p, bid: latestMkt.bid, ask: latestMkt.ask, liquid: latestMkt.liquid, pe: latestMkt.pe ?? null }
         : null,
     },
-    ab: abSection(fs, s.resolutions, s.now),
+    ab: abSection(fs, s.resolutions, s.now, s.abRegisteredAt ?? null),
     method: 'hq-ledger-v1',
   };
 }
@@ -743,7 +745,7 @@ export function buildSummary(s: SummaryInput): DeskLedgerSummary {
  * A/B wersji modelu (1 h): pary A i B z tego samego slotu, oba rozstrzygnięte (bez unieważnionych); okres oceny w toku
  * i ostatni zakończony (bloki 14 dni od AB_EPOCH — patrz abTest.ts); najnowszy reżim i skala B.
  */
-function abSection(fs: Forecast[], res: Map<string, Resolution>, now: number): NonNullable<DeskLedgerSummary['ab']> {
+function abSection(fs: Forecast[], res: Map<string, Resolution>, now: number, registeredAt: number | null): NonNullable<DeskLedgerSummary['ab']> {
   const rows: AbRow[] = [];
   let latest: RetForecast | null = null;
   const byId = new Map(fs.map((f) => [f.id, f]));
@@ -759,7 +761,8 @@ function abSection(fs: Forecast[], res: Map<string, Resolution>, now: number): N
     h: 60,
     model: MODEL_B,
     blockDays: AB_BLOCK_DAYS,
-    ...abBlocks(rows, now, 60),
+    registeredAt,
+    ...abBlocks(rows, now),
     latest: latest && latest.regime && latest.scale !== undefined ? { t: latest.t, scale: latest.scale, regime: latest.regime } : null,
   };
 }

@@ -35,20 +35,39 @@ zapisane przed faktem w tych samych slotach, ocenione tą samą miarą (CRPS), z
 
 ## Ocena bez podglądania (`src/utils/abTest.ts`)
 
+- **Plan prerejestrowany**: `AB_DESIGN` (pytanie, modele, wzór skali, miara, okresy, HAC, wartość krytyczna, minimum
+  par, zapas, reguła wniosku) zapisany w łańcuchu dziennika jako rekord `k: 'p'` (`ab-v1`, SHA-256 kanonicznego JSON)
+  przy pierwszym przebiegu z wariantem B — przed pierwszym rekordem B i przed AB_EPOCH. Weryfikator sprawdza, że
+  zapisany plan jest identyczny z planem w kodzie i że żaden rekord B nie poprzedza rejestracji; zmiana planu = nowy
+  identyfikator.
 - Okresy oceny ustalone z góry: kolejne, rozłączne bloki **14 dni od 2026-10-23 00:00 UTC** (`AB_EPOCH`). Pary
-  sprzed tej chwili nie wchodzą do oceny. Blok 14 dni mieści się w 31-dniowym oknie pamięci skanera.
-- Okres w toku: liczności i średnie CRPS (punktowa różnica bez przedziału). Okres zakończony (koniec + h + 1 h na
-  rozstrzygnięcia): różnica B − A z 95% przedziałem **Neweya–Westa** (jądro Bartletta, opóźnienie 96 slotów = 24 h) na
-  wszystkich parach slotów okresu — prognozy co 15 min z horyzontem 1 h nakładają się, a zmienność skupia się w czasie.
-  Przedział tylko przy co najmniej 192 parach (2 doby).
+  sprzed tej chwili nie wchodzą do oceny. Blok mieści się w 31-dniowym oknie pamięci skanera.
+- Okres w toku i okres w rozliczaniu (po końcu, przed upływem zapasu): liczności i średnie CRPS, bez przedziału.
+  Zapas = horyzont 60 min + unieważnienie po 6 h + 15 min — wniosek nie zmienia się po pokazaniu.
+- Okres zakończony: różnica B − A z 95% przedziałem **Neweya–Westa** (jądro Bartletta, opóźnienie 96 slotów = 24 h) na
+  wszystkich parach slotów okresu i wartością krytyczną **fixed-b** (Kiefer & Vogelsang 2005:
+  1,96 + 2,9694b + 0,416b² − 0,5324b³, b = 97/n) — przy opóźnieniu będącym znaczącą częścią próby zwykłe 1,96 daje
+  za wąski przedział (symulacja AR(1), φ = 0,9: pokrycie 74% przy n = 192). Przedział od 672 par (7 dób).
 - Wniosek z ostatniego zakończonego okresu: B trafniejsze (przedział < 0), A trafniejsze (> 0) albo różnica
-  nieudowodniona. Wniosek nie zmienia się w trakcie okresu, więc nie da się przerwać testu w dogodnej chwili.
+  nieudowodniona.
 
-## Weryfikator (`checkVariants`, `recompute`)
+## Interpretacja
+
+σ_A to σ modelu HAR (miary zakresowe Garmana–Klassa z korektą), a σ reżimu pochodzi z przyrostów cen zamknięcia 5m.
+Wersja B koryguje więc nie tylko opóźnienie reakcji na zmianę reżimu, ale też ewentualną systematyczną różnicę
+poziomu między tymi miarami. „B trafniejsza” znaczy: mieszanina z bieżącą zmiennością zamknięć 5m daje lepiej
+skalibrowaną szerokość rozkładu 1 h — nie rozstrzyga, który z tych dwóch mechanizmów za to odpowiada.
+
+## Weryfikator (`checkVariants`, `checkAbPlan`, `recompute`)
 
 - Te same chwile, horyzont, cena, τ, benchmark i ACI co A; kwantyle = A × skala; horyzont 1 h, model B;
-  skala = √(½ + ½·σ5²·(h/5)·seas/σ_A²) z zapisanych wielkości (±10⁻⁵), więc ≥ √½.
-- Przeliczenie okresów A/B z CRPS liczonych z kwantyli (nie z zapisu) tą samą funkcją co skaner.
+  skala = √(½ + ½·σ5²·(h/5)·seas/σ_A²) z zapisanych wielkości (±10⁻⁵), więc ≥ √½; σ_A wiarygodne względem kwantyli
+  A: (q₀.₉₇₅ − q₀.₀₂₅)/(3,92·σ_A) ∈ [0,5; 2].
+- Plan A/B: zgodny z kodem, jeden hash, wariant B po rejestracji.
+- Przeliczenie okresów A/B z CRPS liczonych z kwantyli (nie z zapisu) tą samą funkcją co skaner; w trybie szybkim
+  (ostatnie dni) okres zaczęty przed pierwszym pobranym dniem oznaczony jako niepełny, bez przedziału.
+- Błąd pobrania reżimu nie wstrzymuje wersji A (slot bez B). Uszkodzona sekcja `ab` w podsumowaniu ukrywa tylko
+  kartę A/B, nie cały panel dziennika.
 
 ## Poza zakresem
 

@@ -3,6 +3,7 @@ import { DASH } from '../../ui';
 import type { AbBlock, DeskLedgerSummary } from '../../utils/deskLedger';
 
 const timeFmt = new Intl.DateTimeFormat('pl-PL', { hour: '2-digit', minute: '2-digit' });
+const stampFmt = new Intl.DateTimeFormat('pl-PL', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' });
 const dateFmt = new Intl.DateTimeFormat('pl-PL', { day: 'numeric', month: 'short', timeZone: 'UTC' });
 /** Najdłuższy śledzony reżim BOCPD: 600 świec 5m = 50 h */
 const RUN_MAX_H = 50;
@@ -28,14 +29,15 @@ function verdictOf(b: AbBlock): string | null {
 
 /**
  * A/B wersji modelu w weryfikowalnym dzienniku: wersja A (HAR + FHS) i wersja B (σ z mieszaniny z reżimem zmienności
- * z BOCPD) zapisywane przed faktem w tych samych slotach. Ocena w z góry ustalonych okresach 14 dni: w toku tylko
- * liczności i CRPS, wniosek z przedziałem Neweya–Westa dopiero po zakończeniu okresu.
+ * z BOCPD) zapisywane przed faktem w tych samych slotach. Plan oceny prerejestrowany w dzienniku; okresy 14 dni ustalone
+ * z góry: w toku i w rozliczaniu tylko liczności i CRPS, wniosek z przedziałem Neweya–Westa (fixed-b) po zakończeniu.
  */
 export const ModelAbCard: React.FC<{ ab: NonNullable<DeskLedgerSummary['ab']> }> = ({ ab }) => {
   const l = ab.latest;
   const verdict = ab.last ? verdictOf(ab.last) : null;
   const rows: { label: string; b: AbBlock; final: boolean }[] = [];
   if (ab.last) rows.push({ label: 'zakończony', b: ab.last, final: true });
+  if (ab.closing) rows.push({ label: 'w rozliczaniu', b: ab.closing, final: false });
   if (ab.current) rows.push({ label: 'w toku', b: ab.current, final: false });
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-line p-3">
@@ -68,7 +70,7 @@ export const ModelAbCard: React.FC<{ ab: NonNullable<DeskLedgerSummary['ab']> }>
       {rows.length > 0 && (
         <div className="overflow-x-auto">
           <table className="w-full text-left font-mono tabular-nums text-[11px]">
-            <caption className="sr-only">CRPS wersji A i B w okresach oceny; różnica B − A z 95% przedziałem Neweya–Westa w punktach bazowych</caption>
+            <caption className="sr-only">CRPS wersji A i B w okresach oceny; różnica B − A z 95% przedziałem Neweya–Westa (fixed-b) w punktach bazowych</caption>
             <thead className="text-ink-3">
               <tr>
                 <th className="py-1 pr-3 font-medium font-sans">Okres oceny</th>
@@ -77,7 +79,10 @@ export const ModelAbCard: React.FC<{ ab: NonNullable<DeskLedgerSummary['ab']> }>
                   CRPS A
                 </th>
                 <th className="py-1 pr-3 font-medium font-sans">CRPS B</th>
-                <th className="py-1 font-medium font-sans" title="Ujemne = B trafniejsze; 95% przedział Neweya–Westa (opóźnienie 24 h) tylko dla zakończonego okresu">
+                <th
+                  className="py-1 font-medium font-sans"
+                  title="Ujemne = B trafniejsze; 95% przedział Neweya–Westa (opóźnienie 24 h, wartość krytyczna fixed-b) tylko dla zakończonego okresu"
+                >
                   B − A
                 </th>
               </tr>
@@ -114,8 +119,12 @@ export const ModelAbCard: React.FC<{ ab: NonNullable<DeskLedgerSummary['ab']> }>
         </div>
       )}
       <div className="text-[11px] text-ink-3">
-        CRPS w punktach bazowych log-zwrotu. Okresy oceny po {ab.blockDays} dni ustalono z góry (od 23 października 2026). Wniosek pojawia się dopiero po
-        zakończeniu okresu, więc nie da się przerwać testu w dogodnej chwili.{' '}
+        CRPS w punktach bazowych log-zwrotu.{' '}
+        {ab.registeredAt ? (
+          <span>Plan oceny prerejestrowany w dzienniku {stampFmt.format(ab.registeredAt)} UTC (hash w łańcuchu, weryfikator porównuje go z kodem). </span>
+        ) : null}
+        Okresy oceny po {ab.blockDays} dni ustalono z góry (od 23 października 2026). Wniosek pojawia się dopiero po zakończeniu okresu i rozliczeniu jego
+        prognoz, więc nie da się przerwać testu w dogodnej chwili; przedział wymaga co najmniej 7 dób par.{' '}
         {verdict ? (
           <span className="text-ink-1">Wniosek za okres {span(ab.last!)}: {verdict}.</span>
         ) : ab.last ? (

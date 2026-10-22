@@ -18,7 +18,7 @@
  */
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { abBlocks } from '../src/utils/abTest.ts';
+import { AB_DESIGN, abBlocks } from '../src/utils/abTest.ts';
 import { fitEnsemble } from '../src/utils/ensemble.ts';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -228,7 +228,8 @@ const MODEL_B = 'ledger-har-fhs-bocpd-v1';
  * A/B wersji modelu: wariant B prognozy zwrotu (`variant: 'B'`, id `<A>b`) musi mieć tę samą chwilę wydania, horyzont,
  * cenę, poziomy τ, benchmark i ACI co wersja A z tego samego slotu, a kwantyle = A × `scale` (±2·10⁻⁶ z zaokrągleń).
  * Skala wynika ze wzoru na zapisanych wielkościach: √(½ + ½·σ5²·(h/5)·seas / σ_A²) (±10⁻⁵ z zaokrągleń), więc ≥ √½;
- * horyzont 1 h, model MODEL_B.
+ * horyzont 1 h, model MODEL_B. σ_A musi być wiarygodne względem kwantyli A: (q₀.₉₇₅ − q₀.₀₂₅) / (3,92·σ_A) ∈ [0,5; 2]
+ * (rozkład FHS ma grubsze ogony niż normalny, ale nie dowolnie) — inaczej dowolne σ_A „zgadzałoby się” ze wzorem.
  */
 export function checkVariants(records) {
   const byId = new Map(records.filter((o) => o.k === 'f').map((o) => [o.id, o]));
@@ -258,11 +259,36 @@ export function checkVariants(records) {
     else if (regOk && typeof b.scale === 'number' && b.h === 60) {
       const want = Math.sqrt(0.5 + (0.5 * b.regime.sigma5 ** 2 * (b.h / 5) * b.seas) / b.sigmaA ** 2);
       if (Math.abs(want - b.scale) > 1e-5 * Math.max(1, want)) bad.push('skala ≠ wzór z zapisanych σ');
+      const i025 = a.taus.indexOf(0.025);
+      const i975 = a.taus.indexOf(0.975);
+      if (i025 >= 0 && i975 >= 0) {
+        const ratio = (a.q[i975] - a.q[i025]) / (3.92 * b.sigmaA);
+        if (!(ratio >= 0.5 && ratio <= 2)) bad.push(`σ_A niezgodne z kwantylami A (stosunek ${ratio.toFixed(2)})`);
+      }
     }
     if (bad.length) problems.push(`${b.id}: ${bad.join(', ')}`);
     else checked++;
   }
   return { problems, checked };
+}
+
+/**
+ * Plan oceny A/B (rekord `k: 'p'`, id AB_DESIGN.id): zapisany plan musi być identyczny z planem w kodzie (te same stałe
+ * oceny, więc publiczny kod liczy wynik tak, jak zarejestrowano), jeden hash dla identyfikatora, a każdy rekord
+ * wariantu B wydany po prerejestracji. Zwraca też czas rejestracji (null — brak planu w rekordach).
+ */
+export function checkAbPlan(records) {
+  const problems = [];
+  const plans = records.filter((o) => o.k === 'p' && o.id === AB_DESIGN.id);
+  const want = canonical(AB_DESIGN);
+  for (const p of plans) if (canonical(p.catalog) !== want) problems.push(`${p.id}: plan A/B różni się od kodu (src/utils/abTest.ts)`);
+  if (new Set(plans.map((p) => p.catalogHash)).size > 1) problems.push(`${AB_DESIGN.id}: kilka różnych planów pod jednym identyfikatorem`);
+  const registeredAt = plans.length && typeof plans[0].t === 'number' ? plans[0].t : null;
+  if (registeredAt !== null) {
+    const early = records.filter((o) => o.k === 'f' && o.variant === 'B' && o.ti < registeredAt);
+    if (early.length) problems.push(`wariant B przed prerejestracją planu: ${early.length} (np. ${early[0].id})`);
+  }
+  return { problems, registeredAt };
 }
 
 /**
@@ -554,7 +580,11 @@ export async function bitcoinTime(bytes) {
 }
 
 /** Wyniki opisowe przeliczone z rekordów. */
-export function recompute(records) {
+/**
+ * Wyniki przeliczone z rekordów. `since` (tryb szybki — tylko ostatnie dni): okresy A/B zaczęte przed pierwszym
+ * pobranym dniem oznaczone `partial` i bez przedziału (pełna ocena — z klonem `--dir`).
+ */
+export function recompute(records, { since } = {}) {
   const f = new Map();
   const r = new Map();
   for (const o of records) {
@@ -625,8 +655,13 @@ export function recompute(records) {
       brierEns: marketTight.nEns ? marketTight.brierEns / marketTight.nEns : null,
     },
     // Okresy oceny A/B (bloki 14 dni od AB_EPOCH) na chwilę ostatniego rekordu
-    ab: abBlocks(abRows, lastT, 60),
-    voided: [...r.values()].filter((x) => x.void).length,
+    ab: (() => {
+      const ab = abBlocks(abRows, lastT);
+      const cut = (b) => (b && since !== undefined && b.start < since ? { ...b, diff: null, partial: true } : b);
+      return { current: cut(ab.current), closing: cut(ab.closing), last: cut(ab.last) };
+    })(),
+    // Jak w podsumowaniu: unieważnienia wersji głównej (wariant B ma własną sekcję)
+    voided: [...r.values()].filter((x) => x.void && !f.get(x.id)?.variant).length,
     skipped: records.filter((o) => o.k === 's').reduce((n, o) => n + (typeof o.until === 'number' ? Math.round((o.until - o.slot) / SLOT_MS) + 1 : 1), 0),
   };
 }
@@ -715,6 +750,14 @@ async function main() {
   if (ab.checked || ab.problems.length)
     console.log(ab.problems.length ? `✗ wariant B (${ab.problems.length}): ${ab.problems.slice(0, 5).join('; ')}` : `✓ A/B: ${ab.checked} prognoz wariantu B = wersja A × skala, te same chwile`);
   if (ab.problems.length) ok = false;
+  const plan = checkAbPlan(records);
+  if (plan.registeredAt !== null || plan.problems.length)
+    console.log(
+      plan.problems.length
+        ? `✗ plan A/B (${plan.problems.length}): ${plan.problems.slice(0, 5).join('; ')}`
+        : `✓ plan A/B ${AB_DESIGN.id} prerejestrowany ${new Date(plan.registeredAt).toISOString().slice(0, 16)}Z, zgodny z kodem; wariant B wydawany po rejestracji`
+    );
+  if (plan.problems.length) ok = false;
   const pre = checkPreregs(records);
   if (pre.preregs.length || pre.problems.length)
     console.log(
@@ -825,7 +868,8 @@ async function main() {
       // brak podsumowania — nie wpływa na wynik
     }
   }
-  console.log('Wyniki przeliczone z rekordów:', JSON.stringify(recompute(records), null, 2));
+  const since = local ? undefined : Date.parse(`${files[0][0].slice(0, 10)}T00:00:00Z`);
+  console.log('Wyniki przeliczone z rekordów:', JSON.stringify(recompute(records, { since }), null, 2));
   if (!ok) process.exitCode = 1;
 }
 

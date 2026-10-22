@@ -136,14 +136,17 @@ export interface DeskLedgerSummary {
   };
   /**
    * A/B wersji modelu (1 h): wersja A (HAR + FHS) vs B (σ z mieszaniny z reżimem BOCPD) na tych samych slotach; ocena
-   * w z góry ustalonych okresach (bloki `blockDays` dni od AB_EPOCH): w toku — tylko liczności i CRPS, zakończony —
-   * różnica B − A z 95% przedziałem Neweya–Westa. Brak w starszych podsumowaniach.
+   * w z góry ustalonych okresach (bloki `blockDays` dni od AB_EPOCH): w toku i w rozliczaniu — tylko liczności i CRPS,
+   * zakończony — różnica B − A z 95% przedziałem Neweya–Westa (fixed-b). `registeredAt` — prerejestracja planu oceny
+   * w dzienniku (null = jeszcze nie). Brak w starszych podsumowaniach; uszkodzona sekcja jest pomijana, nie cały panel.
    */
   ab?: {
     h: number;
     model: string;
     blockDays: number;
+    registeredAt?: number | null;
     current: AbBlock | null;
+    closing?: AbBlock | null;
     last: AbBlock | null;
     latest: { t: number; scale: number; regime: { sigma5: number; run: number; pChange: number } } | null;
   };
@@ -213,8 +216,8 @@ export function isDeskLedgerSummary(x: unknown): x is DeskLedgerSummary {
     fin(s.participation.issued) &&
     fin(s.participation.skipped) &&
     Array.isArray(s.participation.gaps) &&
-    (s.market === undefined || isMarket(s.market)) &&
-    (s.ab === undefined || isAb(s.ab))
+    // Sekcja A/B nie wpływa na ważność podsumowania — panel sprawdza ją osobno (isAb)
+    (s.market === undefined || isMarket(s.market))
   );
 }
 
@@ -237,10 +240,12 @@ function isAbBlock(x: unknown): boolean {
   return b.diff === null || (!!b.diff && fin(b.diff.d) && fin(b.diff.lo) && fin(b.diff.hi));
 }
 
-/** Sekcja A/B (opcjonalna) */
-function isAb(x: unknown): boolean {
+/** Sekcja A/B (opcjonalna) — sprawdzana osobno: uszkodzona sekcja ukrywa tylko kartę A/B */
+export function isAb(x: unknown): x is NonNullable<DeskLedgerSummary['ab']> {
   const a = x as Partial<NonNullable<DeskLedgerSummary['ab']>> | null;
   if (!a || !fin(a.h) || typeof a.model !== 'string' || !fin(a.blockDays) || !isAbBlock(a.current) || !isAbBlock(a.last)) return false;
+  if (a.closing !== undefined && !isAbBlock(a.closing)) return false;
+  if (a.registeredAt !== undefined && a.registeredAt !== null && !fin(a.registeredAt)) return false;
   const l = a.latest;
   return l === null || (!!l && fin(l.t) && fin(l.scale) && !!l.regime && fin(l.regime.sigma5) && fin(l.regime.run) && fin(l.regime.pChange));
 }

@@ -454,6 +454,7 @@ describe('A/B wersji modelu: wariant B z reżimem zmienności (BOCPD)', () => {
 });
 
 import { AB_EPOCH } from '../../../src/utils/abTest.ts';
+import { isAb } from '../../../src/utils/deskLedger.ts';
 
 describe('podsumowanie: sekcja A/B i liczniki wersji głównej', () => {
   const rr = (crps: number) => ({ k: 'r', id: 'x', t: 0, c0: 1, c1: 1, y: 0, crps, crpsB: 0.003, pit: 0.5, in90: 1, in60: 1, inAci: 1 }) as const;
@@ -474,7 +475,7 @@ describe('podsumowanie: sekcja A/B i liczniki wersji głównej', () => {
     // unieważnione rozstrzygnięcie wariantu B
     const last = `${AB_EPOCH + 7 * 15 * MIN}-ret60b`;
     rs.set(last, { k: 'r', id: last, t: 0, void: 'brak świec' } as unknown as Resolution);
-    const s = buildSummary({ coin: 'BTC', now: AB_EPOCH + 3 * 3_600_000, head: { hash: 'h', lines: 1 }, forecasts: fs, resolutions: rs, aci: {}, ots: [] });
+    const s = buildSummary({ coin: 'BTC', now: AB_EPOCH + 3 * 3_600_000, head: { hash: 'h', lines: 1 }, forecasts: fs, resolutions: rs, aci: {}, ots: [], abRegisteredAt: AB_EPOCH - 3_600_000 });
     expect(s.pending).toBe(2);
     expect(s.voided).toBe(0);
     expect(s.ab!.current).toMatchObject({ start: AB_EPOCH, n: 6, diff: null });
@@ -483,6 +484,11 @@ describe('podsumowanie: sekcja A/B i liczniki wersji głównej', () => {
     expect(s.ab!.latest!.scale).toBe(1.1);
     expect(s.scores.ret['60'].n).toBe(6);
     expect(isDeskLedgerSummary(s)).toBe(true);
-    expect(isDeskLedgerSummary({ ...s, ab: { ...s.ab, current: { n: 'x' } } })).toBe(false);
+    expect(isAb(s.ab)).toBe(true);
+    expect(s.ab!.registeredAt).toBe(AB_EPOCH - 3_600_000);
+    // uszkodzona sekcja A/B: podsumowanie nadal ważne (panel dziennika widoczny), odrzucona tylko karta A/B
+    const broken = { ...s, ab: { ...s.ab, current: { n: 'x' } } };
+    expect(isDeskLedgerSummary(broken)).toBe(true);
+    expect(isAb(broken.ab)).toBe(false);
   });
 });
