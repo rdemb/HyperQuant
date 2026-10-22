@@ -666,6 +666,10 @@ export function recompute(records, { since } = {}) {
   };
 }
 
+/** Polska odmiana liczebnika: 1 linia, 2 linie, 5 linii (12–14 jak 5) */
+export const plural = (n, one, few, many) =>
+  `${n} ${n === 1 ? one : n % 10 >= 2 && n % 10 <= 4 && !(n % 100 >= 12 && n % 100 <= 14) ? few : many}`;
+
 const days = (from, to) => {
   const out = [];
   for (let t = Date.parse(`${from}T00:00:00Z`); t <= Date.parse(`${to}T00:00:00Z`); t += 86_400_000) out.push(new Date(t).toISOString().slice(0, 10));
@@ -723,7 +727,7 @@ async function main() {
   for (const [name, text] of files) {
     const lines = text.split('\n').filter(Boolean);
     const v = verifyChain(lines, prev);
-    console.log(`${v.ok ? '✓' : '✗'} ${name}: ${lines.length} linii${v.ok ? '' : ` — linia ${v.badLine + 1}: ${v.reason}`}`);
+    console.log(`${v.ok ? '✓' : '✗'} ${name}: ${plural(lines.length, 'linia', 'linie', 'linii')}${v.ok ? '' : ` — linia ${v.badLine + 1}: ${v.reason}`}`);
     if (!v.ok) {
       ok = false;
       break;
@@ -743,12 +747,12 @@ async function main() {
     console.log(
       ens.problems.length
         ? `✗ ensemble (${ens.problems.length}): ${ens.problems.slice(0, 5).join('; ')}`
-        : `✓ ensemble: ${ens.checked} wydań — p_e i p_r zgodne z zapisanymi wagami${ens.refitted ? `; wagi ${ens.refitted} ostatnich wydań odtworzone ponownym dopasowaniem na pytaniach rozstrzygniętych przed wydaniem` : ''}`
+        : `✓ ensemble: ${plural(ens.checked, 'wydanie', 'wydania', 'wydań')} — p_e i p_r zgodne z zapisanymi wagami${ens.refitted ? `; wagi ostatnich wydań (${ens.refitted}) odtworzone ponownym dopasowaniem na pytaniach rozstrzygniętych przed wydaniem` : ''}`
     );
   if (ens.problems.length) ok = false;
   const ab = checkVariants(records);
   if (ab.checked || ab.problems.length)
-    console.log(ab.problems.length ? `✗ wariant B (${ab.problems.length}): ${ab.problems.slice(0, 5).join('; ')}` : `✓ A/B: ${ab.checked} prognoz wariantu B = wersja A × skala, te same chwile`);
+    console.log(ab.problems.length ? `✗ wariant B (${ab.problems.length}): ${ab.problems.slice(0, 5).join('; ')}` : `✓ A/B: wariant B = wersja A × skala ze wzoru, te same chwile (${plural(ab.checked, 'prognoza', 'prognozy', 'prognoz')})`);
   if (ab.problems.length) ok = false;
   const plan = checkAbPlan(records);
   if (plan.registeredAt !== null || plan.problems.length)
@@ -763,7 +767,7 @@ async function main() {
     console.log(
       pre.problems.length
         ? `✗ prerejestracje (${pre.problems.length}): ${pre.problems.slice(0, 5).join('; ')}`
-        : `✓ prerejestracje katalogów: ${pre.preregs.map((p) => `${p.id} ${new Date(p.t).toISOString().slice(0, 16)}Z (${String(p.catalogHash).slice(0, 12)}…)`).join(', ')}`
+        : `✓ prerejestracje (katalog laboratorium, plan A/B): ${pre.preregs.map((p) => `${p.id} ${new Date(p.t).toISOString().slice(0, 16)}Z (${String(p.catalogHash).slice(0, 12)}…)`).join(', ')}`
     );
   if (pre.problems.length) ok = false;
   console.log(`Głowa łańcucha: ${prev}`);
@@ -771,7 +775,7 @@ async function main() {
   if (local) {
     if (existsSync(path.join(local, '.git'))) {
       const g = checkGitAppendOnly(local);
-      console.log(g.problems.length ? `✗ historia git: ${g.problems.slice(0, 5).join('; ')}` : `✓ historia git: ${g.commits} commitów, tylko dopisywanie`);
+      console.log(g.problems.length ? `✗ historia git: ${g.problems.slice(0, 5).join('; ')}` : `✓ historia git: ${plural(g.commits, 'commit', 'commity', 'commitów')}, tylko dopisywanie`);
       if (g.problems.length) ok = false;
     }
     const otsDir = path.join(local, 'BTC', 'ots');
