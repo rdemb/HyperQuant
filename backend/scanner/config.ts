@@ -10,6 +10,14 @@ export interface R2Config {
   secretAccessKey: string;
 }
 
+export interface GitConfig {
+  /** Publiczne repo danych (SSH) albo ścieżka lokalna */
+  remote: string;
+  /** Klucz wdrożeniowy — wymagany dla zdalnego repo SSH */
+  sshKey: string | null;
+  everyS: number;
+}
+
 export interface ScannerConfig {
   coin: string;
   /** Budżet wag API Hyperliquid na minutę (limit giełdy 1200/min/IP — reszta zostaje dla innych usług) */
@@ -23,6 +31,8 @@ export interface ScannerConfig {
   /** Minimalna wartość konta do zasiewu, USD */
   seedMinUsd: number;
   r2: R2Config | null;
+  /** Publikacja do publicznego repo danych na GitHubie (darmowa); null = wyłączona */
+  git: GitConfig | null;
 }
 
 type Env = Record<string, string | undefined>;
@@ -63,6 +73,15 @@ export function loadConfig(env: Env): { ok: true; config: ScannerConfig } | { ok
     errors.push(`R2: podaj wszystkie zmienne ${r2Keys.join(', ')} albo żadnej (tryb lokalny)`);
   }
 
+  let git: GitConfig | null = null;
+  const gitRemote = (env.HQ_GIT_REMOTE ?? '').trim();
+  if (gitRemote) {
+    const sshKey = (env.HQ_GIT_SSH_KEY ?? '').trim() || null;
+    const viaSsh = gitRemote.startsWith('git@') || gitRemote.startsWith('ssh://');
+    if (viaSsh && !sshKey) errors.push('HQ_GIT_REMOTE przez SSH wymaga HQ_GIT_SSH_KEY (ścieżka do klucza wdrożeniowego)');
+    git = { remote: gitRemote, sshKey, everyS: intIn(env, 'HQ_GIT_EVERY_S', 120, 60, 3600, errors) };
+  }
+
   if (errors.length > 0) return { ok: false, errors };
-  return { ok: true, config: { coin, weightPerMin, stateDir, outDir, publishEveryS, maxAddresses, seedTop, seedMinUsd, r2 } };
+  return { ok: true, config: { coin, weightPerMin, stateDir, outDir, publishEveryS, maxAddresses, seedTop, seedMinUsd, r2, git } };
 }
