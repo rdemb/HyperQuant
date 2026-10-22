@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useDesk } from '../state/DeskContext';
 import { PlanDraft } from '../state/types';
 import { Panel, Segmented } from '../ui';
-import { parkinsonSigma } from '../utils/marketDataFeed';
 import { PlanInput, analyzePlan, proposeLevels, sizeFromRiskWithBook } from '../utils/planAnalyzer';
 import { makeEntry } from '../utils/forecastLedger';
 import { DayTradingPrepDesk } from '../components/DayTradingPrepDesk';
@@ -10,7 +9,7 @@ import { PlanForm, PlanFormState } from './plan/PlanForm';
 import { PlanResult } from './plan/PlanResult';
 import { LedgerPanel } from './plan/LedgerPanel';
 import { usePlanLedger } from './plan/usePlanLedger';
-import { parseNum, useDebounced, usePlanMarket, useStoredString } from './plan/hooks';
+import { parseNum, planSigma, useDebounced, usePlanMarket, useStoredString } from './plan/hooks';
 
 type Tab = 'analyzer' | 'tomorrow';
 
@@ -59,9 +58,10 @@ function formFromDraft(d: PlanDraft, base: PlanFormState, price: number, sigmaFo
 const PlanView: React.FC = () => {
   const { feed, shaakuni, quant, planDraft, prefillPlan } = useDesk();
   const [tab, setTab] = useState<Tab>('analyzer');
+  const volModel = feed.vol.model;
   const sigmaFor = useCallback(
-    (h: number) => parkinsonSigma(feed.bars, h * 60, feed.timeframeSec),
-    [feed.bars, feed.timeframeSec]
+    (h: number) => planSigma(volModel, feed.bars, feed.timeframeSec, Date.now(), h),
+    [volModel, feed.bars, feed.timeframeSec]
   );
   // Szkic czekający przy montażu trafia od razu do stanu początkowego (inicjalizator bez efektów ubocznych)
   const initDraft = useRef<PlanDraft | null>(planDraft && planDraft !== appliedDraft ? planDraft : null);
@@ -88,11 +88,12 @@ const PlanView: React.FC = () => {
     window.scrollTo({ top: 0 });
   }, [planDraft, feed.currentPrice, sigmaFor]);
 
-  // Nietknięty formularz odświeżamy, gdy świece zastępcze zastąpią realne dane
+  // Nietknięty formularz odświeżamy, gdy świece zastępcze zastąpią realne dane albo dojdzie model zmienności
+  const hasVolModel = volModel !== null;
   useEffect(() => {
     if (!market.realBars) return;
     setForm((f) => (f.pristine ? defaultForm(feed.currentPrice, sigmaFor(f.horizonMin)) : f));
-  }, [market.realBars]); // celowo tylko przy zmianie źródła świec
+  }, [market.realBars, hasVolModel]); // celowo tylko przy zmianie źródła świec lub σ
 
   const onChange = useCallback(
     (patch: Partial<PlanFormState>) =>
@@ -138,8 +139,24 @@ const PlanView: React.FC = () => {
       sigmaHorizon: market.sigma,
       book: market.book,
       eventMultiplier: market.eventMultiplier,
+      vol: market.vol ?? undefined,
+      // Cena rynku ≠ wejście → faza wypełnienia w Monte Carlo (tak samo rozlicza dziennik)
+      startPrice: Number.isFinite(market.price) && market.price > 0 ? market.price : undefined,
     }),
-    [form.direction, entry, stop, target, sizeUsd, form.horizonMin, leverage, market.sigma, market.book, market.eventMultiplier]
+    [
+      form.direction,
+      entry,
+      stop,
+      target,
+      sizeUsd,
+      form.horizonMin,
+      leverage,
+      market.sigma,
+      market.book,
+      market.eventMultiplier,
+      market.vol,
+      market.price,
+    ]
   );
   // Przy szybkim pisaniu liczymy po 200 ms ciszy; do tego czasu zostaje poprzedni wynik
   const debInput = useDebounced(input, 200);
