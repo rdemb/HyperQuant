@@ -6,6 +6,7 @@ import { OrderFlowChart } from '../charts/orderflow/OrderFlowChart';
 import { Segmented } from '../ui';
 import { DeskRail } from './desk/DeskRail';
 import { LiquidationMapPanel } from './desk/LiquidationMapPanel';
+import { CohortFlowPanel } from './desk/CohortFlowPanel';
 import { PlanQuickCard } from './plan/PlanQuickCard';
 
 const TF_LABEL: Record<number, string> = { 60: '1m', 300: '5m', 900: '15m', 3600: '1h', 14400: '4h' };
@@ -77,6 +78,7 @@ const DeskView: React.FC = () => {
       </div>
       <DeskRail />
       <LiquidationMapPanel />
+      <CohortFlowPanel />
       <PlanQuickCard />
     </div>
   );

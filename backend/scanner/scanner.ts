@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path';
 import { buildLiqMap } from '../../src/utils/liqMap.ts';
 import { buildLiqTape } from '../../src/utils/liqTape.ts';
 import type { AddressBook } from './addressBook.ts';
+import type { CohortEngine } from './cohortEngine.ts';
 import type { R2Config } from './config.ts';
 import type { HlCtx, HlRest } from './hl.ts';
 import { LiqConfirmer, PriceRange, isLiqCandidate } from './liqDetect.ts';
@@ -34,6 +35,8 @@ export interface ScannerDeps {
   tapeSince?: number;
   /** Ceny z taśmy odczytane ze stanu (ciągłość po krótkim restarcie) */
   prices?: PriceRange;
+  /** Przepływ kohort (opcjonalny) — publikowany z tym samym okresem obserwacji co taśma */
+  cohorts?: CohortEngine;
 }
 
 /**
@@ -146,9 +149,20 @@ export class Scanner {
       liq24h: tape.totals.h24.n,
       liqPending: this.confirmer.pending,
     };
+    let cohortsJson: string | null = null;
+    if (this.d.cohorts) {
+      // Błąd kohort nie może wstrzymać publikacji mapy i taśmy
+      try {
+        this.d.cohorts.housekeep(asOf);
+        cohortsJson = JSON.stringify(this.d.cohorts.build(asOf, this.since));
+      } catch (e) {
+        console.error(`[skaner] błąd budowy przepływu kohort: ${String(e)}`);
+      }
+    }
     const files: [string, string][] = [
       [`liq-map/${this.d.coin}.json`, JSON.stringify(map)],
       [`liq-tape/${this.d.coin}.json`, JSON.stringify(tape)],
+      ...(cohortsJson ? ([[`cohorts/${this.d.coin}.json`, cohortsJson]] as [string, string][]) : []),
       ['status.json', JSON.stringify(status)],
     ];
     for (const [key, body] of files) writeAtomic(join(this.d.outDir, key), body);

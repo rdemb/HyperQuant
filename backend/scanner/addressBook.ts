@@ -33,6 +33,8 @@ interface Rec {
   retryAt?: number;
   /** Ostatnio widziany w publicznym rankingu kont (zasiew) */
   seededAt?: number;
+  /** Wartość konta z rankingu, USD */
+  acct?: number;
 }
 
 const posNtl = (r: Rec) => (r.pos ? Math.abs(r.pos.szi) * r.pos.entryPx : 0);
@@ -101,9 +103,10 @@ export class AddressBook {
     const known = this.recs.get(addr);
     if (known) {
       known.seededAt = t;
+      known.acct = accountValueUsd;
       return;
     }
-    this.recs.set(addr, { lastTradeAt: t, tradedUsd: accountValueUsd, pos: null, lastScanAt: null, dirty: true, seededAt: t });
+    this.recs.set(addr, { lastTradeAt: t, tradedUsd: accountValueUsd, pos: null, lastScanAt: null, dirty: true, seededAt: t, acct: accountValueUsd });
     if (this.recs.size > this.capacity) this.evictOne(addr);
   }
 
@@ -120,6 +123,18 @@ export class AddressBook {
   markFailed(addr: string, now: number): void {
     const r = this.recs.get(addr);
     if (r) r.retryAt = now + RETRY_AFTER;
+  }
+
+  /** Wartość konta z publicznego rankingu (null = konto spoza rankingu). */
+  accountValue(addr: string): number | null {
+    return this.recs.get(addr)?.acct ?? null;
+  }
+
+  /** Wieloryb: pozycja w rynku ≥ 1 mln USD albo konto z rankingu ≥ 10 mln USD. */
+  isWhale(addr: string): boolean {
+    const r = this.recs.get(addr);
+    if (!r) return false;
+    return posNtl(r) >= 1e6 || (r.acct ?? 0) >= 10e6;
   }
 
   /** Ostatnio odczytana pozycja adresu (null = brak pozycji albo adres nieznany). */
@@ -225,6 +240,7 @@ export class AddressBook {
           lastScanAt: r.lastScanAt ?? null,
           dirty: r.dirty ?? r.lastScanAt == null,
           ...(typeof r.seededAt === 'number' ? { seededAt: r.seededAt } : {}),
+          ...(typeof r.acct === 'number' ? { acct: r.acct } : {}),
         });
       }
     }

@@ -40,6 +40,7 @@
 - **Hurst:** R/S z korektą Anis-Lloyd; Lo (1991) — test może mylić krótką pamięć z długą.
 - **OU:** dyskretny AR(1) wokół 0.65·D-EQ + 0.35·W-EQ; bez powrotu do średniej → t½ = ∞.
 - **Mapa likwidacji (panel na Desku):** zmierzona z pozycji on-chain — kubełki cen likwidacji z `clearinghouseState`, pokrycie OI jawnie; kaskada z prawa pierwiastka kwadratowego (Tóth i in. 2011; Bouchaud i in. 2018) jako górna granica.
+- **Przepływ kohort:** każda transakcja z publicznej taśmy HL ma adresy obu stron i stronę agresora — skaner przypisuje je do kohort (market makerzy, statystycznie poinformowani, wieloryby, reszta) i publikuje przepływ netto (zmiana zapasów; suma po kohortach = 0) oraz agresywne CVD per kohorta. „Poinformowani” = istotnie dodatni markout biorcy po 5 min (obserwacja = blok 5 min adresu, test jednostronny, kontrola FDR Benjaminiego–Hochberga q = 10%, empiryczny Bayes); markouty kohort liczone poza próbą (kohorta z chwili transakcji). Prywatność: tylko zamknięte kubełki, k-anonimowość z regułą dominacji i ukrywaniem wtórnym (suma kohort jest publiczna), osobno dla warstwy agresora, kwoty zaokrąglone do 10 tys. USD.
 - **Taśma zrealizowanych likwidacji i precyzja mapy:** likwidacje śledzonych pozycji potwierdzone fillami z polem `liquidation` (Hyperliquid nie publikuje strumienia likwidacji wszystkich kont); dla każdej — o ile bp cena mark przy likwidacji różniła się od ceny likwidacji z mapy (mediana, p90). Pozycje z ceną likwidacji blisko rynku skaner odczytuje co minutę.
 - **Heatmapa likwidacji na wykresie świec, order blocks, U(p):** heurystyki bez walidacji statystycznej — oznaczone jako szacunek.
 - **Ocena prognoz:** Brier, log score, Brier P(wypełnienia), wykres niezawodności (Gneiting & Raftery 2007); ćwierć-Kelly dopiero po ≥ 50 rozstrzygniętych planach, z dolnej granicy Wilsona (MacLean, Thorp & Ziemba 2010).
@@ -49,7 +50,7 @@
 | Źródło | Co | Uwagi |
 |---|---|---|
 | Hyperliquid API (`/info`, WebSocket) | świece, arkusz L2, transakcje, OI, funding (także Binance/Bybit przez `predictedFundings`), HIP-3, mapa rynku | publiczne, limit 1200 wag/min na IP użytkownika |
-| Skaner HyperQuant ([backend/](backend/README.md)) | mapa likwidacji z pozycji on-chain (`clearinghouseState` portfeli z taśmy BTC) i taśma zrealizowanych likwidacji (potwierdzonych fillami z polem `liquidation`) — bez adresów | publikowana co 2 min do publicznego repo [rdemb/hyperquant-data](https://github.com/rdemb/hyperquant-data); przeglądarka nie łączy się z serwerem skanera |
+| Skaner HyperQuant ([backend/](backend/README.md)) | mapa likwidacji z pozycji on-chain (`clearinghouseState` portfeli z taśmy BTC) taśma zrealizowanych likwidacji (potwierdzonych fillami z polem `liquidation`) i przepływ kohort z taśmy (pole `users` + strona agresora) — bez adresów | publikowana co 2 min do publicznego repo [rdemb/hyperquant-data](https://github.com/rdemb/hyperquant-data); przeglądarka nie łączy się z serwerem skanera |
 | Federal Reserve, BLS, BEA | harmonogram FOMC, CPI, NFP, PPI, PKB/PCE | dane publiczne USA |
 | U.S. Treasury, FiscalData, NY Fed, CFTC | rentowności, TGA, RRP, COT | dane publiczne USA |
 | alternative.me | Fear & Greed | atrybucja obok danych |

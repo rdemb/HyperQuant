@@ -30,6 +30,7 @@ Obowiązuje każdy nowy i przerabiany komponent. Kod i identyfikatory po angiels
 Para kupno/sprzedaż przeszła walidator palety (CVD ΔE 11.8, kontrast ≥ 3:1). **Zawsze z drugim kanałem**: znak `+/−`, strzałka ▲▼ lub pozycja (bid pod ceną, ask nad).
 
 Serie kategoryczne na wykresach (kolejność stała, nigdy cyklicznie): `series-1…8` = `#3987e5 #d95926 #199e70 #c98500 #d55181 #008300 #9085e9 #e66767`. Powyżej 3 serii na scatter/mapie → „Inne” lub small multiples.
+Wyjątek — panele przepływu (kierunek kupno/sprzedaż w tle): pomijamy `series-2` i `series-3`, bo są zbyt bliskie `sell`/`buy`. Kohorty uczestników: `series-1` market makerzy, `series-4` poinformowani, `series-5` wieloryby, `series-7` reszta (zestaw sprawdzony walidatorem palet na `surface-1`: pasmo jasności, chroma, CVD ΔE ≥ 13, kontrast ≥ 3:1).
 
 ## 3. Typografia
 - `font-display` (Outfit 600/700): tylko nagłówki sekcji i nazwa aplikacji. **Nigdy na liczbach.**

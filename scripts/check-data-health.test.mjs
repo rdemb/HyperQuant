@@ -79,6 +79,12 @@ describe('taśma likwidacji (plik opcjonalny)', () => {
     const r = assessHealth(input({ errors: { 'liq-tape/BTC.json': 'HTTP 404' } }), NOW);
     expect(r.ok).toBe(true);
   });
+  it('brak pliku kohort przed wdrożeniem nie jest alarmem; obecny jest skanowany', () => {
+    expect(assessHealth(input({ errors: { 'cohorts/BTC.json': 'HTTP 404' } }), NOW).ok).toBe(true);
+    const inp = input();
+    inp.raw['cohorts/BTC.json'] = '{"m":"0x' + '12'.repeat(20) + '"}';
+    expect(assessHealth(inp, NOW).problems.join(' ')).toMatch(/cohorts\/BTC\.json/);
+  });
   it('taśma jest skanowana strażnikiem prywatności', () => {
     const inp = input();
     inp.raw['liq-tape/BTC.json'] = JSON.stringify({ events: [{ who: '0x' + 'ef'.repeat(20) }] });
