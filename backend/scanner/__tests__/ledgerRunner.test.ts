@@ -377,13 +377,15 @@ describe('A/B wersji modelu: wariant B z reżimem BOCPD', () => {
     expect(summary.ab.latest.regime).toEqual(data.regime);
     expect(isDeskLedgerSummary(summary)).toBe(true);
   });
-  it('reżim nieświeży (> 20 min) albo brak — bez wariantu B', async () => {
-    const data = fakeData() as ReturnType<typeof fakeData> & { regime?: unknown; regimeAt?: number };
-    data.regime = { sigma5: 0.0015, run: 40, pChange: 0.01 };
-    data.regimeAt = SLOT0 - HOUR;
-    const { r, dir } = runner({ data });
-    r.init(SLOT0);
-    await r.tick(SLOT0 + MIN);
-    expect(lines(dir, '2026-10-22').some((l) => String(l.id).endsWith('ret60b'))).toBe(false);
+  it('reżim z poprzedniego slotu (nawet sprzed 5 min) albo brak — bez wariantu B', async () => {
+    for (const at of [SLOT0 - 5 * MIN, SLOT0 - HOUR, undefined]) {
+      const data = fakeData() as ReturnType<typeof fakeData> & { regime?: unknown; regimeAt?: number };
+      data.regime = at === undefined ? null : { sigma5: 0.0015, run: 40, pChange: 0.01 };
+      data.regimeAt = at;
+      const { r, dir } = runner({ data });
+      r.init(SLOT0);
+      await r.tick(SLOT0 + MIN);
+      expect(lines(dir, '2026-10-22').some((l) => String(l.id).endsWith('ret60b'))).toBe(false);
+    }
   });
 });

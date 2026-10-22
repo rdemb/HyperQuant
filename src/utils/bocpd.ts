@@ -2,8 +2,9 @@
  * Bayesowskie wykrywanie punktów zmiany online (BOCPD; Adams & MacKay 2007) dla zwrotów o średniej 0 i nieznanej
  * precyzji: prior Gamma(α₀, β₀) na precyzję, predykcja t-Studenta z 2α stopniami swobody i skalą √(β/α).
  * Stałe ryzyko zmiany (hazard) H; rozkład długości przebiegu obcięty do rMax (ogon scalany w ostatniej komórce).
- * Wynik: rozkład długości bieżącego reżimu, najbardziej prawdopodobna długość, P(zmiany w ostatnich k obserwacjach)
- * i σ reżimu (średnia a posteriori wariancji przy najbardziej prawdopodobnej długości).
+ * Wynik: rozkład długości bieżącego reżimu, najbardziej prawdopodobna długość (opis), P(zmiany w ostatnich 5 obserwacjach)
+ * i σ reżimu — pierwiastek predykcyjnej wariancji uśrednionej po rozkładzie długości: Σ_r P(r)·β_r/(α_r − 1).
+ * (P(długość = 0) przy stałym ryzyku zmiany zawsze równa się H — nie jest publikowana.)
  */
 
 export interface BocpdOptions {
@@ -18,13 +19,11 @@ export interface BocpdOptions {
 export interface BocpdState {
   /** P(długość przebiegu = r), r = 0..rMax */
   probs: number[];
-  /** Najbardziej prawdopodobna długość bieżącego reżimu */
+  /** Najbardziej prawdopodobna długość bieżącego reżimu (opisowo) */
   mapRun: number;
-  /** P(długość = 0) — zmiana przy ostatniej obserwacji */
-  pChange: number;
   /** P(długość < 5) — zmiana w ostatnich 5 obserwacjach */
   pRecent5: number;
-  /** σ reżimu: √(β/(α − 1)) przy mapRun (średnia a posteriori wariancji) */
+  /** σ reżimu: √(Σ_r P(r)·β_r/(α_r − 1)) — predykcyjna wariancja uśredniona po długości przebiegu */
   sigma: number;
   /** Liczba przetworzonych obserwacji */
   n: number;
@@ -128,14 +127,17 @@ export class Bocpd {
     const probs = Array.from({ length: this.o.rMax + 1 }, (_, r) => (r < this.len ? Math.exp(this.logR[r]) : 0));
     let mapRun = 0;
     for (let r = 1; r < probs.length; r++) if (probs[r] > probs[mapRun]) mapRun = r;
-    const a = this.alpha[mapRun];
-    const b = this.beta[mapRun];
+    let v = 0;
+    for (let r = 0; r < this.len; r++) {
+      const a = this.alpha[r];
+      const b = this.beta[r];
+      v += probs[r] * (a > 1 ? b / (a - 1) : b / a);
+    }
     return {
       probs,
       mapRun,
-      pChange: probs[0],
       pRecent5: probs.slice(0, 5).reduce((s, p) => s + p, 0),
-      sigma: a > 1 ? Math.sqrt(b / (a - 1)) : Math.sqrt(b / a),
+      sigma: Math.sqrt(v),
       n: this.count,
     };
   }

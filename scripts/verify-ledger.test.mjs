@@ -313,10 +313,22 @@ describe('ensemble: skaner vs niezależny weryfikator', () => {
 });
 
 import { checkVariants } from './verify-ledger.mjs';
+import { AB_EPOCH } from '../src/utils/abTest.ts';
 
-describe('A/B wersji modelu: wariant B = A × skala', () => {
-  const A = { k: 'f', kind: 'ret', id: '900000-ret60', slot: 900000, ti: 900020, t: 960000, h: 60, px0: 80000, taus: [0.1, 0.5, 0.9], q: [-0.004, 0, 0.004], bq: [-0.005, 0, 0.005], aci: 0.1 };
-  const B = { ...A, id: '900000-ret60b', variant: 'B', scale: 1.25, q: [-0.005, 0, 0.005], regime: { sigma5: 0.002, run: 30, pChange: 0.01 } };
+describe('A/B wersji modelu: wariant B = A × skala, skala ze wzoru na zapisanych σ', () => {
+  const A = { k: 'f', kind: 'ret', id: '900000-ret60', slot: 900000, ti: 900020, t: 960000, h: 60, px0: 80000, taus: [0.1, 0.5, 0.9], q: [-0.004, 0, 0.004], bq: [-0.005, 0, 0.005], aci: 0.1, model: 'ledger-har-fhs-v1' };
+  // √(½ + ½·0,002²·12·1 / σ_A²) = 1,25 ⇔ σ_A² = 2,4·10⁻⁵ / 1,0625
+  const B = {
+    ...A,
+    id: '900000-ret60b',
+    variant: 'B',
+    model: 'ledger-har-fhs-bocpd-v1',
+    scale: 1.25,
+    q: [-0.005, 0, 0.005],
+    regime: { sigma5: 0.002, run: 30, pChange: 0.01 },
+    sigmaA: Math.round(Math.sqrt(2.4e-5 / 1.0625) * 1e8) / 1e8,
+    seas: 1,
+  };
   it('zgodny wariant B → bez problemów; liczba sprawdzonych', () => {
     expect(checkVariants([A, B])).toEqual({ problems: [], checked: 1 });
   });
@@ -324,5 +336,29 @@ describe('A/B wersji modelu: wariant B = A × skala', () => {
     expect(checkVariants([A, { ...B, q: [-0.006, 0, 0.005] }]).problems.join(' ')).toMatch(/kwantyle ≠ A × skala/);
     expect(checkVariants([A, { ...B, ti: 900021 }]).problems.join(' ')).toMatch(/ti/);
     expect(checkVariants([B]).problems.join(' ')).toMatch(/brak wersji A/);
+  });
+  it('skala niezgodna ze wzorem z zapisanych σ, poniżej √½, brak σ, zły horyzont lub model → problem', () => {
+    const q = (k) => A.q.map((v) => v * k);
+    expect(checkVariants([A, { ...B, scale: 1.3, q: q(1.3) }]).problems.join(' ')).toMatch(/skala ≠ wzór/);
+    expect(checkVariants([A, { ...B, scale: 0.6, q: q(0.6) }]).problems.join(' ')).toMatch(/skala < √½/);
+    expect(checkVariants([A, { ...B, sigmaA: undefined }]).problems.join(' ')).toMatch(/σ_A/);
+    const A4 = { ...A, id: '900000-ret240', h: 240 };
+    expect(checkVariants([A4, { ...B, id: '900000-ret240b', h: 240 }]).problems.join(' ')).toMatch(/horyzont/);
+    expect(checkVariants([A, { ...B, model: 'inny' }]).problems.join(' ')).toMatch(/model/);
+  });
+  it('recompute: wariant B osobno; okres oceny A/B w toku z parami od AB_EPOCH', () => {
+    const recs = [];
+    for (let k = 0; k < 4; k++) {
+      const slot = AB_EPOCH + k * 900_000;
+      const a = { ...A, id: `${slot}-ret60`, slot, ti: slot + 20_000, t: slot + 60_000 };
+      const b = { ...B, id: `${slot}-ret60b`, slot, ti: slot + 20_000, t: slot + 60_000 };
+      recs.push(a, b, { k: 'r', id: a.id, t: slot + 3_700_000, y: 0.004 }, { k: 'r', id: b.id, t: slot + 3_700_000, y: 0.004 });
+    }
+    const r = recompute(recs);
+    expect(r.ret['60'].n).toBe(4);
+    expect(r.ret['60-B'].n).toBe(4);
+    expect(r.ab.current).toMatchObject({ start: AB_EPOCH, n: 4, diff: null });
+    expect(r.ab.current.crpsA).toBeCloseTo(r.ret['60'].crps, 7);
+    expect(r.ab.current.crpsB).toBeCloseTo(r.ret['60-B'].crps, 7);
   });
 });

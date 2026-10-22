@@ -15,7 +15,8 @@ describe('BOCPD (Adams & MacKay 2007) — zmienność o nieznanej precyzji, śre
     const s = b.state();
     expect(s.probs.reduce((a, p) => a + p, 0)).toBeCloseTo(1, 9);
     expect(s.mapRun).toBeGreaterThan(200);
-    expect(s.pChange).toBeLessThan(0.05);
+    // a priori ≈ 5·H = 0,025; bez zmiany a posteriori tego samego rzędu
+    expect(s.pRecent5).toBeLessThan(0.1);
   });
   it('skok zmienności ×4 wykryty w ciągu kilkunastu obserwacji; σ reżimu bliska nowej', () => {
     const b = new Bocpd({ hazard: 1 / 200, alpha0: 2, beta0: 2 * 0.005 ** 2, rMax: 400 });
@@ -32,6 +33,7 @@ describe('BOCPD (Adams & MacKay 2007) — zmienność o nieznanej precyzji, śre
     expect(detectedAt! - 300).toBeLessThan(15);
     const s = b.state();
     expect(s.mapRun).toBeLessThan(60);
+    // σ — predykcyjna mieszanina po długości reżimu: blisko nowego poziomu
     expect(s.sigma).toBeGreaterThan(0.012);
     expect(s.sigma).toBeLessThan(0.03);
   });

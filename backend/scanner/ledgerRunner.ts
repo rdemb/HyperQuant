@@ -63,14 +63,11 @@ export interface LedgerData {
   refreshModel(now: number): Promise<void>;
   refreshLevels(now: number): Promise<void>;
   minuteCandles(from: number, now: number): Promise<RangeBar[]>;
-  /** Reżim zmienności (BOCPD na świecach 5m) do wariantu B — opcjonalny */
+  /** Reżim zmienności (BOCPD na świecach 5m) do wariantu B — opcjonalny; B tylko z reżimem policzonym w slocie wydania */
   regime?: Regime | null;
   regimeAt?: number;
   refreshRegime?(now: number): Promise<void>;
 }
-
-/** Wariant B tylko z reżimem nie starszym niż 20 min */
-const REGIME_MAX_AGE = 20 * MIN;
 
 interface OtsEntry {
   day: string;
@@ -247,7 +244,7 @@ export class LedgerRunner {
         const tm = { slot, ti, t: Math.floor(ti / MIN) * MIN + MIN };
         for (const h of RET_HORIZONS) issued.push({ ...makeRetForecast(data.model!, tm, px!, h, data.sigma1h, this.aci[h] ?? ACI_ALPHA) });
         // A/B: wariant B (σ z mieszaniny modelu i reżimu BOCPD) dla 1 h — ta sama chwila i partia pokwitowania co A
-        if (data.regime && data.regimeAt !== undefined && ti - data.regimeAt <= REGIME_MAX_AGE) {
+        if (data.regime && data.regimeAt !== undefined && slotOf(data.regimeAt) === slot && data.regimeAt <= ti) {
           const a = issued.find((f) => f.id === `${slot}-ret60`) as unknown as RetForecast | undefined;
           if (a) issued.push({ ...makeRetForecastB(data.model!, a, data.regime) });
         }
