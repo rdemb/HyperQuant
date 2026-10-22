@@ -158,7 +158,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         metric: 'Płynność arkusza w ciągu doby (Mikrostruktura)',
         source: 'Skaner HyperQuant: WS l2Book Hyperliquid zagregowany w koszyki dobierane do ceny (~10–20 USD), co ~5 s; plik liquidity/BTC.json w repo danych',
         method:
-          'Głębokość obu stron w ±10 i ±20 bp od środka z każdej migawki, minutowe mediany (30 dni na serwerze); mediana wg godziny UTC; bieżąca minuta / mediana jej godziny; odporność: po minucie z ruchem środka ≥ 15 bp — minuty do powrotu głębokości ±10 bp do 80% mediany z poprzedniej godziny',
+          'Głębokość obu stron w ±10 i ±20 bp od środka z każdej migawki, minutowe mediany (30 dni na serwerze); mediana wg godziny UTC (sumy i strony osobno, 25. percentyl); bieżąca minuta / mediana jej godziny; odporność: po minucie z ruchem środka ≥ 15 bp — minuty do powrotu głębokości ±10 bp do 80% mediany z poprzedniej godziny; koszt wykonania: średni poślizg z krzywej głębokości strony (liniowo do ±20 bp, dalej prawo pierwiastka kwadratowego Tóth i in. 2011) + opłata takera',
         kinds: ['LIVE'],
         refresh: 'profil co 10 min',
         caveat: 'Historia od uruchomienia rejestratora (rośnie do 30 dni); godzina z mniej niż 30 min danych wyszarzona; widoczne zlecenia — bez ukrytych i szybko anulowanych.',
