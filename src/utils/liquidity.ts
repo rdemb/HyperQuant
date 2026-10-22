@@ -25,8 +25,20 @@ export interface LiquidityProfile {
     /** 25. percentyl sumy obu stron w ±10 bp (warunki cienkie) — brak w starszych profilach */
     thin10?: number | null;
   }[];
-  /** Ostatnia minuta, jeśli świeża (≤ 3 min); ratio10 = bieżąca / norma tej godziny z ≥ 3 innych dni (null = za mało historii) */
-  now: { t: number; d10: number; d20: number | null; ratio10: number | null } | null;
+  /**
+   * Ostatnia minuta, jeśli świeża (≤ 3 min); ratio10 = bieżąca / norma tej godziny z ≥ 3 innych dni (null = za mało
+   * historii); b10/a10/b20/a20 — strony osobno (brak w starszych profilach)
+   */
+  now: {
+    t: number;
+    d10: number;
+    d20: number | null;
+    ratio10: number | null;
+    b10?: number | null;
+    a10?: number | null;
+    b20?: number | null;
+    a20?: number | null;
+  } | null;
   /**
    * Odporność: po minucie z ruchem środka ≥ 15 bp — minuty do powrotu głębokości ±10 bp do 80% mediany z poprzedniej
    * godziny. `events` = zdarzenia z wycofaniem płynności (z powrotem albo bez w 1 h); `censored` — przerwane brakiem danych;
@@ -62,7 +74,13 @@ export function isLiquidityProfile(x: unknown): x is LiquidityProfile {
         fin(b.days) &&
         [b.b10, b.a10, b.b20, b.a20, b.thin10].every((v) => v === undefined || finOrNull(v))
     ) &&
-    (p.now === null || (!!p.now && fin(p.now.t) && fin(p.now.d10) && finOrNull(p.now.d20) && finOrNull(p.now.ratio10))) &&
+    (p.now === null ||
+      (!!p.now &&
+        fin(p.now.t) &&
+        fin(p.now.d10) &&
+        finOrNull(p.now.d20) &&
+        finOrNull(p.now.ratio10) &&
+        [p.now.b10, p.now.a10, p.now.b20, p.now.a20].every((v) => v === undefined || finOrNull(v)))) &&
     !!p.resilience &&
     fin(p.resilience.events) &&
     finOrNull(p.resilience.medianMin) &&
