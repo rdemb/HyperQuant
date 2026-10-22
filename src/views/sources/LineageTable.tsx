@@ -127,12 +127,29 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         caveat: 'Bez modelu zmienności: Merton z założonym udziałem skoków 20%, krok 1 min (oznaczone w pasku).',
       },
       {
-        metric: 'Heatmapa likwidacji',
+        metric: 'Mapa likwidacji (pozycje on-chain)',
+        source: 'Skaner HyperQuant: adresy z WS trades (pole users) → clearinghouseState każdego portfela; publikacja przez Cloudflare R2',
+        method:
+          'Kubełki ceny likwidacji (krok ~0.1% ceny) dla longów i shortów, nominał |szi|·cena likwidacji; pokrycie = Σ|szi| / (2·OI); tylko agregaty, bez adresów',
+        kinds: ['LIVE'],
+        refresh: 'co 60 s (duże pozycje odczytywane co 2 min)',
+        caveat: 'Portfele nieaktywne od startu skanera nie są na mapie; cena likwidacji pozycji cross zmienia się z całym kontem.',
+      },
+      {
+        metric: 'Kaskada likwidacji',
+        source: 'Mapa likwidacji, dzienna zmienność (model zmienności), obrót 24 h z API',
+        method: 'Punkt stały: szok → likwidacje z mapy → wpływ Δp/p = Y·σ·√(Q/V) (Tóth i in. 2011) → kolejne likwidacje; Y = 1, pasmo 0.5–1.5',
+        kinds: ['MODEL'],
+        refresh: 'z każdą mapą',
+        caveat: 'Wpływ szczytowy i pełne trafienie w arkusz — górna granica; tylko zmierzona część OI.',
+      },
+      {
+        metric: 'Heatmapa likwidacji (wykres świec)',
         source: 'Ekstrema świec HL',
         method: 'Teoretyczne ceny likwidacji dla dźwigni 5× / 20× / 100× od ekstremów świec',
         kinds: ['MODEL'],
         refresh: 'z każdą świecą',
-        caveat: 'Szacunek, nie pozycje — giełdy nie publikują rozkładu dźwigni.',
+        caveat: 'Szacunek, nie pozycje — zmierzona mapa jest w panelu „Mapa likwidacji i kaskada”.',
       },
       {
         metric: 'Order blocks',

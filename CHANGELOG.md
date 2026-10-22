@@ -2,6 +2,14 @@
 
 Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/), wersjonowanie: [SemVer](https://semver.org/lang/pl/).
 
+## [Nieopublikowane]
+
+### Dodane
+- **Mapa likwidacji z pozycji on-chain** zamiast szacunku: skaner na serwerze zbiera adresy portfeli z publicznej taśmy BTC (pole `users`), odczytuje ich pozycje i ceny likwidacji (`clearinghouseState`) i co minutę publikuje do Cloudflare R2 wyłącznie agregaty (kubełki, pokrycie open interest, wiek danych).
+- **Symulator kaskady likwidacji**: punkt stały szok → likwidacje → wpływ ceny z prawa pierwiastka kwadratowego (Tóth i in. 2011), krzywa szok → ruch końcowy z pasmem dla Y 0.5–1.5.
+- Panel „Mapa likwidacji i kaskada” na Desku (histogram, najbliższe klastry, tabela) i ostrzeżenie w Analizatorze, gdy stop leży w klastrze likwidacji.
+- Backend `backend/scanner` bez zależności npm (Node 24): własny budżet wag API, harmonogram skanów wg wielkości pozycji, podpis SigV4 sprawdzony wektorem AWS, usługa systemd z limitami zasobów, instalator.
+
 ## [2.1.0] — 2026-10-22
 
 Silnik zmienności i spójność modelu z dziennikiem trafności ([#1](https://github.com/rdemb/HyperQuant/pull/1)).
