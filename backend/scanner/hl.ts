@@ -94,6 +94,8 @@ export class HlStream {
   private readonly coin: string;
   private readonly onTrades: (t: HlTrade[]) => void;
   private readonly onCtx: (c: HlCtx) => void;
+  /** Migawki arkusza zagregowanego do 4 cyfr znaczących (rejestrator płynności); brak = bez subskrypcji arkusza */
+  private readonly onBook: ((t: number, levels: unknown) => void) | null;
   private readonly WS: typeof WebSocket;
   private ws: WebSocket | null = null;
   private timers: ReturnType<typeof setTimeout>[] = [];
@@ -105,11 +107,18 @@ export class HlStream {
   private seenOrder: string[] = [];
   connected = false;
 
-  constructor(coin: string, onTrades: (t: HlTrade[]) => void, onCtx: (c: HlCtx) => void, wsCtor: typeof WebSocket = WebSocket) {
+  constructor(
+    coin: string,
+    onTrades: (t: HlTrade[]) => void,
+    onCtx: (c: HlCtx) => void,
+    wsCtor: typeof WebSocket = WebSocket,
+    onBook: ((t: number, levels: unknown) => void) | null = null
+  ) {
     this.coin = coin;
     this.onTrades = onTrades;
     this.onCtx = onCtx;
     this.WS = wsCtor;
+    this.onBook = onBook;
   }
 
   start(): void {
@@ -140,6 +149,8 @@ export class HlStream {
       for (const type of ['trades', 'activeAssetCtx']) {
         ws.send(JSON.stringify({ method: 'subscribe', subscription: { type, coin: this.coin } }));
       }
+      // Arkusz zagregowany (~co 5 s): koszyki ~10 USD przy cenie BTC ~80 tys. — zasięg 20 poziomów ≈ ±20 bp
+      if (this.onBook) ws.send(JSON.stringify({ method: 'subscribe', subscription: { type: 'l2Book', coin: this.coin, nSigFigs: 4 } }));
       this.timers.push(
         setInterval(() => ws.readyState === this.WS.OPEN && ws.send('{"method":"ping"}'), 50_000),
         setInterval(() => {
@@ -156,6 +167,11 @@ export class HlStream {
       try {
         msg = JSON.parse(String(ev.data));
       } catch {
+        return;
+      }
+      if (msg.channel === 'l2Book' && this.onBook) {
+        const d = msg.data as { coin?: unknown; time?: unknown; levels?: unknown } | undefined;
+        if (d && d.coin === this.coin && typeof d.time === 'number' && Array.isArray(d.levels)) this.onBook(d.time, d.levels);
         return;
       }
       if (msg.channel === 'trades' && Array.isArray(msg.data)) {

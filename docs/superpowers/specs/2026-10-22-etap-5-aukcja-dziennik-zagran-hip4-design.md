@@ -124,6 +124,14 @@ osobno. Weryfikator przelicza wynik z ceny i progu i sprawdza ceny ze świecami 
   „dowodu” przy wielokrotnym zaglądaniu).
 - Najwyżej 2 próby pobrania rynku na slot (~24 wag każda).
 
+## Decyzje z realizacji (D)
+
+- Arkusz domyślny (20 poziomów z dokładnością do 1 USD) obejmuje tylko kilka bp — rejestrator subskrybuje `l2Book`
+  z `nSigFigs: 4` (koszyki ~10 USD, zasięg ~±20 bp), stąd pasma ±10 i ±20 bp (zamiast ±50 bp z projektu).
+- Na serwerze tylko minutowe mediany (JSONL, 30 dni); publikowany wyłącznie profil — bez surowych migawek.
+- Odporność: zdarzenie po ruchu ≥ 15 bp w minutę, powrót = 80% mediany z poprzedniej godziny, kolejne zdarzenie
+  dopiero po powrocie (jeden epizod liczony raz); brak powrotu w 1 h liczony osobno.
+
 ## Kolejność realizacji
 
 A → C1 → B → C2 → D. Każda część: testy jednostkowe reguł, test na prawdziwych danych, PR, CI, scalenie.

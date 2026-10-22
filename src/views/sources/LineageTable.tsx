@@ -155,6 +155,15 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         caveat: 'Wyniki od 20 rozstrzygnięć; prognozy nakładają się (wyniki skorelowane); brak danych 6 h po horyzoncie = jawne unieważnienie; pominięte sloty jawne; znaczniki czasu potwierdzają istnienie zapisu, nie poprawność modelu.',
       },
       {
+        metric: 'Płynność arkusza w ciągu doby (Mikrostruktura)',
+        source: 'Skaner HyperQuant: WS l2Book Hyperliquid zagregowany do 4 cyfr znaczących (koszyki ~10 USD), co ~5 s; plik liquidity/BTC.json w repo danych',
+        method:
+          'Głębokość obu stron w ±10 i ±20 bp od środka z każdej migawki, minutowe mediany (30 dni na serwerze); mediana wg godziny UTC; bieżąca minuta / mediana jej godziny; odporność: po minucie z ruchem środka ≥ 15 bp — minuty do powrotu głębokości ±10 bp do 80% mediany z poprzedniej godziny',
+        kinds: ['LIVE'],
+        refresh: 'profil co 10 min',
+        caveat: 'Historia od uruchomienia rejestratora (rośnie do 30 dni); godzina z mniej niż 30 min danych wyszarzona; widoczne zlecenia — bez ukrytych i szybko anulowanych.',
+      },
+      {
         metric: 'Dziennik zagrań i playbook (Plan)',
         source: 'Twoje wpisy w tej przeglądarce (localStorage, nic nie jest wysyłane) + świece BTC 1m i 1h z candleSnapshot Hyperliquid',
         method:
