@@ -2,8 +2,11 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { publishToGit } from '../gitPublish.ts';
+
+// Operacje git (klon, commit, push do repo lokalnego) przy pełnym, równoległym obciążeniu potrafią przekroczyć 5 s
+vi.setConfig({ testTimeout: 30_000 });
 
 const git = (dir: string, ...args: string[]) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
 
