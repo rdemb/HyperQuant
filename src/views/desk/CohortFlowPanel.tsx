@@ -145,7 +145,7 @@ const FlowBody: React.FC<{ flow: CohortFlow; mode: Mode; setMode: (m: Mode) => v
             Prywatność: adresy i przynależność zostają na serwerze. Publikowane są tylko zamknięte kubełki. Komórka z mniej niż {flow.kMin}{' '}
             uczestnikami albo z jednym powyżej 50% obrotu jest ukrywana. Wtedy ukrywana jest też kolejna, bo suma kohort to publiczny wolumen
             i jedną ukrytą dałoby się odtworzyć odejmowaniem. Warstwa agresora ma osobne ukrywanie. Kwoty są zaokrąglone do 10 tys. USD, liczności
-            do dziesiątek, a markouty pochodzą tylko z w pełni rozliczonych godzin z co najmniej {flow.kMin} biorcami.
+            do dziesiątek. Markouty pochodzą tylko z w pełni rozliczonych godzin (ta sama reguła ukrywania) i są publikowane bez liczności i nominału.
           </li>
           <li>To opis przepływu, nie sygnał. „Poinformowani” to wynik statystyczny z przeszłości, bez gwarancji na przyszłość.</li>
         </ul>
@@ -337,7 +337,6 @@ const OosTable: React.FC<{ flow: CohortFlow }> = ({ flow }) => (
           <th className="py-1 pr-3 font-medium">1 min</th>
           <th className="py-1 pr-3 font-medium">5 min</th>
           <th className="py-1 pr-3 font-medium">60 min</th>
-          <th className="py-1 pr-3 font-medium">Transakcje</th>
           <th className="py-1 font-medium">Godziny</th>
         </tr>
       </thead>
@@ -355,8 +354,7 @@ const OosTable: React.FC<{ flow: CohortFlow }> = ({ flow }) => (
               <td className="py-1 pr-3">{bp(m.m1)}</td>
               <td className="py-1 pr-3">{bp(m.m5)}</td>
               <td className="py-1 pr-3">{bp(m.m60)}</td>
-              <td className="py-1 pr-3">{m.n > 0 ? `≈ ${m.n.toLocaleString('pl-PL')} · ${fmtCompact(m.usd, '$')}` : DASH}</td>
-              <td className="py-1" title="Godziny włączone / pominięte (< 5 biorców lub dominacja)">
+              <td className="py-1" title="Godziny włączone / pominięte (< 5 biorców, dominacja lub ukrywanie wtórne)">
                 {m.hours || m.hiddenHours ? `${m.hours}${m.hiddenHours ? ` (+${m.hiddenHours} ukr.)` : ''}` : DASH}
               </td>
             </tr>

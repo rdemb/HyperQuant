@@ -40,7 +40,11 @@ Jeżeli „poinformowani” nie mają dodatniego markoutu poza próbą, UI to po
   Osobno dla warstwy agresora (takerBuy/takerSell może być null przy widocznej komórce).
 - **Tylko zamknięte kubełki** z widocznością ustaloną raz — różnicowanie kolejnych publikacji otwartego kubełka ujawniałoby pojedyncze transakcje.
 - **Zaokrąglenia**: kwoty do 10 tys. USD, liczności (adresy, kandydaci, wybrani) w dół do dziesiątek, markouty do 0.1 bp.
-- **Markouty poza próbą** tylko z w pełni rozliczonych godzin; każda godzina z bramką k-anonimowości biorców kohorty.
+- **Markouty poza próbą** tylko z w pełni rozliczonych godzin; każda godzina z tą samą regułą (k, dominacja, ukrywanie wtórne
+  między kohortami); publikowane tylko średnie — bez liczności i nominału (wagi pozwalałyby odtwarzać ukryte godziny i ukryte
+  warstwy agresora z publicznych sum taśmy); okno = 24 ostatnie sfinalizowane godziny (dodanie i usunięcie w jednym kroku).
+- **Partner ukrywania wtórnego**: „poinformowani” najpierw z „resztą” — MM i wieloryby da się odtworzyć z danych publicznych.
+- **Wariancja testu ×2**: horyzonty 5 min sąsiednich bloków częściowo się nakładają (np. TWAP w trendzie).
 - **Pseudoreplikacja**: obserwacją testu „poinformowanych” jest blok 5 min adresu (średnia ważona nominałem), nie pojedynczy fill.
 - **Pamięć**: statystyki nieaktywnych małych adresów wypadają po 7 dniach, twardy limit 100 tys. adresów.
 

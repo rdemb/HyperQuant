@@ -13,7 +13,8 @@
  *    a gdy ukryta jest choć jedna — ukrywane są kolejne (najmniejsze), aż suma ukrytych sama spełnia te warunki
  *    (inaczej ukrytą komórkę dałoby się odtworzyć przez odejmowanie od publicznej sumy);
  *  - warstwa biorcy (takerBuy/takerSell) ma własne, takie samo ukrywanie;
- *  - wartości zaokrąglone do 10 tys. USD, liczności do dziesiątek, markouty tylko z w pełni rozliczonych godzin z ≥ 5 biorcami.
+ *  - wartości zaokrąglone do 10 tys. USD, liczności do dziesiątek; markouty tylko z w pełni rozliczonych godzin
+ *    (ta sama reguła z ukrywaniem wtórnym), bez liczności i nominału, okno = 24 ostatnie sfinalizowane godziny.
  */
 
 export const COHORTS = ['mm', 'informed', 'whale', 'rest'] as const;
@@ -55,12 +56,12 @@ export interface CohortBucket {
   cells: Record<CohortId, CohortCell | null>;
 }
 
+/**
+ * Markout transakcji biorców kohorty z 24 ostatnich sfinalizowanych godzin — tylko średnie ważone nominałem
+ * (bez liczności i nominału: wagi pozwalałyby odtwarzać ukryte godziny z publicznych sum taśmy).
+ */
 export interface CohortMarkout {
-  /** Liczba transakcji biorcy z rozliczonym horyzontem 5 min (zaokrąglona do dziesiątek, min. 10; 0 = brak danych) */
-  n: number;
-  /** Nominał tych transakcji, USD (zaokrąglony do 10 tys.) */
-  usd: number;
-  /** Godziny w oknie: włączone i pominięte (< 5 biorców lub dominacja) */
+  /** Godziny w oknie: włączone i pominięte (< 5 biorców, dominacja lub ukrywanie wtórne) */
   hours: number;
   hiddenHours: number;
   /** Markout ważony nominałem, bp (dodatni = cena poszła w kierunku transakcji); null = brak danych */
@@ -131,7 +132,7 @@ const isTotal = (c: unknown) => {
 const isRecordOf = (r: unknown, f: (x: unknown) => boolean) => !!r && typeof r === 'object' && COHORTS.every((k) => f((r as Record<string, unknown>)[k]));
 const isMarkout = (m: unknown) => {
   const o = m as Partial<CohortMarkout> | null;
-  return !!o && fin(o.n) && fin(o.usd) && fin(o.hours) && fin(o.hiddenHours) && finOrNull(o.m1) && finOrNull(o.m5) && finOrNull(o.m60);
+  return !!o && fin(o.hours) && fin(o.hiddenHours) && finOrNull(o.m1) && finOrNull(o.m5) && finOrNull(o.m60);
 };
 
 export function isCohortFlow(x: unknown): x is CohortFlow {

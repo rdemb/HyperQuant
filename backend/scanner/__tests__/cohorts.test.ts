@@ -61,14 +61,25 @@ describe('suppress — ukrywanie pierwotne i wtórne (sumy kohort są publiczne)
     expect(vis).toEqual({ mm: true, informed: false, whale: true, rest: false });
   });
   it('gdy suma ukrytych wciąż łamie dominację — ukrywane są kolejne', () => {
+    // informed (500) + reszta (5 × 10): 500 / 550 > 50% → + mm → + wieloryby → wszystko ukryte
     const vis = suppress({
       mm: parts(1, 1, 1, 1, 1),
       informed: parts(500),
       whale: parts(2, 2, 2, 2, 2),
-      rest: parts(100, 100, 100, 100, 100),
+      rest: parts(10, 10, 10, 10, 10),
     });
     expect(vis).toEqual({ mm: false, informed: false, whale: false, rest: false });
   });
+  it('ukryci „poinformowani” parują się najpierw z „resztą” (MM i wieloryby da się odtworzyć z danych publicznych)', () => {
+    const vis = suppress({
+      mm: parts(1, 1, 1, 1, 1), // najmniejszy obrót, ale odtwarzalny publicznie
+      informed: parts(5, 5),
+      whale: parts(30, 30, 30, 30, 30),
+      rest: parts(40, 40, 40, 40, 40, 40),
+    });
+    expect(vis).toEqual({ mm: true, informed: false, whale: true, rest: false });
+  });
+
   it('wszystkie spełniają → widoczne; komórki bez aktywności nie wymagają ukrycia', () => {
     expect(suppress({ mm: parts(1, 1, 1, 1, 1), informed: new Map(), whale: new Map(), rest: parts(2, 2, 2, 2, 2) })).toEqual({
       mm: true,
@@ -142,7 +153,7 @@ describe('CohortEngine — przepływy', () => {
 });
 
 describe('CohortEngine — markouty i klasyfikacja', () => {
-  it('markouty tylko z w pełni rozliczonych godzin z ≥ 5 biorcami; liczność do dziesiątek (min. 10), nominał do 10 tys.', () => {
+  it('markouty tylko z w pełni rozliczonych godzin z ≥ 5 biorcami; tylko średnie (bez liczności i nominału)', () => {
     const e = new CohortEngine({ coin: 'BTC', isWhale: () => false });
     for (let i = 0; i < 6; i++) e.onTrade(trade(A('R', i), A('S', i), 'B', 100, 1000 + i, T0 + i * 1000));
     e.recordPrice(100.5, T0 + MIN);
@@ -150,16 +161,29 @@ describe('CohortEngine — markouty i klasyfikacja', () => {
     e.recordPrice(100.2, T0 + 60 * MIN);
     e.settle(T0 + 61 * MIN + 10_000);
     e.housekeep(T0 + 61 * MIN + 10_000);
-    expect(e.build(T0 + 61 * MIN + 10_000, T0).oos.rest.n).toBe(0); // godzina nie jest jeszcze rozliczona w całości
+    expect(e.build(T0 + 61 * MIN + 10_000, T0).oos.rest.hours).toBe(0); // godzina nie jest jeszcze rozliczona w całości
     e.settle(T0 + 2 * HOUR + MIN);
     e.housekeep(T0 + 2 * HOUR + MIN);
     const o = e.build(T0 + 2 * HOUR + MIN, T0).oos.rest;
-    expect(o.n).toBe(10);
+    expect(o.hours).toBe(1);
     expect(o.m1).toBeCloseTo(50, 1);
     expect(o.m5).toBeCloseTo(100, 1);
     expect(o.m60).toBeCloseTo(20, 1);
-    expect(o.usd % 10_000).toBe(0);
-    expect(o.usd).toBeGreaterThan(0);
+    // bez liczności i nominału (wagi pozwalałyby odtwarzać ukryte godziny z publicznych sum taśmy)
+    expect(Object.keys(o).sort()).toEqual(['hiddenHours', 'hours', 'm1', 'm5', 'm60']);
+  });
+
+  it('okno markoutów = 24 ostatnie sfinalizowane godziny (nowa wchodzi w tym samym kroku, w którym stara wypada)', () => {
+    const e = new CohortEngine({ coin: 'BTC', isWhale: () => false });
+    for (let h = 0; h < 26; h++) {
+      for (let i = 0; i < 6; i++) e.onTrade(trade(A('R', i), A('S', i), 'B', 100, 1000, T0 + h * HOUR + i * 1000));
+      e.recordPrice(101, T0 + h * HOUR + 5 * MIN);
+      e.recordPrice(100, T0 + h * HOUR + 30 * MIN);
+    }
+    const end = T0 + 28 * HOUR;
+    e.settle(end);
+    e.housekeep(end);
+    expect(e.build(end, T0).oos.rest.hours).toBe(24);
   });
 
   it('godzina z < 5 biorcami w kohorcie nie wchodzi do markoutów (liczona jako ukryta)', () => {
@@ -168,7 +192,7 @@ describe('CohortEngine — markouty i klasyfikacja', () => {
     e.recordPrice(101, T0 + 5 * MIN);
     e.settle(T0 + 3 * HOUR);
     e.housekeep(T0 + 3 * HOUR);
-    expect(e.build(T0 + 3 * HOUR, T0).oos.rest).toMatchObject({ n: 0, m5: null, hiddenHours: 1 });
+    expect(e.build(T0 + 3 * HOUR, T0).oos.rest).toMatchObject({ hours: 0, m5: null, hiddenHours: 1 });
   });
 
   it('jedno zlecenie zamiatające wielu makerów to jedna obserwacja testu (blok 5 min), nie 35', () => {

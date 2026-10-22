@@ -95,10 +95,15 @@ export interface InformedRow {
 }
 
 /** Wybór „poinformowanych”: BH na p-wartościach testu jednostronnego ∧ dodatnia średnia a posteriori (empiryczny Bayes). */
-export function selectInformed(rows: InformedRow[], o: { minN: number; q: number }): { selected: Set<string>; candidates: number; mu0: number | null; tau2: number | null } {
+export function selectInformed(
+  rows: InformedRow[],
+  o: { minN: number; q: number; vif?: number }
+): { selected: Set<string>; candidates: number; mu0: number | null; tau2: number | null } {
   const cand = rows.filter((r) => r.n >= o.minN && r.variance > 0 && Number.isFinite(r.mean));
   if (cand.length === 0) return { selected: new Set(), candidates: 0, mu0: null, tau2: null };
-  const se2 = cand.map((r) => r.variance / r.n);
+  // Korekta wariancji: horyzonty 5 min sąsiednich bloków częściowo się nakładają (np. TWAP w trendzie) — konserwatywnie ×2
+  const vif = o.vif ?? 2;
+  const se2 = cand.map((r) => (vif * r.variance) / r.n);
   const p = cand.map((r, i) => normalSf(r.mean / Math.sqrt(se2[i])));
   const bh = benjaminiHochberg(p, o.q);
   const { mu0, tau2 } = ebPrior(
@@ -132,8 +137,8 @@ const unsafe = (s: { k: number; maxShare: number }) => s.k < K_MIN || s.maxShare
 /**
  * Widoczność komórek jednej warstwy (true = widoczna). Ukrywanie pierwotne: k < 5 albo uczestnik > 50% obrotu.
  * Ukrywanie wtórne: suma komórek w kubełku jest publiczna, więc przy jednej ukrytej (albo gdy suma ukrytych wciąż łamie
- * warunki) ukrywana jest kolejna aktywna komórka o najmniejszym obrocie — aż suma ukrytych spełnia k i dominację
- * albo ukryte jest wszystko. Komórki bez aktywności (zera) niczego nie ujawniają i zostają widoczne.
+ * warunki) ukrywana jest kolejna aktywna komórka — dla „poinformowanych” najpierw „reszta”, poza tym najmniejszy obrót —
+ * aż suma ukrytych spełnia k i dominację albo ukryte jest wszystko. Komórki bez aktywności (zera) niczego nie ujawniają.
  */
 export function suppress(parts: Record<CohortId, Map<string, number>>): Record<CohortId, boolean> {
   const st = Object.fromEntries(COHORTS.map((c) => [c, layerStats([parts[c]])])) as Record<CohortId, ReturnType<typeof layerStats>>;
@@ -141,7 +146,9 @@ export function suppress(parts: Record<CohortId, Map<string, number>>): Record<C
   const hidden = active.filter((c) => unsafe(st[c]));
   if (hidden.length > 0) {
     while (hidden.length < active.length && (hidden.length === 1 || unsafe(layerStats(hidden.map((c) => parts[c]))))) {
-      const next = active.filter((c) => !hidden.includes(c)).sort((a, b) => st[a].gross - st[b].gross)[0];
+      // „Poinformowanych” parujemy najpierw z „resztą”: MM i wieloryby da się odtworzyć z danych publicznych i odjąć od sumy
+      const left = active.filter((c) => !hidden.includes(c));
+      const next = hidden.includes('informed') && left.includes('rest') ? 'rest' : left.sort((a, b) => st[a].gross - st[b].gross)[0];
       hidden.push(next);
     }
   }
@@ -433,16 +440,17 @@ export class CohortEngine {
       }
     }
     for (const [h, acc] of this.oos) {
-      if ((h + 1) * HOUR <= now - DAY) {
+      // 27 h zapasu: okno publikacji to 24 ostatnie sfinalizowane godziny
+      if (h * HOUR < now - 27 * HOUR) {
         this.oos.delete(h);
         continue;
       }
-      if ((h + 1) * HOUR + 60 * MIN + 10_000 > now) continue;
+      if ((h + 1) * HOUR + 60 * MIN + 10_000 > now || acc.rest.ok !== null) continue;
+      // Ta sama reguła co w kubełkach (k, dominacja, ukrywanie wtórne między kohortami) na biorcach godziny
+      const vis = suppress(Object.fromEntries(COHORTS.map((c) => [c, acc[c].takers ?? new Map()])) as Record<CohortId, Map<string, number>>);
       for (const c of COHORTS) {
-        const a = acc[c];
-        if (a.ok !== null) continue;
-        a.ok = a.n5 > 0 && !unsafe(layerStats([a.takers ?? new Map()]));
-        a.takers = null;
+        acc[c].ok = acc[c].n5 > 0 && vis[c];
+        acc[c].takers = null;
       }
     }
   }
@@ -472,6 +480,10 @@ export class CohortEngine {
       for (const a of byAge.slice(0, this.stats.size - this.maxStats)) this.stats.delete(a);
     }
     for (const [a, t] of this.lastActive) if (now - t > 30 * DAY) this.lastActive.delete(a);
+    if (this.lastActive.size > 2 * this.maxStats) {
+      const byAge = [...this.lastActive].sort((x, y) => x[1] - y[1]);
+      for (const [a] of byAge.slice(0, this.lastActive.size - 2 * this.maxStats)) this.lastActive.delete(a);
+    }
 
     const inf = selectInformed(
       rows.filter((r) => this.stats.has(r.addr)),
@@ -530,12 +542,17 @@ export class CohortEngine {
       return r;
     };
 
+    // Okno: 24 ostatnie sfinalizowane godziny — nowa wchodzi w tym samym kroku, w którym najstarsza wypada
+    const finalized = [...this.oos.keys()]
+      .filter((h) => this.oos.get(h)!.rest.ok !== null)
+      .sort((a, b) => b - a)
+      .slice(0, 24);
     const oos = {} as Record<CohortId, CohortMarkout>;
     for (const c of COHORTS) {
-      const sum = { w: [0, 0, 0], wm: [0, 0, 0], n5: 0, usd5: 0, hours: 0, hidden: 0 };
-      for (const [h, acc] of this.oos) {
-        const a = acc[c];
-        if (a.ok === null || (h + 1) * HOUR <= now - DAY || a.n5 === 0) continue;
+      const sum = { w: [0, 0, 0], wm: [0, 0, 0], hours: 0, hidden: 0 };
+      for (const h of finalized) {
+        const a = this.oos.get(h)![c];
+        if (a.n5 === 0) continue;
         if (!a.ok) {
           sum.hidden++;
           continue;
@@ -545,13 +562,10 @@ export class CohortEngine {
           sum.w[i] += a.w[i];
           sum.wm[i] += a.wm[i];
         }
-        sum.n5 += a.n5;
-        sum.usd5 += a.usd5;
       }
+      // Tylko średnie (bez liczności i nominału — wagi pozwalałyby odtwarzać ukryte godziny z publicznych sum taśmy)
       const m = (i: number) => (sum.w[i] > 0 ? Math.round((sum.wm[i] / sum.w[i]) * 10) / 10 : null);
       oos[c] = {
-        n: sum.n5 > 0 ? Math.max(10, Math.round(sum.n5 / 10) * 10) : 0,
-        usd: roundUsd(sum.usd5),
         hours: sum.hours,
         hiddenHours: sum.hidden,
         m1: m(0),
