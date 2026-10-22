@@ -24,6 +24,7 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 - README repo danych: lista plików w jednym miejscu, opis gałęzi `health`.
 
 ### Poprawione
+- Komunikaty weryfikatora z poprawną odmianą liczebników (1 linia, 2 linie, 5 linii); prerejestracje opisane jako katalog laboratorium i plan A/B.
 - Symulator kaskady: strony arkusza (bidy / aski) z bieżącej minuty rejestratora — profil płynności publikuje je w `now`; wcześniej przy krótkiej historii godziny podział był po cichu przyjmowany po połowie. Gdy podział pochodzi z mediany godziny albo jest założony, sekcja to pokazuje.
 
 ## [2.3.0] — 2026-10-22
