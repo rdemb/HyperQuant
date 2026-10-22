@@ -140,10 +140,10 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         metric: 'Zrealizowane likwidacje (taśma 24 h)',
         source: 'Skaner HyperQuant: śledzone pozycje → userFillsByTime konta (pole liquidation: markPx, metoda market/backstop)',
         method:
-          'Kandydat: pozycja zmalała, a cena z taśmy od poprzedniego odczytu dotknęła ceny likwidacji (±0.2%); zdarzenie tylko po potwierdzeniu fillem likwidacyjnym; błąd mapy = mark przy likwidacji vs cena likwidacji z ostatniego odczytu',
+          'Kandydat: pozycja zmalała, a cena z taśmy od poprzedniego odczytu weszła w pasmo ceny likwidacji (do 0.5% przed poziomem z mapy); zdarzenie tylko po potwierdzeniu fillem likwidacyjnym; błąd mapy = mark przy likwidacji vs cena likwidacji z ostatniego odczytu',
         kinds: ['LIVE'],
-        refresh: 'co 2 min z mapą; potwierdzenia do 4 zapytań/min',
-        caveat: 'Hyperliquid nie publikuje likwidacji wszystkich kont — tylko zmierzona część open interest; bez adresów, opóźnienie do kilku minut.',
+        refresh: 'co 2 min z mapą; potwierdzenia do 3 zapytań/min (tylko przy pełnym tempie API)',
+        caveat: 'Hyperliquid nie publikuje likwidacji wszystkich kont — tylko zmierzona część open interest; bez adresów, czas do minuty, rozmiar zaokrąglony, opóźnienie do kilku minut.',
       },
       {
         metric: 'Kaskada likwidacji',

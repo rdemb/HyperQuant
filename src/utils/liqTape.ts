@@ -99,9 +99,25 @@ function add(s: LiqSums, e: LiqEvent): void {
   s.n++;
 }
 
-/** Tylko publiczne pola zdarzenia — wejście skanera może nieść adres i identyfikatory transakcji. */
+const sig2 = (x: number) => (x > 0 ? Number(x.toPrecision(2)) : x);
+
+/**
+ * Tylko publiczne pola zdarzenia — wejście skanera może nieść adres i identyfikatory transakcji.
+ * Zgrubienie (czas do minuty, rozmiar do 2 cyfr znaczących, ceny do dolara, wartość do 100 USD) utrudnia dopasowanie
+ * zdarzenia do pojedynczej transakcji z publicznej taśmy, która zawiera adresy stron. Sumy i kubełki liczone są z wartości dokładnych.
+ */
 function publicEvent(e: LiqEvent): LiqEvent {
-  return { t: e.t, side: e.side, sz: e.sz, px: e.px, usd: e.usd, method: e.method, markPx: e.markPx, mapLiqPx: e.mapLiqPx, mapAgeMin: e.mapAgeMin };
+  return {
+    t: Math.floor(e.t / MIN) * MIN,
+    side: e.side,
+    sz: sig2(e.sz),
+    px: Math.round(e.px),
+    usd: Math.round(e.usd / 100) * 100,
+    method: e.method,
+    markPx: Math.round(e.markPx),
+    mapLiqPx: e.mapLiqPx === null ? null : Math.round(e.mapLiqPx),
+    mapAgeMin: e.mapAgeMin === null ? null : Math.round(e.mapAgeMin * 10) / 10,
+  };
 }
 
 export function buildLiqTape(events: LiqEvent[], o: { coin: string; asOf: number; since: number; checks: LiqTapeChecks }): LiqTape {
@@ -142,7 +158,8 @@ const fin = (v: unknown): v is number => typeof v === 'number' && Number.isFinit
 const finOrNull = (v: unknown) => v === null || fin(v);
 const isSums = (s: unknown): s is LiqSums => !!s && typeof s === 'object' && fin((s as LiqSums).longUsd) && fin((s as LiqSums).shortUsd) && fin((s as LiqSums).n);
 
-function isEvent(e: unknown): e is LiqEvent {
+/** Walidacja zdarzenia (strona: dane z sieci; skaner: stan odczytany z dysku). */
+export function isLiqEvent(e: unknown): e is LiqEvent {
   if (!e || typeof e !== 'object') return false;
   const x = e as LiqEvent;
   return (
@@ -167,7 +184,7 @@ export function isLiqTape(x: unknown): x is LiqTape {
     fin(m.asOf) &&
     fin(m.since) &&
     Array.isArray(m.events) &&
-    m.events.every(isEvent) &&
+    m.events.every(isLiqEvent) &&
     Array.isArray(m.buckets) &&
     m.buckets.every((b) => isSums(b) && fin((b as LiqTapeBucket).t)) &&
     !!m.totals &&

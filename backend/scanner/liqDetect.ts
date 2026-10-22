@@ -1,23 +1,30 @@
 import type { ScannedPosition } from '../../src/utils/liqMap.ts';
-import type { LiqEvent, LiqTapeChecks } from '../../src/utils/liqTape.ts';
+import { type LiqEvent, type LiqTapeChecks, isLiqEvent } from '../../src/utils/liqTape.ts';
 
 /**
  * Wykrywanie likwidacji śledzonych pozycji (Hyperliquid nie publikuje strumienia likwidacji wszystkich kont).
  *  1. Kandydat: ponowny odczyt pokazuje, że pozycja zmalała lub zniknęła, a cena z taśmy od poprzedniego odczytu
- *     dotknęła jej ceny likwidacji (tolerancja 0.2% — likwidację wyzwala cena mark, nie cena transakcji).
- *  2. Potwierdzenie: fille konta z tego okna (`userFillsByTime`) z polem `liquidation` (dokumentacja API: FillLiquidation).
- *     Bez takiego fillu to zwykłe zamknięcie przez właściciela.
- * Adresy zostają w pamięci procesu; zapisany stan i publikacja zawierają tylko zdarzenia bez adresów.
+ *     dotknęła pasma ceny likwidacji: do 0.5% przed poziomem z mapy (likwidacja wcześniejsza — np. strata konta cross
+ *     na innym rynku) i dowolnie za nim. Likwidację wyzwala cena mark, nie cena transakcji.
+ *  2. Potwierdzenie: fille konta od pierwszego dotknięcia pasma (`userFillsByTime`) z polem `liquidation`
+ *     (dokumentacja API: FillLiquidation). Bez takiego fillu to zwykłe zamknięcie przez właściciela.
+ * Adresy zostają na serwerze; publikacja zawiera tylko zdarzenia bez adresów.
  */
 
 const MIN = 60_000;
 const DAY = 24 * 60 * MIN;
-const PRICE_TOL = 0.002;
+/** Pasmo „wcześniej niż mapa” — szersze pasmo = więcej zapytań o zwykłe zamknięcia blisko ceny likwidacji */
+export const EARLY_TOL = 0.005;
 const CANDIDATE_TTL = 30 * MIN;
 const MAX_ATTEMPTS = 3;
 const MAX_QUEUE = 500;
-/** Waga `userFillsByTime`: 20 + 1 na 20 zwróconych fillów (szacunek z zapasem) */
+/** Rezerwacja wag `userFillsByTime` przed zapytaniem; resztę (20 + 1 na 20 fillów) dopłaca się po odpowiedzi */
 export const FILLS_WEIGHT = 25;
+/** Limit fillów w jednej odpowiedzi API — pełna odpowiedź może być obcięta */
+const FILLS_CAP = 2000;
+
+type Side = 'long' | 'short';
+const inBand = (lo: number, hi: number, liqPx: number, side: Side) => (side === 'long' ? lo <= liqPx * (1 + EARLY_TOL) : hi >= liqPx * (1 - EARLY_TOL));
 
 /** Minimum i maksimum ceny transakcji w kubełkach 1 min (24 h). */
 export class PriceRange {
@@ -48,6 +55,31 @@ export class PriceRange {
     }
     return Number.isFinite(lo) ? { lo, hi } : null;
   }
+
+  /** Początek pierwszej minuty w oknie, w której cena weszła w pasmo ceny likwidacji; null = nie weszła. */
+  firstTouch(from: number, to: number, liqPx: number, side: Side): number | null {
+    for (let k = Math.floor(from / MIN); k <= Math.floor(to / MIN); k++) {
+      const m = this.mins.get(k);
+      if (m && inBand(m.lo, m.hi, liqPx, side)) return k * MIN;
+    }
+    return null;
+  }
+
+  toJSON(): { v: 1; mins: [number, number, number][] } {
+    return { v: 1, mins: [...this.mins].map(([k, m]) => [k, m.lo, m.hi]) };
+  }
+
+  static fromJSON(j: unknown): PriceRange {
+    const r = new PriceRange();
+    const x = j as { v?: number; mins?: unknown } | null;
+    if (x?.v !== 1 || !Array.isArray(x.mins)) return r;
+    for (const row of x.mins) {
+      if (!Array.isArray(row) || row.length !== 3 || !row.every((v) => typeof v === 'number' && Number.isFinite(v))) continue;
+      const [k, lo, hi] = row as [number, number, number];
+      if (lo > 0 && hi >= lo) r.mins.set(k, { lo, hi });
+    }
+    return r;
+  }
 }
 
 /** Czy zmiana pozycji między odczytami może być likwidacją (do potwierdzenia fillami). */
@@ -56,8 +88,7 @@ export function isLiqCandidate(prev: ScannedPosition | null, next: ScannedPositi
   const long = prev.szi > 0;
   const nextSzi = next?.szi ?? 0;
   const reduced = long ? nextSzi < prev.szi : nextSzi > prev.szi;
-  if (!reduced) return false;
-  return long ? range.lo <= prev.liqPx * (1 + PRICE_TOL) : range.hi >= prev.liqPx * (1 - PRICE_TOL);
+  return reduced && inBand(range.lo, range.hi, prev.liqPx, long ? 'long' : 'short');
 }
 
 /** Zdarzenie z danymi wewnętrznymi do deduplikacji (identyfikatory transakcji nie są publikowane). */
@@ -74,11 +105,16 @@ interface RawFill {
 
 const num = (v: unknown) => (typeof v === 'number' ? v : parseFloat(String(v)));
 
-/** Fille likwidacyjne konta w danym rynku → jedno zdarzenie (rozmiar, VWAP, pierwszy czas); brak → null. */
-export function parseLiquidationFills(fills: unknown, coin: string, addr: string, prev: ScannedPosition): DetectedLiq | null {
+/**
+ * Fille likwidacyjne konta w danym rynku → jedno zdarzenie (rozmiar, VWAP, pierwszy czas); brak → null.
+ * Fille o identyfikatorach z `seen` (już zaliczone do wcześniejszego zdarzenia) są pomijane pojedynczo —
+ * likwidacja w kilku krokach w nakładających się oknach daje osobne zdarzenia bez podwójnego liczenia.
+ */
+export function parseLiquidationFills(fills: unknown, coin: string, addr: string, prev: ScannedPosition, seen?: ReadonlySet<number>): DetectedLiq | null {
   if (!Array.isArray(fills)) return null;
   const own = (fills as RawFill[]).filter((f) => {
     if (!f || f.coin !== coin || !f.liquidation || typeof f.liquidation !== 'object') return false;
+    if (seen && typeof f.tid === 'number' && seen.has(f.tid)) return false;
     const victim = f.liquidation.liquidatedUser;
     return victim === undefined || victim === null || String(victim).toLowerCase() === addr.toLowerCase();
   });
@@ -122,6 +158,8 @@ export interface LiqCandidate {
   addr: string;
   /** Pozycja z poprzedniego odczytu (z ceną likwidacji znaną mapie) */
   prev: ScannedPosition;
+  /** Początek okna fillów: pierwsze dotknięcie pasma ceny likwidacji (z zapasem), nie wcześniej niż poprzedni odczyt */
+  from: number;
   /** Czas odczytu, który wykazał zmniejszenie */
   to: number;
 }
@@ -130,10 +168,15 @@ interface Queued extends LiqCandidate {
   attempts: number;
 }
 
-type Outcome = 'candidates' | 'confirmed' | 'rejected' | 'failed';
+type Outcome = 'confirmed' | 'rejected' | 'failed';
+const OUTCOMES: readonly string[] = ['confirmed', 'rejected', 'failed'];
 
 export interface InfoClient {
   info(body: unknown, weight: number): Promise<unknown | null>;
+  /** Dopłata wag po odpowiedzi */
+  charge?(weight: number): void;
+  /** false = API w wycofaniu po błędach — potwierdzenia czekają, skan pozycji ma pierwszeństwo */
+  healthy?(): boolean;
 }
 
 /** Kolejka potwierdzeń z własnym limitem zapytań na minutę (budżet wag współdzielony ze skanem pozycji). */
@@ -156,17 +199,20 @@ export class LiqConfirmer {
   }
 
   enqueue(c: LiqCandidate): void {
-    this.log.push(['candidates', c.to]);
     this.queue.push({ ...c, attempts: 0 });
     while (this.queue.length > MAX_QUEUE) {
-      const dropped = this.queue.shift()!;
-      this.log.push(['failed', dropped.to]);
+      this.queue.shift();
+      this.log.push(['failed', c.to]);
     }
   }
 
   /** Przetwarza kolejkę w ramach limitu na minutę; zwraca liczbę zapytań. */
   async process(rest: InfoClient, now: number): Promise<number> {
     this.calls = this.calls.filter((t) => t > now - MIN);
+    if (rest.healthy && !rest.healthy()) {
+      this.expire(now);
+      return 0;
+    }
     let made = 0;
     const keep: Queued[] = [];
     for (const c of this.queue) {
@@ -180,62 +226,96 @@ export class LiqConfirmer {
       }
       this.calls.push(now);
       made++;
-      const fills = await rest.info({ type: 'userFillsByTime', user: c.addr, startTime: c.prev.scannedAt - 1000, endTime: c.to + 1000 }, FILLS_WEIGHT);
-      if (fills === null) {
+      const fills = await rest.info({ type: 'userFillsByTime', user: c.addr, startTime: c.from - 1000, endTime: c.to + 1000 }, FILLS_WEIGHT);
+      if (!Array.isArray(fills)) {
+        // Błąd sieci/API albo nieoczekiwany kształt — nie wiadomo, czy była likwidacja
         c.attempts++;
         if (c.attempts >= MAX_ATTEMPTS) this.log.push(['failed', now]);
         else keep.push(c);
         continue;
       }
-      const ev = parseLiquidationFills(fills, this.coin, c.addr, c.prev);
-      if (!ev) {
-        this.log.push(['rejected', now]);
+      rest.charge?.(20 + Math.ceil(fills.length / 20) - FILLS_WEIGHT);
+      if (fills.length >= FILLS_CAP) {
+        // Odpowiedź mogła zostać obcięta — brak fillu likwidacyjnego niczego nie dowodzi
+        this.log.push(['failed', now]);
         continue;
       }
-      this.log.push(['confirmed', now]);
-      if (ev.tids.some((t) => this.seenTids.has(t))) continue;
-      for (const t of ev.tids) this.seenTids.add(t);
-      this.evs.push(ev);
+      const ev = parseLiquidationFills(fills, this.coin, c.addr, c.prev, this.seenTids);
+      if (ev) {
+        for (const t of ev.tids) this.seenTids.add(t);
+        this.evs.push(ev);
+        this.log.push(['confirmed', now]);
+      } else if (!parseLiquidationFills(fills, this.coin, c.addr, c.prev)) {
+        this.log.push(['rejected', now]);
+      }
+      // Same już zaliczone fille: ta sama likwidacja co wcześniej — bez ponownego liczenia
     }
     this.queue = keep;
     return made;
+  }
+
+  /** Przeterminowanie kandydatów bez zapytań (gdy API jest przeciążone). */
+  private expire(now: number): void {
+    const keep: Queued[] = [];
+    for (const c of this.queue) {
+      if (now - c.to > CANDIDATE_TTL) this.log.push(['failed', now]);
+      else keep.push(c);
+    }
+    this.queue = keep;
   }
 
   events(): DetectedLiq[] {
     return this.evs;
   }
 
+  /** Liczniki z 24 h; kandydaci = rozstrzygnięci (potwierdzeni + zamknięcia + nieudani). */
   checks(now: number): LiqTapeChecks {
     const out: LiqTapeChecks = { candidates: 0, confirmed: 0, rejected: 0, failed: 0 };
     for (const [k, t] of this.log) if (t > now - DAY) out[k]++;
+    out.candidates = out.confirmed + out.rejected + out.failed;
     return out;
   }
 
-  /** Usuwa zdarzenia i liczniki starsze niż 24 h. */
+  /** Usuwa zdarzenia i liczniki starsze niż 24 h oraz zdarzenia z przyszłości (uszkodzony stan, zły zegar). */
   prune(now: number): void {
     this.log = this.log.filter(([, t]) => t > now - DAY);
-    const old = this.evs.filter((e) => e.t <= now - DAY);
-    this.evs = this.evs.filter((e) => e.t > now - DAY);
-    for (const e of old) for (const t of e.tids) this.seenTids.delete(t);
+    this.keepEvents((e) => e.t > now - DAY && e.t <= now + 5 * MIN);
   }
 
-  /** Stan na dysk serwera — bez adresów (kolejka kandydatów nie jest zapisywana). */
+  /** Usuwa zdarzenia sprzed początku okresu obserwacji (np. po przerwie w danych). */
+  dropBefore(t: number): void {
+    this.keepEvents((e) => e.t >= t);
+  }
+
+  private keepEvents(pred: (e: DetectedLiq) => boolean): void {
+    const out = this.evs.filter((e) => !pred(e));
+    this.evs = this.evs.filter(pred);
+    for (const e of out) for (const t of e.tids) this.seenTids.delete(t);
+  }
+
+  /** Stan na dysk serwera — zdarzenia i liczniki, bez adresów (kolejka kandydatów nie jest zapisywana). */
   toJSON(): { v: 1; events: DetectedLiq[]; log: [Outcome, number][] } {
     return { v: 1, events: this.evs, log: this.log };
   }
 
   static fromJSON(j: unknown, o: { coin: string; maxPerMin: number }): LiqConfirmer {
     const c = new LiqConfirmer(o);
-    const x = j as { v?: number; events?: DetectedLiq[]; log?: [Outcome, number][] } | null;
+    const x = j as { v?: number; events?: unknown[]; log?: unknown[] } | null;
     if (x?.v !== 1) return c;
     if (Array.isArray(x.events)) {
       for (const e of x.events) {
-        if (!e || typeof e.t !== 'number' || !Array.isArray(e.tids)) continue;
-        c.evs.push(e);
-        for (const t of e.tids) c.seenTids.add(t);
+        if (!isLiqEvent(e)) continue;
+        const tids = (e as Partial<DetectedLiq>).tids;
+        if (!Array.isArray(tids) || !tids.every((t) => typeof t === 'number' && Number.isFinite(t))) continue;
+        c.evs.push(e as DetectedLiq);
+        for (const t of tids) c.seenTids.add(t);
       }
     }
-    if (Array.isArray(x.log)) c.log = x.log.filter((r) => Array.isArray(r) && typeof r[1] === 'number' && ['candidates', 'confirmed', 'rejected', 'failed'].includes(r[0]));
+    if (Array.isArray(x.log)) {
+      c.log = x.log.filter(
+        (r): r is [Outcome, number] => Array.isArray(r) && OUTCOMES.includes(r[0]) && typeof r[1] === 'number' && Number.isFinite(r[1])
+      );
+    }
     return c;
   }
 }

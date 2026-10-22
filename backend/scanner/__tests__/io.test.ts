@@ -91,10 +91,12 @@ describe('Scanner — cykl skanu i publikacji', () => {
     };
     const calls: string[] = [];
     const fills: Record<string, unknown[]> = {};
+    const bodies: Record<string, unknown>[] = [];
     const fetchFn = vi.fn(async (url: string, init?: RequestInit) => {
       calls.push(url);
       if (url.includes('r2.cloudflarestorage.com')) return new Response(null, { status: 200 });
       const body = JSON.parse(String(init?.body));
+      bodies.push(body);
       if (fail) {
         failing.calls++;
         return new Response('', { status: 503 });
@@ -112,7 +114,7 @@ describe('Scanner — cykl skanu i publikacji', () => {
       now: nowFn,
     });
     scanner.setCtx({ markPx: 83000, oiBtc: 20, dayNtlVlm: 2e9 });
-    return { scanner, out, calls, failing, states, fills, book };
+    return { scanner, out, calls, failing, states, fills, book, bodies };
   }
 
   it('skanuje adresy z taśmy i zapisuje mapę oraz status bez adresów', async () => {
@@ -163,7 +165,7 @@ describe('Scanner — cykl skanu i publikacji', () => {
 
   it('likwidacja śledzonej pozycji: kandydat po zniknięciu pozycji przy cenie likwidacji, potwierdzenie fillem, taśma bez adresów', async () => {
     let now = 120_000;
-    const { scanner, out, states, fills, book } = setup(false, () => now);
+    const { scanner, out, states, fills, book, bodies } = setup(false, () => now);
     await scanner.scanDue(10);
     // Cena spada do ceny likwidacji longa 0xaaa (75 000); pozycja znika, adres handlował
     now = 4 * 60_000;
@@ -187,6 +189,17 @@ describe('Scanner — cykl skanu i publikacji', () => {
     expect(tape.checks).toEqual({ candidates: 1, confirmed: 1, rejected: 0, failed: 0 });
     const status = JSON.parse(readFileSync(join(out, 'status.json'), 'utf8'));
     expect(status).toMatchObject({ liq24h: 1, liqPending: 0 });
+    // Okno fillów od minuty pierwszego dotknięcia ceny likwidacji (minus minuta), nie wcześniej niż poprzedni odczyt
+    const fillsCall = bodies.find((b) => b.type === 'userFillsByTime');
+    expect(fillsCall).toMatchObject({ user: '0xaaa', startTime: 120_000 - 1000, endTime: 240_000 + 1000 });
+    // Przerwa w danych: obserwacja od nowa, starsze zdarzenia nie udają ciągłości
+    now = 10 * 60_000;
+    scanner.resetObservation(now);
+    scanner.setCtx({ markPx: 75_000, oiBtc: 20, dayNtlVlm: 2e9 });
+    await scanner.publish();
+    const after = JSON.parse(readFileSync(join(out, 'liq-tape', 'BTC.json'), 'utf8'));
+    expect(after.since).toBe(now);
+    expect(after.events).toEqual([]);
   });
 });
 

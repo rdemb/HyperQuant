@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { AddressBook } from './addressBook.ts';
 import { loadConfig } from './config.ts';
 import { HlRest, HlStream } from './hl.ts';
-import { LiqConfirmer } from './liqDetect.ts';
+import { LiqConfirmer, PriceRange } from './liqDetect.ts';
 import { WeightLimiter } from './rateLimiter.ts';
 import { Scanner } from './scanner.ts';
 import { fetchLeaderboardAccounts } from './seed.ts';
@@ -35,15 +35,21 @@ try {
   book = new AddressBook(cfg.maxAddresses);
 }
 
-/** Taśma likwidacji: zdarzenia z 24 h (bez adresów); ciągłość obserwacji zachowana, gdy przerwa < 10 min. */
+/**
+ * Taśma likwidacji: zdarzenia z 24 h (bez adresów) i ceny z taśmy na minutę. Ciągłość obserwacji (`since`) zachowana
+ * tylko po przerwie < 2 min (np. restart przy aktualizacji); dłuższa przerwa = obserwacja od nowa, starsze zdarzenia wypadają.
+ */
 const liqStatePath = join(cfg.stateDir, `liq-${cfg.coin}.json`);
-const LIQ_OPTS = { coin: cfg.coin, maxPerMin: 4 };
+const LIQ_OPTS = { coin: cfg.coin, maxPerMin: 3 };
+const MAX_GAP_MS = 2 * 60_000;
 let confirmer = new LiqConfirmer(LIQ_OPTS);
+let prices = new PriceRange();
 let tapeSince = Date.now();
 try {
-  const j = JSON.parse(readFileSync(liqStatePath, 'utf8')) as { savedAt?: number; since?: number; confirmer?: unknown };
+  const j = JSON.parse(readFileSync(liqStatePath, 'utf8')) as { savedAt?: number; since?: number; confirmer?: unknown; prices?: unknown };
   confirmer = LiqConfirmer.fromJSON(j.confirmer, LIQ_OPTS);
-  if (typeof j.savedAt === 'number' && typeof j.since === 'number' && Date.now() - j.savedAt < 10 * 60_000) tapeSince = j.since;
+  prices = PriceRange.fromJSON(j.prices);
+  if (typeof j.savedAt === 'number' && typeof j.since === 'number' && Date.now() - j.savedAt < MAX_GAP_MS) tapeSince = j.since;
   log(`wczytano taśmę likwidacji: ${confirmer.events().length} zdarzeń`);
 } catch {
   // brak stanu — nowa taśma
@@ -57,16 +63,29 @@ function writeJsonAtomic(path: string, value: unknown): void {
 
 function saveState(): void {
   writeJsonAtomic(statePath, book.toJSON());
-  writeJsonAtomic(liqStatePath, { savedAt: Date.now(), since: scanner.tapeSince, confirmer: scanner.confirmer.toJSON() });
+  writeJsonAtomic(liqStatePath, { savedAt: Date.now(), since: scanner.tapeSince, confirmer: scanner.confirmer.toJSON(), prices: scanner.prices.toJSON() });
 }
 
 const rest = new HlRest(new WeightLimiter(cfg.weightPerMin));
-const scanner = new Scanner({ coin: cfg.coin, book, rest, outDir: cfg.outDir, r2: cfg.r2, confirmer, tapeSince });
+const scanner = new Scanner({ coin: cfg.coin, book, rest, outDir: cfg.outDir, r2: cfg.r2, confirmer, tapeSince, prices });
 let lastWsCtx = 0;
+/** Ostatnia wiadomość WebSocket (transakcje lub kontekst) — przerwa > 2 min zeruje okres obserwacji taśmy */
+let lastWsMsg = Date.now();
+let wsGap = false;
+function wsAlive(): void {
+  const now = Date.now();
+  if (wsGap) {
+    wsGap = false;
+    scanner.resetObservation(now);
+    log('taśma likwidacji: przerwa w danych WebSocket — obserwacja od nowa');
+  }
+  lastWsMsg = now;
+}
 
 const stream = new HlStream(
   cfg.coin,
   (trades) => {
+    wsAlive();
     for (const t of trades) {
       const px = Number(t.px);
       const sz = Number(t.sz);
@@ -75,6 +94,7 @@ const stream = new HlStream(
     }
   },
   (c) => {
+    wsAlive();
     scanner.setCtx(c);
     lastWsCtx = Date.now();
   }
@@ -158,6 +178,7 @@ function guarded(name: string, fn: () => unknown): () => Promise<void> {
 
 const timers = [
   setInterval(guarded('publikacja', async () => {
+    if (Date.now() - lastWsMsg > MAX_GAP_MS) wsGap = true;
     await ctxFallback();
     const ok = await scanner.publish();
     const s = book.positions().length;

@@ -250,7 +250,7 @@ const LiqHistogram: React.FC<{ map: LiqMap }> = ({ map }) => {
                 fill="transparent"
                 onMouseEnter={() => setHover(i)}
                 onMouseLeave={() => setHover(null)}
-                onTouchStart={() => setHover(i)}
+                onTouchStart={() => setHover((h) => (h === i ? null : i))}
               />
             ))}
           </svg>

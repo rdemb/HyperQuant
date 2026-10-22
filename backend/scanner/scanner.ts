@@ -28,10 +28,12 @@ export interface ScannerDeps {
   r2: R2Config | null;
   fetchFn?: typeof fetch;
   now?: () => number;
-  /** Kolejka potwierdzeń likwidacji (np. odczytana ze stanu); domyślnie nowa, 4 zapytania/min */
+  /** Kolejka potwierdzeń likwidacji (np. odczytana ze stanu); domyślnie nowa, 3 zapytania/min */
   confirmer?: LiqConfirmer;
   /** Od kiedy taśma likwidacji obserwuje bez przerwy; domyślnie czas utworzenia */
   tapeSince?: number;
+  /** Ceny z taśmy odczytane ze stanu (ciągłość po krótkim restarcie) */
+  prices?: PriceRange;
 }
 
 /**
@@ -43,15 +45,31 @@ export class Scanner {
   private ctx: HlCtx | null = null;
   private ctxAt = 0;
   private scanTimes: number[] = [];
-  private readonly prices = new PriceRange();
+  readonly prices: PriceRange;
   readonly confirmer: LiqConfirmer;
-  readonly tapeSince: number;
+  private since: number;
   lastPublishOk: number | null = null;
 
   constructor(d: ScannerDeps) {
     this.d = d;
-    this.confirmer = d.confirmer ?? new LiqConfirmer({ coin: d.coin, maxPerMin: 4 });
-    this.tapeSince = d.tapeSince ?? this.now();
+    this.prices = d.prices ?? new PriceRange();
+    this.confirmer = d.confirmer ?? new LiqConfirmer({ coin: d.coin, maxPerMin: 3 });
+    this.since = d.tapeSince ?? this.now();
+    this.confirmer.dropBefore(this.since);
+  }
+
+  /** Od kiedy taśma likwidacji obserwuje bez przerwy. */
+  get tapeSince(): number {
+    return this.since;
+  }
+
+  /**
+   * Przerwa w danych (np. WebSocket milczał): likwidacje z tego okresu mogły umknąć, więc obserwacja zaczyna się od nowa,
+   * a wcześniejsze zdarzenia nie udają ciągłości.
+   */
+  resetObservation(now: number): void {
+    this.since = now;
+    this.confirmer.dropBefore(now);
   }
 
   /** Cena transakcji z taśmy (do sprawdzania, czy cena dotknęła ceny likwidacji między odczytami). */
@@ -59,7 +77,7 @@ export class Scanner {
     this.prices.record(px, t);
   }
 
-  /** Potwierdza kandydatów do likwidacji w ramach limitu zapytań; zwraca liczbę zapytań. */
+  /** Potwierdza kandydatów do likwidacji w ramach limitu zapytań (3/min, tylko przy zdrowym API); zwraca liczbę zapytań. */
   confirmLiquidations(): Promise<number> {
     return this.confirmer.process(this.d.rest, this.now());
   }
@@ -75,7 +93,8 @@ export class Scanner {
 
   /** Odpytuje do `limit` adresów z minionym terminem; zwraca liczbę udanych odczytów. */
   async scanDue(limit: number): Promise<number> {
-    const due = this.d.book.due(this.now(), limit, this.ctx?.markPx);
+    const fresh = this.ctx && this.now() - this.ctxAt <= CTX_MAX_AGE_MS ? this.ctx.markPx : undefined;
+    const due = this.d.book.due(this.now(), limit, fresh);
     let ok = 0;
     for (const addr of due) {
       const st = await this.d.rest.info({ type: 'clearinghouseState', user: addr }, 2);
@@ -86,7 +105,10 @@ export class Scanner {
       const t = this.now();
       const prev = this.d.book.positionOf(addr);
       const next = parseCoinPosition(st, this.d.coin, t);
-      if (prev && isLiqCandidate(prev, next, this.prices.range(prev.scannedAt, t))) this.confirmer.enqueue({ addr, prev, to: t });
+      if (prev && isLiqCandidate(prev, next, this.prices.range(prev.scannedAt, t))) {
+        const touch = this.prices.firstTouch(prev.scannedAt, t, prev.liqPx!, prev.szi > 0 ? 'long' : 'short') ?? prev.scannedAt;
+        this.confirmer.enqueue({ addr, prev, from: Math.max(prev.scannedAt, touch - 60_000), to: t });
+      }
       this.d.book.updatePosition(addr, next, t);
       this.scanTimes.push(t);
       ok++;
@@ -107,7 +129,7 @@ export class Scanner {
     const positions = this.d.book.positions();
     const map = buildLiqMap(positions, { coin: this.d.coin, markPx: c.markPx, oiBtc: c.oiBtc, asOf, addresses: this.d.book.size, ctxAt: this.ctxAt });
     this.confirmer.prune(asOf);
-    const tape = buildLiqTape(this.confirmer.events(), { coin: this.d.coin, asOf, since: this.tapeSince, checks: this.confirmer.checks(asOf) });
+    const tape = buildLiqTape(this.confirmer.events(), { coin: this.d.coin, asOf, since: this.since, checks: this.confirmer.checks(asOf) });
     const status = {
       v: 1,
       coin: this.d.coin,

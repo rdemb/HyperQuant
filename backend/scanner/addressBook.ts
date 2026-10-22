@@ -37,15 +37,18 @@ interface Rec {
 
 const posNtl = (r: Rec) => (r.pos ? Math.abs(r.pos.szi) * r.pos.entryPx : 0);
 
+/** Promocja przy cenie likwidacji tylko dla pozycji, które ważą na mapie (pył nie zużywa budżetu). */
+const PROXIMITY_MIN_NTL = 25_000;
+
 /**
  * Interwał odczytu pozycji: wg nominału, a blisko ceny likwidacji częściej — tam mapa musi być najświeższa
- * i tam powstają likwidacje do potwierdzenia (< 1% od ceny mark co 1 min, < 3% najwyżej co 2 min).
+ * i tam powstają likwidacje do potwierdzenia (< 1% od ceny mark co 1 min, < 3% najwyżej co 2 min; od 25 tys. USD).
  */
 function posInterval(r: Rec, markPx?: number): number {
   const ntl = posNtl(r);
   const base = ntl >= 1e6 ? 2 * MIN : ntl >= 1e5 ? 10 * MIN : 30 * MIN;
   const liq = r.pos?.liqPx;
-  if (!markPx || !(markPx > 0) || !liq) return base;
+  if (!markPx || !(markPx > 0) || !liq || ntl < PROXIMITY_MIN_NTL) return base;
   const dist = Math.abs(markPx - liq) / markPx;
   if (dist < 0.01) return MIN;
   if (dist < 0.03) return Math.min(base, 2 * MIN);
@@ -179,18 +182,29 @@ export class AddressBook {
     }
   }
 
-  /** Przepełnienie: odpada najdawniej aktywny adres bez pozycji (nie ten właśnie dodany). */
+  /**
+   * Przepełnienie: odpada najdawniej aktywny adres bez pozycji (nie ten właśnie dodany); konta z rankingu dopiero,
+   * gdy nie ma innych — inaczej nieaktywne duże konta wypadałyby pierwsze i wracały z zasiewem co 6 h.
+   */
   private evictOne(keep: string): void {
     let victim: string | null = null;
     let oldest = Number.POSITIVE_INFINITY;
+    let ranked: string | null = null;
+    let oldestRanked = Number.POSITIVE_INFINITY;
     for (const [a, r] of this.recs) {
       if (a === keep || r.pos) continue;
-      if (r.lastTradeAt < oldest) {
+      if (r.seededAt !== undefined) {
+        if (r.lastTradeAt < oldestRanked) {
+          oldestRanked = r.lastTradeAt;
+          ranked = a;
+        }
+      } else if (r.lastTradeAt < oldest) {
         oldest = r.lastTradeAt;
         victim = a;
       }
     }
-    if (victim !== null) this.recs.delete(victim);
+    const out = victim ?? ranked;
+    if (out !== null) this.recs.delete(out);
   }
 
   toJSON(): { v: 2; recs: [string, Rec][] } {

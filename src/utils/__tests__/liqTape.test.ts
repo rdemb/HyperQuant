@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { LiqEvent, buildLiqTape, calibErrorBp, isLiqTape, liqTapeFreshness } from '../liqTape';
+import { LiqEvent, buildLiqTape, calibErrorBp, isLiqEvent, isLiqTape, liqTapeFreshness } from '../liqTape';
 
 const MIN = 60_000;
 const NOW = Date.UTC(2026, 9, 22, 12, 0, 0);
@@ -82,6 +82,17 @@ describe('buildLiqTape', () => {
     const s = JSON.stringify(tape);
     expect(s).not.toMatch(/0x[0-9a-f]{40}/i);
     expect(s).not.toMatch(/tids|user/);
+  });
+});
+
+describe('publiczne zdarzenia — utrudnione łączenie z publiczną taśmą transakcji', () => {
+  it('czas do minuty, rozmiar do 2 cyfr znaczących, ceny do dolara, wartość do 100 USD; sumy z dokładnych wartości', () => {
+    const exact = ev({ t: NOW - 10 * MIN + 37_412, sz: 8.931, px: 81_101.37, usd: 724_316.3, markPx: 81_120.6, mapLiqPx: 81_150.2 });
+    const tape = buildLiqTape([exact], { coin: 'BTC', asOf: NOW, since: NOW - 60 * MIN, checks: CHECKS });
+    expect(tape.events[0]).toMatchObject({ t: NOW - 10 * MIN, sz: 8.9, px: 81_101, usd: 724_300, markPx: 81_121, mapLiqPx: 81_150 });
+    expect(tape.totals.h1.longUsd).toBeCloseTo(724_316.3, 6);
+    expect(isLiqEvent(tape.events[0])).toBe(true);
+    expect(isLiqEvent({ ...tape.events[0], method: 'x' })).toBe(false);
   });
 });
 

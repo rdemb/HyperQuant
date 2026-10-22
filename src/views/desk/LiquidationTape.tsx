@@ -9,7 +9,6 @@ const MIN = 60_000;
 const DAY = 24 * 60 * MIN;
 const BUCKET = 5 * MIN;
 const timeFmt = new Intl.DateTimeFormat('pl-PL', { hour: '2-digit', minute: '2-digit' });
-const secFmt = new Intl.DateTimeFormat('pl-PL', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 const bp = (v: number | null, signed = false) => (v === null ? DASH : signed ? fmtSigned(v, 0, ' bp') : `${Math.round(v)} bp`);
 
 /** Zrealizowane likwidacje śledzonych pozycji (potwierdzone fillami) — uzupełnienie mapy: co faktycznie zostało zlikwidowane. */
@@ -65,11 +64,13 @@ const TapeBody: React.FC<{ tape: LiqTape; coverage: number | null }> = ({ tape, 
           hint={`ostatnia godzina ${fmtCompact(h1.shortUsd, '$')}`}
         />
         <Stat
-          label="Precyzja mapy"
+          label="Błąd ceny likw. z mapy"
           value={<span className="font-mono tabular-nums">{bp(c.medAbsErrBp)}</span>}
           hint={
             c.n > 0
-              ? `mediana |błędu| z ${c.n} likw. · ze znakiem ${bp(c.medSignedErrBp, true)} · p90 ${bp(c.p90AbsErrBp)}`
+              ? `mediana |błędu| z ${c.n} likw. · ze znakiem ${bp(c.medSignedErrBp, true)} · p90 ${bp(c.p90AbsErrBp)} · odczyt sprzed ${
+                  c.medAgeMin === null ? DASH : `${c.medAgeMin.toFixed(1)} min`
+                }`
               : 'brak likwidacji do porównania z mapą'
           }
         />
@@ -84,9 +85,10 @@ const TapeBody: React.FC<{ tape: LiqTape; coverage: number | null }> = ({ tape, 
       <p className="text-[11px] text-ink-3 leading-relaxed">
         Hyperliquid nie publikuje strumienia likwidacji wszystkich kont. Skaner zauważa, że śledzona pozycja zmalała, gdy cena dotknęła jej ceny
         likwidacji, i potwierdza to w fillach konta (pole <code>liquidation</code>) — bez potwierdzenia zdarzenia nie ma na taśmie. Obejmuje więc
-        tylko zmierzoną część open interest{coverage !== null ? ` (${(coverage * 100).toFixed(1)}%)` : ''}. Precyzja mapy: o ile cena mark przy
-        likwidacji różniła się od ceny likwidacji z ostatniego odczytu (dodatni = głębiej niż mapa; ujemny = wcześniej, np. strata konta cross na
-        innym rynku). Dane publikowane bez adresów, z opóźnieniem do kilku minut.
+        tylko zmierzoną część open interest{coverage !== null ? ` (${(coverage * 100).toFixed(1)}%)` : ''}. Błąd ceny likwidacji: o ile cena mark
+        przy likwidacji różniła się od ceny likwidacji z ostatniego odczytu (dodatni = głębiej niż mapa; ujemny = wcześniej, np. strata konta
+        cross na innym rynku). Wykrywane są likwidacje do 0.5% przed poziomem z mapy; pozycje blisko ceny likwidacji skaner odczytuje co minutę,
+        więc miara opisuje świeże odczyty, nie całą mapę. Bez adresów; czas do minuty, rozmiar zaokrąglony; opóźnienie do kilku minut.
       </p>
     </>
   );
@@ -96,6 +98,7 @@ const TapeBody: React.FC<{ tape: LiqTape; coverage: number | null }> = ({ tape, 
 const TapeTimeline: React.FC<{ tape: LiqTape }> = ({ tape }) => {
   const ref = useRef<HTMLDivElement>(null);
   const width = useElementWidth(ref);
+  /** Kubełek wskazany kursorem — po czasie, nie indeksie (dane odświeżają się co minutę) */
   const [hover, setHover] = useState<number | null>(null);
   const H = 120;
   const pad = { l: 48, r: 10, t: 8, b: 22 };
@@ -111,7 +114,7 @@ const TapeTimeline: React.FC<{ tape: LiqTape }> = ({ tape }) => {
     for (let t = first; t <= tape.asOf; t += 6 * 60 * MIN) out.push(t);
     return out;
   }, [from, tape.asOf]);
-  const hb = hover !== null ? tape.buckets[hover] : null;
+  const hb = hover !== null ? tape.buckets.find((b) => b.t === hover) ?? null : null;
 
   return (
     <div ref={ref} className="relative w-full" style={{ height: H }}>
@@ -134,12 +137,12 @@ const TapeTimeline: React.FC<{ tape: LiqTape }> = ({ tape }) => {
           <text x={pad.l - 6} y={H - pad.b - 2} textAnchor="end" className="fill-ink-3 font-mono" fontSize={10}>
             ▼{fmtCompact(maxY, '$')}
           </text>
-          {tape.buckets.map((b, i) => {
+          {tape.buckets.map((b) => {
             const x0 = x(b.t);
             const hs = y(b.shortUsd);
             const hl = y(b.longUsd);
             return (
-              <g key={b.t} opacity={hover === null || hover === i ? 1 : 0.5}>
+              <g key={b.t} opacity={hover === null || hover === b.t ? 1 : 0.5}>
                 {b.shortUsd > 0 && <rect x={x0} y={mid - 1 - Math.max(2, hs)} width={bw} height={Math.max(2, hs)} rx={Math.min(2, bw / 2)} fill="var(--color-buy)" />}
                 {b.longUsd > 0 && <rect x={x0} y={mid + 1} width={bw} height={Math.max(2, hl)} rx={Math.min(2, bw / 2)} fill="var(--color-sell)" />}
                 <rect
@@ -148,9 +151,9 @@ const TapeTimeline: React.FC<{ tape: LiqTape }> = ({ tape }) => {
                   width={bw + 8}
                   height={H - pad.b - pad.t}
                   fill="transparent"
-                  onMouseEnter={() => setHover(i)}
+                  onMouseEnter={() => setHover(b.t)}
                   onMouseLeave={() => setHover(null)}
-                  onTouchStart={() => setHover(i)}
+                  onTouchStart={() => setHover((h) => (h === b.t ? null : b.t))}
                 />
               </g>
             );
@@ -208,9 +211,9 @@ const EventTable: React.FC<{ tape: LiqTape }> = ({ tape }) => {
         <tbody>
           {rows.map((e) => (
             <tr key={`${e.t}-${e.sz}-${e.px}`} className="border-t border-line">
-              <td className="py-1 pr-3">{secFmt.format(e.t)}</td>
+              <td className="py-1 pr-3">{timeFmt.format(e.t)}</td>
               <td className={`py-1 pr-3 font-sans ${e.side === 'long' ? 'text-sell-ink' : 'text-buy-ink'}`}>{e.side === 'long' ? '▼ long' : '▲ short'}</td>
-              <td className="py-1 pr-3">{e.sz.toFixed(e.sz >= 10 ? 1 : 3)} BTC</td>
+              <td className="py-1 pr-3">{e.sz} BTC</td>
               <td className="py-1 pr-3">{fmtCompact(e.usd, '$')}</td>
               <td className="py-1 pr-3">{fmtPrice(e.px, 0)}</td>
               <td className="py-1 pr-3 font-sans">{e.method === 'backstop' ? 'backstop' : 'arkusz'}</td>
