@@ -11,6 +11,7 @@ import { HlRest, HlStream } from './hl.ts';
 import { WeightLimiter } from './rateLimiter.ts';
 import { Scanner } from './scanner.ts';
 import { fetchLeaderboardAccounts } from './seed.ts';
+import { publishToGit } from './gitPublish.ts';
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 const log = (msg: string) => console.log(`[skaner] ${msg}`);
@@ -68,6 +69,35 @@ async function seedFromLeaderboard(): Promise<void> {
   log(`ranking kont: ${accounts.length} kont ≥ ${cfg.seedMinUsd} USD, nowych ${book.seededCount - before}`);
 }
 
+const DATA_README = [
+  '# HyperQuant — dane publiczne',
+  '',
+  'Agregaty publikowane automatycznie przez skaner [HyperQuant](https://github.com/rdemb/HyperQuant) (katalog backend/).',
+  'Repozytorium zawiera zawsze jeden commit z bieżącym stanem.',
+  '',
+  '- `liq-map/BTC.json` — mapa likwidacji BTC z pozycji on-chain Hyperliquid: kubełki cen likwidacji, pokrycie open interest, wiek odczytów.',
+  '- `status.json` — stan skanera (liczby adresów i pozycji, błędy API).',
+  '',
+  'Wyłącznie agregaty — bez adresów portfeli. Źródło: publiczne API Hyperliquid. Metoda: src/utils/liqMap.ts w repo HyperQuant.',
+  '',
+].join('\n');
+
+/** Publikacja do publicznego repo danych (darmowa): bieżące pliki z HQ_OUT_DIR + README, jeden commit. */
+async function gitPublishTick(): Promise<void> {
+  if (!cfg.git) return;
+  const files: [string, string][] = [];
+  for (const key of [`liq-map/${cfg.coin}.json`, 'status.json']) {
+    try {
+      files.push([key, readFileSync(join(cfg.outDir, key), 'utf8')]);
+    } catch {
+      return; // jeszcze nic nie opublikowano lokalnie
+    }
+  }
+  files.push(['README.md', DATA_README]);
+  const ok = await publishToGit({ remote: cfg.git.remote, workDir: join(cfg.stateDir, 'git', 'repo'), sshKey: cfg.git.sshKey }, files, Date.now());
+  if (!ok) console.error('[skaner] publikacja do repo danych nieudana (spróbuję w następnym cyklu)');
+}
+
 /** Zapas dla kontekstu rynku, gdy WebSocket milczy > 2 min (waga 20). */
 async function ctxFallback(): Promise<void> {
   if (Date.now() - lastWsCtx < 120_000) return;
@@ -116,6 +146,7 @@ const timers = [
   setInterval(guarded('czyszczenie', () => book.prune(Date.now())), 10 * 60_000),
   setInterval(guarded('zapis stanu', saveState), 5 * 60_000),
   setInterval(guarded('zasiew', seedFromLeaderboard), 6 * 60 * 60_000),
+  ...(cfg.git ? [setInterval(guarded('repo danych', gitPublishTick), cfg.git.everyS * 1000)] : []),
 ];
 setTimeout(guarded('zasiew', seedFromLeaderboard), 5_000);
 
@@ -139,6 +170,9 @@ process.on('SIGINT', shutdown);
 const runMinutes = Number(process.env.HQ_RUN_MINUTES ?? '');
 if (runMinutes > 0) setTimeout(shutdown, runMinutes * 60_000);
 
-log(`start: rynek ${cfg.coin}, budżet ${cfg.weightPerMin} wag/min, publikacja co ${cfg.publishEveryS} s ${cfg.r2 ? 'do R2' : 'lokalnie'}`);
+log(
+  `start: rynek ${cfg.coin}, budżet ${cfg.weightPerMin} wag/min, publikacja co ${cfg.publishEveryS} s ${cfg.r2 ? 'do R2' : 'lokalnie'}` +
+    (cfg.git ? `, repo danych co ${cfg.git.everyS} s` : '')
+);
 stream.start();
 void scanLoop();
