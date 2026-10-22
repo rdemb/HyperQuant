@@ -2,15 +2,14 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useDesk } from '../state/DeskContext';
 import { PlanDraft } from '../state/types';
 import { Panel, Segmented } from '../ui';
-import { parkinsonSigma } from '../utils/marketDataFeed';
-import { PlanInput, analyzePlan, proposeLevels, sizeFromRiskWithBook } from '../utils/planAnalyzer';
+import { PlanInput, analyzePlan, attachMarketModel, proposeLevels, sizeFromRiskWithBook } from '../utils/planAnalyzer';
 import { makeEntry } from '../utils/forecastLedger';
 import { DayTradingPrepDesk } from '../components/DayTradingPrepDesk';
 import { PlanForm, PlanFormState } from './plan/PlanForm';
 import { PlanResult } from './plan/PlanResult';
 import { LedgerPanel } from './plan/LedgerPanel';
 import { usePlanLedger } from './plan/usePlanLedger';
-import { parseNum, useDebounced, usePlanMarket, useStoredString } from './plan/hooks';
+import { parseNum, planSigma, useDebounced, usePlanMarket, useStoredString } from './plan/hooks';
 
 type Tab = 'analyzer' | 'tomorrow';
 
@@ -59,9 +58,10 @@ function formFromDraft(d: PlanDraft, base: PlanFormState, price: number, sigmaFo
 const PlanView: React.FC = () => {
   const { feed, shaakuni, quant, planDraft, prefillPlan } = useDesk();
   const [tab, setTab] = useState<Tab>('analyzer');
+  const volModel = feed.vol.model;
   const sigmaFor = useCallback(
-    (h: number) => parkinsonSigma(feed.bars, h * 60, feed.timeframeSec),
-    [feed.bars, feed.timeframeSec]
+    (h: number) => planSigma(volModel, feed.bars, feed.timeframeSec, Date.now(), h),
+    [volModel, feed.bars, feed.timeframeSec]
   );
   // Szkic czekający przy montażu trafia od razu do stanu początkowego (inicjalizator bez efektów ubocznych)
   const initDraft = useRef<PlanDraft | null>(planDraft && planDraft !== appliedDraft ? planDraft : null);
@@ -88,11 +88,12 @@ const PlanView: React.FC = () => {
     window.scrollTo({ top: 0 });
   }, [planDraft, feed.currentPrice, sigmaFor]);
 
-  // Nietknięty formularz odświeżamy, gdy świece zastępcze zastąpią realne dane
+  // Nietknięty formularz odświeżamy, gdy świece zastępcze zastąpią realne dane albo dojdzie model zmienności
+  const hasVolModel = volModel !== null;
   useEffect(() => {
     if (!market.realBars) return;
     setForm((f) => (f.pristine ? defaultForm(feed.currentPrice, sigmaFor(f.horizonMin)) : f));
-  }, [market.realBars]); // celowo tylko przy zmianie źródła świec
+  }, [market.realBars, hasVolModel]); // celowo tylko przy zmianie źródła świec lub σ
 
   const onChange = useCallback(
     (patch: Partial<PlanFormState>) =>
@@ -127,30 +128,43 @@ const PlanView: React.FC = () => {
   const sizeUsd = form.sizeMode === 'usd' ? parseNum(form.sizeUsd) : riskSizeUsd;
 
   const input: PlanInput = useMemo(
-    () => ({
-      direction: form.direction,
+    () =>
+      attachMarketModel(
+        {
+          direction: form.direction,
+          entry,
+          stop,
+          target,
+          sizeUsd,
+          horizonMin: form.horizonMin,
+          leverage,
+          sigmaHorizon: market.sigma,
+          book: market.book,
+          eventMultiplier: market.eventMultiplier,
+        },
+        // Model zmienności i cena rynku (faza wypełnienia — tak samo rozlicza dziennik)
+        market
+      ),
+    [
+      form.direction,
       entry,
       stop,
       target,
       sizeUsd,
-      horizonMin: form.horizonMin,
+      form.horizonMin,
       leverage,
-      sigmaHorizon: market.sigma,
-      book: market.book,
-      eventMultiplier: market.eventMultiplier,
-    }),
-    [form.direction, entry, stop, target, sizeUsd, form.horizonMin, leverage, market.sigma, market.book, market.eventMultiplier]
+      market.sigma,
+      market.book,
+      market.eventMultiplier,
+      market.vol,
+      market.price,
+    ]
   );
   // Przy szybkim pisaniu liczymy po 200 ms ciszy; do tego czasu zostaje poprzedni wynik
   const debInput = useDebounced(input, 200);
   const analysis = useMemo(() => analyzePlan(debInput, { paths: 2000, seed: 7 }), [debInput]);
 
-  const ledger = usePlanLedger({
-    bars: market.bars,
-    barMs: market.timeframeSec * 1000,
-    realBars: market.realBars,
-    nowTick: feed.nowTick,
-  });
+  const ledger = usePlanLedger();
 
   const saveBlocked = !analysis.ok
     ? 'Popraw plan, aby go zapisać.'
@@ -171,6 +185,10 @@ const PlanView: React.FC = () => {
           pTarget: analysis.mc.pTarget,
           pStop: analysis.mc.pStop,
           pNeither: analysis.mc.pNeither,
+          pFill: analysis.mc.pFill,
+          fillRare: analysis.mc.fillRare,
+          modelVersion: analysis.mc.modelVersion,
+          startPrice: debInput.startPrice,
           source: form.draft?.source,
         },
         Date.now()

@@ -8,6 +8,7 @@ import {
   bucketStats,
   clearLedger,
   exportLedgerJson,
+  ledgerFetchStart,
   ledgerMetrics,
   loadLedger,
   makeEntry,
@@ -217,6 +218,90 @@ describe('zapis lokalny, limit, eksport, czyszczenie', () => {
     expect(parsed.key).toBe(LEDGER_KEY);
     expect(parsed.entries).toHaveLength(1);
     expect(parsed.exportedAt).toBe(new Date(T0).toISOString());
+  });
+});
+
+describe('prawdopodobieństwo wypełnienia (pFill)', () => {
+  it('makeEntry zachowuje pFill; loadLedger wczytuje wpisy z pFill i bez niego', () => {
+    const e = makeEntry({ direction: 'LONG', entry: 1, stop: 0.9, target: 1.2, horizonMin: 60, pTarget: 0.3, pStop: 0.5, pNeither: 0.2, pFill: 0.4 }, T0);
+    expect(e.pFill).toBe(0.4);
+    const mem = new Map<string, string>();
+    const storage = { getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => void mem.set(k, v), removeItem: (k: string) => void mem.delete(k) };
+    saveLedger([entry({ id: 'old' }), entry({ id: 'new', pFill: 0.7 })], storage);
+    const loaded = loadLedger(storage);
+    expect(loaded.map((x) => x.id)).toEqual(['old', 'new']);
+    expect(loaded[0].pFill).toBeUndefined();
+    expect(loaded[1].pFill).toBe(0.7);
+    // Uszkodzone pFill (spoza [0, 1] albo nie-liczba) odpada, wpis zostaje
+    mem.set(LEDGER_KEY, JSON.stringify([{ ...entry({ id: 'bad1' }), pFill: 'x' }, { ...entry({ id: 'bad2' }), pFill: 1.7 }]));
+    const fixed = loadLedger(storage);
+    expect(fixed.map((x) => x.id)).toEqual(['bad1', 'bad2']);
+    expect(fixed.every((x) => x.pFill === undefined)).toBe(true);
+  });
+
+  it('Brier wypełnienia liczony tylko z wpisów z pFill (rozstrzygnięte = wypełnione, nofill = 0)', () => {
+    const m = ledgerMetrics([
+      entry({ id: 'a', pFill: 0.8, status: 'target' }),
+      entry({ id: 'b', pFill: 0.3, status: 'nofill' }),
+      entry({ id: 'c', status: 'stop' }),
+      entry({ id: 'd', pFill: 0.5, status: 'pending' }),
+    ]);
+    expect(m.fillScored).toBe(2);
+    expect(m.brierFill).toBeCloseTo(((0.8 - 1) ** 2 + (0.3 - 0) ** 2) / 2, 12);
+    // nofill nadal poza metrykami wyniku
+    expect(m.resolved).toBe(2);
+  });
+
+  it('makeEntry zapisuje faktyczną wersję modelu i flagę fillRare; uszkodzone fillRare odpada przy odczycie', () => {
+    const e = makeEntry(
+      { direction: 'LONG', entry: 1, stop: 0.9, target: 1.2, horizonMin: 60, pTarget: 0.3, pStop: 0.5, pNeither: 0.2, modelVersion: 'plan-gbm-fill-v2', fillRare: true },
+      T0
+    );
+    expect(e.modelVersion).toBe('plan-gbm-fill-v2');
+    expect(e.fillRare).toBe(true);
+    const mem = new Map<string, string>();
+    const storage = { getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => void mem.set(k, v), removeItem: (k: string) => void mem.delete(k) };
+    mem.set(LEDGER_KEY, JSON.stringify([{ ...entry({ id: 'x' }), fillRare: 'tak' }, { ...entry({ id: 'y' }), fillRare: true }]));
+    const loaded = loadLedger(storage);
+    expect(loaded[0].fillRare).toBeUndefined();
+    expect(loaded[1].fillRare).toBe(true);
+  });
+
+  it('brak wpisów z pFill → brierFill null', () => {
+    const m = ledgerMetrics([entry({ status: 'target' })]);
+    expect(m.brierFill).toBeNull();
+    expect(m.fillScored).toBe(0);
+  });
+});
+
+describe('plan po cenie rynku (startPrice w granicy 1 bp) — wypełniony od zapisu', () => {
+  it('cena nie wraca do wejścia, ale dotyka celu → target (nie nofill)', () => {
+    // Wejście 100 000, rynek przy zapisie 100 005 (0.5 bp); potem cena rośnie i dotyka celu 102 000
+    const e = entry({ startPrice: 100005 });
+    const b = bars(T0 + 5 * MIN, 30, { 2: { high: 102100, low: 100500 } }).map((x) => ({ ...x, low: Math.max(x.low, 100300), high: Math.max(x.high, 100400) }));
+    const r = resolvePending([e], b, T0 + 200 * MIN, 5 * MIN)[0];
+    expect(r.status).toBe('target');
+  });
+
+  it('bez startPrice albo dalej niż 1 bp — wymaga dotknięcia wejścia (jak dotąd)', () => {
+    const b = bars(T0 + 5 * MIN, 30).map((x) => ({ ...x, low: Math.max(x.low, 100300), high: Math.max(x.high, 100400) }));
+    expect(resolvePending([entry({})], b, T0 + 200 * MIN, 5 * MIN)[0].status).toBe('nofill');
+    expect(resolvePending([entry({ startPrice: 100050 })], b, T0 + 200 * MIN, 5 * MIN)[0].status).toBe('nofill');
+  });
+});
+
+describe('ledgerFetchStart — od kiedy pobrać świece 1m do rozstrzygania', () => {
+  it('brak oczekujących → null', () => {
+    expect(ledgerFetchStart([entry({ status: 'target' })])).toBeNull();
+  });
+
+  it('najwcześniejszy oczekujący plan minus minuta (rozstrzygnięte pomijane)', () => {
+    const r = ledgerFetchStart([
+      entry({ id: 'a', createdAt: T0 - 3_600_000, status: 'stop' }),
+      entry({ id: 'b', createdAt: T0 + 3_600_000 }),
+      entry({ id: 'c', createdAt: T0 }),
+    ]);
+    expect(r).toBe(T0 - 60_000);
   });
 });
 

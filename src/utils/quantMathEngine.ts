@@ -11,14 +11,14 @@ import {
 } from '../types/trading';
 
 /**
- * Advanced Quantitative, Stochastic, Combinatorial & Neural Time-Series Engine
- * Designed specifically for BTCUSD Perp & Spot Order Flow on Hyperliquid + Aggr.trade:
- * 1) Ornstein-Uhlenbeck (OU) Stochastic Mean-Reversion around Shaakuni D-EQ / W-EQ
- * 2) Self-Exciting Hawkes Point Process on Trade & Liquidation Arrivals
- * 3) Combinatorial Catalan/Binomial Barrier Hitting Probabilities (PDH vs PDL) & Shannon Entropy
- * 4) VPIN (Volume-Synchronized Probability of Informed Trading), Kyle's Lambda Price Impact,
- *    and Gravitational Liquidity Magnet Field + Volume Profile (POC / VAH / VAL / LVN)
- * 5) Multi-Horizon Gated Attention Neural Network Forecaster & Real-Time Signal Generator
+ * Metryki opisowe przepływu i mikrostruktury BTC-PERP (Hyperliquid) — co jest estymatorem, a co heurystyką:
+ * 1) Ornstein-Uhlenbeck: OLS AR(1) wokół kotwicy 0.65·D-EQ + 0.35·W-EQ (kotwica ustalona, nie estymowana).
+ * 2) „Hawkes”: intensywność samowzbudna ze STAŁYMI μ, α, β (bez estymacji MLE, bez współczynnika rozgałęzienia) — heurystyka.
+ * 3) Prawdopodobieństwo PDH vs PDL z odległości (heurystyka, nie formuła barier) i entropia Shannona na 6 koszykach (heurystyka).
+ * 4) VPIN (BVC, Easley–López de Prado–O'Hara 2012), λ Kyle'a (OLS na realnym przepływie), profil wolumenu (POC/VAH/VAL)
+ *    oraz „pole przyciągania” U(p) z ręcznie dobranymi wagami (heurystyka).
+ * 5) Liniowa kombinacja powyższych z ręcznie ustawionymi wagami + tanh („neural*” w nazwach pól z powodów historycznych):
+ *    NIE jest wytrenowaną siecią ani sygnałem — UI pokazuje ją jako „siłę heurystyki”, a stożek ±1σ domyślnie jest wyłączony.
  */
 
 /** Próg reżimu trendowego dla skorygowanego H: ≈ 96. percentyl rozkładu pod szumem (n = 45, symulacja). */

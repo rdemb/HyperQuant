@@ -1,32 +1,62 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  LedgerBar,
   LedgerEntry,
   appendEntry,
   clearLedger,
   exportLedgerJson,
+  ledgerFetchStart,
   ledgerMetrics,
   loadLedger,
   resolvePending,
   saveLedger,
 } from '../../utils/forecastLedger';
+import { loadMinuteCandles } from '../../utils/marketDataFeed';
+
+/** Rozstrzyganie co minutę, dopóki są oczekujące plany (waga API ≈ 20 + liczba świec/60). */
+const RESOLVE_EVERY_MS = 60_000;
+const MINUTE_MS = 60_000;
 
 /**
- * Dziennik trafności w stanie widoku: odczyt z localStorage, automatyczne rozstrzyganie na świecach
- * (tylko realnych — nigdy na świecach zastępczych) i zapis po każdej zmianie.
+ * Dziennik trafności w stanie widoku: odczyt z localStorage, automatyczne rozstrzyganie na realnych świecach 1m
+ * z API Hyperliquid (niezależnie od interwału wykresu — minuta w toku przy zapisie jest jedynym pomijanym oknem,
+ * więc rozstrzyganie odpowiada temu, co prognozuje Monte Carlo) i zapis po każdej zmianie.
  */
-export function usePlanLedger(opts: { bars: LedgerBar[]; barMs: number; realBars: boolean; nowTick: number }) {
+export function usePlanLedger() {
   const [entries, setEntries] = useState<LedgerEntry[]>(() => loadLedger());
   const [persisted, setPersisted] = useState(true);
-  const { bars, barMs, realBars, nowTick } = opts;
+  const entriesRef = useRef(entries);
+  entriesRef.current = entries;
+  const hasPending = entries.some((e) => e.status === 'pending');
 
   useEffect(() => {
-    if (!realBars) return;
-    setEntries((prev) => {
-      const next = resolvePending(prev, bars, Date.now(), barMs);
-      return next.some((e, i) => e !== prev[i]) ? next : prev;
-    });
-  }, [bars, barMs, realBars, nowTick]);
+    if (!hasPending) return;
+    let alive = true;
+    let busy = false;
+    const run = async () => {
+      if (busy || document.visibilityState !== 'visible') return;
+      const start = ledgerFetchStart(entriesRef.current);
+      if (start === null) return;
+      busy = true;
+      try {
+        const bars = await loadMinuteCandles(start);
+        if (!alive || bars.length === 0) return;
+        setEntries((prev) => {
+          const next = resolvePending(prev, bars, Date.now(), MINUTE_MS);
+          return next.some((e, i) => e !== prev[i]) ? next : prev;
+        });
+      } finally {
+        busy = false;
+      }
+    };
+    run();
+    const id = window.setInterval(run, RESOLVE_EVERY_MS);
+    document.addEventListener('visibilitychange', run);
+    return () => {
+      alive = false;
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', run);
+    };
+  }, [hasPending]);
 
   useEffect(() => {
     setPersisted(saveLedger(entries));

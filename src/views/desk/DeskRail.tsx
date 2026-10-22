@@ -19,7 +19,14 @@ export const DeskRail: React.FC = () => {
       <div className="bg-surface-1 border border-line rounded-xl p-3.5 col-span-2 md:col-span-1">
         <Stat
           label="Zasięg 2h · MC"
-          source={{ tone: 'model', label: 'MODEL', title: 'Merton jump-diffusion, σ z Parkinsona, 600 ścieżek, krok 1 min' }}
+          source={{
+            tone: 'model',
+            label: 'MODEL',
+            title:
+              mc?.method === 'fhs-har'
+                ? 'Sezonowy log-HAR + innowacje FHS, 2000 ścieżek, krok 5 min z korektą mostu'
+                : 'Zapas: Merton jump-diffusion (skoki 20% wariancji — założenie), σ z Parkinsona, 2000 ścieżek, krok 1 min',
+          }}
           value={
             <div className="grid grid-cols-3 gap-2 text-sm font-mono tabular-nums">
               <div>

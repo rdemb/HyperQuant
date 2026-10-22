@@ -57,7 +57,7 @@ export const SCENES: SceneMeta[] = [
     limits: [
       'Bez opt-in CEX aktywny jest tylko węzeł Hyperliquid.',
       'Jedna świeca to krótkie okno — przewaga potrafi się odwrócić w kilka sekund.',
-      'Ścieżki Monte Carlo to model (Merton jump-diffusion), nie prognoza.',
+      'Ścieżki Monte Carlo to model (sezonowy log-HAR + reszty FHS; bez modelu zmienności — Merton z założonymi skokami), nie prognoza.',
     ],
   },
   {

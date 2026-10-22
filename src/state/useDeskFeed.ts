@@ -18,6 +18,8 @@ import {
 import { soundEngine } from '../utils/soundEngine';
 import { orderFlowStore } from '../charts/orderflow/orderFlowStore';
 import { useCexFeeds } from './useCexFeeds';
+import { useVolModel } from './useVolModel';
+import { VolModel } from '../utils/volatility';
 
 export type DataStatus = 'SYNTH' | 'LIVE' | 'STALE' | 'PAUSED';
 
@@ -41,6 +43,11 @@ export function useDeskFeed(options: { cexEnabled: boolean }) {
   const [trades, setTrades] = useState<AggrTradeTick[]>([]);
   // Osobny bufor HL — ticki CEX nie mogą wypychać transakcji HL używanych przez OFI i metryki
   const [hlTrades, setHlTrades] = useState<AggrTradeTick[]>([]);
+
+  // Model zmienności (sezonowy log-HAR + FHS) — pas MC 2h i Analizator planu; ref, bo sync jest stabilnym callbackiem
+  const vol = useVolModel();
+  const volRef = useRef<VolModel | null>(null);
+  volRef.current = vol.model;
 
   const timeframeRef = useRef<number>(timeframeSec);
   const syncSeqRef = useRef<number>(0);
@@ -87,7 +94,10 @@ export function useDeskFeed(options: { cexEnabled: boolean }) {
 
       const [marketData, backendRes] = await Promise.all([
         // L2 przez REST tylko bez WS albo gdy WS jeszcze nie dostarczył arkusza (waga 2)
-        fetchRealHyperliquidMarketData(tfSec, { includeL2Book: !hlConnectedRef.current || !hasBookRef.current }),
+        fetchRealHyperliquidMarketData(tfSec, {
+          includeL2Book: !hlConnectedRef.current || !hasBookRef.current,
+          volModel: volRef.current,
+        }),
         isLocalServer
           ? fetch('/api/quant/hyperliquid-live')
               .then((r) => (r.ok ? r.json() : null))
@@ -105,9 +115,10 @@ export function useDeskFeed(options: { cexEnabled: boolean }) {
       if (marketData.htfLevels) setRealHtfLevels(marketData.htfLevels);
       if (marketData.l2Book) setRealL2Book(marketData.l2Book);
 
-      // Brak telemetrii = zostaje ostatnia realna (status pokaże STALE), nigdy stałe zastępcze
-      if (backendRes && backendRes.markPrice) setBackendTelemetry(backendRes);
-      else if (marketData.liveTelemetry) setBackendTelemetry(marketData.liveTelemetry);
+      // Brak telemetrii = zostaje ostatnia realna (status pokaże STALE), nigdy stałe zastępcze.
+      // Najpierw telemetria z przeglądarki (ma model zmienności); endpoint serwera dev (bez modelu) tylko jako zapas.
+      if (marketData.liveTelemetry) setBackendTelemetry(marketData.liveTelemetry);
+      else if (backendRes && backendRes.markPrice) setBackendTelemetry(backendRes);
     } catch {
       // Zostaw bieżący stan przy braku sieci
     } finally {
@@ -341,6 +352,7 @@ export function useDeskFeed(options: { cexEnabled: boolean }) {
     trades,
     hlTrades,
     cex,
+    vol,
     syncNow: () => sync(timeframeRef.current, true),
   };
 }

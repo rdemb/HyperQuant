@@ -1,8 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useDesk } from '../../state/DeskContext';
+import { VolModelState } from '../../state/useVolModel';
 import { BadgeTone } from '../../ui';
 import { parkinsonSigma } from '../../utils/marketDataFeed';
+import { VOL_STEP_MIN, VolModel, horizonStepSigmas } from '../../utils/volatility';
+import { OHLCVBar } from '../../types/trading';
 import { MACRO_EVENTS, MacroEvent, eventVolMultiplier, eventsBetween } from '../../data/macroCalendar';
+
+/**
+ * σ log-ceny na horyzont planu: z modelu zmienności (√Σσ² kroków sezonowego HAR) albo — zapas — z Parkinsona
+ * na bieżących świecach. Wspólne dla propozycji poziomów i Analizatora.
+ */
+export function planSigma(volModel: VolModel | null, bars: OHLCVBar[], timeframeSec: number, nowMs: number, horizonMin: number): number {
+  if (volModel) return Math.sqrt(horizonStepSigmas(volModel, nowMs, horizonMin).reduce((a, s) => a + s * s, 0));
+  return parkinsonSigma(bars, horizonMin * 60, timeframeSec);
+}
 
 /** Wartość opóźniona o `ms` od ostatniej zmiany — ciężkie przeliczenia nie blokują pisania. */
 export function useDebounced<T>(value: T, ms: number): T {
@@ -92,15 +104,19 @@ export interface PlanMarket {
   timeframeSec: number;
   /** true = świece pochodzą z API (nie zastępcze) — warunek rozstrzygania dziennika */
   realBars: boolean;
+  /** Wejście Monte Carlo z modelu zmienności; null = zapas (stała σ Parkinsona, rozkład normalny) */
+  vol: { stepMin: number; stepSigmas: number[]; residuals: Float64Array } | null;
+  volModel: VolModel | null;
+  volStatus: VolModelState['status'];
 }
 
-/**
- * Wspólne wejścia rynkowe Analizatora: σ z Parkinsona na horyzont, zdarzenia makro w oknie, arkusz L2.
- * Świece i arkusz są dławione (co 3 s), żeby Monte Carlo nie liczyło się przy każdym ticku.
- */
 /** Ostatnia data CPI w tabeli kalendarza — granica, do której brak zdarzeń znaczy „brak publikacji”. */
 const CALENDAR_COVERAGE_END_MS = MACRO_EVENTS.filter((e) => e.kind === 'CPI').reduce((m, e) => Math.max(m, e.timeUtcMs), 0);
 
+/**
+ * Wspólne wejścia rynkowe Analizatora: σ kroków z modelu zmienności (zapas: Parkinson), zdarzenia makro w oknie, arkusz L2.
+ * Świece i arkusz są dławione (co 3 s), σ kroków przeliczana co minutę, żeby Monte Carlo nie liczyło się przy każdym ticku.
+ */
 export function usePlanMarket(horizonMin: number): PlanMarket {
   const { feed } = useDesk();
   const bars = useThrottled(feed.bars, 3000);
@@ -109,17 +125,31 @@ export function usePlanMarket(horizonMin: number): PlanMarket {
   const price = useThrottled(feed.currentPrice, 3000);
   // Stabilna referencja arkusza — nowy obiekt przy każdym renderze restartował debounce analizy
   const book = useMemo(() => ({ bids, asks }), [bids, asks]);
-  const sigma = parkinsonSigma(bars, horizonMin * 60, feed.timeframeSec);
+  const volModel = feed.vol.model;
+  const minuteMs = Math.floor(feed.nowTick / 60_000) * 60_000;
+  const vol = useMemo(
+    () =>
+      volModel
+        ? { stepMin: VOL_STEP_MIN, stepSigmas: horizonStepSigmas(volModel, minuteMs, horizonMin), residuals: volModel.residuals }
+        : null,
+    [volModel, minuteMs, horizonMin]
+  );
+  const sigma = vol
+    ? Math.sqrt(vol.stepSigmas.reduce((a, s) => a + s * s, 0))
+    : parkinsonSigma(bars, horizonMin * 60, feed.timeframeSec);
   const now = feed.nowTick;
   const events = eventsBetween(now, now + horizonMin * 60_000);
   const eventMultiplier = Math.max(1, ...events.map((e) => eventVolMultiplier(e)));
   const tf = `${Math.round(feed.timeframeSec / 60)}m`;
+  const modelTitle = vol
+    ? 'Monte Carlo (krok 5 min, faza wypełnienia): σ z sezonowego log-HAR na 5000 świecach 1h, innowacje FHS z reszt 5m'
+    : `Zapas — model zmienności ${feed.vol.status === 'loading' ? 'ładuje się' : 'niedostępny'}: σ Parkinsona z 60 świec ${tf}, rozkład normalny`;
   const source: PlanMarket['source'] =
     feed.dataStatus === 'SYNTH'
       ? { tone: 'sim', label: 'SIM', title: 'Świece zastępcze — wynik poglądowy do czasu synchronizacji z Hyperliquid' }
       : feed.dataStatus === 'STALE'
       ? { tone: 'stale', label: 'STALE', title: 'Dane nieświeże — σ i arkusz mogą być nieaktualne' }
-      : { tone: 'model', label: 'MODEL', title: `Model GBM + Monte Carlo; σ Parkinsona z 60 świec ${tf} Hyperliquid` };
+      : { tone: 'model', label: 'MODEL', title: modelTitle };
   return {
     price,
     sigma,
@@ -132,5 +162,8 @@ export function usePlanMarket(horizonMin: number): PlanMarket {
     bars,
     timeframeSec: feed.timeframeSec,
     realBars: feed.lastSyncOkAt !== null,
+    vol,
+    volModel,
+    volStatus: feed.vol.status,
   };
 }
