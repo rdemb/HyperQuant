@@ -127,7 +127,12 @@ osobno. Weryfikator przelicza wynik z ceny i progu i sprawdza ceny ze świecami 
 ## Decyzje z realizacji (D)
 
 - Arkusz domyślny (20 poziomów z dokładnością do 1 USD) obejmuje tylko kilka bp — rejestrator subskrybuje `l2Book`
-  z `nSigFigs: 4` (koszyki ~10 USD, zasięg ~±20 bp), stąd pasma ±10 i ±20 bp (zamiast ±50 bp z projektu).
+  zagregowany tak, by 20 poziomów pokrywało ±20 bp (najdrobniejsza z: 5 cyfr, 5 cyfr z mantysą 2/5, 4 cyfry; histereza;
+  zmiana = nowa subskrypcja), stąd pasma ±10 i ±20 bp (zamiast ±50 bp z projektu). Po recenzji: stałe 4 cyfry dawały
+  przy cenie ≥ 100 tys. koszyki 100 USD (pomiar ±10 bp 38–84%). Koszyk wyznaczany z danych, koszyk brzegowy
+  proporcjonalnie, pokrycie sprawdzane (±20 bp = brak, gdy arkusz go nie sięga).
+- „Teraz” tylko ze świeżej minuty; norma tej godziny z ≥ 3 innych dni; odporność tylko z ciągłych minut (przerwy =
+  cenzurowane), ruchy bez wycofania płynności osobno.
 - Na serwerze tylko minutowe mediany (JSONL, 30 dni); publikowany wyłącznie profil — bez surowych migawek.
 - Odporność: zdarzenie po ruchu ≥ 15 bp w minutę, powrót = 80% mediany z poprzedniej godziny, kolejne zdarzenie
   dopiero po powrocie (jeden epizod liczony raz); brak powrotu w 1 h liczony osobno.
