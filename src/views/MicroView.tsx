@@ -2,8 +2,9 @@ import React from 'react';
 import { useDesk, usePrefillFromSignal } from '../state/DeskContext';
 import { LiquidityMicrostructureLab, MicrostructureMethods } from '../components/LiquidityMicrostructureLab';
 import { PositionSizer, QuantMetricTiles, QuantRegimePanel } from '../components/QuantSignalDesk';
+import { BookMechanicsPanel } from './micro/BookMechanicsPanel';
 
-/** Mikrostruktura: bohater = profil płynności; reszta jako kafle (reżim, metryki, metody, wielkość pozycji). */
+/** Mikrostruktura: mechanika arkusza (estymatory z literatury), profil płynności, kafle (reżim, metryki, metody, wielkość pozycji). */
 const MicroView: React.FC = () => {
   const { feed, shaakuni, quant } = useDesk();
   const onPrefill = usePrefillFromSignal('Mikrostruktura');
@@ -11,6 +12,9 @@ const MicroView: React.FC = () => {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+      <div className="lg:col-span-12 min-w-0">
+        <BookMechanicsPanel />
+      </div>
       <div className="lg:col-span-8 min-w-0">
         <LiquidityMicrostructureLab quant={quant} shaakuni={shaakuni} currentPrice={feed.currentPrice} />
       </div>

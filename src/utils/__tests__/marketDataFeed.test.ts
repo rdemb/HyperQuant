@@ -422,3 +422,21 @@ describe('applyLiveTradesToBars — ticki CEX i likwidacje', () => {
     expect(nb.vsell).toBe(last.vsell);
   });
 });
+
+import { collectWhaleNodes } from '../marketDataFeed';
+
+describe('collectWhaleNodes — duże poziomy arkusza (także z WebSocket)', () => {
+  it('poziom ≥ 1.2 BTC albo ≥ 10 zleceń → węzeł; wzorzec wg liczby zleceń i rozmiaru', () => {
+    const nodes = collectWhaleNodes(
+      [
+        { px: '100000', sz: '4', n: 3 },
+        { px: '99990', sz: '0.2', n: 2 },
+      ],
+      [{ px: '100010', sz: '0.5', n: 20 }]
+    );
+    expect(nodes.map((n) => [n.side, n.price, n.pattern])).toEqual([
+      ['BID', 100000, 'Passive Whale Wall'],
+      ['ASK', 100010, 'Institutional Iceberg'],
+    ]);
+  });
+});
