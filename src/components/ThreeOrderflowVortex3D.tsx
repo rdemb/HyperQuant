@@ -548,7 +548,7 @@ export const ThreeOrderflowVortex3D: React.FC<ThreeOrderflowVortex3DProps> = ({
         };
       });
 
-      // Ścieżki Monte Carlo (Merton jump-diffusion) — model, nie prognoza
+      // Ścieżki Monte Carlo (sezonowy log-HAR + FHS; zapas: Merton z założonymi skokami) — model, nie prognoza
       clearGroup(monteCarloGroup);
       if (showMC && curBackend?.monteCarlo?.sampledPaths) {
         // Math.max(60, NaN) = NaN — przy braku ATR używamy wartości minimalnej

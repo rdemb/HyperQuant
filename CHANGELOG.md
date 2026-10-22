@@ -2,6 +2,14 @@
 
 Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/), wersjonowanie: [SemVer](https://semver.org/lang/pl/).
 
+## [Unreleased]
+
+### Dodane
+- **Nadzór danych** (`.github/workflows/data-health.yml`, `scripts/check-data-health.mjs`): co 30 min kontrola świeżości publikacji skanera, pokrycia open interest i opóźnienia odczytów pozycji oraz strażnik prywatności (alarm, gdyby w publikacji pojawił się adres portfela lub IP); problem otwiera zgłoszenie `alert-danych`, powrót danych je zamyka.
+
+### Zmienione
+- Wdrożenie GitHub Pages na Node 24 (jak CI i skaner).
+
 ## [2.2.0] — 2026-10-22
 
 Mapa likwidacji z pozycji on-chain i symulator kaskady ([#8](https://github.com/rdemb/HyperQuant/pull/8), [#12](https://github.com/rdemb/HyperQuant/pull/12)), aktualizacje zależności ([#9](https://github.com/rdemb/HyperQuant/pull/9)).

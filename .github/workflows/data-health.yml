@@ -1,0 +1,69 @@
+name: Nadzór danych
+
+# Co 30 min: czy skaner publikuje świeże dane do rdemb/hyperquant-data (i czy publikacja nie zawiera adresów portfeli ani IP).
+# Problem → jedno długowieczne zgłoszenie z etykietą „alert-danych” (otwierane ponownie, aktualizowane, zamykane samo po powrocie danych).
+# Bez kosztów (Actions w publicznym repo) i bez sekretów — czyta tylko publiczne pliki.
+on:
+  schedule:
+    - cron: '13,43 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: data-health
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Świeżość i prywatność danych
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Node.js 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Sprawdzenie danych
+        id: health
+        env:
+          HEALTH_REPORT_FILE: ${{ runner.temp }}/health.md
+        run: node scripts/check-data-health.mjs
+
+      - name: Zgłoszenie
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          OK: ${{ steps.health.outputs.ok }}
+          REPORT: ${{ runner.temp }}/health.md
+        run: |
+          set -euo pipefail
+          LABEL=alert-danych
+          gh label create "$LABEL" --color B60205 --description "Automatyczny nadzór świeżości danych skanera" --force >/dev/null
+          OPEN=$(gh issue list --label "$LABEL" --state open --limit 1 --json number --jq '.[0].number // empty')
+          if [ "$OK" = "true" ]; then
+            if [ -n "$OPEN" ]; then
+              gh issue comment "$OPEN" --body-file "$REPORT"
+              gh issue close "$OPEN" --reason completed
+            fi
+            exit 0
+          fi
+          if [ -n "$OPEN" ]; then
+            # Bez komentarza co 30 min: aktualizacja treści, powiadomienie tylko przy otwarciu
+            gh issue edit "$OPEN" --body-file "$REPORT"
+            exit 0
+          fi
+          LAST=$(gh issue list --label "$LABEL" --state closed --limit 1 --json number --jq '.[0].number // empty')
+          if [ -n "$LAST" ]; then
+            gh issue reopen "$LAST"
+            gh issue edit "$LAST" --body-file "$REPORT"
+            gh issue comment "$LAST" --body "Problem wrócił — szczegóły w treści zgłoszenia."
+          else
+            gh issue create --title "Dane skanera: problem ze świeżością lub publikacją" --label "$LABEL" --body-file "$REPORT"
+          fi
