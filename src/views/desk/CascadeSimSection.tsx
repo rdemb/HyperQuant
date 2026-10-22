@@ -1,49 +1,11 @@
 import React, { useMemo } from 'react';
 import { useLiquidityProfile } from '../../state/useLiquidityProfile';
 import { Badge, DASH, fmtCompact } from '../../ui';
-import { branchingRatio, sideCoverage, simulateCascade, type CascadeSimParams } from '../../utils/cascadeSim';
+import { branchingRatio, cascadeDepth, sideCoverage, simulateCascade } from '../../utils/cascadeSim';
 import type { LiqMap } from '../../utils/liqMap';
-import type { LiquidityProfile } from '../../utils/liquidity';
 
 const SHOCKS = [-0.03, -0.02, -0.01, -0.005, 0.005, 0.01, 0.02, 0.03];
-/** Bieżąca minuta rejestratora jako „teraz” najwyżej tyle — dalej mediana godziny */
-const NOW_MAX_AGE = 15 * 60_000;
-/** Mediana godziny z co najmniej tylu minut danych (jak w panelu płynności) */
-const MIN_HOUR_N = 30;
 const pct = (v: number) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v * 100).toFixed(2)}%`;
-
-/**
- * Głębokość stron do symulacji: bieżąca minuta rejestratora (świeża), podział na strony jak w medianach tej godziny
- * (±10 bp — b10/a10, ±20 bp — b20/a20); brak bieżącej ±20 bp → mediana godziny × (bieżąca ±10 / mediana ±10).
- * Profil nieaktualny albo minuta stara → mediana godziny (z oznaczeniem). null — brak danych.
- */
-function depthFor(p: LiquidityProfile, ready: boolean, now: number): { params: CascadeSimParams; source: 'now' | 'hour' } | null {
-  const fresh = ready && p.now !== null && now - p.now.t <= NOW_MAX_AGE;
-  const h = new Date(fresh ? p.now!.t : now).getUTCHours();
-  const hb = p.byHour[h];
-  const hourOk = !!hb && hb.n >= MIN_HOUR_N && hb.d10 !== null && hb.d10 > 0;
-  const share = (b?: number | null, a?: number | null) => (b != null && a != null && b + a > 0 ? b / (b + a) : 0.5);
-  const s10 = hourOk ? share(hb.b10, hb.a10) : 0.5;
-  const s20 = hourOk ? share(hb.b20, hb.a20) : s10;
-  let d10: number | null;
-  let d20: number | null;
-  if (fresh) {
-    d10 = p.now!.d10;
-    d20 = p.now!.d20 ?? (hourOk && hb.d20 !== null ? hb.d20 * (p.now!.d10 / (hb.d10 as number)) : null);
-  } else if (hourOk) {
-    d10 = hb.d10;
-    d20 = hb.d20;
-  } else return null;
-  if (!(d10 && d10 > 0)) return null;
-  return {
-    params: {
-      bids: { d10: d10 * s10, d20: d20 === null ? null : d20 * s20 },
-      asks: { d10: d10 * (1 - s10), d20: d20 === null ? null : d20 * (1 - s20) },
-      resilienceMin: p.resilience.medianMin,
-    },
-    source: fresh ? 'now' : 'hour',
-  };
-}
 
 const nWord = (n: number) => (n >= 1 ? 'ruch może sam uruchomić likwidacje większe niż on' : n >= 0.5 ? 'blisko progu 1' : 'poniżej progu');
 
@@ -53,7 +15,7 @@ const nWord = (n: number) => (n >= 1 ? 'ruch może sam uruchomić likwidacje wi�
  */
 export const CascadeSimSection: React.FC<{ map: LiqMap }> = ({ map }) => {
   const { profile, status } = useLiquidityProfile();
-  const depth = useMemo(() => (profile ? depthFor(profile, status === 'ready', Date.now()) : null), [profile, status]);
+  const depth = useMemo(() => (profile ? cascadeDepth(profile, status === 'ready', Date.now()) : null), [profile, status]);
   const res = useMemo(() => (depth ? SHOCKS.map((s) => simulateCascade(map, s, depth.params)) : null), [map, depth]);
   const n = useMemo(() => (depth ? { down: branchingRatio(map, 'down', depth.params), up: branchingRatio(map, 'up', depth.params) } : null), [map, depth]);
   if (!depth || !res || !n) return null;
@@ -80,6 +42,7 @@ export const CascadeSimSection: React.FC<{ map: LiqMap }> = ({ map }) => {
         <span className="text-ink-3">
           arkusz ±10 bp {depth.source === 'now' ? 'teraz' : 'mediana tej godziny (brak świeżej minuty)'}: bidy {fmtCompact(depth.params.bids.d10, '$')}, aski{' '}
           {fmtCompact(depth.params.asks.d10, '$')}
+          {depth.split === 'hour' ? ' (podział stron z mediany tej godziny)' : depth.split === 'assumed' ? ' (podział stron założony po połowie — za mało danych)' : ''}
         </span>
       </div>
       <div className="overflow-x-auto">

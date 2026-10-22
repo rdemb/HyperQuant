@@ -20,6 +20,9 @@ describe('isLiquidityProfile', () => {
     expect(isLiquidityProfile({ ...ok, now: null })).toBe(true);
     expect(isLiquidityProfile({ ...ok, byHour: ok.byHour.slice(1) })).toBe(false);
     expect(isLiquidityProfile({ ...ok, now: { ...ok.now, d10: Number.NaN } })).toBe(false);
+    // strony bieżącej minuty (opcjonalne): liczby albo null; inne typy odrzucone
+    expect(isLiquidityProfile({ ...ok, now: { ...ok.now, b10: 4e5, a10: 6e5, b20: null, a20: null } })).toBe(true);
+    expect(isLiquidityProfile({ ...ok, now: { ...ok.now, b10: 'x' } })).toBe(false);
     expect(isLiquidityProfile({ ...ok, v: 2 })).toBe(false);
     // godziny w kolejności (podpowiedź wykresu indeksuje po h)
     expect(isLiquidityProfile({ ...ok, byHour: [...ok.byHour].reverse() })).toBe(false);

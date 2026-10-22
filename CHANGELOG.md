@@ -19,6 +19,9 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 - Magazyn gałęzi tylko do dopisywania (`ledgerStore`) obsługuje dowolną gałąź i pliki `.csv`.
 - README repo danych: lista plików w jednym miejscu, opis gałęzi `health`.
 
+### Poprawione
+- Symulator kaskady: strony arkusza (bidy / aski) z bieżącej minuty rejestratora — profil płynności publikuje je w `now`; wcześniej przy krótkiej historii godziny podział był po cichu przyjmowany po połowie. Gdy podział pochodzi z mediany godziny albo jest założony, sekcja to pokazuje.
+
 ## [2.3.0] — 2026-10-22
 
 ### Dodane

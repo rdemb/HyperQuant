@@ -184,7 +184,17 @@ export function liquidityProfile(rows: MinuteRow[], coin: string, now: number, d
   if (last && now - (last.t + MIN) <= NOW_MAX_AGE) {
     const others = rs.filter((r) => hourOf(r) === hourOf(last) && dayOf(r.t) !== dayOf(last.t));
     const norm = others.length >= 90 && new Set(others.map((r) => dayOf(r.t))).size >= 3 ? median(others.map(tot10)) : null;
-    nowRow = { t: last.t, d10: tot10(last), d20: tot20(last), ratio10: norm && norm > 0 ? tot10(last) / norm : null };
+    nowRow = {
+      t: last.t,
+      d10: tot10(last),
+      d20: tot20(last),
+      ratio10: norm && norm > 0 ? tot10(last) / norm : null,
+      // Strony osobno (symulator kaskady: longi zjadają bidy, shorty — aski)
+      b10: last.b10,
+      a10: last.a10,
+      b20: last.b20,
+      a20: last.a20,
+    };
   }
 
   // Odporność: zdarzenie = minuta z ruchem środka ≥ 15 bp względem poprzedniej (ciągłej) minuty. Okno odniesienia —

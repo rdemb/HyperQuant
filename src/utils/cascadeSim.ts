@@ -1,5 +1,6 @@
 import { impactBp, type SideDepth } from './execCost.ts';
 import type { LiqBucket, LiqMap } from './liqMap.ts';
+import type { LiquidityProfile } from './liquidity.ts';
 import { mulberry32 } from './pathEngine.ts';
 
 /**
@@ -169,4 +170,58 @@ export function branchingRatio(map: LiqMap, dir: 'down' | 'up', p: CascadeSimPar
     best = Math.max(best, impactBp((q / cov) * meanShare, depth) / d);
   }
   return best;
+}
+
+/** Bieżąca minuta rejestratora jako „teraz” najwyżej tyle — dalej mediana godziny */
+const DEPTH_NOW_MAX_AGE = 15 * 60_000;
+/** Mediana godziny z co najmniej tylu minut danych (jak w panelu płynności) */
+const DEPTH_MIN_HOUR_N = 30;
+
+/**
+ * Głębokość stron do symulacji z profilu rejestratora: bieżąca minuta (świeża) — strony wprost z niej; starszy profil
+ * bez stron w minucie → podział jak w medianach tej godziny (od 30 min danych), a bez nich po połowie (`split:
+ * 'assumed'` — do oznaczenia w interfejsie). Brak bieżącej ±20 bp → mediana godziny × (bieżąca ±10 / mediana ±10).
+ * Minuta nieświeża → mediana godziny. null — brak danych.
+ */
+export function cascadeDepth(
+  p: LiquidityProfile,
+  ready: boolean,
+  now: number
+): { params: CascadeSimParams; source: 'now' | 'hour'; split: 'now' | 'hour' | 'assumed' } | null {
+  const fresh = ready && p.now !== null && now - p.now.t <= DEPTH_NOW_MAX_AGE;
+  const hb = p.byHour[new Date(fresh ? p.now!.t : now).getUTCHours()];
+  const hourOk = !!hb && hb.n >= DEPTH_MIN_HOUR_N && hb.d10 !== null && hb.d10 > 0;
+  const share = (b?: number | null, a?: number | null) => (b != null && a != null && b + a > 0 ? b / (b + a) : null);
+  const hs10 = hourOk ? share(hb.b10, hb.a10) : null;
+  const hs20 = hourOk ? share(hb.b20, hb.a20) : null;
+  let d10: number | null;
+  let d20: number | null;
+  let s10: number;
+  let s20: number;
+  let split: 'now' | 'hour' | 'assumed';
+  if (fresh) {
+    const m = p.now!;
+    const ns10 = share(m.b10, m.a10);
+    d10 = m.d10;
+    d20 = m.d20 ?? (hourOk && hb.d20 !== null ? hb.d20 * (m.d10 / (hb.d10 as number)) : null);
+    s10 = ns10 ?? hs10 ?? 0.5;
+    s20 = share(m.b20, m.a20) ?? hs20 ?? s10;
+    split = ns10 !== null ? 'now' : hs10 !== null ? 'hour' : 'assumed';
+  } else if (hourOk) {
+    d10 = hb.d10;
+    d20 = hb.d20;
+    s10 = hs10 ?? 0.5;
+    s20 = hs20 ?? s10;
+    split = hs10 !== null ? 'hour' : 'assumed';
+  } else return null;
+  if (!(d10 && d10 > 0)) return null;
+  return {
+    params: {
+      bids: { d10: d10 * s10, d20: d20 === null ? null : d20 * s20 },
+      asks: { d10: d10 * (1 - s10), d20: d20 === null ? null : d20 * (1 - s20) },
+      resilienceMin: p.resilience.medianMin,
+    },
+    source: fresh ? 'now' : 'hour',
+    split,
+  };
 }
