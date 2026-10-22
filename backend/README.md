@@ -67,6 +67,18 @@ Metadane commitów są neutralne (autor noreply, czas UTC) — bez nazwy hosta i
 pokrycie open interest, opóźnienie odczytów pozycji oraz to, czy publikacja nie zawiera adresu portfela ani adresu IP
 ([scripts/check-data-health.mjs](../scripts/check-data-health.mjs)). Problem otwiera zgłoszenie z etykietą `alert-danych`
 (GitHub wysyła powiadomienie), a powrót świeżych danych zamyka je automatycznie. Ręcznie: `node scripts/check-data-health.mjs`.
+Harmonogram GitHuba jest jednak „best-effort” i w praktyce bywa pomijany, dlatego ta sama ocena działa też na serwerze:
+
+**Strażnik skanera** ([scripts/watchdog.mjs](../scripts/watchdog.mjs), `hyperquant-watchdog.timer`, co 15 min, instalowany przez `install.sh`):
+- restartuje skaner (najwyżej raz na godzinę), gdy usługa stoi, lokalny `status.json` jest starszy niż 10 min albo — przy świeżych
+  danych lokalnych — stoi publikacja, dziennik prognoz lub rejestrator płynności; błędy sieci/GitHuba i problemy jakości
+  (pokrycie open interest) restartu nie wywołują, a usługa działająca krócej niż 10 min ma czas na pierwszą publikację;
+- przy zmianie stanu (i co 6 h przy trwałym problemie) wypycha kluczem wdrożeniowym skanera `alert.json` i `report.md` do gałęzi
+  `health` repo danych; push uruchamia tam workflow (wzorzec: [`deploy/health-alert.yml`](deploy/health-alert.yml)), który
+  otwiera, komentuje albo zamyka zgłoszenie `alert-danych` w repo danych.
+
+Jednorazowo: gałąź `health` w repo danych z plikiem `.github/workflows/health-alert.yml` (kopia wzorca). Podgląd na serwerze:
+`systemctl list-timers hyperquant-watchdog.timer`, `journalctl -u hyperquant-watchdog`.
 
 ## Publikacja do Cloudflare R2 (opcjonalnie)
 

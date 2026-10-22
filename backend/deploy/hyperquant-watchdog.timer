@@ -1,0 +1,10 @@
+[Unit]
+Description=HyperQuant — strażnik skanera co 15 min
+
+[Timer]
+OnCalendar=*:07/15
+RandomizedDelaySec=60
+Persistent=false
+
+[Install]
+WantedBy=timers.target

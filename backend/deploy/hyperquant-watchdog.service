@@ -1,0 +1,25 @@
+[Unit]
+Description=HyperQuant — strażnik skanera (samonaprawa i alarm w repo danych)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# root: restart usługi skanera (systemctl) i odczyt klucza wdrożeniowego; kod tylko z /opt/hyperquant/app
+WorkingDirectory=/opt/hyperquant/app
+EnvironmentFile=/etc/hyperquant/scanner.env
+Environment=HQ_WATCHDOG_DIR=/var/lib/hyperquant/watchdog
+ExecStart=/opt/hyperquant/node/bin/node scripts/watchdog.mjs
+TimeoutStartSec=5min
+Nice=10
+
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=true

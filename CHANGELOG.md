@@ -4,6 +4,13 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Dodane
+- **Strażnik skanera na serwerze** (`scripts/watchdog.mjs`, `backend/deploy/hyperquant-watchdog.{service,timer}`): co 15 min ta sama ocena zdrowia danych co nadzór w GitHub Actions (którego harmonogram GitHub pomija), niezależnie od GitHuba; samonaprawa — restart skanera najwyżej raz na godzinę, gdy usługa stoi, lokalna publikacja ma > 10 min albo stoi publikacja, dziennik prognoz lub rejestrator płynności (bez restartu przy błędach sieci, problemach jakości i w pierwszych 10 min działania usługi); alarm — stan w gałęzi `health` repo danych tylko przy zmianie (przypomnienie co 6 h), push uruchamia workflow otwierający / komentujący / zamykający zgłoszenie `alert-danych`.
+
+### Zmienione
+- `scripts/check-data-health.mjs` eksportuje `fetchInput` (wspólne pobieranie dla nadzoru i strażnika).
+- README repo danych: lista plików w jednym miejscu, opis gałęzi `health`.
+
 ## [2.3.0] — 2026-10-22
 
 ### Dodane
