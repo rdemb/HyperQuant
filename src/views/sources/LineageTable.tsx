@@ -133,8 +133,17 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         method:
           'Kubełki ceny likwidacji (krok ~0.1% ceny) dla longów i shortów, nominał |szi|·cena likwidacji; pokrycie = Σ|szi| / (2·OI); tylko agregaty, bez adresów',
         kinds: ['LIVE'],
-        refresh: 'mapa co 2 min (repo danych + cache GitHuba do 5 min); cel odczytu: pozycje ≥ 1 mln USD co 2 min, ≥ 100 tys. co 10 min — faktyczny wiek (mediana ważona nominałem) w panelu',
+        refresh: 'mapa co 2 min (repo danych + cache GitHuba do 5 min); cel odczytu: pozycje ≥ 1 mln USD co 2 min, ≥ 100 tys. co 10 min, cena likwidacji < 1% od mark co 1 min — faktyczny wiek (mediana ważona nominałem) w panelu',
         caveat: 'Portfele nieaktywne od startu skanera nie są na mapie; cena likwidacji pozycji cross zmienia się z całym kontem.',
+      },
+      {
+        metric: 'Zrealizowane likwidacje (taśma 24 h)',
+        source: 'Skaner HyperQuant: śledzone pozycje → userFillsByTime konta (pole liquidation: markPx, metoda market/backstop)',
+        method:
+          'Kandydat: pozycja zmalała, a cena z taśmy od poprzedniego odczytu dotknęła ceny likwidacji (±0.2%); zdarzenie tylko po potwierdzeniu fillem likwidacyjnym; błąd mapy = mark przy likwidacji vs cena likwidacji z ostatniego odczytu',
+        kinds: ['LIVE'],
+        refresh: 'co 2 min z mapą; potwierdzenia do 4 zapytań/min',
+        caveat: 'Hyperliquid nie publikuje likwidacji wszystkich kont — tylko zmierzona część open interest; bez adresów, opóźnienie do kilku minut.',
       },
       {
         metric: 'Kaskada likwidacji',

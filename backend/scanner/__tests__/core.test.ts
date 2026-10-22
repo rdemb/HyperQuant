@@ -85,6 +85,26 @@ describe('AddressBook — adresy z taśmy i harmonogram skanów', () => {
     expect(b.due(24 * 60 * MIN, 10).sort()).toEqual(['0xbig', '0xmid', '0xnone', '0xsmall', '0xz']);
   });
 
+  it('blisko ceny likwidacji odczyt częściej: < 1% od mark co 1 min, < 3% najwyżej co 2 min (także mała pozycja)', () => {
+    const b = new AddressBook();
+    const at = (liqPx: number, szi = 0.1) => ({ szi, entryPx: 100000, liqPx, scannedAt: 0 });
+    for (const a of ['0xnear', '0xmid', '0xfar']) b.recordTrade([a, '0xz'], 1, 0);
+    b.updatePosition('0xz', null, 0);
+    b.updatePosition('0xnear', at(99_500), 0); // 0.5% od mark
+    b.updatePosition('0xmid', at(97_800), 0); // 2.2%
+    b.updatePosition('0xfar', at(80_000), 0); // 20% — zwykły interwał 30 min
+    expect(b.due(MIN, 10, 100_000)).toEqual(['0xnear']);
+    expect(b.due(2 * MIN, 10, 100_000)).toEqual(['0xnear', '0xmid']);
+    expect(b.due(2 * MIN, 10)).toEqual([]); // bez ceny mark — interwały wg nominału
+  });
+
+  it('positionOf: ostatnio odczytana pozycja adresu (do porównania przy kolejnym odczycie)', () => {
+    const b = new AddressBook();
+    b.updatePosition('0xa', pos(2), 0);
+    expect(b.positionOf('0xa')).toEqual(pos(2));
+    expect(b.positionOf('0xnope')).toBeNull();
+  });
+
   it('znany adres, który znów handluje, wraca do kolejki od razu', () => {
     const b = new AddressBook();
     b.recordTrade(['0xa', '0xb'], 1, 0);

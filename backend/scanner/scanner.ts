@@ -1,9 +1,11 @@
 import { mkdirSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { buildLiqMap } from '../../src/utils/liqMap.ts';
+import { buildLiqTape } from '../../src/utils/liqTape.ts';
 import type { AddressBook } from './addressBook.ts';
 import type { R2Config } from './config.ts';
 import type { HlCtx, HlRest } from './hl.ts';
+import { LiqConfirmer, PriceRange, isLiqCandidate } from './liqDetect.ts';
 import { parseCoinPosition } from './positions.ts';
 import { putObject } from './r2.ts';
 
@@ -26,21 +28,40 @@ export interface ScannerDeps {
   r2: R2Config | null;
   fetchFn?: typeof fetch;
   now?: () => number;
+  /** Kolejka potwierdzeń likwidacji (np. odczytana ze stanu); domyślnie nowa, 4 zapytania/min */
+  confirmer?: LiqConfirmer;
+  /** Od kiedy taśma likwidacji obserwuje bez przerwy; domyślnie czas utworzenia */
+  tapeSince?: number;
 }
 
 /**
- * Cykl skanera: odpytanie pozycji adresów, których termin minął, i publikacja agregatów (mapa likwidacji + status).
- * Publikowane pliki nie zawierają adresów.
+ * Cykl skanera: odpytanie pozycji adresów, których termin minął, wykrywanie i potwierdzanie likwidacji śledzonych pozycji
+ * oraz publikacja agregatów (mapa likwidacji, taśma likwidacji, status). Publikowane pliki nie zawierają adresów.
  */
 export class Scanner {
   private readonly d: ScannerDeps;
   private ctx: HlCtx | null = null;
   private ctxAt = 0;
   private scanTimes: number[] = [];
+  private readonly prices = new PriceRange();
+  readonly confirmer: LiqConfirmer;
+  readonly tapeSince: number;
   lastPublishOk: number | null = null;
 
   constructor(d: ScannerDeps) {
     this.d = d;
+    this.confirmer = d.confirmer ?? new LiqConfirmer({ coin: d.coin, maxPerMin: 4 });
+    this.tapeSince = d.tapeSince ?? this.now();
+  }
+
+  /** Cena transakcji z taśmy (do sprawdzania, czy cena dotknęła ceny likwidacji między odczytami). */
+  recordTrade(px: number, t: number): void {
+    this.prices.record(px, t);
+  }
+
+  /** Potwierdza kandydatów do likwidacji w ramach limitu zapytań; zwraca liczbę zapytań. */
+  confirmLiquidations(): Promise<number> {
+    return this.confirmer.process(this.d.rest, this.now());
   }
 
   private now(): number {
@@ -54,7 +75,7 @@ export class Scanner {
 
   /** Odpytuje do `limit` adresów z minionym terminem; zwraca liczbę udanych odczytów. */
   async scanDue(limit: number): Promise<number> {
-    const due = this.d.book.due(this.now(), limit);
+    const due = this.d.book.due(this.now(), limit, this.ctx?.markPx);
     let ok = 0;
     for (const addr of due) {
       const st = await this.d.rest.info({ type: 'clearinghouseState', user: addr }, 2);
@@ -63,7 +84,10 @@ export class Scanner {
         continue;
       }
       const t = this.now();
-      this.d.book.updatePosition(addr, parseCoinPosition(st, this.d.coin, t), t);
+      const prev = this.d.book.positionOf(addr);
+      const next = parseCoinPosition(st, this.d.coin, t);
+      if (prev && isLiqCandidate(prev, next, this.prices.range(prev.scannedAt, t))) this.confirmer.enqueue({ addr, prev, to: t });
+      this.d.book.updatePosition(addr, next, t);
       this.scanTimes.push(t);
       ok++;
     }
@@ -82,6 +106,8 @@ export class Scanner {
     if (!c || !(c.markPx > 0) || !(c.oiBtc >= 0) || asOf - this.ctxAt > CTX_MAX_AGE_MS) return false;
     const positions = this.d.book.positions();
     const map = buildLiqMap(positions, { coin: this.d.coin, markPx: c.markPx, oiBtc: c.oiBtc, asOf, addresses: this.d.book.size, ctxAt: this.ctxAt });
+    this.confirmer.prune(asOf);
+    const tape = buildLiqTape(this.confirmer.events(), { coin: this.d.coin, asOf, since: this.tapeSince, checks: this.confirmer.checks(asOf) });
     const status = {
       v: 1,
       coin: this.d.coin,
@@ -95,9 +121,12 @@ export class Scanner {
       ctxAt: this.ctxAt,
       dayNtlVlm: Number.isFinite(c.dayNtlVlm) ? c.dayNtlVlm : null,
       apiErrors: this.d.rest.errors,
+      liq24h: tape.totals.h24.n,
+      liqPending: this.confirmer.pending,
     };
     const files: [string, string][] = [
       [`liq-map/${this.d.coin}.json`, JSON.stringify(map)],
+      [`liq-tape/${this.d.coin}.json`, JSON.stringify(tape)],
       ['status.json', JSON.stringify(status)],
     ];
     for (const [key, body] of files) writeAtomic(join(this.d.outDir, key), body);

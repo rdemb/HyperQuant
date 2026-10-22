@@ -5,7 +5,8 @@ import type { ScannedPosition } from '../../src/utils/liqMap.ts';
  * Stan zostaje wyłącznie na serwerze (nigdy nie jest publikowany).
  *
  * Każde wywołanie `due` dzieli limit między trzy kolejki (niewykorzystany udział przechodzi dalej):
- *  1. pozycje (50%): termin z interwału wg nominału — ≥ 1 mln USD co 2 min, ≥ 100 tys. co 10 min, inne co 30 min;
+ *  1. pozycje (50%): termin z interwału wg nominału — ≥ 1 mln USD co 2 min, ≥ 100 tys. co 10 min, inne co 30 min,
+ *     a przy cenie likwidacji < 1% od ceny mark co 1 min (< 3%: najwyżej co 2 min);
  *     kolejność wg spóźnienia względem interwału, więc przy przeciążeniu najdłużej czekają małe pozycje, nie duże;
  *     pozycja, której właściciel znów handlował, jest od razu do odświeżenia;
  *  2. adresy, które handlowały od ostatniego odczytu, w tym nowe (40%) — większy obrót pierwszy;
@@ -36,11 +37,19 @@ interface Rec {
 
 const posNtl = (r: Rec) => (r.pos ? Math.abs(r.pos.szi) * r.pos.entryPx : 0);
 
-function posInterval(r: Rec): number {
+/**
+ * Interwał odczytu pozycji: wg nominału, a blisko ceny likwidacji częściej — tam mapa musi być najświeższa
+ * i tam powstają likwidacje do potwierdzenia (< 1% od ceny mark co 1 min, < 3% najwyżej co 2 min).
+ */
+function posInterval(r: Rec, markPx?: number): number {
   const ntl = posNtl(r);
-  if (ntl >= 1e6) return 2 * MIN;
-  if (ntl >= 1e5) return 10 * MIN;
-  return 30 * MIN;
+  const base = ntl >= 1e6 ? 2 * MIN : ntl >= 1e5 ? 10 * MIN : 30 * MIN;
+  const liq = r.pos?.liqPx;
+  if (!markPx || !(markPx > 0) || !liq) return base;
+  const dist = Math.abs(markPx - liq) / markPx;
+  if (dist < 0.01) return MIN;
+  if (dist < 0.03) return Math.min(base, 2 * MIN);
+  return base;
 }
 
 export class AddressBook {
@@ -110,14 +119,19 @@ export class AddressBook {
     if (r) r.retryAt = now + RETRY_AFTER;
   }
 
-  due(now: number, limit: number): string[] {
+  /** Ostatnio odczytana pozycja adresu (null = brak pozycji albo adres nieznany). */
+  positionOf(addr: string): ScannedPosition | null {
+    return this.recs.get(addr)?.pos ?? null;
+  }
+
+  due(now: number, limit: number, markPx?: number): string[] {
     const positions: [string, number, number][] = []; // adres, spóźnienie względem interwału, nominał
     const traded: [string, number][] = [];
     const safety: [string, number][] = [];
     for (const [a, r] of this.recs) {
       if (r.retryAt !== undefined && r.retryAt > now) continue;
       if (r.pos && r.lastScanAt !== null) {
-        const iv = posInterval(r);
+        const iv = posInterval(r, markPx);
         const late = (now - (r.lastScanAt + iv)) / iv;
         if (late >= 0 || r.dirty) positions.push([a, r.dirty ? Math.max(late, 1) : late, posNtl(r)]);
       } else if (r.dirty || r.lastScanAt === null) {

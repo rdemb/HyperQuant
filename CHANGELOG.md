@@ -7,8 +7,16 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 ### Dodane
 - **Nadzór danych** (`.github/workflows/data-health.yml`, `scripts/check-data-health.mjs`): co 30 min kontrola świeżości publikacji skanera, pokrycia open interest i opóźnienia odczytów pozycji oraz strażnik prywatności (alarm, gdyby w publikacji pojawił się adres portfela lub IP); problem otwiera zgłoszenie `alert-danych`, powrót danych je zamyka.
 
+- **Taśma zrealizowanych likwidacji** (`backend/scanner/liqDetect.ts`, `src/utils/liqTape.ts`, panel na Desku): skaner wykrywa zmniejszenie śledzonej pozycji przy jej cenie likwidacji i potwierdza je w fillach konta (pole `liquidation`, metoda market/backstop); publikuje `liq-tape/BTC.json` — zdarzenia z 24 h, sumy 1 h / 24 h, kubełki 5 min — bez adresów i identyfikatorów transakcji.
+- **Precyzja mapy likwidacji**: dla każdej potwierdzonej likwidacji błąd ceny likwidacji z mapy względem ceny mark w chwili likwidacji (mediana |błędu|, p90, mediana ze znakiem).
+- **Skanowanie adaptacyjne**: pozycje z ceną likwidacji < 1% od ceny mark odczytywane co 1 min (< 3%: najwyżej co 2 min).
+
 ### Zmienione
 - Wdrożenie GitHub Pages na Node 24 (jak CI i skaner).
+- Hook danych skanera wspólny dla mapy i taśmy (`usePublished`): pamięć podręczna, odświeżanie co minutę tylko w widocznej karcie, starsza odpowiedź nie cofa nowszej.
+
+### Naprawione
+- `status.json` pokazywał `seeded: 0` po każdym restarcie skanera (licznik tylko w pamięci); konta z rankingu bez pozycji BTC wypadały co 3 dni i wracały z zasiewem (zbędne ponowne odczyty).
 
 ## [2.2.0] — 2026-10-22
 

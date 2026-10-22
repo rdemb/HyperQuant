@@ -2,22 +2,26 @@
 
 Mierzy **prawdziwą mapę likwidacji** BTC zamiast ją szacować: adresy portfeli pochodzą z publicznego strumienia transakcji
 (pole `users`) i z publicznego rankingu kont Hyperliquid (zasiew 5000 największych kont co 6 h), a ich pozycje i ceny likwidacji
-z publicznego `clearinghouseState`. Co minutę publikuje **wyłącznie agregaty**
-(kubełki ceny likwidacji, pokrycie open interest, wiek danych) — nigdy adresów.
+z publicznego `clearinghouseState`. Wykrywa też **zrealizowane likwidacje** śledzonych pozycji (potwierdzone fillami z polem `liquidation`)
+i mierzy nimi precyzję mapy. Co minutę publikuje **wyłącznie agregaty i zdarzenia bez adresów**
+(kubełki ceny likwidacji, pokrycie open interest, wiek danych, taśma likwidacji) — nigdy adresów ani identyfikatorów transakcji.
 
 ```
 WebSocket trades + activeAssetCtx ──► książka adresów ──► harmonogram skanów ──► clearinghouseState (budżet wag)
+          │ ceny (min/max na minutę)                                                 │ pozycja zmalała przy cenie likwidacji?
+          └──────────────────────────────────────► kandydat ──► userFillsByTime (pole liquidation) ──► taśma likwidacji
                                                                                      │
-                         strona (przeglądarka) ◄── repo danych GitHub ◄── liq-map/BTC.json, status.json
+       strona (przeglądarka) ◄── repo danych GitHub ◄── liq-map/BTC.json, liq-tape/BTC.json, status.json
 ```
 
 - **Bez zależności npm.** Node ≥ 24 uruchamia TypeScript bezpośrednio (`node backend/scanner/main.ts`), `fetch` i `WebSocket` są wbudowane, podpis S3 (SigV4) jest własny i sprawdzony oficjalnym wektorem AWS.
 - **Ostrożny wobec API.** Własny budżet wag (domyślnie 240 z limitu 1200/min na IP — IP bywa współdzielone z innymi usługami). Każdy kolejny błąd (429, 5xx, timeout) halvuje tempo aż do 1/8 budżetu, 429 dodatkowo wstrzymuje zapytania na 30 s; powrót stopniowy po minucie spokoju. Nieudany adres wraca do kolejki po minucie.
-- **Harmonogram z udziałami.** Pozycje (50% skanów) wg spóźnienia względem celu: ≥ 1 mln USD co 2 min, ≥ 100 tys. co 10 min, inne co 30 min; adresy, które handlowały od ostatniego odczytu lub są nowe (40%); bezpiecznik dla adresów bez pozycji raz na 24 h (10%). Pozycja BTC zmienia się tylko przez transakcję BTC, więc adres bez pozycji wraca do kolejki, gdy znów pojawi się na taśmie. Przy przeciążeniu najdłużej czekają małe pozycje — faktyczny wiek odczytów (mediana ważona nominałem) jest publikowany, a strona przy wieku > 15 min pokazuje „OPÓŹNIONE” zamiast LIVE.
+- **Harmonogram z udziałami.** Pozycje (50% skanów) wg spóźnienia względem celu: ≥ 1 mln USD co 2 min, ≥ 100 tys. co 10 min, inne co 30 min, a z ceną likwidacji < 1% od ceny mark co 1 min (< 3%: najwyżej co 2 min) — tam mapa musi być najświeższa; adresy, które handlowały od ostatniego odczytu lub są nowe (40%); bezpiecznik dla adresów bez pozycji raz na 24 h (10%). Pozycja BTC zmienia się tylko przez transakcję BTC, więc adres bez pozycji wraca do kolejki, gdy znów pojawi się na taśmie. Przy przeciążeniu najdłużej czekają małe pozycje — faktyczny wiek odczytów (mediana ważona nominałem) jest publikowany, a strona przy wieku > 15 min pokazuje „OPÓŹNIONE” zamiast LIVE.
 - **Odporność.** WebSocket ze strażnikiem ciszy (90 s) i przerwą 1 → 60 s resetowaną dopiero po minucie stabilnego połączenia; błędy zadań (np. pełny dysk) są logowane, proces działa dalej; publikacja wstrzymana, gdy kontekst rynku (mark, OI) ma ponad 5 min.
-- **Prywatność serwera.** Przeglądarki czytają publiczny bucket R2, nigdy serwer skanera. Konfiguracja tylko ze zmiennych środowiskowych w pliku na serwerze.
+- **Likwidacje bez zgadywania.** Hyperliquid nie publikuje strumienia likwidacji wszystkich kont (kanały likwidacji są per użytkownik, do 10 adresów). Kandydat powstaje, gdy ponowny odczyt pokazuje mniejszą pozycję, a cena z taśmy od poprzedniego odczytu dotknęła jej ceny likwidacji (±0.2%); zdarzenie trafia na taśmę dopiero po potwierdzeniu fillem z polem `liquidation` (`userFillsByTime`, do 4 zapytań/min, kandydat ważny 30 min). Taśma (24 h, bez adresów) przetrwa restart; ciągłość obserwacji (`since`) — tylko przy przerwie < 10 min.
+- **Prywatność serwera.** Przeglądarki czytają publiczne repo danych, nigdy serwer skanera. Konfiguracja tylko ze zmiennych środowiskowych w pliku na serwerze.
 
-Metodę mapy i symulator kaskady opisują `src/utils/liqMap.ts` i `src/utils/cascade.ts` (współdzielone ze stroną).
+Metodę mapy, taśmy i symulator kaskady opisują `src/utils/liqMap.ts`, `src/utils/liqTape.ts` i `src/utils/cascade.ts` (współdzielone ze stroną).
 
 ## Uruchomienie lokalne (test)
 
