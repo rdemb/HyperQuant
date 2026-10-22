@@ -5,7 +5,8 @@
  *     najwyżej raz na godzinę i najwyżej 3 razy w epizodzie; ręcznie zatrzymanej usługi nie uruchamia;
  *  2. alarm — stan zdrowia (ta sama ocena co scripts/check-data-health.mjs) trafia do gałęzi `health` repo danych przez
  *     klucz wdrożeniowy skanera; push uruchamia tam workflow, który otwiera / komentuje / zamyka zgłoszenie
- *     „alert-danych”. Problem wysyłany po potwierdzeniu w dwóch przebiegach (prywatność — od razu), przypomnienie co 6 h.
+ *     „alert-danych”. Problem wysyłany po potwierdzeniu w dwóch przebiegach (prywatność — od razu), przypomnienie co 6 h;
+ *     przy „ok” puls raz na dobę — uruchamia tam niezależną weryfikację dziennika i znaczek „zweryfikowano”.
  * Raport jest publiczny — bez adresów, ścieżek i danych serwera.
  */
 import { execFileSync } from 'node:child_process';
@@ -26,6 +27,8 @@ const RESTART_COOLDOWN = 60 * MIN;
 /** Restartów w jednym epizodzie problemu — potem tylko alarm (restart nie pomaga, np. przerwany łańcuch dziennika) */
 const MAX_RESTARTS = 3;
 const REMIND = 6 * 60 * MIN;
+/** Puls przy „ok” — uruchamia codzienną niezależną weryfikację dziennika (workflow gałęzi health) */
+const HEARTBEAT = 24 * 60 * MIN;
 const SERVICE = 'hyperquant-scanner';
 /**
  * Problemy oceny oznaczające zawieszoną część skanera (nie sieć ani GitHub): publikacja, dziennik, płynność. Stojące
@@ -85,10 +88,11 @@ export function alertState(health, d) {
 
 /**
  * Wysyłka: powrót do „ok” od razu; problem — gdy ten sam stan był już w poprzednim przebiegu (`seenKey`; pojedyncze
- * błędy sieci nie otwierają zgłoszenia), prywatność (`urgent`) od razu; ten sam problem — przypomnienie co 6 h.
+ * błędy sieci nie otwierają zgłoszenia), prywatność (`urgent`) od razu; ten sam problem — przypomnienie co 6 h;
+ * „ok” — puls raz na dobę (codzienna weryfikacja dziennika w GitHub Actions).
  */
 export function shouldPush({ prevKey, seenKey, key, lastPushAt, ok, urgent, now }) {
-  if (ok) return prevKey !== 'ok';
+  if (ok) return prevKey !== 'ok' || lastPushAt === null || now - lastPushAt >= HEARTBEAT;
   if (!urgent && key !== seenKey) return false;
   if (key !== prevKey) return true;
   return lastPushAt === null || now - lastPushAt >= REMIND;

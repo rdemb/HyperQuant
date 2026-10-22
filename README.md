@@ -2,6 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![CI](https://github.com/rdemb/HyperQuant/actions/workflows/ci.yml/badge.svg)](https://github.com/rdemb/HyperQuant/actions/workflows/ci.yml)
+[![Dziennik desku — codzienna niezależna weryfikacja](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Frdemb%2Fhyperquant-data%2Fhealth%2Fbadge%2Fledger.json)](https://github.com/rdemb/hyperquant-data/actions)
 [![Live: GitHub Pages](https://img.shields.io/badge/Live-GitHub%20Pages-0b1019)](https://rdemb.github.io/HyperQuant/)
 [![Stack](https://img.shields.io/badge/React%2019%20·%20Vite%208%20·%20Canvas%20·%20Three.js-PWA-3fc6dd)](https://github.com/rdemb/HyperQuant)
 

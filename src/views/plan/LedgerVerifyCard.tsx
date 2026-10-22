@@ -10,6 +10,37 @@ interface Saved extends RemoteVerification {
   at: number;
 }
 
+/** Codzienna niezależna weryfikacja w GitHub Actions (gałąź health repo danych) */
+interface Daily {
+  ok: boolean;
+  at: number;
+  run: string;
+  lines: string[];
+}
+
+const isDaily = (x: unknown): x is Daily => {
+  const d = x as Partial<Daily> | null;
+  return !!d && typeof d.ok === 'boolean' && typeof d.at === 'number' && Number.isFinite(d.at) && typeof d.run === 'string' && /^https:\/\/github\.com\//.test(d.run) && Array.isArray(d.lines);
+};
+
+/** Wynik ostatniej weryfikacji z GitHub Actions; null = brak / błąd. */
+function useDaily(): Daily | null {
+  const [d, setD] = useState<Daily | null>(null);
+  useEffect(() => {
+    const base = DATA_BASE.replace(/\/main$/, '/health');
+    if (!/^https:\/\//.test(base)) return;
+    let live = true;
+    fetch(`${base}/verify/latest.json`, { cache: 'no-cache' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((x) => live && isDaily(x) && setD(x))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
+  return d;
+}
+
 /** <konto>/<repo> z adresu surowych plików GitHuba; null = inne źródło danych (weryfikacja niedostępna). */
 function repoOf(base: string): string | null {
   const m = base.match(/^https:\/\/raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\/[^/]+$/);
@@ -44,6 +75,7 @@ export const LedgerVerifyCard: React.FC<{ summaryHead: string }> = ({ summaryHea
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const daily = useDaily();
   useEffect(() => setSaved(load()), []);
   if (!repo) return null;
 
@@ -89,6 +121,16 @@ export const LedgerVerifyCard: React.FC<{ summaryHead: string }> = ({ summaryHea
           {running ? 'Sprawdzam…' : saved ? 'Sprawdź ponownie' : 'Zweryfikuj dziennik'}
         </button>
       </div>
+      {daily && (
+        <div className={daily.ok && Date.now() - daily.at < 2 * DAY ? 'text-ink-2' : 'text-warn'}>
+          Niezależna weryfikacja w GitHub Actions (codziennie, infrastruktura GitHuba — nie serwer desku):{' '}
+          <span className="text-ink-1">{daily.ok ? 'zgodna' : 'wykryła problem'}</span> · {dateTimeFmt.format(daily.at)} ·{' '}
+          <a className="text-accent hover:underline" href={daily.run} target="_blank" rel="noopener noreferrer">
+            przebieg i pełny raport
+          </a>
+          {Date.now() - daily.at >= 2 * DAY && ' (starsza niż 2 dni)'}
+        </div>
+      )}
       {running && progress && <div className="text-ink-3">{progress}</div>}
       {error && <div className="text-warn">Weryfikacja przerwana: {error}</div>}
       {saved && !running && (
