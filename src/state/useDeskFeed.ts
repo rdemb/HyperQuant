@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { microEngine } from '../utils/microEngine';
 import {
   AggrTradeTick,
   BackendQuantTelemetry,
@@ -9,6 +10,7 @@ import {
   applyLiveTradesToBars,
   applyRealFlowSplit,
   applyVenueFlow,
+  collectWhaleNodes,
   fetchRealHyperliquidMarketData,
   HyperliquidHTFLevels,
   mapHyperliquidTrade,
@@ -36,6 +38,8 @@ export function useDeskFeed(options: { cexEnabled: boolean }) {
   const [lastSyncOkAt, setLastSyncOkAt] = useState<number | null>(null);
   const [nowTick, setNowTick] = useState<number>(() => Date.now());
   const [backendTelemetry, setBackendTelemetry] = useState<BackendQuantTelemetry | null>(null);
+  /** Duże poziomy z arkusza WS — gdy działa WebSocket, odczyt REST arkusza (i jego węzły) nie jest pobierany */
+  const [wsWhaleNodes, setWsWhaleNodes] = useState<BackendQuantTelemetry['whaleNodes']>([]);
   // Start bez świec: do pierwszej udanej synchronizacji widoki pokazują stan „łączenie”, nie liczby zastępcze
   const [bars, setBars] = useState<OHLCVBar[]>([]);
   const [realHtfLevels, setRealHtfLevels] = useState<HyperliquidHTFLevels | null>(null);
@@ -272,6 +276,7 @@ export function useDeskFeed(options: { cexEnabled: boolean }) {
           try {
             const msg = JSON.parse(event.data);
             if (msg.channel === 'trades' && Array.isArray(msg.data)) {
+              microEngine.onTrades(msg.data);
               const ticks: AggrTradeTick[] = [];
               for (const raw of msg.data) {
                 const t = mapHyperliquidTrade(raw);
@@ -279,6 +284,8 @@ export function useDeskFeed(options: { cexEnabled: boolean }) {
               }
               ingestTicks(ticks, true);
             } else if (msg.channel === 'l2Book' && msg.data && Array.isArray(msg.data.levels)) {
+              microEngine.onBook(msg.data);
+              setWsWhaleNodes(collectWhaleNodes(msg.data.levels[0] || [], msg.data.levels[1] || []).slice(0, 12));
               const parsed = parseL2Levels(msg.data.levels[0] || [], msg.data.levels[1] || []);
               if (parsed.bids.length > 0 && parsed.asks.length > 0) setRealL2Book(parsed);
             }
@@ -342,7 +349,7 @@ export function useDeskFeed(options: { cexEnabled: boolean }) {
     lastSyncOkAt,
     nowTick,
     dataStatus,
-    backendTelemetry,
+    backendTelemetry: backendTelemetry && backendTelemetry.whaleNodes.length === 0 && wsWhaleNodes.length > 0 ? { ...backendTelemetry, whaleNodes: wsWhaleNodes } : backendTelemetry,
     bars,
     latestBar,
     currentPrice,

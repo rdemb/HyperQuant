@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Flame, Layers, ShieldAlert, Zap } from 'lucide-react';
 import { Badge } from '../ui';
 import { useDesk } from '../state/DeskContext';
+import { useMicroMechanics } from '../state/useMicroMechanics';
 import { tickTradeCount } from '../utils/cexAdapters';
 import {
   AggrTradeTick,
@@ -198,6 +199,8 @@ const DomRow: React.FC<{
   );
 };
 
+const absTimeFmt = new Intl.DateTimeFormat('pl-PL', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
 export const AggrOrderFlowTape: React.FC<AggrOrderFlowTapeProps> = ({
   trades,
   latestBar,
@@ -208,6 +211,11 @@ export const AggrOrderFlowTape: React.FC<AggrOrderFlowTapeProps> = ({
   const [viewMode, setViewMode] = useState<'dom_ofi' | 'tape' | 'venues'>(
     'dom_ofi'
   );
+  // Absorpcja z regresji (mechanika arkusza) — pokazywana tylko, gdy wystąpiła w ostatnich 2 min
+  const micro = useMicroMechanics();
+  const absEvents = micro.absorption.events;
+  const lastAbsorptionCandidate = absEvents.length ? absEvents[absEvents.length - 1] : null;
+  const lastAbsorption = lastAbsorptionCandidate && Date.now() - lastAbsorptionCandidate.t <= 2 * 60_000 ? lastAbsorptionCandidate : null;
   const [tapeFilter, setTapeFilter] = useState<'all' | 'perp' | 'spot' | 'liq'>(
     'all'
   );
@@ -276,23 +284,23 @@ export const AggrOrderFlowTape: React.FC<AggrOrderFlowTapeProps> = ({
           <div className="flex items-center gap-1.5">
             <Flame className="w-3.5 h-3.5 text-ink-3 shrink-0" aria-hidden="true" />
             <h2 className="font-display text-sm font-semibold text-ink-1 tracking-tight truncate">
-              Arkusz L2 i przepływ (OFI)
+              Arkusz L2 i przepływ agresora
             </h2>
           </div>
           <p className="mt-0.5 text-[11px] text-ink-3 font-mono tabular-nums truncate">
-            B/S <span className="text-ink-1">{fmtRatio(ofiSummary.overallBuySellRatio)}</span> · OFI{' '}
+            B/S <span className="text-ink-1">{fmtRatio(ofiSummary.overallBuySellRatio)}</span> · przepływ{' '}
             <span className="text-ink-1">
               {ofiSummary.overallOfiPct > 0 ? '+' : ''}
               {ofiSummary.overallOfiPct}%
             </span>{' '}
-            · wyczerpanie <span className="text-ink-1">{ofiSummary.exhaustionIndex}/100</span>
+            · wyczerpanie <span className="text-ink-1" title="Heurystyka z progami — bez walidacji statystycznej">{ofiSummary.exhaustionIndex}/100</span>
           </p>
         </div>
 
         <div role="tablist" aria-label="Widok arkusza" className="grid grid-cols-3 gap-0.5 bg-page p-0.5 rounded-lg border border-line">
           {(
             [
-              { id: 'dom_ofi', label: 'DOM + OFI' },
+              { id: 'dom_ofi', label: 'DOM + przepływ' },
               { id: 'tape', label: 'Taśma' },
               { id: 'venues', label: 'Venues' },
             ] as const
@@ -326,7 +334,7 @@ export const AggrOrderFlowTape: React.FC<AggrOrderFlowTapeProps> = ({
               </span>
             </div>
             <div className="flex items-center justify-between pl-2">
-              <span>OFI kup/sprz</span>
+              <span title="Wolumen agresora z ostatnich 60 s przypisany do poziomu (kupno/sprzedaż) — nie OFI z literatury; OFI Cont–Kukanov–Stoikov: widok Mikrostruktura">Agresor kup/sprz</span>
               <span>Δ $</span>
             </div>
           </div>
@@ -390,8 +398,17 @@ export const AggrOrderFlowTape: React.FC<AggrOrderFlowTapeProps> = ({
                   <div className="flex items-center gap-1.5 text-[11px] font-semibold text-ink-1">
                     <ShieldAlert className="w-3.5 h-3.5 shrink-0 text-level" aria-hidden="true" />
                     <span className="truncate">Detektor wyczerpania momentum</span>
+                    <span className="text-[10px] font-normal text-ink-3" title="Progi dobrane ręcznie, bez walidacji statystycznej">heurystyka</span>
                   </div>
                   <p className="text-[11px] text-ink-2 leading-snug mt-0.5 line-clamp-2">{ofiSummary.exhaustionNote}</p>
+                  {lastAbsorption && (
+                    <p className="text-[11px] leading-snug mt-0.5 text-ink-1" title="Reszta odpornej regresji ruchu ceny na wolumenie agresora (interwały 10 s) — widok Mikrostruktura">
+                      Absorpcja (regresja) {absTimeFmt.format(lastAbsorption.t)}: {lastAbsorption.side === 'buy' ? 'kupno' : 'sprzedaż'}{' '}
+                      {Math.abs(lastAbsorption.signedVol).toFixed(1)} BTC, oczekiwano {lastAbsorption.expected >= 0 ? '+' : ''}
+                      {lastAbsorption.expected.toFixed(0)} $, było {lastAbsorption.realized >= 0 ? '+' : ''}
+                      {lastAbsorption.realized.toFixed(0)} $
+                    </p>
+                  )}
                 </div>
                 {onTriggerExhaustionSignal && (
                   <button
