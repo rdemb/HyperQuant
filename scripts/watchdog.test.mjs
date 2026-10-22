@@ -78,11 +78,13 @@ describe('strażnik: stan alarmu i wysyłka', () => {
     expect(shouldPush({ prevKey: 'ok', seenKey: 'x', key: 'x', lastPushAt: NOW - MIN, ok: false, urgent: false, now: NOW })).toBe(true);
     expect(shouldPush({ prevKey: 'ok', seenKey: 'ok', key: 'p', lastPushAt: NOW - MIN, ok: false, urgent: true, now: NOW })).toBe(true);
   });
-  it('trwały problem — przypomnienie najwyżej co 6 h; powrót do „ok” od razu; „ok” bez powtórek', () => {
+  it('trwały problem — przypomnienie najwyżej co 6 h; powrót do „ok” od razu; „ok” — puls raz na dobę', () => {
     expect(shouldPush({ prevKey: 'x', seenKey: 'x', key: 'x', lastPushAt: NOW - 60 * MIN, ok: false, urgent: false, now: NOW })).toBe(false);
     expect(shouldPush({ prevKey: 'x', seenKey: 'x', key: 'x', lastPushAt: NOW - 7 * 60 * MIN, ok: false, urgent: false, now: NOW })).toBe(true);
     expect(shouldPush({ prevKey: 'x', seenKey: 'x', key: 'ok', lastPushAt: NOW - MIN, ok: true, urgent: false, now: NOW })).toBe(true);
-    expect(shouldPush({ prevKey: 'ok', seenKey: 'ok', key: 'ok', lastPushAt: NOW - 24 * 60 * MIN, ok: true, urgent: false, now: NOW })).toBe(false);
+    expect(shouldPush({ prevKey: 'ok', seenKey: 'ok', key: 'ok', lastPushAt: NOW - 23 * 60 * MIN, ok: true, urgent: false, now: NOW })).toBe(false);
+    // Puls raz na dobę także przy „ok” — uruchamia niezależną weryfikację dziennika w GitHub Actions
+    expect(shouldPush({ prevKey: 'ok', seenKey: 'ok', key: 'ok', lastPushAt: NOW - 24 * 60 * MIN, ok: true, urgent: false, now: NOW })).toBe(true);
     expect(shouldPush({ prevKey: null, seenKey: null, key: 'ok', lastPushAt: null, ok: true, urgent: false, now: NOW })).toBe(true);
   });
 });

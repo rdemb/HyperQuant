@@ -89,6 +89,10 @@ działa jako root z własnym katalogiem stanu poza katalogiem usługi skanera):
   Push uruchamia tam workflow (wzorzec: [`deploy/health-alert.yml`](deploy/health-alert.yml)), który otwiera, komentuje
   albo zamyka zgłoszenie `alert-danych` w repo danych. Commity mają czas UTC i autora noreply, jak publikacja skanera.
 
+Raz na dobę (także przy „ok”) strażnik wysyła puls — workflow gałęzi `health` uruchamia wtedy w GitHub Actions niezależną
+weryfikację dziennika (`verify-ledger.mjs --dir ledger --market` na klonie gałęzi `ledger`) i zapisuje `badge/ledger.json`
+(znaczek shields.io) oraz `verify/latest.json` (podsumowanie dla strony).
+
 Jednorazowo: gałąź `health` w repo danych z plikiem `.github/workflows/health-alert.yml` (kopia wzorca). Podgląd na serwerze:
 `systemctl list-timers hyperquant-watchdog.timer`, `journalctl -u hyperquant-watchdog`. Dłuższa przerwa serwisowa:
 `systemctl stop hyperquant-watchdog.timer` (inaczej strażnik zgłosi zatrzymaną usługę).
