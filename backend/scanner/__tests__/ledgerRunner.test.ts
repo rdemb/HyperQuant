@@ -218,3 +218,86 @@ describe('LedgerRunner — pokwitowania i długie przerwy', () => {
     expect(skips[0]).toMatchObject({ slot: SLOT0 + 15 * MIN, until: SLOT0 + 3 * DAY - 15 * MIN, reason: 'outage' });
   });
 });
+
+describe('LedgerRunner — model vs rynek (HIP-4)', () => {
+  const snapFor = (expiry: number) => ({
+    outcome: 15711,
+    K: 100_000,
+    expiry,
+    src: 'mark' as const,
+    px: 100_000,
+    bookTime: null,
+    quote: { bid: 0.45, ask: 0.5, mid: 0.475, spread: 0.05, depthBid: 100, depthAsk: 100, liquid: true },
+  });
+
+  it('rekord rynku tylko 5–10 min po początku slotu, raz; osobne pokwitowanie <slot>-m.ots ze skrótem = hash rekordu', async () => {
+    const asked: number[] = [];
+    const digests: string[] = [];
+    const stamp = async (d: Uint8Array) => (digests.push(Buffer.from(d).toString('hex')), { ots: new Uint8Array([1]), calendars: ['a'] });
+    const { r, dir, store } = runner({ stamp, markets: async (expiry) => (asked.push(expiry), snapFor(expiry)) });
+    r.init(SLOT0);
+    await r.tick(SLOT0 + 30_000); // prognozy główne
+    await r.tick(SLOT0 + 3 * MIN); // za wcześnie na rynek
+    expect(asked).toEqual([]);
+    await r.tick(SLOT0 + 6 * MIN);
+    await r.tick(SLOT0 + 7 * MIN); // już wydane — bez ponownego pobrania
+    expect(asked).toEqual([SLOT0 + 15 * MIN]);
+    const mkt = lines(dir, '2026-10-22').filter((l) => l.kind === 'mkt');
+    expect(mkt).toHaveLength(1);
+    expect(mkt[0]).toMatchObject({ id: `${SLOT0}-mkt15711`, K: 100_000, expiry: SLOT0 + 15 * MIN, bid: 0.45, ask: 0.5, liquid: true, ti: SLOT0 + 6 * MIN, t: SLOT0 + 7 * MIN, h: 8 });
+    expect(existsSync(join(dir, 'BTC', 'ots', 'slots', '2026-10-22', `${SLOT0}-m.ots`))).toBe(true);
+    expect(digests).toContain(mkt[0].hash);
+    expect(store.head).toBe(mkt[0].hash);
+  });
+
+  it('rozstrzygnięcie po terminie ze świecy 1m i wynik w podsumowaniu (market.scores, market.latest)', async () => {
+    const { r, dir, published } = runner({ markets: async (expiry) => snapFor(expiry) });
+    r.init(SLOT0);
+    await r.tick(SLOT0 + 30_000);
+    await r.tick(SLOT0 + 6 * MIN);
+    await r.tick(SLOT0 + 18 * MIN);
+    const res = lines(dir, '2026-10-22').find((l) => l.k === 'r' && String(l.id).includes('mkt'));
+    expect(res).toMatchObject({ id: `${SLOT0}-mkt15711` });
+    expect(typeof res.c1).toBe('number');
+    expect(res.y).toBe(res.c1 >= 100_000 ? 1 : 0);
+    const summary = JSON.parse(published[published.length - 1]);
+    expect(summary.market.latest).toMatchObject({ K: 100_000, expiry: SLOT0 + 15 * MIN });
+    expect(summary.market.scores.n + summary.market.scores.near + summary.market.scores.illiquid).toBe(1);
+  });
+
+  it('restart: brak pokwitowania partii „m” → kolejka przy starcie', async () => {
+    const { r, dir } = runner({ markets: async (expiry) => snapFor(expiry) }); // bez znakowania
+    r.init(SLOT0);
+    await r.tick(SLOT0 + 30_000);
+    await r.tick(SLOT0 + 6 * MIN);
+    const digests: string[] = [];
+    const again = new LedgerRunner({
+      coin: 'BTC', data: fakeData(), store: new LedgerStore({ dir, coin: 'BTC' }), repo: null, markPx: () => 100_000,
+      stamp: async (d) => (digests.push(Buffer.from(d).toString('hex')), { ots: new Uint8Array([1]), calendars: ['a'] }),
+    });
+    again.init(SLOT0 + 8 * MIN);
+    await again.tick(SLOT0 + 8 * MIN);
+    expect(existsSync(join(dir, 'BTC', 'ots', 'slots', '2026-10-22', `${SLOT0}.ots`))).toBe(true);
+    expect(existsSync(join(dir, 'BTC', 'ots', 'slots', '2026-10-22', `${SLOT0}-m.ots`))).toBe(true);
+    expect(digests).toHaveLength(2);
+  });
+});
+
+describe('LedgerRunner — model vs rynek: bez prognoz głównych slotu nie ma rekordu rynku', () => {
+  it('brak ceny na początku slotu (skip) → w 5–10 min rynek nie jest pobierany ani zapisywany (bez konfliktu skip/prognoza)', async () => {
+    let calls = 0;
+    const asked: number[] = [];
+    const { r, dir } = runner({
+      markPx: () => (calls++ === 0 ? null : 100_000),
+      markets: async (expiry) => (asked.push(expiry), { outcome: 1, K: 100_000, expiry, src: 'mark' as const, px: 100_000, bookTime: expiry - 9 * MIN, quote: null }),
+    });
+    r.init(SLOT0);
+    await r.tick(SLOT0 + 30_000); // brak ceny → prognozy główne nie wydane
+    await r.tick(SLOT0 + 6 * MIN);
+    await r.tick(SLOT0 + 16 * MIN); // następny slot: skip dla SLOT0
+    expect(asked).toEqual([]);
+    const all = lines(dir, '2026-10-22');
+    expect(all.filter((l) => l.kind === 'mkt')).toEqual([]);
+    expect(all.filter((l) => l.k === 's').map((l) => l.slot)).toEqual([SLOT0]);
+  });
+});

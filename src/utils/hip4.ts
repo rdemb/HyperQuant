@@ -7,7 +7,7 @@
  * za udział; dzienny rynek `Recurring` rozlicza się o 06:00 UTC po cenie mark BTC z HyperCore (dokumentacja HIP-4);
  * `binaryPrice` — cena Pyth BTC/USD, mark albo cena transakcji perpa HL (okno `seconds`), `priceTouch` — mark perpa.
  */
-import { makeInnovation, mulberry32 } from './pathEngine';
+import { makeInnovation, mulberry32 } from './pathEngine.ts';
 
 export type OutcomeKind = 'above' | 'touch';
 
@@ -17,8 +17,8 @@ export interface BtcOutcome {
   K: number;
   /** Termin (ms UTC) */
   expiry: number;
-  /** Źródło ceny rozliczenia: mark perpa HL, cena transakcji perpa HL albo Pyth BTC/USD */
-  source: 'mark' | 'trade' | 'pyth';
+  /** Źródło ceny rozliczenia: mark perpa HL, cena transakcji perpa HL, Pyth BTC/USD albo inne (nierozpoznane) */
+  source: 'mark' | 'trade' | 'pyth' | 'other';
   /** Okno z opisu rynku (s) — znaczenie nieudokumentowane oficjalnie; null = brak */
   seconds: number | null;
   /** Rynek cykliczny (dzienny) */
@@ -52,7 +52,7 @@ export function parseBtcOutcomes(meta: unknown, now: number): BtcOutcome[] {
     const d = fields(o.description);
     const src = (): BtcOutcome['source'] => {
       const pd = d.priceDescription ?? '';
-      return /pyth/i.test(pd) ? 'pyth' : /trade/i.test(pd) ? 'trade' : 'mark';
+      return /pyth/i.test(pd) ? 'pyth' : /trade/i.test(pd) ? 'trade' : /\bmark\b/i.test(pd) ? 'mark' : 'other';
     };
     const secs = Number(d.seconds) > 0 ? Number(d.seconds) : null;
     let q: Omit<BtcOutcome, 'id' | 'coin' | 'description'> | null = null;

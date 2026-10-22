@@ -57,6 +57,21 @@ export interface TouchScores {
   calibration: [number, number][];
 }
 
+/** Model vs rynek (HIP-4, 15 min): Brier i log score obu na tych samych pytaniach, różnica (model − rynek) z bootstrapem 90% */
+export interface MktScores {
+  /** Ocenione pary (płynne notowanie, rozstrzygnięcie z dala od progu) */
+  n: number;
+  /** Rozstrzygnięcia blisko progu (≤ 0,02%) — pominięte */
+  near: number;
+  /** Notowania niepłynne — pominięte */
+  illiquid: number;
+  brierModel: number | null;
+  brierMarket: number | null;
+  logModel: number | null;
+  logMarket: number | null;
+  diff: { d: number; lo: number; hi: number } | null;
+}
+
 export interface DeskLedgerSummary {
   v: 1;
   coin: string;
@@ -96,6 +111,14 @@ export interface DeskLedgerSummary {
   slotStamps: number;
   /** Uczestnictwo: sloty z prognozą vs jawnie pominięte (ostatnie luki z powodem) */
   participation: { issued: number; skipped: number; gaps: { slot: number; until?: number; reason: string }[] };
+  /** Model vs rynek predykcyjny (HIP-4, 15 min) — opcjonalne (starsze podsumowania bez tej części) */
+  market?: {
+    /** Ocena ścisła: notowania płynne (spread ≤ 5 pp i głębokość ≥ 50 USDC po obu stronach) */
+    scores: MktScores;
+    /** Ocena „wąski spread”: notowania ze spreadem ≤ 5 pp, także płytkie (brak w starszych podsumowaniach) */
+    tight?: MktScores;
+    latest: { t: number; expiry: number; K: number; p: number; bid: number | null; ask: number | null; liquid: boolean } | null;
+  };
   method: 'hq-ledger-v1';
 }
 
@@ -161,6 +184,19 @@ export function isDeskLedgerSummary(x: unknown): x is DeskLedgerSummary {
     !!s.participation &&
     fin(s.participation.issued) &&
     fin(s.participation.skipped) &&
-    Array.isArray(s.participation.gaps)
+    Array.isArray(s.participation.gaps) &&
+    (s.market === undefined || isMarket(s.market))
   );
+}
+
+const isMkt = (m: unknown) => {
+  const x = m as Partial<MktScores> | null;
+  return !!x && fin(x.n) && fin(x.near) && fin(x.illiquid) && (x.diff === null || (!!x.diff && fin(x.diff.d) && fin(x.diff.lo) && fin(x.diff.hi)));
+};
+/** Część „model vs rynek” (opcjonalna): wyniki obu poziomów i ostatnie pytanie — źle zbudowana odrzuca całe podsumowanie */
+function isMarket(m: unknown): boolean {
+  const x = m as Partial<NonNullable<DeskLedgerSummary['market']>> | null;
+  if (!x || !isMkt(x.scores) || (x.tight !== undefined && !isMkt(x.tight))) return false;
+  const l = x.latest;
+  return l === null || (!!l && fin(l.t) && fin(l.expiry) && fin(l.K) && fin(l.p) && typeof l.liquid === 'boolean');
 }

@@ -2,9 +2,9 @@
  * Prawdopodobieństwa modelu desku dla rynków HIP-4 — moduł bez Reacta, używany w Web Workerze (obliczenia nie blokują
  * wątku strony) i w testach.
  */
-import { outcomeProbabilities, type BtcOutcome } from './hip4';
-import { seedFrom } from './pathEngine';
-import { horizonStepSigmas, type VolModel } from './volatility';
+import { outcomeProbabilities, type BtcOutcome } from './hip4.ts';
+import { seedFrom } from './pathEngine.ts';
+import { horizonStepSigmas, type VolModel } from './volatility.ts';
 
 const MIN = 60_000;
 /** Dalej niż 14 dni model zmienności nie jest testowany — wiersz bez wartości modelu */

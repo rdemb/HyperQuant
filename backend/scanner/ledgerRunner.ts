@@ -11,13 +11,16 @@ import {
   SLOT,
   type SkipRecord,
   buildSummary,
+  makeMktForecast,
   makeRetForecast,
   makeTouchForecast,
   nextAci,
+  resolveMkt,
   resolveRet,
   resolveTouch,
   slotOf,
 } from './forecaster.ts';
+import type { MarketSnap } from './marketQuotes.ts';
 import { type CommitResult, type LedgerRepo, type LedgerStore, commitLedger, dayKey } from './ledgerStore.ts';
 import type { stampDigest } from './ots.ts';
 
@@ -40,6 +43,11 @@ const RESOLVE_LAG = 90_000;
 const VOID_AFTER = 6 * HOUR;
 const MODEL_MAX_AGE = 3 * HOUR;
 const KEEP = 31 * DAY;
+/** Okno wydania rekordu „model vs rynek” w slocie (od początku slotu): 5–10 min, czyli 5–10 min przed terminem rynku */
+const MKT_FROM = 5 * MIN;
+const MKT_TO = 10 * MIN;
+/** Notowanie rynku starsze niż 30 s w chwili wydania — nie zapisujemy (porównanie z modelem z innej chwili) */
+const MKT_MAX_QUOTE_AGE = 30_000;
 /** Pokwitowań slotów na jedno wywołanie (nadrabianie zaległych po awarii kalendarzy) */
 const STAMPS_PER_TICK = 4;
 
@@ -78,6 +86,8 @@ export class LedgerRunner {
     clock?: () => number;
     /** Publikacja podsumowania (gałąź `main` repo danych) */
     publish?: (json: string) => void;
+    /** Migawka aktywnego 15-minutowego rynku HIP-4 z terminem `expiry` (model vs rynek); brak = wyłączone */
+    markets?: (expiry: number, now: number) => Promise<MarketSnap | null>;
   };
   private forecasts = new Map<string, Forecast>();
   private resolutions = new Map<string, Resolution & { void?: string }>();
@@ -95,7 +105,9 @@ export class LedgerRunner {
    * Kolejka pokwitowań slotów (skrót = hash ostatniej prognozy slotu): ponawiane do skutku, także po restarcie
    * (przy starcie — sloty z prognozą bez pliku `.ots`); bez pokwitowania weryfikator odrzuca slot.
    */
-  private stampQueue: { slot: number; hash: string }[] = [];
+  private stampQueue: { slot: number; hash: string; batch: '' | 'm' }[] = [];
+  /** Próby pobrania rynku HIP-4 w slocie (najwyżej 2 — zapytania ważą ~22 z budżetu API) */
+  private mktTries = new Map<number, number>();
 
   constructor(d: LedgerRunner['d']) {
     this.d = d;
@@ -130,12 +142,14 @@ export class LedgerRunner {
     // Ciągłość slotów z całego dziennika (także po przerwie dłuższej niż okno wczytanych rekordów)
     this.accounted = st.lastSlot;
     // Zaległe pokwitowania (np. kalendarze niedostępne przed restartem)
-    const lastHash = new Map<number, string>();
+    // Partie slotu: prognozy główne ('') i „model vs rynek” ('m', wydawane później w slocie) mają osobne pokwitowania
+    const lastHash = new Map<string, { slot: number; hash: string; batch: '' | 'm' }>();
     for (const f of this.forecasts.values()) {
       const h = (f as Forecast & { hash?: string }).hash;
-      if (typeof h === 'string') lastHash.set(f.slot, h);
+      const batch = f.kind === 'mkt' ? 'm' : '';
+      if (typeof h === 'string') lastHash.set(`${f.slot}${batch}`, { slot: f.slot, hash: h, batch });
     }
-    for (const [slot, hash] of lastHash) if (!this.d.store.exists(this.receiptPath(slot))) this.stampQueue.push({ slot, hash });
+    for (const q of lastHash.values()) if (!this.d.store.exists(this.receiptPath(q.slot, q.batch))) this.stampQueue.push(q);
     try {
       const idx = JSON.parse(readFileSync(this.d.store.path('ots/index.json'), 'utf8')) as OtsEntry[];
       if (Array.isArray(idx)) this.ots = idx.filter((e) => e && typeof e.day === 'string');
@@ -202,7 +216,29 @@ export class LedgerRunner {
         appended += issued.length;
         this.accounted = Math.max(this.accounted, slot);
         // Pokwitowanie: głowa łańcucha po wydaniu tego slotu (= hash ostatniej prognozy slotu)
-        this.stampQueue.push({ slot, hash: this.d.store.head });
+        this.stampQueue.push({ slot, hash: this.d.store.head, batch: '' });
+      }
+    }
+
+    // 1b. Model vs rynek (HIP-4): 5–10 min przed końcem slotu — aktywny 15-minutowy rynek binarny z terminem = koniec slotu
+    // Tylko w slocie z prognozami głównymi: slot bez nich dostaje jawny `skip` — rekord rynku w takim slocie dałby
+    // w łańcuchu jednocześnie prognozę i pominięcie (nie do naprawienia w historii tylko dopisywanej)
+    const mktDone = [...this.forecasts.values()].some((f) => f.kind === 'mkt' && f.slot === slot);
+    const mainIssued = this.forecasts.has(`${slot}-ret60`);
+    if (this.d.markets && mainIssued && !mktDone && ti - slot >= MKT_FROM && ti - slot < MKT_TO && (this.mktTries.get(slot) ?? 0) < 2) {
+      this.mktTries.set(slot, (this.mktTries.get(slot) ?? 0) + 1);
+      const fresh = data.model && ti - data.modelAt <= MODEL_MAX_AGE;
+      const snap = fresh ? await this.d.markets(slot + SLOT, ti).catch(() => null) : null;
+      // Chwila wydania po pobraniu notowania i ceny (bez podglądania); cena = środek z migawki (świeży), notowanie ≤ 30 s
+      const t2 = this.clock(now);
+      const bookFresh = snap !== null && (snap.bookTime === null || (t2 - snap.bookTime <= MKT_MAX_QUOTE_AGE && snap.bookTime <= t2 + 5_000));
+      if (snap && bookFresh && snap.px > 0 && slotOf(t2) === slot && t2 - slot < MKT_TO) {
+        const f = makeMktForecast(data.model!, { slot, ti: t2, t: Math.floor(t2 / MIN) * MIN + MIN }, snap.px, snap);
+        if (f) {
+          this.add([{ ...f }], t2);
+          appended += 1;
+          this.stampQueue.push({ slot, hash: this.d.store.head, batch: 'm' });
+        }
       }
     }
     // Pokwitowania z kolejki (najstarsze najpierw); pierwsza porażka kończy próby w tym wywołaniu
@@ -211,7 +247,7 @@ export class LedgerRunner {
       const ps = this.stampQueue[0];
       const res = await this.d.stamp(new Uint8Array(Buffer.from(ps.hash, 'hex')));
       if (!res) break;
-      this.d.store.write(this.receiptPath(ps.slot), res.ots);
+      this.d.store.write(this.receiptPath(ps.slot, ps.batch), res.ots);
       this.stampQueue.shift();
       stamped = true;
     }
@@ -224,7 +260,7 @@ export class LedgerRunner {
       const candles = await data.minuteCandles(from, ti);
       const rNow = this.clock(ti);
       for (const f of due.sort((a, b) => a.t - b.t)) {
-        const r = f.kind === 'ret' ? resolveRet(f, candles, rNow) : resolveTouch(f, candles, rNow);
+        const r = f.kind === 'ret' ? resolveRet(f, candles, rNow) : f.kind === 'touch' ? resolveTouch(f, candles, rNow) : resolveMkt(f, candles, rNow);
         if (r) {
           resBodies.push({ ...r });
           if (f.kind === 'ret' && 'inAci' in r) this.aci[f.h] = nextAci(this.aci[f.h] ?? ACI_ALPHA, r.inAci === 0);
@@ -285,10 +321,12 @@ export class LedgerRunner {
     // Rekord zakresowy po końcu zakresu (długa przerwa zostaje w podsumowaniu, dopóki jej część jest w oknie)
     for (const [s, k] of this.skips) if ((k.until ?? s) < now - KEEP) this.skips.delete(s);
     this.stampQueue = this.stampQueue.filter((q) => q.slot >= now - KEEP);
+    for (const s of this.mktTries.keys()) if (s < now - DAY) this.mktTries.delete(s);
   }
 
-  private receiptPath(slot: number): string {
-    return `ots/slots/${dayKey(slot)}/${slot}.ots`;
+  /** Pokwitowanie partii slotu: prognozy główne `<slot>.ots`, „model vs rynek” `<slot>-m.ots`. */
+  private receiptPath(slot: number, batch: '' | 'm' = ''): string {
+    return `ots/slots/${dayKey(slot)}/${slot}${batch ? `-${batch}` : ''}.ots`;
   }
 
   /** Pokwitowania slotów z ostatnich 24 h (podkatalogi dzienne — bez przeglądania całej historii). */
