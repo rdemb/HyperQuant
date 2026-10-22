@@ -159,3 +159,312 @@ export function leeMyklandJumps(r: number[], window: number = 288, alpha: number
   }
   return out;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sezonowość, log-HAR, innowacje FHS i model zmienności dla horyzontów planu
+// Corsi (2009) HAR-RV; Andersen & Bollerslev (1997) sezonowość wewnątrzdobowa; Duan (1983) smearing;
+// Patton (2011) QLIKE; Barone-Adesi, Giannopoulos & Vosper (1999) filtered historical simulation.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const HOUR_MS = 3_600_000;
+const FIVE_MIN_MS = 300_000;
+/** Krok Monte Carlo (min) zasilanego modelem zmienności */
+export const VOL_STEP_MIN = 5;
+
+const utcHour = (ms: number) => new Date(ms).getUTCHours();
+const meanOf = (xs: ArrayLike<number>, from = 0, to = xs.length) => {
+  let s = 0;
+  for (let i = from; i < to; i++) s += xs[i];
+  return s / (to - from);
+};
+
+export interface SeasonalProfile {
+  /** 24 współczynniki wariancji godzin UTC, średnia 1 */
+  factors: number[];
+  /** Liczba świec w każdej godzinie */
+  counts: number[];
+}
+
+/**
+ * Profil wariancji wg godziny UTC ze świec (Garman–Klass): f_h = (n_h·m_h + K·m) / ((n_h + K)·m),
+ * czyli średnia godziny ściągnięta do średniej ogólnej (K obserwacji „a priori”), potem normalizacja do średniej 1.
+ */
+export function seasonalProfile(bars: RangeBar[], shrinkK: number = 20): SeasonalProfile {
+  const sum = Array(24).fill(0);
+  const counts = Array(24).fill(0);
+  let total = 0;
+  let n = 0;
+  for (const b of bars) {
+    if (!isValidBar(b)) continue;
+    const v = garmanKlassVar(b);
+    const h = utcHour(b.time);
+    sum[h] += v;
+    counts[h]++;
+    total += v;
+    n++;
+  }
+  if (n === 0 || !(total > 0)) return { factors: Array(24).fill(1), counts };
+  const m = total / n;
+  const raw = sum.map((s, h) => (s + shrinkK * m) / ((counts[h] + shrinkK) * m));
+  const avg = meanOf(raw);
+  return { factors: raw.map((f) => f / avg), counts };
+}
+
+/** QLIKE (Patton 2011): r/f − ln(r/f) − 1 — strata odporna na szum w zastępczej mierze realizacji. */
+export function qlike(realized: number, forecast: number): number {
+  const x = realized / forecast;
+  return x - Math.log(x) - 1;
+}
+
+export interface HarModel {
+  /** [b0, b1 (godzina), b2 (24 h), b3 (168 h)] */
+  coef: [number, number, number, number];
+  /** Korekta Duana: E[exp(ε)] */
+  smear: number;
+  /** Liczba wierszy regresji */
+  n: number;
+  r2: number;
+  /** Prognozy 1-krokowe na ostatnich 30% (model z pierwszych 70%) vs naiwna średnia GK z 24 h */
+  oos: { qlikeHar: number; qlikeNaive: number; n: number } | null;
+  /** Ostatnie 168 wartości y (najnowsza na końcu) — stan do prognozy */
+  lastY: number[];
+}
+
+/** Rozwiązanie układu Ax = b eliminacją Gaussa z wyborem elementu głównego; osobliwy → null. */
+function solveLinear(A: number[][], b: number[]): number[] | null {
+  const n = b.length;
+  const M = A.map((row, i) => [...row, b[i]]);
+  for (let c = 0; c < n; c++) {
+    let piv = c;
+    for (let r = c + 1; r < n; r++) if (Math.abs(M[r][c]) > Math.abs(M[piv][c])) piv = r;
+    if (Math.abs(M[piv][c]) < 1e-12) return null;
+    [M[c], M[piv]] = [M[piv], M[c]];
+    for (let r = c + 1; r < n; r++) {
+      const f = M[r][c] / M[c][c];
+      for (let k = c; k <= n; k++) M[r][k] -= f * M[c][k];
+    }
+  }
+  const x = Array(n).fill(0);
+  for (let r = n - 1; r >= 0; r--) {
+    let s = M[r][n];
+    for (let k = r + 1; k < n; k++) s -= M[r][k] * x[k];
+    x[r] = s / M[r][r];
+  }
+  return x;
+}
+
+/** OLS celu na wierszach [1, y_t, D_t, W_t] w zakresie [from, to). */
+function olsHar(rows: number[][], target: number[], from: number, to: number) {
+  const XtX = Array.from({ length: 4 }, () => Array(4).fill(0));
+  const Xty = Array(4).fill(0);
+  for (let i = from; i < to; i++) {
+    const x = rows[i];
+    for (let a = 0; a < 4; a++) {
+      Xty[a] += x[a] * target[i];
+      for (let b = 0; b < 4; b++) XtX[a][b] += x[a] * x[b];
+    }
+  }
+  const coef = solveLinear(XtX, Xty);
+  if (!coef || !coef.every(Number.isFinite)) return null;
+  let smear = 0;
+  let sse = 0;
+  for (let i = from; i < to; i++) {
+    const e = target[i] - (coef[0] + coef[1] * rows[i][1] + coef[2] * rows[i][2] + coef[3] * rows[i][3]);
+    smear += Math.exp(e);
+    sse += e * e;
+  }
+  return { coef: coef as [number, number, number, number], smear: smear / (to - from), sse };
+}
+
+/**
+ * Sezonowy log-HAR na godzinowych wariancjach Garman–Klass:
+ * y_t = ln(GK_t / f_h(t)), y_{t+1} = b0 + b1·y_t + b2·średnia(y_{t−23..t}) + b3·średnia(y_{t−167..t}) + ε.
+ * GK podłogowany na 1% mediany (świeca bez zakresu nie staje się odstającą obserwacją ln 0).
+ * Mniej niż 500 wierszy regresji → null.
+ */
+export function fitSeasonalHar(bars: RangeBar[], profile: SeasonalProfile): HarModel | null {
+  const valid = bars.filter(isValidBar).sort((a, b) => a.time - b.time);
+  const gk = valid.map(garmanKlassVar);
+  const positive = gk.filter((v) => v > 0).sort((a, b) => a - b);
+  if (positive.length === 0) return null;
+  const floor = 0.01 * positive[Math.floor(positive.length / 2)];
+  const v = gk.map((x) => Math.max(x, floor));
+  const y = v.map((x, i) => Math.log(x / profile.factors[utcHour(valid[i].time)]));
+  const N = y.length;
+  if (N - 168 < 500) return null;
+
+  // Sumy prefiksowe do średnich kroczących
+  const pre = new Float64Array(N + 1);
+  for (let i = 0; i < N; i++) pre[i + 1] = pre[i] + y[i];
+  const rows: number[][] = [];
+  const target: number[] = [];
+  for (let t = 167; t < N - 1; t++) {
+    rows.push([1, y[t], (pre[t + 1] - pre[t - 23]) / 24, (pre[t + 1] - pre[t - 167]) / 168]);
+    target.push(y[t + 1]);
+  }
+
+  const fit = olsHar(rows, target, 0, rows.length);
+  if (!fit) return null;
+  const tMean = meanOf(target);
+  const sst = target.reduce((a, x) => a + (x - tMean) ** 2, 0);
+
+  // Ocena poza próbą: model z pierwszych 70% wierszy, prognozy 1-krokowe na reszcie
+  let oos: HarModel['oos'] = null;
+  const split = Math.floor(rows.length * 0.7);
+  const fitIn = olsHar(rows, target, 0, split);
+  if (fitIn && rows.length - split >= 50) {
+    let qh = 0;
+    let qn = 0;
+    let cnt = 0;
+    for (let i = split; i < rows.length; i++) {
+      const t = i + 167; // indeks świecy y_t dla wiersza i
+      const realized = gk[t + 1];
+      if (!(realized > 0)) continue;
+      const x = rows[i];
+      const yHat = fitIn.coef[0] + fitIn.coef[1] * x[1] + fitIn.coef[2] * x[2] + fitIn.coef[3] * x[3];
+      const fHar = profile.factors[utcHour(valid[t + 1].time)] * Math.exp(yHat) * fitIn.smear;
+      const fNaive = meanOf(v, t - 23, t + 1);
+      qh += qlike(realized, fHar);
+      qn += qlike(realized, fNaive);
+      cnt++;
+    }
+    if (cnt >= 50) oos = { qlikeHar: qh / cnt, qlikeNaive: qn / cnt, n: cnt };
+  }
+
+  return {
+    coef: fit.coef,
+    smear: fit.smear,
+    n: rows.length,
+    r2: sst > 0 ? 1 - fit.sse / sst : 0,
+    oos,
+    lastY: y.slice(-168),
+  };
+}
+
+/**
+ * Prognoza iterowana wariancji godzin [firstHourStartMs + k·1h], k = 0..hours−1:
+ * ŷ dopisywane do bufora y (średnie 24/168 przeliczane), wariancja = f_h·exp(ŷ)·smear.
+ */
+export function forecastHourlyVariances(m: HarModel, p: SeasonalProfile, firstHourStartMs: number, hours: number): number[] {
+  const [b0, b1, b2, b3] = m.coef;
+  const buf = [...m.lastY];
+  let sum24 = meanOf(buf, buf.length - 24) * 24;
+  let sum168 = meanOf(buf) * 168;
+  const out: number[] = [];
+  for (let k = 0; k < hours; k++) {
+    const yt = buf[buf.length - 1];
+    const yHat = b0 + b1 * yt + b2 * (sum24 / 24) + b3 * (sum168 / 168);
+    sum24 += yHat - buf[buf.length - 24];
+    sum168 += yHat - buf[buf.length - 168];
+    buf.push(yHat);
+    out.push(p.factors[utcHour(firstHourStartMs + k * HOUR_MS)] * Math.exp(yHat) * m.smear);
+  }
+  return out;
+}
+
+/**
+ * σ kroków od `startMs` przez `horizonMin` minut: wariancja kroku = Σ_h (wspólne minuty kroku i godziny h)/60 · hourVars[h].
+ * Godziny poza zakresem tablicy przyjmują wartość skrajnej godziny.
+ */
+export function stepSigmas(hourVars: number[], firstHourStartMs: number, startMs: number, horizonMin: number, stepMin: number): number[] {
+  const steps = Math.max(1, Math.round(horizonMin / stepMin));
+  const stepMs = stepMin * 60_000;
+  const last = hourVars.length - 1;
+  const out: number[] = [];
+  for (let k = 0; k < steps; k++) {
+    let t = startMs + k * stepMs;
+    const end = t + stepMs;
+    let variance = 0;
+    while (t < end) {
+      const h = Math.floor((t - firstHourStartMs) / HOUR_MS);
+      const hourEnd = firstHourStartMs + (h + 1) * HOUR_MS;
+      const seg = Math.min(end, hourEnd) - t;
+      variance += (seg / HOUR_MS) * hourVars[Math.min(last, Math.max(0, h))];
+      t += seg;
+    }
+    out.push(Math.sqrt(variance));
+  }
+  return out;
+}
+
+/**
+ * Innowacje FHS ze świec 5m: z_i = r_i / σ̂_i, r_i = ln(C_i/C_{i−1}),
+ * σ̂²_i = f_h(i) · średnia(GK_j / f_h(j), j ∈ [i−window, i−1]); na końcu wyśrodkowane i znormalizowane do wariancji 1.
+ */
+export function fhsResiduals(bars5m: RangeBar[], p: SeasonalProfile, window: number = 288): Float64Array {
+  const bars = bars5m.filter(isValidBar).sort((a, b) => a.time - b.time);
+  const des = bars.map((b) => garmanKlassVar(b) / p.factors[utcHour(b.time)]);
+  const z: number[] = [];
+  let sum = 0;
+  for (let j = 0; j < Math.min(window, des.length); j++) sum += des[j];
+  for (let i = window; i < bars.length; i++) {
+    if (i > window) sum += des[i - 1] - des[i - 1 - window];
+    const sig2 = p.factors[utcHour(bars[i].time)] * (sum / window);
+    if (sig2 > 0) z.push(Math.log(bars[i].close / bars[i - 1].close) / Math.sqrt(sig2));
+  }
+  if (z.length < 2) return new Float64Array(0);
+  const m = meanOf(z);
+  const sd = Math.sqrt(z.reduce((a, x) => a + (x - m) ** 2, 0) / (z.length - 1));
+  return Float64Array.from(z, (x) => (x - m) / sd);
+}
+
+export interface VolModel {
+  builtAt: number;
+  profile: SeasonalProfile;
+  har: HarModel;
+  /** Standaryzowane innowacje FHS (5m) */
+  residuals: Float64Array;
+  jump: JumpShare | null;
+  lmJumps: { count: number; days: number; maxAbsMovePct: number };
+  hourlyBars: number;
+  fiveMinBars: number;
+  /** Początek pierwszej godziny bez pełnej świecy (zwykle bieżąca godzina) — start prognozy */
+  nextHourStartMs: number;
+}
+
+const MIN_HOURLY = 1000;
+const MIN_FIVE_MIN = 1500;
+
+/**
+ * Model zmienności ze świec 1h (profil + log-HAR) i 5m (FHS, udział skoków, Lee–Mykland na zwrotach bez sezonowości).
+ * Świece w toku (początek + interwał > teraz) i nieważne są pomijane; za mało danych → null.
+ */
+export function buildVolModel(hourly: RangeBar[], fiveMin: RangeBar[], nowMs: number): VolModel | null {
+  const h = hourly.filter((b) => isValidBar(b) && b.time + HOUR_MS <= nowMs).sort((a, b) => a.time - b.time);
+  const f = fiveMin.filter((b) => isValidBar(b) && b.time + FIVE_MIN_MS <= nowMs).sort((a, b) => a.time - b.time);
+  if (h.length < MIN_HOURLY || f.length < MIN_FIVE_MIN) return null;
+  const profile = seasonalProfile(h);
+  const har = fitSeasonalHar(h, profile);
+  if (!har) return null;
+  const residuals = fhsResiduals(f, profile);
+  if (residuals.length < 500) return null;
+
+  const r: number[] = [];
+  for (let i = 1; i < f.length; i++) r.push(Math.log(f[i].close / f[i - 1].close));
+  const rDes = r.map((x, i) => x / Math.sqrt(profile.factors[utcHour(f[i + 1].time)]));
+  const jumps = leeMyklandJumps(rDes, 288, 0.01);
+  const maxAbs = jumps.reduce((m, i) => Math.max(m, Math.abs(r[i])), 0);
+
+  return {
+    builtAt: nowMs,
+    profile,
+    har,
+    residuals,
+    jump: jumpShareByDay(f, FIVE_MIN_MS),
+    lmJumps: {
+      count: jumps.length,
+      days: (f[f.length - 1].time - f[0].time + FIVE_MIN_MS) / 86_400_000,
+      maxAbsMovePct: maxAbs * 100,
+    },
+    hourlyBars: h.length,
+    fiveMinBars: f.length,
+    nextHourStartMs: h[h.length - 1].time + HOUR_MS,
+  };
+}
+
+/** σ kroków (domyślnie 5 min) na horyzont planu od chwili `nowMs` z prognozy HAR i profilu godzin. */
+export function horizonStepSigmas(m: VolModel, nowMs: number, horizonMin: number, stepMin: number = VOL_STEP_MIN): number[] {
+  const hours = Math.max(1, Math.ceil((nowMs + horizonMin * 60_000 - m.nextHourStartMs) / HOUR_MS) + 1);
+  const hourVars = forecastHourlyVariances(m.har, m.profile, m.nextHourStartMs, hours);
+  return stepSigmas(hourVars, m.nextHourStartMs, nowMs, horizonMin, stepMin);
+}
