@@ -155,6 +155,15 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         caveat: 'Wyniki od 20 rozstrzygnięć; prognozy nakładają się (wyniki skorelowane); brak danych 6 h po horyzoncie = jawne unieważnienie; pominięte sloty jawne; znaczniki czasu potwierdzają istnienie zapisu, nie poprawność modelu.',
       },
       {
+        metric: 'Dziennik zagrań i playbook (Plan)',
+        source: 'Twoje wpisy w tej przeglądarce (localStorage, nic nie jest wysyłane) + świece BTC 1m i 1h z candleSnapshot Hyperliquid',
+        method:
+          'Wynik w R od stopu początkowego; MAE/MFE w R z minimum/maksimum świec 1m w oknie zagrania; kontekst aukcji przy wejściu tą samą metodą co panel „Kontekst aukcji”; per setup: trafność z przedziałem Wilsona 95%, średnie R z bootstrapem 90% (2000 losowań, stałe ziarno), profit factor, mediany MAE wygranych i MFE przegranych',
+        kinds: ['LIVE'],
+        refresh: 'przy zapisie zagrania',
+        caveat: 'Świeca minuty wejścia może zawierać ceny sprzed wejścia (przybliżenie do minuty); MAE/MFE i kontekst tylko dla zagrań z ostatnich ~3,5 doby (limit API); poniżej 20 zagrań — anegdota, nie statystyka.',
+      },
+      {
         metric: 'Model vs rynek (HIP-4, Rynek)',
         source: 'outcomeMeta i l2Book rynków wynikowych Hyperliquid (strona „Tak” = arkusz #<10·outcome>); model zmienności desku (świece 1h/5m)',
         method:
