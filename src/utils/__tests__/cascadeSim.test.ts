@@ -122,3 +122,49 @@ describe('kaskada 2.0 — dynamika czasu, wyzwalanie po mark, niepewność (rece
     expect(Number.isFinite(n)).toBe(true);
   });
 });
+
+import { cascadeDepth } from '../cascadeSim';
+import type { LiquidityProfile } from '../liquidity';
+
+describe('kaskada 2.0 — głębokość stron z rejestratora', () => {
+  const T = Date.UTC(2026, 9, 22, 17, 30);
+  const hour = (n: number, extra: Partial<LiquidityProfile['byHour'][number]> = {}) => ({ h: 17, d10: 60e6, d20: 100e6, n, days: 1, ...extra });
+  const prof = (now: LiquidityProfile['now'], h17: LiquidityProfile['byHour'][number]): LiquidityProfile =>
+    ({
+      v: 1,
+      coin: 'BTC',
+      asOf: T,
+      since: T - 3_600_000,
+      last: T,
+      days: 1,
+      minutes: 100,
+      byHour: Array.from({ length: 24 }, (_, h) => (h === 17 ? h17 : { h, d10: null, d20: null, n: 0, days: 0 })),
+      now,
+      resilience: { events: 0, medianMin: null, unrecovered: 0, censored: 0, noDrop: 0 },
+    }) as LiquidityProfile;
+  it('świeża minuta ze stronami → bidy i aski wprost z niej', () => {
+    const d = cascadeDepth(prof({ t: T - 60_000, d10: 1e6, d20: 2e6, ratio10: null, b10: 3e5, a10: 7e5, b20: 8e5, a20: 1.2e6 }, hour(10)), true, T)!;
+    expect(d).toMatchObject({ source: 'now', split: 'now' });
+    expect(d.params.bids.d10).toBeCloseTo(3e5, 6);
+    expect(d.params.asks.d10).toBeCloseTo(7e5, 6);
+    expect(d.params.bids.d20).toBeCloseTo(8e5, 6);
+    expect(d.params.asks.d20).toBeCloseTo(1.2e6, 6);
+  });
+  it('minuta bez stron (starszy profil): podział z mediany godziny, gdy ≥ 30 min danych; inaczej po połowie — oznaczone', () => {
+    const now = { t: T - 60_000, d10: 1e6, d20: 2e6, ratio10: null };
+    const byHour = cascadeDepth(prof(now, hour(40, { b10: 20e6, a10: 40e6, b20: 40e6, a20: 60e6 })), true, T)!;
+    expect(byHour.split).toBe('hour');
+    expect(byHour.params.bids.d10).toBeCloseTo(1e6 / 3, 3);
+    expect(byHour.params.bids.d20).toBeCloseTo(2e6 * 0.4, 3);
+    const assumed = cascadeDepth(prof(now, hour(18, { b10: 20e6, a10: 40e6 })), true, T)!;
+    expect(assumed.split).toBe('assumed');
+    expect(assumed.params.bids.d10).toBeCloseTo(5e5, 6);
+  });
+  it('minuta nieświeża → mediana godziny; bez danych godziny → null', () => {
+    const stale = { t: T - 3_600_000, d10: 1e6, d20: 2e6, ratio10: null, b10: 3e5, a10: 7e5, b20: null, a20: null };
+    const d = cascadeDepth(prof(stale, hour(40, { b10: 30e6, a10: 30e6 })), true, T)!;
+    expect(d).toMatchObject({ source: 'hour', split: 'hour' });
+    expect(d.params.bids.d10).toBeCloseTo(30e6, 3);
+    expect(cascadeDepth(prof(stale, hour(10)), true, T)).toBeNull();
+  });
+});

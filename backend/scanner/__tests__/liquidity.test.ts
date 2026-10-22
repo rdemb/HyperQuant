@@ -77,6 +77,11 @@ describe('profil płynności', () => {
     // za mało dni dla normy → ratio null
     expect(liquidityProfile(rows.slice(120), 'BTC', T0 + 30 * MIN + 30_000).now!.ratio10).toBeNull();
   });
+  it('„teraz” podaje też strony arkusza z ostatniej minuty (bidy / aski w ±10 i ±20 bp)', () => {
+    const last: MinuteRow = { t: T0, n: 12, mid: 100_000, bk: 10, b10: 300_000, a10: 700_000, b20: 900_000, a20: null };
+    const p = liquidityProfile([last], 'BTC', T0 + MIN + 30_000);
+    expect(p.now).toMatchObject({ d10: 1_000_000, b10: 300_000, a10: 700_000, b20: 900_000, a20: null, d20: null });
+  });
 
   it('odporność: tylko ciągłe minuty; brak danych przed powrotem = cenzurowane; bez wycofania liczone osobno', () => {
     const base = Array.from({ length: 60 }, (_, i) => row(T0 + i * MIN, 1_000_000));
