@@ -75,6 +75,9 @@ export interface RetResolution {
   k: 'r';
   id: string;
   t: number;
+  /** Ceny źródłowe (zamknięcia świec 1m w t i t + h) — do niezależnej kontroli z danymi rynku */
+  c0: number;
+  c1: number;
   y: number;
   crps: number;
   crpsB: number;
@@ -88,6 +91,9 @@ export interface TouchResolution {
   k: 'r';
   id: string;
   t: number;
+  /** Maksimum i minimum świec 1m w oknie — do niezależnej kontroli */
+  hi: number;
+  lo: number;
   yv: Record<TouchLevel, 0 | 1>;
 }
 
@@ -97,6 +103,8 @@ export type Resolution = RetResolution | TouchResolution;
 export interface SkipRecord {
   k: 's';
   slot: number;
+  /** Ostatni pominięty slot zakresu (długa przerwa — jeden rekord zamiast tysięcy) */
+  until?: number;
   reason: string;
 }
 const LEVELS: TouchLevel[] = ['pdh', 'pdl', 'deq'];
@@ -191,6 +199,8 @@ export function resolveRet(f: RetForecast, c1m: RangeBar[], now: number): RetRes
     k: 'r',
     id: f.id,
     t: now,
+    c0,
+    c1,
     y: r6(y),
     crps: r6(crpsQuantiles(f.taus, f.q, y)),
     crpsB: r6(crpsQuantiles(f.taus, f.bq, y)),
@@ -211,6 +221,8 @@ export function resolveTouch(f: TouchForecast, c1m: RangeBar[], now: number): To
     k: 'r',
     id: f.id,
     t: now,
+    hi,
+    lo,
     yv: { pdh: hi >= f.lv.pdh ? 1 : 0, pdl: lo <= f.lv.pdl ? 1 : 0, deq: (deqBelow ? lo <= f.lv.deq : hi >= f.lv.deq) ? 1 : 0 },
   };
 }
@@ -389,11 +401,16 @@ export function buildSummary(s: SummaryInput): DeskLedgerSummary {
   };
 }
 
-/** Sloty wydane vs pominięte (jawne rekordy `skip`) w oknie — braki widoczne, nie ukryte. */
+/** Sloty wydane vs pominięte (jawne rekordy `skip`, także zakresowe) w oknie — braki widoczne, nie ukryte. */
 function participation(fs: Forecast[], skips: SkipRecord[], from: number): DeskLedgerSummary['participation'] {
   const issued = new Set(fs.filter((f) => f.kind === 'ret').map((f) => f.slot));
-  const skipped = skips.filter((k) => k.slot >= from && !issued.has(k.slot)).sort((a, b) => a.slot - b.slot);
-  return { issued: issued.size, skipped: skipped.length, gaps: skipped.slice(-10).map((k) => ({ slot: k.slot, reason: k.reason })) };
+  const recs = skips.filter((k) => (k.until ?? k.slot) >= from && !issued.has(k.slot)).sort((a, b) => a.slot - b.slot);
+  const count = recs.reduce((n, k) => n + (k.until !== undefined ? Math.floor((k.until - Math.max(k.slot, slotOf(from))) / SLOT) + 1 : 1), 0);
+  return {
+    issued: issued.size,
+    skipped: count,
+    gaps: recs.slice(-10).map((k) => (k.until !== undefined ? { slot: k.slot, until: k.until, reason: k.reason } : { slot: k.slot, reason: k.reason })),
+  };
 }
 
 /** Pomocniczo dla skanera: model zmienności ze świec 1h i 5m. */

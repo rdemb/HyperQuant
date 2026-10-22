@@ -95,7 +95,7 @@ export interface DeskLedgerSummary {
   /** Pokwitowania OpenTimestamps głowy łańcucha po wydaniu slotu (ostatnie 24 h) */
   slotStamps: number;
   /** Uczestnictwo: sloty z prognozą vs jawnie pominięte (ostatnie luki z powodem) */
-  participation: { issued: number; skipped: number; gaps: { slot: number; reason: string }[] };
+  participation: { issued: number; skipped: number; gaps: { slot: number; until?: number; reason: string }[] };
   method: 'hq-ledger-v1';
 }
 

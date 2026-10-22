@@ -77,6 +77,8 @@ describe('rozstrzyganie', () => {
     expect(r2.pit).toBeGreaterThan(0.5);
     expect(r2.k).toBe('r');
     expect(r2.id).toBe(ret().id);
+    // ceny źródłowe zapisane do niezależnej kontroli ze świecami rynku
+    expect(r2).toMatchObject({ c0: 100_000, c1: 100_500 });
   });
 
   it('prognoza dotknięć: pełne pokrycie świecami 1m wymagane; dotknięcia PDH/PDL/D-EQ z high/low', () => {
@@ -97,6 +99,8 @@ describe('rozstrzyganie', () => {
     const path = candles(120, (i) => 100_000 + (i < 60 ? i * 7 : (120 - i) * 7 - 600));
     const r = resolveTouch(f, path, T0 + 3 * 60 * MIN)!;
     expect(r.yv).toEqual({ pdh: 1, pdl: 0, deq: 1 });
+    expect(r.hi).toBe(Math.max(...path.map((c) => c.high)));
+    expect(r.lo).toBe(Math.min(...path.map((c) => c.low)));
   });
 });
 
@@ -105,7 +109,7 @@ import { isDeskLedgerSummary } from '../../../src/utils/deskLedger.ts';
 
 describe('wyniki i podsumowanie', () => {
   const rr = (pit: number, in90: 0 | 1, crps = 0.002, crpsB = 0.003) =>
-    ({ k: 'r', id: 'x', t: 0, y: 0, crps, crpsB, pit, in90, in60: 1, inAci: in90 }) as const;
+    ({ k: 'r', id: 'x', t: 0, c0: 1, c1: 1, y: 0, crps, crpsB, pit, in90, in60: 1, inAci: in90 }) as const;
 
   it('retScores: CRPSS, histogram PIT, pokrycie 90% z testem Kupca', () => {
     const pairs = Array.from({ length: 100 }, (_, i) => ({ f: ret({ slot: T0 + i * 3_600_000 }), r: rr((i + 0.5) / 100, i < 90 ? 1 : 0) }));
@@ -122,7 +126,7 @@ describe('wyniki i podsumowanie', () => {
 
   it('touchScores: Brier, BSS względem klimatologii, niemalejąca mapa kalibracji', () => {
     const f = (p: number): TouchForecast => ({ k: 'f', id: String(p), slot: 0, ti: 0, t: 0, kind: 'touch', h: 120, px0: 1, lv: { pdh: 2, pdl: 0.5, deq: 1.2 }, p: { pdh: p, pdl: p, deq: p }, model: 'x' });
-    const r = (y: 0 | 1) => ({ k: 'r' as const, id: 'x', t: 0, yv: { pdh: y, pdl: y, deq: y } });
+    const r = (y: 0 | 1) => ({ k: 'r' as const, id: 'x', t: 0, hi: 0, lo: 0, yv: { pdh: y, pdl: y, deq: y } });
     const pairs = [
       ...Array.from({ length: 30 }, () => ({ f: f(0.1), r: r(0) })),
       ...Array.from({ length: 10 }, () => ({ f: f(0.9), r: r(1) })),
@@ -175,13 +179,13 @@ describe('prognoza dotknięć — poziomy już przekroczone', () => {
     const f = makeTouchForecast(model, { slot: T0, t: T0, ti: T0 }, 82_000, 84_850, 82_613);
     expect(f.p.pdl).toBeNull();
     expect(f.p.pdh).not.toBeNull();
-    const pairs = [{ f, r: { k: 'r' as const, id: f.id, t: 0, yv: { pdh: 0 as const, pdl: 1 as const, deq: 0 as const } } }];
+    const pairs = [{ f, r: { k: 'r' as const, id: f.id, t: 0, hi: 0, lo: 0, yv: { pdh: 0 as const, pdl: 1 as const, deq: 0 as const } } }];
     expect(touchScores(pairs).brier).toBeCloseTo(((f.p.pdh as number) ** 2 + (f.p.deq as number) ** 2) / 2, 9);
   });
 });
 
 describe('poprawki z recenzji: ACI, nakładanie, klimatologia poziomów, uczestnictwo', () => {
-  const rr = (in90: 0 | 1) => ({ k: 'r', id: 'x', t: 0, y: 0, crps: 0.002, crpsB: 0.003, pit: 0.5, in90, in60: 1, inAci: in90 }) as const;
+  const rr = (in90: 0 | 1) => ({ k: 'r', id: 'x', t: 0, c0: 1, c1: 1, y: 0, crps: 0.002, crpsB: 0.003, pit: 0.5, in90, in60: 1, inAci: in90 }) as const;
 
   it('ACI: α ≤ 0 → przedział nieskończony → pokrycie nawet przy skrajnym zwrocie', () => {
     const c = [{ time: T0 - MIN, open: 1, high: 1, low: 1, close: 100_000 }, ...candles(70, (i) => (i < 59 ? 100_000 : 130_000))];
@@ -202,7 +206,7 @@ describe('poprawki z recenzji: ACI, nakładanie, klimatologia poziomów, uczestn
     });
     const pairs = Array.from({ length: 100 }, (_, i) => ({
       f: f({ pdh: 0.1, pdl: 0.3, deq: 0.6 }),
-      r: { k: 'r' as const, id: 'x', t: 0, yv: { pdh: (i % 10 === 0 ? 1 : 0) as 0 | 1, pdl: (i % 10 < 3 ? 1 : 0) as 0 | 1, deq: (i % 10 < 6 ? 1 : 0) as 0 | 1 } },
+      r: { k: 'r' as const, id: 'x', t: 0, hi: 0, lo: 0, yv: { pdh: (i % 10 === 0 ? 1 : 0) as 0 | 1, pdl: (i % 10 < 3 ? 1 : 0) as 0 | 1, deq: (i % 10 < 6 ? 1 : 0) as 0 | 1 } },
     }));
     const s = touchScores(pairs);
     expect(s.pairs).toBe(300);

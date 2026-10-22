@@ -117,7 +117,7 @@ describe('LedgerRunner — wydawanie bez podglądania, rozstrzyganie, jawne brak
     r.init(SLOT0);
     await r.tick(SLOT0 + 30_000);
     expect(digests[0]).toBe(store.head); // głowa po dopisaniu prognoz slotu
-    expect(existsSync(join(dir, 'BTC', 'ots', 'slots', `${SLOT0}.ots`))).toBe(true);
+    expect(existsSync(join(dir, 'BTC', 'ots', 'slots', '2026-10-22', `${SLOT0}.ots`))).toBe(true);
     const nextDay = Date.UTC(2026, 9, 23, 0, 12, 0);
     await r.tick(nextDay);
     await r.tick(nextDay + MIN);
@@ -139,5 +139,36 @@ describe('LedgerRunner — wydawanie bez podglądania, rozstrzyganie, jawne brak
     expect(skips.map((s) => s.slot)).toEqual([SLOT0 + 15 * MIN, SLOT0 + 30 * MIN, SLOT0 + 45 * MIN]);
     expect(skips.every((s) => s.reason === 'outage')).toBe(true);
     expect(store.lines).toBeGreaterThan(0);
+  });
+});
+
+describe('LedgerRunner — pokwitowania i długie przerwy', () => {
+  it('nieudane znakowanie slotu jest ponawiane tym samym skrótem (hash ostatniej prognozy slotu)', async () => {
+    const digests: string[] = [];
+    let fail = true;
+    const stamp = async (d: Uint8Array) => {
+      digests.push(Buffer.from(d).toString('hex'));
+      if (fail) return null;
+      return { ots: new Uint8Array([1]), calendars: ['a'] };
+    };
+    const { r, store, dir } = runner({ stamp });
+    r.init(SLOT0);
+    await r.tick(SLOT0 + 30_000);
+    const head = store.head;
+    fail = false;
+    await r.tick(SLOT0 + 90_000);
+    expect(digests).toEqual([head, head]);
+    expect(existsSync(join(dir, 'BTC', 'ots', 'slots', '2026-10-22', `${SLOT0}.ots`))).toBe(true);
+  });
+
+  it('przerwa dłuższa niż doba → jeden rekord zakresowy skip (od–do), a nie tysiące linii', async () => {
+    const { r, dir } = runner();
+    r.init(SLOT0);
+    await r.tick(SLOT0 + 30_000);
+    await r.tick(SLOT0 + 3 * DAY + 30_000);
+    const all = [...lines(dir, '2026-10-22'), ...lines(dir, '2026-10-25')];
+    const skips = all.filter((l) => l.k === 's');
+    expect(skips).toHaveLength(1);
+    expect(skips[0]).toMatchObject({ slot: SLOT0 + 15 * MIN, until: SLOT0 + 3 * DAY - 15 * MIN, reason: 'outage' });
   });
 });

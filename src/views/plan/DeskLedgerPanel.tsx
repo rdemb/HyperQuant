@@ -120,14 +120,17 @@ const LedgerBody: React.FC<{ s: DeskLedgerSummary; stale: boolean; expired: bool
           </li>
           <li>
             Pełna kontrola: <code className="font-mono text-ink-1">git clone -b ledger …/hyperquant-data ledger</code>, potem{' '}
-            <code className="font-mono text-ink-1">node scripts/verify-ledger.mjs --dir ledger</code> (repo HyperQuant). To niezależna implementacja: sprawdza
-            łańcuch od początku, historię git (tylko dopisywanie), skróty w pokwitowaniach i przelicza wyniki z kwantyli.
+            <code className="font-mono text-ink-1">node scripts/verify-ledger.mjs --dir ledger --market --bitcoin</code> (repo HyperQuant). To niezależna
+            implementacja: sprawdza łańcuch od początku, historię git (tylko dopisywanie), kolejność zapisów, pokwitowanie każdego slotu, przelicza wyniki z
+            kwantyli; <code className="font-mono text-ink-1">--market</code> porównuje zapisane ceny rozstrzygnięć ze świecami 1m Hyperliquid,{' '}
+            <code className="font-mono text-ink-1">--bitcoin</code> odczytuje czas bloku Bitcoina z pokwitowań.
           </li>
           <li>
             Czas: <code className="font-mono text-ink-1">ots upgrade</code>, potem <code className="font-mono text-ink-1">ots verify</code> (klient
-            OpenTimestamps) na pokwitowaniu slotu (<code className="font-mono text-ink-1">ots/slots/</code>, skrót = hash ostatniej prognozy slotu) albo dnia
-            (<code className="font-mono text-ink-1">ots/&lt;dzień&gt;.jsonl.ots</code>). Potwierdza, że zapis istniał przed blokiem Bitcoina; kalendarze
-            potwierdzają przyjęcie od razu.
+            OpenTimestamps) na pokwitowaniu slotu (<code className="font-mono text-ink-1">ots/slots/&lt;dzień&gt;/</code>, skrót = hash ostatniej prognozy
+            slotu) albo dnia (<code className="font-mono text-ink-1">ots/&lt;dzień&gt;.jsonl.ots</code>). Potwierdza, że zapis istniał przed blokiem Bitcoina.
+            Blok przychodzi zwykle po 1–6 h, więc dla prognoz 1 h dowodem zapisu przed faktem są kalendarze OpenTimestamps (niezależni operatorzy, przyjęcie
+            od razu), a blok potwierdza je później; dla 4 h blok zwykle zdąży przed rozstrzygnięciem.
           </li>
         </ol>
       </details>

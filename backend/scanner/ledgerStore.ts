@@ -36,7 +36,15 @@ export class LedgerStore {
   }
 
   /** Weryfikuje cały łańcuch i wczytuje rekordy z ostatnich 31 dni. Zepsuty łańcuch → ok = false i blokada dopisywania. */
-  load(now: number): { ok: boolean; forecasts: Map<string, LedgerRecord>; resolutions: Map<string, LedgerRecord>; skips: LedgerRecord[]; error?: string } {
+  load(now: number): {
+    ok: boolean;
+    forecasts: Map<string, LedgerRecord>;
+    resolutions: Map<string, LedgerRecord>;
+    skips: LedgerRecord[];
+    /** Ostatni rozliczony slot w całym dzienniku (prognoza albo skip, także zakresowy); null = pusty */
+    lastSlot: number | null;
+    error?: string;
+  } {
     const forecasts = new Map<string, LedgerRecord>();
     const resolutions = new Map<string, LedgerRecord>();
     const skips: LedgerRecord[] = [];
@@ -45,12 +53,20 @@ export class LedgerStore {
     const fromDay = dayKey(now - 31 * DAY);
     let prev = GENESIS;
     let count = 0;
+    let lastSlot: number | null = null;
     for (const f of files) {
       const lines = readFileSync(join(cd, f), 'utf8').split('\n').filter(Boolean);
+      // Ostatni slot: z każdego pliku (tanio — tylko rekordy f/s), żeby ciągłość przetrwała przerwy dłuższe niż 31 dni
+      for (const l of lines) {
+        if (!l.includes('"k":"f"') && !l.includes('"k":"s"')) continue;
+        const o = JSON.parse(l) as { slot?: unknown; until?: unknown };
+        const s = typeof o.until === 'number' ? o.until : o.slot;
+        if (typeof s === 'number' && (lastSlot === null || s > lastSlot)) lastSlot = s;
+      }
       const v = verifyLines(lines, prev);
       if (!v.ok) {
         this.broken = true;
-        return { ok: false, forecasts, resolutions, skips, error: `łańcuch przerwany w ${f}, linia ${(v.badLine ?? 0) + 1}` };
+        return { ok: false, forecasts, resolutions, skips, lastSlot: null, error: `łańcuch przerwany w ${f}, linia ${(v.badLine ?? 0) + 1}` };
       }
       prev = v.head;
       count += lines.length;
@@ -69,7 +85,7 @@ export class LedgerStore {
     this.head = prev;
     this.lines = count;
     this.broken = false;
-    return { ok: true, forecasts, resolutions, skips };
+    return { ok: true, forecasts, resolutions, skips, lastSlot };
   }
 
   /** Dopisuje rekordy do pliku bieżącego dnia UTC; zwraca linie (z prev i h). */

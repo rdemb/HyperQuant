@@ -48,8 +48,15 @@ Zero: kalendarze OTS i GitHub są darmowe; świece w budżecie wag skanera (~5 w
 ## Decyzje po recenzji (integralność i statystyka)
 
 - **Pre-rejestracja dowodliwa**: sama kotwica pliku dnia (po 00:10 UTC) przychodziła po rozstrzygnięciu prognoz 1–4 h.
-  Teraz po każdym slocie głowa łańcucha jest znakowana w OpenTimestamps (`ots/slots/<slot>.ots`, skrót = hash ostatniej
-  prognozy slotu): kalendarze (niezależni operatorzy) potwierdzają przyjęcie od razu, blok Bitcoina — po kilku godzinach.
+  Teraz po każdym slocie głowa łańcucha jest znakowana w OpenTimestamps (`ots/slots/<dzień>/<slot>.ots`, skrót = hash
+  ostatniej prognozy slotu, ponawiane do godziny): kalendarze (niezależni operatorzy) potwierdzają przyjęcie od razu, blok
+  Bitcoina — zwykle po 1–6 h. Dla horyzontu 1 h dowodem pre-rejestracji są więc kalendarze; blok potwierdza je później
+  (weryfikator `--bitcoin` raportuje osobno, ile prognoz ma blok przed rozstrzygnięciem).
+- **Ceny źródłowe w rozstrzygnięciach** (`c0`/`c1`, `hi`/`lo`): weryfikator `--market` porównuje je ze świecami 1m
+  Hyperliquid — wynik nie opiera się na zaufaniu do skanera.
+- **Kolejność**: weryfikator sprawdza, że slot zgadza się z chwilą wydania, początek horyzontu to pełna minuta po wydaniu,
+  rozstrzygnięcie nie przed końcem horyzontu, brak duplikatów i cofania czasu; przerwa dłuższa niż doba = jeden rekord
+  zakresowy `skip`.
 - **Historia tylko dopisywana**: commit odrzucany, gdy zmienia zapisane linie, usuwa plik albo zmienia pokwitowanie;
   weryfikator sprawdza każdą parę kolejnych commitów (prefiks) i łańcuch od GENESIS. Zalecana dodatkowo ochrona gałęzi
   `ledger` na GitHubie (blokada force-push i usunięcia).

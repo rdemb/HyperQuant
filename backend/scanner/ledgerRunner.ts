@@ -89,6 +89,8 @@ export class LedgerRunner {
   private accounted: number | null = null;
   /** Powód niewydania w bieżącym slocie (do rekordu `skip`) */
   private slotFail: { slot: number; reason: string } | null = null;
+  /** Pokwitowanie slotu do ponowienia (ten sam skrót: hash ostatniej prognozy slotu), najwyżej przez godzinę */
+  private pendingStamp: { slot: number; hash: string; at: number } | null = null;
 
   constructor(d: LedgerRunner['d']) {
     this.d = d;
@@ -120,8 +122,8 @@ export class LedgerRunner {
       for (const x of later) a = nextAci(a, x.miss);
       this.aci[h] = a;
     }
-    const slots = [...[...this.forecasts.values()].map((f) => f.slot), ...this.skips.keys()].filter((x) => Number.isFinite(x));
-    this.accounted = slots.length ? Math.max(...slots) : null;
+    // Ciągłość slotów z całego dziennika (także po przerwie dłuższej niż okno wczytanych rekordów)
+    this.accounted = st.lastSlot;
     try {
       const idx = JSON.parse(readFileSync(this.d.store.path('ots/index.json'), 'utf8')) as OtsEntry[];
       if (Array.isArray(idx)) this.ots = idx.filter((e) => e && typeof e.day === 'string');
@@ -162,11 +164,12 @@ export class LedgerRunner {
     const ti = this.clock(now);
     const slot = slotOf(ti);
     if (this.accounted === null) this.accounted = slot - SLOT;
-    const skipBodies: Record<string, unknown>[] = [];
-    for (let s = this.accounted + SLOT; s < slot && skipBodies.length < 31 * 96; s += SLOT) {
-      if (this.forecasts.has(`${s}-ret60`) || this.skips.has(s)) continue;
-      skipBodies.push({ k: 's', slot: s, reason: this.slotFail?.slot === s ? this.slotFail.reason : 'outage' });
-    }
+    const missing: number[] = [];
+    for (let s = this.accounted + SLOT; s < slot; s += SLOT) if (!this.forecasts.has(`${s}-ret60`) && !this.skips.has(s)) missing.push(s);
+    const skipBodies: Record<string, unknown>[] =
+      missing.length > 96
+        ? [{ k: 's', slot: missing[0], until: missing[missing.length - 1], reason: 'outage' }]
+        : missing.map((s) => ({ k: 's', slot: s, reason: this.slotFail?.slot === s ? this.slotFail.reason : 'outage' }));
     if (slot - SLOT > this.accounted) this.accounted = slot - SLOT;
     this.add(skipBodies, ti);
     appended += skipBodies.length;
@@ -186,12 +189,17 @@ export class LedgerRunner {
         this.add(issued, ti);
         appended += issued.length;
         this.accounted = Math.max(this.accounted, slot);
-        // Pokwitowanie: głowa łańcucha po wydaniu tego slotu
-        if (this.d.stamp) {
-          const res = await this.d.stamp(new Uint8Array(Buffer.from(this.d.store.head, 'hex')));
-          if (res) this.d.store.write(`ots/slots/${slot}.ots`, res.ots);
-        }
+        // Pokwitowanie: głowa łańcucha po wydaniu tego slotu (= hash ostatniej prognozy slotu)
+        this.pendingStamp = { slot, hash: this.d.store.head, at: ti };
       }
+    }
+    if (this.pendingStamp && this.d.stamp) {
+      const ps = this.pendingStamp;
+      const res = await this.d.stamp(new Uint8Array(Buffer.from(ps.hash, 'hex')));
+      if (res) {
+        this.d.store.write(`ots/slots/${dayKey(ps.slot)}/${ps.slot}.ots`, res.ots);
+        this.pendingStamp = null;
+      } else if (ti - ps.at > HOUR) this.pendingStamp = null; // kalendarze niedostępne przez godzinę — brak pokwitowania (weryfikator to wykaże)
     }
 
     // 2. Rozstrzygnięcia (czas rozstrzygnięcia z zegara — po wydaniu w tym samym wywołaniu)
@@ -264,13 +272,18 @@ export class LedgerRunner {
     for (const s of this.skips.keys()) if (s < now - KEEP) this.skips.delete(s);
   }
 
+  /** Pokwitowania slotów z ostatnich 24 h (podkatalogi dzienne — bez przeglądania całej historii). */
   private slotStamps(now: number): number {
-    const dir = this.d.store.path('ots/slots');
-    if (!existsSync(dir)) return 0;
-    return readdirSync(dir).filter((f) => {
-      const s = Number(f.replace(/\.ots$/, ''));
-      return Number.isFinite(s) && s >= now - DAY;
-    }).length;
+    let n = 0;
+    for (const day of [dayKey(now - DAY), dayKey(now)]) {
+      const dir = this.d.store.path(`ots/slots/${day}`);
+      if (!existsSync(dir)) continue;
+      n += readdirSync(dir).filter((f) => {
+        const s = Number(f.replace(/\.ots$/, ''));
+        return Number.isFinite(s) && s >= now - DAY;
+      }).length;
+    }
+    return n;
   }
 
   summary(now: number): DeskLedgerSummary {

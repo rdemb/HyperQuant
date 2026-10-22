@@ -57,3 +57,70 @@ describe('verify-ledger — przeliczanie wyników i pokwitowania', () => {
     expect(verifyChain([reordered], GENESIS)).toMatchObject({ ok: false, reason: expect.stringMatching(/kanoniczn/) });
   });
 });
+
+import { checkMarket, checkOrdering, checkReceipts, otsAttestations } from './verify-ledger.mjs';
+import { OTS_MAGIC, varbytes, varuint } from '../backend/scanner/ots.ts';
+import { createHash as hashOf } from 'node:crypto';
+
+describe('verify-ledger — kolejność, pokwitowania, Bitcoin, rynek', () => {
+  const M = 60_000;
+  const S = 15 * M;
+  const T = Date.UTC(2026, 9, 22, 12, 0, 0);
+  const f = (over = {}) => ({ k: 'f', id: `${T}-ret60`, slot: T, ti: T + 20_000, t: T + M, kind: 'ret', h: 60, ...over });
+
+  it('checkOrdering: poprawna sekwencja bez zastrzeżeń', () => {
+    expect(checkOrdering([f(), { k: 'r', id: `${T}-ret60`, t: T + 62 * M }, { k: 's', slot: T + S, reason: 'outage' }])).toEqual([]);
+  });
+  it('checkOrdering: slot niezgodny z chwilą wydania, t ≠ pełna minuta po wydaniu, duplikat, rozstrzygnięcie przed horyzontem, cofnięty czas', () => {
+    expect(checkOrdering([f({ slot: T - S })]).join(' ')).toMatch(/slot/);
+    expect(checkOrdering([f({ t: T })]).join(' ')).toMatch(/pełną minutą/);
+    expect(checkOrdering([f(), f()]).join(' ')).toMatch(/powtórzon/);
+    expect(checkOrdering([f(), { k: 'r', id: `${T}-ret60`, t: T + 30 * M }]).join(' ')).toMatch(/przed końcem horyzontu/);
+    expect(checkOrdering([f(), f({ id: 'b', ti: T + 10_000, slot: T, t: T + M })]).join(' ')).toMatch(/cofnięty/);
+    expect(checkOrdering([f(), { k: 's', slot: T, reason: 'x' }]).join(' ')).toMatch(/jednocześnie/);
+  });
+
+  it('checkReceipts: brak pokwitowania slotu = problem; skrót musi być hashem ostatniej prognozy slotu', () => {
+    const recs = [{ ...f(), hash: 'aa'.repeat(32) }, { ...f({ id: `${T}-ret240`, h: 240 }), hash: 'bb'.repeat(32) }];
+    const digest = (hex) => buildOtsFile(new Uint8Array(Buffer.from(hex, 'hex')), new Uint8Array(16), [new Uint8Array([0xf1, 1, 7, 0x08, 0x00, 0x83, 0xdf, 0xe3, 0x0d, 0x2e, 0xf9, 0x0c, 0x8e, 2, 1, 0x61])]);
+    expect(checkReceipts(recs, () => null).join(' ')).toMatch(/brak pokwitowania/);
+    expect(checkReceipts(recs, () => digest('aa'.repeat(32))).join(' ')).toMatch(/skrót/);
+    expect(checkReceipts(recs, () => digest('bb'.repeat(32)))).toEqual([]);
+  });
+
+  it('otsAttestations: przelicza operacje drzewa do poświadczenia Bitcoin (wysokość bloku i wiadomość)', () => {
+    const d = new Uint8Array(32).fill(5);
+    const nonce = new Uint8Array(16).fill(1);
+    const arg = new Uint8Array([9, 9, 9]);
+    const resp = new Uint8Array([0xf0, ...varbytes(arg), 0x08, 0x00, 0x05, 0x88, 0x96, 0x0d, 0x73, 0xd7, 0x19, 0x01, ...varbytes(new Uint8Array(varuint(800_000)))]);
+    const att = otsAttestations(buildOtsFile(d, nonce, [resp]));
+    const m1 = hashOf('sha256').update(Buffer.concat([Buffer.from(d), Buffer.from(nonce)])).digest();
+    const m2 = hashOf('sha256').update(Buffer.concat([m1, Buffer.from(arg)])).digest();
+    expect(att).toEqual([{ kind: 'bitcoin', height: 800_000, msg: m2.toString('hex') }]);
+  });
+
+  it('otsAttestations: SHA-1, RIPEMD-160, reverse, hexlify (dowody kalendarzy); Keccak — gałąź bez wiadomości', () => {
+    const d = new Uint8Array(32).fill(7);
+    const nonce = new Uint8Array(16).fill(2);
+    const btc = [0x00, 0x05, 0x88, 0x96, 0x0d, 0x73, 0xd7, 0x19, 0x01, ...varbytes(new Uint8Array(varuint(358_391)))];
+    // Plik złożony ręcznie: drzewo z gałęzią SHA-1 → RIPEMD-160 → reverse → hexlify i gałęzią Keccak
+    const file = new Uint8Array([...OTS_MAGIC, 0x01, 0x08, ...d, 0xf0, ...varbytes(nonce), 0x08, 0xff, 0x02, 0x03, 0xf2, 0xf3, ...btc, 0x67, ...btc]);
+    const att = otsAttestations(file);
+    const m0 = hashOf('sha256').update(Buffer.concat([Buffer.from(d), Buffer.from(nonce)])).digest();
+    const rip = hashOf('ripemd160').update(hashOf('sha1').update(m0).digest()).digest();
+    const want = Buffer.from(Buffer.from(rip).reverse().toString('hex'), 'ascii');
+    expect(att).toEqual([
+      { kind: 'bitcoin', height: 358_391, msg: want.toString('hex') },
+      { kind: 'bitcoin', height: 358_391, msg: null },
+    ]);
+  });
+
+  it('checkMarket: ceny źródłowe zgodne ze świecami 1m; zmyślone — wykryte', () => {
+    const candles = Array.from({ length: 130 }, (_, i) => ({ time: T + i * M, high: 100 + i, low: 90 + i, close: 95 + i }));
+    const fr = { k: 'f', id: 'a', kind: 'ret', t: T + M, h: 60 };
+    const ft = { k: 'f', id: 'b', kind: 'touch', t: T + M, h: 120 };
+    const good = [fr, { k: 'r', id: 'a', c0: 95, c1: 155 }, ft, { k: 'r', id: 'b', hi: 100 + 120, lo: 90 + 1 }];
+    expect(checkMarket(good, candles)).toEqual([]);
+    expect(checkMarket([fr, { k: 'r', id: 'a', c0: 95, c1: 999 }], candles).length).toBe(1);
+  });
+});
