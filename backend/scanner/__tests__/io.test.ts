@@ -165,11 +165,11 @@ describe('Scanner — cykl skanu i publikacji', () => {
     ]);
   });
 
-  it('z silnikiem kohort publikuje cohorts/BTC.json (agregaty bez adresów, ten sam okres obserwacji co taśma)', async () => {
+  it('z silnikiem kohort publikuje cohorts/BTC.json (agregaty bez adresów, tylko kubełki obserwowane w całości)', async () => {
     const out = mkdtempSync(join(tmpdir(), 'hq-'));
     const book = new AddressBook();
     const cohorts = new CohortEngine({ coin: 'BTC', isWhale: (a) => book.isWhale(a) });
-    for (let i = 0; i < 6; i++) cohorts.onTrade({ users: [`0x${'a'.repeat(39)}${i}`, `0x${'b'.repeat(39)}${i}`], side: 'B', px: 83_000, sz: 1, time: 100_000 + i });
+    for (let i = 0; i < 6; i++) cohorts.onTrade({ users: [`0x${'a'.repeat(39)}${i}`, `0x${'b'.repeat(39)}${i}`], side: 'B', px: 83_000, sz: 1, time: i });
     // publikowane są tylko kubełki zamknięte (15 min) — publikacja po zamknięciu pierwszego
     const scanner = new Scanner({
       coin: 'BTC',
@@ -178,7 +178,7 @@ describe('Scanner — cykl skanu i publikacji', () => {
       outDir: out,
       r2: null,
       now: () => 16 * 60_000,
-      tapeSince: 60_000,
+      tapeSince: 0,
       cohorts,
     });
     scanner.setCtx({ markPx: 83000, oiBtc: 20, dayNtlVlm: 2e9 });
@@ -187,7 +187,7 @@ describe('Scanner — cykl skanu i publikacji', () => {
     expect(txt).not.toMatch(/0x[0-9a-f]{40}/i);
     const flow = JSON.parse(txt);
     expect(isCohortFlow(flow)).toBe(true);
-    expect(flow.since).toBe(60_000);
+    expect(flow.since).toBe(0);
     expect(flow.totals.h24.rest.buy).toBe(500_000); // 6 × 83 000 zaokrąglone do 10 tys.
   });
 
