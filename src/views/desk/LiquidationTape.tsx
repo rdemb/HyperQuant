@@ -124,19 +124,23 @@ const TapeTimeline: React.FC<{ tape: LiqTape }> = ({ tape }) => {
             <g>
               <rect x={pad.l} y={pad.t} width={Math.max(0, x(tape.since) - pad.l)} height={H - pad.b - pad.t} fill="var(--color-surface-2)" opacity={0.6} />
               {x(tape.since) - pad.l > 90 && (
-                <text x={(pad.l + x(tape.since)) / 2} y={mid} dy="0.32em" textAnchor="middle" className="fill-ink-3" fontSize={10}>
+                <text x={(pad.l + x(tape.since)) / 2} y={mid + 14} dy="0.32em" textAnchor="middle" className="fill-ink-3" fontSize={10}>
                   brak obserwacji
                 </text>
               )}
             </g>
           )}
           <line x1={pad.l} x2={width - pad.r} y1={mid} y2={mid} stroke="var(--color-line-strong)" strokeWidth={1} />
-          <text x={pad.l - 6} y={pad.t + 6} textAnchor="end" className="fill-ink-3 font-mono" fontSize={10}>
-            ▲{fmtCompact(maxY, '$')}
-          </text>
-          <text x={pad.l - 6} y={H - pad.b - 2} textAnchor="end" className="fill-ink-3 font-mono" fontSize={10}>
-            ▼{fmtCompact(maxY, '$')}
-          </text>
+          {tape.buckets.length > 0 && (
+            <>
+              <text x={pad.l - 6} y={pad.t + 6} textAnchor="end" className="fill-ink-3 font-mono" fontSize={10}>
+                ▲{fmtCompact(maxY, '$')}
+              </text>
+              <text x={pad.l - 6} y={H - pad.b - 2} textAnchor="end" className="fill-ink-3 font-mono" fontSize={10}>
+                ▼{fmtCompact(maxY, '$')}
+              </text>
+            </>
+          )}
           {tape.buckets.map((b) => {
             const x0 = x(b.t);
             const hs = y(b.shortUsd);
@@ -159,8 +163,8 @@ const TapeTimeline: React.FC<{ tape: LiqTape }> = ({ tape }) => {
             );
           })}
           {tape.buckets.length === 0 && (
-            <text x={(Math.max(pad.l, x(tape.since)) + width - pad.r) / 2} y={mid - 10} textAnchor="middle" className="fill-ink-3" fontSize={11}>
-              brak likwidacji śledzonych pozycji
+            <text x={(pad.l + width - pad.r) / 2} y={pad.t + 10} textAnchor="middle" className="fill-ink-2" fontSize={11}>
+              brak likwidacji śledzonych pozycji od {timeFmt.format(tape.since)}
             </text>
           )}
           {hourTicks.map((t) => (
