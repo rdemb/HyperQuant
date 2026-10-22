@@ -97,7 +97,7 @@ const MiniChart: React.FC<{ values: number[]; refLine?: number; refLabel?: strin
         <>
           <line x1={4} x2={W - 4} y1={y(refLine)} y2={y(refLine)} stroke="var(--color-warn)" strokeWidth={1} strokeDasharray="4 3" />
           {refLabel && (
-            <text x={W - 6} y={y(refLine) - 3} textAnchor="end" fontSize={9} fill="var(--color-ink-3)">
+            <text x={W - 6} y={y(refLine) < 14 ? y(refLine) + 11 : y(refLine) - 3} textAnchor="end" fontSize={9} fill="var(--color-ink-3)">
               {refLabel}
             </text>
           )}
