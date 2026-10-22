@@ -11,7 +11,20 @@ export interface LiquidityProfile {
   days: number;
   minutes: number;
   /** Mediana głębokości obu stron (USD) w ±10 / ±20 bp wg godziny UTC; null = brak danych; `days` — różne dni w godzinie */
-  byHour: { h: number; d10: number | null; d20: number | null; n: number; days: number }[];
+  byHour: {
+    h: number;
+    d10: number | null;
+    d20: number | null;
+    n: number;
+    days: number;
+    /** Mediany stron osobno (USD w ±10 / ±20 bp) — brak w starszych profilach */
+    b10?: number | null;
+    a10?: number | null;
+    b20?: number | null;
+    a20?: number | null;
+    /** 25. percentyl sumy obu stron w ±10 bp (warunki cienkie) — brak w starszych profilach */
+    thin10?: number | null;
+  }[];
   /** Ostatnia minuta, jeśli świeża (≤ 3 min); ratio10 = bieżąca / norma tej godziny z ≥ 3 innych dni (null = za mało historii) */
   now: { t: number; d10: number; d20: number | null; ratio10: number | null } | null;
   /**
@@ -39,7 +52,16 @@ export function isLiquidityProfile(x: unknown): x is LiquidityProfile {
     fin(p.minutes) &&
     Array.isArray(p.byHour) &&
     p.byHour.length === 24 &&
-    p.byHour.every((b, i) => !!b && b.h === i && finOrNull(b.d10) && finOrNull(b.d20) && fin(b.n) && fin(b.days)) &&
+    p.byHour.every(
+      (b, i) =>
+        !!b &&
+        b.h === i &&
+        finOrNull(b.d10) &&
+        finOrNull(b.d20) &&
+        fin(b.n) &&
+        fin(b.days) &&
+        [b.b10, b.a10, b.b20, b.a20, b.thin10].every((v) => v === undefined || finOrNull(v))
+    ) &&
     (p.now === null || (!!p.now && fin(p.now.t) && fin(p.now.d10) && finOrNull(p.now.d20) && finOrNull(p.now.ratio10))) &&
     !!p.resilience &&
     fin(p.resilience.events) &&

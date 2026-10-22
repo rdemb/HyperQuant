@@ -113,3 +113,19 @@ describe('LiquidityRecorder', () => {
     expect(p.since).toBe(recent.t);
   });
 });
+
+describe('profil: strony arkusza i warunki cienkie wg godziny (koszt wykonania)', () => {
+  it('mediany bidów i asków osobno (±10 / ±20 bp) i 25. percentyl sumy ±10 bp', () => {
+    const T = Date.UTC(2026, 9, 20, 5, 0);
+    const rows: MinuteRow[] = Array.from({ length: 40 }, (_, i) => ({ t: T + i * MIN, n: 12, mid: 100_000, bk: 10, b10: 100 + i, a10: 300 + i, b20: 500 + i, a20: 900 + i }));
+    const h = liquidityProfile(rows, 'BTC', T + 2 * 3_600_000).byHour[5];
+    expect(h.b10).toBeCloseTo(119.5, 9);
+    expect(h.a10).toBeCloseTo(319.5, 9);
+    expect(h.b20).toBeCloseTo(519.5, 9);
+    expect(h.a20).toBeCloseTo(919.5, 9);
+    // suma 400 + 2i, i = 0..39 → 25. percentyl ≈ 400 + 2·9,75
+    expect(h.thin10).toBeCloseTo(419.5, 6);
+    const empty = liquidityProfile(rows, 'BTC', T + 2 * 3_600_000).byHour[7];
+    expect(empty).toMatchObject({ b10: null, a10: null, b20: null, a20: null, thin10: null });
+  });
+});
