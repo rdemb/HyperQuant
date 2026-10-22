@@ -67,6 +67,22 @@ Metadane commitów są neutralne (autor noreply, czas UTC) — bez nazwy hosta i
 pokrycie open interest, opóźnienie odczytów pozycji oraz to, czy publikacja nie zawiera adresu portfela ani adresu IP
 ([scripts/check-data-health.mjs](../scripts/check-data-health.mjs)). Problem otwiera zgłoszenie z etykietą `alert-danych`
 (GitHub wysyła powiadomienie), a powrót świeżych danych zamyka je automatycznie. Ręcznie: `node scripts/check-data-health.mjs`.
+Harmonogram GitHuba jest jednak „best-effort” i w praktyce bywa pomijany, dlatego ta sama ocena działa też na serwerze:
+
+**Strażnik skanera** ([scripts/watchdog.mjs](../scripts/watchdog.mjs), `hyperquant-watchdog.timer`, co 15 min, instalowany przez `install.sh`;
+działa jako root z własnym katalogiem stanu poza katalogiem usługi skanera):
+- restartuje skaner, gdy usługa jest w stanie `failed`, lokalny `status.json` jest starszy niż 10 min albo — przy świeżych danych
+  lokalnych i po 30 min działania — stoi publikacja, dziennik prognoz lub rejestrator płynności. Działającą usługę restartuje
+  dopiero po godzinie jej działania, najwyżej 3 razy w epizodzie (potem tylko alarm „potrzebna interwencja”). Błędy sieci/GitHuba
+  i problemy jakości (pokrycie open interest) restartu nie wywołują; ręcznie zatrzymanej usługi (`systemctl stop`) nie uruchamia;
+- wypycha kluczem wdrożeniowym skanera `alert.json` i `report.md` do gałęzi `health` repo danych: problem po potwierdzeniu
+  w dwóch kolejnych przebiegach (wyciek prywatności — od razu), powrót do normy od razu, trwały problem — przypomnienie co 6 h.
+  Push uruchamia tam workflow (wzorzec: [`deploy/health-alert.yml`](deploy/health-alert.yml)), który otwiera, komentuje
+  albo zamyka zgłoszenie `alert-danych` w repo danych. Commity mają czas UTC i autora noreply, jak publikacja skanera.
+
+Jednorazowo: gałąź `health` w repo danych z plikiem `.github/workflows/health-alert.yml` (kopia wzorca). Podgląd na serwerze:
+`systemctl list-timers hyperquant-watchdog.timer`, `journalctl -u hyperquant-watchdog`. Dłuższa przerwa serwisowa:
+`systemctl stop hyperquant-watchdog.timer` (inaczej strażnik zgłosi zatrzymaną usługę).
 
 ## Publikacja do Cloudflare R2 (opcjonalnie)
 
