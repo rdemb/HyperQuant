@@ -10,10 +10,11 @@ import { PlanResult } from './plan/PlanResult';
 import { LedgerPanel } from './plan/LedgerPanel';
 import { DeskLedgerPanel } from './plan/DeskLedgerPanel';
 import { AuctionContextPanel } from './plan/AuctionContextPanel';
+import { JournalTab } from './plan/JournalTab';
 import { usePlanLedger } from './plan/usePlanLedger';
 import { parseNum, planSigma, useDebounced, usePlanMarket, useStoredString } from './plan/hooks';
 
-type Tab = 'analyzer' | 'tomorrow';
+type Tab = 'analyzer' | 'tomorrow' | 'journal';
 
 // Stan formularza przeżywa przełączanie widoków w obrębie sesji (widok jest montowany leniwie)
 let savedForm: PlanFormState | null = null;
@@ -215,6 +216,7 @@ const PlanView: React.FC = () => {
           options={[
             { value: 'analyzer', label: 'Analizator planu' },
             { value: 'tomorrow', label: 'Plan na jutro' },
+            { value: 'journal', label: 'Dziennik zagrań' },
           ]}
         />
         <span className="text-xs text-ink-3">Desk ocenia Twój plan — nie podsuwa wejść.</span>
@@ -259,6 +261,8 @@ const PlanView: React.FC = () => {
           <LedgerPanel ledger={ledger} />
           <DeskLedgerPanel />
         </>
+      ) : tab === 'journal' ? (
+        <JournalTab />
       ) : (
         <DayTradingPrepDesk shaakuni={shaakuni} quant={quant} currentPrice={feed.currentPrice} onPrefillPlan={prefillPlan} />
       )}
