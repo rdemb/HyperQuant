@@ -5,7 +5,8 @@ import type { ScannedPosition } from '../../src/utils/liqMap.ts';
  * Stan zostaje wyłącznie na serwerze (nigdy nie jest publikowany).
  *
  * Każde wywołanie `due` dzieli limit między trzy kolejki (niewykorzystany udział przechodzi dalej):
- *  1. pozycje (50%): termin z interwału wg nominału — ≥ 1 mln USD co 2 min, ≥ 100 tys. co 10 min, inne co 30 min;
+ *  1. pozycje (50%): termin z interwału wg nominału — ≥ 1 mln USD co 2 min, ≥ 100 tys. co 10 min, inne co 30 min,
+ *     a przy cenie likwidacji < 1% od ceny mark co 1 min (< 3%: najwyżej co 2 min);
  *     kolejność wg spóźnienia względem interwału, więc przy przeciążeniu najdłużej czekają małe pozycje, nie duże;
  *     pozycja, której właściciel znów handlował, jest od razu do odświeżenia;
  *  2. adresy, które handlowały od ostatniego odczytu, w tym nowe (40%) — większy obrót pierwszy;
@@ -30,22 +31,33 @@ interface Rec {
   dirty: boolean;
   /** Po nieudanym odczycie: nie wcześniej niż */
   retryAt?: number;
+  /** Ostatnio widziany w publicznym rankingu kont (zasiew) */
+  seededAt?: number;
 }
 
 const posNtl = (r: Rec) => (r.pos ? Math.abs(r.pos.szi) * r.pos.entryPx : 0);
 
-function posInterval(r: Rec): number {
+/** Promocja przy cenie likwidacji tylko dla pozycji, które ważą na mapie (pył nie zużywa budżetu). */
+const PROXIMITY_MIN_NTL = 25_000;
+
+/**
+ * Interwał odczytu pozycji: wg nominału, a blisko ceny likwidacji częściej — tam mapa musi być najświeższa
+ * i tam powstają likwidacje do potwierdzenia (< 1% od ceny mark co 1 min, < 3% najwyżej co 2 min; od 25 tys. USD).
+ */
+function posInterval(r: Rec, markPx?: number): number {
   const ntl = posNtl(r);
-  if (ntl >= 1e6) return 2 * MIN;
-  if (ntl >= 1e5) return 10 * MIN;
-  return 30 * MIN;
+  const base = ntl >= 1e6 ? 2 * MIN : ntl >= 1e5 ? 10 * MIN : 30 * MIN;
+  const liq = r.pos?.liqPx;
+  if (!markPx || !(markPx > 0) || !liq || ntl < PROXIMITY_MIN_NTL) return base;
+  const dist = Math.abs(markPx - liq) / markPx;
+  if (dist < 0.01) return MIN;
+  if (dist < 0.03) return Math.min(base, 2 * MIN);
+  return base;
 }
 
 export class AddressBook {
   private readonly recs = new Map<string, Rec>();
   readonly capacity: number;
-  /** Liczba adresów dodanych z rankingu kont (diagnostyka) */
-  seededCount = 0;
 
   constructor(cap: number = 50_000) {
     this.capacity = cap;
@@ -53,6 +65,13 @@ export class AddressBook {
 
   get size(): number {
     return this.recs.size;
+  }
+
+  /** Liczba adresów obecnych w rankingu kont (diagnostyka; przetrwa restart, bo wynika ze stanu) */
+  get seededCount(): number {
+    let n = 0;
+    for (const r of this.recs.values()) if (r.seededAt !== undefined) n++;
+    return n;
   }
 
   has(addr: string): boolean {
@@ -75,12 +94,16 @@ export class AddressBook {
 
   /**
    * Zasiew z rankingu kont: nowy adres trafia do kolejki „handlowały” z priorytetem wg wartości konta.
-   * Adres już znany nie jest ponownie oznaczany (ponowny zasiew co kilka godzin nie zalewa kolejki).
+   * Adres już znany nie jest ponownie oznaczany (ponowny zasiew co kilka godzin nie zalewa kolejki) — odświeżana jest
+   * tylko obecność w rankingu, która chroni go przed czyszczeniem.
    */
   seed(addr: string, accountValueUsd: number, t: number): void {
-    if (this.recs.has(addr)) return;
-    this.recs.set(addr, { lastTradeAt: t, tradedUsd: accountValueUsd, pos: null, lastScanAt: null, dirty: true });
-    this.seededCount++;
+    const known = this.recs.get(addr);
+    if (known) {
+      known.seededAt = t;
+      return;
+    }
+    this.recs.set(addr, { lastTradeAt: t, tradedUsd: accountValueUsd, pos: null, lastScanAt: null, dirty: true, seededAt: t });
     if (this.recs.size > this.capacity) this.evictOne(addr);
   }
 
@@ -99,14 +122,19 @@ export class AddressBook {
     if (r) r.retryAt = now + RETRY_AFTER;
   }
 
-  due(now: number, limit: number): string[] {
+  /** Ostatnio odczytana pozycja adresu (null = brak pozycji albo adres nieznany). */
+  positionOf(addr: string): ScannedPosition | null {
+    return this.recs.get(addr)?.pos ?? null;
+  }
+
+  due(now: number, limit: number, markPx?: number): string[] {
     const positions: [string, number, number][] = []; // adres, spóźnienie względem interwału, nominał
     const traded: [string, number][] = [];
     const safety: [string, number][] = [];
     for (const [a, r] of this.recs) {
       if (r.retryAt !== undefined && r.retryAt > now) continue;
       if (r.pos && r.lastScanAt !== null) {
-        const iv = posInterval(r);
+        const iv = posInterval(r, markPx);
         const late = (now - (r.lastScanAt + iv)) / iv;
         if (late >= 0 || r.dirty) positions.push([a, r.dirty ? Math.max(late, 1) : late, posNtl(r)]);
       } else if (r.dirty || r.lastScanAt === null) {
@@ -142,23 +170,41 @@ export class AddressBook {
     return out;
   }
 
-  /** Usuwa adresy bez pozycji, nieaktywne na taśmie dłużej niż 3 dni. */
+  /**
+   * Usuwa adresy bez pozycji, nieaktywne na taśmie dłużej niż 3 dni — chyba że konto wciąż jest w rankingu
+   * (inaczej co 3 dni tysiące kont wypadałyby i wracały z zasiewem, zużywając budżet na ponowne odczyty).
+   */
   prune(now: number): void {
-    for (const [a, r] of this.recs) if (!r.pos && now - r.lastTradeAt > 3 * DAY) this.recs.delete(a);
+    for (const [a, r] of this.recs) {
+      if (r.pos || now - r.lastTradeAt <= 3 * DAY) continue;
+      if (r.seededAt !== undefined && now - r.seededAt <= 3 * DAY) continue;
+      this.recs.delete(a);
+    }
   }
 
-  /** Przepełnienie: odpada najdawniej aktywny adres bez pozycji (nie ten właśnie dodany). */
+  /**
+   * Przepełnienie: odpada najdawniej aktywny adres bez pozycji (nie ten właśnie dodany); konta z rankingu dopiero,
+   * gdy nie ma innych — inaczej nieaktywne duże konta wypadałyby pierwsze i wracały z zasiewem co 6 h.
+   */
   private evictOne(keep: string): void {
     let victim: string | null = null;
     let oldest = Number.POSITIVE_INFINITY;
+    let ranked: string | null = null;
+    let oldestRanked = Number.POSITIVE_INFINITY;
     for (const [a, r] of this.recs) {
       if (a === keep || r.pos) continue;
-      if (r.lastTradeAt < oldest) {
+      if (r.seededAt !== undefined) {
+        if (r.lastTradeAt < oldestRanked) {
+          oldestRanked = r.lastTradeAt;
+          ranked = a;
+        }
+      } else if (r.lastTradeAt < oldest) {
         oldest = r.lastTradeAt;
         victim = a;
       }
     }
-    if (victim !== null) this.recs.delete(victim);
+    const out = victim ?? ranked;
+    if (out !== null) this.recs.delete(out);
   }
 
   toJSON(): { v: 2; recs: [string, Rec][] } {
@@ -178,6 +224,7 @@ export class AddressBook {
           pos: r.pos ?? null,
           lastScanAt: r.lastScanAt ?? null,
           dirty: r.dirty ?? r.lastScanAt == null,
+          ...(typeof r.seededAt === 'number' ? { seededAt: r.seededAt } : {}),
         });
       }
     }

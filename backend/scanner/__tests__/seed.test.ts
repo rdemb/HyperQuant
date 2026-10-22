@@ -37,6 +37,37 @@ describe('AddressBook.seed — zasiew dużych kont', () => {
     b.seed('0xmid', 5e5, 0);
     b.seed('0xa', 9e9, 0);
     expect(b.due(0, 10)).toEqual(['0xbig', '0xmid']);
-    expect(b.seededCount).toBe(2);
+    // 0xa jest w rankingu — liczy się jako konto z rankingu, choć nie został ponownie oznaczony do odczytu
+    expect(b.seededCount).toBe(3);
+  });
+
+  it('liczba kont z rankingu przetrwa zapis i odczyt stanu (restart usługi)', () => {
+    const b = new AddressBook();
+    b.seed('0xbig', 5e6, 0);
+    b.seed('0xmid', 5e5, 0);
+    const back = AddressBook.fromJSON(JSON.parse(JSON.stringify(b.toJSON())));
+    expect(back.seededCount).toBe(2);
+  });
+
+  it('konto wciąż obecne w rankingu nie wypada przy czyszczeniu; konto spoza rankingu bez pozycji — tak', () => {
+    const DAY = 24 * 60 * 60_000;
+    const b = new AddressBook();
+    b.seed('0xstays', 5e6, 0);
+    b.seed('0xgone', 5e6, 0);
+    b.updatePosition('0xstays', null, 0);
+    b.updatePosition('0xgone', null, 0);
+    b.seed('0xstays', 5e6, 2.5 * DAY); // ponowny zasiew co 6 h odświeża obecność w rankingu
+    b.prune(3 * DAY + 1);
+    expect(b.has('0xstays')).toBe(true);
+    expect(b.has('0xgone')).toBe(false);
+    expect(b.seededCount).toBe(1);
+  });
+
+  it('ponowny zasiew znanego konta nie oznacza go do ponownego odczytu', () => {
+    const b = new AddressBook();
+    b.seed('0xbig', 5e6, 0);
+    b.updatePosition('0xbig', null, 0);
+    b.seed('0xbig', 5e6, 60_000);
+    expect(b.due(120_000, 10)).toEqual([]);
   });
 });

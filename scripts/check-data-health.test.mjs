@@ -74,6 +74,20 @@ describe('assessHealth', () => {
   });
 });
 
+describe('taśma likwidacji (plik opcjonalny)', () => {
+  it('brak pliku taśmy (np. przed wdrożeniem skanera) nie jest alarmem', () => {
+    const r = assessHealth(input({ errors: { 'liq-tape/BTC.json': 'HTTP 404' } }), NOW);
+    expect(r.ok).toBe(true);
+  });
+  it('taśma jest skanowana strażnikiem prywatności', () => {
+    const inp = input();
+    inp.raw['liq-tape/BTC.json'] = JSON.stringify({ events: [{ who: '0x' + 'ef'.repeat(20) }] });
+    const r = assessHealth(inp, NOW);
+    expect(r.ok).toBe(false);
+    expect(r.problems.join(' ')).toMatch(/liq-tape\/BTC\.json/);
+  });
+});
+
 describe('findLeaks', () => {
   it('wykrywa adres EVM i IPv4, nie myli ich z liczbami JSON', () => {
     expect(findLeaks('{"px":107234.5,"asOf":1792657671870,"share":0.3016068073177374}')).toEqual([]);
