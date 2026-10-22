@@ -3,12 +3,15 @@ import { createHash } from 'node:crypto';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { LAB_CATALOG, isLabReport, type LabReport } from '../../../src/utils/folkloreLab.ts';
 import { CandleArchive } from '../candleArchive.ts';
 import type { InfoClient } from '../liqDetect.ts';
 import { canonicalJson } from '../ledger.ts';
 import { LAB_HASH, LabRunner } from '../labRunner.ts';
+
+// Operacje git (klon, commit, push do repo lokalnego) przy pełnym, równoległym obciążeniu potrafią przekroczyć 5 s
+vi.setConfig({ testTimeout: 30_000 });
 
 const MIN = 60_000;
 const H = 60 * MIN;

@@ -2,9 +2,12 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { LedgerStore, commitLedger, prepareLedgerRepo } from '../ledgerStore.ts';
 import { verifyLines } from '../ledger.ts';
+
+// Operacje git (klon, commit, push do repo lokalnego) przy pełnym, równoległym obciążeniu potrafią przekroczyć 5 s
+vi.setConfig({ testTimeout: 30_000 });
 
 const T0 = Date.UTC(2026, 9, 22, 23, 50, 0);
 const MIN = 60_000;

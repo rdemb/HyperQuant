@@ -1,5 +1,6 @@
 import React from 'react';
 import { useDeskLedger } from '../../state/useDeskLedger';
+import { LedgerVerifyCard } from './LedgerVerifyCard';
 import { LEDGER_BASE } from '../../state/usePublished';
 import { Badge, EmptyState, Panel, Stat, DASH, fmtPrice } from '../../ui';
 import { DeskLedgerSummary, MktScores, RetScores, TouchLevel } from '../../utils/deskLedger';
@@ -117,6 +118,7 @@ const LedgerBody: React.FC<{ s: DeskLedgerSummary; stale: boolean; expired: bool
           ))}
         </div>
       )}
+      <LedgerVerifyCard summaryHead={s.head.hash} />
       <details>
         <summary className="cursor-pointer select-none text-ink-1 font-medium py-1">Jak to sprawdzić samodzielnie</summary>
         <ol className="list-decimal pl-4 mt-1.5 space-y-1 leading-relaxed">
