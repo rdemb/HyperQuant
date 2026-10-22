@@ -1,12 +1,16 @@
 import { L2OrderbookLevel } from '../types/trading';
+import { makeInnovation, mulberry32 } from './pathEngine';
 
 /**
  * Analizator planu transakcji (BTC-PERP, Hyperliquid) — czyste funkcje.
  * Ocenia plan tradera (wejście / stop / cel / horyzont); nie generuje sygnałów.
  *
- * Model ceny: ruch Browna w log-cenie z dryfem μ (domyślnie 0) i zmiennością σ na horyzont.
+ * Model ceny: log-cena z dryfem μ (domyślnie 0). Z modelem zmienności: σ kroków 5 min z sezonowego log-HAR
+ * i innowacje z bootstrapu standaryzowanych reszt (FHS, grube ogony i skoki z danych); bez niego: stała σ i rozkład normalny.
+ * Gdy wejście różni się od ceny rynku, ścieżka najpierw musi je dotknąć — wynik jest warunkowy na wypełnienie.
  * Źródła: Broadie, Glasserman, Kou (1997) „A continuity correction for discrete barrier options”;
- * Parkinson (1980) estymator zmienności high/low; dokumentacja Hyperliquid (likwidacje, margines, opłaty).
+ * Barone-Adesi, Giannopoulos, Vosper (1999) FHS; Corsi (2009) HAR; Parkinson (1980) jako zapas;
+ * dokumentacja Hyperliquid (likwidacje, margines, opłaty).
  */
 
 export type PlanDirection = 'LONG' | 'SHORT';
@@ -16,7 +20,7 @@ export const DEFAULT_TAKER_FEE = 0.00045;
 /** Maks. dźwignia BTC na HL (tier 0–150M USDC notional, docs: trading/margin-tiers). */
 export const BTC_MAX_LEVERAGE = 40;
 /** Wersja modelu zapisywana w dzienniku trafności. */
-export const PLAN_MODEL_VERSION = 'plan-gbm-bgk-v1';
+export const PLAN_MODEL_VERSION = 'plan-fhs-har-v2';
 
 export interface PlanBook {
   bids: L2OrderbookLevel[];
@@ -40,6 +44,10 @@ export interface PlanInput {
   book: PlanBook;
   /** Mnożnik wariancji dla zdarzeń makro w oknie (≥ 1) */
   eventMultiplier: number;
+  /** Model zmienności: σ kroków (sezonowy HAR) i reszty FHS; brak = stała σ_h i rozkład normalny */
+  vol?: { stepMin: number; stepSigmas: number[]; residuals: ArrayLike<number> | null };
+  /** Bieżąca cena rynku — gdy różna od wejścia, plan zaczyna się od fazy wypełnienia (jak w dzienniku) */
+  startPrice?: number;
 }
 
 const sideOf = (d: PlanDirection) => (d === 'LONG' ? 1 : -1);
@@ -102,33 +110,6 @@ export function barrierHitProbability(p: {
   return { pTarget, pStop: 1 - pTarget };
 }
 
-// Deterministyczny generator Mulberry32 — powtarzalne wyniki dla tego samego seeda
-function mulberry32(seed: number) {
-  let s = seed | 0;
-  return () => {
-    s = (s + 0x6d2b79f5) | 0;
-    let t = Math.imul(s ^ (s >>> 15), 1 | s);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-// Box–Muller z buforem drugiej wartości
-function normalGen(u: () => number) {
-  let spare: number | null = null;
-  return () => {
-    if (spare !== null) {
-      const v = spare;
-      spare = null;
-      return v;
-    }
-    const r = Math.sqrt(-2 * Math.log(u() + 1e-300));
-    const th = 2 * Math.PI * u();
-    spare = r * Math.sin(th);
-    return r * Math.cos(th);
-  };
-}
-
 export type PathOutcome = 'target' | 'stop' | 'none';
 
 export interface HitTimePercentiles {
@@ -138,11 +119,18 @@ export interface HitTimePercentiles {
 }
 
 export interface McResult {
+  /** P(cel przed stopem | wypełnione) */
   pTarget: number;
   pStop: number;
   pNeither: number;
+  /** P(wejście dotknięte w horyzoncie); 1 przy wejściu po cenie rynku */
+  pFill: number;
+  /** < 200 wypełnionych ścieżek: wynik warunkowy policzony przy natychmiastowym wejściu */
+  fillRare: boolean;
   paths: number;
   steps: number;
+  /** Długość kroku w minutach (1 przy stałej σ, 5 przy modelu zmienności) */
+  stepMin: number;
   /** σ na horyzont po mnożniku zdarzeń */
   sigmaEff: number;
   timeToTarget: HitTimePercentiles | null;
@@ -150,11 +138,11 @@ export interface McResult {
   /** Średni wynik w R ścieżek bez rozstrzygnięcia (wyjście po cenie z końca horyzontu) */
   neitherMeanR: number;
   samples: {
-    /** Czasy próbek w minutach */
+    /** Czasy próbek w minutach od teraz */
     times: number[];
-    /** Pasmo P10/P50/P90 ceny wszystkich ścieżek (zatrzymane ścieżki trzymane na barierze) */
+    /** Pasmo P10/P50/P90 ceny wypełnionych ścieżek (zatrzymane ścieżki trzymane na barierze) */
     band: { p10: number; p50: number; p90: number }[];
-    /** Skumulowany odsetek ścieżek rozstrzygniętych do danej próbki */
+    /** Skumulowany odsetek wypełnionych ścieżek rozstrzygniętych do danej próbki */
     hitByTime: { target: number; stop: number }[];
     paths: { outcome: PathOutcome; points: { t: number; price: number }[] }[];
   };
@@ -176,14 +164,10 @@ function timePercentiles(times: number[]): HitTimePercentiles | null {
   return { p25: percentile(s, 0.25), p50: percentile(s, 0.5), p75: percentile(s, 0.75) };
 }
 
-/**
- * Monte Carlo z horyzontem: krok 1 min, σ_krok = σ_h·√mult/√kroki.
- * Korekta mostu Browna (Broadie–Glasserman–Kou 1997): gdy oba końce kroku leżą po tej samej stronie bariery,
- * ścieżka mogła ją przeciąć między nimi z p = exp(−2·d_i·d_{i+1}/(σ²Δt)), d = odległość log od bariery.
- * Gdy w jednym kroku możliwe są obie bariery (rzadkie), najpierw sprawdzany jest stop — ostrożnie.
- * Losowania mostu pochodzą z osobnego strumienia, więc ścieżki są identyczne z i bez korekty.
- */
-export function simulateBarrierPaths(p: {
+/** Minimalna liczba wypełnionych ścieżek, przy której wynik warunkowy liczymy z nich samych. */
+const MIN_FILLED_PATHS = 200;
+
+export interface BarrierSimParams {
   direction: PlanDirection;
   entry: number;
   stop: number;
@@ -196,90 +180,147 @@ export function simulateBarrierPaths(p: {
   seed?: number;
   bridge?: boolean;
   samplePaths?: number;
-}): McResult {
+  /** σ log-ceny kolejnych kroków (np. sezonowy HAR); brak = stała σ_h w krokach 1 min */
+  stepSigmas?: number[];
+  stepMin?: number;
+  /** Standaryzowane reszty FHS (bootstrap); brak/null = N(0, 1) */
+  residuals?: ArrayLike<number> | null;
+  /** Bieżąca cena rynku: gdy różna od wejścia, ścieżka najpierw musi dotknąć wejścia (jak w dzienniku trafności) */
+  startPrice?: number;
+}
+
+/**
+ * Monte Carlo z horyzontem. Proces w log-cenie względem wejścia: w_k = w_{k−1} + μ_k + σ_k·z_k,
+ * z z bootstrapu reszt FHS albo N(0, 1); σ_k ze stałej σ_h (kroki 1 min) lub z modelu zmienności (kroki 5 min).
+ *
+ * Faza wypełnienia (gdy cena startowa ≠ wejście): wypełnienie, gdy krok przetnie poziom wejścia albo — przy końcach po tej samej
+ * stronie — z prawdopodobieństwem mostu exp(−2·|w_{k−1}|·|w_k|/σ_k²). W kroku wypełnienia od razu sprawdzane są bariery.
+ * Wynik (cel/stop/żadne) jest warunkowy na wypełnienie — tak samo rozlicza dziennik.
+ *
+ * Wyścig barier: korekta mostu Browna (Broadie–Glasserman–Kou 1997) z lokalnym σ_k; gdy w jednym kroku możliwe są obie
+ * bariery (rzadkie), najpierw sprawdzany jest stop — ostrożnie. Losowania mostu pochodzą z osobnego strumienia.
+ */
+export function simulateBarrierPaths(p: BarrierSimParams): McResult {
+  const g0 =
+    typeof p.startPrice === 'number' && Number.isFinite(p.startPrice) && p.startPrice > 0 ? Math.log(p.startPrice / p.entry) : 0;
+  if (Math.abs(g0) <= 1e-12) return runPaths(p, 0).result;
+  const withFill = runPaths(p, g0);
+  if (withFill.filled >= MIN_FILLED_PATHS) return withFill.result;
+  // Za mało wypełnień, by mówić o rozkładzie warunkowym — liczymy przy natychmiastowym wejściu i mówimy to wprost
+  const immediate = runPaths(p, 0).result;
+  return { ...immediate, pFill: withFill.result.pFill, fillRare: true };
+}
+
+function runPaths(p: BarrierSimParams, g0: number): { result: McResult; filled: number } {
   const nPaths = Math.max(1, Math.round(p.paths ?? 2000));
-  const steps = Math.max(1, Math.round(p.horizonMin));
   const mult = Math.max(1, p.eventMultiplier ?? 1);
-  const sigmaEff = p.sigmaHorizon * Math.sqrt(mult);
-  const sigStep = sigmaEff / Math.sqrt(steps);
-  const varStep = sigStep * sigStep;
+  const custom = Array.isArray(p.stepSigmas) && p.stepSigmas.length > 0;
+  const stepMin = custom ? p.stepMin ?? 5 : 1;
+  const steps = custom ? p.stepSigmas!.length : Math.max(1, Math.round(p.horizonMin));
+  const sig = custom
+    ? p.stepSigmas!.map((s) => s * Math.sqrt(mult))
+    : Array<number>(steps).fill((p.sigmaHorizon * Math.sqrt(mult)) / Math.sqrt(steps));
+  const sigmaEff = custom ? Math.sqrt(sig.reduce((acc, s) => acc + s * s, 0)) : p.sigmaHorizon * Math.sqrt(mult);
   const { a, b, side } = barrierDistances(p.direction, p.entry, p.stop, p.target);
-  // Proces w przestrzeni „zysku”: X = side·ln(P/E); cel na +b, stop na −a
-  const muStep = (side * (p.driftPerHorizon ?? 0)) / steps;
+  const driftStep = (p.driftPerHorizon ?? 0) / steps;
   const bridge = p.bridge ?? true;
   const seed = p.seed ?? 1;
-  const normal = normalGen(mulberry32(seed));
+  const innov = makeInnovation(mulberry32(seed), p.residuals ?? null);
   const uBridge = mulberry32(seed ^ 0x9e3779b9);
   const riskDist = Math.abs(p.entry - p.stop);
+  const needFill = g0 !== 0;
 
-  // Próbkowanie do wizualizacji: co 5 min (rzadziej dla długich horyzontów, ≤ ~72 próbek)
-  const every = Math.max(5, Math.round(steps / 72));
-  const times: number[] = [];
-  for (let t = 0; t <= steps; t += every) times.push(t);
-  if (times[times.length - 1] !== steps) times.push(steps);
+  // Próbkowanie do wizualizacji: co ≥ 5 min (rzadziej dla długich horyzontów, ≤ ~72 próbek); indeksy kroków
+  const every = Math.max(Math.ceil(5 / stepMin), Math.round(steps / 72));
+  const sampleSteps: number[] = [];
+  for (let k = 0; k <= steps; k += every) sampleSteps.push(k);
+  if (sampleSteps[sampleSteps.length - 1] !== steps) sampleSteps.push(steps);
+  const times = sampleSteps.map((k) => k * stepMin);
   const bandCols = times.map(() => new Float64Array(nPaths));
+  const row = new Float64Array(times.length);
   const nSample = Math.min(nPaths, Math.max(0, p.samplePaths ?? 18));
-  // Kandydaci do wizualizacji: do nSample pierwszych ścieżek każdego wyniku; wybór proporcjonalny niżej
   const candidates: Record<PathOutcome, McResult['samples']['paths']> = { target: [], stop: [], none: [] };
 
-  const toPrice = (x: number) => p.entry * Math.exp(side * x);
+  const toPrice = (w: number) => p.entry * Math.exp(w);
+  const startPx = toPrice(g0);
   const hitT: number[] = [];
   const hitS: number[] = [];
   let neitherR = 0;
   let neitherN = 0;
+  let filledN = 0;
 
   for (let i = 0; i < nPaths; i++) {
-    let x = 0;
+    let w = g0;
+    let filled = !needFill;
     let outcome: PathOutcome = 'none';
     let hitStep = steps;
     let col = 1; // indeks następnej próbki (kolumna 0 = start)
-    bandCols[0][i] = p.entry;
-    // Punkty ścieżki zbieramy tylko, dopóki brakuje kandydatów któregoś wyniku
+    row[0] = startPx;
     const need = candidates.target.length < nSample || candidates.stop.length < nSample || candidates.none.length < nSample;
-    const pts: { t: number; price: number }[] | null = need ? [{ t: 0, price: p.entry }] : null;
+    const pts: { t: number; price: number }[] | null = need ? [{ t: 0, price: startPx }] : null;
 
     for (let k = 1; k <= steps; k++) {
-      const xn = x + muStep + sigStep * normal();
-      if (xn <= -a) outcome = 'stop';
-      else if (xn >= b) outcome = 'target';
-      else if (bridge) {
-        const pS = Math.exp((-2 * (x + a) * (xn + a)) / varStep);
-        const pT = Math.exp((-2 * (b - x) * (b - xn)) / varStep);
-        const u = uBridge();
-        if (u < pS) outcome = 'stop';
-        else if (u < pS + pT) outcome = 'target';
+      const s = sig[k - 1];
+      const v = s * s;
+      const wn = w + driftStep + s * innov();
+      if (!filled) {
+        let hit = w > 0 ? wn <= 0 : wn >= 0;
+        if (!hit && bridge) hit = uBridge() < Math.exp((-2 * Math.abs(w) * Math.abs(wn)) / v);
+        w = wn;
+        if (hit) {
+          filled = true;
+          const x = side * w;
+          if (x <= -a) outcome = 'stop';
+          else if (x >= b) outcome = 'target';
+        }
+      } else {
+        const x = side * w;
+        const xn = side * wn;
+        if (xn <= -a) outcome = 'stop';
+        else if (xn >= b) outcome = 'target';
+        else if (bridge) {
+          const pS = Math.exp((-2 * (x + a) * (xn + a)) / v);
+          const pT = Math.exp((-2 * (b - x) * (b - xn)) / v);
+          const u = uBridge();
+          if (u < pS) outcome = 'stop';
+          else if (u < pS + pT) outcome = 'target';
+        }
+        w = wn;
       }
       if (outcome !== 'none') {
         hitStep = k;
         break;
       }
-      x = xn;
-      while (col < times.length && times[col] === k) {
-        const px = toPrice(x);
-        bandCols[col][i] = px;
-        if (pts) pts.push({ t: k, price: px });
+      while (col < sampleSteps.length && sampleSteps[col] === k) {
+        const px = toPrice(w);
+        row[col] = px;
+        if (pts) pts.push({ t: times[col], price: px });
         col++;
       }
     }
 
-    // Ścieżka zatrzymana na barierze: dalsze próbki trzymają cenę bariery
-    const endPrice = outcome === 'target' ? p.target : outcome === 'stop' ? p.stop : toPrice(x);
-    for (; col < times.length; col++) bandCols[col][i] = endPrice;
-    if (outcome === 'target') hitT.push(hitStep);
-    else if (outcome === 'stop') hitS.push(hitStep);
+    // Niewypełnione ścieżki nie wchodzą do wyniku warunkowego ani do pasma
+    if (!filled) continue;
+    const endPrice = outcome === 'target' ? p.target : outcome === 'stop' ? p.stop : toPrice(w);
+    for (; col < sampleSteps.length; col++) row[col] = endPrice;
+    for (let c = 0; c < times.length; c++) bandCols[c][filledN] = row[c];
+    filledN++;
+    if (outcome === 'target') hitT.push(hitStep * stepMin);
+    else if (outcome === 'stop') hitS.push(hitStep * stepMin);
     else {
       neitherR += (side * (endPrice - p.entry)) / riskDist;
       neitherN++;
     }
     if (pts && candidates[outcome].length < nSample) {
-      if (outcome !== 'none') pts.push({ t: hitStep, price: endPrice });
+      if (outcome !== 'none') pts.push({ t: hitStep * stepMin, price: endPrice });
       candidates[outcome].push({ outcome, points: pts });
     }
   }
 
+  const F = Math.max(1, filledN);
   // Próbki proporcjonalne do udziału wyników (pierwsze ścieżki bywają niereprezentatywne przy 18 sztukach)
   const counts = { target: hitT.length, stop: hitS.length, none: neitherN };
-  const quota = (o: PathOutcome) => Math.min(candidates[o].length, Math.round((nSample * counts[o]) / nPaths));
+  const quota = (o: PathOutcome) => Math.min(candidates[o].length, Math.round((nSample * counts[o]) / F));
   const samplePaths = [
     ...candidates.target.slice(0, quota('target')),
     ...candidates.stop.slice(0, quota('stop')),
@@ -295,8 +336,8 @@ export function simulateBarrierPaths(p: {
   }
 
   const band = bandCols.map((c) => {
-    c.sort();
-    return { p10: percentile(c, 0.1), p50: percentile(c, 0.5), p90: percentile(c, 0.9) };
+    const s = c.subarray(0, filledN).sort();
+    return { p10: percentile(s, 0.1), p50: percentile(s, 0.5), p90: percentile(s, 0.9) };
   });
 
   // Skumulowane rozstrzygnięcia do chwili t (do podpowiedzi na wykresie)
@@ -312,19 +353,25 @@ export function simulateBarrierPaths(p: {
     }
     return lo;
   };
-  const hitByTime = times.map((t) => ({ target: countLe(sortedT, t) / nPaths, stop: countLe(sortedS, t) / nPaths }));
+  const hitByTime = times.map((t) => ({ target: countLe(sortedT, t) / F, stop: countLe(sortedS, t) / F }));
 
   return {
-    pTarget: hitT.length / nPaths,
-    pStop: hitS.length / nPaths,
-    pNeither: neitherN / nPaths,
-    paths: nPaths,
-    steps,
-    sigmaEff,
-    timeToTarget: timePercentiles(hitT),
-    timeToStop: timePercentiles(hitS),
-    neitherMeanR: neitherN > 0 ? neitherR / neitherN : 0,
-    samples: { times, band, hitByTime, paths: samplePaths },
+    filled: filledN,
+    result: {
+      pTarget: hitT.length / F,
+      pStop: hitS.length / F,
+      pNeither: neitherN / F,
+      pFill: filledN / nPaths,
+      fillRare: false,
+      paths: nPaths,
+      steps,
+      stepMin,
+      sigmaEff,
+      timeToTarget: timePercentiles(hitT),
+      timeToStop: timePercentiles(hitS),
+      neitherMeanR: neitherN > 0 ? neitherR / neitherN : 0,
+      samples: { times, band, hitByTime, paths: samplePaths },
+    },
   };
 }
 
@@ -531,6 +578,10 @@ export function analyzePlan(
     eventMultiplier: mult,
     paths: Math.max(2000, opts.paths ?? 2000),
     seed: opts.seed ?? 7,
+    stepSigmas: input.vol?.stepSigmas,
+    stepMin: input.vol?.stepMin,
+    residuals: input.vol?.residuals ?? null,
+    startPrice: input.startPrice,
   });
 
   const long = direction === 'LONG';
