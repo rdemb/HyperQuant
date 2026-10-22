@@ -2,17 +2,19 @@
 
 Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/), wersjonowanie: [SemVer](https://semver.org/lang/pl/).
 
-## [Nieopublikowane]
+## [2.2.0] — 2026-10-22
+
+Mapa likwidacji z pozycji on-chain i symulator kaskady ([#8](https://github.com/rdemb/HyperQuant/pull/8), [#12](https://github.com/rdemb/HyperQuant/pull/12)), aktualizacje zależności ([#9](https://github.com/rdemb/HyperQuant/pull/9)).
 
 ### Dodane
-- **Mapa likwidacji z pozycji on-chain** zamiast szacunku: skaner na serwerze zbiera adresy portfeli z publicznej taśmy BTC (pole `users`), odczytuje ich pozycje i ceny likwidacji (`clearinghouseState`) i co minutę publikuje do Cloudflare R2 wyłącznie agregaty (kubełki, pokrycie open interest, wiek danych).
+- **Mapa likwidacji z pozycji on-chain** zamiast szacunku: skaner na serwerze zbiera adresy portfeli z publicznej taśmy BTC (pole `users`), oraz z publicznego rankingu kont (zasiew 5000 największych co 6 h), odczytuje ich pozycje i ceny likwidacji (`clearinghouseState`) i publikuje wyłącznie agregaty (kubełki, pokrycie open interest, wiek odczytów ważony nominałem).
 - **Symulator kaskady likwidacji**: punkt stały szok → likwidacje → wpływ ceny z prawa pierwiastka kwadratowego (Tóth i in. 2011), krzywa szok → ruch końcowy z pasmem dla Y 0.5–1.5.
 - Panel „Mapa likwidacji i kaskada” na Desku (histogram, najbliższe klastry, tabela) i ostrzeżenie w Analizatorze, gdy stop leży w klastrze likwidacji.
 - Publikacja danych skanera do publicznego repo [rdemb/hyperquant-data](https://github.com/rdemb/hyperquant-data) (bez kosztów i kont w chmurze): jeden commit z bieżącym stanem co 2 min, neutralne metadane, klucz wdrożeniowy tylko na serwerze; Cloudflare R2 jako opcja.
 - Backend `backend/scanner` bez zależności npm (Node 24): własny budżet wag API, harmonogram skanów wg wielkości pozycji, podpis SigV4 sprawdzony wektorem AWS, usługa systemd z limitami zasobów, instalator.
 
 ### Zmienione
-- Zależności: lucide-react 1.59, motion 14.3 (używane API bez zmian; poprawki AnimatePresence), Express 5.3 (fallback SPA serwera produkcyjnego jako middleware — Express 5 odrzuca ścieżkę '*'), vitest 5.0.5; typy Node przypięte do wersji uruchomieniowej (24).
+- Zależności: lucide-react 1.59, motion 14.3 (używane API bez zmian; poprawki AnimatePresence), Express 5.3 (fallback SPA serwera produkcyjnego jako middleware — Express 5 odrzuca ścieżkę '*'), vitest 5.0.5; typy Node przypięte do wersji uruchomieniowej (24); TypeScript 7.0.2; motion 14.3.1.
 
 ## [2.1.0] — 2026-10-22
 
@@ -56,5 +58,6 @@ Przebudowa desku i poprawki krytyczne.
 ### Usunięte
 - Automatyczne sygnały i przeliczanie Kelly → dźwignia; nieużywane `.env.example` i zależność `dotenv`.
 
+[2.2.0]: https://github.com/rdemb/HyperQuant/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/rdemb/HyperQuant/compare/5b33b4b...v2.1.0
 [2.0.0]: https://github.com/rdemb/HyperQuant/commit/5b33b4b
