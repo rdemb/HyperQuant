@@ -10,7 +10,9 @@ import {
   parseL2Levels,
   recalculateIndicatorSeries,
   resetHtfCacheForTests,
-  runMertonMonteCarloEngine,
+  loadVolModel,
+  parseHlCandles,
+  runTouchMonteCarlo,
 } from '../marketDataFeed';
 import { normCdf } from '../stats';
 import { OHLCVBar } from '../../types/trading';
@@ -192,7 +194,7 @@ describe('Monte Carlo first-passage', () => {
     // Średnia z kilku przebiegów ogranicza szum 600 ścieżek
     let acc = 0;
     for (let i = 0; i < 6; i++) {
-      acc += runMertonMonteCarloEngine(S, S * 1.012, S * 0.9, S, sigma2h).probTouchPDH2h;
+      acc += runTouchMonteCarlo(S, S * 1.012, S * 0.9, S, sigma2h).probTouchPDH2h;
     }
     const p = acc / 6;
     const reflection = 2 * (1 - normCdf(Math.log(1.012) / sigma2h)) * 100;
@@ -202,15 +204,93 @@ describe('Monte Carlo first-passage', () => {
   });
 
   it('brak sztucznej podłogi 42% dla D-EQ', () => {
-    const mc = runMertonMonteCarloEngine(S, S * 1.2, S * 0.8, S * 0.95, sigma2h);
+    const mc = runTouchMonteCarlo(S, S * 1.2, S * 0.8, S * 0.95, sigma2h);
     expect(mc.probTouchDEQ2h).toBeLessThan(5);
   });
 
   it('null zamiast zmyślonych minut, gdy żadna ścieżka nie dotknie poziomu', () => {
-    const mc = runMertonMonteCarloEngine(S, S * 1.5, S * 0.5, S * 0.5, sigma2h);
+    const mc = runTouchMonteCarlo(S, S * 1.5, S * 0.5, S * 0.5, sigma2h);
     expect(mc.probTouchPDH2h).toBe(0);
     expect(mc.expectedMinsToPDH).toBeNull();
     expect(mc.expectedMinsToPDL).toBeNull();
+  });
+});
+
+describe('runTouchMonteCarlo — deterministyczny, z metodą w wyniku', () => {
+  const S = 100000;
+  const sigma2h = 0.007;
+  const flat = (s2h: number) => Array(24).fill(s2h / Math.sqrt(24));
+
+  it('bez modelu zmienności: Merton z założeniem (etykieta), ten sam wynik przy tych samych wejściach', () => {
+    const a = runTouchMonteCarlo(S, S * 1.01, S * 0.99, S, sigma2h, { nowMs: 1_000_000 });
+    const b = runTouchMonteCarlo(S, S * 1.01, S * 0.99, S, sigma2h, { nowMs: 1_000_000 });
+    expect(a.method).toBe('merton-assumed');
+    expect(a).toEqual(b);
+  });
+
+  it('z σ kroków modelu: metoda fhs-har, większa σ → częstsze dotknięcie PDH', () => {
+    const lo = runTouchMonteCarlo(S, S * 1.01, S * 0.95, S * 0.97, sigma2h, { stepSigmas: flat(0.004), residuals: null, nowMs: 1 });
+    const hi = runTouchMonteCarlo(S, S * 1.01, S * 0.95, S * 0.97, sigma2h, { stepSigmas: flat(0.012), residuals: null, nowMs: 1 });
+    expect(lo.method).toBe('fhs-har');
+    expect(hi.probTouchPDH2h).toBeGreaterThan(lo.probTouchPDH2h);
+  });
+
+  it('z modelem: symetria — PDH +1% i PDL −1% dotykane podobnie często (±3 pp)', () => {
+    const mc = runTouchMonteCarlo(S, S * 1.01, S / 1.01, S * 1.5, sigma2h, { stepSigmas: flat(0.008), residuals: null, nowMs: 2 });
+    expect(Math.abs(mc.probTouchPDH2h - mc.probTouchPDL2h)).toBeLessThan(3);
+    // P(dotknięcia) z mostem ≈ zasada odbicia 2·(1 − Φ(ln(1.01)/σ)) (±4 pp)
+    const reflection = 2 * (1 - normCdf(Math.log(1.01) / 0.008)) * 100;
+    expect(Math.abs(mc.probTouchPDH2h - reflection)).toBeLessThan(4);
+  });
+});
+
+describe('parseHlCandles i loadVolModel (zamockowane API)', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('parseHlCandles: stringi → liczby, rekordy nieskończone pomijane', () => {
+    const bars = parseHlCandles([
+      { t: 1, o: '100', h: '101', l: '99', c: '100.5' },
+      { t: 2, o: 'x', h: '101', l: '99', c: '100' },
+    ]);
+    expect(bars).toEqual([{ time: 1, open: 100, high: 101, low: 99, close: 100.5 }]);
+    expect(parseHlCandles(null)).toEqual([]);
+  });
+
+  function stubCandles(failing = false) {
+    const rng = makeRng(17);
+    const gen = (n: number, ms: number, end: number, sig: number) => {
+      let p = 100000;
+      return Array.from({ length: n }, (_, i) => {
+        const o = p;
+        let h = p;
+        let l = p;
+        for (let k = 0; k < 10; k++) {
+          p *= Math.exp(sig * rng.n());
+          h = Math.max(h, p);
+          l = Math.min(l, p);
+        }
+        return { t: end - (n - i) * ms, o: String(o), h: String(h), l: String(l), c: String(p) };
+      });
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init: { body: string }) => {
+        const body = JSON.parse(init.body);
+        if (failing) return { ok: false, json: async () => null } as Response;
+        const now = 1_800_000_000_000;
+        const data = body.req.interval === '1h' ? gen(1300, 3_600_000, now, 0.002) : gen(2000, 300_000, now, 0.0006);
+        return { ok: true, json: async () => data } as Response;
+      })
+    );
+  }
+
+  it('z danych API buduje model; błąd API → null (bez liczb zastępczych)', async () => {
+    stubCandles();
+    const m = await loadVolModel(1_800_000_000_000);
+    expect(m).not.toBeNull();
+    expect(m!.hourlyBars).toBeGreaterThan(1000);
+    stubCandles(true);
+    expect(await loadVolModel(1_800_000_000_000)).toBeNull();
   });
 });
 
