@@ -40,6 +40,8 @@ const RESOLVE_LAG = 90_000;
 const VOID_AFTER = 6 * HOUR;
 const MODEL_MAX_AGE = 3 * HOUR;
 const KEEP = 31 * DAY;
+/** Pokwitowań slotów na jedno wywołanie (nadrabianie zaległych po awarii kalendarzy) */
+const STAMPS_PER_TICK = 4;
 
 export interface LedgerData {
   model: VolModel | null;
@@ -89,8 +91,11 @@ export class LedgerRunner {
   private accounted: number | null = null;
   /** Powód niewydania w bieżącym slocie (do rekordu `skip`) */
   private slotFail: { slot: number; reason: string } | null = null;
-  /** Pokwitowanie slotu do ponowienia (ten sam skrót: hash ostatniej prognozy slotu), najwyżej przez godzinę */
-  private pendingStamp: { slot: number; hash: string; at: number } | null = null;
+  /**
+   * Kolejka pokwitowań slotów (skrót = hash ostatniej prognozy slotu): ponawiane do skutku, także po restarcie
+   * (przy starcie — sloty z prognozą bez pliku `.ots`); bez pokwitowania weryfikator odrzuca slot.
+   */
+  private stampQueue: { slot: number; hash: string }[] = [];
 
   constructor(d: LedgerRunner['d']) {
     this.d = d;
@@ -124,6 +129,13 @@ export class LedgerRunner {
     }
     // Ciągłość slotów z całego dziennika (także po przerwie dłuższej niż okno wczytanych rekordów)
     this.accounted = st.lastSlot;
+    // Zaległe pokwitowania (np. kalendarze niedostępne przed restartem)
+    const lastHash = new Map<number, string>();
+    for (const f of this.forecasts.values()) {
+      const h = (f as Forecast & { hash?: string }).hash;
+      if (typeof h === 'string') lastHash.set(f.slot, h);
+    }
+    for (const [slot, hash] of lastHash) if (!this.d.store.exists(this.receiptPath(slot))) this.stampQueue.push({ slot, hash });
     try {
       const idx = JSON.parse(readFileSync(this.d.store.path('ots/index.json'), 'utf8')) as OtsEntry[];
       if (Array.isArray(idx)) this.ots = idx.filter((e) => e && typeof e.day === 'string');
@@ -190,16 +202,18 @@ export class LedgerRunner {
         appended += issued.length;
         this.accounted = Math.max(this.accounted, slot);
         // Pokwitowanie: głowa łańcucha po wydaniu tego slotu (= hash ostatniej prognozy slotu)
-        this.pendingStamp = { slot, hash: this.d.store.head, at: ti };
+        this.stampQueue.push({ slot, hash: this.d.store.head });
       }
     }
-    if (this.pendingStamp && this.d.stamp) {
-      const ps = this.pendingStamp;
+    // Pokwitowania z kolejki (najstarsze najpierw); pierwsza porażka kończy próby w tym wywołaniu
+    let stamped = false;
+    for (let i = 0; this.d.stamp && this.stampQueue.length > 0 && i < STAMPS_PER_TICK; i++) {
+      const ps = this.stampQueue[0];
       const res = await this.d.stamp(new Uint8Array(Buffer.from(ps.hash, 'hex')));
-      if (res) {
-        this.d.store.write(`ots/slots/${dayKey(ps.slot)}/${ps.slot}.ots`, res.ots);
-        this.pendingStamp = null;
-      } else if (ti - ps.at > HOUR) this.pendingStamp = null; // kalendarze niedostępne przez godzinę — brak pokwitowania (weryfikator to wykaże)
+      if (!res) break;
+      this.d.store.write(this.receiptPath(ps.slot), res.ots);
+      this.stampQueue.shift();
+      stamped = true;
     }
 
     // 2. Rozstrzygnięcia (czas rozstrzygnięcia z zegara — po wydaniu w tym samym wywołaniu)
@@ -223,7 +237,6 @@ export class LedgerRunner {
     appended += resBodies.length;
 
     // 3. Kotwice zakończonych dni (także zaległe po przerwie), najwyżej 2 na wywołanie
-    let stamped = false;
     if (this.d.stamp && ti - Math.floor(ti / DAY) * DAY >= 10 * MIN) {
       const today = dayKey(ti);
       const days = this.dayFiles().filter((d) => d < today && !this.d.store.exists(`ots/${d}.jsonl.ots`));
@@ -269,7 +282,13 @@ export class LedgerRunner {
       this.forecasts.delete(id);
       this.resolutions.delete(id);
     }
-    for (const s of this.skips.keys()) if (s < now - KEEP) this.skips.delete(s);
+    // Rekord zakresowy po końcu zakresu (długa przerwa zostaje w podsumowaniu, dopóki jej część jest w oknie)
+    for (const [s, k] of this.skips) if ((k.until ?? s) < now - KEEP) this.skips.delete(s);
+    this.stampQueue = this.stampQueue.filter((q) => q.slot >= now - KEEP);
+  }
+
+  private receiptPath(slot: number): string {
+    return `ots/slots/${dayKey(slot)}/${slot}.ots`;
   }
 
   /** Pokwitowania slotów z ostatnich 24 h (podkatalogi dzienne — bez przeglądania całej historii). */

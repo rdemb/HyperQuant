@@ -222,4 +222,13 @@ describe('poprawki z recenzji: ACI, nakładanie, klimatologia poziomów, uczestn
     expect(s.participation).toMatchObject({ issued: 1, skipped: 1 });
     expect(s.participation.gaps).toEqual([{ slot: T0 + 15 * MIN, reason: 'outage' }]);
   });
+
+  it('uczestnictwo: rekord zakresowy na granicy okna liczony tak samo jak pojedyncze (okno od pierwszego pełnego slotu)', () => {
+    const now = T0 + 30 * 24 * 60 * MIN + 7 * MIN; // okno zaczyna się 7 min po T0 → pierwszy slot w oknie: T0 + 15 min
+    const sum = (skips: { k: 's'; slot: number; until?: number; reason: string }[]) =>
+      buildSummary({ coin: 'BTC', now, head: { hash: 'h', lines: 1 }, forecasts: new Map(), resolutions: new Map(), aci: {}, ots: [], skips }).participation.skipped;
+    const singles = [-2, -1, 0, 1, 2].map((k) => ({ k: 's' as const, slot: T0 + k * 15 * MIN, reason: 'outage' }));
+    expect(sum(singles)).toBe(2);
+    expect(sum([{ k: 's', slot: T0 - 30 * MIN, until: T0 + 30 * MIN, reason: 'outage' }])).toBe(2);
+  });
 });

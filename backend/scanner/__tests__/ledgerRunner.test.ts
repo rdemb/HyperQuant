@@ -161,6 +161,52 @@ describe('LedgerRunner — pokwitowania i długie przerwy', () => {
     expect(existsSync(join(dir, 'BTC', 'ots', 'slots', '2026-10-22', `${SLOT0}.ots`))).toBe(true);
   });
 
+  it('kalendarze niedostępne przez kilka slotów → po powrocie dorabiane wszystkie zaległe pokwitowania (kolejka)', async () => {
+    let fail = true;
+    const stamp = async () => (fail ? null : { ots: new Uint8Array([1]), calendars: ['a'] });
+    const { r, dir } = runner({ stamp });
+    r.init(SLOT0);
+    for (const k of [0, 1, 2]) await r.tick(SLOT0 + k * 15 * MIN + 30_000);
+    const receipt = (s: number) => existsSync(join(dir, 'BTC', 'ots', 'slots', '2026-10-22', `${s}.ots`));
+    expect([0, 1, 2].some((k) => receipt(SLOT0 + k * 15 * MIN))).toBe(false);
+    fail = false;
+    await r.tick(SLOT0 + 31 * MIN);
+    expect([0, 1, 2].every((k) => receipt(SLOT0 + k * 15 * MIN))).toBe(true);
+  });
+
+  it('restart: slot z prognozą bez pokwitowania trafia do kolejki przy starcie (skrót = hash ostatniej prognozy slotu)', async () => {
+    const { r, dir, store } = runner({ stamp: async () => null });
+    r.init(SLOT0);
+    await r.tick(SLOT0 + 30_000);
+    const head = store.head;
+    const digests: string[] = [];
+    const again = new LedgerRunner({
+      coin: 'BTC',
+      data: fakeData(),
+      store: new LedgerStore({ dir, coin: 'BTC' }),
+      repo: null,
+      markPx: () => 100_000,
+      stamp: async (d) => (digests.push(Buffer.from(d).toString('hex')), { ots: new Uint8Array([1]), calendars: ['a'] }),
+    });
+    expect(again.init(SLOT0 + 2 * MIN).ok).toBe(true);
+    await again.tick(SLOT0 + 2 * MIN);
+    expect(digests).toEqual([head]);
+    expect(existsSync(join(dir, 'BTC', 'ots', 'slots', '2026-10-22', `${SLOT0}.ots`))).toBe(true);
+  });
+
+  it('przerwa 40 dni: zakresowy skip nie znika z podsumowania (przycinanie po końcu zakresu, nie po początku)', async () => {
+    const data = fakeData();
+    const { r, published } = runner({ data });
+    r.init(SLOT0);
+    await r.tick(SLOT0 + 30_000);
+    data.modelAt = SLOT0 + 40 * DAY; // model odświeżony po powrocie
+    await r.tick(SLOT0 + 40 * DAY + 30_000);
+    const summary = JSON.parse(published[published.length - 1]);
+    // Okno 30 dni: sloty od pierwszego pełnego slotu w oknie do ostatniego przed bieżącym
+    expect(summary.participation).toMatchObject({ issued: 1, skipped: 2879 });
+    expect(summary.participation.gaps).toEqual([{ slot: SLOT0 + 15 * MIN, until: SLOT0 + 40 * DAY - 15 * MIN, reason: 'outage' }]);
+  });
+
   it('przerwa dłuższa niż doba → jeden rekord zakresowy skip (od–do), a nie tysiące linii', async () => {
     const { r, dir } = runner();
     r.init(SLOT0);

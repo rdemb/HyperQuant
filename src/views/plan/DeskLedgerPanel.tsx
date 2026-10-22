@@ -97,7 +97,11 @@ const LedgerBody: React.FC<{ s: DeskLedgerSummary; stale: boolean; expired: bool
           Ostatnie pominięte sloty:{' '}
           {s.participation.gaps
             .slice(-5)
-            .map((g) => `${dateTimeFmt.format(g.slot)} (${g.reason === 'outage' ? 'przerwa' : g.reason === 'no-model' ? 'brak modelu' : g.reason === 'no-price' ? 'brak ceny' : g.reason})`)
+            .map(
+              (g) =>
+                `${dateTimeFmt.format(g.slot)}${g.until !== undefined && g.until !== g.slot ? ` – ${dateTimeFmt.format(g.until)}` : ''} ` +
+                `(${g.reason === 'outage' ? 'przerwa' : g.reason === 'no-model' ? 'brak modelu' : g.reason === 'no-price' ? 'brak ceny' : g.reason})`
+            )
             .join(' · ')}
         </div>
       )}

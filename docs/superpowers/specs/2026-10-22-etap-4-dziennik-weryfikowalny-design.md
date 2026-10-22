@@ -49,11 +49,16 @@ Zero: kalendarze OTS i GitHub są darmowe; świece w budżecie wag skanera (~5 w
 
 - **Pre-rejestracja dowodliwa**: sama kotwica pliku dnia (po 00:10 UTC) przychodziła po rozstrzygnięciu prognoz 1–4 h.
   Teraz po każdym slocie głowa łańcucha jest znakowana w OpenTimestamps (`ots/slots/<dzień>/<slot>.ots`, skrót = hash
-  ostatniej prognozy slotu, ponawiane do godziny): kalendarze (niezależni operatorzy) potwierdzają przyjęcie od razu, blok
+  ostatniej prognozy slotu, ponawiane do skutku z kolejki, także po restarcie): kalendarze (niezależni operatorzy) potwierdzają przyjęcie od razu, blok
   Bitcoina — zwykle po 1–6 h. Dla horyzontu 1 h dowodem pre-rejestracji są więc kalendarze; blok potwierdza je później
   (weryfikator `--bitcoin` raportuje osobno, ile prognoz ma blok przed rozstrzygnięciem).
-- **Ceny źródłowe w rozstrzygnięciach** (`c0`/`c1`, `hi`/`lo`): weryfikator `--market` porównuje je ze świecami 1m
-  Hyperliquid — wynik nie opiera się na zaufaniu do skanera.
+- **Ceny źródłowe w rozstrzygnięciach** (`c0`/`c1`, `hi`/`lo`): weryfikator wymaga ich w każdym rozstrzygnięciu i wylicza
+  z nich wynik (`y = ln(c1/c0)`, `yv` z max/min okna), a `--market` porównuje je ze świecami 1m Hyperliquid (liczba
+  sprawdzonych / wszystkich; brak świec = błąd) — wynik nie opiera się na zaufaniu do skanera.
+- **Unieważnienia**: dopuszczalne dopiero 6 h po końcu horyzontu; `--market` traktuje unieważnienie przy komplecie świec
+  jako błąd (bez wybiórczego pomijania złych wyników).
+- **Czas z Bitcoina**: blok liczy się jako dowód przed rozstrzygnięciem z zapasem 2 h (znacznik czasu bloku może być
+  wcześniejszy niż faktyczne wydobycie).
 - **Kolejność**: weryfikator sprawdza, że slot zgadza się z chwilą wydania, początek horyzontu to pełna minuta po wydaniu,
   rozstrzygnięcie nie przed końcem horyzontu, brak duplikatów i cofania czasu; przerwa dłuższa niż doba = jeden rekord
   zakresowy `skip`.

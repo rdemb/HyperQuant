@@ -47,6 +47,20 @@ describe('LedgerStore — pliki dzienne z łańcuchem hashy', () => {
   });
 });
 
+describe('LedgerStore — ucięta linia', () => {
+  it('niepełna ostatnia linia (np. awaria w trakcie zapisu) → load zwraca ok = false zamiast wyjątku', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hq-ledger-'));
+    const s = new LedgerStore({ dir, coin: 'BTC' });
+    s.load(T0);
+    s.append([{ k: 'f', id: 'a', t: T0, kind: 'ret', h: 60, slot: T0 }], T0);
+    const f = join(dir, 'BTC', '2026-10-22.jsonl');
+    writeFileSync(f, readFileSync(f, 'utf8') + '{"k":"f","slot":12');
+    const st = new LedgerStore({ dir, coin: 'BTC' }).load(T0 + MIN);
+    expect(st.ok).toBe(false);
+    expect(st.error).toMatch(/linia 2/);
+  });
+});
+
 describe('gałąź ledger — publikacja przyrostowa (bez --force)', () => {
   it('pierwsze uruchomienie zakłada gałąź; kolejne commity dokładają historię; ponowny klon ma wszystkie pliki', async () => {
     const remote = mkdtempSync(join(tmpdir(), 'hq-remote-'));

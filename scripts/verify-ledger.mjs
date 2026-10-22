@@ -71,14 +71,44 @@ function quantileAt(taus, qs, tau) {
   return qs[i - 1] + ((tau - taus[i - 1]) / (taus[i] - taus[i - 1])) * (qs[i] - qs[i - 1]);
 }
 
-/** Rozbieżności między zapisanymi a przeliczonymi wynikami (CRPS, pokrycie 90% i 60%) — pusta lista = zgodne. */
+const r6 = (x) => Math.round(x * 1e6) / 1e6;
+
+/** Wynik dotknięć z max/min okna (ta sama reguła co w skanerze: D-EQ od strony ceny przy wydaniu). */
+function touchOutcome(fc, hi, lo) {
+  const deqBelow = fc.lv.deq <= fc.px0;
+  return { pdh: hi >= fc.lv.pdh ? 1 : 0, pdl: lo <= fc.lv.pdl ? 1 : 0, deq: (deqBelow ? lo <= fc.lv.deq : hi >= fc.lv.deq) ? 1 : 0 };
+}
+
+/**
+ * Rozbieżności między zapisanymi a przeliczonymi wynikami — pusta lista = zgodne. Wynik musi wynikać z cen źródłowych
+ * (zwrot: y = ln(c1/c0); dotknięcia: yv z max/min okna), a te sprawdza z rynkiem `checkMarket` (--market).
+ */
 export function checkResolutions(records) {
   const f = new Map(records.filter((o) => o.k === 'f').map((o) => [o.id, o]));
   const out = [];
   for (const r of records) {
-    if (r.k !== 'r' || r.void || typeof r.y !== 'number') continue;
+    if (r.k !== 'r' || r.void) continue;
     const fc = f.get(r.id);
-    if (!fc || fc.kind !== 'ret') continue;
+    if (!fc) continue;
+    if (fc.kind === 'touch') {
+      if (!(typeof r.hi === 'number' && typeof r.lo === 'number')) {
+        out.push(`${r.id}: brak cen źródłowych (hi/lo)`);
+        continue;
+      }
+      const want = touchOutcome(fc, r.hi, r.lo);
+      for (const l of ['pdh', 'pdl', 'deq']) if (r.yv?.[l] !== want[l]) out.push(`${r.id}: yv.${l} = ${r.yv?.[l]} ≠ z max/min okna ${want[l]}`);
+      continue;
+    }
+    if (fc.kind !== 'ret') continue;
+    if (!(r.c0 > 0 && r.c1 > 0)) {
+      out.push(`${r.id}: brak cen źródłowych (c0/c1)`);
+      continue;
+    }
+    const y = r6(Math.log(r.c1 / r.c0));
+    if (typeof r.y !== 'number' || Math.abs(y - r.y) > 1e-9) {
+      out.push(`${r.id}: y = ${r.y} ≠ ln(c1/c0) = ${y}`);
+      continue;
+    }
     const c = crps(fc.taus, fc.q, r.y);
     if (typeof r.crps === 'number' && Math.abs(c - r.crps) > 2e-6) out.push(`${r.id}: CRPS ${r.crps} ≠ przeliczony ${c.toFixed(6)}`);
     for (const [key, lo, hi] of [
@@ -103,12 +133,19 @@ export function otsDigestHex(bytes) {
 
 const SLOT_MS = 15 * 60_000;
 const MIN_MS = 60_000;
+/** Unieważnienie (brak danych) dopuszczalne dopiero 6 h po końcu horyzontu — jak w skanerze */
+const VOID_MS = 6 * 60 * MIN_MS;
+/**
+ * Zapas na swobodę znacznika czasu bloku Bitcoina: znacznik musi być tylko większy od mediany 11 poprzednich bloków,
+ * więc bywa do ~1–2 h wcześniejszy niż faktyczne wydobycie. Blok liczy się jako dowód przed faktem z tym zapasem.
+ */
+const BLOCK_TIME_MARGIN_MS = 2 * 60 * MIN_MS;
 
 /**
  * Kolejność i spójność rekordów w łańcuchu: unikalne prognozy, slot = slot chwili wydania, początek horyzontu = pełna
  * minuta po wydaniu, czasy niemalejące, rozstrzygnięcie nie przed końcem horyzontu, slot z prognozą albo skip — nie oba.
  */
-export function checkOrdering(records) {
+export function checkOrdering(records, opts = {}) {
   const out = [];
   const f = new Map();
   const resolved = new Set();
@@ -126,8 +163,11 @@ export function checkOrdering(records) {
       }
     } else if (o.k === 'r') {
       const fc = f.get(o.id);
-      if (!fc) out.push(`${o.id}: rozstrzygnięcie bez wcześniejszej prognozy`);
-      else if (typeof o.t === 'number' && o.t < fc.t + fc.h * MIN_MS) out.push(`${o.id}: rozstrzygnięcie przed końcem horyzontu`);
+      // Tryb szybki (ostatnie dni): prognoza mogła paść przed pierwszym pobranym dniem
+      const before = opts.since !== undefined && Number(String(o.id).split('-')[0]) < opts.since;
+      if (!fc && !before) out.push(`${o.id}: rozstrzygnięcie bez wcześniejszej prognozy`);
+      else if (fc && typeof o.t === 'number' && o.t < fc.t + fc.h * MIN_MS) out.push(`${o.id}: rozstrzygnięcie przed końcem horyzontu`);
+      else if (fc && o.void && !(o.t >= fc.t + fc.h * MIN_MS + VOID_MS)) out.push(`${o.id}: unieważnienie przed upływem 6 h po horyzoncie`);
       if (resolved.has(o.id)) out.push(`${o.id}: powtórzone rozstrzygnięcie`);
       resolved.add(o.id);
       if (typeof o.t === 'number') {
@@ -246,47 +286,72 @@ export function otsAttestations(bytes) {
 export function checkMarket(records, candles) {
   const byTime = new Map(candles.map((c) => [c.time, c]));
   const f = new Map(records.filter((o) => o.k === 'f').map((o) => [o.id, o]));
-  const out = [];
+  const problems = [];
+  let checked = 0;
+  let eligible = 0;
   for (const r of records) {
-    if (r.k !== 'r' || r.void) continue;
+    if (r.k !== 'r') continue;
     const fc = f.get(r.id);
-    if (!fc) continue;
-    if (fc.kind === 'ret' && typeof r.c0 === 'number') {
+    if (!fc || (fc.kind !== 'ret' && fc.kind !== 'touch')) continue;
+    eligible++;
+    let market = null; // ceny z rynku albo null, gdy poza zakresem pobranych świec
+    if (fc.kind === 'ret') {
       const a = byTime.get(fc.t - MIN_MS);
       const b = byTime.get(fc.t + fc.h * MIN_MS - MIN_MS);
-      if (!a || !b) continue; // poza zakresem pobranych świec
-      if (a.close !== r.c0 || b.close !== r.c1) out.push(`${r.id}: ceny ${r.c0}/${r.c1} ≠ świece ${a.close}/${b.close}`);
-    } else if (fc.kind === 'touch' && typeof r.hi === 'number') {
+      if (a && b) market = { c0: a.close, c1: b.close };
+    } else {
       const win = candles.filter((c) => c.time >= fc.t && c.time + MIN_MS <= fc.t + fc.h * MIN_MS);
-      if (win.length < fc.h) continue;
-      const hi = Math.max(...win.map((c) => c.high));
-      const lo = Math.min(...win.map((c) => c.low));
-      if (hi !== r.hi || lo !== r.lo) out.push(`${r.id}: max/min ${r.hi}/${r.lo} ≠ świece ${hi}/${lo}`);
+      if (win.length >= fc.h) market = { hi: Math.max(...win.map((c) => c.high)), lo: Math.min(...win.map((c) => c.low)) };
     }
+    if (!market) continue;
+    checked++;
+    if (r.void) problems.push(`${r.id}: unieważnione mimo kompletu świec rynku`);
+    else if (fc.kind === 'ret' && (market.c0 !== r.c0 || market.c1 !== r.c1)) problems.push(`${r.id}: ceny ${r.c0}/${r.c1} ≠ świece ${market.c0}/${market.c1}`);
+    else if (fc.kind === 'touch' && (market.hi !== r.hi || market.lo !== r.lo)) problems.push(`${r.id}: max/min ${r.hi}/${r.lo} ≠ świece ${market.hi}/${market.lo}`);
   }
-  return out;
+  return { problems, checked, eligible };
 }
 
+const NET_TIMEOUT_MS = 15_000;
+const blockCache = new Map();
+
 /** Wysokość bloku → { hash, czas, korzeń Merkle } (publiczny eksplorator; ten sam wynik da każdy węzeł Bitcoina). */
-async function bitcoinBlock(height) {
-  const hash = (await (await fetch(`https://mempool.space/api/block-height/${height}`)).text()).trim();
-  const b = await (await fetch(`https://mempool.space/api/block/${hash}`)).json();
-  return { hash, time: b.timestamp * 1000, merkleRoot: b.merkle_root };
+function bitcoinBlock(height) {
+  if (!blockCache.has(height)) {
+    const p = (async () => {
+      const hash = (await (await fetch(`https://mempool.space/api/block-height/${height}`, { signal: AbortSignal.timeout(NET_TIMEOUT_MS) })).text()).trim();
+      const b = await (await fetch(`https://mempool.space/api/block/${hash}`, { signal: AbortSignal.timeout(NET_TIMEOUT_MS) })).json();
+      return { hash, time: b.timestamp * 1000, merkleRoot: b.merkle_root };
+    })();
+    p.catch(() => blockCache.delete(height)); // błąd sieci — bez zapamiętywania
+    blockCache.set(height, p);
+  }
+  return blockCache.get(height);
 }
 
 /** Czas zakotwiczenia w Bitcoinie (ms) dla pliku .ots: poświadczenia z pliku i — dla oczekujących — z kalendarza; null = brak. */
 export async function bitcoinTime(bytes) {
-  const atts = otsAttestations(bytes);
+  let atts;
+  try {
+    atts = otsAttestations(bytes);
+  } catch {
+    return null; // uszkodzony albo nieobsługiwany plik — brak czasu z Bitcoina (nie przerywa weryfikacji)
+  }
   const btc = atts.filter((a) => a.kind === 'bitcoin');
   for (const p of atts.filter((a) => a.kind === 'pending' && a.msg)) {
     try {
-      const res = await fetch(`${p.uri}/timestamp/${p.msg}`, { headers: { Accept: 'application/vnd.opentimestamps.v1' } });
+      // Adres kalendarza pochodzi z pliku — tylko https (odpowiedź i tak jest sprawdzana kryptograficznie)
+      if (new URL(p.uri).protocol !== 'https:') continue;
+      const res = await fetch(`${p.uri}/timestamp/${p.msg}`, {
+        headers: { Accept: 'application/vnd.opentimestamps.v1' },
+        signal: AbortSignal.timeout(NET_TIMEOUT_MS),
+      });
       if (!res.ok) continue;
       const out = [];
       walk(new R(Buffer.from(await res.arrayBuffer())), Buffer.from(p.msg, 'hex'), out);
       btc.push(...out.filter((a) => a.kind === 'bitcoin'));
     } catch {
-      // kalendarz niedostępny — próbujemy pozostałe
+      // kalendarz niedostępny albo odpowiedź nieczytelna — próbujemy pozostałe
     }
   }
   let best = null;
@@ -336,7 +401,7 @@ export function recompute(records) {
     ret: Object.fromEntries(Object.entries(ret).map(([h, s]) => [h, { n: s.n, crps: s.crps / s.n, crpss: 1 - s.crps / s.crpsB, cov90: s.in90 / s.n }])),
     touch: { levels: touchN, brier: touchN ? brierSum / touchN : null },
     voided: [...r.values()].filter((x) => x.void).length,
-    skipped: records.filter((o) => o.k === 's').length,
+    skipped: records.filter((o) => o.k === 's').reduce((n, o) => n + (typeof o.until === 'number' ? Math.round((o.until - o.slot) / SLOT_MS) + 1 : 1), 0),
   };
 }
 
@@ -405,7 +470,8 @@ async function main() {
     prev = v.head;
     for (const l of lines) records.push(JSON.parse(l));
   }
-  const order = checkOrdering(records);
+  // Tryb szybki: rozstrzygnięcia prognoz sprzed pierwszego pobranego dnia nie są błędem
+  const order = checkOrdering(records, local ? {} : { since: Date.parse(`${files[0][0].slice(0, 10)}T00:00:00Z`) });
   console.log(order.length ? `✗ kolejność / spójność (${order.length}): ${order.slice(0, 5).join('; ')}` : '✓ kolejność i spójność rekordów');
   if (order.length) ok = false;
   const mismatch = checkResolutions(records);
@@ -460,13 +526,14 @@ async function main() {
           const s = (stat[fc.h] ??= { n: 0, proven: 0, late: 0, pending: 0 });
           s.n++;
           if (bt === null) s.pending++;
-          else if (bt <= fc.t + fc.h * MIN_MS) s.proven++;
+          else if (bt + BLOCK_TIME_MARGIN_MS <= fc.t + fc.h * MIN_MS) s.proven++;
           else s.late++;
         }
       }
       for (const [h, s] of Object.entries(stat)) {
         console.log(
-          `ℹ horyzont ${h} min (${s.n}): blok Bitcoina przed rozstrzygnięciem ${s.proven}; blok po rozstrzygnięciu ${s.late} ` +
+          `ℹ horyzont ${h} min (${s.n}): blok Bitcoina przed rozstrzygnięciem (z zapasem 2 h na znacznik czasu bloku) ${s.proven}; ` +
+            `blok później ${s.late} ` +
             `(przed faktem — tylko kalendarze OTS, zaufanie do ich operatorów); jeszcze bez bloku ${s.pending}`
         );
       }
@@ -474,16 +541,32 @@ async function main() {
     if (args.includes('--market')) {
       // Ceny źródłowe vs publiczne świece 1m Hyperliquid (API udostępnia ok. 3.5 doby wstecz)
       const since = Date.now() - 3.4 * 86_400_000;
-      const res = await fetch('https://api.hyperliquid.xyz/info', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ type: 'candleSnapshot', req: { coin: 'BTC', interval: '1m', startTime: since } }),
-      });
-      const raw = await res.json();
-      const candles = (Array.isArray(raw) ? raw : []).map((c) => ({ time: c.t, high: Number(c.h), low: Number(c.l), close: Number(c.c) }));
-      const mk = checkMarket(records, candles);
-      console.log(mk.length ? `✗ ceny źródłowe niezgodne ze świecami (${mk.length}): ${mk.slice(0, 5).join('; ')}` : `✓ ceny źródłowe zgodne ze świecami 1m (ostatnie ~3.4 doby)`);
-      if (mk.length) ok = false;
+      let status = 'brak odpowiedzi';
+      let candles = [];
+      try {
+        const res = await fetch('https://api.hyperliquid.xyz/info', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ type: 'candleSnapshot', req: { coin: 'BTC', interval: '1m', startTime: since } }),
+          signal: AbortSignal.timeout(NET_TIMEOUT_MS),
+        });
+        status = `HTTP ${res.status}`;
+        const raw = res.ok ? await res.json() : null;
+        candles = (Array.isArray(raw) ? raw : []).map((c) => ({ time: c.t, high: Number(c.h), low: Number(c.l), close: Number(c.c) }));
+      } catch (e) {
+        status = String(e?.message ?? e);
+      }
+      if (candles.length === 0) {
+        console.log(`✗ --market: nie udało się pobrać świec 1m z Hyperliquid (${status}) — ceny nie zostały sprawdzone`);
+        ok = false;
+      } else {
+        const mk = checkMarket(records, candles);
+        if (mk.problems.length) {
+          console.log(`✗ ceny źródłowe niezgodne ze świecami (${mk.problems.length}): ${mk.problems.slice(0, 5).join('; ')}`);
+          ok = false;
+        } else if (mk.checked === 0) console.log(`ℹ --market: żadne z ${mk.eligible} rozstrzygnięć nie mieści się w zakresie świec 1m (~3.4 doby) — nic nie sprawdzono`);
+        else console.log(`✓ ceny źródłowe zgodne ze świecami 1m: sprawdzone ${mk.checked}/${mk.eligible} (pozostałe starsze niż ~3.4 doby)`);
+      }
     }
   } else {
     try {

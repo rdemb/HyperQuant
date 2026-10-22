@@ -405,7 +405,9 @@ export function buildSummary(s: SummaryInput): DeskLedgerSummary {
 function participation(fs: Forecast[], skips: SkipRecord[], from: number): DeskLedgerSummary['participation'] {
   const issued = new Set(fs.filter((f) => f.kind === 'ret').map((f) => f.slot));
   const recs = skips.filter((k) => (k.until ?? k.slot) >= from && !issued.has(k.slot)).sort((a, b) => a.slot - b.slot);
-  const count = recs.reduce((n, k) => n + (k.until !== undefined ? Math.floor((k.until - Math.max(k.slot, slotOf(from))) / SLOT) + 1 : 1), 0);
+  // Pierwszy pełny slot w oknie (jak dla rekordów pojedynczych: slot ≥ from)
+  const first = Math.ceil(from / SLOT) * SLOT;
+  const count = recs.reduce((n, k) => n + (k.until !== undefined ? Math.floor((k.until - Math.max(k.slot, first)) / SLOT) + 1 : 1), 0);
   return {
     issued: issued.size,
     skipped: count,

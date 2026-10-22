@@ -39,10 +39,23 @@ describe('verify-ledger — przeliczanie wyników i pokwitowania', () => {
     for (let i = 1; i < taus.length; i++) crps += ((pin(q[i - 1], 0.001, taus[i - 1]) + pin(q[i], 0.001, taus[i])) / 2) * (taus[i] - taus[i - 1]);
     crps *= 2;
     const f = { k: 'f', id: 'a', kind: 'ret', h: 60, taus, q, bq: q, aci: 0.1 };
-    const ok = { k: 'r', id: 'a', y: 0.001, crps: Math.round(crps * 1e6) / 1e6, in90: 1 };
+    const ok = { k: 'r', id: 'a', c0: 100, c1: 100 * Math.exp(0.001), y: 0.001, crps: Math.round(crps * 1e6) / 1e6, in90: 1 };
     expect(checkResolutions([f, ok])).toEqual([]);
     expect(checkResolutions([f, { ...ok, crps: ok.crps * 2 }]).length).toBe(1);
     expect(checkResolutions([f, { ...ok, in90: 0 }]).length).toBe(1);
+  });
+  it('wynik związany z cenami źródłowymi: y = ln(c1/c0); yv z max/min okna; brak cen = problem', () => {
+    const f = { k: 'f', id: 'a', kind: 'ret', h: 60, taus, q, bq: q, aci: 0.1 };
+    const base = { k: 'r', id: 'a', c0: 100, c1: 100 * Math.exp(0.001), y: 0.001 };
+    expect(checkResolutions([f, base])).toEqual([]);
+    expect(checkResolutions([f, { ...base, y: 0.002 }]).join(' ')).toMatch(/ln\(c1\/c0\)/);
+    expect(checkResolutions([f, { k: 'r', id: 'a', y: 0.001 }]).join(' ')).toMatch(/cen źródłowych/);
+    const ft = { k: 'f', id: 'b', kind: 'touch', h: 120, px0: 100, lv: { pdh: 102, pdl: 97, deq: 99 }, p: { pdh: 0.2, pdl: 0.1, deq: 0.5 } };
+    const rt = { k: 'r', id: 'b', hi: 101, lo: 98.5, yv: { pdh: 0, pdl: 0, deq: 1 } };
+    expect(checkResolutions([ft, rt])).toEqual([]);
+    expect(checkResolutions([ft, { ...rt, yv: { pdh: 1, pdl: 0, deq: 1 } }]).join(' ')).toMatch(/pdh/);
+    expect(checkResolutions([ft, { k: 'r', id: 'b', yv: rt.yv }]).join(' ')).toMatch(/cen źródłowych/);
+    expect(checkResolutions([f, { k: 'r', id: 'a', void: 'no-data' }])).toEqual([]); // unieważnienie — bez cen
   });
   it('otsDigestHex odczytuje skrót z pliku .ots (nagłówek, wersja, sha256)', () => {
     const digest = new Uint8Array(32).fill(9);
@@ -58,7 +71,7 @@ describe('verify-ledger — przeliczanie wyników i pokwitowania', () => {
   });
 });
 
-import { checkMarket, checkOrdering, checkReceipts, otsAttestations } from './verify-ledger.mjs';
+import { bitcoinTime, checkMarket, checkOrdering, checkReceipts, otsAttestations } from './verify-ledger.mjs';
 import { OTS_MAGIC, varbytes, varuint } from '../backend/scanner/ots.ts';
 import { createHash as hashOf } from 'node:crypto';
 
@@ -120,7 +133,30 @@ describe('verify-ledger — kolejność, pokwitowania, Bitcoin, rynek', () => {
     const fr = { k: 'f', id: 'a', kind: 'ret', t: T + M, h: 60 };
     const ft = { k: 'f', id: 'b', kind: 'touch', t: T + M, h: 120 };
     const good = [fr, { k: 'r', id: 'a', c0: 95, c1: 155 }, ft, { k: 'r', id: 'b', hi: 100 + 120, lo: 90 + 1 }];
-    expect(checkMarket(good, candles)).toEqual([]);
-    expect(checkMarket([fr, { k: 'r', id: 'a', c0: 95, c1: 999 }], candles).length).toBe(1);
+    expect(checkMarket(good, candles)).toEqual({ problems: [], checked: 2, eligible: 2 });
+    expect(checkMarket([fr, { k: 'r', id: 'a', c0: 95, c1: 999 }], candles).problems.length).toBe(1);
+    // poza zakresem świec — nie sprawdzone (licznik to pokazuje, a nie „✓”)
+    expect(checkMarket([{ ...fr, t: T - 10 * 24 * 60 * M }, { k: 'r', id: 'a', c0: 1, c1: 2 }], candles)).toEqual({ problems: [], checked: 0, eligible: 1 });
+    // unieważnienie mimo kompletu świec = problem (wybiórcze pomijanie wyników)
+    expect(checkMarket([fr, { k: 'r', id: 'a', void: 'no-data' }], candles).problems.join(' ')).toMatch(/unieważnion/);
+  });
+
+  it('checkOrdering: unieważnienie dopiero 6 h po horyzoncie; tryb szybki — rozstrzygnięcia prognoz sprzed pobranych dni', () => {
+    const v = (dt) => ({ k: 'r', id: `${T}-ret60`, t: T + M + 60 * M + dt, void: 'no-data' });
+    expect(checkOrdering([f(), v(60 * M)]).join(' ')).toMatch(/unieważnienie przed/);
+    expect(checkOrdering([f(), v(6 * 60 * M)])).toEqual([]);
+    const orphan = { k: 'r', id: `${T - 24 * 60 * M}-ret240`, t: T + 5 * M, c0: 1, c1: 1, y: 0 };
+    expect(checkOrdering([orphan]).join(' ')).toMatch(/bez wcześniejszej prognozy/);
+    expect(checkOrdering([orphan], { since: T })).toEqual([]);
+    expect(checkOrdering([{ ...orphan, id: `${T + S}-ret60` }], { since: T }).join(' ')).toMatch(/bez wcześniejszej prognozy/);
+  });
+
+  it('recompute: rekord zakresowy liczony jako wszystkie jego sloty', () => {
+    expect(recompute([{ k: 's', slot: T, until: T + 3 * S, reason: 'outage' }, { k: 's', slot: T + 5 * S, reason: 'no-model' }]).skipped).toBe(5);
+  });
+
+  it('bitcoinTime: uszkodzony plik .ots → null (bez przerwania całej weryfikacji)', async () => {
+    const broken = new Uint8Array([...OTS_MAGIC, 0x01, 0x08, ...new Uint8Array(32), 0x55]);
+    await expect(bitcoinTime(broken)).resolves.toBeNull();
   });
 });

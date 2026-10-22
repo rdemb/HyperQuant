@@ -56,17 +56,18 @@ export class LedgerStore {
     let lastSlot: number | null = null;
     for (const f of files) {
       const lines = readFileSync(join(cd, f), 'utf8').split('\n').filter(Boolean);
+      // Najpierw łańcuch (także niepełna linia po awarii zapisu → ok = false, nie wyjątek)
+      const v = verifyLines(lines, prev);
+      if (!v.ok) {
+        this.broken = true;
+        return { ok: false, forecasts, resolutions, skips, lastSlot: null, error: `łańcuch przerwany w ${f}, linia ${(v.badLine ?? 0) + 1}` };
+      }
       // Ostatni slot: z każdego pliku (tanio — tylko rekordy f/s), żeby ciągłość przetrwała przerwy dłuższe niż 31 dni
       for (const l of lines) {
         if (!l.includes('"k":"f"') && !l.includes('"k":"s"')) continue;
         const o = JSON.parse(l) as { slot?: unknown; until?: unknown };
         const s = typeof o.until === 'number' ? o.until : o.slot;
         if (typeof s === 'number' && (lastSlot === null || s > lastSlot)) lastSlot = s;
-      }
-      const v = verifyLines(lines, prev);
-      if (!v.ok) {
-        this.broken = true;
-        return { ok: false, forecasts, resolutions, skips, lastSlot: null, error: `łańcuch przerwany w ${f}, linia ${(v.badLine ?? 0) + 1}` };
       }
       prev = v.head;
       count += lines.length;
