@@ -10,6 +10,9 @@ import { loadConfig } from './config.ts';
 import { HlRest, HlStream } from './hl.ts';
 import { LiqConfirmer, PriceRange } from './liqDetect.ts';
 import { CohortEngine } from './cohortEngine.ts';
+import { ForecastData } from './forecaster.ts';
+import { LedgerStore, prepareLedgerRepo } from './ledgerStore.ts';
+import { LedgerRunner } from './ledgerRunner.ts';
 import { WeightLimiter } from './rateLimiter.ts';
 import { Scanner } from './scanner.ts';
 import { fetchLeaderboardAccounts } from './seed.ts';
@@ -135,6 +138,9 @@ const DATA_README = [
   '- `liq-map/BTC.json` — mapa likwidacji BTC z pozycji on-chain Hyperliquid: kubełki cen likwidacji, pokrycie open interest, wiek odczytów.',
   '- `liq-tape/BTC.json` — likwidacje śledzonych pozycji z 24 h, potwierdzone fillami z polem `liquidation`: czas, strona, rozmiar, cena, błąd mapy.',
   '- `cohorts/BTC.json` — przepływ kohort (market makerzy, statystycznie poinformowani, wieloryby, reszta): kubełki 15 min z 24 h, markouty poza próbą; k-anonimowość (komórki z < 5 uczestnikami lub z dominującym uczestnikiem ukryte).',
+  '',
+  'Gałąź `ledger` — weryfikowalny dziennik prognoz desku (historia przyrostowa): pliki dzienne `BTC/RRRR-MM-DD.jsonl` z łańcuchem hashy SHA-256,',
+  'kotwice OpenTimestamps `BTC/ots/`, podsumowanie `BTC/summary.json`. Weryfikacja: `node scripts/verify-ledger.mjs` w repo HyperQuant.',
   '- `status.json` — stan skanera (liczby adresów i pozycji, błędy API).',
   '',
   'Wyłącznie agregaty — bez adresów portfeli. Źródło: publiczne API Hyperliquid. Metoda: src/utils/liqMap.ts w repo HyperQuant.',
@@ -163,6 +169,30 @@ async function gitPublishTick(): Promise<void> {
   files.push(['README.md', DATA_README]);
   const ok = await publishToGit({ remote: cfg.git.remote, workDir: join(cfg.stateDir, 'git', 'repo'), sshKey: cfg.git.sshKey }, files, Date.now());
   if (!ok) console.error('[skaner] publikacja do repo danych nieudana (spróbuję w następnym cyklu)');
+}
+
+/**
+ * Weryfikowalny dziennik prognoz: gałąź `ledger` repo danych (przyrostowa historia, łańcuch hashy, OpenTimestamps).
+ * Bez publikacji git — lokalny katalog w HQ_STATE_DIR (np. test dymny).
+ */
+let ledger: LedgerRunner | null = null;
+async function initLedger(): Promise<void> {
+  const now = Date.now();
+  const dir = cfg.git ? join(cfg.stateDir, 'git', 'ledger') : join(cfg.stateDir, 'ledger');
+  const repo = cfg.git ? { remote: cfg.git.remote, dir, sshKey: cfg.git.sshKey } : null;
+  if (repo && !(await prepareLedgerRepo(repo, now))) {
+    console.error('[skaner] dziennik: repo danych niedostępne — spróbuję za minutę');
+    return;
+  }
+  const store = new LedgerStore({ dir, coin: cfg.coin });
+  const runner = new LedgerRunner({ coin: cfg.coin, data: new ForecastData({ coin: cfg.coin, rest }), store, repo, markPx: () => scanner.freshMarkPx() });
+  const r = runner.init(now);
+  if (!r.ok) {
+    console.error(`[skaner] dziennik: ${r.error} — dopisywanie wstrzymane`);
+    return;
+  }
+  ledger = runner;
+  log(`dziennik: ${store.lines} linii, głowa ${store.head.slice(0, 12)}`);
 }
 
 /** Zapas dla kontekstu rynku, gdy WebSocket milczy > 2 min (waga 20). */
@@ -222,6 +252,13 @@ const timers = [
     5_000
   ),
   setInterval(guarded('klasyfikacja kohort', () => cohorts.classify(Date.now())), 10 * 60_000),
+  setInterval(
+    guarded('dziennik', async () => {
+      if (!ledger) await initLedger();
+      else await ledger.tick(Date.now());
+    }),
+    60_000
+  ),
   setInterval(guarded('zapis stanu', saveState), 5 * 60_000),
   setInterval(guarded('zasiew', seedFromLeaderboard), 6 * 60 * 60_000),
   ...(cfg.git ? [setInterval(guarded('repo danych', gitPublishTick), cfg.git.everyS * 1000)] : []),

@@ -94,6 +94,18 @@ describe('taśma likwidacji (plik opcjonalny)', () => {
   });
 });
 
+describe('dziennik prognoz (gałąź ledger)', () => {
+  it('podsumowanie starsze niż 60 min → problem; brak pliku (przed wdrożeniem) → nie', () => {
+    const inp = input();
+    inp.ledger = { asOf: NOW - 75 * MIN };
+    expect(assessHealth(inp, NOW).problems.join(' ')).toMatch(/dziennik.*75 min/);
+    const ok = input();
+    ok.ledger = { asOf: NOW - 20 * MIN };
+    expect(assessHealth(ok, NOW).ok).toBe(true);
+    expect(assessHealth(input({ errors: { 'ledger:BTC/summary.json': 'HTTP 404' } }), NOW).ok).toBe(true);
+  });
+});
+
 describe('findLeaks', () => {
   it('wykrywa adres EVM i IPv4, nie myli ich z liczbami JSON', () => {
     expect(findLeaks('{"px":107234.5,"asOf":1792657671870,"share":0.3016068073177374}')).toEqual([]);

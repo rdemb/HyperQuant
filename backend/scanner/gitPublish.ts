@@ -28,6 +28,33 @@ function gitDate(ms: number): string {
   return `${new Date(ms).toISOString().replace(/\.\d{3}Z$/, '')}+00:00`;
 }
 
+/**
+ * Środowisko git bez konfiguracji globalnej i systemowej (żadne dane właściciela nie trafią do commita): stały autor
+ * (noreply), data UTC, klucz wdrożeniowy tylko dla zdalnego SSH; known_hosts obok katalogu roboczego.
+ */
+export function gitEnv(workDir: string, sshKey: string | null | undefined, now: number): NodeJS.ProcessEnv {
+  const date = gitDate(now);
+  const env: NodeJS.ProcessEnv = {
+    PATH: process.env.PATH,
+    SystemRoot: process.env.SystemRoot,
+    HOME: dirname(workDir),
+    GIT_CONFIG_NOSYSTEM: '1',
+    GIT_CONFIG_GLOBAL: process.platform === 'win32' ? 'NUL' : '/dev/null',
+    GIT_TERMINAL_PROMPT: '0',
+    GIT_AUTHOR_NAME: AUTHOR,
+    GIT_AUTHOR_EMAIL: EMAIL,
+    GIT_COMMITTER_NAME: AUTHOR,
+    GIT_COMMITTER_EMAIL: EMAIL,
+    GIT_AUTHOR_DATE: date,
+    GIT_COMMITTER_DATE: date,
+  };
+  if (sshKey) {
+    const knownHosts = join(dirname(workDir), 'known_hosts');
+    env.GIT_SSH_COMMAND = `ssh -i ${sshKey} -o IdentitiesOnly=yes -o UserKnownHostsFile=${knownHosts} -o StrictHostKeyChecking=accept-new -o BatchMode=yes`;
+  }
+  return env;
+}
+
 export async function publishToGit(t: GitTarget, files: [string, string][], now: number): Promise<boolean> {
   const branch = t.branch ?? 'main';
   try {
@@ -38,26 +65,7 @@ export async function publishToGit(t: GitTarget, files: [string, string][], now:
       mkdirSync(dirname(p), { recursive: true });
       writeFileSync(p, body);
     }
-    const date = gitDate(now);
-    const env: NodeJS.ProcessEnv = {
-      PATH: process.env.PATH,
-      SystemRoot: process.env.SystemRoot,
-      // Bez konfiguracji globalnej i systemowej (żadne dane właściciela nie trafią do commita)
-      HOME: dirname(t.workDir),
-      GIT_CONFIG_NOSYSTEM: '1',
-      GIT_CONFIG_GLOBAL: process.platform === 'win32' ? 'NUL' : '/dev/null',
-      GIT_TERMINAL_PROMPT: '0',
-      GIT_AUTHOR_NAME: AUTHOR,
-      GIT_AUTHOR_EMAIL: EMAIL,
-      GIT_COMMITTER_NAME: AUTHOR,
-      GIT_COMMITTER_EMAIL: EMAIL,
-      GIT_AUTHOR_DATE: date,
-      GIT_COMMITTER_DATE: date,
-    };
-    if (t.sshKey) {
-      const knownHosts = join(dirname(t.workDir), 'known_hosts');
-      env.GIT_SSH_COMMAND = `ssh -i ${t.sshKey} -o IdentitiesOnly=yes -o UserKnownHostsFile=${knownHosts} -o StrictHostKeyChecking=accept-new -o BatchMode=yes`;
-    }
+    const env = gitEnv(t.workDir, t.sshKey, now);
     const git = (...args: string[]) => run('git', ['-C', t.workDir, ...args], { env, timeout: 30_000 });
     await git('init', '-q', '-b', branch);
     await git('add', '-A');
