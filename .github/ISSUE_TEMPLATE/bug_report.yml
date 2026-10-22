@@ -1,0 +1,35 @@
+name: Błąd
+description: Coś działa źle albo liczba wygląda na nieprawdziwą
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: Co się stało
+      description: Co widzisz, a czego się spodziewałeś(-aś)?
+    validations:
+      required: true
+  - type: input
+    id: where
+    attributes:
+      label: Gdzie
+      description: Widok i panel (np. „Plan → Analizator planu → Model zmienności”)
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Jak odtworzyć
+      placeholder: |
+        1. Otwórz …
+        2. Ustaw …
+        3. Zobacz …
+  - type: input
+    id: env
+    attributes:
+      label: Przeglądarka i urządzenie
+      placeholder: np. Chrome 140, Android / Safari, iOS 19 (PWA)
+  - type: textarea
+    id: extra
+    attributes:
+      label: Zrzut ekranu, czas (UTC), błędy z konsoli

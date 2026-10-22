@@ -43,3 +43,7 @@ public/data/feeds/*.json
 
 # Notatki robocze (plan, wnioski) — tylko lokalnie
 tasks/
+
+# Lokalne narzędzia asystenta i notatki sesji
+.remember/
+.superpowers/

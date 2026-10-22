@@ -1,7 +1,7 @@
 {
   "name": "hyperquant-3d-desk",
   "private": true,
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Open-source BTC day-trading desk for Hyperliquid: live order-flow heatmap & footprint, plan analyzer (P target-before-stop), cross-market context, PWA.",
   "license": "MIT",
   "homepage": "https://rdemb.github.io/HyperQuant/",
