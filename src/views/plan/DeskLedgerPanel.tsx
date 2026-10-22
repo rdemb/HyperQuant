@@ -250,10 +250,22 @@ const PitHist: React.FC<{ hist: number[] }> = ({ hist }) => {
 const VERDICT_N = 100;
 
 /** Wiersz wyników poziomu oceny: Brier modelu i rynku, różnica z przedziałem 90%. */
+const sd3 = (v: number) => `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(3)}`;
+const DiffCell: React.FC<{ d: { d: number; lo: number; hi: number } | null | undefined; show: boolean }> = ({ d, show }) =>
+  show && d ? (
+    <>
+      {sd3(d.d)}{' '}
+      <span className="text-[10px] text-ink-3">
+        ({sd3(d.lo)} … {sd3(d.hi)})
+      </span>
+    </>
+  ) : (
+    <>{DASH}</>
+  );
+
 const MarketRow: React.FC<{ label: string; title: string; sc: MktScores }> = ({ label, title, sc }) => {
   const enough = sc.n >= MIN_N;
   const f3 = (v: number | null) => (enough && v !== null ? v.toFixed(3) : DASH);
-  const sd = (v: number) => `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(3)}`;
   return (
     <tr className="border-t border-line align-baseline">
       <td className="py-1.5 pr-3 font-sans text-ink-1" title={title}>
@@ -263,24 +275,70 @@ const MarketRow: React.FC<{ label: string; title: string; sc: MktScores }> = ({ 
       <td className="py-1.5 pr-3">{f3(sc.brierModel)}</td>
       <td className="py-1.5 pr-3">{f3(sc.brierMarket)}</td>
       <td className="py-1.5">
-        {enough && sc.diff ? (
-          <>
-            {sd(sc.diff.d)}{' '}
-            <span className="text-[10px] text-ink-3">
-              ({sd(sc.diff.lo)} … {sd(sc.diff.hi)})
-            </span>
-          </>
-        ) : (
-          DASH
-        )}
+        <DiffCell d={sc.diff} show={enough} />
       </td>
     </tr>
+  );
+};
+
+/** Ensemble na pytaniach z zapisanym p_e: model, rynek, rynek skalibrowany i ensemble na tym samym podzbiorze. */
+const EnsembleRow: React.FC<{ label: string; sc: MktScores }> = ({ label, sc }) => {
+  const n = sc.nEns ?? 0;
+  const ok = n >= MIN_N;
+  const f3 = (v: number | null | undefined) => (ok && v != null ? v.toFixed(3) : DASH);
+  return (
+    <tr className="border-t border-line align-baseline">
+      <td className="py-1.5 pr-3 font-sans text-ink-1">{label}</td>
+      <td className="py-1.5 pr-3">{ok ? n : `${n} (od ${MIN_N})`}</td>
+      <td className="py-1.5 pr-3">{f3(sc.brierModelE)}</td>
+      <td className="py-1.5 pr-3">{f3(sc.brierMarketE)}</td>
+      <td className="py-1.5 pr-3">{f3(sc.brierRec)}</td>
+      <td className="py-1.5 pr-3">{f3(sc.brierEns)}</td>
+      <td className="py-1.5">
+        <DiffCell d={sc.diffAdd} show={ok} />
+      </td>
+    </tr>
+  );
+};
+
+/** Bieżące wagi ensemble z interpretacją (b_model ≈ 0 → model nic nie dodaje do ceny rynku). */
+const EnsembleWeights: React.FC<{ e: NonNullable<NonNullable<DeskLedgerSummary['market']>['ensemble']> }> = ({ e }) => {
+  const f2 = (v: number) => `${v < 0 ? '−' : ''}${Math.abs(v).toFixed(2)}`;
+  const note =
+    e.n < 50
+      ? `wagi startowe (równy pooling logarytmiczny) — dopasowanie od 50 rozstrzygniętych pytań, teraz ${e.n}`
+      : e.bm < -0.1
+      ? 'ujemna waga modelu: przy znanej cenie rynku odchylenia modelu od rynku wskazywały częściej zły kierunek (nadmierna pewność)'
+      : e.bm < 0.1
+      ? 'model prawie nic nie dodaje do ceny rynku'
+      : e.bk < 0.1
+      ? 'rynek prawie nic nie dodaje do modelu'
+      : e.bm + e.bk > 1.15
+      ? 'suma wag > 1: połączenie „ekstremizuje” (oba źródła są zbyt ostrożne)'
+      : 'oba źródła wnoszą informację';
+  return (
+    <div className="text-[11px] text-ink-2 leading-relaxed">
+      <span className="text-ink-3">Ensemble: </span>
+      logit p = <span className="font-mono text-ink-1">{f2(e.a)}</span> + <span className="font-mono text-ink-1">{f2(e.bm)}</span>·logit model +{' '}
+      <span className="font-mono text-ink-1">{f2(e.bk)}</span>·logit rynek
+      {e.rec && (
+        <>
+          {' '}
+          · <span className="text-ink-3">rynek skalibrowany: </span>
+          <span className="font-mono text-ink-1">{f2(e.rec.a)}</span> + <span className="font-mono text-ink-1">{f2(e.rec.bk)}</span>·logit rynek
+        </>
+      )}{' '}
+      <span className="text-ink-3">
+        ({e.n} pytań z 30 dni; {note}; wagi z małej próby są niepewne — rozstrzyga tabela niżej)
+      </span>
+    </div>
   );
 };
 
 /**
  * Model vs rynek predykcyjny (HIP-4, 15 min): te same pytania „mark BTC ≥ K w terminie”, p modelu i cena rynku zapisane
  * przed faktem; Brier obu i różnica z niepewnością na dwóch poziomach: notowania płynne i notowania z wąskim spreadem.
+ * Ensemble i rynek skalibrowany — osobna tabela na pytaniach z zapisanym p_e (porównanie jak z jak).
  */
 const MarketCard: React.FC<{ m: NonNullable<DeskLedgerSummary['market']> }> = ({ m }) => {
   const l = m.latest;
@@ -294,6 +352,7 @@ const MarketCard: React.FC<{ m: NonNullable<DeskLedgerSummary['market']> }> = ({
       : sc.diff.lo > 0
       ? 'rynek trafniejszy (Brier) niż model'
       : 'różnica nieudowodniona';
+  const hasEns = sc.nEns !== undefined;
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-line p-3">
       <div className="flex items-baseline justify-between gap-2">
@@ -314,6 +373,11 @@ const MarketCard: React.FC<{ m: NonNullable<DeskLedgerSummary['market']> }> = ({
             rynek <span className="font-mono tabular-nums text-ink-1">{mid === null ? DASH : pct(mid)}</span>
             {!l.liquid && <span className="ml-1 text-[10px] text-ink-3">arkusz płytki</span>}
           </span>
+          {l.pe != null && (
+            <span title="Pooling logarytmiczny modelu i rynku z wagami dopasowanymi przed wydaniem na wcześniej rozstrzygniętych pytaniach">
+              ensemble <span className="font-mono tabular-nums text-ink-1">{pct(l.pe)}</span>
+            </span>
+          )}
         </div>
       )}
       <div className="overflow-x-auto">
@@ -344,6 +408,45 @@ const MarketCard: React.FC<{ m: NonNullable<DeskLedgerSummary['market']> }> = ({
           <span> Wniosek dopiero od {VERDICT_N} pytań z płynnym notowaniem.</span>
         )}
       </div>
+      {hasEns && (
+        <>
+          {m.ensemble && <EnsembleWeights e={m.ensemble} />}
+          <div className="overflow-x-auto">
+            <table className="w-full text-left font-mono tabular-nums text-[11px]">
+              <caption className="sr-only">
+                Ensemble i rynek skalibrowany: Brier modelu, rynku, rynku skalibrowanego i ensemble na tych samych pytaniach (z zapisanym p ensemble); wartość dodana
+                modelu = ensemble − rynek skalibrowany z przedziałem bootstrap 90%
+              </caption>
+              <thead className="text-ink-3">
+                <tr>
+                  <th className="py-1 pr-3 font-medium font-sans">Notowania</th>
+                  <th className="py-1 pr-3 font-medium font-sans" title="Pytania z zapisanym p ensemble">
+                    Pytań
+                  </th>
+                  <th className="py-1 pr-3 font-medium font-sans">Model</th>
+                  <th className="py-1 pr-3 font-medium font-sans">Rynek</th>
+                  <th className="py-1 pr-3 font-medium font-sans" title="a + b·logit(rynek) — ta sama procedura dopasowania, bez modelu">
+                    Rynek skal.
+                  </th>
+                  <th className="py-1 pr-3 font-medium font-sans">Ensemble</th>
+                  <th className="py-1 font-medium font-sans" title="Ensemble − rynek skalibrowany: ujemne = model dodaje informację ponad rekalibrację ceny rynku">
+                    Wartość modelu
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                <EnsembleRow label="płynne" sc={m.scores} />
+                {m.tight && <EnsembleRow label="wąski spread" sc={m.tight} />}
+              </tbody>
+            </table>
+          </div>
+          <div className="text-[11px] text-ink-3 leading-relaxed">
+            Wszystkie kolumny liczone na tych samych pytaniach (z zapisanym p ensemble). Rynek skalibrowany to sama cena rynku poprawiona tą samą procedurą
+            (np. o błąd faworyt–outsider) — dopiero przewaga ensemble nad nim pokazuje, że model wnosi informację, której cena rynku nie zawiera. Wagi obu
+            dopasowuje się przy wydaniu wyłącznie na pytaniach rozstrzygniętych w 30 dniach wcześniej; weryfikator odtwarza je ponownym dopasowaniem.
+          </div>
+        </>
+      )}
     </div>
   );
 };

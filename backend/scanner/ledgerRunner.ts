@@ -1,3 +1,4 @@
+import { fitEnsemble } from '../../src/utils/ensemble.ts';
 import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import type { RangeBar, VolModel } from '../../src/utils/volatility.ts';
@@ -11,6 +12,7 @@ import {
   SLOT,
   type SkipRecord,
   buildSummary,
+  ensPairs,
   makeMktForecast,
   makeRetForecast,
   makeTouchForecast,
@@ -257,7 +259,9 @@ export class LedgerRunner {
       const t2 = this.clock(now);
       const bookFresh = snap !== null && (snap.bookTime === null || (t2 - snap.bookTime <= MKT_MAX_QUOTE_AGE && snap.bookTime <= t2 + 5_000));
       if (snap && bookFresh && snap.px > 0 && slotOf(t2) === slot && t2 - slot < MKT_TO) {
-        const f = makeMktForecast(data.model!, { slot, ti: t2, t: Math.floor(t2 / MIN) * MIN + MIN }, snap.px, snap);
+        // Wagi ensemble i rekalibracji rynku wyłącznie z pytań rozstrzygniętych w 30 dniach przed chwilą wydania
+        const pairs = ensPairs(this.forecasts.values(), this.resolutions, t2);
+        const f = makeMktForecast(data.model!, { slot, ti: t2, t: Math.floor(t2 / MIN) * MIN + MIN }, snap.px, snap, fitEnsemble(pairs, t2), fitEnsemble(pairs, t2, { mode: 'market' }));
         if (f) {
           this.add([{ ...f }], t2);
           appended += 1;
