@@ -2,7 +2,7 @@ import React, { useMemo, useRef, useState } from 'react';
 import { scaleLinear } from 'd3';
 import { useCohortFlow } from '../../state/useCohortFlow';
 import { Badge, EmptyState, Panel, Segmented, Stat, DASH, fmtCompact, fmtSigned } from '../../ui';
-import { COHORTS, COHORT_LABEL, CohortFlow, CohortId, cumulativeNet, netOf, takerNetOf } from '../../utils/cohorts';
+import { COHORTS, COHORT_LABEL, CohortFlow, CohortId, CohortTotal, cumulativeNet } from '../../utils/cohorts';
 import { useElementWidth } from '../market/MarketMap';
 
 /**
@@ -15,11 +15,15 @@ const COLOR: Record<CohortId, string> = {
   whale: 'var(--color-series-5)',
   rest: 'var(--color-series-7)',
 };
-const timeFmt = new Intl.DateTimeFormat('pl-PL', { hour: '2-digit', minute: '2-digit' });
 /** Krótkie nazwy do etykiet bezpośrednich na wykresie */
 const SHORT: Record<CohortId, string> = { mm: 'MM', informed: 'Poinf.', whale: 'Wieloryby', rest: 'Reszta' };
+const timeFmt = new Intl.DateTimeFormat('pl-PL', { hour: '2-digit', minute: '2-digit' });
 const usd = (v: number) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${fmtCompact(Math.abs(v), '$')}`;
 const bp = (v: number | null) => (v === null ? DASH : fmtSigned(v, 1, ' bp'));
+/** Liczności publikowane w dół do dziesiątek: 0 = mniej niż 10 */
+const approx = (n: number) => (n < 10 ? '< 10' : `≈ ${n.toLocaleString('pl-PL')}`);
+const netTotal = (t: CohortTotal) => t.buy - t.sell;
+const takerTotal = (t: CohortTotal) => t.takerBuy - t.takerSell;
 type Mode = 'net' | 'taker';
 
 /** Kto kupuje, kto sprzedaje: przepływ netto (zmiana zapasów) i agresywna delta per kohorta uczestników Hyperliquid. */
@@ -62,6 +66,7 @@ export const CohortFlowPanel: React.FC = () => {
 const FlowBody: React.FC<{ flow: CohortFlow; mode: Mode; setMode: (m: Mode) => void }> = ({ flow, mode, setMode }) => {
   const partial = flow.since > flow.asOf - 24 * 3600_000;
   const inf = flow.informed;
+  const last = flow.buckets[flow.buckets.length - 1];
   return (
     <div className="flex flex-col gap-4 p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -75,15 +80,18 @@ const FlowBody: React.FC<{ flow: CohortFlow; mode: Mode; setMode: (m: Mode) => v
           ]}
         />
         <span className="text-[11px] text-ink-3">
-          ostatnia godzina · kubełki {flow.bucketMin} min{partial ? ` · obserwacja od ${timeFmt.format(flow.since)}` : ''}
+          ostatnia godzina = 4 zamknięte kubełki {flow.bucketMin} min{last ? ` (do ${timeFmt.format(last.t + flow.bucketMin * 60_000)})` : ''}
+          {partial ? ` · obserwacja od ${timeFmt.format(flow.since)}` : ''}
         </span>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-5 gap-y-3">
         {COHORTS.map((c) => {
           const t = flow.totals.h1[c];
-          const v = mode === 'net' ? netOf(t) : takerNetOf(t);
-          const other = mode === 'net' ? takerNetOf(t) : netOf(t);
+          const active = t.buy + t.sell > 0;
+          const v = mode === 'net' ? netTotal(t) : takerTotal(t);
+          const other = mode === 'net' ? takerTotal(t) : netTotal(t);
+          const hid = mode === 'net' ? t.hidden : t.hidden + t.takerHidden;
           return (
             <Stat
               key={c}
@@ -93,16 +101,15 @@ const FlowBody: React.FC<{ flow: CohortFlow; mode: Mode; setMode: (m: Mode) => v
                   {COHORT_LABEL[c]}
                 </span>
               }
-              value={<span className="font-mono tabular-nums">{t.buy + t.sell > 0 ? usd(v) : DASH}</span>}
-              hint={`${mode === 'net' ? 'agresor' : 'netto'} ${t.buy + t.sell > 0 ? usd(other) : DASH} · ${flow.members[c].toLocaleString('pl-PL')} adr. (24 h)${
-                t.hidden ? ` · ukryte ${t.hidden}` : ''
-              }`}
+              value={<span className="font-mono tabular-nums">{active || hid ? usd(v) : DASH}</span>}
+              hint={`${mode === 'net' ? 'agresor' : 'netto'} ${active ? usd(other) : DASH} · adresy 24 h ${approx(flow.members[c])}${hid ? ` · ukryte kubełki ${hid}` : ''}`}
             />
           );
         })}
       </div>
 
       <CumulativeChart flow={flow} mode={mode} />
+      <TotalsTable flow={flow} />
 
       <div className="flex flex-col gap-2">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -113,12 +120,13 @@ const FlowBody: React.FC<{ flow: CohortFlow; mode: Mode; setMode: (m: Mode) => v
         </div>
         <OosTable flow={flow} />
         <p className="text-[11px] text-ink-3 leading-relaxed">
-          „Poinformowani”: adresy, których markout biorcy po 5 min jest istotnie dodatni — test jednostronny na adresach z co najmniej {inf.minN}{' '}
-          rozliczonymi transakcjami, kontrola odsetka fałszywych odkryć (Benjamini–Hochberg, q = {Math.round(inf.fdrQ * 100)}%) i dodatnia średnia
-          a posteriori w empirycznym Bayesie. Kandydaci {inf.candidates.toLocaleString('pl-PL')}, wybrani {inf.selected.toLocaleString('pl-PL')}
+          „Poinformowani”: adresy, których markout biorcy po 5 min jest istotnie dodatni. Obserwacją jest blok 5 min adresu, więc jedno zlecenie
+          zamiatające wielu makerów liczy się raz. Test jednostronny obejmuje adresy z co najmniej {inf.minN} blokami, z kontrolą odsetka fałszywych
+          odkryć (Benjamini–Hochberg, q = {Math.round(inf.fdrQ * 100)}%) i dodatnią średnią a posteriori w empirycznym Bayesie. Kandydaci{' '}
+          {approx(inf.candidates)}, wybrani {approx(inf.selected)}
           {inf.mu0Bp !== null ? ` · średnia populacji ${bp(inf.mu0Bp)}, rozrzut umiejętności ${inf.tauBp === null ? DASH : `${inf.tauBp.toFixed(1)} bp`}` : ''}
-          {inf.classifiedAt !== null ? ` · klasyfikacja ${timeFmt.format(inf.classifiedAt)}` : ' · klasyfikacja jeszcze nie wykonana'}. Tabela pokazuje, czy
-          przewaga utrzymuje się na transakcjach wykonanych po klasyfikacji — jeśli nie, kohorta nie ma przewagi, niezależnie od nazwy.
+          {inf.classifiedAt !== null ? ` · klasyfikacja ${timeFmt.format(inf.classifiedAt)}` : ' · klasyfikacja jeszcze nie wykonana'}. Tabela
+          pokazuje, czy przewaga utrzymuje się na transakcjach wykonanych po klasyfikacji. Jeśli nie, kohorta nie ma przewagi, niezależnie od nazwy.
         </p>
       </div>
 
@@ -127,49 +135,57 @@ const FlowBody: React.FC<{ flow: CohortFlow; mode: Mode; setMode: (m: Mode) => v
         <ul className="list-disc pl-4 mt-2 space-y-1.5 leading-relaxed">
           <li>
             Każda transakcja z publicznej taśmy BTC ma adresy kupującego i sprzedającego oraz stronę agresora. Netto kohorty = kupno − sprzedaż
-            wszystkich jej fillów, czyli zmiana jej zapasów — co jedna kohorta kupuje, inna sprzedaje, więc netto sumuje się do zera.
+            wszystkich jej fillów, czyli zmiana jej zapasów. Co jedna kohorta kupuje, inna sprzedaje, więc netto sumuje się do zera.
           </li>
           <li>
             Market makerzy: ≥ 80% nominału jako maker i ≥ 1 mln USD (z wygaszaniem, połowa po 7 dniach). Wieloryby: pozycja BTC ≥ 1 mln USD albo
             konto z publicznego rankingu ≥ 10 mln USD. Kohorty są rozłączne w tej kolejności: market makerzy, poinformowani, wieloryby, reszta.
           </li>
           <li>
-            Prywatność: adresy i przynależność zostają na serwerze. Komórka (kohorta × kubełek) z mniej niż {flow.kMin} uczestnikami albo z jednym
-            uczestnikiem powyżej 50% obrotu jest ukrywana — liczba ukrytych komórek jest podana przy sumach.
+            Prywatność: adresy i przynależność zostają na serwerze. Publikowane są tylko zamknięte kubełki. Komórka z mniej niż {flow.kMin}{' '}
+            uczestnikami albo z jednym powyżej 50% obrotu jest ukrywana. Wtedy ukrywana jest też kolejna, bo suma kohort to publiczny wolumen
+            i jedną ukrytą dałoby się odtworzyć odejmowaniem. Warstwa agresora ma osobne ukrywanie. Kwoty są zaokrąglone do 10 tys. USD, liczności
+            do dziesiątek, a markouty pochodzą tylko z w pełni rozliczonych godzin z co najmniej {flow.kMin} biorcami.
           </li>
-          <li>To opis przepływu, nie sygnał — „poinformowani” to wynik statystyczny z przeszłości, bez gwarancji na przyszłość.</li>
+          <li>To opis przepływu, nie sygnał. „Poinformowani” to wynik statystyczny z przeszłości, bez gwarancji na przyszłość.</li>
         </ul>
       </details>
     </div>
   );
 };
 
-/** Skumulowany przepływ per kohorta (24 h): jedna oś USD, linia zera, etykiety bezpośrednie, krzyżyk z wartościami. */
+/** Skumulowany przepływ per kohorta (24 h): jedna oś USD, linia zera, etykiety bezpośrednie, krzyżyk z wartościami, znaczniki ukrytych kubełków. */
 const CumulativeChart: React.FC<{ flow: CohortFlow; mode: Mode }> = ({ flow, mode }) => {
   const ref = useRef<HTMLDivElement>(null);
   const width = useElementWidth(ref);
   const [hover, setHover] = useState<number | null>(null);
   const H = 200;
-  /** Etykiety bezpośrednie tylko, gdy jest na nie miejsce (na wąskim ekranie wystarcza legenda) */
   const direct = width >= 480;
   const pad = { l: 56, r: direct ? 124 : 10, t: 10, b: 24 };
   const series = useMemo(() => COHORTS.map((c) => ({ c, pts: cumulativeNet(flow, c, mode === 'taker') })), [flow, mode]);
-  const ts = flow.buckets.map((b) => b.t + flow.bucketMin * 60_000);
-  if (ts.length === 0) {
-    return <div className="text-xs text-ink-3">Brak transakcji w okresie obserwacji.</div>;
+  const stepMs = flow.bucketMin * 60_000;
+  const ts = flow.buckets.map((b) => b.t + stepMs);
+  const ext = Math.max(0, ...series.flatMap((s) => s.pts.map((p) => Math.abs(p.v))));
+  if (ts.length === 0 || ext === 0) {
+    return (
+      <div ref={ref} className="text-xs text-ink-3">
+        {ts.length === 0 ? 'Brak zamkniętych kubełków w okresie obserwacji — pierwszy pojawi się po 15 min.' : 'Wszystkie kubełki w oknie są ukryte (k-anonimowość) albo zerowe.'}
+      </div>
+    );
   }
-  const all = series.flatMap((s) => s.pts.map((p) => p.v));
-  const ext = Math.max(1, ...all.map(Math.abs));
   const x = scaleLinear()
-    .domain([Math.min(...ts) - flow.bucketMin * 60_000, Math.max(...ts)])
+    .domain([Math.min(...ts) - stepMs, Math.max(...ts)])
     .range([pad.l, Math.max(pad.l + 1, width - pad.r)]);
   const y = scaleLinear().domain([-ext, ext]).range([H - pad.b, pad.t]).nice();
-  const path = (pts: { v: number }[]) => [`M${x(ts[0] - flow.bucketMin * 60_000).toFixed(1)},${y(0).toFixed(1)}`, ...pts.map((p, i) => `L${x(ts[i]).toFixed(1)},${y(p.v).toFixed(1)}`)].join('');
-  // Etykiety bezpośrednie po prawej: rozsunięte, żeby się nie nakładały (min. 12 px)
-  const labels = series
-    .map((s) => ({ c: s.c, y: y(s.pts[s.pts.length - 1].v), v: s.pts[s.pts.length - 1].v }))
-    .sort((a, b) => a.y - b.y);
+  const path = (pts: { v: number }[]) => [`M${x(ts[0] - stepMs).toFixed(1)},${y(0).toFixed(1)}`, ...pts.map((p, i) => `L${x(ts[i]).toFixed(1)},${y(p.v).toFixed(1)}`)].join('');
+  // Etykiety bezpośrednie: rozsunięcie w dół (min. 12 px), potem w górę, jeśli wyszły poza wykres
+  const labels = series.map((s) => ({ c: s.c, y: y(s.pts[s.pts.length - 1].v), v: s.pts[s.pts.length - 1].v })).sort((a, b) => a.y - b.y);
   for (let i = 1; i < labels.length; i++) if (labels[i].y - labels[i - 1].y < 12) labels[i].y = labels[i - 1].y + 12;
+  const bottom = H - pad.b - 4;
+  if (labels.length && labels[labels.length - 1].y > bottom) {
+    labels[labels.length - 1].y = bottom;
+    for (let i = labels.length - 2; i >= 0; i--) if (labels[i + 1].y - labels[i].y < 12) labels[i].y = labels[i + 1].y - 12;
+  }
   const hi = hover;
 
   return (
@@ -181,6 +197,12 @@ const CumulativeChart: React.FC<{ flow: CohortFlow; mode: Mode }> = ({ flow, mod
             {COHORT_LABEL[c]}
           </span>
         ))}
+        <span className="flex items-center gap-1.5 text-ink-3">
+          <svg width="10" height="10" aria-hidden="true">
+            <circle cx="5" cy="5" r="3" fill="none" stroke="var(--color-ink-3)" strokeWidth="1.5" />
+          </svg>
+          kubełek ukryty
+        </span>
       </div>
       <div ref={ref} className="relative w-full" style={{ height: H }}>
         {width > 0 && (
@@ -188,7 +210,7 @@ const CumulativeChart: React.FC<{ flow: CohortFlow; mode: Mode }> = ({ flow, mod
             width={width}
             height={H}
             role="img"
-            aria-label={`Skumulowany przepływ ${mode === 'net' ? 'netto' : 'agresora'} kohort w czasie`}
+            aria-label={`Skumulowany przepływ ${mode === 'net' ? 'netto' : 'agresora'} kohort w czasie; liczby w tabeli poniżej`}
             onMouseLeave={() => setHover(null)}
             onMouseMove={(e) => {
               const r = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
@@ -207,7 +229,12 @@ const CumulativeChart: React.FC<{ flow: CohortFlow; mode: Mode }> = ({ flow, mod
               </g>
             ))}
             {series.map((s) => (
-              <path key={s.c} d={path(s.pts)} fill="none" stroke={COLOR[s.c]} strokeWidth={2} strokeLinejoin="round" />
+              <g key={s.c}>
+                <path d={path(s.pts)} fill="none" stroke={COLOR[s.c]} strokeWidth={2} strokeLinejoin="round" />
+                {s.pts.map((p, i) =>
+                  p.hidden ? <circle key={i} cx={x(ts[i])} cy={y(p.v)} r={3} fill="var(--color-surface-1)" stroke={COLOR[s.c]} strokeWidth={1.5} /> : null
+                )}
+              </g>
             ))}
             {direct &&
               labels.map((l) => (
@@ -233,9 +260,11 @@ const CumulativeChart: React.FC<{ flow: CohortFlow; mode: Mode }> = ({ flow, mod
         {hi !== null && (
           <div
             className="pointer-events-none absolute top-1 z-10 rounded-md border border-line-strong bg-surface-2 px-2.5 py-1.5 text-[11px] text-ink-2 shadow-lg"
-            style={{ left: Math.min(Math.max(0, x(ts[hi]) - 90), Math.max(0, width - 200)) }}
+            style={{ left: Math.min(Math.max(0, x(ts[hi]) - 90), Math.max(0, width - 210)) }}
           >
-            <div className="font-mono tabular-nums text-ink-1">do {timeFmt.format(ts[hi])}</div>
+            <div className="font-mono tabular-nums text-ink-1">
+              {timeFmt.format(ts[hi] - stepMs)}–{timeFmt.format(ts[hi])}
+            </div>
             {series.map((s) => (
               <div key={s.c} className="flex items-center gap-1.5">
                 <span className="inline-block w-2 h-2 rounded-sm" style={{ background: COLOR[s.c] }} />
@@ -250,17 +279,54 @@ const CumulativeChart: React.FC<{ flow: CohortFlow; mode: Mode }> = ({ flow, mod
   );
 };
 
-/** Znaczniki osi czasu co 6 h (pełne godziny lokalne), najwyżej 5 — czytelne zamiast „18:26”. */
+/** Sumy 24 h per kohorta — liczby bez wykresu (także na telefonie i dla czytników ekranu). */
+const TotalsTable: React.FC<{ flow: CohortFlow }> = ({ flow }) => (
+  <div className="overflow-x-auto">
+    <table className="w-full text-left font-mono tabular-nums text-[11px]">
+      <caption className="sr-only">Przepływ kohort w 24 godzinach</caption>
+      <thead className="text-ink-3">
+        <tr>
+          <th className="py-1 pr-3 font-medium font-sans">Kohorta · 24 h</th>
+          <th className="py-1 pr-3 font-medium">Netto</th>
+          <th className="py-1 pr-3 font-medium">Agresor</th>
+          <th className="py-1 pr-3 font-medium">Obrót</th>
+          <th className="py-1 font-medium">Ukryte</th>
+        </tr>
+      </thead>
+      <tbody>
+        {COHORTS.map((c) => {
+          const t = flow.totals.h24[c];
+          return (
+            <tr key={c} className="border-t border-line">
+              <td className="py-1 pr-3 font-sans">
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="inline-block w-2 h-2 rounded-sm" style={{ background: COLOR[c] }} aria-hidden="true" />
+                  {COHORT_LABEL[c]}
+                </span>
+              </td>
+              <td className="py-1 pr-3">{usd(netTotal(t))}</td>
+              <td className="py-1 pr-3">{usd(takerTotal(t))}</td>
+              <td className="py-1 pr-3">{fmtCompact(t.buy + t.sell, '$')}</td>
+              <td className="py-1">{t.hidden || t.takerHidden ? `${t.hidden} / ${t.takerHidden} agr.` : DASH}</td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  </div>
+);
+
+/** Znaczniki osi czasu w pełnych godzinach lokalnych (co 6/2/1 h wg rozpiętości), najwyżej 6. */
 function hourTicks(from: number, to: number): number[] {
-  const step = (to - from > 12 * 3600_000 ? 6 : to - from > 3 * 3600_000 ? 2 : 1) * 3600_000;
+  const stepH = to - from > 12 * 3600_000 ? 6 : to - from > 3 * 3600_000 ? 2 : 1;
   const d = new Date(from);
   d.setMinutes(0, 0, 0);
   const out: number[] = [];
-  for (let t = d.getTime(); t <= to; t += 3600_000) if (t >= from && new Date(t).getHours() % (step / 3600_000) === 0) out.push(t);
+  for (let t = d.getTime(); t <= to; t += 3600_000) if (t >= from && new Date(t).getHours() % stepH === 0) out.push(t);
   return out.slice(0, 6);
 }
 
-/** Markouty poza próbą per kohorta — tabela (dostęp do liczb bez wykresu). */
+/** Markouty poza próbą per kohorta — tabela. */
 const OosTable: React.FC<{ flow: CohortFlow }> = ({ flow }) => (
   <div className="overflow-x-auto">
     <table className="w-full text-left font-mono tabular-nums text-[11px]">
@@ -272,7 +338,7 @@ const OosTable: React.FC<{ flow: CohortFlow }> = ({ flow }) => (
           <th className="py-1 pr-3 font-medium">5 min</th>
           <th className="py-1 pr-3 font-medium">60 min</th>
           <th className="py-1 pr-3 font-medium">Transakcje</th>
-          <th className="py-1 font-medium">Nominał</th>
+          <th className="py-1 font-medium">Godziny</th>
         </tr>
       </thead>
       <tbody>
@@ -289,8 +355,10 @@ const OosTable: React.FC<{ flow: CohortFlow }> = ({ flow }) => (
               <td className="py-1 pr-3">{bp(m.m1)}</td>
               <td className="py-1 pr-3">{bp(m.m5)}</td>
               <td className="py-1 pr-3">{bp(m.m60)}</td>
-              <td className="py-1 pr-3">{m.n > 0 ? m.n.toLocaleString('pl-PL') : DASH}</td>
-              <td className="py-1">{m.usd > 0 ? fmtCompact(m.usd, '$') : DASH}</td>
+              <td className="py-1 pr-3">{m.n > 0 ? `≈ ${m.n.toLocaleString('pl-PL')} · ${fmtCompact(m.usd, '$')}` : DASH}</td>
+              <td className="py-1" title="Godziny włączone / pominięte (< 5 biorców lub dominacja)">
+                {m.hours || m.hiddenHours ? `${m.hours}${m.hiddenHours ? ` (+${m.hiddenHours} ukr.)` : ''}` : DASH}
+              </td>
             </tr>
           );
         })}

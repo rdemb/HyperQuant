@@ -33,7 +33,16 @@ Jeżeli „poinformowani” nie mają dodatniego markoutu poza próbą, UI to po
 - Publikowane: kubełki **15 min** z 24 h (dłuższe niż pierwotne 5 min — przy 5 min zbyt wiele komórek mniejszych kohort byłoby ukrytych),
   sumy 1 h / 24 h, liczności kohort, markouty poza próbą.
 
-## Decyzje z realizacji
+## Decyzje z realizacji (po recenzji prywatności)
+
+- **Ukrywanie wtórne**: suma kohort w kubełku to publiczny wolumen z taśmy, więc pojedynczą ukrytą komórkę dałoby się odtworzyć
+  odejmowaniem — przy ukryciu jednej ukrywane są kolejne (najmniejsze), aż suma ukrytych sama spełnia k i dominację.
+  Osobno dla warstwy agresora (takerBuy/takerSell może być null przy widocznej komórce).
+- **Tylko zamknięte kubełki** z widocznością ustaloną raz — różnicowanie kolejnych publikacji otwartego kubełka ujawniałoby pojedyncze transakcje.
+- **Zaokrąglenia**: kwoty do 10 tys. USD, liczności (adresy, kandydaci, wybrani) w dół do dziesiątek, markouty do 0.1 bp.
+- **Markouty poza próbą** tylko z w pełni rozliczonych godzin; każda godzina z bramką k-anonimowości biorców kohorty.
+- **Pseudoreplikacja**: obserwacją testu „poinformowanych” jest blok 5 min adresu (średnia ważona nominałem), nie pojedynczy fill.
+- **Pamięć**: statystyki nieaktywnych małych adresów wypadają po 7 dniach, twardy limit 100 tys. adresów.
 
 - **Przepływ netto = zmiana zapasów kohorty**: kupno − sprzedaż wszystkich fillów kohorty (obie strony transakcji), obok agresywnego CVD
   (tylko biorcy). Co jedna kohorta kupuje, inna sprzedaje — netto sumuje się do zera po kohortach (zasada zachowania pozycji), co pokazuje

@@ -7,7 +7,13 @@
  *  - kupno/sprzedaż wszystkich fillów kohorty (przepływ netto = zmiana zapasów; suma netto po kohortach = 0),
  *  - kupno/sprzedaż kohorty jako biorcy (agresywne CVD),
  *  - markouty transakcji biorców po klasyfikacji (walidacja poza próbą).
- * k-anonimowość: komórka (kohorta × kubełek) z < 5 uczestnikami albo z jednym uczestnikiem > 50% obrotu jest ukrywana (null).
+ * Prywatność (sumy kohort są publiczne — suma wszystkich kohort to wolumen z taśmy):
+ *  - publikowane są tylko zamknięte kubełki; widoczność ustalana raz, przy zamknięciu;
+ *  - k-anonimowość z regułą dominacji: komórka z < 5 uczestnikami albo z jednym > 50% obrotu jest ukrywana (null),
+ *    a gdy ukryta jest choć jedna — ukrywane są kolejne (najmniejsze), aż suma ukrytych sama spełnia te warunki
+ *    (inaczej ukrytą komórkę dałoby się odtworzyć przez odejmowanie od publicznej sumy);
+ *  - warstwa biorcy (takerBuy/takerSell) ma własne, takie samo ukrywanie;
+ *  - wartości zaokrąglone do 10 tys. USD, liczności do dziesiątek, markouty tylko z w pełni rozliczonych godzin z ≥ 5 biorcami.
  */
 
 export const COHORTS = ['mm', 'informed', 'whale', 'rest'] as const;
@@ -20,13 +26,26 @@ export const COHORT_LABEL: Record<CohortId, string> = {
   rest: 'Reszta',
 };
 
+/** Zaokrąglenie publikowanych kwot (utrudnia dopasowanie sum do pojedynczych transakcji z publicznej taśmy) */
+export const ROUND_USD = 10_000;
+
 export interface CohortCell {
   /** Kupno / sprzedaż wszystkich fillów kohorty (obie strony transakcji), USD */
   buy: number;
   sell: number;
-  /** Kupno / sprzedaż kohorty jako biorcy płynności (agresor), USD */
+  /** Kupno / sprzedaż kohorty jako biorcy płynności (agresor), USD; null = warstwa biorcy ukryta */
+  takerBuy: number | null;
+  takerSell: number | null;
+}
+
+export interface CohortTotal {
+  buy: number;
+  sell: number;
   takerBuy: number;
   takerSell: number;
+  /** Ukryte komórki (całe) i ukryte warstwy biorcy w oknie */
+  hidden: number;
+  takerHidden: number;
 }
 
 export interface CohortBucket {
@@ -37,10 +56,13 @@ export interface CohortBucket {
 }
 
 export interface CohortMarkout {
-  /** Liczba transakcji biorcy (po klasyfikacji) z rozliczonym horyzontem 5 min */
+  /** Liczba transakcji biorcy z rozliczonym horyzontem 5 min (zaokrąglona do dziesiątek, min. 10; 0 = brak danych) */
   n: number;
-  /** Nominał tych transakcji, USD */
+  /** Nominał tych transakcji, USD (zaokrąglony do 10 tys.) */
   usd: number;
+  /** Godziny w oknie: włączone i pominięte (< 5 biorców lub dominacja) */
+  hours: number;
+  hiddenHours: number;
   /** Markout ważony nominałem, bp (dodatni = cena poszła w kierunku transakcji); null = brak danych */
   m1: number | null;
   m5: number | null;
@@ -56,9 +78,9 @@ export interface CohortFlow {
   bucketMin: number;
   /** Kubełki z ostatnich 24 h z jakąkolwiek aktywnością, rosnąco */
   buckets: CohortBucket[];
-  /** Sumy z kubełków nieukrytych; hidden = liczba ukrytych komórek w oknie */
-  totals: { h1: Record<CohortId, CohortCell & { hidden: number }>; h24: Record<CohortId, CohortCell & { hidden: number }> };
-  /** Adresy aktywne w 24 h przypisane do kohorty (liczności, bez adresów) */
+  /** Sumy z komórek widocznych (ostatnia godzina = 4 ostatnie zamknięte kubełki) */
+  totals: { h1: Record<CohortId, CohortTotal>; h24: Record<CohortId, CohortTotal> };
+  /** Adresy aktywne w 24 h przypisane do kohorty — w dół do dziesiątek (0 = mniej niż 10), z chwili klasyfikacji */
   members: Record<CohortId, number>;
   /** Klasyfikacja „poinformowanych”: test jednostronny markoutu 5 min, kontrola FDR (Benjamini–Hochberg), empiryczny Bayes */
   informed: { candidates: number; selected: number; fdrQ: number; minN: number; mu0Bp: number | null; tauBp: number | null; classifiedAt: number | null };
@@ -72,16 +94,17 @@ export const emptyCell = (): CohortCell => ({ buy: 0, sell: 0, takerBuy: 0, take
 
 /** Przepływ netto komórki (zmiana zapasów kohorty), USD */
 export const netOf = (c: CohortCell) => c.buy - c.sell;
-/** Agresywna delta komórki (CVD biorców), USD */
-export const takerNetOf = (c: CohortCell) => c.takerBuy - c.takerSell;
+/** Agresywna delta komórki (CVD biorców), USD; null = warstwa biorcy ukryta */
+export const takerNetOf = (c: CohortCell): number | null => (c.takerBuy === null || c.takerSell === null ? null : c.takerBuy - c.takerSell);
 
 /** Skumulowany przepływ netto kohorty po kubełkach (ukryte komórki = 0, oznaczone osobno) */
 export function cumulativeNet(flow: CohortFlow, id: CohortId, taker = false): { t: number; v: number; hidden: boolean }[] {
   let acc = 0;
   return flow.buckets.map((b) => {
     const c = b.cells[id];
-    if (c) acc += taker ? takerNetOf(c) : netOf(c);
-    return { t: b.t, v: acc, hidden: c === null };
+    const v = c ? (taker ? takerNetOf(c) : netOf(c)) : null;
+    if (v !== null) acc += v;
+    return { t: b.t, v: acc, hidden: v === null };
   });
 }
 
@@ -95,11 +118,21 @@ export function cohortFreshness(flow: CohortFlow, now: number): 'ready' | 'stale
 const fin = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const finOrNull = (v: unknown) => v === null || fin(v);
 const isCell = (c: unknown): c is CohortCell =>
-  !!c && typeof c === 'object' && fin((c as CohortCell).buy) && fin((c as CohortCell).sell) && fin((c as CohortCell).takerBuy) && fin((c as CohortCell).takerSell);
-const isTotal = (c: unknown) => isCell(c) && fin((c as { hidden?: unknown }).hidden);
+  !!c &&
+  typeof c === 'object' &&
+  fin((c as CohortCell).buy) &&
+  fin((c as CohortCell).sell) &&
+  finOrNull((c as CohortCell).takerBuy) &&
+  finOrNull((c as CohortCell).takerSell);
+const isTotal = (c: unknown) => {
+  const t = c as Partial<CohortTotal> | null;
+  return !!t && fin(t.buy) && fin(t.sell) && fin(t.takerBuy) && fin(t.takerSell) && fin(t.hidden) && fin(t.takerHidden);
+};
 const isRecordOf = (r: unknown, f: (x: unknown) => boolean) => !!r && typeof r === 'object' && COHORTS.every((k) => f((r as Record<string, unknown>)[k]));
-const isMarkout = (m: unknown) =>
-  !!m && typeof m === 'object' && fin((m as CohortMarkout).n) && fin((m as CohortMarkout).usd) && finOrNull((m as CohortMarkout).m1) && finOrNull((m as CohortMarkout).m5) && finOrNull((m as CohortMarkout).m60);
+const isMarkout = (m: unknown) => {
+  const o = m as Partial<CohortMarkout> | null;
+  return !!o && fin(o.n) && fin(o.usd) && fin(o.hours) && fin(o.hiddenHours) && finOrNull(o.m1) && finOrNull(o.m5) && finOrNull(o.m60);
+};
 
 export function isCohortFlow(x: unknown): x is CohortFlow {
   if (!x || typeof x !== 'object') return false;

@@ -1,25 +1,34 @@
-import { COHORTS, type CohortCell, type CohortFlow, type CohortId, type CohortMarkout, emptyCell } from '../../src/utils/cohorts.ts';
+import { COHORTS, type CohortCell, type CohortFlow, type CohortId, type CohortMarkout, type CohortTotal, ROUND_USD } from '../../src/utils/cohorts.ts';
 
 /**
  * Przepływ kohort z publicznej taśmy BTC Hyperliquid (pole `users` + strona agresora) — tylko strumień WebSocket, zero zapytań REST.
  *
  * Kohorty (rozłączne, w tej kolejności):
  *  1. market makerzy — ≥ 80% nominału jako maker i ≥ 1 mln USD nominału maker (z wygaszaniem, połowa po 7 dniach);
- *  2. poinformowani — markout biorcy po 5 min istotnie dodatni: test jednostronny na adresach z n ≥ 30, kontrola FDR
- *     Benjaminiego–Hochberga (q = 0.10) i dodatnia średnia a posteriori w empirycznym Bayesie (normalny–normalny);
+ *  2. poinformowani — markout biorcy po 5 min istotnie dodatni. Obserwacja testu = blok 5 min adresu (średnia ważona
+ *     nominałem jego transakcji biorcy w bloku), więc jedno zlecenie zamiatające wielu makerów to jedna obserwacja, nie
+ *     dziesiątki prawie identycznych. Test jednostronny na adresach z ≥ 30 blokami, kontrola FDR Benjaminiego–Hochberga
+ *     (q = 0.10) i dodatnia średnia a posteriori w empirycznym Bayesie (normalny–normalny);
  *  3. wieloryby — wg książki adresów (pozycja ≥ 1 mln USD albo konto z rankingu ≥ 10 mln USD);
  *  4. reszta.
  * Klasyfikacja pochodzi wyłącznie z markoutów już rozliczonych, a kohorta transakcji jest ustalana w chwili transakcji —
  * markouty publikowane per kohorta są więc poza próbą.
  *
- * Adresy, statystyki per adres i przynależność zostają na serwerze. Publikacja: agregaty z k-anonimowością
- * (komórka z < 5 uczestnikami albo z uczestnikiem > 50% obrotu jest ukrywana).
+ * Prywatność (suma kohort w kubełku to publiczny wolumen z taśmy, więc ukrycie jednej komórki nie wystarcza):
+ *  - publikowane są tylko kubełki zamknięte; widoczność ustalana raz, przy zamknięciu (bez różnicowania kolejnych publikacji);
+ *  - k-anonimowość z regułą dominacji + ukrywanie wtórne (`suppress`) osobno dla wszystkich fillów i dla warstwy biorcy;
+ *  - kwoty zaokrąglone do 10 tys. USD; liczności do dziesiątek; markouty tylko z w pełni rozliczonych godzin,
+ *    każda godzina z bramką k-anonimowości biorców.
+ * Adresy, statystyki per adres i przynależność zostają na serwerze.
  */
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
 const DAY = 24 * HOUR;
 const BUCKET = 15 * MIN;
+/** Kubełek finalizowany 30 s po zamknięciu (transakcje z WebSocket mogą przyjść z opóźnieniem) */
+const CLOSE_LAG = 30_000;
+const BLOCK = 5 * MIN;
 const HALF_LIFE = 7 * DAY;
 export const HORIZONS_MIN = [1, 5, 60] as const;
 const SETTLE_LAG = 2000;
@@ -29,6 +38,7 @@ const MM_MAKER_SHARE = 0.8;
 const MM_MIN_USD = 1e6;
 export const INFORMED_MIN_N = 30;
 export const FDR_Q = 0.1;
+const MAX_STATS = 100_000;
 
 // ——— statystyka ———
 
@@ -76,7 +86,7 @@ export function ebPrior(means: number[], se2: number[]): { mu0: number; tau2: nu
 
 export interface InformedRow {
   addr: string;
-  /** Efektywna liczba rozliczonych markoutów 5 min */
+  /** Efektywna liczba obserwacji (bloków 5 min, z wygaszaniem) */
   n: number;
   /** Średni markout, bp */
   mean: number;
@@ -102,6 +112,44 @@ export function selectInformed(rows: InformedRow[], o: { minN: number; q: number
   });
   return { selected, candidates: cand.length, mu0, tau2 };
 }
+
+// ——— prywatność ———
+
+function layerStats(maps: Map<string, number>[]): { k: number; maxShare: number; gross: number } {
+  const merged = new Map<string, number>();
+  for (const m of maps) for (const [a, v] of m) merged.set(a, (merged.get(a) ?? 0) + v);
+  let gross = 0;
+  let max = 0;
+  for (const v of merged.values()) {
+    gross += v;
+    if (v > max) max = v;
+  }
+  return { k: merged.size, maxShare: gross > 0 ? max / gross : 0, gross };
+}
+
+const unsafe = (s: { k: number; maxShare: number }) => s.k < K_MIN || s.maxShare > DOMINANCE;
+
+/**
+ * Widoczność komórek jednej warstwy (true = widoczna). Ukrywanie pierwotne: k < 5 albo uczestnik > 50% obrotu.
+ * Ukrywanie wtórne: suma komórek w kubełku jest publiczna, więc przy jednej ukrytej (albo gdy suma ukrytych wciąż łamie
+ * warunki) ukrywana jest kolejna aktywna komórka o najmniejszym obrocie — aż suma ukrytych spełnia k i dominację
+ * albo ukryte jest wszystko. Komórki bez aktywności (zera) niczego nie ujawniają i zostają widoczne.
+ */
+export function suppress(parts: Record<CohortId, Map<string, number>>): Record<CohortId, boolean> {
+  const st = Object.fromEntries(COHORTS.map((c) => [c, layerStats([parts[c]])])) as Record<CohortId, ReturnType<typeof layerStats>>;
+  const active = COHORTS.filter((c) => st[c].gross > 0);
+  const hidden = active.filter((c) => unsafe(st[c]));
+  if (hidden.length > 0) {
+    while (hidden.length < active.length && (hidden.length === 1 || unsafe(layerStats(hidden.map((c) => parts[c]))))) {
+      const next = active.filter((c) => !hidden.includes(c)).sort((a, b) => st[a].gross - st[b].gross)[0];
+      hidden.push(next);
+    }
+  }
+  return Object.fromEntries(COHORTS.map((c) => [c, !hidden.includes(c)])) as Record<CohortId, boolean>;
+}
+
+const roundUsd = (v: number) => Math.round(v / ROUND_USD) * ROUND_USD;
+const floorTens = (n: number) => Math.floor(n / 10) * 10;
 
 // ——— ceny ———
 
@@ -135,7 +183,7 @@ interface Stats {
   /** Nominał jako maker / biorca, USD (wygaszany) */
   mk: number;
   tk: number;
-  /** Markouty 5 min: liczba, suma, suma kwadratów (wygaszane) */
+  /** Bloki 5 min z markoutem biorcy: liczba, suma, suma kwadratów (wygaszane) */
   n: number;
   s: number;
   ss: number;
@@ -143,11 +191,21 @@ interface Stats {
   at: number;
 }
 
-interface Cell extends CohortCell {
-  /** Obrót uczestników (otwarty kubełek i stan serwera); po zamknięciu kubełka zastąpiony liczbami k i maxShare */
-  parts: Map<string, number> | null;
-  k: number;
-  maxShare: number;
+interface OpenCell {
+  buy: number;
+  sell: number;
+  takerBuy: number;
+  takerSell: number;
+  /** Obrót uczestników: wszystkie fille / tylko jako biorca */
+  all: Map<string, number>;
+  taker: Map<string, number>;
+}
+
+interface Bucket {
+  /** Kubełek otwarty (z obrotami uczestników) — null po finalizacji */
+  open: Record<CohortId, OpenCell> | null;
+  /** Wartości dokładne komórek widocznych po finalizacji (null = ukryta) */
+  pub: Record<CohortId, CohortCell | null> | null;
 }
 
 interface Pending {
@@ -164,6 +222,10 @@ interface OosAcc {
   wm: number[];
   n5: number;
   usd5: number;
+  /** Biorcy w tej godzinie (do bramki k-anonimowości) — null po finalizacji */
+  takers: Map<string, number> | null;
+  /** Wynik bramki po finalizacji godziny */
+  ok: boolean | null;
 }
 
 export interface CohortTrade {
@@ -174,13 +236,17 @@ export interface CohortTrade {
   time: number;
 }
 
-const newCell = (): Cell => ({ ...emptyCell(), parts: new Map(), k: 0, maxShare: 0 });
-const newCells = (): Record<CohortId, Cell> => ({ mm: newCell(), informed: newCell(), whale: newCell(), rest: newCell() });
+type Meta = { candidates: number; selected: number; mu0: number | null; tau2: number | null; at: number | null };
+const EMPTY_META: Meta = { candidates: 0, selected: 0, mu0: null, tau2: null, at: null };
+
+const newOpenCell = (): OpenCell => ({ buy: 0, sell: 0, takerBuy: 0, takerSell: 0, all: new Map(), taker: new Map() });
+const newOpen = (): Record<CohortId, OpenCell> => ({ mm: newOpenCell(), informed: newOpenCell(), whale: newOpenCell(), rest: newOpenCell() });
 const newOos = (): Record<CohortId, OosAcc> => {
   const o = {} as Record<CohortId, OosAcc>;
-  for (const c of COHORTS) o[c] = { w: [0, 0, 0], wm: [0, 0, 0], n5: 0, usd5: 0 };
+  for (const c of COHORTS) o[c] = { w: [0, 0, 0], wm: [0, 0, 0], n5: 0, usd5: 0, takers: new Map(), ok: null };
   return o;
 };
+const zeroCounts = (): Record<CohortId, number> => ({ mm: 0, informed: 0, whale: 0, rest: 0 });
 
 function decay(st: Stats, now: number): void {
   if (now <= st.at) return;
@@ -193,59 +259,35 @@ function decay(st: Stats, now: number): void {
   st.at = now;
 }
 
-function compress(c: Cell): void {
-  if (!c.parts) return;
-  let total = 0;
-  let max = 0;
-  for (const v of c.parts.values()) {
-    total += v;
-    if (v > max) max = v;
-  }
-  c.k = c.parts.size;
-  c.maxShare = total > 0 ? max / total : 0;
-  c.parts = null;
-}
-
-function visible(c: Cell): CohortCell | null {
-  if (c.buy + c.sell <= 0) return emptyCell();
-  if (c.parts) compressCopy(c);
-  return c.k >= K_MIN && c.maxShare <= DOMINANCE ? { buy: c.buy, sell: c.sell, takerBuy: c.takerBuy, takerSell: c.takerSell } : null;
-}
-
-/** k i udział największego uczestnika dla otwartego kubełka (bez porzucania obrotów uczestników). */
-function compressCopy(c: Cell): void {
-  let total = 0;
-  let max = 0;
-  for (const v of c.parts!.values()) {
-    total += v;
-    if (v > max) max = v;
-  }
-  c.k = c.parts!.size;
-  c.maxShare = total > 0 ? max / total : 0;
-}
-
 export class CohortEngine {
   private readonly coin: string;
   private readonly isWhale: (addr: string) => boolean;
+  private readonly maxStats: number;
   private stats = new Map<string, Stats>();
   private lastActive = new Map<string, number>();
   private mm = new Set<string>();
   private informed = new Set<string>();
-  private meta: { candidates: number; selected: number; mu0: number | null; tau2: number | null; at: number | null } = {
-    candidates: 0,
-    selected: 0,
-    mu0: null,
-    tau2: null,
-    at: null,
-  };
-  private buckets = new Map<number, Record<CohortId, Cell>>();
+  private meta: Meta = { ...EMPTY_META };
+  private members: Record<CohortId, number> = zeroCounts();
+  private buckets = new Map<number, Bucket>();
   private readonly prices = new SecondPrices();
   private queues: Pending[][] = [[], [], []];
   private oos = new Map<number, Record<CohortId, OosAcc>>();
+  private blocks = new Map<string, { blk: number; w: number; wm: number }>();
 
-  constructor(o: { coin: string; isWhale: (addr: string) => boolean }) {
+  constructor(o: { coin: string; isWhale: (addr: string) => boolean; maxStats?: number }) {
     this.coin = o.coin;
     this.isWhale = o.isWhale;
+    this.maxStats = o.maxStats ?? MAX_STATS;
+  }
+
+  get statsSize(): number {
+    return this.stats.size;
+  }
+
+  /** Efektywna liczba obserwacji testu „poinformowanych” (bloki 5 min) dla adresu — diagnostyka/testy. */
+  informedObservations(addr: string): number {
+    return this.stats.get(addr)?.n ?? 0;
   }
 
   cohortOf(addr: string): CohortId {
@@ -276,25 +318,29 @@ export class CohortEngine {
     this.prices.record(tr.px, tr.time);
     const cb = this.cohortOf(buyer);
     const cs = this.cohortOf(seller);
-    const bt = Math.floor(tr.time / BUCKET) * BUCKET;
-    let cells = this.buckets.get(bt);
-    if (!cells) {
-      cells = newCells();
-      this.buckets.set(bt, cells);
-    }
-    const add = (c: Cell, addr: string) => {
-      if (c.parts) c.parts.set(addr, (c.parts.get(addr) ?? 0) + usd);
-    };
-    cells[cb].buy += usd;
-    add(cells[cb], buyer);
-    cells[cs].sell += usd;
-    add(cells[cs], seller);
     const takerIsBuyer = tr.side === 'B';
-    if (takerIsBuyer) cells[cb].takerBuy += usd;
-    else cells[cs].takerSell += usd;
-
     const taker = takerIsBuyer ? buyer : seller;
     const maker = takerIsBuyer ? seller : buyer;
+
+    const bt = Math.floor(tr.time / BUCKET) * BUCKET;
+    let b = this.buckets.get(bt);
+    if (!b) {
+      b = { open: newOpen(), pub: null };
+      this.buckets.set(bt, b);
+    }
+    // Transakcja spóźniona do kubełka już sfinalizowanego nie zmienia opublikowanych wartości
+    if (b.open) {
+      const add = (m: Map<string, number>, a: string) => m.set(a, (m.get(a) ?? 0) + usd);
+      b.open[cb].buy += usd;
+      add(b.open[cb].all, buyer);
+      b.open[cs].sell += usd;
+      add(b.open[cs].all, seller);
+      const ct = takerIsBuyer ? cb : cs;
+      if (takerIsBuyer) b.open[ct].takerBuy += usd;
+      else b.open[ct].takerSell += usd;
+      add(b.open[ct].taker, taker);
+    }
+
     this.stat(taker, tr.time).tk += usd;
     this.stat(maker, tr.time).mk += usd;
     this.lastActive.set(buyer, tr.time);
@@ -304,7 +350,7 @@ export class CohortEngine {
     for (const q of this.queues) q.push(p);
   }
 
-  /** Rozlicza markouty, których horyzont minął (cena z sekundy t + h). */
+  /** Rozlicza markouty, których horyzont minął (cena z sekundy t + h); bloki 5 min adresów → obserwacje testu. */
   settle(now: number): void {
     HORIZONS_MIN.forEach((h, i) => {
       const q = this.queues[i];
@@ -321,27 +367,94 @@ export class CohortEngine {
           this.oos.set(hourKey, acc);
         }
         const a = acc[p.cohort];
+        if (a.ok !== null) continue; // godzina już sfinalizowana
         a.w[i] += p.usd;
         a.wm[i] += p.usd * m;
         if (h === 5) {
           a.n5++;
           a.usd5 += p.usd;
-          const st = this.stat(p.addr, now);
-          st.n += 1;
-          st.s += m;
-          st.ss += m * m;
+          a.takers?.set(p.addr, (a.takers.get(p.addr) ?? 0) + p.usd);
+          this.addToBlock(p, m, now);
         }
       }
     });
+    for (const [addr, blk] of this.blocks) {
+      if ((blk.blk + 1) * BLOCK + 5 * MIN + SETTLE_LAG + 1000 <= now) {
+        this.addObservation(addr, blk, now);
+        this.blocks.delete(addr);
+      }
+    }
   }
 
-  /** Klasyfikacja kohort z danych dotychczasowych (wywoływana co kilka minut) + czyszczenie nieaktywnych adresów. */
+  private addToBlock(p: Pending, m: number, now: number): void {
+    const blk = Math.floor(p.t / BLOCK);
+    let cur = this.blocks.get(p.addr);
+    if (cur && cur.blk !== blk) {
+      this.addObservation(p.addr, cur, now);
+      cur = undefined;
+    }
+    if (!cur) {
+      cur = { blk, w: 0, wm: 0 };
+      this.blocks.set(p.addr, cur);
+    }
+    cur.w += p.usd;
+    cur.wm += p.usd * m;
+  }
+
+  private addObservation(addr: string, blk: { w: number; wm: number }, now: number): void {
+    if (!(blk.w > 0)) return;
+    const m = blk.wm / blk.w;
+    const st = this.stat(addr, now);
+    st.n += 1;
+    st.s += m;
+    st.ss += m * m;
+  }
+
+  /** Finalizacja zamkniętych kubełków i rozliczonych godzin, usuwanie danych starszych niż 24 h. */
+  housekeep(now: number): void {
+    for (const [t, b] of this.buckets) {
+      if (t + BUCKET <= now - DAY) {
+        this.buckets.delete(t);
+        continue;
+      }
+      if (b.open && t + BUCKET + CLOSE_LAG <= now) {
+        const o = b.open;
+        const visAll = suppress(Object.fromEntries(COHORTS.map((c) => [c, o[c].all])) as Record<CohortId, Map<string, number>>);
+        const visTaker = suppress(Object.fromEntries(COHORTS.map((c) => [c, o[c].taker])) as Record<CohortId, Map<string, number>>);
+        b.pub = Object.fromEntries(
+          COHORTS.map((c) => [
+            c,
+            visAll[c]
+              ? { buy: o[c].buy, sell: o[c].sell, takerBuy: visTaker[c] ? o[c].takerBuy : null, takerSell: visTaker[c] ? o[c].takerSell : null }
+              : null,
+          ])
+        ) as Record<CohortId, CohortCell | null>;
+        b.open = null;
+      }
+    }
+    for (const [h, acc] of this.oos) {
+      if ((h + 1) * HOUR <= now - DAY) {
+        this.oos.delete(h);
+        continue;
+      }
+      if ((h + 1) * HOUR + 60 * MIN + 10_000 > now) continue;
+      for (const c of COHORTS) {
+        const a = acc[c];
+        if (a.ok !== null) continue;
+        a.ok = a.n5 > 0 && !unsafe(layerStats([a.takers ?? new Map()]));
+        a.takers = null;
+      }
+    }
+  }
+
+  /** Klasyfikacja kohort z danych dotychczasowych (co kilka minut), liczności kohort, czyszczenie i limit statystyk. */
   classify(now: number): void {
     const mm = new Set<string>();
     const rows: InformedRow[] = [];
     for (const [a, st] of this.stats) {
       decay(st, now);
-      if (st.mk + st.tk < 1 && st.n < 0.5 && now - (this.lastActive.get(a) ?? 0) > 30 * DAY) {
+      const idle = now - (this.lastActive.get(a) ?? st.at);
+      if ((idle > 7 * DAY && st.n < 1 && st.mk + st.tk < 1e4) || idle > 30 * DAY) {
         this.stats.delete(a);
         continue;
       }
@@ -354,71 +467,100 @@ export class CohortEngine {
         rows.push({ addr: a, n: st.n, mean, variance: Math.max(0, st.ss / st.n - mean * mean) });
       }
     }
-    const inf = selectInformed(rows, { minN: INFORMED_MIN_N, q: FDR_Q });
+    if (this.stats.size > this.maxStats) {
+      const byAge = [...this.stats.keys()].sort((x, y) => (this.lastActive.get(x) ?? 0) - (this.lastActive.get(y) ?? 0));
+      for (const a of byAge.slice(0, this.stats.size - this.maxStats)) this.stats.delete(a);
+    }
+    for (const [a, t] of this.lastActive) if (now - t > 30 * DAY) this.lastActive.delete(a);
+
+    const inf = selectInformed(
+      rows.filter((r) => this.stats.has(r.addr)),
+      { minN: INFORMED_MIN_N, q: FDR_Q }
+    );
     this.mm = mm;
     this.informed = inf.selected;
     this.meta = { candidates: inf.candidates, selected: inf.selected.size, mu0: inf.mu0, tau2: inf.tau2, at: now };
-    for (const [a, t] of this.lastActive) if (now - t > 30 * DAY) this.lastActive.delete(a);
+    const members = zeroCounts();
+    for (const [a, t] of this.lastActive) if (t > now - DAY) members[this.cohortOf(a)]++;
+    this.members = members;
   }
 
   build(now: number, since: number): CohortFlow {
     const sinceB = Math.floor(since / BUCKET) * BUCKET;
-    for (const [t, cells] of this.buckets) {
-      if (t + BUCKET <= now - DAY) this.buckets.delete(t);
-      else if (t + BUCKET <= now) for (const c of COHORTS) compress(cells[c]);
-    }
-    for (const k of this.oos.keys()) if ((k + 1) * HOUR <= now - DAY) this.oos.delete(k);
-
-    const h1From = Math.floor((now - HOUR) / BUCKET) * BUCKET;
-    const total = () => ({ ...emptyCell(), hidden: 0 });
+    const h1From = Math.floor(now / BUCKET) * BUCKET - HOUR;
+    const total = (): CohortTotal => ({ buy: 0, sell: 0, takerBuy: 0, takerSell: 0, hidden: 0, takerHidden: 0 });
     const h1 = { mm: total(), informed: total(), whale: total(), rest: total() };
     const h24 = { mm: total(), informed: total(), whale: total(), rest: total() };
+    const rounded = (c: CohortCell | null): CohortCell | null =>
+      c && {
+        buy: roundUsd(c.buy),
+        sell: roundUsd(c.sell),
+        takerBuy: c.takerBuy === null ? null : roundUsd(c.takerBuy),
+        takerSell: c.takerSell === null ? null : roundUsd(c.takerSell),
+      };
     const buckets = [...this.buckets.entries()]
-      .filter(([t]) => t >= sinceB && t > now - DAY && t <= now)
+      .filter(([t, b]) => b.pub !== null && t >= sinceB && t > now - DAY)
       .sort((a, b) => a[0] - b[0])
-      .map(([t, cells]) => {
-        const out = {} as Record<CohortId, CohortCell | null>;
+      .map(([t, b]) => {
         for (const c of COHORTS) {
-          const v = visible(cells[c]);
-          out[c] = v;
-          for (const [tot, inWin] of [
-            [h24, true],
-            [h1, t >= h1From],
-          ] as const) {
-            if (!inWin) continue;
-            if (v) {
-              tot[c].buy += v.buy;
-              tot[c].sell += v.sell;
+          const v = b.pub![c];
+          for (const tot of t >= h1From ? [h24, h1] : [h24]) {
+            if (!v) {
+              tot[c].hidden++;
+              continue;
+            }
+            tot[c].buy += v.buy;
+            tot[c].sell += v.sell;
+            if (v.takerBuy === null || v.takerSell === null) tot[c].takerHidden++;
+            else {
               tot[c].takerBuy += v.takerBuy;
               tot[c].takerSell += v.takerSell;
-            } else tot[c].hidden++;
+            }
           }
         }
-        return { t, cells: out };
+        return { t, cells: Object.fromEntries(COHORTS.map((c) => [c, rounded(b.pub![c])])) as Record<CohortId, CohortCell | null> };
       });
-
-    const members = { mm: 0, informed: 0, whale: 0, rest: 0 };
-    for (const [a, t] of this.lastActive) if (t > now - DAY) members[this.cohortOf(a)]++;
-
-    const oosSum = newOos();
-    for (const [k, acc] of this.oos) {
-      if ((k + 1) * HOUR <= now - DAY) continue;
+    const roundTotals = (r: Record<CohortId, CohortTotal>) => {
       for (const c of COHORTS) {
-        for (let i = 0; i < 3; i++) {
-          oosSum[c].w[i] += acc[c].w[i];
-          oosSum[c].wm[i] += acc[c].wm[i];
-        }
-        oosSum[c].n5 += acc[c].n5;
-        oosSum[c].usd5 += acc[c].usd5;
+        r[c].buy = roundUsd(r[c].buy);
+        r[c].sell = roundUsd(r[c].sell);
+        r[c].takerBuy = roundUsd(r[c].takerBuy);
+        r[c].takerSell = roundUsd(r[c].takerSell);
       }
-    }
+      return r;
+    };
+
     const oos = {} as Record<CohortId, CohortMarkout>;
     for (const c of COHORTS) {
-      const a = oosSum[c];
-      const m = (i: number) => (a.w[i] > 0 ? a.wm[i] / a.w[i] : null);
-      oos[c] = { n: a.n5, usd: a.usd5, m1: m(0), m5: m(1), m60: m(2) };
+      const sum = { w: [0, 0, 0], wm: [0, 0, 0], n5: 0, usd5: 0, hours: 0, hidden: 0 };
+      for (const [h, acc] of this.oos) {
+        const a = acc[c];
+        if (a.ok === null || (h + 1) * HOUR <= now - DAY || a.n5 === 0) continue;
+        if (!a.ok) {
+          sum.hidden++;
+          continue;
+        }
+        sum.hours++;
+        for (let i = 0; i < 3; i++) {
+          sum.w[i] += a.w[i];
+          sum.wm[i] += a.wm[i];
+        }
+        sum.n5 += a.n5;
+        sum.usd5 += a.usd5;
+      }
+      const m = (i: number) => (sum.w[i] > 0 ? Math.round((sum.wm[i] / sum.w[i]) * 10) / 10 : null);
+      oos[c] = {
+        n: sum.n5 > 0 ? Math.max(10, Math.round(sum.n5 / 10) * 10) : 0,
+        usd: roundUsd(sum.usd5),
+        hours: sum.hours,
+        hiddenHours: sum.hidden,
+        m1: m(0),
+        m5: m(1),
+        m60: m(2),
+      };
     }
 
+    const r1 = (v: number | null) => (v === null ? null : Math.round(v * 10) / 10);
     return {
       v: 1,
       coin: this.coin,
@@ -426,15 +568,15 @@ export class CohortEngine {
       since,
       bucketMin: BUCKET / MIN,
       buckets,
-      totals: { h1, h24 },
-      members,
+      totals: { h1: roundTotals(h1), h24: roundTotals(h24) },
+      members: Object.fromEntries(COHORTS.map((c) => [c, floorTens(this.members[c])])) as Record<CohortId, number>,
       informed: {
-        candidates: this.meta.candidates,
-        selected: this.meta.selected,
+        candidates: floorTens(this.meta.candidates),
+        selected: floorTens(this.meta.selected),
         fdrQ: FDR_Q,
         minN: INFORMED_MIN_N,
-        mu0Bp: this.meta.mu0,
-        tauBp: this.meta.tau2 === null ? null : Math.sqrt(this.meta.tau2),
+        mu0Bp: r1(this.meta.mu0),
+        tauBp: this.meta.tau2 === null ? null : r1(Math.sqrt(this.meta.tau2)),
         classifiedAt: this.meta.at,
       },
       oos,
@@ -445,64 +587,96 @@ export class CohortEngine {
 
   /** Stan serwera (zawiera adresy — tylko na dysku serwera, nigdy w publikacji). Markouty w toku nie są zapisywane. */
   toJSON(): unknown {
-    const cellJson = (c: Cell) => ({ buy: c.buy, sell: c.sell, takerBuy: c.takerBuy, takerSell: c.takerSell, k: c.k, maxShare: c.maxShare, parts: c.parts ? [...c.parts] : null });
+    const cellJson = (c: OpenCell) => ({ buy: c.buy, sell: c.sell, takerBuy: c.takerBuy, takerSell: c.takerSell, all: [...c.all], taker: [...c.taker] });
     return {
-      v: 1,
+      v: 2,
       stats: [...this.stats],
       lastActive: [...this.lastActive],
       mm: [...this.mm],
       informed: [...this.informed],
       meta: this.meta,
-      buckets: [...this.buckets].map(([t, cells]) => [t, Object.fromEntries(COHORTS.map((c) => [c, cellJson(cells[c])]))]),
-      oos: [...this.oos],
+      members: this.members,
+      buckets: [...this.buckets].map(([t, b]) => [t, { open: b.open ? Object.fromEntries(COHORTS.map((c) => [c, cellJson(b.open![c])])) : null, pub: b.pub }]),
+      oos: [...this.oos].map(([h, acc]) => [h, Object.fromEntries(COHORTS.map((c) => [c, { ...acc[c], takers: acc[c].takers ? [...acc[c].takers!] : null }]))]),
     };
   }
 
-  static fromJSON(j: unknown, o: { coin: string; isWhale: (addr: string) => boolean }): CohortEngine {
+  static fromJSON(j: unknown, o: { coin: string; isWhale: (addr: string) => boolean; maxStats?: number }): CohortEngine {
     const e = new CohortEngine(o);
     const x = j as Record<string, unknown> | null;
-    if (!x || x.v !== 1) return e;
+    if (!x || x.v !== 2) return e;
     const fin = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+    const finOrNull = (v: unknown) => v === null || fin(v);
+    const pairs = (v: unknown): [string, number][] | null =>
+      Array.isArray(v) && v.every((p) => Array.isArray(p) && typeof p[0] === 'string' && fin(p[1])) ? (v as [string, number][]) : null;
+
     if (Array.isArray(x.stats)) {
       for (const row of x.stats) {
-        const [a, st] = (row ?? []) as [unknown, Partial<Stats>];
+        const [a, st] = (Array.isArray(row) ? row : []) as [unknown, Partial<Stats>];
         if (typeof a === 'string' && st && fin(st.mk) && fin(st.tk) && fin(st.n) && fin(st.s) && fin(st.ss) && fin(st.at)) e.stats.set(a, st as Stats);
       }
     }
-    if (Array.isArray(x.lastActive)) for (const row of x.lastActive) if (Array.isArray(row) && typeof row[0] === 'string' && fin(row[1])) e.lastActive.set(row[0], row[1]);
+    for (const [a, t] of pairs(x.lastActive) ?? []) e.lastActive.set(a, t);
     if (Array.isArray(x.mm)) e.mm = new Set(x.mm.filter((a): a is string => typeof a === 'string'));
     if (Array.isArray(x.informed)) e.informed = new Set(x.informed.filter((a): a is string => typeof a === 'string'));
-    const meta = x.meta as CohortEngine['meta'] | undefined;
-    if (meta && fin(meta.candidates) && fin(meta.selected)) e.meta = meta;
+    const meta = x.meta as Partial<Meta> | undefined;
+    if (meta && fin(meta.candidates) && fin(meta.selected) && finOrNull(meta.mu0) && finOrNull(meta.tau2) && finOrNull(meta.at)) e.meta = meta as Meta;
+    const members = x.members as Record<string, unknown> | undefined;
+    if (members && COHORTS.every((c) => fin(members[c]))) e.members = members as Record<CohortId, number>;
+
+    const isPubCell = (c: unknown) =>
+      c === null || (!!c && fin((c as CohortCell).buy) && fin((c as CohortCell).sell) && finOrNull((c as CohortCell).takerBuy) && finOrNull((c as CohortCell).takerSell));
     if (Array.isArray(x.buckets)) {
       for (const row of x.buckets) {
         if (!Array.isArray(row) || !fin(row[0]) || !row[1] || typeof row[1] !== 'object') continue;
-        const cells = newCells();
+        const raw = row[1] as { open?: Record<string, Record<string, unknown>> | null; pub?: Record<string, unknown> | null };
+        if (raw.pub && COHORTS.every((c) => isPubCell(raw.pub![c]))) {
+          e.buckets.set(row[0], { open: null, pub: raw.pub as Record<CohortId, CohortCell | null> });
+          continue;
+        }
+        if (!raw.open) continue;
+        const open = newOpen();
         let ok = true;
         for (const c of COHORTS) {
-          const v = (row[1] as Record<string, Record<string, unknown>>)[c];
-          if (!v || !fin(v.buy) || !fin(v.sell) || !fin(v.takerBuy) || !fin(v.takerSell) || !fin(v.k) || !fin(v.maxShare)) {
+          const v = raw.open[c];
+          const all = v ? pairs(v.all) : null;
+          const taker = v ? pairs(v.taker) : null;
+          if (!v || !fin(v.buy) || !fin(v.sell) || !fin(v.takerBuy) || !fin(v.takerSell) || !all || !taker) {
             ok = false;
             break;
           }
-          const parts = Array.isArray(v.parts) ? new Map((v.parts as [string, number][]).filter((p) => typeof p[0] === 'string' && fin(p[1]))) : null;
-          cells[c] = { buy: v.buy, sell: v.sell, takerBuy: v.takerBuy, takerSell: v.takerSell, k: v.k, maxShare: v.maxShare, parts };
+          open[c] = { buy: v.buy, sell: v.sell, takerBuy: v.takerBuy, takerSell: v.takerSell, all: new Map(all), taker: new Map(taker) };
         }
-        if (ok) e.buckets.set(row[0], cells);
+        if (ok) e.buckets.set(row[0], { open, pub: null });
       }
     }
     if (Array.isArray(x.oos)) {
       for (const row of x.oos) {
-        if (!Array.isArray(row) || !fin(row[0]) || !row[1]) continue;
+        if (!Array.isArray(row) || !fin(row[0]) || !row[1] || typeof row[1] !== 'object') continue;
         const acc = newOos();
         let ok = true;
         for (const c of COHORTS) {
-          const v = (row[1] as Record<string, OosAcc>)[c];
-          if (!v || !Array.isArray(v.w) || !Array.isArray(v.wm) || v.w.length !== 3 || v.wm.length !== 3 || !fin(v.n5) || !fin(v.usd5)) {
+          const v = (row[1] as Record<string, Record<string, unknown>>)[c];
+          const w = v?.w;
+          const wm = v?.wm;
+          const takers = v?.takers === null ? null : pairs(v?.takers);
+          if (
+            !v ||
+            !Array.isArray(w) ||
+            !Array.isArray(wm) ||
+            w.length !== 3 ||
+            wm.length !== 3 ||
+            !w.every(fin) ||
+            !wm.every(fin) ||
+            !fin(v.n5) ||
+            !fin(v.usd5) ||
+            (v.takers !== null && !takers) ||
+            !(v.ok === null || typeof v.ok === 'boolean')
+          ) {
             ok = false;
             break;
           }
-          acc[c] = { w: v.w.map(Number), wm: v.wm.map(Number), n5: v.n5, usd5: v.usd5 };
+          acc[c] = { w: w as number[], wm: wm as number[], n5: v.n5, usd5: v.usd5, takers: takers ? new Map(takers) : null, ok: v.ok as boolean | null };
         }
         if (ok) e.oos.set(row[0], acc);
       }

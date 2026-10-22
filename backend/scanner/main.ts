@@ -145,11 +145,19 @@ const DATA_README = [
 async function gitPublishTick(): Promise<void> {
   if (!cfg.git) return;
   const files: [string, string][] = [];
-  for (const key of [`liq-map/${cfg.coin}.json`, `liq-tape/${cfg.coin}.json`, `cohorts/${cfg.coin}.json`, 'status.json']) {
+  for (const key of [`liq-map/${cfg.coin}.json`, 'status.json']) {
     try {
       files.push([key, readFileSync(join(cfg.outDir, key), 'utf8')]);
     } catch {
       return; // jeszcze nic nie opublikowano lokalnie
+    }
+  }
+  // Pliki opcjonalne (np. kohorty po błędzie budowy) nie wstrzymują publikacji mapy
+  for (const key of [`liq-tape/${cfg.coin}.json`, `cohorts/${cfg.coin}.json`]) {
+    try {
+      files.push([key, readFileSync(join(cfg.outDir, key), 'utf8')]);
+    } catch {
+      // brak pliku — pomijam
     }
   }
   files.push(['README.md', DATA_README]);
@@ -205,13 +213,22 @@ const timers = [
     );
   }), cfg.publishEveryS * 1000),
   setInterval(guarded('czyszczenie', () => book.prune(Date.now())), 10 * 60_000),
-  setInterval(guarded('markouty kohort', () => cohorts.settle(Date.now())), 5_000),
+  setInterval(
+    guarded('markouty kohort', () => {
+      const now = Date.now();
+      cohorts.settle(now);
+      cohorts.housekeep(now);
+    }),
+    5_000
+  ),
   setInterval(guarded('klasyfikacja kohort', () => cohorts.classify(Date.now())), 10 * 60_000),
   setInterval(guarded('zapis stanu', saveState), 5 * 60_000),
   setInterval(guarded('zasiew', seedFromLeaderboard), 6 * 60 * 60_000),
   ...(cfg.git ? [setInterval(guarded('repo danych', gitPublishTick), cfg.git.everyS * 1000)] : []),
 ];
 setTimeout(guarded('zasiew', seedFromLeaderboard), 5_000);
+// Klasyfikacja kohort wkrótce po starcie (liczności i zbiory po restarcie bez czekania 10 min)
+setTimeout(guarded('klasyfikacja kohort', () => cohorts.classify(Date.now())), 30_000);
 
 function shutdown(): void {
   if (stopping) return;

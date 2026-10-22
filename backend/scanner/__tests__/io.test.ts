@@ -170,13 +170,14 @@ describe('Scanner — cykl skanu i publikacji', () => {
     const book = new AddressBook();
     const cohorts = new CohortEngine({ coin: 'BTC', isWhale: (a) => book.isWhale(a) });
     for (let i = 0; i < 6; i++) cohorts.onTrade({ users: [`0x${'a'.repeat(39)}${i}`, `0x${'b'.repeat(39)}${i}`], side: 'B', px: 83_000, sz: 1, time: 100_000 + i });
+    // publikowane są tylko kubełki zamknięte (15 min) — publikacja po zamknięciu pierwszego
     const scanner = new Scanner({
       coin: 'BTC',
       book,
       rest: new HlRest(new WeightLimiter(240), (async () => new Response('null')) as unknown as typeof fetch, () => 0, async () => {}),
       outDir: out,
       r2: null,
-      now: () => 120_000,
+      now: () => 16 * 60_000,
       tapeSince: 60_000,
       cohorts,
     });
@@ -187,7 +188,7 @@ describe('Scanner — cykl skanu i publikacji', () => {
     const flow = JSON.parse(txt);
     expect(isCohortFlow(flow)).toBe(true);
     expect(flow.since).toBe(60_000);
-    expect(flow.totals.h24.rest.buy).toBe(6 * 83_000);
+    expect(flow.totals.h24.rest.buy).toBe(500_000); // 6 × 83 000 zaokrąglone do 10 tys.
   });
 
   it('likwidacja śledzonej pozycji: kandydat po zniknięciu pozycji przy cenie likwidacji, potwierdzenie fillem, taśma bez adresów', async () => {
@@ -280,6 +281,20 @@ describe('HlStream — odporność połączenia', () => {
     s.stop();
     vi.useRealTimers();
     expect(delays).toEqual([1000, 2000, 4000]);
+  });
+
+  it('transakcje powtórzone po ponownym połączeniu (ten sam czas i tid) są pomijane', () => {
+    FakeWs.instances = [];
+    const got: number[] = [];
+    const s = new HlStream('BTC', (ts) => got.push(...ts.map((t) => t.tid as number)), () => {}, FakeWs as unknown as typeof WebSocket);
+    s.start();
+    const ws = FakeWs.instances[0];
+    ws.open();
+    const msg = (tids: number[]) => ({ data: JSON.stringify({ channel: 'trades', data: tids.map((tid) => ({ coin: 'BTC', side: 'B', px: '1', sz: '1', time: 1000, tid })) }) });
+    ws.onmessage?.(msg([1, 2]));
+    ws.onmessage?.(msg([2, 3])); // np. migawka po ponownej subskrypcji
+    s.stop();
+    expect(got).toEqual([1, 2, 3]);
   });
 
   it('strażnik: brak wiadomości przez 90 s zamyka połączenie (zawieszony socket nie udaje „ok”)', () => {

@@ -149,10 +149,20 @@ export class Scanner {
       liq24h: tape.totals.h24.n,
       liqPending: this.confirmer.pending,
     };
+    let cohortsJson: string | null = null;
+    if (this.d.cohorts) {
+      // Błąd kohort nie może wstrzymać publikacji mapy i taśmy
+      try {
+        this.d.cohorts.housekeep(asOf);
+        cohortsJson = JSON.stringify(this.d.cohorts.build(asOf, this.since));
+      } catch (e) {
+        console.error(`[skaner] błąd budowy przepływu kohort: ${String(e)}`);
+      }
+    }
     const files: [string, string][] = [
       [`liq-map/${this.d.coin}.json`, JSON.stringify(map)],
       [`liq-tape/${this.d.coin}.json`, JSON.stringify(tape)],
-      ...(this.d.cohorts ? ([[`cohorts/${this.d.coin}.json`, JSON.stringify(this.d.cohorts.build(asOf, this.since))]] as [string, string][]) : []),
+      ...(cohortsJson ? ([[`cohorts/${this.d.coin}.json`, cohortsJson]] as [string, string][]) : []),
       ['status.json', JSON.stringify(status)],
     ];
     for (const [key, body] of files) writeAtomic(join(this.d.outDir, key), body);

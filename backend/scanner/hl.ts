@@ -71,6 +71,8 @@ export interface HlTrade {
   px: string;
   sz: string;
   time: number;
+  /** Identyfikator transakcji (unikalny razem z czasem i rynkiem) */
+  tid?: number;
   users?: [string, string];
 }
 
@@ -84,6 +86,7 @@ export interface HlCtx {
 /**
  * WebSocket `trades` (z adresami kupującego i sprzedającego) i `activeAssetCtx` (mark, OI, obrót) dla jednego rynku.
  * Ping co 50 s. Strażnik: brak jakiejkolwiek wiadomości przez 90 s = zawieszone połączenie → zamknięcie i ponowne łączenie.
+ * Transakcje deduplikowane po (czas, tid) — powtórzenia po ponownej subskrypcji nie liczą się podwójnie.
  * Przerwa przed ponownym łączeniem rośnie 1 s → 60 s i wraca do 1 s dopiero po 60 s stabilnego połączenia
  * (połączenie zrywane zaraz po otwarciu nie zasypuje serwera próbami — IP jest współdzielone z innymi usługami).
  */
@@ -97,6 +100,9 @@ export class HlStream {
   private backoff = 1000;
   private lastMsgAt = 0;
   private stopped = false;
+  /** Ostatnio widziane transakcje (czas:tid) — po ponownej subskrypcji API może powtórzyć niedawne transakcje */
+  private seen = new Set<string>();
+  private seenOrder: string[] = [];
   connected = false;
 
   constructor(coin: string, onTrades: (t: HlTrade[]) => void, onCtx: (c: HlCtx) => void, wsCtor: typeof WebSocket = WebSocket) {
@@ -152,7 +158,18 @@ export class HlStream {
       } catch {
         return;
       }
-      if (msg.channel === 'trades' && Array.isArray(msg.data)) this.onTrades(msg.data as HlTrade[]);
+      if (msg.channel === 'trades' && Array.isArray(msg.data)) {
+        const fresh = (msg.data as HlTrade[]).filter((t) => {
+          if (t?.tid === undefined) return true;
+          const key = `${t.time}:${t.tid}`;
+          if (this.seen.has(key)) return false;
+          this.seen.add(key);
+          this.seenOrder.push(key);
+          if (this.seenOrder.length > 20_000) for (const k of this.seenOrder.splice(0, 5_000)) this.seen.delete(k);
+          return true;
+        });
+        if (fresh.length > 0) this.onTrades(fresh);
+      }
       else if (msg.channel === 'activeAssetCtx') {
         const ctx = (msg.data as { ctx?: Record<string, unknown> } | undefined)?.ctx;
         const c = { markPx: Number(ctx?.markPx), oiBtc: Number(ctx?.openInterest), dayNtlVlm: Number(ctx?.dayNtlVlm) };
