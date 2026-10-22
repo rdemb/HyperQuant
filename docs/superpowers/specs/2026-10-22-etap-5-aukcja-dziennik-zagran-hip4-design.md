@@ -108,6 +108,16 @@ osobno. Weryfikator przelicza wynik z ceny i progu i sprawdza ceny ze świecami 
 - Ograniczenie próby: API daje ~208 dni świec 1h, więc część reguł (reguła 80%, słabe ekstrema) ma n ≈ 20 i pokazuje „—”.
   Kierunek: archiwizacja świec 1h w repo danych przez skaner, żeby n rosło z czasem.
 
+## Decyzje z realizacji (C2)
+
+- Rekord „model vs rynek” powstaje w połowie slotu, po prognozach głównych — dostaje osobne pokwitowanie (`<slot>-m.ots`),
+  bo dopisanie do partii głównej zmieniłoby hash jej ostatniej prognozy (pokwitowania są niezmienne). Weryfikator sprawdza
+  pokwitowania per partia slotu.
+- p modelu liczone od chwili wydania (po pobraniu notowania i ceny), horyzont dokładny co do sekundy, 4000 ścieżek.
+- Rozstrzygnięcie ze świecy 1m (cena transakcji), rynek rozlicza po mark: wyniki z |c1 − K| ≤ 0,02% K oznaczone
+  i pomijane w ocenie; niepłynne notowania też pomijane — obie liczby jawne.
+- Najwyżej 2 próby pobrania rynku na slot (~22 wag każda).
+
 ## Kolejność realizacji
 
 A → C1 → B → C2 → D. Każda część: testy jednostkowe reguł, test na prawdziwych danych, PR, CI, scalenie.

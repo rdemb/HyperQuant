@@ -7,7 +7,7 @@
  * za udział; dzienny rynek `Recurring` rozlicza się o 06:00 UTC po cenie mark BTC z HyperCore (dokumentacja HIP-4);
  * `binaryPrice` — cena Pyth BTC/USD, mark albo cena transakcji perpa HL (okno `seconds`), `priceTouch` — mark perpa.
  */
-import { makeInnovation, mulberry32 } from './pathEngine';
+import { makeInnovation, mulberry32 } from './pathEngine.ts';
 
 export type OutcomeKind = 'above' | 'touch';
 

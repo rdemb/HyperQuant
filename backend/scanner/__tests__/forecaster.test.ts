@@ -232,3 +232,73 @@ describe('poprawki z recenzji: ACI, nakładanie, klimatologia poziomów, uczestn
     expect(sum([{ k: 's', slot: T0 - 30 * MIN, until: T0 + 30 * MIN, reason: 'outage' }])).toBe(2);
   });
 });
+
+import { makeMktForecast, mktScores, resolveMkt, type MktForecast, type MktResolution } from '../forecaster.ts';
+import type { RangeBar } from '../../../src/utils/volatility.ts';
+
+describe('model vs rynek (HIP-4, 15 min)', () => {
+  const HOUR = 60 * MIN;
+  function bars(n: number, stepMs: number, end: number, sigma: number, seed = 1): RangeBar[] {
+    let s = seed;
+    const rnd = () => ((s = (s * 16807) % 2147483647) / 2147483647);
+    let px = 100_000;
+    return Array.from({ length: n }, (_, k) => {
+      const t = end - (n - k) * stepMs;
+      const o = px;
+      const c = o * Math.exp(sigma * (rnd() - 0.5) * 3.4);
+      px = c;
+      return { time: t, open: o, high: Math.max(o, c) * (1 + sigma * rnd()), low: Math.min(o, c) * (1 - sigma * rnd()), close: c };
+    });
+  }
+  const model = buildVolModel(bars(1200, HOUR, T0, 0.004), bars(2000, 5 * MIN, T0, 0.0015, 7), T0)!;
+  const slot = T0;
+  const expiry = slot + 15 * MIN;
+  const ti = slot + 7 * MIN + 20_000;
+  const tm = { slot, ti, t: slot + 8 * MIN };
+  const snap = (K: number, quote: { bid: number; ask: number; liquid: boolean } | null = { bid: 0.45, ask: 0.5, liquid: true }) => ({
+    outcome: 15711,
+    K,
+    expiry,
+    src: 'mark' as const,
+    quote: quote && { ...quote, mid: (quote.bid + quote.ask) / 2, spread: quote.ask - quote.bid, depthBid: 100, depthAsk: 100 },
+  });
+
+  it('prognoza: id, horyzont do terminu, notowanie rynku i p modelu malejące z progiem', () => {
+    const lo = makeMktForecast(model, tm, 100_000, snap(99_950))!;
+    const hi = makeMktForecast(model, tm, 100_000, snap(100_050))!;
+    expect(lo).toMatchObject({ k: 'f', kind: 'mkt', id: `${slot}-mkt15711`, h: 7, K: 99_950, expiry, bid: 0.45, ask: 0.5, liquid: true, outcome: 15711 });
+    expect(lo.p).toBeGreaterThan(0.5);
+    expect(hi.p).toBeLessThan(0.5);
+    expect(makeMktForecast(model, tm, 100_000, snap(100_000, null))).toMatchObject({ bid: null, ask: null, liquid: false });
+    // termin nie później niż początek horyzontu → brak prognozy
+    expect(makeMktForecast(model, { ...tm, t: expiry }, 100_000, snap(100_000))).toBeNull();
+  });
+
+  it('rozstrzygnięcie: zamknięcie minuty kończącej się w terminie ≥ próg; blisko progu (≤ 0,02%) oznaczone', () => {
+    const f = makeMktForecast(model, tm, 100_000, snap(100_000))!;
+    const c = (close: number) => [{ time: expiry - MIN, open: close, high: close, low: close, close }];
+    expect(resolveMkt(f, c(100_100), expiry + 2 * MIN)).toMatchObject({ k: 'r', id: f.id, c1: 100_100, y: 1, near: 0 });
+    expect(resolveMkt(f, c(99_000), expiry + 2 * MIN)).toMatchObject({ y: 0, near: 0 });
+    expect(resolveMkt(f, c(100_010), expiry + 2 * MIN)).toMatchObject({ y: 1, near: 1 });
+    expect(resolveMkt(f, [], expiry + 2 * MIN)).toBeNull();
+  });
+
+  it('wyniki: Brier i log score modelu i rynku na tych samych pytaniach (tylko płynne, bez bliskich progu), różnica z bootstrapem', () => {
+    const f = (p: number, mid: number, liquid = true): MktForecast =>
+      ({ k: 'f', id: String(Math.random()), slot, ti, t: tm.t, kind: 'mkt', h: 7, outcome: 1, K: 1, expiry, src: 'mark', px0: 1, bid: mid - 0.01, ask: mid + 0.01, liquid, p, model: 'x' }) as MktForecast;
+    const r = (y: 0 | 1, near: 0 | 1 = 0): MktResolution => ({ k: 'r', id: 'x', t: 0, c1: 1, y, near });
+    const pairs = [
+      ...Array.from({ length: 40 }, (_, i) => ({ f: f(0.8, 0.6), r: r(i < 32 ? 1 : 0) })), // model trafniejszy
+      { f: f(0.9, 0.9, false), r: r(1) }, // niepłynny — pominięty
+      { f: f(0.5, 0.5), r: r(1, 1) }, // blisko progu — pominięty
+    ];
+    const s = mktScores(pairs);
+    expect(s).toMatchObject({ n: 40, illiquid: 1, near: 1 });
+    expect(s.brierModel!).toBeCloseTo((32 * 0.04 + 8 * 0.64) / 40, 9);
+    expect(s.brierMarket!).toBeCloseTo((32 * 0.16 + 8 * 0.36) / 40, 9);
+    expect(s.diff!.d).toBeCloseTo(s.brierModel! - s.brierMarket!, 12);
+    expect(s.diff!.lo).toBeLessThanOrEqual(s.diff!.d);
+    expect(s.diff!.hi).toBeGreaterThanOrEqual(s.diff!.d);
+    expect(mktScores([])).toMatchObject({ n: 0, brierModel: null, diff: null });
+  });
+});

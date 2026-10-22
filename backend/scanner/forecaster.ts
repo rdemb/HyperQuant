@@ -1,9 +1,12 @@
 import { type RangeBar, type VolModel, buildVolModel, horizonStepSigmas } from '../../src/utils/volatility.ts';
 import { forecastReturnQuantiles, runTouchMonteCarlo } from '../../src/utils/touchMc.ts';
 import { aciStep, brier, crpsQuantiles, isotonic, kupiec, normInv, pitFromQuantiles, quantileAt, quantileAtExt, reliability, vennAbers } from '../../src/utils/forecastScore.ts';
-import { seedFrom } from '../../src/utils/pathEngine.ts';
-import type { DeskLedgerSummary, RetScores, TouchLevel, TouchScores } from '../../src/utils/deskLedger.ts';
+import { mulberry32, seedFrom } from '../../src/utils/pathEngine.ts';
+import { outcomeProbabilities } from '../../src/utils/hip4.ts';
+import { horizonSigmas, stepFor } from '../../src/utils/hip4Model.ts';
+import type { DeskLedgerSummary, MktScores, RetScores, TouchLevel, TouchScores } from '../../src/utils/deskLedger.ts';
 import type { InfoClient } from './liqDetect.ts';
+import type { MarketSnap } from './marketQuotes.ts';
 
 /**
  * Prognozy desku do weryfikowalnego dziennika (pre-rejestracja co 15 min, rozstrzygnięcie ze świec 1m):
@@ -97,8 +100,47 @@ export interface TouchResolution {
   yv: Record<TouchLevel, 0 | 1>;
 }
 
-export type Forecast = RetForecast | TouchForecast;
-export type Resolution = RetResolution | TouchResolution;
+/**
+ * Model vs rynek (HIP-4): aktywny 15-minutowy rynek binarny BTC („mark ≥ K w terminie”), zapisany 5–10 min przed terminem:
+ * notowanie strony „Tak” i p modelu z tej samej chwili. Rozstrzygnięcie w t + h = termin.
+ */
+export interface MktForecast {
+  k: 'f';
+  id: string;
+  slot: number;
+  ti: number;
+  t: number;
+  kind: 'mkt';
+  /** Minuty od początku horyzontu do terminu */
+  h: number;
+  outcome: number;
+  K: number;
+  expiry: number;
+  src: 'mark' | 'trade' | 'pyth';
+  px0: number;
+  /** Notowanie strony „Tak” w chwili wydania (null = brak arkusza) */
+  bid: number | null;
+  ask: number | null;
+  /** Arkusz płynny (spread ≤ 5 pp, ≥ 50 USDC w ±5 pp od środka) — tylko takie notowania są oceniane */
+  liquid: boolean;
+  /** P(cena w terminie ≥ K) z modelu, od chwili wydania */
+  p: number;
+  model: string;
+}
+
+export interface MktResolution {
+  k: 'r';
+  id: string;
+  t: number;
+  /** Zamknięcie świecy 1m kończącej się w terminie (cena transakcji — rynek rozlicza po mark) */
+  c1: number;
+  y: 0 | 1;
+  /** |c1 − K| ≤ 0,02% K: wynik niepewny (mark ≠ cena transakcji) — nie oceniany */
+  near: 0 | 1;
+}
+
+export type Forecast = RetForecast | TouchForecast | MktForecast;
+export type Resolution = RetResolution | TouchResolution | MktResolution;
 /** Jawny zapis pominiętego slotu (brak modelu, ceny, przerwa) — braki nie mogą znikać po cichu */
 export interface SkipRecord {
   k: 's';
@@ -227,6 +269,102 @@ export function resolveTouch(f: TouchForecast, c1m: RangeBar[], now: number): To
   };
 }
 
+/** Próg „blisko progu” rynku (względny) — tam rozbieżność mark vs cena transakcji może zmienić wynik */
+export const MKT_NEAR = 0.0002;
+
+/**
+ * Prognoza „model vs rynek”: p = P(S_termin ≥ K) z modelu od chwili wydania (horyzont dokładny co do sekundy,
+ * 4000 ścieżek, wspólny silnik ze stroną) obok notowania rynku. Termin nie później niż początek horyzontu → null.
+ */
+export function makeMktForecast(model: VolModel, tm: ForecastTimes, px0: number, snap: MarketSnap): MktForecast | null {
+  if (snap.expiry <= tm.t || !(px0 > 0) || !(snap.K > 0)) return null;
+  const hInfo = (snap.expiry - tm.ti) / MIN;
+  const [p] = outcomeProbabilities([{ kind: 'above', K: snap.K, horizonMin: hInfo }], px0, {
+    stepSigmas: (h) => horizonSigmas(model, tm.ti, h),
+    residuals: model.residuals,
+    seed: seedFrom(tm.slot, snap.outcome),
+    paths: 4000,
+    innovSum: (h) => stepFor(h) / 5,
+  });
+  if (p === null || !Number.isFinite(p)) return null;
+  const q = snap.quote;
+  return {
+    k: 'f',
+    id: `${tm.slot}-mkt${snap.outcome}`,
+    slot: tm.slot,
+    ti: tm.ti,
+    t: tm.t,
+    kind: 'mkt',
+    h: Math.round((snap.expiry - tm.t) / MIN),
+    outcome: snap.outcome,
+    K: snap.K,
+    expiry: snap.expiry,
+    src: snap.src,
+    px0,
+    bid: q ? q.bid : null,
+    ask: q ? q.ask : null,
+    liquid: !!q?.liquid,
+    p: r4(p),
+    model: MODEL_VERSION,
+  };
+}
+
+/** Rozstrzygnięcie: zamknięcie świecy 1m kończącej się w terminie (t + h) ≥ K; blisko progu oznaczone. */
+export function resolveMkt(f: MktForecast, c1m: RangeBar[], now: number): MktResolution | null {
+  const c1 = closeAt(c1m, f.t + f.h * MIN);
+  if (c1 === null) return null;
+  return { k: 'r', id: f.id, t: now, c1, y: c1 >= f.K ? 1 : 0, near: Math.abs(c1 - f.K) <= MKT_NEAR * f.K ? 1 : 0 };
+}
+
+/**
+ * Wyniki „model vs rynek” na tych samych pytaniach: tylko płynne notowania i rozstrzygnięcia z dala od progu. Brier i log
+ * score obu (log: −ln p(wyniku), p ograniczone do [0,001; 0,999]); różnica Brier (model − rynek) z bootstrapem 90%
+ * parowanym (2000 losowań, stałe ziarno). Ujemna różnica = model lepiej skalibrowany niż rynek.
+ */
+export function mktScores(pairs: { f: MktForecast; r: MktResolution }[]): MktScores {
+  const near = pairs.filter((x) => x.r.near === 1).length;
+  const illiquid = pairs.filter((x) => x.r.near === 0 && !(x.f.liquid && x.f.bid !== null && x.f.ask !== null)).length;
+  const ok = pairs.filter((x) => x.r.near === 0 && x.f.liquid && x.f.bid !== null && x.f.ask !== null);
+  const n = ok.length;
+  if (n === 0) return { n: 0, near, illiquid, brierModel: null, brierMarket: null, logModel: null, logMarket: null, diff: null };
+  const clamp = (p: number) => Math.min(0.999, Math.max(0.001, p));
+  const dm: number[] = [];
+  let bm = 0;
+  let bk = 0;
+  let lm = 0;
+  let lk = 0;
+  for (const { f, r } of ok) {
+    const mid = (f.bid! + f.ask!) / 2;
+    const a = (f.p - r.y) ** 2;
+    const b = (mid - r.y) ** 2;
+    bm += a;
+    bk += b;
+    dm.push(a - b);
+    lm += -Math.log(r.y ? clamp(f.p) : 1 - clamp(f.p));
+    lk += -Math.log(r.y ? clamp(mid) : 1 - clamp(mid));
+  }
+  const d = dm.reduce((s, x) => s + x, 0) / n;
+  const u = mulberry32(seedFrom(n, 7));
+  const reps = 2000;
+  const means = new Float64Array(reps);
+  for (let k = 0; k < reps; k++) {
+    let s = 0;
+    for (let i = 0; i < n; i++) s += dm[Math.floor(u() * n)];
+    means[k] = s / n;
+  }
+  means.sort();
+  return {
+    n,
+    near,
+    illiquid,
+    brierModel: r6(bm / n),
+    brierMarket: r6(bk / n),
+    logModel: r4(lm / n),
+    logMarket: r4(lk / n),
+    diff: { d, lo: Math.min(d, means[Math.floor(0.05 * (reps - 1))]), hi: Math.max(d, means[Math.ceil(0.95 * (reps - 1))]) },
+  };
+}
+
 /** Stan ACI po kolejnym rozstrzygnięciu przedziału 90% (chybienie obniża α → szerszy kolejny przedział). */
 export const nextAci = (alpha: number, miss: boolean) => aciStep(alpha, ACI_ALPHA, miss, ACI_GAMMA);
 
@@ -332,12 +470,15 @@ export function buildSummary(s: SummaryInput): DeskLedgerSummary {
   const fs = [...s.forecasts.values()].filter((f) => f.t >= from).sort((a, b) => a.t - b.t);
   const retPairs = new Map<number, { f: RetForecast; r: RetResolution }[]>();
   const touchPairs: { f: TouchForecast; r: TouchResolution }[] = [];
+  const mktPairs: { f: MktForecast; r: MktResolution }[] = [];
   for (const f of fs) {
     const r = s.resolutions.get(f.id);
     if (!r) continue;
-    if (f.kind === 'ret' && 'y' in r) retPairs.set(f.h, [...(retPairs.get(f.h) ?? []), { f, r }]);
+    if (f.kind === 'ret' && 'crps' in r) retPairs.set(f.h, [...(retPairs.get(f.h) ?? []), { f, r }]);
     if (f.kind === 'touch' && 'yv' in r) touchPairs.push({ f, r });
+    if (f.kind === 'mkt' && 'near' in r) mktPairs.push({ f, r });
   }
+  const latestMkt = [...fs].reverse().find((f): f is MktForecast => f.kind === 'mkt');
   const latestRet = RET_HORIZONS.map((h) => [...fs].reverse().find((f) => f.kind === 'ret' && f.h === h) as RetForecast | undefined).filter(
     (f): f is RetForecast => !!f
   );
@@ -397,6 +538,12 @@ export function buildSummary(s: SummaryInput): DeskLedgerSummary {
     ots: s.ots,
     slotStamps: s.slotStamps ?? 0,
     participation: participation(fs, s.skips ?? [], from),
+    market: {
+      scores: mktScores(mktPairs),
+      latest: latestMkt
+        ? { t: latestMkt.t, expiry: latestMkt.expiry, K: latestMkt.K, p: latestMkt.p, bid: latestMkt.bid, ask: latestMkt.ask, liquid: latestMkt.liquid }
+        : null,
+    },
     method: 'hq-ledger-v1',
   };
 }

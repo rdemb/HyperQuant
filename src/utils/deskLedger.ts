@@ -57,6 +57,21 @@ export interface TouchScores {
   calibration: [number, number][];
 }
 
+/** Model vs rynek (HIP-4, 15 min): Brier i log score obu na tych samych pytaniach, różnica (model − rynek) z bootstrapem 90% */
+export interface MktScores {
+  /** Ocenione pary (płynne notowanie, rozstrzygnięcie z dala od progu) */
+  n: number;
+  /** Rozstrzygnięcia blisko progu (≤ 0,02%) — pominięte */
+  near: number;
+  /** Notowania niepłynne — pominięte */
+  illiquid: number;
+  brierModel: number | null;
+  brierMarket: number | null;
+  logModel: number | null;
+  logMarket: number | null;
+  diff: { d: number; lo: number; hi: number } | null;
+}
+
 export interface DeskLedgerSummary {
   v: 1;
   coin: string;
@@ -96,6 +111,11 @@ export interface DeskLedgerSummary {
   slotStamps: number;
   /** Uczestnictwo: sloty z prognozą vs jawnie pominięte (ostatnie luki z powodem) */
   participation: { issued: number; skipped: number; gaps: { slot: number; until?: number; reason: string }[] };
+  /** Model vs rynek predykcyjny (HIP-4, 15 min) — opcjonalne (starsze podsumowania bez tej części) */
+  market?: {
+    scores: MktScores;
+    latest: { t: number; expiry: number; K: number; p: number; bid: number | null; ask: number | null; liquid: boolean } | null;
+  };
   method: 'hq-ledger-v1';
 }
 

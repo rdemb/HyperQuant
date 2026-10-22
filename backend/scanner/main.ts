@@ -14,6 +14,7 @@ import { ForecastData } from './forecaster.ts';
 import { LedgerStore, prepareLedgerRepo } from './ledgerStore.ts';
 import { LedgerRunner } from './ledgerRunner.ts';
 import { stampDigest } from './ots.ts';
+import { marketSnapshot } from './marketQuotes.ts';
 import { WeightLimiter } from './rateLimiter.ts';
 import { Scanner } from './scanner.ts';
 import { fetchLeaderboardAccounts } from './seed.ts';
@@ -197,6 +198,8 @@ async function initLedger(): Promise<void> {
     store,
     repo,
     markPx: () => scanner.freshMarkPx(),
+    // Model vs rynek (HIP-4): aktywny 15-minutowy rynek binarny BTC — outcomeMeta + arkusz strony „Tak”
+    markets: (expiry, at) => marketSnapshot(rest, expiry, at),
     stamp: (d) => stampDigest(d),
     clock: Date.now,
     publish: (json) => {
