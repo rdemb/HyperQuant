@@ -10,6 +10,8 @@ import { AddressBook } from '../addressBook.ts';
 import { Scanner } from '../scanner.ts';
 import { isLiqMap } from '../../../src/utils/liqMap.ts';
 import { isLiqTape } from '../../../src/utils/liqTape.ts';
+import { isCohortFlow } from '../../../src/utils/cohorts.ts';
+import { CohortEngine } from '../cohortEngine.ts';
 
 const R2 = { R2_ACCOUNT_ID: 'acc', R2_BUCKET: 'bkt', R2_ACCESS_KEY_ID: 'kid', R2_SECRET_ACCESS_KEY: 'sec' };
 
@@ -163,6 +165,32 @@ describe('Scanner — cykl skanu i publikacji', () => {
     ]);
   });
 
+  it('z silnikiem kohort publikuje cohorts/BTC.json (agregaty bez adresów, ten sam okres obserwacji co taśma)', async () => {
+    const out = mkdtempSync(join(tmpdir(), 'hq-'));
+    const book = new AddressBook();
+    const cohorts = new CohortEngine({ coin: 'BTC', isWhale: (a) => book.isWhale(a) });
+    for (let i = 0; i < 6; i++) cohorts.onTrade({ users: [`0x${'a'.repeat(39)}${i}`, `0x${'b'.repeat(39)}${i}`], side: 'B', px: 83_000, sz: 1, time: 100_000 + i });
+    // publikowane są tylko kubełki zamknięte (15 min) — publikacja po zamknięciu pierwszego
+    const scanner = new Scanner({
+      coin: 'BTC',
+      book,
+      rest: new HlRest(new WeightLimiter(240), (async () => new Response('null')) as unknown as typeof fetch, () => 0, async () => {}),
+      outDir: out,
+      r2: null,
+      now: () => 16 * 60_000,
+      tapeSince: 60_000,
+      cohorts,
+    });
+    scanner.setCtx({ markPx: 83000, oiBtc: 20, dayNtlVlm: 2e9 });
+    expect(await scanner.publish()).toBe(true);
+    const txt = readFileSync(join(out, 'cohorts', 'BTC.json'), 'utf8');
+    expect(txt).not.toMatch(/0x[0-9a-f]{40}/i);
+    const flow = JSON.parse(txt);
+    expect(isCohortFlow(flow)).toBe(true);
+    expect(flow.since).toBe(60_000);
+    expect(flow.totals.h24.rest.buy).toBe(500_000); // 6 × 83 000 zaokrąglone do 10 tys.
+  });
+
   it('likwidacja śledzonej pozycji: kandydat po zniknięciu pozycji przy cenie likwidacji, potwierdzenie fillem, taśma bez adresów', async () => {
     let now = 120_000;
     const { scanner, out, states, fills, book, bodies } = setup(false, () => now);
@@ -253,6 +281,20 @@ describe('HlStream — odporność połączenia', () => {
     s.stop();
     vi.useRealTimers();
     expect(delays).toEqual([1000, 2000, 4000]);
+  });
+
+  it('transakcje powtórzone po ponownym połączeniu (ten sam czas i tid) są pomijane', () => {
+    FakeWs.instances = [];
+    const got: number[] = [];
+    const s = new HlStream('BTC', (ts) => got.push(...ts.map((t) => t.tid as number)), () => {}, FakeWs as unknown as typeof WebSocket);
+    s.start();
+    const ws = FakeWs.instances[0];
+    ws.open();
+    const msg = (tids: number[]) => ({ data: JSON.stringify({ channel: 'trades', data: tids.map((tid) => ({ coin: 'BTC', side: 'B', px: '1', sz: '1', time: 1000, tid })) }) });
+    ws.onmessage?.(msg([1, 2]));
+    ws.onmessage?.(msg([2, 3])); // np. migawka po ponownej subskrypcji
+    s.stop();
+    expect(got).toEqual([1, 2, 3]);
   });
 
   it('strażnik: brak wiadomości przez 90 s zamyka połączenie (zawieszony socket nie udaje „ok”)', () => {
