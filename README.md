@@ -48,7 +48,7 @@
 | Źródło | Co | Uwagi |
 |---|---|---|
 | Hyperliquid API (`/info`, WebSocket) | świece, arkusz L2, transakcje, OI, funding (także Binance/Bybit przez `predictedFundings`), HIP-3, mapa rynku | publiczne, limit 1200 wag/min na IP użytkownika |
-| Skaner HyperQuant ([backend/](backend/README.md)) | mapa likwidacji z pozycji on-chain (`clearinghouseState` portfeli z taśmy BTC) — tylko agregaty | publikowana co 60 s do Cloudflare R2; przeglądarka nie łączy się z serwerem skanera |
+| Skaner HyperQuant ([backend/](backend/README.md)) | mapa likwidacji z pozycji on-chain (`clearinghouseState` portfeli z taśmy BTC) — tylko agregaty | publikowana co 2 min do publicznego repo [rdemb/hyperquant-data](https://github.com/rdemb/hyperquant-data); przeglądarka nie łączy się z serwerem skanera |
 | Federal Reserve, BLS, BEA | harmonogram FOMC, CPI, NFP, PPI, PKB/PCE | dane publiczne USA |
 | U.S. Treasury, FiscalData, NY Fed, CFTC | rentowności, TGA, RRP, COT | dane publiczne USA |
 | alternative.me | Fear & Greed | atrybucja obok danych |

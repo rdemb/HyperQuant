@@ -8,6 +8,7 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 - **Mapa likwidacji z pozycji on-chain** zamiast szacunku: skaner na serwerze zbiera adresy portfeli z publicznej taśmy BTC (pole `users`), odczytuje ich pozycje i ceny likwidacji (`clearinghouseState`) i co minutę publikuje do Cloudflare R2 wyłącznie agregaty (kubełki, pokrycie open interest, wiek danych).
 - **Symulator kaskady likwidacji**: punkt stały szok → likwidacje → wpływ ceny z prawa pierwiastka kwadratowego (Tóth i in. 2011), krzywa szok → ruch końcowy z pasmem dla Y 0.5–1.5.
 - Panel „Mapa likwidacji i kaskada” na Desku (histogram, najbliższe klastry, tabela) i ostrzeżenie w Analizatorze, gdy stop leży w klastrze likwidacji.
+- Publikacja danych skanera do publicznego repo [rdemb/hyperquant-data](https://github.com/rdemb/hyperquant-data) (bez kosztów i kont w chmurze): jeden commit z bieżącym stanem co 2 min, neutralne metadane, klucz wdrożeniowy tylko na serwerze; Cloudflare R2 jako opcja.
 - Backend `backend/scanner` bez zależności npm (Node 24): własny budżet wag API, harmonogram skanów wg wielkości pozycji, podpis SigV4 sprawdzony wektorem AWS, usługa systemd z limitami zasobów, instalator.
 
 ### Zmienione

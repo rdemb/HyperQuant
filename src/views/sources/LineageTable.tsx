@@ -129,11 +129,11 @@ const GROUPS: { title: string; rows: Row[] }[] = [
       {
         metric: 'Mapa likwidacji (pozycje on-chain)',
         source:
-          'Skaner HyperQuant: adresy z WS trades (pole users) i z publicznego rankingu kont Hyperliquid → clearinghouseState każdego portfela; publikacja przez Cloudflare R2',
+          'Skaner HyperQuant: adresy z WS trades (pole users) i z publicznego rankingu kont Hyperliquid → clearinghouseState każdego portfela; publikacja przez publiczne repo danych na GitHubie (rdemb/hyperquant-data)',
         method:
           'Kubełki ceny likwidacji (krok ~0.1% ceny) dla longów i shortów, nominał |szi|·cena likwidacji; pokrycie = Σ|szi| / (2·OI); tylko agregaty, bez adresów',
         kinds: ['LIVE'],
-        refresh: 'co 60 s; cel odczytu: pozycje ≥ 1 mln USD co 2 min, ≥ 100 tys. co 10 min — faktyczny wiek (mediana ważona nominałem) w panelu',
+        refresh: 'mapa co 2 min (repo danych + cache GitHuba do 5 min); cel odczytu: pozycje ≥ 1 mln USD co 2 min, ≥ 100 tys. co 10 min — faktyczny wiek (mediana ważona nominałem) w panelu',
         caveat: 'Portfele nieaktywne od startu skanera nie są na mapie; cena likwidacji pozycji cross zmienia się z całym kontem.',
       },
       {

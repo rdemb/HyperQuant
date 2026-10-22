@@ -28,6 +28,16 @@ describe('loadConfig — wyłącznie zmienne środowiskowe', () => {
     expect(loadConfig({ HQ_STATE_DIR: '/s', HQ_OUT_DIR: '/o', HQ_WEIGHT_PER_MIN: '900' }).ok).toBe(false);
     expect(loadConfig({ HQ_STATE_DIR: '/s', HQ_OUT_DIR: '/o', HQ_PUBLISH_EVERY_S: '5' }).ok).toBe(false);
   });
+
+  it('publikacja przez git: zdalne repo SSH wymaga klucza; okres ≥ 60 s; repo lokalne bez klucza', () => {
+    const base = { HQ_STATE_DIR: '/s', HQ_OUT_DIR: '/o' };
+    expect(loadConfig({ ...base, HQ_GIT_REMOTE: 'git@github.com:x/y.git' }).ok).toBe(false);
+    const ok = loadConfig({ ...base, HQ_GIT_REMOTE: 'git@github.com:x/y.git', HQ_GIT_SSH_KEY: '/k' });
+    expect(ok.ok && ok.config.git).toEqual({ remote: 'git@github.com:x/y.git', sshKey: '/k', everyS: 120 });
+    expect(loadConfig({ ...base, HQ_GIT_REMOTE: '/tmp/bare', HQ_GIT_EVERY_S: '30' }).ok).toBe(false);
+    const r = loadConfig(base);
+    expect(r.ok && r.config.git).toBeNull();
+  });
 });
 
 describe('putObject — zapis do R2', () => {
