@@ -63,6 +63,13 @@ Metadane commitów są neutralne (autor noreply, czas UTC) — bez nazwy hosta i
 4. W `/etc/hyperquant/scanner.env`: `HQ_GIT_REMOTE=git@github.com:<konto>/hyperquant-data.git`, `HQ_GIT_SSH_KEY=/var/lib/hyperquant/deploy_key`, potem `systemctl restart hyperquant-scanner`.
 5. W repozytorium strony: zmienna Actions `DATA_BASE_URL` = `https://raw.githubusercontent.com/<konto>/hyperquant-data/main` i ponowne wdrożenie.
 
+**Archiwum świec i laboratorium folkloru:** co 10 min skaner dopisuje zamknięte świece BTC 1m / 1h / 1d i godzinowe
+finansowanie do gałęzi `archive` repo danych (CSV, historia przyrostowa, ta sama kontrola „tylko dopisywanie” co `ledger`;
+commit najwyżej co godzinę). Przy pierwszym uruchomieniu zasiew tym, co oddaje API (1h ≈ 208 dni, 1d od 2020, 1m ≈ 3,5 doby,
+finansowanie od 2023 — kilka minut w budżecie wag). Przy starcie dziennika skaner zapisuje w łańcuchu rekord prerejestracji
+katalogu laboratorium (`k: "p"`, pełny katalog i jego SHA-256), jeśli tego katalogu jeszcze nie ma; co godzinę przelicza
+laboratorium z archiwum → `lab/BTC.json`. `node scripts/verify-ledger.mjs` sprawdza też hash każdego zapisanego katalogu.
+
 **Nadzór (bez kosztów):** workflow [`data-health.yml`](../.github/workflows/data-health.yml) co 30 min sprawdza wiek `status.json` i mapy,
 pokrycie open interest, opóźnienie odczytów pozycji oraz to, czy publikacja nie zawiera adresu portfela ani adresu IP
 ([scripts/check-data-health.mjs](../scripts/check-data-health.mjs)). Problem otwiera zgłoszenie z etykietą `alert-danych`

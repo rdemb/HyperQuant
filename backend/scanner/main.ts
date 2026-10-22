@@ -6,6 +6,7 @@
 import { appendFileSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { AddressBook } from './addressBook.ts';
+import { CandleArchive } from './candleArchive.ts';
 import { loadConfig } from './config.ts';
 import { HlRest, HlStream } from './hl.ts';
 import { LiqConfirmer, PriceRange } from './liqDetect.ts';
@@ -13,6 +14,7 @@ import { CohortEngine } from './cohortEngine.ts';
 import { ForecastData } from './forecaster.ts';
 import { LedgerStore, prepareLedgerRepo } from './ledgerStore.ts';
 import { LedgerRunner } from './ledgerRunner.ts';
+import { LAB_PREREG, LabRunner } from './labRunner.ts';
 import { stampDigest } from './ots.ts';
 import { marketSnapshot } from './marketQuotes.ts';
 import { LiquidityRecorder, chooseAgg, type BookAgg, type MinuteRow } from './liquidity.ts';
@@ -174,10 +176,13 @@ const DATA_README = [
   '- `liq-tape/BTC.json` — likwidacje śledzonych pozycji z 24 h, potwierdzone fillami z polem `liquidation`: czas, strona, rozmiar, cena, błąd mapy.',
   '- `cohorts/BTC.json` — przepływ kohort (market makerzy, statystycznie poinformowani, wieloryby, reszta): kubełki 15 min z 24 h, markouty poza próbą; k-anonimowość (komórki z < 5 uczestnikami lub z dominującym uczestnikiem ukryte).',
   '- `liquidity/BTC.json` — profil płynności arkusza: mediana głębokości obu stron w ±10 / ±20 bp wg godziny UTC (do 30 dni), bieżąca płynność względem normy godziny, odporność po gwałtownych ruchach.',
+  '- `lab/BTC.json` — laboratorium folkloru: reguły day tradingu (okrągłe poziomy, zebranie PDH/PDL, IB, VWAP, luka CME, finansowanie, 10:00 NY, momentum) — test historyczny z FDR i prerejestrowany test do przodu (e-wartości, e-BH) ze wszystkimi zdarzeniami do przeliczenia.',
   '- `status.json` — stan skanera (liczby adresów i pozycji, błędy API).',
   '',
   'Gałąź `ledger` — weryfikowalny dziennik prognoz desku (historia przyrostowa): pliki dzienne `BTC/RRRR-MM-DD.jsonl` z łańcuchem hashy SHA-256,',
   'kotwice OpenTimestamps `BTC/ots/`, podsumowanie `BTC/summary.json`. Weryfikacja: `node scripts/verify-ledger.mjs` w repo HyperQuant.',
+  '',
+  'Gałąź `archive` — archiwum świec BTC 1m / 1h / 1d i godzinowego finansowania (CSV, historia przyrostowa, tylko dopisywanie): API Hyperliquid oddaje najwyżej ~5000 ostatnich świec, archiwum zachowuje resztę.',
   '',
   'Gałąź `health` — stan strażnika skanera (`alert.json`, `report.md`) zapisywany przy zmianie stanu; workflow tej gałęzi otwiera i zamyka zgłoszenie `alert-danych`.',
   '',
@@ -197,7 +202,7 @@ async function gitPublishTick(): Promise<void> {
     }
   }
   // Pliki opcjonalne (np. kohorty po błędzie budowy) nie wstrzymują publikacji mapy
-  for (const key of [`liq-tape/${cfg.coin}.json`, `cohorts/${cfg.coin}.json`, `ledger/${cfg.coin}/summary.json`, `liquidity/${cfg.coin}.json`]) {
+  for (const key of [`liq-tape/${cfg.coin}.json`, `cohorts/${cfg.coin}.json`, `ledger/${cfg.coin}/summary.json`, `liquidity/${cfg.coin}.json`, `lab/${cfg.coin}.json`]) {
     try {
       files.push([key, readFileSync(join(cfg.outDir, key), 'utf8')]);
     } catch {
@@ -263,6 +268,28 @@ async function ledgerTick(): Promise<void> {
   }
   const res = await ledger.tick(Date.now());
   if (res.commit && (!res.commit.ok || !res.commit.pushed)) console.error(`[skaner] dziennik: ${res.commit.error ?? 'commit/push nieudany'}`);
+}
+
+/**
+ * Archiwum świec (gałąź `archive` repo danych, tylko dopisywanie) i laboratorium folkloru: co 10 min nowe świece,
+ * commit najwyżej co godzinę; katalog reguł prerejestrowany w dzienniku, ocena co godzinę → `lab/<coin>.json`.
+ */
+const archiveDir = cfg.git ? join(cfg.stateDir, 'git', 'archive') : join(cfg.stateDir, 'archive');
+const lab = new LabRunner({
+  coin: cfg.coin,
+  archive: new CandleArchive({ dir: archiveDir, coin: cfg.coin, rest }),
+  repo: cfg.git ? { remote: cfg.git.remote, dir: archiveDir, sshKey: cfg.git.sshKey, branch: 'archive' } : null,
+  register: () => ledger?.register(LAB_PREREG, Date.now()) ?? null,
+  publish: (report) => {
+    mkdirSync(join(cfg.outDir, 'lab'), { recursive: true });
+    writeJsonAtomic(join(cfg.outDir, 'lab', `${cfg.coin}.json`), report);
+  },
+});
+
+async function labTick(): Promise<void> {
+  const r = await lab.tick(Date.now());
+  if (r.error) console.error(`[skaner] archiwum/laboratorium: ${r.error}`);
+  if (r.added > 0 || r.evaluated) log(`archiwum: +${r.added} wierszy${r.committed ? ' (commit)' : ''}${r.evaluated ? ', laboratorium przeliczone' : ''}`);
 }
 
 /**
@@ -359,9 +386,12 @@ const timers = [
   setInterval(guarded('kompaktowanie płynności', compactLiquidity), 24 * 60 * 60_000),
   setInterval(guarded('agregacja arkusza', adjustBookAgg), 10 * 60_000),
   setInterval(guarded('zasiew', seedFromLeaderboard), 6 * 60 * 60_000),
+  setInterval(guarded('archiwum i laboratorium', labTick), 10 * 60_000),
   ...(cfg.git ? [setInterval(guarded('repo danych', gitPublishTick), cfg.git.everyS * 1000)] : []),
 ];
 setTimeout(guarded('zasiew', seedFromLeaderboard), 5_000);
+// Archiwum i laboratorium po inicjalizacji dziennika (rejestracja katalogu wymaga gotowego łańcucha)
+setTimeout(guarded('archiwum i laboratorium', labTick), 90_000);
 // Klasyfikacja kohort wkrótce po starcie (liczności i zbiory po restarcie bez czekania 10 min)
 setTimeout(guarded('klasyfikacja kohort', () => cohorts.classify(Date.now())), 30_000);
 

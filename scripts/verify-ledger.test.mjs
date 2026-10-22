@@ -223,3 +223,37 @@ describe('verify-ledger — model vs rynek: niezmienniki rekordu i płynność',
     expect(r.marketTight.n).toBe(2);
   });
 });
+
+import { checkPreregs } from './verify-ledger.mjs';
+
+describe('prerejestracje katalogów (rekordy k = p)', () => {
+  const catalog = { version: 'lab-v1', hypotheses: [{ id: 'a', params: { d: 0.01 } }] };
+  const hash = hashOf('sha256').update(canonical(catalog)).digest('hex');
+  it('hash zgodny z zapisanym katalogiem → bez problemów; lista rejestracji', () => {
+    const r = checkPreregs([{ k: 'f', id: 'x' }, { k: 'p', id: 'lab-v1', t: 5, catalogHash: hash, catalog }]);
+    expect(r.problems).toEqual([]);
+    expect(r.preregs).toEqual([{ id: 'lab-v1', t: 5, catalogHash: hash }]);
+  });
+  it('katalog zmieniony po zapisie hasha albo brak katalogu → problem', () => {
+    const bad = checkPreregs([{ k: 'p', id: 'lab-v1', t: 5, catalogHash: hash, catalog: { ...catalog, version: 'lab-v2' } }]);
+    expect(bad.problems.join(' ')).toMatch(/lab-v1.*hash katalogu/);
+    expect(checkPreregs([{ k: 'p', id: 'lab-v1', t: 5, catalogHash: hash }]).problems).toHaveLength(1);
+  });
+  it('czas prerejestracji nie może się cofać', () => {
+    const r = checkPreregs([
+      { k: 'p', id: 'lab-v1', t: 10, catalogHash: hash, catalog },
+      { k: 'p', id: 'lab-v2', t: 5, catalogHash: hash, catalog },
+    ]);
+    expect(r.problems.join(' ')).toMatch(/cofnięty/);
+  });
+});
+
+import { LAB_HASH, LAB_PREREG } from '../backend/scanner/labRunner.ts';
+
+describe('prerejestracja skanera vs niezależny weryfikator', () => {
+  it('rekord skanera (katalog lab-v1) przechodzi kontrolę weryfikatora — ta sama postać kanoniczna', () => {
+    const r = checkPreregs([{ k: 'p', t: 1, ...LAB_PREREG }]);
+    expect(r.problems).toEqual([]);
+    expect(r.preregs[0].catalogHash).toBe(LAB_HASH);
+  });
+});

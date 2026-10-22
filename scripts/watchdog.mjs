@@ -27,8 +27,8 @@ const RESTART_COOLDOWN = 60 * MIN;
 const MAX_RESTARTS = 3;
 const REMIND = 6 * 60 * MIN;
 const SERVICE = 'hyperquant-scanner';
-/** Problemy oceny oznaczające zawieszoną część skanera (nie sieć ani GitHub): publikacja, dziennik, rejestrator płynności */
-const STALL = /skaner nie publikuje|dziennik prognoz: ostatnia aktualizacja|profil płynności: ostatnia aktualizacja|rejestrator płynności nie zapisuje/;
+/** Problemy oceny oznaczające zawieszoną część skanera (nie sieć ani GitHub): publikacja, dziennik, płynność, laboratorium */
+const STALL = /skaner nie publikuje|dziennik prognoz: ostatnia aktualizacja|profil płynności: ostatnia aktualizacja|rejestrator płynności nie zapisuje|laboratorium folkloru: ostatnia aktualizacja/;
 const TRANSIENT = new Set(['activating', 'deactivating', 'reloading']);
 
 const none = { restart: false, reason: null, category: null };

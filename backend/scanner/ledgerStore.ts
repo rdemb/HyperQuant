@@ -43,11 +43,14 @@ export class LedgerStore {
     skips: LedgerRecord[];
     /** Ostatni rozliczony slot w całym dzienniku (prognoza albo skip, także zakresowy); null = pusty */
     lastSlot: number | null;
+    /** Rekordy prerejestracji katalogów (`k: 'p'`) z całego dziennika, w kolejności zapisu */
+    preregs: LedgerRecord[];
     error?: string;
   } {
     const forecasts = new Map<string, LedgerRecord>();
     const resolutions = new Map<string, LedgerRecord>();
     const skips: LedgerRecord[] = [];
+    const preregs: LedgerRecord[] = [];
     const cd = this.coinDir();
     const files = existsSync(cd) ? readdirSync(cd).filter((f) => DAY_FILE.test(f)).sort() : [];
     const fromDay = dayKey(now - 31 * DAY);
@@ -60,10 +63,14 @@ export class LedgerStore {
       const v = verifyLines(lines, prev);
       if (!v.ok) {
         this.broken = true;
-        return { ok: false, forecasts, resolutions, skips, lastSlot: null, error: `łańcuch przerwany w ${f}, linia ${(v.badLine ?? 0) + 1}` };
+        return { ok: false, forecasts, resolutions, skips, lastSlot: null, preregs, error: `łańcuch przerwany w ${f}, linia ${(v.badLine ?? 0) + 1}` };
       }
       // Ostatni slot: z każdego pliku (tanio — tylko rekordy f/s), żeby ciągłość przetrwała przerwy dłuższe niż 31 dni
       for (const l of lines) {
+        if (l.includes('"k":"p"')) {
+          preregs.push(JSON.parse(l) as LedgerRecord);
+          continue;
+        }
         if (!l.includes('"k":"f"') && !l.includes('"k":"s"')) continue;
         const o = JSON.parse(l) as { slot?: unknown; until?: unknown };
         const s = typeof o.until === 'number' ? o.until : o.slot;
@@ -86,7 +93,7 @@ export class LedgerStore {
     this.head = prev;
     this.lines = count;
     this.broken = false;
-    return { ok: true, forecasts, resolutions, skips, lastSlot };
+    return { ok: true, forecasts, resolutions, skips, lastSlot, preregs };
   }
 
   /** Dopisuje rekordy do pliku bieżącego dnia UTC; zwraca linie (z prev i h). */
@@ -124,9 +131,11 @@ export class LedgerStore {
 export interface LedgerRepo {
   /** Zdalne repo danych (SSH albo ścieżka lokalna w testach) */
   remote: string;
-  /** Katalog roboczy gałęzi `ledger` (na serwerze, w katalogu stanu) */
+  /** Katalog roboczy gałęzi (na serwerze, w katalogu stanu) */
   dir: string;
   sshKey?: string | null;
+  /** Gałąź tylko do dopisywania; domyślnie `ledger` (także `archive` — archiwum świec) */
+  branch?: string;
 }
 
 /**
@@ -136,33 +145,34 @@ export interface LedgerRepo {
  */
 export async function prepareLedgerRepo(o: LedgerRepo, now: number): Promise<boolean> {
   const env = gitEnv(o.dir, o.sshKey, now);
+  const branch = o.branch ?? LEDGER_BRANCH;
   try {
     if (existsSync(join(o.dir, '.git'))) {
       const git = (...args: string[]) => run('git', ['-C', o.dir, ...args], { env, timeout: 60_000 });
-      const heads = await run('git', ['ls-remote', '--heads', o.remote, LEDGER_BRANCH], { env, timeout: 30_000 });
+      const heads = await run('git', ['ls-remote', '--heads', o.remote, branch], { env, timeout: 30_000 });
       if (!heads.stdout.trim()) return true; // gałąź jeszcze nie opublikowana
-      await git('fetch', '-q', 'origin', `${LEDGER_BRANCH}:refs/remotes/origin/${LEDGER_BRANCH}`);
+      await git('fetch', '-q', 'origin', `${branch}:refs/remotes/origin/${branch}`);
       const hasHead = await git('rev-parse', '--verify', '-q', 'HEAD').then(
         () => true,
         () => false
       );
       if (!hasHead) return false;
-      const counts = await git('rev-list', '--left-right', '--count', `HEAD...origin/${LEDGER_BRANCH}`);
+      const counts = await git('rev-list', '--left-right', '--count', `HEAD...origin/${branch}`);
       const behind = Number(counts.stdout.trim().split(/\s+/)[1] ?? '0');
       return behind === 0;
     }
     mkdirSync(dirname(o.dir), { recursive: true });
     const tmp = `${o.dir}.tmp-${now}`;
     rmSync(tmp, { recursive: true, force: true });
-    const heads = await run('git', ['ls-remote', '--heads', o.remote, LEDGER_BRANCH], { env, timeout: 30_000 });
+    const heads = await run('git', ['ls-remote', '--heads', o.remote, branch], { env, timeout: 30_000 });
     if (heads.stdout.trim()) {
-      await run('git', ['clone', '-q', '--branch', LEDGER_BRANCH, '--single-branch', o.remote, tmp], { env, timeout: 120_000 });
+      await run('git', ['clone', '-q', '--branch', branch, '--single-branch', o.remote, tmp], { env, timeout: 120_000 });
     } else {
       mkdirSync(tmp, { recursive: true });
-      await run('git', ['-C', tmp, 'init', '-q', '-b', LEDGER_BRANCH], { env });
+      await run('git', ['-C', tmp, 'init', '-q', '-b', branch], { env });
       await run('git', ['-C', tmp, 'remote', 'add', 'origin', o.remote], { env });
-      // Pliki dziennika bajt w bajt (bez konwersji końców linii) — inaczej `ots verify` na klonie z Windows by zawiodło
-      writeFileSync(join(tmp, '.gitattributes'), '*.jsonl -text\n*.ots binary\n');
+      // Pliki bajt w bajt (bez konwersji końców linii) — inaczej `ots verify` i hashe na klonie z Windows by zawiodły
+      writeFileSync(join(tmp, '.gitattributes'), '*.jsonl -text\n*.csv -text\n*.ots binary\n');
     }
     renameSync(tmp, o.dir);
     return true;
@@ -179,12 +189,13 @@ export interface CommitResult {
 }
 
 /**
- * Commit zmian i push (bez --force) na gałąź `ledger`. Dozwolone wyłącznie dopisanie: nowe pliki, pliki `.jsonl`,
+ * Commit zmian i push (bez --force) na gałąź `ledger` (albo `o.branch`). Dozwolone wyłącznie dopisanie: nowe pliki, pliki `.jsonl` i `.csv`,
  * których dotychczasowa treść jest prefiksem nowej, i indeks kotwic. Zmiana wstecz, usunięcie albo zmiana pokwitowania
  * `.ots` → commit odrzucony (i zmiany zdjęte z indeksu). Brak zmian → ok bez commita.
  */
 export async function commitLedger(o: LedgerRepo, message: string, now: number): Promise<CommitResult> {
   const env = gitEnv(o.dir, o.sshKey, now);
+  const branch = o.branch ?? LEDGER_BRANCH;
   const git = (...args: string[]) => run('git', ['-C', o.dir, ...args], { env, timeout: 60_000, maxBuffer: 64 * 1024 * 1024 });
   try {
     await git('add', '-A');
@@ -201,7 +212,7 @@ export async function commitLedger(o: LedgerRepo, message: string, now: number):
       let refusal: CommitResult | null = null;
       if (status.startsWith('D')) refusal = bad('usunięcie');
       else if (status.startsWith('M')) {
-        if (path.endsWith('.jsonl') && hasHead) {
+        if ((path.endsWith('.jsonl') || path.endsWith('.csv')) && hasHead) {
           const before = (await git('show', `HEAD:${path}`)).stdout;
           const after = readFileSync(join(o.dir, path), 'utf8');
           if (!after.startsWith(before)) refusal = bad('zmiana zapisanych linii');
@@ -221,8 +232,8 @@ export async function commitLedger(o: LedgerRepo, message: string, now: number):
     const ahead = await git('rev-list', '--count', 'HEAD', '--not', '--remotes=origin').catch(() => ({ stdout: '1' }));
     if (ahead.stdout.trim() !== '0') {
       try {
-        await git('push', '-q', 'origin', `HEAD:${LEDGER_BRANCH}`);
-        await git('fetch', '-q', 'origin', `${LEDGER_BRANCH}:refs/remotes/origin/${LEDGER_BRANCH}`).catch(() => undefined);
+        await git('push', '-q', 'origin', `HEAD:${branch}`);
+        await git('fetch', '-q', 'origin', `${branch}:refs/remotes/origin/${branch}`).catch(() => undefined);
       } catch (e) {
         return { ok: true, pushed: false, error: `push nieudany: ${String(e).slice(0, 200)}` };
       }

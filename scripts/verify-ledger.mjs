@@ -214,6 +214,29 @@ export function checkOrdering(records, opts = {}) {
   return out;
 }
 
+/**
+ * Prerejestracje katalogów (laboratorium folkloru, rekordy `k: 'p'`): `catalogHash` = SHA-256 kanonicznego JSON
+ * zapisanego katalogu, czasy niemalejące. Łańcuch hashy i pokwitowania OTS dowodzą, że katalog istniał przed oceną.
+ */
+export function checkPreregs(records) {
+  const problems = [];
+  const preregs = [];
+  let last = -Infinity;
+  for (const o of records) {
+    if (o.k !== 'p') continue;
+    const id = String(o.id);
+    if (!o.catalog || typeof o.catalog !== 'object') problems.push(`${id}: brak katalogu w rekordzie prerejestracji`);
+    else if (createHash('sha256').update(canonical(o.catalog)).digest('hex') !== o.catalogHash) problems.push(`${id}: hash katalogu nie zgadza się z treścią`);
+    if (typeof o.t !== 'number') problems.push(`${id}: brak czasu prerejestracji`);
+    else {
+      if (o.t < last) problems.push(`${id}: czas cofnięty względem poprzedniej prerejestracji`);
+      last = Math.max(last, o.t);
+    }
+    preregs.push({ id, t: o.t, catalogHash: o.catalogHash });
+  }
+  return { problems, preregs };
+}
+
 /** Partia slotu: prognozy główne ('') i „model vs rynek” ('m', wydawane później w slocie — osobne pokwitowanie). */
 export const batchOf = (o) => (o.kind === 'mkt' ? 'm' : '');
 
@@ -536,6 +559,14 @@ async function main() {
   const mismatch = checkResolutions(records);
   console.log(mismatch.length ? `✗ wyniki niezgodne z przeliczonymi (${mismatch.length}): ${mismatch.slice(0, 5).join('; ')}` : '✓ wyniki zgodne z przeliczonymi z kwantyli');
   if (mismatch.length) ok = false;
+  const pre = checkPreregs(records);
+  if (pre.preregs.length || pre.problems.length)
+    console.log(
+      pre.problems.length
+        ? `✗ prerejestracje (${pre.problems.length}): ${pre.problems.slice(0, 5).join('; ')}`
+        : `✓ prerejestracje katalogów: ${pre.preregs.map((p) => `${p.id} ${new Date(p.t).toISOString().slice(0, 16)}Z (${String(p.catalogHash).slice(0, 12)}…)`).join(', ')}`
+    );
+  if (pre.problems.length) ok = false;
   console.log(`Głowa łańcucha: ${prev}`);
 
   if (local) {

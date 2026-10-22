@@ -301,3 +301,34 @@ describe('LedgerRunner — model vs rynek: bez prognoz głównych slotu nie ma r
     expect(all.filter((l) => l.k === 's').map((l) => l.slot)).toEqual([SLOT0]);
   });
 });
+
+describe('prerejestracja katalogu w dzienniku', () => {
+  it('pierwsza rejestracja dopisuje rekord p; ten sam hash po restarcie → czas z dziennika, bez nowego rekordu', async () => {
+    const { r, store, dir } = runner();
+    expect(r.init(SLOT0).ok).toBe(true);
+    const body = { id: 'lab-v1', catalogHash: 'a'.repeat(64), catalog: { version: 'lab-v1', x: [1, 2] } };
+    const t1 = SLOT0 + 3 * MIN;
+    expect(r.register(body, t1)).toEqual({ at: t1, added: true });
+    expect(r.register(body, t1 + MIN)).toEqual({ at: t1, added: false });
+    const recs = lines(dir, '2026-10-22').filter((o) => o.k === 'p');
+    expect(recs).toHaveLength(1);
+    expect(recs[0]).toMatchObject({ k: 'p', id: 'lab-v1', t: t1, catalogHash: 'a'.repeat(64) });
+    // Zmieniony katalog = nowa rejestracja
+    expect(r.register({ ...body, catalogHash: 'b'.repeat(64) }, t1 + 2 * MIN)).toEqual({ at: t1 + 2 * MIN, added: true });
+
+    const again = new LedgerRunner({ coin: 'BTC', data: fakeData(), store: new LedgerStore({ dir, coin: 'BTC' }), repo: null, markPx: () => 100_000 });
+    expect(again.init(SLOT0 + HOUR).ok).toBe(true);
+    expect(again.register(body, SLOT0 + HOUR)).toEqual({ at: t1, added: false });
+    expect(store.lines).toBeGreaterThanOrEqual(2);
+  });
+  it('rekord prerejestracji nie psuje ładowania ani łańcucha; dziennik zatwierdza zmianę przy najbliższym przebiegu', async () => {
+    const { r, dir } = runner();
+    r.init(SLOT0);
+    r.register({ id: 'lab-v1', catalogHash: 'c'.repeat(64), catalog: {} }, SLOT0 + MIN);
+    const res = await r.tick(SLOT0 + 2 * MIN);
+    expect(res.appended).toBeGreaterThanOrEqual(0);
+    const st = new LedgerStore({ dir, coin: 'BTC' }).load(SLOT0 + 3 * MIN);
+    expect(st.ok).toBe(true);
+    expect(st.preregs.map((p) => p.catalogHash)).toEqual(['c'.repeat(64)]);
+  });
+});

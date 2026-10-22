@@ -19,6 +19,7 @@ describe('strażnik: decyzja o restarcie skanera', () => {
       'rejestrator płynności nie zapisuje minut od 40 min (brak arkusza z WebSocket?)',
       'dziennik prognoz: ostatnia aktualizacja 75 min temu (próg 60 min)',
       'profil płynności: ostatnia aktualizacja 45 min temu (próg 30 min)',
+      'laboratorium folkloru: ostatnia aktualizacja 200 min temu (próg 180 min)',
     ]) {
       expect(decide({ ...base, health: { ok: false, problems: [p], facts: [] } })).toMatchObject({ restart: true, category: 'stall' });
     }

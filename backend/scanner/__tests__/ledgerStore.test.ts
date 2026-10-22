@@ -126,3 +126,28 @@ describe('gałąź ledger — tylko dopisywanie', () => {
     expect(await prepareLedgerRepo({ remote, dir }, T0 + 2 * MIN)).toBe(false);
   });
 });
+
+describe('inna gałąź tylko do dopisywania (archiwum świec, pliki .csv)', () => {
+  it('gałąź z parametru; dopisanie wierszy .csv przechodzi, zmiana zapisanego wiersza → odrzucona', async () => {
+    const remote = mkdtempSync(join(tmpdir(), 'hq-remote-'));
+    execFileSync('git', ['init', '-q', '--bare', '-b', 'main', remote]);
+    const dir = join(mkdtempSync(join(tmpdir(), 'hq-state-')), 'archive');
+    const repo = { remote, dir, branch: 'archive' };
+    expect(await prepareLedgerRepo(repo, T0)).toBe(true);
+    const f = join(dir, 'BTC', '1h', '2026-10.csv');
+    execFileSync('git', ['-C', dir, 'status']); // repo istnieje
+    const { mkdirSync } = await import('node:fs');
+    mkdirSync(join(dir, 'BTC', '1h'), { recursive: true });
+    writeFileSync(f, 't,o,h,l,c,v,n\n1,2,3,1,2,5,9\n');
+    expect(await commitLedger(repo, 'archiwum: a', T0)).toMatchObject({ ok: true, pushed: true });
+    writeFileSync(f, 't,o,h,l,c,v,n\n1,2,3,1,2,5,9\n2,2,4,2,3,6,7\n');
+    expect(await commitLedger(repo, 'archiwum: b', T0 + MIN)).toMatchObject({ ok: true, pushed: true });
+    expect(git(remote, 'rev-list', '--count', 'archive')).toBe('2');
+    writeFileSync(f, 't,o,h,l,c,v,n\n1,2,9,1,2,5,9\n2,2,4,2,3,6,7\n');
+    const r = await commitLedger(repo, 'zmiana wstecz', T0 + 2 * MIN);
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/nie jest dopisaniem/);
+    expect(git(remote, 'rev-list', '--count', 'archive')).toBe('2');
+    expect(readFileSync(join(dir, '.gitattributes'), 'utf8')).toMatch(/\*\.csv -text/);
+  });
+});

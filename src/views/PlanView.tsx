@@ -10,6 +10,7 @@ import { PlanResult } from './plan/PlanResult';
 import { LedgerPanel } from './plan/LedgerPanel';
 import { DeskLedgerPanel } from './plan/DeskLedgerPanel';
 import { AuctionContextPanel } from './plan/AuctionContextPanel';
+import { FolkloreLabPanel } from './plan/FolkloreLabPanel';
 import { JournalTab } from './plan/JournalTab';
 import { usePlanLedger } from './plan/usePlanLedger';
 import { parseNum, planSigma, useDebounced, usePlanMarket, useStoredString } from './plan/hooks';
@@ -260,6 +261,7 @@ const PlanView: React.FC = () => {
           <AuctionContextPanel />
           <LedgerPanel ledger={ledger} />
           <DeskLedgerPanel />
+          <FolkloreLabPanel />
         </>
       ) : tab === 'journal' ? (
         <JournalTab />

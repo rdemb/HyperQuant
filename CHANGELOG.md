@@ -5,10 +5,14 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 ## [Unreleased]
 
 ### Dodane
+- **Laboratorium folkloru** (`src/utils/labEvents.ts`, `src/utils/anytime.ts`, `src/utils/folkloreLab.ts`, `backend/scanner/labRunner.ts`, karta w widoku Plan): 10 popularnych reguł day tradingu BTC (okrągły poziom jako opór / wsparcie, zebranie PDH / PDL → powrót, wybicie IB, powrót do VWAP z 2σ, luka CME, skrajne finansowanie → flush, „dump o 10:00 w NY”, momentum śróddzienne) oraz kontrola pozytywna (weekend spokojniejszy) i negatywna (poziomy nieokrągłe). Każda reguła to zdarzenie z dwiema barierami, z dokładnym p0 pod hipotezą martyngału z twierdzenia o opcjonalnym zatrzymaniu. Limit czasu daje wynik ułamkowy (bez obciążenia od odrzucania), a minimalna szerokość pasma ogranicza niejednoznaczne świece; kalibrację pod H0 sprawdzono symulacją. Historia (eksploracja): p i q Benjaminiego–Hochberga. Do przodu (potwierdzenie): katalog prerejestrowany w łańcuchu dziennika z pokwitowaniem OTS, ocena zdarzeń od 24 h po zapisie, e-wartości z procesu zakładów (ważne przy każdym podglądzie), e-BH osobno dla potwierdzeń i obaleń, sekwencja ufności efektu. Wszystkie zdarzenia do przodu publikowane do przeliczenia.
+- **Archiwum świec** (`backend/scanner/candleArchive.ts`, gałąź `archive` repo danych): zamknięte świece BTC 1m / 1h / 1d i godzinowe finansowanie w CSV, tylko dopisywanie — historia przestaje znikać z limitem ~5000 świec API.
+- Weryfikator dziennika sprawdza rekordy prerejestracji (hash katalogu, kolejność czasów).
 - **Strażnik skanera na serwerze** (`scripts/watchdog.mjs`, `backend/deploy/hyperquant-watchdog.{service,timer}`): co 15 min ta sama ocena zdrowia danych co nadzór w GitHub Actions (którego harmonogram GitHub pomija), niezależnie od GitHuba. Samonaprawa: restart skanera w stanie `failed`, przy braku lokalnej publikacji > 10 min albo stojącej publikacji, dzienniku prognoz lub rejestratorze płynności — działającej usługi dopiero po godzinie jej działania, najwyżej 3 razy w epizodzie; bez restartu przy błędach sieci, problemach jakości i ręcznym zatrzymaniu. Alarm: stan w gałęzi `health` repo danych po potwierdzeniu w dwóch przebiegach (prywatność — od razu), przypomnienie co 6 h; push uruchamia workflow otwierający / komentujący / zamykający zgłoszenie `alert-danych`. Root z własnym katalogiem stanu (`StateDirectory`, `ProtectSystem=strict`), commity w UTC.
 
 ### Zmienione
-- `scripts/check-data-health.mjs` eksportuje `fetchInput` (wspólne pobieranie dla nadzoru i strażnika).
+- `scripts/check-data-health.mjs` eksportuje `fetchInput` (wspólne pobieranie dla nadzoru i strażnika); pilnuje świeżości `lab/BTC.json` (3 h), a strażnik restartuje skaner przy stojącym laboratorium.
+- Magazyn gałęzi tylko do dopisywania (`ledgerStore`) obsługuje dowolną gałąź i pliki `.csv`.
 - README repo danych: lista plików w jednym miejscu, opis gałęzi `health`.
 
 ## [2.3.0] — 2026-10-22
