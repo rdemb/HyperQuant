@@ -155,6 +155,15 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         caveat: 'Wyniki od 20 rozstrzygnięć; prognozy nakładają się (wyniki skorelowane); brak danych 6 h po horyzoncie = jawne unieważnienie; pominięte sloty jawne; znaczniki czasu potwierdzają istnienie zapisu, nie poprawność modelu.',
       },
       {
+        metric: 'Kontekst aukcji (Plan, kafel na Desku)',
+        source: 'Świece BTC 1m (bieżąca i poprzednia sesja UTC) i 1h (~5000 ≈ 208 dni) z candleSnapshot Hyperliquid',
+        method:
+          'Sesja = dzień UTC. VWAP z ceny typowej ważonej wolumenem i pasma ±1σ/±2σ; Initial Balance 00:00–01:00 UTC z rozszerzeniami 1,5×/2×; profil poprzedniej sesji (wolumen świecy rozłożony w jej zakresie, koszyki 10 USD, VA 70%); słaby szczyt/dno = ekstremum w ≥ 2 oknach 30 min (≤ 0,02%). Częstości z pełnych sesji 1h: wybicia IB, reguła 80%, przebicie słabych vs mocnych ekstremów (różnica Newcombe’a), dotknięcie PDH/PDL wg otwarcia; przedziały Wilsona 95%',
+        kinds: ['LIVE'],
+        refresh: 'świece 1m co minutę, 1h co 30 min',
+        caveat: 'Cena typowa przybliża ceny transakcji; w statystyce z 1h profil i słabość ekstremów są przybliżone; poniżej 30 sesji „—”. Opis przeszłości, nie prognoza ani sygnał.',
+      },
+      {
         metric: 'Mechanika arkusza (Mikrostruktura)',
         source: 'WS bbo (najlepsze kwotowania, ~co 150 ms), l2Book (~co 5 s) i trades Hyperliquid w przeglądarce — od otwarcia strony, maks. 30 min',
         method:
