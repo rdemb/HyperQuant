@@ -5,6 +5,10 @@ import type { LiquidityProfile } from '../../utils/liquidity';
 import { useElementWidth } from '../market/MarketMap';
 
 const dayFmt = new Intl.DateTimeFormat('pl-PL', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+const hmFmt = new Intl.DateTimeFormat('pl-PL', { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' });
+const minFmt = new Intl.NumberFormat('pl-PL', { maximumFractionDigits: 1 });
+const hh = (h: number) => `${String(h).padStart(2, '0')}:00`;
+const daysWord = (n: number) => (n === 1 ? 'dnia' : 'dni');
 /** Godzina liczona od 30 minut danych — mniej to pojedyncza sesja, nie norma */
 const MIN_HOUR_N = 30;
 
@@ -45,6 +49,7 @@ export const LiquidityByHourPanel: React.FC = () => {
 
 const Body: React.FC<{ p: LiquidityProfile }> = ({ p }) => {
   const valid = p.byHour.filter((b) => b.d10 !== null && b.n >= MIN_HOUR_N);
+  const r = p.resilience;
   const thinnest = valid.length ? valid.reduce((a, b) => ((b.d10 as number) < (a.d10 as number) ? b : a)) : null;
   const deepest = valid.length ? valid.reduce((a, b) => ((b.d10 as number) > (a.d10 as number) ? b : a)) : null;
   const nowHour = p.now ? new Date(p.now.t).getUTCHours() : null;
@@ -52,36 +57,50 @@ const Body: React.FC<{ p: LiquidityProfile }> = ({ p }) => {
   return (
     <div className="flex flex-col gap-4 p-4">
       <p className="text-xs text-ink-2 leading-relaxed">
-        Mediana dolarów w zleceniach po obu stronach w odległości ±10 bp od środka, dla każdej godziny doby UTC, z ostatnich {p.days}{' '}
-        {p.days === 1 ? 'dnia' : 'dni'} ({p.minutes.toLocaleString('pl-PL')} minut). Cienka płynność = większy poślizg i łatwiejsze przesunięcie ceny.
+        Mediana dolarów w zleceniach po obu stronach w odległości ±10 bp od środka, dla każdej godziny doby UTC, z {p.days} {daysWord(p.days)} historii
+        ({p.minutes.toLocaleString('pl-PL')} minut). Cienka płynność = większy poślizg i łatwiejsze przesunięcie ceny.
       </p>
       <HourBars p={p} nowHour={nowHour} />
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Stat
-          label="Teraz (±10 bp)"
+          label={p.now ? `Teraz ±10 bp · ${hmFmt.format(p.now.t)} UTC` : 'Teraz ±10 bp'}
           value={<span className="font-mono tabular-nums text-base">{usd(p.now?.d10)}</span>}
-          hint={p.now?.ratio10 != null ? `${Math.round(p.now.ratio10 * 100)}% normy tej godziny` : 'brak normy dla tej godziny'}
+          hint={
+            !p.now
+              ? 'rejestrator nie zapisał świeżej minuty'
+              : p.now.ratio10 !== null
+              ? `${Math.round(p.now.ratio10 * 100)}% normy tej godziny (inne dni)`
+              : 'norma od 3 dni historii tej godziny'
+          }
         />
         <Stat
           label="Najcieńsza godzina"
-          value={<span className="font-mono tabular-nums text-base">{thinnest ? `${String(thinnest.h).padStart(2, '0')}:00` : DASH}</span>}
-          hint={thinnest ? `${usd(thinnest.d10)} · najgłębsza ${deepest ? `${String(deepest.h).padStart(2, '0')}:00` : DASH}` : `od ${MIN_HOUR_N} min danych na godzinę`}
+          value={<span className="font-mono tabular-nums text-base">{thinnest ? `${hh(thinnest.h)} UTC` : DASH}</span>}
+          hint={
+            thinnest
+              ? `${usd(thinnest.d10)} · najgłębsza ${deepest ? hh(deepest.h) : DASH} · z ${thinnest.days} ${daysWord(thinnest.days)}`
+              : `od ${MIN_HOUR_N} min danych na godzinę`
+          }
         />
-        <Stat label="Teraz (±20 bp)" value={<span className="font-mono tabular-nums text-base">{usd(p.now?.d20)}</span>} hint="obie strony" />
+        <Stat label="Teraz ±20 bp" value={<span className="font-mono tabular-nums text-base">{usd(p.now?.d20)}</span>} hint="obie strony" />
         <Stat
           label="Odporność"
-          value={<span className="font-mono tabular-nums text-base">{p.resilience.medianMin === null ? DASH : `${p.resilience.medianMin} min`}</span>}
+          value={<span className="font-mono tabular-nums text-base">{r.medianMin === null ? DASH : `${minFmt.format(r.medianMin)} min`}</span>}
           hint={
-            p.resilience.events
-              ? `mediana powrotu głębokości po ruchu ≥ 15 bp (${p.resilience.events} zdarz.${p.resilience.unrecovered ? `, bez powrotu w 1 h: ${p.resilience.unrecovered}` : ''})`
+            r.events
+              ? `mediana powrotu głębokości po ruchu ≥ 15 bp z wycofaniem płynności (${r.events}${r.unrecovered ? `, bez powrotu w 1 h: ${r.unrecovered}` : ''}; bez wycofania: ${r.noDrop})`
+              : r.noDrop
+              ? `${r.noDrop} ruchów ≥ 15 bp bez wycofania płynności`
               : 'brak ruchów ≥ 15 bp w historii'
           }
         />
       </div>
       <p className="text-[11px] text-ink-3 leading-relaxed">
-        Metoda: migawki arkusza Hyperliquid zagregowane do koszyków ~10 USD (co ~5 s), minutowe mediany; godzina z mniej niż {MIN_HOUR_N} min danych
-        jest wyszarzona. Odporność: po minucie, w której środek ruszył się o ≥ 15 bp, liczba minut do powrotu głębokości ±10 bp do 80% mediany
-        z poprzedniej godziny. Arkusz pokazuje zlecenia widoczne — ukryte i szybko anulowane nie są tu widoczne. Opis, nie prognoza.
+        Metoda: migawki arkusza Hyperliquid co ~5 s, zagregowane w koszyki dobierane do ceny tak, by 20 poziomów pokrywało ±20 bp (~10–20 USD),
+        koszyk na granicy pasma liczony proporcjonalnie; minutowe mediany. Godzina z mniej niż {MIN_HOUR_N} min danych jest wyszarzona; norma
+        „teraz” — z co najmniej 3 innych dni tej godziny. Odporność: po minucie, w której środek ruszył się o ≥ 15 bp, liczba minut (ciągłych)
+        do powrotu głębokości ±10 bp do 80% mediany z poprzedniej godziny; przerwy w danych pomijane{r.censored ? ` (${r.censored})` : ''}.
+        Arkusz pokazuje zlecenia widoczne — ukryte i szybko anulowane nie są tu widoczne. Opis, nie prognoza.
       </p>
     </div>
   );
@@ -139,21 +158,28 @@ const HourBars: React.FC<{ p: LiquidityProfile; nowHour: number | null }> = ({ p
             );
           })}
           {p.now && nowHour !== null && (
-            <line
-              x1={pad.l + nowHour * bw}
-              x2={pad.l + (nowHour + 1) * bw}
-              y1={y(Math.min(max, p.now.d10))}
-              y2={y(Math.min(max, p.now.d10))}
-              stroke="var(--color-level)"
-              strokeWidth={2}
-            />
+            <g>
+              <line
+                x1={pad.l + nowHour * bw}
+                x2={pad.l + (nowHour + 1) * bw}
+                y1={y(Math.min(max, p.now.d10))}
+                y2={y(Math.min(max, p.now.d10))}
+                stroke="var(--color-level)"
+                strokeWidth={2}
+              />
+              {p.now.d10 > max && (
+                <text x={pad.l + (nowHour + 0.5) * bw} y={pad.t + 2} textAnchor="middle" className="fill-ink-1" fontSize={9}>
+                  ▲
+                </text>
+              )}
+            </g>
           )}
         </svg>
       )}
       {hb && (
         <div className="pointer-events-none absolute top-0 right-0 rounded-md border border-line-strong bg-surface-2 px-2 py-1 text-[11px] text-ink-2 shadow-lg">
-          {String(hb.h).padStart(2, '0')}:00 UTC · ±10 bp {hb.d10 === null ? DASH : fmtCompact(hb.d10, '$')} · ±20 bp{' '}
-          {hb.d20 === null ? DASH : fmtCompact(hb.d20, '$')} · {hb.n} min
+          {hh(hb.h)} UTC · ±10 bp {hb.d10 === null ? DASH : fmtCompact(hb.d10, '$')} · ±20 bp {hb.d20 === null ? DASH : fmtCompact(hb.d20, '$')} · {hb.n}{' '}
+          min z {hb.days} {daysWord(hb.days)}
         </div>
       )}
     </div>

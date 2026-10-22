@@ -5,15 +5,21 @@ export interface LiquidityProfile {
   asOf: number;
   /** Pierwsza zapisana minuta w oknie (historia rośnie od uruchomienia rejestratora) */
   since: number | null;
+  /** Ostatnia zapisana minuta (rejestrator, który stoi, widać po jej wieku) */
+  last: number | null;
   /** Dni z danymi w oknie (maks. 30) i liczba minut */
   days: number;
   minutes: number;
-  /** Mediana głębokości obu stron (USD) w ±10 / ±20 bp wg godziny UTC; null = brak danych */
-  byHour: { h: number; d10: number | null; d20: number | null; n: number }[];
-  /** Ostatnia pełna minuta względem normy jej godziny (ratio10 = bieżąca / mediana godziny) */
-  now: { t: number; d10: number; d20: number; ratio10: number | null } | null;
-  /** Odporność: po minucie z ruchem środka ≥ 15 bp — minuty do powrotu głębokości ±10 bp do 80% mediany z poprzedniej godziny */
-  resilience: { events: number; medianMin: number | null; unrecovered: number };
+  /** Mediana głębokości obu stron (USD) w ±10 / ±20 bp wg godziny UTC; null = brak danych; `days` — różne dni w godzinie */
+  byHour: { h: number; d10: number | null; d20: number | null; n: number; days: number }[];
+  /** Ostatnia minuta, jeśli świeża (≤ 3 min); ratio10 = bieżąca / norma tej godziny z ≥ 3 innych dni (null = za mało historii) */
+  now: { t: number; d10: number; d20: number | null; ratio10: number | null } | null;
+  /**
+   * Odporność: po minucie z ruchem środka ≥ 15 bp — minuty do powrotu głębokości ±10 bp do 80% mediany z poprzedniej
+   * godziny. `events` = zdarzenia z wycofaniem płynności (z powrotem albo bez w 1 h); `censored` — przerwane brakiem danych;
+   * `noDrop` — ruchy bez wycofania płynności.
+   */
+  resilience: { events: number; medianMin: number | null; unrecovered: number; censored: number; noDrop: number };
 }
 
 const fin = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
@@ -28,15 +34,18 @@ export function isLiquidityProfile(x: unknown): x is LiquidityProfile {
     typeof p.coin === 'string' &&
     fin(p.asOf) &&
     finOrNull(p.since) &&
+    finOrNull(p.last) &&
     fin(p.days) &&
     fin(p.minutes) &&
     Array.isArray(p.byHour) &&
     p.byHour.length === 24 &&
-    p.byHour.every((b) => fin(b?.h) && finOrNull(b.d10) && finOrNull(b.d20) && fin(b.n)) &&
-    (p.now === null || (!!p.now && fin(p.now.t) && fin(p.now.d10) && fin(p.now.d20) && finOrNull(p.now.ratio10))) &&
+    p.byHour.every((b, i) => !!b && b.h === i && finOrNull(b.d10) && finOrNull(b.d20) && fin(b.n) && fin(b.days)) &&
+    (p.now === null || (!!p.now && fin(p.now.t) && fin(p.now.d10) && finOrNull(p.now.d20) && finOrNull(p.now.ratio10))) &&
     !!p.resilience &&
     fin(p.resilience.events) &&
     finOrNull(p.resilience.medianMin) &&
-    fin(p.resilience.unrecovered)
+    fin(p.resilience.unrecovered) &&
+    fin(p.resilience.censored) &&
+    fin(p.resilience.noDrop)
   );
 }

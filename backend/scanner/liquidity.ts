@@ -1,8 +1,8 @@
 /**
- * Rejestrator płynności arkusza: z migawek `l2Book` (zagregowanych do 4 cyfr znaczących — koszyki ~10 USD, zasięg ±20 bp)
- * głębokość po obu stronach w ±10 i ±20 bp od środka; minutowe mediany przechowywane na serwerze (30 dni, ~130 KB/dzień),
- * publikowane wyłącznie agregaty: profil płynności wg godziny UTC, bieżąca płynność względem normy tej godziny i odporność
- * (ile minut głębokość wraca do normy po gwałtownym ruchu ceny). Publiczne API nie daje historii arkusza — to ją tworzy.
+ * Rejestrator płynności arkusza: z migawek `l2Book` (zagregowanych tak, by 20 poziomów pokrywało ±20 bp — agregacja
+ * dobierana do ceny) głębokość po obu stronach w ±10 i ±20 bp od środka; minutowe mediany przechowywane na serwerze
+ * (30 dni), publikowane wyłącznie agregaty: profil płynności wg godziny UTC, bieżąca płynność względem normy tej godziny
+ * i odporność (ile minut głębokość wraca do normy po gwałtownym ruchu ceny). Publiczne API nie daje historii arkusza.
  */
 import type { LiquidityProfile } from '../../src/utils/liquidity.ts';
 
@@ -11,25 +11,71 @@ const HOUR = 60 * MIN;
 const DAY = 24 * HOUR;
 /** Okno historii (dni) */
 export const LIQ_KEEP_DAYS = 30;
+/** Poziomy arkusza po stronie w odpowiedzi Hyperliquid */
+const LEVELS = 20;
+/** Pasmo, które agregacja musi pokrywać (bp) */
+const COVER_BP = 20;
+/** „Teraz” tylko z minuty nie starszej niż 3 min — rejestrator, który stoi, nie udaje bieżącej wartości */
+const NOW_MAX_AGE = 3 * MIN;
+
+/** Agregacja `l2Book` Hyperliquid: cyfry znaczące (mantysa 2 lub 5 tylko przy 5 cyfrach) */
+export interface BookAgg {
+  nSigFigs: 3 | 4 | 5;
+  mantissa?: 2 | 5;
+}
+
+/** Rozmiar koszyka (USD) dla agregacji przy danej cenie. */
+export function bucketFor(a: BookAgg, price: number): number {
+  const digits = Math.floor(Math.log10(price)) + 1;
+  return (a.mantissa ?? 1) * 10 ** (digits - a.nSigFigs);
+}
+
+const OPTIONS: BookAgg[] = [{ nSigFigs: 5 }, { nSigFigs: 5, mantissa: 2 }, { nSigFigs: 5, mantissa: 5 }, { nSigFigs: 4 }, { nSigFigs: 3 }];
+
+/**
+ * Najdrobniejsza agregacja, przy której 20 poziomów pokrywa ±20 bp. Histereza: obecna zostaje, póki pokrywa pasmo, a jej
+ * koszyk jest najwyżej 2× większy od najlepszego (bez przełączania subskrypcji przy każdym drobnym ruchu ceny).
+ */
+export function chooseAgg(price: number, current?: BookAgg): BookAgg & { bucket: number } {
+  const need = (price * COVER_BP) / 1e4 / LEVELS;
+  const fits = (a: BookAgg) => bucketFor(a, price) >= need - 1e-9;
+  const best = OPTIONS.filter(fits).sort((a, b) => bucketFor(a, price) - bucketFor(b, price))[0] ?? { nSigFigs: 3 };
+  const pick = current && fits(current) && bucketFor(current, price) <= 2 * bucketFor(best, price) + 1e-9 ? current : best;
+  return { ...(pick.mantissa ? { nSigFigs: pick.nSigFigs, mantissa: pick.mantissa } : { nSigFigs: pick.nSigFigs }), bucket: bucketFor(pick, price) };
+}
 
 export interface BookSnap {
   t: number;
   mid: number;
-  /** USD po stronie bid / ask w ±10 bp i ±20 bp od środka */
+  /** Rozmiar koszyka (USD) wyznaczony z danych */
+  bucket: number;
+  /** USD po stronie bid / ask w ±10 bp i ±20 bp od środka; ±20 bp null, gdy arkusz go nie pokrywa */
   b10: number;
   a10: number;
-  b20: number;
-  a20: number;
+  b20: number | null;
+  a20: number | null;
 }
 
-/** Wiersz minutowy: mediany migawek z minuty */
-export interface MinuteRow extends BookSnap {
+/** Wiersz minutowy: mediany migawek z minuty (USD w pełnych dolarach), `bk` — koszyk */
+export interface MinuteRow {
+  t: number;
   n: number;
+  mid: number;
+  bk: number;
+  b10: number;
+  a10: number;
+  b20: number | null;
+  a20: number | null;
 }
 
 type Lvl = { px?: unknown; sz?: unknown };
 
-/** Migawka z poziomów `l2Book` [bids, asks]; pusta strona / skrzyżowany arkusz → null. */
+/**
+ * Migawka z poziomów `l2Book` [bids, asks] zagregowanych w koszyki (bid zaokrąglony w dół: [px, px + k), ask w górę:
+ * (px − k, px]). Koszyk k = najmniejsza różnica cen sąsiednich poziomów (z danych — niezależnie od subskrypcji). Koszyk
+ * przecinający granicę pasma liczony proporcjonalnie. Pokrycie: ±10 bp wymagane (inaczej null), ±20 bp — null, gdy
+ * najgłębszy poziom nie sięga granicy (bez cichego obcięcia).
+ */
 export function bookSnap(t: number, levels: unknown): BookSnap | null {
   if (!Array.isArray(levels) || levels.length < 2) return null;
   const side = (rows: unknown) =>
@@ -39,9 +85,25 @@ export function bookSnap(t: number, levels: unknown): BookSnap | null {
   const bids = side(levels[0]);
   const asks = side(levels[1]);
   if (!bids.length || !asks.length || bids[0].px >= asks[0].px) return null;
+  let bucket = Infinity;
+  for (const xs of [bids, asks]) for (let i = 1; i < xs.length; i++) bucket = Math.min(bucket, Math.abs(xs[i].px - xs[i - 1].px));
+  if (!Number.isFinite(bucket) || !(bucket > 0)) bucket = asks[0].px - bids[0].px;
   const mid = (bids[0].px + asks[0].px) / 2;
-  const depth = (xs: { px: number; sz: number }[], bp: number) => xs.filter((r) => Math.abs(r.px - mid) <= (mid * bp) / 1e4).reduce((a, r) => a + r.px * r.sz, 0);
-  return { t, mid, b10: depth(bids, 10), a10: depth(asks, 10), b20: depth(bids, 20), a20: depth(asks, 20) };
+  const lowest = Math.min(...bids.map((b) => b.px));
+  const highest = Math.max(...asks.map((a) => a.px));
+  const cover = (Math.min(mid - lowest, highest - mid) / mid) * 1e4;
+  if (cover < 10) return null;
+  const clamp = (x: number) => Math.min(1, Math.max(0, x));
+  const depthBid = (bp: number) => {
+    const edge = mid * (1 - bp / 1e4);
+    return bids.reduce((a, r) => a + r.px * r.sz * clamp((r.px + bucket - edge) / bucket), 0);
+  };
+  const depthAsk = (bp: number) => {
+    const edge = mid * (1 + bp / 1e4);
+    return asks.reduce((a, r) => a + r.px * r.sz * clamp((edge - (r.px - bucket)) / bucket), 0);
+  };
+  const ok20 = cover >= COVER_BP;
+  return { t, mid, bucket, b10: depthBid(10), a10: depthAsk(10), b20: ok20 ? depthBid(20) : null, a20: ok20 ? depthAsk(20) : null };
 }
 
 const median = (xs: number[]): number => {
@@ -49,6 +111,13 @@ const median = (xs: number[]): number => {
   const m = s.length >> 1;
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 };
+
+const medianOrNull = (xs: (number | null)[]): number | null => {
+  const v = xs.filter((x): x is number => x !== null);
+  return v.length ? median(v) : null;
+};
+
+const roundOrNull = (x: number | null) => (x === null ? null : Math.round(x));
 
 /** Mediany migawek w minutach (klucz = początek minuty); minuta w toku (koniec > `now`) pomijana. */
 export function minuteRows(snaps: BookSnap[], now: number): MinuteRow[] {
@@ -66,55 +135,97 @@ export function minuteRows(snaps: BookSnap[], now: number): MinuteRow[] {
       t,
       n: xs.length,
       mid: median(xs.map((x) => x.mid)),
-      b10: median(xs.map((x) => x.b10)),
-      a10: median(xs.map((x) => x.a10)),
-      b20: median(xs.map((x) => x.b20)),
-      a20: median(xs.map((x) => x.a20)),
+      bk: median(xs.map((x) => x.bucket)),
+      b10: Math.round(median(xs.map((x) => x.b10))),
+      a10: Math.round(median(xs.map((x) => x.a10))),
+      b20: roundOrNull(medianOrNull(xs.map((x) => x.b20))),
+      a20: roundOrNull(medianOrNull(xs.map((x) => x.a20))),
     }));
 }
+
+const tot10 = (r: MinuteRow) => r.b10 + r.a10;
+const tot20 = (r: MinuteRow) => (r.b20 === null || r.a20 === null ? null : r.b20 + r.a20);
+const dayOf = (t: number) => Math.floor(t / DAY);
 
 /** Agregaty do publikacji z wierszy minutowych (okno `days` dni). */
 export function liquidityProfile(rows: MinuteRow[], coin: string, now: number, days = LIQ_KEEP_DAYS): LiquidityProfile {
   const from = now - days * DAY;
   const rs = rows.filter((r) => r.t >= from && r.t < now).sort((a, b) => a.t - b.t);
-  const tot10 = (r: MinuteRow) => r.b10 + r.a10;
-  const tot20 = (r: MinuteRow) => r.b20 + r.a20;
+  const hourOf = (r: MinuteRow) => new Date(r.t).getUTCHours();
   const byHour = Array.from({ length: 24 }, (_, h) => {
-    const xs = rs.filter((r) => new Date(r.t).getUTCHours() === h);
-    return { h, d10: xs.length ? median(xs.map(tot10)) : null, d20: xs.length ? median(xs.map(tot20)) : null, n: xs.length };
+    const xs = rs.filter((r) => hourOf(r) === h);
+    return { h, d10: xs.length ? median(xs.map(tot10)) : null, d20: medianOrNull(xs.map(tot20)), n: xs.length, days: new Set(xs.map((r) => dayOf(r.t))).size };
   });
+
+  // „Teraz”: ostatnia minuta, jeśli świeża; norma tej godziny z innych dni (≥ 3 dni, ≥ 90 min) — bez dzisiejszej sesji
   const last = rs[rs.length - 1];
-  const norm = last ? byHour[new Date(last.t).getUTCHours()].d10 : null;
-  // Odporność: zdarzenie = minuta z ruchem środka ≥ 15 bp względem poprzedniej (ciągłej) minuty
+  let nowRow: LiquidityProfile['now'] = null;
+  if (last && now - (last.t + MIN) <= NOW_MAX_AGE) {
+    const others = rs.filter((r) => hourOf(r) === hourOf(last) && dayOf(r.t) !== dayOf(last.t));
+    const norm = others.length >= 90 && new Set(others.map((r) => dayOf(r.t))).size >= 3 ? median(others.map(tot10)) : null;
+    nowRow = { t: last.t, d10: tot10(last), d20: tot20(last), ratio10: norm && norm > 0 ? tot10(last) / norm : null };
+  }
+
+  // Odporność: zdarzenie = minuta z ruchem środka ≥ 15 bp względem poprzedniej (ciągłej) minuty. Okno odniesienia —
+  // godzina przed zdarzeniem (dwa wskaźniki, O(n)). Powrót liczony tylko po ciągłych minutach: luka albo koniec danych
+  // przed powrotem = zdarzenie cenzurowane (pomijane); ruch bez wycofania płynności liczony osobno.
   const recov: number[] = [];
   let unrecovered = 0;
-  let events = 0;
+  let censored = 0;
+  let noDrop = 0;
+  let lo = 0;
   for (let i = 1; i < rs.length; i++) {
     const p = rs[i - 1];
     const c = rs[i];
     if (c.t - p.t !== MIN || Math.abs(c.mid - p.mid) / p.mid < 0.0015) continue;
-    const base = rs.filter((r) => r.t >= c.t - HOUR && r.t < c.t).map(tot10);
+    while (rs[lo].t < c.t - HOUR) lo++;
+    const base = rs.slice(lo, i).map(tot10);
     if (base.length < 30) continue;
-    events++;
     const target = 0.8 * median(base);
-    let k = i;
-    while (k < rs.length && rs[k].t - c.t <= HOUR && tot10(rs[k]) < target) k++;
-    if (k < rs.length && rs[k].t - c.t <= HOUR) recov.push((rs[k].t - c.t) / MIN);
-    else unrecovered++;
-    i = k; // następne zdarzenie dopiero po powrocie (jeden epizod liczony raz)
+    if (tot10(c) >= target) {
+      noDrop++;
+      continue;
+    }
+    let k = i + 1;
+    for (;;) {
+      if (k >= rs.length || rs[k].t - rs[k - 1].t !== MIN) {
+        censored++;
+        break;
+      }
+      if (rs[k].t - c.t > HOUR) {
+        unrecovered++;
+        break;
+      }
+      if (tot10(rs[k]) >= target) {
+        recov.push((rs[k].t - c.t) / MIN);
+        break;
+      }
+      k++;
+    }
+    i = k; // następne zdarzenie dopiero po zakończeniu epizodu
   }
+
   return {
     v: 1,
     coin,
     asOf: now,
     since: rs.length ? rs[0].t : null,
-    days: new Set(rs.map((r) => Math.floor(r.t / DAY))).size,
+    last: last ? last.t : null,
+    days: new Set(rs.map((r) => dayOf(r.t))).size,
     minutes: rs.length,
     byHour,
-    now: last ? { t: last.t, d10: tot10(last), d20: tot20(last), ratio10: norm && norm > 0 ? tot10(last) / norm : null } : null,
-    resilience: { events, medianMin: recov.length ? median(recov) : null, unrecovered },
+    now: nowRow,
+    resilience: { events: recov.length + unrecovered, medianMin: recov.length ? median(recov) : null, unrecovered, censored, noDrop },
   };
 }
+
+const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+const finiteOrNull = (v: unknown) => v === null || finite(v);
+/** Wiersz ze stanu: wszystkie pola liczbowe poprawne (uszkodzony wiersz nie psuje profilu) */
+const validRow = (r: unknown): r is MinuteRow => {
+  const x = r as Partial<MinuteRow> | null;
+  return !!x && finite(x.t) && finite(x.n) && finite(x.mid) && finite(x.bk) && finite(x.b10) && finite(x.a10) && finiteOrNull(x.b20) && finiteOrNull(x.a20);
+};
 
 /** Stan rejestratora: migawki bieżących minut i wiersze minutowe z 30 dni. */
 export class LiquidityRecorder {
@@ -146,12 +257,13 @@ export class LiquidityRecorder {
     return fresh;
   }
 
-  /** Wczytanie wierszy ze stanu (tylko okno 30 dni, rosnąco, bez duplikatów). */
-  load(rows: MinuteRow[], now: number): void {
+  /** Wczytanie wierszy ze stanu (tylko poprawne, w oknie 30 dni, rosnąco, bez duplikatów). */
+  load(rows: unknown[], now: number): void {
     const cut = now - LIQ_KEEP_DAYS * DAY;
     const seen = new Set<number>();
     this.rows = rows
-      .filter((r) => r && Number.isFinite(r.t) && r.t >= cut && r.t < now && !seen.has(r.t) && (seen.add(r.t), true))
+      .filter(validRow)
+      .filter((r) => r.t >= cut && r.t < now && !seen.has(r.t) && (seen.add(r.t), true))
       .sort((a, b) => a.t - b.t);
     this.lastRowT = this.rows.length ? this.rows[this.rows.length - 1].t : Number.NEGATIVE_INFINITY;
   }
@@ -159,6 +271,11 @@ export class LiquidityRecorder {
   /** Wiersze w oknie (do zapisu skompaktowanego pliku stanu). */
   allRows(): MinuteRow[] {
     return this.rows;
+  }
+
+  /** Środek ceny z ostatniej zapisanej minuty (do doboru agregacji po restarcie) */
+  lastMid(): number | null {
+    return this.rows.length ? this.rows[this.rows.length - 1].mid : null;
   }
 
   profile(now: number): LiquidityProfile {

@@ -15,7 +15,7 @@ import { LedgerStore, prepareLedgerRepo } from './ledgerStore.ts';
 import { LedgerRunner } from './ledgerRunner.ts';
 import { stampDigest } from './ots.ts';
 import { marketSnapshot } from './marketQuotes.ts';
-import { LiquidityRecorder, type MinuteRow } from './liquidity.ts';
+import { LiquidityRecorder, chooseAgg, type BookAgg, type MinuteRow } from './liquidity.ts';
 import { WeightLimiter } from './rateLimiter.ts';
 import { Scanner } from './scanner.ts';
 import { fetchLeaderboardAccounts } from './seed.ts';
@@ -263,6 +263,21 @@ async function ledgerTick(): Promise<void> {
   if (res.commit && (!res.commit.ok || !res.commit.pushed)) console.error(`[skaner] dziennik: ${res.commit.error ?? 'commit/push nieudany'}`);
 }
 
+/**
+ * Agregacja arkusza rejestratora płynności: 20 poziomów ma pokrywać ±20 bp (przy cenie ≥ 100 tys. 4 cyfry znaczące dają
+ * koszyki 100 USD — pomiar ±10 bp byłby zdegenerowany). Histereza w `chooseAgg`; zmiana = nowa subskrypcja.
+ */
+let bookAgg: BookAgg = { nSigFigs: 4 };
+function adjustBookAgg(): void {
+  const px = scanner.freshMarkPx() ?? liquidity.lastMid();
+  if (!px) return;
+  const next = chooseAgg(px, bookAgg);
+  if (next.nSigFigs === bookAgg.nSigFigs && next.mantissa === bookAgg.mantissa) return;
+  bookAgg = { nSigFigs: next.nSigFigs, ...(next.mantissa ? { mantissa: next.mantissa } : {}) };
+  stream.setBookAgg(bookAgg);
+  log(`płynność: agregacja arkusza ${bookAgg.nSigFigs} cyfr znaczących${bookAgg.mantissa ? `, mantysa ${bookAgg.mantissa}` : ''} (koszyk ${next.bucket} USD)`);
+}
+
 /** Zapas dla kontekstu rynku, gdy WebSocket milczy > 2 min (waga 20). */
 async function ctxFallback(): Promise<void> {
   if (Date.now() - lastWsCtx < 120_000) return;
@@ -340,6 +355,7 @@ const timers = [
     10 * 60_000
   ),
   setInterval(guarded('kompaktowanie płynności', compactLiquidity), 24 * 60 * 60_000),
+  setInterval(guarded('agregacja arkusza', adjustBookAgg), 10 * 60_000),
   setInterval(guarded('zasiew', seedFromLeaderboard), 6 * 60 * 60_000),
   ...(cfg.git ? [setInterval(guarded('repo danych', gitPublishTick), cfg.git.everyS * 1000)] : []),
 ];
@@ -371,5 +387,8 @@ log(
   `start: rynek ${cfg.coin}, budżet ${cfg.weightPerMin} wag/min, publikacja co ${cfg.publishEveryS} s ${cfg.r2 ? 'do R2' : 'lokalnie'}` +
     (cfg.git ? `, repo danych co ${cfg.git.everyS} s` : '')
 );
+// Agregacja arkusza dobrana do ceny przed pierwszym połączeniem (z ostatniej zapisanej minuty), potem co 10 min
+adjustBookAgg();
 stream.start();
+setTimeout(guarded('agregacja arkusza', adjustBookAgg), 60_000);
 void scanLoop();

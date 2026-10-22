@@ -87,6 +87,9 @@ export function assessHealth(input, nowMs, limits = LIMITS) {
     else {
       facts.push({ label: 'Wiek profilu płynności', value: fmtMin(a.ageMin) });
       if (a.ageMin > LIQUIDITY_MAX_AGE_MIN) problems.push(`profil płynności: ostatnia aktualizacja ${fmtMin(a.ageMin)} temu (próg ${LIQUIDITY_MAX_AGE_MIN} min)`);
+      const last = input.liquidity.last;
+      if (typeof last === 'number' && input.liquidity.asOf - last > 15 * MIN)
+        problems.push(`rejestrator płynności nie zapisuje minut od ${fmtMin((input.liquidity.asOf - last) / MIN)} (brak arkusza z WebSocket?)`);
     }
   }
 

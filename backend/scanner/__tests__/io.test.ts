@@ -309,6 +309,20 @@ describe('HlStream — odporność połączenia', () => {
     ws.onmessage?.({ data: JSON.stringify({ channel: 'l2Book', data: { coin: 'BTC', time: 1234, levels: [[{ px: '1', sz: '1', n: 1 }], []] } }) });
     s.stop();
     expect(got).toEqual([{ t: 1234, levels: [[{ px: '1', sz: '1', n: 1 }], []] }]);
+    // zmiana agregacji (cena przekroczyła próg): wypisanie starej subskrypcji i zapis nowej
+    const s3 = new HlStream('BTC', () => {}, () => {}, FakeWs as unknown as typeof WebSocket, () => {});
+    s3.start();
+    const ws3 = FakeWs.instances[FakeWs.instances.length - 1];
+    ws3.open();
+    ws3.sent.length = 0;
+    s3.setBookAgg({ nSigFigs: 5, mantissa: 2 });
+    expect(ws3.sent.map((x) => JSON.parse(x))).toEqual([
+      { method: 'unsubscribe', subscription: { type: 'l2Book', coin: 'BTC', nSigFigs: 4 } },
+      { method: 'subscribe', subscription: { type: 'l2Book', coin: 'BTC', nSigFigs: 5, mantissa: 2 } },
+    ]);
+    s3.setBookAgg({ nSigFigs: 5, mantissa: 2 }); // bez zmian — bez wiadomości
+    expect(ws3.sent).toHaveLength(2);
+    s3.stop();
     // bez callbacku — bez subskrypcji arkusza
     FakeWs.instances = [];
     const s2 = new HlStream('BTC', () => {}, () => {}, FakeWs as unknown as typeof WebSocket);

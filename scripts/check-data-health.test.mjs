@@ -148,5 +148,9 @@ describe('profil płynności (plik opcjonalny)', () => {
     const stale = assessHealth(input({ liquidity: { v: 1, asOf: NOW - 45 * MIN } }), NOW);
     expect(stale.ok).toBe(false);
     expect(stale.problems.join(' ')).toMatch(/płynności/);
+    // profil świeży, ale rejestrator nie zapisuje minut (np. brak arkusza z WebSocket)
+    const stuck = assessHealth(input({ liquidity: { v: 1, asOf: NOW - 5 * MIN, last: NOW - 40 * MIN } }), NOW);
+    expect(stuck.ok).toBe(false);
+    expect(stuck.problems.join(' ')).toMatch(/nie zapisuje/);
   });
 });
