@@ -5,6 +5,7 @@ import { FundingStrip } from '../market/FundingStrip';
 import { NextEventStat } from '../market/NextEventStat';
 import { useDeskLedger } from '../../state/useDeskLedger';
 import { calibrate } from '../../utils/deskLedger';
+import { useAuctionContext } from '../../state/useAuctionContext';
 
 /** Pas kontekstu pod wykresem: zasięg MC, głębokość arkusza, mikrostruktura, funding, najbliższe makro. */
 export const DeskRail: React.FC = () => {
@@ -31,8 +32,21 @@ export const DeskRail: React.FC = () => {
     return c === null ? null : `skal. ${Math.round(c * 100)}%`;
   };
 
+  // Kontekst aukcji sesji UTC (ten sam stan co panel w widoku Plan — jedno pobieranie)
+  const auction = useAuctionContext();
+  const auctionStale = auction.asOf !== null && Date.now() - auction.asOf > 3 * 60_000;
+  const vw = auction.vwap;
+  const vwapZ = vw && vw.sd > 0 && px > 0 ? (px - vw.vwap) / vw.sd : null;
+  const ibText = !auction.ib
+    ? DASH
+    : !auction.ib.done
+    ? 'IB w trakcie (00–01 UTC)'
+    : auction.today
+    ? `IB ${auction.today.ibBreak.up ? '↑ wybity' : '↑ —'} · ${auction.today.ibBreak.down ? '↓ wybity' : '↓ —'}`
+    : 'IB zamknięty';
+
   return (
-    <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+    <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3">
       <div className="bg-surface-1 border border-line rounded-xl p-3.5 col-span-2 md:col-span-1">
         <Stat
           label="Zasięg 2h · MC"
@@ -116,6 +130,19 @@ export const DeskRail: React.FC = () => {
           source={{ tone: 'model', label: 'MODEL', title: 'Regresja OU wokół 0.65·D-EQ + 0.35·W-EQ' }}
           value={<span className="text-base">Z {quant.ouZScore > 0 ? '+' : ''}{quant.ouZScore}σ</span>}
           hint={`t½ ${Number.isFinite(quant.ouHalfLifeBars) ? `${quant.ouHalfLifeBars} świec` : '∞ (brak powrotu)'} · ${shaakuni.nySession}`}
+        />
+      </div>
+
+      <div className="bg-surface-1 border border-line rounded-xl p-3.5">
+        <Stat
+          label="Aukcja · sesja UTC"
+          source={
+            auctionStale
+              ? { tone: 'stale', label: 'STALE', title: 'Świece nie odświeżyły się od ponad 3 min' }
+              : { tone: 'live', label: 'LIVE', title: 'VWAP sesji UTC ze świec 1m (cena typowa ważona wolumenem) i Initial Balance 00:00–01:00 UTC; szczegóły w widoku Plan' }
+          }
+          value={<span className="text-base">{vwapZ === null ? DASH : `${vwapZ >= 0 ? '+' : '−'}${Math.abs(vwapZ).toFixed(1)}σ`}</span>}
+          hint={`od VWAP · ${ibText}`}
         />
       </div>
 
