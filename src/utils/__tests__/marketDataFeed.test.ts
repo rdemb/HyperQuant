@@ -13,6 +13,7 @@ import {
   loadMinuteCandles,
   loadVolModel,
   parseHlCandles,
+  parseHlCandlesV,
   runTouchMonteCarlo,
 } from '../marketDataFeed';
 import { normCdf } from '../stats';
@@ -262,6 +263,14 @@ describe('parseHlCandles i loadVolModel (zamockowane API)', () => {
     ]);
     expect(bars).toEqual([{ time: 1, open: 100, high: 101, low: 99, close: 100.5 }]);
     expect(parseHlCandles(null)).toEqual([]);
+  });
+
+  it('parseHlCandlesV: z wolumenem (BTC); brak skończonego wolumenu → rekord pominięty', () => {
+    const bars = parseHlCandlesV([
+      { t: 1, o: '100', h: '101', l: '99', c: '100.5', v: '12.5' },
+      { t: 2, o: '100', h: '101', l: '99', c: '100', v: 'x' },
+    ]);
+    expect(bars).toEqual([{ time: 1, open: 100, high: 101, low: 99, close: 100.5, volume: 12.5 }]);
   });
 
   function stubCandles(failing = false) {

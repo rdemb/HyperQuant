@@ -1,5 +1,6 @@
 import { normCdf } from './stats';
 import { RangeBar, VolModel, buildVolModel, horizonStepSigmas } from './volatility';
+import type { VBar } from './auction';
 import { runTouchMonteCarlo } from './touchMc';
 
 export { runTouchMonteCarlo };
@@ -527,6 +528,29 @@ export function parseHlCandles(raw: unknown): RangeBar[] {
     if ([b.time, b.open, b.high, b.low, b.close].every(Number.isFinite)) out.push(b);
   }
   return out;
+}
+
+/** Jak `parseHlCandles`, z wolumenem świecy (BTC, pole `v`); rekord bez skończonego wolumenu jest pomijany. */
+export function parseHlCandlesV(raw: unknown): VBar[] {
+  if (!Array.isArray(raw)) return [];
+  const out: VBar[] = [];
+  for (const c of raw as Record<string, unknown>[]) {
+    const b = {
+      time: finiteOrNaN(c?.t),
+      open: finiteOrNaN(c?.o),
+      high: finiteOrNaN(c?.h),
+      low: finiteOrNaN(c?.l),
+      close: finiteOrNaN(c?.c),
+      volume: finiteOrNaN(c?.v),
+    };
+    if ([b.time, b.open, b.high, b.low, b.close, b.volume].every(Number.isFinite)) out.push(b);
+  }
+  return out;
+}
+
+/** Świece BTC z wolumenem od `fromMs` (interwał HL: '1m', '1h'…; API zwraca najwyżej ~5000 ostatnich). Błąd → pusta lista. */
+export async function loadCandlesV(interval: string, fromMs: number): Promise<VBar[]> {
+  return parseHlCandlesV(await postInfo({ type: 'candleSnapshot', req: { coin: 'BTC', interval, startTime: fromMs } }));
 }
 
 /**
