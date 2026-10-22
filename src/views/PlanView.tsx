@@ -164,12 +164,7 @@ const PlanView: React.FC = () => {
   const debInput = useDebounced(input, 200);
   const analysis = useMemo(() => analyzePlan(debInput, { paths: 2000, seed: 7 }), [debInput]);
 
-  const ledger = usePlanLedger({
-    bars: market.bars,
-    barMs: market.timeframeSec * 1000,
-    realBars: market.realBars,
-    nowTick: feed.nowTick,
-  });
+  const ledger = usePlanLedger();
 
   const saveBlocked = !analysis.ok
     ? 'Popraw plan, aby go zapisać.'
@@ -193,6 +188,7 @@ const PlanView: React.FC = () => {
           pFill: analysis.mc.pFill,
           fillRare: analysis.mc.fillRare,
           modelVersion: analysis.mc.modelVersion,
+          startPrice: debInput.startPrice,
           source: form.draft?.source,
         },
         Date.now()

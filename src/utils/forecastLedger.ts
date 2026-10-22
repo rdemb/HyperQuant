@@ -1,4 +1,4 @@
-import { PLAN_MODEL_VERSION, PlanDirection } from './planAnalyzer';
+import { MARKET_ENTRY_TOL, PLAN_MODEL_VERSION, PlanDirection } from './planAnalyzer';
 
 /**
  * Dziennik trafności prognoz Analizatora planu — lokalny i prywatny (tylko localStorage tej przeglądarki).
@@ -30,6 +30,8 @@ export interface LedgerEntry {
   pFill?: number;
   /** true = za mało wypełnień w symulacji; P(cel/stop/żadne) policzone przy natychmiastowym wejściu */
   fillRare?: boolean;
+  /** Cena rynku przy zapisie; wejście w granicy MARKET_ENTRY_TOL = zlecenie rynkowe, wypełnione od zapisu */
+  startPrice?: number;
   modelVersion: string;
   source?: string;
   status: LedgerStatus;
@@ -66,6 +68,7 @@ export function makeEntry(
     source?: string;
     pFill?: number;
     fillRare?: boolean;
+    startPrice?: number;
     /** Metoda faktycznie użyta w analizie (McResult.modelVersion); domyślnie bieżąca wersja modelu */
     modelVersion?: string;
   },
@@ -110,6 +113,10 @@ export function loadLedger(storage: StorageLike | null = defaultStorage()): Ledg
           const { pFill: _p, ...rest } = out;
           out = rest;
         }
+        if (out.startPrice !== undefined && !(num(out.startPrice) && out.startPrice > 0)) {
+          const { startPrice: _s, ...rest } = out;
+          out = rest;
+        }
         if (out.fillRare !== undefined && typeof out.fillRare !== 'boolean') {
           const { fillRare: _f, ...rest } = out;
           out = rest;
@@ -145,6 +152,7 @@ export function clearLedger(storage: StorageLike | null = defaultStorage()): voi
  * Zasady:
  * - liczą się świece otwarte w [utworzenie, utworzenie + horyzont); świeca w toku przy utworzeniu jest pomijana,
  *   bo jej high/low mogą pochodzić sprzed planu (rozdzielczość = interwał świec);
+ * - zlecenie rynkowe (wejście w granicy 1 bp od ceny przy zapisie) jest wypełnione od zapisu; inne czekają na dotknięcie wejścia;
  * - pierwsza świeca dotykająca celu lub stopu rozstrzyga; gdy jedna świeca dotyka obu — ostrożnie „stop”
  *   (kolejność wewnątrz świecy nieznana);
  * - brak dotknięcia i dane sięgają końca horyzontu → „none”;
@@ -165,7 +173,8 @@ export function resolvePending(entries: LedgerEntry[], bars: LedgerBar[], now: n
     const long = e.direction === 'LONG';
     // Najpierw wypełnienie: pierwsza świeca po zapisie, której zakres obejmuje cenę wejścia.
     // W świecy wypełnienia kolejność zdarzeń jest nieznana — liczymy w niej tylko stop (ostrożnie), cel od następnej.
-    let filled = false;
+    // Zlecenie rynkowe (wejście w granicy 1 bp od ceny przy zapisie) jest wypełnione od zapisu — jak w Monte Carlo
+    let filled = e.startPrice !== undefined && Math.abs(Math.log(e.entry / e.startPrice)) <= MARKET_ENTRY_TOL;
     for (const b of bars) {
       if (b.time < e.createdAt) continue;
       if (b.time >= deadline) break;
@@ -188,6 +197,16 @@ export function resolvePending(entries: LedgerEntry[], bars: LedgerBar[], now: n
     }
     return e;
   });
+}
+
+/**
+ * Początek pobierania świec 1m do rozstrzygania: najwcześniejszy oczekujący plan minus jedna minuta (świeca, w której
+ * plan zapisano, musi być w danych, żeby ją pominąć). Brak oczekujących → null (nic do pobrania).
+ */
+export function ledgerFetchStart(entries: LedgerEntry[]): number | null {
+  let min = Number.POSITIVE_INFINITY;
+  for (const e of entries) if (e.status === 'pending' && e.createdAt < min) min = e.createdAt;
+  return Number.isFinite(min) ? min - 60_000 : null;
 }
 
 export function bucketIndex(p: number): number {

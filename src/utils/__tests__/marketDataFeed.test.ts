@@ -10,6 +10,7 @@ import {
   parseL2Levels,
   recalculateIndicatorSeries,
   resetHtfCacheForTests,
+  loadMinuteCandles,
   loadVolModel,
   parseHlCandles,
   runTouchMonteCarlo,
@@ -290,6 +291,22 @@ describe('parseHlCandles i loadVolModel (zamockowane API)', () => {
       })
     );
   }
+
+  it('loadMinuteCandles: świece 1m od zadanego czasu; błąd API → pusta lista', async () => {
+    const reqs: unknown[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init: { body: string }) => {
+        reqs.push(JSON.parse(init.body));
+        return { ok: true, json: async () => [{ t: 120_000, o: '100', h: '102', l: '99', c: '101' }] } as Response;
+      })
+    );
+    const bars = await loadMinuteCandles(60_000);
+    expect(reqs[0]).toEqual({ type: 'candleSnapshot', req: { coin: 'BTC', interval: '1m', startTime: 60_000 } });
+    expect(bars).toEqual([{ time: 120_000, open: 100, high: 102, low: 99, close: 101 }]);
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, json: async () => null }) as Response));
+    expect(await loadMinuteCandles(60_000)).toEqual([]);
+  });
 
   it('z danych API buduje model; błąd API → null (bez liczb zastępczych)', async () => {
     stubCandles();

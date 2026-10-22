@@ -61,8 +61,8 @@ export const LedgerPanel: React.FC<{ ledger: PlanLedger }> = ({ ledger }) => {
     >
       <div className="px-4 py-3 text-[11px] text-ink-3 leading-relaxed border-b border-line">
         Dane tylko w tej przeglądarce{persisted ? '' : ' — zapis zablokowany (tryb prywatny?), dziennik zniknie po zamknięciu karty'}.
-        Rozstrzygane na realnych świecach bieżącego interwału (nie dłuższych niż ¼ horyzontu); świeca w toku przy zapisie jest
-        pomijana, a świeca dotykająca celu i stopu liczy się ostrożnie jako „stop”.
+        Rozstrzygane na realnych świecach 1m z API Hyperliquid (niezależnie od interwału wykresu): wejście w granicy 1 bp od ceny
+        przy zapisie liczy się jako zlecenie rynkowe, inne najpierw muszą zostać dotknięte; potem cel lub stop; minuta w toku przy zapisie jest pomijana, a świeca dotykająca celu i stopu liczy się ostrożnie jako „stop”.
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 p-4">
         <div className="lg:col-span-3 grid grid-cols-2 lg:grid-cols-1 gap-3 content-start">

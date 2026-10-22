@@ -622,6 +622,14 @@ export function parseHlCandles(raw: unknown): RangeBar[] {
   return out;
 }
 
+/**
+ * Świece BTC 1m od `fromMs` (do rozstrzygania dziennika niezależnie od interwału wykresu; API zwraca najwyżej ~5000
+ * ostatnich ≈ 3.5 dnia). Błąd lub brak danych → pusta lista.
+ */
+export async function loadMinuteCandles(fromMs: number): Promise<RangeBar[]> {
+  return parseHlCandles(await postInfo({ type: 'candleSnapshot', req: { coin: 'BTC', interval: '1m', startTime: fromMs } }));
+}
+
 /** Hyperliquid zwraca najwyżej ~5000 ostatnich świec na interwał (≈ 208 dni 1h, ≈ 17 dni 5m). */
 const VOL_CANDLES = 5000;
 

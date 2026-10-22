@@ -19,6 +19,11 @@ export type PlanDirection = 'LONG' | 'SHORT';
 export const DEFAULT_TAKER_FEE = 0.00045;
 /** Maks. dźwignia BTC na HL (tier 0–150M USDC notional, docs: trading/margin-tiers). */
 export const BTC_MAX_LEVERAGE = 40;
+/**
+ * Wejście w granicy 1 bp od ceny rynku = zlecenie rynkowe (wypełnione od razu) — ta sama reguła w Monte Carlo i dzienniku.
+ * Szersza odległość = zlecenie z limitem/stop: ścieżka musi najpierw dotknąć wejścia.
+ */
+export const MARKET_ENTRY_TOL = 1e-4;
 /** Wersja modelu zapisywana w dzienniku trafności. */
 export const PLAN_MODEL_VERSION = 'plan-fhs-har-v2';
 
@@ -219,7 +224,7 @@ export interface BarrierSimParams {
 export function simulateBarrierPaths(p: BarrierSimParams): McResult {
   const g0 =
     typeof p.startPrice === 'number' && Number.isFinite(p.startPrice) && p.startPrice > 0 ? Math.log(p.startPrice / p.entry) : 0;
-  if (Math.abs(g0) <= 1e-12) return runPaths(p, 0).result;
+  if (Math.abs(g0) <= MARKET_ENTRY_TOL) return runPaths(p, 0).result;
   const withFill = runPaths(p, g0);
   if (withFill.filled >= MIN_FILLED_PATHS) return withFill.result;
   // Za mało wypełnień, by mówić o rozkładzie warunkowym — liczymy przy natychmiastowym wejściu i mówimy to wprost

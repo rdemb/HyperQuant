@@ -8,6 +8,7 @@ import {
   bucketStats,
   clearLedger,
   exportLedgerJson,
+  ledgerFetchStart,
   ledgerMetrics,
   loadLedger,
   makeEntry,
@@ -270,6 +271,37 @@ describe('prawdopodobieństwo wypełnienia (pFill)', () => {
     const m = ledgerMetrics([entry({ status: 'target' })]);
     expect(m.brierFill).toBeNull();
     expect(m.fillScored).toBe(0);
+  });
+});
+
+describe('plan po cenie rynku (startPrice w granicy 1 bp) — wypełniony od zapisu', () => {
+  it('cena nie wraca do wejścia, ale dotyka celu → target (nie nofill)', () => {
+    // Wejście 100 000, rynek przy zapisie 100 005 (0.5 bp); potem cena rośnie i dotyka celu 102 000
+    const e = entry({ startPrice: 100005 });
+    const b = bars(T0 + 5 * MIN, 30, { 2: { high: 102100, low: 100500 } }).map((x) => ({ ...x, low: Math.max(x.low, 100300), high: Math.max(x.high, 100400) }));
+    const r = resolvePending([e], b, T0 + 200 * MIN, 5 * MIN)[0];
+    expect(r.status).toBe('target');
+  });
+
+  it('bez startPrice albo dalej niż 1 bp — wymaga dotknięcia wejścia (jak dotąd)', () => {
+    const b = bars(T0 + 5 * MIN, 30).map((x) => ({ ...x, low: Math.max(x.low, 100300), high: Math.max(x.high, 100400) }));
+    expect(resolvePending([entry({})], b, T0 + 200 * MIN, 5 * MIN)[0].status).toBe('nofill');
+    expect(resolvePending([entry({ startPrice: 100050 })], b, T0 + 200 * MIN, 5 * MIN)[0].status).toBe('nofill');
+  });
+});
+
+describe('ledgerFetchStart — od kiedy pobrać świece 1m do rozstrzygania', () => {
+  it('brak oczekujących → null', () => {
+    expect(ledgerFetchStart([entry({ status: 'target' })])).toBeNull();
+  });
+
+  it('najwcześniejszy oczekujący plan minus minuta (rozstrzygnięte pomijane)', () => {
+    const r = ledgerFetchStart([
+      entry({ id: 'a', createdAt: T0 - 3_600_000, status: 'stop' }),
+      entry({ id: 'b', createdAt: T0 + 3_600_000 }),
+      entry({ id: 'c', createdAt: T0 }),
+    ]);
+    expect(r).toBe(T0 - 60_000);
   });
 });
 

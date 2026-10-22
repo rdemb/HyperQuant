@@ -168,6 +168,13 @@ describe('simulateBarrierPaths — σ kroków (FHS) i faza wypełnienia', () => 
     expect(neu.samples.times[neu.samples.times.length - 1]).toBe(120);
   });
 
+  it('wejście w granicy 1 bp od rynku = zlecenie rynkowe: pFill = 1', () => {
+    const r = simulateBarrierPaths({ ...base, startPrice: 100000 * (1 + 0.9e-4), stepSigmas: flat, stepMin: 5, residuals: null, seed: 2 });
+    expect(r.pFill).toBe(1);
+    const limit = simulateBarrierPaths({ ...base, startPrice: 100000 * (1 + 3e-4), stepSigmas: flat, stepMin: 5, residuals: null, seed: 2 });
+    expect(limit.pFill).toBeLessThan(1);
+  });
+
   it('cena startowa = wejście → pFill = 1, bez fillRare', () => {
     const r = simulateBarrierPaths({ ...base, startPrice: 100000, stepSigmas: flat, stepMin: 5, residuals: null, seed: 2 });
     expect(r.pFill).toBe(1);
