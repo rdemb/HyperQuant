@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { AddressBook } from './addressBook.ts';
 import { loadConfig } from './config.ts';
 import { HlRest, HlStream } from './hl.ts';
+import { LiqConfirmer, PriceRange } from './liqDetect.ts';
 import { WeightLimiter } from './rateLimiter.ts';
 import { Scanner } from './scanner.ts';
 import { fetchLeaderboardAccounts } from './seed.ts';
@@ -34,26 +35,66 @@ try {
   book = new AddressBook(cfg.maxAddresses);
 }
 
+/**
+ * Taśma likwidacji: zdarzenia z 24 h (bez adresów) i ceny z taśmy na minutę. Ciągłość obserwacji (`since`) zachowana
+ * tylko po przerwie < 2 min (np. restart przy aktualizacji); dłuższa przerwa = obserwacja od nowa, starsze zdarzenia wypadają.
+ */
+const liqStatePath = join(cfg.stateDir, `liq-${cfg.coin}.json`);
+const LIQ_OPTS = { coin: cfg.coin, maxPerMin: 3 };
+const MAX_GAP_MS = 2 * 60_000;
+let confirmer = new LiqConfirmer(LIQ_OPTS);
+let prices = new PriceRange();
+let tapeSince = Date.now();
+try {
+  const j = JSON.parse(readFileSync(liqStatePath, 'utf8')) as { savedAt?: number; since?: number; confirmer?: unknown; prices?: unknown };
+  confirmer = LiqConfirmer.fromJSON(j.confirmer, LIQ_OPTS);
+  prices = PriceRange.fromJSON(j.prices);
+  if (typeof j.savedAt === 'number' && typeof j.since === 'number' && Date.now() - j.savedAt < MAX_GAP_MS) tapeSince = j.since;
+  log(`wczytano taśmę likwidacji: ${confirmer.events().length} zdarzeń`);
+} catch {
+  // brak stanu — nowa taśma
+}
+
+function writeJsonAtomic(path: string, value: unknown): void {
+  const tmp = `${path}.tmp`;
+  writeFileSync(tmp, JSON.stringify(value));
+  renameSync(tmp, path);
+}
+
 function saveState(): void {
-  const tmp = `${statePath}.tmp`;
-  writeFileSync(tmp, JSON.stringify(book.toJSON()));
-  renameSync(tmp, statePath);
+  writeJsonAtomic(statePath, book.toJSON());
+  writeJsonAtomic(liqStatePath, { savedAt: Date.now(), since: scanner.tapeSince, confirmer: scanner.confirmer.toJSON(), prices: scanner.prices.toJSON() });
 }
 
 const rest = new HlRest(new WeightLimiter(cfg.weightPerMin));
-const scanner = new Scanner({ coin: cfg.coin, book, rest, outDir: cfg.outDir, r2: cfg.r2 });
+const scanner = new Scanner({ coin: cfg.coin, book, rest, outDir: cfg.outDir, r2: cfg.r2, confirmer, tapeSince, prices });
 let lastWsCtx = 0;
+/** Ostatnia wiadomość WebSocket (transakcje lub kontekst) — przerwa > 2 min zeruje okres obserwacji taśmy */
+let lastWsMsg = Date.now();
+let wsGap = false;
+function wsAlive(): void {
+  const now = Date.now();
+  if (wsGap) {
+    wsGap = false;
+    scanner.resetObservation(now);
+    log('taśma likwidacji: przerwa w danych WebSocket — obserwacja od nowa');
+  }
+  lastWsMsg = now;
+}
 
 const stream = new HlStream(
   cfg.coin,
   (trades) => {
+    wsAlive();
     for (const t of trades) {
       const px = Number(t.px);
       const sz = Number(t.sz);
+      if (px > 0) scanner.recordTrade(px, t.time);
       if (t.users && px > 0 && sz > 0) book.recordTrade(t.users, px * sz, t.time);
     }
   },
   (c) => {
+    wsAlive();
     scanner.setCtx(c);
     lastWsCtx = Date.now();
   }
@@ -63,10 +104,10 @@ const stream = new HlStream(
 async function seedFromLeaderboard(): Promise<void> {
   if (cfg.seedTop <= 0) return;
   const accounts = await fetchLeaderboardAccounts(cfg.seedMinUsd, cfg.seedTop);
-  const before = book.seededCount;
+  const fresh = accounts.filter((a) => !book.has(a.address)).length;
   const t = Date.now();
   for (const a of accounts) book.seed(a.address, a.accountValue, t);
-  log(`ranking kont: ${accounts.length} kont ≥ ${cfg.seedMinUsd} USD, nowych ${book.seededCount - before}`);
+  log(`ranking kont: ${accounts.length} kont ≥ ${cfg.seedMinUsd} USD, nowych ${fresh}, w książce z rankingu ${book.seededCount}`);
 }
 
 const DATA_README = [
@@ -76,6 +117,7 @@ const DATA_README = [
   'Repozytorium zawiera zawsze jeden commit z bieżącym stanem.',
   '',
   '- `liq-map/BTC.json` — mapa likwidacji BTC z pozycji on-chain Hyperliquid: kubełki cen likwidacji, pokrycie open interest, wiek odczytów.',
+  '- `liq-tape/BTC.json` — likwidacje śledzonych pozycji z 24 h, potwierdzone fillami z polem `liquidation`: czas, strona, rozmiar, cena, błąd mapy.',
   '- `status.json` — stan skanera (liczby adresów i pozycji, błędy API).',
   '',
   'Wyłącznie agregaty — bez adresów portfeli. Źródło: publiczne API Hyperliquid. Metoda: src/utils/liqMap.ts w repo HyperQuant.',
@@ -86,7 +128,7 @@ const DATA_README = [
 async function gitPublishTick(): Promise<void> {
   if (!cfg.git) return;
   const files: [string, string][] = [];
-  for (const key of [`liq-map/${cfg.coin}.json`, 'status.json']) {
+  for (const key of [`liq-map/${cfg.coin}.json`, `liq-tape/${cfg.coin}.json`, 'status.json']) {
     try {
       files.push([key, readFileSync(join(cfg.outDir, key), 'utf8')]);
     } catch {
@@ -113,7 +155,8 @@ async function scanLoop(): Promise<void> {
   while (!stopping) {
     try {
       const n = await scanner.scanDue(20);
-      if (n === 0) await sleep(1000);
+      const q = await scanner.confirmLiquidations();
+      if (n === 0 && q === 0) await sleep(1000);
     } catch (e) {
       // Nieoczekiwany błąd nie może zatrzymać skanera — odczekaj i próbuj dalej
       console.error(`[skaner] błąd pętli skanu: ${String(e)}`);
@@ -135,6 +178,7 @@ function guarded(name: string, fn: () => unknown): () => Promise<void> {
 
 const timers = [
   setInterval(guarded('publikacja', async () => {
+    if (Date.now() - lastWsMsg > MAX_GAP_MS) wsGap = true;
     await ctxFallback();
     const ok = await scanner.publish();
     const s = book.positions().length;

@@ -58,6 +58,24 @@ describe('WeightLimiter — własny budżet wag API Hyperliquid', () => {
   });
 });
 
+describe('WeightLimiter — stan i dopłata wag', () => {
+  it('healthy: pełne tempo bez pauzy; po błędzie albo 429 — nie', () => {
+    const l = new WeightLimiter(240);
+    expect(l.healthy(0)).toBe(true);
+    l.fail(1000, 'error');
+    expect(l.healthy(1000)).toBe(false);
+    const k = new WeightLimiter(240);
+    k.fail(0, '429');
+    expect(k.healthy(10_000)).toBe(false);
+  });
+  it('charge: faktyczna waga odpowiedzi opóźnia kolejne zapytania', () => {
+    const a = new WeightLimiter(240);
+    const b = new WeightLimiter(240);
+    b.charge(60, 0);
+    expect(b.reserve(2, 0)).toBeGreaterThan(a.reserve(2, 0));
+  });
+});
+
 describe('AddressBook — adresy z taśmy i harmonogram skanów', () => {
   const pos = (szi: number) => ({ szi, entryPx: 100000, liqPx: 90000, scannedAt: 0 });
 
@@ -83,6 +101,43 @@ describe('AddressBook — adresy z taśmy i harmonogram skanów', () => {
     // Adres bez pozycji: ponownie dopiero po nowej transakcji albo po 24 h (bezpiecznik)
     expect(b.due(120 * MIN, 10)).toEqual(['0xbig', '0xmid', '0xsmall']);
     expect(b.due(24 * 60 * MIN, 10).sort()).toEqual(['0xbig', '0xmid', '0xnone', '0xsmall', '0xz']);
+  });
+
+  it('pył (< 25 tys. USD) blisko ceny likwidacji nie jest promowany do odczytu co minutę', () => {
+    const b = new AddressBook();
+    b.recordTrade(['0xdust', '0xz'], 1, 0);
+    b.updatePosition('0xz', null, 0);
+    b.updatePosition('0xdust', { szi: 0.1, entryPx: 100000, liqPx: 99_500, scannedAt: 0 }, 0);
+    expect(b.due(MIN, 10, 100_000)).toEqual([]);
+  });
+
+  it('przepełnienie: konta z rankingu odpadają dopiero, gdy nie ma innych kandydatów', () => {
+    const b = new AddressBook(3);
+    b.seed('0xranked', 5e6, 0);
+    b.updatePosition('0xranked', null, 0);
+    b.recordTrade(['0xa', '0xb'], 1, 1000);
+    b.recordTrade(['0xc', '0xd'], 1, 2000);
+    expect(b.has('0xranked')).toBe(true);
+  });
+
+  it('blisko ceny likwidacji odczyt częściej: < 1% od mark co 1 min, < 3% najwyżej co 2 min (także mała pozycja)', () => {
+    const b = new AddressBook();
+    const at = (liqPx: number, szi = 0.3) => ({ szi, entryPx: 100000, liqPx, scannedAt: 0 });
+    for (const a of ['0xnear', '0xmid', '0xfar']) b.recordTrade([a, '0xz'], 1, 0);
+    b.updatePosition('0xz', null, 0);
+    b.updatePosition('0xnear', at(99_500), 0); // 0.5% od mark
+    b.updatePosition('0xmid', at(97_800), 0); // 2.2%
+    b.updatePosition('0xfar', at(80_000), 0); // 20% — zwykły interwał 30 min
+    expect(b.due(MIN, 10, 100_000)).toEqual(['0xnear']);
+    expect(b.due(2 * MIN, 10, 100_000)).toEqual(['0xnear', '0xmid']);
+    expect(b.due(2 * MIN, 10)).toEqual([]); // bez ceny mark — interwały wg nominału
+  });
+
+  it('positionOf: ostatnio odczytana pozycja adresu (do porównania przy kolejnym odczycie)', () => {
+    const b = new AddressBook();
+    b.updatePosition('0xa', pos(2), 0);
+    expect(b.positionOf('0xa')).toEqual(pos(2));
+    expect(b.positionOf('0xnope')).toBeNull();
   });
 
   it('znany adres, który znów handluje, wraca do kolejki od razu', () => {

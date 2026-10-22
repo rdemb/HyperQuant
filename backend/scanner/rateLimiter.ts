@@ -40,6 +40,16 @@ export class WeightLimiter {
     return Math.max(tokenWait, this.pauseUntil - now);
   }
 
+  /** Dopłata wag poznanych dopiero po odpowiedzi (np. 1 na 20 zwróconych pozycji) — opóźnia kolejne zapytania. */
+  charge(weight: number, now: number): void {
+    if (weight > 0) this.reserve(weight, now);
+  }
+
+  /** Pełne tempo i brak pauzy — zadania mniej ważne niż skan pozycji czekają, gdy API jest przeciążone. */
+  healthy(now: number): boolean {
+    return this.factor >= 1 && now >= this.pauseUntil;
+  }
+
   /** Błąd zapytania: tempo o połowę (do 1/8); 429 — także pauza 30 s i opróżnione wiadro. */
   fail(now: number, kind: '429' | 'error'): void {
     this.factor = Math.max(MIN_FACTOR, this.factor / 2);

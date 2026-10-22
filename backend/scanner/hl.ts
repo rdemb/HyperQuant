@@ -22,6 +22,16 @@ export class HlRest {
     this.wait = wait;
   }
 
+  /** Dopłata wag po odpowiedzi (waga zależna od liczby zwróconych pozycji). */
+  charge(weight: number): void {
+    this.limiter.charge(weight, this.now());
+  }
+
+  /** Czy API działa w pełnym tempie (bez wycofania po błędach i bez pauzy po 429). */
+  healthy(): boolean {
+    return this.limiter.healthy(this.now());
+  }
+
   async info(body: unknown, weight: number): Promise<unknown | null> {
     const delay = this.limiter.reserve(weight, this.now());
     if (delay > 0) await this.wait(delay);

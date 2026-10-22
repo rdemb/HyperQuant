@@ -9,6 +9,7 @@ import { nearestClusters, rebin } from '../../utils/liqMapView';
 import { horizonStepSigmas } from '../../utils/volatility';
 import { parkinsonSigma } from '../../utils/marketDataFeed';
 import { useElementWidth } from '../market/MarketMap';
+import { LiquidationTape } from './LiquidationTape';
 
 const RANGE = 0.06;
 const BINS = 60;
@@ -74,6 +75,9 @@ export const LiquidationMapPanel: React.FC = () => {
       ) : (
         <LiqMapBody map={map} delayed={status === 'delayed'} sigmaDaily={sigmaDaily} dayVolumeUsd={dayVolumeUsd} />
       )}
+      <div className="px-4 pb-4">
+        <LiquidationTape coverage={map && (status === 'ready' || status === 'delayed') ? map.coverage.share : null} />
+      </div>
     </Panel>
   );
 };
@@ -246,7 +250,7 @@ const LiqHistogram: React.FC<{ map: LiqMap }> = ({ map }) => {
                 fill="transparent"
                 onMouseEnter={() => setHover(i)}
                 onMouseLeave={() => setHover(null)}
-                onTouchStart={() => setHover(i)}
+                onTouchStart={() => setHover((h) => (h === i ? null : i))}
               />
             ))}
           </svg>

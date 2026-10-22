@@ -9,6 +9,7 @@ import { WeightLimiter } from '../rateLimiter.ts';
 import { AddressBook } from '../addressBook.ts';
 import { Scanner } from '../scanner.ts';
 import { isLiqMap } from '../../../src/utils/liqMap.ts';
+import { isLiqTape } from '../../../src/utils/liqTape.ts';
 
 const R2 = { R2_ACCOUNT_ID: 'acc', R2_BUCKET: 'bkt', R2_ACCESS_KEY_ID: 'kid', R2_SECRET_ACCESS_KEY: 'sec' };
 
@@ -89,14 +90,18 @@ describe('Scanner — cykl skanu i publikacji', () => {
       '0xbbb': { assetPositions: [{ position: { coin: 'BTC', szi: '-4', entryPx: '83000', liquidationPx: '90000' } }] },
     };
     const calls: string[] = [];
+    const fills: Record<string, unknown[]> = {};
+    const bodies: Record<string, unknown>[] = [];
     const fetchFn = vi.fn(async (url: string, init?: RequestInit) => {
       calls.push(url);
       if (url.includes('r2.cloudflarestorage.com')) return new Response(null, { status: 200 });
       const body = JSON.parse(String(init?.body));
+      bodies.push(body);
       if (fail) {
         failing.calls++;
         return new Response('', { status: 503 });
       }
+      if (body.type === 'userFillsByTime') return new Response(JSON.stringify(fills[body.user] ?? []), { status: 200 });
       return new Response(JSON.stringify(states[body.user]), { status: 200 });
     });
     const scanner = new Scanner({
@@ -109,7 +114,7 @@ describe('Scanner — cykl skanu i publikacji', () => {
       now: nowFn,
     });
     scanner.setCtx({ markPx: 83000, oiBtc: 20, dayNtlVlm: 2e9 });
-    return { scanner, out, calls, failing };
+    return { scanner, out, calls, failing, states, fills, book, bodies };
   }
 
   it('skanuje adresy z taśmy i zapisuje mapę oraz status bez adresów', async () => {
@@ -153,8 +158,48 @@ describe('Scanner — cykl skanu i publikacji', () => {
     await scanner.publish();
     expect(calls.filter((c) => c.includes('r2.cloudflarestorage.com'))).toEqual([
       'https://a.r2.cloudflarestorage.com/b/liq-map/BTC.json',
+      'https://a.r2.cloudflarestorage.com/b/liq-tape/BTC.json',
       'https://a.r2.cloudflarestorage.com/b/status.json',
     ]);
+  });
+
+  it('likwidacja śledzonej pozycji: kandydat po zniknięciu pozycji przy cenie likwidacji, potwierdzenie fillem, taśma bez adresów', async () => {
+    let now = 120_000;
+    const { scanner, out, states, fills, book, bodies } = setup(false, () => now);
+    await scanner.scanDue(10);
+    // Cena spada do ceny likwidacji longa 0xaaa (75 000); pozycja znika, adres handlował
+    now = 4 * 60_000;
+    scanner.recordTrade(74_990, now - 30_000);
+    states['0xaaa'] = { assetPositions: [] };
+    fills['0xaaa'] = [
+      { coin: 'BTC', px: '74980', sz: '10', side: 'A', time: now - 30_000, tid: 42, liquidation: { markPx: 74_995, method: 'market' } },
+    ];
+    book.recordTrade(['0xaaa', '0xccc'], 1, now - 30_000);
+    states['0xccc'] = { assetPositions: [] };
+    await scanner.scanDue(10);
+    expect(await scanner.confirmLiquidations()).toBe(1);
+    scanner.setCtx({ markPx: 75_000, oiBtc: 20, dayNtlVlm: 2e9 });
+    expect(await scanner.publish()).toBe(true);
+    const txt = readFileSync(join(out, 'liq-tape', 'BTC.json'), 'utf8');
+    expect(txt).not.toMatch(/0x[0-9a-f]{3}/i);
+    const tape = JSON.parse(txt);
+    expect(isLiqTape(tape)).toBe(true);
+    expect(tape.events).toHaveLength(1);
+    expect(tape.events[0]).toMatchObject({ side: 'long', sz: 10, method: 'market', mapLiqPx: 75000 });
+    expect(tape.checks).toEqual({ candidates: 1, confirmed: 1, rejected: 0, failed: 0 });
+    const status = JSON.parse(readFileSync(join(out, 'status.json'), 'utf8'));
+    expect(status).toMatchObject({ liq24h: 1, liqPending: 0 });
+    // Okno fillów od minuty pierwszego dotknięcia ceny likwidacji (minus minuta), nie wcześniej niż poprzedni odczyt
+    const fillsCall = bodies.find((b) => b.type === 'userFillsByTime');
+    expect(fillsCall).toMatchObject({ user: '0xaaa', startTime: 120_000 - 1000, endTime: 240_000 + 1000 });
+    // Przerwa w danych: obserwacja od nowa, starsze zdarzenia nie udają ciągłości
+    now = 10 * 60_000;
+    scanner.resetObservation(now);
+    scanner.setCtx({ markPx: 75_000, oiBtc: 20, dayNtlVlm: 2e9 });
+    await scanner.publish();
+    const after = JSON.parse(readFileSync(join(out, 'liq-tape', 'BTC.json'), 'utf8'));
+    expect(after.since).toBe(now);
+    expect(after.events).toEqual([]);
   });
 });
 
