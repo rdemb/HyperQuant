@@ -143,7 +143,7 @@ export const LedgerVerifyCard: React.FC<{ summaryHead: string }> = ({ summaryHea
             pokwitowania OpenTimestamps ostatnich slotów: {saved.receipts.ok}/{saved.receipts.checked} zgodnych z hashem ostatniej prognozy
           </Check>
           {saved.preregs.length > 0 && (
-            <Check ok={saved.preregs.every((p) => p.ok)}>prerejestracje katalogów: {saved.preregs.map((p) => p.id).join(', ')} — hash zgodny z treścią</Check>
+            <Check ok={saved.preregs.every((p) => p.ok)}>prerejestracje (katalog laboratorium, plan A/B): {saved.preregs.map((p) => p.id).join(', ')} — hash zgodny z treścią</Check>
           )}
           {saved.problems.length > 0 && <li className="text-warn">Problemy: {saved.problems.slice(0, 5).join('; ')}</li>}
         </ul>

@@ -405,3 +405,12 @@ describe('A/B — recenzja: plan prerejestrowany, okres niepełny, σ_A wiarygod
     expect(part.ab.current).toMatchObject({ partial: true, diff: null });
   });
 });
+
+import { plural } from './verify-ledger.mjs';
+
+describe('komunikaty weryfikatora — odmiana liczebników', () => {
+  it('1 linia, 2 linie, 5 linii, 12 linii, 22 linie, 112 linii', () => {
+    const f = (n) => plural(n, 'linia', 'linie', 'linii');
+    expect([1, 2, 5, 12, 22, 112, 0].map(f)).toEqual(['1 linia', '2 linie', '5 linii', '12 linii', '22 linie', '112 linii', '0 linii']);
+  });
+});

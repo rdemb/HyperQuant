@@ -4,6 +4,8 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+## [2.4.0] — 2026-10-22
+
 ### Dodane
 - **Reżim zmienności (BOCPD) i A/B wersji modelu w weryfikowalnym dzienniku** (`src/utils/bocpd.ts`, `src/utils/abTest.ts`, `backend/scanner/forecaster.ts`, karta w panelu dziennika): bayesowskie wykrywanie punktów zmiany online (Adams & MacKay 2007) na zwrotach 5m z 3 dni, oczyszczonych z rytmu doby profilem godzinowym modelu, daje bieżący reżim (σ jako predykcyjna wariancja uśredniona po długości reżimu, długość, P zmiany), liczony raz na slot bez świecy w toku. Obok prognozy zwrotu 1 h (wersja A: HAR + FHS) zapisywana jest przed faktem wersja B z wariancją mieszaną po połowie z wariancją reżimu na horyzoncie (te same chwile, benchmark i partia pokwitowania; kwantyle A × skala; zapisane σ_A i współczynnik sezonowy). Plan oceny prerejestrowany w łańcuchu (`ab-v1`); okresy po 14 dni ustalone z góry od 23.10.2026; wniosek dopiero po zakończeniu okresu, z przedziałem Neweya–Westa (24 h) i wartością krytyczną fixed-b (Kiefer–Vogelsang). Weryfikator sprawdza wersję B (skala ze wzoru, wiarygodność σ_A), zgodność planu z kodem i przelicza okresy.
 - **Codzienna niezależna weryfikacja dziennika i znaczek** (`backend/deploy/health-alert.yml`, strażnik, karta weryfikacji, README): strażnik raz na dobę wysyła puls do gałęzi `health` repo danych, a push uruchamia tam w GitHub Actions — na infrastrukturze GitHuba, nie na serwerze desku — pełny weryfikator (`--market`) na klonie gałęzi `ledger`; wynik to znaczek shields.io w README i podsumowanie w panelu dziennika z linkiem do przebiegu.
@@ -22,6 +24,7 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 - README repo danych: lista plików w jednym miejscu, opis gałęzi `health`.
 
 ### Poprawione
+- Komunikaty weryfikatora z poprawną odmianą liczebników (1 linia, 2 linie, 5 linii); prerejestracje opisane jako katalog laboratorium i plan A/B.
 - Symulator kaskady: strony arkusza (bidy / aski) z bieżącej minuty rejestratora — profil płynności publikuje je w `now`; wcześniej przy krótkiej historii godziny podział był po cichu przyjmowany po połowie. Gdy podział pochodzi z mediany godziny albo jest założony, sekcja to pokazuje.
 
 ## [2.3.0] — 2026-10-22
@@ -108,6 +111,7 @@ Przebudowa desku i poprawki krytyczne.
 ### Usunięte
 - Automatyczne sygnały i przeliczanie Kelly → dźwignia; nieużywane `.env.example` i zależność `dotenv`.
 
+[2.4.0]: https://github.com/rdemb/HyperQuant/compare/v2.3.0...v2.4.0
 [2.3.0]: https://github.com/rdemb/HyperQuant/compare/v2.2.0...v2.3.0
 [2.2.0]: https://github.com/rdemb/HyperQuant/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/rdemb/HyperQuant/compare/5b33b4b...v2.1.0
