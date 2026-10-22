@@ -251,6 +251,21 @@ describe('prawdopodobieństwo wypełnienia (pFill)', () => {
     expect(m.resolved).toBe(2);
   });
 
+  it('makeEntry zapisuje faktyczną wersję modelu i flagę fillRare; uszkodzone fillRare odpada przy odczycie', () => {
+    const e = makeEntry(
+      { direction: 'LONG', entry: 1, stop: 0.9, target: 1.2, horizonMin: 60, pTarget: 0.3, pStop: 0.5, pNeither: 0.2, modelVersion: 'plan-gbm-fill-v2', fillRare: true },
+      T0
+    );
+    expect(e.modelVersion).toBe('plan-gbm-fill-v2');
+    expect(e.fillRare).toBe(true);
+    const mem = new Map<string, string>();
+    const storage = { getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => void mem.set(k, v), removeItem: (k: string) => void mem.delete(k) };
+    mem.set(LEDGER_KEY, JSON.stringify([{ ...entry({ id: 'x' }), fillRare: 'tak' }, { ...entry({ id: 'y' }), fillRare: true }]));
+    const loaded = loadLedger(storage);
+    expect(loaded[0].fillRare).toBeUndefined();
+    expect(loaded[1].fillRare).toBe(true);
+  });
+
   it('brak wpisów z pFill → brierFill null', () => {
     const m = ledgerMetrics([entry({ status: 'target' })]);
     expect(m.brierFill).toBeNull();

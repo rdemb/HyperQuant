@@ -28,6 +28,8 @@ export interface LedgerEntry {
   pNeither: number;
   /** P(wejście dotknięte w horyzoncie) z modelu; brak w starszych wpisach (plan-gbm-bgk-v1) */
   pFill?: number;
+  /** true = za mało wypełnień w symulacji; P(cel/stop/żadne) policzone przy natychmiastowym wejściu */
+  fillRare?: boolean;
   modelVersion: string;
   source?: string;
   status: LedgerStatus;
@@ -63,10 +65,13 @@ export function makeEntry(
   f: Pick<LedgerEntry, 'direction' | 'entry' | 'stop' | 'target' | 'horizonMin' | 'pTarget' | 'pStop' | 'pNeither'> & {
     source?: string;
     pFill?: number;
+    fillRare?: boolean;
+    /** Metoda faktycznie użyta w analizie (McResult.modelVersion); domyślnie bieżąca wersja modelu */
+    modelVersion?: string;
   },
   now: number
 ): LedgerEntry {
-  return { ...f, id: newId(), createdAt: now, modelVersion: PLAN_MODEL_VERSION, status: 'pending' };
+  return { ...f, id: newId(), createdAt: now, modelVersion: f.modelVersion ?? PLAN_MODEL_VERSION, status: 'pending' };
 }
 
 /** Dopisuje wpis; przy przekroczeniu limitu odpadają najstarsze. */
@@ -99,10 +104,17 @@ export function loadLedger(storage: StorageLike | null = defaultStorage()): Ledg
       .filter(isEntry)
       .slice(-LEDGER_LIMIT)
       .map((e) => {
-        // Uszkodzone pFill odpada, wpis zostaje (metryki wyniku go nie potrzebują)
-        if (e.pFill === undefined || (num(e.pFill) && e.pFill >= 0 && e.pFill <= 1)) return e;
-        const { pFill: _drop, ...rest } = e;
-        return rest;
+        // Uszkodzone pola opcjonalne odpadają, wpis zostaje (metryki wyniku ich nie potrzebują)
+        let out: LedgerEntry = e;
+        if (out.pFill !== undefined && !(num(out.pFill) && out.pFill >= 0 && out.pFill <= 1)) {
+          const { pFill: _p, ...rest } = out;
+          out = rest;
+        }
+        if (out.fillRare !== undefined && typeof out.fillRare !== 'boolean') {
+          const { fillRare: _f, ...rest } = out;
+          out = rest;
+        }
+        return out;
       });
   } catch {
     return [];

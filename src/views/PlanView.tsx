@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useDesk } from '../state/DeskContext';
 import { PlanDraft } from '../state/types';
 import { Panel, Segmented } from '../ui';
-import { PlanInput, analyzePlan, proposeLevels, sizeFromRiskWithBook } from '../utils/planAnalyzer';
+import { PlanInput, analyzePlan, attachMarketModel, proposeLevels, sizeFromRiskWithBook } from '../utils/planAnalyzer';
 import { makeEntry } from '../utils/forecastLedger';
 import { DayTradingPrepDesk } from '../components/DayTradingPrepDesk';
 import { PlanForm, PlanFormState } from './plan/PlanForm';
@@ -128,21 +128,23 @@ const PlanView: React.FC = () => {
   const sizeUsd = form.sizeMode === 'usd' ? parseNum(form.sizeUsd) : riskSizeUsd;
 
   const input: PlanInput = useMemo(
-    () => ({
-      direction: form.direction,
-      entry,
-      stop,
-      target,
-      sizeUsd,
-      horizonMin: form.horizonMin,
-      leverage,
-      sigmaHorizon: market.sigma,
-      book: market.book,
-      eventMultiplier: market.eventMultiplier,
-      vol: market.vol ?? undefined,
-      // Cena rynku ≠ wejście → faza wypełnienia w Monte Carlo (tak samo rozlicza dziennik)
-      startPrice: Number.isFinite(market.price) && market.price > 0 ? market.price : undefined,
-    }),
+    () =>
+      attachMarketModel(
+        {
+          direction: form.direction,
+          entry,
+          stop,
+          target,
+          sizeUsd,
+          horizonMin: form.horizonMin,
+          leverage,
+          sigmaHorizon: market.sigma,
+          book: market.book,
+          eventMultiplier: market.eventMultiplier,
+        },
+        // Model zmienności i cena rynku (faza wypełnienia — tak samo rozlicza dziennik)
+        market
+      ),
     [
       form.direction,
       entry,
@@ -189,6 +191,8 @@ const PlanView: React.FC = () => {
           pStop: analysis.mc.pStop,
           pNeither: analysis.mc.pNeither,
           pFill: analysis.mc.pFill,
+          fillRare: analysis.mc.fillRare,
+          modelVersion: analysis.mc.modelVersion,
           source: form.draft?.source,
         },
         Date.now()

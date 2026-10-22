@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { ArrowRight } from 'lucide-react';
 import { useDesk } from '../../state/DeskContext';
 import { Badge, Panel, Segmented, fmtPrice, fmtSigned } from '../../ui';
-import { PlanDirection, analyzePlan, proposeLevels } from '../../utils/planAnalyzer';
+import { PlanDirection, analyzePlan, attachMarketModel, proposeLevels } from '../../utils/planAnalyzer';
 import { ProbabilityBar } from './ProbabilityBar';
 import { parseNum, useDebounced, usePlanMarket } from './hooks';
 
@@ -34,18 +34,22 @@ export const PlanQuickCard: React.FC = () => {
   const target = parseNum(targetShown);
 
   const input = useMemo(
-    () => ({
-      direction,
-      entry,
-      stop,
-      target,
-      sizeUsd: QUICK_SIZE_USD,
-      horizonMin: HORIZON_MIN,
-      sigmaHorizon: market.sigma,
-      book: market.book,
-      eventMultiplier: market.eventMultiplier,
-    }),
-    [direction, entry, stop, target, market.sigma, market.book, market.eventMultiplier]
+    () =>
+      attachMarketModel(
+        {
+          direction,
+          entry,
+          stop,
+          target,
+          sizeUsd: QUICK_SIZE_USD,
+          horizonMin: HORIZON_MIN,
+          sigmaHorizon: market.sigma,
+          book: market.book,
+          eventMultiplier: market.eventMultiplier,
+        },
+        market
+      ),
+    [direction, entry, stop, target, market.sigma, market.book, market.eventMultiplier, market.vol, market.price]
   );
   const deb = useDebounced(input, 200);
   const a = useMemo(() => analyzePlan(deb, { paths: 2000, seed: 7 }), [deb]);

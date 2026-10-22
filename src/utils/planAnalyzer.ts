@@ -50,6 +50,20 @@ export interface PlanInput {
   startPrice?: number;
 }
 
+/**
+ * Wejście z modelem rynku — jedno źródło prawdy dla Analizatora i szybkiej karty: σ kroków i reszty FHS (gdy model gotowy)
+ * oraz cena startowa (faza wypełnienia). Brak modelu lub ceny → pola pominięte (zapas: stała σ, natychmiastowe wejście).
+ */
+export function attachMarketModel(
+  base: Omit<PlanInput, 'vol' | 'startPrice'>,
+  market: { vol: PlanInput['vol'] | null; price: number }
+): PlanInput {
+  const out: PlanInput = { ...base };
+  if (market.vol) out.vol = market.vol;
+  if (Number.isFinite(market.price) && market.price > 0) out.startPrice = market.price;
+  return out;
+}
+
 const sideOf = (d: PlanDirection) => (d === 'LONG' ? 1 : -1);
 const isPos = (v: number) => typeof v === 'number' && Number.isFinite(v) && v > 0;
 
@@ -131,6 +145,8 @@ export interface McResult {
   steps: number;
   /** Długość kroku w minutach (1 przy stałej σ, 5 przy modelu zmienności) */
   stepMin: number;
+  /** Metoda faktycznie użyta (zapisywana w dzienniku): plan-fhs-har-v2 | plan-har-normal-v2 | plan-gbm-fill-v2 */
+  modelVersion: string;
   /** σ na horyzont po mnożniku zdarzeń */
   sigmaEff: number;
   timeToTarget: HitTimePercentiles | null;
@@ -363,6 +379,7 @@ function runPaths(p: BarrierSimParams, g0: number): { result: McResult; filled: 
       pNeither: neitherN / F,
       pFill: filledN / nPaths,
       fillRare: false,
+      modelVersion: custom ? (p.residuals && p.residuals.length > 0 ? 'plan-fhs-har-v2' : 'plan-har-normal-v2') : 'plan-gbm-fill-v2',
       paths: nPaths,
       steps,
       stepMin,

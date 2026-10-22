@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   analyzePlan,
+  attachMarketModel,
   barrierHitProbability,
   isolatedLiquidationPrice,
   liquidationBufferWarning,
@@ -236,6 +237,43 @@ describe('simulateBarrierPaths — σ kroków (FHS) i faza wypełnienia', () => 
       expect(r.mc.pFill).toBeLessThan(0.6);
       expect(r.mc.stepMin).toBe(5);
     }
+  });
+});
+
+describe('attachMarketModel — wspólne wejście Analizatora i szybkiej karty', () => {
+  const base = {
+    direction: 'LONG' as const,
+    entry: 100000,
+    stop: 99000,
+    target: 101500,
+    sizeUsd: 10000,
+    horizonMin: 120,
+    sigmaHorizon: 0.01,
+    book: BOOK,
+    eventMultiplier: 1,
+  };
+
+  it('dokłada model zmienności i cenę startową, gdy są dostępne', () => {
+    const vol = { stepMin: 5, stepSigmas: [0.002], residuals: null };
+    const r = attachMarketModel(base, { vol, price: 100100 });
+    expect(r.vol).toBe(vol);
+    expect(r.startPrice).toBe(100100);
+  });
+
+  it('bez modelu i bez ceny rynku — pola pominięte (zapas)', () => {
+    const r = attachMarketModel(base, { vol: null, price: Number.NaN });
+    expect(r.vol).toBeUndefined();
+    expect(r.startPrice).toBeUndefined();
+  });
+});
+
+describe('wersja modelu w wyniku — zgodna z faktycznie użytą metodą', () => {
+  const p = { direction: 'LONG' as const, entry: 100000, stop: 99000, target: 101500, sigmaHorizon: 0.01, horizonMin: 60 };
+  it('stała σ (zapas) → plan-gbm-fill-v2; HAR + FHS → plan-fhs-har-v2; HAR bez reszt → plan-har-normal-v2', () => {
+    expect(simulateBarrierPaths(p).modelVersion).toBe('plan-gbm-fill-v2');
+    const steps = Array(12).fill(0.01 / Math.sqrt(12));
+    expect(simulateBarrierPaths({ ...p, stepSigmas: steps, residuals: [-1, 1] }).modelVersion).toBe('plan-fhs-har-v2');
+    expect(simulateBarrierPaths({ ...p, stepSigmas: steps, residuals: null }).modelVersion).toBe('plan-har-normal-v2');
   });
 });
 
