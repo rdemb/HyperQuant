@@ -1,3 +1,4 @@
+import { Bocpd } from '../../src/utils/bocpd.ts';
 import { ENS_PRIOR, REC_PRIOR, fitEnsemble, poolProb, type EnsPair, type EnsWeights } from '../../src/utils/ensemble.ts';
 import { type RangeBar, type VolModel, buildVolModel, horizonStepSigmas } from '../../src/utils/volatility.ts';
 import { forecastReturnQuantiles, runTouchMonteCarlo } from '../../src/utils/touchMc.ts';
@@ -58,6 +59,73 @@ export interface RetForecast {
   /** α_t ACI w chwili wydania (przedział [q(α/2), q(1−α/2)]) */
   aci: number;
   model: string;
+  /**
+   * Wariant B (A/B wersji modelu): kwantyle A × `scale`, σ_B² = ½σ_A² + ½σ²_reżimu (BOCPD na zwrotach 5m). Brak = wersja
+   * główna (A). Wariant B nie zmienia ACI wersji A.
+   */
+  variant?: 'B';
+  scale?: number;
+  regime?: Regime;
+}
+
+/** Reżim zmienności z BOCPD: σ zwrotu 5m reżimu, najbardziej prawdopodobna długość (świece 5m), P(zmiany w 5 świecach) */
+export interface Regime {
+  sigma5: number;
+  run: number;
+  pChange: number;
+}
+
+export const MODEL_B = 'ledger-har-fhs-bocpd-v1';
+/** Oczekiwana długość reżimu: doba świec 5m */
+const BOCPD_HAZARD = 1 / 288;
+
+/**
+ * Reżim zmienności z log-zwrotów 5m (ciągłe świece, do 3 dni): BOCPD (Adams & MacKay 2007) z priorem Gamma na precyzję —
+ * średnia a priori wariancji = odporna wariancja okna (mediana r² / 0,4549). Mniej niż 100 zwrotów → null.
+ */
+export function regimeFrom5m(bars: readonly RangeBar[]): Regime | null {
+  const b = [...bars].sort((x, y) => x.time - y.time).slice(-865);
+  const r: number[] = [];
+  for (let i = 1; i < b.length; i++) if (b[i].time - b[i - 1].time === 5 * MIN && b[i].close > 0 && b[i - 1].close > 0) r.push(Math.log(b[i].close / b[i - 1].close));
+  if (r.length < 100) return null;
+  const sq = r.map((x) => x * x).sort((x, y) => x - y);
+  const v0 = Math.max(1e-12, sq[sq.length >> 1] / 0.4549);
+  const det = new Bocpd({ hazard: BOCPD_HAZARD, alpha0: 2, beta0: v0, rMax: 600 });
+  for (const x of r) det.update(x);
+  const st = det.state();
+  return { sigma5: Math.round(st.sigma * 1e8) / 1e8, run: st.mapRun, pChange: r4(st.pRecent5) };
+}
+
+/** Wariant B prognozy zwrotu: te same chwile i benchmark co A, kwantyle A przeskalowane do σ z mieszaniny model/reżim. */
+export function makeRetForecastB(model: VolModel, a: RetForecast, reg: Regime): RetForecast {
+  const sA2 = horizonStepSigmas(model, a.t, a.h).reduce((s, x) => s + x * x, 0);
+  const regH2 = reg.sigma5 ** 2 * (a.h / 5);
+  const scale = r6(Math.sqrt(0.5 + (0.5 * regH2) / Math.max(sA2, 1e-18)));
+  return { ...a, id: `${a.id}b`, q: a.q.map((v) => r6(v * scale)), model: MODEL_B, variant: 'B', scale, regime: reg };
+}
+
+/** Wyniki A/B: CRPS obu wersji na tych samych slotach; różnica B − A z bootstrapem na podpróbie rozłącznej (slot ≡ 0 mod h). */
+export function abScores(rows: readonly { a: RetResolution; b: RetResolution; slot: number; h: number }[]): {
+  n: number;
+  nIndep: number;
+  crpsA: number | null;
+  crpsB: number | null;
+  diff: { d: number; lo: number; hi: number } | null;
+} {
+  const n = rows.length;
+  if (n === 0) return { n: 0, nIndep: 0, crpsA: null, crpsB: null, diff: null };
+  const crpsA = rows.reduce((s, x) => s + x.a.crps, 0) / n;
+  const crpsB = rows.reduce((s, x) => s + x.b.crps, 0) / n;
+  const indep = rows.filter((x) => x.slot % (x.h * MIN) === 0).map((x) => x.b.crps - x.a.crps);
+  let diff: { d: number; lo: number; hi: number } | null = null;
+  if (indep.length >= 5) {
+    // Niepewność z podpróby rozłącznej (prognozy co 15 min z horyzontem 1 h nakładają się), wyśrodkowana na średniej z całości
+    const bd = bootDiff(indep, 17);
+    const d = crpsB - crpsA;
+    diff = { d, lo: d + (bd.lo - bd.d), hi: d + (bd.hi - bd.d) };
+  } else diff = { d: crpsB - crpsA, lo: Number.NaN, hi: Number.NaN };
+  const r8 = (x: number) => Math.round(x * 1e8) / 1e8;
+  return { n, nIndep: indep.length, crpsA: r8(crpsA), crpsB: r8(crpsB), diff: Number.isFinite(diff.lo) ? diff : null };
 }
 
 export interface TouchForecast {
@@ -585,12 +653,12 @@ export function buildSummary(s: SummaryInput): DeskLedgerSummary {
   for (const f of fs) {
     const r = s.resolutions.get(f.id);
     if (!r) continue;
-    if (f.kind === 'ret' && 'crps' in r) retPairs.set(f.h, [...(retPairs.get(f.h) ?? []), { f, r }]);
+    if (f.kind === 'ret' && !f.variant && 'crps' in r) retPairs.set(f.h, [...(retPairs.get(f.h) ?? []), { f, r }]);
     if (f.kind === 'touch' && 'yv' in r) touchPairs.push({ f, r });
     if (f.kind === 'mkt' && 'near' in r) mktPairs.push({ f, r });
   }
   const latestMkt = [...fs].reverse().find((f): f is MktForecast => f.kind === 'mkt');
-  const latestRet = RET_HORIZONS.map((h) => [...fs].reverse().find((f) => f.kind === 'ret' && f.h === h) as RetForecast | undefined).filter(
+  const latestRet = RET_HORIZONS.map((h) => [...fs].reverse().find((f) => f.kind === 'ret' && !f.variant && f.h === h) as RetForecast | undefined).filter(
     (f): f is RetForecast => !!f
   );
   const latestTouch = [...fs].reverse().find((f) => f.kind === 'touch') as TouchForecast | undefined;
@@ -662,7 +730,29 @@ export function buildSummary(s: SummaryInput): DeskLedgerSummary {
         ? { t: latestMkt.t, expiry: latestMkt.expiry, K: latestMkt.K, p: latestMkt.p, bid: latestMkt.bid, ask: latestMkt.ask, liquid: latestMkt.liquid, pe: latestMkt.pe ?? null }
         : null,
     },
+    ab: abSection(fs, s.resolutions),
     method: 'hq-ledger-v1',
+  };
+}
+
+/** A/B wersji modelu (1 h): pary A i B z tego samego slotu, oba rozstrzygnięte; najnowszy reżim i skala B. */
+function abSection(fs: Forecast[], res: Map<string, Resolution>): NonNullable<DeskLedgerSummary['ab']> {
+  const rows: { a: RetResolution; b: RetResolution; slot: number; h: number }[] = [];
+  let latest: RetForecast | null = null;
+  const byId = new Map(fs.map((f) => [f.id, f]));
+  for (const f of fs) {
+    if (f.kind !== 'ret' || f.variant !== 'B') continue;
+    latest = f;
+    const a = byId.get(f.id.slice(0, -1));
+    const ra = a ? res.get(a.id) : undefined;
+    const rb = res.get(f.id);
+    if (ra && rb && 'crps' in ra && 'crps' in rb) rows.push({ a: ra, b: rb, slot: f.slot, h: f.h });
+  }
+  return {
+    h: 60,
+    model: MODEL_B,
+    ...abScores(rows),
+    latest: latest && latest.regime && latest.scale !== undefined ? { t: latest.t, scale: latest.scale, regime: latest.regime } : null,
   };
 }
 
@@ -703,6 +793,10 @@ export class ForecastData {
   private modelTriedAt = Number.NEGATIVE_INFINITY;
   levels: { pdh: number; pdl: number; day: number } | null = null;
   levelsAt = 0;
+  /** Reżim zmienności (BOCPD na świecach 5m z 3 dni) — odświeżany raz na slot */
+  regime: Regime | null = null;
+  regimeAt = 0;
+  private regimeTriedAt = Number.NEGATIVE_INFINITY;
 
   constructor(d: ForecasterDeps) {
     this.d = d;
@@ -735,6 +829,17 @@ export class ForecastData {
     if (prev && prev.high > prev.low) {
       this.levels = { pdh: prev.high, pdl: prev.low, day: prev.time };
       this.levelsAt = now;
+    }
+  }
+
+  /** Reżim zmienności do wariantu B — raz na 15 min (świece 5m z 3 dni, ~35 wag). */
+  async refreshRegime(now: number): Promise<void> {
+    if (now - this.regimeTriedAt < SLOT) return;
+    this.regimeTriedAt = now;
+    const r = regimeFrom5m(await this.candles('5m', now - 865 * 5 * MIN, 865));
+    if (r) {
+      this.regime = r;
+      this.regimeAt = now;
     }
   }
 

@@ -354,3 +354,36 @@ describe('prerejestracja a trwający przebieg dziennika', () => {
     expect(r.register({ id: 'lab-v1', catalogHash: 'd'.repeat(64), catalog: {} }, SLOT0 + 2 * MIN)).toMatchObject({ added: true });
   });
 });
+
+describe('A/B wersji modelu: wariant B z reżimem BOCPD', () => {
+  it('przy świeżym reżimie wydaje ret60b w tej samej partii co A; B nie zmienia ACI wersji A; podsumowanie ma sekcję ab', async () => {
+    const data = fakeData() as ReturnType<typeof fakeData> & { regime?: unknown; regimeAt?: number; refreshRegime?: (now: number) => Promise<void> };
+    data.regime = { sigma5: 0.0015, run: 40, pChange: 0.01 };
+    data.regimeAt = SLOT0;
+    data.refreshRegime = async () => {};
+    const { r, dir, published } = runner({ data });
+    r.init(SLOT0);
+    await r.tick(SLOT0 + MIN);
+    const day = lines(dir, '2026-10-22');
+    const a = day.find((l) => l.id === `${SLOT0}-ret60`);
+    const b = day.find((l) => l.id === `${SLOT0}-ret60b`);
+    expect(b).toMatchObject({ variant: 'B', model: 'ledger-har-fhs-bocpd-v1', ti: a.ti, t: a.t, h: 60 });
+    // B zaraz po A (ta sama partia pokwitowania slotu)
+    expect(day.findIndex((l) => l.id === `${SLOT0}-ret60b`)).toBeGreaterThan(day.findIndex((l) => l.id === `${SLOT0}-ret60`));
+    // Rozstrzygnięcie po horyzoncie: ACI wersji A zmienia tylko rozstrzygnięcie A
+    await r.tick(SLOT0 + 2 * HOUR);
+    const summary = JSON.parse(published.at(-1)!);
+    expect(summary.ab).toMatchObject({ h: 60, model: 'ledger-har-fhs-bocpd-v1' });
+    expect(summary.ab.latest.regime).toEqual(data.regime);
+    expect(isDeskLedgerSummary(summary)).toBe(true);
+  });
+  it('reżim nieświeży (> 20 min) albo brak — bez wariantu B', async () => {
+    const data = fakeData() as ReturnType<typeof fakeData> & { regime?: unknown; regimeAt?: number };
+    data.regime = { sigma5: 0.0015, run: 40, pChange: 0.01 };
+    data.regimeAt = SLOT0 - HOUR;
+    const { r, dir } = runner({ data });
+    r.init(SLOT0);
+    await r.tick(SLOT0 + MIN);
+    expect(lines(dir, '2026-10-22').some((l) => String(l.id).endsWith('ret60b'))).toBe(false);
+  });
+});

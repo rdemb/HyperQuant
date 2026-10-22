@@ -134,6 +134,20 @@ export interface DeskLedgerSummary {
     /** Bieżące wagi ensemble (logit p_e = a + bm·logit p_model + bk·logit p_rynek), n — liczba par; brak w starszych */
     ensemble?: { a: number; bm: number; bk: number; n: number; at: number; rec?: { a: number; bk: number } };
   };
+  /**
+   * A/B wersji modelu (1 h): wersja A (HAR + FHS) vs B (σ z mieszaniny z reżimem BOCPD) na tych samych slotach; CRPS obu,
+   * różnica B − A z bootstrapem na podpróbie rozłącznej — brak w starszych podsumowaniach
+   */
+  ab?: {
+    h: number;
+    model: string;
+    n: number;
+    nIndep: number;
+    crpsA: number | null;
+    crpsB: number | null;
+    diff: { d: number; lo: number; hi: number } | null;
+    latest: { t: number; scale: number; regime: { sigma5: number; run: number; pChange: number } } | null;
+  };
   method: 'hq-ledger-v1';
 }
 
@@ -200,8 +214,20 @@ export function isDeskLedgerSummary(x: unknown): x is DeskLedgerSummary {
     fin(s.participation.issued) &&
     fin(s.participation.skipped) &&
     Array.isArray(s.participation.gaps) &&
-    (s.market === undefined || isMarket(s.market))
+    (s.market === undefined || isMarket(s.market)) &&
+    (s.ab === undefined || isAb(s.ab))
   );
+}
+
+/** Sekcja A/B (opcjonalna) */
+function isAb(x: unknown): boolean {
+  const a = x as Partial<NonNullable<DeskLedgerSummary['ab']>> | null;
+  if (!a || !fin(a.h) || typeof a.model !== 'string' || !fin(a.n) || !fin(a.nIndep)) return false;
+  const fon = (v: unknown) => v === null || fin(v);
+  if (!fon(a.crpsA) || !fon(a.crpsB)) return false;
+  if (a.diff !== null && !(!!a.diff && fin(a.diff.d) && fin(a.diff.lo) && fin(a.diff.hi))) return false;
+  const l = a.latest;
+  return l === null || (!!l && fin(l.t) && fin(l.scale) && !!l.regime && fin(l.regime.sigma5) && fin(l.regime.run) && fin(l.regime.pChange));
 }
 
 const isMkt = (m: unknown) => {

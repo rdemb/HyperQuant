@@ -311,3 +311,18 @@ describe('ensemble: skaner vs niezależny weryfikator', () => {
     }
   });
 });
+
+import { checkVariants } from './verify-ledger.mjs';
+
+describe('A/B wersji modelu: wariant B = A × skala', () => {
+  const A = { k: 'f', kind: 'ret', id: '900000-ret60', slot: 900000, ti: 900020, t: 960000, h: 60, px0: 80000, taus: [0.1, 0.5, 0.9], q: [-0.004, 0, 0.004], bq: [-0.005, 0, 0.005], aci: 0.1 };
+  const B = { ...A, id: '900000-ret60b', variant: 'B', scale: 1.25, q: [-0.005, 0, 0.005], regime: { sigma5: 0.002, run: 30, pChange: 0.01 } };
+  it('zgodny wariant B → bez problemów; liczba sprawdzonych', () => {
+    expect(checkVariants([A, B])).toEqual({ problems: [], checked: 1 });
+  });
+  it('kwantyle niezgodne ze skalą, inna chwila wydania albo brak wersji A → problem', () => {
+    expect(checkVariants([A, { ...B, q: [-0.006, 0, 0.005] }]).problems.join(' ')).toMatch(/kwantyle ≠ A × skala/);
+    expect(checkVariants([A, { ...B, ti: 900021 }]).problems.join(' ')).toMatch(/ti/);
+    expect(checkVariants([B]).problems.join(' ')).toMatch(/brak wersji A/);
+  });
+});

@@ -363,3 +363,78 @@ describe('model vs rynek (HIP-4, 15 min)', () => {
   });
 });
 
+import { abScores, makeRetForecast, makeRetForecastB, regimeFrom5m } from '../forecaster.ts';
+import { horizonStepSigmas } from '../../../src/utils/volatility.ts';
+
+describe('A/B wersji modelu: wariant B z reżimem zmienności (BOCPD)', () => {
+  const H = 60 * MIN;
+  function series(n: number, end: number, sds: [number, number][]): RangeBar[] {
+    let s = 9;
+    const rnd = () => ((s = (s * 16807) % 2147483647) / 2147483647);
+    const g = () => Math.sqrt(-2 * Math.log(rnd() || 1e-12)) * Math.cos(2 * Math.PI * rnd());
+    let px = 100_000;
+    const out: RangeBar[] = [];
+    let k = 0;
+    for (const [cnt, sd] of sds)
+      for (let i = 0; i < cnt; i++, k++) {
+        const o = px;
+        px = o * Math.exp(sd * g());
+        out.push({ time: end - (n - k) * 5 * MIN, open: o, high: Math.max(o, px), low: Math.min(o, px), close: px });
+      }
+    return out;
+  }
+  it('reżim z BOCPD na zwrotach 5m: po skoku zmienności σ reżimu bliska nowej, krótki przebieg', () => {
+    const bars = series(800, T0, [
+      [760, 0.0012],
+      [40, 0.005],
+    ]);
+    const r = regimeFrom5m(bars)!;
+    expect(r.sigma5).toBeGreaterThan(0.003);
+    expect(r.sigma5).toBeLessThan(0.008);
+    expect(r.run).toBeLessThan(60);
+    expect(regimeFrom5m(bars.slice(0, 10))).toBeNull();
+  });
+  it('wariant B: te same chwile co A, kwantyle A × skala, skala z mieszaniny σ modelu i σ reżimu', () => {
+    const model = buildVolModel(bars1h(), bars5m(), T0)!;
+    const tm = { slot: T0, ti: T0 + 20_000, t: T0 + MIN };
+    const a = makeRetForecast(model, tm, 100_000, 60, 0.004, 0.1);
+    const reg = { sigma5: 0.003, run: 25, pChange: 0.02 };
+    const b = makeRetForecastB(model, a, reg);
+    const sA = Math.sqrt(horizonStepSigmas(model, tm.t, 60).reduce((s, x) => s + x * x, 0));
+    const want = Math.sqrt(0.5 + (0.5 * 0.003 ** 2 * 12) / sA ** 2);
+    expect(b).toMatchObject({ id: `${T0}-ret60b`, variant: 'B', slot: a.slot, ti: a.ti, t: a.t, h: 60, px0: a.px0, model: 'ledger-har-fhs-bocpd-v1' });
+    expect(b.scale).toBeCloseTo(want, 6);
+    b.q.forEach((v, i) => expect(v).toBeCloseTo(a.q[i] * b.scale!, 5));
+    expect(b.bq).toEqual(a.bq);
+    expect(b.regime).toEqual(reg);
+  });
+  it('wyniki A/B: CRPS na tych samych slotach, różnica B − A z bootstrapem na podpróbie rozłącznej', () => {
+    const model = buildVolModel(bars1h(), bars5m(), T0)!;
+    const pairs: { a: { f: RetForecast; r: ReturnType<typeof resolveRet> & object }; b: { f: RetForecast; r: ReturnType<typeof resolveRet> & object } }[] = [];
+    for (let k = 0; k < 40; k++) {
+      const slot = T0 + k * 15 * MIN;
+      const tm = { slot, ti: slot + 20_000, t: slot + MIN };
+      const a = makeRetForecast(model, tm, 100_000, 60, 0.004, 0.1);
+      const b = makeRetForecastB(model, a, { sigma5: 0.0001, run: 10, pChange: 0 });
+      const close = 100_000 * Math.exp(0.002 * Math.sin(k));
+      const c1m = [
+        { time: tm.t - MIN, open: 100_000, high: 100_000, low: 100_000, close: 100_000 },
+        { time: tm.t + 59 * MIN, open: close, high: close, low: close, close },
+      ];
+      pairs.push({ a: { f: a, r: resolveRet(a, c1m, tm.t + H + MIN)! }, b: { f: b, r: resolveRet(b, c1m, tm.t + H + MIN)! } });
+    }
+    const s = abScores(pairs.map((p) => ({ a: p.a.r, b: p.b.r, slot: p.a.f.slot, h: 60 })));
+    expect(s.n).toBe(40);
+    expect(s.nIndep).toBe(10);
+    expect(s.crpsA).not.toBeNull();
+    expect(s.diff!.d).toBeCloseTo(s.crpsB! - s.crpsA!, 7);
+    expect(abScores([])).toMatchObject({ n: 0, crpsA: null, diff: null });
+  });
+
+  function bars1h(): RangeBar[] {
+    return series(1200, T0, [[1200, 0.004]]).map((b, i) => ({ ...b, time: T0 - (1200 - i) * H }));
+  }
+  function bars5m(): RangeBar[] {
+    return series(2000, T0, [[2000, 0.0015]]);
+  }
+});

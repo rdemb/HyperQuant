@@ -221,6 +221,33 @@ export function checkOrdering(records, opts = {}) {
 }
 
 /**
+ * A/B wersji modelu: wariant B prognozy zwrotu (`variant: 'B'`, id `<A>b`) musi mieć tę samą chwilę wydania, horyzont,
+ * cenę, poziomy τ, benchmark i ACI co wersja A z tego samego slotu, a kwantyle = A × `scale` (±2·10⁻⁶ z zaokrągleń).
+ */
+export function checkVariants(records) {
+  const byId = new Map(records.filter((o) => o.k === 'f').map((o) => [o.id, o]));
+  const problems = [];
+  let checked = 0;
+  for (const b of byId.values()) {
+    if (b.variant !== 'B') continue;
+    const a = byId.get(String(b.id).slice(0, -1));
+    if (!a || a.variant) {
+      problems.push(`${b.id}: brak wersji A tego slotu`);
+      continue;
+    }
+    const bad = [];
+    for (const k of ['slot', 'ti', 't', 'h', 'px0', 'aci']) if (a[k] !== b[k]) bad.push(k);
+    if (canonical(a.taus) !== canonical(b.taus) || canonical(a.bq) !== canonical(b.bq)) bad.push('taus/bq');
+    if (!(typeof b.scale === 'number' && b.scale > 0 && Number.isFinite(b.scale))) bad.push('scale');
+    else if (!Array.isArray(b.q) || b.q.length !== a.q.length || b.q.some((v, i) => Math.abs(v - a.q[i] * b.scale) > 2e-6)) bad.push('kwantyle ≠ A × skala');
+    if (!b.regime || ![b.regime.sigma5, b.regime.run, b.regime.pChange].every(Number.isFinite)) bad.push('reżim');
+    if (bad.length) problems.push(`${b.id}: ${bad.join(', ')}`);
+    else checked++;
+  }
+  return { problems, checked };
+}
+
+/**
  * Prerejestracje katalogów (laboratorium folkloru, rekordy `k: 'p'`): `catalogHash` = SHA-256 kanonicznego JSON
  * zapisanego katalogu, czasy niemalejące. Łańcuch hashy i pokwitowania OTS dowodzą, że katalog istniał przed oceną.
  */
@@ -525,7 +552,8 @@ export function recompute(records) {
     const res = r.get(id);
     if (!res || res.void) continue;
     if (fc.kind === 'ret') {
-      const s = (ret[fc.h] ??= { n: 0, crps: 0, crpsB: 0, in90: 0 });
+      // Wariant B (A/B) osobno — wyniki wersji głównej bez niego, jak w podsumowaniu
+      const s = (ret[fc.variant === 'B' ? `${fc.h}-B` : fc.h] ??= { n: 0, crps: 0, crpsB: 0, in90: 0 });
       s.n++;
       s.crps += crps(fc.taus, fc.q, res.y);
       s.crpsB += crps(fc.taus, fc.bq, res.y);
@@ -654,6 +682,10 @@ async function main() {
         : `✓ ensemble: ${ens.checked} wydań — p_e i p_r zgodne z zapisanymi wagami${ens.refitted ? `; wagi ${ens.refitted} ostatnich wydań odtworzone ponownym dopasowaniem na pytaniach rozstrzygniętych przed wydaniem` : ''}`
     );
   if (ens.problems.length) ok = false;
+  const ab = checkVariants(records);
+  if (ab.checked || ab.problems.length)
+    console.log(ab.problems.length ? `✗ wariant B (${ab.problems.length}): ${ab.problems.slice(0, 5).join('; ')}` : `✓ A/B: ${ab.checked} prognoz wariantu B = wersja A × skala, te same chwile`);
+  if (ab.problems.length) ok = false;
   const pre = checkPreregs(records);
   if (pre.preregs.length || pre.problems.length)
     console.log(
