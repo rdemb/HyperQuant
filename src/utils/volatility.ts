@@ -219,8 +219,13 @@ export function qlike(realized: number, forecast: number): number {
 export interface HarModel {
   /** [b0, b1 (godzina), b2 (24 h), b3 (168 h)] */
   coef: [number, number, number, number];
-  /** Korekta Duana: E[exp(ε)] */
+  /** Korekta Duana: E[exp(ε)] dla prognozy 1-krokowej */
   smear: number;
+  /**
+   * Korekta Duana dla prognozy iterowanej h kroków (indeks h−1): średnia exp(y_{t+h} − ŷ_{t+h|t}) w próbie.
+   * Iterowanie log-prognozy gubi nierówność Jensena z wcześniejszych błędów — przy szumie BTC ~10% wariancji na 12–24 h.
+   */
+  smearByH: number[];
   /** Liczba wierszy regresji */
   n: number;
   r2: number;
@@ -274,6 +279,40 @@ function olsHar(rows: number[][], target: number[], from: number, to: number) {
     sse += e * e;
   }
   return { coef: coef as [number, number, number, number], smear: smear / (to - from), sse };
+}
+
+/** Liczba horyzontów (godzin) z własną korektą Duana; dalej obowiązuje ostatnia (24 h horyzontu + przesunięcie startu). */
+const SMEAR_HORIZONS = 48;
+
+/**
+ * Korekta Duana dla każdego horyzontu prognozy iterowanej: z każdego początku t (y znane do t) iterujemy ŷ_{t+h|t}
+ * jak w `forecastHourlyVariances` i uśredniamy exp(y_{t+h} − ŷ_{t+h|t}). `pre` = sumy prefiksowe y.
+ */
+function iteratedSmear(y: number[], pre: Float64Array, coef: [number, number, number, number], H: number): number[] {
+  const [b0, b1, b2, b3] = coef;
+  const N = y.length;
+  const sum = new Float64Array(H);
+  const cnt = new Float64Array(H);
+  const pred = new Float64Array(H);
+  for (let t = 167; t < N - 1; t++) {
+    let s24 = pre[t + 1] - pre[t - 23];
+    let s168 = pre[t + 1] - pre[t - 167];
+    let last = y[t];
+    // Wartość szeregu pod indeksem j: obserwacja (j ≤ t) albo prognoza z tego początku
+    const val = (j: number) => (j <= t ? y[j] : pred[j - t - 1]);
+    for (let h = 1; h <= H && t + h < N; h++) {
+      const yh = b0 + b1 * last + b2 * (s24 / 24) + b3 * (s168 / 168);
+      pred[h - 1] = yh;
+      sum[h - 1] += Math.exp(y[t + h] - yh);
+      cnt[h - 1]++;
+      s24 += yh - val(t + h - 24);
+      s168 += yh - val(t + h - 168);
+      last = yh;
+    }
+  }
+  const out: number[] = [];
+  for (let h = 0; h < H; h++) out.push(cnt[h] > 0 ? sum[h] / cnt[h] : out[h - 1] ?? 1);
+  return out;
 }
 
 /**
@@ -334,6 +373,7 @@ export function fitSeasonalHar(bars: RangeBar[], profile: SeasonalProfile): HarM
   return {
     coef: fit.coef,
     smear: fit.smear,
+    smearByH: iteratedSmear(y, pre, fit.coef, SMEAR_HORIZONS),
     n: rows.length,
     r2: sst > 0 ? 1 - fit.sse / sst : 0,
     oos,
@@ -343,7 +383,7 @@ export function fitSeasonalHar(bars: RangeBar[], profile: SeasonalProfile): HarM
 
 /**
  * Prognoza iterowana wariancji godzin [firstHourStartMs + k·1h], k = 0..hours−1:
- * ŷ dopisywane do bufora y (średnie 24/168 przeliczane), wariancja = f_h·exp(ŷ)·smear.
+ * ŷ dopisywane do bufora y (średnie 24/168 przeliczane), wariancja = f_h·exp(ŷ)·smear_{k+1} (korekta Duana dla horyzontu).
  */
 export function forecastHourlyVariances(m: HarModel, p: SeasonalProfile, firstHourStartMs: number, hours: number): number[] {
   const [b0, b1, b2, b3] = m.coef;
@@ -357,7 +397,8 @@ export function forecastHourlyVariances(m: HarModel, p: SeasonalProfile, firstHo
     sum24 += yHat - buf[buf.length - 24];
     sum168 += yHat - buf[buf.length - 168];
     buf.push(yHat);
-    out.push(p.factors[utcHour(firstHourStartMs + k * HOUR_MS)] * Math.exp(yHat) * m.smear);
+    const smear = m.smearByH.length > 0 ? m.smearByH[Math.min(k, m.smearByH.length - 1)] : m.smear;
+    out.push(p.factors[utcHour(firstHourStartMs + k * HOUR_MS)] * Math.exp(yHat) * smear);
   }
   return out;
 }

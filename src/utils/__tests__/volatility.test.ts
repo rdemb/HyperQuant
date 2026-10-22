@@ -240,12 +240,40 @@ describe('sezonowy log-HAR', () => {
     expect(m!.oos!.n).toBeGreaterThan(1000);
   });
 
-  it('prognoza iterowana zbiega do poziomu bezwarunkowego exp(b0/(1−Σb))·smear', () => {
+  it('prognoza iterowana zbiega do poziomu bezwarunkowego exp(b0/(1−Σb))·smear_H', () => {
     const [b0, b1, b2, b3] = m!.coef;
     const f = forecastHourlyVariances(m!, FLAT, 0, 2000);
-    const level = Math.exp(b0 / (1 - b1 - b2 - b3)) * m!.smear;
+    const level = Math.exp(b0 / (1 - b1 - b2 - b3)) * m!.smearByH[m!.smearByH.length - 1];
     expect(f[1999] / level).toBeGreaterThan(0.95);
     expect(f[1999] / level).toBeLessThan(1.05);
+  });
+
+  it('prognoza iterowana nieobciążona przy realistycznym szumie BTC (Jensen, ±5% na 2 h, 12 h, 24 h)', () => {
+    // Współczynniki i szum jak w dopasowaniu na realnych świecach 1h BTC (s ≈ 0.75, smear ≈ 1.3)
+    const live: [number, number, number, number] = [-0.964, 0.439, 0.418, 0.061];
+    const s = 0.75;
+    const ys = simulateLogHar(5000, live, s, 21);
+    const mm = fitSeasonalHar(ys.map((yt, i) => barWithGk(i * HOUR, Math.exp(yt))), FLAT)!;
+    const [b0, b1, b2, b3] = mm.coef;
+    const f = forecastHourlyVariances(mm, FLAT, 0, 24);
+    const { n } = rng(77);
+    for (const H of [2, 12, 24]) {
+      let acc = 0;
+      const N = 3000;
+      for (let p = 0; p < N; p++) {
+        const buf = [...mm.lastY];
+        for (let h = 0; h < H; h++) {
+          const t = buf.length - 1;
+          const D = buf.slice(t - 23).reduce((a, x) => a + x, 0) / 24;
+          const W = buf.slice(t - 167).reduce((a, x) => a + x, 0) / 168;
+          buf.push(b0 + b1 * buf[t] + b2 * D + b3 * W + s * n());
+        }
+        acc += Math.exp(buf[buf.length - 1]);
+      }
+      const ratio = f[H - 1] / (acc / N);
+      expect(ratio).toBeGreaterThan(0.95);
+      expect(ratio).toBeLessThan(1.05);
+    }
   });
 
   it('za mało godzin (< 500 wierszy regresji) → null', () => {
