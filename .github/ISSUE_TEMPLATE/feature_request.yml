@@ -1,0 +1,20 @@
+name: Propozycja
+description: Nowa funkcja, metoda albo źródło danych
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Jaką decyzję tradingową ma to ułatwić?
+      description: Opisz sytuację z rynku, w której tego brakuje.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Propozycja
+  - type: textarea
+    id: method
+    attributes:
+      label: Metoda i dane
+      description: Literatura (autor, rok), publiczne źródło danych, jak sprawdzić trafność.
