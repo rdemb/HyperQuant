@@ -39,7 +39,8 @@
 - **Zasięg 2 h (pas desku):** ten sam silnik (2000 ścieżek, wspólne liczby losowe w obrębie minuty); bez modelu zmienności — Merton z założonym udziałem skoków 20% (oznaczony w pasku).
 - **Hurst:** R/S z korektą Anis-Lloyd; Lo (1991) — test może mylić krótką pamięć z długą.
 - **OU:** dyskretny AR(1) wokół 0.65·D-EQ + 0.35·W-EQ; bez powrotu do średniej → t½ = ∞.
-- **Heatmapa likwidacji, order blocks, U(p):** heurystyki bez walidacji statystycznej — oznaczone jako szacunek.
+- **Mapa likwidacji (panel na Desku):** zmierzona z pozycji on-chain — kubełki cen likwidacji z `clearinghouseState`, pokrycie OI jawnie; kaskada z prawa pierwiastka kwadratowego (Tóth i in. 2011; Bouchaud i in. 2018) jako górna granica.
+- **Heatmapa likwidacji na wykresie świec, order blocks, U(p):** heurystyki bez walidacji statystycznej — oznaczone jako szacunek.
 - **Ocena prognoz:** Brier, log score, Brier P(wypełnienia), wykres niezawodności (Gneiting & Raftery 2007); ćwierć-Kelly dopiero po ≥ 50 rozstrzygniętych planach, z dolnej granicy Wilsona (MacLean, Thorp & Ziemba 2010).
 
 ## Źródła danych
@@ -47,6 +48,7 @@
 | Źródło | Co | Uwagi |
 |---|---|---|
 | Hyperliquid API (`/info`, WebSocket) | świece, arkusz L2, transakcje, OI, funding (także Binance/Bybit przez `predictedFundings`), HIP-3, mapa rynku | publiczne, limit 1200 wag/min na IP użytkownika |
+| Skaner HyperQuant ([backend/](backend/README.md)) | mapa likwidacji z pozycji on-chain (`clearinghouseState` portfeli z taśmy BTC) — tylko agregaty | publikowana co 60 s do Cloudflare R2; przeglądarka nie łączy się z serwerem skanera |
 | Federal Reserve, BLS, BEA | harmonogram FOMC, CPI, NFP, PPI, PKB/PCE | dane publiczne USA |
 | U.S. Treasury, FiscalData, NY Fed, CFTC | rentowności, TGA, RRP, COT | dane publiczne USA |
 | alternative.me | Fear & Greed | atrybucja obok danych |

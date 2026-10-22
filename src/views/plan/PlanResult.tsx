@@ -4,6 +4,8 @@ import { Badge, Stat, fmtCompact, fmtPrice, fmtSigned } from '../../ui';
 import { BTC_MAX_LEVERAGE, DEFAULT_TAKER_FEE, PlanAnalysis, quarterKelly, wilsonLowerBound } from '../../utils/planAnalyzer';
 import { LedgerEntry, bucketIndex, bucketStats } from '../../utils/forecastLedger';
 import { MacroEvent } from '../../data/macroCalendar';
+import { useLiqMap } from '../../state/useLiqMap';
+import { stopNearCluster } from '../../utils/liqMapView';
 import { ProbabilityBar } from './ProbabilityBar';
 import { PathFan } from './PathFan';
 import { PlanMarket, fmtMinutes } from './hooks';
@@ -111,6 +113,7 @@ export const PlanResult: React.FC<PlanResultProps> = (p) => {
       </div>
 
       <MacroWindow events={market.events} loaded={market.calendarLoaded} multiplier={market.eventMultiplier} />
+      <StopClusterWarning entry={p.entry} stop={p.stop} />
 
       <PathFan mc={mc} entry={p.entry} stop={p.stop} target={p.target} />
 
@@ -252,6 +255,26 @@ const VolModelStat: React.FC<{ market: PlanMarket; horizonLabel: string }> = ({ 
         </>
       }
     />
+  );
+};
+
+/** Stop w strefie likwidacji po tej samej stronie (mapa z pozycji on-chain): ryzyko przestrzelenia stopu. */
+const StopClusterWarning: React.FC<{ entry: number; stop: number }> = ({ entry, stop }) => {
+  const { status, map } = useLiqMap();
+  if (status !== 'ready' || !map || !(stop > 0) || !(entry > 0)) return null;
+  const long = stop < entry;
+  const hit = stopNearCluster(map, long ? 'LONG' : 'SHORT', stop);
+  if (!hit) return null;
+  return (
+    <div className="rounded-md border border-warn/40 bg-warn/5 px-3 py-2 text-xs">
+      <div className="flex items-center gap-1.5 text-warn font-medium">
+        <AlertTriangle className="w-3.5 h-3.5" aria-hidden="true" /> Stop w strefie likwidacji {long ? 'longów' : 'shortów'} (pozycje on-chain)
+      </div>
+      <div className="mt-1 text-ink-2">
+        {fmtCompact(hit.ntlUsd, '$')} nominału ({hit.positions} poz.) w ±0.2% wokół stopu — ich zlecenia rynkowe mogą przepchnąć cenę przez stop i
+        pogorszyć wykonanie. Rozważ stop poza klastrem.
+      </div>
+    </div>
   );
 };
 

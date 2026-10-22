@@ -47,3 +47,7 @@ tasks/
 # Lokalne narzędzia asystenta i notatki sesji
 .remember/
 .superpowers/
+
+# Lokalny stan skanera (adresy portfeli) i prawdziwa konfiguracja — nigdy do repozytorium
+.scanner/
+backend/deploy/scanner.env

@@ -1,0 +1,50 @@
+[Unit]
+Description=HyperQuant — skaner pozycji Hyperliquid (mapa likwidacji)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=hyperquant
+Group=hyperquant
+WorkingDirectory=/opt/hyperquant/app
+EnvironmentFile=/etc/hyperquant/scanner.env
+Environment=NODE_OPTIONS=--max-old-space-size=384
+ExecStart=/opt/hyperquant/node/bin/node backend/scanner/main.ts
+Restart=always
+RestartSec=10
+
+# Skaner dzieli serwer z innymi usługami — niski priorytet i twarde limity zasobów
+Nice=10
+CPUQuota=50%
+MemoryMax=512M
+TasksMax=64
+
+# Izolacja: zapis tylko do katalogu stanu, bez uprawnień, bez dostępu do katalogów domowych i obcych procesów
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectProc=invisible
+ProcSubset=pid
+ProtectClock=true
+ProtectHostname=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=true
+CapabilityBoundingSet=
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+ReadWritePaths=/var/lib/hyperquant
+
+[Install]
+WantedBy=multi-user.target
