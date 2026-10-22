@@ -6,6 +6,10 @@ updates:
       interval: weekly
       day: monday
     open-pull-requests-limit: 5
+    ignore:
+      # Typy Node trzymamy przy wersji uruchomieniowej (Node 24 w CI i na serwerze) — nowsze typy wyprzedzałyby runtime
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     groups:
       # Drobne aktualizacje razem — jeden PR zamiast kilkunastu
       minor-and-patch:

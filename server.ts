@@ -46,7 +46,8 @@ async function startServer() {
   } else {
     const distPath = path.resolve(process.cwd(), 'dist');
     app.use(express.static(distPath));
-    app.get('*', (_req, res) => {
+    // Fallback SPA jako middleware: działa w Express 4 i 5 (Express 5 odrzuca ścieżkę '*')
+    app.use((_req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }

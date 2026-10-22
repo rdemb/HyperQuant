@@ -10,6 +10,9 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 - Panel „Mapa likwidacji i kaskada” na Desku (histogram, najbliższe klastry, tabela) i ostrzeżenie w Analizatorze, gdy stop leży w klastrze likwidacji.
 - Backend `backend/scanner` bez zależności npm (Node 24): własny budżet wag API, harmonogram skanów wg wielkości pozycji, podpis SigV4 sprawdzony wektorem AWS, usługa systemd z limitami zasobów, instalator.
 
+### Zmienione
+- Zależności: lucide-react 1.59, motion 14.3 (używane API bez zmian; poprawki AnimatePresence), Express 5.3 (fallback SPA serwera produkcyjnego jako middleware — Express 5 odrzuca ścieżkę '*'), vitest 5.0.5; typy Node przypięte do wersji uruchomieniowej (24).
+
 ## [2.1.0] — 2026-10-22
 
 Silnik zmienności i spójność modelu z dziennikiem trafności ([#1](https://github.com/rdemb/HyperQuant/pull/1)).
