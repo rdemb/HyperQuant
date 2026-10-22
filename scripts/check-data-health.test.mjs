@@ -1,0 +1,108 @@
+// Testy nadzoru publicznych danych skanera (świeżość, pokrycie, strażnik prywatności).
+import { describe, expect, it } from 'vitest';
+import { LIMITS, assessHealth, findLeaks, renderReport } from './check-data-health.mjs';
+
+const NOW = Date.UTC(2026, 9, 22, 12, 0, 0);
+const MIN = 60_000;
+
+function status(over = {}) {
+  return { v: 1, coin: 'BTC', asOf: NOW - 3 * MIN, addresses: 7600, positions: 260, coverage: 0.3, ageNtlP50Min: 1.5, ctxAt: NOW - 3 * MIN, apiErrors: 0, ...over };
+}
+function liqMap(over = {}) {
+  return { v: 1, coin: 'BTC', asOf: NOW - 3 * MIN, markPx: 100000, longs: [], shorts: [], coverage: { share: 0.3 }, ageMin: { p50: 2, p90: 9, ntlP50: 1.5 }, ...over };
+}
+function input(over = {}) {
+  const s = over.status ?? status();
+  const m = over.liqMap ?? liqMap();
+  return { status: s, liqMap: m, raw: { 'status.json': JSON.stringify(s), 'liq-map/BTC.json': JSON.stringify(m), 'README.md': '# dane' }, errors: {}, ...over };
+}
+
+describe('assessHealth', () => {
+  it('świeże dane bez problemów → ok', () => {
+    const r = assessHealth(input(), NOW);
+    expect(r.ok).toBe(true);
+    expect(r.problems).toEqual([]);
+  });
+
+  it('status.json starszy niż 30 min → problem z wiekiem w minutach', () => {
+    const r = assessHealth(input({ status: status({ asOf: NOW - 45 * MIN }) }), NOW);
+    expect(r.ok).toBe(false);
+    expect(r.problems.join(' ')).toMatch(/status\.json.*45 min/);
+  });
+
+  it('mapa likwidacji starsza niż 30 min → problem', () => {
+    const r = assessHealth(input({ liqMap: liqMap({ asOf: NOW - 31 * MIN }) }), NOW);
+    expect(r.ok).toBe(false);
+    expect(r.problems.join(' ')).toMatch(/liq-map\/BTC\.json/);
+  });
+
+  it('próg dokładnie 30 min nie jest jeszcze alarmem', () => {
+    const r = assessHealth(input({ status: status({ asOf: NOW - LIMITS.maxAgeMin * MIN }) }), NOW);
+    expect(r.ok).toBe(true);
+  });
+
+  it('błąd pobrania pliku → problem z treścią błędu', () => {
+    const r = assessHealth(input({ status: null, errors: { 'status.json': 'HTTP 404' } }), NOW);
+    expect(r.ok).toBe(false);
+    expect(r.problems.join(' ')).toMatch(/status\.json.*HTTP 404/);
+  });
+
+  it('plik bez poprawnego asOf → problem (nie NaN w raporcie)', () => {
+    const r = assessHealth(input({ status: { v: 1 } }), NOW);
+    expect(r.ok).toBe(false);
+    expect(r.problems.join(' ')).not.toMatch(/NaN/);
+  });
+
+  it('opóźnione odczyty pozycji (mediana ważona > 30 min) → problem', () => {
+    const r = assessHealth(input({ status: status({ ageNtlP50Min: 42 }) }), NOW);
+    expect(r.ok).toBe(false);
+    expect(r.problems.join(' ')).toMatch(/42 min/);
+  });
+
+  it('pokrycie open interest poniżej 5% → problem', () => {
+    const r = assessHealth(input({ status: status({ coverage: 0.02 }) }), NOW);
+    expect(r.ok).toBe(false);
+    expect(r.problems.join(' ')).toMatch(/2(,|\.)0 ?%/);
+  });
+
+  it('adres portfela w publikacji → alarm prywatności', () => {
+    const inp = input();
+    inp.raw['status.json'] = JSON.stringify({ ...status(), leak: '0x' + 'ab'.repeat(20) });
+    const r = assessHealth(inp, NOW);
+    expect(r.ok).toBe(false);
+    expect(r.problems.join(' ')).toMatch(/prywatno/i);
+  });
+});
+
+describe('findLeaks', () => {
+  it('wykrywa adres EVM i IPv4, nie myli ich z liczbami JSON', () => {
+    expect(findLeaks('{"px":107234.5,"asOf":1792657671870,"share":0.3016068073177374}')).toEqual([]);
+    expect(findLeaks('x 0x' + '1f'.repeat(20) + ' y')).toEqual(['adres portfela (0x…)']);
+    expect(findLeaks('host 10.20.30.40 ok')).toEqual(['adres IPv4']);
+  });
+
+  it('raport nie powtarza wykrytej wartości (nie utrwala wycieku w zgłoszeniu)', () => {
+    const addr = '0x' + 'cd'.repeat(20);
+    const inp = input();
+    inp.raw['README.md'] = `kontakt ${addr}`;
+    const report = renderReport(assessHealth(inp, NOW), NOW);
+    expect(report).not.toContain(addr);
+    expect(report).toMatch(/README\.md/);
+  });
+});
+
+describe('renderReport', () => {
+  it('zawiera stan, wiek danych i znacznik czasu UTC', () => {
+    const report = renderReport(assessHealth(input(), NOW), NOW);
+    expect(report).toMatch(/✅/);
+    expect(report).toMatch(/2026-10-22 12:00 UTC/);
+    expect(report).toMatch(/3 min/);
+  });
+
+  it('przy problemach wylicza je i daje wskazówkę diagnostyczną bez danych serwera', () => {
+    const report = renderReport(assessHealth(input({ status: status({ asOf: NOW - 90 * MIN }) }), NOW), NOW);
+    expect(report).toMatch(/⚠️/);
+    expect(report).toMatch(/- .*status\.json/);
+    expect(report).not.toMatch(/\b\d{1,3}(\.\d{1,3}){3}\b/);
+  });
+});

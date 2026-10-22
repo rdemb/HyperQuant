@@ -28,10 +28,10 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v7
 
-      - name: Setup Node.js 22
+      - name: Setup Node.js 24
         uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
 
       - name: Install Dependencies
@@ -51,7 +51,7 @@ jobs:
       - name: Build Production Assets
         run: npm run build
         env:
-          # Publiczny adres danych skanera (bucket R2) — zmienna repozytorium, pusta = panel mapy likwidacji czeka
+          # Publiczny adres danych skanera (repo rdemb/hyperquant-data) — zmienna repozytorium, pusta = panel mapy likwidacji czeka
           VITE_DATA_BASE_URL: ${{ vars.DATA_BASE_URL }}
 
       - name: Upload GitHub Pages Artifact

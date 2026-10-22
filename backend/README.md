@@ -56,6 +56,11 @@ Metadane commitów są neutralne (autor noreply, czas UTC) — bez nazwy hosta i
 4. W `/etc/hyperquant/scanner.env`: `HQ_GIT_REMOTE=git@github.com:<konto>/hyperquant-data.git`, `HQ_GIT_SSH_KEY=/var/lib/hyperquant/deploy_key`, potem `systemctl restart hyperquant-scanner`.
 5. W repozytorium strony: zmienna Actions `DATA_BASE_URL` = `https://raw.githubusercontent.com/<konto>/hyperquant-data/main` i ponowne wdrożenie.
 
+**Nadzór (bez kosztów):** workflow [`data-health.yml`](../.github/workflows/data-health.yml) co 30 min sprawdza wiek `status.json` i mapy,
+pokrycie open interest, opóźnienie odczytów pozycji oraz to, czy publikacja nie zawiera adresu portfela ani adresu IP
+([scripts/check-data-health.mjs](../scripts/check-data-health.mjs)). Problem otwiera zgłoszenie z etykietą `alert-danych`
+(GitHub wysyła powiadomienie), a powrót świeżych danych zamyka je automatycznie. Ręcznie: `node scripts/check-data-health.mjs`.
+
 ## Publikacja do Cloudflare R2 (opcjonalnie)
 
 Wymaga konta Cloudflare z metodą płatności (darmowy limit: 10 GB, 1 mln zapisów, 10 mln odczytów miesięcznie).
