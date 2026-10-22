@@ -164,6 +164,15 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         caveat: 'Historia od uruchomienia rejestratora (rośnie do 30 dni); godzina z mniej niż 30 min danych wyszarzona; widoczne zlecenia — bez ukrytych i szybko anulowanych.',
       },
       {
+        metric: 'Laboratorium folkloru (Plan)',
+        source: 'Skaner HyperQuant: archiwum świec BTC 1h/1d i godzinowego finansowania z candleSnapshot / fundingHistory Hyperliquid (gałąź archive repo danych); katalog reguł zapisany w gałęzi ledger; plik lab/BTC.json',
+        method:
+          'Zdarzenie z dwiema barierami startujące na zamknięciu świecy 1h; p0 z twierdzenia o opcjonalnym zatrzymaniu (cena = martyngał), reguły kalendarzowe p0 = 0,5 z symetrii; limit czasu → wynik ułamkowy (E = p0 pod H0); historia: p z wariancją pod H0, q Benjaminiego–Hochberga; do przodu (≥ 24 h po prerejestracji): proces zakładów aGRAPA, e-BH 5% osobno dla potwierdzeń i obaleń, sekwencja ufności 90%',
+        kinds: ['LIVE'],
+        refresh: 'archiwum co 10 min, ocena co godzinę',
+        caveat: 'Historia to eksploracja (definicje znane po fakcie); rozstrzyga ocena do przodu, która rośnie powoli (reguły tygodniowe — lata). Świeca dotykająca obu barier odrzucana; pomiar statystyczny, nie sygnał — efekt ≠ zysk po kosztach.',
+      },
+      {
         metric: 'Dziennik zagrań i playbook (Plan)',
         source: 'Twoje wpisy w tej przeglądarce (localStorage, nic nie jest wysyłane) + świece BTC 1m i 1h z candleSnapshot Hyperliquid',
         method:

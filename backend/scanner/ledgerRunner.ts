@@ -108,6 +108,10 @@ export class LedgerRunner {
   private stampQueue: { slot: number; hash: string; batch: '' | 'm' }[] = [];
   /** Próby pobrania rynku HIP-4 w slocie (najwyżej 2 — zapytania ważą ~22 z budżetu API) */
   private mktTries = new Map<number, number>();
+  /** Prerejestracje katalogów (laboratorium) z dziennika */
+  private preregs: Record<string, unknown>[] = [];
+  /** Rekord dopisany poza przebiegiem (prerejestracja) — zatwierdzenie przy najbliższym przebiegu */
+  private dirty = false;
 
   constructor(d: LedgerRunner['d']) {
     this.d = d;
@@ -125,6 +129,7 @@ export class LedgerRunner {
     for (const [id, f] of st.forecasts) this.forecasts.set(id, f as unknown as Forecast);
     for (const [id, r] of st.resolutions) this.resolutions.set(id, r as unknown as Resolution);
     for (const k of st.skips) this.skips.set(k.slot as number, k as unknown as SkipRecord);
+    this.preregs = st.preregs;
     for (const h of RET_HORIZONS) {
       const ret = [...this.forecasts.values()].filter((f): f is RetForecast => f.kind === 'ret' && f.h === h).sort((a, b) => a.t - b.t);
       const last = ret[ret.length - 1];
@@ -166,7 +171,26 @@ export class LedgerRunner {
       if (b.k === 'f') this.forecasts.set(b.id as string, b as unknown as Forecast);
       else if (b.k === 'r') this.resolutions.set(b.id as string, b as unknown as Resolution);
       else if (b.k === 's') this.skips.set(b.slot as number, b as unknown as SkipRecord);
+      else if (b.k === 'p') this.preregs.push({ ...b, hash: this.d.store.head });
     }
+  }
+
+  /**
+   * Prerejestracja katalogu (laboratorium folkloru): rekord `{k: 'p', id, t, catalogHash, catalog}` w łańcuchu hashy —
+   * dowód, że definicje istniały przed danymi oceny (pokwitowanie OTS najbliższego slotu obejmuje głowę łańcucha).
+   * Ten sam hash już w dzienniku → czas i hash linii tamtego rekordu. Dziennik niegotowy albo w trakcie przebiegu → null
+   * (przebieg może dopisywać z wcześniejszym czasem — rekord w środku przebiegu mógłby trafić do pliku następnego dnia
+   * przed liniami dnia poprzedniego i przerwać łańcuch; laboratorium ponawia za 10 min).
+   */
+  register(body: { id: string; catalogHash: string; catalog: unknown }, now: number): { at: number; added: boolean; hash: string } | null {
+    if (!this.ok || this.running) return null;
+    const prev = this.preregs.find((p) => p.catalogHash === body.catalogHash && typeof p.t === 'number');
+    if (prev) return { at: prev.t as number, added: false, hash: String(prev.hash) };
+    const t = this.clock(now);
+    const before = this.preregs.length;
+    this.add([{ k: 'p', id: body.id, t, catalogHash: body.catalogHash, catalog: body.catalog }], t);
+    this.dirty = true;
+    return { at: t, added: true, hash: String(this.preregs[before]?.hash ?? '') };
   }
 
   /** Jedno wywołanie naraz — pobranie świec może czekać na budżet wag dłużej niż interwał timera. */
@@ -293,7 +317,8 @@ export class LedgerRunner {
     this.prune(ti);
 
     // 4. Podsumowanie (przy zmianach albo co 15 min) i publikacja
-    const changed = appended > 0 || stamped;
+    const changed = appended > 0 || stamped || this.dirty;
+    this.dirty = false;
     if (!changed && ti - this.lastSummaryAt < 15 * MIN) return { appended: 0, commit: null };
     this.d.publish?.(JSON.stringify(this.summary(ti)));
     this.lastSummaryAt = ti;

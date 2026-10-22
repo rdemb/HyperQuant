@@ -27,7 +27,11 @@ const RESTART_COOLDOWN = 60 * MIN;
 const MAX_RESTARTS = 3;
 const REMIND = 6 * 60 * MIN;
 const SERVICE = 'hyperquant-scanner';
-/** Problemy oceny oznaczające zawieszoną część skanera (nie sieć ani GitHub): publikacja, dziennik, rejestrator płynności */
+/**
+ * Problemy oceny oznaczające zawieszoną część skanera (nie sieć ani GitHub): publikacja, dziennik, płynność. Stojące
+ * laboratorium folkloru tylko alarmuje — jego typowe przyczyny (klon archiwum w tyle, brak rejestracji przy przerwanym
+ * dzienniku) restart nie naprawia, a przerwałby dziennik i WebSocket.
+ */
 const STALL = /skaner nie publikuje|dziennik prognoz: ostatnia aktualizacja|profil płynności: ostatnia aktualizacja|rejestrator płynności nie zapisuje/;
 const TRANSIENT = new Set(['activating', 'deactivating', 'reloading']);
 
