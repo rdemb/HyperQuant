@@ -1,6 +1,7 @@
 /**
  * Nadzór publicznych danych skanera (repo rdemb/hyperquant-data): świeżość, pokrycie open interest i strażnik prywatności.
- * Uruchamiany przez .github/workflows/data-health.yml co 30 min; wynik trafia do zgłoszenia z etykietą „alert-danych”.
+ * Uruchamiany przez .github/workflows/data-health.yml (harmonogram GitHuba — best-effort) oraz przez strażnika na serwerze
+ * skanera (scripts/watchdog.mjs, co 15 min, niezależnie od GitHuba); wynik trafia do zgłoszenia z etykietą „alert-danych”.
  * Czyta wyłącznie publiczne pliki — nie potrzebuje żadnych kluczy ani dostępu do serwera.
  *
  * Wyjście: plik raportu (HEALTH_REPORT_FILE) i `ok=true|false` w GITHUB_OUTPUT; kod wyjścia ≠ 0 tylko przy błędzie skryptu.
@@ -139,12 +140,13 @@ async function fetchText(url, timeoutMs = 20_000) {
   return res.text();
 }
 
-async function main() {
+/** Pobiera publiczne pliki skanera i składa wejście dla `assessHealth` (także strażnik na serwerze — scripts/watchdog.mjs). */
+export async function fetchInput(base = DATA_BASE) {
   const raw = {};
   const errors = {};
   const json = {};
   await Promise.all(
-    FILES.map((f) => [f, `${DATA_BASE}/${f}`]).map(async ([file, url]) => {
+    FILES.map((f) => [f, `${base}/${f}`]).map(async ([file, url]) => {
       try {
         raw[file] = await fetchText(url);
         if (file.endsWith('.json')) json[file] = JSON.parse(raw[file]);
@@ -153,11 +155,19 @@ async function main() {
       }
     })
   );
+  return {
+    status: json['status.json'] ?? null,
+    liqMap: json['liq-map/BTC.json'] ?? null,
+    ledger: json['ledger/BTC/summary.json'] ?? null,
+    liquidity: json['liquidity/BTC.json'] ?? null,
+    raw,
+    errors,
+  };
+}
+
+async function main() {
   const now = Date.now();
-  const result = assessHealth(
-    { status: json['status.json'] ?? null, liqMap: json['liq-map/BTC.json'] ?? null, ledger: json['ledger/BTC/summary.json'] ?? null, liquidity: json['liquidity/BTC.json'] ?? null, raw, errors },
-    now
-  );
+  const result = assessHealth(await fetchInput(), now);
   const report = renderReport(result, now);
   console.log(report);
   if (process.env.HEALTH_REPORT_FILE) await writeFile(process.env.HEALTH_REPORT_FILE, report, 'utf8');

@@ -1,0 +1,60 @@
+# Wzorzec workflow gałęzi `health` repo danych (tam: .github/workflows/health-alert.yml).
+# Strażnik na serwerze skanera (scripts/watchdog.mjs) wypycha alert.json + report.md przy zmianie stanu albo co 6 h przy
+# trwałym problemie; ten workflow zamienia to w jedno długowieczne zgłoszenie „alert-danych” w repo danych
+# (otwierane / komentowane / zamykane samo po powrocie danych). Push kluczem wdrożeniowym uruchamia workflow
+# niezależnie od harmonogramu GitHuba. Bez kosztów i bez sekretów (wbudowany token z uprawnieniem do zgłoszeń).
+name: Alarm strażnika
+
+on:
+  push:
+    branches: [health]
+    paths: [alert.json]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: health-alert
+  cancel-in-progress: false
+
+jobs:
+  alert:
+    name: Zgłoszenie
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Zgłoszenie
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          OK=$(jq -r '.ok' alert.json)
+          LABEL=alert-danych
+          gh label create "$LABEL" --color B60205 --description "Strażnik skanera: świeżość i publikacja danych" --force >/dev/null
+          OPEN=$(gh issue list --label "$LABEL" --state open --limit 1 --json number --jq '.[0].number // empty')
+          if [ "$OK" = "true" ]; then
+            if [ -n "$OPEN" ]; then
+              gh issue comment "$OPEN" --body-file report.md
+              gh issue close "$OPEN" --reason completed
+            fi
+            exit 0
+          fi
+          if [ -n "$OPEN" ]; then
+            # Strażnik wysyła tylko zmianę stanu albo przypomnienie co 6 h — każdy push to powiadomienie
+            gh issue edit "$OPEN" --body-file report.md
+            gh issue comment "$OPEN" --body-file report.md
+            exit 0
+          fi
+          LAST=$(gh issue list --label "$LABEL" --state closed --limit 1 --json number --jq '.[0].number // empty')
+          if [ -n "$LAST" ]; then
+            gh issue reopen "$LAST"
+            gh issue edit "$LAST" --body-file report.md
+            gh issue comment "$LAST" --body "Problem wrócił — szczegóły w treści zgłoszenia."
+          else
+            gh issue create --title "Dane skanera: problem ze świeżością lub publikacją" --label "$LABEL" --body-file report.md
+          fi
