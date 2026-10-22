@@ -5,17 +5,20 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-# root: restart usługi skanera (systemctl) i odczyt klucza wdrożeniowego; kod tylko z /opt/hyperquant/app
+# root: restart usługi skanera (systemctl) i odczyt klucza wdrożeniowego; kod tylko z /opt/hyperquant/app.
+# Stan strażnika w osobnym katalogu root (poza katalogiem usługi skanera, której strażnik nie ufa).
 WorkingDirectory=/opt/hyperquant/app
 EnvironmentFile=/etc/hyperquant/scanner.env
-Environment=HQ_WATCHDOG_DIR=/var/lib/hyperquant/watchdog
+StateDirectory=hyperquant-watchdog
+StateDirectoryMode=0700
+Environment=HQ_WATCHDOG_DIR=/var/lib/hyperquant-watchdog
 ExecStart=/opt/hyperquant/node/bin/node scripts/watchdog.mjs
 TimeoutStartSec=5min
 Nice=10
 
 UMask=0077
 NoNewPrivileges=true
-ProtectSystem=full
+ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
 ProtectKernelTunables=true
