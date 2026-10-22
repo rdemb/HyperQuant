@@ -264,3 +264,50 @@ describe('prerejestracja skanera vs niezależny weryfikator', () => {
     expect(r.preregs[0].catalogHash).toBe(LAB_HASH);
   });
 });
+
+import { checkEnsemble } from './verify-ledger.mjs';
+
+describe('ensemble model + rynek w rekordach mkt', () => {
+  const sig = (z) => 1 / (1 + Math.exp(-z));
+  const lg = (p) => Math.log(Math.min(1 - 1e-4, Math.max(1e-4, p)) / (1 - Math.min(1 - 1e-4, Math.max(1e-4, p))));
+  const val = (w, p, mid) => Math.round(sig(w.a + w.bm * lg(p) + w.bk * lg(mid)) * 1e4) / 1e4;
+  const mk = (id, ti, ens, rec, peOverride) => {
+    const p = 0.62;
+    const mid = 0.55;
+    return { k: 'f', kind: 'mkt', id, slot: ti, ti, t: ti + 60_000, h: 8, p, bid: 0.54, ask: 0.56, liquid: true, pe: peOverride ?? val(ens, p, mid), ens, pr: val(rec, p, mid), rec };
+  };
+  const res = (id, t, y = 1) => ({ k: 'r', id, t, y, near: 0, c1: 1 });
+  const E = (n) => ({ a: 0, bm: 0.5, bk: 0.5, n });
+  const Rc = (n) => ({ a: 0, bm: 0, bk: 1, n });
+  it('p_e i p_r zgodne ze wzorem; wagi = ponowne dopasowanie na pytaniach rozstrzygniętych przed wydaniem', () => {
+    const r = checkEnsemble([mk('a', 1000, E(0), Rc(0)), res('a', 2000), mk('b', 3000, E(1), Rc(1)), res('b', 4000)], { full: true });
+    expect(r).toEqual({ problems: [], checked: 2, refitted: 2 });
+  });
+  it('p_e niezgodne z wagami → problem; wagi inne niż ponowne dopasowanie (np. z przyszłych wyników) → problem', () => {
+    expect(checkEnsemble([mk('a', 1000, E(0), Rc(0), 0.9)], { full: true }).problems.join(' ')).toMatch(/a: p_e/);
+    const peek = checkEnsemble([mk('a', 1000, E(0), Rc(0)), mk('b', 1500, E(1), Rc(1)), res('a', 2000)], { full: true });
+    expect(peek.problems.join(' ')).toMatch(/b: wagi p_e ≠ ponowne dopasowanie/);
+    const forged = checkEnsemble([mk('a', 1000, { a: 0.3, bm: 0.1, bk: 1.4, n: 0 }, Rc(0))], { full: true });
+    expect(forged.problems.join(' ')).toMatch(/a: wagi p_e ≠ ponowne dopasowanie/);
+    // Tryb szybki (fragment dziennika): tylko wzór
+    expect(checkEnsemble([mk('b', 1500, E(1), Rc(1))], { full: false }).problems).toEqual([]);
+  });
+  it('starsze rekordy bez ensemble są pomijane', () => {
+    const { pe, ens, pr, rec, ...old } = mk('a', 1000, E(0), Rc(0));
+    expect(checkEnsemble([old], { full: true })).toEqual({ problems: [], checked: 0, refitted: 0 });
+  });
+});
+
+import { poolProb } from '../src/utils/ensemble.ts';
+
+describe('ensemble: skaner vs niezależny weryfikator', () => {
+  it('p_e ze wzoru skanera (poolProb, zaokrąglenie do 4 miejsc) przechodzi kontrolę weryfikatora', () => {
+    for (const w of [{ a: 0, bm: 0.5, bk: 0.5, n: 0 }, { a: -0.3, bm: 0.15, bk: 1.4, n: 0 }]) {
+      for (const [p, bid, ask] of [[0.0001, 0.01, 0.02], [0.62, 0.54, 0.56], [0.9999, 0.97, 0.99]]) {
+        const pe = Math.round(poolProb(w, p, (bid + ask) / 2) * 1e4) / 1e4;
+        const r = checkEnsemble([{ k: 'f', kind: 'mkt', id: 'x', ti: 1, p, bid, ask, pe, ens: w }], { full: false });
+        expect(r.problems).toEqual([]);
+      }
+    }
+  });
+});

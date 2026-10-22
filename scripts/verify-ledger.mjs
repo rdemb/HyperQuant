@@ -18,6 +18,7 @@
  */
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { fitEnsemble } from '../src/utils/ensemble.ts';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -242,6 +243,75 @@ export function checkPreregs(records) {
   return { problems, preregs };
 }
 
+/**
+ * Ensemble model + rynek (rekordy mkt z polami `pe`/`ens` i `pr`/`rec`): p = σ(a + bm·logit p_model + bk·logit środek)
+ * z zapisanych wag (logit z obcięciem do [1e-4, 1 − 1e-4], zaokrąglenie do 4 miejsc). Przy pełnym dzienniku (`full`)
+ * wagi są dopasowywane ponownie tym samym, publicznym kodem (src/utils/ensemble.ts) na parach rozstrzygniętych w 30 dniach
+ * przed wydaniem (wąski spread, z dala od progu, kolejność: czas rozstrzygnięcia, id) i muszą się zgadzać z zapisanymi —
+ * dowód, że wagi powstały z przeszłości tą procedurą. `refitDays` — ile ostatnich dni wydań dopasowywać ponownie.
+ */
+export function checkEnsemble(records, { full = false, refitDays = 30 } = {}) {
+  const fcs = new Map();
+  const res = new Map();
+  for (const o of records) {
+    if (o.k === 'f' && o.kind === 'mkt') fcs.set(o.id, o);
+    else if (o.k === 'r') res.set(o.id, o);
+  }
+  const pairs = [];
+  for (const [id, fc] of fcs) {
+    const r = res.get(id);
+    if (r && r.near === 0 && (r.y === 0 || r.y === 1) && fc.bid !== null && fc.ask !== null && fc.ask - fc.bid <= MKT_MAX_SPREAD + 1e-12)
+      pairs.push({ pm: fc.p, pk: (fc.bid + fc.ask) / 2, y: r.y, t: r.t, id });
+  }
+  pairs.sort((a, b) => a.t - b.t || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const logit = (p) => {
+    const q = Math.min(1 - 1e-4, Math.max(1e-4, p));
+    return Math.log(q / (1 - q));
+  };
+  const formula = (w, p, mid) => Math.round((1 / (1 + Math.exp(-(w.a + w.bm * logit(p) + w.bk * logit(mid))))) * 1e4) / 1e4;
+  const sameW = (w, v) => w && v && w.n === v.n && Math.abs(w.a - v.a) <= 2e-6 && Math.abs(w.bm - v.bm) <= 2e-6 && Math.abs(w.bk - v.bk) <= 2e-6;
+  const lastTi = Math.max(...[...fcs.values()].map((f) => f.ti ?? 0));
+  const problems = [];
+  let checked = 0;
+  let refitted = 0;
+  for (const fc of fcs.values()) {
+    if (fc.pe === undefined) continue; // rekordy sprzed ensemble
+    const sets = [['p_e', fc.pe, fc.ens, 'full'], ...(fc.rec !== undefined ? [['p_r', fc.pr, fc.rec, 'market']] : [])];
+    let ok = true;
+    for (const [name, val, w] of sets) {
+      if (!w || ![w.a, w.bm, w.bk, w.n].every(Number.isFinite)) {
+        problems.push(`${fc.id}: brak wag (${name})`);
+        ok = false;
+        continue;
+      }
+      if (fc.bid === null || fc.ask === null) {
+        if (val !== null) {
+          problems.push(`${fc.id}: ${name} bez notowania rynku`);
+          ok = false;
+        }
+        continue;
+      }
+      const want = formula(w, fc.p, (fc.bid + fc.ask) / 2);
+      if (!(Math.abs(want - val) <= 1e-4 + 1e-12)) {
+        problems.push(`${fc.id}: ${name} ${val} ≠ ${want} ze wzoru i zapisanych wag`);
+        ok = false;
+      }
+    }
+    if (full && fc.ti >= lastTi - refitDays * 86_400_000) {
+      for (const [name, , w, mode] of sets) {
+        const fit = fitEnsemble(pairs, fc.ti, { mode });
+        if (!sameW(w, fit)) {
+          problems.push(`${fc.id}: wagi ${name} ≠ ponowne dopasowanie (${JSON.stringify(fit)})`);
+          ok = false;
+        }
+      }
+      refitted++;
+    }
+    if (ok) checked++;
+  }
+  return { problems, checked, refitted };
+}
+
 /** Partia slotu: prognozy główne ('') i „model vs rynek” ('m', wydawane później w slocie — osobne pokwitowanie). */
 export const batchOf = (o) => (o.kind === 'mkt' ? 'm' : '');
 
@@ -449,8 +519,8 @@ export function recompute(records) {
   const ret = {};
   let touchN = 0;
   let brierSum = 0;
-  const market = { n: 0, brierModel: 0, brierMarket: 0 };
-  const marketTight = { n: 0, brierModel: 0, brierMarket: 0 };
+  const market = { n: 0, brierModel: 0, brierMarket: 0, nEns: 0, brierEns: 0 };
+  const marketTight = { n: 0, brierModel: 0, brierMarket: 0, nEns: 0, brierEns: 0 };
   for (const [id, fc] of f) {
     const res = r.get(id);
     if (!res || res.void) continue;
@@ -467,6 +537,10 @@ export function recompute(records) {
         acc.n++;
         acc.brierModel += (fc.p - y) ** 2;
         acc.brierMarket += ((fc.bid + fc.ask) / 2 - y) ** 2;
+        if (typeof fc.pe === 'number') {
+          acc.nEns++;
+          acc.brierEns += (fc.pe - y) ** 2;
+        }
       };
       if (fc.ask - fc.bid <= MKT_MAX_SPREAD + 1e-12) add(marketTight);
       if (fc.liquid) add(market);
@@ -481,11 +555,19 @@ export function recompute(records) {
   return {
     ret: Object.fromEntries(Object.entries(ret).map(([h, s]) => [h, { n: s.n, crps: s.crps / s.n, crpss: 1 - s.crps / s.crpsB, cov90: s.in90 / s.n }])),
     touch: { levels: touchN, brier: touchN ? brierSum / touchN : null },
-    market: { n: market.n, brierModel: market.n ? market.brierModel / market.n : null, brierMarket: market.n ? market.brierMarket / market.n : null },
+    market: {
+      n: market.n,
+      brierModel: market.n ? market.brierModel / market.n : null,
+      brierMarket: market.n ? market.brierMarket / market.n : null,
+      nEns: market.nEns,
+      brierEns: market.nEns ? market.brierEns / market.nEns : null,
+    },
     marketTight: {
       n: marketTight.n,
       brierModel: marketTight.n ? marketTight.brierModel / marketTight.n : null,
       brierMarket: marketTight.n ? marketTight.brierMarket / marketTight.n : null,
+      nEns: marketTight.nEns,
+      brierEns: marketTight.nEns ? marketTight.brierEns / marketTight.nEns : null,
     },
     voided: [...r.values()].filter((x) => x.void).length,
     skipped: records.filter((o) => o.k === 's').reduce((n, o) => n + (typeof o.until === 'number' ? Math.round((o.until - o.slot) / SLOT_MS) + 1 : 1), 0),
@@ -564,6 +646,14 @@ async function main() {
   const mismatch = checkResolutions(records);
   console.log(mismatch.length ? `✗ wyniki niezgodne z przeliczonymi (${mismatch.length}): ${mismatch.slice(0, 5).join('; ')}` : '✓ wyniki zgodne z przeliczonymi z kwantyli');
   if (mismatch.length) ok = false;
+  const ens = checkEnsemble(records, { full: !!local });
+  if (ens.checked || ens.problems.length)
+    console.log(
+      ens.problems.length
+        ? `✗ ensemble (${ens.problems.length}): ${ens.problems.slice(0, 5).join('; ')}`
+        : `✓ ensemble: ${ens.checked} wydań — p_e i p_r zgodne z zapisanymi wagami${ens.refitted ? `; wagi ${ens.refitted} ostatnich wydań odtworzone ponownym dopasowaniem na pytaniach rozstrzygniętych przed wydaniem` : ''}`
+    );
+  if (ens.problems.length) ok = false;
   const pre = checkPreregs(records);
   if (pre.preregs.length || pre.problems.length)
     console.log(
