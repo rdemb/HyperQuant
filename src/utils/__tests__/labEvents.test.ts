@@ -267,3 +267,18 @@ describe('hipoteza zerowa: na martyngale reguły barierowe nie mają efektu', ()
     for (const ev of Object.values(sets)) for (let i = 1; i < ev.length; i++) expect(ev[i].t0).toBeGreaterThanOrEqual(ev[i - 1].t1);
   });
 });
+
+describe('reguła szerokości pasma także dla reguł wyśrodkowanych', () => {
+  it('luka CME węższa niż 2 × mediana zakresu godzin → start pominięty (niejednoznaczność byłaby częsta)', () => {
+    const start = Date.UTC(2026, 9, 23, 0);
+    const rows: LabBar[] = [];
+    for (let i = 0; i < 24 * 4; i++) {
+      const t = start + i * H;
+      const c = t >= Date.UTC(2026, 9, 25, 21) ? 80400 : 80000; // luka 0,5% = 400
+      rows.push({ t, o: c, h: c + 300, l: c - 300, c, v: 1 }); // zakres godziny 600 → pasmo 800 < 1200
+    }
+    const r = cmeGapEvents(rows, 0.003);
+    expect(r.events).toEqual([]);
+    expect(r.dropped.narrow).toBe(1);
+  });
+});

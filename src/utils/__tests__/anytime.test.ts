@@ -68,3 +68,14 @@ describe('sekwencja ufności efektu', () => {
     expect(effectCS([], 0.1)).toBeNull();
   });
 });
+
+describe('sekwencja ufności — postać publikowana', () => {
+  it('granice zaokrąglone do 0,001, w zakresie dopuszczalnym [−p̄0, 1 − p̄0], poszerzone o krok siatki', () => {
+    const ev = simulate(77, 40, 0.3);
+    const cs = effectCS(ev, 0.1)!;
+    const p0 = ev.reduce((s, e) => s + e.p0, 0) / ev.length;
+    for (const v of [cs.lo, cs.hi]) expect(Math.abs(v * 1000 - Math.round(v * 1000))).toBeLessThan(1e-9);
+    expect(cs.lo).toBeGreaterThanOrEqual(-p0 - 1e-9);
+    expect(cs.hi).toBeLessThanOrEqual(1 - p0 + 1e-9);
+  });
+});

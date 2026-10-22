@@ -208,6 +208,11 @@ export function checkOrdering(records, opts = {}) {
         lastTime = Math.max(lastTime, o.t);
       }
     } else if (o.k === 's') skipped.push([o.slot, o.until ?? o.slot]);
+    else if (o.k === 'p' && typeof o.t === 'number') {
+      // Prerejestracja: czas nie może się cofać względem wcześniejszych zapisów (od niego liczy się ocena do przodu)
+      if (o.t < lastTime) out.push(`prerejestracja ${o.id}: czas cofnięty względem poprzedniego rekordu`);
+      lastTime = Math.max(lastTime, o.t);
+    }
   }
   const fSlots = new Set([...f.values()].map((x) => x.slot));
   for (const [a, b] of skipped) for (const s of fSlots) if (s >= a && s <= b) out.push(`slot ${s}: jednocześnie prognoza i pominięcie`);

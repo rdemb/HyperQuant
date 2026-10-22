@@ -40,7 +40,7 @@ function rest(clock: () => number): InfoClient {
   };
 }
 
-function setup(over: { register?: () => { at: number; added: boolean } | null; repo?: boolean } = {}) {
+function setup(over: { register?: () => { at: number; added: boolean; hash: string } | null; repo?: boolean } = {}) {
   let now = NOW;
   const base = mkdtempSync(join(tmpdir(), 'hq-lab-'));
   let repo = null;
@@ -52,7 +52,7 @@ function setup(over: { register?: () => { at: number; added: boolean } | null; r
   }
   const archive = new CandleArchive({ dir: repo ? repo.dir : join(base, 'archive'), coin: 'BTC', rest: rest(() => now), fundingPages: 20 });
   const reports: LabReport[] = [];
-  const r = new LabRunner({ coin: 'BTC', archive, repo, register: over.register ?? (() => ({ at: NOW - 30 * 24 * H, added: false })), publish: (x) => reports.push(x) });
+  const r = new LabRunner({ coin: 'BTC', archive, repo, register: over.register ?? (() => ({ at: NOW - 30 * 24 * H, added: false, hash: 'c'.repeat(64) })), publish: (x) => reports.push(x) });
   return { r, reports, remote, setNow: (t: number) => (now = t) };
 }
 
@@ -74,14 +74,19 @@ describe('LabRunner', () => {
     setNow(NOW + 61 * MIN);
     expect((await r.tick(NOW + 61 * MIN)).evaluated).toBe(true);
   });
-  it('dziennik niegotowy (rejestracja null) → raport bez rejestracji; po udanej rejestracji ponowna ocena od razu', async () => {
-    let reg: { at: number; added: boolean } | null = null;
+  it('dziennik niegotowy (rejestracja null) → bez publikacji (nie nadpisuje wyników); po rejestracji ocena od razu', async () => {
+    let reg: { at: number; added: boolean; hash: string } | null = null;
     const { r, reports, setNow } = setup({ register: () => reg });
-    await r.tick(NOW);
-    expect(reports.at(-1)!.registeredAt).toBeNull();
-    reg = { at: NOW + 5 * MIN, added: true };
+    expect((await r.tick(NOW)).evaluated).toBe(false);
+    expect(reports).toHaveLength(0);
+    reg = { at: NOW + 5 * MIN, added: true, hash: 'e'.repeat(64) };
     setNow(NOW + 10 * MIN);
     expect((await r.tick(NOW + 10 * MIN)).evaluated).toBe(true);
+    expect(reports.at(-1)).toMatchObject({ registeredAt: NOW + 5 * MIN, registrationHash: 'e'.repeat(64) });
+    // Chwilowy brak odpowiedzi dziennika (przebieg w toku) nie kasuje znanej rejestracji
+    reg = null;
+    setNow(NOW + 80 * MIN);
+    expect((await r.tick(NOW + 80 * MIN)).evaluated).toBe(true);
     expect(reports.at(-1)!.registeredAt).toBe(NOW + 5 * MIN);
   });
   it('gałąź archive: commit zaraz po zasiewie, potem najwyżej co godzinę', async () => {

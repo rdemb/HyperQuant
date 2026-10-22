@@ -7,10 +7,11 @@
  * Ścieżka z high/low kolejnych barów. Brak rozstrzygnięcia w limicie albo luka w danych → wynik ułamkowy
  * x = |C_T − porażka| / |sukces − porażka| z ostatniego zamknięcia: liniowy w cenie, więc pod H0 nadal E[x] = p0
  * dokładnie (zatrzymany martyngał) — odrzucanie takich zdarzeń faworyzowałoby bliższą barierę. Bar dotykający obu
- * barier → niejednoznaczne, odrzucone; żeby było rzadkie, reguły z p0 ≠ 0,5 wymagają pasma ≥ 2 × mediana zakresu
- * 24 poprzednich godzin (warunek sprawdzany w chwili startu). Przy regułach wyśrodkowanych (p0 = 0,5) odrzucenie
- * jest symetryczne. Koniec danych → zdarzenie otwarte (bez wpisu, czeka). Zdarzenia jednej reguły nie nakładają
- * się: kolejne szukane od bara po rozstrzygnięciu poprzedniego.
+ * barier → niejednoznaczne, odrzucone; żeby było rzadkie, każda reguła barierowa wymaga pasma ≥ 2 × mediana zakresu
+ * 24 poprzednich godzin (warunek sprawdzany w chwili startu). Odrzucenie niejednoznacznych jest neutralne tylko przy
+ * symetrii odbicia przyrostów (stąd reguła pasma, także dla reguł wyśrodkowanych). Koniec danych → zdarzenie otwarte
+ * (bez wpisu, czeka). Zdarzenia jednej reguły nie nakładają się: kolejne szukane od bara po rozstrzygnięciu
+ * poprzedniego (dotknięcia w trakcie otwartego zdarzenia nie są widoczne dla reguły).
  *
  * Reguły kalendarzowe (10:00 w Nowym Jorku, momentum śróddzienne, weekend) mają p0 = 0,5 z symetrii znaku albo
  * wymienialności — dokładnie pod hipotezą zerową.
@@ -57,8 +58,8 @@ export interface GenResult {
 const newResult = (): GenResult => ({ events: [], dropped: { ambiguous: 0, narrow: 0, timeout: 0, gap: 0 } });
 
 /**
- * Minimalna szerokość pasma barier w medianach zakresu godziny (reguły z p0 ≠ 0,5). Przy 2× w symulacji martyngału brak
- * obciążenia, na danych BTC 2026 niejednoznaczne ≤ 1% zdarzeń.
+ * Minimalna szerokość pasma barier w medianach zakresu godziny (wszystkie reguły barierowe). Przy 2× w symulacji
+ * martyngału brak obciążenia, na danych BTC 2026 niejednoznaczne ≤ 1,4% zdarzeń.
  */
 export const MIN_BAND_RANGES = 2;
 
@@ -289,7 +290,8 @@ export const chicagoToUtc = localToUtc(6);
 export const newYorkToUtc = localToUtc(5);
 
 /**
- * Luka CME (wyśrodkowana: p0 = 0,5, bez warunku szerokości pasma; kontrakty BTC: zamknięcie w piątek 16:00, otwarcie w niedzielę 17:00 czasu Chicago; święta pomijane):
+ * Luka CME (wyśrodkowana: p0 = 0,5; czasy nominalne kontraktów BTC — zamknięcie w piątek 16:00, otwarcie w niedzielę
+ * 17:00 czasu Chicago, bez kalendarza świąt CME):
  * poziom luki G = zamknięcie HL na zamknięciu CME, start C = zamknięcie HL na otwarciu CME; |C − G| ≥ minGap·G.
  * Sukces = dotknięcie G, porażka = lustro 2C − G (p0 = 0,5); limit — piątkowe zamknięcie CME następnego tygodnia.
  */
@@ -315,6 +317,10 @@ export function cmeGapEvents(bars: readonly LabBar[], minGap: number): GenResult
     const G = bars[ig].c;
     const C = bars[ic].c;
     if (!(Math.abs(C - G) >= minGap * G)) continue;
+    if (!(2 * Math.abs(C - G) >= MIN_BAND_RANGES * medianRange(bars, ic))) {
+      res.dropped.narrow++;
+      continue;
+    }
     const end = record(bars, res, open, firstPassage(bars, ic, G, 2 * C - G, Math.round((nextClose - open) / H)), G, 2 * C - G, 0.5);
     if (end < 0) break;
     resumeAt = end;
@@ -374,6 +380,10 @@ export function fundingEvents(
     else if (r < 0 && r < quantileSorted(win, o.pct)) succUp = true;
     if (succUp === null) continue;
     const C = bars[i].c;
+    if (!(2 * o.dPct * C >= MIN_BAND_RANGES * medianRange(bars, i))) {
+      res.dropped.narrow++;
+      continue;
+    }
     const up = C * (1 + o.dPct);
     const dn = C * (1 - o.dPct);
     const succ = succUp ? up : dn;

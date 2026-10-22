@@ -19,13 +19,16 @@ describe('strażnik: decyzja o restarcie skanera', () => {
       'rejestrator płynności nie zapisuje minut od 40 min (brak arkusza z WebSocket?)',
       'dziennik prognoz: ostatnia aktualizacja 75 min temu (próg 60 min)',
       'profil płynności: ostatnia aktualizacja 45 min temu (próg 30 min)',
-      'laboratorium folkloru: ostatnia aktualizacja 200 min temu (próg 180 min)',
     ]) {
       expect(decide({ ...base, health: { ok: false, problems: [p], facts: [] } })).toMatchObject({ restart: true, category: 'stall' });
     }
   });
-  it('błąd pobrania (sieć, GitHub) i problem jakości (pokrycie OI) nie restartują skanera', () => {
-    for (const p of ['status.json: nie udało się pobrać (HTTP 503)', 'pokrycie open interest 3% < 5% — skanowanie pozycji nie nadąża']) {
+  it('błąd pobrania (sieć, GitHub), problem jakości (pokrycie OI) i stojące laboratorium nie restartują skanera', () => {
+    for (const p of [
+      'status.json: nie udało się pobrać (HTTP 503)',
+      'pokrycie open interest 3% < 5% — skanowanie pozycji nie nadąża',
+      'laboratorium folkloru: ostatnia aktualizacja 200 min temu (próg 180 min)',
+    ]) {
       expect(decide({ ...base, health: { ok: false, problems: [p], facts: [] } })).toMatchObject({ restart: false, reason: null });
     }
   });

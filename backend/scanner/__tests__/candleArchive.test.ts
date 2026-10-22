@@ -72,7 +72,7 @@ describe('CandleArchive', () => {
     const added = await a.tick(now);
     expect(added).toBeGreaterThan(5000);
     expect(a.last('1h')).toBe(Math.floor(NOW / H) * H - H);
-    expect(a.last('1m')).toBe(Math.floor(NOW / MIN) * MIN - MIN);
+    expect(a.last('1m')).toBe(Math.floor(NOW / MIN) * MIN - 2 * MIN); // ostatnia zamknięta ≥ 60 s temu
     expect(a.last('1d')).toBe(Math.floor(NOW / D) * D - D);
     const f = readFileSync(join(dir, 'BTC/1h/2026-10.csv'), 'utf8').split('\n');
     expect(f[0]).toBe('t,o,h,l,c,v,n');
@@ -108,5 +108,43 @@ describe('CandleArchive', () => {
     expect(await a.tick(NOW)).toBe(0);
     expect(a.last('1h')).toBeNull();
     expect(a.read('1h')).toEqual([]);
+  });
+});
+
+describe('CandleArchive — odporność na ucięty zapis i złe wiersze', () => {
+  it('ucięty ogon (w środku wiersza albo znacznika czasu) jest obcinany; po kolejnym przebiegu wiersze rosnące i unikalne', async () => {
+    const { appendFileSync, readFileSync: rf } = await import('node:fs');
+    for (const torn of ['17911', '1792677600000,80000,80005,79994,80000,1.5']) {
+      const dir = mkdtempSync(join(tmpdir(), 'hq-arch-'));
+      let now = NOW;
+      const { rest } = fakeRest(() => now, NOW - 3 * D);
+      await new CandleArchive({ dir, coin: 'BTC', rest }).tick(now);
+      appendFileSync(join(dir, 'BTC/1h/2026-10.csv'), torn); // awaria w trakcie zapisu: brak końca linii
+      now = NOW + 2 * H;
+      const b = new CandleArchive({ dir, coin: 'BTC', rest });
+      await b.tick(now);
+      const hours = b.read('1h');
+      for (let i = 1; i < hours.length; i++) expect(hours[i].t).toBeGreaterThan(hours[i - 1].t);
+      expect(hours.every((x) => x.h < 1e6)).toBe(true);
+      expect(rf(join(dir, 'BTC/1h/2026-10.csv'), 'utf8').endsWith('\n')).toBe(true);
+    }
+  });
+  it('odczyt ścisły: zła liczba pól, high < low, czas nierosnący → wiersz pominięty', async () => {
+    const { mkdirSync, writeFileSync } = await import('node:fs');
+    const dir = mkdtempSync(join(tmpdir(), 'hq-arch-'));
+    mkdirSync(join(dir, 'BTC/1h'), { recursive: true });
+    writeFileSync(
+      join(dir, 'BTC/1h/2026-10.csv'),
+      ['t,o,h,l,c,v,n', '3600000,10,12,9,11,1,1', '7200000,10,9,12,11,1,1', '7200000,10,12,9,11,1,1', '3600000,10,12,9,11,1,1', '10800000,10,12,9,11,1', '14400000,10,12,9,11,1,1,5', '18000000,10,12,9,11,1,1', ''].join('\n')
+    );
+    const a = new CandleArchive({ dir, coin: 'BTC', rest: { info: async () => null } });
+    expect(a.read('1h').map((x) => x.t)).toEqual([3600000, 7200000, 18000000]);
+    expect(a.last('1h')).toBe(18000000);
+  });
+  it('świeca zapisywana dopiero 60 s po zamknięciu (API może ją jeszcze uzupełnić)', () => {
+    const t = Math.floor(NOW / H) * H - H; // zamknięta o pełnej godzinie
+    const raw = [{ t, o: '1', h: '2', l: '0.5', c: '1.5', v: '3', n: 4 }];
+    expect(parseArchCandles(raw, H, t + H + 30_000)).toEqual([]);
+    expect(parseArchCandles(raw, H, t + H + 61_000)).toHaveLength(1);
   });
 });

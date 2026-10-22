@@ -239,6 +239,13 @@ describe('prerejestracje katalogów (rekordy k = p)', () => {
     expect(bad.problems.join(' ')).toMatch(/lab-v1.*hash katalogu/);
     expect(checkPreregs([{ k: 'p', id: 'lab-v1', t: 5, catalogHash: hash }]).problems).toHaveLength(1);
   });
+  it('prerejestracja z czasem wcześniejszym niż poprzedni rekord łańcucha → problem kolejności', () => {
+    const order = checkOrdering([
+      { k: 'f', id: 'a', slot: 0, ti: 600_000, t: 660_000, h: 60 },
+      { k: 'p', id: 'lab-v1', t: 500_000, catalogHash: hash, catalog },
+    ]);
+    expect(order.join(' ')).toMatch(/prerejestracja lab-v1: czas cofnięty/);
+  });
   it('czas prerejestracji nie może się cofać', () => {
     const r = checkPreregs([
       { k: 'p', id: 'lab-v1', t: 10, catalogHash: hash, catalog },

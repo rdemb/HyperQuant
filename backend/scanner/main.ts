@@ -275,11 +275,13 @@ async function ledgerTick(): Promise<void> {
  * commit najwyżej co godzinę; katalog reguł prerejestrowany w dzienniku, ocena co godzinę → `lab/<coin>.json`.
  */
 const archiveDir = cfg.git ? join(cfg.stateDir, 'git', 'archive') : join(cfg.stateDir, 'archive');
+const ledgerStoreForLookup = () => new LedgerStore({ dir: cfg.git ? join(cfg.stateDir, 'git', 'ledger') : join(cfg.stateDir, 'ledger'), coin: cfg.coin });
 const lab = new LabRunner({
   coin: cfg.coin,
   archive: new CandleArchive({ dir: archiveDir, coin: cfg.coin, rest }),
   repo: cfg.git ? { remote: cfg.git.remote, dir: archiveDir, sshKey: cfg.git.sshKey, branch: 'archive' } : null,
-  register: () => ledger?.register(LAB_PREREG, Date.now()) ?? null,
+  // Dziennik gotowy → rejestracja (albo istniejący rekord); jeszcze się ładuje → rekord odczytany wprost z plików
+  register: () => ledger?.register(LAB_PREREG, Date.now()) ?? ledgerStoreForLookup().findPrereg(LAB_PREREG.catalogHash),
   publish: (report) => {
     mkdirSync(join(cfg.outDir, 'lab'), { recursive: true });
     writeJsonAtomic(join(cfg.outDir, 'lab', `${cfg.coin}.json`), report);

@@ -151,3 +151,24 @@ describe('inna gałąź tylko do dopisywania (archiwum świec, pliki .csv)', () 
     expect(readFileSync(join(dir, '.gitattributes'), 'utf8')).toMatch(/\*\.csv -text/);
   });
 });
+
+describe('gałąź tylko do dopisywania — ucięty zapis nie trafia do repo', () => {
+  it('nowy albo dopisany plik .csv/.jsonl bez końcowego znaku nowej linii → commit odrzucony', async () => {
+    const remote = mkdtempSync(join(tmpdir(), 'hq-remote-'));
+    execFileSync('git', ['init', '-q', '--bare', '-b', 'main', remote]);
+    const dir = join(mkdtempSync(join(tmpdir(), 'hq-state-')), 'archive');
+    const repo = { remote, dir, branch: 'archive' };
+    await prepareLedgerRepo(repo, T0);
+    const { mkdirSync } = await import('node:fs');
+    mkdirSync(join(dir, 'BTC', '1h'), { recursive: true });
+    const f = join(dir, 'BTC', '1h', '2026-10.csv');
+    writeFileSync(f, 't,o,h,l,c,v,n\n1,2,3,1,2,5');
+    const r = await commitLedger(repo, 'ucięty', T0);
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/niepełna ostatnia linia/);
+    writeFileSync(f, 't,o,h,l,c,v,n\n1,2,3,1,2,5,9\n');
+    expect(await commitLedger(repo, 'ok', T0 + MIN)).toMatchObject({ ok: true, pushed: true });
+    writeFileSync(f, 't,o,h,l,c,v,n\n1,2,3,1,2,5,9\n2,2,4');
+    expect((await commitLedger(repo, 'ucięte dopisanie', T0 + 2 * MIN)).ok).toBe(false);
+  });
+});

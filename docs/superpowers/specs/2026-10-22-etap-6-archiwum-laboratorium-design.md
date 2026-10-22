@@ -85,8 +85,9 @@ Rodzina FDR = 10 reguł folkloru (kontrole poza rodziną).
 ### Statystyka
 
 - **Historycznie** (eksploracyjnie, wszystkie zdarzenia z archiwum): `n`, odsetek sukcesów vs średnie `p₀`,
-  efekt = średnia `(x − p₀)` w pp z przedziałem 90% (normalny z wariancją `Σ p₀(1 − p₀)`), p-wartość jednostronna
-  z dokładnego rozkładu Poissona–dwumianowego (DP), q-wartości BH w rodzinie. Werdykt eksploracyjny:
+  efekt = średnia `(x − p₀)` w pp z przedziałem 90% (z wariancji próby), p-wartość dwustronna z przybliżenia
+  normalnego z wariancją pod H0 `Σ p₀(1 − p₀)` (górne ograniczenie dla wyników ułamkowych w [0, 1] — dokładny rozkład
+  Poissona–dwumianowy nie obejmuje wyników ułamkowych), q-wartości BH w rodzinie. Werdykt eksploracyjny:
   „wspiera” (q ≤ 0,10), „przeciw” (efekt ujemny z q ≤ 0,10 w teście przeciwnym), „brak dowodu”.
 - **Do przodu** (tylko zdarzenia z `t0` > czas rekordu w dzienniku + 24 h): proces zakładów
   `E = Π (1 + λᵢ (xᵢ − p₀ᵢ))` z przewidywalnym `λᵢ` (aGRAPA, obcięte do `[0, 0,5/p₀ᵢ]`); osobno e-proces przeciw tezie
@@ -98,11 +99,16 @@ Rodzina FDR = 10 reguł folkloru (kontrole poza rodziną).
 
 ### Prerejestracja
 
-- Katalog (id, opis, parametry, wersja definicji) → kanoniczny JSON → SHA-256. Przy starcie skaner dopisuje do
-  dziennika rekord `{k: 'p', id: 'lab-v1', t, hash, catalog}`, jeśli rekordu z tym hashem jeszcze nie ma. Łańcuch
-  hashy i pokwitowanie OTS najbliższego slotu dowodzą, że katalog istniał przed danymi oceny.
-- Zmiana definicji = nowa wersja katalogu i nowy rekord; ocena do przodu nowej wersji startuje od nowa (stara
-  zostaje opublikowana do końca jako historia).
+- Katalog (id, definicja, parametry, progi metody, **wektor kontrolny**) → kanoniczny JSON → SHA-256. Wektor
+  kontrolny to SHA-256 wyniku całego silnika (zdarzenia, statystyka, e-procesy, sekwencje ufności) na stałych danych
+  syntetycznych; test pilnuje zgodności, więc zmiana zachowania kodu wymusza nowy hash katalogu — prerejestracja wiąże
+  kod, nie tylko tekst. Nazwy i tezy (teksty prezentacyjne) są poza katalogiem — ich poprawka niczego nie zeruje.
+- Gdy dziennik jest gotowy, skaner dopisuje rekord `{k: 'p', id, t, catalogHash, catalog}`, jeśli rekordu z tym hashem
+  nie ma (nigdy w trakcie przebiegu dziennika — inaczej rekord mógłby trafić do pliku następnego dnia przed liniami
+  dnia poprzedniego). Raport podaje czas i hash linii rekordu; łańcuch hashy i pokwitowanie OTS najbliższego slotu
+  dowodzą, że katalog istniał przed danymi oceny. Bez znanej rejestracji raport nie jest publikowany.
+- Zmiana definicji albo kodu = nowa wersja katalogu i nowy rekord; ocena do przodu nowej wersji startuje od nowa.
+  Wcześniejsze rejestracje zostają w dzienniku (do sprawdzenia skryptem); raport obejmuje bieżącą wersję.
 
 ### Publikacja i UI
 

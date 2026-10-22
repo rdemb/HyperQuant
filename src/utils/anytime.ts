@@ -122,5 +122,12 @@ export function effectCS(events: readonly BernEvent[], alpha = 0.1, step = 0.005
     lo = Math.min(lo, grid[g]);
     hi = Math.max(hi, grid[g]);
   }
-  return Number.isFinite(lo) ? { lo, hi } : null;
+  if (!Number.isFinite(lo)) return null;
+  // Poszerzenie o krok siatki (dyskretyzacja), zaokrąglenie na zewnątrz do 0,001 i przycięcie do zakresu dopuszczalnego
+  // średniego efektu [−p̄0, 1 − p̄0]
+  const p0 = events.reduce((s, e) => s + e.p0, 0) / events.length;
+  return {
+    lo: Math.max(Math.floor((lo - step) * 1000) / 1000, Math.ceil(-p0 * 1000) / 1000),
+    hi: Math.min(Math.ceil((hi + step) * 1000) / 1000, Math.floor((1 - p0) * 1000) / 1000),
+  };
 }

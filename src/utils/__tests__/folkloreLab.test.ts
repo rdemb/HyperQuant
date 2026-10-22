@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { LAB_CATALOG, evaluateLab, histStats, isLabReport, runCatalog, summarize, type LabData, type LabReport } from '../folkloreLab';
+import { LAB_CATALOG, LAB_TEXT, evaluateLab, histStats, isLabReport, labGoldenOutput, runCatalog, summarize, type LabData, type LabReport } from '../folkloreLab';
 import type { LabBar, LabEvent } from '../labEvents';
 import { mulberry32 } from '../pathEngine';
 
@@ -120,5 +120,21 @@ describe('walidacja raportu', () => {
     const bad: LabReport = JSON.parse(JSON.stringify(rep));
     bad.hypotheses[0].fwd.events = [[1, 2, 3] as unknown as [number, number, number, number]];
     expect(isLabReport(bad)).toBe(false);
+  });
+});
+
+describe('wektor kontrolny i hash katalogu (prerejestracja wiąże kod, nie tylko tekst)', () => {
+  it('wynik silnika na danych kontrolnych = LAB_CATALOG.golden — zmiana zachowania wymaga nowej wersji katalogu', async () => {
+    const { createHash } = await import('node:crypto');
+    const { canonicalJson } = await import('../../../backend/scanner/ledger.ts');
+    expect(createHash('sha256').update(canonicalJson(labGoldenOutput())).digest('hex')).toBe(LAB_CATALOG.golden);
+  });
+  it('hash katalogu przypięty (zmiana definicji, progów albo wektora kontrolnego = nowa rejestracja)', async () => {
+    const { LAB_HASH } = await import('../../../backend/scanner/labRunner.ts');
+    expect(LAB_HASH).toBe('61210eb590875088e754032299dc91a1a7f9bac75d70ccaff4749f041db9385a');
+  });
+  it('teksty prezentacyjne dla każdej reguły, poza hashowanym katalogiem', () => {
+    for (const h of LAB_CATALOG.hypotheses) expect(LAB_TEXT[h.id]?.name).toBeTruthy();
+    expect(JSON.stringify(LAB_CATALOG)).not.toContain('Okrągły poziom = opór');
   });
 });

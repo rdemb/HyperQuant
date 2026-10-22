@@ -17,8 +17,8 @@ export interface LabRunnerDeps {
   archive: CandleArchive;
   /** Gałąź `archive` repo danych; null = archiwum tylko lokalnie */
   repo: LedgerRepo | null;
-  /** Prerejestracja katalogu w dzienniku → czas rekordu; null = dziennik jeszcze niegotowy */
-  register: () => { at: number; added: boolean } | null;
+  /** Prerejestracja katalogu w dzienniku → czas i hash linii rekordu; null = dziennik niegotowy (albo w trakcie przebiegu) */
+  register: () => { at: number; hash: string; added?: boolean } | null;
   publish: (r: LabReport) => void;
 }
 
@@ -33,7 +33,7 @@ export class LabRunner {
   private uncommitted = 0;
   private lastCommitAt = Number.NEGATIVE_INFINITY;
   private lastLabAt = Number.NEGATIVE_INFINITY;
-  private registeredAt: number | null = null;
+  private registration: { at: number; hash: string } | null = null;
 
   constructor(d: LabRunnerDeps) {
     this.d = d;
@@ -63,11 +63,12 @@ export class LabRunner {
         }
         if (!c.ok || !c.pushed) error = c.error ?? 'commit/push archiwum nieudany';
       }
+      // Bez znanej rejestracji nie publikujemy — raport „niezarejestrowany” skasowałby wyniki do przodu po restarcie
       const reg = this.d.register();
-      const newlyRegistered = reg !== null && reg.at !== this.registeredAt;
-      if (reg) this.registeredAt = reg.at;
+      const newlyRegistered = reg !== null && reg.hash !== this.registration?.hash;
+      if (reg) this.registration = { at: reg.at, hash: reg.hash };
       let evaluated = false;
-      if (newlyRegistered || now - this.lastLabAt >= H) {
+      if (this.registration && (newlyRegistered || now - this.lastLabAt >= H)) {
         const { archive } = this.d;
         const report = evaluateLab(
           {
@@ -75,7 +76,7 @@ export class LabRunner {
             daily: archive.read('1d'),
             funding: archive.readFunding().map((f) => ({ t: f.t, rate: f.rate })),
           },
-          { coin: this.d.coin, asOf: now, registeredAt: this.registeredAt, catalogHash: LAB_HASH }
+          { coin: this.d.coin, asOf: now, registeredAt: this.registration.at, registrationHash: this.registration.hash, catalogHash: LAB_HASH }
         );
         this.d.publish(report);
         this.lastLabAt = now;

@@ -96,6 +96,27 @@ export class LedgerStore {
     return { ok: true, forecasts, resolutions, skips, lastSlot, preregs };
   }
 
+  /**
+   * Rejestracja katalogu wprost z plików dziennika (bez weryfikacji łańcucha) — gdy dziennik jeszcze się ładuje po
+   * restarcie; null = brak rekordu z tym hashem.
+   */
+  findPrereg(catalogHash: string): { at: number; hash: string } | null {
+    const cd = this.coinDir();
+    if (!existsSync(cd)) return null;
+    for (const f of readdirSync(cd).filter((x) => DAY_FILE.test(x)).sort()) {
+      for (const l of readFileSync(join(cd, f), 'utf8').split('\n')) {
+        if (!l.includes('"k":"p"') || !l.includes(catalogHash)) continue;
+        try {
+          const o = JSON.parse(l) as { catalogHash?: unknown; t?: unknown; hash?: unknown };
+          if (o.catalogHash === catalogHash && typeof o.t === 'number' && typeof o.hash === 'string') return { at: o.t, hash: o.hash };
+        } catch {
+          // niepełna linia po awarii — pomijam
+        }
+      }
+    }
+    return null;
+  }
+
   /** Dopisuje rekordy do pliku bieżącego dnia UTC; zwraca linie (z prev i h). */
   append(bodies: Record<string, unknown>[], now: number): string[] {
     if (this.broken) throw new Error('łańcuch dziennika jest przerwany — dopisywanie wstrzymane');
@@ -210,9 +231,12 @@ export async function commitLedger(o: LedgerRepo, message: string, now: number):
     for (const [status, path] of staged) {
       const bad = (why: string) => ({ ok: false, pushed: false, error: `zmiana nie jest dopisaniem (${why}): ${path}` });
       let refusal: CommitResult | null = null;
+      const lined = path.endsWith('.jsonl') || path.endsWith('.csv');
       if (status.startsWith('D')) refusal = bad('usunięcie');
+      // Ucięty zapis (awaria, pełny dysk) nie może trafić do historii, której nie da się poprawić
+      else if (lined && !readFileSync(join(o.dir, path), 'utf8').endsWith('\n')) refusal = bad('niepełna ostatnia linia');
       else if (status.startsWith('M')) {
-        if ((path.endsWith('.jsonl') || path.endsWith('.csv')) && hasHead) {
+        if (lined && hasHead) {
           const before = (await git('show', `HEAD:${path}`)).stdout;
           const after = readFileSync(join(o.dir, path), 'utf8');
           if (!after.startsWith(before)) refusal = bad('zmiana zapisanych linii');

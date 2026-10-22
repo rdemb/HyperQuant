@@ -156,7 +156,7 @@ describe('profil płynności (plik opcjonalny)', () => {
 });
 
 describe('laboratorium folkloru (plik opcjonalny, przeliczane co godzinę)', () => {
-  it('brak pliku nie jest alarmem; świeży — fakt; starszy niż 3 h — problem (strażnik restartuje skaner)', () => {
+  it('brak pliku nie jest alarmem; świeży — fakt; starszy niż 3 h — problem (alarm bez restartu skanera)', () => {
     expect(assessHealth(input({ errors: { 'lab/BTC.json': 'HTTP 404' } }), NOW).ok).toBe(true);
     const fresh = assessHealth(input({ lab: { v: 1, asOf: NOW - 50 * MIN } }), NOW);
     expect(fresh.ok).toBe(true);
