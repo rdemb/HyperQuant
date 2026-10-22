@@ -8,7 +8,7 @@ z publicznego `clearinghouseState`. Co minutę publikuje **wyłącznie agregaty*
 ```
 WebSocket trades + activeAssetCtx ──► książka adresów ──► harmonogram skanów ──► clearinghouseState (budżet wag)
                                                                                      │
-                         strona (przeglądarka) ◄── Cloudflare R2 ◄── liq-map/BTC.json, status.json
+                         strona (przeglądarka) ◄── repo danych GitHub ◄── liq-map/BTC.json, status.json
 ```
 
 - **Bez zależności npm.** Node ≥ 24 uruchamia TypeScript bezpośrednio (`node backend/scanner/main.ts`), `fetch` i `WebSocket` są wbudowane, podpis S3 (SigV4) jest własny i sprawdzony oficjalnym wektorem AWS.
@@ -43,7 +43,22 @@ Suma SHA-256 wykrywa uszkodzenie archiwum; podpis GPG pliku sum nie jest sprawdz
 
 Podgląd: `journalctl -u hyperquant-scanner -f`, wynik: `/var/lib/hyperquant/out/`.
 
-## Publikacja do Cloudflare R2
+## Publikacja do publicznego repo danych (zalecane, bez kosztów)
+
+Skaner co 2 min wypycha jeden commit z bieżącymi plikami do publicznego repo [rdemb/hyperquant-data](https://github.com/rdemb/hyperquant-data)
+(`--force`, więc repo zawsze ma tylko bieżący stan). Strona czyta `https://raw.githubusercontent.com/rdemb/hyperquant-data/main` (CORS otwarty, cache do 5 min).
+Metadane commitów są neutralne (autor noreply, czas UTC) — bez nazwy hosta i strefy czasowej serwera.
+
+1. Utwórz publiczne repo danych (np. `gh repo create <konto>/hyperquant-data --public`).
+2. Na serwerze wygeneruj klucz wdrożeniowy (zostaje na serwerze):
+   `sudo -u hyperquant ssh-keygen -t ed25519 -N "" -C hyperquant-data -f /var/lib/hyperquant/deploy_key`
+3. Dodaj **publiczną** część jako deploy key z prawem zapisu: `gh repo deploy-key add deploy_key.pub --repo <konto>/hyperquant-data --allow-write`.
+4. W `/etc/hyperquant/scanner.env`: `HQ_GIT_REMOTE=git@github.com:<konto>/hyperquant-data.git`, `HQ_GIT_SSH_KEY=/var/lib/hyperquant/deploy_key`, potem `systemctl restart hyperquant-scanner`.
+5. W repozytorium strony: zmienna Actions `DATA_BASE_URL` = `https://raw.githubusercontent.com/<konto>/hyperquant-data/main` i ponowne wdrożenie.
+
+## Publikacja do Cloudflare R2 (opcjonalnie)
+
+Wymaga konta Cloudflare z metodą płatności (darmowy limit: 10 GB, 1 mln zapisów, 10 mln odczytów miesięcznie).
 
 1. Cloudflare → R2 → **Create bucket** (np. `hyperquant-data`).
 2. Publiczny odczyt: **Settings → Custom Domains** (z CDN) albo **Public Development URL** (`*.r2.dev`, z limitami ruchu).
