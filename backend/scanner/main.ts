@@ -13,6 +13,7 @@ import { CohortEngine } from './cohortEngine.ts';
 import { ForecastData } from './forecaster.ts';
 import { LedgerStore, prepareLedgerRepo } from './ledgerStore.ts';
 import { LedgerRunner } from './ledgerRunner.ts';
+import { stampDigest } from './ots.ts';
 import { WeightLimiter } from './rateLimiter.ts';
 import { Scanner } from './scanner.ts';
 import { fetchLeaderboardAccounts } from './seed.ts';
@@ -159,7 +160,7 @@ async function gitPublishTick(): Promise<void> {
     }
   }
   // Pliki opcjonalne (np. kohorty po błędzie budowy) nie wstrzymują publikacji mapy
-  for (const key of [`liq-tape/${cfg.coin}.json`, `cohorts/${cfg.coin}.json`]) {
+  for (const key of [`liq-tape/${cfg.coin}.json`, `cohorts/${cfg.coin}.json`, `ledger/${cfg.coin}/summary.json`]) {
     try {
       files.push([key, readFileSync(join(cfg.outDir, key), 'utf8')]);
     } catch {
@@ -176,23 +177,53 @@ async function gitPublishTick(): Promise<void> {
  * Bez publikacji git — lokalny katalog w HQ_STATE_DIR (np. test dymny).
  */
 let ledger: LedgerRunner | null = null;
+/** Zepsuty łańcuch: dziennik wyłączony do restartu (bez ponownej weryfikacji całości co minutę) */
+let ledgerBroken = false;
+let ledgerInit: Promise<void> | null = null;
+const ledgerSummaryPath = join(cfg.outDir, 'ledger', cfg.coin, 'summary.json');
+
 async function initLedger(): Promise<void> {
   const now = Date.now();
   const dir = cfg.git ? join(cfg.stateDir, 'git', 'ledger') : join(cfg.stateDir, 'ledger');
   const repo = cfg.git ? { remote: cfg.git.remote, dir, sshKey: cfg.git.sshKey } : null;
   if (repo && !(await prepareLedgerRepo(repo, now))) {
-    console.error('[skaner] dziennik: repo danych niedostępne — spróbuję za minutę');
+    console.error('[skaner] dziennik: repo danych niedostępne albo klon w tyle za origin — spróbuję za minutę');
     return;
   }
   const store = new LedgerStore({ dir, coin: cfg.coin });
-  const runner = new LedgerRunner({ coin: cfg.coin, data: new ForecastData({ coin: cfg.coin, rest }), store, repo, markPx: () => scanner.freshMarkPx() });
+  const runner = new LedgerRunner({
+    coin: cfg.coin,
+    data: new ForecastData({ coin: cfg.coin, rest }),
+    store,
+    repo,
+    markPx: () => scanner.freshMarkPx(),
+    stamp: (d) => stampDigest(d),
+    clock: Date.now,
+    publish: (json) => {
+      mkdirSync(join(cfg.outDir, 'ledger', cfg.coin), { recursive: true });
+      writeJsonAtomic(ledgerSummaryPath, JSON.parse(json));
+    },
+  });
   const r = runner.init(now);
   if (!r.ok) {
-    console.error(`[skaner] dziennik: ${r.error} — dopisywanie wstrzymane`);
+    ledgerBroken = true;
+    console.error(`[skaner] dziennik: ${r.error} — dopisywanie wstrzymane do naprawy (restart po naprawie)`);
     return;
   }
   ledger = runner;
   log(`dziennik: ${store.lines} linii, głowa ${store.head.slice(0, 12)}`);
+}
+
+async function ledgerTick(): Promise<void> {
+  if (ledgerBroken) return;
+  if (!ledger) {
+    // Jedna inicjalizacja naraz (klon może trwać dłużej niż interwał timera)
+    if (!ledgerInit) ledgerInit = initLedger().finally(() => (ledgerInit = null));
+    await ledgerInit;
+    return;
+  }
+  const res = await ledger.tick(Date.now());
+  if (res.commit && (!res.commit.ok || !res.commit.pushed)) console.error(`[skaner] dziennik: ${res.commit.error ?? 'commit/push nieudany'}`);
 }
 
 /** Zapas dla kontekstu rynku, gdy WebSocket milczy > 2 min (waga 20). */
@@ -253,10 +284,7 @@ const timers = [
   ),
   setInterval(guarded('klasyfikacja kohort', () => cohorts.classify(Date.now())), 10 * 60_000),
   setInterval(
-    guarded('dziennik', async () => {
-      if (!ledger) await initLedger();
-      else await ledger.tick(Date.now());
-    }),
+    guarded('dziennik', ledgerTick),
     60_000
   ),
   setInterval(guarded('zapis stanu', saveState), 5 * 60_000),

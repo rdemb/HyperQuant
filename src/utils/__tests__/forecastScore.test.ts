@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   aciStep,
+  quantileAtExt,
   brier,
   crpsQuantiles,
   isotonic,
@@ -62,11 +63,13 @@ describe('kalibracja przedziałów', () => {
     expect(kupiec(0, 0, 0.1)).toBeNull();
   });
 
-  it('ACI: chybienie obniża α_t (szerszy przedział), trafienie lekko je podnosi; α_t ≥ 0', () => {
+  it('ACI: chybienie obniża α_t (szerszy przedział), trafienie lekko je podnosi; α_t może być ujemne', () => {
     // α_{t+1} = α_t + γ(α − err_t); err = 1 (chybienie) → α maleje → szerszy przedział
     expect(aciStep(0.1, 0.1, true, 0.01)).toBeCloseTo(0.1 + 0.01 * (0.1 - 1), 12);
     expect(aciStep(0.1, 0.1, false, 0.01)).toBeCloseTo(0.101, 12);
-    expect(aciStep(0.001, 0.1, true, 0.5)).toBeGreaterThanOrEqual(0); // przycięte
+    // α_t może zejść poniżej 0 (przedział nieskończony — zawsze pokrywa; Gibbs & Candès) — bez przycinania do 0
+    expect(aciStep(0.001, 0.1, true, 0.5)).toBeCloseTo(0.001 + 0.5 * (0.1 - 1), 12);
+    expect(aciStep(-0.99, 0.1, true, 0.5)).toBe(-1); // zakres [−1, 2] chroni przed dryfem
   });
 });
 
@@ -111,5 +114,18 @@ describe('prawdopodobieństwa zdarzeń', () => {
     expect(rel[0]).toMatchObject({ n: 1, freq: 0 });
     expect(rel[5]).toMatchObject({ n: 0, freq: null });
     expect(brier([])).toBeNull();
+  });
+});
+
+describe('quantileAtExt — kwantyle poza siatką (ogony gaussowskie)', () => {
+  const taus = [0.025, 0.05, 0.5, 0.95, 0.975];
+  const qs = taus.map(normInv);
+  it('w siatce = interpolacja; poza siatką ekstrapolacja w skali normalnej; τ ≤ 0 → −∞, τ ≥ 1 → +∞', () => {
+    expect(quantileAtExt(taus, qs, 0.5)).toBeCloseTo(0, 9);
+    expect(quantileAtExt(taus, qs, 0.005)).toBeCloseTo(normInv(0.005), 2);
+    expect(quantileAtExt(taus, qs, 0.995)).toBeCloseTo(normInv(0.995), 2);
+    expect(quantileAtExt(taus, qs, 0)).toBe(Number.NEGATIVE_INFINITY);
+    expect(quantileAtExt(taus, qs, -0.1)).toBe(Number.NEGATIVE_INFINITY);
+    expect(quantileAtExt(taus, qs, 1)).toBe(Number.POSITIVE_INFINITY);
   });
 });

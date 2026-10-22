@@ -5,6 +5,7 @@ import { Badge, EmptyState, Panel, Stat, DASH, fmtPrice } from '../../ui';
 import { DeskLedgerSummary, RetScores, TouchLevel } from '../../utils/deskLedger';
 
 const timeFmt = new Intl.DateTimeFormat('pl-PL', { hour: '2-digit', minute: '2-digit' });
+const dateTimeFmt = new Intl.DateTimeFormat('pl-PL', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 /** Procent bez „−0.0%” (zero ze znakiem minus z zaokrąglenia) */
 const pct = (v: number | null | undefined, d = 0) => {
   if (v === null || v === undefined || !Number.isFinite(v)) return DASH;
@@ -41,22 +42,24 @@ export const DeskLedgerPanel: React.FC = () => {
       {!summary ? (
         <EmptyState
           title={status === 'loading' ? 'Pobieram dziennik prognoz…' : 'Dziennik prognoz chwilowo niedostępny'}
-          detail="Co 15 min desk zapisuje swoje prognozy, zanim rynek je rozstrzygnie. Zapisu nie da się poprawić wstecz: każda linia zawiera hash poprzedniej, a pliki dzienne są zakotwiczane w blockchainie Bitcoina (OpenTimestamps)."
+          detail="Co 15 min desk zapisuje swoje prognozy, zanim rynek je rozstrzygnie. Każda linia zawiera hash poprzedniej, po każdym slocie głowa łańcucha jest znakowana w OpenTimestamps, a historia gałęzi jest tylko dopisywana."
         />
       ) : (
-        <LedgerBody s={summary} stale={status !== 'ready'} />
+        <LedgerBody s={summary} stale={status !== 'ready'} expired={status === 'expired'} />
       )}
     </Panel>
   );
 };
 
-const LedgerBody: React.FC<{ s: DeskLedgerSummary; stale: boolean }> = ({ s, stale }) => (
+const LedgerBody: React.FC<{ s: DeskLedgerSummary; stale: boolean; expired: boolean }> = ({ s, stale, expired }) => (
   <div className="flex flex-col gap-5 p-4">
     <p className="text-xs text-ink-2 leading-relaxed">
       Co 15 min desk zapisuje prognozy, zanim rynek je rozstrzygnie: rozkład zwrotu BTC na 1 h i 4 h (ten sam model zmienności co Analizator)
-      oraz szanse dotknięcia PDH / D-EQ / PDL w 2 h (ten sam silnik co pas „Zasięg 2h”). Każda linia zawiera hash poprzedniej, pliki dzienne
-      są zakotwiczane w Bitcoinie. Wyniki obok liczone są z tych zapisów i każdy może je przeliczyć sam.
-      {stale && <span className="text-warn"> Ostatnia aktualizacja {timeFmt.format(s.asOf)}.</span>}
+      oraz szanse dotknięcia PDH / D-EQ / PDL w 2 h (ten sam silnik co pas „Zasięg 2h”). Horyzont liczy się od pełnej minuty po wydaniu.
+      Każda linia zawiera hash poprzedniej. Zaraz po wydaniu głowa łańcucha jest znakowana w OpenTimestamps (niezależne kalendarze od razu, blok
+      Bitcoina po kilku godzinach), a historia gałęzi jest tylko dopisywana. Pominięte sloty są zapisywane jawnie. Wyniki obok liczone są z tych
+      zapisów i każdy może je przeliczyć sam.
+      {stale && <span className="text-warn"> Ostatnia aktualizacja {(expired ? dateTimeFmt : timeFmt).format(s.asOf)}.</span>}
     </p>
 
     <div className="grid gap-4 lg:grid-cols-2">
@@ -81,7 +84,23 @@ const LedgerBody: React.FC<{ s: DeskLedgerSummary; stale: boolean }> = ({ s, sta
         <span title="Prognozy, których nie dało się rozstrzygnąć (brak świec 1m przez 6 h po horyzoncie) — jawnie unieważnione, nie pominięte">
           unieważnione <span className="font-mono text-ink-1">{s.voided}</span>
         </span>
+        <span title="Sloty z prognozą vs jawnie pominięte (brak modelu, ceny albo przerwa) — braki nie znikają po cichu">
+          sloty <span className="font-mono text-ink-1">{s.participation.issued}</span> wydane ·{' '}
+          <span className="font-mono text-ink-1">{s.participation.skipped}</span> pominięte
+        </span>
+        <span title="Pokwitowania OpenTimestamps głowy łańcucha po wydaniu slotu, ostatnie 24 h">
+          pokwitowania 24 h <span className="font-mono text-ink-1">{s.slotStamps}</span>
+        </span>
       </div>
+      {s.participation.gaps.length > 0 && (
+        <div className="text-ink-3">
+          Ostatnie pominięte sloty:{' '}
+          {s.participation.gaps
+            .slice(-5)
+            .map((g) => `${dateTimeFmt.format(g.slot)} (${g.reason === 'outage' ? 'przerwa' : g.reason === 'no-model' ? 'brak modelu' : g.reason === 'no-price' ? 'brak ceny' : g.reason})`)
+            .join(' · ')}
+        </div>
+      )}
       {s.ots.length > 0 && (
         <div className="flex flex-wrap gap-x-3 gap-y-1">
           Kotwice w Bitcoinie:
@@ -100,13 +119,15 @@ const LedgerBody: React.FC<{ s: DeskLedgerSummary; stale: boolean }> = ({ s, sta
             prognozę albo rozstrzygnięcie.
           </li>
           <li>
-            Łańcuch i wyniki: <code className="font-mono text-ink-1">node scripts/verify-ledger.mjs</code> (repo HyperQuant) — niezależna implementacja,
-            przelicza hashe i wyniki z rekordów.
+            Pełna kontrola: <code className="font-mono text-ink-1">git clone -b ledger …/hyperquant-data ledger</code>, potem{' '}
+            <code className="font-mono text-ink-1">node scripts/verify-ledger.mjs --dir ledger</code> (repo HyperQuant). To niezależna implementacja: sprawdza
+            łańcuch od początku, historię git (tylko dopisywanie), skróty w pokwitowaniach i przelicza wyniki z kwantyli.
           </li>
           <li>
-            Kotwica: <code className="font-mono text-ink-1">ots upgrade &lt;dzień&gt;.jsonl.ots</code>, potem{' '}
-            <code className="font-mono text-ink-1">ots verify -f &lt;dzień&gt;.jsonl &lt;dzień&gt;.jsonl.ots</code> (klient OpenTimestamps) — potwierdza, że
-            plik istniał przed wydobyciem bloku Bitcoina.
+            Czas: <code className="font-mono text-ink-1">ots upgrade</code>, potem <code className="font-mono text-ink-1">ots verify</code> (klient
+            OpenTimestamps) na pokwitowaniu slotu (<code className="font-mono text-ink-1">ots/slots/</code>, skrót = hash ostatniej prognozy slotu) albo dnia
+            (<code className="font-mono text-ink-1">ots/&lt;dzień&gt;.jsonl.ots</code>). Potwierdza, że zapis istniał przed blokiem Bitcoina; kalendarze
+            potwierdzają przyjęcie od razu.
           </li>
         </ol>
       </details>
@@ -120,6 +141,9 @@ const RetCard: React.FC<{ r: DeskLedgerSummary['latest']['ret'][number]; sc: Ret
   const price = (lr: number) => r.px0 * Math.exp(lr);
   const lo = price(q(0.025));
   const hi = price(q(0.975));
+  // Przedział ACI może wychodzić poza siatkę (ogony) albo być nieskończony (α ≤ 0) — rysowany przycięty do skali
+  const aciLo = r.aci.lo === null ? lo : price(r.aci.lo);
+  const aciHi = r.aci.hi === null ? hi : price(r.aci.hi);
   const x = (p: number) => `${Math.min(100, Math.max(0, ((p - lo) / (hi - lo)) * 100))}%`;
   const enough = !!sc && sc.n >= MIN_N;
   return (
@@ -136,8 +160,8 @@ const RetCard: React.FC<{ r: DeskLedgerSummary['latest']['ret'][number]; sc: Ret
         <div className="absolute top-1.5 h-6 w-0.5 bg-ink-1" style={{ left: x(price(q(0.5))) }} />
         <div
           className="absolute top-2 h-5 rounded-sm border border-dashed border-warn"
-          title={`Przedział ACI (α = ${r.aci.alpha.toFixed(3)}) — samokorygujący się przedział 90%`}
-          style={{ left: x(price(r.aci.lo)), right: `calc(100% - ${x(price(r.aci.hi))})` }}
+          title={`Przedział ACI tej prognozy (α = ${r.aci.alpha.toFixed(3)}${r.aci.lo === null ? ', nieskończony' : ''}; bieżące α = ${r.aci.alphaNow.toFixed(3)}) — samokorygujący się przedział 90%`}
+          style={{ left: x(aciLo), right: `calc(100% - ${x(aciHi)})` }}
         />
       </div>
       <div className="flex justify-between text-[10px] font-mono tabular-nums text-ink-3">
@@ -163,12 +187,16 @@ const RetCard: React.FC<{ r: DeskLedgerSummary['latest']['ret'][number]; sc: Ret
         <Stat
           label="Umiejętność (CRPSS)"
           value={<span className="font-mono tabular-nums text-base">{enough ? pct(sc!.crpss, 1) : DASH}</span>}
-          hint={enough ? `> 0 = lepszy od rozkładu normalnego z 30 dni · n ${sc!.n}` : `od ${MIN_N} rozstrzygnięć (jest ${sc?.n ?? 0})`}
+          hint={enough ? `> 0 = lepszy od rozkładu normalnego z 30 dni; CRPS obcięty do τ ∈ [0.025; 0.975] · n ${sc!.n}` : `od ${MIN_N} rozstrzygnięć (jest ${sc?.n ?? 0})`}
         />
         <Stat
           label="Pokrycie 90%"
           value={<span className="font-mono tabular-nums text-base">{enough ? pct(sc!.cov90?.rate, 1) : DASH}</span>}
-          hint={enough && sc!.cov90?.kupiecP !== null && sc!.cov90 ? `test Kupca p = ${sc!.cov90.kupiecP!.toFixed(2)}` : 'nominał 90%'}
+          hint={
+            enough && sc!.cov90 && sc!.cov90.kupiecP !== null
+              ? `test Kupca p = ${sc!.cov90.kupiecP.toFixed(2)} na ${sc!.cov90.nEff} rozłącznych`
+              : 'nominał 90%'
+          }
         />
         <Stat
           label="Pokrycie 60%"
@@ -182,6 +210,12 @@ const RetCard: React.FC<{ r: DeskLedgerSummary['latest']['ret'][number]; sc: Ret
         />
       </div>
       {enough && <PitHist hist={sc!.pitHist} />}
+      {enough && (
+        <p className="text-[10px] text-ink-3 leading-snug">
+          Prognozy co 15 min z horyzontem {HORIZON_LABEL[r.h] ?? `${r.h} min`} nakładają się, więc ich wyniki są skorelowane. Odsetki pokrycia opisują
+          wszystkie prognozy, a test Kupca liczony jest na podpróbie rozłącznej.
+        </p>
+      )}
     </div>
   );
 };
@@ -241,6 +275,10 @@ const TouchCard: React.FC<{ s: DeskLedgerSummary }> = ({ s }) => {
       ) : (
         <div className="text-xs text-ink-3">Brak bieżącej prognozy (np. przed wyznaczeniem PDH/PDL nowej doby).</div>
       )}
+      <p className="text-[10px] text-ink-3 leading-snug">
+        Prognozy 2 h co 15 min nakładają się, więc przedziały Venna–Abersa i mapa kalibracji są orientacyjne. Poziom, za którym cena już jest,
+        nie jest prognozowany ani oceniany.
+      </p>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2">
         <Stat
           label="Brier"
@@ -250,7 +288,7 @@ const TouchCard: React.FC<{ s: DeskLedgerSummary }> = ({ s }) => {
         <Stat
           label="Umiejętność (BSS)"
           value={<span className="font-mono tabular-nums text-base">{enough ? pct(sc.bss, 1) : DASH}</span>}
-          hint="> 0 = lepiej niż stała częstość bazowa"
+          hint="> 0 = lepiej niż częstość bazowa każdego poziomu"
         />
         {enough && <ReliabilityMini bins={sc.reliability} />}
       </div>

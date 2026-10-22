@@ -21,9 +21,11 @@ export const DeskRail: React.FC = () => {
   const depthTotal = depthAsk + depthBid;
   const bidShare = depthTotal > 0 ? depthBid / depthTotal : null;
   const mins = (v: number | null | undefined) => (typeof v === 'number' ? `~${v} min` : 'n/a');
-  // Kalibracja z weryfikowalnego dziennika (izotonicznie na rozstrzygniętych prognozach tego samego silnika) — od 20 rozstrzygnięć
-  const { summary } = useDeskLedger();
-  const cal = summary && summary.scores.touch.n >= 20 ? summary.scores.touch.calibration : null;
+  // Kalibracja z weryfikowalnego dziennika (izotonicznie na rozstrzygniętych prognozach tego samego silnika): tylko przy
+  // ≥ 300 ocenionych parach, aktualnym podsumowaniu i tej samej metodzie (mapa z HAR+FHS nie pasuje do zapasu Mertona)
+  const { status: ledgerStatus, summary } = useDeskLedger();
+  const cal =
+    summary && ledgerStatus !== 'expired' && mc?.method === 'fhs-har' && summary.scores.touch.pairs >= 300 ? summary.scores.touch.calibration : null;
   const calText = (p: number | undefined) => {
     const c = cal && typeof p === 'number' ? calibrate(cal, p / 100) : null;
     return c === null ? null : `skal. ${Math.round(c * 100)}%`;

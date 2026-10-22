@@ -57,10 +57,10 @@ describe('gałąź ledger — publikacja przyrostowa (bez --force)', () => {
     const s = new LedgerStore({ dir, coin: 'BTC' });
     s.load(T0);
     s.append([{ k: 'f', id: 'a', t: T0 }], T0);
-    expect(await commitLedger({ remote, dir }, 'dziennik: a', T0)).toBe(true);
+    expect(await commitLedger({ remote, dir }, 'dziennik: a', T0)).toMatchObject({ ok: true, pushed: true });
     s.append([{ k: 'r', id: 'a', t: T0 + MIN }], T0 + MIN);
-    expect(await commitLedger({ remote, dir }, 'dziennik: r', T0 + MIN)).toBe(true);
-    expect(await commitLedger({ remote, dir }, 'bez zmian', T0 + 2 * MIN)).toBe(true); // nic do zatwierdzenia
+    expect(await commitLedger({ remote, dir }, 'dziennik: r', T0 + MIN)).toMatchObject({ ok: true });
+    expect(await commitLedger({ remote, dir }, 'bez zmian', T0 + 2 * MIN)).toMatchObject({ ok: true }); // nic do zatwierdzenia
     expect(git(remote, 'rev-list', '--count', 'ledger')).toBe('2');
     expect(git(remote, 'log', '-1', '--format=%an <%ae>', 'ledger')).toBe('HyperQuant scanner <hyperquant-scanner@users.noreply.github.com>');
 
@@ -69,5 +69,46 @@ describe('gałąź ledger — publikacja przyrostowa (bez --force)', () => {
     const s2 = new LedgerStore({ dir: dir2, coin: 'BTC' });
     expect(s2.load(T0 + 3 * MIN).ok).toBe(true);
     expect(s2.lines).toBe(2);
+  });
+});
+
+describe('gałąź ledger — tylko dopisywanie', () => {
+  async function setup() {
+    const remote = mkdtempSync(join(tmpdir(), 'hq-remote-'));
+    execFileSync('git', ['init', '-q', '--bare', '-b', 'main', remote]);
+    const dir = join(mkdtempSync(join(tmpdir(), 'hq-state-')), 'ledger');
+    await prepareLedgerRepo({ remote, dir }, T0);
+    const s = new LedgerStore({ dir, coin: 'BTC' });
+    s.load(T0);
+    s.append([{ k: 'f', id: 'a', t: T0, q: [0.1] }], T0);
+    await commitLedger({ remote, dir }, 'a', T0);
+    return { remote, dir, s };
+  }
+
+  it('zmiana zapisanej linii (nie dopisanie) → commit odrzucony, nic nie trafia do repo', async () => {
+    const { remote, dir } = await setup();
+    const f = join(dir, 'BTC', '2026-10-22.jsonl');
+    writeFileSync(f, readFileSync(f, 'utf8').replace('0.1', '0.2'));
+    const r = await commitLedger({ remote, dir }, 'zmiana wstecz', T0 + MIN);
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/nie jest dopisaniem/);
+    expect(git(remote, 'rev-list', '--count', 'ledger')).toBe('1');
+  });
+
+  it('usunięcie pliku dziennika → odrzucone', async () => {
+    const { remote, dir } = await setup();
+    execFileSync('git', ['-C', dir, 'rm', '-q', 'BTC/2026-10-22.jsonl']);
+    expect((await commitLedger({ remote, dir }, 'usunięcie', T0 + MIN)).ok).toBe(false);
+  });
+
+  it('klon w tyle za origin (inny zapis w repo) → przygotowanie odmawia (bez dopisywania do starej głowy)', async () => {
+    const { remote, dir } = await setup();
+    const other = join(mkdtempSync(join(tmpdir(), 'hq-other-')), 'ledger');
+    await prepareLedgerRepo({ remote, dir: other }, T0);
+    const s2 = new LedgerStore({ dir: other, coin: 'BTC' });
+    s2.load(T0);
+    s2.append([{ k: 'r', id: 'a', t: T0 + MIN }], T0 + MIN);
+    await commitLedger({ remote, dir: other }, 'inny', T0 + MIN);
+    expect(await prepareLedgerRepo({ remote, dir }, T0 + 2 * MIN)).toBe(false);
   });
 });

@@ -10,11 +10,10 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 export const DATA_BASE = 'https://raw.githubusercontent.com/rdemb/hyperquant-data/main';
-export const FILES = ['status.json', 'liq-map/BTC.json', 'liq-tape/BTC.json', 'cohorts/BTC.json', 'README.md'];
+export const FILES = ['status.json', 'liq-map/BTC.json', 'liq-tape/BTC.json', 'cohorts/BTC.json', 'ledger/BTC/summary.json', 'README.md'];
 /** Pliki, których brak nie jest alarmem (nowsze niż część wdrożeń skanera) — gdy są, przechodzą strażnika prywatności */
-export const OPTIONAL = new Set(['liq-tape/BTC.json', 'cohorts/BTC.json', 'ledger:BTC/summary.json']);
-/** Dziennik prognoz na gałęzi `ledger` (historia przyrostowa) — prognozy co 15 min */
-export const LEDGER_BASE = 'https://raw.githubusercontent.com/rdemb/hyperquant-data/ledger';
+export const OPTIONAL = new Set(['liq-tape/BTC.json', 'cohorts/BTC.json', 'ledger/BTC/summary.json']);
+/** Podsumowanie dziennika prognoz (prognozy co 15 min; pliki dziennika — gałąź `ledger`) */
 export const LEDGER_MAX_AGE_MIN = 60;
 export const LIMITS = {
   /** Publikacja co 2 min (+ do 5 min pamięci podręcznej CDN) — 30 min to jednoznaczna awaria */
@@ -131,7 +130,7 @@ async function main() {
   const errors = {};
   const json = {};
   await Promise.all(
-    [...FILES.map((f) => [f, `${DATA_BASE}/${f}`]), ['ledger:BTC/summary.json', `${LEDGER_BASE}/BTC/summary.json`]].map(async ([file, url]) => {
+    FILES.map((f) => [f, `${DATA_BASE}/${f}`]).map(async ([file, url]) => {
       try {
         raw[file] = await fetchText(url);
         if (file.endsWith('.json')) json[file] = JSON.parse(raw[file]);
@@ -142,7 +141,7 @@ async function main() {
   );
   const now = Date.now();
   const result = assessHealth(
-    { status: json['status.json'] ?? null, liqMap: json['liq-map/BTC.json'] ?? null, ledger: json['ledger:BTC/summary.json'] ?? null, raw, errors },
+    { status: json['status.json'] ?? null, liqMap: json['liq-map/BTC.json'] ?? null, ledger: json['ledger/BTC/summary.json'] ?? null, raw, errors },
     now
   );
   const report = renderReport(result, now);

@@ -45,6 +45,28 @@ CRPSS względem benchmarku, histogram PIT, pokrycia z testem Kupca, pokrycie ACI
 
 Zero: kalendarze OTS i GitHub są darmowe; świece w budżecie wag skanera (~5 wag/min średnio).
 
+## Decyzje po recenzji (integralność i statystyka)
+
+- **Pre-rejestracja dowodliwa**: sama kotwica pliku dnia (po 00:10 UTC) przychodziła po rozstrzygnięciu prognoz 1–4 h.
+  Teraz po każdym slocie głowa łańcucha jest znakowana w OpenTimestamps (`ots/slots/<slot>.ots`, skrót = hash ostatniej
+  prognozy slotu): kalendarze (niezależni operatorzy) potwierdzają przyjęcie od razu, blok Bitcoina — po kilku godzinach.
+- **Historia tylko dopisywana**: commit odrzucany, gdy zmienia zapisane linie, usuwa plik albo zmienia pokwitowanie;
+  weryfikator sprawdza każdą parę kolejnych commitów (prefiks) i łańcuch od GENESIS. Zalecana dodatkowo ochrona gałęzi
+  `ledger` na GitHubie (blokada force-push i usunięcia).
+- **Bez podglądania**: początek horyzontu = pełna minuta po faktycznym wydaniu (cena czytana po pobraniu danych),
+  nie początek slotu; rozstrzygnięcie od tej chwili.
+- **Jawne braki**: slot bez prognozy dostaje rekord `skip` z powodem (brak modelu, ceny, przerwa); podsumowanie pokazuje
+  wydane vs pominięte.
+- **Nakładanie się prognoz**: pokrycia opisowo ze wszystkich, test Kupca na podpróbie rozłącznej (slot ≡ 0 mod h) z nEff.
+- **BSS**: odniesienie = klimatologia każdego poziomu osobno.
+- **ACI**: α bez przycinania do 0 (α ≤ 0 = przedział nieskończony), ogony poza siatką ekstrapolowane w skali normalnej;
+  stan odtwarzany z α zapisanego przy wydaniu.
+- **Kalibracja pasa na Desku**: tylko przy ≥ 300 ocenionych parach, aktualnym podsumowaniu i tej samej metodzie (HAR+FHS).
+- **Podsumowanie** publikowane na `main` (nie setki commitów dziennie w historii `ledger`); weryfikator porównuje głowę.
+- **Odporność**: klon przez katalog tymczasowy, odmowa przy klonie w tyle za `origin`, blokada inicjalizacji, log błędów
+  push; po nieudanej budowie modelu 10 min przerwy; model starszy niż 3 h — bez wydania; `.gitattributes` (bajty JSONL
+  bez konwersji końców linii).
+
 ## Decyzje z realizacji
 
 - Pola łańcucha `prev` i `hash` (zarezerwowane) — pierwotne `h` kolidowało z horyzontem prognozy `h` (wykryte testem).

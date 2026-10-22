@@ -1,6 +1,6 @@
 import { type RangeBar, type VolModel, buildVolModel, horizonStepSigmas } from '../../src/utils/volatility.ts';
 import { forecastReturnQuantiles, runTouchMonteCarlo } from '../../src/utils/touchMc.ts';
-import { aciStep, brier, crpsQuantiles, isotonic, kupiec, normInv, pitFromQuantiles, quantileAt, reliability, vennAbers } from '../../src/utils/forecastScore.ts';
+import { aciStep, brier, crpsQuantiles, isotonic, kupiec, normInv, pitFromQuantiles, quantileAt, quantileAtExt, reliability, vennAbers } from '../../src/utils/forecastScore.ts';
 import { seedFrom } from '../../src/utils/pathEngine.ts';
 import type { DeskLedgerSummary, RetScores, TouchLevel, TouchScores } from '../../src/utils/deskLedger.ts';
 import type { InfoClient } from './liqDetect.ts';
@@ -28,9 +28,20 @@ export const ACI_GAMMA = 0.005;
 const r6 = (x: number) => Math.round(x * 1e6) / 1e6;
 const r4 = (x: number) => Math.round(x * 1e4) / 1e4;
 
+/** Czasy prognozy: slot 15 min (klucz), chwila wydania i początek horyzontu (pełna minuta po wydaniu — bez podglądania). */
+export interface ForecastTimes {
+  slot: number;
+  /** Chwila wydania (po odczycie ceny) */
+  ti: number;
+  /** Początek horyzontu: pierwsza pełna minuta po wydaniu; rozstrzygnięcie liczone od tej chwili */
+  t: number;
+}
+
 export interface RetForecast {
   k: 'f';
   id: string;
+  slot: number;
+  ti: number;
   t: number;
   kind: 'ret';
   h: number;
@@ -48,6 +59,8 @@ export interface RetForecast {
 export interface TouchForecast {
   k: 'f';
   id: string;
+  slot: number;
+  ti: number;
   t: number;
   kind: 'touch';
   h: number;
@@ -80,6 +93,12 @@ export interface TouchResolution {
 
 export type Forecast = RetForecast | TouchForecast;
 export type Resolution = RetResolution | TouchResolution;
+/** Jawny zapis pominiętego slotu (brak modelu, ceny, przerwa) — braki nie mogą znikać po cichu */
+export interface SkipRecord {
+  k: 's';
+  slot: number;
+  reason: string;
+}
 const LEVELS: TouchLevel[] = ['pdh', 'pdl', 'deq'];
 
 export const slotOf = (t: number) => Math.floor(t / SLOT) * SLOT;
@@ -120,20 +139,37 @@ export function benchQuantiles(sigma1h: number, hMin: number): number[] {
   return TAUS.map((t) => -0.5 * s * s + s * normInv(t));
 }
 
-export function makeRetForecast(model: VolModel, t: number, px0: number, h: number, sigma1h: number, aci: number): RetForecast {
-  const steps = horizonStepSigmas(model, t, h);
-  const q = forecastReturnQuantiles(steps, model.residuals, TAUS, { seed: seedFrom(t / MIN, h) });
-  return { k: 'f', id: `${t}-ret${h}`, t, kind: 'ret', h, px0, taus: TAUS, q: q.map(r6), bq: benchQuantiles(sigma1h, h).map(r6), aci: r4(aci), model: MODEL_VERSION };
+export function makeRetForecast(model: VolModel, tm: ForecastTimes, px0: number, h: number, sigma1h: number, aci: number): RetForecast {
+  const steps = horizonStepSigmas(model, tm.t, h);
+  const q = forecastReturnQuantiles(steps, model.residuals, TAUS, { seed: seedFrom(tm.slot / MIN, h) });
+  return {
+    k: 'f',
+    id: `${tm.slot}-ret${h}`,
+    slot: tm.slot,
+    ti: tm.ti,
+    t: tm.t,
+    kind: 'ret',
+    h,
+    px0,
+    taus: TAUS,
+    q: q.map(r6),
+    bq: benchQuantiles(sigma1h, h).map(r6),
+    aci: r4(aci),
+    model: MODEL_VERSION,
+  };
 }
 
-export function makeTouchForecast(model: VolModel, t: number, px0: number, pdh: number, pdl: number): TouchForecast {
+export function makeTouchForecast(model: VolModel, tm: ForecastTimes, px0: number, pdh: number, pdl: number): TouchForecast {
+  const t = tm.t;
   const deq = (pdh + pdl) / 2;
   const mc = runTouchMonteCarlo(px0, pdh, pdl, deq, 0, { stepSigmas: horizonStepSigmas(model, t, TOUCH_H), residuals: model.residuals, nowMs: t });
   // Poziom już przekroczony przy wydaniu (PDH ≤ cena, PDL ≥ cena) — dotknięcie jest pewne, więc nie jest prognozą
   const live = (crossed: boolean, prob: number) => (crossed ? null : r4(prob / 100));
   return {
     k: 'f',
-    id: `${t}-touch${TOUCH_H}`,
+    id: `${tm.slot}-touch${TOUCH_H}`,
+    slot: tm.slot,
+    ti: tm.ti,
     t,
     kind: 'touch',
     h: TOUCH_H,
@@ -149,7 +185,8 @@ export function resolveRet(f: RetForecast, c1m: RangeBar[], now: number): RetRes
   const c1 = closeAt(c1m, f.t + f.h * MIN);
   if (c0 === null || c1 === null) return null;
   const y = Math.log(c1 / c0);
-  const inRange = (lo: number, hi: number) => (y >= quantileAt(f.taus, f.q, lo) && y <= quantileAt(f.taus, f.q, hi) ? 1 : 0);
+  // Ogony poza siatką ekstrapolowane w skali normalnej; α ACI ≤ 0 → przedział nieskończony (zawsze pokrywa)
+  const inRange = (lo: number, hi: number) => (y >= quantileAtExt(f.taus, f.q, lo) && y <= quantileAtExt(f.taus, f.q, hi) ? 1 : 0);
   return {
     k: 'r',
     id: f.id,
@@ -183,51 +220,84 @@ export const nextAci = (alpha: number, miss: boolean) => aciStep(alpha, ACI_ALPH
 
 const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
 
-/** Wyniki prognoz zwrotu jednego horyzontu z par (prognoza, rozstrzygnięcie). */
+/**
+ * Wyniki prognoz zwrotu jednego horyzontu. Prognozy co 15 min z horyzontem h nakładają się (h/15-krotnie), więc ich
+ * chybienia są skorelowane — odsetek pokrycia liczony jest z całości (opis), a test Kupca na podpróbie rozłącznej
+ * (sloty będące wielokrotnością h), z efektywnym n.
+ */
 export function retScores(pairs: { f: RetForecast; r: RetResolution }[]): RetScores {
   const n = pairs.length;
   const crps = mean(pairs.map((p) => p.r.crps));
   const crpsB = mean(pairs.map((p) => p.r.crpsB));
   const hist = Array<number>(10).fill(0);
   for (const p of pairs) hist[Math.min(9, Math.floor(p.r.pit * 10))]++;
-  const miss90 = pairs.filter((p) => !p.r.in90).length;
-  const miss60 = pairs.filter((p) => !p.r.in60).length;
-  const missAci = pairs.filter((p) => !p.r.inAci).length;
+  const cov = (hit: (r: RetResolution) => number, nominalMiss: number) => {
+    if (!n) return null;
+    const indep = pairs.filter((p) => p.f.slot % (p.f.h * MIN) === 0);
+    const missAll = pairs.filter((p) => !hit(p.r)).length;
+    const missInd = indep.filter((p) => !hit(p.r)).length;
+    return { rate: 1 - missAll / n, n, nEff: indep.length, kupiecP: indep.length ? kupiec(indep.length, missInd, nominalMiss) : null };
+  };
   return {
     n,
     crps,
     crpsBench: crpsB,
     crpss: crps !== null && crpsB !== null && crpsB > 0 ? 1 - crps / crpsB : null,
     pitHist: hist,
-    cov90: n ? { rate: 1 - miss90 / n, kupiecP: kupiec(n, miss90, 0.1) } : null,
-    cov60: n ? { rate: 1 - miss60 / n, kupiecP: kupiec(n, miss60, 0.4) } : null,
-    covAci: n ? { rate: 1 - missAci / n, kupiecP: kupiec(n, missAci, 0.1) } : null,
+    cov90: cov((r) => r.in90, 0.1),
+    cov60: cov((r) => r.in60, 0.4),
+    covAci: cov((r) => r.inAci, 0.1),
   };
 }
 
-/** Wyniki prognoz dotknięć (wszystkie poziomy razem) + mapa kalibracji izotonicznej. */
+/** Pary (p, wynik) z prognoz dotknięć — bez poziomów przekroczonych przy wydaniu (p = null). */
 const touchPairsOf = (pairs: { f: TouchForecast; r: TouchResolution }[]) =>
   pairs.flatMap((p) => LEVELS.filter((l) => p.f.p[l] !== null && p.f.p[l] !== undefined).map((l) => ({ p: p.f.p[l] as number, y: p.r.yv[l] })));
 
+/**
+ * Wyniki prognoz dotknięć + mapa kalibracji izotonicznej. Odniesienie BSS: klimatologia osobno dla każdego poziomu
+ * (PDH, PDL i D-EQ mają różne częstości bazowe — wspólna stała dawałaby „umiejętność” modelowi bez wiedzy).
+ */
 export function touchScores(pairs: { f: TouchForecast; r: TouchResolution }[]): TouchScores {
   const pp = touchPairsOf(pairs);
-  const base = mean(pp.map((x) => x.y));
   const bs = brier(pp);
-  const bsBase = base === null ? null : brier(pp.map((x) => ({ p: base, y: x.y })));
-  const sorted = [...pp].sort((a, b) => a.p - b.p);
-  const fit = isotonic(sorted.map((x) => x.y));
-  const map: [number, number][] = [];
-  sorted.forEach((x, i) => {
-    const last = map[map.length - 1];
-    if (!last || last[1] !== fit[i]) map.push([r4(x.p), r4(fit[i])]);
+  const levelBase = Object.fromEntries(
+    LEVELS.map((l) => {
+      const ys = pairs.filter((p) => p.f.p[l] !== null && p.f.p[l] !== undefined).map((p) => p.r.yv[l]);
+      return [l, mean(ys)];
+    })
+  ) as Record<TouchLevel, number | null>;
+  const basePairs = pairs.flatMap((p) => LEVELS.filter((l) => p.f.p[l] !== null && p.f.p[l] !== undefined && levelBase[l] !== null).map((l) => ({ p: levelBase[l] as number, y: p.r.yv[l] })));
+  const bsBase = brier(basePairs);
+  // Izotonicznie na grupach równych p (wagi = liczności) — ten sam p nie dostaje dwóch wartości
+  const groups: { p: number; sum: number; n: number }[] = [];
+  for (const x of [...pp].sort((a, b) => a.p - b.p)) {
+    const g = groups[groups.length - 1];
+    if (g && g.p === x.p) {
+      g.sum += x.y;
+      g.n++;
+    } else groups.push({ p: x.p, sum: x.y, n: 1 });
+  }
+  const fit = isotonic(
+    groups.map((g) => g.sum / g.n),
+    groups.map((g) => g.n)
+  );
+  const steps: [number, number][] = [];
+  groups.forEach((g, i) => {
+    const last = steps[steps.length - 1];
+    if (!last || last[1] !== r4(fit[i])) steps.push([r4(g.p), r4(fit[i])]);
   });
+  // Najwyżej 200 punktów, równomiernie (z zachowaniem ostatniego — wysokie p nie mogą wypaść)
+  const stride = Math.ceil(steps.length / 200);
+  const map = steps.filter((_, i) => i % stride === 0 || i === steps.length - 1);
   return {
     n: pairs.length,
+    pairs: pp.length,
     brier: bs,
     brierBase: bsBase,
     bss: bs !== null && bsBase !== null && bsBase > 0 ? 1 - bs / bsBase : null,
     reliability: reliability(pp, 10).map((b) => ({ lo: b.lo, hi: b.hi, n: b.n, meanP: b.meanP, freq: b.freq })),
-    calibration: map.slice(0, 200),
+    calibration: map,
   };
 }
 
@@ -239,6 +309,9 @@ export interface SummaryInput {
   resolutions: Map<string, Resolution>;
   aci: Record<number, number>;
   ots: DeskLedgerSummary['ots'];
+  skips?: SkipRecord[];
+  /** Liczba pokwitowań OpenTimestamps głowy łańcucha z ostatnich 24 h */
+  slotStamps?: number;
 }
 
 /** Podsumowanie (30 dni) dla strony: najnowsze prognozy, wyniki, kalibracja Venna–Abersa najnowszych prawdopodobieństw. */
@@ -274,7 +347,10 @@ export function buildSummary(s: SummaryInput): DeskLedgerSummary {
     voided,
     latest: {
       ret: latestRet.map((f) => {
-        const a = s.aci[f.h] ?? ACI_ALPHA;
+        // Przedział ACI tej prognozy — z α zapisanym przy wydaniu (ten, który będzie oceniany)
+        const a = f.aci;
+        const lo = quantileAtExt(f.taus, f.q, a / 2);
+        const hi = quantileAtExt(f.taus, f.q, 1 - a / 2);
         return {
           t: f.t,
           h: f.h,
@@ -282,7 +358,7 @@ export function buildSummary(s: SummaryInput): DeskLedgerSummary {
           taus: f.taus,
           q: f.q,
           bq: f.bq,
-          aci: { alpha: r4(a), lo: r6(quantileAt(f.taus, f.q, a / 2)), hi: r6(quantileAt(f.taus, f.q, 1 - a / 2)) },
+          aci: { alpha: r4(a), alphaNow: r4(s.aci[f.h] ?? ACI_ALPHA), lo: Number.isFinite(lo) ? r6(lo) : null, hi: Number.isFinite(hi) ? r6(hi) : null },
         };
       }),
       touch: latestTouch
@@ -307,8 +383,17 @@ export function buildSummary(s: SummaryInput): DeskLedgerSummary {
       touch: touchScores(touchPairs),
     },
     ots: s.ots,
+    slotStamps: s.slotStamps ?? 0,
+    participation: participation(fs, s.skips ?? [], from),
     method: 'hq-ledger-v1',
   };
+}
+
+/** Sloty wydane vs pominięte (jawne rekordy `skip`) w oknie — braki widoczne, nie ukryte. */
+function participation(fs: Forecast[], skips: SkipRecord[], from: number): DeskLedgerSummary['participation'] {
+  const issued = new Set(fs.filter((f) => f.kind === 'ret').map((f) => f.slot));
+  const skipped = skips.filter((k) => k.slot >= from && !issued.has(k.slot)).sort((a, b) => a.slot - b.slot);
+  return { issued: issued.size, skipped: skipped.length, gaps: skipped.slice(-10).map((k) => ({ slot: k.slot, reason: k.reason })) };
 }
 
 /** Pomocniczo dla skanera: model zmienności ze świec 1h i 5m. */
@@ -330,6 +415,8 @@ export class ForecastData {
   model: VolModel | null = null;
   sigma1h = Number.NaN;
   modelAt = 0;
+  /** Ostatnia próba budowy modelu — po nieudanej 10 min przerwy (świece 1h+5m ważą ~210 z budżetu skanu) */
+  private modelTriedAt = Number.NEGATIVE_INFINITY;
   levels: { pdh: number; pdl: number; day: number } | null = null;
   levelsAt = 0;
 
@@ -344,6 +431,8 @@ export class ForecastData {
   /** Model zmienności i σ benchmarku — co godzinę (≈ 210 wag). */
   async refreshModel(now: number): Promise<void> {
     if (this.model && now - this.modelAt < HOUR) return;
+    if (now - this.modelTriedAt < 10 * MIN) return;
+    this.modelTriedAt = now;
     const [h, f] = [await this.candles('1h', now - 5000 * HOUR, 5000), await this.candles('5m', now - 5000 * 5 * MIN, 5000)];
     const m = buildVolModel(h, f, now);
     if (m) {
@@ -353,11 +442,11 @@ export class ForecastData {
     }
   }
 
-  /** PDH/PDL z poprzedniej dobowej świecy UTC — co 10 min. */
+  /** PDH/PDL z poprzedniej dobowej świecy UTC — co 10 min i od razu po zmianie doby. */
   async refreshLevels(now: number): Promise<void> {
-    if (this.levels && now - this.levelsAt < 10 * MIN) return;
-    const d = await this.candles('1d', now - 3 * DAY, 3);
     const today = Math.floor(now / DAY) * DAY;
+    if (this.levels && now - this.levelsAt < 10 * MIN && this.levels.day === today - DAY) return;
+    const d = await this.candles('1d', now - 3 * DAY, 3);
     const prev = d.find((b) => b.time === today - DAY);
     if (prev && prev.high > prev.low) {
       this.levels = { pdh: prev.high, pdl: prev.low, day: prev.time };
@@ -366,7 +455,9 @@ export class ForecastData {
   }
 
   /** Świece 1m od `from` (do rozstrzygania). */
+  /** API zwraca najwyżej 5000 świec — po dłuższej przerwie starsze prognozy zostaną unieważnione (void) */
   minuteCandles(from: number, now: number): Promise<RangeBar[]> {
-    return this.candles('1m', from - MIN, Math.ceil((now - from) / MIN) + 2);
+    const n = Math.min(5000, Math.ceil((now - from) / MIN) + 2);
+    return this.candles('1m', Math.max(from - MIN, now - n * MIN), n);
   }
 }

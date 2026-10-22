@@ -23,6 +23,8 @@ function candles(n: number, px: (i: number) => number, wick = 5) {
 const ret = (over: Partial<RetForecast> = {}): RetForecast => ({
   k: 'f',
   id: `${T0}-ret60`,
+  slot: T0,
+  ti: T0 - 30_000,
   t: T0,
   kind: 'ret',
   h: 60,
@@ -81,6 +83,8 @@ describe('rozstrzyganie', () => {
     const f: TouchForecast = {
       k: 'f',
       id: `${T0}-touch120`,
+      slot: T0,
+      ti: T0,
       t: T0,
       kind: 'touch',
       h: 120,
@@ -104,18 +108,20 @@ describe('wyniki i podsumowanie', () => {
     ({ k: 'r', id: 'x', t: 0, y: 0, crps, crpsB, pit, in90, in60: 1, inAci: in90 }) as const;
 
   it('retScores: CRPSS, histogram PIT, pokrycie 90% z testem Kupca', () => {
-    const pairs = Array.from({ length: 100 }, (_, i) => ({ f: ret(), r: rr((i + 0.5) / 100, i < 90 ? 1 : 0) }));
+    const pairs = Array.from({ length: 100 }, (_, i) => ({ f: ret({ slot: T0 + i * 3_600_000 }), r: rr((i + 0.5) / 100, i < 90 ? 1 : 0) }));
     const s = retScores(pairs);
     expect(s.n).toBe(100);
     expect(s.crpss).toBeCloseTo(1 - 0.002 / 0.003, 9);
     expect(s.pitHist).toEqual(Array(10).fill(10));
     expect(s.cov90!.rate).toBeCloseTo(0.9, 9);
+    // wszystkie prognozy w tym samym slocie co godzinę (slot % 60 min == 0) → podpróba rozłączna = całość
+    expect(s.cov90!.nEff).toBe(100);
     expect(s.cov90!.kupiecP).toBeCloseTo(1, 6);
     expect(retScores([]).crps).toBeNull();
   });
 
   it('touchScores: Brier, BSS względem klimatologii, niemalejąca mapa kalibracji', () => {
-    const f = (p: number): TouchForecast => ({ k: 'f', id: String(p), t: 0, kind: 'touch', h: 120, px0: 1, lv: { pdh: 2, pdl: 0.5, deq: 1.2 }, p: { pdh: p, pdl: p, deq: p }, model: 'x' });
+    const f = (p: number): TouchForecast => ({ k: 'f', id: String(p), slot: 0, ti: 0, t: 0, kind: 'touch', h: 120, px0: 1, lv: { pdh: 2, pdl: 0.5, deq: 1.2 }, p: { pdh: p, pdl: p, deq: p }, model: 'x' });
     const r = (y: 0 | 1) => ({ k: 'r' as const, id: 'x', t: 0, yv: { pdh: y, pdl: y, deq: y } });
     const pairs = [
       ...Array.from({ length: 30 }, () => ({ f: f(0.1), r: r(0) })),
@@ -136,11 +142,12 @@ describe('wyniki i podsumowanie', () => {
     fs.set('a', a);
     fs.set('b', b);
     rs.set('a', rr(0.4, 1));
-    const touch: TouchForecast = { k: 'f', id: 't', t: T0, kind: 'touch', h: 120, px0: 1, lv: { pdh: 2, pdl: 0.5, deq: 1.2 }, p: { pdh: 0.3, pdl: 0.2, deq: 0.6 }, model: 'x' };
+    const touch: TouchForecast = { k: 'f', id: 't', slot: T0, ti: T0, t: T0, kind: 'touch', h: 120, px0: 1, lv: { pdh: 2, pdl: 0.5, deq: 1.2 }, p: { pdh: 0.3, pdl: 0.2, deq: 0.6 }, model: 'x' };
     fs.set('t', touch);
     const s = buildSummary({ coin: 'BTC', now: T0 + MIN, head: { hash: 'h', lines: 4 }, forecasts: fs, resolutions: rs, aci: { 60: 0.08 }, ots: [] });
     expect(s.latest.ret.map((r) => r.t)).toEqual([T0]);
-    expect(s.latest.ret[0].aci.alpha).toBe(0.08);
+    expect(s.latest.ret[0].aci.alpha).toBe(0.1); // α zapisane przy wydaniu (oceniane)
+    expect(s.latest.ret[0].aci.alphaNow).toBe(0.08);
     expect(s.pending).toBe(2);
     expect(s.latest.touch!.va.pdh!.p).toBe(0.3); // brak zbioru kalibracyjnego → bez zmian
     expect(s.scores.ret['60'].n).toBe(1);
@@ -165,10 +172,50 @@ describe('prognoza dotknięć — poziomy już przekroczone', () => {
       });
     };
     const model = buildVolModel(mk(1200, 3_600_000, 0.004), mk(2000, 300_000, 0.0015), T0)!;
-    const f = makeTouchForecast(model, T0, 82_000, 84_850, 82_613);
+    const f = makeTouchForecast(model, { slot: T0, t: T0, ti: T0 }, 82_000, 84_850, 82_613);
     expect(f.p.pdl).toBeNull();
     expect(f.p.pdh).not.toBeNull();
     const pairs = [{ f, r: { k: 'r' as const, id: f.id, t: 0, yv: { pdh: 0 as const, pdl: 1 as const, deq: 0 as const } } }];
     expect(touchScores(pairs).brier).toBeCloseTo(((f.p.pdh as number) ** 2 + (f.p.deq as number) ** 2) / 2, 9);
+  });
+});
+
+describe('poprawki z recenzji: ACI, nakładanie, klimatologia poziomów, uczestnictwo', () => {
+  const rr = (in90: 0 | 1) => ({ k: 'r', id: 'x', t: 0, y: 0, crps: 0.002, crpsB: 0.003, pit: 0.5, in90, in60: 1, inAci: in90 }) as const;
+
+  it('ACI: α ≤ 0 → przedział nieskończony → pokrycie nawet przy skrajnym zwrocie', () => {
+    const c = [{ time: T0 - MIN, open: 1, high: 1, low: 1, close: 100_000 }, ...candles(70, (i) => (i < 59 ? 100_000 : 130_000))];
+    expect(resolveRet(ret({ aci: -0.05 }), c, T0 + 70 * MIN)!.inAci).toBe(1);
+    expect(resolveRet(ret({ aci: 0.1 }), c, T0 + 70 * MIN)!.inAci).toBe(0);
+  });
+
+  it('test Kupca na rozłącznej podpróbie: prognozy 1 h co 15 min → co czwarta (nEff), opis pokrycia z całości', () => {
+    const pairs = Array.from({ length: 80 }, (_, i) => ({ f: ret({ slot: T0 + i * 15 * MIN }), r: rr(i % 10 === 0 ? 0 : 1) }));
+    const s = retScores(pairs);
+    expect(s.cov90!.n).toBe(80);
+    expect(s.cov90!.nEff).toBe(20);
+  });
+
+  it('BSS względem klimatologii poziomu: model podający częstość bazową każdego poziomu nie ma umiejętności', () => {
+    const f = (p: { pdh: number; pdl: number; deq: number }): TouchForecast => ({
+      k: 'f', id: 'x', slot: 0, ti: 0, t: 0, kind: 'touch', h: 120, px0: 1, lv: { pdh: 2, pdl: 0.5, deq: 1.2 }, p, model: 'x',
+    });
+    const pairs = Array.from({ length: 100 }, (_, i) => ({
+      f: f({ pdh: 0.1, pdl: 0.3, deq: 0.6 }),
+      r: { k: 'r' as const, id: 'x', t: 0, yv: { pdh: (i % 10 === 0 ? 1 : 0) as 0 | 1, pdl: (i % 10 < 3 ? 1 : 0) as 0 | 1, deq: (i % 10 < 6 ? 1 : 0) as 0 | 1 } },
+    }));
+    const s = touchScores(pairs);
+    expect(s.pairs).toBe(300);
+    expect(Math.abs(s.bss!)).toBeLessThan(1e-9);
+  });
+
+  it('uczestnictwo: sloty oczekiwane, wydane i pominięte (z powodem) w podsumowaniu', () => {
+    const fs = new Map<string, Forecast>();
+    const rs = new Map<string, Resolution>();
+    fs.set('a', ret({ id: 'a', slot: T0, t: T0 + MIN }));
+    const skips = [{ k: 's' as const, slot: T0 + 15 * MIN, reason: 'outage' }];
+    const s = buildSummary({ coin: 'BTC', now: T0 + 31 * MIN, head: { hash: 'h', lines: 2 }, forecasts: fs, resolutions: rs, aci: {}, ots: [], skips });
+    expect(s.participation).toMatchObject({ issued: 1, skipped: 1 });
+    expect(s.participation.gaps).toEqual([{ slot: T0 + 15 * MIN, reason: 'outage' }]);
   });
 });

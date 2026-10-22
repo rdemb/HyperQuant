@@ -1,4 +1,5 @@
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -22,9 +23,7 @@ function bars(n: number, stepMs: number, end: number, sigma: number, seed = 1): 
     const t = end - i * stepMs;
     const o = px;
     const c = o * Math.exp(sigma * (rnd() - 0.5) * 3.4);
-    const hi = Math.max(o, c) * (1 + sigma * rnd());
-    const lo = Math.min(o, c) * (1 - sigma * rnd());
-    out.push({ time: t, open: o, high: hi, low: lo, close: c });
+    out.push({ time: t, open: o, high: Math.max(o, c) * (1 + sigma * rnd()), low: Math.min(o, c) * (1 - sigma * rnd()), close: c });
     px = c;
   }
   return out;
@@ -32,78 +31,113 @@ function bars(n: number, stepMs: number, end: number, sigma: number, seed = 1): 
 
 function fakeData(): LedgerData & { candles: RangeBar[] } {
   const model = buildVolModel(bars(1200, HOUR, SLOT0, 0.004), bars(2000, 5 * MIN, SLOT0, 0.0015, 7), SLOT0)!;
-  const candles = bars(400, MIN, SLOT0 + 6 * HOUR, 0.0006, 3).map((b) => ({ ...b }));
-  return {
+  const d = {
     model,
+    modelAt: SLOT0,
     sigma1h: 0.004,
     levels: { pdh: 101_000, pdl: 99_000, day: Math.floor(SLOT0 / DAY) * DAY - DAY },
-    candles,
+    candles: bars(800, MIN, SLOT0 + 12 * HOUR, 0.0006, 3),
     refreshModel: async () => {},
     refreshLevels: async () => {},
-    minuteCandles: async function (this: { candles: RangeBar[] }, from: number, now: number) {
-      return this.candles.filter((b) => b.time >= from - MIN && b.time < now);
-    },
+    minuteCandles: async (from: number, now: number) => d.candles.filter((b) => b.time >= from - MIN && b.time < now),
   };
+  return d;
 }
 
-describe('LedgerRunner — wydawanie, rozstrzyganie, kotwiczenie', () => {
-  it('slot 15 min: 3 prognozy raz; rozstrzygnięcie po horyzoncie; podsumowanie poprawne; ACI z rozstrzygnięć', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'hq-runner-'));
-    const store = new LedgerStore({ dir, coin: 'BTC' });
-    const data = fakeData();
-    const r = new LedgerRunner({ coin: 'BTC', data, store, repo: null, markPx: () => 100_000 });
+function runner(over: Partial<ConstructorParameters<typeof LedgerRunner>[0]> = {}) {
+  const dir = mkdtempSync(join(tmpdir(), 'hq-runner-'));
+  const store = new LedgerStore({ dir, coin: 'BTC' });
+  const published: string[] = [];
+  const r = new LedgerRunner({ coin: 'BTC', data: fakeData(), store, repo: null, markPx: () => 100_000, publish: (j) => published.push(j), ...over });
+  return { r, store, dir, published };
+}
+const lines = (dir: string, day: string) =>
+  existsSync(join(dir, 'BTC', `${day}.jsonl`))
+    ? readFileSync(join(dir, 'BTC', `${day}.jsonl`), 'utf8')
+        .trim()
+        .split('\n')
+        .map((l) => JSON.parse(l))
+    : [];
+
+describe('LedgerRunner — wydawanie bez podglądania, rozstrzyganie, jawne braki', () => {
+  it('slot: 3 prognozy raz; początek horyzontu = pełna minuta po wydaniu; rozstrzygnięcie od tej chwili', async () => {
+    const { r, store, dir, published } = runner();
     expect(r.init(SLOT0).ok).toBe(true);
     expect((await r.tick(SLOT0 + 30_000)).appended).toBe(3);
+    const f = lines(dir, '2026-10-22')[0];
+    expect(f).toMatchObject({ slot: SLOT0, ti: SLOT0 + 30_000, t: SLOT0 + MIN });
     expect((await r.tick(SLOT0 + 90_000)).appended).toBe(0); // ten sam slot — bez duplikatów
-    expect((await r.tick(SLOT0 + 6 * MIN)).appended).toBe(0); // slot minął > 5 min — bez wydawania wstecz
-    const res = await r.tick(SLOT0 + 62 * MIN);
-    expect(res.appended).toBeGreaterThanOrEqual(1 + 2); // rozstrzygnięcie ret60 + prognozy slotu 22:00 (ret60, ret240, touch)
-    const summary = JSON.parse(readFileSync(join(dir, 'BTC', 'summary.json'), 'utf8'));
+    expect((await r.tick(SLOT0 + 6 * MIN)).appended).toBe(0); // okno minęło — bez wydawania wstecz
+    const res = await r.tick(SLOT0 + 63 * MIN);
+    // 3 pominięte sloty (21:15, 21:30, 21:45 — „przerwa”), 3 prognozy slotu 22:00, rozstrzygnięcie ret60
+    expect(res.appended).toBe(7);
+    const summary = JSON.parse(published[published.length - 1]);
     expect(isDeskLedgerSummary(summary)).toBe(true);
     expect(summary.scores.ret['60'].n).toBe(1);
+    expect(summary.participation).toMatchObject({ issued: 2, skipped: 3 });
     expect(summary.head.lines).toBe(store.lines);
+    expect(existsSync(join(dir, 'BTC', 'summary.json'))).toBe(false); // podsumowanie nie trafia do historii gałęzi ledger
   });
 
-  it('brak ceny lub modelu → nic nie jest wydawane (brak danych ≠ prognoza)', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'hq-runner-'));
-    const store = new LedgerStore({ dir, coin: 'BTC' });
-    const data = fakeData();
-    const r = new LedgerRunner({ coin: 'BTC', data, store, repo: null, markPx: () => null });
+  it('brak ceny → nic nie jest wydawane, a slot dostaje jawny skip z powodem', async () => {
+    const { r, dir } = runner({ markPx: () => null });
     r.init(SLOT0);
     expect((await r.tick(SLOT0 + 30_000)).appended).toBe(0);
+    await r.tick(SLOT0 + 16 * MIN);
+    expect(lines(dir, '2026-10-22')).toEqual([expect.objectContaining({ k: 's', slot: SLOT0, reason: 'no-price' })]);
+  });
+
+  it('model starszy niż 3 h → bez wydania (no-model)', async () => {
+    const data = fakeData();
+    data.modelAt = SLOT0 - 4 * HOUR;
+    const { r, dir } = runner({ data });
+    r.init(SLOT0);
+    await r.tick(SLOT0 + 30_000);
+    await r.tick(SLOT0 + 16 * MIN);
+    expect(lines(dir, '2026-10-22')[0]).toMatchObject({ k: 's', reason: 'no-model' });
   });
 
   it('prognoza bez danych do rozstrzygnięcia po 6 h → jawnie unieważniona (nie znika po cichu)', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'hq-runner-'));
-    const store = new LedgerStore({ dir, coin: 'BTC' });
     const data = fakeData();
     data.candles = [];
-    const r = new LedgerRunner({ coin: 'BTC', data, store, repo: null, markPx: () => 100_000 });
+    const { r, dir } = runner({ data });
     r.init(SLOT0);
     await r.tick(SLOT0 + 30_000);
-    await r.tick(SLOT0 + 10 * HOUR + 7 * MIN); // > 6 h po horyzoncie także dla ret240
-    const lines = readFileSync(join(dir, 'BTC', '2026-10-23.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
-    expect(lines.filter((l) => l.void === 'no-data').length).toBe(3);
+    await r.tick(SLOT0 + 10 * HOUR + 7 * MIN);
+    expect(lines(dir, '2026-10-23').filter((l) => l.void === 'no-data').length).toBe(3);
   });
 
-  it('po 00:10 UTC wczorajszy plik jest kotwiczony (OpenTimestamps) raz; indeks trafia do podsumowania', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'hq-runner-'));
-    const store = new LedgerStore({ dir, coin: 'BTC' });
-    const data = fakeData();
-    let stamps = 0;
-    const stamp = async () => {
-      stamps++;
+  it('po wydaniu: pokwitowanie OTS głowy łańcucha; po 00:10 UTC — kotwica zakończonego dnia (raz)', async () => {
+    const digests: string[] = [];
+    const stamp = async (d: Uint8Array) => {
+      digests.push(Buffer.from(d).toString('hex'));
       return { ots: new Uint8Array([1, 2, 3]), calendars: ['a', 'b'] };
     };
-    const r = new LedgerRunner({ coin: 'BTC', data, store, repo: null, markPx: () => 100_000, stamp });
+    const { r, store, dir, published } = runner({ stamp });
     r.init(SLOT0);
-    await r.tick(SLOT0 + 30_000); // 2026-10-22 21:00
+    await r.tick(SLOT0 + 30_000);
+    expect(digests[0]).toBe(store.head); // głowa po dopisaniu prognoz slotu
+    expect(existsSync(join(dir, 'BTC', 'ots', 'slots', `${SLOT0}.ots`))).toBe(true);
     const nextDay = Date.UTC(2026, 9, 23, 0, 12, 0);
     await r.tick(nextDay);
     await r.tick(nextDay + MIN);
-    expect(stamps).toBe(1);
-    expect(readFileSync(join(dir, 'BTC', 'ots', '2026-10-22.jsonl.ots'))).toEqual(Buffer.from([1, 2, 3]));
-    const summary = JSON.parse(readFileSync(join(dir, 'BTC', 'summary.json'), 'utf8'));
+    const fileDigest = createHash('sha256').update(readFileSync(join(dir, 'BTC', '2026-10-22.jsonl'))).digest('hex');
+    expect(digests.filter((d) => d === fileDigest)).toHaveLength(1);
+    const summary = JSON.parse(published[published.length - 1]);
     expect(summary.ots).toEqual([{ day: '2026-10-22', file: 'ots/2026-10-22.jsonl.ots', calendars: 2, stampedAt: nextDay }]);
+    expect(summary.slotStamps).toBeGreaterThanOrEqual(1);
+  });
+
+  it('restart po przerwie: sloty z przerwy dostają skip „outage”; ACI odtworzone z α zapisanego przy wydaniu', async () => {
+    const { r, dir, store } = runner();
+    r.init(SLOT0);
+    await r.tick(SLOT0 + 30_000);
+    const again = new LedgerRunner({ coin: 'BTC', data: fakeData(), store: new LedgerStore({ dir, coin: 'BTC' }), repo: null, markPx: () => 100_000 });
+    expect(again.init(SLOT0 + HOUR).ok).toBe(true);
+    await again.tick(SLOT0 + HOUR + 30_000);
+    const skips = lines(dir, '2026-10-22').filter((l) => l.k === 's');
+    expect(skips.map((s) => s.slot)).toEqual([SLOT0 + 15 * MIN, SLOT0 + 30 * MIN, SLOT0 + 45 * MIN]);
+    expect(skips.every((s) => s.reason === 'outage')).toBe(true);
+    expect(store.lines).toBeGreaterThan(0);
   });
 });

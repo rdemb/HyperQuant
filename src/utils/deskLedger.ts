@@ -10,9 +10,12 @@
 export type TouchLevel = 'pdh' | 'pdl' | 'deq';
 
 export interface Coverage {
-  /** Odsetek realizacji w przedziale */
+  /** Odsetek realizacji w przedziale (wszystkie prognozy — opis) */
   rate: number;
-  /** p-wartość testu Kupca względem nominału; null = brak danych */
+  n: number;
+  /** Liczność podpróby rozłącznej (prognozy nie nakładają się horyzontami) — do testu */
+  nEff: number;
+  /** p-wartość testu Kupca na podpróbie rozłącznej; null = brak danych */
   kupiecP: number | null;
 }
 
@@ -40,12 +43,14 @@ export interface ReliabilityBin {
 }
 
 export interface TouchScores {
-  /** Liczba rozstrzygniętych prognoz (każda: 3 poziomy) */
+  /** Liczba rozstrzygniętych prognoz (każda: do 3 poziomów) */
   n: number;
+  /** Liczba ocenionych par (poziom, wynik) — poziomy już przekroczone przy wydaniu pominięte */
+  pairs: number;
   brier: number | null;
-  /** Brier klimatologii (stała częstość bazowa z tego samego okna) */
+  /** Brier klimatologii poziomu (częstość bazowa osobno dla PDH, PDL, D-EQ z tego samego okna) */
   brierBase: number | null;
-  /** Brier Skill Score względem klimatologii */
+  /** Brier Skill Score względem klimatologii poziomów */
   bss: number | null;
   reliability: ReliabilityBin[];
   /** Mapa kalibracji izotonicznej (PAV): punkty [p surowe, częstość] — funkcja schodkowa niemalejąca */
@@ -64,7 +69,16 @@ export interface DeskLedgerSummary {
   /** Prognozy jawnie unieważnione z braku danych (30 dni) */
   voided: number;
   latest: {
-    ret: { t: number; h: number; px0: number; taus: number[]; q: number[]; bq: number[]; aci: { alpha: number; lo: number; hi: number } }[];
+    ret: {
+      t: number;
+      h: number;
+      px0: number;
+      taus: number[];
+      q: number[];
+      bq: number[];
+      /** Przedział ACI tej prognozy (α z chwili wydania; null = nieskończony) i bieżące α */
+      aci: { alpha: number; alphaNow: number; lo: number | null; hi: number | null };
+    }[];
     touch: {
       t: number;
       px0: number;
@@ -78,6 +92,10 @@ export interface DeskLedgerSummary {
   scores: { ret: Record<string, RetScores>; touch: TouchScores };
   /** Pliki dzienne zakotwiczone przez OpenTimestamps (ostatnie) */
   ots: { day: string; file: string; calendars: number; stampedAt: number }[];
+  /** Pokwitowania OpenTimestamps głowy łańcucha po wydaniu slotu (ostatnie 24 h) */
+  slotStamps: number;
+  /** Uczestnictwo: sloty z prognozą vs jawnie pominięte (ostatnie luki z powodem) */
+  participation: { issued: number; skipped: number; gaps: { slot: number; reason: string }[] };
   method: 'hq-ledger-v1';
 }
 
@@ -103,7 +121,7 @@ export function ledgerFreshness(s: DeskLedgerSummary, now: number): 'ready' | 's
 const fin = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const finOrNull = (v: unknown) => v === null || fin(v);
 const nums = (v: unknown) => Array.isArray(v) && v.every(fin);
-const isCov = (c: unknown) => c === null || (!!c && fin((c as Coverage).rate) && finOrNull((c as Coverage).kupiecP));
+const isCov = (c: unknown) => c === null || (!!c && fin((c as Coverage).rate) && fin((c as Coverage).n) && fin((c as Coverage).nEff) && finOrNull((c as Coverage).kupiecP));
 const isRet = (r: unknown) => {
   const o = r as Partial<RetScores> | null;
   return !!o && fin(o.n) && finOrNull(o.crps) && finOrNull(o.crpsBench) && finOrNull(o.crpss) && nums(o.pitHist) && isCov(o.cov90) && isCov(o.cov60) && isCov(o.covAci);
@@ -132,11 +150,17 @@ export function isDeskLedgerSummary(x: unknown): x is DeskLedgerSummary {
     Object.values(s.scores.ret).every(isRet) &&
     !!t &&
     fin(t.n) &&
+    fin(t.pairs) &&
     finOrNull(t.brier) &&
     finOrNull(t.brierBase) &&
     finOrNull(t.bss) &&
     Array.isArray(t.reliability) &&
     Array.isArray(t.calibration) &&
-    Array.isArray(s.ots)
+    Array.isArray(s.ots) &&
+    fin(s.slotStamps) &&
+    !!s.participation &&
+    fin(s.participation.issued) &&
+    fin(s.participation.skipped) &&
+    Array.isArray(s.participation.gaps)
   );
 }

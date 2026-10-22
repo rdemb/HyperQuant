@@ -106,10 +106,27 @@ export function kupiec(n: number, x: number, p: number): number | null {
 
 /**
  * Krok ACI (Gibbs & Candès 2021): α_{t+1} = α_t + γ(α − err_t), err_t = 1 przy chybieniu przedziału.
- * Chybienie obniża α_t → kolejny przedział szerszy; seria trafień stopniowo go zwęża. Wynik przycięty do [0, 1].
+ * Chybienie obniża α_t → kolejny przedział szerszy; seria trafień stopniowo go zwęża. α_t ≤ 0 = przedział nieskończony
+ * (zawsze pokrywa) — bez przycinania do 0, inaczej gwarancja pokrycia przepada; zakres [−1, 2] tylko przeciw dryfowi.
  */
 export function aciStep(alphaT: number, alpha: number, miss: boolean, gamma: number): number {
-  return Math.min(1, Math.max(0, alphaT + gamma * (alpha - (miss ? 1 : 0))));
+  return Math.min(2, Math.max(-1, alphaT + gamma * (alpha - (miss ? 1 : 0))));
+}
+
+/**
+ * Kwantyl na poziomie τ także poza siatką: w siatce — interpolacja; poza — ekstrapolacja ogona w skali normalnej
+ * (q liniowe względem z_τ na podstawie dwóch skrajnych punktów); τ ≤ 0 → −∞, τ ≥ 1 → +∞.
+ */
+export function quantileAtExt(taus: number[], qs: number[], tau: number): number {
+  if (tau <= 0) return Number.NEGATIVE_INFINITY;
+  if (tau >= 1) return Number.POSITIVE_INFINITY;
+  const last = taus.length - 1;
+  if (tau >= taus[0] && tau <= taus[last]) return quantileAt(taus, qs, tau);
+  const [i, j] = tau < taus[0] ? [0, 1] : [last, last - 1];
+  const zi = normInv(taus[i]);
+  const zj = normInv(taus[j]);
+  const slope = zi !== zj ? (qs[i] - qs[j]) / (zi - zj) : 0;
+  return qs[i] + slope * (normInv(tau) - zi);
 }
 
 /** Regresja izotoniczna (PAV) — niemalejące dopasowanie ciągu y (w kolejności rosnącego predyktora), z wagami. */

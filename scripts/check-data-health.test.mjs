@@ -102,7 +102,7 @@ describe('dziennik prognoz (gałąź ledger)', () => {
     const ok = input();
     ok.ledger = { asOf: NOW - 20 * MIN };
     expect(assessHealth(ok, NOW).ok).toBe(true);
-    expect(assessHealth(input({ errors: { 'ledger:BTC/summary.json': 'HTTP 404' } }), NOW).ok).toBe(true);
+    expect(assessHealth(input({ errors: { 'ledger/BTC/summary.json': 'HTTP 404' } }), NOW).ok).toBe(true);
   });
 });
 
