@@ -1,4 +1,6 @@
 import { normCdf } from './stats';
+import { makeInnovation, mulberry32, normalGen, seedFrom } from './pathEngine';
+import { RangeBar, VOL_STEP_MIN, VolModel, buildVolModel, horizonStepSigmas } from './volatility';
 import {
   AggrTradeTick,
   BackendQuantTelemetry,
@@ -459,122 +461,125 @@ export function parkinsonSigma(
 }
 
 /**
- * 600 ścieżek Merton Jump-Diffusion + przyciąganie OU do D-EQ, horyzont 2h, krok 1 min.
- * Kalibracja: całkowita wariancja logarytmiczna = sigma2h² (z danych, np. Parkinson).
- * Założenie (nieestymowane): skoki niosą 20% wariancji, intensywność 1 skok / 2h,
- * rozmiar log-normalny o zerowej średniej — ogony grubsze niż GBM przy tej samej wariancji.
+ * Prawdopodobieństwa dotknięcia PDH / PDL / D-EQ w 2 h: 2000 ścieżek, ziarno z bieżącej minuty (wspólne liczby losowe —
+ * w obrębie minuty wynik zmienia się płynnie z ceną; błąd standardowy ≤ 1.1 pp). Bez przyciągania do D-EQ
+ * (nieestymowane).
+ * - Z modelem zmienności (`stepSigmas`): kroki 5 min z σ sezonowego log-HAR, innowacje FHS, korekta mostu Browna
+ *   dla dotknięć między krokami.
+ * - Bez modelu (zapas): Merton jump-diffusion z ZAŁOŻENIEM — skoki 20% wariancji, 1 skok / 2 h, krok 1 min, σ np. z Parkinsona.
  */
-export function runMertonMonteCarloEngine(
+export function runTouchMonteCarlo(
   currentPrice: number,
   pdh: number,
   pdl: number,
   deq: number,
-  sigma2h: number
+  sigma2h: number,
+  opts: { stepSigmas?: number[]; residuals?: ArrayLike<number> | null; nowMs?: number } = {}
 ): BackendQuantTelemetry['monteCarlo'] {
-  const numPaths = 600;
-  const steps = 120; // 120 kroków po 1 min = 2h
-  const dt = 1 / steps; // jednostka czasu = horyzont 2h
+  const numPaths = 2000;
+  const now = opts.nowMs ?? Date.now();
+  // Wspólne liczby losowe w obrębie minuty: drobna zmiana ceny przesuwa wynik płynnie zamiast losować ścieżki od nowa
+  const seed = seedFrom(Math.floor(now / 60_000));
+  const useModel = Array.isArray(opts.stepSigmas) && opts.stepSigmas.length > 0;
   const sigma = Math.max(0, sigma2h);
+
+  // Zapas Merton: wariancja dyfuzji 80%, skoki 20% (założenie), λ = 1 na 2 h
   const jumpShare = 0.2;
   const jumpLambda = 1;
-  const sigmaDiff = sigma * Math.sqrt(1 - jumpShare);
+  const mertonSteps = 120;
+  const stepMin = useModel ? VOL_STEP_MIN : 1;
+  const sig = useModel ? opts.stepSigmas! : Array<number>(mertonSteps).fill((sigma * Math.sqrt(1 - jumpShare)) / Math.sqrt(mertonSteps));
+  const steps = sig.length;
   const sigmaJump = sigma * Math.sqrt(jumpShare / jumpLambda);
   const muJump = -0.5 * sigmaJump * sigmaJump;
-  const theta = 0.08; // przyciąganie OU do D-EQ w jednostce 2h
-  const sampleEvery = 5; // zapis punktu ścieżki co 5 min (wizualizacja)
+  const sigmaEff = useModel ? Math.sqrt(sig.reduce((a, s) => a + s * s, 0)) : sigma;
 
-  let hitPDHCount = 0;
-  let hitPDLCount = 0;
-  let hitDEQCount = 0;
-  let sumStepsToPDH = 0;
-  let sumStepsToPDL = 0;
-  let sumStepsToDEQ = 0;
+  const u = mulberry32(seed);
+  const innov = useModel ? makeInnovation(u, opts.residuals ?? null) : normalGen(u);
+  const uJump = mulberry32(seed ^ 0x51ed27);
+  const jumpNormal = normalGen(uJump);
+  const uBridge = mulberry32(seed ^ 0x9e3779b9);
 
+  // Poziomy w log-cenie względem startu; D-EQ dotknięte przy przejściu na drugą stronę względem startu
+  const lh = Math.log(pdh / currentPrice);
+  const ll = Math.log(pdl / currentPrice);
+  const ld = Math.log(deq / currentPrice);
+  const deqBelow = ld <= 0;
+
+  let hitPDH = 0;
+  let hitPDL = 0;
+  let hitDEQ = 0;
+  let sumPDH = 0;
+  let sumPDL = 0;
+  let sumDEQ = 0;
   const sampledPaths: BackendQuantTelemetry['monteCarlo']['sampledPaths'] = [];
+  // Most Browna: stała liczba losowań na krok (po jednym na poziom) — zużycie strumienia nie zależy od stanu ścieżki,
+  // więc przy wspólnym ziarnie mała zmiana ceny nie przesuwa losowań kolejnych ścieżek
+  const bridgeHit = (d0: number, d1: number, v: number, u: number) => useModel && u < Math.exp((-2 * d0 * d1) / v);
 
-  let seed = (Date.now() % 1000000) + 1337;
-  const randUniform = () => {
-    seed = (seed * 1664525 + 1013904223) % 4294967296;
-    return Math.max(1e-7, seed / 4294967296);
-  };
-  const randNormal = () => {
-    const u1 = randUniform();
-    const u2 = randUniform();
-    return Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2);
-  };
-
-  const prevAboveDEQ = currentPrice >= deq;
   for (let p = 0; p < numPaths; p++) {
-    let price = currentPrice;
-    let touchedPDH = false;
-    let touchedPDL = false;
-    let touchedDEQ = false;
+    let w = 0;
+    let tH = false;
+    let tL = false;
+    let tD = false;
+    const pts: { step: number; price: number }[] = [{ step: 0, price: currentPrice }];
 
-    const pathPts: { step: number; price: number }[] = [
-      { step: 0, price: currentPrice },
-    ];
-
-    for (let s = 1; s <= steps; s++) {
-      const z = randNormal();
-      let logRet = -0.5 * sigmaDiff * sigmaDiff * dt + sigmaDiff * Math.sqrt(dt) * z;
-      if (randUniform() < jumpLambda * dt) {
-        logRet += muJump + sigmaJump * randNormal();
+    for (let k = 1; k <= steps; k++) {
+      const s = sig[k - 1];
+      const v = s * s;
+      const uH = useModel ? uBridge() : 1;
+      const uL = useModel ? uBridge() : 1;
+      const uD = useModel ? uBridge() : 1;
+      let wn = w + s * innov();
+      if (!useModel) {
+        wn -= 0.5 * v;
+        if (uJump() < jumpLambda / mertonSteps) wn += muJump + sigmaJump * jumpNormal();
       }
-      const ouDrift = Number.isFinite(deq) ? theta * (deq - price) * dt : 0;
-      price = price * Math.exp(logRet) + ouDrift;
-
-      if (!touchedPDH && price >= pdh) {
-        touchedPDH = true;
-        hitPDHCount++;
-        sumStepsToPDH += s;
+      const minute = k * stepMin;
+      if (!tH && (wn >= lh || (w < lh && bridgeHit(lh - w, lh - wn, v, uH)))) {
+        tH = true;
+        hitPDH++;
+        sumPDH += minute;
       }
-      if (!touchedPDL && price <= pdl) {
-        touchedPDL = true;
-        hitPDLCount++;
-        sumStepsToPDL += s;
+      if (!tL && (wn <= ll || (w > ll && bridgeHit(w - ll, wn - ll, v, uL)))) {
+        tL = true;
+        hitPDL++;
+        sumPDL += minute;
       }
-      if (
-        !touchedDEQ &&
-        ((prevAboveDEQ && price <= deq) || (!prevAboveDEQ && price >= deq))
-      ) {
-        touchedDEQ = true;
-        hitDEQCount++;
-        sumStepsToDEQ += s;
+      if (!tD) {
+        const crossed = deqBelow ? wn <= ld : wn >= ld;
+        const near = deqBelow ? w > ld && bridgeHit(w - ld, wn - ld, v, uD) : w < ld && bridgeHit(ld - w, ld - wn, v, uD);
+        if (crossed || near) {
+          tD = true;
+          hitDEQ++;
+          sumDEQ += minute;
+        }
       }
-
-      if (p < 18 && s % sampleEvery === 0) {
-        pathPts.push({ step: s / sampleEvery, price: Number(price.toFixed(1)) });
-      }
+      w = wn;
+      if (p < 18 && minute % 5 === 0) pts.push({ step: minute / 5, price: Number((currentPrice * Math.exp(w)).toFixed(1)) });
     }
 
     if (p < 18) {
-      const finalPrice = pathPts[pathPts.length - 1].price;
-      const band = currentPrice * sigma * 0.5;
-      const type =
-        finalPrice > currentPrice + band
-          ? 'bull'
-          : finalPrice < currentPrice - band
-          ? 'bear'
-          : 'mean_revert';
-      sampledPaths.push({
-        id: `mc-path-${p}`,
-        type,
-        points: pathPts,
-      });
+      const finalPrice = pts[pts.length - 1].price;
+      const band = currentPrice * sigmaEff * 0.5;
+      const type = finalPrice > currentPrice + band ? 'bull' : finalPrice < currentPrice - band ? 'bear' : 'mean_revert';
+      sampledPaths.push({ id: `mc-path-${p}`, type, points: pts });
     }
   }
 
-  // Średni czas dojścia tylko z trafień (krok = 1 min); null gdy brak trafień
+  // Średni czas dojścia tylko z trafień; null gdy brak trafień
   const avgMins = (sum: number, hits: number) => (hits > 0 ? Math.round(sum / hits) : null);
+  const pct = (hits: number) => Number(((hits / numPaths) * 100).toFixed(1));
 
   return {
-    probTouchPDH2h: Number(((hitPDHCount / numPaths) * 100).toFixed(1)),
-    probTouchPDL2h: Number(((hitPDLCount / numPaths) * 100).toFixed(1)),
-    probTouchDEQ2h: Number(((hitDEQCount / numPaths) * 100).toFixed(1)),
-    expectedMinsToPDH: avgMins(sumStepsToPDH, hitPDHCount),
-    expectedMinsToPDL: avgMins(sumStepsToPDL, hitPDLCount),
-    expectedMinsToDEQ: avgMins(sumStepsToDEQ, hitDEQCount),
+    probTouchPDH2h: pct(hitPDH),
+    probTouchPDL2h: pct(hitPDL),
+    probTouchDEQ2h: pct(hitDEQ),
+    expectedMinsToPDH: avgMins(sumPDH, hitPDH),
+    expectedMinsToPDL: avgMins(sumPDL, hitPDL),
+    expectedMinsToDEQ: avgMins(sumDEQ, hitDEQ),
     sampledPaths,
+    method: useModel ? 'fhs-har' : 'merton-assumed',
   };
 }
 
@@ -587,7 +592,7 @@ export function resetHtfCacheForTests(): void {
   htfCache = null;
 }
 
-function postInfo(body: unknown): Promise<unknown> {
+export function postInfo(body: unknown): Promise<unknown> {
   // Limit czasu 8 s — wiszące zapytanie nie blokuje kolejnych synchronizacji
   const signal = typeof AbortSignal !== 'undefined' && 'timeout' in AbortSignal ? AbortSignal.timeout(8000) : undefined;
   return fetch(HL_INFO_URL, {
@@ -606,13 +611,47 @@ function finiteOrNaN(v: unknown): number {
   return Number.isFinite(x) ? x : Number.NaN;
 }
 
+/** Świece `candleSnapshot` → RangeBar; rekordy z nieskończonymi polami są pomijane. */
+export function parseHlCandles(raw: unknown): RangeBar[] {
+  if (!Array.isArray(raw)) return [];
+  const out: RangeBar[] = [];
+  for (const c of raw as Record<string, unknown>[]) {
+    const b = { time: finiteOrNaN(c?.t), open: finiteOrNaN(c?.o), high: finiteOrNaN(c?.h), low: finiteOrNaN(c?.l), close: finiteOrNaN(c?.c) };
+    if ([b.time, b.open, b.high, b.low, b.close].every(Number.isFinite)) out.push(b);
+  }
+  return out;
+}
+
+/**
+ * Świece BTC 1m od `fromMs` (do rozstrzygania dziennika niezależnie od interwału wykresu; API zwraca najwyżej ~5000
+ * ostatnich ≈ 3.5 dnia). Błąd lub brak danych → pusta lista.
+ */
+export async function loadMinuteCandles(fromMs: number): Promise<RangeBar[]> {
+  return parseHlCandles(await postInfo({ type: 'candleSnapshot', req: { coin: 'BTC', interval: '1m', startTime: fromMs } }));
+}
+
+/** Hyperliquid zwraca najwyżej ~5000 ostatnich świec na interwał (≈ 208 dni 1h, ≈ 17 dni 5m). */
+const VOL_CANDLES = 5000;
+
+/**
+ * Dane modelu zmienności: BTC 1h i 5m z `candleSnapshot` (waga ≈ 20 + 5000/60 każde) → `buildVolModel`.
+ * Brak lub za mało danych → null (desk wraca wtedy do σ Parkinsona i to oznacza).
+ */
+export async function loadVolModel(nowMs: number = Date.now()): Promise<VolModel | null> {
+  const [h, f] = await Promise.all([
+    postInfo({ type: 'candleSnapshot', req: { coin: 'BTC', interval: '1h', startTime: nowMs - VOL_CANDLES * 3_600_000 } }),
+    postInfo({ type: 'candleSnapshot', req: { coin: 'BTC', interval: '5m', startTime: nowMs - VOL_CANDLES * 300_000 } }),
+  ]);
+  return buildVolModel(parseHlCandles(h), parseHlCandles(f), nowMs);
+}
+
 /**
  * Pobiera z publicznego API Hyperliquid: świece, poziomy HTF (1d/1w, cache 5 min), opcjonalnie L2
  * oraz `metaAndAssetCtxs`. Brak danych = null — nigdy zakodowane „live” wartości zastępcze.
  */
 export async function fetchRealHyperliquidMarketData(
   timeframeSec: number = 300,
-  options: { includeL2Book?: boolean } = {}
+  options: { includeL2Book?: boolean; volModel?: VolModel | null } = {}
 ): Promise<{
   bars: OHLCVBar[];
   htfLevels: HyperliquidHTFLevels | null;
@@ -774,7 +813,11 @@ export async function fetchRealHyperliquidMarketData(
         fundingAnnualizedPct: Number((funding1h * 24 * 365 * 100).toFixed(2)),
         basisBps,
         whaleNodes: whaleNodes.slice(0, 12),
-        monteCarlo: runMertonMonteCarloEngine(midPrice, htfLevels.pdh, htfLevels.pdl, deq, sigma2h),
+        monteCarlo: runTouchMonteCarlo(midPrice, htfLevels.pdh, htfLevels.pdl, deq, sigma2h, {
+          stepSigmas: options.volModel ? horizonStepSigmas(options.volModel, now, 120) : undefined,
+          residuals: options.volModel?.residuals ?? null,
+          nowMs: now,
+        }),
       };
     }
   }

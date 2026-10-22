@@ -109,11 +109,22 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         refresh: 'z każdą świecą',
       },
       {
-        metric: 'Monte Carlo (Merton)',
-        source: 'Świece HL, poziomy PDH/PDL/D-EQ',
-        method: '600 ścieżek, krok 1 min, horyzont 2 h; σ Parkinsona z bieżących świec; skoki log-normalne z korektą martyngałową (20% wariancji — założenie)',
+        metric: 'Model zmienności',
+        source: 'Hyperliquid API: candleSnapshot BTC 1h (~5000 ≈ 208 dni) i 5m (~5000 ≈ 17 dni)',
+        method:
+          'Sezonowy log-HAR (Corsi 2009) na godzinowych wariancjach Garman–Klass z profilem godzin UTC i korektą Duana; innowacje FHS ze standaryzowanych zwrotów 5m; udział skoków (wariancja dwupotęgowa) i test Lee–Mykland jako diagnostyka; trafność: QLIKE poza próbą vs średnia 24 h',
         kinds: ['MODEL'],
-        refresh: 'z każdą świecą',
+        refresh: 'co 60 min',
+        caveat: 'Brak danych → σ Parkinsona z bieżących świec, oznaczona jako zapas.',
+      },
+      {
+        metric: 'Monte Carlo — zasięg 2 h i Analizator planu',
+        source: 'Model zmienności, świece HL, poziomy PDH/PDL/D-EQ, arkusz L2',
+        method:
+          '2000 ścieżek, krok 5 min (σ z HAR, innowacje FHS), korekta mostu Browna; Analizator: faza wypełnienia od bieżącej ceny i wynik warunkowy jak w dzienniku. Wspólne liczby losowe w obrębie minuty — w tej minucie wynik zmienia się płynnie z ceną; co minutę nowe ścieżki (błąd standardowy ≤ 1.1 pp)',
+        kinds: ['MODEL'],
+        refresh: 'z każdą synchronizacją',
+        caveat: 'Bez modelu zmienności: Merton z założonym udziałem skoków 20%, krok 1 min (oznaczone w pasku).',
       },
       {
         metric: 'Heatmapa likwidacji',

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   analyzePlan,
+  attachMarketModel,
   barrierHitProbability,
   isolatedLiquidationPrice,
   liquidationBufferWarning,
@@ -148,6 +149,138 @@ describe('simulateBarrierPaths — Monte Carlo z horyzontem i korektą mostu Bro
     const calm = simulateBarrierPaths({ ...p, paths: 3000, seed: 9 });
     const event = simulateBarrierPaths({ ...p, paths: 3000, seed: 9, eventMultiplier: 2 });
     expect(event.pNeither).toBeLessThan(calm.pNeither);
+  });
+});
+
+describe('simulateBarrierPaths — σ kroków (FHS) i faza wypełnienia', () => {
+  // LONG: stop −1%, cel +1.5%, σ = 1% na 2 h
+  const base = { direction: 'LONG' as const, entry: 100000, stop: 99000, target: 101500, sigmaHorizon: 0.01, horizonMin: 120 };
+  const flat = Array(24).fill(0.01 / Math.sqrt(24));
+
+  it('stałe σ kroków 5 min bez reszt ≈ dotychczasowe kroki 1 min (±2.5 pp)', () => {
+    const old = simulateBarrierPaths({ ...base, paths: 8000, seed: 3 });
+    const neu = simulateBarrierPaths({ ...base, paths: 8000, seed: 3, stepSigmas: flat, stepMin: 5, residuals: null });
+    expect(Math.abs(neu.pTarget - old.pTarget)).toBeLessThan(0.025);
+    expect(Math.abs(neu.pStop - old.pStop)).toBeLessThan(0.025);
+    expect(neu.stepMin).toBe(5);
+    expect(old.stepMin).toBe(1);
+    expect(neu.sigmaEff).toBeCloseTo(0.01, 10);
+    expect(neu.samples.times[neu.samples.times.length - 1]).toBe(120);
+  });
+
+  it('wejście w granicy 1 bp od rynku = zlecenie rynkowe: pFill = 1', () => {
+    const r = simulateBarrierPaths({ ...base, startPrice: 100000 * (1 + 0.9e-4), stepSigmas: flat, stepMin: 5, residuals: null, seed: 2 });
+    expect(r.pFill).toBe(1);
+    const limit = simulateBarrierPaths({ ...base, startPrice: 100000 * (1 + 3e-4), stepSigmas: flat, stepMin: 5, residuals: null, seed: 2 });
+    expect(limit.pFill).toBeLessThan(1);
+  });
+
+  it('cena startowa = wejście → pFill = 1, bez fillRare', () => {
+    const r = simulateBarrierPaths({ ...base, startPrice: 100000, stepSigmas: flat, stepMin: 5, residuals: null, seed: 2 });
+    expect(r.pFill).toBe(1);
+    expect(r.fillRare).toBe(false);
+  });
+
+  it('wejście 1σ pod rynkiem: część ścieżek się wypełnia, wynik warunkowy sumuje się do 1, więcej „żadne” niż przy natychmiastowym wejściu', () => {
+    const start = 100000 * Math.exp(0.01);
+    const r = simulateBarrierPaths({ ...base, startPrice: start, stepSigmas: flat, stepMin: 5, residuals: null, paths: 4000, seed: 1 });
+    const now = simulateBarrierPaths({ ...base, stepSigmas: flat, stepMin: 5, residuals: null, paths: 4000, seed: 1 });
+    expect(r.pFill).toBeGreaterThan(0.2);
+    expect(r.pFill).toBeLessThan(0.45);
+    expect(r.fillRare).toBe(false);
+    expect(r.pTarget + r.pStop + r.pNeither).toBeCloseTo(1, 9);
+    expect(r.pNeither).toBeGreaterThan(now.pNeither);
+  });
+
+  it('symetria wypełnienia: LONG z rynkiem nad wejściem ≈ lustrzany SHORT (±3 pp)', () => {
+    const d = 0.006;
+    const long = simulateBarrierPaths({ ...base, startPrice: 100000 * Math.exp(d), stepSigmas: flat, stepMin: 5, residuals: null, paths: 4000, seed: 9 });
+    const short = simulateBarrierPaths({
+      ...base,
+      direction: 'SHORT',
+      stop: 100000 * Math.exp(Math.log(100000 / 99000)),
+      target: 100000 * Math.exp(-Math.log(101500 / 100000)),
+      startPrice: 100000 * Math.exp(-d),
+      stepSigmas: flat,
+      stepMin: 5,
+      residuals: null,
+      paths: 4000,
+      seed: 9,
+    });
+    expect(Math.abs(long.pFill - short.pFill)).toBeLessThan(0.03);
+    expect(Math.abs(long.pTarget - short.pTarget)).toBeLessThan(0.03);
+  });
+
+  it('wejście 8σ od rynku: fillRare i skończone prawdopodobieństwa z założenia natychmiastowego wejścia', () => {
+    const r = simulateBarrierPaths({ ...base, startPrice: 100000 * Math.exp(0.08), stepSigmas: flat, stepMin: 5, residuals: null, seed: 4 });
+    expect(r.fillRare).toBe(true);
+    expect(r.pFill).toBeLessThan(0.1);
+    expect(Number.isFinite(r.pTarget)).toBe(true);
+    expect(r.pTarget + r.pStop + r.pNeither).toBeCloseTo(1, 9);
+  });
+
+  it('reszty FHS: ten sam seed → identyczny wynik', () => {
+    const res = [-2.5, -0.5, -0.2, 0, 0.1, 0.4, 0.6, 2.1];
+    const a = simulateBarrierPaths({ ...base, stepSigmas: flat, stepMin: 5, residuals: res, seed: 6 });
+    const b = simulateBarrierPaths({ ...base, stepSigmas: flat, stepMin: 5, residuals: res, seed: 6 });
+    expect(a.pTarget).toBe(b.pTarget);
+    expect(a.pStop).toBe(b.pStop);
+  });
+
+  it('analyzePlan przekazuje model zmienności i cenę startową do symulacji', () => {
+    const r = analyzePlan(
+      {
+        ...base,
+        sizeUsd: 10000,
+        book: BOOK,
+        eventMultiplier: 1,
+        vol: { stepMin: 5, stepSigmas: flat, residuals: null },
+        startPrice: 100000 * Math.exp(0.01),
+      },
+      { paths: 2000, seed: 3 }
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.mc.pFill).toBeLessThan(0.6);
+      expect(r.mc.stepMin).toBe(5);
+    }
+  });
+});
+
+describe('attachMarketModel — wspólne wejście Analizatora i szybkiej karty', () => {
+  const base = {
+    direction: 'LONG' as const,
+    entry: 100000,
+    stop: 99000,
+    target: 101500,
+    sizeUsd: 10000,
+    horizonMin: 120,
+    sigmaHorizon: 0.01,
+    book: BOOK,
+    eventMultiplier: 1,
+  };
+
+  it('dokłada model zmienności i cenę startową, gdy są dostępne', () => {
+    const vol = { stepMin: 5, stepSigmas: [0.002], residuals: null };
+    const r = attachMarketModel(base, { vol, price: 100100 });
+    expect(r.vol).toBe(vol);
+    expect(r.startPrice).toBe(100100);
+  });
+
+  it('bez modelu i bez ceny rynku — pola pominięte (zapas)', () => {
+    const r = attachMarketModel(base, { vol: null, price: Number.NaN });
+    expect(r.vol).toBeUndefined();
+    expect(r.startPrice).toBeUndefined();
+  });
+});
+
+describe('wersja modelu w wyniku — zgodna z faktycznie użytą metodą', () => {
+  const p = { direction: 'LONG' as const, entry: 100000, stop: 99000, target: 101500, sigmaHorizon: 0.01, horizonMin: 60 };
+  it('stała σ (zapas) → plan-gbm-fill-v2; HAR + FHS → plan-fhs-har-v2; HAR bez reszt → plan-har-normal-v2', () => {
+    expect(simulateBarrierPaths(p).modelVersion).toBe('plan-gbm-fill-v2');
+    const steps = Array(12).fill(0.01 / Math.sqrt(12));
+    expect(simulateBarrierPaths({ ...p, stepSigmas: steps, residuals: [-1, 1] }).modelVersion).toBe('plan-fhs-har-v2');
+    expect(simulateBarrierPaths({ ...p, stepSigmas: steps, residuals: null }).modelVersion).toBe('plan-har-normal-v2');
   });
 });
 

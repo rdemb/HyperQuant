@@ -233,6 +233,8 @@ export interface BackendQuantTelemetry {
       type: 'bull' | 'bear' | 'mean_revert';
       points: { step: number; price: number }[];
     }[];
+    /** fhs-har = σ kroków z sezonowego log-HAR + reszty FHS; merton-assumed = zapas z założonymi skokami */
+    method: 'fhs-har' | 'merton-assumed';
   };
 }
 

@@ -70,6 +70,7 @@ export const PlanResult: React.FC<PlanResultProps> = (p) => {
   const liq = a.liquidation;
   const limitGap = Number.isFinite(market.price) && market.price > 0 ? ((p.entry - market.price) / market.price) * 100 : null;
   const levGiven = p.leverage !== undefined;
+  const showFill = mc.fillRare || mc.pFill < 0.999;
 
   return (
     <div className="flex flex-col gap-5">
@@ -87,9 +88,13 @@ export const PlanResult: React.FC<PlanResultProps> = (p) => {
             <div className="text-xs text-ink-3 mt-1.5">
               R = 1 : {a.R.toFixed(2)} · bez limitu czasu (formuła): cel {pct1(a.closedForm.pTarget)} · stop {pct1(a.closedForm.pStop)}
             </div>
-            {limitGap !== null && Math.abs(limitGap) > 0.1 && (
-              <div className="text-xs text-ink-3 mt-0.5">
-                Wejście {fmtSigned(limitGap, 2, '%')} od rynku — wynik warunkowy na wypełnienie zlecenia (nie ocenia, czy cena tam dojdzie).
+            {showFill && (
+              <div className={`text-xs mt-0.5 ${mc.fillRare ? 'text-warn' : 'text-ink-3'}`}>
+                {limitGap !== null && `Wejście ${fmtSigned(limitGap, 2, '%')} od rynku · `}P(wypełnienia w horyzoncie){' '}
+                <span className="font-mono tabular-nums text-ink-1">{pct1(mc.pFill)}</span>
+                {mc.fillRare
+                  ? ' — wejście rzadko osiągane; wynik powyżej policzony przy założeniu natychmiastowego wypełnienia.'
+                  : ' — wynik powyżej jest warunkowy na wypełnienie (tak samo rozlicza dziennik).'}
               </div>
             )}
           </div>
@@ -203,10 +208,50 @@ export const PlanResult: React.FC<PlanResultProps> = (p) => {
           }
         />
         <Stat label="Ćwierć-Kelly (z dziennika)" value={<span className="font-mono tabular-nums">{kelly}</span>} hint={kellyHint} />
+        <VolModelStat market={market} horizonLabel={horizonLabel} />
       </div>
 
-      <Methodology timeframeSec={market.timeframeSec} sigma={market.sigma} />
+      <Methodology timeframeSec={market.timeframeSec} sigma={market.sigma} hasModel={market.vol !== null} />
     </div>
+  );
+};
+
+/** Karta modelu zmienności: σ horyzontu, trafność HAR poza próbą, skoki, liczność danych — albo jawny zapas. */
+const VolModelStat: React.FC<{ market: PlanMarket; horizonLabel: string }> = ({ market, horizonLabel }) => {
+  const m = market.volModel;
+  const sigmaTxt = market.sigma > 0 ? `${(market.sigma * 100).toFixed(2)}%` : '—';
+  if (!m || !market.vol) {
+    return (
+      <Stat
+        label="Model zmienności"
+        value={<span className="font-mono tabular-nums">σ {horizonLabel} {sigmaTxt}</span>}
+        hint={
+          market.volStatus === 'loading'
+            ? 'pobieram świece 1h/5m z Hyperliquid… do tego czasu σ Parkinsona (zapas)'
+            : 'niedostępny — σ Parkinsona z bieżących świec i rozkład normalny (zapas)'
+        }
+      />
+    );
+  }
+  const oos = m.har.oos;
+  const gain = oos ? (1 - oos.qlikeHar / oos.qlikeNaive) * 100 : null;
+  return (
+    <Stat
+      label="Model zmienności"
+      source={{ tone: 'model', label: 'MODEL', title: 'Sezonowy log-HAR (świece 1h) + innowacje FHS (świece 5m) z publicznego API Hyperliquid' }}
+      value={<span className="font-mono tabular-nums">σ {horizonLabel} {sigmaTxt}</span>}
+      hint={
+        <>
+          sezonowy log-HAR · strata QLIKE poza próbą{' '}
+          {gain !== null ? `${fmtSigned(-gain, 0, '%')} vs średnia 24 h (n = ${oos!.n})` : 'n/a (za mało danych)'}
+          <br />
+          skoki: {m.jump ? `${(m.jump.share * 100).toFixed(1)}% wariancji (${m.jump.days} dni, BV)` : 'n/a'} · Lee–Mykland: {m.lmJumps.count} w{' '}
+          {Math.round(m.lmJumps.days)} dni
+          <br />
+          dane: {m.hourlyBars} świec 1h · {m.fiveMinBars} świec 5m
+        </>
+      }
+    />
   );
 };
 
@@ -249,27 +294,46 @@ const MacroWindow: React.FC<{ events: MacroEvent[]; loaded: boolean; multiplier:
   );
 };
 
-const Methodology: React.FC<{ timeframeSec: number; sigma: number }> = ({ timeframeSec, sigma }) => (
+const Methodology: React.FC<{ timeframeSec: number; sigma: number; hasModel: boolean }> = ({ timeframeSec, sigma, hasModel }) => (
   <details className="group rounded-md border border-line bg-surface-2/50 px-3 py-2 text-xs text-ink-2">
     <summary className="cursor-pointer select-none text-ink-1 font-medium py-1">Uwagi metodologiczne i źródła</summary>
     <ul className="list-disc pl-4 mt-2 space-y-1.5 leading-relaxed">
       <li>
-        Model: ruch Browna w log-cenie z dryfem μ = 0 — desk nie zakłada przewagi. Przy μ = 0 oczekiwana wartość przed kosztami ≈ 0 R
-        dla dowolnego R: wyższe R „kupuje się” niższym P(cel).
+        Model: log-cena z dryfem μ = 0 — desk nie zakłada przewagi. Przy μ = 0 oczekiwana wartość przed kosztami ≈ 0 R dla dowolnego R:
+        wyższe R „kupuje się” niższym P(cel).
       </li>
+      {hasModel ? (
+        <>
+          <li>
+            σ: sezonowy log-HAR (Corsi 2009) na godzinowych wariancjach Garman–Klass z ~5000 świec 1h (≈ 208 dni), z profilem godzin UTC
+            (Andersen–Bollerslev 1997) i korektą Duana; prognoza iterowana godzina po godzinie, σ kroków 5 min
+            {sigma > 0 ? ` (na horyzont teraz ${(sigma * 100).toFixed(2)}%)` : ''}. Trafność: strata QLIKE (Patton 2011) poza próbą względem
+            naiwnej średniej z 24 h — w karcie „Model zmienności”.
+          </li>
+          <li>
+            Innowacje: bootstrap standaryzowanych zwrotów 5m (FHS, Barone-Adesi i in. 1999) — grube ogony i skoki z danych, bez zakładanego
+            rozkładu. Udział skoków w wariancji: wariancja dwupotęgowa (Barndorff-Nielsen–Shephard 2004); skoki: test Lee–Mykland (2008) —
+            diagnostyka, nie parametr.
+          </li>
+        </>
+      ) : (
+        <li>
+          σ (zapas — model zmienności niedostępny): estymator Parkinsona z 60 ostatnich świec {Math.round(timeframeSec / 60)}m, skalowany √(h/Δ)
+          {sigma > 0 ? ` (teraz ${(sigma * 100).toFixed(2)}%)` : ''}, rozkład normalny. Ogony BTC są grubsze niż w tym zapasie, a luki
+          cenowe mogą przeskoczyć stop.
+        </li>
+      )}
       <li>
-        σ na horyzont: estymator Parkinsona (high/low) z 60 ostatnich świec {Math.round(timeframeSec / 60)}m, skalowany √(h/Δ)
-        {sigma > 0 ? ` (teraz ${(sigma * 100).toFixed(2)}%)` : ''}. Świeca w toku zaniża zakres; ogony BTC są grubsze niż w GBM, a luki
-        cenowe mogą przeskoczyć stop.
-      </li>
-      <li>
-        Ocena startuje w chwili wejścia: dla zlecenia z limitem z dala od rynku wynik jest warunkowy na wypełnienie. Poślizg wejścia
+        Wypełnienie: symulacja startuje od bieżącej ceny — gdy wejście jest od niej różne, ścieżka musi je najpierw dotknąć (z korektą mostu).
+        P(cel / stop / żadne) jest warunkowe na wypełnienie, tak samo rozlicza dziennik; P(wypełnienia) oceniana osobno (Brier). Model nie
+        uwzględnia selekcji negatywnej (zlecenie z limitem częściej wypełnia się, gdy cena idzie przeciw) — zmierzy ją dziennik. Poślizg wejścia
         dotyczy zlecenia rynkowego przy bieżącym arkuszu.
       </li>
       <li>Zdarzenia makro w oknie: wariancja × mnożnik ≥ 1 z kalendarza — to założenie, nie estymata z danych desku.</li>
       <li>
-        Monte Carlo: ≥ 2000 ścieżek, krok 1 min, korekta mostu Browna na przekroczenie bariery między krokami; „żadne” = wyjście po cenie
-        z końca horyzontu (średni wynik tych ścieżek w R wliczony do EV). Formuła zamknięta (bez limitu czasu) jako punkt odniesienia.
+        Monte Carlo: ≥ 2000 ścieżek, krok {hasModel ? '5 min' : '1 min'}, korekta mostu Browna z lokalnym σ kroku na przekroczenie bariery
+        między krokami; „żadne” = wyjście po cenie z końca horyzontu (średni wynik tych ścieżek w R wliczony do EV). Formuła zamknięta (bez
+        limitu czasu) jako punkt odniesienia.
       </li>
       <li>
         Koszty: opłata taker {(DEFAULT_TAKER_FEE * 100).toFixed(3)}% (Hyperliquid tier 0 — założenie; maker 0.015%) przy wejściu i wyjściu; poślizg wejścia z
@@ -284,7 +348,15 @@ const Methodology: React.FC<{ timeframeSec: number; sigma: number }> = ({ timefr
     <div className="mt-3 text-ink-3">Źródła:</div>
     <ul className="pl-4 mt-1 space-y-1 text-ink-3">
       <li>Broadie, Glasserman, Kou (1997), „A continuity correction for discrete barrier options”, Mathematical Finance 7(4).</li>
-      <li>Parkinson (1980), „The extreme value method for estimating the variance of the rate of return”, Journal of Business 53(1).</li>
+      <li>Corsi (2009), „A simple approximate long-memory model of realized volatility”, Journal of Financial Econometrics 7(2).</li>
+      <li>Garman, Klass (1980), „On the estimation of security price volatilities from historical data”, Journal of Business 53(1).</li>
+      <li>Andersen, Bollerslev (1997), „Intraday periodicity and volatility persistence in financial markets”, Journal of Empirical Finance 4.</li>
+      <li>Duan (1983), „Smearing estimate: a nonparametric retransformation method”, JASA 78(383).</li>
+      <li>Patton (2011), „Volatility forecast comparison using imperfect volatility proxies”, Journal of Econometrics 160(1).</li>
+      <li>Barone-Adesi, Giannopoulos, Vosper (1999), „VaR without correlations for portfolios of derivative securities”, Journal of Futures Markets 19(5).</li>
+      <li>Barndorff-Nielsen, Shephard (2004), „Power and bipower variation with stochastic volatility and jumps”, Journal of Financial Econometrics 2(1).</li>
+      <li>Lee, Mykland (2008), „Jumps in financial markets: a new nonparametric test and jump dynamics”, Review of Financial Studies 21(6).</li>
+      <li>Parkinson (1980), „The extreme value method for estimating the variance of the rate of return”, Journal of Business 53(1) — zapas.</li>
       <li>
         Dokumentacja Hyperliquid:{' '}
         {[
