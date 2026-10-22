@@ -22,7 +22,7 @@
 | Widok | Zawartość |
 |---|---|
 | **Desk** | Wykres order flow (domyślny): heatmapa arkusza L2 w czasie (kubełki 10 USD, próbkowanie 1 s, 2 h historii od otwarcia strony), bąble transakcji agresora (pole ∝ USD), footprint z nierównowagą diagonalną 3:1 i POC świecy, profil wolumenu z POC/VAH/VAL, poziomy PDH/PDL/PWH/PWL/D-EQ, strefy OB, CVD agresora i delta świec. Alternatywnie klasyczny wykres świec + Shaakuni. Obok arkusz L2 z OFI i taśma. Pas kontekstu: zasięg 2 h (Monte Carlo), głębokość arkusza, VPIN/λ, OU, funding, najbliższa publikacja makro. Szybki Analizator planu. |
-| **Analizator planu** | Kierunek, wejście, stop, cel, wielkość/ryzyko %, dźwignia, horyzont → P(cel przed stopem) / P(stop) / P(żadne w horyzoncie) z formuły dwóch barier i Monte Carlo (2000 ścieżek, krok 1 min, korekta mostu Browna), wachlarz ścieżek, poślizg z przejścia po arkuszu, EV w R po opłatach, cena likwidacji (isolated) i bufor stopu, zdarzenia makro w oknie (mnożnik wariancji). **Dziennik trafności**: zapisane plany są rozstrzygane na realnych świecach (najpierw wypełnienie wejścia), metryki Brier/log score i wykres niezawodności. Zakładka „Plan na jutro” z mechanicznymi scenariuszami i checklistą. |
+| **Analizator planu** | Kierunek, wejście, stop, cel, wielkość/ryzyko %, dźwignia, horyzont → P(cel przed stopem) / P(stop) / P(żadne w horyzoncie) z Monte Carlo (≥ 2000 ścieżek, krok 5 min, σ z sezonowego log-HAR, innowacje FHS, korekta mostu Browna) z fazą wypełnienia od bieżącej ceny i P(wypełnienia), formuła dwóch barier jako punkt odniesienia, wachlarz ścieżek, poślizg z przejścia po arkuszu, EV w R po opłatach, cena likwidacji (isolated) i bufor stopu, zdarzenia makro w oknie (mnożnik wariancji). **Dziennik trafności**: zapisane plany są rozstrzygane na realnych świecach (najpierw wypełnienie wejścia), metryki Brier/log score, Brier P(wypełnienia) i wykres niezawodności. Zakładka „Plan na jutro” z mechanicznymi scenariuszami i checklistą. |
 | **Rynek** | Funding HL vs Binance vs Bybit (przez API Hyperliquid, znormalizowany do APR) + z-score tłoku; proxy makro z rynków HIP-3 (S&P 500, Nasdaq-100, złoto, ropa, EUR, JPY) i udział makro w ruchu BTC (β, R²); mapa rynku perpów HL (treemap, OI/wolumen, zmiana 24 h); kalendarz Fed/BLS/BEA z odliczaniem; makro (rentowności UST, TGA, RRP), CFTC COT (CME BTC), Fear & Greed, mempool; nagłówki RSS. |
 | **Lab 3D** | Pięć scen Three.js ładowanych leniwie (jedna naraz): Liquidity Canyon, Orderflow Vortex, Delta Fluid, Liquidation Risk (szacunek), Options (ilustracja) — z opisem „co widzisz / jak czytać / źródło / ograniczenia”. |
 | **Mikrostruktura** | Profil płynności i pole przyciągania U(p), reżim, trajektoria heurystyczna, OU, intensywność Hawkesa, Hurst, entropia, VPIN, λ Kyle'a, kalkulator wielkości pozycji ze stałego ryzyka. |
@@ -33,12 +33,13 @@
 - **Podział kupno/sprzedaż świec:** realna strona agresora z WebSocket Hyperliquid tam, gdzie desk obserwował transakcje; dla starszych świec Bulk Volume Classification `V_B = V·Φ(ΔP/σ)` (Easley, López de Prado, O'Hara 2012) — oznaczone jako MODEL.
 - **VPIN:** 50 kubełków o równym wolumenie; metryka **kontrowersyjna** (Andersen & Bondarenko 2014) — czytaj względem własnej historii.
 - **λ Kyle'a:** OLS `ΔP = λ·Q + ε` wyłącznie na świecach z realnym przepływem (na BVC regresja byłaby kołowa) — Kyle 1985.
-- **Zmienność:** estymator Parkinsona (1980) z bieżącego interwału, skalowany do horyzontu.
-- **Prawdopodobieństwa barier:** formuła dla ruchu Browna z dryfem + Monte Carlo Mertona (skoki log-normalne, 20% wariancji — założenie) z korektą dyskretnego monitoringu (Broadie, Glasserman & Kou 1997).
+- **Zmienność:** sezonowy log-HAR (Corsi 2009) na godzinowych wariancjach Garman–Klass (1980) z ~5000 świec 1h Hyperliquid (≈ 208 dni), profil godzin UTC (Andersen & Bollerslev 1997), korekta Duana (1983); prognoza iterowana na kroki 5 min. Trafność pokazywana na żywo: strata QLIKE (Patton 2011) poza próbą względem naiwnej średniej z 24 h. Udział skoków — wariancja dwupotęgowa (Barndorff-Nielsen & Shephard 2004), skoki — test Lee & Mykland (2008), obie jako diagnostyka. Brak danych → estymator Parkinsona (1980) jako oznaczony zapas.
+- **Prawdopodobieństwa barier:** Monte Carlo z innowacjami z bootstrapu standaryzowanych zwrotów 5m (filtered historical simulation, Barone-Adesi i in. 1999 — grube ogony i skoki z danych) i korektą dyskretnego monitoringu z lokalnym σ kroku (Broadie, Glasserman & Kou 1997). Gdy wejście ≠ cena rynku, ścieżka najpierw musi je dotknąć; wynik jest warunkowy na wypełnienie, tak jak rozlicza dziennik. Formuła dla ruchu Browna (bez limitu czasu) jako punkt odniesienia.
+- **Zasięg 2 h (pas desku):** ten sam silnik (2000 ścieżek, ziarno z wejść); bez modelu zmienności — Merton z założonym udziałem skoków 20% (oznaczony w pasku).
 - **Hurst:** R/S z korektą Anis-Lloyd; Lo (1991) — test może mylić krótką pamięć z długą.
 - **OU:** dyskretny AR(1) wokół 0.65·D-EQ + 0.35·W-EQ; bez powrotu do średniej → t½ = ∞.
 - **Heatmapa likwidacji, order blocks, U(p):** heurystyki bez walidacji statystycznej — oznaczone jako szacunek.
-- **Ocena prognoz:** Brier, log score, wykres niezawodności (Gneiting & Raftery 2007); ćwierć-Kelly dopiero po ≥ 50 rozstrzygniętych planach, z dolnej granicy Wilsona (MacLean, Thorp & Ziemba 2010).
+- **Ocena prognoz:** Brier, log score, Brier P(wypełnienia), wykres niezawodności (Gneiting & Raftery 2007); ćwierć-Kelly dopiero po ≥ 50 rozstrzygniętych planach, z dolnej granicy Wilsona (MacLean, Thorp & Ziemba 2010).
 
 ## Źródła danych
 
@@ -93,6 +94,7 @@ docs/STYLEGUIDE.md  tokeny kolorów (paleta zwalidowana pod daltonizm), typograf
 - Publiczne API nie udostępnia historii arkusza — heatmapa, bąble i footprint powstają **od momentu otwarcia strony**.
 - Funding Binance/Bybit pochodzi z prognozy publikowanej przez Hyperliquid; rynki HIP-3 to perpy-proxy, nie indeksy kasowe (poza sesją mogą stać).
 - Modele (Monte Carlo, OU, VPIN, Hurst) to narzędzia opisowe; ich trafność mierzysz sam w dzienniku.
+- Model zmienności widzi ~208 dni historii (API zwraca najwyżej ~5000 świec na interwał); mnożniki zdarzeń makro to nadal założenia, a selekcja negatywna przy wypełnieniu zleceń z limitem nie jest modelowana.
 
 ## Zastrzeżenie
 

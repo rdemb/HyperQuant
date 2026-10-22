@@ -115,9 +115,10 @@ export function useDeskFeed(options: { cexEnabled: boolean }) {
       if (marketData.htfLevels) setRealHtfLevels(marketData.htfLevels);
       if (marketData.l2Book) setRealL2Book(marketData.l2Book);
 
-      // Brak telemetrii = zostaje ostatnia realna (status pokaże STALE), nigdy stałe zastępcze
-      if (backendRes && backendRes.markPrice) setBackendTelemetry(backendRes);
-      else if (marketData.liveTelemetry) setBackendTelemetry(marketData.liveTelemetry);
+      // Brak telemetrii = zostaje ostatnia realna (status pokaże STALE), nigdy stałe zastępcze.
+      // Najpierw telemetria z przeglądarki (ma model zmienności); endpoint serwera dev (bez modelu) tylko jako zapas.
+      if (marketData.liveTelemetry) setBackendTelemetry(marketData.liveTelemetry);
+      else if (backendRes && backendRes.markPrice) setBackendTelemetry(backendRes);
     } catch {
       // Zostaw bieżący stan przy braku sieci
     } finally {
