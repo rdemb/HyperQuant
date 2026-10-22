@@ -35,8 +35,8 @@ describe('dopasowanie wag z dziennika', () => {
     expect(w).toEqual({ ...ENS_PRIOR, n: 30 });
   });
   it('odzyskuje wagi z danych (rynek lepiej skalibrowany niż model)', () => {
-    const w = fitEnsemble(gen(2, 6000, { a: 0.1, bm: 0.2, bk: 1.0 }), NOW, { halfLifeDays: 1e9 });
-    expect(w.n).toBe(6000);
+    const w = fitEnsemble(gen(2, 2800, { a: 0.1, bm: 0.2, bk: 1.0 }), NOW, { halfLifeDays: 1e9 }); // 2800 × 15 min < 30 dni
+    expect(w.n).toBe(2800);
     expect(w.bk).toBeGreaterThan(0.75);
     expect(w.bk).toBeLessThan(1.25);
     expect(w.bm).toBeLessThan(0.45);
@@ -62,5 +62,50 @@ describe('dopasowanie wag z dziennika', () => {
     const recent = gen(7, 3000, { a: 0, bm: 0, bk: 1 }).map((p, i) => ({ ...p, t: NOW - 5 * DAY + i * 60_000 }));
     const w = fitEnsemble([...old, ...recent], NOW, { halfLifeDays: 14 });
     expect(w.bk).toBeGreaterThan(w.bm);
+  });
+});
+
+describe('odporność dopasowania (recenzja: rozbieżny Newton)', () => {
+  it('skrajne logity z błędnym wynikiem nie wysadzają wag: kontrola kroku i spadek celu', () => {
+    const pairs: EnsPair[] = [];
+    let t = NOW - 1000 * 60_000;
+    for (let i = 0; i < 50; i++) {
+      const p = [0.2, 0.5, 0.8][i % 3];
+      pairs.push({ pm: p, pk: p, y: (i * 7919) % 100 < p * 100 ? 1 : 0, t: (t += 60_000) });
+    }
+    for (let i = 0; i < 3; i++) pairs.push({ pm: 0, pk: 0.03, y: 1, t: (t += 60_000) });
+    const w = fitEnsemble(pairs, NOW);
+    expect(Math.abs(w.bm)).toBeLessThan(2);
+    expect(Math.abs(w.bk)).toBeLessThan(2);
+    expect(poolProb(w, 0.6, 0.55)).toBeLessThan(0.9);
+    expect(poolProb(w, 0.4, 0.45)).toBeGreaterThan(0.1);
+  });
+  it('fuzzing: model z p = 0/1 mylący się w 5% pytań — wagi zawsze skończone i umiarkowane', () => {
+    for (let seed = 1; seed <= 40; seed++) {
+      const rnd = mulberry32(seed);
+      const pairs: EnsPair[] = Array.from({ length: 50 + Math.floor(rnd() * 400) }, (_, i) => {
+        const pk = 0.05 + 0.9 * rnd();
+        const y: 0 | 1 = rnd() < pk ? 1 : 0;
+        const wrong = rnd() < 0.05;
+        const pm = wrong ? 1 - y : Math.min(1, Math.max(0, pk + 0.2 * (rnd() - 0.5)));
+        return { pm, pk, y, t: NOW - (i + 1) * 60_000 };
+      });
+      const w = fitEnsemble(pairs, NOW);
+      expect([w.a, w.bm, w.bk].every((v) => Number.isFinite(v) && Math.abs(v) < 5)).toBe(true);
+    }
+  });
+  it('tylko okno 30 dni przed chwilą dopasowania (niezależne od czasu działania skanera)', () => {
+    const old = gen(8, 500, { a: 3, bm: 0, bk: 0 }).map((p, i) => ({ ...p, t: NOW - 40 * DAY + i * 60_000 }));
+    const recent = gen(9, 100, { a: 0, bm: 0.5, bk: 0.5 });
+    const w = fitEnsemble([...old, ...recent], NOW);
+    expect(w.n).toBe(100);
+    expect(Math.abs(w.a)).toBeLessThan(1);
+  });
+  it('rekalibracja samego rynku: a + bk·logit(rynek), waga modelu zawsze 0 (punkt odniesienia dla ensemble)', () => {
+    const w = fitEnsemble(gen(10, 3000, { a: 0.2, bm: 0, bk: 1.3 }), NOW, { mode: 'market', halfLifeDays: 1e9 });
+    expect(w.bm).toBe(0);
+    expect(w.bk).toBeGreaterThan(1.05);
+    expect(w.bk).toBeLessThan(1.55);
+    expect(fitEnsemble(gen(11, 10, { a: 0, bm: 0, bk: 1 }), NOW, { mode: 'market' })).toEqual({ a: 0, bm: 0, bk: 1, n: 10 });
   });
 });

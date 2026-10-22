@@ -1,4 +1,4 @@
-import { ENS_PRIOR, fitEnsemble, poolProb, type EnsPair, type EnsWeights } from '../../src/utils/ensemble.ts';
+import { ENS_PRIOR, REC_PRIOR, fitEnsemble, poolProb, type EnsPair, type EnsWeights } from '../../src/utils/ensemble.ts';
 import { type RangeBar, type VolModel, buildVolModel, horizonStepSigmas } from '../../src/utils/volatility.ts';
 import { forecastReturnQuantiles, runTouchMonteCarlo } from '../../src/utils/touchMc.ts';
 import { aciStep, brier, crpsQuantiles, isotonic, kupiec, normInv, pitFromQuantiles, quantileAt, quantileAtExt, reliability, vennAbers } from '../../src/utils/forecastScore.ts';
@@ -135,6 +135,9 @@ export interface MktForecast {
    */
   pe?: number | null;
   ens?: EnsWeights;
+  /** Punkt odniesienia: rekalibrowana sama cena rynku (a + b_k·logit środka) — ta sama procedura dopasowania */
+  pr?: number | null;
+  rec?: EnsWeights;
   model: string;
 }
 
@@ -289,7 +292,14 @@ export const MKT_NEAR = 0.0005;
  * Prognoza „model vs rynek”: p = P(S_termin ≥ K) z modelu od chwili wydania (horyzont dokładny co do sekundy,
  * 4000 ścieżek, wspólny silnik ze stroną) obok notowania rynku. Termin nie później niż początek horyzontu → null.
  */
-export function makeMktForecast(model: VolModel, tm: ForecastTimes, px0: number, snap: MarketSnap, ens: EnsWeights = ENS_PRIOR): MktForecast | null {
+export function makeMktForecast(
+  model: VolModel,
+  tm: ForecastTimes,
+  px0: number,
+  snap: MarketSnap,
+  ens: EnsWeights = ENS_PRIOR,
+  rec: EnsWeights = REC_PRIOR
+): MktForecast | null {
   if (snap.expiry <= tm.t || !(px0 > 0) || !(snap.K > 0)) return null;
   const hInfo = (snap.expiry - tm.ti) / MIN;
   const [p] = outcomeProbabilities([{ kind: 'above', K: snap.K, horizonMin: hInfo }], px0, {
@@ -322,24 +332,28 @@ export function makeMktForecast(model: VolModel, tm: ForecastTimes, px0: number,
     p: r4(p),
     pe: q && q.bid !== null && q.ask !== null ? r4(poolProb(ens, r4(p), (q.bid + q.ask) / 2)) : null,
     ens,
+    pr: q && q.bid !== null && q.ask !== null ? r4(poolProb(rec, r4(p), (q.bid + q.ask) / 2)) : null,
+    rec,
     model: MODEL_VERSION,
   };
 }
 
 /**
  * Pary do dopasowania wag ensemble: pytania z notowaniem o wąskim spreadzie (≤ 5 pp), rozstrzygnięte z dala od progu
- * przed chwilą `before` (tylko przeszłość względem wydania — bez zaglądania w przyszłość).
+ * przed chwilą `before` (tylko przeszłość względem wydania — bez zaglądania w przyszłość). Kolejność deterministyczna
+ * (czas rozstrzygnięcia, id) — weryfikator odtwarza dopasowanie bit w bit.
  */
 export function ensPairs(fs: Iterable<unknown>, res: ReadonlyMap<string, unknown>, before: number): EnsPair[] {
-  const out: EnsPair[] = [];
+  const out: (EnsPair & { id: string })[] = [];
   for (const x of fs) {
     const f = x as MktForecast;
     if (f.kind !== 'mkt' || !tightQuote(f)) continue;
     const r = res.get(f.id) as MktResolution | undefined;
     if (!r || r.near !== 0 || !(r.t < before) || (r.y !== 0 && r.y !== 1)) continue;
-    out.push({ pm: f.p, pk: (f.bid! + f.ask!) / 2, y: r.y, t: r.t });
+    out.push({ pm: f.p, pk: (f.bid! + f.ask!) / 2, y: r.y, t: r.t, id: f.id });
   }
-  return out.sort((a, b) => a.t - b.t);
+  out.sort((a, b) => a.t - b.t || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  return out.map(({ id: _id, ...p }) => p);
 }
 
 /** Rozstrzygnięcie: zamknięcie świecy 1m kończącej się w terminie (t + h) ≥ K; blisko progu oznaczone. */
@@ -421,24 +435,45 @@ function bootDiff(dm: number[], seed: number): { d: number; lo: number; hi: numb
   return { d, lo: means[Math.floor(0.05 * (reps - 1))], hi: means[Math.ceil(0.95 * (reps - 1))] };
 }
 
-/** Wyniki ensemble na tych samych pytaniach (tylko rekordy z p_e); różnica Brier ensemble − rynek. */
-function ensScores(ok: { f: MktForecast; r: MktResolution }[]): Pick<MktScores, 'nEns' | 'brierEns' | 'logEns' | 'diffEns'> {
+type EnsScoreFields = Pick<MktScores, 'nEns' | 'brierEns' | 'logEns' | 'diffEns' | 'brierModelE' | 'brierMarketE' | 'brierRec' | 'diffAdd'>;
+
+/**
+ * Wyniki ensemble na pytaniach z zapisanym p_e — model, rynek i rynek skalibrowany na tym samym podzbiorze (porównanie
+ * jak z jak); różnice parowane: ensemble − rynek i ensemble − rynek skalibrowany (wartość dodana modelu).
+ */
+function ensScores(ok: { f: MktForecast; r: MktResolution }[]): EnsScoreFields {
   const withE = ok.filter((x) => typeof x.f.pe === 'number');
   const nEns = withE.length;
-  if (nEns === 0) return { nEns: 0, brierEns: null, logEns: null, diffEns: null };
+  if (nEns === 0) return { nEns: 0, brierEns: null, logEns: null, diffEns: null, brierModelE: null, brierMarketE: null, brierRec: null, diffAdd: null };
   const clamp = (p: number) => Math.min(0.999, Math.max(0.001, p));
   let be = 0;
   let le = 0;
+  let bm = 0;
+  let bk = 0;
   const dm: number[] = [];
+  const withR = withE.filter((x) => typeof x.f.pr === 'number');
   for (const { f, r } of withE) {
     const pe = f.pe as number;
     const mid = (f.bid! + f.ask!) / 2;
     const a = (pe - r.y) ** 2;
     be += a;
+    bm += (f.p - r.y) ** 2;
+    bk += (mid - r.y) ** 2;
     le += -Math.log(r.y ? clamp(pe) : 1 - clamp(pe));
     dm.push(a - (mid - r.y) ** 2);
   }
-  return { nEns, brierEns: r6(be / nEns), logEns: r4(le / nEns), diffEns: bootDiff(dm, 11) };
+  const dAdd = withR.map(({ f, r }) => ((f.pe as number) - r.y) ** 2 - ((f.pr as number) - r.y) ** 2);
+  const br = withR.reduce((s, { f, r }) => s + ((f.pr as number) - r.y) ** 2, 0);
+  return {
+    nEns,
+    brierEns: r6(be / nEns),
+    logEns: r4(le / nEns),
+    diffEns: bootDiff(dm, 11),
+    brierModelE: r6(bm / nEns),
+    brierMarketE: r6(bk / nEns),
+    brierRec: withR.length ? r6(br / withR.length) : null,
+    diffAdd: withR.length ? bootDiff(dAdd, 13) : null,
+  };
 }
 
 /** Stan ACI po kolejnym rozstrzygnięciu przedziału 90% (chybienie obniża α → szerszy kolejny przedział). */
@@ -618,7 +653,11 @@ export function buildSummary(s: SummaryInput): DeskLedgerSummary {
       scores: mktScores(mktPairs, liquidQuote),
       tight: mktScores(mktPairs, tightQuote),
       // Wagi ensemble z chwili podsumowania (do panelu na żywo) — te same zasady co przy wydaniu
-      ensemble: { ...fitEnsemble(ensPairs(s.forecasts.values(), s.resolutions, s.now), s.now), at: s.now },
+      ensemble: (() => {
+        const pairs = ensPairs(s.forecasts.values(), s.resolutions, s.now);
+        const rec = fitEnsemble(pairs, s.now, { mode: 'market' });
+        return { ...fitEnsemble(pairs, s.now), at: s.now, rec: { a: rec.a, bk: rec.bk } };
+      })(),
       latest: latestMkt
         ? { t: latestMkt.t, expiry: latestMkt.expiry, K: latestMkt.K, p: latestMkt.p, bid: latestMkt.bid, ask: latestMkt.ask, liquid: latestMkt.liquid, pe: latestMkt.pe ?? null }
         : null,

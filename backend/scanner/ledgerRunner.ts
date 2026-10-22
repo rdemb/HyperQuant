@@ -259,9 +259,9 @@ export class LedgerRunner {
       const t2 = this.clock(now);
       const bookFresh = snap !== null && (snap.bookTime === null || (t2 - snap.bookTime <= MKT_MAX_QUOTE_AGE && snap.bookTime <= t2 + 5_000));
       if (snap && bookFresh && snap.px > 0 && slotOf(t2) === slot && t2 - slot < MKT_TO) {
-        // Wagi ensemble wyłącznie z pytań rozstrzygniętych przed chwilą wydania (pary z wczytanych 31 dni)
-        const ens = fitEnsemble(ensPairs(this.forecasts.values(), this.resolutions, t2), t2);
-        const f = makeMktForecast(data.model!, { slot, ti: t2, t: Math.floor(t2 / MIN) * MIN + MIN }, snap.px, snap, ens);
+        // Wagi ensemble i rekalibracji rynku wyłącznie z pytań rozstrzygniętych w 30 dniach przed chwilą wydania
+        const pairs = ensPairs(this.forecasts.values(), this.resolutions, t2);
+        const f = makeMktForecast(data.model!, { slot, ti: t2, t: Math.floor(t2 / MIN) * MIN + MIN }, snap.px, snap, fitEnsemble(pairs, t2), fitEnsemble(pairs, t2, { mode: 'market' }));
         if (f) {
           this.add([{ ...f }], t2);
           appended += 1;

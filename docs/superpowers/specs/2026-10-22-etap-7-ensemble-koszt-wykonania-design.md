@@ -11,20 +11,26 @@ wagi uczą się wyłącznie z wcześniej rozstrzygniętych pytań — zapisywana
 źródła. Waga modelu bliska zera = model nic nie dodaje do rynku (uczciwa informacja zwrotna).
 
 **Metoda** (`src/utils/ensemble.ts`): `logit p_e = a + b_m·logit(p_model) + b_k·logit(środek rynku)`; regresja
-logistyczna IRLS z priorem normalnym (τ = 0,5) w stronę równego poolingu (a = 0, b_m = b_k = ½), wagi obserwacji
-z okresem półtrwania 14 dni, poniżej 50 par — prior. Literatura: Genest & Zidek (1986), Ranjan & Gneiting (2010),
-Satopää i in. (2014, ekstremizacja).
+logistyczna z priorem normalnym (τ = 0,5) w stronę równego poolingu (a = 0, b_m = b_k = ½), wagi obserwacji z okresem
+półtrwania 14 dni, okno 30 dni przed chwilą dopasowania, poniżej 50 par — prior. Metoda Newtona z ograniczeniem kroku
+(|Δ| ≤ 1) i backtrackingiem na karanej funkcji celu; brak zbieżności albo cel gorszy niż w priorze → prior (recenzja
+pokazała, że czysty krok Newtona rozbiega się przy p modelu = 0/1 z błędnym wynikiem). Punkt odniesienia: rynek
+skalibrowany `a + b_k·logit(środek)` (prior a = 0, b_k = 1) — ta sama procedura; dopiero przewaga ensemble nad nim
+pokazuje wartość dodaną modelu (sama rekalibracja usuwa np. błąd faworyt–outsider). Literatura: Genest & Zidek (1986),
+Ranjan & Gneiting (2010), Satopää i in. (2014, ekstremizacja).
 
-**Zapis.** Rekord „mkt” w chwili wydania dostaje `pe` (p ensemble) i `ens: {a, bm, bk, n}` — wagi dopasowane na
-parach rozstrzygniętych przed chwilą wydania (tylko notowania z wąskim spreadem, z dala od progu). Brak notowania →
-`pe` null.
+**Zapis.** Rekord „mkt” w chwili wydania dostaje `pe`, `ens`, `pr`, `rec` — wagi dopasowane na parach rozstrzygniętych
+w 30 dniach przed chwilą wydania (tylko notowania z wąskim spreadem, z dala od progu; kolejność: czas rozstrzygnięcia,
+id). Brak notowania → `pe`/`pr` null.
 
-**Ocena.** Brier i log score ensemble obok modelu i rynku (oba poziomy płynności), różnica ensemble − rynek
-z bootstrapem parowanym; karta w panelu dziennika; panel „Model vs rynek” pokazuje p ensemble dla bieżących rynków
-z ostatnich opublikowanych wag (MODEL).
+**Ocena.** Na pytaniach z zapisanym p_e: Brier modelu, rynku, rynku skalibrowanego i ensemble (porównanie jak z jak),
+różnice parowane ensemble − rynek i ensemble − rynek skalibrowany (wartość dodana modelu) z bootstrapem; karta w panelu
+dziennika; panel „Model vs rynek” pokazuje p_e tylko dla pytania wybieranego tak samo jak w dzienniku (jedyny rolujący
+rynek „perp mark” z terminem na pełnym kwadransie, 5–10 min przed terminem).
 
-**Weryfikator.** `pe` = σ(a + b_m·logit p + b_k·logit środek) z zapisanych wartości; `ens.n` ≤ liczba par
-rozstrzygniętych przed wydaniem (brak zaglądania w przyszłość).
+**Weryfikator.** Wzory `pe`/`pr` z zapisanych wag; przy pełnym dzienniku ponowne dopasowanie wag tym samym publicznym
+kodem na parach rozstrzygniętych przed wydaniem (ostatnie 30 dni wydań) — wagi muszą się zgadzać do 2·10⁻⁶; przeliczony
+Brier ensemble w `recompute`.
 
 ## B. Koszt wykonania wg godziny
 

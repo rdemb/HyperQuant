@@ -239,7 +239,7 @@ describe('poprawki z recenzji: ACI, nakładanie, klimatologia poziomów, uczestn
 });
 
 import { ensPairs, makeMktForecast, mktScores, resolveMkt, type MktForecast, type MktResolution } from '../forecaster.ts';
-import { ENS_PRIOR, poolProb } from '../../../src/utils/ensemble.ts';
+import { ENS_PRIOR, REC_PRIOR, poolProb } from '../../../src/utils/ensemble.ts';
 import type { RangeBar } from '../../../src/utils/volatility.ts';
 
 describe('model vs rynek (HIP-4, 15 min)', () => {
@@ -310,14 +310,19 @@ describe('model vs rynek (HIP-4, 15 min)', () => {
     expect(mktScores([])).toMatchObject({ n: 0, brierModel: null, diff: null });
   });
 
-  it('ensemble: p_e z wag z chwili wydania i środka rynku (zapisane wagi); bez notowania — null', () => {
+  it('ensemble i rynek skalibrowany: p_e i p_r z wag z chwili wydania (zapisane wagi); bez notowania — null', () => {
     const w = { a: 0.1, bm: 0.3, bk: 0.9, n: 120 };
-    const f = makeMktForecast(model, tm, 100_000, snap(99_950), w)!;
+    const rc = { a: -0.05, bm: 0, bk: 1.2, n: 120 };
+    const f = makeMktForecast(model, tm, 100_000, snap(99_950), w, rc)!;
     expect(f.ens).toEqual(w);
+    expect(f.rec).toEqual(rc);
     expect(f.pe).toBeCloseTo(poolProb(w, f.p, 0.475), 4);
-    expect(makeMktForecast(model, tm, 100_000, snap(99_950, null), w)).toMatchObject({ pe: null, ens: w });
-    // Bez wag — równy pooling logarytmiczny (prior)
-    expect(makeMktForecast(model, tm, 100_000, snap(99_950))!.ens).toEqual(ENS_PRIOR);
+    expect(f.pr).toBeCloseTo(poolProb(rc, f.p, 0.475), 4);
+    expect(makeMktForecast(model, tm, 100_000, snap(99_950, null), w, rc)).toMatchObject({ pe: null, pr: null, ens: w, rec: rc });
+    // Bez wag — priory (równy pooling, rynek bez zmian)
+    const d = makeMktForecast(model, tm, 100_000, snap(99_950))!;
+    expect(d.ens).toEqual(ENS_PRIOR);
+    expect(d.rec).toEqual(REC_PRIOR);
   });
 
   it('pary do dopasowania: tylko wąski spread, z dala od progu, rozstrzygnięte przed chwilą wydania', () => {
@@ -332,21 +337,29 @@ describe('model vs rynek (HIP-4, 15 min)', () => {
     ]);
     const got = ensPairs(fs, rs, 2000);
     expect(got).toHaveLength(1);
+    // Kolejność deterministyczna: czas rozstrzygnięcia, potem id
+    const two = ensPairs([mk('z', 0.4, 0.44), mk('a2', 0.4, 0.44)], new Map([['z', { k: 'r', id: 'z', t: 1000, c1: 1, y: 1, near: 0 }], ['a2', { k: 'r', id: 'a2', t: 1000, c1: 1, y: 0, near: 0 }]]) as Map<string, MktResolution>, 2000);
+    expect(two.map((x) => x.y)).toEqual([0, 1]);
     expect(got[0]).toMatchObject({ pm: 0.6, y: 1, t: 1000 });
     expect(got[0].pk).toBeCloseTo(0.42, 12);
   });
 
-  it('wyniki ensemble obok modelu i rynku na tych samych pytaniach; różnica ensemble − rynek z bootstrapem', () => {
-    const f = (p: number, mid: number, pe: number | null): MktForecast =>
-      ({ k: 'f', id: String(Math.random()), slot, ti, t: tm.t, kind: 'mkt', h: 7, outcome: 1, K: 1, expiry, src: 'mark', px0: 1, bid: mid - 0.01, ask: mid + 0.01, liquid: true, p, pe, model: 'x' }) as MktForecast;
+  it('wyniki ensemble na tych samych pytaniach co model, rynek i rynek skalibrowany; wartość dodana modelu', () => {
+    const f = (p: number, mid: number, pe: number | null, pr: number | null): MktForecast =>
+      ({ k: 'f', id: String(Math.random()), slot, ti, t: tm.t, kind: 'mkt', h: 7, outcome: 1, K: 1, expiry, src: 'mark', px0: 1, bid: mid - 0.01, ask: mid + 0.01, liquid: true, p, pe, pr, model: 'x' }) as MktForecast;
     const r = (y: 0 | 1): MktResolution => ({ k: 'r', id: 'x', t: 0, c1: 1, y, near: 0 });
-    const pairs = [...Array.from({ length: 30 }, (_, i) => ({ f: f(0.8, 0.6, 0.7), r: r(i < 24 ? 1 : 0) })), { f: f(0.8, 0.6, null), r: r(1) }];
+    const pairs = [...Array.from({ length: 30 }, (_, i) => ({ f: f(0.8, 0.6, 0.7, 0.65), r: r(i < 24 ? 1 : 0) })), { f: f(0.9, 0.5, null, null), r: r(1) }];
     const s = mktScores(pairs);
     expect(s.n).toBe(31);
     expect(s.nEns).toBe(30);
     expect(s.brierEns!).toBeCloseTo((24 * 0.09 + 6 * 0.49) / 30, 9);
+    // Model i rynek na tym samym podzbiorze 30 pytań (bez pytania bez p_e)
+    expect(s.brierModelE!).toBeCloseTo((24 * 0.04 + 6 * 0.64) / 30, 9);
+    expect(s.brierMarketE!).toBeCloseTo((24 * 0.16 + 6 * 0.36) / 30, 9);
+    expect(s.brierRec!).toBeCloseTo((24 * 0.35 ** 2 + 6 * 0.65 ** 2) / 30, 9);
+    expect(s.diffAdd!.d).toBeCloseTo(s.brierEns! - s.brierRec!, 12);
     expect(s.diffEns!.lo).toBeLessThanOrEqual(s.diffEns!.d);
-    expect(mktScores([])).toMatchObject({ nEns: 0, brierEns: null, diffEns: null });
+    expect(mktScores([])).toMatchObject({ nEns: 0, brierEns: null, diffEns: null, diffAdd: null });
   });
 });
 

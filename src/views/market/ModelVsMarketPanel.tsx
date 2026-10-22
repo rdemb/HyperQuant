@@ -25,8 +25,23 @@ export const ModelVsMarketPanel: React.FC = () => {
   const { feed } = useDesk();
   const st = useHip4(feed.vol.model, feed.currentPrice);
   // Wagi ensemble z dziennika (dopasowane na rozstrzygniętych 15-minutowych rynkach „mark ≥ K”) — od 50 pytań
-  const ens = useDeskLedger().summary?.market?.ensemble ?? null;
+  const ledger = useDeskLedger();
+  const ens = ledger.status === 'expired' ? null : ledger.summary?.market?.ensemble ?? null;
   const weights = ens && ens.n >= ENS_MIN_N ? ens : null;
+  // Tylko pytania wybierane tak samo jak w dzienniku: jedyny rolujący rynek „perp mark ≥ K” z terminem na pełnym kwadransie,
+  // 5–10 min przed terminem — wagi dopasowano wyłącznie na takich pytaniach
+  const now = st.asOf ?? Date.now();
+  const ledgerLike = st.rows.filter(
+    (r) =>
+      r.q.kind === 'above' &&
+      !r.q.recurring &&
+      r.q.source === 'mark' &&
+      /perp mark/i.test(r.q.description) &&
+      r.q.expiry % (15 * 60_000) === 0 &&
+      r.q.expiry - now >= 5 * 60_000 &&
+      r.q.expiry - now <= 10 * 60_000
+  );
+  const ensIds = new Set(ledgerLike.filter((r) => ledgerLike.filter((x) => x.q.expiry === r.q.expiry).length === 1).map((r) => r.q.id));
   const [showThin, setShowThin] = React.useState(false);
   const liquid = st.rows.filter((r) => r.quote?.liquid);
   const shown = showThin ? st.rows : liquid;
@@ -86,7 +101,7 @@ export const ModelVsMarketPanel: React.FC = () => {
               </thead>
               <tbody>
                 {shown.map((r) => (
-                  <Row key={r.q.id} r={r} now={st.asOf ?? Date.now()} ens={weights} />
+                  <Row key={r.q.id} r={r} now={now} ens={weights && ensIds.has(r.q.id) ? weights : null} />
                 ))}
                 {shown.length === 0 && (
                   <tr>
@@ -118,8 +133,9 @@ export const ModelVsMarketPanel: React.FC = () => {
               </li>
               <li>
                 Ensemble: logit p = a + b·logit(model) + c·logit(rynek), wagi dopasowane w weryfikowalnym dzienniku wyłącznie na wcześniej rozstrzygniętych
-                15-minutowych pytaniach „mark ≥ K” (pooling logarytmiczny, prior w stronę równych wag). Pokazywane tylko dla rynków tego typu, od{' '}
-                {ENS_MIN_N} rozstrzygniętych pytań — dla innych terminów i źródeł wagi nie były sprawdzane.
+                15-minutowych pytaniach „mark ≥ K” (pooling logarytmiczny, prior w stronę równych wag). Pokazywane tylko dla pytania wybieranego tak
+                samo jak w dzienniku (jedyny rolujący rynek „perp mark” z terminem na pełnym kwadransie, 5–10 min przed terminem), od {ENS_MIN_N}{' '}
+                rozstrzygniętych pytań — dla innych terminów i źródeł wagi nie były sprawdzane.
               </li>
               <li>Różnica model − rynek to porównanie kalibracji dwóch źródeł prawdopodobieństwa, nie sygnał kupna ani sprzedaży.</li>
             </ul>
@@ -135,8 +151,7 @@ const ENS_MIN_N = 50;
 
 const Row: React.FC<{ r: Hip4Row; now: number; ens: EnsWeights | null }> = ({ r, now, ens }) => {
   const { q, quote, model } = r;
-  // Tylko pytania typu, na którym dopasowano wagi: rolujący rynek „mark ≥ K” z terminem do 20 min
-  const ensOk = ens !== null && q.kind === 'above' && !q.recurring && q.source === 'mark' && q.expiry - now <= 20 * 60_000;
+  const ensOk = ens !== null;
   const label = q.kind === 'above' ? `BTC > ${fmtPrice(q.K, 0)}` : `dotknie ${fmtPrice(q.K, 0)}`;
   const src = q.source === 'pyth' ? 'Pyth' : q.source === 'trade' ? 'transakcja HL' : q.source === 'mark' ? 'mark HL' : 'inne źródło';
   const mid = quote?.liquid ? quote.mid : null;
