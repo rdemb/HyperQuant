@@ -30,6 +30,8 @@ interface Rec {
   dirty: boolean;
   /** Po nieudanym odczycie: nie wcześniej niż */
   retryAt?: number;
+  /** Ostatnio widziany w publicznym rankingu kont (zasiew) */
+  seededAt?: number;
 }
 
 const posNtl = (r: Rec) => (r.pos ? Math.abs(r.pos.szi) * r.pos.entryPx : 0);
@@ -44,8 +46,6 @@ function posInterval(r: Rec): number {
 export class AddressBook {
   private readonly recs = new Map<string, Rec>();
   readonly capacity: number;
-  /** Liczba adresów dodanych z rankingu kont (diagnostyka) */
-  seededCount = 0;
 
   constructor(cap: number = 50_000) {
     this.capacity = cap;
@@ -53,6 +53,13 @@ export class AddressBook {
 
   get size(): number {
     return this.recs.size;
+  }
+
+  /** Liczba adresów obecnych w rankingu kont (diagnostyka; przetrwa restart, bo wynika ze stanu) */
+  get seededCount(): number {
+    let n = 0;
+    for (const r of this.recs.values()) if (r.seededAt !== undefined) n++;
+    return n;
   }
 
   has(addr: string): boolean {
@@ -75,12 +82,16 @@ export class AddressBook {
 
   /**
    * Zasiew z rankingu kont: nowy adres trafia do kolejki „handlowały” z priorytetem wg wartości konta.
-   * Adres już znany nie jest ponownie oznaczany (ponowny zasiew co kilka godzin nie zalewa kolejki).
+   * Adres już znany nie jest ponownie oznaczany (ponowny zasiew co kilka godzin nie zalewa kolejki) — odświeżana jest
+   * tylko obecność w rankingu, która chroni go przed czyszczeniem.
    */
   seed(addr: string, accountValueUsd: number, t: number): void {
-    if (this.recs.has(addr)) return;
-    this.recs.set(addr, { lastTradeAt: t, tradedUsd: accountValueUsd, pos: null, lastScanAt: null, dirty: true });
-    this.seededCount++;
+    const known = this.recs.get(addr);
+    if (known) {
+      known.seededAt = t;
+      return;
+    }
+    this.recs.set(addr, { lastTradeAt: t, tradedUsd: accountValueUsd, pos: null, lastScanAt: null, dirty: true, seededAt: t });
     if (this.recs.size > this.capacity) this.evictOne(addr);
   }
 
@@ -142,9 +153,16 @@ export class AddressBook {
     return out;
   }
 
-  /** Usuwa adresy bez pozycji, nieaktywne na taśmie dłużej niż 3 dni. */
+  /**
+   * Usuwa adresy bez pozycji, nieaktywne na taśmie dłużej niż 3 dni — chyba że konto wciąż jest w rankingu
+   * (inaczej co 3 dni tysiące kont wypadałyby i wracały z zasiewem, zużywając budżet na ponowne odczyty).
+   */
   prune(now: number): void {
-    for (const [a, r] of this.recs) if (!r.pos && now - r.lastTradeAt > 3 * DAY) this.recs.delete(a);
+    for (const [a, r] of this.recs) {
+      if (r.pos || now - r.lastTradeAt <= 3 * DAY) continue;
+      if (r.seededAt !== undefined && now - r.seededAt <= 3 * DAY) continue;
+      this.recs.delete(a);
+    }
   }
 
   /** Przepełnienie: odpada najdawniej aktywny adres bez pozycji (nie ten właśnie dodany). */
@@ -178,6 +196,7 @@ export class AddressBook {
           pos: r.pos ?? null,
           lastScanAt: r.lastScanAt ?? null,
           dirty: r.dirty ?? r.lastScanAt == null,
+          ...(typeof r.seededAt === 'number' ? { seededAt: r.seededAt } : {}),
         });
       }
     }

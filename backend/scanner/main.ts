@@ -63,10 +63,10 @@ const stream = new HlStream(
 async function seedFromLeaderboard(): Promise<void> {
   if (cfg.seedTop <= 0) return;
   const accounts = await fetchLeaderboardAccounts(cfg.seedMinUsd, cfg.seedTop);
-  const before = book.seededCount;
+  const fresh = accounts.filter((a) => !book.has(a.address)).length;
   const t = Date.now();
   for (const a of accounts) book.seed(a.address, a.accountValue, t);
-  log(`ranking kont: ${accounts.length} kont ≥ ${cfg.seedMinUsd} USD, nowych ${book.seededCount - before}`);
+  log(`ranking kont: ${accounts.length} kont ≥ ${cfg.seedMinUsd} USD, nowych ${fresh}, w książce z rankingu ${book.seededCount}`);
 }
 
 const DATA_README = [
