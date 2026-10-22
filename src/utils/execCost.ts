@@ -108,3 +108,18 @@ export function nowCost(
   const slip = slippageBp(q, { d10: now.d10 * share10, d20: now.d20 === null ? null : now.d20 * share20 });
   return { h: new Date(now.t).getUTCHours(), slipBp: slip, totalBp: slip === null ? null : slip + takerFee * 1e4 };
 }
+
+/**
+ * Krańcowy wpływ: odległość od środka (bp), przy której wykonuje się q-ty dolar zlecenia rynkowego — ta sama krzywa
+ * głębokości strony co `slippageBp` (liniowo do ±10 / ±20 bp, dalej prawo pierwiastka). Brak danych → NaN.
+ */
+export function impactBp(q: number, d: SideDepth): number {
+  if (!(q > 0)) return 0;
+  if (!(d.d10 > 0)) return Number.NaN;
+  const s10 = d.d10;
+  const s20 = d.d20 !== null && d.d20 > s10 ? d.d20 : null;
+  if (q <= s10) return (10 * q) / s10;
+  if (s20 === null) return 10 * Math.sqrt(q / s10);
+  if (q <= s20) return 10 + (10 * (q - s10)) / (s20 - s10);
+  return 20 * Math.sqrt(q / s20);
+}

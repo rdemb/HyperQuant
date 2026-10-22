@@ -5,6 +5,7 @@ import { useLiqMap } from '../../state/useLiqMap';
 import { Badge, EmptyState, Panel, Stat, DASH, fmtCompact, fmtPrice, fmtSigned } from '../../ui';
 import { LiqMap } from '../../utils/liqMap';
 import { CascadeResult, cascadeCurve } from '../../utils/cascade';
+import { CascadeSimSection } from './CascadeSimSection';
 import { nearestClusters, rebin } from '../../utils/liqMapView';
 import { horizonStepSigmas } from '../../utils/volatility';
 import { parkinsonSigma } from '../../utils/marketDataFeed';
@@ -154,6 +155,8 @@ const LiqMapBody: React.FC<{ map: LiqMap; delayed: boolean; sigmaDaily: number; 
           <div className="text-xs text-ink-3">Brak dziennej zmienności lub obrotu z API — kaskada niepoliczona.</div>
         )}
       </div>
+
+      <CascadeSimSection map={map} />
 
       <details className="rounded-md border border-line bg-surface-2/50 px-3 py-2 text-xs text-ink-2">
         <summary className="cursor-pointer select-none text-ink-1 font-medium py-1">Metoda, ograniczenia i tabela klastrów</summary>
