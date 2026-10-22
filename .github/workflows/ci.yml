@@ -1,0 +1,40 @@
+name: CI
+
+# Kontrola każdego pull requesta: typy, testy i build — zanim cokolwiek trafi na main (i na GitHub Pages)
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Typy, testy, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Node.js 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Zależności
+        run: npm ci --legacy-peer-deps
+
+      - name: Typy (tsc)
+        run: npm run lint
+
+      - name: Testy (vitest)
+        run: npm test
+
+      - name: Build
+        run: npm run build
