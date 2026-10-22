@@ -68,20 +68,30 @@ export function rMultiple(t: Trade): number | null {
 }
 
 /**
- * MAE/MFE (R) ze świec 1m w oknie [minuta wejścia, wyjście): long — MAE z minimum, MFE z maksimum; short odwrotnie.
- * Świeca minuty wejścia może zawierać ceny sprzed wejścia (przybliżenie do minuty). Brak świec / ryzyka → null.
+ * MAE/MFE (R) ze świec 1m w oknie [minuta wejścia, minuta wyjścia] włącznie (czas z dokładnością do minuty — zlecenie
+ * zamykające wykonało się w minucie wyjścia): long — MAE z minimum, MFE z maksimum; short odwrotnie. Świece brzegowe mogą
+ * zawierać ceny spoza zagrania (przybliżenie do minuty). Ekstremum nie może być płytsze niż wynik: MAE ≤ min(0, R),
+ * MFE ≥ max(0, R). Brak świec / ryzyka → null.
  */
 export function excursions(t: Trade, bars: RangeBar[]): { mae: number; mfe: number } | null {
   const risk = riskPer(t);
   if (risk === null || t.exitT === null) return null;
   const from = Math.floor(t.entryT / 60_000) * 60_000;
-  const win = bars.filter((b) => b.time >= from && b.time < t.exitT!);
+  const to = Math.floor(t.exitT / 60_000) * 60_000;
+  const win = bars.filter((b) => b.time >= from && b.time <= to);
   if (win.length === 0) return null;
   const hi = Math.max(...win.map((b) => b.high));
   const lo = Math.min(...win.map((b) => b.low));
   const fav = t.dir === 'LONG' ? hi - t.entryPx : t.entryPx - lo;
   const adv = t.dir === 'LONG' ? lo - t.entryPx : t.entryPx - hi;
-  return { mae: r6(Math.min(0, adv) / risk), mfe: r6(Math.max(0, fav) / risk) };
+  const r = rMultiple(t);
+  let mae = Math.min(0, adv) / risk;
+  let mfe = Math.max(0, fav) / risk;
+  if (r !== null) {
+    mae = Math.min(mae, r, 0);
+    mfe = Math.max(mfe, r, 0);
+  }
+  return { mae: r6(mae), mfe: r6(mfe) };
 }
 
 /** Przedział bootstrap (percentylowy) dla średniej; stałe ziarno → ten sam wynik dla tych samych danych. */
@@ -149,6 +159,21 @@ export const serializeJournal = (j: Journal): string => JSON.stringify(j);
 const isStr = (v: unknown): v is string => typeof v === 'string';
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const numOrNull = (v: unknown) => v === null || isNum(v);
+const posNum = (v: unknown) => isNum(v) && v > 0;
+/** Czas w ms z sensownego zakresu (2009–2100) — np. nanosekundy wywróciłyby formatowanie dat */
+const isTime = (v: unknown) => isNum(v) && v >= 1.23e12 && v <= 4.1e12;
+const IB_STATES = new Set(['w trakcie', 'w zakresie', 'wybity ↑', 'wybity ↓', 'wybity ↑↓']);
+
+/** Kontekst przy wejściu: tylko znane pola z poprawnymi typami; inaczej null (zagranie zostaje). */
+function cleanCtx(c: unknown): TradeCtx | null {
+  if (!c || typeof c !== 'object') return null;
+  const o = c as Record<string, unknown>;
+  const vwapZ = o.vwapZ === null || o.vwapZ === undefined ? null : isNum(o.vwapZ) ? o.vwapZ : undefined;
+  const openLoc = o.openLoc === null || o.openLoc === undefined ? null : o.openLoc === 'above' || o.openLoc === 'inside' || o.openLoc === 'below' ? o.openLoc : undefined;
+  const ib = o.ib === null || o.ib === undefined ? null : isStr(o.ib) && IB_STATES.has(o.ib) ? (o.ib as TradeCtx['ib']) : undefined;
+  if (vwapZ === undefined || openLoc === undefined || ib === undefined) return null;
+  return { vwapZ, openLoc, ib };
+}
 
 function isSetup(o: Record<string, unknown>): boolean {
   return isStr(o.id) && isStr(o.name) && ['context', 'location', 'trigger', 'execution', 'invalidation'].every((k) => isStr(o[k])) && isNum(o.createdAt);
@@ -159,20 +184,22 @@ function isTrade(o: Record<string, unknown>): boolean {
     isStr(o.id) &&
     (o.setupId === null || isStr(o.setupId)) &&
     (o.dir === 'LONG' || o.dir === 'SHORT') &&
-    isNum(o.entryT) &&
-    isNum(o.entryPx) &&
-    isNum(o.stopPx) &&
-    numOrNull(o.exitT) &&
-    numOrNull(o.exitPx) &&
-    numOrNull(o.sizeBtc) &&
+    isTime(o.entryT) &&
+    posNum(o.entryPx) &&
+    posNum(o.stopPx) &&
+    (o.exitT === null || isTime(o.exitT)) &&
+    (o.exitPx === null || posNum(o.exitPx)) &&
+    (o.sizeBtc === null || posNum(o.sizeBtc)) &&
     isStr(o.note) &&
     numOrNull(o.mae) &&
-    numOrNull(o.mfe) &&
-    (o.ctx === null || (typeof o.ctx === 'object' && o.ctx !== null))
+    numOrNull(o.mfe)
   );
 }
 
-/** Import z JSON: niepoprawne wpisy są pomijane (nie psują reszty); zły JSON → null. */
+/**
+ * Import z JSON (wymagane `v: 1`): niepoprawne wpisy są pomijane (nie psują reszty), zagrania z nieznanym setupem
+ * trafiają do „bez setupu”, kontekst tylko ze znanymi polami; zły JSON / inny format → null.
+ */
 export function parseJournal(text: string): Journal | null {
   let raw: unknown;
   try {
@@ -180,12 +207,15 @@ export function parseJournal(text: string): Journal | null {
   } catch {
     return null;
   }
-  const o = raw as { setups?: unknown; trades?: unknown } | null;
-  if (!o || typeof o !== 'object') return null;
+  const o = raw as { v?: unknown; setups?: unknown; trades?: unknown } | null;
+  if (!o || typeof o !== 'object' || Array.isArray(o) || o.v !== 1) return null;
   const arr = (x: unknown) => (Array.isArray(x) ? (x as Record<string, unknown>[]).filter((e) => e && typeof e === 'object') : []);
-  return {
-    v: 1,
-    setups: arr(o.setups).filter(isSetup) as unknown as Setup[],
-    trades: arr(o.trades).filter(isTrade) as unknown as Trade[],
-  };
+  const setups = arr(o.setups).filter(isSetup) as unknown as Setup[];
+  const ids = new Set(setups.map((s) => s.id));
+  const trades = (arr(o.trades).filter(isTrade) as unknown as Trade[]).map((t) => ({
+    ...t,
+    setupId: t.setupId !== null && ids.has(t.setupId) ? t.setupId : null,
+    ctx: cleanCtx((t as { ctx?: unknown }).ctx),
+  }));
+  return { v: 1, setups, trades };
 }

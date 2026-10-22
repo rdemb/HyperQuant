@@ -35,6 +35,25 @@ describe('enrichTrade — MAE/MFE i kontekst aukcji przy wejściu ze świec 1m',
     expect(e.ctx!.ib).toBe('wybity ↑'); // po 01:00 cena nad IB (100 005)
   });
 
+  it('sesja wejścia zaczęła się przed oknem świec 1m → MAE/MFE tak, kontekst nie (VWAP z części sesji byłby fałszywy)', async () => {
+    const now = TODAY + 3 * H;
+    const from = now - 3.4 * D;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init: { body: string }) => {
+        const req = JSON.parse(init.body).req;
+        const start = Math.ceil(Math.max(req.startTime, from) / MIN) * MIN;
+        const step = req.interval === '1m' ? MIN : H;
+        return { ok: true, json: async () => hl(start, Math.floor((now - start) / step), step, 100_000) };
+      })
+    );
+    const entryT = TODAY - 3.2 * D; // dzień wejścia zaczął się przed oknem 3,4 doby
+    const t = { id: 'p', setupId: null, dir: 'LONG', entryT, entryPx: 100_000, stopPx: 99_900, exitT: entryT + 20 * MIN, exitPx: 100_000, sizeBtc: null, note: '', mae: null, mfe: null, ctx: null } as Trade;
+    const e = await enrichTrade(t, now);
+    expect(e.mae).not.toBeNull();
+    expect(e.ctx).toBeNull();
+  });
+
   it('zagranie starsze niż ~3,5 doby → bez MAE/MFE i kontekstu (brak świec 1m w API)', async () => {
     const t = { id: 'y', setupId: null, dir: 'LONG', entryT: TODAY - 5 * D, entryPx: 1, stopPx: 0.5, exitT: null, exitPx: null, sizeBtc: null, note: '', mae: null, mfe: null, ctx: null } as Trade;
     expect(await enrichTrade(t, TODAY)).toEqual({ mae: null, mfe: null, ctx: null });

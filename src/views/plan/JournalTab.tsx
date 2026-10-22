@@ -34,6 +34,18 @@ export const JournalTab: React.FC = () => {
   const names = useMemo(() => new Map(j.journal.setups.map((s) => [s.id, s.name])), [j.journal.setups]);
   return (
     <div className="flex flex-col gap-4">
+      {j.saveError && (
+        <div role="alert" className="rounded-lg border border-warn/40 bg-warn/10 px-3 py-2 text-xs text-warn">
+          Nie udało się zapisać dziennika w pamięci przeglądarki (pełna albo zablokowana). Zmiany są tylko w tej karcie — wyeksportuj JSON, żeby ich
+          nie stracić.
+        </div>
+      )}
+      {j.recovered && (
+        <div role="status" className="rounded-lg border border-line-strong bg-surface-2 px-3 py-2 text-xs text-ink-2">
+          Zapisany dziennik był nieczytelny — jego kopia została zachowana w pamięci przeglądarki pod kluczem <code>{j.recovered}</code>, a dziennik
+          zaczyna się od nowa.
+        </div>
+      )}
       <Panel
         eyebrow="Twoje zagrania · dane tylko w tej przeglądarce"
         title="Wyniki per setup"
@@ -77,7 +89,7 @@ const ImportExport: React.FC<{ onDownload: () => void; onImport: (text: string) 
           const f = e.target.files?.[0];
           if (!f) return;
           const n = onImport(await f.text());
-          setMsg(n === null ? 'To nie jest plik dziennika' : `Wczytano ${n} wpisów`);
+          setMsg(n === null ? 'To nie jest plik dziennika HyperQuant' : n === 0 ? 'Nic nowego — wszystkie wpisy już są w dzienniku' : `Dodano ${n} nowych wpisów`);
           e.target.value = '';
         }}
       />
@@ -85,7 +97,10 @@ const ImportExport: React.FC<{ onDownload: () => void; onImport: (text: string) 
   );
 };
 
-const StatsTable: React.FC<{ setups: Setup[]; trades: Trade[] }> = ({ setups, trades }) => {
+const StatsTable: React.FC<{ setups: Setup[]; trades: Trade[] }> = ({ setups, trades: raw }) => {
+  // Zagranie z setupem, którego już nie ma, liczy się jako „bez setupu” (nie znika ze statystyk)
+  const known = new Set(setups.map((s) => s.id));
+  const trades = raw.map((t) => (t.setupId !== null && !known.has(t.setupId) ? { ...t, setupId: null } : t));
   const rows = [...setups.map((s) => ({ id: s.id as string | null, name: s.name })), { id: null, name: 'Bez setupu' }]
     .map((r) => ({ ...r, s: setupStats(trades, r.id) }))
     .filter((r) => r.s.n + r.s.open > 0);
@@ -139,7 +154,7 @@ const StatsTable: React.FC<{ setups: Setup[]; trades: Trade[] }> = ({ setups, tr
                   </span>
                 )}
               </td>
-              <td className="py-1.5 pr-3">{s.profitFactor === null ? DASH : s.profitFactor.toFixed(2)}</td>
+              <td className="py-1.5 pr-3">{s.profitFactor !== null ? s.profitFactor.toFixed(2) : s.wins > 0 ? <span className="font-sans text-ink-3">brak strat</span> : DASH}</td>
               <td className="py-1.5 pr-3">{fmtR(s.medMaeWinners)}</td>
               <td className="py-1.5">{fmtR(s.medMfeLosers)}</td>
             </tr>
@@ -148,7 +163,7 @@ const StatsTable: React.FC<{ setups: Setup[]; trades: Trade[] }> = ({ setups, tr
       </table>
       <p className="mt-2 text-[11px] text-ink-3 leading-relaxed">
         Poniżej {MIN_N} zamkniętych zagrań to anegdota, nie statystyka — przedziały pokazują, jak szeroka jest niepewność. Przedział średniego R obejmujący
-        zero znaczy: przewaga nieudowodniona.
+        zero znaczy: przewaga nieudowodniona. Trafność = udział zagrań z wynikiem powyżej 0R (wynik 0R nie jest ani wygraną, ani stratą).
       </p>
     </div>
   );
@@ -173,7 +188,14 @@ const Playbook: React.FC<{ setups: Setup[]; onAdd: (s: Omit<Setup, 'id' | 'creat
             <li key={s.id} className="rounded-lg border border-line p-2.5 text-xs">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-ink-1 font-medium">{s.name}</span>
-                <button type="button" className="text-[11px] text-ink-3 hover:text-sell-ink" onClick={() => onRemove(s.id)} aria-label={`Usuń setup ${s.name}`}>
+                <button
+                  type="button"
+                  className="text-[11px] text-ink-3 hover:text-sell-ink"
+                  onClick={() => {
+                    if (window.confirm(`Usunąć setup „${s.name}”? Jego zagrania przejdą do „bez setupu”.`)) onRemove(s.id);
+                  }}
+                  aria-label={`Usuń setup ${s.name}`}
+                >
                   usuń
                 </button>
               </div>
@@ -218,14 +240,19 @@ const TradeForm: React.FC<{ setups: Setup[]; onAdd: (t: Omit<Trade, 'id' | 'mae'
   const [setupId, setSetupId] = useState<string>('');
   const [f, setF] = useState({ entryT: nowLocal(), entry: '', stop: '', exitT: '', exit: '', size: '', note: '' });
   const [busy, setBusy] = useState(false);
+  // Setup usunięty w playbooku w trakcie wypełniania — formularz wraca do „bez setupu”
+  const chosen = setups.some((s) => s.id === setupId) ? setupId : '';
   const entryPx = parseNum(f.entry);
   const stopPx = parseNum(f.stop);
   const exitPx = f.exit ? parseNum(f.exit) : null;
   const entryT = parseLocal(f.entryT);
   const exitT = parseLocal(f.exitT);
-  const stopOk = Number.isFinite(entryPx) && Number.isFinite(stopPx) && (dir === 'LONG' ? stopPx < entryPx : stopPx > entryPx);
-  const exitOk = (exitPx === null && exitT === null) || (exitPx !== null && Number.isFinite(exitPx) && exitT !== null && entryT !== null && exitT > entryT);
-  const valid = entryT !== null && stopOk && exitOk;
+  const now = Date.now() + 60_000; // minuta zapasu na zaokrąglenie pola czasu
+  const entryOk = entryPx > 0 && entryT !== null && entryT <= now;
+  const stopOk = entryOk && stopPx > 0 && (dir === 'LONG' ? stopPx < entryPx : stopPx > entryPx);
+  const exitOk =
+    (exitPx === null && exitT === null) || (exitPx !== null && exitPx > 0 && exitT !== null && entryT !== null && exitT >= entryT && exitT <= now);
+  const valid = entryOk && stopOk && exitOk;
   const preview = valid && exitPx !== null ? rMultiple({ dir, entryPx, stopPx, exitPx } as Trade) : null;
   return (
     <form
@@ -235,8 +262,10 @@ const TradeForm: React.FC<{ setups: Setup[]; onAdd: (t: Omit<Trade, 'id' | 'mae'
         if (!valid || busy) return;
         setBusy(true);
         const size = parseNum(f.size);
+        // Pola czyszczone od razu (nie po wzbogaceniu — wpisywanie w trakcie nie jest nadpisywane), czas wejścia odświeżony
+        setF((cur) => ({ ...cur, entryT: nowLocal(), entry: '', stop: '', exitT: '', exit: '', size: '', note: '' }));
         await onAdd({
-          setupId: setupId || null,
+          setupId: chosen || null,
           dir,
           entryT: entryT!,
           entryPx,
@@ -247,7 +276,6 @@ const TradeForm: React.FC<{ setups: Setup[]; onAdd: (t: Omit<Trade, 'id' | 'mae'
           note: f.note.trim(),
         });
         setBusy(false);
-        setF({ ...f, entry: '', stop: '', exitT: '', exit: '', size: '', note: '' });
       }}
     >
       <div className="flex flex-wrap items-end gap-3">
@@ -260,7 +288,7 @@ const TradeForm: React.FC<{ setups: Setup[]; onAdd: (t: Omit<Trade, 'id' | 'mae'
             { value: 'SHORT', label: <span><span className="text-sell-ink" aria-hidden="true">▼</span> SHORT</span> },
           ]}
         />
-        <select aria-label="Setup" className={inputCls + ' font-sans w-auto min-w-[10rem]'} value={setupId} onChange={(e) => setSetupId(e.target.value)}>
+        <select aria-label="Setup" className={inputCls + ' font-sans w-auto min-w-[10rem]'} value={chosen} onChange={(e) => setSetupId(e.target.value)}>
           <option value="">Bez setupu</option>
           {setups.map((s) => (
             <option key={s.id} value={s.id}>
@@ -270,23 +298,23 @@ const TradeForm: React.FC<{ setups: Setup[]; onAdd: (t: Omit<Trade, 'id' | 'mae'
         </select>
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <L label="Wejście — czas">
-          <input type="datetime-local" className={inputCls} value={f.entryT} onChange={(e) => setF({ ...f, entryT: e.target.value })} />
+        <L label="Wejście — czas (lokalny)" hint={entryT !== null && entryT > now ? 'czas w przyszłości' : undefined}>
+          <input type="datetime-local" className={inputCls} value={f.entryT} aria-invalid={entryT !== null && entryT > now} onChange={(e) => setF({ ...f, entryT: e.target.value })} />
         </L>
         <L label="Wejście — cena">
-          <input className={inputCls} inputMode="decimal" value={f.entry} onChange={(e) => setF({ ...f, entry: e.target.value })} />
+          <input className={inputCls} inputMode="decimal" value={f.entry} aria-invalid={f.entry !== '' && !(entryPx > 0)} onChange={(e) => setF({ ...f, entry: e.target.value })} />
         </L>
         <L label="Stop początkowy (1R)" hint={f.stop && !stopOk ? `stop musi być ${dir === 'LONG' ? 'poniżej' : 'powyżej'} wejścia` : undefined}>
-          <input className={inputCls} inputMode="decimal" value={f.stop} onChange={(e) => setF({ ...f, stop: e.target.value })} />
+          <input className={inputCls} inputMode="decimal" value={f.stop} aria-invalid={f.stop !== '' && !stopOk} onChange={(e) => setF({ ...f, stop: e.target.value })} />
         </L>
         <L label="Wielkość (BTC, opcjonalnie)">
           <input className={inputCls} inputMode="decimal" value={f.size} onChange={(e) => setF({ ...f, size: e.target.value })} />
         </L>
-        <L label="Wyjście — czas" hint="puste = zagranie otwarte">
-          <input type="datetime-local" className={inputCls} value={f.exitT} onChange={(e) => setF({ ...f, exitT: e.target.value })} />
+        <L label="Wyjście — czas (lokalny)" hint="puste = zagranie otwarte">
+          <input type="datetime-local" className={inputCls} value={f.exitT} aria-invalid={!exitOk} onChange={(e) => setF({ ...f, exitT: e.target.value })} />
         </L>
-        <L label="Wyjście — cena" hint={!exitOk ? 'podaj czas i cenę wyjścia (po wejściu)' : undefined}>
-          <input className={inputCls} inputMode="decimal" value={f.exit} onChange={(e) => setF({ ...f, exit: e.target.value })} />
+        <L label="Wyjście — cena" hint={!exitOk ? 'podaj czas (po wejściu, nie w przyszłości) i cenę wyjścia' : undefined}>
+          <input className={inputCls} inputMode="decimal" value={f.exit} aria-invalid={!exitOk} onChange={(e) => setF({ ...f, exit: e.target.value })} />
         </L>
       </div>
       <textarea aria-label="Notatka" className={textCls} placeholder="Notatka: co widziałeś, co zrobiłeś, czego się nauczyłeś" value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} />
@@ -314,6 +342,8 @@ const L: React.FC<{ label: string; hint?: string; children: React.ReactNode }> =
 const TradeList: React.FC<{ trades: Trade[]; names: Map<string, string>; onRemove: (id: string) => void }> = ({ trades, names, onRemove }) => {
   if (trades.length === 0) return <div className="p-4 text-xs text-ink-3">Dziennik jest pusty.</div>;
   return (
+    <>
+    {trades.length > 100 && <div className="px-4 pt-3 text-[11px] text-ink-3">Pokazano 100 najnowszych z {trades.length} — pełna lista w eksporcie JSON.</div>}
     <ul className="flex flex-col divide-y divide-line">
       {trades.slice(0, 100).map((t) => {
         const r = rMultiple(t);
@@ -325,7 +355,7 @@ const TradeList: React.FC<{ trades: Trade[]; names: Map<string, string>; onRemov
             <span className="font-mono tabular-nums text-ink-2">
               {fmtPrice(t.entryPx, 0)} → {t.exitPx === null ? 'otwarte' : fmtPrice(t.exitPx, 0)}
             </span>
-            <span className={`font-mono tabular-nums ${r === null ? 'text-ink-3' : r >= 0 ? 'text-buy-ink' : 'text-sell-ink'}`}>{fmtR(r)}</span>
+            <span className={`font-mono tabular-nums ${r === null || r === 0 ? 'text-ink-3' : r > 0 ? 'text-buy-ink' : 'text-sell-ink'}`}>{fmtR(r)}</span>
             {(t.mae !== null || t.mfe !== null) && (
               <span className="font-mono tabular-nums text-ink-3" title="Najgorszy / najlepszy ruch w trakcie, w R">
                 MAE {fmtR(t.mae, 1)} · MFE {fmtR(t.mfe, 1)}
@@ -339,12 +369,20 @@ const TradeList: React.FC<{ trades: Trade[]; names: Map<string, string>; onRemov
               </span>
             )}
             {t.note && <span className="w-full text-ink-3">{t.note}</span>}
-            <button type="button" className="ml-auto text-[11px] text-ink-3 hover:text-sell-ink" onClick={() => onRemove(t.id)} aria-label="Usuń zagranie">
+            <button
+              type="button"
+              className="ml-auto text-[11px] text-ink-3 hover:text-sell-ink"
+              onClick={() => {
+                if (window.confirm(`Usunąć zagranie z ${dtFmt.format(t.entryT)}?`)) onRemove(t.id);
+              }}
+              aria-label={`Usuń zagranie z ${dtFmt.format(t.entryT)}`}
+            >
               usuń
             </button>
           </li>
         );
       })}
     </ul>
+    </>
   );
 };
