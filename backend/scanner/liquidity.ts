@@ -119,6 +119,14 @@ const medianOrNull = (xs: (number | null)[]): number | null => {
 
 const roundOrNull = (x: number | null) => (x === null ? null : Math.round(x));
 
+/** Kwantyl z interpolacją liniową (typ 7). */
+const quantile = (xs: number[], q: number): number => {
+  const s = [...xs].sort((a, b) => a - b);
+  const pos = (s.length - 1) * q;
+  const lo = Math.floor(pos);
+  return s[lo] + (s[Math.ceil(pos)] - s[lo]) * (pos - lo);
+};
+
 /** Mediany migawek w minutach (klucz = początek minuty); minuta w toku (koniec > `now`) pomijana. */
 export function minuteRows(snaps: BookSnap[], now: number): MinuteRow[] {
   const by = new Map<number, BookSnap[]>();
@@ -154,7 +162,20 @@ export function liquidityProfile(rows: MinuteRow[], coin: string, now: number, d
   const hourOf = (r: MinuteRow) => new Date(r.t).getUTCHours();
   const byHour = Array.from({ length: 24 }, (_, h) => {
     const xs = rs.filter((r) => hourOf(r) === h);
-    return { h, d10: xs.length ? median(xs.map(tot10)) : null, d20: medianOrNull(xs.map(tot20)), n: xs.length, days: new Set(xs.map((r) => dayOf(r.t))).size };
+    const has = xs.length > 0;
+    return {
+      h,
+      d10: has ? median(xs.map(tot10)) : null,
+      d20: medianOrNull(xs.map(tot20)),
+      n: xs.length,
+      days: new Set(xs.map((r) => dayOf(r.t))).size,
+      // Strony osobno (koszt kupna — aski, sprzedaży — bidy) i warunki cienkie: 25. percentyl sumy ±10 bp
+      b10: has ? median(xs.map((r) => r.b10)) : null,
+      a10: has ? median(xs.map((r) => r.a10)) : null,
+      b20: medianOrNull(xs.map((r) => r.b20)),
+      a20: medianOrNull(xs.map((r) => r.a20)),
+      thin10: has ? quantile(xs.map(tot10), 0.25) : null,
+    };
   });
 
   // „Teraz”: ostatnia minuta, jeśli świeża; norma tej godziny z innych dni (≥ 3 dni, ≥ 90 min) — bez dzisiejszej sesji
