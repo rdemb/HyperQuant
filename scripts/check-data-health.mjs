@@ -10,9 +10,11 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 export const DATA_BASE = 'https://raw.githubusercontent.com/rdemb/hyperquant-data/main';
-export const FILES = ['status.json', 'liq-map/BTC.json', 'liq-tape/BTC.json', 'cohorts/BTC.json', 'README.md'];
+export const FILES = ['status.json', 'liq-map/BTC.json', 'liq-tape/BTC.json', 'cohorts/BTC.json', 'ledger/BTC/summary.json', 'README.md'];
 /** Pliki, których brak nie jest alarmem (nowsze niż część wdrożeń skanera) — gdy są, przechodzą strażnika prywatności */
-export const OPTIONAL = new Set(['liq-tape/BTC.json', 'cohorts/BTC.json']);
+export const OPTIONAL = new Set(['liq-tape/BTC.json', 'cohorts/BTC.json', 'ledger/BTC/summary.json']);
+/** Podsumowanie dziennika prognoz (prognozy co 15 min; pliki dziennika — gałąź `ledger`) */
+export const LEDGER_MAX_AGE_MIN = 60;
 export const LIMITS = {
   /** Publikacja co 2 min (+ do 5 min pamięci podręcznej CDN) — 30 min to jednoznaczna awaria */
   maxAgeMin: 30,
@@ -68,6 +70,15 @@ export function assessHealth(input, nowMs, limits = LIMITS) {
     if (a.ageMin > limits.maxAgeMin) problems.push(`${file}: dane sprzed ${fmtMin(a.ageMin)} (próg ${limits.maxAgeMin} min) — skaner nie publikuje`);
   }
 
+  if (input.ledger && typeof input.ledger === 'object') {
+    const a = ageOf('dziennik (ledger/BTC/summary.json)', input.ledger, nowMs);
+    if (!a.ok) problems.push(a.problem);
+    else {
+      facts.push({ label: 'Wiek dziennika prognoz', value: fmtMin(a.ageMin) });
+      if (a.ageMin > LEDGER_MAX_AGE_MIN) problems.push(`dziennik prognoz: ostatnia aktualizacja ${fmtMin(a.ageMin)} temu (próg ${LEDGER_MAX_AGE_MIN} min)`);
+    }
+  }
+
   const s = input.status;
   if (s && typeof s === 'object') {
     if (typeof s.coverage === 'number') {
@@ -119,9 +130,9 @@ async function main() {
   const errors = {};
   const json = {};
   await Promise.all(
-    FILES.map(async (file) => {
+    FILES.map((f) => [f, `${DATA_BASE}/${f}`]).map(async ([file, url]) => {
       try {
-        raw[file] = await fetchText(`${DATA_BASE}/${file}`);
+        raw[file] = await fetchText(url);
         if (file.endsWith('.json')) json[file] = JSON.parse(raw[file]);
       } catch (e) {
         errors[file] = e instanceof Error ? e.message : String(e);
@@ -129,7 +140,10 @@ async function main() {
     })
   );
   const now = Date.now();
-  const result = assessHealth({ status: json['status.json'] ?? null, liqMap: json['liq-map/BTC.json'] ?? null, raw, errors }, now);
+  const result = assessHealth(
+    { status: json['status.json'] ?? null, liqMap: json['liq-map/BTC.json'] ?? null, ledger: json['ledger/BTC/summary.json'] ?? null, raw, errors },
+    now
+  );
   const report = renderReport(result, now);
   console.log(report);
   if (process.env.HEALTH_REPORT_FILE) await writeFile(process.env.HEALTH_REPORT_FILE, report, 'utf8');

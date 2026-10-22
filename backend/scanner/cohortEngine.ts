@@ -281,6 +281,8 @@ export class CohortEngine {
   private queues: Pending[][] = [[], [], []];
   private oos = new Map<number, Record<CohortId, OosAcc>>();
   private blocks = new Map<string, { blk: number; w: number; wm: number }>();
+  /** Czas pierwszej transakcji widzianej przez silnik (kubełki wcześniejsze lub obserwowane częściowo nie są publikowane) */
+  private observedFrom: number | null = null;
 
   constructor(o: { coin: string; isWhale: (addr: string) => boolean; maxStats?: number }) {
     this.coin = o.coin;
@@ -322,6 +324,7 @@ export class CohortEngine {
     if (typeof buyer !== 'string' || typeof seller !== 'string' || buyer === seller) return;
     if (!(tr.px > 0) || !(tr.sz > 0) || !Number.isFinite(tr.time) || (tr.side !== 'B' && tr.side !== 'A')) return;
     const usd = tr.px * tr.sz;
+    if (this.observedFrom === null || tr.time < this.observedFrom) this.observedFrom = tr.time;
     this.prices.record(tr.px, tr.time);
     const cb = this.cohortOf(buyer);
     const cs = this.cohortOf(seller);
@@ -497,8 +500,10 @@ export class CohortEngine {
     this.members = members;
   }
 
-  build(now: number, since: number): CohortFlow {
-    const sinceB = Math.floor(since / BUCKET) * BUCKET;
+  build(now: number, tapeSince: number): CohortFlow {
+    // Okres obserwacji kohort: późniejszy z ciągłości taśmy i startu silnika; tylko kubełki obserwowane w całości
+    const since = Math.max(tapeSince, this.observedFrom ?? tapeSince);
+    const sinceB = Math.ceil(since / BUCKET) * BUCKET;
     const h1From = Math.floor(now / BUCKET) * BUCKET - HOUR;
     const total = (): CohortTotal => ({ buy: 0, sell: 0, takerBuy: 0, takerSell: 0, hidden: 0, takerHidden: 0 });
     const h1 = { mm: total(), informed: total(), whale: total(), rest: total() };
@@ -610,6 +615,7 @@ export class CohortEngine {
       informed: [...this.informed],
       meta: this.meta,
       members: this.members,
+      observedFrom: this.observedFrom,
       buckets: [...this.buckets].map(([t, b]) => [t, { open: b.open ? Object.fromEntries(COHORTS.map((c) => [c, cellJson(b.open![c])])) : null, pub: b.pub }]),
       oos: [...this.oos].map(([h, acc]) => [h, Object.fromEntries(COHORTS.map((c) => [c, { ...acc[c], takers: acc[c].takers ? [...acc[c].takers!] : null }]))]),
     };
@@ -635,6 +641,7 @@ export class CohortEngine {
     if (Array.isArray(x.informed)) e.informed = new Set(x.informed.filter((a): a is string => typeof a === 'string'));
     const meta = x.meta as Partial<Meta> | undefined;
     if (meta && fin(meta.candidates) && fin(meta.selected) && finOrNull(meta.mu0) && finOrNull(meta.tau2) && finOrNull(meta.at)) e.meta = meta as Meta;
+    if (fin(x.observedFrom)) e.observedFrom = x.observedFrom;
     const members = x.members as Record<string, unknown> | undefined;
     if (members && COHORTS.every((c) => fin(members[c]))) e.members = members as Record<CohortId, number>;
 

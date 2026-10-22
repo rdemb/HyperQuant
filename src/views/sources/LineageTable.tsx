@@ -146,6 +146,15 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         caveat: 'Hyperliquid nie publikuje likwidacji wszystkich kont — tylko zmierzona część open interest; bez adresów, czas do minuty, rozmiar zaokrąglony, opóźnienie do kilku minut.',
       },
       {
+        metric: 'Weryfikowalny dziennik desku',
+        source: 'Skaner HyperQuant: model zmienności ze świec 1h/5m, PDH/PDL ze świec 1d, rozstrzygnięcia ze świec 1m (publiczne API Hyperliquid); gałąź ledger repo danych',
+        method:
+          'Co 15 min przed faktem (horyzont od pełnej minuty po wydaniu): 13 kwantyli log-zwrotu 1 h / 4 h (HAR + FHS, MC 4000 ścieżek) z benchmarkiem normalnym i α ACI; P(dotknięcia PDH/PDL/D-EQ w 2 h). Wyniki: CRPS(S), PIT, Kupiec (podpróba rozłączna), ACI, Brier/BSS (klimatologia poziomów), Venn–Abers; łańcuch SHA-256 tylko dopisywany, pokwitowanie OpenTimestamps po każdym slocie',
+        kinds: ['MODEL'],
+        refresh: 'prognozy co 15 min; podsumowanie przy każdej zmianie (najwyżej co 15 min bez zmian)',
+        caveat: 'Wyniki od 20 rozstrzygnięć; prognozy nakładają się (wyniki skorelowane); brak danych 6 h po horyzoncie = jawne unieważnienie; pominięte sloty jawne; znaczniki czasu potwierdzają istnienie zapisu, nie poprawność modelu.',
+      },
+      {
         metric: 'Przepływ kohort',
         source: 'Skaner HyperQuant: WS trades BTC (pole users = [kupujący, sprzedający], side = strona agresora); pozycje i ranking kont z książki adresów',
         method:
