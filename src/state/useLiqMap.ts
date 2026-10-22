@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react';
 import { LiqMap, isLiqMap } from '../utils/liqMap';
-import { liqMapFreshness } from '../utils/liqMapView';
+import { LiqFreshness, liqMapFreshness } from '../utils/liqMapView';
 
 export interface LiqMapState {
-  /** unconfigured = brak adresu danych w buildzie; stale = mapa starsza niż 10 min (nie jest pokazywana jako aktualna) */
-  status: 'unconfigured' | 'loading' | 'ready' | 'stale' | 'error';
+  /**
+   * unconfigured = brak adresu danych w buildzie; ready = LIVE; delayed = połowa nominału z odczytów > 15 min;
+   * stale = publikacja lub kontekst rynku > 10 min (liczby ukryte); expired = publikacja > 60 min (mapy nie ma)
+   */
+  status: 'unconfigured' | 'loading' | 'error' | LiqFreshness;
   map: LiqMap | null;
 }
 

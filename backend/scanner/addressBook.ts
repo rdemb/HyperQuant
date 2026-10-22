@@ -2,13 +2,23 @@ import type { ScannedPosition } from '../../src/utils/liqMap.ts';
 
 /**
  * Adresy widziane na taśmie BTC (pole `users` transakcji Hyperliquid) i harmonogram odpytywania ich pozycji.
- * Nowy adres — od razu (większy obrót pierwszy). Potem interwał zależy od nominału pozycji: duże pozycje zmieniają
- * mapę najbardziej, więc są odświeżane najczęściej. Stan zostaje wyłącznie na serwerze (nigdy nie jest publikowany).
+ * Stan zostaje wyłącznie na serwerze (nigdy nie jest publikowany).
+ *
+ * Każde wywołanie `due` dzieli limit między trzy kolejki (niewykorzystany udział przechodzi dalej):
+ *  1. pozycje (50%): termin z interwału wg nominału — ≥ 1 mln USD co 2 min, ≥ 100 tys. co 10 min, inne co 30 min;
+ *     kolejność wg spóźnienia względem interwału, więc przy przeciążeniu najdłużej czekają małe pozycje, nie duże;
+ *     pozycja, której właściciel znów handlował, jest od razu do odświeżenia;
+ *  2. adresy, które handlowały od ostatniego odczytu, w tym nowe (40%) — większy obrót pierwszy;
+ *  3. bezpiecznik (10%): adres bez pozycji, który nie handlował, raz na 24 h.
+ * Pozycja w BTC zmienia się tylko przez transakcję BTC (także likwidację), więc adresu bez pozycji nie trzeba
+ * odpytywać, dopóki nie pojawi się znów na taśmie.
  */
 
 const MIN = 60_000;
 const DAY = 24 * 60 * MIN;
 const TRADED_HALF_LIFE = DAY;
+const SAFETY_RESCAN = DAY;
+const RETRY_AFTER = MIN;
 
 interface Rec {
   lastTradeAt: number;
@@ -16,25 +26,29 @@ interface Rec {
   tradedUsd: number;
   pos: ScannedPosition | null;
   lastScanAt: number | null;
+  /** Handlował od ostatniego odczytu (albo nigdy nie był odczytany) */
+  dirty: boolean;
+  /** Po nieudanym odczycie: nie wcześniej niż */
+  retryAt?: number;
 }
 
-function intervalMs(r: Rec): number {
-  if (!r.pos) return 120 * MIN;
-  const ntl = Math.abs(r.pos.szi) * r.pos.entryPx;
+const posNtl = (r: Rec) => (r.pos ? Math.abs(r.pos.szi) * r.pos.entryPx : 0);
+
+function posInterval(r: Rec): number {
+  const ntl = posNtl(r);
   if (ntl >= 1e6) return 2 * MIN;
   if (ntl >= 1e5) return 10 * MIN;
   return 30 * MIN;
 }
 
-const dueAt = (r: Rec) => (r.lastScanAt === null ? 0 : r.lastScanAt + intervalMs(r));
-const posNtl = (r: Rec) => (r.pos ? Math.abs(r.pos.szi) * r.pos.entryPx : 0);
-
 export class AddressBook {
   private readonly recs = new Map<string, Rec>();
-  private readonly cap: number;
+  readonly capacity: number;
+  /** Liczba adresów dodanych z rankingu kont (diagnostyka) */
+  seededCount = 0;
 
   constructor(cap: number = 50_000) {
-    this.cap = cap;
+    this.capacity = cap;
   }
 
   get size(): number {
@@ -51,26 +65,75 @@ export class AddressBook {
       if (r) {
         r.tradedUsd = r.tradedUsd * Math.pow(0.5, Math.max(0, t - r.lastTradeAt) / TRADED_HALF_LIFE) + ntlUsd;
         r.lastTradeAt = Math.max(r.lastTradeAt, t);
+        if (r.lastScanAt === null || t >= r.lastScanAt) r.dirty = true;
       } else {
-        this.recs.set(a, { lastTradeAt: t, tradedUsd: ntlUsd, pos: null, lastScanAt: null });
-        if (this.recs.size > this.cap) this.evictOne(a);
+        this.recs.set(a, { lastTradeAt: t, tradedUsd: ntlUsd, pos: null, lastScanAt: null, dirty: true });
+        if (this.recs.size > this.capacity) this.evictOne(a);
       }
     }
   }
 
+  /**
+   * Zasiew z rankingu kont: nowy adres trafia do kolejki „handlowały” z priorytetem wg wartości konta.
+   * Adres już znany nie jest ponownie oznaczany (ponowny zasiew co kilka godzin nie zalewa kolejki).
+   */
+  seed(addr: string, accountValueUsd: number, t: number): void {
+    if (this.recs.has(addr)) return;
+    this.recs.set(addr, { lastTradeAt: t, tradedUsd: accountValueUsd, pos: null, lastScanAt: null, dirty: true });
+    this.seededCount++;
+    if (this.recs.size > this.capacity) this.evictOne(addr);
+  }
+
   updatePosition(addr: string, pos: ScannedPosition | null, t: number): void {
-    const r = this.recs.get(addr) ?? { lastTradeAt: t, tradedUsd: 0, pos: null, lastScanAt: null };
+    const r = this.recs.get(addr) ?? { lastTradeAt: t, tradedUsd: 0, pos: null, lastScanAt: null, dirty: false };
     r.pos = pos;
     r.lastScanAt = t;
+    r.dirty = false;
+    delete r.retryAt;
     this.recs.set(addr, r);
   }
 
-  /** Adresy do odpytania teraz: najpierw najdłużej czekające, przy remisie większa pozycja / obrót. */
+  /** Nieudany odczyt (błąd API): adres wraca do kolejki po minucie, żeby nie blokował innych. */
+  markFailed(addr: string, now: number): void {
+    const r = this.recs.get(addr);
+    if (r) r.retryAt = now + RETRY_AFTER;
+  }
+
   due(now: number, limit: number): string[] {
-    const out: [string, Rec][] = [];
-    for (const e of this.recs) if (dueAt(e[1]) <= now) out.push(e);
-    out.sort((x, y) => dueAt(x[1]) - dueAt(y[1]) || posNtl(y[1]) - posNtl(x[1]) || y[1].tradedUsd - x[1].tradedUsd);
-    return out.slice(0, limit).map(([a]) => a);
+    const positions: [string, number, number][] = []; // adres, spóźnienie względem interwału, nominał
+    const traded: [string, number][] = [];
+    const safety: [string, number][] = [];
+    for (const [a, r] of this.recs) {
+      if (r.retryAt !== undefined && r.retryAt > now) continue;
+      if (r.pos && r.lastScanAt !== null) {
+        const iv = posInterval(r);
+        const late = (now - (r.lastScanAt + iv)) / iv;
+        if (late >= 0 || r.dirty) positions.push([a, r.dirty ? Math.max(late, 1) : late, posNtl(r)]);
+      } else if (r.dirty || r.lastScanAt === null) {
+        traded.push([a, r.tradedUsd]);
+      } else if (now - r.lastScanAt >= SAFETY_RESCAN) {
+        safety.push([a, r.lastScanAt]);
+      }
+    }
+    positions.sort((x, y) => y[1] - x[1] || y[2] - x[2]);
+    traded.sort((x, y) => y[1] - x[1]);
+    safety.sort((x, y) => x[1] - y[1]);
+
+    const queues = [positions.map((p) => p[0]), traded.map((p) => p[0]), safety.map((p) => p[0])];
+    const shares = [Math.ceil(limit * 0.5), Math.ceil(limit * 0.4), limit];
+    const out: string[] = [];
+    const taken = [0, 0, 0];
+    for (let q = 0; q < 3; q++) {
+      const n = Math.min(queues[q].length, shares[q], limit - out.length);
+      out.push(...queues[q].slice(0, n));
+      taken[q] = n;
+    }
+    // Niewykorzystany udział: dopełnienie z kolejek w kolejności ważności
+    for (let q = 0; q < 3 && out.length < limit; q++) {
+      const extra = queues[q].slice(taken[q], taken[q] + (limit - out.length));
+      out.push(...extra);
+    }
+    return out;
   }
 
   positions(): ScannedPosition[] {
@@ -98,14 +161,26 @@ export class AddressBook {
     if (victim !== null) this.recs.delete(victim);
   }
 
-  toJSON(): { v: 1; cap: number; recs: [string, Rec][] } {
-    return { v: 1, cap: this.cap, recs: [...this.recs] };
+  toJSON(): { v: 2; recs: [string, Rec][] } {
+    return { v: 2, recs: [...this.recs] };
   }
 
-  static fromJSON(j: unknown): AddressBook {
-    const o = j as { v?: number; cap?: number; recs?: [string, Rec][] } | null;
-    const b = new AddressBook(typeof o?.cap === 'number' ? o.cap : undefined);
-    if (o?.v === 1 && Array.isArray(o.recs)) for (const [a, r] of o.recs) if (typeof a === 'string' && r) b.recs.set(a, r);
+  /** Odczyt stanu z dysku; limit adresów zawsze z bieżącej konfiguracji. */
+  static fromJSON(j: unknown, cap?: number): AddressBook {
+    const o = j as { v?: number; recs?: [string, Partial<Rec>][] } | null;
+    const b = new AddressBook(cap);
+    if ((o?.v === 1 || o?.v === 2) && Array.isArray(o.recs)) {
+      for (const [a, r] of o.recs) {
+        if (typeof a !== 'string' || !r) continue;
+        b.recs.set(a, {
+          lastTradeAt: r.lastTradeAt ?? 0,
+          tradedUsd: r.tradedUsd ?? 0,
+          pos: r.pos ?? null,
+          lastScanAt: r.lastScanAt ?? null,
+          dirty: r.dirty ?? r.lastScanAt == null,
+        });
+      }
+    }
     return b;
   }
 }

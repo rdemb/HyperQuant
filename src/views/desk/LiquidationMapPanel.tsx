@@ -46,33 +46,39 @@ export const LiquidationMapPanel: React.FC = () => {
       <Badge tone="live" title="Pozycje i ceny likwidacji z publicznego API Hyperliquid (clearinghouseState), agregat bez adresów">
         LIVE
       </Badge>
-    ) : status === 'stale' ? (
-      <Badge tone="stale" title="Mapa starsza niż 10 min — skaner mógł przestać publikować">
+    ) : status === 'delayed' ? (
+      <Badge tone="warn" title="Publikacja aktualna, ale połowa nominału pochodzi z odczytów pozycji starszych niż 15 min">
+        OPÓŹNIONE
+      </Badge>
+    ) : status === 'stale' || status === 'expired' ? (
+      <Badge tone="stale" title="Skaner nie publikuje aktualnych danych — liczby ukryte">
         STALE
       </Badge>
     ) : null;
 
   return (
     <Panel eyebrow="Pozycje on-chain · Hyperliquid" title="Mapa likwidacji i kaskada" actions={badge}>
-      {status === 'unconfigured' || status === 'loading' || status === 'error' || !map ? (
+      {status === 'unconfigured' || status === 'loading' || status === 'error' || status === 'stale' || status === 'expired' || !map ? (
         <EmptyState
           title={
             status === 'unconfigured'
               ? 'Skaner pozycji nie jest jeszcze podłączony'
               : status === 'loading'
               ? 'Pobieram mapę likwidacji…'
+              : (status === 'stale' || status === 'expired') && map
+              ? `Mapa nieaktualna — ostatnia publikacja ${timeFmt.format(map.asOf)}; liczby ukryte, dopóki skaner nie opublikuje świeżych danych`
               : 'Mapa likwidacji chwilowo niedostępna'
           }
           detail="Mapa powstaje ze zmierzonych pozycji portfeli na Hyperliquid (ceny likwidacji z publicznego API), a nie z założonych dźwigni. Do tego czasu heatmapa likwidacji na wykresie świec pozostaje oznaczonym szacunkiem."
         />
       ) : (
-        <LiqMapBody map={map} stale={status === 'stale'} sigmaDaily={sigmaDaily} dayVolumeUsd={dayVolumeUsd} />
+        <LiqMapBody map={map} delayed={status === 'delayed'} sigmaDaily={sigmaDaily} dayVolumeUsd={dayVolumeUsd} />
       )}
     </Panel>
   );
 };
 
-const LiqMapBody: React.FC<{ map: LiqMap; stale: boolean; sigmaDaily: number; dayVolumeUsd: number }> = ({ map, stale, sigmaDaily, dayVolumeUsd }) => {
+const LiqMapBody: React.FC<{ map: LiqMap; delayed: boolean; sigmaDaily: number; dayVolumeUsd: number }> = ({ map, delayed, sigmaDaily, dayVolumeUsd }) => {
   const near = useMemo(() => nearestClusters(map, MIN_CLUSTER_USD), [map]);
   const canCascade = sigmaDaily > 0 && dayVolumeUsd > 0;
   const curves = useMemo(() => {
@@ -88,16 +94,22 @@ const LiqMapBody: React.FC<{ map: LiqMap; stale: boolean; sigmaDaily: number; da
 
   return (
     <div className="flex flex-col gap-4 p-4">
+      {delayed && (
+        <div className="rounded-md border border-warn/40 bg-warn/5 px-3 py-2 text-xs text-ink-2">
+          Połowa nominału na mapie pochodzi z odczytów pozycji starszych niż {Math.round(map.ageMin.ntlP50)} min (np. po restarcie skanera
+          albo przy przeciążeniu API) — klastry mogły się przesunąć.
+        </div>
+      )}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-5 gap-y-3">
         <Stat
           label="Pokrycie open interest"
           value={<span className="font-mono tabular-nums">{(map.coverage.share * 100).toFixed(1)}%</span>}
-          hint={`${map.coverage.positions.toLocaleString('pl-PL')} pozycji · ${map.coverage.addresses.toLocaleString('pl-PL')} adresów · ${timeFmt.format(map.asOf)}${stale ? ' (nieświeże)' : ''}`}
+          hint={`${map.coverage.positions.toLocaleString('pl-PL')} pozycji · ${map.coverage.addresses.toLocaleString('pl-PL')} adresów · ${timeFmt.format(map.asOf)}`}
         />
         <Stat
           label="Wiek odczytów"
-          value={<span className="font-mono tabular-nums">{Math.round(map.ageMin.p50)} min</span>}
-          hint={`mediana · 90% pozycji młodszych niż ${Math.round(map.ageMin.p90)} min`}
+          value={<span className="font-mono tabular-nums">{Math.round(map.ageMin.ntlP50)} min</span>}
+          hint={`mediana ważona nominałem · zwykła ${Math.round(map.ageMin.p50)} min, p90 ${Math.round(map.ageMin.p90)} min`}
         />
         <Stat
           label="Najbliżej pod ceną"
@@ -128,7 +140,8 @@ const LiqMapBody: React.FC<{ map: LiqMap; stale: boolean; sigmaDaily: number; da
               {fmtCompact(peak.liquidatedUsd, '$')})
               <span className="text-ink-3">
                 {' '}
-                — tylko zmierzone {(map.coverage.share * 100).toFixed(1)}% open interest; przy niższym pokryciu wzmocnienie jest niedoszacowane.
+                — górna granica (wpływ szczytowy, pełne trafienie w arkusz, Y = 1 założone) na zmierzonych {(map.coverage.share * 100).toFixed(1)}% open
+                interest; niezmierzone pozycje nie są wliczone.
               </span>
             </div>
             <CascadeChart main={curves.main} lo={curves.lo} hi={curves.hi} />
@@ -142,10 +155,15 @@ const LiqMapBody: React.FC<{ map: LiqMap; stale: boolean; sigmaDaily: number; da
         <summary className="cursor-pointer select-none text-ink-1 font-medium py-1">Metoda, ograniczenia i tabela klastrów</summary>
         <ul className="list-disc pl-4 mt-2 space-y-1.5 leading-relaxed">
           <li>
-            Adresy portfeli z publicznego strumienia transakcji BTC, ich pozycje i ceny likwidacji z publicznego <code>clearinghouseState</code>.
+            Adresy portfeli z publicznego strumienia transakcji BTC i z publicznego rankingu kont Hyperliquid, ich pozycje i ceny likwidacji z
+            publicznego <code>clearinghouseState</code>.
             Publikowane są tylko agregaty — bez adresów. Pokrycie = zeskanowany rozmiar / (2 × open interest).
           </li>
-          <li>Portfele, które nie handlowały od startu skanera, nie są na mapie. Cena likwidacji pozycji cross zmienia się z całym kontem.</li>
+          <li>
+            Portfele spoza rankingu, które nie handlowały od startu skanera, nie są na mapie. Odczyty po złej stronie ceny (nieaktualne) są
+            pomijane ({map.coverage.wrongSide}). Cena likwidacji pozycji cross zmienia się z całym kontem. Samokontrola: longi{' '}
+            {map.coverage.longBtc.toFixed(1)} BTC, shorty {map.coverage.shortBtc.toFixed(1)} BTC (przy pełnym pokryciu obie ≈ OI {map.coverage.oiBtc.toFixed(0)} BTC).
+          </li>
           <li>
             Kaskada: Δp/p = Y·σ·√(Q/V) (Tóth i in. 2011; Bouchaud i in. 2018), σ = dzienna zmienność ({(sigmaDaily * 100).toFixed(2)}%),
             V = obrót 24 h ({fmtCompact(dayVolumeUsd, '$')}). Wpływ szczytowy i pełne trafienie w arkusz — górna granica; na Hyperliquid duże

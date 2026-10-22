@@ -18,6 +18,10 @@ export interface ScannerConfig {
   outDir: string;
   publishEveryS: number;
   maxAddresses: number;
+  /** Ile największych kont z publicznego rankingu dosiewać co 6 h (0 = wyłączone) */
+  seedTop: number;
+  /** Minimalna wartość konta do zasiewu, USD */
+  seedMinUsd: number;
   r2: R2Config | null;
 }
 
@@ -40,6 +44,8 @@ export function loadConfig(env: Env): { ok: true; config: ScannerConfig } | { ok
   const weightPerMin = intIn(env, 'HQ_WEIGHT_PER_MIN', 240, 30, 600, errors);
   const publishEveryS = intIn(env, 'HQ_PUBLISH_EVERY_S', 60, 15, 3600, errors);
   const maxAddresses = intIn(env, 'HQ_MAX_ADDRESSES', 50_000, 100, 500_000, errors);
+  const seedTop = intIn(env, 'HQ_SEED_TOP', 5000, 0, 20_000, errors);
+  const seedMinUsd = intIn(env, 'HQ_SEED_MIN_USD', 100_000, 0, 1_000_000_000, errors);
   const coin = (env.HQ_COIN ?? 'BTC').trim();
   if (!/^[A-Z0-9]{2,10}$/.test(coin)) errors.push('HQ_COIN: niepoprawny symbol rynku');
 
@@ -58,5 +64,5 @@ export function loadConfig(env: Env): { ok: true; config: ScannerConfig } | { ok
   }
 
   if (errors.length > 0) return { ok: false, errors };
-  return { ok: true, config: { coin, weightPerMin, stateDir, outDir, publishEveryS, maxAddresses, r2 } };
+  return { ok: true, config: { coin, weightPerMin, stateDir, outDir, publishEveryS, maxAddresses, seedTop, seedMinUsd, r2 } };
 }

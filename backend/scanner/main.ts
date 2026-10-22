@@ -10,6 +10,7 @@ import { loadConfig } from './config.ts';
 import { HlRest, HlStream } from './hl.ts';
 import { WeightLimiter } from './rateLimiter.ts';
 import { Scanner } from './scanner.ts';
+import { fetchLeaderboardAccounts } from './seed.ts';
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 const log = (msg: string) => console.log(`[skaner] ${msg}`);
@@ -26,7 +27,7 @@ mkdirSync(cfg.outDir, { recursive: true });
 const statePath = join(cfg.stateDir, `book-${cfg.coin}.json`);
 let book: AddressBook;
 try {
-  book = AddressBook.fromJSON(JSON.parse(readFileSync(statePath, 'utf8')));
+  book = AddressBook.fromJSON(JSON.parse(readFileSync(statePath, 'utf8')), cfg.maxAddresses);
   log(`wczytano stan: ${book.size} adresów`);
 } catch {
   book = new AddressBook(cfg.maxAddresses);
@@ -57,6 +58,16 @@ const stream = new HlStream(
   }
 );
 
+/** Zasiew największymi kontami z publicznego rankingu (adresy zostają na serwerze). */
+async function seedFromLeaderboard(): Promise<void> {
+  if (cfg.seedTop <= 0) return;
+  const accounts = await fetchLeaderboardAccounts(cfg.seedMinUsd, cfg.seedTop);
+  const before = book.seededCount;
+  const t = Date.now();
+  for (const a of accounts) book.seed(a.address, a.accountValue, t);
+  log(`ranking kont: ${accounts.length} kont ≥ ${cfg.seedMinUsd} USD, nowych ${book.seededCount - before}`);
+}
+
 /** Zapas dla kontekstu rynku, gdy WebSocket milczy > 2 min (waga 20). */
 async function ctxFallback(): Promise<void> {
   if (Date.now() - lastWsCtx < 120_000) return;
@@ -70,13 +81,30 @@ async function ctxFallback(): Promise<void> {
 let stopping = false;
 async function scanLoop(): Promise<void> {
   while (!stopping) {
-    const n = await scanner.scanDue(20);
-    if (n === 0) await sleep(1000);
+    try {
+      const n = await scanner.scanDue(20);
+      if (n === 0) await sleep(1000);
+    } catch (e) {
+      // Nieoczekiwany błąd nie może zatrzymać skanera — odczekaj i próbuj dalej
+      console.error(`[skaner] błąd pętli skanu: ${String(e)}`);
+      await sleep(5000);
+    }
   }
 }
 
+/** Zadanie timera z przechwyceniem błędów (np. pełny dysk) — błąd jest logowany, proces działa dalej. */
+function guarded(name: string, fn: () => unknown): () => Promise<void> {
+  return async () => {
+    try {
+      await fn();
+    } catch (e) {
+      console.error(`[skaner] błąd zadania ${name}: ${String(e)}`);
+    }
+  };
+}
+
 const timers = [
-  setInterval(async () => {
+  setInterval(guarded('publikacja', async () => {
     await ctxFallback();
     const ok = await scanner.publish();
     const s = book.positions().length;
@@ -84,10 +112,12 @@ const timers = [
       `adresy=${book.size} pozycje=${s} zapytania=${rest.requests} błędy=${rest.errors} ws=${stream.connected ? 'ok' : 'brak'} ` +
         `publikacja=${ok ? 'ok' : 'brak/niepełna'}${cfg.r2 ? ' (R2)' : ' (lokalnie)'}`
     );
-  }, cfg.publishEveryS * 1000),
-  setInterval(() => book.prune(Date.now()), 10 * 60_000),
-  setInterval(saveState, 5 * 60_000),
+  }), cfg.publishEveryS * 1000),
+  setInterval(guarded('czyszczenie', () => book.prune(Date.now())), 10 * 60_000),
+  setInterval(guarded('zapis stanu', saveState), 5 * 60_000),
+  setInterval(guarded('zasiew', seedFromLeaderboard), 6 * 60 * 60_000),
 ];
+setTimeout(guarded('zasiew', seedFromLeaderboard), 5_000);
 
 function shutdown(): void {
   if (stopping) return;

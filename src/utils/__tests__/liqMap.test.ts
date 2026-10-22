@@ -59,7 +59,7 @@ describe('buildLiqMap — mapa z pozycji on-chain', () => {
     const m = buildLiqMap([], opts);
     expect(m.longs).toEqual([]);
     expect(m.coverage.share).toBe(0);
-    expect(m.ageMin).toEqual({ p50: 0, p90: 0 });
+    expect(m.ageMin).toEqual({ p50: 0, p90: 0, ntlP50: 0 });
     expect(m.v).toBe(1);
     expect(m.method).toBe('hl-clearinghouse-v1');
   });
@@ -72,5 +72,40 @@ describe('isLiqMap — walidacja danych z sieci', () => {
     expect(isLiqMap({ v: 2 })).toBe(false);
     expect(isLiqMap({ ...buildLiqMap([], opts), longs: 'x' })).toBe(false);
     expect(isLiqMap({ ...buildLiqMap([], opts), markPx: Number.NaN })).toBe(false);
+  });
+});
+
+describe('buildLiqMap — rzetelność danych (poprawki po recenzji)', () => {
+  it('long z ceną likwidacji ≥ mark i short ≤ mark (nieaktualny odczyt) nie trafiają do kubełków, są liczone osobno', () => {
+    const m = buildLiqMap([pos(2, 83100), pos(-1, 82900), pos(1, 82000)], opts);
+    expect(m.longs).toEqual([{ px: 82000, ntlUsd: 82000, n: 1 }]);
+    expect(m.shorts).toEqual([]);
+    expect(m.coverage.wrongSide).toBe(2);
+  });
+
+  it('pokrycie rozbite na longi i shorty (samokontrola symetrii OI)', () => {
+    const m = buildLiqMap([pos(3, 80000), pos(-2, 86000), pos(-1, null)], opts);
+    expect(m.coverage.longBtc).toBe(3);
+    expect(m.coverage.shortBtc).toBe(3);
+  });
+
+  it('wiek ważony nominałem: duża świeża pozycja przeważa nad wieloma starymi małymi', () => {
+    const big = { szi: 100, entryPx: 83000, liqPx: 80000, scannedAt: T - 1 * 60_000 };
+    const smalls = Array.from({ length: 9 }, () => ({ szi: 0.1, entryPx: 83000, liqPx: 80000, scannedAt: T - 60 * 60_000 }));
+    const m = buildLiqMap([big, ...smalls], opts);
+    expect(m.ageMin.p50).toBeCloseTo(60, 9);
+    expect(m.ageMin.ntlP50).toBeCloseTo(1, 9);
+  });
+
+  it('czas kontekstu rynku (mark, OI) jest publikowany', () => {
+    expect(buildLiqMap([], { ...opts, ctxAt: T - 30_000 }).ctxAt).toBe(T - 30_000);
+    expect(buildLiqMap([], opts).ctxAt).toBe(T);
+  });
+
+  it('isLiqMap wymaga liczności, czasu kontekstu i wieku ważonego', () => {
+    const ok = buildLiqMap([pos(1, 82000)], opts);
+    expect(isLiqMap({ ...ok, coverage: { ...ok.coverage, positions: 'x' } })).toBe(false);
+    expect(isLiqMap({ ...ok, ctxAt: undefined })).toBe(false);
+    expect(isLiqMap({ ...ok, ageMin: { p50: 1, p90: 2 } })).toBe(false);
   });
 });

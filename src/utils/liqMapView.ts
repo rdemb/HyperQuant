@@ -2,9 +2,19 @@ import type { LiqBucket, LiqMap } from './liqMap.ts';
 
 /** Odczyty mapy likwidacji dla UI — czyste funkcje (świeżość, klastry, stop w klastrze, histogram). */
 
-/** Mapa starsza niż `maxAgeMin` nie jest pokazywana jako aktualna. */
-export function liqMapFreshness(map: LiqMap, now: number, maxAgeMin: number = 10): 'ready' | 'stale' {
-  return now - map.asOf <= maxAgeMin * 60_000 ? 'ready' : 'stale';
+/**
+ * Świeżość mapy z trzech czasów: publikacji (asOf), kontekstu rynku (ctxAt) i samych odczytów pozycji (mediana ważona nominałem).
+ * ready = LIVE; delayed = publikacja aktualna, ale połowa nominału z odczytów > 15 min; stale = publikacja lub kontekst > 10 min;
+ * expired = publikacja > 60 min (mapa nie jest pokazywana).
+ */
+export type LiqFreshness = 'ready' | 'delayed' | 'stale' | 'expired';
+
+export function liqMapFreshness(map: LiqMap, now: number): LiqFreshness {
+  const min = 60_000;
+  if (now - map.asOf > 60 * min) return 'expired';
+  if (now - map.asOf > 10 * min || now - map.ctxAt > 10 * min) return 'stale';
+  if (map.ageMin.ntlP50 > 15) return 'delayed';
+  return 'ready';
 }
 
 const mid = (b: LiqBucket, step: number) => b.px + step / 2;

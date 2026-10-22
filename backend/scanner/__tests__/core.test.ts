@@ -29,11 +29,32 @@ describe('WeightLimiter — własny budżet wag API Hyperliquid', () => {
     expect(sent).toBeLessThanOrEqual(240 + 40);
   });
 
-  it('kara po 429: tempo o połowę przez 5 min, potem wraca', () => {
+  it('kolejne błędy (429/5xx) halvują tempo aż do 1/8 budżetu', () => {
     const l = new WeightLimiter(240);
-    l.penalize(0);
-    expect(l.perMinAt(1000)).toBe(120);
-    expect(l.perMinAt(5 * MIN + 1)).toBe(240);
+    l.fail(0, 'error');
+    expect(l.perMinAt(1)).toBe(120);
+    l.fail(1, 'error');
+    l.fail(2, 'error');
+    l.fail(3, 'error');
+    l.fail(4, 'error');
+    expect(l.perMinAt(5)).toBe(30);
+  });
+
+  it('429 wstrzymuje zapytania na 30 s', () => {
+    const l = new WeightLimiter(240);
+    l.fail(1000, '429');
+    expect(l.reserve(2, 1000)).toBeGreaterThanOrEqual(30_000);
+  });
+
+  it('powrót stopniowy: sukcesy po minucie bez błędów podnoszą tempo ×1.25, najwyżej do budżetu', () => {
+    const l = new WeightLimiter(240);
+    l.fail(0, 'error');
+    l.success(30_000);
+    expect(l.perMinAt(30_000)).toBe(120);
+    l.success(61_000);
+    expect(l.perMinAt(61_000)).toBe(150);
+    for (let i = 0; i < 20; i++) l.success(62_000 + i);
+    expect(l.perMinAt(70_000)).toBe(240);
   });
 });
 
@@ -59,7 +80,50 @@ describe('AddressBook — adresy z taśmy i harmonogram skanów', () => {
     expect(b.due(2 * MIN, 10)).toEqual(['0xbig']);
     expect(b.due(10 * MIN, 10)).toEqual(['0xbig', '0xmid']);
     expect(b.due(30 * MIN, 10)).toEqual(['0xbig', '0xmid', '0xsmall']);
-    expect(b.due(120 * MIN, 10).sort()).toEqual(['0xbig', '0xmid', '0xnone', '0xsmall', '0xz']);
+    // Adres bez pozycji: ponownie dopiero po nowej transakcji albo po 24 h (bezpiecznik)
+    expect(b.due(120 * MIN, 10)).toEqual(['0xbig', '0xmid', '0xsmall']);
+    expect(b.due(24 * 60 * MIN, 10).sort()).toEqual(['0xbig', '0xmid', '0xnone', '0xsmall', '0xz']);
+  });
+
+  it('znany adres, który znów handluje, wraca do kolejki od razu', () => {
+    const b = new AddressBook();
+    b.recordTrade(['0xa', '0xb'], 1, 0);
+    b.updatePosition('0xa', null, 0);
+    b.updatePosition('0xb', null, 0);
+    expect(b.due(5 * MIN, 10)).toEqual([]);
+    b.recordTrade(['0xa', '0xc'], 5000, 5 * MIN);
+    expect(b.due(5 * MIN, 10).sort()).toEqual(['0xa', '0xc']);
+  });
+
+  it('nieudany odczyt: adres wraca do kolejki dopiero po minucie', () => {
+    const b = new AddressBook();
+    b.recordTrade(['0xa', '0xb'], 1, 0);
+    b.markFailed('0xa', 0);
+    expect(b.due(30_000, 10)).toEqual(['0xb']);
+    expect(b.due(61_000, 10).sort()).toEqual(['0xa', '0xb']);
+  });
+
+  it('przeciążenie (120 skanów/min, 100 dużych pozycji, strumień nowych adresów): duże pozycje ≤ 4 min, nowe adresy dostają udział', () => {
+    const b = new AddressBook(100_000);
+    for (let i = 0; i < 100; i++) {
+      b.recordTrade([`0xw${i}`, '0xx'], 1e6, 0);
+      b.updatePosition(`0xw${i}`, pos(20), 0);
+    }
+    b.updatePosition('0xx', null, 0);
+    const lastScan = new Map<string, number>();
+    let newScanned = 0;
+    let maxBigAge = 0;
+    for (let t = 10_000; t <= 30 * MIN; t += 10_000) {
+      for (let k = 0; k < 20; k++) b.recordTrade([`0xn${t}-${k}`, `0xm${t}-${k}`], 100, t);
+      for (const a of b.due(t, 20)) {
+        if (a.startsWith('0xn') || a.startsWith('0xm')) newScanned++;
+        b.updatePosition(a, a.startsWith('0xw') ? pos(20) : null, t);
+        lastScan.set(a, t);
+      }
+      if (t > 5 * MIN) for (let i = 0; i < 100; i++) maxBigAge = Math.max(maxBigAge, t - (lastScan.get(`0xw${i}`) ?? 0));
+    }
+    expect(maxBigAge).toBeLessThanOrEqual(4 * MIN);
+    expect(newScanned).toBeGreaterThanOrEqual(1000);
   });
 
   it('pozycje do mapy, czyszczenie nieaktywnych bez pozycji po 3 dniach, zapis i odczyt stanu', () => {
@@ -70,9 +134,10 @@ describe('AddressBook — adresy z taśmy i harmonogram skanów', () => {
     expect(b.positions()).toHaveLength(1);
     b.prune(3 * 24 * 60 * MIN + 1);
     expect(b.size).toBe(1);
-    const c = AddressBook.fromJSON(JSON.parse(JSON.stringify(b.toJSON())));
+    const c = AddressBook.fromJSON(JSON.parse(JSON.stringify(b.toJSON())), 7);
     expect(c.size).toBe(1);
     expect(c.positions()[0].szi).toBe(1);
+    expect(c.capacity).toBe(7);
   });
 
   it('limit liczby adresów: przy przepełnieniu odpadają najstarsze bez pozycji', () => {

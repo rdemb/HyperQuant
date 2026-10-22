@@ -30,12 +30,13 @@ export interface CascadeResult {
   amplification: number;
 }
 
+/** Wpływ ograniczony do 95% — model nie może sprowadzić ceny do zera (poza zakresem stosowalności prawa pierwiastka). */
+const MAX_IMPACT = 0.95;
+
 export function impactFraction(qUsd: number, p: ImpactParams): number {
   if (!(qUsd > 0) || !(p.dayVolumeUsd > 0) || !(p.sigmaDaily > 0) || !(p.y > 0)) return 0;
-  return p.y * p.sigmaDaily * Math.sqrt(qUsd / p.dayVolumeUsd);
+  return Math.min(MAX_IMPACT, p.y * p.sigmaDaily * Math.sqrt(qUsd / p.dayVolumeUsd));
 }
-
-const MAX_ROUNDS = 100;
 
 /** Środek kubełka — reprezentatywna cena likwidacji pozycji w kubełku. */
 const mid = (b: LiqBucket, step: number) => b.px + step / 2;
@@ -43,12 +44,14 @@ const mid = (b: LiqBucket, step: number) => b.px + step / 2;
 export function cascadeOutcome(map: LiqMap, shockPct: number, p: ImpactParams): CascadeResult {
   if (shockPct === 0) return { shockPct, finalPct: 0, liquidatedUsd: 0, rounds: 0, amplification: 1 };
   const down = shockPct < 0;
-  const buckets = down ? map.longs : map.shorts;
+  // Tylko kubełki po właściwej stronie ceny: long z likwidacją nad ceną (short pod) to nieaktualny odczyt
+  const buckets = (down ? map.longs : map.shorts).filter((b) => (down ? mid(b, map.stepUsd) < map.markPx : mid(b, map.stepUsd) > map.markPx));
   const base = map.markPx * (1 + shockPct);
   let price = base;
   let q = 0;
   let rounds = 0;
-  while (rounds < MAX_ROUNDS) {
+  // Punkt stały osiągany najwyżej po (liczba kubełków + 1) rundach — każda runda dokłada co najmniej jeden kubełek
+  while (rounds <= buckets.length) {
     let qNew = 0;
     for (const b of buckets) {
       const m = mid(b, map.stepUsd);

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { loadConfig } from '../config.ts';
 import { putObject } from '../r2.ts';
-import { HlRest } from '../hl.ts';
+import { HlRest, HlStream } from '../hl.ts';
 import { WeightLimiter } from '../rateLimiter.ts';
 import { AddressBook } from '../addressBook.ts';
 import { Scanner } from '../scanner.ts';
@@ -16,7 +16,9 @@ describe('loadConfig — wyłącznie zmienne środowiskowe', () => {
   it('wymaga katalogów stanu i wyjścia; wartości domyślne dla reszty', () => {
     expect(loadConfig({}).ok).toBe(false);
     const r = loadConfig({ HQ_STATE_DIR: '/s', HQ_OUT_DIR: '/o' });
-    expect(r.ok && r.config).toMatchObject({ coin: 'BTC', weightPerMin: 240, publishEveryS: 60, maxAddresses: 50000, r2: null });
+    expect(r.ok && r.config).toMatchObject({ coin: 'BTC', weightPerMin: 240, publishEveryS: 60, maxAddresses: 50000, seedTop: 5000, seedMinUsd: 100000, r2: null });
+    expect(loadConfig({ HQ_STATE_DIR: '/s', HQ_OUT_DIR: '/o', HQ_SEED_TOP: '0' }).ok).toBe(true);
+    expect(loadConfig({ HQ_STATE_DIR: '/s', HQ_OUT_DIR: '/o', HQ_SEED_TOP: '99999' }).ok).toBe(false);
   });
 
   it('R2 tylko komplet czterech zmiennych; budżet i okres w bezpiecznym zakresie', () => {
@@ -62,11 +64,13 @@ describe('HlRest — zapytania info z budżetem', () => {
     const busy = new HlRest(limiter, vi.fn(async () => new Response('', { status: 429 })), () => 1000, async () => {});
     expect(await busy.info({ type: 'clearinghouseState', user: '0x1' }, 2)).toBeNull();
     expect(limiter.perMinAt(2000)).toBe(120);
+    expect(limiter.reserve(2, 2000)).toBeGreaterThanOrEqual(29_000);
   });
 });
 
 describe('Scanner — cykl skanu i publikacji', () => {
-  function setup(r2 = false) {
+  function setup(r2 = false, nowFn: () => number = () => 120_000, fail = false) {
+    const failing = { calls: 0 };
     const out = mkdtempSync(join(tmpdir(), 'hq-'));
     const book = new AddressBook();
     book.recordTrade(['0xaaa', '0xbbb'], 1e6, 0);
@@ -79,6 +83,10 @@ describe('Scanner — cykl skanu i publikacji', () => {
       calls.push(url);
       if (url.includes('r2.cloudflarestorage.com')) return new Response(null, { status: 200 });
       const body = JSON.parse(String(init?.body));
+      if (fail) {
+        failing.calls++;
+        return new Response('', { status: 503 });
+      }
       return new Response(JSON.stringify(states[body.user]), { status: 200 });
     });
     const scanner = new Scanner({
@@ -88,10 +96,10 @@ describe('Scanner — cykl skanu i publikacji', () => {
       outDir: out,
       r2: r2 ? { accountId: 'a', bucket: 'b', accessKeyId: 'k', secretAccessKey: 's' } : null,
       fetchFn: fetchFn as unknown as typeof fetch,
-      now: () => 120_000,
+      now: nowFn,
     });
     scanner.setCtx({ markPx: 83000, oiBtc: 20, dayNtlVlm: 2e9 });
-    return { scanner, out, calls };
+    return { scanner, out, calls, failing };
   }
 
   it('skanuje adresy z taśmy i zapisuje mapę oraz status bez adresów', async () => {
@@ -104,7 +112,22 @@ describe('Scanner — cykl skanu i publikacji', () => {
     expect(map.longs[0].px).toBe(75000);
     const statusTxt = readFileSync(join(out, 'status.json'), 'utf8');
     expect(statusTxt).not.toMatch(/0x/);
-    expect(JSON.parse(statusTxt)).toMatchObject({ coin: 'BTC', addresses: 2, positions: 2 });
+    expect(JSON.parse(statusTxt)).toMatchObject({ coin: 'BTC', addresses: 2, positions: 2, seeded: 0 });
+  });
+
+  it('kontekst rynku starszy niż 5 min: brak publikacji (stara cena nie udaje aktualnej)', async () => {
+    let now = 120_000;
+    const { scanner } = setup(false, () => now);
+    now += 6 * 60_000;
+    expect(await scanner.publish()).toBe(false);
+  });
+
+  it('nieudany odczyt oznacza adres jako wstrzymany na minutę', async () => {
+    const { scanner, failing } = setup(false, () => 120_000, true);
+    expect(await scanner.scanDue(10)).toBe(0);
+    expect(failing.calls).toBe(2);
+    expect(await scanner.scanDue(10)).toBe(0);
+    expect(failing.calls).toBe(2);
   });
 
   it('bez ceny mark i OI nic nie publikuje (brak danych ≠ zero)', async () => {
@@ -122,5 +145,77 @@ describe('Scanner — cykl skanu i publikacji', () => {
       'https://a.r2.cloudflarestorage.com/b/liq-map/BTC.json',
       'https://a.r2.cloudflarestorage.com/b/status.json',
     ]);
+  });
+});
+
+describe('HlStream — odporność połączenia', () => {
+  class FakeWs {
+    static OPEN = 1;
+    static instances: FakeWs[] = [];
+    readyState = 0;
+    sent: string[] = [];
+    closed = false;
+    onopen: (() => void) | null = null;
+    onmessage: ((e: { data: string }) => void) | null = null;
+    onclose: (() => void) | null = null;
+    onerror: (() => void) | null = null;
+    constructor(public url: string) {
+      FakeWs.instances.push(this);
+    }
+    send(s: string) {
+      this.sent.push(s);
+    }
+    close() {
+      if (this.closed) return;
+      this.closed = true;
+      this.readyState = 3;
+      this.onclose?.();
+    }
+    open() {
+      this.readyState = 1;
+      this.onopen?.();
+    }
+  }
+
+  it('połączenie zrywane zaraz po otwarciu: przerwy rosną 1 s → 2 s → 4 s (bez resetu przy samym otwarciu)', () => {
+    vi.useFakeTimers();
+    FakeWs.instances = [];
+    const s = new HlStream('BTC', () => {}, () => {}, FakeWs as unknown as typeof WebSocket);
+    s.start();
+    const delays: number[] = [];
+    for (let k = 0; k < 3; k++) {
+      const ws = FakeWs.instances[FakeWs.instances.length - 1];
+      ws.open();
+      ws.close();
+      const before = FakeWs.instances.length;
+      let waited = 0;
+      while (FakeWs.instances.length === before && waited < 120_000) {
+        vi.advanceTimersByTime(500);
+        waited += 500;
+      }
+      delays.push(waited);
+    }
+    s.stop();
+    vi.useRealTimers();
+    expect(delays).toEqual([1000, 2000, 4000]);
+  });
+
+  it('strażnik: brak wiadomości przez 90 s zamyka połączenie (zawieszony socket nie udaje „ok”)', () => {
+    vi.useFakeTimers();
+    FakeWs.instances = [];
+    const s = new HlStream('BTC', () => {}, () => {}, FakeWs as unknown as typeof WebSocket);
+    s.start();
+    const ws = FakeWs.instances[0];
+    ws.open();
+    expect(s.connected).toBe(true);
+    vi.advanceTimersByTime(60_000);
+    ws.onmessage?.({ data: '{"channel":"pong"}' });
+    vi.advanceTimersByTime(80_000);
+    expect(ws.closed).toBe(false);
+    vi.advanceTimersByTime(30_000);
+    expect(ws.closed).toBe(true);
+    expect(s.connected).toBe(false);
+    s.stop();
+    vi.useRealTimers();
   });
 });

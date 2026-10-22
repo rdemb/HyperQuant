@@ -1,15 +1,21 @@
 /**
  * Własny budżet wag API Hyperliquid (limit giełdy: 1200 wag/min na IP — ten sam IP obsługuje inne usługi,
- * więc skaner bierze tylko ułamek). Wiadro żetonów z zapasem na 10 s; po 429 tempo spada o połowę na 5 min.
+ * więc skaner bierze tylko ułamek). Wiadro żetonów z zapasem na 10 s.
+ * Wycofanie: każdy kolejny błąd (429, 5xx, timeout) halvuje tempo aż do 1/8 budżetu; 429 dodatkowo wstrzymuje zapytania
+ * na 30 s. Powrót stopniowy: po minucie bez błędów każdy sukces podnosi tempo ×1.25, najwyżej do budżetu.
  */
-const PENALTY_MS = 5 * 60_000;
+const MIN_FACTOR = 1 / 8;
+const PAUSE_429_MS = 30_000;
+const CALM_MS = 60_000;
 
 export class WeightLimiter {
   private readonly perMin: number;
   private readonly capacity: number;
   private tokens: number;
   private last = 0;
-  private penaltyUntil = Number.NEGATIVE_INFINITY;
+  private factor = 1;
+  private pauseUntil = Number.NEGATIVE_INFINITY;
+  private lastFailAt = Number.NEGATIVE_INFINITY;
 
   constructor(perMin: number) {
     this.perMin = perMin;
@@ -17,8 +23,9 @@ export class WeightLimiter {
     this.tokens = this.capacity;
   }
 
-  perMinAt(now: number): number {
-    return now < this.penaltyUntil ? this.perMin / 2 : this.perMin;
+  /** Bieżące tempo (wagi/min) po wycofaniu. */
+  perMinAt(_now: number): number {
+    return this.perMin * this.factor;
   }
 
   /** Rezerwuje `weight` żetonów; zwraca, ile ms trzeba odczekać przed wysłaniem zapytania. */
@@ -29,12 +36,22 @@ export class WeightLimiter {
       this.last = now;
     }
     this.tokens -= weight;
-    return this.tokens >= 0 ? 0 : -this.tokens / rate;
+    const tokenWait = this.tokens >= 0 ? 0 : -this.tokens / rate;
+    return Math.max(tokenWait, this.pauseUntil - now);
   }
 
-  /** Odpowiedź 429 / przeciążenie: połowa tempa przez 5 min i opróżnione wiadro. */
-  penalize(now: number): void {
-    this.penaltyUntil = now + PENALTY_MS;
-    this.tokens = Math.min(this.tokens, 0);
+  /** Błąd zapytania: tempo o połowę (do 1/8); 429 — także pauza 30 s i opróżnione wiadro. */
+  fail(now: number, kind: '429' | 'error'): void {
+    this.factor = Math.max(MIN_FACTOR, this.factor / 2);
+    this.lastFailAt = now;
+    if (kind === '429') {
+      this.pauseUntil = Math.max(this.pauseUntil, now + PAUSE_429_MS);
+      this.tokens = Math.min(this.tokens, 0);
+    }
+  }
+
+  /** Udane zapytanie: po minucie spokoju tempo wraca stopniowo (×1.25). */
+  success(now: number): void {
+    if (this.factor < 1 && now - this.lastFailAt >= CALM_MS) this.factor = Math.min(1, this.factor * 1.25);
   }
 }

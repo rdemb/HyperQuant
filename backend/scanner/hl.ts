@@ -34,16 +34,20 @@ export class HlRest {
         signal: AbortSignal.timeout(10_000),
       });
       if (res.status === 429) {
-        this.limiter.penalize(this.now());
+        this.limiter.fail(this.now(), '429');
         this.errors++;
         return null;
       }
       if (!res.ok) {
+        this.limiter.fail(this.now(), 'error');
         this.errors++;
         return null;
       }
-      return await res.json();
+      const json = await res.json();
+      this.limiter.success(this.now());
+      return json;
     } catch {
+      this.limiter.fail(this.now(), 'error');
       this.errors++;
       return null;
     }
@@ -67,22 +71,27 @@ export interface HlCtx {
 
 /**
  * WebSocket `trades` (z adresami kupującego i sprzedającego) i `activeAssetCtx` (mark, OI, obrót) dla jednego rynku.
- * Ping co 50 s (serwer zamyka ciche połączenia), ponowne łączenie z narastającą przerwą 1 s → 60 s.
+ * Ping co 50 s. Strażnik: brak jakiejkolwiek wiadomości przez 90 s = zawieszone połączenie → zamknięcie i ponowne łączenie.
+ * Przerwa przed ponownym łączeniem rośnie 1 s → 60 s i wraca do 1 s dopiero po 60 s stabilnego połączenia
+ * (połączenie zrywane zaraz po otwarciu nie zasypuje serwera próbami — IP jest współdzielone z innymi usługami).
  */
 export class HlStream {
   private readonly coin: string;
   private readonly onTrades: (t: HlTrade[]) => void;
   private readonly onCtx: (c: HlCtx) => void;
+  private readonly WS: typeof WebSocket;
   private ws: WebSocket | null = null;
-  private ping: ReturnType<typeof setInterval> | null = null;
+  private timers: ReturnType<typeof setTimeout>[] = [];
   private backoff = 1000;
+  private lastMsgAt = 0;
   private stopped = false;
   connected = false;
 
-  constructor(coin: string, onTrades: (t: HlTrade[]) => void, onCtx: (c: HlCtx) => void) {
+  constructor(coin: string, onTrades: (t: HlTrade[]) => void, onCtx: (c: HlCtx) => void, wsCtor: typeof WebSocket = WebSocket) {
     this.coin = coin;
     this.onTrades = onTrades;
     this.onCtx = onCtx;
+    this.WS = wsCtor;
   }
 
   start(): void {
@@ -92,22 +101,39 @@ export class HlStream {
 
   stop(): void {
     this.stopped = true;
-    if (this.ping) clearInterval(this.ping);
+    this.clearTimers();
     this.ws?.close();
   }
 
+  private clearTimers(): void {
+    for (const t of this.timers) {
+      clearTimeout(t);
+      clearInterval(t);
+    }
+    this.timers = [];
+  }
+
   private open(): void {
-    const ws = new WebSocket(WS_URL);
+    const ws = new this.WS(WS_URL);
     this.ws = ws;
     ws.onopen = () => {
       this.connected = true;
-      this.backoff = 1000;
+      this.lastMsgAt = Date.now();
       for (const type of ['trades', 'activeAssetCtx']) {
         ws.send(JSON.stringify({ method: 'subscribe', subscription: { type, coin: this.coin } }));
       }
-      this.ping = setInterval(() => ws.readyState === WebSocket.OPEN && ws.send('{"method":"ping"}'), 50_000);
+      this.timers.push(
+        setInterval(() => ws.readyState === this.WS.OPEN && ws.send('{"method":"ping"}'), 50_000),
+        setInterval(() => {
+          if (Date.now() - this.lastMsgAt > 90_000) ws.close();
+        }, 10_000),
+        setTimeout(() => {
+          this.backoff = 1000;
+        }, 60_000)
+      );
     };
     ws.onmessage = (ev) => {
+      this.lastMsgAt = Date.now();
       let msg: { channel?: string; data?: unknown };
       try {
         msg = JSON.parse(String(ev.data));
@@ -123,9 +149,9 @@ export class HlStream {
     };
     ws.onclose = () => {
       this.connected = false;
-      if (this.ping) clearInterval(this.ping);
+      this.clearTimers();
       if (this.stopped) return;
-      setTimeout(() => this.open(), this.backoff);
+      this.timers.push(setTimeout(() => this.open(), this.backoff));
       this.backoff = Math.min(60_000, this.backoff * 2);
     };
     ws.onerror = () => ws.close();

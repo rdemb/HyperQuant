@@ -14,8 +14,9 @@ function map(longs: LiqBucket[] = [], shorts: LiqBucket[] = []): LiqMap {
     stepUsd: 100,
     longs,
     shorts,
-    coverage: { positions: 0, addresses: 0, scannedBtc: 0, oiBtc: 0, share: 0 },
-    ageMin: { p50: 0, p90: 0 },
+    coverage: { positions: 0, addresses: 0, scannedBtc: 0, longBtc: 0, shortBtc: 0, wrongSide: 0, oiBtc: 0, share: 0 },
+    ageMin: { p50: 0, p90: 0, ntlP50: 0 },
+    ctxAt: 0,
     method: 'test',
   };
 }
@@ -79,5 +80,24 @@ describe('cascadeCurve', () => {
     expect(c.map((x) => x.shockPct)).toEqual([-0.02, -0.005, 0.005]);
     expect(c[0].amplification).toBeGreaterThan(1);
     expect(c[1].amplification).toBeCloseTo(1, 12);
+  });
+});
+
+describe('cascadeOutcome — zabezpieczenia', () => {
+  it('ogromny nominał przy znikomym obrocie: wpływ ograniczony, cena nie schodzi poniżej zera', () => {
+    const r = cascadeOutcome(map([at(-0.001, 1e12)]), -0.01, { ...P, dayVolumeUsd: 1 });
+    expect(r.finalPct).toBeGreaterThan(-1);
+    expect(Number.isFinite(r.amplification)).toBe(true);
+  });
+  it('kubełki po złej stronie ceny (nieaktualne odczyty) nie uruchamiają kaskady', () => {
+    const r = cascadeOutcome(map([{ px: M + 150, ntlUsd: 30e6, n: 1 }]), -0.0025, P);
+    expect(r.amplification).toBeCloseTo(1, 12);
+    expect(r.liquidatedUsd).toBe(0);
+  });
+  it('liczba rund ograniczona liczbą kubełków (punkt stały osiągany bez cichego ucięcia)', () => {
+    const buckets = Array.from({ length: 150 }, (_, i) => at(-0.01 - i * 0.0001, 200e6));
+    const r = cascadeOutcome(map(buckets), -0.0101, P);
+    expect(r.rounds).toBeLessThanOrEqual(buckets.length + 1);
+    expect(r.liquidatedUsd).toBe(150 * 200e6);
   });
 });

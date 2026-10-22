@@ -15,6 +15,9 @@ function writeAtomic(path: string, body: string): void {
   renameSync(tmp, path);
 }
 
+/** Kontekst rynku (mark, OI) starszy niż to blokuje publikację. */
+const CTX_MAX_AGE_MS = 5 * 60_000;
+
 export interface ScannerDeps {
   coin: string;
   book: AddressBook;
@@ -32,6 +35,7 @@ export interface ScannerDeps {
 export class Scanner {
   private readonly d: ScannerDeps;
   private ctx: HlCtx | null = null;
+  private ctxAt = 0;
   private scanTimes: number[] = [];
   lastPublishOk: number | null = null;
 
@@ -45,6 +49,7 @@ export class Scanner {
 
   setCtx(c: HlCtx): void {
     this.ctx = c;
+    this.ctxAt = this.now();
   }
 
   /** Odpytuje do `limit` adresów z minionym terminem; zwraca liczbę udanych odczytów. */
@@ -53,7 +58,10 @@ export class Scanner {
     let ok = 0;
     for (const addr of due) {
       const st = await this.d.rest.info({ type: 'clearinghouseState', user: addr }, 2);
-      if (st === null) continue;
+      if (st === null) {
+        this.d.book.markFailed(addr, this.now());
+        continue;
+      }
       const t = this.now();
       this.d.book.updatePosition(addr, parseCoinPosition(st, this.d.coin, t), t);
       this.scanTimes.push(t);
@@ -64,21 +72,27 @@ export class Scanner {
     return ok;
   }
 
-  /** Buduje i zapisuje mapę oraz status (lokalnie i — gdy skonfigurowane — w R2). Bez ceny mark i OI: nic. */
+  /**
+   * Buduje i zapisuje mapę oraz status (lokalnie i — gdy skonfigurowane — w R2).
+   * Bez ceny mark i OI albo z kontekstem starszym niż 5 min: nic (stara cena nie może udawać aktualnej).
+   */
   async publish(): Promise<boolean> {
     const c = this.ctx;
-    if (!c || !(c.markPx > 0) || !(c.oiBtc >= 0)) return false;
     const asOf = this.now();
+    if (!c || !(c.markPx > 0) || !(c.oiBtc >= 0) || asOf - this.ctxAt > CTX_MAX_AGE_MS) return false;
     const positions = this.d.book.positions();
-    const map = buildLiqMap(positions, { coin: this.d.coin, markPx: c.markPx, oiBtc: c.oiBtc, asOf, addresses: this.d.book.size });
+    const map = buildLiqMap(positions, { coin: this.d.coin, markPx: c.markPx, oiBtc: c.oiBtc, asOf, addresses: this.d.book.size, ctxAt: this.ctxAt });
     const status = {
       v: 1,
       coin: this.d.coin,
       asOf,
       addresses: this.d.book.size,
       positions: positions.length,
+      seeded: this.d.book.seededCount,
       scansLastMin: this.scanTimes.length,
       coverage: map.coverage.share,
+      ageNtlP50Min: map.ageMin.ntlP50,
+      ctxAt: this.ctxAt,
       dayNtlVlm: Number.isFinite(c.dayNtlVlm) ? c.dayNtlVlm : null,
       apiErrors: this.d.rest.errors,
     };

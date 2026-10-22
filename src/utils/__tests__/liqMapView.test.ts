@@ -18,8 +18,9 @@ const map: LiqMap = {
     { px: 84000, ntlUsd: 0.3e6, n: 1 },
     { px: 86000, ntlUsd: 3e6, n: 5 },
   ],
-  coverage: { positions: 15, addresses: 40, scannedBtc: 10, oiBtc: 100, share: 0.05 },
-  ageMin: { p50: 2, p90: 8 },
+  coverage: { positions: 15, addresses: 40, scannedBtc: 10, longBtc: 5, shortBtc: 5, wrongSide: 0, oiBtc: 100, share: 0.05 },
+  ageMin: { p50: 2, p90: 8, ntlP50: 3 },
+  ctxAt: T,
   method: 'hl-clearinghouse-v1',
 };
 
@@ -60,5 +61,20 @@ describe('rebin — agregacja kubełków do histogramu', () => {
     expect(total).toBeCloseTo(7.5e6, 6);
     expect(r[0].from).toBeCloseTo(83000 * 0.95, 6);
     expect(r[9].to).toBeCloseTo(83000 * 1.05, 6);
+  });
+});
+
+describe('liqMapFreshness — wiek publikacji, kontekstu i samych odczytów', () => {
+  it('aktualna publikacja, świeży kontekst i świeże odczyty → ready', () => {
+    expect(liqMapFreshness(map, T + 60_000)).toBe('ready');
+  });
+  it('odczyty ważące połowę nominału starsze niż 15 min → delayed (nie LIVE)', () => {
+    expect(liqMapFreshness({ ...map, ageMin: { ...map.ageMin, ntlP50: 20 } }, T + 60_000)).toBe('delayed');
+  });
+  it('kontekst rynku starszy niż 10 min → stale, mimo świeżej publikacji', () => {
+    expect(liqMapFreshness({ ...map, ctxAt: T - 11 * 60_000 }, T + 60_000)).toBe('stale');
+  });
+  it('publikacja starsza niż godzina → expired (mapa nie jest pokazywana)', () => {
+    expect(liqMapFreshness(map, T + 61 * 60_000)).toBe('expired');
   });
 });

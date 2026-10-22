@@ -38,13 +38,20 @@ export interface LiqMap {
     addresses: number;
     /** Σ |szi| zeskanowanych pozycji, BTC */
     scannedBtc: number;
+    /** Σ szi longów i Σ |szi| shortów — samokontrola: przy pełnym pokryciu obie ≈ OI */
+    longBtc: number;
+    shortBtc: number;
+    /** Pozycje z ceną likwidacji po złej stronie ceny mark (nieaktualny odczyt) — poza kubełkami */
+    wrongSide: number;
     /** Open interest z API (jedna strona rynku), BTC */
     oiBtc: number;
     /** scannedBtc / (2·oiBtc), ≤ 1 */
     share: number;
   };
-  /** Wiek odczytów pozycji w minutach */
-  ageMin: { p50: number; p90: number };
+  /** Wiek odczytów pozycji w minutach; ntlP50 = mediana ważona nominałem (wiek tego, co waży na mapie) */
+  ageMin: { p50: number; p90: number; ntlP50: number };
+  /** Czas kontekstu rynku (mark, OI), ms UTC */
+  ctxAt: number;
   method: string;
 }
 
@@ -75,18 +82,31 @@ function toBuckets(map: Map<number, LiqBucket>): LiqBucket[] {
  */
 export function buildLiqMap(
   positions: ScannedPosition[],
-  o: { coin: string; markPx: number; oiBtc: number; asOf: number; addresses: number; rangePct?: number }
+  o: { coin: string; markPx: number; oiBtc: number; asOf: number; addresses: number; rangePct?: number; ctxAt?: number }
 ): LiqMap {
   const rangePct = o.rangePct ?? 0.15;
   const step = niceStep(o.markPx * 0.001);
   const longs = new Map<number, LiqBucket>();
   const shorts = new Map<number, LiqBucket>();
   let scannedBtc = 0;
+  let longBtc = 0;
+  let shortBtc = 0;
+  let wrongSide = 0;
   const ages: number[] = [];
+  const weighted: [number, number][] = [];
   for (const p of positions) {
     scannedBtc += Math.abs(p.szi);
-    ages.push((o.asOf - p.scannedAt) / 60_000);
+    if (p.szi > 0) longBtc += p.szi;
+    else shortBtc -= p.szi;
+    const age = (o.asOf - p.scannedAt) / 60_000;
+    ages.push(age);
+    weighted.push([age, Math.abs(p.szi) * p.entryPx]);
     if (p.liqPx === null || !(p.liqPx > 0) || p.szi === 0) continue;
+    // Long z likwidacją nad ceną albo short pod ceną już by zniknął — odczyt jest nieaktualny, nie wchodzi do mapy
+    if (p.szi > 0 ? p.liqPx >= o.markPx : p.liqPx <= o.markPx) {
+      wrongSide++;
+      continue;
+    }
     if (Math.abs(p.liqPx / o.markPx - 1) > rangePct) continue;
     const px = Math.floor(p.liqPx / step) * step;
     const side = p.szi > 0 ? longs : shorts;
@@ -96,6 +116,16 @@ export function buildLiqMap(
     side.set(px, b);
   }
   ages.sort((a, b) => a - b);
+  weighted.sort((a, b) => a[0] - b[0]);
+  const totalW = weighted.reduce((s, [, w]) => s + w, 0);
+  let ntlP50 = 0;
+  for (let i = 0, cum = 0; i < weighted.length; i++) {
+    cum += weighted[i][1];
+    if (cum >= totalW / 2) {
+      ntlP50 = weighted[i][0];
+      break;
+    }
+  }
   const share = o.oiBtc > 0 ? Math.min(1, scannedBtc / (2 * o.oiBtc)) : 0;
   return {
     v: 1,
@@ -105,8 +135,9 @@ export function buildLiqMap(
     stepUsd: step,
     longs: toBuckets(longs),
     shorts: toBuckets(shorts),
-    coverage: { positions: positions.length, addresses: o.addresses, scannedBtc, oiBtc: o.oiBtc, share },
-    ageMin: { p50: quantile(ages, 0.5), p90: quantile(ages, 0.9) },
+    coverage: { positions: positions.length, addresses: o.addresses, scannedBtc, longBtc, shortBtc, wrongSide, oiBtc: o.oiBtc, share },
+    ageMin: { p50: quantile(ages, 0.5), p90: quantile(ages, 0.9), ntlP50 },
+    ctxAt: o.ctxAt ?? o.asOf,
     method: 'hl-clearinghouse-v1',
   };
 }
@@ -123,6 +154,7 @@ export function isLiqMap(x: unknown): x is LiqMap {
     m.v === 1 &&
     typeof m.coin === 'string' &&
     fin(m.asOf) &&
+    fin(m.ctxAt) &&
     fin(m.markPx) &&
     fin(m.stepUsd) &&
     isBuckets(m.longs) &&
@@ -131,8 +163,11 @@ export function isLiqMap(x: unknown): x is LiqMap {
     fin(m.coverage.share) &&
     fin(m.coverage.scannedBtc) &&
     fin(m.coverage.oiBtc) &&
+    fin(m.coverage.positions) &&
+    fin(m.coverage.addresses) &&
     !!m.ageMin &&
     fin(m.ageMin.p50) &&
-    fin(m.ageMin.p90)
+    fin(m.ageMin.p90) &&
+    fin(m.ageMin.ntlP50)
   );
 }
