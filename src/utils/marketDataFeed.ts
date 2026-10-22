@@ -461,8 +461,8 @@ export function parkinsonSigma(
 }
 
 /**
- * Prawdopodobieństwa dotknięcia PDH / PDL / D-EQ w 2 h: 2000 ścieżek, ziarno z wejść i bieżącej minuty
- * (stabilne między odświeżeniami, błąd standardowy ≤ 1.1 pp). Proces jest martyngałem w log-cenie — bez przyciągania do D-EQ
+ * Prawdopodobieństwa dotknięcia PDH / PDL / D-EQ w 2 h: 2000 ścieżek, ziarno z bieżącej minuty (wspólne liczby losowe —
+ * w obrębie minuty wynik zmienia się płynnie z ceną; błąd standardowy ≤ 1.1 pp). Bez przyciągania do D-EQ
  * (nieestymowane).
  * - Z modelem zmienności (`stepSigmas`): kroki 5 min z σ sezonowego log-HAR, innowacje FHS, korekta mostu Browna
  *   dla dotknięć między krokami.
@@ -478,7 +478,8 @@ export function runTouchMonteCarlo(
 ): BackendQuantTelemetry['monteCarlo'] {
   const numPaths = 2000;
   const now = opts.nowMs ?? Date.now();
-  const seed = seedFrom(currentPrice, pdh, pdl, deq, Math.floor(now / 60_000));
+  // Wspólne liczby losowe w obrębie minuty: drobna zmiana ceny przesuwa wynik płynnie zamiast losować ścieżki od nowa
+  const seed = seedFrom(Math.floor(now / 60_000));
   const useModel = Array.isArray(opts.stepSigmas) && opts.stepSigmas.length > 0;
   const sigma = Math.max(0, sigma2h);
 
@@ -512,7 +513,9 @@ export function runTouchMonteCarlo(
   let sumPDL = 0;
   let sumDEQ = 0;
   const sampledPaths: BackendQuantTelemetry['monteCarlo']['sampledPaths'] = [];
-  const bridgeHit = (d0: number, d1: number, v: number) => useModel && uBridge() < Math.exp((-2 * d0 * d1) / v);
+  // Most Browna: stała liczba losowań na krok (po jednym na poziom) — zużycie strumienia nie zależy od stanu ścieżki,
+  // więc przy wspólnym ziarnie mała zmiana ceny nie przesuwa losowań kolejnych ścieżek
+  const bridgeHit = (d0: number, d1: number, v: number, u: number) => useModel && u < Math.exp((-2 * d0 * d1) / v);
 
   for (let p = 0; p < numPaths; p++) {
     let w = 0;
@@ -524,25 +527,28 @@ export function runTouchMonteCarlo(
     for (let k = 1; k <= steps; k++) {
       const s = sig[k - 1];
       const v = s * s;
+      const uH = useModel ? uBridge() : 1;
+      const uL = useModel ? uBridge() : 1;
+      const uD = useModel ? uBridge() : 1;
       let wn = w + s * innov();
       if (!useModel) {
         wn -= 0.5 * v;
         if (uJump() < jumpLambda / mertonSteps) wn += muJump + sigmaJump * jumpNormal();
       }
       const minute = k * stepMin;
-      if (!tH && (wn >= lh || (w < lh && bridgeHit(lh - w, lh - wn, v)))) {
+      if (!tH && (wn >= lh || (w < lh && bridgeHit(lh - w, lh - wn, v, uH)))) {
         tH = true;
         hitPDH++;
         sumPDH += minute;
       }
-      if (!tL && (wn <= ll || (w > ll && bridgeHit(w - ll, wn - ll, v)))) {
+      if (!tL && (wn <= ll || (w > ll && bridgeHit(w - ll, wn - ll, v, uL)))) {
         tL = true;
         hitPDL++;
         sumPDL += minute;
       }
       if (!tD) {
         const crossed = deqBelow ? wn <= ld : wn >= ld;
-        const near = deqBelow ? w > ld && bridgeHit(w - ld, wn - ld, v) : w < ld && bridgeHit(ld - w, ld - wn, v);
+        const near = deqBelow ? w > ld && bridgeHit(w - ld, wn - ld, v, uD) : w < ld && bridgeHit(ld - w, ld - wn, v, uD);
         if (crossed || near) {
           tD = true;
           hitDEQ++;

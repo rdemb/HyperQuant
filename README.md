@@ -35,7 +35,7 @@
 - **λ Kyle'a:** OLS `ΔP = λ·Q + ε` wyłącznie na świecach z realnym przepływem (na BVC regresja byłaby kołowa) — Kyle 1985.
 - **Zmienność:** sezonowy log-HAR (Corsi 2009) na godzinowych wariancjach Garman–Klass (1980) z ~5000 świec 1h Hyperliquid (≈ 208 dni), profil godzin UTC (Andersen & Bollerslev 1997), korekta Duana (1983); prognoza iterowana na kroki 5 min. Trafność pokazywana na żywo: strata QLIKE (Patton 2011) poza próbą względem naiwnej średniej z 24 h. Udział skoków — wariancja dwupotęgowa (Barndorff-Nielsen & Shephard 2004), skoki — test Lee & Mykland (2008), obie jako diagnostyka. Brak danych → estymator Parkinsona (1980) jako oznaczony zapas.
 - **Prawdopodobieństwa barier:** Monte Carlo z innowacjami z bootstrapu standaryzowanych zwrotów 5m (filtered historical simulation, Barone-Adesi i in. 1999 — grube ogony i skoki z danych) i korektą dyskretnego monitoringu z lokalnym σ kroku (Broadie, Glasserman & Kou 1997). Gdy wejście ≠ cena rynku, ścieżka najpierw musi je dotknąć; wynik jest warunkowy na wypełnienie, tak jak rozlicza dziennik. Formuła dla ruchu Browna (bez limitu czasu) jako punkt odniesienia.
-- **Zasięg 2 h (pas desku):** ten sam silnik (2000 ścieżek, ziarno z wejść); bez modelu zmienności — Merton z założonym udziałem skoków 20% (oznaczony w pasku).
+- **Zasięg 2 h (pas desku):** ten sam silnik (2000 ścieżek, wspólne liczby losowe w obrębie minuty); bez modelu zmienności — Merton z założonym udziałem skoków 20% (oznaczony w pasku).
 - **Hurst:** R/S z korektą Anis-Lloyd; Lo (1991) — test może mylić krótką pamięć z długą.
 - **OU:** dyskretny AR(1) wokół 0.65·D-EQ + 0.35·W-EQ; bez powrotu do średniej → t½ = ∞.
 - **Heatmapa likwidacji, order blocks, U(p):** heurystyki bez walidacji statystycznej — oznaczone jako szacunek.

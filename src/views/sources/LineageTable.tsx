@@ -121,7 +121,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         metric: 'Monte Carlo — zasięg 2 h i Analizator planu',
         source: 'Model zmienności, świece HL, poziomy PDH/PDL/D-EQ, arkusz L2',
         method:
-          '2000 ścieżek, krok 5 min (σ z HAR, innowacje FHS), korekta mostu Browna; Analizator: faza wypełnienia od bieżącej ceny i wynik warunkowy jak w dzienniku. Ziarno z wejść — liczby nie skaczą między odświeżeniami',
+          '2000 ścieżek, krok 5 min (σ z HAR, innowacje FHS), korekta mostu Browna; Analizator: faza wypełnienia od bieżącej ceny i wynik warunkowy jak w dzienniku. Wspólne liczby losowe w obrębie minuty — w tej minucie wynik zmienia się płynnie z ceną; co minutę nowe ścieżki (błąd standardowy ≤ 1.1 pp)',
         kinds: ['MODEL'],
         refresh: 'z każdą synchronizacją',
         caveat: 'Bez modelu zmienności: Merton z założonym udziałem skoków 20%, krok 1 min (oznaczone w pasku).',

@@ -228,6 +228,13 @@ describe('runTouchMonteCarlo — deterministyczny, z metodą w wyniku', () => {
     expect(a).toEqual(b);
   });
 
+  it('wspólne liczby losowe: zmiana ceny o 1 $ w tej samej minucie nie losuje ścieżek od nowa (Δ < 0.3 pp)', () => {
+    const a = runTouchMonteCarlo(S, S * 1.004, S * 0.996, S * 1.5, sigma2h, { stepSigmas: flat(0.007), residuals: null, nowMs: 60_000 * 5 });
+    const b = runTouchMonteCarlo(S + 1, S * 1.004, S * 0.996, S * 1.5, sigma2h, { stepSigmas: flat(0.007), residuals: null, nowMs: 60_000 * 5 + 30_000 });
+    expect(Math.abs(a.probTouchPDH2h - b.probTouchPDH2h)).toBeLessThan(0.3);
+    expect(Math.abs(a.probTouchPDL2h - b.probTouchPDL2h)).toBeLessThan(0.3);
+  });
+
   it('z σ kroków modelu: metoda fhs-har, większa σ → częstsze dotknięcie PDH', () => {
     const lo = runTouchMonteCarlo(S, S * 1.01, S * 0.95, S * 0.97, sigma2h, { stepSigmas: flat(0.004), residuals: null, nowMs: 1 });
     const hi = runTouchMonteCarlo(S, S * 1.01, S * 0.95, S * 0.97, sigma2h, { stepSigmas: flat(0.012), residuals: null, nowMs: 1 });
