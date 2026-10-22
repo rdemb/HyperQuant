@@ -2,7 +2,7 @@ import React from 'react';
 import { useDeskLedger } from '../../state/useDeskLedger';
 import { LEDGER_BASE } from '../../state/usePublished';
 import { Badge, EmptyState, Panel, Stat, DASH, fmtPrice } from '../../ui';
-import { DeskLedgerSummary, RetScores, TouchLevel } from '../../utils/deskLedger';
+import { DeskLedgerSummary, MktScores, RetScores, TouchLevel } from '../../utils/deskLedger';
 
 const timeFmt = new Intl.DateTimeFormat('pl-PL', { hour: '2-digit', minute: '2-digit' });
 const dateTimeFmt = new Intl.DateTimeFormat('pl-PL', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
@@ -244,17 +244,54 @@ const PitHist: React.FC<{ hist: number[] }> = ({ hist }) => {
   );
 };
 
-/** Szanse dotknięcia poziomów 2h: surowe z modelu i skalibrowane (Venn–Abers), wyniki Briera, niezawodność. */
+/** Werdykt „kto trafniejszy” dopiero od 100 pytań — przy ocenie co 15 min mniejsza próba to ryzyko przypadkowego „dowodu” */
+const VERDICT_N = 100;
+
+/** Wiersz wyników poziomu oceny: Brier modelu i rynku, różnica z przedziałem 90%. */
+const MarketRow: React.FC<{ label: string; title: string; sc: MktScores }> = ({ label, title, sc }) => {
+  const enough = sc.n >= MIN_N;
+  const f3 = (v: number | null) => (enough && v !== null ? v.toFixed(3) : DASH);
+  const sd = (v: number) => `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(3)}`;
+  return (
+    <tr className="border-t border-line align-baseline">
+      <td className="py-1.5 pr-3 font-sans text-ink-1" title={title}>
+        {label}
+      </td>
+      <td className="py-1.5 pr-3">{enough ? sc.n : `${sc.n} (od ${MIN_N})`}</td>
+      <td className="py-1.5 pr-3">{f3(sc.brierModel)}</td>
+      <td className="py-1.5 pr-3">{f3(sc.brierMarket)}</td>
+      <td className="py-1.5">
+        {enough && sc.diff ? (
+          <>
+            {sd(sc.diff.d)}{' '}
+            <span className="text-[10px] text-ink-3">
+              ({sd(sc.diff.lo)} … {sd(sc.diff.hi)})
+            </span>
+          </>
+        ) : (
+          DASH
+        )}
+      </td>
+    </tr>
+  );
+};
+
 /**
  * Model vs rynek predykcyjny (HIP-4, 15 min): te same pytania „mark BTC ≥ K w terminie”, p modelu i cena rynku zapisane
- * przed faktem; Brier obu i różnica z niepewnością. Ujemna różnica = model lepiej skalibrowany niż rynek.
+ * przed faktem; Brier obu i różnica z niepewnością na dwóch poziomach: notowania płynne i notowania z wąskim spreadem.
  */
 const MarketCard: React.FC<{ m: NonNullable<DeskLedgerSummary['market']> }> = ({ m }) => {
-  const sc = m.scores;
-  const enough = sc.n >= MIN_N;
   const l = m.latest;
   const mid = l && l.bid !== null && l.ask !== null ? (l.bid + l.ask) / 2 : null;
-  const verdict = !enough || !sc.diff ? null : sc.diff.hi < 0 ? 'model lepiej skalibrowany niż rynek' : sc.diff.lo > 0 ? 'rynek lepiej skalibrowany niż model' : 'różnica nieudowodniona';
+  const sc = m.scores;
+  const verdict =
+    sc.n < VERDICT_N || !sc.diff
+      ? null
+      : sc.diff.hi < 0
+      ? 'model trafniejszy (Brier) niż rynek'
+      : sc.diff.lo > 0
+      ? 'rynek trafniejszy (Brier) niż model'
+      : 'różnica nieudowodniona';
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-line p-3">
       <div className="flex items-baseline justify-between gap-2">
@@ -263,8 +300,8 @@ const MarketCard: React.FC<{ m: NonNullable<DeskLedgerSummary['market']> }> = ({
       </div>
       <p className="text-[11px] text-ink-2 leading-relaxed">
         Hyperliquid notuje co 15 min rynek „czy mark BTC na koniec kwadransa będzie ≥ ceny z jego początku”. 5–10 min przed terminem desk zapisuje w
-        tym dzienniku cenę rynku (strona „Tak”) i prawdopodobieństwo z własnego modelu — obie przed faktem — a potem rozstrzyga je ze świec. Oceniane
-        tylko płynne notowania i wyniki z dala od progu (mark ≠ cena transakcji).
+        tym dzienniku cenę rynku (strona „Tak”) i prawdopodobieństwo z własnego modelu — obie przed faktem — a potem rozstrzyga je ze świec. Wyniki
+        w pobliżu progu (≤ 0,05%) są pomijane, bo rynek rozlicza po cenie mark, a dziennik ze świec transakcji.
       </p>
       {l && (
         <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-ink-2">
@@ -273,25 +310,43 @@ const MarketCard: React.FC<{ m: NonNullable<DeskLedgerSummary['market']> }> = ({
           </span>
           <span>
             rynek <span className="font-mono tabular-nums text-ink-1">{mid === null ? DASH : pct(mid)}</span>
-            {!l.liquid && <span className="ml-1 text-[10px] text-ink-3">arkusz rzadki</span>}
+            {!l.liquid && <span className="ml-1 text-[10px] text-ink-3">arkusz płytki</span>}
           </span>
         </div>
       )}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Stat label="Brier model" value={<span className="font-mono tabular-nums text-base">{enough && sc.brierModel !== null ? sc.brierModel.toFixed(3) : DASH}</span>} hint={enough ? `${sc.n} pytań` : `od ${MIN_N} (jest ${sc.n})`} />
-        <Stat label="Brier rynek" value={<span className="font-mono tabular-nums text-base">{enough && sc.brierMarket !== null ? sc.brierMarket.toFixed(3) : DASH}</span>} hint="0 = idealnie, 0,25 = rzut monetą" />
-        <Stat
-          label="Model − rynek"
-          value={<span className="font-mono tabular-nums text-base">{enough && sc.diff ? `${sc.diff.d >= 0 ? '+' : '−'}${Math.abs(sc.diff.d).toFixed(3)}` : DASH}</span>}
-          hint={enough && sc.diff ? `90%: ${sc.diff.lo.toFixed(3)} … ${sc.diff.hi.toFixed(3)}` : 'ujemne = model lepszy'}
-        />
-        <Stat label="Pominięte" value={<span className="font-mono tabular-nums text-base">{sc.near + sc.illiquid}</span>} hint={`blisko progu ${sc.near} · rzadki arkusz ${sc.illiquid}`} />
+      <div className="overflow-x-auto">
+        <table className="w-full text-left font-mono tabular-nums text-[11px]">
+          <caption className="sr-only">Brier modelu i rynku na tych samych pytaniach, różnica z przedziałem bootstrap 90%</caption>
+          <thead className="text-ink-3">
+            <tr>
+              <th className="py-1 pr-3 font-medium font-sans">Notowania</th>
+              <th className="py-1 pr-3 font-medium font-sans">Pytań</th>
+              <th className="py-1 pr-3 font-medium font-sans">Brier model</th>
+              <th className="py-1 pr-3 font-medium font-sans">Brier rynek</th>
+              <th className="py-1 font-medium font-sans" title="Ujemne = model trafniejszy; przedział bootstrap 90% (pary pytań)">
+                Model − rynek
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <MarketRow label="płynne" title="Spread ≤ 5 pp i ≥ 50 USDC w ±5 pp od środka po obu stronach" sc={m.scores} />
+            {m.tight && <MarketRow label="wąski spread" title="Spread ≤ 5 pp, także płytkie arkusze (cena może wynikać z małego zlecenia)" sc={m.tight} />}
+          </tbody>
+        </table>
       </div>
-      {verdict && <div className="text-xs text-ink-1">Wniosek na tej próbie: {verdict}.</div>}
+      <div className="text-[11px] text-ink-3">
+        Brier: 0 = idealnie, 0,25 = rzut monetą. Pominięte: blisko progu {sc.near}, notowanie niepłynne {sc.illiquid}.
+        {verdict ? (
+          <span className="text-ink-1"> Wniosek na tej próbie (notowania płynne): {verdict}.</span>
+        ) : (
+          <span> Wniosek dopiero od {VERDICT_N} pytań z płynnym notowaniem.</span>
+        )}
+      </div>
     </div>
   );
 };
 
+/** Szanse dotknięcia poziomów 2h: surowe z modelu i skalibrowane (Venn–Abers), wyniki Briera, niezawodność. */
 const TouchCard: React.FC<{ s: DeskLedgerSummary }> = ({ s }) => {
   const t = s.latest.touch;
   const sc = s.scores.touch;

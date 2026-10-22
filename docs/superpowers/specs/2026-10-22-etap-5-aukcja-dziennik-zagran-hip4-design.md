@@ -114,9 +114,15 @@ osobno. Weryfikator przelicza wynik z ceny i progu i sprawdza ceny ze świecami 
   bo dopisanie do partii głównej zmieniłoby hash jej ostatniej prognozy (pokwitowania są niezmienne). Weryfikator sprawdza
   pokwitowania per partia slotu.
 - p modelu liczone od chwili wydania (po pobraniu notowania i ceny), horyzont dokładny co do sekundy, 4000 ścieżek.
-- Rozstrzygnięcie ze świecy 1m (cena transakcji), rynek rozlicza po mark: wyniki z |c1 − K| ≤ 0,02% K oznaczone
-  i pomijane w ocenie; niepłynne notowania też pomijane — obie liczby jawne.
-- Najwyżej 2 próby pobrania rynku na slot (~22 wag każda).
+- Rozstrzygnięcie ze świecy 1m (cena transakcji), rynek rozlicza po mark w oknie z opisu: wyniki z |c1 − K| ≤ 0,05% K
+  oznaczone i pomijane w ocenie (pasmo ostrożne — zakres świecy 1m to zwykle 2–10 bp).
+- Dwa poziomy oceny: „płynne” (spread ≤ 5 pp i ≥ 50 USDC po obu stronach) i „wąski spread” (≤ 5 pp, także płytkie) —
+  w teście na żywo wiele rynków 15-minutowych miało wąski spread przy kilku USDC głębokości; obie liczby jawne.
+- Rekord rynku tylko w slocie z prognozami głównymi (inaczej skip i prognoza w tym samym slocie); cena = środek z migawki
+  (świeży), notowanie ≤ 30 s; dokładnie jeden rynek „BTC-USDC perp mark” z terminem = koniec slotu, inaczej brak rekordu.
+- Werdykt „kto trafniejszy (Brier)” dopiero od 100 pytań z płynnym notowaniem (ocena co 15 min — ryzyko przypadkowego
+  „dowodu” przy wielokrotnym zaglądaniu).
+- Najwyżej 2 próby pobrania rynku na slot (~24 wag każda).
 
 ## Kolejność realizacji
 

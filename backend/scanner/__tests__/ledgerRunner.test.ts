@@ -225,6 +225,8 @@ describe('LedgerRunner — model vs rynek (HIP-4)', () => {
     K: 100_000,
     expiry,
     src: 'mark' as const,
+    px: 100_000,
+    bookTime: null,
     quote: { bid: 0.45, ask: 0.5, mid: 0.475, spread: 0.05, depthBid: 100, depthAsk: 100, liquid: true },
   });
 
@@ -278,5 +280,24 @@ describe('LedgerRunner — model vs rynek (HIP-4)', () => {
     expect(existsSync(join(dir, 'BTC', 'ots', 'slots', '2026-10-22', `${SLOT0}.ots`))).toBe(true);
     expect(existsSync(join(dir, 'BTC', 'ots', 'slots', '2026-10-22', `${SLOT0}-m.ots`))).toBe(true);
     expect(digests).toHaveLength(2);
+  });
+});
+
+describe('LedgerRunner — model vs rynek: bez prognoz głównych slotu nie ma rekordu rynku', () => {
+  it('brak ceny na początku slotu (skip) → w 5–10 min rynek nie jest pobierany ani zapisywany (bez konfliktu skip/prognoza)', async () => {
+    let calls = 0;
+    const asked: number[] = [];
+    const { r, dir } = runner({
+      markPx: () => (calls++ === 0 ? null : 100_000),
+      markets: async (expiry) => (asked.push(expiry), { outcome: 1, K: 100_000, expiry, src: 'mark' as const, px: 100_000, bookTime: expiry - 9 * MIN, quote: null }),
+    });
+    r.init(SLOT0);
+    await r.tick(SLOT0 + 30_000); // brak ceny → prognozy główne nie wydane
+    await r.tick(SLOT0 + 6 * MIN);
+    await r.tick(SLOT0 + 16 * MIN); // następny slot: skip dla SLOT0
+    expect(asked).toEqual([]);
+    const all = lines(dir, '2026-10-22');
+    expect(all.filter((l) => l.kind === 'mkt')).toEqual([]);
+    expect(all.filter((l) => l.k === 's').map((l) => l.slot)).toEqual([SLOT0]);
   });
 });

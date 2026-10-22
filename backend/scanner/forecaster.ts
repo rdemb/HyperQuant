@@ -116,12 +116,15 @@ export interface MktForecast {
   outcome: number;
   K: number;
   expiry: number;
-  src: 'mark' | 'trade' | 'pyth';
+  src: 'mark' | 'trade' | 'pyth' | 'other';
   px0: number;
   /** Notowanie strony „Tak” w chwili wydania (null = brak arkusza) */
   bid: number | null;
   ask: number | null;
-  /** Arkusz płynny (spread ≤ 5 pp, ≥ 50 USDC w ±5 pp od środka) — tylko takie notowania są oceniane */
+  /** USDC w zleceniach do ±5 pp od środka po obu stronach — do niezależnego przeliczenia płynności */
+  depthBid: number | null;
+  depthAsk: number | null;
+  /** Arkusz płynny (spread ≤ 5 pp, ≥ 50 USDC w ±5 pp od środka po obu stronach) — ocena ścisła */
   liquid: boolean;
   /** P(cena w terminie ≥ K) z modelu, od chwili wydania */
   p: number;
@@ -135,7 +138,7 @@ export interface MktResolution {
   /** Zamknięcie świecy 1m kończącej się w terminie (cena transakcji — rynek rozlicza po mark) */
   c1: number;
   y: 0 | 1;
-  /** |c1 − K| ≤ 0,02% K: wynik niepewny (mark ≠ cena transakcji) — nie oceniany */
+  /** |c1 − K| ≤ 0,05% K: wynik niepewny (rynek rozlicza po mark w oknie z opisu, my ze świecy transakcji) — nie oceniany */
   near: 0 | 1;
 }
 
@@ -269,8 +272,11 @@ export function resolveTouch(f: TouchForecast, c1m: RangeBar[], now: number): To
   };
 }
 
-/** Próg „blisko progu” rynku (względny) — tam rozbieżność mark vs cena transakcji może zmienić wynik */
-export const MKT_NEAR = 0.0002;
+/**
+ * Próg „blisko progu” rynku (względny, 5 bp) — tam rozbieżność mark (w oknie z opisu rynku) vs zamknięcie świecy transakcji
+ * może zmienić wynik; zakres świecy 1m to zwykle 2–10 bp, więc pasmo jest celowo ostrożne.
+ */
+export const MKT_NEAR = 0.0005;
 
 /**
  * Prognoza „model vs rynek”: p = P(S_termin ≥ K) z modelu od chwili wydania (horyzont dokładny co do sekundy,
@@ -303,6 +309,8 @@ export function makeMktForecast(model: VolModel, tm: ForecastTimes, px0: number,
     px0,
     bid: q ? q.bid : null,
     ask: q ? q.ask : null,
+    depthBid: q ? r6(q.depthBid) : null,
+    depthAsk: q ? r6(q.depthAsk) : null,
     liquid: !!q?.liquid,
     p: r4(p),
     model: MODEL_VERSION,
@@ -316,15 +324,20 @@ export function resolveMkt(f: MktForecast, c1m: RangeBar[], now: number): MktRes
   return { k: 'r', id: f.id, t: now, c1, y: c1 >= f.K ? 1 : 0, near: Math.abs(c1 - f.K) <= MKT_NEAR * f.K ? 1 : 0 };
 }
 
+/** Notowanie z wąskim spreadem (≤ 5 pp), także płytkie — poziom oceny „wąski spread” */
+export const tightQuote = (f: MktForecast) => f.bid !== null && f.ask !== null && f.ask - f.bid <= 0.05 + 1e-12;
+/** Notowanie płynne (spread i głębokość) — poziom oceny ścisły */
+export const liquidQuote = (f: MktForecast) => f.liquid && f.bid !== null && f.ask !== null;
+
 /**
- * Wyniki „model vs rynek” na tych samych pytaniach: tylko płynne notowania i rozstrzygnięcia z dala od progu. Brier i log
- * score obu (log: −ln p(wyniku), p ograniczone do [0,001; 0,999]); różnica Brier (model − rynek) z bootstrapem 90%
- * parowanym (2000 losowań, stałe ziarno). Ujemna różnica = model lepiej skalibrowany niż rynek.
+ * Wyniki „model vs rynek” na tych samych pytaniach: notowania spełniające `accept` i rozstrzygnięcia z dala od progu.
+ * Brier i log score obu (log: −ln p(wyniku), p ograniczone do [0,001; 0,999]); różnica Brier (model − rynek) z bootstrapem
+ * percentylowym 90% parowanym (2000 losowań, stałe ziarno). Ujemna różnica = model trafniejszy (Brier) niż rynek.
  */
-export function mktScores(pairs: { f: MktForecast; r: MktResolution }[]): MktScores {
+export function mktScores(pairs: { f: MktForecast; r: MktResolution }[], accept: (f: MktForecast) => boolean = liquidQuote): MktScores {
   const near = pairs.filter((x) => x.r.near === 1).length;
-  const illiquid = pairs.filter((x) => x.r.near === 0 && !(x.f.liquid && x.f.bid !== null && x.f.ask !== null)).length;
-  const ok = pairs.filter((x) => x.r.near === 0 && x.f.liquid && x.f.bid !== null && x.f.ask !== null);
+  const illiquid = pairs.filter((x) => x.r.near === 0 && !accept(x.f)).length;
+  const ok = pairs.filter((x) => x.r.near === 0 && accept(x.f));
   const n = ok.length;
   if (n === 0) return { n: 0, near, illiquid, brierModel: null, brierMarket: null, logModel: null, logMarket: null, diff: null };
   const clamp = (p: number) => Math.min(0.999, Math.max(0.001, p));
@@ -361,7 +374,7 @@ export function mktScores(pairs: { f: MktForecast; r: MktResolution }[]): MktSco
     brierMarket: r6(bk / n),
     logModel: r4(lm / n),
     logMarket: r4(lk / n),
-    diff: { d, lo: Math.min(d, means[Math.floor(0.05 * (reps - 1))]), hi: Math.max(d, means[Math.ceil(0.95 * (reps - 1))]) },
+    diff: { d, lo: means[Math.floor(0.05 * (reps - 1))], hi: means[Math.ceil(0.95 * (reps - 1))] },
   };
 }
 
@@ -539,7 +552,8 @@ export function buildSummary(s: SummaryInput): DeskLedgerSummary {
     slotStamps: s.slotStamps ?? 0,
     participation: participation(fs, s.skips ?? [], from),
     market: {
-      scores: mktScores(mktPairs),
+      scores: mktScores(mktPairs, liquidQuote),
+      tight: mktScores(mktPairs, tightQuote),
       latest: latestMkt
         ? { t: latestMkt.t, expiry: latestMkt.expiry, K: latestMkt.K, p: latestMkt.p, bid: latestMkt.bid, ask: latestMkt.ask, liquid: latestMkt.liquid }
         : null,

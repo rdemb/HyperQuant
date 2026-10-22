@@ -156,6 +156,11 @@ describe('wyniki i podsumowanie', () => {
     expect(s.latest.touch!.va.pdh!.p).toBe(0.3); // brak zbioru kalibracyjnego → bez zmian
     expect(s.scores.ret['60'].n).toBe(1);
     expect(isDeskLedgerSummary(s)).toBe(true);
+    // część „model vs rynek”: poprawna przechodzi, uszkodzona odrzuca podsumowanie, brak — starsze podsumowania przechodzą
+    expect(s.market).toMatchObject({ scores: { n: 0 }, tight: { n: 0 }, latest: null });
+    expect(isDeskLedgerSummary({ ...s, market: { scores: { n: 'x' }, latest: null } })).toBe(false);
+    const { market: _m, ...old } = s;
+    expect(isDeskLedgerSummary(old)).toBe(true);
   });
 });
 
@@ -260,6 +265,8 @@ describe('model vs rynek (HIP-4, 15 min)', () => {
     K,
     expiry,
     src: 'mark' as const,
+    px: 100_000,
+    bookTime: ti - 1_000,
     quote: quote && { ...quote, mid: (quote.bid + quote.ask) / 2, spread: quote.ask - quote.bid, depthBid: 100, depthAsk: 100 },
   });
 

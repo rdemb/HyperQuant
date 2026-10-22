@@ -46,6 +46,8 @@ const KEEP = 31 * DAY;
 /** Okno wydania rekordu „model vs rynek” w slocie (od początku slotu): 5–10 min, czyli 5–10 min przed terminem rynku */
 const MKT_FROM = 5 * MIN;
 const MKT_TO = 10 * MIN;
+/** Notowanie rynku starsze niż 30 s w chwili wydania — nie zapisujemy (porównanie z modelem z innej chwili) */
+const MKT_MAX_QUOTE_AGE = 30_000;
 /** Pokwitowań slotów na jedno wywołanie (nadrabianie zaległych po awarii kalendarzy) */
 const STAMPS_PER_TICK = 4;
 
@@ -219,16 +221,19 @@ export class LedgerRunner {
     }
 
     // 1b. Model vs rynek (HIP-4): 5–10 min przed końcem slotu — aktywny 15-minutowy rynek binarny z terminem = koniec slotu
+    // Tylko w slocie z prognozami głównymi: slot bez nich dostaje jawny `skip` — rekord rynku w takim slocie dałby
+    // w łańcuchu jednocześnie prognozę i pominięcie (nie do naprawienia w historii tylko dopisywanej)
     const mktDone = [...this.forecasts.values()].some((f) => f.kind === 'mkt' && f.slot === slot);
-    if (this.d.markets && !mktDone && ti - slot >= MKT_FROM && ti - slot < MKT_TO && (this.mktTries.get(slot) ?? 0) < 2) {
+    const mainIssued = this.forecasts.has(`${slot}-ret60`);
+    if (this.d.markets && mainIssued && !mktDone && ti - slot >= MKT_FROM && ti - slot < MKT_TO && (this.mktTries.get(slot) ?? 0) < 2) {
       this.mktTries.set(slot, (this.mktTries.get(slot) ?? 0) + 1);
       const fresh = data.model && ti - data.modelAt <= MODEL_MAX_AGE;
       const snap = fresh ? await this.d.markets(slot + SLOT, ti).catch(() => null) : null;
-      // Chwila wydania po pobraniu notowania i ceny (bez podglądania)
-      const px = this.d.markPx();
+      // Chwila wydania po pobraniu notowania i ceny (bez podglądania); cena = środek z migawki (świeży), notowanie ≤ 30 s
       const t2 = this.clock(now);
-      if (snap && px && px > 0 && slotOf(t2) === slot && t2 - slot < MKT_TO) {
-        const f = makeMktForecast(data.model!, { slot, ti: t2, t: Math.floor(t2 / MIN) * MIN + MIN }, px, snap);
+      const bookFresh = snap !== null && (snap.bookTime === null || (t2 - snap.bookTime <= MKT_MAX_QUOTE_AGE && snap.bookTime <= t2 + 5_000));
+      if (snap && bookFresh && snap.px > 0 && slotOf(t2) === slot && t2 - slot < MKT_TO) {
+        const f = makeMktForecast(data.model!, { slot, ti: t2, t: Math.floor(t2 / MIN) * MIN + MIN }, snap.px, snap);
         if (f) {
           this.add([{ ...f }], t2);
           appended += 1;

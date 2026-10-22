@@ -72,8 +72,27 @@ function quantileAt(taus, qs, tau) {
 }
 
 const r6 = (x) => Math.round(x * 1e6) / 1e6;
-/** „Blisko progu” rynku HIP-4 (względnie) — jak w skanerze */
-const MKT_NEAR = 0.0002;
+/** „Blisko progu” rynku HIP-4 (względnie, 5 bp) — jak w skanerze */
+const MKT_NEAR = 0.0005;
+/** Płynność notowania jak w skanerze: spread ≤ 5 pp i ≥ 50 USDC w ±5 pp od środka po obu stronach */
+const MKT_MAX_SPREAD = 0.05;
+const MKT_MIN_DEPTH = 50;
+const SLOT_LEN_MS = 15 * 60_000;
+
+/** Niezmienniki rekordu „model vs rynek” (niezależnie od rozstrzygnięcia) — lista problemów. */
+function mktRecordProblems(fc) {
+  const out = [];
+  if (fc.t + fc.h * 60_000 !== fc.expiry) out.push(`${fc.id}: t + h ≠ termin rynku`);
+  if (fc.expiry !== fc.slot + SLOT_LEN_MS) out.push(`${fc.id}: termin rynku ≠ koniec slotu`);
+  if (!(fc.p >= 0 && fc.p <= 1)) out.push(`${fc.id}: p poza [0, 1]`);
+  if (fc.bid !== null && fc.ask !== null && !(fc.bid <= fc.ask)) out.push(`${fc.id}: bid > ask`);
+  if (typeof fc.depthBid === 'number' || typeof fc.depthAsk === 'number') {
+    const liquid =
+      fc.bid !== null && fc.ask !== null && fc.ask - fc.bid <= MKT_MAX_SPREAD + 1e-12 && fc.depthBid >= MKT_MIN_DEPTH && fc.depthAsk >= MKT_MIN_DEPTH;
+    if (liquid !== fc.liquid) out.push(`${fc.id}: liquid = ${fc.liquid} ≠ przeliczone ze spreadu i głębokości ${liquid}`);
+  }
+  return out;
+}
 
 /** Wynik dotknięć z max/min okna (ta sama reguła co w skanerze: D-EQ od strony ceny przy wydaniu). */
 function touchOutcome(fc, hi, lo) {
@@ -93,6 +112,7 @@ export function checkResolutions(records) {
     const fc = f.get(r.id);
     if (!fc) continue;
     if (fc.kind === 'mkt') {
+      out.push(...mktRecordProblems(fc));
       if (!(r.c1 > 0)) {
         out.push(`${r.id}: brak cen źródłowych (c1)`);
         continue;
@@ -402,6 +422,7 @@ export function recompute(records) {
   let touchN = 0;
   let brierSum = 0;
   const market = { n: 0, brierModel: 0, brierMarket: 0 };
+  const marketTight = { n: 0, brierModel: 0, brierMarket: 0 };
   for (const [id, fc] of f) {
     const res = r.get(id);
     if (!res || res.void) continue;
@@ -412,11 +433,15 @@ export function recompute(records) {
       s.crpsB += crps(fc.taus, fc.bq, res.y);
       s.in90 += res.y >= quantileAt(fc.taus, fc.q, 0.05) && res.y <= quantileAt(fc.taus, fc.q, 0.95) ? 1 : 0;
     } else if (fc.kind === 'mkt') {
-      if (res.near !== 0 || !fc.liquid || fc.bid === null || fc.ask === null) continue;
+      if (res.near !== 0 || fc.bid === null || fc.ask === null) continue;
       const y = res.c1 >= fc.K ? 1 : 0;
-      market.n++;
-      market.brierModel += (fc.p - y) ** 2;
-      market.brierMarket += ((fc.bid + fc.ask) / 2 - y) ** 2;
+      const add = (acc) => {
+        acc.n++;
+        acc.brierModel += (fc.p - y) ** 2;
+        acc.brierMarket += ((fc.bid + fc.ask) / 2 - y) ** 2;
+      };
+      if (fc.ask - fc.bid <= MKT_MAX_SPREAD + 1e-12) add(marketTight);
+      if (fc.liquid) add(market);
     } else if (fc.kind === 'touch') {
       for (const l of ['pdh', 'pdl', 'deq']) {
         if (fc.p[l] === null) continue; // poziom już przekroczony przy wydaniu — nieoceniany
@@ -429,6 +454,11 @@ export function recompute(records) {
     ret: Object.fromEntries(Object.entries(ret).map(([h, s]) => [h, { n: s.n, crps: s.crps / s.n, crpss: 1 - s.crps / s.crpsB, cov90: s.in90 / s.n }])),
     touch: { levels: touchN, brier: touchN ? brierSum / touchN : null },
     market: { n: market.n, brierModel: market.n ? market.brierModel / market.n : null, brierMarket: market.n ? market.brierMarket / market.n : null },
+    marketTight: {
+      n: marketTight.n,
+      brierModel: marketTight.n ? marketTight.brierModel / marketTight.n : null,
+      brierMarket: marketTight.n ? marketTight.brierMarket / marketTight.n : null,
+    },
     voided: [...r.values()].filter((x) => x.void).length,
     skipped: records.filter((o) => o.k === 's').reduce((n, o) => n + (typeof o.until === 'number' ? Math.round((o.until - o.slot) / SLOT_MS) + 1 : 1), 0),
   };

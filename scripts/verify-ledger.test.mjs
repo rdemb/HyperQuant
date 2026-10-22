@@ -197,3 +197,29 @@ describe('verify-ledger — model vs rynek (HIP-4)', () => {
     expect(r.market.brierMarket).toBeCloseTo(0.525 ** 2, 12);
   });
 });
+
+describe('verify-ledger — model vs rynek: niezmienniki rekordu i płynność', () => {
+  const M = 60_000;
+  const T = Date.UTC(2026, 9, 22, 12, 0, 0);
+  const base = { k: 'f', id: `${T}-mkt7`, slot: T, ti: T + 6 * M, t: T + 7 * M, kind: 'mkt', h: 8, outcome: 7, K: 100_000, expiry: T + 15 * M, bid: 0.45, ask: 0.5, depthBid: 80, depthAsk: 60, liquid: true, p: 0.6 };
+  const res = { k: 'r', id: base.id, c1: 100_100, y: 1, near: 0 };
+
+  it('pasmo „blisko progu” 5 bp', () => {
+    expect(checkResolutions([base, { ...res, c1: 100_040, near: 1 }])).toEqual([]);
+    expect(checkResolutions([base, { ...res, c1: 100_040, near: 0 }]).join(' ')).toMatch(/near/);
+  });
+  it('płynność przeliczana ze spreadu i głębokości; t + h = termin = koniec slotu; bid ≤ ask; 0 ≤ p ≤ 1', () => {
+    expect(checkResolutions([base, res])).toEqual([]);
+    expect(checkResolutions([{ ...base, depthAsk: 10 }, res]).join(' ')).toMatch(/liquid/);
+    expect(checkResolutions([{ ...base, h: 9 }, res]).join(' ')).toMatch(/termin/);
+    expect(checkResolutions([{ ...base, expiry: T + 30 * M, h: 23 }, res]).join(' ')).toMatch(/koniec slotu/);
+    expect(checkResolutions([{ ...base, bid: 0.6 }, res]).join(' ')).toMatch(/bid/);
+    expect(checkResolutions([{ ...base, p: 1.2 }, res]).join(' ')).toMatch(/p /);
+  });
+  it('recompute: poziom ścisły i „wąski spread”', () => {
+    const thin = { ...base, id: 'b', depthAsk: 5, liquid: false };
+    const r = recompute([base, res, thin, { ...res, id: 'b' }]);
+    expect(r.market.n).toBe(1);
+    expect(r.marketTight.n).toBe(2);
+  });
+});
