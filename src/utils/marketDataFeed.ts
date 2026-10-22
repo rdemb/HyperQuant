@@ -141,6 +141,34 @@ export function parseL2Levels(
   return { bids: parse(rawBids), asks: parse(rawAsks) };
 }
 
+/**
+ * Duże poziomy arkusza (≥ 1.2 BTC albo ≥ 10 zleceń) z 15 najlepszych po każdej stronie — do sceny 3D.
+ * Wzorzec to etykieta heurystyczna (liczba zleceń / rozmiar), nie wykrycie zleceń ukrytych: publiczny arkusz ich nie pokazuje.
+ */
+export function collectWhaleNodes(rawBids: { px: string; sz: string; n: number }[], rawAsks: { px: string; sz: string; n: number }[]): WhaleOrderNode[] {
+  const out: WhaleOrderNode[] = [];
+  const collect = (rows: { px: string; sz: string; n: number }[], side: 'BID' | 'ASK') => {
+    for (const r of rows.slice(0, 15)) {
+      const px = parseFloat(r.px);
+      const sz = parseFloat(r.sz);
+      if (!Number.isFinite(px) || !Number.isFinite(sz)) continue;
+      if (sz >= 1.2 || r.n >= 10) {
+        out.push({
+          price: px,
+          side,
+          sizeBtc: Number(sz.toFixed(3)),
+          sizeUsd: Math.round(px * sz),
+          orderCount: r.n,
+          pattern: r.n >= 18 ? 'Institutional Iceberg' : sz >= 3.5 ? 'Passive Whale Wall' : 'Liquidity Shield',
+        });
+      }
+    }
+  };
+  collect(rawBids, 'BID');
+  collect(rawAsks, 'ASK');
+  return out;
+}
+
 /** Mapuje surową transakcję z kanału WS `trades` na tick — realny rozmiar, bez podłóg. */
 export function mapHyperliquidTrade(tr: {
   px: string;
@@ -629,29 +657,7 @@ export async function fetchRealHyperliquidMarketData(
     const rawAsks = l2.levels[1] || [];
     const parsed = parseL2Levels(rawBids, rawAsks);
 
-    const collectWhales = (rows: { px: string; sz: string; n: number }[], side: 'BID' | 'ASK') => {
-      rows.slice(0, 15).forEach((r) => {
-        const px = parseFloat(r.px);
-        const sz = parseFloat(r.sz);
-        if (sz >= 1.2 || r.n >= 10) {
-          whaleNodes.push({
-            price: px,
-            side,
-            sizeBtc: Number(sz.toFixed(3)),
-            sizeUsd: Math.round(px * sz),
-            orderCount: r.n,
-            pattern:
-              r.n >= 18
-                ? 'Institutional Iceberg'
-                : sz >= 3.5
-                ? 'Passive Whale Wall'
-                : 'Liquidity Shield',
-          });
-        }
-      });
-    };
-    collectWhales(rawBids, 'BID');
-    collectWhales(rawAsks, 'ASK');
+    whaleNodes.push(...collectWhaleNodes(rawBids, rawAsks));
 
     if (parsed.bids.length > 0 && parsed.asks.length > 0) {
       l2Book = parsed;

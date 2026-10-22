@@ -155,6 +155,23 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         caveat: 'Wyniki od 20 rozstrzygnięć; prognozy nakładają się (wyniki skorelowane); brak danych 6 h po horyzoncie = jawne unieważnienie; pominięte sloty jawne; znaczniki czasu potwierdzają istnienie zapisu, nie poprawność modelu.',
       },
       {
+        metric: 'Mechanika arkusza (Mikrostruktura)',
+        source: 'WS bbo (najlepsze kwotowania, ~co 150 ms), l2Book (~co 5 s) i trades Hyperliquid w przeglądarce — od otwarcia strony, maks. 30 min',
+        method:
+          'OFI Cont–Kukanov–Stoikov w interwałach 10 s i regresja ΔP = α + β·OFI; Hawkes z jądrem wykładniczym (MLE, zdarzenie = blok z transakcjami), współczynnik rozgałęzienia n = α/β; mikrocena: średnia ważona i korekta wg nierównowagi (zmiana mid po 5 s); dodane/anulowane/wykonane z bilansu migawek ±10 bp; absorpcja = reszta odpornej regresji ΔP na wolumenie agresora',
+        kinds: ['LIVE', 'MODEL'],
+        refresh: 'co 5 s; Hawkes co ~30 s',
+        caveat: 'Brak historii arkusza w publicznym API — estymatory dojrzewają po kilku minutach; dodania i anulowania to bilans netto między migawkami.',
+      },
+      {
+        metric: 'Przepływ agresora per poziom (DOM) i detektor wyczerpania',
+        source: 'Ostatnia migawka arkusza i transakcje HL z 60 s',
+        method: 'Wolumen agresora przypisany do poziomu wg odległości ceny; stany absorpcji/wyczerpania z ręcznie dobranych progów (B/S, rozmiar ściany)',
+        kinds: ['MODEL'],
+        refresh: 'z każdą migawką arkusza',
+        caveat: 'Heurystyka bez walidacji statystycznej — obok pokazywana jest absorpcja z regresji (mechanika arkusza).',
+      },
+      {
         metric: 'Przepływ kohort',
         source: 'Skaner HyperQuant: WS trades BTC (pole users = [kupujący, sprzedający], side = strona agresora); pozycje i ranking kont z książki adresów',
         method:
