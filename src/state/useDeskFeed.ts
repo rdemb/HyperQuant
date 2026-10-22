@@ -266,6 +266,8 @@ export function useDeskFeed(options: { cexEnabled: boolean }) {
           setHlConnected(true);
           sock.send(JSON.stringify({ method: 'subscribe', subscription: { type: 'trades', coin: 'BTC' } }));
           sock.send(JSON.stringify({ method: 'subscribe', subscription: { type: 'l2Book', coin: 'BTC' } }));
+          // Najlepsze kwotowania ~co 150 ms (arkusz l2Book przychodzi ~co 5 s) — OFI i mikrocena w mechanice arkusza
+          sock.send(JSON.stringify({ method: 'subscribe', subscription: { type: 'bbo', coin: 'BTC' } }));
           if (pingTimer !== null) clearInterval(pingTimer);
           pingTimer = window.setInterval(() => {
             if (sock.readyState === WebSocket.OPEN) sock.send(JSON.stringify({ method: 'ping' }));
@@ -283,6 +285,8 @@ export function useDeskFeed(options: { cexEnabled: boolean }) {
                 if (t) ticks.push(t);
               }
               ingestTicks(ticks, true);
+            } else if (msg.channel === 'bbo' && msg.data && Array.isArray(msg.data.bbo)) {
+              microEngine.onBbo(msg.data);
             } else if (msg.channel === 'l2Book' && msg.data && Array.isArray(msg.data.levels)) {
               microEngine.onBook(msg.data);
               setWsWhaleNodes(collectWhaleNodes(msg.data.levels[0] || [], msg.data.levels[1] || []).slice(0, 12));

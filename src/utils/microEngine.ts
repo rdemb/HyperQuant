@@ -14,7 +14,10 @@ import {
 } from './microMechanics';
 
 /**
- * Silnik mechaniki mikrostruktury zasilany surowymi migawkami arkusza (WS `l2Book`) i taśmą (WS `trades`) Hyperliquid.
+ * Silnik mechaniki mikrostruktury zasilany publicznym WebSocket Hyperliquid:
+ *  - `bbo` (najlepsze kwotowania, ~co 150 ms) — OFI Cont–Kukanov–Stoikov, mid, nierównowaga i mikrocena;
+ *  - `l2Book` (migawka arkusza, ~co 5 s) — bilans dodań / anulowań / wykonań przy cenie;
+ *  - `trades` — wolumen agresora (absorpcja) i zdarzenia procesu Hawkesa.
  * Historia tylko od otwarcia strony (publiczne API nie udostępnia historii arkusza), maks. 30 min.
  */
 
@@ -26,6 +29,7 @@ const MICRO_HORIZON = 5_000;
 const MAX_EVENTS = 3000;
 
 type RawLevel = { px: string; sz: string; n?: number };
+type Q = { bid: number; bidSz: number; ask: number; askSz: number };
 
 export interface MicroMetrics {
   /** OFI (CKS) w interwałach 10 s i regresja ΔP = α + β·OFI */
@@ -51,6 +55,7 @@ const zero = (): FlowParts => ({ added: 0, cancelled: 0, executed: 0 });
 
 export class MicroEngine {
   private book: { t: number; bids: BookSide[]; asks: BookSide[] } | null = null;
+  private quote: (Q & { t: number }) | null = null;
   private buckets = new Map<number, Bucket>();
   private snaps: { t: number; mid: number; imb: number }[] = [];
   private flows: { t: number; bid: FlowParts; ask: FlowParts }[] = [];
@@ -69,6 +74,25 @@ export class MicroEngine {
     return b;
   }
 
+  /** Najlepsze kwotowania (`bbo`, ~co 150 ms): OFI, mid i nierównowaga. */
+  onBbo(msg: { time?: number; bbo: [RawLevel | null, RawLevel | null] }): void {
+    const t = typeof msg.time === 'number' ? msg.time : Date.now();
+    const [b0, a0] = msg.bbo ?? [];
+    if (!b0 || !a0) return;
+    const q: Q = { bid: parseFloat(b0.px), bidSz: parseFloat(b0.sz), ask: parseFloat(a0.px), askSz: parseFloat(a0.sz) };
+    if (![q.bid, q.bidSz, q.ask, q.askSz].every(Number.isFinite) || !(q.bid > 0) || q.bid >= q.ask) return;
+    const b = this.bucket(t);
+    if (this.quote) b.ofi += ofiEvent(this.quote, q);
+    const mid = (q.bid + q.ask) / 2;
+    b.mid = mid;
+    const tot = q.bidSz + q.askSz;
+    this.snaps.push({ t, mid, imb: tot > 0 ? q.bidSz / tot : 0.5 });
+    this.quote = { ...q, t };
+    if (this.since === null || t < this.since) this.since = t;
+    this.prune(t);
+  }
+
+  /** Migawka arkusza (`l2Book`, ~co 5 s): bilans dodań / anulowań / wykonań przy cenie. */
   onBook(msg: { time?: number; levels: [RawLevel[], RawLevel[]] }): void {
     const t = typeof msg.time === 'number' ? msg.time : Date.now();
     const parse = (rows: RawLevel[]) =>
@@ -80,23 +104,13 @@ export class MicroEngine {
     const asks = parse(msg.levels[1] ?? []);
     if (!bids.length || !asks.length || bids[0].px >= asks[0].px) return;
     const cur = { t, bids, asks };
-    const mid = (bids[0].px + asks[0].px) / 2;
-    const b = this.bucket(t);
     if (this.book) {
-      const p = this.book;
-      b.ofi += ofiEvent(
-        { bid: p.bids[0].px, bidSz: p.bids[0].sz, ask: p.asks[0].px, askSz: p.asks[0].sz },
-        { bid: bids[0].px, bidSz: bids[0].sz, ask: asks[0].px, askSz: asks[0].sz }
-      );
-      const f = addCancel(p, cur, this.tradesSinceBook, mid, FLOW_BAND_BPS);
-      this.flows.push({ t, ...f });
+      const mid = (bids[0].px + asks[0].px) / 2;
+      this.flows.push({ t, ...addCancel(this.book, cur, this.tradesSinceBook, mid, FLOW_BAND_BPS) });
     }
-    b.mid = mid;
-    const tot = bids[0].sz + asks[0].sz;
-    this.snaps.push({ t, mid, imb: tot > 0 ? bids[0].sz / tot : 0.5 });
     this.tradesSinceBook = [];
     this.book = cur;
-    if (this.since === null) this.since = t;
+    if (this.since === null || t < this.since) this.since = t;
     this.prune(t);
   }
 
@@ -162,11 +176,11 @@ export class MicroEngine {
     const sO = iv.length > 1 ? Math.sqrt(iv.reduce((a, i) => a + (i.ofi - mO) ** 2, 0) / (iv.length - 1)) : 0;
 
     let micro: MicroMetrics['micro'] = null;
-    if (this.book) {
-      const b = this.book;
-      const mid = (b.bids[0].px + b.asks[0].px) / 2;
-      const tot = b.bids[0].sz + b.asks[0].sz;
-      const imb = tot > 0 ? b.bids[0].sz / tot : 0.5;
+    if (this.quote) {
+      const b = this.quote;
+      const mid = (b.bid + b.ask) / 2;
+      const tot = b.bidSz + b.askSz;
+      const imb = tot > 0 ? b.bidSz / tot : 0.5;
       // Pary (nierównowaga teraz, zmiana mid po 5 s) z historii migawek
       const samples: { imb: number; dmid: number }[] = [];
       let j = 0;
@@ -181,7 +195,7 @@ export class MicroEngine {
       const g = adj.g[Math.min(9, Math.floor(imb * 10))];
       micro = {
         mid,
-        weighted: weightedMid(b.bids[0].px, b.bids[0].sz, b.asks[0].px, b.asks[0].sz),
+        weighted: weightedMid(b.bid, b.bidSz, b.ask, b.askSz),
         imb,
         adj: samples.length >= 200 && g !== null ? g : null,
         r2: samples.length >= 200 ? adj.r2 : null,

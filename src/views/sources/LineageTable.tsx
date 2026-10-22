@@ -156,7 +156,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
       },
       {
         metric: 'Mechanika arkusza (Mikrostruktura)',
-        source: 'WS l2Book i trades Hyperliquid w przeglądarce — od otwarcia strony, maks. 30 min',
+        source: 'WS bbo (najlepsze kwotowania, ~co 150 ms), l2Book (~co 5 s) i trades Hyperliquid w przeglądarce — od otwarcia strony, maks. 30 min',
         method:
           'OFI Cont–Kukanov–Stoikov w interwałach 10 s i regresja ΔP = α + β·OFI; Hawkes z jądrem wykładniczym (MLE, zdarzenie = blok z transakcjami), współczynnik rozgałęzienia n = α/β; mikrocena: średnia ważona i korekta wg nierównowagi (zmiana mid po 5 s); dodane/anulowane/wykonane z bilansu migawek ±10 bp; absorpcja = reszta odpornej regresji ΔP na wolumenie agresora',
         kinds: ['LIVE', 'MODEL'],

@@ -31,8 +31,9 @@ export const BookMechanicsPanel: React.FC = () => {
         <AbsorptionCard m={m} />
         <div className="rounded-lg border border-line bg-surface-2/50 p-3 text-[11px] text-ink-2 leading-relaxed">
           <div className="text-ink-1 font-medium mb-1">Metoda</div>
-          Migawki arkusza z publicznego kanału <code>l2Book</code> i taśma <code>trades</code> Hyperliquid, od otwarcia tej strony (publiczne API nie
-          udostępnia historii arkusza). Interwały 10 s. OFI według Cont, Kukanov &amp; Stoikov (2014). Hawkes z jądrem wykładniczym (MLE), gdzie
+          Publiczne kanały Hyperliquid od otwarcia tej strony (API nie udostępnia historii arkusza): <code>bbo</code> (najlepsze kwotowania, ok. co
+          150 ms) do OFI i mikroceny, <code>l2Book</code> (migawka arkusza, ok. co 5 s) do bilansu zleceń, <code>trades</code> do wolumenu agresora i
+          procesu Hawkesa. Interwały 10 s. OFI według Cont, Kukanov &amp; Stoikov (2014). Hawkes z jądrem wykładniczym (MLE), gdzie
           zdarzeniem jest blok z transakcjami (Filimonov &amp; Sornette 2012). Mikrocena: średnia ważona i empiryczna korekta wg nierównowagi
           (Stoikov 2018). Dodania i anulowania to bilans netto między migawkami w paśmie ±10 bp, nie zapis każdego zlecenia. Absorpcja to reszta
           odpornej regresji ruchu ceny na wolumenie agresora.
@@ -196,7 +197,7 @@ const FlowCard: React.FC<{ m: MicroMetrics }> = ({ m }) => {
   ];
   const any = rows.some((r) => r.f.added + r.f.cancelled + r.f.executed > 0);
   return (
-    <Card title="Zlecenia przy cenie · 5 min · ±10 bp" cite="bilans migawek arkusza">
+    <Card title="Zlecenia przy cenie · 5 min · ±10 bp" cite="bilans migawek arkusza (co ~5 s)">
       {!any ? (
         <Collecting what="czekam na zmiany arkusza" />
       ) : (

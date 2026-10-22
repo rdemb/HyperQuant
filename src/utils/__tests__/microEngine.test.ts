@@ -4,13 +4,18 @@ import { MicroEngine } from '../microEngine';
 const S = 1000;
 const lv = (px: number, sz: number) => ({ px: String(px), sz: String(sz), n: 1 });
 
+/** Najlepsze kwotowania z kanału `bbo` (co ~150 ms). */
+function bbo(t: number, bid: number, bidSz: number, ask: number, askSz: number) {
+  return { time: t, bbo: [lv(bid, bidSz), lv(ask, askSz)] as [ReturnType<typeof lv>, ReturnType<typeof lv>] };
+}
+
 /** Migawka arkusza: najlepszy bid/ask i ilości (plus głębsze poziomy). */
 function book(t: number, bid: number, bidSz: number, ask: number, askSz: number) {
   return { time: t, levels: [[lv(bid, bidSz), lv(bid - 1, 5)], [lv(ask, askSz), lv(ask + 1, 5)]] as [ReturnType<typeof lv>[], ReturnType<typeof lv>[]] };
 }
 
 describe('MicroEngine — z migawek arkusza i taśmy', () => {
-  it('interwały 10 s: OFI CKS i Δmid; regresja wpływu odzyskuje zależność', () => {
+  it('interwały 10 s: OFI CKS z kanału bbo i Δmid; regresja wpływu odzyskuje zależność', () => {
     const e = new MicroEngine();
     let t = 0;
     let mid = 100_000;
@@ -19,13 +24,13 @@ describe('MicroEngine — z migawek arkusza i taśmy', () => {
     for (let k = 0; k < 120; k++) {
       // w każdym interwale: przyrost ilości na bid = presja kupna → mid rośnie proporcjonalnie
       const push = (rnd() - 0.5) * 10;
-      e.onBook(book(t, mid - 0.5, 5, mid + 0.5, 5));
+      e.onBbo(bbo(t, mid - 0.5, 5, mid + 0.5, 5));
       t += 2 * S;
-      e.onBook(book(t, mid - 0.5, 5 + push, mid + 0.5, 5));
+      e.onBbo(bbo(t, mid - 0.5, 5 + push, mid + 0.5, 5));
       mid += push * 2;
       t += 8 * S;
     }
-    e.onBook(book(t, mid - 0.5, 5, mid + 0.5, 5));
+    e.onBbo(bbo(t, mid - 0.5, 5, mid + 0.5, 5));
     const m = e.metrics(t);
     expect(m.ofi.fit).not.toBeNull();
     expect(m.ofi.fit!.beta).toBeGreaterThan(0);
@@ -60,13 +65,21 @@ describe('MicroEngine — z migawek arkusza i taśmy', () => {
     expect(f.ask).toEqual({ added: 5, cancelled: 0, executed: 0 });
   });
 
-  it('mikrocena: średnia ważona i korekta z historii nierównowagi; dane starsze niż 30 min wypadają', () => {
+  it('mikrocena z bbo: średnia ważona i korekta z historii nierównowagi; dane starsze niż 30 min wypadają', () => {
     const e = new MicroEngine();
-    e.onBook(book(0, 99_999.5, 9, 100_000.5, 1));
+    e.onBbo(bbo(0, 99_999.5, 9, 100_000.5, 1));
     const m = e.metrics(0);
     expect(m.micro!.weighted).toBeCloseTo(100_000.4, 6);
     expect(m.micro!.mid).toBeCloseTo(100_000, 6);
-    e.onBook(book(40 * 60 * S, 99_999.5, 5, 100_000.5, 5));
+    e.onBbo(bbo(40 * 60 * S, 99_999.5, 5, 100_000.5, 5));
     expect(e.metrics(40 * 60 * S).ofi.intervals).toBe(0);
+  });
+
+  it('arkusz l2Book nie wpływa na OFI (liczone z bbo), tylko na bilans dodań/anulowań', () => {
+    const e = new MicroEngine();
+    e.onBook(book(0, 99_999.5, 10, 100_000.5, 4));
+    e.onBook(book(1000, 99_999.5, 30, 100_000.5, 4));
+    expect(e.metrics(1000).micro).toBeNull();
+    expect(e.metrics(1000).flow5m.bid.added).toBe(20);
   });
 });
