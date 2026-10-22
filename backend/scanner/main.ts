@@ -3,7 +3,7 @@
  * Uruchomienie: `node backend/scanner/main.ts` (Node ≥ 24 — TypeScript bez kompilacji, wbudowane fetch i WebSocket).
  * Konfiguracja wyłącznie ze zmiennych środowiskowych — patrz backend/deploy/scanner.env.example.
  */
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { AddressBook } from './addressBook.ts';
 import { loadConfig } from './config.ts';
@@ -15,6 +15,7 @@ import { LedgerStore, prepareLedgerRepo } from './ledgerStore.ts';
 import { LedgerRunner } from './ledgerRunner.ts';
 import { stampDigest } from './ots.ts';
 import { marketSnapshot } from './marketQuotes.ts';
+import { LiquidityRecorder, chooseAgg, type BookAgg, type MinuteRow } from './liquidity.ts';
 import { WeightLimiter } from './rateLimiter.ts';
 import { Scanner } from './scanner.ts';
 import { fetchLeaderboardAccounts } from './seed.ts';
@@ -100,6 +101,36 @@ function wsAlive(): void {
   lastWsMsg = now;
 }
 
+/**
+ * Rejestrator płynności arkusza: wiersze minutowe w pliku JSONL na serwerze (30 dni), publikowany wyłącznie profil
+ * (`liquidity/BTC.json`). Plik dopisywany co minutę, kompaktowany przy starcie i raz na dobę.
+ */
+const liquidityStatePath = join(cfg.stateDir, `liquidity-${cfg.coin}.jsonl`);
+const liquidityOutPath = join(cfg.outDir, 'liquidity', `${cfg.coin}.json`);
+const liquidity = new LiquidityRecorder(cfg.coin);
+function compactLiquidity(): void {
+  const rows = liquidity.allRows();
+  const tmp = `${liquidityStatePath}.tmp`;
+  writeFileSync(tmp, rows.map((r) => JSON.stringify(r)).join('\n') + (rows.length ? '\n' : ''));
+  renameSync(tmp, liquidityStatePath);
+}
+try {
+  const rows: MinuteRow[] = [];
+  for (const line of readFileSync(liquidityStatePath, 'utf8').split('\n')) {
+    if (!line) continue;
+    try {
+      rows.push(JSON.parse(line) as MinuteRow);
+    } catch {
+      // uszkodzona linia (np. przerwany zapis) — pomijana
+    }
+  }
+  liquidity.load(rows, Date.now());
+  compactLiquidity();
+  log(`wczytano historię płynności: ${liquidity.allRows().length} minut`);
+} catch {
+  // brak stanu — historia od teraz
+}
+
 const stream = new HlStream(
   cfg.coin,
   (trades) => {
@@ -118,7 +149,9 @@ const stream = new HlStream(
     wsAlive();
     scanner.setCtx(c);
     lastWsCtx = Date.now();
-  }
+  },
+  WebSocket,
+  (t, levels) => liquidity.onBook(t, levels)
 );
 
 /** Zasiew największymi kontami z publicznego rankingu (adresy zostają na serwerze). */
@@ -143,6 +176,7 @@ const DATA_README = [
   '',
   'Gałąź `ledger` — weryfikowalny dziennik prognoz desku (historia przyrostowa): pliki dzienne `BTC/RRRR-MM-DD.jsonl` z łańcuchem hashy SHA-256,',
   'kotwice OpenTimestamps `BTC/ots/`, podsumowanie `BTC/summary.json`. Weryfikacja: `node scripts/verify-ledger.mjs` w repo HyperQuant.',
+  '- `liquidity/BTC.json` — profil płynności arkusza: mediana głębokości obu stron w ±10 / ±20 bp wg godziny UTC (do 30 dni), bieżąca płynność względem normy godziny, odporność po gwałtownych ruchach.',
   '- `status.json` — stan skanera (liczby adresów i pozycji, błędy API).',
   '',
   'Wyłącznie agregaty — bez adresów portfeli. Źródło: publiczne API Hyperliquid. Metoda: src/utils/liqMap.ts w repo HyperQuant.',
@@ -161,7 +195,7 @@ async function gitPublishTick(): Promise<void> {
     }
   }
   // Pliki opcjonalne (np. kohorty po błędzie budowy) nie wstrzymują publikacji mapy
-  for (const key of [`liq-tape/${cfg.coin}.json`, `cohorts/${cfg.coin}.json`, `ledger/${cfg.coin}/summary.json`]) {
+  for (const key of [`liq-tape/${cfg.coin}.json`, `cohorts/${cfg.coin}.json`, `ledger/${cfg.coin}/summary.json`, `liquidity/${cfg.coin}.json`]) {
     try {
       files.push([key, readFileSync(join(cfg.outDir, key), 'utf8')]);
     } catch {
@@ -229,6 +263,21 @@ async function ledgerTick(): Promise<void> {
   if (res.commit && (!res.commit.ok || !res.commit.pushed)) console.error(`[skaner] dziennik: ${res.commit.error ?? 'commit/push nieudany'}`);
 }
 
+/**
+ * Agregacja arkusza rejestratora płynności: 20 poziomów ma pokrywać ±20 bp (przy cenie ≥ 100 tys. 4 cyfry znaczące dają
+ * koszyki 100 USD — pomiar ±10 bp byłby zdegenerowany). Histereza w `chooseAgg`; zmiana = nowa subskrypcja.
+ */
+let bookAgg: BookAgg = { nSigFigs: 4 };
+function adjustBookAgg(): void {
+  const px = scanner.freshMarkPx() ?? liquidity.lastMid();
+  if (!px) return;
+  const next = chooseAgg(px, bookAgg);
+  if (next.nSigFigs === bookAgg.nSigFigs && next.mantissa === bookAgg.mantissa) return;
+  bookAgg = { nSigFigs: next.nSigFigs, ...(next.mantissa ? { mantissa: next.mantissa } : {}) };
+  stream.setBookAgg(bookAgg);
+  log(`płynność: agregacja arkusza ${bookAgg.nSigFigs} cyfr znaczących${bookAgg.mantissa ? `, mantysa ${bookAgg.mantissa}` : ''} (koszyk ${next.bucket} USD)`);
+}
+
 /** Zapas dla kontekstu rynku, gdy WebSocket milczy > 2 min (waga 20). */
 async function ctxFallback(): Promise<void> {
   if (Date.now() - lastWsCtx < 120_000) return;
@@ -291,6 +340,22 @@ const timers = [
     60_000
   ),
   setInterval(guarded('zapis stanu', saveState), 5 * 60_000),
+  setInterval(
+    guarded('płynność', () => {
+      const rows = liquidity.flush(Date.now());
+      if (rows.length) appendFileSync(liquidityStatePath, rows.map((r) => JSON.stringify(r)).join('\n') + '\n');
+    }),
+    60_000
+  ),
+  setInterval(
+    guarded('profil płynności', () => {
+      mkdirSync(join(cfg.outDir, 'liquidity'), { recursive: true });
+      writeJsonAtomic(liquidityOutPath, liquidity.profile(Date.now()));
+    }),
+    10 * 60_000
+  ),
+  setInterval(guarded('kompaktowanie płynności', compactLiquidity), 24 * 60 * 60_000),
+  setInterval(guarded('agregacja arkusza', adjustBookAgg), 10 * 60_000),
   setInterval(guarded('zasiew', seedFromLeaderboard), 6 * 60 * 60_000),
   ...(cfg.git ? [setInterval(guarded('repo danych', gitPublishTick), cfg.git.everyS * 1000)] : []),
 ];
@@ -322,5 +387,8 @@ log(
   `start: rynek ${cfg.coin}, budżet ${cfg.weightPerMin} wag/min, publikacja co ${cfg.publishEveryS} s ${cfg.r2 ? 'do R2' : 'lokalnie'}` +
     (cfg.git ? `, repo danych co ${cfg.git.everyS} s` : '')
 );
+// Agregacja arkusza dobrana do ceny przed pierwszym połączeniem (z ostatniej zapisanej minuty), potem co 10 min
+adjustBookAgg();
 stream.start();
+setTimeout(guarded('agregacja arkusza', adjustBookAgg), 60_000);
 void scanLoop();

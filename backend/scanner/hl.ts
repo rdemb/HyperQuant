@@ -1,4 +1,5 @@
 import type { WeightLimiter } from './rateLimiter.ts';
+import type { BookAgg } from './liquidity.ts';
 
 /** Publiczne API Hyperliquid — bez kluczy i kont. */
 const INFO_URL = 'https://api.hyperliquid.xyz/info';
@@ -94,6 +95,10 @@ export class HlStream {
   private readonly coin: string;
   private readonly onTrades: (t: HlTrade[]) => void;
   private readonly onCtx: (c: HlCtx) => void;
+  /** Migawki arkusza zagregowanego (rejestrator płynności); brak = bez subskrypcji arkusza */
+  private readonly onBook: ((t: number, levels: unknown) => void) | null;
+  /** Agregacja arkusza (dobierana do ceny przez rejestrator) */
+  private bookAgg: BookAgg = { nSigFigs: 4 };
   private readonly WS: typeof WebSocket;
   private ws: WebSocket | null = null;
   private timers: ReturnType<typeof setTimeout>[] = [];
@@ -105,11 +110,33 @@ export class HlStream {
   private seenOrder: string[] = [];
   connected = false;
 
-  constructor(coin: string, onTrades: (t: HlTrade[]) => void, onCtx: (c: HlCtx) => void, wsCtor: typeof WebSocket = WebSocket) {
+  constructor(
+    coin: string,
+    onTrades: (t: HlTrade[]) => void,
+    onCtx: (c: HlCtx) => void,
+    wsCtor: typeof WebSocket = WebSocket,
+    onBook: ((t: number, levels: unknown) => void) | null = null
+  ) {
     this.coin = coin;
     this.onTrades = onTrades;
     this.onCtx = onCtx;
     this.WS = wsCtor;
+    this.onBook = onBook;
+  }
+
+  private bookSub(a: BookAgg): Record<string, unknown> {
+    return { type: 'l2Book', coin: this.coin, nSigFigs: a.nSigFigs, ...(a.mantissa ? { mantissa: a.mantissa } : {}) };
+  }
+
+  /** Zmiana agregacji arkusza: wypisanie starej subskrypcji i zapis nowej (przy ponownym połączeniu — od razu nowa). */
+  setBookAgg(a: BookAgg): void {
+    if (a.nSigFigs === this.bookAgg.nSigFigs && a.mantissa === this.bookAgg.mantissa) return;
+    const prev = this.bookAgg;
+    this.bookAgg = { nSigFigs: a.nSigFigs, ...(a.mantissa ? { mantissa: a.mantissa } : {}) };
+    const ws = this.ws;
+    if (!this.onBook || !ws || ws.readyState !== this.WS.OPEN) return;
+    ws.send(JSON.stringify({ method: 'unsubscribe', subscription: this.bookSub(prev) }));
+    ws.send(JSON.stringify({ method: 'subscribe', subscription: this.bookSub(this.bookAgg) }));
   }
 
   start(): void {
@@ -140,6 +167,8 @@ export class HlStream {
       for (const type of ['trades', 'activeAssetCtx']) {
         ws.send(JSON.stringify({ method: 'subscribe', subscription: { type, coin: this.coin } }));
       }
+      // Arkusz zagregowany (~co 5 s) tak, by 20 poziomów pokrywało ±20 bp (agregacja dobierana do ceny)
+      if (this.onBook) ws.send(JSON.stringify({ method: 'subscribe', subscription: this.bookSub(this.bookAgg) }));
       this.timers.push(
         setInterval(() => ws.readyState === this.WS.OPEN && ws.send('{"method":"ping"}'), 50_000),
         setInterval(() => {
@@ -156,6 +185,11 @@ export class HlStream {
       try {
         msg = JSON.parse(String(ev.data));
       } catch {
+        return;
+      }
+      if (msg.channel === 'l2Book' && this.onBook) {
+        const d = msg.data as { coin?: unknown; time?: unknown; levels?: unknown } | undefined;
+        if (d && d.coin === this.coin && typeof d.time === 'number' && Array.isArray(d.levels)) this.onBook(d.time, d.levels);
         return;
       }
       if (msg.channel === 'trades' && Array.isArray(msg.data)) {

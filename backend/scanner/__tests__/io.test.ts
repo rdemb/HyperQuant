@@ -297,6 +297,41 @@ describe('HlStream — odporność połączenia', () => {
     expect(got).toEqual([1, 2, 3]);
   });
 
+  it('opcjonalny arkusz: subskrypcja l2Book zagregowanego do 4 cyfr znaczących i przekazanie migawek (czas, poziomy)', () => {
+    FakeWs.instances = [];
+    const got: { t: number; levels: unknown }[] = [];
+    const s = new HlStream('BTC', () => {}, () => {}, FakeWs as unknown as typeof WebSocket, (t, levels) => got.push({ t, levels }));
+    s.start();
+    const ws = FakeWs.instances[0];
+    ws.open();
+    const subs = ws.sent.map((x) => JSON.parse(x).subscription).filter(Boolean);
+    expect(subs).toContainEqual({ type: 'l2Book', coin: 'BTC', nSigFigs: 4 });
+    ws.onmessage?.({ data: JSON.stringify({ channel: 'l2Book', data: { coin: 'BTC', time: 1234, levels: [[{ px: '1', sz: '1', n: 1 }], []] } }) });
+    s.stop();
+    expect(got).toEqual([{ t: 1234, levels: [[{ px: '1', sz: '1', n: 1 }], []] }]);
+    // zmiana agregacji (cena przekroczyła próg): wypisanie starej subskrypcji i zapis nowej
+    const s3 = new HlStream('BTC', () => {}, () => {}, FakeWs as unknown as typeof WebSocket, () => {});
+    s3.start();
+    const ws3 = FakeWs.instances[FakeWs.instances.length - 1];
+    ws3.open();
+    ws3.sent.length = 0;
+    s3.setBookAgg({ nSigFigs: 5, mantissa: 2 });
+    expect(ws3.sent.map((x) => JSON.parse(x))).toEqual([
+      { method: 'unsubscribe', subscription: { type: 'l2Book', coin: 'BTC', nSigFigs: 4 } },
+      { method: 'subscribe', subscription: { type: 'l2Book', coin: 'BTC', nSigFigs: 5, mantissa: 2 } },
+    ]);
+    s3.setBookAgg({ nSigFigs: 5, mantissa: 2 }); // bez zmian — bez wiadomości
+    expect(ws3.sent).toHaveLength(2);
+    s3.stop();
+    // bez callbacku — bez subskrypcji arkusza
+    FakeWs.instances = [];
+    const s2 = new HlStream('BTC', () => {}, () => {}, FakeWs as unknown as typeof WebSocket);
+    s2.start();
+    FakeWs.instances[0].open();
+    expect(FakeWs.instances[0].sent.some((x) => x.includes('l2Book'))).toBe(false);
+    s2.stop();
+  });
+
   it('strażnik: brak wiadomości przez 90 s zamyka połączenie (zawieszony socket nie udaje „ok”)', () => {
     vi.useFakeTimers();
     FakeWs.instances = [];
