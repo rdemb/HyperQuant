@@ -4,6 +4,8 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+## [2.3.0] — 2026-10-22
+
 ### Dodane
 - **Rejestrator płynności arkusza** (`backend/scanner/liquidity.ts`, subskrypcja `l2Book` w strumieniu skanera z agregacją dobieraną do ceny (20 poziomów pokrywa ±20 bp), panel „Płynność arkusza w ciągu doby” w widoku Mikrostruktura): skaner co ~5 s liczy głębokość obu stron w ±10 i ±20 bp od środka, przechowuje minutowe mediany na serwerze (30 dni) i publikuje wyłącznie agregaty (`liquidity/BTC.json`): mediana głębokości wg godziny UTC, bieżąca płynność względem normy tej godziny, odporność (minuty do powrotu głębokości po ruchu ≥ 15 bp); nadzór danych pilnuje świeżości profilu.
 - **Model vs rynek w weryfikowalnym dzienniku** (`backend/scanner/marketQuotes.ts`, `forecaster.ts`, `ledgerRunner.ts`, weryfikator, karta w panelu dziennika): co 15 min, 5–10 min przed terminem, skaner zapisuje w łańcuchu hashy notowanie rolującego 15-minutowego rynku HIP-4 na BTC („mark ≥ ceny z początku kwadransa”) i p z modelu desku z tej samej chwili; osobne pokwitowanie OpenTimestamps partii; rozstrzygnięcie ze świecy 1m w terminie z oznaczeniem wyników blisko progu (≤ 0,05%); Brier i log score modelu i rynku na tych samych pytaniach na dwóch poziomach (notowania płynne i z wąskim spreadem), różnica z bootstrapem parowanym, werdykt od 100 pytań; weryfikator przelicza wynik z ceny i progu, sprawdza cenę ze świecą (`--market`) i pokwitowania per partia.
@@ -86,6 +88,7 @@ Przebudowa desku i poprawki krytyczne.
 ### Usunięte
 - Automatyczne sygnały i przeliczanie Kelly → dźwignia; nieużywane `.env.example` i zależność `dotenv`.
 
+[2.3.0]: https://github.com/rdemb/HyperQuant/compare/v2.2.0...v2.3.0
 [2.2.0]: https://github.com/rdemb/HyperQuant/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/rdemb/HyperQuant/compare/5b33b4b...v2.1.0
 [2.0.0]: https://github.com/rdemb/HyperQuant/commit/5b33b4b
