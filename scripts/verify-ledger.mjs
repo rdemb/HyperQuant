@@ -242,6 +242,52 @@ export function checkPreregs(records) {
   return { problems, preregs };
 }
 
+/**
+ * Ensemble model + rynek (rekordy mkt z polami `pe` i `ens`): p_e = σ(a + bm·logit p + bk·logit środek) z zapisanych wag
+ * (logit z obcięciem do [1e-4, 1 − 1e-4], zaokrąglenie do 4 miejsc); przy pełnym dzienniku (`full`) także `ens.n` ≤ liczba
+ * par (wąski spread, z dala od progu) rozstrzygniętych przed wydaniem — wagi nie mogły użyć przyszłych wyników.
+ */
+export function checkEnsemble(records, { full = false } = {}) {
+  const fcs = new Map();
+  const res = new Map();
+  for (const o of records) {
+    if (o.k === 'f' && o.kind === 'mkt') fcs.set(o.id, o);
+    else if (o.k === 'r') res.set(o.id, o);
+  }
+  const resolvedAt = [];
+  for (const [id, fc] of fcs) {
+    const r = res.get(id);
+    if (r && r.near === 0 && (r.y === 0 || r.y === 1) && fc.bid !== null && fc.ask !== null && fc.ask - fc.bid <= MKT_MAX_SPREAD + 1e-12) resolvedAt.push(r.t);
+  }
+  const logit = (p) => {
+    const q = Math.min(1 - 1e-4, Math.max(1e-4, p));
+    return Math.log(q / (1 - q));
+  };
+  const problems = [];
+  let checked = 0;
+  for (const fc of fcs.values()) {
+    if (fc.pe === undefined) continue; // rekordy sprzed ensemble
+    const e = fc.ens;
+    if (!e || ![e.a, e.bm, e.bk, e.n].every(Number.isFinite)) {
+      problems.push(`${fc.id}: brak wag ensemble`);
+      continue;
+    }
+    if (full) {
+      const before = resolvedAt.filter((t) => t < fc.ti).length;
+      if (e.n > before) problems.push(`${fc.id}: wagi ensemble z ${e.n} par, a przed wydaniem rozstrzygnięto ${before}`);
+    }
+    if (fc.bid === null || fc.ask === null) {
+      if (fc.pe !== null) problems.push(`${fc.id}: p_e bez notowania rynku`);
+      continue;
+    }
+    const z = e.a + e.bm * logit(fc.p) + e.bk * logit((fc.bid + fc.ask) / 2);
+    const want = Math.round((1 / (1 + Math.exp(-z))) * 1e4) / 1e4;
+    if (!(Math.abs(want - fc.pe) <= 1e-4 + 1e-12)) problems.push(`${fc.id}: p_e ${fc.pe} ≠ ${want} ze wzoru i zapisanych wag`);
+    else checked++;
+  }
+  return { problems, checked };
+}
+
 /** Partia slotu: prognozy główne ('') i „model vs rynek” ('m', wydawane później w slocie — osobne pokwitowanie). */
 export const batchOf = (o) => (o.kind === 'mkt' ? 'm' : '');
 
@@ -564,6 +610,10 @@ async function main() {
   const mismatch = checkResolutions(records);
   console.log(mismatch.length ? `✗ wyniki niezgodne z przeliczonymi (${mismatch.length}): ${mismatch.slice(0, 5).join('; ')}` : '✓ wyniki zgodne z przeliczonymi z kwantyli');
   if (mismatch.length) ok = false;
+  const ens = checkEnsemble(records, { full: !!local });
+  if (ens.checked || ens.problems.length)
+    console.log(ens.problems.length ? `✗ ensemble (${ens.problems.length}): ${ens.problems.slice(0, 5).join('; ')}` : `✓ ensemble: ${ens.checked} p_e zgodnych z zapisanymi wagami${local ? ', wagi tylko z wcześniej rozstrzygniętych pytań' : ''}`);
+  if (ens.problems.length) ok = false;
   const pre = checkPreregs(records);
   if (pre.preregs.length || pre.problems.length)
     console.log(

@@ -70,6 +70,12 @@ export interface MktScores {
   logModel: number | null;
   logMarket: number | null;
   diff: { d: number; lo: number; hi: number } | null;
+  /** Ensemble model + rynek (pooling logarytmiczny) — pytania z zapisanym p_e; brak w starszych podsumowaniach */
+  nEns?: number;
+  brierEns?: number | null;
+  logEns?: number | null;
+  /** Różnica Brier ensemble − rynek z bootstrapem 90% */
+  diffEns?: { d: number; lo: number; hi: number } | null;
 }
 
 export interface DeskLedgerSummary {
@@ -117,7 +123,9 @@ export interface DeskLedgerSummary {
     scores: MktScores;
     /** Ocena „wąski spread”: notowania ze spreadem ≤ 5 pp, także płytkie (brak w starszych podsumowaniach) */
     tight?: MktScores;
-    latest: { t: number; expiry: number; K: number; p: number; bid: number | null; ask: number | null; liquid: boolean } | null;
+    latest: { t: number; expiry: number; K: number; p: number; bid: number | null; ask: number | null; liquid: boolean; pe?: number | null } | null;
+    /** Bieżące wagi ensemble (logit p_e = a + bm·logit p_model + bk·logit p_rynek), n — liczba par; brak w starszych */
+    ensemble?: { a: number; bm: number; bk: number; n: number; at: number };
   };
   method: 'hq-ledger-v1';
 }
@@ -191,12 +199,15 @@ export function isDeskLedgerSummary(x: unknown): x is DeskLedgerSummary {
 
 const isMkt = (m: unknown) => {
   const x = m as Partial<MktScores> | null;
-  return !!x && fin(x.n) && fin(x.near) && fin(x.illiquid) && (x.diff === null || (!!x.diff && fin(x.diff.d) && fin(x.diff.lo) && fin(x.diff.hi)));
+  const d3 = (d: unknown) => d === null || (!!d && fin((d as { d: unknown }).d) && fin((d as { lo: unknown }).lo) && fin((d as { hi: unknown }).hi));
+  return !!x && fin(x.n) && fin(x.near) && fin(x.illiquid) && d3(x.diff) && (x.diffEns === undefined || d3(x.diffEns));
 };
 /** Część „model vs rynek” (opcjonalna): wyniki obu poziomów i ostatnie pytanie — źle zbudowana odrzuca całe podsumowanie */
 function isMarket(m: unknown): boolean {
   const x = m as Partial<NonNullable<DeskLedgerSummary['market']>> | null;
   if (!x || !isMkt(x.scores) || (x.tight !== undefined && !isMkt(x.tight))) return false;
+  const e = x.ensemble;
+  if (e !== undefined && !(!!e && fin(e.a) && fin(e.bm) && fin(e.bk) && fin(e.n) && fin(e.at))) return false;
   const l = x.latest;
-  return l === null || (!!l && fin(l.t) && fin(l.expiry) && fin(l.K) && fin(l.p) && typeof l.liquid === 'boolean');
+  return l === null || (!!l && fin(l.t) && fin(l.expiry) && fin(l.K) && fin(l.p) && typeof l.liquid === 'boolean' && (l.pe === undefined || l.pe === null || fin(l.pe)));
 }

@@ -250,8 +250,10 @@ const VERDICT_N = 100;
 /** Wiersz wyników poziomu oceny: Brier modelu i rynku, różnica z przedziałem 90%. */
 const MarketRow: React.FC<{ label: string; title: string; sc: MktScores }> = ({ label, title, sc }) => {
   const enough = sc.n >= MIN_N;
+  const enoughE = (sc.nEns ?? 0) >= MIN_N;
   const f3 = (v: number | null) => (enough && v !== null ? v.toFixed(3) : DASH);
   const sd = (v: number) => `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(3)}`;
+  const de = sc.diffEns ?? null;
   return (
     <tr className="border-t border-line align-baseline">
       <td className="py-1.5 pr-3 font-sans text-ink-1" title={title}>
@@ -260,7 +262,7 @@ const MarketRow: React.FC<{ label: string; title: string; sc: MktScores }> = ({ 
       <td className="py-1.5 pr-3">{enough ? sc.n : `${sc.n} (od ${MIN_N})`}</td>
       <td className="py-1.5 pr-3">{f3(sc.brierModel)}</td>
       <td className="py-1.5 pr-3">{f3(sc.brierMarket)}</td>
-      <td className="py-1.5">
+      <td className="py-1.5 pr-3">
         {enough && sc.diff ? (
           <>
             {sd(sc.diff.d)}{' '}
@@ -272,7 +274,44 @@ const MarketRow: React.FC<{ label: string; title: string; sc: MktScores }> = ({ 
           DASH
         )}
       </td>
+      <td className="py-1.5 pr-3" title={sc.nEns !== undefined ? `${sc.nEns} pytań z zapisanym p ensemble` : 'Brak w tym podsumowaniu'}>
+        {enoughE && sc.brierEns != null ? sc.brierEns.toFixed(3) : DASH}
+      </td>
+      <td className="py-1.5">
+        {enoughE && de ? (
+          <>
+            {sd(de.d)}{' '}
+            <span className="text-[10px] text-ink-3">
+              ({sd(de.lo)} … {sd(de.hi)})
+            </span>
+          </>
+        ) : (
+          DASH
+        )}
+      </td>
     </tr>
+  );
+};
+
+/** Bieżące wagi ensemble z interpretacją (b_model ≈ 0 → model nic nie dodaje do ceny rynku). */
+const EnsembleWeights: React.FC<{ e: NonNullable<NonNullable<DeskLedgerSummary['market']>['ensemble']> }> = ({ e }) => {
+  const f2 = (v: number) => `${v < 0 ? '−' : ''}${Math.abs(v).toFixed(2)}`;
+  const note =
+    e.n < 50
+      ? `wagi startowe (równy pooling logarytmiczny) — dopasowanie od 50 rozstrzygniętych pytań, teraz ${e.n}`
+      : e.bm < 0.1
+      ? 'model prawie nic nie dodaje do ceny rynku'
+      : e.bk < 0.1
+      ? 'rynek prawie nic nie dodaje do modelu'
+      : e.bm + e.bk > 1.15
+      ? 'suma wag > 1: połączenie „ekstremizuje” (oba źródła są zbyt ostrożne)'
+      : 'oba źródła wnoszą informację';
+  return (
+    <div className="text-[11px] text-ink-2">
+      <span className="text-ink-3">Ensemble: </span>
+      logit p = <span className="font-mono text-ink-1">{f2(e.a)}</span> + <span className="font-mono text-ink-1">{f2(e.bm)}</span>·logit model +{' '}
+      <span className="font-mono text-ink-1">{f2(e.bk)}</span>·logit rynek <span className="text-ink-3">({e.n} pytań; {note})</span>
+    </div>
   );
 };
 
@@ -312,8 +351,14 @@ const MarketCard: React.FC<{ m: NonNullable<DeskLedgerSummary['market']> }> = ({
             rynek <span className="font-mono tabular-nums text-ink-1">{mid === null ? DASH : pct(mid)}</span>
             {!l.liquid && <span className="ml-1 text-[10px] text-ink-3">arkusz płytki</span>}
           </span>
+          {l.pe != null && (
+            <span title="Pooling logarytmiczny modelu i rynku z wagami dopasowanymi przed wydaniem na wcześniej rozstrzygniętych pytaniach">
+              ensemble <span className="font-mono tabular-nums text-ink-1">{pct(l.pe)}</span>
+            </span>
+          )}
         </div>
       )}
+      {m.ensemble && <EnsembleWeights e={m.ensemble} />}
       <div className="overflow-x-auto">
         <table className="w-full text-left font-mono tabular-nums text-[11px]">
           <caption className="sr-only">Brier modelu i rynku na tych samych pytaniach, różnica z przedziałem bootstrap 90%</caption>
@@ -323,8 +368,14 @@ const MarketCard: React.FC<{ m: NonNullable<DeskLedgerSummary['market']> }> = ({
               <th className="py-1 pr-3 font-medium font-sans">Pytań</th>
               <th className="py-1 pr-3 font-medium font-sans">Brier model</th>
               <th className="py-1 pr-3 font-medium font-sans">Brier rynek</th>
-              <th className="py-1 font-medium font-sans" title="Ujemne = model trafniejszy; przedział bootstrap 90% (pary pytań)">
+              <th className="py-1 pr-3 font-medium font-sans" title="Ujemne = model trafniejszy; przedział bootstrap 90% (pary pytań)">
                 Model − rynek
+              </th>
+              <th className="py-1 pr-3 font-medium font-sans" title="Ensemble: pooling logarytmiczny modelu i rynku z wagami z wcześniejszych pytań">
+                Brier ensemble
+              </th>
+              <th className="py-1 font-medium font-sans" title="Ujemne = ensemble trafniejszy niż sam rynek; przedział bootstrap 90%">
+                Ensemble − rynek
               </th>
             </tr>
           </thead>

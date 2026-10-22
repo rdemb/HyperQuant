@@ -1,6 +1,8 @@
 import React from 'react';
 import { useDesk } from '../../state/DeskContext';
+import { useDeskLedger } from '../../state/useDeskLedger';
 import { useHip4, type Hip4Row } from '../../state/useHip4';
+import { poolProb, type EnsWeights } from '../../utils/ensemble';
 import { Badge, EmptyState, Panel, DASH, fmtPrice } from '../../ui';
 
 const whenFmt = new Intl.DateTimeFormat('pl-PL', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' });
@@ -22,6 +24,9 @@ function until(ms: number): string {
 export const ModelVsMarketPanel: React.FC = () => {
   const { feed } = useDesk();
   const st = useHip4(feed.vol.model, feed.currentPrice);
+  // Wagi ensemble z dziennika (dopasowane na rozstrzygniętych 15-minutowych rynkach „mark ≥ K”) — od 50 pytań
+  const ens = useDeskLedger().summary?.market?.ensemble ?? null;
+  const weights = ens && ens.n >= ENS_MIN_N ? ens : null;
   const [showThin, setShowThin] = React.useState(false);
   const liquid = st.rows.filter((r) => r.quote?.liquid);
   const shown = showThin ? st.rows : liquid;
@@ -70,16 +75,22 @@ export const ModelVsMarketPanel: React.FC = () => {
                   <th className="py-1 pr-3 font-medium">Termin (UTC)</th>
                   <th className="py-1 pr-3 font-medium">Rynek</th>
                   <th className="py-1 pr-3 font-medium">Model</th>
-                  <th className="py-1 font-medium" title="Model − środek rynku, w punktach procentowych">Różnica</th>
+                  <th className="py-1 pr-3 font-medium" title="Model − środek rynku, w punktach procentowych">Różnica</th>
+                  <th
+                    className="py-1 font-medium"
+                    title="Pooling logarytmiczny modelu i rynku z wagami z weryfikowalnego dziennika — tylko dla 15-minutowych rynków „mark ≥ K”, na których wagi dopasowano"
+                  >
+                    Ensemble
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {shown.map((r) => (
-                  <Row key={r.q.id} r={r} now={st.asOf ?? Date.now()} />
+                  <Row key={r.q.id} r={r} now={st.asOf ?? Date.now()} ens={weights} />
                 ))}
                 {shown.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="py-2 text-ink-3">
+                    <td colSpan={6} className="py-2 text-ink-3">
                       Teraz żaden rynek BTC nie ma płynnego arkusza.
                     </td>
                   </tr>
@@ -105,6 +116,11 @@ export const ModelVsMarketPanel: React.FC = () => {
                 transakcji perpa HL; opis rynku podaje też okno w sekundach, którego dokładne znaczenie nie jest oficjalnie udokumentowane. Model liczy na
                 świecach Hyperliquid — przy kilku minutach do terminu te różnice mają znaczenie.
               </li>
+              <li>
+                Ensemble: logit p = a + b·logit(model) + c·logit(rynek), wagi dopasowane w weryfikowalnym dzienniku wyłącznie na wcześniej rozstrzygniętych
+                15-minutowych pytaniach „mark ≥ K” (pooling logarytmiczny, prior w stronę równych wag). Pokazywane tylko dla rynków tego typu, od{' '}
+                {ENS_MIN_N} rozstrzygniętych pytań — dla innych terminów i źródeł wagi nie były sprawdzane.
+              </li>
               <li>Różnica model − rynek to porównanie kalibracji dwóch źródeł prawdopodobieństwa, nie sygnał kupna ani sprzedaży.</li>
             </ul>
           </details>
@@ -114,8 +130,13 @@ export const ModelVsMarketPanel: React.FC = () => {
   );
 };
 
-const Row: React.FC<{ r: Hip4Row; now: number }> = ({ r, now }) => {
+/** Ensemble od tylu rozstrzygniętych pytań (wcześniej wagi startowe, bez informacji z danych) */
+const ENS_MIN_N = 50;
+
+const Row: React.FC<{ r: Hip4Row; now: number; ens: EnsWeights | null }> = ({ r, now, ens }) => {
   const { q, quote, model } = r;
+  // Tylko pytania typu, na którym dopasowano wagi: rolujący rynek „mark ≥ K” z terminem do 20 min
+  const ensOk = ens !== null && q.kind === 'above' && !q.recurring && q.source === 'mark' && q.expiry - now <= 20 * 60_000;
   const label = q.kind === 'above' ? `BTC > ${fmtPrice(q.K, 0)}` : `dotknie ${fmtPrice(q.K, 0)}`;
   const src = q.source === 'pyth' ? 'Pyth' : q.source === 'trade' ? 'transakcja HL' : q.source === 'mark' ? 'mark HL' : 'inne źródło';
   const mid = quote?.liquid ? quote.mid : null;
@@ -151,9 +172,10 @@ const Row: React.FC<{ r: Hip4Row; now: number }> = ({ r, now }) => {
         )}
       </td>
       <td className="py-1.5 pr-3 font-mono tabular-nums text-ink-1">{model === null ? DASH : pct(model)}</td>
-      <td className="py-1.5 font-mono tabular-nums text-ink-2">
+      <td className="py-1.5 pr-3 font-mono tabular-nums text-ink-2">
         {diff === null ? DASH : Math.round(Math.abs(diff * 100)) === 0 ? '0 pp' : `${diff >= 0 ? '+' : '−'}${Math.round(Math.abs(diff * 100))} pp`}
       </td>
+      <td className="py-1.5 font-mono tabular-nums text-ink-1">{ensOk && mid !== null && model !== null ? pct(poolProb(ens!, model, mid)) : DASH}</td>
     </tr>
   );
 };

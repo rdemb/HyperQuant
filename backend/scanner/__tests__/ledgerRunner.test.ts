@@ -245,6 +245,9 @@ describe('LedgerRunner — model vs rynek (HIP-4)', () => {
     const mkt = lines(dir, '2026-10-22').filter((l) => l.kind === 'mkt');
     expect(mkt).toHaveLength(1);
     expect(mkt[0]).toMatchObject({ id: `${SLOT0}-mkt15711`, K: 100_000, expiry: SLOT0 + 15 * MIN, bid: 0.45, ask: 0.5, liquid: true, ti: SLOT0 + 6 * MIN, t: SLOT0 + 7 * MIN, h: 8 });
+    // Ensemble: brak wcześniejszych rozstrzygnięć → równy pooling logarytmiczny, p_e zapisane przy wydaniu
+    expect(mkt[0].ens).toEqual({ a: 0, bm: 0.5, bk: 0.5, n: 0 });
+    expect(typeof mkt[0].pe).toBe('number');
     expect(existsSync(join(dir, 'BTC', 'ots', 'slots', '2026-10-22', `${SLOT0}-m.ots`))).toBe(true);
     expect(digests).toContain(mkt[0].hash);
     expect(store.head).toBe(mkt[0].hash);
