@@ -26,6 +26,8 @@ export interface LedgerEntry {
   pTarget: number;
   pStop: number;
   pNeither: number;
+  /** P(wejście dotknięte w horyzoncie) z modelu; brak w starszych wpisach (plan-gbm-bgk-v1) */
+  pFill?: number;
   modelVersion: string;
   source?: string;
   status: LedgerStatus;
@@ -60,6 +62,7 @@ function newId(): string {
 export function makeEntry(
   f: Pick<LedgerEntry, 'direction' | 'entry' | 'stop' | 'target' | 'horizonMin' | 'pTarget' | 'pStop' | 'pNeither'> & {
     source?: string;
+    pFill?: number;
   },
   now: number
 ): LedgerEntry {
@@ -91,7 +94,16 @@ export function loadLedger(storage: StorageLike | null = defaultStorage()): Ledg
     const raw = storage?.getItem(LEDGER_KEY);
     if (!raw) return [];
     const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter(isEntry).slice(-LEDGER_LIMIT) : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter(isEntry)
+      .slice(-LEDGER_LIMIT)
+      .map((e) => {
+        // Uszkodzone pFill odpada, wpis zostaje (metryki wyniku go nie potrzebują)
+        if (e.pFill === undefined || (num(e.pFill) && e.pFill >= 0 && e.pFill <= 1)) return e;
+        const { pFill: _drop, ...rest } = e;
+        return rest;
+      });
   } catch {
     return [];
   }
@@ -193,6 +205,9 @@ export interface LedgerMetrics {
   logScore: number | null;
   targetRate: number | null;
   reliability: ReliabilityBin[];
+  /** Brier dla P(wypełnienia): wpisy z pFill rozstrzygnięte (wypełnione = 1) lub „nofill” (= 0); 0–1, niżej = lepiej */
+  brierFill: number | null;
+  fillScored: number;
 }
 
 const isResolved = (e: LedgerEntry): e is LedgerEntry & { status: LedgerOutcome } =>
@@ -218,6 +233,13 @@ export function ledgerMetrics(entries: LedgerEntry[]): LedgerMetrics {
     b.sumP += e.pTarget;
     b.hits += o.target;
   }
+  let brierFill = 0;
+  let fillScored = 0;
+  for (const e of entries) {
+    if (e.pFill === undefined || !(isResolved(e) || e.status === 'nofill')) continue;
+    brierFill += (e.pFill - (e.status === 'nofill' ? 0 : 1)) ** 2;
+    fillScored++;
+  }
   return {
     total: entries.length,
     resolved: n,
@@ -234,6 +256,8 @@ export function ledgerMetrics(entries: LedgerEntry[]): LedgerMetrics {
       meanForecast: b.n > 0 ? b.sumP / b.n : null,
       observed: b.n > 0 ? b.hits / b.n : null,
     })),
+    brierFill: fillScored > 0 ? brierFill / fillScored : null,
+    fillScored,
   };
 }
 

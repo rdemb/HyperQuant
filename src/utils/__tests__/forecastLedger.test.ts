@@ -220,6 +220,44 @@ describe('zapis lokalny, limit, eksport, czyszczenie', () => {
   });
 });
 
+describe('prawdopodobieństwo wypełnienia (pFill)', () => {
+  it('makeEntry zachowuje pFill; loadLedger wczytuje wpisy z pFill i bez niego', () => {
+    const e = makeEntry({ direction: 'LONG', entry: 1, stop: 0.9, target: 1.2, horizonMin: 60, pTarget: 0.3, pStop: 0.5, pNeither: 0.2, pFill: 0.4 }, T0);
+    expect(e.pFill).toBe(0.4);
+    const mem = new Map<string, string>();
+    const storage = { getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => void mem.set(k, v), removeItem: (k: string) => void mem.delete(k) };
+    saveLedger([entry({ id: 'old' }), entry({ id: 'new', pFill: 0.7 })], storage);
+    const loaded = loadLedger(storage);
+    expect(loaded.map((x) => x.id)).toEqual(['old', 'new']);
+    expect(loaded[0].pFill).toBeUndefined();
+    expect(loaded[1].pFill).toBe(0.7);
+    // Uszkodzone pFill (spoza [0, 1] albo nie-liczba) odpada, wpis zostaje
+    mem.set(LEDGER_KEY, JSON.stringify([{ ...entry({ id: 'bad1' }), pFill: 'x' }, { ...entry({ id: 'bad2' }), pFill: 1.7 }]));
+    const fixed = loadLedger(storage);
+    expect(fixed.map((x) => x.id)).toEqual(['bad1', 'bad2']);
+    expect(fixed.every((x) => x.pFill === undefined)).toBe(true);
+  });
+
+  it('Brier wypełnienia liczony tylko z wpisów z pFill (rozstrzygnięte = wypełnione, nofill = 0)', () => {
+    const m = ledgerMetrics([
+      entry({ id: 'a', pFill: 0.8, status: 'target' }),
+      entry({ id: 'b', pFill: 0.3, status: 'nofill' }),
+      entry({ id: 'c', status: 'stop' }),
+      entry({ id: 'd', pFill: 0.5, status: 'pending' }),
+    ]);
+    expect(m.fillScored).toBe(2);
+    expect(m.brierFill).toBeCloseTo(((0.8 - 1) ** 2 + (0.3 - 0) ** 2) / 2, 12);
+    // nofill nadal poza metrykami wyniku
+    expect(m.resolved).toBe(2);
+  });
+
+  it('brak wpisów z pFill → brierFill null', () => {
+    const m = ledgerMetrics([entry({ status: 'target' })]);
+    expect(m.brierFill).toBeNull();
+    expect(m.fillScored).toBe(0);
+  });
+});
+
 describe('resolvePending — wymaga wypełnienia wejścia', () => {
   const base = {
     id: 'x', createdAt: 0, direction: 'LONG' as const, entry: 95000, stop: 94000, target: 97000,

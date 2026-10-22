@@ -171,6 +171,7 @@ const PlanView: React.FC = () => {
           pTarget: analysis.mc.pTarget,
           pStop: analysis.mc.pStop,
           pNeither: analysis.mc.pNeither,
+          pFill: analysis.mc.pFill,
           source: form.draft?.source,
         },
         Date.now()

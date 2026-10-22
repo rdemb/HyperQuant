@@ -82,6 +82,11 @@ export const LedgerPanel: React.FC<{ ledger: PlanLedger }> = ({ ledger }) => {
             hint="−ln p(wyniku), naty · niżej lepiej"
           />
           <Stat
+            label="Brier P(wypełnienia)"
+            value={<span className="font-mono tabular-nums">{fmt3(metrics.brierFill)}</span>}
+            hint={metrics.fillScored > 0 ? `0–1 · n = ${metrics.fillScored} (plany z modelem v2)` : 'brak planów z P(wypełnienia)'}
+          />
+          <Stat
             label="Liczność"
             value={<span className="font-mono tabular-nums">{metrics.resolved}</span>}
             hint={`rozstrzygnięte · ${metrics.pending} oczekuje${metrics.nodata ? ` · ${metrics.nodata} bez danych` : ''}`}
