@@ -154,3 +154,15 @@ describe('profil płynności (plik opcjonalny)', () => {
     expect(stuck.problems.join(' ')).toMatch(/nie zapisuje/);
   });
 });
+
+describe('laboratorium folkloru (plik opcjonalny, przeliczane co godzinę)', () => {
+  it('brak pliku nie jest alarmem; świeży — fakt; starszy niż 3 h — problem (alarm bez restartu skanera)', () => {
+    expect(assessHealth(input({ errors: { 'lab/BTC.json': 'HTTP 404' } }), NOW).ok).toBe(true);
+    const fresh = assessHealth(input({ lab: { v: 1, asOf: NOW - 50 * MIN } }), NOW);
+    expect(fresh.ok).toBe(true);
+    expect(fresh.facts.map((f) => f.label)).toContain('Wiek laboratorium folkloru');
+    const stale = assessHealth(input({ lab: { v: 1, asOf: NOW - 200 * MIN } }), NOW);
+    expect(stale.ok).toBe(false);
+    expect(stale.problems.join(' ')).toMatch(/laboratorium folkloru: ostatnia aktualizacja/);
+  });
+});

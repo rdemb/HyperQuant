@@ -11,11 +11,13 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 export const DATA_BASE = 'https://raw.githubusercontent.com/rdemb/hyperquant-data/main';
-export const FILES = ['status.json', 'liq-map/BTC.json', 'liq-tape/BTC.json', 'cohorts/BTC.json', 'ledger/BTC/summary.json', 'liquidity/BTC.json', 'README.md'];
+export const FILES = ['status.json', 'liq-map/BTC.json', 'liq-tape/BTC.json', 'cohorts/BTC.json', 'ledger/BTC/summary.json', 'liquidity/BTC.json', 'lab/BTC.json', 'README.md'];
 /** Pliki, których brak nie jest alarmem (nowsze niż część wdrożeń skanera) — gdy są, przechodzą strażnika prywatności */
-export const OPTIONAL = new Set(['liq-tape/BTC.json', 'cohorts/BTC.json', 'ledger/BTC/summary.json', 'liquidity/BTC.json']);
+export const OPTIONAL = new Set(['liq-tape/BTC.json', 'cohorts/BTC.json', 'ledger/BTC/summary.json', 'liquidity/BTC.json', 'lab/BTC.json']);
 /** Profil płynności arkusza (publikowany co 10 min) */
 export const LIQUIDITY_MAX_AGE_MIN = 30;
+/** Laboratorium folkloru (przeliczane co godzinę) */
+export const LAB_MAX_AGE_MIN = 180;
 /** Podsumowanie dziennika prognoz (prognozy co 15 min; pliki dziennika — gałąź `ledger`) */
 export const LEDGER_MAX_AGE_MIN = 60;
 export const LIMITS = {
@@ -94,6 +96,15 @@ export function assessHealth(input, nowMs, limits = LIMITS) {
     }
   }
 
+  if (input.lab && typeof input.lab === 'object') {
+    const a = ageOf('laboratorium (lab/BTC.json)', input.lab, nowMs);
+    if (!a.ok) problems.push(a.problem);
+    else {
+      facts.push({ label: 'Wiek laboratorium folkloru', value: fmtMin(a.ageMin) });
+      if (a.ageMin > LAB_MAX_AGE_MIN) problems.push(`laboratorium folkloru: ostatnia aktualizacja ${fmtMin(a.ageMin)} temu (próg ${LAB_MAX_AGE_MIN} min)`);
+    }
+  }
+
   const s = input.status;
   if (s && typeof s === 'object') {
     if (typeof s.coverage === 'number') {
@@ -160,6 +171,7 @@ export async function fetchInput(base = DATA_BASE) {
     liqMap: json['liq-map/BTC.json'] ?? null,
     ledger: json['ledger/BTC/summary.json'] ?? null,
     liquidity: json['liquidity/BTC.json'] ?? null,
+    lab: json['lab/BTC.json'] ?? null,
     raw,
     errors,
   };
