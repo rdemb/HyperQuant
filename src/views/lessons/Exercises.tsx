@@ -456,7 +456,7 @@ const Debrief: React.FC<{
           }}
         >
           <ChartCandlestick className="w-4 h-4" aria-hidden="true" />
-          {c.ui.openStation(station.name)}
+          {c.ui.openStation(station.id, station.name)}
         </button>
         <div className="flex flex-col gap-1.5">
           <div className="text-xs text-ink-3">{c.ui.atlasLinks}</div>
@@ -496,7 +496,7 @@ export const LabResult: React.FC<{ id: string; c: LessonsContent }> = ({ id, c }
   return (
     <div className="flex flex-col gap-1.5 mt-1 pt-3 border-t border-line">
       <div className="text-xs font-semibold text-ink-1">
-        {c.ui.labTitle}: <span className="text-ink-2 font-normal">„{name}”</span>
+        {c.ui.labTitle}: <span className="text-ink-2 font-normal">{c.ui.quote(name)}</span>
       </div>
       {status === 'loading' ? (
         <p className="text-xs text-ink-3">{c.ui.labLoading}</p>

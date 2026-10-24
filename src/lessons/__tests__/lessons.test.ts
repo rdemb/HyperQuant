@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { diagonalImbalances } from '../chart/FootprintFigure';
 import { MIN, dayProfile, figureModel, visibleCount } from '../chart/model';
+import { en } from '../content/en';
 import { pl } from '../content/pl';
 import { isLessonSlice, mergeCandles, type LessonSlice, type SliceCandle } from '../data';
 import { EXERCISES, maxScore, pickSide, scoreAnswer, type QuestionSpec } from '../exercises';
@@ -80,6 +81,48 @@ describe('ćwiczenia: struktura zgodna z treścią i danymi', () => {
         const at = Date.parse(a.figure.at);
         expect(at > s.from && at <= s.to).toBe(true);
       }
+  });
+});
+
+/** Wszystkie teksty obiektu treści (rekurencyjnie, bez funkcji). */
+const strings = (x: unknown): string[] =>
+  typeof x === 'string' ? [x] : Array.isArray(x) ? x.flatMap(strings) : x && typeof x === 'object' ? Object.values(x).flatMap(strings) : [];
+/** Godziny HH:MM w tekście, w minutach od północy. */
+const times = (t: string) => [...t.matchAll(/\b(\d{2}):(\d{2})\b/g)].map((m) => Number(m[1]) * 60 + Number(m[2]));
+
+describe('treść angielska ma tę samą strukturę co polska', () => {
+  it('ćwiczenia: punkty, pytania, odpowiedzi, strefy i omówienie', () => {
+    expect(Object.keys(en.exercises).sort()).toEqual(Object.keys(pl.exercises).sort());
+    for (const [id, p] of Object.entries(pl.exercises)) {
+      const e = en.exercises[id];
+      expect(e.checkpoints.map((c) => c.questions.map((q) => [q.options?.length ?? 0, !!q.pick]))).toEqual(
+        p.checkpoints.map((c) => c.questions.map((q) => [q.options?.length ?? 0, !!q.pick]))
+      );
+      expect(e.zoneLabels?.length ?? 0).toBe(p.zoneLabels?.length ?? 0);
+      expect(e.debrief.points).toHaveLength(p.debrief.points.length);
+    }
+  });
+
+  it('atlas: te same hasła w tej samej kolejności, z tymi samymi rycinami i stacjami', () => {
+    const shape = (c: typeof pl) => c.atlas.entries.map(({ id, group, station, figure }) => ({ id, group, station, figure: figure && { ...figure, caption: '' } }));
+    expect(shape(en)).toEqual(shape(pl));
+    expect(en.combine.questions).toHaveLength(pl.combine.questions.length);
+    expect(en.combine.rules).toHaveLength(pl.combine.rules.length);
+    expect(en.combine.recipes).toHaveLength(pl.combine.recipes.length);
+    expect(en.risk.lessons).toHaveLength(pl.risk.lessons.length);
+  });
+
+  it('bez polskich znaków w treści angielskiej', () => {
+    for (const t of strings(en)) expect(t, t).not.toMatch(/[ąćęłńóśźżĄĆĘŁŃÓŚŹŻ]/);
+  });
+
+  it('godziny w ćwiczeniach: angielskie w UTC to polskie (CEST) minus 2 h', () => {
+    const allowed: Record<string, number[]> = { 'trend-up': [22 * 60] }; // „do północy” = 22:00 UTC
+    for (const [id, p] of Object.entries(pl.exercises)) {
+      const fromPl = strings(p).flatMap(times).map((m) => (m - 120 + 1440) % 1440);
+      const inEn = strings(en.exercises[id]).flatMap(times);
+      expect(new Set(inEn), id).toEqual(new Set([...fromPl, ...(allowed[id] ?? [])]));
+    }
   });
 });
 

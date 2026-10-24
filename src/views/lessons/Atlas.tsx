@@ -88,7 +88,7 @@ const Entry: React.FC<{ e: AtlasEntry; c: LessonsContent; open: boolean; onToggl
               }}
             >
               <ChartCandlestick className="w-4 h-4" aria-hidden="true" />
-              {c.ui.openStation(station.name)}
+              {c.ui.openStation(station.id, station.name)}
             </button>
           </div>
           {e.figure && <AtlasFigure f={e.figure} c={c} label={e.name} />}
