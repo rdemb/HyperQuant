@@ -1,11 +1,12 @@
 import type { Candle, FundingPoint } from '../hl/parse';
 import type { FootprintBar } from './footprintBar';
+import type { PlayerSplit } from './players';
 
 /**
  * Tablica liczb (tabela pod wykresem): wolumen z API, delta i jej ekstrema, liczba transakcji i tempo taśmy
  * z nagrania, zmiana otwartych pozycji z kanału activeAssetCtx (od otwarcia strony) i finansowanie z historii API
- * (bieżąca godzina — stawka prognozowana), a w grupach Binance i Bybit delta, ΔOI i finansowanie tych giełd.
- * Brak danych to null, nie zero.
+ * (bieżąca godzina — stawka prognozowana), w grupie Kto handluje delta dużych graczy i reszty z kont biorców, a w grupach
+ * Binance i Bybit delta, ΔOI i finansowanie tych giełd. Brak danych to null, nie zero.
  */
 
 export const HOUR_MS = 3_600_000;
@@ -13,9 +14,9 @@ export const HOUR_MS = 3_600_000;
 /** Średnia stawka godzinowa → % na 8 h (jak na Binance i Bybit; Hyperliquid rozlicza co godzinę). */
 export const fundingPct8h = (hourly: number) => hourly * 8 * 100;
 
-/** Grupy wierszy Tablicy liczb: Hyperliquid, taśma Hyperliquid, Binance, Bybit. */
-export type StatGroup = 'hl' | 'tape' | 'binance' | 'bybit';
-export const STAT_GROUPS: readonly StatGroup[] = ['hl', 'tape', 'binance', 'bybit'];
+/** Grupy wierszy Tablicy liczb: Hyperliquid, taśma Hyperliquid, Kto handluje (konta biorców Hyperliquid), Binance, Bybit. */
+export type StatGroup = 'hl' | 'tape' | 'who' | 'binance' | 'bybit';
+export const STAT_GROUPS: readonly StatGroup[] = ['hl', 'tape', 'who', 'binance', 'bybit'];
 /** Grupy z danymi giełd scentralizowanych (połączenia przeglądarki czytelnika, tylko gdy grupa jest włączona). */
 export const VENUE_GROUPS: readonly StatGroup[] = ['binance', 'bybit'];
 
@@ -146,6 +147,10 @@ export interface BarStat {
   doi: number | null;
   /** Finansowanie, % na 8 h. */
   funding: number | null;
+  /** Kto handluje: delta dużych graczy i reszty (jednostki rynku), udział dużych w wartości wejść (%). */
+  bigDelta: number | null;
+  restDelta: number | null;
+  bigShare: number | null;
   /** Binance: delta perp i spot, zmiana OI, finansowanie (% na 8 h). */
   bnDelta: number | null;
   bnSpotDelta: number | null;
@@ -177,13 +182,24 @@ const oiChange = (oiAt: (t: number) => number | null, t: number, end: number): n
   return o0 !== null && o1 !== null ? o1 - o0 : null;
 };
 
-export function barStat(b: StatBar, ms: number, now: number, oi: OiLog, funding: FundingBook, predicted: number | null, venue: VenueReads | null = null): BarStat {
+/** `players` — podział wejść świecy o początku `t` na dużych graczy i resztę (grupa Kto handluje włączona). */
+export function barStat(
+  b: StatBar,
+  ms: number,
+  now: number,
+  oi: OiLog,
+  funding: FundingBook,
+  predicted: number | null,
+  venue: VenueReads | null = null,
+  players: ((t: number) => PlayerSplit | null) | null = null
+): BarStat {
   const fp = b.fp;
   const tapeVol = fp ? fp.buyVol + fp.sellVol : 0;
   const end = Math.min(b.t + ms, now);
   const secs = (end - b.t) / 1000;
   const rate = funding.rate(b.t, ms, now, predicted);
   const bnRate = venue ? venue.funding(b.t) : null;
+  const who = players ? players(b.t) : null;
   return {
     vol: b.candle.v,
     delta: fp ? fp.delta : null,
@@ -194,6 +210,9 @@ export function barStat(b: StatBar, ms: number, now: number, oi: OiLog, funding:
     speed: fp && secs > 0 ? fp.trades / secs : null,
     doi: oiChange((t) => oi.at(t), b.t, end),
     funding: rate === null ? null : fundingPct8h(rate),
+    bigDelta: who ? who.big : null,
+    restDelta: who ? who.rest : null,
+    bigShare: who ? who.bigShare : null,
     bnDelta: venue ? venue.delta('binance', b.t) : null,
     bnSpotDelta: venue ? venue.delta('binanceSpot', b.t) : null,
     bnDoi: venue ? oiChange((t) => venue.oi('binance', t), b.t, end) : null,

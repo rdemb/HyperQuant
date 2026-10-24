@@ -116,6 +116,14 @@ describe('statystyki świecy', () => {
     expect([none.bnDelta, none.bnSpotDelta, none.bnDoi, none.bnFunding, none.byDelta, none.byDoi]).toEqual([null, null, null, null, null, null]);
   });
 
+  it('grupa Kto handluje z podziału wejść; bez podziału brak zamiast zera', () => {
+    const b = { t: M1, candle: candle(M1, 9), fp: null };
+    const s = barStat(b, M1, 10 * M1, new OiLog(), new FundingBook(), null, null, (t) => (t === M1 ? { big: 3, rest: -1, bigUsd: 500, usd: 800, bigShare: 62.5 } : null));
+    expect([s.bigDelta, s.restDelta, s.bigShare]).toEqual([3, -1, 62.5]);
+    const none = barStat(b, M1, 10 * M1, new OiLog(), new FundingBook(), null, null, () => null);
+    expect([none.bigDelta, none.restDelta, none.bigShare]).toEqual([null, null, null]);
+  });
+
   it('bieżąca świeca: tempo i ΔOI do teraz', () => {
     const fp = new FootprintBuilder(M1, 1);
     fp.add(M1 + 1, 100, 1, 1);
@@ -141,5 +149,12 @@ describe('Tablica liczb', () => {
     expect(lines.filter((l) => !l.row).map((l) => l.group)).toEqual(['hl', 'binance', 'bybit']);
     expect(lines.filter((l) => l.row).map((l) => l.row!.key)).toEqual(['vol', 'delta', 'doi', 'funding', 'bnDelta', 'bnSpotDelta', 'bnDoi', 'bnFunding', 'byDelta', 'byDoi']);
     expect(tableHeight(['hl', 'binance', 'bybit'])).toBe(10 * STAT_ROW_PX + 3 * STAT_HEAD_PX + STAT_PAD_PX);
+  });
+
+  it('Kto handluje ma nagłówek grupy i stoi po taśmie, przed giełdami', () => {
+    const lines = tableLines(['who', 'tape']);
+    expect(lines.filter((l) => !l.row).map((l) => l.group)).toEqual(['tape', 'who']);
+    expect(lines.filter((l) => l.row && l.group === 'who').map((l) => l.row!.key)).toEqual(['bigDelta', 'restDelta', 'bigShare']);
+    expect(tableHeight(['who'])).toBe(3 * STAT_ROW_PX + STAT_HEAD_PX + STAT_PAD_PX);
   });
 });

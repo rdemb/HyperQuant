@@ -1,8 +1,10 @@
 import React, { useEffect } from 'react';
+import { BIG_PLAYER_USD } from '../core/players';
 import { type StatGroup, STAT_GROUPS, VENUE_GROUPS, barStat } from '../core/stats';
 import { fmtHm } from '../core/time';
 import type { CandleSeries, ProStore } from '../store/proStore';
 import { acquireVenues, venueStoreFor } from '../venues/venueStore';
+import { compact } from './FlowPanels';
 import { STAT_GROUP_INFO, tableLines } from './statsTable';
 import { PRO, rgba } from './theme';
 
@@ -17,6 +19,9 @@ const COLS = 4;
 const GROUP_TITLES: Record<StatGroup, string> = {
   hl: 'Wolumen, delta, ΔOI i funding na 8 h z Hyperliquid',
   tape: 'Delta %, maksymalna i minimalna delta w świecy, liczba transakcji i tempo taśmy',
+  who: `Delta dużych graczy (kont, które w godzinie UTC weszły na rynek za co najmniej ${Object.entries(BIG_PLAYER_USD)
+    .map(([c, v]) => `${compact(v)} USD na ${c}`)
+    .join(', ')}) i reszty rynku oraz udział dużych w wartości wejść`,
   binance: 'Delta perp i spot, ΔOI i funding na 8 h z Binance',
   bybit: 'Delta (z transakcji od otwarcia strony) i ΔOI z Bybit',
 };
@@ -71,7 +76,8 @@ export const NumbersCard: React.FC<{
   const now = store.serverNow();
   const reads = venue ? venue.reads(iv, now) : null;
   const predicted = store.ctx ? store.ctx.funding : null;
-  const stats = bars.map((b) => barStat(b, iv.ms, now, store.oi, store.funding, predicted, reads));
+  const players = groups.includes('who') ? (t: number) => store.players.split(t, iv.ms, now) : null;
+  const stats = bars.map((b) => barStat(b, iv.ms, now, store.oi, store.funding, predicted, reads, players));
   const lines = tableLines(groups);
 
   return (
@@ -136,6 +142,7 @@ export const NumbersCard: React.FC<{
       <p className="px-2 py-1.5 border-t border-line text-[10px] leading-snug text-ink-3 shrink-0">
         Ostatnie świece {iv.label}, najnowsza z prawej; tło — siła wartości względem tych świec. Funding w % na 8 h.
         {venueOn && ` Dane ${venues.map((g) => STAT_GROUP_INFO[g].label).join(' i ')} pobiera Twoja przeglądarka bezpośrednio z publicznego API giełdy.`}
+        {groups.includes('who') && ` Duży gracz: konto, które w godzinie UTC weszło na rynek za co najmniej ${compact(store.players.thresholdUsd)} USD.`}
         {groups.includes('bybit') && ' Delta Bybit liczy się od otwarcia strony.'}
       </p>
     </section>

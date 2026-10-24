@@ -8,8 +8,8 @@ import { MONO, PRO, rgba } from './theme';
 /**
  * Tablica liczb we własnym panelu pod wykresem: kolumna na świecę, wiersz na miarę, tło komórki nasycone wg wartości
  * względem widocznych świec (kupno / wzrost w kolorze kupna, sprzedaż / spadek w kolorze sprzedaży, wielkości bez
- * znaku w kolorze wolumenu). Wiersze w grupach (Hyperliquid, taśma, Binance, Bybit); z grupą giełdy każda grupa ma
- * nagłówek z nazwą. Liczby, gdy świeca jest dość szeroka; nazwy wierszy w stałej kolumnie z lewej.
+ * znaku w kolorze wolumenu). Wiersze w grupach (Hyperliquid, taśma, Kto handluje, Binance, Bybit); z grupą giełdy albo
+ * Kto handluje każda grupa ma nagłówek z nazwą. Liczby, gdy świeca jest dość szeroka; nazwy wierszy w stałej kolumnie z lewej.
  */
 
 export interface StatRowDef {
@@ -37,6 +37,9 @@ export const STAT_ROWS: readonly StatRowDef[] = [
   { key: 'minDelta', group: 'tape', label: 'Min Δ', signed: true, fmt: fmtSignedVol },
   { key: 'trades', group: 'tape', label: 'Transakcje', signed: false, fmt: fmtCount },
   { key: 'speed', group: 'tape', label: 'Tempo /s', signed: false, fmt: (v) => (v >= 10 ? v.toFixed(0) : v.toFixed(1)) },
+  { key: 'bigDelta', group: 'who', label: 'Delta dużych', signed: true, fmt: fmtSignedVol },
+  { key: 'restDelta', group: 'who', label: 'Delta reszty', signed: true, fmt: fmtSignedVol },
+  { key: 'bigShare', group: 'who', label: 'Udział dużych', signed: false, fmt: (v) => `${v.toFixed(0)}%`, scale: 100 },
   { key: 'bnDelta', group: 'binance', label: 'Delta perp', signed: true, fmt: fmtSignedVol },
   { key: 'bnSpotDelta', group: 'binance', label: 'Delta spot', signed: true, fmt: fmtSignedVol },
   { key: 'bnDoi', group: 'binance', label: 'ΔOI', signed: true, fmt: fmtSignedVol },
@@ -49,6 +52,7 @@ export const STAT_ROWS: readonly StatRowDef[] = [
 export const STAT_GROUP_INFO: Record<StatGroup, { label: string; short: string; color: string }> = {
   hl: { label: 'Hyperliquid', short: 'Hyperliquid', color: PRO.venueHl },
   tape: { label: 'Hyperliquid · taśma', short: 'Taśma', color: PRO.venueHl },
+  who: { label: 'Kto handluje', short: 'Kto handluje', color: PRO.players },
   binance: { label: 'Binance', short: 'Binance', color: PRO.venueBinance },
   bybit: { label: 'Bybit', short: 'Bybit', color: PRO.venueBybit },
 };
@@ -59,9 +63,9 @@ export interface TableLine {
   row: StatRowDef | null;
 }
 
-/** Linie tablicy dla włączonych grup; nagłówki grup tylko z grupą giełdy (inaczej nazwy wierszy są jednoznaczne). */
+/** Linie tablicy dla włączonych grup; nagłówki grup tylko z grupą giełdy albo Kto handluje (inaczej nazwy są jednoznaczne). */
 export function tableLines(groups: readonly StatGroup[]): TableLine[] {
-  const heads = groups.some((g) => VENUE_GROUPS.includes(g));
+  const heads = groups.some((g) => g === 'who' || VENUE_GROUPS.includes(g));
   const out: TableLine[] = [];
   for (const g of STAT_GROUPS) {
     if (!groups.includes(g)) continue;
@@ -85,7 +89,7 @@ export function tableHeight(groups: readonly StatGroup[]): number {
 const TEXT_MIN_SPACING = 34;
 /** Szerokość świecy po włączeniu tablicy (px): liczby widać od razu, bez zbliżania wykresu. */
 export const STATS_BAR_SPACING = 50;
-const LABEL_W = 88;
+const LABEL_W = 96;
 /** Nasycenie: |wartość| przy percentylu 90 widocznych świec = pełny kolor. */
 const NORM_Q = 0.9;
 
