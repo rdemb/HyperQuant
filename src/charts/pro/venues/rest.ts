@@ -4,6 +4,7 @@ import {
   OiPoint,
   VenueBar,
   parseBinanceFunding,
+  parseBinanceFundingHist,
   parseBinanceFundingInfo,
   parseBinanceKlines,
   parseBinanceOi,
@@ -26,6 +27,7 @@ const BYBIT = 'https://api.bybit.com';
 export const KLINE_LIMIT = { binance: 1500, binanceSpot: 1000 } as const;
 export const BINANCE_OI_LIMIT = 500;
 export const BYBIT_OI_LIMIT = 200;
+export const BINANCE_FUNDING_LIMIT = 1000;
 
 /** GET z limitem czasu 8 s; błąd sieci albo kod ≠ 2xx → null. */
 async function getJson(url: string): Promise<unknown> {
@@ -67,6 +69,12 @@ export async function fetchBinanceOi(coin: string): Promise<OiPoint | null> {
 
 export async function fetchBinanceFunding(coin: string): Promise<number | null> {
   return parseBinanceFunding(await getJson(`${FAPI}/fapi/v1/premiumIndex?symbol=${symbolOf(coin)}`));
+}
+
+/** Rozliczenia finansowania Binance od `startTime` (najwyżej 1000, rosnąco); null = błąd. */
+export async function fetchBinanceFundingHist(coin: string, startTime: number): Promise<{ time: number; rate: number }[] | null> {
+  const raw = await getJson(`${FAPI}/fapi/v1/fundingRate?symbol=${symbolOf(coin)}&startTime=${Math.floor(startTime)}&limit=${BINANCE_FUNDING_LIMIT}`);
+  return raw === null ? null : parseBinanceFundingHist(raw);
 }
 
 export async function fetchBinanceFundingInfo(): Promise<Map<string, number>> {

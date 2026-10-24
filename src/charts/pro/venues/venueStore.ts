@@ -1,5 +1,5 @@
 import { Coverage } from '../core/coverage';
-import { OiLog } from '../core/stats';
+import { FundingBook, HOUR_MS, OiLog, VenueReads } from '../core/stats';
 import type { Interval } from '../core/time';
 import {
   BINANCE_OI_PERIOD,
@@ -10,12 +10,15 @@ import {
   VenueTrade,
   parseBinanceKlineMsg,
   parseBybitTicker,
+  oiMaxAge,
   parseBybitTrades,
   per8h,
   symbolOf,
 } from './parse';
 import {
+  BINANCE_FUNDING_LIMIT,
   fetchBinanceFunding,
+  fetchBinanceFundingHist,
   fetchBinanceFundingInfo,
   fetchBinanceKlines,
   fetchBinanceOi,
@@ -28,7 +31,8 @@ import { LiveSocket } from './socket';
  * Przepływ Binance i Bybit dla rynku Hyperliquid (panele „CVD giełd” i „ΔOI giełd”), pobierany przez przeglądarkę
  * czytelnika — nic nie przechodzi przez serwer HyperQuant. Delta Binance perp i spot z świec (kupno biorców), także
  * historyczna; Bybit perp z transakcji od otwarcia strony. OI z historii obu giełd i odczytów bieżących, finansowanie
- * przeliczone na 8 h. Połączenia działają tylko, gdy któryś wykres ma panel giełd włączony.
+ * przeliczone na 8 h (Binance także z historii rozliczeń). Połączenia działają tylko, gdy któryś wykres ma panel giełd
+ * albo grupę giełdy w Tablicy liczb włączoną.
  */
 
 const MIN = 60_000;
@@ -52,7 +56,10 @@ interface HistState {
 
 const newHist = (): HistState => ({ oldest: Number.POSITIVE_INFINITY, loading: false, exhausted: false, retryAt: 0 });
 
-/** Delta Bybit z transakcji na żywo w minutach; świeca liczy się tylko w całości nagrana (bez luki połączenia). */
+/**
+ * Delta Bybit z transakcji na żywo w minutach. Świeca liczy się w całości nagrana; świeca, w której zaczęło się nagrywanie
+ * (otwarcie strony), od tej chwili. Świeca z przerwą połączenia nie ma wartości.
+ */
 export class MinuteFlow {
   private readonly mins = new Map<number, [vol: number, buy: number]>();
   readonly coverage = new Coverage();
@@ -71,9 +78,11 @@ export class MinuteFlow {
   /** Delta świecy [t, t + ms) (bieżąca do `now`); null, gdy nagranie jej nie obejmuje. */
   delta(t: number, ms: number, now: number): number | null {
     const end = Math.min(t + ms, now);
-    if (!(end > t) || !this.coverage.covers(t, end)) return null;
+    const rec = this.coverage.first();
+    const from = this.coverage.covers(t, end) ? t : rec > t && this.coverage.covers(rec, end) ? Math.floor(rec / MIN) * MIN : null;
+    if (from === null || !(end > from)) return null;
     let d = 0;
-    for (let m = t; m < end; m += MIN) {
+    for (let m = from; m < end; m += MIN) {
       const acc = this.mins.get(m);
       if (acc) d += 2 * acc[1] - acc[0];
     }
@@ -102,6 +111,10 @@ export class VenueStore {
   readonly oi: Record<OiVenue, OiLog> = { binance: new OiLog(), bybit: new OiLog() };
   /** Bieżąca stopa finansowania na 8 h (ułamek); null przed pierwszym odczytem. */
   readonly funding: Record<OiVenue, number | null> = { binance: null, bybit: null };
+  /** Rozliczenia finansowania Binance po godzinach (Tablica liczb). */
+  readonly binanceFunding = new FundingBook();
+  private fundingLoading = false;
+  private fundingRetryAt = 0;
   readonly bybitFlow = new MinuteFlow();
   version = 0;
   private readonly books = new Map<string, KlineBook>();
@@ -132,12 +145,55 @@ export class VenueStore {
     return venue === 'bybit' ? this.bybitFlow.delta(t, iv.ms, now) : this.book(venue, iv.id).delta(t);
   }
 
-  /** Historia od `from`: świece Binance perp i spot, OI Binance i Bybit — najwyżej kilka stron na raz, w tle. */
+  /** Odczyty świec interwału `iv` dla Tablicy liczb; bieżący okres finansowania Binance ma stawkę prognozowaną. */
+  reads(iv: Interval, now: number): VenueReads {
+    const age = oiMaxAge(iv.id);
+    const predicted = this.funding.binance === null ? null : this.funding.binance / 8;
+    return {
+      delta: (venue, t) => this.delta(venue, iv, t, now),
+      oi: (venue, t) => this.oi[venue].atWithin(t, age),
+      funding: (t) => this.binanceFunding.rate(t, iv.ms, now, predicted),
+    };
+  }
+
+  /** Historia od `from`: świece Binance perp i spot, OI Binance i Bybit, rozliczenia finansowania Binance — w tle. */
   ensure(iv: Interval, from: number): void {
     void this.loadKlines('binance', iv, from);
     void this.loadKlines('binanceSpot', iv, from);
     void this.loadOi('binance', iv, Math.max(from, Date.now() - BINANCE_OI_MAX_MS + iv.ms));
     void this.loadOi('bybit', iv, from);
+    void this.loadFunding(from);
+  }
+
+  /**
+   * Rozliczenia finansowania Binance od `from` (jedna strona: najwyżej 1000 okresów wstecz) albo — gdy historia już jest —
+   * nowe rozliczenie po końcu okresu. Okres (8 albo 4 h) wynika z odstępu kolejnych wypłat.
+   */
+  private async loadFunding(from: number): Promise<void> {
+    const f = this.binanceFunding;
+    const now = Date.now();
+    if (this.fundingLoading || now < this.fundingRetryAt) return;
+    const settled = f.latest + HOUR_MS;
+    const older = from < f.from;
+    const newer = Number.isFinite(settled) && now >= settled + f.periodMs + MIN;
+    if (!older && !newer) return;
+    this.fundingLoading = true;
+    // Strona sięga dwa najdłuższe okresy (2 × 8 h) przed `from`: zawsze co najmniej dwie wypłaty, więc znany jest okres.
+    // Najkrótszy okres Binance to 4 h — tyle okresów mieści się w jednej stronie.
+    const start = older ? Math.max(from - 16 * HOUR_MS, now - (BINANCE_FUNDING_LIMIT - 1) * 4 * HOUR_MS) : settled + 1;
+    const list = await fetchBinanceFundingHist(this.coin, start);
+    this.fundingLoading = false;
+    if (list === null) {
+      this.fundingRetryAt = Date.now() + RETRY_MS;
+      return;
+    }
+    const n = list.length;
+    // Jedna wypłata (nowe rozliczenie albo rynek z krótką historią): okres z wcześniejszych wypłat, bez nich — 8 h
+    const hours = n >= 2 ? Math.round((list[n - 1].time - list[n - 2].time) / HOUR_MS) : Number.isFinite(f.latest) ? f.periodMs / HOUR_MS : 8;
+    f.addPeriods(list, hours > 0 ? hours : 8, older ? from : f.from);
+    // Brak nowego rozliczenia (opóźnione): kolejna próba za chwilę, nie w każdej klatce
+    if (!older && n === 0) this.fundingRetryAt = Date.now() + RETRY_MS;
+    this.bump();
   }
 
   private async loadKlines(venue: 'binance' | 'binanceSpot', iv: Interval, from: number): Promise<void> {
@@ -194,6 +250,11 @@ export class VenueStore {
       this.bump();
     }
     h.loading = false;
+  }
+
+  /** Nowe rozliczenie finansowania Binance bez zmiany zakresu historii. */
+  ensureFunding(): void {
+    void this.loadFunding(this.binanceFunding.from);
   }
 
   // ───────────────────────── na żywo ─────────────────────────
@@ -315,6 +376,8 @@ async function poll(): Promise<void> {
   fundingHours ??= await fetchBinanceFundingInfo();
   for (const coin of liveCoins()) {
     const s = venueStoreFor(coin);
+    // Nowe rozliczenie finansowania Binance po końcu okresu (tylko gdy historia jest już wczytana)
+    if (Number.isFinite(s.binanceFunding.from)) s.ensureFunding();
     const [oi, rate] = await Promise.all([fetchBinanceOi(coin), fetchBinanceFunding(coin)]);
     if (oi) s.onOi('binance', oi);
     if (rate !== null) s.setFunding('binance', per8h(rate, fundingHours.get(symbolOf(coin)) ?? 8));
@@ -336,19 +399,40 @@ function refreshLive(): void {
   }
 }
 
+/**
+ * Połączenia po zwolnieniu zmieniają się z opóźnieniem: zmiana interwału albo stacji zwalnia stary wykres przed
+ * pobraniem nowego i bez tej chwili zerwałaby nagrywanie Bybit (świeca z przerwą nie ma delty).
+ */
+const RELEASE_GRACE_MS = 2000;
+let releaseTimer: ReturnType<typeof setTimeout> | null = null;
+let refreshQueued = false;
+
+/** Kilka pobrań z tej samej chwili (wykres i karta Liczby zmieniają interwał razem) daje jedną zmianę adresów. */
+function queueRefresh(): void {
+  if (refreshQueued) return;
+  refreshQueued = true;
+  queueMicrotask(() => {
+    refreshQueued = false;
+    refreshLive();
+  });
+}
+
 /** Wykres z panelem giełd na (rynek, interwał): połączenia na żywo do zwolnienia zwróconą funkcją. */
 export function acquireVenues(coin: string, iv: Interval): () => void {
   const key = `${coin}|${iv.id}`;
   const x = live.get(key);
   if (x) x.n++;
   else live.set(key, { coin, iv, n: 1 });
-  refreshLive();
+  queueRefresh();
   let released = false;
   return () => {
     if (released) return;
     released = true;
     const y = live.get(key);
     if (y && --y.n <= 0) live.delete(key);
-    refreshLive();
+    releaseTimer ??= setTimeout(() => {
+      releaseTimer = null;
+      refreshLive();
+    }, RELEASE_GRACE_MS);
   };
 }

@@ -1,36 +1,91 @@
 import type { IChartApiBase, IPrimitivePaneRenderer, IPrimitivePaneView, ISeriesPrimitive, Logical, PrimitiveHoveredItem, SeriesAttachedParameter, Time } from 'lightweight-charts';
 import { fmtVol } from '../../orderflow/footprint';
 import { fmtSignedVol } from '../../orderflow/renderer';
-import type { BarStat, StatKey } from '../core/stats';
+import { type BarStat, type StatGroup, STAT_GROUPS, type StatKey, VENUE_GROUPS } from '../core/stats';
 import { type CloseBox, closeHit, drawClose, inBox } from './paneLegend';
 import { MONO, PRO, rgba } from './theme';
 
 /**
- * Tabela statystyk świec we własnym panelu pod wykresem: kolumna na świecę, wiersz na statystykę, tło komórki
- * nasycone wg wartości względem widocznych świec (kupno / wzrost w kolorze kupna, sprzedaż / spadek w kolorze
- * sprzedaży, wielkości bez znaku w kolorze wolumenu). Liczby, gdy świeca jest dość szeroka; nazwy wierszy w stałej kolumnie z lewej.
+ * Tablica liczb we własnym panelu pod wykresem: kolumna na świecę, wiersz na miarę, tło komórki nasycone wg wartości
+ * względem widocznych świec (kupno / wzrost w kolorze kupna, sprzedaż / spadek w kolorze sprzedaży, wielkości bez
+ * znaku w kolorze wolumenu). Wiersze w grupach (Hyperliquid, taśma, Binance, Bybit); z grupą giełdy każda grupa ma
+ * nagłówek z nazwą. Liczby, gdy świeca jest dość szeroka; nazwy wierszy w stałej kolumnie z lewej.
  */
 
-/** `scale` — stała skala nasycenia (|wartość| = pełny kolor) zamiast percentyla widocznych świec. */
-export const STAT_ROWS: { key: StatKey; label: string; signed: boolean; fmt: (v: number) => string; scale?: number }[] = [
-  { key: 'vol', label: 'Wolumen', signed: false, fmt: fmtVol },
-  { key: 'delta', label: 'Delta', signed: true, fmt: fmtSignedVol },
-  { key: 'deltaPct', label: 'Delta %', signed: true, fmt: (v) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v).toFixed(0)}%` },
-  { key: 'maxDelta', label: 'Max Δ', signed: true, fmt: fmtSignedVol },
-  { key: 'minDelta', label: 'Min Δ', signed: true, fmt: fmtSignedVol },
-  { key: 'trades', label: 'Transakcje', signed: false, fmt: (v) => (v >= 1000 ? `${(v / 1000).toFixed(1)}K` : String(Math.round(v))) },
-  { key: 'speed', label: 'Tempo /s', signed: false, fmt: (v) => (v >= 10 ? v.toFixed(0) : v.toFixed(1)) },
-  { key: 'doi', label: 'ΔOI', signed: true, fmt: fmtSignedVol },
-  // Roczna stopa w %, bez znaku „+” i „%” (mieści się w kolumnie); stała skala — stały funding nie daje pełnego koloru
-  { key: 'funding', label: 'Fund. APR', signed: true, fmt: (v) => `${v < 0 ? '−' : ''}${Math.abs(v).toFixed(1)}`, scale: 50 },
+export interface StatRowDef {
+  key: StatKey;
+  group: StatGroup;
+  label: string;
+  signed: boolean;
+  fmt: (v: number) => string;
+  /** Stała skala nasycenia (|wartość| = pełny kolor) zamiast percentyla widocznych świec. */
+  scale?: number;
+}
+
+const fmtCount = (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(1)}K` : String(Math.round(v)));
+// % na 8 h bez znaku „+” i „%” (mieści się w kolumnie); stała skala — stały funding nie daje pełnego koloru
+const fmtFunding = (v: number) => `${v < 0 ? '−' : ''}${Math.abs(v).toFixed(4)}`;
+const FUNDING_SCALE = 0.05;
+
+export const STAT_ROWS: readonly StatRowDef[] = [
+  { key: 'vol', group: 'hl', label: 'Wolumen', signed: false, fmt: fmtVol },
+  { key: 'delta', group: 'hl', label: 'Delta', signed: true, fmt: fmtSignedVol },
+  { key: 'doi', group: 'hl', label: 'ΔOI', signed: true, fmt: fmtSignedVol },
+  { key: 'funding', group: 'hl', label: 'Funding 8 h', signed: true, fmt: fmtFunding, scale: FUNDING_SCALE },
+  { key: 'deltaPct', group: 'tape', label: 'Delta %', signed: true, fmt: (v) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v).toFixed(0)}%` },
+  { key: 'maxDelta', group: 'tape', label: 'Max Δ', signed: true, fmt: fmtSignedVol },
+  { key: 'minDelta', group: 'tape', label: 'Min Δ', signed: true, fmt: fmtSignedVol },
+  { key: 'trades', group: 'tape', label: 'Transakcje', signed: false, fmt: fmtCount },
+  { key: 'speed', group: 'tape', label: 'Tempo /s', signed: false, fmt: (v) => (v >= 10 ? v.toFixed(0) : v.toFixed(1)) },
+  { key: 'bnDelta', group: 'binance', label: 'Delta perp', signed: true, fmt: fmtSignedVol },
+  { key: 'bnSpotDelta', group: 'binance', label: 'Delta spot', signed: true, fmt: fmtSignedVol },
+  { key: 'bnDoi', group: 'binance', label: 'ΔOI', signed: true, fmt: fmtSignedVol },
+  { key: 'bnFunding', group: 'binance', label: 'Funding 8 h', signed: true, fmt: fmtFunding, scale: FUNDING_SCALE },
+  { key: 'byDelta', group: 'bybit', label: 'Delta', signed: true, fmt: fmtSignedVol },
+  { key: 'byDoi', group: 'bybit', label: 'ΔOI', signed: true, fmt: fmtSignedVol },
 ];
 
-/** Wysokość wiersza (px) i wolne miejsce pod tabelą na logo TradingView (px; panel jest najniższy). */
+/** Nazwa grupy (nagłówek i przełącznik) i kolor jej giełdy. */
+export const STAT_GROUP_INFO: Record<StatGroup, { label: string; short: string; color: string }> = {
+  hl: { label: 'Hyperliquid', short: 'Hyperliquid', color: PRO.venueHl },
+  tape: { label: 'Hyperliquid · taśma', short: 'Taśma', color: PRO.venueHl },
+  binance: { label: 'Binance', short: 'Binance', color: PRO.venueBinance },
+  bybit: { label: 'Bybit', short: 'Bybit', color: PRO.venueBybit },
+};
+
+/** Linia tablicy: nagłówek grupy (`row` = null) albo wiersz miary. */
+export interface TableLine {
+  group: StatGroup;
+  row: StatRowDef | null;
+}
+
+/** Linie tablicy dla włączonych grup; nagłówki grup tylko z grupą giełdy (inaczej nazwy wierszy są jednoznaczne). */
+export function tableLines(groups: readonly StatGroup[]): TableLine[] {
+  const heads = groups.some((g) => VENUE_GROUPS.includes(g));
+  const out: TableLine[] = [];
+  for (const g of STAT_GROUPS) {
+    if (!groups.includes(g)) continue;
+    if (heads) out.push({ group: g, row: null });
+    for (const row of STAT_ROWS) if (row.group === g) out.push({ group: g, row });
+  }
+  return out;
+}
+
+/** Wysokość wiersza i nagłówka grupy (px) oraz wolne miejsce pod tabelą na logo TradingView (px; panel jest najniższy). */
 export const STAT_ROW_PX = 15;
-export const STAT_PAD_PX = 26;
+export const STAT_HEAD_PX = 12;
+export const STAT_PAD_PX = 32;
+
+/** Wysokość panelu tablicy (px) dla włączonych grup. */
+export function tableHeight(groups: readonly StatGroup[]): number {
+  return tableLines(groups).reduce((h, l) => h + (l.row ? STAT_ROW_PX : STAT_HEAD_PX), STAT_PAD_PX);
+}
+
 /** Liczby od takiej szerokości świecy (px). */
 const TEXT_MIN_SPACING = 34;
-const LABEL_W = 74;
+/** Szerokość świecy po włączeniu tablicy (px): liczby widać od razu, bez zbliżania wykresu. */
+export const STATS_BAR_SPACING = 50;
+const LABEL_W = 88;
 /** Nasycenie: |wartość| przy percentylu 90 widocznych świec = pełny kolor. */
 const NORM_Q = 0.9;
 
@@ -49,6 +104,7 @@ export class StatsTable implements ISeriesPrimitive<Time> {
   private chart: IChartApiBase<Time> | null = null;
   private requestUpdate: (() => void) | null = null;
   private stats: readonly BarStat[] = [];
+  private lines: TableLine[] = tableLines(['hl', 'tape']);
   private hover = -1;
   private close: CloseBox | null = null;
   private readonly view: IPrimitivePaneView;
@@ -78,6 +134,12 @@ export class StatsTable implements ISeriesPrimitive<Time> {
     this.requestUpdate?.();
   }
 
+  /** Włączone grupy wierszy. */
+  setGroups(groups: readonly StatGroup[]): void {
+    this.lines = tableLines(groups);
+    this.requestUpdate?.();
+  }
+
   setHover(i: number): void {
     if (i === this.hover) return;
     this.hover = i;
@@ -87,8 +149,9 @@ export class StatsTable implements ISeriesPrimitive<Time> {
   private draw(ctx: CanvasRenderingContext2D, W: number, H: number): void {
     const chart = this.chart;
     const stats = this.stats;
+    const lines = this.lines;
     this.close = null;
-    if (!chart || stats.length === 0 || !(H > 0)) return;
+    if (!chart || stats.length === 0 || lines.length === 0 || !(H > 0)) return;
     const ts = chart.timeScale();
     const range = ts.getVisibleLogicalRange();
     const xa = ts.logicalToCoordinate(0 as Logical);
@@ -97,17 +160,24 @@ export class StatsTable implements ISeriesPrimitive<Time> {
     const sp = xb - xa;
     const from = Math.max(0, Math.floor(range.from));
     const to = Math.min(stats.length - 1, Math.ceil(range.to));
-    const rows = STAT_ROWS.length;
-    const rh = Math.max(1, H - STAT_PAD_PX) / rows;
-    const TH = rh * rows;
+    // Wiersze i nagłówki rozciągnięte na wysokość panelu w stałej proporcji
+    const k = Math.max(1, H - STAT_PAD_PX) / lines.reduce((h, l) => h + (l.row ? STAT_ROW_PX : STAT_HEAD_PX), 0);
+    const rh = STAT_ROW_PX * k;
+    const ys: number[] = [];
+    let TH = 0;
+    for (const l of lines) {
+      ys.push(TH);
+      TH += l.row ? rh : STAT_HEAD_PX * k;
+    }
     const text = sp >= TEXT_MIN_SPACING && rh >= 11;
 
     // Normy wierszy z widocznych świec
-    const norm = STAT_ROWS.map((r) => {
-      if (r.scale) return r.scale;
+    const norm = lines.map(({ row }) => {
+      if (!row) return 0;
+      if (row.scale) return row.scale;
       const v: number[] = [];
       for (let i = from; i <= to; i++) {
-        const x = stats[i][r.key];
+        const x = stats[i][row.key];
         if (x !== null && Number.isFinite(x)) v.push(Math.abs(x));
       }
       v.sort((a, b) => a - b);
@@ -122,10 +192,11 @@ export class StatsTable implements ISeriesPrimitive<Time> {
       const cx = xa + i * sp;
       if (cx + sp / 2 < LABEL_W || cx - sp / 2 > W) continue;
       const s = stats[i];
-      for (let r = 0; r < rows; r++) {
-        const row = STAT_ROWS[r];
+      for (let r = 0; r < lines.length; r++) {
+        const row = lines[r].row;
+        if (!row) continue;
         const v = s[row.key];
-        const y = r * rh;
+        const y = ys[r];
         if (v === null || !Number.isFinite(v)) {
           if (text && cx - 4 >= LABEL_W) {
             ctx.fillStyle = C.dim;
@@ -152,18 +223,34 @@ export class StatsTable implements ISeriesPrimitive<Time> {
       ctx.lineWidth = 1;
       ctx.strokeRect(Math.round(xa + this.hover * sp - sp / 2) + 0.5, 0.5, Math.max(1, Math.round(sp) - 1), TH - 1);
     }
-    // Siatka wierszy i kolumna nazw
+    // Siatka wierszy, kolumna nazw i nagłówki grup na całą szerokość
     ctx.fillStyle = C.grid;
-    for (let r = 1; r <= rows; r++) ctx.fillRect(0, Math.round(r * rh), W, 1);
+    for (let r = 1; r <= lines.length; r++) ctx.fillRect(0, Math.round(r < lines.length ? ys[r] : TH), W, 1);
     ctx.fillStyle = rgba(PRO.bg, 0.94);
     ctx.fillRect(0, 0, LABEL_W, TH);
+    for (let r = 0; r < lines.length; r++) if (!lines[r].row) ctx.fillRect(LABEL_W, ys[r], W - LABEL_W, STAT_HEAD_PX * k);
     // Niski panel (np. układ 2 × 2): same kolory, bez nachodzących na siebie nazw
     if (rh < 9) return;
     ctx.textAlign = 'left';
-    ctx.fillStyle = C.label;
-    for (let r = 0; r < rows; r++) ctx.fillText(STAT_ROWS[r].label, 8, r * rh + rh / 2);
-    // Krzyżyk ukrycia tabeli w pierwszym wierszu kolumny nazw
-    this.close = { x: LABEL_W - 16, y: Math.max(0, rh / 2 - 8), size: 16 };
+    let headW = 0;
+    for (let r = 0; r < lines.length; r++) {
+      const { row, group } = lines[r];
+      if (row) {
+        ctx.font = `500 11px ${MONO}`;
+        ctx.fillStyle = C.label;
+        ctx.fillText(row.label, 8, ys[r] + rh / 2);
+      } else {
+        const g = STAT_GROUP_INFO[group];
+        const t = g.label.toUpperCase();
+        ctx.font = `600 10px ${MONO}`;
+        ctx.fillStyle = g.color;
+        ctx.fillText(t, 8, ys[r] + (STAT_HEAD_PX * k) / 2 + 0.5);
+        if (r === 0) headW = ctx.measureText(t).width;
+      }
+    }
+    // Krzyżyk ukrycia tabeli w pierwszej linii: w kolumnie nazw albo za nazwą pierwszej grupy
+    const h0 = lines[0].row ? rh : STAT_HEAD_PX * k;
+    this.close = { x: lines[0].row ? LABEL_W - 16 : 8 + headW + 4, y: Math.max(0, h0 / 2 - 8), size: 16 };
     drawClose(ctx, this.close);
   }
 
