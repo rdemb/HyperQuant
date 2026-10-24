@@ -75,13 +75,13 @@ export const PRO = {
  */
 export const LIQ_RAMP: HeatRamp = [
   { t: 0, color: '#0b1019', alpha: 0 },
-  { t: 0.12, color: '#111d33', alpha: 0.35 },
-  { t: 0.28, color: '#15305a', alpha: 0.55 },
-  { t: 0.42, color: '#1b4677', alpha: 0.7 },
-  { t: 0.55, color: '#22679b', alpha: 0.85 },
-  { t: 0.68, color: '#2f9cc4', alpha: 1 },
-  { t: 0.8, color: '#5fd3e6', alpha: 1 },
-  { t: 0.9, color: '#b9eef6', alpha: 1 },
+  { t: 0.12, color: '#14284a', alpha: 0.45 },
+  { t: 0.28, color: '#1b4373', alpha: 0.65 },
+  { t: 0.42, color: '#22609a', alpha: 0.8 },
+  { t: 0.55, color: '#2a80b8', alpha: 0.9 },
+  { t: 0.68, color: '#3fa9d6', alpha: 1 },
+  { t: 0.8, color: '#7fdcee', alpha: 1 },
+  { t: 0.9, color: '#c9f2f9', alpha: 1 },
   { t: 1, color: '#ffffff', alpha: 1 },
 ];
 

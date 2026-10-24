@@ -59,7 +59,7 @@ Płótno ma własną paletę HyperQuant „Desk” (tokeny `of-*`, te same warto
 | Profil sesji: obszar wartości / reszta / POC / nagi POC | — | `#34425A` / `#1F2B3D` / `#E0A045` / `#7A889C` |
 | Drabina DOM: bidy / aski | — | `#19A88E` / `#D9582E` |
 | VWAP / VWAP sesji | `of-vwap` / `of-svwap` | `#E6EBF2` / `#9085E9` |
-| Mapa ciepła arkusza (granat → błękit → biel ścian) | `of-heat-1…3` | `#1B4677` → `#5FD3E6` → `#FFFFFF` |
+| Mapa ciepła arkusza (granat → błękit → biel ścian) | `of-heat-1…3` | `#22609A` → `#7FDCEE` → `#FFFFFF` |
 | Giełdy: Hyperliquid / Binance / Bybit | — | `#3987E5` / `#C98500` / `#D55181` |
 
 Komórki footprintu Bid × Ask to kafle od grafitu `#2A3446` (mały wolumen) do nasyconego koloru strony; liczby ciemne na jasnym kaflu, jasne na ciemnym. Style Delta i Wolumen to paski od lewej krawędzi świecy (delta i wolumen w kolorze strony przewagi) z jasnymi liczbami bid i ask. Drugi kanał: pozycja (sprzedaż po lewej, kupno po prawej), a liczba nierównowagi jest pogrubiona i obrysowana.
