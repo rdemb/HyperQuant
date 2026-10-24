@@ -35,6 +35,8 @@ export const en: LessonsContent = {
     honest: 'Honestly',
     practice: 'Practise live',
     openStation: (id) => `Open the “${STATION[id]}” workstation in Charts`,
+    openReplay: 'Open this moment in Charts',
+    replayNote: 'A replay of the recorded tape and order book from that evening on the full chart: it starts paused at the moment of the question, and you play it forward yourself.',
     atlasLinks: 'Indicators in this exercise',
     labTitle: 'What the desk data says',
     labLoading: 'Loading Folklore lab results…',
