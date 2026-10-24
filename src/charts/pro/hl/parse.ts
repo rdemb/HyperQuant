@@ -17,8 +17,10 @@ export interface Fill {
   tid: number;
   /** Hash transakcji; wypełnienia jednego zlecenia agresora dzielą hash. */
   hash: string;
-  /** Adres agresora (biorcy) — tylko w pamięci, do złożenia zlecenia; nigdy nie jest zapisywany ani pokazywany. */
+  /** Adres agresora (biorcy) — tylko w pamięci: złożenie zlecenia i podsumowanie portfela po kliknięciu bąbla; nigdy nie jest zapisywany. */
   taker: string;
+  /** Adres drugiej strony (makera) — tylko w pamięci, do klas zderzeń i ścian; nigdy nie jest zapisywany ani pokazywany. */
+  maker: string;
 }
 
 export interface Candle {
@@ -104,12 +106,16 @@ export function parseFill(raw: unknown, coin: string): Fill | null {
   else return null;
   const hash = typeof raw.hash === 'string' ? raw.hash : '';
   let taker = '';
+  let maker = '';
   if (Array.isArray(raw.users) && raw.users.length === 2) {
-    // users = [kupujący, sprzedający]; agresorem jest strona zgodna z `side`
-    const u = side === 1 ? raw.users[0] : raw.users[1];
-    if (typeof u === 'string') taker = u;
+    // users = [kupujący, sprzedający]; agresorem jest strona zgodna z `side`, makerem druga
+    const [buyer, seller] = raw.users as unknown[];
+    const t = side === 1 ? buyer : seller;
+    const m = side === 1 ? seller : buyer;
+    if (typeof t === 'string') taker = t;
+    if (typeof m === 'string') maker = m;
   }
-  return { time, px, sz, side, tid, hash, taker };
+  return { time, px, sz, side, tid, hash, taker, maker };
 }
 
 export function parseFills(raw: unknown, coin: string): Fill[] {

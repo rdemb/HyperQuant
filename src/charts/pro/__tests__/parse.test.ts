@@ -33,13 +33,15 @@ describe('parseFill', () => {
       tid: 123456789,
       hash: '0xabc1',
       taker: '0x00000000000000000000000000000000000000b1',
+      maker: '0x00000000000000000000000000000000000000a1',
     });
   });
 
-  it('A = agresywna sprzedaż, biorcą jest sprzedający (users[1])', () => {
+  it('A = agresywna sprzedaż, biorcą jest sprzedający (users[1]), makerem kupujący', () => {
     const f = parseFill({ ...raw, side: 'A' }, 'BTC');
     expect(f?.side).toBe(-1);
     expect(f?.taker).toBe('0x00000000000000000000000000000000000000a1');
+    expect(f?.maker).toBe('0x00000000000000000000000000000000000000b1');
   });
 
   it('odrzuca inną monetę, nieznaną stronę i niedodatnie wartości', () => {

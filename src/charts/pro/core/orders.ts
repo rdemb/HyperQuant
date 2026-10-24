@@ -4,8 +4,8 @@ import { Fill, Side, isUsableHash } from '../hl/parse';
  * Zlecenia agresora złożone z wypełnień taśmy. Hyperliquid podaje w każdej transakcji adresy obu stron
  * i hash transakcji, więc wypełnienia jednego zlecenia rynkowego (zamiatającego kilka poziomów arkusza)
  * łączymy dokładnie: ten sam adres biorcy i ten sam hash. Bez użytecznego hasha (np. wypełnienia TWAP)
- * łączymy wypełnienia tego samego biorcy z tej samej milisekundy. Adres służy wyłącznie do złożenia
- * zlecenia — nie jest przechowywany w wyniku.
+ * łączymy wypełnienia tego samego biorcy z tej samej milisekundy. Adresy zostają tylko w pamięci strony
+ * (podsumowanie portfela po kliknięciu bąbla, udział największego makera) — nigdy nie są zapisywane.
  */
 
 export interface AggressorOrder {
@@ -23,12 +23,18 @@ export interface AggressorOrder {
   fills: number;
   /** Liczba różnych cen, na których zlecenie się wykonało (poziomy arkusza zebrane jednym zleceniem). */
   levels: number;
+  /** Adres biorcy ('' bez pola users). */
+  taker: string;
+  /** Liczba różnych makerów i wartość (USD) dostarczona przez największego z nich. */
+  makers: number;
+  topMakerUsd: number;
 }
 
 interface Open {
   key: string;
   order: AggressorOrder;
   prices: Set<number>;
+  makers: Map<string, number>;
   lastAt: number;
 }
 
@@ -63,10 +69,14 @@ export class OrderAggregator {
         ord.fills++;
         o.prices.add(f.px);
         ord.levels = o.prices.size;
+        const m = (o.makers.get(f.maker) ?? 0) + f.px * f.sz;
+        o.makers.set(f.maker, m);
+        ord.makers = o.makers.size;
+        ord.topMakerUsd = Math.max(ord.topMakerUsd, m);
         o.lastAt = Math.max(o.lastAt, f.time);
       } else {
         if (o) done.push(o.order);
-        this.open.set(key, { key, order: single(f), prices: new Set([f.px]), lastAt: f.time });
+        this.open.set(key, { key, order: single(f), prices: new Set([f.px]), makers: new Map([[f.maker, f.px * f.sz]]), lastAt: f.time });
       }
     }
     done.push(...this.flush(now));
@@ -92,7 +102,8 @@ export class OrderAggregator {
 }
 
 function single(f: Fill): AggressorOrder {
-  return { time: f.time, side: f.side, sz: f.sz, notional: f.px * f.sz, vwap: f.px, pxFirst: f.px, pxLast: f.px, fills: 1, levels: 1 };
+  const usd = f.px * f.sz;
+  return { time: f.time, side: f.side, sz: f.sz, notional: usd, vwap: f.px, pxFirst: f.px, pxLast: f.px, fills: 1, levels: 1, taker: f.taker, makers: 1, topMakerUsd: usd };
 }
 
 /** Dziennik zakończonych zleceń agresora, rosnąco po czasie (zapytania o zakres przez wyszukiwanie binarne). */

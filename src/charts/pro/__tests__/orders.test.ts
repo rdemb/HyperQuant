@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Fill } from '../hl/parse';
 import { OrderAggregator, orderKey } from '../core/orders';
 
-const fill = (o: Partial<Fill>): Fill => ({ time: 1000, px: 100, sz: 1, side: 1, tid: 1, hash: '0xaa', taker: '0x01', ...o });
+const fill = (o: Partial<Fill>): Fill => ({ time: 1000, px: 100, sz: 1, side: 1, tid: 1, hash: '0xaa', taker: '0x01', maker: '0x99', ...o });
 
 describe('OrderAggregator', () => {
   it('łączy wypełnienia tego samego biorcy i hasha w jedno zlecenie (zamiatanie arkusza)', () => {

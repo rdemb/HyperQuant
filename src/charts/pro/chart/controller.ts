@@ -15,6 +15,7 @@ import type {
 import { fmtVol } from '../../orderflow/footprint';
 import { fmtSignedVol } from '../../orderflow/renderer';
 import { fmtPrice } from '../../../ui/format';
+import { DEFAULT_THRESHOLD_USD, autoThreshold } from '../core/clashes';
 import { Ohlc, cvdCandles, deltaCandle } from '../core/flow';
 import { rowAt } from '../core/footprintBar';
 import type { LiqLevel } from '../core/indicators';
@@ -23,7 +24,7 @@ import type { ProBar, ProStore } from '../store/proStore';
 import { DrawingLayer } from '../draw/layer';
 import { DrawingTools } from '../draw/tools';
 import { FootprintOptions, FootprintPoint, FootprintSeries } from './footprintSeries';
-import { LiquidityLayer } from './liquidity';
+import { LiquidityLayer, LiquidityPick, LiquiditySource } from './liquidity';
 import { IndicatorOverlay, IndicatorToggles, IndicatorValues } from './overlay';
 import { LegendPart, PaneLegend } from './paneLegend';
 import type { ChartSettings } from './settings';
@@ -59,6 +60,8 @@ const FLOW_FORMAT: PriceFormat = { type: 'custom', minMove: 0.0001, formatter: f
 
 const VOLUME_FORMAT: PriceFormat = { type: 'custom', minMove: 0.0001, formatter: (v: number) => fmtVol(v) };
 
+const liqToggles = (s: ChartSettings) => ({ showHeatmap: s.showHeatmap, showBubbles: s.showBubbles, showClashes: s.showClashes });
+
 const toggles = (s: ChartSettings): IndicatorToggles => ({
   showVwap: s.showVwap,
   showVwapBands: s.showVwapBands,
@@ -77,6 +80,9 @@ const MAX_POINT_UPDATES = 24;
 const TOP_MARGIN = 0.06;
 /** Doczytanie historii, gdy z lewej zostało mniej świec niż tyle. */
 const LOAD_OLDER_MARGIN = 40;
+/** Próg automatyczny dużego zlecenia: z zleceń ostatniej godziny, przeliczany co 5 s. */
+const AUTO_WINDOW_MS = 3_600_000;
+const AUTO_EVERY_MS = 5_000;
 
 function toPoint(b: ProBar): FootprintPoint {
   const c = b.candle;
@@ -144,12 +150,29 @@ export class ProChartController {
   private topInset = 0;
   private hoverTime: number | null = null;
   private hoverPrice: number | null = null;
+  private autoUsd = DEFAULT_THRESHOLD_USD;
+  private autoAt = 0;
+  private readonly liqSource: LiquiditySource;
   private readonly unsubscribe: () => void;
   private readonly onHover: (h: Hover) => void;
+  private readonly onPick: (p: LiquidityPick | null) => void;
 
-  constructor(container: HTMLElement, private readonly store: ProStore, settings: ChartSettings, onHover: (h: Hover) => void) {
+  constructor(
+    container: HTMLElement,
+    private readonly store: ProStore,
+    settings: ChartSettings,
+    onHover: (h: Hover) => void,
+    onPick: (p: LiquidityPick | null) => void
+  ) {
     this.settings = settings;
     this.onHover = onHover;
+    this.onPick = onPick;
+    this.liqSource = {
+      near: null,
+      far: null,
+      orders: (from, to) => store.orders.range(from, to),
+      walls: (from, to, t) => store.walls.walls(from, to, t),
+    };
     this.chart = createChart(container, chartOptions());
     this.main = this.chart.addCustomSeries<FootprintPoint, FootprintOptions>(this.fpView, {
       priceFormat: { type: 'custom', minMove: 1, formatter: (p: number) => fmtPrice(p, 0) },
@@ -158,7 +181,7 @@ export class ProChartController {
       lastValueVisible: true,
     });
     // Mapa ciepła pod profilem i pasmami (kolejność dołączenia = kolejność rysowania w tej samej warstwie)
-    this.liquidity = new LiquidityLayer({ showHeatmap: settings.showHeatmap, showBubbles: settings.showBubbles });
+    this.liquidity = new LiquidityLayer(liqToggles(settings));
     this.main.attachPrimitive(this.liquidity);
     this.overlay = new IndicatorOverlay(toggles(settings));
     this.main.attachPrimitive(this.overlay);
@@ -168,6 +191,7 @@ export class ProChartController {
     this.draw = new DrawingTools(container, this.chart, this.drawLayer, store.coin);
     this.applySettings(settings, true);
     this.chart.subscribeCrosshairMove(this.onCrosshair);
+    this.chart.subscribeClick(this.onClick);
     this.chart.timeScale().subscribeVisibleLogicalRangeChange(this.onRange);
     this.unsubscribe = store.subscribe(() => this.schedule());
     this.schedule();
@@ -179,6 +203,7 @@ export class ProChartController {
     this.draw.destroy();
     this.unsubscribe();
     this.chart.unsubscribeCrosshairMove(this.onCrosshair);
+    this.chart.unsubscribeClick(this.onClick);
     this.chart.timeScale().unsubscribeVisibleLogicalRangeChange(this.onRange);
     this.chart.remove();
   }
@@ -196,7 +221,8 @@ export class ProChartController {
       stackedMin: s.stackedMin,
     });
     this.overlay.setToggles(toggles(s));
-    this.liquidity.setToggles({ showHeatmap: s.showHeatmap, showBubbles: s.showBubbles });
+    this.liquidity.setToggles(liqToggles(s));
+    if (prev.bigTradeUsd !== s.bigTradeUsd) this.schedule();
     if (force || prev.showHeatmap !== s.showHeatmap) {
       // Z mapą ciepła przy prawej krawędzi stoi drabina DOM: najnowsza świeca i wskaźniki kończą się przed nią
       this.overlay.setRightInset(s.showHeatmap ? DOM_W_PX : 0);
@@ -255,6 +281,20 @@ export class ProChartController {
       const top = Math.min(0.35, Math.max(TOP_MARGIN, (this.topInset + 6) / h));
       this.main.priceScale().applyOptions({ scaleMargins: { top, bottom: TOP_MARGIN } });
     });
+  }
+
+  /** Próg dużego zlecenia (USD): ręczny z ustawień albo automatyczny z rynku. */
+  get bigTradeUsd(): number {
+    return this.settings.bigTradeUsd > 0 ? this.settings.bigTradeUsd : this.autoUsd;
+  }
+
+  /** Zaznaczenie obiektu warstwy płynności (bąbel z taśmy, seria, ściana) i podświetlenie adresu biorcy. */
+  select(p: LiquidityPick | null): void {
+    this.liquidity.setSelected(p);
+  }
+
+  highlight(address: string): void {
+    this.liquidity.setHighlight(address);
   }
 
   /** Najsilniejsze klastry likwidacji ze skanera (pusta lista = brak aktualnej mapy). */
@@ -317,7 +357,14 @@ export class ProChartController {
     this.overlay.setDaily(this.store.daily);
     this.drawLayer.setBars(next, this.store.interval.ms);
     const st = this.store;
-    this.liquidity.setData(next, st.interval.ms, st.book('near'), st.book('far'), (from, to) => st.orders.range(from, to), st.serverNow());
+    const now = st.serverNow();
+    if (now - this.autoAt >= AUTO_EVERY_MS) {
+      this.autoAt = now;
+      this.autoUsd = autoThreshold(st.orders.range(now - AUTO_WINDOW_MS, now + 1));
+    }
+    this.liqSource.near = st.book('near');
+    this.liqSource.far = st.book('far');
+    this.liquidity.setData(next, st.interval.ms, this.liqSource, now, this.bigTradeUsd);
     this.pushCvd(full);
     this.emitHover();
   }
@@ -346,6 +393,13 @@ export class ProChartController {
 
   private readonly onRange = (range: LogicalRange | null): void => {
     if (range && range.from < LOAD_OLDER_MARGIN && this.bars.length > 0) void this.store.loadOlder();
+  };
+
+  /** Kliknięcie: obiekt warstwy płynności pod kursorem albo nic (zamyka kartę). */
+  private readonly onClick = (p: MouseEventParams<Time>): void => {
+    const pick = p.point && p.paneIndex === 0 ? this.liquidity.pick(p.point.x, p.point.y) : null;
+    this.liquidity.setSelected(pick);
+    this.onPick(pick);
   };
 
   private readonly onCrosshair = (p: MouseEventParams<Time>): void => {

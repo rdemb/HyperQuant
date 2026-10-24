@@ -4,6 +4,7 @@ import { HlStream, StreamStatus, Subscription } from '../hl/stream';
 import { BookHistory, bookSigFigs, bookStep, toFrame } from '../core/book';
 import { Coverage, Span } from '../core/coverage';
 import { FootprintBar, FootprintBuilder, hlTick } from '../core/footprintBar';
+import { WallTracker } from '../core/clashes';
 import { OrderAggregator, OrderLog } from '../core/orders';
 import { Tape, TradeRow } from '../core/tape';
 import { utcDayStart } from '../core/sessions';
@@ -64,6 +65,8 @@ export class ProStore {
   readonly tape = new Tape();
   readonly coverage = new Coverage();
   readonly orders = new OrderLog();
+  /** Wchłanianie zleceń agresora przez makerów (ściany), z taśmy na żywo. */
+  readonly walls = new WallTracker();
   readonly clock = new ClockSync();
   private readonly aggregator = new OrderAggregator();
 
@@ -329,6 +332,7 @@ export class ProStore {
     const { accepted } = this.tape.insert(sorted);
     if (accepted.length === 0) return;
     this.feedLive(accepted);
+    this.walls.push(accepted);
     this.orders.add(this.aggregator.push(accepted, this.clock.toServer(recvAt)));
     this.bump();
   }
@@ -428,6 +432,7 @@ export class ProStore {
     this.tape.prune(cut);
     this.coverage.prune(cut);
     this.orders.prune(cut);
+    this.walls.prune(this.serverNow(), cut);
     this.books.forEach((b) => b.prune(cut));
     const ms = this.interval.ms;
     this.fpCache.forEach((_v, t) => {

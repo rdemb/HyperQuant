@@ -31,6 +31,14 @@ export interface ChartSettings {
   /** Warstwy na żywo: mapa ciepła arkusza i bąble zleceń agresora. */
   showHeatmap: boolean;
   showBubbles: boolean;
+  /** Serie małych zleceń i ściany makerów (z adresów w transakcjach). */
+  showClashes: boolean;
+  /** Próg dużego zlecenia (USD); 0 = automatycznie z rynku. */
+  bigTradeUsd: number;
+  /** Panel taśmy zleceń (Time & Sales), jego filtr (USD) i dźwięk dużych zleceń. */
+  showTape: boolean;
+  tapeMinUsd: number;
+  tapeSound: boolean;
 }
 
 export const DEFAULT_SETTINGS: ChartSettings = {
@@ -56,6 +64,11 @@ export const DEFAULT_SETTINGS: ChartSettings = {
   showLiq: true,
   showHeatmap: true,
   showBubbles: true,
+  showClashes: true,
+  bigTradeUsd: 0,
+  showTape: false,
+  tapeMinUsd: 10_000,
+  tapeSound: false,
 };
 
 const KEY = 'hq.charts.v1';
@@ -91,6 +104,11 @@ export function parseSettings(raw: unknown): ChartSettings {
     showLiq: bool(r.showLiq, d.showLiq),
     showHeatmap: bool(r.showHeatmap, d.showHeatmap),
     showBubbles: bool(r.showBubbles, d.showBubbles),
+    showClashes: bool(r.showClashes, d.showClashes),
+    bigTradeUsd: numIn(r.bigTradeUsd, 0, 100_000_000, d.bigTradeUsd),
+    showTape: bool(r.showTape, d.showTape),
+    tapeMinUsd: numIn(r.tapeMinUsd, 0, 100_000_000, d.tapeMinUsd),
+    tapeSound: bool(r.tapeSound, d.tapeSound),
   };
 }
 
