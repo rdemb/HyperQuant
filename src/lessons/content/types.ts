@@ -88,7 +88,8 @@ export interface LessonsContent {
     debrief: string;
     honest: string;
     practice: string;
-    openStation: (name: string) => string;
+    /** Przycisk stacji Wykresów; `name` to nazwa ze stations.ts (Wykresy mają jeszcze tylko polskie nazwy). */
+    openStation: (id: StationId, name: string) => string;
     atlasLinks: string;
     labTitle: string;
     labLoading: string;
@@ -107,6 +108,8 @@ export interface LessonsContent {
     exercisesIntro: string;
     best: string;
     pickInput: string;
+    /** Cytat w cudzysłowie właściwym dla języka. */
+    quote: (s: string) => string;
   };
   chart: ChartText & { volume: string; oiChange: string; imbalance: string };
   exercises: Record<string, ExerciseText>;

@@ -1,6 +1,7 @@
 import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { LessonSlice } from '../data';
 import type { ChartMark, ChartText, ChartZone } from './LessonChart';
+import { priceFormat } from './model';
 
 /**
  * Footprint ćwiczenia: sprzedaż × kupno agresorów na poziomach ceny w każdej świecy (jak styl Bid × Ask na Wykresach),
@@ -40,8 +41,11 @@ export function diagonalImbalances(cells: readonly [number, number, number][], s
   return { buy, sell };
 }
 
-const fmtPx = (v: number) => Math.round(v).toLocaleString('pl-PL').replace(/ /g, ' ');
-const vol = (v: number) => (v <= 0 ? '' : v < 9.95 ? v.toFixed(1).replace('.', ',') : String(Math.round(v)));
+/** Wolumen komórki: jedno miejsce po przecinku poniżej 10 BTC, z separatorem dziesiętnym języka. */
+const volFormat = (locale: string) => {
+  const dec = (1.5).toLocaleString(locale).charAt(1);
+  return (v: number) => (v <= 0 ? '' : v < 9.95 ? v.toFixed(1).replace('.', dec) : String(Math.round(v)));
+};
 // Wąski kafel (telefon): całe BTC, żeby sąsiednie liczby się nie zlewały
 const volNarrow = (v: number) => (v < 0.5 ? '' : String(Math.round(v)));
 const sig = (v: number) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(Math.round(v))}`;
@@ -73,6 +77,8 @@ export const FootprintFigure: React.FC<Props> = ({ slice, cursor, marks = [], zo
   const tfMs = (fp?.tf ?? slice.tf) * 60_000;
   const bars = fp?.bars ?? [];
   const hm = useMemo(() => new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit', timeZone: tz }), [locale, tz]);
+  const fmtPx = useMemo(() => priceFormat(locale), [locale]);
+  const vol = useMemo(() => volFormat(locale), [locale]);
   if (!fp || W === 0) return <div ref={box} className="w-full h-[420px]" />;
 
   const barMs = tfMs;

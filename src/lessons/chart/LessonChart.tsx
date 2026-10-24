@@ -1,6 +1,6 @@
 import React, { useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { LessonSlice } from '../data';
-import { type FigureLayers, dayProfile, figureModel, ibLines, niceStep, profileLevels, spreadLabels, visibleCount } from './model';
+import { type FigureLayers, dayProfile, figureModel, ibLines, niceStep, priceFormat, profileLevels, spreadLabels, visibleCount } from './model';
 
 /**
  * Rycina ćwiczenia: prawdziwy wycinek rynku w SVG w kolorach Wykresów (tokeny `of-*`). Pokazuje tylko świece
@@ -30,7 +30,8 @@ export interface ChartText {
   cvd: string;
   oi: string;
   sessions: Record<'london' | 'ny', string>;
-  liqUnit: string;
+  /** Podpis kwoty likwidacji w mln USD. */
+  liq: (musd: number) => string;
   pickHint: string;
   yourPick: string;
 }
@@ -76,7 +77,6 @@ const TONE: Record<ChartZone['tone'], string> = { buy: C.buy, sell: C.sell, acce
 const HOUR = 3_600_000;
 const TICK_STEPS = [0.5, 1, 2, 3, 4, 6].map((h) => h * HOUR);
 
-const fmtPx = (v: number) => Math.round(v).toLocaleString('pl-PL').replace(/ /g, ' ');
 const sig = (v: number) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(Math.round(v))}`;
 
 export const LessonChart: React.FC<Props> = ({ slice, layers, cursor, marks = [], zones = [], pick: answer = null, text, tz, locale, label }) => {
@@ -103,6 +103,7 @@ export const LessonChart: React.FC<Props> = ({ slice, layers, cursor, marks = []
   const k = narrow ? Math.max(1, Math.ceil(baseSlots / 60)) : 1;
   const model = useMemo(() => figureModel(slice, layers, k), [slice, layers, k]);
   const hm = useMemo(() => new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit', timeZone: tz }), [locale, tz]);
+  const fmtPx = useMemo(() => priceFormat(locale), [locale]);
 
   if (W === 0) return <div ref={box} className="w-full h-[320px]" />;
 
@@ -325,7 +326,7 @@ export const LessonChart: React.FC<Props> = ({ slice, layers, cursor, marks = []
         if (usd >= 5 && !narrow)
           out.push(
             <text key={`lqt${side}${c[0]}`} x={cx(c[0]) - r - 4} y={yy + 3} fontSize={10} fill={C.ink2} textAnchor="end">
-              {Math.round(usd)} {text.liqUnit}
+              {text.liq(Math.round(usd))}
             </text>
           );
       }
