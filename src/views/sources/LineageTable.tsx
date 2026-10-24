@@ -133,6 +133,15 @@ const GROUPS: { title: string; rows: Row[] }[] = [
           'W bieżącej godzinie konto staje się dużym graczem dopiero po przekroczeniu progu, a wtedy jego wcześniejsze wejścia z tej godziny też przechodzą do dużych. W godzinie otwarcia strony wejścia konta sprzed otwarcia (historia) i po nim (na żywo) liczą się osobno. Zapis taśmy w przeglądarce nie ma kont, więc świece tylko z niego są bez wartości („—”).',
       },
       {
+        metric: 'Stan rynku (zdanie nad wykresem, Wykresy)',
+        source: 'Te same dane co wykres: świece i taśma Hyperliquid, VWAP dnia, otwarte pozycje (activeAssetCtx), Kto handluje, bliski arkusz l2Book; Binance i Bybit tylko, gdy wykres już je pobiera',
+        method:
+          'Stałe reguły na ostatnich 10 świecach wykresu, przeliczane co 5 s: cena względem VWAP dnia w σ (do 0,5σ „przy”, do 2σ „nad/pod”, dalej „daleko”); kierunek CVD z delty okna (poniżej 5% wolumenu z taśmy — bez kierunku) i czas od początku ciągu świec z deltą w tę stronę; Binance i Bybit — znak ich delty w tych samych świecach; zmiana otwartych pozycji od początku okna (poniżej 0,1% — bez zmiany); strona dużych graczy i reszty z delty × cena / wartość wejść grupy (poniżej 10% — bez przewagi); arkusz — udział bidów w bliskim arkuszu (od 60% po jednej stronie — przewaga). „Skąd?” pokazuje liczby każdego faktu',
+        kinds: ['LIVE'],
+        refresh: 'co 5 s',
+        caveat: 'Opis bieżącego stanu, nie sygnał ani prognoza. Fakt bez danych (np. przed nagraniem taśmy) jest pominięty, a nie zgadywany.',
+      },
+      {
         metric: 'Strefy nierównowagi i niedokończone aukcje (Wykresy)',
         source: 'Taśma WS trades nagrywana od otwarcia widoku',
         method:
