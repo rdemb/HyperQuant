@@ -8,7 +8,7 @@
 
 Open-source, installable (PWA) day-trading desk for BTC perpetuals on Hyperliquid. It combines live order-flow charts on TradingView Lightweight Charts™ (footprint, delta and CVD, order-book heatmap, aggressor bubbles, TPO, drawing tools), a Plan Analyzer that scores *your* trade plan (probability of target before stop, slippage from the live book, liquidation buffer, EV after fees) instead of giving buy/sell signals, cross-market context from Hyperliquid's public API, an official US macro calendar, a verifiable forecast ledger, a blog with BTC analyses written before the fact, and a data-lineage page that tells you where every number comes from. Real data only; anything modelled is labelled.
 
-The interface and the blog are in Polish; where it helps you find something, the Polish UI label is given in *italics* next to the English name.
+The blog is written in Polish. The interface is in Polish for now, with an English version in progress; where it helps you find something, the Polish UI label is given in *italics* next to the English name.
 
 **Live:** https://rdemb.github.io/HyperQuant/ · install on a phone: Share → Add to Home Screen (iOS) or Install app (Android/Chrome).
 
