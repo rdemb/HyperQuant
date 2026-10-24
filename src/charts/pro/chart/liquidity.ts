@@ -13,7 +13,7 @@ import type {
 import { fmtVol } from '../../orderflow/footprint';
 import { buildHeatLut } from '../../orderflow/heatColor';
 import { fmtCompact } from '../../../ui/format';
-import { type BookFrame, type BookHistory, type LargeLot, largeLots } from '../core/book';
+import { type BookFrame, type BookHistory, type LargeLot, largeLots, lotThreshold } from '../core/book';
 import { Burst, DEFAULT_THRESHOLD_USD, OrderClass, Wall, bursts, classify } from '../core/clashes';
 import type { AggressorOrder } from '../core/orders';
 import type { ProBar } from '../store/proStore';
@@ -64,10 +64,12 @@ const BUBBLE_LABEL_R = 13;
 /** Zasięg kliknięcia poza obrysem bąbla i od belki ściany (px). */
 const PICK_PX = 3;
 /**
- * Duże zlecenie w arkuszu: średnie zlecenie poziomu od LOT_MULT × progu dużego zlecenia agresora (zlecenia
- * oczekujące są zwykle większe od rynkowych); w widoku najwyżej LOT_MAX największych.
+ * Duże zlecenie w arkuszu: średnie zlecenie poziomu w 1% największych z ostatnich LOT_WINDOW_MS bliskiego arkusza
+ * (próg względny dla każdego rynku), nie niżej niż LOT_FLOOR × próg dużego zlecenia agresora (cienki arkusz nie
+ * zapala się w całości); w widoku najwyżej LOT_MAX największych.
  */
-export const LOT_MULT = 3;
+export const LOT_FLOOR = 0.25;
+const LOT_WINDOW_MS = 30 * 60_000;
 const LOT_MAX = 40;
 /** Podpis od takiej długości linii (px) — krótkie, świeże linie przy prawej krawędzi nie zasłaniają poziomów. */
 const LOT_LABEL_MIN_PX = 30;
@@ -448,9 +450,12 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
   private sceneLots(g: Geometry): LotMark[] {
     const near = this.src.near;
     if (!near) return [];
-    const minUsd = this.threshold * LOT_MULT;
-    const key = `${near.step}|${near.version}|${g.tFrom}|${minUsd}`;
-    if (this.lotCache.key !== key) this.lotCache = { key, lots: largeLots(near.range(g.tFrom, g.tTo), minUsd) };
+    const floor = this.threshold * LOT_FLOOR;
+    const key = `${near.step}|${near.version}|${g.tFrom}|${floor}`;
+    if (this.lotCache.key !== key) {
+      const minUsd = lotThreshold(near.range(this.now - LOT_WINDOW_MS, this.now), floor);
+      this.lotCache = { key, lots: largeLots(near.range(g.tFrom, g.tTo), minUsd) };
+    }
     const W = this.chart?.paneSize(0).width ?? 0;
     const out: LotMark[] = [];
     for (const l of this.lotCache.lots) {

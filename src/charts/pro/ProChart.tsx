@@ -12,7 +12,7 @@ import { tpoInterval } from './core/tpo';
 import { type PaneKey, ProChartController } from './chart/controller';
 import { PickCard, TapePanel, compact } from './chart/FlowPanels';
 import { HoverSignal, Legend } from './chart/Legend';
-import { LOT_MULT, type LiquidityPick } from './chart/liquidity';
+import { LOT_FLOOR, type LiquidityPick } from './chart/liquidity';
 import { brandedScreenshot, downloadCanvas } from './chart/screenshot';
 import { MAX_ALERTS, PriceAlert, alertBook, askNotifications, newAlert, notifyAlert, parsePriceInput, primeAlertSound, reached } from './chart/alerts';
 import { fmtPx, priceDigits } from './chart/layout';
@@ -810,7 +810,7 @@ const IndicatorsMenu: React.FC<{ settings: ChartSettings; intervalMs: number; li
     {
       key: 'showLots',
       label: 'Duże zlecenia w arkuszu',
-      hint: `Poziom arkusza, na którym średnie zlecenie ma co najmniej ${compact(bigUsd * LOT_MULT)} USD (${LOT_MULT} × próg dużego zlecenia): linia przez czas, gdy jest w arkuszu (przygaszona po zniknięciu), podpis „liczba zleceń × średnia wartość” — od otwarcia strony`,
+      hint: `Poziom arkusza, na którym średnie zlecenie jest w 1% największych z ostatnich 30 min tego rynku (co najmniej ${compact(bigUsd * LOT_FLOOR)} USD): linia przez czas, gdy jest w arkuszu (przygaszona po zniknięciu), podpis „liczba zleceń × średnia wartość” — od otwarcia strony`,
       swatch: 'bg-gradient-to-r from-of-buy-ink to-of-sell-ink',
     },
     {

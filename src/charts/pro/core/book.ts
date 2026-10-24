@@ -63,6 +63,21 @@ export interface LargeLot {
   orders: number;
 }
 
+/**
+ * Próg dużego zlecenia w arkuszu z samego arkusza: kwantyl `q` średniego zlecenia poziomu (wartość / liczba zleceń)
+ * ze wszystkich poziomów migawek, nie niżej niż `floorUsd`. Stały próg w USD nie przenosi się między rynkami
+ * (pomiar 24.10: mediana średniego zlecenia BTC i ETH ok. 49 tys. USD, HYPE ok. 6 tys.). Bez migawek — `floorUsd`.
+ */
+export function lotThreshold(frames: readonly BookFrame[], floorUsd: number, q = 0.99): number {
+  const xs: number[] = [];
+  for (const f of frames) {
+    for (let i = 0; i < f.px.length; i++) if (f.n[i] >= 1) xs.push((f.sz[i] * f.px[i]) / f.n[i]);
+  }
+  if (xs.length === 0) return floorUsd;
+  xs.sort((a, b) => a - b);
+  return Math.max(floorUsd, xs[Math.min(xs.length - 1, Math.floor(q * xs.length))]);
+}
+
 /** Duże zlecenia z kolejnych migawek jednej agregacji (rosnąco po czasie), w kolejności pojawienia się. */
 export function largeLots(frames: readonly BookFrame[], minUsd: number): LargeLot[] {
   const live = new Map<string, LargeLot>();

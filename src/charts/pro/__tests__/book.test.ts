@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type BookFrame, largeLots } from '../core/book';
+import { type BookFrame, largeLots, lotThreshold } from '../core/book';
 
 /** Migawka: poziomy [cena, wielkość, liczba zleceń], najpierw bidy. */
 const frame = (t: number, bids: [number, number, number][], asks: [number, number, number][]): BookFrame => {
@@ -37,5 +37,21 @@ describe('largeLots', () => {
 
   it('pomija poziomy bez liczby zleceń', () => {
     expect(largeLots([frame(0, [[100, 10, Number.NaN]], [])], 1)).toEqual([]);
+  });
+});
+
+describe('lotThreshold', () => {
+  it('kwantyl średniego zlecenia poziomu, nie niżej niż próg minimalny', () => {
+    // 100 poziomów: średnie zlecenie 1…100 USD (cena 1, wielkość k, 1 zlecenie)
+    const levels: [number, number, number][] = Array.from({ length: 100 }, (_, k) => [1, k + 1, 1]);
+    const f = frame(0, levels.slice(0, 50), levels.slice(50));
+    expect(lotThreshold([f], 10)).toBe(100);
+    expect(lotThreshold([f], 10, 0.5)).toBe(51);
+    expect(lotThreshold([f], 80, 0.5)).toBe(80);
+  });
+
+  it('bez migawek albo bez liczby zleceń — próg minimalny', () => {
+    expect(lotThreshold([], 500)).toBe(500);
+    expect(lotThreshold([frame(0, [[100, 1, Number.NaN]], [])], 500)).toBe(500);
   });
 });
