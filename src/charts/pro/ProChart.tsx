@@ -11,6 +11,7 @@ import { indicatorScope, liqLevels } from './core/indicators';
 import type { AggressorOrder } from './core/orders';
 import type { ResetMode } from './core/sessions';
 import { tpoInterval } from './core/tpo';
+import { VENUE_GROUPS } from './core/stats';
 import { type PaneKey, ProChartController, type ScaleState } from './chart/controller';
 import { DomLadder, PickCard, TapePanel, compact } from './chart/FlowPanels';
 import { HoverSignal, Legend } from './chart/Legend';
@@ -22,6 +23,7 @@ import { ChartLayout, ChartSettings, NARROW_QUERY, PHONE_PANES, PhonePane, hashF
 import { STATIONS, Station, StationId, stationKey, stationPanel } from './chart/stations';
 import { BUILT_IN_TEMPLATES, ChartTemplate, applyTemplate, loadTemplates, saveAs, saveTemplates } from './chart/templates';
 import { NumbersCard, StatGroupPicker } from './chart/NumbersCard';
+import { MarketStateBar } from './chart/MarketStateBar';
 import type { ChartView } from './chart/footprintSeries';
 import type { FootprintStyle } from './chart/layout';
 import { DrawHint, DrawStyleBar, DrawToolbar } from './draw/DrawToolbar';
@@ -394,6 +396,9 @@ export const ProChart: React.FC<{
 
   const iv = intervalById(settings.interval);
   const twoRow = layout > 1;
+  // Wykres pobiera dane Binance i Bybit (panele giełd albo ich grupa w tablicy) — tylko wtedy Stan rynku je porównuje
+  const shown = shownSettings(settings, narrow, layout);
+  const venueOn = shown.showVenueCvd || shown.showVenueOi || (shown.showStats && shown.statGroups.some((g) => VENUE_GROUPS.includes(g)));
   const tapeSince = store.coverage.first();
   const bigUsd = ctrlRef.current?.bigTradeUsd ?? DEFAULT_THRESHOLD_USD;
   const tick = hlTick(store.lastPrice());
@@ -547,6 +552,20 @@ export const ProChart: React.FC<{
         </div>
       )}
 
+      {/* Stan rynku: zdanie z faktów nad wykresem (w układzie 2 × 2 za mało miejsca) */}
+      {settings.showState && layout !== 4 && (
+        <MarketStateBar
+          store={store}
+          series={series}
+          venueOn={venueOn}
+          narrow={narrow}
+          onClose={() => {
+            update({ showState: false });
+            setToast('Ukryto Stan rynku — włączysz go w Ustawieniach wykresu → Panele');
+          }}
+        />
+      )}
+
       {/* Wykres z paskiem rysowania po lewej i taśmą zleceń po prawej (na telefonie taśma, DOM i liczby to karty) */}
       <div className="relative flex flex-1 min-h-0">
         <DrawToolbar tools={tools} className={drawOpen ? 'flex' : 'hidden'} />
@@ -696,6 +715,7 @@ const PhonePanes: React.FC<{ s: ChartSettings; onChange: (p: Partial<ChartSettin
   const pane = PHONE_PANES.find((k) => s[k]) ?? 'none';
   return (
     <Group title="Panele">
+      <Check label="Stan rynku (zdanie nad wykresem)" checked={s.showState} onChange={(v) => onChange({ showState: v })} />
       <Check label="Wolumen (na dole wykresu ceny)" checked={s.showVolume} onChange={(v) => onChange({ showVolume: v })} />
       <label className="flex flex-col items-start gap-1.5 text-ink-2">
         Panel pod wykresem
@@ -963,6 +983,7 @@ const SettingsMenu: React.FC<{
       <PhonePanes s={s} onChange={onChange} />
     ) : (
       <Group title="Panele">
+        <Check label="Stan rynku (zdanie nad wykresem)" checked={s.showState} onChange={(v) => onChange({ showState: v })} />
         <Check label="Wolumen" checked={s.showVolume} onChange={(v) => onChange({ showVolume: v })} />
         <Check label="Delta (świece delty)" checked={s.showDelta} onChange={(v) => onChange({ showDelta: v })} />
         <Check label="CVD" checked={s.showCvd} onChange={(v) => onChange({ showCvd: v })} />

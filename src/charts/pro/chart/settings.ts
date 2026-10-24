@@ -31,6 +31,8 @@ export interface ChartSettings {
   /** Tablica liczb pod wykresem i jej grupy wierszy (Binance i Bybit — połączenia przeglądarki czytelnika). */
   showStats: boolean;
   statGroups: StatGroup[];
+  /** Pasek „Stan rynku” nad wykresem: zdanie z faktów i „skąd?”. */
+  showState: boolean;
   /** Wskaźniki na wykresie ceny. */
   showVwap: boolean;
   showVwapBands: boolean;
@@ -89,6 +91,7 @@ export const DEFAULT_SETTINGS: ChartSettings = {
   showVenueOi: false,
   showStats: false,
   statGroups: ['hl', 'tape'],
+  showState: true,
   showVwap: true,
   showVwapBands: false,
   showSessionVwap: false,
@@ -169,6 +172,7 @@ export function parseSettings(raw: unknown, d: ChartSettings = DEFAULT_SETTINGS)
     showVenueOi: bool(r.showVenueOi, d.showVenueOi),
     showStats: bool(r.showStats, d.showStats),
     statGroups: groups(r.statGroups, d.statGroups),
+    showState: bool(r.showState, d.showState),
     showVwap: bool(r.showVwap, d.showVwap),
     showVwapBands: bool(r.showVwapBands, d.showVwapBands),
     showSessionVwap: bool(r.showSessionVwap, d.showSessionVwap),
