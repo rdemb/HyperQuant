@@ -27,6 +27,9 @@ export const PRO = {
 
 export { MONO, rgba };
 
+/** Odstęp najnowszej świecy od osi ceny (px), ten sam przy każdym zbliżeniu. */
+export const RIGHT_GAP_PX = 48;
+
 const unix = (time: Time) => (time as number) * 1000;
 
 /** Etykiety osi czasu (czas lokalny przeglądarki). */
@@ -81,7 +84,7 @@ export function chartOptions(): DeepPartial<ChartOptions> {
       borderColor: C.grid,
       timeVisible: true,
       secondsVisible: false,
-      rightOffset: 4,
+      rightOffsetPixels: RIGHT_GAP_PX,
       barSpacing: 9,
       minBarSpacing: 0.6,
       tickMarkFormatter,

@@ -84,13 +84,15 @@ export class ProStore {
   private liveFp: FootprintBar | null = null;
   private liveFpTrades = -1;
   private timers: ReturnType<typeof setInterval>[] = [];
+  /** Subskrypcja transakcji potwierdzona, czekamy na pierwszą wiadomość (migawkę ostatnich transakcji). */
+  private tradesPending = false;
 
   constructor(stream?: HlStream) {
     this.stream = stream ?? new HlStream();
     this.stream.listen({
       onMessage: (ch, data, recvAt) => this.onMessage(ch, data, recvAt),
       onSubscribed: (sub, recvAt) => {
-        if (sub.type === 'trades') this.coverage.open(this.clock.toServer(recvAt));
+        if (sub.type === 'trades') this.tradesPending = true;
         // Po ponownym połączeniu dociągamy świece, które mogły przyjść w trakcie przerwy
         if (sub.type === 'candle' && this.candles.length > 0) void this.refreshRecent();
       },
@@ -234,6 +236,12 @@ export class ProStore {
       let newest = 0;
       for (const f of fills) if (f.time > newest) newest = f.time;
       this.clock.observe(newest, recvAt);
+      if (this.tradesPending) {
+        // Pierwsza wiadomość po subskrypcji to migawka ostatnich transakcji, więc od najnowszej z nich taśma
+        // jest kompletna — początek nagrania w zegarze giełdy, niezależnie od zegara przeglądarki
+        this.tradesPending = false;
+        this.coverage.open(newest);
+      }
       this.ingestFills(fills, recvAt);
     } else if (channel === 'candle') {
       const c = parseCandle(data);

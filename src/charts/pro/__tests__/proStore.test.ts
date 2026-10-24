@@ -97,6 +97,7 @@ describe('ProStore', () => {
 
   it('świeca w całości po starcie nagrania jest pełna', async () => {
     const ws = await boot();
+    ws.msg({ channel: 'trades', data: [trade(now - 1000, 81025, 0.1, 'B', 1)] }); // migawka po subskrypcji
     const next = T0 + 3 * M5;
     now = next + 60_000;
     vi.setSystemTime(now);
@@ -156,6 +157,7 @@ describe('ProStore', () => {
 
   it('zerwanie połączenia domyka pokrycie — świeca z luką nie jest pełna', async () => {
     const ws = await boot();
+    ws.msg({ channel: 'trades', data: [trade(now - 1000, 81025, 0.1, 'B', 1)] });
     const next = T0 + 3 * M5;
     now = next + 10_000;
     vi.setSystemTime(now);
@@ -170,5 +172,29 @@ describe('ProStore', () => {
     ws2.msg({ channel: 'candle', data: candle(next, 81030, 81031, 1) });
     expect(store.coverage.covers(next, next + 30_000)).toBe(false);
     expect(store.bars().at(-1)!.complete).toBe(false);
+  });
+
+  it('początek nagrania z migawki po subskrypcji, w zegarze giełdy (zegar przeglądarki spóźniony o 2 min)', async () => {
+    const ws = await boot();
+    const server = now + 120_000;
+    ws.msg({ channel: 'trades', data: [trade(server - 9000, 81020, 0.3, 'A', 1), trade(server - 2000, 81025, 0.5, 'B', 2)] });
+    expect(store.coverage.covers(now, server - 2000)).toBe(false);
+    expect(store.coverage.covers(server - 2000, server)).toBe(true);
+  });
+
+  it('migawka bez transakcji nowszych niż zerwanie połączenia zachowuje ciągłość nagrania', async () => {
+    const ws = await boot();
+    ws.msg({ channel: 'trades', data: [trade(now - 5000, 81025, 0.1, 'B', 1)] });
+    ws.msg({ channel: 'trades', data: [trade(now - 1000, 81026, 0.2, 'B', 2)] });
+    ws.close();
+    now += 5000;
+    vi.setSystemTime(now);
+    vi.advanceTimersByTime(2000);
+    const ws2 = FakeWs.last!;
+    ws2.open();
+    ws2.msg({ channel: 'subscriptionResponse', data: { method: 'subscribe', subscription: { type: 'trades', coin: 'BTC' } } });
+    // Ta sama migawka co przed zerwaniem: w przerwie nie było transakcji, więc nic nie przepadło
+    ws2.msg({ channel: 'trades', data: [trade(now - 10_000, 81025, 0.1, 'B', 1), trade(now - 6000, 81026, 0.2, 'B', 2)] });
+    expect(store.coverage.covers(now - 10_000, now)).toBe(true);
   });
 });

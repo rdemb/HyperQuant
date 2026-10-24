@@ -59,7 +59,7 @@ export const Legend: React.FC<{ signal: HoverSignal; intervalMs: number; interva
   const fpVol = fp ? fp.buyVol + fp.sellVol : 0;
 
   return (
-    <div className="absolute left-2 top-2 z-10 pointer-events-none max-w-[calc(100%-5rem)] rounded-md bg-surface-1/80 px-2 py-1 font-mono tabular-nums text-[11px] leading-[1.55] text-ink-2">
+    <div className="absolute left-2 top-2 z-10 pointer-events-none max-w-[calc(100%-5rem)] rounded-md bg-surface-1/95 sm:bg-surface-1/80 px-2 py-1 font-mono tabular-nums text-[11px] leading-[1.55] text-ink-2">
       <div className="flex flex-wrap items-baseline gap-x-2">
         <span className="text-ink-1 font-semibold font-sans">BTC-PERP</span>
         <span className="text-ink-3">

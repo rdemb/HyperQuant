@@ -22,7 +22,7 @@ import type { ProBar, ProStore } from '../store/proStore';
 import { FootprintOptions, FootprintPoint, FootprintSeries } from './footprintSeries';
 import { LegendPart, PaneLegend } from './paneLegend';
 import type { ChartSettings } from './settings';
-import { PRO, chartOptions } from './theme';
+import { PRO, RIGHT_GAP_PX, chartOptions } from './theme';
 
 /**
  * Sterownik wykresu Pro (bez Reacta): tworzy wykres Lightweight Charts z serią footprintu, wolumenem
@@ -173,16 +173,16 @@ export class ProChartController {
     if (s.showVolume) {
       this.volume = this.chart.addSeries(HistogramSeries, { priceFormat: VOLUME_FORMAT, priceLineVisible: false, lastValueVisible: false }, pane++);
       this.volume.priceScale().applyOptions({ scaleMargins: { top: 0.12, bottom: 0 } });
-      this.volume.getPane().attachPrimitive(this.volumeLegend);
+      this.volume.attachPrimitive(this.volumeLegend);
     }
     if (s.showDelta) {
       this.delta = this.chart.addSeries(CandlestickSeries, FLOW_CANDLE, pane++);
       this.delta.createPriceLine({ price: 0, color: PRO.divider, lineWidth: 1, lineStyle: LineStyle.Solid, axisLabelVisible: false, title: '' });
-      this.delta.getPane().attachPrimitive(this.deltaLegend);
+      this.delta.attachPrimitive(this.deltaLegend);
     }
     if (s.showCvd) {
       this.cvd = this.chart.addSeries(CandlestickSeries, FLOW_CANDLE, pane++);
-      this.cvd.getPane().attachPrimitive(this.cvdLegend);
+      this.cvd.attachPrimitive(this.cvdLegend);
     }
     const panes = this.chart.panes();
     panes[0]?.setStretchFactor(1);
@@ -193,15 +193,17 @@ export class ProChartController {
     this.schedule();
   }
 
-  /** Przewija do bieżącej świecy (z zachowaniem zbliżenia). */
+  /** Przewija do bieżącej świecy (z zachowaniem zbliżenia); odstęp od osi ceny stały w pikselach. */
   scrollToNow(): void {
-    this.chart.timeScale().scrollToRealTime();
+    const ts = this.chart.timeScale();
+    // Bez animacji: animowane przewinięcie biblioteki kończy się klatkę przed celem (ostatnia świeca za krawędzią)
+    ts.scrollToPosition(RIGHT_GAP_PX / ts.options().barSpacing, false);
   }
 
   /** Dopasowuje zakres ceny do widocznych świec (po ręcznym przeciągnięciu osi). */
   resetScales(): void {
     this.chart.priceScale('right').applyOptions({ autoScale: true });
-    this.chart.timeScale().scrollToRealTime();
+    this.scrollToNow();
   }
 
   // ───────────────────────── dane ─────────────────────────

@@ -1,4 +1,4 @@
-import type { IPanePrimitive, IPrimitivePaneRenderer, IPrimitivePaneView, PaneAttachedParameter, Time } from 'lightweight-charts';
+import type { IPrimitivePaneRenderer, IPrimitivePaneView, ISeriesPrimitive, SeriesAttachedParameter, Time } from 'lightweight-charts';
 import { MONO, PRO } from './theme';
 
 /** Fragment opisu panelu: tekst i kolor. */
@@ -7,8 +7,11 @@ export interface LegendPart {
   color: string;
 }
 
-/** Opis panelu (np. „CVD · sesja +1.2K”) rysowany w lewym górnym rogu — zmienia rozmiar razem z panelem. */
-export class PaneLegend implements IPanePrimitive<Time> {
+/**
+ * Opis panelu (np. „CVD · sesja +1.2K”) rysowany w lewym górnym rogu — zmienia rozmiar razem z panelem.
+ * Dołączany do serii panelu: warstwa „top” prymitywu serii leży nad świecami i słupkami.
+ */
+export class PaneLegend implements ISeriesPrimitive<Time> {
   private parts: LegendPart[] = [];
   private requestUpdate: (() => void) | null = null;
   private readonly view: IPrimitivePaneView;
@@ -37,7 +40,7 @@ export class PaneLegend implements IPanePrimitive<Time> {
     this.view = { zOrder: () => 'top', renderer: () => renderer };
   }
 
-  attached(p: PaneAttachedParameter<Time>): void {
+  attached(p: SeriesAttachedParameter<Time>): void {
     this.requestUpdate = p.requestUpdate;
   }
 
