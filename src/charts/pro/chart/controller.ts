@@ -141,6 +141,11 @@ const FLOW_CANDLE = {
   priceFormat: FLOW_FORMAT,
 } as const;
 
+/** Wykresy na stronie (układ kilku paneli): chwila pod kursorem jednego pokazuje krzyż na pozostałych. */
+const crossPeers = new Set<ProChartController>();
+/** W trakcie ustawiania krzyża na innych panelach (ich zdarzenia krzyża nie są ruchem użytkownika). */
+let crossSyncing = false;
+
 export class ProChartController {
   readonly chart: IChartApi;
   readonly fpView = new FootprintSeries();
@@ -177,6 +182,8 @@ export class ProChartController {
   private topInset = 0;
   private hoverTime: number | null = null;
   private hoverPrice: number | null = null;
+  /** Kursor użytkownika jest nad tym wykresem (nie krzyż z innego panelu). */
+  private userHover = false;
   private autoUsd = DEFAULT_THRESHOLD_USD;
   private autoAt = 0;
   private readonly liqSource: LiquiditySource;
@@ -229,6 +236,7 @@ export class ProChartController {
     this.chart.subscribeClick(this.onClick);
     this.chart.timeScale().subscribeVisibleLogicalRangeChange(this.onRange);
     this.unsubscribe = store.subscribe(() => this.schedule());
+    crossPeers.add(this);
     this.schedule();
   }
 
@@ -236,6 +244,7 @@ export class ProChartController {
     cancelAnimationFrame(this.frame);
     cancelAnimationFrame(this.marginFrame);
     this.draw.destroy();
+    crossPeers.delete(this);
     this.unsubscribe();
     this.chart.unsubscribeCrosshairMove(this.onCrosshair);
     this.chart.unsubscribeClick(this.onClick);
@@ -534,7 +543,30 @@ export class ProChartController {
     this.hoverTime = p.time !== undefined && p.point ? (p.time as number) * 1000 : null;
     this.hoverPrice = p.point && p.paneIndex === 0 ? this.main.coordinateToPrice(p.point.y) : null;
     this.emitHover();
+    // Krzyż ustawiony z innego panelu nie jest ruchem użytkownika — nie rozsyłamy go dalej
+    if (crossSyncing) return;
+    if (p.sourceEvent && p.point) this.userHover = true;
+    else if (!p.point && this.userHover) this.userHover = false;
+    else return;
+    crossSyncing = true;
+    try {
+      for (const peer of crossPeers) if (peer !== this) peer.showCross(this.userHover ? this.hoverTime : null, this.store.coin, this.hoverPrice);
+    } finally {
+      crossSyncing = false;
+    }
   };
+
+  /** Krzyż z innego panelu: świeca tego interwału obejmująca chwilę `t`; cena tylko z tego samego rynku. */
+  private showCross(t: number | null, coin: string, price: number | null): void {
+    const ms = this.series.interval.ms;
+    const i = t === null ? -1 : indexOfTime(this.bars, Math.floor(t / ms) * ms);
+    if (i < 0) {
+      this.chart.clearCrosshairPosition();
+      return;
+    }
+    const bar = this.bars[i];
+    this.chart.setCrosshairPosition(coin === this.store.coin && price !== null ? price : bar.candle.c, sec(bar.t), this.main);
+  }
 
   private emitHover(): void {
     const bars = this.bars;
