@@ -408,7 +408,7 @@ function tile(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h:
 
 /**
  * Komórka z liczbami (wyśrodkowanymi): sprzedaż | kupno na kaflach cieniowanych wolumenem strony,
- * delta wiersza (dodatnia niebieska, ujemna czerwona) albo wolumen wiersza jako pasek od lewej.
+ * delta wiersza (dodatnia w kolorze kupna, ujemna w kolorze sprzedaży) albo wolumen wiersza jako pasek od lewej.
  */
 function drawCellRow(
   ctx: CanvasRenderingContext2D,
@@ -437,7 +437,7 @@ function drawCellRow(
     const lb = lvl(buy / rows.maxSide);
     tile(ctx, x, y, mid - x, h, BID_TILE[ls], hr, vr);
     tile(ctx, mid, y, x + w - mid, h, ASK_TILE[lb], hr, vr);
-    // Nierównowaga: magenta po stronie sprzedaży, cyjan po stronie kupna, pogrubione
+    // Nierównowaga: rozjaśniony kolor strony, pogrubione
     drawNumber(ctx, fmtCell(sell), (x + mid) / 2, ym, sellImb ? PRO.imbSell : BID_INK[ls], sellImb, sellImb, fonts);
     drawNumber(ctx, fmtCell(buy), (mid + x + w) / 2, ym, buyImb ? PRO.imbBuy : ASK_INK[lb], buyImb, buyImb, fonts);
     return;

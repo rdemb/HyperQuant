@@ -31,20 +31,20 @@
   --color-series-8: #e66767;
 
   /* Wykres orderflow (zakładka Wykresy) — te same wartości w src/charts/pro/chart/theme.ts */
-  --color-of-bg: #151521;
-  --color-of-buy: #10ff21;
-  --color-of-sell: #8a2be2;
-  --color-of-buy-ink: #3dff4f;
-  --color-of-sell-ink: #a66bff;
-  --color-of-imb-buy: #00ffff;
-  --color-of-imb-sell: #ff00ff;
-  --color-of-poc: #ffff20;
-  --color-of-vol: #d08a10;
-  --color-of-vwap: #d0d3d9;
-  --color-of-svwap: #14c8c8;
-  --color-of-heat-1: #017979;
-  --color-of-heat-2: #f5e611;
-  --color-of-heat-3: #f5290d;
+  --color-of-bg: #0b1019;
+  --color-of-buy: #19a88e;
+  --color-of-sell: #d9582e;
+  --color-of-buy-ink: #35c9a8;
+  --color-of-sell-ink: #f07c55;
+  --color-of-imb-buy: #5cf2cf;
+  --color-of-imb-sell: #ff9a6a;
+  --color-of-poc: #e0a045;
+  --color-of-vol: #5b7aa6;
+  --color-of-vwap: #e6ebf2;
+  --color-of-svwap: #9085e9;
+  --color-of-heat-1: #1b4677;
+  --color-of-heat-2: #5fd3e6;
+  --color-of-heat-3: #ffffff;
 
   --font-display: 'Outfit', sans-serif;
   --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;

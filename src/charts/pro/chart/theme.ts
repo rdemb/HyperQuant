@@ -9,77 +9,80 @@ import { fmtHm, fmtHms } from '../core/time';
 const MONTHS = ['sty', 'lut', 'mar', 'kwi', 'maj', 'cze', 'lip', 'sie', 'wrz', 'paź', 'lis', 'gru'];
 
 /**
- * Kolory płótna wykresu Pro w stylu terminali orderflow: bardzo ciemne granatowo-fioletowe tło bez siatki,
- * kupno w neonowej zieleni, sprzedaż w fiolecie, nierównowagi w cyjanie i magencie, żółta ramka POC,
- * pomarańczowy wolumen. Te same wartości są tokenami `of-*` w src/index.css (legenda i menu).
+ * Kolory płótna wykresu Pro, paleta HyperQuant „Desk”: morska zieleń kupna i miedź sprzedaży na granatowym tle Desku.
+ * Te same wartości są tokenami `of-*` w src/index.css (legenda i menu).
  * Gotowe napisy z kryciem — bez budowania w pętli rysowania.
  */
 export const PRO = {
   ...C,
-  bg: '#151521',
+  bg: '#0b1019',
   cross: rgba(C.ink2, 0.5),
-  axisText: '#d8dadc',
-  buy: '#10ff21',
-  sell: '#8a2be2',
-  buyInk: '#3dff4f',
-  sellInk: '#a66bff',
-  buyWick: '#10ff21',
-  sellWick: '#8a2be2',
-  volBuy: rgba('#10ff21', 0.42),
-  volSell: rgba('#8a2be2', 0.62),
-  priceLine: '#2f8088',
-  vwap: '#d0d3d9',
-  svwap: '#14c8c8',
+  axisText: '#c3ccd8',
+  // Świece: korpusy i knoty
+  buy: '#19a88e',
+  sell: '#d9582e',
+  buyWick: '#19a88e',
+  sellWick: '#d9582e',
+  // Kierunek przepływu w liczbach, opisach, likwidacjach i wielorybach
+  buyInk: '#35c9a8',
+  sellInk: '#f07c55',
+  volBuy: rgba('#19a88e', 0.5),
+  volSell: rgba('#d9582e', 0.6),
+  priceLine: '#3fc6dd',
+  vwap: '#e6ebf2',
+  svwap: '#9085e9',
   va: rgba(C.ink2, 0.55),
   warn: '#fab219',
   partial: rgba('#fab219', 0.85),
-  // Footprint: kafle komórek od szarości (mały wolumen) do nasyconego koloru strony, ciemne liczby
-  fpNeutral: '#a0a0a0',
-  fpBidRamp: ['#a0a0a0', '#a392b5', '#8d6fad', '#7a48aa', '#6725a3'],
-  fpAskRamp: ['#a0a0a0', '#8ab88b', '#61b861', '#33b934', '#11b920'],
-  // Delta wiersza: dodatnia niebieska, ujemna czerwona
-  fpDeltaPosRamp: ['#a0a0a0', '#8a8bb9', '#6161b9', '#4a4ab8', '#3333b8'],
-  fpDeltaNegRamp: ['#a0a0a0', '#b88a8a', '#b96161', '#b94a4b', '#b93234'],
-  fpText: '#111326',
-  fpTextLight: '#f2f3f5',
-  fpTextProfile: '#d1dee5',
-  fpRowLine: '#434343',
-  imbBuy: '#00ffff',
-  imbSell: '#ff00ff',
-  pocFrame: '#ffff20',
-  volBar: '#d08a10',
-  deltaPosBar: '#159a10',
-  deltaNegBar: '#4b1d80',
-  // Profile wolumenu: obszar wartości szary, reszta przytłumiona szaromorska, POC pomarańczowy, nagi POC szary
-  profileVa: '#555557',
-  profileOut: '#3c6265',
-  profilePoc: '#c58109',
-  nakedPoc: '#5c6166',
-  // Drabina DOM: aski fioletowe nad ceną, bidy zielone pod nią
-  domBid: '#06af23',
-  domAsk: '#8a2be2',
-  domText: '#e4e6ea',
+  // Footprint: kafle komórek od grafitu (mały wolumen) do nasyconego koloru strony; delta wiersza w tych samych kolorach
+  fpNeutral: '#2a3446',
+  fpBidRamp: ['#2a3446', '#4c3532', '#743d2e', '#a6492f', '#d9582e'],
+  fpAskRamp: ['#2a3446', '#1f4b52', '#1a6d63', '#19907d', '#1fb597'],
+  fpDeltaPosRamp: ['#2a3446', '#1f4b52', '#1a6d63', '#19907d', '#1fb597'],
+  fpDeltaNegRamp: ['#2a3446', '#4c3532', '#743d2e', '#a6492f', '#d9582e'],
+  fpText: '#0b1019',
+  fpTextLight: '#eef2f7',
+  fpTextProfile: '#c9d4df',
+  fpRowLine: '#1b2533',
+  // Nierównowagi: rozjaśnione kolory stron
+  imbBuy: '#5cf2cf',
+  imbSell: '#ff9a6a',
+  pocFrame: '#e0a045',
+  volBar: '#5b7aa6',
+  deltaPosBar: '#19a88e',
+  deltaNegBar: '#d9582e',
+  // Profile wolumenu: obszar wartości grafitowy, reszta przygaszona, POC bursztynowy, nagi POC szary
+  profileVa: '#34425a',
+  profileOut: '#1f2b3d',
+  profilePoc: '#e0a045',
+  nakedPoc: '#7a889c',
+  // Drabina DOM: aski nad ceną w kolorze sprzedaży, bidy pod nią w kolorze kupna
+  domBid: '#19a88e',
+  domAsk: '#d9582e',
+  domText: '#e4e8ee',
+  // Bąble agresji: środek, brzeg i obrys kuli
+  bubbleBuy: ['#2fd1ae', '#0e5f52', '#8ef0d9'],
+  bubbleSell: ['#ee7445', '#7a2c14', '#ffb592'],
   // Giełdy w panelach „CVD giełd” i „ΔOI giełd” (paleta kategorii sprawdzona na tle wykresu, także dla daltonistów)
-  venueHl: '#199e70',
-  venueBinance: '#d95926',
-  venueBybit: '#3987e5',
+  venueHl: '#3987e5',
+  venueBinance: '#c98500',
+  venueBybit: '#d55181',
 } as const;
 
 /**
- * Rampa mapy ciepła arkusza: przezroczysty → ciemny morski (półprzezroczysty, świece widać przez niego) → jasny morski
- * (pasy płynności) → biel → żółty → pomarańcz → czerwień (ściany).
+ * Rampa mapy ciepła arkusza: przezroczysty → granat (półprzezroczysty, świece widać przez niego) → błękit
+ * (pasy płynności) → lód → biel (ściany).
  */
 export const LIQ_RAMP: HeatRamp = [
-  { t: 0, color: '#151521', alpha: 0 },
-  { t: 0.12, color: '#172526', alpha: 0.35 },
-  { t: 0.28, color: '#124950', alpha: 0.55 },
-  { t: 0.42, color: '#0d5c67', alpha: 0.7 },
-  { t: 0.55, color: '#017979', alpha: 0.85 },
-  { t: 0.68, color: '#c9e0eb', alpha: 1 },
-  { t: 0.78, color: '#f5e611', alpha: 1 },
-  { t: 0.86, color: '#f8c30c', alpha: 1 },
-  { t: 0.94, color: '#f5620f', alpha: 1 },
-  { t: 1, color: '#f5290d', alpha: 1 },
+  { t: 0, color: '#0b1019', alpha: 0 },
+  { t: 0.12, color: '#111d33', alpha: 0.35 },
+  { t: 0.28, color: '#15305a', alpha: 0.55 },
+  { t: 0.42, color: '#1b4677', alpha: 0.7 },
+  { t: 0.55, color: '#22679b', alpha: 0.85 },
+  { t: 0.68, color: '#2f9cc4', alpha: 1 },
+  { t: 0.8, color: '#5fd3e6', alpha: 1 },
+  { t: 0.9, color: '#b9eef6', alpha: 1 },
+  { t: 1, color: '#ffffff', alpha: 1 },
 ];
 
 const hexRgb = (hex: string): [number, number, number] => {
