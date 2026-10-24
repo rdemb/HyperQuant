@@ -34,10 +34,48 @@ const LOGO_W = 35;
 const LOGO_H = 19;
 const LOGO_MARGIN = 10;
 
-/** Fragment opisu panelu: tekst i kolor. */
+/** Fragment opisu panelu: tekst i kolor; `glue` — nie oddziela się od poprzedniego przy zawijaniu, `br` — nowy wiersz. */
 export interface LegendPart {
   text: string;
   color: string;
+  glue?: boolean;
+  br?: boolean;
+}
+
+interface LegendLine {
+  parts: LegendPart[];
+  widths: number[];
+  w: number;
+}
+
+/** Wiersze opisu: zawijanie grupami (fragment z doklejonymi) na szerokość `maxW`, `br` wymusza nowy wiersz. */
+function wrapLegend(parts: readonly LegendPart[], measure: (t: string) => number, maxW: number): LegendLine[] {
+  const lines: LegendLine[] = [];
+  let cur: LegendLine = { parts: [], widths: [], w: 0 };
+  let i = 0;
+  while (i < parts.length) {
+    if (parts[i].br) {
+      lines.push(cur);
+      cur = { parts: [], widths: [], w: 0 };
+      i++;
+      continue;
+    }
+    let j = i + 1;
+    while (j < parts.length && parts[j].glue) j++;
+    const group = parts.slice(i, j);
+    const widths = group.map((p) => measure(p.text));
+    const gw = widths.reduce((a, w) => a + w, 0) + 6 * (group.length - 1);
+    if (cur.parts.length > 0 && cur.w + 6 + gw > maxW) {
+      lines.push(cur);
+      cur = { parts: [], widths: [], w: 0 };
+    }
+    cur.w += (cur.parts.length > 0 ? 6 : 0) + gw;
+    cur.parts.push(...group);
+    cur.widths.push(...widths);
+    i = j;
+  }
+  lines.push(cur);
+  return lines.filter((ln) => ln.parts.length > 0);
 }
 
 /**
@@ -60,21 +98,30 @@ export class PaneLegend implements ISeriesPrimitive<Time> {
           if (this.parts.length === 0) return;
           ctx.font = `11px ${MONO}`;
           ctx.textBaseline = 'middle';
-          const widths = this.parts.map((p) => ctx.measureText(p.text).width);
-          const total = widths.reduce((a, w) => a + w, 0) + 6 * (this.parts.length - 1);
           const closeW = this.closeId ? 16 : 0;
-          const l = this.bottom && mediaSize.height < 4 + 18 + LOGO_H + LOGO_MARGIN ? LOGO_MARGIN + LOGO_W + 4 : 4;
-          ctx.fillStyle = PRO.bg;
-          ctx.globalAlpha = 0.82;
-          ctx.fillRect(l, 4, total + 10 + closeW, 18);
-          ctx.globalAlpha = 1;
-          let x = l + 5;
-          this.parts.forEach((p, i) => {
-            ctx.fillStyle = p.color;
-            ctx.fillText(p.text, x, 13);
-            x += widths[i] + 6;
+          // Wąski panel (telefon): opis zawija się w kolejne wiersze zamiast znikać za osią ceny
+          const measure = (t: string) => ctx.measureText(t).width;
+          const wrap = (l: number) => wrapLegend(this.parts, measure, Math.max(120, mediaSize.width - l - 14 - closeW));
+          let l = 4;
+          let lines = wrap(l);
+          if (this.bottom && mediaSize.height < 4 + lines.length * 20 - 2 + LOGO_H + LOGO_MARGIN) {
+            l = LOGO_MARGIN + LOGO_W + 4;
+            lines = wrap(l);
+          }
+          lines.forEach((ln, k) => {
+            const top = 4 + k * 20;
+            ctx.fillStyle = PRO.bg;
+            ctx.globalAlpha = 0.82;
+            ctx.fillRect(l, top, ln.w + 10 + (k === 0 ? closeW : 0), 18);
+            ctx.globalAlpha = 1;
+            let x = l + 5;
+            ln.parts.forEach((p, i) => {
+              ctx.fillStyle = p.color;
+              ctx.fillText(p.text, x, top + 9);
+              x += ln.widths[i] + 6;
+            });
           });
-          this.close = this.closeId ? { x: l + 5 + total + 2, y: 5, size: 16 } : null;
+          this.close = this.closeId ? { x: l + 5 + lines[0].w + 2, y: 5, size: 16 } : null;
           if (this.close) drawClose(ctx, this.close);
         }),
     };
@@ -104,7 +151,9 @@ export class PaneLegend implements ISeriesPrimitive<Time> {
   }
 
   set(parts: LegendPart[]): void {
-    const same = parts.length === this.parts.length && parts.every((p, i) => p.text === this.parts[i].text && p.color === this.parts[i].color);
+    const same =
+      parts.length === this.parts.length &&
+      parts.every((p, i) => p.text === this.parts[i].text && p.color === this.parts[i].color && p.glue === this.parts[i].glue && p.br === this.parts[i].br);
     if (same) return;
     this.parts = parts;
     this.requestUpdate?.();

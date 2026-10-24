@@ -94,9 +94,9 @@ const DASH: Record<DrawStyle['dash'], number[]> = {
   dotted: [1.5, 3],
 };
 /** Poziomy Fibonacciego: od szarego 0 przez ciepłe do chłodnych i szarego 1. */
-const FIB_COLORS = ['#8a8f98', '#ff4d5e', '#f5a524', '#2fd8c8', '#10ff21', '#4a9eff', '#8a8f98'];
-const PROFIT = '#10ff21';
-const LOSS = '#ff4d5e';
+const FIB_COLORS = ['#8a8f98', '#ff4d5e', '#f5a524', '#2fd8c8', '#4cc38a', '#4a9eff', '#8a8f98'];
+const PROFIT = PRO.buyInk;
+const LOSS = PRO.sellInk;
 const MEASURE_UP = '#4a9eff';
 const MEASURE_DOWN = '#ff4d5e';
 /** Profil zakresu: najdłuższy wiersz jako ułamek szerokości zakresu, minimalna wysokość wiersza (px). */
@@ -472,7 +472,7 @@ export class DrawingLayer implements ISeriesPrimitive<Time> {
       paint: () => {},
     };
     if (marked && d.kind !== 'brush' && d.kind !== 'text' && d.kind !== 'profile' && d.kind !== 'avwap') {
-      // Pozycja: wejście szare, cel zielony, stop czerwony; reszta w kolorze rysunku
+      // Pozycja: wejście szare, cel w kolorze kupna, stop w kolorze sprzedaży; reszta w kolorze rysunku
       const pos = d.kind === 'long' || d.kind === 'short';
       d.pts.forEach((q, i) => {
         if (d.kind !== 'vline') this.priceMark(q.p, pos ? [PRO.ink2, PROFIT, LOSS][i] : s.color, P[i].y);

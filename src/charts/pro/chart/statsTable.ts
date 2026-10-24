@@ -7,8 +7,8 @@ import { MONO, PRO, rgba } from './theme';
 
 /**
  * Tabela statystyk świec we własnym panelu pod wykresem: kolumna na świecę, wiersz na statystykę, tło komórki
- * nasycone wg wartości względem widocznych świec (kupno / wzrost zielone, sprzedaż / spadek fioletowe, wielkości
- * bez znaku pomarańczowe). Liczby, gdy świeca jest dość szeroka; nazwy wierszy w stałej kolumnie z lewej.
+ * nasycone wg wartości względem widocznych świec (kupno / wzrost w kolorze kupna, sprzedaż / spadek w kolorze
+ * sprzedaży, wielkości bez znaku w kolorze wolumenu). Liczby, gdy świeca jest dość szeroka; nazwy wierszy w stałej kolumnie z lewej.
  */
 
 /** `scale` — stała skala nasycenia (|wartość| = pełny kolor) zamiast percentyla widocznych świec. */
@@ -35,9 +35,9 @@ const LABEL_W = 74;
 const NORM_Q = 0.9;
 
 const C = {
-  pos: '#10ff21',
-  neg: '#8a2be2',
-  size: '#d08a10',
+  pos: PRO.buyInk,
+  neg: PRO.sellInk,
+  size: PRO.volBar,
   text: '#eef0f2',
   dim: PRO.ink3,
   grid: rgba(PRO.ink3, 0.18),

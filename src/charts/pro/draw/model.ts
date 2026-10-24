@@ -146,7 +146,7 @@ export interface Drawing {
 }
 
 /** Kolory rysunków: jasne na ciemnym płótnie, pierwszy domyślny. */
-export const DRAW_COLORS = ['#f2c94c', '#e4e6ea', '#2fd8c8', '#10ff21', '#a66bff', '#ff4fd8', '#f5620f', '#4a9eff'] as const;
+export const DRAW_COLORS = ['#f2c94c', '#e4e6ea', '#2fd8c8', '#4cc38a', '#9085e9', '#e66aa8', '#f5620f', '#4a9eff'] as const;
 export const DRAW_WIDTHS = [1, 2, 3, 4] as const;
 
 export const defaultStyle = (kind: ToolKind): DrawStyle => ({

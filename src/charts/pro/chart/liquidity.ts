@@ -106,15 +106,15 @@ const FAR_ALPHA = 0.6;
 
 /**
  * Kule z cieniowaniem: jaśniejszy środek przesunięty ku górze, ciemniejszy brzeg i jasny obrys 1 px
- * (kupno morskie, sprzedaż magenta). Półprzezroczyste, żeby liczby footprintu pod nimi dało się odczytać.
+ * (kolory stron z palety wykresu). Półprzezroczyste, żeby liczby footprintu pod nimi dało się odczytać.
  */
 const K = {
-  buyCore: 'rgba(47,216,200,0.7)',
-  buyEdge: 'rgba(11,110,102,0.55)',
-  buyRim: 'rgba(120,240,228,0.9)',
-  sellCore: 'rgba(226,59,233,0.7)',
-  sellEdge: 'rgba(122,18,128,0.55)',
-  sellRim: 'rgba(246,140,250,0.9)',
+  buyCore: rgba(PRO.bubbleBuy[0], 0.7),
+  buyEdge: rgba(PRO.bubbleBuy[1], 0.55),
+  buyRim: rgba(PRO.bubbleBuy[2], 0.9),
+  sellCore: rgba(PRO.bubbleSell[0], 0.7),
+  sellEdge: rgba(PRO.bubbleSell[1], 0.55),
+  sellRim: rgba(PRO.bubbleSell[2], 0.9),
   label: '#ffffff',
   mark: PRO.warn,
   selected: '#ffffff',

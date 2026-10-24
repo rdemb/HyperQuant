@@ -18,7 +18,7 @@ import { LOT_FLOOR, type LiquidityPick } from './chart/liquidity';
 import { brandedScreenshot, downloadCanvas } from './chart/screenshot';
 import { MAX_ALERTS, PriceAlert, alertBook, askNotifications, newAlert, notifyAlert, parsePriceInput, primeAlertSound, reached } from './chart/alerts';
 import { fmtPx, priceDigits } from './chart/layout';
-import { ChartLayout, ChartSettings, DEFAULT_SETTINGS, hashFor, loadSettings, panelKey, saveSettings, settingsFromHash } from './chart/settings';
+import { ChartLayout, ChartSettings, hashFor, loadSettings, panelKey, saveSettings, settingsFromHash, startSettings } from './chart/settings';
 import { BUILT_IN_TEMPLATES, ChartTemplate, applyTemplate, loadTemplates, saveAs, saveTemplates } from './chart/templates';
 import type { ChartView } from './chart/footprintSeries';
 import type { FootprintStyle } from './chart/layout';
@@ -48,7 +48,14 @@ const toTick = (p: number) => Number(p.toFixed(priceDigits(p)));
 
 /** Interwał nowego panelu układu (bez zapisanych ustawień): kolejne panele pokazują wyższe interwały. */
 const PANEL_INTERVALS = ['5m', '15m', '1h', '4h'];
-const PANE_NAMES: Record<PaneKey, string> = { showVolume: 'Wolumen', showDelta: 'Delta', showCvd: 'CVD', showStats: 'Statystyki świec' };
+const PANE_NAMES: Record<PaneKey, string> = {
+  showVolume: 'Wolumen',
+  showDelta: 'Delta',
+  showCvd: 'CVD',
+  showVenueCvd: 'CVD giełd',
+  showVenueOi: 'ΔOI giełd',
+  showStats: 'Statystyki świec',
+};
 
 const LAYOUT_OPTIONS: { value: ChartLayout; label: React.ReactNode; title: string }[] = [
   { value: 1, label: <Square className="w-3.5 h-3.5" />, title: 'Jeden wykres' },
@@ -495,7 +502,7 @@ export const ProChart: React.FC<{ panel?: number; layout?: ChartLayout; onLayout
                   onAddAlert={(p) => addAlert(toTick(p))}
                   onRemoveAlert={(a) => alertBook.update((l) => l.filter((x) => x !== a))}
                   onChange={update}
-                  onReset={() => setSettings({ ...DEFAULT_SETTINGS, coin: settings.coin, interval: settings.interval })}
+                  onReset={() => setSettings({ ...startSettings(), coin: settings.coin, interval: settings.interval })}
                   grid4={layout === 4}
                 />
               ) : menu === 'keys' ? (
@@ -731,6 +738,12 @@ const SettingsMenu: React.FC<{
       <Check label="Wolumen" checked={s.showVolume} onChange={(v) => onChange({ showVolume: v })} />
       <Check label="Delta (świece delty)" checked={s.showDelta} onChange={(v) => onChange({ showDelta: v })} />
       <Check label="CVD" checked={s.showCvd} onChange={(v) => onChange({ showCvd: v })} />
+      <Check label="CVD giełd: Hyperliquid, Binance, Bybit" checked={s.showVenueCvd} onChange={(v) => onChange({ showVenueCvd: v })} />
+      <Check label="ΔOI i funding giełd" checked={s.showVenueOi} onChange={(v) => onChange({ showVenueOi: v })} />
+      <p className="text-[11px] leading-snug text-ink-3">
+        Dane Binance i Bybit pobiera Twoja przeglądarka bezpośrednio z ich publicznych API — nic nie przechodzi przez serwer HyperQuant.
+        Domyślnie wyłączone; nie publikuj zrzutów z tymi danymi bez sprawdzenia regulaminu giełdy.
+      </p>
       <Check label="Statystyki świec (tabela)" checked={s.showStats} onChange={(v) => onChange({ showStats: v })} />
       {grid4 && s.showStats && <p className="text-[11px] leading-snug text-ink-3">W układzie 2 × 2 tabela jest ukryta — panel jest za niski.</p>}
       <div className="flex flex-col items-start gap-1.5">

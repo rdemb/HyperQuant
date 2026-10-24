@@ -776,10 +776,11 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
     const vah = Y((p.lo + p.vaHi + 1) * p.step);
     const val = Y((p.lo + p.vaLo) * p.step);
     s.hlines.push({ x0: W - pw, x1: W, y: vah, color: K.vaLine, dash: DASH.dot }, { x0: W - pw, x1: W, y: val, color: K.vaLine, dash: DASH.dot });
+    // Podpisy przy prawej krawędzi, na profilu: przed profilem zasłaniały komórki ostatnich świec
     s.texts.push(
-      { x: W - pw - 4, y: yPoc, text: 'POC', color: PRO.ink2, align: 'right', bg: true },
-      { x: W - pw - 4, y: vah, text: 'VAH', color: PRO.ink3, align: 'right', bg: true },
-      { x: W - pw - 4, y: val, text: 'VAL', color: PRO.ink3, align: 'right', bg: true }
+      { x: W - 4, y: yPoc, text: 'POC', color: PRO.ink2, align: 'right', bg: true },
+      { x: W - 4, y: vah, text: 'VAH', color: PRO.ink3, align: 'right', bg: true },
+      { x: W - 4, y: val, text: 'VAL', color: PRO.ink3, align: 'right', bg: true }
     );
   }
 }

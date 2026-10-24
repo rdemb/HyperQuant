@@ -50,6 +50,25 @@ const off = {
   showLots: false,
 } satisfies Partial<ChartSettings>;
 
+/** Wszystkie warstwy orderflow naraz (poza TPO i rozwijającym się POC, które zastępują profile sesji). */
+const full = {
+  showStats: true,
+  showVwapBands: true,
+  showSessionVwap: true,
+  showPeriodProfiles: true,
+  showLevels: true,
+  showSessions: true,
+  showIb: true,
+  showLiq: true,
+  showWhales: true,
+  showZones: true,
+  showAuctions: true,
+  showHeatmap: true,
+  showBubbles: true,
+  showClashes: true,
+  showLots: true,
+} satisfies Partial<ChartSettings>;
+
 const built = (id: string, name: string, patch: Partial<TemplateSettings>): ChartTemplate => ({
   id,
   name,
@@ -58,8 +77,9 @@ const built = (id: string, name: string, patch: Partial<TemplateSettings>): Char
 });
 
 export const BUILT_IN_TEMPLATES: readonly ChartTemplate[] = [
-  built('orderflow', 'Orderflow (domyślny)', {}),
+  built('orderflow', 'Pełny orderflow: wszystkie warstwy', full),
   built('scalp', 'Skalping 1m: taśma, mapa, strefy', {
+    ...full,
     interval: '1m',
     showTape: true,
     showPeriodProfiles: false,

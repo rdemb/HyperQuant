@@ -3,7 +3,7 @@ import { Highlighter, Volume2, VolumeX, X } from 'lucide-react';
 import { fmtCompact } from '../../../ui/format';
 import { fmtSignedVol } from '../../orderflow/renderer';
 import { fmtVol } from '../../orderflow/footprint';
-import { classify, shortAddress, walletSummary } from '../core/clashes';
+import { classify, walletSummary } from '../core/clashes';
 import type { AggressorOrder } from '../core/orders';
 import { fmtHms } from '../core/time';
 import type { ProStore } from '../store/proStore';
@@ -14,7 +14,7 @@ import type { ChartSettings } from './settings';
 /**
  * Karta obiektu klikniętego na wykresie (zlecenie agresora z podsumowaniem adresu biorcy, seria, ściana)
  * i taśma zleceń agresora (Time & Sales) z filtrem wartości i dźwiękiem dużych zleceń.
- * Adres biorcy pochodzi z publicznych transakcji Hyperliquid; pokazujemy go skróconego i nie zapisujemy.
+ * Adres biorcy pochodzi z publicznych transakcji Hyperliquid; zostaje tylko w pamięci strony, a karta pokazuje pseudonim konta.
  */
 
 /** 200K zamiast 200.0K. */
@@ -86,7 +86,7 @@ export const PickCard: React.FC<{
         <div className="mt-1 pt-2 border-t border-line flex flex-col gap-1">
           {w ? (
             <>
-              <Row label="Adres biorcy">{w.label}</Row>
+              <Row label="Biorca">{w.label}</Row>
               <Row label="Zleceń na taśmie">{w.orders}</Row>
               <Row label="Kupno / sprzedaż">
                 <SideTag buy>{fmtVol(w.buySz)}</SideTag> / <SideTag buy={false}>{fmtVol(w.sellSz)}</SideTag> {store.coin}
@@ -106,9 +106,9 @@ export const PickCard: React.FC<{
                 }`}
               >
                 <Highlighter className="w-3.5 h-3.5" />
-                {highlight === o.taker ? 'Wyłącz podświetlenie' : 'Podświetl zlecenia tego adresu'}
+                {highlight === o.taker ? 'Wyłącz podświetlenie' : 'Podświetl zlecenia tego konta'}
               </button>
-              <p className="text-[10px] leading-snug text-ink-3">Publiczne dane Hyperliquid od otwarcia strony. Adres nie jest zapisywany.</p>
+              <p className="text-[10px] leading-snug text-ink-3">Publiczne dane Hyperliquid od otwarcia strony. Adresu nie pokazujemy ani nie zapisujemy; numer konta obowiązuje do zamknięcia strony.</p>
             </>
           ) : (
             <p className="text-[11px] text-ink-3">{fromServer ? 'Zlecenie z historii serwera — zapis nie zawiera adresów.' : 'Transakcja bez adresu biorcy.'}</p>

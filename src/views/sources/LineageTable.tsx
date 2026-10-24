@@ -415,6 +415,16 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         kinds: ['LIVE'],
         refresh: 'na żywo (domyślnie wyłączone)',
       },
+      {
+        metric: 'CVD, ΔOI i funding giełd (Wykresy)',
+        source:
+          'Binance USDT-M (świece, openInterestHist, openInterest, premiumIndex, fundingInfo), Binance Spot (świece), Bybit Linear (open-interest, publicTrade, tickers) — publiczne API pobierane przez przeglądarkę',
+        method:
+          'Delta świecy = 2 × kupno biorców − wolumen (Binance, z historią); Bybit z transakcji od otwarcia strony, świeca tylko w całości nagrana; ΔOI w monetach od początku okresu CVD; funding przeliczony na 8 h (Hyperliquid co godzinę, Binance i Bybit wg okresu rynku)',
+        caveat: 'Bybit bez historii delty; historia OI Binance najwyżej 30 dni i co 5 min; funding to bieżąca stawka, nie historia',
+        kinds: ['LIVE'],
+        refresh: 'na żywo, OI i funding Binance co 30 s (panele domyślnie wyłączone)',
+      },
     ],
   },
 ];
