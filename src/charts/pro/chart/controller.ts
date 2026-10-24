@@ -17,9 +17,11 @@ import { fmtSignedVol } from '../../orderflow/renderer';
 import { fmtPrice } from '../../../ui/format';
 import { Ohlc, cvdCandles, deltaCandle } from '../core/flow';
 import { rowAt } from '../core/footprintBar';
+import type { LiqLevel } from '../core/indicators';
 import type { ResetMode } from '../core/sessions';
 import type { ProBar, ProStore } from '../store/proStore';
 import { FootprintOptions, FootprintPoint, FootprintSeries } from './footprintSeries';
+import { IndicatorOverlay, IndicatorToggles, IndicatorValues } from './overlay';
 import { LegendPart, PaneLegend } from './paneLegend';
 import type { ChartSettings } from './settings';
 import { PRO, RIGHT_GAP_PX, chartOptions } from './theme';
@@ -44,6 +46,7 @@ export interface Hover {
   live: boolean;
   row: HoverRow | null;
   cvd: Ohlc | null;
+  ind: IndicatorValues | null;
 }
 
 const sec = (t: number) => (t / 1000) as UTCTimestamp;
@@ -52,6 +55,17 @@ const sec = (t: number) => (t / 1000) as UTCTimestamp;
 const FLOW_FORMAT: PriceFormat = { type: 'custom', minMove: 0.0001, formatter: fmtSignedVol };
 
 const VOLUME_FORMAT: PriceFormat = { type: 'custom', minMove: 0.0001, formatter: (v: number) => fmtVol(v) };
+
+const toggles = (s: ChartSettings): IndicatorToggles => ({
+  showVwap: s.showVwap,
+  showVwapBands: s.showVwapBands,
+  showSessionVwap: s.showSessionVwap,
+  showProfile: s.showProfile,
+  showLevels: s.showLevels,
+  showSessions: s.showSessions,
+  showIb: s.showIb,
+  showLiq: s.showLiq,
+});
 
 /** Zmienionych świec powyżej tej liczby nie aktualizujemy pojedynczo, tylko podmieniamy całą serię. */
 const MAX_POINT_UPDATES = 24;
@@ -109,6 +123,7 @@ export class ProChartController {
   private readonly volumeLegend = new PaneLegend();
   private readonly deltaLegend = new PaneLegend();
   private readonly cvdLegend = new PaneLegend();
+  private readonly overlay: IndicatorOverlay;
 
   private settings: ChartSettings;
   private bars: ProBar[] = [];
@@ -128,6 +143,8 @@ export class ProChartController {
       priceLineVisible: true,
       lastValueVisible: true,
     });
+    this.overlay = new IndicatorOverlay(toggles(settings));
+    this.main.attachPrimitive(this.overlay);
     this.applySettings(settings, true);
     this.chart.subscribeCrosshairMove(this.onCrosshair);
     this.chart.timeScale().subscribeVisibleLogicalRangeChange(this.onRange);
@@ -155,6 +172,7 @@ export class ProChartController {
       imbalanceMinVol: s.imbalanceMinVol,
       stackedMin: s.stackedMin,
     });
+    this.overlay.setToggles(toggles(s));
     const panesChanged = force || prev.showVolume !== s.showVolume || prev.showDelta !== s.showDelta || prev.showCvd !== s.showCvd;
     if (panesChanged) this.rebuildPanes();
     else if (prev.cvdReset !== s.cvdReset) {
@@ -191,6 +209,11 @@ export class ProChartController {
     this.bars = [];
     this.cvdData = [];
     this.schedule();
+  }
+
+  /** Najsilniejsze klastry likwidacji ze skanera (pusta lista = brak aktualnej mapy). */
+  setLiqLevels(levels: LiqLevel[]): void {
+    this.overlay.setLiq(levels);
   }
 
   /** Przewija do bieżącej świecy (z zachowaniem zbliżenia); odstęp od osi ceny stały w pikselach. */
@@ -239,6 +262,8 @@ export class ProChartController {
         this.delta?.update(toDelta(b), historical);
       }
     }
+    this.overlay.setBars(next, this.store.interval.ms);
+    this.overlay.setDaily(this.store.daily);
     this.pushCvd(full);
     this.emitHover();
   }
@@ -278,7 +303,7 @@ export class ProChartController {
   private emitHover(): void {
     const bars = this.bars;
     if (bars.length === 0) {
-      this.onHover({ bar: null, live: true, row: null, cvd: null });
+      this.onHover({ bar: null, live: true, row: null, cvd: null, ind: null });
       return;
     }
     const i = this.hoverTime === null ? bars.length - 1 : indexOfTime(bars, this.hoverTime);
@@ -289,7 +314,8 @@ export class ProChartController {
     );
     this.deltaLegend.set(flowLegend('Delta', bar?.fp ? bar.fp.delta : null));
     this.cvdLegend.set(flowLegend(`CVD · ${RESET_LABEL[this.settings.cvdReset]}`, cvd ? cvd.close : null));
-    this.onHover({ bar, live: this.hoverTime === null, row: bar ? this.rowAt(bar, this.hoverPrice) : null, cvd });
+    const ind = i >= 0 ? this.overlay.valuesAt(i) : null;
+    this.onHover({ bar, live: this.hoverTime === null, row: bar ? this.rowAt(bar, this.hoverPrice) : null, cvd, ind });
   }
 
   /** Wiersz footprintu pod krzyżem — ta sama siatka co na wykresie (gdy widać footprint). */

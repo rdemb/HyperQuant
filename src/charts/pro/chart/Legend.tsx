@@ -7,7 +7,7 @@ import type { Hover } from './controller';
 
 /** Najnowszy stan krzyża (ustawiany przez sterownik wykresu najwyżej raz na klatkę). */
 export class HoverSignal {
-  private value: Hover = { bar: null, live: true, row: null, cvd: null };
+  private value: Hover = { bar: null, live: true, row: null, cvd: null, ind: null };
   private readonly listeners = new Set<() => void>();
 
   set = (h: Hover): void => {
@@ -24,6 +24,8 @@ export class HoverSignal {
     };
   };
 }
+
+const fmtSigma = (z: number) => `${z >= 0 ? '+' : '−'}${Math.abs(z).toFixed(2).replace('.', ',')}σ`;
 
 const tone = (v: number) => (v > 0 ? 'text-buy-ink' : v < 0 ? 'text-sell-ink' : 'text-ink-2');
 
@@ -93,8 +95,28 @@ export const Legend: React.FC<{ signal: HoverSignal; intervalMs: number; interva
       ) : (
         <div className="text-ink-3">Wczytywanie świec…</div>
       )}
-      {fp && bar ? (
+      {(h.ind?.vwap || h.ind?.svwap) && c && (
         <div className="flex flex-wrap items-baseline gap-x-2.5">
+          {h.ind.vwap && (
+            <Field label={h.ind.anchor === 'week' ? 'VWAP T' : 'VWAP'} className="text-accent" title="VWAP od początku okresu (cena typowa ważona wolumenem)">
+              {fmtPrice(h.ind.vwap.vwap, 0)}
+            </Field>
+          )}
+          {h.ind.vwap && h.ind.vwap.sd > 0 && (
+            <Field label="Odch." className={tone(c.c - h.ind.vwap.vwap)} title="Odległość zamknięcia od VWAP w odchyleniach standardowych" secondary>
+              {fmtSigma((c.c - h.ind.vwap.vwap) / h.ind.vwap.sd)}
+            </Field>
+          )}
+          {h.ind.svwap && (
+            <Field label="VWAP S" className="text-zone" title="VWAP od otwarcia bieżącej sesji">
+              {fmtPrice(h.ind.svwap.vwap, 0)}
+            </Field>
+          )}
+        </div>
+      )}
+      {/* Szczegóły taśmy tylko na szerszym ekranie — na telefonie deltę i CVD pokazują opisy paneli */}
+      {fp && bar ? (
+        <div className="hidden sm:flex flex-wrap items-baseline gap-x-2.5">
           <Field label="Δ" className={tone(fp.delta)} title="Delta: kupno agresywne − sprzedaż agresywna (BTC)">
             {fmtSignedVol(fp.delta)}
             {fpVol > 0 && <span className="text-ink-3"> ({((fp.delta / fpVol) * 100).toFixed(0)}%)</span>}
@@ -124,7 +146,7 @@ export const Legend: React.FC<{ signal: HoverSignal; intervalMs: number; interva
         </div>
       ) : (
         bar && (
-          <div className="text-ink-3">
+          <div className="hidden sm:block text-ink-3">
             Footprint: brak taśmy dla tej świecy
             {Number.isFinite(tapeSince) ? ` — nagrywanie od ${fmtSince(tapeSince, Date.now())}` : ' — czekam na pierwsze transakcje'}
           </div>

@@ -5,7 +5,8 @@ import { Coverage, Span } from '../core/coverage';
 import { FootprintBar, FootprintBuilder, hlTick } from '../core/footprintBar';
 import { OrderAggregator, OrderLog } from '../core/orders';
 import { Tape, TradeRow } from '../core/tape';
-import { DEFAULT_INTERVAL, Interval, barStart, intervalById } from '../core/time';
+import { utcDayStart } from '../core/sessions';
+import { DAY, DEFAULT_INTERVAL, Interval, barStart, intervalById } from '../core/time';
 
 /**
  * Magazyn wykresu Pro (bez Reacta, jeden na aplikację): świece Hyperliquid wybranego interwału
@@ -19,6 +20,8 @@ export const COIN = 'BTC';
 export const PAGE_BARS = 1500;
 /** Taśma i zlecenia są trzymane w pamięci przez dobę. */
 export const RETENTION_MS = 24 * 3600_000;
+/** Tyle dni świec dziennych pobieramy dla poziomów dnia (PDH, PDL, PDC, otwarcie). */
+const DAILY_DAYS = 400;
 
 export interface ProBar {
   t: number;
@@ -65,6 +68,8 @@ export class ProStore {
 
   interval: Interval = intervalById(DEFAULT_INTERVAL);
   candles: Candle[] = [];
+  /** Świece dzienne (00:00 UTC) — poziomy dnia niezależne od interwału wykresu. */
+  daily: Candle[] = [];
   loadState: LoadState = 'idle';
   /** Doczytywanie starszej historii w toku / historia wyczerpana (limit API). */
   loadingOlder = false;
@@ -86,6 +91,8 @@ export class ProStore {
   private timers: ReturnType<typeof setInterval>[] = [];
   /** Subskrypcja transakcji potwierdzona, czekamy na pierwszą wiadomość (migawkę ostatnich transakcji). */
   private tradesPending = false;
+  /** Dzień UTC, dla którego świece dzienne są pobrane albo w drodze. */
+  private dailyDay = 0;
 
   constructor(stream?: HlStream) {
     this.stream = stream ?? new HlStream();
@@ -134,9 +141,15 @@ export class ProStore {
     });
     // Interwał mógł zostać już ustawiony (i jego świece są w drodze) przed startem
     if (this.loadState === 'idle') void this.setInterval(this.interval.id, true);
+    void this.loadDaily();
     // Zlecenia bez nowych wypełnień zamykają się także w ciszy na rynku
     this.timers.push(setInterval(() => this.flushOrders(), 2000));
-    this.timers.push(setInterval(() => this.prune(), 60_000));
+    this.timers.push(
+      setInterval(() => {
+        this.prune();
+        void this.loadDaily();
+      }, 60_000)
+    );
   }
 
   /** Tylko dla testów: zatrzymuje strumień i liczniki. */
@@ -197,6 +210,19 @@ export class ProStore {
     const older = list.filter((c) => c.t < first);
     if (older.length === 0) this.historyExhausted = true;
     else this.mergeCandles(older);
+    this.bump();
+  }
+
+  /** Świece dzienne — raz na dzień UTC; brak świecy bieżącego dnia albo błąd → ponowienie przy następnym takcie. */
+  private async loadDaily(): Promise<void> {
+    const now = Date.now();
+    const day = utcDayStart(this.serverNow());
+    if (this.dailyDay === day) return;
+    this.dailyDay = day;
+    const list = await fetchCandles(this.coin, '1d', now - DAILY_DAYS * DAY, now + DAY);
+    if (list.length === 0 || list[list.length - 1].t < day) this.dailyDay = 0;
+    if (list.length === 0) return;
+    this.daily = list;
     this.bump();
   }
 

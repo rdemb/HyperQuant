@@ -87,6 +87,8 @@ export function chartOptions(): DeepPartial<ChartOptions> {
       rightOffsetPixels: RIGHT_GAP_PX,
       barSpacing: 9,
       minBarSpacing: 0.6,
+      // Przy największym zbliżeniu komórki footprintu z kolumnami delty i wolumenu wciąż mieszczą kilka świec
+      maxBarSpacing: 240,
       tickMarkFormatter,
     },
     localization: { locale: 'pl-PL', timeFormatter: crosshairTimeFormatter },
