@@ -99,6 +99,8 @@ const DOM_LABEL_GAP_PX = 11;
 const HEAT_LO_Q = 0.6;
 const HEAT_Q = 0.995;
 const HEAT_SAMPLE = 12_000;
+/** Migawka arkusza obowiązuje do następnej, najwyżej tyle ms (luka w nagraniu nie jest zamalowana starą migawką). */
+const FRAME_MAX_MS = 60_000;
 /** Krycie dalekiej agregacji względem bliskiej. */
 const FAR_ALPHA = 0.6;
 
@@ -362,7 +364,7 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
       for (let i = 0; i < frames.length; i++) {
         const f = frames[i];
         const x0 = Math.max(0, Math.round(this.x(f.t, g)));
-        const x1 = Math.min(W, Math.max(x0 + 1, Math.round(this.x(frames[i + 1]?.t ?? this.now, g))));
+        const x1 = Math.min(W, Math.max(x0 + 1, Math.round(this.x(Math.min(frames[i + 1]?.t ?? this.now, f.t + FRAME_MAX_MS), g))));
         if (x1 <= 0 || x0 >= W) continue;
         if (layer === near) clearSpan(px, W, H, f, x0, x1, g);
         paintFrame(px, W, H, f, x0, x1, g, norm, layer === near ? this.lut : this.lutFar);

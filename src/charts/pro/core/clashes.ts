@@ -171,6 +171,14 @@ export class WallTracker {
     }
   }
 
+  /** Ściany z wypełnień historii serwera (rosnąco po czasie), od razu zamknięte; bez dokładnego arkusza — bez gór lodowych. */
+  pushHistory(fills: readonly Fill[]): void {
+    const t = new WallTracker();
+    t.push(fills);
+    t.prune(Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY);
+    this.closed.push(...t.closed);
+  }
+
   /** Ściany od progu `t` (USD), które zahaczają o [from, to). */
   walls(from: number, to: number, t: number): Wall[] {
     const out: Wall[] = [];

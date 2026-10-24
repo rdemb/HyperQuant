@@ -22,6 +22,7 @@ import { hlTick, rowAt } from '../core/footprintBar';
 import type { LiqLevel } from '../core/indicators';
 import type { ResetMode } from '../core/sessions';
 import type { CandleSeries, ProBar, ProStore } from '../store/proStore';
+import { requestHistory } from '../store/serverHistory';
 import { DrawingLayer } from '../draw/layer';
 import { DrawingTools } from '../draw/tools';
 import { FootprintOptions, FootprintPoint, FootprintSeries } from './footprintSeries';
@@ -527,7 +528,10 @@ export class ProChartController {
   // ───────────────────────── interakcja ─────────────────────────
 
   private readonly onRange = (range: LogicalRange | null): void => {
-    if (range && range.from < LOAD_OLDER_MARGIN && this.bars.length > 0) void this.series.loadOlder();
+    if (!range || this.bars.length === 0) return;
+    if (range.from < LOAD_OLDER_MARGIN) void this.series.loadOlder();
+    // Historia taśmy i arkusza z serwera od lewej krawędzi widoku
+    requestHistory(this.store, this.bars[Math.min(this.bars.length - 1, Math.max(0, Math.floor(range.from)))].t);
   };
 
   /** Kliknięcie: krzyżyk ukrycia panelu, obiekt warstwy płynności pod kursorem albo nic (zamyka kartę). */

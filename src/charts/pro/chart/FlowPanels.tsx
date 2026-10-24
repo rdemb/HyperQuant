@@ -57,7 +57,9 @@ export const PickCard: React.FC<{
     const o = pick.order;
     const buy = o.side === 1;
     const top = o.notional > 0 ? o.topMakerUsd / o.notional : 0;
-    const w = o.taker ? walletSummary(store.orders.range(0, Number.MAX_SAFE_INTEGER), o.taker) : null;
+    // Zlecenie z historii serwera ma numer biorcy zamiast adresu (`~godzina:numer`) — bez podsumowania portfela
+    const fromServer = o.taker.startsWith('~');
+    const w = o.taker && !fromServer ? walletSummary(store.orders.range(0, Number.MAX_SAFE_INTEGER), o.taker) : null;
     head = (
       <>
         <SideTag buy={buy} />
@@ -109,7 +111,7 @@ export const PickCard: React.FC<{
               <p className="text-[10px] leading-snug text-ink-3">Publiczne dane Hyperliquid od otwarcia strony. Adres nie jest zapisywany.</p>
             </>
           ) : (
-            <p className="text-[11px] text-ink-3">Transakcja bez adresu biorcy.</p>
+            <p className="text-[11px] text-ink-3">{fromServer ? 'Zlecenie z historii serwera — zapis nie zawiera adresów.' : 'Transakcja bez adresu biorcy.'}</p>
           )}
         </div>
       </>

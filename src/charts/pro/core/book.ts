@@ -160,6 +160,15 @@ export class BookHistory {
     this.version++;
   }
 
+  /** Migawki z historii serwera, scalone po czasie (ta sama chwila — zostaje istniejąca). */
+  restore(list: readonly BookFrame[]): void {
+    const have = new Set(this.frames.map((f) => f.t));
+    const add = list.filter((f) => !have.has(f.t));
+    if (add.length === 0) return;
+    this.frames = [...this.frames, ...add].sort((a, b) => a.t - b.t);
+    this.version++;
+  }
+
   latest(): BookFrame | null {
     return this.frames[this.frames.length - 1] ?? null;
   }

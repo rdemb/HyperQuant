@@ -1,7 +1,7 @@
 import { AssetCtx, Candle, Fill, parseAssetCtx, parseBook, parseCandle, parseFills } from '../hl/parse';
 import { fetchAssetCtx, fetchCandles, fetchFunding } from '../hl/rest';
 import { HlStream, StreamStatus, Subscription } from '../hl/stream';
-import { BookHistory, bookSigFigs, bookStep, toFrame } from '../core/book';
+import { BookFrame, BookHistory, bookSigFigs, bookStep, toFrame } from '../core/book';
 import { Coverage, Span } from '../core/coverage';
 import { FootprintBar, FootprintBuilder, hlTick } from '../core/footprintBar';
 import { WallTracker } from '../core/clashes';
@@ -44,6 +44,21 @@ export interface ProBar {
 
 export type LoadState = 'idle' | 'loading' | 'ready' | 'error';
 
+/** Fragment historii z zapisu serwera (część albo godzina): taśma z pliku transakcji (null bez pliku) i migawki arkusza. */
+export interface HistoryBatch {
+  trades: {
+    /** Zakres pliku [from, to) i odcinki ciągłego nagrania w nim. */
+    from: number;
+    to: number;
+    spans: Span[];
+    /** Rosnąco po czasie; biorca, maker i hash to numery ważne w obrębie godziny. */
+    fills: Fill[];
+    /** [czas, otwarte pozycje] co minutę. */
+    oi: [number, number][];
+  } | null;
+  frames: BookFrame[];
+}
+
 interface FpCacheEntry {
   sig: string;
   fp: FootprintBar | null;
@@ -81,6 +96,13 @@ export class ProStore {
   private readonly aggregator = new OrderAggregator();
   /** Serie świec używanych interwałów (panele układu na tym rynku dzielą taśmę i połączenie). */
   private readonly seriesById = new Map<string, CandleSeries>();
+  /**
+   * Najstarsza transakcja pierwszej wiadomości strumienia (migawki) w tej sesji: od niej zlecenia agresora i ściany
+   * liczy strumień na żywo; +∞ przed pierwszą wiadomością.
+   */
+  private liveFrom = Number.POSITIVE_INFINITY;
+  /** Czas, dla którego zlecenia i ściany zostały już złożone z historii serwera (bez dublowania przy ponownym pliku). */
+  private readonly derived = new Coverage();
   /** Cena ostatniej transakcji z taśmy na żywo (0 przed pierwszą). */
   private lastTradePx = 0;
   private lastTradeT = 0;
@@ -259,8 +281,13 @@ export class ProStore {
       const fills = parseFills(data, this.coin);
       if (fills.length === 0) return;
       let newest = 0;
-      for (const f of fills) if (f.time > newest) newest = f.time;
+      let oldest = Number.POSITIVE_INFINITY;
+      for (const f of fills) {
+        newest = Math.max(newest, f.time);
+        oldest = Math.min(oldest, f.time);
+      }
       this.clock.observe(newest, recvAt);
+      if (this.liveFrom === Number.POSITIVE_INFINITY) this.liveFrom = oldest;
       if (this.tradesPending) {
         // Pierwsza wiadomość po subskrypcji to migawka ostatnich transakcji, więc od najnowszej z nich taśma
         // jest kompletna — początek nagrania w zegarze giełdy, niezależnie od zegara przeglądarki
@@ -317,7 +344,8 @@ export class ProStore {
     if (steps[0] === this.bookSteps[0] && steps[1] === this.bookSteps[1]) return;
     for (const sub of this.bookSubs) this.stream.remove(sub);
     this.bookSteps = steps;
-    this.books.clear();
+    // Historia arkusza w tych samych krokach zostaje (także wczytana z serwera przed pierwszą ceną)
+    for (const step of [...this.books.keys()]) if (step !== steps[0] && step !== steps[1]) this.books.delete(step);
     this.bookSubs = [near, far].map((n): Subscription => ({ type: 'l2Book', coin: this.coin, nSigFigs: n }));
     this.exactSub = steps[0] > hlTick(price) * 1.5;
     if (this.exactSub) this.bookSubs.push({ type: 'l2Book', coin: this.coin });
@@ -327,6 +355,11 @@ export class ProStore {
   /** Historia arkusza w agregacji bliskiej (~2 pb ceny) i dalekiej (10 × większy krok); null przed pierwszą migawką. */
   book(which: 'near' | 'far'): BookHistory | null {
     return this.books.get(this.bookSteps[which === 'near' ? 0 : 1]) ?? null;
+  }
+
+  /** Początek strumienia na żywo w tej sesji (najstarsza transakcja jego pierwszej wiadomości); +∞ przed nią. */
+  get liveSince(): number {
+    return this.liveFrom;
   }
 
   /** Wejście transakcji (WebSocket albo zapis z przeglądarki). */
@@ -354,12 +387,44 @@ export class ProStore {
     this.bump();
   }
 
+  /**
+   * Historia z serwera: taśma z pokryciem, otwarte pozycje i migawki arkusza, a zlecenia agresora i ściany (bez gór
+   * lodowych — zapis nie ma dokładnego arkusza) tylko z transakcji, których nie widział strumień na żywo: nowych na taśmie
+   * albo sprzed jego początku i jeszcze nie złożonych z historii (zapis przeglądarki nie ma adresów, więc nie ma zleceń).
+   */
+  restoreHistory(b: HistoryBatch): void {
+    const tr = b.trades;
+    if (tr) {
+      for (const [a, z] of tr.spans) this.coverage.addSpan(a, z);
+      const { accepted } = this.tape.insert(tr.fills);
+      const fresh = new Set(accepted);
+      const used = tr.fills.filter((f) => fresh.has(f) || (f.time < this.liveFrom && !this.derived.covers(f.time, f.time + 1)));
+      this.derived.addSpan(tr.from, Math.min(tr.to, this.liveFrom));
+      if (used.length > 0) {
+        const agg = new OrderAggregator();
+        this.orders.add([...agg.push(used, Number.NEGATIVE_INFINITY), ...agg.flush(0, true)]);
+        this.walls.pushHistory(used);
+      }
+      if (accepted.length > 0) for (const s of this.seriesById.values()) s.rebuildLive();
+      this.oi.restore(tr.oi);
+    }
+    const bySteps = new Map<number, BookFrame[]>();
+    for (const f of b.frames) bySteps.set(f.step, [...(bySteps.get(f.step) ?? []), f]);
+    for (const [step, list] of bySteps) {
+      let h = this.books.get(step);
+      if (!h) this.books.set(step, (h = new BookHistory(step)));
+      h.restore(list);
+    }
+    this.bump();
+  }
+
   // ───────────────────────── sprzątanie ─────────────────────────
 
   private prune(): void {
     const cut = this.serverNow() - RETENTION_MS;
     this.tape.prune(cut);
     this.coverage.prune(cut);
+    this.derived.prune(cut);
     this.orders.prune(cut);
     this.walls.prune(this.serverNow(), cut);
     this.oi.prune(cut);
