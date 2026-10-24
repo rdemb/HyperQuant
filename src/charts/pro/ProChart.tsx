@@ -250,7 +250,7 @@ export const ProChart: React.FC = () => {
           <DrawHint tools={tools} />
           <LoadOverlay store={store} onRetry={() => void store.setInterval(settings.interval, true)} />
           {pick && (
-            <div className="absolute left-2 bottom-2 z-30 w-[min(320px,calc(100%-16px))]">
+            <div className="absolute left-2 bottom-2 z-30 w-[min(320px,calc(100%-16px))] max-h-[55%] sm:max-h-[calc(100%-16px)] overflow-y-auto rounded-xl">
               <PickCard pick={pick} store={store} bigUsd={bigUsd} highlight={highlight} onHighlight={setHighlight} onClose={closePick} />
             </div>
           )}
