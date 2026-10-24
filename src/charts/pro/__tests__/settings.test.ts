@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_SETTINGS, parseSettings } from '../chart/settings';
+import { DEFAULT_SETTINGS, hashFor, parseSettings, settingsFromHash } from '../chart/settings';
 
 describe('parseSettings', () => {
   it('brak lub śmieci → wartości domyślne', () => {
@@ -29,5 +29,20 @@ describe('parseSettings', () => {
 
   it('nieznany interwał → domyślny', () => {
     expect(parseSettings({ interval: '2m' }).interval).toBe(DEFAULT_SETTINGS.interval);
+  });
+
+  it('rynek tylko z listy, domyślnie BTC', () => {
+    expect(parseSettings({ coin: 'ETH' }).coin).toBe('ETH');
+    expect(parseSettings({ coin: 'DOGE' }).coin).toBe('BTC');
+  });
+});
+
+describe('link do widoku', () => {
+  it('rynek, interwał i rodzaj wykresu w obie strony; nieznane wartości pomijane', () => {
+    const s = { ...DEFAULT_SETTINGS, coin: 'SOL' as const, interval: '5m', view: 'candles' as const };
+    expect(hashFor(s)).toBe('#charts?m=SOL&i=5m&v=candles');
+    expect(settingsFromHash(hashFor(s))).toEqual({ coin: 'SOL', interval: '5m', view: 'candles' });
+    expect(settingsFromHash('#charts?m=DOGE&i=7m&v=x')).toEqual({});
+    expect(settingsFromHash('#charts')).toEqual({});
   });
 });

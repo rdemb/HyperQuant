@@ -10,7 +10,8 @@ const VIEWS: ViewId[] = ['desk', 'charts', 'plan', 'market', 'lab', 'micro', 'so
 const CEX_KEY = 'hq.cexEnabled';
 
 function readHashView(): ViewId {
-  const h = typeof window !== 'undefined' ? window.location.hash.replace('#', '') : '';
+  // Po „?” parametry widoku (np. link do wykresu: #charts?m=ETH&i=5m)
+  const h = typeof window !== 'undefined' ? window.location.hash.replace('#', '').split('?')[0] : '';
   return (VIEWS as string[]).includes(h) ? (h as ViewId) : 'desk';
 }
 
@@ -56,7 +57,7 @@ function useDeskState() {
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
   const setView = useCallback((v: ViewId) => {
-    if (window.location.hash !== `#${v}`) window.location.hash = v;
+    if (window.location.hash.split('?')[0] !== `#${v}`) window.location.hash = v;
     setViewState(v);
   }, []);
 

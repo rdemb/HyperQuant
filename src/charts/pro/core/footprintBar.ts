@@ -13,9 +13,9 @@ export interface FootprintBar {
   /** Tick bazowy (USD); cena wiersza i = (lo + i) × tick. */
   tick: number;
   lo: number;
-  /** Agresywne kupno per wiersz (BTC). */
+  /** Agresywne kupno per wiersz (jednostki rynku). */
   buy: Float64Array;
-  /** Agresywna sprzedaż per wiersz (BTC). */
+  /** Agresywna sprzedaż per wiersz (jednostki rynku). */
   sell: Float64Array;
   buyVol: number;
   sellVol: number;
@@ -38,12 +38,13 @@ export interface FootprintBar {
 
 /**
  * Tick ceny perpów Hyperliquid: najwyżej 5 cyfr znaczących (BTC przy 80 tys. = 1 USD, od 100 tys. = 10 USD),
- * nie mniej niż 10^−(6 − szDecimals).
+ * nie mniej niż 10^−(6 − szDecimals). Bez `szDecimals` — sama reguła cyfr znaczących (przy cenach BTC, ETH, SOL
+ * i HYPE to ona wyznacza tick).
  */
-export function hlTick(px: number, szDecimals = 5): number {
+export function hlTick(px: number, szDecimals?: number): number {
   if (!(px > 0)) return 1;
   const sig = 10 ** (Math.floor(Math.log10(px)) - 4);
-  return Math.max(sig, 10 ** -(6 - szDecimals));
+  return szDecimals === undefined ? sig : Math.max(sig, 10 ** -(6 - szDecimals));
 }
 
 /** Indeks wiersza ceny na siatce `step` (zaokrąglenie chroni przed błędem zmiennoprzecinkowym). */
@@ -183,7 +184,7 @@ export interface FootprintRows {
 export interface ImbalanceParams {
   /** Stosunek nierównowagi diagonalnej (np. 3 = 300%). */
   ratio: number;
-  /** Minimalny wolumen strony przewagi (BTC). */
+  /** Minimalny wolumen strony przewagi (jednostki rynku). */
   minVol: number;
 }
 

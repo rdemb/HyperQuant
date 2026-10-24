@@ -165,7 +165,8 @@ export function mergeSpans(spans: readonly Span[]): Span[] {
 
 // ───────────────────────── IndexedDB ─────────────────────────
 
-const DB_NAME = 'hq-pro-tape-btc';
+/** Osobna baza na rynek (nazwa BTC sprzed wyboru rynków bez zmian, więc zapisana taśma zostaje). */
+const dbName = (coin: string) => `hq-pro-tape-${coin.toLowerCase()}`;
 const MINUTES = 'minutes';
 const META = 'meta';
 
@@ -185,11 +186,11 @@ function done(tx: IDBTransaction): Promise<void> {
 }
 
 /** Magazyn w IndexedDB; null, gdy przeglądarka go nie udostępnia (np. prywatne okno w części przeglądarek). */
-export async function openTapeDb(): Promise<TapeKv | null> {
+export async function openTapeDb(coin = 'BTC'): Promise<TapeKv | null> {
   if (typeof indexedDB === 'undefined') return null;
   let db: IDBDatabase;
   try {
-    const open = indexedDB.open(DB_NAME, 1);
+    const open = indexedDB.open(dbName(coin), 1);
     open.onupgradeneeded = () => {
       open.result.createObjectStore(MINUTES, { keyPath: 'minute' });
       open.result.createObjectStore(META);

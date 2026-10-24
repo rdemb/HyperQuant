@@ -13,7 +13,7 @@ export interface BookFrame {
   step: number;
   /** Ceny poziomów: najpierw bidy (malejąco), potem aski (rosnąco). */
   px: Float64Array;
-  /** Wielkości (BTC) w tej samej kolejności. */
+  /** Wielkości (jednostki rynku) w tej samej kolejności. */
   sz: Float64Array;
   nBids: number;
 }
@@ -100,11 +100,11 @@ export class BookHistory {
 }
 
 /**
- * Cyfry znaczące l2Book dla kroku ~10 USD (arkusz bliski) i ~100 USD (arkusz daleki) przy danej cenie:
- * 5 cyfr ceny (10 000–99 999) → 4 i 3, 6 cyfr → 5 i 4.
+ * Cyfry znaczące l2Book: krok arkusza bliskiego najbliższy 2 pb ceny (BTC 75 000 → 10 USD, ETH 2 800 → 1,
+ * SOL 195 → 0,1, HYPE 37 → 0,01), dalekiego — dziesięć razy większy.
  */
 export function bookSigFigs(price: number): { near: number; far: number } {
   const digits = Math.floor(Math.log10(price)) + 1;
-  const near = Math.min(5, Math.max(2, digits - 1));
+  const near = Math.min(5, Math.max(2, digits - Math.round(Math.log10(price * 2e-4))));
   return { near, far: Math.max(2, near - 1) };
 }

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HlStream } from '../hl/stream';
-import { ProStore } from '../store/proStore';
+import { CandleSeries, ProStore } from '../store/proStore';
 
 class FakeWs {
   static last: FakeWs | null = null;
@@ -43,6 +43,7 @@ function trade(time: number, px: number, sz: number, side: 'B' | 'A', tid: numbe
 describe('ProStore', () => {
   let now = T0 + 2 * M5 + 30_000;
   let store: ProStore;
+  let series: CandleSeries;
   let candles: unknown[];
 
   beforeEach(() => {
@@ -59,6 +60,7 @@ describe('ProStore', () => {
       })
     );
     store = new ProStore(new HlStream({ wsFactory: () => new FakeWs() as unknown as WebSocket, now: () => Date.now() }));
+    series = store.series('5m');
   });
 
   afterEach(() => {
@@ -70,7 +72,7 @@ describe('ProStore', () => {
   async function boot() {
     store.start();
     FakeWs.last!.open();
-    await vi.waitFor(() => expect(store.loadState).toBe('ready'));
+    await vi.waitFor(() => expect(series.loadState).toBe('ready'));
     const ws = FakeWs.last!;
     ws.msg({ channel: 'subscriptionResponse', data: { method: 'subscribe', subscription: { type: 'trades', coin: 'BTC' } } });
     return ws;
@@ -78,7 +80,7 @@ describe('ProStore', () => {
 
   it('ładuje świece interwału i subskrybuje transakcje, kontekst i świecę', async () => {
     const ws = await boot();
-    expect(store.bars()).toHaveLength(3);
+    expect(series.bars()).toHaveLength(3);
     const subs = ws.sent.map((s) => JSON.parse(s).subscription.type);
     expect(subs).toEqual(expect.arrayContaining(['trades', 'activeAssetCtx', 'candle']));
   });
@@ -86,7 +88,7 @@ describe('ProStore', () => {
   it('transakcje tworzą footprint świecy; świeca otwarta w trakcie nagrania jest niepełna', async () => {
     const ws = await boot();
     ws.msg({ channel: 'trades', data: [trade(now - 1000, 81025, 0.5, 'B', 1), trade(now - 500, 81024, 0.2, 'A', 2)] });
-    const bars = store.bars();
+    const bars = series.bars();
     expect(bars[0].fp).toBeNull();
     const live = bars[2];
     expect(live.fp?.buyVol).toBeCloseTo(0.5);
@@ -104,7 +106,7 @@ describe('ProStore', () => {
     ws.msg({ channel: 'trades', data: [trade(next + 1000, 81030, 1, 'B', 3)] });
     candles = [];
     ws.msg({ channel: 'candle', data: candle(next, 81030, 81031, 1) });
-    const last = store.bars().at(-1)!;
+    const last = series.bars().at(-1)!;
     expect(last.t).toBe(next);
     expect(last.complete).toBe(true);
     expect(last.fp?.delta).toBeCloseTo(1);
@@ -114,7 +116,7 @@ describe('ProStore', () => {
     const ws = await boot();
     ws.msg({ channel: 'trades', data: [trade(now - 1000, 81025, 1, 'B', 1)] });
     ws.msg({ channel: 'trades', data: [trade(now - 3000, 81020, 2, 'A', 2)] });
-    const fp = store.bars()[2].fp!;
+    const fp = series.bars()[2].fp!;
     expect(fp.delta).toBeCloseTo(-1);
     expect(fp.open).toBe(81020);
     expect(fp.minDelta).toBeCloseTo(-2);
@@ -122,25 +124,28 @@ describe('ProStore', () => {
 
   it('niezmienione świece zachowują referencję między wywołaniami', async () => {
     const ws = await boot();
-    const a = store.bars();
+    const a = series.bars();
     ws.msg({ channel: 'trades', data: [trade(now - 1000, 81025, 1, 'B', 1)] });
-    const b = store.bars();
+    const b = series.bars();
     expect(b[0]).toBe(a[0]);
     expect(b[1]).toBe(a[1]);
     expect(b[2]).not.toBe(a[2]);
   });
 
-  it('zmiana interwału przelicza footprint z taśmy dla nowych świec', async () => {
+  it('drugi interwał tego rynku liczy footprint z tej samej taśmy (panele układu)', async () => {
     const ws = await boot();
     ws.msg({ channel: 'trades', data: [trade(now - 1000, 81025, 1, 'B', 1), trade(now - 900, 81025, 1, 'B', 2)] });
     const M1 = 60_000;
     const t1 = Math.floor((now - 1000) / M1) * M1;
     candles = [{ ...candle(t1, 81020, 81025, 3), i: '1m' }];
-    await store.setInterval('1m');
-    const bar = store.bars().find((b) => b.t === t1)!;
+    const m1 = store.series('1m');
+    await m1.load();
+    const bar = m1.bars().find((b) => b.t === t1)!;
     expect(bar.fp?.buyVol).toBeCloseTo(2);
     ws.msg({ channel: 'trades', data: [trade(now - 100, 81026, 1, 'A', 3)] });
-    expect(store.bars().find((b) => b.t === t1)!.fp?.delta).toBeCloseTo(1);
+    expect(m1.bars().find((b) => b.t === t1)!.fp?.delta).toBeCloseTo(1);
+    // Seria 5m tego rynku nadal liczy swoje świece z tej samej taśmy
+    expect(series.bars().at(-1)!.fp?.buyVol).toBeCloseTo(2);
   });
 
   it('wypełnienia jednego zlecenia agresora trafiają do dziennika jako jedno zlecenie', async () => {
@@ -171,7 +176,7 @@ describe('ProStore', () => {
     ws2.msg({ channel: 'trades', data: [trade(next + 21_000, 81030, 1, 'B', 9)] });
     ws2.msg({ channel: 'candle', data: candle(next, 81030, 81031, 1) });
     expect(store.coverage.covers(next, next + 30_000)).toBe(false);
-    expect(store.bars().at(-1)!.complete).toBe(false);
+    expect(series.bars().at(-1)!.complete).toBe(false);
   });
 
   it('początek nagrania z migawki po subskrypcji, w zegarze giełdy (zegar przeglądarki spóźniony o 2 min)', async () => {
