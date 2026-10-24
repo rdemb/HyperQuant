@@ -490,6 +490,57 @@ h1 {
   text-align: right;
 }
 
+/* ───── Udostępnianie ───── */
+.share-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.share-btn,
+.share-net {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 44px;
+  padding: 0 16px;
+  background: var(--surface-1);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--ink-2);
+  font: 500 14px/1 var(--font-sans);
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    border-color 150ms,
+    color 150ms;
+}
+.share-net {
+  width: 44px;
+  padding: 0;
+}
+.share-btn[hidden] {
+  display: none;
+}
+.share-btn:hover,
+.share-net:hover {
+  border-color: var(--line-strong);
+  color: var(--ink-1);
+}
+.share svg {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  fill: currentColor;
+}
+.share svg.line {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 /* ───── Lista wpisów ───── */
 .intro p:not(.eyebrow) {
   margin: 0;

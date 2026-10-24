@@ -1,7 +1,8 @@
 # Blog: format wpisu i publikacja
 
 Blog to statyczne strony budowane razem z deskiem (`npm run build`): lista wpisów pogrupowana po dniach, strona każdego wpisu,
-archiwum miesięcy, kanał RSS (`blog/feed.xml`), `sitemap.xml` i obrazek do podglądu linku (Open Graph / X, 1200×630) dla każdego wpisu.
+archiwum miesięcy, kanał RSS (`blog/feed.xml`), `sitemap.xml`, obrazek do podglądu linku (Open Graph / X, 1200×630) dla każdego wpisu
+oraz przyciski udostępniania pod wpisem (X, Facebook, LinkedIn, Telegram, WhatsApp, kopiowanie linku, systemowe „Udostępnij” na telefonie).
 Kod: `scripts/blog/`, wpisy: `content/blog/`.
 
 ## Plik
