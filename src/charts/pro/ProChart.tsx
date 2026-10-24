@@ -984,7 +984,7 @@ const Templates: React.FC<{ settings: ChartSettings; onApply: (s: ChartSettings)
 };
 
 const Group: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
-  <fieldset className="flex flex-col gap-2">
+  <fieldset className="flex flex-col gap-2 min-w-0">
     <legend className="mb-1 text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium">{title}</legend>
     {children}
   </fieldset>
