@@ -1,5 +1,6 @@
 import { ChartLayout, ChartSettings, DEFAULT_SETTINGS, NARROW_PATCH, panelKey, parseLayout } from './settings';
 import { LAYERS_OFF } from './templates';
+import { tr } from '../../../i18n';
 
 /**
  * Stacje robocze: gotowy układ wykresów pod jedno pytanie tradera (co się dzieje, kto naciska, gdzie stoi płynność,
@@ -27,15 +28,21 @@ export const STATIONS: readonly Station[] = [
   {
     id: 'start',
     name: 'Start',
-    question: 'Co się dzieje? Footprint z VWAP, profilem i poziomami dnia, wolumen, delta i CVD',
+    question: tr(
+      'Co się dzieje? Footprint z VWAP, profilem i poziomami dnia, wolumen, delta i CVD',
+      'What is happening? Footprint with VWAP, profile and daily levels, volume, delta and CVD'
+    ),
     layout: 1,
     panels: [{}],
     phone: NARROW_PATCH,
   },
   {
     id: 'scalp',
-    name: 'Skalper',
-    question: 'Kto teraz naciska? Footprint 1m z mapą ciepła i DOM, bąble, ściany, duże zlecenia w arkuszu, strefy, taśma zleceń i Kto handluje (duzi gracze i reszta)',
+    name: tr('Skalper', 'Scalper'),
+    question: tr(
+      'Kto teraz naciska? Footprint 1m z mapą ciepła i DOM, bąble, ściany, duże zlecenia w arkuszu, strefy, taśma zleceń i Kto handluje (duzi gracze i reszta)',
+      'Who is pushing now? 1m footprint with heatmap and DOM, bubbles, walls, large orders in the book, zones, order tape and Who is trading (large players and the rest)'
+    ),
     layout: 1,
     panels: [
       {
@@ -58,8 +65,11 @@ export const STATIONS: readonly Station[] = [
   },
   {
     id: 'liquidity',
-    name: 'Płynność',
-    question: 'Gdzie stoją zlecenia i pozycje? Mapa ciepła, bąble, ściany, duże zlecenia w arkuszu, wieloryby i klastry likwidacji',
+    name: tr('Płynność', 'Liquidity'),
+    question: tr(
+      'Gdzie stoją zlecenia i pozycje? Mapa ciepła, bąble, ściany, duże zlecenia w arkuszu, wieloryby i klastry likwidacji',
+      'Where do orders and positions sit? Heatmap, bubbles, walls, large orders in the book, whales and liquidation clusters'
+    ),
     layout: 1,
     panels: [
       {
@@ -81,8 +91,11 @@ export const STATIONS: readonly Station[] = [
   },
   {
     id: 'auction',
-    name: 'Aukcja',
-    question: 'Gdzie rynek widzi wartość? 30m z TPO i VWAP ±σ obok 4h z profilami sesji i IB',
+    name: tr('Aukcja', 'Auction'),
+    question: tr(
+      'Gdzie rynek widzi wartość? 30m z TPO i VWAP ±σ obok 4h z profilami sesji i IB',
+      'Where does the market see value? 30m with TPO and VWAP ±σ next to 4h with session profiles and IB'
+    ),
     layout: 2,
     panels: [
       { ...LAYERS_OFF, interval: '30m', view: 'candles', showDelta: false, showCvd: false, showTpo: true, showVwap: true, showVwapBands: true, showLevels: true },
@@ -92,8 +105,11 @@ export const STATIONS: readonly Station[] = [
   },
   {
     id: 'venues',
-    name: 'Giełdy',
-    question: 'Czy reszta rynku się zgadza? CVD Hyperliquid, Binance i Bybit oraz Tablica liczb (dane Binance i Bybit pobiera Twoja przeglądarka)',
+    name: tr('Giełdy', 'Exchanges'),
+    question: tr(
+      'Czy reszta rynku się zgadza? CVD Hyperliquid, Binance i Bybit oraz Tablica liczb (dane Binance i Bybit pobiera Twoja przeglądarka)',
+      'Does the rest of the market agree? Hyperliquid, Binance and Bybit CVD plus the Numbers table (your browser fetches Binance and Bybit data)'
+    ),
     layout: 1,
     panels: [
       {
@@ -114,8 +130,11 @@ export const STATIONS: readonly Station[] = [
   },
   {
     id: 'mtf',
-    name: 'Dwa interwały',
-    question: 'Co mówi wyższy interwał? 5m footprint z mapą ciepła obok 1h ze świecami i profilami sesji',
+    name: tr('Dwa interwały', 'Two timeframes'),
+    question: tr(
+      'Co mówi wyższy interwał? 5m footprint z mapą ciepła obok 1h ze świecami i profilami sesji',
+      'What does the higher timeframe say? 5m footprint with heatmap next to 1h candles with session profiles'
+    ),
     layout: 2,
     panels: [
       { ...LAYERS_OFF, interval: '5m', view: 'footprint', showVwap: true, showProfile: true, showHeatmap: true, showBubbles: true },

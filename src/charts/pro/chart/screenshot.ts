@@ -1,4 +1,5 @@
 import { PRO } from './theme';
+import { locale } from '../../../i18n';
 
 /** Zrzut wykresu z paskiem marki (do publikacji): nazwa, rynek, interwał, czas i adres strony. */
 export function brandedScreenshot(chartCanvas: HTMLCanvasElement, cssWidth: number, subtitle: string, when: Date): HTMLCanvasElement {
@@ -24,7 +25,7 @@ export function brandedScreenshot(chartCanvas: HTMLCanvasElement, cssWidth: numb
   const brandW = ctx.measureText('HyperQuant').width;
   ctx.font = `500 ${Math.round(12 * ratio)}px "Plus Jakarta Sans", sans-serif`;
   ctx.fillStyle = PRO.ink2;
-  const stamp = when.toLocaleString('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const stamp = when.toLocaleString(locale, { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   ctx.fillText(`${subtitle} · ${stamp}`, pad + brandW + Math.round(12 * ratio), mid);
   ctx.textAlign = 'right';
   ctx.fillStyle = PRO.accent;

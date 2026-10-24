@@ -1,4 +1,5 @@
 import { DAY } from './time';
+import { tr } from '../../../i18n';
 
 /**
  * Sesje handlu krypto (24/7) wyznaczone otwarciami trzech rynków, z czasem letnim liczonym przez Intl:
@@ -15,7 +16,7 @@ export interface Session {
   end: number;
 }
 
-export const SESSION_LABEL: Record<SessionId, string> = { asia: 'Azja', london: 'Londyn', ny: 'Nowy Jork' };
+export const SESSION_LABEL: Record<SessionId, string> = { asia: tr('Azja', 'Asia'), london: tr('Londyn', 'London'), ny: tr('Nowy Jork', 'New York') };
 
 const fmtCache = new Map<string, Intl.DateTimeFormat>();
 

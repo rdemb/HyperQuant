@@ -10,6 +10,7 @@ import type { ProStore } from '../store/proStore';
 import { fmtPx } from './layout';
 import type { LiquidityPick } from './liquidity';
 import type { ChartSettings } from './settings';
+import { tr } from '../../../i18n';
 
 /**
  * Karta obiektu klikniętego na wykresie (zlecenie agresora z podsumowaniem adresu biorcy, seria, ściana)
@@ -23,7 +24,7 @@ const usd = (v: number) => `${compact(v)} USD`;
 const amount = (v: number, coin: string) => `${fmtVol(v)} ${coin}`;
 
 const SideTag: React.FC<{ buy: boolean; children?: React.ReactNode }> = ({ buy, children }) => (
-  <span className={`font-semibold ${buy ? 'text-of-buy-ink' : 'text-of-sell-ink'}`}>{children ?? (buy ? 'Kupno' : 'Sprzedaż')}</span>
+  <span className={`font-semibold ${buy ? 'text-of-buy-ink' : 'text-of-sell-ink'}`}>{children ?? (buy ? tr('Kupno', 'Buy') : tr('Sprzedaż', 'Sell'))}</span>
 );
 
 const ClassTag: React.FC<{ label: string; tone: 'clash' | 'big' | 'plain' }> = ({ label, tone }) => (
@@ -63,39 +64,41 @@ export const PickCard: React.FC<{
     head = (
       <>
         <SideTag buy={buy} />
-        <ClassTag label={pick.cls === 'clash' ? 'Bitwa' : pick.cls === 'big' ? 'Duże zlecenie' : 'Zlecenie'} tone={pick.cls ?? 'plain'} />
+        <ClassTag label={pick.cls === 'clash' ? tr('Bitwa', 'Battle') : pick.cls === 'big' ? tr('Duże zlecenie', 'Large order') : tr('Zlecenie', 'Order')} tone={pick.cls ?? 'plain'} />
         <span className="font-mono text-ink-3">{fmtHms(o.time)}</span>
       </>
     );
     body = (
       <>
-        <Row label="Wielkość">
+        <Row label={tr('Wielkość', 'Size')}>
           {amount(o.sz, store.coin)} · {usd(o.notional)}
         </Row>
-        <Row label="Cena średnia">{fmtPx(o.vwap)}</Row>
-        <Row label="Zakres">
-          {fmtPx(o.pxFirst)} → {fmtPx(o.pxLast)} · {o.levels} {o.levels === 1 ? 'poziom' : 'poz.'}
+        <Row label={tr('Cena średnia', 'Average price')}>{fmtPx(o.vwap)}</Row>
+        <Row label={tr('Zakres', 'Range')}>
+          {fmtPx(o.pxFirst)} → {fmtPx(o.pxLast)} · {o.levels} {o.levels === 1 ? tr('poziom', 'level') : tr('poz.', 'levels')}
         </Row>
-        <Row label="Makerzy">{o.makers}</Row>
-        <Row label="Największy maker">
+        <Row label={tr('Makerzy', 'Makers')}>{o.makers}</Row>
+        <Row label={tr('Największy maker', 'Largest maker')}>
           {usd(o.topMakerUsd)} · {Math.round(top * 100)}%
         </Row>
         {pick.cls === 'clash' && (
-          <p className="text-[11px] leading-snug text-warn">Jeden maker przyjął co najmniej połowę progu ({usd(bigUsd / 2)}) z tego zlecenia.</p>
+          <p className="text-[11px] leading-snug text-warn">
+            {tr(`Jeden maker przyjął co najmniej połowę progu (${usd(bigUsd / 2)}) z tego zlecenia.`, `One maker absorbed at least half the threshold (${usd(bigUsd / 2)}) of this order.`)}
+          </p>
         )}
         <div className="mt-1 pt-2 border-t border-line flex flex-col gap-1">
           {w ? (
             <>
-              <Row label="Biorca">{w.label}</Row>
-              <Row label="Zleceń na taśmie">{w.orders}</Row>
-              <Row label="Kupno / sprzedaż">
+              <Row label={tr('Biorca', 'Taker')}>{w.label}</Row>
+              <Row label={tr('Zleceń na taśmie', 'Orders on the tape')}>{w.orders}</Row>
+              <Row label={tr('Kupno / sprzedaż', 'Buy / sell')}>
                 <SideTag buy>{fmtVol(w.buySz)}</SideTag> / <SideTag buy={false}>{fmtVol(w.sellSz)}</SideTag> {store.coin}
               </Row>
-              <Row label="Netto">
+              <Row label={tr('Netto', 'Net')}>
                 {fmtSignedVol(w.buySz - w.sellSz)} {store.coin}
               </Row>
-              <Row label="Największe">{usd(w.largestUsd)}</Row>
-              <Row label="Aktywny">
+              <Row label={tr('Największe', 'Largest')}>{usd(w.largestUsd)}</Row>
+              <Row label={tr('Aktywny', 'Active')}>
                 {fmtHms(w.first)} – {fmtHms(w.last)}
               </Row>
               <button
@@ -106,12 +109,17 @@ export const PickCard: React.FC<{
                 }`}
               >
                 <Highlighter className="w-3.5 h-3.5" />
-                {highlight === o.taker ? 'Wyłącz podświetlenie' : 'Podświetl zlecenia tego konta'}
+                {highlight === o.taker ? tr('Wyłącz podświetlenie', 'Turn highlight off') : tr('Podświetl zlecenia tego konta', "Highlight this account's orders")}
               </button>
-              <p className="text-[10px] leading-snug text-ink-3">Publiczne dane Hyperliquid od otwarcia strony. Adresu nie pokazujemy ani nie zapisujemy; numer konta obowiązuje do zamknięcia strony.</p>
+              <p className="text-[10px] leading-snug text-ink-3">
+                {tr(
+                  'Publiczne dane Hyperliquid od otwarcia strony. Adresu nie pokazujemy ani nie zapisujemy; numer konta obowiązuje do zamknięcia strony.',
+                  'Public Hyperliquid data since the page opened. We neither show nor store the address; the account number lasts until the page is closed.'
+                )}
+              </p>
             </>
           ) : (
-            <p className="text-[11px] text-ink-3">{fromServer ? 'Zlecenie z historii serwera — zapis nie zawiera adresów.' : 'Transakcja bez adresu biorcy.'}</p>
+            <p className="text-[11px] text-ink-3">{fromServer ? tr('Zlecenie z historii serwera — zapis nie zawiera adresów.', "Order from the server's history — the recording has no addresses.") : tr('Transakcja bez adresu biorcy.', 'Trade without a taker address.')}</p>
           )}
         </div>
       </>
@@ -121,7 +129,7 @@ export const PickCard: React.FC<{
     head = (
       <>
         <SideTag buy={b.side === 1} />
-        <ClassTag label="Seria" tone="big" />
+        <ClassTag label={tr('Seria', 'Burst')} tone="big" />
         <span className="font-mono text-ink-3">
           {fmtHms(b.from)}–{fmtHms(b.to)}
         </span>
@@ -129,15 +137,18 @@ export const PickCard: React.FC<{
     );
     body = (
       <>
-        <Row label="Zleceń / adresów">
+        <Row label={tr('Zleceń / adresów', 'Orders / addresses')}>
           {b.orders} / {b.takers}
         </Row>
-        <Row label="Razem">
+        <Row label={tr('Razem', 'Total')}>
           {amount(b.sz, store.coin)} · {usd(b.usd)}
         </Row>
-        <Row label="Cena średnia">{fmtPx(b.vwap)}</Row>
+        <Row label={tr('Cena średnia', 'Average price')}>{fmtPx(b.vwap)}</Row>
         <p className="text-[11px] leading-snug text-ink-3">
-          Drobne zlecenia (każde poniżej {usd(bigUsd / 4)}) różnych adresów po jednej stronie w ciągu 2 s, razem od progu {usd(bigUsd)}.
+          {tr(
+            `Drobne zlecenia (każde poniżej ${usd(bigUsd / 4)}) różnych adresów po jednej stronie w ciągu 2 s, razem od progu ${usd(bigUsd)}.`,
+            `Small orders (each below ${usd(bigUsd / 4)}) from different addresses on one side within 2 s, together above the ${usd(bigUsd)} threshold.`
+          )}
         </p>
       </>
     );
@@ -146,24 +157,30 @@ export const PickCard: React.FC<{
     const bid = w.side === 1;
     head = (
       <>
-        <SideTag buy={bid}>{w.iceberg ? (bid ? 'Góra lodowa na bidzie' : 'Góra lodowa na asku') : bid ? 'Ściana na bidzie' : 'Ściana na asku'}</SideTag>
+        <SideTag buy={bid}>{w.iceberg ? (bid ? tr('Góra lodowa na bidzie', 'Iceberg on the bid') : tr('Góra lodowa na asku', 'Iceberg on the ask')) : bid ? tr('Ściana na bidzie', 'Wall on the bid') : tr('Ściana na asku', 'Wall on the ask')}</SideTag>
         <span className="font-mono text-ink-1">{fmtPx(w.px)}</span>
       </>
     );
     body = (
       <>
-        <Row label="Wchłonięte">
+        <Row label={tr('Wchłonięte', 'Absorbed')}>
           {amount(w.sz, store.coin)} · {usd(w.usd)}
         </Row>
-        <Row label="Zleceń agresora">{w.hits}</Row>
-        <Row label="Widoczne w arkuszu">{w.shown > 0 ? `maks. ${amount(w.shown, store.coin)}` : 'brak migawki poziomu'}</Row>
-        <Row label="Czas">
+        <Row label={tr('Zleceń agresora', 'Aggressor orders')}>{w.hits}</Row>
+        <Row label={tr('Widoczne w arkuszu', 'Visible in the book')}>{w.shown > 0 ? `${tr('maks.', 'max')} ${amount(w.shown, store.coin)}` : tr('brak migawki poziomu', 'no level snapshot')}</Row>
+        <Row label={tr('Czas', 'Time')}>
           {fmtHms(w.from)} – {fmtHms(w.to)}
         </Row>
         <p className="text-[11px] leading-snug text-ink-3">
-          Jeden maker na tej cenie przyjmował {bid ? 'agresywną sprzedaż' : 'agresywne kupno'} (przerwy najwyżej 30 s).
+          {tr(
+            `Jeden maker na tej cenie przyjmował ${bid ? 'agresywną sprzedaż' : 'agresywne kupno'} (przerwy najwyżej 30 s).`,
+            `One maker at this price absorbed ${bid ? 'aggressive selling' : 'aggressive buying'} (gaps of at most 30 s).`
+          )}
           {w.iceberg &&
-            ` Wchłonął ${(w.sz / w.shown).toFixed(1)} × więcej, niż cały poziom pokazywał w arkuszu — zlecenie było odnawiane po wypełnieniach.`}
+            tr(
+              ` Wchłonął ${(w.sz / w.shown).toFixed(1)} × więcej, niż cały poziom pokazywał w arkuszu — zlecenie było odnawiane po wypełnieniach.`,
+              ` It absorbed ${(w.sz / w.shown).toFixed(1)} × more than the whole level showed in the book — the order was refilled after fills.`
+            )}
         </p>
       </>
     );
@@ -174,8 +191,8 @@ export const PickCard: React.FC<{
         {head}
         <button
           type="button"
-          aria-label="Zamknij"
-          title="Zamknij"
+          aria-label={tr('Zamknij', 'Close')}
+          title={tr('Zamknij', 'Close')}
           onClick={onClose}
           className="ml-auto -mr-1 inline-flex items-center justify-center w-8 h-8 rounded-md text-ink-3 hover:text-ink-1 hover:bg-surface-3"
         >
@@ -270,25 +287,25 @@ export const TapePanel: React.FC<{
   };
 
   return (
-    <aside aria-label="Taśma zleceń" className={`flex flex-col min-h-0 bg-surface-1 border-l border-line ${className}`}>
+    <aside aria-label={tr('Taśma zleceń', 'Order tape')} className={`flex flex-col min-h-0 bg-surface-1 border-l border-line ${className}`}>
       <div className="flex items-center gap-1 px-2 h-10 border-b border-line shrink-0">
-        <span className="text-[11px] uppercase tracking-[0.08em] text-ink-2 font-medium mr-auto">Taśma zleceń</span>
+        <span className="text-[11px] uppercase tracking-[0.08em] text-ink-2 font-medium mr-auto">{tr('Taśma zleceń', 'Order tape')}</span>
         <select
-          aria-label="Najmniejsza wartość zlecenia na taśmie"
+          aria-label={tr('Najmniejsza wartość zlecenia na taśmie', 'Smallest order value on the tape')}
           value={s.tapeMinUsd}
           onChange={(e) => onChange({ tapeMinUsd: Number(e.target.value) })}
           className="h-8 bg-page border border-line rounded-md px-1.5 font-mono text-[11px] text-ink-1"
         >
           {TAPE_MIN_OPTIONS.map((v) => (
             <option key={v} value={v}>
-              {v === 0 ? 'Wszystkie' : `od ${compact(v)}`}
+              {v === 0 ? tr('Wszystkie', 'All') : tr(`od ${compact(v)}`, `${compact(v)}+`)}
             </option>
           ))}
         </select>
         <button
           type="button"
-          aria-label={s.tapeSound ? 'Wyłącz dźwięk dużych zleceń' : 'Dźwięk dużych zleceń'}
-          title={s.tapeSound ? 'Wyłącz dźwięk dużych zleceń' : `Dźwięk zleceń od ${usd(bigUsd)}`}
+          aria-label={s.tapeSound ? tr('Wyłącz dźwięk dużych zleceń', 'Turn large order sound off') : tr('Dźwięk dużych zleceń', 'Large order sound')}
+          title={s.tapeSound ? tr('Wyłącz dźwięk dużych zleceń', 'Turn large order sound off') : tr(`Dźwięk zleceń od ${usd(bigUsd)}`, `Sound for orders from ${usd(bigUsd)}`)}
           aria-pressed={s.tapeSound}
           onClick={toggleSound}
           className={`inline-flex items-center justify-center w-8 h-8 rounded-md ${s.tapeSound ? 'text-ink-1 bg-surface-3' : 'text-ink-3 hover:text-ink-1 hover:bg-surface-2'}`}
@@ -297,8 +314,8 @@ export const TapePanel: React.FC<{
         </button>
         <button
           type="button"
-          aria-label="Zamknij taśmę"
-          title="Zamknij taśmę"
+          aria-label={tr('Zamknij taśmę', 'Close the tape')}
+          title={tr('Zamknij taśmę', 'Close the tape')}
           onClick={onClose ?? (() => onChange({ showTape: false }))}
           className="inline-flex items-center justify-center w-8 h-8 rounded-md text-ink-3 hover:text-ink-1 hover:bg-surface-2"
         >
@@ -306,13 +323,13 @@ export const TapePanel: React.FC<{
         </button>
       </div>
       <div className="grid grid-cols-[4.2rem_1fr_3.4rem_3.6rem] gap-x-1.5 px-2 py-1 border-b border-line font-mono text-[10px] text-ink-3 shrink-0">
-        <span>Czas</span>
-        <span className="text-right">Cena</span>
+        <span>{tr('Czas', 'Time')}</span>
+        <span className="text-right">{tr('Cena', 'Price')}</span>
         <span className="text-right">{store.coin}</span>
         <span className="text-right">USD</span>
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto [scrollbar-width:thin]">
-        {rows.length === 0 && <p className="px-3 py-4 text-[11px] text-ink-3">Brak zleceń od tej wartości od otwarcia strony.</p>}
+        {rows.length === 0 && <p className="px-3 py-4 text-[11px] text-ink-3">{tr('Brak zleceń od tej wartości od otwarcia strony.', 'No orders from this value since the page opened.')}</p>}
         {rows.map((o, i) => {
           const buy = o.side === 1;
           const cls = classify(o, bigUsd);
@@ -340,7 +357,8 @@ export const TapePanel: React.FC<{
         })}
       </div>
       <p className="px-2 py-1.5 border-t border-line text-[10px] leading-snug text-ink-3 shrink-0">
-        Zlecenia agresora złożone z wypełnień · pogrubione od {usd(bigUsd)}, <span className="text-warn">żółte</span> = bitwa z jednym makerem
+        {tr('Zlecenia agresora złożone z wypełnień · pogrubione od', 'Aggressor orders assembled from fills · bold from')} {usd(bigUsd)},{' '}
+        <span className="text-warn">{tr('żółte', 'yellow')}</span> = {tr('bitwa z jednym makerem', 'a battle with one maker')}
       </p>
     </aside>
   );
@@ -361,7 +379,7 @@ export const DomLadder: React.FC<{ store: ProStore; className: string }> = ({ st
   const stale = f !== null && store.serverNow() - f.t > DOM_STALE_MS;
   let body: React.ReactNode;
   if (!f || f.nBids === 0 || f.nBids === f.px.length) {
-    body = <p className="px-3 py-4 text-[11px] text-ink-3">Czekam na arkusz zleceń Hyperliquid…</p>;
+    body = <p className="px-3 py-4 text-[11px] text-ink-3">{tr('Czekam na arkusz zleceń Hyperliquid…', 'Waiting for the Hyperliquid order book…')}</p>;
   } else {
     const level = (i: number, sum: number) => ({ px: f.px[i], sz: f.sz[i], sum });
     const bids: { px: number; sz: number; sum: number }[] = [];
@@ -388,7 +406,7 @@ export const DomLadder: React.FC<{ store: ProStore; className: string }> = ({ st
         <div className="flex items-center justify-between gap-2 px-3 h-8 shrink-0 border-y border-line bg-surface-2 font-mono text-[11px]">
           <span className="text-ink-1">{fmtPx((f.px[0] + f.px[f.nBids]) / 2)}</span>
           <span className="text-ink-3">spread {fmtStep(f.px[f.nBids] - f.px[0])}</span>
-          <span title="Udział bidów i asków w widocznej głębokości arkusza">
+          <span title={tr('Udział bidów i asków w widocznej głębokości arkusza', 'Share of bids and asks in the visible book depth')}>
             <span className="text-of-buy-ink">{Math.round(bidShare * 100)}%</span>
             <span className="text-ink-3"> / </span>
             <span className="text-of-sell-ink">{Math.round((1 - bidShare) * 100)}%</span>
@@ -399,18 +417,21 @@ export const DomLadder: React.FC<{ store: ProStore; className: string }> = ({ st
     );
   }
   return (
-    <aside aria-label="Arkusz zleceń" className={`flex flex-col min-h-0 bg-surface-1 ${className}`}>
+    <aside aria-label={tr('Arkusz zleceń', 'Order book')} className={`flex flex-col min-h-0 bg-surface-1 ${className}`}>
       <div className="grid grid-cols-[1fr_4.5rem_4.5rem] gap-x-2 px-3 py-1.5 border-b border-line font-mono text-[10px] text-ink-3 shrink-0">
-        <span>Cena</span>
+        <span>{tr('Cena', 'Price')}</span>
         <span className="text-right">{store.coin}</span>
-        <span className="text-right">Σ od środka</span>
+        <span className="text-right">{tr('Σ od środka', 'Σ from mid')}</span>
       </div>
       {body}
       <p className="px-2 py-1.5 border-t border-line text-[10px] leading-snug text-ink-3 shrink-0">
         {stale ? (
-          <span className="text-warn">Arkusz nieaktualny — ostatnia migawka {fmtHms(f!.t)}.</span>
+          <span className="text-warn">{tr(`Arkusz nieaktualny — ostatnia migawka ${fmtHms(f!.t)}.`, `Book out of date — last snapshot ${fmtHms(f!.t)}.`)}</span>
         ) : (
-          <>Arkusz l2Book Hyperliquid{f ? `, poziomy co ${fmtStep(f.step)} USD` : ''} · udział bidów / asków w widocznej głębokości</>
+          tr(
+            `Arkusz l2Book Hyperliquid${f ? `, poziomy co ${fmtStep(f.step)} USD` : ''} · udział bidów / asków w widocznej głębokości`,
+            `Hyperliquid l2Book${f ? `, levels every ${fmtStep(f.step)} USD` : ''} · bid / ask share of the visible depth`
+          )
         )}
       </p>
     </aside>

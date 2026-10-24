@@ -1,3 +1,4 @@
+import { tr } from '../../../i18n';
 /**
  * Alerty cenowe zapisywane w przeglądarce: jednorazowe, wyzwalane, gdy cena rynku dojdzie do poziomu od strony,
  * z której alert ustawiono. Sprawdzane tylko przy otwartej stronie (bez serwera i bez kont).
@@ -132,7 +133,7 @@ function alertTone(): void {
 /** Powiadomienie systemowe (po zgodzie przeglądarki) i krótki dźwięk. */
 export function notifyAlert(text: string, tag: string): void {
   try {
-    if ('Notification' in window && Notification.permission === 'granted') new Notification('HyperQuant · alert cenowy', { body: text, tag });
+    if ('Notification' in window && Notification.permission === 'granted') new Notification(tr('HyperQuant · alert cenowy', 'HyperQuant · price alert'), { body: text, tag });
   } catch {
     // Część przeglądarek mobilnych nie ma konstruktora Notification — zostaje dźwięk i komunikat na wykresie
   }
