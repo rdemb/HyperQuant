@@ -288,6 +288,10 @@ export async function buildCharts({ at, fpFrom = null, get, note = false }) {
     if (!b) continue;
     candles.push([t, b.o, b.h, b.l, b.c, round(b.v), q ? round(q.buy) : null, q ? round(q.sell) : null]);
   }
+  if (candles.length < 2) {
+    const iso = (t) => new Date(t).toISOString();
+    throw new Error(`Za mało świec w oknie ${iso(from)} – ${iso(end)} (${candles.length}): --at w przyszłości albo brak danych w archiwum i na taśmie`);
+  }
 
   const oi = [];
   for (let t = from; t < end; t += bar) {

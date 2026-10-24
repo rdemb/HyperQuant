@@ -160,6 +160,10 @@ describe('wykresy: dane (chartdata.mjs)', () => {
     expect(read.footprint).toBeUndefined();
     expect(read.wartosc).toBeUndefined();
   });
+
+  it('okno bez świec (chwila z przyszłości) to czytelny błąd', async () => {
+    await expect(buildCharts({ at: AT + 24 * HOUR, note: true, get: openSource(fakeSource()) })).rejects.toThrow(/Za mało świec w oknie .* \(0\)/);
+  });
 });
 
 const SESSION = {
