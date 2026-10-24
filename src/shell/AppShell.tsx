@@ -8,6 +8,7 @@ import {
   Box,
   Activity,
   Database,
+  GraduationCap,
   MoreHorizontal,
   Newspaper,
   Pause,
@@ -30,6 +31,7 @@ const PlanView = lazy(() => import('../views/PlanView'));
 const MarketView = lazy(() => import('../views/MarketView'));
 const LabView = lazy(() => import('../views/LabView'));
 const MicroView = lazy(() => import('../views/MicroView'));
+const LessonsView = lazy(() => import('../views/LessonsView'));
 const SourcesView = lazy(() => import('../views/SourcesView'));
 
 const NAV: { id: ViewId; label: string; short: string; icon: React.ReactNode }[] = [
@@ -39,6 +41,7 @@ const NAV: { id: ViewId; label: string; short: string; icon: React.ReactNode }[]
   { id: 'market', label: tr('Rynek', 'Market'), short: tr('Rynek', 'Market'), icon: <Globe2 className="w-4 h-4" /> },
   { id: 'lab', label: 'Lab 3D', short: 'Lab', icon: <Box className="w-4 h-4" /> },
   { id: 'micro', label: tr('Mikrostruktura', 'Microstructure'), short: tr('Mikro', 'Micro'), icon: <Activity className="w-4 h-4" /> },
+  { id: 'lessons', label: tr('Lekcje', 'Lessons'), short: tr('Lekcje', 'Lessons'), icon: <GraduationCap className="w-4 h-4" /> },
   { id: 'sources', label: tr('Źródła', 'Sources'), short: tr('Źródła', 'Sources'), icon: <Database className="w-4 h-4" /> },
 ];
 
@@ -112,6 +115,7 @@ const ViewFallback = () => <EmptyState title={tr('Ładowanie widoku…', 'Loadin
 
 // Desk sam czeka na dane pod powitaniem (powitanie i mapa strony nie zależą od danych)
 const NEEDS_BARS: ViewId[] = ['plan', 'lab', 'micro'];
+const OWN_INTERVALS: ViewId[] = ['charts', 'lessons'];
 
 /** Powłoka aplikacji: nawigacja (górna na desktopie, dolna na telefonie), status danych, przejścia widoków. */
 export const AppShell: React.FC = () => {
@@ -144,7 +148,7 @@ export const AppShell: React.FC = () => {
   return (
     <div className="min-h-dvh bg-page text-ink-1 flex flex-col">
       <header className="pt-safe sticky top-0 z-30 bg-page/95 backdrop-blur border-b border-line">
-        <div className="flex items-center justify-between gap-4 px-4 lg:px-6 h-14">
+        <div className="flex items-center justify-between gap-3 xl:gap-4 px-4 lg:px-6 h-14">
           <a
             href="#desk"
             onClick={(e) => {
@@ -154,7 +158,7 @@ export const AppShell: React.FC = () => {
             className="flex items-baseline gap-2 shrink-0"
           >
             <span className="font-display text-lg font-bold tracking-tight">HyperQuant</span>
-            <span className="hidden sm:inline text-[11px] text-ink-3">BTC · Hyperliquid</span>
+            <span className="hidden sm:inline lg:hidden 2xl:inline text-[11px] text-ink-3">BTC · Hyperliquid</span>
           </a>
 
           <nav aria-label={tr('Główna', 'Main')} className="hidden lg:flex items-center gap-1">
@@ -163,11 +167,12 @@ export const AppShell: React.FC = () => {
                 key={n.id}
                 href={`#${n.id}`}
                 aria-current={view === n.id ? 'page' : undefined}
+                title={n.label}
                 onClick={(e) => {
                   e.preventDefault();
                   setView(n.id);
                 }}
-                className={`relative px-3 py-2 rounded-lg text-sm font-medium transition-colors duration-150 ${
+                className={`relative px-2 xl:px-2.5 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors duration-150 ${
                   view === n.id ? 'text-ink-1' : 'text-ink-3 hover:text-ink-1'
                 }`}
               >
@@ -178,12 +183,15 @@ export const AppShell: React.FC = () => {
                     transition={{ type: 'spring', stiffness: 260, damping: 26 }}
                   />
                 )}
-                <span className="relative">{n.label}</span>
+                {/* Poniżej 1680 px krótkie nazwy (jak w dolnym pasku telefonu), żeby menu mieściło się w jednym wierszu w obu językach */}
+                <span className="relative min-[1680px]:hidden">{n.short}</span>
+                <span className="relative hidden min-[1680px]:inline">{n.label}</span>
               </a>
             ))}
             {/* Blog to osobne statyczne strony (SEO, podgląd linków), nie widok aplikacji */}
-            <a href="./blog/" className="px-3 py-2 rounded-lg text-sm font-medium text-ink-3 hover:text-ink-1 transition-colors duration-150">
-              {BLOG_LABEL}
+            <a href="./blog/" title={BLOG_LABEL} className="px-2 xl:px-2.5 py-2 rounded-lg text-sm font-medium whitespace-nowrap text-ink-3 hover:text-ink-1 transition-colors duration-150">
+              <span className="min-[1680px]:hidden">Blog</span>
+              <span className="hidden min-[1680px]:inline">{BLOG_LABEL}</span>
             </a>
           </nav>
 
@@ -192,9 +200,9 @@ export const AppShell: React.FC = () => {
             <Badge tone={STATUS_TONE[feed.dataStatus]} title={STATUS_TITLE[feed.dataStatus]} testId="data-status">
               {feed.dataStatus}
             </Badge>
-            {/* Wykresy mają własne interwały — globalny przełącznik dotyczy pozostałych widoków */}
-            {view !== 'charts' && (
-              <div className="hidden md:block">
+            {/* Wykresy i Lekcje mają własne interwały — globalny przełącznik dotyczy pozostałych widoków */}
+            {!OWN_INTERVALS.includes(view) && (
+              <div className="hidden md:block lg:hidden xl:block">
                 <Segmented<number> ariaLabel={tr('Interwał', 'Timeframe')} value={feed.timeframeSec} onChange={feed.setTimeframeSec} options={TIMEFRAMES} />
               </div>
             )}
@@ -211,8 +219,8 @@ export const AppShell: React.FC = () => {
           </div>
         </div>
         <TickerStrip />
-        {view !== 'charts' && (
-          <div className="md:hidden px-4 py-2 border-b border-line overflow-x-auto">
+        {!OWN_INTERVALS.includes(view) && (
+          <div className="md:hidden lg:block xl:hidden px-4 py-2 border-b border-line overflow-x-auto">
             <Segmented<number> ariaLabel={tr('Interwał', 'Timeframe')} value={feed.timeframeSec} onChange={feed.setTimeframeSec} options={TIMEFRAMES} />
           </div>
         )}
@@ -229,6 +237,7 @@ export const AppShell: React.FC = () => {
               {view === 'market' && <MarketView />}
               {!awaitingData && view === 'lab' && <LabView />}
               {!awaitingData && view === 'micro' && <MicroView />}
+              {view === 'lessons' && <LessonsView />}
               {view === 'sources' && <SourcesView />}
             </Suspense>
           </motion.div>

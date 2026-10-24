@@ -1,5 +1,5 @@
 import React from 'react';
-import { Activity, ArrowDown, ArrowRight, Box, ChartCandlestick, Database, Globe2, LayoutDashboard, Newspaper, Target } from 'lucide-react';
+import { Activity, ArrowDown, ArrowRight, Box, ChartCandlestick, Database, Globe2, GraduationCap, LayoutDashboard, Newspaper, Target } from 'lucide-react';
 import { useDesk } from '../../state/DeskContext';
 import { ViewId } from '../../state/types';
 import { tr } from '../../i18n';
@@ -66,6 +66,15 @@ const MAP: MapItem[] = [
     text: tr(
       'Jak pracuje arkusz: płynność o każdej godzinie, koszt wejścia Twoją wielkością, OFI, VPIN i wielkość pozycji.',
       'How the book works: liquidity at every hour, the cost of entering with your size, OFI, VPIN and position sizing.'
+    ),
+  },
+  {
+    target: 'lessons',
+    name: tr('Lekcje', 'Lessons'),
+    icon: <GraduationCap className="w-4 h-4" />,
+    text: tr(
+      'Ćwiczenia na prawdziwych dniach BTC, atlas wskaźników z Wykresów, jak je łączyć, mity zestawione z danymi i symulator ryzyka.',
+      'Exercises on real BTC days, an atlas of the indicators from Charts, how to combine them, myths checked against data and a risk simulator.'
     ),
   },
   {
@@ -138,7 +147,7 @@ export const WelcomePanel: React.FC = () => {
           </h2>
           <span className="text-xs text-ink-3">{tr('Co znajdziesz w każdej zakładce', 'What you will find in each tab')}</span>
         </div>
-        <ul className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-4 gap-2.5">
+        <ul className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2.5">
           {MAP.map((m) => (
             <li key={m.name} className="flex">
               <MapCard item={m} onGo={go} />
