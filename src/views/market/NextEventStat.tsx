@@ -2,6 +2,7 @@ import React from 'react';
 import { DASH, Stat, fmtCountdown } from '../../ui';
 import { KIND_LABEL, fmtEventEt, fmtEventLocal, nextEvent, sourceShort } from '../../data/macroCalendar';
 import { useNow } from '../../utils/publicFeeds';
+import { tr } from '../../i18n';
 
 /** Kafel pasa Desk: najbliższa publikacja makro z odliczaniem (odświeżane co 30 s). */
 export const NextEventStat: React.FC<{ compact?: boolean }> = ({ compact }) => {
@@ -12,7 +13,7 @@ export const NextEventStat: React.FC<{ compact?: boolean }> = ({ compact }) => {
   return (
     <div className="bg-surface-1 border border-line rounded-xl p-3.5">
       <Stat
-        label="Najbliższe makro"
+        label={tr('Najbliższe makro', 'Next macro')}
         source={
           e
             ? { tone: soon ? 'warn' : 'neutral', label: soon ? '< 24 h' : sourceShort(e), title: `${e.name} · ${e.source}` }
@@ -32,7 +33,7 @@ export const NextEventStat: React.FC<{ compact?: boolean }> = ({ compact }) => {
             ? compact
               ? undefined
               : `${fmtEventLocal(e.timeUtcMs)} · ${fmtEventEt(e.timeUtcMs)}`
-            : 'Tabela dat wymaga aktualizacji'
+            : tr('Tabela dat wymaga aktualizacji', 'The date table needs an update')
         }
       />
     </div>

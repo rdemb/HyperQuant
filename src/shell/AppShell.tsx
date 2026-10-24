@@ -22,6 +22,7 @@ import { AnimatedNumber, Badge, BadgeTone, EmptyState, Segmented, VIEW_TRANSITIO
 import { InstallButton } from './InstallButton';
 import { ConnectingState } from './ConnectingState';
 import DeskView from '../views/DeskView';
+import { Lang, lang, setLang, tr } from '../i18n';
 
 // Widoki poza ekranem głównym ładowane leniwie (mniejszy pierwszy bundle)
 const ChartsView = lazy(() => import('../views/ChartsView'));
@@ -33,21 +34,29 @@ const SourcesView = lazy(() => import('../views/SourcesView'));
 
 const NAV: { id: ViewId; label: string; short: string; icon: React.ReactNode }[] = [
   { id: 'desk', label: 'Desk', short: 'Desk', icon: <LayoutDashboard className="w-4 h-4" /> },
-  { id: 'charts', label: 'Wykresy', short: 'Wykresy', icon: <ChartCandlestick className="w-4 h-4" /> },
-  { id: 'plan', label: 'Analizator planu', short: 'Plan', icon: <Target className="w-4 h-4" /> },
-  { id: 'market', label: 'Rynek', short: 'Rynek', icon: <Globe2 className="w-4 h-4" /> },
+  { id: 'charts', label: tr('Wykresy', 'Charts'), short: tr('Wykresy', 'Charts'), icon: <ChartCandlestick className="w-4 h-4" /> },
+  { id: 'plan', label: tr('Analizator planu', 'Plan Analyzer'), short: 'Plan', icon: <Target className="w-4 h-4" /> },
+  { id: 'market', label: tr('Rynek', 'Market'), short: tr('Rynek', 'Market'), icon: <Globe2 className="w-4 h-4" /> },
   { id: 'lab', label: 'Lab 3D', short: 'Lab', icon: <Box className="w-4 h-4" /> },
-  { id: 'micro', label: 'Mikrostruktura', short: 'Mikro', icon: <Activity className="w-4 h-4" /> },
-  { id: 'sources', label: 'Źródła', short: 'Źródła', icon: <Database className="w-4 h-4" /> },
+  { id: 'micro', label: tr('Mikrostruktura', 'Microstructure'), short: tr('Mikro', 'Micro'), icon: <Activity className="w-4 h-4" /> },
+  { id: 'sources', label: tr('Źródła', 'Sources'), short: tr('Źródła', 'Sources'), icon: <Database className="w-4 h-4" /> },
 ];
 
 const STATUS_TONE: Record<string, BadgeTone> = { LIVE: 'live', STALE: 'stale', SYNTH: 'stale', PAUSED: 'neutral' };
 const STATUS_TITLE: Record<string, string> = {
-  LIVE: 'Realne dane Hyperliquid (REST + WebSocket)',
-  STALE: 'Dane nieświeże: brak synchronizacji > 30 s lub rozłączony WebSocket',
-  SYNTH: 'Świece zastępcze — czekam na pierwszą synchronizację z API',
-  PAUSED: 'Strumień wstrzymany',
+  LIVE: tr('Realne dane Hyperliquid (REST + WebSocket)', 'Real Hyperliquid data (REST + WebSocket)'),
+  STALE: tr('Dane nieświeże: brak synchronizacji > 30 s lub rozłączony WebSocket', 'Stale data: no sync for > 30 s or WebSocket disconnected'),
+  SYNTH: tr('Świece zastępcze — czekam na pierwszą synchronizację z API', 'Placeholder candles, waiting for the first API sync'),
+  PAUSED: tr('Strumień wstrzymany', 'Stream paused'),
 };
+
+const LANGS: { value: Lang; label: string; title: string }[] = [
+  { value: 'pl', label: 'PL', title: 'Polski' },
+  { value: 'en', label: 'EN', title: 'English' },
+];
+
+// Blog jest tylko po polsku — w wersji angielskiej mówimy o tym w etykiecie
+const BLOG_LABEL = tr('Blog', 'Blog (PL)');
 
 const TIMEFRAMES = [
   { value: 60, label: '1m' },
@@ -80,14 +89,14 @@ const TickerStrip: React.FC = () => {
           </span>
         )}
       </div>
-      <span className={`flex items-baseline gap-x-5 ${fresh ? '' : 'opacity-50'}`} title={fresh ? undefined : 'Ostatnia znana wartość — dane nieświeże'}>
+      <span className={`flex items-baseline gap-x-5 ${fresh ? '' : 'opacity-50'}`} title={fresh ? undefined : tr('Ostatnia znana wartość — dane nieświeże', 'Last known value, data is stale')}>
         <Item label="Funding HL" value={t ? `${t.fundingAnnualizedPct >= 0 ? '+' : ''}${t.fundingAnnualizedPct}% APR` : DASH} />
         <Item label="OI" value={t ? fmtCompact(t.openInterestUsd, '$') : DASH} />
         <Item label="Basis" value={t ? `${t.basisBps} bps` : DASH} />
       </span>
       <Item label="PDH" value={shaakuni.pdh ? `${fmtPrice(shaakuni.pdh, 0)} · ${shaakuni.pdhStatus}` : DASH} />
       <Item label="PDL" value={shaakuni.pdl ? `${fmtPrice(shaakuni.pdl, 0)} · ${shaakuni.pdlStatus}` : DASH} />
-      <Item label="Sesja" value={`${shaakuni.nySession} · ${shaakuni.nyTimeFormatted}`} />
+      <Item label={tr('Sesja', 'Session')} value={`${shaakuni.nySession} · ${shaakuni.nyTimeFormatted}`} />
     </div>
   );
 };
@@ -99,7 +108,7 @@ const Item: React.FC<{ label: string; value: string }> = ({ label, value }) => (
   </span>
 );
 
-const ViewFallback = () => <EmptyState title="Ładowanie widoku…" />;
+const ViewFallback = () => <EmptyState title={tr('Ładowanie widoku…', 'Loading view…')} />;
 
 // Desk sam czeka na dane pod powitaniem (powitanie i mapa strony nie zależą od danych)
 const NEEDS_BARS: ViewId[] = ['plan', 'lab', 'micro'];
@@ -148,7 +157,7 @@ export const AppShell: React.FC = () => {
             <span className="hidden sm:inline text-[11px] text-ink-3">BTC · Hyperliquid</span>
           </a>
 
-          <nav aria-label="Główna" className="hidden lg:flex items-center gap-1">
+          <nav aria-label={tr('Główna', 'Main')} className="hidden lg:flex items-center gap-1">
             {NAV.map((n) => (
               <a
                 key={n.id}
@@ -174,27 +183,28 @@ export const AppShell: React.FC = () => {
             ))}
             {/* Blog to osobne statyczne strony (SEO, podgląd linków), nie widok aplikacji */}
             <a href="./blog/" className="px-3 py-2 rounded-lg text-sm font-medium text-ink-3 hover:text-ink-1 transition-colors duration-150">
-              Blog
+              {BLOG_LABEL}
             </a>
           </nav>
 
           <div className="flex items-center gap-2 shrink-0">
+            <Segmented<Lang> ariaLabel={tr('Język', 'Language')} size="xs" value={lang} onChange={setLang} options={LANGS} />
             <Badge tone={STATUS_TONE[feed.dataStatus]} title={STATUS_TITLE[feed.dataStatus]} testId="data-status">
               {feed.dataStatus}
             </Badge>
             {/* Wykresy mają własne interwały — globalny przełącznik dotyczy pozostałych widoków */}
             {view !== 'charts' && (
               <div className="hidden md:block">
-                <Segmented<number> ariaLabel="Interwał" value={feed.timeframeSec} onChange={feed.setTimeframeSec} options={TIMEFRAMES} />
+                <Segmented<number> ariaLabel={tr('Interwał', 'Timeframe')} value={feed.timeframeSec} onChange={feed.setTimeframeSec} options={TIMEFRAMES} />
               </div>
             )}
-            <IconBtn label={feed.isStreaming ? 'Wstrzymaj strumień' : 'Wznów strumień'} onClick={() => feed.setIsStreaming(!feed.isStreaming)}>
+            <IconBtn label={feed.isStreaming ? tr('Wstrzymaj strumień', 'Pause stream') : tr('Wznów strumień', 'Resume stream')} onClick={() => feed.setIsStreaming(!feed.isStreaming)}>
               {feed.isStreaming ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
             </IconBtn>
-            <IconBtn label="Synchronizuj teraz" onClick={feed.syncNow} className="hidden sm:inline-flex">
+            <IconBtn label={tr('Synchronizuj teraz', 'Sync now')} onClick={feed.syncNow} className="hidden sm:inline-flex">
               <RefreshCw className="w-4 h-4" />
             </IconBtn>
-            <IconBtn label={audioEnabled ? 'Wycisz dźwięk taśmy' : 'Włącz dźwięk taśmy'} onClick={() => setAudioEnabled(!audioEnabled)} className="hidden sm:inline-flex">
+            <IconBtn label={audioEnabled ? tr('Wycisz dźwięk taśmy', 'Mute tape sound') : tr('Włącz dźwięk taśmy', 'Unmute tape sound')} onClick={() => setAudioEnabled(!audioEnabled)} className="hidden sm:inline-flex">
               {audioEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
             </IconBtn>
             <InstallButton compact />
@@ -203,7 +213,7 @@ export const AppShell: React.FC = () => {
         <TickerStrip />
         {view !== 'charts' && (
           <div className="md:hidden px-4 py-2 border-b border-line overflow-x-auto">
-            <Segmented<number> ariaLabel="Interwał" value={feed.timeframeSec} onChange={feed.setTimeframeSec} options={TIMEFRAMES} />
+            <Segmented<number> ariaLabel={tr('Interwał', 'Timeframe')} value={feed.timeframeSec} onChange={feed.setTimeframeSec} options={TIMEFRAMES} />
           </div>
         )}
       </header>
@@ -226,7 +236,7 @@ export const AppShell: React.FC = () => {
       </main>
 
       {/* Dolna nawigacja (telefon) */}
-      <nav aria-label="Główna (telefon)" className="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-surface-1/95 backdrop-blur border-t border-line pb-safe">
+      <nav aria-label={tr('Główna (telefon)', 'Main (phone)')} className="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-surface-1/95 backdrop-blur border-t border-line pb-safe">
         <div ref={moreRef}>
         <div className="grid grid-cols-5">
           {NAV.slice(0, 4).map((n) => (
@@ -234,7 +244,7 @@ export const AppShell: React.FC = () => {
           ))}
           <TabBtn
             active={NAV.slice(4).some((n) => n.id === view)}
-            label="Więcej"
+            label={tr('Więcej', 'More')}
             icon={<MoreHorizontal className="w-4 h-4" />}
             onClick={() => setMoreOpen((o) => !o)}
             expanded={moreOpen}
@@ -265,7 +275,7 @@ export const AppShell: React.FC = () => {
               ))}
               <a href="./blog/" className="w-full min-h-11 flex items-center gap-2.5 px-3 rounded-lg text-sm text-ink-1 hover:bg-surface-3">
                 <Newspaper className="w-4 h-4" />
-                Blog
+                {BLOG_LABEL}
               </a>
             </motion.div>
           )}

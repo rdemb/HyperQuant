@@ -2,6 +2,7 @@ import React from 'react';
 import { useDesk } from '../../state/DeskContext';
 import { freshness, PERIOD_MS, useCrossMarket } from '../../state/useCrossMarket';
 import { Stat, fmtPct, fmtSigned } from '../../ui';
+import { tr } from '../../i18n';
 
 const pp = (v: number | null) => (v === null ? 'n/a' : `${fmtSigned(v, 1)} pp`);
 
@@ -19,11 +20,14 @@ export const FundingStrip: React.FC = () => {
         label="Funding HL · APR"
         source={{
           tone: fr === 'live' ? 'live' : 'stale',
-          label: fr === 'live' ? 'LIVE' : fr === 'stale' ? 'STALE' : 'BRAK',
-          title: 'predictedFundings z API Hyperliquid (co 60 s); Binance/Bybit pośrednio przez API Hyperliquid. Dodatni = longi płacą.',
+          label: fr === 'live' ? 'LIVE' : fr === 'stale' ? 'STALE' : tr('BRAK', 'NONE'),
+          title: tr(
+            'predictedFundings z API Hyperliquid (co 60 s); Binance/Bybit pośrednio przez API Hyperliquid. Dodatni = longi płacą.',
+            'predictedFundings from the Hyperliquid API (every 60 s); Binance/Bybit indirectly via the Hyperliquid API. Positive = longs pay.'
+          ),
         }}
         value={<span className="text-base">{hl ? fmtPct(hl.aprPct, 2) : 'n/a'}</span>}
-        hint={f ? `vs Binance ${pp(f.spreadHlBinancePp)} · Bybit ${pp(f.spreadHlBybitPp)}` : 'Czekam na API Hyperliquid'}
+        hint={f ? `vs Binance ${pp(f.spreadHlBinancePp)} · Bybit ${pp(f.spreadHlBybitPp)}` : tr('Czekam na API Hyperliquid', 'Waiting for the Hyperliquid API')}
       />
     </div>
   );

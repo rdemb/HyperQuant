@@ -1,3 +1,4 @@
+import { tr } from '../i18n';
 /**
  * Weryfikacja weryfikowalnego dziennika desku w przeglądarce (WebCrypto) — bez zaufania do HyperQuant: pliki dzienne
  * prosto z gałęzi `ledger` repo danych, łańcuch hashy SHA-256 od GENESIS (postać kanoniczna każdej linii), głowa
@@ -27,12 +28,12 @@ export async function verifyChain(lines: readonly string[], prev: string): Promi
     try {
       o = JSON.parse(lines[i]) as Record<string, unknown>;
     } catch {
-      return { ok: false, head: expected, badLine: i, reason: 'niepoprawny JSON' };
+      return { ok: false, head: expected, badLine: i, reason: tr('niepoprawny JSON', 'invalid JSON') };
     }
-    if (canonical(o) !== lines[i]) return { ok: false, head: expected, badLine: i, reason: 'linia nie jest w postaci kanonicznej' };
+    if (canonical(o) !== lines[i]) return { ok: false, head: expected, badLine: i, reason: tr('linia nie jest w postaci kanonicznej', 'line is not in canonical form') };
     const { hash, ...rest } = o;
-    if (rest.prev !== expected) return { ok: false, head: expected, badLine: i, reason: 'prev nie wskazuje poprzedniej linii' };
-    if ((await sha256Hex(canonical(rest))) !== hash) return { ok: false, head: expected, badLine: i, reason: 'hash nie zgadza się z treścią' };
+    if (rest.prev !== expected) return { ok: false, head: expected, badLine: i, reason: tr('prev nie wskazuje poprzedniej linii', 'prev does not point to the previous line') };
+    if ((await sha256Hex(canonical(rest))) !== hash) return { ok: false, head: expected, badLine: i, reason: tr('hash nie zgadza się z treścią', 'hash does not match the content') };
     expected = hash as string;
   }
   return { ok: true, head: expected, badLine: null, reason: null };
@@ -89,10 +90,10 @@ export async function verifyLedgerRemote(o: RemoteOptions): Promise<RemoteVerifi
   const say = (m: string) => o.onProgress?.(m);
   const res: RemoteVerification = { ok: false, lines: 0, days: 0, fromGenesis: true, head: null, receipts: { checked: 0, ok: 0 }, preregs: [], problems };
 
-  say('Lista plików dziennika…');
+  say(tr('Lista plików dziennika…', 'Ledger file list…'));
   const list = await f(`https://api.github.com/repos/${o.repo}/contents/BTC?ref=ledger`);
   if (!list.ok) {
-    problems.push(`nie udało się pobrać listy plików (HTTP ${list.status})`);
+    problems.push(tr(`nie udało się pobrać listy plików (HTTP ${list.status})`, `could not fetch the file list (HTTP ${list.status})`));
     return res;
   }
   let names = ((await list.json()) as { name: string; type: string }[])
@@ -108,17 +109,17 @@ export async function verifyLedgerRemote(o: RemoteOptions): Promise<RemoteVerifi
   const records: Record<string, unknown>[] = [];
   let prev: string | null = res.fromGenesis ? GENESIS : null;
   for (const name of names) {
-    say(`Łańcuch: ${name}…`);
+    say(`${tr('Łańcuch', 'Chain')}: ${name}…`);
     const r = await f(`${o.ledgerBase}/BTC/${name}`);
     if (!r.ok) {
-      problems.push(`${name}: nie udało się pobrać (HTTP ${r.status})`);
+      problems.push(`${name}: ${tr('nie udało się pobrać', 'could not fetch')} (HTTP ${r.status})`);
       return res;
     }
     const lines = (await r.text()).split('\n').filter(Boolean);
     if (prev === null) prev = String((JSON.parse(lines[0]) as { prev?: unknown }).prev ?? '');
     const v = await verifyChain(lines, prev);
     if (!v.ok) {
-      problems.push(`${name}: linia ${(v.badLine ?? 0) + 1} — ${v.reason}`);
+      problems.push(`${name}: ${tr('linia', 'line')} ${(v.badLine ?? 0) + 1} — ${v.reason}`);
       return res;
     }
     prev = v.head;
@@ -128,7 +129,7 @@ export async function verifyLedgerRemote(o: RemoteOptions): Promise<RemoteVerifi
   }
   res.head = prev;
 
-  if (o.summaryHead && !records.some((x) => x.hash === o.summaryHead)) problems.push('głowa z publikowanego podsumowania nie występuje w łańcuchu');
+  if (o.summaryHead && !records.some((x) => x.hash === o.summaryHead)) problems.push(tr('głowa z publikowanego podsumowania nie występuje w łańcuchu', 'the head from the published summary is not in the chain'));
 
   // Pokwitowania ostatnich partii slotów: skrót = hash ostatniej prognozy partii
   const lastOf = new Map<string, { slot: number; batch: string; hash: string; t: number }>();
@@ -140,23 +141,23 @@ export async function verifyLedgerRemote(o: RemoteOptions): Promise<RemoteVerifi
   const latest = Math.max(...records.map((x) => Number(x.ti ?? x.t ?? 0)).filter(Number.isFinite));
   const batches = [...lastOf.values()].sort((a, b) => a.slot - b.slot || a.batch.localeCompare(b.batch)).slice(-(o.receipts ?? 12));
   for (const b of batches) {
-    say(`Pokwitowanie slotu ${new Date(b.slot).toISOString().slice(11, 16)} UTC…`);
+    say(`${tr('Pokwitowanie slotu', 'Slot receipt')} ${new Date(b.slot).toISOString().slice(11, 16)} UTC…`);
     const day = new Date(b.slot).toISOString().slice(0, 10);
     const r = await f(`${o.ledgerBase}/BTC/ots/slots/${day}/${b.slot}${b.batch ? `-${b.batch}` : ''}.ots`);
     if (!r.ok) {
-      if (latest - b.t > RECEIPT_GRACE_MS) problems.push(`slot ${new Date(b.slot).toISOString().slice(0, 16)}Z: brak pokwitowania`);
+      if (latest - b.t > RECEIPT_GRACE_MS) problems.push(`slot ${new Date(b.slot).toISOString().slice(0, 16)}Z: ${tr('brak pokwitowania', 'receipt missing')}`);
       continue;
     }
     res.receipts.checked++;
     if (otsDigestHex(new Uint8Array(await r.arrayBuffer())) === b.hash) res.receipts.ok++;
-    else problems.push(`slot ${new Date(b.slot).toISOString().slice(0, 16)}Z: skrót pokwitowania ≠ hash ostatniej prognozy`);
+    else problems.push(`slot ${new Date(b.slot).toISOString().slice(0, 16)}Z: ${tr('skrót pokwitowania ≠ hash ostatniej prognozy', 'receipt digest ≠ hash of the last forecast')}`);
   }
 
   for (const x of records) {
     if (x.k !== 'p') continue;
     const ok = !!x.catalog && (await sha256Hex(canonical(x.catalog))) === x.catalogHash;
     res.preregs.push({ id: String(x.id), ok });
-    if (!ok) problems.push(`prerejestracja ${String(x.id)}: hash katalogu nie zgadza się z treścią`);
+    if (!ok) problems.push(`${tr('prerejestracja', 'pre-registration')} ${String(x.id)}: ${tr('hash katalogu nie zgadza się z treścią', 'catalog hash does not match the content')}`);
   }
   res.ok = problems.length === 0;
   return res;

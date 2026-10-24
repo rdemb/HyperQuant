@@ -1,6 +1,7 @@
 import React from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import { SPRING } from '../../ui';
+import { tr } from '../../i18n';
 
 interface ProbabilityBarProps {
   pTarget: number;
@@ -20,11 +21,14 @@ export const ProbabilityBar: React.FC<ProbabilityBarProps> = ({ pTarget, pStop, 
   const reduce = useReducedMotion();
   const transition = reduce ? { duration: 0 } : SPRING;
   const segs = [
-    { key: 't', p: pTarget, bar: 'bg-buy', sign: '+', label: 'Cel najpierw' },
-    { key: 's', p: pStop, bar: 'bg-sell', sign: '−', label: 'Stop najpierw' },
-    { key: 'n', p: pNeither, bar: 'bg-ink-3/60', sign: '○', label: `Żadne w ${horizonLabel}` },
+    { key: 't', p: pTarget, bar: 'bg-buy', sign: '+', label: tr('Cel najpierw', 'Target first') },
+    { key: 's', p: pStop, bar: 'bg-sell', sign: '−', label: tr('Stop najpierw', 'Stop first') },
+    { key: 'n', p: pNeither, bar: 'bg-ink-3/60', sign: '○', label: tr(`Żadne w ${horizonLabel}`, `Neither in ${horizonLabel}`) },
   ];
-  const aria = `Cel najpierw ${pct(pTarget)}, stop najpierw ${pct(pStop)}, żadne w ${horizonLabel} ${pct(pNeither)}`;
+  const aria = tr(
+    `Cel najpierw ${pct(pTarget)}, stop najpierw ${pct(pStop)}, żadne w ${horizonLabel} ${pct(pNeither)}`,
+    `Target first ${pct(pTarget)}, stop first ${pct(pStop)}, neither in ${horizonLabel} ${pct(pNeither)}`
+  );
 
   return (
     <div className="min-w-0">
