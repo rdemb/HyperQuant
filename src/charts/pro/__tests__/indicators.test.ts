@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Candle } from '../hl/parse';
 import { FootprintBuilder } from '../core/footprintBar';
-import { IndicatorBar, dayLevels, indicatorScope, initialBalances, liqLevels, nakedPocs, periodRanges, volumeProfile, vwapSeries } from '../core/indicators';
+import { IndicatorBar, dayLevels, developingProfile, indicatorScope, initialBalances, liqLevels, nakedPocs, periodRanges, volumeProfile, vwapSeries } from '../core/indicators';
 import { DAY } from '../core/time';
 import type { LiqMap } from '../../../utils/liqMap';
 
@@ -83,6 +83,27 @@ describe('volumeProfile', () => {
   it('pusty zakres albo zły krok', () => {
     expect(volumeProfile([], 0, 10, 5)).toBeNull();
     expect(volumeProfile([bar(c(0, 1, 1, 1, 1, 1))], 0, 0, 0)).toBeNull();
+  });
+});
+
+describe('developingProfile', () => {
+  it('POC i value area po każdej świecy od początku okresu; na końcu jak profil całego okresu', () => {
+    const bars = [c(0, 100, 104, 100, 101, 1), c(M5, 105, 109, 105, 106, 8), c(2 * M5, 110, 114, 110, 111, 9)].map(bar);
+    const d = developingProfile(bars, 0, 2, 5);
+    expect(d).toHaveLength(3);
+    // Po pierwszej świecy cały wolumen w wierszu [100, 105)
+    expect(d[0]).toEqual({ poc: 102.5, vah: 105, val: 100 });
+    // Po drugiej POC przechodzi do [105, 110), value area 70% = sam ten wiersz (8 z 9)
+    expect(d[1]).toEqual({ poc: 107.5, vah: 110, val: 105 });
+    // Po trzeciej POC w [110, 115); 70% z 18 wymaga też wiersza [105, 110)
+    const p = volumeProfile(bars, 0, 2, 5)!;
+    expect(d[2]).toEqual({ poc: (p.lo + p.poc + 0.5) * 5, vah: (p.lo + p.vaHi + 1) * 5, val: (p.lo + p.vaLo) * 5 });
+    expect(d[2]).toEqual({ poc: 112.5, vah: 115, val: 105 });
+  });
+
+  it('pusty zakres albo zły krok', () => {
+    expect(developingProfile([], 0, 3, 5)).toEqual([]);
+    expect(developingProfile([bar(c(0, 1, 1, 1, 1, 1))], 0, 0, 0)).toEqual([]);
   });
 });
 

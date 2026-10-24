@@ -137,6 +137,17 @@ export class AddressBook {
     return posNtl(r) >= 1e6 || (r.acct ?? 0) >= 10e6;
   }
 
+  /**
+   * Kandydaci warstwy wielorybów: `k` największych kont z rankingu (wartość konta malejąco), potem adresy z pozycją BTC
+   * od 1 mln USD spoza tej listy (nominał malejąco).
+   */
+  whaleCandidates(k: number): string[] {
+    const ranked = [...this.recs].filter(([, r]) => r.acct !== undefined).sort((x, y) => (y[1].acct ?? 0) - (x[1].acct ?? 0)).slice(0, k).map(([a]) => a);
+    const top = new Set(ranked);
+    const btc = [...this.recs].filter(([a, r]) => !top.has(a) && posNtl(r) >= 1e6).sort((x, y) => posNtl(y[1]) - posNtl(x[1])).map(([a]) => a);
+    return [...ranked, ...btc];
+  }
+
   /** Ostatnio odczytana pozycja adresu (null = brak pozycji albo adres nieznany). */
   positionOf(addr: string): ScannedPosition | null {
     return this.recs.get(addr)?.pos ?? null;

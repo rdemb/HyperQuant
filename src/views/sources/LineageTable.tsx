@@ -74,14 +74,44 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         caveat: 'Rysunki zapisują się tylko w tej przeglądarce. Delta pomiaru bez taśmy jest pokazana jako brak, nie jako zero.',
       },
       {
-        metric: 'Zderzenia z adresów (Wykresy): duże zlecenie, bitwa, seria, ściana; taśma zleceń; podsumowanie adresu',
-        source: 'Hyperliquid WS trades (adresy kupującego i sprzedającego, hash transakcji) nagrywane od otwarcia widoku',
+        metric: 'Zderzenia z adresów (Wykresy): duże zlecenie, bitwa, seria, ściana, góra lodowa; taśma zleceń; podsumowanie adresu',
+        source: 'Hyperliquid WS trades (adresy kupującego i sprzedającego, hash transakcji) i dokładny arkusz l2Book, nagrywane od otwarcia widoku',
         method:
           'Zlecenie agresora = wypełnienia tego samego biorcy i transakcji; duże od progu (ręczny albo kwantyl 98,5% wartości zleceń z ostatniej godziny zaokrąglony w górę do 1, 2 lub 5 × 10^k, w granicach 25 tys.–5 mln USD); bitwa = duże zlecenie, w którym jeden maker dał co najmniej połowę progu; seria = drobne zlecenia (każde poniżej ¼ progu) co najmniej 4 różnych biorców po jednej stronie w oknie 2 s, razem od progu; ściana = wypełnienia jednego makera na jednej cenie po jednej stronie z przerwami do 30 s, od progu i z co najmniej 3 zleceń agresora; podsumowanie adresu = zlecenia agresora tego biorcy na nagranej taśmie',
         kinds: ['LIVE'],
         refresh: 'na żywo',
         caveat:
-          'Tylko od otwarcia strony. Adres biorcy widać skrócony po kliknięciu i nie jest zapisywany. Ściana obejmuje tylko to, co maker oddał w transakcjach, bez zleceń zdjętych z arkusza.',
+          'Tylko od otwarcia strony. Adres biorcy widać skrócony po kliknięciu i nie jest zapisywany. Ściana obejmuje tylko to, co maker oddał w transakcjach, bez zleceń zdjętych z arkusza. Góra lodowa = ściana, która wchłonęła co najmniej 2 × więcej niż największa wielkość całego poziomu w migawkach dokładnego arkusza (co ok. 5 s) i przyjmowała wypełnienia jeszcze po migawce, która w trakcie pokazywała poziom (jedno przemiecenie przed kolejną migawką się nie liczy): Hyperliquid nie ma ukrytych zleceń, więc to zlecenie odnawiane po wypełnieniach; odnowienie szybsze niż migawka może zawyżyć krotność.',
+      },
+      {
+        metric: 'Duże zlecenia w arkuszu (Wykresy)',
+        source: 'Hyperliquid WS l2Book w bliskiej agregacji (20 poziomów na stronę: cena, wielkość, liczba zleceń), nagrywany od otwarcia widoku',
+        method:
+          'Poziom, na którym średnie zlecenie (wielkość × cena / liczba zleceń) jest w 1% największych średnich zleceń poziomów z ostatnich 30 min tego rynku (próg względny, bo stały próg w USD nie przenosi się między rynkami), nie niżej niż ¼ progu dużego zlecenia agresora; trwa, dopóki poziom mieści ¾ wartości tego zlecenia i nie traci tyle między migawkami (dołączenie drobnych zleceń nie kończy linii), a cena poza 20 widocznymi poziomami — do minuty bez przedłużania linii. Podpis po 30 s w arkuszu: liczba zleceń × średnia wartość zlecenia (największa w czasie trwania)',
+        kinds: ['LIVE'],
+        refresh: 'co migawkę arkusza (ok. 5 s)',
+        caveat:
+          'Liczba zleceń jest na poziomie agregacji (kubełek kilku ticków), więc duże zlecenie może dzielić poziom z drobnymi. Migawka co kilka sekund: krótsze zlecenia mogą nie zostać zauważone, a koniec linii nie mówi, czy zlecenie wypełniono, czy zdjęto.',
+      },
+      {
+        metric: 'Historia ostatniej doby (Wykresy): taśma, zlecenia agresora, serie, ściany, ΔOI i arkusz sprzed otwarcia strony',
+        source: 'Rejestrator skanera na serwerze: Hyperliquid WS trades, activeAssetCtx i l2Book (agregacja bliska i daleka jak na stronie) dla BTC, ETH, SOL i HYPE; gałąź history publicznego repo danych',
+        method:
+          'Części 5-minutowe bieżącej godziny i pliki godzinowe (JSON w gzip) z odcinkami ciągłego nagrania; biorca, maker i zlecenie agresora jako numery ważne w obrębie godziny zamiast adresów i hashy. Strona wczytuje pliki od lewej krawędzi widoku (taśma do doby, arkusz do 12 h), co 2 min dociąga brakujące części i przerwy połączenia, a taśma odrzuca duplikaty po tid',
+        kinds: ['LIVE'],
+        refresh: 'część co 5 min (publikacja ok. 1–2 min po jej końcu)',
+        caveat:
+          'Z zapisu serwera nie ma adresów (podsumowanie portfela tylko dla zleceń od otwarcia strony) ani gór lodowych (rejestrator nie nagrywa dokładnego arkusza). Przerwa w nagraniu serwera jest jawną luką. Ostatnie minuty przed otwarciem strony dochodzą z kilkuminutowym opóźnieniem.',
+      },
+      {
+        metric: 'Wieloryby (Wykresy): pozycje i duże zlecenia oczekujące największych kont',
+        source: 'Hyperliquid API: clearinghouseState i frontendOpenOrders kont z publicznego rankingu (największe wartości kont) i dużych pozycji BTC z taśmy, odczytywane przez skaner',
+        method:
+          'Pozycje od 1 mln USD (BTC), 500 tys. (ETH), 250 tys. (SOL, HYPE): cena wejścia, wartość po cenie mark, dźwignia, cena likwidacji; zlecenia od 250 tys. (BTC), 150 tys. (ETH), 50 tys. (SOL, HYPE), także stop i take profit po cenie wyzwolenia; na wykresie 4 największe pozycje i 6 zleceń w widoku. Konto ma pseudonim ważny jedną dobę UTC (skrót adresu z sekretem serwera), więc pozycję da się połączyć z jej zleceniami, ale nie z portfelem',
+        kinds: ['LIVE'],
+        refresh: 'pozycje i zlecenia co ok. 5 min',
+        caveat:
+          'Tylko konta, które skaner obserwuje (ranking i duże pozycje BTC), więc to nie wszyscy duzi gracze. Odczyt sprzed kilku minut: zlecenie mogło zostać zdjęte. Plik starszy niż 20 min jest ukryty.',
       },
       {
         metric: 'Statystyki świec (Wykresy): wolumen, delta, delta %, max i min delty, transakcje, tempo taśmy, ΔOI, finansowanie',
@@ -110,6 +140,15 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         refresh: 'na żywo · alerty co 1 s',
         caveat:
           'Alerty działają tylko przy otwartej stronie i zapisują się tylko w tej przeglądarce. Klastry likwidacji tylko dla BTC (skaner mapuje pozycje BTC). Taśma każdego rynku nagrywana od otwarcia strony.',
+      },
+      {
+        metric: 'TPO — profil czasowy doby (Wykresy)',
+        source: 'Świece Hyperliquid (API i WS) interwału wykresu do 30m',
+        method:
+          'Doba UTC dzielona na 48 okresów po 30 min (A–X, a–x); okres = H i L jego świec, litera w każdym wierszu ceny między nimi. POC = wiersz z największą liczbą liter (remis: bliżej środka profilu), value area = 70% liter od POC w stronę większego sąsiada, initial balance = zakres okresów A i B, pojedynczy wydruk = wiersz z jedną literą wewnątrz profilu, ogon = co najmniej dwa takie wiersze na skraju; nagi POC = POC zamkniętej doby, którego cena potem nie dotknęła. Wysokość wiersza z zakresu ceny na ekranie',
+        kinds: ['LIVE'],
+        refresh: 'na żywo',
+        caveat: 'Kontekst aukcji, nie sygnał. Liczba liter zależy od wysokości wiersza, więc POC i value area mogą się nieznacznie przesuwać przy zmianie zbliżenia.',
       },
       {
         metric: 'Open interest, funding, mark/oracle',

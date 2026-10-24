@@ -13,7 +13,7 @@ import type {
 import { fmtVol } from '../../orderflow/footprint';
 import { buildHeatLut } from '../../orderflow/heatColor';
 import { fmtCompact } from '../../../ui/format';
-import type { BookFrame, BookHistory } from '../core/book';
+import { type BookFrame, type BookHistory, type LargeLot, largeLots, lotThreshold } from '../core/book';
 import { Burst, DEFAULT_THRESHOLD_USD, OrderClass, Wall, bursts, classify } from '../core/clashes';
 import type { AggressorOrder } from '../core/orders';
 import type { ProBar } from '../store/proStore';
@@ -24,14 +24,16 @@ import { DOM_W_PX, LIQ_RAMP, MONO, PRO, rgba } from './theme';
  * Warstwa płynności pod świecami i nad nimi: mapa ciepła arkusza zleceń w czasie (migawki l2Book,
  * każda obowiązuje do następnej; agregacja daleka (10 × większy krok) pod bliską), bąble zleceń
  * agresora (pole ∝ wartość USD; bitwa z jednym dużym makerem w podwójnym pierścieniu), serie małych
- * zleceń (przerywany pierścień), ściany makerów (pozioma belka na cenie) i drabina DOM z bieżącym
- * arkuszem przy prawej krawędzi. Wszystko powstaje z danych na żywo od otwarcia strony.
+ * zleceń (przerywany pierścień), ściany makerów (pozioma belka na cenie), duże zlecenia oczekujące w arkuszu
+ * (cienka linia przez czas ich trwania) i drabina DOM z bieżącym arkuszem przy prawej krawędzi. Wszystko powstaje
+ * z danych na żywo od otwarcia strony.
  */
 
 export interface LiquidityToggles {
   showHeatmap: boolean;
   showBubbles: boolean;
   showClashes: boolean;
+  showLots: boolean;
 }
 
 /** Źródła danych warstwy (magazyn wykresu). */
@@ -61,6 +63,20 @@ const BUBBLE_R_MAX = 22;
 const BUBBLE_LABEL_R = 13;
 /** Zasięg kliknięcia poza obrysem bąbla i od belki ściany (px). */
 const PICK_PX = 3;
+/**
+ * Duże zlecenie w arkuszu: średnie zlecenie poziomu w 1% największych z ostatnich LOT_WINDOW_MS bliskiego arkusza
+ * (próg względny dla każdego rynku), nie niżej niż LOT_FLOOR × próg dużego zlecenia agresora (cienki arkusz nie
+ * zapala się w całości); w widoku najwyżej LOT_MAX największych.
+ */
+export const LOT_FLOOR = 0.25;
+const LOT_WINDOW_MS = 30 * 60_000;
+const LOT_MAX = 40;
+/**
+ * Podpis od takiego czasu w arkuszu (ms): zlecenie, które postało, a nie mignęło w jednej–dwóch migawkach; świeże linie
+ * przy prawej krawędzi nie zasłaniają poziomów. Linia ma co najmniej LOT_MIN_W_PX, żeby nie ginęła między bąblami.
+ */
+const LOT_LABEL_MIN_MS = 30_000;
+const LOT_MIN_W_PX = 6;
 /** Ściana: grubość belki i najmniejsza długość (px). */
 const WALL_H_PX = 3;
 const WALL_MIN_W_PX = 8;
@@ -83,6 +99,8 @@ const DOM_LABEL_GAP_PX = 11;
 const HEAT_LO_Q = 0.6;
 const HEAT_Q = 0.995;
 const HEAT_SAMPLE = 12_000;
+/** Migawka arkusza obowiązuje do następnej, najwyżej tyle ms (luka w nagraniu nie jest zamalowana starą migawką). */
+const FRAME_MAX_MS = 60_000;
 /** Krycie dalekiej agregacji względem bliskiej. */
 const FAR_ALPHA = 0.6;
 
@@ -104,6 +122,10 @@ const K = {
   domAsk: rgba(PRO.domAsk, 0.92),
   domText: PRO.domText,
   labelBg: rgba(PRO.bg, 0.85),
+  /** Góra lodowa: romb na końcu belki i podpis „ICE”. */
+  ice: '#7fe7ff',
+  lotBid: PRO.buyInk,
+  lotAsk: PRO.sellInk,
 };
 
 interface Bubble {
@@ -121,16 +143,33 @@ interface Bubble {
   pick: LiquidityPick;
 }
 
-/** Ściana makera: belka od pierwszego do ostatniego wchłoniętego wypełnienia. */
-interface WallMark {
+/** Wartość przy belce ściany albo linii dużego zlecenia [x0, x1] (`ink` — kolor tekstu). */
+interface ValueLabel {
   x0: number;
   x1: number;
   y: number;
   bid: boolean;
   usd: number;
   label: string;
+  ink: string;
+  /**
+   * Pierwszeństwo podpisu: 2 — góra lodowa (pierwsza i nad bąblami, z definicji leży pod wieloma zleceniami agresora),
+   * 1 — duże zlecenie stojące co najmniej 30 s (nad bąblami, gdy przy linii nie ma wolnego miejsca; stoi tam, gdzie
+   * handlują agresorzy), 0 — ściana (ustępuje bąblom, wartość pokazuje karta po kliknięciu belki).
+   */
+  rank: 0 | 1 | 2;
+}
+
+/** Ściana makera: belka od pierwszego do ostatniego wchłoniętego wypełnienia. */
+interface WallMark extends ValueLabel {
+  iceberg: boolean;
   selected: boolean;
   pick: LiquidityPick;
+}
+
+/** Duże zlecenie w arkuszu: linia od pojawienia się do zniknięcia (do teraz, gdy nadal jest). */
+interface LotMark extends ValueLabel {
+  open: boolean;
 }
 
 /** Poziom arkusza w drabinie (px CSS panelu): górna krawędź, wysokość, długość słupka. */
@@ -169,6 +208,8 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
   private geo: Geometry | null = null;
   private bubbles: Bubble[] = [];
   private walls: WallMark[] = [];
+  private lots: LotMark[] = [];
+  private lotCache: { key: string; lots: LargeLot[] } = { key: '', lots: [] };
   private dom: DomRow[] = [];
   private domRight = 0;
 
@@ -192,10 +233,17 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
     const bubbles: IPrimitivePaneRenderer = {
       draw: (target) =>
         target.useBitmapCoordinateSpace(({ context, horizontalPixelRatio: hr, verticalPixelRatio: vr }) => {
+          drawLots(context, this.lots, hr, vr);
           drawWalls(context, this.walls, hr, vr);
           drawBubbles(context, this.bubbles, hr, vr);
-          drawWallLabels(context, this.walls, this.bubbles, hr, vr);
         }),
+    };
+    // Podpisy nad poziomami wskaźników (IB, VWAP…), żeby napisu ICE nie przykrywała etykieta poziomu
+    const labels: IPrimitivePaneRenderer = {
+      draw: (target) =>
+        target.useBitmapCoordinateSpace(({ context, bitmapSize, horizontalPixelRatio: hr, verticalPixelRatio: vr }) =>
+          drawValueLabels(context, [...this.walls, ...this.lots], this.bubbles, bitmapSize.width, hr, vr)
+        ),
     };
     const dom: IPrimitivePaneRenderer = {
       draw: (target) =>
@@ -207,6 +255,7 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
       { zOrder: () => 'bottom', renderer: () => heat },
       { zOrder: () => 'normal', renderer: () => bubbles },
       { zOrder: () => 'normal', renderer: () => dom },
+      { zOrder: () => 'top', renderer: () => labels },
     ];
   }
 
@@ -255,6 +304,7 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
     this.geo = this.geometry();
     this.bubbles = this.toggles.showBubbles && this.geo ? this.sceneBubbles(this.geo) : [];
     this.walls = this.toggles.showBubbles && this.toggles.showClashes && this.geo ? this.sceneWalls(this.geo) : [];
+    this.lots = this.toggles.showLots && this.geo ? this.sceneLots(this.geo) : [];
     this.dom = this.toggles.showHeatmap && this.geo ? this.sceneDom(this.geo) : [];
   }
 
@@ -324,7 +374,7 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
       for (let i = 0; i < frames.length; i++) {
         const f = frames[i];
         const x0 = Math.max(0, Math.round(this.x(f.t, g)));
-        const x1 = Math.min(W, Math.max(x0 + 1, Math.round(this.x(frames[i + 1]?.t ?? this.now, g))));
+        const x1 = Math.min(W, Math.max(x0 + 1, Math.round(this.x(Math.min(frames[i + 1]?.t ?? this.now, f.t + FRAME_MAX_MS), g))));
         if (x1 <= 0 || x0 >= W) continue;
         if (layer === near) clearSpan(px, W, H, f, x0, x1, g);
         paintFrame(px, W, H, f, x0, x1, g, norm, layer === near ? this.lut : this.lutFar);
@@ -405,11 +455,45 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
         y: g.a + g.b * w.px,
         bid: w.side === 1,
         usd: w.usd,
-        label: fmtCompact(w.usd),
+        label: w.iceberg ? `ICE ${fmtCompact(w.usd)}` : fmtCompact(w.usd),
+        ink: w.iceberg ? K.ice : K.domText,
+        rank: w.iceberg ? 2 : 0,
+        iceberg: w.iceberg,
         selected: sel?.kind === 'wall' && sel.wall.from === w.from && sel.wall.px === w.px && sel.wall.side === w.side,
         pick: { kind: 'wall', wall: w },
       };
     });
+  }
+
+  /** Duże zlecenia bliskiego arkusza w widocznym czasie (przeliczane po nowej migawce, zmianie zakresu albo progu). */
+  private sceneLots(g: Geometry): LotMark[] {
+    const near = this.src.near;
+    if (!near) return [];
+    const floor = this.threshold * LOT_FLOOR;
+    const key = `${near.step}|${near.version}|${g.tFrom}|${floor}`;
+    if (this.lotCache.key !== key) {
+      const minUsd = lotThreshold(near.range(this.now - LOT_WINDOW_MS, this.now), floor);
+      this.lotCache = { key, lots: largeLots(near.range(g.tFrom, g.tTo), minUsd) };
+    }
+    const W = this.chart?.paneSize(0).width ?? 0;
+    const out: LotMark[] = [];
+    for (const l of this.lotCache.lots) {
+      const x0 = this.x(l.from, g);
+      const x1 = this.x(l.open ? this.now : l.to, g);
+      if (x1 < 0 || x0 > W) continue;
+      out.push({
+        x0,
+        x1: Math.max(x0 + LOT_MIN_W_PX, x1),
+        y: g.a + g.b * l.px,
+        bid: l.bid,
+        usd: l.usd,
+        label: (l.open ? this.now : l.to) - l.from >= LOT_LABEL_MIN_MS ? `${l.orders}× ${fmtCompact(l.usd / l.orders)}` : '',
+        ink: l.bid ? K.lotBid : K.lotAsk,
+        rank: 1,
+        open: l.open,
+      });
+    }
+    return out.length > LOT_MAX ? out.sort((p, q) => q.usd - p.usd).slice(0, LOT_MAX) : out;
   }
 
   // ───────────────────────── drabina DOM ─────────────────────────
@@ -543,6 +627,18 @@ function drawBubbles(ctx: CanvasRenderingContext2D, list: readonly Bubble[], hr:
   ctx.globalAlpha = 1;
 }
 
+/** Linie dużych zleceń: pełne, gdy zlecenie nadal jest w arkuszu, przygaszone po zniknięciu. */
+function drawLots(ctx: CanvasRenderingContext2D, list: readonly LotMark[], hr: number, vr: number): void {
+  const h = Math.max(1, Math.round(1.5 * vr));
+  for (const l of list) {
+    ctx.globalAlpha = l.open ? 1 : 0.55;
+    ctx.fillStyle = l.bid ? K.lotBid : K.lotAsk;
+    const x0 = Math.round(l.x0 * hr);
+    ctx.fillRect(x0, Math.round(l.y * vr - h / 2), Math.round(l.x1 * hr) - x0, h);
+  }
+  ctx.globalAlpha = 1;
+}
+
 function drawWalls(ctx: CanvasRenderingContext2D, list: readonly WallMark[], hr: number, vr: number): void {
   if (list.length === 0) return;
   const h = Math.max(2, Math.round(WALL_H_PX * vr));
@@ -556,35 +652,57 @@ function drawWalls(ctx: CanvasRenderingContext2D, list: readonly WallMark[], hr:
     }
     ctx.fillStyle = w.bid ? K.domBid : K.domAsk;
     ctx.fillRect(x0, y, x1 - x0, h);
+    if (w.iceberg) {
+      const r = Math.round(4 * vr);
+      const cy = y + h / 2;
+      ctx.fillStyle = K.ice;
+      ctx.beginPath();
+      ctx.moveTo(x1 + r, cy - r);
+      ctx.lineTo(x1 + 2 * r, cy);
+      ctx.lineTo(x1 + r, cy + r);
+      ctx.lineTo(x1, cy);
+      ctx.closePath();
+      ctx.fill();
+    }
   }
 }
 
 /**
- * Wartość ściany na tle przed jej początkiem, nad bąblami. Większe ściany pierwsze; etykieta, która nachodzi na inną
- * albo na bąbel, jest pomijana (wartość pokazuje karta po kliknięciu belki).
+ * Wartość ściany albo dużego zlecenia na tle przed jego początkiem (przy lewej krawędzi, gdy początek jest poza
+ * widokiem), a gdy tam zajęte — za końcem belki. Najpierw góry lodowe, potem duże zlecenia, potem ściany, w każdej
+ * grupie większe; podpis nigdy nie nachodzi na inny podpis, a na bąbel tylko z pierwszeństwem (`rank`).
  */
-function drawWallLabels(ctx: CanvasRenderingContext2D, list: readonly WallMark[], bubbles: readonly Bubble[], hr: number, vr: number): void {
+function drawValueLabels(ctx: CanvasRenderingContext2D, list: readonly ValueLabel[], bubbles: readonly Bubble[], width: number, hr: number, vr: number): void {
   if (list.length === 0) return;
   ctx.font = `600 ${Math.round(10 * vr)}px ${MONO}`;
   ctx.textAlign = 'right';
   ctx.textBaseline = 'middle';
   const pad = Math.round(3 * hr);
+  const gap = Math.round(4 * hr);
   const th = Math.round(13 * vr);
   const placed: Rect[] = [];
-  const free = (q: Rect) => !placed.some((p) => q.l < p.r && q.r > p.l && q.t < p.b && q.b > p.t) && !bubbles.some((b) => circleHitsRect(b, q));
-  for (const w of [...list].sort((p, q) => q.usd - p.usd)) {
-    const xr = Math.round(w.x0 * hr) - Math.round(4 * hr);
-    const y = Math.round(w.y * vr);
+  const clear = (q: Rect) => !placed.some((p) => q.l < p.r && q.r > p.l && q.t < p.b && q.b > p.t);
+  const open = (q: Rect) => !bubbles.some((b) => circleHitsRect(b, q));
+  for (const w of [...list].sort((p, q) => q.rank - p.rank || q.usd - p.usd)) {
+    if (!w.label) continue;
     const tw = Math.ceil(ctx.measureText(w.label).width);
-    // Prostokąt etykiety w px CSS (bąble też są w px CSS)
-    const q = { l: (xr - tw - pad) / hr, r: (xr + pad) / hr, t: (y - th / 2) / vr, b: (y + th / 2) / vr };
-    if (!free(q)) continue;
-    placed.push(q);
+    const y = Math.round(w.y * vr);
+    // Prawa krawędź tekstu: przed belką albo za nią; prostokąt etykiety w px CSS (bąble też są w px CSS)
+    const before = Math.max(tw + 2 * pad, Math.round(w.x0 * hr) - gap);
+    const after = Math.round(w.x1 * hr) + gap + pad + tw;
+    const rect = (xr: number): Rect => ({ l: (xr - tw - pad) / hr, r: (xr + pad) / hr, t: (y - th / 2) / vr, b: (y + th / 2) / vr });
+    const spots = after + pad <= width ? [before, after] : [before];
+    const xr =
+      spots.find((x) => clear(rect(x)) && (w.rank === 2 || open(rect(x)))) ?? (w.rank === 1 ? spots.find((x) => clear(rect(x))) : undefined);
+    if (xr === undefined) continue;
+    placed.push(rect(xr));
     ctx.fillStyle = K.labelBg;
     ctx.fillRect(xr - tw - pad, y - th / 2, tw + 2 * pad, th);
+    // Znacznik strony od strony belki
+    const edge = Math.max(1, Math.round(hr));
     ctx.fillStyle = w.bid ? K.domBid : K.domAsk;
-    ctx.fillRect(xr + pad - Math.max(1, Math.round(hr)), y - th / 2, Math.max(1, Math.round(hr)), th);
-    ctx.fillStyle = K.domText;
+    ctx.fillRect(xr === before ? xr + pad - edge : xr - tw - pad, y - th / 2, edge, th);
+    ctx.fillStyle = w.ink;
     ctx.fillText(w.label, xr, y);
   }
 }

@@ -16,6 +16,7 @@ import { spreadTags } from '../../orderflow/renderer';
 import { hlTick } from '../core/footprintBar';
 import {
   DayLevels,
+  DevelopingLevels,
   IB_EXTENSIONS,
   IndicatorScope,
   InitialBalance,
@@ -23,6 +24,7 @@ import {
   VolumeProfile,
   VwapPoint,
   dayLevels,
+  developingProfile,
   indicatorScope,
   initialBalances,
   nakedPocs,
@@ -32,6 +34,7 @@ import {
 } from '../core/indicators';
 import { SESSION_LABEL, sessionsBetween } from '../core/sessions';
 import { DAY } from '../core/time';
+import { type WhaleLayer, groupWhaleOrders } from '../../../utils/whaleLayer';
 import type { Candle } from '../hl/parse';
 import type { ProBar } from '../store/proStore';
 import { autoRowStep, fmtPx } from './layout';
@@ -40,15 +43,28 @@ import { MONO, PRO, rgba } from './theme';
 
 /**
  * Warstwa wskaźników nad główną serią: VWAP z pasmami ±1σ i ±2σ, VWAP sesji, profil wolumenu widocznego
- * zakresu z POC i value area, profile sesji (albo dób) z nagimi POC, poziomy dnia (PDH, PDL, otwarcie),
- * otwarcia sesji, initial balance z rozszerzeniami i klastry likwidacji. Wypełnienia i profil leżą pod świecami, linie i etykiety nad nimi.
+ * zakresu z POC i value area, profile sesji (albo dób) z nagimi POC, rozwijający się POC i value area, poziomy dnia (PDH, PDL, otwarcie),
+ * otwarcia sesji, initial balance z rozszerzeniami, klastry likwidacji i wieloryby. Wypełnienia i profil leżą pod świecami, linie i etykiety nad nimi.
  * Geometria liczona w `updateAllViews` (współrzędne ekranu), rysowanie w pikselach urządzenia.
  */
 
 export type IndicatorToggles = Pick<
   ChartSettings,
-  'showVwap' | 'showVwapBands' | 'showSessionVwap' | 'showProfile' | 'showPeriodProfiles' | 'showLevels' | 'showSessions' | 'showIb' | 'showLiq'
+  | 'showVwap'
+  | 'showVwapBands'
+  | 'showSessionVwap'
+  | 'showProfile'
+  | 'showPeriodProfiles'
+  | 'showDevPoc'
+  | 'showLevels'
+  | 'showSessions'
+  | 'showIb'
+  | 'showLiq'
+  | 'showWhales'
 >;
+
+/** Wieloryby rynku z pliku skanera (pozycje i zlecenia od największych). */
+export type WhaleView = Pick<WhaleLayer['markets'][string], 'positions' | 'orders'>;
 
 /** Wartości wskaźników świecy pod krzyżem (legenda). */
 export interface IndicatorValues {
@@ -82,15 +98,27 @@ const K = {
   spVa: rgba(PRO.profileVa, 0.6),
   spPocLine: PRO.profilePoc,
   nPocLine: PRO.nakedPoc,
+  devPoc: rgba(PRO.pocFrame, 0.85),
+  devVa: rgba(PRO.pocFrame, 0.4),
   liqLong: PRO.sellInk,
   liqShort: PRO.buyInk,
   liqLongLine: rgba(PRO.sellInk, 0.55),
   liqShortLine: rgba(PRO.buyInk, 0.55),
+  whaleLong: PRO.buyInk,
+  whaleShort: PRO.sellInk,
+  whaleLongLine: rgba(PRO.buyInk, 0.45),
+  whaleShortLine: rgba(PRO.sellInk, 0.45),
+  whaleLiq: PRO.warn,
+  whaleLiqLine: rgba(PRO.warn, 0.45),
   tagBg: rgba(PRO.bg, 0.88),
   axisText: PRO.page,
 } as const;
 
-const DASH = { none: [] as number[], level: [6, 4], dot: [2, 3], session: [3, 4], ext: [4, 4], liq: [1, 3] };
+const DASH = { none: [] as number[], level: [6, 4], dot: [2, 3], session: [3, 4], ext: [4, 4], liq: [1, 3], whale: [8, 3, 2, 3] };
+/** Wieloryby: tyle największych pozycji i grup zleceń w widoku; zlecenie to kreska tej długości przy prawej krawędzi (px). */
+const WHALE_POSITIONS = 4;
+const WHALE_ORDERS = 6;
+const WHALE_TICK_PX = 56;
 /** Profil widocznego zakresu: szerokość jako ułamek panelu (z ograniczeniami w px) i minimalna wysokość wiersza. */
 const PROFILE_WIDTH = 0.2;
 const PROFILE_MIN_PX = 56;
@@ -139,6 +167,7 @@ interface Poly {
   pts: number[];
   color: string;
   width: number;
+  dash?: number[];
 }
 interface Fill {
   pts: number[];
@@ -216,6 +245,13 @@ interface PeriodCache {
   profile: VolumeProfile | null;
 }
 
+/** Rozwijający się POC okresu z pamięci (te same zasady co profil okresu). */
+interface DevCache {
+  step: number;
+  refs: readonly ProBar[];
+  levels: (DevelopingLevels | null)[];
+}
+
 const sameRefs = (refs: readonly ProBar[], bars: readonly ProBar[], from: number, to: number): boolean => {
   if (refs.length !== to - from + 1) return false;
   for (let k = 0; k < refs.length; k++) if (refs[k] !== bars[from + k]) return false;
@@ -238,9 +274,11 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
   private daily: readonly Candle[] = [];
   private days: DayLevels[] = [];
   private liq: LiqLevel[] = [];
+  private whales: WhaleView | null = null;
   private profileCache: ProfileCache = { key: '', profile: null };
   private profileBars: readonly ProBar[] | null = null;
   private periodCache = new Map<number, PeriodCache>();
+  private devCache = new Map<number, DevCache>();
   private rightInset = 0;
   private scene: Scene = emptyScene();
 
@@ -327,6 +365,11 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
     this.requestUpdate?.();
   }
 
+  setWhales(w: WhaleView | null): void {
+    this.whales = w;
+    this.requestUpdate?.();
+  }
+
   valuesAt(i: number): IndicatorValues {
     const t = this.toggles;
     return {
@@ -407,6 +450,8 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
     if (t.showProfile && step > 0) this.sceneProfile(s, bars, vf, vt, W, pw, step, Y);
     if (t.showPeriodProfiles && sc.periodProfile && step > 0) this.scenePeriods(s, bars, sc.periodProfile, step, visFrom, visTo, W, edge, Y);
     else this.periodCache.clear();
+    if (t.showDevPoc && sc.periodProfile && step > 0) this.sceneDeveloping(s, bars, sc.periodProfile, step, visFrom, visTo, X, Y);
+    else this.devCache.clear();
 
     // VWAP sesji pod VWAP dnia (w sesji azjatyckiej oba zaczynają się o 00:00 UTC i się pokrywają)
     if (t.showSessionVwap && sc.sessionVwap) {
@@ -499,6 +544,38 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
         const long = l.side === 'long';
         s.hlines.push({ x0: 0, x1: W, y, color: long ? K.liqLongLine : K.liqShortLine, dash: DASH.liq });
         s.tags.push({ y, text: `Likw. ${long ? 'L' : 'S'} ${fmtCompact(l.ntlUsd, '$')}`, color: long ? K.liqLong : K.liqShort });
+      }
+    }
+
+    // Wieloryby: cena wejścia i likwidacji największych pozycji przez cały wykres, duże zlecenia — kreska przy prawej krawędzi
+    if (t.showWhales && this.whales) {
+      const inView = (y: number) => y >= 0 && y <= H;
+      const pos = this.whales.positions.filter((p) => inView(Y(p.entry)) || (p.liq !== null && inView(Y(p.liq)))).slice(0, WHALE_POSITIONS);
+      for (const p of pos) {
+        const long = p.side === 'long';
+        const y = Y(p.entry);
+        if (inView(y)) {
+          s.hlines.push({ x0: 0, x1: W, y, color: long ? K.whaleLongLine : K.whaleShortLine, dash: DASH.whale });
+          s.tags.push({ y, text: `${p.id} ${long ? 'L' : 'S'} ${fmtCompact(p.usd, '$')} ×${Math.round(p.lev)}`, color: long ? K.whaleLong : K.whaleShort });
+        }
+        const yl = p.liq === null ? Number.NaN : Y(p.liq);
+        if (inView(yl)) {
+          s.hlines.push({ x0: 0, x1: W, y: yl, color: K.whaleLiqLine, dash: DASH.liq });
+          s.tags.push({ y: yl, text: `${p.id} likw. ${long ? 'L' : 'S'}`, color: K.whaleLiq });
+        }
+      }
+      // Zlecenia konta po jednej stronie i jednego rodzaju (drabinka) — kreska na każdej cenie, łącznik i jeden podpis z liczbą i sumą
+      const orders = this.whales.orders.filter((x) => inView(Y(x.px)));
+      for (const g of groupWhaleOrders(orders).slice(0, WHALE_ORDERS)) {
+        const bid = g.side === 'bid';
+        const color = bid ? K.whaleLong : K.whaleShort;
+        const dash = g.kind === 'limit' ? DASH.none : DASH.dot;
+        for (const o of orders) {
+          if (o.id === g.id && o.side === g.side && o.kind === g.kind) s.hlines.push({ x0: W - WHALE_TICK_PX, x1: W, y: Y(o.px), color, dash });
+        }
+        if (g.n > 1) s.polys.push({ pts: [W - WHALE_TICK_PX, Y(g.hi), W - WHALE_TICK_PX, Y(g.lo)], color, width: 1 });
+        const what = g.kind === 'stop' ? 'stop' : g.kind === 'tp' ? 'TP' : bid ? 'kupno' : 'sprzedaż';
+        s.tags.push({ y: Y((g.lo + g.hi) / 2), text: `${g.id} ${what} ${g.n > 1 ? `${g.n}× ` : ''}${fmtCompact(g.usd, '$')}`, color });
       }
     }
 
@@ -624,6 +701,51 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
     }
   }
 
+  /** Rozwijający się POC (linia schodkowa) i value area (kropkowane) każdej widocznej sesji albo doby, świeca po świecy. */
+  private sceneDeveloping(
+    s: Scene,
+    bars: readonly ProBar[],
+    mode: 'session' | 'day',
+    step: number,
+    visFrom: number,
+    visTo: number,
+    X: (logical: number) => number,
+    Y: (p: number) => number
+  ): void {
+    const ms = this.ms;
+    const half = (X(1) - X(0)) / 2;
+    const cache = new Map<number, DevCache>();
+    for (const r of periodRanges(bars, mode)) {
+      if (bars[r.to].t + ms <= visFrom || bars[r.from].t >= visTo) continue;
+      const hit = this.devCache.get(r.start);
+      const entry =
+        hit && hit.step === step && sameRefs(hit.refs, bars, r.from, r.to)
+          ? hit
+          : { step, refs: bars.slice(r.from, r.to + 1), levels: developingProfile(bars, r.from, r.to, step) };
+      cache.set(r.start, entry);
+      const lines: [keyof DevelopingLevels, string, number, number[] | undefined][] = [
+        ['vah', K.devVa, 1, DASH.dot],
+        ['val', K.devVa, 1, DASH.dot],
+        ['poc', K.devPoc, 1.5, undefined],
+      ];
+      for (const [key, color, width, dash] of lines) {
+        let pts: number[] = [];
+        const flush = () => {
+          if (pts.length >= 4) s.polys.push({ pts, color, width, dash });
+          pts = [];
+        };
+        entry.levels.forEach((lv, k) => {
+          if (!lv) return flush();
+          const x = X(r.from + k);
+          const y = Y(lv[key]);
+          pts.push(x - half, y, x + half, y);
+        });
+        flush();
+      }
+    }
+    this.devCache = cache;
+  }
+
   private sceneProfile(s: Scene, bars: readonly ProBar[], vf: number, vt: number, W: number, pw: number, step: number, Y: (p: number) => number): void {
     const ref = bars[vt].candle.c;
     const pxPerUsd = Math.abs(Y(ref) - Y(ref + 100)) / 100;
@@ -713,11 +835,13 @@ function drawOver(ctx: CanvasRenderingContext2D, s: Scene, hr: number, vr: numbe
     if (p.pts.length < 4) continue;
     ctx.strokeStyle = p.color;
     ctx.lineWidth = Math.max(1, p.width * hr);
+    ctx.setLineDash(p.dash ? p.dash.map((d) => d * hr) : []);
     ctx.beginPath();
     ctx.moveTo(p.pts[0] * hr, p.pts[1] * vr);
     for (let j = 2; j < p.pts.length; j += 2) ctx.lineTo(p.pts[j] * hr, p.pts[j + 1] * vr);
     ctx.stroke();
   }
+  ctx.setLineDash([]);
 
   const font = Math.round(10 * vr);
   ctx.font = `${font}px ${MONO}`;

@@ -22,16 +22,20 @@ import { hlTick, rowAt } from '../core/footprintBar';
 import type { LiqLevel } from '../core/indicators';
 import type { ResetMode } from '../core/sessions';
 import type { CandleSeries, ProBar, ProStore } from '../store/proStore';
+import { requestHistory } from '../store/serverHistory';
 import { DrawingLayer } from '../draw/layer';
 import { DrawingTools } from '../draw/tools';
 import { FootprintOptions, FootprintPoint, FootprintSeries } from './footprintSeries';
 import { fmtPx } from './layout';
 import { LiquidityLayer, LiquidityPick, LiquiditySource } from './liquidity';
-import { IndicatorOverlay, IndicatorToggles, IndicatorValues } from './overlay';
+import { IndicatorOverlay, IndicatorToggles, IndicatorValues, WhaleView } from './overlay';
 import { LegendPart, PaneLegend } from './paneLegend';
 import { STAT_PAD_PX, STAT_ROWS, STAT_ROW_PX, StatsTable } from './statsTable';
 import { ZonesLayer } from './zonesLayer';
+import { TpoLayer } from './tpoLayer';
+import { tpoInterval } from '../core/tpo';
 import type { ChartSettings } from './settings';
+import { CountdownLabel } from './countdown';
 import { DOM_W_PX, PRO, RIGHT_GAP_PX, chartOptions } from './theme';
 
 /**
@@ -64,19 +68,24 @@ const FLOW_FORMAT: PriceFormat = { type: 'custom', minMove: 0.0001, formatter: f
 
 const VOLUME_FORMAT: PriceFormat = { type: 'custom', minMove: 0.0001, formatter: (v: number) => fmtVol(v) };
 
-const liqToggles = (s: ChartSettings) => ({ showHeatmap: s.showHeatmap, showBubbles: s.showBubbles, showClashes: s.showClashes });
+const liqToggles = (s: ChartSettings) => ({ showHeatmap: s.showHeatmap, showBubbles: s.showBubbles, showClashes: s.showClashes, showLots: s.showLots });
 
 
-const toggles = (s: ChartSettings): IndicatorToggles => ({
+/** TPO na interwale `ms` zajmuje miejsce profili sesji (oba rysują się od początku okresu w prawo). */
+const tpoShown = (s: ChartSettings, ms: number) => s.showTpo && tpoInterval(ms);
+
+const toggles = (s: ChartSettings, ms: number): IndicatorToggles => ({
   showVwap: s.showVwap,
   showVwapBands: s.showVwapBands,
   showSessionVwap: s.showSessionVwap,
   showProfile: s.showProfile,
-  showPeriodProfiles: s.showPeriodProfiles,
+  showPeriodProfiles: s.showPeriodProfiles && !tpoShown(s, ms),
+  showDevPoc: s.showDevPoc,
   showLevels: s.showLevels,
   showSessions: s.showSessions,
   showIb: s.showIb,
   showLiq: s.showLiq,
+  showWhales: s.showWhales,
 });
 
 /** Zmienionych świec powyżej tej liczby nie aktualizujemy pojedynczo, tylko podmieniamy całą serię. */
@@ -94,6 +103,13 @@ const STATS_EVERY_MS = 1_000;
 /** Panele pod wykresem, które można ukryć krzyżykiem w ich rogu. */
 export const PANE_KEYS = ['showVolume', 'showDelta', 'showCvd', 'showStats'] as const;
 export type PaneKey = (typeof PANE_KEYS)[number];
+
+/** Autoskala ceny i wymiary rogu pod osią ceny (px), w którym stoi przycisk A. */
+export interface ScaleState {
+  auto: boolean;
+  width: number;
+  height: number;
+}
 
 function toPoint(b: ProBar): FootprintPoint {
   const c = b.candle;
@@ -136,6 +152,11 @@ const FLOW_CANDLE = {
   priceFormat: FLOW_FORMAT,
 } as const;
 
+/** Wykresy na stronie (układ kilku paneli): chwila pod kursorem jednego pokazuje krzyż na pozostałych. */
+const crossPeers = new Set<ProChartController>();
+/** W trakcie ustawiania krzyża na innych panelach (ich zdarzenia krzyża nie są ruchem użytkownika). */
+let crossSyncing = false;
+
 export class ProChartController {
   readonly chart: IChartApi;
   readonly fpView = new FootprintSeries();
@@ -149,6 +170,7 @@ export class ProChartController {
   private stats: BarStat[] = [];
   private statsAt = 0;
   private readonly zones: ZonesLayer;
+  private readonly tpo: TpoLayer;
   private priceTick = 1;
   /** Cena przeliczenia progu nierównowagi z USD na jednostki rynku (ustalana przy pełnym odświeżeniu danych). */
   private refPx = 0;
@@ -159,6 +181,8 @@ export class ProChartController {
   private readonly overlay: IndicatorOverlay;
   private readonly liquidity: LiquidityLayer;
   private readonly drawLayer = new DrawingLayer();
+  private readonly countdown = new CountdownLabel();
+  private countdownTimer = 0;
   /** Narzędzia rysowania (pasek narzędzi w ProChart). */
   readonly draw: DrawingTools;
 
@@ -171,6 +195,9 @@ export class ProChartController {
   private topInset = 0;
   private hoverTime: number | null = null;
   private hoverPrice: number | null = null;
+  /** Kursor użytkownika jest nad tym wykresem (nie krzyż z innego panelu). */
+  private userHover = false;
+  private horzLine = true;
   private autoUsd = DEFAULT_THRESHOLD_USD;
   private autoAt = 0;
   private readonly liqSource: LiquiditySource;
@@ -178,6 +205,10 @@ export class ProChartController {
   private readonly onHover: (h: Hover) => void;
   private readonly onPick: (p: LiquidityPick | null) => void;
   private readonly onHidePane: (key: PaneKey) => void;
+  private readonly onScale: (s: ScaleState) => void;
+  private scale: ScaleState = { auto: true, width: 0, height: 0 };
+  private scaleFrame = 0;
+  private readonly container: HTMLElement;
 
   constructor(
     container: HTMLElement,
@@ -186,12 +217,15 @@ export class ProChartController {
     settings: ChartSettings,
     onHover: (h: Hover) => void,
     onPick: (p: LiquidityPick | null) => void,
-    onHidePane: (key: PaneKey) => void
+    onHidePane: (key: PaneKey) => void,
+    onScale: (s: ScaleState) => void
   ) {
     this.settings = settings;
     this.onHover = onHover;
     this.onPick = onPick;
     this.onHidePane = onHidePane;
+    this.onScale = onScale;
+    this.container = container;
     this.liqSource = {
       near: null,
       far: null,
@@ -208,10 +242,13 @@ export class ProChartController {
     // Mapa ciepła pod profilem i pasmami (kolejność dołączenia = kolejność rysowania w tej samej warstwie)
     this.liquidity = new LiquidityLayer(liqToggles(settings));
     this.main.attachPrimitive(this.liquidity);
-    this.overlay = new IndicatorOverlay(toggles(settings));
+    this.overlay = new IndicatorOverlay(toggles(settings, series.interval.ms));
     this.main.attachPrimitive(this.overlay);
     this.zones = new ZonesLayer({ showZones: settings.showZones, showAuctions: settings.showAuctions });
     this.main.attachPrimitive(this.zones);
+    this.tpo = new TpoLayer(settings.showTpo);
+    this.main.attachPrimitive(this.tpo);
+    this.main.attachPrimitive(this.countdown);
     // Rysunki dołączone ostatnie — nad wskaźnikami i świecami
     this.drawLayer.setUnit(store.coin);
     this.main.attachPrimitive(this.drawLayer);
@@ -220,14 +257,25 @@ export class ProChartController {
     this.chart.subscribeCrosshairMove(this.onCrosshair);
     this.chart.subscribeClick(this.onClick);
     this.chart.timeScale().subscribeVisibleLogicalRangeChange(this.onRange);
+    // Przeciągnięcie osi albo panelu wyłącza autoskalę, dwuklik na osi ją włącza — stan sprawdzany po geście
+    window.addEventListener('pointerup', this.checkScale);
+    container.addEventListener('dblclick', this.checkScale);
     this.unsubscribe = store.subscribe(() => this.schedule());
+    // Odliczanie do zamknięcia świecy biegnie co sekundę także bez nowych transakcji
+    this.countdownTimer = window.setInterval(() => this.tickCountdown(), 1000);
+    crossPeers.add(this);
     this.schedule();
   }
 
   destroy(): void {
     cancelAnimationFrame(this.frame);
     cancelAnimationFrame(this.marginFrame);
+    cancelAnimationFrame(this.scaleFrame);
+    clearInterval(this.countdownTimer);
+    window.removeEventListener('pointerup', this.checkScale);
+    this.container.removeEventListener('dblclick', this.checkScale);
     this.draw.destroy();
+    crossPeers.delete(this);
     this.unsubscribe();
     this.chart.unsubscribeCrosshairMove(this.onCrosshair);
     this.chart.unsubscribeClick(this.onClick);
@@ -249,6 +297,7 @@ export class ProChartController {
     if (series === this.series) return;
     this.series = series;
     this.bars = [];
+    this.overlay.setToggles(toggles(this.settings, series.interval.ms));
     this.schedule();
   }
 
@@ -264,7 +313,8 @@ export class ProChartController {
       imbalanceMinVol: this.minVol(s),
       stackedMin: s.stackedMin,
     });
-    this.overlay.setToggles(toggles(s));
+    this.overlay.setToggles(toggles(s, this.series.interval.ms));
+    this.tpo.setOn(s.showTpo);
     this.liquidity.setToggles(liqToggles(s));
     this.zones.setToggles({ showZones: s.showZones, showAuctions: s.showAuctions });
     this.zones.setParams(this.zoneParams(s));
@@ -273,6 +323,7 @@ export class ProChartController {
       // Z mapą ciepła przy prawej krawędzi stoi drabina DOM: najnowsza świeca i wskaźniki kończą się przed nią
       this.overlay.setRightInset(s.showHeatmap ? DOM_W_PX : 0);
       this.zones.setRightInset(s.showHeatmap ? DOM_W_PX : 0);
+      this.tpo.setRightInset(s.showHeatmap ? DOM_W_PX : 0);
       this.chart.timeScale().applyOptions({ rightOffsetPixels: this.rightGap() });
     }
     const panesChanged = force || prev.showVolume !== s.showVolume || prev.showDelta !== s.showDelta || prev.showCvd !== s.showCvd || prev.showStats !== s.showStats;
@@ -320,6 +371,9 @@ export class ProChartController {
       );
       this.statsSeries.attachPrimitive(this.statsTable);
     }
+    // Opis najniższego panelu omija logo TradingView (tabela statystyk ma na nie własne miejsce)
+    const lowest = s.showStats ? null : s.showCvd ? this.cvdLegend : s.showDelta ? this.deltaLegend : s.showVolume ? this.volumeLegend : null;
+    for (const lg of [this.volumeLegend, this.deltaLegend, this.cvdLegend]) lg.setBottom(lg === lowest);
     const panes = this.chart.panes();
     panes[0]?.setStretchFactor(1);
     const statsPane = this.statsSeries?.getPane();
@@ -365,6 +419,11 @@ export class ProChartController {
     this.liquidity.setHighlight(address);
   }
 
+  /** Pozycje i zlecenia największych kont na tym rynku (null = brak aktualnej warstwy). */
+  setWhales(w: WhaleView | null): void {
+    this.overlay.setWhales(w);
+  }
+
   /** Najsilniejsze klastry likwidacji ze skanera (pusta lista = brak aktualnej mapy). */
   setLiqLevels(levels: LiqLevel[]): void {
     this.overlay.setLiq(levels);
@@ -404,8 +463,32 @@ export class ProChartController {
 
   /** Dopasowuje zakres ceny do widocznych świec (po ręcznym przeciągnięciu osi). */
   resetScales(): void {
-    this.chart.priceScale('right').applyOptions({ autoScale: true });
+    this.setAutoScale(true);
     this.scrollToNow();
+  }
+
+  /** Autoskala ceny (przycisk A w rogu osi): włączona dopasowuje zakres do widocznych świec, wyłączona go zamraża. */
+  setAutoScale(on: boolean): void {
+    this.chart.priceScale('right').applyOptions({ autoScale: on });
+    this.emitScale();
+  }
+
+  private readonly checkScale = (): void => {
+    cancelAnimationFrame(this.scaleFrame);
+    this.scaleFrame = requestAnimationFrame(() => {
+      this.scaleFrame = 0;
+      this.emitScale();
+    });
+  };
+
+  /** Stan autoskali i wymiary rogu pod osią ceny (szerokość osi ceny × wysokość osi czasu) — tylko przy zmianie. */
+  private emitScale(): void {
+    const ps = this.chart.priceScale('right');
+    const next: ScaleState = { auto: ps.options().autoScale, width: ps.width(), height: this.chart.timeScale().height() };
+    const s = this.scale;
+    if (s.auto === next.auto && s.width === next.width && s.height === next.height) return;
+    this.scale = next;
+    this.onScale(next);
   }
 
   // ───────────────────────── dane ─────────────────────────
@@ -469,6 +552,7 @@ export class ProChartController {
     this.liqSource.far = st.book('far');
     this.liquidity.setData(next, ms, this.liqSource, now, this.bigTradeUsd);
     this.zones.setData(next, ms, now);
+    this.tpo.setData(next, ms);
     if (this.statsSeries && (full || now - this.statsAt >= STATS_EVERY_MS || next.length !== this.stats.length)) {
       this.statsAt = now;
       const predicted = st.ctx ? st.ctx.funding : null;
@@ -477,6 +561,13 @@ export class ProChartController {
     }
     this.pushCvd(full);
     this.emitHover();
+    this.emitScale();
+    this.tickCountdown();
+  }
+
+  private tickCountdown(): void {
+    const last = this.bars[this.bars.length - 1];
+    this.countdown.set(last?.candle.c ?? 0, last ? last.t + this.series.interval.ms - this.store.serverNow() : 0);
   }
 
   /** CVD zależy od wszystkich wcześniejszych świec okresu — liczymy całość i wysyłamy tylko zmienione punkty. */
@@ -502,7 +593,10 @@ export class ProChartController {
   // ───────────────────────── interakcja ─────────────────────────
 
   private readonly onRange = (range: LogicalRange | null): void => {
-    if (range && range.from < LOAD_OLDER_MARGIN && this.bars.length > 0) void this.series.loadOlder();
+    if (!range || this.bars.length === 0) return;
+    if (range.from < LOAD_OLDER_MARGIN) void this.series.loadOlder();
+    // Historia taśmy i arkusza z serwera od lewej krawędzi widoku
+    requestHistory(this.store, this.bars[Math.min(this.bars.length - 1, Math.max(0, Math.floor(range.from)))].t);
   };
 
   /** Kliknięcie: krzyżyk ukrycia panelu, obiekt warstwy płynności pod kursorem albo nic (zamyka kartę). */
@@ -519,10 +613,43 @@ export class ProChartController {
   };
 
   private readonly onCrosshair = (p: MouseEventParams<Time>): void => {
+    if (p.sourceEvent) this.setHorzLine(true);
     this.hoverTime = p.time !== undefined && p.point ? (p.time as number) * 1000 : null;
     this.hoverPrice = p.point && p.paneIndex === 0 ? this.main.coordinateToPrice(p.point.y) : null;
     this.emitHover();
+    // Krzyż ustawiony z innego panelu nie jest ruchem użytkownika — nie rozsyłamy go dalej
+    if (crossSyncing) return;
+    if (p.sourceEvent && p.point) this.userHover = true;
+    else if (!p.point && this.userHover) this.userHover = false;
+    else return;
+    crossSyncing = true;
+    try {
+      for (const peer of crossPeers) if (peer !== this) peer.showCross(this.userHover ? this.hoverTime : null, this.store.coin, this.hoverPrice);
+    } finally {
+      crossSyncing = false;
+    }
   };
+
+  /** Krzyż z innego panelu: świeca tego interwału obejmująca chwilę `t`; cena tylko z tego samego rynku. */
+  private showCross(t: number | null, coin: string, price: number | null): void {
+    const ms = this.series.interval.ms;
+    const i = t === null ? -1 : indexOfTime(this.bars, Math.floor(t / ms) * ms);
+    if (i < 0) {
+      this.chart.clearCrosshairPosition();
+      return;
+    }
+    const bar = this.bars[i];
+    const same = coin === this.store.coin && price !== null;
+    this.setHorzLine(same);
+    this.chart.setCrosshairPosition(same ? price : bar.candle.c, sec(bar.t), this.main);
+  }
+
+  /** Pozioma linia krzyża i jej etykieta — ukryte, gdy krzyż przychodzi z wykresu innego rynku (jego cena tu nic nie znaczy). */
+  private setHorzLine(on: boolean): void {
+    if (this.horzLine === on) return;
+    this.horzLine = on;
+    this.chart.applyOptions({ crosshair: { horzLine: { visible: on, labelVisible: on } } });
+  }
 
   private emitHover(): void {
     const bars = this.bars;

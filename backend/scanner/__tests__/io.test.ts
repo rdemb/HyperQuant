@@ -41,6 +41,21 @@ describe('loadConfig — wyłącznie zmienne środowiskowe', () => {
     const r = loadConfig(base);
     expect(r.ok && r.config.git).toBeNull();
   });
+
+  it('rejestrator historii i warstwa wielorybów domyślnie wyłączone; łączny budżet wag najwyżej 800/min', () => {
+    const base = { HQ_STATE_DIR: '/s', HQ_OUT_DIR: '/o' };
+    const off = loadConfig(base);
+    expect(off.ok && [off.config.history, off.config.whales]).toEqual([null, null]);
+    const on = loadConfig({ ...base, HQ_HISTORY_MARKETS: 'BTC, ETH,SOL,HYPE', HQ_WHALE_TOP: '150' });
+    expect(on.ok && [on.config.history, on.config.whales]).toEqual([
+      { markets: ['BTC', 'ETH', 'SOL', 'HYPE'], keepDays: 7 },
+      { top: 150, weightPerMin: 200 },
+    ]);
+    expect(loadConfig({ ...base, HQ_HISTORY_MARKETS: 'BTC,btc' }).ok).toBe(false);
+    expect(loadConfig({ ...base, HQ_HISTORY_MARKETS: 'BTC,BTC' }).ok).toBe(false);
+    expect(loadConfig({ ...base, HQ_HISTORY_DAYS: '60' }).ok).toBe(false);
+    expect(loadConfig({ ...base, HQ_WEIGHT_PER_MIN: '600', HQ_WHALE_TOP: '10', HQ_WHALE_WEIGHT_PER_MIN: '300' }).ok).toBe(false);
+  });
 });
 
 describe('putObject — zapis do R2', () => {

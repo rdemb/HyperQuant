@@ -35,15 +35,19 @@ const off = {
   showSessionVwap: false,
   showProfile: false,
   showPeriodProfiles: false,
+  showDevPoc: false,
+  showTpo: false,
   showLevels: false,
   showSessions: false,
   showIb: false,
   showLiq: false,
+  showWhales: false,
   showZones: false,
   showAuctions: false,
   showHeatmap: false,
   showBubbles: false,
   showClashes: false,
+  showLots: false,
 } satisfies Partial<ChartSettings>;
 
 const built = (id: string, name: string, patch: Partial<TemplateSettings>): ChartTemplate => ({
@@ -75,6 +79,17 @@ export const BUILT_IN_TEMPLATES: readonly ChartTemplate[] = [
     showLevels: true,
     showIb: true,
     showLiq: true,
+    showWhales: true,
+  }),
+  built('tpo', 'Market Profile 30m: TPO dób', {
+    ...off,
+    interval: '30m',
+    view: 'candles',
+    showDelta: false,
+    showStats: false,
+    showTpo: true,
+    showVwap: true,
+    showLevels: true,
   }),
   built('clean', 'Czyste świece', { ...off, view: 'candles', showDelta: false, showCvd: false, showStats: false }),
 ];

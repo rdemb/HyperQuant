@@ -115,6 +115,11 @@ export class OrderLog {
   }
 
   add(orders: readonly AggressorOrder[]): void {
+    // Paczka z historii serwera: scalenie dwóch posortowanych list zamiast wstawiania po jednym
+    if (orders.length > 64) {
+      this.items = mergeByTime(this.items, [...orders].sort((a, b) => a.time - b.time));
+      return;
+    }
     for (const o of orders) {
       const arr = this.items;
       if (arr.length === 0 || arr[arr.length - 1].time <= o.time) arr.push(o);
@@ -136,6 +141,18 @@ export class OrderLog {
     const i = lowerBound(this.items, before);
     if (i > 0) this.items = this.items.slice(i);
   }
+}
+
+/** Scalenie dwóch list rosnących po czasie (przy równym czasie najpierw `a`). */
+function mergeByTime(a: readonly AggressorOrder[], b: readonly AggressorOrder[]): AggressorOrder[] {
+  const out = new Array<AggressorOrder>(a.length + b.length);
+  let i = 0;
+  let j = 0;
+  let k = 0;
+  while (i < a.length && j < b.length) out[k++] = a[i].time <= b[j].time ? a[i++] : b[j++];
+  while (i < a.length) out[k++] = a[i++];
+  while (j < b.length) out[k++] = b[j++];
+  return out;
 }
 
 /** Pierwszy indeks z czasem ≥ t. */

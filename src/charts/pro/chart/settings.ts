@@ -30,10 +30,16 @@ export interface ChartSettings {
   showProfile: boolean;
   /** Profile sesji (na 1–4 h dób) z nagimi POC. */
   showPeriodProfiles: boolean;
+  /** Rozwijający się POC i value area sesji (na 1–4 h doby), świeca po świecy. */
+  showDevPoc: boolean;
+  /** Profil czasowy (TPO) każdej doby; zastępuje profile sesji. */
+  showTpo: boolean;
   showLevels: boolean;
   showSessions: boolean;
   showIb: boolean;
   showLiq: boolean;
+  /** Pozycje i duże zlecenia oczekujące największych kont (plik skanera, bez adresów). */
+  showWhales: boolean;
   /** Strefy nierównowagi i niedokończone aukcje z footprintu. */
   showZones: boolean;
   showAuctions: boolean;
@@ -42,6 +48,8 @@ export interface ChartSettings {
   showBubbles: boolean;
   /** Serie małych zleceń i ściany makerów (z adresów w transakcjach). */
   showClashes: boolean;
+  /** Duże zlecenia oczekujące w arkuszu (średnie zlecenie poziomu od progu). */
+  showLots: boolean;
   /** Próg dużego zlecenia (USD); 0 = automatycznie z rynku. */
   bigTradeUsd: number;
   /** Panel taśmy zleceń (Time & Sales), jego filtr (USD) i dźwięk dużych zleceń. */
@@ -69,15 +77,19 @@ export const DEFAULT_SETTINGS: ChartSettings = {
   showSessionVwap: true,
   showProfile: true,
   showPeriodProfiles: true,
+  showDevPoc: false,
+  showTpo: false,
   showLevels: true,
   showSessions: true,
   showIb: true,
   showLiq: true,
+  showWhales: true,
   showZones: true,
   showAuctions: true,
   showHeatmap: true,
   showBubbles: true,
   showClashes: true,
+  showLots: true,
   bigTradeUsd: 0,
   showTape: false,
   tapeMinUsd: 10_000,
@@ -112,15 +124,19 @@ export function parseSettings(raw: unknown, d: ChartSettings = DEFAULT_SETTINGS)
     showSessionVwap: bool(r.showSessionVwap, d.showSessionVwap),
     showProfile: bool(r.showProfile, d.showProfile),
     showPeriodProfiles: bool(r.showPeriodProfiles, d.showPeriodProfiles),
+    showDevPoc: bool(r.showDevPoc, d.showDevPoc),
+    showTpo: bool(r.showTpo, d.showTpo),
     showLevels: bool(r.showLevels, d.showLevels),
     showSessions: bool(r.showSessions, d.showSessions),
     showIb: bool(r.showIb, d.showIb),
     showLiq: bool(r.showLiq, d.showLiq),
+    showWhales: bool(r.showWhales, d.showWhales),
     showZones: bool(r.showZones, d.showZones),
     showAuctions: bool(r.showAuctions, d.showAuctions),
     showHeatmap: bool(r.showHeatmap, d.showHeatmap),
     showBubbles: bool(r.showBubbles, d.showBubbles),
     showClashes: bool(r.showClashes, d.showClashes),
+    showLots: bool(r.showLots, d.showLots),
     bigTradeUsd: numIn(r.bigTradeUsd, 0, 100_000_000, d.bigTradeUsd),
     showTape: bool(r.showTape, d.showTape),
     tapeMinUsd: numIn(r.tapeMinUsd, 0, 100_000_000, d.tapeMinUsd),

@@ -11,16 +11,21 @@ export const DATA_BASE = String(import.meta.env.VITE_DATA_BASE_URL ?? '').replac
  */
 export const LEDGER_BASE = DATA_BASE.replace(/\/main$/, '/ledger');
 const REFRESH_MS = 60_000;
+/** Pliku nie ma (404, np. warstwa jeszcze niewłączona w skanerze): następna próba dopiero po tym czasie. */
+const MISSING_RETRY_MS = 10 * 60_000;
 
 interface Entry {
   cache: { asOf: number } | null;
   inflight: Promise<{ asOf: number } | null> | null;
+  /** Najwcześniejsza chwila kolejnego pobrania po 404 (ms). */
+  retryAt: number;
 }
 const entries = new Map<string, Entry>();
 
-async function load<T>(url: string, guard: (x: unknown) => x is T): Promise<T | null> {
+async function load<T>(url: string, guard: (x: unknown) => x is T, entry: Entry): Promise<T | null> {
   try {
     const res = await fetch(url, { cache: 'no-cache', signal: AbortSignal.timeout(10_000) });
+    if (res.status === 404) entry.retryAt = Date.now() + MISSING_RETRY_MS;
     if (!res.ok) return null;
     const j: unknown = await res.json();
     return guard(j) ? j : null;
@@ -43,7 +48,7 @@ export interface Published<T> {
  */
 export function usePublished<T extends { asOf: number }>(path: string, guard: (x: unknown) => x is T, base: string = DATA_BASE): Published<T> {
   const url = `${base}/${path}`;
-  const entry = entries.get(url) ?? { cache: null, inflight: null };
+  const entry = entries.get(url) ?? { cache: null, inflight: null, retryAt: 0 };
   entries.set(url, entry);
   const [state, setState] = useState<Published<T>>(() => ({ configured: !!DATA_BASE, value: entry.cache as T | null, failed: false }));
 
@@ -51,8 +56,8 @@ export function usePublished<T extends { asOf: number }>(path: string, guard: (x
     if (!DATA_BASE) return;
     let alive = true;
     const run = () => {
-      if (document.visibilityState !== 'visible') return;
-      if (!entry.inflight) entry.inflight = load(url, guard).finally(() => (entry.inflight = null));
+      if (document.visibilityState !== 'visible' || (!entry.inflight && Date.now() < entry.retryAt)) return;
+      if (!entry.inflight) entry.inflight = load(url, guard, entry).finally(() => (entry.inflight = null));
       entry.inflight.then((v) => {
         if (v && (!entry.cache || v.asOf >= entry.cache.asOf)) entry.cache = v;
         if (alive) setState({ configured: true, value: entry.cache as T | null, failed: v === null });
