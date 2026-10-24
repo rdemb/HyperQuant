@@ -73,6 +73,8 @@ const DOM_BAR_PX = DOM_W_PX - 22;
 const DOM_Q = 0.95;
 const DOM_STALE_MS = 30_000;
 const DOM_LABEL_ROW_PX = 9;
+/** Najmniejszy odstęp między liczbami drabiny (px). */
+const DOM_LABEL_GAP_PX = 11;
 /**
  * Skala mapy ciepła, osobno dla każdej agregacji arkusza: od percentylu HEAT_LO_Q (próg dolny — większość poziomów
  * jest przezroczysta, świece zostają widoczne) do percentylu HEAT_Q wielkości w widocznych migawkach (pełne
@@ -81,6 +83,8 @@ const DOM_LABEL_ROW_PX = 9;
 const HEAT_LO_Q = 0.6;
 const HEAT_Q = 0.995;
 const HEAT_SAMPLE = 12_000;
+/** Krycie dalekiej agregacji względem bliskiej. */
+const FAR_ALPHA = 0.6;
 
 /**
  * Kule z cieniowaniem: jaśniejszy środek przesunięty ku górze, ciemniejszy brzeg i jasny obrys 1 px
@@ -99,6 +103,7 @@ const K = {
   domBid: rgba(PRO.domBid, 0.92),
   domAsk: rgba(PRO.domAsk, 0.92),
   domText: PRO.domText,
+  labelBg: rgba(PRO.bg, 0.85),
 };
 
 interface Bubble {
@@ -167,6 +172,8 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
   private domRight = 0;
 
   private readonly lut = buildHeatLut(LIQ_RAMP);
+  /** Daleka agregacja przygaszona: tło dla szerszego widoku, bez ostrej granicy z dokładnym arkuszem przy cenie. */
+  private readonly lutFar = buildHeatLut(LIQ_RAMP.map((s) => ({ ...s, alpha: s.alpha * FAR_ALPHA })));
   private readonly tex = document.createElement('canvas');
   private texKey = '';
   private readonly views: readonly IPrimitivePaneView[];
@@ -186,6 +193,7 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
         target.useBitmapCoordinateSpace(({ context, horizontalPixelRatio: hr, verticalPixelRatio: vr }) => {
           drawWalls(context, this.walls, hr, vr);
           drawBubbles(context, this.bubbles, hr, vr);
+          drawWallLabels(context, this.walls, hr, vr);
         }),
     };
     const dom: IPrimitivePaneRenderer = {
@@ -318,7 +326,7 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
         const x1 = Math.min(W, Math.max(x0 + 1, Math.round(this.x(frames[i + 1]?.t ?? this.now, g))));
         if (x1 <= 0 || x0 >= W) continue;
         if (layer === near) clearSpan(px, W, H, f, x0, x1, g);
-        paintFrame(px, W, H, f, x0, x1, g, norm, this.lut);
+        paintFrame(px, W, H, f, x0, x1, g, norm, layer === near ? this.lut : this.lutFar);
       }
     }
     ctx.putImageData(img, 0, 0);
@@ -536,9 +544,6 @@ function drawBubbles(ctx: CanvasRenderingContext2D, list: readonly Bubble[], hr:
 function drawWalls(ctx: CanvasRenderingContext2D, list: readonly WallMark[], hr: number, vr: number): void {
   if (list.length === 0) return;
   const h = Math.max(2, Math.round(WALL_H_PX * vr));
-  ctx.font = `600 ${Math.round(10 * vr)}px ${MONO}`;
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'middle';
   for (const w of list) {
     const x0 = Math.round(w.x0 * hr);
     const x1 = Math.round(w.x1 * hr);
@@ -549,8 +554,27 @@ function drawWalls(ctx: CanvasRenderingContext2D, list: readonly WallMark[], hr:
     }
     ctx.fillStyle = w.bid ? K.domBid : K.domAsk;
     ctx.fillRect(x0, y, x1 - x0, h);
+  }
+}
+
+/** Wartość ściany na tle przed jej początkiem — nad bąblami, które zbierają się przy końcu belki. */
+function drawWallLabels(ctx: CanvasRenderingContext2D, list: readonly WallMark[], hr: number, vr: number): void {
+  if (list.length === 0) return;
+  ctx.font = `600 ${Math.round(10 * vr)}px ${MONO}`;
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  const pad = Math.round(3 * hr);
+  const th = Math.round(13 * vr);
+  for (const w of list) {
+    const xr = Math.round(w.x0 * hr) - Math.round(4 * hr);
+    const y = Math.round(w.y * vr);
+    const tw = Math.ceil(ctx.measureText(w.label).width);
+    ctx.fillStyle = K.labelBg;
+    ctx.fillRect(xr - tw - pad, y - th / 2, tw + 2 * pad, th);
+    ctx.fillStyle = w.bid ? K.domBid : K.domAsk;
+    ctx.fillRect(xr + pad - Math.max(1, Math.round(hr)), y - th / 2, Math.max(1, Math.round(hr)), th);
     ctx.fillStyle = K.domText;
-    ctx.fillText(w.label, x1 + Math.round(4 * hr), y + h / 2);
+    ctx.fillText(w.label, xr, y);
   }
 }
 
@@ -561,15 +585,20 @@ function drawDom(ctx: CanvasRenderingContext2D, rows: readonly DomRow[], right: 
   ctx.font = `500 ${Math.round(10 * vr)}px ${MONO}`;
   ctx.textAlign = 'right';
   ctx.textBaseline = 'middle';
+  // Liczba tylko wtedy, gdy nie nachodzi na poprzednią (gęsta drabina przy oddaleniu)
+  let lastY = Number.NEGATIVE_INFINITY;
+  const minGap = DOM_LABEL_GAP_PX * vr;
   for (const r of rows) {
     const y = Math.round(r.y * vr);
     const h = Math.max(1, Math.round(r.h * vr) - (r.h >= 4 ? gap : 0));
     const w = Math.max(1, Math.round(r.w * hr));
     ctx.fillStyle = r.bid ? K.domBid : K.domAsk;
     ctx.fillRect(xr - w, y, w, h);
-    if (r.h >= DOM_LABEL_ROW_PX) {
+    const ty = y + h / 2;
+    if (r.h >= DOM_LABEL_ROW_PX && Math.abs(ty - lastY) >= minGap) {
       ctx.fillStyle = K.domText;
-      ctx.fillText(r.label, xr - w - Math.round(3 * hr), y + h / 2);
+      ctx.fillText(r.label, xr - w - Math.round(3 * hr), ty);
+      lastY = ty;
     }
   }
 }

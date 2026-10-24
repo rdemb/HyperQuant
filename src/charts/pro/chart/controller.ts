@@ -1,4 +1,4 @@
-import { CandlestickSeries, HistogramSeries, LineStyle, createChart } from 'lightweight-charts';
+import { CandlestickSeries, HistogramSeries, LineSeries, LineStyle, createChart } from 'lightweight-charts';
 import type {
   CandlestickData,
   HistogramData,
@@ -17,6 +17,7 @@ import { fmtSignedVol } from '../../orderflow/renderer';
 import { fmtPrice } from '../../../ui/format';
 import { DEFAULT_THRESHOLD_USD, autoThreshold } from '../core/clashes';
 import { Ohlc, cvdCandles, deltaCandle } from '../core/flow';
+import { BarStat, barStat } from '../core/stats';
 import { rowAt } from '../core/footprintBar';
 import type { LiqLevel } from '../core/indicators';
 import type { ResetMode } from '../core/sessions';
@@ -27,6 +28,8 @@ import { FootprintOptions, FootprintPoint, FootprintSeries } from './footprintSe
 import { LiquidityLayer, LiquidityPick, LiquiditySource } from './liquidity';
 import { IndicatorOverlay, IndicatorToggles, IndicatorValues } from './overlay';
 import { LegendPart, PaneLegend } from './paneLegend';
+import { STAT_PAD_PX, STAT_ROWS, STAT_ROW_PX, StatsTable } from './statsTable';
+import { ZonesLayer } from './zonesLayer';
 import type { ChartSettings } from './settings';
 import { DOM_W_PX, PRO, RIGHT_GAP_PX, chartOptions } from './theme';
 
@@ -62,6 +65,8 @@ const VOLUME_FORMAT: PriceFormat = { type: 'custom', minMove: 0.0001, formatter:
 
 const liqToggles = (s: ChartSettings) => ({ showHeatmap: s.showHeatmap, showBubbles: s.showBubbles, showClashes: s.showClashes });
 
+const zoneParams = (s: ChartSettings) => ({ rowStep: s.rowStep, imbalance: { ratio: s.imbalanceRatio, minVol: s.imbalanceMinVol }, stackedMin: s.stackedMin });
+
 const toggles = (s: ChartSettings): IndicatorToggles => ({
   showVwap: s.showVwap,
   showVwapBands: s.showVwapBands,
@@ -83,6 +88,8 @@ const LOAD_OLDER_MARGIN = 40;
 /** Próg automatyczny dużego zlecenia: z zleceń ostatniej godziny, przeliczany co 5 s. */
 const AUTO_WINDOW_MS = 3_600_000;
 const AUTO_EVERY_MS = 5_000;
+/** Statystyki świec przeliczane najwyżej co tyle ms (i po każdej pełnej podmianie danych). */
+const STATS_EVERY_MS = 1_000;
 
 function toPoint(b: ProBar): FootprintPoint {
   const c = b.candle;
@@ -132,6 +139,12 @@ export class ProChartController {
   private volume: ISeriesApi<'Histogram'> | null = null;
   private delta: ISeriesApi<'Candlestick'> | null = null;
   private cvd: ISeriesApi<'Candlestick'> | null = null;
+  /** Panel tabeli statystyk: niewidoczna seria (tylko oś czasu) z tabelą jako prymitywem. */
+  private statsSeries: ISeriesApi<'Line'> | null = null;
+  private readonly statsTable = new StatsTable();
+  private stats: BarStat[] = [];
+  private statsAt = 0;
+  private readonly zones: ZonesLayer;
   private readonly volumeLegend = new PaneLegend();
   private readonly deltaLegend = new PaneLegend();
   private readonly cvdLegend = new PaneLegend();
@@ -185,6 +198,8 @@ export class ProChartController {
     this.main.attachPrimitive(this.liquidity);
     this.overlay = new IndicatorOverlay(toggles(settings));
     this.main.attachPrimitive(this.overlay);
+    this.zones = new ZonesLayer({ showZones: settings.showZones, showAuctions: settings.showAuctions });
+    this.main.attachPrimitive(this.zones);
     // Rysunki dołączone ostatnie — nad wskaźnikami i świecami
     this.drawLayer.setUnit(store.coin);
     this.main.attachPrimitive(this.drawLayer);
@@ -222,13 +237,16 @@ export class ProChartController {
     });
     this.overlay.setToggles(toggles(s));
     this.liquidity.setToggles(liqToggles(s));
+    this.zones.setToggles({ showZones: s.showZones, showAuctions: s.showAuctions });
+    this.zones.setParams(zoneParams(s));
     if (prev.bigTradeUsd !== s.bigTradeUsd) this.schedule();
     if (force || prev.showHeatmap !== s.showHeatmap) {
       // Z mapą ciepła przy prawej krawędzi stoi drabina DOM: najnowsza świeca i wskaźniki kończą się przed nią
       this.overlay.setRightInset(s.showHeatmap ? DOM_W_PX : 0);
+      this.zones.setRightInset(s.showHeatmap ? DOM_W_PX : 0);
       this.chart.timeScale().applyOptions({ rightOffsetPixels: this.rightGap() });
     }
-    const panesChanged = force || prev.showVolume !== s.showVolume || prev.showDelta !== s.showDelta || prev.showCvd !== s.showCvd;
+    const panesChanged = force || prev.showVolume !== s.showVolume || prev.showDelta !== s.showDelta || prev.showCvd !== s.showCvd || prev.showStats !== s.showStats;
     if (panesChanged) this.rebuildPanes();
     else if (prev.cvdReset !== s.cvdReset) {
       this.cvdData = [];
@@ -239,8 +257,8 @@ export class ProChartController {
 
   private rebuildPanes(): void {
     const s = this.settings;
-    for (const sr of [this.volume, this.delta, this.cvd]) if (sr) this.chart.removeSeries(sr);
-    this.volume = this.delta = this.cvd = null;
+    for (const sr of [this.volume, this.delta, this.cvd, this.statsSeries]) if (sr) this.chart.removeSeries(sr);
+    this.volume = this.delta = this.cvd = this.statsSeries = null;
     let pane = 1;
     // Wolumen we własnym panelu — nie zasłania komórek footprintu
     if (s.showVolume) {
@@ -257,9 +275,28 @@ export class ProChartController {
       this.cvd = this.chart.addSeries(CandlestickSeries, FLOW_CANDLE, pane++);
       this.cvd.attachPrimitive(this.cvdLegend);
     }
+    if (s.showStats) {
+      this.statsSeries = this.chart.addSeries(
+        LineSeries,
+        {
+          lineVisible: false,
+          pointMarkersVisible: false,
+          crosshairMarkerVisible: false,
+          lastValueVisible: false,
+          priceLineVisible: false,
+          // Oś panelu bez liczb (ukrycie skali w jednym panelu psuje układ wykresu)
+          priceFormat: { type: 'custom', minMove: 1, formatter: () => '' },
+        },
+        pane++
+      );
+      this.statsSeries.attachPrimitive(this.statsTable);
+    }
     const panes = this.chart.panes();
     panes[0]?.setStretchFactor(1);
-    for (let i = 1; i < panes.length; i++) panes[i].setStretchFactor(panes[i] === this.volume?.getPane() ? 0.14 : 0.22);
+    const statsPane = this.statsSeries?.getPane();
+    for (let i = 1; i < panes.length; i++) if (panes[i] !== statsPane) panes[i].setStretchFactor(panes[i] === this.volume?.getPane() ? 0.14 : 0.22);
+    // Tabela ma stałą wysokość wiersza: wysokość panelu ustawiamy po ułożeniu pozostałych
+    if (statsPane) requestAnimationFrame(() => statsPane.setHeight(STAT_ROWS.length * STAT_ROW_PX + STAT_PAD_PX));
     this.setTopInset(this.topInset);
     // Nowe serie dostają pełne dane przy następnej synchronizacji
     this.bars = [];
@@ -344,6 +381,7 @@ export class ProChartController {
       this.main.setData(next.map(toPoint));
       this.volume?.setData(next.map(toVolume));
       this.delta?.setData(next.map(toDelta));
+      this.statsSeries?.setData(next.map((b) => ({ time: sec(b.t) })));
     } else {
       for (const i of changed) {
         const historical = i < prev.length - 1;
@@ -351,6 +389,7 @@ export class ProChartController {
         this.main.update(toPoint(b), historical);
         this.volume?.update(toVolume(b), historical);
         this.delta?.update(toDelta(b), historical);
+        if (!historical) this.statsSeries?.update({ time: sec(b.t) });
       }
     }
     this.overlay.setBars(next, this.store.interval.ms);
@@ -365,6 +404,13 @@ export class ProChartController {
     this.liqSource.near = st.book('near');
     this.liqSource.far = st.book('far');
     this.liquidity.setData(next, st.interval.ms, this.liqSource, now, this.bigTradeUsd);
+    this.zones.setData(next, st.interval.ms, now);
+    if (this.statsSeries && (full || now - this.statsAt >= STATS_EVERY_MS || next.length !== this.stats.length)) {
+      this.statsAt = now;
+      const predicted = st.ctx ? st.ctx.funding : null;
+      this.stats = next.map((b) => barStat(b, st.interval.ms, now, st.oi, st.funding, predicted));
+      this.statsTable.setStats(this.stats);
+    }
     this.pushCvd(full);
     this.emitHover();
   }
@@ -423,6 +469,7 @@ export class ProChartController {
     this.deltaLegend.set(flowLegend('Delta', bar?.fp ? bar.fp.delta : null));
     this.cvdLegend.set(flowLegend(`CVD · ${RESET_LABEL[this.settings.cvdReset]}`, cvd ? cvd.close : null));
     const ind = i >= 0 ? this.overlay.valuesAt(i) : null;
+    this.statsTable.setHover(this.hoverTime === null ? -1 : i);
     this.onHover({ bar, live: this.hoverTime === null, row: bar ? this.rowAt(bar, this.hoverPrice) : null, cvd, ind });
   }
 

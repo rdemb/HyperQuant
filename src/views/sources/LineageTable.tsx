@@ -84,6 +84,24 @@ const GROUPS: { title: string; rows: Row[] }[] = [
           'Tylko od otwarcia strony. Adres biorcy widać skrócony po kliknięciu i nie jest zapisywany. Ściana obejmuje tylko to, co maker oddał w transakcjach, bez zleceń zdjętych z arkusza.',
       },
       {
+        metric: 'Statystyki świec (Wykresy): wolumen, delta, delta %, max i min delty, transakcje, tempo taśmy, ΔOI, finansowanie',
+        source: 'Hyperliquid API: candleSnapshot, fundingHistory; WS trades i activeAssetCtx nagrywane od otwarcia widoku',
+        method:
+          'Wolumen ze świec API; delta, jej ekstrema, transakcje i tempo (transakcje na sekundę świecy) z taśmy; ΔOI = otwarte pozycje na końcu świecy − na początku (ostatnie próbki activeAssetCtx nie późniejsze niż te chwile); finansowanie = średnia stawek godzin świecy z historii API w skali roku (stawka × 24 × 365), bieżąca godzina — stawka prognozowana',
+        kinds: ['LIVE'],
+        refresh: 'na żywo',
+        caveat: 'Delta, transakcje, tempo i ΔOI tylko dla świec nagranych od otwarcia strony; brak danych to „—”, nie zero.',
+      },
+      {
+        metric: 'Strefy nierównowagi i niedokończone aukcje (Wykresy)',
+        source: 'Taśma WS trades nagrywana od otwarcia widoku',
+        method:
+          'Siatka stała dla wszystkich świec: wysokość wiersza z ustawień albo 1/12 mediany zakresu ostatnich świec z taśmą (1, 2 lub 5 × 10^k USD). Strefa = co najmniej N kolejnych wierszy z nierównowagą diagonalną po jednej stronie; kończy się na świecy, która przechodzi przez strefę (dołek poniżej wsparcia, szczyt powyżej oporu). Niedokończona aukcja = skrajny wiersz zamkniętej, w całości nagranej świecy z kupnem i sprzedażą agresorów; kończy się na świecy, która wraca do tej ceny',
+        kinds: ['LIVE'],
+        refresh: 'na żywo',
+        caveat: 'Kontekst, nie sygnał: strefy i aukcje nie mają potwierdzonej skuteczności prognostycznej.',
+      },
+      {
         metric: 'Open interest, funding, mark/oracle',
         source: 'Hyperliquid API: metaAndAssetCtxs',
         method: 'Wartości wprost z API; basis = (mark − oracle) / oracle',
