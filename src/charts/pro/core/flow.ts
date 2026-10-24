@@ -51,6 +51,63 @@ export function cvdCandles(bars: readonly FlowInput[], mode: ResetMode): (Ohlc |
   return out;
 }
 
+/**
+ * Linia CVD z delty każdej świecy (`deltaAt(i)`, null = świeca bez danych): wartość na zamknięcie świecy, ten sam
+ * podział na okresy i zerowanie po luce co świece CVD.
+ */
+export function cvdLine(times: readonly number[], deltaAt: (i: number) => number | null, mode: ResetMode): (number | null)[] {
+  const out: (number | null)[] = [];
+  let acc = 0;
+  let period = Number.NaN;
+  let broken = true;
+  for (let i = 0; i < times.length; i++) {
+    const p = periodStart(times[i], mode);
+    if (p !== period) {
+      period = p;
+      acc = 0;
+    }
+    const d = deltaAt(i);
+    if (d === null) {
+      out.push(null);
+      broken = true;
+      continue;
+    }
+    if (broken) {
+      acc = 0;
+      broken = false;
+    }
+    acc += d;
+    out.push(acc);
+  }
+  return out;
+}
+
+/**
+ * Zmiana otwartych pozycji od początku okresu (sesja, doba, tydzień) na zamknięcie każdej świecy [t, t + ms), bieżąca
+ * do `now`. `oiAt(chwila)` null = brak odczytu; po luce linia liczy od stanu na początku pierwszej świecy z odczytem.
+ */
+export function oiChangeLine(times: readonly number[], ms: number, now: number, oiAt: (time: number) => number | null, mode: ResetMode): (number | null)[] {
+  const out: (number | null)[] = [];
+  let base = Number.NaN;
+  let period = Number.NaN;
+  for (const t of times) {
+    const p = periodStart(t, mode);
+    if (p !== period) {
+      period = p;
+      base = Number.NaN;
+    }
+    const v = oiAt(Math.min(t + ms, now));
+    if (v === null) {
+      out.push(null);
+      base = Number.NaN;
+      continue;
+    }
+    if (Number.isNaN(base)) base = oiAt(t) ?? v;
+    out.push(v - base);
+  }
+  return out;
+}
+
 /** Delta od ostatniego szczytu i od ostatniego dołka ceny do zamknięcia świecy (jednostki rynku). */
 export function deltaFromExtremes(fp: FootprintBar): { fromHigh: number; fromLow: number } {
   return { fromHigh: fp.delta - fp.deltaAtHigh, fromLow: fp.delta - fp.deltaAtLow };

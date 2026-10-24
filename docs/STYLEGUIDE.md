@@ -46,22 +46,23 @@ Wyjątek — panele przepływu (kierunek kupno/sprzedaż w tle): pomijamy `serie
 - Odświeżanie danych: trzymaj poprzedni render (bez szkieletów i skoków układu).
 
 ### Wykres orderflow (zakładka Wykresy)
-Płótno ma własną paletę w stylu terminali orderflow (tokeny `of-*`, te same wartości w `src/charts/pro/chart/theme.ts`); obramowanie, pasek narzędzi i menu zostają w tokenach strony.
+Płótno ma własną paletę HyperQuant „Desk” (tokeny `of-*`, te same wartości w `src/charts/pro/chart/theme.ts`): morska zieleń kupna i miedź sprzedaży na granatowym tle Desku. Obramowanie, pasek narzędzi i menu zostają w tokenach strony. Kolory kupna i sprzedaży przechodzą walidator palety także dla daltonistów.
 
 | Rola | Token / klasa | Wartość |
 |---|---|---|
-| Tło płótna (bez siatki) | `of-bg` | `#151521` |
-| Kupno: świeca / tekst | `of-buy` / `text-of-buy-ink` | `#10FF21` / `#3DFF4F` |
-| Sprzedaż: świeca / tekst | `of-sell` / `text-of-sell-ink` | `#8A2BE2` / `#A66BFF` |
-| Nierównowaga kupna / sprzedaży, bąble | `of-imb-buy` / `of-imb-sell` | `#00FFFF` / `#FF00FF` |
-| Ramka POC w świecy | `of-poc` | `#FFFF20` |
-| Wolumen wiersza | `of-vol` | `#D08A10` |
-| Profil sesji: obszar wartości / reszta / POC / nagi POC | — | `#555557` / `#3C6265` / `#C58109` / `#5C6166` |
-| Drabina DOM: bidy / aski | — | `#06AF23` / `#8A2BE2` |
-| VWAP / VWAP sesji | `of-vwap` / `of-svwap` | `#D0D3D9` / `#14C8C8` |
-| Mapa ciepła arkusza | `of-heat-1…3` | `#017979` → `#F5E611` → `#F5290D` |
+| Tło płótna (bez siatki) | `of-bg` | `#0B1019` |
+| Świeca kupna / sprzedaży | `of-buy` / `of-sell` | `#19A88E` / `#D9582E` |
+| Przepływ kupna / sprzedaży (tekst, bąble, likwidacje, wieloryby) | `text-of-buy-ink` / `text-of-sell-ink` | `#35C9A8` / `#F07C55` |
+| Nierównowaga kupna / sprzedaży | `of-imb-buy` / `of-imb-sell` | `#5CF2CF` / `#FF9A6A` |
+| Ramka POC w świecy | `of-poc` | `#E0A045` |
+| Wolumen wiersza | `of-vol` | `#5B7AA6` |
+| Profil sesji: obszar wartości / reszta / POC / nagi POC | — | `#34425A` / `#1F2B3D` / `#E0A045` / `#7A889C` |
+| Drabina DOM: bidy / aski | — | `#19A88E` / `#D9582E` |
+| VWAP / VWAP sesji | `of-vwap` / `of-svwap` | `#E6EBF2` / `#9085E9` |
+| Mapa ciepła arkusza (granat → błękit → biel ścian) | `of-heat-1…3` | `#22609A` → `#7FDCEE` → `#FFFFFF` |
+| Giełdy: Hyperliquid / Binance / Bybit | — | `#3987E5` / `#C98500` / `#D55181` |
 
-Komórki footprintu Bid × Ask to kafle od szarości `#A0A0A0` (mały wolumen) do nasyconego koloru strony; liczby ciemne na jasnym kaflu, jasne na ciemnym. Style Delta i Wolumen to paski od lewej krawędzi świecy (delta dodatnia niebieska, ujemna czerwona; wolumen w kolorze strony przewagi) z jasnymi liczbami bid i ask. Drugi kanał: pozycja (sprzedaż po lewej, kupno po prawej), a liczba nierównowagi jest pogrubiona i obrysowana.
+Komórki footprintu Bid × Ask to kafle od grafitu `#2A3446` (mały wolumen) do nasyconego koloru strony; liczby ciemne na jasnym kaflu, jasne na ciemnym. Style Delta i Wolumen to paski od lewej krawędzi świecy (delta i wolumen w kolorze strony przewagi) z jasnymi liczbami bid i ask. Drugi kanał: pozycja (sprzedaż po lewej, kupno po prawej), a liczba nierównowagi jest pogrubiona i obrysowana.
 
 ## 5. Ruch (Motion — `motion/react`, tokeny w `src/ui/motion.ts`)
 - Sprężyna domyślna: `stiffness 260, damping 26, mass 1` (ζ ≈ 0.8, „premium”). Pozycja i rozmiar mogą sprężynować; **krycie i kolor nigdy**.

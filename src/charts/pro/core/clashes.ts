@@ -216,7 +216,7 @@ export class WallTracker {
 }
 
 export interface WalletSummary {
-  /** Skrócony adres (0x1234…abcd). */
+  /** Pseudonim konta na czas otwarcia strony („Konto 3”) — adresu nie pokazujemy. */
   label: string;
   orders: number;
   buySz: number;
@@ -228,7 +228,17 @@ export interface WalletSummary {
   last: number;
 }
 
-export const shortAddress = (a: string): string => (a.length > 12 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a);
+const aliases = new Map<string, string>();
+
+/** Pseudonim konta biorcy: kolejny numer w kolejności pierwszego pokazania na tej stronie (adres zostaje tylko w pamięci). */
+export function takerAlias(address: string): string {
+  let a = aliases.get(address);
+  if (!a) {
+    a = `Konto ${aliases.size + 1}`;
+    aliases.set(address, a);
+  }
+  return a;
+}
 
 /** Zlecenia agresora jednego adresu z pamięci strony. */
 export function walletSummary(orders: readonly AggressorOrder[], address: string): WalletSummary | null {
@@ -248,5 +258,5 @@ export function walletSummary(orders: readonly AggressorOrder[], address: string
     s.first = Math.min(s.first, o.time);
     s.last = Math.max(s.last, o.time);
   }
-  return n > 0 && address ? { label: shortAddress(address), orders: n, ...s } : null;
+  return n > 0 && address ? { label: takerAlias(address), orders: n, ...s } : null;
 }

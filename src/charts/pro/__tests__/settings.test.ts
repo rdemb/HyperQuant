@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_SETTINGS, hashFor, parseSettings, settingsFromHash } from '../chart/settings';
+import { DEFAULT_SETTINGS, NARROW_PATCH, hashFor, migrateSaved, parseSettings, settingsFromHash } from '../chart/settings';
 
 describe('parseSettings', () => {
   it('brak lub śmieci → wartości domyślne', () => {
@@ -44,5 +44,31 @@ describe('link do widoku', () => {
     expect(settingsFromHash(hashFor(s))).toEqual({ coin: 'SOL', interval: '5m', view: 'candles' });
     expect(settingsFromHash('#charts?m=DOGE&i=7m&v=x')).toEqual({});
     expect(settingsFromHash('#charts')).toEqual({});
+  });
+});
+
+describe('warstwy startowe', () => {
+  it('na starcie bez warstw z podpisami, które zasłaniają świece', () => {
+    for (const k of ['showHeatmap', 'showBubbles', 'showWhales', 'showLots', 'showClashes', 'showZones', 'showAuctions', 'showIb', 'showPeriodProfiles', 'showStats'] as const)
+      expect(DEFAULT_SETTINGS[k]).toBe(false);
+    const phone = { ...DEFAULT_SETTINGS, ...NARROW_PATCH };
+    expect(phone.showBubbles || phone.showHeatmap || phone.showDelta).toBe(false);
+    expect(phone.showVwap && phone.showVolume && phone.showCvd).toBe(true);
+  });
+
+  it('zapis sprzed zmiany: warstwy o nowej wartości startowej wracają do niej, reszta zostaje', () => {
+    const old = { interval: '1m', showWhales: true, showLots: true, showStats: true, showVwap: false, showTpo: true };
+    const s = parseSettings(migrateSaved(old));
+    expect(s.interval).toBe('1m');
+    expect(s.showWhales).toBe(false);
+    expect(s.showLots).toBe(false);
+    expect(s.showStats).toBe(false);
+    // Wartość startowa VWAP i TPO się nie zmieniła, więc zostaje wybór z zapisu
+    expect(s.showVwap).toBe(false);
+    expect(s.showTpo).toBe(true);
+    // Zapis w nowej wersji nie jest zmieniany
+    const fresh = { ...old, layersV: 2 };
+    expect(parseSettings(migrateSaved(fresh)).showWhales).toBe(true);
+    expect(migrateSaved(null)).toBeNull();
   });
 });
