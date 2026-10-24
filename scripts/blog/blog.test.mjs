@@ -132,9 +132,23 @@ describe('blog: szablony', () => {
     expect(html).toContain('<meta name="twitter:card" content="summary_large_image">');
     const ld = /<script type="application\/ld\+json">(.*?)<\/script>/s.exec(html)[1];
     expect(JSON.parse(ld)).toMatchObject({ '@type': 'BlogPosting', datePublished: BASE.date });
-    expect(html.match(/<script/g).length).toBe(1);
+    expect(html.match(/<script/g).length).toBe(2);
     expect(html).toContain('href="https://github.com/x/HQ/commits/main/content/blog/2026-10-24-mapa-dnia.md"');
     expect(html).toContain('Analiza przygotowana automatycznie');
+  });
+
+  it('udostępnianie: linki do serwisów z adresem wpisu, kopiowanie i „Udostępnij” ukryte bez JS', () => {
+    const html = postPage(SITE, post, {});
+    const u = encodeURIComponent('https://example.org/HQ/blog/2026-10-24-mapa-dnia/');
+    const t = encodeURIComponent(BASE.title);
+    expect(html).toContain(`href="https://x.com/intent/tweet?text=${t}&amp;url=${u}"`);
+    expect(html).toContain(`href="https://www.facebook.com/sharer/sharer.php?u=${u}"`);
+    expect(html).toContain(`href="https://www.linkedin.com/sharing/share-offsite/?url=${u}"`);
+    expect(html).toContain(`href="https://t.me/share/url?url=${u}&amp;text=${t}"`);
+    expect(html).toContain(`href="https://wa.me/?text=${t}%20${u}"`);
+    expect(html.match(/class="share-net"[^>]*target="_blank" rel="noopener noreferrer"/g).length).toBe(5);
+    expect(html).toMatch(/data-share="native" hidden/);
+    expect(html).toMatch(/data-share="copy" hidden/);
   });
 
   it('RSS: pełna treść z bezwzględnymi adresami, data RFC 822; sitemap z wpisami', () => {
