@@ -17,7 +17,6 @@ import type { BookFrame, BookHistory } from '../core/book';
 import { Burst, DEFAULT_THRESHOLD_USD, OrderClass, Wall, bursts, classify } from '../core/clashes';
 import type { AggressorOrder } from '../core/orders';
 import type { ProBar } from '../store/proStore';
-import { fmtCell } from './layout';
 import { logicalOfTime } from './overlay';
 import { DOM_W_PX, LIQ_RAMP, MONO, PRO, rgba } from './theme';
 
@@ -75,12 +74,12 @@ const DOM_Q = 0.95;
 const DOM_STALE_MS = 30_000;
 const DOM_LABEL_ROW_PX = 9;
 /**
- * Skala mapy ciepła: od mediany (próg dolny — typowy poziom arkusza jest przezroczysty, świece zostają widoczne)
- * do percentylu HEAT_Q wielkości w widocznych migawkach (pełne nasycenie). Liniowa — jasne pasy i ściany
- * wyróżniają się tylko przy płynności wyraźnie większej niż typowa.
+ * Skala mapy ciepła, osobno dla każdej agregacji arkusza: od percentylu HEAT_LO_Q (próg dolny — większość poziomów
+ * jest przezroczysta, świece zostają widoczne) do percentylu HEAT_Q wielkości w widocznych migawkach (pełne
+ * nasycenie). Liniowa — jasne kolory dostają tylko skupiska i ściany z górnych kilku procent.
  */
-const HEAT_LO_Q = 0.5;
-const HEAT_Q = 0.97;
+const HEAT_LO_Q = 0.6;
+const HEAT_Q = 0.995;
 const HEAT_SAMPLE = 12_000;
 
 /**
@@ -306,7 +305,8 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
     if (!ctx) return false;
     const img = ctx.createImageData(W, H);
     const px = new Uint32Array(img.data.buffer);
-    // Daleka agregacja najpierw, bliska (dokładniejsza) nadpisuje ją wokół ceny
+    // Daleka agregacja najpierw; bliska (dokładniejsza) zastępuje ją w całym swoim zakresie cen, także tam,
+    // gdzie jej poziomy są przezroczyste — inaczej przez słabe poziomy prześwitywałyby grube pasy dalekiej
     for (const layer of [far, near]) {
       if (!layer) continue;
       const frames = layer.range(g.tFrom, g.tTo);
@@ -317,6 +317,7 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
         const x0 = Math.max(0, Math.round(this.x(f.t, g)));
         const x1 = Math.min(W, Math.max(x0 + 1, Math.round(this.x(frames[i + 1]?.t ?? this.now, g))));
         if (x1 <= 0 || x0 >= W) continue;
+        if (layer === near) clearSpan(px, W, H, f, x0, x1, g);
         paintFrame(px, W, H, f, x0, x1, g, norm, this.lut);
       }
     }
@@ -417,7 +418,7 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
     for (let i = 0; i < f.px.length; i++) {
       const ya = g.a + g.b * (f.px[i] + half);
       const yb = g.a + g.b * (f.px[i] - half);
-      out.push({ y: Math.min(ya, yb), h: Math.abs(yb - ya), w: DOM_BAR_PX * Math.sqrt(Math.min(1, f.sz[i] / norm)), bid: i < f.nBids, label: fmtCell(f.sz[i]) });
+      out.push({ y: Math.min(ya, yb), h: Math.abs(yb - ya), w: DOM_BAR_PX * Math.sqrt(Math.min(1, f.sz[i] / norm)), bid: i < f.nBids, label: fmtVol(f.sz[i]) });
     }
     return out;
   }
@@ -443,6 +444,24 @@ function heatNorm(frames: readonly BookFrame[]): HeatScale {
 interface HeatScale {
   lo: number;
   span: number;
+}
+
+/** Czyści teksturę w zakresie cen migawki (od najniższego do najwyższego poziomu) i jej kolumnach. */
+function clearSpan(px: Uint32Array, W: number, H: number, f: BookFrame, x0: number, x1: number, g: Geometry): void {
+  if (f.px.length === 0) return;
+  let lo = f.px[0];
+  let hi = f.px[0];
+  for (let i = 1; i < f.px.length; i++) {
+    if (f.px[i] < lo) lo = f.px[i];
+    else if (f.px[i] > hi) hi = f.px[i];
+  }
+  const half = f.step / 2;
+  let ya = Math.round(g.a + g.b * (hi + half));
+  let yb = Math.round(g.a + g.b * (lo - half));
+  if (ya > yb) [ya, yb] = [yb, ya];
+  ya = Math.max(0, ya);
+  yb = Math.min(H, yb);
+  for (let y = ya; y < yb; y++) px.fill(0, y * W + x0, y * W + x1);
 }
 
 function paintFrame(px: Uint32Array, W: number, H: number, f: BookFrame, x0: number, x1: number, g: Geometry, norm: HeatScale, lut: Uint32Array): void {

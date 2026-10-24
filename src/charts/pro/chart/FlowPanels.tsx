@@ -17,7 +17,7 @@ import type { ChartSettings } from './settings';
  */
 
 /** 200K zamiast 200.0K. */
-const compact = (v: number) => fmtCompact(v).replace(/\.0([KMB])$/, '$1');
+export const compact = (v: number) => fmtCompact(v).replace(/\.0([KMB])$/, '$1');
 const usd = (v: number) => `${compact(v)} USD`;
 const btc = (v: number) => `${fmtVol(v)} BTC`;
 

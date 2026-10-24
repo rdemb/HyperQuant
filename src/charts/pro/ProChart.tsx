@@ -3,13 +3,12 @@ import { Camera, ChevronsRight, Layers, ListOrdered, Maximize2, Minimize2, PenTo
 import { Badge, BadgeTone, Segmented } from '../../ui';
 import { LiqMapState, useLiqMap } from '../../state/useLiqMap';
 import { INTERVALS, fmtHm, fmtSince, intervalById } from './core/time';
-import { fmtCompact } from '../../ui/format';
 import { DEFAULT_THRESHOLD_USD, classify } from './core/clashes';
 import { indicatorScope, liqLevels } from './core/indicators';
 import type { AggressorOrder } from './core/orders';
 import type { ResetMode } from './core/sessions';
 import { ProChartController } from './chart/controller';
-import { PickCard, TapePanel } from './chart/FlowPanels';
+import { PickCard, TapePanel, compact } from './chart/FlowPanels';
 import { HoverSignal, Legend } from './chart/Legend';
 import type { LiquidityPick } from './chart/liquidity';
 import { brandedScreenshot, downloadCanvas } from './chart/screenshot';
@@ -387,7 +386,7 @@ const SettingsMenu: React.FC<{ settings: ChartSettings; bigUsd: number; onChange
         title="Auto: kwantyl 98,5% wartości zleceń agresora z ostatniej godziny, zaokrąglony w górę (1, 2, 5 × 10^k)"
         value={s.bigTradeUsd}
         options={BIG_OPTIONS}
-        format={(v) => (v === 0 ? (s.bigTradeUsd === 0 ? `Auto (${fmtCompact(bigUsd)})` : 'Auto') : `${fmtCompact(v)} USD`)}
+        format={(v) => (v === 0 ? (s.bigTradeUsd === 0 ? `Auto (${compact(bigUsd)})` : 'Auto') : `${compact(v)} USD`)}
         onChange={(v) => onChange({ bigTradeUsd: v })}
       />
       <Check label="Dźwięk dużych zleceń (taśma)" checked={s.tapeSound} onChange={(v) => onChange({ tapeSound: v })} />
@@ -436,7 +435,7 @@ const IndicatorsMenu: React.FC<{ settings: ChartSettings; intervalMs: number; li
   bigUsd,
   onChange,
 }) => {
-  const big = `${fmtCompact(bigUsd)} USD${s.bigTradeUsd === 0 ? ' (próg automatyczny)' : ''}`;
+  const big = `${compact(bigUsd)} USD${s.bigTradeUsd === 0 ? ' (próg automatyczny)' : ''}`;
   const scope = indicatorScope(intervalMs);
   const items: { key: IndicatorKey; label: string; hint: string; swatch: string; off?: string }[] = [
     {
