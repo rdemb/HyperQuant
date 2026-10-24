@@ -25,6 +25,16 @@ const ITEMS: { title: string; body: React.ReactNode }[] = [
     ),
   },
   {
+    title: 'TradingView Lightweight Charts™',
+    body: (
+      <>
+        Silnik widoku Wykresy: TradingView Lightweight Charts™, Copyright (c) 2025 TradingView, Inc.,{' '}
+        <A href="https://www.tradingview.com/">tradingview.com</A> · licencja{' '}
+        <A href="https://github.com/tradingview/lightweight-charts/blob/master/LICENSE">Apache 2.0</A>.
+      </>
+    ),
+  },
+  {
     title: 'alternative.me',
     body: (
       <>
