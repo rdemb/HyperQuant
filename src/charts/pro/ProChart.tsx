@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { Bell, BellOff, Camera, ChevronsRight, Columns2, Copy, Grid2x2, Layers, Link, ListOrdered, Maximize2, Minimize2, Minus, PenTool, RotateCcw, SlidersHorizontal, Square, X } from 'lucide-react';
+import { Bell, BellOff, Camera, ChevronsRight, Columns2, Copy, Grid2x2, Keyboard, Layers, Link, ListOrdered, Maximize2, Minimize2, Minus, PenTool, RotateCcw, SlidersHorizontal, Square, X } from 'lucide-react';
 import { Badge, BadgeTone, Segmented } from '../../ui';
 import { LiqMapState, useLiqMap } from '../../state/useLiqMap';
 import { INTERVALS, fmtHm, fmtSince, intervalById } from './core/time';
@@ -21,7 +21,8 @@ import { BUILT_IN_TEMPLATES, ChartTemplate, applyTemplate, loadTemplates, saveAs
 import type { ChartView } from './chart/footprintSeries';
 import type { FootprintStyle } from './chart/layout';
 import { DrawHint, DrawStyleBar, DrawToolbar } from './draw/DrawToolbar';
-import type { DrawingTools } from './draw/tools';
+import { TOOLS } from './draw/model';
+import { type DrawingTools, isTyping } from './draw/tools';
 import { CandleSeries, MARKETS, Market, ProStore, openStores, storeFor } from './store/proStore';
 import { startRecording } from './store/recording';
 
@@ -96,7 +97,7 @@ export const ProChart: React.FC<{ panel?: number; layout?: ChartLayout; onLayout
   const [settings, setSettings] = useState<ChartSettings>(() => initialSettings(panel));
   const store = storeFor(settings.coin);
   const series = store.series(settings.interval);
-  const [menu, setMenu] = useState<'settings' | 'indicators' | null>(null);
+  const [menu, setMenu] = useState<'settings' | 'indicators' | 'keys' | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
   const [tools, setTools] = useState<DrawingTools | null>(null);
   // Kliknięty bąbel, seria albo ściana i podświetlony adres biorcy (tylko w pamięci strony)
@@ -332,6 +333,31 @@ export const ProChart: React.FC<{ panel?: number; layout?: ChartLayout; onLayout
   const bigUsd = ctrlRef.current?.bigTradeUsd ?? DEFAULT_THRESHOLD_USD;
   const tick = hlTick(store.lastPrice());
 
+  // Skróty wykresu bez modyfikatorów: tylko w panelu, w którym ostatnio kliknięto, i nie w polu tekstowym
+  const onKeyRef = useRef<(e: KeyboardEvent) => void>(() => {});
+  onKeyRef.current = (e) => {
+    if (e.ctrlKey || e.metaKey || e.altKey || isTyping(e.target) || !tools?.isFocused) return;
+    const next = e.key.length === 1 ? INTERVALS['12345678'.indexOf(e.key)] : undefined;
+    if (e.key === '?') setMenu((m) => (m === 'keys' ? null : 'keys'));
+    else if (next) update({ interval: next.id });
+    else if (e.key === 'End') ctrlRef.current?.scrollToNow();
+    else {
+      const k = e.key.toLowerCase();
+      if (k === 'c') update({ view: settings.view === 'footprint' ? 'candles' : 'footprint' });
+      else if (k === 't') update({ showTape: !settings.showTape });
+      else if (k === 'm') setCoin(MARKETS[(MARKETS.indexOf(settings.coin) + 1) % MARKETS.length]);
+      else if (k === 'r') ctrlRef.current?.resetScales();
+      else if (k === 'f') toggleFullscreen();
+      else return;
+    }
+    e.preventDefault();
+  };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => onKeyRef.current(e);
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   return (
     <div
       ref={cardRef}
@@ -394,6 +420,15 @@ export const ProChart: React.FC<{ panel?: number; layout?: ChartLayout; onLayout
           <ToolBtn label="Zrzut ekranu (PNG)" onClick={screenshot}>
             <Camera className="w-4 h-4" />
           </ToolBtn>
+          <ToolBtn
+            label="Skróty klawiszowe (?)"
+            className="hidden lg:inline-flex"
+            onClick={() => setMenu((m) => (m === 'keys' ? null : 'keys'))}
+            active={menu === 'keys'}
+            expanded={menu === 'keys'}
+          >
+            <Keyboard className="w-4 h-4" />
+          </ToolBtn>
           <ToolBtn label={fullscreen ? 'Zamknij pełny ekran' : 'Pełny ekran'} onClick={toggleFullscreen}>
             {fullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
           </ToolBtn>
@@ -451,6 +486,8 @@ export const ProChart: React.FC<{ panel?: number; layout?: ChartLayout; onLayout
                   onReset={() => setSettings({ ...DEFAULT_SETTINGS, coin: settings.coin, interval: settings.interval })}
                   grid4={layout === 4}
                 />
+              ) : menu === 'keys' ? (
+                <KeysMenu />
               ) : (
                 <IndicatorsMenu settings={settings} intervalMs={iv.ms} liq={liq} bigUsd={bigUsd} onChange={update} />
               )}
@@ -991,6 +1028,64 @@ const Templates: React.FC<{ settings: ChartSettings; onApply: (s: ChartSettings)
     </Group>
   );
 };
+
+const KEY_GROUPS: { title: string; keys: [string, string][] }[] = [
+  {
+    title: 'Wykres',
+    keys: [
+      ['1 … 8', `Interwał: ${INTERVALS.map((i) => i.label).join(', ')}`],
+      ['C', 'Świece ↔ footprint'],
+      ['M', `Następny rynek (${MARKETS.join(', ')})`],
+      ['T', 'Taśma zleceń'],
+      ['R', 'Przywróć skalę'],
+      ['End', 'Przewiń do bieżącej świecy'],
+      ['F', 'Pełny ekran'],
+      ['?', 'Ta lista'],
+      ['Esc', 'Zamknij menu, przerwij rysowanie'],
+    ],
+  },
+  {
+    title: 'Rysowanie',
+    keys: [
+      ...TOOLS.filter((t) => t.hotkey).map((t): [string, string] => [`Alt+${t.hotkey}`, t.label]),
+      ['Shift + przeciągnij', 'Szybki pomiar'],
+      ['Ctrl', 'Odwraca magnes do OHLC'],
+      ['Delete', 'Usuń zaznaczony rysunek'],
+      ['Ctrl+C / Ctrl+V', 'Kopiuj i wklej rysunek'],
+      ['Ctrl+Z / Ctrl+Y', 'Cofnij i ponów'],
+    ],
+  },
+  {
+    title: 'Mysz',
+    keys: [
+      ['Kółko', 'Zbliżenie w czasie'],
+      ['Przeciągnij oś ceny', 'Skala ceny'],
+      ['Prawy przycisk', 'Alert, linia, cena, zrzut'],
+      ['Krzyżyk × przy panelu', 'Ukryj panel pod wykresem'],
+    ],
+  },
+];
+
+/** Lista skrótów: skróty bez modyfikatorów działają w panelu, w którym ostatnio kliknięto. */
+const KeysMenu: React.FC = () => (
+  <div className="bg-surface-2 border border-line-strong rounded-xl p-3 shadow-2xl flex flex-col gap-3 text-xs">
+    {KEY_GROUPS.map((g) => (
+      <Group key={g.title} title={g.title}>
+        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5">
+          {g.keys.map(([k, what]) => (
+            <React.Fragment key={k}>
+              <dt>
+                <kbd className="inline-block rounded border border-line-strong bg-surface-3 px-1.5 py-0.5 font-mono text-[11px] text-ink-1 whitespace-nowrap">{k}</kbd>
+              </dt>
+              <dd className="text-ink-2 self-center">{what}</dd>
+            </React.Fragment>
+          ))}
+        </dl>
+      </Group>
+    ))}
+    <p className="text-[11px] leading-snug text-ink-3">W układzie kilku wykresów skróty trafiają do wykresu, w którym ostatnio kliknięto.</p>
+  </div>
+);
 
 const Group: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
   <fieldset className="flex flex-col gap-2 min-w-0">

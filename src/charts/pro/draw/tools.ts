@@ -97,7 +97,7 @@ function loadAll(): Record<string, unknown> {
 const peers = new Set<DrawingTools>();
 let focused: DrawingTools | null = null;
 
-const isTyping = (t: EventTarget | null) =>
+export const isTyping = (t: EventTarget | null) =>
   t instanceof HTMLElement && (t.isContentEditable || t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT');
 
 export class DrawingTools {
@@ -144,6 +144,11 @@ export class DrawingTools {
     peers.add(this);
     focused ??= this;
     this.push();
+  }
+
+  /** Panel, w którym ostatnio kliknięto — do niego trafiają skróty klawiszowe. */
+  get isFocused(): boolean {
+    return focused === this;
   }
 
   destroy(): void {
