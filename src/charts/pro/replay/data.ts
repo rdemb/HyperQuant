@@ -1,7 +1,8 @@
 import { HIST_HOUR_MS, HIST_PART_MS, type HistSpan, type HistoryIndex, clipSpans, decodeBook, decodeTrades, historyPath, isHistoryIndex } from '../../../utils/tapeHistory';
 import type { BookFrame } from '../core/book';
-import type { Fill } from '../hl/parse';
-import { type Fetcher, toBookFrame, toFills } from '../store/serverHistory';
+import { barStart } from '../core/time';
+import type { Candle, Fill } from '../hl/parse';
+import { type Fetcher, gzJson, toBookFrame, toFills } from '../store/serverHistory';
 
 /**
  * Nagranie do powtórki: pliki godzin (a w godzinie bez pliku godzinowego — jej części 5-minutowe) z gałęzi historii
@@ -65,8 +66,8 @@ export async function fetchIndex(base: string, fetcher: Fetcher): Promise<Histor
 async function fetchGz(fetcher: Fetcher, url: string): Promise<unknown> {
   try {
     const res = await fetcher(url);
-    if (!res.ok || !res.body) return null;
-    return await new Response(res.body.pipeThrough(new DecompressionStream('gzip'))).json();
+    if (!res.ok) return null;
+    return await gzJson(res);
   } catch {
     return null;
   }
@@ -132,4 +133,30 @@ export async function loadReplay(
   };
   await Promise.all(Array.from({ length: Math.min(4, units.length) }, worker));
   return clipReplay(joinUnits(coin, got), from, to);
+}
+
+/**
+ * Świece z API uzupełnione świecami z taśmy nagrania tam, gdzie API ich nie ma: Hyperliquid trzyma ok. 5000 świec na
+ * interwał (1m — ok. 3,5 dnia), więc starsze nagranie zostałoby bez świec. Świeca z taśmy: OHLC, wolumen i liczba
+ * transakcji z wypełnień w [from, to).
+ */
+export function withTapeCandles(api: readonly Candle[], fills: readonly Fill[], ms: number, from: number, to: number): Candle[] {
+  const have = new Set(api.map((c) => c.t));
+  const made: Candle[] = [];
+  let cur: Candle | null = null;
+  for (const f of fills) {
+    if (f.time < from || f.time >= to) continue;
+    const t = barStart(f.time, ms);
+    if (have.has(t)) continue;
+    if (!cur || cur.t !== t) {
+      cur = { t, o: f.px, h: f.px, l: f.px, c: f.px, v: 0, n: 0 };
+      made.push(cur);
+    }
+    cur.h = Math.max(cur.h, f.px);
+    cur.l = Math.min(cur.l, f.px);
+    cur.c = f.px;
+    cur.v += f.sz;
+    cur.n++;
+  }
+  return made.length === 0 ? [...api] : [...api, ...made].sort((a, b) => a.t - b.t);
 }

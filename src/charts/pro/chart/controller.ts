@@ -656,7 +656,7 @@ export class ProChartController {
   setZone(zone: readonly [number, number] | null): void {
     for (const l of this.zoneLines) this.main.removePriceLine(l);
     this.zoneLines = (zone ?? []).map((price) =>
-      this.main.createPriceLine({ price, color: PRO.zone, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: 'Strefa' })
+      this.main.createPriceLine({ price, color: PRO.zone, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: tr('Strefa', 'Zone') })
     );
   }
 
