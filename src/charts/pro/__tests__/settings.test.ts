@@ -18,6 +18,15 @@ describe('parseSettings', () => {
     expect(s.cvdReset).toBe('week');
   });
 
+  it('próg dużego zlecenia i filtr taśmy: liczby w zakresie, reszta domyślna', () => {
+    const s = parseSettings({ bigTradeUsd: 250_000, tapeMinUsd: -1, tapeSound: 'tak', showTape: true });
+    expect(s.bigTradeUsd).toBe(250_000);
+    expect(s.tapeMinUsd).toBe(DEFAULT_SETTINGS.tapeMinUsd);
+    expect(s.tapeSound).toBe(false);
+    expect(s.showTape).toBe(true);
+    expect(parseSettings({ bigTradeUsd: 1e12 }).bigTradeUsd).toBe(0);
+  });
+
   it('nieznany interwał → domyślny', () => {
     expect(parseSettings({ interval: '2m' }).interval).toBe(DEFAULT_SETTINGS.interval);
   });
