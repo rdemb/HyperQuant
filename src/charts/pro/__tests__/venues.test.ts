@@ -15,7 +15,7 @@ import {
   parseBybitTrades,
   per8h,
 } from '../venues/parse';
-import { MinuteFlow, VenueStore } from '../venues/venueStore';
+import { MinuteFlow, VenueStore, acquireVenues } from '../venues/venueStore';
 
 const M1 = 60_000;
 
@@ -198,5 +198,48 @@ describe('historia finansowania Binance w Tablicy liczb', () => {
     s.ensureFunding();
     await Promise.resolve();
     expect(asked).toEqual([day]);
+  });
+});
+
+describe('połączenia giełd', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it('zmiana interwału nie zrywa połączenia Bybit; zwolnienie ostatniego wykresu zamyka je po chwili', async () => {
+    vi.useFakeTimers();
+    const sockets: { url: string; closed: boolean }[] = [];
+    class FakeSocket {
+      static OPEN = 1;
+      readyState = 0;
+      onopen: (() => void) | null = null;
+      onmessage: (() => void) | null = null;
+      onclose: (() => void) | null = null;
+      private readonly rec: { url: string; closed: boolean };
+      constructor(url: string) {
+        this.rec = { url, closed: false };
+        sockets.push(this.rec);
+      }
+      send(): void {}
+      close(): void {
+        this.rec.closed = true;
+      }
+    }
+    vi.stubGlobal('WebSocket', FakeSocket);
+    vi.stubGlobal('fetch', async () => ({ ok: true, json: async () => [] }));
+    const bybit = () => sockets.filter((x) => x.url.includes('bybit'));
+    const release1h = acquireVenues('BTC', intervalById('1h'));
+    expect(bybit().map((x) => x.closed)).toEqual([false]);
+    // Kontroler zwalnia stary interwał przed pobraniem nowego
+    release1h();
+    const release15m = acquireVenues('BTC', intervalById('15m'));
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(bybit().map((x) => x.closed)).toEqual([false]);
+    release15m();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(bybit()[0].closed).toBe(false);
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(bybit()[0].closed).toBe(true);
   });
 });

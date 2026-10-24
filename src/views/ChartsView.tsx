@@ -59,6 +59,7 @@ const ChartsView: React.FC = () => {
             value={station.id}
             onChange={(id) => id !== station.id && open(stationById(id), false)}
             options={wide || station.id === 'mtf' ? STATION_OPTIONS : NARROW_STATION_OPTIONS}
+            size={wide ? 'sm' : 'xs'}
           />
         </div>
         <button

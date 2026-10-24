@@ -399,6 +399,13 @@ function refreshLive(): void {
   }
 }
 
+/**
+ * Połączenia po zwolnieniu zmieniają się z opóźnieniem: zmiana interwału albo stacji zwalnia stary wykres przed
+ * pobraniem nowego i bez tej chwili zerwałaby nagrywanie Bybit (świeca z przerwą nie ma delty).
+ */
+const RELEASE_GRACE_MS = 2000;
+let releaseTimer: ReturnType<typeof setTimeout> | null = null;
+
 /** Wykres z panelem giełd na (rynek, interwał): połączenia na żywo do zwolnienia zwróconą funkcją. */
 export function acquireVenues(coin: string, iv: Interval): () => void {
   const key = `${coin}|${iv.id}`;
@@ -412,6 +419,9 @@ export function acquireVenues(coin: string, iv: Interval): () => void {
     released = true;
     const y = live.get(key);
     if (y && --y.n <= 0) live.delete(key);
-    refreshLive();
+    releaseTimer ??= setTimeout(() => {
+      releaseTimer = null;
+      refreshLive();
+    }, RELEASE_GRACE_MS);
   };
 }
