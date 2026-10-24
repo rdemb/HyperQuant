@@ -1,5 +1,5 @@
 /* Service worker HyperQuant (ręczny, bez Workbox).
- * - Nawigacja: network-first, offline → zcache'owany index.html (powłoka aplikacji).
+ * - Nawigacja: network-first, offline → zcache'owany index.html (powłoka aplikacji); strony bloga (blog/) bez przechwytywania.
  * - ./assets/* (nazwy z hashem): cache-first.
  * - ./data/feeds/*.json: stale-while-revalidate.
  * - Wszystko spoza własnego originu (api.hyperliquid.xyz, giełdy CEX, fonty) przechodzi bez cache.
@@ -89,11 +89,13 @@ self.addEventListener('fetch', (event) => {
   // Cudze originy (HL API, CEX, Google Fonts…) — bez respondWith, przeglądarka obsługuje normalnie
   if (url.origin !== self.location.origin) return;
 
+  const rel = url.pathname.startsWith(SCOPE_PATH) ? url.pathname.slice(SCOPE_PATH.length) : url.pathname;
   if (request.mode === 'navigate') {
+    // Strony bloga to osobne dokumenty, nie powłoka aplikacji: bez przechwytywania (nie nadpisują zcache'owanego index.html)
+    if (rel.startsWith('blog/')) return;
     event.respondWith(networkFirstShell(request));
     return;
   }
-  const rel = url.pathname.startsWith(SCOPE_PATH) ? url.pathname.slice(SCOPE_PATH.length) : url.pathname;
   if (rel.startsWith('assets/')) {
     event.respondWith(cacheFirst(request));
     return;

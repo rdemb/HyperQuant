@@ -4,6 +4,13 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Dodane
+- **Blog z analizami BTC** (`scripts/blog/`, `content/blog/`, [docs/BLOG.md](docs/BLOG.md), link „Blog” w nawigacji desku): wpisy w Markdown z frontmatterem YAML budowane razem z deskiem do statycznych stron `blog/` (artykuły i krótkie notki, lista pogrupowana po dniach w czasie polskim, archiwum miesięcy, nawigacja między wpisami). Mapa poziomów (skala ceny z rozsuwaniem etykiet, odległość od ceny w %), scenariusze z prawdopodobieństwami, kanał RSS z pełną treścią, `sitemap.xml`, metadane SEO, Open Graph, X i JSON-LD (`BlogPosting`), obrazek do podglądu linku 1200×630 dla każdego wpisu (SVG → PNG przez resvg, fonty OFL w repo, więc wynik jest powtarzalny). Link do historii zmian pliku wpisu w repozytorium. Walidator (`npm run blog:check`) i build odrzucają wpis ze złym schematem, z danymi prywatnymi (adres portfela, IP, e-mail, tokeny), z wezwaniem do transakcji (tryb rozkazujący, „long od …”, TP/SL) albo z myślnikami i strzałkami.
+
+### Zmienione
+- `npm run build` buduje także blog (`vite build && node scripts/blog/build.mjs`).
+- Service worker nie przechwytuje nawigacji do `blog/` (strona bloga nie nadpisuje zapisanej powłoki aplikacji); `index.html` wskazuje kanał RSS.
+
 ## [2.4.0] — 2026-10-22
 
 ### Dodane
