@@ -21,6 +21,12 @@ export interface ChartSettings {
   showDelta: boolean;
   showCvd: boolean;
   cvdReset: ResetMode;
+  /**
+   * Panele giełd: CVD Hyperliquid, Binance (perp i spot) i Bybit oraz zmiana OI z finansowaniem. Dane CEX pobiera
+   * przeglądarka czytelnika, domyślnie wyłączone (regulaminy giełd).
+   */
+  showVenueCvd: boolean;
+  showVenueOi: boolean;
   /** Tabela statystyk świec pod wykresem. */
   showStats: boolean;
   /** Wskaźniki na wykresie ceny. */
@@ -71,6 +77,8 @@ export const DEFAULT_SETTINGS: ChartSettings = {
   showDelta: true,
   showCvd: true,
   cvdReset: 'session',
+  showVenueCvd: false,
+  showVenueOi: false,
   showStats: true,
   showVwap: true,
   showVwapBands: true,
@@ -118,6 +126,8 @@ export function parseSettings(raw: unknown, d: ChartSettings = DEFAULT_SETTINGS)
     showDelta: bool(r.showDelta, d.showDelta),
     showCvd: bool(r.showCvd, d.showCvd),
     cvdReset: oneOf(r.cvdReset, ['none', 'session', 'day', 'week'] as const, d.cvdReset),
+    showVenueCvd: bool(r.showVenueCvd, d.showVenueCvd),
+    showVenueOi: bool(r.showVenueOi, d.showVenueOi),
     showStats: bool(r.showStats, d.showStats),
     showVwap: bool(r.showVwap, d.showVwap),
     showVwapBands: bool(r.showVwapBands, d.showVwapBands),

@@ -59,6 +59,10 @@ export const PRO = {
   domBid: '#06af23',
   domAsk: '#8a2be2',
   domText: '#e4e6ea',
+  // Giełdy w panelach „CVD giełd” i „ΔOI giełd” (paleta kategorii sprawdzona na tle wykresu, także dla daltonistów)
+  venueHl: '#199e70',
+  venueBinance: '#d95926',
+  venueBybit: '#3987e5',
 } as const;
 
 /**

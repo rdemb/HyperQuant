@@ -48,7 +48,14 @@ const toTick = (p: number) => Number(p.toFixed(priceDigits(p)));
 
 /** Interwał nowego panelu układu (bez zapisanych ustawień): kolejne panele pokazują wyższe interwały. */
 const PANEL_INTERVALS = ['5m', '15m', '1h', '4h'];
-const PANE_NAMES: Record<PaneKey, string> = { showVolume: 'Wolumen', showDelta: 'Delta', showCvd: 'CVD', showStats: 'Statystyki świec' };
+const PANE_NAMES: Record<PaneKey, string> = {
+  showVolume: 'Wolumen',
+  showDelta: 'Delta',
+  showCvd: 'CVD',
+  showVenueCvd: 'CVD giełd',
+  showVenueOi: 'ΔOI giełd',
+  showStats: 'Statystyki świec',
+};
 
 const LAYOUT_OPTIONS: { value: ChartLayout; label: React.ReactNode; title: string }[] = [
   { value: 1, label: <Square className="w-3.5 h-3.5" />, title: 'Jeden wykres' },
@@ -731,6 +738,12 @@ const SettingsMenu: React.FC<{
       <Check label="Wolumen" checked={s.showVolume} onChange={(v) => onChange({ showVolume: v })} />
       <Check label="Delta (świece delty)" checked={s.showDelta} onChange={(v) => onChange({ showDelta: v })} />
       <Check label="CVD" checked={s.showCvd} onChange={(v) => onChange({ showCvd: v })} />
+      <Check label="CVD giełd: Hyperliquid, Binance, Bybit" checked={s.showVenueCvd} onChange={(v) => onChange({ showVenueCvd: v })} />
+      <Check label="ΔOI i funding giełd" checked={s.showVenueOi} onChange={(v) => onChange({ showVenueOi: v })} />
+      <p className="text-[11px] leading-snug text-ink-3">
+        Dane Binance i Bybit pobiera Twoja przeglądarka bezpośrednio z ich publicznych API — nic nie przechodzi przez serwer HyperQuant.
+        Domyślnie wyłączone; nie publikuj zrzutów z tymi danymi bez sprawdzenia regulaminu giełdy.
+      </p>
       <Check label="Statystyki świec (tabela)" checked={s.showStats} onChange={(v) => onChange({ showStats: v })} />
       {grid4 && s.showStats && <p className="text-[11px] leading-snug text-ink-3">W układzie 2 × 2 tabela jest ukryta — panel jest za niski.</p>}
       <div className="flex flex-col items-start gap-1.5">

@@ -16,7 +16,7 @@ import type {
 import { fmtVol } from '../../orderflow/footprint';
 import { fmtSignedVol } from '../../orderflow/renderer';
 import { DEFAULT_THRESHOLD_USD, autoThreshold } from '../core/clashes';
-import { Ohlc, cvdCandles, deltaCandle } from '../core/flow';
+import { Ohlc, cvdCandles, cvdLine, deltaCandle, oiChangeLine } from '../core/flow';
 import { BarStat, barStat } from '../core/stats';
 import { hlTick, rowAt } from '../core/footprintBar';
 import type { LiqLevel } from '../core/indicators';
@@ -36,6 +36,8 @@ import { TpoLayer } from './tpoLayer';
 import { tpoInterval } from '../core/tpo';
 import type { ChartSettings } from './settings';
 import { CountdownLabel } from './countdown';
+import { BINANCE_OI_PERIOD, FlowVenue, OI_PERIOD_MS, OiVenue, per8h } from '../venues/parse';
+import { VenueStore, acquireVenues, venueStoreFor } from '../venues/venueStore';
 import { DOM_W_PX, PRO, RIGHT_GAP_PX, chartOptions } from './theme';
 
 /**
@@ -101,7 +103,7 @@ const AUTO_EVERY_MS = 5_000;
 const STATS_EVERY_MS = 1_000;
 
 /** Panele pod wykresem, które można ukryć krzyżykiem w ich rogu. */
-export const PANE_KEYS = ['showVolume', 'showDelta', 'showCvd', 'showStats'] as const;
+export const PANE_KEYS = ['showVolume', 'showDelta', 'showCvd', 'showVenueCvd', 'showVenueOi', 'showStats'] as const;
 export type PaneKey = (typeof PANE_KEYS)[number];
 
 /** Autoskala ceny i wymiary rogu pod osią ceny (px), w którym stoi przycisk A. */
@@ -130,6 +132,23 @@ function toCvd(t: number, c: Ohlc | null): CandlestickData<Time> | WhitespaceDat
 }
 
 const RESET_LABEL: Record<ResetMode, string> = { none: 'ciągła', session: 'sesja', day: 'doba UTC', week: 'tydzień' };
+
+/** Linie paneli giełd: Hyperliquid i giełdy CEX (spot przerywaną linią w kolorze swojej giełdy). */
+type VenueLineId = 'hl' | FlowVenue;
+const VENUE_LINE: Record<VenueLineId, { label: string; color: string; dashed: boolean }> = {
+  hl: { label: 'HL', color: PRO.venueHl, dashed: false },
+  binance: { label: 'Binance', color: PRO.venueBinance, dashed: false },
+  binanceSpot: { label: 'spot', color: PRO.venueBinance, dashed: true },
+  bybit: { label: 'Bybit', color: PRO.venueBybit, dashed: false },
+};
+const CVD_LINES: readonly VenueLineId[] = ['hl', 'binance', 'binanceSpot', 'bybit'];
+const OI_LINES: readonly ('hl' | OiVenue)[] = ['hl', 'binance', 'bybit'];
+/** Odczyt OI Hyperliquid (kanał na żywo, zapis serwera co minutę) starszy niż to nie liczy się jako stan świecy. */
+const HL_OI_MAX_AGE = 3 * 60_000;
+
+type VenueLines = Partial<Record<VenueLineId, (number | null)[]>>;
+
+const fmtFunding = (r: number | null) => (r === null ? '—' : `${r >= 0 ? '+' : ''}${(r * 100).toFixed(4)}%`);
 
 function flowLegend(label: string, value: number | null): LegendPart[] {
   if (value === null) return [{ text: label, color: PRO.ink3 }];
@@ -178,6 +197,18 @@ export class ProChartController {
   private readonly volumeLegend = new PaneLegend('showVolume');
   private readonly deltaLegend = new PaneLegend('showDelta');
   private readonly cvdLegend = new PaneLegend('showCvd');
+  private readonly venueCvdLegend = new PaneLegend('showVenueCvd');
+  private readonly venueOiLegend = new PaneLegend('showVenueOi');
+  /** Linie paneli giełd i ich ostatnio wysłane wartości. */
+  private venueCvd: Partial<Record<VenueLineId, ISeriesApi<'Line'>>> | null = null;
+  private venueOi: Partial<Record<VenueLineId, ISeriesApi<'Line'>>> | null = null;
+  private venueCvdData: VenueLines = {};
+  private venueOiData: VenueLines = {};
+  /** Przepływ Binance i Bybit tego rynku (tylko z włączonym panelem giełd) i zwolnienie jego połączeń. */
+  private venue: VenueStore | null = null;
+  private venueInterval: string | null = null;
+  private releaseVenue: (() => void) | null = null;
+  private unsubVenue: (() => void) | null = null;
   private readonly overlay: IndicatorOverlay;
   private readonly liquidity: LiquidityLayer;
   private readonly drawLayer = new DrawingLayer();
@@ -277,6 +308,8 @@ export class ProChartController {
     this.draw.destroy();
     crossPeers.delete(this);
     this.unsubscribe();
+    this.releaseVenue?.();
+    this.unsubVenue?.();
     this.chart.unsubscribeCrosshairMove(this.onCrosshair);
     this.chart.unsubscribeClick(this.onClick);
     this.chart.timeScale().unsubscribeVisibleLogicalRangeChange(this.onRange);
@@ -298,6 +331,7 @@ export class ProChartController {
     this.series = series;
     this.bars = [];
     this.overlay.setToggles(toggles(this.settings, series.interval.ms));
+    this.syncVenueLive();
     this.schedule();
   }
 
@@ -326,19 +360,32 @@ export class ProChartController {
       this.tpo.setRightInset(s.showHeatmap ? DOM_W_PX : 0);
       this.chart.timeScale().applyOptions({ rightOffsetPixels: this.rightGap() });
     }
-    const panesChanged = force || prev.showVolume !== s.showVolume || prev.showDelta !== s.showDelta || prev.showCvd !== s.showCvd || prev.showStats !== s.showStats;
+    this.syncVenueLive();
+    const panesChanged =
+      force ||
+      prev.showVolume !== s.showVolume ||
+      prev.showDelta !== s.showDelta ||
+      prev.showCvd !== s.showCvd ||
+      prev.showVenueCvd !== s.showVenueCvd ||
+      prev.showVenueOi !== s.showVenueOi ||
+      prev.showStats !== s.showStats;
     if (panesChanged) this.rebuildPanes();
     else if (prev.cvdReset !== s.cvdReset) {
       this.cvdData = [];
+      this.venueCvdData = {};
+      this.venueOiData = {};
       this.pushCvd(true);
+      this.pushVenues(true);
     }
     this.emitHover();
   }
 
   private rebuildPanes(): void {
     const s = this.settings;
-    for (const sr of [this.volume, this.delta, this.cvd, this.statsSeries]) if (sr) this.chart.removeSeries(sr);
+    const venueSeries = [...Object.values(this.venueCvd ?? {}), ...Object.values(this.venueOi ?? {})];
+    for (const sr of [this.volume, this.delta, this.cvd, this.statsSeries, ...venueSeries]) if (sr) this.chart.removeSeries(sr);
     this.volume = this.delta = this.cvd = this.statsSeries = null;
+    this.venueCvd = this.venueOi = null;
     let pane = 1;
     // Wolumen we własnym panelu — nie zasłania komórek footprintu
     if (s.showVolume) {
@@ -355,6 +402,8 @@ export class ProChartController {
       this.cvd = this.chart.addSeries(CandlestickSeries, FLOW_CANDLE, pane++);
       this.cvd.attachPrimitive(this.cvdLegend);
     }
+    if (s.showVenueCvd) this.venueCvd = this.addVenueLines(CVD_LINES, pane++, this.venueCvdLegend);
+    if (s.showVenueOi) this.venueOi = this.addVenueLines(OI_LINES, pane++, this.venueOiLegend);
     if (s.showStats) {
       this.statsSeries = this.chart.addSeries(
         LineSeries,
@@ -372,8 +421,20 @@ export class ProChartController {
       this.statsSeries.attachPrimitive(this.statsTable);
     }
     // Opis najniższego panelu omija logo TradingView (tabela statystyk ma na nie własne miejsce)
-    const lowest = s.showStats ? null : s.showCvd ? this.cvdLegend : s.showDelta ? this.deltaLegend : s.showVolume ? this.volumeLegend : null;
-    for (const lg of [this.volumeLegend, this.deltaLegend, this.cvdLegend]) lg.setBottom(lg === lowest);
+    const lowest = s.showStats
+      ? null
+      : s.showVenueOi
+        ? this.venueOiLegend
+        : s.showVenueCvd
+          ? this.venueCvdLegend
+          : s.showCvd
+            ? this.cvdLegend
+            : s.showDelta
+              ? this.deltaLegend
+              : s.showVolume
+                ? this.volumeLegend
+                : null;
+    for (const lg of [this.volumeLegend, this.deltaLegend, this.cvdLegend, this.venueCvdLegend, this.venueOiLegend]) lg.setBottom(lg === lowest);
     const panes = this.chart.panes();
     panes[0]?.setStretchFactor(1);
     const statsPane = this.statsSeries?.getPane();
@@ -386,7 +447,55 @@ export class ProChartController {
     // Nowe serie dostają pełne dane przy następnej synchronizacji
     this.bars = [];
     this.cvdData = [];
+    this.venueCvdData = {};
+    this.venueOiData = {};
     this.schedule();
+  }
+
+  /** Linie giełd w nowym panelu: zero jako linia odniesienia, opis panelu na pierwszej linii. */
+  private addVenueLines(ids: readonly VenueLineId[], pane: number, legend: PaneLegend): Partial<Record<VenueLineId, ISeriesApi<'Line'>>> {
+    const out: Partial<Record<VenueLineId, ISeriesApi<'Line'>>> = {};
+    for (const id of ids) {
+      const v = VENUE_LINE[id];
+      out[id] = this.chart.addSeries(
+        LineSeries,
+        {
+          color: v.color,
+          lineWidth: 2,
+          lineStyle: v.dashed ? LineStyle.Dashed : LineStyle.Solid,
+          priceLineVisible: false,
+          lastValueVisible: true,
+          crosshairMarkerRadius: 3,
+          priceFormat: FLOW_FORMAT,
+        },
+        pane
+      );
+    }
+    const first = out[ids[0]]!;
+    first.createPriceLine({ price: 0, color: PRO.divider, lineWidth: 1, lineStyle: LineStyle.Solid, axisLabelVisible: false, title: '' });
+    first.attachPrimitive(legend);
+    return out;
+  }
+
+  /** Połączenia Binance i Bybit tylko z włączonym panelem giełd, dla bieżącego interwału wykresu. */
+  private syncVenueLive(): void {
+    const s = this.settings;
+    const want = s.showVenueCvd || s.showVenueOi ? this.series.interval.id : null;
+    if (want === this.venueInterval) return;
+    this.venueInterval = want;
+    this.releaseVenue?.();
+    this.releaseVenue = null;
+    if (want === null) {
+      this.unsubVenue?.();
+      this.unsubVenue = null;
+      this.venue = null;
+      return;
+    }
+    if (!this.venue) {
+      this.venue = venueStoreFor(this.store.coin);
+      this.unsubVenue = this.venue.subscribe(() => this.schedule());
+    }
+    this.releaseVenue = acquireVenues(this.store.coin, this.series.interval);
   }
 
   /**
@@ -560,6 +669,7 @@ export class ProChartController {
       this.statsTable.setStats(this.stats);
     }
     this.pushCvd(full);
+    this.pushVenues(full);
     this.emitHover();
     this.emitScale();
     this.tickCountdown();
@@ -588,6 +698,70 @@ export class ProChartController {
       return;
     }
     for (const i of changed) this.cvd.update(toCvd(bars[i].t, next[i]), i < prev.length - 1);
+  }
+
+  /** Linie paneli giełd: CVD (delta świec Hyperliquid, Binance perp i spot, Bybit) i zmiana OI od początku okresu. */
+  private pushVenues(full: boolean): void {
+    const v = this.venue;
+    const bars = this.bars;
+    if (!v || (!this.venueCvd && !this.venueOi) || bars.length === 0) return;
+    const iv = this.series.interval;
+    const now = this.store.serverNow();
+    const mode = this.settings.cvdReset;
+    v.ensure(iv, bars[0].t);
+    const times = bars.map((b) => b.t);
+    if (this.venueCvd) {
+      const next: VenueLines = {
+        hl: cvdLine(times, (i) => bars[i].fp?.delta ?? null, mode),
+        binance: cvdLine(times, (i) => v.delta('binance', iv, times[i], now), mode),
+        binanceSpot: cvdLine(times, (i) => v.delta('binanceSpot', iv, times[i], now), mode),
+        bybit: cvdLine(times, (i) => v.delta('bybit', iv, times[i], now), mode),
+      };
+      for (const id of CVD_LINES) this.pushLine(this.venueCvd[id]!, times, this.venueCvdData[id], next[id]!, full);
+      this.venueCvdData = next;
+    }
+    if (this.venueOi) {
+      // Historia OI giełd co 5 min i dłużej: odczyt do dwóch okresów wstecz nadal opisuje świecę
+      const age = 2 * OI_PERIOD_MS[BINANCE_OI_PERIOD[iv.id]];
+      const next: VenueLines = {
+        hl: oiChangeLine(times, iv.ms, now, (t) => this.store.oi.atWithin(t, HL_OI_MAX_AGE), mode),
+        binance: oiChangeLine(times, iv.ms, now, (t) => v.oi.binance.atWithin(t, age), mode),
+        bybit: oiChangeLine(times, iv.ms, now, (t) => v.oi.bybit.atWithin(t, age), mode),
+      };
+      for (const id of OI_LINES) this.pushLine(this.venueOi[id]!, times, this.venueOiData[id], next[id]!, full);
+      this.venueOiData = next;
+    }
+  }
+
+  /** Linia panelu: pełna podmiana albo tylko zmienione punkty (zwykle bieżąca świeca). */
+  private pushLine(series: ISeriesApi<'Line'>, times: readonly number[], prev: readonly (number | null)[] | undefined, next: readonly (number | null)[], full: boolean): void {
+    const point = (i: number) => {
+      const y = next[i];
+      return y === null ? { time: sec(times[i]) } : { time: sec(times[i]), value: y };
+    };
+    if (full || !prev || prev.length === 0 || prev.length > next.length) {
+      series.setData(next.map((_, i) => point(i)));
+      return;
+    }
+    const changed: number[] = [];
+    for (let i = 0; i < next.length && changed.length <= MAX_POINT_UPDATES; i++) if (i >= prev.length || prev[i] !== next[i]) changed.push(i);
+    if (changed.length > MAX_POINT_UPDATES) {
+      series.setData(next.map((_, i) => point(i)));
+      return;
+    }
+    for (const i of changed) series.update(point(i), i < prev.length - 1);
+  }
+
+  /** Opis panelu giełd: nazwa i okres, potem znak linii, giełda i wartość pod krzyżem (albo bieżąca). */
+  private venueLegend(title: string, ids: readonly VenueLineId[], data: VenueLines, i: number): LegendPart[] {
+    const parts: LegendPart[] = [{ text: title, color: PRO.ink3 }];
+    for (const id of ids) {
+      const v = VENUE_LINE[id];
+      const y = i >= 0 ? (data[id]?.[i] ?? null) : null;
+      parts.push({ text: v.dashed ? '┅' : '━', color: v.color }, { text: v.label, color: PRO.ink3, glue: true });
+      parts.push(y === null ? { text: '—', color: PRO.ink3, glue: true } : { text: fmtSignedVol(y), color: y >= 0 ? PRO.buyInk : PRO.sellInk, glue: true });
+    }
+    return parts;
   }
 
   // ───────────────────────── interakcja ─────────────────────────
@@ -665,6 +839,22 @@ export class ProChartController {
     );
     this.deltaLegend.set(flowLegend('Delta', bar?.fp ? bar.fp.delta : null));
     this.cvdLegend.set(flowLegend(`CVD · ${RESET_LABEL[this.settings.cvdReset]}`, cvd ? cvd.close : null));
+    if (this.venueCvd) this.venueCvdLegend.set(this.venueLegend(`CVD giełd · ${RESET_LABEL[this.settings.cvdReset]}`, CVD_LINES, this.venueCvdData, i));
+    if (this.venueOi) {
+      // Drugi wiersz: bieżące finansowanie giełd przeliczone na 8 h (Hyperliquid rozlicza co godzinę)
+      const hlRate = this.store.ctx ? per8h(this.store.ctx.funding, 1) : null;
+      this.venueOiLegend.set([
+        ...this.venueLegend(`ΔOI giełd · ${RESET_LABEL[this.settings.cvdReset]}`, OI_LINES, this.venueOiData, i),
+        { text: '', color: PRO.ink3, br: true },
+        { text: 'Funding 8 h teraz', color: PRO.ink3 },
+        { text: 'HL', color: PRO.ink3 },
+        { text: fmtFunding(hlRate), color: PRO.ink1, glue: true },
+        { text: 'Binance', color: PRO.ink3 },
+        { text: fmtFunding(this.venue?.funding.binance ?? null), color: PRO.ink1, glue: true },
+        { text: 'Bybit', color: PRO.ink3 },
+        { text: fmtFunding(this.venue?.funding.bybit ?? null), color: PRO.ink1, glue: true },
+      ]);
+    }
     const ind = i >= 0 ? this.overlay.valuesAt(i) : null;
     this.statsTable.setHover(this.hoverTime === null ? -1 : i);
     this.onHover({ bar, live: this.hoverTime === null, row: bar ? this.rowAt(bar, this.hoverPrice) : null, cvd, ind });

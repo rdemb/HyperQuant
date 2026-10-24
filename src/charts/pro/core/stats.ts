@@ -40,6 +40,17 @@ export class OiLog {
 
   /** Ostatnia próbka nie późniejsza niż `time`; null przed pierwszą. */
   at(time: number): number | null {
+    const k = this.indexAt(time);
+    return k >= 0 ? this.v[k] : null;
+  }
+
+  /** Jak `at`, ale próbka starsza niż `maxAgeMs` względem `time` się nie liczy (przerwa w danych). */
+  atWithin(time: number, maxAgeMs: number): number | null {
+    const k = this.indexAt(time);
+    return k >= 0 && time - this.t[k] <= maxAgeMs ? this.v[k] : null;
+  }
+
+  private indexAt(time: number): number {
     let lo = 0;
     let hi = this.t.length - 1;
     let k = -1;
@@ -50,7 +61,7 @@ export class OiLog {
         lo = mid + 1;
       } else hi = mid - 1;
     }
-    return k >= 0 ? this.v[k] : null;
+    return k;
   }
 
   prune(before: number): void {
