@@ -66,7 +66,9 @@ describe('Kto handluje', () => {
   it('bez taśmy z kontami brak zamiast zera; świeca bez wejść ma udział nieznany', () => {
     const { players } = flow([order(H0 + M1, 'a', 1, 1200)], [[H0 + H, H0 + 2 * H]]);
     expect(players.split(H0, H, H0 + 3 * H)).toBeNull();
-    expect(players.split(H0 + H, H, H0 + 3 * H)).toEqual({ big: 0, rest: 0, bigUsd: 0, usd: 0, bigShare: null });
+    expect(players.split(H0 + H, H, H0 + 3 * H)).toEqual({ big: 0, rest: 0, bigUsd: 0, usd: 0, bigShare: null, complete: true });
+    // Świeca, w której nagrywanie się zaczęło: liczby z części świecy
+    expect(players.split(H0 + H - 30 * M1, H, H0 + 3 * H)!.complete).toBe(false);
     // Przyszła świeca
     expect(players.split(H0 + 4 * H, H, H0 + 3 * H)).toBeNull();
   });

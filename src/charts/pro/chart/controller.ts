@@ -498,11 +498,27 @@ export class ProChartController {
     this.schedule();
   }
 
-  /** Wysokość panelu Tablicy liczb dla włączonych grup — po ułożeniu pozostałych paneli. */
+  /**
+   * Wysokość panelu Tablicy liczb dla włączonych grup — po ułożeniu pozostałych paneli. Bez setHeight biblioteki: ta
+   * odejmuje różnicę po równo od wszystkich paneli i zabiera miejsce cenie. Proporcje jako wysokości w px: tabela dostaje
+   * swoją wysokość, pozostałe panele dzielą resztę w proporcjach z rebuildPanes.
+   */
   private fitStatsPane(): void {
     // Panele mogły zostać przebudowane przed następną klatką — wtedy ten panel już nie istnieje
     const stats = this.statsSeries;
-    if (stats) requestAnimationFrame(() => this.statsSeries === stats && stats.getPane().setHeight(tableHeight(this.settings.statGroups)));
+    if (!stats) return;
+    requestAnimationFrame(() => {
+      if (this.statsSeries !== stats) return;
+      const panes = this.chart.panes();
+      const table = stats.getPane();
+      const rest = panes.filter((p) => p !== table);
+      const total = panes.reduce((h, p) => h + p.getHeight(), 0);
+      const sum = rest.reduce((f, p) => f + p.getStretchFactor(), 0);
+      if (!(total > 0) || !(sum > 0)) return;
+      const h = Math.min(tableHeight(this.settings.statGroups), total / 2);
+      for (const p of rest) p.setStretchFactor(((total - h) * p.getStretchFactor()) / sum);
+      table.setStretchFactor(h);
+    });
   }
 
   /** Linie giełd w nowym panelu: zero jako linia odniesienia, opis panelu na pierwszej linii. */

@@ -25,6 +25,8 @@ export interface PlayerSplit {
   usd: number;
   /** Udział dużych graczy w wartości wejść (%); null bez wejść. */
   bigShare: number | null;
+  /** Taśma z kontami przez całą świecę; false — nagrywanie zaczęło się albo przerwało w jej trakcie. */
+  complete: boolean;
 }
 
 /** Zlecenia agresora rosnąco po czasie (OrderLog). */
@@ -70,7 +72,7 @@ export class PlayerFlow {
         usd += m[i * F + 3];
       }
     }
-    return { big, rest, bigUsd, usd, bigShare: usd > 0 ? (bigUsd / usd) * 100 : null };
+    return { big, rest, bigUsd, usd, bigShare: usd > 0 ? (bigUsd / usd) * 100 : null, complete: this.addressed.covers(t, end) };
   }
 
   prune(before: number): void {

@@ -159,14 +159,18 @@ export interface BarStat {
   /** Bybit: delta (z transakcji od otwarcia strony) i zmiana OI. */
   byDelta: number | null;
   byDoi: number | null;
+  /** Liczby z taśmy tylko z części świecy: nagrywanie zaczęło się albo przerwało w jej trakcie. */
+  partial: boolean;
 }
 
-export type StatKey = keyof BarStat;
+export type StatKey = Exclude<keyof BarStat, 'partial'>;
 
 export interface StatBar {
   t: number;
   candle: Candle;
   fp: FootprintBar | null;
+  /** Taśma przez całą świecę (brak — przyjmujemy, że tak). */
+  complete?: boolean;
 }
 
 /** Odczyty Binance i Bybit dla świecy o początku `t` (null bez danych); `funding` — średnia stawka godzinowa świecy. */
@@ -219,5 +223,6 @@ export function barStat(
     bnFunding: bnRate === null ? null : fundingPct8h(bnRate),
     byDelta: venue ? venue.delta('bybit', b.t) : null,
     byDoi: venue ? oiChange((t) => venue.oi('bybit', t), b.t, end) : null,
+    partial: (fp !== null && b.complete === false) || (who !== null && !who.complete),
   };
 }

@@ -118,10 +118,24 @@ describe('statystyki świecy', () => {
 
   it('grupa Kto handluje z podziału wejść; bez podziału brak zamiast zera', () => {
     const b = { t: M1, candle: candle(M1, 9), fp: null };
-    const s = barStat(b, M1, 10 * M1, new OiLog(), new FundingBook(), null, null, (t) => (t === M1 ? { big: 3, rest: -1, bigUsd: 500, usd: 800, bigShare: 62.5 } : null));
+    const s = barStat(b, M1, 10 * M1, new OiLog(), new FundingBook(), null, null, (t) =>
+      t === M1 ? { big: 3, rest: -1, bigUsd: 500, usd: 800, bigShare: 62.5, complete: true } : null
+    );
     expect([s.bigDelta, s.restDelta, s.bigShare]).toEqual([3, -1, 62.5]);
     const none = barStat(b, M1, 10 * M1, new OiLog(), new FundingBook(), null, null, () => null);
     expect([none.bigDelta, none.restDelta, none.bigShare]).toEqual([null, null, null]);
+  });
+
+  it('świeca częściowa: taśma albo konta tylko z części świecy', () => {
+    const fp = new FootprintBuilder(M1, 1);
+    fp.add(M1 + 1, 100, 1, 1);
+    const at = (complete: boolean | undefined, who: boolean | null) =>
+      barStat({ t: M1, candle: candle(M1, 1), fp: fp.build(), complete }, M1, 10 * M1, new OiLog(), new FundingBook(), null, null, () =>
+        who === null ? null : { big: 0, rest: 1, bigUsd: 0, usd: 100, bigShare: 0, complete: who }
+      ).partial;
+    expect([at(true, null), at(undefined, null), at(false, null), at(true, true), at(true, false)]).toEqual([false, false, true, false, true]);
+    // Świeca bez taśmy nie jest częściowa — jej liczb z taśmy po prostu nie ma
+    expect(barStat({ t: M1, candle: candle(M1, 1), fp: null, complete: false }, M1, 10 * M1, new OiLog(), new FundingBook(), null).partial).toBe(false);
   });
 
   it('bieżąca świeca: tempo i ΔOI do teraz', () => {

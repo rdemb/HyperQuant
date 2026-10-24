@@ -102,6 +102,7 @@ const C = {
   grid: rgba(PRO.ink3, 0.18),
   hover: rgba('#ffffff', 0.55),
   label: PRO.ink2,
+  partial: PRO.partial,
 };
 
 export class StatsTable implements ISeriesPrimitive<Time> {
@@ -233,6 +234,13 @@ export class StatsTable implements ISeriesPrimitive<Time> {
     ctx.fillStyle = rgba(PRO.bg, 0.94);
     ctx.fillRect(0, 0, LABEL_W, TH);
     for (let r = 0; r < lines.length; r++) if (!lines[r].row) ctx.fillRect(LABEL_W, ys[r], W - LABEL_W, STAT_HEAD_PX * k);
+    // Świeca częściowa (znacznik jak nad świecą footprintu): liczby z taśmy tylko z jej części
+    ctx.fillStyle = C.partial;
+    for (let i = from; i <= to; i++) {
+      const x0 = Math.max(LABEL_W, xa + i * sp - cw / 2);
+      const x1 = Math.min(W, xa + i * sp + cw / 2);
+      if (stats[i].partial && x1 > x0) ctx.fillRect(x0, 0, x1 - x0, 2);
+    }
     // Niski panel (np. układ 2 × 2): same kolory, bez nachodzących na siebie nazw
     if (rh < 9) return;
     ctx.textAlign = 'left';

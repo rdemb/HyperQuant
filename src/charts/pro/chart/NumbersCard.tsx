@@ -26,13 +26,17 @@ const GROUP_TITLES: Record<StatGroup, string> = {
   bybit: 'Delta (z transakcji od otwarcia strony) i ΔOI z Bybit',
 };
 
-/** Grupy wierszy Tablicy liczb: przełączniki jednym kliknięciem; ostatniej włączonej grupy nie da się wyłączyć. */
-export const StatGroupPicker: React.FC<{ value: readonly StatGroup[]; onChange: (g: StatGroup[]) => void; className?: string }> = ({
+/**
+ * Grupy wierszy Tablicy liczb: przełączniki jednym kliknięciem; ostatniej włączonej grupy nie da się wyłączyć.
+ * `row` — jeden przewijany wiersz (karta na telefonie zostawia wysokość tabeli).
+ */
+export const StatGroupPicker: React.FC<{ value: readonly StatGroup[]; onChange: (g: StatGroup[]) => void; className?: string; row?: boolean }> = ({
   value,
   onChange,
   className = '',
+  row = false,
 }) => (
-  <div role="group" aria-label="Grupy Tablicy liczb" className={`flex flex-wrap gap-1.5 ${className}`}>
+  <div role="group" aria-label="Grupy Tablicy liczb" className={`flex gap-1.5 ${row ? 'overflow-x-auto [scrollbar-width:none]' : 'flex-wrap'} ${className}`}>
     {STAT_GROUPS.map((g) => {
       const on = value.includes(g);
       const info = STAT_GROUP_INFO[g];
@@ -44,7 +48,7 @@ export const StatGroupPicker: React.FC<{ value: readonly StatGroup[]; onChange: 
           disabled={on && value.length === 1}
           title={GROUP_TITLES[g]}
           onClick={() => onChange(on ? value.filter((x) => x !== g) : STAT_GROUPS.filter((x) => x === g || value.includes(x)))}
-          className={`inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md border text-[11px] font-medium transition-colors duration-150 disabled:cursor-not-allowed ${
+          className={`shrink-0 inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md border text-[11px] font-medium transition-colors duration-150 disabled:cursor-not-allowed ${
             on ? 'bg-surface-3 text-ink-1 border-line-strong' : 'text-ink-3 border-line hover:text-ink-1'
           }`}
         >
@@ -79,20 +83,28 @@ export const NumbersCard: React.FC<{
   const players = groups.includes('who') ? (t: number) => store.players.split(t, iv.ms, now) : null;
   const stats = bars.map((b) => barStat(b, iv.ms, now, store.oi, store.funding, predicted, reads, players));
   const lines = tableLines(groups);
+  const partial = stats.some((s) => s.partial);
 
   return (
     <section aria-label="Liczby" className={`flex flex-col min-h-0 bg-surface-1 ${className}`}>
       <div className="px-2 py-2 border-b border-line shrink-0">
-        <StatGroupPicker value={groups} onChange={onGroups} />
+        <StatGroupPicker value={groups} onChange={onGroups} row />
       </div>
       <div className="flex-1 min-h-0 overflow-auto [scrollbar-width:thin]">
         <table className="w-full border-collapse font-mono text-[11.5px]">
           <thead>
             <tr>
               <th className="sticky top-0 bg-surface-1" />
-              {bars.map((b) => (
-                <th key={b.t} scope="col" className="sticky top-0 bg-surface-1 px-2 py-1.5 text-right font-medium text-ink-3">
+              {bars.map((b, i) => (
+                <th
+                  key={b.t}
+                  scope="col"
+                  title={stats[i].partial ? 'Świeca częściowa: liczby z taśmy tylko z jej części' : undefined}
+                  className="sticky top-0 bg-surface-1 px-2 py-1.5 text-right font-medium text-ink-3"
+                  style={stats[i].partial ? { color: PRO.partial } : undefined}
+                >
                   {b.t + iv.ms > now ? 'teraz' : fmtHm(b.t)}
+                  {stats[i].partial && '*'}
                 </th>
               ))}
             </tr>
@@ -138,13 +150,15 @@ export const NumbersCard: React.FC<{
             })}
           </tbody>
         </table>
+        {/* Objaśnienia pod tabelą, w tym samym przewijaniu: tabela dostaje całą wysokość karty */}
+        <p className="px-2 pt-2 pb-2.5 mt-1 border-t border-line text-[10px] leading-snug text-ink-3">
+          Ostatnie świece {iv.label}, najnowsza z prawej; tło — siła wartości względem tych świec. Funding w % na 8 h.
+          {partial && ' Godzina z gwiazdką — świeca częściowa: nagrywanie taśmy zaczęło się albo przerwało w jej trakcie, więc liczby z taśmy są tylko z jej części.'}
+          {venueOn && ` Dane ${venues.map((g) => STAT_GROUP_INFO[g].label).join(' i ')} pobiera Twoja przeglądarka bezpośrednio z publicznego API giełdy.`}
+          {groups.includes('who') && ` Duży gracz: konto, które w godzinie UTC weszło na rynek za co najmniej ${compact(store.players.thresholdUsd)} USD.`}
+          {groups.includes('bybit') && ' Delta Bybit liczy się od otwarcia strony.'}
+        </p>
       </div>
-      <p className="px-2 py-1.5 border-t border-line text-[10px] leading-snug text-ink-3 shrink-0">
-        Ostatnie świece {iv.label}, najnowsza z prawej; tło — siła wartości względem tych świec. Funding w % na 8 h.
-        {venueOn && ` Dane ${venues.map((g) => STAT_GROUP_INFO[g].label).join(' i ')} pobiera Twoja przeglądarka bezpośrednio z publicznego API giełdy.`}
-        {groups.includes('who') && ` Duży gracz: konto, które w godzinie UTC weszło na rynek za co najmniej ${compact(store.players.thresholdUsd)} USD.`}
-        {groups.includes('bybit') && ' Delta Bybit liczy się od otwarcia strony.'}
-      </p>
     </section>
   );
 };
