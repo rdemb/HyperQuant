@@ -318,7 +318,9 @@ export class ProChartController {
     const statsPane = this.statsSeries?.getPane();
     for (let i = 1; i < panes.length; i++) if (panes[i] !== statsPane) panes[i].setStretchFactor(panes[i] === this.volume?.getPane() ? 0.14 : 0.22);
     // Tabela ma stałą wysokość wiersza: wysokość panelu ustawiamy po ułożeniu pozostałych
-    if (statsPane) requestAnimationFrame(() => statsPane.setHeight(STAT_ROWS.length * STAT_ROW_PX + STAT_PAD_PX));
+    // (panele mogły zostać przebudowane przed następną klatką — wtedy ten panel już nie istnieje)
+    const stats = this.statsSeries;
+    if (stats) requestAnimationFrame(() => this.statsSeries === stats && stats.getPane().setHeight(STAT_ROWS.length * STAT_ROW_PX + STAT_PAD_PX));
     this.setTopInset(this.topInset);
     // Nowe serie dostają pełne dane przy następnej synchronizacji
     this.bars = [];
