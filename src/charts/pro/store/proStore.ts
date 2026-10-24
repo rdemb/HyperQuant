@@ -1,11 +1,12 @@
 import { AssetCtx, Candle, Fill, parseAssetCtx, parseBook, parseCandle, parseFills } from '../hl/parse';
-import { fetchAssetCtx, fetchCandles } from '../hl/rest';
+import { fetchAssetCtx, fetchCandles, fetchFunding } from '../hl/rest';
 import { HlStream, StreamStatus, Subscription } from '../hl/stream';
 import { BookHistory, bookSigFigs, bookStep, toFrame } from '../core/book';
 import { Coverage, Span } from '../core/coverage';
 import { FootprintBar, FootprintBuilder, hlTick } from '../core/footprintBar';
 import { WallTracker } from '../core/clashes';
 import { OrderAggregator, OrderLog } from '../core/orders';
+import { FundingBook, HOUR_MS, OiLog } from '../core/stats';
 import { Tape, TradeRow } from '../core/tape';
 import { utcDayStart } from '../core/sessions';
 import { DAY, DEFAULT_INTERVAL, Interval, barStart, intervalById } from '../core/time';
@@ -22,6 +23,8 @@ export const COIN = 'BTC';
 export const PAGE_BARS = 1500;
 /** Taśma i zlecenia są trzymane w pamięci przez dobę. */
 export const RETENTION_MS = 24 * 3600_000;
+/** Historia finansowania do statystyk świec: najwyżej tyle wstecz (6 stron API po 500 godzin). */
+const FUNDING_MAX_MS = 120 * DAY;
 /** Tyle dni świec dziennych pobieramy dla poziomów dnia (PDH, PDL, PDC, otwarcie). */
 const DAILY_DAYS = 400;
 
@@ -67,6 +70,10 @@ export class ProStore {
   readonly orders = new OrderLog();
   /** Wchłanianie zleceń agresora przez makerów (ściany), z taśmy na żywo. */
   readonly walls = new WallTracker();
+  /** Otwarte pozycje z kanału activeAssetCtx (od otwarcia strony) i stawki finansowania z historii API. */
+  readonly oi = new OiLog();
+  readonly funding = new FundingBook();
+  private fundingLoading = false;
   readonly clock = new ClockSync();
   private readonly aggregator = new OrderAggregator();
 
@@ -144,6 +151,7 @@ export class ProStore {
     void fetchAssetCtx(this.coin).then((c) => {
       if (c && !this.ctx) {
         this.ctx = c;
+        this.oi.push(this.serverNow(), c.openInterest);
         this.ensureBookSubs(c.markPx);
         this.bump();
       }
@@ -157,6 +165,7 @@ export class ProStore {
       setInterval(() => {
         this.prune();
         void this.loadDaily();
+        void this.refreshFunding();
       }, 60_000)
     );
   }
@@ -204,6 +213,7 @@ export class ProStore {
     this.mergeCandles(list);
     this.loadState = 'ready';
     this.bump();
+    void this.loadFunding();
   }
 
   /** Doczytuje starszą historię (przewinięcie wykresu w lewo). */
@@ -220,6 +230,39 @@ export class ProStore {
     if (older.length === 0) this.historyExhausted = true;
     else this.mergeCandles(older);
     this.bump();
+    void this.loadFunding();
+  }
+
+  /** Stawki finansowania od najstarszej świecy (najwyżej FUNDING_MAX_MS wstecz); pobrany okres nie jest pobierany drugi raz. */
+  private async loadFunding(): Promise<void> {
+    if (this.fundingLoading || this.candles.length === 0) return;
+    const from = Math.max(this.candles[0].t, Date.now() - FUNDING_MAX_MS);
+    if (from >= this.funding.from) return;
+    this.fundingLoading = true;
+    try {
+      const pts = await fetchFunding(this.coin, from);
+      this.funding.add(pts, from);
+      this.bump();
+    } catch {
+      // Bez historii wiersz finansowania pokazuje tylko stawkę prognozowaną bieżącej godziny
+    } finally {
+      this.fundingLoading = false;
+    }
+  }
+
+  /** Rozliczenie kolejnej godziny (wypłata o pełnej godzinie) — dociągane, gdy już powinno być w API. */
+  private async refreshFunding(): Promise<void> {
+    const last = this.funding.latest;
+    if (this.fundingLoading || !Number.isFinite(last) || this.serverNow() < last + 2 * HOUR_MS + 30_000) return;
+    this.fundingLoading = true;
+    try {
+      this.funding.add(await fetchFunding(this.coin, last + 1.5 * HOUR_MS), this.funding.from);
+      this.bump();
+    } catch {
+      // Ponowienie przy następnym takcie; do tego czasu godzina ma stawkę prognozowaną
+    } finally {
+      this.fundingLoading = false;
+    }
   }
 
   /** Świece dzienne — raz na dzień UTC; brak świecy bieżącego dnia albo błąd → ponowienie przy następnym takcie. */
@@ -290,6 +333,7 @@ export class ProStore {
       const ctx = parseAssetCtx(d.ctx);
       if (ctx) {
         this.ctx = ctx;
+        this.oi.push(this.serverNow(), ctx.openInterest);
         this.ensureBookSubs(ctx.markPx);
         this.bump();
       }
@@ -433,6 +477,7 @@ export class ProStore {
     this.coverage.prune(cut);
     this.orders.prune(cut);
     this.walls.prune(this.serverNow(), cut);
+    this.oi.prune(cut);
     this.books.forEach((b) => b.prune(cut));
     const ms = this.interval.ms;
     this.fpCache.forEach((_v, t) => {

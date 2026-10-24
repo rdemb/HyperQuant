@@ -375,6 +375,7 @@ const SettingsMenu: React.FC<{ settings: ChartSettings; bigUsd: number; onChange
       <Check label="Wolumen" checked={s.showVolume} onChange={(v) => onChange({ showVolume: v })} />
       <Check label="Delta (świece delty)" checked={s.showDelta} onChange={(v) => onChange({ showDelta: v })} />
       <Check label="CVD" checked={s.showCvd} onChange={(v) => onChange({ showCvd: v })} />
+      <Check label="Statystyki świec (tabela)" checked={s.showStats} onChange={(v) => onChange({ showStats: v })} />
       <div className="flex flex-col items-start gap-1.5">
         <span className="text-ink-2">Zerowanie CVD</span>
         <Segmented<ResetMode> ariaLabel="Zerowanie CVD" value={s.cvdReset} onChange={(v) => onChange({ cvdReset: v })} options={RESET_OPTIONS} />
@@ -409,7 +410,9 @@ type IndicatorKey =
   | 'showLevels'
   | 'showSessions'
   | 'showIb'
-  | 'showLiq';
+  | 'showLiq'
+  | 'showZones'
+  | 'showAuctions';
 
 function liqHint(liq: LiqMapState): string {
   switch (liq.status) {
@@ -506,6 +509,19 @@ const IndicatorsMenu: React.FC<{ settings: ChartSettings; intervalMs: number; li
       off: scope.ib ? undefined : 'Na interwałach do 30m',
     },
     { key: 'showLiq', label: 'Klastry likwidacji', hint: liqHint(liq), swatch: 'bg-gradient-to-r from-of-sell to-of-buy' },
+    {
+      key: 'showZones',
+      label: 'Strefy nierównowagi',
+      hint: `Seria co najmniej ${s.stackedMin || 3} wierszy z nierównowagą po jednej stronie, ciągnięta w prawo, aż cena przejdzie przez strefę — ze świec z taśmą`,
+      swatch: 'bg-gradient-to-r from-of-imb-buy to-of-imb-sell',
+      off: s.stackedMin > 1 ? undefined : 'Włącz strefy stacked w ustawieniach footprintu',
+    },
+    {
+      key: 'showAuctions',
+      label: 'Niedokończone aukcje',
+      hint: 'Szczyt albo dołek świecy z kupnem i sprzedażą agresorów (UA), do powrotu ceny — ze świec w całości nagranych',
+      swatch: 'bg-warn',
+    },
   ];
   const all = items.every((i) => s[i.key]);
   return (
