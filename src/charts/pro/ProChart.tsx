@@ -23,7 +23,7 @@ import { ChartLayout, ChartSettings, NARROW_QUERY, PHONE_PANES, PhonePane, hashF
 import { STATIONS, Station, StationId, stationKey, stationPanel } from './chart/stations';
 import { BUILT_IN_TEMPLATES, ChartTemplate, applyTemplate, loadTemplates, saveAs, saveTemplates } from './chart/templates';
 import { NumbersCard, StatGroupPicker } from './chart/NumbersCard';
-import { MarketStateBar } from './chart/MarketState';
+import { MarketStateBar } from './chart/MarketStateBar';
 import type { ChartView } from './chart/footprintSeries';
 import type { FootprintStyle } from './chart/layout';
 import { DrawHint, DrawStyleBar, DrawToolbar } from './draw/DrawToolbar';
