@@ -3,6 +3,7 @@
 // agresorów, VWAP dnia i tygodnia, profil wolumenu, open interest, likwidacje i footprint wybranego miejsca.
 // Użycie:
 //   node scripts/blog/chartdata.mjs --at 2026-10-25T06:00Z --out content/blog/<id>/wykresy.json [--fp 2026-10-25T04:00Z] [--source <url|katalog>]
+//   node scripts/blog/chartdata.mjs --notka --at 2026-10-25T12:00Z --out content/blog/<id>/wykresy.json   (6 godzin, świece 5 min, bez footprintu)
 // Na wyjściu standardowym: odczyt wykresu (liczby do tekstu analizy), te same, z których powstaje rysunek.
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -18,6 +19,9 @@ const DAY = 24 * HOUR;
 export const TF = 15 * MIN;
 export const SESSION_BARS = 96;
 export const FP_BARS = 8;
+// Notka: krótsze okno w świecach 5 min, bez footprintu
+export const NOTE_TF = 5 * MIN;
+export const NOTE_BARS = 72;
 const FP_MAX_ROWS = 26;
 const FP_STEPS = [5, 10, 20, 25, 50, 100, 250];
 const PROFILE_STEP = 25;
@@ -226,10 +230,11 @@ export function footprint(trades, ctx, from, covered, n = FP_BARS, tf = TF) {
   return { tf: tf / MIN, step, bars: bars.sort((x, y) => x.t - y.t) };
 }
 
-/** Dane wykresów wpisu na chwilę `at` (koniec ostatniej pełnej świecy 15 min). */
-export async function buildCharts({ at, fpFrom = null, get }) {
-  const end = floorTo(at, TF);
-  const from = end - SESSION_BARS * TF;
+/** Dane wykresów wpisu na chwilę `at` (koniec ostatniej pełnej świecy); `note` = krótkie okno notki bez footprintu. */
+export async function buildCharts({ at, fpFrom = null, get, note = false }) {
+  const bar = note ? NOTE_TF : TF;
+  const end = floorTo(at, bar);
+  const from = end - (note ? NOTE_BARS : SESSION_BARS) * bar;
   const json = async (branch, rel) => {
     const b = await get(branch, rel);
     return b ? JSON.parse(rel.endsWith('.gz') ? gunzipSync(b).toString('utf8') : b.toString('utf8')) : null;
@@ -273,20 +278,24 @@ export async function buildCharts({ at, fpFrom = null, get }) {
   const ones = [...byMinute.values()].filter((c) => c.t < end).sort((a, b) => a.t - b.t);
   const inWindow = ones.filter((c) => c.t >= from);
 
-  const tapeQ = tapeBars(trades, TF);
-  const archQ = rollup(inWindow, TF);
+  const tapeQ = tapeBars(trades, bar);
+  const archQ = rollup(inWindow, bar);
   const candles = [];
-  for (let t = from; t < end; t += TF) {
-    const q = covered(t, TF) ? tapeQ.get(t) : null;
+  for (let t = from; t < end; t += bar) {
+    const q = covered(t, bar) ? tapeQ.get(t) : null;
     const a = archQ.get(t);
     const b = q ?? a;
     if (!b) continue;
     candles.push([t, b.o, b.h, b.l, b.c, round(b.v), q ? round(q.buy) : null, q ? round(q.sell) : null]);
   }
+  if (candles.length < 2) {
+    const iso = (t) => new Date(t).toISOString();
+    throw new Error(`Za mało świec w oknie ${iso(from)} – ${iso(end)} (${candles.length}): --at w przyszłości albo brak danych w archiwum i na taśmie`);
+  }
 
   const oi = [];
-  for (let t = from; t < end; t += TF) {
-    const v = covered(t, TF) ? oiBefore(ctx, t + TF) : null;
+  for (let t = from; t < end; t += bar) {
+    const v = covered(t, bar) ? oiBefore(ctx, t + bar) : null;
     if (v !== null) oi.push([t, round(v, 1)]);
   }
 
@@ -294,7 +303,7 @@ export async function buildCharts({ at, fpFrom = null, get }) {
   const liqQ = new Map();
   for (const b of liqTape?.buckets ?? []) {
     if (b.t < from || b.t >= end) continue;
-    const t = floorTo(b.t, TF);
+    const t = floorTo(b.t, bar);
     const x = liqQ.get(t) ?? [t, 0, 0];
     x[1] += b.longUsd / 1e6;
     x[2] += b.shortUsd / 1e6;
@@ -317,20 +326,20 @@ export async function buildCharts({ at, fpFrom = null, get }) {
     coin: 'BTC',
     at: end,
     session: {
-      tf: TF / MIN,
+      tf: bar / MIN,
       from,
       to: end,
       tape: merged.filter(([a, b]) => b > from && a < end).map(([a, b]) => [Math.max(a, from), Math.min(b, end)]),
       candles,
       // VWAP dnia UTC: od północy UTC (dzień poprzedni bez VWAP, żeby nie mieszać dwóch kotwic na jednym wykresie)
-      vwap: anchoredVwap(ones, dayStart, TF),
+      vwap: anchoredVwap(ones, dayStart, bar),
       dayStart,
       profile: volumeProfile(inWindow),
       levels,
       oi,
       liq,
     },
-    footprint: trades.length ? footprint(trades, ctx, fpStart, covered) : null,
+    footprint: trades.length && !note ? footprint(trades, ctx, fpStart, covered) : null,
   };
 }
 
@@ -345,25 +354,31 @@ export function readCharts(d) {
   const px = last[4];
   const vw = s.vwap.at(-1);
   const withTape = s.candles.filter((c) => c[6] !== null);
-  const deltaH = (h) => round(sum(withTape.slice(-h * 4).map((c) => c[6] - c[7])), 1);
-  const priceH = (h) => (withTape.length >= h * 4 ? round(px - withTape.at(-h * 4)[1], 0) : null);
-  const oiH = (h) => (s.oi.length > h * 4 ? round(s.oi.at(-1)[1] - s.oi.at(-1 - h * 4)[1], 1) : null);
+  const perH = 60 / s.tf;
+  const deltaH = (h) => round(sum(withTape.slice(-h * perH).map((c) => c[6] - c[7])), 1);
+  const priceH = (h) => (withTape.length >= h * perH ? round(px - withTape.at(-h * perH)[1], 0) : null);
+  const oiH = (h) => (s.oi.length > h * perH ? round(s.oi.at(-1)[1] - s.oi.at(-1 - h * perH)[1], 1) : null);
   const hi = Math.max(...s.candles.map((c) => c[2]));
   const lo = Math.min(...s.candles.map((c) => c[3]));
+  const hours = Math.round((s.to - s.from) / HOUR);
   const out = {
     cena: px,
-    zakres24h: {
+    [`zakres${hours}h`]: {
       max: hi,
       min: lo,
       maxAt: new Date(s.candles.find((c) => c[2] === hi)[0]).toISOString(),
       minAt: new Date(s.candles.find((c) => c[3] === lo)[0]).toISOString(),
     },
-    wartosc: {
-      poc: s.profile.poc,
-      vah: s.profile.vah,
-      val: s.profile.val,
-      cenaWzgledemWartosci: px > s.profile.vah ? 'nad' : px < s.profile.val ? 'pod' : 'w środku',
-    },
+    // Notka (krótkie okno) nie rysuje profilu, więc odczyt nie podaje POC ani obszaru wartości
+    wartosc:
+      hours > 8
+        ? {
+            poc: s.profile.poc,
+            vah: s.profile.vah,
+            val: s.profile.val,
+            cenaWzgledemWartosci: px > s.profile.vah ? 'nad' : px < s.profile.val ? 'pod' : 'w środku',
+          }
+        : undefined,
     vwapDnia: vw
       ? {
           vwap: vw[1],
@@ -373,7 +388,7 @@ export function readCharts(d) {
       : null,
     poziomy: s.levels,
     tasma: s.tape.map(([a, b]) => `${new Date(a).toISOString()} – ${new Date(b).toISOString()}`),
-    delta: { h1: deltaH(1), h4: deltaH(4), cala: deltaH(withTape.length / 4) },
+    delta: { h1: deltaH(1), h4: deltaH(4), cala: deltaH(withTape.length / perH) },
     cena1h: priceH(1),
     cena4h: priceH(4),
     oi: s.oi.length ? { teraz: s.oi.at(-1)[1], zmiana1h: oiH(1), zmiana4h: oiH(4) } : null,
@@ -423,11 +438,12 @@ async function main(argv) {
   };
   const at = Date.parse(arg('--at') ?? new Date().toISOString());
   const out = arg('--out');
-  if (!Number.isFinite(at) || !out) throw new Error('Użycie: chartdata.mjs --at <ISO> --out <plik.json> [--fp <ISO>] [--source <url|katalog>]');
+  if (!Number.isFinite(at) || !out) throw new Error('Użycie: chartdata.mjs --at <ISO> --out <plik.json> [--notka] [--fp <ISO>] [--source <url|katalog>]');
   const fp = arg('--fp') ? Date.parse(arg('--fp')) : null;
   const data = await buildCharts({
     at,
     fpFrom: fp,
+    note: argv.includes('--notka'),
     get: openSource(arg('--source') ?? DEFAULT_SOURCE),
   });
   await mkdir(path.dirname(path.resolve(out)), { recursive: true });

@@ -4,7 +4,7 @@ import path from 'node:path';
 import { gzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { anchoredVwap, buildCharts, decodeTape, mergeSpans, openSource, readCharts, volumeProfile } from './chartdata.mjs';
-import { diagonalImbalances, footprintSvg, mergeCandles, sessionHtml, sessionSvg, spreadLabels } from './charts.mjs';
+import { diagonalImbalances, footprintSvg, mergeCandles, sessionHtml, sessionSvg, sessionTitle, spreadLabels } from './charts.mjs';
 import { loadPostFile, validateCharts } from './posts.mjs';
 import { postBody } from './render.mjs';
 
@@ -145,9 +145,29 @@ describe('wykresy: dane (chartdata.mjs)', () => {
     const d = await buildCharts({ at: AT, fpFrom: TAPE_FROM + 5 * MIN, get: openSource(fakeSource()) });
     expect(d.footprint.bars[0].t).toBe(TAPE_FROM);
   });
+
+  it('notka (--notka): 6 godzin w świecach 5 min, bez footprintu, odczyt w tych samych godzinach', async () => {
+    const d = await buildCharts({ at: AT + 2 * MIN, note: true, get: openSource(fakeSource()) });
+    expect(validateCharts(d)).toEqual([]);
+    const s = d.session;
+    expect([s.tf, s.from, s.to, s.candles.length]).toEqual([5, AT - 6 * HOUR, AT, 72]);
+    expect(d.footprint).toBeNull();
+    expect(s.candles.filter((c) => c[6] !== null).map((c) => c[0])[0]).toBe(TAPE_FROM);
+    expect(s.oi.length).toBe(36);
+    const read = readCharts(d);
+    expect(read.zakres6h.max).toBeGreaterThan(read.zakres6h.min);
+    expect(read.delta.h1).toBe(Math.round(10 * s.candles.slice(-12).reduce((a, c) => a + c[6] - c[7], 0)) / 10);
+    expect(read.footprint).toBeUndefined();
+    expect(read.wartosc).toBeUndefined();
+  });
+
+  it('okno bez świec (chwila z przyszłości) to czytelny błąd', async () => {
+    await expect(buildCharts({ at: AT + 24 * HOUR, note: true, get: openSource(fakeSource()) })).rejects.toThrow(/Za mało świec w oknie .* \(0\)/);
+  });
 });
 
 const SESSION = {
+  tf: 15,
   from: AT - 24 * HOUR,
   to: AT,
   dayStart: AT - 6 * HOUR,
@@ -226,6 +246,26 @@ describe('wykresy: rysunek (charts.mjs)', () => {
     expect(wide).toContain('12 mln USD');
     expect(footprintSvg(FP)).toContain('>−13<');
     expect(sessionHtml(SESSION, [{ bias: 'down', zone: [79600, 79700] }])).toMatch(/class="chart chart--w"[\s\S]*class="chart chart--n"/);
+  });
+
+  it('notka: bez profilu i OI, poziomy wpisu podpisane przy osi, najbliższy poza zakresem ze strzałką', () => {
+    const note = { ...SESSION, tf: 5, from: AT - 6 * HOUR, candles: SESSION.candles.slice(-72).map((c, i) => [AT - 6 * HOUR + i * 5 * MIN, ...c.slice(1)]) };
+    const levels = [
+      { label: 'Szczyt odbicia z wczoraj', price: 80100 },
+      { label: 'PDH', price: 82500 },
+      { label: 'Dołek', price: 70000 },
+    ];
+    const wide = sessionSvg(note, { levels });
+    const narrow = sessionSvg(note, { levels, narrow: true, uid: 'n' });
+    for (const svg of [wide, narrow]) expect(svg).not.toMatch(/NaN|undefined|Infinity/);
+    expect(wide).not.toContain('#9085e9');
+    expect(wide).toContain('<title>Szczyt odbicia z wczoraj 80\u00a0100</title>');
+    expect(wide).toContain('↑ PDH');
+    expect(wide).toContain('↓ Dołek');
+    expect(narrow).toMatch(/Szczyt odb[^<]*…/);
+    expect(sessionTitle(note)).toBe('Ostatnie 6 godzin');
+    expect(sessionHtml(note, [], levels)).toContain('poziomy z wpisu');
+    expect(sessionHtml(note, [], levels)).toContain('świece 5 min (na telefonie 10 min)');
   });
 });
 

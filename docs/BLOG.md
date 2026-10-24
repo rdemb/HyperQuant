@@ -1,19 +1,19 @@
-# Blog: format wpisu i publikacja
+# Blog: post format and publishing
 
-Blog to statyczne strony budowane razem z deskiem (`npm run build`): lista wpisów pogrupowana po dniach, strona każdego wpisu,
-archiwum miesięcy, kanał RSS (`blog/feed.xml`), `sitemap.xml`, obrazek do podglądu linku (Open Graph / X, 1200×630) dla każdego wpisu
-oraz przyciski udostępniania pod tytułem i pod treścią wpisu (X, Facebook, LinkedIn, Telegram, WhatsApp, kopiowanie linku, systemowe „Udostępnij” na telefonie).
-Pełna analiza może mieć ramkę „W skrócie”, panel danych, mapę likwidacji, przepływy i scenariusze warunkowe, wstawiane w wybranych miejscach treści.
-Kod: `scripts/blog/`, wpisy: `content/blog/`.
+The blog is a set of static pages built together with the desk (`npm run build`): a list of posts grouped by day, a page for every post,
+a monthly archive, an RSS feed (`blog/feed.xml`), `sitemap.xml`, a link-preview image (Open Graph / X, 1200×630) for every post
+and share buttons under the title and under the body of each post (X, Facebook, LinkedIn, Telegram, WhatsApp, copy link, the system share sheet on phones).
+A full analysis can have a „W skrócie” (In brief) box, a data panel, a liquidation map, flows and conditional scenarios, placed at chosen points in the body.
+Code: `scripts/blog/`, posts: `content/blog/`. Posts are written in Polish, so the examples below are in Polish too.
 
-## Plik
+## File
 
-`content/blog/RRRR-MM-DD-opis.md`, np. `content/blog/2026-10-26-mapa-dnia.md`. Nazwa pliku to adres wpisu
-(`https://rdemb.github.io/HyperQuant/blog/2026-10-26-mapa-dnia/`), więc po publikacji się jej nie zmienia.
-Data w nazwie to dzień publikacji w czasie polskim; kilka wpisów jednego dnia różni się opisem (`2026-10-26-aktualizacja-12`).
+`content/blog/YYYY-MM-DD-slug.md`, e.g. `content/blog/2026-10-26-mapa-dnia.md`. The file name is the post's URL
+(`https://rdemb.github.io/HyperQuant/blog/2026-10-26-mapa-dnia/`), so it does not change after publication.
+The date in the name is the publication day in Polish time; several posts on one day differ by slug (`2026-10-26-aktualizacja-12`).
 
-Obrazy wpisu leżą w katalogu o tej samej nazwie (`content/blog/2026-10-26-mapa-dnia/wykres.png`) i są wstawiane w treści jako `![Opis](wykres.png)`.
-Link do wcześniejszego wpisu: `[mapa dnia](../2026-10-26-mapa-dnia/)`.
+A post's images live in a folder with the same name (`content/blog/2026-10-26-mapa-dnia/wykres.png`) and are embedded in the body as `![Description](wykres.png)`.
+Link to an earlier post: `[mapa dnia](../2026-10-26-mapa-dnia/)`.
 
 ## Frontmatter
 
@@ -35,28 +35,28 @@ scenarios:
 ---
 ```
 
-| Pole | Wymagane | Opis |
+| Field | Required | Description |
 |---|---|---|
-| `title` | tak | Tytuł, do 90 znaków. |
-| `description` | tak | Zajawka, 50–220 znaków: lead pod tytułem, opis w Google, tekst podglądu linku. |
-| `date` | tak | Chwila publikacji, ISO 8601 ze strefą (`+01:00` zimą, `+02:00` latem, albo `Z`). |
-| `type` | tak | `article` (pełna analiza, od 150 słów) albo `note` (krótka notka, 15–250 słów). |
-| `section` | tak | Rubryka, do 40 znaków. Artykuły: Mapa dnia, Mapa przed Nowym Jorkiem, Podsumowanie dnia, Rozliczenie tygodnia, Mapa na weekend, Mapa tygodnia. Notki: Otwarcie Londynu, Rozliczenie Londynu, Otwarcie Nowego Jorku, Aktualizacja 4h. |
-| `price` | przy `levels` | Cena BTC-PERP w chwili publikacji (USD). |
-| `levels` | nie | Do 12 poziomów: `label` (do 20 znaków), `price`, opcjonalnie `note` (do 40 znaków). Rysowane jako mapa poziomów z odległością od ceny w %. |
-| `scenarios` | nie | Do 4 scenariuszy **wykluczających się** (np. trzy przedziały ceny o tej samej godzinie): `label` (do 60 znaków, z horyzontem), `probability` (liczba całkowita 1–99, %), opcjonalnie `note` (do 240 znaków). Suma do 100%; brakująca reszta jest pokazana jako „inne przebiegi”. |
-| `summary` | nie | „W skrócie”: 2–5 punktów (do 200 znaków), ramka pod leadem i lista na początku wpisu w RSS. |
-| `metrics` | nie | Panel danych, do 12 kart: `label` (do 28 znaków), `value` (tekst z jednostką, do 20 znaków, np. `"−1,5 bp"`), opcjonalnie `note` (do 80 znaków) i `bias`: `up`, `down` albo `flat` (znak ▲ ▼ ◆ przy wartości). |
-| `liquidations` | nie | Mapa likwidacji (wymaga `price`): `step` (szerokość przedziału w USD), `longs` i `shorts` jako pary `[cena od, mln USD]` z cenami będącymi wielokrotnością `step` (longi pod ceną, shorty nad nią; przedział shortów może zawierać cenę), opcjonalnie `coverage` (1–100, % otwartych pozycji objętych mapą) i `note` (do 200 znaków). Najwyżej 60 przedziałów od najniższego do najwyższego; puste przedziały pomiędzy są rysowane, żeby odległości były prawdziwe. |
-| `flows` | nie | Przepływy: `title` (do 60 znaków), `unit` (do 12 znaków), `rows` 1–8 wierszy `{ label, value, note }`; `value` dodatnie to przewaga kupujących, ujemne sprzedających. Słupki od zera w obie strony. |
-| `setups` | nie | Do 4 scenariuszy warunkowych (wymaga `price`): `name` (do 70 znaków), `bias` (`up`, `down`, `flat`), `zone: [od, do]` (strefa obserwacji), opcjonalnie `window` (horyzont, do 40 znaków), `triggers` (1–5 warunków, każdy do 180 znaków, w kolejności), `invalidation` (co unieważnia scenariusz, do 220 znaków), `reactions` (do 5 poziomów `{ label, price }`), `evidence` (co mówią dane historyczne, do 280 znaków). |
-| `draft` | nie | `true`: wpis nie trafia na stronę (podgląd lokalny: `--drafts`). |
+| `title` | yes | Title, up to 90 characters. |
+| `description` | yes | Teaser, 50–220 characters: the lead under the title, the Google description and the link-preview text. |
+| `date` | yes | Moment of publication, ISO 8601 with a time zone (`+01:00` in winter, `+02:00` in summer, or `Z`). |
+| `type` | yes | `article` (full analysis, at least 150 words) or `note` (short note, 15–250 words). |
+| `section` | yes | Column, up to 40 characters. Articles: Mapa dnia, Mapa przed Nowym Jorkiem, Podsumowanie dnia, Rozliczenie tygodnia, Mapa na weekend, Mapa tygodnia. Notes: Otwarcie Londynu, Rozliczenie Londynu, Otwarcie Nowego Jorku, Aktualizacja 4h. |
+| `price` | with `levels` | BTC-PERP price at the moment of publication (USD). |
+| `levels` | no | Up to 12 levels: `label` (up to 20 characters), `price`, optionally `note` (up to 40 characters). Drawn as a level map with the distance from price in %. |
+| `scenarios` | no | Up to 4 **mutually exclusive** scenarios (e.g. three price ranges at the same time): `label` (up to 60 characters, including the horizon), `probability` (integer 1–99, %), optionally `note` (up to 240 characters). They sum to at most 100%; the missing remainder is shown as „inne przebiegi” (other outcomes). |
+| `summary` | no | „W skrócie” (In brief): 2–5 points (up to 200 characters each), a box under the lead and a list at the start of the post in RSS. |
+| `metrics` | no | Data panel, up to 12 cards: `label` (up to 28 characters), `value` (text with a unit, up to 20 characters, e.g. `"−1,5 bp"`), optionally `note` (up to 80 characters) and `bias`: `up`, `down` or `flat` (a ▲ ▼ ◆ sign next to the value). |
+| `liquidations` | no | Liquidation map (requires `price`): `step` (bucket width in USD), `longs` and `shorts` as `[price from, USD m]` pairs with prices that are multiples of `step` (longs below the price, shorts above it; a short bucket may contain the price), optionally `coverage` (1–100, % of open interest covered by the map) and `note` (up to 200 characters). At most 60 buckets from lowest to highest; empty buckets in between are drawn so that distances are true. |
+| `flows` | no | Flows: `title` (up to 60 characters), `unit` (up to 12 characters), `rows` of 1–8 rows `{ label, value, note }`; a positive `value` means buyers dominate, a negative one sellers. Bars from zero in both directions. |
+| `setups` | no | Up to 4 conditional scenarios (requires `price`): `name` (up to 70 characters), `bias` (`up`, `down`, `flat`), `zone: [from, to]` (watch zone), optionally `window` (horizon, up to 40 characters), `triggers` (1–5 conditions, each up to 180 characters, in order), `invalidation` (what invalidates the scenario, up to 220 characters), `reactions` (up to 5 levels `{ label, price }`), `evidence` (what historical data says, up to 280 characters). |
+| `draft` | no | `true`: the post is not published (local preview: `--drafts`). |
 
-Tekst z przecinkiem w nawiasach klamrowych YAML ujmuje się w cudzysłów (`note: "dołek, 34%"`), inaczej przecinek tworzy nowe pole i walidacja to zgłosi.
+Text containing a comma inside YAML curly braces must be quoted (`note: "dołek, 34%"`); otherwise the comma starts a new field and validation reports it.
 
-### Analiza rozszerzona
+### Extended analysis
 
-Pełna analiza łączy liczby z desku z diagramami i scenariuszami warunkowymi. Przykład pól (wartości skrócone):
+A full analysis combines numbers from the desk with diagrams and conditional scenarios. Example fields (values shortened):
 
 ```yaml
 summary:
@@ -90,48 +90,50 @@ setups:
     evidence: Po pierwszym dotknięciu minimum poprzedniego dnia cena doszła do środka zakresu w 44% z 85 przypadków (losowo 48%).
 ```
 
-Scenariusze warunkowe opisują, co musiałoby się wydarzyć na rynku (strefa, warunki potwierdzenia, unieważnienie, poziomy reakcji). Nad kartami jest stała uwaga, że to opis warunków, a nie zlecenie ani rekomendacja. Bezpieczniki obejmują wszystkie teksty tych pól, więc nie przejdą w nich poziomy TP/SL, „long od …” ani tryb rozkazujący.
+Conditional scenarios describe what would have to happen in the market (zone, confirmation conditions, invalidation, reaction levels). Above the cards there is a fixed note that this describes conditions and is neither an order nor a recommendation. The safeguards cover every text in these fields, so TP/SL levels, "long from …" and the imperative mood will not pass there either.
 
-**Miejsce bloków w treści.** Blok danych można wstawić w wybranym miejscu treści znacznikiem w osobnej linii: `[[dane]]` (panel danych), `[[wykres]]` i `[[footprint]]` (zob. Wykresy), `[[poziomy]]`, `[[likwidacje]]`, `[[przeplywy]]`, `[[scenariusze]]`, `[[setupy]]`. Wstawiony blok dostaje podpis zamiast nagłówka sekcji, więc dobrze stoi pod własnym `##`. Bloki bez znacznika trafiają przed treść w tej kolejności, każdy z nagłówkiem. Znacznik bez danych, nieznany, powtórzony albo w środku akapitu to błąd wpisu. W RSS diagramy są pomijane, a scenariusze warunkowe zostają jako tekst.
+**Placing blocks in the body.** A data block can be placed at a chosen point in the body with a marker on its own line: `[[dane]]` (data panel), `[[wykres]]` and `[[footprint]]` (see Charts), `[[poziomy]]`, `[[likwidacje]]`, `[[przeplywy]]`, `[[scenariusze]]`, `[[setupy]]`. A placed block gets a caption instead of a section heading, so it sits well under its own `##`. Blocks without a marker go before the body in this order, each with a heading. A marker without data, an unknown marker, a repeated one or one in the middle of a paragraph is a post error. In RSS the diagrams are omitted, and conditional scenarios stay as text.
 
-### Wykresy
+### Charts
 
-Mapa sesji i footprint rysuje generator z pliku `content/blog/<id>/wykresy.json` (katalog mediów wpisu). Plik tworzy skrypt z publicznych danych desku (archiwum świec 1 min, taśma transakcji z gałęzi `history`, taśma likwidacji):
+The session map and the footprint are drawn by the generator from `content/blog/<id>/wykresy.json` (the post's media folder). The file is created by a script from the desk's public data (archive of 1-minute candles, trade tape from the `history` branch, liquidation tape):
 
 ```sh
-node scripts/blog/chartdata.mjs --at 2026-10-25T06:00Z --out content/blog/2026-10-25-mapa-dnia/wykresy.json [--fp 2026-10-25T04:00Z] [--source <adres|katalog>]
+node scripts/blog/chartdata.mjs --at 2026-10-25T06:00Z --out content/blog/2026-10-25-mapa-dnia/wykresy.json [--fp 2026-10-25T04:00Z] [--source <url|folder>]
+node scripts/blog/chartdata.mjs --notka --at 2026-10-25T12:00Z --out content/blog/2026-10-25-aktualizacja-14/wykresy.json
 ```
 
-`--at` to chwila danych (ostatnia pełna świeca 15 min przed nią), `--fp` początek footprintu (osiem świec 15 min, domyślnie ostatnie dwie godziny), `--source` adres repozytorium danych albo katalog o tym samym układzie (`archive/`, `history/`, `main/`). Na wyjściu standardowym skrypt drukuje odczyt wykresu: cenę, zakres doby, POC i obszar wartości, VWAP dnia z odległością w σ, deltę i zmianę OI z 1 i 4 godzin, największe likwidacje oraz dla każdej świecy footprintu deltę, wolumen, zmianę OI, POC i poziomy nierównowag. Tekst analizy pisze się z tych liczb, tych samych co na rysunku.
+`--at` is the data moment (the last full 15-min candle before it), `--fp` the start of the footprint (eight 15-min candles, by default the last two hours), `--source` the data repository URL or a folder with the same layout (`archive/`, `history/`, `main/`). On standard output the script prints a chart reading: price, the day's range, POC and value area, daily VWAP with the distance in σ, delta and OI change over 1 and 4 hours, the largest liquidations and, for every footprint candle, delta, volume, OI change, POC and imbalance levels. The analysis text is written from these numbers, the same ones as in the picture.
 
-- `[[wykres]]`: mapa sesji z 24 godzin. Świece 15 min (na telefonie 30 min), VWAP dnia od północy UTC z pasmami ±1σ i ±2σ, profil wolumenu z POC i obszarem wartości (70% obrotu), szczyt i dołek dnia poprzedniego (PDH, PDL; poza zakresem jako znacznik przy krawędzi), likwidacje jako koła przy świecach, strefy z `setups` (kolor kierunku) i panele delty agresorów, CVD oraz open interest, każdy z własną skalą. Bez taśmy panele są zakreskowane z napisem „brak taśmy”.
-- `[[footprint]]`: sprzedaż i kupno agresorów na każdym poziomie ceny (krok dobrany do zakresu, do 26 wierszy), kafle w odcieniu strony według wolumenu, POC świecy w ramce, nierównowagi po przekątnej 3:1 (pasek przy krawędzi i pogrubiona liczba; komórki poniżej 10% największej w świecy pomijane), pod spodem delta, wolumen i zmiana OI. Tylko świece w pełni nagrane na taśmie.
+- `[[wykres]]`: session map of the last 24 hours. 15-min candles (30 min on phones), daily VWAP from UTC midnight with ±1σ and ±2σ bands, volume profile with POC and value area (70% of turnover), the previous day's high and low (PDH, PDL; out of range shown as a marker at the edge), liquidations as circles at the candles, zones from `setups` (in the direction colour) and panels for aggressor delta, CVD and open interest, each with its own scale. Without tape the panels are hatched and labelled „brak taśmy” (no tape).
+- `[[wykres]]` in a note: with the `--notka` flag the script builds a shorter window, the last 6 hours in 5-min candles (10 min on phones), without footprint. The chart is lighter: candles, daily VWAP with bands, the post's `levels` labelled in a column at the axis (the nearest level above and below the range as a marker with an arrow), liquidations and the delta and CVD panels. No volume profile and no open interest. The reading has `zakres6h` instead of `zakres24h` and no POC or value area, because they are not in the picture.
+- `[[footprint]]`: aggressor sells and buys at every price level (step fitted to the range, up to 26 rows), tiles in the side's shade by volume, the candle's POC framed, diagonal 3:1 imbalances (a bar at the edge and a bold number; cells below 10% of the candle's largest are skipped), with delta, volume and OI change underneath. Only candles fully recorded on the tape.
 
-Oba wykresy to SVG w treści strony w dwóch układach: szerokim (od 640 px) i wąskim na telefon. Najechanie na świecę albo komórkę pokazuje liczby. W RSS wykresów nie ma. Walidator sprawdza kształt pliku, a znacznik wykresu bez danych w pliku to błąd wpisu.
+Both charts are inline SVG in two layouts: wide (from 640 px) and narrow for phones. Hovering a candle or a cell shows the numbers. RSS has no charts. The validator checks the shape of the file, and a chart marker without data in the file is a post error.
 
-## Treść
+## Body
 
-Markdown (GFM): sekcje od `##`, akapity, tabele, listy, linki, obrazy. Surowy HTML jest wyświetlany jako tekst.
-Liczby po polsku ze spacją w grupach cyfr (`80 777`, `3,8 bp`); generator dokleja twarde spacje, żeby liczba nie łamała się między wierszami.
+Markdown (GFM): sections from `##`, paragraphs, tables, lists, links, images. Raw HTML is shown as text.
+Numbers in Polish format with a space between digit groups (`80 777`, `3,8 bp`); the generator adds non-breaking spaces so that a number does not break across lines.
 
-## Bezpieczniki
+## Safeguards
 
-Ten sam walidator działa przed publikacją (`npm run blog:check`) i przy każdym buildzie. Błędny wpis zatrzymuje build, więc nic nie trafia na stronę po cichu.
+The same validator runs before publication (`npm run blog:check`) and on every build. A broken post stops the build, so nothing reaches the site silently.
 
-- **Prywatność:** adresy portfeli i hashe transakcji (`0x…`), adresy IP, e-maile, tokeny i klucze dostępu.
-- **Analiza, nie sygnały:** tryb rozkazujący („kup”, „sprzedaj”, „wejdź w longa”), gotowe wejścia („long od 80 500”), poziomy TP/SL.
-- **Styl:** bez myślników (— oraz – ze spacjami) i strzałek. Zakresy liczb z półpauzą bez spacji (`80 100–80 200`) są w porządku.
-- **Schemat:** pola i długości z tabeli wyżej, dzień w nazwie pliku zgodny z `date`, brak nagłówka `#` w treści, istniejące pliki obrazów.
+- **Privacy:** wallet addresses and transaction hashes (`0x…`), IP addresses, e-mails, tokens and access keys.
+- **Analysis, not signals:** the imperative mood („kup”, „sprzedaj”, „wejdź w longa”: buy, sell, go long), ready-made entries („long od 80 500”: long from 80,500), TP/SL levels.
+- **Style:** no dashes (— and – with spaces) and no arrows. Number ranges with an en dash and no spaces (`80 100–80 200`) are fine.
+- **Schema:** the fields and lengths from the table above, the day in the file name matching `date`, no `#` heading in the body, existing image files.
 
-## Publikacja
+## Publishing
 
 ```bash
-npm run blog:check -- content/blog/2026-10-26-mapa-dnia.md   # walidacja jednego wpisu
+npm run blog:check -- content/blog/2026-10-26-mapa-dnia.md   # validate a single post
 git add content/blog/2026-10-26-mapa-dnia.md
 git commit -m "docs(blog): Mapa dnia 26.10.2026"
-git push origin main                                          # GitHub Pages publikuje w ~2 min
+git push origin main                                          # GitHub Pages publishes in ~2 min
 ```
 
-Podgląd lokalny (razem ze szkicami): `npm run build && node scripts/blog/build.mjs --drafts && npm run preview`, potem `http://localhost:4173/blog/`.
+Local preview (including drafts): `npm run build && node scripts/blog/build.mjs --drafts && npm run preview`, then `http://localhost:4173/blog/`.
 
-Każdy wpis jest w publicznej historii repozytorium od chwili publikacji; strona wpisu linkuje do historii zmian pliku.
+Every post is in the repository's public history from the moment of publication; the post page links to the file's change history.
