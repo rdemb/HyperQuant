@@ -134,6 +134,7 @@ describe('blog: szablony', () => {
     expect(JSON.parse(ld)).toMatchObject({ '@type': 'BlogPosting', datePublished: BASE.date });
     expect(html.match(/<script/g).length).toBe(1);
     expect(html).toContain('href="https://github.com/x/HQ/commits/main/content/blog/2026-10-24-mapa-dnia.md"');
+    expect(html).toContain('Analiza przygotowana automatycznie');
   });
 
   it('RSS: pełna treść z bezwzględnymi adresami, data RFC 822; sitemap z wpisami', () => {

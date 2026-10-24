@@ -175,6 +175,9 @@ ${main}
 `;
 }
 
+/** Jawność pochodzenia tekstu i możliwego konfliktu interesów (pod każdym wpisem). */
+export const DISCLOSURE = 'Analiza przygotowana automatycznie na danych desku HyperQuant. Autor może mieć pozycje w BTC.';
+
 const PUBLISHER = (site) => ({ '@type': 'Organization', name: 'HyperQuant', url: site.url, logo: { '@type': 'ImageObject', url: `${site.url}icons/icon-512.png` } });
 
 /** Strona wpisu (artykuł albo notka). `newer` / `older` = sąsiednie wpisy do nawigacji. */
@@ -201,7 +204,7 @@ ${facts}${levels}${scenarios}
 <div class="prose">
 ${renderMarkdown(post.body)}
 </div>
-<p class="history">Wpis jest w publicznej historii repozytorium od chwili publikacji: <a href="${site.repo}/commits/main/content/blog/${post.id}.md">historia zmian</a>.</p>
+<p class="history">${DISCLOSURE} Wpis jest w publicznej historii repozytorium od chwili publikacji: <a href="${site.repo}/commits/main/content/blog/${post.id}.md">historia zmian</a>.</p>
 </article>
 <nav class="pager" aria-label="Sąsiednie wpisy">${pager}</nav>`;
   return layout(site, {
