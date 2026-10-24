@@ -2,6 +2,7 @@ import React from 'react';
 import { Activity, ArrowDown, ArrowRight, Box, ChartCandlestick, Database, Globe2, LayoutDashboard, Newspaper, Target } from 'lucide-react';
 import { useDesk } from '../../state/DeskContext';
 import { ViewId } from '../../state/types';
+import { tr } from '../../i18n';
 
 interface MapItem {
   /** Widok aplikacji albo zewnętrzna strona (blog to osobne strony statyczne). */
@@ -17,49 +18,73 @@ const MAP: MapItem[] = [
     target: 'desk',
     name: 'Desk',
     icon: <LayoutDashboard className="w-4 h-4" />,
-    text: 'Na tej stronie: arkusz zleceń z taśmą, pas kontekstu rynku, mapa likwidacji, przepływ kohort i szybka ocena planu.',
+    text: tr(
+      'Na tej stronie: arkusz zleceń z taśmą, pas kontekstu rynku, mapa likwidacji, przepływ kohort i szybka ocena planu.',
+      'On this page: order book with the tape, market context strip, liquidation map, cohort flow and a quick plan check.'
+    ),
   },
   {
     target: 'charts',
-    name: 'Wykresy',
+    name: tr('Wykresy', 'Charts'),
     icon: <ChartCandlestick className="w-4 h-4" />,
-    text: 'Orderflow BTC, ETH, SOL i HYPE na żywo: footprint, mapa płynności, bąble dużych zleceń, VWAP, profil, TPO i rysowanie.',
+    text: tr(
+      'Orderflow BTC, ETH, SOL i HYPE na żywo: footprint, mapa płynności, bąble dużych zleceń, VWAP, profil, TPO i rysowanie.',
+      'Live BTC, ETH, SOL and HYPE order flow: footprint, liquidity heatmap, large-order bubbles, VWAP, profile, TPO and drawing tools.'
+    ),
   },
   {
     target: 'plan',
-    name: 'Analizator planu',
+    name: tr('Analizator planu', 'Plan Analyzer'),
     icon: <Target className="w-4 h-4" />,
-    text: 'Wpisz wejście, stop i cel: szansa celu przed stopem, poślizg, wynik po opłatach, zapas do likwidacji i dzienniki.',
+    text: tr(
+      'Wpisz wejście, stop i cel: szansa celu przed stopem, poślizg, wynik po opłatach, zapas do likwidacji i dzienniki.',
+      'Enter entry, stop and target: odds of target before stop, slippage, result after fees, liquidation buffer and journals.'
+    ),
   },
   {
     target: 'market',
-    name: 'Rynek',
+    name: tr('Rynek', 'Market'),
     icon: <Globe2 className="w-4 h-4" />,
-    text: 'Model desku obok rynków predykcyjnych, funding na trzech giełdach, S&P 500, złoto i ropa, kalendarz makro i wiadomości.',
+    text: tr(
+      'Model desku obok rynków predykcyjnych, funding na trzech giełdach, S&P 500, złoto i ropa, kalendarz makro i wiadomości.',
+      'The Desk model next to prediction markets, funding on three exchanges, S&P 500, gold and oil, macro calendar and news.'
+    ),
   },
   {
     target: 'lab',
     name: 'Lab 3D',
     icon: <Box className="w-4 h-4" />,
-    text: 'Pięć scen 3D: płynność, przepływ, delta, ryzyko likwidacji i opcje, każda z opisem, jak ją czytać.',
+    text: tr(
+      'Pięć scen 3D: płynność, przepływ, delta, ryzyko likwidacji i opcje, każda z opisem, jak ją czytać.',
+      'Five 3D scenes: liquidity, flow, delta, liquidation risk and options, each with a guide on how to read it.'
+    ),
   },
   {
     target: 'micro',
-    name: 'Mikrostruktura',
+    name: tr('Mikrostruktura', 'Microstructure'),
     icon: <Activity className="w-4 h-4" />,
-    text: 'Jak pracuje arkusz: płynność o każdej godzinie, koszt wejścia Twoją wielkością, OFI, VPIN i wielkość pozycji.',
+    text: tr(
+      'Jak pracuje arkusz: płynność o każdej godzinie, koszt wejścia Twoją wielkością, OFI, VPIN i wielkość pozycji.',
+      'How the book works: liquidity at every hour, the cost of entering with your size, OFI, VPIN and position sizing.'
+    ),
   },
   {
     target: 'sources',
-    name: 'Źródła',
+    name: tr('Źródła', 'Sources'),
     icon: <Database className="w-4 h-4" />,
-    text: 'Skąd jest każda liczba: źródło, metoda, odświeżanie i licencje. Tu włączysz też dane z Binance i Bybit.',
+    text: tr(
+      'Skąd jest każda liczba: źródło, metoda, odświeżanie i licencje. Tu włączysz też dane z Binance i Bybit.',
+      'Where every number comes from: source, method, refresh rate and licences. This is also where you turn on Binance and Bybit data.'
+    ),
   },
   {
     target: { href: './blog/' },
-    name: 'Blog',
+    name: tr('Blog', 'Blog (PL)'),
     icon: <Newspaper className="w-4 h-4" />,
-    text: 'Analizy BTC pisane przed faktem: mapa dnia, mapa przed Nowym Jorkiem, aktualizacje i podsumowanie dnia.',
+    text: tr(
+      'Analizy BTC pisane przed faktem: mapa dnia, mapa przed Nowym Jorkiem, aktualizacje i podsumowanie dnia.',
+      'BTC analysis written before the fact, in Polish: day map, pre-New York map, updates and the daily summary.'
+    ),
   },
 ];
 
@@ -79,12 +104,13 @@ export const WelcomePanel: React.FC = () => {
   return (
     <section className="flex-1 bg-surface-1 border border-line-strong rounded-xl p-4 sm:p-6 flex flex-col gap-6 min-w-0">
       <div className="flex flex-col gap-3 max-w-3xl">
-        <div className="text-[11px] uppercase tracking-[0.08em] text-ink-3">BTC · Hyperliquid · dane na żywo</div>
-        <h1 className="font-display text-[28px] leading-tight font-bold tracking-tight">Witaj w HyperQuant</h1>
+        <div className="text-[11px] uppercase tracking-[0.08em] text-ink-3">{tr('BTC · Hyperliquid · dane na żywo', 'BTC · Hyperliquid · live data')}</div>
+        <h1 className="font-display text-[28px] leading-tight font-bold tracking-tight">{tr('Witaj w HyperQuant', 'Welcome to HyperQuant')}</h1>
         <p className="text-sm sm:text-base text-ink-2 leading-relaxed">
-          Otwarty desk do day tradingu BTC zbudowany na publicznych danych Hyperliquid. Pokazuje przepływ zleceń, płynność arkusza, poziomy dnia
-          i kontekst rynku, a każda liczba z modelu jest oznaczona. Desk nie daje sygnałów kupna ani sprzedaży. Pomaga ocenić plan, który
-          przygotowujesz sam.
+          {tr(
+            'Otwarty desk do day tradingu BTC zbudowany na publicznych danych Hyperliquid. Pokazuje przepływ zleceń, płynność arkusza, poziomy dnia i kontekst rynku, a każda liczba z modelu jest oznaczona. Desk nie daje sygnałów kupna ani sprzedaży. Pomaga ocenić plan, który przygotowujesz sam.',
+            'An open BTC day-trading desk built on public Hyperliquid data. It shows order flow, book liquidity, daily levels and market context, and every model number is labelled. The Desk gives no buy or sell signals. It helps you assess the plan you prepare yourself.'
+          )}
         </p>
         <div className="flex flex-wrap gap-2 pt-1">
           <a
@@ -92,7 +118,7 @@ export const WelcomePanel: React.FC = () => {
             onClick={(e) => go(e, 'charts')}
             className="inline-flex items-center gap-1.5 h-11 sm:h-9 px-3.5 rounded-md bg-accent/15 border border-accent/40 text-accent text-sm font-medium hover:bg-accent/25 transition-colors"
           >
-            Otwórz wykresy
+            {tr('Otwórz wykresy', 'Open charts')}
             <ArrowRight className="w-4 h-4" aria-hidden="true" />
           </a>
           <a
@@ -100,7 +126,7 @@ export const WelcomePanel: React.FC = () => {
             onClick={(e) => go(e, 'plan')}
             className="inline-flex items-center gap-1.5 h-11 sm:h-9 px-3.5 rounded-md bg-surface-3 border border-line-strong text-ink-1 text-sm font-medium hover:bg-surface-2 transition-colors"
           >
-            Oceń swój plan
+            {tr('Oceń swój plan', 'Check your plan')}
           </a>
         </div>
       </div>
@@ -108,9 +134,9 @@ export const WelcomePanel: React.FC = () => {
       <nav aria-labelledby="site-map-title" className="flex flex-col gap-3">
         <div className="flex items-baseline justify-between gap-3 border-t border-line pt-4">
           <h2 id="site-map-title" className="font-display text-base font-semibold">
-            Mapa strony
+            {tr('Mapa strony', 'Site map')}
           </h2>
-          <span className="text-xs text-ink-3">Co znajdziesz w każdej zakładce</span>
+          <span className="text-xs text-ink-3">{tr('Co znajdziesz w każdej zakładce', 'What you will find in each tab')}</span>
         </div>
         <ul className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-4 gap-2.5">
           {MAP.map((m) => (
@@ -135,7 +161,7 @@ const MapCard: React.FC<{ item: MapItem; onGo: (e: React.MouseEvent, v: ViewId) 
         <span className="flex items-center justify-between gap-2">
           <span className="text-sm font-semibold text-ink-1">
             {item.name}
-            {here && <span className="ml-2 text-[11px] font-medium text-accent">jesteś tutaj</span>}
+            {here && <span className="ml-2 text-[11px] font-medium text-accent">{tr('jesteś tutaj', 'you are here')}</span>}
           </span>
           {here ? (
             <ArrowDown className="w-4 h-4 text-ink-3 group-hover:text-ink-1 transition-colors" aria-hidden="true" />

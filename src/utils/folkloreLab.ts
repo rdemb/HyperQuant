@@ -1,3 +1,4 @@
+import { tr } from '../i18n.ts';
 /**
  * Laboratorium folkloru: prerejestrowany katalog reguł day tradingu BTC, ocena historyczna (eksploracyjna, FDR
  * Benjaminiego–Hochberga) i ocena do przodu (potwierdzająca: e-wartości z procesu zakładów, e-BH, sekwencja ufności) —
@@ -157,18 +158,82 @@ export const LAB_CATALOG: {
 
 /** Teksty prezentacyjne (poza hashowanym katalogiem). */
 export const LAB_TEXT: Record<string, { name: string; claim: string; source?: string }> = {
-  'round-res': { name: 'Okrągły poziom = opór', claim: 'Pełne tysiące dolarów zatrzymują wzrosty.', source: 'Osler (2000), Federal Reserve Bank of New York Economic Policy Review' },
-  'round-sup': { name: 'Okrągły poziom = wsparcie', claim: 'Pełne tysiące dolarów zatrzymują spadki.', source: 'Osler (2000)' },
-  'pdh-sweep': { name: 'Zebranie PDH → powrót', claim: 'Po zebraniu płynności nad wczorajszym maksimum cena wraca do środka zakresu.' },
-  'pdl-sweep': { name: 'Zebranie PDL → powrót', claim: 'Po zebraniu płynności pod wczorajszym minimum cena wraca do środka zakresu.' },
-  'ib-break': { name: 'Wybicie IB jedzie dalej', claim: 'Wyjście poza Initial Balance rozszerza zakres w stronę wybicia.' },
-  'vwap-revert': { name: 'Z 2σ od VWAP cena wraca', claim: 'Po odejściu o 2σ od VWAP sesji cena wraca do VWAP.' },
-  'cme-gap': { name: 'Luka CME przyciąga cenę', claim: 'Weekendowe luki na kontraktach CME się zamykają.' },
-  'funding-flush': { name: 'Skrajne finansowanie → flush', claim: 'Przepełniona strona (skrajne finansowanie) zostaje wyczyszczona.' },
-  'ny-10am': { name: 'Dump o 10:00 w Nowym Jorku', claim: 'BTC spada w pierwszej godzinie po otwarciu rynku akcji w USA.' },
-  'intraday-mom': { name: 'Momentum śróddzienne', claim: 'Kierunek pierwszej godziny dnia powtarza się w ostatniej.', source: 'Gao, Han, Li, Zhou (2018), Market intraday momentum, Journal of Financial Economics' },
-  'ctrl-weekend': { name: 'Kontrola +: weekend spokojniejszy', claim: 'Kontrola pozytywna — znany efekt, który metoda musi wykryć.' },
-  'ctrl-placebo': { name: 'Kontrola −: placebo', claim: 'Kontrola negatywna — poziomy bez znaczenia; efekt nie powinien wyjść.' },
+  'round-res': {
+    name: tr('Okrągły poziom = opór', 'Round level = resistance'),
+    claim: tr('Pełne tysiące dolarów zatrzymują wzrosty.', 'Whole thousands of dollars stop rallies.'),
+    source: 'Osler (2000), Federal Reserve Bank of New York Economic Policy Review',
+  },
+  'round-sup': {
+    name: tr('Okrągły poziom = wsparcie', 'Round level = support'),
+    claim: tr('Pełne tysiące dolarów zatrzymują spadki.', 'Whole thousands of dollars stop declines.'),
+    source: 'Osler (2000)',
+  },
+  'pdh-sweep': {
+    name: tr('Zebranie PDH → powrót', 'PDH sweep → reversion'),
+    claim: tr('Po zebraniu płynności nad wczorajszym maksimum cena wraca do środka zakresu.', "After sweeping liquidity above yesterday's high, price returns to mid-range."),
+  },
+  'pdl-sweep': {
+    name: tr('Zebranie PDL → powrót', 'PDL sweep → reversion'),
+    claim: tr('Po zebraniu płynności pod wczorajszym minimum cena wraca do środka zakresu.', "After sweeping liquidity below yesterday's low, price returns to mid-range."),
+  },
+  'ib-break': {
+    name: tr('Wybicie IB jedzie dalej', 'IB breakout follows through'),
+    claim: tr('Wyjście poza Initial Balance rozszerza zakres w stronę wybicia.', 'A break of the Initial Balance extends the range in the breakout direction.'),
+  },
+  'vwap-revert': {
+    name: tr('Z 2σ od VWAP cena wraca', 'Price reverts from 2σ off VWAP'),
+    claim: tr('Po odejściu o 2σ od VWAP sesji cena wraca do VWAP.', 'After moving 2σ away from the session VWAP, price returns to VWAP.'),
+  },
+  'cme-gap': { name: tr('Luka CME przyciąga cenę', 'CME gap attracts price'), claim: tr('Weekendowe luki na kontraktach CME się zamykają.', 'Weekend gaps on CME futures get filled.') },
+  'funding-flush': {
+    name: tr('Skrajne finansowanie → flush', 'Extreme funding → flush'),
+    claim: tr('Przepełniona strona (skrajne finansowanie) zostaje wyczyszczona.', 'The crowded side (extreme funding) gets flushed.'),
+  },
+  'ny-10am': {
+    name: tr('Dump o 10:00 w Nowym Jorku', 'The 10:00 New York dump'),
+    claim: tr('BTC spada w pierwszej godzinie po otwarciu rynku akcji w USA.', 'BTC falls in the first hour after the US stock market opens.'),
+  },
+  'intraday-mom': {
+    name: tr('Momentum śróddzienne', 'Intraday momentum'),
+    claim: tr('Kierunek pierwszej godziny dnia powtarza się w ostatniej.', 'The direction of the first hour of the day repeats in the last hour.'),
+    source: 'Gao, Han, Li, Zhou (2018), Market intraday momentum, Journal of Financial Economics',
+  },
+  'ctrl-weekend': {
+    name: tr('Kontrola +: weekend spokojniejszy', 'Control +: quieter weekend'),
+    claim: tr('Kontrola pozytywna — znany efekt, który metoda musi wykryć.', 'Positive control: a known effect the method must detect.'),
+  },
+  'ctrl-placebo': {
+    name: tr('Kontrola −: placebo', 'Control −: placebo'),
+    claim: tr('Kontrola negatywna — poziomy bez znaczenia; efekt nie powinien wyjść.', 'Negative control: meaningless levels; no effect should show up.'),
+  },
+};
+
+/**
+ * Angielskie opisy reguł do wyświetlania. Polskie brzmienie jest częścią hashowanego katalogu
+ * (prerejestracja), więc tłumaczenie żyje tutaj, a katalog zostaje bez zmian.
+ */
+export const LAB_RULE_EN: Record<string, string> = {
+  'round-res':
+    'Break up through a 1000·k level in a 1h candle (previous close below the level, candle high ≥ level); start at the close of that candle. Success: a drop to L − 1%·L before a rise to L + 1%·L; limit 72 h.',
+  'round-sup':
+    'Break down through a 1000·k level in a 1h candle (previous close above, low ≤ level); start at the close. Success: a rise to L + 1%·L before a drop to L − 1%·L; limit 72 h.',
+  'pdh-sweep':
+    "First touch in the UTC day of the previous day's high (PDH) among candles after the previous event of this rule resolved. Success: the previous day's mid-range before PDH + (PDH − mid); limit 36 h.",
+  'pdl-sweep':
+    "First touch in the UTC day of the previous day's low (PDL) among candles after the previous event of this rule resolved. Success: the previous day's mid-range before PDL − (mid − PDL); limit 36 h.",
+  'ib-break':
+    'IB = the 00:00–01:00 UTC candle. First exit from the IB that day (a candle leaving on both sides skips the day). Success: IB edge ± IB range in the breakout direction before the opposite IB edge; limit 24 h.',
+  'vwap-revert':
+    'UTC session VWAP from the volume-weighted typical price of 1h candles, weighted σ. A close outside VWAP ± 2σ from the 4th hour on. Success: a VWAP touch before VWAP ± 4σ (frozen at start); limit 24 h.',
+  'cme-gap':
+    'Nominal CME hours without a holiday calendar: gap level = close of the HL candle ending Friday 16:00 (Chicago), start = close of the HL candle ending Sunday 17:00; gap ≥ 0.3%. Success: a touch of the gap level before its mirror on the other side (p0 = 0.5); limit: the Friday CME close.',
+  'funding-flush':
+    'Funding rate above the 95th percentile of 30 days and positive (or below the 5th and negative); start at the close of the candle ending at the rate time. Success: a 1% move against the crowd before a 1% move with the crowd (p0 = 0.5); limit 48 h.',
+  'ny-10am':
+    'Monday to Friday (no US holiday calendar). Success: the return of the hour starting 10:00 New York time is in the lower half (rank ≤ 12) of the 24 hourly returns of the UTC day (p0 = 0.5 from sign symmetry).',
+  'intraday-mom': 'UTC day. Success: sign of the 23:00–24:00 return = sign of the 00:00–01:00 return (p0 = 0.5 from sign symmetry; days with a zero return skipped).',
+  'ctrl-weekend': 'Mon–Sun UTC week, 1d candles. Success: Saturday + Sunday log-range < Wednesday + Thursday (p0 = 0.5 from exchangeability of days).',
+  'ctrl-placebo': 'Like resistance and support together, but with levels 1000·k + 437 (arbitrary, not round).',
 };
 
 export interface LabData {

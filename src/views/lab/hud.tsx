@@ -1,5 +1,6 @@
 import React from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
+import { tr } from '../../i18n';
 
 // Wspólne elementy HUD scen 3D — tokeny ink/surface, bez backdrop-filter nad WebGL (koszt na GPU).
 
@@ -80,7 +81,7 @@ export const SceneDock: React.FC<{ collapsed: boolean; onToggle: () => void; chi
       }`}
     >
       {collapsed ? <ChevronUp className="w-3.5 h-3.5" aria-hidden="true" /> : <ChevronDown className="w-3.5 h-3.5" aria-hidden="true" />}
-      {collapsed ? 'Sterowanie sceny' : 'Ukryj sterowanie'}
+      {collapsed ? tr('Sterowanie sceny', 'Scene controls') : tr('Ukryj sterowanie', 'Hide controls')}
     </button>
     {!collapsed && (
       <div className="bg-surface-1/95 border border-line rounded-lg px-3 py-2 shadow-2xl flex flex-wrap items-center justify-center gap-2 max-w-full">

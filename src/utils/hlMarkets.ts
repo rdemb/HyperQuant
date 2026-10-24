@@ -1,3 +1,4 @@
+import { tr } from '../i18n';
 /**
  * Silnik widoku „Rynek”: czyste parsery odpowiedzi publicznego API Hyperliquid (`POST /info`)
  * i statystyki międzyrynkowe. Bez sieci i bez stanu — odpytywanie jest w `state/useCrossMarket.ts`.
@@ -96,8 +97,8 @@ export interface FundingZ {
 export const HIP3_MACRO: Hip3Spec[] = [
   { key: 'SP500', label: 'S&P 500', aliases: ['SP500', 'SPX', 'US500'] },
   { key: 'XYZ100', label: 'Nasdaq-100', aliases: ['XYZ100', 'NDX', 'NAS100', 'US100'] },
-  { key: 'GOLD', label: 'Złoto', aliases: ['GOLD', 'XAU'] },
-  { key: 'CL', label: 'Ropa WTI', aliases: ['CL', 'WTI', 'WTIOIL'] },
+  { key: 'GOLD', label: tr('Złoto', 'Gold'), aliases: ['GOLD', 'XAU'] },
+  { key: 'CL', label: tr('Ropa WTI', 'WTI crude'), aliases: ['CL', 'WTI', 'WTIOIL'] },
   { key: 'EUR', label: 'EUR', aliases: ['EUR', 'EURUSD'] },
   { key: 'JPY', label: 'JPY', aliases: ['JPY', 'USDJPY'] },
 ];

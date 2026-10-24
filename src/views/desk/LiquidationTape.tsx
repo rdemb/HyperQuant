@@ -4,11 +4,12 @@ import { useLiqTape } from '../../state/useLiqTape';
 import { Badge, Stat, DASH, fmtCompact, fmtPrice, fmtSigned } from '../../ui';
 import { LiqTape, calibErrorBp } from '../../utils/liqTape';
 import { useElementWidth } from '../market/MarketMap';
+import { locale, tr } from '../../i18n';
 
 const MIN = 60_000;
 const DAY = 24 * 60 * MIN;
 const BUCKET = 5 * MIN;
-const timeFmt = new Intl.DateTimeFormat('pl-PL', { hour: '2-digit', minute: '2-digit' });
+const timeFmt = new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit' });
 const bp = (v: number | null, signed = false) => (v === null ? DASH : signed ? fmtSigned(v, 0, ' bp') : `${Math.round(v)} bp`);
 
 /** Zrealizowane likwidacje śledzonych pozycji (potwierdzone fillami) — uzupełnienie mapy: co faktycznie zostało zlikwidowane. */
@@ -20,24 +21,32 @@ export const LiquidationTape: React.FC<{ coverage: number | null }> = ({ coverag
     <section className="flex flex-col gap-3 border-t border-line pt-4" aria-labelledby="liq-tape-title">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h3 id="liq-tape-title" className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium">
-          Zrealizowane likwidacje · 24 h
+          {tr('Zrealizowane likwidacje · 24 h', 'Realised liquidations · 24 h')}
         </h3>
         {status === 'ready' ? (
-          <Badge tone="live" title="Likwidacje śledzonych pozycji potwierdzone fillami konta z polem liquidation (publiczne API Hyperliquid)">
+          <Badge
+            tone="live"
+            title={tr(
+              'Likwidacje śledzonych pozycji potwierdzone fillami konta z polem liquidation (publiczne API Hyperliquid)',
+              'Liquidations of tracked positions confirmed by account fills with the liquidation field (public Hyperliquid API)'
+            )}
+          >
             LIVE
           </Badge>
         ) : status === 'stale' || status === 'expired' ? (
-          <Badge tone="stale" title="Skaner nie publikuje aktualnej taśmy — liczby ukryte">
+          <Badge tone="stale" title={tr('Skaner nie publikuje aktualnej taśmy — liczby ukryte', 'The scanner is not publishing a current tape, numbers hidden')}>
             STALE
           </Badge>
         ) : null}
       </div>
       {status === 'loading' ? (
-        <div className="text-xs text-ink-3">Pobieram taśmę likwidacji…</div>
+        <div className="text-xs text-ink-3">{tr('Pobieram taśmę likwidacji…', 'Loading the liquidation tape…')}</div>
       ) : status === 'error' || !tape ? (
-        <div className="text-xs text-ink-3">Taśma likwidacji chwilowo niedostępna.</div>
+        <div className="text-xs text-ink-3">{tr('Taśma likwidacji chwilowo niedostępna.', 'Liquidation tape temporarily unavailable.')}</div>
       ) : status !== 'ready' ? (
-        <div className="text-xs text-ink-3">Taśma nieaktualna — ostatnia publikacja {timeFmt.format(tape.asOf)}; liczby ukryte.</div>
+        <div className="text-xs text-ink-3">
+          {tr(`Taśma nieaktualna — ostatnia publikacja ${timeFmt.format(tape.asOf)}; liczby ukryte.`, `Tape out of date, last published ${timeFmt.format(tape.asOf)}; numbers hidden.`)}
+        </div>
       ) : (
         <TapeBody tape={tape} coverage={coverage} />
       )}
@@ -54,41 +63,62 @@ const TapeBody: React.FC<{ tape: LiqTape; coverage: number | null }> = ({ tape, 
     <>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-5 gap-y-3">
         <Stat
-          label="▼ Longi"
+          label={tr('▼ Longi', '▼ Longs')}
           value={<span className="font-mono tabular-nums">{fmtCompact(h24.longUsd, '$')}</span>}
-          hint={`ostatnia godzina ${fmtCompact(h1.longUsd, '$')}`}
+          hint={`${tr('ostatnia godzina', 'last hour')} ${fmtCompact(h1.longUsd, '$')}`}
         />
         <Stat
-          label="▲ Shorty"
+          label={tr('▲ Shorty', '▲ Shorts')}
           value={<span className="font-mono tabular-nums">{fmtCompact(h24.shortUsd, '$')}</span>}
-          hint={`ostatnia godzina ${fmtCompact(h1.shortUsd, '$')}`}
+          hint={`${tr('ostatnia godzina', 'last hour')} ${fmtCompact(h1.shortUsd, '$')}`}
         />
         <Stat
-          label="Błąd ceny likw. z mapy"
+          label={tr('Błąd ceny likw. z mapy', 'Map liq. price error')}
           value={<span className="font-mono tabular-nums">{bp(c.medAbsErrBp)}</span>}
           hint={
             c.n > 0
-              ? `mediana |błędu| z ${c.n} likw. · ze znakiem ${bp(c.medSignedErrBp, true)} · p90 ${bp(c.p90AbsErrBp)} · odczyt sprzed ${
-                  c.medAgeMin === null ? DASH : `${c.medAgeMin.toFixed(1)} min`
-                }`
-              : 'brak likwidacji do porównania z mapą'
+              ? tr(
+                  `mediana |błędu| z ${c.n} likw. · ze znakiem ${bp(c.medSignedErrBp, true)} · p90 ${bp(c.p90AbsErrBp)} · odczyt sprzed ${
+                    c.medAgeMin === null ? DASH : `${c.medAgeMin.toFixed(1)} min`
+                  }`,
+                  `median |error| over ${c.n} liq. · signed ${bp(c.medSignedErrBp, true)} · p90 ${bp(c.p90AbsErrBp)} · read age ${
+                    c.medAgeMin === null ? DASH : `${c.medAgeMin.toFixed(1)} min`
+                  }`
+                )
+              : tr('brak likwidacji do porównania z mapą', 'no liquidations to compare with the map')
           }
         />
         <Stat
-          label="Obserwacja"
-          value={<span className="font-mono tabular-nums">{partial ? `od ${timeFmt.format(tape.since)}` : '24 h'}</span>}
-          hint={`kandydaci ${ch.candidates} · potwierdzone ${ch.confirmed} · zamknięcia ${ch.rejected} · niesprawdzone ${ch.failed}`}
+          label={tr('Obserwacja', 'Observation')}
+          value={<span className="font-mono tabular-nums">{partial ? `${tr('od', 'since')} ${timeFmt.format(tape.since)}` : '24 h'}</span>}
+          hint={tr(
+            `kandydaci ${ch.candidates} · potwierdzone ${ch.confirmed} · zamknięcia ${ch.rejected} · niesprawdzone ${ch.failed}`,
+            `candidates ${ch.candidates} · confirmed ${ch.confirmed} · closes ${ch.rejected} · unchecked ${ch.failed}`
+          )}
         />
       </div>
       <TapeTimeline tape={tape} />
       <EventTable tape={tape} />
       <p className="text-[11px] text-ink-3 leading-relaxed">
-        Hyperliquid nie publikuje strumienia likwidacji wszystkich kont. Skaner zauważa, że śledzona pozycja zmalała, gdy cena dotknęła jej ceny
-        likwidacji, i potwierdza to w fillach konta (pole <code>liquidation</code>) — bez potwierdzenia zdarzenia nie ma na taśmie. Obejmuje więc
-        tylko zmierzoną część open interest{coverage !== null ? ` (${(coverage * 100).toFixed(1)}%)` : ''}. Błąd ceny likwidacji: o ile cena mark
-        przy likwidacji różniła się od ceny likwidacji z ostatniego odczytu (dodatni = głębiej niż mapa; ujemny = wcześniej, np. strata konta
-        cross na innym rynku). Wykrywane są likwidacje do 0.5% przed poziomem z mapy; pozycje blisko ceny likwidacji skaner odczytuje co minutę,
-        więc miara opisuje świeże odczyty, nie całą mapę. Bez adresów; czas do minuty, rozmiar zaokrąglony; opóźnienie do kilku minut.
+        {tr(
+          <>
+            Hyperliquid nie publikuje strumienia likwidacji wszystkich kont. Skaner zauważa, że śledzona pozycja zmalała, gdy cena dotknęła jej ceny
+            likwidacji, i potwierdza to w fillach konta (pole <code>liquidation</code>) — bez potwierdzenia zdarzenia nie ma na taśmie. Obejmuje więc
+            tylko zmierzoną część open interest{coverage !== null ? ` (${(coverage * 100).toFixed(1)}%)` : ''}. Błąd ceny likwidacji: o ile cena mark
+            przy likwidacji różniła się od ceny likwidacji z ostatniego odczytu (dodatni = głębiej niż mapa; ujemny = wcześniej, np. strata konta
+            cross na innym rynku). Wykrywane są likwidacje do 0.5% przed poziomem z mapy; pozycje blisko ceny likwidacji skaner odczytuje co minutę,
+            więc miara opisuje świeże odczyty, nie całą mapę. Bez adresów; czas do minuty, rozmiar zaokrąglony; opóźnienie do kilku minut.
+          </>,
+          <>
+            Hyperliquid does not publish a liquidation stream for all accounts. The scanner notices that a tracked position shrank when price touched its
+            liquidation price and confirms it in the account fills (the <code>liquidation</code> field); without confirmation the event is not on the
+            tape. It therefore covers only the measured part of open interest{coverage !== null ? ` (${(coverage * 100).toFixed(1)}%)` : ''}. Liquidation
+            price error: how far the mark price at liquidation was from the liquidation price of the last read (positive = deeper than the map; negative
+            = earlier, e.g. a cross account losing on another market). Liquidations up to 0.5% before the map level are detected; the scanner reads
+            positions close to their liquidation price every minute, so the measure describes fresh reads, not the whole map. No addresses; time to the
+            minute, size rounded; delay up to a few minutes.
+          </>
+        )}
       </p>
     </>
   );
@@ -119,13 +149,13 @@ const TapeTimeline: React.FC<{ tape: LiqTape }> = ({ tape }) => {
   return (
     <div ref={ref} className="relative w-full" style={{ height: H }}>
       {width > 0 && (
-        <svg width={width} height={H} role="img" aria-label="Likwidacje śledzonych pozycji w ostatnich 24 godzinach, kubełki 5 minut">
+        <svg width={width} height={H} role="img" aria-label={tr('Likwidacje śledzonych pozycji w ostatnich 24 godzinach, kubełki 5 minut', 'Liquidations of tracked positions in the last 24 hours, 5-minute buckets')}>
           {tape.since > from && (
             <g>
               <rect x={pad.l} y={pad.t} width={Math.max(0, x(tape.since) - pad.l)} height={H - pad.b - pad.t} fill="var(--color-surface-2)" opacity={0.6} />
               {x(tape.since) - pad.l > 90 && (
                 <text x={(pad.l + x(tape.since)) / 2} y={mid + 14} dy="0.32em" textAnchor="middle" className="fill-ink-3" fontSize={10}>
-                  brak obserwacji
+                  {tr('brak obserwacji', 'not observed')}
                 </text>
               )}
             </g>
@@ -164,7 +194,7 @@ const TapeTimeline: React.FC<{ tape: LiqTape }> = ({ tape }) => {
           })}
           {tape.buckets.length === 0 && (
             <text x={(pad.l + width - pad.r) / 2} y={pad.t + 10} textAnchor="middle" className="fill-ink-2" fontSize={11}>
-              brak likwidacji śledzonych pozycji od {timeFmt.format(tape.since)}
+              {tr('brak likwidacji śledzonych pozycji od', 'no liquidations of tracked positions since')} {timeFmt.format(tape.since)}
             </text>
           )}
           {hourTicks.map((t) => (
@@ -182,9 +212,15 @@ const TapeTimeline: React.FC<{ tape: LiqTape }> = ({ tape }) => {
           <div className="font-mono tabular-nums text-ink-1">
             {timeFmt.format(hb.t)}–{timeFmt.format(hb.t + BUCKET)}
           </div>
-          <div>▲ shorty: {hb.shortUsd > 0 ? fmtCompact(hb.shortUsd, '$') : DASH}</div>
-          <div>▼ longi: {hb.longUsd > 0 ? fmtCompact(hb.longUsd, '$') : DASH}</div>
-          <div className="text-ink-3">{hb.n} likw.</div>
+          <div>
+            ▲ {tr('shorty', 'shorts')}: {hb.shortUsd > 0 ? fmtCompact(hb.shortUsd, '$') : DASH}
+          </div>
+          <div>
+            ▼ {tr('longi', 'longs')}: {hb.longUsd > 0 ? fmtCompact(hb.longUsd, '$') : DASH}
+          </div>
+          <div className="text-ink-3">
+            {hb.n} {tr('likw.', 'liq.')}
+          </div>
         </div>
       )}
     </div>
@@ -198,17 +234,23 @@ const EventTable: React.FC<{ tape: LiqTape }> = ({ tape }) => {
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-left font-mono tabular-nums text-[11px]">
-        <caption className="sr-only">Ostatnie likwidacje śledzonych pozycji</caption>
+        <caption className="sr-only">{tr('Ostatnie likwidacje śledzonych pozycji', 'Latest liquidations of tracked positions')}</caption>
         <thead className="text-ink-3">
           <tr>
-            <th className="py-1 pr-3 font-medium">Czas</th>
-            <th className="py-1 pr-3 font-medium">Strona</th>
-            <th className="py-1 pr-3 font-medium">Rozmiar</th>
-            <th className="py-1 pr-3 font-medium">Wartość</th>
-            <th className="py-1 pr-3 font-medium">Cena</th>
-            <th className="py-1 pr-3 font-medium">Tryb</th>
-            <th className="py-1 font-medium" title="Cena mark przy likwidacji względem ceny likwidacji z ostatniego odczytu (wiek odczytu)">
-              Błąd mapy
+            <th className="py-1 pr-3 font-medium">{tr('Czas', 'Time')}</th>
+            <th className="py-1 pr-3 font-medium">{tr('Strona', 'Side')}</th>
+            <th className="py-1 pr-3 font-medium">{tr('Rozmiar', 'Size')}</th>
+            <th className="py-1 pr-3 font-medium">{tr('Wartość', 'Value')}</th>
+            <th className="py-1 pr-3 font-medium">{tr('Cena', 'Price')}</th>
+            <th className="py-1 pr-3 font-medium">{tr('Tryb', 'Mode')}</th>
+            <th
+              className="py-1 font-medium"
+              title={tr(
+                'Cena mark przy likwidacji względem ceny likwidacji z ostatniego odczytu (wiek odczytu)',
+                'Mark price at liquidation versus the liquidation price of the last read (read age)'
+              )}
+            >
+              {tr('Błąd mapy', 'Map error')}
             </th>
           </tr>
         </thead>
@@ -220,7 +262,7 @@ const EventTable: React.FC<{ tape: LiqTape }> = ({ tape }) => {
               <td className="py-1 pr-3">{e.sz} BTC</td>
               <td className="py-1 pr-3">{fmtCompact(e.usd, '$')}</td>
               <td className="py-1 pr-3">{fmtPrice(e.px, 0)}</td>
-              <td className="py-1 pr-3 font-sans">{e.method === 'backstop' ? 'backstop' : 'arkusz'}</td>
+              <td className="py-1 pr-3 font-sans">{e.method === 'backstop' ? 'backstop' : tr('arkusz', 'book')}</td>
               <td className="py-1">
                 {bp(calibErrorBp(e), true)}
                 {e.mapAgeMin !== null && <span className="text-ink-3"> · {Math.round(e.mapAgeMin)} min</span>}

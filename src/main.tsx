@@ -1,6 +1,7 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
+import { lang, tr } from './i18n';
 import { UpdateBanner } from './shell/UpdateBanner';
 import { registerServiceWorker } from './shell/usePwa';
 import './index.css';
@@ -52,15 +53,17 @@ class RootErrorBoundary extends React.Component<{ children: React.ReactNode }, {
     return (
       <div className="min-h-dvh bg-page text-ink-1 flex items-center justify-center p-4">
         <div role="alert" className="max-w-md w-full bg-surface-1 border border-line-strong rounded-xl p-5 space-y-3">
-          <h1 className="font-display text-lg font-semibold text-ink-1">Coś poszło nie tak</h1>
+          <h1 className="font-display text-lg font-semibold text-ink-1">{tr('Coś poszło nie tak', 'Something went wrong')}</h1>
           <p className="text-sm text-ink-2 leading-relaxed">
-            Interfejs napotkał nieoczekiwany błąd i został zatrzymany. Odśwież stronę. Jeśli błąd wraca, a masz włączony tłumacz strony lub
-            rozszerzenia modyfikujące stronę, spróbuj bez nich.
+            {tr(
+              'Interfejs napotkał nieoczekiwany błąd i został zatrzymany. Odśwież stronę. Jeśli błąd wraca, a masz włączony tłumacz strony lub rozszerzenia modyfikujące stronę, spróbuj bez nich.',
+              'The interface hit an unexpected error and was stopped. Reload the page. If the error comes back and you use a page translator or extensions that modify the page, try without them.'
+            )}
           </p>
           <details className="text-xs text-ink-3">
-            <summary className="cursor-pointer text-ink-2">Szczegóły błędu</summary>
+            <summary className="cursor-pointer text-ink-2">{tr('Szczegóły błędu', 'Error details')}</summary>
             <pre className="mt-2 p-2 bg-page border border-line rounded-lg font-mono whitespace-pre-wrap break-words text-ink-2">
-              {error.name}: {error.message || 'brak opisu'}
+              {error.name}: {error.message || tr('brak opisu', 'no description')}
             </pre>
           </details>
           <button
@@ -68,13 +71,15 @@ class RootErrorBoundary extends React.Component<{ children: React.ReactNode }, {
             onClick={() => window.location.reload()}
             className="min-h-11 px-4 rounded-lg text-sm font-semibold bg-accent text-page hover:brightness-110 transition-[filter] duration-150"
           >
-            Odśwież stronę
+            {tr('Odśwież stronę', 'Reload page')}
           </button>
         </div>
       </div>
     );
   }
 }
+
+document.documentElement.lang = lang;
 
 createRoot(document.getElementById('root')!).render(
   <RootErrorBoundary>

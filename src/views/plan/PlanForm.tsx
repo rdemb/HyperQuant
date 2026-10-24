@@ -3,6 +3,7 @@ import { X } from 'lucide-react';
 import { Segmented, fmtPrice, fmtSigned } from '../../ui';
 import { PlanDirection } from '../../utils/planAnalyzer';
 import { HORIZONS, parseNum } from './hooks';
+import { tr } from '../../i18n';
 
 export interface PlanFormState {
   direction: PlanDirection;
@@ -65,14 +66,20 @@ export const PlanForm: React.FC<PlanFormProps> = ({ form, onChange, equity, onEq
         <div className="flex items-start gap-2 rounded-md border border-line-strong bg-surface-2 px-3 py-2 text-xs">
           <div className="min-w-0 flex-1">
             <div className="text-ink-1">
-              Szkic {form.draft.source ? <>z <strong className="font-semibold">{form.draft.source}</strong></> : 'ręczny'}
+              {form.draft.source ? (
+                <>
+                  {tr('Szkic z', 'Draft from')} <strong className="font-semibold">{form.draft.source}</strong>
+                </>
+              ) : (
+                tr('Szkic ręczny', 'Manual draft')
+              )}
             </div>
             {form.draft.note && <div className="text-ink-3 mt-0.5 leading-snug break-words">{form.draft.note}</div>}
-            <div className="text-ink-3 mt-0.5">Kierunek pochodzi z panelu — oceń go, zanim go przyjmiesz.</div>
+            <div className="text-ink-3 mt-0.5">{tr('Kierunek pochodzi z panelu — oceń go, zanim go przyjmiesz.', 'The direction comes from a panel; assess it before you accept it.')}</div>
           </div>
           <button
             type="button"
-            aria-label="Ukryj informację o szkicu"
+            aria-label={tr('Ukryj informację o szkicu', 'Hide draft info')}
             onClick={() => onChange({ draft: null })}
             className="shrink-0 w-7 h-7 inline-flex items-center justify-center rounded text-ink-3 hover:text-ink-1 hover:bg-surface-3"
           >
@@ -83,9 +90,9 @@ export const PlanForm: React.FC<PlanFormProps> = ({ form, onChange, equity, onEq
 
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <div className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium mb-1">Kierunek</div>
+          <div className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium mb-1">{tr('Kierunek', 'Direction')}</div>
           <Segmented<PlanDirection>
-            ariaLabel="Kierunek planu"
+            ariaLabel={tr('Kierunek planu', 'Plan direction')}
             size="md"
             value={form.direction}
             onChange={(d) => onChange({ direction: d })}
@@ -96,15 +103,15 @@ export const PlanForm: React.FC<PlanFormProps> = ({ form, onChange, equity, onEq
           />
         </div>
         <div>
-          <div className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium mb-1">Horyzont</div>
-          <Segmented<number> ariaLabel="Horyzont planu" value={form.horizonMin} onChange={(h) => onChange({ horizonMin: h })} options={HORIZONS} />
+          <div className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium mb-1">{tr('Horyzont', 'Horizon')}</div>
+          <Segmented<number> ariaLabel={tr('Horyzont planu', 'Plan horizon')} value={form.horizonMin} onChange={(h) => onChange({ horizonMin: h })} options={HORIZONS} />
         </div>
       </div>
 
       <Field
         id="plan-entry"
-        label="Wejście"
-        hint={Number.isFinite(marketPrice) ? `rynek ${fmtPrice(marketPrice, 1)}` : 'brak ceny rynkowej'}
+        label={tr('Wejście', 'Entry')}
+        hint={Number.isFinite(marketPrice) ? `${tr('rynek', 'market')} ${fmtPrice(marketPrice, 1)}` : tr('brak ceny rynkowej', 'no market price')}
       >
         <div className="flex gap-2">
           <input id="plan-entry" className={inputCls} inputMode="decimal" autoComplete="off" value={form.entry} onChange={(e) => onChange({ entry: e.target.value })} />
@@ -114,7 +121,7 @@ export const PlanForm: React.FC<PlanFormProps> = ({ form, onChange, equity, onEq
             onClick={() => onChange({ entry: marketPrice.toFixed(0) })}
             className="shrink-0 h-11 sm:h-9 px-3 rounded-md border border-line text-xs text-ink-2 hover:text-ink-1 hover:bg-surface-3 disabled:opacity-40 transition-colors"
           >
-            cena rynkowa
+            {tr('cena rynkowa', 'market price')}
           </button>
         </div>
       </Field>
@@ -123,42 +130,49 @@ export const PlanForm: React.FC<PlanFormProps> = ({ form, onChange, equity, onEq
         <Field id="plan-stop" label={<><span className="text-sell-ink" aria-hidden="true">−</span> Stop</>} hint={distHint(form.stop)}>
           <input id="plan-stop" className={inputCls} inputMode="decimal" autoComplete="off" value={form.stop} onChange={(e) => onChange({ stop: e.target.value, proposal: false })} />
         </Field>
-        <Field id="plan-target" label={<><span className="text-buy-ink" aria-hidden="true">+</span> Cel</>} hint={distHint(form.target)}>
+        <Field id="plan-target" label={<><span className="text-buy-ink" aria-hidden="true">+</span> {tr('Cel', 'Target')}</>} hint={distHint(form.target)}>
           <input id="plan-target" className={inputCls} inputMode="decimal" autoComplete="off" value={form.target} onChange={(e) => onChange({ target: e.target.value, proposal: false })} />
         </Field>
       </div>
       {form.proposal && (
         <div className="-mt-2 text-[11px] text-ink-3">
-          Stop i cel to <span className="text-ink-2">propozycja startowa ±1.5σ / ±3σ horyzontu</span> — nie sygnał. Wpisz własne poziomy.
+          {tr(
+            <>
+              Stop i cel to <span className="text-ink-2">propozycja startowa ±1.5σ / ±3σ horyzontu</span> — nie sygnał. Wpisz własne poziomy.
+            </>,
+            <>
+              Stop and target are a <span className="text-ink-2">starting proposal of ±1.5σ / ±3σ of the horizon</span>, not a signal. Enter your own levels.
+            </>
+          )}
         </div>
       )}
 
       <div>
         <div className="flex items-center justify-between gap-2 mb-1">
-          <span className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium">Wielkość</span>
+          <span className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium">{tr('Wielkość', 'Size')}</span>
           <Segmented<'usd' | 'risk'>
-            ariaLabel="Sposób określenia wielkości"
+            ariaLabel={tr('Sposób określenia wielkości', 'Sizing method')}
             value={form.sizeMode}
             onChange={(m) => onChange({ sizeMode: m })}
             options={[
-              { value: 'usd', label: 'Kwota $' },
-              { value: 'risk', label: 'Ryzyko %' },
+              { value: 'usd', label: tr('Kwota $', 'Amount $') },
+              { value: 'risk', label: tr('Ryzyko %', 'Risk %') },
             ]}
           />
         </div>
         {form.sizeMode === 'usd' ? (
-          <Field id="plan-size" label="Nominał pozycji (USD)">
+          <Field id="plan-size" label={tr('Nominał pozycji (USD)', 'Position notional (USD)')}>
             <input id="plan-size" className={inputCls} inputMode="decimal" autoComplete="off" value={form.sizeUsd} onChange={(e) => onChange({ sizeUsd: e.target.value })} />
           </Field>
         ) : (
           <div className="grid grid-cols-2 gap-3">
-            <Field id="plan-equity" label="Kapitał (USD)" hint="zapamiętany w tej przeglądarce">
+            <Field id="plan-equity" label={tr('Kapitał (USD)', 'Equity (USD)')} hint={tr('zapamiętany w tej przeglądarce', 'remembered in this browser')}>
               <input id="plan-equity" className={inputCls} inputMode="decimal" autoComplete="off" value={equity} onChange={(e) => onEquity(e.target.value)} />
             </Field>
             <Field
               id="plan-risk"
-              label="Ryzyko na plan (%)"
-              hint={Number.isFinite(riskSizeUsd) ? `→ nominał ${fmtPrice(riskSizeUsd, 0)} $` : undefined}
+              label={tr('Ryzyko na plan (%)', 'Risk per plan (%)')}
+              hint={Number.isFinite(riskSizeUsd) ? `→ ${tr('nominał', 'notional')} ${fmtPrice(riskSizeUsd, 0)} $` : undefined}
             >
               <input id="plan-risk" className={inputCls} inputMode="decimal" autoComplete="off" value={form.riskPct} onChange={(e) => onChange({ riskPct: e.target.value })} />
             </Field>
@@ -168,14 +182,14 @@ export const PlanForm: React.FC<PlanFormProps> = ({ form, onChange, equity, onEq
 
       <Field
         id="plan-lev"
-        label="Dźwignia (isolated)"
+        label={tr('Dźwignia (isolated)', 'Leverage (isolated)')}
         hint={
           Number.isFinite(lev) && lev > 0 && Number.isFinite(notional)
-            ? `depozyt ≈ ${fmtPrice(notional / lev, 0)} $ · puste pole = bez oceny likwidacji`
-            : 'puste pole = bez oceny likwidacji'
+            ? `${tr('depozyt', 'margin')} ≈ ${fmtPrice(notional / lev, 0)} $ · ${tr('puste pole = bez oceny likwidacji', 'empty = no liquidation check')}`
+            : tr('puste pole = bez oceny likwidacji', 'empty = no liquidation check')
         }
       >
-        <input id="plan-lev" className={inputCls} inputMode="decimal" autoComplete="off" placeholder="np. 3" value={form.leverage} onChange={(e) => onChange({ leverage: e.target.value })} />
+        <input id="plan-lev" className={inputCls} inputMode="decimal" autoComplete="off" placeholder={tr('np. 3', 'e.g. 3')} value={form.leverage} onChange={(e) => onChange({ leverage: e.target.value })} />
       </Field>
     </div>
   );

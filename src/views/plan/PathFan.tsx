@@ -3,6 +3,7 @@ import { scaleLinear } from 'd3';
 import { McResult, PathOutcome } from '../../utils/planAnalyzer';
 import { fmtPrice } from '../../ui';
 import { fmtMinutes } from './hooks';
+import { tr } from '../../i18n';
 
 interface PathFanProps {
   mc: McResult;
@@ -84,8 +85,8 @@ export const PathFan: React.FC<PathFanProps> = ({ mc, entry, stop, target, heigh
 
   // Etykiety poziomów rozsuwane, gdy linie leżą bliżej niż 14 px
   const levels = [
-    { key: 'target', price: target, label: 'Cel', stroke: 'var(--color-buy)' },
-    { key: 'entry', price: entry, label: 'Wejście', stroke: 'var(--color-ink-2)' },
+    { key: 'target', price: target, label: tr('Cel', 'Target'), stroke: 'var(--color-buy)' },
+    { key: 'entry', price: entry, label: tr('Wejście', 'Entry'), stroke: 'var(--color-ink-2)' },
     { key: 'stop', price: stop, label: 'Stop', stroke: 'var(--color-sell)' },
   ]
     .map((l) => ({
@@ -106,7 +107,10 @@ export const PathFan: React.FC<PathFanProps> = ({ mc, entry, stop, target, heigh
     <div className="min-w-0">
       <div ref={ref} className="relative w-full" style={{ height }}>
         {W > 0 && (
-          <svg width={W} height={height} role="img" aria-label={`Wachlarz ${paths.length} przykładowych ścieżek Monte Carlo z pasmem P10–P90 w horyzoncie ${fmtMinutes(horizon)}`}>
+          <svg width={W} height={height} role="img" aria-label={tr(
+              `Wachlarz ${paths.length} przykładowych ścieżek Monte Carlo z pasmem P10–P90 w horyzoncie ${fmtMinutes(horizon)}`,
+              `Fan of ${paths.length} sample Monte Carlo paths with a P10–P90 band over a ${fmtMinutes(horizon)} horizon`
+            )}>
             {/* Siatka hairline i oś Y (cena) */}
             {geo.yTicks.map((v) => (
               <g key={v}>
@@ -173,22 +177,24 @@ export const PathFan: React.FC<PathFanProps> = ({ mc, entry, stop, target, heigh
           >
             <div className="text-ink-1">t = {fmtMinutes(times[hover])}</div>
             <div>P90 {fmtPrice(hb.p90, 0)}</div>
-            <div>Mediana {fmtPrice(hb.p50, 0)}</div>
+            <div>
+              {tr('Mediana', 'Median')} {fmtPrice(hb.p50, 0)}
+            </div>
             <div>P10 {fmtPrice(hb.p10, 0)}</div>
             <div className="mt-0.5 text-ink-3">
-              do t: + cel {(hitByTime[hover].target * 100).toFixed(0)}% · − stop {(hitByTime[hover].stop * 100).toFixed(0)}%
+              {tr('do t: + cel', 'by t: + target')} {(hitByTime[hover].target * 100).toFixed(0)}% · − stop {(hitByTime[hover].stop * 100).toFixed(0)}%
             </div>
           </div>
         )}
       </div>
       {/* Legenda (≥ 2 serie) */}
       <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-[11px] text-ink-3">
-        <LegendLine color="var(--color-buy)" label="+ ścieżka: cel najpierw" />
-        <LegendLine color="var(--color-sell)" label="− ścieżka: stop najpierw" />
-        <LegendLine color="var(--color-ink-3)" label="○ bez rozstrzygnięcia" />
+        <LegendLine color="var(--color-buy)" label={tr('+ ścieżka: cel najpierw', '+ path: target first')} />
+        <LegendLine color="var(--color-sell)" label={tr('− ścieżka: stop najpierw', '− path: stop first')} />
+        <LegendLine color="var(--color-ink-3)" label={tr('○ bez rozstrzygnięcia', '○ unresolved')} />
         <span className="inline-flex items-center gap-1.5">
           <span className="inline-block w-4 h-2.5 rounded-sm bg-accent/20 border-t-2 border-accent" aria-hidden="true" />
-          pasmo P10–P90 i mediana ({mc.paths} ścieżek)
+          {tr(`pasmo P10–P90 i mediana (${mc.paths} ścieżek)`, `P10–P90 band and median (${mc.paths} paths)`)}
         </span>
       </div>
     </div>

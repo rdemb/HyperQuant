@@ -14,6 +14,7 @@ import { FolkloreLabPanel } from './plan/FolkloreLabPanel';
 import { JournalTab } from './plan/JournalTab';
 import { usePlanLedger } from './plan/usePlanLedger';
 import { parseNum, planSigma, useDebounced, usePlanMarket, useStoredString } from './plan/hooks';
+import { tr } from '../i18n';
 
 type Tab = 'analyzer' | 'tomorrow' | 'journal';
 
@@ -171,9 +172,9 @@ const PlanView: React.FC = () => {
   const ledger = usePlanLedger();
 
   const saveBlocked = !analysis.ok
-    ? 'Popraw plan, aby go zapisać.'
+    ? tr('Popraw plan, aby go zapisać.', 'Fix the plan to save it.')
     : market.source.tone === 'sim'
-    ? 'Zapis wyłączony: świece zastępcze (SIM) — czekam na dane Hyperliquid.'
+    ? tr('Zapis wyłączony: świece zastępcze (SIM) — czekam na dane Hyperliquid.', 'Saving disabled: placeholder candles (SIM), waiting for Hyperliquid data.')
     : null;
 
   const onSave = () => {
@@ -210,22 +211,22 @@ const PlanView: React.FC = () => {
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <Segmented<Tab>
-          ariaLabel="Sekcja widoku planu"
+          ariaLabel={tr('Sekcja widoku planu', 'Plan view section')}
           size="md"
           value={tab}
           onChange={setTab}
           options={[
-            { value: 'analyzer', label: 'Analizator planu' },
-            { value: 'tomorrow', label: 'Plan na jutro' },
-            { value: 'journal', label: 'Dziennik zagrań' },
+            { value: 'analyzer', label: tr('Analizator planu', 'Plan Analyzer') },
+            { value: 'tomorrow', label: tr('Plan na jutro', 'Plan for tomorrow') },
+            { value: 'journal', label: tr('Dziennik zagrań', 'Trade journal') },
           ]}
         />
-        <span className="text-xs text-ink-3">Desk ocenia Twój plan — nie podsuwa wejść.</span>
+        <span className="text-xs text-ink-3">{tr('Desk ocenia Twój plan — nie podsuwa wejść.', 'The Desk scores your plan; it does not suggest entries.')}</span>
       </div>
 
       {tab === 'analyzer' ? (
         <>
-          <Panel hero title="Analizator planu" eyebrow="BTC-PERP · Hyperliquid">
+          <Panel hero title={tr('Analizator planu', 'Plan Analyzer')} eyebrow="BTC-PERP · Hyperliquid">
             <div className="grid grid-cols-1 lg:grid-cols-12">
               <div className="lg:col-span-5 xl:col-span-4 p-4 border-b lg:border-b-0 lg:border-r border-line">
                 <PlanForm
