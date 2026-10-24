@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { LiquidityProfileBucket, QuantMathMetrics, ShaakuniState } from '../types/trading';
 import { Badge, Panel, Stat, DASH, fmtCompact, fmtPct, fmtPrice, fmtSigned } from '../ui';
 import { PrefillButtons } from './QuantSignalDesk';
+import { tr } from '../i18n';
 
 type Direction = 'LONG' | 'SHORT';
 
@@ -99,9 +100,9 @@ export const LiquidityMicrostructureLab: React.FC<{
     ctx.font = '600 10px "IBM Plex Mono", monospace';
     ctx.textBaseline = 'middle';
     ctx.textAlign = 'left';
-    ctx.fillText('CENA', 6, 12);
-    ctx.fillText('WOLUMEN K/S', axisW + 6, 12);
-    ctx.fillText(width < 420 ? 'PALIWO · U(p)' : 'PALIWO (SZACUNEK) · U(p)', splitX + 8, 12);
+    ctx.fillText(tr('CENA', 'PRICE'), 6, 12);
+    ctx.fillText(tr('WOLUMEN K/S', 'VOLUME B/S'), axisW + 6, 12);
+    ctx.fillText(width < 420 ? tr('PALIWO · U(p)', 'FUEL · U(p)') : tr('PALIWO (SZACUNEK) · U(p)', 'FUEL (ESTIMATE) · U(p)'), splitX + 8, 12);
 
     // Hairline: separator nagłówka i kolumn (ciągłe)
     ctx.strokeStyle = C.line;
@@ -192,7 +193,7 @@ export const LiquidityMicrostructureLab: React.FC<{
         ctx.fillStyle = C.ink1;
         ctx.font = '600 10px "IBM Plex Mono", monospace';
         ctx.textAlign = m.x > width - 70 ? 'right' : 'left';
-        ctx.fillText('magnes', m.x + (m.x > width - 70 ? -8 : 8), m.y);
+        ctx.fillText(tr('magnes', 'magnet'), m.x + (m.x > width - 70 ? -8 : 8), m.y);
       }
     }
 
@@ -222,7 +223,7 @@ export const LiquidityMicrostructureLab: React.FC<{
     };
     hline(shaakuni.pdh, C.level, 'PDH', 0.6);
     hline(shaakuni.pdl, C.level, 'PDL', 0.6);
-    hline(currentPrice > 0 ? currentPrice : null, C.ink1, `cena ${fmtPrice(currentPrice, 0)}`, 0.7);
+    hline(currentPrice > 0 ? currentPrice : null, C.ink1, `${tr('cena', 'price')} ${fmtPrice(currentPrice, 0)}`, 0.7);
   }, [profile, size, hoverIdx, maxFuel, quant.vahPrice, quant.valPrice, quant.primaryMagnetPrice, shaakuni.pdh, shaakuni.pdl, currentPrice]);
 
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -244,27 +245,31 @@ export const LiquidityMicrostructureLab: React.FC<{
   return (
     <Panel
       hero
-      title="Profil płynności"
-      eyebrow="80 świec · 24 poziomy · pole U(p)"
+      title={tr('Profil płynności', 'Liquidity profile')}
+      eyebrow={tr('80 świec · 24 poziomy · pole U(p)', '80 candles · 24 levels · U(p) field')}
       className="h-full"
       actions={
         <>
-          <Badge tone="live" title="Wolumen świec Hyperliquid; podział kupno/sprzedaż z WebSocket tam, gdzie dostępny">LIVE</Badge>
-          <Badge tone="model" title="Paliwo likwidacyjne i U(p) to heurystyczny szacunek">MODEL</Badge>
+          <Badge tone="live" title={tr('Wolumen świec Hyperliquid; podział kupno/sprzedaż z WebSocket tam, gdzie dostępny', 'Hyperliquid candle volume; buy/sell split from the WebSocket where available')}>
+            LIVE
+          </Badge>
+          <Badge tone="model" title={tr('Paliwo likwidacyjne i U(p) to heurystyczny szacunek', 'Liquidation fuel and U(p) are a heuristic estimate')}>
+            MODEL
+          </Badge>
         </>
       }
       bodyClassName="p-4 flex flex-col gap-4"
     >
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-4 gap-y-4">
         <Stat
-          label="Magnes"
-          source={{ tone: 'model', label: 'MODEL', title: 'Heurystyka: paliwo + masa OB + wolumen, ważone odległością od ceny' }}
+          label={tr('Magnes', 'Magnet')}
+          source={{ tone: 'model', label: 'MODEL', title: tr('Heurystyka: paliwo + masa OB + wolumen, ważone odległością od ceny', 'Heuristic: fuel + OB mass + volume, weighted by distance from price') }}
           value={fmtPrice(quant.primaryMagnetPrice, 0)}
           hint={
             magnetDistPct !== null ? (
               <>
-                najsilniejsze U(p) · <span aria-hidden="true">{magnetDistPct >= 0 ? '▲' : '▼'}</span>{' '}
-                {fmtPct(Math.abs(magnetDistPct), 2, false)} {magnetDistPct >= 0 ? 'nad ceną' : 'pod ceną'}
+                {tr('najsilniejsze U(p)', 'strongest U(p)')} · <span aria-hidden="true">{magnetDistPct >= 0 ? '▲' : '▼'}</span>{' '}
+                {fmtPct(Math.abs(magnetDistPct), 2, false)} {magnetDistPct >= 0 ? tr('nad ceną', 'above price') : tr('pod ceną', 'below price')}
               </>
             ) : (
               DASH
@@ -272,14 +277,21 @@ export const LiquidityMicrostructureLab: React.FC<{
           }
         />
         <Stat
-          label="Wolumen"
-          source={{ tone: 'live', label: 'LIVE', title: 'Wolumen ostatnich 80 świec Hyperliquid rozłożony na 24 poziomy' }}
+          label={tr('Wolumen', 'Volume')}
+          source={{ tone: 'live', label: 'LIVE', title: tr('Wolumen ostatnich 80 świec Hyperliquid rozłożony na 24 poziomy', 'Volume of the last 80 Hyperliquid candles spread over 24 levels') }}
           value={`POC ${fmtPrice(quant.pocPrice, 0)}`}
           hint={`VA 70%: ${fmtPrice(quant.valPrice, 0)} – ${fmtPrice(quant.vahPrice, 0)}`}
         />
         <Stat
-          label="Paliwo"
-          source={{ tone: 'model', label: 'SZAC.', title: 'Szacunek z wolumenu przy założonych dźwigniach 5/20/100× i pul przy PDH/PDL/PWH/PWL — nie realne pozycje' }}
+          label={tr('Paliwo', 'Fuel')}
+          source={{
+            tone: 'model',
+            label: tr('SZAC.', 'EST.'),
+            title: tr(
+              'Szacunek z wolumenu przy założonych dźwigniach 5/20/100× i pul przy PDH/PDL/PWH/PWL — nie realne pozycje',
+              'Estimate from volume at assumed 5/20/100× leverage and pools at PDH/PDL/PWH/PWL; not real positions'
+            ),
+          }}
           value={
             fuelAboveShare !== null ? (
               <span className="text-base">
@@ -290,11 +302,15 @@ export const LiquidityMicrostructureLab: React.FC<{
               DASH
             )
           }
-          hint="likwidacje (szac.) nad / pod ceną"
+          hint={tr('likwidacje (szac.) nad / pod ceną', 'liquidations (est.) above / below price')}
         />
         <Stat
-          label="Arkusz L2"
-          source={depthTotal > 0 ? { tone: 'live', label: 'LIVE', title: 'Suma płynności 12 poziomów arkusza Hyperliquid' } : { tone: 'stale', label: 'BRAK', title: 'Brak arkusza' }}
+          label={tr('Arkusz L2', 'L2 book')}
+          source={
+            depthTotal > 0
+              ? { tone: 'live', label: 'LIVE', title: tr('Suma płynności 12 poziomów arkusza Hyperliquid', 'Total liquidity of 12 Hyperliquid book levels') }
+              : { tone: 'stale', label: tr('BRAK', 'NONE'), title: tr('Brak arkusza', 'No book') }
+          }
           value={
             <span className="text-base">
               {fmtCompact(quant.bookDepthBidUsd, '$')} <span className="text-ink-3">/</span> {fmtCompact(quant.bookDepthAskUsd, '$')}
@@ -306,10 +322,10 @@ export const LiquidityMicrostructureLab: React.FC<{
                 <span className="relative h-1.5 w-16 rounded-full bg-sell/70 overflow-hidden" aria-hidden="true">
                   <span className="absolute inset-y-0 left-0 bg-buy" style={{ width: `${(bidShare * 100).toFixed(0)}%` }} />
                 </span>
-                BID {(bidShare * 100).toFixed(0)}% · 12 poz.
+                BID {(bidShare * 100).toFixed(0)}% · {tr('12 poz.', '12 lvls')}
               </span>
             ) : (
-              'czekam na arkusz'
+              tr('czekam na arkusz', 'waiting for the book')
             )
           }
         />
@@ -317,12 +333,15 @@ export const LiquidityMicrostructureLab: React.FC<{
 
       <div ref={wrapRef} className="relative flex-1 min-h-[400px] sm:min-h-[460px] rounded-lg overflow-hidden border border-line">
         {profile.length === 0 ? (
-          <div className="p-4 text-sm text-ink-3">Za mało świec do zbudowania profilu.</div>
+          <div className="p-4 text-sm text-ink-3">{tr('Za mało świec do zbudowania profilu.', 'Too few candles to build the profile.')}</div>
         ) : (
           <canvas
             ref={canvasRef}
             role="img"
-            aria-label={`Profil wolumenu na 24 poziomach; POC ${fmtPrice(quant.pocPrice, 0)}, najsilniejsze przyciąganie ${fmtPrice(quant.primaryMagnetPrice, 0)}`}
+            aria-label={tr(
+              `Profil wolumenu na 24 poziomach; POC ${fmtPrice(quant.pocPrice, 0)}, najsilniejsze przyciąganie ${fmtPrice(quant.primaryMagnetPrice, 0)}`,
+              `Volume profile on 24 levels; POC ${fmtPrice(quant.pocPrice, 0)}, strongest attraction ${fmtPrice(quant.primaryMagnetPrice, 0)}`
+            )}
             onPointerMove={onPointerMove}
             onPointerLeave={() => setHoverIdx(null)}
             className="block w-full h-full cursor-crosshair touch-pan-y"
@@ -345,20 +364,20 @@ export const LiquidityMicrostructureLab: React.FC<{
               </span>
             </div>
             <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 font-mono tabular-nums">
-              <dt className="text-ink-3 font-sans">Kupno</dt>
+              <dt className="text-ink-3 font-sans">{tr('Kupno', 'Buy')}</dt>
               <dd className="text-right text-ink-1">
                 <span className="text-buy-ink" aria-hidden="true">▲ </span>
                 {fmtCompact(hovered.buyVolumeUsd, '$')}
               </dd>
-              <dt className="text-ink-3 font-sans">Sprzedaż</dt>
+              <dt className="text-ink-3 font-sans">{tr('Sprzedaż', 'Sell')}</dt>
               <dd className="text-right text-ink-1">
                 <span className="text-sell-ink" aria-hidden="true">▼ </span>
                 {fmtCompact(hovered.sellVolumeUsd, '$')}
               </dd>
               <dt className="text-ink-3 font-sans">Delta</dt>
               <dd className="text-right text-ink-1">{fmtCompact(hovered.deltaUsd, '$')}</dd>
-              <dt className="text-ink-3 font-sans">Paliwo (szac.)</dt>
-              <dd className="text-right text-ink-1">{maxFuel > 0 ? `${((hovered.liquidationPoolUsd / maxFuel) * 100).toFixed(0)}% maks.` : DASH}</dd>
+              <dt className="text-ink-3 font-sans">{tr('Paliwo (szac.)', 'Fuel (est.)')}</dt>
+              <dd className="text-right text-ink-1">{maxFuel > 0 ? `${((hovered.liquidationPoolUsd / maxFuel) * 100).toFixed(0)}% ${tr('maks.', 'of max')}` : DASH}</dd>
               <dt className="text-ink-3 font-sans">U(p)</dt>
               <dd className="text-right text-ink-1">{(hovered.gravityPotential * 100).toFixed(0)}%</dd>
             </dl>
@@ -367,11 +386,11 @@ export const LiquidityMicrostructureLab: React.FC<{
       </div>
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-ink-2">
-        <LegendSwatch className="bg-buy" label="Wolumen kupna" />
-        <LegendSwatch className="bg-sell" label="Wolumen sprzedaży" />
-        <LegendSwatch className="bg-zone/60" label="Paliwo likwidacyjne (szacunek)" />
+        <LegendSwatch className="bg-buy" label={tr('Wolumen kupna', 'Buy volume')} />
+        <LegendSwatch className="bg-sell" label={tr('Wolumen sprzedaży', 'Sell volume')} />
+        <LegendSwatch className="bg-zone/60" label={tr('Paliwo likwidacyjne (szacunek)', 'Liquidation fuel (estimate)')} />
         <span className="inline-flex items-center gap-1.5">
-          <span className="w-4 h-0.5 rounded-full bg-accent" aria-hidden="true" /> Krzywa U(p)
+          <span className="w-4 h-0.5 rounded-full bg-accent" aria-hidden="true" /> {tr('Krzywa U(p)', 'U(p) curve')}
         </span>
         <span className="inline-flex items-center gap-1.5">
           <span className="w-4 h-px bg-level" aria-hidden="true" /> PDH / PDL
@@ -379,9 +398,10 @@ export const LiquidityMicrostructureLab: React.FC<{
         <LegendSwatch className="bg-surface-2 border border-line-strong" label="Value Area 70%" />
       </div>
       <p className="text-[11px] text-ink-3 leading-relaxed max-w-prose">
-        Paliwo likwidacyjne to szacunek z wolumenu świec przy założonych dźwigniach (5/20/100×) oraz pul przy PDH/PDL/PWH/PWL —
-        Hyperliquid nie publikuje mapy likwidacji, więc to nie są realne pozycje. U(p) porządkuje poziomy wg heurystycznej
-        „siły przyciągania”; nie mówi, czy i kiedy cena tam dotrze.
+        {tr(
+          'Paliwo likwidacyjne to szacunek z wolumenu świec przy założonych dźwigniach (5/20/100×) oraz pul przy PDH/PDL/PWH/PWL — Hyperliquid nie publikuje mapy likwidacji, więc to nie są realne pozycje. U(p) porządkuje poziomy wg heurystycznej „siły przyciągania”; nie mówi, czy i kiedy cena tam dotrze.',
+          'Liquidation fuel is an estimate from candle volume at assumed leverage (5/20/100×) and pools at PDH/PDL/PWH/PWL. Hyperliquid does not publish a liquidation map, so these are not real positions. U(p) ranks levels by a heuristic "attraction strength"; it does not say whether or when price will get there.'
+        )}
       </p>
     </Panel>
   );
@@ -418,72 +438,94 @@ export const MicrostructureMethods: React.FC<{
   const methods: Method[] = [
     {
       id: 'gravity',
-      title: 'Pole przyciągania U(p)',
-      subtitle: 'Szacowane pule likwidacji, strefy OB i wolumen ważone odległością od ceny',
-      formula: 'U(p) = Σ (1,4·Paliwoᵢ + Masa_OBᵢ + 0,18·Wolᵢ) / |p − pᵢ|^0,55',
-      idea:
+      title: tr('Pole przyciągania U(p)', 'Attraction field U(p)'),
+      subtitle: tr('Szacowane pule likwidacji, strefy OB i wolumen ważone odległością od ceny', 'Estimated liquidation pools, OB zones and volume weighted by distance from price'),
+      formula: tr('U(p) = Σ (1,4·Paliwoᵢ + Masa_OBᵢ + 0,18·Wolᵢ) / |p − pᵢ|^0,55', 'U(p) = Σ (1.4·Fuelᵢ + OB_massᵢ + 0.18·Volᵢ) / |p − pᵢ|^0.55'),
+      idea: tr(
         'Hipoteza: cena szybciej przechodzi przez obszary niskiego wolumenu (LVN) w stronę skupisk zleceń stop i likwidacji. Model jedynie porządkuje takie obszary według heurystycznej wagi — nie przewiduje, czy i kiedy cena do nich dotrze. Skuteczność nie została zmierzona.',
-      check:
+        'Hypothesis: price moves faster through low-volume areas (LVN) towards clusters of stop orders and liquidations. The model only ranks such areas by a heuristic weight; it does not predict whether or when price will reach them. Its effectiveness has not been measured.'
+      ),
+      check: tr(
         'Zapisuj poziom najsilniejszego U(p) i sprawdzaj, jak często cena dotyka go w ciągu N świec — w porównaniu z losowym poziomem w tej samej odległości.',
-      metricLabel: 'Najsilniejsze U(p)',
+        'Record the level of the strongest U(p) and check how often price touches it within N candles, compared with a random level at the same distance.'
+      ),
+      metricLabel: tr('Najsilniejsze U(p)', 'Strongest U(p)'),
       metricValue: `${fmtPrice(quant.primaryMagnetPrice, 0)}${magnetPct !== null ? ` (${fmtPct(magnetPct, 2)})` : ''}`,
     },
     {
       id: 'vpin',
-      title: 'VPIN — jednostronność przepływu',
-      subtitle: 'Nierównowaga kupna i sprzedaży w kubełkach wolumenowych (BVC)',
-      formula: 'VPIN = Σ |V_kupno − V_sprzedaż| / (n · V_kubełka)',
-      idea:
+      title: tr('VPIN — jednostronność przepływu', 'VPIN: one-sidedness of flow'),
+      subtitle: tr('Nierównowaga kupna i sprzedaży w kubełkach wolumenowych (BVC)', 'Buy/sell imbalance in volume buckets (BVC)'),
+      formula: tr('VPIN = Σ |V_kupno − V_sprzedaż| / (n · V_kubełka)', 'VPIN = Σ |V_buy − V_sell| / (n · V_bucket)'),
+      idea: tr(
         'VPIN (Easley, López de Prado, O’Hara 2012) opisuje, jak jednostronny jest przepływ. Jego zdolność przewidywania jest sporna (Andersen & Bondarenko 2014), dlatego traktuj go jako opis bieżącego przepływu, a nie sygnał. Dywergencja spot/perp jest liczona tylko przy włączonych źródłach CEX.',
-      check: 'Porównuj bieżący VPIN z jego rozkładem z ostatnich sesji — wysoki percentyl oznacza przepływ nietypowo jednostronny.',
-      metricLabel: 'VPIN · dywergencja spot/perp',
-      metricValue: `${(quant.vpinToxicity * 100).toFixed(1)}% · ${quant.cvdDivergenceScore !== 0 ? fmtSigned(quant.cvdDivergenceScore * 100, 1, '%') : 'n/a (bez CEX)'}`,
+        "VPIN (Easley, López de Prado, O'Hara 2012) describes how one-sided the flow is. Its predictive power is disputed (Andersen & Bondarenko 2014), so treat it as a description of the current flow, not a signal. The spot/perp divergence is computed only with CEX sources enabled."
+      ),
+      check: tr(
+        'Porównuj bieżący VPIN z jego rozkładem z ostatnich sesji — wysoki percentyl oznacza przepływ nietypowo jednostronny.',
+        'Compare the current VPIN with its distribution over recent sessions; a high percentile means unusually one-sided flow.'
+      ),
+      metricLabel: tr('VPIN · dywergencja spot/perp', 'VPIN · spot/perp divergence'),
+      metricValue: `${(quant.vpinToxicity * 100).toFixed(1)}% · ${quant.cvdDivergenceScore !== 0 ? fmtSigned(quant.cvdDivergenceScore * 100, 1, '%') : tr('n/a (bez CEX)', 'n/a (no CEX)')}`,
     },
     {
       id: 'kyle',
-      title: 'λ Kyle’a i asymetria arkusza',
-      subtitle: 'Wpływ przepływu na cenę (OLS) + głębokość 12 poziomów L2',
+      title: tr('λ Kyle’a i asymetria arkusza', "Kyle's λ and book asymmetry"),
+      subtitle: tr('Wpływ przepływu na cenę (OLS) + głębokość 12 poziomów L2', 'Price impact of flow (OLS) + depth of 12 L2 levels'),
       formula: 'ΔPₜ = λ · Qₜ + ε   ·   A = (D_bid − D_ask) / (D_bid + D_ask)',
-      idea:
+      idea: tr(
         'λ mierzy, o ile przesuwa się cena na jednostkę netto przepływu agresora — im wyżej, tym rynek mniej płynny. Asymetria pokazuje, po której stronie 12 najbliższych poziomów stoi mniej zleceń. Arkusz to migawka: zlecenia mogą zniknąć w ułamku sekundy.',
-      check: 'Porównuj λ o różnych porach dnia i przed publikacjami makro; rosnące λ oznacza rynek łatwiejszy do przesunięcia.',
-      metricLabel: 'λ · głębokość BID / ASK',
+        'λ measures how far price moves per unit of net aggressor flow; the higher it is, the less liquid the market. The asymmetry shows which side of the 12 nearest levels has fewer orders. The book is a snapshot: orders can vanish in a fraction of a second.'
+      ),
+      check: tr(
+        'Porównuj λ o różnych porach dnia i przed publikacjami makro; rosnące λ oznacza rynek łatwiejszy do przesunięcia.',
+        'Compare λ at different times of day and before macro releases; a rising λ means a market that is easier to push.'
+      ),
+      metricLabel: tr('λ · głębokość BID / ASK', 'λ · BID / ASK depth'),
       metricValue: `${quant.kyleLambdaPer1M !== null ? `$${quant.kyleLambdaPer1M.toFixed(2)} / $1M` : 'n/a'} · ${fmtCompact(quant.bookDepthBidUsd, '$')} / ${fmtCompact(quant.bookDepthAskUsd, '$')}`,
     },
     {
       id: 'hawkes',
-      title: 'Proces Hawkesa — grupowanie transakcji',
-      subtitle: 'Samowzbudzająca się intensywność agresywnych transakcji',
+      title: tr('Proces Hawkesa — grupowanie transakcji', 'Hawkes process: trade clustering'),
+      subtitle: tr('Samowzbudzająca się intensywność agresywnych transakcji', 'Self-exciting intensity of aggressive trades'),
       formula: 'λ(t) = μ + Σ α · e^(−β(t − tᵢ))',
-      idea:
+      idea: tr(
         'Agresywne transakcje grupują się w czasie: każda zwiększa szansę następnej. Tutaj μ, α i β są stałe (nieestymowane), więc intensywność opisuje tempo przepływu. Współczynnik rozgałęzienia η wymaga estymacji MLE i nie jest liczony.',
-      check: 'Obserwuj skoki intensywności przy testach PDH/PDL i notuj, czy ruch był kontynuowany, czy wygasł.',
-      metricLabel: 'λ kupno / sprzedaż · η',
+        'Aggressive trades cluster in time: each one raises the chance of the next. Here μ, α and β are fixed (not estimated), so the intensity describes the pace of flow. The branching ratio η needs MLE estimation and is not computed.'
+      ),
+      check: tr('Obserwuj skoki intensywności przy testach PDH/PDL i notuj, czy ruch był kontynuowany, czy wygasł.', 'Watch intensity spikes at PDH/PDL tests and note whether the move continued or faded.'),
+      metricLabel: tr('λ kupno / sprzedaż · η', 'λ buy / sell · η'),
       metricValue: `${quant.hawkesBuyIntensity.toFixed(2)} / ${quant.hawkesSellIntensity.toFixed(2)} · η = ${quant.hawkesBranchingRatio ?? 'n/a'}`,
     },
     {
       id: 'ou',
-      title: 'Powrót do średniej (Ornstein-Uhlenbeck)',
-      subtitle: 'Tempo powrotu do kotwicy 0,65·D-EQ + 0,35·W-EQ',
+      title: tr('Powrót do średniej (Ornstein-Uhlenbeck)', 'Mean reversion (Ornstein-Uhlenbeck)'),
+      subtitle: tr('Tempo powrotu do kotwicy 0,65·D-EQ + 0,35·W-EQ', 'Speed of return to the anchor 0.65·D-EQ + 0.35·W-EQ'),
       formula: 'dXₜ = θ(EQ − Xₜ)dt + σ dWₜ   ·   t½ = ln 2 / θ',
-      idea:
+      idea: tr(
         'OU opisuje, jak szybko cena wraca do kotwicy; Z-score mówi, jak daleko od niej jesteśmy w odchyleniach standardowych. Parametry z krótkiej historii są niestabilne, a duże |Z| bywa początkiem trendu, nie okazją.',
-      check: 'Czytaj t½ razem z Hurstem: H > 0,6 przy dużym |Z| przemawia przeciw założeniu powrotu.',
+        'OU describes how fast price returns to the anchor; the Z-score says how far from it we are in standard deviations. Parameters from a short history are unstable, and a large |Z| can be the start of a trend, not an opportunity.'
+      ),
+      check: tr('Czytaj t½ razem z Hurstem: H > 0,6 przy dużym |Z| przemawia przeciw założeniu powrotu.', 'Read t½ together with Hurst: H > 0.6 with a large |Z| argues against the reversion assumption.'),
       metricLabel: 'Z · t½',
-      metricValue: `Z ${fmtSigned(quant.ouZScore, 2)}σ · t½ ${Number.isFinite(quant.ouHalfLifeBars) ? `${quant.ouHalfLifeBars.toFixed(1)} świec` : '∞'} · D-EQ ${fmtPrice(shaakuni.deq, 0)}`,
+      metricValue: `Z ${fmtSigned(quant.ouZScore, 2)}σ · t½ ${Number.isFinite(quant.ouHalfLifeBars) ? `${quant.ouHalfLifeBars.toFixed(1)} ${tr('świec', 'candles')}` : '∞'} · D-EQ ${fmtPrice(shaakuni.deq, 0)}`,
     },
   ];
   const sel = methods.find((m) => m.id === selectedId) ?? methods[0];
 
   return (
     <Panel
-      title="Metody — jak czytać metryki"
-      eyebrow="Edukacyjnie · hipotezy do weryfikacji"
-      actions={<Badge tone="neutral" title="Opis metod, nie rekomendacje">EDU</Badge>}
+      title={tr('Metody — jak czytać metryki', 'Methods: how to read the metrics')}
+      eyebrow={tr('Edukacyjnie · hipotezy do weryfikacji', 'Educational · hypotheses to verify')}
+      actions={
+        <Badge tone="neutral" title={tr('Opis metod, nie rekomendacje', 'Description of methods, not recommendations')}>
+          EDU
+        </Badge>
+      }
       className="h-full"
       bodyClassName="p-4 grid grid-cols-1 md:grid-cols-12 gap-4"
     >
-      <div className="md:col-span-5 flex flex-col gap-1" role="tablist" aria-label="Metoda" aria-orientation="vertical">
+      <div className="md:col-span-5 flex flex-col gap-1" role="tablist" aria-label={tr('Metoda', 'Method')} aria-orientation="vertical">
         {methods.map((m, i) => {
           const active = m.id === sel.id;
           return (
@@ -514,7 +556,7 @@ export const MicrostructureMethods: React.FC<{
         <div className="px-3 py-2 bg-page border border-line rounded-lg font-mono text-xs text-ink-2 overflow-x-auto whitespace-nowrap">{sel.formula}</div>
         <p className="text-[13px] text-ink-2 leading-relaxed">{sel.idea}</p>
         <div>
-          <div className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium">Jak to sprawdzić</div>
+          <div className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium">{tr('Jak to sprawdzić', 'How to check it')}</div>
           <p className="text-[13px] text-ink-2 leading-relaxed mt-0.5">{sel.check}</p>
         </div>
         <div className="flex flex-wrap items-end justify-between gap-3 pt-3 border-t border-line mt-auto">
@@ -523,7 +565,7 @@ export const MicrostructureMethods: React.FC<{
             <div className="font-mono tabular-nums text-sm text-ink-1 break-words">{sel.metricValue}</div>
           </div>
           {onPrefillPlan && (
-            <PrefillButtons onPick={(dir) => onPrefillPlan(dir, `Mikrostruktura · ${sel.title}`, `${sel.metricLabel}: ${sel.metricValue}`)} />
+            <PrefillButtons onPick={(dir) => onPrefillPlan(dir, `${tr('Mikrostruktura', 'Microstructure')} · ${sel.title}`, `${sel.metricLabel}: ${sel.metricValue}`)} />
           )}
         </div>
       </div>

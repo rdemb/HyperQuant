@@ -29,7 +29,8 @@ npm run dev      # http://localhost:3000
 ## Code
 
 - Strict TypeScript; pure computation functions in `src/utils/` (no network, no state), data hooks in `src/state/`, views in `src/views/`.
-- UI text and code comments in Polish, identifiers in English.
+- UI text in Polish and English: every visible string goes through `tr('polski', 'English')` from `src/i18n.ts`, dates and numbers use its `locale`. Texts recorded in the verifiable ledger (lab catalogue, A/B plan) stay Polish in the source and are translated only when displayed. The blog is Polish only.
+- Code comments in Polish, identifiers in English.
 - Every behaviour change comes with a test that fails first (TDD). Randomness in tests and simulations uses a deterministic seed.
 - Commits follow Conventional Commits: `feat(...)`, `fix(...)`, `docs:`, `ci:`, `chore:`.
 

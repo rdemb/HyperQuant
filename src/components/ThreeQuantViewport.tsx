@@ -16,6 +16,7 @@ import {
 import { candlesLabel } from '../views/micro/horizon';
 import { GLOW, T3, T3_CSS, isNarrowViewport, labFov, labPixelRatio } from '../views/lab/tokens3d';
 import { DockPresets, DockSlider, DockToggle, HoverCard, HudButton, HudHeader, SCENE_FRAME, SceneDock } from '../views/lab/hud';
+import { locale, tr } from '../i18n';
 
 interface ThreeQuantViewportProps {
   bars: OHLCVBar[];
@@ -510,9 +511,9 @@ export const ThreeQuantViewport: React.FC<ThreeQuantViewportProps> = ({
         bodyMesh.castShadow = true;
         bodyMesh.layers.enable(1);
         bodyMesh.userData = {
-          title: `Świeca ${new Date(b.time).toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' })} ${isBull ? '▲' : '▼'}`,
+          title: `${tr('Świeca', 'Candle')} ${new Date(b.time).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })} ${isBull ? '▲' : '▼'}`,
           subtitle: `O ${b.open.toFixed(1)} · H ${b.high.toFixed(1)} · L ${b.low.toFixed(1)} · C ${b.close.toFixed(1)}`,
-          metricLabel: 'Delta (kupno − sprzedaż)',
+          metricLabel: tr('Delta (kupno − sprzedaż)', 'Delta (buy − sell)'),
           metricValue: `${b.vbuy - b.vsell >= 0 ? '+' : '−'}$${(Math.abs(b.vbuy - b.vsell) / 1000).toFixed(0)}K`,
           accentColor: isBull ? T3_CSS.buy : T3_CSS.sell,
         };
@@ -588,10 +589,10 @@ export const ThreeQuantViewport: React.FC<ThreeQuantViewportProps> = ({
           obMesh.renderOrder = 5;
           obMesh.layers.enable(1);
           obMesh.userData = {
-            title: `Strefa OB ${ob.type === 'bull' ? 'popytowa ▲' : 'podażowa ▼'} (${ob.label})`,
-            subtitle: `Zakres ${ob.bottom.toFixed(1)} – ${ob.top.toFixed(1)}`,
-            metricLabel: 'Impuls · stan',
-            metricValue: `${ob.impulseAtrMultiple}× ATR · nietestowana`,
+            title: tr(`Strefa OB ${ob.type === 'bull' ? 'popytowa ▲' : 'podażowa ▼'} (${ob.label})`, `${ob.type === 'bull' ? 'Demand ▲' : 'Supply ▼'} OB zone (${ob.label})`),
+            subtitle: `${tr('Zakres', 'Range')} ${ob.bottom.toFixed(1)} – ${ob.top.toFixed(1)}`,
+            metricLabel: tr('Impuls · stan', 'Impulse · state'),
+            metricValue: `${ob.impulseAtrMultiple}× ATR · ${tr('nietestowana', 'untested')}`,
             accentColor: T3_CSS.zone,
           };
           orderBlocksGroup.add(obMesh);
@@ -616,27 +617,27 @@ export const ThreeQuantViewport: React.FC<ThreeQuantViewportProps> = ({
         status?: string;
       }[] = [
         {
-          label: 'PDH (szczyt poprzedniego dnia)',
+          label: tr('PDH (szczyt poprzedniego dnia)', "PDH (previous day's high)"),
           price: curShaakuni.pdh,
           color: T3.level,
           hex: T3_CSS.level,
           status: curShaakuni.pdhStatus,
         },
         {
-          label: 'PDL (dołek poprzedniego dnia)',
+          label: tr('PDL (dołek poprzedniego dnia)', "PDL (previous day's low)"),
           price: curShaakuni.pdl,
           color: T3.level,
           hex: T3_CSS.level,
           status: curShaakuni.pdlStatus,
         },
         {
-          label: 'D-EQ (50% dnia)',
+          label: tr('D-EQ (50% dnia)', 'D-EQ (50% of the day)'),
           price: curShaakuni.deq,
           color: T3.ink2,
           hex: T3_CSS.ink2,
         },
         {
-          label: 'W-EQ (50% tygodnia)',
+          label: tr('W-EQ (50% tygodnia)', 'W-EQ (50% of the week)'),
           price: curShaakuni.weq,
           color: T3.ink3,
           hex: T3_CSS.ink3,
@@ -662,9 +663,9 @@ export const ThreeQuantViewport: React.FC<ThreeQuantViewportProps> = ({
         beamMesh.layers.enable(1);
         beamMesh.userData = {
           title: lvl.label,
-          subtitle: `Poziom ${lvl.price.toFixed(1)}`,
-          metricLabel: 'Stan',
-          metricValue: lvl.status ?? 'poziom równowagi',
+          subtitle: `${tr('Poziom', 'Level')} ${lvl.price.toFixed(1)}`,
+          metricLabel: tr('Stan', 'State'),
+          metricValue: lvl.status ?? tr('poziom równowagi', 'equilibrium level'),
           accentColor: lvl.hex,
         };
         levelsGroup.add(beamMesh);
@@ -694,10 +695,10 @@ export const ThreeQuantViewport: React.FC<ThreeQuantViewportProps> = ({
         );
         barMesh.layers.enable(1);
         barMesh.userData = {
-          title: `Szacunek likwidacji (założone ${cell.leverage}×)`,
-          subtitle: `Zakres ${cell.bottom.toFixed(0)} – ${cell.top.toFixed(0)} · nie są to realne pozycje`,
-          metricLabel: 'Siła szacunku',
-          metricValue: `${(cell.intensityRatio * 100).toFixed(0)}% maks.`,
+          title: tr(`Szacunek likwidacji (założone ${cell.leverage}×)`, `Liquidation estimate (assumed ${cell.leverage}×)`),
+          subtitle: tr(`Zakres ${cell.bottom.toFixed(0)} – ${cell.top.toFixed(0)} · nie są to realne pozycje`, `Range ${cell.bottom.toFixed(0)} – ${cell.top.toFixed(0)} · not real positions`),
+          metricLabel: tr('Siła szacunku', 'Estimate strength'),
+          metricValue: `${(cell.intensityRatio * 100).toFixed(0)}% ${tr('maks.', 'of max')}`,
           accentColor: T3_CSS.zone,
         };
         heatmapGroup.add(barMesh);
@@ -713,9 +714,9 @@ export const ThreeQuantViewport: React.FC<ThreeQuantViewportProps> = ({
         mesh.castShadow = true;
         mesh.layers.enable(1);
         mesh.userData = {
-          title: `Arkusz HL · BID ▲ (poziom ${idx + 1})`,
-          subtitle: `Cena ${bid.price.toFixed(1)} · liczba zleceń na poziomie: ${bid.exchangeCount}`,
-          metricLabel: 'Płynność',
+          title: tr(`Arkusz HL · BID ▲ (poziom ${idx + 1})`, `HL book · BID ▲ (level ${idx + 1})`),
+          subtitle: tr(`Cena ${bid.price.toFixed(1)} · liczba zleceń na poziomie: ${bid.exchangeCount}`, `Price ${bid.price.toFixed(1)} · orders at the level: ${bid.exchangeCount}`),
+          metricLabel: tr('Płynność', 'Liquidity'),
           metricValue: `$${(bid.sizeUsd / 1000).toFixed(1)}K (${bid.sizeBtc} BTC)`,
           accentColor: T3_CSS.buy,
         };
@@ -730,9 +731,9 @@ export const ThreeQuantViewport: React.FC<ThreeQuantViewportProps> = ({
         mesh.castShadow = true;
         mesh.layers.enable(1);
         mesh.userData = {
-          title: `Arkusz HL · ASK ▼ (poziom ${idx + 1})`,
-          subtitle: `Cena ${ask.price.toFixed(1)} · liczba zleceń na poziomie: ${ask.exchangeCount}`,
-          metricLabel: 'Płynność',
+          title: tr(`Arkusz HL · ASK ▼ (poziom ${idx + 1})`, `HL book · ASK ▼ (level ${idx + 1})`),
+          subtitle: tr(`Cena ${ask.price.toFixed(1)} · liczba zleceń na poziomie: ${ask.exchangeCount}`, `Price ${ask.price.toFixed(1)} · orders at the level: ${ask.exchangeCount}`),
+          metricLabel: tr('Płynność', 'Liquidity'),
           metricValue: `$${(ask.sizeUsd / 1000).toFixed(1)}K (${ask.sizeBtc} BTC)`,
           accentColor: T3_CSS.sell,
         };
@@ -767,9 +768,9 @@ export const ThreeQuantViewport: React.FC<ThreeQuantViewportProps> = ({
           );
           profMesh.layers.enable(1);
           profMesh.userData = {
-            title: bucket.isPOC ? `Profil wolumenu · POC (${bucket.price})` : `Profil wolumenu (${bucket.price})`,
-            subtitle: `Wolumen $${(bucket.totalVolumeUsd / 1000000).toFixed(2)}M${bucket.isValueArea ? ' · Value Area' : ''}`,
-            metricLabel: 'Przyciąganie U(p) (heurystyka)',
+            title: bucket.isPOC ? `${tr('Profil wolumenu', 'Volume profile')} · POC (${bucket.price})` : `${tr('Profil wolumenu', 'Volume profile')} (${bucket.price})`,
+            subtitle: `${tr('Wolumen', 'Volume')} $${(bucket.totalVolumeUsd / 1000000).toFixed(2)}M${bucket.isValueArea ? ' · Value Area' : ''}`,
+            metricLabel: tr('Przyciąganie U(p) (heurystyka)', 'Attraction U(p) (heuristic)'),
             metricValue: `${(bucket.gravityPotential * 100).toFixed(0)}%`,
             accentColor: bucket.isPOC ? T3_CSS.accent : T3_CSS.ink3,
           };
@@ -808,9 +809,9 @@ export const ThreeQuantViewport: React.FC<ThreeQuantViewportProps> = ({
           ringMesh.position.set(fx, fy, 0);
           ringMesh.layers.enable(1);
           ringMesh.userData = {
-            title: `Trajektoria heurystyczna (${candlesLabel(fh.stepBars)}) ${isBullForecast ? '▲' : '▼'}`,
-            subtitle: `Pasmo ±1σ: ${fh.lower1Sigma.toFixed(0)} – ${fh.upper1Sigma.toFixed(0)}`,
-            metricLabel: 'Wartość heurystyki (nieskalibrowana)',
+            title: `${tr('Trajektoria heurystyczna', 'Heuristic trajectory')} (${candlesLabel(fh.stepBars)}) ${isBullForecast ? '▲' : '▼'}`,
+            subtitle: `${tr('Pasmo ±1σ', '±1σ band')}: ${fh.lower1Sigma.toFixed(0)} – ${fh.upper1Sigma.toFixed(0)}`,
+            metricLabel: tr('Wartość heurystyki (nieskalibrowana)', 'Heuristic value (uncalibrated)'),
             metricValue: `${fh.predictedPrice.toFixed(1)}`,
             accentColor: isBullForecast ? T3_CSS.buy : T3_CSS.sell,
           };
@@ -1066,18 +1067,18 @@ export const ThreeQuantViewport: React.FC<ThreeQuantViewportProps> = ({
       {/* Kontener WebGL */}
       <div ref={canvasMountRef} className="w-full h-full" />
 
-      <HudHeader title="Liquidity Canyon · świece, arkusz L2, profil i strefy OB">
-        Micro-price {Number.isFinite(quant.l2MicroPrice) ? quant.l2MicroPrice.toFixed(1) : '—'} · Nierównowaga L2{' '}
+      <HudHeader title={tr('Liquidity Canyon · świece, arkusz L2, profil i strefy OB', 'Liquidity Canyon · candles, L2 book, profile and OB zones')}>
+        Micro-price {Number.isFinite(quant.l2MicroPrice) ? quant.l2MicroPrice.toFixed(1) : '—'} · {tr('Nierównowaga L2', 'L2 imbalance')}{' '}
         {(quant.l2OrderbookImbalance * 100).toFixed(1)}% · Hurst {quant.hurstExponent}
       </HudHeader>
 
       <div className="absolute top-3 right-3 z-10 flex items-center gap-1.5">
-        <HudButton onClick={() => applyCameraPreset('isometric')} icon={<RotateCcw className="w-3.5 h-3.5" aria-hidden="true" />} label="Reset kamery" />
+        <HudButton onClick={() => applyCameraPreset('isometric')} icon={<RotateCcw className="w-3.5 h-3.5" aria-hidden="true" />} label={tr('Reset kamery', 'Reset camera')} />
         {onToggleExpand && (
           <HudButton
             onClick={onToggleExpand}
             icon={isExpanded ? <Minimize2 className="w-3.5 h-3.5" aria-hidden="true" /> : <Maximize2 className="w-3.5 h-3.5" aria-hidden="true" />}
-            label={isExpanded ? 'Widok dzielony' : 'Pełny ekran'}
+            label={isExpanded ? tr('Widok dzielony', 'Split view') : tr('Pełny ekran', 'Full screen')}
           />
         )}
       </div>
@@ -1093,30 +1094,30 @@ export const ThreeQuantViewport: React.FC<ThreeQuantViewportProps> = ({
 
       <SceneDock collapsed={dockCollapsed} onToggle={() => setDockCollapsed((prev) => !prev)}>
         <DockPresets<CameraPreset>
-          ariaLabel="Kamera"
+          ariaLabel={tr('Kamera', 'Camera')}
           value={cameraPreset}
           onChange={applyCameraPreset}
           options={[
-            { id: 'isometric', label: 'Izometria' },
-            { id: 'canyon', label: 'Kanion L2' },
-            { id: 'trajectory', label: 'Trajektoria' },
-            { id: 'topdown', label: 'Z góry' },
+            { id: 'isometric', label: tr('Izometria', 'Isometric') },
+            { id: 'canyon', label: tr('Kanion L2', 'L2 canyon') },
+            { id: 'trajectory', label: tr('Trajektoria', 'Trajectory') },
+            { id: 'topdown', label: tr('Z góry', 'Top-down') },
           ]}
         />
         <DockToggle on={showOBVolumes} onClick={() => setShowOBVolumes((v) => !v)}>
-          <Layers className="w-3 h-3" aria-hidden="true" /> Strefy OB
+          <Layers className="w-3 h-3" aria-hidden="true" /> {tr('Strefy OB', 'OB zones')}
         </DockToggle>
         <DockToggle on={showNeuralSurface} onClick={() => setShowNeuralSurface((v) => !v)}>
-          <Eye className="w-3 h-3" aria-hidden="true" /> Trajektoria
+          <Eye className="w-3 h-3" aria-hidden="true" /> {tr('Trajektoria', 'Trajectory')}
         </DockToggle>
-        <DockSlider label="Rozsunięcie Z" min={0.5} max={2} step={0.1} value={explodedScale} onChange={setExplodedScale} format={(v) => `${v.toFixed(1)}×`} />
+        <DockSlider label={tr('Rozsunięcie Z', 'Z spread')} min={0.5} max={2} step={0.1} value={explodedScale} onChange={setExplodedScale} format={(v) => `${v.toFixed(1)}×`} />
         <DockToggle on={dofEnabled} onClick={() => setDofEnabled((v) => !v)}>
-          <Focus className="w-3 h-3" aria-hidden="true" /> Głębia ostrości
+          <Focus className="w-3 h-3" aria-hidden="true" /> {tr('Głębia ostrości', 'Depth of field')}
         </DockToggle>
         {dofEnabled && (
           <>
-            <DockSlider label="Ostrość" min={8} max={48} step={1} value={dofFocus} onChange={setDofFocus} format={(v) => `${v} m`} />
-            <DockSlider label="Przysłona" min={0.4} max={4.5} step={0.2} value={dofAperture} onChange={setDofAperture} format={(v) => `f/${v.toFixed(1)}`} />
+            <DockSlider label={tr('Ostrość', 'Focus')} min={8} max={48} step={1} value={dofFocus} onChange={setDofFocus} format={(v) => `${v} m`} />
+            <DockSlider label={tr('Przysłona', 'Aperture')} min={0.4} max={4.5} step={0.2} value={dofAperture} onChange={setDofAperture} format={(v) => `f/${v.toFixed(1)}`} />
           </>
         )}
       </SceneDock>

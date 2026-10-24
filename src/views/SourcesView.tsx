@@ -3,6 +3,7 @@ import { CexSettings } from './sources/CexSettings';
 import { LineageTable } from './sources/LineageTable';
 import { Attributions } from './sources/Attributions';
 import { AggrTemplateCard } from './sources/AggrTemplateCard';
+import { tr } from '../i18n';
 
 /**
  * Widok „Źródła”: ustawienia (opt-in CEX, dźwięk), rodowód każdej liczby, atrybucje i licencje, szablon Aggr.
@@ -21,8 +22,10 @@ const SourcesView: React.FC = () => (
       </div>
     </div>
     <p className="text-xs text-ink-3 leading-relaxed max-w-prose">
-      HyperQuant to narzędzie edukacyjne. Nie jest poradą inwestycyjną, finansową ani prawną i nie generuje sygnałów transakcyjnych — ocenia
-      plan, który przygotowujesz sam. Handel instrumentami z dźwignią wiąże się z wysokim ryzykiem utraty kapitału.
+      {tr(
+        'HyperQuant to narzędzie edukacyjne. Nie jest poradą inwestycyjną, finansową ani prawną i nie generuje sygnałów transakcyjnych — ocenia plan, który przygotowujesz sam. Handel instrumentami z dźwignią wiąże się z wysokim ryzykiem utraty kapitału.',
+        'HyperQuant is an educational tool. It is not investment, financial or legal advice and does not generate trading signals; it evaluates the plan you prepare yourself. Trading leveraged instruments carries a high risk of losing capital.'
+      )}
     </p>
   </div>
 );

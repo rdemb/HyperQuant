@@ -8,6 +8,7 @@ import {
 } from '../types/trading';
 import { normCdf, normPdf } from '../utils/stats';
 import { Badge, EmptyState, Segmented } from '../ui';
+import { tr } from '../i18n';
 
 // UWAGA: Hyperliquid nie ma rynku opcji, a aplikacja nie pobiera żadnych danych opcyjnych.
 // Cały panel to model ilustracyjny (parametryczny smile IV + Black-Scholes), nie dane rynkowe —
@@ -443,7 +444,10 @@ export const OptionVolatilitySurface3D: React.FC<
   if (!spotOk) {
     return (
       <div className="w-full h-full bg-surface-1 border border-line rounded-xl">
-        <EmptyState title="Brak ceny BTC" detail="Ilustracja opcji potrzebuje bieżącej ceny Hyperliquid — poczekaj na synchronizację danych." />
+        <EmptyState
+          title={tr('Brak ceny BTC', 'No BTC price')}
+          detail={tr('Ilustracja opcji potrzebuje bieżącej ceny Hyperliquid — poczekaj na synchronizację danych.', 'The options illustration needs the current Hyperliquid price; wait for the data to sync.')}
+        />
       </div>
     );
   }
@@ -454,11 +458,13 @@ export const OptionVolatilitySurface3D: React.FC<
       <div className="px-4 py-3 border-b border-line flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           <h2 className="font-display text-[15px] font-semibold text-ink-1 flex flex-wrap items-center gap-2">
-            Options (ilustracja) · powierzchnia IV modelu
-            <Badge tone="model" title="Parametryczny smile IV + Black-Scholes; brak kwotowań opcji">MODEL</Badge>
+            {tr('Options (ilustracja) · powierzchnia IV modelu', 'Options (illustration) · model IV surface')}
+            <Badge tone="model" title={tr('Parametryczny smile IV + Black-Scholes; brak kwotowań opcji', 'Parametric IV smile + Black-Scholes; no option quotes')}>
+              MODEL
+            </Badge>
           </h2>
           <p className="text-[11px] text-ink-3 font-mono tabular-nums mt-0.5">
-            Spot {currentPrice.toFixed(1)} · ATM IV modelu (30D) {modelAtmIv30 !== null ? `${modelAtmIv30.toFixed(1)}%` : '—'} · r ={' '}
+            Spot {currentPrice.toFixed(1)} · {tr('ATM IV modelu (30D)', 'model ATM IV (30D)')} {modelAtmIv30 !== null ? `${modelAtmIv30.toFixed(1)}%` : '—'} · r ={' '}
             {(RISK_FREE_RATE * 100).toFixed(1)}%, q = 0
           </p>
         </div>
@@ -466,7 +472,7 @@ export const OptionVolatilitySurface3D: React.FC<
         <div className="flex flex-wrap items-center gap-2 max-w-full">
           <div className="overflow-x-auto max-w-full">
             <Segmented<SurfaceMode>
-              ariaLabel="Wielkość na osi wysokości"
+              ariaLabel={tr('Wielkość na osi wysokości', 'Quantity on the height axis')}
               value={activeSurfaceMode}
               onChange={setActiveSurfaceMode}
               options={[
@@ -484,8 +490,8 @@ export const OptionVolatilitySurface3D: React.FC<
               setZoom(1);
             }}
             className="inline-flex items-center justify-center w-9 h-9 text-ink-2 hover:text-ink-1 bg-surface-2 border border-line rounded-lg transition-colors duration-150"
-            title="Resetuj orientację"
-            aria-label="Resetuj orientację"
+            title={tr('Resetuj orientację', 'Reset orientation')}
+            aria-label={tr('Resetuj orientację', 'Reset orientation')}
           >
             <RotateCcw className="w-3.5 h-3.5" aria-hidden="true" />
           </button>
@@ -494,8 +500,8 @@ export const OptionVolatilitySurface3D: React.FC<
               type="button"
               onClick={onToggleExpand}
               className="inline-flex items-center justify-center w-9 h-9 text-ink-2 hover:text-ink-1 bg-surface-2 border border-line rounded-lg transition-colors duration-150"
-              title="Maksymalizuj / zwiń panel"
-              aria-label="Maksymalizuj / zwiń panel"
+              title={tr('Maksymalizuj / zwiń panel', 'Maximise / collapse panel')}
+              aria-label={tr('Maksymalizuj / zwiń panel', 'Maximise / collapse panel')}
             >
               <Maximize2 className="w-3.5 h-3.5" aria-hidden="true" />
             </button>
@@ -512,7 +518,7 @@ export const OptionVolatilitySurface3D: React.FC<
           <canvas
             ref={canvasRef}
             role="img"
-            aria-label="Ilustracyjna powierzchnia zmienności implikowanej modelu w funkcji strike'u i terminu"
+            aria-label={tr("Ilustracyjna powierzchnia zmienności implikowanej modelu w funkcji strike'u i terminu", 'Illustrative model implied volatility surface as a function of strike and expiry')}
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
@@ -521,7 +527,7 @@ export const OptionVolatilitySurface3D: React.FC<
           />
           <div className="absolute top-3 left-3 pointer-events-none bg-surface-1/90 border border-line rounded-lg px-2.5 py-1 text-[11px] text-ink-2 flex items-center gap-1.5">
             <Move3d className="w-3.5 h-3.5 text-ink-3" aria-hidden="true" />
-            Przeciągnij, aby obrócić
+            {tr('Przeciągnij, aby obrócić', 'Drag to rotate')}
           </div>
           <label className="absolute right-3 bottom-3 flex items-center gap-2 bg-surface-1/90 border border-line rounded-lg px-2.5 py-1 text-[11px] text-ink-3">
             Zoom
@@ -541,11 +547,11 @@ export const OptionVolatilitySurface3D: React.FC<
         {/* Przekrój smile dla wybranego terminu + greki modelu */}
         <div className="lg:col-span-4 p-4 flex flex-col gap-3 text-xs">
           <div className="flex items-center justify-between gap-2">
-            <span className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium">Przekrój smile · greki (CALL)</span>
+            <span className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium">{tr('Przekrój smile · greki (CALL)', 'Smile cross-section · greeks (CALL)')}</span>
             <select
               value={selectedExpiryDays}
               onChange={(e) => setSelectedExpiryDays(Number(e.target.value))}
-              aria-label="Termin wygaśnięcia"
+              aria-label={tr('Termin wygaśnięcia', 'Expiry')}
               className="bg-page border border-line-strong rounded-lg px-2 min-h-9 text-xs text-ink-1"
             >
               {EXPIRIES.map((exp) => (
@@ -558,7 +564,9 @@ export const OptionVolatilitySurface3D: React.FC<
 
           <div className="bg-page border border-line rounded-lg p-2.5">
             <div className="flex items-center justify-between text-[11px] text-ink-3">
-              <span>IV modelu · {selectedExpiryDays}D</span>
+              <span>
+                {tr('IV modelu', 'Model IV')} · {selectedExpiryDays}D
+              </span>
               <span className="font-mono tabular-nums text-ink-2">ATM {Math.round(currentPrice / 1000) * 1000}</span>
             </div>
             <div className="h-24 flex items-end justify-center gap-1 pt-2">
@@ -575,7 +583,7 @@ export const OptionVolatilitySurface3D: React.FC<
                     onBlur={() => setHoveredPoint(null)}
                     onClick={() => setHoveredPoint(p)}
                     title={`Strike ${p.strike} · IV ${p.impliedVol}%`}
-                    aria-label={`Strike ${p.strike}, IV modelu ${p.impliedVol}%`}
+                    aria-label={tr(`Strike ${p.strike}, IV modelu ${p.impliedVol}%`, `Strike ${p.strike}, model IV ${p.impliedVol}%`)}
                     className="flex-1 max-w-6 h-full flex items-end"
                   >
                     <span
@@ -598,7 +606,7 @@ export const OptionVolatilitySurface3D: React.FC<
           {/* Bez wskazania słupka pokazujemy „—” zamiast wartości domyślnych */}
           <div className="grid grid-cols-2 gap-2 tabular-nums">
             <div className={greekCell}>
-              <span className="text-[10px] text-ink-3 block">Strike · IV modelu</span>
+              <span className="text-[10px] text-ink-3 block">{tr('Strike · IV modelu', 'Strike · model IV')}</span>
               <span className="font-mono text-ink-1">
                 {hoveredPoint ? `${hoveredPoint.strike} · ${hoveredPoint.impliedVol}%` : '—'}
               </span>
@@ -614,14 +622,16 @@ export const OptionVolatilitySurface3D: React.FC<
               <span className="font-mono text-ink-1">{hoveredPoint ? `$${hoveredPoint.gammaUsdPer1Pct.toFixed(0)}` : '—'}</span>
             </div>
             <div className={greekCell}>
-              <span className="text-[10px] text-ink-3 block">Charm ∂Δ/∂t (/rok)</span>
+              <span className="text-[10px] text-ink-3 block">{tr('Charm ∂Δ/∂t (/rok)', 'Charm ∂Δ/∂t (/year)')}</span>
               <span className="font-mono text-ink-1">{hoveredPoint?.charm ?? '—'}</span>
             </div>
           </div>
 
           <p className="text-[11px] text-ink-3 leading-relaxed">
-            Hyperliquid nie ma rynku opcji, a aplikacja nie pobiera kwotowań. Zero-gamma, max pain i GEX dealerów wymagają open interest
-            per strike — nie są wyliczane. To parametryczny smile + greki Blacka-Scholesa, wyłącznie do nauki.
+            {tr(
+              'Hyperliquid nie ma rynku opcji, a aplikacja nie pobiera kwotowań. Zero-gamma, max pain i GEX dealerów wymagają open interest per strike — nie są wyliczane. To parametryczny smile + greki Blacka-Scholesa, wyłącznie do nauki.',
+              'Hyperliquid has no options market and the app does not fetch quotes. Zero-gamma, max pain and dealer GEX need open interest per strike, so they are not computed. This is a parametric smile + Black-Scholes greeks, for learning only.'
+            )}
           </p>
         </div>
       </div>

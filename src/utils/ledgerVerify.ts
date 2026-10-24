@@ -1,4 +1,4 @@
-import { tr } from '../i18n';
+import { tr } from '../i18n.ts';
 /**
  * Weryfikacja weryfikowalnego dziennika desku w przeglądarce (WebCrypto) — bez zaufania do HyperQuant: pliki dzienne
  * prosto z gałęzi `ledger` repo danych, łańcuch hashy SHA-256 od GENESIS (postać kanoniczna każdej linii), głowa

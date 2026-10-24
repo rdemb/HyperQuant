@@ -5,6 +5,7 @@ import { useDesk } from '../../state/DeskContext';
 import { freshness, PERIOD_MS, useCrossMarket } from '../../state/useCrossMarket';
 import { MarketRow, topWithOther } from '../../utils/hlMarkets';
 import { Badge, EmptyState, Panel, Segmented, SPRING, fmtCompact, fmtPct, fmtPrice, DASH } from '../../ui';
+import { tr } from '../../i18n';
 
 type Metric = 'oi' | 'vol';
 const TOP_N = 40;
@@ -144,26 +145,29 @@ export const MarketMap: React.FC = () => {
 
   const label = (t: Tile) =>
     t.row
-      ? `${t.row.coin}: cena ${fmtPrice(t.row.markPx, priceDigits(t.row.markPx))}, 24h ${signedPct(t.row.change24hPct)}, OI ${fmtCompact(t.row.oiUsd, '$')}, wolumen 24h ${fmtCompact(t.row.volume24hUsd, '$')}, funding ${signedPct(t.row.fundingAprPct)} APR`
-      : `Inne: ${t.other?.count ?? 0} rynków, łącznie ${fmtCompact(t.other?.total ?? null, '$')}`;
+      ? tr(
+          `${t.row.coin}: cena ${fmtPrice(t.row.markPx, priceDigits(t.row.markPx))}, 24h ${signedPct(t.row.change24hPct)}, OI ${fmtCompact(t.row.oiUsd, '$')}, wolumen 24h ${fmtCompact(t.row.volume24hUsd, '$')}, funding ${signedPct(t.row.fundingAprPct)} APR`,
+          `${t.row.coin}: price ${fmtPrice(t.row.markPx, priceDigits(t.row.markPx))}, 24h ${signedPct(t.row.change24hPct)}, OI ${fmtCompact(t.row.oiUsd, '$')}, 24h volume ${fmtCompact(t.row.volume24hUsd, '$')}, funding ${signedPct(t.row.fundingAprPct)} APR`
+        )
+      : tr(`Inne: ${t.other?.count ?? 0} rynków, łącznie ${fmtCompact(t.other?.total ?? null, '$')}`, `Other: ${t.other?.count ?? 0} markets, total ${fmtCompact(t.other?.total ?? null, '$')}`);
 
   return (
     <Panel
-      title="Mapa rynku"
-      eyebrow={`Perpy Hyperliquid · top ${TOP_N} + inne`}
+      title={tr('Mapa rynku', 'Market map')}
+      eyebrow={tr(`Perpy Hyperliquid · top ${TOP_N} + inne`, `Hyperliquid perps · top ${TOP_N} + other`)}
       actions={
         <>
           <Segmented<Metric>
-            ariaLabel="Rozmiar kafla"
+            ariaLabel={tr('Rozmiar kafla', 'Tile size')}
             value={metric}
             onChange={setMetric}
             options={[
               { value: 'oi', label: 'OI' },
-              { value: 'vol', label: 'Wolumen 24h' },
+              { value: 'vol', label: tr('Wolumen 24h', '24h volume') },
             ]}
           />
-          <Badge tone={fr === 'live' ? 'live' : 'stale'} title="metaAndAssetCtxs z publicznego API Hyperliquid, odświeżane co 60 s">
-            {fr === 'live' ? 'LIVE' : fr === 'stale' ? 'STALE' : 'BRAK'}
+          <Badge tone={fr === 'live' ? 'live' : 'stale'} title={tr('metaAndAssetCtxs z publicznego API Hyperliquid, odświeżane co 60 s', 'metaAndAssetCtxs from the public Hyperliquid API, refreshed every 60 s')}>
+            {fr === 'live' ? 'LIVE' : fr === 'stale' ? 'STALE' : tr('BRAK', 'NONE')}
           </Badge>
         </>
       }
@@ -171,11 +175,14 @@ export const MarketMap: React.FC = () => {
     >
       <div ref={boxRef} className="relative w-full" style={{ height: cm.markets ? height : undefined }}>
         {!cm.markets ? (
-          <EmptyState title="Czekam na dane rynków" detail="metaAndAssetCtxs z publicznego API Hyperliquid — mapa pojawi się po pierwszej odpowiedzi." />
+          <EmptyState
+            title={tr('Czekam na dane rynków', 'Waiting for market data')}
+            detail={tr('metaAndAssetCtxs z publicznego API Hyperliquid — mapa pojawi się po pierwszej odpowiedzi.', 'metaAndAssetCtxs from the public Hyperliquid API; the map appears after the first response.')}
+          />
         ) : (
-          <div role="list" aria-label="Mapa rynku: kafle wg rozmiaru, kolor = zmiana 24h. Strzałki zmieniają kafel." onKeyDown={onKeyDown}>
+          <div role="list" aria-label={tr('Mapa rynku: kafle wg rozmiaru, kolor = zmiana 24h. Strzałki zmieniają kafel.', 'Market map: tiles by size, colour = 24h change. Arrow keys move between tiles.')} onKeyDown={onKeyDown}>
             {tiles.map((t, i) => {
-              const coin = t.row ? t.row.coin : `Inne (${t.other?.count ?? 0})`;
+              const coin = t.row ? t.row.coin : `${tr('Inne', 'Other')} (${t.other?.count ?? 0})`;
               const chg = t.row ? signedPct(t.row.change24hPct) : '';
               const showCoin = t.w >= textWidth(coin, FONT_COIN) + 10 && t.h >= 20;
               const showChg = showCoin && chg !== '' && t.h >= 36 && t.w >= textWidth(chg, FONT_CHG) + 10;
@@ -225,7 +232,8 @@ export const MarketMap: React.FC = () => {
         <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 text-[11px] text-ink-3">
           <ColorLegend colorFor={colorFor} />
           <span>
-            Rozmiar = {metric === 'oi' ? 'OI (USD)' : 'wolumen 24h (USD)'} · BTC — obrys 2 px · dane: publiczne API Hyperliquid
+            {tr('Rozmiar', 'Size')} = {metric === 'oi' ? 'OI (USD)' : tr('wolumen 24h (USD)', '24h volume (USD)')} ·{' '}
+            {tr('BTC — obrys 2 px · dane: publiczne API Hyperliquid', 'BTC: 2 px outline · data: public Hyperliquid API')}
           </span>
         </div>
       )}
@@ -266,7 +274,7 @@ const MapTooltip: React.FC<{ tile: Tile; boxW: number; boxH: number }> = ({ tile
             </dd>
             <dt className="text-ink-3 font-sans">OI</dt>
             <dd className="text-right text-ink-1">{fmtCompact(r.oiUsd, '$')}</dd>
-            <dt className="text-ink-3 font-sans">Wolumen 24h</dt>
+            <dt className="text-ink-3 font-sans">{tr('Wolumen 24h', '24h volume')}</dt>
             <dd className="text-right text-ink-1">{fmtCompact(r.volume24hUsd, '$')}</dd>
             <dt className="text-ink-3 font-sans">Funding APR</dt>
             <dd className="text-right text-ink-1">{signedPct(r.fundingAprPct)}</dd>
@@ -275,7 +283,7 @@ const MapTooltip: React.FC<{ tile: Tile; boxW: number; boxH: number }> = ({ tile
       ) : (
         <>
           <div className="text-sm font-semibold text-ink-1">{fmtCompact(tile.other?.total ?? null, '$')}</div>
-          <div className="text-ink-2">Inne — {tile.other?.count ?? 0} mniejszych rynków</div>
+          <div className="text-ink-2">{tr(`Inne — ${tile.other?.count ?? 0} mniejszych rynków`, `Other: ${tile.other?.count ?? 0} smaller markets`)}</div>
         </>
       )}
     </div>
@@ -286,8 +294,8 @@ const MapTooltip: React.FC<{ tile: Tile; boxW: number; boxH: number }> = ({ tile
 const ColorLegend: React.FC<{ colorFor: (v: number | null) => string }> = ({ colorFor }) => {
   const stops = [-8, -4, 0, 4, 8].map((v, i) => `${colorFor(v)} ${i * 25}%`).join(', ');
   return (
-    <div className="flex items-center gap-2" aria-label="Skala koloru: zmiana 24h od −8% do +8%, wartości poza zakresem obcięte">
-      <span>Zmiana 24h</span>
+    <div className="flex items-center gap-2" aria-label={tr('Skala koloru: zmiana 24h od −8% do +8%, wartości poza zakresem obcięte', 'Colour scale: 24h change from −8% to +8%, values outside the range clipped')}>
+      <span>{tr('Zmiana 24h', '24h change')}</span>
       <div className="flex flex-col gap-0.5">
         <div className="h-2 w-40 rounded-sm" style={{ background: `linear-gradient(to right, ${stops})` }} />
         <div className="flex justify-between w-40 font-mono tabular-nums text-[10px]">
@@ -303,16 +311,16 @@ const ColorLegend: React.FC<{ colorFor: (v: number | null) => string }> = ({ col
 /** Tabelaryczny odpowiednik mapy (dostępność: wartości bez najeżdżania). */
 const MapTable: React.FC<{ tiles: Tile[] }> = ({ tiles }) => (
   <details className="text-xs">
-    <summary className="cursor-pointer text-ink-3 hover:text-ink-1 select-none py-1">Tabela rynków (jak na mapie)</summary>
+    <summary className="cursor-pointer text-ink-3 hover:text-ink-1 select-none py-1">{tr('Tabela rynków (jak na mapie)', 'Market table (as on the map)')}</summary>
     <div className="mt-2 max-h-72 overflow-auto border border-line rounded-lg">
       <table className="w-full font-mono tabular-nums">
         <thead className="sticky top-0 bg-surface-2 text-ink-3 font-sans">
           <tr>
-            <th className="text-left font-medium px-2 py-1.5">Rynek</th>
-            <th className="text-right font-medium px-2 py-1.5">Cena</th>
+            <th className="text-left font-medium px-2 py-1.5">{tr('Rynek', 'Market')}</th>
+            <th className="text-right font-medium px-2 py-1.5">{tr('Cena', 'Price')}</th>
             <th className="text-right font-medium px-2 py-1.5">24h</th>
             <th className="text-right font-medium px-2 py-1.5">OI</th>
-            <th className="text-right font-medium px-2 py-1.5">Wolumen 24h</th>
+            <th className="text-right font-medium px-2 py-1.5">{tr('Wolumen 24h', '24h volume')}</th>
             <th className="text-right font-medium px-2 py-1.5">Funding APR</th>
           </tr>
         </thead>
@@ -333,7 +341,7 @@ const MapTable: React.FC<{ tiles: Tile[] }> = ({ tiles }) => (
             ) : (
               <tr key={t.id} className="border-t border-line text-ink-2">
                 <td className="text-left px-2 py-1 font-sans" colSpan={6}>
-                  Inne: {t.other?.count ?? 0} rynków, łącznie {fmtCompact(t.other?.total ?? null, '$')}
+                  {tr(`Inne: ${t.other?.count ?? 0} rynków, łącznie ${fmtCompact(t.other?.total ?? null, '$')}`, `Other: ${t.other?.count ?? 0} markets, total ${fmtCompact(t.other?.total ?? null, '$')}`)}
                 </td>
               </tr>
             )

@@ -1,4 +1,4 @@
-import { tr } from '../i18n';
+import { tr } from '../i18n.ts';
 /**
  * Laboratorium folkloru: prerejestrowany katalog reguł day tradingu BTC, ocena historyczna (eksploracyjna, FDR
  * Benjaminiego–Hochberga) i ocena do przodu (potwierdzająca: e-wartości z procesu zakładów, e-BH, sekwencja ufności) —

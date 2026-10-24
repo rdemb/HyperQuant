@@ -2,7 +2,7 @@
  * Język interfejsu (PL/EN). Wybór zapisany w przeglądarce ma pierwszeństwo, inaczej decyduje
  * pierwszy polski lub angielski język z ustawień przeglądarki (każdy inny → EN).
  * Język jest stały przez cały czas życia strony: zmiana zapisuje wybór i przeładowuje stronę,
- * dzięki czemu teksty w stałych modułów i na canvasie nie wymagają subskrypcji.
+ * dzięki czemu teksty w stałych modułach i na canvasie nie wymagają subskrypcji.
  */
 export type Lang = 'pl' | 'en';
 

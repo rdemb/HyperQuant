@@ -1,4 +1,4 @@
-import { tr } from '../i18n';
+import { tr } from '../i18n.ts';
 /**
  * Przepływ kohort uczestników Hyperliquid — typy publikowanego dokumentu i odczyty dla UI (bez importów zewnętrznych;
  * moduł ładowany także natywnie przez Node 24 w skanerze).

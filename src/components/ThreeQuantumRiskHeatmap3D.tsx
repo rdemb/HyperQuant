@@ -15,6 +15,7 @@ import {
 } from '../types/trading';
 import { GLOW, T3, T3_CSS, isNarrowViewport, labFov, labPixelRatio } from '../views/lab/tokens3d';
 import { DockPresets, DockSlider, DockToggle, HoverCard, HudButton, HudHeader, SCENE_FRAME, SceneDock } from '../views/lab/hud';
+import { tr } from '../i18n';
 
 // Scena „Liquidation Risk (szacunek)”: teren heurystycznego szacunku poziomów likwidacji (nie realne pozycje)
 interface ThreeQuantumRiskHeatmap3DProps {
@@ -488,15 +489,15 @@ export const ThreeQuantumRiskHeatmap3D: React.FC<
           normZ,
           intensity,
           price: bucket.price,
-          leverageLabel: levOffset > 2 ? '~100× (umownie)' : levOffset === 0 ? '~20× (umownie)' : '~5× (umownie)',
+          leverageLabel: `${levOffset > 2 ? '~100×' : levOffset === 0 ? '~20×' : '~5×'} ${tr('(umownie)', '(nominal)')}`,
           isShortSqueeze: isShort,
           tag: bucket.isPOC
-            ? 'POC + szacunek likwidacji'
+            ? tr('POC + szacunek likwidacji', 'POC + liquidation estimate')
             : Math.abs(bucket.price - curQuant.primaryMagnetPrice) < 35
-            ? 'Najsilniejsze U(p)'
+            ? tr('Najsilniejsze U(p)', 'Strongest U(p)')
             : isShort
-            ? 'Szac. likwidacje shortów'
-            : 'Szac. likwidacje longów',
+            ? tr('Szac. likwidacje shortów', 'Est. short liquidations')
+            : tr('Szac. likwidacje longów', 'Est. long liquidations'),
         });
       });
 
@@ -534,7 +535,7 @@ export const ThreeQuantumRiskHeatmap3D: React.FC<
           normZ: 1.2,
           intensity: levelIntensityFromProfile(curShaakuni.pdh),
           price: curShaakuni.pdh,
-          leverageLabel: 'pula stopów przy PDH (założenie)',
+          leverageLabel: tr('pula stopów przy PDH (założenie)', 'stop pool at PDH (assumption)'),
           isShortSqueeze: pdhAbove,
           tag: 'PDH',
         });
@@ -551,7 +552,7 @@ export const ThreeQuantumRiskHeatmap3D: React.FC<
           normZ: -1.2,
           intensity: levelIntensityFromProfile(curShaakuni.pdl),
           price: curShaakuni.pdl,
-          leverageLabel: 'pula stopów przy PDL (założenie)',
+          leverageLabel: tr('pula stopów przy PDL (założenie)', 'stop pool at PDL (assumption)'),
           isShortSqueeze: pdlAbove,
           tag: 'PDL',
         });
@@ -595,11 +596,11 @@ export const ThreeQuantumRiskHeatmap3D: React.FC<
         beaconMesh.userData = {
           title: `${m.tag} · ${Math.round(m.price).toLocaleString('en-US')} ${m.isShortSqueeze ? '▲' : '▼'}`,
           priceLevel: `${m.price.toFixed(1)} (${m.price >= spot ? '+' : '−'}${Math.abs(((m.price - spot) / spot) * 100).toFixed(2)}%)`,
-          strength: `${Math.round(m.intensity * 100)}% maks.`,
+          strength: `${Math.round(m.intensity * 100)}% ${tr('maks.', 'of max')}`,
           leverageTier: m.leverageLabel,
           sideLabel: m.isShortSqueeze
-            ? 'Nad ceną: szacowane likwidacje shortów'
-            : 'Pod ceną: szacowane likwidacje longów',
+            ? tr('Nad ceną: szacowane likwidacje shortów', 'Above price: estimated short liquidations')
+            : tr('Pod ceną: szacowane likwidacje longów', 'Below price: estimated long liquidations'),
           accentColor: isLevel ? T3_CSS.level : T3_CSS.zone,
         } satisfies HoveredMagnetPeak;
 
@@ -883,17 +884,18 @@ export const ThreeQuantumRiskHeatmap3D: React.FC<
       {/* Kontener WebGL */}
       <div ref={canvasMountRef} className="w-full h-full" />
 
-      <HudHeader title="Liquidation Risk (szacunek) · teren szacowanych poziomów likwidacji">
-        Najsilniejsze U(p) {quant.primaryMagnetPrice.toLocaleString('en-US')} {magnetAbove ? '▲' : '▼'} · udział szacunku nad / pod ceną{' '}
+      <HudHeader title={tr('Liquidation Risk (szacunek) · teren szacowanych poziomów likwidacji', 'Liquidation Risk (estimate) · terrain of estimated liquidation levels')}>
+        {tr('Najsilniejsze U(p)', 'Strongest U(p)')} {quant.primaryMagnetPrice.toLocaleString('en-US')} {magnetAbove ? '▲' : '▼'} ·{' '}
+        {tr('udział szacunku nad / pod ceną', 'share of the estimate above / below price')}{' '}
         {fuelAbovePct !== null ? `${fuelAbovePct}% / ${100 - fuelAbovePct}%` : '—'}
         <span className="flex items-center gap-2 pt-1 font-sans text-ink-3">
-          słaby
+          {tr('słaby', 'weak')}
           <span
             className="w-28 h-1.5 rounded-full"
             style={{ background: 'linear-gradient(90deg,#101826,#3f3f7a,#9085e9,#cdc7f7)' }}
             aria-hidden="true"
           />
-          silny · względna siła, nie kwota USD
+          {tr('silny · względna siła, nie kwota USD', 'strong · relative strength, not a USD amount')}
         </span>
       </HudHeader>
 
@@ -904,23 +906,27 @@ export const ThreeQuantumRiskHeatmap3D: React.FC<
             onClick={() =>
               onTriggerMagnetSignal(
                 magnetAbove ? 'LONG' : 'SHORT',
-                `Liquidation Risk (szacunek): najsilniejsze U(p) ${magnetAbove ? 'nad' : 'pod'} ceną`,
-                `Poziom ${quant.primaryMagnetPrice} · udział szacunku nad/pod ceną ${
-                  fuelAbovePct !== null ? `${fuelAbovePct}%/${100 - fuelAbovePct}%` : 'n/a'
-                } · szacunek z wolumenu, nie realne pozycje`
+                tr(
+                  `Liquidation Risk (szacunek): najsilniejsze U(p) ${magnetAbove ? 'nad' : 'pod'} ceną`,
+                  `Liquidation Risk (estimate): strongest U(p) ${magnetAbove ? 'above' : 'below'} price`
+                ),
+                tr(
+                  `Poziom ${quant.primaryMagnetPrice} · udział szacunku nad/pod ceną ${fuelAbovePct !== null ? `${fuelAbovePct}%/${100 - fuelAbovePct}%` : 'n/a'} · szacunek z wolumenu, nie realne pozycje`,
+                  `Level ${quant.primaryMagnetPrice} · share of the estimate above/below price ${fuelAbovePct !== null ? `${fuelAbovePct}%/${100 - fuelAbovePct}%` : 'n/a'} · estimate from volume, not real positions`
+                )
               )
             }
             icon={<ClipboardList className="w-3.5 h-3.5" aria-hidden="true" />}
-            label={`Przekaż do planu · ${magnetAbove ? '▲ Long' : '▼ Short'}`}
-            title="Przekazuje stronę najsilniejszego U(p) do Analizatora planu — plan ocenisz tam"
+            label={`${tr('Przekaż do planu', 'Send to plan')} · ${magnetAbove ? '▲ Long' : '▼ Short'}`}
+            title={tr('Przekazuje stronę najsilniejszego U(p) do Analizatora planu — plan ocenisz tam', 'Sends the side of the strongest U(p) to the Plan Analyzer, where you evaluate the plan')}
           />
         )}
-        <HudButton onClick={() => applyPreset('iso')} icon={<RotateCcw className="w-3.5 h-3.5" aria-hidden="true" />} label="Reset kamery" />
+        <HudButton onClick={() => applyPreset('iso')} icon={<RotateCcw className="w-3.5 h-3.5" aria-hidden="true" />} label={tr('Reset kamery', 'Reset camera')} />
         {onToggleExpand && (
           <HudButton
             onClick={onToggleExpand}
             icon={isExpanded ? <Minimize2 className="w-3.5 h-3.5" aria-hidden="true" /> : <Maximize2 className="w-3.5 h-3.5" aria-hidden="true" />}
-            label={isExpanded ? 'Widok dzielony' : 'Pełny ekran'}
+            label={isExpanded ? tr('Widok dzielony', 'Split view') : tr('Pełny ekran', 'Full screen')}
           />
         )}
       </div>
@@ -931,33 +937,33 @@ export const ThreeQuantumRiskHeatmap3D: React.FC<
           title={hoveredPeak.title}
           subtitle={hoveredPeak.sideLabel}
           rows={[
-            { k: 'Cena', v: hoveredPeak.priceLevel },
-            { k: 'Siła szacunku', v: hoveredPeak.strength },
-            { k: 'Dźwignia', v: hoveredPeak.leverageTier },
+            { k: tr('Cena', 'Price'), v: hoveredPeak.priceLevel },
+            { k: tr('Siła szacunku', 'Estimate strength'), v: hoveredPeak.strength },
+            { k: tr('Dźwignia', 'Leverage'), v: hoveredPeak.leverageTier },
           ]}
         />
       )}
 
       <SceneDock collapsed={dockCollapsed} onToggle={() => setDockCollapsed((v) => !v)}>
         <DockPresets<RiskTopoPreset>
-          ariaLabel="Kamera"
+          ariaLabel={tr('Kamera', 'Camera')}
           value={preset}
           onChange={applyPreset}
           options={[
-            { id: 'iso', label: 'Izometria' },
-            { id: 'shortsqueeze', label: 'Nad ceną' },
-            { id: 'longcascade', label: 'Pod ceną' },
-            { id: 'topcontour', label: 'Z góry' },
+            { id: 'iso', label: tr('Izometria', 'Isometric') },
+            { id: 'shortsqueeze', label: tr('Nad ceną', 'Above price') },
+            { id: 'longcascade', label: tr('Pod ceną', 'Below price') },
+            { id: 'topcontour', label: tr('Z góry', 'Top-down') },
           ]}
         />
-        <DockSlider label="Wysokość" min={0.6} max={2.2} step={0.05} value={topoElevationGain} onChange={setTopoElevationGain} format={(v) => `${v.toFixed(2)}×`} />
+        <DockSlider label={tr('Wysokość', 'Height')} min={0.6} max={2.2} step={0.05} value={topoElevationGain} onChange={setTopoElevationGain} format={(v) => `${v.toFixed(2)}×`} />
         <DockToggle on={showContourWireframe} onClick={() => setShowContourWireframe((v) => !v)}>
-          Siatka
+          {tr('Siatka', 'Wireframe')}
         </DockToggle>
         <DockToggle on={dofEnabled} onClick={() => setDofEnabled((v) => !v)}>
-          <Focus className="w-3 h-3" aria-hidden="true" /> Głębia ostrości
+          <Focus className="w-3 h-3" aria-hidden="true" /> {tr('Głębia ostrości', 'Depth of field')}
         </DockToggle>
-        {dofEnabled && <DockSlider label="Ostrość" min={10} max={40} step={1} value={dofFocus} onChange={setDofFocus} format={(v) => `${v} m`} />}
+        {dofEnabled && <DockSlider label={tr('Ostrość', 'Focus')} min={10} max={40} step={1} value={dofFocus} onChange={setDofFocus} format={(v) => `${v} m`} />}
       </SceneDock>
     </div>
   );
