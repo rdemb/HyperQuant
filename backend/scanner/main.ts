@@ -22,6 +22,9 @@ import { WeightLimiter } from './rateLimiter.ts';
 import { Scanner } from './scanner.ts';
 import { fetchLeaderboardAccounts } from './seed.ts';
 import { publishToGit } from './gitPublish.ts';
+import { HISTORY_README, MarketRecorder, historyIndex, pruneHistory } from './history.ts';
+import { prepareHistoryRepo, publishHistory } from './historyGit.ts';
+import { WHALE_MARKETS, WhaleWatcher } from './whales.ts';
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 const log = (msg: string) => console.log(`[skaner] ${msg}`);
@@ -85,6 +88,7 @@ function saveState(): void {
   writeJsonAtomic(statePath, book.toJSON());
   writeJsonAtomic(liqStatePath, { savedAt: Date.now(), since: scanner.tapeSince, confirmer: scanner.confirmer.toJSON(), prices: scanner.prices.toJSON() });
   writeJsonAtomic(cohortStatePath, cohorts.toJSON());
+  if (whales) writeJsonAtomic(whaleStatePath, whales.secret);
 }
 
 const rest = new HlRest(new WeightLimiter(cfg.weightPerMin));
@@ -156,6 +160,87 @@ const stream = new HlStream(
   (t, levels) => liquidity.onBook(t, levels)
 );
 
+/**
+ * Rejestrator historii (gałąź `history` repo danych, rynki z HQ_HISTORY_MARKETS): na rynek osobne połączenie WebSocket
+ * (taśma, kontekst, arkusz bliski i daleki jak na stronie). Części 5-minutowe i pliki godzinowe w katalogu repo gałęzi,
+ * commit po każdym zapisie; raz na dobę (po 00:15 UTC) usunięcie dni spoza okna i spłaszczenie gałęzi do jednego commita.
+ */
+const DAY_MS = 86_400_000;
+const historyRepo = cfg.git && cfg.history ? { remote: cfg.git.remote, dir: join(cfg.stateDir, 'git', 'history'), sshKey: cfg.git.sshKey, branch: 'history' } : null;
+const historyDir = historyRepo ? historyRepo.dir : join(cfg.stateDir, 'history');
+if (cfg.history) mkdirSync(historyDir, { recursive: true });
+const recorders = (cfg.history?.markets ?? []).map((coin) => {
+  const rec = new MarketRecorder(coin, historyDir);
+  const s: HlStream = new HlStream(
+    coin,
+    (t) => rec.onTrades(t),
+    (c) => {
+      rec.onCtx(c, Date.now());
+      const aggs = rec.aggs();
+      if (aggs) s.setBookAggs(aggs);
+    },
+    WebSocket,
+    (t, levels) => rec.onBook(t, levels),
+    (up, at) => rec.onState(up, at)
+  );
+  return { rec, stream: s };
+});
+let historyReady = historyRepo === null;
+let historyBusy = false;
+/** Doba UTC ostatniego sprzątania (od startu bieżąca — pierwsze spłaszczenie następnej doby) */
+let historyDay = Math.floor(Date.now() / DAY_MS);
+
+async function historyTick(): Promise<void> {
+  if (!cfg.history || historyBusy) return;
+  historyBusy = true;
+  try {
+    const now = Date.now();
+    let written = 0;
+    for (const { rec } of recorders) written += rec.flush(now);
+    const day = Math.floor(now / DAY_MS);
+    const daily = day !== historyDay && now - day * DAY_MS >= 15 * 60_000;
+    if (daily) pruneHistory(historyDir, cfg.history.markets, cfg.history.keepDays, now);
+    if (written > 0 || daily) {
+      writeJsonAtomic(join(historyDir, 'index.json'), historyIndex(historyDir, cfg.history.markets, cfg.history.keepDays, now));
+      writeFileSync(join(historyDir, 'README.md'), HISTORY_README);
+    }
+    if (!historyRepo) {
+      if (daily) historyDay = day;
+      return;
+    }
+    if (written === 0 && !daily) return;
+    // Pliki mogą powstawać przed przygotowaniem repo (przygotowanie działa na miejscu), push — dopiero po nim
+    if (!historyReady) historyReady = await prepareHistoryRepo(historyRepo, now);
+    if (!historyReady) {
+      console.error('[skaner] historia: repo gałęzi niedostępne — spróbuję przy następnym zapisie');
+      return;
+    }
+    const r = await publishHistory(historyRepo, `historia: ${new Date(now).toISOString()}`, now, daily);
+    if (r.ok && r.pushed) {
+      if (daily) historyDay = day;
+    } else console.error(`[skaner] historia: ${r.error ?? 'commit/push nieudany'}`);
+  } finally {
+    historyBusy = false;
+  }
+}
+
+/**
+ * Warstwa wielorybów (HQ_WHALE_TOP > 0): pozycje i zlecenia największych kont z rankingu i dużych pozycji BTC, we własnym
+ * budżecie wag; plik `whales.json` bez adresów (pseudonim konta na dobę UTC, sekret doby tylko w stanie serwera).
+ */
+const whaleStatePath = join(cfg.stateDir, 'whale-salt.json');
+let whaleSalt: { day: number; key: string } | undefined;
+try {
+  const j = JSON.parse(readFileSync(whaleStatePath, 'utf8')) as { day?: unknown; key?: unknown };
+  if (typeof j.day === 'number' && typeof j.key === 'string' && j.key.length >= 32) whaleSalt = { day: j.day, key: j.key };
+} catch {
+  // brak stanu — nowy sekret doby
+}
+const whaleCfg = cfg.whales;
+const whales = whaleCfg
+  ? new WhaleWatcher({ rest: new HlRest(new WeightLimiter(whaleCfg.weightPerMin)), candidates: () => book.whaleCandidates(whaleCfg.top), coins: WHALE_MARKETS, salt: whaleSalt })
+  : null;
+
 /** Zasiew największymi kontami z publicznego rankingu (adresy zostają na serwerze). */
 async function seedFromLeaderboard(): Promise<void> {
   if (cfg.seedTop <= 0) return;
@@ -177,7 +262,10 @@ const DATA_README = [
   '- `cohorts/BTC.json` — przepływ kohort (market makerzy, statystycznie poinformowani, wieloryby, reszta): kubełki 15 min z 24 h, markouty poza próbą; k-anonimowość (komórki z < 5 uczestnikami lub z dominującym uczestnikiem ukryte).',
   '- `liquidity/BTC.json` — profil płynności arkusza: mediana głębokości obu stron w ±10 / ±20 bp wg godziny UTC (do 30 dni), bieżąca płynność względem normy godziny, odporność po gwałtownych ruchach.',
   '- `lab/BTC.json` — laboratorium folkloru: reguły day tradingu (okrągłe poziomy, zebranie PDH/PDL, IB, VWAP, luka CME, finansowanie, 10:00 NY, momentum) — test historyczny z FDR i prerejestrowany test do przodu (e-wartości, e-BH) ze wszystkimi zdarzeniami do przeliczenia.',
+  '- `whales.json` — warstwa wielorybów (BTC, ETH, SOL, HYPE): pozycje (wartość, wejście, likwidacja, dźwignia) i zlecenia oczekujące z wyzwalanymi (limit, stop, TP) największych kont z publicznego rankingu i dużych pozycji BTC; konto jako pseudonim ważny jedną dobę UTC, bez adresów.',
   '- `status.json` — stan skanera (liczby adresów i pozycji, błędy API).',
+  '',
+  'Gałąź `history` — nagranie taśmy, arkusza i kontekstu rynków (części 5-minutowe i pliki godzinowe JSON w gzip, okno ostatnich dni, jeden commit): historia footprintu, Delty, CVD i mapy ciepła od pierwszej sekundy na stronie; opis w README gałęzi.',
   '',
   'Gałąź `ledger` — weryfikowalny dziennik prognoz desku (historia przyrostowa): pliki dzienne `BTC/RRRR-MM-DD.jsonl` z łańcuchem hashy SHA-256,',
   'kotwice OpenTimestamps `BTC/ots/`, podsumowanie `BTC/summary.json`. Weryfikacja: `node scripts/verify-ledger.mjs` w repo HyperQuant.',
@@ -202,7 +290,7 @@ async function gitPublishTick(): Promise<void> {
     }
   }
   // Pliki opcjonalne (np. kohorty po błędzie budowy) nie wstrzymują publikacji mapy
-  for (const key of [`liq-tape/${cfg.coin}.json`, `cohorts/${cfg.coin}.json`, `ledger/${cfg.coin}/summary.json`, `liquidity/${cfg.coin}.json`, `lab/${cfg.coin}.json`]) {
+  for (const key of [`liq-tape/${cfg.coin}.json`, `cohorts/${cfg.coin}.json`, `ledger/${cfg.coin}/summary.json`, `liquidity/${cfg.coin}.json`, `lab/${cfg.coin}.json`, 'whales.json']) {
     try {
       files.push([key, readFileSync(join(cfg.outDir, key), 'utf8')]);
     } catch {
@@ -334,6 +422,18 @@ async function scanLoop(): Promise<void> {
   }
 }
 
+/** Pętla warstwy wielorybów (własny budżet wag — nie spowalnia skanu pozycji BTC). */
+async function whaleLoop(): Promise<void> {
+  while (!stopping && whales) {
+    try {
+      if ((await whales.tick(Date.now)) === 0) await sleep(5000);
+    } catch (e) {
+      console.error(`[skaner] błąd warstwy wielorybów: ${String(e)}`);
+      await sleep(5000);
+    }
+  }
+}
+
 /** Zadanie timera z przechwyceniem błędów (np. pełny dysk) — błąd jest logowany, proces działa dalej. */
 function guarded(name: string, fn: () => unknown): () => Promise<void> {
   return async () => {
@@ -350,6 +450,7 @@ const timers = [
     if (Date.now() - lastWsMsg > MAX_GAP_MS) wsGap = true;
     await ctxFallback();
     const ok = await scanner.publish();
+    if (whales) writeJsonAtomic(join(cfg.outDir, 'whales.json'), whales.build(Date.now()));
     const s = book.positions().length;
     log(
       `adresy=${book.size} pozycje=${s} zapytania=${rest.requests} błędy=${rest.errors} ws=${stream.connected ? 'ok' : 'brak'} ` +
@@ -390,6 +491,7 @@ const timers = [
   setInterval(guarded('zasiew', seedFromLeaderboard), 6 * 60 * 60_000),
   setInterval(guarded('archiwum i laboratorium', labTick), 10 * 60_000),
   ...(cfg.git ? [setInterval(guarded('repo danych', gitPublishTick), cfg.git.everyS * 1000)] : []),
+  ...(cfg.history ? [setInterval(guarded('historia', historyTick), 15_000)] : []),
 ];
 setTimeout(guarded('zasiew', seedFromLeaderboard), 5_000);
 // Archiwum i laboratorium po inicjalizacji dziennika (rejestracja katalogu wymaga gotowego łańcucha)
@@ -402,6 +504,7 @@ function shutdown(): void {
   stopping = true;
   for (const t of timers) clearInterval(t);
   stream.stop();
+  for (const r of recorders) r.stream.stop();
   try {
     saveState();
   } catch (e) {
@@ -419,10 +522,14 @@ if (runMinutes > 0) setTimeout(shutdown, runMinutes * 60_000);
 
 log(
   `start: rynek ${cfg.coin}, budżet ${cfg.weightPerMin} wag/min, publikacja co ${cfg.publishEveryS} s ${cfg.r2 ? 'do R2' : 'lokalnie'}` +
-    (cfg.git ? `, repo danych co ${cfg.git.everyS} s` : '')
+    (cfg.git ? `, repo danych co ${cfg.git.everyS} s` : '') +
+    (cfg.history ? `, historia ${cfg.history.markets.join('/')} (${cfg.history.keepDays} dni${historyRepo ? '' : ', lokalnie'})` : '') +
+    (whales ? `, wieloryby: ${whaleCfg?.top} kont, ${whaleCfg?.weightPerMin} wag/min` : '')
 );
 // Agregacja arkusza dobrana do ceny przed pierwszym połączeniem (z ostatniej zapisanej minuty), potem co 10 min
 adjustBookAgg();
 stream.start();
+for (const r of recorders) r.stream.start();
 setTimeout(guarded('agregacja arkusza', adjustBookAgg), 60_000);
 void scanLoop();
+void whaleLoop();

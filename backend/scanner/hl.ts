@@ -74,6 +74,8 @@ export interface HlTrade {
   time: number;
   /** Identyfikator transakcji (unikalny razem z czasem i rynkiem) */
   tid?: number;
+  /** Hash transakcji: wypełnienia jednego zlecenia biorcy dzielą hash (zera = bez użytecznego hasha, np. TWAP) */
+  hash?: string;
   users?: [string, string];
 }
 
@@ -82,6 +84,8 @@ export interface HlCtx {
   /** Open interest w jednostkach rynku (jedna strona) */
   oiBtc: number;
   dayNtlVlm: number;
+  /** Stawka finansowania za godzinę (ułamek); brak w zapasowym odczycie REST */
+  funding?: number;
 }
 
 /**
@@ -97,8 +101,10 @@ export class HlStream {
   private readonly onCtx: (c: HlCtx) => void;
   /** Migawki arkusza zagregowanego (rejestrator płynności); brak = bez subskrypcji arkusza */
   private readonly onBook: ((t: number, levels: unknown) => void) | null;
-  /** Agregacja arkusza (dobierana do ceny przez rejestrator) */
-  private bookAgg: BookAgg = { nSigFigs: 4 };
+  /** Połączenie otwarte (po wysłaniu subskrypcji) albo zamknięte — początek i koniec ciągłego nagrania */
+  private readonly onState: ((up: boolean, at: number) => void) | null;
+  /** Agregacje arkusza (dobierane do ceny); kilka naraz na jednym połączeniu — migawki rozróżnia krok cen */
+  private bookAggs: BookAgg[] = [{ nSigFigs: 4 }];
   private readonly WS: typeof WebSocket;
   private ws: WebSocket | null = null;
   private timers: ReturnType<typeof setTimeout>[] = [];
@@ -115,13 +121,15 @@ export class HlStream {
     onTrades: (t: HlTrade[]) => void,
     onCtx: (c: HlCtx) => void,
     wsCtor: typeof WebSocket = WebSocket,
-    onBook: ((t: number, levels: unknown) => void) | null = null
+    onBook: ((t: number, levels: unknown) => void) | null = null,
+    onState: ((up: boolean, at: number) => void) | null = null
   ) {
     this.coin = coin;
     this.onTrades = onTrades;
     this.onCtx = onCtx;
     this.WS = wsCtor;
     this.onBook = onBook;
+    this.onState = onState;
   }
 
   private bookSub(a: BookAgg): Record<string, unknown> {
@@ -130,13 +138,22 @@ export class HlStream {
 
   /** Zmiana agregacji arkusza: wypisanie starej subskrypcji i zapis nowej (przy ponownym połączeniu — od razu nowa). */
   setBookAgg(a: BookAgg): void {
-    if (a.nSigFigs === this.bookAgg.nSigFigs && a.mantissa === this.bookAgg.mantissa) return;
-    const prev = this.bookAgg;
-    this.bookAgg = { nSigFigs: a.nSigFigs, ...(a.mantissa ? { mantissa: a.mantissa } : {}) };
+    this.setBookAggs([a]);
+  }
+
+  /** Zmiana zestawu agregacji: wypisanie tych, których już nie ma, i zapis nowych (bez zmian — bez wiadomości). */
+  setBookAggs(list: BookAgg[]): void {
+    const key = (a: BookAgg) => `${a.nSigFigs}:${a.mantissa ?? 0}`;
+    const prev = this.bookAggs;
+    const next = list.map((a) => ({ nSigFigs: a.nSigFigs, ...(a.mantissa ? { mantissa: a.mantissa } : {}) }));
+    const prevKeys = new Set(prev.map(key));
+    const nextKeys = new Set(next.map(key));
+    if (prevKeys.size === nextKeys.size && [...nextKeys].every((k) => prevKeys.has(k))) return;
+    this.bookAggs = next;
     const ws = this.ws;
     if (!this.onBook || !ws || ws.readyState !== this.WS.OPEN) return;
-    ws.send(JSON.stringify({ method: 'unsubscribe', subscription: this.bookSub(prev) }));
-    ws.send(JSON.stringify({ method: 'subscribe', subscription: this.bookSub(this.bookAgg) }));
+    for (const a of prev) if (!nextKeys.has(key(a))) ws.send(JSON.stringify({ method: 'unsubscribe', subscription: this.bookSub(a) }));
+    for (const a of next) if (!prevKeys.has(key(a))) ws.send(JSON.stringify({ method: 'subscribe', subscription: this.bookSub(a) }));
   }
 
   start(): void {
@@ -168,7 +185,8 @@ export class HlStream {
         ws.send(JSON.stringify({ method: 'subscribe', subscription: { type, coin: this.coin } }));
       }
       // Arkusz zagregowany (~co 5 s) tak, by 20 poziomów pokrywało ±20 bp (agregacja dobierana do ceny)
-      if (this.onBook) ws.send(JSON.stringify({ method: 'subscribe', subscription: this.bookSub(this.bookAgg) }));
+      if (this.onBook) for (const a of this.bookAggs) ws.send(JSON.stringify({ method: 'subscribe', subscription: this.bookSub(a) }));
+      this.onState?.(true, Date.now());
       this.timers.push(
         setInterval(() => ws.readyState === this.WS.OPEN && ws.send('{"method":"ping"}'), 50_000),
         setInterval(() => {
@@ -206,17 +224,21 @@ export class HlStream {
       }
       else if (msg.channel === 'activeAssetCtx') {
         const ctx = (msg.data as { ctx?: Record<string, unknown> } | undefined)?.ctx;
-        const c = { markPx: Number(ctx?.markPx), oiBtc: Number(ctx?.openInterest), dayNtlVlm: Number(ctx?.dayNtlVlm) };
+        const c = { markPx: Number(ctx?.markPx), oiBtc: Number(ctx?.openInterest), dayNtlVlm: Number(ctx?.dayNtlVlm), funding: Number(ctx?.funding) };
         if (Number.isFinite(c.markPx) && Number.isFinite(c.oiBtc)) this.onCtx(c);
       }
     };
     ws.onclose = () => {
+      if (this.connected) this.onState?.(false, Date.now());
       this.connected = false;
       this.clearTimers();
       if (this.stopped) return;
       this.timers.push(setTimeout(() => this.open(), this.backoff));
       this.backoff = Math.min(60_000, this.backoff * 2);
     };
-    ws.onerror = () => ws.close();
+    // Po błędzie zawsze przychodzi zamknięcie; close() na łączącym się gnieździe wywołuje kolejny błąd (rekurencja w undici)
+    ws.onerror = () => {
+      if (ws.readyState === this.WS.OPEN) ws.close();
+    };
   }
 }

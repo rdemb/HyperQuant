@@ -190,12 +190,5 @@ export class BookHistory {
   }
 }
 
-/**
- * Cyfry znaczące l2Book: krok arkusza bliskiego najbliższy 2 pb ceny (BTC 75 000 → 10 USD, ETH 2 800 → 1,
- * SOL 195 → 0,1, HYPE 37 → 0,01), dalekiego — dziesięć razy większy.
- */
-export function bookSigFigs(price: number): { near: number; far: number } {
-  const digits = Math.floor(Math.log10(price)) + 1;
-  const near = Math.min(5, Math.max(2, digits - Math.round(Math.log10(price * 2e-4))));
-  return { near, far: Math.max(2, near - 1) };
-}
+/** Cyfry znaczące l2Book (wspólne z rejestratorem historii na serwerze). */
+export { bookSigFigs } from '../../../utils/tapeHistory';
