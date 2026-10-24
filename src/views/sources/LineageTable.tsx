@@ -114,10 +114,10 @@ const GROUPS: { title: string; rows: Row[] }[] = [
           'Tylko konta, które skaner obserwuje (ranking i duże pozycje BTC), więc to nie wszyscy duzi gracze. Odczyt sprzed kilku minut: zlecenie mogło zostać zdjęte. Plik starszy niż 20 min jest ukryty.',
       },
       {
-        metric: 'Statystyki świec (Wykresy): wolumen, delta, delta %, max i min delty, transakcje, tempo taśmy, ΔOI, finansowanie',
+        metric: 'Tablica liczb (Wykresy): wolumen, delta, delta %, max i min delty, transakcje, tempo taśmy, ΔOI, finansowanie',
         source: 'Hyperliquid API: candleSnapshot, fundingHistory; WS trades i activeAssetCtx nagrywane od otwarcia widoku',
         method:
-          'Wolumen ze świec API; delta, jej ekstrema, transakcje i tempo (transakcje na sekundę świecy) z taśmy; ΔOI = otwarte pozycje na końcu świecy − na początku (ostatnie próbki activeAssetCtx nie późniejsze niż te chwile); finansowanie = średnia stawek godzin świecy z historii API w skali roku (stawka × 24 × 365), bieżąca godzina — stawka prognozowana',
+          'Wolumen ze świec API; delta, jej ekstrema, transakcje i tempo (transakcje na sekundę świecy) z taśmy; ΔOI = otwarte pozycje na końcu świecy − na początku (ostatnie próbki activeAssetCtx nie późniejsze niż te chwile); finansowanie = średnia stawek godzin świecy z historii API w % na 8 h (stawka godzinowa × 8), bieżąca godzina — stawka prognozowana',
         kinds: ['LIVE'],
         refresh: 'na żywo',
         caveat: 'Delta, transakcje, tempo i ΔOI tylko dla świec nagranych od otwarcia strony; brak danych to „—”, nie zero.',
@@ -416,14 +416,14 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         refresh: 'na żywo (domyślnie wyłączone)',
       },
       {
-        metric: 'CVD, ΔOI i funding giełd (Wykresy)',
+        metric: 'CVD, ΔOI i funding giełd, grupy Binance i Bybit Tablicy liczb (Wykresy)',
         source:
-          'Binance USDT-M (świece, openInterestHist, openInterest, premiumIndex, fundingInfo), Binance Spot (świece), Bybit Linear (open-interest, publicTrade, tickers) — publiczne API pobierane przez przeglądarkę',
+          'Binance USDT-M (świece, openInterestHist, openInterest, premiumIndex, fundingInfo, fundingRate), Binance Spot (świece), Bybit Linear (open-interest, publicTrade, tickers) — publiczne API pobierane przez przeglądarkę',
         method:
-          'Delta świecy = 2 × kupno biorców − wolumen (Binance, z historią); Bybit z transakcji od otwarcia strony, świeca tylko w całości nagrana; ΔOI w monetach od początku okresu CVD; funding przeliczony na 8 h (Hyperliquid co godzinę, Binance i Bybit wg okresu rynku)',
-        caveat: 'Bybit bez historii delty; historia OI Binance najwyżej 30 dni i co 5 min; funding to bieżąca stawka, nie historia',
+          'Delta świecy = 2 × kupno biorców − wolumen (Binance, z historią); Bybit z transakcji od otwarcia strony (pierwsza świeca od tej chwili, świeca z przerwą połączenia bez wartości); ΔOI w panelu w monetach od początku okresu CVD, w Tablicy liczb — zmiana w świecy; funding przeliczony na 8 h (Hyperliquid co godzinę, Binance i Bybit wg okresu rynku); w Tablicy liczb funding Binance z historii rozliczeń (okres nierozliczony — stawka prognozowana)',
+        caveat: 'Bybit bez historii delty; historia OI Binance najwyżej 30 dni i co 5 min; funding w panelu to bieżąca stawka, historia fundingu Binance do ok. 166 dni wstecz (jedno zapytanie)',
         kinds: ['LIVE'],
-        refresh: 'na żywo, OI i funding Binance co 30 s (panele domyślnie wyłączone)',
+        refresh: 'na żywo, OI i funding Binance co 30 s, nowe rozliczenie Binance po końcu okresu (panele i grupy domyślnie wyłączone)',
       },
     ],
   },

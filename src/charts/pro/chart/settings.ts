@@ -1,4 +1,5 @@
 import type { ResetMode } from '../core/sessions';
+import { STAT_GROUPS, type StatGroup } from '../core/stats';
 import { DEFAULT_INTERVAL, INTERVALS } from '../core/time';
 import { COIN, MARKETS, Market } from '../store/proStore';
 import type { ChartView } from './footprintSeries';
@@ -27,8 +28,9 @@ export interface ChartSettings {
    */
   showVenueCvd: boolean;
   showVenueOi: boolean;
-  /** Tabela statystyk świec pod wykresem. */
+  /** Tablica liczb pod wykresem i jej grupy wierszy (Binance i Bybit — połączenia przeglądarki czytelnika). */
   showStats: boolean;
+  statGroups: StatGroup[];
   /** Wskaźniki na wykresie ceny. */
   showVwap: boolean;
   showVwapBands: boolean;
@@ -86,6 +88,7 @@ export const DEFAULT_SETTINGS: ChartSettings = {
   showVenueCvd: false,
   showVenueOi: false,
   showStats: false,
+  statGroups: ['hl', 'tape'],
   showVwap: true,
   showVwapBands: false,
   showSessionVwap: false,
@@ -126,6 +129,11 @@ const KEY = 'hq.charts.v1';
 const oneOf = <T>(v: unknown, allowed: readonly T[], fallback: T): T => (allowed.includes(v as T) ? (v as T) : fallback);
 const numIn = (v: unknown, lo: number, hi: number, fallback: number) => (typeof v === 'number' && v >= lo && v <= hi ? v : fallback);
 const bool = (v: unknown, fallback: boolean) => (typeof v === 'boolean' ? v : fallback);
+/** Grupy Tablicy liczb w stałej kolejności, bez powtórzeń; pusta lub błędna lista → `fallback`. */
+const groups = (v: unknown, fallback: StatGroup[]): StatGroup[] => {
+  const g = Array.isArray(v) ? STAT_GROUPS.filter((x) => v.includes(x)) : [];
+  return g.length > 0 ? g : fallback;
+};
 
 /** Odczyt z walidacją każdego pola (stary lub uszkodzony zapis → wartości domyślne `d`). */
 export function parseSettings(raw: unknown, d: ChartSettings = DEFAULT_SETTINGS): ChartSettings {
@@ -146,6 +154,7 @@ export function parseSettings(raw: unknown, d: ChartSettings = DEFAULT_SETTINGS)
     showVenueCvd: bool(r.showVenueCvd, d.showVenueCvd),
     showVenueOi: bool(r.showVenueOi, d.showVenueOi),
     showStats: bool(r.showStats, d.showStats),
+    statGroups: groups(r.statGroups, d.statGroups),
     showVwap: bool(r.showVwap, d.showVwap),
     showVwapBands: bool(r.showVwapBands, d.showVwapBands),
     showSessionVwap: bool(r.showSessionVwap, d.showSessionVwap),
@@ -171,10 +180,13 @@ export function parseSettings(raw: unknown, d: ChartSettings = DEFAULT_SETTINGS)
   };
 }
 
+/** Telefon: ekran do 639 px. */
+export const NARROW_QUERY = '(max-width: 639px)';
+export const isNarrow = (): boolean => typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia(NARROW_QUERY).matches;
+
 /** Ustawienia startowe dla tego ekranu (na telefonie z `NARROW_PATCH`). */
 export function startSettings(): ChartSettings {
-  const narrow = typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 639px)').matches;
-  return narrow ? { ...DEFAULT_SETTINGS, ...NARROW_PATCH } : DEFAULT_SETTINGS;
+  return isNarrow() ? { ...DEFAULT_SETTINGS, ...NARROW_PATCH } : DEFAULT_SETTINGS;
 }
 
 /**
@@ -256,22 +268,4 @@ export function saveSettings(s: ChartSettings, key = KEY): void {
 /** Liczba wykresów obok siebie: 1, 2 (obok siebie) albo 4 (2 × 2). */
 export type ChartLayout = 1 | 2 | 4;
 
-const LAYOUT_KEY = 'hq.charts.layout.v1';
-
 export const parseLayout = (v: unknown): ChartLayout => (v === 2 || v === 4 ? v : 1);
-
-export function loadLayout(): ChartLayout {
-  try {
-    return parseLayout(Number(localStorage.getItem(LAYOUT_KEY)));
-  } catch {
-    return 1;
-  }
-}
-
-export function saveLayout(l: ChartLayout): void {
-  try {
-    localStorage.setItem(LAYOUT_KEY, String(l));
-  } catch {
-    // Prywatne okno albo zablokowana pamięć — układ działa do końca sesji
-  }
-}

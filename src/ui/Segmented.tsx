@@ -5,7 +5,8 @@ interface SegmentedProps<T extends string | number> {
   options: { value: T; label: React.ReactNode; title?: string }[];
   onChange: (v: T) => void;
   ariaLabel: string;
-  size?: 'sm' | 'md';
+  /** xs — ciaśniejsze odstępy (np. rząd stacji na telefonie). */
+  size?: 'xs' | 'sm' | 'md';
 }
 
 /** Przełącznik segmentowy (radiogroup) — używany do interwałów, trybów i widoków. */
@@ -37,7 +38,7 @@ export function Segmented<T extends string | number>({ value, options, onChange,
             tabIndex={active ? 0 : -1}
             title={o.title}
             onClick={() => onChange(o.value)}
-            className={`${size === 'sm' ? 'px-2.5 py-1 text-xs' : 'px-3 py-1.5 text-sm'} rounded-md font-medium whitespace-nowrap transition-colors duration-150 ${
+            className={`${size === 'md' ? 'px-3 py-1.5 text-sm' : `${size === 'xs' ? 'px-2' : 'px-2.5'} py-1 text-xs`} rounded-md font-medium whitespace-nowrap transition-colors duration-150 ${
               active ? 'bg-surface-3 text-ink-1 shadow-[inset_0_0_0_1px_var(--color-line-strong)]' : 'text-ink-3 hover:text-ink-1'
             }`}
           >

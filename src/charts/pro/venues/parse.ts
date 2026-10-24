@@ -34,6 +34,8 @@ export const BINANCE_OI_PERIOD: Record<string, string> = { '1m': '5m', '3m': '5m
 /** Okres historii OI Bybit (`open-interest`) w nazwach Bybit. */
 export const BYBIT_OI_PERIOD: Record<string, string> = { '5m': '5min', '15m': '15min', '30m': '30min', '1h': '1h', '4h': '4h', '1d': '1d' };
 export const OI_PERIOD_MS: Record<string, number> = { '5m': 5 * MIN, '15m': 15 * MIN, '30m': 30 * MIN, '1h': 60 * MIN, '4h': 240 * MIN, '1d': 1440 * MIN };
+/** Historia OI giełd co 5 min i dłużej: odczyt do dwóch okresów wstecz nadal opisuje świecę interwału. */
+export const oiMaxAge = (interval: string): number => 2 * OI_PERIOD_MS[BINANCE_OI_PERIOD[interval]];
 
 type Rec = Record<string, unknown>;
 const isRec = (v: unknown): v is Rec => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -136,6 +138,19 @@ export function parseBinanceOi(raw: unknown): OiPoint | null {
 export function parseBinanceFunding(raw: unknown): number | null {
   const r = isRec(raw) ? num(raw.lastFundingRate) : Number.NaN;
   return Number.isFinite(r) ? r : null;
+}
+
+/** Rozliczenia finansowania Binance (`/fapi/v1/fundingRate`): czas wypłaty i stawka okresu, rosnąco. */
+export function parseBinanceFundingHist(raw: unknown): { time: number; rate: number }[] {
+  if (!Array.isArray(raw)) return [];
+  const out: { time: number; rate: number }[] = [];
+  for (const x of raw) {
+    if (!isRec(x)) continue;
+    const time = num(x.fundingTime);
+    const rate = num(x.fundingRate);
+    if (time > 0 && Number.isFinite(rate)) out.push({ time, rate });
+  }
+  return out.sort((a, b) => a.time - b.time);
 }
 
 /** Rynki Binance z niestandardowym okresem finansowania (`/fapi/v1/fundingInfo`): symbol → godziny; reszta co 8 h. */

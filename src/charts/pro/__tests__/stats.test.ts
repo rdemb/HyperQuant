@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { Candle } from '../hl/parse';
 import { FootprintBuilder } from '../core/footprintBar';
-import { FundingBook, HOUR_MS, OiLog, barStat, fundingApr } from '../core/stats';
+import { FundingBook, HOUR_MS, OiLog, VenueReads, barStat, fundingPct8h } from '../core/stats';
+import { STAT_HEAD_PX, STAT_PAD_PX, STAT_ROW_PX, tableHeight, tableLines } from '../chart/statsTable';
 
 const M1 = 60_000;
 const candle = (t: number, v: number): Candle => ({ t, o: 100, h: 101, l: 99, c: 100, v, n: 1 });
@@ -37,7 +38,7 @@ describe('finansowanie', () => {
     expect(f.rate(2 * HOUR_MS + M1, M1, now, 0.0005)).toBe(0.0005);
     expect(f.rate(2 * HOUR_MS + M1, M1, now, null)).toBeNull();
     expect(f.rate(0, 2 * HOUR_MS, now, null)).toBeCloseTo(0.0002);
-    expect(fundingApr(0.0000125)).toBeCloseTo(10.95);
+    expect(fundingPct8h(0.0000125)).toBeCloseTo(0.01);
   });
 
   it('po pełnej godzinie poprzednia godzina ma prognozę do czasu rozliczenia, potem stawkę z API', () => {
@@ -51,6 +52,30 @@ describe('finansowanie', () => {
     f.add([{ time: 2 * HOUR_MS + 5, rate: 0.0002, premium: 0 }], 0);
     expect(f.latest).toBe(HOUR_MS);
     expect(f.rate(HOUR_MS + 30 * M1, M1, now, 0.0004)).toBe(0.0002);
+  });
+});
+
+describe('finansowanie Binance (rozliczenia co kilka godzin)', () => {
+  it('godziny okresu dostają stawkę / liczbę godzin; godziny bieżącego okresu — prognozę', () => {
+    const f = new FundingBook();
+    // Wypłaty o 08:00 i 16:00 (okres 8 h)
+    f.addPeriods(
+      [
+        { time: 8 * HOUR_MS, rate: 0.0008 },
+        { time: 16 * HOUR_MS + 4, rate: -0.0016 },
+      ],
+      8,
+      0
+    );
+    expect(f.periodMs).toBe(8 * HOUR_MS);
+    expect(f.latest).toBe(15 * HOUR_MS);
+    const now = 21 * HOUR_MS;
+    expect(f.rate(HOUR_MS, HOUR_MS, now, null)).toBeCloseTo(0.0001);
+    expect(f.rate(10 * HOUR_MS, 5 * 60_000, now, null)).toBeCloseTo(-0.0002);
+    // 17:00–21:00 — okres jeszcze nierozliczony: prognoza (stawka godzinowa)
+    expect(f.rate(17 * HOUR_MS, HOUR_MS, now, 0.00005)).toBe(0.00005);
+    expect(f.rate(17 * HOUR_MS, HOUR_MS, now, null)).toBeNull();
+    expect(fundingPct8h(f.rate(HOUR_MS, HOUR_MS, now, null)!)).toBeCloseTo(0.08);
   });
 });
 
@@ -69,9 +94,26 @@ describe('statystyki świecy', () => {
     expect(s.trades).toBe(2);
     expect(s.speed).toBeCloseTo(2 / 60);
     expect(s.doi).toBe(20);
-    expect(s.funding).toBeCloseTo(10.95);
+    expect(s.funding).toBeCloseTo(0.01);
     const bare = barStat({ t: M1, candle: candle(M1, 9), fp: null }, M1, 10 * M1, new OiLog(), new FundingBook(), null);
     expect([bare.delta, bare.trades, bare.speed, bare.doi, bare.funding]).toEqual([null, null, null, null, null]);
+  });
+
+  it('grupy Binance i Bybit z odczytów giełd; bez odczytów brak zamiast zera', () => {
+    const bn = new OiLog();
+    bn.push(M1, 1000);
+    bn.push(2 * M1, 1015);
+    const reads: VenueReads = {
+      delta: (venue, t) => (t === M1 ? { binance: 4, binanceSpot: -2, bybit: null }[venue] : null),
+      oi: (venue, t) => (venue === 'binance' ? bn.at(t) : null),
+      funding: () => 0.0000125,
+    };
+    const b = { t: M1, candle: candle(M1, 9), fp: null };
+    const s = barStat(b, M1, 10 * M1, new OiLog(), new FundingBook(), null, reads);
+    expect([s.bnDelta, s.bnSpotDelta, s.byDelta, s.bnDoi, s.byDoi]).toEqual([4, -2, null, 15, null]);
+    expect(s.bnFunding).toBeCloseTo(0.01);
+    const none = barStat(b, M1, 10 * M1, new OiLog(), new FundingBook(), null);
+    expect([none.bnDelta, none.bnSpotDelta, none.bnDoi, none.bnFunding, none.byDelta, none.byDoi]).toEqual([null, null, null, null, null, null]);
   });
 
   it('bieżąca świeca: tempo i ΔOI do teraz', () => {
@@ -83,5 +125,21 @@ describe('statystyki świecy', () => {
     const s = barStat({ t: M1, candle: candle(M1, 1), fp: fp.build() }, M1, M1 + 10_000, oi, new FundingBook(), null);
     expect(s.speed).toBeCloseTo(0.1);
     expect(s.doi).toBe(0);
+  });
+});
+
+describe('Tablica liczb', () => {
+  it('bez grupy giełdy: wiersze Hyperliquid i taśmy bez nagłówków (dawne 9 wierszy)', () => {
+    const lines = tableLines(['hl', 'tape']);
+    expect(lines.every((l) => l.row !== null)).toBe(true);
+    expect(lines.map((l) => l.row!.key)).toEqual(['vol', 'delta', 'doi', 'funding', 'deltaPct', 'maxDelta', 'minDelta', 'trades', 'speed']);
+    expect(tableHeight(['hl', 'tape'])).toBe(9 * STAT_ROW_PX + STAT_PAD_PX);
+  });
+
+  it('z grupą giełdy każda grupa ma nagłówek; kolejność grup stała', () => {
+    const lines = tableLines(['bybit', 'hl', 'binance']);
+    expect(lines.filter((l) => !l.row).map((l) => l.group)).toEqual(['hl', 'binance', 'bybit']);
+    expect(lines.filter((l) => l.row).map((l) => l.row!.key)).toEqual(['vol', 'delta', 'doi', 'funding', 'bnDelta', 'bnSpotDelta', 'bnDoi', 'bnFunding', 'byDelta', 'byDoi']);
+    expect(tableHeight(['hl', 'binance', 'bybit'])).toBe(10 * STAT_ROW_PX + 3 * STAT_HEAD_PX + STAT_PAD_PX);
   });
 });

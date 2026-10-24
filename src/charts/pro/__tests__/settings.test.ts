@@ -37,6 +37,16 @@ describe('parseSettings', () => {
   });
 });
 
+describe('grupy Tablicy liczb', () => {
+  it('stała kolejność bez powtórzeń; pusta albo błędna lista → domyślna', () => {
+    expect(parseSettings({ statGroups: ['bybit', 'hl', 'bybit', 'x'] }).statGroups).toEqual(['hl', 'bybit']);
+    expect(parseSettings({ statGroups: [] }).statGroups).toEqual(DEFAULT_SETTINGS.statGroups);
+    expect(parseSettings({ statGroups: 'hl' }).statGroups).toEqual(['hl', 'tape']);
+    // Zapis sprzed grup: dawne wiersze tabeli (Hyperliquid i taśma)
+    expect(parseSettings({ showStats: true }).statGroups).toEqual(['hl', 'tape']);
+  });
+});
+
 describe('link do widoku', () => {
   it('rynek, interwał i rodzaj wykresu w obie strony; nieznane wartości pomijane', () => {
     const s = { ...DEFAULT_SETTINGS, coin: 'SOL' as const, interval: '5m', view: 'candles' as const };
