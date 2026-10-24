@@ -240,6 +240,23 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         ),
       },
       {
+        metric: tr('Powtórka nagranej doby (Wykresy)', 'Replay of the recorded day (Charts)'),
+        source: tr(
+          'Gałąź history publicznego repo danych (ten sam zapis rejestratora co historia ostatniej doby) albo kopia jej plików przy lekcjach; świece z API Hyperliquid (candleSnapshot) do końca nagrania',
+          'The history branch of the public data repository (the same recorder output as the last-24-hours history) or a copy of its files next to the lessons; candles from the Hyperliquid API (candleSnapshot) up to the end of the recording'
+        ),
+        method: tr(
+          'Pliki godzin (a bez pliku godzinowego jej części 5-minutowe) z zakresu linku, najwyżej doba, sklejone w jedną taśmę, migawki arkusza i otwarte pozycje. Wykres dostaje je po kolei do chwili odtwarzania (1×, 5×, 15× albo 60× czasu rzeczywistego) i liczy wszystko tak jak na żywo; świece po tej chwili są ukryte, a bieżąca świeca jest złożona z taśmy do tej chwili. Przewinięcie wstecz buduje wykres od nowa od początku nagrania.',
+          'Hour files (or, without an hour file, its 5-minute parts) from the link range, at most one day, joined into one tape, book snapshots and open interest. The chart receives them in order up to the playback moment (1×, 5×, 15× or 60× real time) and computes everything as it does live; candles after that moment are hidden and the current candle is built from the tape up to that moment. Seeking backwards rebuilds the chart from the start of the recording.'
+        ),
+        kinds: ['LIVE'],
+        refresh: tr('nagranie z przeszłości (bez odświeżania)', 'a past recording (no refresh)'),
+        caveat: tr(
+          'Bez Binance i Bybit, wielorybów, mapy likwidacji i alertów (to stan na teraz, nie z nagrania). Jak w historii ostatniej doby: bez adresów i gór lodowych. Przerwa w nagraniu serwera jest jawną luką w taśmie.',
+          'Without Binance and Bybit, whales, the liquidation map and alerts (those are the current state, not part of the recording). As in the last-24-hours history: no addresses and no icebergs. A gap in the server recording is an explicit gap in the tape.'
+        ),
+      },
+      {
         metric: tr('Strefy nierównowagi i niedokończone aukcje (Wykresy)', 'Imbalance zones and unfinished auctions (Charts)'),
         source: tr('Taśma WS trades nagrywana od otwarcia widoku', 'WS trades tape recorded since the view opened'),
         method: tr(

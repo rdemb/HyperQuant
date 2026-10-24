@@ -226,6 +226,14 @@ export const TapePanel: React.FC<{
     rows.push(o);
     if (rows.length >= TAPE_ROWS) break;
   }
+  // Dwa zlecenia jednego biorcy mogą mieć ten sam czas, cenę i wielkość — kolejny numer rozróżnia je w kluczu
+  const keyCount = new Map<string, number>();
+  const rowKeys = rows.map((o) => {
+    const base = `${o.time}|${o.taker}|${o.vwap}|${o.sz}`;
+    const n = keyCount.get(base) ?? 0;
+    keyCount.set(base, n + 1);
+    return n === 0 ? base : `${base}|${n}`;
+  });
 
   // Dźwięk: tylko nowe zlecenia od progu dużego (pierwsze renderowanie oznacza zastane jako widziane)
   const seen = useRef<WeakSet<AggressorOrder> | null>(null);
@@ -305,14 +313,14 @@ export const TapePanel: React.FC<{
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto [scrollbar-width:thin]">
         {rows.length === 0 && <p className="px-3 py-4 text-[11px] text-ink-3">Brak zleceń od tej wartości od otwarcia strony.</p>}
-        {rows.map((o) => {
+        {rows.map((o, i) => {
           const buy = o.side === 1;
           const cls = classify(o, bigUsd);
           const fill = Math.min(1, o.notional / bigUsd);
           const active = selected === o || (highlight !== '' && o.taker === highlight);
           return (
             <button
-              key={`${o.time}|${o.taker}|${o.vwap}|${o.sz}`}
+              key={rowKeys[i]}
               type="button"
               onClick={() => onPick(o)}
               className={`relative grid w-full grid-cols-[4.2rem_1fr_3.4rem_3.6rem] gap-x-1.5 px-2 h-6 items-center font-mono text-[11px] text-left hover:bg-surface-2 ${

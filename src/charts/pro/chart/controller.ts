@@ -58,6 +58,8 @@ export interface Hover {
   bar: ProBar | null;
   /** true = brak krzyża, pokazujemy ostatnią świecę. */
   live: boolean;
+  /** Świeca jeszcze trwa (w powtórce ostatnia bywa już zamknięta). */
+  open: boolean;
   row: HoverRow | null;
   cvd: Ohlc | null;
   ind: IndicatorValues | null;
@@ -198,6 +200,7 @@ export class ProChartController {
   /** Cena przeliczenia progu nierównowagi z USD na jednostki rynku (ustalana przy pełnym odświeżeniu danych). */
   private refPx = 0;
   private alertLines: IPriceLine[] = [];
+  private zoneLines: IPriceLine[] = [];
   private readonly volumeLegend = new PaneLegend('showVolume');
   private readonly deltaLegend = new PaneLegend('showDelta');
   private readonly cvdLegend = new PaneLegend('showCvd');
@@ -291,7 +294,8 @@ export class ProChartController {
     // Rysunki dołączone ostatnie — nad wskaźnikami i świecami
     this.drawLayer.setUnit(store.coin);
     this.main.attachPrimitive(this.drawLayer);
-    this.draw = new DrawingTools(container, this.chart, this.drawLayer, store.coin);
+    // Rysunki w powtórce osobno od rysunków wykresu na żywo
+    this.draw = new DrawingTools(container, this.chart, this.drawLayer, store.replay ? `${store.coin}.replay` : store.coin);
     this.applySettings(settings, true);
     this.chart.subscribeCrosshairMove(this.onCrosshair);
     this.chart.subscribeClick(this.onClick);
@@ -642,6 +646,14 @@ export class ProChartController {
     );
   }
 
+  /** Strefa ceny z linku powtórki: dwie przerywane linie z etykietą na osi. */
+  setZone(zone: readonly [number, number] | null): void {
+    for (const l of this.zoneLines) this.main.removePriceLine(l);
+    this.zoneLines = (zone ?? []).map((price) =>
+      this.main.createPriceLine({ price, color: PRO.zone, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: 'Strefa' })
+    );
+  }
+
   /** Dopasowuje zakres ceny do widocznych świec (po ręcznym przeciągnięciu osi). */
   resetScales(): void {
     this.setAutoScale(true);
@@ -908,7 +920,7 @@ export class ProChartController {
   private emitHover(): void {
     const bars = this.bars;
     if (bars.length === 0) {
-      this.onHover({ bar: null, live: true, row: null, cvd: null, ind: null });
+      this.onHover({ bar: null, live: true, open: false, row: null, cvd: null, ind: null });
       return;
     }
     const i = this.hoverTime === null ? bars.length - 1 : indexOfTime(bars, this.hoverTime);
@@ -941,7 +953,8 @@ export class ProChartController {
     }
     const ind = i >= 0 ? this.overlay.valuesAt(i) : null;
     this.statsTable.setHover(this.hoverTime === null ? -1 : i);
-    this.onHover({ bar, live: this.hoverTime === null, row: bar ? this.rowAt(bar, this.hoverPrice) : null, cvd, ind });
+    const open = bar !== null && bar.t + this.series.interval.ms > this.store.serverNow();
+    this.onHover({ bar, live: this.hoverTime === null, open, row: bar ? this.rowAt(bar, this.hoverPrice) : null, cvd, ind });
   }
 
   /** Wiersz footprintu pod krzyżem — ta sama siatka co na wykresie (gdy widać footprint). */
