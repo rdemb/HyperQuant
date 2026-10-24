@@ -28,6 +28,16 @@ export class OiLog {
     this.v.push(oi);
   }
 
+  /** Próbki z historii serwera, scalone po czasie (ta sama chwila — zostaje istniejąca). */
+  restore(points: readonly (readonly [number, number])[]): void {
+    if (points.length === 0) return;
+    const m = new Map<number, number>();
+    for (const [t, v] of points) if (v > 0 && t > 0) m.set(t, v);
+    for (let i = 0; i < this.t.length; i++) m.set(this.t[i], this.v[i]);
+    this.t = [...m.keys()].sort((a, b) => a - b);
+    this.v = this.t.map((t) => m.get(t)!);
+  }
+
   /** Ostatnia próbka nie późniejsza niż `time`; null przed pierwszą. */
   at(time: number): number | null {
     let lo = 0;

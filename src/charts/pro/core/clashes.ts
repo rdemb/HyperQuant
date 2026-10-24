@@ -1,4 +1,4 @@
-import type { Fill, Side } from '../hl/parse';
+import type { BookSnapshot, Fill, Side } from '../hl/parse';
 import type { AggressorOrder } from './orders';
 
 /**
@@ -7,7 +7,9 @@ import type { AggressorOrder } from './orders';
  * - duże zlecenie — jedno zlecenie agresora od progu, zebrane z wielu makerów,
  * - bitwa — duże zlecenie agresora, którego dużą część (od połowy progu) dał jeden maker,
  * - seria — wiele małych zleceń różnych biorców po tej samej stronie w krótkim oknie, razem od progu,
- * - ściana — jeden maker na jednej cenie wchłonął od progu z co najmniej trzech różnych zleceń agresora.
+ * - ściana — jeden maker na jednej cenie wchłonął od progu z co najmniej trzech różnych zleceń agresora;
+ *   ściana, która wchłonęła co najmniej 2 × więcej, niż cały poziom arkusza kiedykolwiek pokazywał, to góra lodowa
+ *   (zlecenie odnawiane po każdym wypełnieniu — widać tylko jego wierzchołek).
  * Próg dobiera się sam do rynku: wysoki kwantyl wartości zleceń z ostatniej godziny.
  */
 
@@ -99,12 +101,29 @@ export interface Wall {
   sz: number;
   /** Różne zlecenia agresora (biorca + chwila) wchłonięte przez ten poziom. */
   hits: number;
+  /** Największa wielkość poziomu w dokładnym arkuszu od chwili przed pierwszym wypełnieniem; 0 = poziom niewidoczny. */
+  shown: number;
+  /** Wchłonięte co najmniej `ICEBERG_RATIO` × więcej niż `shown`, z wypełnieniami także po migawce, która pokazała poziom w trakcie. */
+  iceberg: boolean;
 }
 
 interface Absorb extends Wall {
   maker: string;
   keys: Set<string>;
+  /** Pierwsza migawka dokładnego arkusza po pierwszym wypełnieniu, w której poziom był widoczny (ms); +∞ = jeszcze żadna. */
+  seen: number;
 }
+
+/** Ile razy więcej musi wchłonąć ściana niż największa widoczna wielkość poziomu, żeby była górą lodową. */
+export const ICEBERG_RATIO = 2;
+
+/**
+ * Góra lodowa wymaga wypełnień po migawce, która w trakcie wchłaniania jeszcze pokazywała poziom: jedno przemiecenie
+ * (albo kilka bloków przed następną migawką co ok. 5 s) bierze tylko to, co już stało w arkuszu — duża krotność
+ * wynikałaby wtedy z nieaktualnej migawki sprzed postawienia zlecenia, a nie z odnawiania.
+ */
+const isIceberg = (a: { sz: number; shown: number; hits: number; to: number; seen: number }) =>
+  a.hits >= WALL_MIN_HITS && a.to > a.seen && a.shown > 0 && a.sz >= ICEBERG_RATIO * a.shown;
 
 /** Przerwa, po której wchłanianie na poziomie liczy się od nowa (ms), i najmniej trafień do ściany. */
 export const WALL_GAP_MS = 30_000;
@@ -117,6 +136,25 @@ const WALL_MIN_HITS = 3;
 export class WallTracker {
   private readonly open = new Map<string, Absorb>();
   private closed: Absorb[] = [];
+  /** Ostatni dokładny arkusz: wielkość na każdej cenie, osobno bidy i aski. */
+  private bids = new Map<number, number>();
+  private asks = new Map<number, number>();
+
+  /** Dokładny arkusz (bez agregacji): największa widoczna wielkość poziomów otwartych ścian. */
+  observeBook(snap: BookSnapshot): void {
+    this.bids = new Map(snap.bids.map((l) => [l.px, l.sz]));
+    this.asks = new Map(snap.asks.map((l) => [l.px, l.sz]));
+    this.open.forEach((a) => {
+      const lv = this.level(a.side, a.px);
+      a.shown = Math.max(a.shown, lv);
+      if (lv > 0 && snap.time > a.from) a.seen = Math.min(a.seen, snap.time);
+      a.iceberg = isIceberg(a);
+    });
+  }
+
+  private level(side: Side, px: number): number {
+    return (side === 1 ? this.bids : this.asks).get(px) ?? 0;
+  }
 
   push(fills: readonly Fill[]): void {
     for (const f of fills) {
@@ -129,7 +167,9 @@ export class WallTracker {
         a = undefined;
       }
       if (!a) {
-        a = { maker: f.maker, from: f.time, to: f.time, px: f.px, side, usd: 0, sz: 0, hits: 0, keys: new Set() };
+        // Wielkość poziomu tuż przed pierwszym wypełnieniem (ostatnia migawka arkusza)
+        const shown = this.level(side, f.px);
+        a = { maker: f.maker, from: f.time, to: f.time, px: f.px, side, usd: 0, sz: 0, hits: 0, shown, iceberg: false, keys: new Set(), seen: Number.POSITIVE_INFINITY };
         this.open.set(key, a);
       }
       a.to = Math.max(a.to, f.time);
@@ -137,7 +177,16 @@ export class WallTracker {
       a.sz += f.sz;
       a.keys.add(f.taker ? `${f.taker}|${f.hash || f.time}` : `#${f.tid}`);
       a.hits = a.keys.size;
+      a.iceberg = isIceberg(a);
     }
+  }
+
+  /** Ściany z wypełnień historii serwera (rosnąco po czasie), od razu zamknięte; bez dokładnego arkusza — bez gór lodowych. */
+  pushHistory(fills: readonly Fill[]): void {
+    const t = new WallTracker();
+    t.push(fills);
+    t.prune(Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY);
+    this.closed.push(...t.closed);
   }
 
   /** Ściany od progu `t` (USD), które zahaczają o [from, to). */
@@ -145,7 +194,7 @@ export class WallTracker {
     const out: Wall[] = [];
     const take = (a: Absorb) => {
       if (a.usd >= t && a.hits >= WALL_MIN_HITS && a.to >= from && a.from < to) {
-        out.push({ from: a.from, to: a.to, px: a.px, side: a.side, usd: a.usd, sz: a.sz, hits: a.hits });
+        out.push({ from: a.from, to: a.to, px: a.px, side: a.side, usd: a.usd, sz: a.sz, hits: a.hits, shown: a.shown, iceberg: a.iceberg });
       }
     };
     for (const a of this.closed) take(a);

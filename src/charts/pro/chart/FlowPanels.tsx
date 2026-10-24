@@ -57,7 +57,9 @@ export const PickCard: React.FC<{
     const o = pick.order;
     const buy = o.side === 1;
     const top = o.notional > 0 ? o.topMakerUsd / o.notional : 0;
-    const w = o.taker ? walletSummary(store.orders.range(0, Number.MAX_SAFE_INTEGER), o.taker) : null;
+    // Zlecenie z historii serwera ma numer biorcy zamiast adresu (`~godzina:numer`) — bez podsumowania portfela
+    const fromServer = o.taker.startsWith('~');
+    const w = o.taker && !fromServer ? walletSummary(store.orders.range(0, Number.MAX_SAFE_INTEGER), o.taker) : null;
     head = (
       <>
         <SideTag buy={buy} />
@@ -109,7 +111,7 @@ export const PickCard: React.FC<{
               <p className="text-[10px] leading-snug text-ink-3">Publiczne dane Hyperliquid od otwarcia strony. Adres nie jest zapisywany.</p>
             </>
           ) : (
-            <p className="text-[11px] text-ink-3">Transakcja bez adresu biorcy.</p>
+            <p className="text-[11px] text-ink-3">{fromServer ? 'Zlecenie z historii serwera — zapis nie zawiera adresów.' : 'Transakcja bez adresu biorcy.'}</p>
           )}
         </div>
       </>
@@ -144,7 +146,7 @@ export const PickCard: React.FC<{
     const bid = w.side === 1;
     head = (
       <>
-        <SideTag buy={bid}>{bid ? 'Ściana na bidzie' : 'Ściana na asku'}</SideTag>
+        <SideTag buy={bid}>{w.iceberg ? (bid ? 'Góra lodowa na bidzie' : 'Góra lodowa na asku') : bid ? 'Ściana na bidzie' : 'Ściana na asku'}</SideTag>
         <span className="font-mono text-ink-1">{fmtPx(w.px)}</span>
       </>
     );
@@ -154,11 +156,14 @@ export const PickCard: React.FC<{
           {amount(w.sz, store.coin)} · {usd(w.usd)}
         </Row>
         <Row label="Zleceń agresora">{w.hits}</Row>
+        <Row label="Widoczne w arkuszu">{w.shown > 0 ? `maks. ${amount(w.shown, store.coin)}` : 'brak migawki poziomu'}</Row>
         <Row label="Czas">
           {fmtHms(w.from)} – {fmtHms(w.to)}
         </Row>
         <p className="text-[11px] leading-snug text-ink-3">
           Jeden maker na tej cenie przyjmował {bid ? 'agresywną sprzedaż' : 'agresywne kupno'} (przerwy najwyżej 30 s).
+          {w.iceberg &&
+            ` Wchłonął ${(w.sz / w.shown).toFixed(1)} × więcej, niż cały poziom pokazywał w arkuszu — zlecenie było odnawiane po wypełnieniach.`}
         </p>
       </>
     );

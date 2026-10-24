@@ -33,6 +33,10 @@ export interface ScannerConfig {
   r2: R2Config | null;
   /** Publikacja do publicznego repo danych na GitHubie (darmowa); null = wyłączona */
   git: GitConfig | null;
+  /** Rejestrator historii taśmy i arkusza (gałąź `history` repo danych); null = wyłączony */
+  history: { markets: string[]; keepDays: number } | null;
+  /** Warstwa wielorybów: liczba największych kont z rankingu i własny budżet wag; null = wyłączona */
+  whales: { top: number; weightPerMin: number } | null;
 }
 
 type Env = Record<string, string | undefined>;
@@ -82,6 +86,16 @@ export function loadConfig(env: Env): { ok: true; config: ScannerConfig } | { ok
     git = { remote: gitRemote, sshKey, everyS: intIn(env, 'HQ_GIT_EVERY_S', 120, 60, 3600, errors) };
   }
 
+  const markets = (env.HQ_HISTORY_MARKETS ?? '').split(',').map((m) => m.trim()).filter(Boolean);
+  if (markets.some((m) => !/^[A-Z0-9]{2,10}$/.test(m)) || new Set(markets).size !== markets.length) errors.push('HQ_HISTORY_MARKETS: lista symboli rynków po przecinku, bez powtórzeń');
+  const keepDays = intIn(env, 'HQ_HISTORY_DAYS', 7, 1, 30, errors);
+  const history = markets.length > 0 ? { markets, keepDays } : null;
+  const whaleTop = intIn(env, 'HQ_WHALE_TOP', 0, 0, 1000, errors);
+  const whaleWeight = intIn(env, 'HQ_WHALE_WEIGHT_PER_MIN', 200, 30, 600, errors);
+  const whales = whaleTop > 0 ? { top: whaleTop, weightPerMin: whaleWeight } : null;
+  // Razem najwyżej 2/3 limitu giełdy na IP — reszta dla innych usług na tym serwerze
+  if (weightPerMin + (whales?.weightPerMin ?? 0) > 800) errors.push('HQ_WEIGHT_PER_MIN + HQ_WHALE_WEIGHT_PER_MIN: razem najwyżej 800 wag/min');
+
   if (errors.length > 0) return { ok: false, errors };
-  return { ok: true, config: { coin, weightPerMin, stateDir, outDir, publishEveryS, maxAddresses, seedTop, seedMinUsd, r2, git } };
+  return { ok: true, config: { coin, weightPerMin, stateDir, outDir, publishEveryS, maxAddresses, seedTop, seedMinUsd, r2, git, history, whales } };
 }

@@ -1,17 +1,20 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { Bell, BellOff, Camera, ChevronsRight, Columns2, Copy, Grid2x2, Layers, Link, ListOrdered, Maximize2, Minimize2, Minus, PenTool, RotateCcw, SlidersHorizontal, Square, X } from 'lucide-react';
+import { Bell, BellOff, Camera, ChevronsRight, Columns2, Copy, Grid2x2, Keyboard, Layers, Link, ListOrdered, Maximize2, Minimize2, Minus, PenTool, RotateCcw, SlidersHorizontal, Square, X } from 'lucide-react';
 import { Badge, BadgeTone, Segmented } from '../../ui';
 import { LiqMapState, useLiqMap } from '../../state/useLiqMap';
+import { usePublished } from '../../state/usePublished';
+import { type WhaleLayer, isWhaleLayer } from '../../utils/whaleLayer';
 import { INTERVALS, fmtHm, fmtSince, intervalById } from './core/time';
 import { DEFAULT_THRESHOLD_USD, classify } from './core/clashes';
 import { hlTick } from './core/footprintBar';
 import { indicatorScope, liqLevels } from './core/indicators';
 import type { AggressorOrder } from './core/orders';
 import type { ResetMode } from './core/sessions';
-import { type PaneKey, ProChartController } from './chart/controller';
+import { tpoInterval } from './core/tpo';
+import { type PaneKey, ProChartController, type ScaleState } from './chart/controller';
 import { PickCard, TapePanel, compact } from './chart/FlowPanels';
 import { HoverSignal, Legend } from './chart/Legend';
-import type { LiquidityPick } from './chart/liquidity';
+import { LOT_FLOOR, type LiquidityPick } from './chart/liquidity';
 import { brandedScreenshot, downloadCanvas } from './chart/screenshot';
 import { MAX_ALERTS, PriceAlert, alertBook, askNotifications, newAlert, notifyAlert, parsePriceInput, primeAlertSound, reached } from './chart/alerts';
 import { fmtPx, priceDigits } from './chart/layout';
@@ -20,7 +23,8 @@ import { BUILT_IN_TEMPLATES, ChartTemplate, applyTemplate, loadTemplates, saveAs
 import type { ChartView } from './chart/footprintSeries';
 import type { FootprintStyle } from './chart/layout';
 import { DrawHint, DrawStyleBar, DrawToolbar } from './draw/DrawToolbar';
-import type { DrawingTools } from './draw/tools';
+import { TOOLS } from './draw/model';
+import { type DrawingTools, isTyping } from './draw/tools';
 import { CandleSeries, MARKETS, Market, ProStore, openStores, storeFor } from './store/proStore';
 import { startRecording } from './store/recording';
 
@@ -95,7 +99,7 @@ export const ProChart: React.FC<{ panel?: number; layout?: ChartLayout; onLayout
   const [settings, setSettings] = useState<ChartSettings>(() => initialSettings(panel));
   const store = storeFor(settings.coin);
   const series = store.series(settings.interval);
-  const [menu, setMenu] = useState<'settings' | 'indicators' | null>(null);
+  const [menu, setMenu] = useState<'settings' | 'indicators' | 'keys' | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
   const [tools, setTools] = useState<DrawingTools | null>(null);
   // Kliknięty bąbel, seria albo ściana i podświetlony adres biorcy (tylko w pamięci strony)
@@ -112,9 +116,12 @@ export const ProChart: React.FC<{ panel?: number; layout?: ChartLayout; onLayout
   const hostRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const ctrlRef = useRef<ProChartController | null>(null);
+  const [scale, setScale] = useState<ScaleState>({ auto: true, width: 0, height: 0 });
   const legendBottom = useRef(0);
   const signal = useMemo(() => new HoverSignal(), []);
   const liq = useLiqMap();
+  const whalePub = usePublished('whales.json', isWhaleLayer);
+  const whales = whalePub.value && Date.now() - whalePub.value.asOf < WHALES_STALE_MS ? whalePub.value : null;
   useStoreVersion(store, 400);
 
   const update = useCallback((patch: Partial<ChartSettings>) => setSettings((s) => ({ ...s, ...patch })), []);
@@ -141,7 +148,7 @@ export const ProChart: React.FC<{ panel?: number; layout?: ChartLayout; onLayout
     const ctrl = new ProChartController(host, store, series, settings, signal.set, setPick, (key) => {
       update({ [key]: false });
       setToast(`Ukryto panel: ${PANE_NAMES[key]} — włączysz go w Ustawieniach wykresu → Panele`);
-    });
+    }, setScale);
     ctrlRef.current = ctrl;
     setTools(ctrl.draw);
     ctrl.setTopInset(legendBottom.current);
@@ -250,6 +257,11 @@ export const ProChart: React.FC<{ panel?: number; layout?: ChartLayout; onLayout
     setPick(null);
   }, []);
 
+  // Wieloryby tylko z aktualnego pliku skanera (starszy niż WHALES_STALE_MS jest ukryty, jak nieaktualna mapa likwidacji)
+  useEffect(() => {
+    ctrlRef.current?.setWhales(whales?.markets[store.coin] ?? null);
+  }, [whales, store]);
+
   // Klastry likwidacji tylko z aktualnej mapy skanera (jak w Desku: nieaktualna mapa nie jest pokazywana); skaner mapuje BTC
   useEffect(() => {
     const fresh = liq.map && (liq.status === 'ready' || liq.status === 'delayed') && store.coin === 'BTC';
@@ -331,6 +343,32 @@ export const ProChart: React.FC<{ panel?: number; layout?: ChartLayout; onLayout
   const bigUsd = ctrlRef.current?.bigTradeUsd ?? DEFAULT_THRESHOLD_USD;
   const tick = hlTick(store.lastPrice());
 
+  // Skróty wykresu bez modyfikatorów: tylko w panelu, w którym ostatnio kliknięto, i nie w polu tekstowym
+  const onKeyRef = useRef<(e: KeyboardEvent) => void>(() => {});
+  onKeyRef.current = (e) => {
+    if (e.ctrlKey || e.metaKey || e.altKey || isTyping(e.target) || !tools?.isFocused) return;
+    const next = e.key.length === 1 ? INTERVALS['12345678'.indexOf(e.key)] : undefined;
+    if (e.key === '?') setMenu((m) => (m === 'keys' ? null : 'keys'));
+    else if (next) update({ interval: next.id });
+    else if (e.key === 'End') ctrlRef.current?.scrollToNow();
+    else {
+      const k = e.key.toLowerCase();
+      if (k === 'c') update({ view: settings.view === 'footprint' ? 'candles' : 'footprint' });
+      else if (k === 't') update({ showTape: !settings.showTape });
+      else if (k === 'm') setCoin(MARKETS[(MARKETS.indexOf(settings.coin) + 1) % MARKETS.length]);
+      else if (k === 'r') ctrlRef.current?.resetScales();
+      else if (k === 'a') ctrlRef.current?.setAutoScale(!scale.auto);
+      else if (k === 'f') toggleFullscreen();
+      else return;
+    }
+    e.preventDefault();
+  };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => onKeyRef.current(e);
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   return (
     <div
       ref={cardRef}
@@ -393,6 +431,15 @@ export const ProChart: React.FC<{ panel?: number; layout?: ChartLayout; onLayout
           <ToolBtn label="Zrzut ekranu (PNG)" onClick={screenshot}>
             <Camera className="w-4 h-4" />
           </ToolBtn>
+          <ToolBtn
+            label="Skróty klawiszowe (?)"
+            className="hidden lg:inline-flex"
+            onClick={() => setMenu((m) => (m === 'keys' ? null : 'keys'))}
+            active={menu === 'keys'}
+            expanded={menu === 'keys'}
+          >
+            <Keyboard className="w-4 h-4" />
+          </ToolBtn>
           <ToolBtn label={fullscreen ? 'Zamknij pełny ekran' : 'Pełny ekran'} onClick={toggleFullscreen}>
             {fullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
           </ToolBtn>
@@ -404,6 +451,7 @@ export const ProChart: React.FC<{ panel?: number; layout?: ChartLayout; onLayout
         <DrawToolbar tools={tools} className={drawOpen ? 'flex' : 'hidden'} />
         <div className="relative flex-1 min-h-0 min-w-0" onContextMenu={onContextMenu}>
           <div ref={hostRef} className="absolute inset-0" />
+          <AutoScaleBtn scale={scale} onToggle={() => ctrlRef.current?.setAutoScale(!scale.auto)} />
           <Legend signal={signal} intervalMs={iv.ms} intervalLabel={iv.label} tapeSince={tapeSince} coin={store.coin} onBottom={onLegendBottom} />
           <DrawStyleBar tools={tools} />
           <DrawHint tools={tools} />
@@ -450,8 +498,10 @@ export const ProChart: React.FC<{ panel?: number; layout?: ChartLayout; onLayout
                   onReset={() => setSettings({ ...DEFAULT_SETTINGS, coin: settings.coin, interval: settings.interval })}
                   grid4={layout === 4}
                 />
+              ) : menu === 'keys' ? (
+                <KeysMenu />
               ) : (
-                <IndicatorsMenu settings={settings} intervalMs={iv.ms} liq={liq} bigUsd={bigUsd} onChange={update} />
+                <IndicatorsMenu settings={settings} intervalMs={iv.ms} liq={liq} whales={whales} bigUsd={bigUsd} onChange={update} />
               )}
             </div>
           )}
@@ -474,6 +524,32 @@ export const ProChart: React.FC<{ panel?: number; layout?: ChartLayout; onLayout
     </div>
   );
 };
+
+/** Przycisk A w rogu pod osią ceny: podświetlony, gdy skala dopasowuje się do widocznych świec. */
+const AutoScaleBtn: React.FC<{ scale: ScaleState; onToggle: () => void }> = ({ scale, onToggle }) =>
+  scale.width > 0 && scale.height > 0 ? (
+    <button
+      type="button"
+      aria-pressed={scale.auto}
+      aria-label="Autoskala ceny"
+      title={
+        scale.auto
+          ? 'Autoskala ceny włączona: zakres dopasowuje się do widocznych świec. Kliknij, aby go zamrozić (A)'
+          : 'Autoskala ceny wyłączona. Kliknij, aby dopasować zakres do widocznych świec (A, dwuklik na osi ceny)'
+      }
+      onClick={onToggle}
+      className="group absolute right-0 bottom-0 z-10 grid place-items-center outline-none"
+      style={{ width: scale.width, height: scale.height }}
+    >
+      <span
+        className={`grid place-items-center w-5 h-5 rounded font-mono text-[11px] font-semibold transition-colors duration-150 group-focus-visible:ring-2 group-focus-visible:ring-accent ${
+          scale.auto ? 'bg-accent/15 text-accent' : 'text-ink-3 group-hover:text-ink-1 group-hover:bg-surface-3'
+        }`}
+      >
+        A
+      </span>
+    </button>
+  ) : null;
 
 const ToolBtn: React.FC<{ label: string; onClick: () => void; children: React.ReactNode; active?: boolean; expanded?: boolean; className?: string }> = ({
   label,
@@ -709,15 +785,19 @@ type IndicatorKey =
   | 'showHeatmap'
   | 'showBubbles'
   | 'showClashes'
+  | 'showLots'
   | 'showVwap'
   | 'showVwapBands'
   | 'showSessionVwap'
   | 'showProfile'
   | 'showPeriodProfiles'
+  | 'showDevPoc'
+  | 'showTpo'
   | 'showLevels'
   | 'showSessions'
   | 'showIb'
   | 'showLiq'
+  | 'showWhales'
   | 'showZones'
   | 'showAuctions';
 
@@ -737,11 +817,28 @@ function liqHint(liq: LiqMapState): string {
   }
 }
 
+/** Plik wielorybów starszy niż tyle (ms) nie jest pokazywany. */
+const WHALES_STALE_MS = 20 * 60_000;
+
+function whaleHint(w: WhaleLayer | null, coin: string): string {
+  const m = w?.markets[coin];
+  if (!w || !m) return 'Skaner nie publikuje teraz warstwy wielorybów — linie ukryte';
+  return `${m.positions.length} pozycji od ${compact(w.minPositionUsd[coin] ?? 0)} USD i ${m.orders.length} zleceń od ${compact(w.minOrderUsd[coin] ?? 0)} USD · ${w.accounts} kont · stan z ${fmtHm(w.asOf)}`;
+}
+
 /** Wskaźniki na wykresie ceny: przełączniki z kolorem linii (menu jest zarazem legendą) i zakresem interwałów. */
-const IndicatorsMenu: React.FC<{ settings: ChartSettings; intervalMs: number; liq: LiqMapState; bigUsd: number; onChange: (p: Partial<ChartSettings>) => void }> = ({
+const IndicatorsMenu: React.FC<{
+  settings: ChartSettings;
+  intervalMs: number;
+  liq: LiqMapState;
+  whales: WhaleLayer | null;
+  bigUsd: number;
+  onChange: (p: Partial<ChartSettings>) => void;
+}> = ({
   settings: s,
   intervalMs,
   liq,
+  whales,
   bigUsd,
   onChange,
 }) => {
@@ -751,21 +848,27 @@ const IndicatorsMenu: React.FC<{ settings: ChartSettings; intervalMs: number; li
     {
       key: 'showHeatmap',
       label: 'Mapa ciepła arkusza',
-      hint: 'Płynność zleceń oczekujących w czasie (l2Book Hyperliquid, kubełki BTC ~10 i ~100 USD, innych rynków proporcjonalnie do ceny) — od otwarcia strony',
+      hint: 'Płynność zleceń oczekujących w czasie (l2Book Hyperliquid, kubełki BTC ~10 i ~100 USD, innych rynków proporcjonalnie do ceny) — od otwarcia strony, a z zapisem serwera z ostatniej doby',
       swatch: 'bg-gradient-to-r from-of-heat-1 via-of-heat-2 to-of-heat-3',
     },
     {
       key: 'showBubbles',
       label: 'Bąble zleceń agresora',
-      hint: `Zlecenia rynkowe od ${big} złożone z wypełnień; pole koła ∝ wartość, podwójny pierścień = bitwa z jednym dużym makerem; kliknij bąbel — od otwarcia strony`,
+      hint: `Zlecenia rynkowe od ${big} złożone z wypełnień; pole koła ∝ wartość, podwójny pierścień = bitwa z jednym dużym makerem; kliknij bąbel — od otwarcia strony, a z zapisem serwera z ostatniej doby`,
       swatch: 'bg-gradient-to-r from-of-imb-buy to-of-imb-sell',
     },
     {
       key: 'showClashes',
       label: 'Serie i ściany',
-      hint: 'Seria (przerywany pierścień): drobne zlecenia co najmniej 4 adresów po jednej stronie w 2 s, razem od progu. Ściana (belka): jeden maker na jednej cenie przyjął od progu z co najmniej 3 zleceń — od otwarcia strony',
+      hint: 'Seria (przerywany pierścień): drobne zlecenia co najmniej 4 adresów po jednej stronie w 2 s, razem od progu. Ściana (belka): jeden maker na jednej cenie przyjął od progu z co najmniej 3 zleceń — od otwarcia strony, a z zapisem serwera z ostatniej doby',
       swatch: 'bg-of-buy',
       off: s.showBubbles ? undefined : 'Razem z bąblami zleceń agresora',
+    },
+    {
+      key: 'showLots',
+      label: 'Duże zlecenia w arkuszu',
+      hint: `Poziom arkusza, na którym średnie zlecenie jest w 1% największych z ostatnich 30 min tego rynku (co najmniej ${compact(bigUsd * LOT_FLOOR)} USD): linia przez czas, gdy jest w arkuszu (przygaszona po zniknięciu); po 30 s w arkuszu podpis „liczba zleceń × średnia wartość” — od otwarcia strony, a z zapisem serwera z ostatniej doby`,
+      swatch: 'bg-gradient-to-r from-of-buy-ink to-of-sell-ink',
     },
     {
       key: 'showVwap',
@@ -795,6 +898,20 @@ const IndicatorsMenu: React.FC<{ settings: ChartSettings; intervalMs: number; li
       off: scope.periodProfile ? undefined : 'Na interwałach do 4h',
     },
     {
+      key: 'showDevPoc',
+      label: 'Rozwijający się POC i value area',
+      hint: `POC (linia schodkowa) oraz VAH i VAL (kropkowane) ${scope.periodProfile === 'day' ? 'doby UTC' : 'sesji'} świeca po świecy: gdzie był środek wolumenu od początku okresu w każdej chwili`,
+      swatch: 'bg-of-poc',
+      off: scope.periodProfile ? undefined : 'Na interwałach do 4h',
+    },
+    {
+      key: 'showTpo',
+      label: 'TPO — profil czasowy doby',
+      hint: 'Litery 30-minutowych okresów doby UTC w każdym wierszu ceny: POC, value area, initial balance (pasek turkusowy), pojedyncze wydruki i ogony; zastępuje profile sesji',
+      swatch: 'bg-of-svwap',
+      off: tpoInterval(intervalMs) ? undefined : 'Na interwałach do 30m',
+    },
+    {
       key: 'showLevels',
       label: 'Poziomy dnia',
       hint: 'PDH i PDL — szczyt i dołek poprzedniego dnia UTC — oraz otwarcie dnia (00:00 UTC)',
@@ -821,6 +938,12 @@ const IndicatorsMenu: React.FC<{ settings: ChartSettings; intervalMs: number; li
       hint: liqHint(liq),
       swatch: 'bg-gradient-to-r from-of-sell to-of-buy',
       off: s.coin === 'BTC' ? undefined : 'Tylko BTC: skaner mapuje pozycje na BTC',
+    },
+    {
+      key: 'showWhales',
+      label: 'Wieloryby',
+      hint: `Cena wejścia (L/S, wartość, dźwignia) i likwidacji największych pozycji oraz duże zlecenia oczekujące, także stop i TP, największych kont Hyperliquid z ich publicznego stanu; konto ma pseudonim na dobę, bez adresu · ${whaleHint(whales, s.coin)}`,
+      swatch: 'bg-gradient-to-r from-of-buy to-of-sell',
     },
     {
       key: 'showZones',
@@ -983,6 +1106,66 @@ const Templates: React.FC<{ settings: ChartSettings; onApply: (s: ChartSettings)
   );
 };
 
+const KEY_GROUPS: { title: string; keys: [string, string][] }[] = [
+  {
+    title: 'Wykres',
+    keys: [
+      ['1 … 8', `Interwał: ${INTERVALS.map((i) => i.label).join(', ')}`],
+      ['C', 'Świece ↔ footprint'],
+      ['M', `Następny rynek (${MARKETS.join(', ')})`],
+      ['T', 'Taśma zleceń'],
+      ['R', 'Przywróć skalę'],
+      ['A', 'Autoskala ceny: włącz / zamroź zakres'],
+      ['End', 'Przewiń do bieżącej świecy'],
+      ['F', 'Pełny ekran'],
+      ['?', 'Ta lista'],
+      ['Esc', 'Zamknij menu, przerwij rysowanie'],
+    ],
+  },
+  {
+    title: 'Rysowanie',
+    keys: [
+      ...TOOLS.filter((t) => t.hotkey).map((t): [string, string] => [`Alt+${t.hotkey}`, t.label]),
+      ['Shift + przeciągnij', 'Szybki pomiar'],
+      ['Ctrl', 'Odwraca magnes do OHLC'],
+      ['Delete', 'Usuń zaznaczony rysunek'],
+      ['Ctrl+C / Ctrl+V', 'Kopiuj i wklej rysunek'],
+      ['Ctrl+Z / Ctrl+Y', 'Cofnij i ponów'],
+    ],
+  },
+  {
+    title: 'Mysz',
+    keys: [
+      ['Kółko', 'Zbliżenie w czasie'],
+      ['Przeciągnij oś ceny', 'Skala ceny (wyłącza autoskalę)'],
+      ['Dwuklik na osi ceny', 'Włącz autoskalę'],
+      ['Prawy przycisk', 'Alert, linia, cena, zrzut'],
+      ['Krzyżyk × przy panelu', 'Ukryj panel pod wykresem'],
+    ],
+  },
+];
+
+/** Lista skrótów: skróty bez modyfikatorów działają w panelu, w którym ostatnio kliknięto. */
+const KeysMenu: React.FC = () => (
+  <div className="bg-surface-2 border border-line-strong rounded-xl p-3 shadow-2xl flex flex-col gap-3 text-xs">
+    {KEY_GROUPS.map((g) => (
+      <Group key={g.title} title={g.title}>
+        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5">
+          {g.keys.map(([k, what]) => (
+            <React.Fragment key={k}>
+              <dt>
+                <kbd className="inline-block rounded border border-line-strong bg-surface-3 px-1.5 py-0.5 font-mono text-[11px] text-ink-1 whitespace-nowrap">{k}</kbd>
+              </dt>
+              <dd className="text-ink-2 self-center">{what}</dd>
+            </React.Fragment>
+          ))}
+        </dl>
+      </Group>
+    ))}
+    <p className="text-[11px] leading-snug text-ink-3">W układzie kilku wykresów skróty trafiają do wykresu, w którym ostatnio kliknięto.</p>
+  </div>
+);
+
 const Group: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
   <fieldset className="flex flex-col gap-2 min-w-0">
     <legend className="mb-1 text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium">{title}</legend>
@@ -1053,7 +1236,7 @@ const StatusBar: React.FC<{ store: ProStore; series: CandleSeries }> = ({ store,
       <Badge tone={st.tone} title={st.title}>
         {st.text}
       </Badge>
-      <span title="Footprint, Delta i CVD liczymy z taśmy transakcji Hyperliquid nagrywanej od otwarcia tej strony — API nie udostępnia historii transakcji. Świece (OHLC i wolumen) pochodzą z pełnej historii API.">
+      <span title="Footprint, Delta i CVD liczymy z taśmy transakcji Hyperliquid nagrywanej od otwarcia tej strony i z zapisu serwera z ostatniej doby — API nie udostępnia historii transakcji. Świece (OHLC i wolumen) pochodzą z pełnej historii API.">
         Taśma {Number.isFinite(first) ? `od ${fmtSince(first, Date.now())}` : '—'}
         {gaps > 0 && <span className="text-warn"> · luki: {gaps}</span>}
       </span>
