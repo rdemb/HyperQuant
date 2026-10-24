@@ -92,7 +92,22 @@ setups:
 
 Scenariusze warunkowe opisują, co musiałoby się wydarzyć na rynku (strefa, warunki potwierdzenia, unieważnienie, poziomy reakcji). Nad kartami jest stała uwaga, że to opis warunków, a nie zlecenie ani rekomendacja. Bezpieczniki obejmują wszystkie teksty tych pól, więc nie przejdą w nich poziomy TP/SL, „long od …” ani tryb rozkazujący.
 
-**Miejsce bloków w treści.** Blok danych można wstawić w wybranym miejscu treści znacznikiem w osobnej linii: `[[dane]]` (panel danych), `[[poziomy]]`, `[[likwidacje]]`, `[[przeplywy]]`, `[[scenariusze]]`, `[[setupy]]`. Wstawiony blok dostaje podpis zamiast nagłówka sekcji, więc dobrze stoi pod własnym `##`. Bloki bez znacznika trafiają przed treść w tej kolejności, każdy z nagłówkiem. Znacznik bez danych, nieznany, powtórzony albo w środku akapitu to błąd wpisu. W RSS diagramy są pomijane, a scenariusze warunkowe zostają jako tekst.
+**Miejsce bloków w treści.** Blok danych można wstawić w wybranym miejscu treści znacznikiem w osobnej linii: `[[dane]]` (panel danych), `[[wykres]]` i `[[footprint]]` (zob. Wykresy), `[[poziomy]]`, `[[likwidacje]]`, `[[przeplywy]]`, `[[scenariusze]]`, `[[setupy]]`. Wstawiony blok dostaje podpis zamiast nagłówka sekcji, więc dobrze stoi pod własnym `##`. Bloki bez znacznika trafiają przed treść w tej kolejności, każdy z nagłówkiem. Znacznik bez danych, nieznany, powtórzony albo w środku akapitu to błąd wpisu. W RSS diagramy są pomijane, a scenariusze warunkowe zostają jako tekst.
+
+### Wykresy
+
+Mapa sesji i footprint rysuje generator z pliku `content/blog/<id>/wykresy.json` (katalog mediów wpisu). Plik tworzy skrypt z publicznych danych desku (archiwum świec 1 min, taśma transakcji z gałęzi `history`, taśma likwidacji):
+
+```sh
+node scripts/blog/chartdata.mjs --at 2026-10-25T06:00Z --out content/blog/2026-10-25-mapa-dnia/wykresy.json [--fp 2026-10-25T04:00Z] [--source <adres|katalog>]
+```
+
+`--at` to chwila danych (ostatnia pełna świeca 15 min przed nią), `--fp` początek footprintu (osiem świec 15 min, domyślnie ostatnie dwie godziny), `--source` adres repozytorium danych albo katalog o tym samym układzie (`archive/`, `history/`, `main/`). Na wyjściu standardowym skrypt drukuje odczyt wykresu: cenę, zakres doby, POC i obszar wartości, VWAP dnia z odległością w σ, deltę i zmianę OI z 1 i 4 godzin, największe likwidacje oraz dla każdej świecy footprintu deltę, wolumen, zmianę OI, POC i poziomy nierównowag. Tekst analizy pisze się z tych liczb, tych samych co na rysunku.
+
+- `[[wykres]]`: mapa sesji z 24 godzin. Świece 15 min (na telefonie 30 min), VWAP dnia od północy UTC z pasmami ±1σ i ±2σ, profil wolumenu z POC i obszarem wartości (70% obrotu), szczyt i dołek dnia poprzedniego (PDH, PDL; poza zakresem jako znacznik przy krawędzi), likwidacje jako koła przy świecach, strefy z `setups` (kolor kierunku) i panele delty agresorów, CVD oraz open interest, każdy z własną skalą. Bez taśmy panele są zakreskowane z napisem „brak taśmy”.
+- `[[footprint]]`: sprzedaż i kupno agresorów na każdym poziomie ceny (krok dobrany do zakresu, do 26 wierszy), kafle w odcieniu strony według wolumenu, POC świecy w ramce, nierównowagi po przekątnej 3:1 (pasek przy krawędzi i pogrubiona liczba; komórki poniżej 10% największej w świecy pomijane), pod spodem delta, wolumen i zmiana OI. Tylko świece w pełni nagrane na taśmie.
+
+Oba wykresy to SVG w treści strony w dwóch układach: szerokim (od 640 px) i wąskim na telefon. Najechanie na świecę albo komórkę pokazuje liczby. W RSS wykresów nie ma. Walidator sprawdza kształt pliku, a znacznik wykresu bez danych w pliku to błąd wpisu.
 
 ## Treść
 

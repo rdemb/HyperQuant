@@ -22,7 +22,19 @@ export const BIASES = ['up', 'down', 'flat'];
 /** Liczba wierszy mapy likwidacji (przedziały od najniższego do najwyższego, także puste). */
 const LIQ_MAX_ROWS = 60;
 /** Bloki danych, które treść może wstawić w wybranym miejscu znacznikiem w osobnej linii (np. `[[likwidacje]]`). */
-export const BLOCKS = { dane: 'metrics', poziomy: 'levels', likwidacje: 'liquidations', przeplywy: 'flows', scenariusze: 'scenarios', setupy: 'setups' };
+export const BLOCKS = {
+  dane: 'metrics',
+  wykres: 'session',
+  footprint: 'footprint',
+  poziomy: 'levels',
+  likwidacje: 'liquidations',
+  przeplywy: 'flows',
+  scenariusze: 'scenarios',
+  setupy: 'setups',
+};
+/** Dane wykresów wpisu (scripts/blog/chartdata.mjs) w katalogu mediów wpisu. */
+export const CHARTS_FILE = 'wykresy.json';
+const CHART_BLOCKS = new Set(['session', 'footprint']);
 const MARK_RE = /^[ \t]*\[\[([^\]\n]*)\]\][ \t]*$/gm;
 /** Pola spoza schematu (np. przecinek w nawiasach klamrowych YAML bez cudzysłowu tworzy nowy klucz). */
 const extraKeys = (o, known) => (o && typeof o === 'object' ? Object.keys(o).filter((k) => !known.has(k)) : []);
@@ -101,7 +113,7 @@ export function placedBlocks(body) {
  * Walidacja jednego wpisu. Zwraca { post, errors }; post === null, gdy wpis jest niepoprawny.
  * `id` = nazwa pliku bez .md, `body` = treść Markdown, `data` = frontmatter.
  */
-export function validatePost(id, data, body) {
+export function validatePost(id, data, body, charts = null) {
   const errors = [];
   const err = (msg) => errors.push(msg);
   const idMatch = ID_RE.exec(id);
@@ -246,10 +258,20 @@ export function validatePost(id, data, body) {
   const marks = placedBlocks(body);
   const inline = body.match(/\[\[[^\]\n]*\]\]/g) ?? [];
   if (inline.length !== marks.length) err('treść: znacznik bloku (np. [[likwidacje]]) musi stać sam w osobnej linii');
-  const present = { metrics: metrics.length, levels: levels.length, liquidations: liq !== undefined, flows: flows !== undefined, scenarios: scenarios.length, setups: setups.length };
+  const present = {
+    metrics: metrics.length,
+    levels: levels.length,
+    liquidations: liq !== undefined,
+    flows: flows !== undefined,
+    scenarios: scenarios.length,
+    setups: setups.length,
+    session: !!charts?.session,
+    footprint: !!charts?.footprint,
+  };
   marks.forEach((m, i) => {
     if (!(m in BLOCKS)) err(`treść: nieznany blok [[${m}]]; dostępne: ${Object.keys(BLOCKS).join(', ')}`);
     else if (marks.indexOf(m) !== i) err(`treść: blok [[${m}]] wstawiony więcej niż raz`);
+    else if (!present[BLOCKS[m]] && CHART_BLOCKS.has(BLOCKS[m])) err(`treść: blok [[${m}]] bez danych (${BLOCKS[m]} w content/blog/${id}/${CHARTS_FILE})`);
     else if (!present[BLOCKS[m]]) err(`treść: blok [[${m}]] bez danych (pole ${BLOCKS[m]} we frontmatterze)`);
   });
 
@@ -302,6 +324,7 @@ export function validatePost(id, data, body) {
         reactions: (s.reactions ?? []).map((r) => ({ label: r.label.trim(), price: r.price })),
         evidence: trimOrNull(s.evidence),
       })),
+      charts,
       draft: data.draft === true,
       body,
     },
@@ -309,7 +332,40 @@ export function validatePost(id, data, body) {
   };
 }
 
-/** Odczyt i walidacja pliku wpisu; media wpisu (katalog o tej samej nazwie) dołączane do wyniku. */
+const isNums = (v, n) => Array.isArray(v) && (n === undefined || v.length === n) && v.every(isNum);
+const isRows = (v, n, max) => Array.isArray(v) && v.length <= max && v.every((r) => isNums(r, n));
+
+/** Walidacja danych wykresów (wykresy.json): kształt i rozmiar, bez sprawdzania samych liczb rynku. */
+export function validateCharts(c) {
+  const errors = [];
+  const err = (m) => errors.push(m);
+  if (!isMap(c) || c.v !== 1) return ['wersja danych: oczekiwane v: 1'];
+  const s = c.session;
+  if (s !== null && s !== undefined) {
+    if (!isMap(s) || !isNum(s.from) || !isNum(s.to) || s.to <= s.from || !isNum(s.dayStart)) err('session: from < to i dayStart (ms)');
+    else {
+      const candleOk = (r) => Array.isArray(r) && r.length === 8 && r.slice(0, 6).every(isNum) && r.slice(6).every((x) => x === null || isNum(x));
+      if (!Array.isArray(s.candles) || s.candles.length < 2 || s.candles.length > 200 || !s.candles.every(candleOk)) err('session.candles: 2–200 świec [t, o, h, l, c, v, kupno|null, sprzedaż|null]');
+      if (!isRows(s.vwap, 3, 400)) err('session.vwap: lista [t, vwap, sigma]');
+      const p = s.profile;
+      if (!isMap(p) || !isPrice(p.step) || !isNum(p.from) || !isNums(p.vol) || !p.vol.length || p.vol.length > 2000 || ![p.poc, p.val, p.vah].every(isNum))
+        err('session.profile: step, from, vol[], poc, val, vah');
+      if (!Array.isArray(s.levels) || !s.levels.every((l) => isMap(l) && isText(l.label, 8) && isPrice(l.price))) err('session.levels: { label do 8 znaków, price }');
+      if (!isRows(s.oi, 2, 400)) err('session.oi: lista [t, oi]');
+      if (!isRows(s.liq, 3, 400)) err('session.liq: lista [t, longi, shorty]');
+      if (!isRows(s.tape, 2, 50)) err('session.tape: lista odcinków [od, do]');
+    }
+  }
+  const fp = c.footprint;
+  if (fp !== null && fp !== undefined) {
+    const barOk = (b) => isMap(b) && isNum(b.t) && isNums(b.ohlc, 4) && (b.oi === null || isNum(b.oi)) && isRows(b.cells, 3, 60) && b.cells.length > 0;
+    if (!isMap(fp) || !isNum(fp.tf) || !isPrice(fp.step) || !Array.isArray(fp.bars) || !fp.bars.length || fp.bars.length > 12 || !fp.bars.every(barOk))
+      err('footprint: tf, step, 1–12 świec { t, ohlc, oi, cells [cena, sprzedaż, kupno] }');
+  }
+  return errors;
+}
+
+/** Odczyt i walidacja pliku wpisu; media wpisu (katalog o tej samej nazwie) i dane wykresów dołączane do wyniku. */
 export function loadPostFile(file) {
   const id = path.basename(file, '.md');
   let split;
@@ -319,10 +375,27 @@ export function loadPostFile(file) {
     return { id, post: null, errors: [`frontmatter: błąd YAML (${e.message.split('\n')[0]})`] };
   }
   if (!split) return { id, post: null, errors: ['brak frontmattera (blok YAML między liniami ---)'] };
-  const { post, errors } = validatePost(id, split.data, split.body);
+  const dir = path.join(path.dirname(file), id);
+  const mediaDir = existsSync(dir) && statSync(dir).isDirectory() ? dir : null;
+  const errors = [];
+  let charts = null;
+  if (mediaDir && existsSync(path.join(mediaDir, CHARTS_FILE))) {
+    try {
+      charts = JSON.parse(readFileSync(path.join(mediaDir, CHARTS_FILE), 'utf8'));
+      const bad = validateCharts(charts);
+      if (bad.length) {
+        errors.push(...bad.map((e) => `${CHARTS_FILE}: ${e}`));
+        charts = null;
+      }
+    } catch (e) {
+      errors.push(`${CHARTS_FILE}: błąd JSON (${e.message})`);
+    }
+  }
+  const r = validatePost(id, split.data, split.body, charts);
+  errors.push(...r.errors);
+  const post = r.post;
   if (post) {
-    const dir = path.join(path.dirname(file), id);
-    post.mediaDir = existsSync(dir) && statSync(dir).isDirectory() ? dir : null;
+    post.mediaDir = mediaDir;
     // Obrazy w treści: tylko pliki z katalogu mediów wpisu albo adresy https
     for (const m of post.body.matchAll(/!\[[^\]]*\]\(([^)\s]+)[^)]*\)/g)) {
       const src = m[1];

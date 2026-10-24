@@ -465,6 +465,71 @@ h1 {
 .fl-bar--sell {
   background: var(--sell);
 }
+/* Wykresy wpisu: SVG w dwóch układach, widoczny jeden (szeroki od 640 px) */
+.chart-box {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-1);
+}
+.chart {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.chart--w {
+  display: none;
+}
+@media (min-width: 640px) {
+  .chart--w {
+    display: block;
+  }
+  .chart--n {
+    display: none;
+  }
+}
+.sw + .sw {
+  margin-left: -3px;
+}
+.sw--line {
+  width: 14px;
+  height: 0;
+  border-radius: 0;
+  border-top: 2px solid var(--ink-1);
+  vertical-align: 3px;
+}
+.sw--vwap {
+  border-top-color: #e6ebf2;
+}
+.sw--poc {
+  border-top-color: var(--level);
+}
+.sw--va {
+  border-top: 1px dashed var(--ink-3);
+}
+.sw--prev {
+  border-top: 2px dotted var(--ink-2);
+}
+.sw--dot {
+  border-radius: 50%;
+  opacity: 0.8;
+}
+.sw--zone-up {
+  background: rgba(25, 168, 142, 0.35);
+}
+.sw--zone-down {
+  background: rgba(217, 88, 46, 0.35);
+}
+.sw--poc-frame {
+  border: 1.5px solid var(--level);
+}
+.sw--imb {
+  width: 4px;
+  background: #5cf2cf;
+  box-shadow: 6px 0 0 #ff9a6a;
+  margin-right: 12px;
+}
+
 .prose .fig-note,
 .fig-note {
   margin: 12px 0 0;
