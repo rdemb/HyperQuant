@@ -4,7 +4,9 @@
  */
 
 /** Rampa: przezroczysty → granat → niebieski → cyjan (akcent) → bursztyn → kremowa biel (ściany). */
-export const HEAT_RAMP: { t: number; color: string; alpha: number }[] = [
+export type HeatRamp = { t: number; color: string; alpha: number }[];
+
+export const HEAT_RAMP: HeatRamp = [
   { t: 0, color: '#0b1019', alpha: 0 },
   { t: 0.14, color: '#121c33', alpha: 1 },
   { t: 0.38, color: '#1e4a7a', alpha: 1 },
@@ -28,14 +30,14 @@ export function unpackRgba(v: number): [number, number, number, number] {
 }
 
 /** Tablica 256 kolorów (Uint32) do szybkiego zapisu w ImageData. */
-export function buildHeatLut(): Uint32Array {
+export function buildHeatLut(ramp: HeatRamp = HEAT_RAMP): Uint32Array {
   const lut = new Uint32Array(256);
   for (let i = 0; i < 256; i++) {
     const t = i / 255;
     let k = 0;
-    while (k < HEAT_RAMP.length - 2 && t > HEAT_RAMP[k + 1].t) k++;
-    const a = HEAT_RAMP[k];
-    const b = HEAT_RAMP[k + 1];
+    while (k < ramp.length - 2 && t > ramp[k + 1].t) k++;
+    const a = ramp[k];
+    const b = ramp[k + 1];
     const u = Math.min(1, Math.max(0, (t - a.t) / (b.t - a.t)));
     const ca = hexRgb(a.color);
     const cb = hexRgb(b.color);

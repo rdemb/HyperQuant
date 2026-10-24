@@ -1,11 +1,13 @@
-import { AssetCtx, Candle, Fill, parseAssetCtx, parseCandle, parseFills } from '../hl/parse';
+import { AssetCtx, Candle, Fill, parseAssetCtx, parseBook, parseCandle, parseFills } from '../hl/parse';
 import { fetchAssetCtx, fetchCandles } from '../hl/rest';
 import { HlStream, StreamStatus, Subscription } from '../hl/stream';
+import { BookHistory, bookSigFigs, bookStep, toFrame } from '../core/book';
 import { Coverage, Span } from '../core/coverage';
 import { FootprintBar, FootprintBuilder, hlTick } from '../core/footprintBar';
 import { OrderAggregator, OrderLog } from '../core/orders';
 import { Tape, TradeRow } from '../core/tape';
-import { DEFAULT_INTERVAL, Interval, barStart, intervalById } from '../core/time';
+import { utcDayStart } from '../core/sessions';
+import { DAY, DEFAULT_INTERVAL, Interval, barStart, intervalById } from '../core/time';
 
 /**
  * Magazyn wykresu Pro (bez Reacta, jeden na aplikację): świece Hyperliquid wybranego interwału
@@ -19,6 +21,8 @@ export const COIN = 'BTC';
 export const PAGE_BARS = 1500;
 /** Taśma i zlecenia są trzymane w pamięci przez dobę. */
 export const RETENTION_MS = 24 * 3600_000;
+/** Tyle dni świec dziennych pobieramy dla poziomów dnia (PDH, PDL, PDC, otwarcie). */
+const DAILY_DAYS = 400;
 
 export interface ProBar {
   t: number;
@@ -65,6 +69,8 @@ export class ProStore {
 
   interval: Interval = intervalById(DEFAULT_INTERVAL);
   candles: Candle[] = [];
+  /** Świece dzienne (00:00 UTC) — poziomy dnia niezależne od interwału wykresu. */
+  daily: Candle[] = [];
   loadState: LoadState = 'idle';
   /** Doczytywanie starszej historii w toku / historia wyczerpana (limit API). */
   loadingOlder = false;
@@ -86,6 +92,12 @@ export class ProStore {
   private timers: ReturnType<typeof setInterval>[] = [];
   /** Subskrypcja transakcji potwierdzona, czekamy na pierwszą wiadomość (migawkę ostatnich transakcji). */
   private tradesPending = false;
+  /** Dzień UTC, dla którego świece dzienne są pobrane albo w drodze. */
+  private dailyDay = 0;
+  /** Subskrypcje arkusza: bliska (~10 USD) i daleka (~100 USD) agregacja; migawki rozpoznajemy po kroku cen. */
+  private bookSubs: Subscription[] = [];
+  private readonly books = new Map<number, BookHistory>();
+  private bookSteps: [number, number] = [Number.NaN, Number.NaN];
 
   constructor(stream?: HlStream) {
     this.stream = stream ?? new HlStream();
@@ -129,14 +141,21 @@ export class ProStore {
     void fetchAssetCtx(this.coin).then((c) => {
       if (c && !this.ctx) {
         this.ctx = c;
+        this.ensureBookSubs(c.markPx);
         this.bump();
       }
     });
     // Interwał mógł zostać już ustawiony (i jego świece są w drodze) przed startem
     if (this.loadState === 'idle') void this.setInterval(this.interval.id, true);
+    void this.loadDaily();
     // Zlecenia bez nowych wypełnień zamykają się także w ciszy na rynku
     this.timers.push(setInterval(() => this.flushOrders(), 2000));
-    this.timers.push(setInterval(() => this.prune(), 60_000));
+    this.timers.push(
+      setInterval(() => {
+        this.prune();
+        void this.loadDaily();
+      }, 60_000)
+    );
   }
 
   /** Tylko dla testów: zatrzymuje strumień i liczniki. */
@@ -200,6 +219,19 @@ export class ProStore {
     this.bump();
   }
 
+  /** Świece dzienne — raz na dzień UTC; brak świecy bieżącego dnia albo błąd → ponowienie przy następnym takcie. */
+  private async loadDaily(): Promise<void> {
+    const now = Date.now();
+    const day = utcDayStart(this.serverNow());
+    if (this.dailyDay === day) return;
+    this.dailyDay = day;
+    const list = await fetchCandles(this.coin, '1d', now - DAILY_DAYS * DAY, now + DAY);
+    if (list.length === 0 || list[list.length - 1].t < day) this.dailyDay = 0;
+    if (list.length === 0) return;
+    this.daily = list;
+    this.bump();
+  }
+
   private async refreshRecent(): Promise<void> {
     const iv = this.interval;
     const seq = this.loadSeq;
@@ -255,9 +287,40 @@ export class ProStore {
       const ctx = parseAssetCtx(d.ctx);
       if (ctx) {
         this.ctx = ctx;
+        this.ensureBookSubs(ctx.markPx);
         this.bump();
       }
+    } else if (channel === 'l2Book') {
+      const snap = parseBook(data, this.coin);
+      if (!snap) return;
+      const step = bookStep(snap);
+      if (step !== this.bookSteps[0] && step !== this.bookSteps[1]) return;
+      let h = this.books.get(step);
+      if (!h) this.books.set(step, (h = new BookHistory(step)));
+      h.add(toFrame(snap, step));
+      this.bump();
     }
+  }
+
+  // ───────────────────────── arkusz ─────────────────────────
+
+  /** Agregacje arkusza dopasowane do rzędu wielkości ceny (zmiana tylko przy przejściu przez 10^k). */
+  private ensureBookSubs(price: number): void {
+    if (!(price > 0)) return;
+    const { near, far } = bookSigFigs(price);
+    const digits = Math.floor(Math.log10(price)) + 1;
+    const steps: [number, number] = [10 ** (digits - near), 10 ** (digits - far)];
+    if (steps[0] === this.bookSteps[0] && steps[1] === this.bookSteps[1]) return;
+    for (const sub of this.bookSubs) this.stream.remove(sub);
+    this.bookSteps = steps;
+    this.books.clear();
+    this.bookSubs = [near, far].map((n) => ({ type: 'l2Book', coin: this.coin, nSigFigs: n }) as const);
+    for (const sub of this.bookSubs) this.stream.add(sub);
+  }
+
+  /** Historia arkusza w agregacji bliskiej (~10 USD) i dalekiej (~100 USD); null przed pierwszą migawką. */
+  book(which: 'near' | 'far'): BookHistory | null {
+    return this.books.get(this.bookSteps[which === 'near' ? 0 : 1]) ?? null;
   }
 
   /** Wejście transakcji (WebSocket albo zapis z przeglądarki). */
@@ -365,6 +428,7 @@ export class ProStore {
     this.tape.prune(cut);
     this.coverage.prune(cut);
     this.orders.prune(cut);
+    this.books.forEach((b) => b.prune(cut));
     const ms = this.interval.ms;
     this.fpCache.forEach((_v, t) => {
       if (t + ms < cut) this.fpCache.delete(t);
