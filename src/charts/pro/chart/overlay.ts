@@ -34,7 +34,7 @@ import {
 } from '../core/indicators';
 import { SESSION_LABEL, sessionsBetween } from '../core/sessions';
 import { DAY } from '../core/time';
-import type { WhaleLayer } from '../../../utils/whaleLayer';
+import { type WhaleLayer, groupWhaleOrders } from '../../../utils/whaleLayer';
 import type { Candle } from '../hl/parse';
 import type { ProBar } from '../store/proStore';
 import { autoRowStep, fmtPx } from './layout';
@@ -115,7 +115,7 @@ const K = {
 } as const;
 
 const DASH = { none: [] as number[], level: [6, 4], dot: [2, 3], session: [3, 4], ext: [4, 4], liq: [1, 3], whale: [8, 3, 2, 3] };
-/** Wieloryby: tyle największych pozycji i zleceń w widoku; zlecenie to kreska tej długości przy prawej krawędzi (px). */
+/** Wieloryby: tyle największych pozycji i grup zleceń w widoku; zlecenie to kreska tej długości przy prawej krawędzi (px). */
 const WHALE_POSITIONS = 4;
 const WHALE_ORDERS = 6;
 const WHALE_TICK_PX = 56;
@@ -564,12 +564,18 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
           s.tags.push({ y: yl, text: `${p.id} likw. ${long ? 'L' : 'S'}`, color: K.whaleLiq });
         }
       }
-      for (const o of this.whales.orders.filter((x) => inView(Y(x.px))).slice(0, WHALE_ORDERS)) {
-        const y = Y(o.px);
-        const bid = o.side === 'bid';
-        const what = o.kind === 'stop' ? 'stop' : o.kind === 'tp' ? 'TP' : bid ? 'kupno' : 'sprzedaż';
-        s.hlines.push({ x0: W - WHALE_TICK_PX, x1: W, y, color: bid ? K.whaleLong : K.whaleShort, dash: o.kind === 'limit' ? DASH.none : DASH.dot });
-        s.tags.push({ y, text: `${o.id} ${what} ${fmtCompact(o.usd, '$')}`, color: bid ? K.whaleLong : K.whaleShort });
+      // Zlecenia konta po jednej stronie i jednego rodzaju (drabinka) — kreska na każdej cenie, łącznik i jeden podpis z liczbą i sumą
+      const orders = this.whales.orders.filter((x) => inView(Y(x.px)));
+      for (const g of groupWhaleOrders(orders).slice(0, WHALE_ORDERS)) {
+        const bid = g.side === 'bid';
+        const color = bid ? K.whaleLong : K.whaleShort;
+        const dash = g.kind === 'limit' ? DASH.none : DASH.dot;
+        for (const o of orders) {
+          if (o.id === g.id && o.side === g.side && o.kind === g.kind) s.hlines.push({ x0: W - WHALE_TICK_PX, x1: W, y: Y(o.px), color, dash });
+        }
+        if (g.n > 1) s.polys.push({ pts: [W - WHALE_TICK_PX, Y(g.hi), W - WHALE_TICK_PX, Y(g.lo)], color, width: 1 });
+        const what = g.kind === 'stop' ? 'stop' : g.kind === 'tp' ? 'TP' : bid ? 'kupno' : 'sprzedaż';
+        s.tags.push({ y: Y((g.lo + g.hi) / 2), text: `${g.id} ${what} ${g.n > 1 ? `${g.n}× ` : ''}${fmtCompact(g.usd, '$')}`, color });
       }
     }
 

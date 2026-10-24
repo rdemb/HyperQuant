@@ -71,3 +71,30 @@ export function isWhaleLayer(x: unknown): x is WhaleLayer {
   if (!o || o.v !== WHALES_VERSION || !fin(o.asOf) || !fin(o.accounts) || !fin(o.candidates) || !o.markets || typeof o.markets !== 'object') return false;
   return Object.values(o.markets).every((m) => !!m && Array.isArray(m.positions) && m.positions.every(isPosition) && Array.isArray(m.orders) && m.orders.every(isOrder));
 }
+
+/** Zlecenia jednego konta po jednej stronie i jednego rodzaju: zakres cen, liczba i suma wartości. */
+export interface WhaleOrderGroup {
+  id: string;
+  side: WhaleOrder['side'];
+  kind: WhaleOrder['kind'];
+  lo: number;
+  hi: number;
+  n: number;
+  usd: number;
+}
+
+/** Łączy zlecenia tego samego konta, strony i rodzaju (np. drabinkę sprzedaży co kilka ticków); od największej sumy. */
+export function groupWhaleOrders(orders: readonly WhaleOrder[]): WhaleOrderGroup[] {
+  const by = new Map<string, WhaleOrderGroup>();
+  for (const o of orders) {
+    const key = `${o.id}|${o.side}|${o.kind}`;
+    const g = by.get(key);
+    if (g) {
+      g.lo = Math.min(g.lo, o.px);
+      g.hi = Math.max(g.hi, o.px);
+      g.n++;
+      g.usd += o.usd;
+    } else by.set(key, { id: o.id, side: o.side, kind: o.kind, lo: o.px, hi: o.px, n: 1, usd: o.usd });
+  }
+  return [...by.values()].sort((a, b) => b.usd - a.usd);
+}
