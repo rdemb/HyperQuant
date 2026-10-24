@@ -20,6 +20,8 @@ import { rowAt } from '../core/footprintBar';
 import type { LiqLevel } from '../core/indicators';
 import type { ResetMode } from '../core/sessions';
 import type { ProBar, ProStore } from '../store/proStore';
+import { DrawingLayer } from '../draw/layer';
+import { DrawingTools } from '../draw/tools';
 import { FootprintOptions, FootprintPoint, FootprintSeries } from './footprintSeries';
 import { LiquidityLayer } from './liquidity';
 import { IndicatorOverlay, IndicatorToggles, IndicatorValues } from './overlay';
@@ -129,6 +131,9 @@ export class ProChartController {
   private readonly cvdLegend = new PaneLegend();
   private readonly overlay: IndicatorOverlay;
   private readonly liquidity: LiquidityLayer;
+  private readonly drawLayer = new DrawingLayer();
+  /** Narzędzia rysowania (pasek narzędzi w ProChart). */
+  readonly draw: DrawingTools;
 
   private settings: ChartSettings;
   private bars: ProBar[] = [];
@@ -157,6 +162,10 @@ export class ProChartController {
     this.main.attachPrimitive(this.liquidity);
     this.overlay = new IndicatorOverlay(toggles(settings));
     this.main.attachPrimitive(this.overlay);
+    // Rysunki dołączone ostatnie — nad wskaźnikami i świecami
+    this.drawLayer.setUnit(store.coin);
+    this.main.attachPrimitive(this.drawLayer);
+    this.draw = new DrawingTools(container, this.chart, this.drawLayer, store.coin);
     this.applySettings(settings, true);
     this.chart.subscribeCrosshairMove(this.onCrosshair);
     this.chart.timeScale().subscribeVisibleLogicalRangeChange(this.onRange);
@@ -167,6 +176,7 @@ export class ProChartController {
   destroy(): void {
     cancelAnimationFrame(this.frame);
     cancelAnimationFrame(this.marginFrame);
+    this.draw.destroy();
     this.unsubscribe();
     this.chart.unsubscribeCrosshairMove(this.onCrosshair);
     this.chart.timeScale().unsubscribeVisibleLogicalRangeChange(this.onRange);
@@ -305,6 +315,7 @@ export class ProChartController {
     }
     this.overlay.setBars(next, this.store.interval.ms);
     this.overlay.setDaily(this.store.daily);
+    this.drawLayer.setBars(next, this.store.interval.ms);
     const st = this.store;
     this.liquidity.setData(next, st.interval.ms, st.book('near'), st.book('far'), (from, to) => st.orders.range(from, to), st.serverNow());
     this.pushCvd(full);

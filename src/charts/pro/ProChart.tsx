@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { Camera, ChevronsRight, Layers, Maximize2, Minimize2, RotateCcw, SlidersHorizontal } from 'lucide-react';
+import { Camera, ChevronsRight, Layers, Maximize2, Minimize2, PenTool, RotateCcw, SlidersHorizontal } from 'lucide-react';
 import { Badge, BadgeTone, Segmented } from '../../ui';
 import { LiqMapState, useLiqMap } from '../../state/useLiqMap';
 import { INTERVALS, fmtHm, fmtSince, intervalById } from './core/time';
@@ -11,6 +11,8 @@ import { brandedScreenshot, downloadCanvas } from './chart/screenshot';
 import { ChartSettings, DEFAULT_SETTINGS, loadSettings, saveSettings } from './chart/settings';
 import type { ChartView } from './chart/footprintSeries';
 import type { FootprintStyle } from './chart/layout';
+import { DrawHint, DrawStyleBar, DrawToolbar } from './draw/DrawToolbar';
+import type { DrawingTools } from './draw/tools';
 import { ProStore, proStore } from './store/proStore';
 import { startRecording } from './store/recording';
 
@@ -58,6 +60,9 @@ export const ProChart: React.FC = () => {
   const [settings, setSettings] = useState<ChartSettings>(loadSettings);
   const [menu, setMenu] = useState<'settings' | 'indicators' | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
+  const [tools, setTools] = useState<DrawingTools | null>(null);
+  // Pasek rysowania: na komputerze widoczny od razu, na telefonie po dotknięciu przycisku (więcej miejsca na wykres)
+  const [drawOpen, setDrawOpen] = useState(() => window.innerWidth >= 640);
   const cardRef = useRef<HTMLDivElement>(null);
   const hostRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -84,6 +89,7 @@ export const ProChart: React.FC = () => {
     if (!host) return;
     const ctrl = new ProChartController(host, store, settings, signal.set);
     ctrlRef.current = ctrl;
+    setTools(ctrl.draw);
     ctrl.setTopInset(legendBottom.current);
     // Zmiana wysokości wykresu zmienia ułamek skali zajęty przez legendę
     const ro = new ResizeObserver(() => ctrl.setTopInset(legendBottom.current));
@@ -92,6 +98,7 @@ export const ProChart: React.FC = () => {
       ro.disconnect();
       ctrl.destroy();
       ctrlRef.current = null;
+      setTools(null);
     };
     // Wykres tworzymy raz; zmiany ustawień idą przez applySettings
   }, [store, signal]);
@@ -182,6 +189,9 @@ export const ProChart: React.FC = () => {
             <Layers className="w-4 h-4" />
             Wskaźniki
           </button>
+          <ToolBtn label={drawOpen ? 'Ukryj narzędzia rysowania' : 'Narzędzia rysowania'} onClick={() => setDrawOpen((o) => !o)} active={drawOpen}>
+            <PenTool className="w-4 h-4" />
+          </ToolBtn>
           <ToolBtn label="Ustawienia wykresu" onClick={() => setMenu((m) => (m === 'settings' ? null : 'settings'))} active={menu === 'settings'} expanded={menu === 'settings'}>
             <SlidersHorizontal className="w-4 h-4" />
           </ToolBtn>
@@ -200,20 +210,25 @@ export const ProChart: React.FC = () => {
         </div>
       </div>
 
-      {/* Wykres */}
-      <div className="relative flex-1 min-h-0">
-        <div ref={hostRef} className="absolute inset-0" />
-        <Legend signal={signal} intervalMs={iv.ms} intervalLabel={iv.label} tapeSince={tapeSince} onBottom={onLegendBottom} />
-        <LoadOverlay store={store} onRetry={() => void store.setInterval(settings.interval, true)} />
-        {menu && (
-          <div ref={menuRef} className="absolute top-2 right-2 z-30 w-[min(340px,calc(100%-16px))] max-h-[calc(100%-16px)] overflow-y-auto">
-            {menu === 'settings' ? (
-              <SettingsMenu settings={settings} onChange={update} onReset={() => setSettings({ ...DEFAULT_SETTINGS, interval: settings.interval })} />
-            ) : (
-              <IndicatorsMenu settings={settings} intervalMs={iv.ms} liq={liq} onChange={update} />
-            )}
-          </div>
-        )}
+      {/* Wykres z paskiem rysowania po lewej */}
+      <div className="flex flex-1 min-h-0">
+        <DrawToolbar tools={tools} className={drawOpen ? 'flex' : 'hidden'} />
+        <div className="relative flex-1 min-h-0 min-w-0">
+          <div ref={hostRef} className="absolute inset-0" />
+          <Legend signal={signal} intervalMs={iv.ms} intervalLabel={iv.label} tapeSince={tapeSince} onBottom={onLegendBottom} />
+          <DrawStyleBar tools={tools} />
+          <DrawHint tools={tools} />
+          <LoadOverlay store={store} onRetry={() => void store.setInterval(settings.interval, true)} />
+          {menu && (
+            <div ref={menuRef} className="absolute top-2 right-2 z-30 w-[min(340px,calc(100%-16px))] max-h-[calc(100%-16px)] overflow-y-auto">
+              {menu === 'settings' ? (
+                <SettingsMenu settings={settings} onChange={update} onReset={() => setSettings({ ...DEFAULT_SETTINGS, interval: settings.interval })} />
+              ) : (
+                <IndicatorsMenu settings={settings} intervalMs={iv.ms} liq={liq} onChange={update} />
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       <StatusBar store={store} />
