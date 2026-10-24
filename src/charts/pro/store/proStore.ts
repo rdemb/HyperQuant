@@ -9,13 +9,13 @@ import { OrderAggregator, OrderLog } from '../core/orders';
 import { FundingBook, HOUR_MS, OiLog } from '../core/stats';
 import { Tape, TradeRow } from '../core/tape';
 import { utcDayStart } from '../core/sessions';
-import { DAY, DEFAULT_INTERVAL, Interval, barStart, intervalById } from '../core/time';
+import { DAY, Interval, barStart, intervalById } from '../core/time';
 
 /**
- * Magazyn wykresu Pro (bez Reacta, jeden na rynek): świece Hyperliquid wybranego interwału
- * (historia z REST, bieżąca świeca z WebSocket), taśma transakcji od otwarcia widoku z pokryciem
- * i lukami, footprint każdej świecy i zlecenia agresora. Odbiorcy dostają powiadomienie o zmianie
- * i sami czytają stan (`bars()`, `ctx`, `orders`).
+ * Magazyn wykresu Pro (bez Reacta, jeden na rynek): taśma transakcji od otwarcia widoku z pokryciem
+ * i lukami, zlecenia agresora, arkusz i kontekst rynku oraz serie świec każdego używanego interwału
+ * (`series(id)`: historia z REST, bieżąca świeca z WebSocket, footprint z taśmy). Odbiorcy dostają
+ * powiadomienie o zmianie i sami czytają stan (`series(id).bars()`, `ctx`, `orders`).
  */
 
 /** Rynki perp Hyperliquid w widoku Wykresy. */
@@ -79,29 +79,20 @@ export class ProStore {
   private fundingLoading = false;
   readonly clock = new ClockSync();
   private readonly aggregator = new OrderAggregator();
+  /** Serie świec używanych interwałów (panele układu na tym rynku dzielą taśmę i połączenie). */
+  private readonly seriesById = new Map<string, CandleSeries>();
+  /** Cena ostatniej transakcji z taśmy na żywo (0 przed pierwszą). */
+  private lastTradePx = 0;
+  private lastTradeT = 0;
 
-  interval: Interval = intervalById(DEFAULT_INTERVAL);
-  candles: Candle[] = [];
   /** Świece dzienne (00:00 UTC) — poziomy dnia niezależne od interwału wykresu. */
   daily: Candle[] = [];
-  loadState: LoadState = 'idle';
-  /** Doczytywanie starszej historii w toku / historia wyczerpana (limit API). */
-  loadingOlder = false;
-  historyExhausted = false;
   ctx: AssetCtx | null = null;
   status: StreamStatus = 'idle';
   version = 0;
 
   private started = false;
-  private candleSub: Subscription | null = null;
-  private loadSeq = 0;
   private readonly listeners = new Set<() => void>();
-  private fpCache = new Map<number, FpCacheEntry>();
-  private barCache = new Map<number, ProBar>();
-  /** Bieżąca (najnowsza) świeca liczona przyrostowo. */
-  private live: FootprintBuilder | null = null;
-  private liveFp: FootprintBar | null = null;
-  private liveFpTrades = -1;
   private timers: ReturnType<typeof setInterval>[] = [];
   /** Subskrypcja transakcji potwierdzona, czekamy na pierwszą wiadomość (migawkę ostatnich transakcji). */
   private tradesPending = false;
@@ -120,7 +111,7 @@ export class ProStore {
       onSubscribed: (sub, recvAt) => {
         if (sub.type === 'trades') this.tradesPending = true;
         // Po ponownym połączeniu dociągamy świece, które mogły przyjść w trakcie przerwy
-        if (sub.type === 'candle' && this.candles.length > 0) void this.refreshRecent();
+        if (sub.type === 'candle') void this.seriesById.get(sub.interval)?.refreshRecent();
       },
       onClosed: (at) => {
         this.coverage.close(this.clock.toServer(at));
@@ -140,7 +131,8 @@ export class ProStore {
     };
   }
 
-  private bump(): void {
+  /** Powiadomienie odbiorców (także z serii świec tego rynku). */
+  bump(): void {
     this.version++;
     this.listeners.forEach((fn) => fn());
   }
@@ -160,8 +152,8 @@ export class ProStore {
         this.bump();
       }
     });
-    // Interwał mógł zostać już ustawiony (i jego świece są w drodze) przed startem
-    if (this.loadState === 'idle') void this.setInterval(this.interval.id, true);
+    // Serie utworzone przed startem, których świece nie są jeszcze w drodze
+    for (const s of this.seriesById.values()) if (s.loadState === 'idle') void s.load();
     void this.loadDaily();
     // Zlecenia bez nowych wypełnień zamykają się także w ciszy na rynku
     this.timers.push(setInterval(() => this.flushOrders(), 2000));
@@ -188,59 +180,33 @@ export class ProStore {
 
   // ───────────────────────── świece ─────────────────────────
 
-  async setInterval(id: string, force = false): Promise<void> {
-    const next = intervalById(id);
-    if (!force && next.id === this.interval.id && this.candles.length > 0) return;
-    this.interval = next;
-    this.candles = [];
-    this.fpCache = new Map();
-    this.barCache = new Map();
-    this.live = null;
-    this.liveFp = null;
-    this.liveFpTrades = -1;
-    this.historyExhausted = false;
-    this.loadState = 'loading';
-    if (this.candleSub) this.stream.remove(this.candleSub);
-    this.candleSub = { type: 'candle', coin: this.coin, interval: next.id };
-    this.stream.add(this.candleSub);
-    this.bump();
+  /** Seria świec interwału (tworzona przy pierwszym użyciu; świece pobiera `load()`). */
+  series(id: string): CandleSeries {
+    const iv = intervalById(id);
+    let s = this.seriesById.get(iv.id);
+    if (!s) this.seriesById.set(iv.id, (s = new CandleSeries(this, iv)));
+    return s;
+  }
 
-    const seq = ++this.loadSeq;
-    const now = Date.now();
-    const list = await fetchCandles(this.coin, next.id, now - PAGE_BARS * next.ms, now + next.ms);
-    if (seq !== this.loadSeq) return;
-    if (list.length === 0) {
-      this.loadState = 'error';
-      this.bump();
-      return;
+  /** Ostatnia cena rynku: transakcja z taśmy, a przed pierwszą — zamknięcie najnowszej świecy którejś serii. */
+  lastPrice(): number {
+    if (this.lastTradePx > 0) return this.lastTradePx;
+    let t = Number.NEGATIVE_INFINITY;
+    let px = 0;
+    for (const s of this.seriesById.values()) {
+      const c = s.candles[s.candles.length - 1];
+      if (c && c.t > t) {
+        t = c.t;
+        px = c.c;
+      }
     }
-    this.mergeCandles(list);
-    this.loadState = 'ready';
-    this.bump();
-    void this.loadFunding();
+    return px > 0 ? px : (this.ctx?.markPx ?? 0);
   }
 
-  /** Doczytuje starszą historię (przewinięcie wykresu w lewo). */
-  async loadOlder(): Promise<void> {
-    if (this.loadingOlder || this.historyExhausted || this.candles.length === 0) return;
-    this.loadingOlder = true;
-    const seq = this.loadSeq;
-    const iv = this.interval;
-    const first = this.candles[0].t;
-    const list = await fetchCandles(this.coin, iv.id, first - PAGE_BARS * iv.ms, first - 1);
-    this.loadingOlder = false;
-    if (seq !== this.loadSeq) return;
-    const older = list.filter((c) => c.t < first);
-    if (older.length === 0) this.historyExhausted = true;
-    else this.mergeCandles(older);
-    this.bump();
-    void this.loadFunding();
-  }
-
-  /** Stawki finansowania od najstarszej świecy (najwyżej FUNDING_MAX_MS wstecz); pobrany okres nie jest pobierany drugi raz. */
-  private async loadFunding(): Promise<void> {
-    if (this.fundingLoading || this.candles.length === 0) return;
-    const from = Math.max(this.candles[0].t, Date.now() - FUNDING_MAX_MS);
+  /** Stawki finansowania od najstarszej świecy serii (najwyżej FUNDING_MAX_MS wstecz); pobrany okres nie jest pobierany drugi raz. */
+  async requestFunding(oldest: number): Promise<void> {
+    if (this.fundingLoading) return;
+    const from = Math.max(oldest, Date.now() - FUNDING_MAX_MS);
     if (from >= this.funding.from) return;
     this.fundingLoading = true;
     try {
@@ -282,33 +248,6 @@ export class ProStore {
     this.bump();
   }
 
-  private async refreshRecent(): Promise<void> {
-    const iv = this.interval;
-    const seq = this.loadSeq;
-    const now = Date.now();
-    const list = await fetchCandles(this.coin, iv.id, now - 60 * iv.ms, now + iv.ms);
-    if (seq !== this.loadSeq || list.length === 0) return;
-    this.mergeCandles(list);
-    this.bump();
-  }
-
-  /** Scala świece (nowsza wersja tej samej świecy wygrywa), utrzymując porządek czasu. */
-  mergeCandles(list: readonly Candle[]): void {
-    if (list.length === 0) return;
-    const arr = this.candles;
-    const last = arr[arr.length - 1];
-    // Szybka ścieżka: aktualizacja bieżącej świecy albo nowa świeca na końcu
-    if (list.length === 1 && last && list[0].t >= last.t) {
-      if (list[0].t === last.t) arr[arr.length - 1] = list[0];
-      else arr.push(list[0]);
-      return;
-    }
-    const byT = new Map<number, Candle>();
-    for (const c of arr) byT.set(c.t, c);
-    for (const c of list) byT.set(c.t, c);
-    this.candles = [...byT.values()].sort((a, b) => a.t - b.t);
-  }
-
   // ───────────────────────── strumień ─────────────────────────
 
   private onMessage(channel: string, data: unknown, recvAt: number): void {
@@ -328,8 +267,9 @@ export class ProStore {
     } else if (channel === 'candle') {
       const c = parseCandle(data);
       const d = data as { s?: unknown; i?: unknown } | null;
-      if (!c || d?.s !== this.coin || d?.i !== this.interval.id || this.loadState !== 'ready') return;
-      this.mergeCandles([c]);
+      const series = typeof d?.i === 'string' ? this.seriesById.get(d.i) : undefined;
+      if (!c || d?.s !== this.coin || !series || series.loadState !== 'ready') return;
+      series.mergeCandles([c]);
       this.bump();
     } else if (channel === 'activeAssetCtx') {
       const d = data as { coin?: unknown; ctx?: unknown } | null;
@@ -379,7 +319,12 @@ export class ProStore {
     const sorted = fills.length > 1 ? [...fills].sort((a, b) => a.time - b.time) : fills;
     const { accepted } = this.tape.insert(sorted);
     if (accepted.length === 0) return;
-    this.feedLive(accepted);
+    for (const f of accepted) {
+      if (f.time < this.lastTradeT) continue;
+      this.lastTradeT = f.time;
+      this.lastTradePx = f.px;
+    }
+    for (const s of this.seriesById.values()) s.feedLive(accepted);
     this.walls.push(accepted);
     this.orders.add(this.aggregator.push(accepted, this.clock.toServer(recvAt)));
     this.bump();
@@ -390,15 +335,150 @@ export class ProStore {
     for (const [a, b] of spans) this.coverage.addSpan(a, b);
     const { accepted } = this.tape.insert(rows);
     // Bieżąca świeca mogła dostać starsze transakcje z zapisu
-    if (accepted.length > 0 && this.live) this.live = this.buildFromTape(this.live.t);
+    if (accepted.length > 0) for (const s of this.seriesById.values()) s.rebuildLive();
     this.bump();
+  }
+
+  // ───────────────────────── sprzątanie ─────────────────────────
+
+  private prune(): void {
+    const cut = this.serverNow() - RETENTION_MS;
+    this.tape.prune(cut);
+    this.coverage.prune(cut);
+    this.orders.prune(cut);
+    this.walls.prune(this.serverNow(), cut);
+    this.oi.prune(cut);
+    this.books.forEach((b) => b.prune(cut));
+    for (const s of this.seriesById.values()) s.prune(cut);
+  }
+
+  private flushOrders(): void {
+    const done = this.aggregator.flush(this.serverNow());
+    if (done.length === 0) return;
+    this.orders.add(done);
+    this.bump();
+  }
+
+  /** Zlecenia jeszcze zbierające wypełnienia (do podglądu na żywo). */
+  pendingOrders() {
+    return this.aggregator.pending();
+  }
+}
+
+/**
+ * Świece jednego interwału rynku: historia z REST (doczytywana w lewo), bieżąca świeca z WebSocket
+ * i footprint każdej świecy z taśmy magazynu rynku. Niezmienione świece zachowują referencję (tani diff na wykresie).
+ */
+export class CandleSeries {
+  candles: Candle[] = [];
+  loadState: LoadState = 'idle';
+  /** Doczytywanie starszej historii w toku / historia wyczerpana (limit API). */
+  loadingOlder = false;
+  historyExhausted = false;
+  private sub: Subscription | null = null;
+  private loadSeq = 0;
+  private fpCache = new Map<number, FpCacheEntry>();
+  private barCache = new Map<number, ProBar>();
+  /** Bieżąca (najnowsza) świeca liczona przyrostowo. */
+  private live: FootprintBuilder | null = null;
+  private liveFp: FootprintBar | null = null;
+  private liveFpTrades = -1;
+
+  constructor(
+    private readonly m: ProStore,
+    readonly interval: Interval
+  ) {}
+
+  /** Historia świec i subskrypcja bieżącej; drugi raz tylko po błędzie albo z `force`. */
+  async load(force = false): Promise<void> {
+    if (!force && (this.loadState === 'loading' || this.loadState === 'ready')) return;
+    const m = this.m;
+    const iv = this.interval;
+    this.candles = [];
+    this.fpCache = new Map();
+    this.barCache = new Map();
+    this.live = null;
+    this.liveFp = null;
+    this.liveFpTrades = -1;
+    this.historyExhausted = false;
+    this.loadState = 'loading';
+    if (!this.sub) {
+      this.sub = { type: 'candle', coin: m.coin, interval: iv.id };
+      m.stream.add(this.sub);
+    }
+    m.bump();
+
+    const seq = ++this.loadSeq;
+    const now = Date.now();
+    const list = await fetchCandles(m.coin, iv.id, now - PAGE_BARS * iv.ms, now + iv.ms);
+    if (seq !== this.loadSeq) return;
+    if (list.length === 0) {
+      this.loadState = 'error';
+      m.bump();
+      return;
+    }
+    this.mergeCandles(list);
+    this.loadState = 'ready';
+    m.bump();
+    void m.requestFunding(this.candles[0].t);
+  }
+
+  /** Doczytuje starszą historię (przewinięcie wykresu w lewo). */
+  async loadOlder(): Promise<void> {
+    if (this.loadingOlder || this.historyExhausted || this.candles.length === 0) return;
+    this.loadingOlder = true;
+    const seq = this.loadSeq;
+    const iv = this.interval;
+    const first = this.candles[0].t;
+    const list = await fetchCandles(this.m.coin, iv.id, first - PAGE_BARS * iv.ms, first - 1);
+    this.loadingOlder = false;
+    if (seq !== this.loadSeq) return;
+    const older = list.filter((c) => c.t < first);
+    if (older.length === 0) this.historyExhausted = true;
+    else this.mergeCandles(older);
+    this.m.bump();
+    void this.m.requestFunding(this.candles[0].t);
+  }
+
+  /** Po ponownym połączeniu: świece, które mogły przyjść w trakcie przerwy. */
+  async refreshRecent(): Promise<void> {
+    if (this.candles.length === 0) return;
+    const iv = this.interval;
+    const seq = this.loadSeq;
+    const now = Date.now();
+    const list = await fetchCandles(this.m.coin, iv.id, now - 60 * iv.ms, now + iv.ms);
+    if (seq !== this.loadSeq || list.length === 0) return;
+    this.mergeCandles(list);
+    this.m.bump();
+  }
+
+  /** Scala świece (nowsza wersja tej samej świecy wygrywa), utrzymując porządek czasu. */
+  mergeCandles(list: readonly Candle[]): void {
+    if (list.length === 0) return;
+    const arr = this.candles;
+    const last = arr[arr.length - 1];
+    // Szybka ścieżka: aktualizacja bieżącej świecy albo nowa świeca na końcu
+    if (list.length === 1 && last && list[0].t >= last.t) {
+      if (list[0].t === last.t) arr[arr.length - 1] = list[0];
+      else arr.push(list[0]);
+      return;
+    }
+    const byT = new Map<number, Candle>();
+    for (const c of arr) byT.set(c.t, c);
+    for (const c of list) byT.set(c.t, c);
+    this.candles = [...byT.values()].sort((a, b) => a.t - b.t);
+  }
+
+  /** Bieżąca świeca od nowa z taśmy (taśma dostała starsze transakcje z zapisu). */
+  rebuildLive(): void {
+    if (this.live) this.live = this.buildFromTape(this.live.t);
   }
 
   /**
    * Bieżąca świeca liczona przyrostowo. Nowa świeca albo transakcja spóźniona względem już policzonych
    * → przeliczenie świecy z taśmy (taśma ma już całą paczkę).
    */
-  private feedLive(fills: readonly Fill[]): void {
+  feedLive(fills: readonly Fill[]): void {
     const ms = this.interval.ms;
     let maxT = Number.NEGATIVE_INFINITY;
     for (const f of fills) maxT = Math.max(maxT, barStart(f.time, ms));
@@ -421,14 +501,12 @@ export class ProStore {
   private buildFromTape(t: number): FootprintBuilder {
     const ms = this.interval.ms;
     let b: FootprintBuilder | null = null;
-    this.tape.forEach(t, t + ms, (time, px, sz, side) => {
+    this.m.tape.forEach(t, t + ms, (time, px, sz, side) => {
       b ??= new FootprintBuilder(t, baseTick(px));
       b.add(time, px, sz, side);
     });
     return b ?? new FootprintBuilder(t);
   }
-
-  // ───────────────────────── świece z footprintem ─────────────────────────
 
   private footprintFor(t: number): FootprintBar | null {
     const live = this.live;
@@ -439,7 +517,7 @@ export class ProStore {
       }
       return this.liveFp;
     }
-    const sig = this.tape.signature(t, t + this.interval.ms);
+    const sig = this.m.tape.signature(t, t + this.interval.ms);
     const hit = this.fpCache.get(t);
     if (hit && hit.sig === sig) return hit.fp;
     const fp = sig === '0:0' ? null : this.buildFromTape(t).build();
@@ -447,11 +525,11 @@ export class ProStore {
     return fp;
   }
 
-  /** Świece bieżącego interwału z footprintem; niezmienione świece zachowują referencję (tani diff na wykresie). */
+  /** Świece z footprintem; niezmienione świece zachowują referencję (tani diff na wykresie). */
   bars(): ProBar[] {
     const ms = this.interval.ms;
-    const now = this.serverNow();
-    const firstTape = this.tape.firstTime;
+    const now = this.m.serverNow();
+    const firstTape = this.m.tape.firstTime;
     const out: ProBar[] = new Array(this.candles.length);
     for (let i = 0; i < this.candles.length; i++) {
       const c = this.candles[i];
@@ -459,7 +537,7 @@ export class ProStore {
       const end = Math.min(t + ms, now);
       // Świece sprzed nagrania nie mają taśmy — bez przeglądania pamięci podręcznej
       const fp = t + ms > firstTape ? this.footprintFor(t) : null;
-      const complete = fp !== null && this.coverage.covers(t, end);
+      const complete = fp !== null && this.m.coverage.covers(t, end);
       const share = fp && c.v > 0 ? (fp.buyVol + fp.sellVol) / c.v : Number.NaN;
       const prev = this.barCache.get(t);
       if (prev && prev.candle === c && prev.fp === fp && prev.complete === complete) {
@@ -473,32 +551,11 @@ export class ProStore {
     return out;
   }
 
-  // ───────────────────────── sprzątanie ─────────────────────────
-
-  private prune(): void {
-    const cut = this.serverNow() - RETENTION_MS;
-    this.tape.prune(cut);
-    this.coverage.prune(cut);
-    this.orders.prune(cut);
-    this.walls.prune(this.serverNow(), cut);
-    this.oi.prune(cut);
-    this.books.forEach((b) => b.prune(cut));
+  prune(cut: number): void {
     const ms = this.interval.ms;
     this.fpCache.forEach((_v, t) => {
       if (t + ms < cut) this.fpCache.delete(t);
     });
-  }
-
-  private flushOrders(): void {
-    const done = this.aggregator.flush(this.serverNow());
-    if (done.length === 0) return;
-    this.orders.add(done);
-    this.bump();
-  }
-
-  /** Zlecenia jeszcze zbierające wypełnienia (do podglądu na żywo). */
-  pendingOrders() {
-    return this.aggregator.pending();
   }
 }
 

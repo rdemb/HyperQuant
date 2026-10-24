@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { Bell, BellOff, Camera, ChevronsRight, Copy, Layers, Link, ListOrdered, Maximize2, Minimize2, Minus, PenTool, RotateCcw, SlidersHorizontal, X } from 'lucide-react';
+import { Bell, BellOff, Camera, ChevronsRight, Columns2, Copy, Grid2x2, Layers, Link, ListOrdered, Maximize2, Minimize2, Minus, PenTool, RotateCcw, SlidersHorizontal, Square, X } from 'lucide-react';
 import { Badge, BadgeTone, Segmented } from '../../ui';
 import { LiqMapState, useLiqMap } from '../../state/useLiqMap';
 import { INTERVALS, fmtHm, fmtSince, intervalById } from './core/time';
@@ -13,14 +13,15 @@ import { PickCard, TapePanel, compact } from './chart/FlowPanels';
 import { HoverSignal, Legend } from './chart/Legend';
 import type { LiquidityPick } from './chart/liquidity';
 import { brandedScreenshot, downloadCanvas } from './chart/screenshot';
-import { MAX_ALERTS, PriceAlert, askNotifications, loadAlerts, newAlert, notifyAlert, parsePriceInput, primeAlertSound, reached, saveAlerts } from './chart/alerts';
+import { MAX_ALERTS, PriceAlert, alertBook, askNotifications, newAlert, notifyAlert, parsePriceInput, primeAlertSound, reached } from './chart/alerts';
 import { fmtPx, priceDigits } from './chart/layout';
-import { ChartSettings, DEFAULT_SETTINGS, hashFor, loadSettings, saveSettings, settingsFromHash } from './chart/settings';
+import { ChartLayout, ChartSettings, DEFAULT_SETTINGS, hashFor, loadSettings, panelKey, saveSettings, settingsFromHash } from './chart/settings';
+import { BUILT_IN_TEMPLATES, ChartTemplate, applyTemplate, loadTemplates, saveAs, saveTemplates } from './chart/templates';
 import type { ChartView } from './chart/footprintSeries';
 import type { FootprintStyle } from './chart/layout';
 import { DrawHint, DrawStyleBar, DrawToolbar } from './draw/DrawToolbar';
 import type { DrawingTools } from './draw/tools';
-import { MARKETS, Market, ProStore, openStores, storeFor } from './store/proStore';
+import { CandleSeries, MARKETS, Market, ProStore, openStores, storeFor } from './store/proStore';
 import { startRecording } from './store/recording';
 
 const MARKET_OPTIONS = MARKETS.map((m) => ({ value: m, label: m, title: `${m}-PERP · Hyperliquid` }));
@@ -40,6 +41,23 @@ const withPatch = (s: ChartSettings, p: Partial<ChartSettings>): ChartSettings =
 
 /** Cena zaokrąglona do ticku rynku. */
 const toTick = (p: number) => Number(p.toFixed(priceDigits(p)));
+
+/** Interwał nowego panelu układu (bez zapisanych ustawień): kolejne panele pokazują wyższe interwały. */
+const PANEL_INTERVALS = ['5m', '15m', '1h', '4h'];
+
+const LAYOUT_OPTIONS: { value: ChartLayout; label: React.ReactNode; title: string }[] = [
+  { value: 1, label: <Square className="w-3.5 h-3.5" />, title: 'Jeden wykres' },
+  { value: 2, label: <Columns2 className="w-3.5 h-3.5" />, title: 'Dwa wykresy obok siebie' },
+  { value: 4, label: <Grid2x2 className="w-3.5 h-3.5" />, title: 'Cztery wykresy (2 × 2)' },
+];
+
+function initialSettings(panel: number): ChartSettings {
+  // Link do widoku (#charts?m=…&i=…&v=…) ma pierwszeństwo przed zapisanymi ustawieniami pierwszego panelu
+  if (panel === 0) return withPatch(loadSettings(), settingsFromHash(window.location.hash));
+  // Nowy panel: wygląd pierwszego, wyższy interwał, bez tabeli i taśmy (mniej miejsca)
+  const base = { ...loadSettings(), interval: PANEL_INTERVALS[panel] ?? '1h', showStats: false, showTape: false };
+  return loadSettings(panelKey(panel), base);
+}
 
 /** Odświeżanie paska stanu i paska narzędzi z magazynu — najwyżej co `ms` (taśma bywa bardzo szybka). */
 function useStoreVersion(store: ProStore, ms: number): number {
@@ -68,11 +86,14 @@ function useStoreVersion(store: ProStore, ms: number): number {
   return useSyncExternalStore(subscribe, () => ref.current.version);
 }
 
-/** Wykres Pro: Lightweight Charts (TradingView) z footprintem, wolumenem, Deltą i CVD z taśmy Hyperliquid. */
-export const ProChart: React.FC = () => {
-  // Link do widoku (#charts?m=…&i=…&v=…) ma pierwszeństwo przed zapisanymi ustawieniami
-  const [settings, setSettings] = useState<ChartSettings>(() => withPatch(loadSettings(), settingsFromHash(window.location.hash)));
+/**
+ * Wykres Pro: Lightweight Charts (TradingView) z footprintem, wolumenem, Deltą i CVD z taśmy Hyperliquid.
+ * `panel` — miejsce w układzie kilku wykresów: pierwszy prowadzi link do widoku, alerty i przełącznik układu.
+ */
+export const ProChart: React.FC<{ panel?: number; layout?: ChartLayout; onLayout?: (l: ChartLayout) => void }> = ({ panel = 0, layout = 1, onLayout }) => {
+  const [settings, setSettings] = useState<ChartSettings>(() => initialSettings(panel));
   const store = storeFor(settings.coin);
+  const series = store.series(settings.interval);
   const [menu, setMenu] = useState<'settings' | 'indicators' | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
   const [tools, setTools] = useState<DrawingTools | null>(null);
@@ -83,9 +104,7 @@ export const ProChart: React.FC = () => {
   const [drawOpen, setDrawOpen] = useState(() => window.innerWidth >= 640);
   // Menu pod prawym przyciskiem (punkt w pikselach wykresu i cena w tym punkcie), alerty cenowe, krótki komunikat
   const [ctxMenu, setCtxMenu] = useState<CtxMenuAt | null>(null);
-  const [alerts, setAlerts] = useState<PriceAlert[]>(loadAlerts);
-  const alertsRef = useRef(alerts);
-  alertsRef.current = alerts;
+  const alerts = useSyncExternalStore(alertBook.subscribe, alertBook.get);
   const [toast, setToast] = useState<string | null>(null);
   const ctxRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
@@ -108,16 +127,17 @@ export const ProChart: React.FC = () => {
     ctrlRef.current?.setTopInset(px);
   }, []);
 
-  // Interwał przed startem strumieni — pierwsze świece od razu we właściwym interwale
+  // Świece interwału przed startem strumieni — pierwsze świece od razu we właściwym interwale
   useEffect(() => {
-    void store.setInterval(settings.interval);
+    void series.load();
     startRecording(store);
-  }, [store, settings.interval]);
+    ctrlRef.current?.setSeries(series);
+  }, [store, series]);
 
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
-    const ctrl = new ProChartController(host, store, settings, signal.set, setPick);
+    const ctrl = new ProChartController(host, store, series, settings, signal.set, setPick);
     ctrlRef.current = ctrl;
     setTools(ctrl.draw);
     ctrl.setTopInset(legendBottom.current);
@@ -134,9 +154,10 @@ export const ProChart: React.FC = () => {
   }, [store, signal]);
 
   useEffect(() => {
-    ctrlRef.current?.applySettings(settings);
-    saveSettings(settings);
-  }, [settings]);
+    // W układzie 2 × 2 panel jest za niski na tabelę statystyk — zapisane ustawienie wraca w mniejszym układzie
+    ctrlRef.current?.applySettings(layout === 4 && settings.showStats ? { ...settings, showStats: false } : settings);
+    saveSettings(settings, panelKey(panel));
+  }, [settings, panel, layout]);
 
   useEffect(() => {
     ctrlRef.current?.highlight(highlight);
@@ -145,20 +166,19 @@ export const ProChart: React.FC = () => {
   // Adres strony zawsze prowadzi do bieżącego widoku — bez nowych wpisów w historii przeglądarki
   useEffect(() => {
     const h = hashFor(settings);
-    if (window.location.hash.startsWith('#charts') && window.location.hash !== h) history.replaceState(history.state, '', h);
-  }, [settings]);
+    if (panel === 0 && window.location.hash.startsWith('#charts') && window.location.hash !== h) history.replaceState(history.state, '', h);
+  }, [settings, panel]);
 
   // Wklejony link w tej samej karcie
   useEffect(() => {
+    if (panel !== 0) return;
     const onHash = () => {
       const p = settingsFromHash(window.location.hash);
       if (Object.keys(p).length > 0) setSettings((s) => withPatch(s, p));
     };
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
-  }, []);
-
-  useEffect(() => saveAlerts(alerts), [alerts]);
+  }, [panel]);
 
   useEffect(() => {
     ctrlRef.current?.setAlerts(alerts.filter((a) => a.coin === store.coin).map((a) => a.price));
@@ -169,23 +189,24 @@ export const ProChart: React.FC = () => {
     for (const m of MARKETS) if (alerts.some((a) => a.coin === m)) storeFor(m).start();
   }, [alerts]);
 
-  // Alerty cenowe: co sekundę cena bieżącej świecy każdego rynku otwartego na stronie
+  // Alerty cenowe (sprawdza pierwszy panel): co sekundę cena bieżącej świecy każdego rynku otwartego na stronie
   useEffect(() => {
+    if (panel !== 0) return;
     const id = setInterval(() => {
-      const list = alertsRef.current;
+      const list = alertBook.get();
       if (list.length === 0) return;
       const fired: PriceAlert[] = [];
       for (const st of openStores()) {
-        const px = st.candles[st.candles.length - 1]?.c ?? 0;
+        const px = st.lastPrice();
         if (px > 0) for (const a of list) if (a.coin === st.coin && reached(a, px)) fired.push(a);
       }
       if (fired.length === 0) return;
-      setAlerts((l) => l.filter((a) => !fired.includes(a)));
+      alertBook.update((l) => l.filter((a) => !fired.includes(a)));
       for (const a of fired) notifyAlert(`Cena ${a.coin} doszła do ${fmtPx(a.price)}`, a.id);
       setToast(`Alert: cena ${fired[0].coin} doszła do ${fmtPx(fired[0].price)}`);
     }, 1000);
     return () => clearInterval(id);
-  }, []);
+  }, [panel]);
 
   useEffect(() => {
     if (!toast) return;
@@ -281,8 +302,8 @@ export const ProChart: React.FC = () => {
   };
 
   const addAlert = (price: number) => {
-    const last = store.candles[store.candles.length - 1]?.c ?? price;
-    setAlerts((l) => [...l, newAlert(store.coin, price, last)].slice(-MAX_ALERTS));
+    const last = store.lastPrice() || price;
+    alertBook.update((l) => [...l, newAlert(store.coin, price, last)].slice(-MAX_ALERTS));
     primeAlertSound();
     askNotifications();
     setToast(`Alert przy ${fmtPx(price)} (${store.coin}) — działa, gdy strona jest otwarta`);
@@ -301,20 +322,25 @@ export const ProChart: React.FC = () => {
   };
 
   const iv = intervalById(settings.interval);
+  const twoRow = layout > 1;
   const tapeSince = store.coverage.first();
   const bigUsd = ctrlRef.current?.bigTradeUsd ?? DEFAULT_THRESHOLD_USD;
-  const tick = hlTick(store.candles[store.candles.length - 1]?.c ?? 0);
+  const tick = hlTick(store.lastPrice());
 
   return (
     <div
       ref={cardRef}
       className={`relative flex flex-col bg-surface-1 border border-line-strong overflow-hidden ${
-        fullscreen ? 'w-full h-full' : 'rounded-xl h-[calc(100dvh-14rem)] lg:h-[calc(100dvh-9.5rem)] min-h-[440px]'
+        fullscreen
+          ? 'w-full h-full'
+          : layout === 4
+            ? 'rounded-xl h-[calc((100dvh-10rem)/2)] min-h-[380px]'
+            : 'rounded-xl h-[calc(100dvh-14rem)] lg:h-[calc(100dvh-9.5rem)] min-h-[440px]'
       }`}
     >
-      {/* Pasek narzędzi: na telefonie przełączniki przewijane w pierwszym wierszu, narzędzia zawsze widoczne w drugim */}
-      <div className="flex flex-wrap sm:flex-nowrap items-center gap-x-2 gap-y-1 px-2 sm:px-3 py-1.5 border-b border-line min-h-11">
-        <div className="flex items-center gap-2 w-full sm:w-auto sm:flex-1 min-w-0 overflow-x-auto [scrollbar-width:none]">
+      {/* Pasek narzędzi: na telefonie i w układzie kilku wykresów przełączniki przewijane w pierwszym wierszu, narzędzia w drugim */}
+      <div className={`flex flex-wrap ${twoRow ? '' : 'sm:flex-nowrap'} items-center gap-x-2 gap-y-1 px-2 sm:px-3 py-1.5 border-b border-line min-h-11`}>
+        <div className={`flex items-center gap-2 w-full ${twoRow ? '' : 'sm:w-auto sm:flex-1'} min-w-0 overflow-x-auto [scrollbar-width:none]`}>
           <Segmented<Market> ariaLabel="Rynek" value={settings.coin} onChange={setCoin} options={MARKET_OPTIONS} />
           <Segmented<string> ariaLabel="Interwał wykresu" value={settings.interval} onChange={(v) => update({ interval: v })} options={INTERVAL_OPTIONS} />
           <Segmented<ChartView> ariaLabel="Rodzaj wykresu" value={settings.view} onChange={(v) => update({ view: v })} options={VIEW_OPTIONS} />
@@ -322,14 +348,14 @@ export const ProChart: React.FC = () => {
             <Segmented<FootprintStyle> ariaLabel="Styl footprintu" value={settings.fpStyle} onChange={(v) => update({ fpStyle: v })} options={STYLE_OPTIONS} />
           )}
         </div>
-        <div className="flex items-center justify-end gap-1 w-full sm:w-auto shrink-0">
+        <div className={`flex items-center justify-end gap-1 w-full ${twoRow ? '' : 'sm:w-auto'} shrink-0`}>
           <button
             type="button"
             data-menu-toggle
             aria-expanded={menu === 'indicators'}
             title="Wskaźniki na wykresie ceny"
             onClick={() => setMenu((m) => (m === 'indicators' ? null : 'indicators'))}
-            className={`mr-auto sm:mr-0 inline-flex items-center gap-1.5 h-9 px-2.5 rounded-lg border text-xs font-medium transition-colors duration-150 ${
+            className={`mr-auto ${twoRow ? '' : 'sm:mr-0'} inline-flex items-center gap-1.5 h-9 px-2.5 rounded-lg border text-xs font-medium transition-colors duration-150 ${
               menu === 'indicators' ? 'bg-surface-3 text-ink-1 border-line-strong' : 'text-ink-2 border-line hover:text-ink-1 hover:bg-surface-2'
             }`}
           >
@@ -345,6 +371,12 @@ export const ProChart: React.FC = () => {
           <ToolBtn label="Ustawienia wykresu" onClick={() => setMenu((m) => (m === 'settings' ? null : 'settings'))} active={menu === 'settings'} expanded={menu === 'settings'}>
             <SlidersHorizontal className="w-4 h-4" />
           </ToolBtn>
+          {/* Układ kilku wykresów tylko na szerokim ekranie */}
+          {onLayout && (
+            <div className="hidden lg:inline-flex shrink-0 mr-1">
+              <Segmented<ChartLayout> ariaLabel="Układ wykresów" value={layout} onChange={onLayout} options={LAYOUT_OPTIONS} />
+            </div>
+          )}
           <ToolBtn label="Przewiń do bieżącej świecy" onClick={() => ctrlRef.current?.scrollToNow()}>
             <ChevronsRight className="w-4 h-4" />
           </ToolBtn>
@@ -371,7 +403,7 @@ export const ProChart: React.FC = () => {
           <Legend signal={signal} intervalMs={iv.ms} intervalLabel={iv.label} tapeSince={tapeSince} coin={store.coin} onBottom={onLegendBottom} />
           <DrawStyleBar tools={tools} />
           <DrawHint tools={tools} />
-          <LoadOverlay store={store} onRetry={() => void store.setInterval(settings.interval, true)} />
+          <LoadOverlay series={series} onRetry={() => void series.load(true)} />
           {ctxMenu && (
             <ChartMenu
               ref={ctxRef}
@@ -380,7 +412,7 @@ export const ProChart: React.FC = () => {
               nearAlert={alerts.find((a) => a.coin === store.coin && Math.abs((ctrlRef.current?.yOf(a.price) ?? -1e9) - ctxMenu.y) <= 8) ?? null}
               onClose={() => setCtxMenu(null)}
               onAlert={addAlert}
-              onRemoveAlert={(a) => setAlerts((l) => l.filter((x) => x !== a))}
+              onRemoveAlert={(a) => alertBook.update((l) => l.filter((x) => x !== a))}
               onLine={() => tools?.addHorizontal(ctxMenu.x, ctxMenu.y)}
               onCopyPrice={(p) => copy(fmtPx(p).replace(/,/g, ''), `Skopiowano cenę ${fmtPx(p)}`)}
               onCopyLink={() => copy(window.location.href, 'Skopiowano link do widoku')}
@@ -406,12 +438,13 @@ export const ProChart: React.FC = () => {
                   settings={settings}
                   bigUsd={bigUsd}
                   tick={tick}
-                  price={store.candles[store.candles.length - 1]?.c ?? 0}
+                  price={store.lastPrice()}
                   alerts={alerts}
                   onAddAlert={(p) => addAlert(toTick(p))}
-                  onRemoveAlert={(a) => setAlerts((l) => l.filter((x) => x !== a))}
+                  onRemoveAlert={(a) => alertBook.update((l) => l.filter((x) => x !== a))}
                   onChange={update}
                   onReset={() => setSettings({ ...DEFAULT_SETTINGS, coin: settings.coin, interval: settings.interval })}
+                  grid4={layout === 4}
                 />
               ) : (
                 <IndicatorsMenu settings={settings} intervalMs={iv.ms} liq={liq} bigUsd={bigUsd} onChange={update} />
@@ -433,7 +466,7 @@ export const ProChart: React.FC = () => {
         )}
       </div>
 
-      <StatusBar store={store} />
+      <StatusBar store={store} series={series} />
     </div>
   );
 };
@@ -533,9 +566,9 @@ const ChartMenu = React.forwardRef<
 ChartMenu.displayName = 'ChartMenu';
 
 /** Stan wczytywania świec: komunikat zamiast pustego wykresu, przy błędzie — ponowienie. */
-const LoadOverlay: React.FC<{ store: ProStore; onRetry: () => void }> = ({ store, onRetry }) => {
-  if (store.candles.length > 0 || store.loadState === 'ready' || store.loadState === 'idle') return null;
-  const error = store.loadState === 'error';
+const LoadOverlay: React.FC<{ series: CandleSeries; onRetry: () => void }> = ({ series, onRetry }) => {
+  if (series.candles.length > 0 || series.loadState === 'ready' || series.loadState === 'idle') return null;
+  const error = series.loadState === 'error';
   return (
     <div className="absolute inset-0 z-20 flex items-center justify-center pointer-events-none">
       <div className="pointer-events-auto max-w-sm rounded-xl border border-line-strong bg-surface-2 px-4 py-3 text-sm">
@@ -577,7 +610,9 @@ const SettingsMenu: React.FC<{
   onRemoveAlert: (a: PriceAlert) => void;
   onChange: (p: Partial<ChartSettings>) => void;
   onReset: () => void;
-}> = ({ settings: s, bigUsd, tick, price, alerts, onAddAlert, onRemoveAlert, onChange, onReset }) => (
+  /** Układ 2 × 2: tabela statystyk ukryta. */
+  grid4: boolean;
+}> = ({ settings: s, bigUsd, tick, price, alerts, onAddAlert, onRemoveAlert, onChange, onReset, grid4 }) => (
   <div className="bg-surface-2 border border-line-strong rounded-xl p-3 shadow-2xl flex flex-col gap-3 text-xs">
     <Group title="Footprint">
       <Select
@@ -617,6 +652,7 @@ const SettingsMenu: React.FC<{
       <Check label="Delta (świece delty)" checked={s.showDelta} onChange={(v) => onChange({ showDelta: v })} />
       <Check label="CVD" checked={s.showCvd} onChange={(v) => onChange({ showCvd: v })} />
       <Check label="Statystyki świec (tabela)" checked={s.showStats} onChange={(v) => onChange({ showStats: v })} />
+      {grid4 && s.showStats && <p className="text-[11px] leading-snug text-ink-3">W układzie 2 × 2 tabela jest ukryta — panel jest za niski.</p>}
       <div className="flex flex-col items-start gap-1.5">
         <span className="text-ink-2">Zerowanie CVD</span>
         <Segmented<ResetMode> ariaLabel="Zerowanie CVD" value={s.cvdReset} onChange={(v) => onChange({ cvdReset: v })} options={RESET_OPTIONS} />
@@ -658,6 +694,7 @@ const SettingsMenu: React.FC<{
       )}
       <p className="text-[11px] leading-snug text-ink-3">Jednorazowe; działają, gdy strona jest otwarta (dźwięk i powiadomienie przeglądarki po zgodzie).</p>
     </Group>
+    <Templates settings={s} onApply={onChange} />
     <button type="button" onClick={onReset} className="self-start min-h-9 px-3 rounded-lg border border-line-strong text-ink-2 hover:text-ink-1 hover:bg-surface-3">
       Przywróć domyślne
     </button>
@@ -859,6 +896,89 @@ const AlertInput: React.FC<{ coin: string; price: number; onAdd: (price: number)
   );
 };
 
+/** Szablony: wbudowane i własne (z bieżących ustawień), nakładane bez zmiany rynku. */
+const Templates: React.FC<{ settings: ChartSettings; onApply: (s: ChartSettings) => void }> = ({ settings, onApply }) => {
+  const [own, setOwn] = useState<ChartTemplate[]>(loadTemplates);
+  const [pick, setPick] = useState(BUILT_IN_TEMPLATES[0].id);
+  const [name, setName] = useState('');
+  const all = [...BUILT_IN_TEMPLATES, ...own];
+  const chosen = all.find((t) => t.id === pick) ?? all[0];
+  const store = (list: ChartTemplate[]) => {
+    setOwn(list);
+    saveTemplates(list);
+  };
+  const btn = 'inline-flex items-center h-9 px-2.5 rounded-lg border border-line-strong bg-surface-3 font-medium text-ink-1 disabled:opacity-40';
+  return (
+    <Group title="Szablony">
+      <div className="flex items-center gap-1.5">
+        <select
+          aria-label="Szablon"
+          value={chosen.id}
+          onChange={(e) => setPick(e.target.value)}
+          className="min-w-0 flex-1 h-9 bg-page border border-line rounded-md px-2 text-ink-1"
+        >
+          <optgroup label="Wbudowane">
+            {BUILT_IN_TEMPLATES.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </optgroup>
+          {own.length > 0 && (
+            <optgroup label="Własne">
+              {own.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </optgroup>
+          )}
+        </select>
+        <button type="button" className={btn} onClick={() => onApply(applyTemplate(settings, chosen.s))}>
+          Zastosuj
+        </button>
+        {!chosen.builtIn && (
+          <button
+            type="button"
+            aria-label={`Usuń szablon ${chosen.name}`}
+            onClick={() => {
+              store(own.filter((t) => t.id !== chosen.id));
+              setPick(BUILT_IN_TEMPLATES[0].id);
+            }}
+            className="inline-flex items-center justify-center w-9 h-9 rounded-lg text-ink-3 hover:text-ink-1 hover:bg-surface-3"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        )}
+      </div>
+      <form
+        className="flex items-center gap-1.5"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const list = saveAs(own, name, settings);
+          store(list);
+          setPick(list[list.length - 1]?.id ?? pick);
+          setName('');
+        }}
+      >
+        <input
+          type="text"
+          aria-label="Nazwa nowego szablonu"
+          placeholder="Nazwa szablonu"
+          maxLength={40}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          className="min-w-0 flex-1 h-9 px-2.5 rounded-lg bg-surface-1 border border-line text-ink-1 placeholder:text-ink-3 focus:outline-none focus:border-line-strong"
+        />
+        <button type="submit" disabled={!name.trim()} className={btn}>
+          Zapisz bieżące
+        </button>
+      </form>
+      <p className="text-[11px] leading-snug text-ink-3">Interwał, rodzaj wykresu, panele, wskaźniki i warstwy; rynek zostaje.</p>
+    </Group>
+  );
+};
+
 const Group: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
   <fieldset className="flex flex-col gap-2">
     <legend className="mb-1 text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium">{title}</legend>
@@ -920,7 +1040,7 @@ function tzLabel(): string {
 }
 
 /** Pasek stanu: połączenie, zakres taśmy i luki, liczba transakcji, strefa czasu, źródła i licencja wykresu. */
-const StatusBar: React.FC<{ store: ProStore }> = ({ store }) => {
+const StatusBar: React.FC<{ store: ProStore; series: CandleSeries }> = ({ store, series }) => {
   const st = STATUS[store.status] ?? STATUS.idle;
   const first = store.coverage.first();
   const gaps = Math.max(0, store.coverage.list().length - 1);
@@ -934,8 +1054,8 @@ const StatusBar: React.FC<{ store: ProStore }> = ({ store }) => {
         {gaps > 0 && <span className="text-warn"> · luki: {gaps}</span>}
       </span>
       <span>Transakcje: {store.tape.count.toLocaleString('pl-PL')}</span>
-      {store.loadingOlder && <span>Historia: wczytywanie…</span>}
-      {store.historyExhausted && <span title="Hyperliquid udostępnia najwyżej 5000 ostatnich świec każdego interwału">Historia: limit API</span>}
+      {series.loadingOlder && <span>Historia: wczytywanie…</span>}
+      {series.historyExhausted && <span title="Hyperliquid udostępnia najwyżej 5000 ostatnich świec każdego interwału">Historia: limit API</span>}
       <span className="text-ink-3">{tzLabel()}</span>
       <span className="ml-auto text-ink-3">
         Dane: Hyperliquid · Wykres:{' '}

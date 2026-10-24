@@ -90,6 +90,13 @@ function loadAll(): Record<string, unknown> {
   }
 }
 
+/**
+ * Panele układu: skróty klawiszowe trafiają tylko do ostatnio używanego, a zmiana rysunków jednego panelu
+ * od razu odświeża pozostałe panele tego samego rynku (wspólny zapis).
+ */
+const peers = new Set<DrawingTools>();
+let focused: DrawingTools | null = null;
+
 const isTyping = (t: EventTarget | null) =>
   t instanceof HTMLElement && (t.isContentEditable || t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT');
 
@@ -134,6 +141,8 @@ export class DrawingTools {
     window.addEventListener('pointerup', this.onUp);
     window.addEventListener('pointercancel', this.onUp);
     window.addEventListener('keydown', this.onKey);
+    peers.add(this);
+    focused ??= this;
     this.push();
   }
 
@@ -148,6 +157,17 @@ export class DrawingTools {
     window.removeEventListener('pointercancel', this.onUp);
     window.removeEventListener('keydown', this.onKey);
     this.listeners.clear();
+    peers.delete(this);
+    if (focused === this) focused = null;
+  }
+
+  /** Rysunki zapisane przez inny panel tego rynku (historia cofania tego panelu zaczyna się od nowa). */
+  private reload(): void {
+    this.drawings = parseDrawings(loadAll()[this.market]);
+    if (this.selectedId && !this.drawings.some((d) => d.id === this.selectedId)) this.selectedId = null;
+    this.undoStack = [];
+    this.redoStack = [];
+    this.push();
   }
 
   // ───────────────────────── stan dla paska narzędzi ─────────────────────────
@@ -194,7 +214,9 @@ export class DrawingTools {
       localStorage.setItem(KEY, JSON.stringify(all));
     } catch {
       // Prywatne okno albo pełna pamięć — rysunki zostają do zamknięcia strony
+      return;
     }
+    for (const p of peers) if (p !== this && p.market === this.market) p.reload();
   }
 
   /** Zmiana listy rysunków z wpisem do historii cofania. */
@@ -210,7 +232,16 @@ export class DrawingTools {
 
   // ───────────────────────── polecenia ─────────────────────────
 
+  /** Panel, w którym pracuje użytkownik, dostaje skróty; zaznaczenie w poprzednim panelu znika razem z jego paskiem stylu. */
+  private focus(): void {
+    if (focused === this) return;
+    const prev = focused;
+    focused = this;
+    if (prev?.selectedId) prev.deselect();
+  }
+
   setTool(kind: ToolKind | null): void {
+    this.focus();
     this.cancelPending();
     this.tool = this.tool === kind ? null : kind;
     if (this.tool) this.selectedId = null;
@@ -364,6 +395,7 @@ export class DrawingTools {
   };
 
   private readonly onDown = (e: PointerEvent): void => {
+    this.focus();
     if (e.button !== 0) return;
     const { x, y, inPane } = this.local(e);
     if (!inPane) return;
@@ -549,7 +581,7 @@ export class DrawingTools {
   };
 
   private readonly onKey = (e: KeyboardEvent): void => {
-    if (isTyping(e.target)) return;
+    if (isTyping(e.target) || (focused !== null && focused !== this)) return;
     const mod = e.ctrlKey || e.metaKey;
     if (e.altKey && !mod && HOTKEYS.has(e.code)) {
       e.preventDefault();

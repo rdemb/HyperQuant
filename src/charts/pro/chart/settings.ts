@@ -152,20 +152,48 @@ export function settingsFromHash(hash: string): Partial<ChartSettings> {
   return out;
 }
 
-export function loadSettings(): ChartSettings {
-  const d = defaults();
+/** Klucz zapisu panelu układu: pierwszy panel ma klucz sprzed układów, więc zapisane ustawienia zostają. */
+export const panelKey = (panel: number) => (panel === 0 ? KEY : `${KEY}.p${panel}`);
+
+/** Ustawienia panelu; bez zapisu — `fallback` (domyślnie wartości startowe). */
+export function loadSettings(key = KEY, fallback: ChartSettings = defaults()): ChartSettings {
   try {
-    const s = localStorage.getItem(KEY);
-    return parseSettings(s ? JSON.parse(s) : null, d);
+    const s = localStorage.getItem(key);
+    return parseSettings(s ? JSON.parse(s) : null, fallback);
   } catch {
-    return d;
+    return fallback;
   }
 }
 
-export function saveSettings(s: ChartSettings): void {
+export function saveSettings(s: ChartSettings, key = KEY): void {
   try {
-    localStorage.setItem(KEY, JSON.stringify(s));
+    localStorage.setItem(key, JSON.stringify(s));
   } catch {
     // Prywatne okno albo zablokowana pamięć — ustawienia działają do końca sesji
+  }
+}
+
+// ───────────────────────── układ ─────────────────────────
+
+/** Liczba wykresów obok siebie: 1, 2 (obok siebie) albo 4 (2 × 2). */
+export type ChartLayout = 1 | 2 | 4;
+
+const LAYOUT_KEY = 'hq.charts.layout.v1';
+
+export const parseLayout = (v: unknown): ChartLayout => (v === 2 || v === 4 ? v : 1);
+
+export function loadLayout(): ChartLayout {
+  try {
+    return parseLayout(Number(localStorage.getItem(LAYOUT_KEY)));
+  } catch {
+    return 1;
+  }
+}
+
+export function saveLayout(l: ChartLayout): void {
+  try {
+    localStorage.setItem(LAYOUT_KEY, String(l));
+  } catch {
+    // Prywatne okno albo zablokowana pamięć — układ działa do końca sesji
   }
 }

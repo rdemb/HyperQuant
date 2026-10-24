@@ -154,6 +154,8 @@ export class StatsTable implements ISeriesPrimitive<Time> {
     for (let r = 1; r <= rows; r++) ctx.fillRect(0, Math.round(r * rh), W, 1);
     ctx.fillStyle = rgba(PRO.bg, 0.94);
     ctx.fillRect(0, 0, LABEL_W, TH);
+    // Niski panel (np. układ 2 × 2): same kolory, bez nachodzących na siebie nazw
+    if (rh < 9) return;
     ctx.textAlign = 'left';
     ctx.fillStyle = C.label;
     for (let r = 0; r < rows; r++) ctx.fillText(STAT_ROWS[r].label, 8, r * rh + rh / 2);

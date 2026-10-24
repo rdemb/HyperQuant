@@ -74,6 +74,29 @@ export function saveAlerts(list: readonly PriceAlert[]): void {
   }
 }
 
+/** Wspólna lista alertów strony (wszystkie panele układu), zapisywana przy każdej zmianie. */
+class AlertBook {
+  private list: PriceAlert[] | null = null;
+  private readonly listeners = new Set<() => void>();
+
+  get = (): PriceAlert[] => (this.list ??= loadAlerts());
+
+  update = (fn: (list: PriceAlert[]) => PriceAlert[]): void => {
+    this.list = fn(this.get());
+    saveAlerts(this.list);
+    this.listeners.forEach((l) => l());
+  };
+
+  subscribe = (fn: () => void): (() => void) => {
+    this.listeners.add(fn);
+    return () => {
+      this.listeners.delete(fn);
+    };
+  };
+}
+
+export const alertBook = new AlertBook();
+
 // ───────────────────────── powiadomienie ─────────────────────────
 
 let audio: AudioContext | null = null;

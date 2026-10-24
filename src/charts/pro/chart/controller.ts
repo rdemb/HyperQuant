@@ -21,7 +21,7 @@ import { BarStat, barStat } from '../core/stats';
 import { hlTick, rowAt } from '../core/footprintBar';
 import type { LiqLevel } from '../core/indicators';
 import type { ResetMode } from '../core/sessions';
-import type { ProBar, ProStore } from '../store/proStore';
+import type { CandleSeries, ProBar, ProStore } from '../store/proStore';
 import { DrawingLayer } from '../draw/layer';
 import { DrawingTools } from '../draw/tools';
 import { FootprintOptions, FootprintPoint, FootprintSeries } from './footprintSeries';
@@ -177,6 +177,7 @@ export class ProChartController {
   constructor(
     container: HTMLElement,
     private readonly store: ProStore,
+    private series: CandleSeries,
     settings: ChartSettings,
     onHover: (h: Hover) => void,
     onPick: (p: LiquidityPick | null) => void
@@ -234,6 +235,14 @@ export class ProChartController {
 
   private zoneParams(s: ChartSettings) {
     return { rowStep: s.rowStep, imbalance: { ratio: s.imbalanceRatio, minVol: this.minVol(s) }, stackedMin: s.stackedMin };
+  }
+
+  /** Inny interwał tego rynku: pełne odświeżenie danych wykresu z nowej serii. */
+  setSeries(series: CandleSeries): void {
+    if (series === this.series) return;
+    this.series = series;
+    this.bars = [];
+    this.schedule();
   }
 
   /** Nowe ustawienia: opcje serii footprintu, panele i ich dane. */
@@ -401,7 +410,7 @@ export class ProChartController {
   }
 
   private sync(): void {
-    const next = this.store.bars();
+    const next = this.series.bars();
     const prev = this.bars;
     this.bars = next;
     const changed: number[] = [];
@@ -437,9 +446,10 @@ export class ProChartController {
         if (!historical) this.statsSeries?.update({ time: sec(b.t) });
       }
     }
-    this.overlay.setBars(next, this.store.interval.ms);
+    const ms = this.series.interval.ms;
+    this.overlay.setBars(next, ms);
     this.overlay.setDaily(this.store.daily);
-    this.drawLayer.setBars(next, this.store.interval.ms);
+    this.drawLayer.setBars(next, ms);
     const st = this.store;
     const now = st.serverNow();
     if (now - this.autoAt >= AUTO_EVERY_MS) {
@@ -448,12 +458,12 @@ export class ProChartController {
     }
     this.liqSource.near = st.book('near');
     this.liqSource.far = st.book('far');
-    this.liquidity.setData(next, st.interval.ms, this.liqSource, now, this.bigTradeUsd);
-    this.zones.setData(next, st.interval.ms, now);
+    this.liquidity.setData(next, ms, this.liqSource, now, this.bigTradeUsd);
+    this.zones.setData(next, ms, now);
     if (this.statsSeries && (full || now - this.statsAt >= STATS_EVERY_MS || next.length !== this.stats.length)) {
       this.statsAt = now;
       const predicted = st.ctx ? st.ctx.funding : null;
-      this.stats = next.map((b) => barStat(b, st.interval.ms, now, st.oi, st.funding, predicted));
+      this.stats = next.map((b) => barStat(b, ms, now, st.oi, st.funding, predicted));
       this.statsTable.setStats(this.stats);
     }
     this.pushCvd(full);
@@ -483,7 +493,7 @@ export class ProChartController {
   // ───────────────────────── interakcja ─────────────────────────
 
   private readonly onRange = (range: LogicalRange | null): void => {
-    if (range && range.from < LOAD_OLDER_MARGIN && this.bars.length > 0) void this.store.loadOlder();
+    if (range && range.from < LOAD_OLDER_MARGIN && this.bars.length > 0) void this.series.loadOlder();
   };
 
   /** Kliknięcie: obiekt warstwy płynności pod kursorem albo nic (zamyka kartę). */
