@@ -6,7 +6,7 @@ import { soundEngine } from '../utils/soundEngine';
 import { DeskFeed, useDeskFeed } from './useDeskFeed';
 import { PlanDraft, ViewId } from './types';
 
-const VIEWS: ViewId[] = ['desk', 'charts', 'plan', 'market', 'lab', 'micro', 'sources'];
+const VIEWS: ViewId[] = ['desk', 'charts', 'plan', 'market', 'lab', 'micro', 'lessons', 'sources'];
 const CEX_KEY = 'hq.cexEnabled';
 
 function readHashView(): ViewId {

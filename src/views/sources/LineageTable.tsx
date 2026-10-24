@@ -512,6 +512,23 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         ),
       },
       {
+        metric: tr('Lekcje: wycinki rynku i symulator ryzyka', 'Lessons: market slices and risk simulator'),
+        source: tr(
+          'Świece BTC z archiwum desku (gałąź archive repo danych), nagrana taśma transakcji i arkusza (gałąź history) oraz taśma likwidacji; wycinki zapisane przy budowie strony w lessons/*.json',
+          'BTC candles from the desk archive (archive branch of the data repository), the recorded trade and book tape (history branch) and the liquidation tape; slices saved at site build time in lessons/*.json'
+        ),
+        method: tr(
+          'Ryciny: VWAP, profil wolumenu, initial balance i footprint liczone tymi samymi funkcjami co na Wykresach, tylko ze świec zamkniętych przed chwilą zatrzymania (także zakres osi ceny). Symulator: 1000 serii transakcji o stałym ułamku ryzyka i kosztach w R, stałe ziarno (wspólne liczby losowe)',
+          'Figures: VWAP, volume profile, initial balance and footprint computed with the same functions as in Charts, only from candles closed before the pause point (the price axis range too). Simulator: 1000 series of trades with a fixed risk fraction and costs in R, fixed seed (common random numbers)'
+        ),
+        kinds: ['LIVE', 'SIM'],
+        refresh: tr('wycinki stałe · symulacja przy zmianie parametrów', 'fixed slices · simulation on parameter change'),
+        caveat: tr(
+          'Przykłady do nauki czytania wykresu, nie statystyka skuteczności; symulator zakłada niezależne transakcje o stałych parametrach.',
+          'Examples for learning to read a chart, not hit-rate statistics; the simulator assumes independent trades with fixed parameters.'
+        ),
+      },
+      {
         metric: tr('Dziennik zagrań i playbook (Plan)', 'Trade journal and playbook (Plan)'),
         source: tr(
           'Twoje wpisy w tej przeglądarce (localStorage, nic nie jest wysyłane) + świece BTC 1m i 1h z candleSnapshot Hyperliquid',

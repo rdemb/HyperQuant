@@ -31,6 +31,7 @@ The interface is available in English and Polish: the language follows your brow
 | **Market** (*Rynek*) | **Model vs market (HIP-4)**: Hyperliquid outcome markets on BTC ("price above K at expiry", "touch K before expiry", the daily market settling at 06:00 UTC), with the market price from the "Yes" side of the book next to the desk model's probability for the same question (Monte Carlo on seasonal log-HAR + FHS in a Web Worker, exact Brownian-bridge extremes), a liquidity filter and the difference in pp; a calibration comparison, not a signal. Funding HL vs Binance vs Bybit (via Hyperliquid's API, normalised to APR) + crowding z-score; macro proxies from HIP-3 markets (S&P 500, Nasdaq-100, gold, oil, EUR, JPY) and the macro share of BTC's move (β, R²); Hyperliquid perp market map (treemap, OI/volume, 24 h change); Fed/BLS/BEA calendar with countdown; macro (UST yields, TGA, RRP), CFTC COT (CME BTC), Fear & Greed, mempool; RSS headlines. |
 | **Lab 3D** | Five lazily loaded Three.js scenes (one at a time): Liquidity Canyon, Orderflow Vortex, Delta Fluid, Liquidation Risk (estimate), Options (illustration), each with a "what you see / how to read it / source / limitations" note. |
 | **Microstructure** (*Mikrostruktura*) | Book liquidity across the day from the scanner's recorder (median ±10 bp depth by UTC hour, current vs normal, resilience after sharp moves) and the execution cost of your size by hour (slippage from the depth curve and the square-root law, typical and in thin conditions); live order-book mechanics from the literature (Cont–Kukanov–Stoikov OFI, Hawkes MLE, Stoikov microprice, orders added and cancelled near the price, absorption from regression); liquidity profile and attraction field U(p), regime, heuristic trajectory, OU, Hawkes intensity, Hurst, entropy, VPIN, Kyle's λ, a fixed-risk position-size calculator. |
+| **Lessons** (*Lekcje*, in Polish) | Six "What would you do?" exercises on real BTC days (20–24 Oct 2026): the chart stops at a key moment showing only closed candles (the price axis too), you answer or mark the invalidation level on the chart, the reasoning is scored (2/1/0) with feedback for every answer, then the rest of the day is revealed candle by candle, followed by a debrief with an honest caveat, the related Folklore lab result and a button that opens the matching Charts workstation. Also an atlas of the 21 Charts indicators (what it is, how we compute it, how to read it, traps, what to combine it with), how to combine them, popular rules next to the Folklore lab data, and a risk lab (1000 simulated trade series with fixed-fractional risk and costs, labelled as a simulation). VWAP, profile, IB and footprint use the same functions as Charts; slices are built by `scripts/lessons/build.mjs` from the public data repository. No signals, no promised results. |
 | **Blog** | BTC analyses written before the fact (in Polish): the day map, the map before the New York open and the daily summary, with short notes in between. Every post has a level map with distance from price, scenarios with probabilities, its own link-preview image and share buttons; full analyses also have a data panel, a liquidation map, flows, conditional scenarios and charts (session map with VWAP, profile, delta, CVD and OI; footprint of the key area), and short notes a 6-hour chart. Static pages (SEO), RSS, monthly archive. Posts are Markdown files in `content/blog/`; format and safeguards in [docs/BLOG.md](docs/BLOG.md). |
 | **Sources** (*Źródła*) | Lineage of every number (source → method → LIVE/MODEL → refresh), attributions and licences, the opt-in CEX switch with connection status, tape sound. |
 
@@ -95,7 +96,8 @@ src/
                 controller (chart/), drawing tools (draw/), Binance and Bybit feeds (venues/)
                 orderflow/ — the original Canvas order-flow store and renderer; footprint maths, heat colours
                 and formatting shared with the Charts view
-  views/        Desk, Charts, Plan, Market, Lab, Microstructure, Sources (lazy-loaded)
+  views/        Desk, Charts, Plan, Market, Lab, Microstructure, Lessons, Sources (lazy-loaded)
+  lessons/      the Lessons tab: market slices, lesson figures (candles with indicators, footprint), exercises, content, risk simulation
   components/   Three.js scenes (Lab), tape, microstructure panels and "Plan for tomorrow"
   workers/      Web Worker for the HIP-4 model (Monte Carlo)
   types/        market data and metric types
@@ -105,7 +107,7 @@ src/
   shell/        app shell, PWA (install, updates, offline)
 backend/      HyperQuant scanner: liquidation map, ledger, cohorts, tape and book recorder (backend/README.md)
 content/blog/ blog posts (Markdown + YAML frontmatter)
-scripts/      public data fetching (GitHub Actions), ledger verifier, PWA icon generator, blog/ (blog generator: pages, RSS, sitemap, OG images, post charts and their data)
+scripts/      public data fetching (GitHub Actions), ledger verifier, PWA icon generator, blog/ (blog generator: pages, RSS, sitemap, OG images, post charts and their data), lessons/ (market slices for the Lessons tab)
 docs/BLOG.md  blog post format, safeguards, publishing
 docs/STYLEGUIDE.md  colour tokens (palette validated for colour blindness), typography, chart and motion rules
 ```
