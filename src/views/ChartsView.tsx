@@ -1,10 +1,12 @@
-import React, { useCallback, useState, useSyncExternalStore } from 'react';
+import React, { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import { RotateCcw } from 'lucide-react';
 import { Segmented } from '../ui';
 import { ProChart, subscribeNarrow } from '../charts/pro/ProChart';
 import { ChartLayout, isNarrow, loadSettings } from '../charts/pro/chart/settings';
 import { STATIONS, Station, StationId, clearStation, loadStation, loadStationLayout, saveStation, saveStationLayout, stationById, stationKey } from '../charts/pro/chart/stations';
 import type { Market } from '../charts/pro/store/proStore';
+import { parseReplayLink, replayHash } from '../charts/pro/replay/link';
+import { ReplayView } from '../charts/pro/replay/ReplayView';
 
 const WIDE = '(min-width: 1024px)';
 
@@ -23,7 +25,7 @@ const NARROW_STATION_OPTIONS = STATION_OPTIONS.filter((o) => o.value !== 'mtf');
 /**
  * Wykresy: świece i footprint perpów (BTC, ETH, SOL, HYPE) na silniku TradingView Lightweight Charts z danymi Hyperliquid
  * na żywo. Nad wykresami stacje robocze (na telefonie lista w pasku wykresu); na szerokim ekranie układ 1, 2 albo 4 wykresów,
- * każdy panel ma własny rynek, interwał i ustawienia.
+ * każdy panel ma własny rynek, interwał i ustawienia. Link powtórki (#charts?replay=…) pokazuje zamiast nich nagranie z serwera.
  */
 const ChartsView: React.FC = () => {
   const [station, setStation] = useState<Station>(loadStation);
@@ -33,6 +35,12 @@ const ChartsView: React.FC = () => {
   const [coin, setCoin] = useState<Market | null>(null);
   const wide = useSyncExternalStore(subscribeWide, isWide);
   const narrow = useSyncExternalStore(subscribeNarrow, isNarrow);
+  const [replay, setReplay] = useState(() => parseReplayLink(window.location.hash));
+  useEffect(() => {
+    const onHash = () => setReplay(parseReplayLink(window.location.hash));
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
   const setLayout = useCallback(
     (l: ChartLayout) => {
       setLayoutState(l);
@@ -50,6 +58,7 @@ const ChartsView: React.FC = () => {
     setGen((g) => g + 1);
   };
   const n = wide ? layout : 1;
+  if (replay) return <ReplayView key={replayHash(replay)} link={replay} />;
   return (
     <>
       {!narrow && (

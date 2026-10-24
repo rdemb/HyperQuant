@@ -142,6 +142,16 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         caveat: 'Opis bieżącego stanu, nie sygnał ani prognoza. Fakt bez danych (np. przed nagraniem taśmy) jest pominięty, a nie zgadywany.',
       },
       {
+        metric: 'Powtórka nagranej doby (Wykresy)',
+        source: 'Gałąź history publicznego repo danych (ten sam zapis rejestratora co historia ostatniej doby) albo kopia jej plików przy lekcjach; świece z API Hyperliquid (candleSnapshot) do końca nagrania',
+        method:
+          'Pliki godzin (a bez pliku godzinowego jej części 5-minutowe) z zakresu linku, najwyżej doba, sklejone w jedną taśmę, migawki arkusza i otwarte pozycje. Wykres dostaje je po kolei do chwili odtwarzania (1×, 5×, 15× albo 60× czasu rzeczywistego) i liczy wszystko tak jak na żywo; świece po tej chwili są ukryte, a bieżąca świeca jest złożona z taśmy do tej chwili. Przewinięcie wstecz buduje wykres od nowa od początku nagrania.',
+        kinds: ['LIVE'],
+        refresh: 'nagranie z przeszłości (bez odświeżania)',
+        caveat:
+          'Bez Binance i Bybit, wielorybów, mapy likwidacji i alertów (to stan na teraz, nie z nagrania). Jak w historii ostatniej doby: bez adresów i gór lodowych. Przerwa w nagraniu serwera jest jawną luką w taśmie.',
+      },
+      {
         metric: 'Strefy nierównowagi i niedokończone aukcje (Wykresy)',
         source: 'Taśma WS trades nagrywana od otwarcia widoku',
         method:

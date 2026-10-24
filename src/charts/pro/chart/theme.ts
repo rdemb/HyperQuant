@@ -34,6 +34,8 @@ export const PRO = {
   va: rgba(C.ink2, 0.55),
   warn: '#fab219',
   partial: rgba('#fab219', 0.85),
+  /** Strefa ceny z linku powtórki (token zone). */
+  zone: '#9085e9',
   // Footprint: kafle komórek od grafitu (mały wolumen) do nasyconego koloru strony; delta wiersza w tych samych kolorach
   fpNeutral: '#2a3446',
   fpBidRamp: ['#2a3446', '#4c3532', '#743d2e', '#a6492f', '#d9582e'],

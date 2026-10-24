@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { Bell, BellOff, Camera, ChevronDown, ChevronsRight, Columns2, Copy, Grid2x2, Keyboard, Layers, Link, ListOrdered, Maximize2, Minimize2, Minus, MoreHorizontal, PenTool, RotateCcw, SlidersHorizontal, Square, X } from 'lucide-react';
+import { Bell, BellOff, Camera, ChevronDown, ChevronsRight, Columns2, Copy, Grid2x2, History, Keyboard, Layers, Link, ListOrdered, Maximize2, Minimize2, Minus, MoreHorizontal, PenTool, RotateCcw, SlidersHorizontal, Square, X } from 'lucide-react';
 import { Badge, BadgeTone, Segmented } from '../../ui';
 import { LiqMapState, useLiqMap } from '../../state/useLiqMap';
 import { usePublished } from '../../state/usePublished';
@@ -31,6 +31,9 @@ import { TOOLS } from './draw/model';
 import { type DrawingTools, isTyping } from './draw/tools';
 import { CandleSeries, MARKETS, Market, ProStore, openStores, storeFor } from './store/proStore';
 import { startRecording } from './store/recording';
+import { ReplayBar } from './replay/ReplayBar';
+import { type ReplayLink, linkPatch, parseReplayLink, replayHash } from './replay/link';
+import { type ReplaySession, replayBase } from './replay/session';
 
 const MARKET_OPTIONS = MARKETS.map((m) => ({ value: m, label: m, title: `${m}-PERP · Hyperliquid` }));
 const INTERVAL_OPTIONS = INTERVALS.map((i) => ({ value: i.id, label: i.label }));
@@ -82,9 +85,22 @@ export interface PhoneStation {
   onRestore: () => void;
 }
 
-/** Ustawienia w użyciu: telefon — jeden panel pod wykresem, bez tablicy; układ 2 × 2 — bez tablicy (za niski panel). */
-const shownSettings = (s: ChartSettings, narrow: boolean, layout: ChartLayout): ChartSettings =>
-  narrow ? phoneSettings(s) : layout === 4 && s.showStats ? { ...s, showStats: false } : s;
+/**
+ * Ustawienia w użyciu: telefon — jeden panel pod wykresem, bez tablicy; układ 2 × 2 — bez tablicy (za niski panel);
+ * powtórka — bez paneli i grup Binance i Bybit (ich dane są tylko na żywo).
+ */
+const shownSettings = (s: ChartSettings, narrow: boolean, layout: ChartLayout, replay = false): ChartSettings => {
+  const out = narrow ? phoneSettings(s) : layout === 4 && s.showStats ? { ...s, showStats: false } : s;
+  return replay ? { ...out, showVenueCvd: false, showVenueOi: false, statGroups: out.statGroups.filter((g) => !VENUE_GROUPS.includes(g)) } : out;
+};
+
+/** Powtórka nagrania na wykresie: sesja odtwarzania, jej bieżący magazyn, link, z którego weszliśmy, i powrót na żywo. */
+export interface ProChartReplay {
+  session: ReplaySession;
+  store: ProStore;
+  link: ReplayLink;
+  onExit: () => void;
+}
 
 export const subscribeNarrow = (fn: () => void) => {
   const mq = window.matchMedia(NARROW_QUERY);
@@ -139,6 +155,7 @@ function useStoreVersion(store: ProStore, ms: number): number {
  * `panel` — miejsce w układzie kilku wykresów: pierwszy prowadzi link do widoku, alerty i przełącznik układu.
  * `station` — stacja robocza (wzorzec i zapis ustawień), `coin` — rynek przeniesiony z poprzedniej stacji,
  * `fromLink` — pierwsze otwarcie wykresów, więc link do widoku w adresie strony ma pierwszeństwo.
+ * `replay` — powtórka nagrania zamiast rynku na żywo: ustawienia nie są zapisywane, adres strony zostaje linkiem powtórki.
  */
 export const ProChart: React.FC<{
   panel?: number;
@@ -148,9 +165,16 @@ export const ProChart: React.FC<{
   coin?: Market | null;
   fromLink?: boolean;
   phoneStation?: PhoneStation;
-}> = ({ panel = 0, layout = 1, onLayout, station = STATIONS[0], coin = null, fromLink = true, phoneStation }) => {
-  const [settings, setSettings] = useState<ChartSettings>(() => initialSettings(panel, station, coin, fromLink));
-  const store = storeFor(settings.coin);
+  replay?: ProChartReplay;
+}> = ({ panel = 0, layout = 1, onLayout, station = STATIONS[0], coin = null, fromLink = true, phoneStation, replay }) => {
+  const [settings, setSettings] = useState<ChartSettings>(() => {
+    if (!replay) return initialSettings(panel, station, coin, fromLink);
+    // Link ze stacją (lekcja) — sam wzorzec stacji, bez zmian zapisanych przez oglądającego
+    const base = replay.link.station ? stationPanel(station, panel, isNarrow()) : initialSettings(panel, station, coin, false);
+    return withPatch(base, linkPatch(replay.link));
+  });
+  const inReplay = replay !== undefined;
+  const store = replay ? replay.store : storeFor(settings.coin);
   const series = store.series(settings.interval);
   const [menu, setMenu] = useState<'settings' | 'indicators' | 'keys' | 'more' | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
@@ -176,11 +200,20 @@ export const ProChart: React.FC<{
   const signal = useMemo(() => new HoverSignal(), []);
   const liq = useLiqMap();
   const whalePub = usePublished('whales.json', isWhaleLayer);
-  const whales = whalePub.value && Date.now() - whalePub.value.asOf < WHALES_STALE_MS ? whalePub.value : null;
+  // Wieloryby i mapa likwidacji to stan na teraz — w powtórce ich nie ma
+  const whales = !inReplay && whalePub.value && Date.now() - whalePub.value.asOf < WHALES_STALE_MS ? whalePub.value : null;
   useStoreVersion(store, 400);
 
   const update = useCallback((patch: Partial<ChartSettings>) => setSettings((s) => ({ ...s, ...patch })), []);
+  const live = useRef({ replay, settings });
+  live.current = { replay, settings };
   const setCoin = useCallback((coin: Market) => {
+    // Powtórka innego rynku to inne nagranie — nowy link (ta sama chwila, interwał i rodzaj wykresu)
+    const { replay: r, settings: s } = live.current;
+    if (r) {
+      if (coin !== r.session.coin) window.location.hash = replayHash({ ...r.link, coin, interval: s.interval, view: s.view, t: r.session.t });
+      return;
+    }
     setSettings((s) => (s.coin === coin ? s : withPatch(s, { coin })));
     setPick(null);
     setHighlight('');
@@ -193,14 +226,14 @@ export const ProChart: React.FC<{
   // Świece interwału przed startem strumieni — pierwsze świece od razu we właściwym interwale
   useEffect(() => {
     void series.load();
-    startRecording(store);
+    if (!store.replay) startRecording(store);
     ctrlRef.current?.setSeries(series);
   }, [store, series]);
 
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
-    const ctrl = new ProChartController(host, store, series, shownSettings(settings, isNarrow(), layout), signal.set, setPick, (key) => {
+    const ctrl = new ProChartController(host, store, series, shownSettings(settings, isNarrow(), layout, inReplay), signal.set, setPick, (key) => {
       update({ [key]: false });
       setToast(`Ukryto panel: ${PANE_NAMES[key]} — włączysz go w Ustawieniach wykresu → Panele`);
     }, setScale);
@@ -223,9 +256,9 @@ export const ProChart: React.FC<{
   useEffect(() => {
     // Telefon i układ 2 × 2 chowają część paneli — zapisane ustawienia wracają na szerszym ekranie albo w mniejszym układzie
     ctrlRef.current?.setPhone(narrow);
-    ctrlRef.current?.applySettings(shownSettings(settings, narrow, layout));
-    saveSettings(settings, stationKey(station.id, panel));
-  }, [settings, panel, layout, station, narrow]);
+    ctrlRef.current?.applySettings(shownSettings(settings, narrow, layout, inReplay));
+    if (!inReplay) saveSettings(settings, stationKey(station.id, panel));
+  }, [settings, panel, layout, station, narrow, inReplay]);
 
   useEffect(() => {
     ctrlRef.current?.highlight(highlight);
@@ -234,23 +267,33 @@ export const ProChart: React.FC<{
   // Adres strony zawsze prowadzi do bieżącego widoku — bez nowych wpisów w historii przeglądarki
   useEffect(() => {
     const h = hashFor(settings);
-    if (panel === 0 && window.location.hash.startsWith('#charts') && window.location.hash !== h) history.replaceState(history.state, '', h);
-  }, [settings, panel]);
+    const at = window.location.hash;
+    if (panel === 0 && !inReplay && at.startsWith('#charts') && at !== h && !parseReplayLink(at)) history.replaceState(history.state, '', h);
+  }, [settings, panel, inReplay]);
 
-  // Wklejony link w tej samej karcie
+  // Wklejony link w tej samej karcie (link powtórki obsługuje widok wykresów)
   useEffect(() => {
-    if (panel !== 0) return;
+    if (panel !== 0 || inReplay) return;
     const onHash = () => {
+      if (parseReplayLink(window.location.hash)) return;
       const p = settingsFromHash(window.location.hash);
       if (Object.keys(p).length > 0) setSettings((s) => withPatch(s, p));
     };
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
-  }, [panel]);
+  }, [panel, inReplay]);
 
+  // Alerty działają na cenie na żywo — w powtórce bez ich linii
   useEffect(() => {
-    ctrlRef.current?.setAlerts(alerts.filter((a) => a.coin === store.coin).map((a) => a.price));
+    ctrlRef.current?.setAlerts(store.replay ? [] : alerts.filter((a) => a.coin === store.coin).map((a) => a.price));
   }, [alerts, store]);
+
+  // Strefa ceny z linku powtórki (np. z lekcji)
+  const zone = replay?.link.zone ?? null;
+  const [zoneLo, zoneHi] = zone ?? [0, 0];
+  useEffect(() => {
+    ctrlRef.current?.setZone(zoneLo > 0 ? [zoneLo, zoneHi] : null);
+  }, [zoneLo, zoneHi, store]);
 
   // Rynek z alertem ma własny strumień także wtedy, gdy na wykresie jest inny
   useEffect(() => {
@@ -321,7 +364,7 @@ export const ProChart: React.FC<{
 
   // Klastry likwidacji tylko z aktualnej mapy skanera (jak w Desku: nieaktualna mapa nie jest pokazywana); skaner mapuje BTC
   useEffect(() => {
-    const fresh = liq.map && (liq.status === 'ready' || liq.status === 'delayed') && store.coin === 'BTC';
+    const fresh = liq.map && (liq.status === 'ready' || liq.status === 'delayed') && store.coin === 'BTC' && !store.replay;
     ctrlRef.current?.setLiqLevels(fresh ? liqLevels(liq.map!) : []);
   }, [liq.map, liq.status, store]);
 
@@ -374,7 +417,25 @@ export const ProChart: React.FC<{
     );
   };
 
+  // Link do widoku, a w powtórce do bieżącej chwili nagrania (ten sam interwał i rodzaj wykresu)
+  const copyLink = () => {
+    if (!replay) return copy(window.location.href, 'Skopiowano link do widoku');
+    const { session, link } = replay;
+    const h = replayHash({ ...link, interval: settings.interval, view: settings.view, from: session.from, to: session.to, t: Math.round(session.t / 1000) * 1000 });
+    copy(`${window.location.origin}${window.location.pathname}${h}`, 'Skopiowano link do tej chwili powtórki');
+  };
+
+  // Powtórka nagranej doby: link w adresie strony przełącza widok wykresów
+  const canReplay = !inReplay && replayBase('history') !== '';
+  const openReplay = () => {
+    window.location.hash = replayHash({ source: 'history', coin: settings.coin, interval: settings.interval, view: settings.view });
+  };
+
   const addAlert = (price: number) => {
+    if (inReplay) {
+      setToast('Alerty działają na wykresie na żywo — wróć do niego, aby ustawić alert');
+      return;
+    }
     const last = store.lastPrice() || price;
     alertBook.update((l) => [...l, newAlert(store.coin, price, last)].slice(-MAX_ALERTS));
     primeAlertSound();
@@ -397,7 +458,7 @@ export const ProChart: React.FC<{
   const iv = intervalById(settings.interval);
   const twoRow = layout > 1;
   // Wykres pobiera dane Binance i Bybit (panele giełd albo ich grupa w tablicy) — tylko wtedy Stan rynku je porównuje
-  const shown = shownSettings(settings, narrow, layout);
+  const shown = shownSettings(settings, narrow, layout, inReplay);
   const venueOn = shown.showVenueCvd || shown.showVenueOi || (shown.showStats && shown.statGroups.some((g) => VENUE_GROUPS.includes(g)));
   const tapeSince = store.coverage.first();
   const bigUsd = ctrlRef.current?.bigTradeUsd ?? DEFAULT_THRESHOLD_USD;
@@ -491,7 +552,12 @@ export const ProChart: React.FC<{
             <ToolBtn label="Przywróć skalę" onClick={() => ctrlRef.current?.resetScales()}>
               <RotateCcw className="w-4 h-4" />
             </ToolBtn>
-            <ToolBtn label="Kopiuj link do widoku" className="hidden sm:inline-flex" onClick={() => copy(window.location.href, 'Skopiowano link do widoku')}>
+            {canReplay && (
+              <ToolBtn label="Powtórka nagranej doby" className="hidden sm:inline-flex" onClick={openReplay}>
+                <History className="w-4 h-4" />
+              </ToolBtn>
+            )}
+            <ToolBtn label={inReplay ? 'Kopiuj link do tej chwili' : 'Kopiuj link do widoku'} className="hidden sm:inline-flex" onClick={copyLink}>
               <Link className="w-4 h-4" />
             </ToolBtn>
             <ToolBtn label="Zrzut ekranu (PNG)" onClick={screenshot}>
@@ -552,6 +618,8 @@ export const ProChart: React.FC<{
         </div>
       )}
 
+      {replay && <ReplayBar session={replay.session} narrow={narrow} onExit={replay.onExit} />}
+
       {/* Stan rynku: zdanie z faktów nad wykresem (w układzie 2 × 2 za mało miejsca) */}
       {settings.showState && layout !== 4 && (
         <MarketStateBar
@@ -604,7 +672,7 @@ export const ProChart: React.FC<{
               onRemoveAlert={(a) => alertBook.update((l) => l.filter((x) => x !== a))}
               onLine={() => tools?.addHorizontal(ctxMenu.x, ctxMenu.y)}
               onCopyPrice={(p) => copy(fmtPx(p).replace(/,/g, ''), `Skopiowano cenę ${fmtPx(p)}`)}
-              onCopyLink={() => copy(window.location.href, 'Skopiowano link do widoku')}
+              onCopyLink={copyLink}
               onNow={() => ctrlRef.current?.scrollToNow()}
               onReset={() => ctrlRef.current?.resetScales()}
               onShot={screenshot}
@@ -645,7 +713,8 @@ export const ProChart: React.FC<{
                     { icon: ChevronsRight, label: 'Przewiń do bieżącej świecy', on: () => ctrlRef.current?.scrollToNow() },
                     { icon: RotateCcw, label: 'Przywróć skalę', on: () => ctrlRef.current?.resetScales() },
                     { icon: Camera, label: 'Zrzut ekranu (PNG)', on: screenshot },
-                    { icon: Link, label: 'Kopiuj link do widoku', on: () => copy(window.location.href, 'Skopiowano link do widoku') },
+                    ...(canReplay ? [{ icon: History, label: 'Powtórka nagranej doby', on: openReplay }] : []),
+                    { icon: Link, label: inReplay ? 'Kopiuj link do tej chwili' : 'Kopiuj link do widoku', on: copyLink },
                     { icon: fullscreen ? Minimize2 : Maximize2, label: fullscreen ? 'Zamknij pełny ekran' : 'Pełny ekran', on: toggleFullscreen },
                     ...(phoneStation ? [{ icon: RotateCcw, label: `Przywróć wzorzec stacji ${station.name}`, on: phoneStation.onRestore }] : []),
                   ]}
@@ -1488,6 +1557,7 @@ const STATUS: Record<string, { text: string; tone: BadgeTone; title: string }> =
   reconnecting: { text: 'Ponowne łączenie', tone: 'stale', title: 'Połączenie zerwane — łączę ponownie; brakujący czas będzie luką w taśmie' },
   idle: { text: 'Rozłączony', tone: 'neutral', title: 'Strumień nieaktywny' },
 };
+const REPLAY_STATUS = { text: 'Powtórka', tone: 'model' as BadgeTone, title: 'Powtórka nagrania serwera: taśma i arkusz z przeszłości, nie na żywo' };
 
 function tzLabel(): string {
   const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -1497,7 +1567,7 @@ function tzLabel(): string {
 
 /** Pasek stanu: połączenie, zakres taśmy i luki, liczba transakcji, strefa czasu, źródła i licencja wykresu. */
 const StatusBar: React.FC<{ store: ProStore; series: CandleSeries }> = ({ store, series }) => {
-  const st = STATUS[store.status] ?? STATUS.idle;
+  const st = store.replay ? REPLAY_STATUS : (STATUS[store.status] ?? STATUS.idle);
   const first = store.coverage.first();
   const gaps = Math.max(0, store.coverage.list().length - 1);
   return (

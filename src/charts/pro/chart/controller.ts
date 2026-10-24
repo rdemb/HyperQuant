@@ -198,6 +198,7 @@ export class ProChartController {
   /** Cena przeliczenia progu nierównowagi z USD na jednostki rynku (ustalana przy pełnym odświeżeniu danych). */
   private refPx = 0;
   private alertLines: IPriceLine[] = [];
+  private zoneLines: IPriceLine[] = [];
   private readonly volumeLegend = new PaneLegend('showVolume');
   private readonly deltaLegend = new PaneLegend('showDelta');
   private readonly cvdLegend = new PaneLegend('showCvd');
@@ -291,7 +292,8 @@ export class ProChartController {
     // Rysunki dołączone ostatnie — nad wskaźnikami i świecami
     this.drawLayer.setUnit(store.coin);
     this.main.attachPrimitive(this.drawLayer);
-    this.draw = new DrawingTools(container, this.chart, this.drawLayer, store.coin);
+    // Rysunki w powtórce osobno od rysunków wykresu na żywo
+    this.draw = new DrawingTools(container, this.chart, this.drawLayer, store.replay ? `${store.coin}.replay` : store.coin);
     this.applySettings(settings, true);
     this.chart.subscribeCrosshairMove(this.onCrosshair);
     this.chart.subscribeClick(this.onClick);
@@ -639,6 +641,14 @@ export class ProChartController {
     for (const l of this.alertLines) this.main.removePriceLine(l);
     this.alertLines = prices.map((price) =>
       this.main.createPriceLine({ price, color: PRO.warn, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: 'Alert' })
+    );
+  }
+
+  /** Strefa ceny z linku powtórki: dwie przerywane linie z etykietą na osi. */
+  setZone(zone: readonly [number, number] | null): void {
+    for (const l of this.zoneLines) this.main.removePriceLine(l);
+    this.zoneLines = (zone ?? []).map((price) =>
+      this.main.createPriceLine({ price, color: PRO.zone, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: 'Strefa' })
     );
   }
 
