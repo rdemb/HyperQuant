@@ -87,7 +87,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         metric: 'Duże zlecenia w arkuszu (Wykresy)',
         source: 'Hyperliquid WS l2Book w bliskiej agregacji (20 poziomów na stronę: cena, wielkość, liczba zleceń), nagrywany od otwarcia widoku',
         method:
-          'Poziom, na którym średnie zlecenie (wielkość × cena / liczba zleceń) jest w 1% największych średnich zleceń poziomów z ostatnich 30 min tego rynku (próg względny, bo stały próg w USD nie przenosi się między rynkami), nie niżej niż ¼ progu dużego zlecenia agresora; trwa od pierwszej migawki z takim poziomem do migawki, w której go nie ma. Podpis: liczba zleceń × średnia wartość zlecenia (największa w czasie trwania)',
+          'Poziom, na którym średnie zlecenie (wielkość × cena / liczba zleceń) jest w 1% największych średnich zleceń poziomów z ostatnich 30 min tego rynku (próg względny, bo stały próg w USD nie przenosi się między rynkami), nie niżej niż ¼ progu dużego zlecenia agresora; trwa, dopóki poziom mieści ¾ wartości tego zlecenia i nie traci tyle między migawkami (dołączenie drobnych zleceń nie kończy linii), a cena poza 20 widocznymi poziomami — do minuty bez przedłużania linii. Podpis po 30 s w arkuszu: liczba zleceń × średnia wartość zlecenia (największa w czasie trwania)',
         kinds: ['LIVE'],
         refresh: 'co migawkę arkusza (ok. 5 s)',
         caveat:

@@ -49,8 +49,8 @@ export function toFrame(snap: BookSnapshot, step: number): BookFrame {
 
 /**
  * Duże zlecenie w arkuszu: poziom, na którym średnie zlecenie (wartość poziomu / liczba zleceń) jest od progu —
- * jedno albo kilka dużych zleceń, a nie tłum drobnych. Trwa od pierwszej migawki z takim poziomem do migawki,
- * w której go już nie ma (`open` — jest w najnowszej).
+ * jedno albo kilka dużych zleceń, a nie tłum drobnych. Trwa, dopóki poziom może je mieścić (patrz `largeLots`);
+ * `open` — jest w najnowszej migawce.
  */
 export interface LargeLot {
   px: number;
@@ -58,7 +58,7 @@ export interface LargeLot {
   from: number;
   to: number;
   open: boolean;
-  /** Największa wartość poziomu w czasie trwania (USD) i liczba zleceń w tej migawce. */
+  /** Wartość poziomu (USD) i liczba zleceń w migawce z największym średnim zleceniem. */
   usd: number;
   orders: number;
 }
@@ -78,39 +78,63 @@ export function lotThreshold(frames: readonly BookFrame[], floorUsd: number, q =
   return Math.max(floorUsd, xs[Math.min(xs.length - 1, Math.floor(q * xs.length))]);
 }
 
-/** Duże zlecenia z kolejnych migawek jednej agregacji (rosnąco po czasie), w kolejności pojawienia się. */
+/** Ciągłość dużego zlecenia: poziom mieści co najmniej tyle jego wartości i nie traci tyle między migawkami. */
+const LOT_HOLD = 0.75;
+/** Cena poza widocznymi poziomami migawki (20 na stronę): zlecenie czeka najwyżej tyle ms na powrót ceny w zasięg. */
+export const LOT_GAP_MS = 60_000;
+
+/** Cena głębiej niż najdalszy widoczny poziom strony zlecenia (bidy malejąco, aski rosnąco). */
+function beyond(f: BookFrame, l: LargeLot): boolean {
+  if (l.bid) return f.nBids === 0 || l.px < f.px[f.nBids - 1];
+  return f.px.length === f.nBids || l.px > f.px[f.px.length - 1];
+}
+
+/**
+ * Duże zlecenia z kolejnych migawek jednej agregacji (rosnąco po czasie), w kolejności pojawienia się. Start: średnie
+ * zlecenie poziomu od `minUsd`. Dołączenie drobnych zleceń obniża średnią, ale duże zlecenie nadal stoi, więc koniec
+ * dopiero, gdy poziom nie mieści LOT_HOLD jego wartości, stracił tyle od poprzedniej migawki (zdjęte albo wypełnione)
+ * albo zniknął z arkusza. Poza widocznymi poziomami zlecenie trwa bez przedłużania linii, najwyżej LOT_GAP_MS.
+ */
 export function largeLots(frames: readonly BookFrame[], minUsd: number): LargeLot[] {
-  const live = new Map<string, LargeLot>();
+  const live = new Map<string, { lot: LargeLot; size: number; prev: number }>();
   const out: LargeLot[] = [];
   for (const f of frames) {
     const seen = new Set<string>();
     for (let i = 0; i < f.px.length; i++) {
       const orders = f.n[i];
       const usd = f.sz[i] * f.px[i];
-      if (!(orders >= 1) || usd / orders < minUsd) continue;
       const bid = i < f.nBids;
       const key = `${bid ? 'b' : 'a'}${f.px[i]}`;
-      seen.add(key);
-      const lot = live.get(key);
-      if (!lot) {
-        const l: LargeLot = { px: f.px[i], bid, from: f.t, to: f.t, open: true, usd, orders };
-        live.set(key, l);
-        out.push(l);
-      } else {
-        lot.to = f.t;
-        if (usd > lot.usd) {
-          lot.usd = usd;
-          lot.orders = orders;
+      const cur = live.get(key);
+      if (cur) {
+        if (usd < LOT_HOLD * cur.size || usd < cur.prev - LOT_HOLD * cur.size) continue;
+        seen.add(key);
+        cur.lot.to = f.t;
+        cur.prev = usd;
+        if (orders >= 1 && usd / orders > cur.lot.usd / cur.lot.orders) {
+          cur.lot.usd = usd;
+          cur.lot.orders = orders;
         }
+        continue;
       }
+      if (!(orders >= 1) || usd / orders < minUsd) continue;
+      seen.add(key);
+      const lot: LargeLot = { px: f.px[i], bid, from: f.t, to: f.t, open: true, usd, orders };
+      live.set(key, { lot, size: usd / orders, prev: usd });
+      out.push(lot);
     }
-    for (const [key, lot] of live) {
+    for (const [key, { lot }] of live) {
       if (seen.has(key)) continue;
-      lot.to = f.t;
+      const far = beyond(f, lot);
+      if (far && f.t - lot.to <= LOT_GAP_MS) continue;
+      if (!far) lot.to = f.t;
       lot.open = false;
       live.delete(key);
     }
   }
+  // Czekające poza zasięgiem nie są w najnowszej migawce
+  const last = frames[frames.length - 1];
+  for (const { lot } of live.values()) if (lot.to < last.t) lot.open = false;
   return out;
 }
 

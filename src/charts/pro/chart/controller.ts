@@ -184,6 +184,7 @@ export class ProChartController {
   private hoverPrice: number | null = null;
   /** Kursor użytkownika jest nad tym wykresem (nie krzyż z innego panelu). */
   private userHover = false;
+  private horzLine = true;
   private autoUsd = DEFAULT_THRESHOLD_USD;
   private autoAt = 0;
   private readonly liqSource: LiquiditySource;
@@ -340,6 +341,9 @@ export class ProChartController {
       );
       this.statsSeries.attachPrimitive(this.statsTable);
     }
+    // Opis najniższego panelu omija logo TradingView (tabela statystyk ma na nie własne miejsce)
+    const lowest = s.showStats ? null : s.showCvd ? this.cvdLegend : s.showDelta ? this.deltaLegend : s.showVolume ? this.volumeLegend : null;
+    for (const lg of [this.volumeLegend, this.deltaLegend, this.cvdLegend]) lg.setBottom(lg === lowest);
     const panes = this.chart.panes();
     panes[0]?.setStretchFactor(1);
     const statsPane = this.statsSeries?.getPane();
@@ -540,6 +544,7 @@ export class ProChartController {
   };
 
   private readonly onCrosshair = (p: MouseEventParams<Time>): void => {
+    if (p.sourceEvent) this.setHorzLine(true);
     this.hoverTime = p.time !== undefined && p.point ? (p.time as number) * 1000 : null;
     this.hoverPrice = p.point && p.paneIndex === 0 ? this.main.coordinateToPrice(p.point.y) : null;
     this.emitHover();
@@ -565,7 +570,16 @@ export class ProChartController {
       return;
     }
     const bar = this.bars[i];
-    this.chart.setCrosshairPosition(coin === this.store.coin && price !== null ? price : bar.candle.c, sec(bar.t), this.main);
+    const same = coin === this.store.coin && price !== null;
+    this.setHorzLine(same);
+    this.chart.setCrosshairPosition(same ? price : bar.candle.c, sec(bar.t), this.main);
+  }
+
+  /** Pozioma linia krzyża i jej etykieta — ukryte, gdy krzyż przychodzi z wykresu innego rynku (jego cena tu nic nie znaczy). */
+  private setHorzLine(on: boolean): void {
+    if (this.horzLine === on) return;
+    this.horzLine = on;
+    this.chart.applyOptions({ crosshair: { horzLine: { visible: on, labelVisible: on } } });
   }
 
   private emitHover(): void {

@@ -71,8 +71,12 @@ const PICK_PX = 3;
 export const LOT_FLOOR = 0.25;
 const LOT_WINDOW_MS = 30 * 60_000;
 const LOT_MAX = 40;
-/** Podpis od takiej długości linii (px) — krótkie, świeże linie przy prawej krawędzi nie zasłaniają poziomów. */
-const LOT_LABEL_MIN_PX = 30;
+/**
+ * Podpis od takiego czasu w arkuszu (ms): zlecenie, które postało, a nie mignęło w jednej–dwóch migawkach; świeże linie
+ * przy prawej krawędzi nie zasłaniają poziomów. Linia ma co najmniej LOT_MIN_W_PX, żeby nie ginęła między bąblami.
+ */
+const LOT_LABEL_MIN_MS = 30_000;
+const LOT_MIN_W_PX = 6;
 /** Ściana: grubość belki i najmniejsza długość (px). */
 const WALL_H_PX = 3;
 const WALL_MIN_W_PX = 8;
@@ -145,6 +149,8 @@ interface ValueLabel {
   usd: number;
   label: string;
   ink: string;
+  /** Podpis góry lodowej: pierwszy i nad bąblami (góra lodowa z definicji leży pod wieloma zleceniami agresora). */
+  priority: boolean;
 }
 
 /** Ściana makera: belka od pierwszego do ostatniego wchłoniętego wypełnienia. */
@@ -439,6 +445,7 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
         usd: w.usd,
         label: w.iceberg ? `ICE ${fmtCompact(w.usd)}` : fmtCompact(w.usd),
         ink: w.iceberg ? K.ice : K.domText,
+        priority: w.iceberg,
         iceberg: w.iceberg,
         selected: sel?.kind === 'wall' && sel.wall.from === w.from && sel.wall.px === w.px && sel.wall.side === w.side,
         pick: { kind: 'wall', wall: w },
@@ -464,12 +471,13 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
       if (x1 < 0 || x0 > W) continue;
       out.push({
         x0,
-        x1: Math.max(x0 + 2, x1),
+        x1: Math.max(x0 + LOT_MIN_W_PX, x1),
         y: g.a + g.b * l.px,
         bid: l.bid,
         usd: l.usd,
-        label: x1 - x0 >= LOT_LABEL_MIN_PX ? `${l.orders}× ${fmtCompact(l.usd / l.orders)}` : '',
+        label: (l.open ? this.now : l.to) - l.from >= LOT_LABEL_MIN_MS ? `${l.orders}× ${fmtCompact(l.usd / l.orders)}` : '',
         ink: l.bid ? K.lotBid : K.lotAsk,
+        priority: false,
         open: l.open,
       });
     }
@@ -649,8 +657,8 @@ function drawWalls(ctx: CanvasRenderingContext2D, list: readonly WallMark[], hr:
 
 /**
  * Wartość ściany albo dużego zlecenia na tle przed jego początkiem (przy lewej krawędzi, gdy początek jest poza
- * widokiem), nad bąblami. Większe pierwsze; etykieta, która nachodzi na inną albo na bąbel, jest pomijana (wartość
- * ściany pokazuje karta po kliknięciu belki).
+ * widokiem), nad bąblami. Góry lodowe, potem większe; etykieta, która nachodzi na inną albo na bąbel, jest pomijana
+ * (wartość ściany pokazuje karta po kliknięciu belki) — podpis góry lodowej omija tylko inne podpisy.
  */
 function drawValueLabels(ctx: CanvasRenderingContext2D, list: readonly ValueLabel[], bubbles: readonly Bubble[], hr: number, vr: number): void {
   if (list.length === 0) return;
@@ -660,15 +668,15 @@ function drawValueLabels(ctx: CanvasRenderingContext2D, list: readonly ValueLabe
   const pad = Math.round(3 * hr);
   const th = Math.round(13 * vr);
   const placed: Rect[] = [];
-  const free = (q: Rect) => !placed.some((p) => q.l < p.r && q.r > p.l && q.t < p.b && q.b > p.t) && !bubbles.some((b) => circleHitsRect(b, q));
-  for (const w of [...list].sort((p, q) => q.usd - p.usd)) {
+  const free = (q: Rect, top: boolean) => !placed.some((p) => q.l < p.r && q.r > p.l && q.t < p.b && q.b > p.t) && (top || !bubbles.some((b) => circleHitsRect(b, q)));
+  for (const w of [...list].sort((p, q) => Number(q.priority) - Number(p.priority) || q.usd - p.usd)) {
     if (!w.label) continue;
     const tw = Math.ceil(ctx.measureText(w.label).width);
     const xr = Math.max(tw + 2 * pad, Math.round(w.x0 * hr) - Math.round(4 * hr));
     const y = Math.round(w.y * vr);
     // Prostokąt etykiety w px CSS (bąble też są w px CSS)
     const q = { l: (xr - tw - pad) / hr, r: (xr + pad) / hr, t: (y - th / 2) / vr, b: (y + th / 2) / vr };
-    if (!free(q)) continue;
+    if (!free(q, w.priority)) continue;
     placed.push(q);
     ctx.fillStyle = K.labelBg;
     ctx.fillRect(xr - tw - pad, y - th / 2, tw + 2 * pad, th);

@@ -26,6 +26,14 @@ export const inBox = (b: CloseBox | null, x: number, y: number): boolean => !!b 
 /** Wynik trafienia krzyżyka: identyfikator `pane:<ustawienie>` trafia do kliknięcia wykresu. */
 export const closeHit = (id: string): PrimitiveHoveredItem => ({ externalId: `pane:${id}`, zOrder: 'top', cursorStyle: 'pointer', hitTestPriority: 2 });
 
+/**
+ * Logo TradingView (wymagane licencją) w lewym dolnym rogu najniższego panelu: 35 × 19 px, 10 px od lewej i od dołu
+ * (pomiar 24.10, układ 2×2). W niskim panelu opis przesuwa się za logo.
+ */
+const LOGO_W = 35;
+const LOGO_H = 19;
+const LOGO_MARGIN = 10;
+
 /** Fragment opisu panelu: tekst i kolor. */
 export interface LegendPart {
   text: string;
@@ -42,28 +50,31 @@ export class PaneLegend implements ISeriesPrimitive<Time> {
   private requestUpdate: (() => void) | null = null;
   private readonly view: IPrimitivePaneView;
   private close: CloseBox | null = null;
+  /** Panel jest najniższy (pod nim tylko oś czasu) — dzieli róg z logo. */
+  private bottom = false;
 
   constructor(private readonly closeId?: string) {
     const renderer: IPrimitivePaneRenderer = {
       draw: (target) =>
-        target.useMediaCoordinateSpace(({ context: ctx }) => {
+        target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
           if (this.parts.length === 0) return;
           ctx.font = `11px ${MONO}`;
           ctx.textBaseline = 'middle';
           const widths = this.parts.map((p) => ctx.measureText(p.text).width);
           const total = widths.reduce((a, w) => a + w, 0) + 6 * (this.parts.length - 1);
           const closeW = this.closeId ? 16 : 0;
+          const l = this.bottom && mediaSize.height < 4 + 18 + LOGO_H + LOGO_MARGIN ? LOGO_MARGIN + LOGO_W + 4 : 4;
           ctx.fillStyle = PRO.bg;
           ctx.globalAlpha = 0.82;
-          ctx.fillRect(4, 4, total + 10 + closeW, 18);
+          ctx.fillRect(l, 4, total + 10 + closeW, 18);
           ctx.globalAlpha = 1;
-          let x = 9;
+          let x = l + 5;
           this.parts.forEach((p, i) => {
             ctx.fillStyle = p.color;
             ctx.fillText(p.text, x, 13);
             x += widths[i] + 6;
           });
-          this.close = this.closeId ? { x: 9 + total + 2, y: 5, size: 16 } : null;
+          this.close = this.closeId ? { x: l + 5 + total + 2, y: 5, size: 16 } : null;
           if (this.close) drawClose(ctx, this.close);
         }),
     };
@@ -84,6 +95,12 @@ export class PaneLegend implements ISeriesPrimitive<Time> {
 
   hitTest(x: number, y: number): PrimitiveHoveredItem | null {
     return this.closeId && inBox(this.close, x, y) ? closeHit(this.closeId) : null;
+  }
+
+  setBottom(on: boolean): void {
+    if (on === this.bottom) return;
+    this.bottom = on;
+    this.requestUpdate?.();
   }
 
   set(parts: LegendPart[]): void {

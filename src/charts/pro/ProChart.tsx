@@ -810,7 +810,7 @@ const IndicatorsMenu: React.FC<{ settings: ChartSettings; intervalMs: number; li
     {
       key: 'showLots',
       label: 'Duże zlecenia w arkuszu',
-      hint: `Poziom arkusza, na którym średnie zlecenie jest w 1% największych z ostatnich 30 min tego rynku (co najmniej ${compact(bigUsd * LOT_FLOOR)} USD): linia przez czas, gdy jest w arkuszu (przygaszona po zniknięciu), podpis „liczba zleceń × średnia wartość” — od otwarcia strony`,
+      hint: `Poziom arkusza, na którym średnie zlecenie jest w 1% największych z ostatnich 30 min tego rynku (co najmniej ${compact(bigUsd * LOT_FLOOR)} USD): linia przez czas, gdy jest w arkuszu (przygaszona po zniknięciu); po 30 s w arkuszu podpis „liczba zleceń × średnia wartość” — od otwarcia strony`,
       swatch: 'bg-gradient-to-r from-of-buy-ink to-of-sell-ink',
     },
     {
