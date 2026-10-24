@@ -65,6 +65,15 @@ const GROUPS: { title: string; rows: Row[] }[] = [
           'Rozkład wolumenu świecy bez taśmy jest przybliżeniem (MODEL). Klastry likwidacji to bieżący stan mapy, nie historia; mapa nieaktualna wg reguł panelu likwidacji jest ukryta.',
       },
       {
+        metric: 'Narzędzia rysowania (Wykresy): pomiar, profil zakresu, VWAP zakotwiczony, pozycja',
+        source: 'Hyperliquid API: candleSnapshot; taśma WS trades nagrywana od otwarcia widoku',
+        method:
+          'Pomiar: zmiana ceny, liczba świec i czas między punktami, wolumen świec z API, delta agresorów tylko ze świec z taśmą (z udziałem takich świec); profil zakresu jak profil widocznego zakresu; VWAP zakotwiczony = Σ v·(H+L+C)/3 / Σ v od wskazanej świecy z pasmami ±1σ; pozycja: cel, stop, procent od wejścia i stosunek zysku do ryzyka, bez składania zleceń',
+        kinds: ['LIVE', 'MODEL'],
+        refresh: 'na żywo',
+        caveat: 'Rysunki zapisują się tylko w tej przeglądarce. Delta pomiaru bez taśmy jest pokazana jako brak, nie jako zero.',
+      },
+      {
         metric: 'Open interest, funding, mark/oracle',
         source: 'Hyperliquid API: metaAndAssetCtxs',
         method: 'Wartości wprost z API; basis = (mark − oracle) / oracle',
