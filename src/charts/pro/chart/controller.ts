@@ -80,6 +80,7 @@ const toggles = (s: ChartSettings, ms: number): IndicatorToggles => ({
   showSessionVwap: s.showSessionVwap,
   showProfile: s.showProfile,
   showPeriodProfiles: s.showPeriodProfiles && !tpoShown(s, ms),
+  showDevPoc: s.showDevPoc,
   showLevels: s.showLevels,
   showSessions: s.showSessions,
   showIb: s.showIb,

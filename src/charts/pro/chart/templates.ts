@@ -35,6 +35,7 @@ const off = {
   showSessionVwap: false,
   showProfile: false,
   showPeriodProfiles: false,
+  showDevPoc: false,
   showTpo: false,
   showLevels: false,
   showSessions: false,

@@ -16,6 +16,7 @@ import { spreadTags } from '../../orderflow/renderer';
 import { hlTick } from '../core/footprintBar';
 import {
   DayLevels,
+  DevelopingLevels,
   IB_EXTENSIONS,
   IndicatorScope,
   InitialBalance,
@@ -23,6 +24,7 @@ import {
   VolumeProfile,
   VwapPoint,
   dayLevels,
+  developingProfile,
   indicatorScope,
   initialBalances,
   nakedPocs,
@@ -41,14 +43,24 @@ import { MONO, PRO, rgba } from './theme';
 
 /**
  * Warstwa wskaźników nad główną serią: VWAP z pasmami ±1σ i ±2σ, VWAP sesji, profil wolumenu widocznego
- * zakresu z POC i value area, profile sesji (albo dób) z nagimi POC, poziomy dnia (PDH, PDL, otwarcie),
+ * zakresu z POC i value area, profile sesji (albo dób) z nagimi POC, rozwijający się POC i value area, poziomy dnia (PDH, PDL, otwarcie),
  * otwarcia sesji, initial balance z rozszerzeniami, klastry likwidacji i wieloryby. Wypełnienia i profil leżą pod świecami, linie i etykiety nad nimi.
  * Geometria liczona w `updateAllViews` (współrzędne ekranu), rysowanie w pikselach urządzenia.
  */
 
 export type IndicatorToggles = Pick<
   ChartSettings,
-  'showVwap' | 'showVwapBands' | 'showSessionVwap' | 'showProfile' | 'showPeriodProfiles' | 'showLevels' | 'showSessions' | 'showIb' | 'showLiq' | 'showWhales'
+  | 'showVwap'
+  | 'showVwapBands'
+  | 'showSessionVwap'
+  | 'showProfile'
+  | 'showPeriodProfiles'
+  | 'showDevPoc'
+  | 'showLevels'
+  | 'showSessions'
+  | 'showIb'
+  | 'showLiq'
+  | 'showWhales'
 >;
 
 /** Wieloryby rynku z pliku skanera (pozycje i zlecenia od największych). */
@@ -86,6 +98,8 @@ const K = {
   spVa: rgba(PRO.profileVa, 0.6),
   spPocLine: PRO.profilePoc,
   nPocLine: PRO.nakedPoc,
+  devPoc: rgba(PRO.pocFrame, 0.85),
+  devVa: rgba(PRO.pocFrame, 0.4),
   liqLong: PRO.sellInk,
   liqShort: PRO.buyInk,
   liqLongLine: rgba(PRO.sellInk, 0.55),
@@ -153,6 +167,7 @@ interface Poly {
   pts: number[];
   color: string;
   width: number;
+  dash?: number[];
 }
 interface Fill {
   pts: number[];
@@ -230,6 +245,13 @@ interface PeriodCache {
   profile: VolumeProfile | null;
 }
 
+/** Rozwijający się POC okresu z pamięci (te same zasady co profil okresu). */
+interface DevCache {
+  step: number;
+  refs: readonly ProBar[];
+  levels: (DevelopingLevels | null)[];
+}
+
 const sameRefs = (refs: readonly ProBar[], bars: readonly ProBar[], from: number, to: number): boolean => {
   if (refs.length !== to - from + 1) return false;
   for (let k = 0; k < refs.length; k++) if (refs[k] !== bars[from + k]) return false;
@@ -256,6 +278,7 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
   private profileCache: ProfileCache = { key: '', profile: null };
   private profileBars: readonly ProBar[] | null = null;
   private periodCache = new Map<number, PeriodCache>();
+  private devCache = new Map<number, DevCache>();
   private rightInset = 0;
   private scene: Scene = emptyScene();
 
@@ -427,6 +450,8 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
     if (t.showProfile && step > 0) this.sceneProfile(s, bars, vf, vt, W, pw, step, Y);
     if (t.showPeriodProfiles && sc.periodProfile && step > 0) this.scenePeriods(s, bars, sc.periodProfile, step, visFrom, visTo, W, edge, Y);
     else this.periodCache.clear();
+    if (t.showDevPoc && sc.periodProfile && step > 0) this.sceneDeveloping(s, bars, sc.periodProfile, step, visFrom, visTo, X, Y);
+    else this.devCache.clear();
 
     // VWAP sesji pod VWAP dnia (w sesji azjatyckiej oba zaczynają się o 00:00 UTC i się pokrywają)
     if (t.showSessionVwap && sc.sessionVwap) {
@@ -670,6 +695,51 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
     }
   }
 
+  /** Rozwijający się POC (linia schodkowa) i value area (kropkowane) każdej widocznej sesji albo doby, świeca po świecy. */
+  private sceneDeveloping(
+    s: Scene,
+    bars: readonly ProBar[],
+    mode: 'session' | 'day',
+    step: number,
+    visFrom: number,
+    visTo: number,
+    X: (logical: number) => number,
+    Y: (p: number) => number
+  ): void {
+    const ms = this.ms;
+    const half = (X(1) - X(0)) / 2;
+    const cache = new Map<number, DevCache>();
+    for (const r of periodRanges(bars, mode)) {
+      if (bars[r.to].t + ms <= visFrom || bars[r.from].t >= visTo) continue;
+      const hit = this.devCache.get(r.start);
+      const entry =
+        hit && hit.step === step && sameRefs(hit.refs, bars, r.from, r.to)
+          ? hit
+          : { step, refs: bars.slice(r.from, r.to + 1), levels: developingProfile(bars, r.from, r.to, step) };
+      cache.set(r.start, entry);
+      const lines: [keyof DevelopingLevels, string, number, number[] | undefined][] = [
+        ['vah', K.devVa, 1, DASH.dot],
+        ['val', K.devVa, 1, DASH.dot],
+        ['poc', K.devPoc, 1.5, undefined],
+      ];
+      for (const [key, color, width, dash] of lines) {
+        let pts: number[] = [];
+        const flush = () => {
+          if (pts.length >= 4) s.polys.push({ pts, color, width, dash });
+          pts = [];
+        };
+        entry.levels.forEach((lv, k) => {
+          if (!lv) return flush();
+          const x = X(r.from + k);
+          const y = Y(lv[key]);
+          pts.push(x - half, y, x + half, y);
+        });
+        flush();
+      }
+    }
+    this.devCache = cache;
+  }
+
   private sceneProfile(s: Scene, bars: readonly ProBar[], vf: number, vt: number, W: number, pw: number, step: number, Y: (p: number) => number): void {
     const ref = bars[vt].candle.c;
     const pxPerUsd = Math.abs(Y(ref) - Y(ref + 100)) / 100;
@@ -759,11 +829,13 @@ function drawOver(ctx: CanvasRenderingContext2D, s: Scene, hr: number, vr: numbe
     if (p.pts.length < 4) continue;
     ctx.strokeStyle = p.color;
     ctx.lineWidth = Math.max(1, p.width * hr);
+    ctx.setLineDash(p.dash ? p.dash.map((d) => d * hr) : []);
     ctx.beginPath();
     ctx.moveTo(p.pts[0] * hr, p.pts[1] * vr);
     for (let j = 2; j < p.pts.length; j += 2) ctx.lineTo(p.pts[j] * hr, p.pts[j + 1] * vr);
     ctx.stroke();
   }
+  ctx.setLineDash([]);
 
   const font = Math.round(10 * vr);
   ctx.font = `${font}px ${MONO}`;

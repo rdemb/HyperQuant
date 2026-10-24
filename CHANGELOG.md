@@ -31,6 +31,7 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 - Wykresy: skróty klawiszowe wykresu (1–8 interwał, C świece ↔ footprint, M następny rynek, T taśma, R skala, End bieżąca świeca, F pełny ekran) i lista wszystkich skrótów pod „?” albo przyciskiem klawiatury; nie działają w polach tekstowych, a w układzie kilku wykresów trafiają do ostatnio klikniętego.
 - Wykresy: przycisk A w rogu pod osią ceny, jak w TradingView — podświetlony, gdy zakres ceny dopasowuje się do widocznych świec; przeciągnięcie osi ceny wyłącza autoskalę i zamraża zakres, a kliknięcie A, klawisz A albo dwuklik na osi ceny włącza ją z powrotem.
 - Wykresy: pod etykietą ostatniej ceny na osi odliczanie do zamknięcia bieżącej świecy (m:ss, od godziny g:mm:ss), jak w TradingView.
+- Wykresy: rozwijający się POC i value area w menu „Wskaźniki” (domyślnie wyłączony) — POC jako linia schodkowa oraz VAH i VAL kropkowane, świeca po świecy od początku sesji (na 1–4 h doby UTC), z tych samych wierszy co profile sesji.
 - Wykresy: panele Wolumen, Delta, CVD i tabela statystyk mają krzyżyk w rogu, który ukrywa panel jednym kliknięciem (wykres ceny zajmuje zwolnione miejsce); ustawienie zapamiętywane dla wykresu, ponowne włączenie w Ustawieniach → Panele.
 - `npm run build` buduje także blog (`vite build && node scripts/blog/build.mjs`).
 - Service worker nie przechwytuje nawigacji do `blog/` (strona bloga nie nadpisuje zapisanej powłoki aplikacji); `index.html` wskazuje kanał RSS.

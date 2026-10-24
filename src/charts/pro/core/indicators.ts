@@ -112,6 +112,44 @@ export function volumeProfile(bars: readonly IndicatorBar[], from: number, to: n
   return { step, lo, vol, max, total, poc: va.poc, vaLo: va.lo, vaHi: va.hi };
 }
 
+/** POC, VAH i VAL profilu od początku okresu do danej świecy (ceny: środek wiersza POC, granice value area). */
+export interface DevelopingLevels {
+  poc: number;
+  vah: number;
+  val: number;
+}
+
+/**
+ * Rozwijający się profil okresu [from, to]: po każdej świecy POC i value area 70% wszystkiego od początku okresu
+ * (ta sama siatka wierszy i te same zasady co `volumeProfile`, więc na końcu okresu zgadza się z jego profilem).
+ */
+export function developingProfile(bars: readonly IndicatorBar[], from: number, to: number, step: number): (DevelopingLevels | null)[] {
+  const a = Math.max(0, from);
+  const b = Math.min(bars.length - 1, to);
+  if (b < a || !(step > 0)) return [];
+  let minL = Number.POSITIVE_INFINITY;
+  let maxH = Number.NEGATIVE_INFINITY;
+  for (let i = a; i <= b; i++) {
+    const c = bars[i].candle;
+    if (c.l < minL) minL = c.l;
+    if (c.h > maxH) maxH = c.h;
+  }
+  const lo = rowIndex(minL, step);
+  const n = rowIndex(maxH, step) - lo + 1;
+  if (!(n > 0) || n > MAX_PROFILE_ROWS) return [];
+  const vol = new Float64Array(n);
+  const out: (DevelopingLevels | null)[] = [];
+  for (let i = a; i <= b; i++) {
+    const bar = bars[i];
+    const fp = bar.complete ? bar.fp : null;
+    if (fp) addFootprint(vol, fp, step, lo, n);
+    else addCandle(vol, bar.candle, step, lo, n);
+    const va = valueArea(vol, n, 0.7);
+    out.push(va ? { poc: (lo + va.poc + 0.5) * step, vah: (lo + va.hi + 1) * step, val: (lo + va.lo) * step } : null);
+  }
+  return out;
+}
+
 function addFootprint(vol: Float64Array, fp: FootprintBar, step: number, lo: number, n: number): void {
   for (let i = 0; i < fp.buy.length; i++) {
     const v = fp.buy[i] + fp.sell[i];

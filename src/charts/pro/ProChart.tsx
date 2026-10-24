@@ -791,6 +791,7 @@ type IndicatorKey =
   | 'showSessionVwap'
   | 'showProfile'
   | 'showPeriodProfiles'
+  | 'showDevPoc'
   | 'showTpo'
   | 'showLevels'
   | 'showSessions'
@@ -816,7 +817,6 @@ function liqHint(liq: LiqMapState): string {
   }
 }
 
-/** Wskaźniki na wykresie ceny: przełączniki z kolorem linii (menu jest zarazem legendą) i zakresem interwałów. */
 /** Plik wielorybów starszy niż tyle (ms) nie jest pokazywany. */
 const WHALES_STALE_MS = 20 * 60_000;
 
@@ -826,6 +826,7 @@ function whaleHint(w: WhaleLayer | null, coin: string): string {
   return `${m.positions.length} pozycji od ${compact(w.minPositionUsd[coin] ?? 0)} USD i ${m.orders.length} zleceń od ${compact(w.minOrderUsd[coin] ?? 0)} USD · ${w.accounts} kont · stan z ${fmtHm(w.asOf)}`;
 }
 
+/** Wskaźniki na wykresie ceny: przełączniki z kolorem linii (menu jest zarazem legendą) i zakresem interwałów. */
 const IndicatorsMenu: React.FC<{
   settings: ChartSettings;
   intervalMs: number;
@@ -894,6 +895,13 @@ const IndicatorsMenu: React.FC<{
       label: scope.periodProfile === 'day' ? 'Profile dób i nagie POC' : 'Profile sesji i nagie POC',
       hint: `Profil każdej ${scope.periodProfile === 'day' ? 'doby UTC' : 'sesji'} od jej początku; POC, którego cena potem nie dotknęła, ciągnie się do prawej krawędzi`,
       swatch: 'bg-of-vol',
+      off: scope.periodProfile ? undefined : 'Na interwałach do 4h',
+    },
+    {
+      key: 'showDevPoc',
+      label: 'Rozwijający się POC i value area',
+      hint: `POC (linia schodkowa) oraz VAH i VAL (kropkowane) ${scope.periodProfile === 'day' ? 'doby UTC' : 'sesji'} świeca po świecy: gdzie był środek wolumenu od początku okresu w każdej chwili`,
+      swatch: 'bg-of-poc',
       off: scope.periodProfile ? undefined : 'Na interwałach do 4h',
     },
     {
