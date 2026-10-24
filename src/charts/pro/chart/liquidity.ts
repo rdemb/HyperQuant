@@ -127,6 +127,7 @@ interface WallMark {
   x1: number;
   y: number;
   bid: boolean;
+  usd: number;
   label: string;
   selected: boolean;
   pick: LiquidityPick;
@@ -193,7 +194,7 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
         target.useBitmapCoordinateSpace(({ context, horizontalPixelRatio: hr, verticalPixelRatio: vr }) => {
           drawWalls(context, this.walls, hr, vr);
           drawBubbles(context, this.bubbles, hr, vr);
-          drawWallLabels(context, this.walls, hr, vr);
+          drawWallLabels(context, this.walls, this.bubbles, hr, vr);
         }),
     };
     const dom: IPrimitivePaneRenderer = {
@@ -403,6 +404,7 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
         x1: Math.max(x0 + WALL_MIN_W_PX, this.x(w.to, g)),
         y: g.a + g.b * w.px,
         bid: w.side === 1,
+        usd: w.usd,
         label: fmtCompact(w.usd),
         selected: sel?.kind === 'wall' && sel.wall.from === w.from && sel.wall.px === w.px && sel.wall.side === w.side,
         pick: { kind: 'wall', wall: w },
@@ -557,18 +559,27 @@ function drawWalls(ctx: CanvasRenderingContext2D, list: readonly WallMark[], hr:
   }
 }
 
-/** Wartość ściany na tle przed jej początkiem — nad bąblami, które zbierają się przy końcu belki. */
-function drawWallLabels(ctx: CanvasRenderingContext2D, list: readonly WallMark[], hr: number, vr: number): void {
+/**
+ * Wartość ściany na tle przed jej początkiem, nad bąblami. Większe ściany pierwsze; etykieta, która nachodzi na inną
+ * albo na bąbel, jest pomijana (wartość pokazuje karta po kliknięciu belki).
+ */
+function drawWallLabels(ctx: CanvasRenderingContext2D, list: readonly WallMark[], bubbles: readonly Bubble[], hr: number, vr: number): void {
   if (list.length === 0) return;
   ctx.font = `600 ${Math.round(10 * vr)}px ${MONO}`;
   ctx.textAlign = 'right';
   ctx.textBaseline = 'middle';
   const pad = Math.round(3 * hr);
   const th = Math.round(13 * vr);
-  for (const w of list) {
+  const placed: Rect[] = [];
+  const free = (q: Rect) => !placed.some((p) => q.l < p.r && q.r > p.l && q.t < p.b && q.b > p.t) && !bubbles.some((b) => circleHitsRect(b, q));
+  for (const w of [...list].sort((p, q) => q.usd - p.usd)) {
     const xr = Math.round(w.x0 * hr) - Math.round(4 * hr);
     const y = Math.round(w.y * vr);
     const tw = Math.ceil(ctx.measureText(w.label).width);
+    // Prostokąt etykiety w px CSS (bąble też są w px CSS)
+    const q = { l: (xr - tw - pad) / hr, r: (xr + pad) / hr, t: (y - th / 2) / vr, b: (y + th / 2) / vr };
+    if (!free(q)) continue;
+    placed.push(q);
     ctx.fillStyle = K.labelBg;
     ctx.fillRect(xr - tw - pad, y - th / 2, tw + 2 * pad, th);
     ctx.fillStyle = w.bid ? K.domBid : K.domAsk;
@@ -576,6 +587,19 @@ function drawWallLabels(ctx: CanvasRenderingContext2D, list: readonly WallMark[]
     ctx.fillStyle = K.domText;
     ctx.fillText(w.label, xr, y);
   }
+}
+
+interface Rect {
+  l: number;
+  r: number;
+  t: number;
+  b: number;
+}
+
+function circleHitsRect(c: { x: number; y: number; r: number }, q: Rect): boolean {
+  const dx = Math.max(q.l - c.x, 0, c.x - q.r);
+  const dy = Math.max(q.t - c.y, 0, c.y - q.b);
+  return dx * dx + dy * dy < (c.r + 1) ** 2;
 }
 
 function drawDom(ctx: CanvasRenderingContext2D, rows: readonly DomRow[], right: number, hr: number, vr: number): void {

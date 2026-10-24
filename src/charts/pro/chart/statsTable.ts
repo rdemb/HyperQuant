@@ -10,7 +10,8 @@ import { MONO, PRO, rgba } from './theme';
  * bez znaku pomarańczowe). Liczby, gdy świeca jest dość szeroka; nazwy wierszy w stałej kolumnie z lewej.
  */
 
-export const STAT_ROWS: { key: StatKey; label: string; signed: boolean; fmt: (v: number) => string }[] = [
+/** `scale` — stała skala nasycenia (|wartość| = pełny kolor) zamiast percentyla widocznych świec. */
+export const STAT_ROWS: { key: StatKey; label: string; signed: boolean; fmt: (v: number) => string; scale?: number }[] = [
   { key: 'vol', label: 'Wolumen', signed: false, fmt: fmtVol },
   { key: 'delta', label: 'Delta', signed: true, fmt: fmtSignedVol },
   { key: 'deltaPct', label: 'Delta %', signed: true, fmt: (v) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v).toFixed(0)}%` },
@@ -19,7 +20,8 @@ export const STAT_ROWS: { key: StatKey; label: string; signed: boolean; fmt: (v:
   { key: 'trades', label: 'Transakcje', signed: false, fmt: (v) => (v >= 1000 ? `${(v / 1000).toFixed(1)}K` : String(Math.round(v))) },
   { key: 'speed', label: 'Tempo /s', signed: false, fmt: (v) => (v >= 10 ? v.toFixed(0) : v.toFixed(1)) },
   { key: 'doi', label: 'ΔOI', signed: true, fmt: fmtSignedVol },
-  { key: 'funding', label: 'Funding', signed: true, fmt: (v) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v).toFixed(1)}%` },
+  // Roczna stopa w %, bez znaku „+” i „%” (mieści się w kolumnie); stała skala — stały funding nie daje pełnego koloru
+  { key: 'funding', label: 'Fund. APR', signed: true, fmt: (v) => `${v < 0 ? '−' : ''}${Math.abs(v).toFixed(1)}`, scale: 50 },
 ];
 
 /** Wysokość wiersza (px) i wolne miejsce pod tabelą na logo TradingView (px; panel jest najniższy). */
@@ -99,6 +101,7 @@ export class StatsTable implements ISeriesPrimitive<Time> {
 
     // Normy wierszy z widocznych świec
     const norm = STAT_ROWS.map((r) => {
+      if (r.scale) return r.scale;
       const v: number[] = [];
       for (let i = from; i <= to; i++) {
         const x = stats[i][r.key];
@@ -121,7 +124,7 @@ export class StatsTable implements ISeriesPrimitive<Time> {
         const v = s[row.key];
         const y = r * rh;
         if (v === null || !Number.isFinite(v)) {
-          if (text) {
+          if (text && cx - 4 >= LABEL_W) {
             ctx.fillStyle = C.dim;
             ctx.fillText('—', cx, y + rh / 2);
           }
@@ -131,8 +134,13 @@ export class StatsTable implements ISeriesPrimitive<Time> {
         ctx.fillStyle = rgba(row.signed ? (v >= 0 ? C.pos : C.neg) : C.size, 0.08 + 0.5 * k);
         ctx.fillRect(cx - cw / 2, y + 0.5, cw, rh - 1);
         if (text) {
-          ctx.fillStyle = C.text;
-          ctx.fillText(row.fmt(v), cx, y + rh / 2);
+          // Liczba tylko w całości: mieści się w kolumnie i nie wchodzi pod kolumnę nazw
+          const t = row.fmt(v);
+          const tw = ctx.measureText(t).width;
+          if (tw <= sp - 4 && cx - tw / 2 >= LABEL_W + 2) {
+            ctx.fillStyle = C.text;
+            ctx.fillText(t, cx, y + rh / 2);
+          }
         }
       }
     }
