@@ -32,6 +32,7 @@ import {
 } from '../core/indicators';
 import { SESSION_LABEL, sessionsBetween } from '../core/sessions';
 import { DAY } from '../core/time';
+import type { WhaleLayer } from '../../../utils/whaleLayer';
 import type { Candle } from '../hl/parse';
 import type { ProBar } from '../store/proStore';
 import { autoRowStep, fmtPx } from './layout';
@@ -41,14 +42,17 @@ import { MONO, PRO, rgba } from './theme';
 /**
  * Warstwa wskaźników nad główną serią: VWAP z pasmami ±1σ i ±2σ, VWAP sesji, profil wolumenu widocznego
  * zakresu z POC i value area, profile sesji (albo dób) z nagimi POC, poziomy dnia (PDH, PDL, otwarcie),
- * otwarcia sesji, initial balance z rozszerzeniami i klastry likwidacji. Wypełnienia i profil leżą pod świecami, linie i etykiety nad nimi.
+ * otwarcia sesji, initial balance z rozszerzeniami, klastry likwidacji i wieloryby. Wypełnienia i profil leżą pod świecami, linie i etykiety nad nimi.
  * Geometria liczona w `updateAllViews` (współrzędne ekranu), rysowanie w pikselach urządzenia.
  */
 
 export type IndicatorToggles = Pick<
   ChartSettings,
-  'showVwap' | 'showVwapBands' | 'showSessionVwap' | 'showProfile' | 'showPeriodProfiles' | 'showLevels' | 'showSessions' | 'showIb' | 'showLiq'
+  'showVwap' | 'showVwapBands' | 'showSessionVwap' | 'showProfile' | 'showPeriodProfiles' | 'showLevels' | 'showSessions' | 'showIb' | 'showLiq' | 'showWhales'
 >;
+
+/** Wieloryby rynku z pliku skanera (pozycje i zlecenia od największych). */
+export type WhaleView = Pick<WhaleLayer['markets'][string], 'positions' | 'orders'>;
 
 /** Wartości wskaźników świecy pod krzyżem (legenda). */
 export interface IndicatorValues {
@@ -86,11 +90,21 @@ const K = {
   liqShort: PRO.buyInk,
   liqLongLine: rgba(PRO.sellInk, 0.55),
   liqShortLine: rgba(PRO.buyInk, 0.55),
+  whaleLong: PRO.buyInk,
+  whaleShort: PRO.sellInk,
+  whaleLongLine: rgba(PRO.buyInk, 0.45),
+  whaleShortLine: rgba(PRO.sellInk, 0.45),
+  whaleLiq: PRO.warn,
+  whaleLiqLine: rgba(PRO.warn, 0.45),
   tagBg: rgba(PRO.bg, 0.88),
   axisText: PRO.page,
 } as const;
 
-const DASH = { none: [] as number[], level: [6, 4], dot: [2, 3], session: [3, 4], ext: [4, 4], liq: [1, 3] };
+const DASH = { none: [] as number[], level: [6, 4], dot: [2, 3], session: [3, 4], ext: [4, 4], liq: [1, 3], whale: [8, 3, 2, 3] };
+/** Wieloryby: tyle największych pozycji i zleceń w widoku; zlecenie to kreska tej długości przy prawej krawędzi (px). */
+const WHALE_POSITIONS = 4;
+const WHALE_ORDERS = 6;
+const WHALE_TICK_PX = 56;
 /** Profil widocznego zakresu: szerokość jako ułamek panelu (z ograniczeniami w px) i minimalna wysokość wiersza. */
 const PROFILE_WIDTH = 0.2;
 const PROFILE_MIN_PX = 56;
@@ -238,6 +252,7 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
   private daily: readonly Candle[] = [];
   private days: DayLevels[] = [];
   private liq: LiqLevel[] = [];
+  private whales: WhaleView | null = null;
   private profileCache: ProfileCache = { key: '', profile: null };
   private profileBars: readonly ProBar[] | null = null;
   private periodCache = new Map<number, PeriodCache>();
@@ -324,6 +339,11 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
 
   setLiq(levels: LiqLevel[]): void {
     this.liq = levels;
+    this.requestUpdate?.();
+  }
+
+  setWhales(w: WhaleView | null): void {
+    this.whales = w;
     this.requestUpdate?.();
   }
 
@@ -499,6 +519,32 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
         const long = l.side === 'long';
         s.hlines.push({ x0: 0, x1: W, y, color: long ? K.liqLongLine : K.liqShortLine, dash: DASH.liq });
         s.tags.push({ y, text: `Likw. ${long ? 'L' : 'S'} ${fmtCompact(l.ntlUsd, '$')}`, color: long ? K.liqLong : K.liqShort });
+      }
+    }
+
+    // Wieloryby: cena wejścia i likwidacji największych pozycji przez cały wykres, duże zlecenia — kreska przy prawej krawędzi
+    if (t.showWhales && this.whales) {
+      const inView = (y: number) => y >= 0 && y <= H;
+      const pos = this.whales.positions.filter((p) => inView(Y(p.entry)) || (p.liq !== null && inView(Y(p.liq)))).slice(0, WHALE_POSITIONS);
+      for (const p of pos) {
+        const long = p.side === 'long';
+        const y = Y(p.entry);
+        if (inView(y)) {
+          s.hlines.push({ x0: 0, x1: W, y, color: long ? K.whaleLongLine : K.whaleShortLine, dash: DASH.whale });
+          s.tags.push({ y, text: `${p.id} ${long ? 'L' : 'S'} ${fmtCompact(p.usd, '$')} ×${Math.round(p.lev)}`, color: long ? K.whaleLong : K.whaleShort });
+        }
+        const yl = p.liq === null ? Number.NaN : Y(p.liq);
+        if (inView(yl)) {
+          s.hlines.push({ x0: 0, x1: W, y: yl, color: K.whaleLiqLine, dash: DASH.liq });
+          s.tags.push({ y: yl, text: `${p.id} likw. ${long ? 'L' : 'S'}`, color: K.whaleLiq });
+        }
+      }
+      for (const o of this.whales.orders.filter((x) => inView(Y(x.px))).slice(0, WHALE_ORDERS)) {
+        const y = Y(o.px);
+        const bid = o.side === 'bid';
+        const what = o.kind === 'stop' ? 'stop' : o.kind === 'tp' ? 'TP' : bid ? 'kupno' : 'sprzedaż';
+        s.hlines.push({ x0: W - WHALE_TICK_PX, x1: W, y, color: bid ? K.whaleLong : K.whaleShort, dash: o.kind === 'limit' ? DASH.none : DASH.dot });
+        s.tags.push({ y, text: `${o.id} ${what} ${fmtCompact(o.usd, '$')}`, color: bid ? K.whaleLong : K.whaleShort });
       }
     }
 

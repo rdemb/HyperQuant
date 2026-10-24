@@ -94,6 +94,26 @@ const GROUPS: { title: string; rows: Row[] }[] = [
           'Liczba zleceń jest na poziomie agregacji (kubełek kilku ticków), więc duże zlecenie może dzielić poziom z drobnymi. Migawka co kilka sekund: krótsze zlecenia mogą nie zostać zauważone, a koniec linii nie mówi, czy zlecenie wypełniono, czy zdjęto.',
       },
       {
+        metric: 'Historia ostatniej doby (Wykresy): taśma, zlecenia agresora, serie, ściany, ΔOI i arkusz sprzed otwarcia strony',
+        source: 'Rejestrator skanera na serwerze: Hyperliquid WS trades, activeAssetCtx i l2Book (agregacja bliska i daleka jak na stronie) dla BTC, ETH, SOL i HYPE; gałąź history publicznego repo danych',
+        method:
+          'Części 5-minutowe bieżącej godziny i pliki godzinowe (JSON w gzip) z odcinkami ciągłego nagrania; biorca, maker i zlecenie agresora jako numery ważne w obrębie godziny zamiast adresów i hashy. Strona wczytuje pliki od lewej krawędzi widoku (taśma do doby, arkusz do 12 h), co 2 min dociąga brakujące części i przerwy połączenia, a taśma odrzuca duplikaty po tid',
+        kinds: ['LIVE'],
+        refresh: 'część co 5 min (publikacja ok. 1–2 min po jej końcu)',
+        caveat:
+          'Z zapisu serwera nie ma adresów (podsumowanie portfela tylko dla zleceń od otwarcia strony) ani gór lodowych (rejestrator nie nagrywa dokładnego arkusza). Przerwa w nagraniu serwera jest jawną luką. Ostatnie minuty przed otwarciem strony dochodzą z kilkuminutowym opóźnieniem.',
+      },
+      {
+        metric: 'Wieloryby (Wykresy): pozycje i duże zlecenia oczekujące największych kont',
+        source: 'Hyperliquid API: clearinghouseState i frontendOpenOrders kont z publicznego rankingu (największe wartości kont) i dużych pozycji BTC z taśmy, odczytywane przez skaner',
+        method:
+          'Pozycje od 1 mln USD (BTC), 500 tys. (ETH), 250 tys. (SOL, HYPE): cena wejścia, wartość po cenie mark, dźwignia, cena likwidacji; zlecenia od 250 tys. (BTC), 150 tys. (ETH), 50 tys. (SOL, HYPE), także stop i take profit po cenie wyzwolenia; na wykresie 4 największe pozycje i 6 zleceń w widoku. Konto ma pseudonim ważny jedną dobę UTC (skrót adresu z sekretem serwera), więc pozycję da się połączyć z jej zleceniami, ale nie z portfelem',
+        kinds: ['LIVE'],
+        refresh: 'pozycje i zlecenia co ok. 5 min',
+        caveat:
+          'Tylko konta, które skaner obserwuje (ranking i duże pozycje BTC), więc to nie wszyscy duzi gracze. Odczyt sprzed kilku minut: zlecenie mogło zostać zdjęte. Plik starszy niż 20 min jest ukryty.',
+      },
+      {
         metric: 'Statystyki świec (Wykresy): wolumen, delta, delta %, max i min delty, transakcje, tempo taśmy, ΔOI, finansowanie',
         source: 'Hyperliquid API: candleSnapshot, fundingHistory; WS trades i activeAssetCtx nagrywane od otwarcia widoku',
         method:

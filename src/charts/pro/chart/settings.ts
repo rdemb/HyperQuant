@@ -36,6 +36,8 @@ export interface ChartSettings {
   showSessions: boolean;
   showIb: boolean;
   showLiq: boolean;
+  /** Pozycje i duże zlecenia oczekujące największych kont (plik skanera, bez adresów). */
+  showWhales: boolean;
   /** Strefy nierównowagi i niedokończone aukcje z footprintu. */
   showZones: boolean;
   showAuctions: boolean;
@@ -78,6 +80,7 @@ export const DEFAULT_SETTINGS: ChartSettings = {
   showSessions: true,
   showIb: true,
   showLiq: true,
+  showWhales: true,
   showZones: true,
   showAuctions: true,
   showHeatmap: true,
@@ -123,6 +126,7 @@ export function parseSettings(raw: unknown, d: ChartSettings = DEFAULT_SETTINGS)
     showSessions: bool(r.showSessions, d.showSessions),
     showIb: bool(r.showIb, d.showIb),
     showLiq: bool(r.showLiq, d.showLiq),
+    showWhales: bool(r.showWhales, d.showWhales),
     showZones: bool(r.showZones, d.showZones),
     showAuctions: bool(r.showAuctions, d.showAuctions),
     showHeatmap: bool(r.showHeatmap, d.showHeatmap),

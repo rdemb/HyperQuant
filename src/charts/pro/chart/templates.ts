@@ -40,6 +40,7 @@ const off = {
   showSessions: false,
   showIb: false,
   showLiq: false,
+  showWhales: false,
   showZones: false,
   showAuctions: false,
   showHeatmap: false,
@@ -77,6 +78,7 @@ export const BUILT_IN_TEMPLATES: readonly ChartTemplate[] = [
     showLevels: true,
     showIb: true,
     showLiq: true,
+    showWhales: true,
   }),
   built('tpo', 'Market Profile 30m: TPO dób', {
     ...off,

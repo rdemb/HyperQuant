@@ -28,7 +28,7 @@ import { DrawingTools } from '../draw/tools';
 import { FootprintOptions, FootprintPoint, FootprintSeries } from './footprintSeries';
 import { fmtPx } from './layout';
 import { LiquidityLayer, LiquidityPick, LiquiditySource } from './liquidity';
-import { IndicatorOverlay, IndicatorToggles, IndicatorValues } from './overlay';
+import { IndicatorOverlay, IndicatorToggles, IndicatorValues, WhaleView } from './overlay';
 import { LegendPart, PaneLegend } from './paneLegend';
 import { STAT_PAD_PX, STAT_ROWS, STAT_ROW_PX, StatsTable } from './statsTable';
 import { ZonesLayer } from './zonesLayer';
@@ -83,6 +83,7 @@ const toggles = (s: ChartSettings, ms: number): IndicatorToggles => ({
   showSessions: s.showSessions,
   showIb: s.showIb,
   showLiq: s.showLiq,
+  showWhales: s.showWhales,
 });
 
 /** Zmienionych świec powyżej tej liczby nie aktualizujemy pojedynczo, tylko podmieniamy całą serię. */
@@ -391,6 +392,10 @@ export class ProChartController {
   }
 
   /** Najsilniejsze klastry likwidacji ze skanera (pusta lista = brak aktualnej mapy). */
+  setWhales(w: WhaleView | null): void {
+    this.overlay.setWhales(w);
+  }
+
   setLiqLevels(levels: LiqLevel[]): void {
     this.overlay.setLiq(levels);
   }

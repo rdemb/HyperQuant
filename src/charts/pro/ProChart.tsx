@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExtern
 import { Bell, BellOff, Camera, ChevronsRight, Columns2, Copy, Grid2x2, Keyboard, Layers, Link, ListOrdered, Maximize2, Minimize2, Minus, PenTool, RotateCcw, SlidersHorizontal, Square, X } from 'lucide-react';
 import { Badge, BadgeTone, Segmented } from '../../ui';
 import { LiqMapState, useLiqMap } from '../../state/useLiqMap';
+import { usePublished } from '../../state/usePublished';
+import { type WhaleLayer, isWhaleLayer } from '../../utils/whaleLayer';
 import { INTERVALS, fmtHm, fmtSince, intervalById } from './core/time';
 import { DEFAULT_THRESHOLD_USD, classify } from './core/clashes';
 import { hlTick } from './core/footprintBar';
@@ -117,6 +119,8 @@ export const ProChart: React.FC<{ panel?: number; layout?: ChartLayout; onLayout
   const legendBottom = useRef(0);
   const signal = useMemo(() => new HoverSignal(), []);
   const liq = useLiqMap();
+  const whalePub = usePublished('whales.json', isWhaleLayer);
+  const whales = whalePub.value && Date.now() - whalePub.value.asOf < WHALES_STALE_MS ? whalePub.value : null;
   useStoreVersion(store, 400);
 
   const update = useCallback((patch: Partial<ChartSettings>) => setSettings((s) => ({ ...s, ...patch })), []);
@@ -251,6 +255,11 @@ export const ProChart: React.FC<{ panel?: number; layout?: ChartLayout; onLayout
     ctrlRef.current?.select(null);
     setPick(null);
   }, []);
+
+  // Wieloryby tylko z aktualnego pliku skanera (starszy niż WHALES_STALE_MS jest ukryty, jak nieaktualna mapa likwidacji)
+  useEffect(() => {
+    ctrlRef.current?.setWhales(whales?.markets[store.coin] ?? null);
+  }, [whales, store]);
 
   // Klastry likwidacji tylko z aktualnej mapy skanera (jak w Desku: nieaktualna mapa nie jest pokazywana); skaner mapuje BTC
   useEffect(() => {
@@ -489,7 +498,7 @@ export const ProChart: React.FC<{ panel?: number; layout?: ChartLayout; onLayout
               ) : menu === 'keys' ? (
                 <KeysMenu />
               ) : (
-                <IndicatorsMenu settings={settings} intervalMs={iv.ms} liq={liq} bigUsd={bigUsd} onChange={update} />
+                <IndicatorsMenu settings={settings} intervalMs={iv.ms} liq={liq} whales={whales} bigUsd={bigUsd} onChange={update} />
               )}
             </div>
           )}
@@ -758,6 +767,7 @@ type IndicatorKey =
   | 'showSessions'
   | 'showIb'
   | 'showLiq'
+  | 'showWhales'
   | 'showZones'
   | 'showAuctions';
 
@@ -778,10 +788,27 @@ function liqHint(liq: LiqMapState): string {
 }
 
 /** Wskaźniki na wykresie ceny: przełączniki z kolorem linii (menu jest zarazem legendą) i zakresem interwałów. */
-const IndicatorsMenu: React.FC<{ settings: ChartSettings; intervalMs: number; liq: LiqMapState; bigUsd: number; onChange: (p: Partial<ChartSettings>) => void }> = ({
+/** Plik wielorybów starszy niż tyle (ms) nie jest pokazywany. */
+const WHALES_STALE_MS = 20 * 60_000;
+
+function whaleHint(w: WhaleLayer | null, coin: string): string {
+  const m = w?.markets[coin];
+  if (!w || !m) return 'Skaner nie publikuje teraz warstwy wielorybów — linie ukryte';
+  return `${m.positions.length} pozycji od ${compact(w.minPositionUsd[coin] ?? 0)} USD i ${m.orders.length} zleceń od ${compact(w.minOrderUsd[coin] ?? 0)} USD · ${w.accounts} kont · stan z ${fmtHm(w.asOf)}`;
+}
+
+const IndicatorsMenu: React.FC<{
+  settings: ChartSettings;
+  intervalMs: number;
+  liq: LiqMapState;
+  whales: WhaleLayer | null;
+  bigUsd: number;
+  onChange: (p: Partial<ChartSettings>) => void;
+}> = ({
   settings: s,
   intervalMs,
   liq,
+  whales,
   bigUsd,
   onChange,
 }) => {
@@ -791,26 +818,26 @@ const IndicatorsMenu: React.FC<{ settings: ChartSettings; intervalMs: number; li
     {
       key: 'showHeatmap',
       label: 'Mapa ciepła arkusza',
-      hint: 'Płynność zleceń oczekujących w czasie (l2Book Hyperliquid, kubełki BTC ~10 i ~100 USD, innych rynków proporcjonalnie do ceny) — od otwarcia strony',
+      hint: 'Płynność zleceń oczekujących w czasie (l2Book Hyperliquid, kubełki BTC ~10 i ~100 USD, innych rynków proporcjonalnie do ceny) — od otwarcia strony, a z zapisem serwera z ostatniej doby',
       swatch: 'bg-gradient-to-r from-of-heat-1 via-of-heat-2 to-of-heat-3',
     },
     {
       key: 'showBubbles',
       label: 'Bąble zleceń agresora',
-      hint: `Zlecenia rynkowe od ${big} złożone z wypełnień; pole koła ∝ wartość, podwójny pierścień = bitwa z jednym dużym makerem; kliknij bąbel — od otwarcia strony`,
+      hint: `Zlecenia rynkowe od ${big} złożone z wypełnień; pole koła ∝ wartość, podwójny pierścień = bitwa z jednym dużym makerem; kliknij bąbel — od otwarcia strony, a z zapisem serwera z ostatniej doby`,
       swatch: 'bg-gradient-to-r from-of-imb-buy to-of-imb-sell',
     },
     {
       key: 'showClashes',
       label: 'Serie i ściany',
-      hint: 'Seria (przerywany pierścień): drobne zlecenia co najmniej 4 adresów po jednej stronie w 2 s, razem od progu. Ściana (belka): jeden maker na jednej cenie przyjął od progu z co najmniej 3 zleceń — od otwarcia strony',
+      hint: 'Seria (przerywany pierścień): drobne zlecenia co najmniej 4 adresów po jednej stronie w 2 s, razem od progu. Ściana (belka): jeden maker na jednej cenie przyjął od progu z co najmniej 3 zleceń — od otwarcia strony, a z zapisem serwera z ostatniej doby',
       swatch: 'bg-of-buy',
       off: s.showBubbles ? undefined : 'Razem z bąblami zleceń agresora',
     },
     {
       key: 'showLots',
       label: 'Duże zlecenia w arkuszu',
-      hint: `Poziom arkusza, na którym średnie zlecenie jest w 1% największych z ostatnich 30 min tego rynku (co najmniej ${compact(bigUsd * LOT_FLOOR)} USD): linia przez czas, gdy jest w arkuszu (przygaszona po zniknięciu); po 30 s w arkuszu podpis „liczba zleceń × średnia wartość” — od otwarcia strony`,
+      hint: `Poziom arkusza, na którym średnie zlecenie jest w 1% największych z ostatnich 30 min tego rynku (co najmniej ${compact(bigUsd * LOT_FLOOR)} USD): linia przez czas, gdy jest w arkuszu (przygaszona po zniknięciu); po 30 s w arkuszu podpis „liczba zleceń × średnia wartość” — od otwarcia strony, a z zapisem serwera z ostatniej doby`,
       swatch: 'bg-gradient-to-r from-of-buy-ink to-of-sell-ink',
     },
     {
@@ -874,6 +901,12 @@ const IndicatorsMenu: React.FC<{ settings: ChartSettings; intervalMs: number; li
       hint: liqHint(liq),
       swatch: 'bg-gradient-to-r from-of-sell to-of-buy',
       off: s.coin === 'BTC' ? undefined : 'Tylko BTC: skaner mapuje pozycje na BTC',
+    },
+    {
+      key: 'showWhales',
+      label: 'Wieloryby',
+      hint: `Cena wejścia (L/S, wartość, dźwignia) i likwidacji największych pozycji oraz duże zlecenia oczekujące, także stop i TP, największych kont Hyperliquid z ich publicznego stanu; konto ma pseudonim na dobę, bez adresu · ${whaleHint(whales, s.coin)}`,
+      swatch: 'bg-gradient-to-r from-of-buy to-of-sell',
     },
     {
       key: 'showZones',
@@ -1164,7 +1197,7 @@ const StatusBar: React.FC<{ store: ProStore; series: CandleSeries }> = ({ store,
       <Badge tone={st.tone} title={st.title}>
         {st.text}
       </Badge>
-      <span title="Footprint, Delta i CVD liczymy z taśmy transakcji Hyperliquid nagrywanej od otwarcia tej strony — API nie udostępnia historii transakcji. Świece (OHLC i wolumen) pochodzą z pełnej historii API.">
+      <span title="Footprint, Delta i CVD liczymy z taśmy transakcji Hyperliquid nagrywanej od otwarcia tej strony i z zapisu serwera z ostatniej doby — API nie udostępnia historii transakcji. Świece (OHLC i wolumen) pochodzą z pełnej historii API.">
         Taśma {Number.isFinite(first) ? `od ${fmtSince(first, Date.now())}` : '—'}
         {gaps > 0 && <span className="text-warn"> · luki: {gaps}</span>}
       </span>
