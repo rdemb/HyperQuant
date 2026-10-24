@@ -231,6 +231,50 @@ export function liqLevels(map: LiqMap, top = 3, minUsd = 1e6): LiqLevel[] {
   return [...pick(map.longs, 'long'), ...pick(map.shorts, 'short')];
 }
 
+/** Okres profilu (sesja albo doba UTC): pierwsza i ostatnia świeca. */
+export interface PeriodRange {
+  start: number;
+  from: number;
+  to: number;
+  /** Po okresie są już świece następnego (profil ostateczny). */
+  complete: boolean;
+}
+
+/** Kolejne okresy pokryte świecami, rosnąco po czasie. */
+export function periodRanges(bars: readonly IndicatorBar[], mode: 'session' | 'day'): PeriodRange[] {
+  const out: PeriodRange[] = [];
+  let a = 0;
+  for (let i = 1; i <= bars.length; i++) {
+    const start = periodStart(bars[a].t, mode);
+    if (i < bars.length && periodStart(bars[i].t, mode) === start) continue;
+    out.push({ start, from: a, to: i - 1, complete: i < bars.length });
+    a = i;
+  }
+  return out;
+}
+
+/**
+ * Nagie POC: dla każdego zamkniętego okresu, czy żadna późniejsza świeca nie dotknęła jego POC.
+ * Wystarczy najniższy dołek i najwyższy szczyt po okresie — kolejne świece rynku 24/7 łączą się ceną,
+ * więc ich zakresy tworzą jeden przedział.
+ */
+export function nakedPocs(bars: readonly IndicatorBar[], periods: readonly { to: number; complete: boolean; pocPx: number }[]): boolean[] {
+  const out = new Array<boolean>(periods.length).fill(false);
+  let lo = Number.POSITIVE_INFINITY;
+  let hi = Number.NEGATIVE_INFINITY;
+  let j = bars.length - 1;
+  for (let k = periods.length - 1; k >= 0; k--) {
+    const p = periods[k];
+    for (; j > p.to; j--) {
+      const c = bars[j].candle;
+      if (c.l < lo) lo = c.l;
+      if (c.h > hi) hi = c.h;
+    }
+    out[k] = p.complete && !(lo <= p.pocPx && p.pocPx <= hi);
+  }
+  return out;
+}
+
 /** Które wskaźniki mają sens na danym interwale (sesje i IB wymagają świec wyrównanych do ich otwarć). */
 export interface IndicatorScope {
   /** Okres głównego VWAP: doba UTC, a na świecach dziennych tydzień. */
@@ -239,6 +283,8 @@ export interface IndicatorScope {
   ib: boolean;
   sessions: boolean;
   levels: boolean;
+  /** Okres profili z nagimi POC: sesja do 30 min, doba do 4 h, wyżej brak. */
+  periodProfile: 'session' | 'day' | null;
 }
 
 export function indicatorScope(intervalMs: number): IndicatorScope {
@@ -249,5 +295,6 @@ export function indicatorScope(intervalMs: number): IndicatorScope {
     ib: intraday,
     sessions: intervalMs <= 3_600_000,
     levels: intervalMs < DAY,
+    periodProfile: intraday ? 'session' : intervalMs <= 4 * 3_600_000 ? 'day' : null,
   };
 }

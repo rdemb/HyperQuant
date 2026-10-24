@@ -21,10 +21,11 @@ import type { LiqLevel } from '../core/indicators';
 import type { ResetMode } from '../core/sessions';
 import type { ProBar, ProStore } from '../store/proStore';
 import { FootprintOptions, FootprintPoint, FootprintSeries } from './footprintSeries';
+import { LiquidityLayer } from './liquidity';
 import { IndicatorOverlay, IndicatorToggles, IndicatorValues } from './overlay';
 import { LegendPart, PaneLegend } from './paneLegend';
 import type { ChartSettings } from './settings';
-import { PRO, RIGHT_GAP_PX, chartOptions } from './theme';
+import { DOM_W_PX, PRO, RIGHT_GAP_PX, chartOptions } from './theme';
 
 /**
  * Sterownik wykresu Pro (bez Reacta): tworzy wykres Lightweight Charts z serią footprintu, wolumenem
@@ -61,6 +62,7 @@ const toggles = (s: ChartSettings): IndicatorToggles => ({
   showVwapBands: s.showVwapBands,
   showSessionVwap: s.showSessionVwap,
   showProfile: s.showProfile,
+  showPeriodProfiles: s.showPeriodProfiles,
   showLevels: s.showLevels,
   showSessions: s.showSessions,
   showIb: s.showIb,
@@ -69,6 +71,8 @@ const toggles = (s: ChartSettings): IndicatorToggles => ({
 
 /** Zmienionych świec powyżej tej liczby nie aktualizujemy pojedynczo, tylko podmieniamy całą serię. */
 const MAX_POINT_UPDATES = 24;
+/** Margines skali ceny bez legendy (ułamek wysokości panelu) — jak w motywie wykresu. */
+const TOP_MARGIN = 0.06;
 /** Doczytanie historii, gdy z lewej zostało mniej świec niż tyle. */
 const LOAD_OLDER_MARGIN = 40;
 
@@ -124,11 +128,15 @@ export class ProChartController {
   private readonly deltaLegend = new PaneLegend();
   private readonly cvdLegend = new PaneLegend();
   private readonly overlay: IndicatorOverlay;
+  private readonly liquidity: LiquidityLayer;
 
   private settings: ChartSettings;
   private bars: ProBar[] = [];
   private cvdData: (Ohlc | null)[] = [];
   private frame = 0;
+  private marginFrame = 0;
+  /** Dolna krawędź legendy nad panelem ceny (px). */
+  private topInset = 0;
   private hoverTime: number | null = null;
   private hoverPrice: number | null = null;
   private readonly unsubscribe: () => void;
@@ -141,8 +149,12 @@ export class ProChartController {
     this.main = this.chart.addCustomSeries<FootprintPoint, FootprintOptions>(this.fpView, {
       priceFormat: { type: 'custom', minMove: 1, formatter: (p: number) => fmtPrice(p, 0) },
       priceLineVisible: true,
+      priceLineColor: PRO.priceLine,
       lastValueVisible: true,
     });
+    // Mapa ciepła pod profilem i pasmami (kolejność dołączenia = kolejność rysowania w tej samej warstwie)
+    this.liquidity = new LiquidityLayer({ showHeatmap: settings.showHeatmap, showBubbles: settings.showBubbles });
+    this.main.attachPrimitive(this.liquidity);
     this.overlay = new IndicatorOverlay(toggles(settings));
     this.main.attachPrimitive(this.overlay);
     this.applySettings(settings, true);
@@ -154,6 +166,7 @@ export class ProChartController {
 
   destroy(): void {
     cancelAnimationFrame(this.frame);
+    cancelAnimationFrame(this.marginFrame);
     this.unsubscribe();
     this.chart.unsubscribeCrosshairMove(this.onCrosshair);
     this.chart.timeScale().unsubscribeVisibleLogicalRangeChange(this.onRange);
@@ -173,6 +186,12 @@ export class ProChartController {
       stackedMin: s.stackedMin,
     });
     this.overlay.setToggles(toggles(s));
+    this.liquidity.setToggles({ showHeatmap: s.showHeatmap, showBubbles: s.showBubbles });
+    if (force || prev.showHeatmap !== s.showHeatmap) {
+      // Z mapą ciepła przy prawej krawędzi stoi drabina DOM: najnowsza świeca i wskaźniki kończą się przed nią
+      this.overlay.setRightInset(s.showHeatmap ? DOM_W_PX : 0);
+      this.chart.timeScale().applyOptions({ rightOffsetPixels: this.rightGap() });
+    }
     const panesChanged = force || prev.showVolume !== s.showVolume || prev.showDelta !== s.showDelta || prev.showCvd !== s.showCvd;
     if (panesChanged) this.rebuildPanes();
     else if (prev.cvdReset !== s.cvdReset) {
@@ -205,10 +224,27 @@ export class ProChartController {
     const panes = this.chart.panes();
     panes[0]?.setStretchFactor(1);
     for (let i = 1; i < panes.length; i++) panes[i].setStretchFactor(panes[i] === this.volume?.getPane() ? 0.14 : 0.22);
+    this.setTopInset(this.topInset);
     // Nowe serie dostają pełne dane przy następnej synchronizacji
     this.bars = [];
     this.cvdData = [];
     this.schedule();
+  }
+
+  /**
+   * Autoskala ceny zostawia nad świecami miejsce na legendę (px od góry panelu), żeby legenda nie zasłaniała
+   * szczytów ani górnych wierszy footprintu. Liczone po ułożeniu paneli (wysokość panelu ceny zależy od pozostałych).
+   */
+  setTopInset(px: number): void {
+    this.topInset = px;
+    cancelAnimationFrame(this.marginFrame);
+    this.marginFrame = requestAnimationFrame(() => {
+      this.marginFrame = 0;
+      const h = this.chart.paneSize(0).height;
+      if (!(h > 0)) return;
+      const top = Math.min(0.35, Math.max(TOP_MARGIN, (this.topInset + 6) / h));
+      this.main.priceScale().applyOptions({ scaleMargins: { top, bottom: TOP_MARGIN } });
+    });
   }
 
   /** Najsilniejsze klastry likwidacji ze skanera (pusta lista = brak aktualnej mapy). */
@@ -216,11 +252,16 @@ export class ProChartController {
     this.overlay.setLiq(levels);
   }
 
+  /** Odstęp najnowszej świecy od osi ceny (px): stały, a z mapą ciepła powiększony o drabinę DOM. */
+  private rightGap(): number {
+    return RIGHT_GAP_PX + (this.settings.showHeatmap ? DOM_W_PX : 0);
+  }
+
   /** Przewija do bieżącej świecy (z zachowaniem zbliżenia); odstęp od osi ceny stały w pikselach. */
   scrollToNow(): void {
     const ts = this.chart.timeScale();
     // Bez animacji: animowane przewinięcie biblioteki kończy się klatkę przed celem (ostatnia świeca za krawędzią)
-    ts.scrollToPosition(RIGHT_GAP_PX / ts.options().barSpacing, false);
+    ts.scrollToPosition(this.rightGap() / ts.options().barSpacing, false);
   }
 
   /** Dopasowuje zakres ceny do widocznych świec (po ręcznym przeciągnięciu osi). */
@@ -264,6 +305,8 @@ export class ProChartController {
     }
     this.overlay.setBars(next, this.store.interval.ms);
     this.overlay.setDaily(this.store.daily);
+    const st = this.store;
+    this.liquidity.setData(next, st.interval.ms, st.book('near'), st.book('far'), (from, to) => st.orders.range(from, to), st.serverNow());
     this.pushCvd(full);
     this.emitHover();
   }

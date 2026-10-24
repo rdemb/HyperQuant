@@ -25,6 +25,8 @@ import {
   dayLevels,
   indicatorScope,
   initialBalances,
+  nakedPocs,
+  periodRanges,
   volumeProfile,
   vwapSeries,
 } from '../core/indicators';
@@ -38,14 +40,14 @@ import { MONO, PRO, rgba } from './theme';
 
 /**
  * Warstwa wskaźników nad główną serią: VWAP z pasmami ±1σ i ±2σ, VWAP sesji, profil wolumenu widocznego
- * zakresu z POC i value area, poziomy dnia (PDH, PDL, otwarcie), otwarcia sesji, initial balance
- * z rozszerzeniami i klastry likwidacji. Wypełnienia i profil leżą pod świecami, linie i etykiety nad nimi.
+ * zakresu z POC i value area, profile sesji (albo dób) z nagimi POC, poziomy dnia (PDH, PDL, otwarcie),
+ * otwarcia sesji, initial balance z rozszerzeniami i klastry likwidacji. Wypełnienia i profil leżą pod świecami, linie i etykiety nad nimi.
  * Geometria liczona w `updateAllViews` (współrzędne ekranu), rysowanie w pikselach urządzenia.
  */
 
 export type IndicatorToggles = Pick<
   ChartSettings,
-  'showVwap' | 'showVwapBands' | 'showSessionVwap' | 'showProfile' | 'showLevels' | 'showSessions' | 'showIb' | 'showLiq'
+  'showVwap' | 'showVwapBands' | 'showSessionVwap' | 'showProfile' | 'showPeriodProfiles' | 'showLevels' | 'showSessions' | 'showIb' | 'showLiq'
 >;
 
 /** Wartości wskaźników świecy pod krzyżem (legenda). */
@@ -57,12 +59,12 @@ export interface IndicatorValues {
 }
 
 const K = {
-  vwap: PRO.accent,
-  vwapBand1: rgba(PRO.accent, 0.075),
-  vwapBand2: rgba(PRO.accent, 0.04),
-  vwapEdge1: rgba(PRO.accent, 0.4),
-  vwapEdge2: rgba(PRO.accent, 0.24),
-  svwap: PRO.zone,
+  vwap: PRO.vwap,
+  vwapBand1: rgba(PRO.vwap, 0.06),
+  vwapBand2: rgba(PRO.vwap, 0.03),
+  vwapEdge1: rgba(PRO.vwap, 0.32),
+  vwapEdge2: rgba(PRO.vwap, 0.18),
+  svwap: PRO.svwap,
   level: PRO.level,
   dayOpen: rgba(PRO.ink2, 0.6),
   ib: PRO.series1,
@@ -71,11 +73,15 @@ const K = {
   ibExt: rgba(PRO.series1, 0.5),
   session: rgba(PRO.ink3, 0.38),
   sessionText: rgba(PRO.ink3, 0.9),
-  vpOut: rgba(PRO.ink3, 0.17),
-  vpVa: rgba(PRO.ink3, 0.33),
-  vpPoc: rgba(PRO.ink1, 0.55),
-  pocLine: rgba(PRO.ink1, 0.42),
+  vpOut: rgba(PRO.profileOut, 0.5),
+  vpVa: rgba(PRO.profileVa, 0.7),
+  vpPoc: rgba(PRO.profilePoc, 0.85),
+  pocLine: rgba(PRO.profilePoc, 0.5),
   vaLine: rgba(PRO.ink2, 0.4),
+  spOut: rgba(PRO.profileOut, 0.42),
+  spVa: rgba(PRO.profileVa, 0.6),
+  spPocLine: PRO.profilePoc,
+  nPocLine: PRO.nakedPoc,
   liqLong: PRO.sellInk,
   liqShort: PRO.buyInk,
   liqLongLine: rgba(PRO.sellInk, 0.55),
@@ -90,6 +96,12 @@ const PROFILE_WIDTH = 0.2;
 const PROFILE_MIN_PX = 56;
 const PROFILE_MAX_PX = 200;
 const PROFILE_ROW_PX = 4;
+/** Profil sesji: najwyżej taki ułamek szerokości okresu i tyle px (świece obok zostają czytelne); nagie POC — najwyżej tyle ostatnich. */
+const PERIOD_PROFILE_WIDTH = 0.25;
+const PERIOD_PROFILE_MAX_PX = 120;
+const NAKED_POC_MAX = 8;
+/** Od tylu widocznych świec VWAP wchodzi do autoskali. */
+const AUTOSCALE_MIN_BARS = 40;
 const TAG_H = 15;
 
 /** Pozycja logiczna chwili `t` na osi świec co `ms`: indeks świecy plus ułamek jej trwania (także przed i za danymi). */
@@ -164,9 +176,11 @@ interface Scene {
   tags: Tag[];
   /** Przesunięte etykiety (po rozsunięciu). */
   tagYs: number[];
+  /** Prawa krawędź wskaźników (px CSS); 0 = krawędź panelu. */
+  right: number;
 }
 
-const emptyScene = (): Scene => ({ fills: [], rects: [], vlines: [], hlines: [], polys: [], texts: [], tags: [], tagYs: [] });
+const emptyScene = (): Scene => ({ fills: [], rects: [], vlines: [], hlines: [], polys: [], texts: [], tags: [], tagYs: [], right: 0 });
 
 class AxisLabel implements ISeriesPrimitiveAxisView {
   y = 0;
@@ -195,6 +209,19 @@ interface ProfileCache {
   profile: VolumeProfile | null;
 }
 
+/** Profil okresu z pamięci: przeliczany tylko, gdy zmieni się krok albo któraś świeca okresu. */
+interface PeriodCache {
+  step: number;
+  refs: readonly ProBar[];
+  profile: VolumeProfile | null;
+}
+
+const sameRefs = (refs: readonly ProBar[], bars: readonly ProBar[], from: number, to: number): boolean => {
+  if (refs.length !== to - from + 1) return false;
+  for (let k = 0; k < refs.length; k++) if (refs[k] !== bars[from + k]) return false;
+  return true;
+};
+
 export class IndicatorOverlay implements ISeriesPrimitive<Time> {
   private chart: IChartApiBase<Time> | null = null;
   private series: ISeriesApi<SeriesType, Time> | null = null;
@@ -213,6 +240,8 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
   private liq: LiqLevel[] = [];
   private profileCache: ProfileCache = { key: '', profile: null };
   private profileBars: readonly ProBar[] | null = null;
+  private periodCache = new Map<number, PeriodCache>();
+  private rightInset = 0;
   private scene: Scene = emptyScene();
 
   private readonly axisVwap = new AxisLabel(K.vwap);
@@ -287,6 +316,12 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
     this.requestUpdate?.();
   }
 
+  /** Pas przy prawej krawędzi panelu zajęty przez drabinę DOM (px). */
+  setRightInset(px: number): void {
+    this.rightInset = px;
+    this.requestUpdate?.();
+  }
+
   setLiq(levels: LiqLevel[]): void {
     this.liq = levels;
     this.requestUpdate?.();
@@ -301,8 +336,12 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
     };
   }
 
-  /** VWAP mieści się w autoskali (jak w TradingView); pasma nie — świece zachowują wysokość. */
+  /**
+   * VWAP mieści się w autoskali przy widoku przeglądowym; pasma nie — świece zachowują wysokość.
+   * Przy zbliżeniu do footprintu (mało świec) skala należy do ceny, żeby komórki nie malały przez odległy VWAP.
+   */
   autoscaleInfo(start: Logical, end: Logical): AutoscaleInfo | null {
+    if (end - start < AUTOSCALE_MIN_BARS) return null;
     const t = this.toggles;
     const lines = [t.showVwap ? this.vwap : null, t.showSessionVwap ? this.svwap : null];
     let min = Number.POSITIVE_INFINITY;
@@ -341,8 +380,12 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
     const xb = ts.logicalToCoordinate(1 as Logical);
     if (!range || xa === null || xb === null) return s;
     const sp = xb - xa;
-    const { width: W, height: H } = chart.paneSize(0);
+    const pane = chart.paneSize(0);
+    // Przy prawej krawędzi może stać drabina DOM — wskaźniki kończą się przed nią
+    const W = pane.width - this.rightInset;
+    const H = pane.height;
     if (!(W > 0) || !(H > 0) || !(sp > 0)) return s;
+    s.right = W;
     const X = (logical: number) => xa + logical * sp;
     const Y = (p: number) => series.priceToCoordinate(p) ?? Number.NaN;
     const ms = this.ms;
@@ -358,9 +401,12 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
     const t = this.toggles;
     const sc = this.scope;
 
-    // Profil widocznego zakresu (pod świecami, przy prawej krawędzi)
+    // Profil widocznego zakresu (pod świecami, przy prawej krawędzi) i profile sesji od ich początku
+    const step = this.rowStep(bars, vt, Y);
     const pw = Math.round(Math.min(PROFILE_MAX_PX, Math.max(PROFILE_MIN_PX, W * PROFILE_WIDTH)));
-    if (t.showProfile) this.sceneProfile(s, bars, vf, vt, W, pw, Y);
+    if (t.showProfile && step > 0) this.sceneProfile(s, bars, vf, vt, W, pw, step, Y);
+    if (t.showPeriodProfiles && sc.periodProfile && step > 0) this.scenePeriods(s, bars, sc.periodProfile, step, visFrom, visTo, W, edge, Y);
+    else this.periodCache.clear();
 
     // VWAP sesji pod VWAP dnia (w sesji azjatyckiej oba zaczynają się o 00:00 UTC i się pokrywają)
     if (t.showSessionVwap && sc.sessionVwap) {
@@ -516,13 +562,71 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
     return line[line.length - 1] ?? null;
   }
 
-  private sceneProfile(s: Scene, bars: readonly ProBar[], vf: number, vt: number, W: number, pw: number, Y: (p: number) => number): void {
+  /** Krok wiersza profili (USD): najmniejszy z drabiny o wysokości ≥ PROFILE_ROW_PX; 0 bez skali. */
+  private rowStep(bars: readonly ProBar[], vt: number, Y: (p: number) => number): number {
     const ref = bars[vt].candle.c;
-    const ya = Y(ref);
-    const yb = Y(ref + 100);
-    const pxPerUsd = Math.abs(ya - yb) / 100;
-    if (!(pxPerUsd > 0)) return;
-    const step = autoRowStep(pxPerUsd, hlTick(ref), PROFILE_ROW_PX);
+    const pxPerUsd = Math.abs(Y(ref) - Y(ref + 100)) / 100;
+    return pxPerUsd > 0 ? autoRowStep(pxPerUsd, hlTick(ref), PROFILE_ROW_PX) : 0;
+  }
+
+  /**
+   * Profile sesji (albo dób): wiersze od początku okresu w prawo, POC na całą szerokość okresu,
+   * a POC, którego cena później nie dotknęła (nagi), przedłużony cienką linią do prawej krawędzi.
+   */
+  private scenePeriods(
+    s: Scene,
+    bars: readonly ProBar[],
+    mode: 'session' | 'day',
+    step: number,
+    visFrom: number,
+    visTo: number,
+    W: number,
+    edge: (t: number) => number,
+    Y: (p: number) => number
+  ): void {
+    const ms = this.ms;
+    const cache = new Map<number, PeriodCache>();
+    const items: { from: number; to: number; complete: boolean; pocPx: number; p: VolumeProfile }[] = [];
+    for (const r of periodRanges(bars, mode)) {
+      const hit = this.periodCache.get(r.start);
+      const entry =
+        hit && hit.step === step && sameRefs(hit.refs, bars, r.from, r.to)
+          ? hit
+          : { step, refs: bars.slice(r.from, r.to + 1), profile: volumeProfile(bars, r.from, r.to, step) };
+      cache.set(r.start, entry);
+      const p = entry.profile;
+      if (p && p.max > 0) items.push({ from: r.from, to: r.to, complete: r.complete, pocPx: (p.lo + p.poc + 0.5) * p.step, p });
+    }
+    this.periodCache = cache;
+    const naked = nakedPocs(bars, items);
+    let shown = 0;
+    for (let k = items.length - 1; k >= 0; k--) {
+      const { from, to, pocPx, p } = items[k];
+      const x0 = edge(bars[from].t);
+      const x1 = edge(bars[to].t + ms);
+      const yPoc = Y(pocPx);
+      if (naked[k] && shown < NAKED_POC_MAX && x1 < W) {
+        shown++;
+        s.hlines.push({ x0: Math.max(0, x1), x1: W, y: yPoc, color: K.nPocLine, dash: DASH.none });
+      }
+      if (bars[to].t + ms <= visFrom || bars[from].t >= visTo) continue;
+      const pw = Math.min(PERIOD_PROFILE_MAX_PX, (x1 - x0) * PERIOD_PROFILE_WIDTH);
+      const gap = Math.abs(Y(pocPx) - Y(pocPx + step)) >= 3 ? 1 : 0;
+      for (let r = 0; r < p.vol.length; r++) {
+        const v = p.vol[r];
+        if (!(v > 0)) continue;
+        const ya = Y((p.lo + r + 1) * p.step);
+        const yb = Y((p.lo + r) * p.step);
+        const color = r >= p.vaLo && r <= p.vaHi ? K.spVa : K.spOut;
+        s.rects.push({ x: x0, y: ya, w: Math.max(1, (v / p.max) * pw), h: Math.max(1, yb - ya - gap), color });
+      }
+      s.hlines.push({ x0, x1, y: yPoc, color: K.spPocLine, dash: DASH.none });
+    }
+  }
+
+  private sceneProfile(s: Scene, bars: readonly ProBar[], vf: number, vt: number, W: number, pw: number, step: number, Y: (p: number) => number): void {
+    const ref = bars[vt].candle.c;
+    const pxPerUsd = Math.abs(Y(ref) - Y(ref + 100)) / 100;
     const key = `${vf}|${vt}|${step}`;
     // Ta sama tablica świec i ten sam zakres → profil z pamięci (przeliczenie przy każdej zmianie danych)
     if (this.profileCache.key !== key || this.profileBars !== bars) {
@@ -639,7 +743,7 @@ function drawOver(ctx: CanvasRenderingContext2D, s: Scene, hr: number, vr: numbe
   s.tags.forEach((g, i) => {
     const y = Math.round(s.tagYs[i] * vr);
     const w = Math.ceil(ctx.measureText(g.text).width) + 2 * padX;
-    const x = bitmapW - w - Math.round(2 * hr);
+    const x = (s.right > 0 ? Math.round(s.right * hr) : bitmapW) - w - Math.round(2 * hr);
     ctx.fillStyle = K.tagBg;
     ctx.fillRect(x, y - h / 2, w, h);
     ctx.fillStyle = g.color;

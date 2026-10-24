@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Candle } from '../hl/parse';
 import { FootprintBuilder } from '../core/footprintBar';
-import { IndicatorBar, dayLevels, initialBalances, liqLevels, volumeProfile, vwapSeries } from '../core/indicators';
+import { IndicatorBar, dayLevels, indicatorScope, initialBalances, liqLevels, nakedPocs, periodRanges, volumeProfile, vwapSeries } from '../core/indicators';
 import { DAY } from '../core/time';
 import type { LiqMap } from '../../../utils/liqMap';
 
@@ -139,5 +139,41 @@ describe('liqLevels', () => {
       { px: 99_125, ntlUsd: 3.5e6, side: 'long' },
       { px: 101_625, ntlUsd: 4e6, side: 'short' },
     ]);
+  });
+});
+
+describe('periodRanges i nakedPocs', () => {
+  const H1 = 3_600_000;
+  const d0 = utc('2026-10-20T00:00:00Z');
+
+  it('dzieli świece na doby UTC; ostatnia doba nie jest zamknięta', () => {
+    const bars = [0, 1, 24, 25, 48].map((h) => bar(c(d0 + h * H1, 100, 101, 99, 100, 1)));
+    expect(periodRanges(bars, 'day')).toEqual([
+      { start: d0, from: 0, to: 1, complete: true },
+      { start: d0 + DAY, from: 2, to: 3, complete: true },
+      { start: d0 + 2 * DAY, from: 4, to: 4, complete: false },
+    ]);
+  });
+
+  it('POC nagi, dopóki żadna późniejsza świeca go nie dotknie', () => {
+    // Doba 1: POC 100. Doba 2: handel 110–120. Doba 3: zejście do 99 dotyka POC doby 1, ale nie POC doby 2.
+    const bars = [
+      bar(c(d0, 100, 101, 99, 100, 5)),
+      bar(c(d0 + DAY, 110, 120, 110, 115, 5)),
+      bar(c(d0 + 2 * DAY, 109, 109, 99, 100, 5)),
+    ];
+    const periods = [
+      { to: 0, complete: true, pocPx: 100 },
+      { to: 1, complete: true, pocPx: 115 },
+      { to: 2, complete: false, pocPx: 104 },
+    ];
+    expect(nakedPocs(bars, periods)).toEqual([false, true, false]);
+    expect(nakedPocs(bars.slice(0, 2), periods.slice(0, 2).map((p, i) => ({ ...p, complete: i === 0 })))).toEqual([true, false]);
+  });
+
+  it('okres profili zależy od interwału', () => {
+    expect(indicatorScope(60_000).periodProfile).toBe('session');
+    expect(indicatorScope(H1).periodProfile).toBe('day');
+    expect(indicatorScope(DAY).periodProfile).toBeNull();
   });
 });

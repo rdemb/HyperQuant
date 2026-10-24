@@ -22,10 +22,15 @@ export interface ChartSettings {
   showVwapBands: boolean;
   showSessionVwap: boolean;
   showProfile: boolean;
+  /** Profile sesji (na 1–4 h dób) z nagimi POC. */
+  showPeriodProfiles: boolean;
   showLevels: boolean;
   showSessions: boolean;
   showIb: boolean;
   showLiq: boolean;
+  /** Warstwy na żywo: mapa ciepła arkusza i bąble zleceń agresora. */
+  showHeatmap: boolean;
+  showBubbles: boolean;
 }
 
 export const DEFAULT_SETTINGS: ChartSettings = {
@@ -44,10 +49,13 @@ export const DEFAULT_SETTINGS: ChartSettings = {
   showVwapBands: true,
   showSessionVwap: true,
   showProfile: true,
+  showPeriodProfiles: true,
   showLevels: true,
   showSessions: true,
   showIb: true,
   showLiq: true,
+  showHeatmap: true,
+  showBubbles: true,
 };
 
 const KEY = 'hq.charts.v1';
@@ -76,10 +84,13 @@ export function parseSettings(raw: unknown): ChartSettings {
     showVwapBands: bool(r.showVwapBands, d.showVwapBands),
     showSessionVwap: bool(r.showSessionVwap, d.showSessionVwap),
     showProfile: bool(r.showProfile, d.showProfile),
+    showPeriodProfiles: bool(r.showPeriodProfiles, d.showPeriodProfiles),
     showLevels: bool(r.showLevels, d.showLevels),
     showSessions: bool(r.showSessions, d.showSessions),
     showIb: bool(r.showIb, d.showIb),
     showLiq: bool(r.showLiq, d.showLiq),
+    showHeatmap: bool(r.showHeatmap, d.showHeatmap),
+    showBubbles: bool(r.showBubbles, d.showBubbles),
   };
 }
 

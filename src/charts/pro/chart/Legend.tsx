@@ -1,4 +1,4 @@
-import React, { useSyncExternalStore } from 'react';
+import React, { useEffect, useRef, useSyncExternalStore } from 'react';
 import { fmtVol } from '../../orderflow/footprint';
 import { fmtSignedVol } from '../../orderflow/renderer';
 import { DASH, fmtPrice } from '../../../ui';
@@ -27,7 +27,7 @@ export class HoverSignal {
 
 const fmtSigma = (z: number) => `${z >= 0 ? '+' : '−'}${Math.abs(z).toFixed(2).replace('.', ',')}σ`;
 
-const tone = (v: number) => (v > 0 ? 'text-buy-ink' : v < 0 ? 'text-sell-ink' : 'text-ink-2');
+const tone = (v: number) => (v > 0 ? 'text-of-buy-ink' : v < 0 ? 'text-of-sell-ink' : 'text-ink-2');
 
 const Field: React.FC<{ label: string; children: React.ReactNode; className?: string; title?: string; secondary?: boolean }> = ({
   label,
@@ -46,14 +46,28 @@ const Field: React.FC<{ label: string; children: React.ReactNode; className?: st
 /**
  * Legenda wykresu: świeca pod krzyżem (albo bieżąca), OHLC i wolumen z API, a z taśmy: delta, jej
  * maksimum i minimum, liczba transakcji, udział taśmy w wolumenie świecy i wiersz footprintu pod kursorem.
+ * `onBottom` dostaje dolną krawędź legendy (px od góry wykresu) — tylko bez krzyża, żeby skala nie skakała przy ruchu kursora.
  */
-export const Legend: React.FC<{ signal: HoverSignal; intervalMs: number; intervalLabel: string; tapeSince: number }> = ({
-  signal,
-  intervalMs,
-  intervalLabel,
-  tapeSince,
-}) => {
+export const Legend: React.FC<{
+  signal: HoverSignal;
+  intervalMs: number;
+  intervalLabel: string;
+  tapeSince: number;
+  onBottom?: (px: number) => void;
+}> = ({ signal, intervalMs, intervalLabel, tapeSince, onBottom }) => {
   const h = useSyncExternalStore(signal.subscribe, signal.get);
+  const ref = useRef<HTMLDivElement>(null);
+  const live = useRef(h.live);
+  live.current = h.live;
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || !onBottom) return;
+    const ro = new ResizeObserver(() => {
+      if (live.current) onBottom(el.offsetTop + el.offsetHeight);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [onBottom]);
   const bar = h.bar;
   const c = bar?.candle;
   const fp = bar?.fp ?? null;
@@ -61,7 +75,7 @@ export const Legend: React.FC<{ signal: HoverSignal; intervalMs: number; interva
   const fpVol = fp ? fp.buyVol + fp.sellVol : 0;
 
   return (
-    <div className="absolute left-2 top-2 z-10 pointer-events-none max-w-[calc(100%-5rem)] rounded-md bg-surface-1/95 sm:bg-surface-1/80 px-2 py-1 font-mono tabular-nums text-[11px] leading-[1.55] text-ink-2">
+    <div ref={ref} className="absolute left-2 top-2 z-10 pointer-events-none max-w-[calc(100%-5rem)] rounded-md bg-surface-1/95 sm:bg-surface-1/80 px-2 py-1 font-mono tabular-nums text-[11px] leading-[1.55] text-ink-2">
       <div className="flex flex-wrap items-baseline gap-x-2">
         <span className="text-ink-1 font-semibold font-sans">BTC-PERP</span>
         <span className="text-ink-3">
@@ -81,10 +95,10 @@ export const Legend: React.FC<{ signal: HoverSignal; intervalMs: number; interva
           <Field label="L" secondary>
             {fmtPrice(c.l, 0)}
           </Field>
-          <Field label="C" className={c.c >= c.o ? 'text-buy-ink' : 'text-sell-ink'}>
+          <Field label="C" className={c.c >= c.o ? 'text-of-buy-ink' : 'text-of-sell-ink'}>
             {fmtPrice(c.c, 0)}
           </Field>
-          <span className={change >= 0 ? 'text-buy-ink' : 'text-sell-ink'}>
+          <span className={change >= 0 ? 'text-of-buy-ink' : 'text-of-sell-ink'}>
             {change >= 0 ? '+' : '−'}
             {Math.abs(change).toFixed(2)}%
           </span>
@@ -98,7 +112,7 @@ export const Legend: React.FC<{ signal: HoverSignal; intervalMs: number; interva
       {(h.ind?.vwap || h.ind?.svwap) && c && (
         <div className="flex flex-wrap items-baseline gap-x-2.5">
           {h.ind.vwap && (
-            <Field label={h.ind.anchor === 'week' ? 'VWAP T' : 'VWAP'} className="text-accent" title="VWAP od początku okresu (cena typowa ważona wolumenem)">
+            <Field label={h.ind.anchor === 'week' ? 'VWAP T' : 'VWAP'} className="text-of-vwap" title="VWAP od początku okresu (cena typowa ważona wolumenem)">
               {fmtPrice(h.ind.vwap.vwap, 0)}
             </Field>
           )}
@@ -108,7 +122,7 @@ export const Legend: React.FC<{ signal: HoverSignal; intervalMs: number; interva
             </Field>
           )}
           {h.ind.svwap && (
-            <Field label="VWAP S" className="text-zone" title="VWAP od otwarcia bieżącej sesji">
+            <Field label="VWAP S" className="text-of-svwap" title="VWAP od otwarcia bieżącej sesji">
               {fmtPrice(h.ind.svwap.vwap, 0)}
             </Field>
           )}
@@ -158,10 +172,10 @@ export const Legend: React.FC<{ signal: HoverSignal; intervalMs: number; interva
             {fmtPrice(h.row.lo, 0)}
             {h.row.hi > h.row.lo && `–${fmtPrice(h.row.hi, 0)}`}
           </Field>
-          <Field label="Sprzedaż" className="text-sell-ink">
+          <Field label="Sprzedaż" className="text-of-sell-ink">
             {fmtVol(h.row.sell)}
           </Field>
-          <Field label="Kupno" className="text-buy-ink">
+          <Field label="Kupno" className="text-of-buy-ink">
             {fmtVol(h.row.buy)}
           </Field>
           <Field label="Δ" className={tone(h.row.buy - h.row.sell)}>

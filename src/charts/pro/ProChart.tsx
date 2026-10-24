@@ -62,11 +62,16 @@ export const ProChart: React.FC = () => {
   const hostRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const ctrlRef = useRef<ProChartController | null>(null);
+  const legendBottom = useRef(0);
   const signal = useMemo(() => new HoverSignal(), []);
   const liq = useLiqMap();
   useStoreVersion(store, 400);
 
   const update = useCallback((patch: Partial<ChartSettings>) => setSettings((s) => ({ ...s, ...patch })), []);
+  const onLegendBottom = useCallback((px: number) => {
+    legendBottom.current = px;
+    ctrlRef.current?.setTopInset(px);
+  }, []);
 
   // Interwał przed startem strumieni — pierwsze świece od razu we właściwym interwale
   useEffect(() => {
@@ -79,7 +84,12 @@ export const ProChart: React.FC = () => {
     if (!host) return;
     const ctrl = new ProChartController(host, store, settings, signal.set);
     ctrlRef.current = ctrl;
+    ctrl.setTopInset(legendBottom.current);
+    // Zmiana wysokości wykresu zmienia ułamek skali zajęty przez legendę
+    const ro = new ResizeObserver(() => ctrl.setTopInset(legendBottom.current));
+    ro.observe(host);
     return () => {
+      ro.disconnect();
       ctrl.destroy();
       ctrlRef.current = null;
     };
@@ -193,7 +203,7 @@ export const ProChart: React.FC = () => {
       {/* Wykres */}
       <div className="relative flex-1 min-h-0">
         <div ref={hostRef} className="absolute inset-0" />
-        <Legend signal={signal} intervalMs={iv.ms} intervalLabel={iv.label} tapeSince={tapeSince} />
+        <Legend signal={signal} intervalMs={iv.ms} intervalLabel={iv.label} tapeSince={tapeSince} onBottom={onLegendBottom} />
         <LoadOverlay store={store} onRetry={() => void store.setInterval(settings.interval, true)} />
         {menu && (
           <div ref={menuRef} className="absolute top-2 right-2 z-30 w-[min(340px,calc(100%-16px))] max-h-[calc(100%-16px)] overflow-y-auto">
@@ -312,7 +322,18 @@ const SettingsMenu: React.FC<{ settings: ChartSettings; onChange: (p: Partial<Ch
   </div>
 );
 
-type IndicatorKey = 'showVwap' | 'showVwapBands' | 'showSessionVwap' | 'showProfile' | 'showLevels' | 'showSessions' | 'showIb' | 'showLiq';
+type IndicatorKey =
+  | 'showHeatmap'
+  | 'showBubbles'
+  | 'showVwap'
+  | 'showVwapBands'
+  | 'showSessionVwap'
+  | 'showProfile'
+  | 'showPeriodProfiles'
+  | 'showLevels'
+  | 'showSessions'
+  | 'showIb'
+  | 'showLiq';
 
 function liqHint(liq: LiqMapState): string {
   switch (liq.status) {
@@ -340,17 +361,29 @@ const IndicatorsMenu: React.FC<{ settings: ChartSettings; intervalMs: number; li
   const scope = indicatorScope(intervalMs);
   const items: { key: IndicatorKey; label: string; hint: string; swatch: string; off?: string }[] = [
     {
+      key: 'showHeatmap',
+      label: 'Mapa ciepła arkusza',
+      hint: 'Płynność zleceń oczekujących w czasie (l2Book Hyperliquid, kubełki ~10 i ~100 USD) — od otwarcia strony',
+      swatch: 'bg-gradient-to-r from-of-heat-1 via-of-heat-2 to-of-heat-3',
+    },
+    {
+      key: 'showBubbles',
+      label: 'Bąble zleceń agresora',
+      hint: 'Zlecenia rynkowe od 100 tys. USD złożone z wypełnień; pole koła ∝ wartość — od otwarcia strony',
+      swatch: 'bg-gradient-to-r from-of-imb-buy to-of-imb-sell',
+    },
+    {
       key: 'showVwap',
       label: scope.vwapAnchor === 'week' ? 'VWAP tygodnia' : 'VWAP dnia',
       hint: scope.vwapAnchor === 'week' ? 'Od poniedziałku 00:00 UTC (na świecach dziennych)' : 'Od 00:00 UTC, cena typowa (H+L+C)/3 ważona wolumenem',
-      swatch: 'bg-accent',
+      swatch: 'bg-of-vwap',
     },
-    { key: 'showVwapBands', label: 'Pasma VWAP ±1σ i ±2σ', hint: 'Odchylenie standardowe ceny od VWAP ważone wolumenem', swatch: 'bg-accent/40' },
+    { key: 'showVwapBands', label: 'Pasma VWAP ±1σ i ±2σ', hint: 'Odchylenie standardowe ceny od VWAP ważone wolumenem', swatch: 'bg-of-vwap/40' },
     {
       key: 'showSessionVwap',
       label: 'VWAP sesji',
       hint: 'Od otwarcia sesji: Azja, Londyn, Nowy Jork',
-      swatch: 'bg-zone',
+      swatch: 'bg-of-svwap',
       off: scope.sessionVwap ? undefined : 'Na interwałach do 30m',
     },
     {
@@ -358,6 +391,13 @@ const IndicatorsMenu: React.FC<{ settings: ChartSettings; intervalMs: number; li
       label: 'Profil wolumenu',
       hint: 'Widoczny zakres: POC, value area 70% (VAH, VAL); świece z pełnej taśmy dokładnie po cenach transakcji',
       swatch: 'bg-ink-3',
+    },
+    {
+      key: 'showPeriodProfiles',
+      label: scope.periodProfile === 'day' ? 'Profile dób i nagie POC' : 'Profile sesji i nagie POC',
+      hint: `Profil każdej ${scope.periodProfile === 'day' ? 'doby UTC' : 'sesji'} od jej początku; POC, którego cena potem nie dotknęła, ciągnie się do prawej krawędzi`,
+      swatch: 'bg-of-vol',
+      off: scope.periodProfile ? undefined : 'Na interwałach do 4h',
     },
     {
       key: 'showLevels',
@@ -380,7 +420,7 @@ const IndicatorsMenu: React.FC<{ settings: ChartSettings; intervalMs: number; li
       swatch: 'bg-series-1',
       off: scope.ib ? undefined : 'Na interwałach do 30m',
     },
-    { key: 'showLiq', label: 'Klastry likwidacji', hint: liqHint(liq), swatch: 'bg-gradient-to-r from-sell to-buy' },
+    { key: 'showLiq', label: 'Klastry likwidacji', hint: liqHint(liq), swatch: 'bg-gradient-to-r from-of-sell to-of-buy' },
   ];
   const all = items.every((i) => s[i.key]);
   return (
