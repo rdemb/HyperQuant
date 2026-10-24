@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Fill } from '../hl/parse';
 import type { AggressorOrder } from '../core/orders';
 import { OrderAggregator } from '../core/orders';
-import { DEFAULT_THRESHOLD_USD, WALL_GAP_MS, WallTracker, autoThreshold, bursts, classify, niceUp, shortAddress, walletSummary } from '../core/clashes';
+import { DEFAULT_THRESHOLD_USD, WALL_GAP_MS, WallTracker, autoThreshold, bursts, classify, niceUp, takerAlias, walletSummary } from '../core/clashes';
 
 const order = (o: Partial<AggressorOrder>): AggressorOrder => ({
   time: 0,
@@ -137,19 +137,22 @@ describe('ściany', () => {
 });
 
 describe('portfel', () => {
-  it('podsumowanie zleceń jednego adresu i skrócony adres', () => {
+  it('podsumowanie zleceń jednego adresu pod pseudonimem konta, bez adresu', () => {
     const addr = '0x1234567890abcdef1234567890abcdef12345678';
     const s = walletSummary(
       [order({ taker: addr, sz: 2, notional: 200_000, time: 5 }), order({ taker: addr, side: -1, sz: 0.5, notional: 50_000, time: 9 }), order({})],
       addr
     )!;
-    expect(s.label).toBe('0x1234…5678');
+    expect(s.label).toMatch(/^Konto \d+$/);
+    expect(s.label).not.toContain('0x');
     expect(s.orders).toBe(2);
     expect(s.buySz).toBe(2);
     expect(s.sellSz).toBe(0.5);
     expect(s.largestUsd).toBe(200_000);
     expect([s.first, s.last]).toEqual([5, 9]);
     expect(walletSummary([order({})], '')).toBeNull();
-    expect(shortAddress('0xabc')).toBe('0xabc');
+    // Ten sam adres ma ten sam numer, inny adres — kolejny
+    expect(takerAlias(addr)).toBe(s.label);
+    expect(takerAlias('0xother')).not.toBe(s.label);
   });
 });

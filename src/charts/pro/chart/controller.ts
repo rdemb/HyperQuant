@@ -145,6 +145,8 @@ const CVD_LINES: readonly VenueLineId[] = ['hl', 'binance', 'binanceSpot', 'bybi
 const OI_LINES: readonly ('hl' | OiVenue)[] = ['hl', 'binance', 'bybit'];
 /** Odczyt OI Hyperliquid (kanał na żywo, zapis serwera co minutę) starszy niż to nie liczy się jako stan świecy. */
 const HL_OI_MAX_AGE = 3 * 60_000;
+/** Węższy obszar wykresu (px) dostaje zwięzły opis paneli giełd. */
+const COMPACT_LEGEND_PX = 480;
 
 type VenueLines = Partial<Record<VenueLineId, (number | null)[]>>;
 
@@ -229,6 +231,8 @@ export class ProChartController {
   /** Kursor użytkownika jest nad tym wykresem (nie krzyż z innego panelu). */
   private userHover = false;
   private horzLine = true;
+  /** Po pierwszych danych nowej serii przewiń do bieżącej świecy. */
+  private toNow = false;
   private autoUsd = DEFAULT_THRESHOLD_USD;
   private autoAt = 0;
   private readonly liqSource: LiquiditySource;
@@ -330,6 +334,8 @@ export class ProChartController {
     if (series === this.series) return;
     this.series = series;
     this.bars = [];
+    // Indeks świecy innego interwału to zupełnie inna chwila — zamiast przesuniętego widoku bieżąca świeca
+    this.toNow = true;
     this.overlay.setToggles(toggles(this.settings, series.interval.ms));
     this.syncVenueLive();
     this.schedule();
@@ -438,7 +444,10 @@ export class ProChartController {
     const panes = this.chart.panes();
     panes[0]?.setStretchFactor(1);
     const statsPane = this.statsSeries?.getPane();
-    for (let i = 1; i < panes.length; i++) if (panes[i] !== statsPane) panes[i].setStretchFactor(panes[i] === this.volume?.getPane() ? 0.14 : 0.22);
+    const venuePanes = new Set([this.venueCvd?.hl?.getPane(), this.venueOi?.hl?.getPane()]);
+    // Panele giełd mają opis w dwóch wierszach (na telefonie także), więc są wyższe niż CVD
+    for (let i = 1; i < panes.length; i++)
+      if (panes[i] !== statsPane) panes[i].setStretchFactor(panes[i] === this.volume?.getPane() ? 0.14 : venuePanes.has(panes[i]) ? 0.3 : 0.22);
     // Tabela ma stałą wysokość wiersza: wysokość panelu ustawiamy po ułożeniu pozostałych
     // (panele mogły zostać przebudowane przed następną klatką — wtedy ten panel już nie istnieje)
     const stats = this.statsSeries;
@@ -637,6 +646,10 @@ export class ProChartController {
       this.volume?.setData(next.map(toVolume));
       this.delta?.setData(next.map(toDelta));
       this.statsSeries?.setData(next.map((b) => ({ time: sec(b.t) })));
+      if (this.toNow && next.length > 0) {
+        this.toNow = false;
+        this.scrollToNow();
+      }
     } else {
       for (const i of changed) {
         const historical = i < prev.length - 1;
@@ -839,12 +852,15 @@ export class ProChartController {
     );
     this.deltaLegend.set(flowLegend('Delta', bar?.fp ? bar.fp.delta : null));
     this.cvdLegend.set(flowLegend(`CVD · ${RESET_LABEL[this.settings.cvdReset]}`, cvd ? cvd.close : null));
-    if (this.venueCvd) this.venueCvdLegend.set(this.venueLegend(`CVD giełd · ${RESET_LABEL[this.settings.cvdReset]}`, CVD_LINES, this.venueCvdData, i));
+    // Wąski wykres (telefon): bez okresu (ten sam co w opisie CVD) i bez wiersza finansowania — opis mieści się w dwóch wierszach
+    const compact = this.chart.timeScale().width() < COMPACT_LEGEND_PX;
+    const period = compact ? '' : ` · ${RESET_LABEL[this.settings.cvdReset]}`;
+    if (this.venueCvd) this.venueCvdLegend.set(this.venueLegend(`CVD giełd${period}`, CVD_LINES, this.venueCvdData, i));
     if (this.venueOi) {
+      const lines = this.venueLegend(`ΔOI giełd${period}`, OI_LINES, this.venueOiData, i);
       // Drugi wiersz: bieżące finansowanie giełd przeliczone na 8 h (Hyperliquid rozlicza co godzinę)
       const hlRate = this.store.ctx ? per8h(this.store.ctx.funding, 1) : null;
-      this.venueOiLegend.set([
-        ...this.venueLegend(`ΔOI giełd · ${RESET_LABEL[this.settings.cvdReset]}`, OI_LINES, this.venueOiData, i),
+      const funding: LegendPart[] = [
         { text: '', color: PRO.ink3, br: true },
         { text: 'Funding 8 h teraz', color: PRO.ink3 },
         { text: 'HL', color: PRO.ink3 },
@@ -853,7 +869,8 @@ export class ProChartController {
         { text: fmtFunding(this.venue?.funding.binance ?? null), color: PRO.ink1, glue: true },
         { text: 'Bybit', color: PRO.ink3 },
         { text: fmtFunding(this.venue?.funding.bybit ?? null), color: PRO.ink1, glue: true },
-      ]);
+      ];
+      this.venueOiLegend.set(compact ? lines : [...lines, ...funding]);
     }
     const ind = i >= 0 ? this.overlay.valuesAt(i) : null;
     this.statsTable.setHover(this.hoverTime === null ? -1 : i);
