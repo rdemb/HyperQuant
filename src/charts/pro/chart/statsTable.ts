@@ -4,6 +4,7 @@ import { fmtSignedVol } from '../../orderflow/renderer';
 import { type BarStat, type StatGroup, STAT_GROUPS, type StatKey, VENUE_GROUPS } from '../core/stats';
 import { type CloseBox, closeHit, drawClose, inBox } from './paneLegend';
 import { MONO, PRO, rgba } from './theme';
+import { tr } from '../../../i18n';
 
 /**
  * Tablica liczb we własnym panelu pod wykresem: kolumna na świecę, wiersz na miarę, tło komórki nasycone wg wartości
@@ -28,18 +29,18 @@ const fmtFunding = (v: number) => `${v < 0 ? '−' : ''}${Math.abs(v).toFixed(4)
 const FUNDING_SCALE = 0.05;
 
 export const STAT_ROWS: readonly StatRowDef[] = [
-  { key: 'vol', group: 'hl', label: 'Wolumen', signed: false, fmt: fmtVol },
+  { key: 'vol', group: 'hl', label: tr('Wolumen', 'Volume'), signed: false, fmt: fmtVol },
   { key: 'delta', group: 'hl', label: 'Delta', signed: true, fmt: fmtSignedVol },
   { key: 'doi', group: 'hl', label: 'ΔOI', signed: true, fmt: fmtSignedVol },
   { key: 'funding', group: 'hl', label: 'Funding 8 h', signed: true, fmt: fmtFunding, scale: FUNDING_SCALE },
   { key: 'deltaPct', group: 'tape', label: 'Delta %', signed: true, fmt: (v) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v).toFixed(0)}%` },
   { key: 'maxDelta', group: 'tape', label: 'Max Δ', signed: true, fmt: fmtSignedVol },
   { key: 'minDelta', group: 'tape', label: 'Min Δ', signed: true, fmt: fmtSignedVol },
-  { key: 'trades', group: 'tape', label: 'Transakcje', signed: false, fmt: fmtCount },
-  { key: 'speed', group: 'tape', label: 'Tempo /s', signed: false, fmt: (v) => (v >= 10 ? v.toFixed(0) : v.toFixed(1)) },
-  { key: 'bigDelta', group: 'who', label: 'Delta dużych', signed: true, fmt: fmtSignedVol },
-  { key: 'restDelta', group: 'who', label: 'Delta reszty', signed: true, fmt: fmtSignedVol },
-  { key: 'bigShare', group: 'who', label: 'Udział dużych', signed: false, fmt: (v) => `${v.toFixed(0)}%`, scale: 100 },
+  { key: 'trades', group: 'tape', label: tr('Transakcje', 'Trades'), signed: false, fmt: fmtCount },
+  { key: 'speed', group: 'tape', label: tr('Tempo /s', 'Speed /s'), signed: false, fmt: (v) => (v >= 10 ? v.toFixed(0) : v.toFixed(1)) },
+  { key: 'bigDelta', group: 'who', label: tr('Delta dużych', 'Large delta'), signed: true, fmt: fmtSignedVol },
+  { key: 'restDelta', group: 'who', label: tr('Delta reszty', 'Rest delta'), signed: true, fmt: fmtSignedVol },
+  { key: 'bigShare', group: 'who', label: tr('Udział dużych', 'Large share'), signed: false, fmt: (v) => `${v.toFixed(0)}%`, scale: 100 },
   { key: 'bnDelta', group: 'binance', label: 'Delta perp', signed: true, fmt: fmtSignedVol },
   { key: 'bnSpotDelta', group: 'binance', label: 'Delta spot', signed: true, fmt: fmtSignedVol },
   { key: 'bnDoi', group: 'binance', label: 'ΔOI', signed: true, fmt: fmtSignedVol },
@@ -51,8 +52,8 @@ export const STAT_ROWS: readonly StatRowDef[] = [
 /** Nazwa grupy (nagłówek i przełącznik) i kolor jej giełdy. */
 export const STAT_GROUP_INFO: Record<StatGroup, { label: string; short: string; color: string }> = {
   hl: { label: 'Hyperliquid', short: 'Hyperliquid', color: PRO.venueHl },
-  tape: { label: 'Hyperliquid · taśma', short: 'Taśma', color: PRO.venueHl },
-  who: { label: 'Kto handluje', short: 'Kto handluje', color: PRO.players },
+  tape: { label: tr('Hyperliquid · taśma', 'Hyperliquid · tape'), short: tr('Taśma', 'Tape'), color: PRO.venueHl },
+  who: { label: tr('Kto handluje', 'Who is trading'), short: tr('Kto handluje', 'Who is trading'), color: PRO.players },
   binance: { label: 'Binance', short: 'Binance', color: PRO.venueBinance },
   bybit: { label: 'Bybit', short: 'Bybit', color: PRO.venueBybit },
 };

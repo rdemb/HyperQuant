@@ -38,6 +38,7 @@ import {
   positionStats,
   timeOfLogical,
 } from './model';
+import { tr } from '../../../i18n';
 
 /**
  * Warstwa rysunków nad wykresem (prymityw głównej serii, dołączany ostatni, więc rysuje nad wszystkim):
@@ -633,7 +634,7 @@ export class DrawingLayer implements ISeriesPrimitive<Time> {
       case 'text': {
         const size = 12 + 2 * s.width;
         const font = `600 ${size}px ${TEXT_FAMILY}`;
-        const rows = (d.text || 'Tekst').split('\n').slice(0, 8);
+        const rows = (d.text || tr('Tekst', 'Text')).split('\n').slice(0, 8);
         const w = Math.max(...rows.map((r) => this.textWidth(r, font)));
         const lh = size + 4;
         const box = [a.x - 4, a.y - lh / 2 - 3, w + 8, lh * rows.length + 6];
@@ -650,7 +651,7 @@ export class DrawingLayer implements ISeriesPrimitive<Time> {
       }
       case 'note': {
         const font = `500 12px ${TEXT_FAMILY}`;
-        const rows = (d.text || 'Notatka').split('\n').slice(0, 8);
+        const rows = (d.text || tr('Notatka', 'Note')).split('\n').slice(0, 8);
         const w = Math.max(...rows.map((r) => this.textWidth(r, font))) + 14;
         const h = rows.length * 16 + 8;
         const bx = a.x + 8;
@@ -709,13 +710,15 @@ export class DrawingLayer implements ISeriesPrimitive<Time> {
         color: PRO.ink1,
       },
       {
-        text: `${m.bars} ${m.bars === 1 ? 'świeca' : 'świec'} · ${fmtDuration(m.ms)}`,
+        text: `${m.bars} ${m.bars === 1 ? tr('świeca', 'candle') : tr('świec', 'candles')} · ${fmtDuration(m.ms)}`,
         color: PRO.ink2,
       },
       {
         text:
-          `Wol ${fmtVol(m.vol)} ${this.unit}` +
-          (m.delta === null ? ' · Δ brak taśmy' : ` · Δ ${fmtSignedVol(m.delta)}${m.tape < 1 ? ` (taśma ${Math.round(m.tape * 100)}%)` : ''}`),
+          `${tr('Wol', 'Vol')} ${fmtVol(m.vol)} ${this.unit}` +
+          (m.delta === null
+            ? tr(' · Δ brak taśmy', ' · Δ no tape')
+            : ` · Δ ${fmtSignedVol(m.delta)}${m.tape < 1 ? ` (${tr('taśma', 'tape')} ${Math.round(m.tape * 100)}%)` : ''}`),
         color: m.delta === null ? PRO.ink3 : m.delta >= 0 ? PRO.buyInk : PRO.sellInk,
       },
     ];
@@ -759,7 +762,7 @@ export class DrawingLayer implements ISeriesPrimitive<Time> {
       stroke(c, [x0, S.y, x1, S.y], rgba(LOSS, 0.7), 1);
       const tRows = [
         {
-          text: `Cel ${fmtPx(pt.p)} · ${fmtPct(tUp ? ps0.rewardPct : -ps0.rewardPct)}`,
+          text: `${tr('Cel', 'Target')} ${fmtPx(pt.p)} · ${fmtPct(tUp ? ps0.rewardPct : -ps0.rewardPct)}`,
           color: '#0b0b12',
         },
       ];

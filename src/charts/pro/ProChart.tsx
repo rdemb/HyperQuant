@@ -34,17 +34,18 @@ import { startRecording } from './store/recording';
 import { ReplayBar } from './replay/ReplayBar';
 import { type ReplayLink, linkPatch, parseReplayLink, replayHash } from './replay/link';
 import { type ReplaySession, replayBase } from './replay/session';
+import { locale, tr } from '../../i18n';
 
 const MARKET_OPTIONS = MARKETS.map((m) => ({ value: m, label: m, title: `${m}-PERP · Hyperliquid` }));
 const INTERVAL_OPTIONS = INTERVALS.map((i) => ({ value: i.id, label: i.label }));
 const VIEW_OPTIONS: { value: ChartView; label: string; title: string }[] = [
-  { value: 'candles', label: 'Świece', title: 'Same świece (OHLC z API Hyperliquid)' },
-  { value: 'footprint', label: 'Footprint', title: 'Footprint z taśmy: profil w świecy, a po zbliżeniu liczby w każdym wierszu ceny' },
+  { value: 'candles', label: tr('Świece', 'Candles'), title: tr('Same świece (OHLC z API Hyperliquid)', 'Plain candles (OHLC from the Hyperliquid API)') },
+  { value: 'footprint', label: 'Footprint', title: tr('Footprint z taśmy: profil w świecy, a po zbliżeniu liczby w każdym wierszu ceny', 'Footprint from the tape: a profile inside the candle and, zoomed in, numbers on every price row') },
 ];
 const STYLE_OPTIONS: { value: FootprintStyle; label: string; title: string }[] = [
-  { value: 'bidask', label: 'Bid × Ask', title: 'Sprzedaż agresywna (uderza w bid) × kupno agresywne (zdejmuje ask) w każdym wierszu' },
-  { value: 'delta', label: 'Delta', title: 'Delta wiersza: kupno − sprzedaż agresorów' },
-  { value: 'volume', label: 'Wolumen', title: 'Łączny wolumen wiersza' },
+  { value: 'bidask', label: 'Bid × Ask', title: tr('Sprzedaż agresywna (uderza w bid) × kupno agresywne (zdejmuje ask) w każdym wierszu', 'Aggressive selling (hits the bid) × aggressive buying (lifts the ask) on every row') },
+  { value: 'delta', label: 'Delta', title: tr('Delta wiersza: kupno − sprzedaż agresorów', 'Row delta: aggressor buys − sells') },
+  { value: 'volume', label: tr('Wolumen', 'Volume'), title: tr('Łączny wolumen wiersza', 'Total row volume') },
 ];
 
 /** Zmiana z linku albo przełącznika rynku; wysokość wiersza w USD nie pasuje do rynku o innej cenie — wtedy automatyczna. */
@@ -54,27 +55,27 @@ const withPatch = (s: ChartSettings, p: Partial<ChartSettings>): ChartSettings =
 const toTick = (p: number) => Number(p.toFixed(priceDigits(p)));
 
 const PANE_NAMES: Record<PaneKey, string> = {
-  showVolume: 'Wolumen',
+  showVolume: tr('Wolumen', 'Volume'),
   showDelta: 'Delta',
   showCvd: 'CVD',
-  showVenueCvd: 'CVD giełd',
-  showVenueOi: 'ΔOI giełd',
-  showStats: 'Tablica liczb',
+  showVenueCvd: tr('CVD giełd', 'Exchange CVD'),
+  showVenueOi: tr('ΔOI giełd', 'Exchange ΔOI'),
+  showStats: tr('Tablica liczb', 'Numbers table'),
 };
 
 const LAYOUT_OPTIONS: { value: ChartLayout; label: React.ReactNode; title: string }[] = [
-  { value: 1, label: <Square className="w-3.5 h-3.5" />, title: 'Jeden wykres' },
-  { value: 2, label: <Columns2 className="w-3.5 h-3.5" />, title: 'Dwa wykresy obok siebie' },
-  { value: 4, label: <Grid2x2 className="w-3.5 h-3.5" />, title: 'Cztery wykresy (2 × 2)' },
+  { value: 1, label: <Square className="w-3.5 h-3.5" />, title: tr('Jeden wykres', 'One chart') },
+  { value: 2, label: <Columns2 className="w-3.5 h-3.5" />, title: tr('Dwa wykresy obok siebie', 'Two charts side by side') },
+  { value: 4, label: <Grid2x2 className="w-3.5 h-3.5" />, title: tr('Cztery wykresy (2 × 2)', 'Four charts (2 × 2)') },
 ];
 
 /** Karty na telefonie: jedna naraz, więc wykres ma cały ekran. */
 type PhoneTab = 'chart' | 'tape' | 'dom' | 'numbers';
 const PHONE_TABS: { id: PhoneTab; label: string }[] = [
-  { id: 'chart', label: 'Wykres' },
-  { id: 'tape', label: 'Taśma' },
+  { id: 'chart', label: tr('Wykres', 'Chart') },
+  { id: 'tape', label: tr('Taśma', 'Tape') },
   { id: 'dom', label: 'DOM' },
-  { id: 'numbers', label: 'Liczby' },
+  { id: 'numbers', label: tr('Liczby', 'Numbers') },
 ];
 
 /** Stacja na telefonie: lista w pasku wykresu zamiast osobnego rzędu nad nim, przywrócenie wzorca w menu „Więcej”. */
@@ -236,7 +237,7 @@ export const ProChart: React.FC<{
     if (!host) return;
     const ctrl = new ProChartController(host, store, series, shownSettings(settings, isNarrow(), layout, inReplay), signal.set, setPick, (key) => {
       update({ [key]: false });
-      setToast(`Ukryto panel: ${PANE_NAMES[key]} — włączysz go w Ustawieniach wykresu → Panele`);
+      setToast(tr(`Ukryto panel: ${PANE_NAMES[key]} — włączysz go w Ustawieniach wykresu → Panele`, `Panel hidden: ${PANE_NAMES[key]} — turn it back on in Chart settings → Panels`));
     }, setScale);
     ctrl.setPhone(isNarrow());
     ctrlRef.current = ctrl;
@@ -314,8 +315,8 @@ export const ProChart: React.FC<{
       }
       if (fired.length === 0) return;
       alertBook.update((l) => l.filter((a) => !fired.includes(a)));
-      for (const a of fired) notifyAlert(`Cena ${a.coin} doszła do ${fmtPx(a.price)}`, a.id);
-      setToast(`Alert: cena ${fired[0].coin} doszła do ${fmtPx(fired[0].price)}`);
+      for (const a of fired) notifyAlert(tr(`Cena ${a.coin} doszła do ${fmtPx(a.price)}`, `${a.coin} price reached ${fmtPx(a.price)}`), a.id);
+      setToast(tr(`Alert: cena ${fired[0].coin} doszła do ${fmtPx(fired[0].price)}`, `Alert: ${fired[0].coin} price reached ${fmtPx(fired[0].price)}`));
     }, 1000);
     return () => clearInterval(id);
   }, [panel]);
@@ -405,7 +406,7 @@ export const ProChart: React.FC<{
     if (!ctrl || !host) return;
     const iv = intervalById(settings.interval);
     const when = new Date();
-    const mode = settings.view === 'footprint' ? 'Footprint' : 'Świece';
+    const mode = settings.view === 'footprint' ? 'Footprint' : tr('Świece', 'Candles');
     const img = brandedScreenshot(ctrl.chart.takeScreenshot(true), host.clientWidth, `${store.coin}-PERP · Hyperliquid · ${iv.label} · ${mode}`, when);
     const stamp = `${when.getFullYear()}${String(when.getMonth() + 1).padStart(2, '0')}${String(when.getDate()).padStart(2, '0')}-${fmtHm(when.getTime()).replace(':', '')}`;
     downloadCanvas(img, `hyperquant-${store.coin.toLowerCase()}-${iv.id}-${stamp}.png`);
@@ -414,16 +415,16 @@ export const ProChart: React.FC<{
   const copy = (text: string, done: string) => {
     void navigator.clipboard?.writeText(text).then(
       () => setToast(done),
-      () => setToast('Nie udało się skopiować — skopiuj adres strony z paska przeglądarki')
+      () => setToast(tr('Nie udało się skopiować — skopiuj adres strony z paska przeglądarki', 'Copy failed — copy the page address from the browser bar'))
     );
   };
 
   // Link do widoku, a w powtórce do bieżącej chwili nagrania (ten sam interwał i rodzaj wykresu)
   const copyLink = () => {
-    if (!replay) return copy(window.location.href, 'Skopiowano link do widoku');
+    if (!replay) return copy(window.location.href, tr('Skopiowano link do widoku', 'View link copied'));
     const { session, link } = replay;
     const h = replayHash({ ...link, interval: settings.interval, view: settings.view, from: session.from, to: session.to, t: Math.round(session.t / 1000) * 1000 });
-    copy(`${window.location.origin}${window.location.pathname}${h}`, 'Skopiowano link do tej chwili powtórki');
+    copy(`${window.location.origin}${window.location.pathname}${h}`, tr('Skopiowano link do tej chwili powtórki', 'Link to this replay moment copied'));
   };
 
   // Powtórka nagranej doby: link w adresie strony przełącza widok wykresów
@@ -434,14 +435,14 @@ export const ProChart: React.FC<{
 
   const addAlert = (price: number) => {
     if (inReplay) {
-      setToast('Alerty działają na wykresie na żywo — wróć do niego, aby ustawić alert');
+      setToast(tr('Alerty działają na wykresie na żywo — wróć do niego, aby ustawić alert', 'Alerts work on the live chart — go back to it to set an alert'));
       return;
     }
     const last = store.lastPrice() || price;
     alertBook.update((l) => [...l, newAlert(store.coin, price, last)].slice(-MAX_ALERTS));
     primeAlertSound();
     askNotifications();
-    setToast(`Alert przy ${fmtPx(price)} (${store.coin}) — działa, gdy strona jest otwarta`);
+    setToast(tr(`Alert przy ${fmtPx(price)} (${store.coin}) — działa, gdy strona jest otwarta`, `Alert at ${fmtPx(price)} (${store.coin}) — works while the page is open`));
   };
 
   const onContextMenu = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -506,11 +507,11 @@ export const ProChart: React.FC<{
       {!narrow && (
         <div className={`flex flex-wrap ${twoRow ? '' : 'sm:flex-nowrap'} items-center gap-x-2 gap-y-1 px-2 sm:px-3 py-1.5 border-b border-line min-h-11`}>
           <div className={`flex items-center gap-2 w-full ${twoRow ? 'flex-wrap gap-y-1' : 'sm:w-auto sm:flex-1 overflow-x-auto [scrollbar-width:none]'} min-w-0`}>
-            <Segmented<Market> ariaLabel="Rynek" value={settings.coin} onChange={setCoin} options={MARKET_OPTIONS} />
-            <Segmented<string> ariaLabel="Interwał wykresu" value={settings.interval} onChange={(v) => update({ interval: v })} options={INTERVAL_OPTIONS} />
-            <Segmented<ChartView> ariaLabel="Rodzaj wykresu" value={settings.view} onChange={(v) => update({ view: v })} options={VIEW_OPTIONS} />
+            <Segmented<Market> ariaLabel={tr('Rynek', 'Market')} value={settings.coin} onChange={setCoin} options={MARKET_OPTIONS} />
+            <Segmented<string> ariaLabel={tr('Interwał wykresu', 'Chart timeframe')} value={settings.interval} onChange={(v) => update({ interval: v })} options={INTERVAL_OPTIONS} />
+            <Segmented<ChartView> ariaLabel={tr('Rodzaj wykresu', 'Chart type')} value={settings.view} onChange={(v) => update({ view: v })} options={VIEW_OPTIONS} />
             {settings.view === 'footprint' && (
-              <Segmented<FootprintStyle> ariaLabel="Styl footprintu" value={settings.fpStyle} onChange={(v) => update({ fpStyle: v })} options={STYLE_OPTIONS} />
+              <Segmented<FootprintStyle> ariaLabel={tr('Styl footprintu', 'Footprint style')} value={settings.fpStyle} onChange={(v) => update({ fpStyle: v })} options={STYLE_OPTIONS} />
             )}
           </div>
           <div className={`flex items-center justify-end gap-1 w-full ${twoRow ? '' : 'sm:w-auto'} shrink-0`}>
@@ -518,54 +519,54 @@ export const ProChart: React.FC<{
               type="button"
               data-menu-toggle
               aria-expanded={menu === 'indicators'}
-              title="Wskaźniki na wykresie ceny"
+              title={tr('Wskaźniki na wykresie ceny', 'Indicators on the price chart')}
               onClick={() => setMenu((m) => (m === 'indicators' ? null : 'indicators'))}
               className={`mr-auto ${twoRow ? '' : 'sm:mr-0'} inline-flex items-center gap-1.5 h-9 px-2.5 rounded-lg border text-xs font-medium transition-colors duration-150 ${
                 menu === 'indicators' ? 'bg-surface-3 text-ink-1 border-line-strong' : 'text-ink-2 border-line hover:text-ink-1 hover:bg-surface-2'
               }`}
             >
               <Layers className="w-4 h-4" />
-              Wskaźniki
+              {tr('Wskaźniki', 'Indicators')}
             </button>
-            <ToolBtn label={drawOpen ? 'Ukryj narzędzia rysowania' : 'Narzędzia rysowania'} onClick={() => setDrawOpen((o) => !o)} active={drawOpen}>
+            <ToolBtn label={drawOpen ? tr('Ukryj narzędzia rysowania', 'Hide drawing tools') : tr('Narzędzia rysowania', 'Drawing tools')} onClick={() => setDrawOpen((o) => !o)} active={drawOpen}>
               <PenTool className="w-4 h-4" />
             </ToolBtn>
             <ToolBtn
-              label={settings.showTape ? 'Ukryj taśmę zleceń' : 'Taśma zleceń'}
+              label={settings.showTape ? tr('Ukryj taśmę zleceń', 'Hide order tape') : tr('Taśma zleceń', 'Order tape')}
               className="hidden sm:inline-flex"
               onClick={() => update({ showTape: !settings.showTape })}
               active={settings.showTape}
             >
               <ListOrdered className="w-4 h-4" />
             </ToolBtn>
-            <ToolBtn label="Ustawienia wykresu" onClick={() => setMenu((m) => (m === 'settings' ? null : 'settings'))} active={menu === 'settings'} expanded={menu === 'settings'}>
+            <ToolBtn label={tr('Ustawienia wykresu', 'Chart settings')} onClick={() => setMenu((m) => (m === 'settings' ? null : 'settings'))} active={menu === 'settings'} expanded={menu === 'settings'}>
               <SlidersHorizontal className="w-4 h-4" />
             </ToolBtn>
             {/* Układ kilku wykresów tylko na szerokim ekranie */}
             {onLayout && (
               <div className="hidden lg:inline-flex shrink-0 mr-1">
-                <Segmented<ChartLayout> ariaLabel="Układ wykresów" value={layout} onChange={onLayout} options={LAYOUT_OPTIONS} />
+                <Segmented<ChartLayout> ariaLabel={tr('Układ wykresów', 'Chart layout')} value={layout} onChange={onLayout} options={LAYOUT_OPTIONS} />
               </div>
             )}
-            <ToolBtn label="Przewiń do bieżącej świecy" onClick={() => ctrlRef.current?.scrollToNow()}>
+            <ToolBtn label={tr('Przewiń do bieżącej świecy', 'Scroll to the current candle')} onClick={() => ctrlRef.current?.scrollToNow()}>
               <ChevronsRight className="w-4 h-4" />
             </ToolBtn>
-            <ToolBtn label="Przywróć skalę" onClick={() => ctrlRef.current?.resetScales()}>
+            <ToolBtn label={tr('Przywróć skalę', 'Reset scale')} onClick={() => ctrlRef.current?.resetScales()}>
               <RotateCcw className="w-4 h-4" />
             </ToolBtn>
             {canReplay && (
-              <ToolBtn label="Powtórka nagranej doby" className="hidden sm:inline-flex" onClick={openReplay}>
+              <ToolBtn label={tr('Powtórka nagranej doby', 'Replay of the recorded day')} className="hidden sm:inline-flex" onClick={openReplay}>
                 <History className="w-4 h-4" />
               </ToolBtn>
             )}
-            <ToolBtn label={inReplay ? 'Kopiuj link do tej chwili' : 'Kopiuj link do widoku'} className="hidden sm:inline-flex" onClick={copyLink}>
+            <ToolBtn label={inReplay ? tr('Kopiuj link do tej chwili', 'Copy link to this moment') : tr('Kopiuj link do widoku', 'Copy view link')} className="hidden sm:inline-flex" onClick={copyLink}>
               <Link className="w-4 h-4" />
             </ToolBtn>
-            <ToolBtn label="Zrzut ekranu (PNG)" onClick={screenshot}>
+            <ToolBtn label={tr('Zrzut ekranu (PNG)', 'Screenshot (PNG)')} onClick={screenshot}>
               <Camera className="w-4 h-4" />
             </ToolBtn>
             <ToolBtn
-              label="Skróty klawiszowe (?)"
+              label={tr('Skróty klawiszowe (?)', 'Keyboard shortcuts (?)')}
               className="hidden lg:inline-flex"
               onClick={() => setMenu((m) => (m === 'keys' ? null : 'keys'))}
               active={menu === 'keys'}
@@ -573,7 +574,7 @@ export const ProChart: React.FC<{
             >
               <Keyboard className="w-4 h-4" />
             </ToolBtn>
-            <ToolBtn label={fullscreen ? 'Zamknij pełny ekran' : 'Pełny ekran'} onClick={toggleFullscreen}>
+            <ToolBtn label={fullscreen ? tr('Zamknij pełny ekran', 'Exit full screen') : tr('Pełny ekran', 'Full screen')} onClick={toggleFullscreen}>
               {fullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
             </ToolBtn>
           </div>
@@ -584,13 +585,13 @@ export const ProChart: React.FC<{
       {narrow && (
         <div className="flex flex-col gap-1.5 px-2 py-1.5 border-b border-line shrink-0">
           <div className="flex items-center gap-1 min-w-0 overflow-x-auto [scrollbar-width:none]">
-            {phoneStation && <PhoneSelect<StationId> ariaLabel="Stacja robocza" value={phoneStation.value} options={phoneStation.options} onChange={phoneStation.onChange} />}
-            <PhoneSelect<Market> ariaLabel="Rynek" value={settings.coin} options={MARKET_OPTIONS} onChange={setCoin} />
-            <PhoneSelect<string> ariaLabel="Interwał wykresu" value={settings.interval} options={INTERVAL_OPTIONS} onChange={(v) => update({ interval: v })} />
-            <PhoneSelect<ChartView> ariaLabel="Rodzaj wykresu" value={settings.view} options={VIEW_OPTIONS} onChange={(v) => update({ view: v })} />
+            {phoneStation && <PhoneSelect<StationId> ariaLabel={tr('Stacja robocza', 'Workstation')} value={phoneStation.value} options={phoneStation.options} onChange={phoneStation.onChange} />}
+            <PhoneSelect<Market> ariaLabel={tr('Rynek', 'Market')} value={settings.coin} options={MARKET_OPTIONS} onChange={setCoin} />
+            <PhoneSelect<string> ariaLabel={tr('Interwał wykresu', 'Chart timeframe')} value={settings.interval} options={INTERVAL_OPTIONS} onChange={(v) => update({ interval: v })} />
+            <PhoneSelect<ChartView> ariaLabel={tr('Rodzaj wykresu', 'Chart type')} value={settings.view} options={VIEW_OPTIONS} onChange={(v) => update({ view: v })} />
           </div>
           <div className="flex items-center gap-1">
-            <div role="tablist" aria-label="Widok wykresu" className="grid grid-cols-4 gap-0.5 flex-1 min-w-0 p-0.5 rounded-lg border border-line">
+            <div role="tablist" aria-label={tr('Widok wykresu', 'Chart view')} className="grid grid-cols-4 gap-0.5 flex-1 min-w-0 p-0.5 rounded-lg border border-line">
               {PHONE_TABS.map((t) => (
                 <button
                   key={t.id}
@@ -606,13 +607,13 @@ export const ProChart: React.FC<{
                 </button>
               ))}
             </div>
-            <ToolBtn label="Wskaźniki na wykresie ceny" onClick={() => setMenu((m) => (m === 'indicators' ? null : 'indicators'))} active={menu === 'indicators'} expanded={menu === 'indicators'}>
+            <ToolBtn label={tr('Wskaźniki na wykresie ceny', 'Indicators on the price chart')} onClick={() => setMenu((m) => (m === 'indicators' ? null : 'indicators'))} active={menu === 'indicators'} expanded={menu === 'indicators'}>
               <Layers className="w-4 h-4" />
             </ToolBtn>
-            <ToolBtn label="Ustawienia wykresu" onClick={() => setMenu((m) => (m === 'settings' ? null : 'settings'))} active={menu === 'settings'} expanded={menu === 'settings'}>
+            <ToolBtn label={tr('Ustawienia wykresu', 'Chart settings')} onClick={() => setMenu((m) => (m === 'settings' ? null : 'settings'))} active={menu === 'settings'} expanded={menu === 'settings'}>
               <SlidersHorizontal className="w-4 h-4" />
             </ToolBtn>
-            <ToolBtn label="Więcej: rysowanie, skala, zrzut, link, pełny ekran" onClick={() => setMenu((m) => (m === 'more' ? null : 'more'))} active={menu === 'more'} expanded={menu === 'more'}>
+            <ToolBtn label={tr('Więcej: rysowanie, skala, zrzut, link, pełny ekran', 'More: drawing, scale, screenshot, link, full screen')} onClick={() => setMenu((m) => (m === 'more' ? null : 'more'))} active={menu === 'more'} expanded={menu === 'more'}>
               <MoreHorizontal className="w-4 h-4" />
             </ToolBtn>
           </div>
@@ -630,7 +631,7 @@ export const ProChart: React.FC<{
           narrow={narrow}
           onClose={() => {
             update({ showState: false });
-            setToast('Ukryto Stan rynku — włączysz go w Ustawieniach wykresu → Panele');
+            setToast(tr('Ukryto Stan rynku — włączysz go w Ustawieniach wykresu → Panele', 'Market state hidden — turn it back on in Chart settings → Panels'));
           }}
         />
       )}
@@ -672,7 +673,7 @@ export const ProChart: React.FC<{
               onAlert={addAlert}
               onRemoveAlert={(a) => alertBook.update((l) => l.filter((x) => x !== a))}
               onLine={() => tools?.addHorizontal(ctxMenu.x, ctxMenu.y)}
-              onCopyPrice={(p) => copy(fmtPx(p).replace(/,/g, ''), `Skopiowano cenę ${fmtPx(p)}`)}
+              onCopyPrice={(p) => copy(fmtPx(p).replace(/,/g, ''), tr(`Skopiowano cenę ${fmtPx(p)}`, `Price ${fmtPx(p)} copied`))}
               onCopyLink={copyLink}
               onNow={() => ctrlRef.current?.scrollToNow()}
               onReset={() => ctrlRef.current?.resetScales()}
@@ -710,14 +711,14 @@ export const ProChart: React.FC<{
               ) : menu === 'more' ? (
                 <MoreMenu
                   items={[
-                    { icon: PenTool, label: drawOpen ? 'Ukryj narzędzia rysowania' : 'Narzędzia rysowania', on: () => setDrawOpen((o) => !o) },
-                    { icon: ChevronsRight, label: 'Przewiń do bieżącej świecy', on: () => ctrlRef.current?.scrollToNow() },
-                    { icon: RotateCcw, label: 'Przywróć skalę', on: () => ctrlRef.current?.resetScales() },
-                    { icon: Camera, label: 'Zrzut ekranu (PNG)', on: screenshot },
-                    ...(canReplay ? [{ icon: History, label: 'Powtórka nagranej doby', on: openReplay }] : []),
-                    { icon: Link, label: inReplay ? 'Kopiuj link do tej chwili' : 'Kopiuj link do widoku', on: copyLink },
-                    { icon: fullscreen ? Minimize2 : Maximize2, label: fullscreen ? 'Zamknij pełny ekran' : 'Pełny ekran', on: toggleFullscreen },
-                    ...(phoneStation ? [{ icon: RotateCcw, label: `Przywróć wzorzec stacji ${station.name}`, on: phoneStation.onRestore }] : []),
+                    { icon: PenTool, label: drawOpen ? tr('Ukryj narzędzia rysowania', 'Hide drawing tools') : tr('Narzędzia rysowania', 'Drawing tools'), on: () => setDrawOpen((o) => !o) },
+                    { icon: ChevronsRight, label: tr('Przewiń do bieżącej świecy', 'Scroll to the current candle'), on: () => ctrlRef.current?.scrollToNow() },
+                    { icon: RotateCcw, label: tr('Przywróć skalę', 'Reset scale'), on: () => ctrlRef.current?.resetScales() },
+                    { icon: Camera, label: tr('Zrzut ekranu (PNG)', 'Screenshot (PNG)'), on: screenshot },
+                    ...(canReplay ? [{ icon: History, label: tr('Powtórka nagranej doby', 'Replay of the recorded day'), on: openReplay }] : []),
+                    { icon: Link, label: inReplay ? tr('Kopiuj link do tej chwili', 'Copy link to this moment') : tr('Kopiuj link do widoku', 'Copy view link'), on: copyLink },
+                    { icon: fullscreen ? Minimize2 : Maximize2, label: fullscreen ? tr('Zamknij pełny ekran', 'Exit full screen') : tr('Pełny ekran', 'Full screen'), on: toggleFullscreen },
+                    ...(phoneStation ? [{ icon: RotateCcw, label: tr(`Przywróć wzorzec stacji ${station.name}`, `Restore the ${station.name} workstation preset`), on: phoneStation.onRestore }] : []),
                   ]}
                   onClose={() => setMenu(null)}
                 />
@@ -752,11 +753,11 @@ const AutoScaleBtn: React.FC<{ scale: ScaleState; onToggle: () => void }> = ({ s
     <button
       type="button"
       aria-pressed={scale.auto}
-      aria-label="Autoskala ceny"
+      aria-label={tr('Autoskala ceny', 'Price autoscale')}
       title={
         scale.auto
-          ? 'Autoskala ceny włączona: zakres dopasowuje się do widocznych świec. Kliknij, aby go zamrozić (A)'
-          : 'Autoskala ceny wyłączona. Kliknij, aby dopasować zakres do widocznych świec (A, dwuklik na osi ceny)'
+          ? tr('Autoskala ceny włączona: zakres dopasowuje się do widocznych świec. Kliknij, aby go zamrozić (A)', 'Price autoscale on: the range follows the visible candles. Click to freeze it (A)')
+          : tr('Autoskala ceny wyłączona. Kliknij, aby dopasować zakres do widocznych świec (A, dwuklik na osi ceny)', 'Price autoscale off. Click to fit the range to the visible candles (A, double-click on the price axis)')
       }
       onClick={onToggle}
       className="group absolute right-0 bottom-0 z-10 grid place-items-center outline-none"
@@ -774,21 +775,21 @@ const AutoScaleBtn: React.FC<{ scale: ScaleState; onToggle: () => void }> = ({ s
 
 const PHONE_PANE_OPTIONS: { value: PhonePane | 'none'; label: string }[] = [
   { value: 'showCvd', label: 'CVD' },
-  { value: 'showDelta', label: 'Delta (świece delty)' },
-  { value: 'showVenueCvd', label: 'CVD giełd: Hyperliquid, Binance, Bybit' },
-  { value: 'showVenueOi', label: 'ΔOI i funding giełd' },
-  { value: 'none', label: 'Brak' },
+  { value: 'showDelta', label: tr('Delta (świece delty)', 'Delta (delta candles)') },
+  { value: 'showVenueCvd', label: tr('CVD giełd: Hyperliquid, Binance, Bybit', 'Exchange CVD: Hyperliquid, Binance, Bybit') },
+  { value: 'showVenueOi', label: tr('ΔOI i funding giełd', 'Exchange ΔOI and funding') },
+  { value: 'none', label: tr('Brak', 'None') },
 ];
 
 /** Panele na telefonie: wolumen na dole wykresu ceny i jeden panel pod nim (liczby są w karcie „Liczby”). */
 const PhonePanes: React.FC<{ s: ChartSettings; onChange: (p: Partial<ChartSettings>) => void }> = ({ s, onChange }) => {
   const pane = PHONE_PANES.find((k) => s[k]) ?? 'none';
   return (
-    <Group title="Panele">
-      <Check label="Stan rynku (zdanie nad wykresem)" checked={s.showState} onChange={(v) => onChange({ showState: v })} />
-      <Check label="Wolumen (na dole wykresu ceny)" checked={s.showVolume} onChange={(v) => onChange({ showVolume: v })} />
+    <Group title={tr('Panele', 'Panels')}>
+      <Check label={tr('Stan rynku (zdanie nad wykresem)', 'Market state (sentence above the chart)')} checked={s.showState} onChange={(v) => onChange({ showState: v })} />
+      <Check label={tr('Wolumen (na dole wykresu ceny)', 'Volume (at the bottom of the price chart)')} checked={s.showVolume} onChange={(v) => onChange({ showVolume: v })} />
       <label className="flex flex-col items-start gap-1.5 text-ink-2">
-        Panel pod wykresem
+        {tr('Panel pod wykresem', 'Pane below the chart')}
         <select
           value={pane}
           onChange={(e) => onChange(Object.fromEntries(PHONE_PANES.map((k) => [k, k === e.target.value])))}
@@ -801,13 +802,23 @@ const PhonePanes: React.FC<{ s: ChartSettings; onChange: (p: Partial<ChartSettin
           ))}
         </select>
       </label>
-      <p className="text-[11px] leading-snug text-ink-3">Na telefonie pod wykresem jest jeden panel, żeby cena miała większość ekranu. Liczby świec są w karcie „Liczby”.</p>
+      <p className="text-[11px] leading-snug text-ink-3">
+        {tr(
+          'Na telefonie pod wykresem jest jeden panel, żeby cena miała większość ekranu. Liczby świec są w karcie „Liczby”.',
+          'On a phone there is one pane below the chart so the price gets most of the screen. Candle numbers are in the “Numbers” tab.'
+        )}
+      </p>
       {(pane === 'showVenueCvd' || pane === 'showVenueOi') && (
-        <p className="text-[11px] leading-snug text-ink-3">Dane Binance i Bybit pobiera Twoja przeglądarka bezpośrednio z ich publicznych API — nic nie przechodzi przez serwer HyperQuant.</p>
+        <p className="text-[11px] leading-snug text-ink-3">
+          {tr(
+            'Dane Binance i Bybit pobiera Twoja przeglądarka bezpośrednio z ich publicznych API — nic nie przechodzi przez serwer HyperQuant.',
+            "Your browser fetches Binance and Bybit data directly from their public APIs — nothing goes through a HyperQuant server."
+          )}
+        </p>
       )}
       <div className="flex flex-col items-start gap-1.5">
-        <span className="text-ink-2">Zerowanie CVD</span>
-        <Segmented<ResetMode> ariaLabel="Zerowanie CVD" value={s.cvdReset} onChange={(v) => onChange({ cvdReset: v })} options={RESET_OPTIONS} size="xs" />
+        <span className="text-ink-2">{tr('Zerowanie CVD', 'CVD reset')}</span>
+        <Segmented<ResetMode> ariaLabel={tr('Zerowanie CVD', 'CVD reset')} value={s.cvdReset} onChange={(v) => onChange({ cvdReset: v })} options={RESET_OPTIONS} size="xs" />
       </div>
     </Group>
   );
@@ -846,7 +857,7 @@ function PhoneSelect<T extends string>({
 
 /** Menu „Więcej” na telefonie: rzadziej używane przyciski paska narzędzi. */
 const MoreMenu: React.FC<{ items: { icon: React.ComponentType<{ className?: string }>; label: string; on: () => void }[]; onClose: () => void }> = ({ items, onClose }) => (
-  <div role="menu" aria-label="Więcej" className="bg-surface-2 border border-line-strong rounded-xl p-1.5 shadow-2xl flex flex-col text-xs">
+  <div role="menu" aria-label={tr('Więcej', 'More')} className="bg-surface-2 border border-line-strong rounded-xl p-1.5 shadow-2xl flex flex-col text-xs">
     {items.map(({ icon: Icon, label, on }) => (
       <button
         key={label}
@@ -934,7 +945,7 @@ const ChartMenu = React.forwardRef<
     <div
       ref={ref}
       role="menu"
-      aria-label="Menu wykresu"
+      aria-label={tr('Menu wykresu', 'Chart menu')}
       style={{ left: at.x, top: at.y, transform: `translate(${at.left ? '-100%' : '0'}, ${at.up ? '-100%' : '0'})` }}
       className="absolute z-40 w-60 rounded-xl border border-line-strong bg-surface-2 p-1.5 text-xs shadow-2xl"
     >
@@ -943,17 +954,17 @@ const ChartMenu = React.forwardRef<
           <div className="px-2.5 pt-1 pb-1.5 font-mono text-[11px] text-ink-3">
             {coin} · {fmtPx(p)}
           </div>
-          {item(<Bell className="w-4 h-4" />, `Alert przy ${fmtPx(p)}`, () => onAlert(p))}
-          {nearAlert && item(<BellOff className="w-4 h-4" />, `Usuń alert ${fmtPx(nearAlert.price)}`, () => onRemoveAlert(nearAlert))}
-          {item(<Minus className="w-4 h-4" />, `Linia pozioma przy ${fmtPx(p)}`, onLine)}
-          {item(<Copy className="w-4 h-4" />, `Kopiuj cenę ${fmtPx(p)}`, () => onCopyPrice(p))}
+          {item(<Bell className="w-4 h-4" />, tr(`Alert przy ${fmtPx(p)}`, `Alert at ${fmtPx(p)}`), () => onAlert(p))}
+          {nearAlert && item(<BellOff className="w-4 h-4" />, tr(`Usuń alert ${fmtPx(nearAlert.price)}`, `Remove alert ${fmtPx(nearAlert.price)}`), () => onRemoveAlert(nearAlert))}
+          {item(<Minus className="w-4 h-4" />, tr(`Linia pozioma przy ${fmtPx(p)}`, `Horizontal line at ${fmtPx(p)}`), onLine)}
+          {item(<Copy className="w-4 h-4" />, tr(`Kopiuj cenę ${fmtPx(p)}`, `Copy price ${fmtPx(p)}`), () => onCopyPrice(p))}
           <div className="my-1 border-t border-line" />
         </>
       )}
-      {item(<Link className="w-4 h-4" />, 'Kopiuj link do widoku', onCopyLink)}
-      {item(<ChevronsRight className="w-4 h-4" />, 'Przewiń do bieżącej świecy', onNow)}
-      {item(<RotateCcw className="w-4 h-4" />, 'Przywróć skalę', onReset)}
-      {item(<Camera className="w-4 h-4" />, 'Zrzut ekranu (PNG)', onShot)}
+      {item(<Link className="w-4 h-4" />, tr('Kopiuj link do widoku', 'Copy view link'), onCopyLink)}
+      {item(<ChevronsRight className="w-4 h-4" />, tr('Przewiń do bieżącej świecy', 'Scroll to the current candle'), onNow)}
+      {item(<RotateCcw className="w-4 h-4" />, tr('Przywróć skalę', 'Reset scale'), onReset)}
+      {item(<Camera className="w-4 h-4" />, tr('Zrzut ekranu (PNG)', 'Screenshot (PNG)'), onShot)}
     </div>
   );
 });
@@ -966,12 +977,14 @@ const LoadOverlay: React.FC<{ series: CandleSeries; onRetry: () => void }> = ({ 
   return (
     <div className="absolute inset-0 z-20 flex items-center justify-center pointer-events-none">
       <div className="pointer-events-auto max-w-sm rounded-xl border border-line-strong bg-surface-2 px-4 py-3 text-sm">
-        <div className="font-medium text-ink-1">{error ? 'Nie udało się pobrać świec z Hyperliquid' : 'Wczytywanie świec…'}</div>
+        <div className="font-medium text-ink-1">{error ? tr('Nie udało się pobrać świec z Hyperliquid', 'Could not load candles from Hyperliquid') : tr('Wczytywanie świec…', 'Loading candles…')}</div>
         {error && (
           <>
-            <p className="mt-1 text-xs text-ink-3 leading-relaxed">Sprawdź połączenie lub rozszerzenia blokujące żądania do api.hyperliquid.xyz.</p>
+            <p className="mt-1 text-xs text-ink-3 leading-relaxed">
+              {tr('Sprawdź połączenie lub rozszerzenia blokujące żądania do api.hyperliquid.xyz.', 'Check your connection or extensions that block requests to api.hyperliquid.xyz.')}
+            </p>
             <button type="button" onClick={onRetry} className="mt-2 min-h-9 px-3 rounded-lg bg-surface-3 border border-line-strong text-xs font-medium hover:bg-surface-1">
-              Spróbuj ponownie
+              {tr('Spróbuj ponownie', 'Try again')}
             </button>
           </>
         )}
@@ -986,10 +999,10 @@ const RATIO_OPTIONS = [1.5, 2, 2.5, 3, 4];
 const MIN_USD_OPTIONS = [0, 1000, 2500, 10_000, 50_000, 250_000];
 const STACKED_OPTIONS = [0, 2, 3, 4, 5];
 const RESET_OPTIONS: { value: ResetMode; label: string }[] = [
-  { value: 'session', label: 'Sesja' },
-  { value: 'day', label: 'Doba UTC' },
-  { value: 'week', label: 'Tydzień' },
-  { value: 'none', label: 'Ciągła' },
+  { value: 'session', label: tr('Sesja', 'Session') },
+  { value: 'day', label: tr('Doba UTC', 'UTC day') },
+  { value: 'week', label: tr('Tydzień', 'Week') },
+  { value: 'none', label: tr('Ciągła', 'Continuous') },
 ];
 
 const BIG_OPTIONS = [0, 25_000, 50_000, 100_000, 250_000, 500_000, 1_000_000];
@@ -1013,90 +1026,98 @@ const SettingsMenu: React.FC<{
     <Group title="Footprint">
       {narrow && (
         <div className="flex flex-col items-start gap-1.5">
-          <span className="text-ink-2">Styl</span>
-          <Segmented<FootprintStyle> ariaLabel="Styl footprintu" value={s.fpStyle} onChange={(v) => onChange({ fpStyle: v })} options={STYLE_OPTIONS} size="xs" />
+          <span className="text-ink-2">{tr('Styl', 'Style')}</span>
+          <Segmented<FootprintStyle> ariaLabel={tr('Styl footprintu', 'Footprint style')} value={s.fpStyle} onChange={(v) => onChange({ fpStyle: v })} options={STYLE_OPTIONS} size="xs" />
         </div>
       )}
       <Select
-        label="Wysokość wiersza"
+        label={tr('Wysokość wiersza', 'Row height')}
         value={s.rowStep}
         options={ROW_TICKS.map((m) => Number((m * tick).toPrecision(6)))}
         format={(v) => (v === 0 ? 'Auto' : `${v} USD`)}
         onChange={(v) => onChange({ rowStep: v })}
       />
       <Select
-        label="Nierównowaga"
-        title="Nierównowaga diagonalna: kupno w wierszu ≥ N × sprzedaż wiersz niżej (i odwrotnie)"
+        label={tr('Nierównowaga', 'Imbalance')}
+        title={tr('Nierównowaga diagonalna: kupno w wierszu ≥ N × sprzedaż wiersz niżej (i odwrotnie)', 'Diagonal imbalance: buying in a row ≥ N × selling one row lower (and vice versa)')}
         value={s.imbalanceRatio}
         options={RATIO_OPTIONS}
         format={(v) => `${Math.round(v * 100)}%`}
         onChange={(v) => onChange({ imbalanceRatio: v })}
       />
       <Select
-        label="Min. wartość nierównowagi"
-        title={`Wiersz liczy się jako nierównowaga od tej wartości strony przewagi (przeliczane na ${s.coin} po cenie)`}
+        label={tr('Min. wartość nierównowagi', 'Min. imbalance value')}
+        title={tr(
+          `Wiersz liczy się jako nierównowaga od tej wartości strony przewagi (przeliczane na ${s.coin} po cenie)`,
+          `A row counts as an imbalance from this value of the dominant side (converted to ${s.coin} at the price)`
+        )}
         value={s.imbalanceMinUsd}
         options={MIN_USD_OPTIONS}
-        format={(v) => (v === 0 ? 'Brak' : `${compact(v)} USD`)}
+        format={(v) => (v === 0 ? tr('Brak', 'None') : `${compact(v)} USD`)}
         onChange={(v) => onChange({ imbalanceMinUsd: v })}
       />
       <Select
-        label="Strefy stacked"
-        title="Co najmniej N kolejnych wierszy z nierównowagą po tej samej stronie"
+        label={tr('Strefy stacked', 'Stacked zones')}
+        title={tr('Co najmniej N kolejnych wierszy z nierównowagą po tej samej stronie', 'At least N consecutive rows with an imbalance on the same side')}
         value={s.stackedMin}
         options={STACKED_OPTIONS}
-        format={(v) => (v === 0 ? 'Wył.' : `od ${v} wierszy`)}
+        format={(v) => (v === 0 ? tr('Wył.', 'Off') : tr(`od ${v} wierszy`, `${v}+ rows`))}
         onChange={(v) => onChange({ stackedMin: v })}
       />
     </Group>
     {narrow ? (
       <PhonePanes s={s} onChange={onChange} />
     ) : (
-      <Group title="Panele">
-        <Check label="Stan rynku (zdanie nad wykresem)" checked={s.showState} onChange={(v) => onChange({ showState: v })} />
-        <Check label="Wolumen" checked={s.showVolume} onChange={(v) => onChange({ showVolume: v })} />
-        <Check label="Delta (świece delty)" checked={s.showDelta} onChange={(v) => onChange({ showDelta: v })} />
+      <Group title={tr('Panele', 'Panels')}>
+        <Check label={tr('Stan rynku (zdanie nad wykresem)', 'Market state (sentence above the chart)')} checked={s.showState} onChange={(v) => onChange({ showState: v })} />
+        <Check label={tr('Wolumen', 'Volume')} checked={s.showVolume} onChange={(v) => onChange({ showVolume: v })} />
+        <Check label={tr('Delta (świece delty)', 'Delta (delta candles)')} checked={s.showDelta} onChange={(v) => onChange({ showDelta: v })} />
         <Check label="CVD" checked={s.showCvd} onChange={(v) => onChange({ showCvd: v })} />
-        <Check label="CVD giełd: Hyperliquid, Binance, Bybit" checked={s.showVenueCvd} onChange={(v) => onChange({ showVenueCvd: v })} />
-        <Check label="ΔOI i funding giełd" checked={s.showVenueOi} onChange={(v) => onChange({ showVenueOi: v })} />
-        <Check label="Tablica liczb" checked={s.showStats} onChange={(v) => onChange({ showStats: v })} />
+        <Check label={tr('CVD giełd: Hyperliquid, Binance, Bybit', 'Exchange CVD: Hyperliquid, Binance, Bybit')} checked={s.showVenueCvd} onChange={(v) => onChange({ showVenueCvd: v })} />
+        <Check label={tr('ΔOI i funding giełd', 'Exchange ΔOI and funding')} checked={s.showVenueOi} onChange={(v) => onChange({ showVenueOi: v })} />
+        <Check label={tr('Tablica liczb', 'Numbers table')} checked={s.showStats} onChange={(v) => onChange({ showStats: v })} />
         {s.showStats && <StatGroupPicker className="pl-6.5" value={s.statGroups} onChange={(g) => onChange({ statGroups: g })} />}
-        {grid4 && s.showStats && <p className="text-[11px] leading-snug text-ink-3">W układzie 2 × 2 tablica jest ukryta — panel jest za niski.</p>}
+        {grid4 && s.showStats && <p className="text-[11px] leading-snug text-ink-3">{tr('W układzie 2 × 2 tablica jest ukryta — panel jest za niski.', 'In the 2 × 2 layout the table is hidden — the pane is too short.')}</p>}
         <p className="text-[11px] leading-snug text-ink-3">
-          Dane Binance i Bybit pobiera Twoja przeglądarka bezpośrednio z ich publicznych API — nic nie przechodzi przez serwer HyperQuant.
-          Domyślnie wyłączone; nie publikuj zrzutów z tymi danymi bez sprawdzenia regulaminu giełdy.
+          {tr(
+            'Dane Binance i Bybit pobiera Twoja przeglądarka bezpośrednio z ich publicznych API — nic nie przechodzi przez serwer HyperQuant. Domyślnie wyłączone; nie publikuj zrzutów z tymi danymi bez sprawdzenia regulaminu giełdy.',
+            "Your browser fetches Binance and Bybit data directly from their public APIs — nothing goes through a HyperQuant server. Off by default; do not publish screenshots with this data without checking the exchange's terms."
+          )}
         </p>
         <div className="flex flex-col items-start gap-1.5">
-          <span className="text-ink-2">Zerowanie CVD</span>
-          <Segmented<ResetMode> ariaLabel="Zerowanie CVD" value={s.cvdReset} onChange={(v) => onChange({ cvdReset: v })} options={RESET_OPTIONS} />
+          <span className="text-ink-2">{tr('Zerowanie CVD', 'CVD reset')}</span>
+          <Segmented<ResetMode> ariaLabel={tr('Zerowanie CVD', 'CVD reset')} value={s.cvdReset} onChange={(v) => onChange({ cvdReset: v })} options={RESET_OPTIONS} />
         </div>
       </Group>
     )}
-    <Group title="Duże zlecenia">
+    <Group title={tr('Duże zlecenia', 'Large orders')}>
       <Select
-        label="Próg dużego zlecenia"
-        title="Auto: kwantyl 98,5% wartości zleceń agresora z ostatniej godziny, zaokrąglony w górę (1, 2, 5 × 10^k)"
+        label={tr('Próg dużego zlecenia', 'Large order threshold')}
+        title={tr(
+          'Auto: kwantyl 98,5% wartości zleceń agresora z ostatniej godziny, zaokrąglony w górę (1, 2, 5 × 10^k)',
+          'Auto: the 98.5% quantile of aggressor order values over the last hour, rounded up (1, 2, 5 × 10^k)'
+        )}
         value={s.bigTradeUsd}
         options={BIG_OPTIONS}
         format={(v) => (v === 0 ? (s.bigTradeUsd === 0 ? `Auto (${compact(bigUsd)})` : 'Auto') : `${compact(v)} USD`)}
         onChange={(v) => onChange({ bigTradeUsd: v })}
       />
-      <Check label="Dźwięk dużych zleceń (taśma)" checked={s.tapeSound} onChange={(v) => onChange({ tapeSound: v })} />
+      <Check label={tr('Dźwięk dużych zleceń (taśma)', 'Large order sound (tape)')} checked={s.tapeSound} onChange={(v) => onChange({ tapeSound: v })} />
     </Group>
-    <Group title="Alerty cenowe">
+    <Group title={tr('Alerty cenowe', 'Price alerts')}>
       <AlertInput coin={s.coin} price={price} onAdd={onAddAlert} />
       {alerts.length === 0 ? (
-        <p className="text-[11px] leading-snug text-ink-3">Albo prawy przycisk na wykresie → „Alert przy …”.</p>
+        <p className="text-[11px] leading-snug text-ink-3">{tr('Albo prawy przycisk na wykresie → „Alert przy …”.', 'Or right-click on the chart → “Alert at …”.')}</p>
       ) : (
         <ul className="flex flex-col gap-1">
           {alerts.map((a) => (
             <li key={a.id} className="flex items-center justify-between gap-2 min-h-8">
               <span className="font-mono text-ink-1">
-                {a.coin} · {a.dir === 1 ? 'wzrost do' : 'spadek do'} {fmtPx(a.price)}
+                {a.coin} · {a.dir === 1 ? tr('wzrost do', 'rise to') : tr('spadek do', 'drop to')} {fmtPx(a.price)}
               </span>
               <button
                 type="button"
-                aria-label={`Usuń alert ${a.coin} ${fmtPx(a.price)}`}
+                aria-label={tr(`Usuń alert ${a.coin} ${fmtPx(a.price)}`, `Remove alert ${a.coin} ${fmtPx(a.price)}`)}
                 onClick={() => onRemoveAlert(a)}
                 className="inline-flex items-center justify-center w-8 h-8 rounded-md text-ink-3 hover:text-ink-1 hover:bg-surface-3"
               >
@@ -1106,16 +1127,21 @@ const SettingsMenu: React.FC<{
           ))}
         </ul>
       )}
-      <p className="text-[11px] leading-snug text-ink-3">Jednorazowe; działają, gdy strona jest otwarta (dźwięk i powiadomienie przeglądarki po zgodzie).</p>
+      <p className="text-[11px] leading-snug text-ink-3">
+        {tr(
+          'Jednorazowe; działają, gdy strona jest otwarta (dźwięk i powiadomienie przeglądarki po zgodzie).',
+          'One-off; they work while the page is open (sound and a browser notification once you allow it).'
+        )}
+      </p>
     </Group>
     <Templates settings={s} onApply={onChange} />
     <button
       type="button"
       onClick={onReset}
-      title="Ustawienia tego wykresu jak we wzorcu stacji; rynek i interwał zostają"
+      title={tr('Ustawienia tego wykresu jak we wzorcu stacji; rynek i interwał zostają', "Sets this chart as in the workstation preset; market and timeframe stay")}
       className="self-start min-h-9 px-3 rounded-lg border border-line-strong text-ink-2 hover:text-ink-1 hover:bg-surface-3"
     >
-      Przywróć wzorzec stacji
+      {tr('Przywróć wzorzec stacji', 'Restore workstation preset')}
     </button>
   </div>
 );
@@ -1144,15 +1170,18 @@ function liqHint(liq: LiqMapState): string {
   switch (liq.status) {
     case 'ready':
     case 'delayed':
-      return `3 największe po każdej stronie ceny · stan z ${fmtHm(liq.map!.asOf)}${liq.status === 'delayed' ? ' (część odczytów starsza niż 15 min)' : ''}`;
+      return tr(
+        `3 największe po każdej stronie ceny · stan z ${fmtHm(liq.map!.asOf)}${liq.status === 'delayed' ? ' (część odczytów starsza niż 15 min)' : ''}`,
+        `3 largest on each side of the price · as of ${fmtHm(liq.map!.asOf)}${liq.status === 'delayed' ? ' (some readings older than 15 min)' : ''}`
+      );
     case 'loading':
-      return 'Wczytywanie mapy likwidacji…';
+      return tr('Wczytywanie mapy likwidacji…', 'Loading the liquidation map…');
     case 'unconfigured':
-      return 'Mapa likwidacji niedostępna w tej wersji strony';
+      return tr('Mapa likwidacji niedostępna w tej wersji strony', 'Liquidation map unavailable in this version of the site');
     case 'error':
-      return 'Nie udało się pobrać mapy likwidacji';
+      return tr('Nie udało się pobrać mapy likwidacji', 'Could not load the liquidation map');
     default:
-      return 'Skaner nie publikuje teraz aktualnej mapy — klastry ukryte';
+      return tr('Skaner nie publikuje teraz aktualnej mapy — klastry ukryte', 'The scanner is not publishing a current map right now — clusters hidden');
   }
 }
 
@@ -1161,8 +1190,11 @@ const WHALES_STALE_MS = 20 * 60_000;
 
 function whaleHint(w: WhaleLayer | null, coin: string): string {
   const m = w?.markets[coin];
-  if (!w || !m) return 'Skaner nie publikuje teraz warstwy wielorybów — linie ukryte';
-  return `${m.positions.length} pozycji od ${compact(w.minPositionUsd[coin] ?? 0)} USD i ${m.orders.length} zleceń od ${compact(w.minOrderUsd[coin] ?? 0)} USD · ${w.accounts} kont · stan z ${fmtHm(w.asOf)}`;
+  if (!w || !m) return tr('Skaner nie publikuje teraz warstwy wielorybów — linie ukryte', 'The scanner is not publishing the whale layer right now — lines hidden');
+  return tr(
+    `${m.positions.length} pozycji od ${compact(w.minPositionUsd[coin] ?? 0)} USD i ${m.orders.length} zleceń od ${compact(w.minOrderUsd[coin] ?? 0)} USD · ${w.accounts} kont · stan z ${fmtHm(w.asOf)}`,
+    `${m.positions.length} positions from ${compact(w.minPositionUsd[coin] ?? 0)} USD and ${m.orders.length} orders from ${compact(w.minOrderUsd[coin] ?? 0)} USD · ${w.accounts} accounts · as of ${fmtHm(w.asOf)}`
+  );
 }
 
 /** Wskaźniki na wykresie ceny: przełączniki z kolorem linii (menu jest zarazem legendą) i zakresem interwałów. */
@@ -1181,120 +1213,161 @@ const IndicatorsMenu: React.FC<{
   bigUsd,
   onChange,
 }) => {
-  const big = `${compact(bigUsd)} USD${s.bigTradeUsd === 0 ? ' (próg automatyczny)' : ''}`;
+  const big = `${compact(bigUsd)} USD${s.bigTradeUsd === 0 ? tr(' (próg automatyczny)', ' (automatic threshold)') : ''}`;
   const scope = indicatorScope(intervalMs);
   const items: { key: IndicatorKey; label: string; hint: string; swatch: string; off?: string }[] = [
     {
       key: 'showHeatmap',
-      label: 'Mapa ciepła arkusza',
-      hint: 'Płynność zleceń oczekujących w czasie (l2Book Hyperliquid, kubełki BTC ~10 i ~100 USD, innych rynków proporcjonalnie do ceny) — od otwarcia strony, a z zapisem serwera z ostatniej doby',
+      label: tr('Mapa ciepła arkusza', 'Order book heatmap'),
+      hint: tr(
+        'Płynność zleceń oczekujących w czasie (l2Book Hyperliquid, kubełki BTC ~10 i ~100 USD, innych rynków proporcjonalnie do ceny) — od otwarcia strony, a z zapisem serwera z ostatniej doby',
+        "Resting order liquidity over time (Hyperliquid l2Book, BTC buckets ~10 and ~100 USD, other markets in proportion to price) — since the page opened, plus the server's recording of the last day"
+      ),
       swatch: 'bg-gradient-to-r from-of-heat-1 via-of-heat-2 to-of-heat-3',
     },
     {
       key: 'showBubbles',
-      label: 'Bąble zleceń agresora',
-      hint: `Zlecenia rynkowe od ${big} złożone z wypełnień; pole koła ∝ wartość, podwójny pierścień = bitwa z jednym dużym makerem; kliknij bąbel — od otwarcia strony, a z zapisem serwera z ostatniej doby`,
+      label: tr('Bąble zleceń agresora', 'Aggressor order bubbles'),
+      hint: tr(
+        `Zlecenia rynkowe od ${big} złożone z wypełnień; pole koła ∝ wartość, podwójny pierścień = bitwa z jednym dużym makerem; kliknij bąbel — od otwarcia strony, a z zapisem serwera z ostatniej doby`,
+        `Market orders from ${big} assembled from fills; circle area ∝ value, double ring = a battle with one large maker; click a bubble — since the page opened, plus the server's recording of the last day`
+      ),
       swatch: 'bg-gradient-to-r from-of-imb-buy to-of-imb-sell',
     },
     {
       key: 'showClashes',
-      label: 'Serie i ściany',
-      hint: 'Seria (przerywany pierścień): drobne zlecenia co najmniej 4 adresów po jednej stronie w 2 s, razem od progu. Ściana (belka): jeden maker na jednej cenie przyjął od progu z co najmniej 3 zleceń — od otwarcia strony, a z zapisem serwera z ostatniej doby',
+      label: tr('Serie i ściany', 'Bursts and walls'),
+      hint: tr(
+        'Seria (przerywany pierścień): drobne zlecenia co najmniej 4 adresów po jednej stronie w 2 s, razem od progu. Ściana (belka): jeden maker na jednej cenie przyjął od progu z co najmniej 3 zleceń — od otwarcia strony, a z zapisem serwera z ostatniej doby',
+        "Burst (dashed ring): small orders from at least 4 addresses on one side within 2 s, together above the threshold. Wall (bar): one maker at one price absorbed above the threshold from at least 3 orders — since the page opened, plus the server's recording of the last day"
+      ),
       swatch: 'bg-of-buy',
-      off: s.showBubbles ? undefined : 'Razem z bąblami zleceń agresora',
+      off: s.showBubbles ? undefined : tr('Razem z bąblami zleceń agresora', 'Together with aggressor order bubbles'),
     },
     {
       key: 'showLots',
-      label: 'Duże zlecenia w arkuszu',
-      hint: `Poziom arkusza, na którym średnie zlecenie jest w 1% największych z ostatnich 30 min tego rynku (co najmniej ${compact(bigUsd * LOT_FLOOR)} USD): linia przez czas, gdy jest w arkuszu (przygaszona po zniknięciu); po 30 s w arkuszu podpis „liczba zleceń × średnia wartość” — od otwarcia strony, a z zapisem serwera z ostatniej doby`,
+      label: tr('Duże zlecenia w arkuszu', 'Large orders in the book'),
+      hint: tr(
+        `Poziom arkusza, na którym średnie zlecenie jest w 1% największych z ostatnich 30 min tego rynku (co najmniej ${compact(bigUsd * LOT_FLOOR)} USD): linia przez czas, gdy jest w arkuszu (przygaszona po zniknięciu); po 30 s w arkuszu podpis „liczba zleceń × średnia wartość” — od otwarcia strony, a z zapisem serwera z ostatniej doby`,
+        `A book level where the average order is in the top 1% of this market's last 30 min (at least ${compact(bigUsd * LOT_FLOOR)} USD): a line for as long as it rests in the book (dimmed after it disappears); after 30 s in the book a label “order count × average value” — since the page opened, plus the server's recording of the last day`
+      ),
       swatch: 'bg-gradient-to-r from-of-buy-ink to-of-sell-ink',
     },
     {
       key: 'showVwap',
-      label: scope.vwapAnchor === 'week' ? 'VWAP tygodnia' : 'VWAP dnia',
-      hint: scope.vwapAnchor === 'week' ? 'Od poniedziałku 00:00 UTC (na świecach dziennych)' : 'Od 00:00 UTC, cena typowa (H+L+C)/3 ważona wolumenem',
+      label: scope.vwapAnchor === 'week' ? tr('VWAP tygodnia', 'Weekly VWAP') : tr('VWAP dnia', 'Daily VWAP'),
+      hint:
+        scope.vwapAnchor === 'week'
+          ? tr('Od poniedziałku 00:00 UTC (na świecach dziennych)', 'From Monday 00:00 UTC (on daily candles)')
+          : tr('Od 00:00 UTC, cena typowa (H+L+C)/3 ważona wolumenem', 'From 00:00 UTC, typical price (H+L+C)/3 weighted by volume'),
       swatch: 'bg-of-vwap',
     },
-    { key: 'showVwapBands', label: 'Pasma VWAP ±1σ i ±2σ', hint: 'Odchylenie standardowe ceny od VWAP ważone wolumenem', swatch: 'bg-of-vwap/40' },
+    {
+      key: 'showVwapBands',
+      label: tr('Pasma VWAP ±1σ i ±2σ', 'VWAP bands ±1σ and ±2σ'),
+      hint: tr('Odchylenie standardowe ceny od VWAP ważone wolumenem', 'Volume-weighted standard deviation of price from VWAP'),
+      swatch: 'bg-of-vwap/40',
+    },
     {
       key: 'showSessionVwap',
-      label: 'VWAP sesji',
-      hint: 'Od otwarcia sesji: Azja, Londyn, Nowy Jork',
+      label: tr('VWAP sesji', 'Session VWAP'),
+      hint: tr('Od otwarcia sesji: Azja, Londyn, Nowy Jork', 'From the session open: Asia, London, New York'),
       swatch: 'bg-of-svwap',
-      off: scope.sessionVwap ? undefined : 'Na interwałach do 30m',
+      off: scope.sessionVwap ? undefined : tr('Na interwałach do 30m', 'On timeframes up to 30m'),
     },
     {
       key: 'showProfile',
-      label: 'Profil wolumenu',
-      hint: 'Widoczny zakres: POC, value area 70% (VAH, VAL); świece z pełnej taśmy dokładnie po cenach transakcji',
+      label: tr('Profil wolumenu', 'Volume profile'),
+      hint: tr(
+        'Widoczny zakres: POC, value area 70% (VAH, VAL); świece z pełnej taśmy dokładnie po cenach transakcji',
+        'Visible range: POC, 70% value area (VAH, VAL); candles with a full tape exactly at trade prices'
+      ),
       swatch: 'bg-ink-3',
     },
     {
       key: 'showPeriodProfiles',
-      label: scope.periodProfile === 'day' ? 'Profile dób i nagie POC' : 'Profile sesji i nagie POC',
-      hint: `Profil każdej ${scope.periodProfile === 'day' ? 'doby UTC' : 'sesji'} od jej początku; POC, którego cena potem nie dotknęła, ciągnie się do prawej krawędzi`,
+      label: scope.periodProfile === 'day' ? tr('Profile dób i nagie POC', 'Day profiles and naked POCs') : tr('Profile sesji i nagie POC', 'Session profiles and naked POCs'),
+      hint: tr(
+        `Profil każdej ${scope.periodProfile === 'day' ? 'doby UTC' : 'sesji'} od jej początku; POC, którego cena potem nie dotknęła, ciągnie się do prawej krawędzi`,
+        `A profile of every ${scope.periodProfile === 'day' ? 'UTC day' : 'session'} from its start; a POC that price has not touched since extends to the right edge`
+      ),
       swatch: 'bg-of-vol',
-      off: scope.periodProfile ? undefined : 'Na interwałach do 4h',
+      off: scope.periodProfile ? undefined : tr('Na interwałach do 4h', 'On timeframes up to 4h'),
     },
     {
       key: 'showDevPoc',
-      label: 'Rozwijający się POC i value area',
-      hint: `POC (linia schodkowa) oraz VAH i VAL (kropkowane) ${scope.periodProfile === 'day' ? 'doby UTC' : 'sesji'} świeca po świecy: gdzie był środek wolumenu od początku okresu w każdej chwili`,
+      label: tr('Rozwijający się POC i value area', 'Developing POC and value area'),
+      hint: tr(
+        `POC (linia schodkowa) oraz VAH i VAL (kropkowane) ${scope.periodProfile === 'day' ? 'doby UTC' : 'sesji'} świeca po świecy: gdzie był środek wolumenu od początku okresu w każdej chwili`,
+        `The ${scope.periodProfile === 'day' ? 'UTC day' : 'session'} POC (step line) and VAH and VAL (dotted) candle by candle: where the volume centre was at every moment since the period began`
+      ),
       swatch: 'bg-of-poc',
-      off: scope.periodProfile ? undefined : 'Na interwałach do 4h',
+      off: scope.periodProfile ? undefined : tr('Na interwałach do 4h', 'On timeframes up to 4h'),
     },
     {
       key: 'showTpo',
-      label: 'TPO — profil czasowy doby',
-      hint: 'Litery 30-minutowych okresów doby UTC w każdym wierszu ceny: POC, value area, initial balance (pasek turkusowy), pojedyncze wydruki i ogony; zastępuje profile sesji',
+      label: tr('TPO — profil czasowy doby', 'TPO — time profile of the day'),
+      hint: tr(
+        'Litery 30-minutowych okresów doby UTC w każdym wierszu ceny: POC, value area, initial balance (pasek turkusowy), pojedyncze wydruki i ogony; zastępuje profile sesji',
+        'Letters of the 30-minute periods of the UTC day in every price row: POC, value area, initial balance (turquoise bar), single prints and tails; replaces session profiles'
+      ),
       swatch: 'bg-of-svwap',
-      off: tpoInterval(intervalMs) ? undefined : 'Na interwałach do 30m',
+      off: tpoInterval(intervalMs) ? undefined : tr('Na interwałach do 30m', 'On timeframes up to 30m'),
     },
     {
       key: 'showLevels',
-      label: 'Poziomy dnia',
-      hint: 'PDH i PDL — szczyt i dołek poprzedniego dnia UTC — oraz otwarcie dnia (00:00 UTC)',
+      label: tr('Poziomy dnia', 'Daily levels'),
+      hint: tr('PDH i PDL — szczyt i dołek poprzedniego dnia UTC — oraz otwarcie dnia (00:00 UTC)', "PDH and PDL — the previous UTC day's high and low — and the daily open (00:00 UTC)"),
       swatch: 'bg-level',
-      off: scope.levels ? undefined : 'Na interwałach poniżej 1D',
+      off: scope.levels ? undefined : tr('Na interwałach poniżej 1D', 'On timeframes below 1D'),
     },
     {
       key: 'showSessions',
-      label: 'Otwarcia sesji',
-      hint: 'Azja 00:00 UTC, Londyn 08:00 i Nowy Jork 09:30 czasu lokalnego giełd',
+      label: tr('Otwarcia sesji', 'Session opens'),
+      hint: tr('Azja 00:00 UTC, Londyn 08:00 i Nowy Jork 09:30 czasu lokalnego giełd', 'Asia 00:00 UTC, London 08:00 and New York 09:30 exchange local time'),
       swatch: 'bg-ink-3/60',
-      off: scope.sessions ? undefined : 'Na interwałach do 1h',
+      off: scope.sessions ? undefined : tr('Na interwałach do 1h', 'On timeframes up to 1h'),
     },
     {
       key: 'showIb',
       label: 'Initial balance',
-      hint: 'Zakres pierwszej godziny każdej sesji i rozszerzenia 1,5× i 2×',
+      hint: tr('Zakres pierwszej godziny każdej sesji i rozszerzenia 1,5× i 2×', 'The range of the first hour of each session and its 1.5× and 2× extensions'),
       swatch: 'bg-series-1',
-      off: scope.ib ? undefined : 'Na interwałach do 30m',
+      off: scope.ib ? undefined : tr('Na interwałach do 30m', 'On timeframes up to 30m'),
     },
     {
       key: 'showLiq',
-      label: 'Klastry likwidacji',
+      label: tr('Klastry likwidacji', 'Liquidation clusters'),
       hint: liqHint(liq),
       swatch: 'bg-gradient-to-r from-of-sell to-of-buy',
-      off: s.coin === 'BTC' ? undefined : 'Tylko BTC: skaner mapuje pozycje na BTC',
+      off: s.coin === 'BTC' ? undefined : tr('Tylko BTC: skaner mapuje pozycje na BTC', 'BTC only: the scanner maps BTC positions'),
     },
     {
       key: 'showWhales',
-      label: 'Wieloryby',
-      hint: `Cena wejścia (L/S, wartość, dźwignia) i likwidacji największych pozycji oraz duże zlecenia oczekujące, także stop i TP, największych kont Hyperliquid z ich publicznego stanu; konto ma pseudonim na dobę, bez adresu · ${whaleHint(whales, s.coin)}`,
+      label: tr('Wieloryby', 'Whales'),
+      hint: tr(
+        `Cena wejścia (L/S, wartość, dźwignia) i likwidacji największych pozycji oraz duże zlecenia oczekujące, także stop i TP, największych kont Hyperliquid z ich publicznego stanu; konto ma pseudonim na dobę, bez adresu · ${whaleHint(whales, s.coin)}`,
+        `Entry price (L/S, value, leverage) and liquidation price of the largest positions plus large resting orders, including stops and TPs, of the largest Hyperliquid accounts from their public state; each account has a pseudonym for the day, no address · ${whaleHint(whales, s.coin)}`
+      ),
       swatch: 'bg-gradient-to-r from-of-buy to-of-sell',
     },
     {
       key: 'showZones',
-      label: 'Strefy nierównowagi',
-      hint: `Seria co najmniej ${s.stackedMin || 3} wierszy z nierównowagą po jednej stronie, ciągnięta w prawo, aż cena przejdzie przez strefę — ze świec z taśmą`,
+      label: tr('Strefy nierównowagi', 'Imbalance zones'),
+      hint: tr(
+        `Seria co najmniej ${s.stackedMin || 3} wierszy z nierównowagą po jednej stronie, ciągnięta w prawo, aż cena przejdzie przez strefę — ze świec z taśmą`,
+        `A run of at least ${s.stackedMin || 3} rows with an imbalance on one side, extended right until price trades through the zone — from candles with a tape`
+      ),
       swatch: 'bg-gradient-to-r from-of-imb-buy to-of-imb-sell',
-      off: s.stackedMin > 1 ? undefined : 'Włącz strefy stacked w ustawieniach footprintu',
+      off: s.stackedMin > 1 ? undefined : tr('Włącz strefy stacked w ustawieniach footprintu', 'Turn on stacked zones in the footprint settings'),
     },
     {
       key: 'showAuctions',
-      label: 'Niedokończone aukcje',
-      hint: 'Szczyt albo dołek świecy z kupnem i sprzedażą agresorów (UA), do powrotu ceny — ze świec w całości nagranych',
+      label: tr('Niedokończone aukcje', 'Unfinished auctions'),
+      hint: tr(
+        'Szczyt albo dołek świecy z kupnem i sprzedażą agresorów (UA), do powrotu ceny — ze świec w całości nagranych',
+        'A candle high or low with both aggressor buying and selling (UA), until price returns — from fully recorded candles'
+      ),
       swatch: 'bg-warn',
     },
   ];
@@ -1302,13 +1375,13 @@ const IndicatorsMenu: React.FC<{
   return (
     <div className="bg-surface-2 border border-line-strong rounded-xl p-3 shadow-2xl flex flex-col gap-1 text-xs">
       <div className="flex items-center justify-between mb-1">
-        <span className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium">Wskaźniki</span>
+        <span className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium">{tr('Wskaźniki', 'Indicators')}</span>
         <button
           type="button"
           onClick={() => onChange(Object.fromEntries(items.map((i) => [i.key, !all])) as Partial<ChartSettings>)}
           className="min-h-8 px-2.5 rounded-md border border-line-strong text-ink-2 hover:text-ink-1 hover:bg-surface-3"
         >
-          {all ? 'Wyłącz wszystkie' : 'Włącz wszystkie'}
+          {all ? tr('Wyłącz wszystkie', 'Turn all off') : tr('Włącz wszystkie', 'Turn all on')}
         </button>
       </div>
       {items.map((i) => (
@@ -1344,8 +1417,8 @@ const AlertInput: React.FC<{ coin: string; price: number; onAdd: (price: number)
       <input
         type="text"
         inputMode="decimal"
-        aria-label={`Cena alertu ${coin}`}
-        placeholder={price > 0 ? `${coin} · ${fmtPx(price)}` : `Cena ${coin}`}
+        aria-label={tr(`Cena alertu ${coin}`, `${coin} alert price`)}
+        placeholder={price > 0 ? `${coin} · ${fmtPx(price)}` : tr(`Cena ${coin}`, `${coin} price`)}
         value={text}
         onChange={(e) => setText(e.target.value)}
         className="min-w-0 flex-1 h-9 px-2.5 rounded-lg bg-surface-1 border border-line font-mono text-ink-1 placeholder:text-ink-3 focus:outline-none focus:border-line-strong"
@@ -1356,7 +1429,7 @@ const AlertInput: React.FC<{ coin: string; price: number; onAdd: (price: number)
         className="inline-flex items-center gap-1.5 h-9 px-2.5 rounded-lg border border-line-strong bg-surface-3 font-medium text-ink-1 disabled:opacity-40"
       >
         <Bell className="w-3.5 h-3.5" />
-        Dodaj
+        {tr('Dodaj', 'Add')}
       </button>
     </form>
   );
@@ -1375,15 +1448,15 @@ const Templates: React.FC<{ settings: ChartSettings; onApply: (s: ChartSettings)
   };
   const btn = 'inline-flex items-center h-9 px-2.5 rounded-lg border border-line-strong bg-surface-3 font-medium text-ink-1 disabled:opacity-40';
   return (
-    <Group title="Szablony">
+    <Group title={tr('Szablony', 'Templates')}>
       <div className="flex items-center gap-1.5">
         <select
-          aria-label="Szablon"
+          aria-label={tr('Szablon', 'Template')}
           value={chosen.id}
           onChange={(e) => setPick(e.target.value)}
           className="min-w-0 flex-1 h-9 bg-page border border-line rounded-md px-2 text-ink-1"
         >
-          <optgroup label="Wbudowane">
+          <optgroup label={tr('Wbudowane', 'Built-in')}>
             {BUILT_IN_TEMPLATES.map((t) => (
               <option key={t.id} value={t.id}>
                 {t.name}
@@ -1391,7 +1464,7 @@ const Templates: React.FC<{ settings: ChartSettings; onApply: (s: ChartSettings)
             ))}
           </optgroup>
           {own.length > 0 && (
-            <optgroup label="Własne">
+            <optgroup label={tr('Własne', 'Your own')}>
               {own.map((t) => (
                 <option key={t.id} value={t.id}>
                   {t.name}
@@ -1401,12 +1474,12 @@ const Templates: React.FC<{ settings: ChartSettings; onApply: (s: ChartSettings)
           )}
         </select>
         <button type="button" className={btn} onClick={() => onApply(applyTemplate(settings, chosen.s))}>
-          Zastosuj
+          {tr('Zastosuj', 'Apply')}
         </button>
         {!chosen.builtIn && (
           <button
             type="button"
-            aria-label={`Usuń szablon ${chosen.name}`}
+            aria-label={tr(`Usuń szablon ${chosen.name}`, `Delete template ${chosen.name}`)}
             onClick={() => {
               store(own.filter((t) => t.id !== chosen.id));
               setPick(BUILT_IN_TEMPLATES[0].id);
@@ -1429,57 +1502,57 @@ const Templates: React.FC<{ settings: ChartSettings; onApply: (s: ChartSettings)
       >
         <input
           type="text"
-          aria-label="Nazwa nowego szablonu"
-          placeholder="Nazwa szablonu"
+          aria-label={tr('Nazwa nowego szablonu', 'New template name')}
+          placeholder={tr('Nazwa szablonu', 'Template name')}
           maxLength={40}
           value={name}
           onChange={(e) => setName(e.target.value)}
           className="min-w-0 flex-1 h-9 px-2.5 rounded-lg bg-surface-1 border border-line text-ink-1 placeholder:text-ink-3 focus:outline-none focus:border-line-strong"
         />
         <button type="submit" disabled={!name.trim()} className={btn}>
-          Zapisz bieżące
+          {tr('Zapisz bieżące', 'Save current')}
         </button>
       </form>
-      <p className="text-[11px] leading-snug text-ink-3">Interwał, rodzaj wykresu, panele, wskaźniki i warstwy; rynek zostaje.</p>
+      <p className="text-[11px] leading-snug text-ink-3">{tr('Interwał, rodzaj wykresu, panele, wskaźniki i warstwy; rynek zostaje.', 'Timeframe, chart type, panes, indicators and layers; the market stays.')}</p>
     </Group>
   );
 };
 
 const KEY_GROUPS: { title: string; keys: [string, string][] }[] = [
   {
-    title: 'Wykres',
+    title: tr('Wykres', 'Chart'),
     keys: [
-      ['1 … 8', `Interwał: ${INTERVALS.map((i) => i.label).join(', ')}`],
-      ['C', 'Świece ↔ footprint'],
-      ['M', `Następny rynek (${MARKETS.join(', ')})`],
-      ['T', 'Taśma zleceń'],
-      ['R', 'Przywróć skalę'],
-      ['A', 'Autoskala ceny: włącz / zamroź zakres'],
-      ['End', 'Przewiń do bieżącej świecy'],
-      ['F', 'Pełny ekran'],
-      ['?', 'Ta lista'],
-      ['Esc', 'Zamknij menu, przerwij rysowanie'],
+      ['1 … 8', `${tr('Interwał', 'Timeframe')}: ${INTERVALS.map((i) => i.label).join(', ')}`],
+      ['C', tr('Świece ↔ footprint', 'Candles ↔ footprint')],
+      ['M', `${tr('Następny rynek', 'Next market')} (${MARKETS.join(', ')})`],
+      ['T', tr('Taśma zleceń', 'Order tape')],
+      ['R', tr('Przywróć skalę', 'Reset scale')],
+      ['A', tr('Autoskala ceny: włącz / zamroź zakres', 'Price autoscale: on / freeze the range')],
+      ['End', tr('Przewiń do bieżącej świecy', 'Scroll to the current candle')],
+      ['F', tr('Pełny ekran', 'Full screen')],
+      ['?', tr('Ta lista', 'This list')],
+      ['Esc', tr('Zamknij menu, przerwij rysowanie', 'Close menu, cancel drawing')],
     ],
   },
   {
-    title: 'Rysowanie',
+    title: tr('Rysowanie', 'Drawing'),
     keys: [
       ...TOOLS.filter((t) => t.hotkey).map((t): [string, string] => [`Alt+${t.hotkey}`, t.label]),
-      ['Shift + przeciągnij', 'Szybki pomiar'],
-      ['Ctrl', 'Odwraca magnes do OHLC'],
-      ['Delete', 'Usuń zaznaczony rysunek'],
-      ['Ctrl+C / Ctrl+V', 'Kopiuj i wklej rysunek'],
-      ['Ctrl+Z / Ctrl+Y', 'Cofnij i ponów'],
+      [tr('Shift + przeciągnij', 'Shift + drag'), tr('Szybki pomiar', 'Quick measure')],
+      ['Ctrl', tr('Odwraca magnes do OHLC', 'Inverts the OHLC magnet')],
+      ['Delete', tr('Usuń zaznaczony rysunek', 'Delete the selected drawing')],
+      ['Ctrl+C / Ctrl+V', tr('Kopiuj i wklej rysunek', 'Copy and paste a drawing')],
+      ['Ctrl+Z / Ctrl+Y', tr('Cofnij i ponów', 'Undo and redo')],
     ],
   },
   {
-    title: 'Mysz',
+    title: tr('Mysz', 'Mouse'),
     keys: [
-      ['Kółko', 'Zbliżenie w czasie'],
-      ['Przeciągnij oś ceny', 'Skala ceny (wyłącza autoskalę)'],
-      ['Dwuklik na osi ceny', 'Włącz autoskalę'],
-      ['Prawy przycisk', 'Alert, linia, cena, zrzut'],
-      ['Krzyżyk × przy panelu', 'Ukryj panel pod wykresem'],
+      [tr('Kółko', 'Wheel'), tr('Zbliżenie w czasie', 'Zoom in time')],
+      [tr('Przeciągnij oś ceny', 'Drag the price axis'), tr('Skala ceny (wyłącza autoskalę)', 'Price scale (turns autoscale off)')],
+      [tr('Dwuklik na osi ceny', 'Double-click the price axis'), tr('Włącz autoskalę', 'Turn autoscale on')],
+      [tr('Prawy przycisk', 'Right-click'), tr('Alert, linia, cena, zrzut', 'Alert, line, price, screenshot')],
+      [tr('Krzyżyk × przy panelu', 'The × on a pane'), tr('Ukryj panel pod wykresem', 'Hide the pane below the chart')],
     ],
   },
 ];
@@ -1501,7 +1574,7 @@ const KeysMenu: React.FC = () => (
         </dl>
       </Group>
     ))}
-    <p className="text-[11px] leading-snug text-ink-3">W układzie kilku wykresów skróty trafiają do wykresu, w którym ostatnio kliknięto.</p>
+    <p className="text-[11px] leading-snug text-ink-3">{tr('W układzie kilku wykresów skróty trafiają do wykresu, w którym ostatnio kliknięto.', 'With several charts, shortcuts go to the chart you clicked last.')}</p>
   </div>
 );
 
@@ -1553,12 +1626,20 @@ const Check: React.FC<{ label: string; checked: boolean; onChange: (v: boolean) 
 );
 
 const STATUS: Record<string, { text: string; tone: BadgeTone; title: string }> = {
-  open: { text: 'LIVE', tone: 'live', title: 'Na żywo: WebSocket Hyperliquid połączony' },
-  connecting: { text: 'Łączenie', tone: 'stale', title: 'Łączenie z WebSocket Hyperliquid' },
-  reconnecting: { text: 'Ponowne łączenie', tone: 'stale', title: 'Połączenie zerwane — łączę ponownie; brakujący czas będzie luką w taśmie' },
-  idle: { text: 'Rozłączony', tone: 'neutral', title: 'Strumień nieaktywny' },
+  open: { text: 'LIVE', tone: 'live', title: tr('Na żywo: WebSocket Hyperliquid połączony', 'Live: Hyperliquid WebSocket connected') },
+  connecting: { text: tr('Łączenie', 'Connecting'), tone: 'stale', title: tr('Łączenie z WebSocket Hyperliquid', 'Connecting to the Hyperliquid WebSocket') },
+  reconnecting: {
+    text: tr('Ponowne łączenie', 'Reconnecting'),
+    tone: 'stale',
+    title: tr('Połączenie zerwane — łączę ponownie; brakujący czas będzie luką w taśmie', 'Connection dropped — reconnecting; the missing time will be a gap in the tape'),
+  },
+  idle: { text: tr('Rozłączony', 'Disconnected'), tone: 'neutral', title: tr('Strumień nieaktywny', 'Stream inactive') },
 };
-const REPLAY_STATUS = { text: 'Powtórka', tone: 'model' as BadgeTone, title: 'Powtórka nagrania serwera: taśma i arkusz z przeszłości, nie na żywo' };
+const REPLAY_STATUS = {
+  text: tr('Powtórka', 'Replay'),
+  tone: 'model' as BadgeTone,
+  title: tr('Powtórka nagrania serwera: taśma i arkusz z przeszłości, nie na żywo', "Replay of the server's recording: tape and book from the past, not live"),
+};
 
 function tzLabel(): string {
   const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -1576,16 +1657,32 @@ const StatusBar: React.FC<{ store: ProStore; series: CandleSeries }> = ({ store,
       <Badge tone={st.tone} title={st.title}>
         {st.text}
       </Badge>
-      <span title="Footprint, Delta i CVD liczymy z taśmy transakcji Hyperliquid nagrywanej od otwarcia tej strony i z zapisu serwera z ostatniej doby — API nie udostępnia historii transakcji. Świece (OHLC i wolumen) pochodzą z pełnej historii API.">
-        Taśma {Number.isFinite(first) ? `od ${fmtSince(first, Date.now())}` : '—'}
-        {gaps > 0 && <span className="text-warn"> · luki: {gaps}</span>}
+      <span
+        title={tr(
+          'Footprint, Delta i CVD liczymy z taśmy transakcji Hyperliquid nagrywanej od otwarcia tej strony i z zapisu serwera z ostatniej doby — API nie udostępnia historii transakcji. Świece (OHLC i wolumen) pochodzą z pełnej historii API.',
+          "Footprint, Delta and CVD are computed from the Hyperliquid trade tape recorded since this page opened and from the server's recording of the last day — the API does not provide trade history. Candles (OHLC and volume) come from the full API history."
+        )}
+      >
+        {tr('Taśma', 'Tape')} {Number.isFinite(first) ? tr(`od ${fmtSince(first, Date.now())}`, `since ${fmtSince(first, Date.now())}`) : '—'}
+        {gaps > 0 && (
+          <span className="text-warn">
+            {' '}
+            · {tr('luki', 'gaps')}: {gaps}
+          </span>
+        )}
       </span>
-      <span>Transakcje: {store.tape.count.toLocaleString('pl-PL')}</span>
-      {series.loadingOlder && <span>Historia: wczytywanie…</span>}
-      {series.historyExhausted && <span title="Hyperliquid udostępnia najwyżej 5000 ostatnich świec każdego interwału">Historia: limit API</span>}
+      <span>
+        {tr('Transakcje', 'Trades')}: {store.tape.count.toLocaleString(locale)}
+      </span>
+      {series.loadingOlder && <span>{tr('Historia: wczytywanie…', 'History: loading…')}</span>}
+      {series.historyExhausted && (
+        <span title={tr('Hyperliquid udostępnia najwyżej 5000 ostatnich świec każdego interwału', 'Hyperliquid provides at most the last 5000 candles of each timeframe')}>
+          {tr('Historia: limit API', 'History: API limit')}
+        </span>
+      )}
       <span className="text-ink-3">{tzLabel()}</span>
       <span className="ml-auto text-ink-3">
-        Dane: Hyperliquid · Wykres:{' '}
+        {tr('Dane', 'Data')}: Hyperliquid · {tr('Wykres', 'Chart')}:{' '}
         <a href="https://www.tradingview.com/" target="_blank" rel="noopener noreferrer" className="underline decoration-line-strong hover:text-ink-1">
           TradingView Lightweight Charts™
         </a>

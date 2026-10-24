@@ -5,6 +5,7 @@ import { DASH } from '../../../ui';
 import { fmtBarTime, fmtSince } from '../core/time';
 import type { Hover } from './controller';
 import { fmtPx } from './layout';
+import { lang, locale, tr } from '../../../i18n';
 
 /** Najnowszy stan krzyża (ustawiany przez sterownik wykresu najwyżej raz na klatkę). */
 export class HoverSignal {
@@ -26,7 +27,7 @@ export class HoverSignal {
   };
 }
 
-const fmtSigma = (z: number) => `${z >= 0 ? '+' : '−'}${Math.abs(z).toFixed(2).replace('.', ',')}σ`;
+const fmtSigma = (z: number) => `${z >= 0 ? '+' : '−'}${lang === 'en' ? Math.abs(z).toFixed(2) : Math.abs(z).toFixed(2).replace('.', ',')}σ`;
 
 const tone = (v: number) => (v > 0 ? 'text-of-buy-ink' : v < 0 ? 'text-of-sell-ink' : 'text-ink-2');
 
@@ -91,23 +92,23 @@ export const Legend: React.FC<{
               {fmtPx(c.c)} {change >= 0 ? '+' : '−'}
               {Math.abs(change).toFixed(2)}%
             </span>
-            <Field label="Wol.">{fmtVol(c.v)}</Field>
+            <Field label={tr('Wol.', 'Vol.')}>{fmtVol(c.v)}</Field>
             {h.ind?.vwap && (
-              <Field label={h.ind.anchor === 'week' ? 'VWAP T' : 'VWAP'} className="text-of-vwap">
+              <Field label={h.ind.anchor === 'week' ? tr('VWAP T', 'VWAP W') : 'VWAP'} className="text-of-vwap">
                 {fmtPx(h.ind.vwap.vwap)}
               </Field>
             )}
           </div>
         ) : (
-          <div className="text-ink-3">Wczytywanie świec…</div>
+          <div className="text-ink-3">{tr('Wczytywanie świec…', 'Loading candles…')}</div>
         )}
         {h.row && (
           <div className="flex items-baseline gap-x-2 whitespace-nowrap overflow-hidden">
             <span className="text-ink-3">{fmtPx(h.row.lo)}</span>
-            <Field label="S" className="text-of-sell-ink">
+            <Field label={tr('S', 'S')} className="text-of-sell-ink">
               {fmtVol(h.row.sell)}
             </Field>
-            <Field label="K" className="text-of-buy-ink">
+            <Field label={tr('K', 'B')} className="text-of-buy-ink">
               {fmtVol(h.row.buy)}
             </Field>
             <Field label="Δ" className={tone(h.row.buy - h.row.sell)}>
@@ -127,7 +128,7 @@ export const Legend: React.FC<{
           {intervalLabel} · Hyperliquid
         </span>
         {bar && <span className="text-ink-2">{fmtBarTime(bar.t, intervalMs)}</span>}
-        {h.live && h.open && bar && <span className="text-accent">● bieżąca</span>}
+        {h.live && h.open && bar && <span className="text-accent">● {tr('bieżąca', 'current')}</span>}
       </div>
       {c ? (
         <div className="flex flex-wrap items-baseline gap-x-2.5">
@@ -147,27 +148,32 @@ export const Legend: React.FC<{
             {change >= 0 ? '+' : '−'}
             {Math.abs(change).toFixed(2)}%
           </span>
-          <Field label="Wol." title={`Wolumen świecy z API Hyperliquid (${coin})`}>
+          <Field label={tr('Wol.', 'Vol.')} title={tr(`Wolumen świecy z API Hyperliquid (${coin})`, `Candle volume from the Hyperliquid API (${coin})`)}>
             {fmtVol(c.v)}
           </Field>
         </div>
       ) : (
-        <div className="text-ink-3">Wczytywanie świec…</div>
+        <div className="text-ink-3">{tr('Wczytywanie świec…', 'Loading candles…')}</div>
       )}
       {(h.ind?.vwap || h.ind?.svwap) && c && (
         <div className="flex flex-wrap items-baseline gap-x-2.5">
           {h.ind.vwap && (
-            <Field label={h.ind.anchor === 'week' ? 'VWAP T' : 'VWAP'} className="text-of-vwap" title="VWAP od początku okresu (cena typowa ważona wolumenem)">
+            <Field label={h.ind.anchor === 'week' ? tr('VWAP T', 'VWAP W') : 'VWAP'} className="text-of-vwap" title={tr('VWAP od początku okresu (cena typowa ważona wolumenem)', 'VWAP since the start of the period (typical price weighted by volume)')}>
               {fmtPx(h.ind.vwap.vwap)}
             </Field>
           )}
           {h.ind.vwap && h.ind.vwap.sd > 0 && (
-            <Field label="Odch." className={tone(c.c - h.ind.vwap.vwap)} title="Odległość zamknięcia od VWAP w odchyleniach standardowych" secondary>
+            <Field
+              label={tr('Odch.', 'Dev.')}
+              className={tone(c.c - h.ind.vwap.vwap)}
+              title={tr('Odległość zamknięcia od VWAP w odchyleniach standardowych', 'Distance of the close from VWAP in standard deviations')}
+              secondary
+            >
               {fmtSigma((c.c - h.ind.vwap.vwap) / h.ind.vwap.sd)}
             </Field>
           )}
           {h.ind.svwap && (
-            <Field label="VWAP S" className="text-of-svwap" title="VWAP od otwarcia bieżącej sesji">
+            <Field label="VWAP S" className="text-of-svwap" title={tr('VWAP od otwarcia bieżącej sesji', 'VWAP since the current session open')}>
               {fmtPx(h.ind.svwap.vwap)}
             </Field>
           )}
@@ -176,26 +182,29 @@ export const Legend: React.FC<{
       {/* Szczegóły taśmy tylko na szerszym ekranie — na telefonie deltę i CVD pokazują opisy paneli */}
       {fp && bar ? (
         <div className="hidden sm:flex flex-wrap items-baseline gap-x-2.5">
-          <Field label="Δ" className={tone(fp.delta)} title={`Delta: kupno agresywne − sprzedaż agresywna (${coin})`}>
+          <Field label="Δ" className={tone(fp.delta)} title={tr(`Delta: kupno agresywne − sprzedaż agresywna (${coin})`, `Delta: aggressive buying − aggressive selling (${coin})`)}>
             {fmtSignedVol(fp.delta)}
             {fpVol > 0 && <span className="text-ink-3"> ({((fp.delta / fpVol) * 100).toFixed(0)}%)</span>}
           </Field>
-          <Field label="max" className={tone(fp.maxDelta)} title="Najwyższa delta w trakcie świecy" secondary>
+          <Field label="max" className={tone(fp.maxDelta)} title={tr('Najwyższa delta w trakcie świecy', 'Highest delta during the candle')} secondary>
             {fmtSignedVol(fp.maxDelta)}
           </Field>
-          <Field label="min" className={tone(fp.minDelta)} title="Najniższa delta w trakcie świecy" secondary>
+          <Field label="min" className={tone(fp.minDelta)} title={tr('Najniższa delta w trakcie świecy', 'Lowest delta during the candle')} secondary>
             {fmtSignedVol(fp.minDelta)}
           </Field>
-          <Field label="Transakcje" secondary>
-            {fp.trades.toLocaleString('pl-PL')}
+          <Field label={tr('Transakcje', 'Trades')} secondary>
+            {fp.trades.toLocaleString(locale)}
           </Field>
           <Field
-            label="Taśma"
+            label={tr('Taśma', 'Tape')}
             className={bar.complete ? 'text-ink-1' : 'text-warn'}
-            title="Część wolumenu świecy zarejestrowana na taśmie na żywo. Świeca częściowa — nagrywanie zaczęło się lub przerwało w jej trakcie."
+            title={tr(
+              'Część wolumenu świecy zarejestrowana na taśmie na żywo. Świeca częściowa — nagrywanie zaczęło się lub przerwało w jej trakcie.',
+              'The share of candle volume recorded on the live tape. Partial candle — recording started or broke off during it.'
+            )}
           >
             {Number.isFinite(bar.share) ? `${Math.min(100, bar.share * 100).toFixed(0)}%` : DASH}
-            {!bar.complete && ' · częściowa'}
+            {!bar.complete && tr(' · częściowa', ' · partial')}
           </Field>
           {h.cvd && (
             <Field label="CVD" className={tone(h.cvd.close)} secondary>
@@ -206,21 +215,23 @@ export const Legend: React.FC<{
       ) : (
         bar && (
           <div className="hidden sm:block text-ink-3">
-            Footprint: brak taśmy dla tej świecy
-            {Number.isFinite(tapeSince) ? ` — nagrywanie od ${fmtSince(tapeSince, Date.now())}` : ' — czekam na pierwsze transakcje'}
+            {tr('Footprint: brak taśmy dla tej świecy', 'Footprint: no tape for this candle')}
+            {Number.isFinite(tapeSince)
+              ? tr(` — nagrywanie od ${fmtSince(tapeSince, Date.now())}`, ` — recording since ${fmtSince(tapeSince, Date.now())}`)
+              : tr(' — czekam na pierwsze transakcje', ' — waiting for the first trades')}
           </div>
         )
       )}
       {h.row && (
         <div className="flex flex-wrap items-baseline gap-x-2.5">
-          <Field label="Wiersz">
+          <Field label={tr('Wiersz', 'Row')}>
             {fmtPx(h.row.lo)}
             {h.row.hi > h.row.lo && `–${fmtPx(h.row.hi)}`}
           </Field>
-          <Field label="Sprzedaż" className="text-of-sell-ink">
+          <Field label={tr('Sprzedaż', 'Sell')} className="text-of-sell-ink">
             {fmtVol(h.row.sell)}
           </Field>
-          <Field label="Kupno" className="text-of-buy-ink">
+          <Field label={tr('Kupno', 'Buy')} className="text-of-buy-ink">
             {fmtVol(h.row.buy)}
           </Field>
           <Field label="Δ" className={tone(h.row.buy - h.row.sell)}>
