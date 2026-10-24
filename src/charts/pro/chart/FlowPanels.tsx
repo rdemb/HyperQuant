@@ -144,7 +144,7 @@ export const PickCard: React.FC<{
     const bid = w.side === 1;
     head = (
       <>
-        <SideTag buy={bid}>{bid ? 'Ściana na bidzie' : 'Ściana na asku'}</SideTag>
+        <SideTag buy={bid}>{w.iceberg ? (bid ? 'Góra lodowa na bidzie' : 'Góra lodowa na asku') : bid ? 'Ściana na bidzie' : 'Ściana na asku'}</SideTag>
         <span className="font-mono text-ink-1">{fmtPx(w.px)}</span>
       </>
     );
@@ -154,11 +154,14 @@ export const PickCard: React.FC<{
           {amount(w.sz, store.coin)} · {usd(w.usd)}
         </Row>
         <Row label="Zleceń agresora">{w.hits}</Row>
+        <Row label="Widoczne w arkuszu">{w.shown > 0 ? `maks. ${amount(w.shown, store.coin)}` : 'brak migawki poziomu'}</Row>
         <Row label="Czas">
           {fmtHms(w.from)} – {fmtHms(w.to)}
         </Row>
         <p className="text-[11px] leading-snug text-ink-3">
           Jeden maker na tej cenie przyjmował {bid ? 'agresywną sprzedaż' : 'agresywne kupno'} (przerwy najwyżej 30 s).
+          {w.iceberg &&
+            ` Wchłonął ${(w.sz / w.shown).toFixed(1)} × więcej, niż cały poziom pokazywał w arkuszu — zlecenie było odnawiane po wypełnieniach.`}
         </p>
       </>
     );

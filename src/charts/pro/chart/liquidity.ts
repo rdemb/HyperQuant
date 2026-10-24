@@ -104,6 +104,8 @@ const K = {
   domAsk: rgba(PRO.domAsk, 0.92),
   domText: PRO.domText,
   labelBg: rgba(PRO.bg, 0.85),
+  /** Góra lodowa: romb na końcu belki i podpis „ICE”. */
+  ice: '#7fe7ff',
 };
 
 interface Bubble {
@@ -129,6 +131,7 @@ interface WallMark {
   bid: boolean;
   usd: number;
   label: string;
+  iceberg: boolean;
   selected: boolean;
   pick: LiquidityPick;
 }
@@ -405,7 +408,8 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
         y: g.a + g.b * w.px,
         bid: w.side === 1,
         usd: w.usd,
-        label: fmtCompact(w.usd),
+        label: w.iceberg ? `ICE ${fmtCompact(w.usd)}` : fmtCompact(w.usd),
+        iceberg: w.iceberg,
         selected: sel?.kind === 'wall' && sel.wall.from === w.from && sel.wall.px === w.px && sel.wall.side === w.side,
         pick: { kind: 'wall', wall: w },
       };
@@ -556,6 +560,18 @@ function drawWalls(ctx: CanvasRenderingContext2D, list: readonly WallMark[], hr:
     }
     ctx.fillStyle = w.bid ? K.domBid : K.domAsk;
     ctx.fillRect(x0, y, x1 - x0, h);
+    if (w.iceberg) {
+      const r = Math.round(4 * vr);
+      const cy = y + h / 2;
+      ctx.fillStyle = K.ice;
+      ctx.beginPath();
+      ctx.moveTo(x1 + r, cy - r);
+      ctx.lineTo(x1 + 2 * r, cy);
+      ctx.lineTo(x1 + r, cy + r);
+      ctx.lineTo(x1, cy);
+      ctx.closePath();
+      ctx.fill();
+    }
   }
 }
 
@@ -584,7 +600,7 @@ function drawWallLabels(ctx: CanvasRenderingContext2D, list: readonly WallMark[]
     ctx.fillRect(xr - tw - pad, y - th / 2, tw + 2 * pad, th);
     ctx.fillStyle = w.bid ? K.domBid : K.domAsk;
     ctx.fillRect(xr + pad - Math.max(1, Math.round(hr)), y - th / 2, Math.max(1, Math.round(hr)), th);
-    ctx.fillStyle = K.domText;
+    ctx.fillStyle = w.iceberg ? K.ice : K.domText;
     ctx.fillText(w.label, xr, y);
   }
 }

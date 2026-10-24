@@ -101,6 +101,25 @@ describe('ściany', () => {
     ]);
     expect(w.walls(0, 1e9, 100_000)).toEqual([]);
   });
+
+  it('góra lodowa: maker wchłonął co najmniej 2 × więcej, niż poziom kiedykolwiek pokazywał w arkuszu', () => {
+    const book = (ask: number, t: number) => ({ time: t, bids: [{ px: 99_999, sz: 3, n: 1 }], asks: [{ px: 100_000, sz: ask, n: 1 }] });
+    const w = new WallTracker();
+    w.observeBook(book(0.6, 900));
+    w.push([fill({ tid: 1, taker: '0x1', hash: '0xa1' })]);
+    // Po wypełnieniu maker odnawia 0,8 na tej samej cenie
+    w.observeBook(book(0.8, 1500));
+    w.push([fill({ tid: 2, taker: '0x2', hash: '0xa2', time: 2000 }), fill({ tid: 3, taker: '0x3', hash: '0xa3', time: 3000 })]);
+    const [x] = w.walls(0, 10_000, 250_000);
+    expect(x.shown).toBe(0.8);
+    expect(x.sz).toBe(3);
+    expect(x.iceberg).toBe(true);
+    // Poziom, który pokazywał całą wielkość, to zwykła ściana
+    const v = new WallTracker();
+    v.observeBook(book(3, 900));
+    v.push([fill({ tid: 1, taker: '0x1', hash: '0xa1' }), fill({ tid: 2, taker: '0x2', hash: '0xa2', time: 2000 }), fill({ tid: 3, taker: '0x3', hash: '0xa3', time: 3000 })]);
+    expect(v.walls(0, 10_000, 250_000)[0].iceberg).toBe(false);
+  });
 });
 
 describe('portfel', () => {

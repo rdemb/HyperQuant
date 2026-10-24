@@ -98,10 +98,14 @@ export class ProStore {
   private tradesPending = false;
   /** Dzień UTC, dla którego świece dzienne są pobrane albo w drodze. */
   private dailyDay = 0;
-  /** Subskrypcje arkusza: bliska (~2 pb ceny) i daleka (10 × większy krok) agregacja; migawki rozpoznajemy po kroku cen. */
+  /**
+   * Subskrypcje arkusza: bliska (~2 pb ceny) i daleka (10 × większy krok) agregacja do mapy ciepła oraz dokładny arkusz
+   * (tick ceny) do wykrywania gór lodowych; migawki rozpoznajemy po kroku cen.
+   */
   private bookSubs: Subscription[] = [];
   private readonly books = new Map<number, BookHistory>();
   private bookSteps: [number, number] = [Number.NaN, Number.NaN];
+  private exactSub = false;
 
   constructor(stream?: HlStream, coin: string = COIN) {
     this.coin = coin;
@@ -284,8 +288,17 @@ export class ProStore {
     } else if (channel === 'l2Book') {
       const snap = parseBook(data, this.coin);
       if (!snap) return;
+      // Dokładny arkusz: jakaś cena poza siatką bliskiej agregacji (rzadkie poziomy mogą mieć odstępy jak agregacja)
+      const near = this.bookSteps[0];
+      const exact = [...snap.bids, ...snap.asks].some((l) => Math.abs(l.px / near - Math.round(l.px / near)) > 1e-6);
+      if (exact) {
+        this.walls.observeBook(snap);
+        return;
+      }
       const step = bookStep(snap);
       if (step !== this.bookSteps[0] && step !== this.bookSteps[1]) return;
+      // Rynek, na którym bliska agregacja równa się tickowi: bliska migawka jest arkuszem dokładnym
+      if (step === near && !this.exactSub) this.walls.observeBook(snap);
       let h = this.books.get(step);
       if (!h) this.books.set(step, (h = new BookHistory(step)));
       h.add(toFrame(snap, step));
@@ -305,7 +318,9 @@ export class ProStore {
     for (const sub of this.bookSubs) this.stream.remove(sub);
     this.bookSteps = steps;
     this.books.clear();
-    this.bookSubs = [near, far].map((n) => ({ type: 'l2Book', coin: this.coin, nSigFigs: n }) as const);
+    this.bookSubs = [near, far].map((n): Subscription => ({ type: 'l2Book', coin: this.coin, nSigFigs: n }));
+    this.exactSub = steps[0] > hlTick(price) * 1.5;
+    if (this.exactSub) this.bookSubs.push({ type: 'l2Book', coin: this.coin });
     for (const sub of this.bookSubs) this.stream.add(sub);
   }
 

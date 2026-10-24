@@ -74,14 +74,14 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         caveat: 'Rysunki zapisują się tylko w tej przeglądarce. Delta pomiaru bez taśmy jest pokazana jako brak, nie jako zero.',
       },
       {
-        metric: 'Zderzenia z adresów (Wykresy): duże zlecenie, bitwa, seria, ściana; taśma zleceń; podsumowanie adresu',
-        source: 'Hyperliquid WS trades (adresy kupującego i sprzedającego, hash transakcji) nagrywane od otwarcia widoku',
+        metric: 'Zderzenia z adresów (Wykresy): duże zlecenie, bitwa, seria, ściana, góra lodowa; taśma zleceń; podsumowanie adresu',
+        source: 'Hyperliquid WS trades (adresy kupującego i sprzedającego, hash transakcji) i dokładny arkusz l2Book, nagrywane od otwarcia widoku',
         method:
           'Zlecenie agresora = wypełnienia tego samego biorcy i transakcji; duże od progu (ręczny albo kwantyl 98,5% wartości zleceń z ostatniej godziny zaokrąglony w górę do 1, 2 lub 5 × 10^k, w granicach 25 tys.–5 mln USD); bitwa = duże zlecenie, w którym jeden maker dał co najmniej połowę progu; seria = drobne zlecenia (każde poniżej ¼ progu) co najmniej 4 różnych biorców po jednej stronie w oknie 2 s, razem od progu; ściana = wypełnienia jednego makera na jednej cenie po jednej stronie z przerwami do 30 s, od progu i z co najmniej 3 zleceń agresora; podsumowanie adresu = zlecenia agresora tego biorcy na nagranej taśmie',
         kinds: ['LIVE'],
         refresh: 'na żywo',
         caveat:
-          'Tylko od otwarcia strony. Adres biorcy widać skrócony po kliknięciu i nie jest zapisywany. Ściana obejmuje tylko to, co maker oddał w transakcjach, bez zleceń zdjętych z arkusza.',
+          'Tylko od otwarcia strony. Adres biorcy widać skrócony po kliknięciu i nie jest zapisywany. Ściana obejmuje tylko to, co maker oddał w transakcjach, bez zleceń zdjętych z arkusza. Góra lodowa = ściana, która wchłonęła co najmniej 2 × więcej niż największa wielkość całego poziomu w migawkach dokładnego arkusza (co ok. 0,5 s): Hyperliquid nie ma ukrytych zleceń, więc to zlecenie odnawiane po wypełnieniach; odnowienie szybsze niż migawka może zawyżyć krotność.',
       },
       {
         metric: 'Statystyki świec (Wykresy): wolumen, delta, delta %, max i min delty, transakcje, tempo taśmy, ΔOI, finansowanie',
