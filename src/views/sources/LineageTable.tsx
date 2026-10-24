@@ -55,6 +55,16 @@ const GROUPS: { title: string; rows: Row[] }[] = [
           'API nie udostępnia historii transakcji: świece sprzed nagrania nie mają footprintu, a świeca bez pełnego pokrycia nagraniem (start, zerwane połączenie) jest oznaczona jako częściowa — bez uzupełniania szacunkiem.',
       },
       {
+        metric: 'Wskaźniki na wykresie (Wykresy): VWAP ±σ, profil wolumenu, PDH/PDL, IB, klastry likwidacji',
+        source: 'Hyperliquid API: candleSnapshot (świece interwału i dzienne), taśma WS trades; mapa likwidacji skanera HyperQuant',
+        method:
+          'VWAP = Σ v·(H+L+C)/3 / Σ v od 00:00 UTC (na świecach dziennych od poniedziałku) lub od otwarcia sesji, σ ważone wolumenem; profil widocznego zakresu: świeca z pełnej taśmy po cenach transakcji, pozostałe równomiernie na zakres H–L, value area 70% wokół POC; PDH, PDL i otwarcie dnia ze świec dziennych; IB = zakres pierwszej godziny sesji, rozszerzenia 1,5× i 2×; klastry = kubełki mapy łączone w przedziały ~0,25% ceny, 3 największe ≥ 1 mln USD po każdej stronie ceny',
+        kinds: ['LIVE', 'MODEL'],
+        refresh: 'na żywo (świece) · mapa likwidacji co minutę',
+        caveat:
+          'Rozkład wolumenu świecy bez taśmy jest przybliżeniem (MODEL). Klastry likwidacji to bieżący stan mapy, nie historia; mapa nieaktualna wg reguł panelu likwidacji jest ukryta.',
+      },
+      {
         metric: 'Open interest, funding, mark/oracle',
         source: 'Hyperliquid API: metaAndAssetCtxs',
         method: 'Wartości wprost z API; basis = (mark − oracle) / oracle',

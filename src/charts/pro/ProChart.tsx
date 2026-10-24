@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { Camera, ChevronsRight, Maximize2, Minimize2, RotateCcw, SlidersHorizontal } from 'lucide-react';
+import { Camera, ChevronsRight, Layers, Maximize2, Minimize2, RotateCcw, SlidersHorizontal } from 'lucide-react';
 import { Badge, BadgeTone, Segmented } from '../../ui';
+import { LiqMapState, useLiqMap } from '../../state/useLiqMap';
 import { INTERVALS, fmtHm, fmtSince, intervalById } from './core/time';
+import { indicatorScope, liqLevels } from './core/indicators';
 import type { ResetMode } from './core/sessions';
 import { ProChartController } from './chart/controller';
 import { HoverSignal, Legend } from './chart/Legend';
@@ -54,16 +56,22 @@ function useStoreVersion(store: ProStore, ms: number): number {
 export const ProChart: React.FC = () => {
   const store = proStore;
   const [settings, setSettings] = useState<ChartSettings>(loadSettings);
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [menu, setMenu] = useState<'settings' | 'indicators' | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
   const hostRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const ctrlRef = useRef<ProChartController | null>(null);
+  const legendBottom = useRef(0);
   const signal = useMemo(() => new HoverSignal(), []);
+  const liq = useLiqMap();
   useStoreVersion(store, 400);
 
   const update = useCallback((patch: Partial<ChartSettings>) => setSettings((s) => ({ ...s, ...patch })), []);
+  const onLegendBottom = useCallback((px: number) => {
+    legendBottom.current = px;
+    ctrlRef.current?.setTopInset(px);
+  }, []);
 
   // Interwał przed startem strumieni — pierwsze świece od razu we właściwym interwale
   useEffect(() => {
@@ -76,7 +84,12 @@ export const ProChart: React.FC = () => {
     if (!host) return;
     const ctrl = new ProChartController(host, store, settings, signal.set);
     ctrlRef.current = ctrl;
+    ctrl.setTopInset(legendBottom.current);
+    // Zmiana wysokości wykresu zmienia ułamek skali zajęty przez legendę
+    const ro = new ResizeObserver(() => ctrl.setTopInset(legendBottom.current));
+    ro.observe(host);
     return () => {
+      ro.disconnect();
       ctrl.destroy();
       ctrlRef.current = null;
     };
@@ -88,18 +101,26 @@ export const ProChart: React.FC = () => {
     saveSettings(settings);
   }, [settings]);
 
+  // Klastry likwidacji tylko z aktualnej mapy skanera (jak w Desku: nieaktualna mapa nie jest pokazywana)
+  useEffect(() => {
+    const fresh = liq.map && (liq.status === 'ready' || liq.status === 'delayed');
+    ctrlRef.current?.setLiqLevels(fresh ? liqLevels(liq.map!) : []);
+  }, [liq.map, liq.status]);
+
   useEffect(() => {
     const onFs = () => setFullscreen(document.fullscreenElement === cardRef.current);
     document.addEventListener('fullscreenchange', onFs);
     return () => document.removeEventListener('fullscreenchange', onFs);
   }, []);
 
-  // Menu ustawień: Escape i kliknięcie poza menu zamykają
+  // Menu: Escape i kliknięcie poza menu (i poza jego przyciskiem) zamykają
   useEffect(() => {
-    if (!menuOpen) return;
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setMenuOpen(false);
+    if (!menu) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setMenu(null);
     const onDown = (e: PointerEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+      const t = e.target as Element;
+      if (menuRef.current?.contains(t) || t.closest?.('[data-menu-toggle]')) return;
+      setMenu(null);
     };
     window.addEventListener('keydown', onKey);
     window.addEventListener('pointerdown', onDown);
@@ -107,7 +128,7 @@ export const ProChart: React.FC = () => {
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('pointerdown', onDown);
     };
-  }, [menuOpen]);
+  }, [menu]);
 
   const toggleFullscreen = () => {
     const el = cardRef.current;
@@ -138,15 +159,30 @@ export const ProChart: React.FC = () => {
         fullscreen ? 'w-full h-full' : 'rounded-xl h-[calc(100dvh-14rem)] lg:h-[calc(100dvh-9.5rem)] min-h-[440px]'
       }`}
     >
-      {/* Pasek narzędzi */}
-      <div className="flex items-center gap-2 px-2 sm:px-3 py-1.5 border-b border-line min-h-11 overflow-x-auto [scrollbar-width:none]">
-        <Segmented<string> ariaLabel="Interwał wykresu" value={settings.interval} onChange={(v) => update({ interval: v })} options={INTERVAL_OPTIONS} />
-        <Segmented<ChartView> ariaLabel="Rodzaj wykresu" value={settings.view} onChange={(v) => update({ view: v })} options={VIEW_OPTIONS} />
-        {settings.view === 'footprint' && (
-          <Segmented<FootprintStyle> ariaLabel="Styl footprintu" value={settings.fpStyle} onChange={(v) => update({ fpStyle: v })} options={STYLE_OPTIONS} />
-        )}
-        <div className="ml-auto flex items-center gap-1 shrink-0">
-          <ToolBtn label="Ustawienia wykresu" onClick={() => setMenuOpen((o) => !o)} active={menuOpen} expanded={menuOpen}>
+      {/* Pasek narzędzi: na telefonie przełączniki przewijane w pierwszym wierszu, narzędzia zawsze widoczne w drugim */}
+      <div className="flex flex-wrap sm:flex-nowrap items-center gap-x-2 gap-y-1 px-2 sm:px-3 py-1.5 border-b border-line min-h-11">
+        <div className="flex items-center gap-2 w-full sm:w-auto sm:flex-1 min-w-0 overflow-x-auto [scrollbar-width:none]">
+          <Segmented<string> ariaLabel="Interwał wykresu" value={settings.interval} onChange={(v) => update({ interval: v })} options={INTERVAL_OPTIONS} />
+          <Segmented<ChartView> ariaLabel="Rodzaj wykresu" value={settings.view} onChange={(v) => update({ view: v })} options={VIEW_OPTIONS} />
+          {settings.view === 'footprint' && (
+            <Segmented<FootprintStyle> ariaLabel="Styl footprintu" value={settings.fpStyle} onChange={(v) => update({ fpStyle: v })} options={STYLE_OPTIONS} />
+          )}
+        </div>
+        <div className="flex items-center justify-end gap-1 w-full sm:w-auto shrink-0">
+          <button
+            type="button"
+            data-menu-toggle
+            aria-expanded={menu === 'indicators'}
+            title="Wskaźniki na wykresie ceny"
+            onClick={() => setMenu((m) => (m === 'indicators' ? null : 'indicators'))}
+            className={`mr-auto sm:mr-0 inline-flex items-center gap-1.5 h-9 px-2.5 rounded-lg border text-xs font-medium transition-colors duration-150 ${
+              menu === 'indicators' ? 'bg-surface-3 text-ink-1 border-line-strong' : 'text-ink-2 border-line hover:text-ink-1 hover:bg-surface-2'
+            }`}
+          >
+            <Layers className="w-4 h-4" />
+            Wskaźniki
+          </button>
+          <ToolBtn label="Ustawienia wykresu" onClick={() => setMenu((m) => (m === 'settings' ? null : 'settings'))} active={menu === 'settings'} expanded={menu === 'settings'}>
             <SlidersHorizontal className="w-4 h-4" />
           </ToolBtn>
           <ToolBtn label="Przewiń do bieżącej świecy" onClick={() => ctrlRef.current?.scrollToNow()}>
@@ -167,11 +203,15 @@ export const ProChart: React.FC = () => {
       {/* Wykres */}
       <div className="relative flex-1 min-h-0">
         <div ref={hostRef} className="absolute inset-0" />
-        <Legend signal={signal} intervalMs={iv.ms} intervalLabel={iv.label} tapeSince={tapeSince} />
+        <Legend signal={signal} intervalMs={iv.ms} intervalLabel={iv.label} tapeSince={tapeSince} onBottom={onLegendBottom} />
         <LoadOverlay store={store} onRetry={() => void store.setInterval(settings.interval, true)} />
-        {menuOpen && (
-          <div ref={menuRef} className="absolute top-2 right-2 z-30 w-[min(320px,calc(100%-16px))] max-h-[calc(100%-16px)] overflow-y-auto">
-            <SettingsMenu settings={settings} onChange={update} onReset={() => setSettings({ ...DEFAULT_SETTINGS, interval: settings.interval })} />
+        {menu && (
+          <div ref={menuRef} className="absolute top-2 right-2 z-30 w-[min(340px,calc(100%-16px))] max-h-[calc(100%-16px)] overflow-y-auto">
+            {menu === 'settings' ? (
+              <SettingsMenu settings={settings} onChange={update} onReset={() => setSettings({ ...DEFAULT_SETTINGS, interval: settings.interval })} />
+            ) : (
+              <IndicatorsMenu settings={settings} intervalMs={iv.ms} liq={liq} onChange={update} />
+            )}
           </div>
         )}
       </div>
@@ -193,6 +233,7 @@ const ToolBtn: React.FC<{ label: string; onClick: () => void; children: React.Re
     aria-label={label}
     title={label}
     aria-expanded={expanded}
+    data-menu-toggle={expanded === undefined ? undefined : true}
     onClick={onClick}
     className={`inline-flex items-center justify-center w-9 h-9 rounded-lg border transition-colors duration-150 ${
       active ? 'bg-surface-3 text-ink-1 border-line-strong' : 'text-ink-2 border-transparent hover:text-ink-1 hover:bg-surface-2 hover:border-line'
@@ -280,6 +321,135 @@ const SettingsMenu: React.FC<{ settings: ChartSettings; onChange: (p: Partial<Ch
     </button>
   </div>
 );
+
+type IndicatorKey =
+  | 'showHeatmap'
+  | 'showBubbles'
+  | 'showVwap'
+  | 'showVwapBands'
+  | 'showSessionVwap'
+  | 'showProfile'
+  | 'showPeriodProfiles'
+  | 'showLevels'
+  | 'showSessions'
+  | 'showIb'
+  | 'showLiq';
+
+function liqHint(liq: LiqMapState): string {
+  switch (liq.status) {
+    case 'ready':
+    case 'delayed':
+      return `3 największe po każdej stronie ceny · stan z ${fmtHm(liq.map!.asOf)}${liq.status === 'delayed' ? ' (część odczytów starsza niż 15 min)' : ''}`;
+    case 'loading':
+      return 'Wczytywanie mapy likwidacji…';
+    case 'unconfigured':
+      return 'Mapa likwidacji niedostępna w tej wersji strony';
+    case 'error':
+      return 'Nie udało się pobrać mapy likwidacji';
+    default:
+      return 'Skaner nie publikuje teraz aktualnej mapy — klastry ukryte';
+  }
+}
+
+/** Wskaźniki na wykresie ceny: przełączniki z kolorem linii (menu jest zarazem legendą) i zakresem interwałów. */
+const IndicatorsMenu: React.FC<{ settings: ChartSettings; intervalMs: number; liq: LiqMapState; onChange: (p: Partial<ChartSettings>) => void }> = ({
+  settings: s,
+  intervalMs,
+  liq,
+  onChange,
+}) => {
+  const scope = indicatorScope(intervalMs);
+  const items: { key: IndicatorKey; label: string; hint: string; swatch: string; off?: string }[] = [
+    {
+      key: 'showHeatmap',
+      label: 'Mapa ciepła arkusza',
+      hint: 'Płynność zleceń oczekujących w czasie (l2Book Hyperliquid, kubełki ~10 i ~100 USD) — od otwarcia strony',
+      swatch: 'bg-gradient-to-r from-of-heat-1 via-of-heat-2 to-of-heat-3',
+    },
+    {
+      key: 'showBubbles',
+      label: 'Bąble zleceń agresora',
+      hint: 'Zlecenia rynkowe od 100 tys. USD złożone z wypełnień; pole koła ∝ wartość — od otwarcia strony',
+      swatch: 'bg-gradient-to-r from-of-imb-buy to-of-imb-sell',
+    },
+    {
+      key: 'showVwap',
+      label: scope.vwapAnchor === 'week' ? 'VWAP tygodnia' : 'VWAP dnia',
+      hint: scope.vwapAnchor === 'week' ? 'Od poniedziałku 00:00 UTC (na świecach dziennych)' : 'Od 00:00 UTC, cena typowa (H+L+C)/3 ważona wolumenem',
+      swatch: 'bg-of-vwap',
+    },
+    { key: 'showVwapBands', label: 'Pasma VWAP ±1σ i ±2σ', hint: 'Odchylenie standardowe ceny od VWAP ważone wolumenem', swatch: 'bg-of-vwap/40' },
+    {
+      key: 'showSessionVwap',
+      label: 'VWAP sesji',
+      hint: 'Od otwarcia sesji: Azja, Londyn, Nowy Jork',
+      swatch: 'bg-of-svwap',
+      off: scope.sessionVwap ? undefined : 'Na interwałach do 30m',
+    },
+    {
+      key: 'showProfile',
+      label: 'Profil wolumenu',
+      hint: 'Widoczny zakres: POC, value area 70% (VAH, VAL); świece z pełnej taśmy dokładnie po cenach transakcji',
+      swatch: 'bg-ink-3',
+    },
+    {
+      key: 'showPeriodProfiles',
+      label: scope.periodProfile === 'day' ? 'Profile dób i nagie POC' : 'Profile sesji i nagie POC',
+      hint: `Profil każdej ${scope.periodProfile === 'day' ? 'doby UTC' : 'sesji'} od jej początku; POC, którego cena potem nie dotknęła, ciągnie się do prawej krawędzi`,
+      swatch: 'bg-of-vol',
+      off: scope.periodProfile ? undefined : 'Na interwałach do 4h',
+    },
+    {
+      key: 'showLevels',
+      label: 'Poziomy dnia',
+      hint: 'PDH i PDL — szczyt i dołek poprzedniego dnia UTC — oraz otwarcie dnia (00:00 UTC)',
+      swatch: 'bg-level',
+      off: scope.levels ? undefined : 'Na interwałach poniżej 1D',
+    },
+    {
+      key: 'showSessions',
+      label: 'Otwarcia sesji',
+      hint: 'Azja 00:00 UTC, Londyn 08:00 i Nowy Jork 09:30 czasu lokalnego giełd',
+      swatch: 'bg-ink-3/60',
+      off: scope.sessions ? undefined : 'Na interwałach do 1h',
+    },
+    {
+      key: 'showIb',
+      label: 'Initial balance',
+      hint: 'Zakres pierwszej godziny każdej sesji i rozszerzenia 1,5× i 2×',
+      swatch: 'bg-series-1',
+      off: scope.ib ? undefined : 'Na interwałach do 30m',
+    },
+    { key: 'showLiq', label: 'Klastry likwidacji', hint: liqHint(liq), swatch: 'bg-gradient-to-r from-of-sell to-of-buy' },
+  ];
+  const all = items.every((i) => s[i.key]);
+  return (
+    <div className="bg-surface-2 border border-line-strong rounded-xl p-3 shadow-2xl flex flex-col gap-1 text-xs">
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium">Wskaźniki</span>
+        <button
+          type="button"
+          onClick={() => onChange(Object.fromEntries(items.map((i) => [i.key, !all])) as Partial<ChartSettings>)}
+          className="min-h-8 px-2.5 rounded-md border border-line-strong text-ink-2 hover:text-ink-1 hover:bg-surface-3"
+        >
+          {all ? 'Wyłącz wszystkie' : 'Włącz wszystkie'}
+        </button>
+      </div>
+      {items.map((i) => (
+        <label key={i.key} className={`flex items-start gap-2.5 py-1.5 cursor-pointer ${i.off ? 'opacity-55' : ''}`}>
+          <input type="checkbox" checked={s[i.key]} onChange={(e) => onChange({ [i.key]: e.target.checked })} className="mt-0.5 w-4 h-4 accent-accent shrink-0" />
+          <span className="flex flex-col gap-0.5 min-w-0">
+            <span className="flex items-center gap-2 text-ink-1">
+              <span className={`inline-block w-3.5 h-[3px] rounded-full ${i.swatch}`} aria-hidden="true" />
+              {i.label}
+            </span>
+            <span className="text-[11px] leading-snug text-ink-3">{i.off ?? i.hint}</span>
+          </span>
+        </label>
+      ))}
+    </div>
+  );
+};
 
 const Group: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
   <fieldset className="flex flex-col gap-2">

@@ -10,7 +10,7 @@ import type {
   PriceToCoordinateConverter,
   Time,
 } from 'lightweight-charts';
-import { IMB_BUY, IMB_SELL, fmtVol } from '../../orderflow/footprint';
+import { IMB_BUY, IMB_SELL } from '../../orderflow/footprint';
 import { FootprintBar, FootprintRows, aggregateRows, hlTick, stackedRuns } from '../core/footprintBar';
 import type { ProBar } from '../store/proStore';
 import {
@@ -19,11 +19,13 @@ import {
   FootprintStyle,
   PROFILE_MIN_ROW_PX,
   autoRowStep,
+  cellAreaPx,
   cellFontPx,
-  cellMinSpacing,
+  CELL_MIN_SPACING,
+  fmtCell,
   pickDetail,
 } from './layout';
-import { MONO, PRO, rgba } from './theme';
+import { MONO, PRO, luminance, mixRamp, rgba } from './theme';
 
 /**
  * Seria footprintu dla Lightweight Charts: jedna seria rysuje świecę, a przy zbliżeniu także footprint
@@ -61,14 +63,23 @@ export interface FootprintFrame {
 }
 
 const LEVELS = 16;
+// Kafle komórek: od szarości przy małym wolumenie do nasyconego koloru strony przy największym w świecy
+const ASK_TILE = mixRamp(PRO.fpAskRamp, LEVELS);
+const BID_TILE = mixRamp(PRO.fpBidRamp, LEVELS);
+const POS_TILE = mixRamp(PRO.fpDeltaPosRamp, LEVELS);
+const NEG_TILE = mixRamp(PRO.fpDeltaNegRamp, LEVELS);
+// Liczby ciemne na jasnym kaflu, jasne na ciemnym (próg równego kontrastu obu wariantów)
+const inkFor = (tiles: string[]) => tiles.map((c) => (luminance(c) > 0.18 ? PRO.fpText : PRO.fpTextLight));
+const ASK_INK = inkFor(ASK_TILE);
+const BID_INK = inkFor(BID_TILE);
 const ramp = (hex: string, a0: number, a1: number) => Array.from({ length: LEVELS + 1 }, (_, i) => rgba(hex, a0 + ((a1 - a0) * i) / LEVELS));
-// Tło komórek najwyżej 40% krycia — liczby (także wyróżnione kolorem nierównowagi) zachowują kontrast
-const BUY_BG = ramp(PRO.buy, 0.05, 0.4);
-const SELL_BG = ramp(PRO.sell, 0.05, 0.4);
-const VOL_BG = ramp(PRO.accent, 0.05, 0.42);
-const BUY_BAR = ramp(PRO.buy, 0.28, 0.9);
-const SELL_BAR = ramp(PRO.sell, 0.28, 0.9);
+const DPOS_BAR = ramp(PRO.deltaPosBar, 0.55, 1);
+const DNEG_BAR = ramp(PRO.deltaNegBar, 0.55, 1);
+const VOL_BAR = rgba(PRO.volBar, 0.62);
+const TILE_EDGE = 'rgba(255,255,255,0.12)';
 const lvl = (x: number) => (x >= 1 ? LEVELS : x > 0 ? Math.round(x * LEVELS) : 0);
+/** Liczby w komórkach: bezszeryfowe, węższe od czcionki o stałej szerokości. */
+const CELL_FONT = '"Plus Jakarta Sans", -apple-system, "Segoe UI", sans-serif';
 
 const DIM_ALPHA = 0.5;
 /** Od tej szerokości obszaru wierszy (px) styl Bid × Ask dostaje kolumny delty i wolumenu wiersza. */
@@ -153,9 +164,9 @@ export class FootprintSeries implements ICustomSeriesPaneView<Time, FootprintPoi
     let detail: Detail = 'candle';
     let step = 0;
     if (o.view === 'footprint' && pxPerUsd > 0) {
-      const wantCells = spacing >= cellMinSpacing(o.fpStyle);
+      const wantCells = spacing >= CELL_MIN_SPACING;
       step = o.rowStep > 0 ? Math.max(o.rowStep, tick) : autoRowStep(pxPerUsd, tick, wantCells ? CELL_MIN_ROW_PX : PROFILE_MIN_ROW_PX);
-      detail = pickDetail(spacing, step * pxPerUsd, o.fpStyle);
+      detail = pickDetail(spacing, step * pxPerUsd);
     }
     this.frame = { detail, step };
 
@@ -165,8 +176,11 @@ export class FootprintSeries implements ICustomSeriesPaneView<Time, FootprintPoi
         const y = priceToY(p);
         return y === null ? Number.NaN : y * vr;
       };
-      const fontPx = Math.round(cellFontPx(step * pxPerUsd) * vr);
-      const fonts = { normal: `${fontPx}px ${MONO}`, bold: `600 ${fontPx}px ${MONO}` };
+      // Czcionka mieści się i w wierszu, i w kolumnie (dwie kolumny bid i ask, w szerokiej świecy Bid × Ask węższe o kolumny boczne)
+      const area = cellAreaPx(spacing);
+      const colPx = (o.fpStyle === 'bidask' && area >= WIDE_MIN_PX ? area * 0.66 - 4 : area) / 2;
+      const fontPx = Math.round(cellFontPx(step * pxPerUsd, colPx) * vr);
+      const fonts = { normal: `500 ${fontPx}px ${CELL_FONT}`, bold: `700 ${fontPx}px ${CELL_FONT}`, outline: Math.max(2, Math.round(2.5 * vr)) };
       if (detail === 'cells') ctx.textBaseline = 'middle';
       for (let i = from; i < to; i++) {
         const item = data.bars[i];
@@ -177,7 +191,7 @@ export class FootprintSeries implements ICustomSeriesPaneView<Time, FootprintPoi
           continue;
         }
         const rows = this.rowsFor(fp, step);
-        drawFootprint(ctx, item.x * hr, spacing * hr, d, fp, rows, detail, o, toY, hr, vr, H, fonts);
+        drawFootprint(ctx, item.x * hr, spacing * hr, d, fp, rows, detail, o, toY, hr, vr, H, fonts, fontPx);
       }
     });
   }
@@ -188,6 +202,8 @@ type ToY = (p: number) => number;
 interface Fonts {
   normal: string;
   bold: string;
+  /** Grubość obrysu liczb nierównowagi (px urządzenia). */
+  outline: number;
 }
 
 /** Zwykła świeca (wartości z API: pełny wolumen giełdy). */
@@ -228,13 +244,15 @@ function drawFootprint(
   hr: number,
   vr: number,
   H: number,
-  fonts: Fonts
+  fonts: Fonts,
+  fontPx: number
 ): void {
   const half = slot * 0.46;
   const x0 = Math.round(cx - half);
   const x1 = Math.round(cx + half);
-  const strip = Math.max(Math.round(3 * hr), Math.min(Math.round(7 * hr), Math.round(slot * 0.1)));
-  const gap = Math.max(1, Math.round(2 * hr));
+  // Smukła świeca obok komórek (nie pod nimi): korpus ~4 px przy 48 px na świecę, 3 px odstępu
+  const strip = Math.max(Math.round(3 * hr), Math.min(Math.round(6 * hr), Math.round(slot * 0.085)));
+  const gap = Math.max(1, Math.round(3 * hr));
   const ax0 = x0 + strip + gap;
   const aw = x1 - ax0;
   if (aw < 2) {
@@ -252,6 +270,8 @@ function drawFootprint(
   const side = wide ? Math.round(aw * 0.17) : 0;
   const cx0 = wide ? ax0 + side + gap : ax0;
   const cw = wide ? aw - 2 * (side + gap) : aw;
+  // Liczby na słupkach bocznych tylko gdy mieszczą się cztery znaki
+  const sideText = wide && side >= Math.round(fontPx * 0.6 * 4 + 4 * hr);
 
   const halfTick = fp.tick / 2;
   const rowGap = detail === 'cells' ? Math.max(1, Math.round(vr)) : 0;
@@ -261,6 +281,16 @@ function drawFootprint(
   let vaBot = Number.NaN;
   let maxAbsDelta = 0;
   if (o.fpStyle === 'delta' || wide) for (let r = 0; r < rows.n; r++) maxAbsDelta = Math.max(maxAbsDelta, Math.abs(rows.buy[r] - rows.sell[r]));
+
+  // Kafle Bid × Ask leżą na ciemnej siatce: przerwy między wierszami mają kolor linii, nie tła
+  if (detail === 'cells' && o.fpStyle === 'bidask') {
+    const yTop = Math.round(toY((rows.lo + rows.n) * rows.step - halfTick));
+    const yBot = Math.round(toY(rows.lo * rows.step - halfTick));
+    if (Number.isFinite(yTop) && Number.isFinite(yBot)) {
+      ctx.fillStyle = PRO.fpRowLine;
+      ctx.fillRect(cx0, Math.max(0, yTop), cw, Math.min(H, yBot) - Math.max(0, yTop));
+    }
+  }
 
   for (let r = 0; r < rows.n; r++) {
     const pLo = (rows.lo + r) * rows.step - halfTick;
@@ -279,22 +309,32 @@ function drawFootprint(
     const buy = rows.buy[r];
     const sell = rows.sell[r];
     if (detail === 'profile') drawProfileRow(ctx, ax0, aw, yTop, h, buy, sell, rows, r, o.fpStyle);
-    else drawCellRow(ctx, cx0, cw, yTop, h, buy, sell, rows, r, o.fpStyle, maxAbsDelta, vr, fonts);
+    else drawCellRow(ctx, cx0, cw, yTop, h, buy, sell, rows, r, o.fpStyle, maxAbsDelta, hr, vr, fonts);
     if (wide) {
       // Delta rośnie od komórek w lewo, wolumen od komórek w prawo
       const dlt = buy - sell;
       const dl = maxAbsDelta > 0 ? Math.max(1, Math.round((side * Math.abs(dlt)) / maxAbsDelta)) : 0;
-      ctx.fillStyle = dlt >= 0 ? BUY_BAR[LEVELS - 4] : SELL_BAR[LEVELS - 4];
+      ctx.fillStyle = (dlt >= 0 ? DPOS_BAR : DNEG_BAR)[lvl(maxAbsDelta > 0 ? Math.abs(dlt) / maxAbsDelta : 0)];
       if (dlt !== 0) ctx.fillRect(ax0 + side - dl, yTop, dl, h);
-      ctx.fillStyle = r === rows.poc ? PRO.profilePoc : PRO.profile;
+      ctx.fillStyle = r === rows.poc ? PRO.volBar : VOL_BAR;
       ctx.fillRect(ax0 + aw - side, yTop, Math.max(1, Math.round((side * vol) / rows.maxVol)), h);
+      if (sideText) {
+        const ym = yTop + h / 2;
+        const pad = Math.round(2 * hr);
+        ctx.font = fonts.normal;
+        ctx.fillStyle = PRO.ink1;
+        ctx.textAlign = 'right';
+        ctx.fillText(dlt === 0 ? '0' : `${dlt > 0 ? '+' : '−'}${fmtCell(Math.abs(dlt))}`, ax0 + side - pad, ym);
+        ctx.textAlign = 'left';
+        ctx.fillText(fmtCell(vol), ax0 + aw - side + pad, ym);
+      }
     }
   }
 
   // POC w ramce, value area przy prawej krawędzi
   const lw = Math.max(1, Math.round(hr));
   if (!Number.isNaN(pocTop)) {
-    ctx.strokeStyle = PRO.poc;
+    ctx.strokeStyle = PRO.pocFrame;
     ctx.lineWidth = lw;
     ctx.strokeRect(cx0 + lw / 2, pocTop + lw / 2, cw - lw, Math.max(1, pocBot - pocTop - lw));
   }
@@ -309,7 +349,7 @@ function drawFootprint(
     for (const run of stackedRuns(rows.imb, rows.n, o.stackedMin)) {
       const yTop = Math.round(toY((rows.lo + run.to + 1) * rows.step - halfTick));
       const yBot = Math.round(toY((rows.lo + run.from) * rows.step - halfTick));
-      ctx.fillStyle = run.side === 1 ? PRO.buyInk : PRO.sellInk;
+      ctx.fillStyle = run.side === 1 ? PRO.imbBuy : PRO.imbSell;
       ctx.fillRect(run.side === 1 ? cx0 + cw - bw : cx0, yTop, bw, Math.max(1, yBot - yTop));
     }
   }
@@ -342,21 +382,34 @@ function drawProfileRow(
   const len = Math.max(1, Math.round((w * vol) / rows.maxVol));
   if (style === 'bidask') {
     const ls = Math.round((len * sell) / vol);
-    ctx.fillStyle = SELL_BAR[LEVELS - 4];
+    ctx.fillStyle = BID_TILE[LEVELS - 4];
     ctx.fillRect(x, y, ls, h);
-    ctx.fillStyle = BUY_BAR[LEVELS - 4];
+    ctx.fillStyle = ASK_TILE[LEVELS - 4];
     ctx.fillRect(x + ls, y, len - ls, h);
   } else if (style === 'delta') {
     const dlt = buy - sell;
-    ctx.fillStyle = (dlt >= 0 ? BUY_BAR : SELL_BAR)[lvl(Math.abs(dlt) / vol)];
+    ctx.fillStyle = (dlt >= 0 ? POS_TILE : NEG_TILE)[Math.max(4, lvl(Math.abs(dlt) / vol))];
     ctx.fillRect(x, y, len, h);
   } else {
-    ctx.fillStyle = r === rows.poc ? PRO.profilePoc : PRO.profile;
+    ctx.fillStyle = (buy >= sell ? ASK_TILE : BID_TILE)[Math.max(4, lvl(vol / rows.maxVol))];
     ctx.fillRect(x, y, len, h);
   }
 }
 
-/** Komórka z liczbami: sprzedaż × kupno (tło wg przewagi strony), delta albo wolumen wiersza. */
+/** Kafel komórki z jaśniejszą krawędzią górną i lewą (wypukłość jak w terminalach orderflow). */
+function tile(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, color: string, hr: number, vr: number): void {
+  ctx.fillStyle = color;
+  ctx.fillRect(x, y, w, h);
+  if (h < 8 * vr || w < 8 * hr) return;
+  ctx.fillStyle = TILE_EDGE;
+  ctx.fillRect(x, y, w, Math.max(1, Math.round(vr)));
+  ctx.fillRect(x, y, Math.max(1, Math.round(hr)), h);
+}
+
+/**
+ * Komórka z liczbami (wyśrodkowanymi): sprzedaż | kupno na kaflach cieniowanych wolumenem strony,
+ * delta wiersza (dodatnia niebieska, ujemna czerwona) albo wolumen wiersza jako pasek od lewej.
+ */
 function drawCellRow(
   ctx: CanvasRenderingContext2D,
   x: number,
@@ -369,55 +422,54 @@ function drawCellRow(
   r: number,
   style: FootprintStyle,
   maxAbsDelta: number,
+  hr: number,
   vr: number,
   fonts: Fonts
 ): void {
   const ym = y + h / 2;
-  const pad = Math.round(4 * vr);
   const imb = rows.imb[r];
+  const mid = x + Math.round(w / 2);
+  const sellImb = (imb & IMB_SELL) !== 0;
+  const buyImb = (imb & IMB_BUY) !== 0;
+  ctx.textAlign = 'center';
   if (style === 'bidask') {
-    const mid = x + Math.round(w / 2);
-    ctx.fillStyle = SELL_BG[lvl(sell / rows.maxSide)];
-    ctx.fillRect(x, y, mid - x - 1, h);
-    ctx.fillStyle = BUY_BG[lvl(buy / rows.maxSide)];
-    ctx.fillRect(mid, y, x + w - mid, h);
-    // Nierównowaga: kolor strony przewagi i pogrubienie (drugi kanał obok koloru)
-    ctx.textAlign = 'right';
-    ctx.font = imb & IMB_SELL ? fonts.bold : fonts.normal;
-    ctx.fillStyle = imb & IMB_SELL ? PRO.sellInk : sell > 0 ? PRO.ink1 : PRO.ink3;
-    ctx.fillText(sell > 0 ? fmtVol(sell) : '0', mid - pad, ym);
-    ctx.textAlign = 'left';
-    ctx.font = imb & IMB_BUY ? fonts.bold : fonts.normal;
-    ctx.fillStyle = imb & IMB_BUY ? PRO.buyInk : buy > 0 ? PRO.ink1 : PRO.ink3;
-    ctx.fillText(buy > 0 ? fmtVol(buy) : '0', mid + pad, ym);
+    const ls = lvl(sell / rows.maxSide);
+    const lb = lvl(buy / rows.maxSide);
+    tile(ctx, x, y, mid - x, h, BID_TILE[ls], hr, vr);
+    tile(ctx, mid, y, x + w - mid, h, ASK_TILE[lb], hr, vr);
+    // Nierównowaga: magenta po stronie sprzedaży, cyjan po stronie kupna, pogrubione
+    drawNumber(ctx, fmtCell(sell), (x + mid) / 2, ym, sellImb ? PRO.imbSell : BID_INK[ls], sellImb, sellImb, fonts);
+    drawNumber(ctx, fmtCell(buy), (mid + x + w) / 2, ym, buyImb ? PRO.imbBuy : ASK_INK[lb], buyImb, buyImb, fonts);
     return;
   }
-  ctx.font = fonts.normal;
-  const vol = buy + sell;
-  if (style === 'delta') {
-    const dlt = buy - sell;
-    ctx.fillStyle = (dlt >= 0 ? BUY_BG : SELL_BG)[lvl(maxAbsDelta > 0 ? Math.abs(dlt) / maxAbsDelta : 0)];
-    ctx.fillRect(x, y, w, h);
-    ctx.fillStyle = PRO.ink1;
-    ctx.textAlign = 'center';
-    ctx.fillText(dlt === 0 ? '0' : `${dlt > 0 ? '+' : '−'}${fmtVol(Math.abs(dlt))}`, x + w / 2, ym);
-  } else {
-    ctx.fillStyle = VOL_BG[lvl(vol / rows.maxVol)];
-    ctx.fillRect(x, y, w, h);
-    ctx.fillStyle = r === rows.poc ? PRO.ink1 : PRO.ink2;
-    ctx.textAlign = 'center';
-    ctx.fillText(fmtVol(vol), x + w / 2, ym);
+  // Profil w świecy: pasek od lewej krawędzi (delta: długość ∝ |delta|, kolor znaku; wolumen: długość ∝ wolumen,
+  // kolor strony przewagi), na nim jasne liczby bid i ask z ciemnym obrysem
+  const dlt = buy - sell;
+  const frac = style === 'delta' ? (maxAbsDelta > 0 ? Math.abs(dlt) / maxAbsDelta : 0) : (buy + sell) / rows.maxVol;
+  const tiles = style === 'delta' ? (dlt >= 0 ? POS_TILE : NEG_TILE) : buy >= sell ? ASK_TILE : BID_TILE;
+  tile(ctx, x, y, Math.max(1, Math.round(w * frac)), h, tiles[Math.max(4, lvl(frac))], hr, vr);
+  drawNumber(ctx, fmtCell(sell), (x + mid) / 2, ym, sellImb ? PRO.imbSell : PRO.fpTextProfile, sellImb, true, fonts);
+  drawNumber(ctx, fmtCell(buy), (mid + x + w) / 2, ym, buyImb ? PRO.imbBuy : PRO.fpTextProfile, buyImb, true, fonts);
+}
+
+/** Liczba w komórce; ciemny obrys (nierównowaga, jasne liczby profilu), żeby kolor nie ginął na jasnym kaflu. */
+function drawNumber(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  color: string,
+  bold: boolean,
+  outline: boolean,
+  fonts: Fonts
+): void {
+  ctx.font = bold ? fonts.bold : fonts.normal;
+  if (outline) {
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = fonts.outline;
+    ctx.strokeStyle = PRO.fpText;
+    ctx.strokeText(text, x, y);
   }
-  // Nierównowaga w stylach jednokolumnowych: znacznik przy krawędzi strony przewagi
-  if (imb) {
-    const mw = Math.max(2, Math.round(2 * vr));
-    if (imb & IMB_BUY) {
-      ctx.fillStyle = PRO.buyInk;
-      ctx.fillRect(x + w - mw, y, mw, h);
-    }
-    if (imb & IMB_SELL) {
-      ctx.fillStyle = PRO.sellInk;
-      ctx.fillRect(x, y, mw, h);
-    }
-  }
+  ctx.fillStyle = color;
+  ctx.fillText(text, x, y);
 }
