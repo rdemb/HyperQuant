@@ -27,7 +27,7 @@ export const STATIONS: readonly Station[] = [
   {
     id: 'start',
     name: 'Start',
-    question: 'Co się dzieje? Świece z VWAP, profilem i poziomami dnia, wolumen, delta i CVD',
+    question: 'Co się dzieje? Footprint z VWAP, profilem i poziomami dnia, wolumen, delta i CVD',
     layout: 1,
     panels: [{}],
     phone: NARROW_PATCH,

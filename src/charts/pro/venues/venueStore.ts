@@ -56,7 +56,10 @@ interface HistState {
 
 const newHist = (): HistState => ({ oldest: Number.POSITIVE_INFINITY, loading: false, exhausted: false, retryAt: 0 });
 
-/** Delta Bybit z transakcji na żywo w minutach; świeca liczy się tylko w całości nagrana (bez luki połączenia). */
+/**
+ * Delta Bybit z transakcji na żywo w minutach. Świeca liczy się w całości nagrana; świeca, w której zaczęło się nagrywanie
+ * (otwarcie strony), od tej chwili. Świeca z przerwą połączenia nie ma wartości.
+ */
 export class MinuteFlow {
   private readonly mins = new Map<number, [vol: number, buy: number]>();
   readonly coverage = new Coverage();
@@ -75,9 +78,11 @@ export class MinuteFlow {
   /** Delta świecy [t, t + ms) (bieżąca do `now`); null, gdy nagranie jej nie obejmuje. */
   delta(t: number, ms: number, now: number): number | null {
     const end = Math.min(t + ms, now);
-    if (!(end > t) || !this.coverage.covers(t, end)) return null;
+    const rec = this.coverage.first();
+    const from = this.coverage.covers(t, end) ? t : rec > t && this.coverage.covers(rec, end) ? Math.floor(rec / MIN) * MIN : null;
+    if (from === null || !(end > from)) return null;
     let d = 0;
-    for (let m = t; m < end; m += MIN) {
+    for (let m = from; m < end; m += MIN) {
       const acc = this.mins.get(m);
       if (acc) d += 2 * acc[1] - acc[0];
     }
@@ -173,8 +178,9 @@ export class VenueStore {
     const newer = Number.isFinite(settled) && now >= settled + f.periodMs + MIN;
     if (!older && !newer) return;
     this.fundingLoading = true;
-    // Najkrótszy okres Binance to 4 h — tyle okresów mieści się w jednej stronie
-    const start = older ? Math.max(from, now - (BINANCE_FUNDING_LIMIT - 1) * 4 * HOUR_MS) : settled + 1;
+    // Strona sięga dwa najdłuższe okresy (2 × 8 h) przed `from`: zawsze co najmniej dwie wypłaty, więc znany jest okres.
+    // Najkrótszy okres Binance to 4 h — tyle okresów mieści się w jednej stronie.
+    const start = older ? Math.max(from - 16 * HOUR_MS, now - (BINANCE_FUNDING_LIMIT - 1) * 4 * HOUR_MS) : settled + 1;
     const list = await fetchBinanceFundingHist(this.coin, start);
     this.fundingLoading = false;
     if (list === null) {
@@ -182,7 +188,8 @@ export class VenueStore {
       return;
     }
     const n = list.length;
-    const hours = n >= 2 ? Math.round((list[n - 1].time - list[n - 2].time) / HOUR_MS) : f.periodMs / HOUR_MS;
+    // Jedna wypłata (nowe rozliczenie albo rynek z krótką historią): okres z wcześniejszych wypłat, bez nich — 8 h
+    const hours = n >= 2 ? Math.round((list[n - 1].time - list[n - 2].time) / HOUR_MS) : Number.isFinite(f.latest) ? f.periodMs / HOUR_MS : 8;
     f.addPeriods(list, hours > 0 ? hours : 8, older ? from : f.from);
     // Brak nowego rozliczenia (opóźnione): kolejna próba za chwilę, nie w każdej klatce
     if (!older && n === 0) this.fundingRetryAt = Date.now() + RETRY_MS;

@@ -17,6 +17,8 @@ const subscribeWide = (fn: () => void) => {
 const isWide = () => window.matchMedia(WIDE).matches;
 
 const STATION_OPTIONS = STATIONS.map((s) => ({ value: s.id, label: s.name, title: s.question }));
+/** Bez szerokiego ekranu jeden wykres — stacja „Dwa interwały” nie ma tam sensu (zostaje, gdy jest wybrana). */
+const NARROW_STATION_OPTIONS = STATION_OPTIONS.filter((o) => o.value !== 'mtf');
 
 /**
  * Wykresy: świece i footprint perpów (BTC, ETH, SOL, HYPE) na silniku TradingView Lightweight Charts z danymi Hyperliquid
@@ -56,7 +58,7 @@ const ChartsView: React.FC = () => {
             ariaLabel="Stacja robocza"
             value={station.id}
             onChange={(id) => id !== station.id && open(stationById(id), false)}
-            options={STATION_OPTIONS}
+            options={wide || station.id === 'mtf' ? STATION_OPTIONS : NARROW_STATION_OPTIONS}
           />
         </div>
         <button

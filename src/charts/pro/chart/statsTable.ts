@@ -74,7 +74,7 @@ export function tableLines(groups: readonly StatGroup[]): TableLine[] {
 /** Wysokość wiersza i nagłówka grupy (px) oraz wolne miejsce pod tabelą na logo TradingView (px; panel jest najniższy). */
 export const STAT_ROW_PX = 15;
 export const STAT_HEAD_PX = 12;
-export const STAT_PAD_PX = 26;
+export const STAT_PAD_PX = 32;
 
 /** Wysokość panelu tablicy (px) dla włączonych grup. */
 export function tableHeight(groups: readonly StatGroup[]): number {
@@ -85,7 +85,7 @@ export function tableHeight(groups: readonly StatGroup[]): number {
 const TEXT_MIN_SPACING = 34;
 /** Szerokość świecy po włączeniu tablicy (px): liczby widać od razu, bez zbliżania wykresu. */
 export const STATS_BAR_SPACING = 50;
-const LABEL_W = 80;
+const LABEL_W = 88;
 /** Nasycenie: |wartość| przy percentylu 90 widocznych świec = pełny kolor. */
 const NORM_Q = 0.9;
 
@@ -236,13 +236,13 @@ export class StatsTable implements ISeriesPrimitive<Time> {
     for (let r = 0; r < lines.length; r++) {
       const { row, group } = lines[r];
       if (row) {
-        ctx.font = `500 10px ${MONO}`;
+        ctx.font = `500 11px ${MONO}`;
         ctx.fillStyle = C.label;
         ctx.fillText(row.label, 8, ys[r] + rh / 2);
       } else {
         const g = STAT_GROUP_INFO[group];
         const t = g.label.toUpperCase();
-        ctx.font = `600 9px ${MONO}`;
+        ctx.font = `600 10px ${MONO}`;
         ctx.fillStyle = g.color;
         ctx.fillText(t, 8, ys[r] + (STAT_HEAD_PX * k) / 2 + 0.5);
         if (r === 0) headW = ctx.measureText(t).width;

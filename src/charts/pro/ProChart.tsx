@@ -420,9 +420,9 @@ export const ProChart: React.FC<{
             : 'rounded-xl h-[calc(100dvh-16.5rem)] lg:h-[calc(100dvh-12rem)] min-h-[440px]'
       }`}
     >
-      {/* Pasek narzędzi: na telefonie i w układzie kilku wykresów przełączniki przewijane w pierwszym wierszu, narzędzia w drugim */}
+      {/* Pasek narzędzi: na telefonie przełączniki przewijane w pierwszym wierszu, w układzie kilku wykresów zawijane; narzędzia w drugim */}
       <div className={`flex flex-wrap ${twoRow ? '' : 'sm:flex-nowrap'} items-center gap-x-2 gap-y-1 px-2 sm:px-3 py-1.5 border-b border-line min-h-11`}>
-        <div className={`flex items-center gap-2 w-full ${twoRow ? '' : 'sm:w-auto sm:flex-1'} min-w-0 overflow-x-auto [scrollbar-width:none]`}>
+        <div className={`flex items-center gap-2 w-full ${twoRow ? 'flex-wrap gap-y-1' : 'sm:w-auto sm:flex-1 overflow-x-auto [scrollbar-width:none]'} min-w-0`}>
           <Segmented<Market> ariaLabel="Rynek" value={settings.coin} onChange={setCoin} options={MARKET_OPTIONS} />
           <Segmented<string> ariaLabel="Interwał wykresu" value={settings.interval} onChange={(v) => update({ interval: v })} options={INTERVAL_OPTIONS} />
           <Segmented<ChartView> ariaLabel="Rodzaj wykresu" value={settings.view} onChange={(v) => update({ view: v })} options={VIEW_OPTIONS} />

@@ -420,7 +420,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         source:
           'Binance USDT-M (świece, openInterestHist, openInterest, premiumIndex, fundingInfo, fundingRate), Binance Spot (świece), Bybit Linear (open-interest, publicTrade, tickers) — publiczne API pobierane przez przeglądarkę',
         method:
-          'Delta świecy = 2 × kupno biorców − wolumen (Binance, z historią); Bybit z transakcji od otwarcia strony, świeca tylko w całości nagrana; ΔOI w panelu w monetach od początku okresu CVD, w Tablicy liczb — zmiana w świecy; funding przeliczony na 8 h (Hyperliquid co godzinę, Binance i Bybit wg okresu rynku); w Tablicy liczb funding Binance z historii rozliczeń (okres nierozliczony — stawka prognozowana)',
+          'Delta świecy = 2 × kupno biorców − wolumen (Binance, z historią); Bybit z transakcji od otwarcia strony (pierwsza świeca od tej chwili, świeca z przerwą połączenia bez wartości); ΔOI w panelu w monetach od początku okresu CVD, w Tablicy liczb — zmiana w świecy; funding przeliczony na 8 h (Hyperliquid co godzinę, Binance i Bybit wg okresu rynku); w Tablicy liczb funding Binance z historii rozliczeń (okres nierozliczony — stawka prognozowana)',
         caveat: 'Bybit bez historii delty; historia OI Binance najwyżej 30 dni i co 5 min; funding w panelu to bieżąca stawka, historia fundingu Binance do ok. 166 dni wstecz (jedno zapytanie)',
         kinds: ['LIVE'],
         refresh: 'na żywo, OI i funding Binance co 30 s, nowe rozliczenie Binance po końcu okresu (panele i grupy domyślnie wyłączone)',

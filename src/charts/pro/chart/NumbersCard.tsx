@@ -59,7 +59,8 @@ export const NumbersCard: React.FC<{
   className: string;
 }> = ({ store, series, groups, onGroups, className }) => {
   const iv = series.interval;
-  const venueOn = groups.some((g) => VENUE_GROUPS.includes(g));
+  const venues = VENUE_GROUPS.filter((g) => groups.includes(g));
+  const venueOn = venues.length > 0;
   useEffect(() => (venueOn ? acquireVenues(store.coin, iv) : undefined), [venueOn, store.coin, iv]);
   const bars = series.bars().slice(-COLS);
   const venue = venueOn ? venueStoreFor(store.coin) : null;
@@ -134,7 +135,8 @@ export const NumbersCard: React.FC<{
       </div>
       <p className="px-2 py-1.5 border-t border-line text-[10px] leading-snug text-ink-3 shrink-0">
         Ostatnie świece {iv.label}, najnowsza z prawej; tło — siła wartości względem tych świec. Funding w % na 8 h.
-        {venueOn && ' Dane Binance i Bybit pobiera Twoja przeglądarka bezpośrednio z ich publicznych API; delta Bybit liczy się od otwarcia strony.'}
+        {venueOn && ` Dane ${venues.map((g) => STAT_GROUP_INFO[g].label).join(' i ')} pobiera Twoja przeglądarka bezpośrednio z publicznego API giełdy.`}
+        {groups.includes('bybit') && ' Delta Bybit liczy się od otwarcia strony.'}
       </p>
     </section>
   );
