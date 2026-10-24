@@ -48,6 +48,7 @@ const Field: React.FC<{ label: string; children: React.ReactNode; className?: st
  * Legenda wykresu: świeca pod krzyżem (albo bieżąca), OHLC i wolumen z API, a z taśmy: delta, jej
  * maksimum i minimum, liczba transakcji, udział taśmy w wolumenie świecy i wiersz footprintu pod kursorem.
  * `onBottom` dostaje dolną krawędź legendy (px od góry wykresu) — tylko bez krzyża, żeby skala nie skakała przy ruchu kursora.
+ * `compact` (telefon): jedna linia — zamknięcie, zmiana, wolumen i VWAP; czas świecy tylko pod palcem, rynek i interwał są w pasku.
  */
 export const Legend: React.FC<{
   signal: HoverSignal;
@@ -56,7 +57,8 @@ export const Legend: React.FC<{
   tapeSince: number;
   coin: string;
   onBottom?: (px: number) => void;
-}> = ({ signal, intervalMs, intervalLabel, tapeSince, coin, onBottom }) => {
+  compact?: boolean;
+}> = ({ signal, intervalMs, intervalLabel, tapeSince, coin, onBottom, compact = false }) => {
   const h = useSyncExternalStore(signal.subscribe, signal.get);
   const ref = useRef<HTMLDivElement>(null);
   const live = useRef(h.live);
@@ -75,6 +77,47 @@ export const Legend: React.FC<{
   const fp = bar?.fp ?? null;
   const change = c ? ((c.c - c.o) / c.o) * 100 : Number.NaN;
   const fpVol = fp ? fp.buyVol + fp.sellVol : 0;
+
+  if (compact) {
+    return (
+      <div
+        ref={ref}
+        className="absolute left-1.5 top-1 z-10 pointer-events-none max-w-[calc(100%-4.5rem)] rounded px-1.5 bg-surface-1/75 font-mono tabular-nums text-[10.5px] leading-[1.6] text-ink-2"
+      >
+        {c ? (
+          <div className="flex items-baseline gap-x-2 whitespace-nowrap overflow-hidden">
+            {!h.live && bar && <span className="text-ink-3">{fmtBarTime(bar.t, intervalMs)}</span>}
+            <span className={c.c >= c.o ? 'text-of-buy-ink' : 'text-of-sell-ink'}>
+              {fmtPx(c.c)} {change >= 0 ? '+' : '−'}
+              {Math.abs(change).toFixed(2)}%
+            </span>
+            <Field label="Wol.">{fmtVol(c.v)}</Field>
+            {h.ind?.vwap && (
+              <Field label={h.ind.anchor === 'week' ? 'VWAP T' : 'VWAP'} className="text-of-vwap">
+                {fmtPx(h.ind.vwap.vwap)}
+              </Field>
+            )}
+          </div>
+        ) : (
+          <div className="text-ink-3">Wczytywanie świec…</div>
+        )}
+        {h.row && (
+          <div className="flex items-baseline gap-x-2 whitespace-nowrap overflow-hidden">
+            <span className="text-ink-3">{fmtPx(h.row.lo)}</span>
+            <Field label="S" className="text-of-sell-ink">
+              {fmtVol(h.row.sell)}
+            </Field>
+            <Field label="K" className="text-of-buy-ink">
+              {fmtVol(h.row.buy)}
+            </Field>
+            <Field label="Δ" className={tone(h.row.buy - h.row.sell)}>
+              {fmtSignedVol(h.row.buy - h.row.sell)}
+            </Field>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div ref={ref} className="absolute left-2 top-2 z-10 pointer-events-none max-w-[calc(100%-5rem)] rounded-md bg-surface-1/95 sm:bg-surface-1/80 px-2 py-1 font-mono tabular-nums text-[11px] leading-[1.55] text-ink-2">

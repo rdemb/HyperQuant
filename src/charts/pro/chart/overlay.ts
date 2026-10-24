@@ -280,6 +280,10 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
   private periodCache = new Map<number, PeriodCache>();
   private devCache = new Map<number, DevCache>();
   private rightInset = 0;
+  /** Telefon: podpisy wielorybów tylko dotkniętej linii (klucz linii), reszta bez podpisu. */
+  private compact = false;
+  private whaleSel = '';
+  private whaleHits: { y: number; key: string }[] = [];
   private scene: Scene = emptyScene();
 
   private readonly axisVwap = new AxisLabel(K.vwap);
@@ -358,6 +362,24 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
   setRightInset(px: number): void {
     this.rightInset = px;
     this.requestUpdate?.();
+  }
+
+  setCompact(on: boolean): void {
+    this.compact = on;
+    this.whaleSel = '';
+    this.requestUpdate?.();
+  }
+
+  /** Telefon: dotknięcie przy linii wieloryba (±`tol` px) pokazuje jej podpis, kolejne dotknięcie obok go chowa. */
+  pickWhale(y: number, tol = 12): boolean {
+    if (!this.compact) return false;
+    let best: { y: number; key: string } | null = null;
+    for (const h of this.whaleHits) if (Math.abs(h.y - y) <= tol && (!best || Math.abs(h.y - y) < Math.abs(best.y - y))) best = h;
+    const key = best && best.key !== this.whaleSel ? best.key : '';
+    const changed = key !== this.whaleSel;
+    this.whaleSel = key;
+    if (changed) this.requestUpdate?.();
+    return best !== null;
   }
 
   setLiq(levels: LiqLevel[]): void {
@@ -548,20 +570,26 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
     }
 
     // Wieloryby: cena wejścia i likwidacji największych pozycji przez cały wykres, duże zlecenia — kreska przy prawej krawędzi
+    this.whaleHits = [];
     if (t.showWhales && this.whales) {
       const inView = (y: number) => y >= 0 && y <= H;
+      // Na telefonie podpis tylko dotkniętej linii — inaczej podpisy zasłaniają wąski wykres
+      const tag = (key: string, y: number, text: string, color: string) => {
+        this.whaleHits.push({ y, key });
+        if (!this.compact || key === this.whaleSel) s.tags.push({ y, text, color });
+      };
       const pos = this.whales.positions.filter((p) => inView(Y(p.entry)) || (p.liq !== null && inView(Y(p.liq)))).slice(0, WHALE_POSITIONS);
       for (const p of pos) {
         const long = p.side === 'long';
         const y = Y(p.entry);
         if (inView(y)) {
           s.hlines.push({ x0: 0, x1: W, y, color: long ? K.whaleLongLine : K.whaleShortLine, dash: DASH.whale });
-          s.tags.push({ y, text: `${p.id} ${long ? 'L' : 'S'} ${fmtCompact(p.usd, '$')} ×${Math.round(p.lev)}`, color: long ? K.whaleLong : K.whaleShort });
+          tag(`p:${p.id}:${p.side}`, y, `${p.id} ${long ? 'L' : 'S'} ${fmtCompact(p.usd, '$')} ×${Math.round(p.lev)}`, long ? K.whaleLong : K.whaleShort);
         }
         const yl = p.liq === null ? Number.NaN : Y(p.liq);
         if (inView(yl)) {
           s.hlines.push({ x0: 0, x1: W, y: yl, color: K.whaleLiqLine, dash: DASH.liq });
-          s.tags.push({ y: yl, text: `${p.id} likw. ${long ? 'L' : 'S'}`, color: K.whaleLiq });
+          tag(`l:${p.id}:${p.side}`, yl, `${p.id} likw. ${long ? 'L' : 'S'}`, K.whaleLiq);
         }
       }
       // Zlecenia konta po jednej stronie i jednego rodzaju (drabinka) — kreska na każdej cenie, łącznik i jeden podpis z liczbą i sumą
@@ -575,7 +603,7 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
         }
         if (g.n > 1) s.polys.push({ pts: [W - WHALE_TICK_PX, Y(g.hi), W - WHALE_TICK_PX, Y(g.lo)], color, width: 1 });
         const what = g.kind === 'stop' ? 'stop' : g.kind === 'tp' ? 'TP' : bid ? 'kupno' : 'sprzedaż';
-        s.tags.push({ y: Y((g.lo + g.hi) / 2), text: `${g.id} ${what} ${g.n > 1 ? `${g.n}× ` : ''}${fmtCompact(g.usd, '$')}`, color });
+        tag(`o:${g.id}:${g.side}:${g.kind}`, Y((g.lo + g.hi) / 2), `${g.id} ${what} ${g.n > 1 ? `${g.n}× ` : ''}${fmtCompact(g.usd, '$')}`, color);
       }
     }
 

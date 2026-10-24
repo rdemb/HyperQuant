@@ -99,6 +99,8 @@ const LOAD_OLDER_MARGIN = 40;
 /** Próg automatyczny dużego zlecenia: z zleceń ostatniej godziny, przeliczany co 5 s. */
 const AUTO_WINDOW_MS = 3_600_000;
 const AUTO_EVERY_MS = 5_000;
+/** Telefon: wolumen zajmuje dolną część wykresu ceny (ułamek wysokości). */
+const PHONE_VOLUME_H = 0.16;
 /** Statystyki świec przeliczane najwyżej co tyle ms (i po każdej pełnej podmianie danych). */
 const STATS_EVERY_MS = 1_000;
 
@@ -226,6 +228,8 @@ export class ProChartController {
   private marginFrame = 0;
   /** Dolna krawędź legendy nad panelem ceny (px). */
   private topInset = 0;
+  /** Telefon: wolumen na dole wykresu ceny, bez drabiny DOM przy prawej krawędzi, podpisy wielorybów po dotknięciu. */
+  private phone = false;
   private hoverTime: number | null = null;
   private hoverPrice: number | null = null;
   /** Kursor użytkownika jest nad tym wykresem (nie krzyż z innego panelu). */
@@ -359,13 +363,7 @@ export class ProChartController {
     this.zones.setToggles({ showZones: s.showZones, showAuctions: s.showAuctions });
     this.zones.setParams(this.zoneParams(s));
     if (prev.bigTradeUsd !== s.bigTradeUsd) this.schedule();
-    if (force || prev.showHeatmap !== s.showHeatmap) {
-      // Z mapą ciepła przy prawej krawędzi stoi drabina DOM: najnowsza świeca i wskaźniki kończą się przed nią
-      this.overlay.setRightInset(s.showHeatmap ? DOM_W_PX : 0);
-      this.zones.setRightInset(s.showHeatmap ? DOM_W_PX : 0);
-      this.tpo.setRightInset(s.showHeatmap ? DOM_W_PX : 0);
-      this.chart.timeScale().applyOptions({ rightOffsetPixels: this.rightGap() });
-    }
+    if (force || prev.showHeatmap !== s.showHeatmap) this.applyDomInset();
     if (force || prev.statGroups !== s.statGroups) {
       this.statsTable.setGroups(s.statGroups);
       this.statsAt = 0;
@@ -400,6 +398,29 @@ export class ProChartController {
     this.emitHover();
   }
 
+  /** Telefon (wąski ekran) albo szerszy: przebudowa paneli i miejsca przy prawej krawędzi. */
+  setPhone(on: boolean): void {
+    if (on === this.phone) return;
+    this.phone = on;
+    this.liquidity.setDom(!on);
+    this.overlay.setCompact(on);
+    this.applyDomInset();
+    this.rebuildPanes();
+  }
+
+  /** Z mapą ciepła przy prawej krawędzi stoi drabina DOM (nie na telefonie): najnowsza świeca i wskaźniki kończą się przed nią. */
+  private applyDomInset(): void {
+    const px = this.domShown() ? DOM_W_PX : 0;
+    this.overlay.setRightInset(px);
+    this.zones.setRightInset(px);
+    this.tpo.setRightInset(px);
+    this.chart.timeScale().applyOptions({ rightOffsetPixels: this.rightGap() });
+  }
+
+  private domShown(): boolean {
+    return this.settings.showHeatmap && !this.phone;
+  }
+
   private rebuildPanes(): void {
     const s = this.settings;
     const venueSeries = [...Object.values(this.venueCvd ?? {}), ...Object.values(this.venueOi ?? {})];
@@ -407,8 +428,11 @@ export class ProChartController {
     this.volume = this.delta = this.cvd = this.statsSeries = null;
     this.venueCvd = this.venueOi = null;
     let pane = 1;
-    // Wolumen we własnym panelu — nie zasłania komórek footprintu
-    if (s.showVolume) {
+    // Wolumen we własnym panelu — nie zasłania komórek footprintu; na telefonie na dole wykresu ceny (więcej miejsca na cenę)
+    if (s.showVolume && this.phone) {
+      this.volume = this.chart.addSeries(HistogramSeries, { priceFormat: VOLUME_FORMAT, priceLineVisible: false, lastValueVisible: false, priceScaleId: 'vol' }, 0);
+      this.volume.priceScale().applyOptions({ scaleMargins: { top: 1 - PHONE_VOLUME_H, bottom: 0 } });
+    } else if (s.showVolume) {
       this.volume = this.chart.addSeries(HistogramSeries, { priceFormat: VOLUME_FORMAT, priceLineVisible: false, lastValueVisible: false }, pane++);
       this.volume.priceScale().applyOptions({ scaleMargins: { top: 0.12, bottom: 0 } });
       this.volume.attachPrimitive(this.volumeLegend);
@@ -451,7 +475,7 @@ export class ProChartController {
             ? this.cvdLegend
             : s.showDelta
               ? this.deltaLegend
-              : s.showVolume
+              : s.showVolume && !this.phone
                 ? this.volumeLegend
                 : null;
     for (const lg of [this.volumeLegend, this.deltaLegend, this.cvdLegend, this.venueCvdLegend, this.venueOiLegend]) lg.setBottom(lg === lowest);
@@ -474,11 +498,27 @@ export class ProChartController {
     this.schedule();
   }
 
-  /** Wysokość panelu Tablicy liczb dla włączonych grup — po ułożeniu pozostałych paneli. */
+  /**
+   * Wysokość panelu Tablicy liczb dla włączonych grup — po ułożeniu pozostałych paneli. Bez setHeight biblioteki: ta
+   * odejmuje różnicę po równo od wszystkich paneli i zabiera miejsce cenie. Proporcje jako wysokości w px: tabela dostaje
+   * swoją wysokość, pozostałe panele dzielą resztę w proporcjach z rebuildPanes.
+   */
   private fitStatsPane(): void {
     // Panele mogły zostać przebudowane przed następną klatką — wtedy ten panel już nie istnieje
     const stats = this.statsSeries;
-    if (stats) requestAnimationFrame(() => this.statsSeries === stats && stats.getPane().setHeight(tableHeight(this.settings.statGroups)));
+    if (!stats) return;
+    requestAnimationFrame(() => {
+      if (this.statsSeries !== stats) return;
+      const panes = this.chart.panes();
+      const table = stats.getPane();
+      const rest = panes.filter((p) => p !== table);
+      const total = panes.reduce((h, p) => h + p.getHeight(), 0);
+      const sum = rest.reduce((f, p) => f + p.getStretchFactor(), 0);
+      if (!(total > 0) || !(sum > 0)) return;
+      const h = Math.min(tableHeight(this.settings.statGroups), total / 2);
+      for (const p of rest) p.setStretchFactor(((total - h) * p.getStretchFactor()) / sum);
+      table.setStretchFactor(h);
+    });
   }
 
   /** Linie giełd w nowym panelu: zero jako linia odniesienia, opis panelu na pierwszej linii. */
@@ -540,7 +580,9 @@ export class ProChartController {
       const h = this.chart.paneSize(0).height;
       if (!(h > 0)) return;
       const top = Math.min(0.35, Math.max(TOP_MARGIN, (this.topInset + 6) / h));
-      this.main.priceScale().applyOptions({ scaleMargins: { top, bottom: TOP_MARGIN } });
+      // Wolumen na dole wykresu ceny (telefon): świece kończą się nad nim
+      const bottom = this.phone && this.settings.showVolume ? PHONE_VOLUME_H + 0.02 : TOP_MARGIN;
+      this.main.priceScale().applyOptions({ scaleMargins: { top, bottom } });
     });
   }
 
@@ -570,7 +612,7 @@ export class ProChartController {
 
   /** Odstęp najnowszej świecy od osi ceny (px): stały, a z mapą ciepła powiększony o drabinę DOM. */
   private rightGap(): number {
-    return RIGHT_GAP_PX + (this.settings.showHeatmap ? DOM_W_PX : 0);
+    return RIGHT_GAP_PX + (this.domShown() ? DOM_W_PX : 0);
   }
 
   /** Przewija do bieżącej świecy (z zachowaniem zbliżenia); odstęp od osi ceny stały w pikselach. */
@@ -702,7 +744,8 @@ export class ProChartController {
       this.statsAt = now;
       const predicted = st.ctx ? st.ctx.funding : null;
       const reads = this.venue && this.settings.statGroups.some((g) => VENUE_GROUPS.includes(g)) ? this.venue.reads(this.series.interval, now) : null;
-      this.stats = next.map((b) => barStat(b, ms, now, st.oi, st.funding, predicted, reads));
+      const players = this.settings.statGroups.includes('who') ? (t: number) => st.players.split(t, ms, now) : null;
+      this.stats = next.map((b) => barStat(b, ms, now, st.oi, st.funding, predicted, reads, players));
       this.statsTable.setStats(this.stats);
     }
     this.pushCvd(full);
@@ -817,6 +860,8 @@ export class ProChartController {
       return;
     }
     const pick = p.point && p.paneIndex === 0 ? this.liquidity.pick(p.point.x, p.point.y) : null;
+    // Telefon: dotknięcie przy linii wieloryba pokazuje albo chowa jej podpis
+    if (!pick && p.point && p.paneIndex === 0) this.overlay.pickWhale(p.point.y);
     this.liquidity.setSelected(pick);
     this.onPick(pick);
   };

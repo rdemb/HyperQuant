@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { Bell, BellOff, Camera, ChevronsRight, Columns2, Copy, Grid2x2, Keyboard, Layers, Link, ListOrdered, Maximize2, Minimize2, Minus, PenTool, RotateCcw, SlidersHorizontal, Square, X } from 'lucide-react';
+import { Bell, BellOff, Camera, ChevronDown, ChevronsRight, Columns2, Copy, Grid2x2, Keyboard, Layers, Link, ListOrdered, Maximize2, Minimize2, Minus, MoreHorizontal, PenTool, RotateCcw, SlidersHorizontal, Square, X } from 'lucide-react';
 import { Badge, BadgeTone, Segmented } from '../../ui';
 import { LiqMapState, useLiqMap } from '../../state/useLiqMap';
 import { usePublished } from '../../state/usePublished';
@@ -18,8 +18,8 @@ import { LOT_FLOOR, type LiquidityPick } from './chart/liquidity';
 import { brandedScreenshot, downloadCanvas } from './chart/screenshot';
 import { MAX_ALERTS, PriceAlert, alertBook, askNotifications, newAlert, notifyAlert, parsePriceInput, primeAlertSound, reached } from './chart/alerts';
 import { fmtPx, priceDigits } from './chart/layout';
-import { ChartLayout, ChartSettings, NARROW_QUERY, hashFor, isNarrow, loadSettings, saveSettings, settingsFromHash } from './chart/settings';
-import { STATIONS, Station, stationKey, stationPanel } from './chart/stations';
+import { ChartLayout, ChartSettings, NARROW_QUERY, PHONE_PANES, PhonePane, hashFor, isNarrow, loadSettings, phoneSettings, saveSettings, settingsFromHash } from './chart/settings';
+import { STATIONS, Station, StationId, stationKey, stationPanel } from './chart/stations';
 import { BUILT_IN_TEMPLATES, ChartTemplate, applyTemplate, loadTemplates, saveAs, saveTemplates } from './chart/templates';
 import { NumbersCard, StatGroupPicker } from './chart/NumbersCard';
 import type { ChartView } from './chart/footprintSeries';
@@ -72,7 +72,19 @@ const PHONE_TABS: { id: PhoneTab; label: string }[] = [
   { id: 'numbers', label: 'Liczby' },
 ];
 
-const subscribeNarrow = (fn: () => void) => {
+/** Stacja na telefonie: lista w pasku wykresu zamiast osobnego rzędu nad nim, przywrócenie wzorca w menu „Więcej”. */
+export interface PhoneStation {
+  value: StationId;
+  options: readonly { value: StationId; label: string }[];
+  onChange: (id: StationId) => void;
+  onRestore: () => void;
+}
+
+/** Ustawienia w użyciu: telefon — jeden panel pod wykresem, bez tablicy; układ 2 × 2 — bez tablicy (za niski panel). */
+const shownSettings = (s: ChartSettings, narrow: boolean, layout: ChartLayout): ChartSettings =>
+  narrow ? phoneSettings(s) : layout === 4 && s.showStats ? { ...s, showStats: false } : s;
+
+export const subscribeNarrow = (fn: () => void) => {
   const mq = window.matchMedia(NARROW_QUERY);
   mq.addEventListener('change', fn);
   return () => mq.removeEventListener('change', fn);
@@ -133,11 +145,12 @@ export const ProChart: React.FC<{
   station?: Station;
   coin?: Market | null;
   fromLink?: boolean;
-}> = ({ panel = 0, layout = 1, onLayout, station = STATIONS[0], coin = null, fromLink = true }) => {
+  phoneStation?: PhoneStation;
+}> = ({ panel = 0, layout = 1, onLayout, station = STATIONS[0], coin = null, fromLink = true, phoneStation }) => {
   const [settings, setSettings] = useState<ChartSettings>(() => initialSettings(panel, station, coin, fromLink));
   const store = storeFor(settings.coin);
   const series = store.series(settings.interval);
-  const [menu, setMenu] = useState<'settings' | 'indicators' | 'keys' | null>(null);
+  const [menu, setMenu] = useState<'settings' | 'indicators' | 'keys' | 'more' | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
   const narrow = useSyncExternalStore(subscribeNarrow, isNarrow);
   const [tab, setTab] = useState<PhoneTab>('chart');
@@ -185,10 +198,11 @@ export const ProChart: React.FC<{
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
-    const ctrl = new ProChartController(host, store, series, settings, signal.set, setPick, (key) => {
+    const ctrl = new ProChartController(host, store, series, shownSettings(settings, isNarrow(), layout), signal.set, setPick, (key) => {
       update({ [key]: false });
       setToast(`Ukryto panel: ${PANE_NAMES[key]} — włączysz go w Ustawieniach wykresu → Panele`);
     }, setScale);
+    ctrl.setPhone(isNarrow());
     ctrlRef.current = ctrl;
     setTools(ctrl.draw);
     ctrl.setTopInset(legendBottom.current);
@@ -205,10 +219,11 @@ export const ProChart: React.FC<{
   }, [store, signal, update]);
 
   useEffect(() => {
-    // W układzie 2 × 2 panel jest za niski na tabelę statystyk — zapisane ustawienie wraca w mniejszym układzie
-    ctrlRef.current?.applySettings(layout === 4 && settings.showStats ? { ...settings, showStats: false } : settings);
+    // Telefon i układ 2 × 2 chowają część paneli — zapisane ustawienia wracają na szerszym ekranie albo w mniejszym układzie
+    ctrlRef.current?.setPhone(narrow);
+    ctrlRef.current?.applySettings(shownSettings(settings, narrow, layout));
     saveSettings(settings, stationKey(station.id, panel));
-  }, [settings, panel, layout, station]);
+  }, [settings, panel, layout, station, narrow]);
 
   useEffect(() => {
     ctrlRef.current?.highlight(highlight);
@@ -417,96 +432,118 @@ export const ProChart: React.FC<{
           ? 'w-full h-full'
           : layout === 4
             ? 'rounded-xl h-[calc((100dvh-12.5rem)/2)] min-h-[380px]'
-            : 'rounded-xl h-[calc(100dvh-16.5rem)] lg:h-[calc(100dvh-12rem)] min-h-[440px]'
+            : 'rounded-xl h-[calc(100dvh-11.75rem)] sm:h-[calc(100dvh-16.5rem)] lg:h-[calc(100dvh-12rem)] min-h-[440px]'
       }`}
     >
-      {/* Pasek narzędzi: na telefonie przełączniki przewijane w pierwszym wierszu, w układzie kilku wykresów zawijane; narzędzia w drugim */}
-      <div className={`flex flex-wrap ${twoRow ? '' : 'sm:flex-nowrap'} items-center gap-x-2 gap-y-1 px-2 sm:px-3 py-1.5 border-b border-line min-h-11`}>
-        <div className={`flex items-center gap-2 w-full ${twoRow ? 'flex-wrap gap-y-1' : 'sm:w-auto sm:flex-1 overflow-x-auto [scrollbar-width:none]'} min-w-0`}>
-          <Segmented<Market> ariaLabel="Rynek" value={settings.coin} onChange={setCoin} options={MARKET_OPTIONS} />
-          <Segmented<string> ariaLabel="Interwał wykresu" value={settings.interval} onChange={(v) => update({ interval: v })} options={INTERVAL_OPTIONS} />
-          <Segmented<ChartView> ariaLabel="Rodzaj wykresu" value={settings.view} onChange={(v) => update({ view: v })} options={VIEW_OPTIONS} />
-          {settings.view === 'footprint' && (
-            <Segmented<FootprintStyle> ariaLabel="Styl footprintu" value={settings.fpStyle} onChange={(v) => update({ fpStyle: v })} options={STYLE_OPTIONS} />
-          )}
-        </div>
-        <div className={`flex items-center justify-end gap-1 w-full ${twoRow ? '' : 'sm:w-auto'} shrink-0`}>
-          <button
-            type="button"
-            data-menu-toggle
-            aria-expanded={menu === 'indicators'}
-            title="Wskaźniki na wykresie ceny"
-            onClick={() => setMenu((m) => (m === 'indicators' ? null : 'indicators'))}
-            className={`mr-auto ${twoRow ? '' : 'sm:mr-0'} inline-flex items-center gap-1.5 h-9 px-2.5 rounded-lg border text-xs font-medium transition-colors duration-150 ${
-              menu === 'indicators' ? 'bg-surface-3 text-ink-1 border-line-strong' : 'text-ink-2 border-line hover:text-ink-1 hover:bg-surface-2'
-            }`}
-          >
-            <Layers className="w-4 h-4" />
-            Wskaźniki
-          </button>
-          <ToolBtn label={drawOpen ? 'Ukryj narzędzia rysowania' : 'Narzędzia rysowania'} onClick={() => setDrawOpen((o) => !o)} active={drawOpen}>
-            <PenTool className="w-4 h-4" />
-          </ToolBtn>
-          <ToolBtn
-            label={settings.showTape ? 'Ukryj taśmę zleceń' : 'Taśma zleceń'}
-            className="hidden sm:inline-flex"
-            onClick={() => update({ showTape: !settings.showTape })}
-            active={settings.showTape}
-          >
-            <ListOrdered className="w-4 h-4" />
-          </ToolBtn>
-          <ToolBtn label="Ustawienia wykresu" onClick={() => setMenu((m) => (m === 'settings' ? null : 'settings'))} active={menu === 'settings'} expanded={menu === 'settings'}>
-            <SlidersHorizontal className="w-4 h-4" />
-          </ToolBtn>
-          {/* Układ kilku wykresów tylko na szerokim ekranie */}
-          {onLayout && (
-            <div className="hidden lg:inline-flex shrink-0 mr-1">
-              <Segmented<ChartLayout> ariaLabel="Układ wykresów" value={layout} onChange={onLayout} options={LAYOUT_OPTIONS} />
-            </div>
-          )}
-          <ToolBtn label="Przewiń do bieżącej świecy" onClick={() => ctrlRef.current?.scrollToNow()}>
-            <ChevronsRight className="w-4 h-4" />
-          </ToolBtn>
-          <ToolBtn label="Przywróć skalę" onClick={() => ctrlRef.current?.resetScales()}>
-            <RotateCcw className="w-4 h-4" />
-          </ToolBtn>
-          <ToolBtn label="Kopiuj link do widoku" className="hidden sm:inline-flex" onClick={() => copy(window.location.href, 'Skopiowano link do widoku')}>
-            <Link className="w-4 h-4" />
-          </ToolBtn>
-          <ToolBtn label="Zrzut ekranu (PNG)" onClick={screenshot}>
-            <Camera className="w-4 h-4" />
-          </ToolBtn>
-          <ToolBtn
-            label="Skróty klawiszowe (?)"
-            className="hidden lg:inline-flex"
-            onClick={() => setMenu((m) => (m === 'keys' ? null : 'keys'))}
-            active={menu === 'keys'}
-            expanded={menu === 'keys'}
-          >
-            <Keyboard className="w-4 h-4" />
-          </ToolBtn>
-          <ToolBtn label={fullscreen ? 'Zamknij pełny ekran' : 'Pełny ekran'} onClick={toggleFullscreen}>
-            {fullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-          </ToolBtn>
-        </div>
-      </div>
-
-      {narrow && (
-        <div role="tablist" aria-label="Widok wykresu" className="grid grid-cols-4 gap-1 px-2 py-1.5 border-b border-line shrink-0">
-          {PHONE_TABS.map((t) => (
+      {/* Pasek narzędzi: w układzie kilku wykresów przełączniki zawijane, narzędzia w drugim wierszu */}
+      {!narrow && (
+        <div className={`flex flex-wrap ${twoRow ? '' : 'sm:flex-nowrap'} items-center gap-x-2 gap-y-1 px-2 sm:px-3 py-1.5 border-b border-line min-h-11`}>
+          <div className={`flex items-center gap-2 w-full ${twoRow ? 'flex-wrap gap-y-1' : 'sm:w-auto sm:flex-1 overflow-x-auto [scrollbar-width:none]'} min-w-0`}>
+            <Segmented<Market> ariaLabel="Rynek" value={settings.coin} onChange={setCoin} options={MARKET_OPTIONS} />
+            <Segmented<string> ariaLabel="Interwał wykresu" value={settings.interval} onChange={(v) => update({ interval: v })} options={INTERVAL_OPTIONS} />
+            <Segmented<ChartView> ariaLabel="Rodzaj wykresu" value={settings.view} onChange={(v) => update({ view: v })} options={VIEW_OPTIONS} />
+            {settings.view === 'footprint' && (
+              <Segmented<FootprintStyle> ariaLabel="Styl footprintu" value={settings.fpStyle} onChange={(v) => update({ fpStyle: v })} options={STYLE_OPTIONS} />
+            )}
+          </div>
+          <div className={`flex items-center justify-end gap-1 w-full ${twoRow ? '' : 'sm:w-auto'} shrink-0`}>
             <button
-              key={t.id}
               type="button"
-              role="tab"
-              aria-selected={tab === t.id}
-              onClick={() => setTab(t.id)}
-              className={`h-8 rounded-md text-xs font-medium transition-colors duration-150 ${
-                tab === t.id ? 'bg-surface-3 text-ink-1 shadow-[inset_0_0_0_1px_var(--color-line-strong)]' : 'text-ink-3 hover:text-ink-1'
+              data-menu-toggle
+              aria-expanded={menu === 'indicators'}
+              title="Wskaźniki na wykresie ceny"
+              onClick={() => setMenu((m) => (m === 'indicators' ? null : 'indicators'))}
+              className={`mr-auto ${twoRow ? '' : 'sm:mr-0'} inline-flex items-center gap-1.5 h-9 px-2.5 rounded-lg border text-xs font-medium transition-colors duration-150 ${
+                menu === 'indicators' ? 'bg-surface-3 text-ink-1 border-line-strong' : 'text-ink-2 border-line hover:text-ink-1 hover:bg-surface-2'
               }`}
             >
-              {t.label}
+              <Layers className="w-4 h-4" />
+              Wskaźniki
             </button>
-          ))}
+            <ToolBtn label={drawOpen ? 'Ukryj narzędzia rysowania' : 'Narzędzia rysowania'} onClick={() => setDrawOpen((o) => !o)} active={drawOpen}>
+              <PenTool className="w-4 h-4" />
+            </ToolBtn>
+            <ToolBtn
+              label={settings.showTape ? 'Ukryj taśmę zleceń' : 'Taśma zleceń'}
+              className="hidden sm:inline-flex"
+              onClick={() => update({ showTape: !settings.showTape })}
+              active={settings.showTape}
+            >
+              <ListOrdered className="w-4 h-4" />
+            </ToolBtn>
+            <ToolBtn label="Ustawienia wykresu" onClick={() => setMenu((m) => (m === 'settings' ? null : 'settings'))} active={menu === 'settings'} expanded={menu === 'settings'}>
+              <SlidersHorizontal className="w-4 h-4" />
+            </ToolBtn>
+            {/* Układ kilku wykresów tylko na szerokim ekranie */}
+            {onLayout && (
+              <div className="hidden lg:inline-flex shrink-0 mr-1">
+                <Segmented<ChartLayout> ariaLabel="Układ wykresów" value={layout} onChange={onLayout} options={LAYOUT_OPTIONS} />
+              </div>
+            )}
+            <ToolBtn label="Przewiń do bieżącej świecy" onClick={() => ctrlRef.current?.scrollToNow()}>
+              <ChevronsRight className="w-4 h-4" />
+            </ToolBtn>
+            <ToolBtn label="Przywróć skalę" onClick={() => ctrlRef.current?.resetScales()}>
+              <RotateCcw className="w-4 h-4" />
+            </ToolBtn>
+            <ToolBtn label="Kopiuj link do widoku" className="hidden sm:inline-flex" onClick={() => copy(window.location.href, 'Skopiowano link do widoku')}>
+              <Link className="w-4 h-4" />
+            </ToolBtn>
+            <ToolBtn label="Zrzut ekranu (PNG)" onClick={screenshot}>
+              <Camera className="w-4 h-4" />
+            </ToolBtn>
+            <ToolBtn
+              label="Skróty klawiszowe (?)"
+              className="hidden lg:inline-flex"
+              onClick={() => setMenu((m) => (m === 'keys' ? null : 'keys'))}
+              active={menu === 'keys'}
+              expanded={menu === 'keys'}
+            >
+              <Keyboard className="w-4 h-4" />
+            </ToolBtn>
+            <ToolBtn label={fullscreen ? 'Zamknij pełny ekran' : 'Pełny ekran'} onClick={toggleFullscreen}>
+              {fullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+            </ToolBtn>
+          </div>
+        </div>
+      )}
+
+      {/* Telefon: dwa rzędy — stacja, rynek, interwał i rodzaj wykresu; karty, wskaźniki, ustawienia i „Więcej” */}
+      {narrow && (
+        <div className="flex flex-col gap-1.5 px-2 py-1.5 border-b border-line shrink-0">
+          <div className="flex items-center gap-1 min-w-0 overflow-x-auto [scrollbar-width:none]">
+            {phoneStation && <PhoneSelect<StationId> ariaLabel="Stacja robocza" value={phoneStation.value} options={phoneStation.options} onChange={phoneStation.onChange} />}
+            <PhoneSelect<Market> ariaLabel="Rynek" value={settings.coin} options={MARKET_OPTIONS} onChange={setCoin} />
+            <PhoneSelect<string> ariaLabel="Interwał wykresu" value={settings.interval} options={INTERVAL_OPTIONS} onChange={(v) => update({ interval: v })} />
+            <PhoneSelect<ChartView> ariaLabel="Rodzaj wykresu" value={settings.view} options={VIEW_OPTIONS} onChange={(v) => update({ view: v })} />
+          </div>
+          <div className="flex items-center gap-1">
+            <div role="tablist" aria-label="Widok wykresu" className="grid grid-cols-4 gap-0.5 flex-1 min-w-0 p-0.5 rounded-lg border border-line">
+              {PHONE_TABS.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={tab === t.id}
+                  onClick={() => setTab(t.id)}
+                  className={`h-8 rounded-md text-xs font-medium transition-colors duration-150 ${
+                    tab === t.id ? 'bg-surface-3 text-ink-1 shadow-[inset_0_0_0_1px_var(--color-line-strong)]' : 'text-ink-3 hover:text-ink-1'
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+            <ToolBtn label="Wskaźniki na wykresie ceny" onClick={() => setMenu((m) => (m === 'indicators' ? null : 'indicators'))} active={menu === 'indicators'} expanded={menu === 'indicators'}>
+              <Layers className="w-4 h-4" />
+            </ToolBtn>
+            <ToolBtn label="Ustawienia wykresu" onClick={() => setMenu((m) => (m === 'settings' ? null : 'settings'))} active={menu === 'settings'} expanded={menu === 'settings'}>
+              <SlidersHorizontal className="w-4 h-4" />
+            </ToolBtn>
+            <ToolBtn label="Więcej: rysowanie, skala, zrzut, link, pełny ekran" onClick={() => setMenu((m) => (m === 'more' ? null : 'more'))} active={menu === 'more'} expanded={menu === 'more'}>
+              <MoreHorizontal className="w-4 h-4" />
+            </ToolBtn>
+          </div>
         </div>
       )}
 
@@ -516,7 +553,7 @@ export const ProChart: React.FC<{
         <div className="relative flex-1 min-h-0 min-w-0" onContextMenu={onContextMenu}>
           <div ref={hostRef} className="absolute inset-0" />
           <AutoScaleBtn scale={scale} onToggle={() => ctrlRef.current?.setAutoScale(!scale.auto)} />
-          <Legend signal={signal} intervalMs={iv.ms} intervalLabel={iv.label} tapeSince={tapeSince} coin={store.coin} onBottom={onLegendBottom} />
+          <Legend signal={signal} intervalMs={iv.ms} intervalLabel={iv.label} tapeSince={tapeSince} coin={store.coin} onBottom={onLegendBottom} compact={narrow} />
           <DrawStyleBar tools={tools} />
           <DrawHint tools={tools} />
           <LoadOverlay series={series} onRetry={() => void series.load(true)} />
@@ -578,9 +615,23 @@ export const ProChart: React.FC<{
                   onChange={update}
                   onReset={() => setSettings({ ...stationPanel(station, panel, isNarrow()), coin: settings.coin, interval: settings.interval })}
                   grid4={layout === 4}
+                  narrow={narrow}
                 />
               ) : menu === 'keys' ? (
                 <KeysMenu />
+              ) : menu === 'more' ? (
+                <MoreMenu
+                  items={[
+                    { icon: PenTool, label: drawOpen ? 'Ukryj narzędzia rysowania' : 'Narzędzia rysowania', on: () => setDrawOpen((o) => !o) },
+                    { icon: ChevronsRight, label: 'Przewiń do bieżącej świecy', on: () => ctrlRef.current?.scrollToNow() },
+                    { icon: RotateCcw, label: 'Przywróć skalę', on: () => ctrlRef.current?.resetScales() },
+                    { icon: Camera, label: 'Zrzut ekranu (PNG)', on: screenshot },
+                    { icon: Link, label: 'Kopiuj link do widoku', on: () => copy(window.location.href, 'Skopiowano link do widoku') },
+                    { icon: fullscreen ? Minimize2 : Maximize2, label: fullscreen ? 'Zamknij pełny ekran' : 'Pełny ekran', on: toggleFullscreen },
+                    ...(phoneStation ? [{ icon: RotateCcw, label: `Przywróć wzorzec stacji ${station.name}`, on: phoneStation.onRestore }] : []),
+                  ]}
+                  onClose={() => setMenu(null)}
+                />
               ) : (
                 <IndicatorsMenu settings={settings} intervalMs={iv.ms} liq={liq} whales={whales} bigUsd={bigUsd} onChange={update} />
               )}
@@ -631,6 +682,98 @@ const AutoScaleBtn: React.FC<{ scale: ScaleState; onToggle: () => void }> = ({ s
       </span>
     </button>
   ) : null;
+
+const PHONE_PANE_OPTIONS: { value: PhonePane | 'none'; label: string }[] = [
+  { value: 'showCvd', label: 'CVD' },
+  { value: 'showDelta', label: 'Delta (świece delty)' },
+  { value: 'showVenueCvd', label: 'CVD giełd: Hyperliquid, Binance, Bybit' },
+  { value: 'showVenueOi', label: 'ΔOI i funding giełd' },
+  { value: 'none', label: 'Brak' },
+];
+
+/** Panele na telefonie: wolumen na dole wykresu ceny i jeden panel pod nim (liczby są w karcie „Liczby”). */
+const PhonePanes: React.FC<{ s: ChartSettings; onChange: (p: Partial<ChartSettings>) => void }> = ({ s, onChange }) => {
+  const pane = PHONE_PANES.find((k) => s[k]) ?? 'none';
+  return (
+    <Group title="Panele">
+      <Check label="Wolumen (na dole wykresu ceny)" checked={s.showVolume} onChange={(v) => onChange({ showVolume: v })} />
+      <label className="flex flex-col items-start gap-1.5 text-ink-2">
+        Panel pod wykresem
+        <select
+          value={pane}
+          onChange={(e) => onChange(Object.fromEntries(PHONE_PANES.map((k) => [k, k === e.target.value])))}
+          className="w-full h-9 rounded-lg border border-line bg-surface-1 px-2 text-xs text-ink-1"
+        >
+          {PHONE_PANE_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <p className="text-[11px] leading-snug text-ink-3">Na telefonie pod wykresem jest jeden panel, żeby cena miała większość ekranu. Liczby świec są w karcie „Liczby”.</p>
+      {(pane === 'showVenueCvd' || pane === 'showVenueOi') && (
+        <p className="text-[11px] leading-snug text-ink-3">Dane Binance i Bybit pobiera Twoja przeglądarka bezpośrednio z ich publicznych API — nic nie przechodzi przez serwer HyperQuant.</p>
+      )}
+      <div className="flex flex-col items-start gap-1.5">
+        <span className="text-ink-2">Zerowanie CVD</span>
+        <Segmented<ResetMode> ariaLabel="Zerowanie CVD" value={s.cvdReset} onChange={(v) => onChange({ cvdReset: v })} options={RESET_OPTIONS} size="xs" />
+      </div>
+    </Group>
+  );
+};
+
+/** Lista wyboru w pasku telefonu (systemowy wybór — wygodny palcem i zajmuje mało miejsca). */
+function PhoneSelect<T extends string>({
+  ariaLabel,
+  value,
+  options,
+  onChange,
+}: {
+  ariaLabel: string;
+  value: T;
+  options: readonly { value: T; label: string }[];
+  onChange: (v: T) => void;
+}) {
+  return (
+    <span className="relative inline-flex shrink-0">
+      <select
+        aria-label={ariaLabel}
+        value={value}
+        onChange={(e) => onChange(e.target.value as T)}
+        className="appearance-none h-8 pl-2 pr-5 rounded-md border border-line bg-surface-2 text-xs font-medium text-ink-1"
+      >
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+      <ChevronDown aria-hidden="true" className="pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-ink-3" />
+    </span>
+  );
+}
+
+/** Menu „Więcej” na telefonie: rzadziej używane przyciski paska narzędzi. */
+const MoreMenu: React.FC<{ items: { icon: React.ComponentType<{ className?: string }>; label: string; on: () => void }[]; onClose: () => void }> = ({ items, onClose }) => (
+  <div role="menu" aria-label="Więcej" className="bg-surface-2 border border-line-strong rounded-xl p-1.5 shadow-2xl flex flex-col text-xs">
+    {items.map(({ icon: Icon, label, on }) => (
+      <button
+        key={label}
+        type="button"
+        role="menuitem"
+        onClick={() => {
+          onClose();
+          on();
+        }}
+        className="flex items-center gap-2.5 min-h-10 px-2.5 rounded-lg text-left text-ink-1 hover:bg-surface-3 transition-colors duration-150"
+      >
+        <Icon className="w-4 h-4 text-ink-3 shrink-0" />
+        {label}
+      </button>
+    ))}
+  </div>
+);
 
 const ToolBtn: React.FC<{ label: string; onClick: () => void; children: React.ReactNode; active?: boolean; expanded?: boolean; className?: string }> = ({
   label,
@@ -773,9 +916,17 @@ const SettingsMenu: React.FC<{
   onReset: () => void;
   /** Układ 2 × 2: tabela statystyk ukryta. */
   grid4: boolean;
-}> = ({ settings: s, bigUsd, tick, price, alerts, onAddAlert, onRemoveAlert, onChange, onReset, grid4 }) => (
+  /** Telefon: styl footprintu tutaj (nie w pasku), jeden panel pod wykresem, liczby w karcie „Liczby”. */
+  narrow: boolean;
+}> = ({ settings: s, bigUsd, tick, price, alerts, onAddAlert, onRemoveAlert, onChange, onReset, grid4, narrow }) => (
   <div className="bg-surface-2 border border-line-strong rounded-xl p-3 shadow-2xl flex flex-col gap-3 text-xs">
     <Group title="Footprint">
+      {narrow && (
+        <div className="flex flex-col items-start gap-1.5">
+          <span className="text-ink-2">Styl</span>
+          <Segmented<FootprintStyle> ariaLabel="Styl footprintu" value={s.fpStyle} onChange={(v) => onChange({ fpStyle: v })} options={STYLE_OPTIONS} size="xs" />
+        </div>
+      )}
       <Select
         label="Wysokość wiersza"
         value={s.rowStep}
@@ -808,24 +959,28 @@ const SettingsMenu: React.FC<{
         onChange={(v) => onChange({ stackedMin: v })}
       />
     </Group>
-    <Group title="Panele">
-      <Check label="Wolumen" checked={s.showVolume} onChange={(v) => onChange({ showVolume: v })} />
-      <Check label="Delta (świece delty)" checked={s.showDelta} onChange={(v) => onChange({ showDelta: v })} />
-      <Check label="CVD" checked={s.showCvd} onChange={(v) => onChange({ showCvd: v })} />
-      <Check label="CVD giełd: Hyperliquid, Binance, Bybit" checked={s.showVenueCvd} onChange={(v) => onChange({ showVenueCvd: v })} />
-      <Check label="ΔOI i funding giełd" checked={s.showVenueOi} onChange={(v) => onChange({ showVenueOi: v })} />
-      <Check label="Tablica liczb" checked={s.showStats} onChange={(v) => onChange({ showStats: v })} />
-      {s.showStats && <StatGroupPicker className="pl-6.5" value={s.statGroups} onChange={(g) => onChange({ statGroups: g })} />}
-      {grid4 && s.showStats && <p className="text-[11px] leading-snug text-ink-3">W układzie 2 × 2 tablica jest ukryta — panel jest za niski.</p>}
-      <p className="text-[11px] leading-snug text-ink-3">
-        Dane Binance i Bybit pobiera Twoja przeglądarka bezpośrednio z ich publicznych API — nic nie przechodzi przez serwer HyperQuant.
-        Domyślnie wyłączone; nie publikuj zrzutów z tymi danymi bez sprawdzenia regulaminu giełdy.
-      </p>
-      <div className="flex flex-col items-start gap-1.5">
-        <span className="text-ink-2">Zerowanie CVD</span>
-        <Segmented<ResetMode> ariaLabel="Zerowanie CVD" value={s.cvdReset} onChange={(v) => onChange({ cvdReset: v })} options={RESET_OPTIONS} />
-      </div>
-    </Group>
+    {narrow ? (
+      <PhonePanes s={s} onChange={onChange} />
+    ) : (
+      <Group title="Panele">
+        <Check label="Wolumen" checked={s.showVolume} onChange={(v) => onChange({ showVolume: v })} />
+        <Check label="Delta (świece delty)" checked={s.showDelta} onChange={(v) => onChange({ showDelta: v })} />
+        <Check label="CVD" checked={s.showCvd} onChange={(v) => onChange({ showCvd: v })} />
+        <Check label="CVD giełd: Hyperliquid, Binance, Bybit" checked={s.showVenueCvd} onChange={(v) => onChange({ showVenueCvd: v })} />
+        <Check label="ΔOI i funding giełd" checked={s.showVenueOi} onChange={(v) => onChange({ showVenueOi: v })} />
+        <Check label="Tablica liczb" checked={s.showStats} onChange={(v) => onChange({ showStats: v })} />
+        {s.showStats && <StatGroupPicker className="pl-6.5" value={s.statGroups} onChange={(g) => onChange({ statGroups: g })} />}
+        {grid4 && s.showStats && <p className="text-[11px] leading-snug text-ink-3">W układzie 2 × 2 tablica jest ukryta — panel jest za niski.</p>}
+        <p className="text-[11px] leading-snug text-ink-3">
+          Dane Binance i Bybit pobiera Twoja przeglądarka bezpośrednio z ich publicznych API — nic nie przechodzi przez serwer HyperQuant.
+          Domyślnie wyłączone; nie publikuj zrzutów z tymi danymi bez sprawdzenia regulaminu giełdy.
+        </p>
+        <div className="flex flex-col items-start gap-1.5">
+          <span className="text-ink-2">Zerowanie CVD</span>
+          <Segmented<ResetMode> ariaLabel="Zerowanie CVD" value={s.cvdReset} onChange={(v) => onChange({ cvdReset: v })} options={RESET_OPTIONS} />
+        </div>
+      </Group>
+    )}
     <Group title="Duże zlecenia">
       <Select
         label="Próg dużego zlecenia"
