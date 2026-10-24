@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { MacroEvent } from '../data/macroCalendar';
 import type { BadgeTone } from '../ui/Badge';
+import { locale, tr } from '../i18n';
 
 /**
  * Loader plików z potoku danych publicznych (`scripts/fetch-public-data.mjs` → `public/data/feeds/*.json`).
@@ -147,22 +148,24 @@ export function feedFreshness(asOf: string | null | undefined, nowMs: number): '
 /** Znacznik świeżości do `Stat.source` / `Badge`: LIVE / STALE / BRAK + data pobrania w podpowiedzi. */
 export function freshnessBadge(asOf: string | null | undefined, nowMs: number): { tone: BadgeTone; label: string; title: string } {
   const f = feedFreshness(asOf, nowMs);
-  if (!f || !asOf) return { tone: 'neutral', label: 'BRAK', title: 'Brak danych z potoku publicznego' };
+  if (!f || !asOf) return { tone: 'neutral', label: tr('BRAK', 'NONE'), title: tr('Brak danych z potoku publicznego', 'No data from the public pipeline') };
   const t = Date.parse(asOf);
-  const when = `Pobrano ${new Date(t).toLocaleString('pl-PL')} (${fmtAgo(t, nowMs)})`;
-  return f === 'live' ? { tone: 'live', label: 'LIVE', title: when } : { tone: 'stale', label: 'STALE', title: `${when} — starsze niż 90 min` };
+  const when = `${tr('Pobrano', 'Fetched')} ${new Date(t).toLocaleString(locale)} (${fmtAgo(t, nowMs)})`;
+  return f === 'live'
+    ? { tone: 'live', label: 'LIVE', title: when }
+    : { tone: 'stale', label: 'STALE', title: `${when} ${tr('— starsze niż 90 min', '(older than 90 min)')}` };
 }
 
 /** Czas względny: „przed chwilą” / „5 min temu” / „3 h temu” / „2 dni temu”. */
 export function fmtAgo(timeMs: number, nowMs: number): string {
   if (!Number.isFinite(timeMs)) return '—';
   const min = Math.floor((nowMs - timeMs) / 60000);
-  if (min < 1) return 'przed chwilą';
-  if (min < 60) return `${min} min temu`;
+  if (min < 1) return tr('przed chwilą', 'just now');
+  if (min < 60) return tr(`${min} min temu`, `${min} min ago`);
   const h = Math.floor(min / 60);
-  if (h < 24) return `${h} h temu`;
+  if (h < 24) return tr(`${h} h temu`, `${h} h ago`);
   const d = Math.floor(h / 24);
-  return d === 1 ? '1 dzień temu' : `${d} dni temu`;
+  return d === 1 ? tr('1 dzień temu', '1 day ago') : tr(`${d} dni temu`, `${d} days ago`);
 }
 
 export type FeedStatus = 'loading' | 'ready' | 'missing';

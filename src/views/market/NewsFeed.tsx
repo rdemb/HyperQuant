@@ -1,15 +1,16 @@
 import React, { useState } from 'react';
 import { Badge, EmptyState, Panel, Segmented } from '../../ui';
 import { NewsCategory, fmtAgo, freshnessBadge, partAsOf, useNow, usePublicFeed } from '../../utils/publicFeeds';
+import { tr } from '../../i18n';
 
 type Filter = 'all' | NewsCategory;
 
-const CAT_LABEL: Record<NewsCategory, string> = { crypto: 'Krypto', macro: 'Makro', regulation: 'Regulacje' };
+const CAT_LABEL: Record<NewsCategory, string> = { crypto: tr('Krypto', 'Crypto'), macro: tr('Makro', 'Macro'), regulation: tr('Regulacje', 'Regulation') };
 const FILTERS: { value: Filter; label: string }[] = [
-  { value: 'all', label: 'Wszystko' },
-  { value: 'crypto', label: 'Krypto' },
-  { value: 'macro', label: 'Makro' },
-  { value: 'regulation', label: 'Regulacje' },
+  { value: 'all', label: tr('Wszystko', 'All') },
+  { value: 'crypto', label: CAT_LABEL.crypto },
+  { value: 'macro', label: CAT_LABEL.macro },
+  { value: 'regulation', label: CAT_LABEL.regulation },
 ];
 const SOURCES = 'CoinDesk, Cointelegraph, Decrypt, The Block, Bitcoin Magazine, Federal Reserve, BLS, SEC';
 
@@ -25,29 +26,35 @@ export const NewsFeed: React.FC = () => {
 
   return (
     <Panel
-      title="Nagłówki"
-      eyebrow="RSS · tylko tytuł i link"
+      title={tr('Nagłówki', 'Headlines')}
+      eyebrow={tr('RSS · tylko tytuł i link', 'RSS · title and link only')}
       actions={feed ? <Badge tone={badge.tone} title={badge.title}>{badge.label}</Badge> : undefined}
     >
       {status === 'loading' && !feed ? (
-        <EmptyState title="Wczytuję nagłówki…" />
+        <EmptyState title={tr('Wczytuję nagłówki…', 'Loading headlines…')} />
       ) : !feed || items.length === 0 ? (
         <EmptyState
-          title="Brak danych publicznych"
-          detail={
+          title={tr('Brak danych publicznych', 'No public data')}
+          detail={tr(
             <>
               Uruchom <code className="font-mono text-ink-2">npm run data</code> lokalnie albo poczekaj na wdrożenie (GitHub
               Actions odświeża pliki co ~30 min).
+            </>,
+            <>
+              Run <code className="font-mono text-ink-2">npm run data</code> locally or wait for the deployment (GitHub Actions refreshes the files every ~30 min).
             </>
-          }
+          )}
         />
       ) : (
         <>
           <div className="px-4 pt-3 pb-2 overflow-x-auto">
-            <Segmented value={filter} options={FILTERS} onChange={setFilter} ariaLabel="Kategoria nagłówków" />
+            <Segmented value={filter} options={FILTERS} onChange={setFilter} ariaLabel={tr('Kategoria nagłówków', 'Headline category')} />
           </div>
           {shown.length === 0 ? (
-            <EmptyState title="Brak nagłówków w tej kategorii" detail="W ostatnim pobraniu żaden kanał nie dostarczył pozycji tego typu." />
+            <EmptyState
+              title={tr('Brak nagłówków w tej kategorii', 'No headlines in this category')}
+              detail={tr('W ostatnim pobraniu żaden kanał nie dostarczył pozycji tego typu.', 'In the last fetch no feed delivered items of this type.')}
+            />
           ) : (
             <ul className="max-h-[440px] overflow-y-auto divide-y divide-line border-t border-line">
               {shown.map((i) => (
@@ -61,7 +68,7 @@ export const NewsFeed: React.FC = () => {
                     <span className="block text-sm text-ink-1 leading-snug">{i.title}</span>
                     <span className="mt-0.5 block text-[11px] text-ink-3">
                       {i.source} · <time dateTime={new Date(i.time).toISOString()}>{fmtAgo(i.time, now)}</time> · {CAT_LABEL[i.category]}
-                      <span className="sr-only"> (otwiera stronę wydawcy w nowej karcie)</span>
+                      <span className="sr-only">{tr(' (otwiera stronę wydawcy w nowej karcie)', " (opens the publisher's page in a new tab)")}</span>
                     </span>
                   </a>
                 </li>
@@ -69,7 +76,8 @@ export const NewsFeed: React.FC = () => {
             </ul>
           )}
           <p className="px-4 py-2.5 border-t border-line text-[11px] text-ink-3 leading-relaxed">
-            Źródła: {SOURCES}. Treść należy do wydawców — pokazujemy wyłącznie tytuł i link do oryginału.
+            {tr('Źródła', 'Sources')}: {SOURCES}.{' '}
+            {tr('Treść należy do wydawców — pokazujemy wyłącznie tytuł i link do oryginału.', 'The content belongs to the publishers; we show only the title and a link to the original.')}
           </p>
         </>
       )}
