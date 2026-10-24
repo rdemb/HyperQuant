@@ -34,7 +34,7 @@ class MemKv implements TapeKv {
 const T0 = 1_792_850_000_000 - (1_792_850_000_000 % 60_000);
 
 function fill(time: number, px: number, sz: number, side: 1 | -1, tid: number): Fill {
-  return { time, px, sz, side, tid, hash: `0x${tid}`, taker: '0xabc' };
+  return { time, px, sz, side, tid, hash: `0x${tid}`, taker: '0xabc', maker: '0xdef' };
 }
 
 function newStore(): ProStore {

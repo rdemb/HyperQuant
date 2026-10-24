@@ -61,12 +61,15 @@ export const PRO = {
   domText: '#e4e6ea',
 } as const;
 
-/** Rampa mapy ciepła arkusza: przezroczysty → ciemny morski → jasny morski (pasy płynności) → biel → żółty → pomarańcz → czerwień (ściany). */
+/**
+ * Rampa mapy ciepła arkusza: przezroczysty → ciemny morski (półprzezroczysty, świece widać przez niego) → jasny morski
+ * (pasy płynności) → biel → żółty → pomarańcz → czerwień (ściany).
+ */
 export const LIQ_RAMP: HeatRamp = [
   { t: 0, color: '#151521', alpha: 0 },
-  { t: 0.1, color: '#172526', alpha: 1 },
-  { t: 0.24, color: '#124950', alpha: 1 },
-  { t: 0.36, color: '#0d5c67', alpha: 1 },
+  { t: 0.1, color: '#172526', alpha: 0.45 },
+  { t: 0.24, color: '#124950', alpha: 0.7 },
+  { t: 0.36, color: '#0d5c67', alpha: 0.85 },
   { t: 0.5, color: '#017979', alpha: 1 },
   { t: 0.62, color: '#c9e0eb', alpha: 1 },
   { t: 0.72, color: '#f5e611', alpha: 1 },
