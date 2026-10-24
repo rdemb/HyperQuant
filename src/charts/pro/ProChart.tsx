@@ -8,7 +8,7 @@ import { hlTick } from './core/footprintBar';
 import { indicatorScope, liqLevels } from './core/indicators';
 import type { AggressorOrder } from './core/orders';
 import type { ResetMode } from './core/sessions';
-import { ProChartController } from './chart/controller';
+import { type PaneKey, ProChartController } from './chart/controller';
 import { PickCard, TapePanel, compact } from './chart/FlowPanels';
 import { HoverSignal, Legend } from './chart/Legend';
 import type { LiquidityPick } from './chart/liquidity';
@@ -44,6 +44,7 @@ const toTick = (p: number) => Number(p.toFixed(priceDigits(p)));
 
 /** Interwał nowego panelu układu (bez zapisanych ustawień): kolejne panele pokazują wyższe interwały. */
 const PANEL_INTERVALS = ['5m', '15m', '1h', '4h'];
+const PANE_NAMES: Record<PaneKey, string> = { showVolume: 'Wolumen', showDelta: 'Delta', showCvd: 'CVD', showStats: 'Statystyki świec' };
 
 const LAYOUT_OPTIONS: { value: ChartLayout; label: React.ReactNode; title: string }[] = [
   { value: 1, label: <Square className="w-3.5 h-3.5" />, title: 'Jeden wykres' },
@@ -137,7 +138,10 @@ export const ProChart: React.FC<{ panel?: number; layout?: ChartLayout; onLayout
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
-    const ctrl = new ProChartController(host, store, series, settings, signal.set, setPick);
+    const ctrl = new ProChartController(host, store, series, settings, signal.set, setPick, (key) => {
+      update({ [key]: false });
+      setToast(`Ukryto panel: ${PANE_NAMES[key]} — włączysz go w Ustawieniach wykresu → Panele`);
+    });
     ctrlRef.current = ctrl;
     setTools(ctrl.draw);
     ctrl.setTopInset(legendBottom.current);
@@ -151,7 +155,7 @@ export const ProChart: React.FC<{ panel?: number; layout?: ChartLayout; onLayout
       setTools(null);
     };
     // Wykres tworzymy raz; zmiany ustawień idą przez applySettings
-  }, [store, signal]);
+  }, [store, signal, update]);
 
   useEffect(() => {
     // W układzie 2 × 2 panel jest za niski na tabelę statystyk — zapisane ustawienie wraca w mniejszym układzie

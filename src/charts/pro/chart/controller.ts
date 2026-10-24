@@ -91,6 +91,10 @@ const AUTO_EVERY_MS = 5_000;
 /** Statystyki świec przeliczane najwyżej co tyle ms (i po każdej pełnej podmianie danych). */
 const STATS_EVERY_MS = 1_000;
 
+/** Panele pod wykresem, które można ukryć krzyżykiem w ich rogu. */
+export const PANE_KEYS = ['showVolume', 'showDelta', 'showCvd', 'showStats'] as const;
+export type PaneKey = (typeof PANE_KEYS)[number];
+
 function toPoint(b: ProBar): FootprintPoint {
   const c = b.candle;
   return { time: sec(b.t), open: c.o, high: c.h, low: c.l, close: c.c, bar: b, color: c.c >= c.o ? PRO.buy : PRO.sell };
@@ -149,9 +153,9 @@ export class ProChartController {
   /** Cena przeliczenia progu nierównowagi z USD na jednostki rynku (ustalana przy pełnym odświeżeniu danych). */
   private refPx = 0;
   private alertLines: IPriceLine[] = [];
-  private readonly volumeLegend = new PaneLegend();
-  private readonly deltaLegend = new PaneLegend();
-  private readonly cvdLegend = new PaneLegend();
+  private readonly volumeLegend = new PaneLegend('showVolume');
+  private readonly deltaLegend = new PaneLegend('showDelta');
+  private readonly cvdLegend = new PaneLegend('showCvd');
   private readonly overlay: IndicatorOverlay;
   private readonly liquidity: LiquidityLayer;
   private readonly drawLayer = new DrawingLayer();
@@ -173,6 +177,7 @@ export class ProChartController {
   private readonly unsubscribe: () => void;
   private readonly onHover: (h: Hover) => void;
   private readonly onPick: (p: LiquidityPick | null) => void;
+  private readonly onHidePane: (key: PaneKey) => void;
 
   constructor(
     container: HTMLElement,
@@ -180,11 +185,13 @@ export class ProChartController {
     private series: CandleSeries,
     settings: ChartSettings,
     onHover: (h: Hover) => void,
-    onPick: (p: LiquidityPick | null) => void
+    onPick: (p: LiquidityPick | null) => void,
+    onHidePane: (key: PaneKey) => void
   ) {
     this.settings = settings;
     this.onHover = onHover;
     this.onPick = onPick;
+    this.onHidePane = onHidePane;
     this.liqSource = {
       near: null,
       far: null,
@@ -498,8 +505,14 @@ export class ProChartController {
     if (range && range.from < LOAD_OLDER_MARGIN && this.bars.length > 0) void this.series.loadOlder();
   };
 
-  /** Kliknięcie: obiekt warstwy płynności pod kursorem albo nic (zamyka kartę). */
+  /** Kliknięcie: krzyżyk ukrycia panelu, obiekt warstwy płynności pod kursorem albo nic (zamyka kartę). */
   private readonly onClick = (p: MouseEventParams<Time>): void => {
+    const hit = p.hoveredObjectId;
+    if (typeof hit === 'string' && hit.startsWith('pane:')) {
+      const key = hit.slice(5);
+      if ((PANE_KEYS as readonly string[]).includes(key)) this.onHidePane(key as PaneKey);
+      return;
+    }
     const pick = p.point && p.paneIndex === 0 ? this.liquidity.pick(p.point.x, p.point.y) : null;
     this.liquidity.setSelected(pick);
     this.onPick(pick);

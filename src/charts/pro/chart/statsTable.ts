@@ -1,7 +1,8 @@
-import type { IChartApiBase, IPrimitivePaneRenderer, IPrimitivePaneView, ISeriesPrimitive, Logical, SeriesAttachedParameter, Time } from 'lightweight-charts';
+import type { IChartApiBase, IPrimitivePaneRenderer, IPrimitivePaneView, ISeriesPrimitive, Logical, PrimitiveHoveredItem, SeriesAttachedParameter, Time } from 'lightweight-charts';
 import { fmtVol } from '../../orderflow/footprint';
 import { fmtSignedVol } from '../../orderflow/renderer';
 import type { BarStat, StatKey } from '../core/stats';
+import { type CloseBox, closeHit, drawClose, inBox } from './paneLegend';
 import { MONO, PRO, rgba } from './theme';
 
 /**
@@ -49,6 +50,7 @@ export class StatsTable implements ISeriesPrimitive<Time> {
   private requestUpdate: (() => void) | null = null;
   private stats: readonly BarStat[] = [];
   private hover = -1;
+  private close: CloseBox | null = null;
   private readonly view: IPrimitivePaneView;
 
   constructor() {
@@ -85,6 +87,7 @@ export class StatsTable implements ISeriesPrimitive<Time> {
   private draw(ctx: CanvasRenderingContext2D, W: number, H: number): void {
     const chart = this.chart;
     const stats = this.stats;
+    this.close = null;
     if (!chart || stats.length === 0 || !(H > 0)) return;
     const ts = chart.timeScale();
     const range = ts.getVisibleLogicalRange();
@@ -159,5 +162,12 @@ export class StatsTable implements ISeriesPrimitive<Time> {
     ctx.textAlign = 'left';
     ctx.fillStyle = C.label;
     for (let r = 0; r < rows; r++) ctx.fillText(STAT_ROWS[r].label, 8, r * rh + rh / 2);
+    // Krzyżyk ukrycia tabeli w pierwszym wierszu kolumny nazw
+    this.close = { x: LABEL_W - 16, y: Math.max(0, rh / 2 - 8), size: 16 };
+    drawClose(ctx, this.close);
+  }
+
+  hitTest(x: number, y: number): PrimitiveHoveredItem | null {
+    return inBox(this.close, x, y) ? closeHit('showStats') : null;
   }
 }

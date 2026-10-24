@@ -23,6 +23,7 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 - Wykresy: wartość ściany makera na tle przed początkiem belki (nad bąblami; większe ściany pierwsze, bez nachodzenia na inne etykiety i bąble), liczby drabiny arkusza bez nachodzenia przy oddaleniu, daleka agregacja mapy ciepła przygaszona względem dokładnej przy cenie.
 - Wykresy: minimalna wartość nierównowagi w USD (domyślnie 2,5 tys., przeliczana na jednostki rynku po cenie) zamiast stałej ilości BTC.
 - Wykresy: na telefonie pasek narzędzi w dwóch wierszach (interwały i widok przewijane, przyciski zawsze widoczne), legenda bez szczegółów taśmy (deltę i CVD pokazują opisy paneli); największe zbliżenie ograniczone do 240 px na świecę.
+- Wykresy: panele Wolumen, Delta, CVD i tabela statystyk mają krzyżyk w rogu, który ukrywa panel jednym kliknięciem (wykres ceny zajmuje zwolnione miejsce); ustawienie zapamiętywane dla wykresu, ponowne włączenie w Ustawieniach → Panele.
 - `npm run build` buduje także blog (`vite build && node scripts/blog/build.mjs`).
 - Service worker nie przechwytuje nawigacji do `blog/` (strona bloga nie nadpisuje zapisanej powłoki aplikacji); `index.html` wskazuje kanał RSS.
 
