@@ -20,7 +20,7 @@
     {
       "name": "Desk",
       "short_name": "Desk",
-      "description": "Wykres BTC-PERP, arkusz L2 i taśma",
+      "description": "Powitanie, mapa strony, arkusz L2, taśma i kontekst rynku",
       "url": "./#desk",
       "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
     },
