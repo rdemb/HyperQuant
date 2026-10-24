@@ -45,6 +45,16 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         refresh: 'na żywo',
       },
       {
+        metric: 'Footprint, świece delty, CVD (Wykresy)',
+        source: 'Hyperliquid WS trades nagrywane od otwarcia widoku (zapis w przeglądarce do 24 h)',
+        method:
+          'Wolumen agresywnego kupna i sprzedaży na każdym ticku ceny (strona agresora z pola side); POC i value area 70% świecy, nierównowaga diagonalna (próg i minimalny wolumen w ustawieniach), delta z maksimum i minimum w trakcie świecy, CVD zerowane wg sesji, doby UTC lub tygodnia',
+        kinds: ['LIVE'],
+        refresh: 'na żywo',
+        caveat:
+          'API nie udostępnia historii transakcji: świece sprzed nagrania nie mają footprintu, a świeca bez pełnego pokrycia nagraniem (start, zerwane połączenie) jest oznaczona jako częściowa — bez uzupełniania szacunkiem.',
+      },
+      {
         metric: 'Open interest, funding, mark/oracle',
         source: 'Hyperliquid API: metaAndAssetCtxs',
         method: 'Wartości wprost z API; basis = (mark − oracle) / oracle',

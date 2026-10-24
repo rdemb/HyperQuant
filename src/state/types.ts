@@ -1,5 +1,5 @@
 /** Widoki aplikacji (hash w URL: #desk, #plan, …) */
-export type ViewId = 'desk' | 'plan' | 'market' | 'lab' | 'micro' | 'sources';
+export type ViewId = 'desk' | 'charts' | 'plan' | 'market' | 'lab' | 'micro' | 'sources';
 
 /** Szkic planu przekazywany do Analizatora planu (z dowolnego panelu lub ręcznie). */
 export interface PlanDraft {

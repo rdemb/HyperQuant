@@ -2,6 +2,7 @@ import React, { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import {
   LayoutDashboard,
+  ChartCandlestick,
   Target,
   Globe2,
   Box,
@@ -22,6 +23,7 @@ import { InstallButton } from './InstallButton';
 import DeskView from '../views/DeskView';
 
 // Widoki poza ekranem głównym ładowane leniwie (mniejszy pierwszy bundle)
+const ChartsView = lazy(() => import('../views/ChartsView'));
 const PlanView = lazy(() => import('../views/PlanView'));
 const MarketView = lazy(() => import('../views/MarketView'));
 const LabView = lazy(() => import('../views/LabView'));
@@ -30,6 +32,7 @@ const SourcesView = lazy(() => import('../views/SourcesView'));
 
 const NAV: { id: ViewId; label: string; short: string; icon: React.ReactNode }[] = [
   { id: 'desk', label: 'Desk', short: 'Desk', icon: <LayoutDashboard className="w-4 h-4" /> },
+  { id: 'charts', label: 'Wykresy', short: 'Wykresy', icon: <ChartCandlestick className="w-4 h-4" /> },
   { id: 'plan', label: 'Analizator planu', short: 'Plan', icon: <Target className="w-4 h-4" /> },
   { id: 'market', label: 'Rynek', short: 'Rynek', icon: <Globe2 className="w-4 h-4" /> },
   { id: 'lab', label: 'Lab 3D', short: 'Lab', icon: <Box className="w-4 h-4" /> },
@@ -201,9 +204,12 @@ export const AppShell: React.FC = () => {
             <Badge tone={STATUS_TONE[feed.dataStatus]} title={STATUS_TITLE[feed.dataStatus]} testId="data-status">
               {feed.dataStatus}
             </Badge>
-            <div className="hidden md:block">
-              <Segmented<number> ariaLabel="Interwał" value={feed.timeframeSec} onChange={feed.setTimeframeSec} options={TIMEFRAMES} />
-            </div>
+            {/* Wykresy mają własne interwały — globalny przełącznik dotyczy pozostałych widoków */}
+            {view !== 'charts' && (
+              <div className="hidden md:block">
+                <Segmented<number> ariaLabel="Interwał" value={feed.timeframeSec} onChange={feed.setTimeframeSec} options={TIMEFRAMES} />
+              </div>
+            )}
             <IconBtn label={feed.isStreaming ? 'Wstrzymaj strumień' : 'Wznów strumień'} onClick={() => feed.setIsStreaming(!feed.isStreaming)}>
               {feed.isStreaming ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
             </IconBtn>
@@ -217,9 +223,11 @@ export const AppShell: React.FC = () => {
           </div>
         </div>
         <TickerStrip />
-        <div className="md:hidden px-4 py-2 border-b border-line overflow-x-auto">
-          <Segmented<number> ariaLabel="Interwał" value={feed.timeframeSec} onChange={feed.setTimeframeSec} options={TIMEFRAMES} />
-        </div>
+        {view !== 'charts' && (
+          <div className="md:hidden px-4 py-2 border-b border-line overflow-x-auto">
+            <Segmented<number> ariaLabel="Interwał" value={feed.timeframeSec} onChange={feed.setTimeframeSec} options={TIMEFRAMES} />
+          </div>
+        )}
       </header>
 
       <main className="flex-1 w-full max-w-[1920px] mx-auto px-4 lg:px-6 py-4 pb-28 lg:pb-8">
@@ -228,6 +236,7 @@ export const AppShell: React.FC = () => {
             <Suspense fallback={<ViewFallback />}>
               {awaitingData && <ConnectingState onRetry={feed.syncNow} startedAt={startedAt} now={feed.nowTick} />}
               {!awaitingData && view === 'desk' && <DeskView />}
+              {view === 'charts' && <ChartsView />}
               {!awaitingData && view === 'plan' && <PlanView />}
               {view === 'market' && <MarketView />}
               {!awaitingData && view === 'lab' && <LabView />}
@@ -246,7 +255,7 @@ export const AppShell: React.FC = () => {
             <TabBtn key={n.id} active={view === n.id} label={n.short} icon={n.icon} onClick={() => setView(n.id)} />
           ))}
           <TabBtn
-            active={view === 'micro' || view === 'sources'}
+            active={NAV.slice(4).some((n) => n.id === view)}
             label="Więcej"
             icon={<MoreHorizontal className="w-4 h-4" />}
             onClick={() => setMoreOpen((o) => !o)}
