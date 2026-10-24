@@ -35,7 +35,7 @@ interface Unit {
 
 const unitKey = (u: Unit) => `${u.part ? 'p' : 'h'}${u.start}`;
 
-function toBookFrame(f: HistFrame): BookFrame {
+export function toBookFrame(f: HistFrame): BookFrame {
   const nBids = f.bids.length / 3;
   const all = [...f.bids, ...f.asks];
   const n = all.length / 3;

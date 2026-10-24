@@ -60,6 +60,16 @@ export interface HistoryBatch {
   frames: BookFrame[];
 }
 
+/**
+ * Powtórka nagrania (magazyn bez strumienia na żywo): zegar odtwarzania zamiast zegara giełdy, koniec nagrania, do którego
+ * sięgają zapytania o świece, i świece z pamięci powtórki (nowy magazyn po przewinięciu wstecz nie pyta API drugi raz).
+ */
+export interface ReplayClock {
+  now(): number;
+  end: number;
+  candles(coin: string, interval: string, from: number, to: number): Promise<Candle[]>;
+}
+
 interface FpCacheEntry {
   sig: string;
   fp: FootprintBar | null;
@@ -134,7 +144,11 @@ export class ProStore {
   private bookSteps: [number, number] = [Number.NaN, Number.NaN];
   private exactSub = false;
 
-  constructor(stream?: HlStream, coin: string = COIN) {
+  constructor(
+    stream?: HlStream,
+    coin: string = COIN,
+    readonly replay: ReplayClock | null = null
+  ) {
     this.coin = coin;
     this.players = new PlayerFlow(this.orders, this.addressed, bigPlayerUsd(coin));
     this.stream = stream ?? new HlStream();
@@ -208,7 +222,23 @@ export class ProStore {
   }
 
   serverNow(): number {
-    return this.clock.toServer(Date.now());
+    return this.replay ? this.replay.now() : this.clock.toServer(Date.now());
+  }
+
+  /** Koniec zakresu zapytań o świece: teraz, a w powtórce koniec nagrania. */
+  apiNow(): number {
+    return this.replay ? this.replay.end : Date.now();
+  }
+
+  /** Świece z API (w powtórce z jej pamięci). */
+  candles(interval: string, from: number, to: number): Promise<Candle[]> {
+    return this.replay ? this.replay.candles(this.coin, interval, from, to) : fetchCandles(this.coin, interval, from, to);
+  }
+
+  /** Powtórka: agregacje arkusza od ceny nagrania (bez połączenia) i świece dzienne do poziomów dnia. */
+  prepareReplay(price: number): void {
+    this.ensureBookSubs(price);
+    void this.loadDaily();
   }
 
   // ───────────────────────── świece ─────────────────────────
@@ -239,7 +269,7 @@ export class ProStore {
   /** Stawki finansowania od najstarszej świecy serii (najwyżej FUNDING_MAX_MS wstecz); pobrany okres nie jest pobierany drugi raz. */
   async requestFunding(oldest: number): Promise<void> {
     if (this.fundingLoading) return;
-    const from = Math.max(oldest, Date.now() - FUNDING_MAX_MS);
+    const from = Math.max(oldest, this.apiNow() - FUNDING_MAX_MS);
     if (from >= this.funding.from) return;
     this.fundingLoading = true;
     try {
@@ -270,11 +300,11 @@ export class ProStore {
 
   /** Świece dzienne — raz na dzień UTC; brak świecy bieżącego dnia albo błąd → ponowienie przy następnym takcie. */
   private async loadDaily(): Promise<void> {
-    const now = Date.now();
+    const now = this.apiNow();
     const day = utcDayStart(this.serverNow());
     if (this.dailyDay === day) return;
     this.dailyDay = day;
-    const list = await fetchCandles(this.coin, '1d', now - DAILY_DAYS * DAY, now + DAY);
+    const list = await this.candles('1d', now - DAILY_DAYS * DAY, now + DAY);
     if (list.length === 0 || list[list.length - 1].t < day) this.dailyDay = 0;
     if (list.length === 0) return;
     this.daily = list;
@@ -429,6 +459,25 @@ export class ProStore {
     this.bump();
   }
 
+  /**
+   * Powtórka: kolejny odcinek nagrania do chwili odtwarzania — taśma, pokrycie, zlecenia i otwarte pozycje jak historia
+   * serwera, migawki arkusza dopisywane po kolei (rosnąco po czasie), ostatnia cena z ostatniej transakcji odcinka.
+   */
+  feedReplay(b: HistoryBatch): void {
+    this.restoreHistory({ trades: b.trades, frames: [] });
+    for (const f of b.frames) {
+      let h = this.books.get(f.step);
+      if (!h) this.books.set(f.step, (h = new BookHistory(f.step)));
+      h.add(f);
+    }
+    const last = b.trades?.fills[b.trades.fills.length - 1];
+    if (last && last.time >= this.lastTradeT) {
+      this.lastTradeT = last.time;
+      this.lastTradePx = last.px;
+    }
+    this.bump();
+  }
+
   // ───────────────────────── sprzątanie ─────────────────────────
 
   private prune(): void {
@@ -502,8 +551,8 @@ export class CandleSeries {
     m.bump();
 
     const seq = ++this.loadSeq;
-    const now = Date.now();
-    const list = await fetchCandles(m.coin, iv.id, now - PAGE_BARS * iv.ms, now + iv.ms);
+    const now = m.apiNow();
+    const list = await m.candles(iv.id, now - PAGE_BARS * iv.ms, now + iv.ms);
     if (seq !== this.loadSeq) return;
     if (list.length === 0) {
       this.loadState = 'error';
@@ -523,7 +572,7 @@ export class CandleSeries {
     const seq = this.loadSeq;
     const iv = this.interval;
     const first = this.candles[0].t;
-    const list = await fetchCandles(this.m.coin, iv.id, first - PAGE_BARS * iv.ms, first - 1);
+    const list = await this.m.candles(iv.id, first - PAGE_BARS * iv.ms, first - 1);
     this.loadingOlder = false;
     if (seq !== this.loadSeq) return;
     const older = list.filter((c) => c.t < first);
@@ -538,8 +587,8 @@ export class CandleSeries {
     if (this.candles.length === 0) return;
     const iv = this.interval;
     const seq = this.loadSeq;
-    const now = Date.now();
-    const list = await fetchCandles(this.m.coin, iv.id, now - 60 * iv.ms, now + iv.ms);
+    const now = this.m.apiNow();
+    const list = await this.m.candles(iv.id, now - 60 * iv.ms, now + iv.ms);
     if (seq !== this.loadSeq || list.length === 0) return;
     this.mergeCandles(list);
     this.m.bump();
@@ -618,28 +667,37 @@ export class CandleSeries {
     return fp;
   }
 
-  /** Świece z footprintem; niezmienione świece zachowują referencję (tani diff na wykresie). */
+  /**
+   * Świece z footprintem; niezmienione świece zachowują referencję (tani diff na wykresie). W powtórce tylko do chwili
+   * odtwarzania, a bieżąca świeca z taśmy do tej chwili (świeca z API zna już resztę ruchu).
+   */
   bars(): ProBar[] {
     const ms = this.interval.ms;
     const now = this.m.serverNow();
+    const replay = this.m.replay !== null;
     const firstTape = this.m.tape.firstTime;
-    const out: ProBar[] = new Array(this.candles.length);
-    for (let i = 0; i < this.candles.length; i++) {
-      const c = this.candles[i];
-      const t = c.t;
+    const out: ProBar[] = [];
+    for (const api of this.candles) {
+      const t = api.t;
+      if (replay && t > now) break;
       const end = Math.min(t + ms, now);
       // Świece sprzed nagrania nie mają taśmy — bez przeglądania pamięci podręcznej
       const fp = t + ms > firstTape ? this.footprintFor(t) : null;
+      const prev = this.barCache.get(t);
+      let c = api;
+      if (replay && t + ms > now) {
+        if (!fp) break;
+        c = prev && prev.fp === fp ? prev.candle : { t, o: fp.open, h: fp.high, l: fp.low, c: fp.close, v: fp.buyVol + fp.sellVol, n: fp.trades };
+      }
       const complete = fp !== null && this.m.coverage.covers(t, end);
       const share = fp && c.v > 0 ? (fp.buyVol + fp.sellVol) / c.v : Number.NaN;
-      const prev = this.barCache.get(t);
       if (prev && prev.candle === c && prev.fp === fp && prev.complete === complete) {
-        out[i] = prev;
+        out.push(prev);
         continue;
       }
       const bar: ProBar = { t, candle: c, fp, share, complete };
       this.barCache.set(t, bar);
-      out[i] = bar;
+      out.push(bar);
     }
     return out;
   }
