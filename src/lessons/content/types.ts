@@ -90,6 +90,9 @@ export interface LessonsContent {
     practice: string;
     /** Przycisk stacji Wykresów; `name` to nazwa ze stations.ts (Wykresy mają jeszcze tylko polskie nazwy). */
     openStation: (id: StationId, name: string) => string;
+    /** Przycisk powtórki tej samej chwili w Wykresach i zdanie pod nim. */
+    openReplay: string;
+    replayNote: string;
     atlasLinks: string;
     labTitle: string;
     labLoading: string;

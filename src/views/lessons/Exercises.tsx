@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useReducedMotion } from 'motion/react';
-import { ArrowLeft, ArrowRight, ChartCandlestick, Check, Eye, RotateCcw } from 'lucide-react';
+import { ArrowLeft, ArrowRight, ChartCandlestick, Check, Eye, History, RotateCcw } from 'lucide-react';
 import { saveStation, stationById } from '../../charts/pro/chart/stations';
 import type { ChartZone } from '../../lessons/chart/LessonChart';
 import { MIN } from '../../lessons/chart/model';
@@ -8,6 +8,7 @@ import type { ExerciseText, LessonsContent, QuestionText } from '../../lessons/c
 import type { LessonSlice } from '../../lessons/data';
 import { EXERCISES, maxScore, pickSide, scoreAnswer, type ExerciseSpec, type QuestionSpec } from '../../lessons/exercises';
 import type { Progress } from '../../lessons/progress';
+import { exerciseReplayHash } from '../../lessons/replay';
 import { useDesk } from '../../state/DeskContext';
 import { useFolkloreLab } from '../../state/useFolkloreLab';
 import { Badge, Panel } from '../../ui';
@@ -421,6 +422,7 @@ const Debrief: React.FC<{
 }> = ({ spec, t, c, score, max, onAgain, onBack, onAtlas }) => {
   const { setView } = useDesk();
   const station = stationById(spec.station);
+  const replay = exerciseReplayHash(spec);
   const names = new Map(c.atlas.entries.map((e) => [e.id, e.name]));
   return (
     <>
@@ -446,9 +448,22 @@ const Debrief: React.FC<{
       </section>
       <section className="flex flex-col gap-3 p-4 rounded-xl border border-line bg-surface-1">
         <h3 className="text-sm font-semibold text-ink-1">{c.ui.practice}</h3>
+        {replay && (
+          <div className="flex flex-col gap-1.5">
+            <a
+              href={replay}
+              className={`${BTN_PRIMARY} self-start`}
+              onClick={() => window.scrollTo({ top: 0 })}
+            >
+              <History className="w-4 h-4" aria-hidden="true" />
+              {c.ui.openReplay}
+            </a>
+            <p className="text-xs text-ink-3 leading-relaxed max-w-prose">{c.ui.replayNote}</p>
+          </div>
+        )}
         <button
           type="button"
-          className={`${BTN_PRIMARY} self-start`}
+          className={`${replay ? BTN_SECONDARY : BTN_PRIMARY} self-start`}
           onClick={() => {
             saveStation(station.id);
             setView('charts');

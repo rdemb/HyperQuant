@@ -34,6 +34,8 @@ export const pl: LessonsContent = {
     honest: 'Uczciwie',
     practice: 'Ćwicz na żywo',
     openStation: (_id, name) => `Otwórz stację „${name}” w Wykresach`,
+    openReplay: 'Otwórz ten moment w Wykresach',
+    replayNote: 'Powtórka nagranej taśmy i arkusza z tego wieczoru na pełnym wykresie: start na pauzie w chwili pytania, dalej odtwarzasz sam.',
     atlasLinks: 'Wskaźniki z tego ćwiczenia',
     labTitle: 'Co mówią dane desku',
     labLoading: 'Wczytuję wyniki Laboratorium folkloru…',

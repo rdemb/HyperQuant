@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { diagonalImbalances } from '../chart/FootprintFigure';
 import { MIN, dayProfile, figureModel, visibleCount } from '../chart/model';
@@ -8,6 +8,9 @@ import { isLessonSlice, mergeCandles, type LessonSlice, type SliceCandle } from 
 import { EXERCISES, maxScore, pickSide, scoreAnswer, type QuestionSpec } from '../exercises';
 import { loadProgress, saveResult } from '../progress';
 import { RISK_DEFAULTS, expectancyR, mulberry32, simulateRisk } from '../risk';
+import { REPLAY_SUPPORTED, exerciseReplayHash } from '../replay';
+import { parseReplayLink } from '../../charts/pro/replay/link';
+import { HIST_HOUR_MS, historyPath, isHistoryIndex } from '../../utils/tapeHistory';
 
 const slice = (id: string): LessonSlice => JSON.parse(readFileSync(new URL(`../../../public/lessons/${id}.json`, import.meta.url), 'utf8'));
 const SLICES = [...new Set([...EXERCISES.map((e) => e.slice), ...pl.atlas.entries.flatMap((e) => (e.figure ? [e.figure.slice] : []))])];
@@ -123,6 +126,40 @@ describe('treść angielska ma tę samą strukturę co polska', () => {
       const inEn = strings(en.exercises[id]).flatMap(times);
       expect(new Set(inEn), id).toEqual(new Set([...fromPl, ...(allowed[id] ?? [])]));
     }
+  });
+});
+
+describe('powtórka chwili z ćwiczenia w Wykresach', () => {
+  const root = new URL('../../../public/lessons/replay/', import.meta.url);
+  const withReplay = EXERCISES.filter((e) => e.replay);
+
+  it('lekcje znają bieżący format linku powtórki', () => {
+    expect(REPLAY_SUPPORTED).toBe(true);
+    expect(withReplay.length).toBeGreaterThan(0);
+  });
+
+  it.each(withReplay.map((e) => [e.id, e] as const))('%s: nagranie przy lekcjach obejmuje zakres, link wraca do tych samych ustawień', (_, e) => {
+    const r = e.replay!;
+    const [from, to, t] = [r.from, r.to, r.t].map(Date.parse);
+    expect(from % HIST_HOUR_MS).toBe(0);
+    expect(to % HIST_HOUR_MS).toBe(0);
+    expect(t > from && t < to).toBe(true);
+    expect(to - from).toBeLessThanOrEqual(24 * 60 * MIN);
+    expect(e.checkpoints.some((ck) => Date.parse(ck.at) === t)).toBe(true);
+    const index: unknown = JSON.parse(readFileSync(new URL('index.json', root), 'utf8'));
+    expect(isHistoryIndex(index)).toBe(true);
+    const hours = (index as { markets: Record<string, { hours: number[] }> }).markets.BTC.hours;
+    for (let h = from; h < to; h += HIST_HOUR_MS) {
+      expect(hours).toContain(h);
+      for (const kind of ['trades', 'book'] as const) expect(existsSync(new URL(historyPath('BTC', h, kind, false), root)), `${kind} ${h}`).toBe(true);
+    }
+    const link = parseReplayLink(exerciseReplayHash(e)!);
+    expect(link).toMatchObject({ source: 'lessons', coin: 'BTC', interval: r.interval, view: r.view, from, to, t, station: e.station, zone: r.zone ?? null });
+    expect(new Set(link!.layers)).toEqual(new Set(r.layers));
+  });
+
+  it('ćwiczenia bez nagrania nie mają przycisku', () => {
+    for (const e of EXERCISES.filter((x) => !x.replay)) expect(exerciseReplayHash(e)).toBeNull();
   });
 });
 
