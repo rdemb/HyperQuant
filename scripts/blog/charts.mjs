@@ -90,12 +90,12 @@ export function spreadLabels(items, gap, lo, hi) {
   return xs;
 }
 
-/** Świece 15 min sklejone po `k` (układ wąski: 30 min); delta tylko, gdy wszystkie części ją mają. */
-export function mergeCandles(candles, k) {
+/** Świece o interwale `base` sklejone po `k` (układ wąski: dwa razy dłuższe); delta tylko, gdy wszystkie części ją mają. */
+export function mergeCandles(candles, k, base = 15 * MIN) {
   if (k === 1) return candles;
   const out = [];
   for (const c of candles) {
-    const t = c[0] - (c[0] % (k * 15 * MIN));
+    const t = c[0] - (c[0] % (k * base));
     const last = out.at(-1);
     if (!last || last[0] !== t) out.push([t, ...c.slice(1)]);
     else {
@@ -110,23 +110,30 @@ export function mergeCandles(candles, k) {
   return out;
 }
 
+/** Krótkie okno (notka): do 8 godzin. */
+const isCompact = (s) => s.to - s.from <= 8 * 60 * MIN;
+
 const HATCH = (id) =>
   `<pattern id="${id}" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="${C.line}" stroke-width="2"/></pattern>`;
 
 /**
  * Mapa sesji: świece, VWAP dnia z pasmami ±1σ i ±2σ, obszar wartości i POC z profilu, poziomy dnia poprzedniego,
  * strefy scenariuszy, likwidacje; panele delty agresorów, CVD i open interest; profil wolumenu przy osi ceny.
+ * Krótkie okno (notka, do 8 godzin) jest lżejsze: bez profilu i open interest, z poziomami wpisu (`levels`)
+ * podpisanymi w kolumnie przy osi.
  */
-export function sessionSvg(s, { narrow = false, zones = [], uid = 's', label = '' } = {}) {
+export function sessionSvg(s, { narrow = false, zones = [], levels = null, uid = 's', label = '' } = {}) {
+  const compact = isCompact(s);
   const W = narrow ? 380 : 728;
   const AX = narrow ? 48 : 68;
-  const PROF = narrow ? 38 : 72;
+  // Kolumna przy osi: profil wolumenu albo (notka) podpisy poziomów
+  const PROF = compact ? (narrow ? 78 : 118) : narrow ? 38 : 72;
   const plotW = W - AX - PROF - 8;
   const priceTop = 18;
-  const priceH = narrow ? 236 : 300;
-  const paneH = narrow ? 44 : 56;
+  const priceH = compact ? (narrow ? 190 : 230) : narrow ? 236 : 300;
+  const paneH = compact ? (narrow ? 38 : 46) : narrow ? 44 : 56;
   const paneGap = 24;
-  const panes = ['delta', 'cvd', 'oi'].map((k, i) => ({
+  const panes = (compact ? ['delta', 'cvd'] : ['delta', 'cvd', 'oi']).map((k, i) => ({
     k,
     top: priceTop + priceH + paneGap + i * (paneH + paneGap),
   }));
@@ -134,11 +141,13 @@ export function sessionSvg(s, { narrow = false, zones = [], uid = 's', label = '
   const H = timeY + 10;
   const profX = plotW + 8;
 
+  const base = s.tf * MIN;
   const candles = mergeCandles(
     s.candles.map((c) => [...c]),
-    narrow ? 2 : 1
+    narrow ? 2 : 1,
+    base
   );
-  const tf = (narrow ? 30 : 15) * MIN;
+  const tf = (narrow ? 2 : 1) * base;
   const n = Math.round((s.to - s.from) / tf);
   const slot = plotW / n;
   const xOf = (t) => ((t - s.from) / tf) * slot;
@@ -188,25 +197,23 @@ export function sessionSvg(s, { narrow = false, zones = [], uid = 's', label = '
 
   // Obszar wartości, POC i poziomy dnia poprzedniego
   const pr = s.profile;
-  const levelLines = [
-    { label: 'VAH', price: pr.vah, color: C.ink3, dash: '4 3' },
-    { label: 'VAL', price: pr.val, color: C.ink3, dash: '4 3' },
-    { label: 'POC', price: pr.poc + pr.step / 2, color: C.level, dash: null },
-    ...s.levels.map((l) => ({
-      label: l.label,
-      price: l.price,
-      color: C.ink2,
-      dash: '1 3',
-    })),
-  ];
+  const asLine = (l) => ({ label: l.label, price: l.price, color: C.ink2, dash: '1 3' });
+  const levelLines = compact
+    ? (levels ?? s.levels).map(asLine)
+    : [
+        { label: 'VAH', price: pr.vah, color: C.ink3, dash: '4 3' },
+        { label: 'VAL', price: pr.val, color: C.ink3, dash: '4 3' },
+        { label: 'POC', price: pr.poc + pr.step / 2, color: C.level, dash: null },
+        ...s.levels.map(asLine),
+      ];
   for (const l of levelLines.filter((l) => inRange(l.price)))
     out.push(
       hline(0, profX + PROF, y(l.price), l.color, `${l.dash ? ` stroke-dasharray="${l.dash}"` : ''}${l.label === 'POC' ? '' : ' stroke-opacity="0.8"'}`)
     );
 
-  // VWAP dnia: pasmo ±1σ, linie ±2σ, sam VWAP. Punkty 15 min stoją na końcu swojej świecy, w układzie wąskim co drugi.
-  const endX = (t) => xOf(t + 15 * MIN);
-  const thin = (xs) => (narrow ? xs.filter((v) => (v[0] + 15 * MIN - s.from) % tf === 0) : xs);
+  // VWAP dnia: pasmo ±1σ, linie ±2σ, sam VWAP. Punkty stoją na końcu swojej świecy, w układzie wąskim co drugi.
+  const endX = (t) => xOf(t + base);
+  const thin = (xs) => (narrow ? xs.filter((v) => (v[0] + base - s.from) % tf === 0) : xs);
   out.push(`<g clip-path="url(#${uid}c)">`);
   const vw = thin(s.vwap);
   if (vw.length > 1) {
@@ -255,7 +262,15 @@ export function sessionSvg(s, { narrow = false, zones = [], uid = 's', label = '
       if (!biggest || v > biggest.v) biggest = { v, x: cx(t), cy, r, side };
     }
   }
-  if (biggest) out.push(text(biggest.x - biggest.r - 5, biggest.cy, `${n1.format(biggest.v)} mln USD`, { size: 9, fill: C.ink2, anchor: 'end' }));
+  if (biggest) {
+    // Podpis po lewej stronie koła, a przy lewej krawędzi wykresu po prawej
+    const left = biggest.x - biggest.r - 5 > 64;
+    const x = left ? biggest.x - biggest.r - 5 : biggest.x + biggest.r + 5;
+    const label = `${n1.format(biggest.v)} mln USD`;
+    const w = label.length * 5.4 + 4;
+    out.push(rect(left ? x - w + 2 : x - 2, biggest.cy - 7, w, 14, C.bg, ' fill-opacity="0.85" rx="2"'));
+    out.push(text(x, biggest.cy, label, { size: 9, fill: C.ink2, anchor: left ? 'end' : 'start' }));
+  }
 
   // Podpisy stref na wierzchu, na tle wykresu (czytelne także nad świecami)
   for (const z of zones) {
@@ -271,80 +286,66 @@ export function sessionSvg(s, { narrow = false, zones = [], uid = 's', label = '
     );
   }
 
-  // Profil wolumenu przy osi: obszar wartości grafitowy, POC bursztynowy
+  // Profil wolumenu przy osi: obszar wartości grafitowy, POC bursztynowy (w notce bez profilu)
   const pMax = Math.max(...pr.vol);
-  pr.vol.forEach((v, i) => {
-    const p = pr.from + i * pr.step;
-    if (!inRange(p) || !inRange(p + pr.step)) return;
-    const y0 = y(p + pr.step);
-    const hgt = Math.max(0.6, y(p) - y0 - (priceH / ((hi - lo) / pr.step) > 3 ? 1 : 0));
-    const w = (v / pMax) * PROF;
-    const col = p === pr.poc ? C.level : p >= pr.val && p < pr.vah ? C.profileVa : C.profileOut;
-    out.push(rect(profX + PROF - w, y0, w, hgt, col));
-  });
+  if (!compact)
+    pr.vol.forEach((v, i) => {
+      const p = pr.from + i * pr.step;
+      if (!inRange(p) || !inRange(p + pr.step)) return;
+      const y0 = y(p + pr.step);
+      const hgt = Math.max(0.6, y(p) - y0 - (priceH / ((hi - lo) / pr.step) > 3 ? 1 : 0));
+      const w = (v / pMax) * PROF;
+      const col = p === pr.poc ? C.level : p >= pr.val && p < pr.vah ? C.profileVa : C.profileOut;
+      out.push(rect(profX + PROF - w, y0, w, hgt, col));
+    });
 
   // Oś ceny: cena bieżąca, poziomy z nazwą, siatka w wolnych miejscach
   const last = candles.at(-1);
   const axX = W - AX + 4;
   out.push(hline(cx(last[0]), W - AX, y(last[4]), C.accent, ' stroke-dasharray="1 2"'));
+  const shown = levelLines.filter((l) => inRange(l.price));
+  // Notka: najbliższy poziom nad i pod zakresem jako znacznik ze strzałką na krawędzi kolumny podpisów
+  const above = compact ? levelLines.filter((l) => l.price > hi).sort((p, q) => p.price - q.price)[0] : null;
+  const below = compact ? levelLines.filter((l) => l.price < lo).sort((p, q) => q.price - p.price)[0] : null;
   const tags = [
     { y: y(last[4]), label: px0(last[4]), kind: 'price' },
-    ...levelLines
-      .filter((l) => inRange(l.price))
-      .map((l) => ({
-        y: y(l.price),
-        label: l.label,
-        sub: px0(l.label === 'POC' ? pr.poc : l.price),
-        color: l.color,
-      })),
+    ...shown.map((l) => ({ y: y(l.price), label: l.label, sub: px0(l.label === 'POC' ? pr.poc : l.price), color: l.color })),
+    ...(above ? [{ y: priceTop + 5, label: `↑ ${above.label}`, sub: px0(above.price), color: C.ink2 }] : []),
+    ...(below ? [{ y: priceTop + priceH - 5, label: `↓ ${below.label}`, sub: px0(below.price), color: C.ink2 }] : []),
   ];
   const placed = spreadLabels(tags, narrow ? 12 : 13, priceTop + 5, priceTop + priceH - 5);
   for (const g of grid) {
     if (placed.some((t) => Math.abs(t.ly - y(g)) < 12)) continue;
     out.push(text(axX, y(g), px0(g), { size: narrow ? 9 : 10 }));
   }
+  const fit = Math.floor((PROF - 4) / 5.4);
+  const short = (t) => (t.length > fit ? `${t.slice(0, fit - 1)}…` : t);
   for (const t of placed) {
+    const ink = t.color === C.ink3 ? C.ink2 : t.color;
     if (t.kind === 'price') {
       out.push(rect(W - AX + 1, t.ly - 7, AX - 1, 14, C.accent, ' rx="2"'));
+      out.push(text(axX, t.ly, t.label, { size: narrow ? 9 : 10, fill: C.bg, weight: 600 }));
+    } else if (compact) {
+      // Tło pod podpisem: linia poziomu i linia ceny nie przechodzą przez tekst
       out.push(
-        text(axX, t.ly, t.label, {
-          size: narrow ? 9 : 10,
-          fill: C.bg,
-          weight: 600,
-        })
+        `<g>${rect(profX, t.ly - 7, short(t.label).length * 5.4 + 4, 14, C.bg)}${text(profX + 2, t.ly, short(t.label), { size: 9, fill: ink })}<title>${xmlEsc(`${t.label} ${t.sub}`)}</title></g>`
       );
-    } else if (narrow)
-      out.push(
-        text(axX, t.ly, t.label, {
-          size: 9,
-          fill: t.color === C.ink3 ? C.ink2 : t.color,
-          weight: 500,
-        })
-      );
+      out.push(text(axX, t.ly, t.sub, { size: 9, fill: C.ink3 }));
+    } else if (narrow) out.push(text(axX, t.ly, t.label, { size: 9, fill: ink, weight: 500 }));
     else {
-      out.push(
-        text(axX, t.ly, t.label, {
-          size: 9,
-          fill: t.color === C.ink3 ? C.ink2 : t.color,
-          weight: 500,
-        })
-      );
+      out.push(text(axX, t.ly, t.label, { size: 9, fill: ink, weight: 500 }));
       out.push(text(W - 2, t.ly, t.sub, { size: 9, fill: C.ink3, anchor: 'end' }));
     }
   }
-  // Poziomy poza zakresem: strzałka przy krawędzi
-  const off = s.levels.filter((l) => !inRange(l.price));
-  off.forEach((l, i) => {
-    const above = l.price > hi;
-    const yy = above ? priceTop + 6 + i * 12 : priceTop + priceH - 6 - i * 12;
-    out.push(
-      text(plotW - 2, yy, `${l.label} ${px0(l.price)} ${above ? '↑' : '↓'}`, {
-        size: 9,
-        fill: C.ink2,
-        anchor: 'end',
-      })
-    );
-  });
+  // Mapa sesji: poziomy dnia poprzedniego poza zakresem jako napis ze strzałką przy prawej krawędzi
+  if (!compact)
+    s.levels
+      .filter((l) => !inRange(l.price))
+      .forEach((l, i) => {
+        const up = l.price > hi;
+        const yy = up ? priceTop + 6 + i * 12 : priceTop + priceH - 6 - i * 12;
+        out.push(text(plotW - 2, yy, `${l.label} ${px0(l.price)} ${up ? '↑' : '↓'}`, { size: 9, fill: C.ink2, anchor: 'end' }));
+      });
 
   // Panele: delta agresorów, CVD, open interest (każdy z własną skalą, bez wspólnej osi)
   const tape = s.tape ?? [];
@@ -416,9 +417,10 @@ export function sessionSvg(s, { narrow = false, zones = [], uid = 's', label = '
   }
 
   // Oś czasu (czas polski)
-  const every = (narrow ? 6 : 3) * 60 * MIN;
+  const every = (compact ? (narrow ? 2 : 1) : narrow ? 6 : 3) * 60 * MIN;
   for (let t = Math.ceil(s.from / every) * every; t <= s.to; t += every) {
     const x = xOf(t);
+    if (x < 16) continue;
     out.push(vline(x, timeY - 10, timeY - 6, C.lineStrong));
     out.push(text(x, timeY, hm.format(t), { size: 9, anchor: 'middle' }));
   }
@@ -638,27 +640,41 @@ const LEGEND_SW = {
   zone: '<i class="sw sw--zone-up"></i><i class="sw sw--zone-down"></i>',
 };
 
-/** Mapa sesji z legendą i przypisem; strefy scenariuszy wpisu na wykresie. */
-export function sessionHtml(s, setups = []) {
+/** Mapa sesji (albo w notce krótkie okno) z legendą i przypisem; strefy scenariuszy i poziomy wpisu na wykresie. */
+export function sessionHtml(s, setups = [], levels = []) {
+  const compact = isCompact(s);
   const zones = setups.map((x) => ({ bias: x.bias, zone: x.zone }));
+  const lv = compact && levels.length ? levels : null;
   const last = s.candles.at(-1);
   const vw = s.vwap.at(-1);
-  const label = `Mapa sesji BTC, 24 godziny do ${dhm.format(s.to)}: cena ${px0(last[4])}, VWAP dnia ${vw ? px0(vw[1]) : 'brak'}, POC ${px0(s.profile.poc)}, obszar wartości ${px0(s.profile.val)}–${px0(s.profile.vah)}.`;
+  const hours = Math.round((s.to - s.from) / (60 * MIN));
+  const label = compact
+    ? `BTC, ostatnie ${hours} godzin do ${dhm.format(s.to)}: cena ${px0(last[4])}, VWAP dnia ${vw ? px0(vw[1]) : 'brak'}.`
+    : `Mapa sesji BTC, 24 godziny do ${dhm.format(s.to)}: cena ${px0(last[4])}, VWAP dnia ${vw ? px0(vw[1]) : 'brak'}, POC ${px0(s.profile.poc)}, obszar wartości ${px0(s.profile.val)}–${px0(s.profile.vah)}.`;
+  const panels = compact ? 'delty i CVD' : 'delty, CVD i open interest';
   const tape = s.tape?.length
-    ? ` Delta, CVD i open interest z taśmy transakcji Hyperliquid nagrywanej przez desk${s.tape[0][0] > s.from ? ` od ${hm.format(s.tape[0][0])}` : ''}.`
-    : ' W tym oknie brak taśmy transakcji, panele delty, CVD i open interest są puste.';
+    ? ` ${compact ? 'Delta i CVD' : 'Delta, CVD i open interest'} z taśmy transakcji Hyperliquid nagrywanej przez desk${s.tape[0][0] > s.from ? ` od ${hm.format(s.tape[0][0])}` : ''}.`
+    : ` W tym oknie brak taśmy transakcji, panele ${panels} są puste.`;
   const legend = [
     `<span>${LEGEND_SW.candles}świece</span>`,
     `<span>${LEGEND_SW.vwap}VWAP dnia, pasma ±1σ i ±2σ</span>`,
-    `<span>${LEGEND_SW.poc}POC</span>`,
-    `<span>${LEGEND_SW.va}obszar wartości (VAH, VAL)</span>`,
-    s.levels.length ? `<span>${LEGEND_SW.prev}szczyt i dołek wczoraj (PDH, PDL)</span>` : '',
+    compact ? '' : `<span>${LEGEND_SW.poc}POC</span>`,
+    compact ? '' : `<span>${LEGEND_SW.va}obszar wartości (VAH, VAL)</span>`,
+    compact ? `<span>${LEGEND_SW.prev}${lv ? 'poziomy z wpisu' : 'szczyt i dołek wczoraj (PDH, PDL)'}</span>` : '',
+    !compact && s.levels.length ? `<span>${LEGEND_SW.prev}szczyt i dołek wczoraj (PDH, PDL)</span>` : '',
     s.liq.length ? `<span>${LEGEND_SW.liq}likwidacje longów i shortów</span>` : '',
     zones.length ? `<span>${LEGEND_SW.zone}strefy scenariuszy</span>` : '',
   ].join('');
+  const candles = `świece ${s.tf} min (na telefonie ${2 * s.tf} min). VWAP od północy UTC.`;
+  const frame = compact ? candles : `${candles} Profil wolumenu, POC i obszar wartości (70% obrotu) z całych 24 godzin.`;
   return `<p class="legend">${legend}</p>
-<div class="chart-box">${sessionSvg(s, { zones, uid: 'sw', label })}${sessionSvg(s, { zones, narrow: true, uid: 'sn', label })}</div>
-<p class="fig-note">Czas polski, świece 15 min (na telefonie 30 min). VWAP od północy UTC. Profil wolumenu, POC i obszar wartości (70% obrotu) z całych 24 godzin.${tape} Koła: likwidacje od 0,5 mln USD w świecy, pole koła według kwoty.</p>`;
+<div class="chart-box">${sessionSvg(s, { zones, levels: lv, uid: 'sw', label })}${sessionSvg(s, { zones, levels: lv, narrow: true, uid: 'sn', label })}</div>
+<p class="fig-note">Czas polski, ${frame}${tape} Koła: likwidacje od 0,5 mln USD w świecy, pole koła według kwoty.</p>`;
+}
+
+/** Tytuł bloku wykresu sesji: mapa 24 godzin albo krótkie okno notki. */
+export function sessionTitle(s) {
+  return isCompact(s) ? `Ostatnie ${Math.round((s.to - s.from) / (60 * MIN))} godzin` : 'Mapa sesji: ostatnie 24 godziny';
 }
 
 /** Footprint wybranego miejsca z legendą i przypisem. */
