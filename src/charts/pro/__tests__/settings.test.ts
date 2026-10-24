@@ -49,7 +49,7 @@ describe('link do widoku', () => {
 
 describe('warstwy startowe', () => {
   it('na starcie bez warstw z podpisami, które zasłaniają świece', () => {
-    for (const k of ['showWhales', 'showLots', 'showClashes', 'showZones', 'showAuctions', 'showIb', 'showPeriodProfiles', 'showStats'] as const)
+    for (const k of ['showHeatmap', 'showBubbles', 'showWhales', 'showLots', 'showClashes', 'showZones', 'showAuctions', 'showIb', 'showPeriodProfiles', 'showStats'] as const)
       expect(DEFAULT_SETTINGS[k]).toBe(false);
     const phone = { ...DEFAULT_SETTINGS, ...NARROW_PATCH };
     expect(phone.showBubbles || phone.showHeatmap || phone.showDelta).toBe(false);

@@ -66,9 +66,9 @@ export interface ChartSettings {
 
 /**
  * Ustawienia startowe: świece mają być czytelne od pierwszej sekundy, więc na wykresie ceny tylko lekkie warstwy
- * (VWAP dnia, profil widocznego zakresu, poziomy dnia, otwarcia sesji, mapa ciepła i bąble dużych zleceń). Wieloryby,
- * ściany, duże zlecenia w arkuszu, strefy, IB i profile sesji włącza się w „Wskaźnikach” albo szablonem
- * „Pełny orderflow”.
+ * (VWAP dnia, profil widocznego zakresu, poziomy dnia, otwarcia sesji). Mapa ciepła, bąble, wieloryby, ściany, duże
+ * zlecenia w arkuszu, strefy, IB i profile sesji włącza się w „Wskaźnikach” albo szablonem „Pełny orderflow”
+ * (z historią ostatniej doby bąble i mapa ciepła zakrywają świece całego widoku).
  */
 export const DEFAULT_SETTINGS: ChartSettings = {
   coin: COIN,
@@ -100,8 +100,8 @@ export const DEFAULT_SETTINGS: ChartSettings = {
   showWhales: false,
   showZones: false,
   showAuctions: false,
-  showHeatmap: true,
-  showBubbles: true,
+  showHeatmap: false,
+  showBubbles: false,
   showClashes: false,
   showLots: false,
   bigTradeUsd: 0,
@@ -112,15 +112,13 @@ export const DEFAULT_SETTINGS: ChartSettings = {
 
 /**
  * Telefon (do 639 px): kilkadziesiąt świec na wąskim ekranie, więc tylko świece z VWAP, wolumen i CVD — bez panelu
- * delty, mapy ciepła z drabiną arkusza, profilu, poziomów dnia, otwarć sesji i bąbli.
+ * delty, profilu, poziomów dnia i otwarć sesji.
  */
 export const NARROW_PATCH = {
   showDelta: false,
   showProfile: false,
   showLevels: false,
   showSessions: false,
-  showHeatmap: false,
-  showBubbles: false,
 } satisfies Partial<ChartSettings>;
 
 const KEY = 'hq.charts.v1';
@@ -181,7 +179,7 @@ export function startSettings(): ChartSettings {
 
 /**
  * Wersja zestawu warstw startowych. W wersji 2 część warstw przestała być włączona na starcie (na telefonie także
- * profil i mapa ciepła); zapis sprzed tej zmiany ma je zwykle włączone tylko dlatego, że takie były wartości
+ * profil); zapis sprzed tej zmiany ma je zwykle włączone tylko dlatego, że takie były wartości
  * startowe, więc wracają do nowych wartości. Warstwy, których wartość startowa się nie zmieniła, i reszta ustawień
  * zostają z zapisu.
  */
