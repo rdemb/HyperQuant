@@ -4,6 +4,7 @@ import { useDesk, usePrefillFromSignal } from '../state/DeskContext';
 import { EASE_IN, EASE_OUT, EmptyState, Segmented } from '../ui';
 import { SCENES, SceneId } from './lab/scenes';
 import { SceneInfo } from './lab/SceneInfo';
+import { tr } from '../i18n';
 
 // Sceny 3D ładowane leniwie — three.js trafia do osobnego chunku i nie spowalnia ekranu Desk
 const ThreeQuantViewport = lazy(() => import('../components/ThreeQuantViewport').then((m) => ({ default: m.ThreeQuantViewport })));
@@ -22,7 +23,7 @@ const LabView: React.FC = () => {
   const [scene, setScene] = useState<SceneId>('liquidity');
   const switcherRef = useRef<HTMLDivElement | null>(null);
   const onFluid = usePrefillFromSignal('Lab · Delta Fluid');
-  const onMagnet = usePrefillFromSignal('Lab · Liquidation Risk (szacunek)');
+  const onMagnet = usePrefillFromSignal(tr('Lab · Liquidation Risk (szacunek)', 'Lab · Liquidation Risk (estimate)'));
   const latestBar = feed.latestBar;
   const meta = SCENES.find((s) => s.id === scene) ?? SCENES[0];
 
@@ -49,7 +50,7 @@ const LabView: React.FC = () => {
     <div className="flex flex-col gap-3">
       <div ref={switcherRef} onKeyDown={onSwitcherKey} className="overflow-x-auto max-w-full -mx-1 px-1 py-1">
         <Segmented<SceneId>
-          ariaLabel="Scena 3D (strzałki ←/→ przełączają)"
+          ariaLabel={tr('Scena 3D (strzałki ←/→ przełączają)', '3D scene (←/→ arrows switch)')}
           value={scene}
           onChange={setScene}
           options={SCENES.map((s) => ({
@@ -72,7 +73,7 @@ const LabView: React.FC = () => {
         >
           <AnimatePresence mode="wait" initial={false}>
             <motion.div key={scene} className="h-full" {...fade}>
-              <Suspense fallback={<EmptyState title="Ładowanie sceny 3D…" className="h-full bg-surface-1 border border-line rounded-xl" />}>
+              <Suspense fallback={<EmptyState title={tr('Ładowanie sceny 3D…', 'Loading the 3D scene…')} className="h-full bg-surface-1 border border-line rounded-xl" />}>
                 {scene === 'liquidity' && (
                   <ThreeQuantViewport bars={feed.bars} shaakuni={shaakuni} heatmap={heatmap} quant={quant} bids={feed.bids} asks={feed.asks} isExpanded />
                 )}
@@ -80,7 +81,11 @@ const LabView: React.FC = () => {
                   (latestBar ? (
                     <ThreeOrderflowVortex3D latestBar={latestBar} shaakuni={shaakuni} quant={quant} backendTelemetry={feed.backendTelemetry} isExpanded />
                   ) : (
-                    <EmptyState title="Czekam na pierwszą świecę" detail="Scena potrzebuje bieżącej świecy Hyperliquid." className="h-full bg-surface-1 border border-line rounded-xl" />
+                    <EmptyState
+                      title={tr('Czekam na pierwszą świecę', 'Waiting for the first candle')}
+                      detail={tr('Scena potrzebuje bieżącej świecy Hyperliquid.', 'The scene needs the current Hyperliquid candle.')}
+                      className="h-full bg-surface-1 border border-line rounded-xl"
+                    />
                   ))}
                 {scene === 'fluid' && (
                   <ThreeDeltaFluidField3D

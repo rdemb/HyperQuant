@@ -1,3 +1,4 @@
+import { tr } from '../i18n';
 /** Formatowanie liczb dla UI — brak danych zawsze jako „—”. */
 export const DASH = '—';
 
@@ -33,9 +34,9 @@ export function fmtSigned(v: number | null | undefined, digits = 1, suffix = '')
 /** Odliczanie do zdarzenia: „za 2 h 14 min” / „za 38 min” / „teraz”. */
 export function fmtCountdown(targetMs: number, nowMs: number): string {
   const d = Math.round((targetMs - nowMs) / 60000);
-  if (d <= 0) return 'teraz';
-  if (d < 60) return `za ${d} min`;
+  if (d <= 0) return tr('teraz', 'now');
+  if (d < 60) return tr(`za ${d} min`, `in ${d} min`);
   const h = Math.floor(d / 60);
-  if (h < 48) return `za ${h} h ${d % 60} min`;
-  return `za ${Math.round(h / 24)} dni`;
+  if (h < 48) return tr(`za ${h} h ${d % 60} min`, `in ${h} h ${d % 60} min`);
+  return tr(`za ${Math.round(h / 24)} dni`, `in ${Math.round(h / 24)} days`);
 }

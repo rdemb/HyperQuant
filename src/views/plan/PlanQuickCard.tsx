@@ -5,6 +5,7 @@ import { Badge, Panel, Segmented, fmtPrice, fmtSigned } from '../../ui';
 import { PlanDirection, analyzePlan, attachMarketModel, proposeLevels } from '../../utils/planAnalyzer';
 import { ProbabilityBar } from './ProbabilityBar';
 import { parseNum, useDebounced, usePlanMarket } from './hooks';
+import { tr } from '../../i18n';
 
 const HORIZON_MIN = 120;
 /** Założony nominał do kosztów (poślizg z arkusza) w szybkiej ocenie — pełna analiza pozwala go zmienić. */
@@ -67,14 +68,14 @@ export const PlanQuickCard: React.FC = () => {
       entry: Number.isFinite(entry) ? Math.round(entry) : undefined,
       stop: Number.isFinite(stop) ? stop : undefined,
       target: Number.isFinite(target) ? target : undefined,
-      source: 'Szybka ocena (Desk)',
-      note: isProposal ? 'Poziomy z propozycji ±1.5σ/±3σ (2h) — do edycji.' : undefined,
+      source: tr('Szybka ocena (Desk)', 'Quick check (Desk)'),
+      note: isProposal ? tr('Poziomy z propozycji ±1.5σ/±3σ (2h) — do edycji.', 'Levels from the ±1.5σ/±3σ (2h) proposal, edit them.') : undefined,
     });
 
   return (
     <Panel
-      title="Szybka ocena planu"
-      eyebrow="Analizator · horyzont 2h · wejście po cenie rynkowej"
+      title={tr('Szybka ocena planu', 'Quick plan check')}
+      eyebrow={tr('Analizator · horyzont 2h · wejście po cenie rynkowej', 'Analyzer · 2h horizon · market entry')}
       actions={
         <Badge tone={market.source.tone} title={market.source.title}>
           {market.source.label}
@@ -85,7 +86,7 @@ export const PlanQuickCard: React.FC = () => {
         <div className="md:col-span-5 lg:col-span-4 flex flex-col gap-3">
           <div className="flex items-center justify-between gap-2">
             <Segmented<PlanDirection>
-              ariaLabel="Kierunek planu"
+              ariaLabel={tr('Kierunek planu', 'Plan direction')}
               size="md"
               value={direction}
               onChange={changeDirection}
@@ -94,7 +95,9 @@ export const PlanQuickCard: React.FC = () => {
                 { value: 'SHORT', label: <span><span className="text-sell-ink" aria-hidden="true">▼</span> SHORT</span> },
               ]}
             />
-            <span className="text-[11px] text-ink-3 font-mono tabular-nums">wejście {fmtPrice(entry, 0)}</span>
+            <span className="text-[11px] text-ink-3 font-mono tabular-nums">
+              {tr('wejście', 'entry')} {fmtPrice(entry, 0)}
+            </span>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -105,13 +108,15 @@ export const PlanQuickCard: React.FC = () => {
             </div>
             <div>
               <label htmlFor="quick-target" className="block text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium mb-1">
-                <span className="text-buy-ink" aria-hidden="true">+</span> Cel
+                <span className="text-buy-ink" aria-hidden="true">+</span> {tr('Cel', 'Target')}
               </label>
               <input id="quick-target" className={inputCls} inputMode="decimal" autoComplete="off" value={targetShown} onChange={(e) => setTargetStr(e.target.value)} />
             </div>
           </div>
           {isProposal && (
-            <div className="text-[11px] text-ink-3">Propozycja startowa ±1.5σ / ±3σ (2h) — nie sygnał; wpisz własne poziomy.</div>
+            <div className="text-[11px] text-ink-3">
+              {tr('Propozycja startowa ±1.5σ / ±3σ (2h) — nie sygnał; wpisz własne poziomy.', 'Starting proposal ±1.5σ / ±3σ (2h), not a signal; enter your own levels.')}
+            </div>
           )}
         </div>
 
@@ -120,15 +125,15 @@ export const PlanQuickCard: React.FC = () => {
             <>
               <div className="flex flex-wrap items-end gap-x-6 gap-y-2">
                 <div>
-                  <div className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium">P(cel przed stopem)</div>
+                  <div className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium">{tr('P(cel przed stopem)', 'P(target before stop)')}</div>
                   <div className="text-[28px] leading-tight font-semibold text-ink-1">{(a.mc.pTarget * 100).toFixed(1)}%</div>
                 </div>
                 <div>
-                  <div className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium">EV po kosztach</div>
+                  <div className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium">{tr('EV po kosztach', 'EV after costs')}</div>
                   <div className="text-xl leading-tight font-semibold text-ink-1 font-mono tabular-nums">{fmtSigned(a.evR, 2, ' R')}</div>
                 </div>
                 <div className="text-[11px] text-ink-3 pb-1">
-                  R = 1 : {a.R.toFixed(2)} · koszty dla ${QUICK_SIZE_USD.toLocaleString('en-US')} nominału
+                  R = 1 : {a.R.toFixed(2)} · {tr(`koszty dla $${QUICK_SIZE_USD.toLocaleString('en-US')} nominału`, `costs for $${QUICK_SIZE_USD.toLocaleString('en-US')} notional`)}
                 </div>
               </div>
               <ProbabilityBar pTarget={a.mc.pTarget} pStop={a.mc.pStop} pNeither={a.mc.pNeither} horizonLabel="2 h" />
@@ -146,7 +151,7 @@ export const PlanQuickCard: React.FC = () => {
               onClick={openFull}
               className="inline-flex items-center gap-1.5 h-11 sm:h-9 px-3 rounded-md bg-accent/15 border border-accent/40 text-accent text-sm font-medium hover:bg-accent/25 transition-colors"
             >
-              Pełna analiza <ArrowRight className="w-4 h-4" aria-hidden="true" />
+              {tr('Pełna analiza', 'Full analysis')} <ArrowRight className="w-4 h-4" aria-hidden="true" />
             </button>
           </div>
         </div>

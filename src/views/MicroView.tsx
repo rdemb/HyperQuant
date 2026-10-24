@@ -4,12 +4,13 @@ import { LiquidityMicrostructureLab, MicrostructureMethods } from '../components
 import { PositionSizer, QuantMetricTiles, QuantRegimePanel } from '../components/QuantSignalDesk';
 import { BookMechanicsPanel } from './micro/BookMechanicsPanel';
 import { LiquidityByHourPanel } from './micro/LiquidityByHourPanel';
+import { tr } from '../i18n';
 
 /** Mikrostruktura: mechanika arkusza (estymatory z literatury), profil płynności, kafle (reżim, metryki, metody, wielkość pozycji). */
 const MicroView: React.FC = () => {
   const { feed, shaakuni, quant } = useDesk();
-  const onPrefill = usePrefillFromSignal('Mikrostruktura');
-  const onMethod = usePrefillFromSignal('Mikrostruktura · Metody');
+  const onPrefill = usePrefillFromSignal(tr('Mikrostruktura', 'Microstructure'));
+  const onMethod = usePrefillFromSignal(tr('Mikrostruktura · Metody', 'Microstructure · Methods'));
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">

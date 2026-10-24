@@ -1,5 +1,6 @@
 import { L2OrderbookLevel } from '../types/trading';
 import { makeInnovation, mulberry32 } from './pathEngine';
+import { tr } from '../i18n';
 
 /**
  * Analizator planu transakcji (BTC-PERP, Hyperliquid) — czyste funkcje.
@@ -72,27 +73,27 @@ export function attachMarketModel(
 const sideOf = (d: PlanDirection) => (d === 'LONG' ? 1 : -1);
 const isPos = (v: number) => typeof v === 'number' && Number.isFinite(v) && v > 0;
 
-/** Walidacja planu — błędy po polsku; pusta lista = plan poprawny. */
+/** Walidacja planu — błędy w języku interfejsu; pusta lista = plan poprawny. */
 export function validatePlan(p: PlanInput, maxLeverage: number = BTC_MAX_LEVERAGE): string[] {
   const errors: string[] = [];
   if (!isPos(p.entry) || !isPos(p.stop) || !isPos(p.target)) {
-    errors.push('Podaj dodatnie liczby: wejście, stop i cel.');
+    errors.push(tr('Podaj dodatnie liczby: wejście, stop i cel.', 'Enter positive numbers: entry, stop and target.'));
     return errors;
   }
-  if (p.stop === p.entry) errors.push('Stop równy wejściu — zerowa odległość, ryzyko nieokreślone.');
-  if (p.target === p.entry) errors.push('Cel równy wejściu — zerowa odległość, brak zysku do oceny.');
+  if (p.stop === p.entry) errors.push(tr('Stop równy wejściu — zerowa odległość, ryzyko nieokreślone.', 'Stop equals entry: zero distance, risk undefined.'));
+  if (p.target === p.entry) errors.push(tr('Cel równy wejściu — zerowa odległość, brak zysku do oceny.', 'Target equals entry: zero distance, no profit to assess.'));
   if (p.direction === 'LONG') {
-    if (p.stop > p.entry) errors.push('Dla LONG stop musi być poniżej wejścia.');
-    if (p.target < p.entry) errors.push('Dla LONG cel musi być powyżej wejścia.');
+    if (p.stop > p.entry) errors.push(tr('Dla LONG stop musi być poniżej wejścia.', 'For a LONG the stop must be below entry.'));
+    if (p.target < p.entry) errors.push(tr('Dla LONG cel musi być powyżej wejścia.', 'For a LONG the target must be above entry.'));
   } else {
-    if (p.stop < p.entry) errors.push('Dla SHORT stop musi być powyżej wejścia.');
-    if (p.target > p.entry) errors.push('Dla SHORT cel musi być poniżej wejścia.');
+    if (p.stop < p.entry) errors.push(tr('Dla SHORT stop musi być powyżej wejścia.', 'For a SHORT the stop must be above entry.'));
+    if (p.target > p.entry) errors.push(tr('Dla SHORT cel musi być poniżej wejścia.', 'For a SHORT the target must be below entry.'));
   }
-  if (!isPos(p.sizeUsd)) errors.push('Wielkość pozycji musi być dodatnia.');
-  if (!isPos(p.horizonMin)) errors.push('Horyzont musi być dodatni.');
-  if (!isPos(p.sigmaHorizon)) errors.push('Brak oszacowania zmienności (σ) — za mało świec.');
+  if (!isPos(p.sizeUsd)) errors.push(tr('Wielkość pozycji musi być dodatnia.', 'Position size must be positive.'));
+  if (!isPos(p.horizonMin)) errors.push(tr('Horyzont musi być dodatni.', 'Horizon must be positive.'));
+  if (!isPos(p.sigmaHorizon)) errors.push(tr('Brak oszacowania zmienności (σ) — za mało świec.', 'No volatility estimate (σ), not enough candles.'));
   if (p.leverage !== undefined && (!Number.isFinite(p.leverage) || p.leverage < 1 || p.leverage > maxLeverage)) {
-    errors.push(`Dźwignia musi być w zakresie 1–${maxLeverage}× (limit BTC na Hyperliquid).`);
+    errors.push(tr(`Dźwignia musi być w zakresie 1–${maxLeverage}× (limit BTC na Hyperliquid).`, `Leverage must be within 1–${maxLeverage}× (BTC limit on Hyperliquid).`));
   }
   return errors;
 }

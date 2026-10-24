@@ -4,18 +4,19 @@ import { Badge, EmptyState, Panel, Stat, fmtPrice } from '../../ui';
 import { LedgerEntry, LedgerStatus, ReliabilityBin } from '../../utils/forecastLedger';
 import { PlanLedger } from './usePlanLedger';
 import { fmtMinutes } from './hooks';
+import { locale, tr } from '../../i18n';
 
 const STATUS: Record<LedgerStatus, { icon: string; label: string; cls: string }> = {
-  target: { icon: '✓', label: 'cel', cls: 'text-buy-ink' },
+  target: { icon: '✓', label: tr('cel', 'target'), cls: 'text-buy-ink' },
   stop: { icon: '✕', label: 'stop', cls: 'text-sell-ink' },
-  none: { icon: '○', label: 'żadne', cls: 'text-ink-2' },
-  pending: { icon: '…', label: 'oczekuje', cls: 'text-ink-3' },
-  nodata: { icon: '—', label: 'brak danych', cls: 'text-ink-3' },
-  nofill: { icon: '∅', label: 'niewykonany', cls: 'text-ink-3' },
+  none: { icon: '○', label: tr('żadne', 'neither'), cls: 'text-ink-2' },
+  pending: { icon: '…', label: tr('oczekuje', 'pending'), cls: 'text-ink-3' },
+  nodata: { icon: '—', label: tr('brak danych', 'no data'), cls: 'text-ink-3' },
+  nofill: { icon: '∅', label: tr('niewykonany', 'not filled'), cls: 'text-ink-3' },
 };
 
 const fmt3 = (v: number | null) => (v === null ? '—' : v.toFixed(3));
-const timeFmt = new Intl.DateTimeFormat('pl-PL', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+const timeFmt = new Intl.DateTimeFormat(locale, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 
 /** Panel dziennika trafności: Brier, log score, liczność, wykres niezawodności, ostatnie wpisy; eksport i czyszczenie. */
 export const LedgerPanel: React.FC<{ ledger: PlanLedger }> = ({ ledger }) => {
@@ -25,18 +26,18 @@ export const LedgerPanel: React.FC<{ ledger: PlanLedger }> = ({ ledger }) => {
 
   return (
     <Panel
-      title="Dziennik trafności"
-      eyebrow="Kalibracja prognoz Analizatora"
+      title={tr('Dziennik trafności', 'Accuracy journal')}
+      eyebrow={tr('Kalibracja prognoz Analizatora', 'Calibration of Plan Analyzer forecasts')}
       actions={
         <>
           <button
             type="button"
             onClick={ledger.download}
             disabled={entries.length === 0}
-            aria-label="Eksport dziennika do pliku JSON"
+            aria-label={tr('Eksport dziennika do pliku JSON', 'Export the journal to a JSON file')}
             className="inline-flex items-center justify-center gap-1.5 h-11 w-11 sm:h-9 sm:w-auto sm:px-2.5 rounded-md border border-line text-xs text-ink-2 hover:text-ink-1 hover:bg-surface-3 disabled:opacity-40 disabled:pointer-events-none transition-colors"
           >
-            <Download className="w-3.5 h-3.5" aria-hidden="true" /> <span className="hidden sm:inline">Eksport JSON</span>
+            <Download className="w-3.5 h-3.5" aria-hidden="true" /> <span className="hidden sm:inline">{tr('Eksport JSON', 'Export JSON')}</span>
           </button>
           <button
             type="button"
@@ -48,76 +49,89 @@ export const LedgerPanel: React.FC<{ ledger: PlanLedger }> = ({ ledger }) => {
             }}
             onBlur={() => setConfirmClear(false)}
             disabled={entries.length === 0}
-            aria-label={confirmClear ? 'Potwierdź wyczyszczenie dziennika' : 'Wyczyść dziennik'}
+            aria-label={confirmClear ? tr('Potwierdź wyczyszczenie dziennika', 'Confirm clearing the journal') : tr('Wyczyść dziennik', 'Clear journal')}
             className={`inline-flex items-center justify-center gap-1.5 h-11 min-w-11 px-2.5 sm:h-9 rounded-md border text-xs transition-colors disabled:opacity-40 disabled:pointer-events-none ${
               confirmClear ? 'border-critical/60 text-critical bg-critical/10' : 'border-line text-ink-2 hover:text-ink-1 hover:bg-surface-3'
             }`}
           >
             <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
-            {confirmClear ? <span>Na pewno?</span> : <span className="hidden sm:inline">Wyczyść</span>}
+            {confirmClear ? <span>{tr('Na pewno?', 'Sure?')}</span> : <span className="hidden sm:inline">{tr('Wyczyść', 'Clear')}</span>}
           </button>
         </>
       }
     >
       <div className="px-4 py-3 text-[11px] text-ink-3 leading-relaxed border-b border-line">
-        Dane tylko w tej przeglądarce{persisted ? '' : ' — zapis zablokowany (tryb prywatny?), dziennik zniknie po zamknięciu karty'}.
-        Rozstrzygane na realnych świecach 1m z API Hyperliquid (niezależnie od interwału wykresu): wejście w granicy 1 bp od ceny
-        przy zapisie liczy się jako zlecenie rynkowe, inne najpierw muszą zostać dotknięte; potem cel lub stop; minuta w toku przy zapisie jest pomijana, a świeca dotykająca celu i stopu liczy się ostrożnie jako „stop”.
+        {tr('Dane tylko w tej przeglądarce', 'Data stays in this browser only')}
+        {persisted ? '' : tr(' — zapis zablokowany (tryb prywatny?), dziennik zniknie po zamknięciu karty', ': saving is blocked (private mode?), the journal disappears when the tab closes')}.{' '}
+        {tr(
+          'Rozstrzygane na realnych świecach 1m z API Hyperliquid (niezależnie od interwału wykresu): wejście w granicy 1 bp od ceny przy zapisie liczy się jako zlecenie rynkowe, inne najpierw muszą zostać dotknięte; potem cel lub stop; minuta w toku przy zapisie jest pomijana, a świeca dotykająca celu i stopu liczy się ostrożnie jako „stop”.',
+          'Settled on real 1m candles from the Hyperliquid API (regardless of the chart timeframe): an entry within 1 bp of the price at save time counts as a market order, others must be touched first; then target or stop; the minute in progress at save time is skipped, and a candle touching both target and stop conservatively counts as "stop".'
+        )}
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 p-4">
         <div className="lg:col-span-3 grid grid-cols-2 lg:grid-cols-1 gap-3 content-start">
           <Stat
-            label="Brier (3 klasy)"
+            label={tr('Brier (3 klasy)', 'Brier (3 classes)')}
             value={<span className="font-mono tabular-nums">{fmt3(metrics.brier)}</span>}
-            hint="0 = idealnie · 2 = najgorzej · niżej lepiej"
+            hint={tr('0 = idealnie · 2 = najgorzej · niżej lepiej', '0 = perfect · 2 = worst · lower is better')}
           />
           <Stat
-            label="Brier P(cel)"
+            label={tr('Brier P(cel)', 'Brier P(target)')}
             value={<span className="font-mono tabular-nums">{fmt3(metrics.brierTarget)}</span>}
-            hint="binarny, 0–1"
+            hint={tr('binarny, 0–1', 'binary, 0–1')}
           />
           <Stat
             label="Log score"
             value={<span className="font-mono tabular-nums">{fmt3(metrics.logScore)}</span>}
-            hint="−ln p(wyniku), naty · niżej lepiej"
+            hint={tr('−ln p(wyniku), naty · niżej lepiej', '−ln p(outcome), nats · lower is better')}
           />
           <Stat
-            label="Brier P(wypełnienia)"
+            label={tr('Brier P(wypełnienia)', 'Brier P(fill)')}
             value={<span className="font-mono tabular-nums">{fmt3(metrics.brierFill)}</span>}
-            hint={metrics.fillScored > 0 ? `0–1 · n = ${metrics.fillScored} (plany z modelem v2)` : 'brak planów z P(wypełnienia)'}
+            hint={
+              metrics.fillScored > 0
+                ? tr(`0–1 · n = ${metrics.fillScored} (plany z modelem v2)`, `0–1 · n = ${metrics.fillScored} (plans with model v2)`)
+                : tr('brak planów z P(wypełnienia)', 'no plans with P(fill)')
+            }
           />
           <Stat
-            label="Liczność"
+            label={tr('Liczność', 'Count')}
             value={<span className="font-mono tabular-nums">{metrics.resolved}</span>}
-            hint={`rozstrzygnięte · ${metrics.pending} oczekuje${metrics.nodata ? ` · ${metrics.nodata} bez danych` : ''}`}
+            hint={tr(
+              `rozstrzygnięte · ${metrics.pending} oczekuje${metrics.nodata ? ` · ${metrics.nodata} bez danych` : ''}`,
+              `settled · ${metrics.pending} pending${metrics.nodata ? ` · ${metrics.nodata} without data` : ''}`
+            )}
           />
         </div>
         <div className="lg:col-span-4 min-w-0">
-          <div className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium mb-2">Niezawodność P(cel przed stopem)</div>
+          <div className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium mb-2">{tr('Niezawodność P(cel przed stopem)', 'Reliability of P(target before stop)')}</div>
           {metrics.resolved === 0 ? (
             <EmptyState
               className="px-0"
-              title="Brak rozstrzygniętych planów"
-              detail="Zapisz plan do dziennika — po dotknięciu celu lub stopu albo upływie horyzontu pojawi się tutaj."
+              title={tr('Brak rozstrzygniętych planów', 'No settled plans')}
+              detail={tr(
+                'Zapisz plan do dziennika — po dotknięciu celu lub stopu albo upływie horyzontu pojawi się tutaj.',
+                'Save a plan to the journal; it shows up here once target or stop is touched or the horizon runs out.'
+              )}
             />
           ) : (
             <ReliabilityChart bins={metrics.reliability} />
           )}
         </div>
         <div className="lg:col-span-5 min-w-0">
-          <div className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium mb-2">Ostatnie wpisy</div>
+          <div className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium mb-2">{tr('Ostatnie wpisy', 'Latest entries')}</div>
           {recent.length === 0 ? (
-            <div className="text-xs text-ink-3">Dziennik jest pusty.</div>
+            <div className="text-xs text-ink-3">{tr('Dziennik jest pusty.', 'The journal is empty.')}</div>
           ) : (
             <div className="overflow-x-auto -mx-1">
               <table className="w-full text-[11px] font-mono tabular-nums min-w-[420px]">
                 <thead>
                   <tr className="text-ink-3 text-left">
-                    <th className="font-medium px-1 py-1">Czas</th>
+                    <th className="font-medium px-1 py-1">{tr('Czas', 'Time')}</th>
                     <th className="font-medium px-1 py-1">Plan</th>
-                    <th className="font-medium px-1 py-1 text-right">Wejście</th>
-                    <th className="font-medium px-1 py-1 text-right">P(cel)</th>
-                    <th className="font-medium px-1 py-1 text-right">Wynik</th>
+                    <th className="font-medium px-1 py-1 text-right">{tr('Wejście', 'Entry')}</th>
+                    <th className="font-medium px-1 py-1 text-right">{tr('P(cel)', 'P(target)')}</th>
+                    <th className="font-medium px-1 py-1 text-right">{tr('Wynik', 'Outcome')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -137,7 +151,7 @@ export const LedgerPanel: React.FC<{ ledger: PlanLedger }> = ({ ledger }) => {
 const LedgerRow: React.FC<{ e: LedgerEntry }> = ({ e }) => {
   const st = STATUS[e.status];
   return (
-    <tr className="border-t border-line text-ink-2" title={`Stop ${fmtPrice(e.stop, 0)} · Cel ${fmtPrice(e.target, 0)}${e.source ? ` · źródło: ${e.source}` : ''}`}>
+    <tr className="border-t border-line text-ink-2" title={`Stop ${fmtPrice(e.stop, 0)} · ${tr('Cel', 'Target')} ${fmtPrice(e.target, 0)}${e.source ? ` · ${tr('źródło', 'source')}: ${e.source}` : ''}`}>
       <td className="px-1 py-1.5 whitespace-nowrap">{timeFmt.format(e.createdAt)}</td>
       <td className="px-1 py-1.5 whitespace-nowrap">
         <span className={e.direction === 'LONG' ? 'text-buy-ink' : 'text-sell-ink'} aria-hidden="true">
@@ -172,7 +186,7 @@ const ReliabilityChart: React.FC<{ bins: ReliabilityBin[] }> = ({ bins }) => {
   return (
     <div style={{ maxWidth: S }}>
       <div className="relative">
-      <svg viewBox={`0 0 ${S} ${S}`} width="100%" className="block" role="img" aria-label="Wykres niezawodności prognoz P(cel przed stopem)">
+      <svg viewBox={`0 0 ${S} ${S}`} width="100%" className="block" role="img" aria-label={tr('Wykres niezawodności prognoz P(cel przed stopem)', 'Reliability diagram of P(target before stop) forecasts')}>
         {[0, 0.5, 1].map((v) => (
           <g key={v}>
             <line x1={pad.l} x2={S - pad.r} y1={y(v)} y2={y(v)} stroke="var(--color-line)" strokeWidth={1} />
@@ -186,7 +200,7 @@ const ReliabilityChart: React.FC<{ bins: ReliabilityBin[] }> = ({ bins }) => {
           </g>
         ))}
         <text x={pad.l + inner / 2} y={S - 2} textAnchor="middle" fontSize={10} className="fill-ink-3">
-          prognoza
+          {tr('prognoza', 'forecast')}
         </text>
         {/* Przekątna odniesienia — idealna kalibracja */}
         <line x1={x(0)} y1={y(0)} x2={x(1)} y2={y(1)} stroke="var(--color-ink-3)" strokeWidth={1} />
@@ -209,22 +223,26 @@ const ReliabilityChart: React.FC<{ bins: ReliabilityBin[] }> = ({ bins }) => {
           }}
         >
           <div className="text-ink-1">
-            Koszyk {Math.round(h.lo * 100)}–{Math.round(h.hi * 100)}%
+            {tr('Koszyk', 'Bucket')} {Math.round(h.lo * 100)}–{Math.round(h.hi * 100)}%
           </div>
-          <div>prognoza {(h.meanForecast * 100).toFixed(1)}%</div>
-          <div>częstość {(h.observed * 100).toFixed(1)}%</div>
+          <div>
+            {tr('prognoza', 'forecast')} {(h.meanForecast * 100).toFixed(1)}%
+          </div>
+          <div>
+            {tr('częstość', 'frequency')} {(h.observed * 100).toFixed(1)}%
+          </div>
           <div>n = {h.n}</div>
         </div>
       )}
       </div>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-[11px] text-ink-3">
         <span className="inline-flex items-center gap-1.5">
-          <span className="inline-block w-2 h-2 rounded-full bg-accent" aria-hidden="true" /> koszyk
+          <span className="inline-block w-2 h-2 rounded-full bg-accent" aria-hidden="true" /> {tr('koszyk', 'bucket')}
         </span>
         <span className="inline-flex items-center gap-1.5">
-          <span className="inline-block w-3 h-px bg-ink-3" aria-hidden="true" /> przekątna = kalibracja
+          <span className="inline-block w-3 h-px bg-ink-3" aria-hidden="true" /> {tr('przekątna = kalibracja', 'diagonal = calibration')}
         </span>
-        {pts.some((p) => p.n < 10) && <Badge tone="neutral">mała próba</Badge>}
+        {pts.some((p) => p.n < 10) && <Badge tone="neutral">{tr('mała próba', 'small sample')}</Badge>}
       </div>
     </div>
   );

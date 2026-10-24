@@ -1,3 +1,4 @@
+import { tr } from '../i18n.ts';
 /**
  * Przepływ kohort uczestników Hyperliquid — typy publikowanego dokumentu i odczyty dla UI (bez importów zewnętrznych;
  * moduł ładowany także natywnie przez Node 24 w skanerze).
@@ -21,10 +22,10 @@ export const COHORTS = ['mm', 'informed', 'whale', 'rest'] as const;
 export type CohortId = (typeof COHORTS)[number];
 
 export const COHORT_LABEL: Record<CohortId, string> = {
-  mm: 'Market makerzy',
-  informed: 'Poinformowani',
-  whale: 'Wieloryby',
-  rest: 'Reszta',
+  mm: tr('Market makerzy', 'Market makers'),
+  informed: tr('Poinformowani', 'Informed'),
+  whale: tr('Wieloryby', 'Whales'),
+  rest: tr('Reszta', 'Rest'),
 };
 
 /** Zaokrąglenie publikowanych kwot (utrudnia dopasowanie sum do pojedynczych transakcji z publicznej taśmy) */

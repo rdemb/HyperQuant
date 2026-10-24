@@ -3,6 +3,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { RefreshCw } from 'lucide-react';
 import { DUR, EASE_IN, EASE_OUT } from '../ui';
 import { usePwa } from './usePwa';
+import { tr } from '../i18n';
 
 /** Baner „Dostępna nowa wersja” — pojawia się, gdy nowy service worker czeka na aktywację. */
 export const UpdateBanner: React.FC = () => {
@@ -24,22 +25,22 @@ export const UpdateBanner: React.FC = () => {
         >
           <RefreshCw className="w-4 h-4 text-accent shrink-0" aria-hidden="true" />
           <div className="min-w-0 flex-1">
-            <div className="text-sm font-medium text-ink-1">Dostępna nowa wersja</div>
-            <div className="text-xs text-ink-3">Odśwież, aby wczytać aktualizację desku.</div>
+            <div className="text-sm font-medium text-ink-1">{tr('Dostępna nowa wersja', 'New version available')}</div>
+            <div className="text-xs text-ink-3">{tr('Odśwież, aby wczytać aktualizację desku.', 'Reload to load the Desk update.')}</div>
           </div>
           <button
             type="button"
             onClick={() => setDismissed(true)}
             className="min-h-11 sm:min-h-9 px-2.5 rounded-lg text-xs font-medium text-ink-2 hover:text-ink-1"
           >
-            Później
+            {tr('Później', 'Later')}
           </button>
           <button
             type="button"
             onClick={applyUpdate}
             className="min-h-11 sm:min-h-9 px-3 rounded-lg text-xs font-semibold bg-accent text-page hover:brightness-110 transition-[filter] duration-150"
           >
-            Odśwież
+            {tr('Odśwież', 'Reload')}
           </button>
         </motion.div>
       )}

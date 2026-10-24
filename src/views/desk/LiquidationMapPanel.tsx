@@ -11,6 +11,7 @@ import { horizonStepSigmas } from '../../utils/volatility';
 import { parkinsonSigma } from '../../utils/marketDataFeed';
 import { useElementWidth } from '../market/MarketMap';
 import { LiquidationTape } from './LiquidationTape';
+import { locale, tr } from '../../i18n';
 
 const RANGE = 0.06;
 const BINS = 60;
@@ -22,7 +23,7 @@ const SHOCKS = [
 const Y_MAIN = 1;
 const Y_BAND: [number, number] = [0.5, 1.5];
 const MIN_CLUSTER_USD = 1e6;
-const timeFmt = new Intl.DateTimeFormat('pl-PL', { hour: '2-digit', minute: '2-digit' });
+const timeFmt = new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit' });
 const pct = (v: number, d = 2) => fmtSigned(v * 100, d, '%');
 
 /** Ścieżka słupka z zaokrąglonym końcem danych (4 px), zakotwiczonego w linii bazowej. */
@@ -45,33 +46,39 @@ export const LiquidationMapPanel: React.FC = () => {
 
   const badge =
     status === 'ready' ? (
-      <Badge tone="live" title="Pozycje i ceny likwidacji z publicznego API Hyperliquid (clearinghouseState), agregat bez adresów">
+      <Badge tone="live" title={tr('Pozycje i ceny likwidacji z publicznego API Hyperliquid (clearinghouseState), agregat bez adresów', 'Positions and liquidation prices from the public Hyperliquid API (clearinghouseState), aggregated without addresses')}>
         LIVE
       </Badge>
     ) : status === 'delayed' ? (
-      <Badge tone="warn" title="Publikacja aktualna, ale połowa nominału pochodzi z odczytów pozycji starszych niż 15 min">
-        OPÓŹNIONE
+      <Badge tone="warn" title={tr('Publikacja aktualna, ale połowa nominału pochodzi z odczytów pozycji starszych niż 15 min', 'Publication is current, but half of the notional comes from position reads older than 15 min')}>
+        {tr('OPÓŹNIONE', 'DELAYED')}
       </Badge>
     ) : status === 'stale' || status === 'expired' ? (
-      <Badge tone="stale" title="Skaner nie publikuje aktualnych danych — liczby ukryte">
+      <Badge tone="stale" title={tr('Skaner nie publikuje aktualnych danych — liczby ukryte', 'The scanner is not publishing current data, numbers hidden')}>
         STALE
       </Badge>
     ) : null;
 
   return (
-    <Panel eyebrow="Pozycje on-chain · Hyperliquid" title="Mapa likwidacji i kaskada" actions={badge}>
+    <Panel eyebrow={tr('Pozycje on-chain · Hyperliquid', 'On-chain positions · Hyperliquid')} title={tr('Mapa likwidacji i kaskada', 'Liquidation map and cascade')} actions={badge}>
       {status === 'unconfigured' || status === 'loading' || status === 'error' || status === 'stale' || status === 'expired' || !map ? (
         <EmptyState
           title={
             status === 'unconfigured'
-              ? 'Skaner pozycji nie jest jeszcze podłączony'
+              ? tr('Skaner pozycji nie jest jeszcze podłączony', 'The position scanner is not connected yet')
               : status === 'loading'
-              ? 'Pobieram mapę likwidacji…'
+              ? tr('Pobieram mapę likwidacji…', 'Loading the liquidation map…')
               : (status === 'stale' || status === 'expired') && map
-              ? `Mapa nieaktualna — ostatnia publikacja ${timeFmt.format(map.asOf)}; liczby ukryte, dopóki skaner nie opublikuje świeżych danych`
-              : 'Mapa likwidacji chwilowo niedostępna'
+              ? tr(
+                  `Mapa nieaktualna — ostatnia publikacja ${timeFmt.format(map.asOf)}; liczby ukryte, dopóki skaner nie opublikuje świeżych danych`,
+                  `Map is out of date, last published ${timeFmt.format(map.asOf)}; numbers stay hidden until the scanner publishes fresh data`
+                )
+              : tr('Mapa likwidacji chwilowo niedostępna', 'Liquidation map temporarily unavailable')
           }
-          detail="Mapa powstaje ze zmierzonych pozycji portfeli na Hyperliquid (ceny likwidacji z publicznego API), a nie z założonych dźwigni. Do tego czasu heatmapa likwidacji na wykresie świec pozostaje oznaczonym szacunkiem."
+          detail={tr(
+            'Mapa powstaje ze zmierzonych pozycji portfeli na Hyperliquid (ceny likwidacji z publicznego API), a nie z założonych dźwigni. Do tego czasu heatmapa likwidacji na wykresie świec pozostaje oznaczonym szacunkiem.',
+            'The map is built from measured wallet positions on Hyperliquid (liquidation prices from the public API), not from assumed leverage. Until then the liquidation heatmap on the candle chart remains a labelled estimate.'
+          )}
         />
       ) : (
         <LiqMapBody map={map} delayed={status === 'delayed'} sigmaDaily={sigmaDaily} dayVolumeUsd={dayVolumeUsd} />
@@ -101,30 +108,43 @@ const LiqMapBody: React.FC<{ map: LiqMap; delayed: boolean; sigmaDaily: number; 
     <div className="flex flex-col gap-4 p-4">
       {delayed && (
         <div className="rounded-md border border-warn/40 bg-warn/5 px-3 py-2 text-xs text-ink-2">
-          Połowa nominału na mapie pochodzi z odczytów pozycji starszych niż {Math.round(map.ageMin.ntlP50)} min (np. po restarcie skanera
-          albo przy przeciążeniu API) — klastry mogły się przesunąć.
+          {tr(
+            `Połowa nominału na mapie pochodzi z odczytów pozycji starszych niż ${Math.round(map.ageMin.ntlP50)} min (np. po restarcie skanera albo przy przeciążeniu API) — klastry mogły się przesunąć.`,
+            `Half of the notional on the map comes from position reads older than ${Math.round(map.ageMin.ntlP50)} min (e.g. after a scanner restart or API overload), so clusters may have moved.`
+          )}
         </div>
       )}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-5 gap-y-3">
         <Stat
-          label="Pokrycie open interest"
+          label={tr('Pokrycie open interest', 'Open interest coverage')}
           value={<span className="font-mono tabular-nums">{(map.coverage.share * 100).toFixed(1)}%</span>}
-          hint={`${map.coverage.positions.toLocaleString('pl-PL')} pozycji · ${map.coverage.addresses.toLocaleString('pl-PL')} adresów · ${timeFmt.format(map.asOf)}`}
+          hint={`${map.coverage.positions.toLocaleString(locale)} ${tr('pozycji', 'positions')} · ${map.coverage.addresses.toLocaleString(locale)} ${tr('adresów', 'addresses')} · ${timeFmt.format(map.asOf)}`}
         />
         <Stat
-          label="Wiek odczytów"
+          label={tr('Wiek odczytów', 'Read age')}
           value={<span className="font-mono tabular-nums">{Math.round(map.ageMin.ntlP50)} min</span>}
-          hint={`mediana ważona nominałem · zwykła ${Math.round(map.ageMin.p50)} min, p90 ${Math.round(map.ageMin.p90)} min`}
+          hint={tr(
+            `mediana ważona nominałem · zwykła ${Math.round(map.ageMin.p50)} min, p90 ${Math.round(map.ageMin.p90)} min`,
+            `notional-weighted median · plain ${Math.round(map.ageMin.p50)} min, p90 ${Math.round(map.ageMin.p90)} min`
+          )}
         />
         <Stat
-          label="Najbliżej pod ceną"
+          label={tr('Najbliżej pod ceną', 'Nearest below price')}
           value={<span className="font-mono tabular-nums">{near.below ? fmtPrice(near.below.px, 0) : DASH}</span>}
-          hint={near.below ? `▼ ${pct(near.below.distPct)} · longi ${fmtCompact(near.below.ntlUsd, '$')}` : `brak klastra ≥ ${fmtCompact(MIN_CLUSTER_USD, '$')}`}
+          hint={
+            near.below
+              ? `▼ ${pct(near.below.distPct)} · ${tr('longi', 'longs')} ${fmtCompact(near.below.ntlUsd, '$')}`
+              : `${tr('brak klastra', 'no cluster')} ≥ ${fmtCompact(MIN_CLUSTER_USD, '$')}`
+          }
         />
         <Stat
-          label="Najbliżej nad ceną"
+          label={tr('Najbliżej nad ceną', 'Nearest above price')}
           value={<span className="font-mono tabular-nums">{near.above ? fmtPrice(near.above.px, 0) : DASH}</span>}
-          hint={near.above ? `▲ ${pct(near.above.distPct)} · shorty ${fmtCompact(near.above.ntlUsd, '$')}` : `brak klastra ≥ ${fmtCompact(MIN_CLUSTER_USD, '$')}`}
+          hint={
+            near.above
+              ? `▲ ${pct(near.above.distPct)} · ${tr('shorty', 'shorts')} ${fmtCompact(near.above.ntlUsd, '$')}`
+              : `${tr('brak klastra', 'no cluster')} ≥ ${fmtCompact(MIN_CLUSTER_USD, '$')}`
+          }
         />
       </div>
 
@@ -132,49 +152,68 @@ const LiqMapBody: React.FC<{ map: LiqMap; delayed: boolean; sigmaDaily: number; 
 
       <div className="flex flex-col gap-2">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <div className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium">Kaskada: szok → ruch końcowy</div>
-          <Badge tone="model" title="Punkt stały: szok → likwidacje z mapy → wpływ ceny z prawa pierwiastka (Y = 1, pasmo 0.5–1.5) → kolejne likwidacje">
+          <div className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium">{tr('Kaskada: szok → ruch końcowy', 'Cascade: shock → final move')}</div>
+          <Badge
+            tone="model"
+            title={tr(
+              'Punkt stały: szok → likwidacje z mapy → wpływ ceny z prawa pierwiastka (Y = 1, pasmo 0.5–1.5) → kolejne likwidacje',
+              'Fixed point: shock → liquidations from the map → price impact from the square-root law (Y = 1, band 0.5–1.5) → further liquidations'
+            )}
+          >
             MODEL
           </Badge>
         </div>
         {curves && peak ? (
           <>
             <div className="text-xs text-ink-2">
-              Najsilniejsze wzmocnienie: szok <span className="font-mono tabular-nums text-ink-1">{pct(peak.shockPct)}</span> → ruch{' '}
-              <span className="font-mono tabular-nums text-ink-1">{pct(peak.finalPct)}</span> (×{peak.amplification.toFixed(2)}, likwidacje{' '}
-              {fmtCompact(peak.liquidatedUsd, '$')})
+              {tr('Najsilniejsze wzmocnienie: szok', 'Strongest amplification: shock')} <span className="font-mono tabular-nums text-ink-1">{pct(peak.shockPct)}</span> →{' '}
+              {tr('ruch', 'move')} <span className="font-mono tabular-nums text-ink-1">{pct(peak.finalPct)}</span> (×{peak.amplification.toFixed(2)},{' '}
+              {tr('likwidacje', 'liquidations')} {fmtCompact(peak.liquidatedUsd, '$')})
               <span className="text-ink-3">
                 {' '}
-                — górna granica (wpływ szczytowy, pełne trafienie w arkusz, Y = 1 założone) na zmierzonych {(map.coverage.share * 100).toFixed(1)}% open
-                interest; niezmierzone pozycje nie są wliczone.
+                {tr(
+                  `— górna granica (wpływ szczytowy, pełne trafienie w arkusz, Y = 1 założone) na zmierzonych ${(map.coverage.share * 100).toFixed(1)}% open interest; niezmierzone pozycje nie są wliczone.`,
+                  `— an upper bound (peak impact, full hit on the book, Y = 1 assumed) on the measured ${(map.coverage.share * 100).toFixed(1)}% of open interest; unmeasured positions are not included.`
+                )}
               </span>
             </div>
             <CascadeChart main={curves.main} lo={curves.lo} hi={curves.hi} />
           </>
         ) : (
-          <div className="text-xs text-ink-3">Brak dziennej zmienności lub obrotu z API — kaskada niepoliczona.</div>
+          <div className="text-xs text-ink-3">{tr('Brak dziennej zmienności lub obrotu z API — kaskada niepoliczona.', 'No daily volatility or volume from the API, cascade not computed.')}</div>
         )}
       </div>
 
       <CascadeSimSection map={map} />
 
       <details className="rounded-md border border-line bg-surface-2/50 px-3 py-2 text-xs text-ink-2">
-        <summary className="cursor-pointer select-none text-ink-1 font-medium py-1">Metoda, ograniczenia i tabela klastrów</summary>
+        <summary className="cursor-pointer select-none text-ink-1 font-medium py-1">{tr('Metoda, ograniczenia i tabela klastrów', 'Method, limitations and cluster table')}</summary>
         <ul className="list-disc pl-4 mt-2 space-y-1.5 leading-relaxed">
           <li>
-            Adresy portfeli z publicznego strumienia transakcji BTC i z publicznego rankingu kont Hyperliquid, ich pozycje i ceny likwidacji z
-            publicznego <code>clearinghouseState</code>.
-            Publikowane są tylko agregaty — bez adresów. Pokrycie = zeskanowany rozmiar / (2 × open interest).
+            {tr(
+              <>
+                Adresy portfeli z publicznego strumienia transakcji BTC i z publicznego rankingu kont Hyperliquid, ich pozycje i ceny likwidacji z
+                publicznego <code>clearinghouseState</code>. Publikowane są tylko agregaty — bez adresów. Pokrycie = zeskanowany rozmiar / (2 × open
+                interest).
+              </>,
+              <>
+                Wallet addresses come from the public BTC trade stream and the public Hyperliquid account leaderboard, their positions and liquidation
+                prices from the public <code>clearinghouseState</code>. Only aggregates are published, never addresses. Coverage = scanned size / (2 ×
+                open interest).
+              </>
+            )}
           </li>
           <li>
-            Portfele spoza rankingu, które nie handlowały od startu skanera, nie są na mapie. Odczyty po złej stronie ceny (nieaktualne) są
-            pomijane ({map.coverage.wrongSide}). Cena likwidacji pozycji cross zmienia się z całym kontem. Samokontrola: longi{' '}
-            {map.coverage.longBtc.toFixed(1)} BTC, shorty {map.coverage.shortBtc.toFixed(1)} BTC (przy pełnym pokryciu obie ≈ OI {map.coverage.oiBtc.toFixed(0)} BTC).
+            {tr(
+              `Portfele spoza rankingu, które nie handlowały od startu skanera, nie są na mapie. Odczyty po złej stronie ceny (nieaktualne) są pomijane (${map.coverage.wrongSide}). Cena likwidacji pozycji cross zmienia się z całym kontem. Samokontrola: longi ${map.coverage.longBtc.toFixed(1)} BTC, shorty ${map.coverage.shortBtc.toFixed(1)} BTC (przy pełnym pokryciu obie ≈ OI ${map.coverage.oiBtc.toFixed(0)} BTC).`,
+              `Wallets outside the leaderboard that have not traded since the scanner started are not on the map. Reads on the wrong side of price (stale) are skipped (${map.coverage.wrongSide}). The liquidation price of a cross position moves with the whole account. Self-check: longs ${map.coverage.longBtc.toFixed(1)} BTC, shorts ${map.coverage.shortBtc.toFixed(1)} BTC (at full coverage both ≈ OI ${map.coverage.oiBtc.toFixed(0)} BTC).`
+            )}
           </li>
           <li>
-            Kaskada: Δp/p = Y·σ·√(Q/V) (Tóth i in. 2011; Bouchaud i in. 2018), σ = dzienna zmienność ({(sigmaDaily * 100).toFixed(2)}%),
-            V = obrót 24 h ({fmtCompact(dayVolumeUsd, '$')}). Wpływ szczytowy i pełne trafienie w arkusz — górna granica; na Hyperliquid duże
-            likwidacje idą po 20% na blok, a część przejmuje Liquidator Vault.
+            {tr(
+              `Kaskada: Δp/p = Y·σ·√(Q/V) (Tóth i in. 2011; Bouchaud i in. 2018), σ = dzienna zmienność (${(sigmaDaily * 100).toFixed(2)}%), V = obrót 24 h (${fmtCompact(dayVolumeUsd, '$')}). Wpływ szczytowy i pełne trafienie w arkusz — górna granica; na Hyperliquid duże likwidacje idą po 20% na blok, a część przejmuje Liquidator Vault.`,
+              `Cascade: Δp/p = Y·σ·√(Q/V) (Tóth et al. 2011; Bouchaud et al. 2018), σ = daily volatility (${(sigmaDaily * 100).toFixed(2)}%), V = 24 h volume (${fmtCompact(dayVolumeUsd, '$')}). Peak impact and a full hit on the book make this an upper bound; on Hyperliquid large liquidations go through 20% per block and part is taken over by the Liquidator Vault.`
+            )}
           </li>
         </ul>
         <ClusterTable map={map} />
@@ -203,16 +242,20 @@ const LiqHistogram: React.FC<{ map: LiqMap }> = ({ map }) => {
     <div className="flex flex-col gap-1.5">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-ink-2">
         <span className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-sm bg-sell" aria-hidden="true" />▼ likwidacje longów (sprzedaż)
+          <span className="w-2.5 h-2.5 rounded-sm bg-sell" aria-hidden="true" />
+          {tr('▼ likwidacje longów (sprzedaż)', '▼ long liquidations (selling)')}
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-sm bg-buy" aria-hidden="true" />▲ likwidacje shortów (kupno)
+          <span className="w-2.5 h-2.5 rounded-sm bg-buy" aria-hidden="true" />
+          {tr('▲ likwidacje shortów (kupno)', '▲ short liquidations (buying)')}
         </span>
-        <span className="text-ink-3">przedział {fmtPrice((map.markPx * 2 * RANGE) / BINS, 0)} $ · ±{RANGE * 100}% od ceny</span>
+        <span className="text-ink-3">
+          {tr('przedział', 'bin')} {fmtPrice((map.markPx * 2 * RANGE) / BINS, 0)} $ · ±{RANGE * 100}% {tr('od ceny', 'from price')}
+        </span>
       </div>
       <div ref={ref} className="relative w-full" style={{ height: H }}>
         {width > 0 && (
-          <svg width={width} height={H} role="img" aria-label="Histogram nominału likwidacji według ceny">
+          <svg width={width} height={H} role="img" aria-label={tr('Histogram nominału likwidacji według ceny', 'Histogram of liquidation notional by price')}>
             {y.ticks(3).map((t) => (
               <g key={t}>
                 <line x1={pad.l} x2={width - pad.r} y1={y(t)} y2={y(t)} stroke="var(--color-line)" strokeWidth={1} />
@@ -240,7 +283,7 @@ const LiqHistogram: React.FC<{ map: LiqMap }> = ({ map }) => {
             <line x1={pad.l} x2={width - pad.r} y1={H - pad.b} y2={H - pad.b} stroke="var(--color-line-strong)" strokeWidth={1} />
             {ticks.map((t) => (
               <text key={t} x={x(map.markPx * (1 + t))} y={H - 8} textAnchor="middle" className="fill-ink-3 font-mono" fontSize={10}>
-                {t === 0 ? 'cena' : pct(t, 0)}
+                {t === 0 ? tr('cena', 'price') : pct(t, 0)}
               </text>
             ))}
             {longs.map((b, i) => (
@@ -266,8 +309,12 @@ const LiqHistogram: React.FC<{ map: LiqMap }> = ({ map }) => {
             <div className="font-mono tabular-nums text-ink-1">
               {fmtPrice(hv.l.from, 0)}–{fmtPrice(hv.l.to, 0)} ({pct(((hv.l.from + hv.l.to) / 2) / map.markPx - 1, 1)})
             </div>
-            <div>▼ longi: {hv.l.ntlUsd > 0 ? `${fmtCompact(hv.l.ntlUsd, '$')} · ${hv.l.n} poz.` : DASH}</div>
-            <div>▲ shorty: {hv.s.ntlUsd > 0 ? `${fmtCompact(hv.s.ntlUsd, '$')} · ${hv.s.n} poz.` : DASH}</div>
+            <div>
+              ▼ {tr('longi', 'longs')}: {hv.l.ntlUsd > 0 ? `${fmtCompact(hv.l.ntlUsd, '$')} · ${hv.l.n} ${tr('poz.', 'pos.')}` : DASH}
+            </div>
+            <div>
+              ▲ {tr('shorty', 'shorts')}: {hv.s.ntlUsd > 0 ? `${fmtCompact(hv.s.ntlUsd, '$')} · ${hv.s.n} ${tr('poz.', 'pos.')}` : DASH}
+            </div>
           </div>
         )}
       </div>
@@ -297,7 +344,7 @@ const CascadeChart: React.FC<{ main: CascadeResult[]; lo: CascadeResult[]; hi: C
           width={width}
           height={H}
           role="img"
-          aria-label="Krzywa wzmocnienia kaskady likwidacji"
+          aria-label={tr('Krzywa wzmocnienia kaskady likwidacji', 'Liquidation cascade amplification curve')}
           onMouseLeave={() => setHover(null)}
           onMouseMove={(e) => {
             const r = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
@@ -324,7 +371,7 @@ const CascadeChart: React.FC<{ main: CascadeResult[]; lo: CascadeResult[]; hi: C
           ))}
           {[-0.05, -0.025, 0, 0.025, 0.05].map((t) => (
             <text key={t} x={x(t)} y={H - 8} textAnchor="middle" className="fill-ink-3 font-mono" fontSize={10}>
-              {t === 0 ? 'szok 0' : pct(t, 1)}
+              {t === 0 ? tr('szok 0', 'shock 0') : pct(t, 1)}
             </text>
           ))}
           {h && (
@@ -341,15 +388,23 @@ const CascadeChart: React.FC<{ main: CascadeResult[]; lo: CascadeResult[]; hi: C
           style={{ left: Math.min(Math.max(0, x(h.shockPct) - 80), Math.max(0, width - 200)) }}
         >
           <div className="text-ink-1">
-            szok <span className="font-mono tabular-nums">{pct(h.shockPct)}</span> → ruch <span className="font-mono tabular-nums">{pct(h.finalPct)}</span>
+            {tr('szok', 'shock')} <span className="font-mono tabular-nums">{pct(h.shockPct)}</span> → {tr('ruch', 'move')}{' '}
+            <span className="font-mono tabular-nums">{pct(h.finalPct)}</span>
           </div>
           <div>
-            ×{h.amplification.toFixed(2)} (pasmo ×{lo[hover].amplification.toFixed(2)}–×{hi[hover].amplification.toFixed(2)})
+            ×{h.amplification.toFixed(2)} ({tr('pasmo', 'band')} ×{lo[hover].amplification.toFixed(2)}–×{hi[hover].amplification.toFixed(2)})
           </div>
-          <div>likwidacje {fmtCompact(h.liquidatedUsd, '$')}</div>
+          <div>
+            {tr('likwidacje', 'liquidations')} {fmtCompact(h.liquidatedUsd, '$')}
+          </div>
         </div>
       )}
-      <div className="sr-only">Przekątna to ruch bez kaskady; linia nad nią w wartości bezwzględnej oznacza wzmocnienie przez likwidacje.</div>
+      <div className="sr-only">
+        {tr(
+          'Przekątna to ruch bez kaskady; linia nad nią w wartości bezwzględnej oznacza wzmocnienie przez likwidacje.',
+          'The diagonal is the move without a cascade; a line above it in absolute value means amplification by liquidations.'
+        )}
+      </div>
     </div>
   );
 };
@@ -357,22 +412,22 @@ const CascadeChart: React.FC<{ main: CascadeResult[]; lo: CascadeResult[]; hi: C
 /** Tabela największych klastrów — dostęp do liczb bez wykresu. */
 const ClusterTable: React.FC<{ map: LiqMap }> = ({ map }) => {
   const rows = [
-    ...map.longs.map((b) => ({ side: '▼ longi', ...b })),
-    ...map.shorts.map((b) => ({ side: '▲ shorty', ...b })),
+    ...map.longs.map((b) => ({ side: tr('▼ longi', '▼ longs'), ...b })),
+    ...map.shorts.map((b) => ({ side: tr('▲ shorty', '▲ shorts'), ...b })),
   ]
     .sort((a, b) => b.ntlUsd - a.ntlUsd)
     .slice(0, 10);
-  if (rows.length === 0) return <div className="mt-2 text-ink-3">Brak pozycji z ceną likwidacji w zakresie ±15%.</div>;
+  if (rows.length === 0) return <div className="mt-2 text-ink-3">{tr('Brak pozycji z ceną likwidacji w zakresie ±15%.', 'No positions with a liquidation price within ±15%.')}</div>;
   return (
     <div className="mt-3 overflow-x-auto">
       <table className="w-full text-left font-mono tabular-nums text-[11px]">
         <thead className="text-ink-3">
           <tr>
-            <th className="py-1 pr-3 font-medium">Strona</th>
-            <th className="py-1 pr-3 font-medium">Cena likwidacji</th>
-            <th className="py-1 pr-3 font-medium">Od ceny</th>
-            <th className="py-1 pr-3 font-medium">Nominał</th>
-            <th className="py-1 font-medium">Pozycje</th>
+            <th className="py-1 pr-3 font-medium">{tr('Strona', 'Side')}</th>
+            <th className="py-1 pr-3 font-medium">{tr('Cena likwidacji', 'Liquidation price')}</th>
+            <th className="py-1 pr-3 font-medium">{tr('Od ceny', 'From price')}</th>
+            <th className="py-1 pr-3 font-medium">{tr('Nominał', 'Notional')}</th>
+            <th className="py-1 font-medium">{tr('Pozycje', 'Positions')}</th>
           </tr>
         </thead>
         <tbody>

@@ -3,8 +3,9 @@ import { useDesk } from '../../state/DeskContext';
 import { useAuctionContext, type AuctionContext } from '../../state/useAuctionContext';
 import { Badge, EmptyState, Panel, DASH, fmtPrice } from '../../ui';
 import type { OpenLoc, Rate } from '../../utils/auction';
+import { locale, tr } from '../../i18n';
 
-const dayFmt = new Intl.DateTimeFormat('pl-PL', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+const dayFmt = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', timeZone: 'UTC' });
 /** Minimalna liczba sesji dla częstości — mniej to szum */
 const MIN_N = 30;
 /** Dane starsze niż 3 min (odświeżanie co minutę) = nieaktualne */
@@ -24,7 +25,7 @@ function RateText({ r }: { r: Rate }) {
   );
 }
 
-const LOC_LABEL: Record<OpenLoc, string> = { above: 'nad VA', inside: 'w VA', below: 'pod VA' };
+const LOC_LABEL: Record<OpenLoc, string> = { above: tr('nad VA', 'above VA'), inside: tr('w VA', 'inside VA'), below: tr('pod VA', 'below VA') };
 
 /** Kontekst aukcji sesji UTC: poziomy (VWAP ±σ, IB, profil wczoraj) i częstości historyczne z przedziałami Wilsona. */
 export const AuctionContextPanel: React.FC = () => {
@@ -40,16 +41,16 @@ export const AuctionContextPanel: React.FC = () => {
   const stale = ctx.asOf !== null && now - ctx.asOf > STALE_MS;
   return (
     <Panel
-      eyebrow="Sesja UTC · świece 1m i 1h Hyperliquid · historycznie, nie prognoza"
-      title="Kontekst aukcji"
+      eyebrow={tr('Sesja UTC · świece 1m i 1h Hyperliquid · historycznie, nie prognoza', 'UTC session · Hyperliquid 1m and 1h candles · historical, not a forecast')}
+      title={tr('Kontekst aukcji', 'Auction context')}
       actions={
         ctx.status === 'ready' ? (
           stale ? (
-            <Badge tone="stale" title="Świece nie odświeżyły się od ponad 3 min — poziomy mogą być nieaktualne">
+            <Badge tone="stale" title={tr('Świece nie odświeżyły się od ponad 3 min — poziomy mogą być nieaktualne', 'Candles have not refreshed for over 3 min, levels may be out of date')}>
               STALE
             </Badge>
           ) : (
-            <Badge tone="live" title="Poziomy z publicznych świec Hyperliquid; częstości z ~200 pełnych sesji UTC">
+            <Badge tone="live" title={tr('Poziomy z publicznych świec Hyperliquid; częstości z ~200 pełnych sesji UTC', 'Levels from public Hyperliquid candles; frequencies from ~200 full UTC sessions')}>
               LIVE
             </Badge>
           )
@@ -58,8 +59,11 @@ export const AuctionContextPanel: React.FC = () => {
     >
       {ctx.status !== 'ready' ? (
         <EmptyState
-          title={ctx.status === 'loading' ? 'Pobieram świece sesji…' : 'Świece chwilowo niedostępne'}
-          detail="VWAP sesji, Initial Balance, profil poprzedniego dnia i to, jak często na BTC faktycznie działają klasyczne reguły aukcji."
+          title={ctx.status === 'loading' ? tr('Pobieram świece sesji…', 'Loading session candles…') : tr('Świece chwilowo niedostępne', 'Candles temporarily unavailable')}
+          detail={tr(
+            'VWAP sesji, Initial Balance, profil poprzedniego dnia i to, jak często na BTC faktycznie działają klasyczne reguły aukcji.',
+            "Session VWAP, Initial Balance, the previous day's profile and how often the classic auction rules actually work on BTC."
+          )}
         />
       ) : (
         <Body ctx={ctx} price={price} />
@@ -79,7 +83,7 @@ function levels(ctx: AuctionContext, price: number | null): Level[] {
   const out: Level[] = [];
   if (ctx.vwap) {
     const { vwap, sd } = ctx.vwap;
-    out.push({ label: 'VWAP sesji', px: vwap, tone: 'vwap' });
+    out.push({ label: tr('VWAP sesji', 'Session VWAP'), px: vwap, tone: 'vwap' });
     if (sd > 0) {
       out.push({ label: 'VWAP +1σ', px: vwap + sd, tone: 'band' }, { label: 'VWAP −1σ', px: vwap - sd, tone: 'band' });
       out.push({ label: 'VWAP +2σ', px: vwap + 2 * sd, tone: 'band' }, { label: 'VWAP −2σ', px: vwap - 2 * sd, tone: 'band' });
@@ -87,7 +91,10 @@ function levels(ctx: AuctionContext, price: number | null): Level[] {
   }
   if (ctx.ib) {
     const r = ctx.ib.hi - ctx.ib.lo;
-    out.push({ label: ctx.ib.done ? 'IB high' : 'IB high (w trakcie)', px: ctx.ib.hi, tone: 'ib' }, { label: ctx.ib.done ? 'IB low' : 'IB low (w trakcie)', px: ctx.ib.lo, tone: 'ib' });
+    out.push(
+      { label: ctx.ib.done ? 'IB high' : tr('IB high (w trakcie)', 'IB high (forming)'), px: ctx.ib.hi, tone: 'ib' },
+      { label: ctx.ib.done ? 'IB low' : tr('IB low (w trakcie)', 'IB low (forming)'), px: ctx.ib.lo, tone: 'ib' }
+    );
     if (ctx.ib.done && r > 0) {
       out.push({ label: 'IB +1,5×', px: ctx.ib.lo + 1.5 * r, tone: 'ib' }, { label: 'IB −1,5×', px: ctx.ib.hi - 1.5 * r, tone: 'ib' });
       out.push({ label: 'IB +2×', px: ctx.ib.lo + 2 * r, tone: 'ib' }, { label: 'IB −2×', px: ctx.ib.hi - 2 * r, tone: 'ib' });
@@ -97,11 +104,15 @@ function levels(ctx: AuctionContext, price: number | null): Level[] {
     const p = ctx.prev;
     // Słabość wg tej samej definicji co statystyka (świece 1h), żeby drabina i tabela się nie przeczyły
     const h1 = ctx.today?.prev1h;
-    out.push({ label: 'PDH', px: p.high, tone: 'prev', note: h1?.poorHigh ? 'słaby szczyt' : undefined });
-    out.push({ label: 'PDL', px: p.low, tone: 'prev', note: h1?.poorLow ? 'słabe dno' : undefined });
-    out.push({ label: 'VAH wczoraj', px: p.vah, tone: 'prev' }, { label: 'POC wczoraj', px: p.poc, tone: 'prev' }, { label: 'VAL wczoraj', px: p.val, tone: 'prev' });
+    out.push({ label: 'PDH', px: p.high, tone: 'prev', note: h1?.poorHigh ? tr('słaby szczyt', 'poor high') : undefined });
+    out.push({ label: 'PDL', px: p.low, tone: 'prev', note: h1?.poorLow ? tr('słabe dno', 'poor low') : undefined });
+    out.push(
+      { label: tr('VAH wczoraj', 'Yesterday VAH'), px: p.vah, tone: 'prev' },
+      { label: tr('POC wczoraj', 'Yesterday POC'), px: p.poc, tone: 'prev' },
+      { label: tr('VAL wczoraj', 'Yesterday VAL'), px: p.val, tone: 'prev' }
+    );
   }
-  if (price !== null) out.push({ label: 'Cena', px: price, tone: 'price' });
+  if (price !== null) out.push({ label: tr('Cena', 'Price'), px: price, tone: 'price' });
   return out.sort((a, b) => b.px - a.px);
 }
 
@@ -121,17 +132,22 @@ const Body: React.FC<{ ctx: AuctionContext; price: number | null }> = ({ ctx, pr
   return (
     <div className="flex flex-col gap-5 p-4">
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
-        <section aria-label="Poziomy sesji">
-          <div className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium mb-2">Poziomy</div>
+        <section aria-label={tr('Poziomy sesji', 'Session levels')}>
+          <div className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium mb-2">{tr('Poziomy', 'Levels')}</div>
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-2 mb-2">
             <span>
-              cena vs VWAP: <span className="font-mono tabular-nums text-ink-1">{z === null ? DASH : `${z >= 0 ? '+' : '−'}${Math.abs(z).toFixed(1)}σ`}</span>
+              {tr('cena vs VWAP', 'price vs VWAP')}: <span className="font-mono tabular-nums text-ink-1">{z === null ? DASH : `${z >= 0 ? '+' : '−'}${Math.abs(z).toFixed(1)}σ`}</span>
             </span>
             {t && (
-              <span title="Położenie otwarcia liczone tą samą metodą co częstości (profil wczorajszej sesji ze świec 1h)">
-                otwarcie: <span className="text-ink-1">{LOC_LABEL[t.openLoc]}</span> wczoraj{' '}
+              <span
+                title={tr(
+                  'Położenie otwarcia liczone tą samą metodą co częstości (profil wczorajszej sesji ze świec 1h)',
+                  "Open location computed with the same method as the frequencies (yesterday's session profile from 1h candles)"
+                )}
+              >
+                {tr('otwarcie', 'open')}: <span className="text-ink-1">{LOC_LABEL[t.openLoc]}</span> {tr('wczoraj', 'of yesterday')}{' '}
                 <span className="text-ink-3">
-                  (VA z 1h: {fmtPrice(t.prev1h.val, 0)}–{fmtPrice(t.prev1h.vah, 0)})
+                  ({tr('VA z 1h', 'VA from 1h')}: {fmtPrice(t.prev1h.val, 0)}–{fmtPrice(t.prev1h.vah, 0)})
                 </span>
               </span>
             )}
@@ -157,46 +173,67 @@ const Body: React.FC<{ ctx: AuctionContext; price: number | null }> = ({ ctx, pr
           </ol>
         </section>
 
-        <section aria-label="Częstości historyczne">
+        <section aria-label={tr('Częstości historyczne', 'Historical frequencies')}>
           <div className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium mb-2">
-            Co mówi historia{st?.from && st.to ? ` · ${st.n} sesji, ${dayFmt.format(st.from)} – ${dayFmt.format(st.to)}` : ''}
+            {tr('Co mówi historia', 'What history says')}
+            {st?.from && st.to ? ` · ${st.n} ${tr('sesji', 'sessions')}, ${dayFmt.format(st.from)} – ${dayFmt.format(st.to)}` : ''}
           </div>
           {!st || st.n < MIN_N ? (
-            <div className="text-xs text-ink-3">Za mało pełnych sesji w danych 1h (potrzeba {MIN_N}).</div>
+            <div className="text-xs text-ink-3">{tr(`Za mało pełnych sesji w danych 1h (potrzeba ${MIN_N}).`, `Not enough full sessions in the 1h data (need ${MIN_N}).`)}</div>
           ) : (
             <table className="w-full text-left text-xs">
-              <caption className="sr-only">Częstości historyczne reguł aukcji z przedziałami ufności Wilsona 95%</caption>
+              <caption className="sr-only">{tr('Częstości historyczne reguł aukcji z przedziałami ufności Wilsona 95%', 'Historical frequencies of auction rules with 95% Wilson confidence intervals')}</caption>
               <thead className="text-ink-3 text-[10px] uppercase tracking-wide">
                 <tr>
-                  <th className="py-1 pr-2 font-medium">Reguła</th>
-                  <th className="py-1 pr-2 font-medium">Częstość (95%)</th>
-                  <th className="py-1 font-medium">Dziś</th>
+                  <th className="py-1 pr-2 font-medium">{tr('Reguła', 'Rule')}</th>
+                  <th className="py-1 pr-2 font-medium">{tr('Częstość (95%)', 'Frequency (95%)')}</th>
+                  <th className="py-1 font-medium">{tr('Dziś', 'Today')}</th>
                 </tr>
               </thead>
               <tbody>
-                <Row label="IB wybity w górę" rate={st.ib.up} today={t ? (t.ibBreak.up ? 'tak' : t.ibDone ? 'jeszcze nie' : 'IB w trakcie') : undefined} />
-                <Row label="IB wybity w dół" rate={st.ib.down} today={t ? (t.ibBreak.down ? 'tak' : t.ibDone ? 'jeszcze nie' : 'IB w trakcie') : undefined} />
-                <Row label="IB wybity w obie strony" rate={st.ib.both} />
+                <Row label={tr('IB wybity w górę', 'IB broken up')} rate={st.ib.up} today={t ? (t.ibBreak.up ? YES : t.ibDone ? NOT_YET : IB_FORMING) : undefined} />
+                <Row label={tr('IB wybity w dół', 'IB broken down')} rate={st.ib.down} today={t ? (t.ibBreak.down ? YES : t.ibDone ? NOT_YET : IB_FORMING) : undefined} />
+                <Row label={tr('IB wybity w obie strony', 'IB broken both ways')} rate={st.ib.both} />
                 <Row
-                  label="Reguła 80%: otwarcie nad VA → powrót do VA → dojście do VAL"
+                  label={tr('Reguła 80%: otwarcie nad VA → powrót do VA → dojście do VAL', '80% rule: open above VA → back into VA → reaches VAL')}
                   rate={st.rule80.above}
                   today={t?.openLoc === 'above' ? RULE80[t.rule80] : undefined}
                   highlight={t?.openLoc === 'above'}
                 />
                 <Row
-                  label="Reguła 80%: otwarcie pod VA → powrót do VA → dojście do VAH"
+                  label={tr('Reguła 80%: otwarcie pod VA → powrót do VA → dojście do VAH', '80% rule: open below VA → back into VA → reaches VAH')}
                   rate={st.rule80.below}
                   today={t?.openLoc === 'below' ? RULE80[t.rule80] : undefined}
                   highlight={t?.openLoc === 'below'}
                 />
-                <Row label="Słaby szczyt wczoraj → przebity dziś" rate={st.poor.high.poor} today={t?.prev1h.poorHigh ? (t.pdhBroken ? 'przebity' : 'wczoraj słaby') : undefined} highlight={t?.prev1h.poorHigh} />
-                <Row label="Mocny szczyt wczoraj → przebity dziś" rate={st.poor.high.strong} highlight={t ? !t.prev1h.poorHigh : false} />
-                <Row label="Słabe dno wczoraj → przebite dziś" rate={st.poor.low.poor} today={t?.prev1h.poorLow ? (t.pdlBroken ? 'przebite' : 'wczoraj słabe') : undefined} highlight={t?.prev1h.poorLow} />
-                <Row label="Mocne dno wczoraj → przebite dziś" rate={st.poor.low.strong} highlight={t ? !t.prev1h.poorLow : false} />
+                <Row
+                  label={tr('Słaby szczyt wczoraj → przebity dziś', 'Poor high yesterday → taken out today')}
+                  rate={st.poor.high.poor}
+                  today={t?.prev1h.poorHigh ? (t.pdhBroken ? tr('przebity', 'taken out') : tr('wczoraj słaby', 'poor yesterday')) : undefined}
+                  highlight={t?.prev1h.poorHigh}
+                />
+                <Row label={tr('Mocny szczyt wczoraj → przebity dziś', 'Strong high yesterday → taken out today')} rate={st.poor.high.strong} highlight={t ? !t.prev1h.poorHigh : false} />
+                <Row
+                  label={tr('Słabe dno wczoraj → przebite dziś', 'Poor low yesterday → taken out today')}
+                  rate={st.poor.low.poor}
+                  today={t?.prev1h.poorLow ? (t.pdlBroken ? tr('przebite', 'taken out') : tr('wczoraj słabe', 'poor yesterday')) : undefined}
+                  highlight={t?.prev1h.poorLow}
+                />
+                <Row label={tr('Mocne dno wczoraj → przebite dziś', 'Strong low yesterday → taken out today')} rate={st.poor.low.strong} highlight={t ? !t.prev1h.poorLow : false} />
                 {(['above', 'inside', 'below'] as OpenLoc[]).map((loc) => (
                   <React.Fragment key={loc}>
-                    <Row label={`Otwarcie ${LOC_LABEL[loc]} → dotknięcie PDH`} rate={st.pdTouch[loc].pdh} today={t?.openLoc === loc ? (t.pdhTouched ? 'tak' : 'jeszcze nie') : undefined} highlight={t?.openLoc === loc} />
-                    <Row label={`Otwarcie ${LOC_LABEL[loc]} → dotknięcie PDL`} rate={st.pdTouch[loc].pdl} today={t?.openLoc === loc ? (t.pdlTouched ? 'tak' : 'jeszcze nie') : undefined} highlight={t?.openLoc === loc} />
+                    <Row
+                      label={`${tr('Otwarcie', 'Open')} ${LOC_LABEL[loc]} → ${tr('dotknięcie PDH', 'PDH touch')}`}
+                      rate={st.pdTouch[loc].pdh}
+                      today={t?.openLoc === loc ? (t.pdhTouched ? YES : NOT_YET) : undefined}
+                      highlight={t?.openLoc === loc}
+                    />
+                    <Row
+                      label={`${tr('Otwarcie', 'Open')} ${LOC_LABEL[loc]} → ${tr('dotknięcie PDL', 'PDL touch')}`}
+                      rate={st.pdTouch[loc].pdl}
+                      today={t?.openLoc === loc ? (t.pdlTouched ? YES : NOT_YET) : undefined}
+                      highlight={t?.openLoc === loc}
+                    />
                   </React.Fragment>
                 ))}
               </tbody>
@@ -208,35 +245,34 @@ const Body: React.FC<{ ctx: AuctionContext; price: number | null }> = ({ ctx, pr
               if (!p.diff || p.poor.n < MIN_N || p.strong.n < MIN_N) return null;
               return (
                 <p key={side} className="mt-2 text-[11px] text-ink-2">
-                  {side === 'high' ? 'Słaby − mocny szczyt' : 'Słabe − mocne dno'} (przebicie):{' '}
+                  {side === 'high' ? tr('Słaby − mocny szczyt', 'Poor − strong high') : tr('Słabe − mocne dno', 'Poor − strong low')} ({tr('przebicie', 'taken out')}):{' '}
                   <span className="font-mono tabular-nums">{signedPp(p.diff.d)}</span>{' '}
                   <span className="text-ink-3">
                     (95%: {signedPp(p.diff.lo)} … {signedPp(p.diff.hi)})
                   </span>
                   {p.diff.lo > 0
-                    ? ' — słabe przebijane istotnie częściej.'
+                    ? tr(' — słabe przebijane istotnie częściej.', ': poor extremes are taken out significantly more often.')
                     : p.diff.hi < 0
-                    ? ' — słabe przebijane istotnie rzadziej.'
-                    : ' — przedział obejmuje zero: różnica nieudowodniona.'}
+                    ? tr(' — słabe przebijane istotnie rzadziej.', ': poor extremes are taken out significantly less often.')
+                    : tr(' — przedział obejmuje zero: różnica nieudowodniona.', ': the interval includes zero, the difference is not proven.')}
                 </p>
               );
             })}
         </section>
       </div>
       <details className="text-[11px] text-ink-2 leading-relaxed">
-        <summary className="cursor-pointer select-none text-ink-1 font-medium py-1">Metoda i zastrzeżenia</summary>
+        <summary className="cursor-pointer select-none text-ink-1 font-medium py-1">{tr('Metoda i zastrzeżenia', 'Method and caveats')}</summary>
         <p className="mt-1">
-          Sesja = dzień UTC (otwarcie 00:00 UTC). VWAP z ceny typowej (H+L+C)/3 świec 1m ważonej wolumenem, pasma ±σ z ważonego odchylenia — cena
-          typowa przybliża ceny transakcji. Initial Balance = zakres 00:00–01:00 UTC. Profil poprzedniego dnia: wolumen świecy 1m rozłożony
-          równomiernie w jej zakresie, koszyki 10 USD, value area 70% od POC. Słaby szczyt/dno: ekstremum osiągnięte w co najmniej dwóch różnych
-          godzinach (w odległości ≤ 0,02%) — płaskie zakończenie aukcji bez ekscesu, jak dwa TPO na skrajnym poziomie (wierzchołek na granicy
-          godzin też liczy się podwójnie, tak jak w Market Profile).
+          {tr(
+            'Sesja = dzień UTC (otwarcie 00:00 UTC). VWAP z ceny typowej (H+L+C)/3 świec 1m ważonej wolumenem, pasma ±σ z ważonego odchylenia — cena typowa przybliża ceny transakcji. Initial Balance = zakres 00:00–01:00 UTC. Profil poprzedniego dnia: wolumen świecy 1m rozłożony równomiernie w jej zakresie, koszyki 10 USD, value area 70% od POC. Słaby szczyt/dno: ekstremum osiągnięte w co najmniej dwóch różnych godzinach (w odległości ≤ 0,02%) — płaskie zakończenie aukcji bez ekscesu, jak dwa TPO na skrajnym poziomie (wierzchołek na granicy godzin też liczy się podwójnie, tak jak w Market Profile).',
+            "Session = UTC day (open 00:00 UTC). VWAP from the volume-weighted typical price (H+L+C)/3 of 1m candles, ±σ bands from the weighted deviation; the typical price approximates trade prices. Initial Balance = the 00:00–01:00 UTC range. Previous day's profile: each 1m candle's volume spread evenly across its range, 10 USD buckets, 70% value area from the POC. Poor high/low: an extreme reached in at least two different hours (within ≤ 0.02%), a flat end of the auction with no excess, like two TPOs at the extreme level (a top on an hour boundary also counts twice, as in Market Profile)."
+          )}
         </p>
         <p className="mt-1">
-          Częstości liczone są ze świec 1h z ostatnich ~208 dni (tyle udostępnia API). Profil i słabość ekstremów są tam przybliżone (godziny zamiast
-          okien 30 min), a „Dziś” klasyfikuje bieżącą sesję tą samą metodą co historia. Reguła 80%: dwie kolejne zamknięte godziny z zamknięciem w VA,
-          dojście liczone od kolejnej godziny (bez podglądania). Przedziały Wilsona 95%; różnica proporcji z przedziałem Newcombe&apos;a. Mniej niż{' '}
-          {MIN_N} sesji = „—”. To opis przeszłości, nie prognoza ani sygnał.
+          {tr(
+            `Częstości liczone są ze świec 1h z ostatnich ~208 dni (tyle udostępnia API). Profil i słabość ekstremów są tam przybliżone (godziny zamiast okien 30 min), a „Dziś” klasyfikuje bieżącą sesję tą samą metodą co historia. Reguła 80%: dwie kolejne zamknięte godziny z zamknięciem w VA, dojście liczone od kolejnej godziny (bez podglądania). Przedziały Wilsona 95%; różnica proporcji z przedziałem Newcombe'a. Mniej niż ${MIN_N} sesji = „—”. To opis przeszłości, nie prognoza ani sygnał.`,
+            `Frequencies are computed from 1h candles over the last ~208 days (as much as the API provides). Profile and extreme weakness are approximate there (hours instead of 30-min periods), and "Today" classifies the current session with the same method as history. 80% rule: two consecutive closed hours closing inside the VA, the target counted from the next hour (no look-ahead). 95% Wilson intervals; difference of proportions with Newcombe's interval. Fewer than ${MIN_N} sessions = "—". This describes the past; it is not a forecast or a signal.`
+          )}
         </p>
       </details>
     </div>
@@ -245,10 +281,14 @@ const Body: React.FC<{ ctx: AuctionContext; price: number | null }> = ({ ctx, pr
 
 const RULE80: Record<'n/a' | 'armed' | 'triggered' | 'done', string> = {
   'n/a': '—',
-  armed: 'czeka na powrót',
-  triggered: 'powrót potwierdzony',
-  done: 'dotarła',
+  armed: tr('czeka na powrót', 'waiting for re-entry'),
+  triggered: tr('powrót potwierdzony', 're-entry confirmed'),
+  done: tr('dotarła', 'reached'),
 };
+
+const YES = tr('tak', 'yes');
+const NOT_YET = tr('jeszcze nie', 'not yet');
+const IB_FORMING = tr('IB w trakcie', 'IB forming');
 
 const signedPp = (d: number) => `${d >= 0 ? '+' : '−'}${Math.abs(Math.round(d * 100))} pp`;
 

@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { Download, Share, WifiOff, X } from 'lucide-react';
 import { Badge, EASE_IN, EASE_OUT } from '../ui';
 import { usePwa } from './usePwa';
+import { tr } from '../i18n';
 
 /**
  * Instalacja PWA: przycisk „Zainstaluj” (Chromium, gdy przeglądarka udostępni zdarzenie),
@@ -30,7 +31,7 @@ export const InstallButton: React.FC<{ compact?: boolean }> = ({ compact }) => {
   }, [iosOpen]);
 
   const offline = !online && (
-    <Badge tone="warn" title="Brak połączenia — widzisz ostatnie zapisane dane i powłokę aplikacji" testId="offline-badge">
+    <Badge tone="warn" title={tr('Brak połączenia — widzisz ostatnie zapisane dane i powłokę aplikacji', 'No connection: you see the last saved data and the app shell')} testId="offline-badge">
       <WifiOff className="w-3 h-3" aria-hidden="true" />
       Offline
     </Badge>
@@ -48,31 +49,31 @@ export const InstallButton: React.FC<{ compact?: boolean }> = ({ compact }) => {
       {offline}
       <button
         type="button"
-        aria-label="Zainstaluj aplikację"
-        title="Zainstaluj aplikację"
+        aria-label={tr('Zainstaluj aplikację', 'Install app')}
+        title={tr('Zainstaluj aplikację', 'Install app')}
         aria-expanded={showIos ? iosOpen : undefined}
         onClick={() => (canInstall ? void install() : setIosOpen((o) => !o))}
         className={btnClass}
       >
         <Download className="w-4 h-4" aria-hidden="true" />
-        {!compact && <span>Zainstaluj</span>}
+        {!compact && <span>{tr('Zainstaluj', 'Install')}</span>}
       </button>
 
       <AnimatePresence>
         {iosOpen && (
           <motion.div
             role="dialog"
-            aria-label="Instalacja na iPhonie lub iPadzie"
+            aria-label={tr('Instalacja na iPhonie lub iPadzie', 'Install on iPhone or iPad')}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1, transition: { duration: 0.16, ease: EASE_OUT } }}
             exit={{ opacity: 0, transition: { duration: 0.1, ease: EASE_IN } }}
             className="absolute right-0 top-full mt-2 z-50 w-64 bg-surface-2 border border-line-strong rounded-xl p-3 shadow-2xl text-left"
           >
             <div className="flex items-start justify-between gap-2">
-              <div className="text-sm font-medium text-ink-1">Dodaj do ekranu początkowego</div>
+              <div className="text-sm font-medium text-ink-1">{tr('Dodaj do ekranu początkowego', 'Add to Home Screen')}</div>
               <button
                 type="button"
-                aria-label="Zamknij"
+                aria-label={tr('Zamknij', 'Close')}
                 onClick={() => setIosOpen(false)}
                 className="-mr-1.5 -mt-1.5 inline-flex items-center justify-center w-9 h-9 rounded-lg text-ink-3 hover:text-ink-1"
               >
@@ -81,13 +82,17 @@ export const InstallButton: React.FC<{ compact?: boolean }> = ({ compact }) => {
             </div>
             <ol className="mt-1 space-y-1.5 text-xs text-ink-2 leading-relaxed list-decimal pl-4">
               <li>
-                Stuknij <span className="inline-flex items-center gap-1 text-ink-1">Udostępnij <Share className="w-3.5 h-3.5" aria-hidden="true" /></span> na pasku przeglądarki.
+                {tr('Stuknij', 'Tap')}{' '}
+                <span className="inline-flex items-center gap-1 text-ink-1">
+                  {tr('Udostępnij', 'Share')} <Share className="w-3.5 h-3.5" aria-hidden="true" />
+                </span>{' '}
+                {tr('na pasku przeglądarki.', 'in the browser bar.')}
               </li>
               <li>
-                Wybierz <span className="text-ink-1">Do ekranu początkowego</span>.
+                {tr('Wybierz', 'Choose')} <span className="text-ink-1">{tr('Do ekranu początkowego', 'Add to Home Screen')}</span>.
               </li>
             </ol>
-            <p className="mt-2 text-[11px] text-ink-3">Aplikacja otworzy się na pełnym ekranie, bez paska adresu.</p>
+            <p className="mt-2 text-[11px] text-ink-3">{tr('Aplikacja otworzy się na pełnym ekranie, bez paska adresu.', 'The app opens full screen, without the address bar.')}</p>
           </motion.div>
         )}
       </AnimatePresence>

@@ -1,3 +1,4 @@
+import { locale, tr } from '../i18n';
 /** Zdarzenie makro z oficjalnych harmonogramów (Fed, BLS, BEA). */
 export interface MacroEvent {
   id: string;
@@ -18,7 +19,7 @@ export const KIND_LABEL: Record<MacroEvent['kind'], string> = {
   CPI: 'CPI',
   NFP: 'NFP',
   PPI: 'PPI',
-  GDP_PCE: 'PKB+PCE',
+  GDP_PCE: tr('PKB+PCE', 'GDP+PCE'),
 };
 
 // Druga niedziela marca / pierwsza niedziela listopada (reguła DST w USA od 2007 r.)
@@ -43,11 +44,11 @@ export function etToUtcMs(year: number, month: number, day: number, hour: number
 }
 
 const SRC = {
-  FED: { source: 'Federal Reserve — kalendarz FOMC', sourceUrl: 'https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm' },
-  CPI: { source: 'BLS — harmonogram CPI', sourceUrl: 'https://www.bls.gov/schedule/news_release/cpi.htm' },
-  NFP: { source: 'BLS — harmonogram Employment Situation', sourceUrl: 'https://www.bls.gov/schedule/news_release/empsit.htm' },
-  PPI: { source: 'BLS — harmonogram PPI', sourceUrl: 'https://www.bls.gov/schedule/news_release/ppi.htm' },
-  BEA: { source: 'BEA — harmonogram publikacji', sourceUrl: 'https://www.bea.gov/news/schedule' },
+  FED: { source: tr('Federal Reserve — kalendarz FOMC', 'Federal Reserve — FOMC calendar'), sourceUrl: 'https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm' },
+  CPI: { source: tr('BLS — harmonogram CPI', 'BLS — CPI schedule'), sourceUrl: 'https://www.bls.gov/schedule/news_release/cpi.htm' },
+  NFP: { source: tr('BLS — harmonogram Employment Situation', 'BLS — Employment Situation schedule'), sourceUrl: 'https://www.bls.gov/schedule/news_release/empsit.htm' },
+  PPI: { source: tr('BLS — harmonogram PPI', 'BLS — PPI schedule'), sourceUrl: 'https://www.bls.gov/schedule/news_release/ppi.htm' },
+  BEA: { source: tr('BEA — harmonogram publikacji', 'BEA — release schedule'), sourceUrl: 'https://www.bea.gov/news/schedule' },
 } as const;
 
 type Ymd = [number, number, number];
@@ -73,9 +74,9 @@ function ev(
   };
 }
 
-const FOMC_NAME = 'FOMC — decyzja ws. stóp (konf. 14:30 ET)';
-const FOMC_SEP = 'FOMC — decyzja ws. stóp + projekcje SEP (konf. 14:30 ET)';
-const FOMC_TENT = 'FOMC — decyzja ws. stóp (termin wstępny)';
+const FOMC_NAME = tr('FOMC — decyzja ws. stóp (konf. 14:30 ET)', 'FOMC — rate decision (press conf. 14:30 ET)');
+const FOMC_SEP = tr('FOMC — decyzja ws. stóp + projekcje SEP (konf. 14:30 ET)', 'FOMC — rate decision + SEP projections (press conf. 14:30 ET)');
+const FOMC_TENT = tr('FOMC — decyzja ws. stóp (termin wstępny)', 'FOMC — rate decision (tentative date)');
 
 // Daty zweryfikowane z federalreserve.gov, bls.gov, bea.gov (stan 2026-10-21). Czas ET.
 const FOMC_DATES: [Ymd, string][] = [
@@ -99,15 +100,17 @@ const BEA_DATES: Ymd[] = [[2026, 10, 29], [2026, 11, 25], [2026, 12, 23], [2027,
 export const MACRO_EVENTS: MacroEvent[] = [
   ...FOMC_DATES.map(([d, name]) => ev('FOMC', d, [14, 0], name, 'high', SRC.FED)),
   // Protokół z posiedzenia grudniowego — mniejsza reakcja niż decyzja
-  ev('FOMC', [2026, 12, 30], [14, 0], 'FOMC — protokół (minutes) z posiedzenia grudniowego', 'medium', SRC.FED, {
+  ev('FOMC', [2026, 12, 30], [14, 0], tr('FOMC — protokół (minutes) z posiedzenia grudniowego', 'FOMC — minutes of the December meeting'), 'medium', SRC.FED, {
     id: 'FOMC_MIN',
     volMultiplier: 1.1,
   }),
-  ...NFP_DATES.map((d) => ev('NFP', d, [8, 30], 'NFP — raport z rynku pracy (BLS)', 'high', SRC.NFP)),
-  ...CPI_DATES.map((d) => ev('CPI', d, [8, 30], 'CPI — inflacja konsumencka (BLS)', 'high', SRC.CPI)),
-  ...PPI_DATES.map((d) => ev('PPI', d, [8, 30], 'PPI — inflacja producencka (BLS)', 'medium', SRC.PPI)),
+  ...NFP_DATES.map((d) => ev('NFP', d, [8, 30], tr('NFP — raport z rynku pracy (BLS)', 'NFP — jobs report (BLS)'), 'high', SRC.NFP)),
+  ...CPI_DATES.map((d) => ev('CPI', d, [8, 30], tr('CPI — inflacja konsumencka (BLS)', 'CPI — consumer inflation (BLS)'), 'high', SRC.CPI)),
+  ...PPI_DATES.map((d) => ev('PPI', d, [8, 30], tr('PPI — inflacja producencka (BLS)', 'PPI — producer inflation (BLS)'), 'medium', SRC.PPI)),
   ...BEA_DATES.map((d, i) =>
-    ev('GDP_PCE', d, [8, 30], i === 0 ? 'PKB Q3 (szac. wstępny) + PCE za wrzesień — BEA' : 'PKB + PCE (dochody i wydatki) — BEA', 'medium', SRC.BEA)
+    ev('GDP_PCE', d, [8, 30], i === 0
+        ? tr('PKB Q3 (szac. wstępny) + PCE za wrzesień — BEA', 'Q3 GDP (advance estimate) + September PCE — BEA')
+        : tr('PKB + PCE (dochody i wydatki) — BEA', 'GDP + PCE (personal income and outlays) — BEA'), 'medium', SRC.BEA)
   ),
 ].sort((a, b) => a.timeUtcMs - b.timeUtcMs);
 
@@ -161,8 +164,8 @@ export function sourceShort(e: MacroEvent): string {
   return e.source.startsWith('Federal Reserve') ? 'Fed' : e.source.split(' — ')[0];
 }
 
-const LOCAL_FMT = new Intl.DateTimeFormat('pl-PL', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-const ET_FMT = new Intl.DateTimeFormat('pl-PL', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit' });
+const LOCAL_FMT = new Intl.DateTimeFormat(locale, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+const ET_FMT = new Intl.DateTimeFormat(locale, { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit' });
 
 /** Czas zdarzenia w strefie użytkownika, np. „śr., 28 paź, 19:00”. */
 export const fmtEventLocal = (ms: number): string => LOCAL_FMT.format(ms);

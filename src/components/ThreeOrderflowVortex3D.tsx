@@ -15,6 +15,7 @@ import {
 } from '../types/trading';
 import { GLOW, T3, T3_CSS, isNarrowViewport, labFov, labPixelRatio } from '../views/lab/tokens3d';
 import { DockPresets, DockSlider, DockToggle, HoverCard, HudButton, HudHeader, SCENE_FRAME, SceneDock } from '../views/lab/hud';
+import { tr } from '../i18n';
 
 interface ThreeOrderflowVortex3DProps {
   latestBar: OHLCVBar;
@@ -53,9 +54,9 @@ const VENUE_NODES: {
 
 // Opis wzorca dużego zlecenia — heurystyka z liczby zleceń i wielkości poziomu, nie identyfikacja uczestnika
 const WHALE_PATTERN_PL: Record<string, string> = {
-  'Institutional Iceberg': 'Wiele zleceń na poziomie',
-  'Passive Whale Wall': 'Duża ściana (≥ 3,5 BTC)',
-  'Liquidity Shield': 'Skupisko płynności',
+  'Institutional Iceberg': tr('Wiele zleceń na poziomie', 'Many orders at the level'),
+  'Passive Whale Wall': tr('Duża ściana (≥ 3,5 BTC)', 'Large wall (≥ 3.5 BTC)'),
+  'Liquidity Shield': tr('Skupisko płynności', 'Liquidity cluster'),
 };
 
 // Zwalnia materiał wraz ze wszystkimi teksturami, do których się odwołuje (map, envMap, normalMap itd.).
@@ -538,11 +539,14 @@ export const ThreeOrderflowVortex3D: React.FC<ThreeOrderflowVortex3DProps> = ({
         mesh.userData = {
           title: `${venue.name}${hasData ? (isNetBuy ? ' ▲' : ' ▼') : ''}`,
           subtitle: hasData
-            ? `Bieżąca świeca · kupno $${(exVol.vbuy / 1000).toFixed(0)}K · sprzedaż $${(exVol.vsell / 1000).toFixed(0)}K`
+            ? tr(
+                `Bieżąca świeca · kupno $${(exVol.vbuy / 1000).toFixed(0)}K · sprzedaż $${(exVol.vsell / 1000).toFixed(0)}K`,
+                `Current candle · buy $${(exVol.vbuy / 1000).toFixed(0)}K · sell $${(exVol.vsell / 1000).toFixed(0)}K`
+              )
             : id === 'HYPERLIQUID'
-            ? 'Brak transakcji w bieżącej świecy'
-            : 'Brak danych — źródła CEX są wyłączone (opt-in w Źródłach)',
-          metricLabel: 'Delta netto',
+            ? tr('Brak transakcji w bieżącej świecy', 'No trades in the current candle')
+            : tr('Brak danych — źródła CEX są wyłączone (opt-in w Źródłach)', 'No data: CEX sources are off (opt-in in Sources)'),
+          metricLabel: tr('Delta netto', 'Net delta'),
           metricValue: hasData ? `${delta >= 0 ? '+' : '−'}$${(Math.abs(delta) / 1000).toFixed(0)}K` : '—',
           accentColor: !hasData ? T3_CSS.ink3 : isNetBuy ? T3_CSS.buy : T3_CSS.sell,
         };
@@ -607,9 +611,9 @@ export const ThreeOrderflowVortex3D: React.FC<ThreeOrderflowVortex3DProps> = ({
         pillarMesh.position.set(x, -2.5 + h / 2, z);
         pillarMesh.layers.enable(1);
         pillarMesh.userData = {
-          title: `Arkusz HL · ${isBid ? 'BID ▲' : 'ASK ▼'} · ${WHALE_PATTERN_PL[w.pattern] ?? 'Duże zlecenie'}`,
-          subtitle: `Cena ${w.price.toFixed(1)} · liczba zleceń na poziomie: ${w.orderCount}`,
-          metricLabel: 'Płynność na poziomie',
+          title: `${tr('Arkusz HL', 'HL book')} · ${isBid ? 'BID ▲' : 'ASK ▼'} · ${WHALE_PATTERN_PL[w.pattern] ?? tr('Duże zlecenie', 'Large order')}`,
+          subtitle: tr(`Cena ${w.price.toFixed(1)} · liczba zleceń na poziomie: ${w.orderCount}`, `Price ${w.price.toFixed(1)} · orders at the level: ${w.orderCount}`),
+          metricLabel: tr('Płynność na poziomie', 'Liquidity at the level'),
           metricValue: `${w.sizeBtc} BTC ($${(w.sizeUsd / 1000).toFixed(0)}K)`,
           accentColor: isBid ? T3_CSS.buy : T3_CSS.sell,
         };
@@ -885,14 +889,14 @@ export const ThreeOrderflowVortex3D: React.FC<ThreeOrderflowVortex3DProps> = ({
       {/* Kontener WebGL */}
       <div ref={canvasMountRef} className="w-full h-full" />
 
-      <HudHeader title="Orderflow Vortex · przepływ agresora per giełda (bieżąca świeca)">
+      <HudHeader title={tr('Orderflow Vortex · przepływ agresora per giełda (bieżąca świeca)', 'Orderflow Vortex · aggressor flow per exchange (current candle)')}>
         {/* Brak telemetrii → „—” zamiast wartości wyglądających na live */}
         OI {backendTelemetry ? `$${(backendTelemetry.openInterestUsd / 1e9).toFixed(2)}B` : '—'} · Funding{' '}
         {backendTelemetry ? `${backendTelemetry.fundingAnnualizedPct}% APR` : '—'} · Basis{' '}
         {backendTelemetry ? `${backendTelemetry.basisBps} bps` : '—'}
         {mc && (
           <span className="block text-ink-3">
-            Monte Carlo (model), dotknięcie w 2 h: D-EQ {mc.probTouchDEQ2h}% ({formatFirstPassageMins(mc.expectedMinsToDEQ)}) · PDH{' '}
+            {tr('Monte Carlo (model), dotknięcie w 2 h', 'Monte Carlo (model), touch within 2 h')}: D-EQ {mc.probTouchDEQ2h}% ({formatFirstPassageMins(mc.expectedMinsToDEQ)}) · PDH{' '}
             {mc.probTouchPDH2h}% ({formatFirstPassageMins(mc.expectedMinsToPDH)}) · PDL {mc.probTouchPDL2h}% (
             {formatFirstPassageMins(mc.expectedMinsToPDL)})
           </span>
@@ -900,12 +904,12 @@ export const ThreeOrderflowVortex3D: React.FC<ThreeOrderflowVortex3DProps> = ({
       </HudHeader>
 
       <div className="absolute top-3 right-3 z-10 flex items-center gap-1.5">
-        <HudButton onClick={() => applyPreset('vortex')} icon={<RotateCcw className="w-3.5 h-3.5" aria-hidden="true" />} label="Reset kamery" />
+        <HudButton onClick={() => applyPreset('vortex')} icon={<RotateCcw className="w-3.5 h-3.5" aria-hidden="true" />} label={tr('Reset kamery', 'Reset camera')} />
         {onToggleExpand && (
           <HudButton
             onClick={onToggleExpand}
             icon={isExpanded ? <Minimize2 className="w-3.5 h-3.5" aria-hidden="true" /> : <Maximize2 className="w-3.5 h-3.5" aria-hidden="true" />}
-            label={isExpanded ? 'Widok dzielony' : 'Pełny ekran'}
+            label={isExpanded ? tr('Widok dzielony', 'Split view') : tr('Pełny ekran', 'Full screen')}
           />
         )}
       </div>
@@ -921,24 +925,24 @@ export const ThreeOrderflowVortex3D: React.FC<ThreeOrderflowVortex3DProps> = ({
 
       <SceneDock collapsed={dockCollapsed} onToggle={() => setDockCollapsed((v) => !v)}>
         <DockPresets<VortexPreset>
-          ariaLabel="Kamera"
+          ariaLabel={tr('Kamera', 'Camera')}
           value={preset}
           onChange={applyPreset}
           options={[
-            { id: 'vortex', label: 'Giełdy' },
+            { id: 'vortex', label: tr('Giełdy', 'Exchanges') },
             { id: 'montecarlo', label: 'Monte Carlo' },
-            { id: 'side', label: 'Z boku' },
-            { id: 'top', label: 'Z góry' },
+            { id: 'side', label: tr('Z boku', 'Side') },
+            { id: 'top', label: tr('Z góry', 'Top-down') },
           ]}
         />
         <DockToggle on={showMonteCarloFan} onClick={() => setShowMonteCarloFan((v) => !v)}>
-          <Cpu className="w-3 h-3" aria-hidden="true" /> Ścieżki MC
+          <Cpu className="w-3 h-3" aria-hidden="true" /> {tr('Ścieżki MC', 'MC paths')}
         </DockToggle>
-        <DockSlider label="Tempo impulsów" min={0.3} max={3} step={0.1} value={pulseSpeed} onChange={setPulseSpeed} format={(v) => `${v.toFixed(1)}×`} />
+        <DockSlider label={tr('Tempo impulsów', 'Pulse speed')} min={0.3} max={3} step={0.1} value={pulseSpeed} onChange={setPulseSpeed} format={(v) => `${v.toFixed(1)}×`} />
         <DockToggle on={dofEnabled} onClick={() => setDofEnabled((v) => !v)}>
-          <Focus className="w-3 h-3" aria-hidden="true" /> Głębia ostrości
+          <Focus className="w-3 h-3" aria-hidden="true" /> {tr('Głębia ostrości', 'Depth of field')}
         </DockToggle>
-        {dofEnabled && <DockSlider label="Ostrość" min={8} max={42} step={1} value={dofFocus} onChange={setDofFocus} format={(v) => `${v} m`} />}
+        {dofEnabled && <DockSlider label={tr('Ostrość', 'Focus')} min={8} max={42} step={1} value={dofFocus} onChange={setDofFocus} format={(v) => `${v} m`} />}
       </SceneDock>
     </div>
   );

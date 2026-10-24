@@ -2,6 +2,7 @@ import React from 'react';
 import { ExternalLink } from 'lucide-react';
 import { DASH, EmptyState, Panel, Sparkline, Stat, fmtPct, fmtSigned } from '../../ui';
 import { freshnessBadge, partAsOf, useNow, usePublicFeed } from '../../utils/publicFeeds';
+import { locale, tr } from '../../i18n';
 
 const LINKS = {
   treasury: { name: 'U.S. Treasury', url: 'https://home.treasury.gov/resource-center/data-chart-center/interest-rates/TextView?type=daily_treasury_yield_curve' },
@@ -23,10 +24,11 @@ const FNG_PL: Record<string, string> = {
 
 const lastOf = <T,>(a: T[]): T | null => (a.length ? a[a.length - 1] : null);
 const prevOf = <T,>(a: T[]): T | null => (a.length >= 2 ? a[a.length - 2] : null);
-const fmtDay = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit', timeZone: 'UTC' });
-const signedInt = (v: number) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v).toLocaleString('pl-PL')}`;
-const bn = (v: number) => `$${v < 10 ? v.toFixed(2) : v.toLocaleString('pl-PL', { maximumFractionDigits: 0 })} mld`;
-const range = (vals: number[], f: (v: number) => string) => (vals.length ? `Zakres: ${f(Math.min(...vals))} – ${f(Math.max(...vals))}` : undefined);
+const fmtDay = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString(locale, { day: '2-digit', month: '2-digit', timeZone: 'UTC' });
+const signedInt = (v: number) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v).toLocaleString(locale)}`;
+const BN = tr(' mld', ' bn');
+const bn = (v: number) => `$${v < 10 ? v.toFixed(2) : v.toLocaleString(locale, { maximumFractionDigits: 0 })}${BN}`;
+const range = (vals: number[], f: (v: number) => string) => (vals.length ? `${tr('Zakres', 'Range')}: ${f(Math.min(...vals))} – ${f(Math.max(...vals))}` : undefined);
 
 interface TileProps {
   label: string;
@@ -63,7 +65,7 @@ const Tile: React.FC<TileProps> = ({ label, value, hint, trend, trendLabel, tren
       rel="noopener noreferrer"
       className="self-start inline-flex items-center gap-1 rounded text-[11px] text-ink-3 hover:text-ink-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
     >
-      Źródło: {link.name}
+      {tr('Źródło', 'Source')}: {link.name}
       <ExternalLink size={11} aria-hidden="true" />
     </a>
   </div>
@@ -78,11 +80,11 @@ export const MacroTiles: React.FC = () => {
   const onchain = usePublicFeed('onchain');
   const all = [macro, cot, sentiment, onchain];
 
-  const header = { title: 'Makro i sentyment', eyebrow: 'Dane publiczne · bez kluczy API' };
+  const header = { title: tr('Makro i sentyment', 'Macro and sentiment'), eyebrow: tr('Dane publiczne · bez kluczy API', 'Public data · no API keys') };
   if (all.every((f) => f.status === 'loading')) {
     return (
       <Panel {...header}>
-        <EmptyState title="Wczytuję dane publiczne…" />
+        <EmptyState title={tr('Wczytuję dane publiczne…', 'Loading public data…')} />
       </Panel>
     );
   }
@@ -90,13 +92,16 @@ export const MacroTiles: React.FC = () => {
     return (
       <Panel {...header}>
         <EmptyState
-          title="Brak danych publicznych"
-          detail={
+          title={tr('Brak danych publicznych', 'No public data')}
+          detail={tr(
             <>
               Uruchom <code className="font-mono text-ink-2">npm run data</code> lokalnie albo poczekaj na wdrożenie (GitHub
               Actions odświeża pliki co ~30 min).
+            </>,
+            <>
+              Run <code className="font-mono text-ink-2">npm run data</code> locally or wait for the deployment (GitHub Actions refreshes the files every ~30 min).
             </>
-          }
+          )}
         />
       </Panel>
     );
@@ -116,9 +121,9 @@ export const MacroTiles: React.FC = () => {
       <Tile
         label={label}
         value={l ? `${l.v.toFixed(2)}%` : DASH}
-        hint={l ? `${p ? `${fmtSigned((l.v - p.v) * 100, 0, ' bp')} d/d · ` : ''}sesja ${fmtDay(l.date)}` : undefined}
+        hint={l ? `${p ? `${fmtSigned((l.v - p.v) * 100, 0, ' bp')} d/d · ` : ''}${tr('sesja', 'session')} ${fmtDay(l.date)}` : undefined}
         trend={vals}
-        trendLabel={`${label}, ostatnie ${vals.length} sesji`}
+        trendLabel={tr(`${label}, ostatnie ${vals.length} sesji`, `${label}, last ${vals.length} sessions`)}
         trendTitle={range(vals, (v) => `${v.toFixed(2)}%`)}
         asOf={ustAsOf}
         now={now}
@@ -161,20 +166,20 @@ export const MacroTiles: React.FC = () => {
         <Tile
           label="Spread 10Y−2Y"
           value={sLast ? fmtSigned(sLast.bp, 0, ' bp') : DASH}
-          hint={sLast ? `${sLast.bp < 0 ? 'krzywa odwrócona' : 'krzywa dodatnia'} · ${fmtDay(sLast.date)}` : undefined}
+          hint={sLast ? `${sLast.bp < 0 ? tr('krzywa odwrócona', 'inverted curve') : tr('krzywa dodatnia', 'positive curve')} · ${fmtDay(sLast.date)}` : undefined}
           trend={spread.map((x) => x.bp)}
-          trendLabel={`Spread 10Y−2Y, ostatnie ${spread.length} sesji`}
+          trendLabel={tr(`Spread 10Y−2Y, ostatnie ${spread.length} sesji`, `10Y−2Y spread, last ${spread.length} sessions`)}
           trendTitle={range(spread.map((x) => x.bp), (v) => fmtSigned(v, 0, ' bp'))}
           asOf={ustAsOf}
           now={now}
           link={LINKS.treasury}
         />
         <Tile
-          label="TGA (Skarb USA)"
+          label={tr('TGA (Skarb USA)', 'TGA (US Treasury)')}
           value={tL ? bn(tL.value) : DASH}
-          hint={tL ? `${tP ? `${fmtSigned(tL.value - tP.value, 1, ' mld')} d/d · ` : ''}${fmtDay(tL.date)}` : undefined}
+          hint={tL ? `${tP ? `${fmtSigned(tL.value - tP.value, 1, BN)} d/d · ` : ''}${fmtDay(tL.date)}` : undefined}
           trend={tga.map((x) => x.value)}
-          trendLabel={`Saldo TGA, ostatnie ${tga.length} dni`}
+          trendLabel={tr(`Saldo TGA, ostatnie ${tga.length} dni`, `TGA balance, last ${tga.length} days`)}
           trendTitle={range(tga.map((x) => x.value), bn)}
           asOf={partAsOf(macro.feed, 'tga')}
           now={now}
@@ -183,20 +188,20 @@ export const MacroTiles: React.FC = () => {
         <Tile
           label="Reverse repo (RRP)"
           value={rL ? bn(rL.value) : DASH}
-          hint={rL ? `${rP ? `${fmtSigned(rL.value - rP.value, 2, ' mld')} d/d · ` : ''}${fmtDay(rL.date)}` : undefined}
+          hint={rL ? `${rP ? `${fmtSigned(rL.value - rP.value, 2, BN)} d/d · ` : ''}${fmtDay(rL.date)}` : undefined}
           trend={rrp.map((x) => x.value)}
-          trendLabel={`RRP, ostatnie ${rrp.length} operacji`}
+          trendLabel={tr(`RRP, ostatnie ${rrp.length} operacji`, `RRP, last ${rrp.length} operations`)}
           trendTitle={range(rrp.map((x) => x.value), bn)}
           asOf={partAsOf(macro.feed, 'rrp')}
           now={now}
           link={LINKS.nyfed}
         />
         <Tile
-          label="CFTC · lev. funds netto"
+          label={tr('CFTC · lev. funds netto', 'CFTC · lev. funds net')}
           value={
             cL ? (
-              <span title="Kontrakty CME po 5 BTC">
-                {signedInt(cL.levNet)} <span className="text-sm font-medium text-ink-3">kontr.</span>
+              <span title={tr('Kontrakty CME po 5 BTC', 'CME contracts of 5 BTC')}>
+                {signedInt(cL.levNet)} <span className="text-sm font-medium text-ink-3">{tr('kontr.', 'contr.')}</span>
               </span>
             ) : (
               DASH
@@ -205,32 +210,32 @@ export const MacroTiles: React.FC = () => {
           hint={
             cL ? (
               <>
-                CME BTC · asset managers {signedInt(cL.assetMgrNet)} · dealerzy {signedInt(cL.dealerNet)} · OI {cL.oi.toLocaleString('pl-PL')}
+                CME BTC · asset managers {signedInt(cL.assetMgrNet)} · {tr('dealerzy', 'dealers')} {signedInt(cL.dealerNet)} · OI {cL.oi.toLocaleString(locale)}
                 <br />
-                Raport z {fmtDay(cL.date)} (dane wtorkowe, publikacja pt 15:30 ET)
+                {tr(`Raport z ${fmtDay(cL.date)} (dane wtorkowe, publikacja pt 15:30 ET)`, `Report of ${fmtDay(cL.date)} (Tuesday data, published Fri 15:30 ET)`)}
               </>
             ) : undefined
           }
           trend={cotRows.map((x) => x.levNet)}
-          trendLabel={`Pozycja netto leveraged funds, ostatnie ${cotRows.length} tygodni`}
+          trendLabel={tr(`Pozycja netto leveraged funds, ostatnie ${cotRows.length} tygodni`, `Leveraged funds net position, last ${cotRows.length} weeks`)}
           trendTitle={range(cotRows.map((x) => x.levNet), signedInt)}
           asOf={partAsOf(cot.feed, 'btc')}
           now={now}
           link={LINKS.cftc}
         />
         <Tile
-          label="Fear & Greed (krypto)"
-          value={fL ? `${fL.value} · ${FNG_PL[fL.classification] ?? fL.classification}` : DASH}
-          hint={fL ? `${fP ? `${fmtSigned(fL.value - fP.value, 0)} d/d · ` : ''}skala 0–100` : undefined}
+          label={tr('Fear & Greed (krypto)', 'Fear & Greed (crypto)')}
+          value={fL ? `${fL.value} · ${tr(FNG_PL[fL.classification] ?? fL.classification, fL.classification)}` : DASH}
+          hint={fL ? `${fP ? `${fmtSigned(fL.value - fP.value, 0)} d/d · ` : ''}${tr('skala 0–100', 'scale 0–100')}` : undefined}
           trend={fng.map((x) => x.value)}
-          trendLabel={`Fear & Greed, ostatnie ${fng.length} dni`}
+          trendLabel={tr(`Fear & Greed, ostatnie ${fng.length} dni`, `Fear & Greed, last ${fng.length} days`)}
           trendTitle={range(fng.map((x) => x.value), (v) => v.toFixed(0))}
           asOf={partAsOf(sentiment.feed, 'fng')}
           now={now}
           link={LINKS.fng}
         />
         <Tile
-          label="Opłata mempool (priorytet)"
+          label={tr('Opłata mempool (priorytet)', 'Mempool fee (priority)')}
           value={fees?.fastestFee !== null && fees?.fastestFee !== undefined ? `${fees.fastestFee} sat/vB` : DASH}
           hint={
             fees ? (
@@ -239,8 +244,8 @@ export const MacroTiles: React.FC = () => {
                 {diff?.difficultyChange !== null && diff?.difficultyChange !== undefined && (
                   <>
                     <br />
-                    Korekta trudności {fmtPct(diff.difficultyChange, 1)}
-                    {diff.remainingBlocks !== null ? ` za ${diff.remainingBlocks} bl.` : ''}
+                    {tr('Korekta trudności', 'Difficulty adjustment')} {fmtPct(diff.difficultyChange, 1)}
+                    {diff.remainingBlocks !== null ? tr(` za ${diff.remainingBlocks} bl.`, ` in ${diff.remainingBlocks} bl.`) : ''}
                     {hr ? ` · hashrate ${(hr.hashrate / 1e18).toFixed(0)} EH/s` : ''}
                   </>
                 )}
@@ -254,11 +259,11 @@ export const MacroTiles: React.FC = () => {
         {tone.length > 0 && (
           <Tile
             wide
-            label="Ton mediów o BTC (GDELT, 24 h)"
+            label={tr('Ton mediów o BTC (GDELT, 24 h)', 'Media tone on BTC (GDELT, 24 h)')}
             value={toneAvg !== null ? fmtSigned(toneAvg, 2) : DASH}
-            hint="Średni ton artykułów anglojęzycznych (skala ok. −10…+10); wykres: 7 dni, średnie godzinowe"
+            hint={tr('Średni ton artykułów anglojęzycznych (skala ok. −10…+10); wykres: 7 dni, średnie godzinowe', 'Average tone of English-language articles (scale approx. −10…+10); chart: 7 days, hourly averages')}
             trend={tone.map((x) => x.tone)}
-            trendLabel="Ton mediów GDELT, 7 dni"
+            trendLabel={tr('Ton mediów GDELT, 7 dni', 'GDELT media tone, 7 days')}
             trendTitle={range(tone.map((x) => x.tone), (v) => fmtSigned(v, 2))}
             asOf={partAsOf(sentiment.feed, 'gdeltTone')}
             now={now}

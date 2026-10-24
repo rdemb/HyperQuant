@@ -6,6 +6,7 @@ import { parkinsonSigma } from '../../utils/marketDataFeed';
 import { VOL_STEP_MIN, VolModel, horizonStepSigmas } from '../../utils/volatility';
 import { OHLCVBar } from '../../types/trading';
 import { MACRO_EVENTS, MacroEvent, eventVolMultiplier, eventsBetween } from '../../data/macroCalendar';
+import { tr } from '../../i18n';
 
 /**
  * σ log-ceny na horyzont planu: z modelu zmienności (√Σσ² kroków sezonowego HAR) albo — zapas — z Parkinsona
@@ -142,13 +143,19 @@ export function usePlanMarket(horizonMin: number): PlanMarket {
   const eventMultiplier = Math.max(1, ...events.map((e) => eventVolMultiplier(e)));
   const tf = `${Math.round(feed.timeframeSec / 60)}m`;
   const modelTitle = vol
-    ? 'Monte Carlo (krok 5 min, faza wypełnienia): σ z sezonowego log-HAR na 5000 świecach 1h, innowacje FHS z reszt 5m'
-    : `Zapas — model zmienności ${feed.vol.status === 'loading' ? 'ładuje się' : 'niedostępny'}: σ Parkinsona z 60 świec ${tf}, rozkład normalny`;
+    ? tr(
+        'Monte Carlo (krok 5 min, faza wypełnienia): σ z sezonowego log-HAR na 5000 świecach 1h, innowacje FHS z reszt 5m',
+        'Monte Carlo (5-min step, fill phase): σ from seasonal log-HAR on 5000 1h candles, FHS innovations from 5m residuals'
+      )
+    : tr(
+        `Zapas — model zmienności ${feed.vol.status === 'loading' ? 'ładuje się' : 'niedostępny'}: σ Parkinsona z 60 świec ${tf}, rozkład normalny`,
+        `Fallback, volatility model ${feed.vol.status === 'loading' ? 'loading' : 'unavailable'}: Parkinson σ from 60 ${tf} candles, normal distribution`
+      );
   const source: PlanMarket['source'] =
     feed.dataStatus === 'SYNTH'
-      ? { tone: 'sim', label: 'SIM', title: 'Świece zastępcze — wynik poglądowy do czasu synchronizacji z Hyperliquid' }
+      ? { tone: 'sim', label: 'SIM', title: tr('Świece zastępcze — wynik poglądowy do czasu synchronizacji z Hyperliquid', 'Placeholder candles, illustrative result until the Hyperliquid sync') }
       : feed.dataStatus === 'STALE'
-      ? { tone: 'stale', label: 'STALE', title: 'Dane nieświeże — σ i arkusz mogą być nieaktualne' }
+      ? { tone: 'stale', label: 'STALE', title: tr('Dane nieświeże — σ i arkusz mogą być nieaktualne', 'Stale data, σ and the book may be out of date') }
       : { tone: 'model', label: 'MODEL', title: modelTitle };
   return {
     price,

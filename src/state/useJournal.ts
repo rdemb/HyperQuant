@@ -4,6 +4,7 @@ import { dayStart } from '../utils/auction';
 import { computeAuctionContext } from './useAuctionContext';
 import { createJournalStore, JOURNAL_KEY, type StorageLike } from './journalStore';
 import { excursions, parseJournal, serializeJournal, type Setup, type Trade, type TradeCtx } from '../utils/tradeJournal';
+import { tr } from '../i18n';
 
 const MIN = 60_000;
 const DAY = 24 * 60 * MIN;
@@ -100,7 +101,7 @@ export function useJournal() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `hyperquant-zagrania-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `hyperquant-${tr('zagrania', 'trades')}-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }, []);
