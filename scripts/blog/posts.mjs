@@ -344,6 +344,7 @@ export function validateCharts(c) {
   if (s !== null && s !== undefined) {
     if (!isMap(s) || !isNum(s.from) || !isNum(s.to) || s.to <= s.from || !isNum(s.dayStart)) err('session: from < to i dayStart (ms)');
     else {
+      if (s.tf !== 5 && s.tf !== 15) err('session.tf: świece 5 albo 15 min');
       const candleOk = (r) => Array.isArray(r) && r.length === 8 && r.slice(0, 6).every(isNum) && r.slice(6).every((x) => x === null || isNum(x));
       if (!Array.isArray(s.candles) || s.candles.length < 2 || s.candles.length > 200 || !s.candles.every(candleOk)) err('session.candles: 2–200 świec [t, o, h, l, c, v, kupno|null, sprzedaż|null]');
       if (!isRows(s.vwap, 3, 400)) err('session.vwap: lista [t, vwap, sigma]');
