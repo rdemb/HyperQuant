@@ -6,6 +6,7 @@ import type { CandleSeries, ProStore } from '../store/proStore';
 import { venueStoreFor } from '../venues/venueStore';
 import { STATE_BARS, STATE_RUN_MAX, StateFact, StateInput, marketState, stateSentence } from './marketState';
 import { PRO } from './theme';
+import { tr } from '../../../i18n';
 
 /**
  * Pasek „Stan rynku” nad wykresem: zdanie z faktów (chart/marketState.ts) przeliczane co kilka sekund, żeby nie skakało
@@ -54,7 +55,7 @@ function readState(store: ProStore, series: CandleSeries, venueOn: boolean): Sta
     ms: iv.ms,
     now,
     vwap: vw[vw.length - 1] ?? null,
-    vwapPeriod: anchor === 'week' ? 'tygodnia' : 'dnia',
+    vwapPeriod: anchor === 'week' ? tr('tygodnia', 'weekly') : tr('dnia', 'daily'),
     oiAt: (t) => store.oi.at(t),
     players: store.players.split(from, now - from, now),
     bigPlayerUsd: store.players.thresholdUsd,
@@ -103,10 +104,10 @@ export const MarketStateBar: React.FC<{ store: ProStore; series: CandleSeries; v
     <div ref={ref} className="relative shrink-0 border-b border-line">
       {/* Na telefonie zdanie w dwóch liniach z etykietą w tekście — w jednej linii mieścił się tylko pierwszy fakt */}
       <div className={`flex items-center gap-2 pl-2 sm:pl-3 pr-1 min-w-0 ${narrow ? 'py-1' : 'h-8'}`}>
-        {!narrow && <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-3">Stan rynku</span>}
+        {!narrow && <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-3">{tr('Stan rynku', 'Market state')}</span>}
         <p className={`flex-1 min-w-0 text-[11.5px] text-ink-2 ${narrow ? 'line-clamp-2 leading-snug' : 'truncate'}`} title={sentence}>
-          {narrow && <span className="mr-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-3">Stan rynku</span>}
-          {sentence || 'Czekam na dane wykresu…'}
+          {narrow && <span className="mr-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-3">{tr('Stan rynku', 'Market state')}</span>}
+          {sentence || tr('Czekam na dane wykresu…', 'Waiting for chart data…')}
         </p>
         {facts.length > 0 && (
           <button
@@ -115,13 +116,13 @@ export const MarketStateBar: React.FC<{ store: ProStore; series: CandleSeries; v
             onClick={() => setOpen((o) => !o)}
             className="shrink-0 h-7 px-2 rounded-md text-[11px] font-medium text-accent hover:bg-surface-2 transition-colors duration-150"
           >
-            {narrow ? 'więcej' : 'skąd?'}
+            {narrow ? tr('więcej', 'more') : tr('skąd?', 'why?')}
           </button>
         )}
         <button
           type="button"
-          aria-label="Ukryj Stan rynku"
-          title="Ukryj Stan rynku — włączysz go w Ustawieniach wykresu → Panele"
+          aria-label={tr('Ukryj Stan rynku', 'Hide Market state')}
+          title={tr('Ukryj Stan rynku — włączysz go w Ustawieniach wykresu → Panele', 'Hide Market state — turn it back on in Chart settings → Panels')}
           onClick={onClose}
           className="shrink-0 inline-flex items-center justify-center w-7 h-7 rounded-md text-ink-3 hover:text-ink-1 hover:bg-surface-2 transition-colors duration-150"
         >
@@ -145,8 +146,10 @@ export const MarketStateBar: React.FC<{ store: ProStore; series: CandleSeries; v
             ))}
           </dl>
           <p className="mt-2.5 text-[10.5px] leading-snug text-ink-3">
-            Opis ze stałych reguł na danych tego wykresu: ostatnie {STATE_BARS} świec {series.interval.label}, odświeżany co 5 s. To nie sygnał ani
-            rekomendacja.
+            {tr(
+              `Opis ze stałych reguł na danych tego wykresu: ostatnie ${STATE_BARS} świec ${series.interval.label}, odświeżany co 5 s. To nie sygnał ani rekomendacja.`,
+              `A description from fixed rules on this chart's data: the last ${STATE_BARS} ${series.interval.label} candles, refreshed every 5 s. Not a signal or a recommendation.`
+            )}
           </p>
         </div>
       )}

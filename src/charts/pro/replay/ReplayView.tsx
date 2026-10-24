@@ -4,6 +4,7 @@ import { ProChart } from '../ProChart';
 import { loadStation, stationById } from '../chart/stations';
 import type { ReplayLink } from './link';
 import { ReplaySession } from './session';
+import { tr } from '../../../i18n';
 
 const none = () => () => {};
 
@@ -44,21 +45,24 @@ const ReplayStatus: React.FC<{ session: ReplaySession | null; onExit: () => void
   const title =
     state === 'loading'
       ? total > 0
-        ? `Wczytuję nagranie: ${done} z ${total} godzin i części`
-        : 'Wczytuję spis nagrań…'
+        ? tr(`Wczytuję nagranie: ${done} z ${total} godzin i części`, `Loading the recording: ${done} of ${total} hours and parts`)
+        : tr('Wczytuję spis nagrań…', 'Loading the list of recordings…')
       : state === 'empty'
-        ? 'Brak nagrania w tym zakresie'
-        : 'Nie udało się wczytać nagrania';
+        ? tr('Brak nagrania w tym zakresie', 'No recording in this range')
+        : tr('Nie udało się wczytać nagrania', 'Could not load the recording');
   const note =
     state === 'empty'
-      ? 'Serwer nagrywa taśmę i arkusz Hyperliquid i trzyma je 7 dni. Ten rynek albo zakres z linku nie ma jeszcze nagrania.'
+      ? tr(
+          'Serwer nagrywa taśmę i arkusz Hyperliquid i trzyma je 7 dni. Ten rynek albo zakres z linku nie ma jeszcze nagrania.',
+          'The server records the Hyperliquid tape and book and keeps them for 7 days. This market or the range from the link has no recording yet.'
+        )
       : state === 'error'
-        ? 'Sprawdź połączenie lub rozszerzenia blokujące pobieranie plików nagrania.'
-        : 'Taśma transakcji i migawki arkusza z serwera, potem wykres od wybranej chwili.';
+        ? tr('Sprawdź połączenie lub rozszerzenia blokujące pobieranie plików nagrania.', 'Check your connection or extensions that block downloading the recording files.')
+        : tr('Taśma transakcji i migawki arkusza z serwera, potem wykres od wybranej chwili.', 'The trade tape and book snapshots from the server, then the chart from the chosen moment.');
   return (
     <div className="rounded-xl border border-line-strong bg-surface-1 h-[calc(100dvh-11.75rem)] sm:h-[calc(100dvh-16.5rem)] lg:h-[calc(100dvh-12rem)] min-h-[440px] grid place-items-center p-4">
       <div role="status" className="max-w-sm w-full rounded-xl border border-line-strong bg-surface-2 px-4 py-3 text-sm">
-        <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-accent">Powtórka</div>
+        <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-accent">{tr('Powtórka', 'Replay')}</div>
         <div className="mt-1 font-medium text-ink-1">{title}</div>
         <p className="mt-1 text-xs text-ink-3 leading-relaxed">{note}</p>
         {state === 'loading' && total > 0 && (
@@ -73,7 +77,7 @@ const ReplayStatus: React.FC<{ session: ReplaySession | null; onExit: () => void
             className="mt-2 inline-flex items-center gap-1.5 min-h-9 px-3 rounded-lg bg-surface-3 border border-line-strong text-xs font-medium hover:bg-surface-1"
           >
             <Radio className="w-4 h-4" />
-            Wróć na żywo
+            {tr('Wróć na żywo', 'Back to live')}
           </button>
         )}
       </div>

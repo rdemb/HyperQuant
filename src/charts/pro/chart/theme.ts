@@ -3,10 +3,14 @@ import type { ChartOptions, DeepPartial, Time } from 'lightweight-charts';
 import type { HeatRamp } from '../../orderflow/heatColor';
 import { C, MONO, rgba } from '../../orderflow/renderer';
 import { fmtHm, fmtHms } from '../core/time';
+import { locale, tr } from '../../../i18n';
 
 /** Wygląd wykresu Pro: tokeny projektu (src/index.css), oś czasu w czasie lokalnym, polskie skróty miesięcy. */
 
-const MONTHS = ['sty', 'lut', 'mar', 'kwi', 'maj', 'cze', 'lip', 'sie', 'wrz', 'paź', 'lis', 'gru'];
+const MONTHS = tr(
+  ['sty', 'lut', 'mar', 'kwi', 'maj', 'cze', 'lip', 'sie', 'wrz', 'paź', 'lis', 'gru'],
+  ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+);
 
 /**
  * Kolory płótna wykresu Pro, paleta HyperQuant „Desk”: morska zieleń kupna i miedź sprzedaży na granatowym tle Desku.
@@ -147,7 +151,7 @@ export function tickMarkFormatter(time: Time, type: TickMarkType): string {
 export function crosshairTimeFormatter(time: Time): string {
   const t = unix(time);
   const d = new Date(t);
-  const wd = ['nd', 'pn', 'wt', 'śr', 'cz', 'pt', 'sb'][d.getDay()];
+  const wd = tr(['nd', 'pn', 'wt', 'śr', 'cz', 'pt', 'sb'], ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'])[d.getDay()];
   return `${wd} ${d.getDate()} ${MONTHS[d.getMonth()]} '${String(d.getFullYear()).slice(2)}  ${fmtHm(t)}`;
 }
 
@@ -184,6 +188,6 @@ export function chartOptions(): DeepPartial<ChartOptions> {
       maxBarSpacing: 240,
       tickMarkFormatter,
     },
-    localization: { locale: 'pl-PL', timeFormatter: crosshairTimeFormatter },
+    localization: { locale, timeFormatter: crosshairTimeFormatter },
   };
 }

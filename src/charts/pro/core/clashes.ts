@@ -1,5 +1,6 @@
 import type { BookSnapshot, Fill, Side } from '../hl/parse';
 import type { AggressorOrder } from './orders';
+import { tr } from '../../../i18n';
 
 /**
  * Klasy zderzeń z adresów Hyperliquid (każda transakcja ma adres biorcy i makera), liczone dokładnie,
@@ -234,7 +235,7 @@ const aliases = new Map<string, string>();
 export function takerAlias(address: string): string {
   let a = aliases.get(address);
   if (!a) {
-    a = `Konto ${aliases.size + 1}`;
+    a = tr(`Konto ${aliases.size + 1}`, `Account ${aliases.size + 1}`);
     aliases.set(address, a);
   }
   return a;

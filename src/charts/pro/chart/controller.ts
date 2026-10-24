@@ -39,6 +39,7 @@ import { CountdownLabel } from './countdown';
 import { FlowVenue, OiVenue, oiMaxAge, per8h } from '../venues/parse';
 import { VenueStore, acquireVenues, venueStoreFor } from '../venues/venueStore';
 import { DOM_W_PX, PRO, RIGHT_GAP_PX, chartOptions } from './theme';
+import { tr } from '../../../i18n';
 
 /**
  * Sterownik wykresu Pro (bez Reacta): tworzy wykres Lightweight Charts z serią footprintu, wolumenem
@@ -135,7 +136,12 @@ function toCvd(t: number, c: Ohlc | null): CandlestickData<Time> | WhitespaceDat
   return c ? { time: sec(t), ...c } : { time: sec(t) };
 }
 
-const RESET_LABEL: Record<ResetMode, string> = { none: 'ciągła', session: 'sesja', day: 'doba UTC', week: 'tydzień' };
+const RESET_LABEL: Record<ResetMode, string> = {
+  none: tr('ciągła', 'continuous'),
+  session: tr('sesja', 'session'),
+  day: tr('doba UTC', 'UTC day'),
+  week: tr('tydzień', 'week'),
+};
 
 /** Linie paneli giełd: Hyperliquid i giełdy CEX (spot przerywaną linią w kolorze swojej giełdy). */
 type VenueLineId = 'hl' | FlowVenue;
@@ -927,21 +933,21 @@ export class ProChartController {
     const bar = i >= 0 ? bars[i] : null;
     const cvd = i >= 0 ? (this.cvdData[i] ?? null) : null;
     this.volumeLegend.set(
-      bar ? [{ text: 'Wolumen', color: PRO.ink3 }, { text: fmtVol(bar.candle.v), color: PRO.ink1 }] : [{ text: 'Wolumen', color: PRO.ink3 }]
+      bar ? [{ text: tr('Wolumen', 'Volume'), color: PRO.ink3 }, { text: fmtVol(bar.candle.v), color: PRO.ink1 }] : [{ text: tr('Wolumen', 'Volume'), color: PRO.ink3 }]
     );
     this.deltaLegend.set(flowLegend('Delta', bar?.fp ? bar.fp.delta : null));
     this.cvdLegend.set(flowLegend(`CVD · ${RESET_LABEL[this.settings.cvdReset]}`, cvd ? cvd.close : null));
     // Wąski wykres (telefon): bez okresu (ten sam co w opisie CVD) i bez wiersza finansowania — opis mieści się w dwóch wierszach
     const compact = this.chart.timeScale().width() < COMPACT_LEGEND_PX;
     const period = compact ? '' : ` · ${RESET_LABEL[this.settings.cvdReset]}`;
-    if (this.venueCvd) this.venueCvdLegend.set(this.venueLegend(`CVD giełd${period}`, CVD_LINES, this.venueCvdData, i));
+    if (this.venueCvd) this.venueCvdLegend.set(this.venueLegend(`${tr('CVD giełd', 'Exchange CVD')}${period}`, CVD_LINES, this.venueCvdData, i));
     if (this.venueOi) {
-      const lines = this.venueLegend(`ΔOI giełd${period}`, OI_LINES, this.venueOiData, i);
+      const lines = this.venueLegend(`${tr('ΔOI giełd', 'Exchange ΔOI')}${period}`, OI_LINES, this.venueOiData, i);
       // Drugi wiersz: bieżące finansowanie giełd przeliczone na 8 h (Hyperliquid rozlicza co godzinę)
       const hlRate = this.store.ctx ? per8h(this.store.ctx.funding, 1) : null;
       const funding: LegendPart[] = [
         { text: '', color: PRO.ink3, br: true },
-        { text: 'Funding 8 h teraz', color: PRO.ink3 },
+        { text: tr('Funding 8 h teraz', 'Funding 8 h now'), color: PRO.ink3 },
         { text: 'HL', color: PRO.ink3 },
         { text: fmtFunding(hlRate), color: PRO.ink1, glue: true },
         { text: 'Binance', color: PRO.ink3 },

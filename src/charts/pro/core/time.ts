@@ -1,3 +1,4 @@
+import { tr } from '../../../i18n';
 /** Interwały wykresu Pro i formatowanie czasu (oś i legenda w czasie lokalnym przeglądarki). */
 
 export interface Interval {
@@ -56,7 +57,7 @@ export function fmtDm(t: number): string {
 /** Pełna etykieta czasu świecy do legendy i krzyża (np. „pt 24.10 14:35”). */
 export function fmtBarTime(t: number, ms: number): string {
   const d = new Date(t);
-  const wd = ['nd', 'pn', 'wt', 'śr', 'cz', 'pt', 'sb'][d.getDay()];
+  const wd = tr(['nd', 'pn', 'wt', 'śr', 'cz', 'pt', 'sb'], ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'])[d.getDay()];
   const date = `${wd} ${fmtDm(t)}${ms >= DAY ? `.${d.getFullYear()}` : ''}`;
   return ms >= DAY ? date : `${date} ${fmtHm(t)}`;
 }

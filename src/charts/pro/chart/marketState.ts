@@ -7,6 +7,7 @@ import type { VwapPoint } from '../core/indicators';
 import type { PlayerSplit } from '../core/players';
 import { fmtDuration } from '../draw/model';
 import { fmtPx } from './layout';
+import { lang, tr } from '../../../i18n';
 
 /**
  * Stan rynku: jedno zdanie o bieżącej sytuacji złożone ze stałych reguł — położenie ceny względem VWAP w σ, kierunek
@@ -75,24 +76,31 @@ export interface StateInput {
 const sign = (v: number): -1 | 0 | 1 => (v > 0 ? 1 : v < 0 ? -1 : 0);
 /** Zaokrąglenie do `d` miejsc: progi reguł porównujemy z liczbą, którą widać w „skąd?”. */
 const round = (v: number, d: number) => Math.round(v * 10 ** d) / 10 ** d;
-const dec = (v: number, d: number) => Math.abs(v).toFixed(d).replace('.', ',');
+const dec = (v: number, d: number) => (lang === 'en' ? Math.abs(v).toFixed(d) : Math.abs(v).toFixed(d).replace('.', ','));
 const signed = (v: number, d: number, unit: string) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${dec(v, d)}${unit}`;
 const usd = (v: number) => `${fmtCompact(v).replace(/\.0([KMB])$/, '$1')} USD`;
 /** „świeca”, „świece”, „świec” po liczbie. */
-const bars = (n: number) => (n === 1 ? 'świeca' : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? 'świece' : 'świec');
+const bars = (n: number) =>
+  lang === 'en' ? (n === 1 ? 'candle' : 'candles') : n === 1 ? 'świeca' : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? 'świece' : 'świec';
 
 function vwapFact(x: StateInput, close: number): StateFact | null {
   const v = x.vwap;
   if (!v || !(v.sd > 0)) return null;
   const z = round((close - v.vwap) / v.sd, 1);
   const a = Math.abs(z);
-  const name = `VWAP ${x.vwapPeriod}`;
-  const where = a < VWAP_NEAR_SD ? 'przy' : `${a >= VWAP_FAR_SD ? 'daleko ' : ''}${z > 0 ? 'nad' : 'pod'}`;
+  const name = tr(`VWAP ${x.vwapPeriod}`, `${x.vwapPeriod} VWAP`);
+  const where =
+    a < VWAP_NEAR_SD
+      ? tr('przy', 'at')
+      : `${a >= VWAP_FAR_SD ? tr('daleko ', 'far ') : ''}${z > 0 ? tr('nad', 'above') : tr('pod', 'below')}`;
   return {
     key: 'vwap',
     label: 'VWAP',
-    text: `cena ${where} ${name} (${signed(z, 1, 'σ')})`,
-    why: `Zamknięcie ${fmtPx(close)}, ${name} ${fmtPx(v.vwap)}, odchylenie σ ${fmtPx(v.sd)}: ${signed(z, 1, 'σ')}. Do 0,5σ „przy”, do 2σ „nad” albo „pod”, dalej „daleko”.`,
+    text: tr(`cena ${where} ${name} (${signed(z, 1, 'σ')})`, `price ${where} the ${name} (${signed(z, 1, 'σ')})`),
+    why: tr(
+      `Zamknięcie ${fmtPx(close)}, ${name} ${fmtPx(v.vwap)}, odchylenie σ ${fmtPx(v.sd)}: ${signed(z, 1, 'σ')}. Do 0,5σ „przy”, do 2σ „nad” albo „pod”, dalej „daleko”.`,
+      `Close ${fmtPx(close)}, ${name} ${fmtPx(v.vwap)}, deviation σ ${fmtPx(v.sd)}: ${signed(z, 1, 'σ')}. Up to 0.5σ “at”, up to 2σ “above” or “below”, beyond that “far”.`
+    ),
     tone: a < VWAP_NEAR_SD ? 0 : sign(z),
   };
 }
@@ -123,15 +131,26 @@ function cvdFact(x: StateInput, win: readonly StateBar[]): { fact: StateFact; di
       from = x.bars[i].t;
     }
   }
-  const word = dir > 0 ? 'rośnie' : 'spada';
-  const text = dir === 0 ? 'CVD bez wyraźnego kierunku' : run >= 2 ? `CVD ${word} od ${fmtDuration(x.now - from)}` : `CVD ${word}`;
-  const runWhy = dir !== 0 && run > 0 ? ` Z rzędu ${run} ${bars(run)} z deltą ${dir > 0 ? 'dodatnią' : 'ujemną'}.` : '';
+  const word = dir > 0 ? tr('rośnie', 'rising') : tr('spada', 'falling');
+  const text =
+    dir === 0
+      ? tr('CVD bez wyraźnego kierunku', 'CVD with no clear direction')
+      : run >= 2
+        ? tr(`CVD ${word} od ${fmtDuration(x.now - from)}`, `CVD ${word} for ${fmtDuration(x.now - from)}`)
+        : `CVD ${word}`;
+  const runWhy =
+    dir !== 0 && run > 0
+      ? tr(` Z rzędu ${run} ${bars(run)} z deltą ${dir > 0 ? 'dodatnią' : 'ujemną'}.`, ` ${run} ${bars(run)} in a row with ${dir > 0 ? 'positive' : 'negative'} delta.`)
+      : '';
   return {
     fact: {
       key: 'cvd',
       label: 'CVD',
       text,
-      why: `Delta ${tape.length} ${bars(tape.length)} z taśmy: ${fmtSignedVol(d)} ${x.unit} (${signed(share * 100, 0, '%')} wolumenu), ${up} z ${tape.length} na plus.${runWhy} Poniżej 5% wolumenu — bez kierunku.`,
+      why: tr(
+        `Delta ${tape.length} ${bars(tape.length)} z taśmy: ${fmtSignedVol(d)} ${x.unit} (${signed(share * 100, 0, '%')} wolumenu), ${up} z ${tape.length} na plus.${runWhy} Poniżej 5% wolumenu — bez kierunku.`,
+        `Delta of ${tape.length} ${bars(tape.length)} from the tape: ${fmtSignedVol(d)} ${x.unit} (${signed(share * 100, 0, '%')} of volume), ${up} of ${tape.length} positive.${runWhy} Below 5% of volume — no direction.`
+      ),
       tone: dir,
     },
     dir,
@@ -161,22 +180,25 @@ function venuesFact(x: StateInput, cvd: { dir: -1 | 0 | 1; delta: number; tape: 
   });
   const list = sums.filter((g) => g.have === n).map((g) => ({ ...g, same: sign(g.sum) === cvd.dir }));
   if (list.length === 0) return null;
-  const names = list.map((l) => l.name).join(' i ');
+  const names = list.map((l) => l.name).join(tr(' i ', ' and '));
   const text = list.every((l) => l.same)
-    ? `${names} w tę samą stronę`
+    ? tr(`${names} w tę samą stronę`, `${names} in the same direction`)
     : list.every((l) => !l.same)
-      ? `${names} w przeciwną stronę`
-      : list.map((l) => `${l.name} w ${l.same ? 'tę samą stronę' : 'przeciwną'}`).join(', ');
+      ? tr(`${names} w przeciwną stronę`, `${names} in the opposite direction`)
+      : list.map((l) => tr(`${l.name} w ${l.same ? 'tę samą stronę' : 'przeciwną'}`, `${l.name} in the ${l.same ? 'same direction' : 'opposite one'}`)).join(', ');
   const parts = [`Hyperliquid ${fmtSignedVol(cvd.delta)}`, ...list.map((l) => `${l.label} ${fmtSignedVol(l.sum)}`)];
   const skipped = sums
     .filter((g) => g.have < n)
-    .map((g) => ` ${g.name} pominięty: delta tylko z ${g.have} z ${n} świec.`)
+    .map((g) => tr(` ${g.name} pominięty: delta tylko z ${g.have} z ${n} świec.`, ` ${g.name} skipped: delta only from ${g.have} of ${n} candles.`))
     .join('');
   return {
     key: 'venues',
-    label: 'Giełdy',
+    label: tr('Giełdy', 'Exchanges'),
     text,
-    why: `Delta w tych samych ${n} świecach z taśmy: ${parts.join(', ')} ${x.unit}. „Ta sama strona” — znak delty jak na Hyperliquid.${skipped}`,
+    why: tr(
+      `Delta w tych samych ${n} świecach z taśmy: ${parts.join(', ')} ${x.unit}. „Ta sama strona” — znak delty jak na Hyperliquid.${skipped}`,
+      `Delta in the same ${n} candles from the tape: ${parts.join(', ')} ${x.unit}. “Same direction” — the delta sign as on Hyperliquid.${skipped}`
+    ),
     tone: list.every((l) => l.same) ? cvd.dir : 0,
   };
 }
@@ -189,9 +211,15 @@ function oiFact(x: StateInput, win: readonly StateBar[]): StateFact | null {
   const dir = Math.abs(p) < OI_FLAT_PCT ? 0 : sign(p);
   return {
     key: 'oi',
-    label: 'Otwarte pozycje',
-    text: dir === 0 ? 'otwarte pozycje bez większej zmiany' : `otwarte pozycje ${dir > 0 ? 'rosną' : 'spadają'}`,
-    why: `Otwarte pozycje Hyperliquid ${fmtVol(o0)} → ${fmtVol(o1)} ${x.unit} (${signed(p, 2, '%')}) od początku ostatnich ${win.length} ${bars(win.length)}. Poniżej 0,1% — bez większej zmiany.`,
+    label: tr('Otwarte pozycje', 'Open interest'),
+    text:
+      dir === 0
+        ? tr('otwarte pozycje bez większej zmiany', 'open interest without a major change')
+        : tr(`otwarte pozycje ${dir > 0 ? 'rosną' : 'spadają'}`, `open interest ${dir > 0 ? 'rising' : 'falling'}`),
+    why: tr(
+      `Otwarte pozycje Hyperliquid ${fmtVol(o0)} → ${fmtVol(o1)} ${x.unit} (${signed(p, 2, '%')}) od początku ostatnich ${win.length} ${bars(win.length)}. Poniżej 0,1% — bez większej zmiany.`,
+      `Hyperliquid open interest ${fmtVol(o0)} → ${fmtVol(o1)} ${x.unit} (${signed(p, 2, '%')}) since the start of the last ${win.length} ${bars(win.length)}. Below 0.1% — no major change.`
+    ),
     tone: dir,
   };
 }
@@ -205,21 +233,29 @@ function playersFact(x: StateInput, price: number): StateFact | null {
   const side = (imb: number) => (Math.abs(imb) < PLAYERS_EVEN ? 0 : sign(imb));
   const b = side(bigImb);
   const r = side(restImb);
-  const word = (s: number) => (s > 0 ? 'kupna' : 'sprzedaży');
+  const word = (s: number) => (s > 0 ? tr('kupna', 'buying') : tr('sprzedaży', 'selling'));
   const text = !(p.bigUsd > 0)
-    ? 'bez wejść dużych graczy'
+    ? tr('bez wejść dużych graczy', 'no entries from large players')
     : b === 0
-      ? 'duzi gracze bez przewagi'
-      : `duzi gracze po stronie ${word(b)}${r === -b ? `, reszta po stronie ${word(r)}` : ''}`;
+      ? tr('duzi gracze bez przewagi', 'large players without an edge')
+      : tr(
+          `duzi gracze po stronie ${word(b)}${r === -b ? `, reszta po stronie ${word(r)}` : ''}`,
+          `large players on the ${word(b)} side${r === -b ? `, the rest on the ${word(r)} side` : ''}`
+        );
   return {
     key: 'players',
-    label: 'Duzi gracze',
+    label: tr('Duzi gracze', 'Large players'),
     text,
-    why:
+    why: tr(
       `Duzi gracze (konta od ${usd(x.bigPlayerUsd)} wejść w godzinie UTC): delta ${fmtSignedVol(p.big)} ${x.unit}, ` +
-      `${dec(p.bigShare ?? 0, 0)}% wartości wejść, przewaga ${signed(bigImb * 100, 0, '%')}. Reszta: delta ${fmtSignedVol(p.rest)} ${x.unit}, ` +
-      `przewaga ${signed(restImb * 100, 0, '%')}. Przewaga = delta × cena / wartość wejść grupy; poniżej 10% — bez przewagi.` +
-      (p.complete ? '' : ' Konta biorców tylko z części okna: nagrywanie zaczęło się albo przerwało w jego trakcie.'),
+        `${dec(p.bigShare ?? 0, 0)}% wartości wejść, przewaga ${signed(bigImb * 100, 0, '%')}. Reszta: delta ${fmtSignedVol(p.rest)} ${x.unit}, ` +
+        `przewaga ${signed(restImb * 100, 0, '%')}. Przewaga = delta × cena / wartość wejść grupy; poniżej 10% — bez przewagi.` +
+        (p.complete ? '' : ' Konta biorców tylko z części okna: nagrywanie zaczęło się albo przerwało w jego trakcie.'),
+      `Large players (accounts with ${usd(x.bigPlayerUsd)} of entries in a UTC hour): delta ${fmtSignedVol(p.big)} ${x.unit}, ` +
+        `${dec(p.bigShare ?? 0, 0)}% of entry value, edge ${signed(bigImb * 100, 0, '%')}. The rest: delta ${fmtSignedVol(p.rest)} ${x.unit}, ` +
+        `edge ${signed(restImb * 100, 0, '%')}. Edge = delta × price / the group's entry value; below 10% — no edge.` +
+        (p.complete ? '' : ' Taker accounts cover only part of the window: recording started or broke off during it.')
+    ),
     tone: b,
   };
 }
@@ -231,9 +267,17 @@ function bookFact(x: StateInput): StateFact | null {
   const tone = s >= BOOK_SIDE ? 1 : s <= 1 - BOOK_SIDE ? -1 : 0;
   return {
     key: 'book',
-    label: 'Arkusz',
-    text: tone > 0 ? 'w arkuszu przewaga bidów' : tone < 0 ? 'w arkuszu przewaga asków' : 'arkusz w równowadze',
-    why: `Bliski arkusz Hyperliquid: bidy ${fmtVol(b.bid)}, aski ${fmtVol(b.ask)} ${x.unit}, ${Math.round(s * 100)}% po stronie bidów. Od 60% po jednej stronie — przewaga.`,
+    label: tr('Arkusz', 'Book'),
+    text:
+      tone > 0
+        ? tr('w arkuszu przewaga bidów', 'bids dominate the book')
+        : tone < 0
+          ? tr('w arkuszu przewaga asków', 'asks dominate the book')
+          : tr('arkusz w równowadze', 'book in balance'),
+    why: tr(
+      `Bliski arkusz Hyperliquid: bidy ${fmtVol(b.bid)}, aski ${fmtVol(b.ask)} ${x.unit}, ${Math.round(s * 100)}% po stronie bidów. Od 60% po jednej stronie — przewaga.`,
+      `Near Hyperliquid book: bids ${fmtVol(b.bid)}, asks ${fmtVol(b.ask)} ${x.unit}, ${Math.round(s * 100)}% on the bid side. From 60% on one side — dominance.`
+    ),
     tone,
   };
 }

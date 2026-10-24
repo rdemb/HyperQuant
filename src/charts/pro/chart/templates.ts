@@ -1,4 +1,5 @@
 import { ChartSettings, DEFAULT_SETTINGS, parseSettings } from './settings';
+import { tr } from '../../../i18n';
 
 /**
  * Szablony wykresu: zestaw ustawień (interwał, rodzaj wykresu, panele, wskaźniki, warstwy) do nałożenia jednym
@@ -78,8 +79,8 @@ const built = (id: string, name: string, patch: Partial<TemplateSettings>): Char
 });
 
 export const BUILT_IN_TEMPLATES: readonly ChartTemplate[] = [
-  built('orderflow', 'Pełny orderflow: wszystkie warstwy', full),
-  built('scalp', 'Skalping 1m: taśma, mapa, strefy', {
+  built('orderflow', tr('Pełny orderflow: wszystkie warstwy', 'Full orderflow: all layers'), full),
+  built('scalp', tr('Skalping 1m: taśma, mapa, strefy', 'Scalping 1m: tape, heatmap, zones'), {
     ...full,
     interval: '1m',
     showTape: true,
@@ -87,7 +88,7 @@ export const BUILT_IN_TEMPLATES: readonly ChartTemplate[] = [
     showSessions: false,
     showIb: false,
   }),
-  built('swing', 'Swing 1h: poziomy i profile', {
+  built('swing', tr('Swing 1h: poziomy i profile', 'Swing 1h: levels and profiles'), {
     ...LAYERS_OFF,
     interval: '1h',
     view: 'candles',
@@ -102,7 +103,7 @@ export const BUILT_IN_TEMPLATES: readonly ChartTemplate[] = [
     showLiq: true,
     showWhales: true,
   }),
-  built('tpo', 'Market Profile 30m: TPO dób', {
+  built('tpo', tr('Market Profile 30m: TPO dób', 'Market Profile 30m: daily TPO'), {
     ...LAYERS_OFF,
     interval: '30m',
     view: 'candles',
@@ -112,7 +113,7 @@ export const BUILT_IN_TEMPLATES: readonly ChartTemplate[] = [
     showVwap: true,
     showLevels: true,
   }),
-  built('clean', 'Czyste świece', { ...LAYERS_OFF, view: 'candles', showDelta: false, showCvd: false, showStats: false }),
+  built('clean', tr('Czyste świece', 'Clean candles'), { ...LAYERS_OFF, view: 'candles', showDelta: false, showCvd: false, showStats: false }),
 ];
 
 export function parseTemplates(raw: unknown): ChartTemplate[] {

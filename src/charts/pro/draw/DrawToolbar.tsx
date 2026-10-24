@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { Copy, Eye, EyeOff, Lock, LockOpen, Magnet, MousePointer2, PencilLine, Redo2, Trash2, Undo2 } from 'lucide-react';
 import { DRAW_COLORS, DRAW_WIDTHS, Dash, TOOLS, ToolDef, ToolGroup, ToolKind, toolDef } from './model';
 import type { DrawState, DrawingTools } from './tools';
+import { tr } from '../../../i18n';
 
 /**
  * Pionowy pasek narzędzi rysowania (grupy z rozwijaną listą jak w TradingView), pływający pasek stylu
@@ -29,11 +30,11 @@ export function useDrawState(tools: DrawingTools | null): DrawState {
 }
 
 const GROUPS: { id: ToolGroup; label: string }[] = [
-  { id: 'lines', label: 'Linie' },
+  { id: 'lines', label: tr('Linie', 'Lines') },
   { id: 'fib', label: 'Fibonacci' },
-  { id: 'shapes', label: 'Kształty' },
-  { id: 'measure', label: 'Pomiar i pozycja' },
-  { id: 'text', label: 'Opisy' },
+  { id: 'shapes', label: tr('Kształty', 'Shapes') },
+  { id: 'measure', label: tr('Pomiar i pozycja', 'Measure and position') },
+  { id: 'text', label: tr('Opisy', 'Annotations') },
   { id: 'orderflow', label: 'Orderflow' },
 ];
 
@@ -215,13 +216,13 @@ export const DrawToolbar: React.FC<{
       ref={barRef}
       role="toolbar"
       aria-orientation="vertical"
-      aria-label="Narzędzia rysowania"
+      aria-label={tr('Narzędzia rysowania', 'Drawing tools')}
       className={`relative z-30 flex-col items-center gap-0.5 w-11 shrink-0 py-1.5 border-r border-line bg-surface-1 overflow-y-auto overflow-x-visible [scrollbar-width:none] ${className}`}
     >
       <button
         type="button"
-        title="Kursor (Esc)"
-        aria-label="Kursor"
+        title={tr('Kursor (Esc)', 'Cursor (Esc)')}
+        aria-label={tr('Kursor', 'Cursor')}
         aria-pressed={!st.tool}
         onClick={() => tools?.setTool(null)}
         className={`${BTN} ${btnTone(!st.tool)}`}
@@ -248,7 +249,7 @@ export const DrawToolbar: React.FC<{
             {items.length > 1 && (
               <button
                 type="button"
-                aria-label={`${g.label}: więcej narzędzi`}
+                aria-label={tr(`${g.label}: więcej narzędzi`, `${g.label}: more tools`)}
                 aria-expanded={open?.group === g.id}
                 onClick={(e) => {
                   // Lista obok przycisku grupy, poza przewijanym paskiem (nie jest przycinana)
@@ -299,23 +300,23 @@ export const DrawToolbar: React.FC<{
         );
       })}
       <div className="w-6 my-1 border-t border-line" />
-      <Toggle on={st.magnet} label="Magnes do OHLC świecy (Ctrl przy rysowaniu odwraca)" onClick={() => tools?.toggleMagnet()}>
+      <Toggle on={st.magnet} label={tr('Magnes do OHLC świecy (Ctrl przy rysowaniu odwraca)', 'Magnet to candle OHLC (Ctrl while drawing inverts it)')} onClick={() => tools?.toggleMagnet()}>
         <Magnet className="w-[18px] h-[18px]" />
       </Toggle>
-      <Toggle on={st.keep} label="Rysuj dalej tym samym narzędziem" onClick={() => tools?.toggleKeep()}>
+      <Toggle on={st.keep} label={tr('Rysuj dalej tym samym narzędziem', 'Keep drawing with the same tool')} onClick={() => tools?.toggleKeep()}>
         <PencilLine className="w-[18px] h-[18px]" />
       </Toggle>
-      <Toggle on={st.locked} label={st.locked ? 'Odblokuj rysunki' : 'Zablokuj rysunki'} onClick={() => tools?.toggleLocked()}>
+      <Toggle on={st.locked} label={st.locked ? tr('Odblokuj rysunki', 'Unlock drawings') : tr('Zablokuj rysunki', 'Lock drawings')} onClick={() => tools?.toggleLocked()}>
         {st.locked ? <Lock className="w-[18px] h-[18px]" /> : <LockOpen className="w-[18px] h-[18px]" />}
       </Toggle>
-      <Toggle on={st.hidden} label={st.hidden ? 'Pokaż rysunki' : 'Ukryj rysunki'} onClick={() => tools?.toggleHidden()}>
+      <Toggle on={st.hidden} label={st.hidden ? tr('Pokaż rysunki', 'Show drawings') : tr('Ukryj rysunki', 'Hide drawings')} onClick={() => tools?.toggleHidden()}>
         {st.hidden ? <EyeOff className="w-[18px] h-[18px]" /> : <Eye className="w-[18px] h-[18px]" />}
       </Toggle>
       <div className="w-6 my-1 border-t border-line" />
       <button
         type="button"
-        title="Cofnij (Ctrl+Z)"
-        aria-label="Cofnij"
+        title={tr('Cofnij (Ctrl+Z)', 'Undo (Ctrl+Z)')}
+        aria-label={tr('Cofnij', 'Undo')}
         disabled={!st.canUndo}
         onClick={() => tools?.undo()}
         className={`${BTN} ${btnTone(false)} disabled:opacity-35 disabled:pointer-events-none`}
@@ -324,8 +325,8 @@ export const DrawToolbar: React.FC<{
       </button>
       <button
         type="button"
-        title="Ponów (Ctrl+Y)"
-        aria-label="Ponów"
+        title={tr('Ponów (Ctrl+Y)', 'Redo (Ctrl+Y)')}
+        aria-label={tr('Ponów', 'Redo')}
         disabled={!st.canRedo}
         onClick={() => tools?.redo()}
         className={`${BTN} ${btnTone(false)} disabled:opacity-35 disabled:pointer-events-none`}
@@ -334,8 +335,8 @@ export const DrawToolbar: React.FC<{
       </button>
       <button
         type="button"
-        title={`Usuń wszystkie rysunki (${st.count})`}
-        aria-label="Usuń wszystkie rysunki"
+        title={tr(`Usuń wszystkie rysunki (${st.count})`, `Delete all drawings (${st.count})`)}
+        aria-label={tr('Usuń wszystkie rysunki', 'Delete all drawings')}
         disabled={st.count === 0}
         onClick={() => tools?.clearAll()}
         className={`${BTN} text-ink-2 hover:text-critical hover:bg-surface-3 disabled:opacity-35 disabled:pointer-events-none`}
@@ -358,9 +359,9 @@ const Toggle: React.FC<{
 );
 
 const DASH_OPTIONS: { value: Dash; label: string; d: string }[] = [
-  { value: 'solid', label: 'Linia ciągła', d: '' },
-  { value: 'dashed', label: 'Linia przerywana', d: '5 3' },
-  { value: 'dotted', label: 'Linia kropkowana', d: '1.5 2.5' },
+  { value: 'solid', label: tr('Linia ciągła', 'Solid line'), d: '' },
+  { value: 'dashed', label: tr('Linia przerywana', 'Dashed line'), d: '5 3' },
+  { value: 'dotted', label: tr('Linia kropkowana', 'Dotted line'), d: '1.5 2.5' },
 ];
 
 const HAS_TEXT = new Set<ToolKind>(['text', 'note', 'hline', 'hray']);
@@ -383,18 +384,18 @@ export const DrawStyleBar: React.FC<{ tools: DrawingTools | null }> = ({ tools }
   return (
     <div
       role="toolbar"
-      aria-label="Styl rysunku"
+      aria-label={tr('Styl rysunku', 'Drawing style')}
       className="absolute top-2 right-[68px] z-30 w-max max-w-[calc(100%-76px)] flex flex-nowrap items-center gap-1 overflow-x-auto [scrollbar-width:none] rounded-lg border border-line-strong bg-surface-2/95 px-1.5 py-1 shadow-2xl"
     >
       <span className="hidden sm:inline px-1.5 text-[11px] text-ink-3 whitespace-nowrap">{toolDef(d.kind).label}</span>
-      <div className="flex items-center gap-0.5" role="radiogroup" aria-label="Kolor">
+      <div className="flex items-center gap-0.5" role="radiogroup" aria-label={tr('Kolor', 'Colour')}>
         {DRAW_COLORS.map((c) => (
           <button
             key={c}
             type="button"
             role="radio"
             aria-checked={s.color === c}
-            aria-label={`Kolor ${c}`}
+            aria-label={tr(`Kolor ${c}`, `Colour ${c}`)}
             onClick={() => tools.styleSelected({ color: c })}
             className={`w-7 h-7 rounded-md flex items-center justify-center ${s.color === c ? 'bg-surface-3 ring-1 ring-ink-2' : 'hover:bg-surface-3'}`}
           >
@@ -403,14 +404,14 @@ export const DrawStyleBar: React.FC<{ tools: DrawingTools | null }> = ({ tools }
         ))}
       </div>
       <Sep />
-      <div className="flex items-center gap-0.5" role="radiogroup" aria-label="Grubość">
+      <div className="flex items-center gap-0.5" role="radiogroup" aria-label={tr('Grubość', 'Width')}>
         {DRAW_WIDTHS.map((w) => (
           <button
             key={w}
             type="button"
             role="radio"
             aria-checked={s.width === w}
-            aria-label={`Grubość ${w} px`}
+            aria-label={tr(`Grubość ${w} px`, `Width ${w} px`)}
             onClick={() => tools.styleSelected({ width: w })}
             className={`w-7 h-7 rounded-md flex items-center justify-center ${s.width === w ? 'bg-surface-3 text-ink-1' : 'text-ink-2 hover:bg-surface-3'}`}
           >
@@ -419,7 +420,7 @@ export const DrawStyleBar: React.FC<{ tools: DrawingTools | null }> = ({ tools }
         ))}
       </div>
       <Sep />
-      <div className="flex items-center gap-0.5" role="radiogroup" aria-label="Rodzaj linii">
+      <div className="flex items-center gap-0.5" role="radiogroup" aria-label={tr('Rodzaj linii', 'Line style')}>
         {DASH_OPTIONS.map((o) => (
           <button
             key={o.value}
@@ -442,11 +443,11 @@ export const DrawStyleBar: React.FC<{ tools: DrawingTools | null }> = ({ tools }
           <Sep />
           <textarea
             ref={inputRef}
-            aria-label="Tekst rysunku"
+            aria-label={tr('Tekst rysunku', 'Drawing text')}
             rows={1}
             maxLength={280}
             value={d.text ?? ''}
-            placeholder={d.kind === 'hline' || d.kind === 'hray' ? 'Opis poziomu' : 'Tekst'}
+            placeholder={d.kind === 'hline' || d.kind === 'hray' ? tr('Opis poziomu', 'Level label') : tr('Tekst', 'Text')}
             onChange={(e) => tools.setText(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Escape' || (e.key === 'Enter' && !e.shiftKey)) {
@@ -461,8 +462,8 @@ export const DrawStyleBar: React.FC<{ tools: DrawingTools | null }> = ({ tools }
       <Sep />
       <button
         type="button"
-        title="Kopia rysunku (Ctrl+C, Ctrl+V)"
-        aria-label="Kopia rysunku"
+        title={tr('Kopia rysunku (Ctrl+C, Ctrl+V)', 'Copy drawing (Ctrl+C, Ctrl+V)')}
+        aria-label={tr('Kopia rysunku', 'Copy drawing')}
         onClick={() => tools.cloneSelected()}
         className="w-7 h-7 rounded-md flex items-center justify-center text-ink-2 hover:text-ink-1 hover:bg-surface-3"
       >
@@ -470,8 +471,8 @@ export const DrawStyleBar: React.FC<{ tools: DrawingTools | null }> = ({ tools }
       </button>
       <button
         type="button"
-        title="Usuń rysunek (Delete)"
-        aria-label="Usuń rysunek"
+        title={tr('Usuń rysunek (Delete)', 'Delete drawing (Delete)')}
+        aria-label={tr('Usuń rysunek', 'Delete drawing')}
         onClick={() => tools.deleteSelected()}
         className="w-7 h-7 rounded-md flex items-center justify-center text-ink-2 hover:text-critical hover:bg-surface-3"
       >
@@ -484,14 +485,14 @@ export const DrawStyleBar: React.FC<{ tools: DrawingTools | null }> = ({ tools }
 const Sep = () => <span className="w-px h-5 bg-line mx-0.5" aria-hidden />;
 
 const HINTS: Partial<Record<ToolKind, string>> = {
-  brush: 'Przeciągnij, żeby rysować',
-  channel: 'Kliknij dwa punkty linii, potem trzeci dla szerokości kanału',
-  fibext: 'Kliknij początek i koniec ruchu, potem punkt odbicia',
-  profile: 'Zaznacz zakres świec: kliknij początek i koniec',
-  avwap: 'Kliknij świecę, od której liczyć VWAP',
-  measure: 'Kliknij dwa punkty albo przeciągnij (Shift + przeciągnięcie działa zawsze)',
-  long: 'Kliknij cenę wejścia; cel i stop przeciągniesz uchwytami',
-  short: 'Kliknij cenę wejścia; cel i stop przeciągniesz uchwytami',
+  brush: tr('Przeciągnij, żeby rysować', 'Drag to draw'),
+  channel: tr('Kliknij dwa punkty linii, potem trzeci dla szerokości kanału', 'Click two points of the line, then a third for the channel width'),
+  fibext: tr('Kliknij początek i koniec ruchu, potem punkt odbicia', 'Click the start and end of the move, then the pullback point'),
+  profile: tr('Zaznacz zakres świec: kliknij początek i koniec', 'Select a candle range: click the start and the end'),
+  avwap: tr('Kliknij świecę, od której liczyć VWAP', 'Click the candle to anchor VWAP from'),
+  measure: tr('Kliknij dwa punkty albo przeciągnij (Shift + przeciągnięcie działa zawsze)', 'Click two points or drag (Shift + drag always works)'),
+  long: tr('Kliknij cenę wejścia; cel i stop przeciągniesz uchwytami', 'Click the entry price; drag the handles to set target and stop'),
+  short: tr('Kliknij cenę wejścia; cel i stop przeciągniesz uchwytami', 'Click the entry price; drag the handles to set target and stop'),
 };
 
 /** Podpowiedź przy aktywnym narzędziu (dół panelu ceny). */
@@ -499,10 +500,10 @@ export const DrawHint: React.FC<{ tools: DrawingTools | null }> = ({ tools }) =>
   const st = useDrawState(tools);
   if (!st.tool) return null;
   const def = toolDef(st.tool);
-  const hint = HINTS[st.tool] ?? (def.points === 1 ? 'Kliknij na wykresie' : 'Kliknij dwa punkty albo przeciągnij');
+  const hint = HINTS[st.tool] ?? (def.points === 1 ? tr('Kliknij na wykresie', 'Click on the chart') : tr('Kliknij dwa punkty albo przeciągnij', 'Click two points or drag'));
   return (
     <div className="absolute bottom-10 left-1/2 -translate-x-1/2 z-20 pointer-events-none rounded-md border border-line bg-surface-2/90 px-2.5 py-1 text-[11px] text-ink-2 whitespace-nowrap max-w-[calc(100%-16px)] overflow-hidden text-ellipsis">
-      <span className="text-ink-1 font-medium">{def.label}</span> · {hint} · Esc anuluje
+      <span className="text-ink-1 font-medium">{def.label}</span> · {hint} · {tr('Esc anuluje', 'Esc cancels')}
     </div>
   );
 };

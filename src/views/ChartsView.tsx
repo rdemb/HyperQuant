@@ -7,6 +7,7 @@ import { STATIONS, Station, StationId, clearStation, loadStation, loadStationLay
 import type { Market } from '../charts/pro/store/proStore';
 import { parseReplayLink, replayHash } from '../charts/pro/replay/link';
 import { ReplayView } from '../charts/pro/replay/ReplayView';
+import { tr } from '../i18n';
 
 const WIDE = '(min-width: 1024px)';
 
@@ -63,10 +64,10 @@ const ChartsView: React.FC = () => {
     <>
       {!narrow && (
         <div className="flex items-center gap-2 mb-2 min-w-0">
-          <span className="hidden sm:inline text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium shrink-0">Stacja</span>
+          <span className="hidden sm:inline text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium shrink-0">{tr('Stacja', 'Workstation')}</span>
           <div className="min-w-0 overflow-x-auto [scrollbar-width:none]">
             <Segmented<StationId>
-              ariaLabel="Stacja robocza"
+              ariaLabel={tr('Stacja robocza', 'Workstation')}
               value={station.id}
               onChange={(id) => id !== station.id && open(stationById(id), false)}
               options={wide || station.id === 'mtf' ? STATION_OPTIONS : NARROW_STATION_OPTIONS}
@@ -76,12 +77,15 @@ const ChartsView: React.FC = () => {
           <button
             type="button"
             onClick={() => open(station, true)}
-            aria-label={`Przywróć wzorzec stacji ${station.name}`}
-            title={`Przywróć wzorzec stacji ${station.name}: Twoje zmiany w tej stacji (ustawienia wykresów i układ) zostaną zastąpione`}
+            aria-label={tr(`Przywróć wzorzec stacji ${station.name}`, `Restore the ${station.name} workstation preset`)}
+            title={tr(
+              `Przywróć wzorzec stacji ${station.name}: Twoje zmiany w tej stacji (ustawienia wykresów i układ) zostaną zastąpione`,
+              `Restore the ${station.name} workstation preset: your changes in this workstation (chart settings and layout) will be replaced`
+            )}
             className="ml-auto shrink-0 inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-line text-xs font-medium text-ink-2 hover:text-ink-1 hover:bg-surface-2 transition-colors duration-150"
           >
             <RotateCcw className="w-4 h-4" />
-            <span className="hidden sm:inline">Przywróć</span>
+            <span className="hidden sm:inline">{tr('Przywróć', 'Restore')}</span>
           </button>
         </div>
       )}

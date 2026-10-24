@@ -40,6 +40,7 @@ import type { ProBar } from '../store/proStore';
 import { autoRowStep, fmtPx } from './layout';
 import type { ChartSettings } from './settings';
 import { MONO, PRO, rgba } from './theme';
+import { lang, tr } from '../../../i18n';
 
 /**
  * Warstwa wskaźników nad główną serią: VWAP z pasmami ±1σ i ±2σ, VWAP sesji, profil wolumenu widocznego
@@ -491,7 +492,7 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
         this.axisVwap.on = true;
         this.axisVwap.y = Y(last.vwap);
         this.axisVwap.label = fmtPx(last.vwap);
-        s.tags.push({ y: Y(last.vwap), text: sc.vwapAnchor === 'week' ? 'VWAP T' : 'VWAP', color: K.vwap });
+        s.tags.push({ y: Y(last.vwap), text: sc.vwapAnchor === 'week' ? tr('VWAP T', 'VWAP W') : 'VWAP', color: K.vwap });
       }
     }
 
@@ -517,7 +518,7 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
         const lv: [number, string, string, number[]][] = [
           [d.pdh, 'PDH', K.level, DASH.level],
           [d.pdl, 'PDL', K.level, DASH.level],
-          [d.open, 'Otwarcie dnia', K.dayOpen, DASH.dot],
+          [d.open, tr('Otwarcie dnia', 'Daily open'), K.dayOpen, DASH.dot],
         ];
         for (const [px, name, color, dash] of lv) {
           const y = Y(px);
@@ -548,7 +549,7 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
         if (!ib.complete) continue;
         const r = ib.hi - ib.lo;
         for (const m of IB_EXTENSIONS) {
-          const label = `IB ${String(1 + m).replace('.', ',')}×`;
+          const label = `IB ${lang === 'en' ? String(1 + m) : String(1 + m).replace('.', ',')}×`;
           for (const px of [ib.hi + m * r, ib.lo - m * r]) {
             const y = Y(px);
             s.hlines.push({ x0: xi, x1, y, color: K.ibExt, dash: DASH.ext });
@@ -565,7 +566,7 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
         if (!(y >= 0 && y <= H)) continue;
         const long = l.side === 'long';
         s.hlines.push({ x0: 0, x1: W, y, color: long ? K.liqLongLine : K.liqShortLine, dash: DASH.liq });
-        s.tags.push({ y, text: `Likw. ${long ? 'L' : 'S'} ${fmtCompact(l.ntlUsd, '$')}`, color: long ? K.liqLong : K.liqShort });
+        s.tags.push({ y, text: `${tr('Likw.', 'Liq.')} ${long ? 'L' : 'S'} ${fmtCompact(l.ntlUsd, '$')}`, color: long ? K.liqLong : K.liqShort });
       }
     }
 
@@ -589,7 +590,7 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
         const yl = p.liq === null ? Number.NaN : Y(p.liq);
         if (inView(yl)) {
           s.hlines.push({ x0: 0, x1: W, y: yl, color: K.whaleLiqLine, dash: DASH.liq });
-          tag(`l:${p.id}:${p.side}`, yl, `${p.id} likw. ${long ? 'L' : 'S'}`, K.whaleLiq);
+          tag(`l:${p.id}:${p.side}`, yl, `${p.id} ${tr('likw.', 'liq.')} ${long ? 'L' : 'S'}`, K.whaleLiq);
         }
       }
       // Zlecenia konta po jednej stronie i jednego rodzaju (drabinka) — kreska na każdej cenie, łącznik i jeden podpis z liczbą i sumą
@@ -602,7 +603,7 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
           if (o.id === g.id && o.side === g.side && o.kind === g.kind) s.hlines.push({ x0: W - WHALE_TICK_PX, x1: W, y: Y(o.px), color, dash });
         }
         if (g.n > 1) s.polys.push({ pts: [W - WHALE_TICK_PX, Y(g.hi), W - WHALE_TICK_PX, Y(g.lo)], color, width: 1 });
-        const what = g.kind === 'stop' ? 'stop' : g.kind === 'tp' ? 'TP' : bid ? 'kupno' : 'sprzedaż';
+        const what = g.kind === 'stop' ? 'stop' : g.kind === 'tp' ? 'TP' : bid ? tr('kupno', 'buy') : tr('sprzedaż', 'sell');
         tag(`o:${g.id}:${g.side}:${g.kind}`, Y((g.lo + g.hi) / 2), `${g.id} ${what} ${g.n > 1 ? `${g.n}× ` : ''}${fmtCompact(g.usd, '$')}`, color);
       }
     }
