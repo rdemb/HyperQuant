@@ -10,6 +10,9 @@ import { mergeCandles, toIndicatorBars, type LessonSlice, type SliceCandle } fro
 
 export const MIN = 60_000;
 
+/** Cena w pełnych dolarach w formacie języka ryciny (twarda spacja z pl-PL zamieniona na zwykłą). */
+export const priceFormat = (locale: string) => (v: number) => Math.round(v).toLocaleString(locale).replace(/\u00a0/g, ' ');
+
 export interface FigureLayers {
   vwap?: boolean;
   /** Pasma VWAP ±1σ i ±2σ. */

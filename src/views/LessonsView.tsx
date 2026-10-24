@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
+import { en } from '../lessons/content/en';
 import { pl } from '../lessons/content/pl';
+import { tr } from '../i18n';
 import { EXERCISES } from '../lessons/exercises';
 import { loadProgress, saveResult, type Progress } from '../lessons/progress';
 import { Segmented } from '../ui';
@@ -8,6 +10,9 @@ import { Combine } from './lessons/Combine';
 import { ExerciseList, ExercisePlayer } from './lessons/Exercises';
 import { Myths } from './lessons/Myths';
 import { RiskLab } from './lessons/RiskLab';
+
+/** Treść w języku interfejsu (język jest stały przez cały czas życia strony). */
+const CONTENT = tr(pl, en);
 
 type Tab = 'exercises' | 'atlas' | 'combine' | 'myths' | 'risk';
 const TABS: Tab[] = ['exercises', 'atlas', 'combine', 'myths', 'risk'];
@@ -25,7 +30,7 @@ function readRoute(): Route {
   if (ex && EXERCISES.some((e) => e.id === ex)) return { tab: 'exercises', id: ex };
   const tab = TABS.find((t) => t === q.get('tab')) ?? 'exercises';
   const id = q.get('id');
-  return { tab, id: tab === 'atlas' && id && pl.atlas.entries.some((e) => e.id === id) ? id : null };
+  return { tab, id: tab === 'atlas' && id && CONTENT.atlas.entries.some((e) => e.id === id) ? id : null };
 }
 
 function writeRoute(r: Route): void {
@@ -39,7 +44,7 @@ function writeRoute(r: Route): void {
  * z danymi desku i symulator serii transakcji. Bez sygnałów i obietnic wyniku; postęp tylko w tej przeglądarce.
  */
 const LessonsView: React.FC = () => {
-  const c = pl;
+  const c = CONTENT;
   const [route, setRoute] = useState<Route>(readRoute);
   const [progress, setProgress] = useState<Progress>(loadProgress);
   useEffect(() => writeRoute(route), [route]);
