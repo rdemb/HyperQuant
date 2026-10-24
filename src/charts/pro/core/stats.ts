@@ -2,15 +2,22 @@ import type { Candle, FundingPoint } from '../hl/parse';
 import type { FootprintBar } from './footprintBar';
 
 /**
- * Statystyki świec (tabela pod wykresem): wolumen z API, delta i jej ekstrema, liczba transakcji i tempo taśmy
+ * Tablica liczb (tabela pod wykresem): wolumen z API, delta i jej ekstrema, liczba transakcji i tempo taśmy
  * z nagrania, zmiana otwartych pozycji z kanału activeAssetCtx (od otwarcia strony) i finansowanie z historii API
- * (bieżąca godzina — stawka prognozowana). Brak danych to null, nie zero.
+ * (bieżąca godzina — stawka prognozowana), a w grupach Binance i Bybit delta, ΔOI i finansowanie tych giełd.
+ * Brak danych to null, nie zero.
  */
 
 export const HOUR_MS = 3_600_000;
 
-/** Stawka godzinowa → % w skali roku (jak w desku). */
-export const fundingApr = (rate: number) => rate * 24 * 365 * 100;
+/** Średnia stawka godzinowa → % na 8 h (jak na Binance i Bybit; Hyperliquid rozlicza co godzinę). */
+export const fundingPct8h = (hourly: number) => hourly * 8 * 100;
+
+/** Grupy wierszy Tablicy liczb: Hyperliquid, taśma Hyperliquid, Binance, Bybit. */
+export type StatGroup = 'hl' | 'tape' | 'binance' | 'bybit';
+export const STAT_GROUPS: readonly StatGroup[] = ['hl', 'tape', 'binance', 'bybit'];
+/** Grupy z danymi giełd scentralizowanych (połączenia przeglądarki czytelnika, tylko gdy grupa jest włączona). */
+export const VENUE_GROUPS: readonly StatGroup[] = ['binance', 'bybit'];
 
 /** Próbki otwartych pozycji (w jednostkach monety) rosnąco po czasie. */
 export class OiLog {
@@ -75,13 +82,18 @@ export class OiLog {
   }
 }
 
-/** Stawki finansowania z historii API po początku godziny, której dotyczą (wypłata na koniec godziny). */
+/**
+ * Stawki finansowania z historii API po początku godziny, której dotyczą (wypłata na koniec godziny). Giełda
+ * rozliczająca co kilka godzin (Binance co 8 albo 4 h) dopisuje stawkę godzinową każdej godziny okresu (`addPeriods`).
+ */
 export class FundingBook {
   private readonly byHour = new Map<number, number>();
   /** Najwcześniejsza godzina pobrana z API. */
   from = Number.POSITIVE_INFINITY;
   /** Ostatnia godzina z rozliczoną stawką. */
   latest = Number.NEGATIVE_INFINITY;
+  /** Okres rozliczenia (ms): godziny po ostatniej wypłacie, ale z okresu jeszcze nierozliczonego, dostają prognozę. */
+  periodMs = HOUR_MS;
 
   add(points: readonly FundingPoint[], from: number): void {
     for (const p of points) {
@@ -93,6 +105,14 @@ export class FundingBook {
     this.from = Math.min(this.from, from);
   }
 
+  /** Wypłaty co `hours` godzin (czas wypłaty, stawka okresu): każda godzina okresu dostaje stawkę / `hours`. */
+  addPeriods(points: readonly { time: number; rate: number }[], hours: number, from: number): void {
+    this.periodMs = hours * HOUR_MS;
+    const hourly: FundingPoint[] = [];
+    for (const p of points) for (let k = 0; k < hours; k++) hourly.push({ time: p.time - k * HOUR_MS, rate: p.rate / hours, premium: 0 });
+    this.add(hourly, from);
+  }
+
   /**
    * Średnia stawka godzin, które obejmuje świeca [t, t + ms). Godzina bez wypłaty — bieżąca albo poprzednia, której rozliczenie
    * jeszcze nie dotarło — dostaje stawkę prognozowaną `predicted`. null, gdy żadna godzina świecy nie ma stawki.
@@ -102,7 +122,7 @@ export class FundingBook {
     let n = 0;
     const end = Math.min(t + ms, now);
     for (let h = Math.floor(t / HOUR_MS) * HOUR_MS; h < Math.max(end, t + 1); h += HOUR_MS) {
-      const pending = h + HOUR_MS > now || (h > this.latest && h + 2 * HOUR_MS > now);
+      const pending = h + HOUR_MS > now || (h > this.latest && h + this.periodMs + HOUR_MS > now);
       const r = this.byHour.get(h) ?? (pending && predicted !== null ? predicted : undefined);
       if (r === undefined) continue;
       sum += r;
@@ -124,8 +144,16 @@ export interface BarStat {
   speed: number | null;
   /** Zmiana otwartych pozycji w świecy (jednostki monety). */
   doi: number | null;
-  /** Finansowanie, % w skali roku. */
+  /** Finansowanie, % na 8 h. */
   funding: number | null;
+  /** Binance: delta perp i spot, zmiana OI, finansowanie (% na 8 h). */
+  bnDelta: number | null;
+  bnSpotDelta: number | null;
+  bnDoi: number | null;
+  bnFunding: number | null;
+  /** Bybit: delta (z transakcji od otwarcia strony) i zmiana OI. */
+  byDelta: number | null;
+  byDoi: number | null;
 }
 
 export type StatKey = keyof BarStat;
@@ -136,14 +164,26 @@ export interface StatBar {
   fp: FootprintBar | null;
 }
 
-export function barStat(b: StatBar, ms: number, now: number, oi: OiLog, funding: FundingBook, predicted: number | null): BarStat {
+/** Odczyty Binance i Bybit dla świecy o początku `t` (null bez danych); `funding` — średnia stawka godzinowa świecy. */
+export interface VenueReads {
+  delta(venue: 'binance' | 'binanceSpot' | 'bybit', t: number): number | null;
+  oi(venue: 'binance' | 'bybit', t: number): number | null;
+  funding(t: number): number | null;
+}
+
+const oiChange = (oiAt: (t: number) => number | null, t: number, end: number): number | null => {
+  const o0 = oiAt(t);
+  const o1 = o0 !== null && end > t ? oiAt(end) : null;
+  return o0 !== null && o1 !== null ? o1 - o0 : null;
+};
+
+export function barStat(b: StatBar, ms: number, now: number, oi: OiLog, funding: FundingBook, predicted: number | null, venue: VenueReads | null = null): BarStat {
   const fp = b.fp;
   const tapeVol = fp ? fp.buyVol + fp.sellVol : 0;
   const end = Math.min(b.t + ms, now);
   const secs = (end - b.t) / 1000;
-  const o0 = oi.at(b.t);
-  const o1 = o0 !== null && end > b.t ? oi.at(end) : null;
   const rate = funding.rate(b.t, ms, now, predicted);
+  const bnRate = venue ? venue.funding(b.t) : null;
   return {
     vol: b.candle.v,
     delta: fp ? fp.delta : null,
@@ -152,7 +192,13 @@ export function barStat(b: StatBar, ms: number, now: number, oi: OiLog, funding:
     minDelta: fp ? fp.minDelta : null,
     trades: fp ? fp.trades : null,
     speed: fp && secs > 0 ? fp.trades / secs : null,
-    doi: o0 !== null && o1 !== null ? o1 - o0 : null,
-    funding: rate === null ? null : fundingApr(rate),
+    doi: oiChange((t) => oi.at(t), b.t, end),
+    funding: rate === null ? null : fundingPct8h(rate),
+    bnDelta: venue ? venue.delta('binance', b.t) : null,
+    bnSpotDelta: venue ? venue.delta('binanceSpot', b.t) : null,
+    bnDoi: venue ? oiChange((t) => venue.oi('binance', t), b.t, end) : null,
+    bnFunding: bnRate === null ? null : fundingPct8h(bnRate),
+    byDelta: venue ? venue.delta('bybit', b.t) : null,
+    byDoi: venue ? oiChange((t) => venue.oi('bybit', t), b.t, end) : null,
   };
 }

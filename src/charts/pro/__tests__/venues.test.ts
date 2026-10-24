@@ -1,8 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cvdLine, oiChangeLine } from '../core/flow';
-import { OiLog } from '../core/stats';
+import { HOUR_MS, OiLog } from '../core/stats';
+import { intervalById } from '../core/time';
 import {
   parseBinanceFunding,
+  parseBinanceFundingHist,
   parseBinanceFundingInfo,
   parseBinanceKlineMsg,
   parseBinanceKlines,
@@ -13,7 +15,7 @@ import {
   parseBybitTrades,
   per8h,
 } from '../venues/parse';
-import { MinuteFlow } from '../venues/venueStore';
+import { MinuteFlow, VenueStore } from '../venues/venueStore';
 
 const M1 = 60_000;
 
@@ -85,6 +87,17 @@ describe('parsery Binance i Bybit', () => {
   it('finansowanie: stopa Binance, okresy niestandardowe i przeliczenie na 8 h', () => {
     expect(parseBinanceFunding({ markPrice: '79776.67', lastFundingRate: '-0.00000024' })).toBe(-0.00000024);
     expect(parseBinanceFunding({})).toBeNull();
+    expect(
+      parseBinanceFundingHist([
+        { symbol: 'BTCUSDT', fundingTime: 1761292800001, fundingRate: '0.00002113', markPrice: '110000' },
+        { symbol: 'BTCUSDT', fundingTime: 1761264000000, fundingRate: '-0.00001' },
+        { fundingTime: 'x', fundingRate: '1' },
+      ])
+    ).toEqual([
+      { time: 1761264000000, rate: -0.00001 },
+      { time: 1761292800001, rate: 0.00002113 },
+    ]);
+    expect(parseBinanceFundingHist({})).toEqual([]);
     expect(parseBinanceFundingInfo([{ symbol: 'HYPEUSDT', fundingIntervalHours: 4 }, { symbol: 'X' }]).get('HYPEUSDT')).toBe(4);
     // Hyperliquid co godzinę: 0,00125% / h = 0,01% / 8 h
     expect(per8h(0.0000125, 1)).toBeCloseTo(0.0001, 12);
@@ -125,7 +138,7 @@ describe('linie paneli giełd', () => {
     expect(oi.atWithin(900, 600)).toBeNull();
   });
 
-  it('Bybit: delta świecy tylko w całości nagranej, bieżąca do teraz', () => {
+  it('Bybit: delta świecy nagranej w całości albo od początku nagrania, bieżąca do teraz, bez świec z przerwą', () => {
     const f = new MinuteFlow();
     f.coverage.open(M1 + 5_000);
     f.add([
@@ -134,12 +147,56 @@ describe('linie paneli giełd', () => {
       { t: 2 * M1 + 2_000, sz: 3, buy: false },
       { t: 3 * M1 + 1_000, sz: 4, buy: true },
     ]);
-    // Świeca 1m od 1:00 zaczęła się przed nagraniem
-    expect(f.delta(M1, M1, 10 * M1)).toBeNull();
+    // Świeca 1m od 1:00 zaczęła się przed nagraniem — liczy się od jego początku
+    expect(f.delta(M1, M1, 10 * M1)).toBe(2);
     expect(f.delta(2 * M1, M1, 10 * M1)).toBe(-2);
     // Świeca 3m od 3:00 jest bieżąca (teraz 3:30)
     expect(f.delta(3 * M1, 3 * M1, 3 * M1 + 30_000)).toBe(4);
     f.coverage.close(3 * M1 + 40_000);
     expect(f.delta(3 * M1, M1, 10 * M1)).toBeNull();
+    // Po przerwie świeca z powrotem połączenia nie ma wartości, kolejna pełna — tak
+    f.coverage.open(5 * M1 + 10_000);
+    f.add([{ t: 6 * M1 + 1_000, sz: 1, buy: false }]);
+    expect(f.delta(5 * M1, M1, 10 * M1)).toBeNull();
+    expect(f.delta(6 * M1, M1, 10 * M1)).toBe(-1);
+  });
+});
+
+describe('historia finansowania Binance w Tablicy liczb', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it('kilka ostatnich świec: okres 8 h z dwóch wypłat sprzed świec, bez ponownych zapytań przed końcem okresu', async () => {
+    // Wypłaty co 8 h (00, 08, 16 UTC), teraz 19:30 — świece 1h od 16:00 należą do okresu jeszcze nierozliczonego
+    const day = Date.UTC(2026, 9, 24);
+    const now = day + 19.5 * HOUR_MS;
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(now);
+    const paid = [0, 8, 16].map((h, i) => ({ fundingTime: day + h * HOUR_MS + 3, fundingRate: String((i + 1) * 0.0001) }));
+    const asked: number[] = [];
+    vi.stubGlobal('fetch', async (url: string) => {
+      const q = new URL(url).searchParams;
+      let body: unknown = [];
+      if (url.includes('/fundingRate')) {
+        asked.push(Number(q.get('startTime')));
+        body = paid.filter((p) => p.fundingTime >= Number(q.get('startTime')));
+      }
+      return { ok: true, json: async () => body };
+    });
+    const s = new VenueStore('BTC');
+    s.setFunding('binance', 0.0008);
+    const iv = intervalById('1h');
+    s.ensure(iv, day + 16 * HOUR_MS);
+    await vi.waitFor(() => expect(s.binanceFunding.latest).toBe(day + 15 * HOUR_MS));
+    const r = s.reads(iv, now);
+    // Okres rozliczony o 16:00 obejmuje 08–16, każda godzina 1/8 stawki; świece od 16:00 — stawka prognozowana na godzinę
+    expect(r.funding(day + 15 * HOUR_MS)).toBeCloseTo(0.0003 / 8, 12);
+    for (const h of [16, 17, 18, 19]) expect(r.funding(day + h * HOUR_MS)).toBeCloseTo(0.0001, 12);
+    s.ensure(iv, day + 16 * HOUR_MS);
+    s.ensureFunding();
+    await Promise.resolve();
+    expect(asked).toEqual([day]);
   });
 });

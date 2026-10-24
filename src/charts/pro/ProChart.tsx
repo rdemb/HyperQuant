@@ -12,14 +12,16 @@ import type { AggressorOrder } from './core/orders';
 import type { ResetMode } from './core/sessions';
 import { tpoInterval } from './core/tpo';
 import { type PaneKey, ProChartController, type ScaleState } from './chart/controller';
-import { PickCard, TapePanel, compact } from './chart/FlowPanels';
+import { DomLadder, PickCard, TapePanel, compact } from './chart/FlowPanels';
 import { HoverSignal, Legend } from './chart/Legend';
 import { LOT_FLOOR, type LiquidityPick } from './chart/liquidity';
 import { brandedScreenshot, downloadCanvas } from './chart/screenshot';
 import { MAX_ALERTS, PriceAlert, alertBook, askNotifications, newAlert, notifyAlert, parsePriceInput, primeAlertSound, reached } from './chart/alerts';
 import { fmtPx, priceDigits } from './chart/layout';
-import { ChartLayout, ChartSettings, hashFor, loadSettings, panelKey, saveSettings, settingsFromHash, startSettings } from './chart/settings';
+import { ChartLayout, ChartSettings, NARROW_QUERY, hashFor, isNarrow, loadSettings, saveSettings, settingsFromHash } from './chart/settings';
+import { STATIONS, Station, stationKey, stationPanel } from './chart/stations';
 import { BUILT_IN_TEMPLATES, ChartTemplate, applyTemplate, loadTemplates, saveAs, saveTemplates } from './chart/templates';
+import { NumbersCard, StatGroupPicker } from './chart/NumbersCard';
 import type { ChartView } from './chart/footprintSeries';
 import type { FootprintStyle } from './chart/layout';
 import { DrawHint, DrawStyleBar, DrawToolbar } from './draw/DrawToolbar';
@@ -46,15 +48,13 @@ const withPatch = (s: ChartSettings, p: Partial<ChartSettings>): ChartSettings =
 /** Cena zaokrąglona do ticku rynku. */
 const toTick = (p: number) => Number(p.toFixed(priceDigits(p)));
 
-/** Interwał nowego panelu układu (bez zapisanych ustawień): kolejne panele pokazują wyższe interwały. */
-const PANEL_INTERVALS = ['5m', '15m', '1h', '4h'];
 const PANE_NAMES: Record<PaneKey, string> = {
   showVolume: 'Wolumen',
   showDelta: 'Delta',
   showCvd: 'CVD',
   showVenueCvd: 'CVD giełd',
   showVenueOi: 'ΔOI giełd',
-  showStats: 'Statystyki świec',
+  showStats: 'Tablica liczb',
 };
 
 const LAYOUT_OPTIONS: { value: ChartLayout; label: React.ReactNode; title: string }[] = [
@@ -63,12 +63,34 @@ const LAYOUT_OPTIONS: { value: ChartLayout; label: React.ReactNode; title: strin
   { value: 4, label: <Grid2x2 className="w-3.5 h-3.5" />, title: 'Cztery wykresy (2 × 2)' },
 ];
 
-function initialSettings(panel: number): ChartSettings {
+/** Karty na telefonie: jedna naraz, więc wykres ma cały ekran. */
+type PhoneTab = 'chart' | 'tape' | 'dom' | 'numbers';
+const PHONE_TABS: { id: PhoneTab; label: string }[] = [
+  { id: 'chart', label: 'Wykres' },
+  { id: 'tape', label: 'Taśma' },
+  { id: 'dom', label: 'DOM' },
+  { id: 'numbers', label: 'Liczby' },
+];
+
+const subscribeNarrow = (fn: () => void) => {
+  const mq = window.matchMedia(NARROW_QUERY);
+  mq.addEventListener('change', fn);
+  return () => mq.removeEventListener('change', fn);
+};
+
+function initialSettings(panel: number, station: Station, coin: Market | null, fromLink: boolean): ChartSettings {
+  const narrow = isNarrow();
+  const pattern = stationPanel(station, panel, narrow);
+  // Panel spoza wzorca stacji bez zapisu: wygląd pierwszego panelu, wyższy interwał, bez tablicy i taśmy (mniej miejsca)
+  const base =
+    panel < station.panels.length
+      ? pattern
+      : { ...loadSettings(stationKey(station.id, 0), stationPanel(station, 0, narrow)), interval: pattern.interval, showStats: false, showTape: false };
+  let s = loadSettings(stationKey(station.id, panel), base);
   // Link do widoku (#charts?m=…&i=…&v=…) ma pierwszeństwo przed zapisanymi ustawieniami pierwszego panelu
-  if (panel === 0) return withPatch(loadSettings(), settingsFromHash(window.location.hash));
-  // Nowy panel: wygląd pierwszego, wyższy interwał, bez tabeli i taśmy (mniej miejsca)
-  const base = { ...loadSettings(), interval: PANEL_INTERVALS[panel] ?? '1h', showStats: false, showTape: false };
-  return loadSettings(panelKey(panel), base);
+  if (panel === 0 && fromLink) s = withPatch(s, settingsFromHash(window.location.hash));
+  // Rynek zostaje przy zmianie stacji
+  return coin ? withPatch(s, { coin }) : s;
 }
 
 /** Odświeżanie paska stanu i paska narzędzi z magazynu — najwyżej co `ms` (taśma bywa bardzo szybka). */
@@ -101,13 +123,24 @@ function useStoreVersion(store: ProStore, ms: number): number {
 /**
  * Wykres Pro: Lightweight Charts (TradingView) z footprintem, wolumenem, Deltą i CVD z taśmy Hyperliquid.
  * `panel` — miejsce w układzie kilku wykresów: pierwszy prowadzi link do widoku, alerty i przełącznik układu.
+ * `station` — stacja robocza (wzorzec i zapis ustawień), `coin` — rynek przeniesiony z poprzedniej stacji,
+ * `fromLink` — pierwsze otwarcie wykresów, więc link do widoku w adresie strony ma pierwszeństwo.
  */
-export const ProChart: React.FC<{ panel?: number; layout?: ChartLayout; onLayout?: (l: ChartLayout) => void }> = ({ panel = 0, layout = 1, onLayout }) => {
-  const [settings, setSettings] = useState<ChartSettings>(() => initialSettings(panel));
+export const ProChart: React.FC<{
+  panel?: number;
+  layout?: ChartLayout;
+  onLayout?: (l: ChartLayout) => void;
+  station?: Station;
+  coin?: Market | null;
+  fromLink?: boolean;
+}> = ({ panel = 0, layout = 1, onLayout, station = STATIONS[0], coin = null, fromLink = true }) => {
+  const [settings, setSettings] = useState<ChartSettings>(() => initialSettings(panel, station, coin, fromLink));
   const store = storeFor(settings.coin);
   const series = store.series(settings.interval);
   const [menu, setMenu] = useState<'settings' | 'indicators' | 'keys' | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
+  const narrow = useSyncExternalStore(subscribeNarrow, isNarrow);
+  const [tab, setTab] = useState<PhoneTab>('chart');
   const [tools, setTools] = useState<DrawingTools | null>(null);
   // Kliknięty bąbel, seria albo ściana i podświetlony adres biorcy (tylko w pamięci strony)
   const [pick, setPick] = useState<LiquidityPick | null>(null);
@@ -174,8 +207,8 @@ export const ProChart: React.FC<{ panel?: number; layout?: ChartLayout; onLayout
   useEffect(() => {
     // W układzie 2 × 2 panel jest za niski na tabelę statystyk — zapisane ustawienie wraca w mniejszym układzie
     ctrlRef.current?.applySettings(layout === 4 && settings.showStats ? { ...settings, showStats: false } : settings);
-    saveSettings(settings, panelKey(panel));
-  }, [settings, panel, layout]);
+    saveSettings(settings, stationKey(station.id, panel));
+  }, [settings, panel, layout, station]);
 
   useEffect(() => {
     ctrlRef.current?.highlight(highlight);
@@ -255,9 +288,9 @@ export const ProChart: React.FC<{ panel?: number; layout?: ChartLayout; onLayout
     const p: LiquidityPick = { kind: 'order', order: o, cls: classify(o, ctrl?.bigTradeUsd ?? DEFAULT_THRESHOLD_USD) };
     ctrl?.select(p);
     setPick(p);
-    // Na telefonie taśma zasłania wykres — po wyborze zlecenia chowamy ją, żeby było widać kartę i bąbel
-    if (window.innerWidth < 640) update({ showTape: false });
-  }, [update]);
+    // Na telefonie taśma jest kartą zamiast wykresu — po wyborze zlecenia wracamy do wykresu z kartą i bąblem
+    if (isNarrow()) setTab('chart');
+  }, []);
 
   const closePick = useCallback(() => {
     ctrlRef.current?.select(null);
@@ -383,13 +416,13 @@ export const ProChart: React.FC<{ panel?: number; layout?: ChartLayout; onLayout
         fullscreen
           ? 'w-full h-full'
           : layout === 4
-            ? 'rounded-xl h-[calc((100dvh-10rem)/2)] min-h-[380px]'
-            : 'rounded-xl h-[calc(100dvh-14rem)] lg:h-[calc(100dvh-9.5rem)] min-h-[440px]'
+            ? 'rounded-xl h-[calc((100dvh-12.5rem)/2)] min-h-[380px]'
+            : 'rounded-xl h-[calc(100dvh-16.5rem)] lg:h-[calc(100dvh-12rem)] min-h-[440px]'
       }`}
     >
-      {/* Pasek narzędzi: na telefonie i w układzie kilku wykresów przełączniki przewijane w pierwszym wierszu, narzędzia w drugim */}
+      {/* Pasek narzędzi: na telefonie przełączniki przewijane w pierwszym wierszu, w układzie kilku wykresów zawijane; narzędzia w drugim */}
       <div className={`flex flex-wrap ${twoRow ? '' : 'sm:flex-nowrap'} items-center gap-x-2 gap-y-1 px-2 sm:px-3 py-1.5 border-b border-line min-h-11`}>
-        <div className={`flex items-center gap-2 w-full ${twoRow ? '' : 'sm:w-auto sm:flex-1'} min-w-0 overflow-x-auto [scrollbar-width:none]`}>
+        <div className={`flex items-center gap-2 w-full ${twoRow ? 'flex-wrap gap-y-1' : 'sm:w-auto sm:flex-1 overflow-x-auto [scrollbar-width:none]'} min-w-0`}>
           <Segmented<Market> ariaLabel="Rynek" value={settings.coin} onChange={setCoin} options={MARKET_OPTIONS} />
           <Segmented<string> ariaLabel="Interwał wykresu" value={settings.interval} onChange={(v) => update({ interval: v })} options={INTERVAL_OPTIONS} />
           <Segmented<ChartView> ariaLabel="Rodzaj wykresu" value={settings.view} onChange={(v) => update({ view: v })} options={VIEW_OPTIONS} />
@@ -414,7 +447,12 @@ export const ProChart: React.FC<{ panel?: number; layout?: ChartLayout; onLayout
           <ToolBtn label={drawOpen ? 'Ukryj narzędzia rysowania' : 'Narzędzia rysowania'} onClick={() => setDrawOpen((o) => !o)} active={drawOpen}>
             <PenTool className="w-4 h-4" />
           </ToolBtn>
-          <ToolBtn label={settings.showTape ? 'Ukryj taśmę zleceń' : 'Taśma zleceń'} onClick={() => update({ showTape: !settings.showTape })} active={settings.showTape}>
+          <ToolBtn
+            label={settings.showTape ? 'Ukryj taśmę zleceń' : 'Taśma zleceń'}
+            className="hidden sm:inline-flex"
+            onClick={() => update({ showTape: !settings.showTape })}
+            active={settings.showTape}
+          >
             <ListOrdered className="w-4 h-4" />
           </ToolBtn>
           <ToolBtn label="Ustawienia wykresu" onClick={() => setMenu((m) => (m === 'settings' ? null : 'settings'))} active={menu === 'settings'} expanded={menu === 'settings'}>
@@ -453,7 +491,26 @@ export const ProChart: React.FC<{ panel?: number; layout?: ChartLayout; onLayout
         </div>
       </div>
 
-      {/* Wykres z paskiem rysowania po lewej i taśmą zleceń po prawej (na telefonie taśma nad wykresem) */}
+      {narrow && (
+        <div role="tablist" aria-label="Widok wykresu" className="grid grid-cols-4 gap-1 px-2 py-1.5 border-b border-line shrink-0">
+          {PHONE_TABS.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              aria-selected={tab === t.id}
+              onClick={() => setTab(t.id)}
+              className={`h-8 rounded-md text-xs font-medium transition-colors duration-150 ${
+                tab === t.id ? 'bg-surface-3 text-ink-1 shadow-[inset_0_0_0_1px_var(--color-line-strong)]' : 'text-ink-3 hover:text-ink-1'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Wykres z paskiem rysowania po lewej i taśmą zleceń po prawej (na telefonie taśma, DOM i liczby to karty) */}
       <div className="relative flex flex-1 min-h-0">
         <DrawToolbar tools={tools} className={drawOpen ? 'flex' : 'hidden'} />
         <div className="relative flex-1 min-h-0 min-w-0" onContextMenu={onContextMenu}>
@@ -463,6 +520,23 @@ export const ProChart: React.FC<{ panel?: number; layout?: ChartLayout; onLayout
           <DrawStyleBar tools={tools} />
           <DrawHint tools={tools} />
           <LoadOverlay series={series} onRetry={() => void series.load(true)} />
+          {narrow && tab === 'tape' && (
+            <TapePanel
+              store={store}
+              settings={settings}
+              bigUsd={bigUsd}
+              selected={pick?.kind === 'order' ? pick.order : null}
+              highlight={highlight}
+              className="absolute inset-0 z-20 border-l-0"
+              onPick={pickOrder}
+              onChange={update}
+              onClose={() => setTab('chart')}
+            />
+          )}
+          {narrow && tab === 'dom' && <DomLadder store={store} className="absolute inset-0 z-20" />}
+          {narrow && tab === 'numbers' && (
+            <NumbersCard store={store} series={series} groups={settings.statGroups} onGroups={(g) => update({ statGroups: g })} className="absolute inset-0 z-20" />
+          )}
           {ctxMenu && (
             <ChartMenu
               ref={ctxRef}
@@ -502,7 +576,7 @@ export const ProChart: React.FC<{ panel?: number; layout?: ChartLayout; onLayout
                   onAddAlert={(p) => addAlert(toTick(p))}
                   onRemoveAlert={(a) => alertBook.update((l) => l.filter((x) => x !== a))}
                   onChange={update}
-                  onReset={() => setSettings({ ...startSettings(), coin: settings.coin, interval: settings.interval })}
+                  onReset={() => setSettings({ ...stationPanel(station, panel, isNarrow()), coin: settings.coin, interval: settings.interval })}
                   grid4={layout === 4}
                 />
               ) : menu === 'keys' ? (
@@ -513,7 +587,7 @@ export const ProChart: React.FC<{ panel?: number; layout?: ChartLayout; onLayout
             </div>
           )}
         </div>
-        {settings.showTape && (
+        {settings.showTape && !narrow && (
           <TapePanel
             store={store}
             settings={settings}
@@ -740,12 +814,13 @@ const SettingsMenu: React.FC<{
       <Check label="CVD" checked={s.showCvd} onChange={(v) => onChange({ showCvd: v })} />
       <Check label="CVD giełd: Hyperliquid, Binance, Bybit" checked={s.showVenueCvd} onChange={(v) => onChange({ showVenueCvd: v })} />
       <Check label="ΔOI i funding giełd" checked={s.showVenueOi} onChange={(v) => onChange({ showVenueOi: v })} />
+      <Check label="Tablica liczb" checked={s.showStats} onChange={(v) => onChange({ showStats: v })} />
+      {s.showStats && <StatGroupPicker className="pl-6.5" value={s.statGroups} onChange={(g) => onChange({ statGroups: g })} />}
+      {grid4 && s.showStats && <p className="text-[11px] leading-snug text-ink-3">W układzie 2 × 2 tablica jest ukryta — panel jest za niski.</p>}
       <p className="text-[11px] leading-snug text-ink-3">
         Dane Binance i Bybit pobiera Twoja przeglądarka bezpośrednio z ich publicznych API — nic nie przechodzi przez serwer HyperQuant.
         Domyślnie wyłączone; nie publikuj zrzutów z tymi danymi bez sprawdzenia regulaminu giełdy.
       </p>
-      <Check label="Statystyki świec (tabela)" checked={s.showStats} onChange={(v) => onChange({ showStats: v })} />
-      {grid4 && s.showStats && <p className="text-[11px] leading-snug text-ink-3">W układzie 2 × 2 tabela jest ukryta — panel jest za niski.</p>}
       <div className="flex flex-col items-start gap-1.5">
         <span className="text-ink-2">Zerowanie CVD</span>
         <Segmented<ResetMode> ariaLabel="Zerowanie CVD" value={s.cvdReset} onChange={(v) => onChange({ cvdReset: v })} options={RESET_OPTIONS} />
@@ -788,8 +863,13 @@ const SettingsMenu: React.FC<{
       <p className="text-[11px] leading-snug text-ink-3">Jednorazowe; działają, gdy strona jest otwarta (dźwięk i powiadomienie przeglądarki po zgodzie).</p>
     </Group>
     <Templates settings={s} onApply={onChange} />
-    <button type="button" onClick={onReset} className="self-start min-h-9 px-3 rounded-lg border border-line-strong text-ink-2 hover:text-ink-1 hover:bg-surface-3">
-      Przywróć domyślne
+    <button
+      type="button"
+      onClick={onReset}
+      title="Ustawienia tego wykresu jak we wzorcu stacji; rynek i interwał zostają"
+      className="self-start min-h-9 px-3 rounded-lg border border-line-strong text-ink-2 hover:text-ink-1 hover:bg-surface-3"
+    >
+      Przywróć wzorzec stacji
     </button>
   </div>
 );
