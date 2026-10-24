@@ -123,6 +123,16 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         caveat: 'Delta, transakcje, tempo i ΔOI tylko dla świec nagranych od otwarcia strony; brak danych to „—”, nie zero.',
       },
       {
+        metric: 'Kto handluje (Tablica liczb, Wykresy): delta dużych graczy i reszty, udział dużych w wartości wejść',
+        source: 'Hyperliquid: WS trades (adres biorcy przy każdej transakcji) nagrywane od otwarcia widoku i historia taśmy ostatniej doby z repo danych (konta jako numery w obrębie godziny)',
+        method:
+          'Wypełnienia składane w zlecenia agresora; wartość wejść każdego konta biorcy sumowana w godzinie UTC. Konto, które w tej godzinie weszło za co najmniej 1 mln USD (BTC), 500 tys. (ETH) albo 250 tys. (SOL, HYPE), jest w niej dużym graczem — także gdy tnie zlecenie na wiele małych. Delta dużych i reszty = kupno − sprzedaż ich zleceń w świecy (jednostki rynku); udział dużych = ich wartość wejść / wartość wszystkich wejść świecy. Pokazujemy tylko sumy, bez kont',
+        kinds: ['LIVE'],
+        refresh: 'na żywo',
+        caveat:
+          'W bieżącej godzinie konto staje się dużym graczem dopiero po przekroczeniu progu, a wtedy jego wcześniejsze wejścia z tej godziny też przechodzą do dużych. W godzinie otwarcia strony wejścia konta sprzed otwarcia (historia) i po nim (na żywo) liczą się osobno. Zapis taśmy w przeglądarce nie ma kont, więc świece tylko z niego są bez wartości („—”).',
+      },
+      {
         metric: 'Strefy nierównowagi i niedokończone aukcje (Wykresy)',
         source: 'Taśma WS trades nagrywana od otwarcia widoku',
         method:

@@ -6,6 +6,7 @@ import { Coverage, Span } from '../core/coverage';
 import { FootprintBar, FootprintBuilder, hlTick } from '../core/footprintBar';
 import { WallTracker } from '../core/clashes';
 import { OrderAggregator, OrderLog } from '../core/orders';
+import { PlayerFlow, bigPlayerUsd } from '../core/players';
 import { FundingBook, HOUR_MS, OiLog } from '../core/stats';
 import { Tape, TradeRow } from '../core/tape';
 import { utcDayStart } from '../core/sessions';
@@ -86,6 +87,10 @@ export class ProStore {
   readonly tape = new Tape();
   readonly coverage = new Coverage();
   readonly orders = new OrderLog();
+  /** Czas z kontami biorców na taśmie (strumień na żywo i historia serwera; zapis przeglądarki ich nie ma). */
+  readonly addressed = new Coverage();
+  /** Kto handluje: wejścia dużych graczy i reszty z kont biorców. */
+  readonly players: PlayerFlow;
   /** Wchłanianie zleceń agresora przez makerów (ściany), z taśmy na żywo. */
   readonly walls = new WallTracker();
   /** Otwarte pozycje z kanału activeAssetCtx (od otwarcia strony) i stawki finansowania z historii API. */
@@ -131,6 +136,7 @@ export class ProStore {
 
   constructor(stream?: HlStream, coin: string = COIN) {
     this.coin = coin;
+    this.players = new PlayerFlow(this.orders, this.addressed, bigPlayerUsd(coin));
     this.stream = stream ?? new HlStream();
     this.stream.listen({
       onMessage: (ch, data, recvAt) => this.onMessage(ch, data, recvAt),
@@ -141,6 +147,7 @@ export class ProStore {
       },
       onClosed: (at) => {
         this.coverage.close(this.clock.toServer(at));
+        this.addressed.close(this.clock.toServer(at));
         this.bump();
       },
       onStatus: (s) => {
@@ -293,6 +300,7 @@ export class ProStore {
         // jest kompletna — początek nagrania w zegarze giełdy, niezależnie od zegara przeglądarki
         this.tradesPending = false;
         this.coverage.open(newest);
+        this.addressed.open(newest);
       }
       this.ingestFills(fills, recvAt);
     } else if (channel === 'candle') {
@@ -395,7 +403,10 @@ export class ProStore {
   restoreHistory(b: HistoryBatch): void {
     const tr = b.trades;
     if (tr) {
-      for (const [a, z] of tr.spans) this.coverage.addSpan(a, z);
+      for (const [a, z] of tr.spans) {
+        this.coverage.addSpan(a, z);
+        this.addressed.addSpan(a, z);
+      }
       const { accepted } = this.tape.insert(tr.fills);
       const fresh = new Set(accepted);
       const used = tr.fills.filter((f) => fresh.has(f) || (f.time < this.liveFrom && !this.derived.covers(f.time, f.time + 1)));
@@ -426,6 +437,8 @@ export class ProStore {
     this.coverage.prune(cut);
     this.derived.prune(cut);
     this.orders.prune(cut);
+    this.addressed.prune(cut);
+    this.players.prune(cut);
     this.walls.prune(this.serverNow(), cut);
     this.oi.prune(cut);
     this.books.forEach((b) => b.prune(cut));

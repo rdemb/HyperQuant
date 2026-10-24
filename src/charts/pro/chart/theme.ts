@@ -67,6 +67,8 @@ export const PRO = {
   venueHl: '#3987e5',
   venueBinance: '#c98500',
   venueBybit: '#d55181',
+  // Grupa „Kto handluje” w Tablicy liczb: neutralna jasna (to nie giełda, nie bierze koloru z palety giełd)
+  players: '#e4e8ee',
 } as const;
 
 /**

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_SETTINGS, NARROW_PATCH, hashFor, migrateSaved, parseSettings, settingsFromHash } from '../chart/settings';
+import { DEFAULT_SETTINGS, NARROW_PATCH, hashFor, migrateSaved, parseSettings, phoneSettings, settingsFromHash } from '../chart/settings';
 
 describe('parseSettings', () => {
   it('brak lub śmieci → wartości domyślne', () => {
@@ -64,6 +64,18 @@ describe('warstwy startowe', () => {
     const phone = { ...DEFAULT_SETTINGS, ...NARROW_PATCH };
     expect(phone.showBubbles || phone.showHeatmap || phone.showDelta).toBe(false);
     expect(phone.showVwap && phone.showVolume && phone.showCvd).toBe(true);
+  });
+
+  it('telefon: najwyżej jeden panel pod wykresem (pierwszy włączony), bez tablicy; zapis bez zmian', () => {
+    const saved = { ...DEFAULT_SETTINGS, interval: '1m', showVolume: true, showDelta: true, showCvd: true, showVenueOi: true, showStats: true, showHeatmap: true };
+    const p = phoneSettings(saved);
+    expect([p.showCvd, p.showDelta, p.showVenueCvd, p.showVenueOi, p.showStats]).toEqual([true, false, false, false, false]);
+    expect([p.showVolume, p.showHeatmap, p.interval]).toEqual([true, true, '1m']);
+    expect(saved.showDelta && saved.showStats).toBe(true);
+    const delta = phoneSettings({ ...saved, showCvd: false });
+    expect([delta.showCvd, delta.showDelta, delta.showVenueOi]).toEqual([false, true, false]);
+    const none = phoneSettings({ ...saved, showCvd: false, showDelta: false, showVenueOi: false });
+    expect([none.showCvd, none.showDelta, none.showVenueCvd, none.showVenueOi]).toEqual([false, false, false, false]);
   });
 
   it('zapis sprzed zmiany: warstwy o nowej wartości startowej wracają do niej, reszta zostaje', () => {

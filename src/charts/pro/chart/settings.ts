@@ -124,6 +124,20 @@ export const NARROW_PATCH = {
   showSessions: false,
 } satisfies Partial<ChartSettings>;
 
+/** Panele pod wykresem ceny na telefonie w kolejności pierwszeństwa: widać najwyżej jeden, pierwszy włączony. */
+export const PHONE_PANES = ['showCvd', 'showDelta', 'showVenueCvd', 'showVenueOi'] as const;
+export type PhonePane = (typeof PHONE_PANES)[number];
+
+/**
+ * Ustawienia w użyciu na telefonie, niezależnie od zapisu: wykres ceny ma co najmniej 60% wysokości, więc pod nim
+ * najwyżej jeden panel (pierwszy włączony z PHONE_PANES), bez Tablicy liczb (jest karta „Liczby”). Wolumen rysuje się
+ * na dole wykresu ceny. Zapis zostaje bez zmian — na szerszym ekranie wracają wszystkie panele.
+ */
+export function phoneSettings(s: ChartSettings): ChartSettings {
+  const keep = PHONE_PANES.find((k) => s[k]) ?? null;
+  return { ...s, showStats: false, showCvd: keep === 'showCvd', showDelta: keep === 'showDelta', showVenueCvd: keep === 'showVenueCvd', showVenueOi: keep === 'showVenueOi' };
+}
+
 const KEY = 'hq.charts.v1';
 
 const oneOf = <T>(v: unknown, allowed: readonly T[], fallback: T): T => (allowed.includes(v as T) ? (v as T) : fallback);

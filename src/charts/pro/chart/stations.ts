@@ -35,12 +35,26 @@ export const STATIONS: readonly Station[] = [
   {
     id: 'scalp',
     name: 'Skalper',
-    question: 'Kto teraz naciska? Footprint 1m z mapą ciepła i DOM, bąble, ściany, duże zlecenia w arkuszu, strefy i taśma zleceń',
+    question: 'Kto teraz naciska? Footprint 1m z mapą ciepła i DOM, bąble, ściany, duże zlecenia w arkuszu, strefy, taśma zleceń i Kto handluje (duzi gracze i reszta)',
     layout: 1,
     panels: [
-      { ...LAYERS_OFF, interval: '1m', view: 'footprint', showVwap: true, showHeatmap: true, showBubbles: true, showClashes: true, showLots: true, showZones: true, showTape: true },
+      {
+        ...LAYERS_OFF,
+        interval: '1m',
+        view: 'footprint',
+        showVwap: true,
+        showHeatmap: true,
+        showBubbles: true,
+        showClashes: true,
+        showLots: true,
+        showZones: true,
+        showTape: true,
+        showStats: true,
+        statGroups: ['who'],
+      },
     ],
-    phone: { ...NARROW_PATCH, showClashes: false, showLots: false, showZones: false },
+    // Na telefonie liczby są w karcie „Liczby”
+    phone: { ...NARROW_PATCH, showClashes: false, showLots: false, showZones: false, showStats: false },
   },
   {
     id: 'liquidity',

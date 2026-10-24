@@ -132,6 +132,11 @@ export class OrderLog {
     return this.items.slice(lowerBound(this.items, from), lowerBound(this.items, to));
   }
 
+  /** Liczba zleceń z [from, to). */
+  count(from: number, to: number): number {
+    return lowerBound(this.items, to) - lowerBound(this.items, from);
+  }
+
   /** `n` najnowszych, od najnowszego. */
   latest(n: number): AggressorOrder[] {
     return this.items.slice(-n).reverse();

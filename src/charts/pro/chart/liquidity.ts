@@ -212,6 +212,8 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
   private lotCache: { key: string; lots: LargeLot[] } = { key: '', lots: [] };
   private dom: DomRow[] = [];
   private domRight = 0;
+  /** Drabina DOM przy prawej krawędzi (na telefonie jest osobną kartą). */
+  private domOn = true;
 
   private readonly lut = buildHeatLut(LIQ_RAMP);
   /** Daleka agregacja przygaszona: tło dla szerszego widoku, bez ostrej granicy z dokładnym arkuszem przy cenie. */
@@ -280,6 +282,11 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
     this.requestUpdate?.();
   }
 
+  setDom(on: boolean): void {
+    this.domOn = on;
+    this.requestUpdate?.();
+  }
+
   setData(bars: readonly ProBar[], intervalMs: number, src: LiquiditySource, now: number, threshold: number): void {
     this.bars = bars;
     this.ms = intervalMs;
@@ -305,7 +312,7 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
     this.bubbles = this.toggles.showBubbles && this.geo ? this.sceneBubbles(this.geo) : [];
     this.walls = this.toggles.showBubbles && this.toggles.showClashes && this.geo ? this.sceneWalls(this.geo) : [];
     this.lots = this.toggles.showLots && this.geo ? this.sceneLots(this.geo) : [];
-    this.dom = this.toggles.showHeatmap && this.geo ? this.sceneDom(this.geo) : [];
+    this.dom = this.toggles.showHeatmap && this.domOn && this.geo ? this.sceneDom(this.geo) : [];
   }
 
   /** Bąbel, seria albo ściana pod punktem (px CSS panelu); najpierw to, co narysowane na wierzchu. */
