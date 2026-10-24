@@ -6,7 +6,7 @@ import { Coverage, Span } from '../core/coverage';
 import { FootprintBar, FootprintBuilder, hlTick } from '../core/footprintBar';
 import { WallTracker } from '../core/clashes';
 import { OrderAggregator, OrderLog } from '../core/orders';
-import { FundingBook, OiLog } from '../core/stats';
+import { FundingBook, HOUR_MS, OiLog } from '../core/stats';
 import { Tape, TradeRow } from '../core/tape';
 import { utcDayStart } from '../core/sessions';
 import { DAY, DEFAULT_INTERVAL, Interval, barStart, intervalById } from '../core/time';
@@ -165,6 +165,7 @@ export class ProStore {
       setInterval(() => {
         this.prune();
         void this.loadDaily();
+        void this.refreshFunding();
       }, 60_000)
     );
   }
@@ -244,6 +245,21 @@ export class ProStore {
       this.bump();
     } catch {
       // Bez historii wiersz finansowania pokazuje tylko stawkę prognozowaną bieżącej godziny
+    } finally {
+      this.fundingLoading = false;
+    }
+  }
+
+  /** Rozliczenie kolejnej godziny (wypłata o pełnej godzinie) — dociągane, gdy już powinno być w API. */
+  private async refreshFunding(): Promise<void> {
+    const last = this.funding.latest;
+    if (this.fundingLoading || !Number.isFinite(last) || this.serverNow() < last + 2 * HOUR_MS + 30_000) return;
+    this.fundingLoading = true;
+    try {
+      this.funding.add(await fetchFunding(this.coin, last + 1.5 * HOUR_MS), this.funding.from);
+      this.bump();
+    } catch {
+      // Ponowienie przy następnym takcie; do tego czasu godzina ma stawkę prognozowaną
     } finally {
       this.fundingLoading = false;
     }

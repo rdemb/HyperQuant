@@ -39,6 +39,19 @@ describe('finansowanie', () => {
     expect(f.rate(0, 2 * HOUR_MS, now, null)).toBeCloseTo(0.0002);
     expect(fundingApr(0.0000125)).toBeCloseTo(10.95);
   });
+
+  it('po pełnej godzinie poprzednia godzina ma prognozę do czasu rozliczenia, potem stawkę z API', () => {
+    const f = new FundingBook();
+    f.add([{ time: HOUR_MS + 3, rate: 0.0001, premium: 0 }], 0);
+    // 02:00:20 — wypłata za 01:00–02:00 jeszcze nie dotarła
+    const now = 2 * HOUR_MS + 20_000;
+    expect(f.rate(HOUR_MS + 30 * M1, M1, now, 0.0004)).toBe(0.0004);
+    // Starsza godzina bez wypłaty nie dostaje prognozy
+    expect(f.rate(30 * M1 - HOUR_MS, M1, now, 0.0004)).toBeNull();
+    f.add([{ time: 2 * HOUR_MS + 5, rate: 0.0002, premium: 0 }], 0);
+    expect(f.latest).toBe(HOUR_MS);
+    expect(f.rate(HOUR_MS + 30 * M1, M1, now, 0.0004)).toBe(0.0002);
+  });
 });
 
 describe('statystyki świecy', () => {

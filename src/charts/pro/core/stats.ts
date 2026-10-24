@@ -59,23 +59,30 @@ export class FundingBook {
   private readonly byHour = new Map<number, number>();
   /** Najwcześniejsza godzina pobrana z API. */
   from = Number.POSITIVE_INFINITY;
+  /** Ostatnia godzina z rozliczoną stawką. */
+  latest = Number.NEGATIVE_INFINITY;
 
   add(points: readonly FundingPoint[], from: number): void {
-    // Czas wypłaty bywa kilka ms po pełnej godzinie — zaokrąglamy do najbliższej
-    for (const p of points) this.byHour.set(Math.round(p.time / HOUR_MS) * HOUR_MS - HOUR_MS, p.rate);
+    for (const p of points) {
+      // Czas wypłaty bywa kilka ms po pełnej godzinie — zaokrąglamy do najbliższej
+      const h = Math.round(p.time / HOUR_MS) * HOUR_MS - HOUR_MS;
+      this.byHour.set(h, p.rate);
+      this.latest = Math.max(this.latest, h);
+    }
     this.from = Math.min(this.from, from);
   }
 
   /**
-   * Średnia stawka godzin, które obejmuje świeca [t, t + ms); godzina bez wypłaty (bieżąca) — stawka prognozowana `predicted`.
-   * null, gdy żadna godzina świecy nie ma stawki.
+   * Średnia stawka godzin, które obejmuje świeca [t, t + ms). Godzina bez wypłaty — bieżąca albo poprzednia, której rozliczenie
+   * jeszcze nie dotarło — dostaje stawkę prognozowaną `predicted`. null, gdy żadna godzina świecy nie ma stawki.
    */
   rate(t: number, ms: number, now: number, predicted: number | null): number | null {
     let sum = 0;
     let n = 0;
     const end = Math.min(t + ms, now);
     for (let h = Math.floor(t / HOUR_MS) * HOUR_MS; h < Math.max(end, t + 1); h += HOUR_MS) {
-      const r = this.byHour.get(h) ?? (h + HOUR_MS > now && predicted !== null ? predicted : undefined);
+      const pending = h + HOUR_MS > now || (h > this.latest && h + 2 * HOUR_MS > now);
+      const r = this.byHour.get(h) ?? (pending && predicted !== null ? predicted : undefined);
       if (r === undefined) continue;
       sum += r;
       n++;
