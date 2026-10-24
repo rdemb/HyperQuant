@@ -216,7 +216,9 @@ export const TapePanel: React.FC<{
   className: string;
   onPick: (o: AggressorOrder) => void;
   onChange: (p: Partial<ChartSettings>) => void;
-}> = ({ store, settings: s, bigUsd, selected, highlight, className, onPick, onChange }) => {
+  /** Zamknięcie inne niż wyłączenie taśmy w ustawieniach (karta na telefonie wraca do wykresu). */
+  onClose?: () => void;
+}> = ({ store, settings: s, bigUsd, selected, highlight, className, onPick, onChange, onClose }) => {
   const recent = store.orders.latest(TAPE_SCAN);
   const rows: AggressorOrder[] = [];
   for (const o of recent) {
@@ -289,7 +291,7 @@ export const TapePanel: React.FC<{
           type="button"
           aria-label="Zamknij taśmę"
           title="Zamknij taśmę"
-          onClick={() => onChange({ showTape: false })}
+          onClick={onClose ?? (() => onChange({ showTape: false }))}
           className="inline-flex items-center justify-center w-8 h-8 rounded-md text-ink-3 hover:text-ink-1 hover:bg-surface-2"
         >
           <X className="w-4 h-4" />
@@ -331,6 +333,77 @@ export const TapePanel: React.FC<{
       </div>
       <p className="px-2 py-1.5 border-t border-line text-[10px] leading-snug text-ink-3 shrink-0">
         Zlecenia agresora złożone z wypełnień · pogrubione od {usd(bigUsd)}, <span className="text-warn">żółte</span> = bitwa z jednym makerem
+      </p>
+    </aside>
+  );
+};
+
+/** Różnica cen (krok, spread) bez zbędnych zer: 10, 0.5, 0.001. */
+const fmtStep = (v: number) => String(Number(v.toPrecision(6)));
+
+/** Migawka arkusza starsza niż tyle ms jest nieaktualna (zerwane połączenie). */
+const DOM_STALE_MS = 30_000;
+
+/**
+ * Drabina DOM (karta na telefonie): bieżąca migawka bliskiego arkusza l2Book — aski nad ceną, bidy pod nią, przy
+ * środku najbliższe poziomy. Słupek pokazuje wielkość poziomu względem największego w migawce, Σ — sumę od środka.
+ */
+export const DomLadder: React.FC<{ store: ProStore; className: string }> = ({ store, className }) => {
+  const f = store.book('near')?.latest() ?? null;
+  const stale = f !== null && store.serverNow() - f.t > DOM_STALE_MS;
+  let body: React.ReactNode;
+  if (!f || f.nBids === 0 || f.nBids === f.px.length) {
+    body = <p className="px-3 py-4 text-[11px] text-ink-3">Czekam na arkusz zleceń Hyperliquid…</p>;
+  } else {
+    const level = (i: number, sum: number) => ({ px: f.px[i], sz: f.sz[i], sum });
+    const bids: { px: number; sz: number; sum: number }[] = [];
+    const asks: { px: number; sz: number; sum: number }[] = [];
+    let sb = 0;
+    for (let i = 0; i < f.nBids; i++) bids.push(level(i, (sb += f.sz[i])));
+    let sa = 0;
+    for (let i = f.nBids; i < f.px.length; i++) asks.push(level(i, (sa += f.sz[i])));
+    let max = 0;
+    for (let i = 0; i < f.sz.length; i++) max = Math.max(max, f.sz[i]);
+    const bidShare = sb + sa > 0 ? sb / (sb + sa) : 0.5;
+    const row = (l: { px: number; sz: number; sum: number }, bid: boolean) => (
+      <div key={`${bid ? 'b' : 'a'}${l.px}`} className="relative grid w-full grid-cols-[1fr_4.5rem_4.5rem] gap-x-2 px-3 h-[22px] shrink-0 items-center font-mono text-[11.5px]">
+        <span aria-hidden="true" className={`absolute inset-y-px right-0 ${bid ? 'bg-of-buy/20' : 'bg-of-sell/25'}`} style={{ width: `${max > 0 ? (l.sz / max) * 100 : 0}%` }} />
+        <span className={`relative ${bid ? 'text-of-buy-ink' : 'text-of-sell-ink'}`}>{fmtPx(l.px)}</span>
+        <span className="relative text-right text-ink-1">{fmtVol(l.sz)}</span>
+        <span className="relative text-right text-ink-3">{fmtVol(l.sum)}</span>
+      </div>
+    );
+    body = (
+      <>
+        {/* Od środka na zewnątrz; poziomy, które się nie mieszczą, przechodzą do ukrytej kolumny (bez uciętych wierszy) */}
+        <div className="flex-1 min-h-0 flex flex-col-reverse flex-wrap overflow-hidden">{asks.map((l) => row(l, false))}</div>
+        <div className="flex items-center justify-between gap-2 px-3 h-8 shrink-0 border-y border-line bg-surface-2 font-mono text-[11px]">
+          <span className="text-ink-1">{fmtPx((f.px[0] + f.px[f.nBids]) / 2)}</span>
+          <span className="text-ink-3">spread {fmtStep(f.px[f.nBids] - f.px[0])}</span>
+          <span title="Udział bidów i asków w widocznej głębokości arkusza">
+            <span className="text-of-buy-ink">{Math.round(bidShare * 100)}%</span>
+            <span className="text-ink-3"> / </span>
+            <span className="text-of-sell-ink">{Math.round((1 - bidShare) * 100)}%</span>
+          </span>
+        </div>
+        <div className="flex-1 min-h-0 flex flex-col flex-wrap overflow-hidden">{bids.map((l) => row(l, true))}</div>
+      </>
+    );
+  }
+  return (
+    <aside aria-label="Arkusz zleceń" className={`flex flex-col min-h-0 bg-surface-1 ${className}`}>
+      <div className="grid grid-cols-[1fr_4.5rem_4.5rem] gap-x-2 px-3 py-1.5 border-b border-line font-mono text-[10px] text-ink-3 shrink-0">
+        <span>Cena</span>
+        <span className="text-right">{store.coin}</span>
+        <span className="text-right">Σ od środka</span>
+      </div>
+      {body}
+      <p className="px-2 py-1.5 border-t border-line text-[10px] leading-snug text-ink-3 shrink-0">
+        {stale ? (
+          <span className="text-warn">Arkusz nieaktualny — ostatnia migawka {fmtHms(f!.t)}.</span>
+        ) : (
+          <>Arkusz l2Book Hyperliquid{f ? `, poziomy co ${fmtStep(f.step)} USD` : ''} · udział bidów / asków w widocznej głębokości</>
+        )}
       </p>
     </aside>
   );

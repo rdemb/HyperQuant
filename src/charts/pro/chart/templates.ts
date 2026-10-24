@@ -29,7 +29,8 @@ export function applyTemplate(s: ChartSettings, t: TemplateSettings): ChartSetti
   return { ...parseSettings({ ...s, ...t }, s), coin: s.coin, rowStep: s.rowStep };
 }
 
-const off = {
+/** Wszystkie warstwy na wykresie ceny wyłączone (podstawa szablonów i stacji, które włączają tylko swoje). */
+export const LAYERS_OFF = {
   showVwap: false,
   showVwapBands: false,
   showSessionVwap: false,
@@ -87,7 +88,7 @@ export const BUILT_IN_TEMPLATES: readonly ChartTemplate[] = [
     showIb: false,
   }),
   built('swing', 'Swing 1h: poziomy i profile', {
-    ...off,
+    ...LAYERS_OFF,
     interval: '1h',
     view: 'candles',
     showDelta: false,
@@ -102,7 +103,7 @@ export const BUILT_IN_TEMPLATES: readonly ChartTemplate[] = [
     showWhales: true,
   }),
   built('tpo', 'Market Profile 30m: TPO dób', {
-    ...off,
+    ...LAYERS_OFF,
     interval: '30m',
     view: 'candles',
     showDelta: false,
@@ -111,7 +112,7 @@ export const BUILT_IN_TEMPLATES: readonly ChartTemplate[] = [
     showVwap: true,
     showLevels: true,
   }),
-  built('clean', 'Czyste świece', { ...off, view: 'candles', showDelta: false, showCvd: false, showStats: false }),
+  built('clean', 'Czyste świece', { ...LAYERS_OFF, view: 'candles', showDelta: false, showCvd: false, showStats: false }),
 ];
 
 export function parseTemplates(raw: unknown): ChartTemplate[] {

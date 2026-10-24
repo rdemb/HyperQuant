@@ -3,6 +3,7 @@ import { cvdLine, oiChangeLine } from '../core/flow';
 import { OiLog } from '../core/stats';
 import {
   parseBinanceFunding,
+  parseBinanceFundingHist,
   parseBinanceFundingInfo,
   parseBinanceKlineMsg,
   parseBinanceKlines,
@@ -85,6 +86,17 @@ describe('parsery Binance i Bybit', () => {
   it('finansowanie: stopa Binance, okresy niestandardowe i przeliczenie na 8 h', () => {
     expect(parseBinanceFunding({ markPrice: '79776.67', lastFundingRate: '-0.00000024' })).toBe(-0.00000024);
     expect(parseBinanceFunding({})).toBeNull();
+    expect(
+      parseBinanceFundingHist([
+        { symbol: 'BTCUSDT', fundingTime: 1761292800001, fundingRate: '0.00002113', markPrice: '110000' },
+        { symbol: 'BTCUSDT', fundingTime: 1761264000000, fundingRate: '-0.00001' },
+        { fundingTime: 'x', fundingRate: '1' },
+      ])
+    ).toEqual([
+      { time: 1761264000000, rate: -0.00001 },
+      { time: 1761292800001, rate: 0.00002113 },
+    ]);
+    expect(parseBinanceFundingHist({})).toEqual([]);
     expect(parseBinanceFundingInfo([{ symbol: 'HYPEUSDT', fundingIntervalHours: 4 }, { symbol: 'X' }]).get('HYPEUSDT')).toBe(4);
     // Hyperliquid co godzinę: 0,00125% / h = 0,01% / 8 h
     expect(per8h(0.0000125, 1)).toBeCloseTo(0.0001, 12);

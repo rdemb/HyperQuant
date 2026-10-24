@@ -17,7 +17,7 @@ import { fmtVol } from '../../orderflow/footprint';
 import { fmtSignedVol } from '../../orderflow/renderer';
 import { DEFAULT_THRESHOLD_USD, autoThreshold } from '../core/clashes';
 import { Ohlc, cvdCandles, cvdLine, deltaCandle, oiChangeLine } from '../core/flow';
-import { BarStat, barStat } from '../core/stats';
+import { BarStat, VENUE_GROUPS, barStat } from '../core/stats';
 import { hlTick, rowAt } from '../core/footprintBar';
 import type { LiqLevel } from '../core/indicators';
 import type { ResetMode } from '../core/sessions';
@@ -30,13 +30,13 @@ import { fmtPx } from './layout';
 import { LiquidityLayer, LiquidityPick, LiquiditySource } from './liquidity';
 import { IndicatorOverlay, IndicatorToggles, IndicatorValues, WhaleView } from './overlay';
 import { LegendPart, PaneLegend } from './paneLegend';
-import { STAT_PAD_PX, STAT_ROWS, STAT_ROW_PX, StatsTable } from './statsTable';
+import { STATS_BAR_SPACING, StatsTable, tableHeight } from './statsTable';
 import { ZonesLayer } from './zonesLayer';
 import { TpoLayer } from './tpoLayer';
 import { tpoInterval } from '../core/tpo';
 import type { ChartSettings } from './settings';
 import { CountdownLabel } from './countdown';
-import { BINANCE_OI_PERIOD, FlowVenue, OI_PERIOD_MS, OiVenue, per8h } from '../venues/parse';
+import { FlowVenue, OiVenue, oiMaxAge, per8h } from '../venues/parse';
 import { VenueStore, acquireVenues, venueStoreFor } from '../venues/venueStore';
 import { DOM_W_PX, PRO, RIGHT_GAP_PX, chartOptions } from './theme';
 
@@ -366,6 +366,12 @@ export class ProChartController {
       this.tpo.setRightInset(s.showHeatmap ? DOM_W_PX : 0);
       this.chart.timeScale().applyOptions({ rightOffsetPixels: this.rightGap() });
     }
+    if (force || prev.statGroups !== s.statGroups) {
+      this.statsTable.setGroups(s.statGroups);
+      this.statsAt = 0;
+      if (!force && s.showStats && prev.showStats) this.fitStatsPane();
+      this.schedule();
+    }
     this.syncVenueLive();
     const panesChanged =
       force ||
@@ -375,6 +381,14 @@ export class ProChartController {
       prev.showVenueCvd !== s.showVenueCvd ||
       prev.showVenueOi !== s.showVenueOi ||
       prev.showStats !== s.showStats;
+    if (s.showStats && (force || !prev.showStats)) {
+      // Włączona tablica poszerza wąskie świece, żeby jej liczby było widać od razu
+      const ts = this.chart.timeScale();
+      if (ts.options().barSpacing < STATS_BAR_SPACING) {
+        ts.applyOptions({ barSpacing: STATS_BAR_SPACING });
+        this.toNow = true;
+      }
+    }
     if (panesChanged) this.rebuildPanes();
     else if (prev.cvdReset !== s.cvdReset) {
       this.cvdData = [];
@@ -450,8 +464,7 @@ export class ProChartController {
       if (panes[i] !== statsPane) panes[i].setStretchFactor(panes[i] === this.volume?.getPane() ? 0.14 : venuePanes.has(panes[i]) ? 0.3 : 0.22);
     // Tabela ma stałą wysokość wiersza: wysokość panelu ustawiamy po ułożeniu pozostałych
     // (panele mogły zostać przebudowane przed następną klatką — wtedy ten panel już nie istnieje)
-    const stats = this.statsSeries;
-    if (stats) requestAnimationFrame(() => this.statsSeries === stats && stats.getPane().setHeight(STAT_ROWS.length * STAT_ROW_PX + STAT_PAD_PX));
+    this.fitStatsPane();
     this.setTopInset(this.topInset);
     // Nowe serie dostają pełne dane przy następnej synchronizacji
     this.bars = [];
@@ -459,6 +472,13 @@ export class ProChartController {
     this.venueCvdData = {};
     this.venueOiData = {};
     this.schedule();
+  }
+
+  /** Wysokość panelu Tablicy liczb dla włączonych grup — po ułożeniu pozostałych paneli. */
+  private fitStatsPane(): void {
+    // Panele mogły zostać przebudowane przed następną klatką — wtedy ten panel już nie istnieje
+    const stats = this.statsSeries;
+    if (stats) requestAnimationFrame(() => this.statsSeries === stats && stats.getPane().setHeight(tableHeight(this.settings.statGroups)));
   }
 
   /** Linie giełd w nowym panelu: zero jako linia odniesienia, opis panelu na pierwszej linii. */
@@ -486,10 +506,11 @@ export class ProChartController {
     return out;
   }
 
-  /** Połączenia Binance i Bybit tylko z włączonym panelem giełd, dla bieżącego interwału wykresu. */
+  /** Połączenia Binance i Bybit tylko z włączonym panelem giełd albo grupą giełdy w Tablicy liczb, dla bieżącego interwału. */
   private syncVenueLive(): void {
     const s = this.settings;
-    const want = s.showVenueCvd || s.showVenueOi ? this.series.interval.id : null;
+    const statsVenue = s.showStats && s.statGroups.some((g) => VENUE_GROUPS.includes(g));
+    const want = s.showVenueCvd || s.showVenueOi || statsVenue ? this.series.interval.id : null;
     if (want === this.venueInterval) return;
     this.venueInterval = want;
     this.releaseVenue?.();
@@ -675,10 +696,13 @@ export class ProChartController {
     this.liquidity.setData(next, ms, this.liqSource, now, this.bigTradeUsd);
     this.zones.setData(next, ms, now);
     this.tpo.setData(next, ms);
+    // Historia giełd od pierwszej świecy (panele giełd i Tablica liczb)
+    if (this.venue && next.length > 0) this.venue.ensure(this.series.interval, next[0].t);
     if (this.statsSeries && (full || now - this.statsAt >= STATS_EVERY_MS || next.length !== this.stats.length)) {
       this.statsAt = now;
       const predicted = st.ctx ? st.ctx.funding : null;
-      this.stats = next.map((b) => barStat(b, ms, now, st.oi, st.funding, predicted));
+      const reads = this.venue && this.settings.statGroups.some((g) => VENUE_GROUPS.includes(g)) ? this.venue.reads(this.series.interval, now) : null;
+      this.stats = next.map((b) => barStat(b, ms, now, st.oi, st.funding, predicted, reads));
       this.statsTable.setStats(this.stats);
     }
     this.pushCvd(full);
@@ -721,7 +745,6 @@ export class ProChartController {
     const iv = this.series.interval;
     const now = this.store.serverNow();
     const mode = this.settings.cvdReset;
-    v.ensure(iv, bars[0].t);
     const times = bars.map((b) => b.t);
     if (this.venueCvd) {
       const next: VenueLines = {
@@ -734,8 +757,7 @@ export class ProChartController {
       this.venueCvdData = next;
     }
     if (this.venueOi) {
-      // Historia OI giełd co 5 min i dłużej: odczyt do dwóch okresów wstecz nadal opisuje świecę
-      const age = 2 * OI_PERIOD_MS[BINANCE_OI_PERIOD[iv.id]];
+      const age = oiMaxAge(iv.id);
       const next: VenueLines = {
         hl: oiChangeLine(times, iv.ms, now, (t) => this.store.oi.atWithin(t, HL_OI_MAX_AGE), mode),
         binance: oiChangeLine(times, iv.ms, now, (t) => v.oi.binance.atWithin(t, age), mode),
