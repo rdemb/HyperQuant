@@ -23,7 +23,7 @@ import type { HlCtx, HlTrade } from './hl.ts';
 import type { BookAgg } from './liquidity.ts';
 
 /**
- * Rejestrator historii jednego rynku: taśma (bez adresów — numery zleceń agresora i makerów w obrębie godziny),
+ * Rejestrator historii jednego rynku: taśma (bez adresów — numery zleceń agresora, biorców i makerów w obrębie godziny),
  * arkusz w agregacji bliskiej i dalekiej (te same co na stronie) i kontekst minutowy. Bufor w pamięci tylko dla części
  * jeszcze niezamkniętych; część 5-minutowa trafia na dysk 10 s po końcu, a po zamknięciu godziny części łączą się w plik
  * godzinowy. Pokrycie: od najnowszej transakcji pierwszej wiadomości po (ponownym) połączeniu do zamknięcia połączenia —
@@ -86,9 +86,10 @@ function uniqCtx(xs: readonly HistCtx[]): HistCtx[] {
 
 interface Ids {
   orders: Map<string, number>;
-  makers: Map<string, number>;
+  /** Biorcy i makerzy w jednej numeracji (ten sam adres po obu stronach = ten sam numer) */
+  users: Map<string, number>;
   nextO: number;
-  nextM: number;
+  nextU: number;
 }
 
 export class MarketRecorder {
@@ -134,19 +135,22 @@ export class MarketRecorder {
       if (!(t > 0) || !(px > 0) || !(sz > 0) || !Number.isFinite(tid) || (x.side !== 'B' && x.side !== 'A')) continue;
       newest = Math.max(newest, t);
       let o = -1;
+      let k = -1;
       let m = -1;
       if (Array.isArray(x.users) && x.users.length === 2) {
         const ids = this.idsFor(hourOf(t));
         const taker = x.side === 'B' ? x.users[0] : x.users[1];
         const maker = x.side === 'B' ? x.users[1] : x.users[0];
         const key = typeof x.hash === 'string' && x.hash.length > 2 && !ZERO_HASH.test(x.hash) ? `${taker}|${x.hash}` : `${taker}|t${t}|${x.side}`;
+        const user = (a: string) => ids.users.get(a) ?? (ids.users.set(a, ids.nextU), ids.nextU++);
         o = ids.orders.get(key) ?? (ids.orders.set(key, ids.nextO), ids.nextO++);
-        m = ids.makers.get(maker) ?? (ids.makers.set(maker, ids.nextM), ids.nextM++);
+        k = user(taker);
+        m = user(maker);
       }
       const p = partOf(t);
       if (p <= this.lastPart) continue; // część już zapisana — spóźniona transakcja pominięta
       const acc = this.trades.get(p);
-      const row: HistTrade = { t, px, sz, side: x.side, tid, o, m };
+      const row: HistTrade = { t, px, sz, side: x.side, tid, o, k, m };
       if (acc) acc.push(row);
       else this.trades.set(p, [row]);
     }
@@ -195,13 +199,13 @@ export class MarketRecorder {
   private idsFor(hour: number): Ids {
     let ids = this.ids.get(hour);
     if (ids) return ids;
-    ids = { orders: new Map(), makers: new Map(), nextO: 0, nextM: 0 };
+    ids = { orders: new Map(), users: new Map(), nextO: 0, nextU: 0 };
     const files = [historyPath(this.coin, hour, 'trades', false), ...this.partsOnDisk(hour).map((p) => historyPath(this.coin, p, 'trades', true))];
     for (const rel of files) {
       const f = decodeTrades(readGz(join(this.dir, rel)));
       for (const x of f?.trades ?? []) {
         ids.nextO = Math.max(ids.nextO, x.o + 1);
-        ids.nextM = Math.max(ids.nextM, x.m + 1);
+        ids.nextU = Math.max(ids.nextU, x.k + 1, x.m + 1);
       }
     }
     this.ids.set(hour, ids);
@@ -338,7 +342,7 @@ export const HISTORY_README = [
   '',
   '- `index.json` — spis: godziny z plikiem godzinowym i części 5-minutowe bieżącej godziny dla każdego rynku.',
   '- `<RYNEK>/<RRRR-MM-DD>/<GG>.trades.json.gz` — taśma godziny (JSON w gzip): czas i tid różnicowo, cena, wielkość, strona',
-  '  agresora (B/A), numer zlecenia agresora i makera w obrębie godziny; kontekst minutowy (OI, finansowanie, mark); pokrycie.',
+  '  agresora (B/A), numery zlecenia agresora, biorcy i makera w obrębie godziny; kontekst minutowy (OI, finansowanie, mark); pokrycie.',
   '- `<RYNEK>/<RRRR-MM-DD>/<GG>.book.json.gz` — migawki arkusza (co ok. 5 s, 20 poziomów na stronę: cena, wielkość, liczba',
   '  zleceń) w agregacji bliskiej (~2 pb ceny) i dalekiej (10 × większy krok); pokrycie.',
   '- `<GG>-<MM>.*.json.gz` — części 5-minutowe godziny w toku (po jej zamknięciu łączone w plik godzinowy).',

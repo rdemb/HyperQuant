@@ -45,12 +45,13 @@ describe('MarketRecorder — nagranie taśmy, arkusza i kontekstu jednego rynku'
     expect(r.flush(T0 + 5 * MIN + SETTLE_MS)).toBe(2);
     const f = decodeTrades(read(dir, 'BTC', T0, 'trades', true))!;
     expect(f.spans).toEqual([[T0 + 2000, T0 + 5 * MIN]]);
-    expect(f.trades.map((x) => [x.tid, x.side, x.o, x.m])).toEqual([
-      [1, 'B', 0, 0],
-      [2, 'B', 0, 1],
-      [3, 'A', 1, 0],
-      [4, 'A', 1, 0],
-      [5, 'A', 2, 0],
+    // Biorcy i makerzy w jednej numeracji: 1 → 0, 9 → 1, 8 → 2, 2 → 3
+    expect(f.trades.map((x) => [x.tid, x.side, x.o, x.k, x.m])).toEqual([
+      [1, 'B', 0, 0, 1],
+      [2, 'B', 0, 0, 2],
+      [3, 'A', 1, 3, 1],
+      [4, 'A', 1, 3, 1],
+      [5, 'A', 2, 3, 1],
     ]);
     expect(f.ctx).toEqual([{ t: T0, oi: 30_000, funding: 1.25e-5, mark: 80_000 }]);
     // W pliku nie ma adresów ani hashy

@@ -4,8 +4,8 @@
  *
  * Publiczne API nie daje historii transakcji ani arkusza, więc rejestrator nagrywa je na serwerze i publikuje w gałęzi
  * `history` repo danych: części 5-minutowe bieżącej godziny, łączone po jej zamknięciu w plik godzinowy (JSON w gzip).
- * Pliki nie zawierają adresów ani hashy: zlecenie agresora i maker to numery ważne tylko w obrębie jednej godziny
- * (`o`, `m`) — wystarczą do złożenia zleceń i ścian, a nie da się z nich odczytać portfela.
+ * Pliki nie zawierają adresów ani hashy: zlecenie agresora, biorca i maker to numery ważne tylko w obrębie jednej godziny
+ * (`o`, `k`, `m`) — wystarczą do złożenia zleceń, serii i ścian, a nie da się z nich odczytać portfela.
  */
 
 export const HISTORY_VERSION = 1;
@@ -24,7 +24,8 @@ export interface HistTrade {
   tid: number;
   /** Numer zlecenia agresora w godzinie (ten sam biorca i hash albo milisekunda bez hasha); −1 = nieznany */
   o: number;
-  /** Numer makera w godzinie; −1 = nieznany */
+  /** Numer biorcy i makera w godzinie; −1 = nieznany */
+  k: number;
   m: number;
 }
 
@@ -57,6 +58,7 @@ export interface TradesFile {
   side: string;
   tid: number[];
   o: number[];
+  k: number[];
   m: number[];
   ctx: { t: number[]; oi: number[]; funding: number[]; mark: number[] };
 }
@@ -132,6 +134,7 @@ export function encodeTrades(coin: string, from: number, to: number, spans: read
     side: ts.map((x) => x.side).join(''),
     tid: deltas(ts.map((x) => x.tid)),
     o: ts.map((x) => x.o),
+    k: ts.map((x) => x.k),
     m: ts.map((x) => x.m),
     ctx: { t: cs.map((c) => c.t), oi: cs.map((c) => c.oi), funding: cs.map((c) => c.funding), mark: cs.map((c) => c.mark) },
   };
@@ -142,7 +145,7 @@ export function decodeTrades(raw: unknown): { coin: string; from: number; to: nu
   const f = raw as Partial<TradesFile> | null;
   if (!f || f.v !== HISTORY_VERSION || typeof f.coin !== 'string' || !fin(f.from) || !fin(f.to) || !Array.isArray(f.spans)) return null;
   const n = Array.isArray(f.t) ? f.t.length : -1;
-  if (!finArr(f.t) || !finArr(f.px, n) || !finArr(f.sz, n) || !finArr(f.tid, n) || !finArr(f.o, n) || !finArr(f.m, n)) return null;
+  if (!finArr(f.t) || !finArr(f.px, n) || !finArr(f.sz, n) || !finArr(f.tid, n) || !finArr(f.o, n) || !finArr(f.k, n) || !finArr(f.m, n)) return null;
   if (typeof f.side !== 'string' || f.side.length !== n || !/^[AB]*$/.test(f.side)) return null;
   const c = f.ctx;
   const k = Array.isArray(c?.t) ? c.t.length : -1;
@@ -153,7 +156,7 @@ export function decodeTrades(raw: unknown): { coin: string; from: number; to: nu
   const trades: HistTrade[] = [];
   for (let i = 0; i < n; i++) {
     if (!(f.px[i] > 0) || !(f.sz[i] > 0)) continue;
-    trades.push({ t: t[i], px: f.px[i], sz: f.sz[i], side: f.side[i] as 'B' | 'A', tid: tid[i], o: f.o[i], m: f.m[i] });
+    trades.push({ t: t[i], px: f.px[i], sz: f.sz[i], side: f.side[i] as 'B' | 'A', tid: tid[i], o: f.o[i], k: f.k[i], m: f.m[i] });
   }
   const ctx: HistCtx[] = c.t.map((tt, i) => ({ t: tt, oi: c.oi[i], funding: c.funding[i], mark: c.mark[i] }));
   return { coin: f.coin, from: f.from, to: f.to, spans: clipSpans(spans, f.from, f.to), trades, ctx };
