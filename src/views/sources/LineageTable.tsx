@@ -223,6 +223,23 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         ),
       },
       {
+        metric: tr('Stan rynku (zdanie nad wykresem, Wykresy)', 'Market state (sentence above the chart, Charts)'),
+        source: tr(
+          'Te same dane co wykres: świece i taśma Hyperliquid, VWAP dnia, otwarte pozycje (activeAssetCtx), Kto handluje, bliski arkusz l2Book; Binance i Bybit tylko, gdy wykres już je pobiera',
+          'The same data as the chart: Hyperliquid candles and tape, daily VWAP, open interest (activeAssetCtx), Who is trading, near l2Book; Binance and Bybit only when the chart already fetches them'
+        ),
+        method: tr(
+          'Stałe reguły na ostatnich 10 świecach wykresu, przeliczane co 5 s: cena względem VWAP dnia w σ (do 0,5σ „przy”, do 2σ „nad/pod”, dalej „daleko”); kierunek CVD z delty okna (poniżej 5% wolumenu z taśmy — bez kierunku) i czas od początku ciągu świec z deltą w tę stronę; Binance i Bybit — znak ich delty w tych samych świecach z taśmy Hyperliquid (giełda bez delty w którejś z nich, np. Bybit tuż po otwarciu strony, jest pominięta); zmiana otwartych pozycji od początku okna (poniżej 0,1% — bez zmiany); strona dużych graczy i reszty z delty × cena / wartość wejść grupy (poniżej 10% — bez przewagi); arkusz — udział bidów w bliskim arkuszu (od 60% po jednej stronie — przewaga). „Skąd?” pokazuje liczby każdego faktu',
+          'Fixed rules on the last 10 chart candles, recomputed every 5 s: price vs daily VWAP in σ (up to 0.5σ “at”, up to 2σ “above/below”, beyond that “far”); CVD direction from the window delta (below 5% of tape volume — no direction) and the time since the start of the run of candles with delta that way; Binance and Bybit — the sign of their delta in the same candles with Hyperliquid tape (an exchange without delta in any of them, e.g. Bybit right after the page opens, is left out); open-interest change since the window start (below 0.1% — no change); the side of large players and the rest from delta × price / the group’s entry value (below 10% — no edge); book — bid share of the near book (from 60% on one side — an edge). “Why?” shows the numbers behind each fact'
+        ),
+        kinds: ['LIVE'],
+        refresh: tr('co 5 s', 'every 5 s'),
+        caveat: tr(
+          'Opis bieżącego stanu, nie sygnał ani prognoza. Fakt bez danych (np. przed nagraniem taśmy) jest pominięty, a nie zgadywany.',
+          'A description of the current state, not a signal or forecast. A fact without data (e.g. before the tape is recorded) is left out, not guessed.'
+        ),
+      },
+      {
         metric: tr('Strefy nierównowagi i niedokończone aukcje (Wykresy)', 'Imbalance zones and unfinished auctions (Charts)'),
         source: tr('Taśma WS trades nagrywana od otwarcia widoku', 'WS trades tape recorded since the view opened'),
         method: tr(
