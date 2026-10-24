@@ -64,6 +64,12 @@ export interface ChartSettings {
   tapeSound: boolean;
 }
 
+/**
+ * Ustawienia startowe: świece mają być czytelne od pierwszej sekundy, więc na wykresie ceny tylko lekkie warstwy
+ * (VWAP dnia, profil widocznego zakresu, poziomy dnia, otwarcia sesji, mapa ciepła i bąble dużych zleceń). Wieloryby,
+ * ściany, duże zlecenia w arkuszu, strefy, IB i profile sesji włącza się w „Wskaźnikach” albo szablonem
+ * „Pełny orderflow”.
+ */
 export const DEFAULT_SETTINGS: ChartSettings = {
   coin: COIN,
   interval: DEFAULT_INTERVAL,
@@ -79,30 +85,43 @@ export const DEFAULT_SETTINGS: ChartSettings = {
   cvdReset: 'session',
   showVenueCvd: false,
   showVenueOi: false,
-  showStats: true,
+  showStats: false,
   showVwap: true,
-  showVwapBands: true,
-  showSessionVwap: true,
+  showVwapBands: false,
+  showSessionVwap: false,
   showProfile: true,
-  showPeriodProfiles: true,
+  showPeriodProfiles: false,
   showDevPoc: false,
   showTpo: false,
   showLevels: true,
   showSessions: true,
-  showIb: true,
-  showLiq: true,
-  showWhales: true,
-  showZones: true,
-  showAuctions: true,
+  showIb: false,
+  showLiq: false,
+  showWhales: false,
+  showZones: false,
+  showAuctions: false,
   showHeatmap: true,
   showBubbles: true,
-  showClashes: true,
-  showLots: true,
+  showClashes: false,
+  showLots: false,
   bigTradeUsd: 0,
   showTape: false,
   tapeMinUsd: 10_000,
   tapeSound: false,
 };
+
+/**
+ * Telefon (do 639 px): kilkadziesiąt świec na wąskim ekranie, więc tylko świece z VWAP, wolumen i CVD — bez panelu
+ * delty, mapy ciepła z drabiną arkusza, profilu, poziomów dnia, otwarć sesji i bąbli.
+ */
+export const NARROW_PATCH = {
+  showDelta: false,
+  showProfile: false,
+  showLevels: false,
+  showSessions: false,
+  showHeatmap: false,
+  showBubbles: false,
+} satisfies Partial<ChartSettings>;
 
 const KEY = 'hq.charts.v1';
 
@@ -154,10 +173,45 @@ export function parseSettings(raw: unknown, d: ChartSettings = DEFAULT_SETTINGS)
   };
 }
 
-/** Na wąskim ekranie tabela statystyk domyślnie wyłączona — zabrałaby większość wysokości wykresu. */
-function defaults(): ChartSettings {
+/** Ustawienia startowe dla tego ekranu (na telefonie z `NARROW_PATCH`). */
+export function startSettings(): ChartSettings {
   const narrow = typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 639px)').matches;
-  return narrow ? { ...DEFAULT_SETTINGS, showStats: false } : DEFAULT_SETTINGS;
+  return narrow ? { ...DEFAULT_SETTINGS, ...NARROW_PATCH } : DEFAULT_SETTINGS;
+}
+
+/**
+ * Wersja zestawu warstw startowych. W wersji 2 część warstw przestała być włączona na starcie (na telefonie także
+ * profil i mapa ciepła); zapis sprzed tej zmiany ma je zwykle włączone tylko dlatego, że takie były wartości
+ * startowe, więc wracają do nowych wartości. Warstwy, których wartość startowa się nie zmieniła, i reszta ustawień
+ * zostają z zapisu.
+ */
+const LAYERS_V = 2;
+const RESET_IN_V2 = [
+  'showStats',
+  'showDelta',
+  'showVwapBands',
+  'showSessionVwap',
+  'showProfile',
+  'showPeriodProfiles',
+  'showLevels',
+  'showSessions',
+  'showIb',
+  'showLiq',
+  'showWhales',
+  'showZones',
+  'showAuctions',
+  'showHeatmap',
+  'showBubbles',
+  'showClashes',
+  'showLots',
+] as const;
+
+/** Zapis ustawień sprzed wersji `LAYERS_V` bez pól warstw, których wartość startowa się zmieniła. */
+export function migrateSaved(raw: unknown): unknown {
+  if (!raw || typeof raw !== 'object' || (raw as { layersV?: unknown }).layersV === LAYERS_V) return raw;
+  const r = { ...(raw as Record<string, unknown>) };
+  for (const k of RESET_IN_V2) delete r[k];
+  return r;
 }
 
 /** Link do widoku: #charts?m=ETH&i=5m&v=footprint (rynek, interwał, rodzaj wykresu). */
@@ -182,10 +236,10 @@ export function settingsFromHash(hash: string): Partial<ChartSettings> {
 export const panelKey = (panel: number) => (panel === 0 ? KEY : `${KEY}.p${panel}`);
 
 /** Ustawienia panelu; bez zapisu — `fallback` (domyślnie wartości startowe). */
-export function loadSettings(key = KEY, fallback: ChartSettings = defaults()): ChartSettings {
+export function loadSettings(key = KEY, fallback: ChartSettings = startSettings()): ChartSettings {
   try {
     const s = localStorage.getItem(key);
-    return parseSettings(s ? JSON.parse(s) : null, fallback);
+    return parseSettings(s ? migrateSaved(JSON.parse(s)) : null, fallback);
   } catch {
     return fallback;
   }
@@ -193,7 +247,7 @@ export function loadSettings(key = KEY, fallback: ChartSettings = defaults()): C
 
 export function saveSettings(s: ChartSettings, key = KEY): void {
   try {
-    localStorage.setItem(key, JSON.stringify(s));
+    localStorage.setItem(key, JSON.stringify({ ...s, layersV: LAYERS_V }));
   } catch {
     // Prywatne okno albo zablokowana pamięć — ustawienia działają do końca sesji
   }

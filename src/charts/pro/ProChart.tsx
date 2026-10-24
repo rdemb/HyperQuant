@@ -18,7 +18,7 @@ import { LOT_FLOOR, type LiquidityPick } from './chart/liquidity';
 import { brandedScreenshot, downloadCanvas } from './chart/screenshot';
 import { MAX_ALERTS, PriceAlert, alertBook, askNotifications, newAlert, notifyAlert, parsePriceInput, primeAlertSound, reached } from './chart/alerts';
 import { fmtPx, priceDigits } from './chart/layout';
-import { ChartLayout, ChartSettings, DEFAULT_SETTINGS, hashFor, loadSettings, panelKey, saveSettings, settingsFromHash } from './chart/settings';
+import { ChartLayout, ChartSettings, hashFor, loadSettings, panelKey, saveSettings, settingsFromHash, startSettings } from './chart/settings';
 import { BUILT_IN_TEMPLATES, ChartTemplate, applyTemplate, loadTemplates, saveAs, saveTemplates } from './chart/templates';
 import type { ChartView } from './chart/footprintSeries';
 import type { FootprintStyle } from './chart/layout';
@@ -502,7 +502,7 @@ export const ProChart: React.FC<{ panel?: number; layout?: ChartLayout; onLayout
                   onAddAlert={(p) => addAlert(toTick(p))}
                   onRemoveAlert={(a) => alertBook.update((l) => l.filter((x) => x !== a))}
                   onChange={update}
-                  onReset={() => setSettings({ ...DEFAULT_SETTINGS, coin: settings.coin, interval: settings.interval })}
+                  onReset={() => setSettings({ ...startSettings(), coin: settings.coin, interval: settings.interval })}
                   grid4={layout === 4}
                 />
               ) : menu === 'keys' ? (
