@@ -540,6 +540,50 @@ h1 {
   stroke-linecap: round;
   stroke-linejoin: round;
 }
+.share-btn .ico-check,
+.share-btn[data-done] .ico-link {
+  display: none;
+}
+.share-btn[data-done] .ico-check {
+  display: block;
+}
+.share-btn[data-done] {
+  color: var(--accent);
+}
+/* Rząd ikon pod tytułem, obok daty */
+.byline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 16px;
+  margin: 0 0 20px;
+}
+.byline .meta {
+  margin: 0;
+}
+.share--compact .share-row {
+  gap: 6px;
+}
+.share--compact .share-btn,
+.share--compact .share-net {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 10px;
+}
+.share--compact svg {
+  width: 16px;
+  height: 16px;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
 
 /* ───── Lista wpisów ───── */
 .intro p:not(.eyebrow) {
