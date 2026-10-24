@@ -1,3 +1,6 @@
+import { fmtPrice } from '../../../ui/format';
+import { hlTick } from '../core/footprintBar';
+
 /**
  * Dobór szczegółowości footprintu do zbliżenia: wysokość wiersza (USD) i poziom rysowania
  * (sama świeca, profil wolumenu w świecy, komórki z liczbami). Czyste funkcje — bez płótna.
@@ -46,6 +49,12 @@ export function cellFontPx(rowPx: number, colPx = Number.POSITIVE_INFINITY, char
 export function cellAreaPx(slot: number): number {
   return slot * 0.92 - Math.max(3, Math.min(6, slot * 0.085)) - 3;
 }
+
+/** Liczba miejsc po przecinku ceny wg ticku Hyperliquid (BTC przy 80 tys.: 0, ETH: 1, SOL: 2, HYPE: 3). */
+export const priceDigits = (p: number) => Math.max(0, -Math.floor(Math.log10(hlTick(Math.abs(p)))));
+
+/** Cena z dokładnością ticku rynku. */
+export const fmtPx = (p: number) => fmtPrice(p, priceDigits(p));
 
 /**
  * Liczba w komórce footprintu: najwyżej trzy znaki, żeby para sprzedaż | kupno mieściła się

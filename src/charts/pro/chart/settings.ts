@@ -1,17 +1,21 @@
 import type { ResetMode } from '../core/sessions';
 import { DEFAULT_INTERVAL, INTERVALS } from '../core/time';
+import { COIN, MARKETS, Market } from '../store/proStore';
 import type { ChartView } from './footprintSeries';
 import type { FootprintStyle } from './layout';
 
 /** Ustawienia wykresu Pro zapamiętywane w przeglądarce (tylko wygoda użytkownika — brak danych osobowych). */
 export interface ChartSettings {
+  /** Rynek perp Hyperliquid. */
+  coin: Market;
   interval: string;
   view: ChartView;
   fpStyle: FootprintStyle;
   /** Wysokość wiersza footprintu (USD); 0 = automatycznie. */
   rowStep: number;
   imbalanceRatio: number;
-  imbalanceMinVol: number;
+  /** Najmniejsza wartość strony przewagi w wierszu nierównowagi (USD; przeliczana na jednostki rynku po cenie). */
+  imbalanceMinUsd: number;
   stackedMin: number;
   showVolume: boolean;
   showDelta: boolean;
@@ -47,12 +51,13 @@ export interface ChartSettings {
 }
 
 export const DEFAULT_SETTINGS: ChartSettings = {
+  coin: COIN,
   interval: DEFAULT_INTERVAL,
   view: 'footprint',
   fpStyle: 'bidask',
   rowStep: 0,
   imbalanceRatio: 3,
-  imbalanceMinVol: 0.05,
+  imbalanceMinUsd: 2500,
   stackedMin: 3,
   showVolume: true,
   showDelta: true,
@@ -89,12 +94,13 @@ const bool = (v: unknown, fallback: boolean) => (typeof v === 'boolean' ? v : fa
 export function parseSettings(raw: unknown, d: ChartSettings = DEFAULT_SETTINGS): ChartSettings {
   const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
   return {
+    coin: oneOf(r.coin, MARKETS, d.coin),
     interval: oneOf(r.interval, INTERVALS.map((i) => i.id), d.interval),
     view: oneOf(r.view, ['candles', 'footprint'] as const, d.view),
     fpStyle: oneOf(r.fpStyle, ['bidask', 'delta', 'volume'] as const, d.fpStyle),
     rowStep: numIn(r.rowStep, 0, 10_000, d.rowStep),
     imbalanceRatio: numIn(r.imbalanceRatio, 1.1, 10, d.imbalanceRatio),
-    imbalanceMinVol: numIn(r.imbalanceMinVol, 0, 1000, d.imbalanceMinVol),
+    imbalanceMinUsd: numIn(r.imbalanceMinUsd, 0, 10_000_000, d.imbalanceMinUsd),
     stackedMin: numIn(r.stackedMin, 0, 10, d.stackedMin),
     showVolume: bool(r.showVolume, d.showVolume),
     showDelta: bool(r.showDelta, d.showDelta),
@@ -128,20 +134,66 @@ function defaults(): ChartSettings {
   return narrow ? { ...DEFAULT_SETTINGS, showStats: false } : DEFAULT_SETTINGS;
 }
 
-export function loadSettings(): ChartSettings {
-  const d = defaults();
+/** Link do widoku: #charts?m=ETH&i=5m&v=footprint (rynek, interwał, rodzaj wykresu). */
+export function hashFor(s: ChartSettings): string {
+  return `#charts?m=${s.coin}&i=${s.interval}&v=${s.view}`;
+}
+
+/** Ustawienia z linku do widoku; pola spoza listy dozwolonych wartości są pomijane. */
+export function settingsFromHash(hash: string): Partial<ChartSettings> {
+  const q = new URLSearchParams(hash.split('?')[1] ?? '');
+  const out: Partial<ChartSettings> = {};
+  const m = q.get('m');
+  const i = q.get('i');
+  const v = q.get('v');
+  if (m && (MARKETS as readonly string[]).includes(m)) out.coin = m as Market;
+  if (i && INTERVALS.some((x) => x.id === i)) out.interval = i;
+  if (v === 'candles' || v === 'footprint') out.view = v;
+  return out;
+}
+
+/** Klucz zapisu panelu układu: pierwszy panel ma klucz sprzed układów, więc zapisane ustawienia zostają. */
+export const panelKey = (panel: number) => (panel === 0 ? KEY : `${KEY}.p${panel}`);
+
+/** Ustawienia panelu; bez zapisu — `fallback` (domyślnie wartości startowe). */
+export function loadSettings(key = KEY, fallback: ChartSettings = defaults()): ChartSettings {
   try {
-    const s = localStorage.getItem(KEY);
-    return parseSettings(s ? JSON.parse(s) : null, d);
+    const s = localStorage.getItem(key);
+    return parseSettings(s ? JSON.parse(s) : null, fallback);
   } catch {
-    return d;
+    return fallback;
   }
 }
 
-export function saveSettings(s: ChartSettings): void {
+export function saveSettings(s: ChartSettings, key = KEY): void {
   try {
-    localStorage.setItem(KEY, JSON.stringify(s));
+    localStorage.setItem(key, JSON.stringify(s));
   } catch {
     // Prywatne okno albo zablokowana pamięć — ustawienia działają do końca sesji
+  }
+}
+
+// ───────────────────────── układ ─────────────────────────
+
+/** Liczba wykresów obok siebie: 1, 2 (obok siebie) albo 4 (2 × 2). */
+export type ChartLayout = 1 | 2 | 4;
+
+const LAYOUT_KEY = 'hq.charts.layout.v1';
+
+export const parseLayout = (v: unknown): ChartLayout => (v === 2 || v === 4 ? v : 1);
+
+export function loadLayout(): ChartLayout {
+  try {
+    return parseLayout(Number(localStorage.getItem(LAYOUT_KEY)));
+  } catch {
+    return 1;
+  }
+}
+
+export function saveLayout(l: ChartLayout): void {
+  try {
+    localStorage.setItem(LAYOUT_KEY, String(l));
+  } catch {
+    // Prywatne okno albo zablokowana pamięć — układ działa do końca sesji
   }
 }

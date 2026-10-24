@@ -1,12 +1,13 @@
 import React, { useEffect, useRef } from 'react';
 import { Highlighter, Volume2, VolumeX, X } from 'lucide-react';
-import { fmtCompact, fmtPrice } from '../../../ui/format';
+import { fmtCompact } from '../../../ui/format';
 import { fmtSignedVol } from '../../orderflow/renderer';
 import { fmtVol } from '../../orderflow/footprint';
 import { classify, shortAddress, walletSummary } from '../core/clashes';
 import type { AggressorOrder } from '../core/orders';
 import { fmtHms } from '../core/time';
 import type { ProStore } from '../store/proStore';
+import { fmtPx } from './layout';
 import type { LiquidityPick } from './liquidity';
 import type { ChartSettings } from './settings';
 
@@ -19,7 +20,7 @@ import type { ChartSettings } from './settings';
 /** 200K zamiast 200.0K. */
 export const compact = (v: number) => fmtCompact(v).replace(/\.0([KMB])$/, '$1');
 const usd = (v: number) => `${compact(v)} USD`;
-const btc = (v: number) => `${fmtVol(v)} BTC`;
+const amount = (v: number, coin: string) => `${fmtVol(v)} ${coin}`;
 
 const SideTag: React.FC<{ buy: boolean; children?: React.ReactNode }> = ({ buy, children }) => (
   <span className={`font-semibold ${buy ? 'text-of-buy-ink' : 'text-of-sell-ink'}`}>{children ?? (buy ? 'Kupno' : 'Sprzedaż')}</span>
@@ -67,11 +68,11 @@ export const PickCard: React.FC<{
     body = (
       <>
         <Row label="Wielkość">
-          {btc(o.sz)} · {usd(o.notional)}
+          {amount(o.sz, store.coin)} · {usd(o.notional)}
         </Row>
-        <Row label="Cena średnia">{fmtPrice(o.vwap, 0)}</Row>
+        <Row label="Cena średnia">{fmtPx(o.vwap)}</Row>
         <Row label="Zakres">
-          {fmtPrice(o.pxFirst, 0)} → {fmtPrice(o.pxLast, 0)} · {o.levels} {o.levels === 1 ? 'poziom' : 'poz.'}
+          {fmtPx(o.pxFirst)} → {fmtPx(o.pxLast)} · {o.levels} {o.levels === 1 ? 'poziom' : 'poz.'}
         </Row>
         <Row label="Makerzy">{o.makers}</Row>
         <Row label="Największy maker">
@@ -86,9 +87,11 @@ export const PickCard: React.FC<{
               <Row label="Adres biorcy">{w.label}</Row>
               <Row label="Zleceń na taśmie">{w.orders}</Row>
               <Row label="Kupno / sprzedaż">
-                <SideTag buy>{fmtVol(w.buySz)}</SideTag> / <SideTag buy={false}>{fmtVol(w.sellSz)}</SideTag> BTC
+                <SideTag buy>{fmtVol(w.buySz)}</SideTag> / <SideTag buy={false}>{fmtVol(w.sellSz)}</SideTag> {store.coin}
               </Row>
-              <Row label="Netto">{fmtSignedVol(w.buySz - w.sellSz)} BTC</Row>
+              <Row label="Netto">
+                {fmtSignedVol(w.buySz - w.sellSz)} {store.coin}
+              </Row>
               <Row label="Największe">{usd(w.largestUsd)}</Row>
               <Row label="Aktywny">
                 {fmtHms(w.first)} – {fmtHms(w.last)}
@@ -128,9 +131,9 @@ export const PickCard: React.FC<{
           {b.orders} / {b.takers}
         </Row>
         <Row label="Razem">
-          {btc(b.sz)} · {usd(b.usd)}
+          {amount(b.sz, store.coin)} · {usd(b.usd)}
         </Row>
-        <Row label="Cena średnia">{fmtPrice(b.vwap, 0)}</Row>
+        <Row label="Cena średnia">{fmtPx(b.vwap)}</Row>
         <p className="text-[11px] leading-snug text-ink-3">
           Drobne zlecenia (każde poniżej {usd(bigUsd / 4)}) różnych adresów po jednej stronie w ciągu 2 s, razem od progu {usd(bigUsd)}.
         </p>
@@ -142,13 +145,13 @@ export const PickCard: React.FC<{
     head = (
       <>
         <SideTag buy={bid}>{bid ? 'Ściana na bidzie' : 'Ściana na asku'}</SideTag>
-        <span className="font-mono text-ink-1">{fmtPrice(w.px, 0)}</span>
+        <span className="font-mono text-ink-1">{fmtPx(w.px)}</span>
       </>
     );
     body = (
       <>
         <Row label="Wchłonięte">
-          {btc(w.sz)} · {usd(w.usd)}
+          {amount(w.sz, store.coin)} · {usd(w.usd)}
         </Row>
         <Row label="Zleceń agresora">{w.hits}</Row>
         <Row label="Czas">
@@ -290,7 +293,7 @@ export const TapePanel: React.FC<{
       <div className="grid grid-cols-[4.2rem_1fr_3.4rem_3.6rem] gap-x-1.5 px-2 py-1 border-b border-line font-mono text-[10px] text-ink-3 shrink-0">
         <span>Czas</span>
         <span className="text-right">Cena</span>
-        <span className="text-right">BTC</span>
+        <span className="text-right">{store.coin}</span>
         <span className="text-right">USD</span>
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto [scrollbar-width:thin]">
@@ -312,7 +315,7 @@ export const TapePanel: React.FC<{
               {/* Pasek wartości zlecenia względem progu dużego */}
               <span aria-hidden="true" className={`absolute inset-y-0 right-0 ${buy ? 'bg-of-buy/15' : 'bg-of-sell/25'}`} style={{ width: `${fill * 100}%` }} />
               <span className="relative text-ink-3">{fmtHms(o.time)}</span>
-              <span className={`relative text-right ${buy ? 'text-of-buy-ink' : 'text-of-sell-ink'} ${cls ? 'font-semibold' : ''}`}>{fmtPrice(o.vwap, 0)}</span>
+              <span className={`relative text-right ${buy ? 'text-of-buy-ink' : 'text-of-sell-ink'} ${cls ? 'font-semibold' : ''}`}>{fmtPx(o.vwap)}</span>
               <span className={`relative text-right ${cls ? 'text-ink-1 font-semibold' : 'text-ink-2'}`}>{fmtVol(o.sz)}</span>
               <span className={`relative text-right ${cls === 'clash' ? 'text-warn font-semibold' : cls ? 'text-ink-1 font-semibold' : 'text-ink-2'}`}>
                 {compact(o.notional)}

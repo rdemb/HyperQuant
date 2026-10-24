@@ -12,7 +12,7 @@ export interface AggressorOrder {
   /** Czas pierwszego wypełnienia (ms). */
   time: number;
   side: Side;
-  /** Wielkość (BTC). */
+  /** Wielkość (jednostki rynku). */
   sz: number;
   /** Wartość (USD). */
   notional: number;

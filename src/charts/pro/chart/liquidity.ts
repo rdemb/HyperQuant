@@ -22,7 +22,7 @@ import { DOM_W_PX, LIQ_RAMP, MONO, PRO, rgba } from './theme';
 
 /**
  * Warstwa płynności pod świecami i nad nimi: mapa ciepła arkusza zleceń w czasie (migawki l2Book,
- * każda obowiązuje do następnej; agregacja daleka ~100 USD pod bliską ~10 USD), bąble zleceń
+ * każda obowiązuje do następnej; agregacja daleka (10 × większy krok) pod bliską), bąble zleceń
  * agresora (pole ∝ wartość USD; bitwa z jednym dużym makerem w podwójnym pierścieniu), serie małych
  * zleceń (przerywany pierścień), ściany makerów (pozioma belka na cenie) i drabina DOM z bieżącym
  * arkuszem przy prawej krawędzi. Wszystko powstaje z danych na żywo od otwarcia strony.
@@ -57,7 +57,7 @@ const BUBBLE_MIN_COUNT = 8;
 const BUBBLE_MAX_COUNT = 400;
 const BUBBLE_R_MIN = 3;
 const BUBBLE_R_MAX = 22;
-/** Podpis (wielkość w BTC) od tego promienia (px). */
+/** Podpis (wielkość w jednostkach rynku) od tego promienia (px). */
 const BUBBLE_LABEL_R = 13;
 /** Zasięg kliknięcia poza obrysem bąbla i od belki ściany (px). */
 const PICK_PX = 3;
@@ -434,7 +434,7 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
   }
 }
 
-/** Wielkości (BTC) przy percentylach HEAT_LO_Q i HEAT_Q z próbki poziomów widocznych migawek. */
+/** Wielkości (jednostki rynku) przy percentylach HEAT_LO_Q i HEAT_Q z próbki poziomów widocznych migawek. */
 function heatNorm(frames: readonly BookFrame[]): HeatScale {
   let total = 0;
   for (const f of frames) total += f.sz.length;

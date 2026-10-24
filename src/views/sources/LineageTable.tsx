@@ -48,7 +48,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         metric: 'Footprint, świece delty, CVD (Wykresy)',
         source: 'Hyperliquid WS trades nagrywane od otwarcia widoku (zapis w przeglądarce do 24 h)',
         method:
-          'Wolumen agresywnego kupna i sprzedaży na każdym ticku ceny (strona agresora z pola side); POC i value area 70% świecy, nierównowaga diagonalna (próg i minimalny wolumen w ustawieniach), delta z maksimum i minimum w trakcie świecy, CVD zerowane wg sesji, doby UTC lub tygodnia',
+          'Wolumen agresywnego kupna i sprzedaży na każdym ticku ceny (strona agresora z pola side); POC i value area 70% świecy, nierównowaga diagonalna (próg i minimalna wartość w USD w ustawieniach, przeliczana na jednostki rynku po cenie), delta z maksimum i minimum w trakcie świecy, CVD zerowane wg sesji, doby UTC lub tygodnia',
         kinds: ['LIVE'],
         refresh: 'na żywo',
         caveat:
@@ -100,6 +100,16 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         kinds: ['LIVE'],
         refresh: 'na żywo',
         caveat: 'Kontekst, nie sygnał: strefy i aukcje nie mają potwierdzonej skuteczności prognostycznej.',
+      },
+      {
+        metric: 'Rynki, alerty cenowe i link do widoku (Wykresy)',
+        source: 'Hyperliquid WS i API dla BTC, ETH, SOL i HYPE (każdy rynek osobnym połączeniem); alerty w pamięci przeglądarki',
+        method:
+          'Tick ceny = 5 cyfr znaczących ceny; arkusz bliski w kroku najbliższym 2 pb ceny, daleki w 10 × większym; alert = jednorazowy poziom z kierunkiem wg położenia względem ceny przy ustawianiu, sprawdzany co sekundę na cenie bieżącej świecy rynku; link = rynek, interwał i rodzaj wykresu w adresie strony',
+        kinds: ['LIVE'],
+        refresh: 'na żywo · alerty co 1 s',
+        caveat:
+          'Alerty działają tylko przy otwartej stronie i zapisują się tylko w tej przeglądarce. Klastry likwidacji tylko dla BTC (skaner mapuje pozycje BTC). Taśma każdego rynku nagrywana od otwarcia strony.',
       },
       {
         metric: 'Open interest, funding, mark/oracle',
