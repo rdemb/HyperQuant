@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { guardViolations, splitFrontmatter, validatePost } from './posts.mjs';
-import { absolutize, esc, feedXml, ladderLayout, postPage, renderMarkdown, sitemapXml } from './render.mjs';
+import { absolutize, esc, feedXml, flowsHtml, ladderLayout, liquidationsHtml, postBody, postPage, renderMarkdown, setupsHtml, sitemapXml } from './render.mjs';
 import { buildBlog, checkPosts } from './build.mjs';
 import { wrapTitle } from './og.mjs';
 
@@ -172,6 +172,142 @@ describe('blog: szablony', () => {
     const long = wrapTitle('Bardzo długi tytuł '.repeat(10).trim(), 640);
     expect(long.lines.length).toBe(3);
     expect(long.lines[2].endsWith('…')).toBe(true);
+  });
+});
+
+describe('blog: analiza rozszerzona (dane, diagramy, scenariusze warunkowe)', () => {
+  const PRO = {
+    ...BASE,
+    price: 80610,
+    summary: ['Pod ceną osiem razy więcej longów do likwidacji niż shortów nad nią.', 'Przepływ jest po stronie sprzedających.'],
+    metrics: [
+      { label: 'Premia perp', value: '−1,5 bp', note: 'perp pod indeksem', bias: 'down' },
+      { label: 'Likwidacje 24 h', value: '13,3 mln USD' },
+    ],
+    liquidations: {
+      step: 250,
+      coverage: 43,
+      shorts: [
+        [81250, 0.1],
+        [82750, 13.4],
+      ],
+      longs: [
+        [80000, 42.9],
+        [79750, 57.4],
+      ],
+    },
+    flows: { title: 'Przepływ agresorów netto, 24 h', unit: 'mln USD', rows: [{ label: 'Wieloryby', value: -37.5 }, { label: 'Reszta rynku', value: 12.5, note: '18 720 kont' }] },
+    setups: [
+      {
+        name: 'Wypłukanie longów i powrót nad dołek',
+        bias: 'up',
+        zone: [79750, 80250],
+        window: 'do 18:00',
+        triggers: ['Likwidacje longów rosną skokowo.', 'Świeca 15 min zamyka się nad 80 500.'],
+        invalidation: 'Dwa zamknięcia 15 min pod 79 750.',
+        reactions: [{ label: 'VWAP soboty', price: 80836 }],
+        evidence: 'Po zebraniu PDL cena wracała do środka zakresu w 44% z 85 przypadków.',
+      },
+    ],
+  };
+  const PRO_BODY = `## Płynność\n\n[[likwidacje]]\n\n${BODY_ARTICLE}\n\n## Scenariusze\n\n[[setupy]]\n`;
+
+  it('pełny wpis przechodzi; pola są znormalizowane', () => {
+    const { post, errors } = validatePost(ID, PRO, PRO_BODY);
+    expect(errors).toEqual([]);
+    expect(post.summary).toHaveLength(2);
+    expect(post.metrics[1]).toEqual({ label: 'Likwidacje 24 h', value: '13,3 mln USD', note: null, bias: null });
+    expect(post.liquidations).toMatchObject({ step: 250, coverage: 43, note: null });
+    expect(post.setups[0]).toMatchObject({ bias: 'up', zone: [79750, 80250], window: 'do 18:00' });
+    // znaczniki bloków nie liczą się do słów treści
+    expect(validatePost(ID, PRO, '[[likwidacje]]\n\nZa krótko.').errors.join('\n')).toMatch(/artykuł ma 2 słów/);
+  });
+
+  it('mapa likwidacji: longi pod ceną, shorty sięgają ceny, przedziały co step', () => {
+    const bad = { ...PRO.liquidations, longs: [[80750, 1]], shorts: [[80250, 1], [81300, 2]] };
+    const msg = validatePost(ID, { ...PRO, liquidations: bad }, BODY_ARTICLE).errors.join('\n');
+    expect(msg).toMatch(/longs\[0\]: przedział 80750 nie leży pod ceną/);
+    expect(msg).toMatch(/shorts\[0\]: przedział 80250 nie sięga ceny/);
+    expect(msg).toMatch(/cena 81300 nie jest wielokrotnością step/);
+    const wide = { step: 50, longs: [[70000, 1]], shorts: [[81000, 1]] };
+    expect(validatePost(ID, { ...PRO, liquidations: wide }, BODY_ARTICLE).errors.join('\n')).toMatch(/ponad 60 przedziałów/);
+  });
+
+  it('scenariusze warunkowe: strefa rosnąco, kierunek, warunki i unieważnienie są wymagane', () => {
+    const s = { name: 'X', bias: 'long', zone: [80250, 79750], triggers: [] };
+    const msg = validatePost(ID, { ...PRO, setups: [s] }, BODY_ARTICLE).errors.join('\n');
+    expect(msg).toMatch(/setups\[0\]\.bias/);
+    expect(msg).toMatch(/setups\[0\]\.zone/);
+    expect(msg).toMatch(/setups\[0\]\.triggers: lista 1–5/);
+    expect(msg).toMatch(/setups\[0\]\.invalidation/);
+    expect(validatePost(ID, { ...PRO, summary: ['jeden'] }, BODY_ARTICLE).errors.join('\n')).toMatch(/summary: lista 2–5/);
+    expect(validatePost(ID, { ...PRO, metrics: [{ label: 'Funding', value: 0.125 }] }, BODY_ARTICLE).errors.join('\n')).toMatch(/metrics\[0\]\.value/);
+  });
+
+  it('bezpieczniki obejmują teksty scenariuszy warunkowych i panelu danych', () => {
+    const setups = [{ ...PRO.setups[0], invalidation: 'SL 79 700, dalej bez zmian.', triggers: ['Kupujcie po wybiciu.'] }];
+    const msg = validatePost(ID, { ...PRO, setups, metrics: [{ label: 'Portfel', value: '0x1234567890abcdef1234567890abcdef12345678' }] }, BODY_ARTICLE).errors.join('\n');
+    expect(msg).toMatch(/TP\/SL/);
+    expect(msg).toMatch(/wezwanie do transakcji/);
+    expect(msg).toMatch(/portfela/);
+  });
+
+  it('znaczniki bloków: znane, raz, z danymi, w osobnej linii', () => {
+    const msg = (body, data = PRO) => validatePost(ID, data, `${BODY_ARTICLE}\n\n${body}`).errors.join('\n');
+    expect(msg('[[wykres]]')).toMatch(/nieznany blok \[\[wykres\]\]/);
+    expect(msg('[[setupy]]\n\n[[setupy]]')).toMatch(/więcej niż raz/);
+    expect(msg('[[przeplywy]]', { ...PRO, flows: undefined })).toMatch(/\[\[przeplywy\]\] bez danych/);
+    expect(msg('Patrz [[likwidacje]] wyżej.')).toMatch(/w osobnej linii/);
+  });
+
+  it('strona: bloki ze znacznikiem w treści, pozostałe przed treścią w stałej kolejności', () => {
+    const { post } = validatePost(ID, PRO, PRO_BODY);
+    const html = postPage(SITE, post, {});
+    const { top, prose } = postBody(post);
+    expect(html).toContain('<section class="summary"');
+    expect([...top.matchAll(/block--(\w+)/g)].map((m) => m[1])).toEqual(['dane', 'poziomy', 'przeplywy', 'scenariusze']);
+    expect(prose).toMatch(/<h2>Płynność<\/h2>\n<figure class="block block--inline block--likwidacje"><figcaption>Mapa likwidacji<\/figcaption>/);
+    expect(prose).toContain('block--setupy');
+    expect(html).not.toMatch(/\[\[/);
+    expect(html).toContain('<span class="bias bias--down" aria-hidden="true">▼</span><span class="sr-only">spadkowy: </span>');
+  });
+
+  it('mapa likwidacji: przedziały od góry bez luk, linia ceny między shortami a longami, sumy w legendzie', () => {
+    const html = liquidationsHtml(80610, PRO.liquidations);
+    const rows = [...html.matchAll(/<li( class="liq-now")?><span class="liq-px">([\d ]+)<\/span>/g)].map((m) => (m[1] ? 'cena' : m[2].replace(' ', ' ')));
+    expect(rows).toEqual(['82 750', '82 500', '82 250', '82 000', '81 750', '81 500', '81 250', '81 000', '80 750', '80 500', 'cena', '80 250', '80 000', '79 750']);
+    // najdłuższy słupek = 88% ścieżki, kwota tylko przy większych przedziałach
+    expect(html).toContain('<span class="liq-bars" style="width:88.0%"><span class="liq-bar liq-bar--long" style="width:100.0%"></span></span><span class="liq-v">57,4</span>');
+    expect(html).not.toContain('<span class="liq-v">0,1</span>');
+    expect(html).toContain('▲ likwidacje shortów (kupno) <b>13,5 mln USD</b>');
+    expect(html).toContain('▼ likwidacje longów (sprzedaż) <b>100,3 mln USD</b>');
+    expect(html).toContain('Mapa obejmuje 43% otwartych pozycji');
+    expect(html).toContain('<tr><td>79 750–79 999</td><td align="right"></td><td align="right">57,4</td></tr>');
+  });
+
+  it('przepływy: słupki od zera w obie strony, wartość ze znakiem i typograficznym minusem', () => {
+    const html = flowsHtml(PRO.flows);
+    expect(html).toContain('<span class="fl-bar fl-bar--sell" style="width:50.0%"></span></span><span class="fl-v">−37,5</span>');
+    expect(html).toContain('<span class="fl-bar fl-bar--buy" style="width:16.7%"></span></span><span class="fl-v">+12,5</span>');
+    expect(html).toContain('Kwoty w mln USD.');
+  });
+
+  it('scenariusz warunkowy: strefa z odległością od ceny, warunki po kolei, poziomy reakcji z odległością w %', () => {
+    const html = setupsHtml(80610, PRO.setups);
+    expect(html).toContain('To opis warunków, nie zlecenie ani rekomendacja.');
+    expect(html).toContain('<span class="su-bias">▲ Scenariusz wzrostowy</span> <span class="su-window">do 18:00</span>');
+    expect(html).toContain('<b>79 750–80 250</b> <span class="su-dist">360–860 USD pod ceną</span>');
+    expect(html.match(/<ol class="su-checks">(.*?)<\/ol>/)[1].match(/<li>/g)).toHaveLength(2);
+    expect(html).toContain('<b>80 836</b> <span>VWAP soboty</span> <span class="su-dist">+0,3%</span>');
+    expect(setupsHtml(80610, [{ ...PRO.setups[0], zone: [80500, 80700] }])).toContain('cena w strefie');
+  });
+
+  it('RSS: bez diagramów i znaczników, z punktami w skrócie i scenariuszami warunkowymi', () => {
+    const { post } = validatePost(ID, PRO, PRO_BODY);
+    const xml = feedXml(SITE, [post]);
+    expect(xml).not.toMatch(/\[\[|liq-rows/);
+    expect(xml).toContain('<li>Przepływ jest po stronie sprzedających.</li>');
+    expect(xml).toContain('Wypłukanie longów i powrót nad dołek');
   });
 });
 

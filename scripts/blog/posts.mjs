@@ -10,9 +10,20 @@ export const TYPES = ['article', 'note'];
 /** Nazwa pliku (bez .md) = adres wpisu: data publikacji (czas polski) + krótki opis. */
 const ID_RE = /^(\d{4}-\d{2}-\d{2})-[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?(?:Z|[+-]\d{2}:\d{2})$/;
-const KNOWN_KEYS = new Set(['title', 'description', 'date', 'type', 'section', 'price', 'levels', 'scenarios', 'draft']);
+const KNOWN_KEYS = new Set(['title', 'description', 'date', 'type', 'section', 'price', 'summary', 'metrics', 'levels', 'liquidations', 'flows', 'scenarios', 'setups', 'draft']);
 const LEVEL_KEYS = new Set(['label', 'price', 'note']);
 const SCENARIO_KEYS = new Set(['label', 'probability', 'note']);
+const METRIC_KEYS = new Set(['label', 'value', 'note', 'bias']);
+const LIQ_KEYS = new Set(['step', 'coverage', 'longs', 'shorts', 'note']);
+const FLOW_KEYS = new Set(['title', 'unit', 'rows']);
+const FLOW_ROW_KEYS = new Set(['label', 'value', 'note']);
+const SETUP_KEYS = new Set(['name', 'bias', 'zone', 'window', 'triggers', 'invalidation', 'reactions', 'evidence']);
+export const BIASES = ['up', 'down', 'flat'];
+/** Liczba wierszy mapy likwidacji (przedziały od najniższego do najwyższego, także puste). */
+const LIQ_MAX_ROWS = 60;
+/** Bloki danych, które treść może wstawić w wybranym miejscu znacznikiem w osobnej linii (np. `[[likwidacje]]`). */
+export const BLOCKS = { dane: 'metrics', poziomy: 'levels', likwidacje: 'liquidations', przeplywy: 'flows', scenariusze: 'scenarios', setupy: 'setups' };
+const MARK_RE = /^[ \t]*\[\[([^\]\n]*)\]\][ \t]*$/gm;
 /** Pola spoza schematu (np. przecinek w nawiasach klamrowych YAML bez cudzysłowu tworzy nowy klucz). */
 const extraKeys = (o, known) => (o && typeof o === 'object' ? Object.keys(o).filter((k) => !known.has(k)) : []);
 
@@ -68,6 +79,7 @@ export function localDate(ms) {
 /** Liczba słów treści (bez znaczników Markdown). */
 export function wordCount(md) {
   return md
+    .replace(/\[\[[^\]\n]*\]\]/g, ' ')
     .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
     .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
     .split(/\s+/)
@@ -76,6 +88,14 @@ export function wordCount(md) {
 
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 const isText = (v, max) => typeof v === 'string' && v.trim().length > 0 && v.length <= max;
+const isPrice = (v) => isNum(v) && v > 0;
+const isMap = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+const trimOrNull = (v) => (typeof v === 'string' ? v.trim() : null);
+
+/** Bloki wstawione w treść znacznikiem w osobnej linii, w kolejności wystąpienia. */
+export function placedBlocks(body) {
+  return [...body.matchAll(MARK_RE)].map((m) => m[1]);
+}
 
 /**
  * Walidacja jednego wpisu. Zwraca { post, errors }; post === null, gdy wpis jest niepoprawny.
@@ -130,13 +150,129 @@ export function validatePost(id, data, body) {
     if (sum > 100) err(`scenarios: suma prawdopodobieństw ${sum}% > 100%`);
   }
 
+  const summary = data.summary ?? [];
+  if (!Array.isArray(summary) || summary.length === 1 || summary.length > 5) err('summary: lista 2–5 punktów');
+  else summary.forEach((t, i) => !isText(t, 200) && err(`summary[${i}]: tekst do 200 znaków`));
+
+  const metrics = data.metrics ?? [];
+  if (!Array.isArray(metrics) || metrics.length > 12) err('metrics: lista do 12 wskaźników');
+  else
+    metrics.forEach((m, i) => {
+      for (const k of extraKeys(m, METRIC_KEYS)) err(`metrics[${i}]: nieznane pole „${k}” (tekst z przecinkiem ujmij w cudzysłów)`);
+      if (!m || !isText(m.label, 28)) err(`metrics[${i}].label: wymagana nazwa do 28 znaków`);
+      if (!m || !isText(m.value, 20)) err(`metrics[${i}].value: wymagana wartość jako tekst do 20 znaków, np. "−37,5 mln USD"`);
+      if (m?.note !== undefined && !isText(m.note, 80)) err(`metrics[${i}].note: tekst do 80 znaków`);
+      if (m?.bias !== undefined && !BIASES.includes(m.bias)) err(`metrics[${i}].bias: ${BIASES.join(', ')}`);
+    });
+
+  const liq = data.liquidations;
+  if (liq !== undefined) {
+    if (!isMap(liq)) err('liquidations: mapa z polami step, longs, shorts');
+    else {
+      for (const k of extraKeys(liq, LIQ_KEYS)) err(`liquidations: nieznane pole „${k}”`);
+      if (!isPrice(liq.step)) err('liquidations.step: szerokość przedziału w USD, liczba dodatnia');
+      if (liq.coverage !== undefined && !(Number.isInteger(liq.coverage) && liq.coverage >= 1 && liq.coverage <= 100)) err('liquidations.coverage: liczba całkowita 1–100 (% otwartych pozycji objętych mapą)');
+      if (liq.note !== undefined && !isText(liq.note, 200)) err('liquidations.note: tekst do 200 znaków');
+      if (data.price === undefined) err('liquidations: wymagają pola price (cena w chwili publikacji)');
+      const sides = { longs: liq.longs ?? [], shorts: liq.shorts ?? [] };
+      const all = [];
+      for (const [side, rows] of Object.entries(sides)) {
+        if (!Array.isArray(rows)) {
+          err(`liquidations.${side}: lista par [cena od, mln USD]`);
+          continue;
+        }
+        const seen = new Set();
+        rows.forEach((r, i) => {
+          if (!Array.isArray(r) || r.length !== 2 || !isPrice(r[0]) || !isNum(r[1]) || r[1] < 0) return err(`liquidations.${side}[${i}]: para [cena od, mln USD], np. [80000, 42.9]`);
+          if (isPrice(liq.step) && r[0] % liq.step !== 0) err(`liquidations.${side}[${i}]: cena ${r[0]} nie jest wielokrotnością step (${liq.step})`);
+          if (seen.has(r[0])) err(`liquidations.${side}: przedział ${r[0]} powtórzony`);
+          seen.add(r[0]);
+          // Longi likwidują się pod ceną, shorty nad nią (przedział shortów może zawierać cenę)
+          if (isPrice(data.price) && side === 'longs' && r[0] >= data.price) err(`liquidations.longs[${i}]: przedział ${r[0]} nie leży pod ceną ${data.price}`);
+          if (isPrice(data.price) && isPrice(liq.step) && side === 'shorts' && r[0] + liq.step <= data.price) err(`liquidations.shorts[${i}]: przedział ${r[0]} nie sięga ceny ${data.price}`);
+          all.push(r[0]);
+        });
+      }
+      if (!all.length) err('liquidations: co najmniej jeden przedział');
+      else if (isPrice(liq.step) && (Math.max(...all) - Math.min(...all)) / liq.step + 1 > LIQ_MAX_ROWS) err(`liquidations: zakres ponad ${LIQ_MAX_ROWS} przedziałów, zwiększ step albo zawęź ceny`);
+    }
+  }
+
+  const flows = data.flows;
+  if (flows !== undefined) {
+    if (!isMap(flows)) err('flows: mapa z polami title, unit, rows');
+    else {
+      for (const k of extraKeys(flows, FLOW_KEYS)) err(`flows: nieznane pole „${k}”`);
+      if (!isText(flows.title, 60)) err('flows.title: wymagany tytuł do 60 znaków, np. „Przepływ agresorów, 24 h”');
+      if (!isText(flows.unit, 12)) err('flows.unit: wymagana jednostka do 12 znaków, np. „mln USD”');
+      if (!Array.isArray(flows.rows) || flows.rows.length < 1 || flows.rows.length > 8) err('flows.rows: lista 1–8 wierszy');
+      else
+        flows.rows.forEach((r, i) => {
+          for (const k of extraKeys(r, FLOW_ROW_KEYS)) err(`flows.rows[${i}]: nieznane pole „${k}”`);
+          if (!r || !isText(r.label, 28)) err(`flows.rows[${i}].label: wymagana nazwa do 28 znaków`);
+          if (!r || !isNum(r.value)) err(`flows.rows[${i}].value: liczba (dodatnia: przewaga kupujących, ujemna: sprzedających)`);
+          if (r?.note !== undefined && !isText(r.note, 60)) err(`flows.rows[${i}].note: tekst do 60 znaków`);
+        });
+    }
+  }
+
+  const setups = data.setups ?? [];
+  if (!Array.isArray(setups) || setups.length > 4) err('setups: lista do 4 scenariuszy warunkowych');
+  else {
+    if (setups.length && data.price === undefined) err('setups: wymagają pola price (cena w chwili publikacji)');
+    setups.forEach((s, i) => {
+      const at = `setups[${i}]`;
+      if (!isMap(s)) return err(`${at}: mapa z polami name, bias, zone, triggers, invalidation`);
+      for (const k of extraKeys(s, SETUP_KEYS)) err(`${at}: nieznane pole „${k}” (tekst z przecinkiem ujmij w cudzysłów)`);
+      if (!isText(s.name, 70)) err(`${at}.name: wymagana nazwa do 70 znaków`);
+      if (!BIASES.includes(s.bias)) err(`${at}.bias: ${BIASES.join(', ')}`);
+      if (!Array.isArray(s.zone) || s.zone.length !== 2 || !isPrice(s.zone[0]) || !isPrice(s.zone[1]) || s.zone[0] >= s.zone[1]) err(`${at}.zone: [od, do], np. [79800, 80250]`);
+      if (s.window !== undefined && !isText(s.window, 40)) err(`${at}.window: horyzont do 40 znaków, np. „do 18:00”`);
+      if (!Array.isArray(s.triggers) || s.triggers.length < 1 || s.triggers.length > 5) err(`${at}.triggers: lista 1–5 warunków`);
+      else s.triggers.forEach((t, j) => !isText(t, 180) && err(`${at}.triggers[${j}]: tekst do 180 znaków`));
+      if (!isText(s.invalidation, 220)) err(`${at}.invalidation: wymagany warunek unieważnienia do 220 znaków`);
+      const reactions = s.reactions ?? [];
+      if (!Array.isArray(reactions) || reactions.length > 5) err(`${at}.reactions: lista do 5 poziomów`);
+      else
+        reactions.forEach((r, j) => {
+          for (const k of extraKeys(r, LEVEL_KEYS)) err(`${at}.reactions[${j}]: nieznane pole „${k}”`);
+          if (!r || !isText(r.label, 40)) err(`${at}.reactions[${j}].label: wymagana nazwa do 40 znaków`);
+          if (!r || !isPrice(r.price)) err(`${at}.reactions[${j}].price: liczba dodatnia`);
+        });
+      if (s.evidence !== undefined && !isText(s.evidence, 280)) err(`${at}.evidence: tekst do 280 znaków`);
+    });
+  }
+
+  const marks = placedBlocks(body);
+  const inline = body.match(/\[\[[^\]\n]*\]\]/g) ?? [];
+  if (inline.length !== marks.length) err('treść: znacznik bloku (np. [[likwidacje]]) musi stać sam w osobnej linii');
+  const present = { metrics: metrics.length, levels: levels.length, liquidations: liq !== undefined, flows: flows !== undefined, scenarios: scenarios.length, setups: setups.length };
+  marks.forEach((m, i) => {
+    if (!(m in BLOCKS)) err(`treść: nieznany blok [[${m}]]; dostępne: ${Object.keys(BLOCKS).join(', ')}`);
+    else if (marks.indexOf(m) !== i) err(`treść: blok [[${m}]] wstawiony więcej niż raz`);
+    else if (!present[BLOCKS[m]]) err(`treść: blok [[${m}]] bez danych (pole ${BLOCKS[m]} we frontmatterze)`);
+  });
+
   if (/^#\s/m.test(body)) err('treść: bez nagłówka # (tytuł strony to title); sekcje od ##');
   const words = wordCount(body);
   if (data.type === 'article' && words < 150) err(`treść: artykuł ma ${words} słów, minimum 150`);
   if (data.type === 'note' && (words < 15 || words > 250)) err(`treść: notka ma ${words} słów, dozwolone 15–250`);
 
   // Bezpieczniki na całym tekście, który trafia na stronę
-  const texts = [data.title, data.description, data.section, body, ...levels.flatMap((l) => [l?.label, l?.note]), ...scenarios.flatMap((s) => [s?.label, s?.note])];
+  const list = (v) => (Array.isArray(v) ? v : []);
+  const texts = [
+    data.title,
+    data.description,
+    data.section,
+    body,
+    ...list(summary),
+    ...list(metrics).flatMap((m) => [m?.label, m?.value, m?.note]),
+    ...list(levels).flatMap((l) => [l?.label, l?.note]),
+    isMap(liq) ? liq.note : null,
+    ...(isMap(flows) ? [flows.title, flows.unit, ...list(flows.rows).flatMap((r) => [r?.label, r?.note])] : []),
+    ...list(scenarios).flatMap((s) => [s?.label, s?.note]),
+    ...list(setups).flatMap((s) => [s?.name, s?.window, ...list(s?.triggers), s?.invalidation, s?.evidence, ...list(s?.reactions).map((r) => r?.label)]),
+  ];
   for (const v of guardViolations(texts.filter((t) => typeof t === 'string').join('\n'))) err(v);
 
   if (errors.length) return { post: null, errors };
@@ -150,8 +286,22 @@ export function validatePost(id, data, body) {
       type: data.type,
       section: data.section.trim(),
       price: data.price ?? null,
+      summary: summary.map((t) => t.trim()),
+      metrics: metrics.map((m) => ({ label: m.label.trim(), value: m.value.trim(), note: trimOrNull(m.note), bias: m.bias ?? null })),
       levels: levels.map((l) => ({ label: l.label.trim(), price: l.price, note: l.note?.trim() ?? null })),
+      liquidations: liq === undefined ? null : { step: liq.step, coverage: liq.coverage ?? null, longs: liq.longs ?? [], shorts: liq.shorts ?? [], note: trimOrNull(liq.note) },
+      flows: flows === undefined ? null : { title: flows.title.trim(), unit: flows.unit.trim(), rows: flows.rows.map((r) => ({ label: r.label.trim(), value: r.value, note: trimOrNull(r.note) })) },
       scenarios: scenarios.map((s) => ({ label: s.label.trim(), probability: s.probability, note: s.note?.trim() ?? null })),
+      setups: setups.map((s) => ({
+        name: s.name.trim(),
+        bias: s.bias,
+        zone: s.zone,
+        window: trimOrNull(s.window),
+        triggers: s.triggers.map((t) => t.trim()),
+        invalidation: s.invalidation.trim(),
+        reactions: (s.reactions ?? []).map((r) => ({ label: r.label.trim(), price: r.price })),
+        evidence: trimOrNull(s.evidence),
+      })),
       draft: data.draft === true,
       body,
     },

@@ -3,6 +3,7 @@
 Blog to statyczne strony budowane razem z deskiem (`npm run build`): lista wpisów pogrupowana po dniach, strona każdego wpisu,
 archiwum miesięcy, kanał RSS (`blog/feed.xml`), `sitemap.xml`, obrazek do podglądu linku (Open Graph / X, 1200×630) dla każdego wpisu
 oraz przyciski udostępniania pod tytułem i pod treścią wpisu (X, Facebook, LinkedIn, Telegram, WhatsApp, kopiowanie linku, systemowe „Udostępnij” na telefonie).
+Pełna analiza może mieć ramkę „W skrócie”, panel danych, mapę likwidacji, przepływy i scenariusze warunkowe, wstawiane w wybranych miejscach treści.
 Kod: `scripts/blog/`, wpisy: `content/blog/`.
 
 ## Plik
@@ -44,9 +45,54 @@ scenarios:
 | `price` | przy `levels` | Cena BTC-PERP w chwili publikacji (USD). |
 | `levels` | nie | Do 12 poziomów: `label` (do 20 znaków), `price`, opcjonalnie `note` (do 40 znaków). Rysowane jako mapa poziomów z odległością od ceny w %. |
 | `scenarios` | nie | Do 4 scenariuszy **wykluczających się** (np. trzy przedziały ceny o tej samej godzinie): `label` (do 60 znaków, z horyzontem), `probability` (liczba całkowita 1–99, %), opcjonalnie `note` (do 240 znaków). Suma do 100%; brakująca reszta jest pokazana jako „inne przebiegi”. |
+| `summary` | nie | „W skrócie”: 2–5 punktów (do 200 znaków), ramka pod leadem i lista na początku wpisu w RSS. |
+| `metrics` | nie | Panel danych, do 12 kart: `label` (do 28 znaków), `value` (tekst z jednostką, do 20 znaków, np. `"−1,5 bp"`), opcjonalnie `note` (do 80 znaków) i `bias`: `up`, `down` albo `flat` (znak ▲ ▼ ◆ przy wartości). |
+| `liquidations` | nie | Mapa likwidacji (wymaga `price`): `step` (szerokość przedziału w USD), `longs` i `shorts` jako pary `[cena od, mln USD]` z cenami będącymi wielokrotnością `step` (longi pod ceną, shorty nad nią; przedział shortów może zawierać cenę), opcjonalnie `coverage` (1–100, % otwartych pozycji objętych mapą) i `note` (do 200 znaków). Najwyżej 60 przedziałów od najniższego do najwyższego; puste przedziały pomiędzy są rysowane, żeby odległości były prawdziwe. |
+| `flows` | nie | Przepływy: `title` (do 60 znaków), `unit` (do 12 znaków), `rows` 1–8 wierszy `{ label, value, note }`; `value` dodatnie to przewaga kupujących, ujemne sprzedających. Słupki od zera w obie strony. |
+| `setups` | nie | Do 4 scenariuszy warunkowych (wymaga `price`): `name` (do 70 znaków), `bias` (`up`, `down`, `flat`), `zone: [od, do]` (strefa obserwacji), opcjonalnie `window` (horyzont, do 40 znaków), `triggers` (1–5 warunków, każdy do 180 znaków, w kolejności), `invalidation` (co unieważnia scenariusz, do 220 znaków), `reactions` (do 5 poziomów `{ label, price }`), `evidence` (co mówią dane historyczne, do 280 znaków). |
 | `draft` | nie | `true`: wpis nie trafia na stronę (podgląd lokalny: `--drafts`). |
 
 Tekst z przecinkiem w nawiasach klamrowych YAML ujmuje się w cudzysłów (`note: "dołek, 34%"`), inaczej przecinek tworzy nowe pole i walidacja to zgłosi.
+
+### Analiza rozszerzona
+
+Pełna analiza łączy liczby z desku z diagramami i scenariuszami warunkowymi. Przykład pól (wartości skrócone):
+
+```yaml
+summary:
+  - "Pod ceną czeka osiem razy więcej longów do likwidacji niż shortów nad nią."
+  - "Przepływ jest po stronie sprzedających, perp notuje się pod indeksem."
+metrics:
+  - { label: Premia perp, value: "−1,5 bp", note: "perp pod indeksem od rana", bias: down }
+  - { label: Likwidacje 24 h, value: "13,3 mln USD", note: same longi }
+liquidations:
+  step: 250
+  coverage: 43
+  shorts: [[82750, 13.4], [82500, 7.6]]
+  longs: [[80000, 42.9], [79750, 57.4]]
+flows:
+  title: Przepływ agresorów netto, 24 h
+  unit: mln USD
+  rows:
+    - { label: Wieloryby, value: -37.5, note: 100 największych kont }
+    - { label: Reszta rynku, value: -23.3 }
+setups:
+  - name: Wypłukanie longów pod 80 000 i powrót nad dołek tygodnia
+    bias: up
+    zone: [79750, 80250]
+    window: do 18:00
+    triggers:
+      - Cena wchodzi w klaster, a likwidacje longów rosną skokowo.
+      - W ciągu godziny świeca 15 min zamyka się z powrotem nad 80 500.
+    invalidation: Dwa zamknięcia 15 min pod 79 750 bez powrotu.
+    reactions:
+      - { label: VWAP soboty, price: 80836 }
+    evidence: Po pierwszym dotknięciu minimum poprzedniego dnia cena doszła do środka zakresu w 44% z 85 przypadków (losowo 48%).
+```
+
+Scenariusze warunkowe opisują, co musiałoby się wydarzyć na rynku (strefa, warunki potwierdzenia, unieważnienie, poziomy reakcji). Nad kartami jest stała uwaga, że to opis warunków, a nie zlecenie ani rekomendacja. Bezpieczniki obejmują wszystkie teksty tych pól, więc nie przejdą w nich poziomy TP/SL, „long od …” ani tryb rozkazujący.
+
+**Miejsce bloków w treści.** Blok danych można wstawić w wybranym miejscu treści znacznikiem w osobnej linii: `[[dane]]` (panel danych), `[[poziomy]]`, `[[likwidacje]]`, `[[przeplywy]]`, `[[scenariusze]]`, `[[setupy]]`. Wstawiony blok dostaje podpis zamiast nagłówka sekcji, więc dobrze stoi pod własnym `##`. Bloki bez znacznika trafiają przed treść w tej kolejności, każdy z nagłówkiem. Znacznik bez danych, nieznany, powtórzony albo w środku akapitu to błąd wpisu. W RSS diagramy są pomijane, a scenariusze warunkowe zostają jako tekst.
 
 ## Treść
 

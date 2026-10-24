@@ -1,6 +1,6 @@
 // Szablony bloga: strona wpisu, lista wpisów, archiwum miesięcy, RSS i sitemap. Czyste funkcje (tekst → tekst).
 import { Marked } from 'marked';
-import { TIME_ZONE, localDate } from './posts.mjs';
+import { BLOCKS, TIME_ZONE, localDate, placedBlocks } from './posts.mjs';
 
 export const INDEX_LIMIT = 40;
 export const FEED_LIMIT = 50;
@@ -10,12 +10,14 @@ const LADDER_PAD = 16;
 
 // ───────────────────────── Formatowanie ─────────────────────────
 
-/** Twarde spacje w grupach cyfr („80 777”), żeby liczba nie łamała się między wierszami. */
-export const nbsp = (s) => s.replace(/(\d) (?=\d{3}(?!\d))/g, '$1\u00a0');
+/** Twarde spacje w grupach cyfr („80 777”) i przed jednostką („1,5 bp”), żeby liczba nie łamała się między wierszami. */
+export const nbsp = (s) => s.replace(/(\d) (?=\d{3}(?!\d))/g, '$1\u00a0').replace(/(\d) (?=(?:bp|mln|mld|USD|BTC|min)(?![\p{L}]))/gu, '$1\u00a0');
 /** Tekst do HTML: encje i twarde spacje w liczbach. */
 export const esc = (s) => nbsp(String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]));
 
 const priceFmt = new Intl.NumberFormat('pl-PL', { maximumFractionDigits: 0 });
+const amountFmt = new Intl.NumberFormat('pl-PL', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+const signedFmt = new Intl.NumberFormat('pl-PL', { minimumFractionDigits: 1, maximumFractionDigits: 1, signDisplay: 'exceptZero' });
 const pctFmt = new Intl.NumberFormat('pl-PL', { minimumFractionDigits: 1, maximumFractionDigits: 1, signDisplay: 'exceptZero' });
 const dayFmt = new Intl.DateTimeFormat('pl-PL', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: TIME_ZONE });
 const timeFmt = new Intl.DateTimeFormat('pl-PL', { hour: '2-digit', minute: '2-digit', timeZone: TIME_ZONE });
@@ -23,6 +25,9 @@ const monthFmt = new Intl.DateTimeFormat('pl-PL', { month: 'long', year: 'numeri
 
 export const fmtPrice = (v) => priceFmt.format(v);
 export const fmtPct = (v) => `${pctFmt.format(v)}%`;
+export const fmtAmount = (v) => amountFmt.format(v);
+/** Kwota ze znakiem i typograficznym minusem („−37,5”, „+4,2”). */
+export const fmtSigned = (v) => signedFmt.format(v).replace('-', '\u2212');
 export const fmtDay = (ms) => dayFmt.format(ms);
 export const fmtTime = (ms) => timeFmt.format(ms);
 export const monthKey = (ms) => localDate(ms).slice(0, 7);
@@ -111,6 +116,156 @@ export function scenariosHtml(scenarios) {
     .join('');
   const rest = sum < 100 ? `<p class="sc-rest">Pozostałe ${100 - sum}%: inne przebiegi.</p>` : '';
   return `<ol class="scenarios">${items}</ol>${rest}`;
+}
+
+/** Kierunek, za którym przemawia wskaźnik albo scenariusz: znak i opis (kolor nigdy nie jest jedynym nośnikiem). */
+const BIAS = { up: ['▲', 'wzrostowy'], down: ['▼', 'spadkowy'], flat: ['◆', 'bez przewagi'] };
+const biasMark = (bias) => `<span class="bias bias--${bias}" aria-hidden="true">${BIAS[bias][0]}</span><span class="sr-only">${BIAS[bias][1]}: </span>`;
+
+/** Najważniejsze wnioski wpisu (2–5 punktów) pod leadem. */
+export function summaryHtml(items) {
+  return `<section class="summary" aria-labelledby="summary-title"><h2 id="summary-title">W skrócie</h2><ul>${items.map((t) => `<li>${esc(t)}</li>`).join('')}</ul></section>`;
+}
+
+/** Panel danych: karty wskaźników (wartość jako tekst z jednostką, opcjonalnie kierunek). */
+export function metricsHtml(metrics) {
+  const cards = metrics
+    .map(
+      (m) =>
+        `<li><span class="mt-label">${esc(m.label)}</span><span class="mt-value">${m.bias ? biasMark(m.bias) : ''}${esc(m.value)}</span>${m.note ? `<span class="mt-note">${esc(m.note)}</span>` : ''}</li>`
+    )
+    .join('');
+  return `<ul class="metrics">${cards}</ul>`;
+}
+
+/**
+ * Mapa likwidacji: przedziały ceny od najwyższego do najniższego (także puste, żeby odległości były prawdziwe),
+ * shorty nad ceną (wymuszone kupno), longi pod ceną (wymuszona sprzedaż), linia ceny w przedziale, który ją zawiera.
+ * Kwoty przy słupkach tylko dla większych przedziałów; komplet w tabeli pod mapą.
+ */
+export function liquidationsHtml(price, liq) {
+  const { step } = liq;
+  const longs = new Map(liq.longs);
+  const shorts = new Map(liq.shorts);
+  const prices = [...longs.keys(), ...shorts.keys()];
+  const hi = Math.max(...prices);
+  const lo = Math.min(...prices);
+  const rows = [];
+  for (let px = hi; px >= lo; px -= step) rows.push({ px, long: longs.get(px) ?? 0, short: shorts.get(px) ?? 0 });
+  const max = Math.max(...rows.map((r) => Math.max(r.long, r.short))) || 1;
+  const sum = (m) => [...m.values()].reduce((a, v) => a + v, 0);
+  const range = (px) => `${fmtPrice(px)}–${fmtPrice(px + step - 1)}`;
+  // Najdłuższy słupek zajmuje 88% ścieżki, reszta na kwotę tuż za końcem słupka
+  const bars = (r) => {
+    const v = Math.max(r.long, r.short);
+    if (v <= 0) return '';
+    const bar = (side, x) => (x > 0 ? `<span class="liq-bar liq-bar--${side}" style="width:${((x / v) * 100).toFixed(1)}%"></span>` : '');
+    const label = v >= max * 0.1 ? `<span class="liq-v">${fmtAmount(v)}</span>` : '';
+    return `<span class="liq-bars" style="width:${((v / max) * 88).toFixed(1)}%">${bar('short', r.short)}${bar('long', r.long)}</span>${label}`;
+  };
+  const nowRow = `<li class="liq-now"><span class="liq-px">${fmtPrice(price)}</span><span class="liq-track"><span class="liq-line"></span><span class="liq-v">cena</span></span></li>`;
+  let placed = false;
+  const items = [];
+  for (const r of rows) {
+    if (!placed && r.px + step <= price) {
+      items.push(nowRow);
+      placed = true;
+    }
+    items.push(`<li><span class="liq-px">${fmtPrice(r.px)}</span><span class="liq-track">${bars(r)}</span></li>`);
+  }
+  if (!placed) items.push(nowRow);
+  const table = rows
+    .filter((r) => r.long > 0 || r.short > 0)
+    .map((r) => `<tr><td>${range(r.px)}</td><td align="right">${r.short > 0 ? fmtAmount(r.short) : ''}</td><td align="right">${r.long > 0 ? fmtAmount(r.long) : ''}</td></tr>`)
+    .join('');
+  const coverage = liq.coverage ? ` Mapa obejmuje ${liq.coverage}% otwartych pozycji, więc rzeczywiste kwoty są wyższe.` : '';
+  const aria = `Mapa likwidacji przy cenie ${fmtPrice(price)}: shorty nad ceną ${fmtAmount(sum(shorts))} mln USD, longi pod ceną ${fmtAmount(sum(longs))} mln USD.`;
+  return `<div class="liq" role="group" aria-label="${esc(aria)}">
+<p class="legend"><span><i class="sw sw--short"></i>▲ likwidacje shortów (kupno) <b>${fmtAmount(sum(shorts))}\u00a0mln USD</b></span><span><i class="sw sw--long"></i>▼ likwidacje longów (sprzedaż) <b>${fmtAmount(sum(longs))}\u00a0mln USD</b></span></p>
+<ol class="liq-rows" aria-hidden="true">${items.join('')}</ol>
+<p class="fig-note">Przedziały co ${fmtPrice(step)} USD, kwoty w mln USD.${coverage}${liq.note ? ` ${esc(liq.note)}` : ''}</p>
+<details class="fig-table"><summary>Tabela danych</summary><div class="table-wrap"><table><thead><tr><th>Przedział</th><th align="right">Shorty, mln USD</th><th align="right">Longi, mln USD</th></tr></thead><tbody>${table}</tbody></table></div></details>
+</div>`;
+}
+
+/** Przepływy: słupki od zera w obie strony (w prawo przewaga kupujących, w lewo sprzedających), wartość ze znakiem obok. */
+export function flowsHtml(flows) {
+  const max = Math.max(...flows.rows.map((r) => Math.abs(r.value))) || 1;
+  const rows = flows.rows
+    .map((r) => {
+      const side = r.value >= 0 ? 'buy' : 'sell';
+      const w = ((Math.abs(r.value) / max) * 50).toFixed(1);
+      const note = r.note ? `<small>${esc(r.note)}</small>` : '';
+      return `<li><span class="fl-label">${esc(r.label)}${note}</span><span class="fl-track"><span class="fl-bar fl-bar--${side}" style="width:${w}%"></span></span><span class="fl-v">${fmtSigned(r.value)}</span></li>`;
+    })
+    .join('');
+  return `<div class="flows">
+<p class="legend"><span><i class="sw sw--buy"></i>▲ przewaga kupujących</span><span><i class="sw sw--sell"></i>▼ przewaga sprzedających</span></p>
+<ol class="fl-rows">${rows}</ol>
+<p class="fig-note">Kwoty w ${esc(flows.unit)}.</p>
+</div>`;
+}
+
+/** Odległość strefy od ceny w dolarach: nad, pod albo „cena w strefie”. */
+function zoneDistance(price, [lo, hi]) {
+  if (lo > price) return `${fmtPrice(lo - price)}–${fmtPrice(hi - price)} USD nad ceną`;
+  if (hi < price) return `${fmtPrice(price - hi)}–${fmtPrice(price - lo)} USD pod ceną`;
+  return 'cena w strefie';
+}
+
+const SETUPS_NOTE = 'Każdy scenariusz opisuje, co musiałoby się wydarzyć na rynku, żeby obraz się potwierdził albo upadł. To opis warunków, nie zlecenie ani rekomendacja.';
+
+/** Scenariusze warunkowe: strefa obserwacji, warunki potwierdzenia, unieważnienie, poziomy reakcji i dane historyczne. */
+export function setupsHtml(price, setups) {
+  const cards = setups
+    .map((s) => {
+      const reactions = s.reactions.length
+        ? `<p class="su-k">Poziomy reakcji</p><ul class="su-reactions">${s.reactions.map((r) => `<li><b>${fmtPrice(r.price)}</b> <span>${esc(r.label)}</span> <span class="su-dist">${fmtPct(((r.price - price) / price) * 100)}</span></li>`).join('')}</ul>`
+        : '';
+      const evidence = s.evidence ? `<p class="su-evidence"><span class="su-k">Co mówią dane</span> ${esc(s.evidence)}</p>` : '';
+      return `<li class="setup setup--${s.bias}">
+<div class="su-head"><span class="su-bias">${BIAS[s.bias][0]} ${s.bias === 'flat' ? 'Bez przewagi' : `Scenariusz ${BIAS[s.bias][1]}`}</span>${s.window ? ` <span class="su-window">${esc(s.window)}</span>` : ''}</div>
+<h3>${esc(s.name)}</h3>
+<p class="su-zone"><span class="su-k">Strefa obserwacji</span> <b>${fmtPrice(s.zone[0])}–${fmtPrice(s.zone[1])}</b> <span class="su-dist">${zoneDistance(price, s.zone)}</span></p>
+<p class="su-k">Co musi się stać</p><ol class="su-checks">${s.triggers.map((t) => `<li>${esc(t)}</li>`).join('')}</ol>
+<p class="su-k">Co neguje scenariusz</p><p class="su-invalid">${esc(s.invalidation)}</p>
+${reactions}${evidence}
+</li>`;
+    })
+    .join('\n');
+  return `<p class="su-note">${SETUPS_NOTE}</p>
+<ol class="setups">
+${cards}
+</ol>`;
+}
+
+/**
+ * Bloki danych wpisu (HTML bez ramki), w kolejności domyślnej: przed treścią trafiają te, których treść nie wstawiła znacznikiem.
+ * Klucze to nazwy znaczników z posts.mjs (BLOCKS).
+ */
+function postBlocks(post) {
+  const out = {};
+  if (post.metrics.length) out.dane = { title: 'Panel danych', html: metricsHtml(post.metrics) };
+  if (post.levels.length) out.poziomy = { title: 'Mapa poziomów', html: ladderHtml(post.price, post.levels) };
+  if (post.liquidations) out.likwidacje = { title: 'Mapa likwidacji', html: liquidationsHtml(post.price, post.liquidations) };
+  if (post.flows) out.przeplywy = { title: post.flows.title, html: flowsHtml(post.flows) };
+  if (post.scenarios.length) out.scenariusze = { title: 'Scenariusze', html: scenariosHtml(post.scenarios) };
+  if (post.setups.length) out.setupy = { title: 'Scenariusze warunkowe', html: setupsHtml(post.price, post.setups) };
+  return out;
+}
+
+/** Treść wpisu z blokami wstawionymi w miejsce znaczników; pozostałe bloki przed treścią (sekcje z nagłówkiem). */
+export function postBody(post) {
+  const blocks = postBlocks(post);
+  const placed = new Set(placedBlocks(post.body));
+  const top = Object.keys(BLOCKS)
+    .filter((k) => blocks[k] && !placed.has(k))
+    .map((k) => `<section class="block block--${k}"><h2>${esc(blocks[k].title)}</h2>${blocks[k].html}</section>`)
+    .join('');
+  const prose = renderMarkdown(post.body).replace(/<p>\[\[([a-z]+)\]\]<\/p>/g, (m, k) =>
+    blocks[k] ? `<figure class="block block--inline block--${k}"><figcaption>${esc(blocks[k].title)}</figcaption>${blocks[k].html}</figure>` : ''
+  );
+  return { top, prose };
 }
 
 // ───────────────────────── Strony ─────────────────────────
@@ -279,8 +434,8 @@ export function postPage(site, post, { newer, older }) {
     post.price !== null
       ? `<div class="facts"><span class="k">BTC-PERP</span><span class="v">${fmtPrice(post.price)} USD</span><span class="s">w chwili publikacji</span></div>`
       : '';
-  const levels = post.levels.length ? `<section class="block"><h2>Mapa poziomów</h2>${ladderHtml(post.price, post.levels)}</section>` : '';
-  const scenarios = post.scenarios.length ? `<section class="block"><h2>Scenariusze</h2>${scenariosHtml(post.scenarios)}</section>` : '';
+  const summary = post.summary.length ? summaryHtml(post.summary) : '';
+  const { top, prose } = postBody(post);
   const pager = [
     older ? `<a class="pager-older" href="../${older.id}/"><span>Starszy wpis</span>${esc(older.title)}</a>` : '<span></span>',
     newer ? `<a class="pager-newer" href="../${newer.id}/"><span>Nowszy wpis</span>${esc(newer.title)}</a>` : '<span></span>',
@@ -293,9 +448,9 @@ export function postPage(site, post, { newer, older }) {
 ${shareHtml(url, post.title, { compact: true })}
 </div>
 <p class="lead">${esc(post.description)}</p>
-${facts}${levels}${scenarios}
+${summary}${facts}${top}
 <div class="prose">
-${renderMarkdown(post.body)}
+${prose}
 </div>
 ${shareHtml(url, post.title)}
 <p class="history">${DISCLOSURE} Wpis jest w publicznej historii repozytorium od chwili publikacji: <a href="${site.repo}/commits/main/content/blog/${post.id}.md">historia zmian</a>.</p>
@@ -417,7 +572,11 @@ export function absolutize(html, base) {
 export function feedXml(site, posts) {
   const items = posts.slice(0, FEED_LIMIT).map((p) => {
     const url = `${site.url}blog/${p.id}/`;
-    const content = `<p><strong>${esc(p.description)}</strong></p>${absolutize(renderMarkdown(p.body), url)}`;
+    const summary = p.summary.length ? `<ul>${p.summary.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>` : '';
+    // Diagramy są tylko na stronie wpisu; w kanale zostaje tekst, w tym scenariusze warunkowe
+    const body = renderMarkdown(p.body).replace(/<p>\[\[([a-z]+)\]\]<\/p>\n?/g, (m, k) => (k === 'setupy' ? setupsHtml(p.price, p.setups) : ''));
+    const setups = p.setups.length && !placedBlocks(p.body).includes('setupy') ? setupsHtml(p.price, p.setups) : '';
+    const content = `<p><strong>${esc(p.description)}</strong></p>${summary}${setups}${absolutize(body, url)}`;
     return `<item><title>${xmlEsc(p.title)}</title><link>${url}</link><guid isPermaLink="true">${url}</guid><pubDate>${new Date(p.ms).toUTCString()}</pubDate><category>${xmlEsc(p.section)}</category><description>${xmlEsc(p.description)}</description><content:encoded>${cdata(content)}</content:encoded></item>`;
   });
   const last = posts[0] ? `<lastBuildDate>${new Date(posts[0].ms).toUTCString()}</lastBuildDate>` : '';
