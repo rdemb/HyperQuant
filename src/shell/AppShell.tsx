@@ -8,6 +8,7 @@ import {
   Activity,
   Database,
   MoreHorizontal,
+  Newspaper,
   Pause,
   Play,
   RefreshCw,
@@ -190,6 +191,10 @@ export const AppShell: React.FC = () => {
                 <span className="relative">{n.label}</span>
               </a>
             ))}
+            {/* Blog to osobne statyczne strony (SEO, podgląd linków), nie widok aplikacji */}
+            <a href="./blog/" className="px-3 py-2 rounded-lg text-sm font-medium text-ink-3 hover:text-ink-1 transition-colors duration-150">
+              Blog
+            </a>
           </nav>
 
           <div className="flex items-center gap-2 shrink-0">
@@ -271,6 +276,10 @@ export const AppShell: React.FC = () => {
                   {n.label}
                 </button>
               ))}
+              <a href="./blog/" className="w-full min-h-11 flex items-center gap-2.5 px-3 rounded-lg text-sm text-ink-1 hover:bg-surface-3">
+                <Newspaper className="w-4 h-4" />
+                Blog
+              </a>
             </motion.div>
           )}
         </AnimatePresence>
