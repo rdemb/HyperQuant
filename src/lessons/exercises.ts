@@ -1,4 +1,5 @@
 import type { StationId } from '../charts/pro/chart/stations';
+import type { LAYERS_OFF } from '../charts/pro/chart/templates';
 import type { ChartMark, ChartZone } from './chart/LessonChart';
 import type { FigureLayers } from './chart/model';
 
@@ -23,6 +24,20 @@ export interface CheckpointSpec {
   answerZones?: readonly ChartZone[];
 }
 
+/**
+ * Ta sama chwila w powtórce Wykresów (nagranie w public/lessons/replay/, link w formacie REPLAY_LINK_VERSION 1):
+ * start na pauzie w `t`, stacja ćwiczenia z wymienionymi warstwami i podświetlonym przedziałem ceny.
+ */
+export interface ReplaySpec {
+  from: string;
+  to: string;
+  t: string;
+  interval: string;
+  view: 'candles' | 'footprint';
+  layers: readonly (keyof typeof LAYERS_OFF)[];
+  zone?: readonly [number, number];
+}
+
 export interface ExerciseSpec {
   id: string;
   slice: string;
@@ -38,6 +53,7 @@ export interface ExerciseSpec {
   atlas: readonly string[];
   /** Stacja robocza Wykresów do ćwiczenia na żywo. */
   station: StationId;
+  replay?: ReplaySpec;
   level: 1 | 2 | 3;
 }
 
@@ -131,6 +147,14 @@ export const EXERCISES: readonly ExerciseSpec[] = [
     endMarks: [{ n: '4', t: T('2026-10-24T21:10Z'), px: 80259 }],
     atlas: ['liq', 'oi', 'cvd', 'vwap', 'levels'],
     station: 'liquidity',
+    replay: {
+      from: '2026-10-24T16:00Z',
+      to: '2026-10-24T22:00Z',
+      t: '2026-10-24T18:15Z',
+      interval: '5m',
+      view: 'candles',
+      layers: ['showVwap', 'showVwapBands', 'showLevels', 'showHeatmap', 'showBubbles'],
+    },
     level: 2,
   },
   {
@@ -153,6 +177,15 @@ export const EXERCISES: readonly ExerciseSpec[] = [
     endMarks: [{ n: '2', t: T('2026-10-24T21:00Z'), px: 80280 }],
     atlas: ['footprint', 'imbalance', 'delta', 'oi'],
     station: 'scalp',
+    replay: {
+      from: '2026-10-24T16:00Z',
+      to: '2026-10-24T22:00Z',
+      t: '2026-10-24T19:00Z',
+      interval: '15m',
+      view: 'footprint',
+      layers: ['showVwap', 'showZones', 'showHeatmap', 'showBubbles'],
+      zone: [80300, 80470],
+    },
     level: 3,
   },
 ];

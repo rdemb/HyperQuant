@@ -3,7 +3,9 @@
 // danych desku. Świece od północy UTC (kotwica VWAP dnia) do końca okna, szczyt i dołek dnia poprzedniego ze świec
 // dziennych, a tam, gdzie desk nagrywał taśmę: delta agresorów, open interest, likwidacje i footprint.
 // Wskaźniki (VWAP, profil, IB) liczy strona tymi samymi funkcjami co Wykresy, więc tu są tylko surowe dane.
-// Użycie: node scripts/lessons/build.mjs [--source <url|katalog>] [--only <id>]
+// Z --replay kopiuje też nagranie taśmy i arkusza do powtórki w Wykresach (public/lessons/replay/, układ gałęzi history):
+// gałąź history trzyma tylko 7 dni, a linki z lekcji mają działać na stałe.
+// Użycie: node scripts/lessons/build.mjs [--source <url|katalog>] [--only <id>] [--replay]
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { gunzipSync } from 'node:zlib';
@@ -24,6 +26,10 @@ export const SLICES = [
   { id: '2026-10-24-cascade', from: '2026-10-24T12:00Z', to: '2026-10-24T21:30Z', tf: 5, tape: true },
   { id: '2026-10-24-footprint', from: '2026-10-24T18:00Z', to: '2026-10-24T21:30Z', tf: 15, tape: true, fp: true },
 ];
+
+/** Nagranie do powtórki z lekcji: pełne godziny [from, to) jednego rynku. */
+export const REPLAY = { coin: 'BTC', from: '2026-10-24T16:00Z', to: '2026-10-24T22:00Z' };
+const REPLAY_DIR = path.join(OUT_DIR, 'replay');
 
 const pad = (x) => String(x).padStart(2, '0');
 const dayKey = (ms) => {
@@ -147,6 +153,31 @@ export async function buildSlice(spec, get) {
   return out;
 }
 
+/** Kopia plików godzin z gałęzi history i spis w jej formacie (wersja 1, bez części 5-minutowych). */
+async function copyReplay(get) {
+  const from = Date.parse(REPLAY.from);
+  const to = Date.parse(REPLAY.to);
+  const hours = [];
+  for (let h = from; h < to; h += HOUR) {
+    const files = ['trades', 'book'].map((kind) => `${REPLAY.coin}/${dayKey(h)}/${pad(new Date(h).getUTCHours())}.${kind}.json.gz`);
+    const bodies = await Promise.all(files.map((rel) => get('history', rel)));
+    if (bodies.some((b) => !b)) {
+      console.warn(`powtórka: brak godziny ${new Date(h).toISOString()} w gałęzi history`);
+      continue;
+    }
+    for (const [i, rel] of files.entries()) {
+      const file = path.join(REPLAY_DIR, rel);
+      await mkdir(path.dirname(file), { recursive: true });
+      await writeFile(file, bodies[i]);
+    }
+    hours.push(h);
+  }
+  if (hours.length === 0) throw new Error('powtórka: brak nagrania (gałąź history trzyma tylko 7 dni)');
+  const index = { v: 1, asOf: to, partMs: 5 * MIN, markets: { [REPLAY.coin]: { hours, parts: [] } } };
+  await writeFile(path.join(REPLAY_DIR, 'index.json'), `${JSON.stringify(index)}\n`);
+  console.log(`${REPLAY_DIR}: ${hours.length} godzin nagrania ${REPLAY.coin}`);
+}
+
 async function main(argv) {
   const arg = (k) => {
     const i = argv.indexOf(k);
@@ -162,6 +193,7 @@ async function main(argv) {
     const withTape = data.candles.filter((c) => c[6] !== null).length;
     console.log(`${file}: ${data.candles.length} świec (${withTape} z taśmą)${data.fp ? `, footprint ${data.fp.bars.length} świec co ${data.fp.step} USD` : ''}`);
   }
+  if (argv.includes('--replay')) await copyReplay(get);
 }
 
 main(process.argv.slice(2)).catch((e) => {
