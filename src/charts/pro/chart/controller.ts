@@ -35,6 +35,7 @@ import { ZonesLayer } from './zonesLayer';
 import { TpoLayer } from './tpoLayer';
 import { tpoInterval } from '../core/tpo';
 import type { ChartSettings } from './settings';
+import { CountdownLabel } from './countdown';
 import { DOM_W_PX, PRO, RIGHT_GAP_PX, chartOptions } from './theme';
 
 /**
@@ -179,6 +180,8 @@ export class ProChartController {
   private readonly overlay: IndicatorOverlay;
   private readonly liquidity: LiquidityLayer;
   private readonly drawLayer = new DrawingLayer();
+  private readonly countdown = new CountdownLabel();
+  private countdownTimer = 0;
   /** Narzędzia rysowania (pasek narzędzi w ProChart). */
   readonly draw: DrawingTools;
 
@@ -244,6 +247,7 @@ export class ProChartController {
     this.main.attachPrimitive(this.zones);
     this.tpo = new TpoLayer(settings.showTpo);
     this.main.attachPrimitive(this.tpo);
+    this.main.attachPrimitive(this.countdown);
     // Rysunki dołączone ostatnie — nad wskaźnikami i świecami
     this.drawLayer.setUnit(store.coin);
     this.main.attachPrimitive(this.drawLayer);
@@ -256,6 +260,8 @@ export class ProChartController {
     window.addEventListener('pointerup', this.checkScale);
     container.addEventListener('dblclick', this.checkScale);
     this.unsubscribe = store.subscribe(() => this.schedule());
+    // Odliczanie do zamknięcia świecy biegnie co sekundę także bez nowych transakcji
+    this.countdownTimer = window.setInterval(() => this.tickCountdown(), 1000);
     crossPeers.add(this);
     this.schedule();
   }
@@ -264,6 +270,7 @@ export class ProChartController {
     cancelAnimationFrame(this.frame);
     cancelAnimationFrame(this.marginFrame);
     cancelAnimationFrame(this.scaleFrame);
+    clearInterval(this.countdownTimer);
     window.removeEventListener('pointerup', this.checkScale);
     this.container.removeEventListener('dblclick', this.checkScale);
     this.draw.destroy();
@@ -554,6 +561,12 @@ export class ProChartController {
     this.pushCvd(full);
     this.emitHover();
     this.emitScale();
+    this.tickCountdown();
+  }
+
+  private tickCountdown(): void {
+    const last = this.bars[this.bars.length - 1];
+    this.countdown.set(last?.candle.c ?? 0, last ? last.t + this.series.interval.ms - this.store.serverNow() : 0);
   }
 
   /** CVD zależy od wszystkich wcześniejszych świec okresu — liczymy całość i wysyłamy tylko zmienione punkty. */
