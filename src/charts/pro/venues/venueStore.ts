@@ -405,6 +405,17 @@ function refreshLive(): void {
  */
 const RELEASE_GRACE_MS = 2000;
 let releaseTimer: ReturnType<typeof setTimeout> | null = null;
+let refreshQueued = false;
+
+/** Kilka pobrań z tej samej chwili (wykres i karta Liczby zmieniają interwał razem) daje jedną zmianę adresów. */
+function queueRefresh(): void {
+  if (refreshQueued) return;
+  refreshQueued = true;
+  queueMicrotask(() => {
+    refreshQueued = false;
+    refreshLive();
+  });
+}
 
 /** Wykres z panelem giełd na (rynek, interwał): połączenia na żywo do zwolnienia zwróconą funkcją. */
 export function acquireVenues(coin: string, iv: Interval): () => void {
@@ -412,7 +423,7 @@ export function acquireVenues(coin: string, iv: Interval): () => void {
   const x = live.get(key);
   if (x) x.n++;
   else live.set(key, { coin, iv, n: 1 });
-  refreshLive();
+  queueRefresh();
   let released = false;
   return () => {
     if (released) return;

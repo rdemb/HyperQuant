@@ -207,7 +207,7 @@ describe('połączenia giełd', () => {
     vi.useRealTimers();
   });
 
-  it('zmiana interwału nie zrywa połączenia Bybit; zwolnienie ostatniego wykresu zamyka je po chwili', async () => {
+  it('zmiana interwału nie zrywa połączenia Bybit i zmienia adres Binance raz; zwolnienie ostatniego wykresu zamyka połączenia po chwili', async () => {
     vi.useFakeTimers();
     const sockets: { url: string; closed: boolean }[] = [];
     class FakeSocket {
@@ -229,14 +229,22 @@ describe('połączenia giełd', () => {
     vi.stubGlobal('WebSocket', FakeSocket);
     vi.stubGlobal('fetch', async () => ({ ok: true, json: async () => [] }));
     const bybit = () => sockets.filter((x) => x.url.includes('bybit'));
-    const release1h = acquireVenues('BTC', intervalById('1h'));
+    const perp = () => sockets.filter((x) => x.url.includes('fstream')).map((x) => x.url.split('streams=')[1]);
+    // Wykres i karta Liczby na tym samym interwale
+    const chart1h = acquireVenues('BTC', intervalById('1h'));
+    const card1h = acquireVenues('BTC', intervalById('1h'));
+    await vi.advanceTimersByTimeAsync(0);
     expect(bybit().map((x) => x.closed)).toEqual([false]);
-    // Kontroler zwalnia stary interwał przed pobraniem nowego
-    release1h();
-    const release15m = acquireVenues('BTC', intervalById('15m'));
+    // Zmiana interwału: każdy zwalnia stary interwał przed pobraniem nowego
+    chart1h();
+    const chart15m = acquireVenues('BTC', intervalById('15m'));
+    card1h();
+    const card15m = acquireVenues('BTC', intervalById('15m'));
     await vi.advanceTimersByTimeAsync(3000);
     expect(bybit().map((x) => x.closed)).toEqual([false]);
-    release15m();
+    expect(perp()).toEqual(['btcusdt@kline_1h', 'btcusdt@kline_15m']);
+    chart15m();
+    card15m();
     await vi.advanceTimersByTimeAsync(1000);
     expect(bybit()[0].closed).toBe(false);
     await vi.advanceTimersByTimeAsync(1500);
