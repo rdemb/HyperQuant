@@ -120,6 +120,20 @@ describe('ściany', () => {
     v.push([fill({ tid: 1, taker: '0x1', hash: '0xa1' }), fill({ tid: 2, taker: '0x2', hash: '0xa2', time: 2000 }), fill({ tid: 3, taker: '0x3', hash: '0xa3', time: 3000 })]);
     expect(v.walls(0, 10_000, 250_000)[0].iceberg).toBe(false);
   });
+
+  it('przemiecenie przed następną migawką to nie góra lodowa, nawet gdy wzięło kilka razy więcej niż stara migawka', () => {
+    const book = (ask: number, t: number) => ({ time: t, bids: [{ px: 99_999, sz: 3, n: 1 }], asks: [{ px: 100_000, sz: ask, n: 1 }] });
+    const w = new WallTracker();
+    w.observeBook(book(0.5, 900));
+    // Trzech biorców w jednym bloku i jeden blok później: zlecenie mogło stanąć po migawce z 0,5
+    w.push([fill({ tid: 1, taker: '0x1', hash: '0xa1' }), fill({ tid: 2, taker: '0x2', hash: '0xa2' }), fill({ tid: 3, taker: '0x3', hash: '0xa3', time: 1100 })]);
+    expect(w.walls(0, 10_000, 250_000)[0].iceberg).toBe(false);
+    // Migawka po wypełnieniach znów pokazuje poziom, a maker wchłania dalej — odnawianie
+    w.observeBook(book(0.6, 1500));
+    expect(w.walls(0, 10_000, 250_000)[0].iceberg).toBe(false);
+    w.push([fill({ tid: 4, taker: '0x4', hash: '0xa4', time: 2000 })]);
+    expect(w.walls(0, 10_000, 250_000)[0].iceberg).toBe(true);
+  });
 });
 
 describe('portfel', () => {

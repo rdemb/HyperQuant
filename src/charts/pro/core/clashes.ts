@@ -103,19 +103,27 @@ export interface Wall {
   hits: number;
   /** Największa wielkość poziomu w dokładnym arkuszu od chwili przed pierwszym wypełnieniem; 0 = poziom niewidoczny. */
   shown: number;
-  /** Wchłonięte co najmniej `ICEBERG_RATIO` × więcej niż `shown`. */
+  /** Wchłonięte co najmniej `ICEBERG_RATIO` × więcej niż `shown`, z wypełnieniami także po migawce, która pokazała poziom w trakcie. */
   iceberg: boolean;
 }
 
 interface Absorb extends Wall {
   maker: string;
   keys: Set<string>;
+  /** Pierwsza migawka dokładnego arkusza po pierwszym wypełnieniu, w której poziom był widoczny (ms); +∞ = jeszcze żadna. */
+  seen: number;
 }
 
 /** Ile razy więcej musi wchłonąć ściana niż największa widoczna wielkość poziomu, żeby była górą lodową. */
 export const ICEBERG_RATIO = 2;
 
-const isIceberg = (a: { sz: number; shown: number; hits: number }) => a.hits >= WALL_MIN_HITS && a.shown > 0 && a.sz >= ICEBERG_RATIO * a.shown;
+/**
+ * Góra lodowa wymaga wypełnień po migawce, która w trakcie wchłaniania jeszcze pokazywała poziom: jedno przemiecenie
+ * (albo kilka bloków przed następną migawką co ok. 5 s) bierze tylko to, co już stało w arkuszu — duża krotność
+ * wynikałaby wtedy z nieaktualnej migawki sprzed postawienia zlecenia, a nie z odnawiania.
+ */
+const isIceberg = (a: { sz: number; shown: number; hits: number; to: number; seen: number }) =>
+  a.hits >= WALL_MIN_HITS && a.to > a.seen && a.shown > 0 && a.sz >= ICEBERG_RATIO * a.shown;
 
 /** Przerwa, po której wchłanianie na poziomie liczy się od nowa (ms), i najmniej trafień do ściany. */
 export const WALL_GAP_MS = 30_000;
@@ -137,7 +145,9 @@ export class WallTracker {
     this.bids = new Map(snap.bids.map((l) => [l.px, l.sz]));
     this.asks = new Map(snap.asks.map((l) => [l.px, l.sz]));
     this.open.forEach((a) => {
-      a.shown = Math.max(a.shown, this.level(a.side, a.px));
+      const lv = this.level(a.side, a.px);
+      a.shown = Math.max(a.shown, lv);
+      if (lv > 0 && snap.time > a.from) a.seen = Math.min(a.seen, snap.time);
       a.iceberg = isIceberg(a);
     });
   }
@@ -159,7 +169,7 @@ export class WallTracker {
       if (!a) {
         // Wielkość poziomu tuż przed pierwszym wypełnieniem (ostatnia migawka arkusza)
         const shown = this.level(side, f.px);
-        a = { maker: f.maker, from: f.time, to: f.time, px: f.px, side, usd: 0, sz: 0, hits: 0, shown, iceberg: false, keys: new Set() };
+        a = { maker: f.maker, from: f.time, to: f.time, px: f.px, side, usd: 0, sz: 0, hits: 0, shown, iceberg: false, keys: new Set(), seen: Number.POSITIVE_INFINITY };
         this.open.set(key, a);
       }
       a.to = Math.max(a.to, f.time);

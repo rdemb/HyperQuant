@@ -81,7 +81,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         kinds: ['LIVE'],
         refresh: 'na żywo',
         caveat:
-          'Tylko od otwarcia strony. Adres biorcy widać skrócony po kliknięciu i nie jest zapisywany. Ściana obejmuje tylko to, co maker oddał w transakcjach, bez zleceń zdjętych z arkusza. Góra lodowa = ściana, która wchłonęła co najmniej 2 × więcej niż największa wielkość całego poziomu w migawkach dokładnego arkusza (co ok. 5 s): Hyperliquid nie ma ukrytych zleceń, więc to zlecenie odnawiane po wypełnieniach; odnowienie szybsze niż migawka może zawyżyć krotność.',
+          'Tylko od otwarcia strony. Adres biorcy widać skrócony po kliknięciu i nie jest zapisywany. Ściana obejmuje tylko to, co maker oddał w transakcjach, bez zleceń zdjętych z arkusza. Góra lodowa = ściana, która wchłonęła co najmniej 2 × więcej niż największa wielkość całego poziomu w migawkach dokładnego arkusza (co ok. 5 s) i przyjmowała wypełnienia jeszcze po migawce, która w trakcie pokazywała poziom (jedno przemiecenie przed kolejną migawką się nie liczy): Hyperliquid nie ma ukrytych zleceń, więc to zlecenie odnawiane po wypełnieniach; odnowienie szybsze niż migawka może zawyżyć krotność.',
       },
       {
         metric: 'Duże zlecenia w arkuszu (Wykresy)',

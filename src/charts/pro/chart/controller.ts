@@ -102,6 +102,13 @@ const STATS_EVERY_MS = 1_000;
 export const PANE_KEYS = ['showVolume', 'showDelta', 'showCvd', 'showStats'] as const;
 export type PaneKey = (typeof PANE_KEYS)[number];
 
+/** Autoskala ceny i wymiary rogu pod osią ceny (px), w którym stoi przycisk A. */
+export interface ScaleState {
+  auto: boolean;
+  width: number;
+  height: number;
+}
+
 function toPoint(b: ProBar): FootprintPoint {
   const c = b.candle;
   return { time: sec(b.t), open: c.o, high: c.h, low: c.l, close: c.c, bar: b, color: c.c >= c.o ? PRO.buy : PRO.sell };
@@ -194,6 +201,10 @@ export class ProChartController {
   private readonly onHover: (h: Hover) => void;
   private readonly onPick: (p: LiquidityPick | null) => void;
   private readonly onHidePane: (key: PaneKey) => void;
+  private readonly onScale: (s: ScaleState) => void;
+  private scale: ScaleState = { auto: true, width: 0, height: 0 };
+  private scaleFrame = 0;
+  private readonly container: HTMLElement;
 
   constructor(
     container: HTMLElement,
@@ -202,12 +213,15 @@ export class ProChartController {
     settings: ChartSettings,
     onHover: (h: Hover) => void,
     onPick: (p: LiquidityPick | null) => void,
-    onHidePane: (key: PaneKey) => void
+    onHidePane: (key: PaneKey) => void,
+    onScale: (s: ScaleState) => void
   ) {
     this.settings = settings;
     this.onHover = onHover;
     this.onPick = onPick;
     this.onHidePane = onHidePane;
+    this.onScale = onScale;
+    this.container = container;
     this.liqSource = {
       near: null,
       far: null,
@@ -238,6 +252,9 @@ export class ProChartController {
     this.chart.subscribeCrosshairMove(this.onCrosshair);
     this.chart.subscribeClick(this.onClick);
     this.chart.timeScale().subscribeVisibleLogicalRangeChange(this.onRange);
+    // Przeciągnięcie osi albo panelu wyłącza autoskalę, dwuklik na osi ją włącza — stan sprawdzany po geście
+    window.addEventListener('pointerup', this.checkScale);
+    container.addEventListener('dblclick', this.checkScale);
     this.unsubscribe = store.subscribe(() => this.schedule());
     crossPeers.add(this);
     this.schedule();
@@ -246,6 +263,9 @@ export class ProChartController {
   destroy(): void {
     cancelAnimationFrame(this.frame);
     cancelAnimationFrame(this.marginFrame);
+    cancelAnimationFrame(this.scaleFrame);
+    window.removeEventListener('pointerup', this.checkScale);
+    this.container.removeEventListener('dblclick', this.checkScale);
     this.draw.destroy();
     crossPeers.delete(this);
     this.unsubscribe();
@@ -391,11 +411,12 @@ export class ProChartController {
     this.liquidity.setHighlight(address);
   }
 
-  /** Najsilniejsze klastry likwidacji ze skanera (pusta lista = brak aktualnej mapy). */
+  /** Pozycje i zlecenia największych kont na tym rynku (null = brak aktualnej warstwy). */
   setWhales(w: WhaleView | null): void {
     this.overlay.setWhales(w);
   }
 
+  /** Najsilniejsze klastry likwidacji ze skanera (pusta lista = brak aktualnej mapy). */
   setLiqLevels(levels: LiqLevel[]): void {
     this.overlay.setLiq(levels);
   }
@@ -434,8 +455,32 @@ export class ProChartController {
 
   /** Dopasowuje zakres ceny do widocznych świec (po ręcznym przeciągnięciu osi). */
   resetScales(): void {
-    this.chart.priceScale('right').applyOptions({ autoScale: true });
+    this.setAutoScale(true);
     this.scrollToNow();
+  }
+
+  /** Autoskala ceny (przycisk A w rogu osi): włączona dopasowuje zakres do widocznych świec, wyłączona go zamraża. */
+  setAutoScale(on: boolean): void {
+    this.chart.priceScale('right').applyOptions({ autoScale: on });
+    this.emitScale();
+  }
+
+  private readonly checkScale = (): void => {
+    cancelAnimationFrame(this.scaleFrame);
+    this.scaleFrame = requestAnimationFrame(() => {
+      this.scaleFrame = 0;
+      this.emitScale();
+    });
+  };
+
+  /** Stan autoskali i wymiary rogu pod osią ceny (szerokość osi ceny × wysokość osi czasu) — tylko przy zmianie. */
+  private emitScale(): void {
+    const ps = this.chart.priceScale('right');
+    const next: ScaleState = { auto: ps.options().autoScale, width: ps.width(), height: this.chart.timeScale().height() };
+    const s = this.scale;
+    if (s.auto === next.auto && s.width === next.width && s.height === next.height) return;
+    this.scale = next;
+    this.onScale(next);
   }
 
   // ───────────────────────── dane ─────────────────────────
@@ -508,6 +553,7 @@ export class ProChartController {
     }
     this.pushCvd(full);
     this.emitHover();
+    this.emitScale();
   }
 
   /** CVD zależy od wszystkich wcześniejszych świec okresu — liczymy całość i wysyłamy tylko zmienione punkty. */

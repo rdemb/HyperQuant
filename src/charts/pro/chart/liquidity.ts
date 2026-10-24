@@ -143,21 +143,25 @@ interface Bubble {
   pick: LiquidityPick;
 }
 
-/** Wartość przed początkiem belki ściany albo linii dużego zlecenia (`ink` — kolor tekstu). */
+/** Wartość przy belce ściany albo linii dużego zlecenia [x0, x1] (`ink` — kolor tekstu). */
 interface ValueLabel {
   x0: number;
+  x1: number;
   y: number;
   bid: boolean;
   usd: number;
   label: string;
   ink: string;
-  /** Podpis góry lodowej: pierwszy i nad bąblami (góra lodowa z definicji leży pod wieloma zleceniami agresora). */
-  priority: boolean;
+  /**
+   * Pierwszeństwo podpisu: 2 — góra lodowa (pierwsza i nad bąblami, z definicji leży pod wieloma zleceniami agresora),
+   * 1 — duże zlecenie stojące co najmniej 30 s (nad bąblami, gdy przy linii nie ma wolnego miejsca; stoi tam, gdzie
+   * handlują agresorzy), 0 — ściana (ustępuje bąblom, wartość pokazuje karta po kliknięciu belki).
+   */
+  rank: 0 | 1 | 2;
 }
 
 /** Ściana makera: belka od pierwszego do ostatniego wchłoniętego wypełnienia. */
 interface WallMark extends ValueLabel {
-  x1: number;
   iceberg: boolean;
   selected: boolean;
   pick: LiquidityPick;
@@ -165,7 +169,6 @@ interface WallMark extends ValueLabel {
 
 /** Duże zlecenie w arkuszu: linia od pojawienia się do zniknięcia (do teraz, gdy nadal jest). */
 interface LotMark extends ValueLabel {
-  x1: number;
   open: boolean;
 }
 
@@ -233,8 +236,14 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
           drawLots(context, this.lots, hr, vr);
           drawWalls(context, this.walls, hr, vr);
           drawBubbles(context, this.bubbles, hr, vr);
-          drawValueLabels(context, [...this.walls, ...this.lots], this.bubbles, hr, vr);
         }),
+    };
+    // Podpisy nad poziomami wskaźników (IB, VWAP…), żeby napisu ICE nie przykrywała etykieta poziomu
+    const labels: IPrimitivePaneRenderer = {
+      draw: (target) =>
+        target.useBitmapCoordinateSpace(({ context, bitmapSize, horizontalPixelRatio: hr, verticalPixelRatio: vr }) =>
+          drawValueLabels(context, [...this.walls, ...this.lots], this.bubbles, bitmapSize.width, hr, vr)
+        ),
     };
     const dom: IPrimitivePaneRenderer = {
       draw: (target) =>
@@ -246,6 +255,7 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
       { zOrder: () => 'bottom', renderer: () => heat },
       { zOrder: () => 'normal', renderer: () => bubbles },
       { zOrder: () => 'normal', renderer: () => dom },
+      { zOrder: () => 'top', renderer: () => labels },
     ];
   }
 
@@ -447,7 +457,7 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
         usd: w.usd,
         label: w.iceberg ? `ICE ${fmtCompact(w.usd)}` : fmtCompact(w.usd),
         ink: w.iceberg ? K.ice : K.domText,
-        priority: w.iceberg,
+        rank: w.iceberg ? 2 : 0,
         iceberg: w.iceberg,
         selected: sel?.kind === 'wall' && sel.wall.from === w.from && sel.wall.px === w.px && sel.wall.side === w.side,
         pick: { kind: 'wall', wall: w },
@@ -479,7 +489,7 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
         usd: l.usd,
         label: (l.open ? this.now : l.to) - l.from >= LOT_LABEL_MIN_MS ? `${l.orders}× ${fmtCompact(l.usd / l.orders)}` : '',
         ink: l.bid ? K.lotBid : K.lotAsk,
-        priority: false,
+        rank: 1,
         open: l.open,
       });
     }
@@ -659,31 +669,39 @@ function drawWalls(ctx: CanvasRenderingContext2D, list: readonly WallMark[], hr:
 
 /**
  * Wartość ściany albo dużego zlecenia na tle przed jego początkiem (przy lewej krawędzi, gdy początek jest poza
- * widokiem), nad bąblami. Góry lodowe, potem większe; etykieta, która nachodzi na inną albo na bąbel, jest pomijana
- * (wartość ściany pokazuje karta po kliknięciu belki) — podpis góry lodowej omija tylko inne podpisy.
+ * widokiem), a gdy tam zajęte — za końcem belki. Najpierw góry lodowe, potem duże zlecenia, potem ściany, w każdej
+ * grupie większe; podpis nigdy nie nachodzi na inny podpis, a na bąbel tylko z pierwszeństwem (`rank`).
  */
-function drawValueLabels(ctx: CanvasRenderingContext2D, list: readonly ValueLabel[], bubbles: readonly Bubble[], hr: number, vr: number): void {
+function drawValueLabels(ctx: CanvasRenderingContext2D, list: readonly ValueLabel[], bubbles: readonly Bubble[], width: number, hr: number, vr: number): void {
   if (list.length === 0) return;
   ctx.font = `600 ${Math.round(10 * vr)}px ${MONO}`;
   ctx.textAlign = 'right';
   ctx.textBaseline = 'middle';
   const pad = Math.round(3 * hr);
+  const gap = Math.round(4 * hr);
   const th = Math.round(13 * vr);
   const placed: Rect[] = [];
-  const free = (q: Rect, top: boolean) => !placed.some((p) => q.l < p.r && q.r > p.l && q.t < p.b && q.b > p.t) && (top || !bubbles.some((b) => circleHitsRect(b, q)));
-  for (const w of [...list].sort((p, q) => Number(q.priority) - Number(p.priority) || q.usd - p.usd)) {
+  const clear = (q: Rect) => !placed.some((p) => q.l < p.r && q.r > p.l && q.t < p.b && q.b > p.t);
+  const open = (q: Rect) => !bubbles.some((b) => circleHitsRect(b, q));
+  for (const w of [...list].sort((p, q) => q.rank - p.rank || q.usd - p.usd)) {
     if (!w.label) continue;
     const tw = Math.ceil(ctx.measureText(w.label).width);
-    const xr = Math.max(tw + 2 * pad, Math.round(w.x0 * hr) - Math.round(4 * hr));
     const y = Math.round(w.y * vr);
-    // Prostokąt etykiety w px CSS (bąble też są w px CSS)
-    const q = { l: (xr - tw - pad) / hr, r: (xr + pad) / hr, t: (y - th / 2) / vr, b: (y + th / 2) / vr };
-    if (!free(q, w.priority)) continue;
-    placed.push(q);
+    // Prawa krawędź tekstu: przed belką albo za nią; prostokąt etykiety w px CSS (bąble też są w px CSS)
+    const before = Math.max(tw + 2 * pad, Math.round(w.x0 * hr) - gap);
+    const after = Math.round(w.x1 * hr) + gap + pad + tw;
+    const rect = (xr: number): Rect => ({ l: (xr - tw - pad) / hr, r: (xr + pad) / hr, t: (y - th / 2) / vr, b: (y + th / 2) / vr });
+    const spots = after + pad <= width ? [before, after] : [before];
+    const xr =
+      spots.find((x) => clear(rect(x)) && (w.rank === 2 || open(rect(x)))) ?? (w.rank === 1 ? spots.find((x) => clear(rect(x))) : undefined);
+    if (xr === undefined) continue;
+    placed.push(rect(xr));
     ctx.fillStyle = K.labelBg;
     ctx.fillRect(xr - tw - pad, y - th / 2, tw + 2 * pad, th);
+    // Znacznik strony od strony belki
+    const edge = Math.max(1, Math.round(hr));
     ctx.fillStyle = w.bid ? K.domBid : K.domAsk;
-    ctx.fillRect(xr + pad - Math.max(1, Math.round(hr)), y - th / 2, Math.max(1, Math.round(hr)), th);
+    ctx.fillRect(xr === before ? xr + pad - edge : xr - tw - pad, y - th / 2, edge, th);
     ctx.fillStyle = w.ink;
     ctx.fillText(w.label, xr, y);
   }

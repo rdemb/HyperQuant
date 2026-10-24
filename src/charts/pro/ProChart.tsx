@@ -11,7 +11,7 @@ import { indicatorScope, liqLevels } from './core/indicators';
 import type { AggressorOrder } from './core/orders';
 import type { ResetMode } from './core/sessions';
 import { tpoInterval } from './core/tpo';
-import { type PaneKey, ProChartController } from './chart/controller';
+import { type PaneKey, ProChartController, type ScaleState } from './chart/controller';
 import { PickCard, TapePanel, compact } from './chart/FlowPanels';
 import { HoverSignal, Legend } from './chart/Legend';
 import { LOT_FLOOR, type LiquidityPick } from './chart/liquidity';
@@ -116,6 +116,7 @@ export const ProChart: React.FC<{ panel?: number; layout?: ChartLayout; onLayout
   const hostRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const ctrlRef = useRef<ProChartController | null>(null);
+  const [scale, setScale] = useState<ScaleState>({ auto: true, width: 0, height: 0 });
   const legendBottom = useRef(0);
   const signal = useMemo(() => new HoverSignal(), []);
   const liq = useLiqMap();
@@ -147,7 +148,7 @@ export const ProChart: React.FC<{ panel?: number; layout?: ChartLayout; onLayout
     const ctrl = new ProChartController(host, store, series, settings, signal.set, setPick, (key) => {
       update({ [key]: false });
       setToast(`Ukryto panel: ${PANE_NAMES[key]} — włączysz go w Ustawieniach wykresu → Panele`);
-    });
+    }, setScale);
     ctrlRef.current = ctrl;
     setTools(ctrl.draw);
     ctrl.setTopInset(legendBottom.current);
@@ -356,6 +357,7 @@ export const ProChart: React.FC<{ panel?: number; layout?: ChartLayout; onLayout
       else if (k === 't') update({ showTape: !settings.showTape });
       else if (k === 'm') setCoin(MARKETS[(MARKETS.indexOf(settings.coin) + 1) % MARKETS.length]);
       else if (k === 'r') ctrlRef.current?.resetScales();
+      else if (k === 'a') ctrlRef.current?.setAutoScale(!scale.auto);
       else if (k === 'f') toggleFullscreen();
       else return;
     }
@@ -449,6 +451,7 @@ export const ProChart: React.FC<{ panel?: number; layout?: ChartLayout; onLayout
         <DrawToolbar tools={tools} className={drawOpen ? 'flex' : 'hidden'} />
         <div className="relative flex-1 min-h-0 min-w-0" onContextMenu={onContextMenu}>
           <div ref={hostRef} className="absolute inset-0" />
+          <AutoScaleBtn scale={scale} onToggle={() => ctrlRef.current?.setAutoScale(!scale.auto)} />
           <Legend signal={signal} intervalMs={iv.ms} intervalLabel={iv.label} tapeSince={tapeSince} coin={store.coin} onBottom={onLegendBottom} />
           <DrawStyleBar tools={tools} />
           <DrawHint tools={tools} />
@@ -521,6 +524,32 @@ export const ProChart: React.FC<{ panel?: number; layout?: ChartLayout; onLayout
     </div>
   );
 };
+
+/** Przycisk A w rogu pod osią ceny: podświetlony, gdy skala dopasowuje się do widocznych świec. */
+const AutoScaleBtn: React.FC<{ scale: ScaleState; onToggle: () => void }> = ({ scale, onToggle }) =>
+  scale.width > 0 && scale.height > 0 ? (
+    <button
+      type="button"
+      aria-pressed={scale.auto}
+      aria-label="Autoskala ceny"
+      title={
+        scale.auto
+          ? 'Autoskala ceny włączona: zakres dopasowuje się do widocznych świec. Kliknij, aby go zamrozić (A)'
+          : 'Autoskala ceny wyłączona. Kliknij, aby dopasować zakres do widocznych świec (A, dwuklik na osi ceny)'
+      }
+      onClick={onToggle}
+      className="group absolute right-0 bottom-0 z-10 grid place-items-center outline-none"
+      style={{ width: scale.width, height: scale.height }}
+    >
+      <span
+        className={`grid place-items-center w-5 h-5 rounded font-mono text-[11px] font-semibold transition-colors duration-150 group-focus-visible:ring-2 group-focus-visible:ring-accent ${
+          scale.auto ? 'bg-accent/15 text-accent' : 'text-ink-3 group-hover:text-ink-1 group-hover:bg-surface-3'
+        }`}
+      >
+        A
+      </span>
+    </button>
+  ) : null;
 
 const ToolBtn: React.FC<{ label: string; onClick: () => void; children: React.ReactNode; active?: boolean; expanded?: boolean; className?: string }> = ({
   label,
@@ -1078,6 +1107,7 @@ const KEY_GROUPS: { title: string; keys: [string, string][] }[] = [
       ['M', `Następny rynek (${MARKETS.join(', ')})`],
       ['T', 'Taśma zleceń'],
       ['R', 'Przywróć skalę'],
+      ['A', 'Autoskala ceny: włącz / zamroź zakres'],
       ['End', 'Przewiń do bieżącej świecy'],
       ['F', 'Pełny ekran'],
       ['?', 'Ta lista'],
@@ -1099,7 +1129,8 @@ const KEY_GROUPS: { title: string; keys: [string, string][] }[] = [
     title: 'Mysz',
     keys: [
       ['Kółko', 'Zbliżenie w czasie'],
-      ['Przeciągnij oś ceny', 'Skala ceny'],
+      ['Przeciągnij oś ceny', 'Skala ceny (wyłącza autoskalę)'],
+      ['Dwuklik na osi ceny', 'Włącz autoskalę'],
       ['Prawy przycisk', 'Alert, linia, cena, zrzut'],
       ['Krzyżyk × przy panelu', 'Ukryj panel pod wykresem'],
     ],
