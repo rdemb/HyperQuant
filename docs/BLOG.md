@@ -100,11 +100,13 @@ Mapa sesji i footprint rysuje generator z pliku `content/blog/<id>/wykresy.json`
 
 ```sh
 node scripts/blog/chartdata.mjs --at 2026-10-25T06:00Z --out content/blog/2026-10-25-mapa-dnia/wykresy.json [--fp 2026-10-25T04:00Z] [--source <adres|katalog>]
+node scripts/blog/chartdata.mjs --notka --at 2026-10-25T12:00Z --out content/blog/2026-10-25-aktualizacja-14/wykresy.json
 ```
 
 `--at` to chwila danych (ostatnia pełna świeca 15 min przed nią), `--fp` początek footprintu (osiem świec 15 min, domyślnie ostatnie dwie godziny), `--source` adres repozytorium danych albo katalog o tym samym układzie (`archive/`, `history/`, `main/`). Na wyjściu standardowym skrypt drukuje odczyt wykresu: cenę, zakres doby, POC i obszar wartości, VWAP dnia z odległością w σ, deltę i zmianę OI z 1 i 4 godzin, największe likwidacje oraz dla każdej świecy footprintu deltę, wolumen, zmianę OI, POC i poziomy nierównowag. Tekst analizy pisze się z tych liczb, tych samych co na rysunku.
 
 - `[[wykres]]`: mapa sesji z 24 godzin. Świece 15 min (na telefonie 30 min), VWAP dnia od północy UTC z pasmami ±1σ i ±2σ, profil wolumenu z POC i obszarem wartości (70% obrotu), szczyt i dołek dnia poprzedniego (PDH, PDL; poza zakresem jako znacznik przy krawędzi), likwidacje jako koła przy świecach, strefy z `setups` (kolor kierunku) i panele delty agresorów, CVD oraz open interest, każdy z własną skalą. Bez taśmy panele są zakreskowane z napisem „brak taśmy”.
+- `[[wykres]]` w notce: z flagą `--notka` skrypt buduje krótsze okno, ostatnie 6 godzin w świecach 5 min (na telefonie 10 min), bez footprintu. Wykres jest lżejszy: świece, VWAP dnia z pasmami, poziomy z `levels` wpisu podpisane w kolumnie przy osi (najbliższy poziom nad i pod zakresem jako znacznik ze strzałką), likwidacje oraz panele delty i CVD. Bez profilu wolumenu i open interest. Odczyt ma `zakres6h` zamiast `zakres24h` i nie ma POC ani obszaru wartości, bo nie ma ich na rysunku.
 - `[[footprint]]`: sprzedaż i kupno agresorów na każdym poziomie ceny (krok dobrany do zakresu, do 26 wierszy), kafle w odcieniu strony według wolumenu, POC świecy w ramce, nierównowagi po przekątnej 3:1 (pasek przy krawędzi i pogrubiona liczba; komórki poniżej 10% największej w świecy pomijane), pod spodem delta, wolumen i zmiana OI. Tylko świece w pełni nagrane na taśmie.
 
 Oba wykresy to SVG w treści strony w dwóch układach: szerokim (od 640 px) i wąskim na telefon. Najechanie na świecę albo komórkę pokazuje liczby. W RSS wykresów nie ma. Walidator sprawdza kształt pliku, a znacznik wykresu bez danych w pliku to błąd wpisu.
