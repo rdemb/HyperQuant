@@ -31,6 +31,8 @@ import { IndicatorOverlay, IndicatorToggles, IndicatorValues } from './overlay';
 import { LegendPart, PaneLegend } from './paneLegend';
 import { STAT_PAD_PX, STAT_ROWS, STAT_ROW_PX, StatsTable } from './statsTable';
 import { ZonesLayer } from './zonesLayer';
+import { TpoLayer } from './tpoLayer';
+import { tpoInterval } from '../core/tpo';
 import type { ChartSettings } from './settings';
 import { DOM_W_PX, PRO, RIGHT_GAP_PX, chartOptions } from './theme';
 
@@ -67,12 +69,15 @@ const VOLUME_FORMAT: PriceFormat = { type: 'custom', minMove: 0.0001, formatter:
 const liqToggles = (s: ChartSettings) => ({ showHeatmap: s.showHeatmap, showBubbles: s.showBubbles, showClashes: s.showClashes });
 
 
-const toggles = (s: ChartSettings): IndicatorToggles => ({
+/** TPO na interwale `ms` zajmuje miejsce profili sesji (oba rysują się od początku okresu w prawo). */
+const tpoShown = (s: ChartSettings, ms: number) => s.showTpo && tpoInterval(ms);
+
+const toggles = (s: ChartSettings, ms: number): IndicatorToggles => ({
   showVwap: s.showVwap,
   showVwapBands: s.showVwapBands,
   showSessionVwap: s.showSessionVwap,
   showProfile: s.showProfile,
-  showPeriodProfiles: s.showPeriodProfiles,
+  showPeriodProfiles: s.showPeriodProfiles && !tpoShown(s, ms),
   showLevels: s.showLevels,
   showSessions: s.showSessions,
   showIb: s.showIb,
@@ -149,6 +154,7 @@ export class ProChartController {
   private stats: BarStat[] = [];
   private statsAt = 0;
   private readonly zones: ZonesLayer;
+  private readonly tpo: TpoLayer;
   private priceTick = 1;
   /** Cena przeliczenia progu nierównowagi z USD na jednostki rynku (ustalana przy pełnym odświeżeniu danych). */
   private refPx = 0;
@@ -208,10 +214,12 @@ export class ProChartController {
     // Mapa ciepła pod profilem i pasmami (kolejność dołączenia = kolejność rysowania w tej samej warstwie)
     this.liquidity = new LiquidityLayer(liqToggles(settings));
     this.main.attachPrimitive(this.liquidity);
-    this.overlay = new IndicatorOverlay(toggles(settings));
+    this.overlay = new IndicatorOverlay(toggles(settings, series.interval.ms));
     this.main.attachPrimitive(this.overlay);
     this.zones = new ZonesLayer({ showZones: settings.showZones, showAuctions: settings.showAuctions });
     this.main.attachPrimitive(this.zones);
+    this.tpo = new TpoLayer(settings.showTpo);
+    this.main.attachPrimitive(this.tpo);
     // Rysunki dołączone ostatnie — nad wskaźnikami i świecami
     this.drawLayer.setUnit(store.coin);
     this.main.attachPrimitive(this.drawLayer);
@@ -249,6 +257,7 @@ export class ProChartController {
     if (series === this.series) return;
     this.series = series;
     this.bars = [];
+    this.overlay.setToggles(toggles(this.settings, series.interval.ms));
     this.schedule();
   }
 
@@ -264,7 +273,8 @@ export class ProChartController {
       imbalanceMinVol: this.minVol(s),
       stackedMin: s.stackedMin,
     });
-    this.overlay.setToggles(toggles(s));
+    this.overlay.setToggles(toggles(s, this.series.interval.ms));
+    this.tpo.setOn(s.showTpo);
     this.liquidity.setToggles(liqToggles(s));
     this.zones.setToggles({ showZones: s.showZones, showAuctions: s.showAuctions });
     this.zones.setParams(this.zoneParams(s));
@@ -273,6 +283,7 @@ export class ProChartController {
       // Z mapą ciepła przy prawej krawędzi stoi drabina DOM: najnowsza świeca i wskaźniki kończą się przed nią
       this.overlay.setRightInset(s.showHeatmap ? DOM_W_PX : 0);
       this.zones.setRightInset(s.showHeatmap ? DOM_W_PX : 0);
+      this.tpo.setRightInset(s.showHeatmap ? DOM_W_PX : 0);
       this.chart.timeScale().applyOptions({ rightOffsetPixels: this.rightGap() });
     }
     const panesChanged = force || prev.showVolume !== s.showVolume || prev.showDelta !== s.showDelta || prev.showCvd !== s.showCvd || prev.showStats !== s.showStats;
@@ -469,6 +480,7 @@ export class ProChartController {
     this.liqSource.far = st.book('far');
     this.liquidity.setData(next, ms, this.liqSource, now, this.bigTradeUsd);
     this.zones.setData(next, ms, now);
+    this.tpo.setData(next, ms);
     if (this.statsSeries && (full || now - this.statsAt >= STATS_EVERY_MS || next.length !== this.stats.length)) {
       this.statsAt = now;
       const predicted = st.ctx ? st.ctx.funding : null;

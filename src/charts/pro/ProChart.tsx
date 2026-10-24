@@ -8,6 +8,7 @@ import { hlTick } from './core/footprintBar';
 import { indicatorScope, liqLevels } from './core/indicators';
 import type { AggressorOrder } from './core/orders';
 import type { ResetMode } from './core/sessions';
+import { tpoInterval } from './core/tpo';
 import { type PaneKey, ProChartController } from './chart/controller';
 import { PickCard, TapePanel, compact } from './chart/FlowPanels';
 import { HoverSignal, Legend } from './chart/Legend';
@@ -714,6 +715,7 @@ type IndicatorKey =
   | 'showSessionVwap'
   | 'showProfile'
   | 'showPeriodProfiles'
+  | 'showTpo'
   | 'showLevels'
   | 'showSessions'
   | 'showIb'
@@ -793,6 +795,13 @@ const IndicatorsMenu: React.FC<{ settings: ChartSettings; intervalMs: number; li
       hint: `Profil każdej ${scope.periodProfile === 'day' ? 'doby UTC' : 'sesji'} od jej początku; POC, którego cena potem nie dotknęła, ciągnie się do prawej krawędzi`,
       swatch: 'bg-of-vol',
       off: scope.periodProfile ? undefined : 'Na interwałach do 4h',
+    },
+    {
+      key: 'showTpo',
+      label: 'TPO — profil czasowy doby',
+      hint: 'Litery 30-minutowych okresów doby UTC w każdym wierszu ceny: POC, value area, initial balance (pasek turkusowy), pojedyncze wydruki i ogony; zastępuje profile sesji',
+      swatch: 'bg-of-svwap',
+      off: tpoInterval(intervalMs) ? undefined : 'Na interwałach do 30m',
     },
     {
       key: 'showLevels',

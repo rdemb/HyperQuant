@@ -112,6 +112,15 @@ const GROUPS: { title: string; rows: Row[] }[] = [
           'Alerty działają tylko przy otwartej stronie i zapisują się tylko w tej przeglądarce. Klastry likwidacji tylko dla BTC (skaner mapuje pozycje BTC). Taśma każdego rynku nagrywana od otwarcia strony.',
       },
       {
+        metric: 'TPO — profil czasowy doby (Wykresy)',
+        source: 'Świece Hyperliquid (API i WS) interwału wykresu do 30m',
+        method:
+          'Doba UTC dzielona na 48 okresów po 30 min (A–X, a–x); okres = H i L jego świec, litera w każdym wierszu ceny między nimi. POC = wiersz z największą liczbą liter (remis: bliżej środka profilu), value area = 70% liter od POC w stronę większego sąsiada, initial balance = zakres okresów A i B, pojedynczy wydruk = wiersz z jedną literą wewnątrz profilu, ogon = co najmniej dwa takie wiersze na skraju; nagi POC = POC zamkniętej doby, którego cena potem nie dotknęła. Wysokość wiersza z zakresu ceny na ekranie',
+        kinds: ['LIVE'],
+        refresh: 'na żywo',
+        caveat: 'Kontekst aukcji, nie sygnał. Liczba liter zależy od wysokości wiersza, więc POC i value area mogą się nieznacznie przesuwać przy zmianie zbliżenia.',
+      },
+      {
         metric: 'Open interest, funding, mark/oracle',
         source: 'Hyperliquid API: metaAndAssetCtxs',
         method: 'Wartości wprost z API; basis = (mark − oracle) / oracle',

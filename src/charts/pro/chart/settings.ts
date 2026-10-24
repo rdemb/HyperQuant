@@ -30,6 +30,8 @@ export interface ChartSettings {
   showProfile: boolean;
   /** Profile sesji (na 1–4 h dób) z nagimi POC. */
   showPeriodProfiles: boolean;
+  /** Profil czasowy (TPO) każdej doby; zastępuje profile sesji. */
+  showTpo: boolean;
   showLevels: boolean;
   showSessions: boolean;
   showIb: boolean;
@@ -69,6 +71,7 @@ export const DEFAULT_SETTINGS: ChartSettings = {
   showSessionVwap: true,
   showProfile: true,
   showPeriodProfiles: true,
+  showTpo: false,
   showLevels: true,
   showSessions: true,
   showIb: true,
@@ -112,6 +115,7 @@ export function parseSettings(raw: unknown, d: ChartSettings = DEFAULT_SETTINGS)
     showSessionVwap: bool(r.showSessionVwap, d.showSessionVwap),
     showProfile: bool(r.showProfile, d.showProfile),
     showPeriodProfiles: bool(r.showPeriodProfiles, d.showPeriodProfiles),
+    showTpo: bool(r.showTpo, d.showTpo),
     showLevels: bool(r.showLevels, d.showLevels),
     showSessions: bool(r.showSessions, d.showSessions),
     showIb: bool(r.showIb, d.showIb),
