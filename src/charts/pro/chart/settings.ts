@@ -17,6 +17,8 @@ export interface ChartSettings {
   showDelta: boolean;
   showCvd: boolean;
   cvdReset: ResetMode;
+  /** Tabela statystyk świec pod wykresem. */
+  showStats: boolean;
   /** Wskaźniki na wykresie ceny. */
   showVwap: boolean;
   showVwapBands: boolean;
@@ -28,6 +30,9 @@ export interface ChartSettings {
   showSessions: boolean;
   showIb: boolean;
   showLiq: boolean;
+  /** Strefy nierównowagi i niedokończone aukcje z footprintu. */
+  showZones: boolean;
+  showAuctions: boolean;
   /** Warstwy na żywo: mapa ciepła arkusza i bąble zleceń agresora. */
   showHeatmap: boolean;
   showBubbles: boolean;
@@ -53,6 +58,7 @@ export const DEFAULT_SETTINGS: ChartSettings = {
   showDelta: true,
   showCvd: true,
   cvdReset: 'session',
+  showStats: true,
   showVwap: true,
   showVwapBands: true,
   showSessionVwap: true,
@@ -62,6 +68,8 @@ export const DEFAULT_SETTINGS: ChartSettings = {
   showSessions: true,
   showIb: true,
   showLiq: true,
+  showZones: true,
+  showAuctions: true,
   showHeatmap: true,
   showBubbles: true,
   showClashes: true,
@@ -77,10 +85,9 @@ const oneOf = <T>(v: unknown, allowed: readonly T[], fallback: T): T => (allowed
 const numIn = (v: unknown, lo: number, hi: number, fallback: number) => (typeof v === 'number' && v >= lo && v <= hi ? v : fallback);
 const bool = (v: unknown, fallback: boolean) => (typeof v === 'boolean' ? v : fallback);
 
-/** Odczyt z walidacją każdego pola (stary lub uszkodzony zapis → wartości domyślne). */
-export function parseSettings(raw: unknown): ChartSettings {
+/** Odczyt z walidacją każdego pola (stary lub uszkodzony zapis → wartości domyślne `d`). */
+export function parseSettings(raw: unknown, d: ChartSettings = DEFAULT_SETTINGS): ChartSettings {
   const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
-  const d = DEFAULT_SETTINGS;
   return {
     interval: oneOf(r.interval, INTERVALS.map((i) => i.id), d.interval),
     view: oneOf(r.view, ['candles', 'footprint'] as const, d.view),
@@ -93,6 +100,7 @@ export function parseSettings(raw: unknown): ChartSettings {
     showDelta: bool(r.showDelta, d.showDelta),
     showCvd: bool(r.showCvd, d.showCvd),
     cvdReset: oneOf(r.cvdReset, ['none', 'session', 'day', 'week'] as const, d.cvdReset),
+    showStats: bool(r.showStats, d.showStats),
     showVwap: bool(r.showVwap, d.showVwap),
     showVwapBands: bool(r.showVwapBands, d.showVwapBands),
     showSessionVwap: bool(r.showSessionVwap, d.showSessionVwap),
@@ -102,6 +110,8 @@ export function parseSettings(raw: unknown): ChartSettings {
     showSessions: bool(r.showSessions, d.showSessions),
     showIb: bool(r.showIb, d.showIb),
     showLiq: bool(r.showLiq, d.showLiq),
+    showZones: bool(r.showZones, d.showZones),
+    showAuctions: bool(r.showAuctions, d.showAuctions),
     showHeatmap: bool(r.showHeatmap, d.showHeatmap),
     showBubbles: bool(r.showBubbles, d.showBubbles),
     showClashes: bool(r.showClashes, d.showClashes),
@@ -112,12 +122,19 @@ export function parseSettings(raw: unknown): ChartSettings {
   };
 }
 
+/** Na wąskim ekranie tabela statystyk domyślnie wyłączona — zabrałaby większość wysokości wykresu. */
+function defaults(): ChartSettings {
+  const narrow = typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 639px)').matches;
+  return narrow ? { ...DEFAULT_SETTINGS, showStats: false } : DEFAULT_SETTINGS;
+}
+
 export function loadSettings(): ChartSettings {
+  const d = defaults();
   try {
     const s = localStorage.getItem(KEY);
-    return parseSettings(s ? JSON.parse(s) : null);
+    return parseSettings(s ? JSON.parse(s) : null, d);
   } catch {
-    return DEFAULT_SETTINGS;
+    return d;
   }
 }
 
