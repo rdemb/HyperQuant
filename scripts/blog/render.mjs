@@ -198,36 +198,45 @@ const BRANDS = {
 const ICON_SHARE =
   '<svg class="line" viewBox="0 0 24 24" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.59 13.51 15.42 17.49M15.41 6.51 8.59 10.49"/></svg>';
 const ICON_LINK =
-  '<svg class="line" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>';
+  '<svg class="line ico-link" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>';
+const ICON_CHECK = '<svg class="line ico-check" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
 
 // Kopiowanie linku i systemowe „Udostępnij” (telefon) wymagają JS: bez niego przyciski zostają ukryte, linki do serwisów działają zawsze
 const SHARE_SCRIPT = `<script>
 (() => {
-  const box = document.querySelector('.share');
-  const { url, title } = box.dataset;
-  const native = box.querySelector('[data-share="native"]');
-  const copy = box.querySelector('[data-share="copy"]');
-  const label = copy.querySelector('span');
-  if (navigator.share) {
-    native.hidden = false;
-    native.addEventListener('click', () => navigator.share({ title, url }).catch(() => {}));
-  }
-  copy.hidden = false;
-  copy.addEventListener('click', async () => {
-    try {
-      await navigator.clipboard.writeText(url);
-    } catch {
-      window.prompt('Link do wpisu', url);
-      return;
+  for (const box of document.querySelectorAll('.share')) {
+    const { url, title } = box.dataset;
+    const native = box.querySelector('[data-share="native"]');
+    const copy = box.querySelector('[data-share="copy"]');
+    const label = copy.querySelector('span');
+    if (navigator.share) {
+      native.hidden = false;
+      native.addEventListener('click', () => navigator.share({ title, url }).catch(() => {}));
     }
-    label.textContent = 'Skopiowano';
-    setTimeout(() => (label.textContent = 'Kopiuj link'), 2000);
-  });
+    copy.hidden = false;
+    copy.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(url);
+      } catch {
+        window.prompt('Link do wpisu', url);
+        return;
+      }
+      copy.dataset.done = '';
+      label.textContent = 'Skopiowano';
+      setTimeout(() => {
+        delete copy.dataset.done;
+        label.textContent = 'Kopiuj link';
+      }, 2000);
+    });
+  }
 })();
 </script>`;
 
-/** Udostępnianie wpisu: X, Facebook, LinkedIn, Telegram, WhatsApp, kopiowanie linku i systemowe „Udostępnij”. */
-export function shareHtml(url, title) {
+/**
+ * Udostępnianie wpisu: X, Facebook, LinkedIn, Telegram, WhatsApp, kopiowanie linku i systemowe „Udostępnij”.
+ * `compact`: same ikony (rząd pod tytułem), opisy przycisków tylko dla czytników ekranu i w podpowiedzi.
+ */
+export function shareHtml(url, title, { compact = false } = {}) {
   const u = encodeURIComponent(url);
   const t = encodeURIComponent(title);
   const targets = [
@@ -243,15 +252,22 @@ export function shareHtml(url, title) {
         `<a class="share-net" href="${esc(href)}" target="_blank" rel="noopener noreferrer" aria-label="${name}" title="${name}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="${BRANDS[key]}"/></svg></a>`
     )
     .join('');
-  return `<section class="block share" aria-labelledby="share-title" data-url="${esc(url)}" data-title="${esc(title)}">
-<h2 id="share-title">Udostępnij</h2>
-<div class="share-row">
-<button type="button" class="share-btn" data-share="native" hidden>${ICON_SHARE}<span>Udostępnij</span></button>
-<button type="button" class="share-btn" data-share="copy" hidden>${ICON_LINK}<span aria-live="polite">Kopiuj link</span></button>
+  const tip = (text) => (compact ? ` title="${text}"` : '');
+  const label = compact ? ' class="sr-only"' : '';
+  const row = `<div class="share-row">
+<button type="button" class="share-btn" data-share="native"${tip('Udostępnij')} hidden>${ICON_SHARE}<span${label}>Udostępnij</span></button>
+<button type="button" class="share-btn" data-share="copy"${tip('Kopiuj link')} hidden>${ICON_LINK}${ICON_CHECK}<span${label} aria-live="polite">Kopiuj link</span></button>
 ${links}
-</div>
-</section>
-${SHARE_SCRIPT}`;
+</div>`;
+  const data = `data-url="${esc(url)}" data-title="${esc(title)}"`;
+  if (compact)
+    return `<div class="share share--compact" role="group" aria-label="Udostępnij wpis" ${data}>
+${row}
+</div>`;
+  return `<section class="block share" aria-labelledby="share-title" ${data}>
+<h2 id="share-title">Udostępnij</h2>
+${row}
+</section>`;
 }
 
 /** Strona wpisu (artykuł albo notka). `newer` / `older` = sąsiednie wpisy do nawigacji. */
@@ -272,7 +288,10 @@ export function postPage(site, post, { newer, older }) {
   const main = `<article class="post post--${post.type}">
 <p class="eyebrow"><a href="../">Blog</a><span>${esc(post.section)}</span></p>
 <h1>${esc(post.title)}</h1>
+<div class="byline">
 <p class="meta"><time datetime="${esc(post.date)}">${fmtDay(post.ms)}, ${fmtTime(post.ms)}</time> czasu polskiego</p>
+${shareHtml(url, post.title, { compact: true })}
+</div>
 <p class="lead">${esc(post.description)}</p>
 ${facts}${levels}${scenarios}
 <div class="prose">
@@ -281,6 +300,7 @@ ${renderMarkdown(post.body)}
 ${shareHtml(url, post.title)}
 <p class="history">${DISCLOSURE} Wpis jest w publicznej historii repozytorium od chwili publikacji: <a href="${site.repo}/commits/main/content/blog/${post.id}.md">historia zmian</a>.</p>
 </article>
+${SHARE_SCRIPT}
 <nav class="pager" aria-label="Sąsiednie wpisy">${pager}</nav>`;
   return layout(site, {
     title: `${post.title} · HyperQuant`,

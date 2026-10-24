@@ -146,9 +146,11 @@ describe('blog: szablony', () => {
     expect(html).toContain(`href="https://www.linkedin.com/sharing/share-offsite/?url=${u}"`);
     expect(html).toContain(`href="https://t.me/share/url?url=${u}&amp;text=${t}"`);
     expect(html).toContain(`href="https://wa.me/?text=${t}%20${u}"`);
-    expect(html.match(/class="share-net"[^>]*target="_blank" rel="noopener noreferrer"/g).length).toBe(5);
-    expect(html).toMatch(/data-share="native" hidden/);
-    expect(html).toMatch(/data-share="copy" hidden/);
+    // dwa rzędy: ikony pod tytułem i pełny blok pod treścią
+    expect(html.match(/class="share-net"[^>]*target="_blank" rel="noopener noreferrer"/g).length).toBe(10);
+    expect(html.match(/data-share="native"[^>]* hidden>/g).length).toBe(2);
+    expect(html.match(/data-share="copy"[^>]* hidden>/g).length).toBe(2);
+    expect(html).toContain('<span class="sr-only" aria-live="polite">Kopiuj link</span>');
   });
 
   it('RSS: pełna treść z bezwzględnymi adresami, data RFC 822; sitemap z wpisami', () => {
