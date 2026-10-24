@@ -18,7 +18,6 @@ import {
   VenueFlowMap,
 } from '../utils/marketDataFeed';
 import { soundEngine } from '../utils/soundEngine';
-import { orderFlowStore } from '../charts/orderflow/orderFlowStore';
 import { useCexFeeds } from './useCexFeeds';
 import { useVolModel } from './useVolModel';
 import { VolModel } from '../utils/volatility';
@@ -193,7 +192,6 @@ export function useDeskFeed(options: { cexEnabled: boolean }) {
     if (ticks.length === 0) return;
     const tfMs = timeframeRef.current * 1000;
     if (isHyperliquid) {
-      orderFlowStore.ingestTrades(ticks);
       const flow = wsFlowRef.current;
       for (const t of ticks) {
         const barTime = Math.floor(t.timestamp / tfMs) * tfMs;

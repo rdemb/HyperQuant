@@ -340,7 +340,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         caveat: 'Wpływ szczytowy i pełne trafienie w arkusz — górna granica; tylko zmierzona część OI.',
       },
       {
-        metric: 'Heatmapa likwidacji (wykres świec)',
+        metric: 'Heatmapa likwidacji (Lab 3D)',
         source: 'Ekstrema świec HL',
         method: 'Teoretyczne ceny likwidacji dla dźwigni 5× / 20× / 100× od ekstremów świec',
         kinds: ['MODEL'],
