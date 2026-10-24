@@ -4,7 +4,7 @@ import { indicatorScope, vwapSeries } from '../core/indicators';
 import { periodStart } from '../core/sessions';
 import type { CandleSeries, ProStore } from '../store/proStore';
 import { venueStoreFor } from '../venues/venueStore';
-import { STATE_BARS, STATE_RUN_MAX, StateFact, marketState, stateSentence } from './marketState';
+import { STATE_BARS, STATE_RUN_MAX, StateFact, StateInput, marketState, stateSentence } from './marketState';
 import { PRO } from './theme';
 
 /**
@@ -31,18 +31,10 @@ function readState(store: ProStore, series: CandleSeries, venueOn: boolean): Sta
   let k = n - 1;
   while (k > 0 && all[k - 1].t >= p0) k--;
   const vw = vwapSeries(all.slice(k), anchor);
-  let venues: { binance: number | null; bybit: number | null } | null = null;
+  let venues: StateInput['venues'] = null;
   if (venueOn) {
     const r = venueStoreFor(store.coin).reads(iv, now);
-    const sum = (v: 'binance' | 'bybit') => {
-      let s: number | null = null;
-      for (const b of win) {
-        const d = r.delta(v, b.t);
-        if (d !== null) s = (s ?? 0) + d;
-      }
-      return s;
-    };
-    venues = { binance: sum('binance'), bybit: sum('bybit') };
+    venues = { binance: (t) => r.delta('binance', t), bybit: (t) => r.delta('bybit', t) };
   }
   const f = store.book('near')?.latest() ?? null;
   let book: { bid: number; ask: number } | null = null;

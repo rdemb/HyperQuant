@@ -66,8 +66,8 @@ export interface StateInput {
   /** Wejścia dużych graczy i reszty od początku okna do teraz. */
   players: PlayerSplit | null;
   bigPlayerUsd: number;
-  /** Suma delty Binance perp i Bybit w oknie; null — dane giełd wyłączone. */
-  venues: { binance: number | null; bybit: number | null } | null;
+  /** Delta Binance perp i Bybit w świecy o początku `t` (null bez danych); null — dane giełd wyłączone. */
+  venues: { binance: (t: number) => number | null; bybit: (t: number) => number | null } | null;
   /** Wielkość bidów i asków bliskiego arkusza (jednostki rynku); null bez świeżej migawki. */
   book: { bid: number; ask: number } | null;
 }
@@ -97,7 +97,7 @@ function vwapFact(x: StateInput, close: number): StateFact | null {
   };
 }
 
-function cvdFact(x: StateInput, win: readonly StateBar[]): { fact: StateFact; dir: -1 | 0 | 1; delta: number; n: number } | null {
+function cvdFact(x: StateInput, win: readonly StateBar[]): { fact: StateFact; dir: -1 | 0 | 1; delta: number; tape: StateBar[] } | null {
   const tape = win.filter((b) => b.fp);
   if (tape.length < 2) return null;
   let d = 0;
@@ -125,7 +125,7 @@ function cvdFact(x: StateInput, win: readonly StateBar[]): { fact: StateFact; di
   }
   const word = dir > 0 ? 'rośnie' : 'spada';
   const text = dir === 0 ? 'CVD bez wyraźnego kierunku' : run >= 2 ? `CVD ${word} od ${fmtDuration(x.now - from)}` : `CVD ${word}`;
-  const runWhy = dir !== 0 ? ` Z rzędu ${run} ${bars(run)} z deltą ${dir > 0 ? 'dodatnią' : 'ujemną'}.` : '';
+  const runWhy = dir !== 0 && run > 0 ? ` Z rzędu ${run} ${bars(run)} z deltą ${dir > 0 ? 'dodatnią' : 'ujemną'}.` : '';
   return {
     fact: {
       key: 'cvd',
@@ -136,16 +136,30 @@ function cvdFact(x: StateInput, win: readonly StateBar[]): { fact: StateFact; di
     },
     dir,
     delta: d,
-    n: tape.length,
+    tape,
   };
 }
 
-function venuesFact(x: StateInput, cvd: { dir: -1 | 0 | 1; delta: number; n: number }): StateFact | null {
+/**
+ * Zgodność giełd w tych samych świecach co CVD Hyperliquid (świece z taśmy). Giełda bez delty w którejś z nich (Bybit ma
+ * taśmę tylko od otwarcia strony) jest pominięta — suma z części świec porównywałaby inne okresy.
+ */
+function venuesFact(x: StateInput, cvd: { dir: -1 | 0 | 1; delta: number; tape: readonly StateBar[] }): StateFact | null {
   const v = x.venues;
   if (!v || cvd.dir === 0) return null;
-  const list = (['binance', 'bybit'] as const)
-    .filter((k) => v[k] !== null)
-    .map((k) => ({ name: k === 'binance' ? 'Binance' : 'Bybit', same: sign(v[k]!) === cvd.dir }));
+  const n = cvd.tape.length;
+  const sums = (['binance', 'bybit'] as const).map((k) => {
+    let sum = 0;
+    let have = 0;
+    for (const b of cvd.tape) {
+      const d = v[k](b.t);
+      if (d === null) continue;
+      sum += d;
+      have++;
+    }
+    return { name: k === 'binance' ? 'Binance' : 'Bybit', label: k === 'binance' ? 'Binance perp' : 'Bybit', sum, have };
+  });
+  const list = sums.filter((g) => g.have === n).map((g) => ({ ...g, same: sign(g.sum) === cvd.dir }));
   if (list.length === 0) return null;
   const names = list.map((l) => l.name).join(' i ');
   const text = list.every((l) => l.same)
@@ -153,14 +167,16 @@ function venuesFact(x: StateInput, cvd: { dir: -1 | 0 | 1; delta: number; n: num
     : list.every((l) => !l.same)
       ? `${names} w przeciwną stronę`
       : list.map((l) => `${l.name} w ${l.same ? 'tę samą stronę' : 'przeciwną'}`).join(', ');
-  const parts = [`Hyperliquid ${fmtSignedVol(cvd.delta)}`];
-  if (v.binance !== null) parts.push(`Binance perp ${fmtSignedVol(v.binance)}`);
-  if (v.bybit !== null) parts.push(`Bybit ${fmtSignedVol(v.bybit)}`);
+  const parts = [`Hyperliquid ${fmtSignedVol(cvd.delta)}`, ...list.map((l) => `${l.label} ${fmtSignedVol(l.sum)}`)];
+  const skipped = sums
+    .filter((g) => g.have < n)
+    .map((g) => ` ${g.name} pominięty: delta tylko z ${g.have} z ${n} świec.`)
+    .join('');
   return {
     key: 'venues',
     label: 'Giełdy',
     text,
-    why: `Delta w tych samych świecach: ${parts.join(', ')} ${x.unit}. „Ta sama strona” — znak delty jak na Hyperliquid.`,
+    why: `Delta w tych samych ${n} świecach z taśmy: ${parts.join(', ')} ${x.unit}. „Ta sama strona” — znak delty jak na Hyperliquid.${skipped}`,
     tone: list.every((l) => l.same) ? cvd.dir : 0,
   };
 }

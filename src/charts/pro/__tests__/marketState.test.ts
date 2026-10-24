@@ -40,7 +40,7 @@ describe('Stan rynku', () => {
       vwap: { vwap: 99_880, sd: 100, start: false },
       oiAt: (t) => (t <= T0 ? 30_000 : 30_150),
       players: { big: 6, rest: -2, bigUsd: 1_500_000, usd: 3_000_000, bigShare: 50, complete: true },
-      venues: { binance: 40, bybit: 3 },
+      venues: { binance: () => 7, bybit: () => 0.5 },
       book: { bid: 65, ask: 35 },
     });
     const facts = marketState(x);
@@ -74,8 +74,33 @@ describe('Stan rynku', () => {
 
   it('bieżąca świeca w przeciwną stronę nie przerywa ciągu; giełdy w różne strony; daleko pod VWAP', () => {
     const bars = [bar(0, 1, 6), bar(1, 1, 5), bar(2, 2, 7), bar(3, 3, 1)];
-    const facts = marketState(base(bars, { vwap: { vwap: 100_250, sd: 100, start: false }, venues: { binance: -12, bybit: 2 } }));
+    const facts = marketState(base(bars, { vwap: { vwap: 100_250, sd: 100, start: false }, venues: { binance: () => -3, bybit: () => 0.5 } }));
     expect(stateSentence(facts)).toBe('Cena daleko pod VWAP dnia (−2,5σ), CVD spada od 16 min, Binance w tę samą stronę, Bybit w przeciwną.');
     expect(facts[2].tone).toBe(0);
+  });
+
+  it('giełdy w tych samych świecach co taśma Hyperliquid; giełda bez delty w części z nich pominięta', () => {
+    // 10 świec, taśma Hyperliquid tylko w ostatnich 7; Binance ma deltę we wszystkich (w 3 pierwszych mocno ujemną),
+    // Bybit tylko w bieżącej (dane od otwarcia strony)
+    const bars = Array.from({ length: 10 }, (_, i) => (i < 3 ? { t: T0 + i * M5, candle: candle(T0 + i * M5, 100_000), fp: null } : bar(i, 6, 2)));
+    const last = bars[9].t;
+    const facts = marketState(
+      base(bars, {
+        venues: { binance: (t) => (t < T0 + 3 * M5 ? -2000 : 500), bybit: (t) => (t === last ? 2 : null) },
+      })
+    );
+    const v = facts.find((f) => f.key === 'venues')!;
+    expect(v.text).toBe('Binance w tę samą stronę');
+    expect(v.why).toBe(
+      'Delta w tych samych 7 świecach z taśmy: Hyperliquid +28.0, Binance perp +3.5K BTC. „Ta sama strona” — znak delty jak na Hyperliquid. Bybit pominięty: delta tylko z 1 z 7 świec.'
+    );
+    // Żadna giełda nie ma delty we wszystkich świecach z taśmy — bez porównania
+    expect(marketState(base(bars, { venues: { binance: () => null, bybit: (t) => (t === last ? 2 : null) } })).some((f) => f.key === 'venues')).toBe(false);
+  });
+
+  it('CVD z kierunkiem, ale bez ciągu świec — bez „z rzędu 0 świec”', () => {
+    const facts = marketState(base([bar(0, 9, 1), bar(1, 8, 2), bar(2, 1, 3)], { now: T0 + 3 * M5 + 1 }));
+    expect(facts[0].text).toBe('CVD rośnie');
+    expect(facts[0].why).not.toContain('Z rzędu');
   });
 });
