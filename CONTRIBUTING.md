@@ -1,43 +1,43 @@
-# Jak współtworzyć HyperQuant
+# Contributing to HyperQuant
 
-Dzięki za chęć pomocy. HyperQuant to publiczny desk analityczny BTC na Hyperliquid — liczy się w nim przede wszystkim **uczciwość liczb**. Zanim zaczniesz, przeczytaj zasady z [README](README.md#zasady).
+Thanks for wanting to help. HyperQuant is a public BTC analytics desk on Hyperliquid, and what matters above all is **honest numbers**. Before you start, read the [principles in the README](README.md#principles).
 
-## Uruchomienie
+## Running
 
-Wymagany Node.js 22.
+Requires Node.js 24.
 
 ```bash
 npm ci --legacy-peer-deps
 npm run dev      # http://localhost:3000
 ```
 
-| Skrypt | Co robi |
+| Script | What it does |
 |---|---|
-| `npm run lint` | sprawdzenie typów (`tsc --noEmit`) |
-| `npm test` | testy Vitest |
-| `npm run build` | build produkcyjny do `dist/` |
-| `npm run data` | pobranie danych publicznych do `public/data/feeds` |
+| `npm run lint` | type check (`tsc --noEmit`) |
+| `npm test` | Vitest tests |
+| `npm run build` | production build to `dist/` |
+| `npm run data` | fetches public data into `public/data/feeds` |
 
-## Zasady merytoryczne
+## Content rules
 
-1. **Każda liczba ma źródło i metodę.** Wartość z API to `LIVE`, wynik modelu z realnych danych to `MODEL` (metoda opisana w UI i w [Rodowodzie](src/views/sources/LineageTable.tsx)), symulacja to `SIM`. Brak danych = „—”, nigdy liczba zastępcza.
-2. **Nazwa = matematyka.** Jeśli coś nazywa się „Hawkes”, „OFI” czy „VPIN”, implementuje dokładnie tę metodę (z cytatem) albo jest jawnie oznaczone jako heurystyka.
-3. **Desk ocenia plan, nie podsuwa wejść.** Żadnych automatycznych sygnałów LONG/SHORT.
-4. **Tylko publiczne, legalne dane.** Rdzeń to publiczne API Hyperliquid; giełdy CEX wyłącznie opt-in w przeglądarce użytkownika.
-5. **Metody z literatury.** Nowy model lub estymator dostaje cytat (autor, rok, czasopismo) w komentarzu i w sekcji metodologii UI oraz test na danych o znanym rozkładzie.
+1. **Every number has a source and a method.** A value from an API is `LIVE`, a model output from real data is `MODEL` (method described in the UI and in the [data lineage](src/views/sources/LineageTable.tsx)), a simulation is `SIM`. Missing data = "—", never a placeholder number.
+2. **Name = maths.** If something is called "Hawkes", "OFI" or "VPIN", it implements exactly that method (with a citation) or is explicitly labelled as a heuristic.
+3. **The desk scores the plan; it does not suggest entries.** No automatic LONG/SHORT signals.
+4. **Public, legal data only.** The core is Hyperliquid's public API; centralised exchanges are opt-in only, in the user's browser.
+5. **Methods from the literature.** A new model or estimator gets a citation (author, year, journal) in a code comment and in the UI methodology section, plus a test on data with a known distribution.
 
-## Kod
+## Code
 
-- TypeScript strict; czyste funkcje obliczeniowe w `src/utils/` (bez sieci i stanu), hooki z danymi w `src/state/`, widoki w `src/views/`.
-- Teksty UI i komentarze po polsku, identyfikatory po angielsku.
-- Każda zmiana zachowania ma test, który najpierw nie przechodzi (TDD). Losowość w testach i symulacjach — deterministyczne ziarno.
-- Commity w stylu Conventional Commits: `feat(...)`, `fix(...)`, `docs:`, `ci:`, `chore:`.
+- Strict TypeScript; pure computation functions in `src/utils/` (no network, no state), data hooks in `src/state/`, views in `src/views/`.
+- UI text and code comments in Polish, identifiers in English.
+- Every behaviour change comes with a test that fails first (TDD). Randomness in tests and simulations uses a deterministic seed.
+- Commits follow Conventional Commits: `feat(...)`, `fix(...)`, `docs:`, `ci:`, `chore:`.
 
-## Pull request
+## Pull requests
 
-1. Gałąź od `main`, jeden temat na PR.
-2. `npm run lint && npm test && npm run build` lokalnie — CI uruchamia to samo na każdym PR.
-3. Uzupełnij [CHANGELOG](CHANGELOG.md) (sekcja „Nieopublikowane” lub nowa wersja).
-4. Zmiany w UI: zrzut ekranu (desktop i telefon).
+1. Branch from `main`, one topic per PR.
+2. Run `npm run lint && npm test && npm run build` locally; CI runs the same on every PR.
+3. Update the [CHANGELOG](CHANGELOG.md) (the "Unreleased" section or a new version).
+4. UI changes: a screenshot (desktop and phone).
 
-Scalenie na `main` publikuje stronę na GitHub Pages.
+Merging to `main` publishes the site on GitHub Pages.

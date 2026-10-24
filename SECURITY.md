@@ -1,16 +1,16 @@
-# Bezpieczeństwo
+# Security
 
-HyperQuant to statyczna strona (GitHub Pages) korzystająca wyłącznie z publicznych API. Nie przechowuje kluczy, haseł ani danych użytkowników po stronie serwera — plany, dziennik i ustawienia są tylko w `localStorage` przeglądarki.
+HyperQuant is a static site (GitHub Pages) that uses public APIs only. It stores no keys, passwords or user data on the server side: plans, the journal and settings live only in the browser (`localStorage` and IndexedDB).
 
-## Zgłaszanie podatności
+## Reporting a vulnerability
 
-Nie zgłaszaj podatności w publicznych issue. Użyj prywatnego zgłoszenia na GitHubie: zakładka **Security → Report a vulnerability** w repozytorium [rdemb/HyperQuant](https://github.com/rdemb/HyperQuant/security/advisories/new).
+Do not report vulnerabilities in public issues. Use GitHub's private reporting: the **Security → Report a vulnerability** tab in the [rdemb/HyperQuant](https://github.com/rdemb/HyperQuant/security/advisories/new) repository.
 
-Opisz, co i gdzie (plik, widok, adres), jak odtworzyć problem i jaki może mieć skutek. Odpowiedź w ciągu kilku dni roboczych.
+Describe what and where (file, view, URL), how to reproduce the problem and what its impact could be. You will get a reply within a few business days.
 
-## Zakres
+## Scope
 
-- kod w tym repozytorium i strona https://rdemb.github.io/HyperQuant/,
-- workflow GitHub Actions i pobieranie danych publicznych (`scripts/fetch-public-data.mjs`).
+- the code in this repository and the site https://rdemb.github.io/HyperQuant/,
+- the GitHub Actions workflows and public data fetching (`scripts/fetch-public-data.mjs`).
 
-Poza zakresem: dostępność i dane zewnętrznych API (Hyperliquid, giełdy, źródła publiczne).
+Out of scope: availability and data of external APIs (Hyperliquid, exchanges, public sources).
