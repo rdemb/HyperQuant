@@ -254,7 +254,8 @@ describe('blog: analiza rozszerzona (dane, diagramy, scenariusze warunkowe)', ()
 
   it('znaczniki bloków: znane, raz, z danymi, w osobnej linii', () => {
     const msg = (body, data = PRO) => validatePost(ID, data, `${BODY_ARTICLE}\n\n${body}`).errors.join('\n');
-    expect(msg('[[wykres]]')).toMatch(/nieznany blok \[\[wykres\]\]/);
+    expect(msg('[[mapa]]')).toMatch(/nieznany blok \[\[mapa\]\]/);
+    expect(msg('[[wykres]]')).toMatch(/blok \[\[wykres\]\] bez danych \(session w content\/blog\/.+\/wykresy\.json\)/);
     expect(msg('[[setupy]]\n\n[[setupy]]')).toMatch(/więcej niż raz/);
     expect(msg('[[przeplywy]]', { ...PRO, flows: undefined })).toMatch(/\[\[przeplywy\]\] bez danych/);
     expect(msg('Patrz [[likwidacje]] wyżej.')).toMatch(/w osobnej linii/);

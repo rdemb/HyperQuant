@@ -1,5 +1,6 @@
 // Szablony bloga: strona wpisu, lista wpisów, archiwum miesięcy, RSS i sitemap. Czyste funkcje (tekst → tekst).
 import { Marked } from 'marked';
+import { footprintHtml, sessionHtml } from './charts.mjs';
 import { BLOCKS, TIME_ZONE, localDate, placedBlocks } from './posts.mjs';
 
 export const INDEX_LIMIT = 40;
@@ -246,6 +247,12 @@ ${cards}
 function postBlocks(post) {
   const out = {};
   if (post.metrics.length) out.dane = { title: 'Panel danych', html: metricsHtml(post.metrics) };
+  if (post.charts?.session) out.wykres = { title: 'Mapa sesji: ostatnie 24 godziny', html: sessionHtml(post.charts.session, post.setups) };
+  if (post.charts?.footprint) {
+    const fp = post.charts.footprint;
+    const end = fp.bars.at(-1).t + fp.tf * 60_000;
+    out.footprint = { title: `Footprint ${fmtTime(fp.bars[0].t)}–${fmtTime(end)}`, html: footprintHtml(fp) };
+  }
   if (post.levels.length) out.poziomy = { title: 'Mapa poziomów', html: ladderHtml(post.price, post.levels) };
   if (post.liquidations) out.likwidacje = { title: 'Mapa likwidacji', html: liquidationsHtml(post.price, post.liquidations) };
   if (post.flows) out.przeplywy = { title: post.flows.title, html: flowsHtml(post.flows) };
