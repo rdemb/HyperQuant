@@ -8,7 +8,7 @@ import { fmtPx } from './layout';
 
 /** Najnowszy stan krzyża (ustawiany przez sterownik wykresu najwyżej raz na klatkę). */
 export class HoverSignal {
-  private value: Hover = { bar: null, live: true, row: null, cvd: null, ind: null };
+  private value: Hover = { bar: null, live: true, open: false, row: null, cvd: null, ind: null };
   private readonly listeners = new Set<() => void>();
 
   set = (h: Hover): void => {
@@ -127,7 +127,7 @@ export const Legend: React.FC<{
           {intervalLabel} · Hyperliquid
         </span>
         {bar && <span className="text-ink-2">{fmtBarTime(bar.t, intervalMs)}</span>}
-        {h.live && bar && <span className="text-accent">● bieżąca</span>}
+        {h.live && h.open && bar && <span className="text-accent">● bieżąca</span>}
       </div>
       {c ? (
         <div className="flex flex-wrap items-baseline gap-x-2.5">

@@ -211,7 +211,8 @@ export const ProChart: React.FC<{
     // Powtórka innego rynku to inne nagranie — nowy link (ta sama chwila, interwał i rodzaj wykresu)
     const { replay: r, settings: s } = live.current;
     if (r) {
-      if (coin !== r.session.coin) window.location.hash = replayHash({ ...r.link, coin, interval: s.interval, view: s.view, t: r.session.t });
+      // Strefa ceny dotyczy rynku z linku — dla innego rynku jej nie przenosimy
+      if (coin !== r.session.coin) window.location.hash = replayHash({ ...r.link, coin, interval: s.interval, view: s.view, t: r.session.t, zone: null });
       return;
     }
     setSettings((s) => (s.coin === coin ? s : withPatch(s, { coin })));
