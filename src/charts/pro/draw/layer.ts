@@ -13,12 +13,12 @@ import type {
 } from 'lightweight-charts';
 import { fmtVol } from '../../orderflow/footprint';
 import { fmtSignedVol } from '../../orderflow/renderer';
-import { fmtPct, fmtPrice, fmtSigned } from '../../../ui/format';
+import { fmtPct, fmtSigned } from '../../../ui/format';
 import { hlTick } from '../core/footprintBar';
 import { volumeProfile, vwapSeries } from '../core/indicators';
 import type { VolumeProfile, VwapPoint } from '../core/indicators';
 import type { ProBar } from '../store/proStore';
-import { autoRowStep } from '../chart/layout';
+import { autoRowStep, fmtPx, priceDigits } from '../chart/layout';
 import { logicalOfTime } from '../chart/overlay';
 import { MONO, PRO, crosshairTimeFormatter, luminance, rgba } from '../chart/theme';
 import {
@@ -103,9 +103,6 @@ const MEASURE_DOWN = '#ff4d5e';
 const RANGE_PROFILE_FRAC = 0.6;
 const RANGE_PROFILE_ROW_PX = 4;
 
-/** Liczba miejsc po przecinku ceny wg ticku Hyperliquid (BTC: 0). */
-const priceDigits = (p: number) => Math.max(0, -Math.floor(Math.log10(hlTick(Math.abs(p)))));
-const fmtP = (p: number) => fmtPrice(p, priceDigits(p));
 
 const inkOn = (bg: string) => (luminance(bg) > 0.4 ? '#0b0b12' : '#ffffff');
 
@@ -441,7 +438,7 @@ export class DrawingLayer implements ISeriesPrimitive<Time> {
   }
 
   private priceMark(p: number, color: string, y: number): void {
-    if (Number.isFinite(y)) this.priceMarks.push({ at: y, text: fmtP(p), color });
+    if (Number.isFinite(y)) this.priceMarks.push({ at: y, text: fmtPx(p), color });
   }
 
   private timeMark(t: number, color: string, x: number): void {
@@ -590,7 +587,7 @@ export class DrawingLayer implements ISeriesPrimitive<Time> {
             if (!Number.isFinite(l.y)) continue;
             stroke(c, [x0, l.y, x1, l.y], l.color, s.width, dash);
             c.fillStyle = l.color;
-            const text = `${l.L} (${fmtP(l.p)})`;
+            const text = `${l.L} (${fmtPx(l.p)})`;
             if (labelsLeft) {
               c.textAlign = 'right';
               c.fillText(text, x0 - 6, l.y);
@@ -762,13 +759,13 @@ export class DrawingLayer implements ISeriesPrimitive<Time> {
       stroke(c, [x0, S.y, x1, S.y], rgba(LOSS, 0.7), 1);
       const tRows = [
         {
-          text: `Cel ${fmtP(pt.p)} · ${fmtPct(tUp ? ps0.rewardPct : -ps0.rewardPct)}`,
+          text: `Cel ${fmtPx(pt.p)} · ${fmtPct(tUp ? ps0.rewardPct : -ps0.rewardPct)}`,
           color: '#0b0b12',
         },
       ];
       const sRows = [
         {
-          text: `Stop ${fmtP(ps.p)} · ${fmtPct(sUp ? ps0.riskPct : -ps0.riskPct)}`,
+          text: `Stop ${fmtPx(ps.p)} · ${fmtPct(sUp ? ps0.riskPct : -ps0.riskPct)}`,
           color: '#ffffff',
         },
       ];
@@ -778,7 +775,7 @@ export class DrawingLayer implements ISeriesPrimitive<Time> {
         c,
         [
           {
-            text: `${d.kind === 'long' ? 'Long' : 'Short'} ${fmtP(pe.p)} · R:R ${rr}`,
+            text: `${d.kind === 'long' ? 'Long' : 'Short'} ${fmtPx(pe.p)} · R:R ${rr}`,
             color: PRO.ink1,
           },
         ],
@@ -844,7 +841,7 @@ export class DrawingLayer implements ISeriesPrimitive<Time> {
       c.fillStyle = PRO.ink2;
       c.textAlign = 'left';
       c.textBaseline = 'top';
-      c.fillText(`Wol ${fmtVol(prof.total)} ${this.unit} · POC ${fmtP(pocPrice)}`, xL + 2, yBot + 4);
+      c.fillText(`Wol ${fmtVol(prof.total)} ${this.unit} · POC ${fmtPx(pocPrice)}`, xL + 2, yBot + 4);
     };
     return it;
   }

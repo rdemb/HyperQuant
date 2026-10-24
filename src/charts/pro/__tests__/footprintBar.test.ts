@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { IMB_BUY, IMB_SELL } from '../../orderflow/footprint';
+import { bookSigFigs } from '../core/book';
 import { FootprintBuilder, aggregateRows, hlTick, rowAt, rowIndex, stackedRuns } from '../core/footprintBar';
 
 function build(trades: [number, number, number, 1 | -1][]) {
@@ -14,6 +15,18 @@ describe('hlTick', () => {
     expect(hlTick(100500)).toBe(10);
     expect(hlTick(9876.5)).toBe(0.1);
     expect(hlTick(2.5, 5)).toBe(0.1); // ograniczenie 10^−(6 − szDecimals)
+  });
+
+  it('tick i agregacje arkusza ETH, SOL i HYPE proporcjonalne do ceny', () => {
+    expect(hlTick(2802.9)).toBe(0.1);
+    expect(hlTick(195.07)).toBeCloseTo(0.01, 12);
+    expect(hlTick(36.837)).toBeCloseTo(0.001, 12);
+    // krok bliski = 10^(cyfry − near): BTC 10, ETH 1, SOL 0,1, HYPE 0,01
+    expect(bookSigFigs(75_000)).toEqual({ near: 4, far: 3 });
+    expect(bookSigFigs(105_000)).toEqual({ near: 5, far: 4 });
+    expect(bookSigFigs(2_800)).toEqual({ near: 4, far: 3 });
+    expect(bookSigFigs(195)).toEqual({ near: 4, far: 3 });
+    expect(bookSigFigs(36.8)).toEqual({ near: 4, far: 3 });
   });
 
   it('rowIndex nie gubi wiersza przez błąd zmiennoprzecinkowy', () => {

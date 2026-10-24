@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { Camera, ChevronsRight, Layers, ListOrdered, Maximize2, Minimize2, PenTool, RotateCcw, SlidersHorizontal } from 'lucide-react';
+import { Bell, BellOff, Camera, ChevronsRight, Copy, Layers, Link, ListOrdered, Maximize2, Minimize2, Minus, PenTool, RotateCcw, SlidersHorizontal, X } from 'lucide-react';
 import { Badge, BadgeTone, Segmented } from '../../ui';
 import { LiqMapState, useLiqMap } from '../../state/useLiqMap';
 import { INTERVALS, fmtHm, fmtSince, intervalById } from './core/time';
 import { DEFAULT_THRESHOLD_USD, classify } from './core/clashes';
+import { hlTick } from './core/footprintBar';
 import { indicatorScope, liqLevels } from './core/indicators';
 import type { AggressorOrder } from './core/orders';
 import type { ResetMode } from './core/sessions';
@@ -12,14 +13,17 @@ import { PickCard, TapePanel, compact } from './chart/FlowPanels';
 import { HoverSignal, Legend } from './chart/Legend';
 import type { LiquidityPick } from './chart/liquidity';
 import { brandedScreenshot, downloadCanvas } from './chart/screenshot';
-import { ChartSettings, DEFAULT_SETTINGS, loadSettings, saveSettings } from './chart/settings';
+import { MAX_ALERTS, PriceAlert, askNotifications, loadAlerts, newAlert, notifyAlert, parsePriceInput, primeAlertSound, reached, saveAlerts } from './chart/alerts';
+import { fmtPx, priceDigits } from './chart/layout';
+import { ChartSettings, DEFAULT_SETTINGS, hashFor, loadSettings, saveSettings, settingsFromHash } from './chart/settings';
 import type { ChartView } from './chart/footprintSeries';
 import type { FootprintStyle } from './chart/layout';
 import { DrawHint, DrawStyleBar, DrawToolbar } from './draw/DrawToolbar';
 import type { DrawingTools } from './draw/tools';
-import { ProStore, proStore } from './store/proStore';
+import { MARKETS, Market, ProStore, openStores, storeFor } from './store/proStore';
 import { startRecording } from './store/recording';
 
+const MARKET_OPTIONS = MARKETS.map((m) => ({ value: m, label: m, title: `${m}-PERP · Hyperliquid` }));
 const INTERVAL_OPTIONS = INTERVALS.map((i) => ({ value: i.id, label: i.label }));
 const VIEW_OPTIONS: { value: ChartView; label: string; title: string }[] = [
   { value: 'candles', label: 'Świece', title: 'Same świece (OHLC z API Hyperliquid)' },
@@ -30,6 +34,12 @@ const STYLE_OPTIONS: { value: FootprintStyle; label: string; title: string }[] =
   { value: 'delta', label: 'Delta', title: 'Delta wiersza: kupno − sprzedaż agresorów' },
   { value: 'volume', label: 'Wolumen', title: 'Łączny wolumen wiersza' },
 ];
+
+/** Zmiana z linku albo przełącznika rynku; wysokość wiersza w USD nie pasuje do rynku o innej cenie — wtedy automatyczna. */
+const withPatch = (s: ChartSettings, p: Partial<ChartSettings>): ChartSettings => ({ ...s, ...p, rowStep: p.coin && p.coin !== s.coin ? 0 : s.rowStep });
+
+/** Cena zaokrąglona do ticku rynku. */
+const toTick = (p: number) => Number(p.toFixed(priceDigits(p)));
 
 /** Odświeżanie paska stanu i paska narzędzi z magazynu — najwyżej co `ms` (taśma bywa bardzo szybka). */
 function useStoreVersion(store: ProStore, ms: number): number {
@@ -60,8 +70,9 @@ function useStoreVersion(store: ProStore, ms: number): number {
 
 /** Wykres Pro: Lightweight Charts (TradingView) z footprintem, wolumenem, Deltą i CVD z taśmy Hyperliquid. */
 export const ProChart: React.FC = () => {
-  const store = proStore;
-  const [settings, setSettings] = useState<ChartSettings>(loadSettings);
+  // Link do widoku (#charts?m=…&i=…&v=…) ma pierwszeństwo przed zapisanymi ustawieniami
+  const [settings, setSettings] = useState<ChartSettings>(() => withPatch(loadSettings(), settingsFromHash(window.location.hash)));
+  const store = storeFor(settings.coin);
   const [menu, setMenu] = useState<'settings' | 'indicators' | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
   const [tools, setTools] = useState<DrawingTools | null>(null);
@@ -70,6 +81,13 @@ export const ProChart: React.FC = () => {
   const [highlight, setHighlight] = useState('');
   // Pasek rysowania: na komputerze widoczny od razu, na telefonie po dotknięciu przycisku (więcej miejsca na wykres)
   const [drawOpen, setDrawOpen] = useState(() => window.innerWidth >= 640);
+  // Menu pod prawym przyciskiem (punkt w pikselach wykresu i cena w tym punkcie), alerty cenowe, krótki komunikat
+  const [ctxMenu, setCtxMenu] = useState<CtxMenuAt | null>(null);
+  const [alerts, setAlerts] = useState<PriceAlert[]>(loadAlerts);
+  const alertsRef = useRef(alerts);
+  alertsRef.current = alerts;
+  const [toast, setToast] = useState<string | null>(null);
+  const ctxRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   const hostRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -80,6 +98,11 @@ export const ProChart: React.FC = () => {
   useStoreVersion(store, 400);
 
   const update = useCallback((patch: Partial<ChartSettings>) => setSettings((s) => ({ ...s, ...patch })), []);
+  const setCoin = useCallback((coin: Market) => {
+    setSettings((s) => (s.coin === coin ? s : withPatch(s, { coin })));
+    setPick(null);
+    setHighlight('');
+  }, []);
   const onLegendBottom = useCallback((px: number) => {
     legendBottom.current = px;
     ctrlRef.current?.setTopInset(px);
@@ -119,6 +142,75 @@ export const ProChart: React.FC = () => {
     ctrlRef.current?.highlight(highlight);
   }, [highlight]);
 
+  // Adres strony zawsze prowadzi do bieżącego widoku — bez nowych wpisów w historii przeglądarki
+  useEffect(() => {
+    const h = hashFor(settings);
+    if (window.location.hash.startsWith('#charts') && window.location.hash !== h) history.replaceState(history.state, '', h);
+  }, [settings]);
+
+  // Wklejony link w tej samej karcie
+  useEffect(() => {
+    const onHash = () => {
+      const p = settingsFromHash(window.location.hash);
+      if (Object.keys(p).length > 0) setSettings((s) => withPatch(s, p));
+    };
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
+
+  useEffect(() => saveAlerts(alerts), [alerts]);
+
+  useEffect(() => {
+    ctrlRef.current?.setAlerts(alerts.filter((a) => a.coin === store.coin).map((a) => a.price));
+  }, [alerts, store]);
+
+  // Rynek z alertem ma własny strumień także wtedy, gdy na wykresie jest inny
+  useEffect(() => {
+    for (const m of MARKETS) if (alerts.some((a) => a.coin === m)) storeFor(m).start();
+  }, [alerts]);
+
+  // Alerty cenowe: co sekundę cena bieżącej świecy każdego rynku otwartego na stronie
+  useEffect(() => {
+    const id = setInterval(() => {
+      const list = alertsRef.current;
+      if (list.length === 0) return;
+      const fired: PriceAlert[] = [];
+      for (const st of openStores()) {
+        const px = st.candles[st.candles.length - 1]?.c ?? 0;
+        if (px > 0) for (const a of list) if (a.coin === st.coin && reached(a, px)) fired.push(a);
+      }
+      if (fired.length === 0) return;
+      setAlerts((l) => l.filter((a) => !fired.includes(a)));
+      for (const a of fired) notifyAlert(`Cena ${a.coin} doszła do ${fmtPx(a.price)}`, a.id);
+      setToast(`Alert: cena ${fired[0].coin} doszła do ${fmtPx(fired[0].price)}`);
+    }, 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    if (!toast) return;
+    const id = setTimeout(() => setToast(null), 5000);
+    return () => clearTimeout(id);
+  }, [toast]);
+
+  // Menu pod prawym przyciskiem: Escape, kliknięcie obok i przewinięcie zamykają
+  useEffect(() => {
+    if (!ctxMenu) return;
+    const close = () => setCtxMenu(null);
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && close();
+    const onDown = (e: PointerEvent) => {
+      if (!ctxRef.current?.contains(e.target as Node)) close();
+    };
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('pointerdown', onDown);
+    window.addEventListener('wheel', close, { passive: true });
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('pointerdown', onDown);
+      window.removeEventListener('wheel', close);
+    };
+  }, [ctxMenu]);
+
   const pickOrder = useCallback((o: AggressorOrder) => {
     const ctrl = ctrlRef.current;
     const p: LiquidityPick = { kind: 'order', order: o, cls: classify(o, ctrl?.bigTradeUsd ?? DEFAULT_THRESHOLD_USD) };
@@ -133,11 +225,11 @@ export const ProChart: React.FC = () => {
     setPick(null);
   }, []);
 
-  // Klastry likwidacji tylko z aktualnej mapy skanera (jak w Desku: nieaktualna mapa nie jest pokazywana)
+  // Klastry likwidacji tylko z aktualnej mapy skanera (jak w Desku: nieaktualna mapa nie jest pokazywana); skaner mapuje BTC
   useEffect(() => {
-    const fresh = liq.map && (liq.status === 'ready' || liq.status === 'delayed');
+    const fresh = liq.map && (liq.status === 'ready' || liq.status === 'delayed') && store.coin === 'BTC';
     ctrlRef.current?.setLiqLevels(fresh ? liqLevels(liq.map!) : []);
-  }, [liq.map, liq.status]);
+  }, [liq.map, liq.status, store]);
 
   useEffect(() => {
     const onFs = () => setFullscreen(document.fullscreenElement === cardRef.current);
@@ -176,14 +268,42 @@ export const ProChart: React.FC = () => {
     const iv = intervalById(settings.interval);
     const when = new Date();
     const mode = settings.view === 'footprint' ? 'Footprint' : 'Świece';
-    const img = brandedScreenshot(ctrl.chart.takeScreenshot(true), host.clientWidth, `BTC-PERP · Hyperliquid · ${iv.label} · ${mode}`, when);
+    const img = brandedScreenshot(ctrl.chart.takeScreenshot(true), host.clientWidth, `${store.coin}-PERP · Hyperliquid · ${iv.label} · ${mode}`, when);
     const stamp = `${when.getFullYear()}${String(when.getMonth() + 1).padStart(2, '0')}${String(when.getDate()).padStart(2, '0')}-${fmtHm(when.getTime()).replace(':', '')}`;
-    downloadCanvas(img, `hyperquant-btc-${iv.id}-${stamp}.png`);
+    downloadCanvas(img, `hyperquant-${store.coin.toLowerCase()}-${iv.id}-${stamp}.png`);
+  };
+
+  const copy = (text: string, done: string) => {
+    void navigator.clipboard?.writeText(text).then(
+      () => setToast(done),
+      () => setToast('Nie udało się skopiować — skopiuj adres strony z paska przeglądarki')
+    );
+  };
+
+  const addAlert = (price: number) => {
+    const last = store.candles[store.candles.length - 1]?.c ?? price;
+    setAlerts((l) => [...l, newAlert(store.coin, price, last)].slice(-MAX_ALERTS));
+    primeAlertSound();
+    askNotifications();
+    setToast(`Alert przy ${fmtPx(price)} (${store.coin}) — działa, gdy strona jest otwarta`);
+  };
+
+  const onContextMenu = (e: React.MouseEvent<HTMLDivElement>) => {
+    // Tylko na samym wykresie (legenda, karty i menu mają własne zachowanie)
+    if (!hostRef.current?.contains(e.target as Node)) return;
+    e.preventDefault();
+    const r = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - r.left;
+    const y = e.clientY - r.top;
+    const raw = ctrlRef.current?.priceAt(y) ?? null;
+    // Menu otwiera się w lewo i w górę tylko wtedy, gdy nie mieści się przy prawej lub dolnej krawędzi
+    setCtxMenu({ x, y, price: raw === null ? null : toTick(raw), left: x > r.width - 248, up: y > r.height - 340 });
   };
 
   const iv = intervalById(settings.interval);
   const tapeSince = store.coverage.first();
   const bigUsd = ctrlRef.current?.bigTradeUsd ?? DEFAULT_THRESHOLD_USD;
+  const tick = hlTick(store.candles[store.candles.length - 1]?.c ?? 0);
 
   return (
     <div
@@ -195,6 +315,7 @@ export const ProChart: React.FC = () => {
       {/* Pasek narzędzi: na telefonie przełączniki przewijane w pierwszym wierszu, narzędzia zawsze widoczne w drugim */}
       <div className="flex flex-wrap sm:flex-nowrap items-center gap-x-2 gap-y-1 px-2 sm:px-3 py-1.5 border-b border-line min-h-11">
         <div className="flex items-center gap-2 w-full sm:w-auto sm:flex-1 min-w-0 overflow-x-auto [scrollbar-width:none]">
+          <Segmented<Market> ariaLabel="Rynek" value={settings.coin} onChange={setCoin} options={MARKET_OPTIONS} />
           <Segmented<string> ariaLabel="Interwał wykresu" value={settings.interval} onChange={(v) => update({ interval: v })} options={INTERVAL_OPTIONS} />
           <Segmented<ChartView> ariaLabel="Rodzaj wykresu" value={settings.view} onChange={(v) => update({ view: v })} options={VIEW_OPTIONS} />
           {settings.view === 'footprint' && (
@@ -230,6 +351,9 @@ export const ProChart: React.FC = () => {
           <ToolBtn label="Przywróć skalę" onClick={() => ctrlRef.current?.resetScales()}>
             <RotateCcw className="w-4 h-4" />
           </ToolBtn>
+          <ToolBtn label="Kopiuj link do widoku" className="hidden sm:inline-flex" onClick={() => copy(window.location.href, 'Skopiowano link do widoku')}>
+            <Link className="w-4 h-4" />
+          </ToolBtn>
           <ToolBtn label="Zrzut ekranu (PNG)" onClick={screenshot}>
             <Camera className="w-4 h-4" />
           </ToolBtn>
@@ -242,12 +366,34 @@ export const ProChart: React.FC = () => {
       {/* Wykres z paskiem rysowania po lewej i taśmą zleceń po prawej (na telefonie taśma nad wykresem) */}
       <div className="relative flex flex-1 min-h-0">
         <DrawToolbar tools={tools} className={drawOpen ? 'flex' : 'hidden'} />
-        <div className="relative flex-1 min-h-0 min-w-0">
+        <div className="relative flex-1 min-h-0 min-w-0" onContextMenu={onContextMenu}>
           <div ref={hostRef} className="absolute inset-0" />
-          <Legend signal={signal} intervalMs={iv.ms} intervalLabel={iv.label} tapeSince={tapeSince} onBottom={onLegendBottom} />
+          <Legend signal={signal} intervalMs={iv.ms} intervalLabel={iv.label} tapeSince={tapeSince} coin={store.coin} onBottom={onLegendBottom} />
           <DrawStyleBar tools={tools} />
           <DrawHint tools={tools} />
           <LoadOverlay store={store} onRetry={() => void store.setInterval(settings.interval, true)} />
+          {ctxMenu && (
+            <ChartMenu
+              ref={ctxRef}
+              at={ctxMenu}
+              coin={store.coin}
+              nearAlert={alerts.find((a) => a.coin === store.coin && Math.abs((ctrlRef.current?.yOf(a.price) ?? -1e9) - ctxMenu.y) <= 8) ?? null}
+              onClose={() => setCtxMenu(null)}
+              onAlert={addAlert}
+              onRemoveAlert={(a) => setAlerts((l) => l.filter((x) => x !== a))}
+              onLine={() => tools?.addHorizontal(ctxMenu.x, ctxMenu.y)}
+              onCopyPrice={(p) => copy(fmtPx(p).replace(/,/g, ''), `Skopiowano cenę ${fmtPx(p)}`)}
+              onCopyLink={() => copy(window.location.href, 'Skopiowano link do widoku')}
+              onNow={() => ctrlRef.current?.scrollToNow()}
+              onReset={() => ctrlRef.current?.resetScales()}
+              onShot={screenshot}
+            />
+          )}
+          {toast && (
+            <div role="status" className="absolute left-1/2 -translate-x-1/2 top-2 z-40 max-w-[calc(100%-16px)] rounded-lg border border-line-strong bg-surface-2 px-3 py-2 text-xs text-ink-1 shadow-2xl">
+              {toast}
+            </div>
+          )}
           {pick && (
             <div className="absolute left-2 bottom-2 z-30 w-[min(320px,calc(100%-16px))] max-h-[55%] sm:max-h-[calc(100%-16px)] overflow-y-auto rounded-xl">
               <PickCard pick={pick} store={store} bigUsd={bigUsd} highlight={highlight} onHighlight={setHighlight} onClose={closePick} />
@@ -256,7 +402,17 @@ export const ProChart: React.FC = () => {
           {menu && (
             <div ref={menuRef} className="absolute top-2 right-2 z-30 w-[min(340px,calc(100%-16px))] max-h-[calc(100%-16px)] overflow-y-auto">
               {menu === 'settings' ? (
-                <SettingsMenu settings={settings} bigUsd={bigUsd} onChange={update} onReset={() => setSettings({ ...DEFAULT_SETTINGS, interval: settings.interval })} />
+                <SettingsMenu
+                  settings={settings}
+                  bigUsd={bigUsd}
+                  tick={tick}
+                  price={store.candles[store.candles.length - 1]?.c ?? 0}
+                  alerts={alerts}
+                  onAddAlert={(p) => addAlert(toTick(p))}
+                  onRemoveAlert={(a) => setAlerts((l) => l.filter((x) => x !== a))}
+                  onChange={update}
+                  onReset={() => setSettings({ ...DEFAULT_SETTINGS, coin: settings.coin, interval: settings.interval })}
+                />
               ) : (
                 <IndicatorsMenu settings={settings} intervalMs={iv.ms} liq={liq} bigUsd={bigUsd} onChange={update} />
               )}
@@ -282,12 +438,13 @@ export const ProChart: React.FC = () => {
   );
 };
 
-const ToolBtn: React.FC<{ label: string; onClick: () => void; children: React.ReactNode; active?: boolean; expanded?: boolean }> = ({
+const ToolBtn: React.FC<{ label: string; onClick: () => void; children: React.ReactNode; active?: boolean; expanded?: boolean; className?: string }> = ({
   label,
   onClick,
   children,
   active,
   expanded,
+  className = 'inline-flex',
 }) => (
   <button
     type="button"
@@ -296,13 +453,84 @@ const ToolBtn: React.FC<{ label: string; onClick: () => void; children: React.Re
     aria-expanded={expanded}
     data-menu-toggle={expanded === undefined ? undefined : true}
     onClick={onClick}
-    className={`inline-flex items-center justify-center w-9 h-9 rounded-lg border transition-colors duration-150 ${
+    className={`${className} items-center justify-center w-9 h-9 rounded-lg border transition-colors duration-150 ${
       active ? 'bg-surface-3 text-ink-1 border-line-strong' : 'text-ink-2 border-transparent hover:text-ink-1 hover:bg-surface-2 hover:border-line'
     }`}
   >
     {children}
   </button>
 );
+
+/** Miejsce otwarcia menu wykresu i cena pod kursorem (null poza panelem ceny). */
+interface CtxMenuAt {
+  x: number;
+  y: number;
+  price: number | null;
+  left: boolean;
+  up: boolean;
+}
+
+/** Menu pod prawym przyciskiem (na telefonie przytrzymanie): alert i linia przy cenie, kopiowanie, widok. */
+const ChartMenu = React.forwardRef<
+  HTMLDivElement,
+  {
+    at: CtxMenuAt;
+    coin: string;
+    nearAlert: PriceAlert | null;
+    onClose: () => void;
+    onAlert: (price: number) => void;
+    onRemoveAlert: (a: PriceAlert) => void;
+    onLine: () => void;
+    onCopyPrice: (price: number) => void;
+    onCopyLink: () => void;
+    onNow: () => void;
+    onReset: () => void;
+    onShot: () => void;
+  }
+>(({ at, coin, nearAlert, onClose, onAlert, onRemoveAlert, onLine, onCopyPrice, onCopyLink, onNow, onReset, onShot }, ref) => {
+  const p = at.price;
+  const item = (icon: React.ReactNode, label: string, run: () => void) => (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={() => {
+        run();
+        onClose();
+      }}
+      className="flex items-center gap-2.5 w-full min-h-9 px-2.5 rounded-md text-left text-ink-1 hover:bg-surface-3"
+    >
+      <span className="text-ink-3">{icon}</span>
+      {label}
+    </button>
+  );
+  return (
+    <div
+      ref={ref}
+      role="menu"
+      aria-label="Menu wykresu"
+      style={{ left: at.x, top: at.y, transform: `translate(${at.left ? '-100%' : '0'}, ${at.up ? '-100%' : '0'})` }}
+      className="absolute z-40 w-60 rounded-xl border border-line-strong bg-surface-2 p-1.5 text-xs shadow-2xl"
+    >
+      {p !== null && (
+        <>
+          <div className="px-2.5 pt-1 pb-1.5 font-mono text-[11px] text-ink-3">
+            {coin} · {fmtPx(p)}
+          </div>
+          {item(<Bell className="w-4 h-4" />, `Alert przy ${fmtPx(p)}`, () => onAlert(p))}
+          {nearAlert && item(<BellOff className="w-4 h-4" />, `Usuń alert ${fmtPx(nearAlert.price)}`, () => onRemoveAlert(nearAlert))}
+          {item(<Minus className="w-4 h-4" />, `Linia pozioma przy ${fmtPx(p)}`, onLine)}
+          {item(<Copy className="w-4 h-4" />, `Kopiuj cenę ${fmtPx(p)}`, () => onCopyPrice(p))}
+          <div className="my-1 border-t border-line" />
+        </>
+      )}
+      {item(<Link className="w-4 h-4" />, 'Kopiuj link do widoku', onCopyLink)}
+      {item(<ChevronsRight className="w-4 h-4" />, 'Przewiń do bieżącej świecy', onNow)}
+      {item(<RotateCcw className="w-4 h-4" />, 'Przywróć skalę', onReset)}
+      {item(<Camera className="w-4 h-4" />, 'Zrzut ekranu (PNG)', onShot)}
+    </div>
+  );
+});
+ChartMenu.displayName = 'ChartMenu';
 
 /** Stan wczytywania świec: komunikat zamiast pustego wykresu, przy błędzie — ponowienie. */
 const LoadOverlay: React.FC<{ store: ProStore; onRetry: () => void }> = ({ store, onRetry }) => {
@@ -325,9 +553,10 @@ const LoadOverlay: React.FC<{ store: ProStore; onRetry: () => void }> = ({ store
   );
 };
 
-const ROW_OPTIONS = [0, 1, 2, 5, 10, 25, 50, 100];
+/** Wysokość wiersza jako wielokrotność ticku rynku (BTC przy 80 tys.: 1 USD). */
+const ROW_TICKS = [0, 1, 2, 5, 10, 25, 50, 100];
 const RATIO_OPTIONS = [1.5, 2, 2.5, 3, 4];
-const MIN_VOL_OPTIONS = [0, 0.05, 0.25, 1, 5];
+const MIN_USD_OPTIONS = [0, 1000, 2500, 10_000, 50_000, 250_000];
 const STACKED_OPTIONS = [0, 2, 3, 4, 5];
 const RESET_OPTIONS: { value: ResetMode; label: string }[] = [
   { value: 'session', label: 'Sesja' },
@@ -338,15 +567,26 @@ const RESET_OPTIONS: { value: ResetMode; label: string }[] = [
 
 const BIG_OPTIONS = [0, 25_000, 50_000, 100_000, 250_000, 500_000, 1_000_000];
 
-const SettingsMenu: React.FC<{ settings: ChartSettings; bigUsd: number; onChange: (p: Partial<ChartSettings>) => void; onReset: () => void }> = ({
-  settings: s,
-  bigUsd,
-  onChange,
-  onReset,
-}) => (
+const SettingsMenu: React.FC<{
+  settings: ChartSettings;
+  bigUsd: number;
+  tick: number;
+  price: number;
+  alerts: readonly PriceAlert[];
+  onAddAlert: (price: number) => void;
+  onRemoveAlert: (a: PriceAlert) => void;
+  onChange: (p: Partial<ChartSettings>) => void;
+  onReset: () => void;
+}> = ({ settings: s, bigUsd, tick, price, alerts, onAddAlert, onRemoveAlert, onChange, onReset }) => (
   <div className="bg-surface-2 border border-line-strong rounded-xl p-3 shadow-2xl flex flex-col gap-3 text-xs">
     <Group title="Footprint">
-      <Select label="Wysokość wiersza" value={s.rowStep} options={ROW_OPTIONS} format={(v) => (v === 0 ? 'Auto' : `${v} USD`)} onChange={(v) => onChange({ rowStep: v })} />
+      <Select
+        label="Wysokość wiersza"
+        value={s.rowStep}
+        options={ROW_TICKS.map((m) => Number((m * tick).toPrecision(6)))}
+        format={(v) => (v === 0 ? 'Auto' : `${v} USD`)}
+        onChange={(v) => onChange({ rowStep: v })}
+      />
       <Select
         label="Nierównowaga"
         title="Nierównowaga diagonalna: kupno w wierszu ≥ N × sprzedaż wiersz niżej (i odwrotnie)"
@@ -356,11 +596,12 @@ const SettingsMenu: React.FC<{ settings: ChartSettings; bigUsd: number; onChange
         onChange={(v) => onChange({ imbalanceRatio: v })}
       />
       <Select
-        label="Min. wolumen nierównowagi"
-        value={s.imbalanceMinVol}
-        options={MIN_VOL_OPTIONS}
-        format={(v) => (v === 0 ? 'Brak' : `${v} BTC`)}
-        onChange={(v) => onChange({ imbalanceMinVol: v })}
+        label="Min. wartość nierównowagi"
+        title={`Wiersz liczy się jako nierównowaga od tej wartości strony przewagi (przeliczane na ${s.coin} po cenie)`}
+        value={s.imbalanceMinUsd}
+        options={MIN_USD_OPTIONS}
+        format={(v) => (v === 0 ? 'Brak' : `${compact(v)} USD`)}
+        onChange={(v) => onChange({ imbalanceMinUsd: v })}
       />
       <Select
         label="Strefy stacked"
@@ -391,6 +632,31 @@ const SettingsMenu: React.FC<{ settings: ChartSettings; bigUsd: number; onChange
         onChange={(v) => onChange({ bigTradeUsd: v })}
       />
       <Check label="Dźwięk dużych zleceń (taśma)" checked={s.tapeSound} onChange={(v) => onChange({ tapeSound: v })} />
+    </Group>
+    <Group title="Alerty cenowe">
+      <AlertInput coin={s.coin} price={price} onAdd={onAddAlert} />
+      {alerts.length === 0 ? (
+        <p className="text-[11px] leading-snug text-ink-3">Albo prawy przycisk na wykresie → „Alert przy …”.</p>
+      ) : (
+        <ul className="flex flex-col gap-1">
+          {alerts.map((a) => (
+            <li key={a.id} className="flex items-center justify-between gap-2 min-h-8">
+              <span className="font-mono text-ink-1">
+                {a.coin} · {a.dir === 1 ? 'wzrost do' : 'spadek do'} {fmtPx(a.price)}
+              </span>
+              <button
+                type="button"
+                aria-label={`Usuń alert ${a.coin} ${fmtPx(a.price)}`}
+                onClick={() => onRemoveAlert(a)}
+                className="inline-flex items-center justify-center w-8 h-8 rounded-md text-ink-3 hover:text-ink-1 hover:bg-surface-3"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="text-[11px] leading-snug text-ink-3">Jednorazowe; działają, gdy strona jest otwarta (dźwięk i powiadomienie przeglądarki po zgodzie).</p>
     </Group>
     <button type="button" onClick={onReset} className="self-start min-h-9 px-3 rounded-lg border border-line-strong text-ink-2 hover:text-ink-1 hover:bg-surface-3">
       Przywróć domyślne
@@ -444,7 +710,7 @@ const IndicatorsMenu: React.FC<{ settings: ChartSettings; intervalMs: number; li
     {
       key: 'showHeatmap',
       label: 'Mapa ciepła arkusza',
-      hint: 'Płynność zleceń oczekujących w czasie (l2Book Hyperliquid, kubełki ~10 i ~100 USD) — od otwarcia strony',
+      hint: 'Płynność zleceń oczekujących w czasie (l2Book Hyperliquid, kubełki BTC ~10 i ~100 USD, innych rynków proporcjonalnie do ceny) — od otwarcia strony',
       swatch: 'bg-gradient-to-r from-of-heat-1 via-of-heat-2 to-of-heat-3',
     },
     {
@@ -508,7 +774,13 @@ const IndicatorsMenu: React.FC<{ settings: ChartSettings; intervalMs: number; li
       swatch: 'bg-series-1',
       off: scope.ib ? undefined : 'Na interwałach do 30m',
     },
-    { key: 'showLiq', label: 'Klastry likwidacji', hint: liqHint(liq), swatch: 'bg-gradient-to-r from-of-sell to-of-buy' },
+    {
+      key: 'showLiq',
+      label: 'Klastry likwidacji',
+      hint: liqHint(liq),
+      swatch: 'bg-gradient-to-r from-of-sell to-of-buy',
+      off: s.coin === 'BTC' ? undefined : 'Tylko BTC: skaner mapuje pozycje na BTC',
+    },
     {
       key: 'showZones',
       label: 'Strefy nierównowagi',
@@ -549,6 +821,41 @@ const IndicatorsMenu: React.FC<{ settings: ChartSettings; intervalMs: number; li
         </label>
       ))}
     </div>
+  );
+};
+
+/** Alert z wpisanej ceny — także na telefonach, na których przytrzymanie nie otwiera menu wykresu. */
+const AlertInput: React.FC<{ coin: string; price: number; onAdd: (price: number) => void }> = ({ coin, price, onAdd }) => {
+  const [text, setText] = useState('');
+  const value = parsePriceInput(text, price);
+  return (
+    <form
+      className="flex items-center gap-1.5"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (value === null) return;
+        onAdd(value);
+        setText('');
+      }}
+    >
+      <input
+        type="text"
+        inputMode="decimal"
+        aria-label={`Cena alertu ${coin}`}
+        placeholder={price > 0 ? `${coin} · ${fmtPx(price)}` : `Cena ${coin}`}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        className="min-w-0 flex-1 h-9 px-2.5 rounded-lg bg-surface-1 border border-line font-mono text-ink-1 placeholder:text-ink-3 focus:outline-none focus:border-line-strong"
+      />
+      <button
+        type="submit"
+        disabled={value === null}
+        className="inline-flex items-center gap-1.5 h-9 px-2.5 rounded-lg border border-line-strong bg-surface-3 font-medium text-ink-1 disabled:opacity-40"
+      >
+        <Bell className="w-3.5 h-3.5" />
+        Dodaj
+      </button>
+    </form>
   );
 };
 

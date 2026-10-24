@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useSyncExternalStore } from 'react';
 import { fmtVol } from '../../orderflow/footprint';
 import { fmtSignedVol } from '../../orderflow/renderer';
-import { DASH, fmtPrice } from '../../../ui';
+import { DASH } from '../../../ui';
 import { fmtBarTime, fmtSince } from '../core/time';
 import type { Hover } from './controller';
+import { fmtPx } from './layout';
 
 /** Najnowszy stan krzyża (ustawiany przez sterownik wykresu najwyżej raz na klatkę). */
 export class HoverSignal {
@@ -53,8 +54,9 @@ export const Legend: React.FC<{
   intervalMs: number;
   intervalLabel: string;
   tapeSince: number;
+  coin: string;
   onBottom?: (px: number) => void;
-}> = ({ signal, intervalMs, intervalLabel, tapeSince, onBottom }) => {
+}> = ({ signal, intervalMs, intervalLabel, tapeSince, coin, onBottom }) => {
   const h = useSyncExternalStore(signal.subscribe, signal.get);
   const ref = useRef<HTMLDivElement>(null);
   const live = useRef(h.live);
@@ -77,7 +79,7 @@ export const Legend: React.FC<{
   return (
     <div ref={ref} className="absolute left-2 top-2 z-10 pointer-events-none max-w-[calc(100%-5rem)] rounded-md bg-surface-1/95 sm:bg-surface-1/80 px-2 py-1 font-mono tabular-nums text-[11px] leading-[1.55] text-ink-2">
       <div className="flex flex-wrap items-baseline gap-x-2">
-        <span className="text-ink-1 font-semibold font-sans">BTC-PERP</span>
+        <span className="text-ink-1 font-semibold font-sans">{coin}-PERP</span>
         <span className="text-ink-3">
           {intervalLabel} · Hyperliquid
         </span>
@@ -87,22 +89,22 @@ export const Legend: React.FC<{
       {c ? (
         <div className="flex flex-wrap items-baseline gap-x-2.5">
           <Field label="O" secondary>
-            {fmtPrice(c.o, 0)}
+            {fmtPx(c.o)}
           </Field>
           <Field label="H" secondary>
-            {fmtPrice(c.h, 0)}
+            {fmtPx(c.h)}
           </Field>
           <Field label="L" secondary>
-            {fmtPrice(c.l, 0)}
+            {fmtPx(c.l)}
           </Field>
           <Field label="C" className={c.c >= c.o ? 'text-of-buy-ink' : 'text-of-sell-ink'}>
-            {fmtPrice(c.c, 0)}
+            {fmtPx(c.c)}
           </Field>
           <span className={change >= 0 ? 'text-of-buy-ink' : 'text-of-sell-ink'}>
             {change >= 0 ? '+' : '−'}
             {Math.abs(change).toFixed(2)}%
           </span>
-          <Field label="Wol." title="Wolumen świecy z API Hyperliquid (BTC)">
+          <Field label="Wol." title={`Wolumen świecy z API Hyperliquid (${coin})`}>
             {fmtVol(c.v)}
           </Field>
         </div>
@@ -113,7 +115,7 @@ export const Legend: React.FC<{
         <div className="flex flex-wrap items-baseline gap-x-2.5">
           {h.ind.vwap && (
             <Field label={h.ind.anchor === 'week' ? 'VWAP T' : 'VWAP'} className="text-of-vwap" title="VWAP od początku okresu (cena typowa ważona wolumenem)">
-              {fmtPrice(h.ind.vwap.vwap, 0)}
+              {fmtPx(h.ind.vwap.vwap)}
             </Field>
           )}
           {h.ind.vwap && h.ind.vwap.sd > 0 && (
@@ -123,7 +125,7 @@ export const Legend: React.FC<{
           )}
           {h.ind.svwap && (
             <Field label="VWAP S" className="text-of-svwap" title="VWAP od otwarcia bieżącej sesji">
-              {fmtPrice(h.ind.svwap.vwap, 0)}
+              {fmtPx(h.ind.svwap.vwap)}
             </Field>
           )}
         </div>
@@ -131,7 +133,7 @@ export const Legend: React.FC<{
       {/* Szczegóły taśmy tylko na szerszym ekranie — na telefonie deltę i CVD pokazują opisy paneli */}
       {fp && bar ? (
         <div className="hidden sm:flex flex-wrap items-baseline gap-x-2.5">
-          <Field label="Δ" className={tone(fp.delta)} title="Delta: kupno agresywne − sprzedaż agresywna (BTC)">
+          <Field label="Δ" className={tone(fp.delta)} title={`Delta: kupno agresywne − sprzedaż agresywna (${coin})`}>
             {fmtSignedVol(fp.delta)}
             {fpVol > 0 && <span className="text-ink-3"> ({((fp.delta / fpVol) * 100).toFixed(0)}%)</span>}
           </Field>
@@ -169,8 +171,8 @@ export const Legend: React.FC<{
       {h.row && (
         <div className="flex flex-wrap items-baseline gap-x-2.5">
           <Field label="Wiersz">
-            {fmtPrice(h.row.lo, 0)}
-            {h.row.hi > h.row.lo && `–${fmtPrice(h.row.hi, 0)}`}
+            {fmtPx(h.row.lo)}
+            {h.row.hi > h.row.lo && `–${fmtPx(h.row.hi)}`}
           </Field>
           <Field label="Sprzedaż" className="text-of-sell-ink">
             {fmtVol(h.row.sell)}

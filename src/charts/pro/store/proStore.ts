@@ -12,13 +12,16 @@ import { utcDayStart } from '../core/sessions';
 import { DAY, DEFAULT_INTERVAL, Interval, barStart, intervalById } from '../core/time';
 
 /**
- * Magazyn wykresu Pro (bez Reacta, jeden na aplikację): świece Hyperliquid wybranego interwału
+ * Magazyn wykresu Pro (bez Reacta, jeden na rynek): świece Hyperliquid wybranego interwału
  * (historia z REST, bieżąca świeca z WebSocket), taśma transakcji od otwarcia widoku z pokryciem
  * i lukami, footprint każdej świecy i zlecenia agresora. Odbiorcy dostają powiadomienie o zmianie
  * i sami czytają stan (`bars()`, `ctx`, `orders`).
  */
 
-export const COIN = 'BTC';
+/** Rynki perp Hyperliquid w widoku Wykresy. */
+export const MARKETS = ['BTC', 'ETH', 'SOL', 'HYPE'] as const;
+export type Market = (typeof MARKETS)[number];
+export const COIN: Market = 'BTC';
 /** Tyle świec pobieramy na start i przy każdym doczytaniu historii. */
 export const PAGE_BARS = 1500;
 /** Taśma i zlecenia są trzymane w pamięci przez dobę. */
@@ -63,7 +66,7 @@ export class ClockSync {
 }
 
 export class ProStore {
-  readonly coin = COIN;
+  readonly coin: string;
   readonly stream: HlStream;
   readonly tape = new Tape();
   readonly coverage = new Coverage();
@@ -104,12 +107,13 @@ export class ProStore {
   private tradesPending = false;
   /** Dzień UTC, dla którego świece dzienne są pobrane albo w drodze. */
   private dailyDay = 0;
-  /** Subskrypcje arkusza: bliska (~10 USD) i daleka (~100 USD) agregacja; migawki rozpoznajemy po kroku cen. */
+  /** Subskrypcje arkusza: bliska (~2 pb ceny) i daleka (10 × większy krok) agregacja; migawki rozpoznajemy po kroku cen. */
   private bookSubs: Subscription[] = [];
   private readonly books = new Map<number, BookHistory>();
   private bookSteps: [number, number] = [Number.NaN, Number.NaN];
 
-  constructor(stream?: HlStream) {
+  constructor(stream?: HlStream, coin: string = COIN) {
+    this.coin = coin;
     this.stream = stream ?? new HlStream();
     this.stream.listen({
       onMessage: (ch, data, recvAt) => this.onMessage(ch, data, recvAt),
@@ -365,7 +369,7 @@ export class ProStore {
     for (const sub of this.bookSubs) this.stream.add(sub);
   }
 
-  /** Historia arkusza w agregacji bliskiej (~10 USD) i dalekiej (~100 USD); null przed pierwszą migawką. */
+  /** Historia arkusza w agregacji bliskiej (~2 pb ceny) i dalekiej (10 × większy krok); null przed pierwszą migawką. */
   book(which: 'near' | 'far'): BookHistory | null {
     return this.books.get(this.bookSteps[which === 'near' ? 0 : 1]) ?? null;
   }
@@ -503,5 +507,16 @@ function baseTick(px: number): number {
   return hlTick(px * 0.95);
 }
 
-/** Wspólny magazyn aplikacji. */
-export const proStore = new ProStore();
+const stores = new Map<Market, ProStore>();
+
+/** Magazyn rynku, jeden na stronę: raz otwarty nagrywa taśmę dalej także po przełączeniu wykresu na inny rynek. */
+export function storeFor(coin: Market): ProStore {
+  let s = stores.get(coin);
+  if (!s) stores.set(coin, (s = new ProStore(undefined, coin)));
+  return s;
+}
+
+/** Magazyny rynków otwartych na tej stronie (alerty cenowe sprawdzamy na każdym z nich). */
+export function openStores(): ProStore[] {
+  return [...stores.values()];
+}

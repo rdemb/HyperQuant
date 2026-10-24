@@ -3,6 +3,7 @@ import type {
   CandlestickData,
   HistogramData,
   IChartApi,
+  IPriceLine,
   ISeriesApi,
   LogicalRange,
   MouseEventParams,
@@ -14,17 +15,17 @@ import type {
 } from 'lightweight-charts';
 import { fmtVol } from '../../orderflow/footprint';
 import { fmtSignedVol } from '../../orderflow/renderer';
-import { fmtPrice } from '../../../ui/format';
 import { DEFAULT_THRESHOLD_USD, autoThreshold } from '../core/clashes';
 import { Ohlc, cvdCandles, deltaCandle } from '../core/flow';
 import { BarStat, barStat } from '../core/stats';
-import { rowAt } from '../core/footprintBar';
+import { hlTick, rowAt } from '../core/footprintBar';
 import type { LiqLevel } from '../core/indicators';
 import type { ResetMode } from '../core/sessions';
 import type { ProBar, ProStore } from '../store/proStore';
 import { DrawingLayer } from '../draw/layer';
 import { DrawingTools } from '../draw/tools';
 import { FootprintOptions, FootprintPoint, FootprintSeries } from './footprintSeries';
+import { fmtPx } from './layout';
 import { LiquidityLayer, LiquidityPick, LiquiditySource } from './liquidity';
 import { IndicatorOverlay, IndicatorToggles, IndicatorValues } from './overlay';
 import { LegendPart, PaneLegend } from './paneLegend';
@@ -58,14 +59,13 @@ export interface Hover {
 
 const sec = (t: number) => (t / 1000) as UTCTimestamp;
 
-/** Liczby panelu przepływu: BTC ze znakiem. */
+/** Liczby panelu przepływu: jednostki rynku ze znakiem. */
 const FLOW_FORMAT: PriceFormat = { type: 'custom', minMove: 0.0001, formatter: fmtSignedVol };
 
 const VOLUME_FORMAT: PriceFormat = { type: 'custom', minMove: 0.0001, formatter: (v: number) => fmtVol(v) };
 
 const liqToggles = (s: ChartSettings) => ({ showHeatmap: s.showHeatmap, showBubbles: s.showBubbles, showClashes: s.showClashes });
 
-const zoneParams = (s: ChartSettings) => ({ rowStep: s.rowStep, imbalance: { ratio: s.imbalanceRatio, minVol: s.imbalanceMinVol }, stackedMin: s.stackedMin });
 
 const toggles = (s: ChartSettings): IndicatorToggles => ({
   showVwap: s.showVwap,
@@ -145,6 +145,10 @@ export class ProChartController {
   private stats: BarStat[] = [];
   private statsAt = 0;
   private readonly zones: ZonesLayer;
+  private priceTick = 1;
+  /** Cena przeliczenia progu nierównowagi z USD na jednostki rynku (ustalana przy pełnym odświeżeniu danych). */
+  private refPx = 0;
+  private alertLines: IPriceLine[] = [];
   private readonly volumeLegend = new PaneLegend();
   private readonly deltaLegend = new PaneLegend();
   private readonly cvdLegend = new PaneLegend();
@@ -188,7 +192,7 @@ export class ProChartController {
     };
     this.chart = createChart(container, chartOptions());
     this.main = this.chart.addCustomSeries<FootprintPoint, FootprintOptions>(this.fpView, {
-      priceFormat: { type: 'custom', minMove: 1, formatter: (p: number) => fmtPrice(p, 0) },
+      priceFormat: { type: 'custom', minMove: 1, formatter: fmtPx },
       priceLineVisible: true,
       priceLineColor: PRO.priceLine,
       lastValueVisible: true,
@@ -223,6 +227,15 @@ export class ProChartController {
     this.chart.remove();
   }
 
+  /** Próg nierównowagi w jednostkach rynku (3 cyfry znaczące, więc pamięć podręczna wierszy footprintu się nie unieważnia). */
+  private minVol(s: ChartSettings): number {
+    return this.refPx > 0 && s.imbalanceMinUsd > 0 ? Number((s.imbalanceMinUsd / this.refPx).toPrecision(3)) : 0;
+  }
+
+  private zoneParams(s: ChartSettings) {
+    return { rowStep: s.rowStep, imbalance: { ratio: s.imbalanceRatio, minVol: this.minVol(s) }, stackedMin: s.stackedMin };
+  }
+
   /** Nowe ustawienia: opcje serii footprintu, panele i ich dane. */
   applySettings(s: ChartSettings, force = false): void {
     const prev = this.settings;
@@ -232,13 +245,13 @@ export class ProChartController {
       fpStyle: s.fpStyle,
       rowStep: s.rowStep,
       imbalanceRatio: s.imbalanceRatio,
-      imbalanceMinVol: s.imbalanceMinVol,
+      imbalanceMinVol: this.minVol(s),
       stackedMin: s.stackedMin,
     });
     this.overlay.setToggles(toggles(s));
     this.liquidity.setToggles(liqToggles(s));
     this.zones.setToggles({ showZones: s.showZones, showAuctions: s.showAuctions });
-    this.zones.setParams(zoneParams(s));
+    this.zones.setParams(this.zoneParams(s));
     if (prev.bigTradeUsd !== s.bigTradeUsd) this.schedule();
     if (force || prev.showHeatmap !== s.showHeatmap) {
       // Z mapą ciepła przy prawej krawędzi stoi drabina DOM: najnowsza świeca i wskaźniki kończą się przed nią
@@ -351,6 +364,26 @@ export class ProChartController {
     ts.scrollToPosition(this.rightGap() / ts.options().barSpacing, false);
   }
 
+  /** Cena w punkcie panelu ceny (px od góry wykresu); null poza panelem. */
+  priceAt(y: number): number | null {
+    if (!(y >= 0 && y < this.chart.paneSize(0).height)) return null;
+    const p = this.main.coordinateToPrice(y);
+    return p !== null && p > 0 ? p : null;
+  }
+
+  /** Położenie ceny w panelu ceny (px od góry); null poza skalą. */
+  yOf(price: number): number | null {
+    return this.main.priceToCoordinate(price);
+  }
+
+  /** Poziomy alertów cenowych rynku jako przerywane linie z etykietą na osi. */
+  setAlerts(prices: readonly number[]): void {
+    for (const l of this.alertLines) this.main.removePriceLine(l);
+    this.alertLines = prices.map((price) =>
+      this.main.createPriceLine({ price, color: PRO.warn, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: 'Alert' })
+    );
+  }
+
   /** Dopasowuje zakres ceny do widocznych świec (po ręcznym przeciągnięciu osi). */
   resetScales(): void {
     this.chart.priceScale('right').applyOptions({ autoScale: true });
@@ -378,6 +411,18 @@ export class ProChartController {
       full = changed.length > MAX_POINT_UPDATES;
     }
     if (full) {
+      // Krok osi ceny = tick rynku (BTC 1 USD, HYPE 0,001 USD)
+      const tick = hlTick(next[next.length - 1]?.candle.c ?? 0);
+      if (tick !== this.priceTick) {
+        this.priceTick = tick;
+        this.main.applyOptions({ priceFormat: { type: 'custom', minMove: tick, formatter: fmtPx } });
+      }
+      const px = next[next.length - 1]?.candle.c ?? 0;
+      if (px > 0 && Math.abs(px / this.refPx - 1) > 0.05) {
+        this.refPx = px;
+        this.main.applyOptions({ imbalanceMinVol: this.minVol(this.settings) });
+        this.zones.setParams(this.zoneParams(this.settings));
+      }
       this.main.setData(next.map(toPoint));
       this.volume?.setData(next.map(toVolume));
       this.delta?.setData(next.map(toDelta));

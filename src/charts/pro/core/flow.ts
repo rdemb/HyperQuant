@@ -51,7 +51,7 @@ export function cvdCandles(bars: readonly FlowInput[], mode: ResetMode): (Ohlc |
   return out;
 }
 
-/** Delta od ostatniego szczytu i od ostatniego dołka ceny do zamknięcia świecy (BTC). */
+/** Delta od ostatniego szczytu i od ostatniego dołka ceny do zamknięcia świecy (jednostki rynku). */
 export function deltaFromExtremes(fp: FootprintBar): { fromHigh: number; fromLow: number } {
   return { fromHigh: fp.delta - fp.deltaAtHigh, fromLow: fp.delta - fp.deltaAtLow };
 }

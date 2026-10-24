@@ -299,6 +299,12 @@ export class DrawingTools {
     this.push();
   }
 
+  /** Linia pozioma w punkcie panelu ceny (menu kontekstowe wykresu). */
+  addHorizontal(x: number, y: number): void {
+    const q = this.layer.toPt(x, y);
+    if (q) this.begin('hline', q, false, x, y);
+  }
+
   deselect(): void {
     this.selectedId = null;
     this.lastTextId = null;

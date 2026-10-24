@@ -11,7 +11,7 @@ import type {
   SeriesType,
   Time,
 } from 'lightweight-charts';
-import { fmtCompact, fmtPrice } from '../../../ui/format';
+import { fmtCompact } from '../../../ui/format';
 import { spreadTags } from '../../orderflow/renderer';
 import { hlTick } from '../core/footprintBar';
 import {
@@ -34,7 +34,7 @@ import { SESSION_LABEL, sessionsBetween } from '../core/sessions';
 import { DAY } from '../core/time';
 import type { Candle } from '../hl/parse';
 import type { ProBar } from '../store/proStore';
-import { autoRowStep } from './layout';
+import { autoRowStep, fmtPx } from './layout';
 import type { ChartSettings } from './settings';
 import { MONO, PRO, rgba } from './theme';
 
@@ -414,7 +414,7 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
       if (last) {
         this.axisSvwap.on = true;
         this.axisSvwap.y = Y(last.vwap);
-        this.axisSvwap.label = fmtPrice(last.vwap, 0);
+        this.axisSvwap.label = fmtPx(last.vwap);
         s.tags.push({ y: Y(last.vwap), text: 'VWAP S', color: K.svwap });
       }
     }
@@ -423,7 +423,7 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
       if (last) {
         this.axisVwap.on = true;
         this.axisVwap.y = Y(last.vwap);
-        this.axisVwap.label = fmtPrice(last.vwap, 0);
+        this.axisVwap.label = fmtPx(last.vwap);
         s.tags.push({ y: Y(last.vwap), text: sc.vwapAnchor === 'week' ? 'VWAP T' : 'VWAP', color: K.vwap });
       }
     }
@@ -456,7 +456,7 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
           const y = Y(px);
           if (!Number.isFinite(y)) continue;
           s.hlines.push({ x0, x1, y, color, dash });
-          if (current) s.tags.push({ y, text: `${name} ${fmtPrice(px, 0)}`, color: color === K.dayOpen ? PRO.ink2 : K.level });
+          if (current) s.tags.push({ y, text: `${name} ${fmtPx(px)}`, color: color === K.dayOpen ? PRO.ink2 : K.level });
         }
       }
     }
@@ -476,7 +476,7 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
         s.fills.push({ pts: [x0, yh, xi, yh, xi, yl, x0, yl], color: K.ibFill });
         s.hlines.push({ x0, x1, y: yh, color: K.ibLine, dash: DASH.none }, { x0, x1, y: yl, color: K.ibLine, dash: DASH.none });
         if (current) {
-          s.tags.push({ y: yh, text: `IBH ${fmtPrice(ib.hi, 0)}`, color: K.ib }, { y: yl, text: `IBL ${fmtPrice(ib.lo, 0)}`, color: K.ib });
+          s.tags.push({ y: yh, text: `IBH ${fmtPx(ib.hi)}`, color: K.ib }, { y: yl, text: `IBL ${fmtPx(ib.lo)}`, color: K.ib });
         }
         if (!ib.complete) continue;
         const r = ib.hi - ib.lo;
@@ -485,7 +485,7 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
           for (const px of [ib.hi + m * r, ib.lo - m * r]) {
             const y = Y(px);
             s.hlines.push({ x0: xi, x1, y, color: K.ibExt, dash: DASH.ext });
-            if (current) s.tags.push({ y, text: `${label} ${fmtPrice(px, 0)}`, color: K.ib });
+            if (current) s.tags.push({ y, text: `${label} ${fmtPx(px)}`, color: K.ib });
           }
         }
       }
@@ -650,7 +650,7 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
     s.hlines.push({ x0: 0, x1: W, y: yPoc, color: K.pocLine, dash: DASH.level });
     this.axisPoc.on = true;
     this.axisPoc.y = yPoc;
-    this.axisPoc.label = fmtPrice(pocPx, 0);
+    this.axisPoc.label = fmtPx(pocPx);
     const vah = Y((p.lo + p.vaHi + 1) * p.step);
     const val = Y((p.lo + p.vaLo) * p.step);
     s.hlines.push({ x0: W - pw, x1: W, y: vah, color: K.vaLine, dash: DASH.dot }, { x0: W - pw, x1: W, y: val, color: K.vaLine, dash: DASH.dot });
