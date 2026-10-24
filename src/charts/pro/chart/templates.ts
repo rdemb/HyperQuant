@@ -45,6 +45,7 @@ const off = {
   showHeatmap: false,
   showBubbles: false,
   showClashes: false,
+  showLots: false,
 } satisfies Partial<ChartSettings>;
 
 const built = (id: string, name: string, patch: Partial<TemplateSettings>): ChartTemplate => ({

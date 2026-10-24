@@ -44,6 +44,8 @@ export interface ChartSettings {
   showBubbles: boolean;
   /** Serie małych zleceń i ściany makerów (z adresów w transakcjach). */
   showClashes: boolean;
+  /** Duże zlecenia oczekujące w arkuszu (średnie zlecenie poziomu od progu). */
+  showLots: boolean;
   /** Próg dużego zlecenia (USD); 0 = automatycznie z rynku. */
   bigTradeUsd: number;
   /** Panel taśmy zleceń (Time & Sales), jego filtr (USD) i dźwięk dużych zleceń. */
@@ -81,6 +83,7 @@ export const DEFAULT_SETTINGS: ChartSettings = {
   showHeatmap: true,
   showBubbles: true,
   showClashes: true,
+  showLots: true,
   bigTradeUsd: 0,
   showTape: false,
   tapeMinUsd: 10_000,
@@ -125,6 +128,7 @@ export function parseSettings(raw: unknown, d: ChartSettings = DEFAULT_SETTINGS)
     showHeatmap: bool(r.showHeatmap, d.showHeatmap),
     showBubbles: bool(r.showBubbles, d.showBubbles),
     showClashes: bool(r.showClashes, d.showClashes),
+    showLots: bool(r.showLots, d.showLots),
     bigTradeUsd: numIn(r.bigTradeUsd, 0, 100_000_000, d.bigTradeUsd),
     showTape: bool(r.showTape, d.showTape),
     tapeMinUsd: numIn(r.tapeMinUsd, 0, 100_000_000, d.tapeMinUsd),

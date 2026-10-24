@@ -81,7 +81,17 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         kinds: ['LIVE'],
         refresh: 'na żywo',
         caveat:
-          'Tylko od otwarcia strony. Adres biorcy widać skrócony po kliknięciu i nie jest zapisywany. Ściana obejmuje tylko to, co maker oddał w transakcjach, bez zleceń zdjętych z arkusza. Góra lodowa = ściana, która wchłonęła co najmniej 2 × więcej niż największa wielkość całego poziomu w migawkach dokładnego arkusza (co ok. 0,5 s): Hyperliquid nie ma ukrytych zleceń, więc to zlecenie odnawiane po wypełnieniach; odnowienie szybsze niż migawka może zawyżyć krotność.',
+          'Tylko od otwarcia strony. Adres biorcy widać skrócony po kliknięciu i nie jest zapisywany. Ściana obejmuje tylko to, co maker oddał w transakcjach, bez zleceń zdjętych z arkusza. Góra lodowa = ściana, która wchłonęła co najmniej 2 × więcej niż największa wielkość całego poziomu w migawkach dokładnego arkusza (co ok. 5 s): Hyperliquid nie ma ukrytych zleceń, więc to zlecenie odnawiane po wypełnieniach; odnowienie szybsze niż migawka może zawyżyć krotność.',
+      },
+      {
+        metric: 'Duże zlecenia w arkuszu (Wykresy)',
+        source: 'Hyperliquid WS l2Book w bliskiej agregacji (20 poziomów na stronę: cena, wielkość, liczba zleceń), nagrywany od otwarcia widoku',
+        method:
+          'Poziom, na którym średnie zlecenie (wielkość × cena / liczba zleceń) jest od trzykrotności progu dużego zlecenia agresora; trwa od pierwszej migawki z takim poziomem do migawki, w której go nie ma. Podpis: liczba zleceń × średnia wartość zlecenia (największa w czasie trwania)',
+        kinds: ['LIVE'],
+        refresh: 'co migawkę arkusza (ok. 5 s)',
+        caveat:
+          'Liczba zleceń jest na poziomie agregacji (kubełek kilku ticków), więc duże zlecenie może dzielić poziom z drobnymi. Migawka co kilka sekund: krótsze zlecenia mogą nie zostać zauważone, a koniec linii nie mówi, czy zlecenie wypełniono, czy zdjęto.',
       },
       {
         metric: 'Statystyki świec (Wykresy): wolumen, delta, delta %, max i min delty, transakcje, tempo taśmy, ΔOI, finansowanie',

@@ -12,7 +12,7 @@ import { tpoInterval } from './core/tpo';
 import { type PaneKey, ProChartController } from './chart/controller';
 import { PickCard, TapePanel, compact } from './chart/FlowPanels';
 import { HoverSignal, Legend } from './chart/Legend';
-import type { LiquidityPick } from './chart/liquidity';
+import { LOT_MULT, type LiquidityPick } from './chart/liquidity';
 import { brandedScreenshot, downloadCanvas } from './chart/screenshot';
 import { MAX_ALERTS, PriceAlert, alertBook, askNotifications, newAlert, notifyAlert, parsePriceInput, primeAlertSound, reached } from './chart/alerts';
 import { fmtPx, priceDigits } from './chart/layout';
@@ -747,6 +747,7 @@ type IndicatorKey =
   | 'showHeatmap'
   | 'showBubbles'
   | 'showClashes'
+  | 'showLots'
   | 'showVwap'
   | 'showVwapBands'
   | 'showSessionVwap'
@@ -805,6 +806,12 @@ const IndicatorsMenu: React.FC<{ settings: ChartSettings; intervalMs: number; li
       hint: 'Seria (przerywany pierścień): drobne zlecenia co najmniej 4 adresów po jednej stronie w 2 s, razem od progu. Ściana (belka): jeden maker na jednej cenie przyjął od progu z co najmniej 3 zleceń — od otwarcia strony',
       swatch: 'bg-of-buy',
       off: s.showBubbles ? undefined : 'Razem z bąblami zleceń agresora',
+    },
+    {
+      key: 'showLots',
+      label: 'Duże zlecenia w arkuszu',
+      hint: `Poziom arkusza, na którym średnie zlecenie ma co najmniej ${compact(bigUsd * LOT_MULT)} USD (${LOT_MULT} × próg dużego zlecenia): linia przez czas, gdy jest w arkuszu (przygaszona po zniknięciu), podpis „liczba zleceń × średnia wartość” — od otwarcia strony`,
+      swatch: 'bg-gradient-to-r from-of-buy-ink to-of-sell-ink',
     },
     {
       key: 'showVwap',

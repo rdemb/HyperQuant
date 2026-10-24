@@ -15,6 +15,8 @@ export interface BookFrame {
   px: Float64Array;
   /** Wielkości (jednostki rynku) w tej samej kolejności. */
   sz: Float64Array;
+  /** Liczba zleceń na poziomie (NaN, gdy API jej nie podało). */
+  n: Float64Array;
   nBids: number;
 }
 
@@ -35,16 +37,66 @@ export function toFrame(snap: BookSnapshot, step: number): BookFrame {
   const n = snap.bids.length + snap.asks.length;
   const px = new Float64Array(n);
   const sz = new Float64Array(n);
+  const cnt = new Float64Array(n);
   let k = 0;
-  for (const l of snap.bids) {
+  for (const l of [...snap.bids, ...snap.asks]) {
     px[k] = l.px;
-    sz[k++] = l.sz;
+    sz[k] = l.sz;
+    cnt[k++] = l.n;
   }
-  for (const l of snap.asks) {
-    px[k] = l.px;
-    sz[k++] = l.sz;
+  return { t: snap.time, step, px, sz, n: cnt, nBids: snap.bids.length };
+}
+
+/**
+ * Duże zlecenie w arkuszu: poziom, na którym średnie zlecenie (wartość poziomu / liczba zleceń) jest od progu —
+ * jedno albo kilka dużych zleceń, a nie tłum drobnych. Trwa od pierwszej migawki z takim poziomem do migawki,
+ * w której go już nie ma (`open` — jest w najnowszej).
+ */
+export interface LargeLot {
+  px: number;
+  bid: boolean;
+  from: number;
+  to: number;
+  open: boolean;
+  /** Największa wartość poziomu w czasie trwania (USD) i liczba zleceń w tej migawce. */
+  usd: number;
+  orders: number;
+}
+
+/** Duże zlecenia z kolejnych migawek jednej agregacji (rosnąco po czasie), w kolejności pojawienia się. */
+export function largeLots(frames: readonly BookFrame[], minUsd: number): LargeLot[] {
+  const live = new Map<string, LargeLot>();
+  const out: LargeLot[] = [];
+  for (const f of frames) {
+    const seen = new Set<string>();
+    for (let i = 0; i < f.px.length; i++) {
+      const orders = f.n[i];
+      const usd = f.sz[i] * f.px[i];
+      if (!(orders >= 1) || usd / orders < minUsd) continue;
+      const bid = i < f.nBids;
+      const key = `${bid ? 'b' : 'a'}${f.px[i]}`;
+      seen.add(key);
+      const lot = live.get(key);
+      if (!lot) {
+        const l: LargeLot = { px: f.px[i], bid, from: f.t, to: f.t, open: true, usd, orders };
+        live.set(key, l);
+        out.push(l);
+      } else {
+        lot.to = f.t;
+        if (usd > lot.usd) {
+          lot.usd = usd;
+          lot.orders = orders;
+        }
+      }
+    }
+    for (const [key, lot] of live) {
+      if (seen.has(key)) continue;
+      lot.to = f.t;
+      lot.open = false;
+      live.delete(key);
+    }
   }
-  return { t: snap.time, step, px, sz, nBids: snap.bids.length };
+  return out;
 }
 
 /** Migawki jednej agregacji, rosnąco po czasie. */
