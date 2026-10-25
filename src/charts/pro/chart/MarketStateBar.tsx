@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
-import { indicatorScope, vwapSeries } from '../core/indicators';
+import { indicatorScope, vwapFrom } from '../core/indicators';
 import { periodStart } from '../core/sessions';
 import type { CandleSeries, ProStore } from '../store/proStore';
 import { venueStoreFor } from '../venues/venueStore';
@@ -26,12 +26,12 @@ function readState(store: ProStore, series: CandleSeries, venueOn: boolean): Sta
   const now = store.serverNow();
   const bars = all.slice(-STATE_RUN_MAX);
   const win = bars.slice(-STATE_BARS);
-  // VWAP okresu ostatniej świecy (doba, na świecach dziennych tydzień) — od pierwszej świecy tego okresu
+  // VWAP okresu ostatniej świecy (doba, na świecach dziennych tydzień) — od pierwszej świecy tego okresu, ze świec 1m (tydzień 5m) jak na wykresie
   const anchor = indicatorScope(iv.ms).vwapAnchor;
   const p0 = periodStart(all[n - 1].t, anchor);
   let k = n - 1;
   while (k > 0 && all[k - 1].t >= p0) k--;
-  const vw = vwapSeries(all.slice(k), anchor);
+  const vw = vwapFrom(all.slice(k), store.vwapCandles(iv), iv.ms, anchor);
   let venues: StateInput['venues'] = null;
   if (venueOn) {
     const r = venueStoreFor(store.coin).reads(iv, now);

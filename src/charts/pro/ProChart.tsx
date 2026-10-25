@@ -1258,8 +1258,8 @@ const IndicatorsMenu: React.FC<{
       label: scope.vwapAnchor === 'week' ? tr('VWAP tygodnia', 'Weekly VWAP') : tr('VWAP dnia', 'Daily VWAP'),
       hint:
         scope.vwapAnchor === 'week'
-          ? tr('Od poniedziałku 00:00 UTC (na świecach dziennych)', 'From Monday 00:00 UTC (on daily candles)')
-          : tr('Od 00:00 UTC, cena typowa (H+L+C)/3 ważona wolumenem', 'From 00:00 UTC, typical price (H+L+C)/3 weighted by volume'),
+          ? tr('Od poniedziałku 00:00 UTC, ze świec 5m (na świecach dziennych)', 'From Monday 00:00 UTC, from 5m candles (on daily candles)')
+          : tr('Od 00:00 UTC, ze świec 1m: cena typowa (H+L+C)/3 ważona wolumenem, ta sama na każdym interwale', 'From 00:00 UTC, from 1m candles: typical price (H+L+C)/3 weighted by volume, the same on every timeframe'),
       swatch: 'bg-of-vwap',
     },
     {

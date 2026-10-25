@@ -742,7 +742,7 @@ export class ProChartController {
       }
     }
     const ms = this.series.interval.ms;
-    this.overlay.setBars(next, ms);
+    this.overlay.setBars(next, ms, this.store.vwapCandles(this.series.interval));
     this.overlay.setDaily(this.store.daily);
     this.drawLayer.setBars(next, ms);
     const st = this.store;

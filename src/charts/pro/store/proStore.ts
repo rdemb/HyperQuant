@@ -9,7 +9,8 @@ import { OrderAggregator, OrderLog } from '../core/orders';
 import { PlayerFlow, bigPlayerUsd } from '../core/players';
 import { FundingBook, HOUR_MS, OiLog } from '../core/stats';
 import { Tape, TradeRow } from '../core/tape';
-import { utcDayStart } from '../core/sessions';
+import { periodStart, utcDayStart } from '../core/sessions';
+import { indicatorScope, vwapSourceId } from '../core/indicators';
 import { DAY, Interval, barStart, intervalById } from '../core/time';
 
 /**
@@ -249,6 +250,18 @@ export class ProStore {
     let s = this.seriesById.get(iv.id);
     if (!s) this.seriesById.set(iv.id, (s = new CandleSeries(this, iv)));
     return s;
+  }
+
+  /**
+   * Świece, z których liczymy VWAP okresu na wykresie interwału `iv` (doba i sesje z 1m, tydzień z 5m) — ta sama wartość
+   * na każdym interwale. Seria wczytuje się przy pierwszym użyciu, a do VWAP tygodnia także wstecz do poniedziałku.
+   */
+  vwapCandles(iv: Interval): readonly Candle[] {
+    const mode = indicatorScope(iv.ms).vwapAnchor;
+    const s = this.series(vwapSourceId(mode));
+    if (s.loadState === 'idle') void s.load();
+    else if (mode === 'week' && s.candles.length > 0 && s.candles[0].t > periodStart(this.serverNow(), mode)) void s.loadOlder();
+    return s.candlesNow();
   }
 
   /** Ostatnia cena rynku: transakcja z taśmy, a przed pierwszą — zamknięcie najnowszej świecy którejś serii. */
@@ -687,7 +700,7 @@ export class CandleSeries {
       let c = api;
       if (replay && t + ms > now) {
         if (!fp) break;
-        c = prev && prev.fp === fp ? prev.candle : { t, o: fp.open, h: fp.high, l: fp.low, c: fp.close, v: fp.buyVol + fp.sellVol, n: fp.trades };
+        c = prev && prev.fp === fp ? prev.candle : fpCandle(t, fp);
       }
       const complete = fp !== null && this.m.coverage.covers(t, end);
       const share = fp && c.v > 0 ? (fp.buyVol + fp.sellVol) / c.v : Number.NaN;
@@ -702,12 +715,36 @@ export class CandleSeries {
     return out;
   }
 
+  /** Świece bez footprintu (źródło VWAP): w powtórce tylko do chwili odtwarzania, a bieżąca złożona z taśmy, jak w `bars()`. */
+  candlesNow(): readonly Candle[] {
+    if (!this.m.replay) return this.candles;
+    const ms = this.interval.ms;
+    const now = this.m.serverNow();
+    const out: Candle[] = [];
+    for (const c of this.candles) {
+      if (c.t > now) break;
+      if (c.t + ms <= now) {
+        out.push(c);
+        continue;
+      }
+      const fp = this.footprintFor(c.t);
+      if (fp) out.push(fpCandle(c.t, fp));
+      break;
+    }
+    return out;
+  }
+
   prune(cut: number): void {
     const ms = this.interval.ms;
     this.fpCache.forEach((_v, t) => {
       if (t + ms < cut) this.fpCache.delete(t);
     });
   }
+}
+
+/** Świeca z footprintu (bieżąca świeca powtórki: z taśmy do chwili odtwarzania). */
+function fpCandle(t: number, fp: FootprintBar): Candle {
+  return { t, o: fp.open, h: fp.high, l: fp.low, c: fp.close, v: fp.buyVol + fp.sellVol, n: fp.trades };
 }
 
 /** Tick bazowy footprintu z ceny o 5% niższej — patrz FootprintBuilder. */
