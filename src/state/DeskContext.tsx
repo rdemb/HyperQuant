@@ -7,6 +7,8 @@ import { DeskFeed, useDeskFeed } from './useDeskFeed';
 import { PlanDraft, ViewId } from './types';
 
 const VIEWS: ViewId[] = ['desk', 'charts', 'plan', 'market', 'lab', 'micro', 'lessons', 'sources'];
+// Widoki z modelem zmienności (pas MC, mapa likwidacji, plan, model vs rynek, Lab) — pozostałe go nie pobierają
+const VOL_VIEWS: ViewId[] = ['desk', 'plan', 'market', 'lab'];
 const CEX_KEY = 'hq.cexEnabled';
 
 function readHashView(): ViewId {
@@ -48,7 +50,7 @@ function useDeskState() {
   const [shaakuniConfig, setShaakuniConfig] = useState<ShaakuniConfig>(DEFAULT_SHAAKUNI);
   const [planDraft, setPlanDraft] = useState<PlanDraft | null>(null);
 
-  const feed: DeskFeed = useDeskFeed({ cexEnabled });
+  const feed: DeskFeed = useDeskFeed({ cexEnabled, volModel: VOL_VIEWS.includes(view) });
 
   // Nawigacja synchronizowana z hashem (głębokie linki, przycisk Wstecz, skróty PWA)
   useEffect(() => {

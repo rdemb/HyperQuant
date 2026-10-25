@@ -495,9 +495,10 @@ const HL_INFO_URL = 'https://api.hyperliquid.xyz/info';
 const HTF_CACHE_TTL_MS = 5 * 60 * 1000;
 let htfCache: { at: number; daily: unknown; weekly: unknown } | null = null;
 
-/** Tylko dla testów: czyści cache świec 1d/1w. */
+/** Tylko dla testów: czyści cache świec 1d/1w i wspólnych świec 1h. */
 export function resetHtfCacheForTests(): void {
   htfCache = null;
+  hourlyShared = null;
 }
 
 export function postInfo(body: unknown): Promise<unknown> {
@@ -564,25 +565,66 @@ export async function loadMinuteCandles(fromMs: number): Promise<RangeBar[]> {
 /** Hyperliquid zwraca najwyżej ~5000 ostatnich świec na interwał (≈ 208 dni 1h, ≈ 17 dni 5m). */
 const VOL_CANDLES = 5000;
 
+let hourlyShared: { at: number; p: Promise<unknown> } | null = null;
+
 /**
- * Dane modelu zmienności: BTC 1h i 5m z `candleSnapshot` (waga ≈ 20 + 5000/60 każde) → `buildVolModel`.
+ * Ostatnie ~5000 świec 1h BTC (ok. 680 kB, API nie kompresuje) — jedno pobranie wspólne dla modelu zmienności
+ * i kontekstu aukcji. Odpowiedź (także jeszcze trwająca) jest używana ponownie, jeśli pobrano ją nie wcześniej
+ * niż `notBefore`; nieudana nie zostaje w pamięci. `at` = chwila pobrania (świece zamknięte przed nią są pełne).
+ */
+export async function loadHourlyShared(notBefore: number, nowMs: number = Date.now()): Promise<{ at: number; raw: unknown }> {
+  if (!hourlyShared || hourlyShared.at < notBefore) {
+    const entry = { at: nowMs, p: postInfo({ type: 'candleSnapshot', req: { coin: 'BTC', interval: '1h', startTime: nowMs - VOL_CANDLES * 3_600_000 } }) };
+    hourlyShared = entry;
+    void entry.p.then((r) => {
+      if (!Array.isArray(r) && hourlyShared === entry) hourlyShared = null;
+    });
+  }
+  const { at, p } = hourlyShared;
+  return { at, raw: await p };
+}
+
+/**
+ * Dane modelu zmienności: BTC 1h (wspólne, najwyżej 30 min) i 5m z `candleSnapshot` (waga ≈ 20 + 5000/60 każde) → `buildVolModel`.
  * Brak lub za mało danych → null (desk wraca wtedy do σ Parkinsona i to oznacza).
  */
 export async function loadVolModel(nowMs: number = Date.now()): Promise<VolModel | null> {
   const [h, f] = await Promise.all([
-    postInfo({ type: 'candleSnapshot', req: { coin: 'BTC', interval: '1h', startTime: nowMs - VOL_CANDLES * 3_600_000 } }),
+    loadHourlyShared(nowMs - 30 * 60_000, nowMs),
     postInfo({ type: 'candleSnapshot', req: { coin: 'BTC', interval: '5m', startTime: nowMs - VOL_CANDLES * 300_000 } }),
   ]);
-  return buildVolModel(parseHlCandles(h), parseHlCandles(f), nowMs);
+  return buildVolModel(parseHlCandles(h.raw), parseHlCandles(f), nowMs);
+}
+
+let firstSyncDone = false;
+const firstSyncWaiters: (() => void)[] = [];
+
+/**
+ * Ciężkie pobrania (model zmienności, kontekst aukcji: ok. 1,6 MB) czekają na pierwszą synchronizację desku,
+ * żeby nie zabierać łącza cenie na wolnym telefonie; najpóźniej po `maxWaitMs`.
+ */
+export function afterFirstSync(maxWaitMs = 5000): Promise<void> {
+  if (firstSyncDone) return Promise.resolve();
+  return new Promise((resolve) => {
+    firstSyncWaiters.push(resolve);
+    setTimeout(resolve, maxWaitMs);
+  });
+}
+
+function markFirstSync(): void {
+  if (firstSyncDone) return;
+  firstSyncDone = true;
+  firstSyncWaiters.splice(0).forEach((r) => r());
 }
 
 /**
  * Pobiera z publicznego API Hyperliquid: świece, poziomy HTF (1d/1w, cache 5 min), opcjonalnie L2
- * oraz `metaAndAssetCtxs`. Brak danych = null — nigdy zakodowane „live” wartości zastępcze.
+ * oraz `metaAndAssetCtxs` (bez niego, gdy podano świeży kontekst BTC z kanału WS `activeAssetCtx` — ok. 70 kB mniej
+ * na synchronizację). Brak danych = null — nigdy zakodowane „live” wartości zastępcze.
  */
 export async function fetchRealHyperliquidMarketData(
   timeframeSec: number = 300,
-  options: { includeL2Book?: boolean; volModel?: VolModel | null } = {}
+  options: { includeL2Book?: boolean; volModel?: VolModel | null; assetCtx?: Record<string, unknown> | null } = {}
 ): Promise<{
   bars: OHLCVBar[];
   htfLevels: HyperliquidHTFLevels | null;
@@ -617,8 +659,10 @@ export async function fetchRealHyperliquidMarketData(
           req: { coin: 'BTC', interval: '1w', startTime: now - 86400 * 1000 * 35 },
         }),
     includeL2Book ? postInfo({ type: 'l2Book', coin: 'BTC' }) : Promise.resolve(null),
-    postInfo({ type: 'metaAndAssetCtxs' }),
+    options.assetCtx ? Promise.resolve(null) : postInfo({ type: 'metaAndAssetCtxs' }),
   ]);
+  // Także po nieudanej odpowiedzi — łącze jest już wolne dla ciężkich pobrań
+  markFirstSync();
 
   if (!htfFresh && Array.isArray(dailyFetched) && Array.isArray(weeklyFetched)) {
     htfCache = { at: now, daily: dailyFetched, weekly: weeklyFetched };
@@ -689,7 +733,7 @@ export async function fetchRealHyperliquidMarketData(
   }
 
   // Telemetria tylko z kompletnych, realnych danych: kontekst BTC + świece + poziomy HTF
-  let btcCtx: Record<string, unknown> | null = null;
+  let btcCtx: Record<string, unknown> | null = options.assetCtx ?? null;
   const meta = metaCtxRes as [{ universe?: { name: string }[] }, Record<string, unknown>[]] | null;
   if (Array.isArray(meta) && meta.length >= 2 && Array.isArray(meta[0]?.universe) && Array.isArray(meta[1])) {
     const btcIdx = meta[0].universe!.findIndex((u) => u.name === 'BTC');

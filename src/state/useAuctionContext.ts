@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { loadCandlesV } from '../utils/marketDataFeed';
+import { afterFirstSync, loadCandlesV, loadHourlyShared, parseHlCandlesV } from '../utils/marketDataFeed';
 import {
   auctionStats,
   dayStart,
@@ -36,6 +36,8 @@ const EMPTY: AuctionContext = { status: 'loading', asOf: null, vwap: null, ib: n
 
 // Pamięć modułu: przełączanie widoków nie pobiera ponownie świec 1h (≈ 208 dni)
 let hourlyCache: { at: number; bars: VBar[] } | null = null;
+// Świece 1m od początku poprzedniej sesji UTC — co minutę dociągamy tylko końcówkę (cała doba to ok. 260 kB)
+let minuteCache: VBar[] = [];
 
 /** Tylko świece 1h zamknięte w chwili `asOf` (trwająca godzina zaniżałaby ekstrema i profil). */
 export const completeHourly = (bars: VBar[], asOf: number): VBar[] => bars.filter((b) => b.time + HOUR <= asOf);
@@ -43,6 +45,15 @@ export const completeHourly = (bars: VBar[], asOf: number): VBar[] => bars.filte
 /** Pamięć świec 1h do odświeżenia: brak, starsza niż 30 min albo z poprzedniego dnia UTC (wczorajsza sesja niepełna). */
 export const hourlyStale = (cacheAt: number | null, now: number): boolean =>
   cacheAt === null || now - cacheAt > 30 * MIN || dayStart(cacheAt) < dayStart(now);
+
+/**
+ * Pamięć 1m po dociągnięciu: świece sprzed pierwszej nowej zostają, nowe (od ostatniej, może trwającej) je zastępują;
+ * wszystko sprzed `from` (początek poprzedniej sesji) odpada.
+ */
+export function mergeMinute(cache: VBar[], fresh: VBar[], from: number): VBar[] {
+  const start = fresh.length ? fresh[0].time : Number.POSITIVE_INFINITY;
+  return [...cache.filter((b) => b.time >= from && b.time < start), ...fresh.filter((b) => b.time >= from)];
+}
 
 /** Wylicza kontekst aukcji ze świec 1m (bieżąca i poprzednia sesja) i 1h (statystyki). Czysta funkcja — testowalna. */
 export function computeAuctionContext(minute: VBar[], hourly: VBar[], now: number): AuctionContext {
@@ -83,18 +94,25 @@ function publish(c: AuctionContext): void {
 async function refresh(): Promise<void> {
   if (inflight) return;
   inflight = true;
-  const now = Date.now();
   try {
+    await afterFirstSync();
+    const now = Date.now();
     if (hourlyStale(hourlyCache?.at ?? null, now)) {
-      const bars = completeHourly(await loadCandlesV('1h', now - 5000 * HOUR), now);
-      if (bars.length) hourlyCache = { at: now, bars };
+      // Te same świece 1h co w modelu zmienności — jedno pobranie; po północy UTC tylko świeże (pełna wczorajsza sesja)
+      const { at, raw } = await loadHourlyShared(Math.max(now - 30 * MIN, dayStart(now)), now);
+      const bars = completeHourly(parseHlCandlesV(raw), at);
+      if (bars.length) hourlyCache = { at, bars };
     }
-    const minute = await loadCandlesV('1m', dayStart(now) - DAY);
-    if (!minute.length) {
+    const from = dayStart(now) - DAY;
+    const kept = minuteCache.filter((b) => b.time >= from);
+    const incremental = kept.length > 0 && kept[0].time - from < 5 * MIN;
+    const fresh = await loadCandlesV('1m', incremental ? kept[kept.length - 1].time : from);
+    if (fresh.length) minuteCache = mergeMinute(incremental ? kept : [], fresh, from);
+    if (!minuteCache.length) {
       if (shared.status !== 'ready') publish({ ...EMPTY, status: 'error' });
       return;
     }
-    publish(computeAuctionContext(minute, hourlyCache?.bars ?? [], Date.now()));
+    publish(computeAuctionContext(minuteCache, hourlyCache?.bars ?? [], Date.now()));
   } catch {
     if (shared.status !== 'ready') publish({ ...EMPTY, status: 'error' });
   } finally {
@@ -102,7 +120,7 @@ async function refresh(): Promise<void> {
   }
 }
 
-/** Kontekst aukcji: świece 1m co minutę (od początku poprzedniej sesji), 1h co 30 min; wspólny dla wszystkich widoków. */
+/** Kontekst aukcji: świece 1m co minutę (od początku poprzedniej sesji, dociągana końcówka), 1h co 30 min; wspólny dla wszystkich widoków. */
 export function useAuctionContext(): AuctionContext {
   const [ctx, setCtx] = useState<AuctionContext>(shared);
   useEffect(() => {

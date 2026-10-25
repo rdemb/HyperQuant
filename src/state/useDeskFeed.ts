@@ -30,7 +30,7 @@ const EMPTY_LEVELS: L2OrderbookLevel[] = [];
  * Warstwa danych desku: REST + WebSocket Hyperliquid, opcjonalne źródła CEX (opt-in, lokalnie),
  * stan świeżości danych. Wydzielona z App.tsx, żeby widoki były czystymi konsumentami.
  */
-export function useDeskFeed(options: { cexEnabled: boolean }) {
+export function useDeskFeed(options: { cexEnabled: boolean; volModel: boolean }) {
   const [timeframeSec, setTimeframeSec] = useState<number>(300);
   const [isStreaming, setIsStreaming] = useState<boolean>(true);
   const [hlConnected, setHlConnected] = useState<boolean>(false);
@@ -48,7 +48,7 @@ export function useDeskFeed(options: { cexEnabled: boolean }) {
   const [hlTrades, setHlTrades] = useState<AggrTradeTick[]>([]);
 
   // Model zmienności (sezonowy log-HAR + FHS) — pas MC 2h i Analizator planu; ref, bo sync jest stabilnym callbackiem
-  const vol = useVolModel();
+  const vol = useVolModel(options.volModel);
   const volRef = useRef<VolModel | null>(null);
   volRef.current = vol.model;
 
@@ -56,6 +56,8 @@ export function useDeskFeed(options: { cexEnabled: boolean }) {
   const syncSeqRef = useRef<number>(0);
   const syncInFlightRef = useRef<boolean>(false);
   const hasBookRef = useRef<boolean>(false);
+  // Kontekst BTC z WS (funding, OI, mark, oracle ~co 1 s) — zastępuje w synchronizacji ciężkie metaAndAssetCtxs
+  const wsCtxRef = useRef<{ at: number; ctx: Record<string, unknown> } | null>(null);
   // Interwał, do którego należą bieżące świece — ticki trafiają do świec tylko gdy zgadza się z wybranym
   const barsTfRef = useRef<number | null>(null);
   // Deduplikacja transakcji HL po tid (np. powtórka po ponownym połączeniu WS)
@@ -99,6 +101,7 @@ export function useDeskFeed(options: { cexEnabled: boolean }) {
         // L2 przez REST tylko bez WS albo gdy WS jeszcze nie dostarczył arkusza (waga 2)
         fetchRealHyperliquidMarketData(tfSec, {
           includeL2Book: !hlConnectedRef.current || !hasBookRef.current,
+          assetCtx: hlConnectedRef.current && wsCtxRef.current && Date.now() - wsCtxRef.current.at < 30_000 ? wsCtxRef.current.ctx : null,
           volModel: volRef.current,
         }),
         isLocalServer
@@ -266,6 +269,7 @@ export function useDeskFeed(options: { cexEnabled: boolean }) {
           sock.send(JSON.stringify({ method: 'subscribe', subscription: { type: 'l2Book', coin: 'BTC' } }));
           // Najlepsze kwotowania ~co 150 ms (arkusz l2Book przychodzi ~co 5 s) — OFI i mikrocena w mechanice arkusza
           sock.send(JSON.stringify({ method: 'subscribe', subscription: { type: 'bbo', coin: 'BTC' } }));
+          sock.send(JSON.stringify({ method: 'subscribe', subscription: { type: 'activeAssetCtx', coin: 'BTC' } }));
           if (pingTimer !== null) clearInterval(pingTimer);
           pingTimer = window.setInterval(() => {
             if (sock.readyState === WebSocket.OPEN) sock.send(JSON.stringify({ method: 'ping' }));
@@ -285,6 +289,8 @@ export function useDeskFeed(options: { cexEnabled: boolean }) {
               ingestTicks(ticks, true);
             } else if (msg.channel === 'bbo' && msg.data && Array.isArray(msg.data.bbo)) {
               microEngine.onBbo(msg.data);
+            } else if (msg.channel === 'activeAssetCtx' && msg.data?.coin === 'BTC' && msg.data.ctx) {
+              wsCtxRef.current = { at: Date.now(), ctx: msg.data.ctx };
             } else if (msg.channel === 'l2Book' && msg.data && Array.isArray(msg.data.levels)) {
               microEngine.onBook(msg.data);
               setWsWhaleNodes(collectWhaleNodes(msg.data.levels[0] || [], msg.data.levels[1] || []).slice(0, 12));
