@@ -271,7 +271,7 @@ const VolModelStat: React.FC<{ market: PlanMarket; horizonLabel: string }> = ({ 
           {gain !== null ? `${fmtSigned(-gain, 0, '%')} ${tr('vs średnia 24 h', 'vs 24 h mean')} (n = ${oos!.n})` : tr('b/d (za mało danych)', 'n/a (not enough data)')}
           <br />
           {tr('skoki', 'jumps')}:{' '}
-          {m.jump ? tr(`${fmtFixed(m.jump.share * 100, 1)}% wariancji (${m.jump.days} dni, BV)`, `${fmtFixed(m.jump.share * 100, 1)}% of variance (${m.jump.days} days, BV)`) : 'n/a'} ·
+          {m.jump ? tr(`${fmtFixed(m.jump.share * 100, 1)}% wariancji (${m.jump.days} dni, BV)`, `${fmtFixed(m.jump.share * 100, 1)}% of variance (${m.jump.days} days, BV)`) : tr('b/d', 'n/a')} ·
           Lee–Mykland: {tr(`${m.lmJumps.count} w ${Math.round(m.lmJumps.days)} dni`, `${m.lmJumps.count} in ${Math.round(m.lmJumps.days)} days`)}
           <br />
           {tr(`dane: ${m.hourlyBars} świec 1h · ${m.fiveMinBars} świec 5m`, `data: ${m.hourlyBars} 1h candles · ${m.fiveMinBars} 5m candles`)}
@@ -324,7 +324,7 @@ const MacroWindow: React.FC<{ events: MacroEvent[]; loaded: boolean; multiplier:
     return (
       <div className="text-[11px] text-ink-3">
         {tr(
-          'Kalendarz makro: n/a (tabela publikacji niedostępna) — brak korekty zmienności o zdarzenia.',
+          'Kalendarz makro: b/d (tabela publikacji niedostępna) — brak korekty zmienności o zdarzenia.',
           'Macro calendar: n/a (release table unavailable), no event volatility adjustment.'
         )}
       </div>

@@ -1,10 +1,10 @@
 import React from 'react';
 import { useDesk } from '../../state/DeskContext';
 import { freshness, PERIOD_MS, useCrossMarket } from '../../state/useCrossMarket';
-import { Stat, fmtPct, fmtSigned } from '../../ui';
+import { DASH, Stat, fmtPct, fmtSigned } from '../../ui';
 import { tr } from '../../i18n';
 
-const pp = (v: number | null) => (v === null ? 'n/a' : `${fmtSigned(v, 1)} pp`);
+const pp = (v: number | null) => (v === null ? tr('b/d', 'n/a') : `${fmtSigned(v, 1)} pp`);
 
 /** Kafel pasa Desku: funding HL (APR) i spread względem Binance/Bybit (pośrednio przez API Hyperliquid). */
 export const FundingStrip: React.FC = () => {
@@ -26,7 +26,7 @@ export const FundingStrip: React.FC = () => {
             'predictedFundings from the Hyperliquid API (every 60 s); Binance/Bybit indirectly via the Hyperliquid API. Positive = longs pay.'
           ),
         }}
-        value={<span className="text-base">{hl ? fmtPct(hl.aprPct, 2) : 'n/a'}</span>}
+        value={<span className="text-base">{hl ? fmtPct(hl.aprPct, 2) : DASH}</span>}
         hint={f ? `vs Binance ${pp(f.spreadHlBinancePp)} · Bybit ${pp(f.spreadHlBybitPp)}` : tr('Czekam na API Hyperliquid', 'Waiting for the Hyperliquid API')}
       />
     </div>

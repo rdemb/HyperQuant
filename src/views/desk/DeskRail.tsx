@@ -21,7 +21,7 @@ export const DeskRail: React.FC = () => {
   const pdhCrossed = !!lv && px > 0 && lv.pdh <= px;
   const pdlCrossed = !!lv && px > 0 && lv.pdl >= px;
   const crossedNote = (
-    <div className="text-[10px] text-ink-3 font-sans" title={tr('Cena jest już za poziomem — dotknięcie nie jest prognozą', 'Price is already past the level, a touch is not a forecast')}>
+    <div className="text-[10px] text-ink-3 font-sans whitespace-normal leading-tight" title={tr('Cena jest już za poziomem — dotknięcie nie jest prognozą', 'Price is already past the level, a touch is not a forecast')}>
       {tr('za poziomem', 'past level')}
     </div>
   );
@@ -29,7 +29,7 @@ export const DeskRail: React.FC = () => {
   const depthBid = quant.bookDepthBidUsd;
   const depthTotal = depthAsk + depthBid;
   const bidShare = depthTotal > 0 ? depthBid / depthTotal : null;
-  const mins = (v: number | null | undefined) => (typeof v === 'number' ? `~${fmtNum(v)} min` : 'n/a');
+  const mins = (v: number | null | undefined) => (typeof v === 'number' ? `~${fmtNum(v)} min` : tr('b/d', 'n/a'));
   // Kalibracja z weryfikowalnego dziennika (izotonicznie na rozstrzygniętych prognozach tego samego silnika): tylko przy
   // ≥ 300 ocenionych parach, aktualnym podsumowaniu i tej samej metodzie (mapa z HAR+FHS nie pasuje do zapasu Mertona)
   const { status: ledgerStatus, summary } = useDeskLedger();
@@ -53,9 +53,10 @@ export const DeskRail: React.FC = () => {
     ? `IB ${auction.today.ibBreak.up ? tr('↑ wybity', '↑ broken') : '↑ —'} · ${auction.today.ibBreak.down ? tr('↓ wybity', '↓ broken') : '↓ —'}`
     : tr('IB zamknięty', 'IB closed');
 
+  // Kafel „Zasięg 2h” ma trzy kolumny liczb, więc dostaje więcej miejsca: 2 kolumny siatki do lg, szerszą kolumnę od xl
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3">
-      <div className="bg-surface-1 border border-line rounded-xl p-3.5 col-span-2 md:col-span-1">
+    <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-[minmax(0,1.4fr)_repeat(6,minmax(0,1fr))] gap-3">
+      <div className="bg-surface-1 border border-line rounded-xl p-3.5 col-span-2 xl:col-span-1">
         <Stat
           label={tr('Zasięg 2h · MC', '2h reach · MC')}
           source={{
@@ -132,16 +133,16 @@ export const DeskRail: React.FC = () => {
 
       <div className="bg-surface-1 border border-line rounded-xl p-3.5">
         <Stat
-          label="VPIN · λ"
+          label={<>VPIN · <span className="normal-case">λ</span></>}
           source={{ tone: 'model', label: 'MODEL', title: tr('VPIN na kubełkach wolumenowych; λ z OLS na realnym przepływie WS', 'VPIN on volume buckets; λ from OLS on real WS flow') }}
           value={<span className="text-base">{fmtPct(quant.vpinToxicity * 100, 1, false)}</span>}
-          hint={`λ = ${quant.kyleLambdaPer1M !== null ? `$${fmtFixed(quant.kyleLambdaPer1M, 2)} / $1M` : 'n/a'}`}
+          hint={`λ = ${quant.kyleLambdaPer1M !== null ? `$${fmtFixed(quant.kyleLambdaPer1M, 2)} / $1M` : tr('b/d', 'n/a')}`}
         />
       </div>
 
       <div className="bg-surface-1 border border-line rounded-xl p-3.5">
         <Stat
-          label={tr('Powrót do D-EQ', 'Reversion to D-EQ')}
+          label={tr(<>Powrót do <span className="whitespace-nowrap">D-EQ</span></>, <>Reversion to <span className="whitespace-nowrap">D-EQ</span></>)}
           source={{ tone: 'model', label: 'MODEL', title: tr('Regresja OU wokół 0,65·D-EQ + 0,35·W-EQ', 'OU regression around 0.65·D-EQ + 0.35·W-EQ') }}
           value={<span className="text-base">Z {quant.ouZScore > 0 ? '+' : ''}{fmtNum(quant.ouZScore)}σ</span>}
           hint={`t½ ${Number.isFinite(quant.ouHalfLifeBars) ? `${fmtNum(quant.ouHalfLifeBars)} ${tr('świec', 'bars')}` : tr('∞ (brak powrotu)', '∞ (no reversion)')} · ${sessionLabel(shaakuni.nySession)}`}
