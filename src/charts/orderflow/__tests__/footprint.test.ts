@@ -67,13 +67,13 @@ describe('valueArea (70%)', () => {
 });
 
 describe('fmtVol', () => {
-  it('maksymalnie 4 znaki dla typowych wolumenów BTC', () => {
+  it('maksymalnie 4 znaki dla typowych wolumenów BTC (po polsku przecinek dziesiętny)', () => {
     expect(fmtVol(0)).toBe('0');
-    expect(fmtVol(0.004)).toBe('<.01');
-    expect(fmtVol(0.42)).toBe('0.42');
-    expect(fmtVol(2.346)).toBe('2.35');
-    expect(fmtVol(24.46)).toBe('24.5');
+    expect(fmtVol(0.004)).toBe('<,01');
+    expect(fmtVol(0.42)).toBe('0,42');
+    expect(fmtVol(2.346)).toBe('2,35');
+    expect(fmtVol(24.46)).toBe('24,5');
     expect(fmtVol(245.4)).toBe('245');
-    expect(fmtVol(1234)).toBe('1.2K');
+    expect(fmtVol(1234)).toBe('1,2K');
   });
 });

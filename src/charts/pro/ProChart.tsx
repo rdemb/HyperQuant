@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Bell, BellOff, Camera, ChevronDown, ChevronsRight, Columns2, Copy, Grid2x2, History, Keyboard, Layers, Link, ListOrdered, Maximize2, Minimize2, Minus, MoreHorizontal, PenTool, RotateCcw, SlidersHorizontal, Square, X } from 'lucide-react';
-import { Badge, BadgeTone, Segmented } from '../../ui';
+import { Badge, BadgeTone, Segmented, numLang } from '../../ui';
 import { LiqMapState, useLiqMap } from '../../state/useLiqMap';
 import { usePublished } from '../../state/usePublished';
 import { type WhaleLayer, isWhaleLayer } from '../../utils/whaleLayer';
@@ -34,7 +34,7 @@ import { startRecording } from './store/recording';
 import { ReplayBar } from './replay/ReplayBar';
 import { type ReplayLink, linkPatch, parseReplayLink, replayHash } from './replay/link';
 import { type ReplaySession, replayBase } from './replay/session';
-import { locale, tr } from '../../i18n';
+import { tr } from '../../i18n';
 
 const MARKET_OPTIONS = MARKETS.map((m) => ({ value: m, label: m, title: `${m}-PERP · Hyperliquid` }));
 const INTERVAL_OPTIONS = INTERVALS.map((i) => ({ value: i.id, label: i.label }));
@@ -1672,7 +1672,7 @@ const StatusBar: React.FC<{ store: ProStore; series: CandleSeries }> = ({ store,
         )}
       </span>
       <span>
-        {tr('Transakcje', 'Trades')}: {store.tape.count.toLocaleString(locale)}
+        {tr('Transakcje', 'Trades')}: {numLang(store.tape.count.toLocaleString('en-US'))}
       </span>
       {series.loadingOlder && <span>{tr('Historia: wczytywanie…', 'History: loading…')}</span>}
       {series.historyExhausted && (

@@ -1,5 +1,7 @@
 /** Logika footprintu (bez Reacta i bez płótna): kubełki ceny, nierównowagi, POC, value area. */
 
+import { numLang } from '../../ui/format';
+
 /** Flagi nierównowagi wiersza (bitowo). */
 export const IMB_BUY = 1; // ask[p] ≥ ratio × bid[p−1] — przewaga kupujących agresorów
 export const IMB_SELL = 2; // bid[p] ≥ ratio × ask[p+1] — przewaga sprzedających agresorów
@@ -77,9 +79,9 @@ export function valueArea(vol: ArrayLike<number>, n: number, pct = 0.7): { poc: 
 /** Wolumen BTC w ≤ 4 znakach (komórki footprintu: tabular mono 10 px). */
 export function fmtVol(v: number): string {
   if (!(v > 0)) return '0';
-  if (v < 0.01) return '<.01';
-  if (v < 10) return v.toFixed(2);
-  if (v < 100) return v.toFixed(1);
+  if (v < 0.01) return numLang('<.01');
+  if (v < 10) return numLang(v.toFixed(2));
+  if (v < 100) return numLang(v.toFixed(1));
   if (v < 1000) return v.toFixed(0);
-  return `${(v / 1000).toFixed(1)}K`;
+  return numLang(`${(v / 1000).toFixed(1)}K`);
 }
