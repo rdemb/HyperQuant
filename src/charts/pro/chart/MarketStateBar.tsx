@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
-import { indicatorScope, vwapSeries } from '../core/indicators';
+import { indicatorScope, vwapFrom } from '../core/indicators';
 import { periodStart } from '../core/sessions';
 import type { CandleSeries, ProStore } from '../store/proStore';
 import { venueStoreFor } from '../venues/venueStore';
@@ -15,6 +15,8 @@ import { tr } from '../../../i18n';
  */
 
 const STATE_EVERY_MS = 5_000;
+/** Przed pierwszym zdaniem (wykres dopiero dostaje dane) — częściej. */
+const STATE_WAIT_MS = 500;
 /** Migawka arkusza starsza niż tyle ms jest nieaktualna (zerwane połączenie). */
 const BOOK_STALE_MS = 30_000;
 
@@ -26,12 +28,12 @@ function readState(store: ProStore, series: CandleSeries, venueOn: boolean): Sta
   const now = store.serverNow();
   const bars = all.slice(-STATE_RUN_MAX);
   const win = bars.slice(-STATE_BARS);
-  // VWAP okresu ostatniej świecy (doba, na świecach dziennych tydzień) — od pierwszej świecy tego okresu
+  // VWAP okresu ostatniej świecy (doba, na świecach dziennych tydzień) — od pierwszej świecy tego okresu, ze świec 1m (tydzień 5m) jak na wykresie
   const anchor = indicatorScope(iv.ms).vwapAnchor;
   const p0 = periodStart(all[n - 1].t, anchor);
   let k = n - 1;
   while (k > 0 && all[k - 1].t >= p0) k--;
-  const vw = vwapSeries(all.slice(k), anchor);
+  const vw = vwapFrom(all.slice(k), store.vwapCandles(iv), iv.ms, anchor);
   let venues: StateInput['venues'] = null;
   if (venueOn) {
     const r = venueStoreFor(store.coin).reads(iv, now);
@@ -78,10 +80,15 @@ export const MarketStateBar: React.FC<{ store: ProStore; series: CandleSeries; v
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const run = () => setFacts(readState(store, series, venueOn));
+    let id = 0;
+    // Do pierwszego zdania co 0,5 s (dane wykresu dochodzą po wejściu), potem co 5 s
+    const run = () => {
+      const f = readState(store, series, venueOn);
+      setFacts(f);
+      id = window.setTimeout(run, f.length > 0 ? STATE_EVERY_MS : STATE_WAIT_MS);
+    };
     run();
-    const id = setInterval(run, STATE_EVERY_MS);
-    return () => clearInterval(id);
+    return () => clearTimeout(id);
   }, [store, series, venueOn]);
 
   // Rozwinięcie zamyka dotknięcie obok i Escape

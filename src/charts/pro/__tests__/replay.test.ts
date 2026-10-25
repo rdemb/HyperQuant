@@ -185,6 +185,19 @@ describe('ReplaySession — odtwarzanie nagrania', () => {
     expect(bars[30].candle).toMatchObject({ t: H0 + 30 * 60_000, v: 1, n: 1 });
   });
 
+  it('źródło VWAP (świece 1m) w powtórce kończy się na chwili odtwarzania', async () => {
+    s = new ReplaySession({ source: 'history', coin: 'BTC', from: null, to: null, t: H0 + 30 * 60_000 + 15_000 }, twoHours().fetcher, fakeCandles().load, BASE);
+    await s.load();
+    const st = s.store!;
+    const iv = st.series('5m').interval;
+    // Pierwsze pytanie wczytuje serię 1m
+    expect(st.vwapCandles(iv)).toEqual([]);
+    await vi.waitFor(() => expect(st.series('1m').loadState).toBe('ready'));
+    const fine = st.vwapCandles(iv);
+    expect(fine.length).toBe(31);
+    expect(fine.at(-1)).toMatchObject({ t: H0 + 30 * 60_000, v: 1, n: 1 });
+  });
+
   it('bez spisu — błąd; rynek bez nagrania albo zakres poza nagraniem — puste', async () => {
     s = new ReplaySession({ source: 'history', coin: 'BTC', from: null, to: null, t: null }, fakeFetch(new Map(), null).fetcher, fakeCandles().load, BASE);
     await s.load();

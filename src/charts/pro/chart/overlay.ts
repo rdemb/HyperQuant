@@ -30,7 +30,7 @@ import {
   nakedPocs,
   periodRanges,
   volumeProfile,
-  vwapSeries,
+  vwapFrom,
 } from '../core/indicators';
 import { SESSION_LABEL, sessionsBetween } from '../core/sessions';
 import { DAY } from '../core/time';
@@ -267,6 +267,9 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
   private toggles: IndicatorToggles;
   private bars: readonly ProBar[] = [];
   private candles: Candle[] = [];
+  // Liczba i ostatnia świeca źródła VWAP przy ostatnim przeliczeniu (tablica serii zmienia się w miejscu)
+  private fineN = 0;
+  private fineLast: Candle | undefined;
   private ms = 60_000;
   private scope: IndicatorScope = indicatorScope(60_000);
   private vwap: (VwapPoint | null)[] = [];
@@ -336,17 +339,22 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
     this.requestUpdate?.();
   }
 
-  /** Świece wykresu; wskaźniki z historii liczone od nowa tylko po zmianie którejś świecy z API. */
-  setBars(bars: readonly ProBar[], intervalMs: number): void {
+  /**
+   * Świece wykresu i świece źródła VWAP (`fine`, zob. ProStore.vwapCandles); wskaźniki z historii liczone od nowa tylko
+   * po zmianie którejś świecy z API.
+   */
+  setBars(bars: readonly ProBar[], intervalMs: number, fine: readonly Candle[] = []): void {
     this.bars = bars;
-    let changed = intervalMs !== this.ms || bars.length !== this.candles.length;
+    let changed = intervalMs !== this.ms || bars.length !== this.candles.length || fine.length !== this.fineN || fine.at(-1) !== this.fineLast;
     for (let i = bars.length - 1; i >= 0 && !changed; i--) changed = bars[i].candle !== this.candles[i];
     if (changed) {
       this.ms = intervalMs;
       this.scope = indicatorScope(intervalMs);
       this.candles = bars.map((b) => b.candle);
-      this.vwap = vwapSeries(bars, this.scope.vwapAnchor);
-      this.svwap = this.scope.sessionVwap ? vwapSeries(bars, 'session') : [];
+      this.fineN = fine.length;
+      this.fineLast = fine.at(-1);
+      this.vwap = vwapFrom(bars, fine, intervalMs, this.scope.vwapAnchor);
+      this.svwap = this.scope.sessionVwap ? vwapFrom(bars, fine, intervalMs, 'session') : [];
       this.ibs = this.scope.ib ? initialBalances(bars, intervalMs) : [];
     }
     this.requestUpdate?.();

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Candle } from '../hl/parse';
 import { FootprintBuilder } from '../core/footprintBar';
-import { IndicatorBar, dayLevels, developingProfile, indicatorScope, initialBalances, liqLevels, nakedPocs, periodRanges, volumeProfile, vwapSeries } from '../core/indicators';
+import { IndicatorBar, dayLevels, developingProfile, indicatorScope, initialBalances, liqLevels, nakedPocs, periodRanges, volumeProfile, vwapFrom, vwapSeries } from '../core/indicators';
 import { DAY } from '../core/time';
 import type { LiqMap } from '../../../utils/liqMap';
 
@@ -50,6 +50,44 @@ describe('vwapSeries', () => {
     const last = vwapSeries(bars, 'day').at(-1)!;
     expect(last.vwap).toBeCloseTo(110_000.5, 6);
     expect(last.sd).toBeCloseTo(0.5, 6);
+  });
+});
+
+describe('vwapFrom — VWAP ze świec 1m na każdym interwale', () => {
+  const M1 = 60_000;
+  const t0 = utc('2026-10-25T00:00:00Z');
+  // Świece 1m od 00:00 UTC: cena rośnie o 1 na minutę, wolumen zmienny
+  const fine = Array.from({ length: 30 }, (_, i) => c(t0 + i * M1, 100 + i, 101 + i, 99 + i, 100 + i, 1 + (i % 3)));
+  /** Świece interwału `ms` sklejone z tych samych świec 1m (jak świece z API). */
+  const merged = (ms: number) => {
+    const out: Candle[] = [];
+    for (const f of fine) {
+      const t = Math.floor(f.t / ms) * ms;
+      const last = out.at(-1);
+      if (last?.t === t) out[out.length - 1] = c(t, last.o, Math.max(last.h, f.h), Math.min(last.l, f.l), f.c, last.v + f.v);
+      else out.push({ ...f, t });
+    }
+    return out.map(bar);
+  };
+
+  it('na końcu świecy 5m i 15m ten sam VWAP i σ co na 1m', () => {
+    const one = vwapFrom(fine.map(bar), fine, M1, 'day');
+    const five = vwapFrom(merged(M5), fine, M5, 'day');
+    const fifteen = vwapFrom(merged(3 * M5), fine, 3 * M5, 'day');
+    expect(five[2]).toEqual({ ...one[14]!, start: false });
+    expect(fifteen[1]).toEqual({ ...one[29]!, start: false });
+    expect(five[0]!.start).toBe(true);
+    // Ze świec 5m (bez źródła 1m) wychodzi inaczej — to różnica, którą usuwa źródło 1m
+    expect(vwapSeries(merged(M5), 'day')[2]!.vwap).not.toBeCloseTo(one[14]!.vwap, 6);
+  });
+
+  it('okres, którego początku nie ma w świecach 1m, liczony ze świec wykresu; bez źródła — jak dotąd', () => {
+    const prev = [c(t0 - 2 * M5, 50, 50, 50, 50, 1), c(t0 - M5, 60, 60, 60, 60, 1)].map(bar);
+    const bars = [...prev, ...merged(M5)];
+    const out = vwapFrom(bars, fine, M5, 'day');
+    expect(out.slice(0, 2)).toEqual(vwapSeries(prev, 'day'));
+    expect(out[2]!.start).toBe(true);
+    expect(vwapFrom(bars, [], M5, 'day')).toEqual(vwapSeries(bars, 'day'));
   });
 });
 
