@@ -21,12 +21,13 @@ const DeskView: React.FC = () => {
   return (
     <div className="flex flex-col gap-4">
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        <div className="lg:col-span-9 min-w-0 flex">
+        <div className="lg:col-span-8 xl:col-span-9 min-w-0 flex">
           <WelcomePanel />
         </div>
-        {/* Na desktopie taśma ma wysokość powitania (absolutne wypełnienie komórki siatki), na telefonie stałą */}
+        {/* Na desktopie taśma ma wysokość powitania (absolutne wypełnienie komórki siatki), na telefonie stałą;
+            przy 1024 px dostaje 4 kolumny, bo w 3 (ok. 230 px) wiersze arkusza łamały się na dwie linie */}
         {feed.latestBar && (
-          <div className="lg:col-span-3 h-[540px] lg:h-auto lg:min-h-[560px] min-w-0 lg:relative">
+          <div className="lg:col-span-4 xl:col-span-3 h-[540px] lg:h-auto lg:min-h-[560px] min-w-0 lg:relative">
             <div className="h-full lg:absolute lg:inset-0">
               <AggrOrderFlowTape
                 trades={feed.trades}

@@ -25,7 +25,7 @@ export const Panel: React.FC<PanelProps> = ({ title, eyebrow, actions, children,
             <div className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium">{eyebrow}</div>
           )}
           {title && (
-            <h2 className={`font-display text-ink-1 truncate ${hero ? 'text-lg' : 'text-[15px]'} font-semibold leading-tight`}>
+            <h2 className={`font-display text-ink-1 ${hero ? 'text-lg' : 'text-[15px]'} font-semibold leading-tight`}>
               {title}
             </h2>
           )}

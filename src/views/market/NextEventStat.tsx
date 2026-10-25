@@ -21,8 +21,9 @@ export const NextEventStat: React.FC<{ compact?: boolean }> = ({ compact }) => {
         }
         value={
           e ? (
-            <span className="text-base">
-              {KIND_LABEL[e.kind]} <span className="text-ink-3">·</span> {fmtCountdown(e.timeUtcMs, now)}
+            // Wąski kafel (7 w rzędzie przy 1280 px) łamie wiersz po kropce zamiast ucinać odliczanie
+            <span className="text-base whitespace-normal">
+              {KIND_LABEL[e.kind]} <span className="text-ink-3">·</span> <span className="whitespace-nowrap">{fmtCountdown(e.timeUtcMs, now)}</span>
             </span>
           ) : (
             DASH

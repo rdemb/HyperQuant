@@ -46,7 +46,7 @@ export const MacroProxies: React.FC = () => {
           const spec = HIP3_MACRO[i];
           if (!t) return <Stat key={spec.key} label={spec.label} value={<span className="text-ink-3">{DASH}</span>} hint={tr('Czekam na API', 'Waiting for the API')} />;
           if (!t.coin)
-            return <Stat key={t.key} label={t.label} value={<span className="text-ink-3">n/a</span>} hint={tr('Brak rynku w dexie xyz', 'No market in the xyz dex')} />;
+            return <Stat key={t.key} label={t.label} value={<span className="text-ink-3">{DASH}</span>} hint={tr('Brak rynku w dexie xyz', 'No market in the xyz dex')} />;
           const candles = cm.hip3Candles[t.key] ?? [];
           const closed = t.quiet || recentlyFlat(candles, now, H) === true;
           const closes = candles.map((c) => c.c);
@@ -54,7 +54,7 @@ export const MacroProxies: React.FC = () => {
             <div key={t.key} title={`${t.coin} · ${tr('cena perpa HIP-3, nie indeks kasowy', 'HIP-3 perp price, not the cash index')}`} className="min-w-0">
               <Stat
                 label={t.label}
-                value={<span className="text-base">{t.markPx !== null ? fmtPrice(t.markPx, priceDigits(t.markPx)) : 'n/a'}</span>}
+                value={<span className="text-base">{t.markPx !== null ? fmtPrice(t.markPx, priceDigits(t.markPx)) : DASH}</span>}
                 delta={t.change24hPct !== null ? { value: t.change24hPct, text: `${fmtFixed(Math.abs(t.change24hPct), 2)}%` } : null}
                 hint={
                   closed ? (
@@ -129,7 +129,7 @@ const FitRow: React.FC<{ label: string; m: MacroFit | null }> = ({ label, m }) =
             R² {fmtFixed(m.fit.r2 * 100, 0)}% <span className="text-ink-3">· β {fmtSigned(m.fit.beta, 2)} · n {m.fit.n}</span>
           </>
         ) : (
-          <span className="text-ink-3">n/a{m ? ` · n ${m.n} < 30 ${tr('lub proxy stoi', 'or proxy flat')}` : ''}</span>
+          <span className="text-ink-3">{tr('b/d', 'n/a')}{m ? ` · n ${m.n} < 30 ${tr('lub proxy stoi', 'or proxy flat')}` : ''}</span>
         )}
       </span>
     </div>

@@ -105,7 +105,7 @@ export const QuantRegimePanel: React.FC<{
             const up = diff >= 0;
             return (
               <div key={fh.stepBars} className="bg-page border border-line rounded-lg px-1.5 py-2 text-center min-w-0">
-                <div className="text-[11px] text-ink-2 font-medium truncate">{candlesLabel(fh.stepBars)}</div>
+                <div className="text-[11px] text-ink-2 font-medium leading-tight">{candlesLabel(fh.stepBars)}</div>
                 <div className="text-[10px] text-ink-3">= {horizonDuration(fh.stepBars, timeframeSec)}</div>
                 <div className="mt-1 font-mono tabular-nums text-xs text-ink-1 truncate">{fmtPrice(fh.predictedPrice, 0)}</div>
                 <div className={`font-mono tabular-nums text-[10px] ${up ? 'text-buy-ink' : 'text-sell-ink'}`}>
@@ -141,7 +141,7 @@ export const QuantRegimePanel: React.FC<{
             <li key={s.key} className="flex items-center justify-between gap-2 min-w-0">
               <span className="flex items-center gap-1.5 min-w-0">
                 <span className={`w-2 h-2 rounded-sm shrink-0 ${s.color}`} aria-hidden="true" />
-                <span className="truncate">{s.label}</span>
+                <span className="leading-tight">{s.label}</span>
               </span>
               <span className="font-mono tabular-nums text-ink-1">{fmtFixed(weights[s.key] * 100, 0)}%</span>
             </li>
@@ -197,10 +197,15 @@ export const QuantMetricTiles: React.FC<{ quant: QuantMathMetrics; className?: s
           label="Hawkes"
           source={{ tone: 'model', label: 'MODEL', title: tr('λ(t) = μ + Σ α·e^(−β(t−tᵢ)) na transakcjach HL; μ, α, β stałe (nieestymowane)', 'λ(t) = μ + Σ α·e^(−β(t−tᵢ)) on HL trades; μ, α, β fixed (not estimated)') }}
           value={
-            <span className="text-base">
-              <span className="text-buy-ink" aria-hidden="true">▲</span> {fmtFixed(quant.hawkesBuyIntensity, 2)}{' '}
-              <span className="text-ink-3">/</span> <span className="text-sell-ink" aria-hidden="true">▼</span>{' '}
-              {fmtFixed(quant.hawkesSellIntensity, 2)}
+            // W wąskim kafelku (1024 px) druga intensywność przechodzi do drugiego wiersza zamiast wielokropka
+            <span className="text-base whitespace-normal">
+              <span className="whitespace-nowrap">
+                <span className="text-buy-ink" aria-hidden="true">▲</span> {fmtFixed(quant.hawkesBuyIntensity, 2)}
+              </span>{' '}
+              <span className="text-ink-3">/</span>{' '}
+              <span className="whitespace-nowrap">
+                <span className="text-sell-ink" aria-hidden="true">▼</span> {fmtFixed(quant.hawkesSellIntensity, 2)}
+              </span>
             </span>
           }
           hint={tr(`kupno / sprzedaż · η = ${quant.hawkesBranchingRatio != null ? fmtNum(quant.hawkesBranchingRatio) : 'b/d'} (wymaga MLE)`, `buy / sell · η = ${quant.hawkesBranchingRatio != null ? fmtNum(quant.hawkesBranchingRatio) : 'n/a'} (needs MLE)`)}
@@ -365,7 +370,7 @@ export const PositionSizer: React.FC<{ atr14: number; currentPrice: number }> = 
           { k: tr('Dźwignia efektywna', 'Effective leverage'), v: leverage !== null ? `${fmtFixed(leverage, 1)}×` : DASH },
         ].map((row) => (
           <div key={row.k} className="min-w-0">
-            <dt className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium truncate">{row.k}</dt>
+            <dt className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium leading-snug">{row.k}</dt>
             <dd className="font-mono tabular-nums text-base text-ink-1 truncate">{row.v}</dd>
           </div>
         ))}

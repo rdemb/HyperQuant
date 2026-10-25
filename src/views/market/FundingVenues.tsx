@@ -108,7 +108,7 @@ export const FundingVenues: React.FC = () => {
                     <span className="text-[11px] text-ink-3 truncate">
                       {v
                         ? `${wide ? tr(`co ${v.intervalH} h · `, `every ${v.intervalH} h · `) : ''}${v.nextFundingTime !== null ? fmtCountdown(v.nextFundingTime, now) : DASH}`
-                        : 'n/a'}
+                        : tr('b/d', 'n/a')}
                     </span>
                   </div>
                   <div
@@ -136,7 +136,7 @@ export const FundingVenues: React.FC = () => {
                     ) : (
                       plotW > 0 && (
                         <span className="absolute top-1/2 -translate-y-1/2 text-[11px] text-ink-3" style={{ left: zeroPx + 6 }}>
-                          n/a
+                          {tr('b/d', 'n/a')}
                         </span>
                       )
                     )}
@@ -166,7 +166,7 @@ export const FundingVenues: React.FC = () => {
           <Spread label="HL − Bybit" value={f.spreadHlBybitPp} />
           <div className="min-w-0 flex flex-col gap-1 col-span-2 sm:col-span-1">
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium truncate">{tr('Tłok HL (z vs 7 dni)', 'HL crowding (z vs 7 days)')}</span>
+              <span className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium min-w-0 leading-snug">{tr('Tłok HL (z vs 7 dni)', 'HL crowding (z vs 7 days)')}</span>
               <Badge
                 tone="model"
                 title={tr(
@@ -177,7 +177,7 @@ export const FundingVenues: React.FC = () => {
                 MODEL
               </Badge>
             </div>
-            <div className="text-xl font-semibold text-ink-1 leading-tight">{cm.fundingZ ? `${fmtSigned(cm.fundingZ.z, 2)}σ` : 'n/a'}</div>
+            <div className="text-xl font-semibold text-ink-1 leading-tight">{cm.fundingZ ? `${fmtSigned(cm.fundingZ.z, 2)}σ` : DASH}</div>
             <div className="text-[11px] text-ink-3 leading-snug">
               {cm.fundingZ
                 ? `${crowdText(cm.fundingZ.z)} n = ${cm.fundingZ.n} h, ${tr('średnia', 'mean')} ${fmtPct(cm.fundingZ.mean * 24 * 365 * 100, 1)} APR.`
@@ -267,7 +267,7 @@ const VenueTooltip: React.FC<{ v: VenueFunding; now: number; left: number }> = (
 const Spread: React.FC<{ label: string; value: number | null }> = ({ label, value }) => (
   <div className="min-w-0 flex flex-col gap-1">
     <span className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium truncate">Spread {label}</span>
-    <div className="text-xl font-semibold text-ink-1 leading-tight">{value === null ? 'n/a' : `${fmtSigned(value, 2)} pp`}</div>
+    <div className="text-xl font-semibold text-ink-1 leading-tight">{value === null ? DASH : `${fmtSigned(value, 2)} pp`}</div>
     <div className="text-[11px] text-ink-3 leading-snug">
       {value === null
         ? tr('brak stawki jednej ze stron', 'one side has no rate')
