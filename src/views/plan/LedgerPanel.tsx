@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Download, Trash2 } from 'lucide-react';
-import { Badge, EmptyState, Panel, Stat, fmtPrice } from '../../ui';
+import { Badge, EmptyState, Panel, Stat, fmtPrice, fmtFixed } from '../../ui';
 import { LedgerEntry, LedgerStatus, ReliabilityBin } from '../../utils/forecastLedger';
 import { PlanLedger } from './usePlanLedger';
 import { fmtMinutes } from './hooks';
@@ -15,7 +15,7 @@ const STATUS: Record<LedgerStatus, { icon: string; label: string; cls: string }>
   nofill: { icon: '∅', label: tr('niewykonany', 'not filled'), cls: 'text-ink-3' },
 };
 
-const fmt3 = (v: number | null) => (v === null ? '—' : v.toFixed(3));
+const fmt3 = (v: number | null) => (v === null ? '—' : fmtFixed(v, 3));
 const timeFmt = new Intl.DateTimeFormat(locale, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 
 /** Panel dziennika trafności: Brier, log score, liczność, wykres niezawodności, ostatnie wpisy; eksport i czyszczenie. */
@@ -160,7 +160,7 @@ const LedgerRow: React.FC<{ e: LedgerEntry }> = ({ e }) => {
         {e.direction} · {fmtMinutes(e.horizonMin)}
       </td>
       <td className="px-1 py-1.5 text-right">{fmtPrice(e.entry, 0)}</td>
-      <td className="px-1 py-1.5 text-right">{(e.pTarget * 100).toFixed(0)}%</td>
+      <td className="px-1 py-1.5 text-right">{fmtFixed(e.pTarget * 100, 0)}%</td>
       <td className={`px-1 py-1.5 text-right whitespace-nowrap ${st.cls}`}>
         <span aria-hidden="true">{st.icon}</span> {st.label}
       </td>
@@ -226,10 +226,10 @@ const ReliabilityChart: React.FC<{ bins: ReliabilityBin[] }> = ({ bins }) => {
             {tr('Koszyk', 'Bucket')} {Math.round(h.lo * 100)}–{Math.round(h.hi * 100)}%
           </div>
           <div>
-            {tr('prognoza', 'forecast')} {(h.meanForecast * 100).toFixed(1)}%
+            {tr('prognoza', 'forecast')} {fmtFixed(h.meanForecast * 100, 1)}%
           </div>
           <div>
-            {tr('częstość', 'frequency')} {(h.observed * 100).toFixed(1)}%
+            {tr('częstość', 'frequency')} {fmtFixed(h.observed * 100, 1)}%
           </div>
           <div>n = {h.n}</div>
         </div>

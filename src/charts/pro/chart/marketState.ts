@@ -78,7 +78,7 @@ const sign = (v: number): -1 | 0 | 1 => (v > 0 ? 1 : v < 0 ? -1 : 0);
 const round = (v: number, d: number) => Math.round(v * 10 ** d) / 10 ** d;
 const dec = (v: number, d: number) => numLang(Math.abs(v).toFixed(d));
 const signed = (v: number, d: number, unit: string) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${dec(v, d)}${unit}`;
-const usd = (v: number) => `${numLang(fmtCompact(v).replace(/\.0([KMB])$/, '$1'))} USD`;
+const usd = (v: number) => `${fmtCompact(v).replace(/[.,]0([KMB])$/, '$1')} USD`;
 /** „świeca”, „świece”, „świec” po liczbie. */
 const bars = (n: number) =>
   lang === 'en' ? (n === 1 ? 'candle' : 'candles') : n === 1 ? 'świeca' : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? 'świece' : 'świec';

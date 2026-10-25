@@ -16,6 +16,7 @@ import {
 import { GLOW, T3, T3_CSS, isNarrowViewport, labFov, labPixelRatio } from '../views/lab/tokens3d';
 import { DockPresets, DockSlider, DockToggle, HoverCard, HudButton, HudHeader, SCENE_FRAME, SceneDock } from '../views/lab/hud';
 import { tr } from '../i18n';
+import { fmtFixed, fmtPrice } from '../ui/format';
 
 // Scena „Liquidation Risk (szacunek)”: teren heurystycznego szacunku poziomów likwidacji (nie realne pozycje)
 interface ThreeQuantumRiskHeatmap3DProps {
@@ -594,8 +595,8 @@ export const ThreeQuantumRiskHeatmap3D: React.FC<
         beaconMesh.layers.enable(1);
 
         beaconMesh.userData = {
-          title: `${m.tag} · ${Math.round(m.price).toLocaleString('en-US')} ${m.isShortSqueeze ? '▲' : '▼'}`,
-          priceLevel: `${m.price.toFixed(1)} (${m.price >= spot ? '+' : '−'}${Math.abs(((m.price - spot) / spot) * 100).toFixed(2)}%)`,
+          title: `${m.tag} · ${fmtPrice(m.price, 0)} ${m.isShortSqueeze ? '▲' : '▼'}`,
+          priceLevel: `${fmtPrice(m.price, 1)} (${m.price >= spot ? '+' : '−'}${fmtFixed(Math.abs(((m.price - spot) / spot) * 100), 2)}%)`,
           strength: `${Math.round(m.intensity * 100)}% ${tr('maks.', 'of max')}`,
           leverageTier: m.leverageLabel,
           sideLabel: m.isShortSqueeze
@@ -885,7 +886,7 @@ export const ThreeQuantumRiskHeatmap3D: React.FC<
       <div ref={canvasMountRef} className="w-full h-full" />
 
       <HudHeader title={tr('Liquidation Risk (szacunek) · teren szacowanych poziomów likwidacji', 'Liquidation Risk (estimate) · terrain of estimated liquidation levels')}>
-        {tr('Najsilniejsze U(p)', 'Strongest U(p)')} {quant.primaryMagnetPrice.toLocaleString('en-US')} {magnetAbove ? '▲' : '▼'} ·{' '}
+        {tr('Najsilniejsze U(p)', 'Strongest U(p)')} {fmtPrice(quant.primaryMagnetPrice, 0)} {magnetAbove ? '▲' : '▼'} ·{' '}
         {tr('udział szacunku nad / pod ceną', 'share of the estimate above / below price')}{' '}
         {fuelAbovePct !== null ? `${fuelAbovePct}% / ${100 - fuelAbovePct}%` : '—'}
         <span className="flex items-center gap-2 pt-1 font-sans text-ink-3">
@@ -911,8 +912,8 @@ export const ThreeQuantumRiskHeatmap3D: React.FC<
                   `Liquidation Risk (estimate): strongest U(p) ${magnetAbove ? 'above' : 'below'} price`
                 ),
                 tr(
-                  `Poziom ${quant.primaryMagnetPrice} · udział szacunku nad/pod ceną ${fuelAbovePct !== null ? `${fuelAbovePct}%/${100 - fuelAbovePct}%` : 'n/a'} · szacunek z wolumenu, nie realne pozycje`,
-                  `Level ${quant.primaryMagnetPrice} · share of the estimate above/below price ${fuelAbovePct !== null ? `${fuelAbovePct}%/${100 - fuelAbovePct}%` : 'n/a'} · estimate from volume, not real positions`
+                  `Poziom ${fmtPrice(quant.primaryMagnetPrice, 0)} · udział szacunku nad/pod ceną ${fuelAbovePct !== null ? `${fuelAbovePct}%/${100 - fuelAbovePct}%` : 'n/a'} · szacunek z wolumenu, nie realne pozycje`,
+                  `Level ${fmtPrice(quant.primaryMagnetPrice, 0)} · share of the estimate above/below price ${fuelAbovePct !== null ? `${fuelAbovePct}%/${100 - fuelAbovePct}%` : 'n/a'} · estimate from volume, not real positions`
                 )
               )
             }
@@ -956,7 +957,7 @@ export const ThreeQuantumRiskHeatmap3D: React.FC<
             { id: 'topcontour', label: tr('Z góry', 'Top-down') },
           ]}
         />
-        <DockSlider label={tr('Wysokość', 'Height')} min={0.6} max={2.2} step={0.05} value={topoElevationGain} onChange={setTopoElevationGain} format={(v) => `${v.toFixed(2)}×`} />
+        <DockSlider label={tr('Wysokość', 'Height')} min={0.6} max={2.2} step={0.05} value={topoElevationGain} onChange={setTopoElevationGain} format={(v) => `${fmtFixed(v, 2)}×`} />
         <DockToggle on={showContourWireframe} onClick={() => setShowContourWireframe((v) => !v)}>
           {tr('Siatka', 'Wireframe')}
         </DockToggle>

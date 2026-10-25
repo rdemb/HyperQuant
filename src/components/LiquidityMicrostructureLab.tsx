@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { LiquidityProfileBucket, QuantMathMetrics, ShaakuniState } from '../types/trading';
-import { Badge, Panel, Stat, DASH, fmtCompact, fmtPct, fmtPrice, fmtSigned } from '../ui';
+import { Badge, Panel, Stat, DASH, fmtCompact, fmtPct, fmtPrice, fmtSigned, fmtFixed, fmtNum } from '../ui';
 import { PrefillButtons } from './QuantSignalDesk';
 import { tr } from '../i18n';
 
@@ -295,8 +295,8 @@ export const LiquidityMicrostructureLab: React.FC<{
           value={
             fuelAboveShare !== null ? (
               <span className="text-base">
-                <span aria-hidden="true">▲</span> {(fuelAboveShare * 100).toFixed(0)}% <span className="text-ink-3">/</span>{' '}
-                <span aria-hidden="true">▼</span> {((1 - fuelAboveShare) * 100).toFixed(0)}%
+                <span aria-hidden="true">▲</span> {fmtFixed(fuelAboveShare * 100, 0)}% <span className="text-ink-3">/</span>{' '}
+                <span aria-hidden="true">▼</span> {fmtFixed((1 - fuelAboveShare) * 100, 0)}%
               </span>
             ) : (
               DASH
@@ -322,7 +322,7 @@ export const LiquidityMicrostructureLab: React.FC<{
                 <span className="relative h-1.5 w-16 rounded-full bg-sell/70 overflow-hidden" aria-hidden="true">
                   <span className="absolute inset-y-0 left-0 bg-buy" style={{ width: `${(bidShare * 100).toFixed(0)}%` }} />
                 </span>
-                BID {(bidShare * 100).toFixed(0)}% · {tr('12 poz.', '12 lvls')}
+                BID {fmtFixed(bidShare * 100, 0)}% · {tr('12 poz.', '12 lvls')}
               </span>
             ) : (
               tr('czekam na arkusz', 'waiting for the book')
@@ -377,9 +377,9 @@ export const LiquidityMicrostructureLab: React.FC<{
               <dt className="text-ink-3 font-sans">Delta</dt>
               <dd className="text-right text-ink-1">{fmtCompact(hovered.deltaUsd, '$')}</dd>
               <dt className="text-ink-3 font-sans">{tr('Paliwo (szac.)', 'Fuel (est.)')}</dt>
-              <dd className="text-right text-ink-1">{maxFuel > 0 ? `${((hovered.liquidationPoolUsd / maxFuel) * 100).toFixed(0)}% ${tr('maks.', 'of max')}` : DASH}</dd>
+              <dd className="text-right text-ink-1">{maxFuel > 0 ? `${fmtFixed((hovered.liquidationPoolUsd / maxFuel) * 100, 0)}% ${tr('maks.', 'of max')}` : DASH}</dd>
               <dt className="text-ink-3 font-sans">U(p)</dt>
-              <dd className="text-right text-ink-1">{(hovered.gravityPotential * 100).toFixed(0)}%</dd>
+              <dd className="text-right text-ink-1">{fmtFixed(hovered.gravityPotential * 100, 0)}%</dd>
             </dl>
           </div>
         )}
@@ -466,7 +466,7 @@ export const MicrostructureMethods: React.FC<{
         'Compare the current VPIN with its distribution over recent sessions; a high percentile means unusually one-sided flow.'
       ),
       metricLabel: tr('VPIN · dywergencja spot/perp', 'VPIN · spot/perp divergence'),
-      metricValue: `${(quant.vpinToxicity * 100).toFixed(1)}% · ${quant.cvdDivergenceScore !== 0 ? fmtSigned(quant.cvdDivergenceScore * 100, 1, '%') : tr('n/a (bez CEX)', 'n/a (no CEX)')}`,
+      metricValue: `${fmtFixed(quant.vpinToxicity * 100, 1)}% · ${quant.cvdDivergenceScore !== 0 ? fmtSigned(quant.cvdDivergenceScore * 100, 1, '%') : tr('n/a (bez CEX)', 'n/a (no CEX)')}`,
     },
     {
       id: 'kyle',
@@ -482,7 +482,7 @@ export const MicrostructureMethods: React.FC<{
         'Compare λ at different times of day and before macro releases; a rising λ means a market that is easier to push.'
       ),
       metricLabel: tr('λ · głębokość BID / ASK', 'λ · BID / ASK depth'),
-      metricValue: `${quant.kyleLambdaPer1M !== null ? `$${quant.kyleLambdaPer1M.toFixed(2)} / $1M` : 'n/a'} · ${fmtCompact(quant.bookDepthBidUsd, '$')} / ${fmtCompact(quant.bookDepthAskUsd, '$')}`,
+      metricValue: `${quant.kyleLambdaPer1M !== null ? `$${fmtFixed(quant.kyleLambdaPer1M, 2)} / $1M` : 'n/a'} · ${fmtCompact(quant.bookDepthBidUsd, '$')} / ${fmtCompact(quant.bookDepthAskUsd, '$')}`,
     },
     {
       id: 'hawkes',
@@ -495,7 +495,7 @@ export const MicrostructureMethods: React.FC<{
       ),
       check: tr('Obserwuj skoki intensywności przy testach PDH/PDL i notuj, czy ruch był kontynuowany, czy wygasł.', 'Watch intensity spikes at PDH/PDL tests and note whether the move continued or faded.'),
       metricLabel: tr('λ kupno / sprzedaż · η', 'λ buy / sell · η'),
-      metricValue: `${quant.hawkesBuyIntensity.toFixed(2)} / ${quant.hawkesSellIntensity.toFixed(2)} · η = ${quant.hawkesBranchingRatio ?? 'n/a'}`,
+      metricValue: `${fmtFixed(quant.hawkesBuyIntensity, 2)} / ${fmtFixed(quant.hawkesSellIntensity, 2)} · η = ${quant.hawkesBranchingRatio != null ? fmtNum(quant.hawkesBranchingRatio) : 'n/a'}`,
     },
     {
       id: 'ou',
@@ -508,7 +508,7 @@ export const MicrostructureMethods: React.FC<{
       ),
       check: tr('Czytaj t½ razem z Hurstem: H > 0,6 przy dużym |Z| przemawia przeciw założeniu powrotu.', 'Read t½ together with Hurst: H > 0.6 with a large |Z| argues against the reversion assumption.'),
       metricLabel: 'Z · t½',
-      metricValue: `Z ${fmtSigned(quant.ouZScore, 2)}σ · t½ ${Number.isFinite(quant.ouHalfLifeBars) ? `${quant.ouHalfLifeBars.toFixed(1)} ${tr('świec', 'candles')}` : '∞'} · D-EQ ${fmtPrice(shaakuni.deq, 0)}`,
+      metricValue: `Z ${fmtSigned(quant.ouZScore, 2)}σ · t½ ${Number.isFinite(quant.ouHalfLifeBars) ? `${fmtFixed(quant.ouHalfLifeBars, 1)} ${tr('świec', 'candles')}` : '∞'} · D-EQ ${fmtPrice(shaakuni.deq, 0)}`,
     },
   ];
   const sel = methods.find((m) => m.id === selectedId) ?? methods[0];

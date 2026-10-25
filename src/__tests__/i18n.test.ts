@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { detectLang, lang, tr } from '../i18n';
 import { fmtPx } from '../charts/pro/chart/layout';
-import { numLang } from '../ui/format';
+import { fmtFixed, fmtNum, numLang } from '../ui/format';
 
 describe('detectLang', () => {
   it('zapisany wybór ma pierwszeństwo przed przeglądarką', () => {
@@ -35,5 +35,8 @@ describe('numLang', () => {
     expect(numLang('+1.2K')).toBe('+1,2K');
     expect(numLang('—')).toBe('—');
     expect(fmtPx(80_768.4)).toBe('80\u00a0768');
+    expect(fmtNum(-3.85)).toBe('−3,85');
+    expect(fmtFixed(-23.84, 1)).toBe('−23,8');
+    expect(fmtFixed(18_048.66, 1)).toBe('18\u00a0048,7');
   });
 });

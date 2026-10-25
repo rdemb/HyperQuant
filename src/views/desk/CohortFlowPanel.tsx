@@ -1,7 +1,7 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { scaleLinear } from 'd3';
 import { useCohortFlow } from '../../state/useCohortFlow';
-import { Badge, EmptyState, Panel, Segmented, Stat, DASH, fmtCompact, fmtSigned } from '../../ui';
+import { Badge, EmptyState, Panel, Segmented, Stat, DASH, fmtCompact, fmtSigned, fmtFixed } from '../../ui';
 import { COHORTS, COHORT_LABEL, CohortFlow, CohortId, CohortTotal, cumulativeNet } from '../../utils/cohorts';
 import { useElementWidth } from '../market/MarketMap';
 import { locale, tr } from '../../i18n';
@@ -145,7 +145,7 @@ const FlowBody: React.FC<{ flow: CohortFlow; mode: Mode; setMode: (m: Mode) => v
             `"Informed": addresses whose 5-min taker markout is significantly positive. The unit of observation is an address's 5-min block, so one order sweeping many makers counts once. The one-sided test covers addresses with at least ${inf.minN} blocks, with false discovery rate control (Benjamini–Hochberg, q = ${Math.round(inf.fdrQ * 100)}%) and a positive posterior mean under empirical Bayes. Candidates ${approx(inf.candidates)}, selected ${approx(inf.selected)}`
           )}
           {inf.mu0Bp !== null
-            ? ` · ${tr('średnia populacji', 'population mean')} ${bp(inf.mu0Bp)}, ${tr('rozrzut umiejętności', 'skill dispersion')} ${inf.tauBp === null ? DASH : `${inf.tauBp.toFixed(1)} bp`}`
+            ? ` · ${tr('średnia populacji', 'population mean')} ${bp(inf.mu0Bp)}, ${tr('rozrzut umiejętności', 'skill dispersion')} ${inf.tauBp === null ? DASH : `${fmtFixed(inf.tauBp, 1)} bp`}`
             : ''}
           {inf.classifiedAt !== null
             ? ` · ${tr('klasyfikacja', 'classified')} ${timeFmt.format(inf.classifiedAt)}`

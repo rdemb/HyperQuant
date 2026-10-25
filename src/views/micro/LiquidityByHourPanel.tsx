@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { useLiquidityProfile } from '../../state/useLiquidityProfile';
-import { Badge, EmptyState, Panel, Segmented, Stat, DASH, fmtCompact } from '../../ui';
+import { Badge, EmptyState, Panel, Segmented, Stat, DASH, fmtCompact, fmtFixed } from '../../ui';
 import { costByHour, nowCost } from '../../utils/execCost';
 import type { LiquidityProfile } from '../../utils/liquidity';
 import { DEFAULT_TAKER_FEE } from '../../utils/planAnalyzer';
@@ -124,7 +124,7 @@ const Body: React.FC<{ p: LiquidityProfile }> = ({ p }) => {
 };
 
 const SIZES = [250_000, 1_000_000, 5_000_000, 25_000_000] as const;
-const bp = (v: number | null) => (v === null ? DASH : `${v.toFixed(v < 1 ? 2 : 1)} bp`);
+const bp = (v: number | null) => (v === null ? DASH : `${fmtFixed(v, v < 1 ? 2 : 1)} bp`);
 
 /**
  * Koszt wykonania zlecenia rynkowego wybranej wielkości wg godziny UTC: poślizg z krzywej głębokości strony arkusza
@@ -189,8 +189,8 @@ const ExecCost: React.FC<{ p: LiquidityProfile; nowHour: number | null }> = ({ p
       </div>
       <p className="text-[11px] text-ink-3 leading-relaxed">
         {tr(
-          `Średni poślizg od środka ceny przy natychmiastowym zjedzeniu arkusza: głębokość strony rośnie liniowo do ±10 i ±20 bp (mediany rejestratora${hasSides ? ', osobno bidy i aski' : ', połowa sumy obu stron'}), dalej zgodnie z prawem pierwiastka kwadratowego wpływu ceny (Tóth i in. 2011; Bouchaud i in. 2018) skalibrowanym na ±20 bp. Do tego opłata takera Hyperliquid (poziom bazowy ${(fee * 100).toFixed(3)}%). Jaśniejszy słupek: warunki cienkie (25. percentyl głębokości tej godziny). Słupki pokazują sam poślizg — opłata jest stała. Widoczne zlecenia — bez ukrytych; duże zlecenie przesuwa arkusz i cenę bardziej, niż pokazuje statyczna krzywa. Szacunek kosztu, nie rekomendacja pory transakcji.`,
-          `Average slippage from the mid when eating the book at once: side depth grows linearly to ±10 and ±20 bp (recorder medians${hasSides ? ', bids and asks separately' : ', half the sum of both sides'}), and beyond that per the square-root law of price impact (Tóth et al. 2011; Bouchaud et al. 2018) calibrated at ±20 bp. Plus the Hyperliquid taker fee (base tier ${(fee * 100).toFixed(3)}%). Lighter bar: thin conditions (25th percentile of depth for that hour). The bars show slippage alone; the fee is constant. Visible orders only, no hidden ones; a large order moves the book and price more than the static curve shows. A cost estimate, not a recommendation on when to trade.`
+          `Średni poślizg od środka ceny przy natychmiastowym zjedzeniu arkusza: głębokość strony rośnie liniowo do ±10 i ±20 bp (mediany rejestratora${hasSides ? ', osobno bidy i aski' : ', połowa sumy obu stron'}), dalej zgodnie z prawem pierwiastka kwadratowego wpływu ceny (Tóth i in. 2011; Bouchaud i in. 2018) skalibrowanym na ±20 bp. Do tego opłata takera Hyperliquid (poziom bazowy ${fmtFixed(fee * 100, 3)}%). Jaśniejszy słupek: warunki cienkie (25. percentyl głębokości tej godziny). Słupki pokazują sam poślizg — opłata jest stała. Widoczne zlecenia — bez ukrytych; duże zlecenie przesuwa arkusz i cenę bardziej, niż pokazuje statyczna krzywa. Szacunek kosztu, nie rekomendacja pory transakcji.`,
+          `Average slippage from the mid when eating the book at once: side depth grows linearly to ±10 and ±20 bp (recorder medians${hasSides ? ', bids and asks separately' : ', half the sum of both sides'}), and beyond that per the square-root law of price impact (Tóth et al. 2011; Bouchaud et al. 2018) calibrated at ±20 bp. Plus the Hyperliquid taker fee (base tier ${fmtFixed(fee * 100, 3)}%). Lighter bar: thin conditions (25th percentile of depth for that hour). The bars show slippage alone; the fee is constant. Visible orders only, no hidden ones; a large order moves the book and price more than the static curve shows. A cost estimate, not a recommendation on when to trade.`
         )}
       </p>
     </section>
@@ -220,7 +220,7 @@ const CostBars: React.FC<{ typ: { h: number; slipBp: number | null; totalBp: num
             <g key={f}>
               <line x1={pad.l} x2={width - pad.r} y1={y(max * f)} y2={y(max * f)} stroke="var(--color-line)" />
               <text x={pad.l - 4} y={y(max * f) + 3} textAnchor="end" className="fill-ink-3 font-mono" fontSize={9}>
-                {(max * f).toFixed(max < 1 ? 2 : 1)} bp
+                {fmtFixed(max * f, max < 1 ? 2 : 1)} bp
               </text>
             </g>
           ))}

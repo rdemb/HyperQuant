@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { ChevronUp, ChevronsUp, ExternalLink } from 'lucide-react';
-import { Badge, EmptyState, Panel, fmtCountdown } from '../../ui';
+import { Badge, EmptyState, Panel, fmtCountdown, fmtFixed } from '../../ui';
 import {
   MACRO_EVENTS,
   MacroEvent,
@@ -114,7 +114,7 @@ export const MacroCalendar: React.FC = () => {
                     <span>{fmtEventEt(e.timeUtcMs)}</span>
                     <span aria-hidden="true">·</span>
                     <span className="font-mono tabular-nums" title={tr('Mnożnik wariancji okna z publikacją (prior do kalibracji)', 'Variance multiplier of a window with a release (prior to be calibrated)')}>
-                      σ² ×{eventVolMultiplier(e).toFixed(2)}
+                      σ² ×{fmtFixed(eventVolMultiplier(e), 2)}
                     </span>
                     {soon && dt > 0 && <Badge tone="warn">&lt; 24 h</Badge>}
                     <a

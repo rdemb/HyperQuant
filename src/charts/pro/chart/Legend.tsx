@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useSyncExternalStore } from 'react';
 import { fmtVol } from '../../orderflow/footprint';
 import { fmtSignedVol } from '../../orderflow/renderer';
-import { DASH, numLang } from '../../../ui';
+import { DASH, fmtFixed, numLang } from '../../../ui';
 import { fmtBarTime, fmtSince } from '../core/time';
 import type { Hover } from './controller';
 import { fmtPx } from './layout';
@@ -184,7 +184,7 @@ export const Legend: React.FC<{
         <div className="hidden sm:flex flex-wrap items-baseline gap-x-2.5">
           <Field label="Δ" className={tone(fp.delta)} title={tr(`Delta: kupno agresywne − sprzedaż agresywna (${coin})`, `Delta: aggressive buying − aggressive selling (${coin})`)}>
             {fmtSignedVol(fp.delta)}
-            {fpVol > 0 && <span className="text-ink-3"> ({((fp.delta / fpVol) * 100).toFixed(0)}%)</span>}
+            {fpVol > 0 && <span className="text-ink-3"> ({fmtFixed((fp.delta / fpVol) * 100, 0)}%)</span>}
           </Field>
           <Field label="max" className={tone(fp.maxDelta)} title={tr('Najwyższa delta w trakcie świecy', 'Highest delta during the candle')} secondary>
             {fmtSignedVol(fp.maxDelta)}

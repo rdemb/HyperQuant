@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { scaleLinear } from 'd3';
 import { McResult, PathOutcome } from '../../utils/planAnalyzer';
-import { fmtPrice } from '../../ui';
+import { fmtPrice, fmtFixed } from '../../ui';
 import { fmtMinutes } from './hooks';
 import { tr } from '../../i18n';
 
@@ -33,7 +33,7 @@ function useWidth<T extends HTMLElement>(): [React.RefObject<T | null>, number] 
   return [ref, w];
 }
 
-const fmtAxisMin = (m: number) => (m === 0 ? '0' : m < 60 ? `${m}m` : m % 60 === 0 ? `${m / 60}h` : `${(m / 60).toFixed(1)}h`);
+const fmtAxisMin = (m: number) => (m === 0 ? '0' : m < 60 ? `${m}m` : m % 60 === 0 ? `${m / 60}h` : `${fmtFixed(m / 60, 1)}h`);
 
 /**
  * Wachlarz ścieżek Monte Carlo: ~18 próbek (cienkie linie wg wyniku), pasmo P10–P90 i mediana,
@@ -182,7 +182,7 @@ export const PathFan: React.FC<PathFanProps> = ({ mc, entry, stop, target, heigh
             </div>
             <div>P10 {fmtPrice(hb.p10, 0)}</div>
             <div className="mt-0.5 text-ink-3">
-              {tr('do t: + cel', 'by t: + target')} {(hitByTime[hover].target * 100).toFixed(0)}% · − stop {(hitByTime[hover].stop * 100).toFixed(0)}%
+              {tr('do t: + cel', 'by t: + target')} {fmtFixed(hitByTime[hover].target * 100, 0)}% · − stop {fmtFixed(hitByTime[hover].stop * 100, 0)}%
             </div>
           </div>
         )}

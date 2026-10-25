@@ -17,6 +17,7 @@ import {
 import { GLOW, T3, T3_CSS, isNarrowViewport, labFov, labPixelRatio } from '../views/lab/tokens3d';
 import { DockPresets, DockSlider, DockToggle, HoverCard, HudButton, HudHeader, SCENE_FRAME, SceneDock } from '../views/lab/hud';
 import { tr } from '../i18n';
+import { fmtFixed, fmtNum, fmtPrice } from '../ui/format';
 
 interface ThreeDeltaFluidField3DProps {
   bars: OHLCVBar[];
@@ -457,14 +458,14 @@ export const ThreeDeltaFluidField3D: React.FC<ThreeDeltaFluidField3DProps> = ({
       const shockTubeMesh = new THREE.Mesh(shockTubeGeo, shockTubeMat);
       shockTubeMesh.layers.enable(1);
       shockTubeMesh.userData = {
-        title: tr(`Linia styku · cena ${curPx.toFixed(1)}`, `Contact line · price ${curPx.toFixed(1)}`),
+        title: tr(`Linia styku · cena ${fmtFixed(curPx, 1)}`, `Contact line · price ${fmtFixed(curPx, 1)}`),
         subtitle: tr(
-          `Przewaga netto (Hawkes) ${(curQuant.hawkesNetDominance * 100).toFixed(1)}% · kupno/sprzedaż ${curOfi.overallBuySellRatio}×`,
-          `Net edge (Hawkes) ${(curQuant.hawkesNetDominance * 100).toFixed(1)}% · buy/sell ${curOfi.overallBuySellRatio}×`
+          `Przewaga netto (Hawkes) ${fmtFixed(curQuant.hawkesNetDominance * 100, 1)}% · kupno/sprzedaż ${fmtNum(curOfi.overallBuySellRatio)}×`,
+          `Net edge (Hawkes) ${fmtFixed(curQuant.hawkesNetDominance * 100, 1)}% · buy/sell ${fmtNum(curOfi.overallBuySellRatio)}×`
         ),
-        buyPressurePsi: `λ ${curQuant.hawkesBuyIntensity.toFixed(2)}`,
-        sellPressurePsi: `λ ${curQuant.hawkesSellIntensity.toFixed(2)}`,
-        netDeltaUsd: `OFI ${curOfi.overallOfiPct >= 0 ? '+' : ''}${curOfi.overallOfiPct}%`,
+        buyPressurePsi: `λ ${fmtFixed(curQuant.hawkesBuyIntensity, 2)}`,
+        sellPressurePsi: `λ ${fmtFixed(curQuant.hawkesSellIntensity, 2)}`,
+        netDeltaUsd: `OFI ${curOfi.overallOfiPct >= 0 ? '+' : ''}${fmtNum(curOfi.overallOfiPct)}%`,
         accentColor: T3_CSS.ink2,
       };
       shockLineGroup.add(shockTubeMesh);
@@ -502,11 +503,11 @@ export const ThreeDeltaFluidField3D: React.FC<ThreeDeltaFluidField3DProps> = ({
         nodeMesh.position.set(x, -3.2 + h * 0.5, z);
         nodeMesh.layers.enable(1);
         nodeMesh.userData = {
-          title: `${tr('Poziom', 'Level')} ${t.price.toFixed(1)} (${t.side}) ${t.ofiNormalized >= 0 ? '▲' : '▼'}`,
-          subtitle: tr(`Kupno/sprzedaż ${t.buySellRatio.toFixed(2)}× · wyczerpanie ${t.exhaustionScore}%`, `Buy/sell ${t.buySellRatio.toFixed(2)}× · exhaustion ${t.exhaustionScore}%`),
-          buyPressurePsi: `$${(t.aggressiveBuyUsd / 1000).toFixed(0)}K`,
-          sellPressurePsi: `$${(t.aggressiveSellUsd / 1000).toFixed(0)}K`,
-          netDeltaUsd: `${t.deltaUsd >= 0 ? '+' : '−'}$${(Math.abs(t.deltaUsd) / 1000).toFixed(0)}K`,
+          title: `${tr('Poziom', 'Level')} ${fmtPrice(t.price, 1)} (${t.side}) ${t.ofiNormalized >= 0 ? '▲' : '▼'}`,
+          subtitle: tr(`Kupno/sprzedaż ${fmtFixed(t.buySellRatio, 2)}× · wyczerpanie ${t.exhaustionScore}%`, `Buy/sell ${fmtFixed(t.buySellRatio, 2)}× · exhaustion ${t.exhaustionScore}%`),
+          buyPressurePsi: `$${fmtFixed(t.aggressiveBuyUsd / 1000, 0)}K`,
+          sellPressurePsi: `$${fmtFixed(t.aggressiveSellUsd / 1000, 0)}K`,
+          netDeltaUsd: `${t.deltaUsd >= 0 ? '+' : '−'}$${fmtFixed(Math.abs(t.deltaUsd) / 1000, 0)}K`,
           accentColor:
             t.exhaustionState !== 'NONE'
               ? '#eef2f7'
@@ -895,9 +896,9 @@ export const ThreeDeltaFluidField3D: React.FC<ThreeDeltaFluidField3DProps> = ({
       <div ref={canvasMountRef} className="w-full h-full" />
 
       <HudHeader title={tr('Delta Fluid · presja agresywnych kupujących vs sprzedających', 'Delta Fluid · pressure of aggressive buyers vs sellers')}>
-        λ {tr('kupno', 'buy')} <span className="text-buy-ink">▲ {quant.hawkesBuyIntensity.toFixed(2)}</span> · λ {tr('sprzedaż', 'sell')}{' '}
-        <span className="text-sell-ink">▼ {quant.hawkesSellIntensity.toFixed(2)}</span> · OFI {ofiSummary.overallOfiPct >= 0 ? '+' : ''}
-        {ofiSummary.overallOfiPct}% ({ofiSummary.overallBuySellRatio}× {tr('K/S', 'B/S')})
+        λ {tr('kupno', 'buy')} <span className="text-buy-ink">▲ {fmtFixed(quant.hawkesBuyIntensity, 2)}</span> · λ {tr('sprzedaż', 'sell')}{' '}
+        <span className="text-sell-ink">▼ {fmtFixed(quant.hawkesSellIntensity, 2)}</span> · OFI {ofiSummary.overallOfiPct >= 0 ? '+' : ''}
+        {fmtNum(ofiSummary.overallOfiPct)}% ({fmtNum(ofiSummary.overallBuySellRatio)}× {tr('K/S', 'B/S')})
         <span className="block text-ink-3 font-sans">
           {tr('Lewo: kupno · prawo: sprzedaż · jasna linia: styk stron. Fale są efektem wizualnym.', 'Left: buy · right: sell · bright line: where the sides meet. The waves are a visual effect.')}
         </span>
@@ -911,9 +912,9 @@ export const ThreeDeltaFluidField3D: React.FC<ThreeDeltaFluidField3DProps> = ({
               onTriggerFluidSignal(
                 fluidIsBull ? 'LONG' : 'SHORT',
                 tr(`Delta Fluid: przewaga ${fluidIsBull ? 'kupujących' : 'sprzedających'}`, `Delta Fluid: ${fluidIsBull ? 'buyers' : 'sellers'} dominate`),
-                `${tr('Kupno/sprzedaż', 'Buy/sell')} ${ofiSummary.overallBuySellRatio}× · OFI ${ofiSummary.overallOfiPct}% · ${tr('η Hawkesa', 'Hawkes η')} ${
+                `${tr('Kupno/sprzedaż', 'Buy/sell')} ${fmtNum(ofiSummary.overallBuySellRatio)}× · OFI ${fmtNum(ofiSummary.overallOfiPct)}% · ${tr('η Hawkesa', 'Hawkes η')} ${
                   // null = współczynnik rozgałęzienia nieestymowany → "n/a"
-                  quant.hawkesBranchingRatio !== null ? quant.hawkesBranchingRatio.toFixed(2) : 'n/a'
+                  quant.hawkesBranchingRatio !== null ? fmtFixed(quant.hawkesBranchingRatio, 2) : 'n/a'
                 }`
               )
             }
@@ -957,8 +958,8 @@ export const ThreeDeltaFluidField3D: React.FC<ThreeDeltaFluidField3DProps> = ({
             { id: 'topmap', label: tr('Z góry', 'Top-down') },
           ]}
         />
-        <DockSlider label={tr('Wzmocnienie (wizualne)', 'Gain (visual)')} min={0.5} max={2.4} step={0.05} value={pressureGain} onChange={setPressureGain} format={(v) => `${v.toFixed(2)}×`} />
-        <DockSlider label={tr('Tłumienie (wizualne)', 'Damping (visual)')} min={0.1} max={1} step={0.05} value={viscosityDamping} onChange={setViscosityDamping} format={(v) => v.toFixed(2)} />
+        <DockSlider label={tr('Wzmocnienie (wizualne)', 'Gain (visual)')} min={0.5} max={2.4} step={0.05} value={pressureGain} onChange={setPressureGain} format={(v) => `${fmtFixed(v, 2)}×`} />
+        <DockSlider label={tr('Tłumienie (wizualne)', 'Damping (visual)')} min={0.1} max={1} step={0.05} value={viscosityDamping} onChange={setViscosityDamping} format={(v) => fmtFixed(v, 2)} />
         <DockToggle on={dofEnabled} onClick={() => setDofEnabled((v) => !v)}>
           <Focus className="w-3 h-3" aria-hidden="true" /> {tr('Głębia ostrości', 'Depth of field')}
         </DockToggle>

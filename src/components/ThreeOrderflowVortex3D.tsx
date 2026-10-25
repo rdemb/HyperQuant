@@ -16,6 +16,7 @@ import {
 import { GLOW, T3, T3_CSS, isNarrowViewport, labFov, labPixelRatio } from '../views/lab/tokens3d';
 import { DockPresets, DockSlider, DockToggle, HoverCard, HudButton, HudHeader, SCENE_FRAME, SceneDock } from '../views/lab/hud';
 import { tr } from '../i18n';
+import { fmtFixed, fmtNum, fmtPrice } from '../ui/format';
 
 interface ThreeOrderflowVortex3DProps {
   latestBar: OHLCVBar;
@@ -493,12 +494,12 @@ export const ThreeOrderflowVortex3D: React.FC<ThreeOrderflowVortex3DProps> = ({
       // Brak telemetrii backendu → "—" zamiast zakodowanych na sztywno wartości wyglądających na live
       innerCoreMesh.userData = {
         title: `Hyperliquid BTC-PERP · mark / oracle`,
-        subtitle: `Mid: $${curPrice.toFixed(1)} · Oracle: ${
-          curBackend ? `$${curBackend.oraclePrice.toFixed(1)}` : '—'
-        } · Basis: ${curBackend ? `${curBackend.basisBps} bps` : '—'}`,
+        subtitle: `Mid: $${fmtPrice(curPrice, 1)} · Oracle: ${
+          curBackend ? `$${fmtPrice(curBackend.oraclePrice, 1)}` : '—'
+        } · Basis: ${curBackend ? `${fmtNum(curBackend.basisBps)} bps` : '—'}`,
         metricLabel: 'Open interest · funding (APR)',
         metricValue: curBackend
-          ? `$${(curBackend.openInterestUsd / 1e9).toFixed(2)}B OI · ${
+          ? `$${fmtFixed(curBackend.openInterestUsd / 1e9, 2)}B OI · ${
               curBackend.fundingAnnualizedPct
             }% APR`
           : '— OI · — APR',
@@ -540,14 +541,14 @@ export const ThreeOrderflowVortex3D: React.FC<ThreeOrderflowVortex3DProps> = ({
           title: `${venue.name}${hasData ? (isNetBuy ? ' ▲' : ' ▼') : ''}`,
           subtitle: hasData
             ? tr(
-                `Bieżąca świeca · kupno $${(exVol.vbuy / 1000).toFixed(0)}K · sprzedaż $${(exVol.vsell / 1000).toFixed(0)}K`,
-                `Current candle · buy $${(exVol.vbuy / 1000).toFixed(0)}K · sell $${(exVol.vsell / 1000).toFixed(0)}K`
+                `Bieżąca świeca · kupno $${fmtFixed(exVol.vbuy / 1000, 0)}K · sprzedaż $${fmtFixed(exVol.vsell / 1000, 0)}K`,
+                `Current candle · buy $${fmtFixed(exVol.vbuy / 1000, 0)}K · sell $${fmtFixed(exVol.vsell / 1000, 0)}K`
               )
             : id === 'HYPERLIQUID'
             ? tr('Brak transakcji w bieżącej świecy', 'No trades in the current candle')
             : tr('Brak danych — źródła CEX są wyłączone (opt-in w Źródłach)', 'No data: CEX sources are off (opt-in in Sources)'),
           metricLabel: tr('Delta netto', 'Net delta'),
-          metricValue: hasData ? `${delta >= 0 ? '+' : '−'}$${(Math.abs(delta) / 1000).toFixed(0)}K` : '—',
+          metricValue: hasData ? `${delta >= 0 ? '+' : '−'}$${fmtFixed(Math.abs(delta) / 1000, 0)}K` : '—',
           accentColor: !hasData ? T3_CSS.ink3 : isNetBuy ? T3_CSS.buy : T3_CSS.sell,
         };
       });
@@ -612,9 +613,9 @@ export const ThreeOrderflowVortex3D: React.FC<ThreeOrderflowVortex3DProps> = ({
         pillarMesh.layers.enable(1);
         pillarMesh.userData = {
           title: `${tr('Arkusz HL', 'HL book')} · ${isBid ? 'BID ▲' : 'ASK ▼'} · ${WHALE_PATTERN_PL[w.pattern] ?? tr('Duże zlecenie', 'Large order')}`,
-          subtitle: tr(`Cena ${w.price.toFixed(1)} · liczba zleceń na poziomie: ${w.orderCount}`, `Price ${w.price.toFixed(1)} · orders at the level: ${w.orderCount}`),
+          subtitle: tr(`Cena ${fmtPrice(w.price, 1)} · liczba zleceń na poziomie: ${w.orderCount}`, `Price ${fmtPrice(w.price, 1)} · orders at the level: ${w.orderCount}`),
           metricLabel: tr('Płynność na poziomie', 'Liquidity at the level'),
-          metricValue: `${w.sizeBtc} BTC ($${(w.sizeUsd / 1000).toFixed(0)}K)`,
+          metricValue: `${fmtNum(w.sizeBtc)} BTC ($${fmtFixed(w.sizeUsd / 1000, 0)}K)`,
           accentColor: isBid ? T3_CSS.buy : T3_CSS.sell,
         };
         whaleIcebergsGroup.add(pillarMesh);
@@ -891,13 +892,13 @@ export const ThreeOrderflowVortex3D: React.FC<ThreeOrderflowVortex3DProps> = ({
 
       <HudHeader title={tr('Orderflow Vortex · przepływ agresora per giełda (bieżąca świeca)', 'Orderflow Vortex · aggressor flow per exchange (current candle)')}>
         {/* Brak telemetrii → „—” zamiast wartości wyglądających na live */}
-        OI {backendTelemetry ? `$${(backendTelemetry.openInterestUsd / 1e9).toFixed(2)}B` : '—'} · Funding{' '}
-        {backendTelemetry ? `${backendTelemetry.fundingAnnualizedPct}% APR` : '—'} · Basis{' '}
-        {backendTelemetry ? `${backendTelemetry.basisBps} bps` : '—'}
+        OI {backendTelemetry ? `$${fmtFixed(backendTelemetry.openInterestUsd / 1e9, 2)}B` : '—'} · Funding{' '}
+        {backendTelemetry ? `${fmtNum(backendTelemetry.fundingAnnualizedPct)}% APR` : '—'} · Basis{' '}
+        {backendTelemetry ? `${fmtNum(backendTelemetry.basisBps)} bps` : '—'}
         {mc && (
           <span className="block text-ink-3">
-            {tr('Monte Carlo (model), dotknięcie w 2 h', 'Monte Carlo (model), touch within 2 h')}: D-EQ {mc.probTouchDEQ2h}% ({formatFirstPassageMins(mc.expectedMinsToDEQ)}) · PDH{' '}
-            {mc.probTouchPDH2h}% ({formatFirstPassageMins(mc.expectedMinsToPDH)}) · PDL {mc.probTouchPDL2h}% (
+            {tr('Monte Carlo (model), dotknięcie w 2 h', 'Monte Carlo (model), touch within 2 h')}: D-EQ {fmtNum(mc.probTouchDEQ2h)}% ({formatFirstPassageMins(mc.expectedMinsToDEQ)}) · PDH{' '}
+            {fmtNum(mc.probTouchPDH2h)}% ({formatFirstPassageMins(mc.expectedMinsToPDH)}) · PDL {fmtNum(mc.probTouchPDL2h)}% (
             {formatFirstPassageMins(mc.expectedMinsToPDL)})
           </span>
         )}
@@ -938,7 +939,7 @@ export const ThreeOrderflowVortex3D: React.FC<ThreeOrderflowVortex3DProps> = ({
         <DockToggle on={showMonteCarloFan} onClick={() => setShowMonteCarloFan((v) => !v)}>
           <Cpu className="w-3 h-3" aria-hidden="true" /> {tr('Ścieżki MC', 'MC paths')}
         </DockToggle>
-        <DockSlider label={tr('Tempo impulsów', 'Pulse speed')} min={0.3} max={3} step={0.1} value={pulseSpeed} onChange={setPulseSpeed} format={(v) => `${v.toFixed(1)}×`} />
+        <DockSlider label={tr('Tempo impulsów', 'Pulse speed')} min={0.3} max={3} step={0.1} value={pulseSpeed} onChange={setPulseSpeed} format={(v) => `${fmtFixed(v, 1)}×`} />
         <DockToggle on={dofEnabled} onClick={() => setDofEnabled((v) => !v)}>
           <Focus className="w-3 h-3" aria-hidden="true" /> {tr('Głębia ostrości', 'Depth of field')}
         </DockToggle>

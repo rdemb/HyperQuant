@@ -1,7 +1,7 @@
 import React from 'react';
 import { useDesk } from '../../state/DeskContext';
 import { useAuctionContext, type AuctionContext } from '../../state/useAuctionContext';
-import { Badge, EmptyState, Panel, DASH, fmtPrice } from '../../ui';
+import { Badge, EmptyState, Panel, DASH, fmtPrice, fmtFixed } from '../../ui';
 import type { OpenLoc, Rate } from '../../utils/auction';
 import { locale, tr } from '../../i18n';
 
@@ -96,7 +96,7 @@ function levels(ctx: AuctionContext, price: number | null): Level[] {
       { label: ctx.ib.done ? 'IB low' : tr('IB low (w trakcie)', 'IB low (forming)'), px: ctx.ib.lo, tone: 'ib' }
     );
     if (ctx.ib.done && r > 0) {
-      out.push({ label: 'IB +1,5×', px: ctx.ib.lo + 1.5 * r, tone: 'ib' }, { label: 'IB −1,5×', px: ctx.ib.hi - 1.5 * r, tone: 'ib' });
+      out.push({ label: tr('IB +1,5×', 'IB +1.5×'), px: ctx.ib.lo + 1.5 * r, tone: 'ib' }, { label: tr('IB −1,5×', 'IB −1.5×'), px: ctx.ib.hi - 1.5 * r, tone: 'ib' });
       out.push({ label: 'IB +2×', px: ctx.ib.lo + 2 * r, tone: 'ib' }, { label: 'IB −2×', px: ctx.ib.hi - 2 * r, tone: 'ib' });
     }
   }
@@ -136,7 +136,7 @@ const Body: React.FC<{ ctx: AuctionContext; price: number | null }> = ({ ctx, pr
           <div className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium mb-2">{tr('Poziomy', 'Levels')}</div>
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-2 mb-2">
             <span>
-              {tr('cena vs VWAP', 'price vs VWAP')}: <span className="font-mono tabular-nums text-ink-1">{z === null ? DASH : `${z >= 0 ? '+' : '−'}${Math.abs(z).toFixed(1)}σ`}</span>
+              {tr('cena vs VWAP', 'price vs VWAP')}: <span className="font-mono tabular-nums text-ink-1">{z === null ? DASH : `${z >= 0 ? '+' : '−'}${fmtFixed(Math.abs(z), 1)}σ`}</span>
             </span>
             {t && (
               <span
@@ -165,7 +165,7 @@ const Body: React.FC<{ ctx: AuctionContext; price: number | null }> = ({ ctx, pr
                 <span className="font-mono tabular-nums text-ink-1">
                   {fmtPrice(l.px, 0)}
                   {price !== null && l.tone !== 'price' && (
-                    <span className="ml-2 text-[10px] text-ink-3">{`${l.px >= price ? '+' : '−'}${Math.abs(((l.px - price) / price) * 100).toFixed(2)}%`}</span>
+                    <span className="ml-2 text-[10px] text-ink-3">{`${l.px >= price ? '+' : '−'}${fmtFixed(Math.abs(((l.px - price) / price) * 100), 2)}%`}</span>
                   )}
                 </span>
               </li>

@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { useJournal } from '../../state/useJournal';
-import { Badge, EmptyState, Panel, Segmented, DASH, fmtPrice } from '../../ui';
+import { Badge, EmptyState, Panel, Segmented, DASH, fmtPrice, fmtFixed } from '../../ui';
 import { rMultiple, setupStats, type Setup, type Trade } from '../../utils/tradeJournal';
 import { parseNum } from './hooks';
 import { locale, tr } from '../../i18n';
@@ -18,7 +18,7 @@ const MIN_CI_N = 5;
 /** Stan IB zapisany w dzienniku po polsku (format danych) → etykieta w bieżącym języku */
 const IB_EN: Record<string, string> = { 'w trakcie': 'forming', 'w zakresie': 'inside', 'wybity ↑': 'broken ↑', 'wybity ↓': 'broken ↓', 'wybity ↑↓': 'broken ↑↓' };
 
-const fmtR = (r: number | null, d = 2) => (r === null || !Number.isFinite(r) ? DASH : `${r >= 0 ? '+' : '−'}${Math.abs(r).toFixed(d)}R`);
+const fmtR = (r: number | null, d = 2) => (r === null || !Number.isFinite(r) ? DASH : `${r >= 0 ? '+' : '−'}${fmtFixed(Math.abs(r), d)}R`);
 const pct = (p: number) => `${Math.round(p * 100)}%`;
 /** Wartość pola datetime-local (czas lokalny przeglądarki) → ms; puste/niepoprawne → null. */
 const parseLocal = (s: string): number | null => {
@@ -186,7 +186,7 @@ const StatsTable: React.FC<{ setups: Setup[]; trades: Trade[] }> = ({ setups, tr
                   </span>
                 )}
               </td>
-              <td className="py-1.5 pr-3">{s.profitFactor !== null ? s.profitFactor.toFixed(2) : s.wins > 0 ? <span className="font-sans text-ink-3">{tr('brak strat', 'no losses')}</span> : DASH}</td>
+              <td className="py-1.5 pr-3">{s.profitFactor !== null ? fmtFixed(s.profitFactor, 2) : s.wins > 0 ? <span className="font-sans text-ink-3">{tr('brak strat', 'no losses')}</span> : DASH}</td>
               <td className="py-1.5 pr-3">{fmtR(s.medMaeWinners)}</td>
               <td className="py-1.5">{fmtR(s.medMfeLosers)}</td>
             </tr>
@@ -413,7 +413,7 @@ const TradeList: React.FC<{ trades: Trade[]; names: Map<string, string>; onRemov
             )}
             {t.ctx && (
               <span className="flex gap-1">
-                {t.ctx.vwapZ !== null && <Badge tone="neutral">VWAP {t.ctx.vwapZ >= 0 ? '+' : '−'}{Math.abs(t.ctx.vwapZ).toFixed(1)}σ</Badge>}
+                {t.ctx.vwapZ !== null && <Badge tone="neutral">VWAP {t.ctx.vwapZ >= 0 ? '+' : '−'}{fmtFixed(Math.abs(t.ctx.vwapZ), 1)}σ</Badge>}
                 {t.ctx.openLoc && (
                   <Badge tone="neutral">
                     {tr('otw.', 'open')} {t.ctx.openLoc === 'above' ? tr('nad VA', 'above VA') : t.ctx.openLoc === 'below' ? tr('pod VA', 'below VA') : tr('w VA', 'in VA')}

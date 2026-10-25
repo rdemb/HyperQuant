@@ -54,7 +54,7 @@ export function cellAreaPx(slot: number): number {
 export const priceDigits = (p: number) => Math.max(0, -Math.floor(Math.log10(hlTick(Math.abs(p)))));
 
 /** Cena z dokładnością ticku rynku. */
-export const fmtPx = (p: number) => numLang(fmtPrice(p, priceDigits(p)));
+export const fmtPx = (p: number) => fmtPrice(p, priceDigits(p));
 
 /**
  * Liczba w komórce footprintu: najwyżej trzy znaki, żeby para sprzedaż | kupno mieściła się
