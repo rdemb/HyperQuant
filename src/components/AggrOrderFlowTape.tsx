@@ -4,6 +4,7 @@ import { Badge, fmtFixed, fmtNum, fmtPrice } from '../ui';
 import { useDesk } from '../state/DeskContext';
 import { useMicroMechanics } from '../state/useMicroMechanics';
 import { tickTradeCount } from '../utils/cexAdapters';
+import { MIN_OFI_FLOW_USD } from '../utils/quantMathEngine';
 import {
   AggrTradeTick,
   ExchangeId,
@@ -76,6 +77,12 @@ function getAggrRowStyle(tick: AggrTradeTick): {
 
 /** Bardzo duże ilorazy (prawie zerowa sprzedaż) nie rozpychają kolumny. */
 const fmtRatio = (r: number) => (Number.isFinite(r) ? (r >= 100 ? '>99x' : `${fmtFixed(r, 2)}x`) : '—');
+
+/** Delta w tysiącach $ ze znakiem; po zaokrągleniu zero bez znaku (bez „−0K”). */
+const signedK = (usd: number) => {
+  const k = Math.round(usd / 1000);
+  return `${k > 0 ? '+' : k < 0 ? '−' : ''}${Math.abs(k)}K`;
+};
 
 /**
  * Thermal heatmap background color for the Order Flow Imbalance (OFI) Side-Bar cell
@@ -152,6 +159,11 @@ const DomRow: React.FC<{
   const depthPct = Math.min(100, (tick.restingSizeUsd / maxRestingUsd) * 100);
   const ofiCell = getOfiHeatmapCellStyle(tick);
   const buyBarPct = Math.round(((tick.ofiNormalized + 1) / 2) * 100);
+  // Stosunek z realnych transakcji poziomu: bez transakcji kreska, poniżej progu klasyfikacji przygaszony
+  // (silnik zwraca wtedy neutralne 1, które w tabeli wyglądało jak zmierzona równowaga)
+  const flowUsd = tick.aggressiveBuyUsd + tick.aggressiveSellUsd;
+  const thin = flowUsd < MIN_OFI_FLOW_USD;
+  const ratio = flowUsd === 0 ? NaN : tick.aggressiveSellUsd > 0 ? tick.aggressiveBuyUsd / tick.aggressiveSellUsd : 100;
 
   return (
     <div
@@ -178,22 +190,27 @@ const DomRow: React.FC<{
         style={{ backgroundColor: ofiCell.bg, borderColor: ofiCell.border }}
       >
         <div className="flex items-center gap-1.5 min-w-0 flex-1">
-          <span className="font-semibold text-[10px] w-9 shrink-0" style={{ color: ofiCell.ratioColor }}>
-            {fmtRatio(tick.buySellRatio)}
+          <span
+            className={`font-semibold text-[10px] w-9 shrink-0${thin ? ' text-ink-3' : ''}`}
+            style={thin ? undefined : { color: ofiCell.ratioColor }}
+            title={thin && flowUsd > 0 ? tr(`Mało przepływu (poniżej ${MIN_OFI_FLOW_USD / 1000} tys. $ w 60 s) — bez klasyfikacji`, `Thin flow (below $${MIN_OFI_FLOW_USD / 1000}K in 60 s), not classified`) : undefined}
+          >
+            {fmtRatio(ratio)}
           </span>
-          {/* Udział agresywnego kupna (lewa część) vs sprzedaży */}
+          {/* Udział agresywnego kupna (lewa część) vs sprzedaży; bez transakcji pusta szyna */}
           <div className="flex-1 h-1.5 bg-page rounded-full overflow-hidden flex" aria-hidden="true">
-            <div className="bg-buy h-full" style={{ width: `${buyBarPct}%` }} />
-            <div className="bg-sell h-full" style={{ width: `${100 - buyBarPct}%` }} />
+            {flowUsd > 0 && (
+              <>
+                <div className="bg-buy h-full" style={{ width: `${buyBarPct}%` }} />
+                <div className="bg-sell h-full" style={{ width: `${100 - buyBarPct}%` }} />
+              </>
+            )}
           </div>
         </div>
         {ofiCell.tag ? (
           <span className="text-[9px] font-semibold text-ink-1 tracking-tight shrink-0">{ofiCell.tag}</span>
         ) : (
-          <span className="text-[10px] text-ink-2 shrink-0">
-            {tick.deltaUsd >= 0 ? '+' : '−'}
-            {fmtFixed(Math.abs(tick.deltaUsd / 1000), 0)}K
-          </span>
+          <span className="text-[10px] text-ink-2 shrink-0">{flowUsd === 0 ? '—' : signedK(tick.deltaUsd)}</span>
         )}
       </div>
     </div>
@@ -235,6 +252,9 @@ export const AggrOrderFlowTape: React.FC<AggrOrderFlowTapeProps> = ({
     return true;
   });
 
+  // Łączny przepływ poniżej progu: B/S i przepływ jako kreska zamiast neutralnych 1.00x i 0%
+  const flowTotalUsd = ofiSummary.ticks.reduce((s, t) => s + t.aggressiveBuyUsd + t.aggressiveSellUsd, 0);
+  const overallRatioTxt = flowTotalUsd >= MIN_OFI_FLOW_USD ? fmtRatio(ofiSummary.overallBuySellRatio) : '—';
   const askTicks = ofiSummary.ticks.filter((t) => t.side === 'ASK').slice(-8);
   const bidTicks = ofiSummary.ticks.filter((t) => t.side === 'BID').slice(0, 8);
   const maxRestingUsd = Math.max(
@@ -293,11 +313,10 @@ export const AggrOrderFlowTape: React.FC<AggrOrderFlowTapeProps> = ({
               {tr('Arkusz L2 i przepływ agresora', 'L2 book and aggressor flow')}
             </h2>
           </div>
-          <p className="mt-0.5 text-[11px] text-ink-3 font-mono tabular-nums truncate">
-            B/S <span className="text-ink-1">{fmtRatio(ofiSummary.overallBuySellRatio)}</span> · {tr('przepływ', 'flow')}{' '}
+          <p className="mt-0.5 text-[11px] text-ink-3 font-mono tabular-nums">
+            B/S <span className="text-ink-1">{overallRatioTxt}</span> · {tr('przepływ', 'flow')}{' '}
             <span className="text-ink-1">
-              {ofiSummary.overallOfiPct > 0 ? '+' : ''}
-              {fmtNum(ofiSummary.overallOfiPct)}%
+              {flowTotalUsd < MIN_OFI_FLOW_USD ? '—' : `${ofiSummary.overallOfiPct > 0 ? '+' : ''}${fmtNum(ofiSummary.overallOfiPct)}%`}
             </span>{' '}
             · {tr('wyczerpanie', 'exhaustion')}{' '}
             <span className="text-ink-1" title={tr('Heurystyka z progami — bez walidacji statystycznej', 'Threshold heuristic, not statistically validated')}>
@@ -311,7 +330,7 @@ export const AggrOrderFlowTape: React.FC<AggrOrderFlowTapeProps> = ({
             [
               { id: 'dom_ofi', label: tr('DOM + przepływ', 'DOM + flow') },
               { id: 'tape', label: tr('Taśma', 'Tape') },
-              { id: 'venues', label: 'Venues' },
+              { id: 'venues', label: tr('Giełdy', 'Venues') },
             ] as const
           ).map((tab) => (
             <button
@@ -366,7 +385,7 @@ export const AggrOrderFlowTape: React.FC<AggrOrderFlowTapeProps> = ({
               <div className="flex items-baseline gap-2 min-w-0">
                 <span className="font-semibold text-ink-1">{fmtPrice(currentPrice, 1)}</span>
                 <span className="text-[10px] text-ink-3 truncate">
-                  mid · B/S {fmtRatio(ofiSummary.overallBuySellRatio)}
+                  mid · B/S {overallRatioTxt}
                 </span>
               </div>
               <div className="flex items-baseline gap-1.5 text-[10px] shrink-0">
@@ -412,9 +431,9 @@ export const AggrOrderFlowTape: React.FC<AggrOrderFlowTapeProps> = ({
             ) : (
               <div className="flex items-start justify-between gap-2 bg-surface-2 border border-line rounded-lg px-2.5 py-1.5">
                 <div className="min-w-0">
-                  <div className="flex items-center gap-1.5 text-[11px] font-semibold text-ink-1">
+                  <div className="flex flex-wrap items-center gap-x-1.5 text-[11px] font-semibold text-ink-1">
                     <ShieldAlert className="w-3.5 h-3.5 shrink-0 text-level" aria-hidden="true" />
-                    <span className="truncate">{tr('Detektor wyczerpania momentum', 'Momentum exhaustion detector')}</span>
+                    <span>{tr('Detektor wyczerpania momentum', 'Momentum exhaustion detector')}</span>
                     <span className="text-[10px] font-normal text-ink-3" title={tr('Progi dobrane ręcznie, bez walidacji statystycznej', 'Hand-picked thresholds, not statistically validated')}>
                       {tr('heurystyka', 'heuristic')}
                     </span>

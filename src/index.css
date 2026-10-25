@@ -125,3 +125,12 @@
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(100, 116, 139, 0.8);
 }
+
+/* Cień przy krawędzi przewijanej w bok tabeli, dopóki z tej strony są jeszcze kolumny (zakrywacze przewijają się z treścią) */
+.hq-scroll-cue {
+  background:
+    linear-gradient(to right, var(--color-surface-1) 40%, transparent) left / 28px 100% no-repeat local,
+    linear-gradient(to left, var(--color-surface-1) 40%, transparent) right / 28px 100% no-repeat local,
+    radial-gradient(farthest-side at 0 50%, color-mix(in oklab, var(--color-ink-2) 35%, transparent), transparent) left / 12px 100% no-repeat scroll,
+    radial-gradient(farthest-side at 100% 50%, color-mix(in oklab, var(--color-ink-2) 35%, transparent), transparent) right / 12px 100% no-repeat scroll;
+}

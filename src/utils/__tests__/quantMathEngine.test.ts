@@ -143,5 +143,7 @@ describe('OFI — tylko realne transakcje', () => {
     expect(ofi.ticks.every((t) => t.aggressiveBuyUsd === 0 && t.aggressiveSellUsd === 0)).toBe(true);
     expect(ofi.exhaustionIndex).toBe(0);
     expect(ofi.overallOfiPct).toBe(0);
+    // Brak przepływu to nie równowaga — notka mówi o braku danych
+    expect(ofi.exhaustionNote).toMatch(/Mało transakcji/);
   });
 });

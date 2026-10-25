@@ -506,7 +506,8 @@ export const ProChart: React.FC<{
       {/* Pasek narzędzi: w układzie kilku wykresów przełączniki zawijane, narzędzia w drugim wierszu */}
       {!narrow && (
         <div className={`flex flex-wrap ${twoRow ? '' : 'sm:flex-nowrap'} items-center gap-x-2 gap-y-1 px-2 sm:px-3 py-1.5 border-b border-line min-h-11`}>
-          <div className={`flex items-center gap-2 w-full ${twoRow ? 'flex-wrap gap-y-1' : 'sm:w-auto sm:flex-1 overflow-x-auto [scrollbar-width:none]'} min-w-0`}>
+          {/* Przełączniki zawijają się, gdy wykres jest węższy (np. z taśmą obok) — wcześniej ostatni („Bid × Ask”) chował się za krawędzią */}
+          <div className={`flex flex-wrap items-center gap-2 gap-y-1 w-full ${twoRow ? '' : 'sm:w-auto sm:flex-1'} min-w-0`}>
             <Segmented<Market> ariaLabel={tr('Rynek', 'Market')} value={settings.coin} onChange={setCoin} options={MARKET_OPTIONS} />
             <Segmented<string> ariaLabel={tr('Interwał wykresu', 'Chart timeframe')} value={settings.interval} onChange={(v) => update({ interval: v })} options={INTERVAL_OPTIONS} />
             <Segmented<ChartView> ariaLabel={tr('Rodzaj wykresu', 'Chart type')} value={settings.view} onChange={(v) => update({ view: v })} options={VIEW_OPTIONS} />
@@ -1641,9 +1642,10 @@ const REPLAY_STATUS = {
   title: tr('Powtórka nagrania serwera: taśma i arkusz z przeszłości, nie na żywo', "Replay of the server's recording: tape and book from the past, not live"),
 };
 
-function tzLabel(): string {
+/** Strefa i przesunięcie w chwili `at` — w powtórce chwila nagrania (czas letni i zimowy mają inne przesunięcie). */
+function tzLabel(at: number): string {
   const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const off = -new Date().getTimezoneOffset() / 60;
+  const off = -new Date(at).getTimezoneOffset() / 60;
   return `${zone} (UTC${off >= 0 ? '+' : '−'}${Math.abs(off)})`;
 }
 
@@ -1680,7 +1682,7 @@ const StatusBar: React.FC<{ store: ProStore; series: CandleSeries }> = ({ store,
           {tr('Historia: limit API', 'History: API limit')}
         </span>
       )}
-      <span className="text-ink-3">{tzLabel()}</span>
+      <span className="text-ink-3">{tzLabel(store.replay ? store.replay.now() : Date.now())}</span>
       <span className="ml-auto text-ink-3">
         {tr('Dane', 'Data')}: Hyperliquid · {tr('Wykres', 'Chart')}:{' '}
         <a href="https://www.tradingview.com/" target="_blank" rel="noopener noreferrer" className="underline decoration-line-strong hover:text-ink-1">

@@ -466,7 +466,7 @@ export const MicrostructureMethods: React.FC<{
         'Compare the current VPIN with its distribution over recent sessions; a high percentile means unusually one-sided flow.'
       ),
       metricLabel: tr('VPIN · dywergencja spot/perp', 'VPIN · spot/perp divergence'),
-      metricValue: `${fmtFixed(quant.vpinToxicity * 100, 1)}% · ${quant.cvdDivergenceScore !== 0 ? fmtSigned(quant.cvdDivergenceScore * 100, 1, '%') : tr('n/a (bez CEX)', 'n/a (no CEX)')}`,
+      metricValue: `${fmtFixed(quant.vpinToxicity * 100, 1)}% · ${quant.cvdDivergenceScore !== 0 ? fmtSigned(quant.cvdDivergenceScore * 100, 1, '%') : tr('b/d (bez CEX)', 'n/a (no CEX)')}`,
     },
     {
       id: 'kyle',
@@ -482,7 +482,7 @@ export const MicrostructureMethods: React.FC<{
         'Compare λ at different times of day and before macro releases; a rising λ means a market that is easier to push.'
       ),
       metricLabel: tr('λ · głębokość BID / ASK', 'λ · BID / ASK depth'),
-      metricValue: `${quant.kyleLambdaPer1M !== null ? `$${fmtFixed(quant.kyleLambdaPer1M, 2)} / $1M` : 'n/a'} · ${fmtCompact(quant.bookDepthBidUsd, '$')} / ${fmtCompact(quant.bookDepthAskUsd, '$')}`,
+      metricValue: `${quant.kyleLambdaPer1M !== null ? `$${fmtFixed(quant.kyleLambdaPer1M, 2)} / $1M` : tr('b/d', 'n/a')} · ${fmtCompact(quant.bookDepthBidUsd, '$')} / ${fmtCompact(quant.bookDepthAskUsd, '$')}`,
     },
     {
       id: 'hawkes',
@@ -495,7 +495,7 @@ export const MicrostructureMethods: React.FC<{
       ),
       check: tr('Obserwuj skoki intensywności przy testach PDH/PDL i notuj, czy ruch był kontynuowany, czy wygasł.', 'Watch intensity spikes at PDH/PDL tests and note whether the move continued or faded.'),
       metricLabel: tr('λ kupno / sprzedaż · η', 'λ buy / sell · η'),
-      metricValue: `${fmtFixed(quant.hawkesBuyIntensity, 2)} / ${fmtFixed(quant.hawkesSellIntensity, 2)} · η = ${quant.hawkesBranchingRatio != null ? fmtNum(quant.hawkesBranchingRatio) : 'n/a'}`,
+      metricValue: `${fmtFixed(quant.hawkesBuyIntensity, 2)} / ${fmtFixed(quant.hawkesSellIntensity, 2)} · η = ${quant.hawkesBranchingRatio != null ? fmtNum(quant.hawkesBranchingRatio) : tr('b/d', 'n/a')}`,
     },
     {
       id: 'ou',

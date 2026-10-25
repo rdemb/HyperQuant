@@ -8,6 +8,28 @@ import {
   ShaakuniState,
 } from '../types/trading';
 import { HyperliquidHTFLevels } from './marketDataFeed';
+import { tr } from '../i18n';
+
+/** Nazwa sesji do wyświetlenia — w stanie zostaje angielski klucz z Pine Script. */
+export function sessionLabel(s: NYSessionName): string {
+  switch (s) {
+    case 'Asian':
+      return tr('Azja', 'Asia');
+    case 'London':
+      return tr('Londyn', 'London');
+    case 'New York':
+      return tr('Nowy Jork', 'New York');
+    case 'London Close':
+      return tr('Zamknięcie Londynu', 'London close');
+    default:
+      return tr('przerwa', 'break');
+  }
+}
+
+/** Stan poziomu PDH/PDL do wyświetlenia: nietknięty, zebrany knotem (zamknięcie wróciło) albo przebity zamknięciem. */
+export function levelStatusLabel(s: LevelStatus): string {
+  return s === 'Break' ? tr('przebity', 'broken') : s === 'Sweep !' ? tr('zebrany knotem', 'swept') : tr('nietknięty', 'intact');
+}
 
 /**
  * Exact mathematical & algorithmic implementation of:

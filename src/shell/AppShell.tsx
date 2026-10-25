@@ -24,6 +24,7 @@ import { InstallButton } from './InstallButton';
 import { ConnectingState } from './ConnectingState';
 import DeskView from '../views/DeskView';
 import { Lang, lang, setLang, tr } from '../i18n';
+import { levelStatusLabel, sessionLabel } from '../utils/shaakuniEngine';
 
 // Widoki poza ekranem głównym ładowane leniwie (mniejszy pierwszy bundle)
 const ChartsView = lazy(() => import('../views/ChartsView'));
@@ -97,9 +98,9 @@ const TickerStrip: React.FC = () => {
         <Item label="OI" value={t ? fmtCompact(t.openInterestUsd, '$') : DASH} />
         <Item label="Basis" value={t ? `${fmtNum(t.basisBps)} bps` : DASH} />
       </span>
-      <Item label="PDH" value={shaakuni.pdh ? `${fmtPrice(shaakuni.pdh, 0)} · ${shaakuni.pdhStatus}` : DASH} />
-      <Item label="PDL" value={shaakuni.pdl ? `${fmtPrice(shaakuni.pdl, 0)} · ${shaakuni.pdlStatus}` : DASH} />
-      <Item label={tr('Sesja', 'Session')} value={`${shaakuni.nySession} · ${shaakuni.nyTimeFormatted}`} />
+      <Item label="PDH" value={shaakuni.pdh ? `${fmtPrice(shaakuni.pdh, 0)} · ${levelStatusLabel(shaakuni.pdhStatus)}` : DASH} />
+      <Item label="PDL" value={shaakuni.pdl ? `${fmtPrice(shaakuni.pdl, 0)} · ${levelStatusLabel(shaakuni.pdlStatus)}` : DASH} />
+      <Item label={tr('Sesja', 'Session')} value={`${sessionLabel(shaakuni.nySession)} · ${shaakuni.nyTimeFormatted}`} />
     </div>
   );
 };

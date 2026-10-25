@@ -23,7 +23,7 @@ const LabView: React.FC = () => {
   const [scene, setScene] = useState<SceneId>('liquidity');
   const switcherRef = useRef<HTMLDivElement | null>(null);
   const onFluid = usePrefillFromSignal('Lab · Delta Fluid');
-  const onMagnet = usePrefillFromSignal(tr('Lab · Liquidation Risk (szacunek)', 'Lab · Liquidation Risk (estimate)'));
+  const onMagnet = usePrefillFromSignal(tr('Lab · Ryzyko likwidacji (szacunek)', 'Lab · Liquidation Risk (estimate)'));
   const latestBar = feed.latestBar;
   const meta = SCENES.find((s) => s.id === scene) ?? SCENES[0];
 

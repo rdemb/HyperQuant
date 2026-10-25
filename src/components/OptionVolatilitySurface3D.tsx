@@ -458,7 +458,7 @@ export const OptionVolatilitySurface3D: React.FC<
       <div className="px-4 py-3 border-b border-line flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           <h2 className="font-display text-[15px] font-semibold text-ink-1 flex flex-wrap items-center gap-2">
-            {tr('Options (ilustracja) · powierzchnia IV modelu', 'Options (illustration) · model IV surface')}
+            {tr('Opcje (ilustracja) · powierzchnia IV modelu', 'Options (illustration) · model IV surface')}
             <Badge tone="model" title={tr('Parametryczny smile IV + Black-Scholes; brak kwotowań opcji', 'Parametric IV smile + Black-Scholes; no option quotes')}>
               MODEL
             </Badge>

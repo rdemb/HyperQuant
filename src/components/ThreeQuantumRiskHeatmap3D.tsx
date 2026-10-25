@@ -18,7 +18,7 @@ import { DockPresets, DockSlider, DockToggle, HoverCard, HudButton, HudHeader, S
 import { tr } from '../i18n';
 import { fmtFixed, fmtPrice } from '../ui/format';
 
-// Scena „Liquidation Risk (szacunek)”: teren heurystycznego szacunku poziomów likwidacji (nie realne pozycje)
+// Scena „Ryzyko likwidacji (szacunek)”: teren heurystycznego szacunku poziomów likwidacji (nie realne pozycje)
 interface ThreeQuantumRiskHeatmap3DProps {
   currentPrice: number;
   shaakuni: ShaakuniState;
@@ -885,7 +885,7 @@ export const ThreeQuantumRiskHeatmap3D: React.FC<
       {/* Kontener WebGL */}
       <div ref={canvasMountRef} className="w-full h-full" />
 
-      <HudHeader title={tr('Liquidation Risk (szacunek) · teren szacowanych poziomów likwidacji', 'Liquidation Risk (estimate) · terrain of estimated liquidation levels')}>
+      <HudHeader title={tr('Ryzyko likwidacji (szacunek) · teren szacowanych poziomów likwidacji', 'Liquidation Risk (estimate) · terrain of estimated liquidation levels')}>
         {tr('Najsilniejsze U(p)', 'Strongest U(p)')} {fmtPrice(quant.primaryMagnetPrice, 0)} {magnetAbove ? '▲' : '▼'} ·{' '}
         {tr('udział szacunku nad / pod ceną', 'share of the estimate above / below price')}{' '}
         {fuelAbovePct !== null ? `${fuelAbovePct}% / ${100 - fuelAbovePct}%` : '—'}
@@ -908,11 +908,11 @@ export const ThreeQuantumRiskHeatmap3D: React.FC<
               onTriggerMagnetSignal(
                 magnetAbove ? 'LONG' : 'SHORT',
                 tr(
-                  `Liquidation Risk (szacunek): najsilniejsze U(p) ${magnetAbove ? 'nad' : 'pod'} ceną`,
+                  `Ryzyko likwidacji (szacunek): najsilniejsze U(p) ${magnetAbove ? 'nad' : 'pod'} ceną`,
                   `Liquidation Risk (estimate): strongest U(p) ${magnetAbove ? 'above' : 'below'} price`
                 ),
                 tr(
-                  `Poziom ${fmtPrice(quant.primaryMagnetPrice, 0)} · udział szacunku nad/pod ceną ${fuelAbovePct !== null ? `${fuelAbovePct}%/${100 - fuelAbovePct}%` : 'n/a'} · szacunek z wolumenu, nie realne pozycje`,
+                  `Poziom ${fmtPrice(quant.primaryMagnetPrice, 0)} · udział szacunku nad/pod ceną ${fuelAbovePct !== null ? `${fuelAbovePct}%/${100 - fuelAbovePct}%` : 'b/d'} · szacunek z wolumenu, nie realne pozycje`,
                   `Level ${fmtPrice(quant.primaryMagnetPrice, 0)} · share of the estimate above/below price ${fuelAbovePct !== null ? `${fuelAbovePct}%/${100 - fuelAbovePct}%` : 'n/a'} · estimate from volume, not real positions`
                 )
               )

@@ -98,9 +98,9 @@ const disposeSceneGraph = (
   });
 };
 
-// Czas pierwszego dotknięcia poziomu z Monte Carlo: null = żadna ścieżka nie dotknęła poziomu w 2h → "n/a"
+// Czas pierwszego dotknięcia poziomu z Monte Carlo: null = żadna ścieżka nie dotknęła poziomu w 2h → „poza 2h”
 const formatFirstPassageMins = (mins: number | null) =>
-  mins === null || !Number.isFinite(mins) ? 'n/a' : `~${mins}m`;
+  mins === null || !Number.isFinite(mins) ? tr('poza 2h', 'beyond 2h') : `~${mins}m`;
 
 export const ThreeOrderflowVortex3D: React.FC<ThreeOrderflowVortex3DProps> = ({
   latestBar,

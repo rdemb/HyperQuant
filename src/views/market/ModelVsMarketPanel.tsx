@@ -94,7 +94,7 @@ export const ModelVsMarketPanel: React.FC = () => {
               </button>
             )}
           </p>
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto hq-scroll-cue">
             <table className="w-full text-left text-xs">
               <caption className="sr-only">{tr('Rynki wynikowe BTC: cena rynku, prawdopodobieństwo modelu i różnica', 'BTC outcome markets: market price, model probability and the difference')}</caption>
               <thead className="text-ink-3 text-[10px] uppercase tracking-wide">

@@ -268,7 +268,7 @@ const VolModelStat: React.FC<{ market: PlanMarket; horizonLabel: string }> = ({ 
       hint={
         <>
           {tr('sezonowy log-HAR · strata QLIKE poza próbą', 'seasonal log-HAR · out-of-sample QLIKE loss')}{' '}
-          {gain !== null ? `${fmtSigned(-gain, 0, '%')} ${tr('vs średnia 24 h', 'vs 24 h mean')} (n = ${oos!.n})` : tr('n/a (za mało danych)', 'n/a (not enough data)')}
+          {gain !== null ? `${fmtSigned(-gain, 0, '%')} ${tr('vs średnia 24 h', 'vs 24 h mean')} (n = ${oos!.n})` : tr('b/d (za mało danych)', 'n/a (not enough data)')}
           <br />
           {tr('skoki', 'jumps')}:{' '}
           {m.jump ? tr(`${fmtFixed(m.jump.share * 100, 1)}% wariancji (${m.jump.days} dni, BV)`, `${fmtFixed(m.jump.share * 100, 1)}% of variance (${m.jump.days} days, BV)`) : 'n/a'} ·

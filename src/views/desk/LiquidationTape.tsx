@@ -232,7 +232,7 @@ const EventTable: React.FC<{ tape: LiqTape }> = ({ tape }) => {
   const rows = tape.events.slice(0, 10);
   if (rows.length === 0) return null;
   return (
-    <div className="overflow-x-auto">
+    <div className="overflow-x-auto hq-scroll-cue">
       <table className="w-full text-left font-mono tabular-nums text-[11px]">
         <caption className="sr-only">{tr('Ostatnie likwidacje śledzonych pozycji', 'Latest liquidations of tracked positions')}</caption>
         <thead className="text-ink-3">
