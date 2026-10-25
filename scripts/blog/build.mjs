@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Blog: budowanie stron do dist/blog (po `vite build`) albo sprawdzenie wpisów przed publikacją.
 // Użycie:
-//   node scripts/blog/build.mjs                       → dist/blog/**, dist/sitemap.xml
+//   node scripts/blog/build.mjs                       → dist/blog/**, strony serwisu (wykresy/, lekcje/, en/…, 404.html), dist/sitemap.xml
 //   node scripts/blog/build.mjs --drafts              → to samo razem z wpisami `draft: true` (podgląd lokalny)
 //   node scripts/blog/build.mjs --check [plik.md …]   → walidacja wszystkich albo wskazanych wpisów, bez zapisu; kod 1 przy błędach
 import { createHash } from 'node:crypto';
@@ -28,10 +28,41 @@ export function formatProblems(problems) {
 }
 
 /**
- * Buduje blog do `outDir/blog` i `outDir/sitemap.xml`. Błędny wpis zatrzymuje build (nic nie trafia na stronę po cichu).
- * Zwraca liczbę opublikowanych wpisów.
+ * Strony serwisu (pages.mjs): HTML, zrzuty ekranu do `outDir/site` i karty podglądu linku. Import dynamiczny, bo pages.mjs
+ * czyta treść lekcji z plików TypeScript, a samo sprawdzanie wpisów (`--check`) ma działać bez tego.
+ * Zwraca wpisy mapy strony.
  */
-export async function buildBlog({ contentDir = CONTENT_DIR, outDir, site, drafts = false }) {
+export async function buildPages({ outDir, site }) {
+  const { SHOTS, shotFile, sitePages, sitemapEntries } = await import('./pages.mjs');
+  const shotDir = path.join(HERE, 'shots');
+  await mkdir(path.join(outDir, 'site'), { recursive: true });
+  const shots = new Map();
+  for (const kind of Object.keys(SHOTS))
+    for (const lang of ['pl', 'en']) {
+      const file = shotFile(kind, lang);
+      const buf = await readFile(path.join(shotDir, file));
+      await writeFile(path.join(outDir, 'site', file), buf);
+      shots.set(file, `data:image/jpeg;base64,${buf.toString('base64')}`);
+    }
+  const pages = sitePages(site);
+  for (const p of pages) {
+    const file = path.join(outDir, p.path.endsWith('.html') ? p.path : path.join(p.path, 'index.html'));
+    await mkdir(path.dirname(file), { recursive: true });
+    if (p.html) await writeFile(file, p.html);
+    if (p.card) {
+      const { shot, ...card } = p.card;
+      if (shot) card.shot = { ...SHOTS[shot.kind], href: shots.get(shotFile(shot.kind, shot.lang)) };
+      await writeFile(path.join(outDir, p.path, 'og.png'), renderPng(ogSvg(card)));
+    }
+  }
+  return sitemapEntries(site, pages);
+}
+
+/**
+ * Buduje blog do `outDir/blog`, strony serwisu (bez `pages: false`) i `outDir/sitemap.xml`. Błędny wpis zatrzymuje build
+ * (nic nie trafia na stronę po cichu). Zwraca liczbę opublikowanych wpisów.
+ */
+export async function buildBlog({ contentDir = CONTENT_DIR, outDir, site, drafts = false, pages = true }) {
   const { posts, problems } = loadPosts(contentDir);
   if (problems.length) throw new Error(`Błędne wpisy bloga:\n${formatProblems(problems)}`);
   const visible = posts.filter((p) => drafts || !p.draft);
@@ -68,7 +99,7 @@ export async function buildBlog({ contentDir = CONTENT_DIR, outDir, site, drafts
     );
   }
   await writeFile(path.join(blogDir, 'feed.xml'), feedXml(s, visible));
-  await writeFile(path.join(outDir, 'sitemap.xml'), sitemapXml(s, visible));
+  await writeFile(path.join(outDir, 'sitemap.xml'), sitemapXml(s, visible, pages ? await buildPages({ outDir, site: s }) : []));
   await writeFile(
     path.join(blogDir, 'og.png'),
     renderPng(ogSvg({ section: 'Blog', title: 'Analizy BTC na Hyperliquid', subtitle: 'Mapa dnia, mapa przed Nowym Jorkiem, podsumowanie dnia' }))

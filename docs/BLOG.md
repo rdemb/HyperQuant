@@ -111,6 +111,10 @@ node scripts/blog/chartdata.mjs --notka --at 2026-10-25T12:00Z --out content/blo
 
 Both charts are inline SVG in two layouts: wide (from 640 px) and narrow for phones. Hovering a candle or a cell shows the numbers. RSS has no charts. The validator checks the shape of the file, and a chart marker without data in the file is a post error.
 
+### Replay on Charts
+
+Every post gets a „Zobacz na wykresie” (See it on the chart) block between the body and the share buttons, with no extra field in the post. Its button opens the recorded tape on Charts (link format version 1 from `src/charts/pro/replay/link.ts`): BTC 5-min footprint with VWAP, profile, levels and aggressor bubbles, paused at the post's `date`. The window follows the section: a post whose `section` contains „podsumowanie” or „rozliczenie” (summary, settlement) looks back, from 10 hours before to 2 hours after `date`; every other post looks forward, from 2 hours before to 10 hours after, so the reader can play what happened next. The server keeps the recording for 7 days, so after that a small script in the page swaps the block for links to live Charts and the replay of the last day. A window that starts before the recording began (24 Oct 2026, 16:00 UTC) shows the Charts message about a missing recording.
+
 ## Body
 
 Markdown (GFM): sections from `##`, paragraphs, tables, lists, links, images. Raw HTML is shown as text.
@@ -137,3 +141,7 @@ git push origin main                                          # GitHub Pages pub
 Local preview (including drafts): `npm run build && node scripts/blog/build.mjs --drafts && npm run preview`, then `http://localhost:4173/blog/`.
 
 Every post is in the repository's public history from the moment of publication; the post page links to the file's change history.
+
+## Site pages
+
+The same generator (`scripts/blog/pages.mjs`) builds static pages for the parts of the desk that live behind `#` routes, which search engines do not index: Charts (`wykresy/`, `en/charts/`), Lessons (`lekcje/`, `en/lessons/`), one page for each of the 21 indicator atlas entries in both languages (`lekcje/atlas/<id>/`, `en/lessons/atlas/<id>/`, text taken from `src/lessons/content/`) and `404.html`. Each page has its own title, description, canonical URL, `hreflang` link to the other language, structured data and link-preview image, and its buttons open the matching view of the app. The previews of the main page (`og.png`), Charts and Lessons carry a screenshot of the app from `scripts/blog/shots/` (JPEG, 2880 px wide); replace these files when the look of the app changes. `sitemap.xml` lists the posts and the site pages with their language versions.

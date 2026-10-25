@@ -96,6 +96,9 @@ a {
 .site-header nav {
   display: flex;
   gap: 4px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
 .site-header nav a {
   min-height: 40px;
@@ -117,6 +120,22 @@ a {
   color: var(--ink-1);
   background: var(--surface-2);
   border-color: var(--line);
+}
+.site-header nav .nav-lang {
+  margin-left: 4px;
+  border-color: var(--line);
+}
+/* Na telefonie Desk prowadzi przez logo, a RSS jest w stopce */
+@media (max-width: 559px) {
+  .site-header nav a {
+    padding: 0 8px;
+    font-size: 13px;
+    white-space: nowrap;
+  }
+  .site-header nav .nav-desk,
+  .site-header nav .nav-rss {
+    display: none;
+  }
 }
 main.wrap {
   padding-top: 32px;
@@ -1248,6 +1267,189 @@ h1 {
 }
 .archive a {
   color: var(--ink-2);
+}
+
+/* ───── Przyciski ───── */
+.cta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 0 0 28px;
+}
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 18px;
+  background: var(--surface-1);
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  color: var(--ink-1);
+  font: 600 15px/1.2 var(--font-sans);
+  text-align: center;
+  text-decoration: none;
+  transition:
+    border-color 150ms,
+    background 150ms;
+}
+.btn:hover {
+  border-color: var(--accent);
+}
+.btn--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--page);
+}
+.btn--primary:hover {
+  background: #6ad5e7;
+  border-color: #6ad5e7;
+}
+
+/* ───── Powtórka pod wpisem ───── */
+.replay {
+  padding: 20px;
+  background: var(--surface-1);
+  border: 1px solid var(--line-strong);
+  border-radius: 16px;
+}
+.replay p {
+  margin: 0;
+  color: var(--ink-2);
+}
+.replay .cta {
+  margin: 16px 0 8px;
+}
+.replay [hidden] {
+  display: none;
+}
+
+/* ───── Strony serwisu: Wykresy, Lekcje, atlas wskaźników ───── */
+.shot {
+  margin: 0;
+}
+.shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+}
+.shot figcaption {
+  margin-top: 8px;
+  color: var(--ink-3);
+  font-size: 13px;
+}
+/* Na szerokim ekranie zrzut wychodzi poza kolumnę tekstu, żeby szczegóły wykresu były czytelne */
+@media (min-width: 900px) {
+  .shot {
+    --shot-w: min(1120px, calc(100vw - 48px));
+    width: var(--shot-w);
+    margin-left: calc((100% - var(--shot-w)) / 2);
+  }
+}
+.page .block > p {
+  margin: 0 0 12px;
+  max-width: 68ch;
+  color: var(--ink-2);
+}
+.page .block > h3 {
+  margin: 28px 0 0;
+  color: var(--ink-3);
+  font: 600 11px/1.4 var(--font-sans);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.features,
+.cards,
+.more {
+  display: grid;
+  gap: 10px;
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.features li {
+  padding: 16px;
+  background: var(--surface-1);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.features h3 {
+  margin: 0 0 6px;
+  font-size: 17px;
+  line-height: 1.3;
+}
+.features p {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 15px;
+}
+.features li:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
+.cards a {
+  display: block;
+  height: 100%;
+  padding: 14px 16px;
+  background: var(--surface-1);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--ink-1);
+  text-decoration: none;
+  transition: border-color 150ms;
+}
+.cards a:hover {
+  border-color: var(--accent);
+}
+.card-meta {
+  display: block;
+  color: var(--ink-3);
+  font-size: 12px;
+}
+.card-title {
+  display: block;
+  margin-top: 2px;
+  font: 600 17px/1.3 var(--font-display);
+  letter-spacing: -0.01em;
+}
+.card-text {
+  display: block;
+  margin-top: 4px;
+  color: var(--ink-2);
+  font-size: 15px;
+  line-height: 1.5;
+}
+.questions {
+  margin: 0;
+  padding-left: 1.3em;
+  color: var(--ink-2);
+}
+.questions li + li {
+  margin-top: 6px;
+}
+.questions b {
+  color: var(--ink-1);
+  font-weight: 600;
+}
+.tab-link {
+  margin: 12px 0 0;
+  font-weight: 500;
+}
+.page > .cta:last-of-type {
+  margin-top: 40px;
+}
+.more {
+  margin-top: 24px;
+}
+.page--atlas .prose {
+  margin-top: 0;
+}
+@media (min-width: 640px) {
+  .features,
+  .cards--atlas {
+    grid-template-columns: 1fr 1fr;
+  }
 }
 
 @media (min-width: 768px) {

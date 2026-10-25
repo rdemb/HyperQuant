@@ -73,30 +73,58 @@ function ladderPanel(price, levels) {
   return out.join('');
 }
 
-/** SVG karty. `card` = { section, title, dateLine?, subtitle?, price?, levels? }. */
+/**
+ * Zrzut ekranu w panelu z prawej (karty stron serwisu). `shot` = { href (data: URI JPEG/PNG), w, h, crop: [x, y, w, h] }:
+ * wycinek obrazka w px obrazka, przeskalowany tak, żeby pokrył panel, który wychodzi za prawą krawędź karty.
+ */
+function shotPanel(shot) {
+  const px = 640;
+  const py = 64;
+  const pw = W - px + 24;
+  const ph = 452;
+  const [cx, cy, cw, ch] = shot.crop;
+  const k = Math.max(pw / cw, ph / ch);
+  const r = (v) => Math.round(v * 100) / 100;
+  return `<clipPath id="shot"><rect x="${px}" y="${py}" width="${pw}" height="${ph}" rx="16"/></clipPath>
+<g clip-path="url(#shot)"><image href="${shot.href}" x="${r(px - cx * k)}" y="${r(py - cy * k)}" width="${r(shot.w * k)}" height="${r(shot.h * k)}"/></g>
+<rect x="${px}" y="${py}" width="${pw}" height="${ph}" rx="16" fill="none" stroke="${C.lineStrong}" stroke-width="2"/>`;
+}
+
+/** Stopka karty bloga: adres i zastrzeżenie (karty stron serwisu podają własne). */
+const BLOG_FOOT = ['rdemb.github.io/HyperQuant/blog', 'prawdopodobieństwa, nie sygnały'];
+
+/** SVG karty. `card` = { section, title, dateLine?, subtitle?, body?, price?, levels?, shot?, foot? }. */
 export function ogSvg(card) {
   const levels = card.price ? (card.levels ?? []) : [];
-  const textWidth = levels.length ? 640 : W - 2 * X0;
+  const textWidth = levels.length ? 640 : card.shot ? 560 : W - 2 * X0;
   const { size, lines } = wrapTitle(card.title, textWidth);
   const lh = Math.round(size * 1.14);
   const titleTop = 196;
   const title = lines.map((l, i) => `<tspan x="${X0}" y="${titleTop + i * lh}">${x(l)}</tspan>`).join('');
   const below = titleTop + (lines.length - 1) * lh + 58;
   const sub = card.dateLine ?? card.subtitle;
+  // Podtytuł do dwóch wierszy (Plus Jakarta Sans 26 px)
+  const subLines = sub ? wrapTitle(sub, textWidth, [26], 2).lines : [];
+  const subtitle = subLines.map((l, i) => `<tspan x="${X0}" y="${below + i * 36}">${x(l)}</tspan>`).join('');
+  // Dłuższy opis pod podtytułem (hasła atlasu): do trzech wierszy, 22 px
+  const bodyTop = below + subLines.length * 36 + 28;
+  const body = card.body ? wrapTitle(card.body, textWidth, [22], 3).lines.map((l, i) => `<tspan x="${X0}" y="${bodyTop + i * 32}">${x(l)}</tspan>`).join('') : '';
   const price = card.price
     ? `<text x="${X0}" y="476" font-family="Plus Jakarta Sans" font-weight="500" font-size="22" letter-spacing="2" fill="${C.ink3}">BTC-PERP</text><text x="${X0}" y="530" font-family="Plus Jakarta Sans" font-weight="500" font-size="48" fill="${C.ink1}">${x(fmtPrice(card.price))} USD</text>`
     : '';
+  const [footLeft, footRight] = card.foot ?? BLOG_FOOT;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
 <rect width="${W}" height="${H}" fill="${C.page}"/>
 <rect x="0" y="0" width="${W}" height="6" fill="${C.accent}"/>
 <text x="${X0}" y="104" font-family="Outfit" font-weight="600" font-size="26" letter-spacing="3" fill="${C.accent}">HYPERQUANT<tspan dx="14" fill="${C.lineStrong}" letter-spacing="0">/</tspan><tspan dx="14" fill="${C.ink2}" font-family="Plus Jakarta Sans" font-weight="500" letter-spacing="0">${x(card.section)}</tspan></text>
 <text font-family="Outfit" font-weight="600" font-size="${size}" fill="${C.ink1}">${title}</text>
-${sub ? `<text x="${X0}" y="${below}" font-family="Plus Jakarta Sans" font-weight="500" font-size="26" fill="${C.ink2}">${x(sub)}</text>` : ''}
+${subtitle ? `<text font-family="Plus Jakarta Sans" font-weight="500" font-size="26" fill="${C.ink2}">${subtitle}</text>` : ''}
+${body ? `<text font-family="Plus Jakarta Sans" font-weight="500" font-size="22" fill="${C.ink3}">${body}</text>` : ''}
 ${price}
-${levels.length ? ladderPanel(card.price, levels) : ''}
+${levels.length ? ladderPanel(card.price, levels) : ''}${card.shot ? shotPanel(card.shot) : ''}
 <line x1="${X0}" y1="566" x2="${W - X0}" y2="566" stroke="${C.lineStrong}" stroke-width="2"/>
-<text x="${X0}" y="604" font-family="Plus Jakarta Sans" font-weight="500" font-size="20" fill="${C.ink3}">rdemb.github.io/HyperQuant/blog</text>
-<text x="${W - X0}" y="604" text-anchor="end" font-family="Plus Jakarta Sans" font-weight="500" font-size="20" fill="${C.ink3}">prawdopodobieństwa, nie sygnały</text>
+<text x="${X0}" y="604" font-family="Plus Jakarta Sans" font-weight="500" font-size="20" fill="${C.ink3}">${x(footLeft)}</text>
+<text x="${W - X0}" y="604" text-anchor="end" font-family="Plus Jakarta Sans" font-weight="500" font-size="20" fill="${C.ink3}">${x(footRight)}</text>
 </svg>`;
 }
 
