@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useEffect, useRef, useState } from 'react';
+import React, { Suspense, lazy, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import {
   LayoutDashboard,
@@ -104,6 +104,17 @@ const TickerStrip: React.FC = () => {
   );
 };
 
+const subscribeHash = (fn: () => void) => {
+  window.addEventListener('hashchange', fn);
+  return () => window.removeEventListener('hashchange', fn);
+};
+/** Powtórka w Wykresach (#charts?replay=history|lessons…) pokazuje przeszłość — wtedy bez paska ceny na żywo (jak parseReplayLink). */
+const inReplay = () => {
+  const h = window.location.hash;
+  const src = h.startsWith('#charts') ? new URLSearchParams(h.split('?')[1] ?? '').get('replay') : null;
+  return src === 'history' || src === 'lessons';
+};
+
 const Item: React.FC<{ label: string; value: string }> = ({ label, value }) => (
   <span className="flex items-baseline gap-1.5">
     <span className="text-ink-3">{label}</span>
@@ -126,6 +137,7 @@ export const AppShell: React.FC = () => {
   const moreRef = useRef<HTMLDivElement>(null);
   const transition = reduce ? { initial: { opacity: 0 }, animate: { opacity: 1 }, exit: { opacity: 0 } } : VIEW_TRANSITION;
   const awaitingData = feed.bars.length === 0 && NEEDS_BARS.includes(view);
+  const replay = useSyncExternalStore(subscribeHash, inReplay);
 
   // Menu „Więcej”: zamykanie Escape i kliknięciem poza menu, fokus na pierwszej pozycji
   useEffect(() => {
@@ -218,7 +230,7 @@ export const AppShell: React.FC = () => {
             <InstallButton compact />
           </div>
         </div>
-        <TickerStrip />
+        {!(replay && view === 'charts') && <TickerStrip />}
         {!OWN_INTERVALS.includes(view) && (
           <div className="md:hidden lg:block xl:hidden px-4 py-2 border-b border-line overflow-x-auto">
             <Segmented<number> ariaLabel={tr('Interwał', 'Timeframe')} value={feed.timeframeSec} onChange={feed.setTimeframeSec} options={TIMEFRAMES} />
