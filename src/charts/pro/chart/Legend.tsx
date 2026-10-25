@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useSyncExternalStore } from 'react';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 import { fmtVol } from '../../orderflow/footprint';
 import { fmtSignedVol } from '../../orderflow/renderer';
 import { DASH, fmtFixed, numLang } from '../../../ui';
@@ -25,6 +26,38 @@ export class HoverSignal {
       this.listeners.delete(fn);
     };
   };
+}
+
+/**
+ * Zwinięta legenda (tylko symbol i OHLC w jednej linii), osobno dla jednego wykresu i dla układu kilku wykresów —
+ * w układzie kilku domyślnie zwinięta, bo pełna zasłania mały wykres. Wspólna dla paneli układu, zapis w przeglądarce.
+ */
+const FOLD_KEY = 'hq.charts.legend.v1';
+type Fold = { single: boolean; multi: boolean };
+let fold: Fold = (() => {
+  try {
+    const v = JSON.parse(localStorage.getItem(FOLD_KEY) ?? 'null') as Partial<Fold> | null;
+    if (v && typeof v.single === 'boolean' && typeof v.multi === 'boolean') return { single: v.single, multi: v.multi };
+  } catch {
+    // Prywatne okno albo zablokowana pamięć — domyślne
+  }
+  return { single: false, multi: true };
+})();
+const foldListeners = new Set<() => void>();
+const subscribeFold = (fn: () => void) => {
+  foldListeners.add(fn);
+  return () => {
+    foldListeners.delete(fn);
+  };
+};
+function setFold(multi: boolean, folded: boolean): void {
+  fold = multi ? { ...fold, multi: folded } : { ...fold, single: folded };
+  try {
+    localStorage.setItem(FOLD_KEY, JSON.stringify(fold));
+  } catch {
+    // Prywatne okno albo zablokowana pamięć — działa do końca sesji
+  }
+  foldListeners.forEach((fn) => fn());
 }
 
 const fmtSigma = (z: number) => `${z >= 0 ? '+' : '−'}${numLang(Math.abs(z).toFixed(2))}σ`;
@@ -55,6 +88,7 @@ const Field: React.FC<{ label: string; children: React.ReactNode; className?: st
  * maksimum i minimum, liczba transakcji, udział taśmy w wolumenie świecy i wiersz footprintu pod kursorem.
  * `onBottom` dostaje dolną krawędź legendy (px od góry wykresu) — tylko bez krzyża, żeby skala nie skakała przy ruchu kursora.
  * `compact` (telefon): jedna linia — zamknięcie, zmiana, wolumen i VWAP; czas świecy tylko pod palcem, rynek i interwał są w pasku.
+ * `multi` — wykres w układzie kilku wykresów (osobny stan zwinięcia legendy).
  */
 export const Legend: React.FC<{
   signal: HoverSignal;
@@ -64,8 +98,10 @@ export const Legend: React.FC<{
   coin: string;
   onBottom?: (px: number) => void;
   compact?: boolean;
-}> = ({ signal, intervalMs, intervalLabel, tapeSince, coin, onBottom, compact = false }) => {
+  multi?: boolean;
+}> = ({ signal, intervalMs, intervalLabel, tapeSince, coin, onBottom, compact = false, multi = false }) => {
   const h = useSyncExternalStore(signal.subscribe, signal.get);
+  const folded = useSyncExternalStore(subscribeFold, () => (multi ? fold.multi : fold.single));
   const ref = useRef<HTMLDivElement>(null);
   const live = useRef(h.live);
   live.current = h.live;
@@ -124,40 +160,71 @@ export const Legend: React.FC<{
     );
   }
 
+  const ohlc = c ? (
+    <>
+      <Field label="O" secondary>
+        {fmtPx(c.o)}
+      </Field>
+      <Field label="H" secondary>
+        {fmtPx(c.h)}
+      </Field>
+      <Field label="L" secondary>
+        {fmtPx(c.l)}
+      </Field>
+      <Field label="C" className={c.c >= c.o ? 'text-of-buy-ink' : 'text-of-sell-ink'}>
+        {fmtPx(c.c)}
+      </Field>
+      <span className={change >= 0 ? 'text-of-buy-ink' : 'text-of-sell-ink'}>{fmtChange(change)}</span>
+    </>
+  ) : (
+    <span className="text-ink-3">{tr('Wczytywanie świec…', 'Loading candles…')}</span>
+  );
+  const toggle = (
+    <button
+      type="button"
+      onClick={() => setFold(multi, !folded)}
+      aria-expanded={!folded}
+      aria-label={folded ? tr('Rozwiń legendę', 'Expand legend') : tr('Zwiń legendę', 'Collapse legend')}
+      title={folded ? tr('Rozwiń legendę', 'Expand legend') : tr('Zwiń legendę do jednej linii', 'Collapse legend to one line')}
+      className="pointer-events-auto self-center -ml-1 grid place-items-center w-4 h-4 rounded text-ink-3 hover:text-ink-1 hover:bg-surface-3"
+    >
+      {folded ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+    </button>
+  );
+
+  // Zwinięta: jedna linia bez tła — symbol, interwał, czas świecy spoza bieżącej i OHLC
+  if (folded) {
+    return (
+      <div ref={ref} className="absolute left-2 top-1.5 z-10 pointer-events-none max-w-[calc(100%-5rem)] rounded-md bg-surface-1/60 px-2 py-0.5 font-mono tabular-nums text-[11px] leading-[1.55] text-ink-2">
+        <div className="flex items-baseline gap-x-2 whitespace-nowrap overflow-hidden">
+          {toggle}
+          <span className="text-ink-1 font-semibold font-sans">{coin}-PERP</span>
+          <span className="text-ink-3">{intervalLabel}</span>
+          {!h.live && bar && <span className="text-ink-2">{fmtBarTime(bar.t, intervalMs)}</span>}
+          {ohlc}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div ref={ref} className="absolute left-2 top-2 z-10 pointer-events-none max-w-[calc(100%-5rem)] rounded-md bg-surface-1/95 sm:bg-surface-1/80 px-2 py-1 font-mono tabular-nums text-[11px] leading-[1.55] text-ink-2">
-      <div className="flex flex-wrap items-baseline gap-x-2">
+      {/* Symbol i OHLC w jednej linii, gdy wykres jest szeroki (zawija się na węższym) */}
+      <div className="flex flex-wrap items-baseline gap-x-2.5">
+        {toggle}
         <span className="text-ink-1 font-semibold font-sans">{coin}-PERP</span>
         <span className="text-ink-3">
           {intervalLabel} · Hyperliquid
         </span>
         {bar && <span className="text-ink-2">{fmtBarTime(bar.t, intervalMs)}</span>}
         {h.live && h.open && bar && <span className="text-accent">● {tr('bieżąca', 'current')}</span>}
-      </div>
-      {c ? (
-        <div className="flex flex-wrap items-baseline gap-x-2.5">
-          <Field label="O" secondary>
-            {fmtPx(c.o)}
-          </Field>
-          <Field label="H" secondary>
-            {fmtPx(c.h)}
-          </Field>
-          <Field label="L" secondary>
-            {fmtPx(c.l)}
-          </Field>
-          <Field label="C" className={c.c >= c.o ? 'text-of-buy-ink' : 'text-of-sell-ink'}>
-            {fmtPx(c.c)}
-          </Field>
-          <span className={change >= 0 ? 'text-of-buy-ink' : 'text-of-sell-ink'}>
-            {fmtChange(change)}
-          </span>
+        {ohlc}
+        {c && (
           <Field label={tr('Wol.', 'Vol.')} title={tr(`Wolumen świecy z API Hyperliquid (${coin})`, `Candle volume from the Hyperliquid API (${coin})`)}>
             {fmtVol(c.v)}
           </Field>
-        </div>
-      ) : (
-        <div className="text-ink-3">{tr('Wczytywanie świec…', 'Loading candles…')}</div>
-      )}
+        )}
+      </div>
       {(h.ind?.vwap || h.ind?.svwap) && c && (
         <div className="flex flex-wrap items-baseline gap-x-2.5">
           {h.ind.vwap && (
