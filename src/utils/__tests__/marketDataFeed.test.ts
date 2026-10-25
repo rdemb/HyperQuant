@@ -10,6 +10,7 @@ import {
   parseL2Levels,
   recalculateIndicatorSeries,
   resetHtfCacheForTests,
+  loadHourlyShared,
   loadMinuteCandles,
   loadVolModel,
   parseHlCandles,
@@ -254,7 +255,10 @@ describe('runTouchMonteCarlo — deterministyczny, z metodą w wyniku', () => {
 });
 
 describe('parseHlCandles i loadVolModel (zamockowane API)', () => {
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    resetHtfCacheForTests();
+  });
 
   it('parseHlCandles: stringi → liczby, rekordy nieskończone pomijane', () => {
     const bars = parseHlCandles([
@@ -322,8 +326,37 @@ describe('parseHlCandles i loadVolModel (zamockowane API)', () => {
     const m = await loadVolModel(1_800_000_000_000);
     expect(m).not.toBeNull();
     expect(m!.hourlyBars).toBeGreaterThan(1000);
+    resetHtfCacheForTests();
     stubCandles(true);
     expect(await loadVolModel(1_800_000_000_000)).toBeNull();
+  });
+
+  it('świece 1h: jedno pobranie dla równoczesnych odbiorców; świeższe tylko na żądanie; błąd nie zostaje w pamięci', async () => {
+    let calls = 0;
+    let ok = true;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        calls++;
+        return { ok, json: async () => [{ t: 1, o: '1', h: '1', l: '1', c: '1', v: '1' }] } as Response;
+      })
+    );
+    const T = 1_800_000_000_000;
+    const [a, b] = await Promise.all([loadHourlyShared(T - 1000, T), loadHourlyShared(T - 1000, T + 10)]);
+    expect(calls).toBe(1);
+    expect(a.at).toBe(T);
+    expect(b.raw).toBe(a.raw);
+    // Model zmienności i kontekst aukcji kilka minut później: ta sama odpowiedź
+    expect((await loadHourlyShared(T - 30 * 60_000, T + 5 * 60_000)).at).toBe(T);
+    expect(calls).toBe(1);
+    // Po północy UTC kontekst aukcji wymaga pobrania po północy
+    expect((await loadHourlyShared(T + 1, T + 6 * 60_000)).at).toBe(T + 6 * 60_000);
+    expect(calls).toBe(2);
+    ok = false;
+    expect((await loadHourlyShared(T + 7 * 60_000, T + 7 * 60_000)).raw).toBeNull();
+    ok = true;
+    await loadHourlyShared(0, T + 8 * 60_000);
+    expect(calls).toBe(4);
   });
 });
 
@@ -379,6 +412,16 @@ describe('fetchRealHyperliquidMarketData (zamockowane API)', () => {
     stubApi(null);
     const res = await fetchRealHyperliquidMarketData(300);
     expect(res.liveTelemetry).toBeNull();
+  });
+
+  it('świeży kontekst BTC z WS zastępuje metaAndAssetCtxs (telemetria z niego)', async () => {
+    const calls: string[] = [];
+    stubApi(meta('0.0'), calls);
+    const ctx = (meta('0.0000125') as [unknown, Record<string, unknown>[]])[1][0];
+    const res = await fetchRealHyperliquidMarketData(300, { assetCtx: ctx });
+    expect(calls).not.toContain('metaAndAssetCtxs');
+    expect(res.liveTelemetry?.fundingAnnualizedPct).toBe(10.95);
+    expect(res.liveTelemetry?.markPrice).toBe(100010);
   });
 
   it('cache HTF i opcjonalny L2 ograniczają liczbę zapytań', async () => {
