@@ -166,7 +166,7 @@ export const FundingVenues: React.FC = () => {
           <Spread label="HL − Bybit" value={f.spreadHlBybitPp} />
           <div className="min-w-0 flex flex-col gap-1 col-span-2 sm:col-span-1">
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium truncate">{tr('Tłok HL (z vs 7 dni)', 'HL crowding (z vs 7 days)')}</span>
+              <span className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium min-w-0 leading-snug">{tr('Tłok HL (z vs 7 dni)', 'HL crowding (z vs 7 days)')}</span>
               <Badge
                 tone="model"
                 title={tr(
