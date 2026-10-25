@@ -30,14 +30,16 @@ function files(units: { start: number; part: boolean }[]): Map<string, unknown> 
   return m;
 }
 
-function fakeFetch(m: Map<string, unknown>, idx: unknown) {
+/** `plain` — serwer wysyła pliki .json.gz z Content-Encoding: gzip, więc przeglądarka oddaje je już rozpakowane. */
+function fakeFetch(m: Map<string, unknown>, idx: unknown, plain = false) {
   const calls: string[] = [];
   const fetcher = async (url: string) => {
     const rel = url.slice(BASE.length + 1);
     calls.push(rel);
     if (rel === 'index.json') return idx ? new Response(JSON.stringify(idx)) : new Response('', { status: 404 });
     const v = m.get(rel);
-    return v ? new Response(new Uint8Array(gzipSync(JSON.stringify(v)))) : new Response('', { status: 404 });
+    if (!v) return new Response('', { status: 404 });
+    return new Response(plain ? JSON.stringify(v) : new Uint8Array(gzipSync(JSON.stringify(v))));
   };
   return { calls, fetcher };
 }
@@ -93,12 +95,12 @@ describe('ReplaySession — odtwarzanie nagrania', () => {
     vi.useRealTimers();
   });
 
-  const twoHours = () => {
+  const twoHours = (plain = false) => {
     const units = [
       { start: H0, part: false },
       { start: H0 + HIST_HOUR_MS, part: false },
     ];
-    return fakeFetch(files(units), index([H0, H0 + HIST_HOUR_MS], []));
+    return fakeFetch(files(units), index([H0, H0 + HIST_HOUR_MS], []), plain);
   };
   const tradesUpTo = (t: number) => tradesIn(H0, H0 + 2 * HIST_HOUR_MS).filter((x) => x.t <= t).length;
 
@@ -161,6 +163,26 @@ describe('ReplaySession — odtwarzanie nagrania', () => {
     vi.advanceTimersByTime(2000);
     expect(s.t).toBe(s.to);
     expect(s.playing).toBe(false);
+  });
+
+  it('pliki już rozpakowane przez serwer — to samo nagranie co z gzip', async () => {
+    s = new ReplaySession({ source: 'lessons', coin: 'BTC', from: null, to: null, t: null }, twoHours(true).fetcher, fakeCandles().load, BASE);
+    await s.load();
+    expect(s.state).toBe('ready');
+    expect(s.store!.tape.count).toBe(tradesUpTo(H0 + HIST_HOUR_MS));
+  });
+
+  it('API bez świec 1m (starsze nagranie) — świece z taśmy, bieżąca do chwili odtwarzania', async () => {
+    s = new ReplaySession({ source: 'history', coin: 'BTC', from: null, to: null, t: H0 + 30 * 60_000 + 15_000 }, twoHours().fetcher, fakeCandles().load, BASE);
+    await s.load();
+    const series = s.store!.series('1m');
+    await series.load();
+    expect(series.loadState).toBe('ready');
+    const bars = series.bars();
+    expect(bars.length).toBe(31);
+    expect(bars[0].candle).toEqual({ t: H0, o: 80_000, h: 80_000, l: 80_000, c: 80_000, v: 2, n: 2 });
+    expect(bars[29].candle).toMatchObject({ t: H0 + 29 * 60_000, o: 80_029, c: 80_029, v: 2 });
+    expect(bars[30].candle).toMatchObject({ t: H0 + 30 * 60_000, v: 1, n: 1 });
   });
 
   it('bez spisu — błąd; rynek bez nagrania albo zakres poza nagraniem — puste', async () => {

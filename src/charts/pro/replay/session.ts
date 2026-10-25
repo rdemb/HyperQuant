@@ -2,10 +2,10 @@ import { HIST_HOUR_MS, type HistoryIndex } from '../../../utils/tapeHistory';
 import type { Candle } from '../hl/parse';
 import { fetchCandles } from '../hl/rest';
 import { HlStream } from '../hl/stream';
-import { DAY } from '../core/time';
+import { DAY, intervalById } from '../core/time';
 import { HISTORY_BASE, type Fetcher } from '../store/serverHistory';
 import { type Market, ProStore, type ReplayClock } from '../store/proStore';
-import { type ReplayData, fetchIndex, loadReplay, recordedRange } from './data';
+import { type ReplayData, fetchIndex, loadReplay, recordedRange, withTapeCandles } from './data';
 import type { ReplaySource } from './link';
 
 /**
@@ -210,12 +210,12 @@ export class ReplaySession {
     st.feedReplay({ trades: { from: lo, to: t, spans, fills, oi }, frames });
   }
 
-  /** Świece z API do końca nagrania, pamiętane dla kolejnych magazynów tej powtórki. */
+  /** Świece z API do końca nagrania (brakujące — z taśmy nagrania), pamiętane dla kolejnych magazynów tej powtórki. */
   private candles(coin: string, interval: string, from: number, to: number): Promise<Candle[]> {
     const key = `${coin}:${interval}:${from}:${to}`;
     let p = this.candleMemo.get(key);
     if (!p) {
-      p = this.loadCandles(coin, interval, from, to);
+      p = this.loadCandles(coin, interval, from, to).then((list) => (this.data ? withTapeCandles(list, this.data.fills, intervalById(interval).ms, from, to) : list));
       this.candleMemo.set(key, p);
       // Błąd pobrania nie zostaje w pamięci — następna próba pyta ponownie
       p.catch(() => this.candleMemo.delete(key));

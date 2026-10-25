@@ -194,12 +194,22 @@ export class ServerHistory {
   private async fetchGz(rel: string): Promise<unknown> {
     try {
       const res = await this.fetcher(`${this.base}/${rel}`);
-      if (!res.ok || !res.body) return null;
-      return await new Response(res.body.pipeThrough(new DecompressionStream('gzip'))).json();
+      if (!res.ok) return null;
+      return await gzJson(res);
     } catch {
       return null;
     }
   }
+}
+
+/**
+ * JSON z pliku .json.gz. Serwer, który wysyła plik z nagłówkiem Content-Encoding: gzip, oddaje już rozpakowane bajty —
+ * rozpakowujemy tylko, gdy treść zaczyna się nagłówkiem gzip (1f 8b).
+ */
+export async function gzJson(res: Response): Promise<unknown> {
+  const buf = new Uint8Array(await res.arrayBuffer());
+  const gz = buf[0] === 0x1f && buf[1] === 0x8b;
+  return await new Response(gz ? new Blob([buf]).stream().pipeThrough(new DecompressionStream('gzip')) : buf).json();
 }
 
 const loaders = new Map<ProStore, ServerHistory>();
