@@ -54,6 +54,7 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 - Service worker nie przechwytuje nawigacji do `blog/` (strona bloga nie nadpisuje zapisanej powłoki aplikacji); `index.html` wskazuje kanał RSS.
 
 ### Poprawione
+- Stan rynku: pierwsze zdanie pojawia się zaraz po danych wykresu (wcześniej do 5 s „Czekam na dane wykresu…”), a liczby w „skąd?” mają po polsku jeden zapis: spacja tysięcy i przecinek dziesiętny (wcześniej „80,455” obok „+0,6σ” i „42.8K”).
 - Powtórka w widoku Wykresy: starsze nagranie nie zostaje bez świec, gdy API Hyperliquid już ich nie ma (trzyma ok. 5000 świec na interwał, 1m to ok. 3,5 dnia) — brakująca świeca jest złożona z transakcji taśmy nagrania. Pliki nagrania wysłane przez serwer już rozpakowane (nagłówek Content-Encoding: gzip) wczytują się tak samo jak spakowane.
 - Wykresy: po zmianie interwału albo rynku widok wraca do bieżącej świecy (wcześniej przesunięcie z poprzedniego interwału pokazywało zupełnie inny okres, np. czerwiec na świecach dziennych).
 

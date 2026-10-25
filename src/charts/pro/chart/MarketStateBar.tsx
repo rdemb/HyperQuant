@@ -15,6 +15,8 @@ import { tr } from '../../../i18n';
  */
 
 const STATE_EVERY_MS = 5_000;
+/** Przed pierwszym zdaniem (wykres dopiero dostaje dane) — częściej. */
+const STATE_WAIT_MS = 500;
 /** Migawka arkusza starsza niż tyle ms jest nieaktualna (zerwane połączenie). */
 const BOOK_STALE_MS = 30_000;
 
@@ -78,10 +80,15 @@ export const MarketStateBar: React.FC<{ store: ProStore; series: CandleSeries; v
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const run = () => setFacts(readState(store, series, venueOn));
+    let id = 0;
+    // Do pierwszego zdania co 0,5 s (dane wykresu dochodzą po wejściu), potem co 5 s
+    const run = () => {
+      const f = readState(store, series, venueOn);
+      setFacts(f);
+      id = window.setTimeout(run, f.length > 0 ? STATE_EVERY_MS : STATE_WAIT_MS);
+    };
     run();
-    const id = setInterval(run, STATE_EVERY_MS);
-    return () => clearInterval(id);
+    return () => clearTimeout(id);
   }, [store, series, venueOn]);
 
   // Rozwinięcie zamyka dotknięcie obok i Escape
