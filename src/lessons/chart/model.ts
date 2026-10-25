@@ -1,6 +1,6 @@
-import { IB_EXTENSIONS, initialBalances, volumeProfile, vwapSeries, type InitialBalance, type VolumeProfile, type VwapPoint } from '../../charts/pro/core/indicators';
+import { IB_EXTENSIONS, initialBalances, volumeProfile, vwapFrom, type InitialBalance, type VolumeProfile, type VwapPoint } from '../../charts/pro/core/indicators';
 import { sessionsBetween, utcDayStart, type SessionId } from '../../charts/pro/core/sessions';
-import { mergeCandles, toIndicatorBars, type LessonSlice, type SliceCandle } from '../data';
+import { mergeCandles, minuteCandles, toIndicatorBars, type LessonSlice, type SliceCandle } from '../data';
 
 /**
  * Model ryciny ćwiczenia: świece wycinka (na wąskim ekranie sklejone po k) i wskaźniki liczone funkcjami Wykresów.
@@ -54,7 +54,8 @@ export function figureModel(slice: LessonSlice, layers: FigureLayers, k: number)
   const tfMs = baseMs * k;
   const dayCandles = mergeCandles(slice.candles, k, baseMs);
   const dayBars = toIndicatorBars(dayCandles);
-  const vwapAll = layers.vwap || layers.bands ? vwapSeries(dayBars, 'day') : dayBars.map(() => null);
+  // VWAP dnia ze świec 1m, jak w Wykresach: ta sama wartość przy każdym interwale ryciny
+  const vwapAll = layers.vwap || layers.bands ? vwapFrom(dayBars, minuteCandles(slice.m1), tfMs, 'day') : dayBars.map(() => null);
   const first = dayCandles.findIndex((c) => c[0] >= slice.from);
   const candles = dayCandles.slice(first);
   const ibAll = layers.ib ? initialBalances(dayBars, tfMs) : [];

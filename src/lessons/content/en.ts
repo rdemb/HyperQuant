@@ -86,7 +86,7 @@ export const en: LessonsContent = {
       checkpoints: [
         {
           context:
-            "It is 13:30. Since midnight UTC price has been rotating between 81,300 and 81,800 USD. VWAP has barely moved (81,630), and the day's value area, the range holding 70% of the volume, fits within 400 dollars (81,360–81,760).",
+            "It is 13:30. Since midnight UTC price has been rotating between 81,300 and 81,800 USD. VWAP has barely moved (81,627), and the day's value area, the range holding 70% of the volume, fits within 400 dollars (81,360–81,760).",
           questions: [
             {
               prompt: 'How would you describe this morning?',
@@ -105,7 +105,7 @@ export const en: LessonsContent = {
             'The NY open breaks price out of balance: within an hour BTC rises by more than 2,000 USD, on volume several times higher than in the morning. Price breaks through PDH (83,138) and peaks at 83,425 (1), but does not stay above it: at 15:10 a single five-minute candle drops it to 82,200 (2), almost back to VWAP.',
         },
         {
-          context: 'It is 15:30. After the drop to 82,200, price has held between 82,330 and 82,630 for twenty minutes, above VWAP (82,150). PDH 83,138 was broken but not held.',
+          context: 'It is 15:30. After the drop to 82,200, price has held between 82,330 and 82,630 for twenty minutes, above VWAP (82,143). PDH 83,138 was broken but not held.',
           questions: [
             {
               prompt: 'Someone assumes the breakout will continue. Where is the level whose break invalidates that scenario?',
@@ -143,7 +143,7 @@ export const en: LessonsContent = {
       checkpoints: [
         {
           context:
-            'It is 14:45. Price has been rising since the London open; PDH 83,425 was broken in the morning and held. Since 09:00 price has not touched VWAP, which is itself rising (now 83,390). Price 84,185 is +1.9σ from VWAP, right at the +2σ band.',
+            'It is 14:45. Price has been rising since the London open; PDH 83,425 was broken in the morning and held. Since 09:00 price has not touched VWAP, which is itself rising (now 83,395). Price 84,185 is +1.8σ from VWAP, just below the +2σ band.',
           questions: [
             {
               prompt: "Many traders teach that “price at +2σ is statistically too high”. What does this day's context say?",
@@ -168,7 +168,7 @@ export const en: LessonsContent = {
             },
           ],
           reveal:
-            'Price reached 84,850 at 16:39 and did not return to VWAP once before 22:00 UTC: the low was 84,136, with VWAP around 83,850. The window closed near the highs, at 84,795. Anyone who sold at +2σ with a target at VWAP never saw the target.',
+            'Price reached 84,850 at 16:39 and did not return to VWAP once before 22:00 UTC: the low was 84,136, with VWAP around 83,840. The window closed near the highs, at 84,795. Anyone who sold at +2σ with a target at VWAP never saw the target.',
         },
       ],
       debrief: {
@@ -190,7 +190,7 @@ export const en: LessonsContent = {
       checkpoints: [
         {
           context:
-            "It is 11:00. Overnight price slid from 84,300, broke PDL 82,613 before 08:00 and made a low of 81,619 at 09:00. It has now bounced to 82,172 (1) and sits at 82,020: the lower edge of the day's value area (VAL 82,000). VWAP is falling and is 770 USD higher (82,774); price is at −1.1σ.",
+            "It is 11:00. Overnight price slid from 84,300, broke PDL 82,613 before 08:00 and made a low of 81,619 at 09:00. It has now bounced to 82,172 (1) and sits at 82,020: the lower edge of the day's value area (VAL 82,000). VWAP is falling and is 750 USD higher (82,768); price is at −1.1σ.",
           questions: [
             {
               prompt: 'Has the market regained value?',
@@ -237,7 +237,7 @@ export const en: LessonsContent = {
       checkpoints: [
         {
           context:
-            'It is 14:10. Since the morning VWAP has stood still (81,600–81,700), and price has crossed it many times. At the NY open a jump to 82,088 (1), above the upper edge of the value area (VAH 82,020), but ten minutes later price is back inside, at 81,890.',
+            'It is 14:10. Since the morning VWAP has stood still (81,590–81,690), and price has crossed it many times. At the NY open a jump to 82,088 (1), above the upper edge of the value area (VAH 82,020), but ten minutes later price is back inside, at 81,890.',
           questions: [
             {
               prompt: 'What kind of day is this?',
@@ -290,7 +290,7 @@ export const en: LessonsContent = {
       checkpoints: [
         {
           context:
-            'It is 15:30. A quiet day (VWAP around 80,760) ended at 14:15: price fell below PDL 80,500 and triggered long liquidations, $17.7M in a single candle (1). After a short bounce came a second wave, $14.3M at 15:10 (2), and a low of 79,184. In total about $45M of longs have been liquidated since 14:15. Price is 1.65σ below VWAP.',
+            'It is 15:30. A quiet day (VWAP around 80,760) ended at 14:15: price fell below PDL 80,500 and triggered long liquidations, $17.7M in a single candle (1). After a short bounce came a second wave, $14.3M at 15:10 (2), and a low of 79,184. In total about $45M of longs have been liquidated since 14:15. Price is 1.7σ below VWAP.',
           questions: [
             {
               prompt: 'What do you do with this information?',
@@ -309,7 +309,7 @@ export const en: LessonsContent = {
             'There were no more large liquidations, and no new low either. From 15:45 price recovers, and around 16:50 it is back above VWAP. From 16:25 the desk records the tape, so CVD and open interest appear in the panels.',
         },
         {
-          context: 'It is 18:15. Price 80,330, above VWAP (80,124). In the last quarter of an hour aggressive buying outweighed selling by almost 500 BTC (CVD rising), while open interest fell by more than 600 BTC (3).',
+          context: 'It is 18:15. Price 80,330, above VWAP (80,127). In the last quarter of an hour aggressive buying outweighed selling by almost 500 BTC (CVD rising), while open interest fell by more than 600 BTC (3).',
           questions: [
             {
               prompt: 'Price is rising, delta strongly positive, open interest falling. Who is most likely buying?',
@@ -398,7 +398,7 @@ export const en: LessonsContent = {
         name: 'Daily VWAP and σ bands',
         group: 'price',
         what: "The day's volume-weighted average price: what everyone who traded today paid on average.",
-        how: 'From 00:00 UTC, the typical price of each candle (H+L+C)/3 weighted by volume; the bands are ±1σ and ±2σ, the volume-weighted standard deviation of price from VWAP. Session VWAP computes the same from the Asia, London or New York open.',
+        how: 'From 00:00 UTC, the typical price (H+L+C)/3 of each 1-minute candle weighted by volume, so the value is the same on every timeframe; the bands are ±1σ and ±2σ, the volume-weighted standard deviation of price from VWAP. Session VWAP computes the same from the Asia, London or New York open.',
         read: [
           'The slope tells you the type of day: a flat VWAP means balance, a sloping one a trend.',
           "Price above VWAP: the day's buyers are on average in profit; below VWAP: at a loss.",

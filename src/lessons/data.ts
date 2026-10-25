@@ -7,7 +7,7 @@ import type { IndicatorBar } from '../charts/pro/core/indicators';
  * i footprint. Wskaźniki liczymy na stronie tymi samymi funkcjami co Wykresy.
  */
 
-export const LESSONS_VERSION = 1;
+export const LESSONS_VERSION = 2;
 
 /** Świeca: [czas, o, h, l, c, wolumen, kupno agresorów | null, sprzedaż agresorów | null] (wolumen w BTC). */
 export type SliceCandle = [number, number, number, number, number, number, number | null, number | null];
@@ -33,6 +33,8 @@ export interface LessonSlice {
   /** Północ UTC dnia początku okna: kotwica VWAP i profilu dnia. */
   dayStart: number;
   candles: SliceCandle[];
+  /** Świece 1m od północy UTC do końca okna: [czas, o, h, l, c, wolumen] — VWAP jak w Wykresach. */
+  m1: [number, number, number, number, number, number][];
   levels: { t: number; open: number | null; pdh: number; pdl: number }[];
   /** Odcinki nagranej taśmy [od, do). */
   tape: [number, number][];
@@ -57,6 +59,8 @@ export function isLessonSlice(x: unknown): x is LessonSlice {
     Array.isArray(s.candles) &&
     s.candles.length > 1 &&
     s.candles.every((c) => Array.isArray(c) && c.length === 8 && c.slice(0, 6).every(fin)) &&
+    Array.isArray(s.m1) &&
+    s.m1.every((c) => Array.isArray(c) && c.length === 6 && c.every(fin)) &&
     Array.isArray(s.levels) &&
     Array.isArray(s.tape)
   );
@@ -68,7 +72,8 @@ const cache = new Map<string, Promise<LessonSlice>>();
 export function loadSlice(id: string): Promise<LessonSlice> {
   let p = cache.get(id);
   if (!p) {
-    p = fetch(`./lessons/${id}.json`)
+    // Wersja w adresie: po zmianie formatu cache HTTP nie poda starego pliku
+    p = fetch(`./lessons/${id}.json?v=${LESSONS_VERSION}`)
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
@@ -101,6 +106,11 @@ export function mergeCandles(cs: readonly SliceCandle[], k: number, tfMs: number
     }
   }
   return out;
+}
+
+/** Świece 1m wycinka w postaci świec Wykresów. */
+export function minuteCandles(m1: LessonSlice['m1']): Candle[] {
+  return m1.map(([t, o, h, l, c, v]) => ({ t, o, h, l, c, v, n: 0 }));
 }
 
 /** Świece wycinka w postaci, której oczekują funkcje wskaźników Wykresów. */
