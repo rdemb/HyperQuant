@@ -81,6 +81,7 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 - Wykresy: podpis wejścia wąskiej pozycji long albo short stoi za prawym uchwytem zamiast pod uchwytami. Plan: przełącznik sekcji mieści się na telefonie 390 px (wcześniej strona przewijała się w bok o kilka pikseli).
 - Powtórka w widoku Wykresy: starsze nagranie nie zostaje bez świec, gdy API Hyperliquid już ich nie ma (trzyma ok. 5000 świec na interwał, 1m to ok. 3,5 dnia) — brakująca świeca jest złożona z transakcji taśmy nagrania. Pliki nagrania wysłane przez serwer już rozpakowane (nagłówek Content-Encoding: gzip) wczytują się tak samo jak spakowane.
 - Wykresy: po zmianie interwału albo rynku widok wraca do bieżącej świecy (wcześniej przesunięcie z poprzedniego interwału pokazywało zupełnie inny okres, np. czerwiec na świecach dziennych).
+- Wykresy we wpisach bloga: CVD na telefonie (świece 30 min) kończy się tą samą liczbą co na komputerze i w tekście wpisu (wcześniej świeca 30 min z luką w taśmie wypadała z sumy, np. +183 zamiast +296), a przypis footprintu podaje świecę, której brakuje w zakresie przez przerwę w nagraniu taśmy (kolumny stoją obok siebie, więc luki nie było widać).
 
 ## [2.4.0] — 2026-10-22
 

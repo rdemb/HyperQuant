@@ -4,7 +4,7 @@ import path from 'node:path';
 import { gzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { anchoredVwap, buildCharts, decodeTape, mergeSpans, openSource, readCharts, volumeProfile } from './chartdata.mjs';
-import { diagonalImbalances, footprintSvg, mergeCandles, sessionHtml, sessionSvg, sessionTitle, spreadLabels } from './charts.mjs';
+import { diagonalImbalances, footprintHtml, footprintSvg, mergeCandles, sessionHtml, sessionSvg, sessionTitle, spreadLabels } from './charts.mjs';
 import { loadPostFile, validateCharts } from './posts.mjs';
 import { postBody } from './render.mjs';
 
@@ -246,6 +246,20 @@ describe('wykresy: rysunek (charts.mjs)', () => {
     expect(wide).toContain('12 mln USD');
     expect(footprintSvg(FP)).toContain('>−13<');
     expect(sessionHtml(SESSION, [{ bias: 'down', zone: [79600, 79700] }])).toMatch(/class="chart chart--w"[\s\S]*class="chart chart--n"/);
+  });
+
+  it('CVD liczone ze świec bazowych: ten sam wynik w obu układach, gdy część świecy 30 min jest bez delty', () => {
+    // Ostatnia świeca bez taśmy (nagranie skończyło się przed jej końcem): 11 świec po +20
+    const s = { ...SESSION, candles: SESSION.candles.map((c, i) => (i === 95 ? [...c.slice(0, 6), null, null] : c)) };
+    const cvdLabel = (svg) => svg.match(/fill="#3fc6dd" text-anchor="start" dominant-baseline="middle" font-family="[^"]*">([^<]+)</)[1];
+    expect(cvdLabel(sessionSvg(s))).toBe('+220');
+    expect(cvdLabel(sessionSvg(s, { narrow: true, uid: 'n' }))).toBe('+220');
+  });
+
+  it('footprint: brakująca świeca w środku zakresu podana w przypisie', () => {
+    expect(footprintHtml(FP)).not.toContain('Brak świec');
+    const gap = { ...FP, bars: [FP.bars[0], { ...FP.bars[1], t: FP.bars[1].t + 15 * MIN }] };
+    expect(footprintHtml(gap)).toMatch(/Brak świecy \d\d:\d\d \(przerwa w nagraniu taśmy\)\.<\/p>/);
   });
 
   it('notka: bez profilu i OI, poziomy wpisu podpisane przy osi, najbliższy poza zakresem ze strzałką', () => {
