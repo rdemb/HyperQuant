@@ -266,6 +266,11 @@ describe('wykresy: rysunek (charts.mjs)', () => {
     expect(sessionTitle(note)).toBe('Ostatnie 6 godzin');
     expect(sessionHtml(note, [], levels)).toContain('poziomy z wpisu');
     expect(sessionHtml(note, [], levels)).toContain('świece 5 min (na telefonie 10 min)');
+    // Legenda i przypis o kołach likwidacji tylko wtedy, gdy jakieś koło jest na rysunku
+    expect(sessionHtml(note, [], levels)).toContain('likwidacje longów i shortów');
+    const quiet = sessionHtml({ ...note, liq: [[AT - HOUR, 0.2, 0.1]] }, [], levels);
+    expect(quiet).not.toContain('likwidacje longów i shortów');
+    expect(quiet).toContain('nie było likwidacji od 0,5 mln USD');
   });
 });
 
