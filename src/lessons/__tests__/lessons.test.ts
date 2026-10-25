@@ -4,11 +4,12 @@ import { diagonalImbalances } from '../chart/FootprintFigure';
 import { MIN, dayProfile, figureModel, visibleCount } from '../chart/model';
 import { en } from '../content/en';
 import { pl } from '../content/pl';
-import { isLessonSlice, mergeCandles, type LessonSlice, type SliceCandle } from '../data';
+import { isLessonSlice, mergeCandles, minuteCandles, type LessonSlice, type SliceCandle } from '../data';
 import { EXERCISES, maxScore, pickSide, scoreAnswer, type QuestionSpec } from '../exercises';
 import { loadProgress, saveResult } from '../progress';
 import { RISK_DEFAULTS, expectancyR, mulberry32, simulateRisk } from '../risk';
 import { REPLAY_SUPPORTED, exerciseReplayHash } from '../replay';
+import { vwapSeries } from '../../charts/pro/core/indicators';
 import { parseReplayLink } from '../../charts/pro/replay/link';
 import { HIST_HOUR_MS, historyPath, isHistoryIndex } from '../../utils/tapeHistory';
 
@@ -187,6 +188,35 @@ describe('ocena odpowiedzi', () => {
   });
 });
 
+describe('VWAP jak w Wykresach', () => {
+  // Liczby VWAP z treści ćwiczeń w chwili zatrzymania (ta sama wartość na rycinie i w legendzie powtórki)
+  const QUOTED: [string, string, number][] = [
+    ['2026-10-20-ny', '2026-10-20T13:30Z', 81627],
+    ['2026-10-20-ny', '2026-10-20T15:30Z', 82143],
+    ['2026-10-21-trend', '2026-10-21T14:45Z', 83395],
+    ['2026-10-22-trend', '2026-10-22T11:00Z', 82768],
+    ['2026-10-24-cascade', '2026-10-24T18:15Z', 80127],
+  ];
+
+  it.each(QUOTED)('%s %s: VWAP %d', (id, at, px) => {
+    const m = figureModel(slice(id), { vwap: true }, 1);
+    expect(Math.round(m.vwap[visibleCount(m, Date.parse(at)) - 1]!.vwap)).toBe(px);
+  });
+
+  it('ze świec 1m: ta sama wartość przy sklejonych świecach ryciny', () => {
+    const s = slice('2026-10-24-cascade');
+    const at = Date.parse('2026-10-24T18:15Z');
+    const fine = minuteCandles(s.m1).filter((c) => c.t + MIN <= at);
+    const ref = vwapSeries(fine.map((c) => ({ t: c.t, candle: c })), 'day').at(-1)!;
+    for (const k of [1, 3]) {
+      const m = figureModel(s, { vwap: true }, k);
+      const v = m.vwap[visibleCount(m, at) - 1]!;
+      expect(v.vwap).toBeCloseTo(ref.vwap, 6);
+      expect(v.sd).toBeCloseTo(ref.sd, 6);
+    }
+  });
+});
+
 describe('rycina nie zdradza dalszego ciągu', () => {
   const s = slice('2026-10-20-ny');
   const m = figureModel(s, { vwap: true, profile: true }, 1);
@@ -206,7 +236,7 @@ describe('rycina nie zdradza dalszego ciągu', () => {
   });
 
   it('VWAP przy zatrzymaniu nie zależy od późniejszych świec', () => {
-    const cut = { ...s, candles: s.candles.filter((c) => c[0] + s.tf * MIN <= cursor), to: cursor };
+    const cut = { ...s, candles: s.candles.filter((c) => c[0] + s.tf * MIN <= cursor), m1: s.m1.filter((c) => c[0] + MIN <= cursor), to: cursor };
     const n = visibleCount(m, cursor);
     const b = figureModel(cut, { vwap: true }, 1);
     expect(b.vwap[n - 1]).toEqual(m.vwap[n - 1]);

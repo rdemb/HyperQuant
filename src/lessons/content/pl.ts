@@ -85,7 +85,7 @@ export const pl: LessonsContent = {
       checkpoints: [
         {
           context:
-            'Jest 15:30. Od północy cena krąży między 81 300 a 81 800 USD. VWAP prawie się nie rusza (81 630), a obszar wartości dnia, czyli 70% wolumenu, mieści się w 400 dolarach (81 360–81 760).',
+            'Jest 15:30. Od północy cena krąży między 81 300 a 81 800 USD. VWAP prawie się nie rusza (81 627), a obszar wartości dnia, czyli 70% wolumenu, mieści się w 400 dolarach (81 360–81 760).',
           questions: [
             {
               prompt: 'Jak opisać ten poranek?',
@@ -104,7 +104,7 @@ export const pl: LessonsContent = {
             'Otwarcie NY wybija cenę z równowagi: w godzinę BTC rośnie o ponad 2000 USD, z wolumenem kilka razy większym niż rano. Cena przebija PDH (83 138) i robi szczyt 83 425 (1), ale nie zostaje nad nim: o 17:10 jedna pięciominutowa świeca zrzuca ją do 82 200 (2), czyli prawie do VWAP.',
         },
         {
-          context: 'Jest 17:30. Po zrzucie do 82 200 cena od dwudziestu minut trzyma się między 82 330 a 82 630, nad VWAP (82 150). PDH 83 138 został przebity, ale nie utrzymany.',
+          context: 'Jest 17:30. Po zrzucie do 82 200 cena od dwudziestu minut trzyma się między 82 330 a 82 630, nad VWAP (82 143). PDH 83 138 został przebity, ale nie utrzymany.',
           questions: [
             {
               prompt: 'Ktoś zakłada, że wybicie będzie kontynuowane. Gdzie leży poziom, którego przełamanie unieważnia ten scenariusz?',
@@ -142,7 +142,7 @@ export const pl: LessonsContent = {
       checkpoints: [
         {
           context:
-            'Jest 16:45. Od otwarcia Londynu cena rośnie, PDH 83 425 przebity przed południem i utrzymany. Od 11:00 cena nie dotknęła VWAP, który sam rośnie (teraz 83 390). Cena 84 185 to +1,9σ od VWAP, tuż przy paśmie +2σ.',
+            'Jest 16:45. Od otwarcia Londynu cena rośnie, PDH 83 425 przebity przed południem i utrzymany. Od 11:00 cena nie dotknęła VWAP, który sam rośnie (teraz 83 395). Cena 84 185 to +1,8σ od VWAP, tuż pod pasmem +2σ.',
           questions: [
             {
               prompt: 'Wielu traderów uczy: „cena przy +2σ jest statystycznie za wysoko”. Co mówi kontekst tego dnia?',
@@ -167,7 +167,7 @@ export const pl: LessonsContent = {
             },
           ],
           reveal:
-            'Cena doszła do 84 850 o 18:39 i do północy ani razu nie wróciła do VWAP: najniżej 84 136, przy VWAP około 83 850. Dzień zamknął się przy szczytach, 84 795. Kto sprzedał przy +2σ z celem na VWAP, celu nie zobaczył.',
+            'Cena doszła do 84 850 o 18:39 i do północy ani razu nie wróciła do VWAP: najniżej 84 136, przy VWAP około 83 840. Dzień zamknął się przy szczytach, 84 795. Kto sprzedał przy +2σ z celem na VWAP, celu nie zobaczył.',
         },
       ],
       debrief: {
@@ -189,7 +189,7 @@ export const pl: LessonsContent = {
       checkpoints: [
         {
           context:
-            'Jest 13:00. W nocy cena zjechała z 84 300, przed 10:00 przebiła PDL 82 613, o 11:00 zrobiła dołek 81 619. Teraz odbiła do 82 172 (1) i stoi przy 82 020: to dolna krawędź obszaru wartości dnia (VAL 82 000). VWAP spada i jest 770 USD wyżej (82 774), cena to −1,1σ.',
+            'Jest 13:00. W nocy cena zjechała z 84 300, przed 10:00 przebiła PDL 82 613, o 11:00 zrobiła dołek 81 619. Teraz odbiła do 82 172 (1) i stoi przy 82 020: to dolna krawędź obszaru wartości dnia (VAL 82 000). VWAP spada i jest 750 USD wyżej (82 768), cena to −1,1σ.',
           questions: [
             {
               prompt: 'Czy rynek odzyskał wartość?',
@@ -236,7 +236,7 @@ export const pl: LessonsContent = {
       checkpoints: [
         {
           context:
-            'Jest 16:10. Od rana VWAP stoi w miejscu (81 600–81 700), a cena przechodziła przez niego wiele razy. Na otwarciu NY skok do 82 088 (1), nad górną krawędź obszaru wartości (VAH 82 020), ale po dziesięciu minutach cena jest z powrotem w środku, przy 81 890.',
+            'Jest 16:10. Od rana VWAP stoi w miejscu (81 590–81 690), a cena przechodziła przez niego wiele razy. Na otwarciu NY skok do 82 088 (1), nad górną krawędź obszaru wartości (VAH 82 020), ale po dziesięciu minutach cena jest z powrotem w środku, przy 81 890.',
           questions: [
             {
               prompt: 'Jaki to dzień?',
@@ -289,7 +289,7 @@ export const pl: LessonsContent = {
       checkpoints: [
         {
           context:
-            'Jest 17:30. Spokojny dzień (VWAP około 80 760) skończył się o 16:15: cena zeszła pod PDL 80 500 i uruchomiła likwidacje longów, 17,7 mln USD w jednej świecy (1). Po krótkim odbiciu druga fala, 14,3 mln o 17:10 (2), i dołek 79 184. Razem od 16:15 około 45 mln USD zlikwidowanych longów. Cena jest 1,65σ pod VWAP.',
+            'Jest 17:30. Spokojny dzień (VWAP około 80 760) skończył się o 16:15: cena zeszła pod PDL 80 500 i uruchomiła likwidacje longów, 17,7 mln USD w jednej świecy (1). Po krótkim odbiciu druga fala, 14,3 mln o 17:10 (2), i dołek 79 184. Razem od 16:15 około 45 mln USD zlikwidowanych longów. Cena jest 1,7σ pod VWAP.',
           questions: [
             {
               prompt: 'Co robisz z tą informacją?',
@@ -308,7 +308,7 @@ export const pl: LessonsContent = {
             'Kolejnych dużych likwidacji już nie było, a nowego dołka też nie. Od 17:45 cena wraca, około 18:50 jest z powrotem nad VWAP. Od 18:25 desk nagrywa taśmę, więc w panelach pojawiają się CVD i open interest.',
         },
         {
-          context: 'Jest 20:15. Cena 80 330, nad VWAP (80 124). W ostatnim kwadransie agresywne kupno przeważało o prawie 500 BTC (CVD rośnie), a open interest spadł o ponad 600 BTC (3).',
+          context: 'Jest 20:15. Cena 80 330, nad VWAP (80 127). W ostatnim kwadransie agresywne kupno przeważało o prawie 500 BTC (CVD rośnie), a open interest spadł o ponad 600 BTC (3).',
           questions: [
             {
               prompt: 'Cena rośnie, delta mocno dodatnia, open interest spada. Kto najpewniej kupuje?',
@@ -397,7 +397,7 @@ export const pl: LessonsContent = {
         name: 'VWAP dnia i pasma σ',
         group: 'price',
         what: 'Średnia cena dnia ważona wolumenem: ile średnio zapłacił każdy, kto dziś handlował.',
-        how: 'Od 00:00 UTC cena typowa świecy (H+L+C)/3 ważona wolumenem; pasma to ±1σ i ±2σ, odchylenie standardowe ceny od VWAP ważone wolumenem. VWAP sesji liczy to samo od otwarcia Azji, Londynu albo Nowego Jorku.',
+        how: 'Od 00:00 UTC cena typowa każdej świecy 1m (H+L+C)/3 ważona wolumenem, więc wartość jest ta sama na każdym interwale; pasma to ±1σ i ±2σ, odchylenie standardowe ceny od VWAP ważone wolumenem. VWAP sesji liczy to samo od otwarcia Azji, Londynu albo Nowego Jorku.',
         read: [
           'Nachylenie mówi o typie dnia: płaski VWAP to równowaga, nachylony to trend.',
           'Cena nad VWAP: kupujący dnia są średnio na plusie; pod VWAP: na minusie.',
