@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Dane ćwiczeń zakładki Lekcje (public/lessons/<id>.json): wycinki prawdziwego rynku BTC z publicznego repozytorium
-// danych desku. Świece od północy UTC (kotwica VWAP dnia) do końca okna, szczyt i dołek dnia poprzedniego ze świec
-// dziennych, a tam, gdzie desk nagrywał taśmę: delta agresorów, open interest, likwidacje i footprint.
+// danych desku. Świece od północy UTC (kotwica VWAP dnia) do końca okna, także 1m (VWAP), szczyt i dołek dnia
+// poprzedniego ze świec dziennych, a tam, gdzie desk nagrywał taśmę: delta agresorów, open interest, likwidacje i footprint.
 // Wskaźniki (VWAP, profil, IB) liczy strona tymi samymi funkcjami co Wykresy, więc tu są tylko surowe dane.
 // Z --replay kopiuje też nagranie taśmy i arkusza do powtórki w Wykresach (public/lessons/replay/, układ gałęzi history):
 // gałąź history trzyma tylko 7 dni, a linki z lekcji mają działać na stałe.
@@ -11,7 +11,7 @@ import path from 'node:path';
 import { gunzipSync } from 'node:zlib';
 import { DEFAULT_SOURCE, decodeTape, footprint, mergeSpans, openSource, parseCandles, rollup, tapeBars } from '../blog/chartdata.mjs';
 
-export const LESSONS_VERSION = 1;
+export const LESSONS_VERSION = 2;
 const MIN = 60_000;
 const HOUR = 60 * MIN;
 const DAY = 24 * HOUR;
@@ -126,6 +126,8 @@ export async function buildSlice(spec, get) {
     to,
     dayStart,
     candles,
+    // Świece 1m: VWAP liczony na stronie tak jak w Wykresach (ze świec 1m przy każdym interwale)
+    m1: minute.map((c) => [c.t, c.o, c.h, c.l, c.c, round(c.v)]),
     levels,
     tape: spans.filter(([a, b]) => b > dayStart && a < to).map(([a, b]) => [Math.max(a, dayStart), Math.min(b, to)]),
   };

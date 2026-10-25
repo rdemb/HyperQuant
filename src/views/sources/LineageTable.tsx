@@ -514,8 +514,8 @@ const GROUPS: { title: string; rows: Row[] }[] = [
       {
         metric: tr('Lekcje: wycinki rynku i symulator ryzyka', 'Lessons: market slices and risk simulator'),
         source: tr(
-          'Świece BTC z archiwum desku (gałąź archive repo danych), nagrana taśma transakcji i arkusza (gałąź history) oraz taśma likwidacji; wycinki zapisane przy budowie strony w lessons/*.json, a kopia nagrania z wieczoru 24.10 (16:00–22:00 UTC) do powtórki w Wykresach w lessons/replay/',
-          'BTC candles from the desk archive (archive branch of the data repository), the recorded trade and book tape (history branch) and the liquidation tape; slices saved at site build time in lessons/*.json, and a copy of the 24 Oct evening recording (16:00–22:00 UTC) for the Charts replay in lessons/replay/'
+          'Świece BTC z archiwum desku (gałąź archive repo danych; 1m do VWAP), nagrana taśma transakcji i arkusza (gałąź history) oraz taśma likwidacji; wycinki zapisane przy budowie strony w lessons/*.json, a kopia nagrania z wieczoru 24.10 (16:00–22:00 UTC) do powtórki w Wykresach w lessons/replay/',
+          'BTC candles from the desk archive (archive branch of the data repository; 1m for VWAP), the recorded trade and book tape (history branch) and the liquidation tape; slices saved at site build time in lessons/*.json, and a copy of the 24 Oct evening recording (16:00–22:00 UTC) for the Charts replay in lessons/replay/'
         ),
         method: tr(
           'Ryciny: VWAP, profil wolumenu, initial balance i footprint liczone tymi samymi funkcjami co na Wykresach, tylko ze świec zamkniętych przed chwilą zatrzymania (także zakres osi ceny). Symulator: 1000 serii transakcji o stałym ułamku ryzyka i kosztach w R, stałe ziarno (wspólne liczby losowe)',
