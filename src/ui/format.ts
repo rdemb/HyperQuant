@@ -14,8 +14,8 @@ export const numLang = (s: string): string => (lang === 'en' ? s : s.replace(/,/
 /** `toFixed` w zapisie języka strony (po polsku przecinek dziesiętny). */
 export const fmtFixed = (v: number, digits: number): string => numLang(v.toFixed(digits));
 
-/** Liczba bez zaokrąglania (już zaokrąglona w modelu) w zapisie języka strony. */
-export const fmtNum = (v: number): string => numLang(String(v));
+/** Liczba bez zaokrąglania (już zaokrąglona w modelu) w zapisie języka strony, ujemna ze znakiem „−”. */
+export const fmtNum = (v: number): string => numLang(String(v)).replace(/^-/, '−');
 
 export function fmtPrice(v: number | null | undefined, digits = 1): string {
   return isNum(v) ? numLang(v.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits })) : DASH;
