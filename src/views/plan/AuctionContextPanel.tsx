@@ -96,7 +96,7 @@ function levels(ctx: AuctionContext, price: number | null): Level[] {
       { label: ctx.ib.done ? 'IB low' : tr('IB low (w trakcie)', 'IB low (forming)'), px: ctx.ib.lo, tone: 'ib' }
     );
     if (ctx.ib.done && r > 0) {
-      out.push({ label: 'IB +1,5×', px: ctx.ib.lo + 1.5 * r, tone: 'ib' }, { label: 'IB −1,5×', px: ctx.ib.hi - 1.5 * r, tone: 'ib' });
+      out.push({ label: tr('IB +1,5×', 'IB +1.5×'), px: ctx.ib.lo + 1.5 * r, tone: 'ib' }, { label: tr('IB −1,5×', 'IB −1.5×'), px: ctx.ib.hi - 1.5 * r, tone: 'ib' });
       out.push({ label: 'IB +2×', px: ctx.ib.lo + 2 * r, tone: 'ib' }, { label: 'IB −2×', px: ctx.ib.hi - 2 * r, tone: 'ib' });
     }
   }

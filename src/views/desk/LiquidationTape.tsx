@@ -1,7 +1,7 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { scaleLinear } from 'd3';
 import { useLiqTape } from '../../state/useLiqTape';
-import { Badge, Stat, DASH, fmtCompact, fmtPrice, fmtSigned, fmtFixed } from '../../ui';
+import { Badge, Stat, DASH, fmtCompact, fmtPrice, fmtSigned, fmtFixed, fmtNum } from '../../ui';
 import { LiqTape, calibErrorBp } from '../../utils/liqTape';
 import { useElementWidth } from '../market/MarketMap';
 import { locale, tr } from '../../i18n';
@@ -259,7 +259,7 @@ const EventTable: React.FC<{ tape: LiqTape }> = ({ tape }) => {
             <tr key={`${e.t}-${e.sz}-${e.px}`} className="border-t border-line">
               <td className="py-1 pr-3">{timeFmt.format(e.t)}</td>
               <td className={`py-1 pr-3 font-sans ${e.side === 'long' ? 'text-sell-ink' : 'text-buy-ink'}`}>{e.side === 'long' ? '▼ long' : '▲ short'}</td>
-              <td className="py-1 pr-3">{e.sz} BTC</td>
+              <td className="py-1 pr-3">{fmtNum(e.sz)} BTC</td>
               <td className="py-1 pr-3">{fmtCompact(e.usd, '$')}</td>
               <td className="py-1 pr-3">{fmtPrice(e.px, 0)}</td>
               <td className="py-1 pr-3 font-sans">{e.method === 'backstop' ? 'backstop' : tr('arkusz', 'book')}</td>

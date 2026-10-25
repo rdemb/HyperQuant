@@ -11,14 +11,15 @@ const isNum = (v: number | null | undefined): v is number => typeof v === 'numbe
  */
 export const numLang = (s: string): string => (lang === 'en' ? s : s.replace(/,/g, '\u00a0').replace(/\./g, ','));
 
-/** `toFixed` w zapisie języka strony (po polsku przecinek dziesiętny). */
-export const fmtFixed = (v: number, digits: number): string => numLang(v.toFixed(digits));
+/** Stała liczba miejsc po przecinku w zapisie języka strony (separator tysięcy, po polsku przecinek dziesiętny), ujemna ze znakiem „−”. */
+export const fmtFixed = (v: number, digits: number): string =>
+  numLang(v.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits })).replace(/^-/, '−');
 
 /** Liczba bez zaokrąglania (już zaokrąglona w modelu) w zapisie języka strony, ujemna ze znakiem „−”. */
 export const fmtNum = (v: number): string => numLang(String(v)).replace(/^-/, '−');
 
 export function fmtPrice(v: number | null | undefined, digits = 1): string {
-  return isNum(v) ? numLang(v.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits })) : DASH;
+  return isNum(v) ? fmtFixed(v, digits) : DASH;
 }
 
 /** Zwięzły zapis kwot: 1 284 / 12,9K / 4,2M / 3,1B (po angielsku 12.9K). */
