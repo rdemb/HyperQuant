@@ -3,7 +3,7 @@ import { useDeskLedger } from '../../state/useDeskLedger';
 import { LedgerVerifyCard } from './LedgerVerifyCard';
 import { ModelAbCard } from './ModelAbCard';
 import { LEDGER_BASE } from '../../state/usePublished';
-import { Badge, EmptyState, Panel, Stat, DASH, fmtPrice } from '../../ui';
+import { Badge, EmptyState, Panel, Stat, DASH, fmtPrice, fmtFixed } from '../../ui';
 import { DeskLedgerSummary, MktScores, RetScores, TouchLevel, isAb } from '../../utils/deskLedger';
 import { locale, tr } from '../../i18n';
 
@@ -12,7 +12,7 @@ const dateTimeFmt = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'sh
 /** Procent bez „−0.0%” (zero ze znakiem minus z zaokrąglenia) */
 const pct = (v: number | null | undefined, d = 0) => {
   if (v === null || v === undefined || !Number.isFinite(v)) return DASH;
-  const s = (v * 100).toFixed(d);
+  const s = fmtFixed(v * 100, d);
   return `${Number(s) === 0 ? (0).toFixed(d) : s}%`;
 };
 /** Wyniki pokazujemy dopiero od 20 rozstrzygnięć — mniejsza próba to szum, nie ocena */
@@ -220,8 +220,8 @@ const RetCard: React.FC<{ r: DeskLedgerSummary['latest']['ret'][number]; sc: Ret
         <div
           className="absolute top-2 h-5 rounded-sm border border-dashed border-warn"
           title={tr(
-            `Przedział ACI tej prognozy (α = ${r.aci.alpha.toFixed(3)}${r.aci.lo === null ? ', nieskończony' : ''}; bieżące α = ${r.aci.alphaNow.toFixed(3)}) — samokorygujący się przedział 90%`,
-            `ACI interval of this forecast (α = ${r.aci.alpha.toFixed(3)}${r.aci.lo === null ? ', infinite' : ''}; current α = ${r.aci.alphaNow.toFixed(3)}), a self-correcting 90% interval`
+            `Przedział ACI tej prognozy (α = ${fmtFixed(r.aci.alpha, 3)}${r.aci.lo === null ? ', nieskończony' : ''}; bieżące α = ${fmtFixed(r.aci.alphaNow, 3)}) — samokorygujący się przedział 90%`,
+            `ACI interval of this forecast (α = ${fmtFixed(r.aci.alpha, 3)}${r.aci.lo === null ? ', infinite' : ''}; current α = ${fmtFixed(r.aci.alphaNow, 3)}), a self-correcting 90% interval`
           )}
           style={{ left: x(aciLo), right: `calc(100% - ${x(aciHi)})` }}
         />
@@ -254,7 +254,7 @@ const RetCard: React.FC<{ r: DeskLedgerSummary['latest']['ret'][number]; sc: Ret
           hint={
             enough
               ? tr(
-                  `> 0 = lepszy od rozkładu normalnego z 30 dni; CRPS obcięty do τ ∈ [0.025; 0.975] · n ${sc!.n}`,
+                  `> 0 = lepszy od rozkładu normalnego z 30 dni; CRPS obcięty do τ ∈ [0,025; 0,975] · n ${sc!.n}`,
                   `> 0 = better than a 30-day normal distribution; CRPS truncated to τ ∈ [0.025; 0.975] · n ${sc!.n}`
                 )
               : fromN(sc?.n ?? 0)
@@ -265,7 +265,7 @@ const RetCard: React.FC<{ r: DeskLedgerSummary['latest']['ret'][number]; sc: Ret
           value={<span className="font-mono tabular-nums text-base">{enough ? pct(sc!.cov90?.rate, 1) : DASH}</span>}
           hint={
             enough && sc!.cov90 && sc!.cov90.kupiecP !== null
-              ? tr(`test Kupca p = ${sc!.cov90.kupiecP.toFixed(2)} na ${sc!.cov90.nEff} rozłącznych`, `Kupiec test p = ${sc!.cov90.kupiecP.toFixed(2)} on ${sc!.cov90.nEff} disjoint`)
+              ? tr(`test Kupca p = ${fmtFixed(sc!.cov90.kupiecP, 2)} na ${sc!.cov90.nEff} rozłącznych`, `Kupiec test p = ${fmtFixed(sc!.cov90.kupiecP, 2)} on ${sc!.cov90.nEff} disjoint`)
               : tr('nominał 90%', 'nominal 90%')
           }
         />
@@ -314,7 +314,7 @@ const PitHist: React.FC<{ hist: number[] }> = ({ hist }) => {
 const VERDICT_N = 100;
 
 /** Wiersz wyników poziomu oceny: Brier modelu i rynku, różnica z przedziałem 90%. */
-const sd3 = (v: number) => `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(3)}`;
+const sd3 = (v: number) => `${v >= 0 ? '+' : '−'}${fmtFixed(Math.abs(v), 3)}`;
 const DiffCell: React.FC<{ d: { d: number; lo: number; hi: number } | null | undefined; show: boolean }> = ({ d, show }) =>
   show && d ? (
     <>
@@ -329,7 +329,7 @@ const DiffCell: React.FC<{ d: { d: number; lo: number; hi: number } | null | und
 
 const MarketRow: React.FC<{ label: string; title: string; sc: MktScores }> = ({ label, title, sc }) => {
   const enough = sc.n >= MIN_N;
-  const f3 = (v: number | null) => (enough && v !== null ? v.toFixed(3) : DASH);
+  const f3 = (v: number | null) => (enough && v !== null ? fmtFixed(v, 3) : DASH);
   return (
     <tr className="border-t border-line align-baseline">
       <td className="py-1.5 pr-3 font-sans text-ink-1" title={title}>
@@ -349,7 +349,7 @@ const MarketRow: React.FC<{ label: string; title: string; sc: MktScores }> = ({ 
 const EnsembleRow: React.FC<{ label: string; sc: MktScores }> = ({ label, sc }) => {
   const n = sc.nEns ?? 0;
   const ok = n >= MIN_N;
-  const f3 = (v: number | null | undefined) => (ok && v != null ? v.toFixed(3) : DASH);
+  const f3 = (v: number | null | undefined) => (ok && v != null ? fmtFixed(v, 3) : DASH);
   return (
     <tr className="border-t border-line align-baseline">
       <td className="py-1.5 pr-3 font-sans text-ink-1">{label}</td>
@@ -367,7 +367,7 @@ const EnsembleRow: React.FC<{ label: string; sc: MktScores }> = ({ label, sc }) 
 
 /** Bieżące wagi ensemble z interpretacją (b_model ≈ 0 → model nic nie dodaje do ceny rynku). */
 const EnsembleWeights: React.FC<{ e: NonNullable<NonNullable<DeskLedgerSummary['market']>['ensemble']> }> = ({ e }) => {
-  const f2 = (v: number) => `${v < 0 ? '−' : ''}${Math.abs(v).toFixed(2)}`;
+  const f2 = (v: number) => `${v < 0 ? '−' : ''}${fmtFixed(Math.abs(v), 2)}`;
   const note =
     e.n < 50
       ? tr(
@@ -606,8 +606,8 @@ const TouchCard: React.FC<{ s: DeskLedgerSummary }> = ({ s }) => {
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2">
         <Stat
           label="Brier"
-          value={<span className="font-mono tabular-nums text-base">{enough && sc.brier !== null ? sc.brier.toFixed(3) : DASH}</span>}
-          hint={enough ? `n ${sc.n} · ${tr('klimatologia', 'climatology')} ${sc.brierBase?.toFixed(3) ?? DASH}` : fromN(sc.n)}
+          value={<span className="font-mono tabular-nums text-base">{enough && sc.brier !== null ? fmtFixed(sc.brier, 3) : DASH}</span>}
+          hint={enough ? `n ${sc.n} · ${tr('klimatologia', 'climatology')} ${sc.brierBase != null ? fmtFixed(sc.brierBase, 3) : DASH}` : fromN(sc.n)}
         />
         <Stat
           label={tr('Umiejętność (BSS)', 'Skill (BSS)')}

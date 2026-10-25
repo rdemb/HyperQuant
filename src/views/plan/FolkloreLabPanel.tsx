@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useFolkloreLab } from '../../state/useFolkloreLab';
 import { DATA_BASE } from '../../state/usePublished';
-import { Badge, EmptyState, Panel, DASH, fmtSigned } from '../../ui';
+import { Badge, EmptyState, Panel, DASH, fmtSigned, fmtFixed, numLang } from '../../ui';
 import { canonical, sha256Hex } from '../../utils/canonical';
 import { LAB_CATALOG, LAB_RULE_EN, LAB_RULES, LAB_TEXT, type FwdVerdict, type HistVerdict, type LabHypResult, type LabReport } from '../../utils/folkloreLab';
 import { lang, locale, tr } from '../../i18n';
@@ -12,9 +12,9 @@ const CATALOG = new Map(LAB_CATALOG.hypotheses.map((h) => [h.id, h]));
 
 /** Punkty procentowe ze znakiem; null → „—” */
 const pp = (v: number | null, d = 1) => (v === null ? DASH : fmtSigned(v * 100, d, ' pp'));
-const pct = (v: number | null) => (v === null ? DASH : `${(v * 100).toFixed(0)}%`);
-const fmtE = (e: number) => (e >= 1000 ? e.toExponential(1).replace('e+', 'e') : e >= 10 ? e.toFixed(0) : e.toFixed(2));
-const fmtQ = (q: number | null) => (q === null ? DASH : q < 0.001 ? '<0.001' : q.toFixed(3));
+const pct = (v: number | null) => (v === null ? DASH : `${fmtFixed(v * 100, 0)}%`);
+const fmtE = (e: number) => (e >= 1000 ? e.toExponential(1).replace('e+', 'e') : e >= 10 ? fmtFixed(e, 0) : fmtFixed(e, 2));
+const fmtQ = (q: number | null) => (q === null ? DASH : q < 0.001 ? numLang('<0.001') : fmtFixed(q, 3));
 
 const HIST_LABEL: Record<HistVerdict, { text: string; cls: string; folk: string; ctrl: string }> = {
   support: {
@@ -452,7 +452,7 @@ const Details: React.FC<{ h: LabHypResult }> = ({ h }) => {
         )}
         <div className="text-ink-3">
           {tr('Historia', 'History')} {h.hist.from !== null ? dateFmt.format(h.hist.from) : DASH} – {h.hist.to !== null ? dateFmt.format(h.hist.to) : DASH};{' '}
-          {tr('przedział 90% efektu', '90% effect interval')} {pp(h.hist.lo)} … {pp(h.hist.hi)}; p = {h.hist.p === null ? DASH : h.hist.p.toFixed(4)}.{' '}
+          {tr('przedział 90% efektu', '90% effect interval')} {pp(h.hist.lo)} … {pp(h.hist.hi)}; p = {h.hist.p === null ? DASH : fmtFixed(h.hist.p, 4)}.{' '}
           {tr(
             `Odrzucone: niejednoznaczne ${d.ambiguous}, wąskie pasmo ${d.narrow}; wynik ułamkowy: limit czasu ${d.timeout}, luka w danych ${d.gap}.`,
             `Discarded: ambiguous ${d.ambiguous}, narrow band ${d.narrow}; fractional result: time limit ${d.timeout}, data gap ${d.gap}.`

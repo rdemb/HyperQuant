@@ -1,5 +1,5 @@
 import React from 'react';
-import { DASH } from '../../ui';
+import { DASH, fmtFixed } from '../../ui';
 import type { AbBlock, DeskLedgerSummary } from '../../utils/deskLedger';
 import { locale, tr } from '../../i18n';
 
@@ -9,8 +9,8 @@ const dateFmt = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short'
 /** Najdłuższy śledzony reżim BOCPD: 600 świec 5m = 50 h */
 const RUN_MAX_H = 50;
 
-const bp = (v: number | null) => (v === null ? DASH : (v * 1e4).toFixed(2));
-const sd = (v: number) => `${v >= 0 ? '+' : '−'}${Math.abs(v * 1e4).toFixed(2)}`;
+const bp = (v: number | null) => (v === null ? DASH : fmtFixed(v * 1e4, 2));
+const sd = (v: number) => `${v >= 0 ? '+' : '−'}${fmtFixed(Math.abs(v * 1e4), 2)}`;
 /** Okres [start, end) — koniec pokazany jako ostatni dzień okresu */
 const span = (b: AbBlock) => `${dateFmt.format(b.start)} – ${dateFmt.format(b.end - 1)}`;
 
@@ -64,16 +64,16 @@ export const ModelAbCard: React.FC<{ ab: NonNullable<DeskLedgerSummary['ab']> }>
               'Standard deviation of the 5-minute return in the current regime, after removing the daily rhythm (predictive variance averaged over the regime length)'
             )}
           >
-            {tr('σ reżimu (5 min)', 'regime σ (5 min)')} <span className="font-mono tabular-nums text-ink-1">{(l.regime.sigma5 * 100).toFixed(3)}%</span>
+            {tr('σ reżimu (5 min)', 'regime σ (5 min)')} <span className="font-mono tabular-nums text-ink-1">{fmtFixed(l.regime.sigma5 * 100, 3)}%</span>
           </span>
           <span title={tr('Najbardziej prawdopodobna długość bieżącego reżimu (śledzone do 50 h)', 'Most likely length of the current regime (tracked up to 50 h)')}>
             {tr('reżim trwa', 'regime age')} <span className="font-mono tabular-nums text-ink-1">{runLabel(l.regime.run)}</span>
           </span>
           <span title={tr('Prawdopodobieństwo, że reżim zmienił się w ostatnich 5 świecach 5-minutowych', 'Probability that the regime changed within the last five 5-minute candles')}>
-            {tr('P(zmiana w 25 min)', 'P(change in 25 min)')} <span className="font-mono tabular-nums text-ink-1">{(l.regime.pChange * 100).toFixed(0)}%</span>
+            {tr('P(zmiana w 25 min)', 'P(change in 25 min)')} <span className="font-mono tabular-nums text-ink-1">{fmtFixed(l.regime.pChange * 100, 0)}%</span>
           </span>
           <span title={tr('Kwantyle B = kwantyle A × skala', 'B quantiles = A quantiles × scale')}>
-            B {l.scale >= 1 ? tr('szersze o', 'wider by') : tr('węższe o', 'narrower by')} <span className="font-mono tabular-nums text-ink-1">{Math.abs((l.scale - 1) * 100).toFixed(0)}%</span>
+            B {l.scale >= 1 ? tr('szersze o', 'wider by') : tr('węższe o', 'narrower by')} <span className="font-mono tabular-nums text-ink-1">{fmtFixed(Math.abs((l.scale - 1) * 100), 0)}%</span>
           </span>
         </div>
       )}

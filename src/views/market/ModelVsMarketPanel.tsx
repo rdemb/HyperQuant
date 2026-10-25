@@ -3,12 +3,12 @@ import { useDesk } from '../../state/DeskContext';
 import { useDeskLedger } from '../../state/useDeskLedger';
 import { useHip4, type Hip4Row } from '../../state/useHip4';
 import { poolProb, type EnsWeights } from '../../utils/ensemble';
-import { Badge, EmptyState, Panel, DASH, fmtPrice } from '../../ui';
+import { Badge, EmptyState, Panel, DASH, fmtPrice, fmtFixed } from '../../ui';
 import { lang, locale, tr } from '../../i18n';
 
 const whenFmt = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' });
 /** Procent: całe punkty (błąd Monte Carlo modelu ~1 pp), przy skrajach jedno miejsce po przecinku */
-const pct = (p: number) => `${(p * 100).toFixed(p < 0.05 || p > 0.95 ? 1 : 0)}%`;
+const pct = (p: number) => `${fmtFixed(p * 100, p < 0.05 || p > 0.95 ? 1 : 0)}%`;
 
 /** Ile do terminu: „za 18 h”, „za 3 dni”. */
 function until(ms: number): string {

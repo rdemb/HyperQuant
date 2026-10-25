@@ -1,7 +1,7 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { scaleLinear } from 'd3';
 import { useLiqTape } from '../../state/useLiqTape';
-import { Badge, Stat, DASH, fmtCompact, fmtPrice, fmtSigned } from '../../ui';
+import { Badge, Stat, DASH, fmtCompact, fmtPrice, fmtSigned, fmtFixed } from '../../ui';
 import { LiqTape, calibErrorBp } from '../../utils/liqTape';
 import { useElementWidth } from '../market/MarketMap';
 import { locale, tr } from '../../i18n';
@@ -79,10 +79,10 @@ const TapeBody: React.FC<{ tape: LiqTape; coverage: number | null }> = ({ tape, 
             c.n > 0
               ? tr(
                   `mediana |błędu| z ${c.n} likw. · ze znakiem ${bp(c.medSignedErrBp, true)} · p90 ${bp(c.p90AbsErrBp)} · odczyt sprzed ${
-                    c.medAgeMin === null ? DASH : `${c.medAgeMin.toFixed(1)} min`
+                    c.medAgeMin === null ? DASH : `${fmtFixed(c.medAgeMin, 1)} min`
                   }`,
                   `median |error| over ${c.n} liq. · signed ${bp(c.medSignedErrBp, true)} · p90 ${bp(c.p90AbsErrBp)} · read age ${
-                    c.medAgeMin === null ? DASH : `${c.medAgeMin.toFixed(1)} min`
+                    c.medAgeMin === null ? DASH : `${fmtFixed(c.medAgeMin, 1)} min`
                   }`
                 )
               : tr('brak likwidacji do porównania z mapą', 'no liquidations to compare with the map')
@@ -104,15 +104,15 @@ const TapeBody: React.FC<{ tape: LiqTape; coverage: number | null }> = ({ tape, 
           <>
             Hyperliquid nie publikuje strumienia likwidacji wszystkich kont. Skaner zauważa, że śledzona pozycja zmalała, gdy cena dotknęła jej ceny
             likwidacji, i potwierdza to w fillach konta (pole <code>liquidation</code>) — bez potwierdzenia zdarzenia nie ma na taśmie. Obejmuje więc
-            tylko zmierzoną część open interest{coverage !== null ? ` (${(coverage * 100).toFixed(1)}%)` : ''}. Błąd ceny likwidacji: o ile cena mark
+            tylko zmierzoną część open interest{coverage !== null ? ` (${fmtFixed(coverage * 100, 1)}%)` : ''}. Błąd ceny likwidacji: o ile cena mark
             przy likwidacji różniła się od ceny likwidacji z ostatniego odczytu (dodatni = głębiej niż mapa; ujemny = wcześniej, np. strata konta
-            cross na innym rynku). Wykrywane są likwidacje do 0.5% przed poziomem z mapy; pozycje blisko ceny likwidacji skaner odczytuje co minutę,
+            cross na innym rynku). Wykrywane są likwidacje do 0,5% przed poziomem z mapy; pozycje blisko ceny likwidacji skaner odczytuje co minutę,
             więc miara opisuje świeże odczyty, nie całą mapę. Bez adresów; czas do minuty, rozmiar zaokrąglony; opóźnienie do kilku minut.
           </>,
           <>
             Hyperliquid does not publish a liquidation stream for all accounts. The scanner notices that a tracked position shrank when price touched its
             liquidation price and confirms it in the account fills (the <code>liquidation</code> field); without confirmation the event is not on the
-            tape. It therefore covers only the measured part of open interest{coverage !== null ? ` (${(coverage * 100).toFixed(1)}%)` : ''}. Liquidation
+            tape. It therefore covers only the measured part of open interest{coverage !== null ? ` (${fmtFixed(coverage * 100, 1)}%)` : ''}. Liquidation
             price error: how far the mark price at liquidation was from the liquidation price of the last read (positive = deeper than the map; negative
             = earlier, e.g. a cross account losing on another market). Liquidations up to 0.5% before the map level are detected; the scanner reads
             positions close to their liquidation price every minute, so the measure describes fresh reads, not the whole map. No addresses; time to the

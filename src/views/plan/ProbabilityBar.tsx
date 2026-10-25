@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion, useReducedMotion } from 'motion/react';
-import { SPRING } from '../../ui';
+import { SPRING, fmtFixed } from '../../ui';
 import { tr } from '../../i18n';
 
 interface ProbabilityBarProps {
@@ -11,7 +11,7 @@ interface ProbabilityBarProps {
   compact?: boolean;
 }
 
-const pct = (v: number) => `${(v * 100).toFixed(1)}%`;
+const pct = (v: number) => `${fmtFixed(v * 100, 1)}%`;
 
 /**
  * Pasek trzech wyników: cel najpierw / stop najpierw / żadne w horyzoncie.

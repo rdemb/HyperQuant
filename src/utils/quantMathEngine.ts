@@ -10,6 +10,7 @@ import {
   ShaakuniState,
 } from '../types/trading';
 import { tr } from '../i18n';
+import { fmtFixed, fmtNum, fmtPrice } from '../ui/format';
 
 /**
  * Metryki opisowe przepływu i mikrostruktury BTC-PERP (Hyperliquid) — co jest estymatorem, a co heurystyką:
@@ -790,8 +791,8 @@ export function computeOrderFlowImbalanceHeatmap(
   let exhaustionBias: OFIMomentumSummary['exhaustionBias'] =
     'BALANCED_EQUILIBRIUM';
   let exhaustionNote = tr(
-    `Zrównoważony przepływ OFI (${overallBuySellRatio}x Buy/Sell) wokół $${currentPrice.toFixed(1)}.`,
-    `Balanced OFI flow (${overallBuySellRatio}x Buy/Sell) around $${currentPrice.toFixed(1)}.`
+    `Zrównoważony przepływ OFI (${fmtNum(overallBuySellRatio)}x Buy/Sell) wokół $${fmtPrice(currentPrice, 1)}.`,
+    `Balanced OFI flow (${fmtNum(overallBuySellRatio)}x Buy/Sell) around $${fmtPrice(currentPrice, 1)}.`
   );
 
   if (
@@ -800,8 +801,8 @@ export function computeOrderFlowImbalanceHeatmap(
   ) {
     exhaustionBias = 'BULLISH_EXHAUSTION_TOP_RISK';
     exhaustionNote = tr(
-      `Wyczerpanie impetu kupujących na $${topExhaustionTick.price.toFixed(1)} (${topExhaustionTick.buySellRatio}x B/S) — pasywna ściana ASK absorbuje zlecenia rynkowe.`,
-      `Buyer momentum exhausted at $${topExhaustionTick.price.toFixed(1)} (${topExhaustionTick.buySellRatio}x B/S): a passive ASK wall is absorbing market orders.`
+      `Wyczerpanie impetu kupujących na $${fmtPrice(topExhaustionTick.price, 1)} (${fmtNum(topExhaustionTick.buySellRatio)}x B/S) — pasywna ściana ASK absorbuje zlecenia rynkowe.`,
+      `Buyer momentum exhausted at $${fmtPrice(topExhaustionTick.price, 1)} (${fmtNum(topExhaustionTick.buySellRatio)}x B/S): a passive ASK wall is absorbing market orders.`
     );
   } else if (
     topExhaustionTick?.exhaustionState === 'BID_WALL_ABSORPTION' ||
@@ -809,20 +810,20 @@ export function computeOrderFlowImbalanceHeatmap(
   ) {
     exhaustionBias = 'BEARISH_EXHAUSTION_BOTTOM_REVERSAL';
     exhaustionNote = tr(
-      `Wyczerpanie impetu sprzedających na $${topExhaustionTick.price.toFixed(1)} (${topExhaustionTick.buySellRatio}x B/S) — pasywna ściana BID absorbuje podaż rynkową.`,
-      `Seller momentum exhausted at $${topExhaustionTick.price.toFixed(1)} (${topExhaustionTick.buySellRatio}x B/S): a passive BID wall is absorbing market selling.`
+      `Wyczerpanie impetu sprzedających na $${fmtPrice(topExhaustionTick.price, 1)} (${fmtNum(topExhaustionTick.buySellRatio)}x B/S) — pasywna ściana BID absorbuje podaż rynkową.`,
+      `Seller momentum exhausted at $${fmtPrice(topExhaustionTick.price, 1)} (${fmtNum(topExhaustionTick.buySellRatio)}x B/S): a passive BID wall is absorbing market selling.`
     );
   } else if (overallBuySellRatio >= 1.25) {
     exhaustionBias = 'AGGRESSIVE_BUY_CONTINUATION';
     exhaustionNote = tr(
-      `Dominacja agresywnych zleceń Market Buy (${overallBuySellRatio}x B/S, OFI +${overallOfiPct}%) bez oporu pasywnego.`,
-      `Aggressive market buys dominate (${overallBuySellRatio}x B/S, OFI +${overallOfiPct}%) with no passive resistance.`
+      `Dominacja agresywnych zleceń Market Buy (${fmtNum(overallBuySellRatio)}x B/S, OFI +${fmtNum(overallOfiPct)}%) bez oporu pasywnego.`,
+      `Aggressive market buys dominate (${fmtNum(overallBuySellRatio)}x B/S, OFI +${fmtNum(overallOfiPct)}%) with no passive resistance.`
     );
   } else if (overallBuySellRatio <= 0.8) {
     exhaustionBias = 'AGGRESSIVE_SELL_CONTINUATION';
     exhaustionNote = tr(
-      `Dominacja agresywnych zleceń Market Sell (${overallBuySellRatio}x B/S, OFI ${overallOfiPct}%) wywierająca presję na arkusz BID.`,
-      `Aggressive market sells dominate (${overallBuySellRatio}x B/S, OFI ${overallOfiPct}%), pressing on the BID side of the book.`
+      `Dominacja agresywnych zleceń Market Sell (${fmtNum(overallBuySellRatio)}x B/S, OFI ${fmtNum(overallOfiPct)}%) wywierająca presję na arkusz BID.`,
+      `Aggressive market sells dominate (${fmtNum(overallBuySellRatio)}x B/S, OFI ${fmtNum(overallOfiPct)}%), pressing on the BID side of the book.`
     );
   }
 

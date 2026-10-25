@@ -1,13 +1,13 @@
 import React, { useRef, useState } from 'react';
 import { scaleLinear } from 'd3';
 import { useMicroMechanics } from '../../state/useMicroMechanics';
-import { Badge, Panel, Stat, DASH, fmtPrice, fmtSigned } from '../../ui';
+import { Badge, Panel, Stat, DASH, fmtPrice, fmtSigned, fmtFixed } from '../../ui';
 import { MicroMetrics } from '../../utils/microEngine';
 import { useElementWidth } from '../market/MarketMap';
 import { locale, tr } from '../../i18n';
 
 const timeFmt = new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-const btc = (v: number) => `${v.toFixed(v >= 100 ? 0 : v >= 10 ? 1 : 2)} BTC`;
+const btc = (v: number) => `${fmtFixed(v, v >= 100 ? 0 : v >= 10 ? 1 : 2)} BTC`;
 const usd = (v: number | null, d = 1) => (v === null || !Number.isFinite(v) ? DASH : `${fmtSigned(v, d)} $`);
 
 /** Mikrostruktura jako mechanika: OFI → cena, endogeniczność (Hawkes), mikrocena, przepływ zleceń przy cenie, absorpcja. */
@@ -101,7 +101,7 @@ const OfiCard: React.FC<{ m: MicroMetrics }> = ({ m }) => {
         <>
           <div className="grid grid-cols-3 gap-3">
             <Stat label={tr('Wpływ β', 'Impact β')} value={<span className="font-mono tabular-nums text-base">{usd(fit.beta, 2)}</span>} hint={tr('na 1 BTC OFI', 'per 1 BTC of OFI')} />
-            <Stat label="R²" value={<span className="font-mono tabular-nums text-base">{fit.r2.toFixed(2)}</span>} hint={tr(`${fit.n} interwałów`, `${fit.n} intervals`)} />
+            <Stat label="R²" value={<span className="font-mono tabular-nums text-base">{fmtFixed(fit.r2, 2)}</span>} hint={tr(`${fit.n} interwałów`, `${fit.n} intervals`)} />
             <Stat
               label={tr('Ostatnie 10 s', 'Last 10 s')}
               value={<span className="font-mono tabular-nums text-base">{m.ofi.last === null ? DASH : `${fmtSigned(m.ofi.last, 1)}`}</span>}
@@ -146,10 +146,10 @@ const Scatter: React.FC<{ points: { x: number; y: number }[]; alpha: number; bet
           ))}
           <line x1={x(-xe)} y1={y(alpha - beta * xe)} x2={x(xe)} y2={y(alpha + beta * xe)} stroke="var(--color-level)" strokeWidth={2} />
           <text x={pad.l - 4} y={pad.t + 8} textAnchor="end" className="fill-ink-3 font-mono" fontSize={9}>
-            +{ye.toFixed(1)}$
+            +{fmtFixed(ye, 1)}$
           </text>
           <text x={pad.l - 4} y={H - pad.b} textAnchor="end" className="fill-ink-3 font-mono" fontSize={9}>
-            −{ye.toFixed(1)}$
+            −{fmtFixed(ye, 1)}$
           </text>
           <text x={width - pad.r} y={H - 6} textAnchor="end" className="fill-ink-3" fontSize={9}>
             OFI (BTC) →
@@ -175,7 +175,7 @@ const HawkesCard: React.FC<{ m: MicroMetrics }> = ({ m }) => {
       ) : (
         <>
           <div className="flex items-baseline gap-3">
-            <span className="text-2xl font-semibold font-mono tabular-nums text-ink-1">{h.branching.toFixed(2)}</span>
+            <span className="text-2xl font-semibold font-mono tabular-nums text-ink-1">{fmtFixed(h.branching, 2)}</span>
             <span className="text-xs text-ink-2">
               {tr(
                 `współczynnik rozgałęzienia n: w modelu ${Math.round(h.branching * 100)}% zdarzeń (bloków z transakcjami) przypisanych samopobudzeniu`,
@@ -191,17 +191,17 @@ const HawkesCard: React.FC<{ m: MicroMetrics }> = ({ m }) => {
               )}
             </div>
           )}
-          <div className="relative h-2 rounded-full bg-surface-3" role="img" aria-label={tr(`Współczynnik rozgałęzienia ${h.branching.toFixed(2)} na skali od 0 do 1`, `Branching ratio ${h.branching.toFixed(2)} on a scale from 0 to 1`)}>
+          <div className="relative h-2 rounded-full bg-surface-3" role="img" aria-label={tr(`Współczynnik rozgałęzienia ${fmtFixed(h.branching, 2)} na skali od 0 do 1`, `Branching ratio ${fmtFixed(h.branching, 2)} on a scale from 0 to 1`)}>
             <div className="absolute inset-y-0 left-0 rounded-full bg-accent" style={{ width: `${Math.min(100, h.branching * 100)}%` }} />
-            <div className="absolute -top-1 h-4 w-px bg-warn" style={{ left: '90%' }} title={tr('n ≥ 0.9 — rynek blisko krytyczności (samonapędzający się)', 'n ≥ 0.9: market close to criticality (self-reinforcing)')} />
+            <div className="absolute -top-1 h-4 w-px bg-warn" style={{ left: '90%' }} title={tr('n ≥ 0,9 — rynek blisko krytyczności (samonapędzający się)', 'n ≥ 0.9: market close to criticality (self-reinforcing)')} />
           </div>
           <div className="grid grid-cols-3 gap-3 text-xs">
-            <Stat label={tr('Tło μ', 'Background μ')} value={<span className="font-mono tabular-nums text-base">{h.mu.toFixed(2)}</span>} hint={tr('bloków/s z zewnątrz', 'external blocks/s')} />
+            <Stat label={tr('Tło μ', 'Background μ')} value={<span className="font-mono tabular-nums text-base">{fmtFixed(h.mu, 2)}</span>} hint={tr('bloków/s z zewnątrz', 'external blocks/s')} />
             <Stat
               label={tr('Półokres', 'Half-life')}
               value={
                 <span className="font-mono tabular-nums text-base">
-                  {h.branching < 0.05 ? DASH : h.halfLife < 1 ? `${Math.round(h.halfLife * 1000)} ms` : `${h.halfLife.toFixed(1)} s`}
+                  {h.branching < 0.05 ? DASH : h.halfLife < 1 ? `${Math.round(h.halfLife * 1000)} ms` : `${fmtFixed(h.halfLife, 1)} s`}
                 </span>
               }
               hint={h.branching < 0.05 ? tr('przy n ≈ 0 nieokreślony', 'undefined at n ≈ 0') : tr('wygasanie pobudzenia', 'excitation decay')}
@@ -236,7 +236,7 @@ const MicroCard: React.FC<{ m: MicroMetrics }> = ({ m }) => {
           <Stat
             label={tr('Średnia ważona', 'Weighted mid')}
             value={<span className="font-mono tabular-nums text-base">{usd(mc.weighted - mc.mid, 2)}</span>}
-            hint={`${tr('nierównowaga', 'imbalance')} I = ${mc.imb.toFixed(2)}`}
+            hint={`${tr('nierównowaga', 'imbalance')} I = ${fmtFixed(mc.imb, 2)}`}
           />
           <Stat
             label={tr('Korekta empiryczna', 'Empirical correction')}
@@ -249,7 +249,7 @@ const MicroCard: React.FC<{ m: MicroMetrics }> = ({ m }) => {
           />
           <Stat
             label={tr('R² poza próbą', 'Out-of-sample R²')}
-            value={<span className="font-mono tabular-nums text-base">{mc.r2Oos === null ? DASH : mc.r2Oos.toFixed(3)}</span>}
+            value={<span className="font-mono tabular-nums text-base">{mc.r2Oos === null ? DASH : fmtFixed(mc.r2Oos, 3)}</span>}
             hint={tr('ostatnia 1/3 historii vs założenie „mid się nie zmieni”; ≤ 0 = brak przewagi', 'last 1/3 of history vs the "mid will not change" assumption; ≤ 0 = no edge')}
           />
         </div>
@@ -290,7 +290,7 @@ const FlowCard: React.FC<{ m: MicroMetrics }> = ({ m }) => {
                   <td className="py-1 pr-3">{btc(r.f.added)}</td>
                   <td className="py-1 pr-3">{btc(r.f.cancelled)}</td>
                   <td className="py-1 pr-3">{btc(r.f.executed)}</td>
-                  <td className="py-1">{r.f.added > 0 ? (r.f.cancelled / r.f.added).toFixed(2) : DASH}</td>
+                  <td className="py-1">{r.f.added > 0 ? fmtFixed(r.f.cancelled / r.f.added, 2) : DASH}</td>
                 </tr>
               ))}
             </tbody>
@@ -317,7 +317,7 @@ const AbsorptionCard: React.FC<{ m: MicroMetrics }> = ({ m }) => {
             />
             <Stat
               label="R²"
-              value={<span className="font-mono tabular-nums text-base">{a.r2 === null ? DASH : a.r2.toFixed(2)}</span>}
+              value={<span className="font-mono tabular-nums text-base">{a.r2 === null ? DASH : fmtFixed(a.r2, 2)}</span>}
               hint={tr('Theil–Sen, bez wartości odstających', 'Theil–Sen, without outliers')}
             />
           </div>

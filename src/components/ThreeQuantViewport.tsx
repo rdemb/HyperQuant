@@ -17,6 +17,7 @@ import { candlesLabel } from '../views/micro/horizon';
 import { GLOW, T3, T3_CSS, isNarrowViewport, labFov, labPixelRatio } from '../views/lab/tokens3d';
 import { DockPresets, DockSlider, DockToggle, HoverCard, HudButton, HudHeader, SCENE_FRAME, SceneDock } from '../views/lab/hud';
 import { locale, tr } from '../i18n';
+import { fmtFixed, fmtNum, fmtPrice } from '../ui/format';
 
 interface ThreeQuantViewportProps {
   bars: OHLCVBar[];
@@ -512,9 +513,9 @@ export const ThreeQuantViewport: React.FC<ThreeQuantViewportProps> = ({
         bodyMesh.layers.enable(1);
         bodyMesh.userData = {
           title: `${tr('Świeca', 'Candle')} ${new Date(b.time).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })} ${isBull ? '▲' : '▼'}`,
-          subtitle: `O ${b.open.toFixed(1)} · H ${b.high.toFixed(1)} · L ${b.low.toFixed(1)} · C ${b.close.toFixed(1)}`,
+          subtitle: `O ${fmtPrice(b.open, 1)} · H ${fmtPrice(b.high, 1)} · L ${fmtPrice(b.low, 1)} · C ${fmtPrice(b.close, 1)}`,
           metricLabel: tr('Delta (kupno − sprzedaż)', 'Delta (buy − sell)'),
-          metricValue: `${b.vbuy - b.vsell >= 0 ? '+' : '−'}$${(Math.abs(b.vbuy - b.vsell) / 1000).toFixed(0)}K`,
+          metricValue: `${b.vbuy - b.vsell >= 0 ? '+' : '−'}$${fmtFixed(Math.abs(b.vbuy - b.vsell) / 1000, 0)}K`,
           accentColor: isBull ? T3_CSS.buy : T3_CSS.sell,
         };
         candlesGroup.add(bodyMesh);
@@ -590,9 +591,9 @@ export const ThreeQuantViewport: React.FC<ThreeQuantViewportProps> = ({
           obMesh.layers.enable(1);
           obMesh.userData = {
             title: tr(`Strefa OB ${ob.type === 'bull' ? 'popytowa ▲' : 'podażowa ▼'} (${ob.label})`, `${ob.type === 'bull' ? 'Demand ▲' : 'Supply ▼'} OB zone (${ob.label})`),
-            subtitle: `${tr('Zakres', 'Range')} ${ob.bottom.toFixed(1)} – ${ob.top.toFixed(1)}`,
+            subtitle: `${tr('Zakres', 'Range')} ${fmtPrice(ob.bottom, 1)} – ${fmtPrice(ob.top, 1)}`,
             metricLabel: tr('Impuls · stan', 'Impulse · state'),
-            metricValue: `${ob.impulseAtrMultiple}× ATR · ${tr('nietestowana', 'untested')}`,
+            metricValue: `${fmtNum(ob.impulseAtrMultiple)}× ATR · ${tr('nietestowana', 'untested')}`,
             accentColor: T3_CSS.zone,
           };
           orderBlocksGroup.add(obMesh);
@@ -663,7 +664,7 @@ export const ThreeQuantViewport: React.FC<ThreeQuantViewportProps> = ({
         beamMesh.layers.enable(1);
         beamMesh.userData = {
           title: lvl.label,
-          subtitle: `${tr('Poziom', 'Level')} ${lvl.price.toFixed(1)}`,
+          subtitle: `${tr('Poziom', 'Level')} ${fmtPrice(lvl.price, 1)}`,
           metricLabel: tr('Stan', 'State'),
           metricValue: lvl.status ?? tr('poziom równowagi', 'equilibrium level'),
           accentColor: lvl.hex,
@@ -696,9 +697,9 @@ export const ThreeQuantViewport: React.FC<ThreeQuantViewportProps> = ({
         barMesh.layers.enable(1);
         barMesh.userData = {
           title: tr(`Szacunek likwidacji (założone ${cell.leverage}×)`, `Liquidation estimate (assumed ${cell.leverage}×)`),
-          subtitle: tr(`Zakres ${cell.bottom.toFixed(0)} – ${cell.top.toFixed(0)} · nie są to realne pozycje`, `Range ${cell.bottom.toFixed(0)} – ${cell.top.toFixed(0)} · not real positions`),
+          subtitle: tr(`Zakres ${fmtPrice(cell.bottom, 0)} – ${fmtPrice(cell.top, 0)} · nie są to realne pozycje`, `Range ${fmtPrice(cell.bottom, 0)} – ${fmtPrice(cell.top, 0)} · not real positions`),
           metricLabel: tr('Siła szacunku', 'Estimate strength'),
-          metricValue: `${(cell.intensityRatio * 100).toFixed(0)}% ${tr('maks.', 'of max')}`,
+          metricValue: `${fmtFixed(cell.intensityRatio * 100, 0)}% ${tr('maks.', 'of max')}`,
           accentColor: T3_CSS.zone,
         };
         heatmapGroup.add(barMesh);
@@ -715,9 +716,9 @@ export const ThreeQuantViewport: React.FC<ThreeQuantViewportProps> = ({
         mesh.layers.enable(1);
         mesh.userData = {
           title: tr(`Arkusz HL · BID ▲ (poziom ${idx + 1})`, `HL book · BID ▲ (level ${idx + 1})`),
-          subtitle: tr(`Cena ${bid.price.toFixed(1)} · liczba zleceń na poziomie: ${bid.exchangeCount}`, `Price ${bid.price.toFixed(1)} · orders at the level: ${bid.exchangeCount}`),
+          subtitle: tr(`Cena ${fmtPrice(bid.price, 1)} · liczba zleceń na poziomie: ${bid.exchangeCount}`, `Price ${fmtPrice(bid.price, 1)} · orders at the level: ${bid.exchangeCount}`),
           metricLabel: tr('Płynność', 'Liquidity'),
-          metricValue: `$${(bid.sizeUsd / 1000).toFixed(1)}K (${bid.sizeBtc} BTC)`,
+          metricValue: `$${fmtFixed(bid.sizeUsd / 1000, 1)}K (${fmtNum(bid.sizeBtc)} BTC)`,
           accentColor: T3_CSS.buy,
         };
         l2CanyonGroup.add(mesh);
@@ -732,9 +733,9 @@ export const ThreeQuantViewport: React.FC<ThreeQuantViewportProps> = ({
         mesh.layers.enable(1);
         mesh.userData = {
           title: tr(`Arkusz HL · ASK ▼ (poziom ${idx + 1})`, `HL book · ASK ▼ (level ${idx + 1})`),
-          subtitle: tr(`Cena ${ask.price.toFixed(1)} · liczba zleceń na poziomie: ${ask.exchangeCount}`, `Price ${ask.price.toFixed(1)} · orders at the level: ${ask.exchangeCount}`),
+          subtitle: tr(`Cena ${fmtPrice(ask.price, 1)} · liczba zleceń na poziomie: ${ask.exchangeCount}`, `Price ${fmtPrice(ask.price, 1)} · orders at the level: ${ask.exchangeCount}`),
           metricLabel: tr('Płynność', 'Liquidity'),
-          metricValue: `$${(ask.sizeUsd / 1000).toFixed(1)}K (${ask.sizeBtc} BTC)`,
+          metricValue: `$${fmtFixed(ask.sizeUsd / 1000, 1)}K (${fmtNum(ask.sizeBtc)} BTC)`,
           accentColor: T3_CSS.sell,
         };
         l2CanyonGroup.add(mesh);
@@ -769,9 +770,9 @@ export const ThreeQuantViewport: React.FC<ThreeQuantViewportProps> = ({
           profMesh.layers.enable(1);
           profMesh.userData = {
             title: bucket.isPOC ? `${tr('Profil wolumenu', 'Volume profile')} · POC (${bucket.price})` : `${tr('Profil wolumenu', 'Volume profile')} (${bucket.price})`,
-            subtitle: `${tr('Wolumen', 'Volume')} $${(bucket.totalVolumeUsd / 1000000).toFixed(2)}M${bucket.isValueArea ? ' · Value Area' : ''}`,
+            subtitle: `${tr('Wolumen', 'Volume')} $${fmtFixed(bucket.totalVolumeUsd / 1000000, 2)}M${bucket.isValueArea ? ' · Value Area' : ''}`,
             metricLabel: tr('Przyciąganie U(p) (heurystyka)', 'Attraction U(p) (heuristic)'),
-            metricValue: `${(bucket.gravityPotential * 100).toFixed(0)}%`,
+            metricValue: `${fmtFixed(bucket.gravityPotential * 100, 0)}%`,
             accentColor: bucket.isPOC ? T3_CSS.accent : T3_CSS.ink3,
           };
           l2CanyonGroup.add(profMesh);
@@ -810,9 +811,9 @@ export const ThreeQuantViewport: React.FC<ThreeQuantViewportProps> = ({
           ringMesh.layers.enable(1);
           ringMesh.userData = {
             title: `${tr('Trajektoria heurystyczna', 'Heuristic trajectory')} (${candlesLabel(fh.stepBars)}) ${isBullForecast ? '▲' : '▼'}`,
-            subtitle: `${tr('Pasmo ±1σ', '±1σ band')}: ${fh.lower1Sigma.toFixed(0)} – ${fh.upper1Sigma.toFixed(0)}`,
+            subtitle: `${tr('Pasmo ±1σ', '±1σ band')}: ${fmtPrice(fh.lower1Sigma, 0)} – ${fmtPrice(fh.upper1Sigma, 0)}`,
             metricLabel: tr('Wartość heurystyki (nieskalibrowana)', 'Heuristic value (uncalibrated)'),
-            metricValue: `${fh.predictedPrice.toFixed(1)}`,
+            metricValue: `${fmtPrice(fh.predictedPrice, 1)}`,
             accentColor: isBullForecast ? T3_CSS.buy : T3_CSS.sell,
           };
           neuralSurfaceGroup.add(ringMesh);
@@ -1068,8 +1069,8 @@ export const ThreeQuantViewport: React.FC<ThreeQuantViewportProps> = ({
       <div ref={canvasMountRef} className="w-full h-full" />
 
       <HudHeader title={tr('Liquidity Canyon · świece, arkusz L2, profil i strefy OB', 'Liquidity Canyon · candles, L2 book, profile and OB zones')}>
-        Micro-price {Number.isFinite(quant.l2MicroPrice) ? quant.l2MicroPrice.toFixed(1) : '—'} · {tr('Nierównowaga L2', 'L2 imbalance')}{' '}
-        {(quant.l2OrderbookImbalance * 100).toFixed(1)}% · Hurst {quant.hurstExponent}
+        Micro-price {Number.isFinite(quant.l2MicroPrice) ? fmtPrice(quant.l2MicroPrice, 1) : '—'} · {tr('Nierównowaga L2', 'L2 imbalance')}{' '}
+        {fmtFixed(quant.l2OrderbookImbalance * 100, 1)}% · Hurst {fmtNum(quant.hurstExponent)}
       </HudHeader>
 
       <div className="absolute top-3 right-3 z-10 flex items-center gap-1.5">
@@ -1110,14 +1111,14 @@ export const ThreeQuantViewport: React.FC<ThreeQuantViewportProps> = ({
         <DockToggle on={showNeuralSurface} onClick={() => setShowNeuralSurface((v) => !v)}>
           <Eye className="w-3 h-3" aria-hidden="true" /> {tr('Trajektoria', 'Trajectory')}
         </DockToggle>
-        <DockSlider label={tr('Rozsunięcie Z', 'Z spread')} min={0.5} max={2} step={0.1} value={explodedScale} onChange={setExplodedScale} format={(v) => `${v.toFixed(1)}×`} />
+        <DockSlider label={tr('Rozsunięcie Z', 'Z spread')} min={0.5} max={2} step={0.1} value={explodedScale} onChange={setExplodedScale} format={(v) => `${fmtFixed(v, 1)}×`} />
         <DockToggle on={dofEnabled} onClick={() => setDofEnabled((v) => !v)}>
           <Focus className="w-3 h-3" aria-hidden="true" /> {tr('Głębia ostrości', 'Depth of field')}
         </DockToggle>
         {dofEnabled && (
           <>
             <DockSlider label={tr('Ostrość', 'Focus')} min={8} max={48} step={1} value={dofFocus} onChange={setDofFocus} format={(v) => `${v} m`} />
-            <DockSlider label={tr('Przysłona', 'Aperture')} min={0.4} max={4.5} step={0.2} value={dofAperture} onChange={setDofAperture} format={(v) => `f/${v.toFixed(1)}`} />
+            <DockSlider label={tr('Przysłona', 'Aperture')} min={0.4} max={4.5} step={0.2} value={dofAperture} onChange={setDofAperture} format={(v) => `f/${fmtFixed(v, 1)}`} />
           </>
         )}
       </SceneDock>

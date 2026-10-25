@@ -6,35 +6,42 @@ const isNum = (v: number | null | undefined): v is number => typeof v === 'numbe
 
 /**
  * Liczba zapisana po angielsku (80,768.5) w zapisie języka strony: po polsku twarda spacja tysięcy
- * i przecinek dziesiętny (80 768,5), żeby przecinek miał jedno znaczenie.
+ * i przecinek dziesiętny (80 768,5), żeby przecinek miał jedno znaczenie. Tylko raz na liczbę —
+ * drugi raz zamieniłby przecinek dziesiętny na spację.
  */
 export const numLang = (s: string): string => (lang === 'en' ? s : s.replace(/,/g, '\u00a0').replace(/\./g, ','));
 
+/** `toFixed` w zapisie języka strony (po polsku przecinek dziesiętny). */
+export const fmtFixed = (v: number, digits: number): string => numLang(v.toFixed(digits));
+
+/** Liczba bez zaokrąglania (już zaokrąglona w modelu) w zapisie języka strony. */
+export const fmtNum = (v: number): string => numLang(String(v));
+
 export function fmtPrice(v: number | null | undefined, digits = 1): string {
-  return isNum(v) ? v.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits }) : DASH;
+  return isNum(v) ? numLang(v.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits })) : DASH;
 }
 
-/** Zwięzły zapis kwot: 1 284 / 12.9K / 4.2M / 3.1B. */
+/** Zwięzły zapis kwot: 1 284 / 12,9K / 4,2M / 3,1B (po angielsku 12.9K). */
 export function fmtCompact(v: number | null | undefined, prefix = ''): string {
   if (!isNum(v)) return DASH;
   const a = Math.abs(v);
   const sign = v < 0 ? '−' : '';
-  if (a >= 1e9) return `${sign}${prefix}${(a / 1e9).toFixed(2)}B`;
-  if (a >= 1e6) return `${sign}${prefix}${(a / 1e6).toFixed(1)}M`;
-  if (a >= 1e3) return `${sign}${prefix}${(a / 1e3).toFixed(1)}K`;
+  if (a >= 1e9) return `${sign}${prefix}${fmtFixed(a / 1e9, 2)}B`;
+  if (a >= 1e6) return `${sign}${prefix}${fmtFixed(a / 1e6, 1)}M`;
+  if (a >= 1e3) return `${sign}${prefix}${fmtFixed(a / 1e3, 1)}K`;
   return `${sign}${prefix}${a.toFixed(0)}`;
 }
 
 export function fmtPct(v: number | null | undefined, digits = 2, signed = true): string {
   if (!isNum(v)) return DASH;
   const s = signed && v > 0 ? '+' : v < 0 ? '−' : '';
-  return `${s}${Math.abs(v).toFixed(digits)}%`;
+  return `${s}${fmtFixed(Math.abs(v), digits)}%`;
 }
 
 export function fmtSigned(v: number | null | undefined, digits = 1, suffix = ''): string {
   if (!isNum(v)) return DASH;
   const s = v > 0 ? '+' : v < 0 ? '−' : '';
-  return `${s}${Math.abs(v).toFixed(digits)}${suffix}`;
+  return `${s}${fmtFixed(Math.abs(v), digits)}${suffix}`;
 }
 
 /** Odliczanie do zdarzenia: „za 2 h 14 min” / „za 38 min” / „teraz”. */

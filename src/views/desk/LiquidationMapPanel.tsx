@@ -2,7 +2,7 @@ import React, { useMemo, useRef, useState } from 'react';
 import { scaleLinear } from 'd3';
 import { useDesk } from '../../state/DeskContext';
 import { useLiqMap } from '../../state/useLiqMap';
-import { Badge, EmptyState, Panel, Stat, DASH, fmtCompact, fmtPrice, fmtSigned } from '../../ui';
+import { Badge, EmptyState, Panel, Stat, DASH, fmtCompact, fmtPrice, fmtSigned, fmtFixed } from '../../ui';
 import { LiqMap } from '../../utils/liqMap';
 import { CascadeResult, cascadeCurve } from '../../utils/cascade';
 import { CascadeSimSection } from './CascadeSimSection';
@@ -117,7 +117,7 @@ const LiqMapBody: React.FC<{ map: LiqMap; delayed: boolean; sigmaDaily: number; 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-5 gap-y-3">
         <Stat
           label={tr('Pokrycie open interest', 'Open interest coverage')}
-          value={<span className="font-mono tabular-nums">{(map.coverage.share * 100).toFixed(1)}%</span>}
+          value={<span className="font-mono tabular-nums">{fmtFixed(map.coverage.share * 100, 1)}%</span>}
           hint={`${map.coverage.positions.toLocaleString(locale)} ${tr('pozycji', 'positions')} · ${map.coverage.addresses.toLocaleString(locale)} ${tr('adresów', 'addresses')} · ${timeFmt.format(map.asOf)}`}
         />
         <Stat
@@ -156,7 +156,7 @@ const LiqMapBody: React.FC<{ map: LiqMap; delayed: boolean; sigmaDaily: number; 
           <Badge
             tone="model"
             title={tr(
-              'Punkt stały: szok → likwidacje z mapy → wpływ ceny z prawa pierwiastka (Y = 1, pasmo 0.5–1.5) → kolejne likwidacje',
+              'Punkt stały: szok → likwidacje z mapy → wpływ ceny z prawa pierwiastka (Y = 1, pasmo 0,5–1,5) → kolejne likwidacje',
               'Fixed point: shock → liquidations from the map → price impact from the square-root law (Y = 1, band 0.5–1.5) → further liquidations'
             )}
           >
@@ -167,13 +167,13 @@ const LiqMapBody: React.FC<{ map: LiqMap; delayed: boolean; sigmaDaily: number; 
           <>
             <div className="text-xs text-ink-2">
               {tr('Najsilniejsze wzmocnienie: szok', 'Strongest amplification: shock')} <span className="font-mono tabular-nums text-ink-1">{pct(peak.shockPct)}</span> →{' '}
-              {tr('ruch', 'move')} <span className="font-mono tabular-nums text-ink-1">{pct(peak.finalPct)}</span> (×{peak.amplification.toFixed(2)},{' '}
+              {tr('ruch', 'move')} <span className="font-mono tabular-nums text-ink-1">{pct(peak.finalPct)}</span> (×{fmtFixed(peak.amplification, 2)},{' '}
               {tr('likwidacje', 'liquidations')} {fmtCompact(peak.liquidatedUsd, '$')})
               <span className="text-ink-3">
                 {' '}
                 {tr(
-                  `— górna granica (wpływ szczytowy, pełne trafienie w arkusz, Y = 1 założone) na zmierzonych ${(map.coverage.share * 100).toFixed(1)}% open interest; niezmierzone pozycje nie są wliczone.`,
-                  `— an upper bound (peak impact, full hit on the book, Y = 1 assumed) on the measured ${(map.coverage.share * 100).toFixed(1)}% of open interest; unmeasured positions are not included.`
+                  `— górna granica (wpływ szczytowy, pełne trafienie w arkusz, Y = 1 założone) na zmierzonych ${fmtFixed(map.coverage.share * 100, 1)}% open interest; niezmierzone pozycje nie są wliczone.`,
+                  `— an upper bound (peak impact, full hit on the book, Y = 1 assumed) on the measured ${fmtFixed(map.coverage.share * 100, 1)}% of open interest; unmeasured positions are not included.`
                 )}
               </span>
             </div>
@@ -205,14 +205,14 @@ const LiqMapBody: React.FC<{ map: LiqMap; delayed: boolean; sigmaDaily: number; 
           </li>
           <li>
             {tr(
-              `Portfele spoza rankingu, które nie handlowały od startu skanera, nie są na mapie. Odczyty po złej stronie ceny (nieaktualne) są pomijane (${map.coverage.wrongSide}). Cena likwidacji pozycji cross zmienia się z całym kontem. Samokontrola: longi ${map.coverage.longBtc.toFixed(1)} BTC, shorty ${map.coverage.shortBtc.toFixed(1)} BTC (przy pełnym pokryciu obie ≈ OI ${map.coverage.oiBtc.toFixed(0)} BTC).`,
-              `Wallets outside the leaderboard that have not traded since the scanner started are not on the map. Reads on the wrong side of price (stale) are skipped (${map.coverage.wrongSide}). The liquidation price of a cross position moves with the whole account. Self-check: longs ${map.coverage.longBtc.toFixed(1)} BTC, shorts ${map.coverage.shortBtc.toFixed(1)} BTC (at full coverage both ≈ OI ${map.coverage.oiBtc.toFixed(0)} BTC).`
+              `Portfele spoza rankingu, które nie handlowały od startu skanera, nie są na mapie. Odczyty po złej stronie ceny (nieaktualne) są pomijane (${map.coverage.wrongSide}). Cena likwidacji pozycji cross zmienia się z całym kontem. Samokontrola: longi ${fmtFixed(map.coverage.longBtc, 1)} BTC, shorty ${fmtFixed(map.coverage.shortBtc, 1)} BTC (przy pełnym pokryciu obie ≈ OI ${fmtFixed(map.coverage.oiBtc, 0)} BTC).`,
+              `Wallets outside the leaderboard that have not traded since the scanner started are not on the map. Reads on the wrong side of price (stale) are skipped (${map.coverage.wrongSide}). The liquidation price of a cross position moves with the whole account. Self-check: longs ${fmtFixed(map.coverage.longBtc, 1)} BTC, shorts ${fmtFixed(map.coverage.shortBtc, 1)} BTC (at full coverage both ≈ OI ${fmtFixed(map.coverage.oiBtc, 0)} BTC).`
             )}
           </li>
           <li>
             {tr(
-              `Kaskada: Δp/p = Y·σ·√(Q/V) (Tóth i in. 2011; Bouchaud i in. 2018), σ = dzienna zmienność (${(sigmaDaily * 100).toFixed(2)}%), V = obrót 24 h (${fmtCompact(dayVolumeUsd, '$')}). Wpływ szczytowy i pełne trafienie w arkusz — górna granica; na Hyperliquid duże likwidacje idą po 20% na blok, a część przejmuje Liquidator Vault.`,
-              `Cascade: Δp/p = Y·σ·√(Q/V) (Tóth et al. 2011; Bouchaud et al. 2018), σ = daily volatility (${(sigmaDaily * 100).toFixed(2)}%), V = 24 h volume (${fmtCompact(dayVolumeUsd, '$')}). Peak impact and a full hit on the book make this an upper bound; on Hyperliquid large liquidations go through 20% per block and part is taken over by the Liquidator Vault.`
+              `Kaskada: Δp/p = Y·σ·√(Q/V) (Tóth i in. 2011; Bouchaud i in. 2018), σ = dzienna zmienność (${fmtFixed(sigmaDaily * 100, 2)}%), V = obrót 24 h (${fmtCompact(dayVolumeUsd, '$')}). Wpływ szczytowy i pełne trafienie w arkusz — górna granica; na Hyperliquid duże likwidacje idą po 20% na blok, a część przejmuje Liquidator Vault.`,
+              `Cascade: Δp/p = Y·σ·√(Q/V) (Tóth et al. 2011; Bouchaud et al. 2018), σ = daily volatility (${fmtFixed(sigmaDaily * 100, 2)}%), V = 24 h volume (${fmtCompact(dayVolumeUsd, '$')}). Peak impact and a full hit on the book make this an upper bound; on Hyperliquid large liquidations go through 20% per block and part is taken over by the Liquidator Vault.`
             )}
           </li>
         </ul>
@@ -392,7 +392,7 @@ const CascadeChart: React.FC<{ main: CascadeResult[]; lo: CascadeResult[]; hi: C
             <span className="font-mono tabular-nums">{pct(h.finalPct)}</span>
           </div>
           <div>
-            ×{h.amplification.toFixed(2)} ({tr('pasmo', 'band')} ×{lo[hover].amplification.toFixed(2)}–×{hi[hover].amplification.toFixed(2)})
+            ×{fmtFixed(h.amplification, 2)} ({tr('pasmo', 'band')} ×{fmtFixed(lo[hover].amplification, 2)}–×{fmtFixed(hi[hover].amplification, 2)})
           </div>
           <div>
             {tr('likwidacje', 'liquidations')} {fmtCompact(h.liquidatedUsd, '$')}

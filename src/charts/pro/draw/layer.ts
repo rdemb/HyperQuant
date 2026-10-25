@@ -706,7 +706,7 @@ export class DrawingLayer implements ISeriesPrimitive<Time> {
     const digits = priceDigits(d.pts[0].p);
     const rows = [
       {
-        text: numLang(`${fmtSigned(m.dp, digits)} (${fmtPct(m.pct)})`),
+        text: `${fmtSigned(m.dp, digits)} (${fmtPct(m.pct)})`,
         color: PRO.ink1,
       },
       {
@@ -762,13 +762,13 @@ export class DrawingLayer implements ISeriesPrimitive<Time> {
       stroke(c, [x0, S.y, x1, S.y], rgba(LOSS, 0.7), 1);
       const tRows = [
         {
-          text: `${tr('Cel', 'Target')} ${fmtPx(pt.p)} · ${numLang(fmtPct(tUp ? ps0.rewardPct : -ps0.rewardPct))}`,
+          text: `${tr('Cel', 'Target')} ${fmtPx(pt.p)} · ${fmtPct(tUp ? ps0.rewardPct : -ps0.rewardPct)}`,
           color: '#0b0b12',
         },
       ];
       const sRows = [
         {
-          text: `Stop ${fmtPx(ps.p)} · ${numLang(fmtPct(sUp ? ps0.riskPct : -ps0.riskPct))}`,
+          text: `Stop ${fmtPx(ps.p)} · ${fmtPct(sUp ? ps0.riskPct : -ps0.riskPct)}`,
           color: '#ffffff',
         },
       ];

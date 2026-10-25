@@ -407,7 +407,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         metric: tr('Monte Carlo — zasięg 2 h i Analizator planu', 'Monte Carlo — 2 h range and Plan Analyzer'),
         source: tr('Model zmienności, świece HL, poziomy PDH/PDL/D-EQ, arkusz L2', 'Volatility model, HL candles, PDH/PDL/D-EQ levels, L2 book'),
         method: tr(
-          '2000 ścieżek, krok 5 min (σ z HAR, innowacje FHS), korekta mostu Browna; Analizator: faza wypełnienia od bieżącej ceny i wynik warunkowy jak w dzienniku. Wspólne liczby losowe w obrębie minuty — w tej minucie wynik zmienia się płynnie z ceną; co minutę nowe ścieżki (błąd standardowy ≤ 1.1 pp)',
+          '2000 ścieżek, krok 5 min (σ z HAR, innowacje FHS), korekta mostu Browna; Analizator: faza wypełnienia od bieżącej ceny i wynik warunkowy jak w dzienniku. Wspólne liczby losowe w obrębie minuty — w tej minucie wynik zmienia się płynnie z ceną; co minutę nowe ścieżki (błąd standardowy ≤ 1,1 pp)',
           '2000 paths, 5-min step (σ from HAR, FHS innovations), Brownian-bridge correction; Analyzer: fill phase from the current price and a conditional result as in the journal. Common random numbers within a minute — within that minute the result changes smoothly with price; new paths every minute (standard error ≤ 1.1 pp)'
         ),
         kinds: ['MODEL'],
@@ -424,7 +424,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
           'HyperQuant scanner: addresses from WS trades (users field) and from Hyperliquid’s public account leaderboard → clearinghouseState of each wallet; published through the public data repository on GitHub (rdemb/hyperquant-data)'
         ),
         method: tr(
-          'Kubełki ceny likwidacji (krok ~0.1% ceny) dla longów i shortów, nominał |szi|·cena likwidacji; pokrycie = Σ|szi| / (2·OI); tylko agregaty, bez adresów',
+          'Kubełki ceny likwidacji (krok ~0,1% ceny) dla longów i shortów, nominał |szi|·cena likwidacji; pokrycie = Σ|szi| / (2·OI); tylko agregaty, bez adresów',
           'Liquidation-price buckets (step ~0.1% of price) for longs and shorts, notional |szi|·liquidation price; coverage = Σ|szi| / (2·OI); aggregates only, no addresses'
         ),
         kinds: ['LIVE'],
@@ -444,7 +444,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
           'HyperQuant scanner: tracked positions → the account’s userFillsByTime (liquidation field: markPx, market/backstop method)'
         ),
         method: tr(
-          'Kandydat: pozycja zmalała, a cena z taśmy od poprzedniego odczytu weszła w pasmo ceny likwidacji (do 0.5% przed poziomem z mapy); zdarzenie tylko po potwierdzeniu fillem likwidacyjnym; błąd mapy = mark przy likwidacji vs cena likwidacji z ostatniego odczytu',
+          'Kandydat: pozycja zmalała, a cena z taśmy od poprzedniego odczytu weszła w pasmo ceny likwidacji (do 0,5% przed poziomem z mapy); zdarzenie tylko po potwierdzeniu fillem likwidacyjnym; błąd mapy = mark przy likwidacji vs cena likwidacji z ostatniego odczytu',
           'Candidate: the position shrank and the tape price since the previous read entered the liquidation-price band (up to 0.5% before the map level); an event only after confirmation by a liquidation fill; map error = mark at liquidation vs the liquidation price from the last read'
         ),
         kinds: ['LIVE'],
@@ -634,7 +634,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
           'Liquidation map, daily volatility (volatility model), 24 h turnover from the API'
         ),
         method: tr(
-          'Punkt stały: szok → likwidacje z mapy → wpływ Δp/p = Y·σ·√(Q/V) (Tóth i in. 2011) → kolejne likwidacje; Y = 1, pasmo 0.5–1.5',
+          'Punkt stały: szok → likwidacje z mapy → wpływ Δp/p = Y·σ·√(Q/V) (Tóth i in. 2011) → kolejne likwidacje; Y = 1, pasmo 0,5–1,5',
           'Fixed point: shock → liquidations from the map → impact Δp/p = Y·σ·√(Q/V) (Tóth et al. 2011) → further liquidations; Y = 1, band 0.5–1.5'
         ),
         kinds: ['MODEL'],

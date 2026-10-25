@@ -1,6 +1,6 @@
 import React from 'react';
 import { AlertTriangle, BookmarkPlus, Check, OctagonAlert } from 'lucide-react';
-import { Badge, Stat, fmtCompact, fmtPrice, fmtSigned } from '../../ui';
+import { Badge, Stat, fmtCompact, fmtPrice, fmtSigned, fmtFixed, fmtNum } from '../../ui';
 import { BTC_MAX_LEVERAGE, DEFAULT_TAKER_FEE, PlanAnalysis, quarterKelly, wilsonLowerBound } from '../../utils/planAnalyzer';
 import { LedgerEntry, bucketIndex, bucketStats } from '../../utils/forecastLedger';
 import { MacroEvent } from '../../data/macroCalendar';
@@ -31,7 +31,7 @@ interface PlanResultProps {
   justSaved: boolean;
 }
 
-const pct1 = (v: number) => `${(v * 100).toFixed(1)}%`;
+const pct1 = (v: number) => `${fmtFixed(v * 100, 1)}%`;
 const evtFmt = new Intl.DateTimeFormat(locale, { weekday: 'short', hour: '2-digit', minute: '2-digit' });
 
 /** Wynik analizy: P(cel przed stopem) jako bohater, pasek trzech wyników, wachlarz ścieżek, EV, koszty, likwidacja, wielkość. */
@@ -69,7 +69,7 @@ export const PlanResult: React.FC<PlanResultProps> = (p) => {
     const pL = wilsonLowerBound(b.hits, b.n);
     const f = quarterKelly(pL, a.R);
     const idx = bucketIndex(mc.pTarget);
-    kelly = tr(`${(f * 100).toFixed(1)}% kapitału`, `${(f * 100).toFixed(1)}% of equity`);
+    kelly = tr(`${fmtFixed(f * 100, 1)}% kapitału`, `${fmtFixed(f * 100, 1)}% of equity`);
     kellyHint = tr(
       `¼·max(0, p_L − (1−p_L)/R); p_L = ${pct1(pL)} (Wilson 95%) w koszyku ${idx * 10}–${idx * 10 + 10}% · n = ${b.n}, trafień ${b.hits}`,
       `¼·max(0, p_L − (1−p_L)/R); p_L = ${pct1(pL)} (Wilson 95%) in the ${idx * 10}–${idx * 10 + 10}% bucket · n = ${b.n}, hits ${b.hits}`
@@ -97,7 +97,7 @@ export const PlanResult: React.FC<PlanResultProps> = (p) => {
             </div>
             <div className="text-[28px] sm:text-[44px] leading-none font-semibold text-ink-1 mt-1.5">{pct1(mc.pTarget)}</div>
             <div className="text-xs text-ink-3 mt-1.5">
-              R = 1 : {a.R.toFixed(2)} · {tr('bez limitu czasu (formuła): cel', 'no time limit (formula): target')} {pct1(a.closedForm.pTarget)} · stop{' '}
+              R = 1 : {fmtFixed(a.R, 2)} · {tr('bez limitu czasu (formuła): cel', 'no time limit (formula): target')} {pct1(a.closedForm.pTarget)} · stop{' '}
               {pct1(a.closedForm.pStop)}
             </div>
             {showFill && (
@@ -139,7 +139,7 @@ export const PlanResult: React.FC<PlanResultProps> = (p) => {
           value={<span className="font-mono tabular-nums">{fmtSigned(a.evR, 2, ' R')}</span>}
           hint={
             <>
-              {tr('przed kosztami', 'before costs')} {fmtSigned(a.evRGross, 2, ' R')} · {tr('koszty', 'costs')} {costs.totalR.toFixed(2)} R ({fmtPrice(costs.totalUsd, 2)} $)
+              {tr('przed kosztami', 'before costs')} {fmtSigned(a.evRGross, 2, ' R')} · {tr('koszty', 'costs')} {fmtFixed(costs.totalR, 2)} R ({fmtPrice(costs.totalUsd, 2)} $)
               <br />
               {tr('dryf 0 ⇒ ≈ 0 R przed kosztami — przewagę wykaże tylko dziennik', 'zero drift ⇒ ≈ 0 R before costs; only the journal can show an edge')}
             </>
@@ -152,7 +152,7 @@ export const PlanResult: React.FC<PlanResultProps> = (p) => {
             a.entrySlip ? (
               <span className="font-mono tabular-nums">
                 {a.entrySlip.insufficientDepth ? '≥ ' : ''}
-                {a.entrySlip.slipBps.toFixed(1)} bps
+                {fmtFixed(a.entrySlip.slipBps, 1)} bps
               </span>
             ) : (
               '—'
@@ -169,7 +169,7 @@ export const PlanResult: React.FC<PlanResultProps> = (p) => {
                   </span>
                 )}
                 <br />
-                {tr('stop (przybliżenie, bieżący arkusz)', 'stop (approximation, current book)')}: {a.stopSlip ? `${a.stopSlip.slipBps.toFixed(1)} bps` : '—'}
+                {tr('stop (przybliżenie, bieżący arkusz)', 'stop (approximation, current book)')}: {a.stopSlip ? `${fmtFixed(a.stopSlip.slipBps, 1)} bps` : '—'}
               </>
             ) : (
               tr('brak arkusza L2 — poślizg nie wliczony do kosztów', 'no L2 book, slippage not included in costs')
@@ -187,7 +187,7 @@ export const PlanResult: React.FC<PlanResultProps> = (p) => {
           hint={
             liq ? (
               <>
-                {fmtSigned(((liq.price - p.entry) / p.entry) * 100, 2, '%')} {tr('od wejścia', 'from entry')} · MMR {(liq.maintenanceRate * 100).toFixed(2)}% (BTC max{' '}
+                {fmtSigned(((liq.price - p.entry) / p.entry) * 100, 2, '%')} {tr('od wejścia', 'from entry')} · MMR {fmtFixed(liq.maintenanceRate * 100, 2)}% (BTC max{' '}
                 {liq.maxLeverage}×)
                 {liq.warning === 'liq_before_stop' && (
                   <span className="flex items-center gap-1 text-critical mt-0.5 font-medium">
@@ -212,8 +212,8 @@ export const PlanResult: React.FC<PlanResultProps> = (p) => {
           value={<span className="font-mono tabular-nums">{fmtCompact(p.sizeUsd, '$')}</span>}
           hint={
             <>
-              {btc.toFixed(4)} BTC · {tr('ryzyko', 'risk')} {fmtPrice(costs.riskUsd, 0)} $
-              {p.risk && tr(` (${p.risk.riskPct}% z ${fmtCompact(p.risk.equity, '$')}, z kosztami)`, ` (${p.risk.riskPct}% of ${fmtCompact(p.risk.equity, '$')}, incl. costs)`)}
+              {fmtFixed(btc, 4)} BTC · {tr('ryzyko', 'risk')} {fmtPrice(costs.riskUsd, 0)} $
+              {p.risk && tr(` (${fmtNum(p.risk.riskPct)}% z ${fmtCompact(p.risk.equity, '$')}, z kosztami)`, ` (${fmtNum(p.risk.riskPct)}% of ${fmtCompact(p.risk.equity, '$')}, incl. costs)`)}
               {p.leverage ? ` · ${tr('depozyt', 'margin')} ${fmtCompact(p.sizeUsd / p.leverage, '$')}` : ''}
             </>
           }
@@ -223,7 +223,7 @@ export const PlanResult: React.FC<PlanResultProps> = (p) => {
           value={<span className="font-mono tabular-nums">{fmtPrice(costs.totalUsd, 2)} $</span>}
           hint={
             <>
-              {tr('opłaty taker', 'taker fees')} 2×{(a.feeRateTaker * 100).toFixed(3)}%: {fmtPrice(costs.feeUsd, 2)} $ · {tr('poślizg stopu (oczek.)', 'stop slippage (exp.)')}:{' '}
+              {tr('opłaty taker', 'taker fees')} 2×{fmtFixed(a.feeRateTaker * 100, 3)}%: {fmtPrice(costs.feeUsd, 2)} $ · {tr('poślizg stopu (oczek.)', 'stop slippage (exp.)')}:{' '}
               {fmtPrice(costs.stopSlipUsdExpected, 2)} $
             </>
           }
@@ -240,7 +240,7 @@ export const PlanResult: React.FC<PlanResultProps> = (p) => {
 /** Karta modelu zmienności: σ horyzontu, trafność HAR poza próbą, skoki, liczność danych — albo jawny zapas. */
 const VolModelStat: React.FC<{ market: PlanMarket; horizonLabel: string }> = ({ market, horizonLabel }) => {
   const m = market.volModel;
-  const sigmaTxt = market.sigma > 0 ? `${(market.sigma * 100).toFixed(2)}%` : '—';
+  const sigmaTxt = market.sigma > 0 ? `${fmtFixed(market.sigma * 100, 2)}%` : '—';
   if (!m || !market.vol) {
     return (
       <Stat
@@ -271,7 +271,7 @@ const VolModelStat: React.FC<{ market: PlanMarket; horizonLabel: string }> = ({ 
           {gain !== null ? `${fmtSigned(-gain, 0, '%')} ${tr('vs średnia 24 h', 'vs 24 h mean')} (n = ${oos!.n})` : tr('n/a (za mało danych)', 'n/a (not enough data)')}
           <br />
           {tr('skoki', 'jumps')}:{' '}
-          {m.jump ? tr(`${(m.jump.share * 100).toFixed(1)}% wariancji (${m.jump.days} dni, BV)`, `${(m.jump.share * 100).toFixed(1)}% of variance (${m.jump.days} days, BV)`) : 'n/a'} ·
+          {m.jump ? tr(`${fmtFixed(m.jump.share * 100, 1)}% wariancji (${m.jump.days} dni, BV)`, `${fmtFixed(m.jump.share * 100, 1)}% of variance (${m.jump.days} days, BV)`) : 'n/a'} ·
           Lee–Mykland: {tr(`${m.lmJumps.count} w ${Math.round(m.lmJumps.days)} dni`, `${m.lmJumps.count} in ${Math.round(m.lmJumps.days)} days`)}
           <br />
           {tr(`dane: ${m.hourlyBars} świec 1h · ${m.fiveMinBars} świec 5m`, `data: ${m.hourlyBars} 1h candles · ${m.fiveMinBars} 5m candles`)}
@@ -296,7 +296,7 @@ const StopClusterWarning: React.FC<{ entry: number; stop: number }> = ({ entry, 
       </div>
       <div className="mt-1 text-ink-2">
         {tr(
-          `${fmtCompact(hit.ntlUsd, '$')} nominału (${hit.positions} poz.) w ±0.2% wokół stopu — ich zlecenia rynkowe mogą przepchnąć cenę przez stop i pogorszyć wykonanie. Rozważ stop poza klastrem.`,
+          `${fmtCompact(hit.ntlUsd, '$')} nominału (${hit.positions} poz.) w ±0,2% wokół stopu — ich zlecenia rynkowe mogą przepchnąć cenę przez stop i pogorszyć wykonanie. Rozważ stop poza klastrem.`,
           `${fmtCompact(hit.ntlUsd, '$')} of notional (${hit.positions} pos.) within ±0.2% of the stop; their market orders can push price through the stop and worsen the fill. Consider a stop outside the cluster.`
         )}
       </div>
@@ -335,7 +335,7 @@ const MacroWindow: React.FC<{ events: MacroEvent[]; loaded: boolean; multiplier:
     <div className="rounded-md border border-warn/40 bg-warn/5 px-3 py-2 text-xs">
       <div className="flex items-center gap-1.5 text-warn font-medium">
         <AlertTriangle className="w-3.5 h-3.5" aria-hidden="true" />{' '}
-        {tr(`Zdarzenie makro w oknie — wariancja ×${multiplier.toFixed(2)} (założenie)`, `Macro event in the window: variance ×${multiplier.toFixed(2)} (assumption)`)}
+        {tr(`Zdarzenie makro w oknie — wariancja ×${fmtFixed(multiplier, 2)} (założenie)`, `Macro event in the window: variance ×${fmtFixed(multiplier, 2)} (assumption)`)}
       </div>
       <ul className="mt-1 text-ink-2 space-y-0.5">
         {events.map((e) => (
@@ -366,10 +366,10 @@ const Methodology: React.FC<{ timeframeSec: number; sigma: number; hasModel: boo
           <li>
             {tr(
               `σ: sezonowy log-HAR (Corsi 2009) na godzinowych wariancjach Garman–Klass z ~5000 świec 1h (≈ 208 dni), z profilem godzin UTC (Andersen–Bollerslev 1997) i korektą Duana; prognoza iterowana godzina po godzinie, σ kroków 5 min${
-                sigma > 0 ? ` (na horyzont teraz ${(sigma * 100).toFixed(2)}%)` : ''
+                sigma > 0 ? ` (na horyzont teraz ${fmtFixed(sigma * 100, 2)}%)` : ''
               }. Trafność: strata QLIKE (Patton 2011) poza próbą względem naiwnej średniej z 24 h — w karcie „Model zmienności”.`,
               `σ: seasonal log-HAR (Corsi 2009) on hourly Garman–Klass variances from ~5000 1h candles (≈ 208 days), with a UTC hour-of-day profile (Andersen–Bollerslev 1997) and Duan's correction; the forecast is iterated hour by hour, σ in 5-min steps${
-                sigma > 0 ? ` (for the horizon now ${(sigma * 100).toFixed(2)}%)` : ''
+                sigma > 0 ? ` (for the horizon now ${fmtFixed(sigma * 100, 2)}%)` : ''
               }. Accuracy: out-of-sample QLIKE loss (Patton 2011) against a naive 24 h mean, in the "Volatility model" card.`
             )}
           </li>
@@ -384,10 +384,10 @@ const Methodology: React.FC<{ timeframeSec: number; sigma: number; hasModel: boo
         <li>
           {tr(
             `σ (zapas — model zmienności niedostępny): estymator Parkinsona z 60 ostatnich świec ${Math.round(timeframeSec / 60)}m, skalowany √(h/Δ)${
-              sigma > 0 ? ` (teraz ${(sigma * 100).toFixed(2)}%)` : ''
+              sigma > 0 ? ` (teraz ${fmtFixed(sigma * 100, 2)}%)` : ''
             }, rozkład normalny. Ogony BTC są grubsze niż w tym zapasie, a luki cenowe mogą przeskoczyć stop.`,
             `σ (fallback, volatility model unavailable): Parkinson estimator from the last 60 ${Math.round(timeframeSec / 60)}m candles, scaled by √(h/Δ)${
-              sigma > 0 ? ` (now ${(sigma * 100).toFixed(2)}%)` : ''
+              sigma > 0 ? ` (now ${fmtFixed(sigma * 100, 2)}%)` : ''
             }, normal distribution. BTC tails are fatter than in this fallback, and price gaps can jump over the stop.`
           )}
         </li>
@@ -412,13 +412,13 @@ const Methodology: React.FC<{ timeframeSec: number; sigma: number; hasModel: boo
       </li>
       <li>
         {tr(
-          `Koszty: opłata taker ${(DEFAULT_TAKER_FEE * 100).toFixed(3)}% (Hyperliquid tier 0 — założenie; maker 0.015%) przy wejściu i wyjściu; poślizg wejścia z przejścia po bieżącym arkuszu L2; stop jako zlecenie rynkowe po przeciwnej stronie bieżącego arkusza (przybliżenie). Funding pominięty.`,
-          `Costs: taker fee ${(DEFAULT_TAKER_FEE * 100).toFixed(3)}% (Hyperliquid tier 0, an assumption; maker 0.015%) on entry and exit; entry slippage from walking the current L2 book; the stop as a market order against the opposite side of the current book (approximation). Funding ignored.`
+          `Koszty: opłata taker ${fmtFixed(DEFAULT_TAKER_FEE * 100, 3)}% (Hyperliquid tier 0 — założenie; maker 0,015%) przy wejściu i wyjściu; poślizg wejścia z przejścia po bieżącym arkuszu L2; stop jako zlecenie rynkowe po przeciwnej stronie bieżącego arkusza (przybliżenie). Funding pominięty.`,
+          `Costs: taker fee ${fmtFixed(DEFAULT_TAKER_FEE * 100, 3)}% (Hyperliquid tier 0, an assumption; maker 0.015%) on entry and exit; entry slippage from walking the current L2 book; the stop as a market order against the opposite side of the current book (approximation). Funding ignored.`
         )}
       </li>
       <li>
         {tr(
-          'Likwidacja (isolated): liq = E − side·margin_available/size/(1 − l·side), l = 1/MAINTENANCE_LEVERAGE; maintenance margin = ½ initial margin przy max dźwigni (BTC 40× → 1.25%, do 150M USDC nominału). Bez opłat i fundingu.',
+          'Likwidacja (isolated): liq = E − side·margin_available/size/(1 − l·side), l = 1/MAINTENANCE_LEVERAGE; maintenance margin = ½ initial margin przy max dźwigni (BTC 40× → 1,25%, do 150M USDC nominału). Bez opłat i fundingu.',
           'Liquidation (isolated): liq = E − side·margin_available/size/(1 − l·side), l = 1/MAINTENANCE_LEVERAGE; maintenance margin = ½ initial margin at max leverage (BTC 40× → 1.25%, up to 150M USDC notional). Fees and funding excluded.'
         )}
       </li>
