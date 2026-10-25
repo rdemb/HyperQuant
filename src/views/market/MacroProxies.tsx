@@ -2,7 +2,7 @@ import React from 'react';
 import { useDesk } from '../../state/DeskContext';
 import { freshness, MacroFit, PERIOD_MS, useCrossMarket } from '../../state/useCrossMarket';
 import { HIP3_MACRO, Hip3Tile, recentlyFlat } from '../../utils/hlMarkets';
-import { Badge, Panel, Sparkline, Stat, fmtPrice, fmtSigned, DASH } from '../../ui';
+import { Badge, Panel, Sparkline, Stat, fmtPrice, fmtSigned, DASH, fmtFixed } from '../../ui';
 import { tr } from '../../i18n';
 
 const H = 3_600_000;
@@ -55,7 +55,7 @@ export const MacroProxies: React.FC = () => {
               <Stat
                 label={t.label}
                 value={<span className="text-base">{t.markPx !== null ? fmtPrice(t.markPx, priceDigits(t.markPx)) : 'n/a'}</span>}
-                delta={t.change24hPct !== null ? { value: t.change24hPct, text: `${Math.abs(t.change24hPct).toFixed(2)}%` } : null}
+                delta={t.change24hPct !== null ? { value: t.change24hPct, text: `${fmtFixed(Math.abs(t.change24hPct), 2)}%` } : null}
                 hint={
                   closed ? (
                     <span title={tr('Brak wolumenu albo zmian w ostatnich godzinach — sesja kasowa mogła się skończyć', 'No volume or changes in recent hours; the cash session may have ended')}>
@@ -105,7 +105,7 @@ export const MacroProxies: React.FC = () => {
         <p className="text-xs text-ink-2 leading-relaxed">{best >= 0 ? r2Text(best) : tr('Za mało wspólnych świec 5m, by policzyć zależność (proxy stoi albo rynek zamknięty).', 'Too few common 5m candles to compute the relationship (the proxy is flat or the market is closed).')}</p>
         <p className="text-[11px] text-ink-3 leading-relaxed">
           {tr(
-            'Zastrzeżenie: zależność jest niestabilna w czasie (IMF 2022: korelacja BTC–S&P 500 wzrosła z 0.01 do 0.36 po 2020) i liczona z jednej doby. Poza sesją kasową i w weekend proxy stoi — wtedy R² nic nie mówi o makro. β: ruch proxy o 1% ≈ ruch BTC o β% w tym oknie.',
+            'Zastrzeżenie: zależność jest niestabilna w czasie (IMF 2022: korelacja BTC–S&P 500 wzrosła z 0,01 do 0,36 po 2020) i liczona z jednej doby. Poza sesją kasową i w weekend proxy stoi — wtedy R² nic nie mówi o makro. β: ruch proxy o 1% ≈ ruch BTC o β% w tym oknie.',
             'Caveat: the relationship is unstable over time (IMF 2022: the BTC–S&P 500 correlation rose from 0.01 to 0.36 after 2020) and is computed from one day. Outside the cash session and at weekends the proxy is flat, so R² says nothing about macro. β: a 1% proxy move ≈ a β% BTC move in this window.'
           )}
         </p>
@@ -126,7 +126,7 @@ const FitRow: React.FC<{ label: string; m: MacroFit | null }> = ({ label, m }) =
       <span className="text-xs font-mono tabular-nums text-ink-1 text-right whitespace-nowrap">
         {m?.fit ? (
           <>
-            R² {(m.fit.r2 * 100).toFixed(0)}% <span className="text-ink-3">· β {fmtSigned(m.fit.beta, 2)} · n {m.fit.n}</span>
+            R² {fmtFixed(m.fit.r2 * 100, 0)}% <span className="text-ink-3">· β {fmtSigned(m.fit.beta, 2)} · n {m.fit.n}</span>
           </>
         ) : (
           <span className="text-ink-3">n/a{m ? ` · n ${m.n} < 30 ${tr('lub proxy stoi', 'or proxy flat')}` : ''}</span>

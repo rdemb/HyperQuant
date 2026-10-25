@@ -1,7 +1,7 @@
 import React, { useId, useState } from 'react';
 import { ClipboardList } from 'lucide-react';
 import { QuantMathMetrics } from '../types/trading';
-import { Badge, Panel, Stat, DASH, fmtCompact, fmtPrice, fmtSigned } from '../ui';
+import { Badge, Panel, Stat, DASH, fmtCompact, fmtPrice, fmtSigned, fmtFixed, fmtNum } from '../ui';
 import { candlesLabel, horizonDuration } from '../views/micro/horizon';
 import { tr } from '../i18n';
 
@@ -42,7 +42,7 @@ const WEIGHT_SERIES: { key: keyof QuantMathMetrics['neuralAttentionWeights']; la
   { key: 'hawkesCascadeVelocity', label: 'Hawkes', color: 'bg-series-5' },
 ];
 
-const fmtHalfLife = (v: number) => (Number.isFinite(v) ? `${v.toFixed(1)} ${tr('świec', 'candles')}` : tr('∞ (brak powrotu)', '∞ (no reversion)'));
+const fmtHalfLife = (v: number) => (Number.isFinite(v) ? `${fmtFixed(v, 1)} ${tr('świec', 'candles')}` : tr('∞ (brak powrotu)', '∞ (no reversion)'));
 
 /** Przyciski przekazania kierunku do Analizatora planu — kierunek wybiera trader. */
 export const PrefillButtons: React.FC<{ onPick: (dir: Direction) => void }> = ({ onPick }) => (
@@ -132,7 +132,7 @@ export const QuantRegimePanel: React.FC<{
               key={s.key}
               className={`${s.color} h-full border-r border-surface-1 last:border-r-0`}
               style={{ width: `${(weights[s.key] * 100).toFixed(1)}%` }}
-              title={`${s.label}: ${(weights[s.key] * 100).toFixed(0)}%`}
+              title={`${s.label}: ${fmtFixed(weights[s.key] * 100, 0)}%`}
             />
           ))}
         </div>
@@ -143,7 +143,7 @@ export const QuantRegimePanel: React.FC<{
                 <span className={`w-2 h-2 rounded-sm shrink-0 ${s.color}`} aria-hidden="true" />
                 <span className="truncate">{s.label}</span>
               </span>
-              <span className="font-mono tabular-nums text-ink-1">{(weights[s.key] * 100).toFixed(0)}%</span>
+              <span className="font-mono tabular-nums text-ink-1">{fmtFixed(weights[s.key] * 100, 0)}%</span>
             </li>
           ))}
         </ul>
@@ -156,7 +156,7 @@ export const QuantRegimePanel: React.FC<{
               onPrefillPlan(
                 dir,
                 tr('Mikrostruktura', 'Microstructure'),
-                `${tr('Reżim', 'Regime')}: ${regime.label} · OU Z ${fmtSigned(quant.ouZScore, 2)}σ · Hurst ${quant.hurstExponent} · VPIN ${(quant.vpinToxicity * 100).toFixed(0)}%`
+                `${tr('Reżim', 'Regime')}: ${regime.label} · OU Z ${fmtSigned(quant.ouZScore, 2)}σ · Hurst ${quant.hurstExponent} · VPIN ${fmtFixed(quant.vpinToxicity * 100, 0)}%`
               )
             }
           />
@@ -198,12 +198,12 @@ export const QuantMetricTiles: React.FC<{ quant: QuantMathMetrics; className?: s
           source={{ tone: 'model', label: 'MODEL', title: tr('λ(t) = μ + Σ α·e^(−β(t−tᵢ)) na transakcjach HL; μ, α, β stałe (nieestymowane)', 'λ(t) = μ + Σ α·e^(−β(t−tᵢ)) on HL trades; μ, α, β fixed (not estimated)') }}
           value={
             <span className="text-base">
-              <span className="text-buy-ink" aria-hidden="true">▲</span> {quant.hawkesBuyIntensity.toFixed(2)}{' '}
+              <span className="text-buy-ink" aria-hidden="true">▲</span> {fmtFixed(quant.hawkesBuyIntensity, 2)}{' '}
               <span className="text-ink-3">/</span> <span className="text-sell-ink" aria-hidden="true">▼</span>{' '}
-              {quant.hawkesSellIntensity.toFixed(2)}
+              {fmtFixed(quant.hawkesSellIntensity, 2)}
             </span>
           }
-          hint={tr(`kupno / sprzedaż · η = ${quant.hawkesBranchingRatio ?? 'n/a'} (wymaga MLE)`, `buy / sell · η = ${quant.hawkesBranchingRatio ?? 'n/a'} (needs MLE)`)}
+          hint={tr(`kupno / sprzedaż · η = ${quant.hawkesBranchingRatio != null ? fmtNum(quant.hawkesBranchingRatio) : 'n/a'} (wymaga MLE)`, `buy / sell · η = ${quant.hawkesBranchingRatio != null ? fmtNum(quant.hawkesBranchingRatio) : 'n/a'} (needs MLE)`)}
         />
       ),
     },
@@ -213,7 +213,7 @@ export const QuantMetricTiles: React.FC<{ quant: QuantMathMetrics; className?: s
         <Stat
           label="Hurst"
           source={{ tone: 'model', label: 'MODEL', title: tr('R/S z korektą Anis-Lloyd na 45 log-zwrotach', 'R/S with the Anis-Lloyd correction on 45 log returns') }}
-          value={<span>H {h.toFixed(3)}</span>}
+          value={<span>H {fmtFixed(h, 3)}</span>}
           hint={
             <>
               {hurstRead}. {tr('R/S z korektą Anis-Lloyd; Lo (1991) — test może mylić krótką pamięć z długą.', 'R/S with the Anis-Lloyd correction; Lo (1991): the test can mistake short memory for long.')}
@@ -235,7 +235,7 @@ export const QuantMetricTiles: React.FC<{ quant: QuantMathMetrics; className?: s
               'Entropy of the distribution: spot and perp buy/sell of the last candle + book sides; normalised to 0–1'
             ),
           }}
-          value={<span>{quant.shannonEntropyBits.toFixed(3)}</span>}
+          value={<span>{fmtFixed(quant.shannonEntropyBits, 3)}</span>}
           hint={tr('Shannon, 0–1; 1 = masa równo rozłożona między stronami przepływu i arkusza', 'Shannon, 0–1; 1 = mass spread evenly between the flow and book sides')}
         />
       ),
@@ -246,7 +246,7 @@ export const QuantMetricTiles: React.FC<{ quant: QuantMathMetrics; className?: s
         <Stat
           label="VPIN"
           source={{ tone: 'model', label: 'MODEL', title: tr('Bulk volume classification, 50 kubełków wolumenowych', 'Bulk volume classification, 50 volume buckets') }}
-          value={<span>{(quant.vpinToxicity * 100).toFixed(1)}%</span>}
+          value={<span>{fmtFixed(quant.vpinToxicity * 100, 1)}%</span>}
           hint={tr('Kontrowersyjny — Andersen & Bondarenko 2014; czytaj względem własnej historii.', 'Controversial (Andersen & Bondarenko 2014); read it against its own history.')}
         />
       ),
@@ -263,7 +263,7 @@ export const QuantMetricTiles: React.FC<{ quant: QuantMathMetrics; className?: s
           }}
           value={
             <span>
-              {quant.kyleLambdaPer1M !== null ? `$${quant.kyleLambdaPer1M.toFixed(2)}` : 'n/a'}
+              {quant.kyleLambdaPer1M !== null ? `$${fmtFixed(quant.kyleLambdaPer1M, 2)}` : 'n/a'}
             </span>
           }
           hint={
@@ -360,9 +360,9 @@ export const PositionSizer: React.FC<{ atr14: number; currentPrice: number }> = 
       <dl className="grid grid-cols-2 gap-x-4 gap-y-2.5 pt-3 border-t border-line">
         {[
           { k: tr('Ryzyko 1R', '1R risk'), v: dollarRisk !== null ? fmtCompact(dollarRisk, '$') : DASH },
-          { k: tr('Wielkość', 'Size'), v: sizeBtc !== null ? `${sizeBtc.toFixed(3)} BTC` : DASH },
+          { k: tr('Wielkość', 'Size'), v: sizeBtc !== null ? `${fmtFixed(sizeBtc, 3)} BTC` : DASH },
           { k: tr('Nominał', 'Notional'), v: notional !== null ? fmtCompact(notional, '$') : DASH },
-          { k: tr('Dźwignia efektywna', 'Effective leverage'), v: leverage !== null ? `${leverage.toFixed(1)}×` : DASH },
+          { k: tr('Dźwignia efektywna', 'Effective leverage'), v: leverage !== null ? `${fmtFixed(leverage, 1)}×` : DASH },
         ].map((row) => (
           <div key={row.k} className="min-w-0">
             <dt className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium truncate">{row.k}</dt>

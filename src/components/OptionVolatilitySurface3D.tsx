@@ -7,7 +7,7 @@ import {
   ShaakuniState,
 } from '../types/trading';
 import { normCdf, normPdf } from '../utils/stats';
-import { Badge, EmptyState, Segmented } from '../ui';
+import { Badge, EmptyState, Segmented, fmtFixed, fmtNum, fmtPrice } from '../ui';
 import { tr } from '../i18n';
 
 // UWAGA: Hyperliquid nie ma rynku opcji, a aplikacja nie pobiera żadnych danych opcyjnych.
@@ -143,7 +143,7 @@ export const OptionVolatilitySurface3D: React.FC<
         // Gamma modelu w $ na ruch spotu o 1% na 1 BTC nominału: Γ·S²·0.01.
         // Bez open interest nie znamy pozycjonowania dealerów, więc brak odwracania znaku (to nie GEX).
         const gammaUsdPer1Pct = Number(
-          (greeks.gamma * spot * spot * 0.01).toFixed(2)
+          fmtFixed(greeks.gamma * spot * spot * 0.01, 2)
         );
 
         points.push({
@@ -398,7 +398,7 @@ export const OptionVolatilitySurface3D: React.FC<
     ctx.fillStyle = '#eef2f7';
     ctx.font = '600 10px "IBM Plex Mono", monospace';
     ctx.textAlign = 'left';
-    ctx.fillText(`SPOT $${currentPrice.toFixed(0)}`, spotProj.px + 5, spotProj.py - 14);
+    ctx.fillText(`SPOT $${fmtPrice(currentPrice, 0)}`, spotProj.px + 5, spotProj.py - 14);
 
     // Strike Axis Labels at bottom edge
     for (let i = 0; i < strikes.length; i += 3) {
@@ -406,7 +406,7 @@ export const OptionVolatilitySurface3D: React.FC<
       ctx.fillStyle = '#a9b4c4';
       ctx.font = '10px "IBM Plex Mono", monospace';
       ctx.textAlign = 'center';
-      ctx.fillText(`$${(strikes[i] / 1000).toFixed(0)}k`, p.px, p.py + 12);
+      ctx.fillText(`$${fmtFixed(strikes[i] / 1000, 0)}k`, p.px, p.py + 12);
     }
   }, [surfaceGrid, pitch, yaw, zoom, activeSurfaceMode, currentPrice, spotOk, wrapSize]);
 
@@ -464,8 +464,8 @@ export const OptionVolatilitySurface3D: React.FC<
             </Badge>
           </h2>
           <p className="text-[11px] text-ink-3 font-mono tabular-nums mt-0.5">
-            Spot {currentPrice.toFixed(1)} · {tr('ATM IV modelu (30D)', 'model ATM IV (30D)')} {modelAtmIv30 !== null ? `${modelAtmIv30.toFixed(1)}%` : '—'} · r ={' '}
-            {(RISK_FREE_RATE * 100).toFixed(1)}%, q = 0
+            Spot {fmtPrice(currentPrice, 1)} · {tr('ATM IV modelu (30D)', 'model ATM IV (30D)')} {modelAtmIv30 !== null ? `${fmtFixed(modelAtmIv30, 1)}%` : '—'} · r ={' '}
+            {fmtFixed(RISK_FREE_RATE * 100, 1)}%, q = 0
           </p>
         </div>
 
@@ -540,7 +540,7 @@ export const OptionVolatilitySurface3D: React.FC<
               onChange={(e) => setZoom(Number(e.target.value))}
               className="w-16 accent-accent cursor-pointer"
             />
-            <span className="font-mono tabular-nums text-ink-1 w-9">{(zoom * 100).toFixed(0)}%</span>
+            <span className="font-mono tabular-nums text-ink-1 w-9">{fmtFixed(zoom * 100, 0)}%</span>
           </label>
         </div>
 
@@ -582,8 +582,8 @@ export const OptionVolatilitySurface3D: React.FC<
                     onFocus={() => setHoveredPoint(p)}
                     onBlur={() => setHoveredPoint(null)}
                     onClick={() => setHoveredPoint(p)}
-                    title={`Strike ${p.strike} · IV ${p.impliedVol}%`}
-                    aria-label={tr(`Strike ${p.strike}, IV modelu ${p.impliedVol}%`, `Strike ${p.strike}, model IV ${p.impliedVol}%`)}
+                    title={`Strike ${p.strike} · IV ${fmtNum(p.impliedVol)}%`}
+                    aria-label={tr(`Strike ${p.strike}, IV modelu ${fmtNum(p.impliedVol)}%`, `Strike ${p.strike}, model IV ${p.impliedVol}%`)}
                     className="flex-1 max-w-6 h-full flex items-end"
                   >
                     <span
@@ -608,7 +608,7 @@ export const OptionVolatilitySurface3D: React.FC<
             <div className={greekCell}>
               <span className="text-[10px] text-ink-3 block">{tr('Strike · IV modelu', 'Strike · model IV')}</span>
               <span className="font-mono text-ink-1">
-                {hoveredPoint ? `${hoveredPoint.strike} · ${hoveredPoint.impliedVol}%` : '—'}
+                {hoveredPoint ? `${hoveredPoint.strike} · ${fmtNum(hoveredPoint.impliedVol)}%` : '—'}
               </span>
             </div>
             <div className={greekCell}>
@@ -619,7 +619,7 @@ export const OptionVolatilitySurface3D: React.FC<
             </div>
             <div className={greekCell}>
               <span className="text-[10px] text-ink-3 block">Gamma ($/1% · 1 BTC)</span>
-              <span className="font-mono text-ink-1">{hoveredPoint ? `$${hoveredPoint.gammaUsdPer1Pct.toFixed(0)}` : '—'}</span>
+              <span className="font-mono text-ink-1">{hoveredPoint ? `$${fmtFixed(hoveredPoint.gammaUsdPer1Pct, 0)}` : '—'}</span>
             </div>
             <div className={greekCell}>
               <span className="text-[10px] text-ink-3 block">{tr('Charm ∂Δ/∂t (/rok)', 'Charm ∂Δ/∂t (/year)')}</span>

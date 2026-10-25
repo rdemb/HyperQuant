@@ -1,12 +1,12 @@
 import React, { useMemo } from 'react';
 import { useLiquidityProfile } from '../../state/useLiquidityProfile';
-import { Badge, DASH, fmtCompact } from '../../ui';
+import { Badge, DASH, fmtCompact, fmtFixed } from '../../ui';
 import { branchingRatio, cascadeDepth, sideCoverage, simulateCascade } from '../../utils/cascadeSim';
 import type { LiqMap } from '../../utils/liqMap';
 import { tr } from '../../i18n';
 
 const SHOCKS = [-0.03, -0.02, -0.01, -0.005, 0.005, 0.01, 0.02, 0.03];
-const pct = (v: number) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v * 100).toFixed(2)}%`;
+const pct = (v: number) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${fmtFixed(Math.abs(v * 100), 2)}%`;
 
 const nWord = (n: number) =>
   n >= 1
@@ -43,11 +43,11 @@ export const CascadeSimSection: React.FC<{ map: LiqMap }> = ({ map }) => {
       </div>
       <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-ink-2">
         <span title={nTitle}>
-          {tr('wzmocnienie lokalne', 'local amplification')} ▼ <span className="font-mono tabular-nums text-ink-1">{Number.isFinite(n.down) ? n.down.toFixed(2) : DASH}</span>{' '}
+          {tr('wzmocnienie lokalne', 'local amplification')} ▼ <span className="font-mono tabular-nums text-ink-1">{Number.isFinite(n.down) ? fmtFixed(n.down, 2) : DASH}</span>{' '}
           <span className="text-ink-3">({Number.isFinite(n.down) ? nWord(n.down) : tr('brak danych', 'no data')})</span>
         </span>
         <span title={nTitle}>
-          {tr('wzmocnienie lokalne', 'local amplification')} ▲ <span className="font-mono tabular-nums text-ink-1">{Number.isFinite(n.up) ? n.up.toFixed(2) : DASH}</span>{' '}
+          {tr('wzmocnienie lokalne', 'local amplification')} ▲ <span className="font-mono tabular-nums text-ink-1">{Number.isFinite(n.up) ? fmtFixed(n.up, 2) : DASH}</span>{' '}
           <span className="text-ink-3">({Number.isFinite(n.up) ? nWord(n.up) : tr('brak danych', 'no data')})</span>
         </span>
         <span className="text-ink-3">
@@ -87,12 +87,12 @@ export const CascadeSimSection: React.FC<{ map: LiqMap }> = ({ map }) => {
                 <tr key={r.shockPct} className="border-t border-line">
                   <td className="py-1.5 pr-3">{pct(r.shockPct)}</td>
                   <td className="py-1.5 pr-3 text-ink-1">
-                    {pct(r.move.p50)} <span className="text-[10px] text-ink-3">×{(r.move.p50 / r.shockPct).toFixed(2)}</span>
+                    {pct(r.move.p50)} <span className="text-[10px] text-ink-3">×{fmtFixed(r.move.p50 / r.shockPct, 2)}</span>
                   </td>
                   <td className="py-1.5 pr-3 text-ink-2">
                     {pct(r.move.p10)} … {pct(r.move.p90)}
                   </td>
-                  <td className="py-1.5 pr-3">{(r.pAmplify2 * 100).toFixed(0)}%</td>
+                  <td className="py-1.5 pr-3">{fmtFixed(r.pAmplify2 * 100, 0)}%</td>
                   <td className="py-1.5">{fmtCompact(r.liquidated.p50, '$')}</td>
                 </tr>
               ) : (
@@ -111,10 +111,10 @@ export const CascadeSimSection: React.FC<{ map: LiqMap }> = ({ map }) => {
         {tr(
           `Szok przesuwa cały rynek; likwidacje z mapy wchodzą transzami (20% na 30 s) i zjadają zmierzoną stronę arkusza Hyperliquid (longi — bidy, shorty — aski) wzdłuż krzywej głębokości z rejestratora (liniowo do ±20 bp, dalej prawo pierwiastka kwadratowego). Kolejne likwidacje wyzwala cena mark, która — gdy giełdy zewnętrzne stoją — podąża za ceną Hyperliquid z opóźnieniem (EMA 150 s), a arkusz w tym czasie się odbudowuje${
             profile?.resilience.medianMin == null ? ' (odporność bez pomiaru — założone 5 min)' : ' w tempie zmierzonej odporności'
-          }. Pozycje spoza mapy: nominał × 1/pokrycie strony (longi ${(covDown * 100).toFixed(0)}%, shorty ${(covUp * 100).toFixed(0)}%) z czynnikiem wspólnym ścieżki i kubełka; w arkusz trafia 60–100% (resztę przejmuje Liquidator Vault). Wzmocnienie lokalne to przybliżenie liniowe: ≥ 1 oznacza, że likwidacje uruchomione ruchem o kilka dziesiątek bp mogłyby same przesunąć cenę o więcej — o tym, czy kaskada faktycznie się rozkręci, decyduje dopiero symulacja z opóźnieniem mark i odbudową. Scenariusz „co jeśli”, nie prognoza ruchu.`,
+          }. Pozycje spoza mapy: nominał × 1/pokrycie strony (longi ${fmtFixed(covDown * 100, 0)}%, shorty ${fmtFixed(covUp * 100, 0)}%) z czynnikiem wspólnym ścieżki i kubełka; w arkusz trafia 60–100% (resztę przejmuje Liquidator Vault). Wzmocnienie lokalne to przybliżenie liniowe: ≥ 1 oznacza, że likwidacje uruchomione ruchem o kilka dziesiątek bp mogłyby same przesunąć cenę o więcej — o tym, czy kaskada faktycznie się rozkręci, decyduje dopiero symulacja z opóźnieniem mark i odbudową. Scenariusz „co jeśli”, nie prognoza ruchu.`,
           `The shock moves the whole market; liquidations from the map enter in tranches (20% per 30 s) and eat the measured side of the Hyperliquid book (longs hit bids, shorts hit asks) along the depth curve from the recorder (linear up to ±20 bp, then the square-root law). Further liquidations are triggered by the mark price, which, when external exchanges are flat, follows the Hyperliquid price with a lag (EMA 150 s) while the book refills${
             profile?.resilience.medianMin == null ? ' (resilience not measured, 5 min assumed)' : ' at the measured resilience rate'
-          }. Positions outside the map: notional × 1/side coverage (longs ${(covDown * 100).toFixed(0)}%, shorts ${(covUp * 100).toFixed(0)}%) with a common path and bucket factor; 60–100% hits the book (the rest is taken by the Liquidator Vault). Local amplification is a linear approximation: ≥ 1 means liquidations triggered by a move of a few dozen bp could move price further on their own; whether a cascade actually unfolds is decided only by the simulation with mark lag and refill. A "what if" scenario, not a move forecast.`
+          }. Positions outside the map: notional × 1/side coverage (longs ${fmtFixed(covDown * 100, 0)}%, shorts ${fmtFixed(covUp * 100, 0)}%) with a common path and bucket factor; 60–100% hits the book (the rest is taken by the Liquidator Vault). Local amplification is a linear approximation: ≥ 1 means liquidations triggered by a move of a few dozen bp could move price further on their own; whether a cascade actually unfolds is decided only by the simulation with mark lag and refill. A "what if" scenario, not a move forecast.`
         )}
       </p>
     </div>

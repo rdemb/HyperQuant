@@ -19,7 +19,7 @@ import { tr } from '../../../i18n';
  */
 
 /** 200K zamiast 200.0K. */
-export const compact = (v: number) => numLang(fmtCompact(v).replace(/\.0([KMB])$/, '$1'));
+export const compact = (v: number) => fmtCompact(v).replace(/[.,]0([KMB])$/, '$1');
 const usd = (v: number) => `${compact(v)} USD`;
 const amount = (v: number, coin: string) => `${fmtVol(v)} ${coin}`;
 

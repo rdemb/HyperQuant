@@ -1,6 +1,6 @@
 import React from 'react';
 import { X } from 'lucide-react';
-import { Segmented, fmtPrice, fmtSigned } from '../../ui';
+import { Segmented, fmtPrice, fmtSigned, fmtFixed } from '../../ui';
 import { PlanDirection } from '../../utils/planAnalyzer';
 import { HORIZONS, parseNum } from './hooks';
 import { tr } from '../../i18n';
@@ -55,7 +55,7 @@ export const PlanForm: React.FC<PlanFormProps> = ({ form, onChange, equity, onEq
     if (!Number.isFinite(v) || !Number.isFinite(entry) || entry <= 0) return undefined;
     const pct = ((v - entry) / entry) * 100;
     const inSigma = sigma > 0 ? Math.abs(Math.log(v / entry)) / sigma : Number.NaN;
-    return `${fmtSigned(pct, 2, '%')} · ${fmtSigned(v - entry, 0, ' $')}${Number.isFinite(inSigma) ? ` · ${inSigma.toFixed(1)}σ` : ''}`;
+    return `${fmtSigned(pct, 2, '%')} · ${fmtSigned(v - entry, 0, ' $')}${Number.isFinite(inSigma) ? ` · ${fmtFixed(inSigma, 1)}σ` : ''}`;
   };
   const lev = parseNum(form.leverage);
   const notional = form.sizeMode === 'usd' ? parseNum(form.sizeUsd) : riskSizeUsd;
@@ -138,7 +138,7 @@ export const PlanForm: React.FC<PlanFormProps> = ({ form, onChange, equity, onEq
         <div className="-mt-2 text-[11px] text-ink-3">
           {tr(
             <>
-              Stop i cel to <span className="text-ink-2">propozycja startowa ±1.5σ / ±3σ horyzontu</span> — nie sygnał. Wpisz własne poziomy.
+              Stop i cel to <span className="text-ink-2">propozycja startowa ±1,5σ / ±3σ horyzontu</span> — nie sygnał. Wpisz własne poziomy.
             </>,
             <>
               Stop and target are a <span className="text-ink-2">starting proposal of ±1.5σ / ±3σ of the horizon</span>, not a signal. Enter your own levels.

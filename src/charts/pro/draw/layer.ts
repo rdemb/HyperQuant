@@ -706,7 +706,7 @@ export class DrawingLayer implements ISeriesPrimitive<Time> {
     const digits = priceDigits(d.pts[0].p);
     const rows = [
       {
-        text: numLang(`${fmtSigned(m.dp, digits)} (${fmtPct(m.pct)})`),
+        text: `${fmtSigned(m.dp, digits)} (${fmtPct(m.pct)})`,
         color: PRO.ink1,
       },
       {
@@ -762,31 +762,24 @@ export class DrawingLayer implements ISeriesPrimitive<Time> {
       stroke(c, [x0, S.y, x1, S.y], rgba(LOSS, 0.7), 1);
       const tRows = [
         {
-          text: `${tr('Cel', 'Target')} ${fmtPx(pt.p)} · ${numLang(fmtPct(tUp ? ps0.rewardPct : -ps0.rewardPct))}`,
+          text: `${tr('Cel', 'Target')} ${fmtPx(pt.p)} · ${fmtPct(tUp ? ps0.rewardPct : -ps0.rewardPct)}`,
           color: '#0b0b12',
         },
       ];
       const sRows = [
         {
-          text: `Stop ${fmtPx(ps.p)} · ${numLang(fmtPct(sUp ? ps0.riskPct : -ps0.riskPct))}`,
+          text: `Stop ${fmtPx(ps.p)} · ${fmtPct(sUp ? ps0.riskPct : -ps0.riskPct)}`,
           color: '#ffffff',
         },
       ];
       textBox(c, tRows, cx, tUp ? T.y - 4 - boxHeight(1) : T.y + 4, PROFIT);
       textBox(c, sRows, cx, sUp ? S.y - 4 - boxHeight(1) : S.y + 4, LOSS);
-      textBox(
-        c,
-        [
-          {
-            text: `${d.kind === 'long' ? 'Long' : 'Short'} ${fmtPx(pe.p)} · R:R ${rr}`,
-            color: PRO.ink1,
-          },
-        ],
-        cx,
-        E.y - boxHeight(1) / 2,
-        rgba(PRO.bg, 0.92),
-        PRO.ink3
-      );
+      const entry = `${d.kind === 'long' ? 'Long' : 'Short'} ${fmtPx(pe.p)} · R:R ${rr}`;
+      // Podpis wejścia leży na linii wejścia między uchwytami; gdy pozycja jest węższa niż podpis, stoi za prawym uchwytem
+      c.font = LABEL_FONT;
+      const ew = c.measureText(entry).width + 12;
+      const ecx = ew + 4 * HANDLE_R <= w ? cx : x1 + 2 * HANDLE_R + ew / 2;
+      textBox(c, [{ text: entry, color: PRO.ink1 }], ecx, E.y - boxHeight(1) / 2, rgba(PRO.bg, 0.92), PRO.ink3);
     };
     return it;
   }

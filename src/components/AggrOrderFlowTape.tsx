@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Flame, Layers, ShieldAlert, Zap } from 'lucide-react';
-import { Badge } from '../ui';
+import { Badge, fmtFixed, fmtNum, fmtPrice } from '../ui';
 import { useDesk } from '../state/DeskContext';
 import { useMicroMechanics } from '../state/useMicroMechanics';
 import { tickTradeCount } from '../utils/cexAdapters';
@@ -75,7 +75,7 @@ function getAggrRowStyle(tick: AggrTradeTick): {
 }
 
 /** Bardzo duże ilorazy (prawie zerowa sprzedaż) nie rozpychają kolumny. */
-const fmtRatio = (r: number) => (Number.isFinite(r) ? (r >= 100 ? '>99x' : `${r.toFixed(2)}x`) : '—');
+const fmtRatio = (r: number) => (Number.isFinite(r) ? (r >= 100 ? '>99x' : `${fmtFixed(r, 2)}x`) : '—');
 
 /**
  * Thermal heatmap background color for the Order Flow Imbalance (OFI) Side-Bar cell
@@ -165,10 +165,10 @@ const DomRow: React.FC<{
           style={{ width: `${depthPct.toFixed(0)}%` }}
         />
         <span className={`relative pl-1.5 border-l-2 font-medium text-ink-1 ${isAsk ? 'border-sell' : 'border-buy'}`}>
-          {tick.price.toFixed(1)}
+          {fmtPrice(tick.price, 1)}
         </span>
         <span className="relative text-ink-2">
-          {tick.restingSizeBtc.toFixed(2)}
+          {fmtFixed(tick.restingSizeBtc, 2)}
           <span className="text-[10px] text-ink-3 max-[400px]:hidden"> ({tick.orderCount})</span>
         </span>
       </div>
@@ -192,7 +192,7 @@ const DomRow: React.FC<{
         ) : (
           <span className="text-[10px] text-ink-2 shrink-0">
             {tick.deltaUsd >= 0 ? '+' : '−'}
-            {Math.abs(tick.deltaUsd / 1000).toFixed(0)}K
+            {fmtFixed(Math.abs(tick.deltaUsd / 1000), 0)}K
           </span>
         )}
       </div>
@@ -276,8 +276,8 @@ export const AggrOrderFlowTape: React.FC<AggrOrderFlowTapeProps> = ({
     onTriggerExhaustionSignal(
       dir,
       dir === 'SHORT'
-        ? `HYPERLIQUID OFI EXHAUSTION SHORT // ASK ABSORPTION @ $${px.toFixed(1)}`
-        : `HYPERLIQUID OFI EXHAUSTION LONG // BID ABSORPTION @ $${px.toFixed(1)}`,
+        ? `HYPERLIQUID OFI EXHAUSTION SHORT // ASK ABSORPTION @ $${fmtPrice(px, 1)}`
+        : `HYPERLIQUID OFI EXHAUSTION LONG // BID ABSORPTION @ $${fmtPrice(px, 1)}`,
       ofiSummary.exhaustionNote
     );
   };
@@ -297,7 +297,7 @@ export const AggrOrderFlowTape: React.FC<AggrOrderFlowTapeProps> = ({
             B/S <span className="text-ink-1">{fmtRatio(ofiSummary.overallBuySellRatio)}</span> · {tr('przepływ', 'flow')}{' '}
             <span className="text-ink-1">
               {ofiSummary.overallOfiPct > 0 ? '+' : ''}
-              {ofiSummary.overallOfiPct}%
+              {fmtNum(ofiSummary.overallOfiPct)}%
             </span>{' '}
             · {tr('wyczerpanie', 'exhaustion')}{' '}
             <span className="text-ink-1" title={tr('Heurystyka z progami — bez walidacji statystycznej', 'Threshold heuristic, not statistically validated')}>
@@ -364,7 +364,7 @@ export const AggrOrderFlowTape: React.FC<AggrOrderFlowTapeProps> = ({
             {/* Cena środkowa i podsumowanie OFI */}
             <div className="px-2.5 py-1.5 bg-page border-y border-line flex items-center justify-between gap-2 text-xs font-mono tabular-nums">
               <div className="flex items-baseline gap-2 min-w-0">
-                <span className="font-semibold text-ink-1">{currentPrice.toFixed(1)}</span>
+                <span className="font-semibold text-ink-1">{fmtPrice(currentPrice, 1)}</span>
                 <span className="text-[10px] text-ink-3 truncate">
                   mid · B/S {fmtRatio(ofiSummary.overallBuySellRatio)}
                 </span>
@@ -393,13 +393,13 @@ export const AggrOrderFlowTape: React.FC<AggrOrderFlowTapeProps> = ({
               <div className="flex items-center justify-between gap-2 text-[11px] font-mono tabular-nums bg-surface-2 border border-line rounded-lg px-2.5 py-1.5">
                 <div className="min-w-0">
                   <span className="text-ink-1 font-semibold">
-                    {hoveredTick.price.toFixed(1)}{' '}
+                    {fmtPrice(hoveredTick.price, 1)}{' '}
                     <span className="text-ink-3 font-normal">({hoveredTick.side === 'ASK' ? 'ask ▲' : 'bid ▼'})</span>
                   </span>
                   <div className="text-[10px] text-ink-3">
-                    {tr('mkt kupno', 'mkt buy')} <span className="text-ink-2">${(hoveredTick.aggressiveBuyUsd / 1000).toFixed(0)}K</span> ·{' '}
+                    {tr('mkt kupno', 'mkt buy')} <span className="text-ink-2">${fmtFixed(hoveredTick.aggressiveBuyUsd / 1000, 0)}K</span> ·{' '}
                     {tr('mkt sprz.', 'mkt sell')}{' '}
-                    <span className="text-ink-2">${(hoveredTick.aggressiveSellUsd / 1000).toFixed(0)}K</span>
+                    <span className="text-ink-2">${fmtFixed(hoveredTick.aggressiveSellUsd / 1000, 0)}K</span>
                   </div>
                 </div>
                 <div className="text-right shrink-0">
@@ -429,7 +429,7 @@ export const AggrOrderFlowTape: React.FC<AggrOrderFlowTapeProps> = ({
                       )}
                     >
                       {tr('Absorpcja (regresja)', 'Absorption (regression)')} {absTimeFmt.format(lastAbsorption.t)}:{' '}
-                      {lastAbsorption.side === 'buy' ? tr('kupno', 'buy') : tr('sprzedaż', 'sell')} {Math.abs(lastAbsorption.signedVol).toFixed(1)} BTC,{' '}
+                      {lastAbsorption.side === 'buy' ? tr('kupno', 'buy') : tr('sprzedaż', 'sell')} {fmtFixed(Math.abs(lastAbsorption.signedVol), 1)} BTC,{' '}
                       {tr('oczekiwano', 'expected')} {signedUsd0(lastAbsorption.expected)}, {tr('było', 'actual')} {signedUsd0(lastAbsorption.realized)}
                     </p>
                   )}
@@ -470,11 +470,11 @@ export const AggrOrderFlowTape: React.FC<AggrOrderFlowTapeProps> = ({
                     className="px-2 py-0.5 rounded-sm flex items-center justify-between gap-2 text-[11px] font-mono tabular-nums"
                   >
                     <span className="truncate">
-                      {badge?.short ?? t.exchange} {t.price.toFixed(1)}
+                      {badge?.short ?? t.exchange} {fmtPrice(t.price, 1)}
                     </span>
                     <span className="font-semibold shrink-0">
                       {t.isLiquidation ? 'LIQ ' : ''}
-                      {t.side === 'buy' ? tr('kupno +', 'buy +') : tr('sprz. −', 'sell −')}${(t.sizeUsd / 1000).toFixed(1)}K
+                      {t.side === 'buy' ? tr('kupno +', 'buy +') : tr('sprz. −', 'sell −')}${fmtFixed(t.sizeUsd / 1000, 1)}K
                     </span>
                   </div>
                 );
@@ -531,7 +531,7 @@ export const AggrOrderFlowTape: React.FC<AggrOrderFlowTapeProps> = ({
                     <span className="font-medium w-16 truncate max-[400px]:w-14">
                       {badge?.short ?? t.exchange}
                     </span>
-                    <span>{t.price.toFixed(1)}</span>
+                    <span>{fmtPrice(t.price, 1)}</span>
                   </div>
 
                   <div className="flex items-center gap-2 shrink-0">
@@ -553,8 +553,8 @@ export const AggrOrderFlowTape: React.FC<AggrOrderFlowTapeProps> = ({
                     <span className="font-semibold">
                       {t.side === 'buy' ? '+' : '−'}$
                       {t.sizeUsd >= 1000000
-                        ? `${(t.sizeUsd / 1000000).toFixed(2)}M`
-                        : `${(t.sizeUsd / 1000).toFixed(1)}K`}
+                        ? `${fmtFixed(t.sizeUsd / 1000000, 2)}M`
+                        : `${fmtFixed(t.sizeUsd / 1000, 1)}K`}
                     </span>
                     <span className="text-[10px] opacity-70 w-7 text-right max-[400px]:hidden">
                       {ageSec}s
@@ -603,7 +603,7 @@ export const AggrOrderFlowTape: React.FC<AggrOrderFlowTapeProps> = ({
                     )}
                   </span>
                   <span className="w-14 shrink-0 text-right text-ink-1 font-semibold">
-                    {row.buyPct === null ? '—' : `${row.delta >= 0 ? '+' : '−'}${Math.abs(row.delta / 1000).toFixed(0)}K`}
+                    {row.buyPct === null ? '—' : `${row.delta >= 0 ? '+' : '−'}${fmtFixed(Math.abs(row.delta / 1000), 0)}K`}
                   </span>
                   <span className="w-10 shrink-0 text-right text-[10px] text-ink-3 max-[400px]:hidden">
                     {off ? 'off' : row.count > 0 ? `${row.count} tr.` : '—'}

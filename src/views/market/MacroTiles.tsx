@@ -1,6 +1,6 @@
 import React from 'react';
 import { ExternalLink } from 'lucide-react';
-import { DASH, EmptyState, Panel, Sparkline, Stat, fmtPct, fmtSigned } from '../../ui';
+import { DASH, EmptyState, Panel, Sparkline, Stat, fmtPct, fmtSigned, fmtFixed } from '../../ui';
 import { freshnessBadge, partAsOf, useNow, usePublicFeed } from '../../utils/publicFeeds';
 import { locale, tr } from '../../i18n';
 
@@ -27,7 +27,7 @@ const prevOf = <T,>(a: T[]): T | null => (a.length >= 2 ? a[a.length - 2] : null
 const fmtDay = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString(locale, { day: '2-digit', month: '2-digit', timeZone: 'UTC' });
 const signedInt = (v: number) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v).toLocaleString(locale)}`;
 const BN = tr(' mld', ' bn');
-const bn = (v: number) => `$${v < 10 ? v.toFixed(2) : v.toLocaleString(locale, { maximumFractionDigits: 0 })}${BN}`;
+const bn = (v: number) => `$${v < 10 ? fmtFixed(v, 2) : v.toLocaleString(locale, { maximumFractionDigits: 0 })}${BN}`;
 const range = (vals: number[], f: (v: number) => string) => (vals.length ? `${tr('Zakres', 'Range')}: ${f(Math.min(...vals))} – ${f(Math.max(...vals))}` : undefined);
 
 interface TileProps {
@@ -120,11 +120,11 @@ export const MacroTiles: React.FC = () => {
     return (
       <Tile
         label={label}
-        value={l ? `${l.v.toFixed(2)}%` : DASH}
+        value={l ? `${fmtFixed(l.v, 2)}%` : DASH}
         hint={l ? `${p ? `${fmtSigned((l.v - p.v) * 100, 0, ' bp')} d/d · ` : ''}${tr('sesja', 'session')} ${fmtDay(l.date)}` : undefined}
         trend={vals}
         trendLabel={tr(`${label}, ostatnie ${vals.length} sesji`, `${label}, last ${vals.length} sessions`)}
-        trendTitle={range(vals, (v) => `${v.toFixed(2)}%`)}
+        trendTitle={range(vals, (v) => `${fmtFixed(v, 2)}%`)}
         asOf={ustAsOf}
         now={now}
         link={LINKS.treasury}
@@ -229,7 +229,7 @@ export const MacroTiles: React.FC = () => {
           hint={fL ? `${fP ? `${fmtSigned(fL.value - fP.value, 0)} d/d · ` : ''}${tr('skala 0–100', 'scale 0–100')}` : undefined}
           trend={fng.map((x) => x.value)}
           trendLabel={tr(`Fear & Greed, ostatnie ${fng.length} dni`, `Fear & Greed, last ${fng.length} days`)}
-          trendTitle={range(fng.map((x) => x.value), (v) => v.toFixed(0))}
+          trendTitle={range(fng.map((x) => x.value), (v) => fmtFixed(v, 0))}
           asOf={partAsOf(sentiment.feed, 'fng')}
           now={now}
           link={LINKS.fng}
@@ -246,7 +246,7 @@ export const MacroTiles: React.FC = () => {
                     <br />
                     {tr('Korekta trudności', 'Difficulty adjustment')} {fmtPct(diff.difficultyChange, 1)}
                     {diff.remainingBlocks !== null ? tr(` za ${diff.remainingBlocks} bl.`, ` in ${diff.remainingBlocks} bl.`) : ''}
-                    {hr ? ` · hashrate ${(hr.hashrate / 1e18).toFixed(0)} EH/s` : ''}
+                    {hr ? ` · hashrate ${fmtFixed(hr.hashrate / 1e18, 0)} EH/s` : ''}
                   </>
                 )}
               </>

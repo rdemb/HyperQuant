@@ -11,7 +11,7 @@ import type {
   SeriesType,
   Time,
 } from 'lightweight-charts';
-import { fmtCompact, numLang } from '../../../ui/format';
+import { fmtCompact } from '../../../ui/format';
 import { spreadTags } from '../../orderflow/renderer';
 import { hlTick } from '../core/footprintBar';
 import {
@@ -574,7 +574,7 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
         if (!(y >= 0 && y <= H)) continue;
         const long = l.side === 'long';
         s.hlines.push({ x0: 0, x1: W, y, color: long ? K.liqLongLine : K.liqShortLine, dash: DASH.liq });
-        s.tags.push({ y, text: `${tr('Likw.', 'Liq.')} ${long ? 'L' : 'S'} ${numLang(fmtCompact(l.ntlUsd, '$'))}`, color: long ? K.liqLong : K.liqShort });
+        s.tags.push({ y, text: `${tr('Likw.', 'Liq.')} ${long ? 'L' : 'S'} ${fmtCompact(l.ntlUsd, '$')}`, color: long ? K.liqLong : K.liqShort });
       }
     }
 
@@ -593,7 +593,7 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
         const y = Y(p.entry);
         if (inView(y)) {
           s.hlines.push({ x0: 0, x1: W, y, color: long ? K.whaleLongLine : K.whaleShortLine, dash: DASH.whale });
-          tag(`p:${p.id}:${p.side}`, y, `${p.id} ${long ? 'L' : 'S'} ${numLang(fmtCompact(p.usd, '$'))} ×${Math.round(p.lev)}`, long ? K.whaleLong : K.whaleShort);
+          tag(`p:${p.id}:${p.side}`, y, `${p.id} ${long ? 'L' : 'S'} ${fmtCompact(p.usd, '$')} ×${Math.round(p.lev)}`, long ? K.whaleLong : K.whaleShort);
         }
         const yl = p.liq === null ? Number.NaN : Y(p.liq);
         if (inView(yl)) {
@@ -612,7 +612,7 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
         }
         if (g.n > 1) s.polys.push({ pts: [W - WHALE_TICK_PX, Y(g.hi), W - WHALE_TICK_PX, Y(g.lo)], color, width: 1 });
         const what = g.kind === 'stop' ? 'stop' : g.kind === 'tp' ? 'TP' : bid ? tr('kupno', 'buy') : tr('sprzedaż', 'sell');
-        tag(`o:${g.id}:${g.side}:${g.kind}`, Y((g.lo + g.hi) / 2), `${g.id} ${what} ${g.n > 1 ? `${g.n}× ` : ''}${numLang(fmtCompact(g.usd, '$'))}`, color);
+        tag(`o:${g.id}:${g.side}:${g.kind}`, Y((g.lo + g.hi) / 2), `${g.id} ${what} ${g.n > 1 ? `${g.n}× ` : ''}${fmtCompact(g.usd, '$')}`, color);
       }
     }
 

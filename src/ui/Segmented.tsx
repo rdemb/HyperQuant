@@ -38,7 +38,7 @@ export function Segmented<T extends string | number>({ value, options, onChange,
             tabIndex={active ? 0 : -1}
             title={o.title}
             onClick={() => onChange(o.value)}
-            className={`${size === 'md' ? 'px-3 py-1.5 text-sm' : `${size === 'xs' ? 'px-2' : 'px-2.5'} py-1 text-xs`} rounded-md font-medium whitespace-nowrap transition-colors duration-150 ${
+            className={`${size === 'md' ? 'px-2 sm:px-3 py-1.5 text-[13px] sm:text-sm' : `${size === 'xs' ? 'px-2' : 'px-2.5'} py-1 text-xs`} rounded-md font-medium whitespace-nowrap transition-colors duration-150 ${
               active ? 'bg-surface-3 text-ink-1 shadow-[inset_0_0_0_1px_var(--color-line-strong)]' : 'text-ink-3 hover:text-ink-1'
             }`}
           >

@@ -210,7 +210,7 @@ export const DayTradingPrepDesk: React.FC<DayTradingPrepDeskProps> = ({ shaakuni
                   stop: longStop ?? undefined,
                   target: longTarget ?? undefined,
                   source: tr('Plan na jutro', 'Plan for tomorrow'),
-                  note: tr(`Scenariusz A: strefa ${longZone?.label}, stop 0.4×ATR pod strefą — hipoteza do oceny.`, `Scenario A: zone ${longZone?.label}, stop 0.4×ATR below the zone; a hypothesis to evaluate.`),
+                  note: tr(`Scenariusz A: strefa ${longZone?.label}, stop 0,4×ATR pod strefą — hipoteza do oceny.`, `Scenario A: zone ${longZone?.label}, stop 0.4×ATR below the zone; a hypothesis to evaluate.`),
                 })
               }
             />
@@ -230,7 +230,7 @@ export const DayTradingPrepDesk: React.FC<DayTradingPrepDeskProps> = ({ shaakuni
                   stop: shortStop ?? undefined,
                   target: shortTarget ?? undefined,
                   source: tr('Plan na jutro', 'Plan for tomorrow'),
-                  note: tr(`Scenariusz B: strefa ${shortZone?.label}, stop 0.4×ATR nad strefą — hipoteza do oceny.`, `Scenario B: zone ${shortZone?.label}, stop 0.4×ATR above the zone; a hypothesis to evaluate.`),
+                  note: tr(`Scenariusz B: strefa ${shortZone?.label}, stop 0,4×ATR nad strefą — hipoteza do oceny.`, `Scenario B: zone ${shortZone?.label}, stop 0.4×ATR above the zone; a hypothesis to evaluate.`),
                 })
               }
             />

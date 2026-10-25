@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { ArrowRight } from 'lucide-react';
 import { useDesk } from '../../state/DeskContext';
-import { Badge, Panel, Segmented, fmtPrice, fmtSigned } from '../../ui';
+import { Badge, Panel, Segmented, fmtPrice, fmtSigned, fmtFixed } from '../../ui';
 import { PlanDirection, analyzePlan, attachMarketModel, proposeLevels } from '../../utils/planAnalyzer';
 import { ProbabilityBar } from './ProbabilityBar';
 import { parseNum, useDebounced, usePlanMarket } from './hooks';
@@ -69,7 +69,7 @@ export const PlanQuickCard: React.FC = () => {
       stop: Number.isFinite(stop) ? stop : undefined,
       target: Number.isFinite(target) ? target : undefined,
       source: tr('Szybka ocena (Desk)', 'Quick check (Desk)'),
-      note: isProposal ? tr('Poziomy z propozycji ±1.5σ/±3σ (2h) — do edycji.', 'Levels from the ±1.5σ/±3σ (2h) proposal, edit them.') : undefined,
+      note: isProposal ? tr('Poziomy z propozycji ±1,5σ/±3σ (2h) — do edycji.', 'Levels from the ±1.5σ/±3σ (2h) proposal, edit them.') : undefined,
     });
 
   return (
@@ -115,7 +115,7 @@ export const PlanQuickCard: React.FC = () => {
           </div>
           {isProposal && (
             <div className="text-[11px] text-ink-3">
-              {tr('Propozycja startowa ±1.5σ / ±3σ (2h) — nie sygnał; wpisz własne poziomy.', 'Starting proposal ±1.5σ / ±3σ (2h), not a signal; enter your own levels.')}
+              {tr('Propozycja startowa ±1,5σ / ±3σ (2h) — nie sygnał; wpisz własne poziomy.', 'Starting proposal ±1.5σ / ±3σ (2h), not a signal; enter your own levels.')}
             </div>
           )}
         </div>
@@ -126,14 +126,14 @@ export const PlanQuickCard: React.FC = () => {
               <div className="flex flex-wrap items-end gap-x-6 gap-y-2">
                 <div>
                   <div className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium">{tr('P(cel przed stopem)', 'P(target before stop)')}</div>
-                  <div className="text-[28px] leading-tight font-semibold text-ink-1">{(a.mc.pTarget * 100).toFixed(1)}%</div>
+                  <div className="text-[28px] leading-tight font-semibold text-ink-1">{fmtFixed(a.mc.pTarget * 100, 1)}%</div>
                 </div>
                 <div>
                   <div className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium">{tr('EV po kosztach', 'EV after costs')}</div>
                   <div className="text-xl leading-tight font-semibold text-ink-1 font-mono tabular-nums">{fmtSigned(a.evR, 2, ' R')}</div>
                 </div>
                 <div className="text-[11px] text-ink-3 pb-1">
-                  R = 1 : {a.R.toFixed(2)} · {tr(`koszty dla $${QUICK_SIZE_USD.toLocaleString('en-US')} nominału`, `costs for $${QUICK_SIZE_USD.toLocaleString('en-US')} notional`)}
+                  R = 1 : {fmtFixed(a.R, 2)} · {tr(`koszty dla $${fmtPrice(QUICK_SIZE_USD, 0)} nominału`, `costs for $${fmtPrice(QUICK_SIZE_USD, 0)} notional`)}
                 </div>
               </div>
               <ProbabilityBar pTarget={a.mc.pTarget} pStop={a.mc.pStop} pNeither={a.mc.pNeither} horizonLabel="2 h" />
