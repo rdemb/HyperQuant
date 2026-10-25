@@ -126,11 +126,17 @@
   background: rgba(100, 116, 139, 0.8);
 }
 
-/* Cień przy krawędzi przewijanej w bok tabeli, dopóki z tej strony są jeszcze kolumny (zakrywacze przewijają się z treścią) */
+/* Cień przy krawędzi przewijanej w bok tabeli, dopóki z tej strony są jeszcze kolumny (zakrywacze przewijają się z treścią);
+   liniowy, nie radialny — przy wysokiej tabeli radialny rozmywał się do zera. Bez skrótu `background`, żeby kolor tła
+   z klasy elementu został; --cue-bg = kolor pod zakrywaczami, gdy tło elementu nie jest surface-1 */
 .hq-scroll-cue {
-  background:
-    linear-gradient(to right, var(--color-surface-1) 40%, transparent) left / 28px 100% no-repeat local,
-    linear-gradient(to left, var(--color-surface-1) 40%, transparent) right / 28px 100% no-repeat local,
-    radial-gradient(farthest-side at 0 50%, color-mix(in oklab, var(--color-ink-2) 35%, transparent), transparent) left / 12px 100% no-repeat scroll,
-    radial-gradient(farthest-side at 100% 50%, color-mix(in oklab, var(--color-ink-2) 35%, transparent), transparent) right / 12px 100% no-repeat scroll;
+  background-image:
+    linear-gradient(to right, var(--cue-bg, var(--color-surface-1)) 40%, transparent),
+    linear-gradient(to left, var(--cue-bg, var(--color-surface-1)) 40%, transparent),
+    linear-gradient(to right, color-mix(in oklab, var(--color-ink-2) 35%, transparent), transparent),
+    linear-gradient(to left, color-mix(in oklab, var(--color-ink-2) 35%, transparent), transparent);
+  background-position: left, right, left, right;
+  background-size: 28px 100%, 28px 100%, 12px 100%, 12px 100%;
+  background-repeat: no-repeat;
+  background-attachment: local, local, scroll, scroll;
 }

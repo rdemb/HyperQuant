@@ -78,10 +78,11 @@ function getAggrRowStyle(tick: AggrTradeTick): {
 /** Bardzo duże ilorazy (prawie zerowa sprzedaż) nie rozpychają kolumny. */
 const fmtRatio = (r: number) => (Number.isFinite(r) ? (r >= 100 ? '>99x' : `${fmtFixed(r, 2)}x`) : '—');
 
-/** Delta w tysiącach $ ze znakiem; po zaokrągleniu zero bez znaku (bez „−0K”). */
+/** Delta w tysiącach $ ze znakiem (poniżej 10K z jednym miejscem, żeby drobny przepływ nie był „0K”); zero bez znaku. */
 const signedK = (usd: number) => {
-  const k = Math.round(usd / 1000);
-  return `${k > 0 ? '+' : k < 0 ? '−' : ''}${Math.abs(k)}K`;
+  const digits = Math.abs(usd) < 10_000 ? 1 : 0;
+  const k = Number((usd / 1000).toFixed(digits));
+  return `${k > 0 ? '+' : k < 0 ? '−' : ''}${fmtFixed(Math.abs(k), digits)}K`;
 };
 
 /**

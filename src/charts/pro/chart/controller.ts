@@ -16,7 +16,7 @@ import type {
 import { fmtVol } from '../../orderflow/footprint';
 import { fmtSignedVol } from '../../orderflow/renderer';
 import { DEFAULT_THRESHOLD_USD, autoThreshold } from '../core/clashes';
-import { Ohlc, cvdCandles, cvdLine, deltaCandle, oiChangeLine } from '../core/flow';
+import { Ohlc, cvdCandles, cvdLine, deltaCandle, flipsEmpty, oiChangeLine } from '../core/flow';
 import { BarStat, VENUE_GROUPS, barStat } from '../core/stats';
 import { hlTick, rowAt } from '../core/footprintBar';
 import type { LiqLevel } from '../core/indicators';
@@ -733,14 +733,16 @@ export class ProChartController {
         this.scrollToNow();
       }
     } else {
+      const deltaReset = flipsEmpty(changed, prev.length, (i) => !prev[i].fp, (i) => !next[i].fp);
       for (const i of changed) {
         const historical = i < prev.length - 1;
         const b = next[i];
         this.main.update(toPoint(b), historical);
         this.volume?.update(toVolume(b), historical);
-        this.delta?.update(toDelta(b), historical);
+        if (!deltaReset) this.delta?.update(toDelta(b), historical);
         if (!historical) this.statsSeries?.update({ time: sec(b.t) });
       }
+      if (deltaReset) this.delta?.setData(next.map(toDelta));
     }
     const ms = this.series.interval.ms;
     this.overlay.setBars(next, ms, this.store.vwapCandles(this.series.interval));
@@ -792,7 +794,7 @@ export class ProChartController {
     }
     const changed: number[] = [];
     for (let i = 0; i < next.length && changed.length <= MAX_POINT_UPDATES; i++) if (i >= prev.length || !sameOhlc(prev[i], next[i])) changed.push(i);
-    if (changed.length > MAX_POINT_UPDATES) {
+    if (changed.length > MAX_POINT_UPDATES || flipsEmpty(changed, prev.length, (i) => prev[i] === null, (i) => next[i] === null)) {
       this.cvd.setData(next.map((c, i) => toCvd(bars[i].t, c)));
       return;
     }
@@ -842,7 +844,7 @@ export class ProChartController {
     }
     const changed: number[] = [];
     for (let i = 0; i < next.length && changed.length <= MAX_POINT_UPDATES; i++) if (i >= prev.length || prev[i] !== next[i]) changed.push(i);
-    if (changed.length > MAX_POINT_UPDATES) {
+    if (changed.length > MAX_POINT_UPDATES || flipsEmpty(changed, prev.length, (i) => prev[i] === null, (i) => next[i] === null)) {
       series.setData(next.map((_, i) => point(i)));
       return;
     }

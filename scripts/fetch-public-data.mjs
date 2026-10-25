@@ -30,13 +30,13 @@ export const NEWS_FEEDS = [
 
 /** Pobieranie z limitem czasu 15 s i jawnym User-Agent; błąd HTTP = wyjątek. */
 export function makeGetter(fetchImpl, timeoutMs = TIMEOUT_MS) {
-  return async function get(url, as = 'text') {
+  return async function get(url, as = 'text', waitMs = timeoutMs) {
     const res = await fetchImpl(url, {
       headers: {
         'User-Agent': USER_AGENT,
         Accept: as === 'json' ? 'application/json' : 'application/rss+xml, application/atom+xml, application/xml, text/xml;q=0.9, */*;q=0.8',
       },
-      signal: AbortSignal.timeout(timeoutMs),
+      signal: AbortSignal.timeout(waitMs),
       redirect: 'follow',
     });
     if (!res.ok) throw new Error(`HTTP ${res.status} ${url}`);
@@ -328,9 +328,12 @@ async function buildNews(get, now) {
   return items;
 }
 
+// home.treasury.gov odpowiada po ok. 17 s (pomiar 25.10.2026), więc ogólny limit 15 s zawsze go przerywał
+const TREASURY_TIMEOUT_MS = 45000;
+
 async function buildUst(get, now) {
   const base = 'https://home.treasury.gov/resource-center/data-chart-center/interest-rates/pages/xml?data=daily_treasury_yield_curve&field_tdr_date_value_month=';
-  const months = await Promise.allSettled(treasuryMonths(now).map(async (m) => parseTreasuryYieldXml(await get(base + m))));
+  const months = await Promise.allSettled(treasuryMonths(now).map(async (m) => parseTreasuryYieldXml(await get(base + m, 'text', TREASURY_TIMEOUT_MS))));
   const byDate = new Map();
   for (const r of months) if (r.status === 'fulfilled') for (const row of r.value) byDate.set(row.date, row);
   if (!byDate.size && months[0].status === 'rejected') throw months[0].reason;

@@ -9,6 +9,7 @@ import {
   categorize,
   cleanLink,
   decodeEntities,
+  makeGetter,
   mergeNews,
   parseBeaReleaseDates,
   parseCot,
@@ -202,6 +203,22 @@ function fakeFetch({ fail = [], prev = {} } = {}) {
   };
   return { impl, calls };
 }
+
+describe('makeGetter', () => {
+  it('limit czasu podany przy zapytaniu zastępuje domyślny (Treasury odpowiada po ok. 17 s)', async () => {
+    const after30ms = (_url, init) =>
+      new Promise((resolve, reject) => {
+        const t = setTimeout(() => resolve(new Response('ok')), 30);
+        init.signal.addEventListener('abort', () => {
+          clearTimeout(t);
+          reject(init.signal.reason);
+        });
+      });
+    const get = makeGetter(after30ms, 10);
+    await expect(get('https://example.test/a')).rejects.toThrow();
+    await expect(get('https://example.test/a', 'text', 500)).resolves.toBe('ok');
+  });
+});
 
 describe('runPipeline — dry-run ze wstrzykniętym fetch', () => {
   const now = new Date(Date.UTC(2026, 9, 21, 12, 0));
