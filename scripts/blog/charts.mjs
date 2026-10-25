@@ -651,6 +651,14 @@ export function sessionHtml(s, setups = [], levels = []) {
   const label = compact
     ? `BTC, ostatnie ${hours} godzin do ${dhm.format(s.to)}: cena ${px0(last[4])}, VWAP dnia ${vw ? px0(vw[1]) : 'brak'}.`
     : `Mapa sesji BTC, 24 godziny do ${dhm.format(s.to)}: cena ${px0(last[4])}, VWAP dnia ${vw ? px0(vw[1]) : 'brak'}, POC ${px0(s.profile.poc)}, obszar wartości ${px0(s.profile.val)}–${px0(s.profile.vah)}.`;
+  // Koła likwidacji są od 0,5 mln USD w świecy; świece na telefonie są dwa razy dłuższe, więc ich sumy są co najmniej takie same
+  const liqBy = new Map();
+  for (const [t, l, sh] of s.liq) {
+    const k = t - (t % (2 * s.tf * MIN));
+    const x = liqBy.get(k) ?? [0, 0];
+    liqBy.set(k, [x[0] + l, x[1] + sh]);
+  }
+  const hasLiq = [...liqBy.values()].some(([l, sh]) => l >= 0.5 || sh >= 0.5);
   const panels = compact ? 'delty i CVD' : 'delty, CVD i open interest';
   const tape = s.tape?.length
     ? ` ${compact ? 'Delta i CVD' : 'Delta, CVD i open interest'} z taśmy transakcji Hyperliquid nagrywanej przez desk${s.tape[0][0] > s.from ? ` od ${hm.format(s.tape[0][0])}` : ''}.`
@@ -662,14 +670,14 @@ export function sessionHtml(s, setups = [], levels = []) {
     compact ? '' : `<span>${LEGEND_SW.va}obszar wartości (VAH, VAL)</span>`,
     compact ? `<span>${LEGEND_SW.prev}${lv ? 'poziomy z wpisu' : 'szczyt i dołek wczoraj (PDH, PDL)'}</span>` : '',
     !compact && s.levels.length ? `<span>${LEGEND_SW.prev}szczyt i dołek wczoraj (PDH, PDL)</span>` : '',
-    s.liq.length ? `<span>${LEGEND_SW.liq}likwidacje longów i shortów</span>` : '',
+    hasLiq ? `<span>${LEGEND_SW.liq}likwidacje longów i shortów</span>` : '',
     zones.length ? `<span>${LEGEND_SW.zone}strefy scenariuszy</span>` : '',
   ].join('');
   const candles = `świece ${s.tf} min (na telefonie ${2 * s.tf} min). VWAP od północy UTC.`;
   const frame = compact ? candles : `${candles} Profil wolumenu, POC i obszar wartości (70% obrotu) z całych 24 godzin.`;
   return `<p class="legend">${legend}</p>
 <div class="chart-box">${sessionSvg(s, { zones, levels: lv, uid: 'sw', label })}${sessionSvg(s, { zones, levels: lv, narrow: true, uid: 'sn', label })}</div>
-<p class="fig-note">Czas polski, ${frame}${tape} Koła: likwidacje od 0,5 mln USD w świecy, pole koła według kwoty.</p>`;
+<p class="fig-note">Czas polski, ${frame}${tape} ${hasLiq ? 'Koła: likwidacje od 0,5 mln USD w świecy, pole koła według kwoty.' : 'W tym oknie nie było likwidacji od 0,5 mln USD w świecy.'}</p>`;
 }
 
 /** Tytuł bloku wykresu sesji: mapa 24 godzin albo krótkie okno notki. */
