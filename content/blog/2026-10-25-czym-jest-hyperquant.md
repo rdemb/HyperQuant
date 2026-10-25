@@ -1,10 +1,9 @@
 ---
 title: "HyperQuant jest gotowy. Darmowy orderflow BTC, lekcje i analizy pisane przed faktem"
 description: "Wykresy orderflow BTC na żywo z powtórką nagranej doby, lekcje na prawdziwych dniach rynku i blog z mapami pisanymi przed faktem. Za darmo, bez konta, po polsku i po angielsku."
-date: 2026-10-25T19:00:00+01:00
+date: 2026-10-25T12:00:00+01:00
 type: article
 section: O HyperQuant
-draft: true
 summary:
   - "HyperQuant to darmowa strona do day tradingu BTC na publicznych danych Hyperliquid: wykresy orderflow, lekcje i blog z analizami."
   - "Footprint, mapa płynności, VWAP, profil i powtórka nagranej doby, na telefonie i na komputerze."
@@ -74,7 +73,7 @@ HyperQuant działa w przeglądarce na telefonie i na komputerze, bez logowania i
 
 To jest publiczna wersja HyperQuant. Przez najbliższy czas nie dokładam nowych funkcji, tylko słucham i poprawiam. Od poniedziałku sam pracuję na nim codziennie przy day tradingu BTC.
 
-Napisz mi, co jest niejasne, co nie działa na Twoim telefonie i czego brakuje Ci najbardziej. Najprościej w komentarzu pod postem na Facebooku (strona HyperQuant PL) albo na X (@takitamrafal). Błędy techniczne możesz też [zgłosić na GitHubie](https://github.com/rdemb/HyperQuant/issues). Przeczytam każdą uwagę.
+Napisz mi, co jest niejasne, co nie działa na Twoim telefonie i czego brakuje Ci najbardziej. Najprościej w komentarzu pod postem na Facebooku, na stronie HyperQuant PL. Błędy techniczne możesz też [zgłosić na GitHubie](https://github.com/rdemb/HyperQuant/issues). Przeczytam każdą uwagę.
 
 [Otwórz HyperQuant](https://rdemb.github.io/HyperQuant/)
 
