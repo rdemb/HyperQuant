@@ -593,7 +593,7 @@ export function computeQuantMathAndNeuralForecast(
 }
 
 /** Minimalny realny przepływ na poziomie ($), od którego klasyfikujemy wyczerpanie/absorpcję. */
-const MIN_OFI_FLOW_USD = 25000;
+export const MIN_OFI_FLOW_USD = 25000;
 
 export function computeOrderFlowImbalanceHeatmap(
   bids: L2OrderbookLevel[],
@@ -790,10 +790,17 @@ export function computeOrderFlowImbalanceHeatmap(
 
   let exhaustionBias: OFIMomentumSummary['exhaustionBias'] =
     'BALANCED_EQUILIBRIUM';
-  let exhaustionNote = tr(
-    `Zrównoważony przepływ OFI (${fmtNum(overallBuySellRatio)}x Buy/Sell) wokół $${fmtPrice(currentPrice, 1)}.`,
-    `Balanced OFI flow (${fmtNum(overallBuySellRatio)}x Buy/Sell) around $${fmtPrice(currentPrice, 1)}.`
-  );
+  // Poniżej progu stosunek jest neutralny z braku danych, nie z równowagi — mówimy to wprost
+  let exhaustionNote =
+    totalAggBuy + totalAggSell >= MIN_OFI_FLOW_USD
+      ? tr(
+          `Zrównoważony przepływ OFI (${fmtNum(overallBuySellRatio)}x Buy/Sell) wokół $${fmtPrice(currentPrice, 1)}.`,
+          `Balanced OFI flow (${fmtNum(overallBuySellRatio)}x Buy/Sell) around $${fmtPrice(currentPrice, 1)}.`
+        )
+      : tr(
+          `Mało transakcji w ostatnich 60 s wokół $${fmtPrice(currentPrice, 1)} — za mało przepływu, by go ocenić.`,
+          `Few trades in the last 60 s around $${fmtPrice(currentPrice, 1)}, too little flow to assess.`
+        );
 
   if (
     topExhaustionTick?.exhaustionState === 'ASK_WALL_ABSORPTION' ||

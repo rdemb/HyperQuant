@@ -83,7 +83,7 @@ export const SCENES: SceneMeta[] = [
   },
   {
     id: 'risk',
-    label: tr('Liquidation Risk (szacunek)', 'Liquidation Risk (estimate)'),
+    label: tr('Ryzyko likwidacji (szacunek)', 'Liquidation Risk (estimate)'),
     icon: <Mountain className={ICON} aria-hidden="true" />,
     sources: [{ tone: 'model', label: 'MODEL' }],
     what: tr('Teren wokół bieżącej ceny (jasna pionowa linia): wzniesienia tam, gdzie heurystyka szacuje skupiska poziomów likwidacji i stopów.', 'Terrain around the current price (bright vertical line): hills where the heuristic estimates clusters of liquidation and stop levels.'),
@@ -100,7 +100,7 @@ export const SCENES: SceneMeta[] = [
   },
   {
     id: 'options',
-    label: tr('Options (ilustracja)', 'Options (illustration)'),
+    label: tr('Opcje (ilustracja)', 'Options (illustration)'),
     icon: <Sparkles className={ICON} aria-hidden="true" />,
     sources: [{ tone: 'model', label: 'MODEL' }],
     what: tr('Parametryczny smile zmienności implikowanej w funkcji strike’u i terminu oraz greki Blacka-Scholesa dla opcji CALL.', 'A parametric implied volatility smile as a function of strike and expiry, plus Black-Scholes greeks for a CALL option.'),

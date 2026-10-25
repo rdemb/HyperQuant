@@ -17,6 +17,7 @@ import { candlesLabel } from '../views/micro/horizon';
 import { GLOW, T3, T3_CSS, isNarrowViewport, labFov, labPixelRatio } from '../views/lab/tokens3d';
 import { DockPresets, DockSlider, DockToggle, HoverCard, HudButton, HudHeader, SCENE_FRAME, SceneDock } from '../views/lab/hud';
 import { locale, tr } from '../i18n';
+import { levelStatusLabel } from '../utils/shaakuniEngine';
 import { fmtFixed, fmtNum, fmtPrice } from '../ui/format';
 
 interface ThreeQuantViewportProps {
@@ -622,14 +623,14 @@ export const ThreeQuantViewport: React.FC<ThreeQuantViewportProps> = ({
           price: curShaakuni.pdh,
           color: T3.level,
           hex: T3_CSS.level,
-          status: curShaakuni.pdhStatus,
+          status: levelStatusLabel(curShaakuni.pdhStatus),
         },
         {
           label: tr('PDL (dołek poprzedniego dnia)', "PDL (previous day's low)"),
           price: curShaakuni.pdl,
           color: T3.level,
           hex: T3_CSS.level,
-          status: curShaakuni.pdlStatus,
+          status: levelStatusLabel(curShaakuni.pdlStatus),
         },
         {
           label: tr('D-EQ (50% dnia)', 'D-EQ (50% of the day)'),

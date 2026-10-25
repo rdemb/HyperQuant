@@ -3,7 +3,7 @@ import { CheckSquare, Clock, Crosshair, ShieldCheck, Square } from 'lucide-react
 import { QuantMathMetrics, ShaakuniState } from '../types/trading';
 import { PlanDraft } from '../state/types';
 import { Badge, Panel, fmtPct, fmtPrice } from '../ui';
-import { nyHourInTimeZone } from '../utils/shaakuniEngine';
+import { levelStatusLabel, nyHourInTimeZone } from '../utils/shaakuniEngine';
 import { tr } from '../i18n';
 
 interface DayTradingPrepDeskProps {
@@ -145,11 +145,11 @@ export const DayTradingPrepDesk: React.FC<DayTradingPrepDeskProps> = ({ shaakuni
 
   const ladder: { label: string; val: number | null; sub?: string }[] = [
     { label: 'PWH', val: pwh },
-    { label: `PDH · ${shaakuni.pdhStatus}`, val: pdh },
+    { label: `PDH · ${levelStatusLabel(shaakuni.pdhStatus)}`, val: pdh },
     { label: tr('POC (profil wolumenu)', 'POC (volume profile)'), val: isNum(quant.pocPrice) && quant.pocPrice > 0 ? quant.pocPrice : null, sub: 'MODEL' },
     { label: tr('D-EQ (50% dnia)', 'D-EQ (50% of the day)'), val: deq },
     { label: tr('W-EQ (50% tygodnia)', 'W-EQ (50% of the week)'), val: weq },
-    { label: `PDL · ${shaakuni.pdlStatus}`, val: pdl },
+    { label: `PDL · ${levelStatusLabel(shaakuni.pdlStatus)}`, val: pdl },
     { label: 'PWL', val: pwl },
   ];
 
