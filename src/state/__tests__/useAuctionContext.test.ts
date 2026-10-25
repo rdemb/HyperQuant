@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { completeHourly, computeAuctionContext, hourlyStale } from '../useAuctionContext';
+import { completeHourly, computeAuctionContext, hourlyStale, mergeMinute } from '../useAuctionContext';
 import type { VBar } from '../../utils/auction';
 
 const MIN = 60_000;
@@ -23,6 +23,16 @@ describe('świece 1h: tylko zamknięte; odświeżenie po zmianie dnia UTC', () =
     expect(hourlyStale(TODAY - 20 * MIN, TODAY + 5 * MIN)).toBe(true); // pobrane 23:40, teraz 00:05
     expect(hourlyStale(TODAY + MIN, TODAY + 20 * MIN)).toBe(false);
     expect(hourlyStale(TODAY + MIN, TODAY + 40 * MIN)).toBe(true);
+  });
+});
+
+describe('świece 1m: dociąganie końcówki zamiast całej doby', () => {
+  it('nowe świece zastępują ostatnią (trwającą); starsze niż początek poprzedniej sesji odpadają', () => {
+    const cache = flat(TODAY - D - 2 * MIN, 5, MIN, 100_000); // dwie sprzed poprzedniej sesji
+    const fresh = [{ ...cache[4], close: 100_050, high: 100_060 }, ...flat(cache[4].time + MIN, 2, MIN, 100_100)];
+    const merged = mergeMinute(cache, fresh, TODAY - D);
+    expect(merged.map((b) => b.time)).toEqual([TODAY - D, TODAY - D + MIN, TODAY - D + 2 * MIN, TODAY - D + 3 * MIN, TODAY - D + 4 * MIN]);
+    expect(merged[2]).toEqual(fresh[0]);
   });
 });
 
