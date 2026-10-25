@@ -356,8 +356,11 @@ export function sessionSvg(s, { narrow = false, zones = [], levels = null, uid =
     oi: 'Open interest, BTC',
   };
   const withDelta = candles.filter((c) => c[6] !== null);
+  // CVD ze świec bazowych (na telefonie punkt na koniec sklejonej świecy): ten sam wynik w obu układach i w tekście
+  const cvdAt = new Map();
   let cum = 0;
-  const cvd = withDelta.map((c) => [c[0], (cum += c[6] - c[7])]);
+  for (const c of s.candles) if (c[6] !== null) cvdAt.set(c[0] - (c[0] % tf), (cum += c[6] - c[7]));
+  const cvd = [...cvdAt];
   for (const { k, top } of panes) {
     out.push(text(0, top - 8, labels[k], { size: 9, fill: C.ink2, family: MONO }));
     out.push(hline(0, plotW, top + paneH, C.line));
@@ -690,7 +693,12 @@ export function footprintHtml(fp) {
   const first = fp.bars[0].t;
   const end = fp.bars.at(-1).t + fp.tf * MIN;
   const label = `Footprint BTC ${hm.format(first)}–${hm.format(end)}, świece ${fp.tf} min, przedziały ceny co ${fp.step} USD: sprzedaż i kupno agresorów w BTC.`;
+  // Świeca bez transakcji w środku zakresu to przerwa w nagraniu: kolumny stoją obok siebie, więc mówimy o niej wprost
+  const have = new Set(fp.bars.map((b) => b.t));
+  const missing = [];
+  for (let t = first; t < end; t += fp.tf * MIN) if (!have.has(t)) missing.push(hm.format(t));
+  const gap = missing.length ? ` ${missing.length > 1 ? 'Brak świec' : 'Brak świecy'} ${missing.join(', ')} (przerwa w nagraniu taśmy).` : '';
   return `<p class="legend"><span><i class="sw sw--sell"></i>sprzedaż agresorów (lewa kolumna)</span><span><i class="sw sw--buy"></i>kupno agresorów (prawa kolumna)</span><span><i class="sw sw--poc-frame"></i>POC świecy</span><span><i class="sw sw--imb"></i>nierównowaga 3:1</span></p>
 <div class="chart-box">${footprintSvg(fp, { label })}${footprintSvg(fp, { narrow: true, label })}</div>
-<p class="fig-note">Czas polski. Świece ${fp.tf} min (na telefonie 30 min), przedziały ceny co ${fp.step} USD, wolumen w BTC z taśmy transakcji Hyperliquid. Nierównowaga: kupno na poziomie co najmniej 3 razy większe niż sprzedaż poziom niżej (albo odwrotnie). Pod świecami: delta, wolumen i zmiana open interest w BTC.</p>`;
+<p class="fig-note">Czas polski. Świece ${fp.tf} min (na telefonie 30 min), przedziały ceny co ${fp.step} USD, wolumen w BTC z taśmy transakcji Hyperliquid. Nierównowaga: kupno na poziomie co najmniej 3 razy większe niż sprzedaż poziom niżej (albo odwrotnie). Pod świecami: delta, wolumen i zmiana open interest w BTC.${gap}</p>`;
 }
