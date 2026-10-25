@@ -138,6 +138,8 @@ git commit -m "docs(blog): Mapa dnia 26.10.2026"
 git push origin main                                          # GitHub Pages publishes in ~2 min
 ```
 
+After each push that adds or changes a published post, the deploy workflow sends the post URLs and the blog index to IndexNow (Bing, Yandex, Seznam, Naver; `scripts/blog/indexnow.mjs`, key file in `public/`), so these search engines learn about a post minutes after publication instead of waiting for the sitemap. Google reads `sitemap.xml` through Search Console (verification file in `public/`, keep it there).
+
 Local preview (including drafts): `npm run build && node scripts/blog/build.mjs --drafts && npm run preview`, then `http://localhost:4173/blog/`.
 
 Every post is in the repository's public history from the moment of publication; the post page links to the file's change history.
