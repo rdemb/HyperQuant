@@ -280,26 +280,82 @@ export function postBody(post) {
 const FONTS =
   'https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Outfit:wght@500;600;700&family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap';
 
-/** Szkielet strony: metadane (SEO, Open Graph, X), nagłówek z nawigacją, stopka. `root` = względna ścieżka do korzenia desku. */
-export function layout(site, { title, description, url, root, image, imageAlt, type = 'website', published, section, jsonLd, main }) {
+/** Pozycje nawigacji: klucz, etykieta i ścieżka od korzenia desku (wersja angielska prowadzi do stron EN). */
+const NAV = {
+  pl: [
+    ['desk', 'Desk', ''],
+    ['charts', 'Wykresy', 'wykresy/'],
+    ['lessons', 'Lekcje', 'lekcje/'],
+    ['blog', 'Blog', 'blog/'],
+  ],
+  en: [
+    ['desk', 'Desk', ''],
+    ['charts', 'Charts', 'en/charts/'],
+    ['lessons', 'Lessons', 'en/lessons/'],
+    ['blog', 'Blog (PL)', 'blog/'],
+  ],
+};
+const OG_LOCALE = { pl: 'pl_PL', en: 'en_GB' };
+const FOOTER = {
+  pl: (root, site) => `<a href="${root}">Desk HyperQuant</a> · <a href="${site.repo}">Kod na GitHubie</a> · <a href="${root}blog/feed.xml">RSS</a>`,
+  en: (root, site) => `<a href="${root}">HyperQuant Desk</a> · <a href="${site.repo}">Code on GitHub</a> · <a href="${root}blog/feed.xml">Blog RSS (PL)</a>`,
+};
+const BLOG_DISCLAIMER = 'Prawdopodobieństwa i scenariusze, nie porada inwestycyjna ani sygnał do transakcji. Handel kontraktami z dźwignią wiąże się z wysokim ryzykiem utraty środków.';
+
+/**
+ * Szkielet strony: metadane (SEO, Open Graph, X), nagłówek z nawigacją, stopka. `root` = względna ścieżka do korzenia desku
+ * (na stronie 404 bezwzględny adres, bo GitHub Pages podaje ją pod dowolną ścieżką). `alternates` = wersje językowe strony
+ * razem z nią samą ({ lang, url }), `current` = podświetlona pozycja nawigacji.
+ */
+export function layout(
+  site,
+  {
+    title,
+    description,
+    url,
+    root,
+    image,
+    imageAlt,
+    type = 'website',
+    published,
+    section,
+    jsonLd,
+    main,
+    lang = 'pl',
+    current = 'blog',
+    alternates = [],
+    robots,
+    disclaimer = BLOG_DISCLAIMER,
+  }
+) {
   const article =
-    type === 'article'
+    type === 'article' && published
       ? `\n<meta property="article:published_time" content="${esc(published)}">\n<meta property="article:section" content="${esc(section)}">`
       : '';
+  const other = alternates.filter((a) => a.lang !== lang);
+  const hreflang = alternates.length
+    ? `\n${[...alternates, { lang: 'x-default', url: alternates.find((a) => a.lang === 'en')?.url ?? url }].map((a) => `<link rel="alternate" hreflang="${a.lang}" href="${esc(a.url)}">`).join('\n')}`
+    : '';
+  const localeAlt = other.map((a) => `\n<meta property="og:locale:alternate" content="${OG_LOCALE[a.lang]}">`).join('');
+  const nav = NAV[lang]
+    .map(([key, label, href]) => `<a class="nav-${key}" href="${root}${href}"${key === current ? ' aria-current="page"' : ''}>${label}</a>`)
+    .join('');
+  const rss = current === 'blog' ? `<a class="nav-rss" href="${root}blog/feed.xml">RSS</a>` : '';
+  const langLink = other.map((a) => `<a class="nav-lang" href="${esc(a.url)}" hreflang="${a.lang}" lang="${a.lang}">${a.lang.toUpperCase()}</a>`).join('');
   return `<!doctype html>
-<html lang="pl">
+<html lang="${lang}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>${esc(title)}</title>
-<meta name="description" content="${esc(description)}">
-<link rel="canonical" href="${esc(url)}">
+<meta name="description" content="${esc(description)}">${robots ? `\n<meta name="robots" content="${robots}">` : ''}
+<link rel="canonical" href="${esc(url)}">${hreflang}
 <link rel="alternate" type="application/rss+xml" title="HyperQuant · Analizy BTC" href="${site.url}blog/feed.xml">
 <link rel="icon" type="image/svg+xml" href="${root}favicon.svg">
 <link rel="apple-touch-icon" href="${root}icons/apple-touch-icon.png">
 <meta name="theme-color" content="#070A11">
 <meta property="og:type" content="${type}">
-<meta property="og:locale" content="pl_PL">
+<meta property="og:locale" content="${OG_LOCALE[lang]}">${localeAlt}
 <meta property="og:site_name" content="HyperQuant">
 <meta property="og:url" content="${esc(url)}">
 <meta property="og:title" content="${esc(title)}">
@@ -323,14 +379,14 @@ export function layout(site, { title, description, url, root, image, imageAlt, t
 <body>
 <header class="site-header"><div class="wrap">
 <a class="brand" href="${root}">HyperQuant<span>BTC · Hyperliquid</span></a>
-<nav aria-label="Główna"><a href="${root}">Desk</a><a href="${root}blog/" aria-current="page">Blog</a><a href="${root}blog/feed.xml">RSS</a></nav>
+<nav aria-label="${lang === 'en' ? 'Main' : 'Główna'}">${nav}${rss}${langLink}</nav>
 </div></header>
 <main class="wrap">
 ${main}
 </main>
 <footer class="site-footer"><div class="wrap">
-<p>Prawdopodobieństwa i scenariusze, nie porada inwestycyjna ani sygnał do transakcji. Handel kontraktami z dźwignią wiąże się z wysokim ryzykiem utraty środków.</p>
-<p><a href="${root}">Desk HyperQuant</a> · <a href="${site.repo}">Kod na GitHubie</a> · <a href="${root}blog/feed.xml">RSS</a></p>
+<p>${esc(disclaimer)}</p>
+<p>${FOOTER[lang](root, site)}</p>
 </div></footer>
 </body>
 </html>
@@ -432,6 +488,54 @@ ${row}
 </section>`;
 }
 
+// ───────────────────────── Powtórka na Wykresach ─────────────────────────
+
+const HOUR_MS = 3_600_000;
+/** Serwer trzyma nagranie taśmy i arkusza przez 7 dni (gałąź historii repozytorium danych). */
+export const REPLAY_KEEP_MS = 7 * 24 * HOUR_MS;
+// Wpis podsumowujący patrzy wstecz: na wykresie jest cały opisany okres. Pozostałe: krótki kontekst i dalszy ciąg po wpisie
+const LOOKS_BACK = /podsumowanie|rozliczenie/i;
+const isoTime = (ms) => new Date(ms).toISOString().replace('.000Z', 'Z');
+
+/**
+ * Powtórka chwili publikacji w Wykresach (format linku src/charts/pro/replay/link.ts, wersja 1): footprint 5 min z VWAP,
+ * profilem, poziomami dnia i bąblami, zatrzymany w chwili wpisu. Okno 12 h: 10 h przed i 2 h po wpisie podsumowującym,
+ * 2 h przed i 10 h po pozostałych. Powtórka przycina koniec do nagrania, więc świeży wpis pokazuje tyle dalszego ciągu,
+ * ile serwer już nagrał.
+ */
+export function replayLink(post) {
+  const back = LOOKS_BACK.test(post.section);
+  const from = post.ms - (back ? 10 : 2) * HOUR_MS;
+  const to = post.ms + (back ? 2 : 10) * HOUR_MS;
+  const hash = `#charts?replay=history&m=BTC&i=5m&v=footprint&from=${isoTime(from)}&to=${isoTime(to)}&t=${isoTime(post.ms)}&layers=vwap,profile,levels,bubbles`;
+  return { back, from, to, hash };
+}
+
+// Po 7 dniach nagrania już nie ma: zamiast powtórki tej chwili Wykresy na żywo i powtórka ostatniej doby
+const REPLAY_SCRIPT = `<script>
+(() => {
+  const box = document.querySelector('.replay[data-until]');
+  if (box && Date.now() > Number(box.dataset.until)) {
+    box.querySelector('.replay-on').hidden = true;
+    box.querySelector('.replay-off').hidden = false;
+  }
+})();
+</script>`;
+
+/** Blok „Zobacz na wykresie” pod treścią wpisu. `root` = względna ścieżka do korzenia desku. */
+export function replayHtml(post, root) {
+  const r = replayLink(post);
+  const text = r.back
+    ? `Nagrana taśma i arkusz z ${fmtTime(r.from)}–${fmtTime(post.ms)} na Wykresach HyperQuant: footprint, delta, CVD i mapa ciepła całego opisanego okresu. Przewiń go albo odtwórz od początku w przyspieszeniu do 60×.`
+    : `Nagrana taśma i arkusz na Wykresach HyperQuant: footprint, delta, CVD i mapa ciepła, zatrzymane w chwili publikacji (${fmtTime(post.ms)}). Odtwórz dalszy ciąg w przyspieszeniu do 60×: powtórka obejmuje 10 godzin po wpisie, w miarę jak serwer je nagrywa.`;
+  return `<section class="block replay" data-until="${post.ms + REPLAY_KEEP_MS}" aria-labelledby="replay-title">
+<h2 id="replay-title">Zobacz na wykresie</h2>
+<div class="replay-on"><p>${esc(text)}</p><p class="cta"><a class="btn btn--primary" href="${esc(root + r.hash)}">Otwórz powtórkę na Wykresach</a></p><p class="fig-note">Nagranie jest dostępne przez 7 dni od publikacji.</p></div>
+<div class="replay-off" hidden><p>Nagranie z chwili tego wpisu minęło już 7 dni, przez które serwer je przechowuje. Na Wykresach jest rynek na żywo i powtórka ostatniej doby.</p><p class="cta"><a class="btn btn--primary" href="${root}#charts">Otwórz Wykresy</a><a class="btn" href="${root}#charts?replay=history&amp;m=BTC">Powtórka ostatniej doby</a></p></div>
+</section>
+${REPLAY_SCRIPT}`;
+}
+
 /** Strona wpisu (artykuł albo notka). `newer` / `older` = sąsiednie wpisy do nawigacji. */
 export function postPage(site, post, { newer, older }) {
   const url = `${site.url}blog/${post.id}/`;
@@ -459,6 +563,7 @@ ${summary}${facts}${top}
 <div class="prose">
 ${prose}
 </div>
+${replayHtml(post, root)}
 ${shareHtml(url, post.title)}
 <p class="history">${DISCLOSURE} Wpis jest w publicznej historii repozytorium od chwili publikacji: <a href="${site.repo}/commits/main/content/blog/${post.id}.md">historia zmian</a>.</p>
 </article>
@@ -601,10 +706,13 @@ ${items.join('\n')}
 `;
 }
 
-/** Mapa strony dla wyszukiwarek: desk, blog, wpisy i archiwa miesięcy. */
-export function sitemapXml(site, posts) {
+/**
+ * Mapa strony dla wyszukiwarek: desk, strony serwisu z wersjami językowymi (`pages` = { loc, alternates }), blog, wpisy
+ * i archiwa miesięcy.
+ */
+export function sitemapXml(site, posts, pages = []) {
   const day = (ms) => new Date(ms).toISOString().slice(0, 10);
-  const urls = [{ loc: site.url }];
+  const urls = [{ loc: site.url }, ...pages];
   if (posts.length) {
     urls.push({ loc: `${site.url}blog/`, lastmod: day(posts[0].ms) });
     for (const p of posts) urls.push({ loc: `${site.url}blog/${p.id}/`, lastmod: day(p.ms) });
@@ -612,9 +720,10 @@ export function sitemapXml(site, posts) {
     for (const p of posts) if (!months.has(monthKey(p.ms))) months.set(monthKey(p.ms), p.ms);
     for (const [k, ms] of months) urls.push({ loc: `${site.url}blog/archiwum/${k}/`, lastmod: day(ms) });
   } else urls.push({ loc: `${site.url}blog/` });
+  const alt = (u) => (u.alternates ?? []).map((a) => `<xhtml:link rel="alternate" hreflang="${a.lang}" href="${xmlEsc(a.url)}"/>`).join('');
   return `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-${urls.map((u) => `<url><loc>${xmlEsc(u.loc)}</loc>${u.lastmod ? `<lastmod>${u.lastmod}</lastmod>` : ''}</url>`).join('\n')}
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
+${urls.map((u) => `<url><loc>${xmlEsc(u.loc)}</loc>${u.lastmod ? `<lastmod>${u.lastmod}</lastmod>` : ''}${alt(u)}</url>`).join('\n')}
 </urlset>
 `;
 }

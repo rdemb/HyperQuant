@@ -3,9 +3,11 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { guardViolations, splitFrontmatter, validatePost } from './posts.mjs';
-import { absolutize, esc, feedXml, flowsHtml, ladderLayout, liquidationsHtml, postBody, postPage, renderMarkdown, setupsHtml, sitemapXml } from './render.mjs';
+import { REPLAY_LINK_VERSION, parseReplayLink } from '../../src/charts/pro/replay/link';
+import { absolutize, esc, feedXml, flowsHtml, ladderLayout, layout, liquidationsHtml, postBody, postPage, renderMarkdown, replayLink, setupsHtml, sitemapXml } from './render.mjs';
 import { buildBlog, checkPosts } from './build.mjs';
-import { wrapTitle } from './og.mjs';
+import { ogSvg, wrapTitle } from './og.mjs';
+import { PATHS, clip, sitePages, sitemapEntries } from './pages.mjs';
 
 const SITE = { url: 'https://example.org/HQ/', repo: 'https://github.com/x/HQ', cssVersion: 'abc' };
 const BODY_ARTICLE = `## Kontekst\n\n${'Cena stoi nad dołkiem piątku i pod VWAP tygodnia, a płynność w weekend jest cienka. '.repeat(12)}`;
@@ -132,7 +134,7 @@ describe('blog: szablony', () => {
     expect(html).toContain('<meta name="twitter:card" content="summary_large_image">');
     const ld = /<script type="application\/ld\+json">(.*?)<\/script>/s.exec(html)[1];
     expect(JSON.parse(ld)).toMatchObject({ '@type': 'BlogPosting', datePublished: BASE.date });
-    expect(html.match(/<script/g).length).toBe(2);
+    expect(html.match(/<script/g).length).toBe(3);
     expect(html).toContain('href="https://github.com/x/HQ/commits/main/content/blog/2026-10-24-mapa-dnia.md"');
     expect(html).toContain('Analiza przygotowana automatycznie');
   });
@@ -347,6 +349,9 @@ describe('blog: budowanie', () => {
     expect(readFileSync(path.join(blog, 'feed.xml'), 'utf8').match(/<item>/g).length).toBe(2);
     expect(readFileSync(path.join(out, 'sitemap.xml'), 'utf8')).toContain('/blog/2026-10-24-aktualizacja-14/');
     expect(existsSync(path.join(blog, 'og.png'))).toBe(true);
+    // strony serwisu, zrzuty i karty podglądu obok bloga
+    for (const f of ['wykresy/index.html', 'en/charts/og.png', 'lekcje/atlas/cvd/index.html', '404.html', 'og.png', 'site/charts-pl.jpg']) expect(existsSync(path.join(out, f)), f).toBe(true);
+    expect(readFileSync(path.join(out, 'sitemap.xml'), 'utf8')).toContain('<loc>https://example.org/HQ/wykresy/</loc><xhtml:link rel="alternate" hreflang="pl"');
   });
 
   it('błędny wpis zatrzymuje build z nazwą pliku; --check zwraca ten sam problem', async () => {
@@ -360,5 +365,128 @@ describe('blog: budowanie', () => {
     const content = mkdtempSync(path.join(tmpdir(), 'hq-blog-'));
     writePost(content, ID, BASE, `${BODY_ARTICLE}\n\n![Wykres](brak.png)`);
     expect(checkPosts([], content)[0].errors.join('\n')).toMatch(/brak\.png/);
+  });
+});
+
+describe('blog: powtórka chwili wpisu na Wykresach', () => {
+  const at = (section, date = BASE.date) => validatePost(ID, { ...BASE, section, date }, BODY_ARTICLE).post;
+
+  it('link w formacie powtórki Wykresów: zatrzymanie w chwili wpisu, okno 2 h przed i 10 h po', () => {
+    expect(REPLAY_LINK_VERSION).toBe(1);
+    const post = at('Mapa dnia');
+    const r = replayLink(post);
+    const l = parseReplayLink(r.hash);
+    expect(l).toMatchObject({ source: 'history', coin: 'BTC', interval: '5m', view: 'footprint', station: null, zone: null });
+    expect([l.from, l.t, l.to]).toEqual([post.ms - 2 * 3_600_000, post.ms, post.ms + 10 * 3_600_000]);
+    expect(l.layers).toEqual(['showVwap', 'showProfile', 'showLevels', 'showBubbles']);
+  });
+
+  it('wpis podsumowujący patrzy wstecz: 10 h przed i 2 h po', () => {
+    for (const section of ['Podsumowanie dnia', 'Rozliczenie tygodnia', 'Rozliczenie Londynu']) {
+      const post = at(section);
+      const l = parseReplayLink(replayLink(post).hash);
+      expect([l.from, l.t, l.to], section).toEqual([post.ms - 10 * 3_600_000, post.ms, post.ms + 2 * 3_600_000]);
+    }
+  });
+
+  it('strona wpisu: blok z linkiem od korzenia desku, termin 7 dni i zastępstwo po nim', () => {
+    const post = at('Mapa dnia');
+    const html = postPage(SITE, post, {});
+    expect(html).toContain(`<section class="block replay" data-until="${post.ms + 7 * 24 * 3_600_000}"`);
+    expect(html).toContain('href="../../#charts?replay=history&amp;m=BTC&amp;i=5m&amp;v=footprint&amp;from=2026-10-24T05:30:00Z&amp;to=2026-10-24T17:30:00Z&amp;t=2026-10-24T07:30:00Z');
+    expect(html).toMatch(/<div class="replay-off" hidden>[\s\S]*href="\.\.\/\.\.\/#charts">Otwórz Wykresy/);
+    // blok stoi przed udostępnianiem pod treścią
+    expect(html.indexOf('class="block replay"')).toBeLessThan(html.indexOf('<section class="block share"'));
+  });
+});
+
+describe('strony serwisu: Wykresy, Lekcje, atlas, 404', () => {
+  const pages = sitePages(SITE);
+  const byPath = new Map(pages.filter((p) => p.html).map((p) => [p.path, p]));
+
+  it('strony PL i EN pod stałymi adresami, każde hasło atlasu w obu językach', () => {
+    for (const lang of ['pl', 'en']) for (const k of ['charts', 'lessons']) expect(byPath.has(PATHS[k][lang]), PATHS[k][lang]).toBe(true);
+    const atlas = [...byPath.keys()].filter((p) => p.includes('/atlas/'));
+    expect(atlas.length).toBe(42);
+    expect(byPath.has('lekcje/atlas/footprint/') && byPath.has('en/lessons/atlas/footprint/')).toBe(true);
+    expect(byPath.has('404.html')).toBe(true);
+    // karta desku (strona aplikacji) bez HTML
+    expect(pages.find((p) => p.path === '')).toMatchObject({ card: { section: 'Desk' } });
+  });
+
+  it('metadane: kanoniczny adres, obrazek OG strony, wersje językowe z x-default po angielsku, język dokumentu', () => {
+    const pl = byPath.get('wykresy/').html;
+    expect(pl).toContain('<html lang="pl">');
+    expect(pl).toContain('<link rel="canonical" href="https://example.org/HQ/wykresy/">');
+    expect(pl).toContain('<meta property="og:image" content="https://example.org/HQ/wykresy/og.png">');
+    expect(pl).toContain('<link rel="alternate" hreflang="en" href="https://example.org/HQ/en/charts/">');
+    expect(pl).toContain('<link rel="alternate" hreflang="x-default" href="https://example.org/HQ/en/charts/">');
+    expect(pl).toContain('<meta property="og:locale:alternate" content="en_GB">');
+    expect(pl).toContain('<a class="nav-charts" href="../" aria-current="page">'.replace('../', '../wykresy/'));
+    const en = byPath.get('en/lessons/atlas/cvd/').html;
+    expect(en).toContain('<html lang="en">');
+    expect(en).toContain('<a class="nav-lang" href="https://example.org/HQ/lekcje/atlas/cvd/" hreflang="pl" lang="pl">PL</a>');
+    expect(en).toContain('<a class="nav-blog" href="../../../../blog/">Blog (PL)</a>');
+    for (const p of byPath.values()) {
+      const ld = /<script type="application\/ld\+json">(.*?)<\/script>/s.exec(p.html)[1];
+      expect(() => JSON.parse(ld), p.path).not.toThrow();
+      const desc = /<meta name="description" content="([^"]*)">/.exec(p.html)[1];
+      expect(desc.length, p.path).toBeLessThanOrEqual(200);
+    }
+  });
+
+  it('linki względne prowadzą do istniejących stron, plików albo widoków aplikacji', () => {
+    const files = new Set(['', 'blog/', 'blog/feed.xml', 'blog/blog.css', 'favicon.svg', 'icons/apple-touch-icon.png', ...byPath.keys(), ...pages.filter((p) => p.card).map((p) => `${p.path}og.png`)]);
+    for (const k of ['charts', 'lessons']) for (const l of ['pl', 'en']) files.add(`site/${k}-${l}.jpg`);
+    for (const [path_, p] of byPath) {
+      if (path_ === '404.html') continue;
+      const base = new URL(path_, SITE.url);
+      for (const [, href] of p.html.matchAll(/(?:href|src)="([^"]+)"/g)) {
+        const u = new URL(href.replaceAll('&amp;', '&'), base);
+        if (!u.href.startsWith(SITE.url)) continue;
+        const rel = u.pathname.slice(new URL(SITE.url).pathname.length);
+        expect(files.has(rel), `${path_} → ${href}`).toBe(true);
+        if (rel === '' && u.hash) expect(u.hash, `${path_} → ${href}`).toMatch(/^#(charts|lessons)(\?|$)/);
+      }
+    }
+  });
+
+  it('ćwiczenia i hasła prowadzą do Lekcji pod adresami, które rozumie zakładka', () => {
+    const html = byPath.get('lekcje/').html;
+    expect(html).toContain('href="../#lessons?ex=ny-breakout"');
+    expect(html).toContain('href="atlas/cvd/"');
+    expect(byPath.get('lekcje/atlas/cvd/').html).toContain('href="../../../#lessons?tab=atlas&amp;id=cvd"');
+  });
+
+  it('404: same bezwzględne adresy (GitHub Pages podaje ją pod dowolną ścieżką) i noindex', () => {
+    const html = byPath.get('404.html').html;
+    expect(html).toContain('<meta name="robots" content="noindex">');
+    for (const [, href] of html.matchAll(/(?:href|src)="([^"]+)"/g)) expect(href, href).toMatch(/^(https:|#)/);
+  });
+
+  it('mapa strony: strony z wersjami językowymi, bez 404', () => {
+    const map = sitemapXml(SITE, [], sitemapEntries(SITE, pages));
+    expect(map).toContain('xmlns:xhtml="http://www.w3.org/1999/xhtml"');
+    expect(map).toContain('<url><loc>https://example.org/HQ/en/lessons/atlas/vwap/</loc><xhtml:link rel="alternate" hreflang="pl" href="https://example.org/HQ/lekcje/atlas/vwap/"/><xhtml:link rel="alternate" hreflang="en" href="https://example.org/HQ/en/lessons/atlas/vwap/"/></url>');
+    expect(map).not.toContain('404');
+  });
+
+  it('opis do 160 znaków ucięty na słowie; karta z zrzutem i własną stopką', () => {
+    expect(clip('krótki')).toBe('krótki');
+    const long = clip('słowo '.repeat(60));
+    expect(long.length).toBeLessThanOrEqual(160);
+    expect(long.endsWith('słowo…')).toBe(true);
+    const svg = ogSvg({ section: 'Wykresy', title: 'Tytuł', subtitle: 'Podtytuł', shot: { href: 'data:image/jpeg;base64,AA', w: 1440, h: 700, crop: [0, 0, 720, 557] }, foot: ['adres', 'bez sygnałów'] });
+    expect(svg).toContain('<clipPath id="shot">');
+    expect(svg).toContain('href="data:image/jpeg;base64,AA"');
+    expect(svg).toContain('>bez sygnałów</text>');
+    expect(ogSvg({ section: 'Blog', title: 'T' })).toContain('>prawdopodobieństwa, nie sygnały</text>');
+  });
+
+  it('układ bloga bez zmian: polski, Blog podświetlony, RSS w menu', () => {
+    const html = layout(SITE, { title: 't', description: 'd', url: SITE.url, root: '../', image: 'i', imageAlt: 'a', jsonLd: {}, main: '' });
+    expect(html).toContain('<html lang="pl">');
+    expect(html).toContain('<a class="nav-blog" href="../blog/" aria-current="page">Blog</a><a class="nav-rss" href="../blog/feed.xml">RSS</a>');
+    expect(html).not.toContain('hreflang');
   });
 });

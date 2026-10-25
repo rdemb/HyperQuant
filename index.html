@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="google" content="notranslate" />
-    <title>HyperQuant — BTC Day Trading Desk (Hyperliquid)</title>
+    <title>HyperQuant: wykresy orderflow BTC i desk dla Hyperliquid</title>
 
     <!-- Ikony i PWA -->
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
@@ -17,8 +17,8 @@
     <meta name="apple-mobile-web-app-title" content="HyperQuant" />
 
     <!-- Wyszukiwarki i metadane -->
-    <meta name="description" content="Darmowy, otwarty desk do day tradingu BTC-PERP na Hyperliquid: wykres z poziomami PDH/PDL i strefami OB, arkusz L2 i taśma transakcji z Hyperliquid oraz kontekst makro z publicznych źródeł. Desk ocenia Twój plan transakcji (wejście, stop, cel) — nie generuje sygnałów kupna ani sprzedaży." />
-    <meta name="keywords" content="Hyperliquid, BTC-PERP, day trading, plan transakcji, orderbook L2, taśma transakcji, PDH PDL, funding, open interest" />
+    <meta name="description" content="Darmowy desk do day tradingu BTC na Hyperliquid: wykresy orderflow na żywo (footprint, delta, CVD, mapa ciepła), lekcje na prawdziwych danych i analizy BTC." />
+    <meta name="keywords" content="Hyperliquid, BTC, orderflow, footprint, delta, CVD, mapa ciepła arkusza, day trading, lekcje tradingu, analizy BTC" />
     <meta name="author" content="HyperQuant (open source)" />
     <link rel="canonical" href="https://rdemb.github.io/HyperQuant/" />
     <link rel="alternate" type="application/rss+xml" title="HyperQuant · Analizy BTC" href="./blog/feed.xml" />
@@ -26,24 +26,25 @@
     <!-- Open Graph (Facebook, Discord, LinkedIn, Slack) -->
     <meta property="og:type" content="website" />
     <meta property="og:locale" content="pl_PL" />
+    <meta property="og:locale:alternate" content="en_GB" />
     <meta property="og:url" content="https://rdemb.github.io/HyperQuant/" />
-    <meta property="og:title" content="HyperQuant — BTC Day Trading Desk (Hyperliquid)" />
-    <meta property="og:description" content="Darmowy desk do day tradingu BTC-PERP na Hyperliquid. Wykres, arkusz L2 i taśma z Hyperliquid, kontekst makro z publicznych źródeł. Ocenia Twój plan — nie daje sygnałów." />
-    <meta property="og:image" content="https://rdemb.github.io/HyperQuant/og-image.png" />
-    <meta property="og:image:secure_url" content="https://rdemb.github.io/HyperQuant/og-image.png" />
+    <meta property="og:title" content="HyperQuant: wykresy orderflow BTC i desk dla Hyperliquid" />
+    <meta property="og:description" content="Darmowe wykresy orderflow BTC z Hyperliquid (footprint, delta, CVD, mapa ciepła arkusza, powtórka nagranej doby), lekcje na prawdziwych dniach i analizy pisane przed faktem. Bez sygnałów." />
+    <meta property="og:image" content="https://rdemb.github.io/HyperQuant/og.png" />
+    <meta property="og:image:secure_url" content="https://rdemb.github.io/HyperQuant/og.png" />
     <meta property="og:image:type" content="image/png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="HyperQuant — desk do day tradingu BTC-PERP na Hyperliquid" />
+    <meta property="og:image:alt" content="HyperQuant: darmowy desk do day tradingu BTC na Hyperliquid, footprint na Wykresach" />
     <meta property="og:site_name" content="HyperQuant" />
 
     <!-- Twitter / X Cards -->
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:url" content="https://rdemb.github.io/HyperQuant/" />
-    <meta name="twitter:title" content="HyperQuant — BTC Day Trading Desk (Hyperliquid)" />
-    <meta name="twitter:description" content="Darmowy desk do day tradingu BTC-PERP na Hyperliquid. Ocenia Twój plan transakcji na danych rynkowych — nie daje sygnałów." />
-    <meta name="twitter:image" content="https://rdemb.github.io/HyperQuant/og-image.png" />
-    <meta name="twitter:image:alt" content="HyperQuant — desk do day tradingu BTC-PERP na Hyperliquid" />
+    <meta name="twitter:title" content="HyperQuant: wykresy orderflow BTC i desk dla Hyperliquid" />
+    <meta name="twitter:description" content="Darmowe wykresy orderflow BTC z Hyperliquid, lekcje na prawdziwych dniach i analizy pisane przed faktem. Bez sygnałów." />
+    <meta name="twitter:image" content="https://rdemb.github.io/HyperQuant/og.png" />
+    <meta name="twitter:image:alt" content="HyperQuant: darmowy desk do day tradingu BTC na Hyperliquid, footprint na Wykresach" />
 
     <!-- Fonty -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -57,9 +58,11 @@
       "@type": "WebApplication",
       "name": "HyperQuant — BTC Day Trading Desk",
       "url": "https://rdemb.github.io/HyperQuant/",
-      "inLanguage": "pl",
-      "description": "Darmowy, otwarty desk do day tradingu BTC-PERP na Hyperliquid. Ocenia plan transakcji tradera na danych rynkowych; nie generuje sygnałów.",
+      "inLanguage": ["pl", "en"],
+      "description": "Darmowy, otwarty desk do day tradingu BTC na Hyperliquid: wykresy orderflow na żywo (footprint, delta, CVD, mapa ciepła arkusza, powtórka nagranej doby), lekcje na prawdziwych danych, analizy BTC i analizator planu transakcji. Nie generuje sygnałów.",
       "applicationCategory": "FinanceApplication",
+      "isAccessibleForFree": true,
+      "image": "https://rdemb.github.io/HyperQuant/og.png",
       "operatingSystem": "Dowolny (nowoczesna przeglądarka)",
       "offers": {
         "@type": "Offer",
@@ -74,10 +77,10 @@
       <div style="padding: 2rem 1rem; font-family: system-ui, sans-serif; color: #A9B4C4; background: #070A11; min-height: 100vh;">
         <h1 style="color: #EEF2F7; font-size: 1.5rem; margin: 0 0 0.5rem;">HyperQuant — BTC Day Trading Desk</h1>
         <p style="font-size: 1rem; line-height: 1.6; max-width: 640px;">
-          Darmowy desk do day tradingu BTC-PERP na Hyperliquid: wykres z poziomami dziennymi i tygodniowymi, arkusz L2 i taśma transakcji z Hyperliquid oraz kontekst makro z publicznych źródeł.
+          Darmowy desk do day tradingu BTC na Hyperliquid: wykresy orderflow na żywo (footprint, delta, CVD, mapa ciepła arkusza), lekcje na prawdziwych danych, analizy BTC pisane przed faktem i analizator planu transakcji. Bez sygnałów kupna ani sprzedaży.
         </p>
         <p style="line-height: 1.6; max-width: 640px;">
-          Desk ocenia Twój plan transakcji (wejście, stop, cel) — nie generuje sygnałów kupna ani sprzedaży.
+          <a href="./wykresy/" style="color: #3FC6DD;">Wykresy</a> · <a href="./lekcje/" style="color: #3FC6DD;">Lekcje</a> · <a href="./blog/" style="color: #3FC6DD;">Blog</a> · <a href="./en/charts/" lang="en" style="color: #3FC6DD;">Charts (EN)</a> · <a href="./en/lessons/" lang="en" style="color: #3FC6DD;">Lessons (EN)</a>
         </p>
         <p style="margin-top: 1.5rem; color: #FAB219;">
           Włącz JavaScript, aby uruchomić aplikację.
