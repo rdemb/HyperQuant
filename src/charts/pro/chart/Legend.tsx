@@ -195,7 +195,7 @@ export const Legend: React.FC<{
   // Zwinięta: jedna linia bez tła — symbol, interwał, czas świecy spoza bieżącej i OHLC
   if (folded) {
     return (
-      <div ref={ref} className="absolute left-2 top-1.5 z-10 pointer-events-none max-w-[calc(100%-5rem)] rounded-md bg-surface-1/60 px-2 py-0.5 font-mono tabular-nums text-[11px] leading-[1.55] text-ink-2">
+      <div ref={ref} className="absolute left-2 top-2 z-10 pointer-events-none max-w-[calc(100%-5rem)] rounded-md bg-surface-1/60 px-2 py-0.5 font-mono tabular-nums text-[11px] leading-[1.55] text-ink-2">
         <div className="flex items-baseline gap-x-2 whitespace-nowrap overflow-hidden">
           {toggle}
           <span className="text-ink-1 font-semibold font-sans">{coin}-PERP</span>
