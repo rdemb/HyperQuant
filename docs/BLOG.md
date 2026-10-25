@@ -138,7 +138,7 @@ git commit -m "docs(blog): Mapa dnia 26.10.2026"
 git push origin main                                          # GitHub Pages publishes in ~2 min
 ```
 
-After each push that adds or changes a published post, the deploy workflow sends the post URLs and the blog index to IndexNow (Bing, Yandex, Seznam, Naver; `scripts/blog/indexnow.mjs`, key file in `public/`), so these search engines learn about a post minutes after publication instead of waiting for the sitemap. To submit every URL from `sitemap.xml` at once, run the deploy workflow by hand (Actions → Deploy static content to Pages → Run workflow) with „Zgłoś do IndexNow wszystkie adresy z sitemap.xml” ticked. Google reads `sitemap.xml` through Search Console (verification file in `public/`, keep it there).
+After each push that adds or changes a published post, the deploy workflow sends the post URLs and the blog index to IndexNow (Bing, Yandex, Seznam, Naver; `scripts/blog/indexnow.mjs`, key file in `public/`), so these search engines learn about a post minutes after publication instead of waiting for the sitemap. To submit every URL from `sitemap.xml` at once, run the deploy workflow by hand (Actions → Deploy static content to Pages → Run workflow) with „Zgłoś do IndexNow wszystkie adresy z sitemap.xml” ticked. Google reads `sitemap.xml` through Search Console and Bing through Bing Webmaster Tools (verification files `public/google3e29f86ae03c99dc.html` and `public/BingSiteAuth.xml`; keep both there, the services re-check them).
 
 Local preview (including drafts): `npm run build && node scripts/blog/build.mjs --drafts && npm run preview`, then `http://localhost:4173/blog/`.
 
