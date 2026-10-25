@@ -73,7 +73,7 @@ HyperQuant działa w przeglądarce na telefonie i na komputerze, bez logowania i
 
 To jest publiczna wersja HyperQuant. Przez najbliższy czas nie dokładam nowych funkcji, tylko słucham i poprawiam. Od poniedziałku sam pracuję na nim codziennie przy day tradingu BTC.
 
-Napisz mi, co jest niejasne, co nie działa na Twoim telefonie i czego brakuje Ci najbardziej. Najprościej w komentarzu pod postem na Facebooku, na stronie HyperQuant PL. Błędy techniczne możesz też [zgłosić na GitHubie](https://github.com/rdemb/HyperQuant/issues). Przeczytam każdą uwagę.
+Napisz mi, co jest niejasne, co nie działa na Twoim telefonie i czego brakuje Ci najbardziej. Najprościej w komentarzu pod postem na Facebooku, na stronie [HyperQuant PL](https://www.facebook.com/share/1CF58c91dc/). Błędy techniczne możesz też [zgłosić na GitHubie](https://github.com/rdemb/HyperQuant/issues). Przeczytam każdą uwagę.
 
 [Otwórz HyperQuant](https://rdemb.github.io/HyperQuant/)
 
