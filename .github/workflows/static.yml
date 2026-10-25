@@ -24,6 +24,8 @@ jobs:
   build:
     name: Build Vite App
     runs-on: ubuntu-latest
+    outputs:
+      indexnow: ${{ steps.indexnow.outputs.body }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v7
@@ -54,6 +56,15 @@ jobs:
           # Publiczny adres danych skanera (repo rdemb/hyperquant-data) — zmienna repozytorium, pusta = panel mapy likwidacji czeka
           VITE_DATA_BASE_URL: ${{ vars.DATA_BASE_URL }}
 
+      # Nowe i zmienione wpisy bloga z tego pusha → zgłoszenie IndexNow po wdrożeniu (pusto = nic do zgłoszenia)
+      - name: List New Blog Posts For IndexNow
+        id: indexnow
+        if: github.event_name == 'push'
+        continue-on-error: true
+        run: node scripts/blog/indexnow.mjs >> "$GITHUB_OUTPUT"
+        env:
+          COMMITS: ${{ toJSON(github.event.commits) }}
+
       - name: Upload GitHub Pages Artifact
         uses: actions/upload-pages-artifact@v5
         with:
@@ -70,3 +81,12 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5
+
+      # Bing, Yandex, Seznam i Naver dostają adresy nowych wpisów od razu, zamiast czekać na odczyt mapy strony
+      - name: Notify IndexNow
+        if: needs.build.outputs.indexnow != ''
+        continue-on-error: true
+        run: |
+          curl -sS -f -m 30 -H 'Content-Type: application/json; charset=utf-8' --data "$BODY" https://api.indexnow.org/indexnow
+        env:
+          BODY: ${{ needs.build.outputs.indexnow }}
