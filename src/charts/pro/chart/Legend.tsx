@@ -28,6 +28,11 @@ export class HoverSignal {
 }
 
 const fmtSigma = (z: number) => `${z >= 0 ? '+' : '−'}${numLang(Math.abs(z).toFixed(2))}σ`;
+/** Zmiana świecy w % ze znakiem; po zaokrągleniu zero bez znaku (bez „−0.00%”). */
+const fmtChange = (v: number) => {
+  const a = Math.abs(v).toFixed(2);
+  return `${Number(a) === 0 ? '' : v > 0 ? '+' : '−'}${numLang(a)}%`;
+};
 
 const tone = (v: number) => (v > 0 ? 'text-of-buy-ink' : v < 0 ? 'text-of-sell-ink' : 'text-ink-2');
 
@@ -89,8 +94,7 @@ export const Legend: React.FC<{
           <div className="flex items-baseline gap-x-2 whitespace-nowrap overflow-hidden">
             {!h.live && bar && <span className="text-ink-3">{fmtBarTime(bar.t, intervalMs)}</span>}
             <span className={c.c >= c.o ? 'text-of-buy-ink' : 'text-of-sell-ink'}>
-              {fmtPx(c.c)} {change >= 0 ? '+' : '−'}
-              {numLang(Math.abs(change).toFixed(2))}%
+              {fmtPx(c.c)} {fmtChange(change)}
             </span>
             <Field label={tr('Wol.', 'Vol.')}>{fmtVol(c.v)}</Field>
             {h.ind?.vwap && (
@@ -145,8 +149,7 @@ export const Legend: React.FC<{
             {fmtPx(c.c)}
           </Field>
           <span className={change >= 0 ? 'text-of-buy-ink' : 'text-of-sell-ink'}>
-            {change >= 0 ? '+' : '−'}
-            {numLang(Math.abs(change).toFixed(2))}%
+            {fmtChange(change)}
           </span>
           <Field label={tr('Wol.', 'Vol.')} title={tr(`Wolumen świecy z API Hyperliquid (${coin})`, `Candle volume from the Hyperliquid API (${coin})`)}>
             {fmtVol(c.v)}

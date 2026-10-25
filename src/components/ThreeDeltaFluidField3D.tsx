@@ -914,7 +914,7 @@ export const ThreeDeltaFluidField3D: React.FC<ThreeDeltaFluidField3DProps> = ({
                 tr(`Delta Fluid: przewaga ${fluidIsBull ? 'kupujących' : 'sprzedających'}`, `Delta Fluid: ${fluidIsBull ? 'buyers' : 'sellers'} dominate`),
                 `${tr('Kupno/sprzedaż', 'Buy/sell')} ${fmtNum(ofiSummary.overallBuySellRatio)}× · OFI ${fmtNum(ofiSummary.overallOfiPct)}% · ${tr('η Hawkesa', 'Hawkes η')} ${
                   // null = współczynnik rozgałęzienia nieestymowany → "n/a"
-                  quant.hawkesBranchingRatio !== null ? fmtFixed(quant.hawkesBranchingRatio, 2) : 'n/a'
+                  quant.hawkesBranchingRatio !== null ? fmtFixed(quant.hawkesBranchingRatio, 2) : tr('b/d', 'n/a')
                 }`
               )
             }

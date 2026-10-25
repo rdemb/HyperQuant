@@ -203,7 +203,7 @@ export const QuantMetricTiles: React.FC<{ quant: QuantMathMetrics; className?: s
               {fmtFixed(quant.hawkesSellIntensity, 2)}
             </span>
           }
-          hint={tr(`kupno / sprzedaż · η = ${quant.hawkesBranchingRatio != null ? fmtNum(quant.hawkesBranchingRatio) : 'n/a'} (wymaga MLE)`, `buy / sell · η = ${quant.hawkesBranchingRatio != null ? fmtNum(quant.hawkesBranchingRatio) : 'n/a'} (needs MLE)`)}
+          hint={tr(`kupno / sprzedaż · η = ${quant.hawkesBranchingRatio != null ? fmtNum(quant.hawkesBranchingRatio) : 'b/d'} (wymaga MLE)`, `buy / sell · η = ${quant.hawkesBranchingRatio != null ? fmtNum(quant.hawkesBranchingRatio) : 'n/a'} (needs MLE)`)}
         />
       ),
     },
@@ -259,11 +259,11 @@ export const QuantMetricTiles: React.FC<{ quant: QuantMathMetrics; className?: s
           source={{
             tone: 'model',
             label: 'MODEL',
-            title: tr('OLS: ΔP na netto przepływie agresora z WebSocket HL; n/a gdy < 10 świec z realnym przepływem', 'OLS: ΔP on net aggressor flow from the HL WebSocket; n/a with < 10 candles of real flow'),
+            title: tr('OLS: ΔP na netto przepływie agresora z WebSocket HL; b/d, gdy < 10 świec z realnym przepływem', 'OLS: ΔP on net aggressor flow from the HL WebSocket; n/a with < 10 candles of real flow'),
           }}
           value={
             <span>
-              {quant.kyleLambdaPer1M !== null ? `$${fmtFixed(quant.kyleLambdaPer1M, 2)}` : 'n/a'}
+              {quant.kyleLambdaPer1M !== null ? `$${fmtFixed(quant.kyleLambdaPer1M, 2)}` : tr('b/d', 'n/a')}
             </span>
           }
           hint={

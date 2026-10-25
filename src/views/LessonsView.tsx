@@ -71,10 +71,12 @@ const LessonsView: React.FC = () => {
         </div>
         <h1 className="font-display text-[26px] sm:text-[28px] leading-tight font-bold tracking-tight">{c.ui.title}</h1>
         {!spec && <p className="text-sm sm:text-base text-ink-2 leading-relaxed max-w-3xl">{c.ui.lead}</p>}
-        <div className="-mx-1 px-1 pt-1 overflow-x-auto">
+        {/* Na telefonie pięć sekcji nie mieści się w jednym wierszu — zawijamy, żeby żadna nie chowała się za krawędzią */}
+        <div className="pt-1">
           <Segmented<Tab>
             ariaLabel={c.ui.title}
             size="md"
+            wrap
             value={route.tab}
             onChange={(tab) => go({ tab, id: null })}
             options={TABS.map((t) => ({ value: t, label: c.ui.tabs[t] }))}
