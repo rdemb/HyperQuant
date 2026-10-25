@@ -9,6 +9,11 @@ on:
   schedule:
     - cron: '*/30 * * * *'
   workflow_dispatch:
+    inputs:
+      indexnow_all:
+        description: 'Zgłoś do IndexNow wszystkie adresy z sitemap.xml'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -56,14 +61,22 @@ jobs:
           # Publiczny adres danych skanera (repo rdemb/hyperquant-data) — zmienna repozytorium, pusta = panel mapy likwidacji czeka
           VITE_DATA_BASE_URL: ${{ vars.DATA_BASE_URL }}
 
-      # Nowe i zmienione wpisy bloga z tego pusha → zgłoszenie IndexNow po wdrożeniu (pusto = nic do zgłoszenia)
+      # Nowe i zmienione wpisy bloga z tego pusha (diff względem poprzedniej głowy main; lista plików w commitach zdarzenia
+      # push jest pusta) albo ręcznie cała mapa strony → zgłoszenie IndexNow po wdrożeniu (pusto = nic do zgłoszenia)
       - name: List New Blog Posts For IndexNow
         id: indexnow
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' || inputs.indexnow_all
         continue-on-error: true
-        run: node scripts/blog/indexnow.mjs >> "$GITHUB_OUTPUT"
+        run: |
+          if [ "$ALL" = true ]; then
+            node scripts/blog/indexnow.mjs --all >> "$GITHUB_OUTPUT"
+          else
+            git fetch --no-tags --depth=1 origin "$BEFORE"
+            git diff --name-only --diff-filter=AM "$BEFORE" HEAD | node scripts/blog/indexnow.mjs >> "$GITHUB_OUTPUT"
+          fi
         env:
-          COMMITS: ${{ toJSON(github.event.commits) }}
+          ALL: ${{ inputs.indexnow_all }}
+          BEFORE: ${{ github.event.before }}
 
       - name: Upload GitHub Pages Artifact
         uses: actions/upload-pages-artifact@v5

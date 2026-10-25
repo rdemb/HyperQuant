@@ -8,7 +8,7 @@ import { absolutize, esc, feedXml, flowsHtml, ladderLayout, layout, liquidations
 import { buildBlog, checkPosts } from './build.mjs';
 import { ogSvg, wrapTitle } from './og.mjs';
 import { PATHS, clip, sitePages, sitemapEntries } from './pages.mjs';
-import { INDEXNOW_KEY, indexNowBody } from './indexnow.mjs';
+import { INDEXNOW_KEY, changedPostUrls, indexNowBody, sitemapUrls } from './indexnow.mjs';
 
 const SITE = { url: 'https://example.org/HQ/', repo: 'https://github.com/x/HQ', cssVersion: 'abc' };
 const BODY_ARTICLE = `## Kontekst\n\n${'Cena stoi nad dołkiem piątku i pod VWAP tygodnia, a płynność w weekend jest cienka. '.repeat(12)}`;
@@ -493,25 +493,30 @@ describe('strony serwisu: Wykresy, Lekcje, atlas, 404', () => {
 });
 
 describe('IndexNow: nowe wpisy z pusha', () => {
-  const commits = [
-    { added: ['content/blog/2026-10-25-mapa-dnia.md', 'content/blog/2026-10-25-mapa-dnia/wykresy.json'], modified: ['README.md'] },
-    { added: ['content/blog/2026-10-25-szkic.md'], modified: ['content/blog/2026-10-24-aktualizacja-14.md'] },
+  const files = [
+    'content/blog/2026-10-25-mapa-dnia.md',
+    'content/blog/2026-10-25-mapa-dnia/wykresy.json',
+    'README.md',
+    'content/blog/2026-10-25-szkic.md',
+    'content/blog/2026-10-24-aktualizacja-14.md',
+    '',
   ];
 
-  it('zgłasza wpisy dodane i zmienione, które są w zbudowanej stronie, razem ze stroną bloga', () => {
-    const body = indexNowBody(commits, SITE, (id) => id !== '2026-10-25-szkic');
-    expect(body).toEqual({
-      host: 'example.org',
-      key: INDEXNOW_KEY,
-      keyLocation: `https://example.org/HQ/${INDEXNOW_KEY}.txt`,
-      urlList: ['https://example.org/HQ/blog/', 'https://example.org/HQ/blog/2026-10-24-aktualizacja-14/', 'https://example.org/HQ/blog/2026-10-25-mapa-dnia/'],
-    });
+  it('zgłasza wpisy z listy zmienionych plików, które są w zbudowanej stronie, razem ze stroną bloga', () => {
+    const urls = changedPostUrls(files, SITE, (id) => id !== '2026-10-25-szkic');
+    expect(urls).toEqual(['https://example.org/HQ/blog/', 'https://example.org/HQ/blog/2026-10-24-aktualizacja-14/', 'https://example.org/HQ/blog/2026-10-25-mapa-dnia/']);
+    expect(indexNowBody(urls, SITE)).toEqual({ host: 'example.org', key: INDEXNOW_KEY, keyLocation: `https://example.org/HQ/${INDEXNOW_KEY}.txt`, urlList: urls });
   });
 
-  it('nic do zgłoszenia: push bez wpisów, same szkice albo brak listy commitów', () => {
-    expect(indexNowBody([{ added: ['src/main.tsx'], modified: [] }], SITE, () => true)).toBeNull();
-    expect(indexNowBody(commits, SITE, () => false)).toBeNull();
-    expect(indexNowBody(undefined, SITE, () => true)).toBeNull();
+  it('nic do zgłoszenia: zmiany bez wpisów albo same szkice', () => {
+    expect(changedPostUrls(['src/main.tsx', ''], SITE, () => true)).toEqual([]);
+    expect(changedPostUrls(files, SITE, () => false)).toEqual([]);
+    expect(indexNowBody([], SITE)).toBeNull();
+  });
+
+  it('ręczne zgłoszenie bierze wszystkie adresy z mapy strony', () => {
+    const xml = sitemapXml(SITE, [], [{ loc: 'https://example.org/HQ/wykresy/' }]);
+    expect(sitemapUrls(xml)).toEqual(['https://example.org/HQ/', 'https://example.org/HQ/wykresy/', 'https://example.org/HQ/blog/']);
   });
 
   it('plik klucza leży w public/ pod nazwą klucza i zawiera sam klucz', () => {
