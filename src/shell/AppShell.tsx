@@ -82,7 +82,7 @@ const TickerStrip: React.FC = () => {
   const fresh = feed.dataStatus === 'LIVE';
 
   return (
-    <div className="flex items-center gap-x-5 gap-y-1 overflow-x-auto whitespace-nowrap px-4 lg:px-6 py-2 border-b border-line bg-surface-1/60 text-xs">
+    <div className="flex items-center gap-x-5 gap-y-1 overflow-x-auto hq-scroll-cue [--cue-bg:color-mix(in_oklab,var(--color-surface-1)_60%,var(--color-page))] whitespace-nowrap px-4 lg:px-6 py-2 border-b border-line bg-surface-1/60 text-xs">
       <div className="flex items-baseline gap-2">
         <span className="text-ink-2 font-medium">BTC-PERP</span>
         <AnimatedNumber value={feed.currentPrice} format={(v) => fmtPrice(v)} className="text-lg font-semibold text-ink-1 px-1" />

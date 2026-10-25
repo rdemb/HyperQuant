@@ -91,7 +91,8 @@ export function tableHeight(groups: readonly StatGroup[]): number {
 const TEXT_MIN_SPACING = 34;
 /** Szerokość świecy po włączeniu tablicy (px): liczby widać od razu, bez zbliżania wykresu. */
 export const STATS_BAR_SPACING = 50;
-const LABEL_W = 96;
+// Najdłuższa etykieta („Udział dużych”, 13 znaków mono 11 px) + odstęp od liczb pierwszej świecy
+const LABEL_W = 104;
 /** Nasycenie: |wartość| przy percentylu 90 widocznych świec = pełny kolor. */
 const NORM_Q = 0.9;
 

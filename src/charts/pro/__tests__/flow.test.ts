@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { FootprintBuilder } from '../core/footprintBar';
-import { cvdCandles, deltaCandle, deltaFromExtremes } from '../core/flow';
+import { cvdCandles, deltaCandle, deltaFromExtremes, flipsEmpty } from '../core/flow';
 
 const DAY = 86_400_000;
 
@@ -47,5 +47,17 @@ describe('świece delty i CVD', () => {
     b.add(2, 102, 3, 1);
     b.add(3, 101, 6, -1);
     expect(deltaFromExtremes(b.build()!)).toEqual({ fromHigh: -6, fromLow: -3 });
+  });
+});
+
+describe('flipsEmpty — kiedy pełne setData zamiast update', () => {
+  const before = [null, 1, null, 2];
+  it('starsza świeca pusta → z wartością (historia taśmy doszła) wymaga setData', () => {
+    const now = [null, 1, 5, 2];
+    expect(flipsEmpty([2], before.length, (i) => before[i] === null, (i) => now[i] === null)).toBe(true);
+  });
+  it('zmiana wartości bez zmiany pustości i ostatnia świeca — zwykły update', () => {
+    const now = [null, 3, null, null];
+    expect(flipsEmpty([1, 3], before.length, (i) => before[i] === null, (i) => now[i] === null)).toBe(false);
   });
 });
