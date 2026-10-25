@@ -1,11 +1,11 @@
 import React, { useEffect, useRef, useSyncExternalStore } from 'react';
 import { fmtVol } from '../../orderflow/footprint';
 import { fmtSignedVol } from '../../orderflow/renderer';
-import { DASH } from '../../../ui';
+import { DASH, numLang } from '../../../ui';
 import { fmtBarTime, fmtSince } from '../core/time';
 import type { Hover } from './controller';
 import { fmtPx } from './layout';
-import { lang, locale, tr } from '../../../i18n';
+import { tr } from '../../../i18n';
 
 /** Najnowszy stan krzyża (ustawiany przez sterownik wykresu najwyżej raz na klatkę). */
 export class HoverSignal {
@@ -27,7 +27,7 @@ export class HoverSignal {
   };
 }
 
-const fmtSigma = (z: number) => `${z >= 0 ? '+' : '−'}${lang === 'en' ? Math.abs(z).toFixed(2) : Math.abs(z).toFixed(2).replace('.', ',')}σ`;
+const fmtSigma = (z: number) => `${z >= 0 ? '+' : '−'}${numLang(Math.abs(z).toFixed(2))}σ`;
 
 const tone = (v: number) => (v > 0 ? 'text-of-buy-ink' : v < 0 ? 'text-of-sell-ink' : 'text-ink-2');
 
@@ -90,7 +90,7 @@ export const Legend: React.FC<{
             {!h.live && bar && <span className="text-ink-3">{fmtBarTime(bar.t, intervalMs)}</span>}
             <span className={c.c >= c.o ? 'text-of-buy-ink' : 'text-of-sell-ink'}>
               {fmtPx(c.c)} {change >= 0 ? '+' : '−'}
-              {Math.abs(change).toFixed(2)}%
+              {numLang(Math.abs(change).toFixed(2))}%
             </span>
             <Field label={tr('Wol.', 'Vol.')}>{fmtVol(c.v)}</Field>
             {h.ind?.vwap && (
@@ -146,7 +146,7 @@ export const Legend: React.FC<{
           </Field>
           <span className={change >= 0 ? 'text-of-buy-ink' : 'text-of-sell-ink'}>
             {change >= 0 ? '+' : '−'}
-            {Math.abs(change).toFixed(2)}%
+            {numLang(Math.abs(change).toFixed(2))}%
           </span>
           <Field label={tr('Wol.', 'Vol.')} title={tr(`Wolumen świecy z API Hyperliquid (${coin})`, `Candle volume from the Hyperliquid API (${coin})`)}>
             {fmtVol(c.v)}
@@ -193,7 +193,7 @@ export const Legend: React.FC<{
             {fmtSignedVol(fp.minDelta)}
           </Field>
           <Field label={tr('Transakcje', 'Trades')} secondary>
-            {fp.trades.toLocaleString(locale)}
+            {numLang(fp.trades.toLocaleString('en-US'))}
           </Field>
           <Field
             label={tr('Taśma', 'Tape')}

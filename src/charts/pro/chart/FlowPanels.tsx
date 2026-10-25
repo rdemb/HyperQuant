@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { Highlighter, Volume2, VolumeX, X } from 'lucide-react';
-import { fmtCompact } from '../../../ui/format';
+import { fmtCompact, numLang } from '../../../ui/format';
 import { fmtSignedVol } from '../../orderflow/renderer';
 import { fmtVol } from '../../orderflow/footprint';
 import { classify, walletSummary } from '../core/clashes';
@@ -19,7 +19,7 @@ import { tr } from '../../../i18n';
  */
 
 /** 200K zamiast 200.0K. */
-export const compact = (v: number) => fmtCompact(v).replace(/\.0([KMB])$/, '$1');
+export const compact = (v: number) => numLang(fmtCompact(v).replace(/\.0([KMB])$/, '$1'));
 const usd = (v: number) => `${compact(v)} USD`;
 const amount = (v: number, coin: string) => `${fmtVol(v)} ${coin}`;
 
@@ -178,7 +178,7 @@ export const PickCard: React.FC<{
           )}
           {w.iceberg &&
             tr(
-              ` Wchłonął ${(w.sz / w.shown).toFixed(1)} × więcej, niż cały poziom pokazywał w arkuszu — zlecenie było odnawiane po wypełnieniach.`,
+              ` Wchłonął ${numLang((w.sz / w.shown).toFixed(1))} × więcej, niż cały poziom pokazywał w arkuszu — zlecenie było odnawiane po wypełnieniach.`,
               ` It absorbed ${(w.sz / w.shown).toFixed(1)} × more than the whole level showed in the book — the order was refilled after fills.`
             )}
         </p>
@@ -365,7 +365,7 @@ export const TapePanel: React.FC<{
 };
 
 /** Różnica cen (krok, spread) bez zbędnych zer: 10, 0.5, 0.001. */
-const fmtStep = (v: number) => String(Number(v.toPrecision(6)));
+const fmtStep = (v: number) => numLang(String(Number(v.toPrecision(6))));
 
 /** Migawka arkusza starsza niż tyle ms jest nieaktualna (zerwane połączenie). */
 const DOM_STALE_MS = 30_000;
