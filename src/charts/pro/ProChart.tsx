@@ -157,6 +157,7 @@ function useStoreVersion(store: ProStore, ms: number): number {
  * `station` — stacja robocza (wzorzec i zapis ustawień), `coin` — rynek przeniesiony z poprzedniej stacji,
  * `fromLink` — pierwsze otwarcie wykresów, więc link do widoku w adresie strony ma pierwszeństwo.
  * `replay` — powtórka nagrania zamiast rynku na żywo: ustawienia nie są zapisywane, adres strony zostaje linkiem powtórki.
+ * `layoutFs` — pełny ekran całego układu kilku wykresów (przycisk pełnego ekranu i klawisz F obejmują wtedy wszystkie panele).
  */
 export const ProChart: React.FC<{
   panel?: number;
@@ -167,7 +168,8 @@ export const ProChart: React.FC<{
   fromLink?: boolean;
   phoneStation?: PhoneStation;
   replay?: ProChartReplay;
-}> = ({ panel = 0, layout = 1, onLayout, station = STATIONS[0], coin = null, fromLink = true, phoneStation, replay }) => {
+  layoutFs?: { active: boolean; toggle: () => void };
+}> = ({ panel = 0, layout = 1, onLayout, station = STATIONS[0], coin = null, fromLink = true, phoneStation, replay, layoutFs }) => {
   const [settings, setSettings] = useState<ChartSettings>(() => {
     if (!replay) return initialSettings(panel, station, coin, fromLink);
     // Link ze stacją (lekcja) — sam wzorzec stacji, bez zmian zapisanych przez oglądającego
@@ -481,7 +483,7 @@ export const ProChart: React.FC<{
       else if (k === 'm') setCoin(MARKETS[(MARKETS.indexOf(settings.coin) + 1) % MARKETS.length]);
       else if (k === 'r') ctrlRef.current?.resetScales();
       else if (k === 'a') ctrlRef.current?.setAutoScale(!scale.auto);
-      else if (k === 'f') toggleFullscreen();
+      else if (k === 'f') (layoutFs?.toggle ?? toggleFullscreen)();
       else return;
     }
     e.preventDefault();
@@ -498,7 +500,9 @@ export const ProChart: React.FC<{
       className={`relative flex flex-col bg-surface-1 border border-line-strong overflow-hidden ${
         fullscreen
           ? 'w-full h-full'
-          : layout === 4
+          : layoutFs?.active
+            ? 'rounded-xl h-full min-h-0'
+            : layout === 4
             ? 'rounded-xl h-[calc((100dvh-12.5rem)/2)] min-h-[380px]'
             : 'rounded-xl h-[calc(100dvh-11.75rem)] sm:h-[calc(100dvh-16.5rem)] lg:h-[calc(100dvh-12rem)] min-h-[440px]'
       }`}
@@ -575,9 +579,18 @@ export const ProChart: React.FC<{
             >
               <Keyboard className="w-4 h-4" />
             </ToolBtn>
-            <ToolBtn label={fullscreen ? tr('Zamknij pełny ekran', 'Exit full screen') : tr('Pełny ekran', 'Full screen')} onClick={toggleFullscreen}>
-              {fullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-            </ToolBtn>
+            {layoutFs ? (
+              <ToolBtn
+                label={layoutFs.active ? tr('Zamknij pełny ekran', 'Exit full screen') : tr('Pełny ekran układu: wszystkie wykresy (F)', 'Full screen layout: all charts (F)')}
+                onClick={layoutFs.toggle}
+              >
+                {layoutFs.active ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+              </ToolBtn>
+            ) : (
+              <ToolBtn label={fullscreen ? tr('Zamknij pełny ekran', 'Exit full screen') : tr('Pełny ekran (F)', 'Full screen (F)')} onClick={toggleFullscreen}>
+                {fullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+              </ToolBtn>
+            )}
           </div>
         </div>
       )}
@@ -643,7 +656,7 @@ export const ProChart: React.FC<{
         <div className="relative flex-1 min-h-0 min-w-0" onContextMenu={onContextMenu}>
           <div ref={hostRef} className="absolute inset-0" />
           <AutoScaleBtn scale={scale} onToggle={() => ctrlRef.current?.setAutoScale(!scale.auto)} />
-          <Legend signal={signal} intervalMs={iv.ms} intervalLabel={iv.label} tapeSince={tapeSince} coin={store.coin} onBottom={onLegendBottom} compact={narrow} />
+          <Legend signal={signal} intervalMs={iv.ms} intervalLabel={iv.label} tapeSince={tapeSince} coin={store.coin} onBottom={onLegendBottom} compact={narrow} multi={layout > 1} />
           <DrawStyleBar tools={tools} />
           <DrawHint tools={tools} />
           <LoadOverlay series={series} onRetry={() => void series.load(true)} />
@@ -1530,7 +1543,7 @@ const KEY_GROUPS: { title: string; keys: [string, string][] }[] = [
       ['R', tr('Przywróć skalę', 'Reset scale')],
       ['A', tr('Autoskala ceny: włącz / zamroź zakres', 'Price autoscale: on / freeze the range')],
       ['End', tr('Przewiń do bieżącej świecy', 'Scroll to the current candle')],
-      ['F', tr('Pełny ekran', 'Full screen')],
+      ['F', tr('Pełny ekran (przy kilku wykresach: cały układ)', 'Full screen (with several charts: the whole layout)')],
       ['?', tr('Ta lista', 'This list')],
       ['Esc', tr('Zamknij menu, przerwij rysowanie', 'Close menu, cancel drawing')],
     ],

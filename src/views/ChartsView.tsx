@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
+import React, { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { RotateCcw } from 'lucide-react';
 import { Segmented } from '../ui';
 import { ProChart, subscribeNarrow } from '../charts/pro/ProChart';
@@ -41,6 +41,18 @@ const ChartsView: React.FC = () => {
     const onHash = () => setReplay(parseReplayLink(window.location.hash));
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
+  }, []);
+  // Pełny ekran całego układu (wszystkie panele naraz); pojedynczy wykres ma własny pełny ekran
+  const gridRef = useRef<HTMLDivElement>(null);
+  const [gridFs, setGridFs] = useState(false);
+  useEffect(() => {
+    const onFs = () => setGridFs(document.fullscreenElement === gridRef.current);
+    document.addEventListener('fullscreenchange', onFs);
+    return () => document.removeEventListener('fullscreenchange', onFs);
+  }, []);
+  const toggleGridFs = useCallback(() => {
+    if (document.fullscreenElement) void document.exitFullscreen();
+    else void gridRef.current?.requestFullscreen?.();
   }, []);
   const setLayout = useCallback(
     (l: ChartLayout) => {
@@ -90,7 +102,10 @@ const ChartsView: React.FC = () => {
         </div>
       )}
       {/* Ten sam kontener dla każdego układu: pierwszy panel nie tworzy się od nowa przy zmianie układu */}
-      <div className={n === 1 ? '' : 'grid grid-cols-2 gap-2'}>
+      <div
+        ref={gridRef}
+        className={n === 1 ? '' : gridFs ? `grid grid-cols-2 ${n === 4 ? 'grid-rows-2' : 'grid-rows-1'} gap-2 h-full p-2 bg-page` : 'grid grid-cols-2 gap-2'}
+      >
         {Array.from({ length: n }, (_, i) => (
           <ProChart
             key={`${station.id}.${gen}.${i}`}
@@ -100,6 +115,7 @@ const ChartsView: React.FC = () => {
             fromLink={gen === 0}
             layout={n}
             onLayout={i === 0 ? setLayout : undefined}
+            layoutFs={n > 1 ? { active: gridFs, toggle: toggleGridFs } : undefined}
             phoneStation={
               narrow && i === 0
                 ? {
