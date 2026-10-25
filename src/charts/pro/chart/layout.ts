@@ -1,4 +1,4 @@
-import { fmtPrice } from '../../../ui/format';
+import { fmtPrice, numLang } from '../../../ui/format';
 import { hlTick } from '../core/footprintBar';
 
 /**
@@ -54,7 +54,7 @@ export function cellAreaPx(slot: number): number {
 export const priceDigits = (p: number) => Math.max(0, -Math.floor(Math.log10(hlTick(Math.abs(p)))));
 
 /** Cena z dokładnością ticku rynku. */
-export const fmtPx = (p: number) => fmtPrice(p, priceDigits(p));
+export const fmtPx = (p: number) => numLang(fmtPrice(p, priceDigits(p)));
 
 /**
  * Liczba w komórce footprintu: najwyżej trzy znaki, żeby para sprzedaż | kupno mieściła się
@@ -64,9 +64,9 @@ export const fmtPx = (p: number) => fmtPrice(p, priceDigits(p));
 export function fmtCell(v: number): string {
   if (!(v > 0)) return '0';
   const c = Math.round(v * 100);
-  if (c < 100) return `.${String(c).padStart(2, '0')}`;
+  if (c < 100) return numLang(`.${String(c).padStart(2, '0')}`);
   const d = Math.round(v * 10);
-  if (d < 100) return (d / 10).toFixed(1);
+  if (d < 100) return numLang((d / 10).toFixed(1));
   const n = Math.round(v);
   if (n < 1000) return String(n);
   return `${Math.round(v / 1000)}K`;

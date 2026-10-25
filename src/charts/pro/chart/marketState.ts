@@ -1,6 +1,6 @@
 import { fmtVol } from '../../orderflow/footprint';
 import { fmtSignedVol } from '../../orderflow/renderer';
-import { fmtCompact } from '../../../ui/format';
+import { fmtCompact, numLang } from '../../../ui/format';
 import type { Candle } from '../hl/parse';
 import type { FootprintBar } from '../core/footprintBar';
 import type { VwapPoint } from '../core/indicators';
@@ -76,17 +76,9 @@ export interface StateInput {
 const sign = (v: number): -1 | 0 | 1 => (v > 0 ? 1 : v < 0 ? -1 : 0);
 /** Zaokrąglenie do `d` miejsc: progi reguł porównujemy z liczbą, którą widać w „skąd?”. */
 const round = (v: number, d: number) => Math.round(v * 10 ** d) / 10 ** d;
-const dec = (v: number, d: number) => (lang === 'en' ? Math.abs(v).toFixed(d) : Math.abs(v).toFixed(d).replace('.', ','));
+const dec = (v: number, d: number) => numLang(Math.abs(v).toFixed(d));
 const signed = (v: number, d: number, unit: string) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${dec(v, d)}${unit}`;
-/**
- * Liczba z formatera wykresu (przecinek tysięcy, kropka dziesiętna) zapisem języka strony: po polsku spacja tysięcy
- * i przecinek dziesiętny, jak „+0,6σ” obok — bez przecinka w dwóch znaczeniach w jednym zdaniu.
- */
-const loc = (s: string) => (lang === 'en' ? s : s.replace(/,/g, '\u00a0').replace(/\./g, ','));
-const px = (v: number) => loc(fmtPx(v));
-const vol = (v: number) => loc(fmtVol(v));
-const svol = (v: number) => loc(fmtSignedVol(v));
-const usd = (v: number) => `${loc(fmtCompact(v).replace(/\.0([KMB])$/, '$1'))} USD`;
+const usd = (v: number) => `${numLang(fmtCompact(v).replace(/\.0([KMB])$/, '$1'))} USD`;
 /** „świeca”, „świece”, „świec” po liczbie. */
 const bars = (n: number) =>
   lang === 'en' ? (n === 1 ? 'candle' : 'candles') : n === 1 ? 'świeca' : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? 'świece' : 'świec';
@@ -106,8 +98,8 @@ function vwapFact(x: StateInput, close: number): StateFact | null {
     label: 'VWAP',
     text: tr(`cena ${where} ${name} (${signed(z, 1, 'σ')})`, `price ${where} the ${name} (${signed(z, 1, 'σ')})`),
     why: tr(
-      `Zamknięcie ${px(close)}, ${name} ${px(v.vwap)}, odchylenie σ ${px(v.sd)}: ${signed(z, 1, 'σ')}. Do 0,5σ „przy”, do 2σ „nad” albo „pod”, dalej „daleko”.`,
-      `Close ${px(close)}, ${name} ${px(v.vwap)}, deviation σ ${px(v.sd)}: ${signed(z, 1, 'σ')}. Up to 0.5σ “at”, up to 2σ “above” or “below”, beyond that “far”.`
+      `Zamknięcie ${fmtPx(close)}, ${name} ${fmtPx(v.vwap)}, odchylenie σ ${fmtPx(v.sd)}: ${signed(z, 1, 'σ')}. Do 0,5σ „przy”, do 2σ „nad” albo „pod”, dalej „daleko”.`,
+      `Close ${fmtPx(close)}, ${name} ${fmtPx(v.vwap)}, deviation σ ${fmtPx(v.sd)}: ${signed(z, 1, 'σ')}. Up to 0.5σ “at”, up to 2σ “above” or “below”, beyond that “far”.`
     ),
     tone: a < VWAP_NEAR_SD ? 0 : sign(z),
   };
@@ -156,8 +148,8 @@ function cvdFact(x: StateInput, win: readonly StateBar[]): { fact: StateFact; di
       label: 'CVD',
       text,
       why: tr(
-        `Delta ${tape.length} ${bars(tape.length)} z taśmy: ${svol(d)} ${x.unit} (${signed(share * 100, 0, '%')} wolumenu), ${up} z ${tape.length} na plus.${runWhy} Poniżej 5% wolumenu — bez kierunku.`,
-        `Delta of ${tape.length} ${bars(tape.length)} from the tape: ${svol(d)} ${x.unit} (${signed(share * 100, 0, '%')} of volume), ${up} of ${tape.length} positive.${runWhy} Below 5% of volume — no direction.`
+        `Delta ${tape.length} ${bars(tape.length)} z taśmy: ${fmtSignedVol(d)} ${x.unit} (${signed(share * 100, 0, '%')} wolumenu), ${up} z ${tape.length} na plus.${runWhy} Poniżej 5% wolumenu — bez kierunku.`,
+        `Delta of ${tape.length} ${bars(tape.length)} from the tape: ${fmtSignedVol(d)} ${x.unit} (${signed(share * 100, 0, '%')} of volume), ${up} of ${tape.length} positive.${runWhy} Below 5% of volume — no direction.`
       ),
       tone: dir,
     },
@@ -194,7 +186,7 @@ function venuesFact(x: StateInput, cvd: { dir: -1 | 0 | 1; delta: number; tape: 
     : list.every((l) => !l.same)
       ? tr(`${names} w przeciwną stronę`, `${names} in the opposite direction`)
       : list.map((l) => tr(`${l.name} w ${l.same ? 'tę samą stronę' : 'przeciwną'}`, `${l.name} in the ${l.same ? 'same direction' : 'opposite one'}`)).join(', ');
-  const parts = [`Hyperliquid ${svol(cvd.delta)}`, ...list.map((l) => `${l.label} ${svol(l.sum)}`)];
+  const parts = [`Hyperliquid ${fmtSignedVol(cvd.delta)}`, ...list.map((l) => `${l.label} ${fmtSignedVol(l.sum)}`)];
   const skipped = sums
     .filter((g) => g.have < n)
     .map((g) => tr(` ${g.name} pominięty: delta tylko z ${g.have} z ${n} świec.`, ` ${g.name} skipped: delta only from ${g.have} of ${n} candles.`))
@@ -225,8 +217,8 @@ function oiFact(x: StateInput, win: readonly StateBar[]): StateFact | null {
         ? tr('otwarte pozycje bez większej zmiany', 'open interest without a major change')
         : tr(`otwarte pozycje ${dir > 0 ? 'rosną' : 'spadają'}`, `open interest ${dir > 0 ? 'rising' : 'falling'}`),
     why: tr(
-      `Otwarte pozycje Hyperliquid ${vol(o0)} → ${vol(o1)} ${x.unit} (${signed(p, 2, '%')}) od początku ostatnich ${win.length} ${bars(win.length)}. Poniżej 0,1% — bez większej zmiany.`,
-      `Hyperliquid open interest ${vol(o0)} → ${vol(o1)} ${x.unit} (${signed(p, 2, '%')}) since the start of the last ${win.length} ${bars(win.length)}. Below 0.1% — no major change.`
+      `Otwarte pozycje Hyperliquid ${fmtVol(o0)} → ${fmtVol(o1)} ${x.unit} (${signed(p, 2, '%')}) od początku ostatnich ${win.length} ${bars(win.length)}. Poniżej 0,1% — bez większej zmiany.`,
+      `Hyperliquid open interest ${fmtVol(o0)} → ${fmtVol(o1)} ${x.unit} (${signed(p, 2, '%')}) since the start of the last ${win.length} ${bars(win.length)}. Below 0.1% — no major change.`
     ),
     tone: dir,
   };
@@ -255,12 +247,12 @@ function playersFact(x: StateInput, price: number): StateFact | null {
     label: tr('Duzi gracze', 'Large players'),
     text,
     why: tr(
-      `Duzi gracze (konta od ${usd(x.bigPlayerUsd)} wejść w godzinie UTC): delta ${svol(p.big)} ${x.unit}, ` +
-        `${dec(p.bigShare ?? 0, 0)}% wartości wejść, przewaga ${signed(bigImb * 100, 0, '%')}. Reszta: delta ${svol(p.rest)} ${x.unit}, ` +
+      `Duzi gracze (konta od ${usd(x.bigPlayerUsd)} wejść w godzinie UTC): delta ${fmtSignedVol(p.big)} ${x.unit}, ` +
+        `${dec(p.bigShare ?? 0, 0)}% wartości wejść, przewaga ${signed(bigImb * 100, 0, '%')}. Reszta: delta ${fmtSignedVol(p.rest)} ${x.unit}, ` +
         `przewaga ${signed(restImb * 100, 0, '%')}. Przewaga = delta × cena / wartość wejść grupy; poniżej 10% — bez przewagi.` +
         (p.complete ? '' : ' Konta biorców tylko z części okna: nagrywanie zaczęło się albo przerwało w jego trakcie.'),
-      `Large players (accounts with ${usd(x.bigPlayerUsd)} of entries in a UTC hour): delta ${svol(p.big)} ${x.unit}, ` +
-        `${dec(p.bigShare ?? 0, 0)}% of entry value, edge ${signed(bigImb * 100, 0, '%')}. The rest: delta ${svol(p.rest)} ${x.unit}, ` +
+      `Large players (accounts with ${usd(x.bigPlayerUsd)} of entries in a UTC hour): delta ${fmtSignedVol(p.big)} ${x.unit}, ` +
+        `${dec(p.bigShare ?? 0, 0)}% of entry value, edge ${signed(bigImb * 100, 0, '%')}. The rest: delta ${fmtSignedVol(p.rest)} ${x.unit}, ` +
         `edge ${signed(restImb * 100, 0, '%')}. Edge = delta × price / the group's entry value; below 10% — no edge.` +
         (p.complete ? '' : ' Taker accounts cover only part of the window: recording started or broke off during it.')
     ),
@@ -283,8 +275,8 @@ function bookFact(x: StateInput): StateFact | null {
           ? tr('w arkuszu przewaga asków', 'asks dominate the book')
           : tr('arkusz w równowadze', 'book in balance'),
     why: tr(
-      `Bliski arkusz Hyperliquid: bidy ${vol(b.bid)}, aski ${vol(b.ask)} ${x.unit}, ${Math.round(s * 100)}% po stronie bidów. Od 60% po jednej stronie — przewaga.`,
-      `Near Hyperliquid book: bids ${vol(b.bid)}, asks ${vol(b.ask)} ${x.unit}, ${Math.round(s * 100)}% on the bid side. From 60% on one side — dominance.`
+      `Bliski arkusz Hyperliquid: bidy ${fmtVol(b.bid)}, aski ${fmtVol(b.ask)} ${x.unit}, ${Math.round(s * 100)}% po stronie bidów. Od 60% po jednej stronie — przewaga.`,
+      `Near Hyperliquid book: bids ${fmtVol(b.bid)}, asks ${fmtVol(b.ask)} ${x.unit}, ${Math.round(s * 100)}% on the bid side. From 60% on one side — dominance.`
     ),
     tone,
   };

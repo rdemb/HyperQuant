@@ -5,6 +5,7 @@ import { type BarStat, type StatGroup, STAT_GROUPS, type StatKey, VENUE_GROUPS }
 import { type CloseBox, closeHit, drawClose, inBox } from './paneLegend';
 import { MONO, PRO, rgba } from './theme';
 import { tr } from '../../../i18n';
+import { numLang } from '../../../ui/format';
 
 /**
  * Tablica liczb we własnym panelu pod wykresem: kolumna na świecę, wiersz na miarę, tło komórki nasycone wg wartości
@@ -23,9 +24,9 @@ export interface StatRowDef {
   scale?: number;
 }
 
-const fmtCount = (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(1)}K` : String(Math.round(v)));
+const fmtCount = (v: number) => (v >= 1000 ? numLang(`${(v / 1000).toFixed(1)}K`) : String(Math.round(v)));
 // % na 8 h bez znaku „+” i „%” (mieści się w kolumnie); stała skala — stały funding nie daje pełnego koloru
-const fmtFunding = (v: number) => `${v < 0 ? '−' : ''}${Math.abs(v).toFixed(4)}`;
+const fmtFunding = (v: number) => `${v < 0 ? '−' : ''}${numLang(Math.abs(v).toFixed(4))}`;
 const FUNDING_SCALE = 0.05;
 
 export const STAT_ROWS: readonly StatRowDef[] = [
@@ -37,7 +38,7 @@ export const STAT_ROWS: readonly StatRowDef[] = [
   { key: 'maxDelta', group: 'tape', label: 'Max Δ', signed: true, fmt: fmtSignedVol },
   { key: 'minDelta', group: 'tape', label: 'Min Δ', signed: true, fmt: fmtSignedVol },
   { key: 'trades', group: 'tape', label: tr('Transakcje', 'Trades'), signed: false, fmt: fmtCount },
-  { key: 'speed', group: 'tape', label: tr('Tempo /s', 'Speed /s'), signed: false, fmt: (v) => (v >= 10 ? v.toFixed(0) : v.toFixed(1)) },
+  { key: 'speed', group: 'tape', label: tr('Tempo /s', 'Speed /s'), signed: false, fmt: (v) => (v >= 10 ? v.toFixed(0) : numLang(v.toFixed(1))) },
   { key: 'bigDelta', group: 'who', label: tr('Delta dużych', 'Large delta'), signed: true, fmt: fmtSignedVol },
   { key: 'restDelta', group: 'who', label: tr('Delta reszty', 'Rest delta'), signed: true, fmt: fmtSignedVol },
   { key: 'bigShare', group: 'who', label: tr('Udział dużych', 'Large share'), signed: false, fmt: (v) => `${v.toFixed(0)}%`, scale: 100 },

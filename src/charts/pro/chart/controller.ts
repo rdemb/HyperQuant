@@ -40,6 +40,7 @@ import { FlowVenue, OiVenue, oiMaxAge, per8h } from '../venues/parse';
 import { VenueStore, acquireVenues, venueStoreFor } from '../venues/venueStore';
 import { DOM_W_PX, PRO, RIGHT_GAP_PX, chartOptions } from './theme';
 import { tr } from '../../../i18n';
+import { numLang } from '../../../ui/format';
 
 /**
  * Sterownik wykresu Pro (bez Reacta): tworzy wykres Lightweight Charts z serią footprintu, wolumenem
@@ -160,7 +161,7 @@ const COMPACT_LEGEND_PX = 480;
 
 type VenueLines = Partial<Record<VenueLineId, (number | null)[]>>;
 
-const fmtFunding = (r: number | null) => (r === null ? '—' : `${r >= 0 ? '+' : ''}${(r * 100).toFixed(4)}%`);
+const fmtFunding = (r: number | null) => (r === null ? '—' : `${r >= 0 ? '+' : ''}${numLang((r * 100).toFixed(4))}%`);
 
 function flowLegend(label: string, value: number | null): LegendPart[] {
   if (value === null) return [{ text: label, color: PRO.ink3 }];

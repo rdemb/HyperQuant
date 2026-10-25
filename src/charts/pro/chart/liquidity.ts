@@ -12,7 +12,7 @@ import type {
 } from 'lightweight-charts';
 import { fmtVol } from '../../orderflow/footprint';
 import { buildHeatLut } from '../../orderflow/heatColor';
-import { fmtCompact } from '../../../ui/format';
+import { fmtCompact, numLang } from '../../../ui/format';
 import { type BookFrame, type BookHistory, type LargeLot, largeLots, lotThreshold } from '../core/book';
 import { Burst, DEFAULT_THRESHOLD_USD, OrderClass, Wall, bursts, classify } from '../core/clashes';
 import type { AggressorOrder } from '../core/orders';
@@ -462,7 +462,7 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
         y: g.a + g.b * w.px,
         bid: w.side === 1,
         usd: w.usd,
-        label: w.iceberg ? `ICE ${fmtCompact(w.usd)}` : fmtCompact(w.usd),
+        label: numLang(w.iceberg ? `ICE ${fmtCompact(w.usd)}` : fmtCompact(w.usd)),
         ink: w.iceberg ? K.ice : K.domText,
         rank: w.iceberg ? 2 : 0,
         iceberg: w.iceberg,
@@ -494,7 +494,7 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
         y: g.a + g.b * l.px,
         bid: l.bid,
         usd: l.usd,
-        label: (l.open ? this.now : l.to) - l.from >= LOT_LABEL_MIN_MS ? `${l.orders}× ${fmtCompact(l.usd / l.orders)}` : '',
+        label: (l.open ? this.now : l.to) - l.from >= LOT_LABEL_MIN_MS ? `${l.orders}× ${numLang(fmtCompact(l.usd / l.orders))}` : '',
         ink: l.bid ? K.lotBid : K.lotAsk,
         rank: 1,
         open: l.open,

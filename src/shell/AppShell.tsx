@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import { useDesk } from '../state/DeskContext';
 import { ViewId } from '../state/types';
-import { AnimatedNumber, Badge, BadgeTone, EmptyState, Segmented, VIEW_TRANSITION, fmtCompact, fmtPrice, DASH } from '../ui';
+import { AnimatedNumber, Badge, BadgeTone, EmptyState, Segmented, VIEW_TRANSITION, fmtCompact, fmtPrice, numLang, DASH } from '../ui';
 import { InstallButton } from './InstallButton';
 import { ConnectingState } from './ConnectingState';
 import DeskView from '../views/DeskView';
@@ -84,21 +84,21 @@ const TickerStrip: React.FC = () => {
     <div className="flex items-center gap-x-5 gap-y-1 overflow-x-auto whitespace-nowrap px-4 lg:px-6 py-2 border-b border-line bg-surface-1/60 text-xs">
       <div className="flex items-baseline gap-2">
         <span className="text-ink-2 font-medium">BTC-PERP</span>
-        <AnimatedNumber value={feed.currentPrice} format={(v) => fmtPrice(v)} className="text-lg font-semibold text-ink-1 px-1" />
+        <AnimatedNumber value={feed.currentPrice} format={(v) => numLang(fmtPrice(v))} className="text-lg font-semibold text-ink-1 px-1" />
         {changePct !== null && (
           <span className={changePct >= 0 ? 'text-buy-ink' : 'text-sell-ink'}>
-            <span aria-hidden="true">{changePct >= 0 ? '▲' : '▼'}</span> {Math.abs(changePct).toFixed(2)}%{' '}
+            <span aria-hidden="true">{changePct >= 0 ? '▲' : '▼'}</span> {numLang(Math.abs(changePct).toFixed(2))}%{' '}
             <span className="text-ink-3">{windowLabel}</span>
           </span>
         )}
       </div>
       <span className={`flex items-baseline gap-x-5 ${fresh ? '' : 'opacity-50'}`} title={fresh ? undefined : tr('Ostatnia znana wartość — dane nieświeże', 'Last known value, data is stale')}>
-        <Item label="Funding HL" value={t ? `${t.fundingAnnualizedPct >= 0 ? '+' : ''}${t.fundingAnnualizedPct}% APR` : DASH} />
-        <Item label="OI" value={t ? fmtCompact(t.openInterestUsd, '$') : DASH} />
-        <Item label="Basis" value={t ? `${t.basisBps} bps` : DASH} />
+        <Item label="Funding HL" value={t ? `${t.fundingAnnualizedPct >= 0 ? '+' : ''}${numLang(String(t.fundingAnnualizedPct))}% APR` : DASH} />
+        <Item label="OI" value={t ? numLang(fmtCompact(t.openInterestUsd, '$')) : DASH} />
+        <Item label="Basis" value={t ? `${numLang(String(t.basisBps))} bps` : DASH} />
       </span>
-      <Item label="PDH" value={shaakuni.pdh ? `${fmtPrice(shaakuni.pdh, 0)} · ${shaakuni.pdhStatus}` : DASH} />
-      <Item label="PDL" value={shaakuni.pdl ? `${fmtPrice(shaakuni.pdl, 0)} · ${shaakuni.pdlStatus}` : DASH} />
+      <Item label="PDH" value={shaakuni.pdh ? `${numLang(fmtPrice(shaakuni.pdh, 0))} · ${shaakuni.pdhStatus}` : DASH} />
+      <Item label="PDL" value={shaakuni.pdl ? `${numLang(fmtPrice(shaakuni.pdl, 0))} · ${shaakuni.pdlStatus}` : DASH} />
       <Item label={tr('Sesja', 'Session')} value={`${shaakuni.nySession} · ${shaakuni.nyTimeFormatted}`} />
     </div>
   );

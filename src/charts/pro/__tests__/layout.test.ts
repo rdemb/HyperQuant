@@ -59,13 +59,13 @@ describe('cellAreaPx', () => {
 });
 
 describe('fmtCell', () => {
-  it('najwyżej trzy znaki i zero tylko dla braku transakcji', () => {
+  it('najwyżej trzy znaki i zero tylko dla braku transakcji (po polsku przecinek dziesiętny)', () => {
     expect(fmtCell(0)).toBe('0');
-    expect(fmtCell(0.001)).toBe('.00');
-    expect(fmtCell(0.05)).toBe('.05');
-    expect(fmtCell(0.994)).toBe('.99');
-    expect(fmtCell(0.996)).toBe('1.0');
-    expect(fmtCell(1.24)).toBe('1.2');
+    expect(fmtCell(0.001)).toBe(',00');
+    expect(fmtCell(0.05)).toBe(',05');
+    expect(fmtCell(0.994)).toBe(',99');
+    expect(fmtCell(0.996)).toBe('1,0');
+    expect(fmtCell(1.24)).toBe('1,2');
     expect(fmtCell(9.96)).toBe('10');
     expect(fmtCell(37.6)).toBe('38');
     expect(fmtCell(999.4)).toBe('999');

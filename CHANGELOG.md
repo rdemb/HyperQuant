@@ -56,6 +56,7 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 ### Poprawione
 - Powtórka w widoku Wykresy: bez paska ceny na żywo pod nawigacją (pokazywał bieżącą cenę obok wykresu z przeszłości).
 - Stan rynku: pierwsze zdanie pojawia się zaraz po danych wykresu (wcześniej do 5 s „Czekam na dane wykresu…”), a liczby w „skąd?” mają po polsku jeden zapis: spacja tysięcy i przecinek dziesiętny (wcześniej „80,455” obok „+0,6σ” i „42.8K”).
+- Jeden zapis liczb w polskiej wersji Wykresów i paska ceny (`numLang` w `src/ui/format.ts`): ceny, wolumeny, kwoty i procenty w legendzie, na osi, w komórkach footprintu, panelach, Tablicy liczb, podpisach rysunków i w pasku ceny mają spację tysięcy i przecinek dziesiętny, jak zdania Stanu rynku i lekcje (wcześniej np. „VWAP 80,768 Odch. −2,33σ”: przecinek raz oddzielał tysiące, raz ułamek). Wersja angielska bez zmian.
 - Powtórka w widoku Wykresy: starsze nagranie nie zostaje bez świec, gdy API Hyperliquid już ich nie ma (trzyma ok. 5000 świec na interwał, 1m to ok. 3,5 dnia) — brakująca świeca jest złożona z transakcji taśmy nagrania. Pliki nagrania wysłane przez serwer już rozpakowane (nagłówek Content-Encoding: gzip) wczytują się tak samo jak spakowane.
 - Wykresy: po zmianie interwału albo rynku widok wraca do bieżącej świecy (wcześniej przesunięcie z poprzedniego interwału pokazywało zupełnie inny okres, np. czerwiec na świecach dziennych).
 

@@ -1,8 +1,14 @@
-import { tr } from '../i18n';
+import { lang, tr } from '../i18n';
 /** Formatowanie liczb dla UI — brak danych zawsze jako „—”. */
 export const DASH = '—';
 
 const isNum = (v: number | null | undefined): v is number => typeof v === 'number' && Number.isFinite(v);
+
+/**
+ * Liczba zapisana po angielsku (80,768.5) w zapisie języka strony: po polsku twarda spacja tysięcy
+ * i przecinek dziesiętny (80 768,5), żeby przecinek miał jedno znaczenie.
+ */
+export const numLang = (s: string): string => (lang === 'en' ? s : s.replace(/,/g, '\u00a0').replace(/\./g, ','));
 
 export function fmtPrice(v: number | null | undefined, digits = 1): string {
   return isNum(v) ? v.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits }) : DASH;

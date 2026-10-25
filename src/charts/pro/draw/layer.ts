@@ -13,7 +13,7 @@ import type {
 } from 'lightweight-charts';
 import { fmtVol } from '../../orderflow/footprint';
 import { fmtSignedVol } from '../../orderflow/renderer';
-import { fmtPct, fmtSigned } from '../../../ui/format';
+import { fmtPct, fmtSigned, numLang } from '../../../ui/format';
 import { hlTick } from '../core/footprintBar';
 import { volumeProfile, vwapSeries } from '../core/indicators';
 import type { VolumeProfile, VwapPoint } from '../core/indicators';
@@ -706,7 +706,7 @@ export class DrawingLayer implements ISeriesPrimitive<Time> {
     const digits = priceDigits(d.pts[0].p);
     const rows = [
       {
-        text: `${fmtSigned(m.dp, digits)} (${fmtPct(m.pct)})`,
+        text: numLang(`${fmtSigned(m.dp, digits)} (${fmtPct(m.pct)})`),
         color: PRO.ink1,
       },
       {
@@ -753,7 +753,7 @@ export class DrawingLayer implements ISeriesPrimitive<Time> {
     const cx = x0 + w / 2;
     const tUp = T.y < E.y;
     const sUp = S.y < E.y;
-    const rr = Number.isFinite(ps0.rr) ? ps0.rr.toFixed(2) : '—';
+    const rr = Number.isFinite(ps0.rr) ? numLang(ps0.rr.toFixed(2)) : '—';
     it.paint = (c) => {
       fill(c, rectXY(tBox[0], tBox[1], tBox[2], tBox[3]), rgba(PROFIT, 0.16));
       fill(c, rectXY(sBox[0], sBox[1], sBox[2], sBox[3]), rgba(LOSS, 0.16));
@@ -762,13 +762,13 @@ export class DrawingLayer implements ISeriesPrimitive<Time> {
       stroke(c, [x0, S.y, x1, S.y], rgba(LOSS, 0.7), 1);
       const tRows = [
         {
-          text: `${tr('Cel', 'Target')} ${fmtPx(pt.p)} · ${fmtPct(tUp ? ps0.rewardPct : -ps0.rewardPct)}`,
+          text: `${tr('Cel', 'Target')} ${fmtPx(pt.p)} · ${numLang(fmtPct(tUp ? ps0.rewardPct : -ps0.rewardPct))}`,
           color: '#0b0b12',
         },
       ];
       const sRows = [
         {
-          text: `Stop ${fmtPx(ps.p)} · ${fmtPct(sUp ? ps0.riskPct : -ps0.riskPct)}`,
+          text: `Stop ${fmtPx(ps.p)} · ${numLang(fmtPct(sUp ? ps0.riskPct : -ps0.riskPct))}`,
           color: '#ffffff',
         },
       ];
