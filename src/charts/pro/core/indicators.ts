@@ -61,6 +61,46 @@ export function vwapSeries(bars: readonly IndicatorBar[], mode: ResetMode): (Vwa
   return out;
 }
 
+/** Interwał świec, z których liczymy VWAP okresu: doba i sesje z 1m, tydzień z 5m (API trzyma ok. 5000 świec, 1m to ok. 3,5 dnia). */
+export function vwapSourceId(mode: ResetMode): string {
+  return mode === 'week' ? '5m' : '1m';
+}
+
+/**
+ * VWAP świec wykresu ze świec drobniejszych (`fine`, rosnąco): punkt świecy to VWAP drobnych świec okresu, które zaczęły się
+ * przed jej końcem, więc VWAP i σ są te same na każdym interwale. Okres, którego początku drobne świece nie obejmują
+ * (starsza historia), liczymy ze świec wykresu.
+ */
+export function vwapFrom(bars: readonly IndicatorBar[], fine: readonly Candle[], ms: number, mode: ResetMode): (VwapPoint | null)[] {
+  const own = vwapSeries(bars, mode);
+  if (fine.length === 0) return own;
+  const pts = vwapSeries(
+    fine.map((c) => ({ t: c.t, candle: c })),
+    mode
+  );
+  const out: (VwapPoint | null)[] = new Array(bars.length);
+  let j = -1;
+  let period = Number.NaN;
+  let started = false;
+  for (let i = 0; i < bars.length; i++) {
+    const t = bars[i].t;
+    const p = periodStart(t, mode);
+    if (p < fine[0].t) {
+      out[i] = own[i];
+      continue;
+    }
+    while (j + 1 < fine.length && fine[j + 1].t < t + ms) j++;
+    if (p !== period) {
+      period = p;
+      started = false;
+    }
+    const pt = j >= 0 && periodStart(fine[j].t, mode) === p ? pts[j] : null;
+    out[i] = pt ? { vwap: pt.vwap, sd: pt.sd, start: !started } : null;
+    if (pt) started = true;
+  }
+  return out;
+}
+
 export interface VolumeProfile {
   /** Wysokość wiersza (USD); wiersz k obejmuje ceny [(lo + k)·step, (lo + k + 1)·step). */
   step: number;

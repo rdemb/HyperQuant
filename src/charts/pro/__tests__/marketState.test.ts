@@ -51,6 +51,10 @@ describe('Stan rynku', () => {
     expect(facts.map((f) => f.tone)).toEqual([1, 1, 1, 1, 1, 1]);
     expect(facts[1].why).toContain('Z rzędu 4 świece z deltą dodatnią');
     expect(facts[3].why).toContain('+0,50%');
+    // Po polsku jeden zapis liczb: spacja tysięcy, przecinek dziesiętny (bez przecinka w dwóch znaczeniach)
+    expect(facts[0].why).toMatch(/^Zamknięcie 100\u00a0000, VWAP dnia 99\u00a0880, odchylenie σ 100(,0+)?: \+1,2σ\./);
+    expect(facts[3].why).toContain('30,0K → 30,1K BTC');
+    expect(facts.map((f) => f.why).join(' ')).not.toMatch(/\d\.\d/);
   });
 
   it('progi: przy VWAP, bez kierunku, bez zmiany, równowaga; fakt bez danych pominięty', () => {
@@ -92,7 +96,7 @@ describe('Stan rynku', () => {
     const v = facts.find((f) => f.key === 'venues')!;
     expect(v.text).toBe('Binance w tę samą stronę');
     expect(v.why).toBe(
-      'Delta w tych samych 7 świecach z taśmy: Hyperliquid +28.0, Binance perp +3.5K BTC. „Ta sama strona” — znak delty jak na Hyperliquid. Bybit pominięty: delta tylko z 1 z 7 świec.'
+      'Delta w tych samych 7 świecach z taśmy: Hyperliquid +28,0, Binance perp +3,5K BTC. „Ta sama strona” — znak delty jak na Hyperliquid. Bybit pominięty: delta tylko z 1 z 7 świec.'
     );
     // Żadna giełda nie ma delty we wszystkich świecach z taśmy — bez porównania
     expect(marketState(base(bars, { venues: { binance: () => null, bybit: (t) => (t === last ? 2 : null) } })).some((f) => f.key === 'venues')).toBe(false);
