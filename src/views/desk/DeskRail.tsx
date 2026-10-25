@@ -21,7 +21,7 @@ export const DeskRail: React.FC = () => {
   const pdhCrossed = !!lv && px > 0 && lv.pdh <= px;
   const pdlCrossed = !!lv && px > 0 && lv.pdl >= px;
   const crossedNote = (
-    <div className="text-[10px] text-ink-3 font-sans" title={tr('Cena jest już za poziomem — dotknięcie nie jest prognozą', 'Price is already past the level, a touch is not a forecast')}>
+    <div className="text-[10px] text-ink-3 font-sans whitespace-normal leading-tight" title={tr('Cena jest już za poziomem — dotknięcie nie jest prognozą', 'Price is already past the level, a touch is not a forecast')}>
       {tr('za poziomem', 'past level')}
     </div>
   );
@@ -29,7 +29,7 @@ export const DeskRail: React.FC = () => {
   const depthBid = quant.bookDepthBidUsd;
   const depthTotal = depthAsk + depthBid;
   const bidShare = depthTotal > 0 ? depthBid / depthTotal : null;
-  const mins = (v: number | null | undefined) => (typeof v === 'number' ? `~${fmtNum(v)} min` : 'n/a');
+  const mins = (v: number | null | undefined) => (typeof v === 'number' ? `~${fmtNum(v)} min` : tr('b/d', 'n/a'));
   // Kalibracja z weryfikowalnego dziennika (izotonicznie na rozstrzygniętych prognozach tego samego silnika): tylko przy
   // ≥ 300 ocenionych parach, aktualnym podsumowaniu i tej samej metodzie (mapa z HAR+FHS nie pasuje do zapasu Mertona)
   const { status: ledgerStatus, summary } = useDeskLedger();
@@ -135,7 +135,7 @@ export const DeskRail: React.FC = () => {
           label="VPIN · λ"
           source={{ tone: 'model', label: 'MODEL', title: tr('VPIN na kubełkach wolumenowych; λ z OLS na realnym przepływie WS', 'VPIN on volume buckets; λ from OLS on real WS flow') }}
           value={<span className="text-base">{fmtPct(quant.vpinToxicity * 100, 1, false)}</span>}
-          hint={`λ = ${quant.kyleLambdaPer1M !== null ? `$${fmtFixed(quant.kyleLambdaPer1M, 2)} / $1M` : 'n/a'}`}
+          hint={`λ = ${quant.kyleLambdaPer1M !== null ? `$${fmtFixed(quant.kyleLambdaPer1M, 2)} / $1M` : tr('b/d', 'n/a')}`}
         />
       </div>
 

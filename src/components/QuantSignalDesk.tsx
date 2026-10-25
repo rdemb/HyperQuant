@@ -105,7 +105,7 @@ export const QuantRegimePanel: React.FC<{
             const up = diff >= 0;
             return (
               <div key={fh.stepBars} className="bg-page border border-line rounded-lg px-1.5 py-2 text-center min-w-0">
-                <div className="text-[11px] text-ink-2 font-medium truncate">{candlesLabel(fh.stepBars)}</div>
+                <div className="text-[11px] text-ink-2 font-medium leading-tight">{candlesLabel(fh.stepBars)}</div>
                 <div className="text-[10px] text-ink-3">= {horizonDuration(fh.stepBars, timeframeSec)}</div>
                 <div className="mt-1 font-mono tabular-nums text-xs text-ink-1 truncate">{fmtPrice(fh.predictedPrice, 0)}</div>
                 <div className={`font-mono tabular-nums text-[10px] ${up ? 'text-buy-ink' : 'text-sell-ink'}`}>

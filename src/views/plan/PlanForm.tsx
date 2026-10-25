@@ -43,7 +43,7 @@ const Field: React.FC<{ id: string; label: React.ReactNode; hint?: React.ReactNo
       {label}
     </label>
     {children}
-    {hint && <div className="text-[11px] text-ink-3 mt-1 font-mono tabular-nums truncate">{hint}</div>}
+    {hint && <div className="text-[11px] text-ink-3 mt-1 font-mono tabular-nums">{hint}</div>}
   </div>
 );
 
