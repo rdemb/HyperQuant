@@ -20,7 +20,7 @@ export const Stat: React.FC<StatProps> = ({ label, value, delta, hint, source, t
       {source && <Badge tone={source.tone} title={source.title}>{source.label}</Badge>}
     </div>
     <div className="flex items-end justify-between gap-2">
-      <div className="min-w-0">
+      <div className="min-w-0 flex-1">
         <div className="text-xl font-semibold text-ink-1 leading-tight truncate">{value}</div>
         {delta && delta.value !== null && Number.isFinite(delta.value) && (
           <div className={`text-xs font-medium ${delta.value >= 0 ? 'text-buy-ink' : 'text-sell-ink'}`}>

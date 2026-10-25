@@ -310,7 +310,7 @@ export const AggrOrderFlowTape: React.FC<AggrOrderFlowTapeProps> = ({
         <div className="min-w-0">
           <div className="flex items-center gap-1.5">
             <Flame className="w-3.5 h-3.5 text-ink-3 shrink-0" aria-hidden="true" />
-            <h2 className="font-display text-sm font-semibold text-ink-1 tracking-tight truncate">
+            <h2 className="font-display text-sm font-semibold text-ink-1 tracking-tight leading-tight">
               {tr('Arkusz L2 i przepływ agresora', 'L2 book and aggressor flow')}
             </h2>
           </div>
@@ -383,9 +383,9 @@ export const AggrOrderFlowTape: React.FC<AggrOrderFlowTapeProps> = ({
 
             {/* Cena środkowa i podsumowanie OFI */}
             <div className="px-2.5 py-1.5 bg-page border-y border-line flex items-center justify-between gap-2 text-xs font-mono tabular-nums">
-              <div className="flex items-baseline gap-2 min-w-0">
+              <div className="flex flex-wrap items-baseline gap-x-2 min-w-0">
                 <span className="font-semibold text-ink-1">{fmtPrice(currentPrice, 1)}</span>
-                <span className="text-[10px] text-ink-3 truncate">
+                <span className="text-[10px] text-ink-3">
                   mid · B/S {overallRatioTxt}
                 </span>
               </div>
@@ -487,12 +487,12 @@ export const AggrOrderFlowTape: React.FC<AggrOrderFlowTapeProps> = ({
                   <div
                     key={t.id}
                     style={{ backgroundColor: style.bg, color: style.text }}
-                    className="px-2 py-0.5 rounded-sm flex items-center justify-between gap-2 text-[11px] font-mono tabular-nums"
+                    className="px-2 py-0.5 rounded-sm flex flex-wrap items-center justify-between gap-x-2 text-[11px] font-mono tabular-nums"
                   >
-                    <span className="truncate">
+                    <span>
                       {badge?.short ?? t.exchange} {fmtPrice(t.price, 1)}
                     </span>
-                    <span className="font-semibold shrink-0">
+                    <span className="font-semibold shrink-0 ml-auto">
                       {t.isLiquidation ? 'LIQ ' : ''}
                       {t.side === 'buy' ? tr('kupno +', 'buy +') : tr('sprz. −', 'sell −')}${fmtFixed(t.sizeUsd / 1000, 1)}K
                     </span>
