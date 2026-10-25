@@ -112,3 +112,12 @@ export function oiChangeLine(times: readonly number[], ms: number, now: number, 
 export function deltaFromExtremes(fp: FootprintBar): { fromHigh: number; fromLow: number } {
   return { fromHigh: fp.delta - fp.deltaAtHigh, fromLow: fp.delta - fp.deltaAtLow };
 }
+
+/**
+ * Czy zmienione punkty serii wymagają pełnego `setData`: LWC 5.2 przy `update(punkt, true)`, który zamienia pusty punkt
+ * (whitespace) starszej świecy na wartość, nadpisuje następny wiersz serii zamiast wstawić nowy — świece Delty i CVD
+ * znikały, gdy historia taśmy dochodziła do starszych świec. Ostatnia świeca (zwykła aktualizacja) jest bezpieczna.
+ */
+export function flipsEmpty(changed: readonly number[], prevLen: number, emptyBefore: (i: number) => boolean, emptyNow: (i: number) => boolean): boolean {
+  return changed.some((i) => i < prevLen - 1 && emptyBefore(i) !== emptyNow(i));
+}
