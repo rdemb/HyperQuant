@@ -24,6 +24,7 @@ import { STATIONS, Station, StationId, stationKey, stationPanel } from './chart/
 import { BUILT_IN_TEMPLATES, ChartTemplate, applyTemplate, loadTemplates, saveAs, saveTemplates } from './chart/templates';
 import { NumbersCard, StatGroupPicker } from './chart/NumbersCard';
 import { MarketStateBar } from './chart/MarketStateBar';
+import { type ChartPalette, PALETTE, setPalette } from './chart/palette';
 import type { ChartView } from './chart/footprintSeries';
 import type { FootprintStyle } from './chart/layout';
 import { DrawHint, DrawStyleBar, DrawToolbar } from './draw/DrawToolbar';
@@ -67,6 +68,11 @@ const LAYOUT_OPTIONS: { value: ChartLayout; label: React.ReactNode; title: strin
   { value: 1, label: <Square className="w-3.5 h-3.5" />, title: tr('Jeden wykres', 'One chart') },
   { value: 2, label: <Columns2 className="w-3.5 h-3.5" />, title: tr('Dwa wykresy obok siebie', 'Two charts side by side') },
   { value: 4, label: <Grid2x2 className="w-3.5 h-3.5" />, title: tr('Cztery wykresy (2 × 2)', 'Four charts (2 × 2)') },
+];
+
+const PALETTE_OPTIONS: { value: ChartPalette; label: string }[] = [
+  { value: 'neon', label: 'Neon' },
+  { value: 'desk', label: 'Desk' },
 ];
 
 /** Zakładki menu Wskaźniki: linie i warstwy na wykresie ceny albo panele pod nim. */
@@ -1120,6 +1126,17 @@ const SettingsMenu: React.FC<{
     </Group>
     <Group title={tr('Nad wykresem', 'Above the chart')}>
       <Check label={tr('Stan rynku (zdanie z faktów)', 'Market state (a sentence of facts)')} checked={s.showState} onChange={(v) => onChange({ showState: v })} />
+    </Group>
+    <Group title={tr('Kolory', 'Colours')}>
+      <div className="flex flex-col items-start">
+        <Segmented<ChartPalette> ariaLabel={tr('Paleta wykresów', 'Chart palette')} value={PALETTE} onChange={setPalette} options={PALETTE_OPTIONS} />
+      </div>
+      <p className="text-[11px] leading-snug text-ink-3">
+        {tr(
+          'Neon: zieleń i fiolet na grafitowym tle. Desk: morska zieleń i miedź na granatowym. Dla wszystkich wykresów; zmiana przeładowuje stronę.',
+          'Neon: green and violet on graphite. Desk: sea green and copper on navy. For all charts; changing it reloads the page.'
+        )}
+      </p>
     </Group>
     <Group title={tr('Duże zlecenia', 'Large orders')}>
       <Select

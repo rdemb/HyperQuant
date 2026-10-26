@@ -46,23 +46,23 @@ Exception: flow panels (buy/sell direction in the background) skip `series-2` an
 - Data refresh: keep the previous render (no skeletons, no layout jumps).
 
 ### Order-flow chart (Charts tab)
-The canvas has its own HyperQuant "Desk" palette (`of-*` tokens, the same values in `src/charts/pro/chart/theme.ts`): sea-green buys and copper sells on the Desk's navy background. The frame, toolbar and menus stay in the page tokens. The buy and sell colours pass the palette validator, including for colour-blind viewers.
+The canvas has two palettes (`of-*` tokens, the same values in `src/charts/pro/chart/theme.ts`), picked in Chart settings → Colours for all charts and kept in the browser (`src/charts/pro/chart/palette.ts`, the `data-chart-palette` attribute on `<html>` switches the tokens; changing it reloads the page). **Neon** (default): neon-green buys and violet sells on a graphite background, cyan and magenta imbalances, a yellow POC. **Desk**: sea-green buys and copper sells on the Desk's navy background. The frame, toolbar and menus stay in the page tokens in both.
 
-| Role | Token / class | Value |
-|---|---|---|
-| Canvas background (no grid) | `of-bg` | `#0B1019` |
-| Buy / sell candle | `of-buy` / `of-sell` | `#19A88E` / `#D9582E` |
-| Buy / sell flow (text, bubbles, liquidations, whales) | `text-of-buy-ink` / `text-of-sell-ink` | `#35C9A8` / `#F07C55` |
-| Buy / sell imbalance | `of-imb-buy` / `of-imb-sell` | `#5CF2CF` / `#FF9A6A` |
-| POC frame in a candle | `of-poc` | `#E0A045` |
-| Row volume | `of-vol` | `#5B7AA6` |
-| Session profile: value area / rest / POC / naked POC | — | `#34425A` / `#1F2B3D` / `#E0A045` / `#7A889C` |
-| DOM ladder: bids / asks | — | `#19A88E` / `#D9582E` |
-| VWAP / session VWAP | `of-vwap` / `of-svwap` | `#E6EBF2` / `#9085E9` |
-| Order-book heatmap (navy → light blue → white walls) | `of-heat-1…3` | `#22609A` → `#7FDCEE` → `#FFFFFF` |
-| Exchanges: Hyperliquid / Binance / Bybit | — | `#3987E5` / `#C98500` / `#D55181` |
+| Role | Token / class | Neon (default) | Desk |
+|---|---|---|---|
+| Canvas background (no grid) | `of-bg` | `#151521` | `#0B1019` |
+| Buy / sell candle | `of-buy` / `of-sell` | `#10FF21` / `#8A2BE2` | `#19A88E` / `#D9582E` |
+| Buy / sell flow (text, bubbles, liquidations, whales) | `text-of-buy-ink` / `text-of-sell-ink` | `#3DFF4F` / `#A66BFF` | `#35C9A8` / `#F07C55` |
+| Buy / sell imbalance | `of-imb-buy` / `of-imb-sell` | `#00FFFF` / `#FF00FF` | `#5CF2CF` / `#FF9A6A` |
+| POC frame in a candle | `of-poc` | `#FFFF20` | `#E0A045` |
+| Row volume | `of-vol` | `#D08A10` | `#5B7AA6` |
+| Session profile: value area / rest / POC / naked POC | — | `#555557` / `#3C6265` / `#C58109` / `#5C6166` | `#34425A` / `#1F2B3D` / `#E0A045` / `#7A889C` |
+| DOM ladder: bids / asks | — | `#06AF23` / `#8A2BE2` | `#19A88E` / `#D9582E` |
+| VWAP / session VWAP | `of-vwap` / `of-svwap` | `#D0D3D9` / `#14C8C8` | `#E6EBF2` / `#9085E9` |
+| Order-book heatmap (weak → walls) | `of-heat-1…3` | `#017979` → `#F5E611` → `#F5290D` | `#22609A` → `#7FDCEE` → `#FFFFFF` |
+| Exchanges: Hyperliquid / Binance / Bybit | — | `#199E70` / `#D95926` / `#3987E5` | `#3987E5` / `#C98500` / `#D55181` |
 
-Bid × Ask footprint cells are tiles from graphite `#2A3446` (low volume) to the saturated side colour; dark numbers on a light tile, light numbers on a dark one. The Delta and Volume styles are bars from the left edge of the candle (delta and volume in the colour of the dominant side) with light bid and ask numbers. Second channel: position (sells on the left, buys on the right), and the imbalance number is bold and outlined.
+Bid × Ask footprint cells are tiles from grey `#A0A0A0` (Neon) or graphite `#2A3446` (Desk) at low volume to the saturated side colour; dark numbers on a light tile, light numbers on a dark one. The Delta and Volume styles are bars from the left edge of the candle (delta and volume in the colour of the dominant side) with light bid and ask numbers. Second channel: position (sells on the left, buys on the right), and the imbalance number is bold and outlined.
 
 ## 5. Motion (`motion/react`, tokens in `src/ui/motion.ts`)
 - Default spring: `stiffness 260, damping 26, mass 1` (ζ ≈ 0.8, "premium"). Position and size may spring; **opacity and colour never**.
