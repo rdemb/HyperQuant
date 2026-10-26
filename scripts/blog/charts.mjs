@@ -304,14 +304,15 @@ export function sessionSvg(s, { narrow = false, zones = [], levels = null, uid =
   const axX = W - AX + 4;
   out.push(hline(cx(last[0]), W - AX, y(last[4]), C.accent, ' stroke-dasharray="1 2"'));
   const shown = levelLines.filter((l) => inRange(l.price));
-  // Notka: najbliższy poziom nad i pod zakresem jako znacznik ze strzałką na krawędzi kolumny podpisów
-  const above = compact ? levelLines.filter((l) => l.price > hi).sort((p, q) => p.price - q.price)[0] : null;
-  const below = compact ? levelLines.filter((l) => l.price < lo).sort((p, q) => q.price - p.price)[0] : null;
+  // Najbliższy poziom nad i pod zakresem jako znacznik ze strzałką przy osi (poza polem świec, więc nie wchodzi w koła likwidacji)
+  const above = levelLines.filter((l) => l.price > hi).sort((p, q) => p.price - q.price)[0];
+  const below = levelLines.filter((l) => l.price < lo).sort((p, q) => q.price - p.price)[0];
   const tags = [
     { y: y(last[4]), label: px0(last[4]), kind: 'price' },
     ...shown.map((l) => ({ y: y(l.price), label: l.label, sub: px0(l.label === 'POC' ? pr.poc : l.price), color: l.color })),
-    ...(above ? [{ y: priceTop + 5, label: `↑ ${above.label}`, sub: px0(above.price), color: C.ink2 }] : []),
-    ...(below ? [{ y: priceTop + priceH - 5, label: `↓ ${below.label}`, sub: px0(below.price), color: C.ink2 }] : []),
+    // Mapa sesji: wąska kolumna osi, strzałka bez spacji, żeby nazwa nie dotykała ceny
+    ...(above ? [{ y: priceTop + 5, label: `↑${compact ? ' ' : ''}${above.label}`, sub: px0(above.price), color: C.ink2 }] : []),
+    ...(below ? [{ y: priceTop + priceH - 5, label: `↓${compact ? ' ' : ''}${below.label}`, sub: px0(below.price), color: C.ink2 }] : []),
   ];
   const placed = spreadLabels(tags, narrow ? 12 : 13, priceTop + 5, priceTop + priceH - 5);
   for (const g of grid) {
@@ -337,16 +338,6 @@ export function sessionSvg(s, { narrow = false, zones = [], levels = null, uid =
       out.push(text(W - 2, t.ly, t.sub, { size: 9, fill: C.ink3, anchor: 'end' }));
     }
   }
-  // Mapa sesji: poziomy dnia poprzedniego poza zakresem jako napis ze strzałką przy prawej krawędzi
-  if (!compact)
-    s.levels
-      .filter((l) => !inRange(l.price))
-      .forEach((l, i) => {
-        const up = l.price > hi;
-        const yy = up ? priceTop + 6 + i * 12 : priceTop + priceH - 6 - i * 12;
-        out.push(text(plotW - 2, yy, `${l.label} ${px0(l.price)} ${up ? '↑' : '↓'}`, { size: 9, fill: C.ink2, anchor: 'end' }));
-      });
-
   // Panele: delta agresorów, CVD, open interest (każdy z własną skalą, bez wspólnej osi)
   const tape = s.tape ?? [];
   const coveredX = tape.map(([a, b]) => [xOf(a), xOf(b)]);

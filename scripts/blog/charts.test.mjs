@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { gzipSync } from 'node:zlib';
@@ -17,6 +17,36 @@ const TAPE_FROM = Date.parse('2026-10-25T03:00:00Z');
 const px = (t) => Math.round(80000 + 600 * Math.sin((t - DAY0) / (300 * MIN)));
 const pad = (x) => String(x).padStart(2, '0');
 
+/** Plik taśmy serwera (godzina albo część 5 min): transakcja co 10 s i open interest co minutę. */
+function tapeFile(from, to, spans = [[from, to]]) {
+  const ts = [];
+  for (let t = from; t < to; t += 10_000) ts.push(t);
+  const n = (to - from) / MIN;
+  return gzipSync(
+    JSON.stringify({
+      v: 1,
+      coin: 'BTC',
+      from,
+      to,
+      spans,
+      t: ts.map((t, i) => (i ? t - ts[i - 1] : t)),
+      px: ts.map(px),
+      sz: ts.map((t, i) => (i % 7 === 0 ? 0 : 1 + (i % 3))),
+      side: ts.map((t, i) => (i % 3 === 0 ? 'A' : 'B')).join(''),
+      tid: ts.map((t, i) => (i ? 1 : 1000)),
+      o: ts.map(() => -1),
+      k: ts.map(() => -1),
+      m: ts.map(() => -1),
+      ctx: {
+        t: [...Array(n)].map((_, i) => from + i * MIN),
+        oi: [...Array(n)].map((_, i) => 40000 + (from - TAPE_FROM) / MIN + i),
+        funding: Array(n).fill(0),
+        mark: Array(n).fill(80000),
+      },
+    })
+  );
+}
+
 /** Repozytorium danych w katalogu: archiwum 1m (z opóźnieniem), taśma z trzech ostatnich godzin, taśma likwidacji. */
 function fakeSource() {
   const dir = mkdtempSync(path.join(tmpdir(), 'hq-data-'));
@@ -34,38 +64,15 @@ function fakeSource() {
 
   const hours = [0, 1, 2].map((i) => TAPE_FROM + i * HOUR);
   mkdirSync(path.join(dir, 'history/BTC/2026-10-25'), { recursive: true });
-  writeFileSync(path.join(dir, 'history/index.json'), JSON.stringify({ v: 1, asOf: AT, keepDays: 7, partMs: 300000, markets: { BTC: { hours, parts: [] } } }));
   for (const h of hours) {
-    const ts = [];
-    for (let t = h; t < h + HOUR; t += 10_000) ts.push(t);
-    const file = {
-      v: 1,
-      coin: 'BTC',
-      from: h,
-      to: h + HOUR,
-      spans:
-        h === hours[1]
-          ? [
-              [h, h + 20 * MIN],
-              [h + 20 * MIN + 5000, h + HOUR],
-            ]
-          : [[h, h + HOUR]],
-      t: ts.map((t, i) => (i ? t - ts[i - 1] : t)),
-      px: ts.map(px),
-      sz: ts.map((t, i) => (i % 7 === 0 ? 0 : 1 + (i % 3))),
-      side: ts.map((t, i) => (i % 3 === 0 ? 'A' : 'B')).join(''),
-      tid: ts.map((t, i) => (i ? 1 : 1000)),
-      o: ts.map(() => -1),
-      k: ts.map(() => -1),
-      m: ts.map(() => -1),
-      ctx: {
-        t: [...Array(60)].map((_, i) => h + i * MIN),
-        oi: [...Array(60)].map((_, i) => 40000 + (h - TAPE_FROM) / MIN + i),
-        funding: Array(60).fill(0),
-        mark: Array(60).fill(80000),
-      },
-    };
-    writeFileSync(path.join(dir, `history/BTC/2026-10-25/${pad(new Date(h).getUTCHours())}.trades.json.gz`), gzipSync(JSON.stringify(file)));
+    const spans =
+      h === hours[1]
+        ? [
+            [h, h + 20 * MIN],
+            [h + 20 * MIN + 5000, h + HOUR],
+          ]
+        : [[h, h + HOUR]];
+    writeFileSync(path.join(dir, `history/BTC/2026-10-25/${pad(new Date(h).getUTCHours())}.trades.json.gz`), tapeFile(h, h + HOUR, spans));
   }
   mkdirSync(path.join(dir, 'main/liq-tape'), { recursive: true });
   writeFileSync(
@@ -161,6 +168,34 @@ describe('wykresy: dane (chartdata.mjs)', () => {
     expect(read.wartosc).toBeUndefined();
   });
 
+  it('taśma bez spisu index.json: plik godzinowy, a bieżąca godzina z części 5 min', async () => {
+    const dir = fakeSource();
+    const h = TAPE_FROM + 2 * HOUR;
+    rmSync(path.join(dir, 'history/BTC/2026-10-25/05.trades.json.gz'));
+    for (const m of [0, 5]) writeFileSync(path.join(dir, `history/BTC/2026-10-25/05-${pad(m)}.trades.json.gz`), tapeFile(h + m * MIN, h + (m + 5) * MIN));
+    const d = await buildCharts({ at: AT, note: true, get: openSource(dir) });
+    expect(d.session.tape).toEqual([[TAPE_FROM, h + 10 * MIN]]);
+  });
+
+  it('odczyt w oknach czasu: luka w taśmie to brak delty okna, cena i OI z godziny wstecz', async () => {
+    const d = await buildCharts({ at: AT + 2 * MIN, note: true, get: openSource(fakeSource()) });
+    const s = d.session;
+    const delta = (xs) => Math.round(10 * xs.reduce((a, c) => a + c[6] - c[7], 0)) / 10;
+    // Bez taśmy tylko ostatnia świeca (zwykle niepełna przy publikacji): delta z pozostałych 11
+    const tail = structuredClone(d);
+    tail.session.candles.at(-1)[6] = tail.session.candles.at(-1)[7] = null;
+    expect(readCharts(tail).delta.h1).toBe(delta(s.candles.slice(-12, -1)));
+    // Luka 05:10–05:50, jak przy opóźnionej publikacji danych: bez delty godziny, cena i OI dalej sprzed godziny
+    for (const c of s.candles) if (c[0] >= AT - 50 * MIN && c[0] < AT - 10 * MIN) c[6] = c[7] = null;
+    s.oi = s.oi.filter(([t]) => t < AT - 50 * MIN || t >= AT - 10 * MIN);
+    const read = readCharts(d);
+    expect(read.delta.h1).toBeNull();
+    expect(read.cena1h).toBe(s.candles.at(-1)[4] - s.candles.find((c) => c[0] === AT - HOUR)[1]);
+    const oi = new Map(s.oi);
+    expect(read.oi.zmiana1h).toBe(Math.round(10 * (oi.get(AT - 5 * MIN) - oi.get(AT - 65 * MIN))) / 10);
+    expect(read.delta.cala).toBe(delta(s.candles.filter((c) => c[6] !== null)));
+  });
+
   it('okno bez świec (chwila z przyszłości) to czytelny błąd', async () => {
     await expect(buildCharts({ at: AT + 24 * HOUR, note: true, get: openSource(fakeSource()) })).rejects.toThrow(/Za mało świec w oknie .* \(0\)/);
   });
@@ -242,7 +277,9 @@ describe('wykresy: rysunek (charts.mjs)', () => {
     for (const svg of [wide, narrow, footprintSvg(FP), footprintSvg(FP, { narrow: true })]) expect(svg).not.toMatch(/NaN|undefined|Infinity/);
     expect(wide).toContain('▲ 80 300–80 400');
     expect(wide).toContain('brak taśmy');
-    expect(wide).toContain('PDH 82 500 ↑');
+    // Poziom poza zakresem: znacznik ze strzałką przy osi, w układzie szerokim z ceną
+    for (const svg of [wide, narrow]) expect(svg).toContain('>↑PDH<');
+    expect(wide).toMatch(/>82\s500</);
     expect(wide).toContain('12 mln USD');
     expect(footprintSvg(FP)).toContain('>−13<');
     expect(sessionHtml(SESSION, [{ bias: 'down', zone: [79600, 79700] }])).toMatch(/class="chart chart--w"[\s\S]*class="chart chart--n"/);

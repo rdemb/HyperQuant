@@ -28,6 +28,8 @@ const PROFILE_STEP = 25;
 const VALUE_SHARE = 0.7;
 // Krótkie przerwy w nagraniu (ponowne połączenie) nie psują delty świecy 15 min
 const SPAN_GAP_MS = 30_000;
+// Część pliku taśmy bieżącej godziny na serwerze
+const PART = 5 * MIN;
 
 const pad = (x) => String(x).padStart(2, '0');
 const dayKey = (ms) => {
@@ -248,20 +250,21 @@ export async function buildCharts({ at, fpFrom = null, get, note = false }) {
     if (buf) minute.push(...parseCandles(buf.toString('utf8')));
   }
 
-  // Taśma z serwera: pliki godzinowe i części bieżącej godziny w oknie
-  const index = await json('history', 'index.json');
-  const m = index?.markets?.BTC ?? { hours: [], parts: [] };
-  const files = [
-    ...m.hours.filter((h) => h + HOUR > from && h < end).map((h) => `BTC/${dayKey(h)}/${pad(new Date(h).getUTCHours())}.trades.json.gz`),
-    ...m.parts
-      .filter((p) => p >= from && p < end && !m.hours.includes(floorTo(p, HOUR)))
-      .map((p) => `BTC/${dayKey(p)}/${pad(new Date(p).getUTCHours())}-${pad(new Date(p).getUTCMinutes())}.trades.json.gz`),
-  ];
+  // Taśma z serwera: plik godzinowy, a bez niego części 5 min. Bez spisu index.json: po pełnej godzinie serwer scala części
+  // w plik godzinowy i je kasuje, a spis z CDN bywa o kilka minut starszy, więc wskazywał skasowane części
+  const files = [];
+  for (let h = floorTo(from, HOUR); h < end; h += HOUR) {
+    const hourFile = await json('history', `BTC/${dayKey(h)}/${pad(new Date(h).getUTCHours())}.trades.json.gz`);
+    if (hourFile) files.push(hourFile);
+    else
+      for (let p = h; p < Math.min(h + HOUR, end); p += PART)
+        files.push(await json('history', `BTC/${dayKey(p)}/${pad(new Date(p).getUTCHours())}-${pad(new Date(p).getUTCMinutes())}.trades.json.gz`));
+  }
   const trades = [];
   const ctx = [];
   const spans = [];
   for (const f of files) {
-    const tape = decodeTape(await json('history', f));
+    const tape = decodeTape(f);
     if (!tape) continue;
     trades.push(...tape.trades.filter((x) => x.t >= from && x.t < end));
     ctx.push(...tape.ctx.filter((c) => c.t >= from && c.t < end));
@@ -355,9 +358,23 @@ export function readCharts(d) {
   const vw = s.vwap.at(-1);
   const withTape = s.candles.filter((c) => c[6] !== null);
   const perH = 60 / s.tf;
-  const deltaH = (h) => round(sum(withTape.slice(-h * perH).map((c) => c[6] - c[7])), 1);
-  const priceH = (h) => (withTape.length >= h * perH ? round(px - withTape.at(-h * perH)[1], 0) : null);
-  const oiH = (h) => (s.oi.length > h * perH ? round(s.oi.at(-1)[1] - s.oi.at(-1 - h * perH)[1], 1) : null);
+  // Okna w czasie, nie w liczbie świec: każda miara za dokładnie h godzin do swojego ostatniego odczytu, więc przy luce
+  // w taśmie „ostatnia godzina” dalej jest godziną (cena: koniec ostatniej świecy, OI: stan na końcu ostatniej świecy z taśmą)
+  const lastEnd = last[0] + s.tf * MIN;
+  const deltaH = (h) => {
+    const xs = withTape.filter((c) => c[0] >= lastEnd - h * HOUR);
+    // Taśma bez więcej niż 10% świec okna (co najmniej jedna, zwykle ostatnia niepełna) to brak odczytu, nie suma z kawałka
+    return h * perH - xs.length <= Math.max(1, Math.ceil(h * perH * 0.1)) ? round(sum(xs.map((c) => c[6] - c[7])), 1) : null;
+  };
+  const priceH = (h) => {
+    const c = s.candles.find((x) => x[0] === lastEnd - h * HOUR);
+    return c ? round(px - c[1], 0) : null;
+  };
+  const oiAt = new Map(s.oi);
+  const oiH = (h) => {
+    const [t, v] = s.oi.at(-1) ?? [];
+    return oiAt.has(t - h * HOUR) ? round(v - oiAt.get(t - h * HOUR), 1) : null;
+  };
   const hi = Math.max(...s.candles.map((c) => c[2]));
   const lo = Math.min(...s.candles.map((c) => c[3]));
   const hours = Math.round((s.to - s.from) / HOUR);
@@ -388,7 +405,7 @@ export function readCharts(d) {
       : null,
     poziomy: s.levels,
     tasma: s.tape.map(([a, b]) => `${new Date(a).toISOString()} – ${new Date(b).toISOString()}`),
-    delta: { h1: deltaH(1), h4: deltaH(4), cala: deltaH(withTape.length / perH) },
+    delta: { h1: deltaH(1), h4: deltaH(4), cala: round(sum(withTape.map((c) => c[6] - c[7])), 1) },
     cena1h: priceH(1),
     cena4h: priceH(4),
     oi: s.oi.length ? { teraz: s.oi.at(-1)[1], zmiana1h: oiH(1), zmiana4h: oiH(4) } : null,
