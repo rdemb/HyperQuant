@@ -188,6 +188,23 @@ describe('ocena odpowiedzi', () => {
   });
 });
 
+describe('kolory rycin jak na Wykresach', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.resetModules();
+  });
+
+  it.each(['neon', 'desk'])('paleta %s: kafle footprintu, delta, liczby i profil takie same', async (palette) => {
+    vi.stubGlobal('localStorage', { getItem: () => palette, setItem: () => undefined });
+    vi.resetModules();
+    const { FIG, inkOn } = await import('../chart/palette');
+    const { PRO, luminance } = await import('../../charts/pro/chart/theme');
+    expect((await import('../../charts/pro/chart/palette')).PALETTE).toBe(palette);
+    for (const k of ['fpBidRamp', 'fpAskRamp', 'fpDeltaPosRamp', 'fpDeltaNegRamp', 'fpText', 'fpTextLight', 'profileVa', 'profileOut'] as const) expect(FIG[k]).toEqual(PRO[k]);
+    for (const c of [...FIG.fpBidRamp, ...FIG.fpAskRamp, ...FIG.fpDeltaPosRamp, ...FIG.fpDeltaNegRamp]) expect(inkOn(c)).toBe(luminance(c) > 0.18 ? PRO.fpText : PRO.fpTextLight);
+  });
+});
+
 describe('VWAP jak w Wykresach', () => {
   // Liczby VWAP z treści ćwiczeń w chwili zatrzymania (ta sama wartość na rycinie i w legendzie powtórki)
   const QUOTED: [string, string, number][] = [
