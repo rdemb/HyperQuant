@@ -30,6 +30,6 @@ Od mapy porannej rynek najpierw zszedł w dół: o 09:04 dotknął VWAP i PDL 79
 
 [[wykres]]
 
-W ostatnich czterech godzinach cena zyskała 251 USD przy delcie +466 BTC, a open interest urósł o 287 BTC, więc ruch niosły nowe longi, nie samo zamykanie shortów. Dołek 79 620 z 09:10 był ostatnim testem dołu, a szczyt 80 548 z 10:50 stanął nad szczytem Azji, który teraz jest wsparciem. Cena stoi 1,92σ nad VWAP dnia 79 888, czyli daleko od średniej, i żeby obraz się zmienił na korzyść dołu, cena musiałaby wrócić pod 80 300.
+W ostatnich czterech godzinach cena zyskała 423 USD, a open interest urósł o 170 BTC, więc ruch niosły nowe longi, nie samo zamykanie shortów. Delty z tych godzin nie podajemy, bo w chwili wpisu taśmie brakowało danych od 11:00 do 11:50. Dołek 79 620 z 09:10 był ostatnim testem dołu, a szczyt 80 548 z 10:50 stanął nad szczytem Azji, który teraz jest wsparciem. Cena stoi 1,92σ nad VWAP dnia 79 888, czyli daleko od średniej, i żeby obraz się zmienił na korzyść dołu, cena musiałaby wrócić pod 80 300.
 
 Do 16:00 model daje 56% na dotknięcie VAH 80 680 i 39% na powrót do PDL 79 817. Prawdopodobieństwa pochodzą z modelu desku HAR + FHS z symulacją Monte Carlo, policzone o 12:00 i zapisane przed faktem. Następny wpis to rozliczenie Londynu o 13:05.
