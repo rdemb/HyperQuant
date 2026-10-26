@@ -69,6 +69,13 @@ const LAYOUT_OPTIONS: { value: ChartLayout; label: React.ReactNode; title: strin
   { value: 4, label: <Grid2x2 className="w-3.5 h-3.5" />, title: tr('Cztery wykresy (2 × 2)', 'Four charts (2 × 2)') },
 ];
 
+/** Zakładki menu Wskaźniki: linie i warstwy na wykresie ceny albo panele pod nim. */
+type IndicatorsTab = 'price' | 'panes';
+const INDICATOR_TABS: { id: IndicatorsTab; label: string }[] = [
+  { id: 'price', label: tr('Na wykresie ceny', 'On the price chart') },
+  { id: 'panes', label: tr('Pod wykresem', 'Below the chart') },
+];
+
 /** Karty na telefonie: jedna naraz, więc wykres ma cały ekran. */
 type PhoneTab = 'chart' | 'tape' | 'dom' | 'numbers';
 const PHONE_TABS: { id: PhoneTab; label: string }[] = [
@@ -180,6 +187,7 @@ export const ProChart: React.FC<{
   const store = replay ? replay.store : storeFor(settings.coin);
   const series = store.series(settings.interval);
   const [menu, setMenu] = useState<'settings' | 'indicators' | 'keys' | 'more' | null>(null);
+  const [indicatorsTab, setIndicatorsTab] = useState<IndicatorsTab>('price');
   const [fullscreen, setFullscreen] = useState(false);
   const narrow = useSyncExternalStore(subscribeNarrow, isNarrow);
   const [tab, setTab] = useState<PhoneTab>('chart');
@@ -239,7 +247,7 @@ export const ProChart: React.FC<{
     if (!host) return;
     const ctrl = new ProChartController(host, store, series, shownSettings(settings, isNarrow(), layout, inReplay), signal.set, setPick, (key) => {
       update({ [key]: false });
-      setToast(tr(`Ukryto panel: ${PANE_NAMES[key]} — włączysz go w Ustawieniach wykresu → Panele`, `Panel hidden: ${PANE_NAMES[key]} — turn it back on in Chart settings → Panels`));
+      setToast(tr(`Ukryto panel: ${PANE_NAMES[key]} — włączysz go w menu Wskaźniki → Pod wykresem`, `Panel hidden: ${PANE_NAMES[key]} — turn it back on in Indicators → Below the chart`));
     }, setScale);
     ctrl.setPhone(isNarrow());
     ctrlRef.current = ctrl;
@@ -524,7 +532,7 @@ export const ProChart: React.FC<{
               type="button"
               data-menu-toggle
               aria-expanded={menu === 'indicators'}
-              title={tr('Wskaźniki na wykresie ceny', 'Indicators on the price chart')}
+              title={tr('Wskaźniki: na wykresie ceny i pod nim', 'Indicators: on the price chart and below it')}
               onClick={() => setMenu((m) => (m === 'indicators' ? null : 'indicators'))}
               className={`mr-auto ${twoRow ? '' : 'sm:mr-0'} inline-flex items-center gap-1.5 h-9 px-2.5 rounded-lg border text-xs font-medium transition-colors duration-150 ${
                 menu === 'indicators' ? 'bg-surface-3 text-ink-1 border-line-strong' : 'text-ink-2 border-line hover:text-ink-1 hover:bg-surface-2'
@@ -621,7 +629,7 @@ export const ProChart: React.FC<{
                 </button>
               ))}
             </div>
-            <ToolBtn label={tr('Wskaźniki na wykresie ceny', 'Indicators on the price chart')} onClick={() => setMenu((m) => (m === 'indicators' ? null : 'indicators'))} active={menu === 'indicators'} expanded={menu === 'indicators'}>
+            <ToolBtn label={tr('Wskaźniki: na wykresie ceny i pod nim', 'Indicators: on the price chart and below it')} onClick={() => setMenu((m) => (m === 'indicators' ? null : 'indicators'))} active={menu === 'indicators'} expanded={menu === 'indicators'}>
               <Layers className="w-4 h-4" />
             </ToolBtn>
             <ToolBtn label={tr('Ustawienia wykresu', 'Chart settings')} onClick={() => setMenu((m) => (m === 'settings' ? null : 'settings'))} active={menu === 'settings'} expanded={menu === 'settings'}>
@@ -645,7 +653,7 @@ export const ProChart: React.FC<{
           narrow={narrow}
           onClose={() => {
             update({ showState: false });
-            setToast(tr('Ukryto Stan rynku — włączysz go w Ustawieniach wykresu → Panele', 'Market state hidden — turn it back on in Chart settings → Panels'));
+            setToast(tr('Ukryto Stan rynku — włączysz go w Ustawieniach wykresu → Nad wykresem', 'Market state hidden — turn it back on in Chart settings → Above the chart'));
           }}
         />
       )}
@@ -717,7 +725,6 @@ export const ProChart: React.FC<{
                   onRemoveAlert={(a) => alertBook.update((l) => l.filter((x) => x !== a))}
                   onChange={update}
                   onReset={() => setSettings({ ...stationPanel(station, panel, isNarrow()), coin: settings.coin, interval: settings.interval })}
-                  grid4={layout === 4}
                   narrow={narrow}
                 />
               ) : menu === 'keys' ? (
@@ -737,7 +744,18 @@ export const ProChart: React.FC<{
                   onClose={() => setMenu(null)}
                 />
               ) : (
-                <IndicatorsMenu settings={settings} intervalMs={iv.ms} liq={liq} whales={whales} bigUsd={bigUsd} onChange={update} />
+                <IndicatorsMenu
+                  settings={settings}
+                  intervalMs={iv.ms}
+                  liq={liq}
+                  whales={whales}
+                  bigUsd={bigUsd}
+                  tab={indicatorsTab}
+                  onTab={setIndicatorsTab}
+                  grid4={layout === 4}
+                  narrow={narrow}
+                  onChange={update}
+                />
               )}
             </div>
           )}
@@ -795,46 +813,69 @@ const PHONE_PANE_OPTIONS: { value: PhonePane | 'none'; label: string }[] = [
   { value: 'none', label: tr('Brak', 'None') },
 ];
 
-/** Panele na telefonie: wolumen na dole wykresu ceny i jeden panel pod nim (liczby są w karcie „Liczby”). */
-const PhonePanes: React.FC<{ s: ChartSettings; onChange: (p: Partial<ChartSettings>) => void }> = ({ s, onChange }) => {
+/**
+ * Zakładka „Pod wykresem” menu Wskaźniki: panele pod wykresem ceny. Telefon: wolumen na dole wykresu ceny i jeden panel
+ * pod nim (liczby są w karcie „Liczby”).
+ */
+const PanesTab: React.FC<{ s: ChartSettings; grid4: boolean; narrow: boolean; onChange: (p: Partial<ChartSettings>) => void }> = ({ s, grid4, narrow, onChange }) => {
   const pane = PHONE_PANES.find((k) => s[k]) ?? 'none';
   return (
-    <Group title={tr('Panele', 'Panels')}>
-      <Check label={tr('Stan rynku (zdanie nad wykresem)', 'Market state (sentence above the chart)')} checked={s.showState} onChange={(v) => onChange({ showState: v })} />
-      <Check label={tr('Wolumen (na dole wykresu ceny)', 'Volume (at the bottom of the price chart)')} checked={s.showVolume} onChange={(v) => onChange({ showVolume: v })} />
-      <label className="flex flex-col items-start gap-1.5 text-ink-2">
-        {tr('Panel pod wykresem', 'Pane below the chart')}
-        <select
-          value={pane}
-          onChange={(e) => onChange(Object.fromEntries(PHONE_PANES.map((k) => [k, k === e.target.value])))}
-          className="w-full h-9 rounded-lg border border-line bg-surface-1 px-2 text-xs text-ink-1"
-        >
-          {PHONE_PANE_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </select>
-      </label>
-      <p className="text-[11px] leading-snug text-ink-3">
-        {tr(
-          'Na telefonie pod wykresem jest jeden panel, żeby cena miała większość ekranu. Liczby świec są w karcie „Liczby”.',
-          'On a phone there is one pane below the chart so the price gets most of the screen. Candle numbers are in the “Numbers” tab.'
-        )}
-      </p>
-      {(pane === 'showVenueCvd' || pane === 'showVenueOi') && (
-        <p className="text-[11px] leading-snug text-ink-3">
-          {tr(
-            'Dane Binance i Bybit pobiera Twoja przeglądarka bezpośrednio z ich publicznych API — nic nie przechodzi przez serwer HyperQuant.',
-            "Your browser fetches Binance and Bybit data directly from their public APIs — nothing goes through a HyperQuant server."
+    <div className="flex flex-col gap-2">
+      {narrow ? (
+        <>
+          <Check label={tr('Wolumen (na dole wykresu ceny)', 'Volume (at the bottom of the price chart)')} checked={s.showVolume} onChange={(v) => onChange({ showVolume: v })} />
+          <label className="flex flex-col items-start gap-1.5 text-ink-2">
+            {tr('Panel pod wykresem', 'Pane below the chart')}
+            <select
+              value={pane}
+              onChange={(e) => onChange(Object.fromEntries(PHONE_PANES.map((k) => [k, k === e.target.value])))}
+              className="w-full h-9 rounded-lg border border-line bg-surface-1 px-2 text-xs text-ink-1"
+            >
+              {PHONE_PANE_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className="text-[11px] leading-snug text-ink-3">
+            {tr(
+              'Na telefonie pod wykresem jest jeden panel, żeby cena miała większość ekranu. Liczby świec są w karcie „Liczby”.',
+              'On a phone there is one pane below the chart so the price gets most of the screen. Candle numbers are in the “Numbers” tab.'
+            )}
+          </p>
+          {(pane === 'showVenueCvd' || pane === 'showVenueOi') && (
+            <p className="text-[11px] leading-snug text-ink-3">
+              {tr(
+                'Dane Binance i Bybit pobiera Twoja przeglądarka bezpośrednio z ich publicznych API — nic nie przechodzi przez serwer HyperQuant.',
+                "Your browser fetches Binance and Bybit data directly from their public APIs — nothing goes through a HyperQuant server."
+              )}
+            </p>
           )}
-        </p>
+        </>
+      ) : (
+        <>
+          <Check label={tr('Wolumen', 'Volume')} checked={s.showVolume} onChange={(v) => onChange({ showVolume: v })} />
+          <Check label={tr('Delta (świece delty)', 'Delta (delta candles)')} checked={s.showDelta} onChange={(v) => onChange({ showDelta: v })} />
+          <Check label="CVD" checked={s.showCvd} onChange={(v) => onChange({ showCvd: v })} />
+          <Check label={tr('CVD giełd: Hyperliquid, Binance, Bybit', 'Exchange CVD: Hyperliquid, Binance, Bybit')} checked={s.showVenueCvd} onChange={(v) => onChange({ showVenueCvd: v })} />
+          <Check label={tr('ΔOI i funding giełd', 'Exchange ΔOI and funding')} checked={s.showVenueOi} onChange={(v) => onChange({ showVenueOi: v })} />
+          <Check label={tr('Tablica liczb', 'Numbers table')} checked={s.showStats} onChange={(v) => onChange({ showStats: v })} />
+          {s.showStats && <StatGroupPicker className="pl-6.5" value={s.statGroups} onChange={(g) => onChange({ statGroups: g })} />}
+          {grid4 && s.showStats && <p className="text-[11px] leading-snug text-ink-3">{tr('W układzie 2 × 2 tablica jest ukryta — panel jest za niski.', 'In the 2 × 2 layout the table is hidden — the pane is too short.')}</p>}
+          <p className="text-[11px] leading-snug text-ink-3">
+            {tr(
+              'Dane Binance i Bybit pobiera Twoja przeglądarka bezpośrednio z ich publicznych API — nic nie przechodzi przez serwer HyperQuant. Domyślnie wyłączone; nie publikuj zrzutów z tymi danymi bez sprawdzenia regulaminu giełdy.',
+              "Your browser fetches Binance and Bybit data directly from their public APIs — nothing goes through a HyperQuant server. Off by default; do not publish screenshots with this data without checking the exchange's terms."
+            )}
+          </p>
+        </>
       )}
       <div className="flex flex-col items-start gap-1.5">
         <span className="text-ink-2">{tr('Zerowanie CVD', 'CVD reset')}</span>
-        <Segmented<ResetMode> ariaLabel={tr('Zerowanie CVD', 'CVD reset')} value={s.cvdReset} onChange={(v) => onChange({ cvdReset: v })} options={RESET_OPTIONS} size="xs" />
+        <Segmented<ResetMode> ariaLabel={tr('Zerowanie CVD', 'CVD reset')} value={s.cvdReset} onChange={(v) => onChange({ cvdReset: v })} options={RESET_OPTIONS} size={narrow ? 'xs' : undefined} />
       </div>
-    </Group>
+    </div>
   );
 };
 
@@ -1031,11 +1072,9 @@ const SettingsMenu: React.FC<{
   onRemoveAlert: (a: PriceAlert) => void;
   onChange: (p: Partial<ChartSettings>) => void;
   onReset: () => void;
-  /** Układ 2 × 2: tabela statystyk ukryta. */
-  grid4: boolean;
-  /** Telefon: styl footprintu tutaj (nie w pasku), jeden panel pod wykresem, liczby w karcie „Liczby”. */
+  /** Telefon: styl footprintu tutaj (nie w pasku). */
   narrow: boolean;
-}> = ({ settings: s, bigUsd, tick, price, alerts, onAddAlert, onRemoveAlert, onChange, onReset, grid4, narrow }) => (
+}> = ({ settings: s, bigUsd, tick, price, alerts, onAddAlert, onRemoveAlert, onChange, onReset, narrow }) => (
   <div className="bg-surface-2 border border-line-strong rounded-xl p-3 shadow-2xl flex flex-col gap-3 text-xs">
     <Group title="Footprint">
       {narrow && (
@@ -1079,31 +1118,9 @@ const SettingsMenu: React.FC<{
         onChange={(v) => onChange({ stackedMin: v })}
       />
     </Group>
-    {narrow ? (
-      <PhonePanes s={s} onChange={onChange} />
-    ) : (
-      <Group title={tr('Panele', 'Panels')}>
-        <Check label={tr('Stan rynku (zdanie nad wykresem)', 'Market state (sentence above the chart)')} checked={s.showState} onChange={(v) => onChange({ showState: v })} />
-        <Check label={tr('Wolumen', 'Volume')} checked={s.showVolume} onChange={(v) => onChange({ showVolume: v })} />
-        <Check label={tr('Delta (świece delty)', 'Delta (delta candles)')} checked={s.showDelta} onChange={(v) => onChange({ showDelta: v })} />
-        <Check label="CVD" checked={s.showCvd} onChange={(v) => onChange({ showCvd: v })} />
-        <Check label={tr('CVD giełd: Hyperliquid, Binance, Bybit', 'Exchange CVD: Hyperliquid, Binance, Bybit')} checked={s.showVenueCvd} onChange={(v) => onChange({ showVenueCvd: v })} />
-        <Check label={tr('ΔOI i funding giełd', 'Exchange ΔOI and funding')} checked={s.showVenueOi} onChange={(v) => onChange({ showVenueOi: v })} />
-        <Check label={tr('Tablica liczb', 'Numbers table')} checked={s.showStats} onChange={(v) => onChange({ showStats: v })} />
-        {s.showStats && <StatGroupPicker className="pl-6.5" value={s.statGroups} onChange={(g) => onChange({ statGroups: g })} />}
-        {grid4 && s.showStats && <p className="text-[11px] leading-snug text-ink-3">{tr('W układzie 2 × 2 tablica jest ukryta — panel jest za niski.', 'In the 2 × 2 layout the table is hidden — the pane is too short.')}</p>}
-        <p className="text-[11px] leading-snug text-ink-3">
-          {tr(
-            'Dane Binance i Bybit pobiera Twoja przeglądarka bezpośrednio z ich publicznych API — nic nie przechodzi przez serwer HyperQuant. Domyślnie wyłączone; nie publikuj zrzutów z tymi danymi bez sprawdzenia regulaminu giełdy.',
-            "Your browser fetches Binance and Bybit data directly from their public APIs — nothing goes through a HyperQuant server. Off by default; do not publish screenshots with this data without checking the exchange's terms."
-          )}
-        </p>
-        <div className="flex flex-col items-start gap-1.5">
-          <span className="text-ink-2">{tr('Zerowanie CVD', 'CVD reset')}</span>
-          <Segmented<ResetMode> ariaLabel={tr('Zerowanie CVD', 'CVD reset')} value={s.cvdReset} onChange={(v) => onChange({ cvdReset: v })} options={RESET_OPTIONS} />
-        </div>
-      </Group>
-    )}
+    <Group title={tr('Nad wykresem', 'Above the chart')}>
+      <Check label={tr('Stan rynku (zdanie z faktów)', 'Market state (a sentence of facts)')} checked={s.showState} onChange={(v) => onChange({ showState: v })} />
+    </Group>
     <Group title={tr('Duże zlecenia', 'Large orders')}>
       <Select
         label={tr('Próg dużego zlecenia', 'Large order threshold')}
@@ -1211,13 +1228,21 @@ function whaleHint(w: WhaleLayer | null, coin: string): string {
   );
 }
 
-/** Wskaźniki na wykresie ceny: przełączniki z kolorem linii (menu jest zarazem legendą) i zakresem interwałów. */
+/**
+ * Wskaźniki w dwóch zakładkach: na wykresie ceny (przełączniki z kolorem linii — menu jest zarazem legendą — i zakresem
+ * interwałów) oraz panele pod wykresem.
+ */
 const IndicatorsMenu: React.FC<{
   settings: ChartSettings;
   intervalMs: number;
   liq: LiqMapState;
   whales: WhaleLayer | null;
   bigUsd: number;
+  tab: IndicatorsTab;
+  onTab: (t: IndicatorsTab) => void;
+  /** Układ 2 × 2: tabela statystyk ukryta. */
+  grid4: boolean;
+  narrow: boolean;
   onChange: (p: Partial<ChartSettings>) => void;
 }> = ({
   settings: s,
@@ -1225,6 +1250,10 @@ const IndicatorsMenu: React.FC<{
   liq,
   whales,
   bigUsd,
+  tab,
+  onTab,
+  grid4,
+  narrow,
   onChange,
 }) => {
   const big = `${compact(bigUsd)} USD${s.bigTradeUsd === 0 ? tr(' (próg automatyczny)', ' (automatic threshold)') : ''}`;
@@ -1388,28 +1417,49 @@ const IndicatorsMenu: React.FC<{
   const all = items.every((i) => s[i.key]);
   return (
     <div className="bg-surface-2 border border-line-strong rounded-xl p-3 shadow-2xl flex flex-col gap-1 text-xs">
-      <div className="flex items-center justify-between mb-1">
-        <span className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium">{tr('Wskaźniki', 'Indicators')}</span>
-        <button
-          type="button"
-          onClick={() => onChange(Object.fromEntries(items.map((i) => [i.key, !all])) as Partial<ChartSettings>)}
-          className="min-h-8 px-2.5 rounded-md border border-line-strong text-ink-2 hover:text-ink-1 hover:bg-surface-3"
-        >
-          {all ? tr('Wyłącz wszystkie', 'Turn all off') : tr('Włącz wszystkie', 'Turn all on')}
-        </button>
+      <div role="tablist" aria-label={tr('Wskaźniki', 'Indicators')} className="grid grid-cols-2 gap-0.5 p-0.5 mb-2 rounded-lg border border-line">
+        {INDICATOR_TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            aria-selected={tab === t.id}
+            onClick={() => onTab(t.id)}
+            className={`h-8 rounded-md text-xs font-medium transition-colors duration-150 ${
+              tab === t.id ? 'bg-surface-3 text-ink-1 shadow-[inset_0_0_0_1px_var(--color-line-strong)]' : 'text-ink-3 hover:text-ink-1'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
       </div>
-      {items.map((i) => (
-        <label key={i.key} className={`flex items-start gap-2.5 py-1.5 cursor-pointer ${i.off ? 'opacity-55' : ''}`}>
-          <input type="checkbox" checked={s[i.key]} onChange={(e) => onChange({ [i.key]: e.target.checked })} className="mt-0.5 w-4 h-4 accent-accent shrink-0" />
-          <span className="flex flex-col gap-0.5 min-w-0">
-            <span className="flex items-center gap-2 text-ink-1">
-              <span className={`inline-block w-3.5 h-[3px] rounded-full ${i.swatch}`} aria-hidden="true" />
-              {i.label}
-            </span>
-            <span className="text-[11px] leading-snug text-ink-3">{i.off ?? i.hint}</span>
-          </span>
-        </label>
-      ))}
+      {tab === 'panes' ? (
+        <PanesTab s={s} grid4={grid4} narrow={narrow} onChange={onChange} />
+      ) : (
+        <>
+          <div className="flex justify-end mb-1">
+            <button
+              type="button"
+              onClick={() => onChange(Object.fromEntries(items.map((i) => [i.key, !all])) as Partial<ChartSettings>)}
+              className="min-h-8 px-2.5 rounded-md border border-line-strong text-ink-2 hover:text-ink-1 hover:bg-surface-3"
+            >
+              {all ? tr('Wyłącz wszystkie', 'Turn all off') : tr('Włącz wszystkie', 'Turn all on')}
+            </button>
+          </div>
+          {items.map((i) => (
+            <label key={i.key} className={`flex items-start gap-2.5 py-1.5 cursor-pointer ${i.off ? 'opacity-55' : ''}`}>
+              <input type="checkbox" checked={s[i.key]} onChange={(e) => onChange({ [i.key]: e.target.checked })} className="mt-0.5 w-4 h-4 accent-accent shrink-0" />
+              <span className="flex flex-col gap-0.5 min-w-0">
+                <span className="flex items-center gap-2 text-ink-1">
+                  <span className={`inline-block w-3.5 h-[3px] rounded-full ${i.swatch}`} aria-hidden="true" />
+                  {i.label}
+                </span>
+                <span className="text-[11px] leading-snug text-ink-3">{i.off ?? i.hint}</span>
+              </span>
+            </label>
+          ))}
+        </>
+      )}
     </div>
   );
 };

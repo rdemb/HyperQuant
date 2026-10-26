@@ -129,7 +129,7 @@ export const MarketStateBar: React.FC<{ store: ProStore; series: CandleSeries; v
         <button
           type="button"
           aria-label={tr('Ukryj Stan rynku', 'Hide Market state')}
-          title={tr('Ukryj Stan rynku — włączysz go w Ustawieniach wykresu → Panele', 'Hide Market state — turn it back on in Chart settings → Panels')}
+          title={tr('Ukryj Stan rynku — włączysz go w Ustawieniach wykresu → Nad wykresem', 'Hide Market state — turn it back on in Chart settings → Above the chart')}
           onClick={onClose}
           className="shrink-0 inline-flex items-center justify-center w-7 h-7 rounded-md text-ink-3 hover:text-ink-1 hover:bg-surface-2 transition-colors duration-150"
         >
