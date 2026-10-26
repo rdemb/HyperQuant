@@ -1,6 +1,7 @@
 import React, { useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { LessonSlice } from '../data';
 import { type FigureLayers, dayProfile, figureModel, ibLines, niceStep, priceFormat, profileLevels, spreadLabels, visibleCount } from './model';
+import { FIG } from './palette';
 
 /**
  * Rycina ćwiczenia: prawdziwy wycinek rynku w SVG w kolorach Wykresów (tokeny `of-*`). Pokazuje tylko świece
@@ -68,9 +69,9 @@ const C = {
   poc: 'var(--color-of-poc)',
   zone: 'var(--color-zone)',
   oi: 'var(--color-zone)',
-  // Profil wolumenu jak na Wykresach (src/charts/pro/chart/theme.ts): obszar wartości grafitowy, reszta przygaszona
-  profileVa: '#34425a',
-  profileOut: '#1f2b3d',
+  // Profil wolumenu jak na Wykresach, w palecie wybranej w Wykresach: obszar wartości jaśniejszy, reszta przygaszona
+  profileVa: FIG.profileVa,
+  profileOut: FIG.profileOut,
 };
 
 const TONE: Record<ChartZone['tone'], string> = { buy: C.buy, sell: C.sell, accent: C.accent, neutral: C.ink3 };

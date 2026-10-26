@@ -2,6 +2,7 @@ import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { LessonSlice } from '../data';
 import type { ChartMark, ChartText, ChartZone } from './LessonChart';
 import { priceFormat } from './model';
+import { FIG, inkOn } from './palette';
 
 /**
  * Footprint ćwiczenia: sprzedaż × kupno agresorów na poziomach ceny w każdej świecy (jak styl Bid × Ask na Wykresach),
@@ -23,9 +24,9 @@ interface Props {
   locale: string;
 }
 
-// Kafle jak w stylu Bid × Ask Wykresów (src/charts/pro/chart/theme.ts): od grafitu do nasyconego koloru strony
-const SELL_RAMP = ['#2a3446', '#4c3532', '#743d2e', '#a6492f', '#d9582e'];
-const BUY_RAMP = ['#2a3446', '#1f4b52', '#1a6d63', '#19907d', '#1fb597'];
+// Kafle jak w stylu Bid × Ask Wykresów, w palecie wybranej w Wykresach: sprzedaż agresorów po stronie bidu, kupno po stronie asku
+const SELL_RAMP = FIG.fpBidRamp;
+const BUY_RAMP = FIG.fpAskRamp;
 const TONE: Record<ChartZone['tone'], string> = { buy: 'var(--color-of-buy)', sell: 'var(--color-of-sell)', accent: 'var(--color-accent)', neutral: 'var(--color-ink-3)' };
 
 /** Nierównowagi po przekątnej: kupno wobec sprzedaży poziom niżej i sprzedaż wobec kupna poziom wyżej, co najmniej 3:1. */
@@ -127,7 +128,7 @@ export const FootprintFigure: React.FC<Props> = ({ slice, cursor, marks = [], zo
 
   let maxCell = 1;
   for (const b of vis) for (const c of b.cells) maxCell = Math.max(maxCell, c[1], c[2]);
-  const ramp = (r: string[], v: number) => r[Math.min(r.length - 1, Math.round((v / maxCell) ** 0.6 * (r.length - 1)))];
+  const ramp = (r: readonly string[], v: number) => r[Math.min(r.length - 1, Math.round((v / maxCell) ** 0.6 * (r.length - 1)))];
   const maxDelta = Math.max(1, ...vis.map((b) => Math.abs(b.cells.reduce((s, c) => s + c[2] - c[1], 0))));
 
   const els: React.ReactNode[] = [];
@@ -156,19 +157,18 @@ export const FootprintFigure: React.FC<Props> = ({ slice, cursor, marks = [], zo
       const yy = yRow(p);
       const sCol = ramp(SELL_RAMP, s);
       const bCol = ramp(BUY_RAMP, kb);
-      els.push(<rect key={`s${b.t}${p}`} x={xs} y={yy + 0.5} width={cw - 1} height={rowH - 1} fill={s > 0 ? sCol : '#1c2534'} />);
-      els.push(<rect key={`b${b.t}${p}`} x={xs + cw} y={yy + 0.5} width={cw - 1} height={rowH - 1} fill={kb > 0 ? bCol : '#1c2534'} />);
+      els.push(<rect key={`s${b.t}${p}`} x={xs} y={yy + 0.5} width={cw - 1} height={rowH - 1} fill={sCol} />);
+      els.push(<rect key={`b${b.t}${p}`} x={xs + cw} y={yy + 0.5} width={cw - 1} height={rowH - 1} fill={bCol} />);
       const fs = cw < 22 ? 9 : 10;
       const fmt = cw < 24 ? volNarrow : vol;
-      const dark = (v: number) => (v / maxCell) ** 0.6 > 0.62;
       if (cw >= 15) {
         els.push(
-          <text key={`st${b.t}${p}`} x={xs + cw / 2 - 0.5} y={yy + rowH / 2 + 3.5} fontSize={fs} textAnchor="middle" fontWeight={imb.sell.has(p) ? 700 : 400} fill={dark(s) ? '#0b1019' : '#eef2f7'}>
+          <text key={`st${b.t}${p}`} x={xs + cw / 2 - 0.5} y={yy + rowH / 2 + 3.5} fontSize={fs} textAnchor="middle" fontWeight={imb.sell.has(p) ? 700 : 400} fill={inkOn(sCol)}>
             {fmt(s)}
           </text>
         );
         els.push(
-          <text key={`bt${b.t}${p}`} x={xs + cw * 1.5 - 0.5} y={yy + rowH / 2 + 3.5} fontSize={fs} textAnchor="middle" fontWeight={imb.buy.has(p) ? 700 : 400} fill={dark(kb) ? '#0b1019' : '#eef2f7'}>
+          <text key={`bt${b.t}${p}`} x={xs + cw * 1.5 - 0.5} y={yy + rowH / 2 + 3.5} fontSize={fs} textAnchor="middle" fontWeight={imb.buy.has(p) ? 700 : 400} fill={inkOn(bCol)}>
             {fmt(kb)}
           </text>
         );
@@ -180,11 +180,12 @@ export const FootprintFigure: React.FC<Props> = ({ slice, cursor, marks = [], zo
     // Delta, wolumen, ΔOI pod świecą
     const d = b.cells.reduce((sum, c) => sum + c[2] - c[1], 0);
     const v = b.cells.reduce((sum, c) => sum + c[1] + c[2], 0);
-    const dCol = d >= 0 ? BUY_RAMP : SELL_RAMP;
-    els.push(<rect key={`dl${b.t}`} x={xs} y={statTop} width={2 * cw - 1} height={statH - 2} fill={dCol[Math.min(4, Math.round((Math.abs(d) / maxDelta) * 4))]} />);
+    const dRamp = d >= 0 ? FIG.fpDeltaPosRamp : FIG.fpDeltaNegRamp;
+    const dCol = dRamp[Math.min(dRamp.length - 1, Math.round((Math.abs(d) / maxDelta) * (dRamp.length - 1)))];
+    els.push(<rect key={`dl${b.t}`} x={xs} y={statTop} width={2 * cw - 1} height={statH - 2} fill={dCol} />);
     const cxm = xs + cw;
     els.push(
-      <text key={`dt${b.t}`} x={cxm} y={statTop + 11.5} fontSize={10} textAnchor="middle" fontWeight={600} fill="#eef2f7">
+      <text key={`dt${b.t}`} x={cxm} y={statTop + 11.5} fontSize={10} textAnchor="middle" fontWeight={600} fill={inkOn(dCol)}>
         {sig(d)}
       </text>
     );
