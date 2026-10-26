@@ -112,7 +112,7 @@ Niedziela była spokojna. Szczyt doby 81 014 padł o 04:15, dołek 80 051 o 10:1
 
 **VWAP.** VWAP dnia stoi na 80 550 przy σ 226 dolarów, cena jest 0,4σ nad nim. Pasmo −1σ okolice 80 329 zatrzymało przecenę rano, a od popołudnia cena trzyma się nad VWAP i dwa razy testowała strefę pasma +1σ (80 775) bez zamknięcia nad nią.
 
-**Przepływ i pozycje.** Taśma obejmuje okres od soboty 21:00, z krótką przerwą o 10:33. W tym czasie delta wynosi +296 BTC, w ostatnich 4 godzinach +600 BTC przy cenie +239 dolarów i OI +152,8 BTC, czyli nowe longi. W ostatniej godzinie cena spadła o 158 dolarów, a delta była dodatnia (+80 BTC) przy OI +104,7 BTC. Kupujący agresywnie nie przesunęli ceny, ktoś pasywnie sprzedawał w ich zlecenia. Sam rozjazd nic nie przesądza, liczy się reakcja ceny przy 80 640.
+**Przepływ i pozycje.** Taśma obejmuje okres od soboty 21:00, z krótką przerwą o 10:33. W tym czasie delta wynosi +296 BTC, w ostatnich 4 godzinach +463 BTC przy cenie +5 dolarów i OI +152,8 BTC, czyli nowe longi, które nie ruszyły ceny. W ostatniej godzinie cena spadła o 129 dolarów, a delta była dodatnia (+79 BTC) przy OI +104,7 BTC. Kupujący agresywnie nie przesunęli ceny, ktoś pasywnie sprzedawał w ich zlecenia. Sam rozjazd nic nie przesądza, liczy się reakcja ceny przy 80 640.
 
 ## Footprint dołka niedzieli
 
