@@ -247,6 +247,8 @@ export function sessionSvg(s, { narrow = false, zones = [], levels = null, uid =
   const rMax = narrow ? 8 : 11;
   const byT = new Map(candles.map((c) => [c[0], c]));
   let biggest = null;
+  // Koła i podpis największego: podpis strefy scenariusza ich nie zasłania
+  const marks = [];
   for (const [t, [l, sh]] of liq) {
     const c = byT.get(t);
     if (!c) continue;
@@ -259,6 +261,7 @@ export function sessionSvg(s, { narrow = false, zones = [], levels = null, uid =
       const cy = side === 'long' ? y(c[3]) + r + 4 : y(c[2]) - r - 4;
       const col = side === 'long' ? C.sell : C.buy;
       out.push(`<circle cx="${f(cx(t))}" cy="${f(cy)}" r="${f(r)}" fill="${col}" fill-opacity="0.45" stroke="${side === 'long' ? C.sellInk : C.buyInk}"/>`);
+      marks.push({ x: cx(t) - r, y: cy - r, w: 2 * r, h: 2 * r });
       if (!biggest || v > biggest.v) biggest = { v, x: cx(t), cy, r, side };
     }
   }
@@ -269,17 +272,21 @@ export function sessionSvg(s, { narrow = false, zones = [], levels = null, uid =
     const label = `${n1.format(biggest.v)} mln USD`;
     const w = label.length * 5.4 + 4;
     out.push(rect(left ? x - w + 2 : x - 2, biggest.cy - 7, w, 14, C.bg, ' fill-opacity="0.85" rx="2"'));
+    marks.push({ x: left ? x - w + 2 : x - 2, y: biggest.cy - 7, w, h: 14 });
     out.push(text(x, biggest.cy, label, { size: 9, fill: C.ink2, anchor: left ? 'end' : 'start' }));
   }
 
-  // Podpisy stref na wierzchu, na tle wykresu (czytelne także nad świecami)
+  // Podpisy stref na wierzchu, na tle wykresu (czytelne także nad świecami); przy lewej krawędzi, a gdy tam jest koło likwidacji, przy prawej
   for (const z of zones) {
     const [a, b] = z.zone;
     const label = `${z.bias === 'up' ? '▲' : z.bias === 'down' ? '▼' : '◆'} ${px0(a)}–${px0(b)}`;
     const yy = (y(a) + y(b)) / 2;
-    out.push(rect(2, yy - 7, label.length * 5.6 + 8, 14, C.bg, ' fill-opacity="0.85" rx="2"'));
+    const w = label.length * 5.6 + 8;
+    const hits = (x0) => marks.some((m) => m.x < x0 + w && m.x + m.w > x0 && m.y < yy + 7 && m.y + m.h > yy - 7);
+    const x0 = hits(2) && !hits(plotW - w - 2) ? plotW - w - 2 : 2;
+    out.push(rect(x0, yy - 7, w, 14, C.bg, ' fill-opacity="0.85" rx="2"'));
     out.push(
-      text(6, yy, label, {
+      text(x0 + 4, yy, label, {
         size: 9,
         fill: z.bias === 'up' ? C.buyInk : z.bias === 'down' ? C.sellInk : C.ink2,
       })

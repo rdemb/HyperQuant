@@ -285,6 +285,16 @@ describe('wykresy: rysunek (charts.mjs)', () => {
     expect(sessionHtml(SESSION, [{ bias: 'down', zone: [79600, 79700] }])).toMatch(/class="chart chart--w"[\s\S]*class="chart chart--n"/);
   });
 
+  it('podpis strefy omija koło likwidacji przy lewej krawędzi', () => {
+    const low = SESSION.candles[0][3];
+    const zones = [{ bias: 'down', zone: [low - 40, low + 40] }];
+    const s = { ...SESSION, liq: [[SESSION.from, 12, 0]] };
+    const at = (svg) => Number(svg.match(/<text x="([\d.]+)"[^>]*>▼ /)[1]);
+    expect(at(sessionSvg(SESSION, { zones }))).toBe(6);
+    expect(at(sessionSvg(s, { zones }))).toBeGreaterThan(400);
+    expect(at(sessionSvg(s, { zones, narrow: true, uid: 'n' }))).toBeGreaterThan(150);
+  });
+
   it('CVD liczone ze świec bazowych: ten sam wynik w obu układach, gdy część świecy 30 min jest bez delty', () => {
     // Ostatnia świeca bez taśmy (nagranie skończyło się przed jej końcem): 11 świec po +20
     const s = { ...SESSION, candles: SESSION.candles.map((c, i) => (i === 95 ? [...c.slice(0, 6), null, null] : c)) };
