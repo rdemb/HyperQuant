@@ -446,6 +446,19 @@ export const UNSURE_HI = 0.53;
 export type Stance = 'long' | 'short' | 'unsure';
 export const stanceOf = (pUp: number): Stance => (pUp > UNSURE_HI ? 'long' : pUp < UNSURE_LO ? 'short' : 'unsure');
 
+/**
+ * Histereza etykiety na żywo: zajęte stanowisko trzyma się, dopóki szansa nie wejdzie o 0,5 pp w strefę „Nie wiem”,
+ * więc przy szansie skaczącej wokół 53% etykieta nie miga co sekundę. Po zaokrągleniu nadal widać co najmniej 53%.
+ * Tylko wyświetlanie: dziennik zapisuje szanse, nie etykietę.
+ */
+export const STANCE_HOLD = 0.005;
+export function holdStance(prev: Stance | null, pUp: number): Stance {
+  const s = stanceOf(pUp);
+  if (s !== 'unsure' || prev === null || prev === 'unsure') return s;
+  if (prev === 'long') return pUp > UNSURE_HI - STANCE_HOLD ? 'long' : s;
+  return pUp < UNSURE_LO + STANCE_HOLD ? 'short' : s;
+}
+
 export interface Forecast {
   version: string;
   t: number;
