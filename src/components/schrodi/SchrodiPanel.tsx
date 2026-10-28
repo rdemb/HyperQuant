@@ -529,8 +529,8 @@ export const SchrodiPanel: React.FC<{
             "I'm Schrödinger's cat: until the market decides, I'm a bit Long and a bit Short. The blurrier I am, the less I know. I compute 22 features from Hyperliquid candles (move, volatility, auction, session clock, macro calendar) and combine a logistic regression with 300 decision trees."
           )}{' '}
           {tr(
-            'Liczę się na żywo, na świecach kończących się w tej chwili: w testach 2024 do 2026 świeża prognoza przy nagłym ruchu trafiała duże ruchy do 52% lepiej (Brier) niż prognoza sprzed kilku minut.',
-            'I update live, on candles ending right now: in 2024 to 2026 tests a fresh forecast during a sudden move called big moves up to 52% better (Brier) than one a few minutes old.'
+            'Liczę się na żywo, na świecach kończących się w tej chwili: w testach 2023 do 2026 świeża prognoza przy nagłym ruchu trafiała duże ruchy do 52% lepiej (Brier) niż prognoza sprzed kilku minut.',
+            'I update live, on candles ending right now: in 2023 to 2026 tests a fresh forecast during a sudden move called big moves up to 52% better (Brier) than one a few minutes old.'
           )}{' '}
           <a href={DOC_URL} target="_blank" rel="noopener noreferrer" className="underline decoration-line-strong hover:text-ink-1">
             {tr('Metoda i wyniki', 'Method and results')}
