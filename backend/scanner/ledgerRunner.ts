@@ -306,9 +306,10 @@ export class LedgerRunner {
       appended++;
     }
 
-    // 1. Wydanie prognoz w bieżącym slocie
+    // 1. Wydanie prognoz w bieżącym slocie — tylko w przebiegu zaczętym w tym slocie: reżim i kot są pobierane dla slotu
+    // chwili `now`; przebieg sprzed granicy (np. pierwsze pobranie modelu po restarcie) zostawia wydanie następnemu
     const issued: Record<string, unknown>[] = [];
-    if (!this.forecasts.has(`${slot}-ret60`) && ti - slot < ISSUE_WINDOW) {
+    if (!this.forecasts.has(`${slot}-ret60`) && ti - slot < ISSUE_WINDOW && slotOf(now) === slot) {
       const px = this.d.markPx();
       const fresh = data.model && ti - data.modelAt <= MODEL_MAX_AGE;
       const reason = !fresh ? 'no-model' : !(px && px > 0) ? 'no-price' : !Number.isFinite(data.sigma1h) ? 'no-benchmark' : null;

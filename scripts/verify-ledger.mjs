@@ -98,8 +98,9 @@ function mktRecordProblems(fc) {
   if (!(fc.p >= 0 && fc.p <= 1)) out.push(`${fc.id}: p poza [0, 1]`);
   if (fc.bid !== null && fc.ask !== null && !(fc.bid <= fc.ask)) out.push(`${fc.id}: bid > ask`);
   if (typeof fc.depthBid === 'number' || typeof fc.depthAsk === 'number') {
+    // Jak bookQuote w src/utils/hip4.ts, bez tolerancji: spread 0,503–0,553 to w liczbach zmiennoprzecinkowych > 0,05
     const liquid =
-      fc.bid !== null && fc.ask !== null && fc.ask - fc.bid <= MKT_MAX_SPREAD + 1e-12 && fc.depthBid >= MKT_MIN_DEPTH && fc.depthAsk >= MKT_MIN_DEPTH;
+      fc.bid !== null && fc.ask !== null && fc.ask - fc.bid <= MKT_MAX_SPREAD && fc.depthBid >= MKT_MIN_DEPTH && fc.depthAsk >= MKT_MIN_DEPTH;
     if (liquid !== fc.liquid) out.push(`${fc.id}: liquid = ${fc.liquid} ≠ przeliczone ze spreadu i głębokości ${liquid}`);
   }
   return out;
