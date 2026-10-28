@@ -1,10 +1,11 @@
 import React from 'react';
 import { useDeskLedger } from '../../state/useDeskLedger';
 import { LedgerVerifyCard } from './LedgerVerifyCard';
+import { CatLedgerCard } from './CatLedgerCard';
 import { ModelAbCard } from './ModelAbCard';
 import { LEDGER_BASE } from '../../state/usePublished';
 import { Badge, EmptyState, Panel, Stat, DASH, fmtPrice, fmtFixed } from '../../ui';
-import { DeskLedgerSummary, MktScores, RetScores, TouchLevel, isAb } from '../../utils/deskLedger';
+import { DeskLedgerSummary, MktScores, RetScores, TouchLevel, isAb, isCat } from '../../utils/deskLedger';
 import { locale, tr } from '../../i18n';
 
 const timeFmt = new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit' });
@@ -12,8 +13,7 @@ const dateTimeFmt = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'sh
 /** Procent bez „−0.0%” (zero ze znakiem minus z zaokrąglenia) */
 const pct = (v: number | null | undefined, d = 0) => {
   if (v === null || v === undefined || !Number.isFinite(v)) return DASH;
-  const s = fmtFixed(v * 100, d);
-  return `${Number(s) === 0 ? (0).toFixed(d) : s}%`;
+  return `${fmtFixed(Number((v * 100).toFixed(d)) || 0, d)}%`;
 };
 /** Wyniki pokazujemy dopiero od 20 rozstrzygnięć — mniejsza próba to szum, nie ocena */
 const MIN_N = 20;
@@ -90,6 +90,8 @@ const LedgerBody: React.FC<{ s: DeskLedgerSummary; stale: boolean; expired: bool
     {s.market && <MarketCard m={s.market} />}
 
     {s.ab && isAb(s.ab) && <ModelAbCard ab={s.ab} />}
+
+    {s.cat && isCat(s.cat) && s.cat.since !== null && <CatLedgerCard cat={s.cat} />}
 
     <div className="flex flex-col gap-2 rounded-md border border-line bg-surface-2/50 px-3 py-2.5 text-xs text-ink-2">
       <div className="flex flex-wrap gap-x-5 gap-y-1">

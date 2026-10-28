@@ -1,15 +1,17 @@
 import React, { useState } from 'react';
 import { ChevronDown, X } from 'lucide-react';
 import { KIND_LABEL, MACRO_EVENTS, type MacroEvent, fmtEventLocal } from '../../data/macroCalendar';
-import { tr } from '../../i18n';
+import { locale, tr } from '../../i18n';
+import { useDeskLedger } from '../../state/useDeskLedger';
 import { Badge } from '../../ui';
+import { isCat } from '../../utils/deskLedger';
 import { fmtCountdown, fmtPrice, fmtSigned } from '../../ui/format';
 import type { Forecast, Group, Levels, SchrodiModel } from '../../utils/schrodi';
 import { type Mood, SchrodiCat } from './SchrodiCat';
 
 /**
  * Dymek Schrödiego: najpierw wielkość ruchu w najbliższej godzinie, poziomy i makro, potem kierunek z uczciwym %.
- * Rozwijane: „Dlaczego?” (wkład grup cech), „Jak trafiam” (walidacja krocząca), „O mnie”.
+ * Rozwijane: „Dlaczego?” (wkład grup cech), „Jak trafiam” (walidacja krocząca i wynik na żywo z dziennika), „O mnie”.
  */
 
 const MIN = 60_000;
@@ -109,6 +111,32 @@ type Card = {
 /** Odległość w dolarach ze znakiem: „+87 $” po polsku, „+$87” po angielsku */
 const usd = (v: number) => tr(fmtSigned(v, 0, ' $'), `${v > 0 ? '+' : v < 0 ? '−' : ''}$${fmtPrice(Math.abs(v), 0)}`);
 
+type Live = NonNullable<NonNullable<ReturnType<typeof useDeskLedger>['summary']>['cat']>;
+const pctOr = (v: number | null) => (v === null ? '—' : pct(v));
+
+/** Wynik na żywo z weryfikowalnego dziennika: każda prognoza zapisana z hashem, zanim znany jest wynik. */
+const LiveRecord: React.FC<{ live: Live }> = ({ live }) => {
+  const s = live.scores;
+  const since = new Date(live.since!).toLocaleDateString(locale, { day: 'numeric', month: 'short' });
+  return (
+    <p className="mt-2">
+      <span className="text-ink-1">{tr('Na żywo', 'Live')}</span>{' '}
+      {s.n === 0
+        ? tr(
+            `od ${since}: każdą prognozę co 15 minut zapisuję w dzienniku z hashem, zanim znam wynik. Pierwsze rozliczenie po godzinie.`,
+            `since ${since}: every forecast is written to the ledger with a hash every 15 minutes, before the outcome is known. First results after an hour.`
+          )
+        : tr(
+            `(30 dni, od ${since}): ${s.n} rozliczonych prognoz, ${s.nEff} rozłącznych godzin. Duży ruch: AUC ${s.big.auc === null ? '—' : s.big.auc.toFixed(2).replace('.', ',')}, trafność ${pctOr(s.big.hit)}. Kierunek: Long trafiał w ${pctOr(s.dir.long.hit)} z ${s.dir.long.n}, Short w ${pctOr(s.dir.short.hit)} z ${s.dir.short.n}.${s.nEff < 50 ? ' To jeszcze za mało, żeby oceniać.' : ''}`,
+            `(30 days, since ${since}): ${s.n} resolved forecasts, ${s.nEff} non-overlapping hours. Big move: AUC ${s.big.auc === null ? '—' : s.big.auc.toFixed(2)}, accuracy ${pctOr(s.big.hit)}. Direction: Long right ${pctOr(s.dir.long.hit)} of ${s.dir.long.n}, Short ${pctOr(s.dir.short.hit)} of ${s.dir.short.n}.${s.nEff < 50 ? ' Too little data to judge yet.' : ''}`
+          )}{' '}
+      <a href="#plan" className="underline decoration-line-strong hover:text-ink-1">
+        {tr('Dziennik', 'Ledger')}
+      </a>
+    </p>
+  );
+};
+
 export const SchrodiPanel: React.FC<{
   f: Forecast;
   model: SchrodiModel;
@@ -128,6 +156,8 @@ export const SchrodiPanel: React.FC<{
         .sort((a, b) => b.px - a.px)
     : [];
   const px = livePx && livePx > 0 ? livePx : f.price;
+  const { summary } = useDeskLedger();
+  const live = summary && isCat(summary.cat) && summary.cat.since !== null ? summary.cat : null;
   const above = levels.filter((l) => l.px > px).slice(-2);
   const below = levels.filter((l) => l.px <= px).slice(0, 2);
   const card = model.card as unknown as Card;
@@ -234,6 +264,7 @@ export const SchrodiPanel: React.FC<{
             `Direction: Long was right ${pct(card.kierunek['2023_2025'].long[1])} and ${pct(card.kierunek['2026'].long[1])} of the time, Short ${pct(card.kierunek['2023_2025'].short[1])} and ${pct(card.kierunek['2026'].short[1])}. Wins are small, so direction alone does not pay after costs.`
           )}
         </p>
+        {live && <LiveRecord live={live} />}
       </Section>
 
       <Section title={tr('O mnie', 'About me')}>
