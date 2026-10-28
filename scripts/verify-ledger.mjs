@@ -15,6 +15,8 @@
  *     = `mh` rekordu), wzrost i duży ruch z cen i max/min okna; szanse dotknięcia poziomów i stożek zasięgu
  *     przeliczone modelem public/schrodi/touch-v1.json (hash = `th`); plan oceny zaufania kota zgodny z kodem
  *     (src/utils/schrodiTrust.ts), a dowód przewagi, rozkład trafności i alarm dryfu przeliczone z rekordów;
+ *     godzina na żywo (zapisy o :15 i :30): cena, próg i szanse startowe z prognozy kota z początku godziny, p przeliczone
+ *     modelem public/schrodi/hour-v1.json (hash = `mh`), wynik z godziny zegara, plan i dowód przewagi przeliczone;
  *  4. pokwitowania OpenTimestamps: skrót w `ots/<dzień>.jsonl.ots` = SHA-256 pliku dnia; w `ots/slots/<slot>.ots`
  *     = hash ostatniej prognozy tego slotu (prognozy istniały w chwili znakowania). Sam czas potwierdza klient OTS:
  *     `ots upgrade <plik>.ots` i `ots verify -f <plik danych> <plik>.ots` (dla slotu: skrót podaj przez `-d <hash>`).
@@ -25,7 +27,8 @@ import { createHash } from 'node:crypto';
 import { AB_DESIGN, abBlocks } from '../src/utils/abTest.ts';
 import { fitEnsemble } from '../src/utils/ensemble.ts';
 import { FEATURES, TOUCH_MAX_R, scoreHead, touchCone, touchProb } from '../src/utils/schrodi.ts';
-import { TRUST_DESIGN, catTrust, trustHour } from '../src/utils/schrodiTrust.ts';
+import { HOUR_DESIGN, TRUST_DESIGN, catTrust, hourRow, hourTrust, trustHour } from '../src/utils/schrodiTrust.ts';
+import { HOUR_FEATURES, hourProbs, hourX, logit } from '../src/utils/schrodiHour.ts';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -131,7 +134,7 @@ export function checkResolutions(records) {
       if (r.near !== near) out.push(`${r.id}: near = ${r.near} ≠ przeliczone ${near}`);
       continue;
     }
-    if (fc.kind === 'cat') {
+    if (fc.kind === 'cat' || fc.kind === 'hour') {
       if (!(r.c0 > 0 && r.c1 > 0 && r.hi > 0 && r.lo > 0)) {
         out.push(`${r.id}: brak cen źródłowych (c0/c1/hi/lo)`);
         continue;
@@ -220,6 +223,47 @@ function touchProblems(fc, x, touchModel, th) {
   }
   if (canonical(touchCone(touchModel, x, fc.thr)) !== canonical(fc.cone ?? null)) bad.push('stożek zasięgu ≠ przeliczony');
   return bad;
+}
+
+const HOUR_MS = 60 * 60_000;
+const hourVec = (x) => Object.fromEntries(HOUR_FEATURES.map((f, i) => [f, x[i]]));
+
+/**
+ * Godzina na żywo (Schrödi): zapis o :15 albo :30 (minuty od początku godziny = pierwsza cecha), cena, próg i szanse
+ * startowe w cechach z prognozy kota z początku godziny, horyzont do końca godziny zegara, hash modelu = SHA-256
+ * kanonicznego JSON public/schrodi/hour-v1.json, p przeliczone z zapisanych cech. Cechy drogi ceny vs świece: --market.
+ */
+export function checkHour(records, model) {
+  const mh = model ? createHash('sha256').update(canonical(model)).digest('hex') : null;
+  const cats = new Map(records.filter((o) => o.k === 'f' && o.kind === 'cat').map((o) => [o.id, o]));
+  const problems = [];
+  let checked = 0;
+  for (const fc of records) {
+    if (fc.k !== 'f' || fc.kind !== 'hour') continue;
+    const bad = [];
+    const hs = fc.slot - (fc.slot % HOUR_MS);
+    const m = (fc.slot - hs) / 60_000;
+    if (!HOUR_DESIGN.checkpoints.includes(m)) bad.push('slot poza :15 i :30');
+    if (fc.id !== `${fc.slot}-hour` || fc.hs !== hs) bad.push('identyfikator albo początek godziny');
+    if (fc.h !== (hs + HOUR_MS - fc.t) / 60_000) bad.push('horyzont ≠ do końca godziny');
+    const cat = cats.get(`${hs}-cat`);
+    if (!cat) bad.push('brak prognozy kota z początku godziny');
+    else if (cat.px0 !== fc.px0 || cat.thr !== fc.thr) bad.push('cena albo próg ≠ prognoza kota');
+    if (!Array.isArray(fc.x) || fc.x.length !== HOUR_FEATURES.length || !fc.x.every(Number.isFinite)) bad.push('cechy');
+    else {
+      if (fc.x[0] !== m) bad.push('m ≠ minuty od początku godziny');
+      if (cat && (fc.x[6] !== r6(logit(cat.pBig, 1e-4)) || fc.x[7] !== r6(logit(cat.pUp, 1e-4)))) bad.push('szanse startowe ≠ prognoza kota');
+      if (!model) bad.push('brak publicznego modelu godziny do przeliczenia');
+      else if (fc.mh !== mh) bad.push('hash modelu ≠ public/schrodi/hour-v1.json');
+      else {
+        const p = hourProbs(model, hourVec(fc.x));
+        for (const k of ['pBig', 'pBigRule', 'pUp']) if (r4(p[k]) !== fc[k]) bad.push(`${k} ${fc[k]} ≠ przeliczone ${r4(p[k])}`);
+      }
+    }
+    if (bad.length) problems.push(`${fc.id}: ${bad.join(', ')}`);
+    else checked++;
+  }
+  return { problems, checked };
 }
 
 /** Skrót (hex) zakotwiczony w pliku .ots — nagłówek, wersja 1, operacja SHA-256; inny format → null. */
@@ -381,6 +425,30 @@ export function checkTrust(records) {
     if (h) hours.push(h);
   }
   return { problems, plan, trust: catTrust(hours, plan) };
+}
+
+/**
+ * Plan oceny godziny na żywo (rekord `k: 'p'`, id HOUR_DESIGN.id): jak plan zaufania — zgodny z kodem, jeden hash;
+ * ocena przeliczona z zapisów z rozstrzygnięciem (bez unieważnionych), gdy rekord planu jest wśród sprawdzanych.
+ */
+export function checkHourTrust(records) {
+  const problems = [];
+  const plans = records.filter((o) => o.k === 'p' && o.id === HOUR_DESIGN.id);
+  const want = canonical(HOUR_DESIGN);
+  for (const p of plans) if (canonical(p.catalog) !== want) problems.push(`${p.id}: plan godziny na żywo różni się od kodu (src/utils/schrodiTrust.ts)`);
+  if (new Set(plans.map((p) => p.catalogHash)).size > 1) problems.push(`${HOUR_DESIGN.id}: kilka różnych planów pod jednym identyfikatorem`);
+  const p = plans[0];
+  const plan = p && typeof p.t === 'number' ? { id: HOUR_DESIGN.id, hash: String(p.hash), at: p.t } : null;
+  if (!plan) return { problems, plan: null, trust: null };
+  const res = new Map();
+  for (const o of records) if (o.k === 'r') res.set(o.id, o);
+  const rows = [];
+  for (const o of records) {
+    if (o.k !== 'f' || o.kind !== 'hour') continue;
+    const r = res.get(o.id);
+    if (r && !r.void && typeof r.hi === 'number') rows.push(hourRow(o, r));
+  }
+  return { problems, plan, trust: hourTrust(rows, plan) };
 }
 
 /**
@@ -590,7 +658,7 @@ export function checkMarket(records, candles) {
   for (const r of records) {
     if (r.k !== 'r') continue;
     const fc = f.get(r.id);
-    if (!fc || (fc.kind !== 'ret' && fc.kind !== 'touch' && fc.kind !== 'mkt' && fc.kind !== 'cat')) continue;
+    if (!fc || (fc.kind !== 'ret' && fc.kind !== 'touch' && fc.kind !== 'mkt' && fc.kind !== 'cat' && fc.kind !== 'hour')) continue;
     eligible++;
     let market = null; // ceny z rynku albo null, gdy poza zakresem pobranych świec
     if (fc.kind === 'ret') {
@@ -600,11 +668,13 @@ export function checkMarket(records, candles) {
     } else if (fc.kind === 'mkt') {
       const b = byTime.get(fc.t + fc.h * MIN_MS - MIN_MS);
       if (b) market = { c1: b.close };
-    } else if (fc.kind === 'cat') {
-      const a = byTime.get(fc.t - MIN_MS);
-      const b = byTime.get(fc.t + fc.h * MIN_MS - MIN_MS);
-      const win = candles.filter((c) => c.time >= fc.t && c.time + MIN_MS <= fc.t + fc.h * MIN_MS);
-      if (a && b && win.length >= fc.h) market = { c0: a.close, c1: b.close, hi: Math.max(...win.map((c) => c.high)), lo: Math.min(...win.map((c) => c.low)) };
+    } else if (fc.kind === 'cat' || fc.kind === 'hour') {
+      // Kot: okno od początku horyzontu; godzina na żywo: godzina zegara od `hs`
+      const [s0, n] = fc.kind === 'cat' ? [fc.t, fc.h] : [fc.hs, 60];
+      const a = byTime.get(s0 - MIN_MS);
+      const b = byTime.get(s0 + n * MIN_MS - MIN_MS);
+      const win = candles.filter((c) => c.time >= s0 && c.time + MIN_MS <= s0 + n * MIN_MS);
+      if (a && b && win.length >= n) market = { c0: a.close, c1: b.close, hi: Math.max(...win.map((c) => c.high)), lo: Math.min(...win.map((c) => c.low)) };
     } else {
       const win = candles.filter((c) => c.time >= fc.t && c.time + MIN_MS <= fc.t + fc.h * MIN_MS);
       if (win.length >= fc.h) market = { hi: Math.max(...win.map((c) => c.high)), lo: Math.min(...win.map((c) => c.low)) };
@@ -615,10 +685,25 @@ export function checkMarket(records, candles) {
     else if (fc.kind === 'ret' && (market.c0 !== r.c0 || market.c1 !== r.c1)) problems.push(`${r.id}: ceny ${r.c0}/${r.c1} ≠ świece ${market.c0}/${market.c1}`);
     else if (fc.kind === 'mkt' && market.c1 !== r.c1) problems.push(`${r.id}: cena ${r.c1} ≠ świeca ${market.c1}`);
     else if (fc.kind === 'touch' && (market.hi !== r.hi || market.lo !== r.lo)) problems.push(`${r.id}: max/min ${r.hi}/${r.lo} ≠ świece ${market.hi}/${market.lo}`);
-    else if (fc.kind === 'cat' && (market.c0 !== r.c0 || market.c1 !== r.c1 || market.hi !== r.hi || market.lo !== r.lo))
+    else if ((fc.kind === 'cat' || fc.kind === 'hour') && (market.c0 !== r.c0 || market.c1 !== r.c1 || market.hi !== r.hi || market.lo !== r.lo))
       problems.push(`${r.id}: ceny ${r.c0}/${r.c1}, max/min ${r.hi}/${r.lo} ≠ świece ${market.c0}/${market.c1}, ${market.hi}/${market.lo}`);
   }
-  return { problems, checked, eligible };
+  // Godzina na żywo: cechy drogi ceny (zakres, odległości od max/min, zmienność, zmiana) z pełnych minut przed slotem
+  let hourFeatures = 0;
+  for (const fc of f.values()) {
+    if (fc.kind !== 'hour' || !Array.isArray(fc.x)) continue;
+    const mins = [];
+    for (let t = fc.hs; t < fc.slot; t += MIN_MS) {
+      const c = byTime.get(t);
+      if (!c) break;
+      mins.push({ h: c.high, l: c.low, c: c.close });
+    }
+    if (mins.length !== (fc.slot - fc.hs) / MIN_MS) continue;
+    const x = hourX(fc.px0, fc.thr, 0.5, 0.5, mins);
+    hourFeatures++;
+    if (!x || HOUR_FEATURES.slice(1, 6).some((k, i) => Math.abs(r6(x[k]) - fc.x[i + 1]) > 2e-6)) problems.push(`${fc.id}: cechy drogi ceny ≠ przeliczone ze świec`);
+  }
+  return { problems, checked, eligible, hourFeatures };
 }
 
 const NET_TIMEOUT_MS = 15_000;
@@ -909,6 +994,33 @@ async function main() {
     );
   }
   if (trust.problems.length) ok = false;
+  let hourModel = null;
+  try {
+    hourModel = JSON.parse(readFileSync(new URL('../public/schrodi/hour-v1.json', import.meta.url), 'utf8'));
+  } catch {
+    // brak pliku — zapisy godziny na żywo zgłoszą brak przeliczenia
+  }
+  const hour = checkHour(records, hourModel);
+  if (hour.checked || hour.problems.length)
+    console.log(
+      hour.problems.length
+        ? `✗ godzina na żywo (${hour.problems.length}): ${hour.problems.slice(0, 5).join('; ')}`
+        : `✓ godzina na żywo: ${plural(hour.checked, 'zapis', 'zapisy', 'zapisów')} — cena, próg i szanse startowe z prognozy kota, p przeliczone z zapisanych cech publicznym modelem, hash zgodny`
+    );
+  if (hour.problems.length) ok = false;
+  const hourPlan = checkHourTrust(records);
+  if (hourPlan.plan || hourPlan.problems.length) {
+    const b = hourPlan.trust?.big;
+    console.log(
+      hourPlan.problems.length
+        ? `✗ plan godziny na żywo (${hourPlan.problems.length}): ${hourPlan.problems.slice(0, 5).join('; ')}`
+        : `✓ plan godziny na żywo ${HOUR_DESIGN.id} prerejestrowany ${new Date(hourPlan.plan.at).toISOString().slice(0, 16)}Z, zgodny z kodem` +
+            (b
+              ? `; przeliczone z rekordów — duży ruch wobec samej drogi ceny E = ${(10 ** b.lg).toPrecision(3)} (${plural(b.n, 'godzina', 'godziny', 'godzin')}${b.proofAt !== null ? `, dowód od ${new Date(b.proofAt).toISOString().slice(0, 13)}Z` : ''}); alarm dryfu: ${b.drift.alarm ? 'tak' : 'brak'}`
+              : '')
+    );
+  }
+  if (hourPlan.problems.length) ok = false;
   const pre = checkPreregs(records);
   if (pre.preregs.length || pre.problems.length)
     console.log(
@@ -964,7 +1076,7 @@ async function main() {
         for (const fc of fs) {
           // Wariant B (A/B) dzieli pokwitowanie z wersją A — liczony raz, jako wersja główna
           if (fc.variant) continue;
-          const key = fc.kind === 'mkt' ? 'rynek HIP-4 (15 min)' : fc.kind === 'cat' ? 'Schrödi (1 h)' : `horyzont ${fc.h} min`;
+          const key = fc.kind === 'mkt' ? 'rynek HIP-4 (15 min)' : fc.kind === 'cat' ? 'Schrödi (1 h)' : fc.kind === 'hour' ? 'Schrödi, godzina na żywo' : `horyzont ${fc.h} min`;
           const s = (stat[key] ??= { n: 0, proven: 0, late: 0, pending: 0 });
           s.n++;
           if (bt === null) s.pending++;
@@ -1008,7 +1120,7 @@ async function main() {
           ok = false;
         } else if (mk.eligible === 0) console.log('ℹ --market: brak rozstrzygnięć do sprawdzenia');
         else if (mk.checked === 0) console.log(`ℹ --market: żadne z ${mk.eligible} rozstrzygnięć nie mieści się w zakresie świec 1m (~3.4 doby) — nic nie sprawdzono`);
-        else console.log(`✓ ceny źródłowe zgodne ze świecami 1m: sprawdzone ${mk.checked}/${mk.eligible} (pozostałe starsze niż ~3.4 doby)`);
+        else console.log(`✓ ceny źródłowe zgodne ze świecami 1m: sprawdzone ${mk.checked}/${mk.eligible} (pozostałe starsze niż ~3.4 doby)${mk.hourFeatures ? `; cechy godziny na żywo ze świec: ${mk.hourFeatures}` : ''}`);
       }
     }
   } else {
@@ -1019,6 +1131,11 @@ async function main() {
       if (s?.head?.hash === prev && trust.trust && s?.cat?.trust) {
         const same = canonical(s.cat.trust) === canonical(trust.trust);
         console.log(same ? '✓ ocena zaufania kota w podsumowaniu zgodna z przeliczoną z rekordów' : '✗ ocena zaufania kota w podsumowaniu różni się od przeliczonej z rekordów');
+        if (!same) ok = false;
+      }
+      if (s?.head?.hash === prev && hourPlan.trust && s?.cat?.hour) {
+        const same = canonical(s.cat.hour) === canonical(hourPlan.trust);
+        console.log(same ? '✓ ocena godziny na żywo w podsumowaniu zgodna z przeliczoną z rekordów' : '✗ ocena godziny na żywo w podsumowaniu różni się od przeliczonej z rekordów');
         if (!same) ok = false;
       }
     } catch {
