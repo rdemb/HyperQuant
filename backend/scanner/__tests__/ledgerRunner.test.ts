@@ -475,6 +475,31 @@ describe('LedgerRunner — Schrödi (kot) w partii slotu', () => {
     expect(checkResolutions([c, { ...res, yBig: 1 - res.yBig }])).toHaveLength(1);
   });
 
+  it('przebieg zaczęty przed granicą slotu (długie pobieranie po restarcie) nie wydaje; następny wydaje z reżimem i kotem tego slotu', async () => {
+    // Jak ForecastData: reżim i dane kota liczone dla slotu chwili `now` z początku przebiegu
+    const data = { ...fakeData(), cat, catInput: null } as ReturnType<typeof fakeData> & LedgerData;
+    data.refreshRegime = async (now: number) => {
+      data.regime = { sigma5: 0.0015, run: 40, pChange: 0.01 };
+      data.regimeAt = now;
+    };
+    data.refreshCat = async (now: number) => {
+      data.catInput = { slot: now - (now % (15 * MIN)), inp };
+    };
+    let clock = 0;
+    const { r, dir } = runner({ data, clock: () => clock });
+    r.init(SLOT0 - 2 * MIN);
+    // Start 30 s przed slotem, koniec pobierania 23 s po jego początku
+    clock = SLOT0 + 23_000;
+    await r.tick(SLOT0 - 30_000);
+    expect(lines(dir, '2026-10-22').filter((l) => l.k === 'f')).toEqual([]);
+    clock = SLOT0 + 31_000;
+    await r.tick(SLOT0 + 30_000);
+    const ids = lines(dir, '2026-10-22')
+      .filter((l) => l.k === 'f')
+      .map((l) => l.id);
+    expect(ids).toEqual(expect.arrayContaining([`${SLOT0}-ret60`, `${SLOT0}-ret60b`, `${SLOT0}-cat`]));
+  });
+
   it('dane kota z innego slotu albo brak modelu → slot bez kota, reszta prognoz bez zmian', async () => {
     const data = { ...fakeData(), cat, catInput: { slot: SLOT0 - 15 * MIN, inp }, refreshCat: async () => {} };
     const { r } = runner({ data });

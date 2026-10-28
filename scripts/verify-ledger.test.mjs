@@ -211,6 +211,8 @@ describe('verify-ledger — model vs rynek: niezmienniki rekordu i płynność',
   it('płynność przeliczana ze spreadu i głębokości; t + h = termin = koniec slotu; bid ≤ ask; 0 ≤ p ≤ 1', () => {
     expect(checkResolutions([base, res])).toEqual([]);
     expect(checkResolutions([{ ...base, depthAsk: 10 }, res]).join(' ')).toMatch(/liquid/);
+    // Spread równo 5 centów z zapisu 23.10: skaner liczy bez tolerancji (0,553 − 0,503 > 0,05 w liczbach zmiennoprzecinkowych)
+    expect(checkResolutions([{ ...base, bid: 0.503, ask: 0.553, liquid: false }, res])).toEqual([]);
     expect(checkResolutions([{ ...base, h: 9 }, res]).join(' ')).toMatch(/termin/);
     expect(checkResolutions([{ ...base, expiry: T + 30 * M, h: 23 }, res]).join(' ')).toMatch(/koniec slotu/);
     expect(checkResolutions([{ ...base, bid: 0.6 }, res]).join(' ')).toMatch(/bid/);
