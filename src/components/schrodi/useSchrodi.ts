@@ -9,6 +9,7 @@ import { type Bar, type Forecast, type SchrodiModel, forecast, lastClosed5m, mod
  */
 
 const MIN = 60_000;
+const DAY = 1440 * MIN;
 /** Przeliczenie 20 s po zamknięciu świecy 5m (świeca jest już w API) */
 const AFTER_CLOSE_MS = 20_000;
 
@@ -24,7 +25,8 @@ const EVENTS = modelEvents(MACRO_EVENTS);
 
 async function loadInput(now: number) {
   const [m1, m5, h1, d1] = await Promise.all([
-    fetchCandles('BTC', '1m', now - 4990 * MIN),
+    // 1m od początku poprzedniej doby UTC: profil wczoraj i VWAP dziś
+    fetchCandles('BTC', '1m', Math.floor(now / DAY) * DAY - DAY),
     fetchCandles('BTC', '5m', now - 2110 * 5 * MIN),
     fetchCandles('BTC', '1h', now - 725 * 60 * MIN),
     fetchCandles('BTC', '1d', now - 35 * 1440 * MIN),
