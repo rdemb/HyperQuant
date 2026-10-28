@@ -1,5 +1,5 @@
 import { AB_DESIGN } from '../../src/utils/abTest.ts';
-import { TRUST_DESIGN, type TrustHour, trustHour } from '../../src/utils/schrodiTrust.ts';
+import { HOUR_DESIGN, type HourRow, TRUST_DESIGN, type TrustHour, hourRow, trustHour } from '../../src/utils/schrodiTrust.ts';
 import { fitEnsemble } from '../../src/utils/ensemble.ts';
 import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
@@ -16,9 +16,11 @@ import {
   type CatForecast,
   type CatModel,
   type CatResolution,
+  type HourForecast,
   buildSummary,
   ensPairs,
   makeCatForecast,
+  makeHourForecast,
   makeMktForecast,
   makeRetForecast,
   makeRetForecastB,
@@ -26,6 +28,7 @@ import {
   makeTouchForecast,
   nextAci,
   resolveCat,
+  resolveHour,
   resolveMkt,
   resolveRet,
   resolveTouch,
@@ -42,7 +45,8 @@ import type { stampDigest } from './ots.ts';
  *  1. w nowym slocie 15 min (do 5 min po jego początku) wydaje prognozy; początkiem horyzontu jest pełna minuta PO
  *     wydaniu (bez podglądania ceny między początkiem slotu a wydaniem); slot przegapiony nie jest uzupełniany wstecz —
  *     dostaje jawny rekord `skip` z powodem (brak modelu, ceny, przerwa);
- *     W tym samym slocie i tej samej partii — prognoza kota (Schrödi), jeśli jego dane z tego slotu są gotowe;
+ *     W tym samym slocie i tej samej partii — prognoza kota (Schrödi), jeśli jego dane z tego slotu są gotowe, a o :15
+ *     i :30 godzina na żywo (z rekordu kota z początku godziny);
  *  2. zaraz po wydaniu znakuje głowę łańcucha w OpenTimestamps (niezależne kalendarze od razu, blok Bitcoina po kilku
  *     godzinach) — pokwitowanie `ots/slots/<slot>.ots` dowodzi, że prognozy istniały przed rozstrzygnięciem;
  *  3. rozstrzyga prognozy po horyzoncie ze świec 1m; bez danych przez 6 h po horyzoncie — jawne unieważnienie (`void`);
@@ -59,6 +63,8 @@ const VOID_AFTER = 6 * HOUR;
 const AB_HASH = createHash('sha256').update(canonicalJson(AB_DESIGN)).digest('hex');
 /** SHA-256 kanonicznego JSON planu oceny zaufania kota */
 const TRUST_HASH = createHash('sha256').update(canonicalJson(TRUST_DESIGN)).digest('hex');
+/** SHA-256 kanonicznego JSON planu oceny godziny na żywo */
+const HOUR_HASH = createHash('sha256').update(canonicalJson(HOUR_DESIGN)).digest('hex');
 const MODEL_MAX_AGE = 3 * HOUR;
 const KEEP = 31 * DAY;
 /** Okno wydania rekordu „model vs rynek” w slocie (od początku slotu): 5–10 min, czyli 5–10 min przed terminem rynku */
@@ -140,6 +146,8 @@ export class LedgerRunner {
   private dirty = false;
   /** Rozstrzygnięte pełne godziny kota z całego dziennika (ocena zaufania) — po slocie, w zwartej postaci */
   private trustHours = new Map<number, TrustHour>();
+  /** Rozstrzygnięte zapisy godziny na żywo z całego dziennika (ocena wobec reguły z samej drogi ceny) */
+  private hourRows = new Map<string, HourRow>();
 
   constructor(d: LedgerRunner['d']) {
     this.d = d;
@@ -207,9 +215,10 @@ export class LedgerRunner {
     }
   }
 
-  /** Pełna godzina kota z rozstrzygnięciem (bez unieważnionych) do oceny zaufania */
+  /** Pełna godzina kota albo zapis godziny na żywo z rozstrzygnięciem (bez unieważnionych) do oceny zaufania */
   private addTrustHour(f: unknown, r: Record<string, unknown>): void {
-    const c = f as CatForecast | undefined;
+    const c = f as CatForecast | HourForecast | undefined;
+    if (c?.kind === 'hour' && typeof r.void !== 'string' && 'yBig' in r) this.hourRows.set(c.id, hourRow(c, r as unknown as CatResolution));
     if (c?.kind !== 'cat' || c.slot % HOUR !== 0 || typeof r.void === 'string' || !('yBig' in r)) return;
     const h = trustHour(c, r as unknown as CatResolution);
     if (h) this.trustHours.set(h.slot, h);
@@ -291,6 +300,11 @@ export class LedgerRunner {
       this.add([{ k: 'p', id: TRUST_DESIGN.id, t: ti, catalogHash: TRUST_HASH, catalog: TRUST_DESIGN }], ti);
       appended++;
     }
+    // Plan oceny godziny na żywo — w łańcuchu przed pierwszym zapisem godziny (liczą się godziny od chwili rejestracji)
+    if (data.refreshCat && data.cat?.hour && !this.preregs.some((p) => p.catalogHash === HOUR_HASH)) {
+      this.add([{ k: 'p', id: HOUR_DESIGN.id, t: ti, catalogHash: HOUR_HASH, catalog: HOUR_DESIGN }], ti);
+      appended++;
+    }
 
     // 1. Wydanie prognoz w bieżącym slocie
     const issued: Record<string, unknown>[] = [];
@@ -312,6 +326,10 @@ export class LedgerRunner {
         if (data.cat && data.catInput?.slot === slot) {
           const c = makeCatForecast(data.cat, data.catInput.inp, tm);
           if (c) issued.push({ ...c });
+          // Godzina na żywo (:15, :30): tylko z rekordem kota z początku tej godziny
+          const cat0 = this.forecasts.get(`${slot - (slot % HOUR)}-cat`);
+          const hf = data.cat.hour && cat0?.kind === 'cat' ? makeHourForecast(data.cat.hour, cat0, data.catInput.inp.m1, tm) : null;
+          if (hf) issued.push({ ...hf });
         }
         this.add(issued, ti);
         appended += issued.length;
@@ -359,7 +377,8 @@ export class LedgerRunner {
     const due = [...this.forecasts.values()].filter((f) => !this.resolutions.has(f.id) && f.t + f.h * MIN + RESOLVE_LAG <= ti);
     const resBodies: Record<string, unknown>[] = [];
     if (due.length > 0) {
-      const from = Math.min(...due.map((f) => f.t));
+      // Godzina na żywo: od minuty przed początkiem godziny (cena odniesienia)
+      const from = Math.min(...due.map((f) => (f.kind === 'hour' ? f.hs : f.t)));
       const candles = await data.minuteCandles(from, ti);
       const rNow = this.clock(ti);
       for (const f of due.sort((a, b) => a.t - b.t)) {
@@ -370,7 +389,9 @@ export class LedgerRunner {
               ? resolveTouch(f, candles, rNow)
               : f.kind === 'cat'
                 ? resolveCat(f, candles, rNow)
-                : resolveMkt(f, candles, rNow);
+                : f.kind === 'hour'
+                  ? resolveHour(f, candles, rNow)
+                  : resolveMkt(f, candles, rNow);
         if (r) {
           resBodies.push({ ...r });
           if (f.kind === 'ret' && !f.variant && 'inAci' in r) this.aci[f.h] = nextAci(this.aci[f.h] ?? ACI_ALPHA, r.inAci === 0);
@@ -469,6 +490,10 @@ export class LedgerRunner {
       catHours: [...this.trustHours.values()],
       trustPlan: ((p) => (p && typeof p.t === 'number' ? { id: TRUST_DESIGN.id, hash: String(p.hash), at: p.t } : null))(
         this.preregs.find((p) => p.catalogHash === TRUST_HASH)
+      ),
+      hourRows: [...this.hourRows.values()],
+      hourPlan: ((p) => (p && typeof p.t === 'number' ? { id: HOUR_DESIGN.id, hash: String(p.hash), at: p.t } : null))(
+        this.preregs.find((p) => p.catalogHash === HOUR_HASH)
       ),
     });
   }

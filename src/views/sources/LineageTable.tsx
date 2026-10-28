@@ -366,6 +366,23 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         ),
       },
       {
+        metric: tr('Schrödi: godzina na żywo (dymek kota, Plan)', 'Schrödi: live hour (cat panel, Plan)'),
+        source: tr(
+          'Świece 1m BTC Hyperliquid od początku bieżącej godziny i prognoza kota z tej chwili; w dzienniku zapisy o :15 i :30 od rejestracji planu schrodi-hour-v1',
+          'Hyperliquid BTC 1m candles since the start of the current hour and the cat forecast from that moment; in the ledger, records at :15 and :30 since the schrodi-hour-v1 plan was recorded'
+        ),
+        method: tr(
+          'Trzy głowy LightGBM z ograniczeniami monotonicznymi i kalibracją Platta (public/schrodi/hour-v1.json, src/utils/schrodiHour.ts); e-proces wobec tej samej metody z samej drogi ceny',
+          'Three LightGBM heads with monotone constraints and Platt calibration (public/schrodi/hour-v1.json, src/utils/schrodiHour.ts); e-process against the same method from the price path alone'
+        ),
+        kinds: ['LIVE', 'MODEL'],
+        refresh: tr('co minutę w dymku, zapis co 15 min o :15 i :30', 'every minute in the panel, recorded at :15 and :30'),
+        caveat: tr(
+          'Wynik dotyczy godziny zegara, a nie 60 minut od teraz. Kierunek tylko z drogi ceny, bez przewagi kota. Dowód w dzienniku na historii przychodził po ok. 34 dniach.',
+          'The result is for the clock hour, not the next 60 minutes. Direction from the price path only, with no edge from the cat. On history the ledger proof came after about 34 days.'
+        ),
+      },
+      {
         metric: 'CVD (spot / perp)',
         source: tr('Świece HL + transakcje WS (+ CEX, jeśli włączone)', 'HL candles + WS trades (+ CEX, if enabled)'),
         method: tr(

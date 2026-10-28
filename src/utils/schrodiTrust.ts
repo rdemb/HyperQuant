@@ -375,3 +375,89 @@ export function catTrust(hours: readonly TrustHour[], plan: CatTrust['plan']): C
     },
   };
 }
+
+/**
+ * Plan oceny godziny na żywo (`public/schrodi/hour-v1.json`) — prerejestrowany w dzienniku (rekord `k: 'p'`); zmiana
+ * planu = nowy identyfikator. Zakłady, próg dowodu i detektor dryfu jak w TRUST_DESIGN (ten sam kod).
+ */
+export const HOUR_DESIGN = {
+  id: 'schrodi-hour-v1',
+  question:
+    'Czy godzina na żywo kota (droga ceny od początku godziny i prognoza kota z jej początku) trafia duży ruch w tej godzinie lepiej (wynik Briera) niż ta sama metoda z samej drogi ceny?',
+  model: 'public/schrodi/hour-v1.json (hash mh w rekordzie): głowa big = kot, bigRule = reguła, dir = wzrost z samej drogi ceny',
+  checkpoints: [15, 30],
+  hours: 'pełne godziny zegara z prognozą kota o ich początku; zapis o :15 i :30, początek godziny nie wcześniej niż rejestracja planu, bez unieważnionych',
+  outcome: 'duży ruch: ln(max/min) minut [początek, początek + 60 min) · 1e4 > próg z prognozy kota; wzrost: zamknięcie godziny > zamknięcie minuty przed jej początkiem',
+  delta: 'δ = Brier reguły − Brier kota, średnio po zapisach godziny; δmin, δmax = mniejsza i większa ze średnich dla obu wyników; zakres już ponad progiem: p = 1 u obu (δ = 0)',
+  proof: {
+    bets: [0.025, 0.05, 0.1, 0.2, 0.4],
+    bet: 'kapitał_f ← kapitał_f · (1 + f · δ / |δmin|), mieszanka po f z równymi wagami',
+    threshold: 20,
+  },
+  drift: {
+    bets: [0.025, 0.05, 0.1, 0.2, 0.4],
+    update: 'M_f ← max(M_f, 1) · (1 − f · δ / δmax), statystyka = średnia po f',
+    alarm: 1000,
+    clear: 'statystyka poniżej 1',
+  },
+  direction: 'opisowo (Brier, trafność), bez zakładu: prognoza kota z początku godziny nic tu nie dodaje',
+  display: 'alarm dryfu tylko jako informacja przy wyniku godziny',
+} as const;
+
+/** Zapis godziny na żywo z rozstrzygnięciem (po m pełnych minutach godziny z początkiem `hs`) */
+export interface HourRow {
+  hs: number;
+  m: number;
+  pBig: number;
+  pBigRule: number;
+  pUp: number;
+  yBig: 0 | 1;
+  yDir: 0 | 1;
+}
+
+/** Zapis do oceny z pól rekordu (cechy: m pierwsze) i rozstrzygnięcia godziny zegara. */
+export function hourRow(
+  f: { hs: number; x: readonly number[]; pBig: number; pBigRule: number; pUp: number; thr: number },
+  r: { c0: number; c1: number; hi: number; lo: number }
+): HourRow {
+  return { hs: f.hs, m: f.x[0], pBig: f.pBig, pBigRule: f.pBigRule, pUp: f.pUp, yBig: Math.log(r.hi / r.lo) * 1e4 > f.thr ? 1 : 0, yDir: r.c1 > r.c0 ? 1 : 0 };
+}
+
+export interface HourTrust {
+  /** Rejestracja planu w dzienniku; null = plan jeszcze niezapisany (ocena nie biegnie) */
+  plan: { id: string; hash: string; at: number } | null;
+  /** Duży ruch: kot wobec reguły z samej drogi ceny (krok = godzina) */
+  big: TrustHead;
+  /** Wzrost z samej drogi ceny, opisowo: zapisy, Brier, trafność */
+  dir: { n: number; brier: number | null; hit: number | null };
+}
+
+/** Ocena godziny na żywo z zapisów (dowolna kolejność; liczą się godziny od rejestracji planu); bez planu — pusta ocena. */
+export function hourTrust(rows: readonly HourRow[], plan: HourTrust['plan']): HourTrust {
+  const cps: readonly number[] = HOUR_DESIGN.checkpoints;
+  const rs = plan ? rows.filter((r) => r.hs >= plan.at && cps.includes(r.m)).sort((a, b) => a.hs - b.hs || a.m - b.m) : [];
+  const steps: TrustStep[] = [];
+  for (let i = 0; i < rs.length; ) {
+    let j = i;
+    let d0 = 0;
+    let d1 = 0;
+    for (; j < rs.length && rs[j].hs === rs[i].hs; j++) {
+      const { pBig: p, pBigRule: q } = rs[j];
+      d1 += (q - 1) ** 2 - (p - 1) ** 2;
+      d0 += q * q - p * p;
+    }
+    const k = j - i;
+    steps.push({ slot: rs[i].hs, d: (rs[i].yBig === 1 ? d1 : d0) / k, lo: Math.min(d0, d1) / k, hi: Math.max(d0, d1) / k });
+    i = j;
+  }
+  const n = rs.length;
+  return {
+    plan,
+    big: head(steps, rs.map((r) => ({ p: r.pBig, y: r.yBig, q: r.pBigRule, c: r.hs })), false),
+    dir: {
+      n,
+      brier: n ? r4(rs.reduce((a, r) => a + (r.pUp - r.yDir) ** 2, 0) / n) : null,
+      hit: n ? r4(rs.filter((r) => (r.pUp > 0.5 ? 1 : 0) === r.yDir).length / n) : null,
+    },
+  };
+}

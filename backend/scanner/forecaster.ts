@@ -27,7 +27,8 @@ import {
   touchProb,
 } from '../../src/utils/schrodi.ts';
 import { normCdf } from '../../src/utils/stats.ts';
-import { type CatTrust, type TrustHour, catTrust } from '../../src/utils/schrodiTrust.ts';
+import { type CatTrust, type HourRow, type HourTrust, type TrustHour, HOUR_DESIGN, catTrust, hourTrust } from '../../src/utils/schrodiTrust.ts';
+import { HOUR_FEATURES, type HourModel, hourMinutes, hourProbs, hourX } from '../../src/utils/schrodiHour.ts';
 import { MACRO_EVENTS } from '../../src/data/macroCalendar.ts';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -41,7 +42,8 @@ import type { MarketSnap } from './marketQuotes.ts';
  *    Monte Carlo 4000 ścieżek, martyngał ceny) oraz — zapisane od razu — kwantyle benchmarku (normalny, σ z 30 dni);
  *  - prawdopodobieństwa dotknięcia PDH / PDL / D-EQ w 2 h — ten sam silnik co pas „Zasięg 2h” na Desku;
  *  - Schrödi (kot pod wykresem): szansa dużego ruchu i wzrostu w 1 h, szanse dotknięcia poziomów aukcji i stożek
- *    zasięgu godziny — te same modele i kod co na stronie.
+ *    zasięgu godziny, a o :15 i :30 godzina na żywo (szanse w bieżącej godzinie zegara) — te same modele i kod co na
+ *    stronie.
  * Wyniki: CRPS (i umiejętność względem benchmarku), PIT, pokrycie przedziałów 60/90% z testem Kupca, ACI (Gibbs & Candès),
  * Brier, BSS, niezawodność i kalibracja Venna–Abersa dla prawdopodobieństw.
  */
@@ -298,7 +300,34 @@ export interface CatResolution {
   yBig: 0 | 1;
 }
 
-export type Forecast = RetForecast | TouchForecast | MktForecast | CatForecast;
+/**
+ * Schrödi, godzina na żywo (`public/schrodi/hour-v1.json`, hash `mh`): o :15 i :30 szansa dużego ruchu (kot i reguła
+ * z samej drogi ceny) i wzrostu w bieżącej godzinie zegara [hs, hs + 1 h). Cechy z pełnych minut od `hs` do slotu, ceny
+ * `px0`, progu `thr` i szans kota z rekordu `<hs>-cat`; zapisane z 6 miejscami, p policzone z wersji zapisanej.
+ * Rozstrzygnięcie jak kota, ale w oknie godziny zegara (`h` = minuty od `t` do jej końca).
+ */
+export interface HourForecast {
+  k: 'f';
+  id: string;
+  slot: number;
+  ti: number;
+  t: number;
+  kind: 'hour';
+  h: number;
+  /** Początek godziny (slot prognozy kota z ceną, progiem i szansami startowymi) */
+  hs: number;
+  px0: number;
+  thr: number;
+  /** Cechy w kolejności HOUR_FEATURES (pierwsza: m = pełne minuty od początku godziny) */
+  x: number[];
+  pBig: number;
+  pBigRule: number;
+  pUp: number;
+  model: string;
+  mh: string;
+}
+
+export type Forecast = RetForecast | TouchForecast | MktForecast | CatForecast | HourForecast;
 export type Resolution = RetResolution | TouchResolution | MktResolution | CatResolution;
 /** Jawny zapis pominiętego slotu (brak modelu, ceny, przerwa) — braki nie mogą znikać po cichu */
 export interface SkipRecord {
@@ -517,6 +546,8 @@ export interface CatModel {
   mh: string;
   /** Model dotknięć i jego hash; brak pliku → kot bez szans dotknięcia */
   touch?: { model: TouchModel; th: string } | null;
+  /** Model godziny na żywo i jego hash; brak pliku → bez zapisów o :15 i :30 */
+  hour?: { model: HourModel; mh: string } | null;
 }
 
 const sha = (o: unknown) => createHash('sha256').update(canonicalJson(o)).digest('hex');
@@ -524,7 +555,8 @@ const sha = (o: unknown) => createHash('sha256').update(canonicalJson(o)).digest
 /** Model kota z pliku strony; brak albo uszkodzony plik → null (dziennik wydaje resztę prognoz bez kota). */
 export function loadCatModel(
   file: string | URL = new URL('../../public/schrodi/model-v1.json', import.meta.url),
-  touchFile: string | URL = new URL('../../public/schrodi/touch-v1.json', import.meta.url)
+  touchFile: string | URL = new URL('../../public/schrodi/touch-v1.json', import.meta.url),
+  hourFile: string | URL = new URL('../../public/schrodi/hour-v1.json', import.meta.url)
 ): CatModel | null {
   try {
     const model = JSON.parse(readFileSync(file, 'utf8')) as SchrodiModel;
@@ -536,7 +568,14 @@ export function loadCatModel(
     } catch {
       // bez modelu dotknięć kot wydaje tylko kierunek i duży ruch
     }
-    return { model, mh: sha(model), touch };
+    let hour: CatModel['hour'] = null;
+    try {
+      const hm = JSON.parse(readFileSync(hourFile, 'utf8')) as HourModel;
+      if (hm?.heads?.big && hm.heads.bigRule && hm.heads.dir) hour = { model: hm, mh: sha(hm) };
+    } catch {
+      // bez modelu godziny — bez zapisów godziny na żywo
+    }
+    return { model, mh: sha(model), touch, hour };
   } catch {
     return null;
   }
@@ -620,15 +659,54 @@ export function makeCatForecast(cm: CatModel, inp: SchrodiInput, tm: ForecastTim
   };
 }
 
-export function resolveCat(f: CatForecast, c1m: RangeBar[], now: number): CatResolution | null {
-  const c0 = closeAt(c1m, f.t);
-  const c1 = closeAt(c1m, f.t + f.h * MIN);
-  const win = c1m.filter((b) => b.time >= f.t && b.time + MIN <= f.t + f.h * MIN);
-  if (c0 === null || c1 === null || win.length < f.h) return null;
+/**
+ * Godzina na żywo w slocie o :15 albo :30: cechy z pełnych minut [hs, slot) i rekordu kota z początku godziny; brak
+ * kota, minuty albo inny slot → null.
+ */
+export function makeHourForecast(hm: NonNullable<CatModel['hour']>, cat: CatForecast, m1: readonly Bar[], tm: ForecastTimes): HourForecast | null {
+  const hs = tm.slot - (tm.slot % HOUR);
+  const m = (tm.slot - hs) / MIN;
+  if (!(HOUR_DESIGN.checkpoints as readonly number[]).includes(m) || cat.slot !== hs) return null;
+  const mins = hourMinutes(m1, hs, tm.slot);
+  const fx = mins && hourX(cat.px0, cat.thr, cat.pBig, cat.pUp, mins);
+  if (!fx) return null;
+  const x = HOUR_FEATURES.map((f) => r6(fx[f]));
+  const p = hourProbs(hm.model, Object.fromEntries(HOUR_FEATURES.map((f, i) => [f, x[i]])) as Record<(typeof HOUR_FEATURES)[number], number>);
+  return {
+    k: 'f',
+    id: `${tm.slot}-hour`,
+    slot: tm.slot,
+    ti: tm.ti,
+    t: tm.t,
+    kind: 'hour',
+    h: (hs + HOUR - tm.t) / MIN,
+    hs,
+    px0: cat.px0,
+    thr: cat.thr,
+    x,
+    pBig: r4(p.pBig),
+    pBigRule: r4(p.pBigRule),
+    pUp: r4(p.pUp),
+    model: hm.model.version,
+    mh: hm.mh,
+  };
+}
+
+/** Rozstrzygnięcie w oknie [start, start + n min): ceny na brzegach, max/min minut, wzrost i duży ruch wobec progu. */
+function resolveWindow(id: string, thr: number, start: number, n: number, c1m: RangeBar[], now: number): CatResolution | null {
+  const c0 = closeAt(c1m, start);
+  const c1 = closeAt(c1m, start + n * MIN);
+  const win = c1m.filter((b) => b.time >= start && b.time + MIN <= start + n * MIN);
+  if (c0 === null || c1 === null || win.length < n) return null;
   const hi = Math.max(...win.map((b) => b.high));
   const lo = Math.min(...win.map((b) => b.low));
-  return { k: 'r', id: f.id, t: now, c0, c1, hi, lo, yDir: c1 > c0 ? 1 : 0, yBig: Math.log(hi / lo) * 1e4 > f.thr ? 1 : 0 };
+  return { k: 'r', id, t: now, c0, c1, hi, lo, yDir: c1 > c0 ? 1 : 0, yBig: Math.log(hi / lo) * 1e4 > thr ? 1 : 0 };
 }
+
+/** Godzina na żywo: godzina zegara [hs, hs + 1 h), cena odniesienia = zamknięcie minuty przed jej początkiem */
+export const resolveHour = (f: HourForecast, c1m: RangeBar[], now: number): CatResolution | null => resolveWindow(f.id, f.thr, f.hs, 60, c1m, now);
+
+export const resolveCat = (f: CatForecast, c1m: RangeBar[], now: number): CatResolution | null => resolveWindow(f.id, f.thr, f.t, f.h, c1m, now);
 
 /** Notowanie z wąskim spreadem (≤ 5 pp), także płytkie — poziom oceny „wąski spread” */
 export const tightQuote = (f: MktForecast) => f.bid !== null && f.ask !== null && f.ask - f.bid <= 0.05 + 1e-12;
@@ -948,6 +1026,9 @@ export interface SummaryInput {
   /** Rozstrzygnięte pełne godziny kota z całego dziennika i rejestracja planu oceny zaufania (null / brak = jeszcze nie) */
   catHours?: TrustHour[];
   trustPlan?: CatTrust['plan'];
+  /** Rozstrzygnięte zapisy godziny na żywo z całego dziennika i rejestracja ich planu oceny */
+  hourRows?: HourRow[];
+  hourPlan?: HourTrust['plan'];
 }
 
 /** Podsumowanie (30 dni) dla strony: najnowsze prognozy, wyniki, kalibracja Venna–Abersa najnowszych prawdopodobieństw. */
@@ -1042,7 +1123,7 @@ export function buildSummary(s: SummaryInput): DeskLedgerSummary {
         : null,
     },
     ab: abSection(fs, s.resolutions, s.now, s.abRegisteredAt ?? null),
-    cat: { ...catSection(fs, catPairs), trust: catTrust(s.catHours ?? [], s.trustPlan ?? null) },
+    cat: { ...catSection(fs, catPairs), trust: catTrust(s.catHours ?? [], s.trustPlan ?? null), hour: hourTrust(s.hourRows ?? [], s.hourPlan ?? null) },
     method: 'hq-ledger-v1',
   };
 }

@@ -19,9 +19,10 @@ import {
   touchCone,
   touchProb,
 } from '../../utils/schrodi';
-import { type CatTrust, type OodFeature, TRUST_DESIGN, TRUST_HEADS, type TrustHeadKey, driftAlarms, oodKeys, proofState } from '../../utils/schrodiTrust';
+import { type HourModel, type HourPoint, hourPath } from '../../utils/schrodiHour';
+import { type CatTrust, type HourTrust, type OodFeature, TRUST_DESIGN, TRUST_HEADS, type TrustHeadKey, driftAlarms, oodKeys, proofState } from '../../utils/schrodiTrust';
 import { type Mood, SchrodiCat } from './SchrodiCat';
-import { HIST_MIN, useTouchModel } from './useSchrodi';
+import { HIST_MIN, type HourLive, useHourModel, useTouchModel } from './useSchrodi';
 
 /**
  * Dymek Schrödiego: najpierw wielkość ruchu w najbliższej godzinie, poziomy i makro, potem kierunek z uczciwym %.
@@ -29,6 +30,7 @@ import { HIST_MIN, useTouchModel } from './useSchrodi';
  * Rozwijane: „Dlaczego?” (wkład grup cech), „Jak trafiam” (walidacja krocząca, dowód i wynik na żywo z dziennika), „O mnie”.
  * Zaufanie: szary tryb przy alarmie dryfu z dziennika, znacznik rzadkiego rynku (cechy poza zakresem z nauki).
  * Na żywo: zmiana zdania w 10 min z grupami cech, które ją niosą, i wykres zdania z ostatniej godziny.
+ * „Ta godzina”: szanse w bieżącej pełnej godzinie po każdej minucie (model godziny, wczytywany po otwarciu dymka).
  */
 
 const MIN = 60_000;
@@ -187,6 +189,23 @@ const LiveProof: React.FC<{ t: CatTrust }> = ({ t }) => {
   );
 };
 
+/** Godzina na żywo: wynik testów i dowód w dzienniku (zapisy o :15 i :30 wobec tej samej metody z samej drogi ceny). */
+const HourProof: React.FC<{ h: HourTrust | undefined }> = ({ h }) => (
+  <p className="mt-2">
+    <span className="text-ink-1">{tr('Godzina na żywo', 'Live hour')}</span>{' '}
+    {tr(
+      'w testach 2024 do 2026: o :15 i :30 duży ruch w tej godzinie trafiałem o 4% lepiej (Brier) niż z samej drogi ceny, a dowód w dzienniku przychodził po ok. 34 dniach (mediana).',
+      'in 2024 to 2026 tests: at :15 and :30 I called a big move this hour 4% better (Brier) than from the price path alone, and the ledger proof came after about 34 days (median).'
+    )}
+    {h?.plan &&
+      h.big.n > 0 &&
+      ` ${tr(
+        `Na żywo od ${new Date(h.plan.at).toLocaleDateString(locale, { day: 'numeric', month: 'short' })}: po ${h.big.n} godz. kapitał zakładu ${fmtE(h.big.lg)} (start 1, dowód od ${TRUST_DESIGN.proof.threshold})${proofState(h.big) === 'holding' ? ', przewaga dowiedziona' : ''}.`,
+        `Live since ${new Date(h.plan.at).toLocaleDateString(locale, { day: 'numeric', month: 'short' })}: after ${h.big.n} h betting capital ${fmtE(h.big.lg)} (start 1, proof at ${TRUST_DESIGN.proof.threshold})${proofState(h.big) === 'holding' ? ', edge proven' : ''}.`
+      )}`}
+  </p>
+);
+
 /** Wynik na żywo z weryfikowalnego dziennika: każda prognoza zapisana z hashem, zanim znany jest wynik. */
 const LiveRecord: React.FC<{ live: Live }> = ({ live }) => {
   const s = live.scores;
@@ -280,6 +299,102 @@ const MindChart: React.FC<{ hist: Snap[] }> = ({ hist }) => {
   );
 };
 
+/** Czas lokalny HH:MM */
+const hhmm = (t: number) => new Date(t).toLocaleTimeString(tr('pl-PL', 'en-GB'), { hour: '2-digit', minute: '2-digit' });
+
+/** Wykres szans w tej godzinie: minuty 0 do 60, znaczniki chwil zapisu do dziennika (15 i 30 min). */
+const HourChart: React.FC<{ pts: HourPoint[]; hs: number }> = ({ pts, hs }) => {
+  const W = 300;
+  const H = 40;
+  const x = (m: number) => (m / 60) * W;
+  const path = (k: 'pBig' | 'pUp') => pts.map((p, i) => `${i ? 'L' : 'M'}${x(p.m).toFixed(1)},${((1 - p[k]) * H).toFixed(1)}`).join('');
+  return (
+    <div>
+      <div className="text-right text-[10px] text-ink-3 mb-0.5">
+        <span className="text-accent">━</span> {tr('ruch', 'move')} <span className="text-ink-2">━</span> {tr('wzrost', 'rise')}
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="w-full h-10 rounded bg-surface-3/40" aria-hidden="true">
+        <line x1={0} x2={W} y1={H / 2} y2={H / 2} className="stroke-line-strong" strokeDasharray="3 3" strokeWidth={1} vectorEffect="non-scaling-stroke" />
+        {[15, 30].map((m) => (
+          <line key={m} x1={x(m)} x2={x(m)} y1={0} y2={H} className="stroke-line" strokeWidth={1} vectorEffect="non-scaling-stroke" />
+        ))}
+        {pts.length > 1 && <path d={path('pUp')} fill="none" className="stroke-ink-2" strokeWidth={1.25} vectorEffect="non-scaling-stroke" />}
+        {pts.length > 1 && <path d={path('pBig')} fill="none" className="stroke-accent" strokeWidth={1.75} vectorEffect="non-scaling-stroke" />}
+      </svg>
+      <div className="relative h-3.5 text-[10px] text-ink-3">
+        <span className="absolute left-0">{hhmm(hs)}</span>
+        <span className="absolute -translate-x-1/2" style={{ left: '25%' }}>
+          :15
+        </span>
+        <span className="absolute -translate-x-1/2" style={{ left: '50%' }}>
+          :30
+        </span>
+        <span className="absolute right-0">{hhmm(hs + 60 * MIN)}</span>
+      </div>
+    </div>
+  );
+};
+
+/**
+ * Ta godzina: szansa dużego ruchu i wzrostu w bieżącej pełnej godzinie, po każdej minucie z drogi ceny od jej początku
+ * i prognozy kota z tej chwili. Kierunek tylko z drogi ceny (prognoza z początku godziny nic tu nie dodaje).
+ */
+const HourBlock: React.FC<{ hm: HourModel; hour: HourLive; end: number }> = ({ hm, hour, end }) => {
+  const pts = useMemo(() => hourPath(hm, hour.m1, hour.start, end), [hm, hour, end]);
+  if (!pts) return null;
+  const { hs, c0, thr } = hour.start;
+  const last = pts[pts.length - 1];
+  const mins = hour.m1.filter((b) => b.t >= hs && b.t + MIN <= end);
+  const range = mins.length ? Math.max(...mins.map((b) => b.h)) - Math.min(...mins.map((b) => b.l)) : 0;
+  const thrUsd = c0 * (Math.exp(thr / 1e4) - 1);
+  const done = last.m > 0 && last.pBig === 1;
+  return (
+    <div className="text-xs rounded-md border border-line px-2 py-2 flex flex-col gap-1.5">
+      <div className="flex items-baseline justify-between text-ink-2">
+        <span>
+          ⏱️ {tr('Ta godzina', 'This hour')} <span className="font-mono text-ink-1">{hhmm(hs)}</span>
+          {tr(' do ', ' to ')}
+          <span className="font-mono text-ink-1">{hhmm(hs + 60 * MIN)}</span>
+        </span>
+        <span className="text-[10px] text-ink-3">{tr(`zostało ${60 - last.m} min`, `${60 - last.m} min left`)}</span>
+      </div>
+      <div>
+        <div className="flex items-baseline justify-between text-[11px] text-ink-3">
+          <span>{tr('Zakres do teraz', 'Range so far')}</span>
+          <span className="font-mono">
+            <span className="text-ink-1">{fmtPrice(range, 0)} $</span> {tr('z', 'of')} {fmtPrice(thrUsd, 0)} $
+          </span>
+        </div>
+        <ProbBar p={Math.min(1, range / thrUsd)} tone="move" />
+      </div>
+      <div className="flex items-baseline justify-between">
+        <span className="text-ink-2">🌊 {tr('Duży ruch w tej godzinie', 'Big move this hour')}</span>
+        <span className="font-mono text-sm font-semibold text-accent">{pct(last.pBig)}</span>
+      </div>
+      {last.m > 0 && !done && (
+        <p className="-mt-1 text-[10px] text-ink-3 text-right">
+          {tr(`z samej drogi ceny ${pct(last.pBigRule)}`, `from the price path alone ${pct(last.pBigRule)}`)}
+        </p>
+      )}
+      <div className="flex items-baseline justify-between">
+        <span className="text-ink-2">
+          🎯 {tr('Zamknie wyżej niż o', 'Closes above')} {hhmm(hs)} <span className="font-mono text-ink-3">({fmtPrice(c0, 0)})</span>
+        </span>
+        <span className={`font-mono text-sm font-semibold ${last.pUp >= 0.5 ? 'text-buy-ink' : 'text-sell-ink'}`}>{pct(last.pUp)}</span>
+      </div>
+      <HourChart pts={pts} hs={hs} />
+      <p className="text-[11px] leading-snug text-ink-3">
+        {done
+          ? tr('Duży ruch w tej godzinie już jest: zakres przekroczył próg.', 'The big move this hour has happened: the range crossed the threshold.')
+          : tr(
+              `Liczę po każdej minucie z drogi ceny od ${hhmm(hs)} i mojej prognozy z tej chwili. W testach 2024 do 2026 duży ruch trafiałem tak o 6% lepiej (Brier) niż z samej drogi ceny, najwięcej na początku godziny. Kierunek tylko z drogi ceny. Do dziennika trafia o :15 i :30.`,
+              `I update after every minute from the price path since ${hhmm(hs)} and my forecast from that moment. In 2024 to 2026 tests that way I called big moves 6% better (Brier) than from the price path alone, most at the start of the hour. Direction from the price path only. Recorded in the ledger at :15 and :30.`
+            )}
+      </p>
+    </div>
+  );
+};
+
 export const SchrodiPanel: React.FC<{
   f: Forecast;
   model: SchrodiModel;
@@ -288,8 +403,10 @@ export const SchrodiPanel: React.FC<{
   stale: boolean;
   /** Zdanie na koniec każdej minuty z ostatniej godziny (ostatni wpis = bieżąca prognoza) */
   hist: Snap[];
+  /** Bieżąca pełna godzina (start z prognozy kota i minuty do teraz) */
+  hour: HourLive | null;
   onClose: () => void;
-}> = ({ f, model, at, now, stale, hist, onClose }) => {
+}> = ({ f, model, at, now, stale, hist, hour, onClose }) => {
   const mood = moodOf(f, now, stale);
   const ev = nextMacro(now);
   const levels = f.levels
@@ -309,6 +426,7 @@ export const SchrodiPanel: React.FC<{
   const below = levels.filter((l) => l.px <= px).slice(0, 2);
   const card = model.card as unknown as Card;
   const tm = useTouchModel();
+  const hm = useHourModel();
   // Szanse dotknięcia od bieżącej ceny z cechami tej samej chwili (dziennik zapisuje je co 15 min od ceny zamknięcia świecy 5m)
   const touch = useMemo(() => {
     if (!tm || !Number.isFinite(f.med1h)) return null;
@@ -400,6 +518,8 @@ export const SchrodiPanel: React.FC<{
             )}
           </p>
         </div>
+
+        {hm && hour && !stale && <HourBlock hm={hm} hour={hour} end={f.t + 5 * MIN} />}
 
         {levels.length > 0 && (
           <div className="text-xs">
@@ -519,6 +639,7 @@ export const SchrodiPanel: React.FC<{
           </p>
         )}
         {trust && <LiveProof t={trust} />}
+        <HourProof h={live?.hour} />
         {live && <LiveRecord live={live} />}
       </Section>
 
@@ -543,8 +664,8 @@ export const SchrodiPanel: React.FC<{
           MODEL
         </Badge>{' '}
         {tr(
-          `Na żywo, dane z ${time}: przeliczam w przeglądarce przy każdej zmianie świecy minutowej Hyperliquid, najwyżej raz na sekundę (${model.version}${tm ? `, ${tm.version}` : ''}). Do dziennika trafia prognoza co 15 minut. To nie jest porada inwestycyjna.`,
-          `Live, data from ${time}: recomputed in your browser on every change of the Hyperliquid minute candle, at most once a second (${model.version}${tm ? `, ${tm.version}` : ''}). The ledger records a forecast every 15 minutes. Not investment advice.`
+          `Na żywo, dane z ${time}: przeliczam w przeglądarce przy każdej zmianie świecy minutowej Hyperliquid, najwyżej raz na sekundę (${model.version}${tm ? `, ${tm.version}` : ''}${hm ? `, ${hm.version}` : ''}). Do dziennika trafia prognoza co 15 minut. To nie jest porada inwestycyjna.`,
+          `Live, data from ${time}: recomputed in your browser on every change of the Hyperliquid minute candle, at most once a second (${model.version}${tm ? `, ${tm.version}` : ''}${hm ? `, ${hm.version}` : ''}). The ledger records a forecast every 15 minutes. Not investment advice.`
         )}
         {stale && <span className="text-warn"> {tr('Dane nieświeże.', 'Data not fresh.')}</span>}
       </div>

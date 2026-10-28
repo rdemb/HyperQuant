@@ -376,7 +376,7 @@ export interface SchrodiModel {
   card: Record<string, unknown>;
 }
 
-const sigmoid = (z: number) => 1 / (1 + Math.exp(-z));
+export const sigmoid = (z: number) => 1 / (1 + Math.exp(-z));
 
 function lrScore(m: LrModel, x: FeatureVec): { z: number; contrib: Partial<Record<Feature, number>> } {
   const contrib: Partial<Record<Feature, number>> = {};
@@ -415,6 +415,28 @@ function treeScore(tr: Tree, xv: number[], contrib: number[]): number {
     if (child < 0) return next;
     node = child;
   }
+}
+
+/** Liść drzewa dla wektora cech (te same reguły braków co `treeScore`; bez `iv`) */
+function treeLeaf(tr: Pick<Tree, 'f' | 't' | 'm' | 'l' | 'r' | 'lv'>, xv: number[]): number {
+  if (tr.f.length === 0) return tr.lv[0];
+  let node = 0;
+  for (;;) {
+    let v = xv[tr.f[node]];
+    const miss = tr.m[node] >> 1;
+    if (Number.isNaN(v) && miss !== 2) v = 0;
+    const isMissing = (miss === 1 && Math.abs(v) <= ZERO) || (miss === 2 && Number.isNaN(v));
+    const child = (isMissing ? (tr.m[node] & 1) === 1 : v <= tr.t[node]) ? tr.l[node] : tr.r[node];
+    if (child < 0) return tr.lv[~child];
+    node = child;
+  }
+}
+
+/** Suma drzew (log-szansa) bez rozkładu wkładu cech; drzewa mogą nie mieć `iv` */
+export function treeSum(gb: readonly Pick<Tree, 'f' | 't' | 'm' | 'l' | 'r' | 'lv'>[], v: number[]): number {
+  let raw = 0;
+  for (const tr of gb) raw += treeLeaf(tr, v);
+  return raw;
 }
 
 export interface HeadResult {
@@ -583,11 +605,7 @@ export function touchVector(x: FeatureVec, med1h: number, d: number): number[] {
 export function touchProb(m: TouchModel, x: FeatureVec, med1h: number, d: number): number {
   const r = Math.abs(d) / med1h;
   if (!(r > 0) || r > TOUCH_MAX_R || !(x.rv_1d > 0)) return NaN;
-  const v = touchVector(x, med1h, d);
-  const scratch = new Array<number>(v.length).fill(0);
-  let raw = 0;
-  for (const tr of m.gb) raw += treeScore(tr, v, scratch);
-  return sigmoid(raw);
+  return sigmoid(treeSum(m.gb, touchVector(x, med1h, d)));
 }
 
 /** Szanse stożka zasięgu */

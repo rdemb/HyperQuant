@@ -46,7 +46,10 @@ export class LedgerStore {
     lastSlot: number | null;
     /** Rekordy prerejestracji katalogów (`k: 'p'`) z całego dziennika, w kolejności zapisu */
     preregs: LedgerRecord[];
-    /** Prognozy kota z pełnej godziny i rozstrzygnięcia kota z całego dziennika (ocena zaufania od rejestracji planu) */
+    /**
+     * Prognozy kota z pełnej godziny, zapisy godziny na żywo i ich rozstrzygnięcia z całego dziennika (oceny zaufania od
+     * rejestracji planów)
+     */
     catHours: { forecasts: Map<string, LedgerRecord>; resolutions: Map<string, LedgerRecord> };
     error?: string;
   } {
@@ -75,9 +78,10 @@ export class LedgerStore {
           preregs.push(JSON.parse(l) as LedgerRecord);
           continue;
         }
-        if (l.includes('-cat"')) {
+        if (l.includes('-cat"') || l.includes('-hour"')) {
           const o = JSON.parse(l) as LedgerRecord;
-          if (o.k === 'f' && o.kind === 'cat' && typeof o.slot === 'number' && o.slot % HOUR === 0) catHours.forecasts.set(o.id as string, o);
+          if (o.k === 'f' && o.kind === 'hour') catHours.forecasts.set(o.id as string, o);
+          else if (o.k === 'f' && o.kind === 'cat' && typeof o.slot === 'number' && o.slot % HOUR === 0) catHours.forecasts.set(o.id as string, o);
           else if (o.k === 'r' && typeof o.id === 'string') catHours.resolutions.set(o.id, o);
         }
         if (!l.includes('"k":"f"') && !l.includes('"k":"s"')) continue;

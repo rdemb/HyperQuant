@@ -7,7 +7,7 @@
  * i przeliczyć wyniki (scripts/verify-ledger.mjs) bez zaufania do HyperQuant.
  */
 
-import type { CatTrust, TrustHead } from './schrodiTrust.ts';
+import type { CatTrust, HourTrust, TrustHead } from './schrodiTrust.ts';
 
 export type TouchLevel = 'pdh' | 'pdl' | 'deq';
 
@@ -199,6 +199,8 @@ export interface DeskLedgerSummary {
     scores: CatScores;
     /** Ocena zaufania od rejestracji planu (cały dziennik, pełne godziny); brak w starszych podsumowaniach */
     trust?: CatTrust;
+    /** Ocena godziny na żywo (zapisy o :15 i :30) od rejestracji jej planu; brak w starszych podsumowaniach */
+    hour?: HourTrust;
   };
   method: 'hq-ledger-v1';
 }
@@ -349,6 +351,14 @@ export function isTrust(x: unknown): x is CatTrust {
   return !!t.ood && fin(t.ood.n) && finOrNull(t.ood.bssBig) && finOrNull(t.ood.bssDir);
 }
 
+/** Ocena godziny na żywo: plan, dowód dużego ruchu wobec reguły, kierunek opisowo */
+export function isHourTrust(x: unknown): x is HourTrust {
+  const t = x as Partial<HourTrust> | null;
+  const p = t?.plan;
+  if (!t || !(p === null || (!!p && typeof p.id === 'string' && typeof p.hash === 'string' && fin(p.at)))) return false;
+  return isTrustHead(t.big) && !!t.dir && fin(t.dir.n) && finOrNull(t.dir.brier) && finOrNull(t.dir.hit);
+}
+
 /** Sekcja kota (opcjonalna) — sprawdzana osobno: uszkodzona sekcja ukrywa tylko wynik kota */
 export function isCat(x: unknown): x is NonNullable<DeskLedgerSummary['cat']> {
   const c = x as Partial<NonNullable<DeskLedgerSummary['cat']>> | null;
@@ -358,6 +368,7 @@ export function isCat(x: unknown): x is NonNullable<DeskLedgerSummary['cat']> {
   if (!isSide(s.dir.long) || !isSide(s.dir.short) || !fin(s.dir.unsure) || !Array.isArray(s.big.reliability)) return false;
   if (s.touch !== undefined && !isCatTouch(s.touch)) return false;
   if (c.trust !== undefined && !isTrust(c.trust)) return false;
+  if (c.hour !== undefined && !isHourTrust(c.hour)) return false;
   const l = c.latest;
   return l === null || (!!l && fin(l.t) && fin(l.px0) && fin(l.pUp) && fin(l.pBig) && fin(l.thr));
 }

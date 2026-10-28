@@ -1,12 +1,13 @@
 import React from 'react';
 import { DASH, fmtE, fmtFixed } from '../../ui';
 import { locale, tr } from '../../i18n';
-import { type CatTrust, TRUST_DESIGN, TRUST_HEADS, type TrustHead, type TrustHeadKey, proofState } from '../../utils/schrodiTrust';
+import { type CatTrust, type HourTrust, TRUST_DESIGN, TRUST_HEADS, type TrustHead, type TrustHeadKey, proofState } from '../../utils/schrodiTrust';
 
 /**
  * Zaufanie do kota w dzienniku: dowód przewagi na żywo (e-wartość wobec prostej reguły, ważna przy każdym podglądaniu),
  * rozkład wyniku Briera (kalibracja, wiedza, trudność), koszyki kalibracji z pasmami Wilsona 90%, alarm dryfu i godziny
- * z rzadkim rynkiem. Wszystko przeliczalne z rekordów dziennika (scripts/verify-ledger.mjs).
+ * z rzadkim rynkiem; godzina na żywo (zapisy o :15 i :30) wobec tej samej metody z samej drogi ceny. Wszystko
+ * przeliczalne z rekordów dziennika (scripts/verify-ledger.mjs).
  */
 
 const PROOF_LG = Math.log10(TRUST_DESIGN.proof.threshold);
@@ -70,8 +71,8 @@ const Calibration: React.FC<{ h: TrustHead; label: string }> = ({ h, label }) =>
   );
 };
 
-const Head: React.FC<{ k: TrustHeadKey; h: TrustHead }> = ({ k, h }) => {
-  const label = LABEL[k]();
+/** Głowa oceny; `grey` = alarm dryfu przełącza kota w szary tryb (godzina na żywo: alarm tylko jako informacja) */
+const Head: React.FC<{ h: TrustHead; label: string; rule: string; grey?: boolean }> = ({ h, label, rule, grey = true }) => {
   const st = proofState(h);
   const proven = st === 'holding';
   const bar = Math.max(0, Math.min(1, h.lg / PROOF_LG));
@@ -80,7 +81,7 @@ const Head: React.FC<{ k: TrustHeadKey; h: TrustHead }> = ({ k, h }) => {
       <div className="flex items-baseline justify-between gap-2">
         <span className="text-[11px] text-ink-2">{label}</span>
         <span className="text-[10px] text-ink-3">
-          {h.n} {tr('godz.', 'h')} · {RULE[k]()}
+          {h.n} {tr('godz.', 'h')} · {rule}
         </span>
       </div>
       <div className="flex items-end justify-between gap-3">
@@ -123,8 +124,8 @@ const Head: React.FC<{ k: TrustHeadKey; h: TrustHead }> = ({ k, h }) => {
       <div className={`text-[11px] ${h.drift.alarm ? 'text-warn' : 'text-ink-3'}`}>
         {h.drift.alarm
           ? tr(
-              `⚠️ Alarm dryfu od ${whenFmt.format(h.drift.since!)}: ostatnio gorzej niż reguła, kot w szarym trybie`,
-              `⚠️ Drift alarm since ${whenFmt.format(h.drift.since!)}: recently worse than the rule, the cat goes grey`
+              `⚠️ Alarm dryfu od ${whenFmt.format(h.drift.since!)}: ostatnio gorzej niż reguła${grey ? ', kot w szarym trybie' : ''}`,
+              `⚠️ Drift alarm since ${whenFmt.format(h.drift.since!)}: recently worse than the rule${grey ? ', the cat goes grey' : ''}`
             )
           : tr(
               `Dryf: brak (${fmtE(h.drift.lg)} z ${TRUST_DESIGN.drift.alarm}${h.drift.episodes ? `, alarmów dotąd ${h.drift.episodes}` : ''})`,
@@ -135,7 +136,40 @@ const Head: React.FC<{ k: TrustHeadKey; h: TrustHead }> = ({ k, h }) => {
   );
 };
 
-export const CatTrustBlock: React.FC<{ trust: CatTrust }> = ({ trust }) => {
+/** Godzina na żywo: dowód wobec samej drogi ceny, kierunek opisowo */
+const HourBlock: React.FC<{ hour: HourTrust }> = ({ hour }) => {
+  const p = hour.plan!;
+  return (
+    <div className="flex flex-col gap-2 border-t border-line pt-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <div className="text-[11px] uppercase tracking-[0.08em] text-ink-2 font-medium">⏱️ {tr('Godzina na żywo', 'Live hour')}</div>
+        <span className="text-[10px] text-ink-3 font-mono">
+          {tr('plan', 'plan')} {p.id} · {tr('w dzienniku od', 'in the ledger since')} {whenFmt.format(p.at)} · {p.hash.slice(0, 10)}…
+        </span>
+      </div>
+      <p className="text-[10px] text-ink-3 leading-snug">
+        {tr(
+          'O :15 i :30 kot zapisuje szansę dużego ruchu w bieżącej godzinie z drogi ceny od jej początku i swojej prognozy z tej chwili. Reguła to ta sama metoda z samej drogi ceny. Zakład raz na godzinę, ze średniej z obu zapisów. Na historii 2024 do 2026 dowód przychodził po ok. 34 dniach (mediana).',
+          'At :15 and :30 the cat records the odds of a big move in the current hour from the price path since it began and its own forecast from that moment. The rule is the same method from the price path alone. One bet per hour, on the average of both records. On 2024 to 2026 history the proof came after about 34 days (median).'
+        )}{' '}
+        {hour.dir.n > 0 &&
+          tr(
+            `Kierunek tylko z drogi ceny: Brier ${num(hour.dir.brier, 3)}, trafność ${pct(hour.dir.hit)} (${hour.dir.n} zapisów).`,
+            `Direction from the price path only: Brier ${num(hour.dir.brier, 3)}, accuracy ${pct(hour.dir.hit)} (${hour.dir.n} records).`
+          )}
+      </p>
+      {hour.big.n === 0 ? (
+        <div className="text-xs text-ink-3">{tr('Pierwsza ocena po pierwszej pełnej godzinie od zapisania planu.', 'First result after the first full hour since the plan was recorded.')}</div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <Head h={hour.big} label={tr('Duży ruch w tej godzinie', 'Big move this hour')} rule={tr('reguła: sama droga ceny', 'rule: price path alone')} grey={false} />
+        </div>
+      )}
+    </div>
+  );
+};
+
+export const CatTrustBlock: React.FC<{ trust: CatTrust; hour?: HourTrust }> = ({ trust, hour }) => {
   const p = trust.plan;
   return (
     <div className="flex flex-col gap-3 rounded-md bg-surface-2/60 p-3">
@@ -161,7 +195,7 @@ export const CatTrustBlock: React.FC<{ trust: CatTrust }> = ({ trust }) => {
         <>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {TRUST_HEADS.map((k) => (
-              <Head key={k} k={k} h={trust[k]} />
+              <Head key={k} h={trust[k]} label={LABEL[k]()} rule={RULE[k]()} />
             ))}
           </div>
           <div className="text-[11px] text-ink-3">
@@ -172,6 +206,7 @@ export const CatTrustBlock: React.FC<{ trust: CatTrust }> = ({ trust }) => {
           </div>
         </>
       )}
+      {hour?.plan && <HourBlock hour={hour} />}
     </div>
   );
 };

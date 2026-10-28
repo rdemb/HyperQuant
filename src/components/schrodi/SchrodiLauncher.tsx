@@ -39,7 +39,7 @@ export const SchrodiLauncher: React.FC<{ className?: string }> = ({ className })
     <div className={`relative ${className ?? ''}`}>
       {open && st.status === 'ready' && (
         <div className="absolute bottom-full left-0 mb-1.5 z-40 w-[min(340px,calc(100vw-32px))] max-h-[min(560px,calc(100dvh-15rem))] overflow-y-auto rounded-xl shadow-2xl">
-          <SchrodiPanel f={st.f} model={st.model} at={st.at} now={now} stale={stale} hist={st.hist} onClose={() => setOpen(false)} />
+          <SchrodiPanel f={st.f} model={st.model} at={st.at} now={now} stale={stale} hist={st.hist} hour={st.hour} onClose={() => setOpen(false)} />
         </div>
       )}
       <button
