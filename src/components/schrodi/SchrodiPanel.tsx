@@ -6,16 +6,29 @@ import { useDeskLedger } from '../../state/useDeskLedger';
 import { Badge } from '../../ui';
 import { isCat } from '../../utils/deskLedger';
 import { fmtCountdown, fmtE, fmtPrice, fmtSigned } from '../../ui/format';
-import { type Forecast, type Group, type Levels, type SchrodiModel, TOUCH_MAX_R, touchCone, touchProb } from '../../utils/schrodi';
+import {
+  type Forecast,
+  type Group,
+  type Levels,
+  MIND_MIN,
+  type MindChange,
+  type SchrodiModel,
+  type Snap,
+  TOUCH_MAX_R,
+  mindChange,
+  touchCone,
+  touchProb,
+} from '../../utils/schrodi';
 import { type CatTrust, type OodFeature, TRUST_DESIGN, TRUST_HEADS, type TrustHeadKey, driftAlarms, oodKeys, proofState } from '../../utils/schrodiTrust';
 import { type Mood, SchrodiCat } from './SchrodiCat';
-import { useTouchModel } from './useSchrodi';
+import { HIST_MIN, useTouchModel } from './useSchrodi';
 
 /**
  * Dymek Schrödiego: najpierw wielkość ruchu w najbliższej godzinie, poziomy i makro, potem kierunek z uczciwym %.
  * Przy poziomach szansa dotknięcia w godzinę i stożek zasięgu (model dotknięć, wczytywany po otwarciu dymka).
  * Rozwijane: „Dlaczego?” (wkład grup cech), „Jak trafiam” (walidacja krocząca, dowód i wynik na żywo z dziennika), „O mnie”.
  * Zaufanie: szary tryb przy alarmie dryfu z dziennika, znacznik rzadkiego rynku (cechy poza zakresem z nauki).
+ * Na żywo: zmiana zdania w 10 min z grupami cech, które ją niosą, i wykres zdania z ostatniej godziny.
  */
 
 const MIN = 60_000;
@@ -209,16 +222,74 @@ const LiveRecord: React.FC<{ live: Live }> = ({ live }) => {
   );
 };
 
+/** Zmiana zdania w ostatnich 10 min i grupy cech, które ją niosą (wkład w przybliżeniu). */
+const MindLine: React.FC<{ m: MindChange }> = ({ m }) => {
+  const what = m.head === 'big' ? tr('duży ruch', 'big move') : tr('szansa wzrostu', 'odds of a rise');
+  const by = m.drivers.map((d) => `${GROUP_NAMES[d.g]().toLowerCase()} ${fmtSigned(d.pp, 0, ' pp')}`).join(', ');
+  return (
+    <div role="status" className="rounded-md border border-accent/40 bg-accent/10 px-2 py-1.5 text-[11px] leading-snug text-ink-1">
+      🔄{' '}
+      {tr(
+        `Zmiana zdania w ostatnich ${MIND_MIN} min: ${what} z ${pct(m.from)} na ${pct(m.to)}.`,
+        `Change of mind in the last ${MIND_MIN} min: ${what} from ${pct(m.from)} to ${pct(m.to)}.`
+      )}
+      {by && ` ${tr(`Najwięcej zmieniły (w przybliżeniu): ${by}.`, `Moved most by (approximately): ${by}.`)}`}
+    </div>
+  );
+};
+
+/** Zdanie kota w ostatniej godzinie: szansa dużego ruchu i szansa wzrostu na koniec każdej minuty. */
+const MindChart: React.FC<{ hist: Snap[] }> = ({ hist }) => {
+  const end = hist[hist.length - 1]?.s ?? 0;
+  const pts = hist.filter((h) => h.s >= end - HIST_MIN * MIN);
+  if (pts.length < 2) return null;
+  const W = 300;
+  const H = 48;
+  const x = (t: number) => ((t - (end - HIST_MIN * MIN)) / (HIST_MIN * MIN)) * W;
+  const path = (k: 'pBig' | 'pUp') => pts.map((h, i) => `${i ? 'L' : 'M'}${x(h.s).toFixed(1)},${((1 - h[k]) * H).toFixed(1)}`).join('');
+  const a = pts[0];
+  const b = pts[pts.length - 1];
+  return (
+    <div className="text-xs">
+      <div className="flex items-baseline justify-between text-ink-2 mb-1">
+        <span>📈 {tr('Moje zdanie w ostatniej godzinie', 'My view over the last hour')}</span>
+        <span className="text-[10px] text-ink-3">
+          <span className="text-accent">━</span> {tr('ruch', 'move')} <span className="text-ink-2">━</span> {tr('wzrost', 'rise')}
+        </span>
+      </div>
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        preserveAspectRatio="none"
+        className="w-full h-12 rounded bg-surface-3/40"
+        role="img"
+        aria-label={tr(
+          `Duży ruch od ${pct(a.pBig)} do ${pct(b.pBig)}, szansa wzrostu od ${pct(a.pUp)} do ${pct(b.pUp)}`,
+          `Big move from ${pct(a.pBig)} to ${pct(b.pBig)}, odds of a rise from ${pct(a.pUp)} to ${pct(b.pUp)}`
+        )}
+      >
+        <line x1={0} x2={W} y1={H / 2} y2={H / 2} className="stroke-line-strong" strokeDasharray="3 3" strokeWidth={1} vectorEffect="non-scaling-stroke" />
+        <path d={path('pUp')} fill="none" className="stroke-ink-2" strokeWidth={1.25} vectorEffect="non-scaling-stroke" />
+        <path d={path('pBig')} fill="none" className="stroke-accent" strokeWidth={1.75} vectorEffect="non-scaling-stroke" />
+      </svg>
+      <div className="flex justify-between text-[10px] text-ink-3">
+        <span>−{HIST_MIN} min</span>
+        <span>{tr('linia przerywana: 50%', 'dashed line: 50%')}</span>
+        <span>{tr('teraz', 'now')}</span>
+      </div>
+    </div>
+  );
+};
+
 export const SchrodiPanel: React.FC<{
   f: Forecast;
   model: SchrodiModel;
   at: number;
   now: number;
   stale: boolean;
-  /** Bieżąca cena BTC (poziomy liczone od niej); brak → cena z chwili prognozy */
-  livePx?: number | null;
+  /** Zdanie na koniec każdej minuty z ostatniej godziny (ostatni wpis = bieżąca prognoza) */
+  hist: Snap[];
   onClose: () => void;
-}> = ({ f, model, at, now, stale, livePx, onClose }) => {
+}> = ({ f, model, at, now, stale, hist, onClose }) => {
   const mood = moodOf(f, now, stale);
   const ev = nextMacro(now);
   const levels = f.levels
@@ -227,7 +298,8 @@ export const SchrodiPanel: React.FC<{
         .filter((l) => Number.isFinite(l.px))
         .sort((a, b) => b.px - a.px)
     : [];
-  const px = livePx && livePx > 0 ? livePx : f.price;
+  const px = f.price;
+  const mind = hist.length ? mindChange(hist, hist[hist.length - 1]) : null;
   const { summary } = useDeskLedger();
   const live = summary && isCat(summary.cat) && summary.cat.since !== null ? summary.cat : null;
   const trust = live?.trust ?? null;
@@ -237,7 +309,7 @@ export const SchrodiPanel: React.FC<{
   const below = levels.filter((l) => l.px <= px).slice(0, 2);
   const card = model.card as unknown as Card;
   const tm = useTouchModel();
-  // Szanse dotknięcia od bieżącej ceny z cechami ostatniej świecy 5m (dziennik zapisuje je od ceny zamknięcia tej świecy)
+  // Szanse dotknięcia od bieżącej ceny z cechami tej samej chwili (dziennik zapisuje je co 15 min od ceny zamknięcia świecy 5m)
   const touch = useMemo(() => {
     if (!tm || !Number.isFinite(f.med1h)) return null;
     // Dalej niż zakres uczenia: szansa nie rośnie z odległością, więc wartość na granicy jest górnym ograniczeniem
@@ -255,15 +327,21 @@ export const SchrodiPanel: React.FC<{
   const dirTitle =
     f.stance === 'long' ? `LONG ${pct(f.pUp)}` : f.stance === 'short' ? `SHORT ${pct(1 - f.pUp)}` : tr('NIE WIEM', "DON'T KNOW");
   const dirTone = f.stance === 'long' ? 'text-buy-ink' : f.stance === 'short' ? 'text-sell-ink' : 'text-ink-2';
-  const time = new Date(f.t + 5 * MIN).toLocaleTimeString(tr('pl-PL', 'en-GB'), { hour: '2-digit', minute: '2-digit' });
+  const time = new Date(at).toLocaleTimeString(tr('pl-PL', 'en-GB'), { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   return (
     <div role="dialog" aria-label="Schrödi" className="rounded-xl border border-line-strong bg-surface-2/95 backdrop-blur shadow-2xl text-ink-1 overflow-hidden">
       <div className="flex items-start gap-3 px-3 pt-3 pb-2">
         <SchrodiCat pUp={f.pUp} mood={mood} size={56} className={`shrink-0 ${alarms.length ? 'grayscale opacity-70' : ''}`} />
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
             <span className="text-sm font-semibold">Schrödi</span>
-            <span className="text-[10px] uppercase tracking-wide text-ink-3">BTC · {tr('najbliższa godzina', 'next hour')}</span>
+            <span className="text-[10px] uppercase tracking-wide text-ink-3 whitespace-nowrap">BTC · {tr('najbliższa godzina', 'next hour')}</span>
+            {!stale && (
+              <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wide text-buy-ink whitespace-nowrap">
+                <span className="w-1.5 h-1.5 rounded-full bg-buy animate-pulse" aria-hidden="true" />
+                {tr('na żywo', 'live')}
+              </span>
+            )}
           </div>
           <p className="mt-1 text-xs leading-snug text-ink-2">
             {stale ? tr('Nie mam świeżych danych z Hyperliquid, chowam się pod stołem.', 'No fresh Hyperliquid data, hiding under the table.') : catLine(f, mood, now)}
@@ -284,6 +362,7 @@ export const SchrodiPanel: React.FC<{
             )}
           </div>
         )}
+        {mind && !stale && <MindLine m={mind} />}
         {ood.length > 0 && (
           <div className="rounded-md border border-line px-2 py-1.5 text-[11px] leading-snug text-ink-2">
             🧭 <span className="font-medium text-ink-1">{tr('Rzadki rynek', 'Rare market')}</span>:{' '}
@@ -385,6 +464,8 @@ export const SchrodiPanel: React.FC<{
           </div>
         )}
 
+        {!stale && <MindChart hist={hist} />}
+
         {ev && (
           <div className="text-xs text-ink-2">
             ⏰ {KIND_LABEL[ev.kind]} <span className="text-ink-1">{fmtCountdown(ev.timeUtcMs, now)}</span>{' '}
@@ -394,11 +475,20 @@ export const SchrodiPanel: React.FC<{
       </div>
 
       <Section title={tr('Dlaczego?', 'Why?')}>
-        <p className="mb-2">{tr('Wkład grup cech w szansę wzrostu, w punktach procentowych (w przybliżeniu):', 'Contribution of feature groups to the odds of a rise, in percentage points (approximate):')}</p>
-        <div className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1">
+        <p className="mb-2">
+          {tr(
+            'Wkład grup cech w szansę dużego ruchu i w szansę wzrostu, w punktach procentowych (w przybliżeniu):',
+            'Contribution of feature groups to the odds of a big move and of a rise, in percentage points (approximate):'
+          )}
+        </p>
+        <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 gap-y-1">
+          <span />
+          <span className="text-[10px] text-ink-3 text-right">{tr('ruch', 'move')}</span>
+          <span className="text-[10px] text-ink-3 text-right">{tr('wzrost', 'rise')}</span>
           {(Object.keys(GROUP_NAMES) as Group[]).map((g) => (
             <React.Fragment key={g}>
               <span>{GROUP_NAMES[g]()}</span>
+              <span className={`font-mono text-right ${Math.abs(f.whyBig[g]) > 0.05 ? 'text-accent' : 'text-ink-3'}`}>{fmtSigned(f.whyBig[g], 1, ' pp')}</span>
               <span className={`font-mono text-right ${f.why[g] > 0.05 ? 'text-buy-ink' : f.why[g] < -0.05 ? 'text-sell-ink' : 'text-ink-3'}`}>
                 {fmtSigned(f.why[g], 1, ' pp')}
               </span>
@@ -438,6 +528,10 @@ export const SchrodiPanel: React.FC<{
             'Jestem kotem Schrödingera: dopóki rynek nie zdecyduje, jestem trochę Long i trochę Short. Im bardziej się rozmywam, tym mniej wiem. Liczę 22 cechy ze świec Hyperliquid (ruch, zmienność, aukcja, zegar sesji, kalendarz makro) i łączę regresję logistyczną z 300 drzewami decyzyjnymi.',
             "I'm Schrödinger's cat: until the market decides, I'm a bit Long and a bit Short. The blurrier I am, the less I know. I compute 22 features from Hyperliquid candles (move, volatility, auction, session clock, macro calendar) and combine a logistic regression with 300 decision trees."
           )}{' '}
+          {tr(
+            'Liczę się na żywo, na świecach kończących się w tej chwili: w testach 2023 do 2026 świeża prognoza przy nagłym ruchu trafiała duże ruchy do 52% lepiej (Brier) niż prognoza sprzed kilku minut.',
+            'I update live, on candles ending right now: in 2023 to 2026 tests a fresh forecast during a sudden move called big moves up to 52% better (Brier) than one a few minutes old.'
+          )}{' '}
           <a href={DOC_URL} target="_blank" rel="noopener noreferrer" className="underline decoration-line-strong hover:text-ink-1">
             {tr('Metoda i wyniki', 'Method and results')}
           </a>
@@ -449,10 +543,10 @@ export const SchrodiPanel: React.FC<{
           MODEL
         </Badge>{' '}
         {tr(
-          `Prognoza z ${time}, liczona w przeglądarce ze świec Hyperliquid (${model.version}${tm ? `, ${tm.version}` : ''}). To nie jest porada inwestycyjna.`,
-          `Forecast from ${time}, computed in your browser from Hyperliquid candles (${model.version}${tm ? `, ${tm.version}` : ''}). Not investment advice.`
+          `Na żywo, dane z ${time}: przeliczam w przeglądarce przy każdej zmianie świecy minutowej Hyperliquid, najwyżej raz na sekundę (${model.version}${tm ? `, ${tm.version}` : ''}). Do dziennika trafia prognoza co 15 minut. To nie jest porada inwestycyjna.`,
+          `Live, data from ${time}: recomputed in your browser on every change of the Hyperliquid minute candle, at most once a second (${model.version}${tm ? `, ${tm.version}` : ''}). The ledger records a forecast every 15 minutes. Not investment advice.`
         )}
-        {now - at > 15 * MIN && <span className="text-warn"> {tr('Dane nieświeże.', 'Data not fresh.')}</span>}
+        {stale && <span className="text-warn"> {tr('Dane nieświeże.', 'Data not fresh.')}</span>}
       </div>
     </div>
   );

@@ -1,7 +1,8 @@
 # Schrödi
 
-Schrödi is the cat under the chart in the **Charts** tab. Every five minutes it gives two probabilities for BTC over the
-next hour: the chance of a **big move** and the chance that the price ends the hour **higher**. It also lists the nearest
+Schrödi is the cat under the chart in the **Charts** tab. It recomputes [live](#live-updates), on every update of the
+Hyperliquid minute candle, and gives two probabilities for BTC over the next hour: the chance of a **big move** and the
+chance that the price ends the hour **higher**. It also lists the nearest
 auction levels with the chance of touching each within the hour, the hour's reach (prices touched with 80%, 50% and 20%
 odds) and the next high-impact macro release.
 
@@ -159,6 +160,38 @@ The model (`public/schrodi/touch-v1.json`, version `schrodi-touch-v1`, trained t
 panel opens. A fixture of 41 cases from the training code checks the TypeScript evaluation to 9 decimals
 (`src/utils/__tests__/schrodiTouch.test.ts`).
 
+## Live updates
+
+The model was trained on features at the close of each 5m candle. In the browser the cat does not wait for the next
+5m close: it rebuilds the 5m candles so that the last one **ends now** and evaluates the same model on them, on every
+update of the Hyperliquid 1m candle (WebSocket `candle` channel), at most once a second. The minute in progress counts
+as if it closed now. Hyperliquid serves about 3.5 days of minutes, so older 5m candles are the regular ones shifted by
+1 to 4 minutes; they only enter the 7-day mean and spread of `vol_z`, which moves by at most 0.03 on test data
+(`src/utils/__tests__/schrodiLive.test.ts`). The ledger keeps recording the forecast every 15 minutes, and at a slot
+the live number is exactly the recorded one.
+
+Does it help? Walk-forward test 2023 to 24.10.2026 (Binance BTCUSDT perpetual minutes, the same quarterly models as in
+[Validation](#validation)), 1,604,544 moments that are 1 to 4 minutes after a 5m close: the forecast on candles ending
+now against the one from the last 5m close, both scored on the hour that starts now.
+
+| Moments | Share | Big move: Brier better by | Mean change of `pBig` |
+| --- | --- | --- | --- |
+| All | 100% | 0.68% | |
+| Calm last minutes (range below the median) | 50% | 0.15% | 1.8 pp |
+| Range of the last minutes between the median and the top 10% | 40% | 0.16% | 2.9 pp |
+| Range of the last minutes in the top 10 to 1% | 9% | 7.5% | 3.7 pp |
+| Range of the last minutes in the top 1% | 1% | 52.1% | 5.6 pp |
+
+The older the last 5m close (1 to 4 minutes), the larger the gain (0.25% to 1.05%). Direction barely changes (0.09%
+overall, 0.44% in the top 1%). In other words the live cat matters exactly when the market starts moving.
+
+The panel also shows the cat's view over the last hour (`pBig` and `pUp` at the end of each minute, filled in from the
+same minutes when the page opens) and a **change of mind**: when `pBig` moved by 15 pp or more, or `pUp` by 4 pp or
+more, against 10 minutes earlier, with the two feature groups whose contribution changed most. On live candles from
+25 to 28.10.2026 each threshold is crossed in about 5% of minutes, so the dot next to the numbers under the chart
+means that something really changed. The "Why?" section lists the contribution of each feature group to both
+probabilities.
+
 ## Live record
 
 The backtest above can be wrong in ways nobody notices. So every 15 minutes, together with the other desk forecasts,
@@ -250,9 +283,10 @@ verifier checks that the recorded plan matches the code and recomputes the whole
 | `src/utils/schrodi.ts` | Features, model evaluation, forecast (no React, shared with the scanner) |
 | `public/schrodi/model-v1.json` | Model weights, trees and the validation card shown in the panel |
 | `public/schrodi/touch-v1.json` | Touch model trees and its validation card |
-| `src/components/schrodi/` | Cat, launcher button, panel, data hook |
+| `src/components/schrodi/` | Cat, launcher button, panel, live data hook (REST and WebSocket) |
 | `src/utils/__tests__/schrodi.test.ts` | Parity tests against the Python reference on a synthetic fixture |
 | `src/utils/__tests__/schrodiTouch.test.ts` | Touch model parity test and cone checks |
+| `src/utils/__tests__/schrodiLive.test.ts` | Live candles against shifted 5m candles, change of mind |
 | `backend/scanner/forecaster.ts` | Ledger record, resolution and scores (`makeCatForecast`, `catTouch`, `resolveCat`, `catScores`, `catTouchScores`) |
 | `scripts/verify-ledger.mjs` | Independent check of the records against the public model |
 | `src/utils/schrodiTrust.ts` | Trust layer: plan, e-process, drift detector, CORP, Wilson bands, Spiegelhalter, rare market |

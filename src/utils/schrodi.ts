@@ -156,6 +156,55 @@ export function bigMoveThreshold(h1: Bar[], at: number): number {
 /** Ostatnia pełna świeca 5m przed chwilą `now`: jej początek. */
 export const lastClosed5m = (now: number) => Math.floor(now / M5) * M5 - M5;
 
+/** Tyle świec 5m wstecz potrzebują cechy (zmienność doby, wolumen z 7 dni) */
+const LIVE_BARS = 2110;
+
+/**
+ * Świece 5m kończące się dokładnie w chwili `s` (pełna minuta), jak w badaniu kota na żywo: z minut wszędzie, gdzie
+ * sięgają minuty (Hyperliquid daje ok. 3,5 doby), starsze z wyrównanych świec 5m przesuniętych o resztę `s` z 5 min.
+ * Starsze świece wpływają tylko na średnią i odchylenie wolumenu z 7 dni (vol_z), więc przesunięcie o 1 do 4 min
+ * nie zmienia tej cechy w praktyce (test w __tests__/schrodiLive.test.ts).
+ */
+export function liveBars(m1: Bar[], m5: Bar[], s: number): Bar[] {
+  const k = ((s % M5) + M5) % M5;
+  const min = byTime(m1);
+  const old = byTime(m5);
+  const first = m1.length ? m1[0].t : Infinity;
+  const out: Bar[] = [];
+  for (let i = LIVE_BARS; i >= 1; i--) {
+    const g = s - i * M5;
+    if (g < first) {
+      const b = old.get(g - k);
+      if (b) out.push({ ...b, t: g });
+      continue;
+    }
+    let bar: Bar | null = null;
+    for (let j = 0; j < 5; j++) {
+      const b = min.get(g + j * MIN);
+      if (!b) continue;
+      if (!bar) bar = { ...b, t: g };
+      else {
+        bar.h = Math.max(bar.h, b.h);
+        bar.l = Math.min(bar.l, b.l);
+        bar.c = b.c;
+        bar.v += b.v;
+      }
+    }
+    if (bar) out.push(bar);
+  }
+  return out;
+}
+
+/**
+ * Prognoza na żywo: te same cechy i model co w dzienniku, ale na świecach 5m kończących się teraz (koniec ostatniej
+ * minuty w danych; minuta w trakcie liczy się tak, jakby kończyła się teraz). Godzina prognozy zaczyna się w tej chwili.
+ */
+export function liveForecast(model: SchrodiModel, inp: SchrodiInput, s?: number): Forecast | null {
+  if (!inp.m1.length) return null;
+  const end = s ?? inp.m1[inp.m1.length - 1].t + MIN;
+  return forecast(model, { ...inp, m5: liveBars(inp.m1, inp.m5, end) }, end - M5);
+}
+
 /** Cechy na zamknięciu świecy 5m o początku `t` (braki danych → NaN, tak jak przy uczeniu). */
 export function features(inp: SchrodiInput, t: number): FeatureResult | null {
   const m5 = byTime(inp.m5);
@@ -410,7 +459,9 @@ export interface Forecast {
   bigUsd: number;
   /** Mediana zakresu godziny z 30 dni (pb, log) — skala odległości modelu dotknięć */
   med1h: number;
+  /** Wkład grup cech w szansę wzrostu i w szansę dużego ruchu (pp, w przybliżeniu) */
   why: Record<Group, number>;
+  whyBig: Record<Group, number>;
   levels: Levels | null;
   x: FeatureVec;
 }
@@ -430,9 +481,55 @@ export function forecast(model: SchrodiModel, inp: SchrodiInput, t: number): For
     bigUsd: Number.isFinite(fr.med1h) ? fr.price * (Math.exp(fr.med1h / 1e4) - 1) : NaN,
     med1h: fr.med1h,
     why: dir.why,
+    whyBig: big.why,
     levels: fr.levels,
     x: fr.x,
   };
+}
+
+/* ─────────────────────────── Zmiana zdania ─────────────────────────── */
+
+/** Zdanie kota na koniec minuty `s` (historia ostatniej godziny i „co zmieniło moje zdanie”) */
+export interface Snap {
+  s: number;
+  pBig: number;
+  pUp: number;
+  why: Record<Group, number>;
+  whyBig: Record<Group, number>;
+}
+
+export const snapOf = (f: Forecast): Snap => ({ s: f.t + M5, pBig: f.pBig, pUp: f.pUp, why: f.why, whyBig: f.whyBig });
+
+/**
+ * Zmiana zdania: względem chwili sprzed 10 min, od 15 pp dla dużego ruchu i od 4 pp dla kierunku. Na żywych świecach
+ * 25 do 28.10.2026 każdy z progów przekracza ok. 5% minut, więc kropka znaczy, że naprawdę coś się zmieniło.
+ */
+export const MIND_MIN = 10;
+export const MIND_PP = { big: 15, dir: 4 } as const;
+
+export interface MindChange {
+  head: 'big' | 'dir';
+  from: number;
+  to: number;
+  /** Najwyżej dwie grupy cech o największej zmianie wkładu (pp, od 1 pp) */
+  drivers: { g: Group; pp: number }[];
+}
+
+/** Większa (względem progu) zmiana zdania niż 10 min temu i grupy cech, które ją niosą; poniżej progów → null. */
+export function mindChange(hist: Snap[], cur: Snap): MindChange | null {
+  const ref = hist.find((h) => h.s === cur.s - MIND_MIN * MIN);
+  if (!ref) return null;
+  const big = (Math.abs(cur.pBig - ref.pBig) * 100) / MIND_PP.big;
+  const dir = (Math.abs(cur.pUp - ref.pUp) * 100) / MIND_PP.dir;
+  if (Math.max(big, dir) < 1) return null;
+  const head = big >= dir ? 'big' : 'dir';
+  const [a, b] = head === 'big' ? [ref.whyBig, cur.whyBig] : [ref.why, cur.why];
+  const drivers = (Object.keys(b) as Group[])
+    .map((g) => ({ g, pp: b[g] - a[g] }))
+    .filter((d) => Math.abs(d.pp) >= 1)
+    .sort((x, y) => Math.abs(y.pp) - Math.abs(x.pp))
+    .slice(0, 2);
+  return head === 'big' ? { head, from: ref.pBig, to: cur.pBig, drivers } : { head, from: ref.pUp, to: cur.pUp, drivers };
 }
 
 /* ─────────────────────────── Dotknięcia ceny ─────────────────────────── */

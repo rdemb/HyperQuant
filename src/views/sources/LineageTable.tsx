@@ -342,7 +342,10 @@ const GROUPS: { title: string; rows: Row[] }[] = [
           '22 features (move, volatility, auction, clock); average of a logistic regression and 300 LightGBM trees from public/schrodi/model-v1.json, trained on BTCUSDT 1m candles 2022 to 10.2026; quarterly walk-forward validation (docs/SCHRODI.md)'
         ),
         kinds: ['MODEL'],
-        refresh: tr('co 5 min (20 s po zamknięciu świecy 5m)', 'every 5 min (20 s after the 5m candle closes)'),
+        refresh: tr(
+          'na żywo: przy każdej zmianie świecy 1m z WebSocket Hyperliquid, najwyżej raz na sekundę (świece 5m kończące się teraz); do dziennika co 15 min',
+          'live: on every change of the 1m candle from the Hyperliquid WebSocket, at most once a second (5m candles ending now); to the ledger every 15 min'
+        ),
         caveat: tr(
           'Kierunek tylko trochę lepszy niż rzut monetą (AUC 0,54, trafność 53%); po kosztach sam kierunek nie daje przewagi. Wielkość ruchu AUC 0,83.',
           'Direction only slightly better than a coin flip (AUC 0.54, accuracy 53%); after costs direction alone is no edge. Move size AUC 0.83.'
