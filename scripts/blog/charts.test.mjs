@@ -4,7 +4,7 @@ import path from 'node:path';
 import { gzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { anchoredVwap, buildCharts, decodeTape, mergeSpans, openSource, readCharts, volumeProfile } from './chartdata.mjs';
-import { diagonalImbalances, footprintHtml, footprintSvg, mergeCandles, sessionHtml, sessionSvg, sessionTitle, spreadLabels } from './charts.mjs';
+import { diagonalImbalances, footprintHtml, footprintSvg, mergeBars, mergeCandles, sessionHtml, sessionSvg, sessionTitle, spreadLabels } from './charts.mjs';
 import { loadPostFile, validateCharts } from './posts.mjs';
 import { postBody } from './render.mjs';
 
@@ -301,6 +301,15 @@ describe('wykresy: rysunek (charts.mjs)', () => {
     const cvdLabel = (svg) => svg.match(/fill="#3fc6dd" text-anchor="start" dominant-baseline="middle" font-family="[^"]*">([^<]+)</)[1];
     expect(cvdLabel(sessionSvg(s))).toBe('+220');
     expect(cvdLabel(sessionSvg(s, { narrow: true, uid: 'n' }))).toBe('+220');
+  });
+
+  it('footprint na telefonie: kolumna z brakującą połową ma czas świecy, która w niej jest', () => {
+    const t0 = Date.UTC(2026, 9, 28, 10, 30);
+    const bar = (m) => ({ ...FP.bars[0], t: t0 + m * MIN });
+    // 10:45 sama (początek okna), 11:00 i 11:15 razem, 11:30 brak, 11:45 sama
+    const merged = mergeBars([bar(15), bar(30), bar(45), bar(75)], 2);
+    expect(merged.map((b) => (b.t - t0) / MIN)).toEqual([15, 30, 75]);
+    expect(merged[1].cells.find((c) => c[0] === 80100)).toEqual([80100, 2, 60]);
   });
 
   it('footprint: brakująca świeca w środku zakresu podana w przypisie', () => {
