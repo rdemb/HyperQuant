@@ -192,6 +192,11 @@ more, against 10 minutes earlier, with the two feature groups whose contribution
 means that something really changed. The "Why?" section lists the contribution of each feature group to both
 probabilities.
 
+Live numbers move every second, so the direction label has a small hysteresis: once the cat says Long (above 53%) or
+Short (below 47%), the label stays until the probability is 0.5 pp inside the "don't know" band. Without it a
+probability hovering at 53% made the label flip several times a minute. The shown percentage still rounds to at least
+53%, and the ledger records probabilities, not labels, so scores are unaffected.
+
 ## Live record
 
 The backtest above can be wrong in ways nobody notices. So every 15 minutes, together with the other desk forecasts,

@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { FEATURES, type Bar, type Group, type SchrodiModel, type Snap, features, liveBars, liveForecast, mindChange, snapOf } from '../schrodi';
+import { FEATURES, type Bar, type Group, type SchrodiModel, type Snap, type Stance, features, holdStance, liveBars, liveForecast, mindChange, snapOf, stanceOf } from '../schrodi';
 import { agg, synth } from './schrodiSynth';
 
 const MIN = 60_000;
@@ -86,5 +86,19 @@ describe('schrodi na żywo', () => {
     expect(s.s).toBe(end);
     expect(Object.keys(s.whyBig).sort()).toEqual(['auction', 'clock', 'move', 'vol']);
     expect(Object.values(s.whyBig).every(Number.isFinite)).toBe(true);
+  });
+  it('etykieta kierunku z histerezą: nie miga przy 53%, puszcza po wejściu 0,5 pp w strefę „Nie wiem”', () => {
+    const seq = [0.531, 0.529, 0.532, 0.528, 0.53, 0.526];
+    let st: Stance | null = null;
+    const held = seq.map((p) => (st = holdStance(st, p)));
+    expect(held).toEqual(['long', 'long', 'long', 'long', 'long', 'long']);
+    expect(seq.map(stanceOf)).toEqual(['long', 'unsure', 'long', 'unsure', 'unsure', 'unsure']);
+    expect(holdStance('long', 0.524)).toBe('unsure');
+    expect(holdStance('long', 0.46)).toBe('short');
+    expect(holdStance('unsure', 0.528)).toBe('unsure');
+    expect(holdStance(null, 0.528)).toBe('unsure');
+    expect(holdStance('short', 0.472)).toBe('short');
+    expect(holdStance('short', 0.476)).toBe('unsure');
+    expect(holdStance('short', 0.54)).toBe('long');
   });
 });
