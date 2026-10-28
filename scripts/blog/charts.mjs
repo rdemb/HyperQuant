@@ -441,13 +441,14 @@ export function sessionSvg(s, { narrow = false, zones = [], levels = null, uid =
 /** Komórki footprintu sklejone po `k` świec (układ wąski: 30 min). */
 export function mergeBars(bars, k) {
   if (k === 1) return bars;
+  // Kolumna ma czas pierwszej świecy, która w niej jest: przy brakującej połowie podpis zgadza się z przypisem o brakach
+  const slotOf = (t) => t - (t % (k * 15 * MIN));
   const out = [];
   for (const b of bars) {
-    const t = b.t - (b.t % (k * 15 * MIN));
     const last = out.at(-1);
-    if (!last || last.t !== t) {
+    if (!last || slotOf(last.t) !== slotOf(b.t)) {
       out.push({
-        t,
+        t: b.t,
         ohlc: [...b.ohlc],
         oi: b.oi,
         cells: b.cells.map((c) => [...c]),
