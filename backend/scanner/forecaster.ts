@@ -7,15 +7,21 @@ import { aciStep, brier, crpsQuantiles, isotonic, kupiec, normInv, pitFromQuanti
 import { mulberry32, seedFrom } from '../../src/utils/pathEngine.ts';
 import { outcomeProbabilities } from '../../src/utils/hip4.ts';
 import { horizonSigmas, stepFor } from '../../src/utils/hip4Model.ts';
-import type { DeskLedgerSummary, MktScores, RetScores, TouchLevel, TouchScores } from '../../src/utils/deskLedger.ts';
+import type { CatScores, DeskLedgerSummary, MktScores, RetScores, TouchLevel, TouchScores } from '../../src/utils/deskLedger.ts';
+import { type Bar, FEATURES, type FeatureVec, type SchrodiInput, type SchrodiModel, features as catFeatures, modelEvents, scoreHead, stanceOf } from '../../src/utils/schrodi.ts';
+import { MACRO_EVENTS } from '../../src/data/macroCalendar.ts';
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import type { InfoClient } from './liqDetect.ts';
+import { canonicalJson } from './ledger.ts';
 import type { MarketSnap } from './marketQuotes.ts';
 
 /**
  * Prognozy desku do weryfikowalnego dziennika (pre-rejestracja co 15 min, rozstrzygnięcie ze świec 1m):
  *  - rozkład log-zwrotu BTC na 1 h i 4 h: 13 kwantyli z tego samego modelu co desk (sezonowy log-HAR + innowacje FHS,
  *    Monte Carlo 4000 ścieżek, martyngał ceny) oraz — zapisane od razu — kwantyle benchmarku (normalny, σ z 30 dni);
- *  - prawdopodobieństwa dotknięcia PDH / PDL / D-EQ w 2 h — ten sam silnik co pas „Zasięg 2h” na Desku.
+ *  - prawdopodobieństwa dotknięcia PDH / PDL / D-EQ w 2 h — ten sam silnik co pas „Zasięg 2h” na Desku;
+ *  - Schrödi (kot pod wykresem): szansa dużego ruchu i wzrostu w 1 h — ten sam model i kod co na stronie.
  * Wyniki: CRPS (i umiejętność względem benchmarku), PIT, pokrycie przedziałów 60/90% z testem Kupca, ACI (Gibbs & Candès),
  * Brier, BSS, niezawodność i kalibracja Venna–Abersa dla prawdopodobieństw.
  */
@@ -222,8 +228,48 @@ export interface MktResolution {
   near: 0 | 1;
 }
 
-export type Forecast = RetForecast | TouchForecast | MktForecast;
-export type Resolution = RetResolution | TouchResolution | MktResolution;
+/**
+ * Schrödi: szansa wzrostu i dużego ruchu w 1 h z modelu `public/schrodi/model-v1.json` (ten sam plik i kod co kot na
+ * stronie). Cechy na zamknięciu świecy 5m kończącej się z początkiem slotu; zapisane z 6 miejscami, a p policzone
+ * z wersji zapisanej — każdy przeliczy p z rekordu i publicznego modelu (`mh` = SHA-256 kanonicznego JSON modelu).
+ */
+export interface CatForecast {
+  k: 'f';
+  id: string;
+  slot: number;
+  ti: number;
+  t: number;
+  kind: 'cat';
+  h: number;
+  /** Początek świecy 5m z cechami (jej koniec = początek slotu) */
+  bar: number;
+  /** Zamknięcie tej świecy */
+  px0: number;
+  /** Cechy w kolejności FEATURES (null = brak danych) */
+  x: (number | null)[];
+  pUp: number;
+  pBig: number;
+  /** Próg dużego ruchu: mediana zakresu 720 pełnych godzin przed slotem (bp, log) */
+  thr: number;
+  model: string;
+  mh: string;
+}
+
+/** Rozstrzygnięcie kota: ceny w t i t + h, max/min świec 1m okna; wzrost = c1 > c0, duży ruch = ln(hi/lo) > próg. */
+export interface CatResolution {
+  k: 'r';
+  id: string;
+  t: number;
+  c0: number;
+  c1: number;
+  hi: number;
+  lo: number;
+  yDir: 0 | 1;
+  yBig: 0 | 1;
+}
+
+export type Forecast = RetForecast | TouchForecast | MktForecast | CatForecast;
+export type Resolution = RetResolution | TouchResolution | MktResolution | CatResolution;
 /** Jawny zapis pominiętego slotu (brak modelu, ceny, przerwa) — braki nie mogą znikać po cichu */
 export interface SkipRecord {
   k: 's';
@@ -433,6 +479,83 @@ export function resolveMkt(f: MktForecast, c1m: RangeBar[], now: number): MktRes
   return { k: 'r', id: f.id, t: now, c1, y: c1 >= f.K ? 1 : 0, near: Math.abs(c1 - f.K) <= MKT_NEAR * f.K ? 1 : 0 };
 }
 
+export const CAT_H = 60;
+
+export interface CatModel {
+  model: SchrodiModel;
+  /** SHA-256 kanonicznego JSON modelu */
+  mh: string;
+}
+
+/** Model kota z pliku strony; brak albo uszkodzony plik → null (dziennik wydaje resztę prognoz bez kota). */
+export function loadCatModel(file: string | URL = new URL('../../public/schrodi/model-v1.json', import.meta.url)): CatModel | null {
+  try {
+    const model = JSON.parse(readFileSync(file, 'utf8')) as SchrodiModel;
+    if (!model?.dir || !model?.big || !Array.isArray(model.features)) return null;
+    return { model, mh: createHash('sha256').update(canonicalJson(model)).digest('hex') };
+  } catch {
+    return null;
+  }
+}
+
+/** Zdarzenia modelu z kalendarza desku (FOMC bez protokołów, CPI, NFP) */
+export const CAT_EVENTS = modelEvents(MACRO_EVENTS);
+
+/** Wektor cech do zapisu: 6 miejsc, braki i nieskończoności → null. */
+export const catX = (x: FeatureVec): (number | null)[] => FEATURES.map((f) => (Number.isFinite(x[f]) ? r6(x[f]) : null));
+
+/** p z zapisanego wektora cech (null → NaN, jak brak przy uczeniu) */
+export function catProbs(m: SchrodiModel, x: readonly (number | null)[]): { pUp: number; pBig: number } {
+  const v = Object.fromEntries(FEATURES.map((f, i) => [f, x[i] ?? Number.NaN])) as FeatureVec;
+  return { pUp: r4(scoreHead(m.dir, m.features, v).p), pBig: r4(scoreHead(m.big, m.features, v).p) };
+}
+
+/** Świece `candleSnapshot` z wolumenem (dla cech kota) */
+export function parseBars(raw: unknown): Bar[] {
+  if (!Array.isArray(raw)) return [];
+  const out: Bar[] = [];
+  for (const c of raw as Record<string, unknown>[]) {
+    const n = (v: unknown) => (typeof v === 'number' ? v : parseFloat(String(v)));
+    const b = { t: n(c?.t), o: n(c?.o), h: n(c?.h), l: n(c?.l), c: n(c?.c), v: n(c?.v) };
+    if ([b.t, b.o, b.h, b.l, b.c, b.v].every(Number.isFinite)) out.push(b);
+  }
+  return out;
+}
+
+/** Prognoza kota w slocie: cechy na świecy 5m [slot − 5 min, slot); brak danych albo progu → null. */
+export function makeCatForecast(cm: CatModel, inp: SchrodiInput, tm: ForecastTimes): CatForecast | null {
+  const bar = tm.slot - 5 * MIN;
+  const fr = catFeatures(inp, bar);
+  if (!fr || !Number.isFinite(fr.d30) || !Number.isFinite(fr.med1h) || !(fr.price > 0)) return null;
+  const x = catX(fr.x);
+  return {
+    k: 'f',
+    id: `${tm.slot}-cat`,
+    slot: tm.slot,
+    ti: tm.ti,
+    t: tm.t,
+    kind: 'cat',
+    h: CAT_H,
+    bar,
+    px0: fr.price,
+    x,
+    ...catProbs(cm.model, x),
+    thr: r4(fr.med1h),
+    model: cm.model.version,
+    mh: cm.mh,
+  };
+}
+
+export function resolveCat(f: CatForecast, c1m: RangeBar[], now: number): CatResolution | null {
+  const c0 = closeAt(c1m, f.t);
+  const c1 = closeAt(c1m, f.t + f.h * MIN);
+  const win = c1m.filter((b) => b.time >= f.t && b.time + MIN <= f.t + f.h * MIN);
+  if (c0 === null || c1 === null || win.length < f.h) return null;
+  const hi = Math.max(...win.map((b) => b.high));
+  const lo = Math.min(...win.map((b) => b.low));
+  return { k: 'r', id: f.id, t: now, c0, c1, hi, lo, yDir: c1 > c0 ? 1 : 0, yBig: Math.log(hi / lo) * 1e4 > f.thr ? 1 : 0 };
+}
+
 /** Notowanie z wąskim spreadem (≤ 5 pp), także płytkie — poziom oceny „wąski spread” */
 export const tightQuote = (f: MktForecast) => f.bid !== null && f.ask !== null && f.ask - f.bid <= 0.05 + 1e-12;
 /** Notowanie płynne (spread i głębokość) — poziom oceny ścisły */
@@ -632,6 +755,59 @@ export function touchScores(pairs: { f: TouchForecast; r: TouchResolution }[]): 
   };
 }
 
+/** AUC (Mann–Whitney, remisy ze średnią rangą); brak jednej z klas → null. */
+export function auc(pp: { p: number; y: 0 | 1 }[]): number | null {
+  const pos = pp.filter((x) => x.y === 1).length;
+  const neg = pp.length - pos;
+  if (!pos || !neg) return null;
+  const s = [...pp].sort((a, b) => a.p - b.p);
+  let rankSum = 0;
+  for (let i = 0; i < s.length; ) {
+    let j = i;
+    while (j < s.length && s[j].p === s[i].p) j++;
+    for (let k = i; k < j; k++) if (s[k].y === 1) rankSum += (i + j + 1) / 2;
+    i = j;
+  }
+  return (rankSum - (pos * (pos + 1)) / 2) / (pos * neg);
+}
+
+/** Brier, Brier klimatologii (częstość z tego samego okna), BSS, AUC i trafność progu 50%. */
+function probScores(pp: { p: number; y: 0 | 1 }[]) {
+  const bs = brier(pp);
+  const base = mean(pp.map((x) => x.y));
+  const bsBase = base === null ? null : brier(pp.map((x) => ({ p: base, y: x.y })));
+  return {
+    brier: bs,
+    brierBase: bsBase,
+    bss: bs !== null && bsBase !== null && bsBase > 0 ? 1 - bs / bsBase : null,
+    auc: auc(pp),
+    hit: pp.length ? pp.filter((x) => (x.p > 0.5 ? 1 : 0) === x.y).length / pp.length : null,
+  };
+}
+
+/**
+ * Wyniki kota. Prognozy co 15 min na 1 h nakładają się czterokrotnie, więc ich błędy są skorelowane — `nEff` to liczba
+ * prognoz rozłącznych (sloty o pełnej godzinie). Kierunek dodatkowo w trzech stanach panelu (Long, Short, nie wiem).
+ */
+export function catScores(pairs: { f: CatForecast; r: CatResolution }[]): CatScores {
+  const side = (s: 'long' | 'short') => {
+    const xs = pairs.filter((p) => stanceOf(p.f.pUp) === s);
+    return { n: xs.length, hit: xs.length ? xs.filter((p) => p.r.yDir === (s === 'long' ? 1 : 0)).length / xs.length : null };
+  };
+  const big = pairs.map((p) => ({ p: p.f.pBig, y: p.r.yBig }));
+  return {
+    n: pairs.length,
+    nEff: pairs.filter((p) => p.f.slot % HOUR === 0).length,
+    dir: {
+      ...probScores(pairs.map((p) => ({ p: p.f.pUp, y: p.r.yDir }))),
+      long: side('long'),
+      short: side('short'),
+      unsure: pairs.filter((p) => stanceOf(p.f.pUp) === 'unsure').length,
+    },
+    big: { ...probScores(big), reliability: reliability(big, 10).map((b) => ({ lo: b.lo, hi: b.hi, n: b.n, meanP: b.meanP, freq: b.freq })) },
+  };
+}
+
 export interface SummaryInput {
   coin: string;
   now: number;
@@ -654,12 +830,14 @@ export function buildSummary(s: SummaryInput): DeskLedgerSummary {
   const retPairs = new Map<number, { f: RetForecast; r: RetResolution }[]>();
   const touchPairs: { f: TouchForecast; r: TouchResolution }[] = [];
   const mktPairs: { f: MktForecast; r: MktResolution }[] = [];
+  const catPairs: { f: CatForecast; r: CatResolution }[] = [];
   for (const f of fs) {
     const r = s.resolutions.get(f.id);
     if (!r) continue;
     if (f.kind === 'ret' && !f.variant && 'crps' in r) retPairs.set(f.h, [...(retPairs.get(f.h) ?? []), { f, r }]);
     if (f.kind === 'touch' && 'yv' in r) touchPairs.push({ f, r });
     if (f.kind === 'mkt' && 'near' in r) mktPairs.push({ f, r });
+    if (f.kind === 'cat' && 'yBig' in r) catPairs.push({ f, r });
   }
   const latestMkt = [...fs].reverse().find((f): f is MktForecast => f.kind === 'mkt');
   const latestRet = RET_HORIZONS.map((h) => [...fs].reverse().find((f) => f.kind === 'ret' && !f.variant && f.h === h) as RetForecast | undefined).filter(
@@ -737,6 +915,7 @@ export function buildSummary(s: SummaryInput): DeskLedgerSummary {
         : null,
     },
     ab: abSection(fs, s.resolutions, s.now, s.abRegisteredAt ?? null),
+    cat: catSection(fs, catPairs),
     method: 'hq-ledger-v1',
   };
 }
@@ -764,6 +943,21 @@ function abSection(fs: Forecast[], res: Map<string, Resolution>, now: number, re
     registeredAt,
     ...abBlocks(rows, now),
     latest: latest && latest.regime && latest.scale !== undefined ? { t: latest.t, scale: latest.scale, regime: latest.regime } : null,
+  };
+}
+
+/** Kot: najnowsza prognoza, wyniki i udział — sloty z prognozami desku od pierwszej prognozy kota vs prognozy kota. */
+function catSection(fs: Forecast[], pairs: { f: CatForecast; r: CatResolution }[]): NonNullable<DeskLedgerSummary['cat']> {
+  const cats = fs.filter((f): f is CatForecast => f.kind === 'cat');
+  const since = cats.length ? cats[0].t : null;
+  const latest = cats[cats.length - 1];
+  return {
+    model: latest?.model ?? null,
+    since,
+    issued: cats.length,
+    slots: since === null ? 0 : new Set(fs.filter((f) => f.kind === 'ret' && f.t >= since).map((f) => f.slot)).size,
+    latest: latest ? { t: latest.t, px0: latest.px0, pUp: latest.pUp, pBig: latest.pBig, thr: latest.thr } : null,
+    scores: catScores(pairs),
   };
 }
 
@@ -809,8 +1003,14 @@ export class ForecastData {
   regimeAt = 0;
   private regimeSlot = Number.NEGATIVE_INFINITY;
 
-  constructor(d: ForecasterDeps) {
+  /** Model kota (null = brak pliku — dziennik bez kota) i dane wejściowe policzone w slocie */
+  readonly cat: CatModel | null;
+  catInput: { slot: number; inp: SchrodiInput } | null = null;
+  private catSlot = Number.NEGATIVE_INFINITY;
+
+  constructor(d: ForecasterDeps, cat: CatModel | null = loadCatModel()) {
     this.d = d;
+    this.cat = cat;
   }
 
   private async candles(interval: string, startTime: number, n: number): Promise<RangeBar[]> {
@@ -856,6 +1056,24 @@ export class ForecastData {
       this.regime = r;
       this.regimeAt = now;
     }
+  }
+
+  /**
+   * Dane kota — raz na slot (≈ 180 wag): 1m od początku poprzedniej doby UTC (profil i VWAP), 5m z 7 dni (wolumen),
+   * 1h z 30 dni (próg dużego ruchu), 1d z 35 dni (mediana zakresu dnia). Nieudana próba nie jest ponawiana w tym slocie.
+   */
+  async refreshCat(now: number): Promise<void> {
+    const slot = slotOf(now);
+    if (!this.cat || this.catSlot === slot) return;
+    this.catSlot = slot;
+    const bars = async (interval: string, startTime: number, n: number) =>
+      parseBars(await this.d.rest.info({ type: 'candleSnapshot', req: { coin: this.d.coin, interval, startTime } }, candleWeight(n)));
+    const from1m = Math.floor(now / DAY) * DAY - DAY;
+    const m1 = await bars('1m', from1m, Math.ceil((now - from1m) / MIN) + 1);
+    const m5 = await bars('5m', now - 2110 * 5 * MIN, 2110);
+    const h1 = await bars('1h', now - 725 * HOUR, 725);
+    const d1 = await bars('1d', now - 35 * DAY, 35);
+    this.catInput = { slot, inp: { m1, m5, h1, d1, events: CAT_EVENTS } };
   }
 
   /** Świece 1m od `from` (do rozstrzygania). */

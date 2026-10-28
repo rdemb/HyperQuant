@@ -1,4 +1,4 @@
-import { locale, tr } from '../i18n';
+import { locale, tr } from '../i18n.ts';
 /** Zdarzenie makro z oficjalnych harmonogramów (Fed, BLS, BEA). */
 export interface MacroEvent {
   id: string;

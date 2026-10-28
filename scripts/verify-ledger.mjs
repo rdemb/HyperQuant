@@ -11,6 +11,8 @@
  *     poprzedniej linii (także między dniami); w trybie --dir od GENESIS;
  *  2. wyniki: CRPS, PIT i pokrycia przeliczone z zapisanych kwantyli i zwrotu (nie przepisane z zapisu);
  *  3. historię git (--dir): każdy commit tylko dopisuje do plików dziennika;
+ *     kot (Schrödi): p przeliczone z zapisanych cech i publicznego modelu public/schrodi/model-v1.json (hash modelu
+ *     = `mh` rekordu), wzrost i duży ruch z cen i max/min okna;
  *  4. pokwitowania OpenTimestamps: skrót w `ots/<dzień>.jsonl.ots` = SHA-256 pliku dnia; w `ots/slots/<slot>.ots`
  *     = hash ostatniej prognozy tego slotu (prognozy istniały w chwili znakowania). Sam czas potwierdza klient OTS:
  *     `ots upgrade <plik>.ots` i `ots verify -f <plik danych> <plik>.ots` (dla slotu: skrót podaj przez `-d <hash>`).
@@ -20,6 +22,7 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { AB_DESIGN, abBlocks } from '../src/utils/abTest.ts';
 import { fitEnsemble } from '../src/utils/ensemble.ts';
+import { FEATURES, scoreHead } from '../src/utils/schrodi.ts';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -125,6 +128,17 @@ export function checkResolutions(records) {
       if (r.near !== near) out.push(`${r.id}: near = ${r.near} ≠ przeliczone ${near}`);
       continue;
     }
+    if (fc.kind === 'cat') {
+      if (!(r.c0 > 0 && r.c1 > 0 && r.hi > 0 && r.lo > 0)) {
+        out.push(`${r.id}: brak cen źródłowych (c0/c1/hi/lo)`);
+        continue;
+      }
+      const yDir = r.c1 > r.c0 ? 1 : 0;
+      const yBig = Math.log(r.hi / r.lo) * 1e4 > fc.thr ? 1 : 0;
+      if (r.yDir !== yDir) out.push(`${r.id}: yDir = ${r.yDir} ≠ [c1 > c0] = ${yDir}`);
+      if (r.yBig !== yBig) out.push(`${r.id}: yBig = ${r.yBig} ≠ [ln(hi/lo) > próg] = ${yBig}`);
+      continue;
+    }
     if (fc.kind === 'touch') {
       if (!(typeof r.hi === 'number' && typeof r.lo === 'number')) {
         out.push(`${r.id}: brak cen źródłowych (hi/lo)`);
@@ -156,6 +170,37 @@ export function checkResolutions(records) {
     }
   }
   return out;
+}
+
+const r4 = (x) => Math.round(x * 1e4) / 1e4;
+
+/**
+ * Kot (Schrödi): hash modelu w rekordzie = SHA-256 kanonicznego JSON publicznego modelu, p przeliczone z zapisanych cech
+ * tym modelem (null = brak cechy), cechy na świecy 5m kończącej się z początkiem slotu, horyzont 1 h.
+ */
+export function checkCat(records, model) {
+  const mh = model ? createHash('sha256').update(canonical(model)).digest('hex') : null;
+  const problems = [];
+  let checked = 0;
+  for (const fc of records) {
+    if (fc.k !== 'f' || fc.kind !== 'cat') continue;
+    const bad = [];
+    if (fc.h !== 60) bad.push('horyzont ≠ 60');
+    if (fc.bar !== fc.slot - 5 * 60_000) bad.push('świeca cech ≠ ostatnia 5m przed slotem');
+    if (!Array.isArray(fc.x) || fc.x.length !== FEATURES.length || fc.x.some((v) => v !== null && !Number.isFinite(v))) bad.push('cechy');
+    else if (!model) bad.push('brak publicznego modelu do przeliczenia');
+    else if (fc.mh !== mh) bad.push('hash modelu ≠ public/schrodi/model-v1.json');
+    else {
+      const x = Object.fromEntries(FEATURES.map((f, i) => [f, fc.x[i] ?? Number.NaN]));
+      const pUp = r4(scoreHead(model.dir, model.features, x).p);
+      const pBig = r4(scoreHead(model.big, model.features, x).p);
+      if (pUp !== fc.pUp) bad.push(`pUp ${fc.pUp} ≠ przeliczone ${pUp}`);
+      if (pBig !== fc.pBig) bad.push(`pBig ${fc.pBig} ≠ przeliczone ${pBig}`);
+    }
+    if (bad.length) problems.push(`${fc.id}: ${bad.join(', ')}`);
+    else checked++;
+  }
+  return { problems, checked };
 }
 
 /** Skrót (hex) zakotwiczony w pliku .ots — nagłówek, wersja 1, operacja SHA-256; inny format → null. */
@@ -498,7 +543,7 @@ export function checkMarket(records, candles) {
   for (const r of records) {
     if (r.k !== 'r') continue;
     const fc = f.get(r.id);
-    if (!fc || (fc.kind !== 'ret' && fc.kind !== 'touch' && fc.kind !== 'mkt')) continue;
+    if (!fc || (fc.kind !== 'ret' && fc.kind !== 'touch' && fc.kind !== 'mkt' && fc.kind !== 'cat')) continue;
     eligible++;
     let market = null; // ceny z rynku albo null, gdy poza zakresem pobranych świec
     if (fc.kind === 'ret') {
@@ -508,6 +553,11 @@ export function checkMarket(records, candles) {
     } else if (fc.kind === 'mkt') {
       const b = byTime.get(fc.t + fc.h * MIN_MS - MIN_MS);
       if (b) market = { c1: b.close };
+    } else if (fc.kind === 'cat') {
+      const a = byTime.get(fc.t - MIN_MS);
+      const b = byTime.get(fc.t + fc.h * MIN_MS - MIN_MS);
+      const win = candles.filter((c) => c.time >= fc.t && c.time + MIN_MS <= fc.t + fc.h * MIN_MS);
+      if (a && b && win.length >= fc.h) market = { c0: a.close, c1: b.close, hi: Math.max(...win.map((c) => c.high)), lo: Math.min(...win.map((c) => c.low)) };
     } else {
       const win = candles.filter((c) => c.time >= fc.t && c.time + MIN_MS <= fc.t + fc.h * MIN_MS);
       if (win.length >= fc.h) market = { hi: Math.max(...win.map((c) => c.high)), lo: Math.min(...win.map((c) => c.low)) };
@@ -518,6 +568,8 @@ export function checkMarket(records, candles) {
     else if (fc.kind === 'ret' && (market.c0 !== r.c0 || market.c1 !== r.c1)) problems.push(`${r.id}: ceny ${r.c0}/${r.c1} ≠ świece ${market.c0}/${market.c1}`);
     else if (fc.kind === 'mkt' && market.c1 !== r.c1) problems.push(`${r.id}: cena ${r.c1} ≠ świeca ${market.c1}`);
     else if (fc.kind === 'touch' && (market.hi !== r.hi || market.lo !== r.lo)) problems.push(`${r.id}: max/min ${r.hi}/${r.lo} ≠ świece ${market.hi}/${market.lo}`);
+    else if (fc.kind === 'cat' && (market.c0 !== r.c0 || market.c1 !== r.c1 || market.hi !== r.hi || market.lo !== r.lo))
+      problems.push(`${r.id}: ceny ${r.c0}/${r.c1}, max/min ${r.hi}/${r.lo} ≠ świece ${market.c0}/${market.c1}, ${market.hi}/${market.lo}`);
   }
   return { problems, checked, eligible };
 }
@@ -598,6 +650,7 @@ export function recompute(records, { since } = {}) {
   for (const o of records) if (typeof o.t === 'number' && o.t > lastT) lastT = o.t;
   let touchN = 0;
   let brierSum = 0;
+  const cat = { n: 0, brierDir: 0, brierBig: 0, hitDir: 0, hitBig: 0 };
   const market = { n: 0, brierModel: 0, brierMarket: 0, nEns: 0, brierEns: 0 };
   const marketTight = { n: 0, brierModel: 0, brierMarket: 0, nEns: 0, brierEns: 0 };
   for (const [id, fc] of f) {
@@ -629,6 +682,14 @@ export function recompute(records, { since } = {}) {
       };
       if (fc.ask - fc.bid <= MKT_MAX_SPREAD + 1e-12) add(marketTight);
       if (fc.liquid) add(market);
+    } else if (fc.kind === 'cat') {
+      const yDir = res.c1 > res.c0 ? 1 : 0;
+      const yBig = Math.log(res.hi / res.lo) * 1e4 > fc.thr ? 1 : 0;
+      cat.n++;
+      cat.brierDir += (fc.pUp - yDir) ** 2;
+      cat.brierBig += (fc.pBig - yBig) ** 2;
+      cat.hitDir += (fc.pUp > 0.5 ? 1 : 0) === yDir ? 1 : 0;
+      cat.hitBig += (fc.pBig > 0.5 ? 1 : 0) === yBig ? 1 : 0;
     } else if (fc.kind === 'touch') {
       for (const l of ['pdh', 'pdl', 'deq']) {
         if (fc.p[l] === null) continue; // poziom już przekroczony przy wydaniu — nieoceniany
@@ -640,6 +701,9 @@ export function recompute(records, { since } = {}) {
   return {
     ret: Object.fromEntries(Object.entries(ret).map(([h, s]) => [h, { n: s.n, crps: s.crps / s.n, crpss: 1 - s.crps / s.crpsB, cov90: s.in90 / s.n }])),
     touch: { levels: touchN, brier: touchN ? brierSum / touchN : null },
+    cat: cat.n
+      ? { n: cat.n, brierDir: cat.brierDir / cat.n, brierBig: cat.brierBig / cat.n, hitDir: cat.hitDir / cat.n, hitBig: cat.hitBig / cat.n }
+      : { n: 0 },
     market: {
       n: market.n,
       brierModel: market.n ? market.brierModel / market.n : null,
@@ -762,6 +826,20 @@ async function main() {
         : `✓ plan A/B ${AB_DESIGN.id} prerejestrowany ${new Date(plan.registeredAt).toISOString().slice(0, 16)}Z, zgodny z kodem; wariant B wydawany po rejestracji`
     );
   if (plan.problems.length) ok = false;
+  let catModel = null;
+  try {
+    catModel = JSON.parse(readFileSync(new URL('../public/schrodi/model-v1.json', import.meta.url), 'utf8'));
+  } catch {
+    // brak pliku modelu — rekordy kota zgłoszą brak przeliczenia
+  }
+  const cat = checkCat(records, catModel);
+  if (cat.checked || cat.problems.length)
+    console.log(
+      cat.problems.length
+        ? `✗ Schrödi (${cat.problems.length}): ${cat.problems.slice(0, 5).join('; ')}`
+        : `✓ Schrödi: ${plural(cat.checked, 'prognoza', 'prognozy', 'prognoz')} — p przeliczone z zapisanych cech publicznym modelem, hash modelu zgodny`
+    );
+  if (cat.problems.length) ok = false;
   const pre = checkPreregs(records);
   if (pre.preregs.length || pre.problems.length)
     console.log(
@@ -817,7 +895,7 @@ async function main() {
         for (const fc of fs) {
           // Wariant B (A/B) dzieli pokwitowanie z wersją A — liczony raz, jako wersja główna
           if (fc.variant) continue;
-          const key = fc.kind === 'mkt' ? 'rynek HIP-4 (15 min)' : `horyzont ${fc.h} min`;
+          const key = fc.kind === 'mkt' ? 'rynek HIP-4 (15 min)' : fc.kind === 'cat' ? 'Schrödi (1 h)' : `horyzont ${fc.h} min`;
           const s = (stat[key] ??= { n: 0, proven: 0, late: 0, pending: 0 });
           s.n++;
           if (bt === null) s.pending++;

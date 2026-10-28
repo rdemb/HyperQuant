@@ -12,20 +12,24 @@ import {
   RET_HORIZONS,
   SLOT,
   type SkipRecord,
+  type CatModel,
   buildSummary,
   ensPairs,
+  makeCatForecast,
   makeMktForecast,
   makeRetForecast,
   makeRetForecastB,
   type Regime,
   makeTouchForecast,
   nextAci,
+  resolveCat,
   resolveMkt,
   resolveRet,
   resolveTouch,
   slotOf,
 } from './forecaster.ts';
 import type { MarketSnap } from './marketQuotes.ts';
+import type { SchrodiInput } from '../../src/utils/schrodi.ts';
 import { type CommitResult, type LedgerRepo, type LedgerStore, commitLedger, dayKey } from './ledgerStore.ts';
 import { canonicalJson } from './ledger.ts';
 import type { stampDigest } from './ots.ts';
@@ -35,6 +39,7 @@ import type { stampDigest } from './ots.ts';
  *  1. w nowym slocie 15 min (do 5 min po jego początku) wydaje prognozy; początkiem horyzontu jest pełna minuta PO
  *     wydaniu (bez podglądania ceny między początkiem slotu a wydaniem); slot przegapiony nie jest uzupełniany wstecz —
  *     dostaje jawny rekord `skip` z powodem (brak modelu, ceny, przerwa);
+ *     W tym samym slocie i tej samej partii — prognoza kota (Schrödi), jeśli jego dane z tego slotu są gotowe;
  *  2. zaraz po wydaniu znakuje głowę łańcucha w OpenTimestamps (niezależne kalendarze od razu, blok Bitcoina po kilku
  *     godzinach) — pokwitowanie `ots/slots/<slot>.ots` dowodzi, że prognozy istniały przed rozstrzygnięciem;
  *  3. rozstrzyga prognozy po horyzoncie ze świec 1m; bez danych przez 6 h po horyzoncie — jawne unieważnienie (`void`);
@@ -71,6 +76,10 @@ export interface LedgerData {
   regime?: Regime | null;
   regimeAt?: number;
   refreshRegime?(now: number): Promise<void>;
+  /** Kot (Schrödi) — opcjonalny; wydawany tylko z danymi pobranymi w slocie wydania */
+  cat?: CatModel | null;
+  catInput?: { slot: number; inp: SchrodiInput } | null;
+  refreshCat?(now: number): Promise<void>;
 }
 
 interface OtsEntry {
@@ -229,6 +238,14 @@ export class LedgerRunner {
         regimeOk = false;
       }
     }
+    // Kot opcjonalny jak reżim: dane tylko przed wydaniem w nowym slocie; błąd pobrania = slot bez kota
+    if (data.refreshCat && now - slotOf(now) < ISSUE_WINDOW && !this.forecasts.has(`${slotOf(now)}-ret60`)) {
+      try {
+        await data.refreshCat(now);
+      } catch {
+        // slot bez kota
+      }
+    }
     let appended = 0;
 
     // 0. Rozliczenie poprzednich slotów: brak prognozy = jawny `skip` (z powodem albo „przerwa”)
@@ -268,6 +285,10 @@ export class LedgerRunner {
         }
         const today = Math.floor(ti / DAY) * DAY;
         if (data.levels && data.levels.day === today - DAY) issued.push({ ...makeTouchForecast(data.model!, tm, px!, data.levels.pdh, data.levels.pdl) });
+        if (data.cat && data.catInput?.slot === slot) {
+          const c = makeCatForecast(data.cat, data.catInput.inp, tm);
+          if (c) issued.push({ ...c });
+        }
         this.add(issued, ti);
         appended += issued.length;
         this.accounted = Math.max(this.accounted, slot);
@@ -318,7 +339,14 @@ export class LedgerRunner {
       const candles = await data.minuteCandles(from, ti);
       const rNow = this.clock(ti);
       for (const f of due.sort((a, b) => a.t - b.t)) {
-        const r = f.kind === 'ret' ? resolveRet(f, candles, rNow) : f.kind === 'touch' ? resolveTouch(f, candles, rNow) : resolveMkt(f, candles, rNow);
+        const r =
+          f.kind === 'ret'
+            ? resolveRet(f, candles, rNow)
+            : f.kind === 'touch'
+              ? resolveTouch(f, candles, rNow)
+              : f.kind === 'cat'
+                ? resolveCat(f, candles, rNow)
+                : resolveMkt(f, candles, rNow);
         if (r) {
           resBodies.push({ ...r });
           if (f.kind === 'ret' && !f.variant && 'inAci' in r) this.aci[f.h] = nextAci(this.aci[f.h] ?? ACI_ALPHA, r.inAci === 0);
