@@ -101,6 +101,22 @@ export interface CatScores {
   nEff: number;
   dir: CatHeadScores & { long: { n: number; hit: number | null }; short: { n: number; hit: number | null }; unsure: number };
   big: CatHeadScores & { reliability: ReliabilityBin[] };
+  /** Szanse dotknięcia poziomów i stożek zasięgu; brak w starszych podsumowaniach */
+  touch?: CatTouchScores;
+}
+
+/** Szanse dotknięcia kota: Brier wobec ruchu Browna, niezawodność i pokrycie stożka 80/50/20% (odsetek dotkniętych granic) */
+export interface CatTouchScores {
+  /** Ocenione szanse poziomów */
+  n: number;
+  /** Pełne godziny z szansami dotknięcia (prognozy rozłączne) */
+  hours: number;
+  brier: number | null;
+  /** Ruch Browna z σ godziny z realizowanej zmienności doby */
+  brierBm: number | null;
+  bssBm: number | null;
+  reliability: ReliabilityBin[];
+  cone: { q: number; n: number; up: number | null; dn: number | null }[];
 }
 
 export interface DeskLedgerSummary {
@@ -300,6 +316,13 @@ const isCatHead = (h: unknown) => {
   return !!x && finOrNull(x.brier) && finOrNull(x.brierBase) && finOrNull(x.bss) && finOrNull(x.auc) && finOrNull(x.hit);
 };
 const isSide = (v: unknown) => !!v && fin((v as { n: unknown }).n) && finOrNull((v as { hit: unknown }).hit);
+const isCatTouch = (v: unknown) => {
+  const t = v as Partial<CatTouchScores> | null;
+  return (
+    !!t && fin(t.n) && fin(t.hours) && finOrNull(t.brier) && finOrNull(t.brierBm) && finOrNull(t.bssBm) && Array.isArray(t.reliability) &&
+    Array.isArray(t.cone) && t.cone.every((c) => !!c && fin(c.q) && fin(c.n) && finOrNull(c.up) && finOrNull(c.dn))
+  );
+};
 
 /** Sekcja kota (opcjonalna) — sprawdzana osobno: uszkodzona sekcja ukrywa tylko wynik kota */
 export function isCat(x: unknown): x is NonNullable<DeskLedgerSummary['cat']> {
@@ -308,6 +331,7 @@ export function isCat(x: unknown): x is NonNullable<DeskLedgerSummary['cat']> {
   const s = c.scores;
   if (!fin(s.n) || !fin(s.nEff) || !isCatHead(s.dir) || !isCatHead(s.big)) return false;
   if (!isSide(s.dir.long) || !isSide(s.dir.short) || !fin(s.dir.unsure) || !Array.isArray(s.big.reliability)) return false;
+  if (s.touch !== undefined && !isCatTouch(s.touch)) return false;
   const l = c.latest;
   return l === null || (!!l && fin(l.t) && fin(l.px0) && fin(l.pUp) && fin(l.pBig) && fin(l.thr));
 }

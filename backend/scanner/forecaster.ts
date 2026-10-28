@@ -7,8 +7,26 @@ import { aciStep, brier, crpsQuantiles, isotonic, kupiec, normInv, pitFromQuanti
 import { mulberry32, seedFrom } from '../../src/utils/pathEngine.ts';
 import { outcomeProbabilities } from '../../src/utils/hip4.ts';
 import { horizonSigmas, stepFor } from '../../src/utils/hip4Model.ts';
-import type { CatScores, DeskLedgerSummary, MktScores, RetScores, TouchLevel, TouchScores } from '../../src/utils/deskLedger.ts';
-import { type Bar, FEATURES, type FeatureVec, type SchrodiInput, type SchrodiModel, features as catFeatures, modelEvents, scoreHead, stanceOf } from '../../src/utils/schrodi.ts';
+import type { CatScores, CatTouchScores, DeskLedgerSummary, MktScores, RetScores, TouchLevel, TouchScores } from '../../src/utils/deskLedger.ts';
+import {
+  type Bar,
+  CONE_Q,
+  type ConeStep,
+  FEATURES,
+  type FeatureVec,
+  type Levels,
+  type SchrodiInput,
+  type SchrodiModel,
+  TOUCH_MAX_R,
+  type TouchModel,
+  features as catFeatures,
+  modelEvents,
+  scoreHead,
+  stanceOf,
+  touchCone,
+  touchProb,
+} from '../../src/utils/schrodi.ts';
+import { normCdf } from '../../src/utils/stats.ts';
 import { MACRO_EVENTS } from '../../src/data/macroCalendar.ts';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -21,7 +39,8 @@ import type { MarketSnap } from './marketQuotes.ts';
  *  - rozkład log-zwrotu BTC na 1 h i 4 h: 13 kwantyli z tego samego modelu co desk (sezonowy log-HAR + innowacje FHS,
  *    Monte Carlo 4000 ścieżek, martyngał ceny) oraz — zapisane od razu — kwantyle benchmarku (normalny, σ z 30 dni);
  *  - prawdopodobieństwa dotknięcia PDH / PDL / D-EQ w 2 h — ten sam silnik co pas „Zasięg 2h” na Desku;
- *  - Schrödi (kot pod wykresem): szansa dużego ruchu i wzrostu w 1 h — ten sam model i kod co na stronie.
+ *  - Schrödi (kot pod wykresem): szansa dużego ruchu i wzrostu w 1 h, szanse dotknięcia poziomów aukcji i stożek
+ *    zasięgu godziny — te same modele i kod co na stronie.
  * Wyniki: CRPS (i umiejętność względem benchmarku), PIT, pokrycie przedziałów 60/90% z testem Kupca, ACI (Gibbs & Candès),
  * Brier, BSS, niezawodność i kalibracja Venna–Abersa dla prawdopodobieństw.
  */
@@ -39,6 +58,7 @@ export const ACI_ALPHA = 0.1;
 export const ACI_GAMMA = 0.005;
 const r6 = (x: number) => Math.round(x * 1e6) / 1e6;
 const r4 = (x: number) => Math.round(x * 1e4) / 1e4;
+const r2 = (x: number) => Math.round(x * 100) / 100;
 const r8 = (x: number) => Math.round(x * 1e8) / 1e8;
 
 /** Czasy prognozy: slot 15 min (klucz), chwila wydania i początek horyzontu (pełna minuta po wydaniu — bez podglądania). */
@@ -253,6 +273,15 @@ export interface CatForecast {
   thr: number;
   model: string;
   mh: string;
+  /**
+   * Szanse dotknięcia poziomów aukcji w oknie godziny (model `public/schrodi/touch-v1.json`, hash `th`): poziom, cena
+   * (2 miejsca) i p z zapisanych cech, `thr` i ceny `px0`. Tylko poziomy w zakresie uczenia (do 3 median zakresu godziny).
+   */
+  tl?: { k: keyof Levels; px: number; p: number }[];
+  /** Stożek zasięgu: odległość od `px0` (pb, log) w górę i w dół dotykana z szansą 80, 50 i 20% (null = poza zakresem) */
+  cone?: ConeStep[];
+  tmodel?: string;
+  th?: string;
 }
 
 /** Rozstrzygnięcie kota: ceny w t i t + h, max/min świec 1m okna; wzrost = c1 > c0, duży ruch = ln(hi/lo) > próg. */
@@ -485,14 +514,28 @@ export interface CatModel {
   model: SchrodiModel;
   /** SHA-256 kanonicznego JSON modelu */
   mh: string;
+  /** Model dotknięć i jego hash; brak pliku → kot bez szans dotknięcia */
+  touch?: { model: TouchModel; th: string } | null;
 }
 
+const sha = (o: unknown) => createHash('sha256').update(canonicalJson(o)).digest('hex');
+
 /** Model kota z pliku strony; brak albo uszkodzony plik → null (dziennik wydaje resztę prognoz bez kota). */
-export function loadCatModel(file: string | URL = new URL('../../public/schrodi/model-v1.json', import.meta.url)): CatModel | null {
+export function loadCatModel(
+  file: string | URL = new URL('../../public/schrodi/model-v1.json', import.meta.url),
+  touchFile: string | URL = new URL('../../public/schrodi/touch-v1.json', import.meta.url)
+): CatModel | null {
   try {
     const model = JSON.parse(readFileSync(file, 'utf8')) as SchrodiModel;
     if (!model?.dir || !model?.big || !Array.isArray(model.features)) return null;
-    return { model, mh: createHash('sha256').update(canonicalJson(model)).digest('hex') };
+    let touch: CatModel['touch'] = null;
+    try {
+      const tm = JSON.parse(readFileSync(touchFile, 'utf8')) as TouchModel;
+      if (Array.isArray(tm?.gb) && Array.isArray(tm.features)) touch = { model: tm, th: sha(tm) };
+    } catch {
+      // bez modelu dotknięć kot wydaje tylko kierunek i duży ruch
+    }
+    return { model, mh: sha(model), touch };
   } catch {
     return null;
   }
@@ -504,10 +547,39 @@ export const CAT_EVENTS = modelEvents(MACRO_EVENTS);
 /** Wektor cech do zapisu: 6 miejsc, braki i nieskończoności → null. */
 export const catX = (x: FeatureVec): (number | null)[] => FEATURES.map((f) => (Number.isFinite(x[f]) ? r6(x[f]) : null));
 
+const catVec = (x: readonly (number | null)[]) => Object.fromEntries(FEATURES.map((f, i) => [f, x[i] ?? Number.NaN])) as FeatureVec;
+
 /** p z zapisanego wektora cech (null → NaN, jak brak przy uczeniu) */
 export function catProbs(m: SchrodiModel, x: readonly (number | null)[]): { pUp: number; pBig: number } {
-  const v = Object.fromEntries(FEATURES.map((f, i) => [f, x[i] ?? Number.NaN])) as FeatureVec;
+  const v = catVec(x);
   return { pUp: r4(scoreHead(m.dir, m.features, v).p), pBig: r4(scoreHead(m.big, m.features, v).p) };
+}
+
+const LEVEL_KEYS: (keyof Levels)[] = ['pdh', 'pdl', 'poc', 'vah', 'val', 'vwap'];
+
+/**
+ * Szanse dotknięcia i stożek z zapisanych wartości (cechy, próg = mediana zakresu godziny, cena `px0`, ceny poziomów
+ * z 2 miejscami) — każdy przeliczy je z rekordu i publicznego modelu dotknięć.
+ */
+export function catTouch(
+  tm: TouchModel,
+  x: readonly (number | null)[],
+  thr: number,
+  px0: number,
+  levels: Partial<Levels> | null
+): { tl: NonNullable<CatForecast['tl']>; cone: ConeStep[] } {
+  const v = catVec(x);
+  const tl: NonNullable<CatForecast['tl']> = [];
+  for (const k of LEVEL_KEYS) {
+    const L = levels?.[k];
+    if (L === undefined || !Number.isFinite(L) || !(L > 0)) continue;
+    const px = r2(L);
+    const d = Math.log(px / px0) * 1e4;
+    if (!(Math.abs(d) > 0) || Math.abs(d) > TOUCH_MAX_R * thr) continue;
+    const p = touchProb(tm, v, thr, d);
+    if (Number.isFinite(p)) tl.push({ k, px, p: r4(p) });
+  }
+  return { tl, cone: touchCone(tm, v, thr) };
 }
 
 /** Świece `candleSnapshot` z wolumenem (dla cech kota) */
@@ -543,6 +615,7 @@ export function makeCatForecast(cm: CatModel, inp: SchrodiInput, tm: ForecastTim
     thr: r4(fr.med1h),
     model: cm.model.version,
     mh: cm.mh,
+    ...(cm.touch ? { ...catTouch(cm.touch.model, x, r4(fr.med1h), fr.price, fr.levels), tmodel: cm.touch.model.version, th: cm.touch.th } : {}),
   };
 }
 
@@ -805,6 +878,56 @@ export function catScores(pairs: { f: CatForecast; r: CatResolution }[]): CatSco
       unsure: pairs.filter((p) => stanceOf(p.f.pUp) === 'unsure').length,
     },
     big: { ...probScores(big), reliability: reliability(big, 10).map((b) => ({ lo: b.lo, hi: b.hi, n: b.n, meanP: b.meanP, freq: b.freq })) },
+    touch: catTouchScores(pairs),
+  };
+}
+
+/** Dotknięcie poziomu w oknie: nad ceną `px0` max okna ≥ poziom, pod ceną min okna ≤ poziom */
+export const touchedLevel = (px: number, px0: number, r: Pick<CatResolution, 'hi' | 'lo'>): 0 | 1 => (px > px0 ? (r.hi >= px ? 1 : 0) : r.lo <= px ? 1 : 0);
+
+/**
+ * Szanse dotknięcia kota: Brier wobec ruchu Browna (P = 2(1 − Φ(|d| / σ)), σ godziny z realizowanej zmienności doby,
+ * jak w teście), niezawodność, pokrycie stożka (odsetek godzin, w których granica została dotknięta, wobec q).
+ */
+export function catTouchScores(pairs: { f: CatForecast; r: CatResolution }[]): CatTouchScores {
+  const rvIdx = FEATURES.indexOf('rv_1d');
+  const pp: { p: number; y: 0 | 1 }[] = [];
+  const bm: { p: number; y: 0 | 1 }[] = [];
+  const withTouch = pairs.filter((x) => Array.isArray(x.f.tl));
+  for (const { f, r } of withTouch) {
+    const rv = f.x[rvIdx];
+    for (const l of f.tl!) {
+      const y = touchedLevel(l.px, f.px0, r);
+      pp.push({ p: l.p, y });
+      if (rv !== null && rv > 0) {
+        const p = 2 * (1 - normCdf(Math.abs(Math.log(l.px / f.px0) * 1e4) / (rv / Math.sqrt(24))));
+        bm.push({ p: Math.min(1 - 1e-4, Math.max(1e-4, p)), y });
+      }
+    }
+  }
+  const bs = brier(pp);
+  const bsBm = bm.length === pp.length ? brier(bm) : null;
+  const cone = CONE_Q.map((q, i) => {
+    let n = 0;
+    let up = 0;
+    let dn = 0;
+    for (const { f, r } of withTouch) {
+      const s = f.cone?.[i];
+      if (!s || s.up === null || s.dn === null) continue;
+      n++;
+      up += r.hi >= f.px0 * Math.exp(s.up / 1e4) ? 1 : 0;
+      dn += r.lo <= f.px0 * Math.exp(-s.dn / 1e4) ? 1 : 0;
+    }
+    return { q, n, up: n ? up / n : null, dn: n ? dn / n : null };
+  });
+  return {
+    n: pp.length,
+    hours: withTouch.filter((x) => x.f.slot % HOUR === 0).length,
+    brier: bs,
+    brierBm: bsBm,
+    bssBm: bs !== null && bsBm !== null && bsBm > 0 ? 1 - bs / bsBm : null,
+    reliability: reliability(pp, 10).map((b) => ({ lo: b.lo, hi: b.hi, n: b.n, meanP: b.meanP, freq: b.freq })),
+    cone,
   };
 }
 
