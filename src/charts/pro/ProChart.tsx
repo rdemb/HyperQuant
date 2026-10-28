@@ -24,6 +24,7 @@ import { STATIONS, Station, StationId, stationKey, stationPanel } from './chart/
 import { BUILT_IN_TEMPLATES, ChartTemplate, applyTemplate, loadTemplates, saveAs, saveTemplates } from './chart/templates';
 import { NumbersCard, StatGroupPicker } from './chart/NumbersCard';
 import { MarketStateBar } from './chart/MarketStateBar';
+import { SchrodiLauncher } from '../../components/schrodi/SchrodiLauncher';
 import { type ChartPalette, PALETTE, setPalette } from './chart/palette';
 import type { ChartView } from './chart/footprintSeries';
 import type { FootprintStyle } from './chart/layout';
@@ -674,6 +675,8 @@ export const ProChart: React.FC<{
           <DrawStyleBar tools={tools} />
           <DrawHint tools={tools} />
           <LoadOverlay series={series} onRetry={() => void series.load(true)} />
+          {/* Schrödi (prognoza BTC na godzinę) tylko w pierwszym panelu i poza powtórką */}
+          {panel === 0 && !inReplay && !pick && (!narrow || tab === 'chart') && <SchrodiLauncher className="absolute left-2 bottom-8 z-30" />}
           {narrow && tab === 'tape' && (
             <TapePanel
               store={store}

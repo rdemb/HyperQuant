@@ -335,6 +335,20 @@ const GROUPS: { title: string; rows: Row[] }[] = [
     title: tr('Modele liczone z danych', 'Models computed from data'),
     rows: [
       {
+        metric: tr('Schrödi: duży ruch i kierunek BTC na 1 h (Wykresy)', 'Schrödi: BTC big move and direction for 1 h (Charts)'),
+        source: tr('Świece HL 1m, 5m, 1h, 1d + kalendarz makro desku', 'HL 1m, 5m, 1h, 1d candles + the desk macro calendar'),
+        method: tr(
+          '22 cechy (ruch, zmienność, aukcja, zegar); średnia regresji logistycznej i 300 drzew LightGBM z public/schrodi/model-v1.json, uczonych na minutówkach BTCUSDT 2022 do 10.2026; walidacja krocząca kwartałami (docs/SCHRODI.md)',
+          '22 features (move, volatility, auction, clock); average of a logistic regression and 300 LightGBM trees from public/schrodi/model-v1.json, trained on BTCUSDT 1m candles 2022 to 10.2026; quarterly walk-forward validation (docs/SCHRODI.md)'
+        ),
+        kinds: ['MODEL'],
+        refresh: tr('co 5 min (20 s po zamknięciu świecy 5m)', 'every 5 min (20 s after the 5m candle closes)'),
+        caveat: tr(
+          'Kierunek tylko trochę lepszy niż rzut monetą (AUC 0,54, trafność 53%); po kosztach sam kierunek nie daje przewagi. Wielkość ruchu AUC 0,83.',
+          'Direction only slightly better than a coin flip (AUC 0.54, accuracy 53%); after costs direction alone is no edge. Move size AUC 0.83.'
+        ),
+      },
+      {
         metric: 'CVD (spot / perp)',
         source: tr('Świece HL + transakcje WS (+ CEX, jeśli włączone)', 'HL candles + WS trades (+ CEX, if enabled)'),
         method: tr(
