@@ -429,7 +429,9 @@ describe('A/B wersji modelu: wariant B z reżimem BOCPD', () => {
 import { isCat } from '../../../src/utils/deskLedger.ts';
 import { loadCatModel } from '../forecaster.ts';
 import { agg, synth } from '../../../src/utils/__tests__/schrodiSynth.ts';
-import { checkCat, checkResolutions } from '../../../scripts/verify-ledger.mjs';
+import { checkCat, checkResolutions, checkTrust } from '../../../scripts/verify-ledger.mjs';
+import { TRUST_DESIGN } from '../../../src/utils/schrodiTrust.ts';
+import { isTrust } from '../../../src/utils/deskLedger.ts';
 
 describe('LedgerRunner — Schrödi (kot) w partii slotu', () => {
   const m1 = synth(7, SLOT0 - 31 * DAY, 31);
@@ -440,7 +442,8 @@ describe('LedgerRunner — Schrödi (kot) w partii slotu', () => {
     const data = { ...fakeData(), cat, catInput: { slot: SLOT0, inp }, refreshCat: async () => {} };
     const { r, dir, published } = runner({ data });
     r.init(SLOT0);
-    expect((await r.tick(SLOT0 + 30_000)).appended).toBe(4);
+    // 3 prognozy desku, kot i plan oceny zaufania (prerejestrowany raz, przed prognozami slotu)
+    expect((await r.tick(SLOT0 + 30_000)).appended).toBe(5);
     const recs = lines(dir, '2026-10-22');
     const c = recs.find((l) => l.kind === 'cat');
     expect(c).toMatchObject({ id: `${SLOT0}-cat`, slot: SLOT0, ti: SLOT0 + 30_000, t: SLOT0 + MIN, bar: SLOT0 - 5 * MIN });
@@ -475,10 +478,45 @@ describe('LedgerRunner — Schrödi (kot) w partii slotu', () => {
     const data = { ...fakeData(), cat, catInput: { slot: SLOT0 - 15 * MIN, inp }, refreshCat: async () => {} };
     const { r } = runner({ data });
     r.init(SLOT0);
-    expect((await r.tick(SLOT0 + 30_000)).appended).toBe(3);
+    expect((await r.tick(SLOT0 + 30_000)).appended).toBe(4); // 3 prognozy + plan zaufania
     const failing = { ...fakeData(), cat, refreshCat: async () => Promise.reject(new Error('429')) };
     const { r: r2 } = runner({ data: failing });
     r2.init(SLOT0);
-    expect((await r2.tick(SLOT0 + 30_000)).appended).toBe(3);
+    expect((await r2.tick(SLOT0 + 30_000)).appended).toBe(4);
+  });
+
+  it('plan zaufania w łańcuchu przed oceną (hash przypięty); ocenia pełne godziny po rejestracji, także po restarcie; weryfikator przelicza', async () => {
+    // Zmiana planu = nowy identyfikator i nowy rekord; ten hash chroni przed cichą zmianą planu już zapisanego w dzienniku
+    expect(createHash('sha256').update(canonicalJson(TRUST_DESIGN)).digest('hex')).toBe('08e5f569137533fba1629dc2b5a6597fcd36252717151d874b43d789f56f98f6');
+    const m1b = synth(7, SLOT0 - 30 * DAY, 31);
+    const inp2 = { m1: m1b, m5: agg(m1b, 5 * MIN), h1: agg(m1b, HOUR), d1: agg(m1b, DAY), events: [] };
+    const data = { ...fakeData(), cat, catInput: { slot: SLOT0, inp: inp2 } as { slot: number; inp: typeof inp2 } | null, refreshCat: async () => {} };
+    const { r, dir, published } = runner({ data });
+    r.init(SLOT0);
+    await r.tick(SLOT0 + 30_000);
+    const p = lines(dir, '2026-10-22').filter((l) => l.k === 'p');
+    expect(p).toHaveLength(1);
+    expect(p[0]).toMatchObject({ id: TRUST_DESIGN.id, t: SLOT0 + 30_000, catalog: JSON.parse(canonicalJson(TRUST_DESIGN)) });
+    data.catInput = { slot: SLOT0 + HOUR, inp: inp2 };
+    await r.tick(SLOT0 + HOUR + 30_000);
+    await r.tick(SLOT0 + 2 * HOUR + 3 * MIN);
+    const s = JSON.parse(published.at(-1)!);
+    expect(isCat(s.cat) && isTrust(s.cat.trust)).toBe(true);
+    expect(s.cat.trust.plan).toEqual({ id: TRUST_DESIGN.id, hash: p[0].hash, at: p[0].t });
+    // 21:00 wydany przed rejestracją planu — poza oceną; 22:00 w ocenie; obie godziny w wynikach 30 dni
+    expect(s.cat.scores.nEff).toBe(2);
+    expect(s.cat.trust.big).toMatchObject({ n: 1, path: [expect.any(Number)], step: 1 });
+    expect(s.cat.trust.dir.n).toBe(1);
+    // Restart: godziny z całego dziennika, ta sama ocena
+    const again = new LedgerRunner({ coin: 'BTC', data: { ...data, catInput: null }, store: new LedgerStore({ dir, coin: 'BTC' }), repo: null, markPx: () => 100_000, publish: () => {} });
+    expect(again.init(SLOT0 + 2 * HOUR + 4 * MIN).ok).toBe(true);
+    expect(JSON.parse(JSON.stringify(again.summary(s.asOf).cat!.trust))).toEqual(s.cat.trust);
+    // Weryfikator: plan zgodny z kodem, ocena przeliczona z rekordów identyczna z podsumowaniem
+    const all = [...lines(dir, '2026-10-22'), ...lines(dir, '2026-10-23')];
+    const v = checkTrust(all);
+    expect(v.problems).toEqual([]);
+    expect(JSON.parse(JSON.stringify(v.trust))).toEqual(s.cat.trust);
+    const forged = all.map((l) => (l.k === 'p' ? { ...l, catalog: { ...l.catalog, proof: { ...l.catalog.proof, threshold: 10 } } } : l));
+    expect(checkTrust(forged).problems[0]).toMatch(/różni się od kodu/);
   });
 });

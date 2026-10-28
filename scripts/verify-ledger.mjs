@@ -13,7 +13,8 @@
  *  3. historię git (--dir): każdy commit tylko dopisuje do plików dziennika;
  *     kot (Schrödi): p przeliczone z zapisanych cech i publicznego modelu public/schrodi/model-v1.json (hash modelu
  *     = `mh` rekordu), wzrost i duży ruch z cen i max/min okna; szanse dotknięcia poziomów i stożek zasięgu
- *     przeliczone modelem public/schrodi/touch-v1.json (hash = `th`);
+ *     przeliczone modelem public/schrodi/touch-v1.json (hash = `th`); plan oceny zaufania kota zgodny z kodem
+ *     (src/utils/schrodiTrust.ts), a dowód przewagi, rozkład trafności i alarm dryfu przeliczone z rekordów;
  *  4. pokwitowania OpenTimestamps: skrót w `ots/<dzień>.jsonl.ots` = SHA-256 pliku dnia; w `ots/slots/<slot>.ots`
  *     = hash ostatniej prognozy tego slotu (prognozy istniały w chwili znakowania). Sam czas potwierdza klient OTS:
  *     `ots upgrade <plik>.ots` i `ots verify -f <plik danych> <plik>.ots` (dla slotu: skrót podaj przez `-d <hash>`).
@@ -24,6 +25,7 @@ import { createHash } from 'node:crypto';
 import { AB_DESIGN, abBlocks } from '../src/utils/abTest.ts';
 import { fitEnsemble } from '../src/utils/ensemble.ts';
 import { FEATURES, TOUCH_MAX_R, scoreHead, touchCone, touchProb } from '../src/utils/schrodi.ts';
+import { TRUST_DESIGN, catTrust, trustHour } from '../src/utils/schrodiTrust.ts';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -351,6 +353,34 @@ export function checkAbPlan(records) {
     if (early.length) problems.push(`wariant B przed prerejestracją planu: ${early.length} (np. ${early[0].id})`);
   }
   return { problems, registeredAt };
+}
+
+/**
+ * Plan oceny zaufania kota (rekord `k: 'p'`, id TRUST_DESIGN.id): zapisany plan identyczny z planem w kodzie, jeden hash
+ * dla identyfikatora. Gdy rekord planu jest wśród sprawdzanych (pełny klon albo plan z ostatnich dni), ocena jest
+ * przeliczana z kompletu godzin po rejestracji: pełne godziny kota z rozstrzygnięciem, bez unieważnionych — ten sam,
+ * publiczny kod co podsumowanie. Plan spoza zakresu → `trust` null (nie wszystkie godziny w rekordach).
+ */
+export function checkTrust(records) {
+  const problems = [];
+  const plans = records.filter((o) => o.k === 'p' && o.id === TRUST_DESIGN.id);
+  const want = canonical(TRUST_DESIGN);
+  for (const p of plans) if (canonical(p.catalog) !== want) problems.push(`${p.id}: plan zaufania różni się od kodu (src/utils/schrodiTrust.ts)`);
+  if (new Set(plans.map((p) => p.catalogHash)).size > 1) problems.push(`${TRUST_DESIGN.id}: kilka różnych planów pod jednym identyfikatorem`);
+  const p = plans[0];
+  const plan = p && typeof p.t === 'number' ? { id: TRUST_DESIGN.id, hash: String(p.hash), at: p.t } : null;
+  if (!plan) return { problems, plan: null, trust: null };
+  const res = new Map();
+  for (const o of records) if (o.k === 'r') res.set(o.id, o);
+  const hours = [];
+  for (const o of records) {
+    if (o.k !== 'f' || o.kind !== 'cat') continue;
+    const r = res.get(o.id);
+    if (!r || r.void || typeof r.hi !== 'number') continue;
+    const h = trustHour(o, r);
+    if (h) hours.push(h);
+  }
+  return { problems, plan, trust: catTrust(hours, plan) };
 }
 
 /**
@@ -863,12 +893,28 @@ async function main() {
         : `✓ Schrödi: ${plural(cat.checked, 'prognoza', 'prognozy', 'prognoz')} — p, szanse dotknięcia i stożek przeliczone z zapisanych cech publicznymi modelami, hashe modeli zgodne`
     );
   if (cat.problems.length) ok = false;
+  const trust = checkTrust(records);
+  if (trust.plan || trust.problems.length) {
+    const e = (h) => `E = ${(10 ** h.lg).toPrecision(3)} (${plural(h.n, 'godzina', 'godziny', 'godzin')}${h.proofAt !== null ? `, dowód od ${new Date(h.proofAt).toISOString().slice(0, 13)}Z` : ''})`;
+    const t = trust.trust;
+    console.log(
+      trust.problems.length
+        ? `✗ plan zaufania kota (${trust.problems.length}): ${trust.problems.slice(0, 5).join('; ')}`
+        : `✓ plan zaufania kota ${TRUST_DESIGN.id} prerejestrowany ${new Date(trust.plan.at).toISOString().slice(0, 16)}Z, zgodny z kodem` +
+            (t
+              ? `; przeliczone z rekordów — duży ruch ${e(t.big)}, kierunek ${e(t.dir)}, dotknięcia ${e(t.touch)}; dowód przy E ≥ ${TRUST_DESIGN.proof.threshold}; alarm dryfu: ${
+                  ['big', 'dir', 'touch'].filter((k) => t[k].drift.alarm).join(', ') || 'brak'
+                }`
+              : '')
+    );
+  }
+  if (trust.problems.length) ok = false;
   const pre = checkPreregs(records);
   if (pre.preregs.length || pre.problems.length)
     console.log(
       pre.problems.length
         ? `✗ prerejestracje (${pre.problems.length}): ${pre.problems.slice(0, 5).join('; ')}`
-        : `✓ prerejestracje (katalog laboratorium, plan A/B): ${pre.preregs.map((p) => `${p.id} ${new Date(p.t).toISOString().slice(0, 16)}Z (${String(p.catalogHash).slice(0, 12)}…)`).join(', ')}`
+        : `✓ prerejestracje (katalog laboratorium, plany ocen): ${pre.preregs.map((p) => `${p.id} ${new Date(p.t).toISOString().slice(0, 16)}Z (${String(p.catalogHash).slice(0, 12)}…)`).join(', ')}`
     );
   if (pre.problems.length) ok = false;
   console.log(`Głowa łańcucha: ${prev}`);
@@ -969,6 +1015,12 @@ async function main() {
     try {
       const s = await (await fetch(SUMMARY_URL, { cache: 'no-store' })).json();
       console.log(s?.head?.hash === prev ? '✓ głowa zgodna z podsumowaniem na stronie' : `ℹ podsumowanie wskazuje inną głowę (${String(s?.head?.hash).slice(0, 12)}…) — mogło zostać opublikowane przed/po ostatnim dopisaniu`);
+      // Ta sama głowa = ten sam stan dziennika: ocena zaufania w podsumowaniu musi być identyczna z przeliczoną
+      if (s?.head?.hash === prev && trust.trust && s?.cat?.trust) {
+        const same = canonical(s.cat.trust) === canonical(trust.trust);
+        console.log(same ? '✓ ocena zaufania kota w podsumowaniu zgodna z przeliczoną z rekordów' : '✗ ocena zaufania kota w podsumowaniu różni się od przeliczonej z rekordów');
+        if (!same) ok = false;
+      }
     } catch {
       // brak podsumowania — nie wpływa na wynik
     }
