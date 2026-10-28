@@ -5,15 +5,17 @@ import { locale, tr } from '../../i18n';
 import { useDeskLedger } from '../../state/useDeskLedger';
 import { Badge } from '../../ui';
 import { isCat } from '../../utils/deskLedger';
-import { fmtCountdown, fmtPrice, fmtSigned } from '../../ui/format';
+import { fmtCountdown, fmtE, fmtPrice, fmtSigned } from '../../ui/format';
 import { type Forecast, type Group, type Levels, type SchrodiModel, TOUCH_MAX_R, touchCone, touchProb } from '../../utils/schrodi';
+import { type CatTrust, type OodFeature, TRUST_DESIGN, TRUST_HEADS, type TrustHeadKey, driftAlarms, oodKeys, proofState } from '../../utils/schrodiTrust';
 import { type Mood, SchrodiCat } from './SchrodiCat';
 import { useTouchModel } from './useSchrodi';
 
 /**
  * Dymek Schrödiego: najpierw wielkość ruchu w najbliższej godzinie, poziomy i makro, potem kierunek z uczciwym %.
  * Przy poziomach szansa dotknięcia w godzinę i stożek zasięgu (model dotknięć, wczytywany po otwarciu dymka).
- * Rozwijane: „Dlaczego?” (wkład grup cech), „Jak trafiam” (walidacja krocząca i wynik na żywo z dziennika), „O mnie”.
+ * Rozwijane: „Dlaczego?” (wkład grup cech), „Jak trafiam” (walidacja krocząca, dowód i wynik na żywo z dziennika), „O mnie”.
+ * Zaufanie: szary tryb przy alarmie dryfu z dziennika, znacznik rzadkiego rynku (cechy poza zakresem z nauki).
  */
 
 const MIN = 60_000;
@@ -62,6 +64,31 @@ const LEVEL_NAMES: Record<keyof Levels, () => string> = {
   val: () => tr('VAL wczoraj', "Yesterday's VAL"),
   vwap: () => tr('VWAP dnia', 'Daily VWAP'),
 };
+
+const OOD_NAMES: Record<OodFeature, () => string> = {
+  ret_15m: () => tr('ruch 15 min', '15 min move'),
+  ret_1h: () => tr('ruch godziny', '1 h move'),
+  ret_4h: () => tr('ruch 4 h', '4 h move'),
+  ret_1d: () => tr('ruch doby', '1 day move'),
+  rv_1h: () => tr('zmienność godziny', '1 h volatility'),
+  rv_1d: () => tr('zmienność doby', '1 day volatility'),
+  rng4h_rel: () => tr('zakres 4 h', '4 h range'),
+  vol_z: () => tr('wolumen', 'volume'),
+};
+
+const HEAD_NAMES: Record<TrustHeadKey, () => string> = {
+  big: () => tr('duży ruch', 'big move'),
+  dir: () => tr('kierunek', 'direction'),
+  touch: () => tr('dotknięcia', 'touches'),
+};
+
+/** Szansa jako częstość: „w 10 takich godzinach około N razy” (łatwiej ocenić niż procent) */
+function inTen(p: number): string {
+  const n = Math.round(p * 10);
+  if (n === 0) return tr('W 10 takich godzinach prawie nigdy.', 'In 10 such hours almost never.');
+  if (n === 10) return tr('W 10 takich godzinach prawie zawsze.', 'In 10 such hours almost always.');
+  return tr(`W 10 takich godzinach średnio ${n} ${n === 1 ? 'raz' : 'razy'}.`, `In 10 such hours about ${n} ${n === 1 ? 'time' : 'times'}.`);
+}
 
 const GROUP_NAMES: Record<Group, () => string> = {
   move: () => tr('Ruch ceny', 'Price move'),
@@ -120,6 +147,33 @@ const usd = (v: number) => tr(fmtSigned(v, 0, ' $'), `${v > 0 ? '+' : v < 0 ? '�
 type Live = NonNullable<NonNullable<ReturnType<typeof useDeskLedger>['summary']>['cat']>;
 const pctOr = (v: number | null) => (v === null ? '—' : pct(v));
 
+/** Dowód na żywo: kapitał zakładu wobec prostej reguły od zapisania planu w dzienniku (próg 20 = dowód przewagi). */
+const LiveProof: React.FC<{ t: CatTrust }> = ({ t }) => {
+  if (!t.plan || t.big.n === 0) return null;
+  const proven = TRUST_HEADS.filter((k) => proofState(t[k]) === 'holding');
+  const faded = TRUST_HEADS.filter((k) => proofState(t[k]) === 'faded');
+  return (
+    <p className="mt-2">
+      <span className="text-ink-1">{tr('Dowód na żywo', 'Live proof')}</span>{' '}
+      {tr(
+        `(od ${new Date(t.plan.at).toLocaleDateString(locale, { day: 'numeric', month: 'short' })}): co godzinę stawiam wirtualny zakład, że trafię lepiej niż prosta reguła. Start 1, dowód przy ${TRUST_DESIGN.proof.threshold}, bo bez przewagi tyle zdarza się najwyżej w 5%. Po ${t.big.n} godz.: duży ruch ${fmtE(t.big.lg)}, kierunek ${fmtE(t.dir.lg)}, dotknięcia ${fmtE(t.touch.lg)}.`,
+        `(since ${new Date(t.plan.at).toLocaleDateString(locale, { day: 'numeric', month: 'short' })}): every hour I place a virtual bet that I beat a simple rule. Start 1, proof at ${TRUST_DESIGN.proof.threshold}, because without an edge that happens at most 5% of the time. After ${t.big.n} h: big move ${fmtE(t.big.lg)}, direction ${fmtE(t.dir.lg)}, touches ${fmtE(t.touch.lg)}.`
+      )}
+      {proven.length > 0 && (
+        <span className="text-buy-ink">
+          {' '}
+          {tr(`Przewaga dowiedziona: ${proven.map((k) => HEAD_NAMES[k]()).join(', ')}.`, `Edge proven: ${proven.map((k) => HEAD_NAMES[k]()).join(', ')}.`)}
+        </span>
+      )}
+      {faded.length > 0 &&
+        ` ${tr(
+          `Dowód był, ale od tego czasu kapitał spadł poniżej ${TRUST_DESIGN.proof.threshold}: ${faded.map((k) => HEAD_NAMES[k]()).join(', ')}.`,
+          `Proven earlier, but capital has since fallen below ${TRUST_DESIGN.proof.threshold}: ${faded.map((k) => HEAD_NAMES[k]()).join(', ')}.`
+        )}`}
+    </p>
+  );
+};
+
 /** Wynik na żywo z weryfikowalnego dziennika: każda prognoza zapisana z hashem, zanim znany jest wynik. */
 const LiveRecord: React.FC<{ live: Live }> = ({ live }) => {
   const s = live.scores;
@@ -176,6 +230,9 @@ export const SchrodiPanel: React.FC<{
   const px = livePx && livePx > 0 ? livePx : f.price;
   const { summary } = useDeskLedger();
   const live = summary && isCat(summary.cat) && summary.cat.since !== null ? summary.cat : null;
+  const trust = live?.trust ?? null;
+  const alarms = driftAlarms(trust);
+  const ood = oodKeys((k) => f.x[k]);
   const above = levels.filter((l) => l.px > px).slice(-2);
   const below = levels.filter((l) => l.px <= px).slice(0, 2);
   const card = model.card as unknown as Card;
@@ -202,7 +259,7 @@ export const SchrodiPanel: React.FC<{
   return (
     <div role="dialog" aria-label="Schrödi" className="rounded-xl border border-line-strong bg-surface-2/95 backdrop-blur shadow-2xl text-ink-1 overflow-hidden">
       <div className="flex items-start gap-3 px-3 pt-3 pb-2">
-        <SchrodiCat pUp={f.pUp} mood={mood} size={56} className="shrink-0" />
+        <SchrodiCat pUp={f.pUp} mood={mood} size={56} className={`shrink-0 ${alarms.length ? 'grayscale opacity-70' : ''}`} />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="text-sm font-semibold">Schrödi</span>
@@ -218,6 +275,24 @@ export const SchrodiPanel: React.FC<{
       </div>
 
       <div className="px-3 pb-3 flex flex-col gap-3">
+        {alarms.length > 0 && (
+          <div role="status" className="rounded-md border border-warn/40 bg-warn/10 px-2 py-1.5 text-[11px] leading-snug text-ink-1">
+            ⚠️{' '}
+            {tr(
+              `Szary tryb: ostatnio trafiam gorzej niż prosta reguła (${alarms.map((k) => HEAD_NAMES[k]()).join(', ')}). Traktuj moje procenty ostrożnie, dopóki alarm nie zgaśnie.`,
+              `Grey mode: lately I do worse than a simple rule (${alarms.map((k) => HEAD_NAMES[k]()).join(', ')}). Treat my odds with care until the alarm clears.`
+            )}
+          </div>
+        )}
+        {ood.length > 0 && (
+          <div className="rounded-md border border-line px-2 py-1.5 text-[11px] leading-snug text-ink-2">
+            🧭 <span className="font-medium text-ink-1">{tr('Rzadki rynek', 'Rare market')}</span>:{' '}
+            {tr(
+              `${ood.map((k) => OOD_NAMES[k]()).join(', ')} poza zakresem 99% godzin z nauki. W 2026 takich godzin było 275 z 7124 i duży ruch trafiałem w nich lepiej niż zwykle (w burzy jest prawie pewny). Kierunek nadal zgaduję tylko trochę lepiej niż rzut monetą.`,
+              `${ood.map((k) => OOD_NAMES[k]()).join(', ')} outside the range of 99% of training hours. In 2026 there were 275 such hours out of 7124 and I called big moves better than usual in them (in a storm one is almost certain). Direction is still only slightly better than a coin flip.`
+            )}
+          </div>
+        )}
         <div>
           <div className="flex items-baseline justify-between text-xs">
             <span className="text-ink-2">🌊 {tr('Duży ruch w ciągu godziny', 'Big move within the hour')}</span>
@@ -228,7 +303,8 @@ export const SchrodiPanel: React.FC<{
             {tr(
               `Duży, czyli zakres godziny ponad ${fmtPrice(f.bigUsd, 0)} $ (mediana z 30 dni).`,
               `Big means an hourly range above $${fmtPrice(f.bigUsd, 0)} (30-day median).`
-            )}
+            )}{' '}
+            {inTen(f.pBig)}
           </p>
         </div>
 
@@ -352,6 +428,7 @@ export const SchrodiPanel: React.FC<{
             )}
           </p>
         )}
+        {trust && <LiveProof t={trust} />}
         {live && <LiveRecord live={live} />}
       </Section>
 

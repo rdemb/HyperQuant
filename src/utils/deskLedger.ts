@@ -1,11 +1,13 @@
 /**
  * Weryfikowalny dziennik prognoz desku — kontrakt danych `ledger/BTC/summary.json` (gałąź `ledger` repo danych) i odczyty
- * dla UI. Bez importów (moduł ładowany także natywnie w skanerze).
+ * dla UI. Tylko importy typów (moduł ładowany także natywnie w skanerze).
  *
  * Prognozy są pre-rejestrowane co 15 min w plikach dziennych JSONL z łańcuchem hashy (SHA-256), dni zakotwiczane
  * w Bitcoinie przez OpenTimestamps; rozstrzygnięcia ze świec 1m Hyperliquid. Każdy może zweryfikować łańcuch
  * i przeliczyć wyniki (scripts/verify-ledger.mjs) bez zaufania do HyperQuant.
  */
+
+import type { CatTrust, TrustHead } from './schrodiTrust.ts';
 
 export type TouchLevel = 'pdh' | 'pdl' | 'deq';
 
@@ -195,6 +197,8 @@ export interface DeskLedgerSummary {
     slots: number;
     latest: { t: number; px0: number; pUp: number; pBig: number; thr: number } | null;
     scores: CatScores;
+    /** Ocena zaufania od rejestracji planu (cały dziennik, pełne godziny); brak w starszych podsumowaniach */
+    trust?: CatTrust;
   };
   method: 'hq-ledger-v1';
 }
@@ -324,6 +328,27 @@ const isCatTouch = (v: unknown) => {
   );
 };
 
+const isTrustHead = (v: unknown) => {
+  const h = v as Partial<TrustHead> | null;
+  const d = h?.drift;
+  return (
+    !!h && fin(h.n) && fin(h.lg) && fin(h.lgMax) && finOrNull(h.proofAt) && Array.isArray(h.path) && h.path.every(fin) && fin(h.step) &&
+    finOrNull(h.brier) && finOrNull(h.brierBase) && (h.corp === null || (!!h.corp && fin(h.corp.mcb) && fin(h.corp.dsc) && fin(h.corp.unc))) &&
+    (h.spiegel === null || (!!h.spiegel && fin(h.spiegel.z) && fin(h.spiegel.p))) &&
+    Array.isArray(h.rel) && h.rel.every((b) => !!b && fin(b.lo) && fin(b.hi) && fin(b.n) && finOrNull(b.meanP) && finOrNull(b.freq)) &&
+    !!d && fin(d.lg) && typeof d.alarm === 'boolean' && fin(d.episodes) && finOrNull(d.since)
+  );
+};
+
+/** Ocena zaufania kota (dowód przewagi, rozkład trafności, dryf, rzadki rynek) */
+export function isTrust(x: unknown): x is CatTrust {
+  const t = x as Partial<CatTrust> | null;
+  const p = t?.plan;
+  if (!t || !(p === null || (!!p && typeof p.id === 'string' && typeof p.hash === 'string' && fin(p.at)))) return false;
+  if (!isTrustHead(t.big) || !isTrustHead(t.dir) || !isTrustHead(t.touch)) return false;
+  return !!t.ood && fin(t.ood.n) && finOrNull(t.ood.bssBig) && finOrNull(t.ood.bssDir);
+}
+
 /** Sekcja kota (opcjonalna) — sprawdzana osobno: uszkodzona sekcja ukrywa tylko wynik kota */
 export function isCat(x: unknown): x is NonNullable<DeskLedgerSummary['cat']> {
   const c = x as Partial<NonNullable<DeskLedgerSummary['cat']>> | null;
@@ -332,6 +357,7 @@ export function isCat(x: unknown): x is NonNullable<DeskLedgerSummary['cat']> {
   if (!fin(s.n) || !fin(s.nEff) || !isCatHead(s.dir) || !isCatHead(s.big)) return false;
   if (!isSide(s.dir.long) || !isSide(s.dir.short) || !fin(s.dir.unsure) || !Array.isArray(s.big.reliability)) return false;
   if (s.touch !== undefined && !isCatTouch(s.touch)) return false;
+  if (c.trust !== undefined && !isTrust(c.trust)) return false;
   const l = c.latest;
   return l === null || (!!l && fin(l.t) && fin(l.px0) && fin(l.pUp) && fin(l.pBig) && fin(l.thr));
 }

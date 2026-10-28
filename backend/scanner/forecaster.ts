@@ -27,6 +27,7 @@ import {
   touchProb,
 } from '../../src/utils/schrodi.ts';
 import { normCdf } from '../../src/utils/stats.ts';
+import { type CatTrust, type TrustHour, catTrust } from '../../src/utils/schrodiTrust.ts';
 import { MACRO_EVENTS } from '../../src/data/macroCalendar.ts';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -944,6 +945,9 @@ export interface SummaryInput {
   slotStamps?: number;
   /** Czas prerejestracji planu oceny A/B w dzienniku (null / brak = jeszcze nie) */
   abRegisteredAt?: number | null;
+  /** Rozstrzygnięte pełne godziny kota z całego dziennika i rejestracja planu oceny zaufania (null / brak = jeszcze nie) */
+  catHours?: TrustHour[];
+  trustPlan?: CatTrust['plan'];
 }
 
 /** Podsumowanie (30 dni) dla strony: najnowsze prognozy, wyniki, kalibracja Venna–Abersa najnowszych prawdopodobieństw. */
@@ -1038,7 +1042,7 @@ export function buildSummary(s: SummaryInput): DeskLedgerSummary {
         : null,
     },
     ab: abSection(fs, s.resolutions, s.now, s.abRegisteredAt ?? null),
-    cat: catSection(fs, catPairs),
+    cat: { ...catSection(fs, catPairs), trust: catTrust(s.catHours ?? [], s.trustPlan ?? null) },
     method: 'hq-ledger-v1',
   };
 }

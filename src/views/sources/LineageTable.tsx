@@ -349,6 +349,20 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         ),
       },
       {
+        metric: tr('Schrödi: dowód przewagi, alarm dryfu, kalibracja (Plan, dymek kota)', 'Schrödi: proof of edge, drift alarm, calibration (Plan, cat panel)'),
+        source: tr('Weryfikowalny dziennik prognoz: pełne godziny kota od rejestracji planu schrodi-trust-v1', 'Verifiable forecast ledger: full-hour cat forecasts since the schrodi-trust-v1 plan was recorded'),
+        method: tr(
+          'E-proces wobec prostej reguły na różnicy wyników Briera (Henzi i Ziegel 2022), e-detektor dryfu CUSUM (Shin, Ramdas, Rinaldo 2022), rozkład CORP (Dimitriadis, Gneiting, Jordan 2021), pasma Wilsona 90%, test Spiegelhaltera (1986); src/utils/schrodiTrust.ts',
+          'E-process against a simple rule on the Brier score difference (Henzi and Ziegel 2022), CUSUM e-detector for drift (Shin, Ramdas, Rinaldo 2022), CORP decomposition (Dimitriadis, Gneiting, Jordan 2021), 90% Wilson bands, Spiegelhalter test (1986); src/utils/schrodiTrust.ts'
+        ),
+        kinds: ['LIVE', 'MODEL'],
+        refresh: tr('co godzinę, po rozstrzygnięciu', 'hourly, after resolution'),
+        caveat: tr(
+          'Brak dowodu to nie dowód braku przewagi: dla kierunku dowód może nie przyjść nawet przez rok. Alarm dryfu znaczy, że ostatnio kot był gorszy od reguły.',
+          'No proof is not proof of no edge: for direction it may not come within a year. A drift alarm means the cat was recently worse than the rule.'
+        ),
+      },
+      {
         metric: 'CVD (spot / perp)',
         source: tr('Świece HL + transakcje WS (+ CEX, jeśli włączone)', 'HL candles + WS trades (+ CEX, if enabled)'),
         method: tr(

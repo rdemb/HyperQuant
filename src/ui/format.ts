@@ -18,6 +18,14 @@ export const fmtFixed = (v: number, digits: number): string =>
 /** Liczba bez zaokrąglania (już zaokrąglona w modelu) w zapisie języka strony, ujemna ze znakiem „−”. */
 export const fmtNum = (v: number): string => numLang(String(v)).replace(/^-/, '−');
 
+/** E-wartość z log10 (kapitał zakładu startujący od 1): małe z dwoma miejscami, duże w tysiącach. */
+export function fmtE(lg: number): string {
+  const e = 10 ** lg;
+  if (e >= 1e6) return tr('ponad milion', 'over a million');
+  if (e >= 1000) return `${fmtFixed(e / 1000, 1)}${tr(' tys.', 'k')}`;
+  return fmtFixed(e, e >= 100 ? 0 : e >= 10 ? 1 : 2);
+}
+
 export function fmtPrice(v: number | null | undefined, digits = 1): string {
   return isNum(v) ? fmtFixed(v, digits) : DASH;
 }

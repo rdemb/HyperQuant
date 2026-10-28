@@ -12,7 +12,8 @@ import { GENESIS, makeLine, verifyLines } from './ledger.ts';
  */
 
 const run = promisify(execFile);
-const DAY = 24 * 3_600_000;
+const HOUR = 3_600_000;
+const DAY = 24 * HOUR;
 export const LEDGER_BRANCH = 'ledger';
 export const dayKey = (t: number) => new Date(t).toISOString().slice(0, 10);
 const DAY_FILE = /^\d{4}-\d{2}-\d{2}\.jsonl$/;
@@ -45,12 +46,15 @@ export class LedgerStore {
     lastSlot: number | null;
     /** Rekordy prerejestracji katalogów (`k: 'p'`) z całego dziennika, w kolejności zapisu */
     preregs: LedgerRecord[];
+    /** Prognozy kota z pełnej godziny i rozstrzygnięcia kota z całego dziennika (ocena zaufania od rejestracji planu) */
+    catHours: { forecasts: Map<string, LedgerRecord>; resolutions: Map<string, LedgerRecord> };
     error?: string;
   } {
     const forecasts = new Map<string, LedgerRecord>();
     const resolutions = new Map<string, LedgerRecord>();
     const skips: LedgerRecord[] = [];
     const preregs: LedgerRecord[] = [];
+    const catHours = { forecasts: new Map<string, LedgerRecord>(), resolutions: new Map<string, LedgerRecord>() };
     const cd = this.coinDir();
     const files = existsSync(cd) ? readdirSync(cd).filter((f) => DAY_FILE.test(f)).sort() : [];
     const fromDay = dayKey(now - 31 * DAY);
@@ -63,13 +67,18 @@ export class LedgerStore {
       const v = verifyLines(lines, prev);
       if (!v.ok) {
         this.broken = true;
-        return { ok: false, forecasts, resolutions, skips, lastSlot: null, preregs, error: `łańcuch przerwany w ${f}, linia ${(v.badLine ?? 0) + 1}` };
+        return { ok: false, forecasts, resolutions, skips, lastSlot: null, preregs, catHours, error: `łańcuch przerwany w ${f}, linia ${(v.badLine ?? 0) + 1}` };
       }
       // Ostatni slot: z każdego pliku (tanio — tylko rekordy f/s), żeby ciągłość przetrwała przerwy dłuższe niż 31 dni
       for (const l of lines) {
         if (l.includes('"k":"p"')) {
           preregs.push(JSON.parse(l) as LedgerRecord);
           continue;
+        }
+        if (l.includes('-cat"')) {
+          const o = JSON.parse(l) as LedgerRecord;
+          if (o.k === 'f' && o.kind === 'cat' && typeof o.slot === 'number' && o.slot % HOUR === 0) catHours.forecasts.set(o.id as string, o);
+          else if (o.k === 'r' && typeof o.id === 'string') catHours.resolutions.set(o.id, o);
         }
         if (!l.includes('"k":"f"') && !l.includes('"k":"s"')) continue;
         const o = JSON.parse(l) as { slot?: unknown; until?: unknown };
@@ -93,7 +102,7 @@ export class LedgerStore {
     this.head = prev;
     this.lines = count;
     this.broken = false;
-    return { ok: true, forecasts, resolutions, skips, lastSlot, preregs };
+    return { ok: true, forecasts, resolutions, skips, lastSlot, preregs, catHours };
   }
 
   /**

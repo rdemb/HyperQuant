@@ -1,4 +1,5 @@
 import { AB_DESIGN } from '../../src/utils/abTest.ts';
+import { TRUST_DESIGN, type TrustHour, trustHour } from '../../src/utils/schrodiTrust.ts';
 import { fitEnsemble } from '../../src/utils/ensemble.ts';
 import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
@@ -12,7 +13,9 @@ import {
   RET_HORIZONS,
   SLOT,
   type SkipRecord,
+  type CatForecast,
   type CatModel,
+  type CatResolution,
   buildSummary,
   ensPairs,
   makeCatForecast,
@@ -54,6 +57,8 @@ const RESOLVE_LAG = 90_000;
 const VOID_AFTER = 6 * HOUR;
 /** SHA-256 kanonicznego JSON planu oceny A/B — identyfikator prerejestracji w dzienniku */
 const AB_HASH = createHash('sha256').update(canonicalJson(AB_DESIGN)).digest('hex');
+/** SHA-256 kanonicznego JSON planu oceny zaufania kota */
+const TRUST_HASH = createHash('sha256').update(canonicalJson(TRUST_DESIGN)).digest('hex');
 const MODEL_MAX_AGE = 3 * HOUR;
 const KEEP = 31 * DAY;
 /** Okno wydania rekordu „model vs rynek” w slocie (od początku slotu): 5–10 min, czyli 5–10 min przed terminem rynku */
@@ -133,6 +138,8 @@ export class LedgerRunner {
   private preregs: Record<string, unknown>[] = [];
   /** Rekord dopisany poza przebiegiem (prerejestracja) — zatwierdzenie przy najbliższym przebiegu */
   private dirty = false;
+  /** Rozstrzygnięte pełne godziny kota z całego dziennika (ocena zaufania) — po slocie, w zwartej postaci */
+  private trustHours = new Map<number, TrustHour>();
 
   constructor(d: LedgerRunner['d']) {
     this.d = d;
@@ -151,6 +158,7 @@ export class LedgerRunner {
     for (const [id, r] of st.resolutions) this.resolutions.set(id, r as unknown as Resolution);
     for (const k of st.skips) this.skips.set(k.slot as number, k as unknown as SkipRecord);
     this.preregs = st.preregs;
+    for (const [id, r] of st.catHours.resolutions) this.addTrustHour(st.catHours.forecasts.get(id), r);
     for (const h of RET_HORIZONS) {
       const ret = [...this.forecasts.values()].filter((f): f is RetForecast => f.kind === 'ret' && !f.variant && f.h === h).sort((a, b) => a.t - b.t);
       const last = ret[ret.length - 1];
@@ -190,10 +198,21 @@ export class LedgerRunner {
     this.d.store.append(bodies, now);
     for (const b of bodies) {
       if (b.k === 'f') this.forecasts.set(b.id as string, b as unknown as Forecast);
-      else if (b.k === 'r') this.resolutions.set(b.id as string, b as unknown as Resolution);
+      else if (b.k === 'r') {
+        this.resolutions.set(b.id as string, b as unknown as Resolution);
+        this.addTrustHour(this.forecasts.get(b.id as string), b);
+      }
       else if (b.k === 's') this.skips.set(b.slot as number, b as unknown as SkipRecord);
       else if (b.k === 'p') this.preregs.push({ ...b, hash: this.d.store.head });
     }
+  }
+
+  /** Pełna godzina kota z rozstrzygnięciem (bez unieważnionych) do oceny zaufania */
+  private addTrustHour(f: unknown, r: Record<string, unknown>): void {
+    const c = f as CatForecast | undefined;
+    if (c?.kind !== 'cat' || c.slot % HOUR !== 0 || typeof r.void === 'string' || !('yBig' in r)) return;
+    const h = trustHour(c, r as unknown as CatResolution);
+    if (h) this.trustHours.set(h.slot, h);
   }
 
   /**
@@ -265,6 +284,11 @@ export class LedgerRunner {
     // Plan oceny A/B prerejestrowany w łańcuchu raz, zanim powstaną oceniane pary (wariant B włączony)
     if (data.refreshRegime && !this.preregs.some((p) => p.catalogHash === AB_HASH)) {
       this.add([{ k: 'p', id: AB_DESIGN.id, t: ti, catalogHash: AB_HASH, catalog: AB_DESIGN }], ti);
+      appended++;
+    }
+    // Plan oceny zaufania kota — w łańcuchu przed pierwszą ocenianą godziną (liczą się sloty od chwili rejestracji)
+    if (data.refreshCat && !this.preregs.some((p) => p.catalogHash === TRUST_HASH)) {
+      this.add([{ k: 'p', id: TRUST_DESIGN.id, t: ti, catalogHash: TRUST_HASH, catalog: TRUST_DESIGN }], ti);
       appended++;
     }
 
@@ -442,6 +466,10 @@ export class LedgerRunner {
       skips: [...this.skips.values()],
       slotStamps: this.slotStamps(now),
       abRegisteredAt: (this.preregs.find((p) => p.catalogHash === AB_HASH)?.t as number | undefined) ?? null,
+      catHours: [...this.trustHours.values()],
+      trustPlan: ((p) => (p && typeof p.t === 'number' ? { id: TRUST_DESIGN.id, hash: String(p.hash), at: p.t } : null))(
+        this.preregs.find((p) => p.catalogHash === TRUST_HASH)
+      ),
     });
   }
 }

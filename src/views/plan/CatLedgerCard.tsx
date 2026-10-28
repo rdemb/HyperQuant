@@ -2,6 +2,7 @@ import React from 'react';
 import { DASH, Stat, fmtFixed, fmtPrice } from '../../ui';
 import type { CatHeadScores, DeskLedgerSummary } from '../../utils/deskLedger';
 import { locale, tr } from '../../i18n';
+import { CatTrustBlock } from './CatTrustBlock';
 
 const timeFmt = new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit' });
 const dateFmt = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short' });
@@ -11,7 +12,7 @@ const num = (v: number | null, d: number) => (v === null ? DASH : fmtFixed(v, d)
 /** Wyniki od 20 rozłącznych godzin — mniejsza próba to szum */
 const MIN_EFF = 20;
 
-/** Schrödi (kot pod wykresem) w dzienniku: najnowsza prognoza, wyniki obu głów, szanse dotknięcia i udział w slotach. */
+/** Schrödi (kot pod wykresem) w dzienniku: najnowsza prognoza, zaufanie, wyniki obu głów, szanse dotknięcia i udział w slotach. */
 export const CatLedgerCard: React.FC<{ cat: NonNullable<DeskLedgerSummary['cat']> }> = ({ cat }) => {
   const s = cat.scores;
   const enough = s.nEff >= MIN_EFF;
@@ -56,6 +57,8 @@ export const CatLedgerCard: React.FC<{ cat: NonNullable<DeskLedgerSummary['cat']
           </>
         )}
       </p>
+      {cat.trust && <CatTrustBlock trust={cat.trust} />}
+      {cat.trust && <div className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium">{tr('Ostatnie 30 dni', 'Last 30 days')}</div>}
       {head(s.big, tr('Duży ruch', 'Big move'))}
       {head(
         s.dir,
