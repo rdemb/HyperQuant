@@ -6,8 +6,9 @@ import { SchrodiPanel, moodOf } from './SchrodiPanel';
 import { useSchrodi } from './useSchrodi';
 
 /**
- * Kot w rogu wykresu: mały Schrödi z dwiema liczbami (duży ruch, kierunek); kliknięcie otwiera dymek.
- * Prognoza dotyczy zawsze BTC na najbliższą godzinę, niezależnie od rynku na wykresie.
+ * Kot w pasku stanu pod wykresem (nie zasłania świec ani wskaźników): mały Schrödi z dwiema liczbami (duży ruch,
+ * kierunek); kliknięcie otwiera dymek nad paskiem. Prognoza dotyczy zawsze BTC na najbliższą godzinę, niezależnie od
+ * rynku na wykresie.
  */
 
 const MIN = 60_000;
@@ -44,39 +45,42 @@ export const SchrodiLauncher: React.FC<{ className?: string }> = ({ className })
   const mood = moodOf(f, now, stale);
   const dir = f ? (f.stance === 'long' ? `LONG ${pct(f.pUp)}%` : f.stance === 'short' ? `SHORT ${pct(1 - f.pUp)}%` : tr('kierunek ?', 'direction ?')) : '';
   return (
-    <div className={className}>
-      {open && st.status === 'ready' ? (
-        <div className="w-[min(340px,calc(100vw-32px))] max-h-[min(560px,calc(100dvh-15rem))] overflow-y-auto rounded-xl">
+    <div className={`relative ${className ?? ''}`}>
+      {open && st.status === 'ready' && (
+        <div className="absolute bottom-full left-0 mb-1.5 z-40 w-[min(340px,calc(100vw-32px))] max-h-[min(560px,calc(100dvh-15rem))] overflow-y-auto rounded-xl shadow-2xl">
           <SchrodiPanel f={st.f} model={st.model} at={st.at} now={now} stale={stale} livePx={livePx} onClose={() => setOpen(false)} />
         </div>
-      ) : (
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          disabled={st.status !== 'ready'}
-          aria-label={tr('Schrödi: prognoza ruchu i kierunku BTC na godzinę', 'Schrödi: BTC move and direction forecast for the hour')}
-          title={
-            st.status === 'loading'
-              ? tr('Schrödi liczy…', 'Schrödi is thinking…')
-              : st.status === 'error'
-                ? tr('Schrödi nie ma danych', 'Schrödi has no data')
-                : tr('Schrödi: kliknij, żeby zobaczyć prognozę', 'Schrödi: click to see the forecast')
-          }
-          className="group flex items-center gap-1.5 h-11 pl-1 pr-2.5 rounded-full border border-line-strong bg-surface-2/90 backdrop-blur shadow-lg hover:bg-surface-3 transition-colors duration-150 disabled:opacity-60"
-        >
-          <SchrodiCat pUp={f?.pUp ?? null} mood={mood} size={36} />
-          {f && !stale ? (
-            <span className="flex flex-col items-start leading-none font-mono">
-              <span className="text-[11px] font-semibold text-accent">
-                {tr('ruch', 'move')} {pct(f.pBig)}%
-              </span>
-              <span className={`text-[10px] ${f.stance === 'long' ? 'text-buy-ink' : f.stance === 'short' ? 'text-sell-ink' : 'text-ink-3'}`}>{dir}</span>
-            </span>
-          ) : (
-            <span className="text-[11px] text-ink-3">Schrödi</span>
-          )}
-        </button>
       )}
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        disabled={st.status !== 'ready'}
+        aria-expanded={open}
+        aria-label={tr('Schrödi: prognoza ruchu i kierunku BTC na godzinę', 'Schrödi: BTC move and direction forecast for the hour')}
+        title={
+          st.status === 'loading'
+            ? tr('Schrödi liczy…', 'Schrödi is thinking…')
+            : st.status === 'error'
+              ? tr('Schrödi nie ma danych', 'Schrödi has no data')
+              : tr('Schrödi: kliknij, żeby zobaczyć prognozę', 'Schrödi: click to see the forecast')
+        }
+        className={`flex items-center gap-1.5 h-7 pl-0.5 pr-2 rounded-md font-mono text-[10px] leading-none transition-colors duration-150 hover:bg-surface-2 disabled:opacity-60 ${
+          open ? 'bg-surface-2' : ''
+        }`}
+      >
+        <SchrodiCat pUp={f?.pUp ?? null} mood={mood} size={26} beat={f?.t} />
+        {f && !stale ? (
+          <span className="whitespace-nowrap">
+            <span className="font-semibold text-accent">
+              {tr('ruch', 'move')} {pct(f.pBig)}%
+            </span>
+            <span className="text-ink-3"> · </span>
+            <span className={f.stance === 'long' ? 'text-buy-ink' : f.stance === 'short' ? 'text-sell-ink' : 'text-ink-3'}>{dir}</span>
+          </span>
+        ) : (
+          <span className="text-ink-3">Schrödi</span>
+        )}
+      </button>
     </div>
   );
 };

@@ -126,6 +126,65 @@
 .hq-cat-breathe { transform-origin: 50% 80%; animation: hq-cat-breathe 3.2s ease-in-out infinite; }
 .hq-cat-sleep { transform-origin: 50% 80%; animation: hq-cat-breathe 5.5s ease-in-out infinite; }
 .hq-cat-zzz { animation: hq-cat-zzz 2.4s ease-out infinite; }
+/* Schrödi: mruganie, uszy, ogon, rozglądanie się, wąsy, drganie superpozycji i podskok przy nowej prognozie */
+@keyframes hq-cat-blink {
+  0%, 93%, 100% { transform: scaleY(1); }
+  95.5% { transform: scaleY(0.1); }
+}
+@keyframes hq-cat-ear-l {
+  0%, 84%, 100% { transform: rotate(0deg); }
+  86% { transform: rotate(-14deg); }
+  89% { transform: rotate(0deg); }
+  91% { transform: rotate(-9deg); }
+  94% { transform: rotate(0deg); }
+}
+@keyframes hq-cat-ear-r {
+  0%, 88%, 100% { transform: rotate(0deg); }
+  90.5% { transform: rotate(14deg); }
+  94% { transform: rotate(0deg); }
+}
+@keyframes hq-cat-tail {
+  0%, 100% { transform: rotate(-6deg); }
+  50% { transform: rotate(9deg); }
+}
+@keyframes hq-cat-look {
+  0%, 38%, 100% { transform: translateX(0); }
+  44%, 58% { transform: translateX(1.3px); }
+  64%, 78% { transform: translateX(-1.1px); }
+  84% { transform: translateX(0); }
+}
+@keyframes hq-cat-whisk {
+  0%, 90%, 100% { transform: translateY(0); }
+  93% { transform: translateY(-0.8px); }
+  96% { transform: translateY(0.4px); }
+}
+@keyframes hq-cat-q {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(var(--q, 0px)); }
+  75% { transform: translateX(calc(var(--q, 0px) * -1)); }
+}
+@keyframes hq-cat-hop {
+  0%, 100% { transform: translateY(0); }
+  28% { transform: translateY(-6px); }
+  52% { transform: translateY(0); }
+  68% { transform: translateY(-2.5px); }
+  84% { transform: translateY(0); }
+}
+@keyframes hq-cat-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(0.8); }
+}
+.hq-cat-blink { transform-box: fill-box; transform-origin: center; animation: hq-cat-blink 4.7s ease-in-out infinite; }
+.hq-cat-ear-l { transform-box: fill-box; transform-origin: 60% 88%; animation: hq-cat-ear-l 7.3s ease-in-out infinite; }
+.hq-cat-ear-r { transform-box: fill-box; transform-origin: 40% 88%; animation: hq-cat-ear-r 9.1s ease-in-out infinite 1.7s; }
+.hq-cat-tail { transform-box: fill-box; transform-origin: 0% 100%; animation: hq-cat-tail 2.8s ease-in-out infinite; }
+.hq-cat-tail.hq-cat-slow { animation-duration: 6.5s; }
+.hq-cat-look { animation: hq-cat-look 8.3s ease-in-out infinite; }
+.hq-cat-whisk { animation: hq-cat-whisk 5.9s ease-in-out infinite 0.8s; }
+.hq-cat-q { animation: hq-cat-q 1.6s ease-in-out infinite; }
+.hq-cat-q-rev { animation-direction: reverse; }
+.hq-cat-hop { animation: hq-cat-hop 0.9s ease-out 1; }
+.hq-cat-drop, .hq-cat-spark { transform-box: fill-box; transform-origin: center; animation: hq-cat-pulse 1.4s ease-in-out infinite; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
@@ -133,6 +192,8 @@
     transition-duration: 120ms !important;
     scroll-behavior: auto !important;
   }
+  /* Kot stoi nieruchomo (1 ms w pętli migotałby mruganiem) */
+  [class*='hq-cat-'] { animation: none !important; }
 }
 
 /* Bezpieczne strefy (notch) dla PWA na telefonie */

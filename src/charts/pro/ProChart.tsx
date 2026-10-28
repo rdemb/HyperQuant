@@ -675,8 +675,6 @@ export const ProChart: React.FC<{
           <DrawStyleBar tools={tools} />
           <DrawHint tools={tools} />
           <LoadOverlay series={series} onRetry={() => void series.load(true)} />
-          {/* Schrödi (prognoza BTC na godzinę) tylko w pierwszym panelu i poza powtórką */}
-          {panel === 0 && !inReplay && !pick && (!narrow || tab === 'chart') && <SchrodiLauncher className="absolute left-2 bottom-8 z-30" />}
           {narrow && tab === 'tape' && (
             <TapePanel
               store={store}
@@ -783,7 +781,8 @@ export const ProChart: React.FC<{
         )}
       </div>
 
-      <StatusBar store={store} series={series} />
+      {/* Schrödi (prognoza BTC na godzinę) w pasku stanu, tylko w pierwszym panelu i poza powtórką */}
+      <StatusBar store={store} series={series} cat={panel === 0 && !inReplay ? <SchrodiLauncher className="shrink-0 pl-1 sm:pl-1.5" /> : null} />
     </div>
   );
 };
@@ -1733,45 +1732,49 @@ function tzLabel(at: number): string {
 }
 
 /** Pasek stanu: połączenie, zakres taśmy i luki, liczba transakcji, strefa czasu, źródła i licencja wykresu. */
-const StatusBar: React.FC<{ store: ProStore; series: CandleSeries }> = ({ store, series }) => {
+const StatusBar: React.FC<{ store: ProStore; series: CandleSeries; cat?: React.ReactNode }> = ({ store, series, cat }) => {
   const st = store.replay ? REPLAY_STATUS : (STATUS[store.status] ?? STATUS.idle);
   const first = store.coverage.first();
   const gaps = Math.max(0, store.coverage.list().length - 1);
   return (
-    <div className="flex items-center gap-x-3.5 px-2 sm:px-3 h-7 shrink-0 border-t border-line font-mono text-[10px] text-ink-2 whitespace-nowrap overflow-x-auto [scrollbar-width:none]">
-      <Badge tone={st.tone} title={st.title}>
-        {st.text}
-      </Badge>
-      <span
-        title={tr(
-          'Footprint, Delta i CVD liczymy z taśmy transakcji Hyperliquid nagrywanej od otwarcia tej strony i z zapisu serwera z ostatniej doby — API nie udostępnia historii transakcji. Świece (OHLC i wolumen) pochodzą z pełnej historii API.',
-          "Footprint, Delta and CVD are computed from the Hyperliquid trade tape recorded since this page opened and from the server's recording of the last day — the API does not provide trade history. Candles (OHLC and volume) come from the full API history."
-        )}
-      >
-        {tr('Taśma', 'Tape')} {Number.isFinite(first) ? tr(`od ${fmtSince(first, Date.now())}`, `since ${fmtSince(first, Date.now())}`) : '—'}
-        {gaps > 0 && (
-          <span className="text-warn">
-            {' '}
-            · {tr('luki', 'gaps')}: {gaps}
+    // Kot poza przewijaną częścią: zawsze widoczny, a jego dymek nie jest przycinany
+    <div className={`flex items-center shrink-0 border-t border-line ${cat ? 'h-8' : 'h-7'}`}>
+      {cat}
+      <div className="flex flex-1 min-w-0 items-center gap-x-3.5 px-2 sm:px-3 h-full font-mono text-[10px] text-ink-2 whitespace-nowrap overflow-x-auto [scrollbar-width:none]">
+        <Badge tone={st.tone} title={st.title}>
+          {st.text}
+        </Badge>
+        <span
+          title={tr(
+            'Footprint, Delta i CVD liczymy z taśmy transakcji Hyperliquid nagrywanej od otwarcia tej strony i z zapisu serwera z ostatniej doby — API nie udostępnia historii transakcji. Świece (OHLC i wolumen) pochodzą z pełnej historii API.',
+            "Footprint, Delta and CVD are computed from the Hyperliquid trade tape recorded since this page opened and from the server's recording of the last day — the API does not provide trade history. Candles (OHLC and volume) come from the full API history."
+          )}
+        >
+          {tr('Taśma', 'Tape')} {Number.isFinite(first) ? tr(`od ${fmtSince(first, Date.now())}`, `since ${fmtSince(first, Date.now())}`) : '—'}
+          {gaps > 0 && (
+            <span className="text-warn">
+              {' '}
+              · {tr('luki', 'gaps')}: {gaps}
+            </span>
+          )}
+        </span>
+        <span>
+          {tr('Transakcje', 'Trades')}: {numLang(store.tape.count.toLocaleString('en-US'))}
+        </span>
+        {series.loadingOlder && <span>{tr('Historia: wczytywanie…', 'History: loading…')}</span>}
+        {series.historyExhausted && (
+          <span title={tr('Hyperliquid udostępnia najwyżej 5000 ostatnich świec każdego interwału', 'Hyperliquid provides at most the last 5000 candles of each timeframe')}>
+            {tr('Historia: limit API', 'History: API limit')}
           </span>
         )}
-      </span>
-      <span>
-        {tr('Transakcje', 'Trades')}: {numLang(store.tape.count.toLocaleString('en-US'))}
-      </span>
-      {series.loadingOlder && <span>{tr('Historia: wczytywanie…', 'History: loading…')}</span>}
-      {series.historyExhausted && (
-        <span title={tr('Hyperliquid udostępnia najwyżej 5000 ostatnich świec każdego interwału', 'Hyperliquid provides at most the last 5000 candles of each timeframe')}>
-          {tr('Historia: limit API', 'History: API limit')}
+        <span className="text-ink-3">{tzLabel(store.replay ? store.replay.now() : Date.now())}</span>
+        <span className="ml-auto text-ink-3">
+          {tr('Dane', 'Data')}: Hyperliquid · {tr('Wykres', 'Chart')}:{' '}
+          <a href="https://www.tradingview.com/" target="_blank" rel="noopener noreferrer" className="underline decoration-line-strong hover:text-ink-1">
+            TradingView Lightweight Charts™
+          </a>
         </span>
-      )}
-      <span className="text-ink-3">{tzLabel(store.replay ? store.replay.now() : Date.now())}</span>
-      <span className="ml-auto text-ink-3">
-        {tr('Dane', 'Data')}: Hyperliquid · {tr('Wykres', 'Chart')}:{' '}
-        <a href="https://www.tradingview.com/" target="_blank" rel="noopener noreferrer" className="underline decoration-line-strong hover:text-ink-1">
-          TradingView Lightweight Charts™
-        </a>
-      </span>
+      </div>
     </div>
   );
 };
