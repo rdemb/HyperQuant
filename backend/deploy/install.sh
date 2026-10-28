@@ -74,10 +74,14 @@ main() {
   # Strażnik (co 15 min, root, własny katalog stanu z StateDirectory): restart zawieszonego skanera i alarm w gałęzi `health`
   install -o root -g root -m 0644 "$PREFIX/app/backend/deploy/hyperquant-watchdog.service" /etc/systemd/system/hyperquant-watchdog.service
   install -o root -g root -m 0644 "$PREFIX/app/backend/deploy/hyperquant-watchdog.timer" /etc/systemd/system/hyperquant-watchdog.timer
+  # Aktualizacja (co 15 min, root): kod do stanu gałęzi zdalnej i restart skanera tylko po zmianie
+  install -o root -g root -m 0644 "$PREFIX/app/backend/deploy/hyperquant-update.service" /etc/systemd/system/hyperquant-update.service
+  install -o root -g root -m 0644 "$PREFIX/app/backend/deploy/hyperquant-update.timer" /etc/systemd/system/hyperquant-update.timer
   systemctl daemon-reload
   systemctl enable --quiet hyperquant-scanner
   systemctl restart hyperquant-scanner
   systemctl enable --now --quiet hyperquant-watchdog.timer
+  systemctl enable --now --quiet hyperquant-update.timer
   systemctl --no-pager --lines=5 status hyperquant-scanner || true
 }
 
