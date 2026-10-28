@@ -457,10 +457,17 @@ describe('LedgerRunner — Schrödi (kot) w partii slotu', () => {
     expect(s.cat.scores.n).toBe(1);
     expect(checkResolutions(all)).toEqual([]);
     const model = JSON.parse(readFileSync(new URL('../../../public/schrodi/model-v1.json', import.meta.url), 'utf8'));
-    expect(checkCat(all, model)).toEqual({ problems: [], checked: 1 });
+    const touch = JSON.parse(readFileSync(new URL('../../../public/schrodi/touch-v1.json', import.meta.url), 'utf8'));
+    expect(c.tl.length).toBeGreaterThan(0);
+    expect(checkCat(all, model, touch)).toEqual({ problems: [], checked: 1 });
     // Zmienione p albo cechy po zapisie → weryfikator wykrywa
-    expect(checkCat([{ ...c, pUp: c.pUp + 0.01 }], model).problems).toHaveLength(1);
-    expect(checkCat([{ ...c, mh: '0'.repeat(64) }], model).problems[0]).toMatch(/hash modelu/);
+    expect(checkCat([{ ...c, pUp: c.pUp + 0.01 }], model, touch).problems).toHaveLength(1);
+    expect(checkCat([{ ...c, mh: '0'.repeat(64) }], model, touch).problems[0]).toMatch(/hash modelu/);
+    // Szanse dotknięcia i stożek: zmiana po zapisie, inny model albo brak modelu → wykryte
+    expect(checkCat([{ ...c, tl: c.tl.map((l: { p: number }, i: number) => (i ? l : { ...l, p: l.p + 0.01 })) }], model, touch).problems[0]).toMatch(/dotknięcie/);
+    expect(checkCat([{ ...c, cone: c.cone.map((q: { up: number | null }) => ({ ...q, up: q.up === null ? null : q.up + 1 })) }], model, touch).problems[0]).toMatch(/stożek/);
+    expect(checkCat([{ ...c, th: '0'.repeat(64) }], model, touch).problems[0]).toMatch(/hash modelu dotknięć/);
+    expect(checkCat([c], model).problems[0]).toMatch(/brak publicznego modelu dotknięć/);
     expect(checkResolutions([c, { ...res, yBig: 1 - res.yBig }])).toHaveLength(1);
   });
 

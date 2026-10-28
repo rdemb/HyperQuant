@@ -11,10 +11,12 @@ const num = (v: number | null, d: number) => (v === null ? DASH : fmtFixed(v, d)
 /** Wyniki od 20 rozłącznych godzin — mniejsza próba to szum */
 const MIN_EFF = 20;
 
-/** Schrödi (kot pod wykresem) w dzienniku: najnowsza prognoza, wyniki obu głów i udział w slotach. */
+/** Schrödi (kot pod wykresem) w dzienniku: najnowsza prognoza, wyniki obu głów, szanse dotknięcia i udział w slotach. */
 export const CatLedgerCard: React.FC<{ cat: NonNullable<DeskLedgerSummary['cat']> }> = ({ cat }) => {
   const s = cat.scores;
   const enough = s.nEff >= MIN_EFF;
+  const t = s.touch;
+  const tEnough = !!t && t.hours >= MIN_EFF;
   const head = (h: CatHeadScores, label: string, extra?: React.ReactNode) => (
     <div className="flex flex-col gap-2">
       <div className="text-[11px] text-ink-2">{label}</div>
@@ -34,7 +36,7 @@ export const CatLedgerCard: React.FC<{ cat: NonNullable<DeskLedgerSummary['cat']
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-line p-3">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <div className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium">{tr('Schrödi: duży ruch i kierunek w 1 h', 'Schrödi: big move and direction within 1 h')}</div>
+        <div className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium">{tr('Schrödi: duży ruch, kierunek i dotknięcia w 1 h', 'Schrödi: big move, direction and touches within 1 h')}</div>
         {cat.latest && (
           <span className="text-[11px] text-ink-3">
             {tr('wydano', 'issued')} {timeFmt.format(cat.latest.t)} · {tr('cena', 'price')} {fmtPrice(cat.latest.px0, 0)} · {tr('ruch', 'move')} {pct(cat.latest.pBig)} ·{' '}
@@ -61,6 +63,40 @@ export const CatLedgerCard: React.FC<{ cat: NonNullable<DeskLedgerSummary['cat']
         <div className="text-[11px] text-ink-2">
           Long ({tr('od 53%', 'from 53%')}): <span className="font-mono text-ink-1">{pct(s.dir.long.hit)}</span> {tr('z', 'of')} {s.dir.long.n} · Short ({tr('do 47%', 'to 47%')}):{' '}
           <span className="font-mono text-ink-1">{pct(s.dir.short.hit)}</span> {tr('z', 'of')} {s.dir.short.n} · {tr('nie wiem', "don't know")} {s.dir.unsure}
+        </div>
+      )}
+      {t && (
+        <div className="flex flex-col gap-2">
+          <div className="text-[11px] text-ink-2">
+            {tr('Dotknięcia poziomów i stożek zasięgu', 'Level touches and the reach cone')}{' '}
+            <span className="text-ink-3">
+              ({t.n} {tr('szans', 'odds')}, {t.hours} {tr('godzin', 'hours')})
+            </span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-2">
+            <Stat
+              label="Brier"
+              value={<span className="font-mono tabular-nums text-base">{tEnough ? num(t.brier, 3) : DASH}</span>}
+              hint={tEnough ? `${tr('ruch Browna', 'Brownian motion')} ${num(t.brierBm, 3)}` : tr(`od ${MIN_EFF} godzin (jest ${t.hours})`, `from ${MIN_EFF} hours (now ${t.hours})`)}
+            />
+            <Stat
+              label={tr('Lepiej niż ruch Browna', 'Better than Brownian')}
+              value={<span className="font-mono tabular-nums text-base">{tEnough ? pct(t.bssBm) : DASH}</span>}
+              hint={tr('test 2026: 9%', '2026 test: 9%')}
+            />
+            {t.cone.slice(0, 2).map((c) => (
+              <Stat
+                key={c.q}
+                label={tr(`Granica ${pct(c.q)} dotknięta`, `${pct(c.q)} edge touched`)}
+                value={
+                  <span className="font-mono tabular-nums text-base">
+                    {tEnough ? `${pct(c.up)} / ${pct(c.dn)}` : DASH}
+                  </span>
+                }
+                hint={tr(`w górę / w dół, cel ${pct(c.q)}`, `up / down, target ${pct(c.q)}`)}
+              />
+            ))}
+          </div>
         </div>
       )}
     </div>

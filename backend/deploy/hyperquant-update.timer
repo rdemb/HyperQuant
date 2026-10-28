@@ -1,0 +1,9 @@
+[Unit]
+Description=HyperQuant — aktualizacja skanera co 15 min (3 min przed slotem, po migawce rynku)
+
+[Timer]
+OnCalendar=*:12/15
+Persistent=false
+
+[Install]
+WantedBy=timers.target

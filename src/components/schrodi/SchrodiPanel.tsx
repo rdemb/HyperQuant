@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { ChevronDown, X } from 'lucide-react';
 import { KIND_LABEL, MACRO_EVENTS, type MacroEvent, fmtEventLocal } from '../../data/macroCalendar';
 import { locale, tr } from '../../i18n';
@@ -6,11 +6,13 @@ import { useDeskLedger } from '../../state/useDeskLedger';
 import { Badge } from '../../ui';
 import { isCat } from '../../utils/deskLedger';
 import { fmtCountdown, fmtPrice, fmtSigned } from '../../ui/format';
-import type { Forecast, Group, Levels, SchrodiModel } from '../../utils/schrodi';
+import { type Forecast, type Group, type Levels, type SchrodiModel, TOUCH_MAX_R, touchCone, touchProb } from '../../utils/schrodi';
 import { type Mood, SchrodiCat } from './SchrodiCat';
+import { useTouchModel } from './useSchrodi';
 
 /**
  * Dymek Schrödiego: najpierw wielkość ruchu w najbliższej godzinie, poziomy i makro, potem kierunek z uczciwym %.
+ * Przy poziomach szansa dotknięcia w godzinę i stożek zasięgu (model dotknięć, wczytywany po otwarciu dymka).
  * Rozwijane: „Dlaczego?” (wkład grup cech), „Jak trafiam” (walidacja krocząca i wynik na żywo z dziennika), „O mnie”.
  */
 
@@ -107,6 +109,10 @@ type Card = {
   ruch: Record<'2023_2025' | '2026', { auc: number; trafnosc: number; gorne20: number; dolne20: number }>;
   kierunek: Record<'2023_2025' | '2026', { auc: number; trafnosc: number; long: [number, number]; short: [number, number] }>;
 };
+/** Karta modelu dotknięć: pasma szans [średnia prognoza, częstość dotknięć, liczba] i Brier wobec ruchu Browna */
+type TouchCard = {
+  B: Record<'2023_2025' | '2026', { auc_B: number; bss_vs_BM: number; 'pasmo_0.7_0.9': number[]; 'pasmo_0.4_0.6': number[]; 'pasmo_0.1_0.3': number[] }>;
+};
 
 /** Odległość w dolarach ze znakiem: „+87 $” po polsku, „+$87” po angielsku */
 const usd = (v: number) => tr(fmtSigned(v, 0, ' $'), `${v > 0 ? '+' : v < 0 ? '−' : ''}$${fmtPrice(Math.abs(v), 0)}`);
@@ -118,6 +124,9 @@ const pctOr = (v: number | null) => (v === null ? '—' : pct(v));
 const LiveRecord: React.FC<{ live: Live }> = ({ live }) => {
   const s = live.scores;
   const since = new Date(live.since!).toLocaleDateString(locale, { day: 'numeric', month: 'short' });
+  const t = s.touch;
+  const cone50 = t?.cone.find((c) => c.q === 0.5);
+  const num3 = (v: number | null) => (v === null ? '—' : tr(v.toFixed(3).replace('.', ','), v.toFixed(3)));
   return (
     <p className="mt-2">
       <span className="text-ink-1">{tr('Na żywo', 'Live')}</span>{' '}
@@ -129,7 +138,16 @@ const LiveRecord: React.FC<{ live: Live }> = ({ live }) => {
         : tr(
             `(30 dni, od ${since}): ${s.n} rozliczonych prognoz, ${s.nEff} rozłącznych godzin. Duży ruch: AUC ${s.big.auc === null ? '—' : s.big.auc.toFixed(2).replace('.', ',')}, trafność ${pctOr(s.big.hit)}. Kierunek: Long trafiał w ${pctOr(s.dir.long.hit)} z ${s.dir.long.n}, Short w ${pctOr(s.dir.short.hit)} z ${s.dir.short.n}.${s.nEff < 50 ? ' To jeszcze za mało, żeby oceniać.' : ''}`,
             `(30 days, since ${since}): ${s.n} resolved forecasts, ${s.nEff} non-overlapping hours. Big move: AUC ${s.big.auc === null ? '—' : s.big.auc.toFixed(2)}, accuracy ${pctOr(s.big.hit)}. Direction: Long right ${pctOr(s.dir.long.hit)} of ${s.dir.long.n}, Short ${pctOr(s.dir.short.hit)} of ${s.dir.short.n}.${s.nEff < 50 ? ' Too little data to judge yet.' : ''}`
-          )}{' '}
+          )}
+      {t && t.hours > 0 && cone50 && (
+        <>
+          {' '}
+          {tr(
+            `Dotknięcia: Brier ${num3(t.brier)} wobec ${num3(t.brierBm)} dla ruchu Browna; granicę 50% cena dotykała w ${pctOr(cone50.up)} godzin w górę i ${pctOr(cone50.dn)} w dół.`,
+            `Touches: Brier ${num3(t.brier)} against ${num3(t.brierBm)} for Brownian motion; price touched the 50% edge in ${pctOr(cone50.up)} of hours up and ${pctOr(cone50.dn)} down.`
+          )}
+        </>
+      )}{' '}
       <a href="#plan" className="underline decoration-line-strong hover:text-ink-1">
         {tr('Dziennik', 'Ledger')}
       </a>
@@ -161,6 +179,22 @@ export const SchrodiPanel: React.FC<{
   const above = levels.filter((l) => l.px > px).slice(-2);
   const below = levels.filter((l) => l.px <= px).slice(0, 2);
   const card = model.card as unknown as Card;
+  const tm = useTouchModel();
+  // Szanse dotknięcia od bieżącej ceny z cechami ostatniej świecy 5m (dziennik zapisuje je od ceny zamknięcia tej świecy)
+  const touch = useMemo(() => {
+    if (!tm || !Number.isFinite(f.med1h)) return null;
+    // Dalej niż zakres uczenia: szansa nie rośnie z odległością, więc wartość na granicy jest górnym ograniczeniem
+    const at = (lvl: number): string => {
+      const d = Math.log(lvl / px) * 1e4;
+      const far = Math.abs(d) > TOUCH_MAX_R * f.med1h;
+      const p = touchProb(tm, f.x, f.med1h, far ? Math.sign(d) * TOUCH_MAX_R * f.med1h : d);
+      if (!Number.isFinite(p)) return '—';
+      if (p < 0.005) return '<1%';
+      return far ? `≤${pct(p)}` : pct(p);
+    };
+    return { at, cone: touchCone(tm, f.x, f.med1h) };
+  }, [tm, f, px]);
+  const tcard = tm ? (tm.card as unknown as TouchCard).B : null;
   const dirTitle =
     f.stance === 'long' ? `LONG ${pct(f.pUp)}` : f.stance === 'short' ? `SHORT ${pct(1 - f.pUp)}` : tr('NIE WIEM', "DON'T KNOW");
   const dirTone = f.stance === 'long' ? 'text-buy-ink' : f.stance === 'short' ? 'text-sell-ink' : 'text-ink-2';
@@ -214,18 +248,64 @@ export const SchrodiPanel: React.FC<{
 
         {levels.length > 0 && (
           <div className="text-xs">
-            <div className="text-ink-2 mb-1">
-              🧲 {tr('Poziomy od ceny', 'Levels from price')} <span className="font-mono text-ink-1">{fmtPrice(px, 0)}</span>
+            <div className="flex items-baseline justify-between text-ink-2 mb-1">
+              <span>
+                🧲 {tr('Poziomy od ceny', 'Levels from price')} <span className="font-mono text-ink-1">{fmtPrice(px, 0)}</span>
+              </span>
+              {touch && <span className="text-[10px] text-ink-3">{tr('dotknie w 1 h', 'touch in 1 h')}</span>}
             </div>
-            <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 gap-y-0.5 font-mono text-[11px]">
-              {[...above, ...below].map((l) => (
-                <React.Fragment key={l.k}>
-                  <span className="font-sans text-ink-2">{LEVEL_NAMES[l.k]()}</span>
-                  <span className="text-right">{fmtPrice(l.px, 0)}</span>
-                  <span className={`text-right ${l.px > px ? 'text-buy-ink' : 'text-sell-ink'}`}>{usd(l.px - px)}</span>
-                </React.Fragment>
-              ))}
+            <div className={`grid ${touch ? 'grid-cols-[1fr_auto_auto_2.5rem]' : 'grid-cols-[1fr_auto_auto]'} gap-x-3 gap-y-0.5 font-mono text-[11px]`}>
+              {[...above, ...below].map((l) => {
+                return (
+                  <React.Fragment key={l.k}>
+                    <span className="font-sans text-ink-2">{LEVEL_NAMES[l.k]()}</span>
+                    <span className="text-right">{fmtPrice(l.px, 0)}</span>
+                    <span className={`text-right ${l.px > px ? 'text-buy-ink' : 'text-sell-ink'}`}>{usd(l.px - px)}</span>
+                    {touch && <span className="text-right font-semibold text-ink-1">{touch.at(l.px)}</span>}
+                  </React.Fragment>
+                );
+              })}
             </div>
+            {touch && (
+              <p className="mt-1 text-[11px] text-ink-3">
+                {tr(
+                  'Poziomy nie przyciągają ceny: w testach 2022 do 2026 dotykała ich tak samo często jak każdej innej ceny w tej odległości, więc szansa liczona jest jak dla zwykłej ceny.',
+                  'Levels do not attract price: in 2022 to 2026 tests they were touched as often as any other price at the same distance, so the odds are those of a plain price.'
+                )}
+              </p>
+            )}
+          </div>
+        )}
+
+        {touch && touch.cone.some((s) => s.up !== null || s.dn !== null) && (
+          <div className="text-xs">
+            <div className="text-ink-2 mb-1">📏 {tr('Zasięg godziny', "The hour's reach")}</div>
+            <div className="grid grid-cols-[auto_1fr_1fr] gap-x-3 gap-y-0.5 font-mono text-[11px]">
+              <span className="font-sans text-[10px] text-ink-3">{tr('szansa', 'odds')}</span>
+              <span className="font-sans text-[10px] text-ink-3 text-right">{tr('w dół', 'down')}</span>
+              <span className="font-sans text-[10px] text-ink-3 text-right">{tr('w górę', 'up')}</span>
+              {touch.cone.map((s) => {
+                const dn = s.dn === null ? null : px * Math.exp(-s.dn / 1e4);
+                const up = s.up === null ? null : px * Math.exp(s.up / 1e4);
+                return (
+                  <React.Fragment key={s.q}>
+                    <span className="font-semibold">{pct(s.q)}</span>
+                    <span className="text-right">
+                      {dn === null ? '—' : fmtPrice(dn, 0)} <span className="text-sell-ink">{dn === null ? '' : usd(dn - px)}</span>
+                    </span>
+                    <span className="text-right">
+                      {up === null ? '—' : fmtPrice(up, 0)} <span className="text-buy-ink">{up === null ? '' : usd(up - px)}</span>
+                    </span>
+                  </React.Fragment>
+                );
+              })}
+            </div>
+            <p className="mt-1 text-[11px] text-ink-3">
+              {tr(
+                'Każdą z tych cen godzina dotknie z podaną szansą, osobno w górę i w dół.',
+                'Within the hour, each of these prices gets touched with the stated odds, up and down separately.'
+              )}
+            </p>
           </div>
         )}
 
@@ -264,6 +344,14 @@ export const SchrodiPanel: React.FC<{
             `Direction: Long was right ${pct(card.kierunek['2023_2025'].long[1])} and ${pct(card.kierunek['2026'].long[1])} of the time, Short ${pct(card.kierunek['2023_2025'].short[1])} and ${pct(card.kierunek['2026'].short[1])}. Wins are small, so direction alone does not pay after costs.`
           )}
         </p>
+        {tcard && (
+          <p className="mt-2">
+            {tr(
+              `Dotknięcia: gdy mówiłem ok. ${pct(tcard['2026']['pasmo_0.7_0.9'][0])}, cena dotykała w ${pct(tcard['2026']['pasmo_0.7_0.9'][1])} przypadków (2026), ok. ${pct(tcard['2026']['pasmo_0.4_0.6'][0])} w ${pct(tcard['2026']['pasmo_0.4_0.6'][1])}, ok. ${pct(tcard['2026']['pasmo_0.1_0.3'][0])} w ${pct(tcard['2026']['pasmo_0.1_0.3'][1])}. Wynik Briera o ${pct(tcard['2026'].bss_vs_BM)} lepszy niż dla ruchu Browna.`,
+              `Touches: when I said about ${pct(tcard['2026']['pasmo_0.7_0.9'][0])}, price touched in ${pct(tcard['2026']['pasmo_0.7_0.9'][1])} of cases (2026), about ${pct(tcard['2026']['pasmo_0.4_0.6'][0])} in ${pct(tcard['2026']['pasmo_0.4_0.6'][1])}, about ${pct(tcard['2026']['pasmo_0.1_0.3'][0])} in ${pct(tcard['2026']['pasmo_0.1_0.3'][1])}. Brier score ${pct(tcard['2026'].bss_vs_BM)} better than for Brownian motion.`
+            )}
+          </p>
+        )}
         {live && <LiveRecord live={live} />}
       </Section>
 
@@ -284,8 +372,8 @@ export const SchrodiPanel: React.FC<{
           MODEL
         </Badge>{' '}
         {tr(
-          `Prognoza z ${time}, liczona w przeglądarce ze świec Hyperliquid (${model.version}). To nie jest porada inwestycyjna.`,
-          `Forecast from ${time}, computed in your browser from Hyperliquid candles (${model.version}). Not investment advice.`
+          `Prognoza z ${time}, liczona w przeglądarce ze świec Hyperliquid (${model.version}${tm ? `, ${tm.version}` : ''}). To nie jest porada inwestycyjna.`,
+          `Forecast from ${time}, computed in your browser from Hyperliquid candles (${model.version}${tm ? `, ${tm.version}` : ''}). Not investment advice.`
         )}
         {now - at > 15 * MIN && <span className="text-warn"> {tr('Dane nieświeże.', 'Data not fresh.')}</span>}
       </div>
