@@ -1,0 +1,257 @@
+import React, { useState } from 'react';
+import { ChevronDown, X } from 'lucide-react';
+import { KIND_LABEL, MACRO_EVENTS, type MacroEvent, fmtEventLocal } from '../../data/macroCalendar';
+import { tr } from '../../i18n';
+import { Badge } from '../../ui';
+import { fmtCountdown, fmtPrice, fmtSigned } from '../../ui/format';
+import type { Forecast, Group, Levels, SchrodiModel } from '../../utils/schrodi';
+import { type Mood, SchrodiCat } from './SchrodiCat';
+
+/**
+ * Dymek Schrödiego: najpierw wielkość ruchu w najbliższej godzinie, poziomy i makro, potem kierunek z uczciwym %.
+ * Rozwijane: „Dlaczego?” (wkład grup cech), „Jak trafiam” (walidacja krocząca), „O mnie”.
+ */
+
+const MIN = 60_000;
+const DOC_URL = 'https://github.com/rdemb/HyperQuant/blob/main/docs/SCHRODI.md';
+const pct = (p: number) => `${Math.round(p * 100)}%`;
+
+/** Najbliższe zdarzenie o wysokiej wadze w ciągu doby (albo trwające do 15 min po publikacji). */
+export function nextMacro(now: number): MacroEvent | null {
+  return MACRO_EVENTS.find((e) => e.importance === 'high' && e.timeUtcMs > now - 15 * MIN && e.timeUtcMs - now <= 24 * 60 * MIN) ?? null;
+}
+
+export function moodOf(f: Forecast | null, now: number, stale: boolean): Mood {
+  if (!f || stale) return 'hiding';
+  const ev = nextMacro(now);
+  if (ev && Math.abs(ev.timeUtcMs - now) <= 60 * MIN) return 'nervous';
+  if (f.pBig >= 0.7) return 'alert';
+  if (f.pBig <= 0.25) return 'sleep';
+  return 'calm';
+}
+
+/** Jedno zdanie kota: ruch, potem kierunek. */
+export function catLine(f: Forecast, mood: Mood, now: number): string {
+  const ev = nextMacro(now);
+  const move =
+    mood === 'nervous' && ev
+      ? tr(`${KIND_LABEL[ev.kind]} ${fmtCountdown(ev.timeUtcMs, now)}. Gryzę pazury, ruch może być gwałtowny.`, `${KIND_LABEL[ev.kind]} ${fmtCountdown(ev.timeUtcMs, now)}. Biting my claws, the move can be sharp.`)
+      : f.pBig >= 0.7
+        ? tr(`Szykuje się ruch: duży z szansą ${pct(f.pBig)}.`, `A move is coming: a big one with ${pct(f.pBig)} odds.`)
+        : f.pBig <= 0.25
+          ? tr(`Spokojnie, drzemię. Duży ruch tylko z szansą ${pct(f.pBig)}.`, `Quiet, I'm napping. A big move only has ${pct(f.pBig)} odds.`)
+          : tr(`Zwykła godzina, duży ruch z szansą ${pct(f.pBig)}.`, `An ordinary hour, a big move with ${pct(f.pBig)} odds.`);
+  const dir =
+    f.stance === 'long'
+      ? tr(`Kierunek lekko w górę: Long ${pct(f.pUp)}.`, `Direction slightly up: Long ${pct(f.pUp)}.`)
+      : f.stance === 'short'
+        ? tr(`Kierunek lekko w dół: Short ${pct(1 - f.pUp)}.`, `Direction slightly down: Short ${pct(1 - f.pUp)}.`)
+        : tr('Kierunku nie wiem.', "I don't know the direction.");
+  return `${move} ${dir}`;
+}
+
+const LEVEL_NAMES: Record<keyof Levels, () => string> = {
+  pdh: () => tr('Wczorajsze max', "Yesterday's high"),
+  pdl: () => tr('Wczorajsze min', "Yesterday's low"),
+  poc: () => tr('POC wczoraj', "Yesterday's POC"),
+  vah: () => tr('VAH wczoraj', "Yesterday's VAH"),
+  val: () => tr('VAL wczoraj', "Yesterday's VAL"),
+  vwap: () => tr('VWAP dnia', 'Daily VWAP'),
+};
+
+const GROUP_NAMES: Record<Group, () => string> = {
+  move: () => tr('Ruch ceny', 'Price move'),
+  vol: () => tr('Zmienność', 'Volatility'),
+  auction: () => tr('Aukcja i poziomy', 'Auction and levels'),
+  clock: () => tr('Zegar i kalendarz', 'Clock and calendar'),
+};
+
+const Section: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="border-t border-line">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center justify-between px-3 py-2 text-xs font-medium text-ink-2 hover:text-ink-1"
+      >
+        {title}
+        <ChevronDown className={`w-4 h-4 transition-transform duration-150 ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && <div className="px-3 pb-3 text-xs text-ink-2 leading-relaxed">{children}</div>}
+    </div>
+  );
+};
+
+/** Pasek szansy: od 0 do 100%, znacznik w punkcie p */
+const ProbBar: React.FC<{ p: number; tone: 'move' | 'dir' }> = ({ p, tone }) => (
+  <div className="relative h-1.5 rounded-full bg-surface-3 overflow-hidden" aria-hidden="true">
+    {tone === 'move' ? (
+      <div className="absolute inset-y-0 left-0 rounded-full bg-accent" style={{ width: `${p * 100}%` }} />
+    ) : (
+      <>
+        <div className="absolute inset-y-0 left-1/2 w-px bg-line-strong" />
+        <div
+          className={`absolute inset-y-0 ${p >= 0.5 ? 'left-1/2 bg-buy-ink' : 'right-1/2 bg-sell-ink'}`}
+          style={{ width: `${Math.abs(p - 0.5) * 100}%` }}
+        />
+      </>
+    )}
+  </div>
+);
+
+type Card = {
+  ruch: Record<'2023_2025' | '2026', { auc: number; trafnosc: number; gorne20: number; dolne20: number }>;
+  kierunek: Record<'2023_2025' | '2026', { auc: number; trafnosc: number; long: [number, number]; short: [number, number] }>;
+};
+
+export const SchrodiPanel: React.FC<{ f: Forecast; model: SchrodiModel; at: number; now: number; stale: boolean; onClose: () => void }> = ({
+  f,
+  model,
+  at,
+  now,
+  stale,
+  onClose,
+}) => {
+  const mood = moodOf(f, now, stale);
+  const ev = nextMacro(now);
+  const levels = f.levels
+    ? (Object.keys(LEVEL_NAMES) as (keyof Levels)[])
+        .map((k) => ({ k, px: f.levels![k] }))
+        .filter((l) => Number.isFinite(l.px))
+        .sort((a, b) => b.px - a.px)
+    : [];
+  const above = levels.filter((l) => l.px > f.price).slice(-2);
+  const below = levels.filter((l) => l.px <= f.price).slice(0, 2);
+  const card = model.card as unknown as Card;
+  const dirTitle =
+    f.stance === 'long' ? `LONG ${pct(f.pUp)}` : f.stance === 'short' ? `SHORT ${pct(1 - f.pUp)}` : tr('NIE WIEM', "DON'T KNOW");
+  const dirTone = f.stance === 'long' ? 'text-buy-ink' : f.stance === 'short' ? 'text-sell-ink' : 'text-ink-2';
+  const time = new Date(f.t + 5 * MIN).toLocaleTimeString(tr('pl-PL', 'en-GB'), { hour: '2-digit', minute: '2-digit' });
+  return (
+    <div role="dialog" aria-label="Schrödi" className="rounded-xl border border-line-strong bg-surface-2/95 backdrop-blur shadow-2xl text-ink-1 overflow-hidden">
+      <div className="flex items-start gap-3 px-3 pt-3 pb-2">
+        <SchrodiCat pUp={f.pUp} mood={mood} size={56} className="shrink-0" />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold">Schrödi</span>
+            <span className="text-[10px] uppercase tracking-wide text-ink-3">BTC · {tr('najbliższa godzina', 'next hour')}</span>
+          </div>
+          <p className="mt-1 text-xs leading-snug text-ink-2">
+            {stale ? tr('Nie mam świeżych danych z Hyperliquid, chowam się pod stołem.', 'No fresh Hyperliquid data, hiding under the table.') : catLine(f, mood, now)}
+          </p>
+        </div>
+        <button type="button" onClick={onClose} aria-label={tr('Zamknij', 'Close')} className="shrink-0 grid place-items-center w-7 h-7 rounded-md text-ink-3 hover:text-ink-1 hover:bg-surface-3">
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+
+      <div className="px-3 pb-3 flex flex-col gap-3">
+        <div>
+          <div className="flex items-baseline justify-between text-xs">
+            <span className="text-ink-2">🌊 {tr('Duży ruch w ciągu godziny', 'Big move within the hour')}</span>
+            <span className="font-mono text-sm font-semibold text-accent">{pct(f.pBig)}</span>
+          </div>
+          <ProbBar p={f.pBig} tone="move" />
+          <p className="mt-1 text-[11px] text-ink-3">
+            {tr(
+              `Duży, czyli zakres godziny ponad ${fmtPrice(f.bigUsd, 0)} $ (mediana z 30 dni).`,
+              `Big means an hourly range above $${fmtPrice(f.bigUsd, 0)} (30-day median).`
+            )}
+          </p>
+        </div>
+
+        <div>
+          <div className="flex items-baseline justify-between text-xs">
+            <span className="text-ink-2">🎯 {tr('Kierunek', 'Direction')}</span>
+            <span className={`font-mono text-sm font-semibold ${dirTone}`}>{dirTitle}</span>
+          </div>
+          <ProbBar p={f.pUp} tone="dir" />
+          <p className="mt-1 text-[11px] text-ink-3">
+            {tr(
+              `Szansa wzrostu ${pct(f.pUp)}. Kierunek przewiduję tylko trochę lepiej niż rzut monetą.`,
+              `Odds of a rise ${pct(f.pUp)}. I predict direction only slightly better than a coin flip.`
+            )}
+          </p>
+        </div>
+
+        {levels.length > 0 && (
+          <div className="text-xs">
+            <div className="text-ink-2 mb-1">
+              🧲 {tr('Poziomy od ceny', 'Levels from price')} <span className="font-mono text-ink-1">{fmtPrice(f.price, 0)}</span>
+            </div>
+            <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 gap-y-0.5 font-mono text-[11px]">
+              {[...above, ...below].map((l) => (
+                <React.Fragment key={l.k}>
+                  <span className="font-sans text-ink-2">{LEVEL_NAMES[l.k]()}</span>
+                  <span className="text-right">{fmtPrice(l.px, 0)}</span>
+                  <span className={`text-right ${l.px > f.price ? 'text-buy-ink' : 'text-sell-ink'}`}>{fmtSigned(l.px - f.price, 0, ' $')}</span>
+                </React.Fragment>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {ev && (
+          <div className="text-xs text-ink-2">
+            ⏰ {KIND_LABEL[ev.kind]} <span className="text-ink-1">{fmtCountdown(ev.timeUtcMs, now)}</span>{' '}
+            <span className="text-ink-3">({fmtEventLocal(ev.timeUtcMs)})</span>
+          </div>
+        )}
+      </div>
+
+      <Section title={tr('Dlaczego?', 'Why?')}>
+        <p className="mb-2">{tr('Wkład grup cech w szansę wzrostu, w punktach procentowych (w przybliżeniu):', 'Contribution of feature groups to the odds of a rise, in percentage points (approximate):')}</p>
+        <div className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1">
+          {(Object.keys(GROUP_NAMES) as Group[]).map((g) => (
+            <React.Fragment key={g}>
+              <span>{GROUP_NAMES[g]()}</span>
+              <span className={`font-mono text-right ${f.why[g] > 0.05 ? 'text-buy-ink' : f.why[g] < -0.05 ? 'text-sell-ink' : 'text-ink-3'}`}>
+                {fmtSigned(f.why[g], 1, ' pp')}
+              </span>
+            </React.Fragment>
+          ))}
+        </div>
+      </Section>
+
+      <Section title={tr('Jak trafiam', 'My track record')}>
+        <p>
+          {tr(
+            `Test kroczący 2023 do 10.2026 na danych, których model nie widział. Duży ruch: gdy byłem najpewniejszy, że przyjdzie (górne 20% prognoz), przyszedł w ${pct(card.ruch['2023_2025'].gorne20)} przypadków w latach 2023 do 2025 i w ${pct(card.ruch['2026'].gorne20)} w 2026. Gdy mówiłem, że będzie spokojnie, duży ruch był w ${pct(card.ruch['2026'].dolne20)}.`,
+            `Walk-forward test 2023 to 10.2026 on data the model had not seen. Big move: when I was most sure it would come (top 20% of forecasts), it came in ${pct(card.ruch['2023_2025'].gorne20)} of cases in 2023 to 2025 and ${pct(card.ruch['2026'].gorne20)} in 2026. When I said it would be quiet, a big move came in ${pct(card.ruch['2026'].dolne20)}.`
+          )}
+        </p>
+        <p className="mt-2">
+          {tr(
+            `Kierunek: Long trafiał w ${pct(card.kierunek['2023_2025'].long[1])} i ${pct(card.kierunek['2026'].long[1])}, Short w ${pct(card.kierunek['2023_2025'].short[1])} i ${pct(card.kierunek['2026'].short[1])}. Wygrane są małe, więc po kosztach sam kierunek nie wystarcza na zysk.`,
+            `Direction: Long was right ${pct(card.kierunek['2023_2025'].long[1])} and ${pct(card.kierunek['2026'].long[1])} of the time, Short ${pct(card.kierunek['2023_2025'].short[1])} and ${pct(card.kierunek['2026'].short[1])}. Wins are small, so direction alone does not pay after costs.`
+          )}
+        </p>
+      </Section>
+
+      <Section title={tr('O mnie', 'About me')}>
+        <p>
+          {tr(
+            'Jestem kotem Schrödingera: dopóki rynek nie zdecyduje, jestem trochę Long i trochę Short. Im bardziej się rozmywam, tym mniej wiem. Liczę 22 cechy ze świec Hyperliquid (ruch, zmienność, aukcja, zegar sesji, kalendarz makro) i łączę regresję logistyczną z 300 drzewami decyzyjnymi.',
+            "I'm Schrödinger's cat: until the market decides, I'm a bit Long and a bit Short. The blurrier I am, the less I know. I compute 22 features from Hyperliquid candles (move, volatility, auction, session clock, macro calendar) and combine a logistic regression with 300 decision trees."
+          )}{' '}
+          <a href={DOC_URL} target="_blank" rel="noopener noreferrer" className="underline decoration-line-strong hover:text-ink-1">
+            {tr('Metoda i wyniki', 'Method and results')}
+          </a>
+        </p>
+      </Section>
+
+      <div className="border-t border-line px-3 py-2 text-[10px] text-ink-3 leading-snug">
+        <Badge tone="model" title={tr('Wynik modelu liczony z realnych danych', 'Model output computed from real data')}>
+          MODEL
+        </Badge>{' '}
+        {tr(
+          `Prognoza z ${time}, liczona w przeglądarce ze świec Hyperliquid (${model.version}). To nie jest porada inwestycyjna.`,
+          `Forecast from ${time}, computed in your browser from Hyperliquid candles (${model.version}). Not investment advice.`
+        )}
+        {now - at > 15 * MIN && <span className="text-warn"> {tr('Dane nieświeże.', 'Data not fresh.')}</span>}
+      </div>
+    </div>
+  );
+};
