@@ -57,7 +57,7 @@ export const CatLedgerCard: React.FC<{ cat: NonNullable<DeskLedgerSummary['cat']
           </>
         )}
       </p>
-      {cat.trust && <CatTrustBlock trust={cat.trust} />}
+      {cat.trust && <CatTrustBlock trust={cat.trust} hour={cat.hour} />}
       {cat.trust && <div className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium">{tr('Ostatnie 30 dni', 'Last 30 days')}</div>}
       {head(s.big, tr('Duży ruch', 'Big move'))}
       {head(

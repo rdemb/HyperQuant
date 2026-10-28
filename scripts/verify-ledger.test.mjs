@@ -133,10 +133,10 @@ describe('verify-ledger — kolejność, pokwitowania, Bitcoin, rynek', () => {
     const fr = { k: 'f', id: 'a', kind: 'ret', t: T + M, h: 60 };
     const ft = { k: 'f', id: 'b', kind: 'touch', t: T + M, h: 120 };
     const good = [fr, { k: 'r', id: 'a', c0: 95, c1: 155 }, ft, { k: 'r', id: 'b', hi: 100 + 120, lo: 90 + 1 }];
-    expect(checkMarket(good, candles)).toEqual({ problems: [], checked: 2, eligible: 2 });
+    expect(checkMarket(good, candles)).toEqual({ problems: [], checked: 2, eligible: 2, hourFeatures: 0 });
     expect(checkMarket([fr, { k: 'r', id: 'a', c0: 95, c1: 999 }], candles).problems.length).toBe(1);
     // poza zakresem świec — nie sprawdzone (licznik to pokazuje, a nie „✓”)
-    expect(checkMarket([{ ...fr, t: T - 10 * 24 * 60 * M }, { k: 'r', id: 'a', c0: 1, c1: 2 }], candles)).toEqual({ problems: [], checked: 0, eligible: 1 });
+    expect(checkMarket([{ ...fr, t: T - 10 * 24 * 60 * M }, { k: 'r', id: 'a', c0: 1, c1: 2 }], candles)).toEqual({ problems: [], checked: 0, eligible: 1, hourFeatures: 0 });
     // unieważnienie mimo kompletu świec = problem (wybiórcze pomijanie wyników)
     expect(checkMarket([fr, { k: 'r', id: 'a', void: 'no-data' }], candles).problems.join(' ')).toMatch(/unieważnion/);
   });

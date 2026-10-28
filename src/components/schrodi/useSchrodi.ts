@@ -4,6 +4,7 @@ import { fetchCandles } from '../../charts/pro/hl/rest';
 import { HlStream } from '../../charts/pro/hl/stream';
 import { MACRO_EVENTS } from '../../data/macroCalendar';
 import { type Bar, type Forecast, type SchrodiInput, type SchrodiModel, type Snap, type Stance, type TouchModel, holdStance, liveForecast, modelEvents, snapOf } from '../../utils/schrodi';
+import type { HourModel } from '../../utils/schrodiHour';
 
 /**
  * Prognoza Schrödiego na żywo: model z `public/schrodi/model-v1.json` (wczytywany raz, przy pierwszym użyciu), świece BTC
@@ -13,6 +14,7 @@ import { type Bar, type Forecast, type SchrodiInput, type SchrodiModel, type Sna
  */
 
 const MIN = 60_000;
+const HOUR = 3_600_000;
 /** Hyperliquid oddaje najwyżej 5000 ostatnich świec */
 const M1_KEEP = 4990;
 const THROTTLE_MS = 1000;
@@ -53,6 +55,23 @@ export function useTouchModel(): TouchModel | null {
   return m;
 }
 
+let hourPromise: Promise<HourModel | null> | null = null;
+/** Model godziny na żywo (ok. 340 kB po kompresji) wczytywany dopiero po otwarciu dymka */
+export function useHourModel(): HourModel | null {
+  const [m, setM] = useState<HourModel | null>(null);
+  useEffect(() => {
+    let alive = true;
+    hourPromise ??= fetch(`${BASE}/schrodi/hour-v1.json`)
+      .then((r) => (r.ok ? (r.json() as Promise<HourModel>) : null))
+      .catch(() => null);
+    void hourPromise.then((x) => alive && setM(x));
+    return () => {
+      alive = false;
+    };
+  }, []);
+  return m;
+}
+
 const EVENTS = modelEvents(MACRO_EVENTS);
 
 const bars = (xs: Bar[]) => xs.map(({ t, o, h, l, c, v }) => ({ t, o, h, l, c, v }));
@@ -78,7 +97,13 @@ export function mergeMinute(m1: Bar[], b: Bar): void {
 export type SchrodiState =
   | { status: 'loading' }
   | { status: 'error' }
-  | { status: 'ready'; f: Forecast; model: SchrodiModel; at: number; hist: Snap[] };
+  | { status: 'ready'; f: Forecast; model: SchrodiModel; at: number; hist: Snap[]; hour: HourLive | null };
+
+/** Bieżąca pełna godzina: prognoza kota z jej początku (jak w dzienniku o pełnej godzinie) i jej minuty do teraz */
+export interface HourLive {
+  start: { hs: number; c0: number; thr: number; pBig: number; pUp: number };
+  m1: Bar[];
+}
 
 export function useSchrodi(enabled = true): SchrodiState {
   const [state, setState] = useState<SchrodiState>({ status: 'loading' });
@@ -95,6 +120,7 @@ export function useSchrodi(enabled = true): SchrodiState {
     let dirty = false;
     let hist: Snap[] = [];
     let stance: Stance | null = null;
+    let h0: HourLive['start'] | null = null;
     let pending: ReturnType<typeof setTimeout> | undefined;
     const stream = new HlStream();
     const sub = { type: 'candle', coin: 'BTC', interval: '1m' } as const;
@@ -112,7 +138,13 @@ export function useSchrodi(enabled = true): SchrodiState {
       stance = f.stance;
       const snap = snapOf(f);
       hist = [...hist.filter((h) => h.s !== snap.s && h.s > snap.s - (HIST_MIN + 1) * MIN), snap];
-      setState({ status: 'ready', f, model, at: rx, hist });
+      const hs = Math.floor(snap.s / HOUR) * HOUR;
+      if (h0?.hs !== hs) {
+        const g = liveForecast(model, inp, hs);
+        h0 = g && Number.isFinite(g.med1h) ? { hs, c0: g.price, thr: g.med1h, pBig: g.pBig, pUp: g.pUp } : null;
+      }
+      const hour = h0 ? { start: h0, m1: inp.m1.filter((b) => b.t >= hs) } : null;
+      setState({ status: 'ready', f, model, at: rx, hist, hour });
     };
     const kick = () => {
       dirty = true;

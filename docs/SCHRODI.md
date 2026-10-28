@@ -4,7 +4,8 @@ Schrödi is the cat under the chart in the **Charts** tab. It recomputes [live](
 Hyperliquid minute candle, and gives two probabilities for BTC over the next hour: the chance of a **big move** and the
 chance that the price ends the hour **higher**. It also lists the nearest
 auction levels with the chance of touching each within the hour, the hour's reach (prices touched with 80%, 50% and 20%
-odds) and the next high-impact macro release.
+odds), the next high-impact macro release and, for the current clock hour, odds that follow the price path minute by
+minute ([Live hour](#live-hour)).
 
 The cat is drawn as Schrödinger's cat: a green (Long) and an orange (Short) outline in superposition, each as bright as
 its probability. The closer the forecast is to 50%, the more the two outlines drift apart and blur. Above about 60% on
@@ -281,6 +282,82 @@ bands, Spiegelhalter, drift state, rare-market hours), the **Plan** tab shows it
 verifier checks that the recorded plan matches the code and recomputes the whole result from the records
 (`checkTrust`), comparing it with the published summary when both describe the same chain head.
 
+## Live hour
+
+The hourly forecast is made when the hour starts. Once the hour is running, the price path since its start says a lot:
+a range already close to the threshold, a burst of volatility, a quiet tape. The **This hour** block in the panel
+answers two questions about the current clock hour (say 14:00 to 15:00) after every minute: will its range exceed the
+big-move threshold, and will it close above its opening price? A small chart shows both odds since the start of the
+hour.
+
+Model (`public/schrodi/hour-v1.json`, `src/utils/schrodiHour.ts`): three LightGBM heads of 300 trees with monotone
+constraints, on features after `m` full minutes, in units of the threshold `thr` from the cat's forecast at the start of
+the hour:
+
+| Feature | Meaning |
+| --- | --- |
+| `m` | Full minutes since the hour began (1 to 59) |
+| `rr` | Range so far, `ln(high / low)` |
+| `up`, `dn` | Distance of the last close below the high and above the low |
+| `rv` | Minute volatility, `√Σr² / √m` with returns from the opening price |
+| `ret` | Change since the opening price |
+| `l0b`, `l0d` | Logit of the cat's `pBig` and `pUp` at the start of the hour |
+
+- `big` (the cat): `m`, `rr`, `up`, `dn`, `rv`, `l0b`. A larger range, more volatility and a higher start forecast can
+  only raise the odds, more minutes gone can only lower them.
+- `bigRule` (the rule the cat is compared with): the same without `l0b`, so the price path alone.
+- `dir`: `m`, `ret`, `rv`, `rr`. Once the hour runs, the start forecast adds nothing to direction (Brier difference
+  −0.00002, 90% interval −0.00026 to 0.00023), so direction comes from the price path only.
+
+When the range has already crossed the threshold the big move has happened and both heads say 100%. Each head is
+recalibrated with Platt scaling, `σ(a · logit p + b)`, fitted on the last 90 days; the trees are trained on minutes up
+to 25.07.2026 (every third minute), the calibration on 25.07 to 24.10.2026.
+
+Walk-forward test by quarter, 2024-01 to 24.10.2026 (Binance BTCUSDT perpetual minutes, 24,667 test hours; each quarter
+trained up to 91 days before it and calibrated on the 90 days before it), Brier score:
+
+| Moment | Big move: cat | Big move: price path alone | Rise (price path) |
+| --- | --- | --- | --- |
+| Every minute | 0.0958 | 0.1021 | 0.1583 |
+| :15 | 0.1409 | 0.1494 | 0.2127 |
+| :30 | 0.1060 | 0.1090 | 0.1709 |
+| :45 | 0.0548 | 0.0549 | 0.1115 |
+
+The start forecast alone (the cat's number at :00) scores 0.166 for the big move; following the path brings it to
+0.096. The cat's start forecast helps most early in the hour and fades by :45, when the path already says almost
+everything. Calibration error (ECE) after Platt scaling: 0.004 for the big move, 0.009 for the rise.
+
+**In the ledger.** At :15 and :30, in the same slot batch as the other forecasts, the scanner records `kind: "hour"`,
+but only when the cat's record from the start of that hour exists:
+
+| Field | Meaning |
+| --- | --- |
+| `hs` | Start of the hour; the cat's record `<hs>-cat` gives the price, the threshold and the start odds |
+| `px0`, `thr` | Copied from that record |
+| `x` | The 8 features in the order of `HOUR_FEATURES`, rounded to 6 decimals; `x[0]` = `m` = 15 or 30 |
+| `pBig`, `pBigRule`, `pUp` | Odds computed from the rounded `x` |
+| `h` | Minutes from `t` to the end of the hour |
+| `model`, `mh` | Model version and SHA-256 of the canonical JSON of `public/schrodi/hour-v1.json` |
+
+The resolution covers the clock hour `[hs, hs + 60 min)`: the close of the minute before `hs` and of the hour's last
+minute, and the high and low of its 60 minutes. Unlike the other forecasts, the target starts before the record is
+written. That is the point of the record, and nothing leaks: the features use only minutes that closed before the slot,
+and the odds follow from them and the public model.
+
+**Proof.** Plan `schrodi-hour-v1` (`HOUR_DESIGN` in `src/utils/schrodiTrust.ts`) is written to the hash chain before the
+first record. Once per hour the cat bets against the price path alone, on δ = Brier(rule) − Brier(cat) averaged over the
+:15 and :30 records; both records share the outcome, so δmin and δmax are the smaller and larger of the two averages.
+The bets, the proof at 20 and the drift detector are the same as in [Trust](#trust); scored hours start after the plan
+was recorded. Direction is descriptive (Brier and accuracy), and a drift alarm here is information only. On the
+walk-forward forecasts, one-year windows starting each month from 2024-01 to 2025-10, all 22 reached proof, after a
+median of 816 hours (about 34 days). Scoring :15 alone needs 1,326 hours, and :15, :30 and :45 together 1,310: at :45
+the cat and the rule nearly agree, which dilutes the bet.
+
+The ledger summary carries the result as `cat.hour`, the **Plan** tab shows it under the trust block, and the verifier
+checks each record (`checkHour`: slot, link to the cat's record, start odds, model hash, odds), the outcome
+(`checkResolutions`), the prices and the path features against Hyperliquid 1m candles (`--market`), and the plan and
+the whole result (`checkHourTrust`).
+
 ## Files
 
 | Path | Role |
@@ -288,11 +365,14 @@ verifier checks that the recorded plan matches the code and recomputes the whole
 | `src/utils/schrodi.ts` | Features, model evaluation, forecast (no React, shared with the scanner) |
 | `public/schrodi/model-v1.json` | Model weights, trees and the validation card shown in the panel |
 | `public/schrodi/touch-v1.json` | Touch model trees and its validation card |
+| `public/schrodi/hour-v1.json` | Live hour model: three heads with Platt calibration and the validation card |
+| `src/utils/schrodiHour.ts` | Live hour features, odds and the path since the start of the hour |
 | `src/components/schrodi/` | Cat, launcher button, panel, live data hook (REST and WebSocket) |
 | `src/utils/__tests__/schrodi.test.ts` | Parity tests against the Python reference on a synthetic fixture |
 | `src/utils/__tests__/schrodiTouch.test.ts` | Touch model parity test and cone checks |
 | `src/utils/__tests__/schrodiLive.test.ts` | Live candles against shifted 5m candles, change of mind |
-| `backend/scanner/forecaster.ts` | Ledger record, resolution and scores (`makeCatForecast`, `catTouch`, `resolveCat`, `catScores`, `catTouchScores`) |
+| `src/utils/__tests__/schrodiHour.test.ts` | Live hour parity test against the Python reference |
+| `backend/scanner/forecaster.ts` | Ledger record, resolution and scores (`makeCatForecast`, `catTouch`, `resolveCat`, `catScores`, `catTouchScores`, `makeHourForecast`, `resolveHour`) |
 | `scripts/verify-ledger.mjs` | Independent check of the records against the public model |
-| `src/utils/schrodiTrust.ts` | Trust layer: plan, e-process, drift detector, CORP, Wilson bands, Spiegelhalter, rare market |
+| `src/utils/schrodiTrust.ts` | Trust layer: plan, e-process, drift detector, CORP, Wilson bands, Spiegelhalter, rare market; live hour plan and score |
 | `src/views/plan/CatTrustBlock.tsx` | Trust block in the Plan tab |
