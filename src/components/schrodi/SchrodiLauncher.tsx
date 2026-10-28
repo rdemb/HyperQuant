@@ -1,6 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { fetchCandles } from '../../charts/pro/hl/rest';
 import { tr } from '../../i18n';
+import { useDeskLedger } from '../../state/useDeskLedger';
+import { isCat } from '../../utils/deskLedger';
+import { driftAlarms } from '../../utils/schrodiTrust';
 import { SchrodiCat } from './SchrodiCat';
 import { SchrodiPanel, moodOf } from './SchrodiPanel';
 import { useSchrodi } from './useSchrodi';
@@ -8,7 +11,7 @@ import { useSchrodi } from './useSchrodi';
 /**
  * Kot w pasku stanu pod wykresem (nie zasłania świec ani wskaźników): mały Schrödi z dwiema liczbami (duży ruch,
  * kierunek); kliknięcie otwiera dymek nad paskiem. Prognoza dotyczy zawsze BTC na najbliższą godzinę, niezależnie od
- * rynku na wykresie.
+ * rynku na wykresie. Alarm dryfu z dziennika (kot ostatnio gorszy od prostej reguły) → kot szary.
  */
 
 const MIN = 60_000;
@@ -43,6 +46,8 @@ export const SchrodiLauncher: React.FC<{ className?: string }> = ({ className })
   const f = st.status === 'ready' ? st.f : null;
   const stale = st.status !== 'ready' || now - st.at > STALE_MS;
   const mood = moodOf(f, now, stale);
+  const { summary } = useDeskLedger();
+  const grey = driftAlarms(summary && isCat(summary.cat) ? summary.cat.trust : null).length > 0;
   const dir = f ? (f.stance === 'long' ? `LONG ${pct(f.pUp)}%` : f.stance === 'short' ? `SHORT ${pct(1 - f.pUp)}%` : tr('kierunek ?', 'direction ?')) : '';
   return (
     <div className={`relative ${className ?? ''}`}>
@@ -62,13 +67,15 @@ export const SchrodiLauncher: React.FC<{ className?: string }> = ({ className })
             ? tr('Schrödi liczy…', 'Schrödi is thinking…')
             : st.status === 'error'
               ? tr('Schrödi nie ma danych', 'Schrödi has no data')
-              : tr('Schrödi: kliknij, żeby zobaczyć prognozę', 'Schrödi: click to see the forecast')
+              : grey
+                ? tr('Schrödi w szarym trybie: ostatnio trafia gorzej niż prosta reguła', 'Schrödi in grey mode: lately worse than a simple rule')
+                : tr('Schrödi: kliknij, żeby zobaczyć prognozę', 'Schrödi: click to see the forecast')
         }
         className={`flex items-center gap-1.5 h-7 pl-0.5 pr-2 rounded-md font-mono text-[10px] leading-none transition-colors duration-150 hover:bg-surface-2 disabled:opacity-60 ${
           open ? 'bg-surface-2' : ''
         }`}
       >
-        <SchrodiCat pUp={f?.pUp ?? null} mood={mood} size={26} beat={f?.t} />
+        <SchrodiCat pUp={f?.pUp ?? null} mood={mood} size={26} beat={f?.t} className={grey ? 'grayscale opacity-70' : undefined} />
         {f && !stale ? (
           <span className="whitespace-nowrap">
             <span className="font-semibold text-accent">

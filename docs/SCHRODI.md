@@ -194,6 +194,55 @@ share of hours in which each cone edge was touched, which should match 80%, 50% 
 the **Plan** tab shows scores only from 20 such hours. The cat's panel shows the same live numbers under "My track
 record", next to the backtest.
 
+## Trust
+
+A track record is only worth something if it can be checked and if it says when the cat stops working. The trust layer
+(`src/utils/schrodiTrust.ts`) answers three questions live, from the ledger records alone, with a plan that was
+written to the hash chain before the first scored hour (`k: "p"` record `schrodi-trust-v1`, SHA-256 of the canonical
+JSON of `TRUST_DESIGN`; a changed plan needs a new id).
+
+**Is the cat better than a simple rule?** Each full hour after the plan was recorded, the cat bets against a rule:
+always 48.3% for the big move, always 50.45% for a rise (the base rates of the training data) and Brownian motion for the
+touch odds (P = 2(1 − Φ(|d| / σ)), σ of the hour from the recorded `rv_1d`). With δ = Brier(rule) − Brier(cat) and
+δmin, the worst possible δ for that hour (known before the outcome), each bet multiplies its capital by
+`1 + f · δ / |δmin|`; the shown capital E is the average over f ∈ {0.025, 0.05, 0.1, 0.2, 0.4}, starting at 1. This is
+an e-process for the weak null "the cat is not better than the rule" (Henzi and Ziegel 2022; Choe and Ramdas 2021).
+By Ville's inequality, without an edge E ever reaches 20 with probability at most 5%, however often anyone looks. So
+E ≥ 20 is proof of an edge, and the time it first happens is recorded. For touches, δ, δmin and δmax are averaged over
+the levels of the hour, so one hour is one bet.
+
+**Has the cat stopped working?** An e-detector (Shin, Ramdas and Rinaldo 2022) runs the opposite bet in CUSUM form,
+`M_f ← max(M_f, 1) · (1 − f · δ / δmax)`, averaged over the same f. At 1000 the drift alarm fires, which without a real
+change happens on average less than once per 1000 hours; it clears when the statistic falls below 1. While any head is in
+alarm the cat on the chart turns grey and the panel says so.
+
+**Where does the score come from?** The CORP decomposition (Dimitriadis, Gneiting and Jordan 2021) splits the Brier
+score exactly into miscalibration, discrimination and uncertainty, BS = MCB − DSC + UNC, using isotonic recalibration
+(PAV). The calibration bins carry 90% Wilson bands (for touches the count is the number of hours in the bin, because
+levels of one hour are not independent) and the Spiegelhalter (1986) test gives a p-value for the big move and direction.
+
+**Rare market.** When any of 8 features (moves over 15 min, 1 h, 4 h and 1 day, volatility of the hour and day, 4 h
+range, volume) lies outside the 0.5 to 99.5% range of the training data, the panel says so. It is information only and
+does not grey the cat: in 2026 such hours were 275 of 7124, and in them the cat was better than usual on the big move
+(Brier skill 0.86 against 0.31; in a storm a big move is almost certain), while direction stayed near a coin flip.
+
+What to expect, from walk-forward forecasts 2023 to 10.2026 (33,428 full hours, one-year windows starting each month,
+45 starts):
+
+| | Big move | Direction | Touches |
+| --- | --- | --- | --- |
+| Proof (E ≥ 20) reached within a year | 45 of 45 | 11 of 45 | 45 of 45 |
+| Hours to proof, median (10 to 90%) | 92 (35 to 187) | 2,877 when reached | 416 (82 to 1,845) |
+| False proof within 90 days with no edge (400 simulations) | 3% | 1.3% | |
+| Drift alarms on the real history | 0 | 0 | 0 |
+| False drift alarms with no change, per 1000 h (40 simulations) | 0.02 | 0.02 | |
+| Alarm after the cat loses its knowledge (forecasts shuffled in time, 60 simulations) | all within 90 days, median 202 h | 14 of 60 within 90 days | |
+
+The ledger summary carries the result as `cat.trust` (capital path, proof time, Brier against the rule, CORP, bins with
+bands, Spiegelhalter, drift state, rare-market hours), the **Plan** tab shows it next to the 30-day scores, and the
+verifier checks that the recorded plan matches the code and recomputes the whole result from the records
+(`checkTrust`), comparing it with the published summary when both describe the same chain head.
+
 ## Files
 
 | Path | Role |
@@ -206,3 +255,5 @@ record", next to the backtest.
 | `src/utils/__tests__/schrodiTouch.test.ts` | Touch model parity test and cone checks |
 | `backend/scanner/forecaster.ts` | Ledger record, resolution and scores (`makeCatForecast`, `catTouch`, `resolveCat`, `catScores`, `catTouchScores`) |
 | `scripts/verify-ledger.mjs` | Independent check of the records against the public model |
+| `src/utils/schrodiTrust.ts` | Trust layer: plan, e-process, drift detector, CORP, Wilson bands, Spiegelhalter, rare market |
+| `src/views/plan/CatTrustBlock.tsx` | Trust block in the Plan tab |
