@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { fetchCandles } from '../../charts/pro/hl/rest';
 import { tr } from '../../i18n';
 import { useDeskLedger } from '../../state/useDeskLedger';
 import { isCat } from '../../utils/deskLedger';
+import { mindChange } from '../../utils/schrodi';
 import { driftAlarms } from '../../utils/schrodiTrust';
 import { SchrodiCat } from './SchrodiCat';
 import { SchrodiPanel, moodOf } from './SchrodiPanel';
@@ -11,11 +11,13 @@ import { useSchrodi } from './useSchrodi';
 /**
  * Kot w pasku stanu pod wykresem (nie zasłania świec ani wskaźników): mały Schrödi z dwiema liczbami (duży ruch,
  * kierunek); kliknięcie otwiera dymek nad paskiem. Prognoza dotyczy zawsze BTC na najbliższą godzinę, niezależnie od
- * rynku na wykresie. Alarm dryfu z dziennika (kot ostatnio gorszy od prostej reguły) → kot szary.
+ * rynku na wykresie. Liczby zmieniają się na żywo; kropka przy liczbach = zmiana zdania w ostatnich 10 min.
+ * Alarm dryfu z dziennika (kot ostatnio gorszy od prostej reguły) → kot szary.
  */
 
 const MIN = 60_000;
-const STALE_MS = 15 * MIN;
+/** Kot liczy na żywo; bez nowych minut z Hyperliquid przez 3 min chowa się */
+const STALE_MS = 3 * MIN;
 const pct = (p: number) => Math.round(p * 100);
 
 export const SchrodiLauncher: React.FC<{ className?: string }> = ({ className }) => {
@@ -26,26 +28,10 @@ export const SchrodiLauncher: React.FC<{ className?: string }> = ({ className })
     const id = setInterval(() => setNow(Date.now()), 30_000);
     return () => clearInterval(id);
   }, []);
-  // Bieżąca cena BTC do poziomów: zamknięcie ostatniej świecy 1m, co 15 s, tylko przy otwartym dymku
-  const [livePx, setLivePx] = useState<number | null>(null);
-  useEffect(() => {
-    if (!open) return;
-    let alive = true;
-    const pull = async () => {
-      const xs = await fetchCandles('BTC', '1m', Date.now() - 3 * MIN);
-      const c = xs[xs.length - 1]?.c;
-      if (alive && c && c > 0) setLivePx(c);
-    };
-    void pull();
-    const id = setInterval(() => void pull(), 15_000);
-    return () => {
-      alive = false;
-      clearInterval(id);
-    };
-  }, [open]);
   const f = st.status === 'ready' ? st.f : null;
   const stale = st.status !== 'ready' || now - st.at > STALE_MS;
   const mood = moodOf(f, now, stale);
+  const mind = st.status === 'ready' && st.hist.length ? mindChange(st.hist, st.hist[st.hist.length - 1]) : null;
   const { summary } = useDeskLedger();
   const grey = driftAlarms(summary && isCat(summary.cat) ? summary.cat.trust : null).length > 0;
   const dir = f ? (f.stance === 'long' ? `LONG ${pct(f.pUp)}%` : f.stance === 'short' ? `SHORT ${pct(1 - f.pUp)}%` : tr('kierunek ?', 'direction ?')) : '';
@@ -53,7 +39,7 @@ export const SchrodiLauncher: React.FC<{ className?: string }> = ({ className })
     <div className={`relative ${className ?? ''}`}>
       {open && st.status === 'ready' && (
         <div className="absolute bottom-full left-0 mb-1.5 z-40 w-[min(340px,calc(100vw-32px))] max-h-[min(560px,calc(100dvh-15rem))] overflow-y-auto rounded-xl shadow-2xl">
-          <SchrodiPanel f={st.f} model={st.model} at={st.at} now={now} stale={stale} livePx={livePx} onClose={() => setOpen(false)} />
+          <SchrodiPanel f={st.f} model={st.model} at={st.at} now={now} stale={stale} hist={st.hist} onClose={() => setOpen(false)} />
         </div>
       )}
       <button
@@ -83,6 +69,12 @@ export const SchrodiLauncher: React.FC<{ className?: string }> = ({ className })
             </span>
             <span className="text-ink-3"> · </span>
             <span className={f.stance === 'long' ? 'text-buy-ink' : f.stance === 'short' ? 'text-sell-ink' : 'text-ink-3'}>{dir}</span>
+            {mind && (
+              <span
+                className="inline-block ml-1 w-1.5 h-1.5 rounded-full bg-accent animate-pulse align-middle"
+                title={tr('Zmiana zdania w ostatnich 10 min', 'Change of mind in the last 10 min')}
+              />
+            )}
           </span>
         ) : (
           <span className="text-ink-3">Schrödi</span>
