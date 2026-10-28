@@ -506,6 +506,12 @@ function shutdown(): void {
   stream.stop();
   for (const r of recorders) r.stream.stop();
   try {
+    // Bieżąca część taśmy do chwili zatrzymania (aktualizacja restartuje skaner — bez tego luka do 5 min)
+    for (const { rec } of recorders) rec.flush(Date.now(), true);
+  } catch (e) {
+    console.error(`[skaner] zapis historii przy zatrzymaniu nieudany: ${String(e)}`);
+  }
+  try {
     saveState();
   } catch (e) {
     console.error(`[skaner] zapis stanu nieudany: ${String(e)}`);

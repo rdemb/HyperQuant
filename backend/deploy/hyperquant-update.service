@@ -6,9 +6,10 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 # root: zapis do /opt/hyperquant/app i restart usługi skanera. Polecenia wpisane tutaj, nie w repo — kod z repo
-# nie wykonuje się jako root. Restart tylko po zmianie; pliki usług systemd zmienia wyłącznie install.sh.
+# nie wykonuje się jako root. Restart tylko po zmianie kodu skanera (backend, src, modele kota, pakiety); sam wpis bloga
+# tylko aktualizuje pliki, bez przerwy w nagraniu. Pliki usług systemd zmienia wyłącznie install.sh.
 WorkingDirectory=/opt/hyperquant/app
-ExecStart=/bin/sh -c 'set -e; git fetch --quiet; up=$$(git rev-parse "@{u}"); if [ "$$(git rev-parse HEAD)" != "$$up" ]; then git reset --quiet --hard "$$up"; systemctl restart hyperquant-scanner; echo "skaner zaktualizowany do $$up"; fi'
+ExecStart=/bin/sh -c 'set -e; git fetch --quiet; up=$$(git rev-parse "@{u}"); head=$$(git rev-parse HEAD); if [ "$$head" != "$$up" ]; then git reset --quiet --hard "$$up"; if git diff --quiet "$$head" "$$up" -- backend src public/schrodi package.json package-lock.json; then echo "pliki zaktualizowane do $$up, kod skanera bez zmian (bez restartu)"; else systemctl restart hyperquant-scanner; echo "skaner zaktualizowany do $$up"; fi; fi'
 TimeoutStartSec=5min
 Nice=10
 
