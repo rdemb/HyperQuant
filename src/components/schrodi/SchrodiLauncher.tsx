@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { fetchCandles } from '../../charts/pro/hl/rest';
 import { tr } from '../../i18n';
 import { SchrodiCat } from './SchrodiCat';
 import { SchrodiPanel, moodOf } from './SchrodiPanel';
@@ -21,6 +22,23 @@ export const SchrodiLauncher: React.FC<{ className?: string }> = ({ className })
     const id = setInterval(() => setNow(Date.now()), 30_000);
     return () => clearInterval(id);
   }, []);
+  // Bieżąca cena BTC do poziomów: zamknięcie ostatniej świecy 1m, co 15 s, tylko przy otwartym dymku
+  const [livePx, setLivePx] = useState<number | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    let alive = true;
+    const pull = async () => {
+      const xs = await fetchCandles('BTC', '1m', Date.now() - 3 * MIN);
+      const c = xs[xs.length - 1]?.c;
+      if (alive && c && c > 0) setLivePx(c);
+    };
+    void pull();
+    const id = setInterval(() => void pull(), 15_000);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, [open]);
   const f = st.status === 'ready' ? st.f : null;
   const stale = st.status !== 'ready' || now - st.at > STALE_MS;
   const mood = moodOf(f, now, stale);
@@ -29,7 +47,7 @@ export const SchrodiLauncher: React.FC<{ className?: string }> = ({ className })
     <div className={className}>
       {open && st.status === 'ready' ? (
         <div className="w-[min(340px,calc(100vw-32px))] max-h-[min(560px,calc(100dvh-15rem))] overflow-y-auto rounded-xl">
-          <SchrodiPanel f={st.f} model={st.model} at={st.at} now={now} stale={stale} onClose={() => setOpen(false)} />
+          <SchrodiPanel f={st.f} model={st.model} at={st.at} now={now} stale={stale} livePx={livePx} onClose={() => setOpen(false)} />
         </div>
       ) : (
         <button

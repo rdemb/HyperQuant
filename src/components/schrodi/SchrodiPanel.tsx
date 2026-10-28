@@ -106,14 +106,19 @@ type Card = {
   kierunek: Record<'2023_2025' | '2026', { auc: number; trafnosc: number; long: [number, number]; short: [number, number] }>;
 };
 
-export const SchrodiPanel: React.FC<{ f: Forecast; model: SchrodiModel; at: number; now: number; stale: boolean; onClose: () => void }> = ({
-  f,
-  model,
-  at,
-  now,
-  stale,
-  onClose,
-}) => {
+/** Odległość w dolarach ze znakiem: „+87 $” po polsku, „+$87” po angielsku */
+const usd = (v: number) => tr(fmtSigned(v, 0, ' $'), `${v > 0 ? '+' : v < 0 ? '−' : ''}$${fmtPrice(Math.abs(v), 0)}`);
+
+export const SchrodiPanel: React.FC<{
+  f: Forecast;
+  model: SchrodiModel;
+  at: number;
+  now: number;
+  stale: boolean;
+  /** Bieżąca cena BTC (poziomy liczone od niej); brak → cena z chwili prognozy */
+  livePx?: number | null;
+  onClose: () => void;
+}> = ({ f, model, at, now, stale, livePx, onClose }) => {
   const mood = moodOf(f, now, stale);
   const ev = nextMacro(now);
   const levels = f.levels
@@ -122,8 +127,9 @@ export const SchrodiPanel: React.FC<{ f: Forecast; model: SchrodiModel; at: numb
         .filter((l) => Number.isFinite(l.px))
         .sort((a, b) => b.px - a.px)
     : [];
-  const above = levels.filter((l) => l.px > f.price).slice(-2);
-  const below = levels.filter((l) => l.px <= f.price).slice(0, 2);
+  const px = livePx && livePx > 0 ? livePx : f.price;
+  const above = levels.filter((l) => l.px > px).slice(-2);
+  const below = levels.filter((l) => l.px <= px).slice(0, 2);
   const card = model.card as unknown as Card;
   const dirTitle =
     f.stance === 'long' ? `LONG ${pct(f.pUp)}` : f.stance === 'short' ? `SHORT ${pct(1 - f.pUp)}` : tr('NIE WIEM', "DON'T KNOW");
@@ -179,14 +185,14 @@ export const SchrodiPanel: React.FC<{ f: Forecast; model: SchrodiModel; at: numb
         {levels.length > 0 && (
           <div className="text-xs">
             <div className="text-ink-2 mb-1">
-              🧲 {tr('Poziomy od ceny', 'Levels from price')} <span className="font-mono text-ink-1">{fmtPrice(f.price, 0)}</span>
+              🧲 {tr('Poziomy od ceny', 'Levels from price')} <span className="font-mono text-ink-1">{fmtPrice(px, 0)}</span>
             </div>
             <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 gap-y-0.5 font-mono text-[11px]">
               {[...above, ...below].map((l) => (
                 <React.Fragment key={l.k}>
                   <span className="font-sans text-ink-2">{LEVEL_NAMES[l.k]()}</span>
                   <span className="text-right">{fmtPrice(l.px, 0)}</span>
-                  <span className={`text-right ${l.px > f.price ? 'text-buy-ink' : 'text-sell-ink'}`}>{fmtSigned(l.px - f.price, 0, ' $')}</span>
+                  <span className={`text-right ${l.px > px ? 'text-buy-ink' : 'text-sell-ink'}`}>{usd(l.px - px)}</span>
                 </React.Fragment>
               ))}
             </div>
