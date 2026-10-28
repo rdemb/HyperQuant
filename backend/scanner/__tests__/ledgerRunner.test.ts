@@ -425,3 +425,53 @@ describe('A/B wersji modelu: wariant B z reżimem BOCPD', () => {
     }
   });
 });
+
+import { isCat } from '../../../src/utils/deskLedger.ts';
+import { loadCatModel } from '../forecaster.ts';
+import { agg, synth } from '../../../src/utils/__tests__/schrodiSynth.ts';
+import { checkCat, checkResolutions } from '../../../scripts/verify-ledger.mjs';
+
+describe('LedgerRunner — Schrödi (kot) w partii slotu', () => {
+  const m1 = synth(7, SLOT0 - 31 * DAY, 31);
+  const inp = { m1, m5: agg(m1, 5 * MIN), h1: agg(m1, HOUR), d1: agg(m1, DAY), events: [] };
+  const cat = loadCatModel();
+
+  it('kot wydany z prognozami slotu (te same chwile), rozstrzygnięty po 1 h; wynik w podsumowaniu; weryfikator przelicza p', async () => {
+    const data = { ...fakeData(), cat, catInput: { slot: SLOT0, inp }, refreshCat: async () => {} };
+    const { r, dir, published } = runner({ data });
+    r.init(SLOT0);
+    expect((await r.tick(SLOT0 + 30_000)).appended).toBe(4);
+    const recs = lines(dir, '2026-10-22');
+    const c = recs.find((l) => l.kind === 'cat');
+    expect(c).toMatchObject({ id: `${SLOT0}-cat`, slot: SLOT0, ti: SLOT0 + 30_000, t: SLOT0 + MIN, bar: SLOT0 - 5 * MIN });
+    // Ta sama chwila wydania i partia pokwitowania co prognozy desku
+    expect(recs.filter((l) => l.k === 'f').every((l) => l.slot === SLOT0 && l.ti === SLOT0 + 30_000)).toBe(true);
+    await r.tick(SLOT0 + 63 * MIN);
+    const all = [...recs, ...lines(dir, '2026-10-22').slice(recs.length), ...lines(dir, '2026-10-23')];
+    const res = all.find((l) => l.k === 'r' && l.id === `${SLOT0}-cat`);
+    expect(res).toMatchObject({ yDir: expect.any(Number), yBig: expect.any(Number) });
+    const s = JSON.parse(published[published.length - 1]);
+    expect(isCat(s.cat)).toBe(true);
+    // Slot 22:00 bez danych kota z tego slotu: 2 sloty desku, 1 prognoza kota (brak widoczny w podsumowaniu)
+    expect(s.cat).toMatchObject({ model: 'schrodi-v1', since: SLOT0 + MIN, issued: 1, slots: 2, latest: { t: SLOT0 + MIN } });
+    expect(s.cat.scores.n).toBe(1);
+    expect(checkResolutions(all)).toEqual([]);
+    const model = JSON.parse(readFileSync(new URL('../../../public/schrodi/model-v1.json', import.meta.url), 'utf8'));
+    expect(checkCat(all, model)).toEqual({ problems: [], checked: 1 });
+    // Zmienione p albo cechy po zapisie → weryfikator wykrywa
+    expect(checkCat([{ ...c, pUp: c.pUp + 0.01 }], model).problems).toHaveLength(1);
+    expect(checkCat([{ ...c, mh: '0'.repeat(64) }], model).problems[0]).toMatch(/hash modelu/);
+    expect(checkResolutions([c, { ...res, yBig: 1 - res.yBig }])).toHaveLength(1);
+  });
+
+  it('dane kota z innego slotu albo brak modelu → slot bez kota, reszta prognoz bez zmian', async () => {
+    const data = { ...fakeData(), cat, catInput: { slot: SLOT0 - 15 * MIN, inp }, refreshCat: async () => {} };
+    const { r } = runner({ data });
+    r.init(SLOT0);
+    expect((await r.tick(SLOT0 + 30_000)).appended).toBe(3);
+    const failing = { ...fakeData(), cat, refreshCat: async () => Promise.reject(new Error('429')) };
+    const { r: r2 } = runner({ data: failing });
+    r2.init(SLOT0);
+    expect((await r2.tick(SLOT0 + 30_000)).appended).toBe(3);
+  });
+});

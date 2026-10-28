@@ -414,3 +414,29 @@ describe('komunikaty weryfikatora — odmiana liczebników', () => {
     expect([1, 2, 5, 12, 22, 112, 0].map(f)).toEqual(['1 linia', '2 linie', '5 linii', '12 linii', '22 linie', '112 linii', '0 linii']);
   });
 });
+
+import { checkMarket as checkMarketCat, recompute as recomputeCat } from './verify-ledger.mjs';
+
+describe('verify-ledger — Schrödi (kot)', () => {
+  const T = Date.UTC(2026, 9, 22, 21, 1, 0);
+  const fc = { k: 'f', id: 'k-cat', kind: 'cat', slot: T - 60_000, t: T, h: 60, thr: 40, pUp: 0.6, pBig: 0.3 };
+  const candles = Array.from({ length: 62 }, (_, i) => ({ time: T - 60_000 + i * 60_000, high: 80_010 + i, low: 79_990 + i, close: 80_000 + i }));
+  const res = { k: 'r', id: 'k-cat', t: T + 2 * 3_600_000, c0: 80_000, c1: 80_060, hi: 80_070, lo: 79_991, yDir: 1, yBig: 0 };
+
+  it('checkResolutions: wzrost z cen, duży ruch z max/min i progu; brak cen = problem', () => {
+    expect(checkResolutions([fc, res])).toEqual([]);
+    expect(checkResolutions([fc, { ...res, yDir: 0 }])[0]).toMatch(/yDir/);
+    expect(checkResolutions([{ ...fc, thr: 5 }, res])[0]).toMatch(/yBig/);
+    expect(checkResolutions([fc, { ...res, hi: undefined }])[0]).toMatch(/brak cen/);
+  });
+  it('checkMarket: c0, c1 i max/min okna ze świec 1m', () => {
+    expect(checkMarketCat([fc, res], candles)).toMatchObject({ problems: [], checked: 1 });
+    expect(checkMarketCat([fc, { ...res, hi: 80_100 }], candles).problems).toHaveLength(1);
+  });
+  it('recompute: Brier i trafność obu głów z cen, nie z zapisanych wyników', () => {
+    const r = recomputeCat([fc, { ...res, yDir: 0, yBig: 1 }]);
+    expect(r.cat).toMatchObject({ n: 1, hitDir: 1, hitBig: 1 });
+    expect(r.cat.brierDir).toBeCloseTo(0.16, 12);
+    expect(r.cat.brierBig).toBeCloseTo(0.09, 12);
+  });
+});

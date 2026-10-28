@@ -111,6 +111,36 @@ therefore not built.
 
 Direction calibration (deciles): forecasts of 42% to 59% matched observed frequencies of 44% to 58%.
 
+## Live record
+
+The backtest above can be wrong in ways nobody notices. So every 15 minutes, together with the other desk forecasts,
+the scanner records the cat's forecast in the [verifiable desk ledger](../README.md#methods-summary-and-literature) before the hour starts:
+the same model file and the same TypeScript code as the page, with the 22 features at the close of the 5m candle that
+ends at the slot.
+
+| Field | Meaning |
+| --- | --- |
+| `kind` | `cat` |
+| `bar`, `px0` | Open time and close of the 5m candle with the features |
+| `x` | The 22 features in the order of `FEATURES`, rounded to 6 decimals (`null` = missing) |
+| `pUp`, `pBig` | Chance of a rise and of a big move, computed from the rounded `x` |
+| `thr` | Big-move threshold: median log range of the last 720 complete 1h candles, in bp |
+| `model`, `mh` | Model version and SHA-256 of the canonical JSON of `public/schrodi/model-v1.json` |
+
+The hour starts at the full minute after the record is written (`t`), so the live test is a minute or two later than
+the backtest target and never sees the future. The resolution stores the closes at `t` and `t + 60 min` and the high and
+low of the 60 one-minute candles in between: rise = close above the start, big move = `ln(high / low)` above `thr`.
+
+Because `x` and the model are public, anyone can recompute `pUp` and `pBig` bit for bit:
+`node scripts/verify-ledger.mjs --dir <clone of the ledger branch>` checks the chain, the model hash and every
+probability, and `--market` also checks the resolution prices against Hyperliquid 1m candles.
+
+Scores in the ledger summary (last 30 days): Brier score against the climatology of the same window, Brier skill score,
+AUC and hit rate for both heads, plus the hit rate of Long (from 53%) and Short (to 47%) and the number of "don't know"
+forecasts. Four forecasts per hour overlap, so the effective sample is the number of forecasts made on the full hour, and
+the **Plan** tab shows scores only from 20 such hours. The cat's panel shows the same live numbers under "My track
+record", next to the backtest.
+
 ## Files
 
 | Path | Role |
@@ -119,3 +149,5 @@ Direction calibration (deciles): forecasts of 42% to 59% matched observed freque
 | `public/schrodi/model-v1.json` | Model weights, trees and the validation card shown in the panel |
 | `src/components/schrodi/` | Cat, launcher button, panel, data hook |
 | `src/utils/__tests__/schrodi.test.ts` | Parity tests against the Python reference on a synthetic fixture |
+| `backend/scanner/forecaster.ts` | Ledger record, resolution and scores (`makeCatForecast`, `resolveCat`, `catScores`) |
+| `scripts/verify-ledger.mjs` | Independent check of the records against the public model |

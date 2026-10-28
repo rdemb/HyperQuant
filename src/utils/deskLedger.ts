@@ -85,6 +85,24 @@ export interface MktScores {
   diffAdd?: { d: number; lo: number; hi: number } | null;
 }
 
+/** Wyniki jednej głowy kota: Brier, Brier klimatologii z tego samego okna, BSS, AUC i trafność progu 50% */
+export interface CatHeadScores {
+  brier: number | null;
+  brierBase: number | null;
+  bss: number | null;
+  auc: number | null;
+  hit: number | null;
+}
+
+/** Schrödi (1 h): kierunek w trzech stanach panelu i duży ruch z diagramem niezawodności */
+export interface CatScores {
+  n: number;
+  /** Prognozy rozłączne (sloty o pełnej godzinie) — prognozy co 15 min na 1 h nakładają się czterokrotnie */
+  nEff: number;
+  dir: CatHeadScores & { long: { n: number; hit: number | null }; short: { n: number; hit: number | null }; unsure: number };
+  big: CatHeadScores & { reliability: ReliabilityBin[] };
+}
+
 export interface DeskLedgerSummary {
   v: 1;
   coin: string;
@@ -149,6 +167,18 @@ export interface DeskLedgerSummary {
     closing?: AbBlock | null;
     last: AbBlock | null;
     latest: { t: number; scale: number; regime: { sigma5: number; run: number; pChange: number } } | null;
+  };
+  /**
+   * Schrödi (kot pod wykresem): od `since` w każdym slocie z prognozami desku; `slots` — takie sloty, `issued` — prognozy
+   * kota (różnica = sloty bez danych kota). Brak w starszych podsumowaniach; sprawdzana osobno (isCat).
+   */
+  cat?: {
+    model: string | null;
+    since: number | null;
+    issued: number;
+    slots: number;
+    latest: { t: number; px0: number; pUp: number; pBig: number; thr: number } | null;
+    scores: CatScores;
   };
   method: 'hq-ledger-v1';
 }
@@ -263,4 +293,21 @@ function isMarket(m: unknown): boolean {
   if (e !== undefined && !(!!e && fin(e.a) && fin(e.bm) && fin(e.bk) && fin(e.n) && fin(e.at) && (e.rec === undefined || (!!e.rec && fin(e.rec.a) && fin(e.rec.bk))))) return false;
   const l = x.latest;
   return l === null || (!!l && fin(l.t) && fin(l.expiry) && fin(l.K) && fin(l.p) && typeof l.liquid === 'boolean' && (l.pe === undefined || l.pe === null || fin(l.pe)));
+}
+
+const isCatHead = (h: unknown) => {
+  const x = h as Partial<CatHeadScores> | null;
+  return !!x && finOrNull(x.brier) && finOrNull(x.brierBase) && finOrNull(x.bss) && finOrNull(x.auc) && finOrNull(x.hit);
+};
+const isSide = (v: unknown) => !!v && fin((v as { n: unknown }).n) && finOrNull((v as { hit: unknown }).hit);
+
+/** Sekcja kota (opcjonalna) — sprawdzana osobno: uszkodzona sekcja ukrywa tylko wynik kota */
+export function isCat(x: unknown): x is NonNullable<DeskLedgerSummary['cat']> {
+  const c = x as Partial<NonNullable<DeskLedgerSummary['cat']>> | null;
+  if (!c || !fin(c.issued) || !fin(c.slots) || !finOrNull(c.since ?? null) || !c.scores) return false;
+  const s = c.scores;
+  if (!fin(s.n) || !fin(s.nEff) || !isCatHead(s.dir) || !isCatHead(s.big)) return false;
+  if (!isSide(s.dir.long) || !isSide(s.dir.short) || !fin(s.dir.unsure) || !Array.isArray(s.big.reliability)) return false;
+  const l = c.latest;
+  return l === null || (!!l && fin(l.t) && fin(l.px0) && fin(l.pUp) && fin(l.pBig) && fin(l.thr));
 }
