@@ -1,0 +1,25 @@
+[Unit]
+Description=HyperQuant — aktualizacja kodu skanera do gałęzi zdalnej
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# root: zapis do /opt/hyperquant/app i restart usługi skanera. Polecenia wpisane tutaj, nie w repo — kod z repo
+# nie wykonuje się jako root. Restart tylko po zmianie; pliki usług systemd zmienia wyłącznie install.sh.
+WorkingDirectory=/opt/hyperquant/app
+ExecStart=/bin/sh -c 'set -e; git fetch --quiet; up=$$(git rev-parse "@{u}"); if [ "$$(git rev-parse HEAD)" != "$$up" ]; then git reset --quiet --hard "$$up"; systemctl restart hyperquant-scanner; echo "skaner zaktualizowany do $$up"; fi'
+TimeoutStartSec=5min
+Nice=10
+
+UMask=0022
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/hyperquant/app
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=true

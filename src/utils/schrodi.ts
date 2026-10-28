@@ -408,6 +408,8 @@ export interface Forecast {
   pBig: number;
   /** Ta mediana w USD przy bieżącej cenie */
   bigUsd: number;
+  /** Mediana zakresu godziny z 30 dni (pb, log) — skala odległości modelu dotknięć */
+  med1h: number;
   why: Record<Group, number>;
   levels: Levels | null;
   x: FeatureVec;
@@ -426,8 +428,84 @@ export function forecast(model: SchrodiModel, inp: SchrodiInput, t: number): For
     stance: stanceOf(dir.p),
     pBig: big.p,
     bigUsd: Number.isFinite(fr.med1h) ? fr.price * (Math.exp(fr.med1h / 1e4) - 1) : NaN,
+    med1h: fr.med1h,
     why: dir.why,
     levels: fr.levels,
     x: fr.x,
   };
+}
+
+/* ─────────────────────────── Dotknięcia ceny ─────────────────────────── */
+
+/**
+ * Model dotknięć (`public/schrodi/touch-v1.json`): szansa, że cena odległa o `d` pb dotknięta zostanie w oknie godziny
+ * kota. Uczony na losowych cenach („placebo”), bo poziomy aukcji nie przyciągają ceny bardziej niż zwykła cena
+ * w tej samej odległości (atlas 2022 do 2026, docs/SCHRODI.md). Drzewa malejące z odległością (ograniczenie monotoniczne).
+ */
+export interface TouchModel {
+  version: string;
+  trainedTo: string;
+  features: string[];
+  gb: Tree[];
+  card: Record<string, unknown>;
+}
+
+/** Zakres uczenia: do 3 median zakresu godziny od ceny */
+export const TOUCH_MAX_R = 3;
+const TOUCH_MIN_R = 0.01;
+
+/**
+ * Wektor cech dotknięcia jak przy uczeniu: odległość w medianach zakresu godziny i w σ godziny z realizowanej
+ * zmienności doby, strona (+1 w górę), ruchy ze znakiem względem strony, zmienność i zegar kota.
+ */
+export function touchVector(x: FeatureVec, med1h: number, d: number): number[] {
+  const side = Math.sign(d);
+  const a = Math.abs(d);
+  const sig = x.rv_1d / Math.sqrt(24);
+  return [
+    Math.log(a / med1h), Math.log(a / sig), side, x.ret_15m * side, x.ret_1h * side, x.ret_4h * side, x.ret_1d * side,
+    x.rv_1h, x.rv_1d, x.rng4h_rel, x.vol_z, x.ny_hour, x.ldn_hour, x.dow, x.min_to_event, x.min_since_event, x.expiry_pre,
+    x.rv_1h / med1h,
+  ];
+}
+
+/** Szansa dotknięcia ceny odległej o `d` pb (log, + w górę) w godzinę; poza zakresem uczenia albo bez zmienności → NaN. */
+export function touchProb(m: TouchModel, x: FeatureVec, med1h: number, d: number): number {
+  const r = Math.abs(d) / med1h;
+  if (!(r > 0) || r > TOUCH_MAX_R || !(x.rv_1d > 0)) return NaN;
+  const v = touchVector(x, med1h, d);
+  const scratch = new Array<number>(v.length).fill(0);
+  let raw = 0;
+  for (const tr of m.gb) raw += treeScore(tr, v, scratch);
+  return sigmoid(raw);
+}
+
+/** Szanse stożka zasięgu */
+export const CONE_Q = [0.8, 0.5, 0.2] as const;
+export interface ConeStep {
+  q: number;
+  /** Odległość w górę i w dół (pb, log) dotykana z szansą q; null = poza zakresem uczenia */
+  up: number | null;
+  dn: number | null;
+}
+
+/**
+ * Stożek zasięgu godziny: dla każdej szansy q najdalsza odległość w górę i w dół, którą model dotyka z szansą co najmniej q.
+ * Bisekcja po log odległości (szansa nie rośnie z odległością), 40 kroków, wynik zaokrąglony do 0,01 pb.
+ */
+export function touchCone(m: TouchModel, x: FeatureVec, med1h: number): ConeStep[] {
+  const edge = (q: number, side: 1 | -1): number | null => {
+    let lo = Math.log(TOUCH_MIN_R);
+    let hi = Math.log(TOUCH_MAX_R);
+    const p = (lr: number) => touchProb(m, x, med1h, side * Math.exp(lr) * med1h);
+    if (!(p(lo) >= q)) return null;
+    if (p(hi) >= q) return null;
+    for (let i = 0; i < 40; i++) {
+      const mid = (lo + hi) / 2;
+      if (p(mid) >= q) lo = mid;
+      else hi = mid;
+    }
+    return Math.round(Math.exp(lo) * med1h * 100) / 100;
+  };
+  return CONE_Q.map((q) => ({ q, up: edge(q, 1), dn: edge(q, -1) }));
 }

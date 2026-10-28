@@ -12,7 +12,8 @@
  *  2. wyniki: CRPS, PIT i pokrycia przeliczone z zapisanych kwantyli i zwrotu (nie przepisane z zapisu);
  *  3. historię git (--dir): każdy commit tylko dopisuje do plików dziennika;
  *     kot (Schrödi): p przeliczone z zapisanych cech i publicznego modelu public/schrodi/model-v1.json (hash modelu
- *     = `mh` rekordu), wzrost i duży ruch z cen i max/min okna;
+ *     = `mh` rekordu), wzrost i duży ruch z cen i max/min okna; szanse dotknięcia poziomów i stożek zasięgu
+ *     przeliczone modelem public/schrodi/touch-v1.json (hash = `th`);
  *  4. pokwitowania OpenTimestamps: skrót w `ots/<dzień>.jsonl.ots` = SHA-256 pliku dnia; w `ots/slots/<slot>.ots`
  *     = hash ostatniej prognozy tego slotu (prognozy istniały w chwili znakowania). Sam czas potwierdza klient OTS:
  *     `ots upgrade <plik>.ots` i `ots verify -f <plik danych> <plik>.ots` (dla slotu: skrót podaj przez `-d <hash>`).
@@ -22,7 +23,7 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { AB_DESIGN, abBlocks } from '../src/utils/abTest.ts';
 import { fitEnsemble } from '../src/utils/ensemble.ts';
-import { FEATURES, scoreHead } from '../src/utils/schrodi.ts';
+import { FEATURES, TOUCH_MAX_R, scoreHead, touchCone, touchProb } from '../src/utils/schrodi.ts';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -178,8 +179,9 @@ const r4 = (x) => Math.round(x * 1e4) / 1e4;
  * Kot (Schrödi): hash modelu w rekordzie = SHA-256 kanonicznego JSON publicznego modelu, p przeliczone z zapisanych cech
  * tym modelem (null = brak cechy), cechy na świecy 5m kończącej się z początkiem slotu, horyzont 1 h.
  */
-export function checkCat(records, model) {
+export function checkCat(records, model, touchModel = null) {
   const mh = model ? createHash('sha256').update(canonical(model)).digest('hex') : null;
+  const th = touchModel ? createHash('sha256').update(canonical(touchModel)).digest('hex') : null;
   const problems = [];
   let checked = 0;
   for (const fc of records) {
@@ -196,11 +198,26 @@ export function checkCat(records, model) {
       const pBig = r4(scoreHead(model.big, model.features, x).p);
       if (pUp !== fc.pUp) bad.push(`pUp ${fc.pUp} ≠ przeliczone ${pUp}`);
       if (pBig !== fc.pBig) bad.push(`pBig ${fc.pBig} ≠ przeliczone ${pBig}`);
+      if (fc.tl !== undefined || fc.cone !== undefined) bad.push(...touchProblems(fc, x, touchModel, th));
     }
     if (bad.length) problems.push(`${fc.id}: ${bad.join(', ')}`);
     else checked++;
   }
   return { problems, checked };
+}
+
+/** Szanse dotknięcia poziomów (cena z rekordu, odległość od px0, próg = mediana zakresu godziny) i stożek zasięgu kota. */
+function touchProblems(fc, x, touchModel, th) {
+  if (!touchModel) return ['brak publicznego modelu dotknięć do przeliczenia'];
+  if (fc.th !== th) return ['hash modelu dotknięć ≠ public/schrodi/touch-v1.json'];
+  const bad = [];
+  for (const l of fc.tl ?? []) {
+    const d = Math.log(l.px / fc.px0) * 1e4;
+    const p = Math.abs(d) > 0 && Math.abs(d) <= TOUCH_MAX_R * fc.thr ? r4(touchProb(touchModel, x, fc.thr, d)) : null;
+    if (p !== l.p) bad.push(`dotknięcie ${l.k}: p ${l.p} ≠ przeliczone ${p}`);
+  }
+  if (canonical(touchCone(touchModel, x, fc.thr)) !== canonical(fc.cone ?? null)) bad.push('stożek zasięgu ≠ przeliczony');
+  return bad;
 }
 
 /** Skrót (hex) zakotwiczony w pliku .ots — nagłówek, wersja 1, operacja SHA-256; inny format → null. */
@@ -832,12 +849,18 @@ async function main() {
   } catch {
     // brak pliku modelu — rekordy kota zgłoszą brak przeliczenia
   }
-  const cat = checkCat(records, catModel);
+  let touchModel = null;
+  try {
+    touchModel = JSON.parse(readFileSync(new URL('../public/schrodi/touch-v1.json', import.meta.url), 'utf8'));
+  } catch {
+    // brak pliku — rekordy z szansami dotknięcia zgłoszą brak przeliczenia
+  }
+  const cat = checkCat(records, catModel, touchModel);
   if (cat.checked || cat.problems.length)
     console.log(
       cat.problems.length
         ? `✗ Schrödi (${cat.problems.length}): ${cat.problems.slice(0, 5).join('; ')}`
-        : `✓ Schrödi: ${plural(cat.checked, 'prognoza', 'prognozy', 'prognoz')} — p przeliczone z zapisanych cech publicznym modelem, hash modelu zgodny`
+        : `✓ Schrödi: ${plural(cat.checked, 'prognoza', 'prognozy', 'prognoz')} — p, szanse dotknięcia i stożek przeliczone z zapisanych cech publicznymi modelami, hashe modeli zgodne`
     );
   if (cat.problems.length) ok = false;
   const pre = checkPreregs(records);

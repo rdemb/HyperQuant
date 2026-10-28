@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { fetchCandles } from '../../charts/pro/hl/rest';
 import { MACRO_EVENTS } from '../../data/macroCalendar';
-import { type Bar, type Forecast, type SchrodiModel, forecast, lastClosed5m, modelEvents } from '../../utils/schrodi';
+import { type Bar, type Forecast, type SchrodiModel, type TouchModel, forecast, lastClosed5m, modelEvents } from '../../utils/schrodi';
 
 /**
  * Prognoza Schrödiego na żywo: model z `public/schrodi/model-v1.json` (wczytywany raz, przy pierwszym użyciu), świece BTC
@@ -13,12 +13,35 @@ const DAY = 1440 * MIN;
 /** Przeliczenie 20 s po zamknięciu świecy 5m (świeca jest już w API) */
 const AFTER_CLOSE_MS = 20_000;
 
+const BASE = import.meta.env.BASE_URL.replace(/\/+$/, '');
+
 let modelPromise: Promise<SchrodiModel | null> | null = null;
 export function loadModel(): Promise<SchrodiModel | null> {
-  modelPromise ??= fetch(`${import.meta.env.BASE_URL.replace(/\/+$/, '')}/schrodi/model-v1.json`)
+  modelPromise ??= fetch(`${BASE}/schrodi/model-v1.json`)
     .then((r) => (r.ok ? (r.json() as Promise<SchrodiModel>) : null))
     .catch(() => null);
   return modelPromise;
+}
+
+let touchPromise: Promise<TouchModel | null> | null = null;
+/** Model dotknięć (ok. 200 kB po kompresji) wczytywany dopiero po otwarciu dymka */
+export function loadTouchModel(): Promise<TouchModel | null> {
+  touchPromise ??= fetch(`${BASE}/schrodi/touch-v1.json`)
+    .then((r) => (r.ok ? (r.json() as Promise<TouchModel>) : null))
+    .catch(() => null);
+  return touchPromise;
+}
+
+export function useTouchModel(): TouchModel | null {
+  const [m, setM] = useState<TouchModel | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void loadTouchModel().then((x) => alive && setM(x));
+    return () => {
+      alive = false;
+    };
+  }, []);
+  return m;
 }
 
 const EVENTS = modelEvents(MACRO_EVENTS);

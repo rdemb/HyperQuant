@@ -1,7 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { forecast } from '../../../src/utils/schrodi.ts';
+import { FEATURES, forecast } from '../../../src/utils/schrodi.ts';
 import { agg, synth } from '../../../src/utils/__tests__/schrodiSynth.ts';
-import { type CatForecast, type CatResolution, auc, catProbs, catScores, loadCatModel, makeCatForecast, parseBars, resolveCat } from '../forecaster.ts';
+import {
+  type CatForecast,
+  type CatResolution,
+  auc,
+  catProbs,
+  catScores,
+  catTouch,
+  catTouchScores,
+  loadCatModel,
+  makeCatForecast,
+  parseBars,
+  resolveCat,
+  touchedLevel,
+} from '../forecaster.ts';
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -36,6 +49,35 @@ describe('Schrödi w dzienniku — wydanie', () => {
     const extra = synth(9, SLOT, 1).map((b) => ({ ...b, c: b.c * 1.05, h: b.h * 1.05 }));
     const later = { ...inp, m1: [...m1, ...extra], m5: agg([...m1, ...extra], 5 * MIN), h1: agg([...m1, ...extra], HOUR) };
     expect(makeCatForecast(cm, later, tm)).toEqual(makeCatForecast(cm, inp, tm));
+  });
+
+  it('szanse dotknięcia poziomów i stożek: z zapisanych wartości, w zakresie uczenia, dalej = mniejsza szansa', () => {
+    expect(cm.touch?.model.version).toBe('schrodi-touch-v1');
+    expect(cm.touch?.th).toMatch(/^[0-9a-f]{64}$/);
+    const f = makeCatForecast(cm, inp, tm)!;
+    expect(f).toMatchObject({ tmodel: 'schrodi-touch-v1', th: cm.touch!.th });
+    expect(f.tl!.length).toBeGreaterThan(0);
+    for (const l of f.tl!) {
+      expect(Math.abs(Math.log(l.px / f.px0) * 1e4)).toBeLessThanOrEqual(3 * f.thr);
+      expect(l.p).toBeGreaterThan(0);
+      expect(l.p).toBeLessThan(1);
+    }
+    // Przeliczenie z rekordu (ceny poziomów z 2 miejscami) daje to samo bit w bit
+    const lv = Object.fromEntries(f.tl!.map((l) => [l.k, l.px]));
+    expect(catTouch(cm.touch!.model, f.x, f.thr, f.px0, lv)).toEqual({ tl: f.tl, cone: f.cone });
+    expect(f.cone!.map((c) => c.q)).toEqual([0.8, 0.5, 0.2]);
+    for (const side of ['up', 'dn'] as const) {
+      const ds = f.cone!.map((c) => c[side]).filter((d): d is number => d !== null);
+      expect(ds).toEqual([...ds].sort((a, b) => a - b));
+    }
+  });
+
+  it('bez pliku modelu dotknięć kot wydaje prognozę bez szans dotknięcia', () => {
+    const noTouch = loadCatModel(undefined, new URL('file:///brak/touch.json'))!;
+    expect(noTouch.touch).toBeNull();
+    const f = makeCatForecast(noTouch, inp, tm)!;
+    expect(f.tl).toBeUndefined();
+    expect(f.pUp).toBe(makeCatForecast(cm, inp, tm)!.pUp);
   });
 
   it('brak świecy 5m przed slotem → brak prognozy', () => {
@@ -87,5 +129,47 @@ describe('Schrödi w dzienniku — rozstrzygnięcie i wyniki', () => {
     expect(s.big.auc).toBe(1);
     expect(s.big.hit).toBe(1);
     expect(s.big.reliability).toHaveLength(10);
+  });
+
+  it('dotknięcie poziomu: nad ceną max okna, pod ceną min okna', () => {
+    const r = { hi: 80_100, lo: 79_900 };
+    expect(touchedLevel(80_100, 80_000, r)).toBe(1);
+    expect(touchedLevel(80_100.5, 80_000, r)).toBe(0);
+    expect(touchedLevel(79_900, 80_000, r)).toBe(1);
+    expect(touchedLevel(79_899, 80_000, r)).toBe(0);
+  });
+
+  it('wyniki dotknięć: Brier wobec ruchu Browna, pokrycie stożka, pełne godziny', () => {
+    const x = FEATURES.map((f) => (f === 'rv_1d' ? 240 : 0));
+    const px0 = 80_000;
+    const f = (slot: number) =>
+      ({
+        slot,
+        px0,
+        x,
+        tl: [
+          { k: 'pdh', px: 80_200, p: 0.3 },
+          { k: 'pdl', px: 79_600, p: 0.1 },
+        ],
+        cone: [
+          { q: 0.8, up: 5, dn: 5 },
+          { q: 0.5, up: 20, dn: 20 },
+          { q: 0.2, up: null, dn: 40 },
+        ],
+      }) as CatForecast;
+    // Godzina 1: max 80 200 (PDH i granice w górę ≈ 80 040 i 80 160 dotknięte), min 79 970; godzina 2 (:15): min 79 950
+    // dotyka tylko granicy 80% w dół (≈ 79 960)
+    const s = catTouchScores([
+      { f: f(SLOT), r: { hi: 80_200, lo: 79_970 } as CatResolution },
+      { f: f(SLOT + 15 * MIN), r: { hi: 80_010, lo: 79_950 } as CatResolution },
+      { f: { slot: SLOT + HOUR } as CatForecast, r: { hi: 1, lo: 1 } as CatResolution },
+    ]);
+    expect(s).toMatchObject({ n: 4, hours: 1 });
+    expect(s.brier).toBeCloseTo((0.7 ** 2 + 0.1 ** 2 + 0.3 ** 2 + 0.1 ** 2) / 4, 12);
+    expect(s.brierBm).not.toBeNull();
+    expect(s.cone[0]).toEqual({ q: 0.8, n: 2, up: 0.5, dn: 0.5 });
+    expect(s.cone[1]).toEqual({ q: 0.5, n: 2, up: 0.5, dn: 0 });
+    // Granica poza zakresem uczenia (null) — godzina nieoceniana dla tej szansy
+    expect(s.cone[2]).toEqual({ q: 0.2, n: 0, up: null, dn: null });
   });
 });
