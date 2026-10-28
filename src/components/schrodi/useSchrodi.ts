@@ -3,7 +3,7 @@ import { parseCandle } from '../../charts/pro/hl/parse';
 import { fetchCandles } from '../../charts/pro/hl/rest';
 import { HlStream } from '../../charts/pro/hl/stream';
 import { MACRO_EVENTS } from '../../data/macroCalendar';
-import { type Bar, type Forecast, type SchrodiInput, type SchrodiModel, type Snap, type TouchModel, liveForecast, modelEvents, snapOf } from '../../utils/schrodi';
+import { type Bar, type Forecast, type SchrodiInput, type SchrodiModel, type Snap, type Stance, type TouchModel, holdStance, liveForecast, modelEvents, snapOf } from '../../utils/schrodi';
 
 /**
  * Prognoza Schrödiego na żywo: model z `public/schrodi/model-v1.json` (wczytywany raz, przy pierwszym użyciu), świece BTC
@@ -94,6 +94,7 @@ export function useSchrodi(enabled = true): SchrodiState {
     let lastPoll = 0;
     let dirty = false;
     let hist: Snap[] = [];
+    let stance: Stance | null = null;
     let pending: ReturnType<typeof setTimeout> | undefined;
     const stream = new HlStream();
     const sub = { type: 'candle', coin: 'BTC', interval: '1m' } as const;
@@ -102,11 +103,13 @@ export function useSchrodi(enabled = true): SchrodiState {
       if (!alive || !model || !inp || document.hidden) return;
       dirty = false;
       lastRun = Date.now();
-      const f = liveForecast(model, inp);
-      if (!f) {
+      const raw = liveForecast(model, inp);
+      if (!raw) {
         setState((prev) => (prev.status === 'ready' ? prev : { status: 'error' }));
         return;
       }
+      const f = { ...raw, stance: holdStance(stance, raw.pUp) };
+      stance = f.stance;
       const snap = snapOf(f);
       hist = [...hist.filter((h) => h.s !== snap.s && h.s > snap.s - (HIST_MIN + 1) * MIN), snap];
       setState({ status: 'ready', f, model, at: rx, hist });
