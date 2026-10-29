@@ -4,12 +4,12 @@ import type { Lang } from '../i18n.ts';
  * Reguły alarmów cenowych wspólne dla strony i serwera powiadomień (bez importów wykonywalnych; uruchamiane także
  * natywnie przez Node 24). Silnik dostaje transakcje rynku po kolei i sprawdza warunki tak, jak trader zapisuje plan
  * sesji: dotknięcie poziomu, zamknięcie świecy za poziomem (także kilka z rzędu), wybicie i powrót, z filtrem delty,
- * oknem czasu, wygaśnięciem i parą scenariuszy. Zamknięcie świecy to ostatnia transakcja przed jej końcem — tak samo
- * liczy je Hyperliquid. Przy uruchomieniu alarm niesie fakty ze świecy (delta, wolumen, OI, największe zlecenia),
+ * oknem czasu, wygaśnięciem i parą scenariuszy, oraz wyciskanie (gwałtowny ruch przy spadku otwartych pozycji).
+ * Zamknięcie świecy to ostatnia transakcja przed jej końcem — tak samo liczy je Hyperliquid. Przy uruchomieniu alarm niesie fakty ze świecy (delta, wolumen, OI, największe zlecenia),
  * policzone z tej samej taśmy. Opis faktów, nie sygnał.
  */
 
-export type AlertKind = 'touch' | 'close' | 'reclaim';
+export type AlertKind = 'touch' | 'close' | 'reclaim' | 'squeeze';
 
 export const ALERT_INTERVALS = ['1m', '5m', '15m', '30m', '1h', '4h'] as const;
 /** Rynki z alarmami (perpy Hyperliquid z widoku Wykresy). */
@@ -26,15 +26,21 @@ export const DEFAULT_TTL_MS = 7 * 24 * 60 * MIN;
 export const NOTE_MAX = 60;
 /** Tyle poprzednich świec daje średni wolumen do porównania. */
 const VOL_BARS = 20;
+/** Wyciskanie: okno ruchu ceny i zmiany otwartych pozycji. */
+export const SQUEEZE_MS = 10 * MIN;
+/** Wyciskanie: tyle co najmniej % otwartych pozycji ubywa w oknie (pozycje zamykane, a nie otwierane). */
+export const SQUEEZE_OI_PCT = 0.3;
 
 export interface AlertRule {
   id: string;
   coin: string;
+  /** Poziom ceny; przy wyciskaniu próg ruchu ceny w % w oknie `SQUEEZE_MS`. */
   price: number;
   kind: AlertKind;
   /**
    * Dotknięcie: 1 = cena ma wzrosnąć do poziomu, −1 = spaść do niego. Zamknięcie: 1 = nad poziomem, −1 = pod nim.
    * Powrót: 1 = po zejściu pod poziom zamknięcie z powrotem nad nim, −1 = po wyjściu nad poziom zamknięcie pod nim.
+   * Wyciskanie: 1 = wzrost (zamykane shorty), −1 = spadek (zamykane longi).
    */
   dir: 1 | -1;
   /** Interwał świecy warunku (zamknięcie i powrót). */
@@ -86,6 +92,8 @@ export interface AlertFacts {
   partial: boolean;
   /** Fakty z bieżącej minuty przy dotknięciu (świeca jeszcze trwa). */
   touch: boolean;
+  /** Wyciskanie: cena i chwila początku ruchu, zmiana otwartych pozycji w oknie (%). */
+  move?: { from: number; at: number; oiPct: number };
 }
 
 export interface AlertEvent {
@@ -108,12 +116,22 @@ interface Bar {
   partial: boolean;
 }
 
+/** Sekunda taśmy do wyciskania: skrajne ceny i otwarte pozycje na jej początku. */
+interface Tick {
+  t: number;
+  hi: number;
+  lo: number;
+  oi: number;
+}
+
 interface CoinState {
   px: number;
   t: number;
   oi: number;
   bars: Map<string, Bar>;
   vols: Map<string, number[]>;
+  /** Ostatnie `SQUEEZE_MS` taśmy po sekundzie (tylko przy alarmie wyciskania). */
+  ticks: Tick[];
 }
 
 const num = (v: unknown, fallback: number): number => (typeof v === 'number' && Number.isFinite(v) ? v : fallback);
@@ -134,7 +152,7 @@ export function parseRules(raw: unknown, now: number): AlertRule[] {
       id: a.id.slice(0, 40),
       coin: a.coin,
       price: a.price,
-      kind: a.kind === 'close' || a.kind === 'reclaim' ? a.kind : 'touch',
+      kind: a.kind === 'close' || a.kind === 'reclaim' || a.kind === 'squeeze' ? a.kind : 'touch',
       dir: a.dir,
       iv: (ALERT_INTERVALS as readonly string[]).includes(a.iv ?? '') ? (a.iv as string) : '15m',
       closes: Math.min(MAX_CLOSES, Math.max(1, Math.round(num(a.closes, 1)))),
@@ -166,13 +184,53 @@ const maxOf = (m: Map<string, number>): number => {
   return v;
 };
 
+/** Transakcja do sekund wyciskania; sekundy starsze niż okno odpadają. */
+function tick(s: CoinState, tr: AlertTrade): void {
+  const t = Math.floor(tr.time / 1000) * 1000;
+  const last = s.ticks[s.ticks.length - 1];
+  if (last && last.t === t) {
+    last.hi = Math.max(last.hi, tr.px);
+    last.lo = Math.min(last.lo, tr.px);
+  } else s.ticks.push({ t, hi: tr.px, lo: tr.px, oi: s.oi });
+  let k = 0;
+  while (k < s.ticks.length && s.ticks[k].t <= tr.time - SQUEEZE_MS) k++;
+  if (k > 0) s.ticks.splice(0, k);
+}
+
+/**
+ * Wyciskanie: od skrajnej ceny okna (od ustawienia alarmu) cena przeszła próg `r.price` % w kierunku `dir`, a otwartych
+ * pozycji od początku okna ubyło co najmniej `SQUEEZE_OI_PCT` %. Bez danych o pozycjach — nic.
+ */
+function squeezeMove(s: CoinState, r: AlertRule, px: number): { from: number; at: number; oiPct: number } | null {
+  let first = -1;
+  for (let k = 0; k < s.ticks.length; k++)
+    if (s.ticks[k].t >= r.created - 999) {
+      first = k;
+      break;
+    }
+  if (first < 0) return null;
+  // Pozycje z pierwszej sekundy, która je zna (kontekst rynku przychodzi osobno, czasem po pierwszych transakcjach)
+  let base = Number.NaN;
+  for (let k = first; k < s.ticks.length && !(base > 0); k++) base = s.ticks[k].oi;
+  if (!(base > 0 && s.oi > 0)) return null;
+  const oiPct = ((s.oi - base) / base) * 100;
+  if (oiPct > -SQUEEZE_OI_PCT) return null;
+  let ext = s.ticks[first];
+  for (let k = first + 1; k < s.ticks.length; k++) {
+    const x = s.ticks[k];
+    if (r.dir === 1 ? x.lo < ext.lo : x.hi > ext.hi) ext = x;
+  }
+  const from = r.dir === 1 ? ext.lo : ext.hi;
+  return ((px - from) / from) * 100 * r.dir >= r.price ? { from, at: ext.t, oiPct } : null;
+}
+
 /** Silnik alarmów: stan świec każdego rynku z alarmem, wspólny dla wszystkich alarmów tego rynku. */
 export class AlertEngine {
   private readonly coins = new Map<string, CoinState>();
 
   private state(coin: string): CoinState {
     let s = this.coins.get(coin);
-    if (!s) this.coins.set(coin, (s = { px: 0, t: 0, oi: Number.NaN, bars: new Map(), vols: new Map() }));
+    if (!s) this.coins.set(coin, (s = { px: 0, t: 0, oi: Number.NaN, bars: new Map(), vols: new Map(), ticks: [] }));
     return s;
   }
 
@@ -182,6 +240,7 @@ export class AlertEngine {
     s.px = 0;
     s.t = 0;
     s.bars.clear();
+    s.ticks = [];
   }
 
   /** Otwarte pozycje rynku (kontekst z WebSocket). */
@@ -202,7 +261,7 @@ export class AlertEngine {
   /** Interwały, których świece są potrzebne: alarmów rynku i minuta do faktów przy dotknięciu. */
   intervals(rules: readonly AlertRule[], coin: string): string[] {
     const set = new Set<string>();
-    for (const r of rules) if (r.coin === coin) set.add(r.kind === 'touch' ? '1m' : r.iv);
+    for (const r of rules) if (r.coin === coin) set.add(r.kind === 'touch' || r.kind === 'squeeze' ? '1m' : r.iv);
     return [...set];
   }
 
@@ -218,6 +277,8 @@ export class AlertEngine {
     for (const iv of [...s.bars.keys()]) if (!ivs.includes(iv)) s.bars.delete(iv);
     const done = new Set<string>();
     const sorted = trades.length > 1 ? [...trades].sort((a, b) => a.time - b.time) : trades;
+    const squeeze = work.some((r) => r.kind === 'squeeze');
+    if (!squeeze && s.ticks.length > 0) s.ticks = [];
 
     for (const tr of sorted) {
       // Starsze niż ostatnia przetworzona (migawka po ponownym połączeniu) — już policzone albo sprzed przerwy
@@ -239,6 +300,7 @@ export class AlertEngine {
         const book = tr.side === 1 ? b.buys : b.sells;
         book.set(tr.key, (book.get(tr.key) ?? 0) + tr.px * tr.sz);
       }
+      if (squeeze) tick(s, tr);
       for (const r of work) {
         if (done.has(r.id) || r.after || tr.time < r.created) continue;
         if (tr.time >= r.until) {
@@ -249,6 +311,14 @@ export class AlertEngine {
           const m = s.bars.get('1m');
           events.push({ type: 'fire', rule: r, at: tr.time, px: tr.px, facts: m ? this.facts(s, '1m', m, true) : null });
         } else if (r.kind === 'reclaim' && !r.armed && (r.dir === 1 ? tr.px < r.price : tr.px > r.price)) r.armed = true;
+        else if (r.kind === 'squeeze' && inWindow(r, tr.time)) {
+          const move = squeezeMove(s, r, tr.px);
+          if (!move) continue;
+          done.add(r.id);
+          const m = s.bars.get('1m');
+          const facts = m ? { ...this.facts(s, '1m', m, true), oiPct: Number.NaN, move } : null;
+          events.push({ type: 'fire', rule: r, at: tr.time, px: tr.px, facts });
+        }
       }
       s.px = tr.px;
       s.t = tr.time;
@@ -301,7 +371,7 @@ export class AlertEngine {
     const close = s.px;
     let facts: AlertFacts | null = null;
     for (const r of work) {
-      if (done.has(r.id) || r.after || r.kind === 'touch' || r.iv !== iv || end <= r.created) continue;
+      if (done.has(r.id) || r.after || r.kind === 'touch' || r.kind === 'squeeze' || r.iv !== iv || end <= r.created) continue;
       if (r.kind === 'reclaim' && !r.armed) continue;
       if (!beyond(r, close)) {
         r.streak = 0;
@@ -363,7 +433,13 @@ export function ruleText(r: Pick<AlertRule, 'kind' | 'dir' | 'price' | 'iv' | 'c
   const up = r.dir === 1;
   let t: string;
   if (r.kind === 'touch') t = en ? `${up ? 'rise' : 'drop'} to ${L}` : `${up ? 'wzrost' : 'spadek'} do ${L}`;
-  else if (r.kind === 'close') {
+  else if (r.kind === 'squeeze') {
+    const p = fixed(r.price, 1, lang);
+    const oi = fixed(SQUEEZE_OI_PCT, 1, lang);
+    t = en
+      ? `${up ? 'short' : 'long'} squeeze: ${up ? 'rise' : 'drop'} of ${p}% within 10 min, OI down at least ${oi}%`
+      : `wyciskanie ${up ? 'shortów' : 'longów'}: ${up ? 'wzrost' : 'spadek'} o ${p}% w 10 min, OI w dół co najmniej ${oi}%`;
+  } else if (r.kind === 'close') {
     const side = en ? (up ? 'above' : 'below') : up ? 'nad' : 'pod';
     t =
       r.closes > 1
@@ -375,7 +451,7 @@ export function ruleText(r: Pick<AlertRule, 'kind' | 'dir' | 'price' | 'iv' | 'c
       ? `${up ? 'dip below' : 'move above'} ${L}, then ${back} back ${up ? 'above' : 'below'}`
       : `${up ? 'zejście pod' : 'wyjście nad'} ${L}, potem ${back} z powrotem ${up ? 'nad' : 'pod'}`;
   }
-  if (r.delta && r.kind !== 'touch') t += en ? ` · ${up ? 'positive' : 'negative'} delta` : ` · delta ${up ? 'dodatnia' : 'ujemna'}`;
+  if (r.delta && (r.kind === 'close' || r.kind === 'reclaim')) t += en ? ` · ${up ? 'positive' : 'negative'} delta` : ` · delta ${up ? 'dodatnia' : 'ujemna'}`;
   return t;
 }
 
@@ -386,13 +462,25 @@ export function eventText(e: AlertEvent, lang: Lang): string {
   const L = fmtLevel(r.price, lang);
   const C = fmtLevel(e.px, lang);
   const iv = r.iv;
-  if (e.type === 'expire') return en ? `${r.coin} alert at ${L} expired without triggering` : `Alarm ${r.coin} ${L} wygasł bez uruchomienia`;
+  // Alarm wyciskania nie ma poziomu ceny (pole `price` to próg w %)
+  const name = r.kind === 'squeeze' ? (en ? `${r.coin} squeeze alert` : `Alarm wyciskania ${r.coin}`) : en ? `${r.coin} alert at ${L}` : `Alarm ${r.coin} ${L}`;
+  if (e.type === 'expire') return en ? `${name} expired without triggering` : `${name} wygasł bez uruchomienia`;
   // Anulowany alarm z łańcucha wciąż czeka (`after`): alarm przed nim wygasł albo został anulowany
   if (e.type === 'cancel')
     return r.after
-      ? en ? `${r.coin} alert at ${L} cancelled: the alert it was waiting for did not fire` : `Alarm ${r.coin} ${L} anulowany: alarm, na który czekał, nie zadziałał`
-      : en ? `${r.coin} alert at ${L} cancelled: its paired alert fired` : `Alarm ${r.coin} ${L} anulowany: zadziałał alarm z pary`;
+      ? en ? `${name} cancelled: the alert it was waiting for did not fire` : `${name} anulowany: alarm, na który czekał, nie zadziałał`
+      : en ? `${name} cancelled: its paired alert fired` : `${name} anulowany: zadziałał alarm z pary`;
   if (r.kind === 'touch') return en ? `${r.coin} price reached ${L}` : `Cena ${r.coin} doszła do ${L}`;
+  if (r.kind === 'squeeze') {
+    const m = e.facts?.move;
+    const what = en ? `${r.coin} ${r.dir === 1 ? 'short' : 'long'} squeeze` : `Wyciskanie ${r.dir === 1 ? 'shortów' : 'longów'} ${r.coin}`;
+    if (!m) return `${what} (${C})`;
+    const mins = Math.max(1, Math.round((e.at - m.at) / MIN));
+    const pct = signed(((e.px - m.from) / m.from) * 100, 2, lang);
+    return en
+      ? `${what}: ${pct}% in ${mins} min (from ${fmtLevel(m.from, lang)} to ${C}), OI ${signed(m.oiPct, 1, lang)}%`
+      : `${what}: ${pct}% w ${mins} min (z ${fmtLevel(m.from, lang)} do ${C}), OI ${signed(m.oiPct, 1, lang)}%`;
+  }
   const side = en ? (r.dir === 1 ? 'above' : 'below') : r.dir === 1 ? 'nad' : 'pod';
   if (r.kind === 'close')
     return r.closes > 1

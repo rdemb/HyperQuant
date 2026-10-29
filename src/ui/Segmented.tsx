@@ -9,15 +9,17 @@ interface SegmentedProps<T extends string | number> {
   size?: 'xs' | 'sm' | 'md';
   /** Zawijanie do kolejnego wiersza, gdy opcje nie mieszczą się w szerokości (zamiast ukrytego przewijania). */
   wrap?: boolean;
+  /** Siatka dwóch równych kolumn na całą szerokość (np. cztery opcje w wąskim panelu). */
+  cols?: 2;
 }
 
 /** Przełącznik segmentowy (radiogroup) — używany do interwałów, trybów i widoków. */
-export function Segmented<T extends string | number>({ value, options, onChange, ariaLabel, size = 'sm', wrap = false }: SegmentedProps<T>) {
+export function Segmented<T extends string | number>({ value, options, onChange, ariaLabel, size = 'sm', wrap = false, cols }: SegmentedProps<T>) {
   return (
     <div
       role="radiogroup"
       aria-label={ariaLabel}
-      className={`inline-flex${wrap ? ' flex-wrap' : ''} items-center gap-0.5 bg-page border border-line rounded-lg p-0.5`}
+      className={`${cols === 2 ? 'grid grid-cols-2' : `inline-flex${wrap ? ' flex-wrap' : ''}`} items-center gap-0.5 bg-page border border-line rounded-lg p-0.5`}
       onKeyDown={(e) => {
         // Nawigacja strzałkami jak w natywnej grupie radio
         if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
