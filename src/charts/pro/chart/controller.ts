@@ -645,11 +645,11 @@ export class ProChartController {
     return this.main.priceToCoordinate(price);
   }
 
-  /** Poziomy alertów cenowych rynku jako przerywane linie z etykietą na osi. */
-  setAlerts(prices: readonly number[]): void {
+  /** Poziomy alarmów rynku: przerywana linia z opisem warunku i etykietą na osi; ciągła, gdy warunek jest w toku (powrót, seria). */
+  setAlerts(lines: readonly { price: number; title: string; armed: boolean }[]): void {
     for (const l of this.alertLines) this.main.removePriceLine(l);
-    this.alertLines = prices.map((price) =>
-      this.main.createPriceLine({ price, color: PRO.warn, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: 'Alert' })
+    this.alertLines = lines.map(({ price, title, armed }) =>
+      this.main.createPriceLine({ price, color: PRO.warn, lineWidth: 1, lineStyle: armed ? LineStyle.Solid : LineStyle.Dashed, axisLabelVisible: true, title })
     );
   }
 

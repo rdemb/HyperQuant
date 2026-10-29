@@ -108,3 +108,14 @@ self.addEventListener('fetch', (event) => {
   }
   event.respondWith(networkWithFallback(request));
 });
+
+// Kliknięcie powiadomienia alarmu: powrót do otwartej karty desku (najpierw z Wykresami), a bez niej — nowe okno Wykresów
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+      const tab = list.find((c) => new URL(c.url).hash.startsWith('#charts')) || list[0];
+      return tab ? tab.focus() : self.clients.openWindow('./#charts');
+    })
+  );
+});
