@@ -48,18 +48,15 @@ jobs:
             echo "ok=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          # Sekret wklejony ze spacją, nowym wierszem, z przykładowym poleceniem „curl … Bearer …” z panelu Cloudflare
-          # albo razem z identyfikatorem konta: token i konto wyłuskane z treści (w dzienniku tylko długości wierszy)
-          parsed="$(printf '%s' "$TOKEN_SET" | node -e 'const s=require("fs").readFileSync(0,"utf8");const L=s.split(/\r?\n/).map((l)=>l.trim()).filter(Boolean);const b=s.match(/Bearer\s+([^\s"\x27]+)/);const id=L.find((l)=>/^[0-9a-f]{32}$/.test(l))??(s.match(/accounts\/([0-9a-f]{32})/)??[])[1]??"";const c=L.filter((l)=>l!==id&&/^[^\s"\x27]{20,}$/.test(l));const t=b?b[1]:c.length===1?c[0]:"";if(!t)console.error(L.map((l,i)=>`wiersz ${i+1}: ${l.length} znaków${/\s/.test(l)?", ze spacjami":""}${/curl|http/i.test(l)?", polecenie":""}`).join("; "));process.stdout.write(`${t}\n${id}\n`)')"
-          { read -r token; read -r guessed; } <<< "$parsed" || true
-          if [ -z "$token" ]; then
-            echo "::error::Sekret CLOUDFLARE_API_TOKEN nie zawiera rozpoznawalnego tokenu API. Wklej sam token."
+          # Token bez spacji i nowych wierszy z kopiowania; inna treść sekretu to błąd (w dzienniku tylko długości wierszy)
+          token="$(printf '%s' "$TOKEN_SET" | tr -d '[:space:]')"
+          if [ "$(printf '%s' "$TOKEN_SET" | wc -w)" -ne 1 ]; then
+            echo "::error::Sekret CLOUDFLARE_API_TOKEN to nie sam token (wiersze: $(printf '%s\n' "$TOKEN_SET" | awk '{ printf "%d znaków, %d słów; ", length($0), NF }')). Wklej sam token."
             exit 1
           fi
           echo "::add-mask::$token"
           echo "CLOUDFLARE_API_TOKEN=$token" >> "$GITHUB_ENV"
           account="$(printf '%s' "$ACCOUNT_ID_SET" | tr -d '[:space:]')"
-          account="${account:-$guessed}"
           if [ -z "$account" ]; then
             account="$(curl -fsS -H "Authorization: Bearer $token" 'https://api.cloudflare.com/client/v4/accounts?per_page=5' | node -e 'const r=JSON.parse(require("fs").readFileSync(0,"utf8")).result??[];process.stdout.write(r.length===1?r[0].id:"")')" || account=""
           fi
