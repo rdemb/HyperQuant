@@ -160,6 +160,7 @@ describe('alarmy: wygaśnięcie i para scenariuszy', () => {
       ['cancel', 'l'],
     ]);
     expect(list.map((r) => r.id)).toEqual(['o']);
+    expect(eventText(events[1], 'pl')).toBe('Alarm BTC 64 670 anulowany: zadziałał alarm z pary');
   });
 });
 
@@ -186,6 +187,8 @@ describe('alarmy: łańcuch', () => {
       ['cancel', 'n'],
     ]);
     expect(list).toEqual([]);
+    expect(eventText(events[1], 'pl')).toBe('Alarm BTC 81 000 anulowany: alarm, na który czekał, nie zadziałał');
+    expect(eventText(events[1], 'en')).toBe('BTC alert at 81,000 cancelled: the alert it was waiting for did not fire');
   });
 });
 
