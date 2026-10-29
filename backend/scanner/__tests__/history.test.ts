@@ -117,6 +117,33 @@ describe('MarketRecorder — nagranie taśmy, arkusza i kontekstu jednego rynku'
     expect(existsSync(join(dir, historyPath('SOL', T0, 'trades', true)))).toBe(false);
     expect(existsSync(join(dir, historyPath('SOL', T0, 'book', false)))).toBe(true);
   });
+  it('zatrzymanie (SIGTERM): bieżąca część zapisana do chwili zatrzymania; po restarcie dopisana do tej samej części', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hq-hist-'));
+    const r = new MarketRecorder('BTC', dir);
+    r.onState(true, T0);
+    r.onTrades([trade(T0 + 1000, 1, 'B', 1, 2, HASH(6))]);
+    r.onTrades([trade(T0 + 60_000, 2, 'A', 3, 2, ZERO)]);
+    expect(r.flush(T0 + 2 * MIN, true)).toBe(2);
+    expect(decodeTrades(read(dir, 'BTC', T0, 'trades', true))!.spans).toEqual([[T0 + 1000, T0 + 2 * MIN]]);
+    // Nowy proces: migawka od transakcji sprzed zatrzymania, nagranie dalej w tej samej części
+    const r2 = new MarketRecorder('BTC', dir);
+    r2.onState(true, T0 + 2 * MIN + 20_000);
+    r2.onTrades([trade(T0 + 60_000, 2, 'A', 3, 2, ZERO), trade(T0 + 2 * MIN + 10_000, 3, 'B', 4, 2, HASH(7))]);
+    r2.onTrades([trade(T0 + 3 * MIN, 4, 'B', 1, 2, HASH(8))]);
+    r2.flush(T0 + 5 * MIN + SETTLE_MS);
+    const f = decodeTrades(read(dir, 'BTC', T0, 'trades', true))!;
+    // Powtórzona transakcja raz; numeracja dalej od zapisanej części (jak przy każdym restarcie, adresów nie ma w plikach)
+    expect(f.trades.map((x) => [x.tid, x.o, x.k])).toEqual([
+      [1, 0, 0],
+      [2, 1, 2],
+      [3, 3, 5],
+      [4, 4, 6],
+    ]);
+    expect([...f.spans].sort((a, b) => a[0] - b[0])).toEqual([
+      [T0 + 1000, T0 + 2 * MIN],
+      [T0 + 2 * MIN + 10_000, T0 + 5 * MIN],
+    ]);
+  });
 });
 
 describe('historyIndex i pruneHistory', () => {

@@ -53,7 +53,9 @@ Suma SHA-256 wykrywa uszkodzenie archiwum; podpis GPG pliku sum nie jest sprawdz
 Podgląd: `journalctl -u hyperquant-scanner -f`, wynik: `/var/lib/hyperquant/out/`.
 
 **Aktualizacja automatyczna** (`hyperquant-update.timer`, instalowany przez `install.sh`): co 15 min, 3 min przed slotem dziennika
-(po migawce rynku HIP-4), `git fetch` i porównanie z gałęzią zdalną; tylko po zmianie `reset --hard` i restart skanera. Polecenia
+(po migawce rynku HIP-4), `git fetch` i porównanie z gałęzią zdalną; po zmianie `reset --hard`, a restart skanera tylko wtedy, gdy
+zmiana dotyka jego kodu (`backend`, `src`, `public/schrodi`, `package.json`, `package-lock.json`), więc wpis bloga nie przerywa nagrania. Przy
+zatrzymaniu skaner zapisuje bieżącą 5-minutową część taśmy, a po starcie dopisuje do niej dalsze nagranie. Polecenia
 są wpisane w pliku usługi, więc kod z repo nie wykonuje się jako root. Zmiany plików usług systemd (`backend/deploy/*.service`,
 `*.timer`) i wersji Node wymagają ponownego `install.sh`. Wstrzymanie: `systemctl disable --now hyperquant-update.timer`,
 dziennik: `journalctl -u hyperquant-update`.
