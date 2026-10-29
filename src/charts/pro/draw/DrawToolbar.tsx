@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { Copy, Eye, EyeOff, Lock, LockOpen, Magnet, MousePointer2, PencilLine, Redo2, Trash2, Undo2 } from 'lucide-react';
+import { Bell, Copy, Eye, EyeOff, Lock, LockOpen, Magnet, MousePointer2, PencilLine, Redo2, Trash2, Undo2 } from 'lucide-react';
 import { DRAW_COLORS, DRAW_WIDTHS, Dash, TOOLS, ToolDef, ToolGroup, ToolKind, toolDef } from './model';
 import type { DrawState, DrawingTools } from './tools';
 import { tr } from '../../../i18n';
@@ -367,7 +367,8 @@ const DASH_OPTIONS: { value: Dash; label: string; d: string }[] = [
 const HAS_TEXT = new Set<ToolKind>(['text', 'note', 'hline', 'hray']);
 
 /** Pasek stylu zaznaczonego rysunku (prawy górny róg panelu, obok osi ceny): kolor, grubość, rodzaj linii, tekst, kopia i usunięcie. */
-export const DrawStyleBar: React.FC<{ tools: DrawingTools | null }> = ({ tools }) => {
+/** `onAlert` — alarm na poziomie zaznaczonej linii poziomej (bez niego, np. w powtórce, przycisku nie ma). */
+export const DrawStyleBar: React.FC<{ tools: DrawingTools | null; onAlert?: (price: number) => void }> = ({ tools, onAlert }) => {
   const st = useDrawState(tools);
   const d = st.selected;
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -460,6 +461,17 @@ export const DrawStyleBar: React.FC<{ tools: DrawingTools | null }> = ({ tools }
         </>
       )}
       <Sep />
+      {onAlert && (d.kind === 'hline' || d.kind === 'hray') && (
+        <button
+          type="button"
+          title={tr('Alarm na tym poziomie', 'Alert at this level')}
+          aria-label={tr('Alarm na tym poziomie', 'Alert at this level')}
+          onClick={() => onAlert(d.pts[0].p)}
+          className="w-7 h-7 rounded-md flex items-center justify-center text-warn hover:bg-surface-3"
+        >
+          <Bell className="w-4 h-4" />
+        </button>
+      )}
       <button
         type="button"
         title={tr('Kopia rysunku (Ctrl+C, Ctrl+V)', 'Copy drawing (Ctrl+C, Ctrl+V)')}

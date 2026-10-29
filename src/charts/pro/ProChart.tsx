@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { Bell, BellOff, Camera, ChevronDown, ChevronsRight, Columns2, Copy, Grid2x2, History, Keyboard, Layers, Link, ListOrdered, Maximize2, Minimize2, Minus, MoreHorizontal, PenTool, RotateCcw, SlidersHorizontal, Square, X } from 'lucide-react';
+import { Bell, BellOff, BellPlus, Camera, ChevronDown, ChevronsRight, Columns2, Copy, Grid2x2, History, Keyboard, Layers, Link, ListOrdered, Maximize2, Minimize2, Minus, MoreHorizontal, PenTool, RotateCcw, SlidersHorizontal, Square, X } from 'lucide-react';
 import { Badge, BadgeTone, Segmented, numLang } from '../../ui';
 import { LiqMapState, useLiqMap } from '../../state/useLiqMap';
 import { usePublished } from '../../state/usePublished';
@@ -17,7 +17,11 @@ import { DomLadder, PickCard, TapePanel, compact } from './chart/FlowPanels';
 import { HoverSignal, Legend } from './chart/Legend';
 import { LOT_FLOOR, type LiquidityPick } from './chart/liquidity';
 import { brandedScreenshot, downloadCanvas } from './chart/screenshot';
-import { MAX_ALERTS, PriceAlert, alertBook, askNotifications, newAlert, notifyAlert, parsePriceInput, primeAlertSound, reached } from './chart/alerts';
+import { MAX_ALERTS, type PriceAlert, addAlert, alertBook, alertLog, askNotifications, lastSeen, lineLabel, markSeen, primeAlertSound, removeAlert } from './chart/alerts';
+import { type LinkAlarm, linkAlerts, parseAlarmLink } from './chart/alarmLink';
+import { AlarmLinkCard, type AlertDraft, AlertsMenu } from './chart/AlertsMenu';
+import { onAlertEvents, startAlertWatch } from './chart/alertWatch';
+import { DEFAULT_TTL_MS, defaultDir, eventText } from '../../utils/alertRules';
 import { fmtPx, priceDigits } from './chart/layout';
 import { ChartLayout, ChartSettings, NARROW_QUERY, PHONE_PANES, PhonePane, hashFor, isNarrow, loadSettings, phoneSettings, saveSettings, settingsFromHash } from './chart/settings';
 import { STATIONS, Station, StationId, stationKey, stationPanel } from './chart/stations';
@@ -31,12 +35,12 @@ import type { FootprintStyle } from './chart/layout';
 import { DrawHint, DrawStyleBar, DrawToolbar } from './draw/DrawToolbar';
 import { TOOLS } from './draw/model';
 import { type DrawingTools, isTyping } from './draw/tools';
-import { CandleSeries, MARKETS, Market, ProStore, openStores, storeFor } from './store/proStore';
+import { CandleSeries, MARKETS, Market, ProStore, storeFor } from './store/proStore';
 import { startRecording } from './store/recording';
 import { ReplayBar } from './replay/ReplayBar';
 import { type ReplayLink, linkPatch, parseReplayLink, replayHash } from './replay/link';
 import { type ReplaySession, replayBase } from './replay/session';
-import { tr } from '../../i18n';
+import { lang, tr } from '../../i18n';
 
 const MARKET_OPTIONS = MARKETS.map((m) => ({ value: m, label: m, title: `${m}-PERP · Hyperliquid` }));
 const INTERVAL_OPTIONS = INTERVALS.map((i) => ({ value: i.id, label: i.label }));
@@ -193,7 +197,7 @@ export const ProChart: React.FC<{
   const inReplay = replay !== undefined;
   const store = replay ? replay.store : storeFor(settings.coin);
   const series = store.series(settings.interval);
-  const [menu, setMenu] = useState<'settings' | 'indicators' | 'keys' | 'more' | null>(null);
+  const [menu, setMenu] = useState<'settings' | 'indicators' | 'alerts' | 'keys' | 'more' | null>(null);
   const [indicatorsTab, setIndicatorsTab] = useState<IndicatorsTab>('price');
   const [fullscreen, setFullscreen] = useState(false);
   const narrow = useSyncExternalStore(subscribeNarrow, isNarrow);
@@ -207,6 +211,13 @@ export const ProChart: React.FC<{
   // Menu pod prawym przyciskiem (punkt w pikselach wykresu i cena w tym punkcie), alerty cenowe, krótki komunikat
   const [ctxMenu, setCtxMenu] = useState<CtxMenuAt | null>(null);
   const alerts = useSyncExternalStore(alertBook.subscribe, alertBook.get);
+  const log = useSyncExternalStore(alertLog.subscribe, alertLog.get);
+  // Cena z wykresu dla formularza alarmu i chwila ostatniego obejrzenia historii (kropka na dzwonku)
+  const [alertDraft, setAlertDraft] = useState<AlertDraft | null>(null);
+  const [seen, setSeen] = useState(lastSeen);
+  const freshAlert = log.some((e) => e.type === 'fire' && e.at > seen);
+  // Zestaw alarmów z linku (czytany przed pierwszym przepisaniem adresu na link do widoku)
+  const [linkSet, setLinkSet] = useState<LinkAlarm[] | null>(() => (panel === 0 && !inReplay ? parseAlarmLink(window.location.hash) : null));
   const [toast, setToast] = useState<string | null>(null);
   const ctxRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
@@ -295,6 +306,8 @@ export const ProChart: React.FC<{
     if (panel !== 0 || inReplay) return;
     const onHash = () => {
       if (parseReplayLink(window.location.hash)) return;
+      const set = parseAlarmLink(window.location.hash);
+      if (set) setLinkSet(set);
       const p = settingsFromHash(window.location.hash);
       if (Object.keys(p).length > 0) setSettings((s) => withPatch(s, p));
     };
@@ -302,9 +315,9 @@ export const ProChart: React.FC<{
     return () => window.removeEventListener('hashchange', onHash);
   }, [panel, inReplay]);
 
-  // Alerty działają na cenie na żywo — w powtórce bez ich linii
+  // Alarmy działają na cenie na żywo — w powtórce bez ich linii
   useEffect(() => {
-    ctrlRef.current?.setAlerts(store.replay ? [] : alerts.filter((a) => a.coin === store.coin).map((a) => a.price));
+    ctrlRef.current?.setAlerts(store.replay ? [] : alerts.filter((a) => a.coin === store.coin).map((a) => ({ price: a.price, title: lineLabel(a), armed: a.armed || a.streak > 0 })));
   }, [alerts, store]);
 
   // Strefa ceny z linku powtórki (np. z lekcji)
@@ -314,28 +327,29 @@ export const ProChart: React.FC<{
     ctrlRef.current?.setZone(zoneLo > 0 ? [zoneLo, zoneHi] : null);
   }, [zoneLo, zoneHi, store]);
 
-  // Rynek z alertem ma własny strumień także wtedy, gdy na wykresie jest inny
+  // Rynki z linku z alarmami nagrywają od razu, żeby kierunek dotknięcia wynikał z bieżącej ceny
   useEffect(() => {
-    for (const m of MARKETS) if (alerts.some((a) => a.coin === m)) storeFor(m).start();
-  }, [alerts]);
+    for (const c of new Set(linkSet?.map((e) => e.c))) storeFor(c as Market).start();
+  }, [linkSet]);
+  const linkPreview = linkSet ? linkAlerts(linkSet, (c) => storeFor(c as Market).lastPrice(), 0, Date.now()) : null;
+  const addLinkSet = (replace: boolean) => {
+    if (!linkSet) return;
+    const made = linkAlerts(linkSet, (c) => storeFor(c as Market).lastPrice(), store.serverNow(), Date.now());
+    alertBook.update((l) => [...(replace ? [] : l), ...made].slice(-MAX_ALERTS));
+    primeAlertSound();
+    void askNotifications();
+    setLinkSet(null);
+    setToast(tr(`Dodano alarmy z linku: ${made.length}`, `Alerts added from the link: ${made.length}`));
+  };
 
-  // Alerty cenowe (sprawdza pierwszy panel): co sekundę cena bieżącej świecy każdego rynku otwartego na stronie
+  // Alarmy pilnuje moduł strony (każda transakcja rynku z alarmem, także po wyjściu z Wykresów); komunikat w pierwszym panelu
   useEffect(() => {
+    startAlertWatch();
     if (panel !== 0) return;
-    const id = setInterval(() => {
-      const list = alertBook.get();
-      if (list.length === 0) return;
-      const fired: PriceAlert[] = [];
-      for (const st of openStores()) {
-        const px = st.lastPrice();
-        if (px > 0) for (const a of list) if (a.coin === st.coin && reached(a, px)) fired.push(a);
-      }
-      if (fired.length === 0) return;
-      alertBook.update((l) => l.filter((a) => !fired.includes(a)));
-      for (const a of fired) notifyAlert(tr(`Cena ${a.coin} doszła do ${fmtPx(a.price)}`, `${a.coin} price reached ${fmtPx(a.price)}`), a.id);
-      setToast(tr(`Alert: cena ${fired[0].coin} doszła do ${fmtPx(fired[0].price)}`, `Alert: ${fired[0].coin} price reached ${fmtPx(fired[0].price)}`));
-    }, 1000);
-    return () => clearInterval(id);
+    return onAlertEvents((events) => {
+      const fired = events.find((e) => e.type === 'fire');
+      if (fired) setToast(`🔔 ${eventText(fired, lang)}`);
+    });
   }, [panel]);
 
   useEffect(() => {
@@ -450,16 +464,25 @@ export const ProChart: React.FC<{
     window.location.hash = replayHash({ source: 'history', coin: settings.coin, interval: settings.interval, view: settings.view });
   };
 
-  const addAlert = (price: number) => {
-    if (inReplay) {
-      setToast(tr('Alerty działają na wykresie na żywo — wróć do niego, aby ustawić alert', 'Alerts work on the live chart — go back to it to set an alert'));
-      return;
-    }
-    const last = store.lastPrice() || price;
-    alertBook.update((l) => [...l, newAlert(store.coin, price, last)].slice(-MAX_ALERTS));
-    primeAlertSound();
-    askNotifications();
-    setToast(tr(`Alert przy ${fmtPx(price)} (${store.coin}) — działa, gdy strona jest otwarta`, `Alert at ${fmtPx(price)} (${store.coin}) — works while the page is open`));
+  const liveOnly = () => {
+    if (inReplay) setToast(tr('Alarmy działają na wykresie na żywo — wróć do niego, aby ustawić alarm', 'Alerts work on the live chart — go back to it to set an alert'));
+    return !inReplay;
+  };
+  // Szybki alarm z menu wykresu: dotknięcie poziomu, kierunek z położenia względem ceny
+  const addTouch = (price: number) => {
+    if (!liveOnly()) return;
+    const now = store.serverNow();
+    const dir = defaultDir('touch', price, store.lastPrice() || price);
+    addAlert({ coin: store.coin, price, kind: 'touch', dir, iv: '15m', closes: 1, delta: false, from: now, until: now + DEFAULT_TTL_MS, pair: '', note: '', after: '' }, now);
+    setToast(tr(`Alarm przy ${fmtPx(price)} (${store.coin}): dotknięcie poziomu`, `Alert at ${fmtPx(price)} (${store.coin}): level touch`));
+  };
+  const openAlerts = (draft: AlertDraft | null) => {
+    if (draft && !liveOnly()) return;
+    setAlertDraft(draft);
+    setMenu('alerts');
+    const now = Date.now();
+    markSeen(now);
+    setSeen(now);
   };
 
   const onContextMenu = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -559,6 +582,11 @@ export const ProChart: React.FC<{
             >
               <ListOrdered className="w-4 h-4" />
             </ToolBtn>
+            {!inReplay && (
+              <ToolBtn label={tr('Alarmy cenowe', 'Price alerts')} onClick={() => (menu === 'alerts' ? setMenu(null) : openAlerts(null))} active={menu === 'alerts'} expanded={menu === 'alerts'}>
+                <BellBadge count={alerts.length} fresh={freshAlert} />
+              </ToolBtn>
+            )}
             <ToolBtn label={tr('Ustawienia wykresu', 'Chart settings')} onClick={() => setMenu((m) => (m === 'settings' ? null : 'settings'))} active={menu === 'settings'} expanded={menu === 'settings'}>
               <SlidersHorizontal className="w-4 h-4" />
             </ToolBtn>
@@ -639,6 +667,11 @@ export const ProChart: React.FC<{
             <ToolBtn label={tr('Wskaźniki: na wykresie ceny i pod nim', 'Indicators: on the price chart and below it')} onClick={() => setMenu((m) => (m === 'indicators' ? null : 'indicators'))} active={menu === 'indicators'} expanded={menu === 'indicators'}>
               <Layers className="w-4 h-4" />
             </ToolBtn>
+            {!inReplay && (
+              <ToolBtn label={tr('Alarmy cenowe', 'Price alerts')} onClick={() => (menu === 'alerts' ? setMenu(null) : openAlerts(null))} active={menu === 'alerts'} expanded={menu === 'alerts'}>
+                <BellBadge count={alerts.length} fresh={freshAlert} />
+              </ToolBtn>
+            )}
             <ToolBtn label={tr('Ustawienia wykresu', 'Chart settings')} onClick={() => setMenu((m) => (m === 'settings' ? null : 'settings'))} active={menu === 'settings'} expanded={menu === 'settings'}>
               <SlidersHorizontal className="w-4 h-4" />
             </ToolBtn>
@@ -672,7 +705,7 @@ export const ProChart: React.FC<{
           <div ref={hostRef} className="absolute inset-0" />
           <AutoScaleBtn scale={scale} onToggle={() => ctrlRef.current?.setAutoScale(!scale.auto)} />
           <Legend signal={signal} intervalMs={iv.ms} intervalLabel={iv.label} tapeSince={tapeSince} coin={store.coin} onBottom={onLegendBottom} compact={narrow} multi={layout > 1} />
-          <DrawStyleBar tools={tools} />
+          <DrawStyleBar tools={tools} onAlert={inReplay ? undefined : (p) => openAlerts({ price: toTick(p), kind: 'close' })} />
           <DrawHint tools={tools} />
           <LoadOverlay series={series} onRetry={() => void series.load(true)} />
           {narrow && tab === 'tape' && (
@@ -699,8 +732,9 @@ export const ProChart: React.FC<{
               coin={store.coin}
               nearAlert={alerts.find((a) => a.coin === store.coin && Math.abs((ctrlRef.current?.yOf(a.price) ?? -1e9) - ctxMenu.y) <= 8) ?? null}
               onClose={() => setCtxMenu(null)}
-              onAlert={addAlert}
-              onRemoveAlert={(a) => alertBook.update((l) => l.filter((x) => x !== a))}
+              onAlert={addTouch}
+              onAlertMore={(p) => openAlerts({ price: toTick(p), kind: 'close' })}
+              onRemoveAlert={(a) => removeAlert(a.id)}
               onLine={() => tools?.addHorizontal(ctxMenu.x, ctxMenu.y)}
               onCopyPrice={(p) => copy(fmtPx(p).replace(/,/g, ''), tr(`Skopiowano cenę ${fmtPx(p)}`, `Price ${fmtPx(p)} copied`))}
               onCopyLink={copyLink}
@@ -708,6 +742,11 @@ export const ProChart: React.FC<{
               onReset={() => ctrlRef.current?.resetScales()}
               onShot={screenshot}
             />
+          )}
+          {linkPreview && (
+            <div className="absolute left-2 top-2 z-40 w-[min(380px,calc(100%-16px))] max-h-[calc(100%-16px)] overflow-y-auto rounded-xl">
+              <AlarmLinkCard list={linkPreview} existing={alerts.length} onAdd={addLinkSet} onClose={() => setLinkSet(null)} />
+            </div>
           )}
           {toast && (
             <div role="status" className="absolute left-1/2 -translate-x-1/2 top-2 z-40 max-w-[calc(100%-16px)] rounded-lg border border-line-strong bg-surface-2 px-3 py-2 text-xs text-ink-1 shadow-2xl">
@@ -726,14 +765,12 @@ export const ProChart: React.FC<{
                   settings={settings}
                   bigUsd={bigUsd}
                   tick={tick}
-                  price={store.lastPrice()}
-                  alerts={alerts}
-                  onAddAlert={(p) => addAlert(toTick(p))}
-                  onRemoveAlert={(a) => alertBook.update((l) => l.filter((x) => x !== a))}
                   onChange={update}
                   onReset={() => setSettings({ ...stationPanel(station, panel, isNarrow()), coin: settings.coin, interval: settings.interval })}
                   narrow={narrow}
                 />
+              ) : menu === 'alerts' ? (
+                <AlertsMenu key={alertDraft ? `${alertDraft.price}-${alertDraft.kind}` : 'new'} coin={store.coin} price={store.lastPrice()} draft={alertDraft} serverNow={() => store.serverNow()} />
               ) : menu === 'keys' ? (
                 <KeysMenu />
               ) : menu === 'more' ? (
@@ -962,6 +999,17 @@ const ToolBtn: React.FC<{ label: string; onClick: () => void; children: React.Re
   </button>
 );
 
+/** Dzwonek alarmów: liczba aktywnych i kropka przy zdarzeniu, którego jeszcze nie obejrzano. */
+const BellBadge: React.FC<{ count: number; fresh: boolean }> = ({ count, fresh }) => (
+  <span className="relative inline-flex">
+    <Bell className={`w-4 h-4 ${fresh ? 'text-warn' : ''}`} />
+    {count > 0 && (
+      <span className="absolute -top-1.5 -right-2 min-w-3.5 h-3.5 px-0.5 rounded-full bg-warn text-page text-[9px] leading-[14px] font-semibold text-center tabular-nums">{count}</span>
+    )}
+    {fresh && <span className="absolute -top-1 -left-1 w-2 h-2 rounded-full bg-critical ring-2 ring-surface-1" />}
+  </span>
+);
+
 /** Miejsce otwarcia menu wykresu i cena pod kursorem (null poza panelem ceny). */
 interface CtxMenuAt {
   x: number;
@@ -971,7 +1019,7 @@ interface CtxMenuAt {
   up: boolean;
 }
 
-/** Menu pod prawym przyciskiem (na telefonie przytrzymanie): alert i linia przy cenie, kopiowanie, widok. */
+/** Menu pod prawym przyciskiem (na telefonie przytrzymanie): alarm i linia przy cenie, kopiowanie, widok. */
 const ChartMenu = React.forwardRef<
   HTMLDivElement,
   {
@@ -980,6 +1028,7 @@ const ChartMenu = React.forwardRef<
     nearAlert: PriceAlert | null;
     onClose: () => void;
     onAlert: (price: number) => void;
+    onAlertMore: (price: number) => void;
     onRemoveAlert: (a: PriceAlert) => void;
     onLine: () => void;
     onCopyPrice: (price: number) => void;
@@ -988,7 +1037,7 @@ const ChartMenu = React.forwardRef<
     onReset: () => void;
     onShot: () => void;
   }
->(({ at, coin, nearAlert, onClose, onAlert, onRemoveAlert, onLine, onCopyPrice, onCopyLink, onNow, onReset, onShot }, ref) => {
+>(({ at, coin, nearAlert, onClose, onAlert, onAlertMore, onRemoveAlert, onLine, onCopyPrice, onCopyLink, onNow, onReset, onShot }, ref) => {
   const p = at.price;
   const item = (icon: React.ReactNode, label: string, run: () => void) => (
     <button
@@ -1017,8 +1066,9 @@ const ChartMenu = React.forwardRef<
           <div className="px-2.5 pt-1 pb-1.5 font-mono text-[11px] text-ink-3">
             {coin} · {fmtPx(p)}
           </div>
-          {item(<Bell className="w-4 h-4" />, tr(`Alert przy ${fmtPx(p)}`, `Alert at ${fmtPx(p)}`), () => onAlert(p))}
-          {nearAlert && item(<BellOff className="w-4 h-4" />, tr(`Usuń alert ${fmtPx(nearAlert.price)}`, `Remove alert ${fmtPx(nearAlert.price)}`), () => onRemoveAlert(nearAlert))}
+          {item(<Bell className="w-4 h-4" />, tr(`Alarm: dotknięcie ${fmtPx(p)}`, `Alert: touch of ${fmtPx(p)}`), () => onAlert(p))}
+          {item(<BellPlus className="w-4 h-4" />, tr(`Alarm z warunkiem przy ${fmtPx(p)}…`, `Alert with a condition at ${fmtPx(p)}…`), () => onAlertMore(p))}
+          {nearAlert && item(<BellOff className="w-4 h-4" />, tr(`Usuń alarm ${fmtPx(nearAlert.price)}`, `Remove alert ${fmtPx(nearAlert.price)}`), () => onRemoveAlert(nearAlert))}
           {item(<Minus className="w-4 h-4" />, tr(`Linia pozioma przy ${fmtPx(p)}`, `Horizontal line at ${fmtPx(p)}`), onLine)}
           {item(<Copy className="w-4 h-4" />, tr(`Kopiuj cenę ${fmtPx(p)}`, `Copy price ${fmtPx(p)}`), () => onCopyPrice(p))}
           <div className="my-1 border-t border-line" />
@@ -1074,15 +1124,11 @@ const SettingsMenu: React.FC<{
   settings: ChartSettings;
   bigUsd: number;
   tick: number;
-  price: number;
-  alerts: readonly PriceAlert[];
-  onAddAlert: (price: number) => void;
-  onRemoveAlert: (a: PriceAlert) => void;
   onChange: (p: Partial<ChartSettings>) => void;
   onReset: () => void;
   /** Telefon: styl footprintu tutaj (nie w pasku). */
   narrow: boolean;
-}> = ({ settings: s, bigUsd, tick, price, alerts, onAddAlert, onRemoveAlert, onChange, onReset, narrow }) => (
+}> = ({ settings: s, bigUsd, tick, onChange, onReset, narrow }) => (
   <div className="bg-surface-2 border border-line-strong rounded-xl p-3 shadow-2xl flex flex-col gap-3 text-xs">
     <Group title="Footprint">
       {narrow && (
@@ -1153,36 +1199,6 @@ const SettingsMenu: React.FC<{
         onChange={(v) => onChange({ bigTradeUsd: v })}
       />
       <Check label={tr('Dźwięk dużych zleceń (taśma)', 'Large order sound (tape)')} checked={s.tapeSound} onChange={(v) => onChange({ tapeSound: v })} />
-    </Group>
-    <Group title={tr('Alerty cenowe', 'Price alerts')}>
-      <AlertInput coin={s.coin} price={price} onAdd={onAddAlert} />
-      {alerts.length === 0 ? (
-        <p className="text-[11px] leading-snug text-ink-3">{tr('Albo prawy przycisk na wykresie → „Alert przy …”.', 'Or right-click on the chart → “Alert at …”.')}</p>
-      ) : (
-        <ul className="flex flex-col gap-1">
-          {alerts.map((a) => (
-            <li key={a.id} className="flex items-center justify-between gap-2 min-h-8">
-              <span className="font-mono text-ink-1">
-                {a.coin} · {a.dir === 1 ? tr('wzrost do', 'rise to') : tr('spadek do', 'drop to')} {fmtPx(a.price)}
-              </span>
-              <button
-                type="button"
-                aria-label={tr(`Usuń alert ${a.coin} ${fmtPx(a.price)}`, `Remove alert ${a.coin} ${fmtPx(a.price)}`)}
-                onClick={() => onRemoveAlert(a)}
-                className="inline-flex items-center justify-center w-8 h-8 rounded-md text-ink-3 hover:text-ink-1 hover:bg-surface-3"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-      <p className="text-[11px] leading-snug text-ink-3">
-        {tr(
-          'Jednorazowe; działają, gdy strona jest otwarta (dźwięk i powiadomienie przeglądarki po zgodzie).',
-          'One-off; they work while the page is open (sound and a browser notification once you allow it).'
-        )}
-      </p>
     </Group>
     <Templates settings={s} onApply={onChange} />
     <button
@@ -1483,41 +1499,6 @@ const IndicatorsMenu: React.FC<{
   );
 };
 
-/** Alert z wpisanej ceny — także na telefonach, na których przytrzymanie nie otwiera menu wykresu. */
-const AlertInput: React.FC<{ coin: string; price: number; onAdd: (price: number) => void }> = ({ coin, price, onAdd }) => {
-  const [text, setText] = useState('');
-  const value = parsePriceInput(text, price);
-  return (
-    <form
-      className="flex items-center gap-1.5"
-      onSubmit={(e) => {
-        e.preventDefault();
-        if (value === null) return;
-        onAdd(value);
-        setText('');
-      }}
-    >
-      <input
-        type="text"
-        inputMode="decimal"
-        aria-label={tr(`Cena alertu ${coin}`, `${coin} alert price`)}
-        placeholder={price > 0 ? `${coin} · ${fmtPx(price)}` : tr(`Cena ${coin}`, `${coin} price`)}
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        className="min-w-0 flex-1 h-9 px-2.5 rounded-lg bg-surface-1 border border-line font-mono text-ink-1 placeholder:text-ink-3 focus:outline-none focus:border-line-strong"
-      />
-      <button
-        type="submit"
-        disabled={value === null}
-        className="inline-flex items-center gap-1.5 h-9 px-2.5 rounded-lg border border-line-strong bg-surface-3 font-medium text-ink-1 disabled:opacity-40"
-      >
-        <Bell className="w-3.5 h-3.5" />
-        {tr('Dodaj', 'Add')}
-      </button>
-    </form>
-  );
-};
-
 /** Szablony: wbudowane i własne (z bieżących ustawień), nakładane bez zmiany rynku. */
 const Templates: React.FC<{ settings: ChartSettings; onApply: (s: ChartSettings) => void }> = ({ settings, onApply }) => {
   const [own, setOwn] = useState<ChartTemplate[]>(loadTemplates);
@@ -1634,7 +1615,7 @@ const KEY_GROUPS: { title: string; keys: [string, string][] }[] = [
       [tr('Kółko', 'Wheel'), tr('Zbliżenie w czasie', 'Zoom in time')],
       [tr('Przeciągnij oś ceny', 'Drag the price axis'), tr('Skala ceny (wyłącza autoskalę)', 'Price scale (turns autoscale off)')],
       [tr('Dwuklik na osi ceny', 'Double-click the price axis'), tr('Włącz autoskalę', 'Turn autoscale on')],
-      [tr('Prawy przycisk', 'Right-click'), tr('Alert, linia, cena, zrzut', 'Alert, line, price, screenshot')],
+      [tr('Prawy przycisk', 'Right-click'), tr('Alarm, linia, cena, zrzut', 'Alert, line, price, screenshot')],
       [tr('Krzyżyk × przy panelu', 'The × on a pane'), tr('Ukryj panel pod wykresem', 'Hide the pane below the chart')],
     ],
   },
