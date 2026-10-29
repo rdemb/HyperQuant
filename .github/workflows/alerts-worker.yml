@@ -12,6 +12,11 @@ on:
       - 'src/utils/alertsServer.ts'
       - '.github/workflows/alerts-worker.yml'
   workflow_dispatch:
+    inputs:
+      subdomain:
+        description: 'Nowy adres konta *.workers.dev (puste: bez zmiany)'
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -86,9 +91,12 @@ jobs:
           echo "CLOUDFLARE_ACCOUNT_ID=$account" >> "$GITHUB_ENV"
           echo "ok=true" >> "$GITHUB_OUTPUT"
 
-      # Konto bez adresu *.workers.dev dostaje go przy pierwszym wdrożeniu (pierwsza wolna nazwa z listy)
+      # Konto bez adresu *.workers.dev dostaje go przy pierwszym wdrożeniu (pierwsza wolna nazwa z listy);
+      # zmiana adresu tylko na żądanie (uruchomienie ręczne z nazwą) i dotyczy wszystkich Workerów konta
       - name: Ensure workers.dev Subdomain
         if: steps.ready.outputs.ok == 'true'
+        env:
+          WANT: ${{ inputs.subdomain }}
         run: |
           api="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain"
           auth="Authorization: Bearer $CLOUDFLARE_API_TOKEN"
@@ -101,8 +109,20 @@ jobs:
               fi
             done
           fi
+          if [ -n "$WANT" ] && [ "$WANT" != "$sub" ]; then
+            if ! printf '%s' "$WANT" | grep -Eq '^[a-z0-9-]{1,63}$'; then
+              echo "::error::Nazwa adresu: małe litery, cyfry i myślniki."
+              exit 1
+            fi
+            if ! curl -sS --fail-with-body -o "$RUNNER_TEMP/sub.json" -X PUT -H "$auth" -H 'content-type: application/json' --data "{\"subdomain\":\"$WANT\"}" "$api"; then
+              cat "$RUNNER_TEMP/sub.json"
+              exit 1
+            fi
+            sub="$WANT"
+          fi
           test -n "$sub"
           echo "Skrzynka: https://hyperquant-alerts.$sub.workers.dev"
+          echo "WORKER_URL=https://hyperquant-alerts.$sub.workers.dev" >> "$GITHUB_ENV"
 
       # Baza tworzona przy pierwszym wdrożeniu; schemat tylko z IF NOT EXISTS, więc każde wdrożenie może go wykonać
       - name: Prepare D1 Database
@@ -125,3 +145,8 @@ jobs:
         if: steps.ready.outputs.ok == 'true'
         working-directory: workers/alerts
         run: $WRANGLER deploy --var "DATA_BASE_URL:$DATA_BASE_URL"
+
+      # Nowy adres potrzebuje chwili na certyfikat, stąd do 3 minut prób
+      - name: Check Worker
+        if: steps.ready.outputs.ok == 'true'
+        run: curl -fsS --retry 30 --retry-delay 6 --retry-all-errors "$WORKER_URL/v1/health"
