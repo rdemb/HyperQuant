@@ -2,8 +2,8 @@
  * Wspólne ustalenia powiadomień 24/7 dla strony, skrzynki (Cloudflare Worker) i serwera powiadomień na VPS.
  */
 
-/** Adres skrzynki alarmów ('' = powiadomienia 24/7 jeszcze niewdrożone: strona ich nie proponuje, serwer czeka). */
-export const ALERTS_URL = '';
+/** Adres skrzynki alarmów (pusty = powiadomienia 24/7 niewdrożone: strona ich nie proponuje, serwer czeka). */
+export const ALERTS_URL: string = 'https://hyperquant-alerts.hyperquant-desk.workers.dev';
 
 /**
  * Usługi push przeglądarek (Google, Mozilla, Apple, Microsoft). Adres subskrypcji przychodzi od odwiedzającego, więc
