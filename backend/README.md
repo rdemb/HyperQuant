@@ -60,6 +60,37 @@ są wpisane w pliku usługi, więc kod z repo nie wykonuje się jako root. Zmian
 `*.timer`) i wersji Node wymagają ponownego `install.sh`. Wstrzymanie: `systemctl disable --now hyperquant-update.timer`,
 dziennik: `journalctl -u hyperquant-update`.
 
+## Serwer powiadomień o alarmach (24/7)
+
+Alarmy z widoku Wykresy przeglądarka sprawdza tylko przy otwartej stronie. Przełącznik „Powiadomienia 24/7” w panelu alarmów
+przenosi pilnowanie na serwer, więc alarm przychodzi także przy zamkniętej stronie i zablokowanym telefonie:
+
+```
+przeglądarka ──► skrzynka (Cloudflare Worker + D1) ◄── serwer powiadomień (VPS, tylko połączenia wychodzące)
+                                                              │ taśma Hyperliquid, ten sam silnik co strona
+telefon ◄── usługa push przeglądarki (FCM, Mozilla, Apple, WNS) ◄──┘ Web Push przy uruchomieniu alarmu
+```
+
+- **Skrzynka** (`workers/alerts/`, wdrażana przez `.github/workflows/alerts-worker.yml` po ustawieniu sekretów `CLOUDFLARE_API_TOKEN`
+  i `CLOUDFLARE_ACCOUNT_ID`; baza D1 i adres `*.workers.dev` tworzone przy pierwszym wdrożeniu): subskrypcja push urządzenia
+  (adres usługi push i klucze szyfrowania), do 30 alarmów, język i zdarzenia z 7 dni. Urządzenie to losowy identyfikator z tokenem
+  (w bazie tylko SHA-256 tokenu), bez konta, e-maila i adresu IP. Wyłączenie przełącznika usuwa urządzenie, nieużywane 30 dni znika
+  samo (sprzątanie raz na dobę). Przyjmowane tylko adresy push FCM, Mozilli, Apple i WNS.
+- **Serwer powiadomień** (`backend/alerts/main.ts`, usługa `hyperquant-alerts`, CPUQuota 30%, MemoryMax 256M): co 3 s pobiera zmiany
+  ze skrzynki i pilnuje alarmów wszystkich urządzeń jednym silnikiem `src/utils/alertRules.ts` na taśmie Hyperliquid (WebSocket tylko
+  dla rynków z alarmem). Identyfikatory, pary i łańcuchy dostają przedrostek urządzenia, więc alarmy różnych osób nie wpływają na
+  siebie. Przy uruchomieniu wysyła Web Push (szyfrowanie aes128gcm wg RFC 8291, podpis VAPID; sprawdzone wektorem z RFC, bez
+  zależności npm). Zdarzenia (uruchomione, wygasłe, anulowane, starty z łańcucha) wracają do skrzynki co 1 s, a z niej do przeglądarki
+  przy następnej wizycie. Stan pilnowania (powrót uzbrojony, seria zamknięć) co 30 s w `HQ_STATE_DIR/alerts-state.json`.
+- **Klucze bez wspólnego sekretu.** Przy pierwszym starcie serwer tworzy klucze VAPID i Ed25519 w `HQ_STATE_DIR/alerts-keys.json`
+  (`0600`), a części publiczne zapisuje do `HQ_OUT_DIR/alerts/keys.json`, które skaner publikuje w repo danych. Zapytania serwera
+  do skrzynki są podpisane Ed25519 (metoda, ścieżka, czas, treść; okno 60 s), skrzynka sprawdza je kluczem z repo danych. Nowe klucze
+  (usunięty plik) oznaczają ponowne włączenie „24/7” na każdym urządzeniu.
+- **Adres skrzynki** w `src/utils/alertsServer.ts` (`ALERTS_URL`), na serwerze opcjonalnie `HQ_ALERTS_URL` w `/etc/hyperquant/alerts.env`.
+  Bez adresu przełącznika na stronie nie ma, a serwer tylko publikuje klucze.
+- Instalacja przez `install.sh`; aktualizacja automatyczna restartuje usługę po zmianie jej kodu (`backend/alerts`, `src/utils`,
+  wspólne moduły skanera). Podgląd: `journalctl -u hyperquant-alerts -f`, co godzinę liczba wysłanych powiadomień.
+
 ## Publikacja do publicznego repo danych (zalecane, bez kosztów)
 
 Skaner co 2 min wypycha jeden commit z bieżącymi plikami do publicznego repo [rdemb/hyperquant-data](https://github.com/rdemb/hyperquant-data)
