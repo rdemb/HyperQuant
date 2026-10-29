@@ -56,14 +56,29 @@ jobs:
           fi
           echo "::add-mask::$token"
           echo "CLOUDFLARE_API_TOKEN=$token" >> "$GITHUB_ENV"
-          # Stan tokenu w Cloudflare (aktywny, wygasły, nieznany) zamiast samego „403” przy pierwszym zapytaniu
-          curl -sS -H "Authorization: Bearer $token" 'https://api.cloudflare.com/client/v4/user/tokens/verify' | node -e 'const r=JSON.parse(require("fs").readFileSync(0,"utf8")||"{}");console.log(`Token (${process.argv[1]} znaków): ${r.result?.status??"nieznany"}${(r.errors??[]).map((e)=>`, błąd ${e.code}: ${e.message}`).join("")}`)' "${#token}" || true
           account="$(printf '%s' "$ACCOUNT_ID_SET" | tr -d '[:space:]')"
+          case "$token" in
+            cfk_*) echo "::error::Sekret CLOUDFLARE_API_TOKEN to Global API Key, a potrzebny jest token API (Create Token)."; exit 1 ;;
+            cfat_*) kind="token konta" ;;
+            *) kind="token użytkownika" ;;
+          esac
+          if [ "$kind" = "token konta" ] && [ -z "$account" ]; then
+            echo "::error::Token konta (cfat_) wymaga sekretu CLOUDFLARE_ACCOUNT_ID."
+            exit 1
+          fi
+          if [ "$kind" = "token konta" ]; then verify="accounts/$account/tokens/verify"; else verify="user/tokens/verify"; fi
+          # Stan tokenu w Cloudflare zamiast samego „403” przy pierwszym zapytaniu
+          status="$(curl -sS -H "Authorization: Bearer $token" "https://api.cloudflare.com/client/v4/$verify" | node -e 'const r=JSON.parse(require("fs").readFileSync(0,"utf8")||"{}");console.error(`${process.argv[1]}: ${r.result?.status??"nieznany"}${(r.errors??[]).map((e)=>`, błąd ${e.code}: ${e.message}`).join("")}`);process.stdout.write(r.result?.status??"")' "$kind")" || status=""
+          if [ "$status" != "active" ]; then
+            echo "::error::Cloudflare nie przyjmuje tego tokenu. Skopiuj go jeszcze raz w całości (po „Roll” stary przestaje działać)."
+            exit 1
+          fi
+          # Token użytkownika z dostępem do jednego konta wystarcza, by odczytać identyfikator konta
           if [ -z "$account" ]; then
             account="$(curl -fsS -H "Authorization: Bearer $token" 'https://api.cloudflare.com/client/v4/accounts?per_page=5' | node -e 'const r=JSON.parse(require("fs").readFileSync(0,"utf8")).result??[];process.stdout.write(r.length===1?r[0].id:"")')" || account=""
           fi
           if [ -z "$account" ]; then
-            echo "::error::Nie znam konta Cloudflare: ustaw sekret CLOUDFLARE_ACCOUNT_ID albo token z dostępem do jednego konta."
+            echo "::error::Nie znam konta Cloudflare: ustaw sekret CLOUDFLARE_ACCOUNT_ID."
             exit 1
           fi
           echo "::add-mask::$account"
