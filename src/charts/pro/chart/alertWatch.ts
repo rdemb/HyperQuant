@@ -1,9 +1,10 @@
 import { lang, tr } from '../../../i18n';
-import { type AlertEvent, AlertEngine, eventText, factsText, ivMs, ruleText } from '../../../utils/alertRules';
+import { type AlertEvent, AlertEngine, eventBody, eventText, ivMs } from '../../../utils/alertRules';
 import { parseAssetCtx, parseFills } from '../hl/parse';
 import { fetchCandles } from '../hl/rest';
 import { MARKETS, storeFor } from '../store/proStore';
 import { LOG_MAX, alertBook, alertLog, notifyAlert, primeAlertSound } from './alerts';
+import { startPushSync } from './pushAlerts';
 
 /**
  * Pilnowanie alarmów na stronie: każda wiadomość z transakcjami rynku z alarmem przechodzi przez silnik reguł.
@@ -17,13 +18,6 @@ const seeded = new Set<string>();
 const listeners = new Set<(events: AlertEvent[]) => void>();
 let started = false;
 let savedTitle: string | null = null;
-
-/** Treść powiadomienia: co się stało i fakty ze świecy (wygaśnięcie: jaki był warunek). */
-export function eventBody(e: AlertEvent): string {
-  const head = `${e.rule.note ? `${e.rule.note} · ` : ''}${eventText(e, lang)}`;
-  if (e.type === 'expire') return `${head}: ${ruleText(e.rule, lang)}.`;
-  return e.facts ? `${head}. ${factsText(e.facts, e.rule.coin, lang)}` : `${head}.`;
-}
 
 /** Karta w tle: dzwonek i treść alarmu w tytule, aż do powrotu do karty. */
 function flagTitle(text: string): void {
@@ -49,7 +43,7 @@ function onTrades(coin: string, data: unknown): void {
   if (rules) alertBook.update(() => rules);
   if (events.length === 0) return;
   alertLog.update((l) => [...[...events].reverse(), ...l].slice(0, LOG_MAX));
-  for (const e of events) if (e.type !== 'cancel') notifyAlert(eventBody(e), e.rule.id, e.type === 'fire');
+  for (const e of events) if (e.type !== 'cancel') notifyAlert(eventBody(e, lang), e.rule.id, e.type === 'fire');
   const fired = events.find((e) => e.type === 'fire');
   if (fired) flagTitle(eventText(fired, lang));
   listeners.forEach((fn) => fn(events));
@@ -90,13 +84,14 @@ function watch(): void {
   }
 }
 
-/** Start pilnowania (raz na stronę); dźwięk odblokowuje pierwsze dotknięcie strony. */
+/** Start pilnowania (raz na stronę) i synchronizacji z serwerem powiadomień 24/7; dźwięk odblokowuje pierwsze dotknięcie strony. */
 export function startAlertWatch(): void {
   if (started) return;
   started = true;
   watch();
   alertBook.subscribe(watch);
   window.addEventListener('pointerdown', primeAlertSound, { once: true, capture: true });
+  startPushSync();
 }
 
 /** Zdarzenia alarmów (komunikat na wykresie). */

@@ -1,0 +1,19 @@
+# Skrzynka alarmów HyperQuant (powiadomienia 24/7). Wdrażana przez .github/workflows/alerts-worker.yml.
+name = "hyperquant-alerts"
+main = "src/index.ts"
+compatibility_date = "2026-09-01"
+workers_dev = true
+
+[vars]
+ORIGINS = "https://rdemb.github.io"
+# DATA_BASE_URL (publiczny adres repo danych) dopisuje wdrożenie ze zmiennej repozytorium o tej samej nazwie
+
+[[d1_databases]]
+binding = "DB"
+database_name = "hyperquant-alerts"
+# Identyfikator bazy podstawia wdrożenie (baza tworzona przy pierwszym wdrożeniu)
+database_id = "00000000-0000-0000-0000-000000000000"
+
+[triggers]
+# Sprzątanie raz na dobę
+crons = ["17 3 * * *"]

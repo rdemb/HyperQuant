@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Instalacja / aktualizacja skanera HyperQuant na serwerze z Ubuntu (uruchamiać jako root).
+# Instalacja / aktualizacja skanera i serwera powiadomień HyperQuant na serwerze z Ubuntu (uruchamiać jako root).
 # Idempotentny: tworzy użytkownika i katalogi, instaluje Node z oficjalnego archiwum (weryfikacja SHA-256),
 # pobiera kod z publicznego repo i (re)startuje usługę. Nie zawiera żadnych danych konkretnego serwera.
 # Całość w funkcji main wywoływanej na końcu — ucięte pobranie skryptu (curl | bash) nie wykona się częściowo.
@@ -77,12 +77,17 @@ main() {
   # Aktualizacja (co 15 min, root): kod do stanu gałęzi zdalnej i restart skanera tylko po zmianie
   install -o root -g root -m 0644 "$PREFIX/app/backend/deploy/hyperquant-update.service" /etc/systemd/system/hyperquant-update.service
   install -o root -g root -m 0644 "$PREFIX/app/backend/deploy/hyperquant-update.timer" /etc/systemd/system/hyperquant-update.timer
+  # Serwer powiadomień o alarmach (Web Push): klucze tworzy sam przy pierwszym starcie w $STATE/state
+  install -o root -g root -m 0644 "$PREFIX/app/backend/deploy/hyperquant-alerts.service" /etc/systemd/system/hyperquant-alerts.service
   systemctl daemon-reload
   systemctl enable --quiet hyperquant-scanner
   systemctl restart hyperquant-scanner
+  systemctl enable --quiet hyperquant-alerts
+  systemctl restart hyperquant-alerts
   systemctl enable --now --quiet hyperquant-watchdog.timer
   systemctl enable --now --quiet hyperquant-update.timer
   systemctl --no-pager --lines=5 status hyperquant-scanner || true
+  systemctl --no-pager --lines=5 status hyperquant-alerts || true
 }
 
 main "$@"

@@ -110,12 +110,38 @@ self.addEventListener('fetch', (event) => {
 });
 
 // Kliknięcie powiadomienia alarmu: powrót do otwartej karty desku (najpierw z Wykresami), a bez niej — nowe okno Wykresów
+// (z powiadomienia 24/7: od razu na rynku alarmu)
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
+  const target = (event.notification.data && event.notification.data.url) || './#charts';
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
       const tab = list.find((c) => new URL(c.url).hash.startsWith('#charts')) || list[0];
-      return tab ? tab.focus() : self.clients.openWindow('./#charts');
+      return tab ? tab.focus() : self.clients.openWindow(target);
     })
+  );
+});
+
+// Powiadomienie 24/7 z serwera alarmów: treść zaszyfrowana dla tej przeglądarki (odszyfrowuje ją przeglądarka).
+// Otwarte karty dostają znak, żeby od razu dopisać zdarzenie do historii alarmów.
+self.addEventListener('push', (event) => {
+  let d = {};
+  try {
+    d = event.data ? event.data.json() : {};
+  } catch {
+    d = { body: event.data ? event.data.text() : '' };
+  }
+  const url = typeof d.url === 'string' && d.url.startsWith('./#charts') ? d.url : './#charts';
+  event.waitUntil(
+    Promise.all([
+      self.registration.showNotification(typeof d.title === 'string' ? d.title : 'HyperQuant', {
+        body: typeof d.body === 'string' ? d.body : '',
+        tag: typeof d.tag === 'string' ? d.tag : undefined,
+        icon: './icons/icon-192.png',
+        requireInteraction: true,
+        data: { url },
+      }),
+      self.clients.matchAll({ type: 'window' }).then((list) => list.forEach((c) => c.postMessage({ type: 'hq-alert-push' }))),
+    ])
   );
 });

@@ -1,6 +1,6 @@
-import { ALERT_INTERVALS, MAX_CLOSES, defaultDir } from '../../../utils/alertRules';
+import { ALERT_INTERVALS, MAX_CLOSES, NOTE_MAX, defaultDir } from '../../../utils/alertRules';
 import { MARKETS } from '../store/proStore';
-import { NOTE_MAX, type PriceAlert, newAlert, windowOf } from './alerts';
+import { type PriceAlert, newAlert, windowOf } from './alerts';
 
 /**
  * Link z gotowym zestawem alarmów (np. z planu sesji): `#charts?alarm=1.<base64url JSON>`. Strona pokazuje zestaw

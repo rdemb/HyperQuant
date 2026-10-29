@@ -1,5 +1,5 @@
 import { tr } from '../../../i18n';
-import { ALERT_INTERVALS, type AlertEvent, type AlertKind, type AlertRule, DEFAULT_TTL_MS, MAX_CLOSES } from '../../../utils/alertRules';
+import { type AlertEvent, type AlertKind, type AlertRule, DEFAULT_TTL_MS, parseRules } from '../../../utils/alertRules';
 /**
  * Alarmy cenowe zapisywane w przeglądarce (warunki sprawdza `AlertEngine` z utils/alertRules, pilnowanie: alertWatch.ts):
  * lista alarmów, historia zdarzeń, dźwięk i powiadomienie systemowe. Bez serwera i bez kont.
@@ -32,9 +32,6 @@ export interface AlertSpec {
   after: string;
 }
 
-/** Najdłuższy własny opis alarmu. */
-export const NOTE_MAX = 60;
-
 export function newAlert(spec: AlertSpec, now: number): PriceAlert {
   return { ...spec, id: `${now.toString(36)}${(seq++).toString(36)}`, created: now, armed: false, streak: 0 };
 }
@@ -56,38 +53,8 @@ export function parsePriceInput(text: string, ref: number): number | null {
   return Number.isFinite(v) && v > 0 ? v : null;
 }
 
-const num = (v: unknown, fallback: number): number => (typeof v === 'number' && Number.isFinite(v) ? v : fallback);
-
-/** Odczyt z zapisu: uszkodzone wpisy odpadają, alarmy z poprzedniej wersji (samo dotknięcie) dostają domyślne pola. */
-export function parseAlerts(raw: unknown): PriceAlert[] {
-  if (!Array.isArray(raw)) return [];
-  const out: PriceAlert[] = [];
-  for (const v of raw) {
-    const a = v as Partial<PriceAlert> | null;
-    if (!a || typeof a.id !== 'string' || typeof a.coin !== 'string' || !(typeof a.price === 'number' && a.price > 0)) continue;
-    if (a.dir !== 1 && a.dir !== -1) continue;
-    const created = num(a.created, 0) || Date.now();
-    out.push({
-      id: a.id,
-      coin: a.coin,
-      price: a.price,
-      kind: a.kind === 'close' || a.kind === 'reclaim' ? a.kind : 'touch',
-      dir: a.dir,
-      iv: (ALERT_INTERVALS as readonly string[]).includes(a.iv ?? '') ? (a.iv as string) : '15m',
-      closes: Math.min(MAX_CLOSES, Math.max(1, Math.round(num(a.closes, 1)))),
-      delta: a.delta === true,
-      from: num(a.from, 0),
-      until: num(a.until, 0) > 0 ? (a.until as number) : created + DEFAULT_TTL_MS,
-      pair: typeof a.pair === 'string' ? a.pair : '',
-      note: typeof a.note === 'string' ? a.note.slice(0, NOTE_MAX) : '',
-      after: typeof a.after === 'string' ? a.after : '',
-      created,
-      armed: a.armed === true,
-      streak: Math.max(0, Math.round(num(a.streak, 0))),
-    });
-  }
-  return out.slice(-MAX_ALERTS);
-}
+/** Odczyt z zapisu (stare alarmy dostają domyślne pola); najwięcej `MAX_ALERTS`. */
+export const parseAlerts = (raw: unknown): PriceAlert[] => parseRules(raw, Date.now()).slice(-MAX_ALERTS);
 
 /** Historia: zdarzenia z poprawnym alarmem, najnowsze pierwsze. */
 export function parseLog(raw: unknown): AlertEvent[] {

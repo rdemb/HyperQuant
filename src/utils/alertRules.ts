@@ -12,6 +12,8 @@ import type { Lang } from '../i18n.ts';
 export type AlertKind = 'touch' | 'close' | 'reclaim';
 
 export const ALERT_INTERVALS = ['1m', '5m', '15m', '30m', '1h', '4h'] as const;
+/** Rynki z alarmami (perpy Hyperliquid z widoku Wykresy). */
+export const ALERT_MARKETS = ['BTC', 'ETH', 'SOL', 'HYPE'] as const;
 const MIN = 60_000;
 const IV_MS: Record<string, number> = { '1m': MIN, '5m': 5 * MIN, '15m': 15 * MIN, '30m': 30 * MIN, '1h': 60 * MIN, '4h': 240 * MIN };
 export const ivMs = (iv: string): number => IV_MS[iv] ?? 15 * MIN;
@@ -20,6 +22,8 @@ export const ivMs = (iv: string): number => IV_MS[iv] ?? 15 * MIN;
 export const MAX_CLOSES = 3;
 /** Alarm bez wybranego końca wygasa po tygodniu. */
 export const DEFAULT_TTL_MS = 7 * 24 * 60 * MIN;
+/** Najdłuższy własny opis alarmu. */
+export const NOTE_MAX = 60;
 /** Tyle poprzednich świec daje średni wolumen do porównania. */
 const VOL_BARS = 20;
 
@@ -110,6 +114,42 @@ interface CoinState {
   oi: number;
   bars: Map<string, Bar>;
   vols: Map<string, number[]>;
+}
+
+const num = (v: unknown, fallback: number): number => (typeof v === 'number' && Number.isFinite(v) ? v : fallback);
+
+/**
+ * Alarmy z zapisu przeglądarki albo z sieci: uszkodzone wpisy odpadają, brakujące pola dostają wartości domyślne
+ * (alarmy z poprzedniej wersji strony to samo dotknięcie). `now` — chwila ustawienia alarmu bez zapisanej.
+ */
+export function parseRules(raw: unknown, now: number): AlertRule[] {
+  if (!Array.isArray(raw)) return [];
+  const out: AlertRule[] = [];
+  for (const v of raw) {
+    const a = v as Partial<AlertRule> | null;
+    if (!a || typeof a.id !== 'string' || typeof a.coin !== 'string' || !(typeof a.price === 'number' && a.price > 0 && a.price < 1e9)) continue;
+    if (a.dir !== 1 && a.dir !== -1) continue;
+    const created = num(a.created, 0) || now;
+    out.push({
+      id: a.id.slice(0, 40),
+      coin: a.coin,
+      price: a.price,
+      kind: a.kind === 'close' || a.kind === 'reclaim' ? a.kind : 'touch',
+      dir: a.dir,
+      iv: (ALERT_INTERVALS as readonly string[]).includes(a.iv ?? '') ? (a.iv as string) : '15m',
+      closes: Math.min(MAX_CLOSES, Math.max(1, Math.round(num(a.closes, 1)))),
+      delta: a.delta === true,
+      from: num(a.from, 0),
+      until: num(a.until, 0) > 0 ? (a.until as number) : created + DEFAULT_TTL_MS,
+      pair: typeof a.pair === 'string' ? a.pair.slice(0, 40) : '',
+      note: typeof a.note === 'string' ? a.note.slice(0, NOTE_MAX) : '',
+      after: typeof a.after === 'string' ? a.after.slice(0, 40) : '',
+      created,
+      armed: a.armed === true,
+      streak: Math.max(0, Math.round(num(a.streak, 0))),
+    });
+  }
+  return out;
 }
 
 /** Kierunek domyślny z położenia poziomu względem ceny: dotknięcie i zamknięcie po tej stronie, powrót po przeciwnej. */
@@ -369,4 +409,11 @@ export function factsText(f: AlertFacts, coin: string, lang: Lang): string {
   if (f.maxBuy > 0 || f.maxSell > 0)
     parts.push(en ? `largest orders: buy ${usd(f.maxBuy, lang)}, sell ${usd(f.maxSell, lang)}` : `największe zlecenia: kupno ${usd(f.maxBuy, lang)}, sprzedaż ${usd(f.maxSell, lang)}`);
   return `${head}: ${parts.join(', ')}${f.partial ? (en ? ' (part of the candle)' : ' (część świecy)') : ''}.`;
+}
+
+/** Pełna treść komunikatu i powiadomienia: opis z planu, co się stało, fakty ze świecy (wygaśnięcie: jaki był warunek). */
+export function eventBody(e: AlertEvent, lang: Lang): string {
+  const head = `${e.rule.note ? `${e.rule.note} · ` : ''}${eventText(e, lang)}`;
+  if (e.type === 'expire') return `${head}: ${ruleText(e.rule, lang)}.`;
+  return e.facts ? `${head}. ${factsText(e.facts, e.rule.coin, lang)}` : `${head}.`;
 }
