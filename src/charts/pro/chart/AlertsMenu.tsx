@@ -2,11 +2,12 @@ import React, { useState, useSyncExternalStore } from 'react';
 import { Bell, Pencil, Trash2, Volume2, X } from 'lucide-react';
 import { Segmented } from '../../../ui';
 import { lang, tr } from '../../../i18n';
-import { ALERT_INTERVALS, type AlertKind, DEFAULT_TTL_MS, defaultDir, ruleText } from '../../../utils/alertRules';
+import { ALERT_INTERVALS, type AlertKind, DEFAULT_TTL_MS, NOTE_MAX, defaultDir, eventBody, ruleText } from '../../../utils/alertRules';
 import { fmtHm, fmtSince } from '../core/time';
 import { fmtPx } from './layout';
-import { type AlertSpec, MAX_ALERTS, NOTE_MAX, type PriceAlert, alertBook, alertLog, askNotifications, newAlert, parsePriceInput, primeAlertSound, removeAlert, windowOf } from './alerts';
-import { eventBody, testAlert } from './alertWatch';
+import { type AlertSpec, MAX_ALERTS, type PriceAlert, alertBook, alertLog, askNotifications, newAlert, parsePriceInput, primeAlertSound, removeAlert, windowOf } from './alerts';
+import { testAlert } from './alertWatch';
+import { PUSH_MAX, disablePush, enablePush, pushNeedsHomeScreen, usePushStatus } from './pushAlerts';
 
 /** Cena z wykresu, od której zaczyna formularz (menu pod prawym przyciskiem albo zaznaczona linia pozioma). */
 export interface AlertDraft {
@@ -39,6 +40,7 @@ export const AlertsMenu: React.FC<{ coin: string; price: number; draft: AlertDra
   const [afterId, setAfterId] = useState('');
   const [editing, setEditing] = useState<string | null>(null);
   const [perm, setPerm] = useState<NotificationPermission | 'none'>(() => ('Notification' in window ? Notification.permission : 'none'));
+  const push = usePushStatus();
 
   const value = parsePriceInput(text, price);
   const autoDir = value !== null && price > 0 ? defaultDir(kind, value, price) : 1;
@@ -262,7 +264,7 @@ export const AlertsMenu: React.FC<{ coin: string; price: number; draft: AlertDra
             {log.map((e, i) => (
               <li key={`${e.rule.id}-${e.type}-${i}`} className="leading-snug">
                 <span className={`font-mono ${e.type === 'fire' ? 'text-warn' : 'text-ink-3'}`}>{fmtSince(e.at, Date.now())}</span>{' '}
-                <span className={e.type === 'fire' ? 'text-ink-1' : 'text-ink-2'}>{eventBody(e)}</span>
+                <span className={e.type === 'fire' ? 'text-ink-1' : 'text-ink-2'}>{eventBody(e, lang)}</span>
               </li>
             ))}
           </ul>
@@ -300,6 +302,44 @@ export const AlertsMenu: React.FC<{ coin: string; price: number; draft: AlertDra
             'Each alert fires once, and every trade checks its condition. It works while the page is open, also in the background and on another desk tab: sound, notification and 🔔 in the tab title.'
           )}
         </p>
+        {push !== 'unsupported' ? (
+          <div className="flex flex-col gap-1.5 rounded-lg border border-line p-2">
+            <div className="flex items-center justify-between gap-2">
+              <span className={`font-medium ${push === 'on' ? 'text-good' : 'text-ink-1'}`}>{push === 'on' ? tr('Powiadomienia 24/7 włączone', '24/7 notifications on') : tr('Powiadomienia 24/7', '24/7 notifications')}</span>
+              <button
+                type="button"
+                disabled={push === 'busy'}
+                onClick={() => void (push === 'on' ? disablePush() : enablePush())}
+                className={`h-8 px-2.5 rounded-lg font-medium disabled:opacity-60 ${push === 'on' ? 'text-ink-2 hover:text-ink-1 hover:bg-surface-3' : 'border border-line-strong bg-surface-3 text-ink-1'}`}
+              >
+                {push === 'on' ? tr('Wyłącz', 'Turn off') : push === 'busy' ? tr('Włączam…', 'Turning on…') : tr('Włącz', 'Turn on')}
+              </button>
+            </div>
+            <p className="text-[11px] leading-snug text-ink-2">
+              {push === 'error'
+                ? tr('Nie udało się włączyć. Zezwól stronie na powiadomienia i spróbuj jeszcze raz.', 'Could not turn on. Allow notifications for this site and try again.')
+                : tr(
+                    `Alarm przyjdzie także przy zamkniętej stronie i zablokowanym telefonie: pilnuje go serwer HyperQuant (do ${PUSH_MAX} alarmów tego urządzenia).`,
+                    `The alert arrives even with the page closed and the phone locked: the HyperQuant server watches it (up to ${PUSH_MAX} alerts on this device).`
+                  )}
+            </p>
+            <p className="text-[11px] leading-snug text-ink-3">
+              {tr(
+                'Zapisujemy tylko adres powiadomień tej przeglądarki, alarmy i język. Bez konta i e-maila, adresu IP nie zapisujemy. Wyłączenie usuwa wszystko, a urządzenie nieużywane 30 dni znika samo.',
+                'We store only this browser’s notification address, the alerts and the language. No account or e-mail, and no IP address is stored. Turning it off deletes everything, and a device unused for 30 days is removed automatically.'
+              )}
+            </p>
+          </div>
+        ) : (
+          pushNeedsHomeScreen() && (
+            <p className="text-[11px] leading-snug text-ink-2">
+              {tr(
+                'Powiadomienia 24/7 na iPhonie działają w aplikacji: Udostępnij, „Do ekranu początkowego”, potem otwórz HyperQuant z ekranu.',
+                'On iPhone, 24/7 notifications work in the app: Share, “Add to Home Screen”, then open HyperQuant from the Home Screen.'
+              )}
+            </p>
+          )
+        )}
       </Section>
     </div>
   );

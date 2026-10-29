@@ -1,0 +1,52 @@
+[Unit]
+Description=HyperQuant — serwer powiadomień o alarmach cenowych (Web Push)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=hyperquant
+Group=hyperquant
+WorkingDirectory=/opt/hyperquant/app
+# Bez pliku skanera (sekrety R2 i repo danych nie są tu potrzebne); opcjonalny plik nadpisuje adres skrzynki
+Environment=HQ_STATE_DIR=/var/lib/hyperquant/state
+Environment=HQ_OUT_DIR=/var/lib/hyperquant/out
+Environment=NODE_OPTIONS=--max-old-space-size=160
+EnvironmentFile=-/etc/hyperquant/alerts.env
+ExecStart=/opt/hyperquant/node/bin/node backend/alerts/main.ts
+Restart=always
+RestartSec=5
+
+# Alarm ma wyjść od razu: zwykły priorytet (skaner ma niższy), twarde limity zasobów
+CPUQuota=30%
+MemoryMax=256M
+TasksMax=32
+
+# Izolacja: zapis tylko do katalogu stanu, bez uprawnień, bez dostępu do katalogów domowych i obcych procesów
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectProc=invisible
+ProcSubset=pid
+ProtectClock=true
+ProtectHostname=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=true
+CapabilityBoundingSet=
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+ReadWritePaths=/var/lib/hyperquant
+
+[Install]
+WantedBy=multi-user.target
