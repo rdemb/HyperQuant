@@ -387,7 +387,11 @@ export function eventText(e: AlertEvent, lang: Lang): string {
   const C = fmtLevel(e.px, lang);
   const iv = r.iv;
   if (e.type === 'expire') return en ? `${r.coin} alert at ${L} expired without triggering` : `Alarm ${r.coin} ${L} wygasł bez uruchomienia`;
-  if (e.type === 'cancel') return en ? `${r.coin} alert at ${L} cancelled: its paired alert fired` : `Alarm ${r.coin} ${L} anulowany: zadziałał alarm z pary`;
+  // Anulowany alarm z łańcucha wciąż czeka (`after`): alarm przed nim wygasł albo został anulowany
+  if (e.type === 'cancel')
+    return r.after
+      ? en ? `${r.coin} alert at ${L} cancelled: the alert it was waiting for did not fire` : `Alarm ${r.coin} ${L} anulowany: alarm, na który czekał, nie zadziałał`
+      : en ? `${r.coin} alert at ${L} cancelled: its paired alert fired` : `Alarm ${r.coin} ${L} anulowany: zadziałał alarm z pary`;
   if (r.kind === 'touch') return en ? `${r.coin} price reached ${L}` : `Cena ${r.coin} doszła do ${L}`;
   const side = en ? (r.dir === 1 ? 'above' : 'below') : r.dir === 1 ? 'nad' : 'pod';
   if (r.kind === 'close')
