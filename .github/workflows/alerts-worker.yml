@@ -25,7 +25,7 @@ jobs:
     name: Deploy Worker
     runs-on: ubuntu-latest
     env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      TOKEN_SET: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       # Identyfikator konta z sekretu albo zmiennej; bez nich odczytywany z tokenu (token z dostępem do jednego konta)
       ACCOUNT_ID_SET: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
       # Publiczny adres repo danych: skrzynka czyta z niego klucz publiczny serwera powiadomień
@@ -43,14 +43,22 @@ jobs:
       - name: Check Configuration
         id: ready
         run: |
-          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$DATA_BASE_URL" ]; then
+          if [ -z "$TOKEN_SET" ] || [ -z "$DATA_BASE_URL" ]; then
             echo "::notice::Brak sekretu CLOUDFLARE_API_TOKEN albo zmiennej DATA_BASE_URL: skrzynka nie jest wdrażana."
             echo "ok=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          account="$ACCOUNT_ID_SET"
+          # Token wklejony ze spacją, nowym wierszem albo z przykładowym poleceniem „Bearer …” z panelu Cloudflare
+          token="$(printf '%s' "$TOKEN_SET" | node -e 'const s=require("fs").readFileSync(0,"utf8").trim();const m=/^[A-Za-z0-9_-]{20,}$/.test(s)?s:(s.match(/Bearer\s+([A-Za-z0-9_-]{20,})/)??[])[1];process.stdout.write(m??"")')"
+          if [ -z "$token" ]; then
+            echo "::error::Sekret CLOUDFLARE_API_TOKEN nie wygląda na token API (długość ${#TOKEN_SET}, wierszy $(printf '%s\n' "$TOKEN_SET" | wc -l)). Wklej sam token."
+            exit 1
+          fi
+          echo "::add-mask::$token"
+          echo "CLOUDFLARE_API_TOKEN=$token" >> "$GITHUB_ENV"
+          account="$(printf '%s' "$ACCOUNT_ID_SET" | tr -d '[:space:]')"
           if [ -z "$account" ]; then
-            account="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" 'https://api.cloudflare.com/client/v4/accounts?per_page=5' | node -e 'const r=JSON.parse(require("fs").readFileSync(0,"utf8")).result??[];process.stdout.write(r.length===1?r[0].id:"")')" || account=""
+            account="$(curl -fsS -H "Authorization: Bearer $token" 'https://api.cloudflare.com/client/v4/accounts?per_page=5' | node -e 'const r=JSON.parse(require("fs").readFileSync(0,"utf8")).result??[];process.stdout.write(r.length===1?r[0].id:"")')" || account=""
           fi
           if [ -z "$account" ]; then
             echo "::error::Nie znam konta Cloudflare: ustaw sekret CLOUDFLARE_ACCOUNT_ID albo token z dostępem do jednego konta."
