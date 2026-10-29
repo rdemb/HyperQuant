@@ -222,11 +222,12 @@ export class MarketRecorder {
 
   /**
    * Zapis części zamkniętych co najmniej SETTLE_MS (także pustych, jeśli nagranie trwało) i łączenie godzin zamkniętych;
-   * zwraca liczbę zapisanych plików.
+   * zwraca liczbę zapisanych plików. `final` (zatrzymanie procesu): także bieżąca część, z pokryciem do `now` —
+   * restart dopisze do niej dalsze nagranie zamiast zostawiać lukę od początku części.
    */
-  flush(now: number): number {
+  flush(now: number, final = false): number {
     let written = 0;
-    const due = partOf(now - SETTLE_MS) - HIST_PART_MS;
+    const due = final ? partOf(now) : partOf(now - SETTLE_MS) - HIST_PART_MS;
     const keys = new Set<number>([...this.trades.keys(), ...this.frames.keys()]);
     // Część bez transakcji i migawek, ale w trakcie nagrania (cisza na rynku) też jest zapisywana — pokrycie bez luki
     const all = this.openAt !== null ? [...this.spans, [this.openAt, now] as HistSpan] : this.spans;
