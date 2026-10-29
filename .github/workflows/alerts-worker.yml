@@ -114,8 +114,15 @@ jobs:
               echo "::error::Nazwa adresu: małe litery, cyfry i myślniki."
               exit 1
             fi
-            if ! curl -sS --fail-with-body -o "$RUNNER_TEMP/sub.json" -X PUT -H "$auth" -H 'content-type: application/json' --data "{\"subdomain\":\"$WANT\"}" "$api"; then
+            # API nie nadpisuje adresu: usunięcie starego i założenie nowego; zajęta nazwa przywraca poprzedni
+            put() { curl -sS --fail-with-body -o "$RUNNER_TEMP/sub.json" -X PUT -H "$auth" -H 'content-type: application/json' --data "{\"subdomain\":\"$1\"}" "$api"; }
+            if ! curl -sS --fail-with-body -o "$RUNNER_TEMP/sub.json" -X DELETE -H "$auth" "$api"; then
               cat "$RUNNER_TEMP/sub.json"
+              exit 1
+            fi
+            if ! put "$WANT"; then
+              cat "$RUNNER_TEMP/sub.json"
+              put "$sub"
               exit 1
             fi
             sub="$WANT"
