@@ -60,7 +60,8 @@ jobs:
           case "$token" in
             cfk_*) echo "::error::Sekret CLOUDFLARE_API_TOKEN to Global API Key, a potrzebny jest token API (Create Token)."; exit 1 ;;
             cfat_*) kind="token konta" ;;
-            *) kind="token użytkownika" ;;
+            cfut_*) kind="token użytkownika" ;;
+            *) kind="token użytkownika (stary format)" ;;
           esac
           if [ "$kind" = "token konta" ] && [ -z "$account" ]; then
             echo "::error::Token konta (cfat_) wymaga sekretu CLOUDFLARE_ACCOUNT_ID."
