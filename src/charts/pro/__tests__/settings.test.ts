@@ -57,6 +57,19 @@ describe('link do widoku', () => {
     expect(settingsFromHash('#charts?m=DOGE&i=7m&v=x')).toEqual({});
     expect(settingsFromHash('#charts')).toEqual({});
   });
+
+  it('widoczne wskaźniki w linku (&ind=…); bez widocznych link bez wskaźników', () => {
+    let list = addIndicator(addIndicator([], 'ema'), 'rsi');
+    list = list.map((x) => (x.id === 'ema' ? { ...x, params: { length: 21 } } : x));
+    const s = { ...DEFAULT_SETTINGS, coin: 'BTC' as const, interval: '5m', view: 'candles' as const, indicators: list };
+    expect(hashFor(s)).toBe('#charts?m=BTC&i=5m&v=candles&ind=ema(21);rsi(14)');
+    expect(settingsFromHash(hashFor(s)).indicators?.map((x) => [x.id, x.params])).toEqual([
+      ['ema', { length: 21 }],
+      ['rsi', { length: 14 }],
+    ]);
+    expect(hashFor({ ...s, indicators: list.map((x) => ({ ...x, visible: false })) })).toBe('#charts?m=BTC&i=5m&v=candles');
+    expect(settingsFromHash('#charts?m=BTC&ind=foo(1)')).toEqual({ coin: 'BTC' });
+  });
 });
 
 describe('warstwy startowe', () => {

@@ -27,8 +27,9 @@ import { ChartLayout, ChartSettings, NARROW_QUERY, PHONE_PANES, PhonePane, hashF
 import { STATIONS, Station, StationId, stationKey, stationPanel } from './chart/stations';
 import { BUILT_IN_TEMPLATES, ChartTemplate, applyTemplate, loadTemplates, saveAs, saveTemplates } from './chart/templates';
 import { NumbersCard, StatGroupPicker } from './chart/NumbersCard';
-import { ClassicTab } from './chart/ClassicTab';
-import { indicatorLabel } from './indicators/registry';
+import { IndicatorsDialog, type IndicatorsSection, type ToggleItem } from './chart/IndicatorsDialog';
+import { IndicatorSettings } from './chart/IndicatorSettings';
+import { indicatorLabel, indicatorsLink } from './indicators/registry';
 import { MarketStateBar } from './chart/MarketStateBar';
 import { SchrodiLauncher } from '../../components/schrodi/SchrodiLauncher';
 import { type ChartPalette, PALETTE, setPalette } from './chart/palette';
@@ -58,8 +59,16 @@ const STYLE_OPTIONS: { value: FootprintStyle; label: string; title: string }[] =
   { value: 'volume', label: tr('Wolumen', 'Volume'), title: tr('Łączny wolumen wiersza', 'Total row volume') },
 ];
 
-/** Zmiana z linku albo przełącznika rynku; wysokość wiersza w USD nie pasuje do rynku o innej cenie — wtedy automatyczna. */
-const withPatch = (s: ChartSettings, p: Partial<ChartSettings>): ChartSettings => ({ ...s, ...p, rowStep: p.coin && p.coin !== s.coin ? 0 : s.rowStep });
+/**
+ * Zmiana z linku albo przełącznika rynku; wysokość wiersza w USD nie pasuje do rynku o innej cenie — wtedy automatyczna.
+ * Wskaźniki z linku zastępują listę tylko wtedy, gdy różnią się od widocznych — odświeżenie strony zachowuje styl i ukryte.
+ */
+const withPatch = (s: ChartSettings, p: Partial<ChartSettings>): ChartSettings => ({
+  ...s,
+  ...p,
+  indicators: p.indicators && indicatorsLink(p.indicators) !== indicatorsLink(s.indicators) ? p.indicators : s.indicators,
+  rowStep: p.coin && p.coin !== s.coin ? 0 : s.rowStep,
+});
 
 /** Cena zaokrąglona do ticku rynku. */
 const toTick = (p: number) => Number(p.toFixed(priceDigits(p)));
@@ -84,12 +93,14 @@ const PALETTE_OPTIONS: { value: ChartPalette; label: string }[] = [
   { value: 'desk', label: 'Desk' },
 ];
 
-/** Zakładki menu Wskaźniki: linie i warstwy na wykresie ceny, panele pod nim albo klasyczne wskaźniki (EMA, RSI…). */
-type IndicatorsTab = 'price' | 'panes' | 'classic';
-const INDICATOR_TABS: { id: IndicatorsTab; label: string }[] = [
-  { id: 'price', label: tr('Na cenie', 'On price') },
-  { id: 'panes', label: tr('Pod wykresem', 'Below the chart') },
-  { id: 'classic', label: tr('Klasyczne', 'Classic') },
+/** Panele pod wykresem w wynikach wyszukiwania okna wskaźników i na liście sekcji „Pod wykresem” (komputer). */
+const PANE_ITEMS: ToggleItem[] = [
+  { key: 'showVolume', label: tr('Wolumen', 'Volume'), hint: tr('Wolumen świec z API Hyperliquid', 'Candle volume from the Hyperliquid API') },
+  { key: 'showDelta', label: tr('Delta (świece delty)', 'Delta (delta candles)'), hint: tr('Kupno − sprzedaż agresorów w każdej świecy', 'Aggressor buys − sells in every candle') },
+  { key: 'showCvd', label: 'CVD', hint: tr('Skumulowana delta od zerowania (sesja, dzień albo tydzień)', 'Cumulative delta since the reset (session, day or week)') },
+  { key: 'showVenueCvd', label: tr('CVD giełd: Hyperliquid, Binance, Bybit', 'Exchange CVD: Hyperliquid, Binance, Bybit'), hint: tr('Dane Binance i Bybit z Twojej przeglądarki', 'Binance and Bybit data from your browser') },
+  { key: 'showVenueOi', label: tr('ΔOI i funding giełd', 'Exchange ΔOI and funding'), hint: tr('Dane Binance i Bybit z Twojej przeglądarki', 'Binance and Bybit data from your browser') },
+  { key: 'showStats', label: tr('Tablica liczb', 'Numbers table'), hint: tr('Liczby każdej świecy w wierszach pod wykresem', 'Numbers of every candle in rows below the chart') },
 ];
 
 /** Karty na telefonie: jedna naraz, więc wykres ma cały ekran. */
@@ -203,7 +214,9 @@ export const ProChart: React.FC<{
   const store = replay ? replay.store : storeFor(settings.coin);
   const series = store.series(settings.interval);
   const [menu, setMenu] = useState<'settings' | 'indicators' | 'alerts' | 'keys' | 'more' | null>(null);
-  const [indicatorsTab, setIndicatorsTab] = useState<IndicatorsTab>('price');
+  const [indicatorsSection, setIndicatorsSection] = useState<IndicatorsSection>('flow');
+  // Wskaźnik w oknie ustawień (identyfikator instancji)
+  const [indEdit, setIndEdit] = useState<string | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
   const narrow = useSyncExternalStore(subscribeNarrow, isNarrow);
   const [tab, setTab] = useState<PhoneTab>('chart');
@@ -239,6 +252,11 @@ export const ProChart: React.FC<{
   useStoreVersion(store, 400);
 
   const update = useCallback((patch: Partial<ChartSettings>) => setSettings((s) => ({ ...s, ...patch })), []);
+  // Okno ustawień wskaźnika (z legendy, opisu jego panelu albo listy „Na wykresie”) zamiast menu
+  const editIndicator = useCallback((iid: string) => {
+    setMenu(null);
+    setIndEdit(iid);
+  }, []);
   const live = useRef({ replay, settings });
   live.current = { replay, settings };
   const setCoin = useCallback((coin: Market) => {
@@ -273,7 +291,7 @@ export const ProChart: React.FC<{
         const x = live.current.settings.indicators.find((y) => `ind:${y.iid}` === key);
         if (!x) return;
         setSettings((s) => ({ ...s, indicators: s.indicators.map((y) => (y.iid === x.iid ? { ...y, visible: false } : y)) }));
-        setToast(tr(`Ukryto wskaźnik: ${indicatorLabel(x)} — włączysz go w menu Wskaźniki → Klasyczne`, `Indicator hidden: ${indicatorLabel(x)} — turn it back on in Indicators → Classic`));
+        setToast(tr(`Ukryto wskaźnik: ${indicatorLabel(x)} — włączysz go w menu Wskaźniki → Na wykresie`, `Indicator hidden: ${indicatorLabel(x)} — turn it back on in Indicators → On the chart`));
         return;
       }
       const pane = key as PaneKey;
@@ -281,6 +299,7 @@ export const ProChart: React.FC<{
       setToast(tr(`Ukryto panel: ${PANE_NAMES[pane]} — włączysz go w menu Wskaźniki → Pod wykresem`, `Panel hidden: ${PANE_NAMES[pane]} — turn it back on in Indicators → Below the chart`));
     }, setScale);
     ctrl.setPhone(isNarrow());
+    ctrl.onEditIndicator = editIndicator;
     ctrlRef.current = ctrl;
     setTools(ctrl.draw);
     ctrl.setTopInset(legendBottom.current);
@@ -294,7 +313,7 @@ export const ProChart: React.FC<{
       setTools(null);
     };
     // Wykres tworzymy raz; zmiany ustawień idą przez applySettings
-  }, [store, signal, update]);
+  }, [store, signal, update, editIndicator]);
 
   useEffect(() => {
     // Telefon i układ 2 × 2 chowają część paneli — zapisane ustawienia wracają na szerszym ekranie albo w mniejszym układzie
@@ -525,6 +544,7 @@ export const ProChart: React.FC<{
   const tapeSince = store.coverage.first();
   const bigUsd = ctrlRef.current?.bigTradeUsd ?? DEFAULT_THRESHOLD_USD;
   const tick = hlTick(store.lastPrice());
+  const editing = indEdit ? (settings.indicators.find((x) => x.iid === indEdit) ?? null) : null;
 
   // Skróty wykresu bez modyfikatorów: tylko w panelu, w którym ostatnio kliknięto, i nie w polu tekstowym
   const onKeyRef = useRef<(e: KeyboardEvent) => void>(() => {});
@@ -532,6 +552,7 @@ export const ProChart: React.FC<{
     if (e.ctrlKey || e.metaKey || e.altKey || isTyping(e.target) || !tools?.isFocused) return;
     const next = e.key.length === 1 ? INTERVALS['12345678'.indexOf(e.key)] : undefined;
     if (e.key === '?') setMenu((m) => (m === 'keys' ? null : 'keys'));
+    else if (e.key === '/') setMenu('indicators');
     else if (next) update({ interval: next.id });
     else if (e.key === 'End') ctrlRef.current?.scrollToNow();
     else {
@@ -725,10 +746,29 @@ export const ProChart: React.FC<{
           {/* Własny kontekst warstw: uchwyt zmiany wysokości paneli wykresu (z-index 50) nie przykrywa pasków i okien rysunków */}
           <div ref={hostRef} className="absolute inset-0 isolate" />
           <AutoScaleBtn scale={scale} onToggle={() => ctrlRef.current?.setAutoScale(!scale.auto)} />
-          <Legend signal={signal} intervalMs={iv.ms} intervalLabel={iv.label} tapeSince={tapeSince} coin={store.coin} onBottom={onLegendBottom} compact={narrow} multi={layout > 1} />
+          <Legend
+            signal={signal}
+            intervalMs={iv.ms}
+            intervalLabel={iv.label}
+            tapeSince={tapeSince}
+            coin={store.coin}
+            onBottom={onLegendBottom}
+            compact={narrow}
+            multi={layout > 1}
+            onEditIndicator={editIndicator}
+          />
           <DrawStyleBar tools={tools} onAlert={drawAlert} />
           <DrawMenu tools={tools} onAlert={drawAlert} />
           <DrawSettings tools={tools} />
+          {editing && (
+            <IndicatorSettings
+              key={editing.iid}
+              x={editing}
+              loaded={series.candles.length}
+              onChange={(x) => setSettings((s) => ({ ...s, indicators: s.indicators.map((y) => (y.iid === x.iid ? x : y)) }))}
+              onClose={() => setIndEdit(null)}
+            />
+          )}
           <DrawList tools={tools} />
           <DrawHint tools={tools} />
           <LoadOverlay series={series} onRetry={() => void series.load(true)} />
@@ -783,7 +823,14 @@ export const ProChart: React.FC<{
             </div>
           )}
           {menu && (
-            <div ref={menuRef} className="absolute top-2 right-2 z-30 w-[min(340px,calc(100%-16px))] max-h-[calc(100%-16px)] overflow-y-auto">
+            <div
+              ref={menuRef}
+              className={
+                menu === 'indicators'
+                  ? 'absolute z-30 inset-0 sm:inset-auto sm:top-2 sm:left-1/2 sm:-translate-x-1/2 sm:w-[min(720px,calc(100%-16px))] sm:h-[min(540px,calc(100%-16px))]'
+                  : 'absolute top-2 right-2 z-30 w-[min(340px,calc(100%-16px))] max-h-[calc(100%-16px)] overflow-y-auto'
+              }
+            >
               {menu === 'settings' ? (
                 <SettingsMenu
                   settings={settings}
@@ -812,17 +859,17 @@ export const ProChart: React.FC<{
                   onClose={() => setMenu(null)}
                 />
               ) : (
-                <IndicatorsMenu
-                  settings={settings}
-                  intervalMs={iv.ms}
-                  liq={liq}
-                  whales={whales}
-                  bigUsd={bigUsd}
-                  tab={indicatorsTab}
-                  onTab={setIndicatorsTab}
-                  grid4={layout === 4}
+                <IndicatorsDialog
+                  s={settings}
+                  layers={flowLayers(settings, iv.ms, liq, whales, bigUsd)}
+                  panes={narrow ? [] : PANE_ITEMS}
+                  panesTab={<PanesTab s={settings} grid4={layout === 4} narrow={narrow} onChange={update} />}
+                  section={indicatorsSection}
+                  onSection={setIndicatorsSection}
                   narrow={narrow}
                   onChange={update}
+                  onEdit={editIndicator}
+                  onClose={() => setMenu(null)}
                 />
               )}
             </div>
@@ -924,12 +971,9 @@ const PanesTab: React.FC<{ s: ChartSettings; grid4: boolean; narrow: boolean; on
         </>
       ) : (
         <>
-          <Check label={tr('Wolumen', 'Volume')} checked={s.showVolume} onChange={(v) => onChange({ showVolume: v })} />
-          <Check label={tr('Delta (świece delty)', 'Delta (delta candles)')} checked={s.showDelta} onChange={(v) => onChange({ showDelta: v })} />
-          <Check label="CVD" checked={s.showCvd} onChange={(v) => onChange({ showCvd: v })} />
-          <Check label={tr('CVD giełd: Hyperliquid, Binance, Bybit', 'Exchange CVD: Hyperliquid, Binance, Bybit')} checked={s.showVenueCvd} onChange={(v) => onChange({ showVenueCvd: v })} />
-          <Check label={tr('ΔOI i funding giełd', 'Exchange ΔOI and funding')} checked={s.showVenueOi} onChange={(v) => onChange({ showVenueOi: v })} />
-          <Check label={tr('Tablica liczb', 'Numbers table')} checked={s.showStats} onChange={(v) => onChange({ showStats: v })} />
+          {PANE_ITEMS.map((i) => (
+            <Check key={i.key} label={i.label} checked={s[i.key]} onChange={(v) => onChange({ [i.key]: v })} />
+          ))}
           {s.showStats && <StatGroupPicker className="pl-6.5" value={s.statGroups} onChange={(g) => onChange({ statGroups: g })} />}
           {grid4 && s.showStats && <p className="text-[11px] leading-snug text-ink-3">{tr('W układzie 2 × 2 tablica jest ukryta — panel jest za niski.', 'In the 2 × 2 layout the table is hidden — the pane is too short.')}</p>}
           <p className="text-[11px] leading-snug text-ink-3">
@@ -1236,26 +1280,6 @@ const SettingsMenu: React.FC<{
   </div>
 );
 
-type IndicatorKey =
-  | 'showHeatmap'
-  | 'showBubbles'
-  | 'showClashes'
-  | 'showLots'
-  | 'showVwap'
-  | 'showVwapBands'
-  | 'showSessionVwap'
-  | 'showProfile'
-  | 'showPeriodProfiles'
-  | 'showDevPoc'
-  | 'showTpo'
-  | 'showLevels'
-  | 'showSessions'
-  | 'showIb'
-  | 'showLiq'
-  | 'showWhales'
-  | 'showZones'
-  | 'showAuctions';
-
 function liqHint(liq: LiqMapState): string {
   switch (liq.status) {
     case 'ready':
@@ -1287,37 +1311,11 @@ function whaleHint(w: WhaleLayer | null, coin: string): string {
   );
 }
 
-/**
- * Wskaźniki w dwóch zakładkach: na wykresie ceny (przełączniki z kolorem linii — menu jest zarazem legendą — i zakresem
- * interwałów) oraz panele pod wykresem.
- */
-const IndicatorsMenu: React.FC<{
-  settings: ChartSettings;
-  intervalMs: number;
-  liq: LiqMapState;
-  whales: WhaleLayer | null;
-  bigUsd: number;
-  tab: IndicatorsTab;
-  onTab: (t: IndicatorsTab) => void;
-  /** Układ 2 × 2: tabela statystyk ukryta. */
-  grid4: boolean;
-  narrow: boolean;
-  onChange: (p: Partial<ChartSettings>) => void;
-}> = ({
-  settings: s,
-  intervalMs,
-  liq,
-  whales,
-  bigUsd,
-  tab,
-  onTab,
-  grid4,
-  narrow,
-  onChange,
-}) => {
+/** Warstwy orderflow na wykresie ceny (sekcja „Orderflow” okna wskaźników): opis z progami i powód, gdy nie działają. */
+function flowLayers(s: ChartSettings, intervalMs: number, liq: LiqMapState, whales: WhaleLayer | null, bigUsd: number): ToggleItem[] {
   const big = `${compact(bigUsd)} USD${s.bigTradeUsd === 0 ? tr(' (próg automatyczny)', ' (automatic threshold)') : ''}`;
   const scope = indicatorScope(intervalMs);
-  const items: { key: IndicatorKey; label: string; hint: string; swatch: string; off?: string }[] = [
+  return [
     {
       key: 'showHeatmap',
       label: tr('Mapa ciepła arkusza', 'Order book heatmap'),
@@ -1473,57 +1471,7 @@ const IndicatorsMenu: React.FC<{
       swatch: 'bg-warn',
     },
   ];
-  const all = items.every((i) => s[i.key]);
-  return (
-    <div className="bg-surface-2 border border-line-strong rounded-xl p-3 shadow-2xl flex flex-col gap-1 text-xs">
-      <div role="tablist" aria-label={tr('Wskaźniki', 'Indicators')} className="grid grid-cols-3 gap-0.5 p-0.5 mb-2 rounded-lg border border-line">
-        {INDICATOR_TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            role="tab"
-            aria-selected={tab === t.id}
-            onClick={() => onTab(t.id)}
-            className={`h-8 rounded-md text-xs font-medium transition-colors duration-150 ${
-              tab === t.id ? 'bg-surface-3 text-ink-1 shadow-[inset_0_0_0_1px_var(--color-line-strong)]' : 'text-ink-3 hover:text-ink-1'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-      {tab === 'panes' ? (
-        <PanesTab s={s} grid4={grid4} narrow={narrow} onChange={onChange} />
-      ) : tab === 'classic' ? (
-        <ClassicTab list={s.indicators} narrow={narrow} onChange={(indicators) => onChange({ indicators })} />
-      ) : (
-        <>
-          <div className="flex justify-end mb-1">
-            <button
-              type="button"
-              onClick={() => onChange(Object.fromEntries(items.map((i) => [i.key, !all])) as Partial<ChartSettings>)}
-              className="min-h-8 px-2.5 rounded-md border border-line-strong text-ink-2 hover:text-ink-1 hover:bg-surface-3"
-            >
-              {all ? tr('Wyłącz wszystkie', 'Turn all off') : tr('Włącz wszystkie', 'Turn all on')}
-            </button>
-          </div>
-          {items.map((i) => (
-            <label key={i.key} className={`flex items-start gap-2.5 py-1.5 cursor-pointer ${i.off ? 'opacity-55' : ''}`}>
-              <input type="checkbox" checked={s[i.key]} onChange={(e) => onChange({ [i.key]: e.target.checked })} className="mt-0.5 w-4 h-4 accent-accent shrink-0" />
-              <span className="flex flex-col gap-0.5 min-w-0">
-                <span className="flex items-center gap-2 text-ink-1">
-                  <span className={`inline-block w-3.5 h-[3px] rounded-full ${i.swatch}`} aria-hidden="true" />
-                  {i.label}
-                </span>
-                <span className="text-[11px] leading-snug text-ink-3">{i.off ?? i.hint}</span>
-              </span>
-            </label>
-          ))}
-        </>
-      )}
-    </div>
-  );
-};
+}
 
 /** Szablony: wbudowane i własne (z bieżących ustawień), nakładane bez zmiany rynku. */
 const Templates: React.FC<{ settings: ChartSettings; onApply: (s: ChartSettings) => void }> = ({ settings, onApply }) => {
@@ -1620,6 +1568,7 @@ const KEY_GROUPS: { title: string; keys: [string, string][] }[] = [
       ['A', tr('Autoskala ceny: włącz / zamroź zakres', 'Price autoscale: on / freeze the range')],
       ['End', tr('Przewiń do bieżącej świecy', 'Scroll to the current candle')],
       ['F', tr('Pełny ekran (przy kilku wykresach: cały układ)', 'Full screen (with several charts: the whole layout)')],
+      ['/', tr('Wskaźniki: szukaj i dodaj', 'Indicators: search and add')],
       ['?', tr('Ta lista', 'This list')],
       ['Esc', tr('Zamknij menu, przerwij rysowanie', 'Close menu, cancel drawing')],
     ],

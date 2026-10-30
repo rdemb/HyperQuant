@@ -2,7 +2,7 @@ import type { ResetMode } from '../core/sessions';
 import { STAT_GROUPS, type StatGroup } from '../core/stats';
 import { DEFAULT_INTERVAL, INTERVALS } from '../core/time';
 import { COIN, MARKETS, Market } from '../store/proStore';
-import { IndicatorInstance, indicatorDef, parseIndicators } from '../indicators/registry';
+import { IndicatorInstance, indicatorDef, indicatorsFromLink, indicatorsLink, parseIndicators } from '../indicators/registry';
 import type { ChartView } from './footprintSeries';
 import type { FootprintStyle } from './layout';
 
@@ -257,9 +257,10 @@ export function migrateSaved(raw: unknown): unknown {
   return r;
 }
 
-/** Link do widoku: #charts?m=ETH&i=5m&v=footprint (rynek, interwał, rodzaj wykresu). */
+/** Link do widoku: #charts?m=ETH&i=5m&v=footprint (rynek, interwał, rodzaj wykresu) i widoczne wskaźniki (&ind=ema(21);rsi(14)). */
 export function hashFor(s: ChartSettings): string {
-  return `#charts?m=${s.coin}&i=${s.interval}&v=${s.view}`;
+  const ind = indicatorsLink(s.indicators);
+  return `#charts?m=${s.coin}&i=${s.interval}&v=${s.view}${ind ? `&ind=${ind}` : ''}`;
 }
 
 /** Ustawienia z linku do widoku; pola spoza listy dozwolonych wartości są pomijane. */
@@ -272,6 +273,8 @@ export function settingsFromHash(hash: string): Partial<ChartSettings> {
   if (m && (MARKETS as readonly string[]).includes(m)) out.coin = m as Market;
   if (i && INTERVALS.some((x) => x.id === i)) out.interval = i;
   if (v === 'candles' || v === 'footprint') out.view = v;
+  const ind = indicatorsFromLink(q.get('ind') ?? '');
+  if (ind.length > 0) out.indicators = ind;
   return out;
 }
 

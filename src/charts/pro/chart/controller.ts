@@ -5,6 +5,8 @@ import type {
   IChartApi,
   IPriceLine,
   ISeriesApi,
+  LineSeriesOptions,
+  LineWidth,
   LogicalRange,
   MouseEventParams,
   PriceFormat,
@@ -238,7 +240,12 @@ export class ProChartController {
   private readonly engine = new IndicatorEngine();
   private indSeries: ISeriesApi<'Line'>[][] = [];
   private indLegends: (PaneLegend | null)[] = [];
+  /** Widoczne instancje ze stylem (kolor legendy); przeliczanie trzyma je w silniku. */
+  private indShown: IndicatorInstance[] = [];
   private indKey = '';
+  private indStyleKey = '';
+  /** Kliknięcie opisu wskaźnika w jego panelu: okno ustawień instancji. */
+  onEditIndicator: ((iid: string) => void) | null = null;
   /** Przepływ Binance i Bybit tego rynku (tylko z włączonym panelem giełd) i zwolnienie jego połączeń. */
   private venue: VenueStore | null = null;
   private venueInterval: string | null = null;
@@ -403,10 +410,14 @@ export class ProChartController {
       this.schedule();
     }
     this.syncVenueLive();
-    // Każda zmiana wskaźników (lista, parametry, kolor, widoczność) przebudowuje ich serie razem z panelami
-    const indKey = JSON.stringify(s.indicators);
+    // Lista, parametry i widoczność wskaźników przebudowują ich serie razem z panelami; sam styl zmienia opcje linii
+    const indShown = s.indicators.filter((x) => x.visible);
+    const indKey = JSON.stringify(indShown.map((x) => [x.iid, x.id, x.params]));
     const indChanged = indKey !== this.indKey;
     this.indKey = indKey;
+    const indStyleKey = JSON.stringify(indShown);
+    const indRestyle = indStyleKey !== this.indStyleKey;
+    this.indStyleKey = indStyleKey;
     const panesChanged =
       force ||
       indChanged ||
@@ -425,7 +436,11 @@ export class ProChartController {
       }
     }
     if (panesChanged) this.rebuildPanes();
-    else if (prev.cvdReset !== s.cvdReset) {
+    else if (indRestyle) {
+      this.indShown = indShown;
+      indShown.forEach((x, k) => this.indSeries[k].forEach((sr) => sr.applyOptions(this.indStyle(x))));
+    }
+    if (!panesChanged && prev.cvdReset !== s.cvdReset) {
       this.cvdData = [];
       this.venueCvdData = {};
       this.venueOiData = {};
@@ -488,12 +503,13 @@ export class ProChartController {
     // Wskaźniki: na wykresie ceny albo każdy we własnym panelu pod panelami przepływu (nad Tablicą liczb)
     const shown = s.indicators.filter((x) => x.visible);
     this.engine.setInstances(shown);
+    this.indShown = shown;
     this.indLegends = [];
     this.indSeries = shown.map((x) => {
       const def = indicatorDef(x.id);
       const own = def.pane === 'own';
       const lines = this.addIndicatorLines(def, x, own ? pane++ : 0);
-      const legend = own ? new PaneLegend(`ind:${x.iid}`) : null;
+      const legend = own ? new PaneLegend(`ind:${x.iid}`, `ind:${x.iid}`) : null;
       if (legend) lines[0].attachPrimitive(legend);
       this.indLegends.push(legend);
       return lines;
@@ -600,11 +616,9 @@ export class ProChartController {
       this.chart.addSeries(
         LineSeries,
         {
-          color: x.color,
-          lineWidth: def.plots.length > 1 ? 1 : 2,
+          ...this.indStyle(x),
           lineStyle: p.dashed ? LineStyle.Dashed : LineStyle.Solid,
           priceLineVisible: false,
-          lastValueVisible: true,
           crosshairMarkerRadius: 3,
           priceFormat: { type: 'custom', minMove: 0.0001, formatter: this.indFormat(def) },
           ...(range ? { autoscaleInfoProvider: () => ({ priceRange: { minValue: range[0], maxValue: range[1] } }) } : {}),
@@ -614,6 +628,11 @@ export class ProChartController {
     );
     for (const price of def.levels ?? []) lines[0].createPriceLine({ price, color: LEVEL_COLOR, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false, title: '' });
     return lines;
+  }
+
+  /** Styl linii instancji: kolor z kryciem, grubość i wartość na osi ceny. */
+  private indStyle(x: IndicatorInstance): Partial<LineSeriesOptions> {
+    return { color: rgba(x.color, x.alpha), lineWidth: x.width as LineWidth, lastValueVisible: x.labels };
   }
 
   /** Liczby wskaźnika: cena (tick rynku), odległość ceny (ATR: o miejsce dokładniej niż tick) albo dwa miejsca (RSI). */
@@ -956,9 +975,13 @@ export class ProChartController {
     requestHistory(this.store, this.bars[Math.min(this.bars.length - 1, Math.max(0, Math.floor(range.from)))].t);
   };
 
-  /** Kliknięcie: krzyżyk ukrycia panelu, obiekt warstwy płynności pod kursorem albo nic (zamyka kartę). */
+  /** Kliknięcie: opis wskaźnika (jego ustawienia), krzyżyk ukrycia panelu, obiekt warstwy płynności pod kursorem albo nic (zamyka kartę). */
   private readonly onClick = (p: MouseEventParams<Time>): void => {
     const hit = p.hoveredObjectId;
+    if (typeof hit === 'string' && hit.startsWith('edit:ind:')) {
+      this.onEditIndicator?.(hit.slice(9));
+      return;
+    }
     if (typeof hit === 'string' && hit.startsWith('pane:')) {
       const key = hit.slice(5);
       if ((PANE_KEYS as readonly string[]).includes(key) || key.startsWith('ind:')) this.onHidePane(key as HideKey);
@@ -1048,7 +1071,7 @@ export class ProChartController {
     // Wskaźniki: na wykresie ceny w legendzie wykresu, we własnym panelu w opisie panelu
     const indicators: IndicatorReadout[] = [];
     this.engine.runs.forEach((run, k) => {
-      const x = run.x;
+      const x = this.indShown[k];
       const def = indicatorDef(x.id);
       const fmt = this.indFormat(def);
       const text = run.out.map((ys) => (i >= 0 && i < this.engine.count && !Number.isNaN(ys[i]) ? fmt(ys[i]) : '—')).join(' ');
