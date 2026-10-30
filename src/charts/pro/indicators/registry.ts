@@ -1,5 +1,6 @@
 import type { Candle, Side } from '../hl/parse';
 import type { BookFrame } from '../core/book';
+import type { MakerSplit } from '../core/makers';
 import { ofiEvent } from '../../../utils/microMechanics';
 import { Extreme, OlsWindow, RegimeDetector, RobustLine, Window, Wma, ema, rma } from './primitives';
 import { INTERVALS, intervalById } from '../core/time';
@@ -47,7 +48,8 @@ export type IndicatorId =
   | 'cone'
   | 'slippage'
   | 'breadth'
-  | 'repeat';
+  | 'repeat'
+  | 'makers';
 
 /**
  * Grupy na liście okna wskaźników (jak kategorie TradingView); `hyperquant` — wskaźniki, których nie ma w TradingView
@@ -129,6 +131,8 @@ export interface FlowContext {
   orders(from: number, to: number): readonly { time: number; side: Side; notional: number; taker: string }[];
   /** Czy taśma ma konta biorców przez cały [from, to) (strumień na żywo i historia serwera, bez zapisu przeglądarki). */
   identified(from: number, to: number): boolean;
+  /** Delta agresorów w [from, to) przyjęta przez animatorów rynku i resztę makerów; null bez wypełnień z kontem makera. */
+  makers(from: number, to: number): MakerSplit | null;
   orderCount(from: number, to: number): number;
   now: number;
 }
@@ -1804,6 +1808,45 @@ export const INDICATORS: readonly IndicatorDef[] = [
           fresh[i] = r ? r.fresh : Number.NaN;
         }
       };
+    },
+  },
+  {
+    id: 'makers',
+    short: tr('Makerzy', 'Makers'),
+    name: tr('Delta według klasy makera (animatorzy i reszta)', 'Delta by maker class (market makers and the rest)'),
+    hint: tr(
+      'Delta agresorów w świecy podzielona według tego, kto ją przyjął po stronie makera: animatorzy rynku (płynność przez większość godziny, po obu stronach) albo reszta (zlecenia limit pozostałych kont); w legendzie udział animatorów w wartości po stronie makera',
+      'The aggressor delta within the candle split by who took it on the maker side: market makers (liquidity through most of the hour, on both sides) or the rest (limit orders of other accounts); the legend shows the market makers’ share of the maker-side value'
+    ),
+    group: 'hyperquant',
+    aliases: 'maker makers animator market maker mm delta absorpcja absorption limit plynnosc liquidity konta accounts klasa class',
+    warmup: () => 0,
+    convention: tr(
+      'Tego wskaźnika nie ma w TradingView: liczony z nagranej taśmy Hyperliquid, która przy każdej transakcji podaje konto makera. Konto jest w godzinie UTC animatorem, gdy dawało płynność w co najmniej połowie jej minut z taśmą i po obu stronach (słabsza strona co najmniej 20% jego wartości); w bieżącej godzinie liczą się minuty, które już minęły, więc jej świece mogą się zmieniać do końca godziny. Delta to suma wielkości ze znakiem strony agresora; obie części razem dają deltę świecy. Progi 50% i 20% są umowne. Pokazujemy tylko sumy, nigdy kont.',
+      'TradingView has no such indicator: it is computed from the recorded Hyperliquid tape, which gives the maker account with every trade. An account is a market maker in a UTC hour when it provided liquidity in at least half of the hour’s minutes with tape and on both sides (the weaker side at least 20% of its value); in the current hour the minutes that have passed count, so its candles may change until the hour ends. Delta is the sum of sizes signed by the aggressor side; the two parts add up to the candle delta. The 50% and 20% thresholds are a convention. Only totals are shown, never accounts.'
+    ),
+    memoryNote: tr(
+      'Świeca zależy od swoich wypełnień i od klas kont z jej godziny UTC (historia serwera numeruje konta w obrębie godziny), więc wskaźnik działa na interwałach do 1 h. W godzinie otwarcia strony konto sprzed otwarcia i po nim liczy się jako dwa, więc animatorów może wyjść mniej. Świece bez taśmy z kontami w całości (zapis z przeglądarki ich nie ma) nie mają wartości.',
+      'A candle depends on its fills and on the account classes of its UTC hour (server history numbers accounts within an hour), so the indicator works on intervals up to 1 h. In the hour the page was opened, an account before and after opening counts as two, so fewer market makers may come out. Candles without the tape with accounts throughout (the browser recording has none) have no value.'
+    ),
+    pane: 'own',
+    params: [],
+    plots: [
+      { title: tr('animatorzy', 'market makers') },
+      { color: ORANGE, title: tr('reszta', 'rest') },
+      { hidden: true, title: tr('udział animatorów', 'market maker share'), format: 'fixed2' },
+    ],
+    levels: [0],
+    format: 'volume',
+    series: () => (bars, ms, ctx, out) => {
+      const [mm, rest, share] = out;
+      for (let i = 0; i < bars.length; i++) {
+        const t = bars[i].candle.t;
+        const r = ms <= ACCOUNT_HOUR_MS && ctx.identified(t, Math.min(t + ms, ctx.now)) ? ctx.makers(t, t + ms) : null;
+        mm[i] = r ? r.mm : Number.NaN;
+        rest[i] = r ? r.rest : Number.NaN;
+        share[i] = r ? r.mmShare : Number.NaN;
+      }
     },
   },
 ];

@@ -5,6 +5,7 @@ import { BookFrame, BookHistory, bookSigFigs, bookStep, toFrame } from '../core/
 import { Coverage, Span } from '../core/coverage';
 import { FootprintBar, FootprintBuilder, baseTick, hlTick } from '../core/footprintBar';
 import { WallTracker } from '../core/clashes';
+import { MakerFlow, MakerSplit } from '../core/makers';
 import { OrderAggregator, OrderLog } from '../core/orders';
 import { PlayerFlow, bigPlayerUsd } from '../core/players';
 import { FundingBook, HOUR_MS, OiLog } from '../core/stats';
@@ -104,6 +105,8 @@ export class ProStore {
   readonly players: PlayerFlow;
   /** Wchłanianie zleceń agresora przez makerów (ściany), z taśmy na żywo. */
   readonly walls = new WallTracker();
+  /** Kto przyjmuje agresję: animatorzy rynku i reszta makerów, z kont makerów. */
+  private readonly makers = new MakerFlow();
   /** Otwarte pozycje z kanału activeAssetCtx (od otwarcia strony) i stawki finansowania z historii API. */
   readonly oi = new OiLog();
   readonly funding = new FundingBook();
@@ -428,6 +431,13 @@ export class ProStore {
     return this.exactSub ? this.exact : this.book('near');
   }
 
+  /** Delta agresorów w [from, to) (w jednej godzinie UTC) przyjęta przez animatorów rynku i resztę makerów. */
+  makerSplit(from: number, to: number): MakerSplit | null {
+    const h = Math.floor(from / HOUR_MS) * HOUR_MS;
+    const minutes = Math.round(this.addressed.coveredMs(h, Math.min(h + HOUR_MS, this.serverNow())) / 60_000);
+    return this.makers.split(from, to, minutes);
+  }
+
   /** Początek strumienia na żywo w tej sesji (najstarsza transakcja jego pierwszej wiadomości); +∞ przed nią. */
   get liveSince(): number {
     return this.liveFrom;
@@ -445,6 +455,7 @@ export class ProStore {
     }
     for (const s of this.seriesById.values()) s.feedLive(accepted);
     this.walls.push(accepted);
+    this.makers.add(accepted);
     this.orders.add(this.aggregator.push(accepted, this.clock.toServer(recvAt)));
     this.bump();
   }
@@ -478,6 +489,7 @@ export class ProStore {
         const agg = new OrderAggregator();
         this.orders.add([...agg.push(used, Number.NEGATIVE_INFINITY), ...agg.flush(0, true)]);
         this.walls.pushHistory(used);
+        this.makers.add(used);
       }
       if (accepted.length > 0) for (const s of this.seriesById.values()) s.rebuildLive();
       this.oi.restore(tr.oi);
@@ -525,6 +537,7 @@ export class ProStore {
     this.oi.prune(cut);
     this.books.forEach((b) => b.prune(cut));
     this.exact.prune(cut);
+    this.makers.prune(cut);
     for (const s of this.seriesById.values()) s.prune(cut);
   }
 

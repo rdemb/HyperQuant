@@ -62,7 +62,7 @@ describe('koszt zlecenia rynkowego po arkuszu', () => {
       // Druga świeca bez migawek, trzecia z askami za płytkimi na 2000 USD
       { ...frame(0, [[99, 50]], [[101, 1]]), t: 2 * M1 + 5_000 },
     ];
-    const ctx: FlowContext = { oiAt: () => null, book: () => [], exactBook: () => frames, orders: () => [], orderCount: () => 0, identified: () => false, now: 3 * M1 };
+    const ctx: FlowContext = { oiAt: () => null, book: () => [], exactBook: () => frames, orders: () => [], orderCount: () => 0, identified: () => false, makers: () => null, now: 3 * M1 };
     const c = { o: 100, h: 100, l: 100, c: 100, v: 1, n: 1 };
     const bars = [0, 1, 2].map((k) => ({ candle: { ...c, t: k * M1 } }));
     const e = new IndicatorEngine();
