@@ -26,6 +26,19 @@ export type DataStatus = 'SYNTH' | 'LIVE' | 'STALE' | 'PAUSED';
 
 const EMPTY_LEVELS: L2OrderbookLevel[] = [];
 
+/** Cisza WS dłuższa niż próg = martwe połączenie (bbo przychodzi ~co 150 ms; serwer HL zamyka po 60 s ciszy). */
+export const WS_SILENCE_MS = 30_000;
+const WS_PING_MS = 30_000;
+
+/**
+ * Kontrola otwartego socketu (co 5 s): zawieszone połączenie bez zdarzenia close (uśpienie laptopa,
+ * zmiana Wi-Fi) trzeba zerwać samemu, inaczej arkusz i taśma stoją przy zielonym LIVE.
+ */
+export function wsWatch(now: number, lastMsgAt: number, lastPingAt: number): 'reconnect' | 'ping' | null {
+  if (now - lastMsgAt > WS_SILENCE_MS) return 'reconnect';
+  return now - lastPingAt >= WS_PING_MS ? 'ping' : null;
+}
+
 /**
  * Warstwa danych desku: REST + WebSocket Hyperliquid, opcjonalne źródła CEX (opt-in, lokalnie),
  * stan świeżości danych. Wydzielona z App.tsx, żeby widoki były czystymi konsumentami.
@@ -234,7 +247,7 @@ export function useDeskFeed(options: { cexEnabled: boolean; volModel: boolean })
     };
   }, []);
 
-  // WebSocket Hyperliquid: reconnect z backoffem, ping co 30 s (serwer zamyka po 60 s ciszy)
+  // WebSocket Hyperliquid: reconnect z backoffem, ping co 30 s, zerwanie po 30 s ciszy (wsWatch)
   useEffect(() => {
     if (!isStreaming) {
       setHlConnected(false);
@@ -256,14 +269,30 @@ export function useDeskFeed(options: { cexEnabled: boolean; volModel: boolean })
       }, delay);
     };
 
+    // Odłączenie bieżącego socketu (close albo cisza); wywołane drugi raz dla tego samego socketu nic nie robi
+    const drop = (sock: WebSocket) => {
+      if (ws !== sock) return;
+      ws = null;
+      if (pingTimer !== null) {
+        clearInterval(pingTimer);
+        pingTimer = null;
+      }
+      if (disposed) return;
+      setHlConnected(false);
+      scheduleReconnect();
+    };
+
     const connect = () => {
       if (disposed) return;
       try {
         const sock = new WebSocket('wss://api.hyperliquid.xyz/ws');
         ws = sock;
+        let lastMsgAt = 0;
+        let lastPingAt = 0;
         sock.onopen = () => {
-          if (disposed) return;
+          if (disposed || ws !== sock) return;
           attempt = 0;
+          lastMsgAt = lastPingAt = Date.now();
           setHlConnected(true);
           sock.send(JSON.stringify({ method: 'subscribe', subscription: { type: 'trades', coin: 'BTC' } }));
           sock.send(JSON.stringify({ method: 'subscribe', subscription: { type: 'l2Book', coin: 'BTC' } }));
@@ -272,11 +301,22 @@ export function useDeskFeed(options: { cexEnabled: boolean; volModel: boolean })
           sock.send(JSON.stringify({ method: 'subscribe', subscription: { type: 'activeAssetCtx', coin: 'BTC' } }));
           if (pingTimer !== null) clearInterval(pingTimer);
           pingTimer = window.setInterval(() => {
-            if (sock.readyState === WebSocket.OPEN) sock.send(JSON.stringify({ method: 'ping' }));
-          }, 30000);
+            if (ws !== sock || sock.readyState !== WebSocket.OPEN) return;
+            const now = Date.now();
+            const act = wsWatch(now, lastMsgAt, lastPingAt);
+            if (act === 'reconnect') {
+              // Zamknięcie martwego socketu może czekać długo na close — łączymy od razu
+              sock.close();
+              drop(sock);
+            } else if (act === 'ping') {
+              lastPingAt = now;
+              sock.send(JSON.stringify({ method: 'ping' }));
+            }
+          }, 5000);
         };
         sock.onmessage = (event: MessageEvent) => {
-          if (disposed) return;
+          if (disposed || ws !== sock) return;
+          lastMsgAt = Date.now();
           try {
             const msg = JSON.parse(event.data);
             if (msg.channel === 'trades' && Array.isArray(msg.data)) {
@@ -301,16 +341,7 @@ export function useDeskFeed(options: { cexEnabled: boolean; volModel: boolean })
             // Pomijamy uszkodzone pakiety
           }
         };
-        sock.onclose = () => {
-          if (ws === sock) ws = null;
-          if (pingTimer !== null) {
-            clearInterval(pingTimer);
-            pingTimer = null;
-          }
-          if (disposed) return;
-          setHlConnected(false);
-          scheduleReconnect();
-        };
+        sock.onclose = () => drop(sock);
       } catch {
         scheduleReconnect();
       }

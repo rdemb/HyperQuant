@@ -1,13 +1,13 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { ALERT_MARKETS, AlertEngine, type AlertTrade, eventBody, ivMs } from '../../src/utils/alertRules.ts';
+import { ALERT_MARKETS, AlertEngine, type AlertEvent, type AlertRule, type AlertTrade, eventBody, ivMs } from '../../src/utils/alertRules.ts';
 import { ALERTS_URL } from '../../src/utils/alertsServer.ts';
 import { HlRest, HlStream, type HlTrade } from '../scanner/hl.ts';
 import { WeightLimiter } from '../scanner/rateLimiter.ts';
 import { DeviceBook, type DeviceEvent, type DeviceStart } from './book.ts';
 import { loadKeys } from './keys.ts';
 import { Mailbox } from './mailbox.ts';
-import { sendPush } from './push.ts';
+import { retryDelay, sendPush } from './push.ts';
 
 /**
  * Serwer powiadomień HyperQuant (VPS): pobiera ze skrzynki alarmy urządzeń z włączonym „24/7”, pilnuje ich na taśmie
@@ -42,6 +42,8 @@ mkdirSync(join(OUT_DIR, 'alerts'), { recursive: true });
 writeJsonAtomic(join(OUT_DIR, 'alerts', 'keys.json'), { v: 1, vapid: keys.vapid.publicKey, server: keys.signPublic });
 
 const statePath = join(STATE_DIR, 'alerts-state.json');
+/** Zdarzenia jeszcze niezgłoszone skrzynce (zapisywane od razu: po twardej awarii alarm nie uruchomi się drugi raz) */
+const pendingPath = join(STATE_DIR, 'alerts-pending.json');
 const book = new DeviceBook();
 try {
   book.restore(JSON.parse(readFileSync(statePath, 'utf8')) as Record<string, { armed?: unknown; streak?: unknown }>);
@@ -56,12 +58,29 @@ const streams = new Map<string, HlStream>();
 const seeded = new Map<string, number>();
 let cursor = '0';
 let pending: { events: DeviceEvent[]; starts: DeviceStart[]; gone: Set<string> } = { events: [], starts: [], gone: new Set() };
+try {
+  const p = JSON.parse(readFileSync(pendingPath, 'utf8')) as { events?: unknown; starts?: unknown; gone?: unknown };
+  pending = {
+    events: Array.isArray(p.events) ? (p.events as DeviceEvent[]) : [],
+    starts: Array.isArray(p.starts) ? (p.starts as DeviceStart[]) : [],
+    gone: new Set(Array.isArray(p.gone) ? (p.gone as string[]) : []),
+  };
+  book.hold(pending.events);
+} catch {
+  // Pierwszy start albo wszystko zgłoszone
+}
 const stats = { sent: 0, gone: 0, failed: 0 };
 const pulsePath = join(STATE_DIR, 'alerts-pulse.json');
 // Start liczy się jak synchronizacja: strażnik ocenia ciszę dopiero od uruchomienia
 let syncOkAt = Date.now();
 /** Ostatni komunikat Hyperliquid na rynek ze strumieniem (transakcje albo kontekst rynku ~co 1 s). */
 const heard = new Map<string, number>();
+/** Początek przerwy w strumieniu rynku (ostatnia przetworzona transakcja): po powrocie połączenia dociągane są świece 1m. */
+const gapFrom = new Map<string, number>();
+
+function savePending(): void {
+  writeJsonAtomic(pendingPath, { events: pending.events, starts: pending.starts, gone: [...pending.gone] });
+}
 
 /** Średni wolumen do faktów: zamknięte świece interwału z API (raz na 6 h na rynek i interwał). */
 async function seed(coin: string, iv: string): Promise<void> {
@@ -77,7 +96,8 @@ async function seed(coin: string, iv: string): Promise<void> {
   engine.seedVolumes(coin, iv, (raw as { t: number; v: string }[]).map((c) => ({ t: Number(c.t), v: Number(c.v) })), Date.now());
 }
 
-async function notify(e: DeviceEvent, retry = true): Promise<void> {
+/** Web Push alarmu; błąd przejściowy usługi push — ponowienia z rosnącym odstępem (`retryDelay`), dopiero potem nieudane. */
+async function notify(e: DeviceEvent, attempt = 0): Promise<void> {
   const d = book.devices.get(e.device);
   if (!d) return;
   const payload = { title: d.lang === 'en' ? 'HyperQuant · alert' : 'HyperQuant · alarm', body: eventBody(e, d.lang), tag: e.rule.id, url: `./#charts?m=${e.rule.coin}` };
@@ -87,8 +107,41 @@ async function notify(e: DeviceEvent, retry = true): Promise<void> {
     stats.gone++;
     pending.gone.add(d.id);
     book.apply({ ...d, rules: null });
-  } else if (retry) setTimeout(() => void notify(e, false), 5000);
-  else stats.failed++;
+  } else {
+    const ms = retryDelay(attempt, typeof r === 'object' ? r.retryAfterMs : null);
+    if (ms === null) stats.failed++;
+    else setTimeout(() => void notify(e, attempt + 1), ms);
+  }
+}
+
+/** Wynik silnika: nowa lista alarmów, zdarzenia do skrzynki (zapisane przed wysyłką) i powiadomienia. */
+function apply(before: readonly AlertRule[], r: { rules: AlertRule[] | null; events: AlertEvent[] }): void {
+  if (r.rules) book.rules = r.rules;
+  if (r.events.length === 0) return;
+  const out = book.split(r.events, before);
+  book.hold(out.events);
+  pending.events.push(...out.events);
+  pending.starts.push(...out.starts);
+  savePending();
+  for (const e of out.events) if (e.type === 'fire') void notify(e);
+}
+
+/**
+ * Po przerwie w strumieniu: świece 1m z API od początku przerwy przeciw alarmom dotknięcia (cena mogła dojść do poziomu,
+ * gdy połączenie nie działało). Ten sam budżet wag co średnie wolumenu; bez odpowiedzi po 3 próbach — tylko wpis w dzienniku.
+ */
+async function backfill(coin: string, from: number, to: number): Promise<void> {
+  if (!book.rules.some((r) => r.coin === coin && r.kind === 'touch')) return;
+  const req = { type: 'candleSnapshot', req: { coin, interval: '1m', startTime: Math.floor(from / 60_000) * 60_000, endTime: to } };
+  let raw: unknown = null;
+  for (let k = 0; k < 3 && !Array.isArray(raw); k++) raw = await rest.info(req, 21);
+  if (!Array.isArray(raw)) {
+    log(`${coin}: brak świec 1m z przerwy w połączeniu (${Math.round((to - from) / 1000)} s), dotknięcia z niej niesprawdzone`);
+    return;
+  }
+  const candles = (raw as { t: unknown; h: unknown; l: unknown }[]).map((c) => ({ t: Number(c.t), h: Number(c.h), l: Number(c.l) })).filter((c) => c.t > 0 && c.h > 0 && c.l > 0);
+  const before = book.rules;
+  apply(before, engine.onGapCandles(before, coin, candles));
 }
 
 function onTrades(coin: string, hl: HlTrade[]): void {
@@ -101,13 +154,7 @@ function onTrades(coin: string, hl: HlTrade[]): void {
   }
   if (trades.length === 0) return;
   const before = book.rules;
-  const { rules, events } = engine.onTrades(before, coin, trades);
-  if (rules) book.rules = rules;
-  if (events.length === 0) return;
-  const out = book.split(events, before);
-  pending.events.push(...out.events);
-  pending.starts.push(...out.starts);
-  for (const e of out.events) if (e.type === 'fire') void notify(e);
+  apply(before, engine.onTrades(before, coin, trades));
 }
 
 /** Strumień dla każdego rynku z alarmem (bez alarmów: zamknięty). */
@@ -121,6 +168,7 @@ function watch(): void {
         streams.delete(coin);
         heard.delete(coin);
         engine.gap(coin);
+        gapFrom.delete(coin);
       }
       continue;
     }
@@ -140,7 +188,16 @@ function watch(): void {
       WebSocket,
       null,
       (up) => {
-        if (!up) engine.gap(coin);
+        // Zamknięcie strumienia bez alarmów (watch) to nie przerwa
+        if (streams.get(coin) !== st) return;
+        if (!up) {
+          const last = engine.gap(coin);
+          if (last > 0 && !gapFrom.has(coin)) gapFrom.set(coin, last);
+          return;
+        }
+        const from = gapFrom.get(coin);
+        gapFrom.delete(coin);
+        if (from !== undefined) void backfill(coin, from, Date.now()).catch((e) => log(`${coin}: błąd dociągania świec (${String(e)})`));
       }
     );
     streams.set(coin, st);
@@ -174,6 +231,7 @@ async function reportTick(): Promise<void> {
   pending = { events: [], starts: [], gone: new Set() };
   try {
     await mailbox.report({ events: batch.events, starts: batch.starts, gone: [...batch.gone] });
+    book.release(batch.events);
   } catch {
     // Następna próba razem z nowymi zdarzeniami
     pending = {
@@ -182,6 +240,7 @@ async function reportTick(): Promise<void> {
       gone: new Set([...batch.gone, ...pending.gone]),
     };
   }
+  savePending();
 }
 
 /** Puls dla strażnika (scripts/watchdog.mjs): czas zapisu, ostatnia synchronizacja, najstarszy ostatni komunikat HL. */
