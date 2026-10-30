@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ChevronDown, X } from 'lucide-react';
 import { ColorPicker } from '../draw/DrawToolbar';
 import { INDICATOR_WIDTHS, IndicatorInstance, ParamDef, defaultWidth, indicatorDef, indicatorLabel, memoryCandles, paramOk, parseParams } from '../indicators/registry';
+import { INTERVALS, intervalById } from '../core/time';
 import { tr } from '../../../i18n';
 
 /**
@@ -19,12 +20,13 @@ const TABS: { id: Tab; label: string }[] = [
 
 const FIELD = 'h-8 min-w-0 px-2 rounded-md bg-page border border-line font-mono text-xs text-ink-1 outline-none focus:border-accent [color-scheme:dark]';
 
-/** „1 świeca”, „3 świece”, „12 świec” (po angielsku candle / candles). */
-function candles(n: number): string {
+/** „1 świeca”, „3 świece”, „12 świec” (po angielsku candle / candles); z interwałem „12 świec 1h”. */
+function candles(n: number, tf = ''): string {
   const d = n % 10;
   const h = n % 100;
   const pl = n === 1 ? 'świeca' : d >= 2 && d <= 4 && (h < 12 || h > 14) ? 'świece' : 'świec';
-  return tr(`${n} ${pl}`, `${n} ${n === 1 ? 'candle' : 'candles'}`);
+  const iv = tf ? ` ${tf}` : '';
+  return tr(`${n} ${pl}${iv}`, `${n} ${tf ? `${tf} ` : ''}${n === 1 ? 'candle' : 'candles'}`);
 }
 
 /** Pole parametru: tekst w trakcie pisania, wartość trafia do wykresu, gdy jest liczbą z zakresu. */
@@ -58,10 +60,14 @@ const Row: React.FC<{ label: string; children: React.ReactNode }> = ({ label, ch
   </div>
 );
 
-/** `loaded` — liczba świec na wykresie (przy krótszej historii średnia rekurencyjna zależy jeszcze od jej początku). */
-export const IndicatorSettings: React.FC<{ x: IndicatorInstance; loaded: number; onChange: (x: IndicatorInstance) => void; onClose: () => void }> = ({
+/**
+ * `loaded` — liczba świec na wykresie (przy krótszej historii średnia rekurencyjna zależy jeszcze od jej początku);
+ * `chart` — interwał wykresu (wskaźnik można liczyć z wyższego).
+ */
+export const IndicatorSettings: React.FC<{ x: IndicatorInstance; loaded: number; chart: string; onChange: (x: IndicatorInstance) => void; onClose: () => void }> = ({
   x,
   loaded,
+  chart,
   onChange,
   onClose,
 }) => {
@@ -80,16 +86,20 @@ export const IndicatorSettings: React.FC<{ x: IndicatorInstance; loaded: number;
   const warmup = def.warmup(x.params);
   const memory = memoryCandles(def, x.params);
   const span = warmup + 1;
+  // Interwał wskaźnika: wyższe niż wykres (i zapisany, gdy wykres przeszedł na wyższy)
+  const chartMs = intervalById(chart).ms;
+  const tfs = INTERVALS.filter((iv) => iv.ms > chartMs || iv.id === x.tf);
+  const tf = x.tf ? intervalById(x.tf).label : '';
   const memoryText =
     def.memoryNote ??
     (memory !== null
       ? tr(
-          `Średnie rekurencyjne: liczy się cała wczytana historia, ale poza ostatnimi ${memory} świecami jej waga to łącznie mniej niż 0,1%.`,
-          `Recursive averages: the whole loaded history counts, but beyond the last ${memory} candles its total weight is below 0.1%.`
+          `Średnie rekurencyjne: liczy się cała wczytana historia, ale poza ostatnimi ${memory} świecami${tf ? ` ${tf}` : ''} jej waga to łącznie mniej niż 0,1%.`,
+          `Recursive averages: the whole loaded history counts, but beyond the last ${candles(memory, tf)} its total weight is below 0.1%.`
         )
       : span === 1
-        ? tr('Wartość zależy tylko od bieżącej świecy.', 'The value depends only on the current candle.')
-        : tr(`Wartość zależy tylko od ostatnich ${span} świec.`, `The value depends only on the last ${span} candles.`));
+        ? tr(`Wartość zależy tylko od bieżącej świecy${tf ? ` ${tf}` : ''}.`, `The value depends only on the current ${tf ? `${tf} ` : ''}candle.`)
+        : tr(`Wartość zależy tylko od ostatnich ${span} świec${tf ? ` ${tf}` : ''}.`, `The value depends only on the last ${candles(span, tf)}.`));
 
   // Fokus w oknie: Esc i Enter działają od razu, bez klikania w pole
   useEffect(() => ref.current?.focus(), []);
@@ -153,6 +163,21 @@ export const IndicatorSettings: React.FC<{ x: IndicatorInstance; loaded: number;
               </span>
             </Row>
           ))}
+        {tab === 'params' && !def.period && (
+          <Row label={tr('Interwał', 'Timeframe')}>
+            <select aria-label={tr('Interwał wskaźnika', 'Indicator timeframe')} value={x.tf ?? ''} onChange={(e) => set({ tf: e.target.value || undefined })} className={`${FIELD} w-24`}>
+              <option value="">{tr('Wykresu', 'Chart')}</option>
+              {tfs.map((iv) => (
+                <option key={iv.id} value={iv.id}>
+                  {iv.label}
+                </option>
+              ))}
+            </select>
+          </Row>
+        )}
+        {tab === 'params' && def.period && (
+          <p className="py-2 text-ink-2 leading-snug">{tr('Wzór Traditional bez parametrów; okres to doba UTC.', 'The Traditional formula has no inputs; the period is the UTC day.')}</p>
+        )}
         {tab === 'style' && (
           <div className="flex flex-col gap-1">
             <Row label={tr('Linia', 'Line')}>
@@ -191,18 +216,27 @@ export const IndicatorSettings: React.FC<{ x: IndicatorInstance; loaded: number;
             <p className="text-ink-1 font-medium">{def.name}</p>
             <p className="text-ink-2">{def.hint}.</p>
             <p className="text-ink-2">
-              {tr(
-                'Wzór i wartości domyślne jak we wbudowanym wskaźniku TradingView, liczone ze świec Hyperliquid tego wykresu.',
-                "Formula and defaults as in TradingView's built-in indicator, computed from this chart's Hyperliquid candles."
-              )}
+              {def.period
+                ? tr('Wzór jak we wbudowanym wskaźniku TradingView, liczony ze świec Hyperliquid.', "Formula as in TradingView's built-in indicator, computed from Hyperliquid candles.")
+                : x.tf
+                  ? tr(
+                      `Wzór i wartości domyślne jak we wbudowanym wskaźniku TradingView, liczone ze świec ${tf} Hyperliquid. Świeca wykresu ma wartość ostatniej świecy ${tf} zamkniętej do jej końca, bez zaglądania w przyszłość: linia zmienia się raz na ${tf}, a do zamknięcia świecy ${tf} jej wartość to podgląd.`,
+                      `Formula and defaults as in TradingView's built-in indicator, computed from Hyperliquid ${tf} candles. A chart candle gets the value of the last ${tf} candle closed by its end, without looking ahead: the line changes once per ${tf}, and until a ${tf} candle closes its value is a preview.`
+                    )
+                  : tr(
+                      'Wzór i wartości domyślne jak we wbudowanym wskaźniku TradingView, liczone ze świec Hyperliquid tego wykresu.',
+                      "Formula and defaults as in TradingView's built-in indicator, computed from this chart's Hyperliquid candles."
+                    )}
             </p>
             <p className="text-ink-2">
-              {warmup > 0
-                ? tr(`Rozbieg: na początku historii ${candles(warmup)} bez wartości.`, `Warm-up: ${candles(warmup)} without a value at the start of history.`)
-                : tr('Wartość od pierwszej świecy historii.', 'A value from the first candle of history.')}{' '}
+              {def.period
+                ? ''
+                : warmup > 0
+                  ? tr(`Rozbieg: na początku historii ${candles(warmup, tf)} bez wartości.`, `Warm-up: ${candles(warmup, tf)} without a value at the start of history.`)
+                  : tr('Wartość od pierwszej świecy historii.', 'A value from the first candle of history.')}{' '}
               {memoryText}
             </p>
-            {memory !== null && loaded > 0 && loaded < memory && (
+            {memory !== null && !x.tf && loaded > 0 && loaded < memory && (
               <p className="text-warn">
                 {tr(
                   `Wykres ma teraz ${candles(loaded)}, mniej niż ${memory}: początek wczytanej historii wciąż wpływa na wartość.`,
@@ -217,8 +251,8 @@ export const IndicatorSettings: React.FC<{ x: IndicatorInstance; loaded: number;
       <div className="flex items-center gap-1.5 px-3 py-2 border-t border-line">
         <button
           type="button"
-          title={tr('Parametry i styl domyślne (kolor zostaje)', 'Default inputs and style (the colour stays)')}
-          onClick={() => set({ params: parseParams(def, null), alpha: 1, width: defaultWidth(def), labels: true })}
+          title={tr('Parametry, interwał i styl domyślne (kolor zostaje)', 'Default inputs, timeframe and style (the colour stays)')}
+          onClick={() => set({ params: parseParams(def, null), alpha: 1, width: defaultWidth(def), labels: true, tf: undefined })}
           className="h-8 px-2.5 rounded-md border border-line text-ink-2 hover:text-ink-1 hover:bg-surface-3"
         >
           {tr('Domyślne', 'Defaults')}

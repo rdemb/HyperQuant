@@ -1,5 +1,6 @@
 import type { Candle } from '../hl/parse';
 import { Extreme, Window, Wma, ema, rma } from './primitives';
+import { INTERVALS, intervalById } from '../core/time';
 import { numLang } from '../../../ui/format';
 import { tr } from '../../../i18n';
 
@@ -29,15 +30,17 @@ export type IndicatorId =
   | 'chop'
   | 'obv'
   | 'cmf'
-  | 'mfi';
+  | 'mfi'
+  | 'pivots';
 
 /** Grupy na liście okna wskaźników (jak kategorie TradingView). */
-export type IndicatorGroup = 'trend' | 'momentum' | 'volatility' | 'volume';
+export type IndicatorGroup = 'trend' | 'momentum' | 'volatility' | 'volume' | 'levels';
 export const GROUPS: readonly { id: IndicatorGroup; name: string }[] = [
   { id: 'trend', name: 'Trend' },
   { id: 'momentum', name: 'Momentum' },
   { id: 'volatility', name: tr('Zmienność', 'Volatility') },
   { id: 'volume', name: tr('Wolumen', 'Volume') },
+  { id: 'levels', name: tr('Poziomy', 'Levels') },
 ];
 
 /** Parametr liczbowy: zakres, krok pola i wartość domyślna (krok 1 = liczba całkowita). */
@@ -58,6 +61,10 @@ export interface PlotDef {
   color?: string;
   /** Słupki od zera w kolorze znaku zamiast linii (histogram MACD). */
   hist?: boolean;
+  /** Podpis przy wartości na osi ceny (poziomy pivot: P, R1, S1…). */
+  title?: string;
+  /** Poziom okresu: bez odcinka łączącego go z innym poziomem następnego okresu. */
+  breaks?: boolean;
 }
 
 /** Kolory stałych linii: drugiej i trzeciej linii wskaźnika oraz słupków dodatnich i ujemnych. */
@@ -90,6 +97,11 @@ export interface IndicatorDef {
   lag?(p: Params): number;
   /** Opis zależności od historii zamiast wyliczonego (np. suma od początku historii albo pasma trzymające poziom). */
   memoryNote?: string;
+  /**
+   * Stały okres (interwał świec, np. doba pivotów): liczone na jego świecach, a świeca wykresu bierze wartość okresu,
+   * w którym leży — wzór sięga tylko po okresy zamknięte. Bez niego wskaźnik ma parametr „Interwał”.
+   */
+  period?: string;
   /** Na wykresie ceny albo we własnym panelu pod nim. */
   pane: 'price' | 'own';
   params: readonly ParamDef[];
@@ -769,6 +781,55 @@ export const INDICATORS: readonly IndicatorDef[] = [
       };
     },
   },
+  {
+    id: 'pivots',
+    short: 'Pivots',
+    name: tr('Punkty pivot (Traditional)', 'Pivot Points Standard (Traditional)'),
+    hint: tr(
+      'Poziomy doby z maksimum, minimum i zamknięcia poprzedniej doby UTC: P = (H + L + C) / 3, R1 = 2P − L, S1 = 2P − H, R2 = P + (H − L), S2 = P − (H − L), R3 = H + 2(P − L), S3 = L − 2(H − P)',
+      "The day's levels from the previous UTC day's high, low and close: P = (H + L + C) / 3, R1 = 2P − L, S1 = 2P − H, R2 = P + (H − L), S2 = P − (H − L), R3 = H + 2(P − L), S3 = L − 2(H − P)"
+    ),
+    group: 'levels',
+    aliases: 'pivot points standard traditional punkty piwot poziomy opór wsparcie resistance support r1 s1 doba dzień daily',
+    warmup: () => 1,
+    memoryNote: tr(
+      'Liczone ze świec 1D Hyperliquid (doba UTC, rynek bez przerw): poziomy stoją od północy UTC do końca doby. TradingView w trybie Auto na wyższych interwałach bierze dłuższy okres; tu zawsze doba.',
+      'Computed from Hyperliquid 1D candles (the UTC day, a market without breaks): the levels hold from UTC midnight to the end of the day. TradingView in Auto mode takes a longer period on higher timeframes; here it is always the day.'
+    ),
+    period: '1d',
+    pane: 'price',
+    params: [],
+    plots: [
+      { title: 'P', breaks: true },
+      { title: 'R1', breaks: true },
+      { title: 'S1', breaks: true },
+      { title: 'R2', breaks: true },
+      { title: 'S2', breaks: true },
+      { title: 'R3', breaks: true },
+      { title: 'S3', breaks: true },
+    ],
+    format: 'price',
+    create: () => {
+      // Świeca poprzedniej doby (zatwierdzona); bieżąca doba dostaje jej poziomy
+      let prev: Candle | null = null;
+      return (c, keep, out) => {
+        const d = prev;
+        if (keep) prev = c;
+        if (!d) {
+          out.fill(Number.NaN);
+          return;
+        }
+        const p = (d.h + d.l + d.c) / 3;
+        out[0] = p;
+        out[1] = 2 * p - d.l;
+        out[2] = 2 * p - d.h;
+        out[3] = p + (d.h - d.l);
+        out[4] = p - (d.h - d.l);
+        out[5] = d.h + 2 * (p - d.l);
+        out[6] = d.l - 2 * (d.h - p);
+      };
+    },
+  },
 ];
 
 export const indicatorDef = (id: IndicatorId): IndicatorDef => INDICATORS.find((d) => d.id === id)!;
@@ -798,6 +859,8 @@ export interface IndicatorInstance {
   /** Ostatnia wartość na osi ceny. */
   labels: boolean;
   visible: boolean;
+  /** Interwał świec, z których liczony jest wskaźnik (np. 1h na wykresie 5m); brak — interwał wykresu. */
+  tf?: string;
 }
 
 /** Grubości linii w oknie stylu. */
@@ -812,11 +875,14 @@ export const MAX_INDICATORS = 12;
 /** Kolory kolejnych instancji: odróżnialne od świec, VWAP i POC w obu paletach wykresu. */
 export const INDICATOR_COLORS = ['#3987e5', '#f2a93b', '#e66767', '#2ec4b6', '#d55181', '#b388ff'] as const;
 
-/** Podpis w legendzie i na liście: skrót i parametry („EMA 21”, „BB 20 2,5”). */
+/** Podpis w legendzie i na liście: skrót, parametry i interwał spoza wykresu („EMA 21”, „BB 20 2,5”, „RSI 14 1h”). */
 export function indicatorLabel(x: IndicatorInstance): string {
   const def = indicatorDef(x.id);
-  return [def.short, ...def.params.map((p) => numLang(String(x.params[p.key])))].join(' ');
+  return [def.short, ...def.params.map((p) => numLang(String(x.params[p.key]))), ...(x.tf ? [intervalById(x.tf).label] : [])].join(' ');
 }
+
+/** Interwał wskaźnika: znany identyfikator interwału, a wskaźnik ze stałym okresem (pivoty) go nie ma. */
+const tfOk = (def: IndicatorDef, tf: unknown): tf is string => !def.period && INTERVALS.some((iv) => iv.id === tf);
 
 /** Wartość parametru w zakresie (przy kroku 1 liczba całkowita). */
 export const paramOk = (v: unknown, p: ParamDef): v is number =>
@@ -867,26 +933,28 @@ export function parseIndicators(raw: unknown): IndicatorInstance[] {
     const alpha = typeof r.alpha === 'number' && r.alpha >= 0 && r.alpha <= 1 ? r.alpha : 1;
     const width = (INDICATOR_WIDTHS as readonly unknown[]).includes(r.width) ? (r.width as number) : defaultWidth(def);
     const flag = (v: unknown) => (typeof v === 'boolean' ? v : true);
-    out.push({ iid, id: def.id, params: parseParams(def, r.params), color, alpha, width, labels: flag(r.labels), visible: flag(r.visible) });
+    const x: IndicatorInstance = { iid, id: def.id, params: parseParams(def, r.params), color, alpha, width, labels: flag(r.labels), visible: flag(r.visible) };
+    if (tfOk(def, r.tf)) x.tf = r.tf;
+    out.push(x);
   }
   return out;
 }
 
-/** Widoczne wskaźniki w linku do widoku: `ema(21);rsi(14);bb(20,2.5)` (parametry w kolejności z rejestru, bez stylu). */
+/** Widoczne wskaźniki w linku do widoku: `ema(21);rsi(14)@1h;bb(20,2.5)` (parametry w kolejności z rejestru i interwał, bez stylu). */
 export const indicatorsLink = (list: readonly IndicatorInstance[]): string =>
   list
     .filter((x) => x.visible)
-    .map((x) => `${x.id}(${indicatorDef(x.id).params.map((p) => x.params[p.key]).join(',')})`)
+    .map((x) => `${x.id}(${indicatorDef(x.id).params.map((p) => x.params[p.key]).join(',')})${x.tf ? `@${x.tf}` : ''}`)
     .join(';');
 
 /** Wskaźniki z linku z walidacją jak zapis: nieznany pominięty, błędny parametr domyślny, kolory kolejne. */
 export function indicatorsFromLink(link: string): IndicatorInstance[] {
   const raw = link.split(';').map((part) => {
-    const m = /^([a-z]+)\(([^()]*)\)$/.exec(part.trim());
+    const m = /^([a-z]+)\(([^()]*)\)(?:@(\w+))?$/.exec(part.trim());
     const def = m ? INDICATORS.find((d) => d.id === m[1]) : undefined;
     if (!m || !def) return null;
     const vals = m[2].split(',');
-    return { id: def.id, params: Object.fromEntries(def.params.map((p, i) => [p.key, vals[i] ? Number(vals[i]) : undefined])) };
+    return { id: def.id, params: Object.fromEntries(def.params.map((p, i) => [p.key, vals[i] ? Number(vals[i]) : undefined])), tf: m[3] };
   });
   return parseIndicators(raw.filter((r) => r !== null));
 }
