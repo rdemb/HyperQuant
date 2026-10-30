@@ -4,13 +4,13 @@ import { fmtVol } from '../../orderflow/footprint';
 import { fmtSignedVol } from '../../orderflow/renderer';
 import { DASH, fmtFixed, numLang } from '../../../ui';
 import { fmtBarTime, fmtSince } from '../core/time';
-import type { Hover } from './controller';
+import type { Hover, IndicatorReadout } from './controller';
 import { fmtPx } from './layout';
 import { tr } from '../../../i18n';
 
 /** Najnowszy stan krzyża (ustawiany przez sterownik wykresu najwyżej raz na klatkę). */
 export class HoverSignal {
-  private value: Hover = { bar: null, live: true, open: false, row: null, cvd: null, ind: null };
+  private value: Hover = { bar: null, live: true, open: false, row: null, cvd: null, ind: null, indicators: [] };
   private readonly listeners = new Set<() => void>();
 
   set = (h: Hover): void => {
@@ -68,6 +68,17 @@ const fmtChange = (v: number) => {
 };
 
 const tone = (v: number) => (v > 0 ? 'text-of-buy-ink' : v < 0 ? 'text-of-sell-ink' : 'text-ink-2');
+
+/** Klasyczne wskaźniki na wykresie ceny: podpis z parametrami i wartości w kolorze linii. */
+const IndicatorFields: React.FC<{ list: IndicatorReadout[] }> = ({ list }) => (
+  <>
+    {list.map((r) => (
+      <Field key={r.iid} label={r.label} className="">
+        <span style={{ color: r.color }}>{r.text}</span>
+      </Field>
+    ))}
+  </>
+);
 
 const Field: React.FC<{ label: string; children: React.ReactNode; className?: string; title?: string; secondary?: boolean }> = ({
   label,
@@ -138,6 +149,7 @@ export const Legend: React.FC<{
                 {fmtPx(h.ind.vwap.vwap)}
               </Field>
             )}
+            <IndicatorFields list={h.indicators} />
           </div>
         ) : (
           <div className="text-ink-3">{tr('Wczytywanie świec…', 'Loading candles…')}</div>
@@ -247,6 +259,11 @@ export const Legend: React.FC<{
               {fmtPx(h.ind.svwap.vwap)}
             </Field>
           )}
+        </div>
+      )}
+      {h.indicators.length > 0 && c && (
+        <div className="flex flex-wrap items-baseline gap-x-2.5">
+          <IndicatorFields list={h.indicators} />
         </div>
       )}
       {/* Szczegóły taśmy tylko na szerszym ekranie — na telefonie deltę i CVD pokazują opisy paneli */}
