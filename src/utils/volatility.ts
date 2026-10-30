@@ -315,6 +315,28 @@ function iteratedSmear(y: number[], pre: Float64Array, coef: [number, number, nu
   return out;
 }
 
+/** GK podłogowany na 1% mediany dodatnich wartości z `ref` (świeca bez zakresu nie staje się odstającą obserwacją ln 0). */
+function floorGk(gk: number[], ref: number[]): number[] | null {
+  const positive = ref.filter((v) => v > 0).sort((a, b) => a - b);
+  if (positive.length === 0) return null;
+  const floor = 0.01 * positive[Math.floor(positive.length / 2)];
+  return gk.map((x) => Math.max(x, floor));
+}
+
+/** Wiersze regresji HAR [1, y_t, średnia 24, średnia 168] → y_{t+1} dla t = 167..N−2 i sumy prefiksowe y. */
+function harRows(y: number[]): { rows: number[][]; target: number[]; pre: Float64Array } {
+  const N = y.length;
+  const pre = new Float64Array(N + 1);
+  for (let i = 0; i < N; i++) pre[i + 1] = pre[i] + y[i];
+  const rows: number[][] = [];
+  const target: number[] = [];
+  for (let t = 167; t < N - 1; t++) {
+    rows.push([1, y[t], (pre[t + 1] - pre[t - 23]) / 24, (pre[t + 1] - pre[t - 167]) / 168]);
+    target.push(y[t + 1]);
+  }
+  return { rows, target, pre };
+}
+
 /**
  * Sezonowy log-HAR na godzinowych wariancjach Garman–Klass:
  * y_t = ln(GK_t / f_h(t)), y_{t+1} = b0 + b1·y_t + b2·średnia(y_{t−23..t}) + b3·średnia(y_{t−167..t}) + ε.
@@ -324,34 +346,28 @@ function iteratedSmear(y: number[], pre: Float64Array, coef: [number, number, nu
 export function fitSeasonalHar(bars: RangeBar[], profile: SeasonalProfile): HarModel | null {
   const valid = bars.filter(isValidBar).sort((a, b) => a.time - b.time);
   const gk = valid.map(garmanKlassVar);
-  const positive = gk.filter((v) => v > 0).sort((a, b) => a - b);
-  if (positive.length === 0) return null;
-  const floor = 0.01 * positive[Math.floor(positive.length / 2)];
-  const v = gk.map((x) => Math.max(x, floor));
+  const v = floorGk(gk, gk);
+  if (!v) return null;
   const y = v.map((x, i) => Math.log(x / profile.factors[utcHour(valid[i].time)]));
   const N = y.length;
   if (N - 168 < 500) return null;
 
-  // Sumy prefiksowe do średnich kroczących
-  const pre = new Float64Array(N + 1);
-  for (let i = 0; i < N; i++) pre[i + 1] = pre[i] + y[i];
-  const rows: number[][] = [];
-  const target: number[] = [];
-  for (let t = 167; t < N - 1; t++) {
-    rows.push([1, y[t], (pre[t + 1] - pre[t - 23]) / 24, (pre[t + 1] - pre[t - 167]) / 168]);
-    target.push(y[t + 1]);
-  }
-
+  const { rows, target, pre } = harRows(y);
   const fit = olsHar(rows, target, 0, rows.length);
   if (!fit) return null;
   const tMean = meanOf(target);
   const sst = target.reduce((a, x) => a + (x - tMean) ** 2, 0);
 
-  // Ocena poza próbą: model z pierwszych 70% wierszy, prognozy 1-krokowe na reszcie
+  // Ocena poza próbą: model z pierwszych 70% wierszy, prognozy 1-krokowe na reszcie. Profil sezonowy i podłoga GK tylko
+  // ze świec części uczącej (wiersze 0..split−1 sięgają świecy split+167): profil z całej próby widziałby część testową
   let oos: HarModel['oos'] = null;
   const split = Math.floor(rows.length * 0.7);
-  const fitIn = olsHar(rows, target, 0, split);
-  if (fitIn && rows.length - split >= 50) {
+  const nTrain = split + 168;
+  const pIn = seasonalProfile(valid.slice(0, nTrain));
+  const vIn = floorGk(gk, gk.slice(0, nTrain));
+  const ins = vIn ? harRows(vIn.map((x, i) => Math.log(x / pIn.factors[utcHour(valid[i].time)]))) : null;
+  const fitIn = ins ? olsHar(ins.rows, ins.target, 0, split) : null;
+  if (ins && vIn && fitIn && rows.length - split >= 50) {
     let qh = 0;
     let qn = 0;
     let cnt = 0;
@@ -359,10 +375,10 @@ export function fitSeasonalHar(bars: RangeBar[], profile: SeasonalProfile): HarM
       const t = i + 167; // indeks świecy y_t dla wiersza i
       const realized = gk[t + 1];
       if (!(realized > 0)) continue;
-      const x = rows[i];
+      const x = ins.rows[i];
       const yHat = fitIn.coef[0] + fitIn.coef[1] * x[1] + fitIn.coef[2] * x[2] + fitIn.coef[3] * x[3];
-      const fHar = profile.factors[utcHour(valid[t + 1].time)] * Math.exp(yHat) * fitIn.smear;
-      const fNaive = meanOf(v, t - 23, t + 1);
+      const fHar = pIn.factors[utcHour(valid[t + 1].time)] * Math.exp(yHat) * fitIn.smear;
+      const fNaive = meanOf(vIn, t - 23, t + 1);
       qh += qlike(realized, fHar);
       qn += qlike(realized, fNaive);
       cnt++;

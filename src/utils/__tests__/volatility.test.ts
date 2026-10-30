@@ -276,6 +276,15 @@ describe('sezonowy log-HAR', () => {
     }
   });
 
+  it('ocena poza próbą nie widzi części testowej: profil z części uczącej, a nie z całej próby', () => {
+    // Profil z całej próby (tu: 4× wariancja o 14:00 UTC, jak po skoku zmienności tylko w ostatnich 30%) nie zmienia oceny
+    const spiky: SeasonalProfile = { factors: FLAT.factors.map((_, h) => (h === 14 ? 4 : 1)), counts: FLAT.counts };
+    const ms = fitSeasonalHar(bars, spiky)!;
+    expect(ms.oos).toEqual(m!.oos);
+    // Dopasowanie na całej próbie nadal używa podanego profilu
+    expect(ms.coef).not.toEqual(m!.coef);
+  });
+
   it('za mało godzin (< 500 wierszy regresji) → null', () => {
     expect(fitSeasonalHar(bars.slice(0, 600), FLAT)).toBeNull();
   });
