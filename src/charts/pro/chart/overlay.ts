@@ -13,7 +13,7 @@ import type {
 } from 'lightweight-charts';
 import { fmtCompact } from '../../../ui/format';
 import { spreadTags } from '../../orderflow/renderer';
-import { hlTick } from '../core/footprintBar';
+import { baseTick } from '../core/footprintBar';
 import {
   DayLevels,
   DevelopingLevels,
@@ -680,7 +680,7 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
   private rowStep(bars: readonly ProBar[], vt: number, Y: (p: number) => number): number {
     const ref = bars[vt].candle.c;
     const pxPerUsd = Math.abs(Y(ref) - Y(ref + 100)) / 100;
-    return pxPerUsd > 0 ? autoRowStep(pxPerUsd, hlTick(ref), PROFILE_ROW_PX) : 0;
+    return pxPerUsd > 0 ? autoRowStep(pxPerUsd, baseTick(ref), PROFILE_ROW_PX) : 0;
   }
 
   /**

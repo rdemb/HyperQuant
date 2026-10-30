@@ -25,8 +25,11 @@ export interface TradeCtx {
   /** Otwarcie sesji względem VA poprzedniej */
   openLoc: OpenLoc | null;
   /** Stan Initial Balance przy wejściu */
-  ib: 'w trakcie' | 'w zakresie' | 'wybity ↑' | 'wybity ↓' | 'wybity ↑↓' | null;
+  ib: IbState | null;
 }
+
+/** Stan IB: w trakcie (00–01 UTC), w zakresie, wybity w górę, w dół, w obie strony. Kod, nie etykieta (etykieta w widoku). */
+export type IbState = 'open' | 'inside' | 'up' | 'down' | 'both';
 
 export interface Trade {
   id: string;
@@ -162,7 +165,15 @@ const numOrNull = (v: unknown) => v === null || isNum(v);
 const posNum = (v: unknown) => isNum(v) && v > 0;
 /** Czas w ms z sensownego zakresu (2009–2100) — np. nanosekundy wywróciłyby formatowanie dat */
 const isTime = (v: unknown) => isNum(v) && v >= 1.23e12 && v <= 4.1e12;
-const IB_STATES = new Set(['w trakcie', 'w zakresie', 'wybity ↑', 'wybity ↓', 'wybity ↑↓']);
+const IB_STATES = new Set<string>(['open', 'inside', 'up', 'down', 'both']);
+/** Wpisy sprzed kodów zapisywały polską etykietę */
+const IB_LEGACY = new Map<string, IbState>([
+  ['w trakcie', 'open'],
+  ['w zakresie', 'inside'],
+  ['wybity ↑', 'up'],
+  ['wybity ↓', 'down'],
+  ['wybity ↑↓', 'both'],
+]);
 
 /** Kontekst przy wejściu: tylko znane pola z poprawnymi typami; inaczej null (zagranie zostaje). */
 function cleanCtx(c: unknown): TradeCtx | null {
@@ -170,7 +181,7 @@ function cleanCtx(c: unknown): TradeCtx | null {
   const o = c as Record<string, unknown>;
   const vwapZ = o.vwapZ === null || o.vwapZ === undefined ? null : isNum(o.vwapZ) ? o.vwapZ : undefined;
   const openLoc = o.openLoc === null || o.openLoc === undefined ? null : o.openLoc === 'above' || o.openLoc === 'inside' || o.openLoc === 'below' ? o.openLoc : undefined;
-  const ib = o.ib === null || o.ib === undefined ? null : isStr(o.ib) && IB_STATES.has(o.ib) ? (o.ib as TradeCtx['ib']) : undefined;
+  const ib = o.ib === null || o.ib === undefined ? null : !isStr(o.ib) ? undefined : IB_STATES.has(o.ib) ? (o.ib as IbState) : IB_LEGACY.get(o.ib);
   if (vwapZ === undefined || openLoc === undefined || ib === undefined) return null;
   return { vwapZ, openLoc, ib };
 }

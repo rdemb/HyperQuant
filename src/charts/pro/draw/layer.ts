@@ -14,7 +14,7 @@ import type {
 import { fmtVol } from '../../orderflow/footprint';
 import { fmtSignedVol } from '../../orderflow/renderer';
 import { fmtPct, fmtSigned, numLang } from '../../../ui/format';
-import { hlTick } from '../core/footprintBar';
+import { baseTick } from '../core/footprintBar';
 import { volumeProfile, vwapSeries } from '../core/indicators';
 import type { VolumeProfile, VwapPoint } from '../core/indicators';
 import type { ProBar } from '../store/proStore';
@@ -837,7 +837,7 @@ export class DrawingLayer implements ISeriesPrimitive<Time> {
     const s = d.style;
     const ref = bars[Math.max(0, ib)].candle.c;
     const ppu = this.pxPerUsd(ref);
-    const step = ppu > 0 ? autoRowStep(ppu, hlTick(ref), RANGE_PROFILE_ROW_PX) : 0;
+    const step = ppu > 0 ? autoRowStep(ppu, baseTick(ref), RANGE_PROFILE_ROW_PX) : 0;
     const prof = ib >= ia && step > 0 ? this.rangeProfile(d.id, ia, ib, step) : null;
     const ym = (v.Y(d.pts[0].p) + v.Y(d.pts[1].p)) / 2;
     it.handles = d.pts.map((q) => ({ x: q.t === ta ? xL : xR, y: ym }));
@@ -878,7 +878,7 @@ export class DrawingLayer implements ISeriesPrimitive<Time> {
       c.fillStyle = PRO.ink2;
       c.textAlign = 'left';
       c.textBaseline = 'top';
-      c.fillText(`Wol ${fmtVol(prof.total)} ${this.unit} · POC ${fmtPx(pocPrice)}`, xL + 2, yBot + 4);
+      c.fillText(`${tr('Wol', 'Vol')} ${fmtVol(prof.total)} ${this.unit} · POC ${fmtPx(pocPrice)}`, xL + 2, yBot + 4);
     };
     return it;
   }

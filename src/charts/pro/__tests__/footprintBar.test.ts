@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { IMB_BUY, IMB_SELL } from '../../orderflow/footprint';
 import { bookSigFigs } from '../core/book';
-import { FootprintBuilder, aggregateRows, hlTick, rowAt, rowIndex, stackedRuns } from '../core/footprintBar';
+import { FootprintBuilder, aggregateRows, baseTick, hlTick, rowAt, rowIndex, stackedRuns } from '../core/footprintBar';
+import { autoRowStep } from '../chart/layout';
 
 function build(trades: [number, number, number, 1 | -1][]) {
   const b = new FootprintBuilder(0, 1);
@@ -30,6 +31,17 @@ describe('hlTick', () => {
     expect(bookSigFigs(2_800)).toEqual({ near: 4, far: 3 });
     expect(bookSigFigs(195)).toEqual({ near: 4, far: 3 });
     expect(bookSigFigs(36.8)).toEqual({ near: 4, far: 3 });
+  });
+
+  it('baseTick: jedna kotwica footprintu i profili tuż nad granicą rzędu ceny', () => {
+    // SOL 102: tick rynku 0,01, tick bazowy (z 96,9) 0,001 — footprint i profile startują z tej samej drabiny kroków
+    expect(hlTick(102)).toBeCloseTo(0.01, 12);
+    expect(baseTick(102)).toBeCloseTo(0.001, 12);
+    const b = new FootprintBuilder(0);
+    b.add(0, 102, 1, 1);
+    expect(b.build()!.tick).toBe(baseTick(102));
+    // Przy dużym przybliżeniu (2000 px/USD) profil z tickiem rynku miałby wiersz 10× grubszy niż footprint
+    expect(autoRowStep(2000, baseTick(102), 6)).toBeLessThan(autoRowStep(2000, hlTick(102), 6));
   });
 
   it('rowIndex nie gubi wiersza przez błąd zmiennoprzecinkowy', () => {

@@ -109,15 +109,18 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(networkWithFallback(request));
 });
 
-// Kliknięcie powiadomienia alarmu: powrót do otwartej karty desku (najpierw z Wykresami), a bez niej — nowe okno Wykresów
-// (z powiadomienia 24/7: od razu na rynku alarmu)
+// Kliknięcie powiadomienia alarmu: powrót do otwartej karty desku (najpierw z Wykresami), a bez niej — nowe okno Wykresów.
+// Powiadomienie 24/7 niesie rynek alarmu: także otwarta karta przechodzi na niego (zmiana # bez przeładowania strony)
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const target = (event.notification.data && event.notification.data.url) || './#charts';
+  const url = event.notification.data && event.notification.data.url;
   event.waitUntil(
-    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async (list) => {
       const tab = list.find((c) => new URL(c.url).hash.startsWith('#charts')) || list[0];
-      return tab ? tab.focus() : self.clients.openWindow(target);
+      if (!tab) return self.clients.openWindow(url || './#charts');
+      // Najpierw focus (zgoda na pokazanie okna trwa krótko po kliknięciu); navigate odrzuca kartę spoza tego workera
+      await tab.focus().catch(() => null);
+      if (url && tab.navigate) await tab.navigate(url).catch(() => null);
     })
   );
 });

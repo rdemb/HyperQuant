@@ -31,6 +31,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       indexnow: ${{ steps.indexnow.outputs.body }}
+      deploy: ${{ steps.gate.outputs.deploy }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v7
@@ -41,21 +42,40 @@ jobs:
           node-version: 24
           cache: npm
 
-      - name: Install Dependencies
-        run: npm ci --legacy-peer-deps
-
-      - name: Type Check
-        run: npm run lint
-
-      - name: Run Tests
-        run: npm test
-
-      # Dane publiczne bez kluczy API → public/data/feeds/*.json; błąd źródeł nie blokuje wdrożenia
+      # Dane publiczne bez kluczy API → public/data/feeds/*.json (skrypt bez zależności, przed npm ci); błąd źródeł
+      # nie blokuje wdrożenia po pushu
       - name: Fetch Public Data
+        id: feeds
         run: node scripts/fetch-public-data.mjs
         continue-on-error: true
 
+      # Przebieg z harmonogramu wdraża tylko nowe dane: bez zmian względem Pages albo bez żadnego pliku kończy się tutaj
+      - name: Decide Deploy
+        id: gate
+        run: |
+          if [ "$EVENT" != schedule ] || [ "$CHANGED" = true ]; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Dane bez zmian albo pobranie nie powiodło się: bez wdrożenia"
+          fi
+        env:
+          EVENT: ${{ github.event_name }}
+          CHANGED: ${{ steps.feeds.outputs.changed }}
+
+      - name: Install Dependencies
+        if: steps.gate.outputs.deploy == 'true'
+        run: npm ci --legacy-peer-deps
+
+      - name: Type Check
+        if: steps.gate.outputs.deploy == 'true'
+        run: npm run lint
+
+      - name: Run Tests
+        if: steps.gate.outputs.deploy == 'true'
+        run: npm test
+
       - name: Build Production Assets
+        if: steps.gate.outputs.deploy == 'true'
         run: npm run build
         env:
           # Publiczny adres danych skanera (repo rdemb/hyperquant-data) — zmienna repozytorium, pusta = panel mapy likwidacji czeka
@@ -79,6 +99,7 @@ jobs:
           BEFORE: ${{ github.event.before }}
 
       - name: Upload GitHub Pages Artifact
+        if: steps.gate.outputs.deploy == 'true'
         uses: actions/upload-pages-artifact@v5
         with:
           path: './dist'
@@ -86,6 +107,7 @@ jobs:
   deploy:
     name: Deploy to GitHub Pages
     needs: build
+    if: needs.build.outputs.deploy == 'true'
     runs-on: ubuntu-latest
     environment:
       name: github-pages

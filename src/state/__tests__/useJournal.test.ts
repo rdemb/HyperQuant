@@ -32,7 +32,7 @@ describe('enrichTrade — MAE/MFE i kontekst aukcji przy wejściu ze świec 1m',
     expect(e.mae).toBeCloseTo(-0.1, 9); // min low 100 095 → −5 / 50
     expect(e.mfe).toBeCloseTo(0.1, 9); // max high 100 105 → +5 / 50
     expect(e.ctx!.vwapZ).not.toBeNull();
-    expect(e.ctx!.ib).toBe('wybity ↑'); // po 01:00 cena nad IB (100 005)
+    expect(e.ctx!.ib).toBe('up'); // po 01:00 cena nad IB (100 005)
   });
 
   it('sesja wejścia zaczęła się przed oknem świec 1m → MAE/MFE tak, kontekst nie (VWAP z części sesji byłby fałszywy)', async () => {

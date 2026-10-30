@@ -9,7 +9,7 @@ import type {
   SeriesType,
   Time,
 } from 'lightweight-charts';
-import { hlTick } from '../core/footprintBar';
+import { baseTick } from '../core/footprintBar';
 import { nakedPocs } from '../core/indicators';
 import { DAY } from '../core/time';
 import { TPO_LETTERS, TpoProfile, tpoInterval, tpoPocPx, tpoProfiles, tpoSingles } from '../core/tpo';
@@ -187,7 +187,7 @@ export class TpoLayer implements ISeriesPrimitive<Time> {
     const yb = y(ref + 100);
     if (ya === null || yb === null) return;
     const pxPerUsd = Math.abs(ya - yb) / 100;
-    const step = pxPerUsd > 0 ? autoRowStep(pxPerUsd, hlTick(ref), TPO_ROW_PX) : 0;
+    const step = pxPerUsd > 0 ? autoRowStep(pxPerUsd, baseTick(ref), TPO_ROW_PX) : 0;
     if (!(step > 0)) return;
     if (!this.cache || this.cache.bars !== bars || this.cache.step !== step) this.cache = { bars, step, list: tpoProfiles(bars, step) };
     const list = this.cache.list;

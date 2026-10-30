@@ -1,5 +1,5 @@
 // Weryfikacja krzyżowa: linie z modułu skanera (backend/scanner/ledger.ts) sprawdzane niezależnym skryptem dla użytkowników.
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { GENESIS, makeLine } from '../backend/scanner/ledger.ts';
 import { canonical, recompute, verifyChain } from './verify-ledger.mjs';
 
@@ -71,7 +71,7 @@ describe('verify-ledger — przeliczanie wyników i pokwitowania', () => {
   });
 });
 
-import { bitcoinTime, checkMarket, checkOrdering, checkReceipts, otsAttestations } from './verify-ledger.mjs';
+import { EXPLORERS, bitcoinTime, checkMarket, checkOrdering, checkReceipts, otsAttestations } from './verify-ledger.mjs';
 import { OTS_MAGIC, varbytes, varuint } from '../backend/scanner/ots.ts';
 import { createHash as hashOf } from 'node:crypto';
 
@@ -158,6 +158,43 @@ describe('verify-ledger — kolejność, pokwitowania, Bitcoin, rynek', () => {
   it('bitcoinTime: uszkodzony plik .ots → null (bez przerwania całej weryfikacji)', async () => {
     const broken = new Uint8Array([...OTS_MAGIC, 0x01, 0x08, ...new Uint8Array(32), 0x55]);
     await expect(bitcoinTime(broken)).resolves.toBeNull();
+  });
+
+  describe('bitcoinTime: dwa eksploratory muszą podać ten sam blok', () => {
+    afterEach(() => vi.unstubAllGlobals());
+    const d = new Uint8Array(32).fill(3);
+    const nonce = new Uint8Array(16).fill(4);
+    // Plik złożony ręcznie: poświadczenie Bitcoin wprost na SHA-256(skrót ‖ nonce) na wysokości `height`
+    const ots = (height) =>
+      new Uint8Array([...OTS_MAGIC, 0x01, 0x08, ...d, 0xf0, ...varbytes(nonce), 0x08, 0x00, 0x05, 0x88, 0x96, 0x0d, 0x73, 0xd7, 0x19, 0x01, ...varbytes(new Uint8Array(varuint(height)))]);
+    // Eksplorator zapisuje korzeń Merkle w odwrotnej kolejności bajtów
+    const root = Buffer.from(hashOf('sha256').update(Buffer.concat([Buffer.from(d), Buffer.from(nonce)])).digest()).reverse().toString('hex');
+    const TS = 1_790_000_000;
+    /** Eksplorator `base`: `blk(height)` → { hash, merkle_root, timestamp } albo null (niedostępny). */
+    const stub = (byBase) =>
+      vi.stubGlobal('fetch', async (url) => {
+        const base = EXPLORERS.find((b) => url.startsWith(b));
+        const m = /block-height\/(\d+)$/.exec(url);
+        const blk = byBase[base](m ? Number(m[1]) : Number(url.split('/').pop().split('-')[1]));
+        if (!blk) return new Response('down', { status: 503 });
+        return m ? new Response(`${blk.hash}\n`) : new Response(JSON.stringify(blk));
+      });
+    const honest = (h) => ({ hash: `blk-${h}`, merkle_root: root, timestamp: TS });
+
+    it('zgodne: czas bloku', async () => {
+      stub({ [EXPLORERS[0]]: honest, [EXPLORERS[1]]: honest });
+      await expect(bitcoinTime(ots(900_001))).resolves.toBe(TS * 1000);
+    });
+    it('drugi podaje inny korzeń Merkle albo inny hash: brak czasu', async () => {
+      stub({ [EXPLORERS[0]]: honest, [EXPLORERS[1]]: (h) => ({ ...honest(h), merkle_root: 'ff'.repeat(32) }) });
+      await expect(bitcoinTime(ots(900_002))).resolves.toBeNull();
+      stub({ [EXPLORERS[0]]: honest, [EXPLORERS[1]]: (h) => ({ ...honest(h), hash: 'inny' }) });
+      await expect(bitcoinTime(ots(900_003))).resolves.toBeNull();
+    });
+    it('drugi niedostępny: brak czasu (jeden eksplorator nie wystarcza)', async () => {
+      stub({ [EXPLORERS[0]]: honest, [EXPLORERS[1]]: () => null });
+      await expect(bitcoinTime(ots(900_004))).resolves.toBeNull();
+    });
   });
 });
 

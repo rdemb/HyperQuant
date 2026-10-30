@@ -1,7 +1,7 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { useJournal } from '../../state/useJournal';
 import { Badge, EmptyState, Panel, Segmented, DASH, fmtPrice, fmtFixed } from '../../ui';
-import { rMultiple, setupStats, type Setup, type Trade } from '../../utils/tradeJournal';
+import { rMultiple, setupStats, type IbState, type Setup, type Trade } from '../../utils/tradeJournal';
 import { parseNum } from './hooks';
 import { locale, tr } from '../../i18n';
 
@@ -15,8 +15,9 @@ const dtFmt = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', 
 const MIN_N = 20;
 /** Przedział bootstrap od 5 zagrań (przy 1–4 losowanie ze zwracaniem daje przedział zdegenerowany) */
 const MIN_CI_N = 5;
-/** Stan IB zapisany w dzienniku po polsku (format danych) → etykieta w bieżącym języku */
-const IB_EN: Record<string, string> = { 'w trakcie': 'forming', 'w zakresie': 'inside', 'wybity ↑': 'broken ↑', 'wybity ↓': 'broken ↓', 'wybity ↑↓': 'broken ↑↓' };
+/** Kod stanu IB z dziennika → etykieta w bieżącym języku */
+const ibLabel = (ib: IbState) =>
+  ({ open: tr('w trakcie', 'forming'), inside: tr('w zakresie', 'inside'), up: tr('wybity ↑', 'broken ↑'), down: tr('wybity ↓', 'broken ↓'), both: tr('wybity ↑↓', 'broken ↑↓') })[ib];
 
 const fmtR = (r: number | null, d = 2) => (r === null || !Number.isFinite(r) ? DASH : `${r >= 0 ? '+' : '−'}${fmtFixed(Math.abs(r), d)}R`);
 const pct = (p: number) => `${Math.round(p * 100)}%`;
@@ -419,7 +420,7 @@ const TradeList: React.FC<{ trades: Trade[]; names: Map<string, string>; onRemov
                     {tr('otw.', 'open')} {t.ctx.openLoc === 'above' ? tr('nad VA', 'above VA') : t.ctx.openLoc === 'below' ? tr('pod VA', 'below VA') : tr('w VA', 'in VA')}
                   </Badge>
                 )}
-                {t.ctx.ib && <Badge tone="neutral">IB {tr(t.ctx.ib, IB_EN[t.ctx.ib] ?? t.ctx.ib)}</Badge>}
+                {t.ctx.ib && <Badge tone="neutral">IB {ibLabel(t.ctx.ib)}</Badge>}
               </span>
             )}
             {t.note && <span className="w-full text-ink-3">{t.note}</span>}

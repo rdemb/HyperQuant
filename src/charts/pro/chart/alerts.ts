@@ -137,11 +137,11 @@ export function markSeen(t: number): void {
   }
 }
 
-const DAY = 24 * 3600_000;
-/** Godzina HH:MM dnia chwili `ref` (czas lokalny). */
-function clockAt(hm: string, ref: number): number {
+/** Godzina HH:MM dnia chwili `ref` przesuniętego o `days` dni kalendarza (czas lokalny; doba zmiany czasu ma 23 albo 25 h). */
+function clockAt(hm: string, ref: number, days = 0): number {
   const [h, m] = hm.split(':').map(Number);
   const d = new Date(ref);
+  d.setDate(d.getDate() + days);
   d.setHours(h, m, 0, 0);
   return d.getTime();
 }
@@ -150,13 +150,13 @@ function clockAt(hm: string, ref: number): number {
 export function windowOf(fromHm: string, untilHm: string, now: number): [number, number] {
   const next = (hm: string) => {
     const t = clockAt(hm, now);
-    return t > now ? t : t + DAY;
+    return t > now ? t : clockAt(hm, now, 1);
   };
   const until = untilHm ? next(untilHm) : now + DEFAULT_TTL_MS;
   if (!fromHm) return [now, until];
   if (!untilHm) return [next(fromHm), until];
   const f = clockAt(fromHm, until);
-  return [f < until ? f : f - DAY, until];
+  return [f < until ? f : clockAt(fromHm, until, -1), until];
 }
 
 /** Krótki podpis linii alarmu przy osi ceny. */

@@ -47,6 +47,14 @@ export function hlTick(px: number, szDecimals?: number): number {
   return szDecimals === undefined ? sig : Math.max(sig, 10 ** -(6 - szDecimals));
 }
 
+/**
+ * Tick bazowy footprintu, profili i TPO: z ceny o 5% niższej (świeca tuż nad granicą rzędu, np. 100 tys., nie traci ticku
+ * 1 USD po spadku pod nią). Jedna kotwica dla wszystkich warstw wierszy, żeby leżały na tej samej siatce.
+ */
+export function baseTick(px: number): number {
+  return hlTick(px * 0.95);
+}
+
 /** Indeks wiersza ceny na siatce `step` (zaokrąglenie chroni przed błędem zmiennoprzecinkowym). */
 export function rowIndex(px: number, step: number): number {
   return Math.floor(px / step + 1e-7);
@@ -79,8 +87,7 @@ export class FootprintBuilder {
 
   /** Dokłada transakcję; wymaga kolejności czasu (delta w trakcie świecy zależy od kolejności). */
   add(time: number, px: number, sz: number, side: Side): void {
-    // Tick z ceny o 5% niższej: świeca tuż nad granicą rzędu (np. 100 tys.) nie traci ticku 1 USD po spadku pod nią
-    if (Number.isNaN(this.tick)) this.tick = hlTick(px * 0.95);
+    if (Number.isNaN(this.tick)) this.tick = baseTick(px);
     const idx = rowIndex(px, this.tick);
     let r = this.rows.get(idx);
     if (!r) {
