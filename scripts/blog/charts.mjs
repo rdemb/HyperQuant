@@ -90,6 +90,21 @@ export function spreadLabels(items, gap, lo, hi) {
   return xs;
 }
 
+/**
+ * Podpis strefy przy lewej albo prawej krawędzi pola świec: tam, gdzie mniej zasłania koła likwidacji i podpis kwoty.
+ * Zasłonięty fragment podpisu kwoty liczy się dziesięć razy mocniej niż koło (ucięta liczba myli bardziej niż ukryte małe koło).
+ */
+export function zoneLabelX(marks, yy, w, plotW) {
+  const cost = (x0) =>
+    marks.reduce(
+      (sum, m) =>
+        sum +
+        Math.max(0, Math.min(x0 + w, m.x + m.w) - Math.max(x0, m.x)) * Math.max(0, Math.min(yy + 7, m.y + m.h) - Math.max(yy - 7, m.y)) * (m.text ? 10 : 1),
+      0
+    );
+  return cost(plotW - w - 2) < cost(2) ? plotW - w - 2 : 2;
+}
+
 /** Świece o interwale `base` sklejone po `k` (układ wąski: dwa razy dłuższe); delta tylko, gdy wszystkie części ją mają. */
 export function mergeCandles(candles, k, base = 15 * MIN) {
   if (k === 1) return candles;
@@ -272,18 +287,17 @@ export function sessionSvg(s, { narrow = false, zones = [], levels = null, uid =
     const label = `${n1.format(biggest.v)} mln USD`;
     const w = label.length * 5.4 + 4;
     out.push(rect(left ? x - w + 2 : x - 2, biggest.cy - 7, w, 14, C.bg, ' fill-opacity="0.85" rx="2"'));
-    marks.push({ x: left ? x - w + 2 : x - 2, y: biggest.cy - 7, w, h: 14 });
+    marks.push({ x: left ? x - w + 2 : x - 2, y: biggest.cy - 7, w, h: 14, text: true });
     out.push(text(x, biggest.cy, label, { size: 9, fill: C.ink2, anchor: left ? 'end' : 'start' }));
   }
 
-  // Podpisy stref na wierzchu, na tle wykresu (czytelne także nad świecami); przy lewej krawędzi, a gdy tam jest koło likwidacji, przy prawej
+  // Podpisy stref na wierzchu, na tle wykresu (czytelne także nad świecami); przy lewej krawędzi, a gdy tam zasłaniają koło likwidacji, przy prawej
   for (const z of zones) {
     const [a, b] = z.zone;
     const label = `${z.bias === 'up' ? '▲' : z.bias === 'down' ? '▼' : '◆'} ${px0(a)}–${px0(b)}`;
     const yy = (y(a) + y(b)) / 2;
     const w = label.length * 5.6 + 8;
-    const hits = (x0) => marks.some((m) => m.x < x0 + w && m.x + m.w > x0 && m.y < yy + 7 && m.y + m.h > yy - 7);
-    const x0 = hits(2) && !hits(plotW - w - 2) ? plotW - w - 2 : 2;
+    const x0 = zoneLabelX(marks, yy, w, plotW);
     out.push(rect(x0, yy - 7, w, 14, C.bg, ' fill-opacity="0.85" rx="2"'));
     out.push(
       text(x0 + 4, yy, label, {

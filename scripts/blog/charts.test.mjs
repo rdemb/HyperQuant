@@ -4,7 +4,18 @@ import path from 'node:path';
 import { gzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { anchoredVwap, buildCharts, decodeTape, mergeSpans, openSource, readCharts, volumeProfile } from './chartdata.mjs';
-import { diagonalImbalances, footprintHtml, footprintSvg, mergeBars, mergeCandles, sessionHtml, sessionSvg, sessionTitle, spreadLabels } from './charts.mjs';
+import {
+  diagonalImbalances,
+  footprintHtml,
+  footprintSvg,
+  mergeBars,
+  mergeCandles,
+  sessionHtml,
+  sessionSvg,
+  sessionTitle,
+  spreadLabels,
+  zoneLabelX,
+} from './charts.mjs';
 import { loadPostFile, validateCharts } from './posts.mjs';
 import { postBody } from './render.mjs';
 
@@ -293,6 +304,28 @@ describe('wykresy: rysunek (charts.mjs)', () => {
     expect(at(sessionSvg(SESSION, { zones }))).toBe(6);
     expect(at(sessionSvg(s, { zones }))).toBeGreaterThan(400);
     expect(at(sessionSvg(s, { zones, narrow: true, uid: 'n' }))).toBeGreaterThan(150);
+  });
+
+  it('podpis strefy: gdy obie krawędzie coś zasłaniają, wygrywa ta, która nie ucina podpisu kwoty', () => {
+    // Mapa dnia 30.10 na telefonie: z lewej podpis „14,1 mln USD”, z prawej małe koło
+    const caption = { x: 84.1, y: 180.6, w: 68.8, h: 14, text: true };
+    const circles = [
+      { x: 155.9, y: 179.6, w: 16, h: 16 },
+      { x: 197.1, y: 191.5, w: 5, h: 5 },
+    ];
+    expect(zoneLabelX([...circles, caption], 188.9, 92, 286)).toBe(192);
+    expect(zoneLabelX(circles, 188.9, 92, 286)).toBe(2);
+    expect(
+      zoneLabelX(
+        [
+          { x: 10, y: 100, w: 4, h: 4 },
+          { x: 200, y: 95, w: 20, h: 20 },
+        ],
+        100,
+        92,
+        286
+      )
+    ).toBe(2);
   });
 
   it('CVD liczone ze świec bazowych: ten sam wynik w obu układach, gdy część świecy 30 min jest bez delty', () => {
