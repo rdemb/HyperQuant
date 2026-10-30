@@ -18,6 +18,8 @@ export type PlanDirection = 'LONG' | 'SHORT';
 
 /** Opłata taker HL, tier 0 (perps 0.045%) — ZAŁOŻENIE konfigurowalne (wyższe tiery mają niższe opłaty). */
 export const DEFAULT_TAKER_FEE = 0.00045;
+/** Opłata maker HL, tier 0 (perps 0.015%) — ZAŁOŻENIE jak wyżej; tylko w drabinie kosztów (zlecenia z limitem). */
+export const DEFAULT_MAKER_FEE = 0.00015;
 /** Maks. dźwignia BTC na HL (tier 0–150M USDC notional, docs: trading/margin-tiers). */
 export const BTC_MAX_LEVERAGE = 40;
 /**
@@ -554,6 +556,66 @@ export interface PlanCosts {
   slippageKnown: boolean;
 }
 
+/** Wykonanie w drabinie kosztów: rynkowe, limit na wejściu, limit na wejściu i celu (stop zawsze rynkowy). */
+export type CostLadderKind = 'taker' | 'makerEntry' | 'makerBoth';
+
+export interface CostLadderRow {
+  kind: CostLadderKind;
+  /** Oczekiwany koszt w bp nominału: opłaty wejścia i wyjścia, poślizg wejścia rynkowego, oczekiwany poślizg stopu */
+  costBp: number;
+  costR: number;
+  /** EV po kosztach tego wykonania = EV przed kosztami − koszt */
+  evR: number;
+  /** P(cel), przy której EV po kosztach = 0 przy tym samym udziale „żadne”: P_T − EV/(R + 1) */
+  breakEvenPTarget: number;
+}
+
+export interface CostLadder {
+  rows: CostLadderRow[];
+  /** R za 1 bp kosztu przy tym stopie: E / (|E − S|·10⁴) */
+  rPerBp: number;
+}
+
+/**
+ * Drabina kosztów: te same prawdopodobieństwa wyników, różne wykonanie. Koszt w bp nominału = wejście (taker + poślizg
+ * z arkusza albo maker bez poślizgu) + wyjście: P_T·(taker albo maker przy limicie na celu) + P_S·(taker + poślizg stopu)
+ * + P_N·taker. Limit zakłada wypełnienie po cenie zlecenia (bez kolejki i selekcji negatywnej); stop zawsze rynkowy.
+ * Wiersz rynkowy = koszty `analyzePlan`.
+ */
+export function costLadder(p: {
+  direction: PlanDirection;
+  entry: number;
+  stop: number;
+  R: number;
+  sizeUsd: number;
+  book: PlanBook;
+  mc: Pick<McResult, 'pTarget' | 'pStop' | 'pNeither'>;
+  evRGross: number;
+  takerFee: number;
+  makerFee: number;
+}): CostLadder {
+  const long = p.direction === 'LONG';
+  const entryBp = Math.max(0, walkBook(p.book, long ? 'buy' : 'sell', p.sizeUsd)?.slipBps ?? 0);
+  const stopBp = Math.max(0, walkBook(p.book, long ? 'sell' : 'buy', p.sizeUsd)?.slipBps ?? 0);
+  const t = p.takerFee * 1e4;
+  const m = p.makerFee * 1e4;
+  const { pTarget: pT, pStop: pS, pNeither: pN } = p.mc;
+  const costs: [CostLadderKind, number][] = [
+    ['taker', t + entryBp + t + pS * stopBp],
+    ['makerEntry', m + t + pS * stopBp],
+    ['makerBoth', m + pT * m + (pS + pN) * t + pS * stopBp],
+  ];
+  const rPerBp = p.entry / (Math.abs(p.entry - p.stop) * 1e4);
+  return {
+    rows: costs.map(([kind, costBp]) => {
+      const costR = costBp * rPerBp;
+      const evR = p.evRGross - costR;
+      return { kind, costBp, costR, evR, breakEvenPTarget: pT - evR / (p.R + 1) };
+    }),
+    rPerBp,
+  };
+}
+
 export type PlanAnalysis =
   | {
       ok: true;
@@ -567,14 +629,16 @@ export type PlanAnalysis =
       /** EV w R przed kosztami: P_T·R − P_S·1 + P_N·(średni R ścieżek bez rozstrzygnięcia) */
       evRGross: number;
       evR: number;
+      /** EV tego samego planu przy innym wykonaniu (rynkowe / limit) i próg trafności */
+      ladder: CostLadder;
       liquidation: (LiquidationInfo & { warning: LiquidationWarning }) | null;
       feeRateTaker: number;
     }
   | { ok: false; errors: string[] };
 
 /**
- * Pełna ocena planu. Założenia: wejście i wyjście zleceniem rynkowym (taker) — konserwatywnie;
- * „żadne w horyzoncie” = wyjście po cenie z MC na końcu horyzontu (przy dryfie 0 średnio ≈ 0R).
+ * Pełna ocena planu. Założenia: wejście i wyjście zleceniem rynkowym (taker) — konserwatywnie; inne wykonania w drabinie
+ * kosztów. „Żadne w horyzoncie” = wyjście po cenie z MC na końcu horyzontu (przy dryfie 0 średnio ≈ 0R).
  */
 export function analyzePlan(
   input: PlanInput,
@@ -626,6 +690,18 @@ export function analyzePlan(
   };
 
   const evRGross = mc.pTarget * R - mc.pStop + mc.pNeither * mc.neitherMeanR;
+  const ladder = costLadder({
+    direction,
+    entry,
+    stop,
+    R,
+    sizeUsd,
+    book: input.book,
+    mc,
+    evRGross,
+    takerFee: fee,
+    makerFee: DEFAULT_MAKER_FEE,
+  });
 
   let liquidation: (LiquidationInfo & { warning: LiquidationWarning }) | null = null;
   if (input.leverage !== undefined) {
@@ -646,6 +722,7 @@ export function analyzePlan(
     costs,
     evRGross,
     evR: evRGross - costs.totalR,
+    ladder,
     liquidation,
     feeRateTaker: fee,
   };

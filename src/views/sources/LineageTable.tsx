@@ -466,6 +466,20 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         ),
       },
       {
+        metric: tr('Drabina kosztów planu', 'Plan cost ladder'),
+        source: tr('Wynik Analizatora (P cel / stop / żadne), arkusz L2 Hyperliquid, opłaty Hyperliquid tier 0', 'Analyzer result (P target / stop / neither), Hyperliquid L2 book, Hyperliquid tier 0 fees'),
+        method: tr(
+          'Koszt w bp nominału dla trzech wykonań: rynkowe (taker 0,045% dwa razy, poślizg wejścia z arkusza, P(stop) × poślizg stopu), limit na wejściu (maker 0,015% bez poślizgu), limit na wejściu i celu (maker przy celu, taker przy stopie i wyjściu z końca horyzontu); koszt w R = bp × E / (|E − S|·10⁴); próg P(cel) = P(cel) − EV/(R + 1)',
+          'Cost in bp of notional for three executions: market (taker 0.045% twice, entry slippage from the book, P(stop) × stop slippage), limit entry (maker 0.015% with no slippage), limit entry and target (maker at the target, taker at the stop and at the end-of-horizon exit); cost in R = bp × E / (|E − S|·10⁴); break-even P(target) = P(target) − EV/(R + 1)'
+        ),
+        kinds: ['MODEL'],
+        refresh: tr('z każdą synchronizacją', 'every sync'),
+        caveat: tr(
+          'Limit zakłada wypełnienie po cenie zlecenia, bez kolejki i selekcji negatywnej; opłaty tier 0 to założenie (wyższe tiery płacą mniej); funding pominięty.',
+          'A limit order is assumed to fill at its price, with no queue and no adverse selection; tier 0 fees are an assumption (higher tiers pay less); funding ignored.'
+        ),
+      },
+      {
         metric: tr('Mapa likwidacji (pozycje on-chain)', 'Liquidation map (on-chain positions)'),
         source: tr(
           'Skaner HyperQuant: adresy z WS trades (pole users) i z publicznego rankingu kont Hyperliquid → clearinghouseState każdego portfela; publikacja przez publiczne repo danych na GitHubie (rdemb/hyperquant-data)',

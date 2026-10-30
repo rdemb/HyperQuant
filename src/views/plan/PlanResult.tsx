@@ -1,7 +1,16 @@
 import React from 'react';
 import { AlertTriangle, BookmarkPlus, Check, OctagonAlert } from 'lucide-react';
 import { Badge, Stat, fmtCompact, fmtPrice, fmtSigned, fmtFixed, fmtNum } from '../../ui';
-import { BTC_MAX_LEVERAGE, DEFAULT_TAKER_FEE, PlanAnalysis, quarterKelly, wilsonLowerBound } from '../../utils/planAnalyzer';
+import {
+  BTC_MAX_LEVERAGE,
+  CostLadder,
+  CostLadderKind,
+  DEFAULT_MAKER_FEE,
+  DEFAULT_TAKER_FEE,
+  PlanAnalysis,
+  quarterKelly,
+  wilsonLowerBound,
+} from '../../utils/planAnalyzer';
 import { LedgerEntry, bucketIndex, bucketStats } from '../../utils/forecastLedger';
 import { MacroEvent } from '../../data/macroCalendar';
 import { useLiqMap } from '../../state/useLiqMap';
@@ -232,7 +241,79 @@ export const PlanResult: React.FC<PlanResultProps> = (p) => {
         <VolModelStat market={market} horizonLabel={horizonLabel} />
       </div>
 
+      <CostLadderTable ladder={a.ladder} pTarget={mc.pTarget} evRGross={a.evRGross} slippageKnown={costs.slippageKnown} />
+
       <Methodology timeframeSec={market.timeframeSec} sigma={market.sigma} hasModel={market.vol !== null} />
+    </div>
+  );
+};
+
+/** Drabina kosztów: EV tego samego planu przy różnym wykonaniu i P(cel), od której plan wychodzi na zero. */
+const CostLadderTable: React.FC<{ ladder: CostLadder; pTarget: number; evRGross: number; slippageKnown: boolean }> = ({
+  ladder,
+  pTarget,
+  evRGross,
+  slippageKnown,
+}) => {
+  const names: Record<CostLadderKind, [string, string]> = {
+    taker: [tr('Rynkowe wejście i wyjścia', 'Market entry and exits'), 'taker / taker'],
+    makerEntry: [tr('Limit na wejściu, wyjścia rynkowe', 'Limit entry, market exits'), 'maker / taker'],
+    makerBoth: [tr('Limit na wejściu i celu, stop rynkowy', 'Limit entry and target, market stop'), 'maker / maker, stop taker'],
+  };
+  const th = 'font-medium px-1 py-1';
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium">{tr('Drabina kosztów', 'Cost ladder')}</span>
+          <Badge tone="model">MODEL</Badge>
+        </div>
+        <span className="text-[11px] text-ink-3">{tr('te same szanse, inne wykonanie', 'same odds, different execution')}</span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-[11px] font-mono tabular-nums">
+          <thead>
+            <tr className="text-ink-3 text-left">
+              <th className={th}>{tr('Wykonanie', 'Execution')}</th>
+              <th className={`${th} text-right`}>{tr('Koszt', 'Cost')}</th>
+              <th className={`${th} text-right`}>{tr('EV po kosztach', 'EV after costs')}</th>
+              <th className={`${th} text-right`}>{tr('Próg P(cel)', 'Break-even P(target)')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {ladder.rows.map((r) => (
+              <tr key={r.kind} className="border-t border-line text-ink-2 align-top">
+                <td className="px-1 py-1.5">
+                  <div className="font-sans text-xs text-ink-1">{names[r.kind][0]}</div>
+                  <div className="text-ink-3">{names[r.kind][1]}</div>
+                </td>
+                <td className="px-1 py-1.5 text-right whitespace-nowrap">
+                  <div className="text-ink-1">{fmtFixed(r.costBp, 1)} bp</div>
+                  <div className="text-ink-3">{fmtFixed(r.costR, 2)} R</div>
+                </td>
+                <td className="px-1 py-1.5 text-right whitespace-nowrap text-ink-1">{fmtSigned(r.evR, 2, ' R')}</td>
+                <td className="px-1 py-1.5 text-right whitespace-nowrap">
+                  {r.breakEvenPTarget < 1 ? (
+                    <>
+                      <div className="text-ink-1">{pct1(Math.max(0, r.breakEvenPTarget))}</div>
+                      <div className="text-ink-3">{fmtSigned((r.breakEvenPTarget - pTarget) * 100, 1, ' pp')}</div>
+                    </>
+                  ) : (
+                    <span className="text-warn">{tr('nieosiągalne', 'unreachable')}</span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-[11px] text-ink-3 leading-relaxed">
+        {tr(
+          `Model nie zakłada przewagi (przed kosztami ${fmtSigned(evRGross, 2, ' R')}), więc każde wykonanie traci średnio tyle, ile kosztuje. Plan zaczyna się opłacać, gdy cel pada częściej niż w ostatniej kolumnie (model: ${pct1(pTarget)}). Przy tym stopie 1 bp kosztu to ${fmtFixed(ladder.rPerBp, 3)} R, a przewaga 0,1 R pokrywa ${fmtFixed(0.1 / ladder.rPerBp, 1)} bp.`,
+          `The model assumes no edge (before costs ${fmtSigned(evRGross, 2, ' R')}), so every execution loses on average what it costs. The plan starts to pay when the target is hit more often than in the last column (model: ${pct1(pTarget)}). With this stop 1 bp of cost is ${fmtFixed(ladder.rPerBp, 3)} R, and a 0.1 R edge covers ${fmtFixed(0.1 / ladder.rPerBp, 1)} bp.`
+        )}
+        {!slippageKnown && tr(' Bez arkusza L2: same opłaty, poślizg nie wliczony.', ' No L2 book: fees only, slippage not included.')}
+      </p>
     </div>
   );
 };
@@ -414,6 +495,12 @@ const Methodology: React.FC<{ timeframeSec: number; sigma: number; hasModel: boo
         {tr(
           `Koszty: opłata taker ${fmtFixed(DEFAULT_TAKER_FEE * 100, 3)}% (Hyperliquid tier 0 — założenie; maker 0,015%) przy wejściu i wyjściu; poślizg wejścia z przejścia po bieżącym arkuszu L2; stop jako zlecenie rynkowe po przeciwnej stronie bieżącego arkusza (przybliżenie). Funding pominięty.`,
           `Costs: taker fee ${fmtFixed(DEFAULT_TAKER_FEE * 100, 3)}% (Hyperliquid tier 0, an assumption; maker 0.015%) on entry and exit; entry slippage from walking the current L2 book; the stop as a market order against the opposite side of the current book (approximation). Funding ignored.`
+        )}
+      </li>
+      <li>
+        {tr(
+          `Drabina kosztów: te same P(cel / stop / żadne), inne wykonanie. Limit = opłata maker ${fmtFixed(DEFAULT_MAKER_FEE * 100, 3)}% bez poślizgu, przy założeniu wypełnienia po cenie zlecenia (bez kolejki i selekcji negatywnej); stop zawsze rynkowy z poślizgiem z arkusza, wyjście z końca horyzontu rynkowe. Próg P(cel) = P(cel) − EV/(R + 1) przy tym samym udziale „żadne”.`,
+          `Cost ladder: the same P(target / stop / neither), different execution. Limit = maker fee ${fmtFixed(DEFAULT_MAKER_FEE * 100, 3)}% with no slippage, assuming a fill at the order price (no queue, no adverse selection); the stop is always a market order with slippage from the book, the exit at the end of the horizon is a market order. Break-even P(target) = P(target) − EV/(R + 1) with the same share of "neither".`
         )}
       </li>
       <li>
