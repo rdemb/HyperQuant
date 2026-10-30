@@ -623,6 +623,102 @@ describe('wskaźniki: partia C (pivoty, interwał wskaźnika)', () => {
   });
 });
 
+describe('wskaźniki: partia D (Parabolic SAR, kanał regresji, HV, Net Volume)', () => {
+  const cs = walk(600, 51);
+  const closes = cs.map((c) => c.c);
+
+  it('Parabolic SAR: przykład liczony ręcznie (start, nowy szczyt, odwrócenie) i zawsze poza zakresem świecy', () => {
+    const mk = (h: number, l: number, c: number, i: number): Candle => ({ t: i * M5, o: c, h, l, c, v: 1, n: 1 });
+    const five = [mk(10, 8, 9, 0), mk(11, 9, 10.5, 1), mk(12, 10, 11.5, 2), mk(12.5, 11, 12, 3), mk(12, 7, 7.5, 4)];
+    // Doba 1: SAR = min(8 + 0,02·(11 − 8), L[1] 8) = 8; doba 2: przyspieszenie 0,04, SAR obcięty do L[2] 8;
+    // doba 3: 8 + 0,04·(12 − 8) = 8,16; doba 4: 8,16 + 0,06·(12,5 − 8,16) > L 7 → odwrócenie na max(H 12, szczyt 12,5)
+    expectClose(run(inst('psar'), five)[0], [NaN, 8, 8, 8.16, 12.5], 1e-12);
+    const sar = run(inst('psar'), cs)[0];
+    sar.slice(1).forEach((v, k) => {
+      const c = cs[k + 1];
+      expect(v <= c.l || v >= c.h, `świeca ${k + 1}`).toBe(true);
+    });
+    // Po obu stronach ceny: trend w górę i w dół
+    expect(sar.some((v, i) => v < cs[i].l) && sar.some((v, i) => v > cs[i].h)).toBe(true);
+  });
+
+  it('kanał regresji: prosta najmniejszych kwadratów przez ostatnie n zamknięć i odchylenie reszt z dzielnikiem n − 1, wcześniej bez wartości', () => {
+    const n = 50;
+    const [mid, up, down] = run(inst('linreg', { length: n, up: 2, down: 1.5 }), cs);
+    const end = cs.length - 1;
+    // Prosta z zwykłej regresji y = a + b·t po indeksie świecy
+    const ts = Array.from({ length: n }, (_, k) => end - n + 1 + k);
+    const ys = ts.map((t) => closes[t]);
+    const mt = ts.reduce((a, b) => a + b, 0) / n;
+    const my = ys.reduce((a, b) => a + b, 0) / n;
+    const b = ts.reduce((a, t, k) => a + (t - mt) * (ys[k] - my), 0) / ts.reduce((a, t) => a + (t - mt) ** 2, 0);
+    const fit = ts.map((t) => my + b * (t - mt));
+    const sd = Math.sqrt(ys.reduce((a, y, k) => a + (y - fit[k]) ** 2, 0) / (n - 1));
+    expectClose(mid.slice(end - n + 1), fit, 1e-9);
+    expectClose(up.slice(end - n + 1), fit.map((f) => f + 2 * sd), 1e-9);
+    expectClose(down.slice(end - n + 1), fit.map((f) => f - 1.5 * sd), 1e-9);
+    expect(mid.slice(0, end - n + 1).every(Number.isNaN)).toBe(true);
+    // Za mało świec: bez kanału
+    expect(run(inst('linreg', { length: n }), cs.slice(0, n - 1))[0].every(Number.isNaN)).toBe(true);
+  });
+
+  it('HV: odchylenie populacyjne logarytmicznych zmian × √(świec w roku); na 1D jak TradingView (√365)', () => {
+    const lr = closes.map((c, i) => (i === 0 ? NaN : Math.log(c / closes[i - 1])));
+    const sd = [NaN, ...stdevPop(lr.slice(1), 10)];
+    expectClose(run(inst('hv', { length: 10 }), cs)[0], sd.map((x) => 100 * x * Math.sqrt(365 * 288)), 1e-9);
+    const days = cs.map((c, i) => ({ ...c, t: i * 86_400_000 }));
+    expectClose(run(inst('hv', { length: 10 }), days)[0], sd.map((x) => 100 * x * Math.sqrt(365)), 1e-9);
+  });
+
+  it('Net Volume: wolumen ze znakiem zmiany zamknięcia, pierwsza świeca i brak zmiany 0', () => {
+    const flat = cs.slice(0, 30).map((c, i) => (i === 10 ? { ...c, c: cs[9].c } : c));
+    const want = flat.map((c, i) => (i === 0 ? 0 : c.c > flat[i - 1].c ? c.v : c.c < flat[i - 1].c ? -c.v : 0));
+    expect(run(inst('netvol'), flat)[0]).toEqual(want);
+    expect(want[10]).toBe(0);
+  });
+
+  it('na żywo z indeksem zmian każdej instancji osobno: kanał przesuwa się z nową świecą, wynik jak przeliczenie od zera', () => {
+    const list = [inst('linreg', { length: 20 }), inst('psar'), inst('hv'), inst('netvol'), { ...inst('ema', { length: 3 }), tf: '4h' }];
+    const src = walk(24 * 3, 61).map((c, i) => ({ ...c, t: i * H1 }));
+    const e = new IndicatorEngine();
+    e.setInstances(list);
+    let chart: Candle[] = [];
+    let h4: Candle[] = [];
+    const shown = list.map((x) => indicatorDef(x.id).plots.map(() => [] as number[]));
+    const candlesOf = (tf: string) => (tf === '4h' ? h4 : []);
+    const push = () => {
+      e.sync(bars(chart), H1, candlesOf);
+      e.runs.forEach((r, k) =>
+        r.out.forEach((a, p) => {
+          shown[k][p].length = chart.length;
+          for (let i = r.from; i < chart.length; i++) shown[k][p][i] = a[i];
+        })
+      );
+    };
+    const r = rng(19);
+    for (const c of src) {
+      let cur = c;
+      chart = [...chart, cur];
+      h4 = rollup(h4, chart, 4 * H1);
+      push();
+      for (let k = 0; k < 2; k++) {
+        const px = cur.c + (r() - 0.5) * 30;
+        cur = { ...cur, c: px, h: Math.max(cur.h, px), l: Math.min(cur.l, px) };
+        chart = [...chart.slice(0, -1), cur];
+        h4 = rollup(h4, chart, 4 * H1);
+        push();
+      }
+    }
+    const fresh = new IndicatorEngine();
+    fresh.setInstances(list);
+    fresh.sync(bars(chart), H1, candlesOf);
+    fresh.runs.forEach((run, k) => run.out.forEach((a, p) => expect(shown[k][p]).toEqual(Array.from(a.subarray(0, chart.length)))));
+    // Bez zmian świec: żadna instancja nie zgłasza zmiany
+    e.sync(bars(chart), H1, candlesOf);
+    expect(e.runs.every((run) => run.from === chart.length)).toBe(true);
+  });
+});
+
 describe('przeliczanie przyrostowe', () => {
   const all = INDICATORS.map((d) => inst(d.id, { length: 5 }));
 
@@ -639,18 +735,23 @@ describe('przeliczanie przyrostowe', () => {
     const src = walk(300, 11);
     const e = new IndicatorEngine();
     e.setInstances(all);
+    // Indeks zmian wskaźników liczonych świeca po świecy (kanał regresji przelicza całe okno)
+    const stepFrom = (cs: readonly Candle[]) => {
+      e.sync(bars(cs));
+      return Math.min(...e.runs.filter((_, k) => !indicatorDef(all[k].id).fit).map((run) => run.from));
+    };
     let cs = src.slice(0, 50);
-    expect(e.sync(bars(cs))).toBe(0);
+    expect(stepFrom(cs)).toBe(0);
     for (let i = 50; i < src.length; i++) {
       // Kilka zmian bieżącej świecy (nowy obiekt, jak z API), potem nowa świeca
       for (let k = 0; k < 3; k++) {
         const last = cs[cs.length - 1];
         const c = last.c + (r() - 0.5) * 40;
         cs = [...cs.slice(0, -1), { ...last, c, h: Math.max(last.h, c), l: Math.min(last.l, c) }];
-        expect(e.sync(bars(cs))).toBe(cs.length - 1);
+        expect(stepFrom(cs)).toBe(cs.length - 1);
       }
       cs = [...cs, src[i]];
-      expect(e.sync(bars(cs))).toBe(cs.length - 2);
+      expect(stepFrom(cs)).toBe(cs.length - 2);
     }
     sameAsFresh(e, cs);
     expect(e.sync(bars(cs))).toBe(cs.length);
