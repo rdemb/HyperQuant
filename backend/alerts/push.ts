@@ -65,8 +65,26 @@ export function vapidAuth(endpoint: string, keys: VapidKeys, subject: string, no
   return `vapid t=${unsigned}.${b64u(sig)}, k=${keys.publicKey}`;
 }
 
-/** Wynik wysłania: doręczone usłudze push, subskrypcja wygasła (do usunięcia) albo błąd przejściowy. */
-export type PushResult = 'ok' | 'gone' | 'error';
+/** Wynik wysłania: doręczone usłudze push, subskrypcja wygasła (do usunięcia) albo błąd przejściowy (przy 429 z `Retry-After`). */
+export type PushResult = 'ok' | 'gone' | 'error' | { retryAfterMs: number };
+
+/** Odstępy kolejnych ponowień po błędzie przejściowym; po ostatnim powiadomienie jest liczone jako nieudane. */
+export const RETRY_MS = [5_000, 30_000, 120_000, 600_000];
+
+/** Odstęp ponowienia nr `attempt` (od 0) albo null, gdy próby się skończyły; `Retry-After` wydłuża go, najwyżej do ostatniego. */
+export function retryDelay(attempt: number, retryAfterMs: number | null): number | null {
+  if (attempt >= RETRY_MS.length) return null;
+  return Math.min(RETRY_MS[RETRY_MS.length - 1], Math.max(RETRY_MS[attempt], retryAfterMs ?? 0));
+}
+
+/** Nagłówek `Retry-After` (sekundy albo data HTTP) w ms; brak albo zły — null. */
+export function parseRetryAfter(h: string | null, now: number): number | null {
+  if (!h) return null;
+  const s = Number(h);
+  if (Number.isFinite(s)) return s >= 0 ? s * 1000 : null;
+  const t = Date.parse(h);
+  return Number.isFinite(t) ? Math.max(0, t - now) : null;
+}
 
 /** Wysłanie jednego powiadomienia; `ttlS` — jak długo usługa ma czekać na urządzenie bez sieci. */
 export async function sendPush(
@@ -97,6 +115,10 @@ export async function sendPush(
       signal: AbortSignal.timeout(10_000),
     });
     if (res.status === 404 || res.status === 410) return 'gone';
+    if (res.status === 429) {
+      const ms = parseRetryAfter(res.headers.get('retry-after'), opts.now ?? Date.now());
+      if (ms !== null) return { retryAfterMs: ms };
+    }
     return res.ok ? 'ok' : 'error';
   } catch {
     return 'error';

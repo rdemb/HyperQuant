@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { forecastReturnQuantiles } from '../touchMc';
+import { crossedLevels, forecastReturnQuantiles } from '../touchMc';
 import { normInv } from '../forecastScore';
 
 describe('forecastReturnQuantiles — kwantyle log-zwrotu z kroków σ', () => {
@@ -32,5 +32,19 @@ describe('forecastReturnQuantiles — kwantyle log-zwrotu z kroków σ', () => {
     const qn = forecastReturnQuantiles(steps, null, [0.001, 0.999], { paths: 20_000, seed: 3 });
     const qf = forecastReturnQuantiles(steps, std, [0.001, 0.999], { paths: 20_000, seed: 3 });
     expect(qf[1] - qf[0]).toBeGreaterThan(qn[1] - qn[0]);
+  });
+});
+
+describe('poziom już przekroczony: bez pozornej szansy dotknięcia', () => {
+  it('cena nad PDH albo pod PDL (także równo na poziomie) oznacza przekroczenie', () => {
+    expect(crossedLevels(80_000, 78_000, 79_000)).toEqual({ pdh: false, pdl: false });
+    expect(crossedLevels(80_000, 78_000, 80_500)).toEqual({ pdh: true, pdl: false });
+    expect(crossedLevels(80_000, 78_000, 78_000)).toEqual({ pdh: false, pdl: true });
+  });
+
+  it('brak poziomów albo ceny: nic nie jest przekroczone', () => {
+    expect(crossedLevels(null, undefined, 79_000)).toEqual({ pdh: false, pdl: false });
+    expect(crossedLevels(80_000, 78_000, Number.NaN)).toEqual({ pdh: false, pdl: false });
+    expect(crossedLevels(80_000, 78_000, 0)).toEqual({ pdh: false, pdl: false });
   });
 });

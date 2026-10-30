@@ -2,6 +2,7 @@ import type { ResetMode } from '../core/sessions';
 import { STAT_GROUPS, type StatGroup } from '../core/stats';
 import { DEFAULT_INTERVAL, INTERVALS } from '../core/time';
 import { COIN, MARKETS, Market } from '../store/proStore';
+import { IndicatorInstance, indicatorDef, indicatorsFromLink, indicatorsLink, parseIndicators } from '../indicators/registry';
 import type { ChartView } from './footprintSeries';
 import type { FootprintStyle } from './layout';
 
@@ -66,6 +67,8 @@ export interface ChartSettings {
   showTape: boolean;
   tapeMinUsd: number;
   tapeSound: boolean;
+  /** Klasyczne wskaźniki (EMA, RSI, ATR, Bollinger): instancje z parametrami i kolorem, w kolejności dodania. */
+  indicators: IndicatorInstance[];
 }
 
 /**
@@ -114,6 +117,7 @@ export const DEFAULT_SETTINGS: ChartSettings = {
   showTape: false,
   tapeMinUsd: 10_000,
   tapeSound: false,
+  indicators: [],
 };
 
 /**
@@ -133,12 +137,22 @@ export type PhonePane = (typeof PHONE_PANES)[number];
 
 /**
  * Ustawienia w użyciu na telefonie, niezależnie od zapisu: wykres ceny ma co najmniej 60% wysokości, więc pod nim
- * najwyżej jeden panel (pierwszy włączony z PHONE_PANES), bez Tablicy liczb (jest karta „Liczby”). Wolumen rysuje się
- * na dole wykresu ceny. Zapis zostaje bez zmian — na szerszym ekranie wracają wszystkie panele.
+ * najwyżej jeden panel (pierwszy włączony z PHONE_PANES) i najwyżej jeden panel wskaźnika (pierwszy widoczny), bez
+ * Tablicy liczb (jest karta „Liczby”). Wolumen rysuje się na dole wykresu ceny. Zapis zostaje bez zmian — na szerszym
+ * ekranie wracają wszystkie panele.
  */
 export function phoneSettings(s: ChartSettings): ChartSettings {
   const keep = PHONE_PANES.find((k) => s[k]) ?? null;
-  return { ...s, showStats: false, showCvd: keep === 'showCvd', showDelta: keep === 'showDelta', showVenueCvd: keep === 'showVenueCvd', showVenueOi: keep === 'showVenueOi' };
+  const own = s.indicators.find((x) => x.visible && indicatorDef(x.id).pane === 'own');
+  return {
+    ...s,
+    showStats: false,
+    showCvd: keep === 'showCvd',
+    showDelta: keep === 'showDelta',
+    showVenueCvd: keep === 'showVenueCvd',
+    showVenueOi: keep === 'showVenueOi',
+    indicators: s.indicators.map((x) => (x !== own && x.visible && indicatorDef(x.id).pane === 'own' ? { ...x, visible: false } : x)),
+  };
 }
 
 const KEY = 'hq.charts.v1';
@@ -195,6 +209,7 @@ export function parseSettings(raw: unknown, d: ChartSettings = DEFAULT_SETTINGS)
     showTape: bool(r.showTape, d.showTape),
     tapeMinUsd: numIn(r.tapeMinUsd, 0, 100_000_000, d.tapeMinUsd),
     tapeSound: bool(r.tapeSound, d.tapeSound),
+    indicators: Array.isArray(r.indicators) ? parseIndicators(r.indicators) : d.indicators,
   };
 }
 
@@ -242,9 +257,10 @@ export function migrateSaved(raw: unknown): unknown {
   return r;
 }
 
-/** Link do widoku: #charts?m=ETH&i=5m&v=footprint (rynek, interwał, rodzaj wykresu). */
+/** Link do widoku: #charts?m=ETH&i=5m&v=footprint (rynek, interwał, rodzaj wykresu) i widoczne wskaźniki (&ind=ema(21);rsi(14)). */
 export function hashFor(s: ChartSettings): string {
-  return `#charts?m=${s.coin}&i=${s.interval}&v=${s.view}`;
+  const ind = indicatorsLink(s.indicators);
+  return `#charts?m=${s.coin}&i=${s.interval}&v=${s.view}${ind ? `&ind=${ind}` : ''}`;
 }
 
 /** Ustawienia z linku do widoku; pola spoza listy dozwolonych wartości są pomijane. */
@@ -257,6 +273,8 @@ export function settingsFromHash(hash: string): Partial<ChartSettings> {
   if (m && (MARKETS as readonly string[]).includes(m)) out.coin = m as Market;
   if (i && INTERVALS.some((x) => x.id === i)) out.interval = i;
   if (v === 'candles' || v === 'footprint') out.view = v;
+  const ind = indicatorsFromLink(q.get('ind') ?? '');
+  if (ind.length > 0) out.indicators = ind;
   return out;
 }
 
