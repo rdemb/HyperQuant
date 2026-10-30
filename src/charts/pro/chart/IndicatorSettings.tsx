@@ -84,6 +84,8 @@ export const IndicatorSettings: React.FC<{ x: IndicatorInstance; loaded: number;
     onClose();
   };
   const warmup = def.warmup(x.params);
+  // Same słupki w kolorach znaku (zmiana OI): kolor i grubość linii nic nie zmieniają, zostaje krycie
+  const bars = def.plots.every((p) => p.hist);
   const memory = memoryCandles(def, x.params);
   const span = warmup + 1;
   // Interwał wskaźnika: wyższe niż wykres (i zapisany, gdy wykres przeszedł na wyższy)
@@ -178,28 +180,46 @@ export const IndicatorSettings: React.FC<{ x: IndicatorInstance; loaded: number;
         {tab === 'params' && def.period && (
           <p className="py-2 text-ink-2 leading-snug">{tr('Wzór Traditional bez parametrów; okres to doba UTC.', 'The Traditional formula has no inputs; the period is the UTC day.')}</p>
         )}
+        {tab === 'params' && def.flow && (
+          <p className="py-2 text-ink-2 leading-snug">{tr('Bez parametrów: każda świeca wykresu ma swoją wartość.', 'No inputs: every chart candle has its own value.')}</p>
+        )}
         {tab === 'style' && (
           <div className="flex flex-col gap-1">
-            <Row label={tr('Linia', 'Line')}>
-              <button
-                type="button"
-                title={tr('Kolor', 'Colour')}
-                aria-label={tr('Kolor', 'Colour')}
-                aria-expanded={pick}
-                onClick={() => setPick((v) => !v)}
-                className={`h-8 px-1.5 rounded-md border inline-flex items-center gap-1.5 ${pick ? 'border-accent' : 'border-line hover:border-line-strong'}`}
-              >
-                <span className="w-5 h-5 rounded" style={{ background: x.color, opacity: Math.max(x.alpha, 0.15) }} />
-                <ChevronDown className="w-3.5 h-3.5 text-ink-3" />
-              </button>
-              <select aria-label={tr('Grubość linii', 'Line width')} value={x.width} onChange={(e) => set({ width: Number(e.target.value) })} className={`${FIELD} w-[4.5rem]`}>
-                {INDICATOR_WIDTHS.map((w) => (
-                  <option key={w} value={w}>
-                    {w}px
-                  </option>
-                ))}
-              </select>
-            </Row>
+            {bars ? (
+              <Row label={tr('Słupki', 'Bars')}>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  value={Math.round(x.alpha * 100)}
+                  aria-label={tr('Krycie', 'Opacity')}
+                  onChange={(e) => set({ alpha: Number(e.target.value) / 100 })}
+                  className="flex-1 min-w-0 accent-accent cursor-pointer"
+                />
+                <span className="w-9 text-right font-mono tabular-nums text-ink-2">{Math.round(x.alpha * 100)}%</span>
+              </Row>
+            ) : (
+              <Row label={tr('Linia', 'Line')}>
+                <button
+                  type="button"
+                  title={tr('Kolor', 'Colour')}
+                  aria-label={tr('Kolor', 'Colour')}
+                  aria-expanded={pick}
+                  onClick={() => setPick((v) => !v)}
+                  className={`h-8 px-1.5 rounded-md border inline-flex items-center gap-1.5 ${pick ? 'border-accent' : 'border-line hover:border-line-strong'}`}
+                >
+                  <span className="w-5 h-5 rounded" style={{ background: x.color, opacity: Math.max(x.alpha, 0.15) }} />
+                  <ChevronDown className="w-3.5 h-3.5 text-ink-3" />
+                </button>
+                <select aria-label={tr('Grubość linii', 'Line width')} value={x.width} onChange={(e) => set({ width: Number(e.target.value) })} className={`${FIELD} w-[4.5rem]`}>
+                  {INDICATOR_WIDTHS.map((w) => (
+                    <option key={w} value={w}>
+                      {w}px
+                    </option>
+                  ))}
+                </select>
+              </Row>
+            )}
             {pick && (
               <div className="rounded-lg border border-line bg-surface-1 p-1.5">
                 <ColorPicker color={x.color} alpha={x.alpha} onColor={(color) => set({ color })} onAlpha={(alpha) => set({ alpha })} />

@@ -25,12 +25,12 @@ export interface ToggleItem {
   aliases?: string;
 }
 
-export type IndicatorsSection = 'fav' | 'chart' | 'flow' | 'classic' | 'panes';
+export type IndicatorsSection = 'fav' | 'chart' | 'flow' | 'classic' | 'hl' | 'panes';
 
 /** Wiersz listy: klasyczny wskaźnik (dodawany, `on` brak) albo przełącznik (`on` — stan). */
 interface Entry {
   key: string;
-  section: 'flow' | 'classic' | 'panes';
+  section: 'flow' | 'classic' | 'hl' | 'panes';
   label: string;
   hint: string;
   badge?: string;
@@ -73,6 +73,7 @@ const SECTION_NAME: Record<IndicatorsSection, string> = {
   chart: tr('Na wykresie', 'On the chart'),
   flow: 'Orderflow',
   classic: tr('Klasyczne', 'Classic'),
+  hl: tr('Tylko Hyperliquid', 'Hyperliquid only'),
   panes: tr('Pod wykresem', 'Below the chart'),
 };
 
@@ -116,7 +117,7 @@ export const IndicatorsDialog: React.FC<{
       ...INDICATORS.map(
         (d): Entry => ({
           key: d.id,
-          section: 'classic',
+          section: d.group === 'hyperliquid' ? 'hl' : 'classic',
           label: d.name,
           hint: d.hint,
           // Długi skrót (Supertrend, Stoch RSI) nie mieści się w kolumnie skrótów; jest też w nazwie
@@ -139,7 +140,7 @@ export const IndicatorsDialog: React.FC<{
       return [...hits.filter(head), ...hits.filter((e) => !head(e))];
     }
     if (section === 'fav') return favs.map((k) => entries.find((e) => e.key === k)).filter((e): e is Entry => e !== undefined);
-    if (section === 'flow' || section === 'classic') return entries.filter((e) => e.section === section);
+    if (section === 'flow' || section === 'classic' || section === 'hl') return entries.filter((e) => e.section === section);
     return [];
   }, [q, entries, section, favs]);
   const at = Math.min(active, shown.length - 1);
@@ -314,6 +315,14 @@ export const IndicatorsDialog: React.FC<{
                 </div>
               )}
               <ul className="flex flex-col gap-0.5">{shown.map(row)}</ul>
+              {section === 'hl' && (
+                <p className="px-2 pt-1 text-[11px] leading-snug text-ink-3">
+                  {tr(
+                    'Wskaźniki z danych, których nie ma w samych świecach: nagranej taśmy transakcji i otwartych pozycji Hyperliquid. Nie ma ich w TradingView. Opisują ostatnie świece, nie przewidują następnych.',
+                    'Indicators from data the candles alone do not carry: the recorded Hyperliquid trade tape and open interest. TradingView does not have them. They describe recent candles; they do not predict the next ones.'
+                  )}
+                </p>
+              )}
             </>
           )}
         </div>
