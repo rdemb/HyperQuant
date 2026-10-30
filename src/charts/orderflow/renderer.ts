@@ -3,6 +3,7 @@ import { IMB_BUY, IMB_SELL, detectImbalances, fmtVol, valueArea } from './footpr
 import { HeatTexture } from './heatTexture';
 import { FP_TICK, FpCandle, FpCell, OrderFlowStore } from './orderFlowStore';
 import { numLang } from '../../ui/format';
+import { tr } from '../../i18n';
 import { Frame, bucketFor, priceTickStep, priceToY, timeStep, timeToX } from './scales';
 
 /** Kolory płótna = tokeny z src/index.css (canvas nie widzi klas Tailwind). */
@@ -145,6 +146,17 @@ export interface DrawOptions {
 }
 
 const easeOutQuint = (t: number) => 1 - (1 - t) ** 5;
+
+/** Podpisy na płótnie; język jest stały przez cały czas życia strony, więc wystarczy raz. */
+export const LABELS = {
+  recStart: tr('start zapisu', 'recording since'),
+  cvd: tr('CVD agresora HL · BTC', 'HL aggressor CVD · BTC'),
+  cvdLast: tr('ostatnio', 'last'),
+  cvdWait: tr('CVD agresora HL · czekam na transakcje', 'HL aggressor CVD · waiting for trades'),
+  delta: tr('Δ świecy · BTC', 'Candle Δ · BTC'),
+  buy: tr('+ kupno', '+ buy'),
+  sell: tr('− sprzedaż', '− sell'),
+} as const;
 
 function hhmm(t: number, withSec: boolean): string {
   const d = new Date(t);
@@ -578,7 +590,7 @@ export class OrderFlowRenderer {
     ctx.textBaseline = 'middle';
     const tyText = L.timeY0 + 11.5;
     const startTagX = xStart > L.plotX0 && xStart < L.plotX1 ? xStart : Number.NaN;
-    const startText = o.startedAt === null ? '' : compact ? `▸ ${hhmm(o.startedAt, false)}` : `start zapisu ${hhmm(o.startedAt, false)}`;
+    const startText = o.startedAt === null ? '' : compact ? `▸ ${hhmm(o.startedAt, false)}` : `${LABELS.recStart} ${hhmm(o.startedAt, false)}`;
     ctx.font = `600 10px ${MONO}`;
     const startTagW = Math.ceil(ctx.measureText(startText).width) + 12;
     ctx.font = `10px ${MONO}`;
@@ -871,7 +883,7 @@ export class OrderFlowRenderer {
     // ── CVD ──
     const cy0 = L.cvdY0 + 18;
     const cy1 = L.cvdY1 - 6;
-    let label = 'CVD agresora HL · BTC';
+    let label: string = LABELS.cvd;
     if (store.firstTradeSec >= 0) {
       const nowSec = Math.floor(store.nowMs() / 1000);
       const sA = Math.max(Math.floor(f.t0 / 1000), store.firstTradeSec);
@@ -928,10 +940,10 @@ export class OrderFlowRenderer {
           ctx.fillText(fmtSignedVol(max), L.axisX0 + 6, cy0);
           ctx.fillText(fmtSignedVol(min), L.axisX0 + 6, cy1);
         }
-        label = `CVD agresora HL · BTC · ostatnio ${fmtSignedVol(cvd)}`;
+        label = `${LABELS.cvd} · ${LABELS.cvdLast} ${fmtSignedVol(cvd)}`;
       }
     } else {
-      label = 'CVD agresora HL · czekam na transakcje';
+      label = LABELS.cvdWait;
     }
     this.paneLegend(ctx, L.plotX0 + 6, L.cvdY0 + 9, [{ text: label, color: C.series1, line: true }]);
 
@@ -974,9 +986,9 @@ export class OrderFlowRenderer {
     ctx.fillStyle = C.ink3;
     if (maxAbs > 0 && (!L.compact || L.dY1 - L.dY0 > 34)) ctx.fillText(fmtSignedVol(maxAbs), L.axisX0 + 6, L.dY0 + 14);
     const items: { text: string; color?: string; line?: boolean }[] = [
-      { text: 'Δ świecy · BTC' },
-      { text: '+ kupno', color: C.buy },
-      { text: '− sprzedaż', color: C.sell },
+      { text: LABELS.delta },
+      { text: LABELS.buy, color: C.buy },
+      { text: LABELS.sell, color: C.sell },
     ];
     if (anyModel) items.push({ text: 'MODEL (BVC)', color: K.buyModel });
     this.paneLegend(ctx, L.plotX0 + 6, L.dY0 + 9, L.compact ? items.slice(0, 1).concat(anyModel ? [items[3]] : []) : items);

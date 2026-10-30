@@ -16,6 +16,7 @@ import {
 import { GLOW, T3, T3_CSS, isNarrowViewport, labFov, labPixelRatio } from '../views/lab/tokens3d';
 import { DockPresets, DockSlider, DockToggle, HoverCard, HudButton, HudHeader, SCENE_FRAME, SceneDock } from '../views/lab/hud';
 import { tr } from '../i18n';
+import { crossedLevels } from '../utils/touchMc';
 import { fmtFixed, fmtNum, fmtPrice } from '../ui/format';
 
 interface ThreeOrderflowVortex3DProps {
@@ -884,6 +885,10 @@ export const ThreeOrderflowVortex3D: React.FC<ThreeOrderflowVortex3DProps> = ({
   }, []);
 
   const mc = backendTelemetry?.monteCarlo;
+  // Poziom już przekroczony — zamiast „100%” napis „za poziomem”, jak w pasie pod wykresem
+  const crossed = crossedLevels(shaakuni.pdh, shaakuni.pdl, latestBar.close);
+  const touch = (crossedLevel: boolean, p: number, mins: number | null) =>
+    crossedLevel ? tr('za poziomem', 'past level') : `${fmtNum(p)}% (${formatFirstPassageMins(mins)})`;
 
   return (
     <div className={SCENE_FRAME}>
@@ -898,8 +903,7 @@ export const ThreeOrderflowVortex3D: React.FC<ThreeOrderflowVortex3DProps> = ({
         {mc && (
           <span className="block text-ink-3">
             {tr('Monte Carlo (model), dotknięcie w 2 h', 'Monte Carlo (model), touch within 2 h')}: D-EQ {fmtNum(mc.probTouchDEQ2h)}% ({formatFirstPassageMins(mc.expectedMinsToDEQ)}) · PDH{' '}
-            {fmtNum(mc.probTouchPDH2h)}% ({formatFirstPassageMins(mc.expectedMinsToPDH)}) · PDL {fmtNum(mc.probTouchPDL2h)}% (
-            {formatFirstPassageMins(mc.expectedMinsToPDL)})
+            {touch(crossed.pdh, mc.probTouchPDH2h, mc.expectedMinsToPDH)} · PDL {touch(crossed.pdl, mc.probTouchPDL2h, mc.expectedMinsToPDL)}
           </span>
         )}
       </HudHeader>

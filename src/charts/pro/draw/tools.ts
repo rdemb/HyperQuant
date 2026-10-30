@@ -10,6 +10,7 @@ import {
   TOOLS,
   ToolKind,
   defaultStyle,
+  defaultText,
   dragHandle,
   moveDrawing,
   newPosition,
@@ -541,8 +542,8 @@ export class DrawingTools {
       const bars = Math.max(4, Math.round(POSITION_W_PX / this.chart.timeScale().options().barSpacing));
       d.pts = newPosition(kind, q, ppu > 0 ? POSITION_RISK_PX / ppu : q.p * 0.005, this.layer.intervalMs, bars);
     }
-    if (kind === 'text') d.text = 'Tekst';
-    if (kind === 'note') d.text = 'Notatka';
+    const text = defaultText(kind);
+    if (text !== undefined) d.text = text;
     const need = kind === 'brush' ? Number.POSITIVE_INFINITY : kind === 'long' || kind === 'short' ? 1 : toolDef(kind).points;
     if (need <= 1) {
       this.finish(d, temp);
