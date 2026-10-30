@@ -27,6 +27,7 @@ import {
   reorder,
   snapToOhlc,
   styleCaps,
+  stylePatchFor,
   textSize,
   timeOfLogical,
   visibleOn,
@@ -217,6 +218,15 @@ describe('edycja', () => {
     expect(visibleOn({ ...d, hideIv: [M1] }, 5 * M1)).toBe(true);
   });
 
+  it('styl kilku zaznaczonych: każdy rysunek dostaje tylko swoje pola', () => {
+    const patch = { color: '#4a9eff', width: 3, fillAlpha: 0.2 };
+    expect(stylePatchFor('rect', patch)).toEqual(patch);
+    expect(stylePatchFor('trend', patch)).toEqual({ color: '#4a9eff', width: 3 });
+    expect(stylePatchFor('text', patch)).toEqual({ color: '#4a9eff' });
+    expect(stylePatchFor('measure', patch)).toBeNull();
+    expect(stylePatchFor('note', { size: 20, bold: true })).toEqual({ size: 20, bold: true });
+  });
+
   it('pasek pokazuje tylko ustawienia narzędzia', () => {
     expect(styleCaps('trend')).toEqual({ color: true, stroke: true, fill: false, size: false, text: false });
     expect(styleCaps('rect').fill).toBe(true);
@@ -273,7 +283,7 @@ describe('zapis rysunków', () => {
     expect(textSize({ ...b, kind: 'note' })).toBe(12);
   });
 
-  it('ustawienia z okna: przedłużenie, opis, poziomy, widoczność i krój tekstu', () => {
+  it('ustawienia z okna i listy: przedłużenie, opis, poziomy, widoczność, ukrycie i krój tekstu', () => {
     const pts = [{ t: 0, p: 1 }, { t: 1, p: 2 }];
     const [a, b, c] = parseDrawings([
       { id: 'a', kind: 'trend', pts, extL: true, extR: 'tak', labels: true, stats: 1, hideIv: [M1, 'x', 5 * M1], style: { bold: true, italic: 'tak' } },
@@ -288,6 +298,12 @@ describe('zapis rysunków', () => {
     expect(b.levels).toEqual([0, 0.618]);
     expect(c.levels).toBeUndefined();
     expect(c.hideIv).toBeUndefined();
+    const [h, v] = parseDrawings([
+      { id: 'h', kind: 'hline', pts, hidden: true },
+      { id: 'v', kind: 'hline', pts, hidden: 'tak' },
+    ]);
+    expect(h.hidden).toBe(true);
+    expect(v.hidden).toBeUndefined();
   });
 
   it('szablon narzędzia: styl i ustawienia bez punktów, tekstu i blokady', () => {

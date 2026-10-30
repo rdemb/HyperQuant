@@ -57,6 +57,8 @@ export interface LayerState {
   /** Rysunek w trakcie stawiania (ostatni punkt idzie za kursorem). */
   pending: Drawing | null;
   selectedId: string | null;
+  /** Pozostałe zaznaczone rysunki (Ctrl + klik): uchwyty bez etykiet na osiach. */
+  group: readonly string[];
   /** Rysunek pod kursorem (pokazuje swoje uchwyty, jak w TradingView). */
   hoverId: string | null;
   hidden: boolean;
@@ -260,12 +262,14 @@ export class DrawingLayer implements ISeriesPrimitive<Time> {
     drawings: [],
     pending: null,
     selectedId: null,
+    group: [],
     hoverId: null,
     hidden: false,
   };
   private items: Item[] = [];
   private selectedItem: Item | null = null;
   private selectedColor = '#ffffff';
+  private groupItems: { it: Item; color: string }[] = [];
   private hoverItem: Item | null = null;
   private hoverColor = '#ffffff';
   private profiles = new Map<string, ProfileCache>();
@@ -426,6 +430,7 @@ export class DrawingLayer implements ISeriesPrimitive<Time> {
   updateAllViews(): void {
     this.items = [];
     this.selectedItem = null;
+    this.groupItems = [];
     this.hoverItem = null;
     this.priceMarks = [];
     this.timeMarks = [];
@@ -433,13 +438,15 @@ export class DrawingLayer implements ISeriesPrimitive<Time> {
     const st = this.state;
     if (v && !st.hidden) {
       for (const d of st.drawings) {
-        if (!visibleOn(d, this.ms)) continue;
+        if (d.hidden || !visibleOn(d, this.ms)) continue;
         const it = this.build(d, v, d.id === st.selectedId);
         if (!it) continue;
         this.items.push(it);
         if (d.id === st.selectedId) {
           this.selectedItem = it;
           this.selectedColor = d.style.color;
+        } else if (st.group.includes(d.id)) {
+          this.groupItems.push({ it, color: d.style.color });
         } else if (d.id === st.hoverId) {
           this.hoverItem = it;
           this.hoverColor = d.style.color;
@@ -471,6 +478,7 @@ export class DrawingLayer implements ISeriesPrimitive<Time> {
       for (const h of hov.handles) handleDot(c, h, this.hoverColor);
       c.globalAlpha = 1;
     }
+    for (const g of this.groupItems) for (const h of g.it.handles) handleDot(c, h, g.color);
     const sel = this.selectedItem;
     if (sel) for (const h of sel.handles) handleDot(c, h, this.selectedColor);
     c.restore();

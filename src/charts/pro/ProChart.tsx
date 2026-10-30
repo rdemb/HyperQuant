@@ -34,6 +34,7 @@ import type { ChartView } from './chart/footprintSeries';
 import type { FootprintStyle } from './chart/layout';
 import { DrawHint, DrawMenu, DrawStyleBar, DrawToolbar } from './draw/DrawToolbar';
 import { DrawSettings } from './draw/DrawSettings';
+import { DrawList } from './draw/DrawList';
 import { TOOLS } from './draw/model';
 import { type DrawingTools, isTyping } from './draw/tools';
 import { CandleSeries, MARKETS, Market, ProStore, storeFor } from './store/proStore';
@@ -717,6 +718,7 @@ export const ProChart: React.FC<{
           <DrawStyleBar tools={tools} onAlert={drawAlert} />
           <DrawMenu tools={tools} onAlert={drawAlert} />
           <DrawSettings tools={tools} />
+          <DrawList tools={tools} />
           <DrawHint tools={tools} />
           <LoadOverlay series={series} onRetry={() => void series.load(true)} />
           {narrow && tab === 'tape' && (
