@@ -6,14 +6,15 @@ import { type PriceAlert, newAlert, windowOf } from './alerts';
  * Link z gotowym zestawem alarmów (np. z planu sesji): `#charts?alarm=1.<base64url JSON>`. Strona pokazuje zestaw
  * i dodaje go dopiero po potwierdzeniu; poziomy są tylko w linku, strona nigdzie ich nie wysyła.
  *
- * Wpis: c rynek, p poziom, k warunek ('t' dotknięcie, 'c' zamknięcie, 'r' powrót), d kierunek (1 nad / −1 pod; przy
- * dotknięciu z ceny w chwili dodania), i interwał świecy, n zamknięcia z rzędu, x 1 = filtr delty, f i u okno HH:MM
- * (czas lokalny), g znacznik pary, a numer wpisu (od 0), po którego uruchomieniu alarm startuje, o opis.
+ * Wpis: c rynek, p poziom (przy wyciskaniu próg ruchu w %), k warunek ('t' dotknięcie, 'c' zamknięcie, 'r' powrót,
+ * 's' wyciskanie), d kierunek (1 nad / −1 pod, przy wyciskaniu wzrost / spadek; przy dotknięciu z ceny w chwili
+ * dodania), i interwał świecy, n zamknięcia z rzędu, x 1 = filtr delty, f i u okno HH:MM (czas lokalny), g znacznik
+ * pary, a numer wpisu (od 0), po którego uruchomieniu alarm startuje, o opis.
  */
 export interface LinkAlarm {
   c: string;
   p: number;
-  k: 't' | 'c' | 'r';
+  k: 't' | 'c' | 'r' | 's';
   d?: 1 | -1;
   i?: string;
   n?: number;
@@ -28,7 +29,7 @@ export interface LinkAlarm {
 const VERSION = '1.';
 /** Najwięcej alarmów w jednym linku. */
 export const LINK_MAX = 20;
-const KIND = { t: 'touch', c: 'close', r: 'reclaim' } as const;
+const KIND = { t: 'touch', c: 'close', r: 'reclaim', s: 'squeeze' } as const;
 const HM = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 const toB64 = (s: string): string =>
@@ -58,7 +59,7 @@ export function parseAlarmLink(hash: string): LinkAlarm[] | null {
   const out: LinkAlarm[] = [];
   for (const [idx, v] of data.entries()) {
     const e = v as Partial<LinkAlarm> | null;
-    if (!e || !(MARKETS as readonly string[]).includes(e.c ?? '') || !(typeof e.p === 'number' && e.p > 0) || !(e.k === 't' || e.k === 'c' || e.k === 'r')) return null;
+    if (!e || !(MARKETS as readonly string[]).includes(e.c ?? '') || !(typeof e.p === 'number' && e.p > 0) || !(e.k === 't' || e.k === 'c' || e.k === 'r' || e.k === 's')) return null;
     if (e.k !== 't' && e.d !== 1 && e.d !== -1) return null;
     if (e.i !== undefined && !(ALERT_INTERVALS as readonly string[]).includes(e.i)) return null;
     if (e.n !== undefined && !(Number.isInteger(e.n) && e.n >= 1 && e.n <= MAX_CLOSES)) return null;

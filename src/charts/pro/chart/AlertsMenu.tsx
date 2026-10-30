@@ -19,9 +19,20 @@ const KIND_OPTIONS: { value: AlertKind; label: string; title: string }[] = [
   { value: 'touch', label: tr('Dotknięcie', 'Touch'), title: tr('Pierwsza transakcja na poziomie', 'The first trade at the level') },
   { value: 'close', label: tr('Zamknięcie', 'Close'), title: tr('Świeca zamknięta nad albo pod poziomem', 'A candle closes above or below the level') },
   { value: 'reclaim', label: tr('Powrót', 'Reclaim'), title: tr('Wyjście za poziom, potem zamknięcie z powrotem', 'A move through the level, then a close back') },
+  { value: 'squeeze', label: tr('Wyciskanie', 'Squeeze'), title: tr('Gwałtowny ruch, gdy pozycje są zamykane (spadek OI)', 'A sharp move while positions close (falling OI)') },
 ];
 const IV_OPTIONS = ALERT_INTERVALS.map((iv) => ({ value: iv as string, label: iv }));
 const CLOSES_OPTIONS = [1, 2, 3].map((n) => ({ value: n, label: `${n}×`, title: tr(`${n} zamknięcia z rzędu`, `${n} closes in a row`) }));
+const SQUEEZE_DIRS = [
+  { value: 1 as const, label: tr('W górę', 'Up'), title: tr('Zamykane shorty', 'Shorts closing') },
+  { value: -1 as const, label: tr('W dół', 'Down'), title: tr('Zamykane longi', 'Longs closing') },
+];
+/** Próg wyciskania wpisany ręcznie: „1”, „1,2” albo „1.2 %”, od 0,2 do 10. */
+function parsePct(text: string): number | null {
+  const v = Number(text.replace(/[\s%]/g, '').replace(',', '.'));
+  return Number.isFinite(v) && v >= 0.2 && v <= 10 ? v : null;
+}
+const fmtPct = (v: number): string => (lang === 'en' ? v.toFixed(1) : v.toFixed(1).replace('.', ','));
 
 /** Panel alarmów: nowy alarm (warunek, cena, świeca, filtry, okno, łańcuch, para, opis), lista do edycji, historia i powiadomienia. */
 export const AlertsMenu: React.FC<{ coin: string; price: number; draft: AlertDraft | null; serverNow: () => number }> = ({ coin, price, draft, serverNow }) => {
@@ -42,16 +53,18 @@ export const AlertsMenu: React.FC<{ coin: string; price: number; draft: AlertDra
   const [perm, setPerm] = useState<NotificationPermission | 'none'>(() => ('Notification' in window ? Notification.permission : 'none'));
   const push = usePushStatus();
 
-  const value = parsePriceInput(text, price);
-  const autoDir = value !== null && price > 0 ? defaultDir(kind, value, price) : 1;
+  const squeeze = kind === 'squeeze';
+  const candle = kind === 'close' || kind === 'reclaim';
+  const value = squeeze ? parsePct(text) : parsePriceInput(text, price);
+  const autoDir = value !== null && price > 0 && !squeeze ? defaultDir(kind, value, price) : 1;
   const dir = kind === 'touch' ? autoDir : (dirPick ?? autoDir);
-  const spec = value !== null ? { kind, dir, price: value, iv, closes: kind === 'touch' ? 1 : closes, delta: kind !== 'touch' && delta } : null;
+  const spec = value !== null ? { kind, dir, price: value, iv, closes: candle ? closes : 1, delta: candle && delta } : null;
   const partners = alerts.filter((a) => a.coin === coin && a.id !== editing);
   // Warunek już spełniony przy obecnej cenie: zamknięcie zadziała przy najbliższej świecy, powrót czeka tylko na zamknięcie
-  const already = spec && price > 0 && kind !== 'touch' && (kind === 'close' ? (dir === 1 ? price > spec.price : price < spec.price) : dir === 1 ? price < spec.price : price > spec.price);
+  const already = spec && price > 0 && candle && (kind === 'close' ? (dir === 1 ? price > spec.price : price < spec.price) : dir === 1 ? price < spec.price : price > spec.price);
 
   const reset = () => {
-    setText('');
+    setText(squeeze ? fmtPct(1) : '');
     setDirPick(null);
     setEditing(null);
     setPairWith('');
@@ -78,7 +91,7 @@ export const AlertsMenu: React.FC<{ coin: string; price: number; draft: AlertDra
   const edit = (a: PriceAlert) => {
     setEditing(a.id);
     setKind(a.kind);
-    setText(fmtPx(a.price));
+    setText(a.kind === 'squeeze' ? fmtPct(a.price) : fmtPx(a.price));
     setIv(a.iv);
     setDirPick(a.dir);
     setCloses(a.closes);
@@ -113,20 +126,44 @@ export const AlertsMenu: React.FC<{ coin: string; price: number; draft: AlertDra
         >
           <Segmented<AlertKind> ariaLabel={tr('Warunek alarmu', 'Alert condition')} value={kind}
             onChange={(k) => {
+              // Próg wyciskania w % zamiast ceny: pole dostaje wartość domyślną albo wraca puste
+              if (k === 'squeeze') setText(fmtPct(1));
+              else if (squeeze) setText('');
               setKind(k);
               setDirPick(null);
             }}
-            options={KIND_OPTIONS} />
-          <input
-            type="text"
-            inputMode="decimal"
-            aria-label={tr(`Cena alarmu ${coin}`, `${coin} alert price`)}
-            placeholder={price > 0 ? `${tr('Poziom', 'Level')} · ${tr('teraz', 'now')} ${fmtPx(price)}` : tr(`Cena ${coin}`, `${coin} price`)}
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            className="h-9 px-2.5 rounded-lg bg-surface-1 border border-line font-mono text-ink-1 placeholder:text-ink-3 focus:outline-none focus:border-line-strong"
-          />
-          {kind !== 'touch' && (
+            options={KIND_OPTIONS} size="xs" cols={2} />
+          {squeeze ? (
+            <Row label={tr('Ruch w 10 min', 'Move within 10 min')}>
+              <span className="flex items-center gap-1.5">
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  aria-label={tr(`Próg ruchu ${coin} w 10 min, %`, `${coin} move within 10 min, %`)}
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  className="h-8 w-20 px-2 rounded-md bg-page border border-line font-mono text-right text-ink-1 focus:outline-none focus:border-line-strong"
+                />
+                <span className="text-ink-2">%</span>
+              </span>
+            </Row>
+          ) : (
+            <input
+              type="text"
+              inputMode="decimal"
+              aria-label={tr(`Cena alarmu ${coin}`, `${coin} alert price`)}
+              placeholder={price > 0 ? `${tr('Poziom', 'Level')} · ${tr('teraz', 'now')} ${fmtPx(price)}` : tr(`Cena ${coin}`, `${coin} price`)}
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              className="h-9 px-2.5 rounded-lg bg-surface-1 border border-line font-mono text-ink-1 placeholder:text-ink-3 focus:outline-none focus:border-line-strong"
+            />
+          )}
+          {squeeze && (
+            <Row label={tr('Kierunek', 'Direction')}>
+              <Segmented<1 | -1> ariaLabel={tr('Kierunek', 'Direction')} value={dir} onChange={setDirPick} options={SQUEEZE_DIRS} size="xs" />
+            </Row>
+          )}
+          {candle && (
             <>
               <Row label={tr('Świeca', 'Candle')}>
                 <Segmented<string> ariaLabel={tr('Interwał świecy', 'Candle timeframe')} value={iv} onChange={setIv} options={IV_OPTIONS} size="xs" />
@@ -207,6 +244,8 @@ export const AlertsMenu: React.FC<{ coin: string; price: number; draft: AlertDra
                   </span>
                 )}
               </>
+            ) : squeeze ? (
+              tr('Wpisz próg ruchu w %, od 0,2 do 10.', 'Type the move threshold in %, from 0.2 to 10.')
             ) : (
               tr('Wpisz poziom albo kliknij wykres prawym przyciskiem i wybierz „Alarm…”.', 'Type a level, or right-click the chart and pick “Alert…”.')
             )}
@@ -249,7 +288,10 @@ export const AlertsMenu: React.FC<{ coin: string; price: number; draft: AlertDra
                 <IconBtn label={tr('Zmień alarm', 'Edit alert')} onClick={() => edit(a)}>
                   <Pencil className="w-3.5 h-3.5" />
                 </IconBtn>
-                <IconBtn label={tr(`Usuń alarm ${a.coin} ${fmtPx(a.price)}`, `Remove alert ${a.coin} ${fmtPx(a.price)}`)} onClick={() => removeAlert(a.id)}>
+                <IconBtn
+                  label={a.kind === 'squeeze' ? tr(`Usuń alarm wyciskania ${a.coin}`, `Remove ${a.coin} squeeze alert`) : tr(`Usuń alarm ${a.coin} ${fmtPx(a.price)}`, `Remove alert ${a.coin} ${fmtPx(a.price)}`)}
+                  onClick={() => removeAlert(a.id)}
+                >
                   <X className="w-4 h-4" />
                 </IconBtn>
               </li>
@@ -361,8 +403,8 @@ function statusText(a: PriceAlert, all: readonly PriceAlert[]): string {
         ? a.dir === 1 ? tr('cena była pod poziomem, czeka na zamknięcie nad', 'price went below, waiting for a close above') : tr('cena była nad poziomem, czeka na zamknięcie pod', 'price went above, waiting for a close below')
         : a.dir === 1 ? tr('czeka na zejście pod poziom', 'waiting for a dip below') : tr('czeka na wyjście nad poziom', 'waiting for a move above')
     );
-  if (a.kind !== 'touch' && a.closes > 1 && a.streak > 0) parts.push(tr(`${a.streak} z ${a.closes} zamknięć`, `${a.streak} of ${a.closes} closes`));
-  if (a.delta && a.kind !== 'touch') parts.push(tr('z filtrem delty', 'with delta filter'));
+  if ((a.kind === 'close' || a.kind === 'reclaim') && a.closes > 1 && a.streak > 0) parts.push(tr(`${a.streak} z ${a.closes} zamknięć`, `${a.streak} of ${a.closes} closes`));
+  if (a.delta && (a.kind === 'close' || a.kind === 'reclaim')) parts.push(tr('z filtrem delty', 'with delta filter'));
   if (a.pair) parts.push(tr('w parze', 'paired'));
   return parts.join(' · ');
 }

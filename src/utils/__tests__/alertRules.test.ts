@@ -192,6 +192,95 @@ describe('alarmy: łańcuch', () => {
   });
 });
 
+describe('alarmy: wyciskanie', () => {
+  const S = 1000;
+  /** Transakcje z otwartymi pozycjami przed każdą (jak kontekst rynku z WebSocket). */
+  function runOi(e: AlertEngine, rules: AlertRule[], steps: [number, number, number][]) {
+    let list = rules;
+    const events = [];
+    for (const [time, px, oi] of steps) {
+      e.onOi('BTC', oi);
+      const r = e.onTrades(list, 'BTC', [tr(time, px)]);
+      if (r.rules) list = r.rules;
+      events.push(...r.events);
+    }
+    return { list, events };
+  }
+  const squeeze = (p: Partial<AlertRule> = {}) => rule({ id: 's', kind: 'squeeze', dir: 1, price: 1, ...p });
+
+  it('wzrost o próg w 10 min przy ubywających pozycjach: od dołka okna, z OI od początku okna', () => {
+    const e = new AlertEngine();
+    const { list, events } = runOi(e, [squeeze()], [
+      [T0 + S, 64_100, 1000],
+      [T0 + 2 * M, 64_000, 1001],
+      [T0 + 5 * M, 64_500, 997],
+      [T0 + 6 * M, 64_600, 995],
+      [T0 + 6 * M + 10 * S, 64_700, 994],
+    ]);
+    expect(events.map((x) => [x.type, x.rule.id, x.px])).toEqual([['fire', 's', 64_700]]);
+    expect(events[0].facts?.move).toEqual({ from: 64_000, at: T0 + 2 * M, oiPct: expect.closeTo(-0.6, 5) });
+    expect(Number.isNaN(events[0].facts?.oiPct)).toBe(true);
+    expect(list).toEqual([]);
+    expect(eventText(events[0], 'pl')).toBe('Wyciskanie shortów BTC: +1,09% w 4 min (z 64\u00a0000 do 64\u00a0700), OI −0,6%');
+    expect(eventText(events[0], 'en')).toBe('BTC short squeeze: +1.09% in 4 min (from 64,000 to 64,700), OI −0.6%');
+  });
+
+  it('pozycje znane dopiero po pierwszych transakcjach (alarm ustawiony na rynku bez innych alarmów)', () => {
+    const e = new AlertEngine();
+    let list = [squeeze()];
+    const r1 = e.onTrades(list, 'BTC', [tr(T0 + S, 64_000)]);
+    if (r1.rules) list = r1.rules;
+    const { events } = runOi(e, list, [
+      [T0 + 2 * S, 64_010, 1000],
+      [T0 + 4 * M, 64_700, 994],
+    ]);
+    expect(events.map((x) => [x.type, x.px])).toEqual([['fire', 64_700]]);
+  });
+
+  it('ten sam ruch przy przybywających pozycjach to nie wyciskanie', () => {
+    const e = new AlertEngine();
+    const { events } = runOi(e, [squeeze()], [
+      [T0 + S, 64_000, 1000],
+      [T0 + 4 * M, 64_700, 1005],
+    ]);
+    expect(events).toEqual([]);
+  });
+
+  it('ruch rozłożony na dłużej niż 10 min nie przechodzi progu', () => {
+    const e = new AlertEngine();
+    const { events } = runOi(e, [squeeze()], [
+      [T0 + S, 64_000, 1000],
+      [T0 + 6 * M, 64_330, 998],
+      [T0 + 12 * M, 64_700, 990],
+    ]);
+    expect(events).toEqual([]);
+  });
+
+  it('spadek przy zamykanych longach i tylko od chwili ustawienia alarmu', () => {
+    const e = new AlertEngine();
+    const steps: [number, number, number][] = [
+      [T0 + S, 65_000, 1000],
+      [T0 + 3 * M, 64_700, 998],
+      [T0 + 5 * M, 64_300, 995],
+    ];
+    // Szczyt 65 000 sprzed ustawienia alarmu się nie liczy: od 64 700 to tylko −0,62%
+    expect(runOi(e, [squeeze({ dir: -1, created: T0 + 2 * M })], steps).events).toEqual([]);
+    const fresh = new AlertEngine();
+    const { events } = runOi(fresh, [squeeze({ dir: -1 })], steps);
+    expect(events.map((x) => [x.type, x.px])).toEqual([['fire', 64_300]]);
+    expect(eventText(events[0], 'pl')).toMatch(/^Wyciskanie longów BTC: −1,08% w 5 min/);
+  });
+
+  it('opis warunku i świece: bez linii poziomu, fakty z bieżącej minuty', () => {
+    const r = squeeze({ price: 1.2 });
+    expect(ruleText(r, 'pl')).toBe('wyciskanie shortów: wzrost o 1,2% w 10 min, OI w dół co najmniej 0,3%');
+    expect(ruleText({ ...r, dir: -1 }, 'en')).toBe('long squeeze: drop of 1.2% within 10 min, OI down at least 0.3%');
+    expect(new AlertEngine().intervals([r], 'BTC')).toEqual(['1m']);
+    expect(eventText({ type: 'expire', rule: r, at: 0, px: 64_000, facts: null }, 'pl')).toBe('Alarm wyciskania BTC wygasł bez uruchomienia');
+    expect(eventText({ type: 'expire', rule: r, at: 0, px: 64_000, facts: null }, 'en')).toBe('BTC squeeze alert expired without triggering');
+  });
+});
+
 describe('alarmy: fakty ze świecy', () => {
   it('delta, wolumen wobec średniej, OI i największe zlecenia (wypełnienia jednego zlecenia razem)', () => {
     const e = new AlertEngine();
