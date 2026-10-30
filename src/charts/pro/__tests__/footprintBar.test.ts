@@ -10,9 +10,12 @@ function build(trades: [number, number, number, 1 | -1][]) {
 }
 
 describe('hlTick', () => {
-  it('5 cyfr znaczących ceny BTC', () => {
+  it('5 cyfr znaczących ceny BTC, a cena całkowita zawsze dozwolona (od 100 tys. nadal 1 USD)', () => {
+    expect(hlTick(80000)).toBe(1);
     expect(hlTick(81234)).toBe(1);
-    expect(hlTick(100500)).toBe(10);
+    expect(hlTick(100500)).toBe(1);
+    expect(hlTick(123456)).toBe(1);
+    expect(hlTick(123456, 5)).toBe(1);
     expect(hlTick(9876.5)).toBe(0.1);
     expect(hlTick(2.5, 5)).toBe(0.1); // ograniczenie 10^−(6 − szDecimals)
   });
