@@ -12,12 +12,17 @@ import {
   fibExtension,
   fibRetrace,
   fmtDuration,
+  PALETTE_ROWS,
   measureStats,
+  mix,
   moveDrawing,
   newPosition,
   parseDrawings,
   positionStats,
+  reorder,
   snapToOhlc,
+  styleCaps,
+  textSize,
   timeOfLogical,
 } from '../draw/model';
 
@@ -165,6 +170,38 @@ describe('edycja', () => {
     expect(dragHandle('long', pos, 0, { t: M1, p: 101 })[2]).toEqual({ t: M1, p: 95 });
     expect(dragHandle('vline', [{ t: 0, p: 5 }], 0, { t: 9, p: 50 })).toEqual([{ t: 9, p: 5 }]);
   });
+
+  it('kolejność warstw: na wierzch, do przodu, do tyłu, na spód', () => {
+    const l = ['a', 'b', 'c', 'd'].map((id) => ({ id }));
+    const ids = (to: Parameters<typeof reorder>[2], id = 'b') => reorder(l, id, to).map((d) => d.id).join('');
+    expect(ids('front')).toBe('acdb');
+    expect(ids('forward')).toBe('acbd');
+    expect(ids('backward')).toBe('bacd');
+    expect(ids('back')).toBe('bacd');
+    expect(ids('forward', 'd')).toBe('abcd');
+    expect(ids('backward', 'a')).toBe('abcd');
+    expect(ids('front', 'x')).toBe('abcd');
+  });
+
+  it('pasek pokazuje tylko ustawienia narzędzia', () => {
+    expect(styleCaps('trend')).toEqual({ color: true, stroke: true, fill: false, size: false, text: false });
+    expect(styleCaps('rect').fill).toBe(true);
+    expect(styleCaps('text')).toEqual({ color: true, stroke: false, fill: false, size: true, text: true });
+    expect(styleCaps('hline').text).toBe(true);
+    expect(styleCaps('long')).toEqual({ color: false, stroke: false, fill: false, size: false, text: false });
+  });
+});
+
+describe('kolory', () => {
+  it('mieszanka kolorów i paleta 6 × 10 bez powtórzeń', () => {
+    expect(mix('#000000', '#ffffff', 0.5)).toBe('#808080');
+    expect(mix('#ff4d5e', '#ffffff', 0)).toBe('#ff4d5e');
+    expect(mix('#ff4d5e', '#000000', 1)).toBe('#000000');
+    const all = PALETTE_ROWS.flat();
+    expect(PALETTE_ROWS.every((r) => r.length === 10)).toBe(true);
+    expect(new Set(all).size).toBe(all.length);
+    expect(all.every((c) => /^#[0-9a-f]{6}$/.test(c))).toBe(true);
+  });
 });
 
 describe('zapis rysunków', () => {
@@ -184,6 +221,22 @@ describe('zapis rysunków', () => {
     expect(out[1].style.color).toMatch(/^#[0-9a-f]{6}$/i);
     expect(out[1].text).toHaveLength(280);
     expect(parseDrawings('zły zapis')).toEqual([]);
+  });
+
+  it('krycie, tło, rozmiar tekstu i blokada: poprawne wartości zostają, złe są pomijane', () => {
+    const pts = [{ t: 0, p: 1 }, { t: 1, p: 2 }];
+    const [a, b] = parseDrawings([
+      { id: 'a', kind: 'rect', pts, locked: true, style: { color: '#ff0000', width: 1, dash: 'solid', alpha: 0.5, fill: '#00ff00', fillAlpha: 3, size: 99 } },
+      { id: 'b', kind: 'text', pts, locked: 'tak', style: { color: '#ff0000', width: 2, dash: 'solid', alpha: 'pół', fill: 'zielony' } },
+    ]);
+    expect(a.locked).toBe(true);
+    expect(a.style).toEqual({ color: '#ff0000', width: 1, dash: 'solid', alpha: 0.5, fill: '#00ff00', fillAlpha: 1, size: 48 });
+    expect(b.locked).toBeUndefined();
+    expect(b.style).toEqual({ color: '#ff0000', width: 2, dash: 'solid' });
+    // Stary zapis tekstu: rozmiar z grubości
+    expect(textSize(b)).toBe(16);
+    expect(textSize({ ...b, style: { ...b.style, size: 24 } })).toBe(24);
+    expect(textSize({ ...b, kind: 'note' })).toBe(12);
   });
 
   it('najwyżej MAX_DRAWINGS rysunków', () => {

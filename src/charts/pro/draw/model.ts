@@ -135,6 +135,13 @@ export interface DrawStyle {
   color: string;
   width: number;
   dash: Dash;
+  /** Krycie koloru rysunku (0..1); brak = pełne. */
+  alpha?: number;
+  /** Tło kształtu (prostokąt, kanał): kolor i krycie (0 = bez tła); brak = kolor rysunku z kryciem domyślnym. */
+  fill?: string;
+  fillAlpha?: number;
+  /** Rozmiar tekstu (px) — tekst i notatka; brak = rozmiar domyślny. */
+  size?: number;
 }
 
 export interface Drawing {
@@ -144,11 +151,64 @@ export interface Drawing {
   pts: Pt[];
   style: DrawStyle;
   text?: string;
+  /** Zablokowany: daje się zaznaczyć i zmienić styl, ale nie przesunąć. */
+  locked?: boolean;
 }
 
 /** Kolory rysunków: jasne na ciemnym płótnie, pierwszy domyślny. */
 export const DRAW_COLORS = ['#f2c94c', '#e4e6ea', '#2fd8c8', '#4cc38a', '#9085e9', '#e66aa8', '#f5620f', '#4a9eff'] as const;
 export const DRAW_WIDTHS = [1, 2, 3, 4] as const;
+export const TEXT_SIZES = [10, 12, 14, 16, 20, 24, 28, 32] as const;
+
+/** Mieszanka dwóch kolorów #rrggbb: `k` = 0 daje `a`, 1 daje `b`. */
+export function mix(a: string, b: string, k: number): string {
+  const x = parseInt(a.slice(1), 16);
+  const y = parseInt(b.slice(1), 16);
+  const ch = (s: number) => Math.round(((x >> s) & 255) * (1 - k) + ((y >> s) & 255) * k);
+  return `#${((ch(16) << 16) | (ch(8) << 8) | ch(0)).toString(16).padStart(6, '0')}`;
+}
+
+/** Barwy palety: kolory desku uzupełnione do dziesięciu. */
+const HUES = ['#ff4d5e', '#f5620f', '#f5a524', '#f2c94c', '#4cc38a', '#2fd8c8', '#4a9eff', '#9085e9', '#b45ef0', '#e66aa8'];
+
+/** Pełna paleta (wiersze po 10): szarości, potem każda barwa od najjaśniejszej do najciemniejszej. */
+export const PALETTE_ROWS: readonly (readonly string[])[] = [
+  ['#ffffff', '#e4e6ea', '#c3c6cc', '#9a9ea6', '#787b86', '#5d606b', '#434651', '#2a2e39', '#1a1d26', '#000000'],
+  HUES.map((h) => mix(h, '#ffffff', 0.6)),
+  HUES.map((h) => mix(h, '#ffffff', 0.3)),
+  HUES,
+  HUES.map((h) => mix(h, '#000000', 0.3)),
+  HUES.map((h) => mix(h, '#000000', 0.55)),
+];
+
+/** Domyślne krycie tła kształtu i rozmiar tekstu. */
+export const FILL_ALPHA: Partial<Record<ToolKind, number>> = { rect: 0.12, channel: 0.08 };
+export const textSize = (d: Drawing): number => d.style.size ?? (d.kind === 'text' ? 12 + 2 * d.style.width : 12);
+
+export interface StyleCaps {
+  /** Kolor rysunku (z kryciem). */
+  color: boolean;
+  /** Grubość i rodzaj linii. */
+  stroke: boolean;
+  /** Tło kształtu. */
+  fill: boolean;
+  /** Rozmiar tekstu. */
+  size: boolean;
+  /** Treść tekstu albo opis poziomu. */
+  text: boolean;
+}
+
+/** Pomiar i pozycje mają stałe kolory (zysk, strata, kierunek). */
+const FIXED_STYLE = new Set<ToolKind>(['measure', 'long', 'short']);
+
+/** Które ustawienia stylu ma narzędzie (pasek obiektu pokazuje tylko te). */
+export const styleCaps = (kind: ToolKind): StyleCaps => ({
+  color: !FIXED_STYLE.has(kind),
+  stroke: !FIXED_STYLE.has(kind) && kind !== 'text' && kind !== 'profile',
+  fill: kind in FILL_ALPHA,
+  size: kind === 'text' || kind === 'note',
+  text: kind === 'text' || kind === 'note' || kind === 'hline' || kind === 'hray',
+});
 
 export const defaultStyle = (kind: ToolKind): DrawStyle => ({
   color: kind === 'measure' || kind === 'profile' ? DRAW_COLORS[1] : kind === 'avwap' ? DRAW_COLORS[2] : DRAW_COLORS[0],
@@ -345,6 +405,19 @@ export function dragHandle(kind: ToolKind, pts: readonly Pt[], h: number, q: Pt)
   return out;
 }
 
+export type Order = 'front' | 'forward' | 'backward' | 'back';
+
+/** Kolejność warstw: ostatni rysunek listy leży na wierzchu. */
+export function reorder<T extends { id: string }>(list: readonly T[], id: string, to: Order): T[] {
+  const i = list.findIndex((d) => d.id === id);
+  if (i < 0) return list.slice();
+  const out = list.slice();
+  const [d] = out.splice(i, 1);
+  const at = to === 'front' ? out.length : to === 'back' ? 0 : Math.max(0, Math.min(out.length, i + (to === 'forward' ? 1 : -1)));
+  out.splice(at, 0, d);
+  return out;
+}
+
 // ───────────────────────── zapis ─────────────────────────
 
 const KINDS = new Set<string>(TOOLS.map((t) => t.kind));
@@ -354,6 +427,8 @@ export const MAX_DRAWINGS = 500;
 export const MAX_BRUSH_POINTS = 2000;
 
 const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+const isHex = (v: unknown): v is string => typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v);
+const unit = (v: number) => Math.min(1, Math.max(0, v));
 
 /** Rysunki z zapisu: tylko poprawne pozycje, reszta pominięta (stary albo uszkodzony zapis nie psuje wykresu). */
 export function parseDrawings(raw: unknown): Drawing[] {
@@ -372,16 +447,22 @@ export function parseDrawings(raw: unknown): Drawing[] {
     if (pts.length < need) continue;
     const st = (d.style ?? {}) as Record<string, unknown>;
     const def = defaultStyle(kind);
+    const style: DrawStyle = {
+      color: isHex(st.color) ? st.color : def.color,
+      width: finite(st.width) ? Math.min(4, Math.max(1, Math.round(st.width))) : def.width,
+      dash: typeof st.dash === 'string' && DASHES.has(st.dash) ? (st.dash as Dash) : def.dash,
+    };
+    if (finite(st.alpha)) style.alpha = unit(st.alpha);
+    if (isHex(st.fill)) style.fill = st.fill;
+    if (finite(st.fillAlpha)) style.fillAlpha = unit(st.fillAlpha);
+    if (finite(st.size)) style.size = Math.min(48, Math.max(8, Math.round(st.size)));
     out.push({
       id: d.id,
       kind,
       pts,
-      style: {
-        color: typeof st.color === 'string' && /^#[0-9a-f]{6}$/i.test(st.color) ? st.color : def.color,
-        width: finite(st.width) ? Math.min(4, Math.max(1, Math.round(st.width))) : def.width,
-        dash: typeof st.dash === 'string' && DASHES.has(st.dash) ? (st.dash as Dash) : def.dash,
-      },
+      style,
       ...(typeof d.text === 'string' ? { text: d.text.slice(0, 280) } : {}),
+      ...(d.locked === true ? { locked: true } : {}),
     });
   }
   return out;
