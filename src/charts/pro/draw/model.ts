@@ -140,8 +140,10 @@ export interface DrawStyle {
   /** Tło kształtu (prostokąt, kanał): kolor i krycie (0 = bez tła); brak = kolor rysunku z kryciem domyślnym. */
   fill?: string;
   fillAlpha?: number;
-  /** Rozmiar tekstu (px) — tekst i notatka; brak = rozmiar domyślny. */
+  /** Rozmiar tekstu (px) — tekst, notatka i opis poziomu; brak = rozmiar domyślny. */
   size?: number;
+  bold?: boolean;
+  italic?: boolean;
 }
 
 export interface Drawing {
@@ -153,6 +155,16 @@ export interface Drawing {
   text?: string;
   /** Zablokowany: daje się zaznaczyć i zmienić styl, ale nie przesunąć. */
   locked?: boolean;
+  /** Linia: przedłużenie w lewo i w prawo (brak = jak narzędzie: promień w prawo, linia rozszerzona w obie strony). */
+  extL?: boolean;
+  extR?: boolean;
+  /** Linia: ceny przy końcach i statystyki odcinka (zmiana ceny, świece, czas, wolumen i delta). */
+  labels?: boolean;
+  stats?: boolean;
+  /** Fibonacci: włączone poziomy (brak = domyślne). */
+  levels?: number[];
+  /** Interwały (ms), na których rysunek jest ukryty. */
+  hideIv?: number[];
 }
 
 /** Kolory rysunków: jasne na ciemnym płótnie, pierwszy domyślny. */
@@ -183,6 +195,8 @@ export const PALETTE_ROWS: readonly (readonly string[])[] = [
 
 /** Domyślne krycie tła kształtu i rozmiar tekstu. */
 export const FILL_ALPHA: Partial<Record<ToolKind, number>> = { rect: 0.12, channel: 0.08 };
+/** Krycie pasów między poziomami Fibonacciego (0 = bez tła). */
+export const FIB_FILL_ALPHA = 0.07;
 export const textSize = (d: Drawing): number => d.style.size ?? (d.kind === 'text' ? 12 + 2 * d.style.width : 12);
 
 export interface StyleCaps {
@@ -215,6 +229,20 @@ export const defaultStyle = (kind: ToolKind): DrawStyle => ({
   width: kind === 'brush' ? 2 : 1,
   dash: 'solid',
 });
+
+/** Linie z dwóch punktów, które można przedłużać. */
+export const EXTENDABLE = new Set<ToolKind>(['trend', 'ray', 'extended']);
+/** Linie ze statystykami i cenami przy końcach. */
+export const SEGMENTS = new Set<ToolKind>(['trend', 'ray', 'extended', 'arrow']);
+
+/** Przedłużenie linii: z ustawień albo jak narzędzie (promień w prawo, linia rozszerzona w obie strony). */
+export const extension = (d: Drawing): { left: boolean; right: boolean } => ({
+  left: EXTENDABLE.has(d.kind) && (d.extL ?? d.kind === 'extended'),
+  right: EXTENDABLE.has(d.kind) && (d.extR ?? d.kind !== 'trend'),
+});
+
+/** Rysunek widoczny na interwale `ms`. */
+export const visibleOn = (d: Drawing, ms: number): boolean => !d.hideIv?.includes(ms);
 
 // ───────────────────────── geometria ekranu ─────────────────────────
 
@@ -285,8 +313,47 @@ export function snapToOhlc(c: { o: number; h: number; l: number; c: number }, pr
 
 // ───────────────────────── Fibonacci ─────────────────────────
 
-export const FIB_RETRACE = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1] as const;
-export const FIB_EXTENSION = [0, 0.618, 1, 1.272, 1.618, 2, 2.618] as const;
+export interface FibLevel {
+  v: number;
+  color: string;
+  /** Włączony domyślnie. */
+  on: boolean;
+}
+
+const fl = (v: number, color: string, on = true): FibLevel => ({ v, color, on });
+
+/** Poziomy do wyboru w ustawieniach: od szarego 0 przez ciepłe do chłodnych i szarego 1. */
+export const FIB_LEVELS: Record<'fib' | 'fibext', readonly FibLevel[]> = {
+  fib: [
+    fl(0, '#8a8f98'),
+    fl(0.236, '#ff4d5e'),
+    fl(0.382, '#f5a524'),
+    fl(0.5, '#2fd8c8'),
+    fl(0.618, '#4cc38a'),
+    fl(0.786, '#4a9eff'),
+    fl(1, '#8a8f98'),
+    fl(1.272, '#9085e9', false),
+    fl(1.618, '#e66aa8', false),
+    fl(2.618, '#f5620f', false),
+  ],
+  fibext: [
+    fl(0, '#8a8f98'),
+    fl(0.382, '#9085e9', false),
+    fl(0.618, '#ff4d5e'),
+    fl(1, '#f5a524'),
+    fl(1.272, '#2fd8c8'),
+    fl(1.618, '#4cc38a'),
+    fl(2, '#4a9eff'),
+    fl(2.618, '#8a8f98'),
+    fl(3.618, '#e66aa8', false),
+  ],
+};
+
+/** Poziomy rysunku Fibonacciego do narysowania (wybrane albo domyślne). */
+export const fibLevels = (d: Drawing): FibLevel[] => {
+  const all = FIB_LEVELS[d.kind === 'fibext' ? 'fibext' : 'fib'];
+  return all.filter((l) => (d.levels ? d.levels.includes(l.v) : l.on));
+};
 
 /** Zniesienie: poziom 0 na końcu ruchu (B), 1 na jego początku (A), jak w TradingView. */
 export const fibRetrace = (a: number, b: number, level: number): number => b + (a - b) * level;
@@ -430,6 +497,24 @@ const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFi
 const isHex = (v: unknown): v is string => typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v);
 const unit = (v: number) => Math.min(1, Math.max(0, v));
 
+/** Styl z zapisu (rysunek albo styl domyślny narzędzia); brakujące i błędne pola z `defaultStyle`. */
+export function parseStyle(kind: ToolKind, raw: unknown): DrawStyle {
+  const st = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  const def = defaultStyle(kind);
+  const style: DrawStyle = {
+    color: isHex(st.color) ? st.color : def.color,
+    width: finite(st.width) ? Math.min(4, Math.max(1, Math.round(st.width))) : def.width,
+    dash: typeof st.dash === 'string' && DASHES.has(st.dash) ? (st.dash as Dash) : def.dash,
+  };
+  if (finite(st.alpha)) style.alpha = unit(st.alpha);
+  if (isHex(st.fill)) style.fill = st.fill;
+  if (finite(st.fillAlpha)) style.fillAlpha = unit(st.fillAlpha);
+  if (finite(st.size)) style.size = Math.min(48, Math.max(8, Math.round(st.size)));
+  if (st.bold === true) style.bold = true;
+  if (st.italic === true) style.italic = true;
+  return style;
+}
+
 /** Rysunki z zapisu: tylko poprawne pozycje, reszta pominięta (stary albo uszkodzony zapis nie psuje wykresu). */
 export function parseDrawings(raw: unknown): Drawing[] {
   if (!Array.isArray(raw)) return [];
@@ -445,25 +530,26 @@ export function parseDrawings(raw: unknown): Drawing[] {
     const kind = d.kind as ToolKind;
     const need = kind === 'long' || kind === 'short' ? 3 : kind === 'brush' ? 2 : toolDef(kind).points;
     if (pts.length < need) continue;
-    const st = (d.style ?? {}) as Record<string, unknown>;
-    const def = defaultStyle(kind);
-    const style: DrawStyle = {
-      color: isHex(st.color) ? st.color : def.color,
-      width: finite(st.width) ? Math.min(4, Math.max(1, Math.round(st.width))) : def.width,
-      dash: typeof st.dash === 'string' && DASHES.has(st.dash) ? (st.dash as Dash) : def.dash,
-    };
-    if (finite(st.alpha)) style.alpha = unit(st.alpha);
-    if (isHex(st.fill)) style.fill = st.fill;
-    if (finite(st.fillAlpha)) style.fillAlpha = unit(st.fillAlpha);
-    if (finite(st.size)) style.size = Math.min(48, Math.max(8, Math.round(st.size)));
-    out.push({
-      id: d.id,
-      kind,
-      pts,
-      style,
-      ...(typeof d.text === 'string' ? { text: d.text.slice(0, 280) } : {}),
-      ...(d.locked === true ? { locked: true } : {}),
-    });
+    const out1: Drawing = { id: d.id, kind, pts, style: parseStyle(kind, d.style), ...parseProps(kind, d) };
+    if (typeof d.text === 'string') out1.text = d.text.slice(0, 280);
+    if (d.locked === true) out1.locked = true;
+    if (Array.isArray(d.hideIv)) {
+      const iv = (d.hideIv as unknown[]).filter(finite).slice(0, 16);
+      if (iv.length) out1.hideIv = iv;
+    }
+    out.push(out1);
   }
+  return out;
+}
+
+/** Ustawienia rysunku poza stylem, które idą do szablonu „Zapisz jako domyślny” (bez punktów, tekstu, blokady i widoczności). */
+export type DrawProps = Pick<Drawing, 'extL' | 'extR' | 'labels' | 'stats' | 'levels'>;
+
+export function parseProps(kind: ToolKind, raw: unknown): DrawProps {
+  const d = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  const out: DrawProps = {};
+  for (const k of ['labels', 'stats'] as const) if (d[k] === true) out[k] = true;
+  for (const k of ['extL', 'extR'] as const) if (typeof d[k] === 'boolean') out[k] = d[k] as boolean;
+  if ((kind === 'fib' || kind === 'fibext') && Array.isArray(d.levels)) out.levels = FIB_LEVELS[kind].map((l) => l.v).filter((v) => (d.levels as unknown[]).includes(v));
   return out;
 }
