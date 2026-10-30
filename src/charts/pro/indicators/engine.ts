@@ -13,23 +13,26 @@ export type CandlesOf = (tf: string) => readonly Candle[];
 /** Wartości plotów instancji świeca po świecy wykresu (NaN = brak); długość tablicy bywa większa niż liczba świec (zapas). */
 export interface IndicatorValues {
   out: Float64Array[];
+  /** Indeks pierwszej wartości zmienionej w ostatnim przeliczeniu (liczba świec = bez zmian). */
+  from: number;
 }
 
 /** Jedna instancja wskaźnika: wartości plotów świeca po świecy (NaN = brak). */
 export class IndicatorRun implements IndicatorValues {
   out: Float64Array[];
+  from = 0;
   private step: Step;
   private readonly v: Float64Array;
 
   constructor(readonly x: IndicatorInstance) {
     const def = indicatorDef(x.id);
-    this.step = def.create(x.params);
+    this.step = def.create!(x.params);
     this.v = new Float64Array(def.plots.length);
     this.out = def.plots.map(() => new Float64Array(0));
   }
 
   reset(): void {
-    this.step = indicatorDef(this.x.id).create(this.x.params);
+    this.step = indicatorDef(this.x.id).create!(this.x.params);
   }
 
   /** Świeca `i`: zatwierdzona (`keep`) albo podgląd bieżącej. */
@@ -103,6 +106,7 @@ function lastStartedBy(cs: readonly Candle[], t: number): number {
  */
 class TfRun implements IndicatorValues {
   out: Float64Array[];
+  from = 0;
   private readonly run: IndicatorRun;
   private readonly pass: Pass;
   private readonly ms: number;
@@ -128,7 +132,7 @@ class TfRun implements IndicatorValues {
     let i = changed ? 0 : Math.min(from, this.n);
     if (i >= n) {
       this.n = n;
-      return n;
+      return (this.from = n);
     }
     if (n > this.out[0].length) this.out = this.out.map((a) => grow(a, n));
     // Świeca interwału zamknięta do końca świecy wykresu zaczęła się najpóźniej w chwili t + ms − ms interwału
@@ -147,7 +151,38 @@ class TfRun implements IndicatorValues {
       }
     }
     this.n = n;
-    return first;
+    return (this.from = first);
+  }
+}
+
+/** Rysunek na ostatnich świecach (kanał regresji): liczony od nowa z ostatnich `span` świec, wcześniejsze bez wartości. */
+class WindowRun implements IndicatorValues {
+  out: Float64Array[];
+  from = 0;
+  private readonly span: number;
+  /** Początek okna i liczba świec z poprzedniego liczenia. */
+  private start = 0;
+  private n = 0;
+
+  constructor(private readonly x: IndicatorInstance) {
+    const def = indicatorDef(x.id);
+    this.span = def.fit!.span(x.params);
+    this.out = def.plots.map(() => new Float64Array(0));
+  }
+
+  /** Liczy okno po zmianie świec wykresu od `from`; zwraca indeks pierwszej zmienionej wartości. */
+  sync(bars: readonly Bar[], from: number): number {
+    const n = bars.length;
+    if (from >= n && n === this.n) return (this.from = n);
+    if (n > this.out[0].length) this.out = this.out.map((a) => grow(a, n));
+    // Za mało świec: bez kanału; poprzednie okno poza nowym traci wartości
+    const start = n >= this.span ? n - this.span : n;
+    const clear = from === 0 ? 0 : Math.min(this.start, start);
+    for (const a of this.out) a.fill(Number.NaN, clear, start);
+    if (start < n) indicatorDef(this.x.id).fit!.run((j) => bars[n - 1 - j].candle, this.x.params, this.out, n - 1);
+    this.start = start;
+    this.n = n;
+    return (this.from = clear);
   }
 }
 
@@ -159,7 +194,9 @@ export class IndicatorEngine {
   /** Wartości instancji w kolejności listy. */
   runs: IndicatorValues[] = [];
   private chart = new Pass([]);
+  private own: IndicatorRun[] = [];
   private tfs: TfRun[] = [];
+  private windows: WindowRun[] = [];
 
   /** Liczba przeliczonych świec wykresu. */
   get count(): number {
@@ -167,27 +204,36 @@ export class IndicatorEngine {
   }
 
   setInstances(list: readonly IndicatorInstance[]): void {
-    const own: IndicatorRun[] = [];
+    this.own = [];
     this.tfs = [];
+    this.windows = [];
     this.runs = list.map((x) => {
-      const tf = indicatorDef(x.id).period ?? x.tf;
+      const def = indicatorDef(x.id);
+      if (def.fit) {
+        const r = new WindowRun(x);
+        this.windows.push(r);
+        return r;
+      }
+      const tf = def.period ?? x.tf;
       if (tf) {
         const r = new TfRun(x, tf);
         this.tfs.push(r);
         return r;
       }
       const r = new IndicatorRun(x);
-      own.push(r);
+      this.own.push(r);
       return r;
     });
-    this.chart = new Pass(own);
+    this.chart = new Pass(this.own);
   }
 
   /** Przelicza zmienione świece (`ms` — interwał wykresu); zwraca indeks pierwszej zmienionej wartości (liczba świec = bez zmian). */
   sync(bars: readonly Bar[], ms = 0, candlesOf: CandlesOf = () => []): number {
     const from = this.chart.sync(bars.length, (i) => bars[i].candle);
+    for (const r of this.own) r.from = from;
     let start = from;
     for (const r of this.tfs) start = Math.min(start, r.sync(bars, ms, from, candlesOf(r.tf)));
+    for (const r of this.windows) start = Math.min(start, r.sync(bars, from));
     return start;
   }
 }
