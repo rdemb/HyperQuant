@@ -1,6 +1,7 @@
 import type { IChartApi } from 'lightweight-charts';
 import type { DrawingLayer, LayerState } from './layer';
 import {
+  DrawProps,
   DrawStyle,
   Drawing,
   MAX_BRUSH_POINTS,
@@ -14,15 +15,18 @@ import {
   moveDrawing,
   newPosition,
   parseDrawings,
+  parseProps,
+  parseStyle,
   reorder,
   snapToOhlc,
   toolDef,
+  visibleOn,
 } from './model';
 
 /**
  * Obsługa rysowania myszą, dotykiem i klawiaturą: stawianie punktów (klik-klik albo przeciągnięcie),
  * zaznaczanie i podświetlenie pod kursorem, przesuwanie rysunku i jego uchwytów (Ctrl + przeciągnięcie klonuje,
- * Shift trzyma linię poziomo), blokada, kolejność warstw, menu rysunku, magnes do OHLC, szybki pomiar z Shift,
+ * Shift trzyma linię poziomo), blokada, kolejność warstw, menu i okno ustawień rysunku, magnes do OHLC, szybki pomiar z Shift,
  * cofanie i ponawianie, kopiowanie oraz zapis rysunków rynku w przeglądarce. Zdarzenia przejmowane w fazie przechwytywania,
  * więc w trakcie rysowania wykres się nie przesuwa.
  */
@@ -42,7 +46,11 @@ export interface DrawState {
   editTick: number;
   /** Menu rysunku pod prawym przyciskiem: miejsce kliknięcia w pikselach panelu. */
   menu: DrawMenuAt | null;
+  /** Otwarte okno ustawień zaznaczonego rysunku i jego zakładka. */
+  settings: SettingsTab | null;
 }
+
+export type SettingsTab = 'style' | 'text' | 'coords' | 'visibility';
 
 export interface DrawMenuAt {
   x: number;
@@ -71,6 +79,8 @@ interface Drag {
 }
 
 const KEY = 'hq.charts.draw.v1';
+/** Styl domyślny narzędzi zapisany przez „Zapisz jako domyślny”. */
+const DEFAULTS_KEY = 'hq.charts.draw.defaults.v1';
 const UNDO_MAX = 100;
 /** Magnes przyciąga cenę do OHLC świecy z tej odległości (px). */
 const MAGNET_PX = 24;
@@ -98,9 +108,9 @@ const clone = (ds: readonly Drawing[]): Drawing[] =>
 let seq = 0;
 const newId = () => `${Date.now().toString(36)}${(seq++).toString(36)}`;
 
-function loadAll(): Record<string, unknown> {
+function loadAll(key = KEY): Record<string, unknown> {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = localStorage.getItem(key);
     const v = raw ? (JSON.parse(raw) as unknown) : null;
     return v && typeof v === 'object' ? (v as Record<string, unknown>) : {};
   } catch {
@@ -133,6 +143,7 @@ export class DrawingTools {
   private editTick = 0;
   private hoverId: string | null = null;
   private menu: DrawMenuAt | null = null;
+  private settings: SettingsTab | null = null;
   /** Zmiana scalana z poprzednią w jeden wpis cofania (`id:pole` — wpisywanie tekstu, suwak krycia). */
   private mergeKey: string | null = null;
   private undoStack: Drawing[][] = [];
@@ -141,6 +152,8 @@ export class DrawingTools {
   /** Wciśnięcie należy do rysowania — kolejne zdarzenia myszy i dotyku nie trafiają do wykresu. */
   private swallow = false;
   private lastStyle = new Map<ToolKind, DrawStyle>();
+  /** Ostatni styl narzędzia sprzed otwarcia okna ustawień („Anuluj” go przywraca). */
+  private lastBefore: DrawStyle | undefined;
   private snapshot: DrawState;
   private readonly listeners = new Set<() => void>();
 
@@ -162,6 +175,7 @@ export class DrawingTools {
     window.addEventListener('pointerup', this.onUp);
     window.addEventListener('pointercancel', this.onUp);
     window.addEventListener('keydown', this.onKey);
+    layer.onInterval = this.onInterval;
     peers.add(this);
     focused ??= this;
     this.push();
@@ -173,6 +187,7 @@ export class DrawingTools {
   }
 
   destroy(): void {
+    this.layer.onInterval = null;
     this.host.removeEventListener('pointerdown', this.onDown, true);
     this.host.removeEventListener('mousedown', this.onCompat, true);
     this.host.removeEventListener('touchstart', this.onCompat, true);
@@ -219,6 +234,7 @@ export class DrawingTools {
       canRedo: this.redoStack.length > 0,
       editTick: this.editTick,
       menu: this.selectedId ? this.menu : null,
+      settings: this.selectedId ? this.settings : null,
     };
   }
 
@@ -376,8 +392,105 @@ export class DrawingTools {
     if (d && d.text !== text) this.patchSelected({ text: text.slice(0, 280) }, `${d.id}:text`);
   }
 
+  /** Zmiana zaznaczonego rysunku z okna ustawień (przedłużenie, statystyki, poziomy, widoczność, tekst). */
+  editSelected(patch: Partial<Drawing>): void {
+    if (this.selected) this.patchSelected(patch);
+  }
+
+  /** Punkt `i` z pola współrzędnych (czas dociągnięty do początku świecy); pozycja: stop ma czas wejścia. */
+  setPoint(i: number, q: Pt): void {
+    const d = this.selected;
+    if (!d || !d.pts[i]) return;
+    const ms = this.layer.intervalMs;
+    const pts = d.pts.map((x) => ({ ...x }));
+    pts[i] = { t: Math.floor(q.t / ms) * ms, p: q.p };
+    if ((d.kind === 'long' || d.kind === 'short') && i === 0) pts[2].t = pts[0].t;
+    this.patchSelected({ pts });
+  }
+
+  /** Szablon zapisany przez „Zapisz jako domyślny” (styl i ustawienia narzędzia) albo null. */
+  private saved(kind: ToolKind): { style: DrawStyle; props: DrawProps } | null {
+    const raw = loadAll(DEFAULTS_KEY)[kind];
+    if (!raw || typeof raw !== 'object') return null;
+    return { style: parseStyle(kind, (raw as Record<string, unknown>).style), props: parseProps(kind, raw) };
+  }
+
+  /** Styl i ustawienia zaznaczonego rysunku stają się domyślnymi dla nowych rysunków tego narzędzia (zapis w przeglądarce). */
+  saveDefault(): void {
+    const d = this.selected;
+    if (!d) return;
+    try {
+      const all = loadAll(DEFAULTS_KEY);
+      all[d.kind] = { style: d.style, ...parseProps(d.kind, d) };
+      localStorage.setItem(DEFAULTS_KEY, JSON.stringify(all));
+    } catch {
+      // Prywatne okno — szablon zostaje do zamknięcia strony
+    }
+    this.lastStyle.set(d.kind, { ...d.style });
+  }
+
+  /** Narzędzie zaznaczonego rysunku ma zapisany szablon. */
+  hasDefault(): boolean {
+    const d = this.selected;
+    return !!d && this.saved(d.kind) !== null;
+  }
+
+  /** Zaznaczony rysunek dostaje zapisany szablon albo (`factory`) ustawienia wbudowane. */
+  applyDefault(factory: boolean): void {
+    const d = this.selected;
+    if (!d) return;
+    const t = factory ? null : this.saved(d.kind);
+    const style = t?.style ?? defaultStyle(d.kind);
+    this.lastStyle.set(d.kind, { ...style });
+    this.patchSelected({ style, extL: undefined, extR: undefined, labels: undefined, stats: undefined, levels: undefined, ...t?.props });
+  }
+
+  /** Styl nowego rysunku: ostatnio użyty, zapisany jako domyślny albo wbudowany. */
+  private styleFor(kind: ToolKind): DrawStyle {
+    const last = this.lastStyle.get(kind);
+    return last ? { ...last } : (this.saved(kind)?.style ?? defaultStyle(kind));
+  }
+
+  openSettings(tab: SettingsTab = 'style'): void {
+    const d = this.selected;
+    if (!d) return;
+    this.menu = null;
+    this.settings = tab;
+    this.lastBefore = this.lastStyle.get(d.kind);
+    // Zmiany w oknie to jeden krok cofania; „Anuluj” go cofa
+    this.mergeKey = null;
+    this.push();
+  }
+
+  setSettingsTab(tab: SettingsTab): void {
+    if (!this.settings) return;
+    this.settings = tab;
+    this.push();
+  }
+
+  /** Zamknięcie okna: `apply` false (Anuluj, Esc) cofa zmiany zrobione w oknie. */
+  closeSettings(apply: boolean): void {
+    if (!this.settings) return;
+    const changed = this.mergeKey === `${this.selectedId}:dialog`;
+    this.settings = null;
+    if (!apply && changed) {
+      this.undo();
+      this.redoStack.pop();
+      // Styl dla nowych rysunków też wraca do stanu sprzed okna
+      const d = this.selected;
+      if (d && this.lastBefore) this.lastStyle.set(d.kind, this.lastBefore);
+      else if (d) this.lastStyle.delete(d.kind);
+    }
+    this.mergeKey = null;
+    // Rysunek ukryty na tym interwale nie zostaje zaznaczony (pasek bez widocznego rysunku)
+    const d = this.selected;
+    if (d && !visibleOn(d, this.layer.intervalMs)) this.selectedId = null;
+    this.push();
+  }
+
   private patchSelected(patch: Partial<Drawing>, merge: string | null = null): void {
     const id = this.selectedId;
+    if (this.settings) merge = `${id}:dialog`;
     const next = this.drawings.map((x) => (x.id === id ? { ...x, ...patch } : x));
     if (merge !== null && merge === this.mergeKey) {
       this.drawings = next;
@@ -409,9 +522,17 @@ export class DrawingTools {
   }
 
   private select(id: string): void {
-    if (this.selectedId !== id) this.mergeKey = null;
+    if (this.selectedId !== id) {
+      this.mergeKey = null;
+      this.settings = null;
+    }
     this.selectedId = id;
   }
+
+  private readonly onInterval = (): void => {
+    const d = this.selected;
+    if (d && !visibleOn(d, this.layer.intervalMs)) this.deselect();
+  };
 
   /** Linia pozioma w punkcie panelu ceny (menu kontekstowe wykresu). */
   addHorizontal(x: number, y: number): void {
@@ -423,6 +544,7 @@ export class DrawingTools {
     this.selectedId = null;
     this.mergeKey = null;
     this.menu = null;
+    this.settings = null;
     this.push();
   }
 
@@ -534,8 +656,7 @@ export class DrawingTools {
   };
 
   private begin(kind: ToolKind, q: Pt, temp: boolean, x: number, y: number): void {
-    const style = { ...(this.lastStyle.get(kind) ?? defaultStyle(kind)) };
-    const d: Drawing = { id: temp ? 'temp' : newId(), kind, pts: [q], style };
+    const d: Drawing = { id: temp ? 'temp' : newId(), kind, pts: [q], style: this.styleFor(kind), ...this.saved(kind)?.props };
     if (kind === 'long' || kind === 'short') {
       const ppu = this.layer.pxPerUsd(q.p);
       const bars = Math.max(4, Math.round(POSITION_W_PX / this.chart.timeScale().options().barSpacing));
@@ -688,8 +809,8 @@ export class DrawingTools {
     if (!d) return;
     e.stopPropagation();
     this.select(d.id);
-    if (d.kind === 'text' || d.kind === 'note' || d.kind === 'hline' || d.kind === 'hray') this.editTick++;
-    this.push();
+    // Dwuklik otwiera ustawienia, tekst od razu w zakładce Tekst (jak w TradingView)
+    this.openSettings(d.kind === 'text' || d.kind === 'note' ? 'text' : 'style');
   };
 
   private readonly onKey = (e: KeyboardEvent): void => {
@@ -701,7 +822,8 @@ export class DrawingTools {
       return;
     }
     if (e.key === 'Escape') {
-      if (this.menu) this.closeMenu();
+      if (this.settings) this.closeSettings(false);
+      else if (this.menu) this.closeMenu();
       else if (this.pending) this.cancelPending();
       else if (this.temp) {
         this.temp = null;

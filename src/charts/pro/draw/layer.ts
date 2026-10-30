@@ -24,22 +24,25 @@ import { MONO, PRO, crosshairTimeFormatter, luminance, rgba } from '../chart/the
 import {
   Drawing,
   DrawStyle,
-  FIB_EXTENSION,
-  FIB_RETRACE,
+  FIB_FILL_ALPHA,
   FILL_ALPHA,
+  MeasureStats,
   Pt,
   ToolKind,
   XY,
   barIndexAt,
   distToSegment,
+  extension,
   farPoint,
   fibExtension,
+  fibLevels,
   fibRetrace,
   fmtDuration,
   measureStats,
   positionStats,
   textSize,
   timeOfLogical,
+  visibleOn,
 } from './model';
 import { tr } from '../../../i18n';
 
@@ -99,8 +102,6 @@ const DASH: Record<DrawStyle['dash'], number[]> = {
   dashed: [6, 4],
   dotted: [1.5, 3],
 };
-/** Poziomy Fibonacciego: od szarego 0 przez ciepłe do chłodnych i szarego 1. */
-const FIB_COLORS = ['#8a8f98', '#ff4d5e', '#f5a524', '#2fd8c8', '#4cc38a', '#4a9eff', '#8a8f98'];
 const PROFIT = PRO.buyInk;
 const LOSS = PRO.sellInk;
 const MEASURE_UP = '#4a9eff';
@@ -117,6 +118,9 @@ const tint = (s: DrawStyle, a = 1): string => {
   const k = a * (s.alpha ?? 1);
   return k < 1 ? rgba(s.color, k) : s.color;
 };
+
+/** Krój tekstu rysunku: pogrubienie i kursywa z ustawień, `weight` gdy bez pogrubienia. */
+const textFont = (s: DrawStyle, size: number, weight: number): string => `${s.italic ? 'italic ' : ''}${s.bold ? 700 : weight} ${size}px ${TEXT_FAMILY}`;
 
 /** Tło kształtu: własny kolor i krycie albo kolor rysunku z kryciem domyślnym narzędzia. */
 const backdrop = (s: DrawStyle, kind: ToolKind): string => rgba(s.fill ?? s.color, s.fillAlpha ?? FILL_ALPHA[kind] ?? 0.1);
@@ -305,10 +309,15 @@ export class DrawingLayer implements ISeriesPrimitive<Time> {
     return this.timeViews;
   }
 
+  /** Zmiana interwału (obsługa rysowania zdejmuje zaznaczenie rysunku ukrytego na nowym interwale). */
+  onInterval: (() => void) | null = null;
+
   setBars(bars: readonly ProBar[], intervalMs: number): void {
+    const changed = intervalMs !== this.ms;
     this.bars = bars;
     this.ms = intervalMs;
     this.requestUpdate?.();
+    if (changed) this.onInterval?.();
   }
 
   /** Jednostka wolumenu w opisach (moneta rynku). */
@@ -424,6 +433,7 @@ export class DrawingLayer implements ISeriesPrimitive<Time> {
     const st = this.state;
     if (v && !st.hidden) {
       for (const d of st.drawings) {
+        if (!visibleOn(d, this.ms)) continue;
         const it = this.build(d, v, d.id === st.selectedId);
         if (!it) continue;
         this.items.push(it);
@@ -515,13 +525,23 @@ export class DrawingLayer implements ISeriesPrimitive<Time> {
       case 'extended':
       case 'arrow': {
         if (!b) return null;
-        const ends = d.kind === 'ray' ? [a, farPoint(a, b)] : d.kind === 'extended' ? [farPoint(b, a), farPoint(a, b)] : [a, b];
+        const ext = extension(d);
+        const ends = [ext.left ? farPoint(b, a) : a, ext.right ? farPoint(a, b) : b];
         const xy = [ends[0].x, ends[0].y, ends[1].x, ends[1].y];
         it.lines.push(xy);
         it.handles = [a, b];
+        const [pa, pb] = d.pts;
+        const stats = d.stats ? measureRows(measureStats(this.bars, this.ms, pa, pb), pa.p, this.unit) : null;
         it.paint = (c) => {
           stroke(c, xy, tint(s), s.width, dash);
           if (d.kind === 'arrow') arrowHead(c, a, b, tint(s), 8 + 2 * s.width);
+          if (d.labels) {
+            // Cena przy każdym końcu: nad punktem wyższym, pod niższym
+            const up = b.y <= a.y;
+            tag(c, fmtPx(pa.p), a.x, up ? a.y + 12 : a.y - 12, 'center', s.color);
+            tag(c, fmtPx(pb.p), b.x, up ? b.y - 12 : b.y + 12, 'center', s.color);
+          }
+          if (stats) textBox(c, stats, b.x, b.y <= a.y ? b.y - 24 - boxHeight(stats.length) : b.y + 24, rgba(PRO.bg, 0.94), s.color);
         };
         return it;
       }
@@ -541,7 +561,7 @@ export class DrawingLayer implements ISeriesPrimitive<Time> {
         it.paint = (c) => {
           stroke(c, xy, tint(s), s.width, dash);
           if (d.text) {
-            c.font = `600 12px ${TEXT_FAMILY}`;
+            c.font = textFont(s, textSize(d), 600);
             c.fillStyle = tint(s);
             c.textAlign = 'left';
             c.textBaseline = 'bottom';
@@ -587,6 +607,7 @@ export class DrawingLayer implements ISeriesPrimitive<Time> {
         if (!b) return null;
         const ext = d.kind === 'fibext';
         const c3 = P[2];
+        const band = s.fillAlpha ?? FIB_FILL_ALPHA;
         it.handles = P.slice();
         const guide = [a.x, a.y, b.x, b.y, ...(c3 ? [c3.x, c3.y] : [])];
         it.lines.push(guide);
@@ -595,9 +616,9 @@ export class DrawingLayer implements ISeriesPrimitive<Time> {
           return it;
         }
         const [pa, pb, pc] = d.pts;
-        const levels = (ext ? FIB_EXTENSION : FIB_RETRACE).map((L, i) => {
+        const levels = fibLevels(d).map(({ v: L, color }) => {
           const p = ext ? fibExtension(pa.p, pb.p, pc.p, L) : fibRetrace(pa.p, pb.p, L);
-          return { L, p, y: v.Y(p), color: FIB_COLORS[i % FIB_COLORS.length] };
+          return { L, p, y: v.Y(p), color };
         });
         const x0 = ext ? c3.x : Math.min(a.x, b.x);
         const x1 = ext ? c3.x + Math.max(40, Math.abs(b.x - a.x)) : Math.max(a.x, b.x, x0 + 40);
@@ -607,7 +628,7 @@ export class DrawingLayer implements ISeriesPrimitive<Time> {
           for (let i = 1; i < levels.length; i++) {
             const y0 = levels[i - 1].y;
             const y1 = levels[i].y;
-            fill(c, rectXY(x0, Math.min(y0, y1), x1 - x0, Math.abs(y1 - y0)), rgba(levels[i].color, 0.07));
+            if (band > 0) fill(c, rectXY(x0, Math.min(y0, y1), x1 - x0, Math.abs(y1 - y0)), rgba(levels[i].color, band));
           }
           stroke(c, guide, tint(s, 0.7), 1, DASH.dashed);
           c.font = LABEL_FONT;
@@ -661,7 +682,7 @@ export class DrawingLayer implements ISeriesPrimitive<Time> {
         return P.length >= 3 ? this.buildPosition(d, it, P) : null;
       case 'text': {
         const size = textSize(d);
-        const font = `600 ${size}px ${TEXT_FAMILY}`;
+        const font = textFont(s, size, 600);
         const rows = (d.text || tr('Tekst', 'Text')).split('\n').slice(0, 8);
         const w = Math.max(...rows.map((r) => this.textWidth(r, font)));
         const lh = size + 4;
@@ -680,7 +701,7 @@ export class DrawingLayer implements ISeriesPrimitive<Time> {
       case 'note': {
         const size = textSize(d);
         const lh = size + 4;
-        const font = `500 ${size}px ${TEXT_FAMILY}`;
+        const font = textFont(s, size, 500);
         const rows = (d.text || tr('Notatka', 'Note')).split('\n').slice(0, 8);
         const w = Math.max(...rows.map((r) => this.textWidth(r, font))) + 14;
         const h = rows.length * lh + 8;
@@ -733,25 +754,7 @@ export class DrawingLayer implements ISeriesPrimitive<Time> {
     const ym = y + h / 2;
     it.boxes.push([x, y, w, h]);
     it.handles = [a, b];
-    const digits = priceDigits(d.pts[0].p);
-    const rows = [
-      {
-        text: `${fmtSigned(m.dp, digits)} (${fmtPct(m.pct)})`,
-        color: PRO.ink1,
-      },
-      {
-        text: `${m.bars} ${m.bars === 1 ? tr('świeca', 'candle') : tr('świec', 'candles')} · ${fmtDuration(m.ms)}`,
-        color: PRO.ink2,
-      },
-      {
-        text:
-          `${tr('Wol', 'Vol')} ${fmtVol(m.vol)} ${this.unit}` +
-          (m.delta === null
-            ? tr(' · Δ brak taśmy', ' · Δ no tape')
-            : ` · Δ ${fmtSignedVol(m.delta)}${m.tape < 1 ? ` (${tr('taśma', 'tape')} ${Math.round(m.tape * 100)}%)` : ''}`),
-        color: m.delta === null ? PRO.ink3 : m.delta >= 0 ? PRO.buyInk : PRO.sellInk,
-      },
-    ];
+    const rows = measureRows(m, d.pts[0].p, this.unit);
     const by = up ? y - 6 - boxHeight(rows.length) : y + h + 6;
     it.paint = (c) => {
       fill(c, rectXY(x, y, w, h), rgba(color, 0.14));
@@ -931,6 +934,28 @@ export class DrawingLayer implements ISeriesPrimitive<Time> {
     };
     return it;
   }
+}
+
+/** Opis pomiaru: zmiana ceny i %, świece i czas, wolumen i delta z taśmy (pomiar i statystyki linii). */
+function measureRows(m: MeasureStats, ref: number, unit: string): { text: string; color: string }[] {
+  return [
+    {
+      text: `${fmtSigned(m.dp, priceDigits(ref))} (${fmtPct(m.pct)})`,
+      color: PRO.ink1,
+    },
+    {
+      text: `${m.bars} ${m.bars === 1 ? tr('świeca', 'candle') : tr('świec', 'candles')} · ${fmtDuration(m.ms)}`,
+      color: PRO.ink2,
+    },
+    {
+      text:
+        `${tr('Wol', 'Vol')} ${fmtVol(m.vol)} ${unit}` +
+        (m.delta === null
+          ? tr(' · Δ brak taśmy', ' · Δ no tape')
+          : ` · Δ ${fmtSignedVol(m.delta)}${m.tape < 1 ? ` (${tr('taśma', 'tape')} ${Math.round(m.tape * 100)}%)` : ''}`),
+      color: m.delta === null ? PRO.ink3 : m.delta >= 0 ? PRO.buyInk : PRO.sellInk,
+    },
+  ];
 }
 
 function hitsItem(it: Item, x: number, y: number): boolean {

@@ -22,6 +22,7 @@ import {
   Plus,
   Redo2,
   SendToBack,
+  Settings,
   Trash2,
   Undo2,
 } from 'lucide-react';
@@ -46,6 +47,7 @@ const EMPTY: DrawState = {
   canRedo: false,
   editTick: 0,
   menu: null,
+  settings: null,
 };
 
 const noop = () => () => {};
@@ -384,13 +386,13 @@ const Toggle: React.FC<{
   </button>
 );
 
-const DASH_OPTIONS: { value: Dash; label: string; d: string }[] = [
+export const DASH_OPTIONS: { value: Dash; label: string; d: string }[] = [
   { value: 'solid', label: tr('Linia ciągła', 'Solid line'), d: '' },
   { value: 'dashed', label: tr('Linia przerywana', 'Dashed line'), d: '5 3' },
   { value: 'dotted', label: tr('Linia kropkowana', 'Dotted line'), d: '1.5 2.5' },
 ];
 
-const DashIcon: React.FC<{ d: string }> = ({ d }) => (
+export const DashIcon: React.FC<{ d: string }> = ({ d }) => (
   <svg viewBox="0 0 18 4" className="w-[18px] h-1" aria-hidden>
     <path d="M1 2h16" stroke="currentColor" strokeWidth="1.6" strokeDasharray={d || undefined} strokeLinecap="round" />
   </svg>
@@ -469,7 +471,8 @@ export const DrawStyleBar: React.FC<{ tools: DrawingTools | null; onAlert?: (pri
     };
   }, [pop]);
 
-  if (!d || !tools) return null;
+  // Okno ustawień zastępuje pasek, dopóki jest otwarte
+  if (!d || !tools || st.settings) return null;
   const s = d.style;
   const caps = styleCaps(d.kind);
   const level = onAlert && (d.kind === 'hline' || d.kind === 'hray');
@@ -584,6 +587,9 @@ export const DrawStyleBar: React.FC<{ tools: DrawingTools | null; onAlert?: (pri
           </>
         )}
         <Sep />
+        <BarBtn label={tr('Ustawienia rysunku', 'Drawing settings')} onClick={() => tools.openSettings()}>
+          <Settings className="w-4 h-4" />
+        </BarBtn>
         {level && (
           <BarBtn label={tr('Alarm na tym poziomie', 'Alert at this level')} onClick={() => onAlert(d.pts[0].p)}>
             <Bell className="w-4 h-4 text-warn" />
@@ -670,7 +676,7 @@ const Swatch: React.FC<{ icon: React.ReactNode; color: string; alpha: number }> 
 );
 
 /** Paleta (szarości i barwy w odcieniach), własny kolor i krycie. `merge` — zmiana z suwaka lub próbnika scalana w jeden krok cofania. */
-const ColorPicker: React.FC<{ color: string; alpha: number; onColor: (c: string, merge: boolean) => void; onAlpha: (a: number) => void }> = ({ color, alpha, onColor, onAlpha }) => {
+export const ColorPicker: React.FC<{ color: string; alpha: number; onColor: (c: string, merge: boolean) => void; onAlpha: (a: number) => void }> = ({ color, alpha, onColor, onAlpha }) => {
   const pct = Math.round(alpha * 100);
   return (
     <div className="p-0.5">
@@ -760,6 +766,7 @@ const DrawActions: React.FC<{ tools: DrawingTools; d: Drawing; onAlert?: (price:
       </button>
       {order && ORDER.map((o) => <React.Fragment key={o.value}>{item(o.icon, o.label, '', () => tools.reorderSelected(o.value), false, true)}</React.Fragment>)}
       {onAlert && item(<Bell className="w-4 h-4" />, tr('Alarm na tym poziomie', 'Alert at this level'), '', () => onAlert(d.pts[0].p))}
+      {item(<Settings className="w-4 h-4" />, tr('Ustawienia…', 'Settings…'), tr('dwuklik', 'double-click'), () => tools.openSettings())}
       <div className="my-1 border-t border-line" />
       {item(<Trash2 className="w-4 h-4" />, tr('Usuń', 'Remove'), 'Delete', () => tools.deleteSelected(), true)}
     </>

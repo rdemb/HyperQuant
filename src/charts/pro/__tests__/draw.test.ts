@@ -4,12 +4,15 @@ import { FootprintBuilder } from '../core/footprintBar';
 import type { IndicatorBar } from '../core/indicators';
 import { logicalOfTime } from '../chart/overlay';
 import {
+  FIB_LEVELS,
   MAX_DRAWINGS,
   barIndexAt,
   distToSegment,
   dragHandle,
+  extension,
   farPoint,
   fibExtension,
+  fibLevels,
   fibRetrace,
   fmtDuration,
   PALETTE_ROWS,
@@ -18,12 +21,15 @@ import {
   moveDrawing,
   newPosition,
   parseDrawings,
+  parseProps,
+  parseStyle,
   positionStats,
   reorder,
   snapToOhlc,
   styleCaps,
   textSize,
   timeOfLogical,
+  visibleOn,
 } from '../draw/model';
 
 const M1 = 60_000;
@@ -183,6 +189,34 @@ describe('edycja', () => {
     expect(ids('front', 'x')).toBe('abcd');
   });
 
+  it('przedłużenie linii: domyślnie jak narzędzie, z ustawień w obie strony', () => {
+    const pts = [{ t: 0, p: 1 }, { t: 1, p: 2 }];
+    const style = { color: '#ffffff', width: 1, dash: 'solid' as const };
+    expect(extension({ id: 'a', kind: 'trend', pts, style })).toEqual({ left: false, right: false });
+    expect(extension({ id: 'a', kind: 'ray', pts, style })).toEqual({ left: false, right: true });
+    expect(extension({ id: 'a', kind: 'extended', pts, style })).toEqual({ left: true, right: true });
+    expect(extension({ id: 'a', kind: 'trend', pts, style, extL: true })).toEqual({ left: true, right: false });
+    expect(extension({ id: 'a', kind: 'ray', pts, style, extR: false })).toEqual({ left: false, right: false });
+    // Strzałka się nie przedłuża
+    expect(extension({ id: 'a', kind: 'arrow', pts, style, extL: true, extR: true })).toEqual({ left: false, right: false });
+  });
+
+  it('poziomy Fibonacciego: domyślne albo wybrane, w kolejności od 0', () => {
+    const pts = [{ t: 0, p: 1 }, { t: 1, p: 2 }];
+    const d = { id: 'f', kind: 'fib' as const, pts, style: { color: '#ffffff', width: 1, dash: 'solid' as const } };
+    expect(fibLevels(d).map((l) => l.v)).toEqual([0, 0.236, 0.382, 0.5, 0.618, 0.786, 1]);
+    expect(fibLevels({ ...d, levels: [1.618, 0.5] }).map((l) => l.v)).toEqual([0.5, 1.618]);
+    expect(fibLevels({ ...d, kind: 'fibext' }).map((l) => l.v)).toEqual([0, 0.618, 1, 1.272, 1.618, 2, 2.618]);
+    expect(new Set(FIB_LEVELS.fib.map((l) => l.v)).size).toBe(FIB_LEVELS.fib.length);
+  });
+
+  it('widoczność na interwałach', () => {
+    const d = { id: 'h', kind: 'hline' as const, pts: [{ t: 0, p: 1 }], style: { color: '#ffffff', width: 1, dash: 'solid' as const } };
+    expect(visibleOn(d, M1)).toBe(true);
+    expect(visibleOn({ ...d, hideIv: [M1] }, M1)).toBe(false);
+    expect(visibleOn({ ...d, hideIv: [M1] }, 5 * M1)).toBe(true);
+  });
+
   it('pasek pokazuje tylko ustawienia narzędzia', () => {
     expect(styleCaps('trend')).toEqual({ color: true, stroke: true, fill: false, size: false, text: false });
     expect(styleCaps('rect').fill).toBe(true);
@@ -237,6 +271,29 @@ describe('zapis rysunków', () => {
     expect(textSize(b)).toBe(16);
     expect(textSize({ ...b, style: { ...b.style, size: 24 } })).toBe(24);
     expect(textSize({ ...b, kind: 'note' })).toBe(12);
+  });
+
+  it('ustawienia z okna: przedłużenie, opis, poziomy, widoczność i krój tekstu', () => {
+    const pts = [{ t: 0, p: 1 }, { t: 1, p: 2 }];
+    const [a, b, c] = parseDrawings([
+      { id: 'a', kind: 'trend', pts, extL: true, extR: 'tak', labels: true, stats: 1, hideIv: [M1, 'x', 5 * M1], style: { bold: true, italic: 'tak' } },
+      { id: 'b', kind: 'fib', pts, levels: [0.618, 7, 0, '1'] },
+      { id: 'c', kind: 'rect', pts, levels: [0.5], hideIv: [] },
+    ]);
+    expect(a).toMatchObject({ extL: true, labels: true, hideIv: [M1, 5 * M1] });
+    expect(a.extR).toBeUndefined();
+    expect(a.stats).toBeUndefined();
+    expect(a.style.bold).toBe(true);
+    expect(a.style.italic).toBeUndefined();
+    expect(b.levels).toEqual([0, 0.618]);
+    expect(c.levels).toBeUndefined();
+    expect(c.hideIv).toBeUndefined();
+  });
+
+  it('szablon narzędzia: styl i ustawienia bez punktów, tekstu i blokady', () => {
+    expect(parseStyle('rect', { color: 'zły', width: 9, fillAlpha: 0.3 })).toEqual({ color: parseStyle('rect', null).color, width: 4, dash: 'solid', fillAlpha: 0.3 });
+    expect(parseProps('ray', { extL: true, labels: true, text: 'x', locked: true, pts: [] })).toEqual({ extL: true, labels: true });
+    expect(parseProps('fibext', { levels: [3.618, 0.236] })).toEqual({ levels: [3.618] });
   });
 
   it('najwyżej MAX_DRAWINGS rysunków', () => {
