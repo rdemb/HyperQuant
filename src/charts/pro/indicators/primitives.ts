@@ -252,3 +252,49 @@ export class RobustLine {
     return { alpha, beta, scale: 1.4826 * medianInPlace(this.res, n) };
   }
 }
+
+/** Regresja y = α + β·x (MNK) z ostatnich `n` par: sumy kroczące, wynik jak `olsFit` na tych parach. */
+export class OlsWindow {
+  private readonly xs: Float64Array;
+  private readonly ys: Float64Array;
+  private k = 0;
+  count = 0;
+  private sx = 0;
+  private sy = 0;
+  private sxx = 0;
+  private sxy = 0;
+  private syy = 0;
+
+  constructor(readonly n: number) {
+    this.xs = new Float64Array(n);
+    this.ys = new Float64Array(n);
+  }
+
+  push(x: number, y: number): void {
+    if (this.count === this.n) this.add(this.xs[this.k], this.ys[this.k], -1);
+    else this.count++;
+    this.xs[this.k] = x;
+    this.ys[this.k] = y;
+    this.add(x, y, 1);
+    this.k = (this.k + 1) % this.n;
+  }
+
+  /** Dopasowanie z par w oknie; null, gdy x albo y się nie zmienia (R² nieokreślone). */
+  fit(): { alpha: number; beta: number; r2: number } | null {
+    const m = this.count;
+    const cxx = this.sxx - (this.sx * this.sx) / m;
+    const cxy = this.sxy - (this.sx * this.sy) / m;
+    const cyy = this.syy - (this.sy * this.sy) / m;
+    if (!(cxx > 0) || !(cyy > 0)) return null;
+    const beta = cxy / cxx;
+    return { alpha: (this.sy - beta * this.sx) / m, beta, r2: Math.min(1, (cxy * cxy) / (cxx * cyy)) };
+  }
+
+  private add(x: number, y: number, s: number): void {
+    this.sx += s * x;
+    this.sy += s * y;
+    this.sxx += s * x * x;
+    this.sxy += s * x * y;
+    this.syy += s * y * y;
+  }
+}
