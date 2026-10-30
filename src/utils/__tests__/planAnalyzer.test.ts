@@ -3,6 +3,7 @@ import {
   analyzePlan,
   attachMarketModel,
   barrierHitProbability,
+  costLadder,
   isolatedLiquidationPrice,
   liquidationBufferWarning,
   quarterKelly,
@@ -425,5 +426,74 @@ describe('analyzePlan — całość', () => {
   it('błędne wejście → ok: false z listą błędów', () => {
     const r = analyzePlan({ ...ONE_TO_THREE, stop: 100500, sizeUsd: 1000, book: BOOK, eventMultiplier: 1 });
     expect(r.ok).toBe(false);
+  });
+});
+
+describe('costLadder — drabina kosztów (te same szanse, inne wykonanie)', () => {
+  // Stop 0,5% od wejścia ⇒ 1 bp = 0,02 R; EV przed kosztami 0 przy P_N·średni R żadnych = −0,05
+  const BASE = {
+    direction: 'LONG' as const,
+    entry: 100000,
+    stop: 99500,
+    R: 3,
+    sizeUsd: 10000,
+    book: { bids: [], asks: [] },
+    mc: { pTarget: 0.25, pStop: 0.7, pNeither: 0.05 },
+    evRGross: 0,
+    takerFee: 0.00045,
+    makerFee: 0.00015,
+  };
+
+  it('koszty wierszy z opłat: taker 9 bp, limit na wejściu 6 bp, limit na wejściu i celu 5,25 bp', () => {
+    const l = costLadder(BASE);
+    expect(l.rPerBp).toBeCloseTo(0.02, 12);
+    expect(l.rows.map((r) => r.kind)).toEqual(['taker', 'makerEntry', 'makerBoth']);
+    const [t, me, mb] = l.rows;
+    expect(t.costBp).toBeCloseTo(9, 12);
+    expect(me.costBp).toBeCloseTo(6, 12);
+    // 1,5 + 0,25·1,5 + (0,7 + 0,05)·4,5
+    expect(mb.costBp).toBeCloseTo(5.25, 12);
+    expect(t.costR).toBeCloseTo(0.18, 12);
+    expect(t.evR).toBeCloseTo(-0.18, 12);
+  });
+
+  it('próg P(cel): przy nim EV po kosztach = 0 (ten sam udział „żadne”)', () => {
+    const neitherMeanR = -1; // 0,25·3 − 0,7 + 0,05·(−1) = 0
+    for (const r of costLadder(BASE).rows) {
+      const pT = r.breakEvenPTarget;
+      const pS = 1 - BASE.mc.pNeither - pT;
+      expect(pT * BASE.R - pS + BASE.mc.pNeither * neitherMeanR - r.costR).toBeCloseTo(0, 12);
+    }
+    expect(costLadder(BASE).rows[0].breakEvenPTarget).toBeCloseTo(0.295, 12);
+  });
+
+  it('kolejność: rynkowe ≥ limit na wejściu ≥ limit na wejściu i celu; poślizg tylko przy wejściu rynkowym i stopie', () => {
+    const l = costLadder({ ...BASE, sizeUsd: 150000, book: BOOK });
+    const [t, me, mb] = l.rows;
+    expect(t.costBp).toBeGreaterThan(me.costBp);
+    expect(me.costBp).toBeGreaterThan(mb.costBp);
+    const entrySlip = walkBook(BOOK, 'buy', 150000)!.slipBps;
+    const stopSlip = walkBook(BOOK, 'sell', 150000)!.slipBps;
+    expect(t.costBp).toBeCloseTo(9 + entrySlip + 0.7 * stopSlip, 12);
+    expect(me.costBp).toBeCloseTo(6 + 0.7 * stopSlip, 12);
+    for (const r of l.rows) expect(r.evR).toBeCloseTo(BASE.evRGross - r.costR, 12);
+  });
+
+  it('SHORT: poślizg wejścia z bidów, stopu z asków', () => {
+    const l = costLadder({ ...BASE, direction: 'SHORT', stop: 100500, sizeUsd: 150000, book: BOOK });
+    const entrySlip = walkBook(BOOK, 'sell', 150000)!.slipBps;
+    const stopSlip = walkBook(BOOK, 'buy', 150000)!.slipBps;
+    expect(l.rows[0].costBp).toBeCloseTo(9 + entrySlip + 0.7 * stopSlip, 12);
+    expect(l.rPerBp).toBeCloseTo(0.02, 12);
+  });
+
+  it('analyzePlan: wiersz rynkowy drabiny = koszty i EV po kosztach z analizy', () => {
+    const r = analyzePlan({ ...ONE_TO_THREE, sizeUsd: 300000, book: BOOK, eventMultiplier: 1 }, { paths: 2000, seed: 3 });
+    if (!r.ok) throw new Error(r.errors.join());
+    const taker = r.ladder.rows[0];
+    expect(taker.kind).toBe('taker');
+    expect(taker.costR).toBeCloseTo(r.costs.totalR, 12);
+    expect(taker.evR).toBeCloseTo(r.evR, 12);
+    expect(r.ladder.rows.map((x) => x.kind)).toEqual(['taker', 'makerEntry', 'makerBoth']);
   });
 });
