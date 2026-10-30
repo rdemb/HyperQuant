@@ -7,6 +7,7 @@ const PLAN: LinkAlarm[] = [
   { c: 'BTC', p: 64_670, k: 'r', d: 1, i: '15m', x: 1, f: '10:05', u: '11:45', g: 'L', o: 'Powrót nad: źdźbło' },
   { c: 'BTC', p: 65_500, k: 'c', d: 1 },
   { c: 'BTC', p: 65_400, k: 'c', d: -1, a: 3, u: '14:10', o: 'Wyjście po wybiciu' },
+  { c: 'BTC', p: 1, k: 's', d: 1, u: '14:10', o: 'Wyciskanie: nie goń' },
 ];
 
 describe('link z alarmami', () => {
@@ -19,7 +20,7 @@ describe('link z alarmami', () => {
   });
 
   it('jeden błędny wpis odrzuca cały link', () => {
-    for (const bad of [{ ...PLAN[1], d: undefined }, { ...PLAN[0], c: 'DOGE' }, { ...PLAN[1], i: '2h' }, { ...PLAN[1], f: '9:05' }, { ...PLAN[4], a: 4 }, { ...PLAN[1], n: 4 }])
+    for (const bad of [{ ...PLAN[1], d: undefined }, { ...PLAN[5], d: undefined }, { ...PLAN[0], c: 'DOGE' }, { ...PLAN[1], i: '2h' }, { ...PLAN[1], f: '9:05' }, { ...PLAN[4], a: 4 }, { ...PLAN[1], n: 4 }])
       expect(parseAlarmLink(`#charts?alarm=${alarmParam([PLAN[0], bad as LinkAlarm])}`)).toBeNull();
     expect(parseAlarmLink('#charts?alarm=1.@@@')).toBeNull();
   });
@@ -33,6 +34,7 @@ describe('link z alarmami', () => {
     expect(list[1].pair).not.toBe('');
     expect(list[1].pair).toBe(list[2].pair);
     expect(list[4]).toMatchObject({ after: list[3].id, until: new Date(2026, 9, 29, 14, 10).getTime() });
+    expect(list[5]).toMatchObject({ kind: 'squeeze', dir: 1, price: 1, after: '' });
     expect(new Set(list.map((a) => a.id)).size).toBe(PLAN.length);
   });
 });

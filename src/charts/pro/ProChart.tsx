@@ -317,7 +317,7 @@ export const ProChart: React.FC<{
 
   // Alarmy działają na cenie na żywo — w powtórce bez ich linii
   useEffect(() => {
-    ctrlRef.current?.setAlerts(store.replay ? [] : alerts.filter((a) => a.coin === store.coin).map((a) => ({ price: a.price, title: lineLabel(a), armed: a.armed || a.streak > 0 })));
+    ctrlRef.current?.setAlerts(store.replay ? [] : alerts.filter((a) => a.coin === store.coin && a.kind !== 'squeeze').map((a) => ({ price: a.price, title: lineLabel(a), armed: a.armed || a.streak > 0 })));
   }, [alerts, store]);
 
   // Strefa ceny z linku powtórki (np. z lekcji)
@@ -730,7 +730,7 @@ export const ProChart: React.FC<{
               ref={ctxRef}
               at={ctxMenu}
               coin={store.coin}
-              nearAlert={alerts.find((a) => a.coin === store.coin && Math.abs((ctrlRef.current?.yOf(a.price) ?? -1e9) - ctxMenu.y) <= 8) ?? null}
+              nearAlert={alerts.find((a) => a.coin === store.coin && a.kind !== 'squeeze' && Math.abs((ctrlRef.current?.yOf(a.price) ?? -1e9) - ctxMenu.y) <= 8) ?? null}
               onClose={() => setCtxMenu(null)}
               onAlert={addTouch}
               onAlertMore={(p) => openAlerts({ price: toTick(p), kind: 'close' })}
