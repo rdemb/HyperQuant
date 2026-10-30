@@ -4,26 +4,24 @@
  *
  * Hyperliquid udostępnia publicznie pozycje i zlecenia oczekujące każdego konta. Skaner czyta je dla największych kont
  * z publicznego rankingu i dużych pozycji BTC z taśmy, a publikuje bez adresów: konto ma pseudonim ważny jedną dobę UTC
- * (skrót z sekretem znanym tylko serwerowi), więc pozycję da się połączyć z jej zleceniami, ale nie z portfelem.
+ * (skrót z sekretem znanym tylko serwerowi), więc pozycję da się połączyć z jej zleceniami. Dla prywatności kwoty są
+ * zaokrąglone do 2 cyfr znaczących, ceny do siatki ułamka procenta ceny, a dźwignia do liczby całkowitej.
  */
 
-export const WHALES_VERSION = 1;
+export const WHALES_VERSION = 2;
 
 export interface WhalePosition {
   /** Pseudonim konta na dobę UTC */
   id: string;
   side: 'long' | 'short';
-  /** Wartość pozycji po cenie mark, USD */
+  /** Wartość pozycji po cenie mark, USD (2 cyfry znaczące) */
   usd: number;
-  /** Wielkość (jednostki rynku) */
-  sz: number;
+  /** Cena wejścia (siatka ~0,25% ceny) */
   entry: number;
-  /** Cena likwidacji; null = brak (np. pozycja zabezpieczona marżą krzyżową z zapasem) */
+  /** Cena likwidacji (siatka ~0,25% ceny); null = brak (np. pozycja zabezpieczona marżą krzyżową z zapasem) */
   liq: number | null;
-  /** Dźwignia (krotność) */
+  /** Dźwignia (krotność, całkowita) */
   lev: number;
-  /** Niezrealizowany wynik, USD */
-  upnl: number;
   /** Czas odczytu (ms) */
   at: number;
 }
@@ -32,9 +30,9 @@ export interface WhaleOrder {
   id: string;
   /** bid = kupno, ask = sprzedaż */
   side: 'bid' | 'ask';
-  /** Cena limitu albo wyzwolenia (stop, take profit) */
+  /** Cena limitu albo wyzwolenia (stop, take profit), siatka ~0,05% ceny */
   px: number;
-  /** Wartość, USD */
+  /** Wartość, USD (2 cyfry znaczące) */
   usd: number;
   kind: 'limit' | 'stop' | 'tp';
   /** Tylko zmniejsza pozycję (także TP/SL pozycji) */
@@ -58,7 +56,7 @@ const fin = (x: unknown): x is number => typeof x === 'number' && Number.isFinit
 
 function isPosition(p: unknown): p is WhalePosition {
   const x = p as Partial<WhalePosition> | null;
-  return !!x && typeof x.id === 'string' && (x.side === 'long' || x.side === 'short') && fin(x.usd) && fin(x.sz) && fin(x.entry) && (x.liq === null || fin(x.liq)) && fin(x.lev) && fin(x.upnl) && fin(x.at);
+  return !!x && typeof x.id === 'string' && (x.side === 'long' || x.side === 'short') && fin(x.usd) && fin(x.entry) && (x.liq === null || fin(x.liq)) && fin(x.lev) && fin(x.at);
 }
 
 function isOrder(o: unknown): o is WhaleOrder {
