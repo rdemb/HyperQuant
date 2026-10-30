@@ -69,7 +69,7 @@ const fmtChange = (v: number) => {
 
 const tone = (v: number) => (v > 0 ? 'text-of-buy-ink' : v < 0 ? 'text-of-sell-ink' : 'text-ink-2');
 
-/** Klasyczne wskaźniki na wykresie ceny: podpis z parametrami (kliknięcie otwiera ustawienia) i wartości w kolorze linii. */
+/** Klasyczne wskaźniki na wykresie ceny: podpis z parametrami (kliknięcie otwiera ustawienia) i wartości plotów w ich kolorach. */
 const IndicatorFields: React.FC<{ list: IndicatorReadout[]; onEdit?: (iid: string) => void }> = ({ list, onEdit }) => (
   <>
     {list.map((r) => (
@@ -82,7 +82,11 @@ const IndicatorFields: React.FC<{ list: IndicatorReadout[]; onEdit?: (iid: strin
         >
           {r.label}
         </button>
-        <span style={{ color: r.color }}>{r.text}</span>
+        {r.values.map((v, p) => (
+          <span key={p} style={{ color: v.color }}>
+            {v.text}
+          </span>
+        ))}
       </span>
     ))}
   </>

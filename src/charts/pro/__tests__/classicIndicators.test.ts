@@ -234,6 +234,158 @@ describe('wskaźniki: wzory TradingView', () => {
   });
 });
 
+// ───────────── partia A: wzory wbudowanych skryptów TradingView przepisane wprost na tablice ─────────────
+
+/** `ta.ema` / `ta.rma` na serii z `na` na początku: rozbieg średnią prostą od pierwszej liczby. */
+function smoothedFrom(xs: readonly number[], n: number, alpha: number): number[] {
+  const f = xs.findIndex((x) => !Number.isNaN(x));
+  return f < 0 ? xs.map(() => NaN) : [...xs.slice(0, f).map(() => NaN), ...smoothed(xs.slice(f), n, alpha)];
+}
+
+const highest = (xs: readonly number[], n: number) => xs.map((_, i) => (i < n - 1 ? NaN : Math.max(...xs.slice(i - n + 1, i + 1))));
+const lowest = (xs: readonly number[], n: number) => xs.map((_, i) => (i < n - 1 ? NaN : Math.min(...xs.slice(i - n + 1, i + 1))));
+
+function dmiBatch(cs: readonly Candle[], len: number, lensig: number): number[][] {
+  const tr = cs.map((c, i) => (i === 0 ? NaN : Math.max(c.h - c.l, Math.abs(c.h - cs[i - 1].c), Math.abs(c.l - cs[i - 1].c))));
+  const up = cs.map((c, i) => (i === 0 ? NaN : c.h - cs[i - 1].h));
+  const down = cs.map((c, i) => (i === 0 ? NaN : cs[i - 1].l - c.l));
+  const pdm = up.map((u, i) => (Number.isNaN(u) ? NaN : u > down[i] && u > 0 ? u : 0));
+  const mdm = down.map((d, i) => (Number.isNaN(d) ? NaN : d > up[i] && d > 0 ? d : 0));
+  const trur = smoothedFrom(tr, len, 1 / len);
+  const fixnan = (xs: number[]) => xs.map((x, i, a) => (Number.isNaN(x) && i > 0 ? (a[i] = a[i - 1]) : x));
+  const plus = fixnan(smoothedFrom(pdm, len, 1 / len).map((x, i) => (100 * x) / trur[i]));
+  const minus = fixnan(smoothedFrom(mdm, len, 1 / len).map((x, i) => (100 * x) / trur[i]));
+  const dx = plus.map((p, i) => Math.abs(p - minus[i]) / (p + minus[i] === 0 ? 1 : p + minus[i]));
+  return [smoothedFrom(dx, lensig, 1 / lensig).map((x) => 100 * x), plus, minus];
+}
+
+/** `ta.supertrend(factor, atrPeriod)` z dokumentacji Pine, krok po kroku. */
+function supertrendBatch(cs: readonly Candle[], factor: number, period: number): { line: number[]; dir: number[] } {
+  const atr = atrBatch(cs, period);
+  const lower: number[] = [];
+  const upper: number[] = [];
+  const line: number[] = [];
+  const dir: number[] = [];
+  const nz = (x: number) => (Number.isNaN(x) ? 0 : x);
+  cs.forEach((c, i) => {
+    const src = (c.h + c.l) / 2;
+    let lb = src - factor * atr[i];
+    let ub = src + factor * atr[i];
+    const pl = nz(lower[i - 1] ?? NaN);
+    const pu = nz(upper[i - 1] ?? NaN);
+    const pc = i > 0 ? cs[i - 1].c : NaN;
+    lb = lb > pl || pc < pl ? lb : pl;
+    ub = ub < pu || pc > pu ? ub : pu;
+    let d: number;
+    if (i === 0 || Number.isNaN(atr[i - 1])) d = 1;
+    else if (line[i - 1] === pu) d = c.c > ub ? -1 : 1;
+    else d = c.c < lb ? 1 : -1;
+    lower.push(Number.isNaN(atr[i]) ? NaN : lb);
+    upper.push(Number.isNaN(atr[i]) ? NaN : ub);
+    dir.push(Number.isNaN(atr[i]) ? NaN : d);
+    line.push(Number.isNaN(atr[i]) ? NaN : d === -1 ? lb : ub);
+  });
+  return { line, dir };
+}
+
+describe('wskaźniki: partia A (wzory TradingView)', () => {
+  const cs = walk(700, 9);
+  const closes = cs.map((c) => c.c);
+  const highs = cs.map((c) => c.h);
+  const lows = cs.map((c) => c.l);
+
+  it('MA: średnia prosta z n zamknięć', () => {
+    expectClose(run(inst('sma', { length: 9 }), cs)[0], sma(closes, 9));
+  });
+
+  it('Stochastic: %K = SMA(100·(C − min L)/(max H − min L)), %D = SMA(%K)', () => {
+    const [k, d] = run(inst('stoch', { length: 14, smooth: 3, d: 3 }), cs);
+    const hh = highest(highs, 14);
+    const ll = lowest(lows, 14);
+    const raw = closes.map((c, i) => (100 * (c - ll[i])) / (hh[i] - ll[i]));
+    const kb = sma(raw, 3);
+    expectClose(k, kb);
+    expectClose(d, sma(kb, 3));
+    expect(k.filter((x) => !Number.isNaN(x)).every((x) => x >= 0 && x <= 100)).toBe(true);
+    // Domyślne TradingView: %K bez wygładzania, pierwsza %D na świecy 15
+    const [k1, d1] = run(inst('stoch'), cs);
+    expect(Number.isNaN(k1[12]) && !Number.isNaN(k1[13]) && Number.isNaN(d1[14]) && !Number.isNaN(d1[15])).toBe(true);
+  });
+
+  it('Stochastic przy zakresie zerowym: `ta.sma` pomija `na`, więc %K trzyma ostatnią wartość', () => {
+    const flat = (t: number): Candle => ({ t, o: 100, h: 100, l: 100, c: 100, v: 1, n: 1 });
+    const two = [...cs.slice(0, 40), ...[1, 2, 3, 4].map((k) => flat(cs[39].t + k * M5))];
+    const [k, d] = run(inst('stoch', { length: 2, smooth: 1, d: 3 }), two);
+    // Od świecy 41 obie świece zakresu są płaskie: max H = min L
+    expect(k[40]).not.toBeNaN();
+    expect([k[41], k[42], k[43]]).toEqual([k[40], k[40], k[40]]);
+    // %D dostaje z %K liczby, więc liczy dalej: na świecy 43 trzy razy ta sama wartość
+    expect(d[41]).toBeCloseTo((k[39] + 2 * k[40]) / 3, 9);
+    expect(d[43]).toBeCloseTo(k[40], 9);
+    const w = new Window(2);
+    for (const x of [1, NaN, 3, NaN]) w.next(x, true);
+    expect(w.mean).toBe(2);
+  });
+
+  it('MACD: EMA 12 − EMA 26, sygnał EMA 9 od pierwszej wartości MACD, słupki = różnica', () => {
+    const [m, sig, hist] = run(inst('macd'), cs);
+    const mb = smoothed(closes, 12, 2 / 13).map((x, i) => x - smoothed(closes, 26, 2 / 27)[i]);
+    const sb = smoothedFrom(mb, 9, 0.2);
+    expectClose(m, mb, 1e-9);
+    expectClose(sig, sb, 1e-9);
+    expectClose(hist, mb.map((x, i) => x - sb[i]), 1e-9);
+    expect(Number.isNaN(sig[32]) && !Number.isNaN(sig[33])).toBe(true);
+  });
+
+  it('DMI: ADX, +DI i −DI jak we wbudowanym skrypcie (ta.tr bez pierwszej świecy, fixnan)', () => {
+    const got = run(inst('dmi'), cs);
+    const want = dmiBatch(cs, 14, 14);
+    got.forEach((ys, p) => expectClose(ys, want[p], 1e-8));
+    expect(Number.isNaN(got[0][26]) && !Number.isNaN(got[0][27])).toBe(true);
+    expect(got[0].filter((x) => !Number.isNaN(x)).every((x) => x >= 0 && x <= 100)).toBe(true);
+  });
+
+  it('Supertrend: ta.supertrend krok po kroku; linia pod zamknięciem w trendzie −1, nad nim w trendzie 1', () => {
+    const [down, up] = run(inst('supertrend'), cs);
+    const { line, dir } = supertrendBatch(cs, 3, 10);
+    expectClose(down, line.map((x, i) => (dir[i] === -1 ? x : NaN)), 1e-9);
+    expectClose(up, line.map((x, i) => (dir[i] === 1 ? x : NaN)), 1e-9);
+    expect(dir.filter((d) => d === -1).length).toBeGreaterThan(50);
+    expect(dir.filter((d) => d === 1).length).toBeGreaterThan(50);
+    cs.forEach((c, i) => {
+      if (dir[i] === -1) expect(c.c).toBeGreaterThanOrEqual(down[i]);
+      if (dir[i] === 1) expect(c.c).toBeLessThanOrEqual(up[i]);
+    });
+  });
+
+  it('Keltner: EMA 20 ± 2 × ATR 10; Donchian: kanał zawiera każdą świecę okna', () => {
+    const [basis, upper, lower] = run(inst('keltner'), cs);
+    const e = smoothed(closes, 20, 2 / 21);
+    const a = atrBatch(cs, 10);
+    expectClose(basis, e);
+    expectClose(upper, e.map((x, i) => x + 2 * a[i]), 1e-9);
+    expectClose(lower, e.map((x, i) => x - 2 * a[i]), 1e-9);
+    const [mid, hi, lo] = run(inst('donchian'), cs);
+    expectClose(hi, highest(highs, 20));
+    expectClose(lo, lowest(lows, 20));
+    expectClose(mid, highest(highs, 20).map((h, i) => (h + lowest(lows, 20)[i]) / 2));
+  });
+
+  it('OBV: suma wolumenu ze znakiem zmiany zamknięcia', () => {
+    const obv = run(inst('obv'), cs)[0];
+    let sum = 0;
+    const want = closes.map((c, i) => (i === 0 ? NaN : (sum += Math.sign(c - closes[i - 1]) * cs[i].v)));
+    expectClose(obv, want, 1e-12);
+  });
+
+  it('przesunięcie ceny: MACD, Stochastic, DMI bez zmian; MA, Keltner, Donchian i Supertrend przesunięte', () => {
+    const shifted = cs.map((c) => ({ ...c, o: c.o + 5000, h: c.h + 5000, l: c.l + 5000, c: c.c + 5000 }));
+    for (const id of ['macd', 'stoch', 'dmi'] as const) run(inst(id), shifted).forEach((ys, p) => expectClose(ys, run(inst(id), cs)[p], 1e-7));
+    for (const id of ['sma', 'keltner', 'donchian', 'supertrend'] as const)
+      run(inst(id), shifted).forEach((ys, p) => expectClose(ys, run(inst(id), cs)[p].map((x) => x + 5000), 1e-9));
+  });
+});
+
 describe('przeliczanie przyrostowe', () => {
   const all = INDICATORS.map((d) => inst(d.id, { length: 5 }));
 
@@ -302,7 +454,7 @@ describe('lista wskaźników', () => {
     const list = parseIndicators([
       { iid: 'ema1', id: 'ema', params: { length: 21 }, color: '#112233', visible: false },
       { iid: 'ema1', id: 'ema', params: { length: 2.5 }, color: 'czerwony' },
-      { iid: 'x', id: 'supertrend', params: {} },
+      { iid: 'x', id: 'ichimoku', params: {} },
       { iid: 'bb1', id: 'bb', params: { length: 0, mult: 2.2 } },
       'śmieci',
     ]);
@@ -354,7 +506,7 @@ describe('lista wskaźników', () => {
     expect(indicatorsLink(back)).toBe('ema(21);bb(20,2.5)');
     expect(new Set(back.map((x) => x.color)).size).toBe(2);
     // Nieznany wskaźnik i śmieci pominięte, parametr spoza zakresu i brakujący — domyślny
-    expect(indicatorsLink(indicatorsFromLink('supertrend(10,3);ema(0);bb(30);x;rsi()'))).toBe('ema(9);bb(30,2);rsi(14)');
+    expect(indicatorsLink(indicatorsFromLink('ichimoku(9,26);ema(0);bb(30);x;rsi()'))).toBe('ema(9);bb(30,2);rsi(14)');
     expect(indicatorsFromLink('')).toEqual([]);
   });
 
@@ -367,7 +519,7 @@ describe('lista wskaźników', () => {
       [ema, 200],
       [rsi, 14],
     ] as const) {
-      const a = def.decay!({ length: n });
+      const [a] = def.decay!({ length: n });
       const m = memoryCandles(def, { length: n })!;
       expect((1 - a) ** m).toBeLessThan(0.001);
       expect((1 - a) ** (m - 1)).toBeGreaterThanOrEqual(0.001);
@@ -375,5 +527,25 @@ describe('lista wskaźników', () => {
     expect(memoryCandles(rsi, { length: 14 })).toBe(94);
     expect(memoryCandles(ema, { length: 1 })).toBeNull();
     expect(memoryCandles(indicatorDef('bb'), { length: 20, mult: 2 })).toBeNull();
+  });
+
+  it('pamięć kilku średnich po sobie (MACD, DMI): waga historii starszej niż granica poniżej 0,1% (splot wag)', () => {
+    for (const [id, p] of [
+      ['macd', { fast: 12, slow: 26, signal: 9 }],
+      ['dmi', { length: 14, adx: 14 }],
+    ] as const) {
+      const def = indicatorDef(id);
+      const m = memoryCandles(def, p)!;
+      // Wagi kolejnych średnich: a·(1 − a)^k; splot daje wagi świec wstecz w wyniku końcowym
+      let w = new Float64Array(m + 1);
+      w[0] = 1;
+      for (const a of def.decay!(p)) {
+        const next = new Float64Array(m + 1);
+        for (let i = 0; i <= m; i++) for (let k = 0; k <= i; k++) next[i] += w[i - k] * a * (1 - a) ** k;
+        w = next;
+      }
+      const inside = w.slice(0, m).reduce((x, y) => x + y, 0);
+      expect(1 - inside).toBeLessThan(0.001);
+    }
   });
 });

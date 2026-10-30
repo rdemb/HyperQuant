@@ -41,7 +41,8 @@ export const rma = (n: number) => new Smooth(n, 1 / n);
 /**
  * Okno n ostatnich wartości: średnia (`ta.sma`) i odchylenie standardowe populacyjne, z dzielnikiem n (`ta.stdev`,
  * `biased = true`, jak w Bollingerze TradingView). Sumy względem ceny odniesienia, liczone od nowa co n zatwierdzeń —
- * bez utraty precyzji przy kwadratach cen rzędu 10^10 i bez narastania błędu zaokrągleń.
+ * bez utraty precyzji przy kwadratach cen rzędu 10^10 i bez narastania błędu zaokrągleń. NaN (`na` w Pine) jest
+ * pomijane jak we wbudowanych funkcjach Pine: okno to n ostatnich liczb, a świeca z NaN dostaje wartość z nich.
  */
 export class Window {
   mean = Number.NaN;
@@ -59,6 +60,10 @@ export class Window {
   }
 
   next(x: number, keep: boolean): void {
+    if (Number.isNaN(x)) {
+      this.set(this.count, this.ref, this.s, this.ss);
+      return;
+    }
     const n = this.n;
     const full = this.count === n;
     const ref = this.count === 0 ? x : this.ref;
@@ -67,11 +72,7 @@ export class Window {
     const s = this.s + d - o;
     const ss = this.ss + d * d - o * o;
     const count = full ? n : this.count + 1;
-    if (count === n) {
-      const m = s / n;
-      this.mean = ref + m;
-      this.sd = Math.sqrt(Math.max(0, ss / n - m * m));
-    } else this.mean = this.sd = Number.NaN;
+    this.set(count, ref, s, ss);
     if (!keep) return;
     this.buf[this.head] = x;
     this.head = (this.head + 1) % n;
@@ -80,6 +81,14 @@ export class Window {
     this.s = s;
     this.ss = ss;
     if (++this.since >= n) this.reanchor(x);
+  }
+
+  private set(count: number, ref: number, s: number, ss: number): void {
+    if (count === this.n) {
+      const m = s / this.n;
+      this.mean = ref + m;
+      this.sd = Math.sqrt(Math.max(0, ss / this.n - m * m));
+    } else this.mean = this.sd = Number.NaN;
   }
 
   private reanchor(ref: number): void {
@@ -91,5 +100,44 @@ export class Window {
       this.ss += d * d;
     }
     this.since = 0;
+  }
+}
+
+/**
+ * Najwyższa (`ta.highest`, `sign = 1`) albo najniższa (`ta.lowest`, `sign = −1`) z n ostatnich wartości. Kolejka
+ * monotoniczna n − 1 zatwierdzonych wartości: bieżąca świeca jest porównywana z jej czołem, więc podgląd nie zmienia stanu.
+ */
+export class Extreme {
+  private readonly vals: number[] = [];
+  private readonly idx: number[] = [];
+  private head = 0;
+  private i = 0;
+
+  constructor(
+    private readonly n: number,
+    private readonly sign: 1 | -1
+  ) {}
+
+  next(x: number, keep: boolean): number {
+    const better = (a: number, b: number) => (a - b) * this.sign > 0;
+    const v = this.i + 1 < this.n ? Number.NaN : this.head < this.vals.length && better(this.vals[this.head], x) ? this.vals[this.head] : x;
+    if (keep) {
+      // Wartości słabsze od nowej już nigdy nie będą skrajne
+      while (this.vals.length > this.head && !better(this.vals[this.vals.length - 1], x)) {
+        this.vals.pop();
+        this.idx.pop();
+      }
+      this.vals.push(x);
+      this.idx.push(this.i);
+      this.i++;
+      // W kolejce zostaje n − 1 ostatnich świec (bieżąca dochodzi przy następnym wywołaniu)
+      while (this.idx[this.head] <= this.i - this.n) this.head++;
+      if (this.head > 1024) {
+        this.vals.splice(0, this.head);
+        this.idx.splice(0, this.head);
+        this.head = 0;
+      }
+    }
+    return v;
   }
 }

@@ -80,6 +80,16 @@ export const IndicatorSettings: React.FC<{ x: IndicatorInstance; loaded: number;
   const warmup = def.warmup(x.params);
   const memory = memoryCandles(def, x.params);
   const span = warmup + 1;
+  const memoryText =
+    def.memoryNote ??
+    (memory !== null
+      ? tr(
+          `Średnie rekurencyjne: liczy się cała wczytana historia, ale poza ostatnimi ${memory} świecami jej waga to łącznie mniej niż 0,1%.`,
+          `Recursive averages: the whole loaded history counts, but beyond the last ${memory} candles its total weight is below 0.1%.`
+        )
+      : span === 1
+        ? tr('Wartość zależy tylko od bieżącej świecy.', 'The value depends only on the current candle.')
+        : tr(`Wartość zależy tylko od ostatnich ${span} świec.`, `The value depends only on the last ${span} candles.`));
 
   // Fokus w oknie: Esc i Enter działają od razu, bez klikania w pole
   useEffect(() => ref.current?.focus(), []);
@@ -190,14 +200,7 @@ export const IndicatorSettings: React.FC<{ x: IndicatorInstance; loaded: number;
               {warmup > 0
                 ? tr(`Rozbieg: na początku historii ${candles(warmup)} bez wartości.`, `Warm-up: ${candles(warmup)} without a value at the start of history.`)
                 : tr('Wartość od pierwszej świecy historii.', 'A value from the first candle of history.')}{' '}
-              {memory !== null
-                ? tr(
-                    `Średnie rekurencyjne: liczy się cała wczytana historia, ale poza ostatnimi ${memory} świecami jej waga to łącznie mniej niż 0,1%.`,
-                    `Recursive averages: the whole loaded history counts, but beyond the last ${memory} candles its total weight is below 0.1%.`
-                  )
-                : span === 1
-                  ? tr('Wartość zależy tylko od bieżącej świecy.', 'The value depends only on the current candle.')
-                  : tr(`Wartość zależy tylko od ostatnich ${span} świec.`, `The value depends only on the last ${span} candles.`)}
+              {memoryText}
             </p>
             {memory !== null && loaded > 0 && loaded < memory && (
               <p className="text-warn">

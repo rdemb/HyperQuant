@@ -117,7 +117,8 @@ export const IndicatorsDialog: React.FC<{
           section: 'classic',
           label: d.name,
           hint: d.hint,
-          badge: d.short,
+          // Skrót równy nazwie (Supertrend) nie mieści się w kolumnie skrótów i nic nie dodaje
+          badge: d.short === d.name ? undefined : d.short,
           words: norm(`${d.short} ${d.name} ${d.aliases}`),
           run: () => onChange({ indicators: addIndicator(s.indicators, d.id) }),
         })
