@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Candle } from '../hl/parse';
 import type { BookFrame } from '../core/book';
 import { ofiEvent, olsFit } from '../../../utils/microMechanics';
-import { OlsWindow, RobustLine, Window, Wma, ema, medianInPlace, rma } from '../indicators/primitives';
+import { Bocpd } from '../../../utils/bocpd';
+import { OlsWindow, RegimeDetector, RobustLine, Window, Wma, ema, medianInPlace, rma } from '../indicators/primitives';
 import { IndicatorEngine } from '../indicators/engine';
 import {
   INDICATORS,
@@ -12,6 +13,7 @@ import {
   MAX_INDICATORS,
   OFI_MAX_GAP,
   OFI_MIN_R2,
+  REGIME_PRIOR,
   addIndicator,
   bookFlow,
   copyIndicator,
@@ -23,6 +25,7 @@ import {
   parseIndicators,
   parseParams,
   plotShift,
+  regimePrior,
 } from '../indicators/registry';
 
 const M5 = 300_000;
@@ -788,7 +791,7 @@ describe('wskaźniki: zmiana OI i delta', () => {
       { hist: true, signOf: 1, title: 'ΔOI' },
       { hist: true, hidden: true, title: 'Delta' },
     ]);
-    expect(def.group).toBe('hyperliquid');
+    expect(def.group).toBe('hyperquant');
     expect(indicatorLabel(inst('oiflow'))).toBe('OI × Delta');
     expect(indicatorsLink([inst('oiflow')])).toBe('oiflow()');
     const fromLink = indicatorsFromLink('oiflow()@1h')[0];
@@ -1113,11 +1116,89 @@ describe('wskaźniki: OFI z kalibracją', () => {
       [false, true, 'R²', 'fixed2'],
       [true, true, 'oczek.', 'volume'],
     ]);
-    expect(def.group).toBe('hyperliquid');
+    expect(def.group).toBe('hyperquant');
     expect(indicatorLabel(inst('ofi'))).toBe('OFI 30');
     expect(indicatorsLink([inst('ofi')])).toBe('ofi(30)');
     expect(indicatorsFromLink('ofi(50)@1h')[0].tf).toBeUndefined();
     expect(parseIndicators([{ id: 'ofi', tf: '1h' }])[0].tf).toBeUndefined();
+  });
+});
+
+describe('wskaźniki: reżim zmienności (BOCPD)', () => {
+  /** Zwroty z rozkładu normalnego (Box–Muller) o zadanych σ w kolejnych odcinkach. */
+  function returns(seed: number, parts: { n: number; sd: number }[]): number[] {
+    const r = rng(seed);
+    const g = () => Math.sqrt(-2 * Math.log(r() || 1e-12)) * Math.cos(2 * Math.PI * r());
+    return parts.flatMap((p) => Array.from({ length: p.n }, () => p.sd * g()));
+  }
+  const fromReturns = (xs: readonly number[]) => closeOnly(xs.reduce((cs, x) => [...cs, cs[cs.length - 1] * Math.exp(x)], [80_000]));
+
+  it('silnik wskaźnika liczy to samo co BOCPD prognozy (Bocpd z utils), a podgląd nie zmienia stanu', () => {
+    const xs = returns(5, [
+      { n: 300, sd: 0.001 },
+      { n: 60, sd: 0.004 },
+      { n: 200, sd: 0.0015 },
+    ]);
+    const ref = new Bocpd({ hazard: 1 / 150, alpha0: 2, beta0: 1e-6, rMax: 120 });
+    const d = new RegimeDetector(1 / 150, 2, 1e-6, 120, 5);
+    for (const x of xs) {
+      const before = d.state();
+      const peek = d.peek(x);
+      expect(d.state()).toEqual(before);
+      ref.update(x);
+      d.update(x);
+      const s = ref.state();
+      expect(d.state()).toEqual(peek);
+      expect(d.state().pRecent).toBeCloseTo(s.pRecent5, 10);
+      expect(d.state().sigma / s.sigma).toBeCloseTo(1, 10);
+    }
+    d.update(Number.NaN);
+    expect(d.state()).toEqual(d.peek(Number.POSITIVE_INFINITY));
+  });
+
+  it('pierwsze 100 świec bez wartości (prior z pierwszych zwrotów), dalej BOCPD na log-zwrotach zamknięcia', () => {
+    const xs = returns(6, [{ n: 400, sd: 0.002 }]);
+    const cs = fromReturns(xs);
+    const [p, sigma] = run(inst('regime', { length: 100, recent: 5 }), cs);
+    expect(p.slice(0, REGIME_PRIOR).every(Number.isNaN)).toBe(true);
+    const lr = cs.slice(1).map((c, i) => Math.log(c.c / cs[i].c));
+    const ref = new Bocpd({ hazard: 1 / 100, alpha0: 2, beta0: regimePrior(lr.slice(0, REGIME_PRIOR)), rMax: 600 });
+    lr.forEach((x, i) => {
+      ref.update(x);
+      if (i + 1 < REGIME_PRIOR) return;
+      const s = ref.state();
+      expect(p[i + 1]).toBeCloseTo(s.pRecent5, 9);
+      expect(sigma[i + 1] / (100 * s.sigma)).toBeCloseTo(1, 9);
+    });
+  });
+
+  it('skok zmienności ×4: nowy reżim ponad 0,5 po kilku świecach i do końca okna zmiany; przy stałym reżimie rzadko', () => {
+    const xs = returns(7, [
+      { n: 500, sd: 0.001 },
+      { n: 60, sd: 0.004 },
+    ]);
+    const [p, sigma] = run(inst('regime'), fromReturns(xs));
+    // Świeca i ma zwrot i − 1: skok od świecy 501
+    const hit = p.findIndex((v, i) => i > 500 && v > 0.5);
+    expect(hit - 501).toBeGreaterThanOrEqual(0);
+    expect(hit - 501).toBeLessThan(8);
+    expect(p.slice(hit, 515).every((v) => v > 0.5)).toBe(true);
+    expect(p[530]).toBeLessThan(0.5);
+    expect(p.slice(150, 500).filter((v) => v > 0.5).length / 350).toBeLessThan(0.02);
+    // σ reżimu (%, na świecę) blisko nowego poziomu na końcu, starego przed skokiem
+    expect(sigma[499]).toBeGreaterThan(0.07);
+    expect(sigma[499]).toBeLessThan(0.14);
+    expect(sigma[560]).toBeGreaterThan(0.25);
+  });
+
+  it('linia od 0 do 1 z poziomem 0,5, σ w legendzie; ta sama sekcja co wskaźniki z danych Hyperliquid', () => {
+    const def = indicatorDef('regime');
+    expect(def.range).toEqual([0, 1]);
+    expect(def.levels).toEqual([0.5]);
+    expect(def.plots).toEqual([{}, { hidden: true, title: 'σ%', format: 'fixed3' }]);
+    expect(def.group).toBe('hyperquant');
+    expect(indicatorLabel(inst('regime'))).toBe('Reżim 200 20');
+    expect(indicatorsLink([inst('regime', { length: 288 })])).toBe('regime(288,20)');
   });
 });
 
