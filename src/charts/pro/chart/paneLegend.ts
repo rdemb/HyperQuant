@@ -81,17 +81,23 @@ function wrapLegend(parts: readonly LegendPart[], measure: (t: string) => number
 /**
  * Opis panelu (np. „CVD · sesja +1.2K”) rysowany w lewym górnym rogu — zmienia rozmiar razem z panelem.
  * Dołączany do serii panelu: warstwa „top” prymitywu serii leży nad świecami i słupkami. Z `closeId` za opisem
- * stoi krzyżyk, który ukrywa panel (kliknięcie obsługuje wykres po identyfikatorze trafienia).
+ * stoi krzyżyk, który ukrywa panel; z `editId` pierwszy wiersz opisu otwiera ustawienia (trafienie `edit:<editId>`).
+ * Kliknięcia obsługuje wykres po identyfikatorze trafienia.
  */
 export class PaneLegend implements ISeriesPrimitive<Time> {
   private parts: LegendPart[] = [];
   private requestUpdate: (() => void) | null = null;
   private readonly view: IPrimitivePaneView;
   private close: CloseBox | null = null;
+  /** Pierwszy wiersz opisu (px CSS panelu). */
+  private line: { x: number; w: number } | null = null;
   /** Panel jest najniższy (pod nim tylko oś czasu) — dzieli róg z logo. */
   private bottom = false;
 
-  constructor(private readonly closeId?: string) {
+  constructor(
+    private readonly closeId?: string,
+    private readonly editId?: string
+  ) {
     const renderer: IPrimitivePaneRenderer = {
       draw: (target) =>
         target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
@@ -121,6 +127,7 @@ export class PaneLegend implements ISeriesPrimitive<Time> {
               x += ln.widths[i] + 6;
             });
           });
+          this.line = { x: l, w: lines[0].w + 10 };
           this.close = this.closeId ? { x: l + 5 + lines[0].w + 2, y: 5, size: 16 } : null;
           if (this.close) drawClose(ctx, this.close);
         }),
@@ -141,7 +148,10 @@ export class PaneLegend implements ISeriesPrimitive<Time> {
   }
 
   hitTest(x: number, y: number): PrimitiveHoveredItem | null {
-    return this.closeId && inBox(this.close, x, y) ? closeHit(this.closeId) : null;
+    if (this.closeId && inBox(this.close, x, y)) return closeHit(this.closeId);
+    const ln = this.line;
+    if (this.editId && ln && x >= ln.x && x <= ln.x + ln.w && y >= 4 && y <= 22) return { externalId: `edit:${this.editId}`, zOrder: 'top', cursorStyle: 'pointer', hitTestPriority: 2 };
+    return null;
   }
 
   setBottom(on: boolean): void {

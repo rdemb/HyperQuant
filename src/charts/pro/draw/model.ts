@@ -251,6 +251,10 @@ export const defaultStyle = (kind: ToolKind): DrawStyle => ({
   dash: 'solid',
 });
 
+/** Tekst nowego rysunku tekstowego (tekst, notatka); inne narzędzia nie mają tekstu. */
+export const defaultText = (kind: ToolKind): string | undefined =>
+  kind === 'text' ? tr('Tekst', 'Text') : kind === 'note' ? tr('Notatka', 'Note') : undefined;
+
 /** Linie z dwóch punktów, które można przedłużać. */
 export const EXTENDABLE = new Set<ToolKind>(['trend', 'ray', 'extended']);
 /** Linie ze statystykami i cenami przy końcach. */

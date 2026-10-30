@@ -4,13 +4,13 @@ import { fmtVol } from '../../orderflow/footprint';
 import { fmtSignedVol } from '../../orderflow/renderer';
 import { DASH, fmtFixed, numLang } from '../../../ui';
 import { fmtBarTime, fmtSince } from '../core/time';
-import type { Hover } from './controller';
+import type { Hover, IndicatorReadout } from './controller';
 import { fmtPx } from './layout';
 import { tr } from '../../../i18n';
 
 /** Najnowszy stan krzyża (ustawiany przez sterownik wykresu najwyżej raz na klatkę). */
 export class HoverSignal {
-  private value: Hover = { bar: null, live: true, open: false, row: null, cvd: null, ind: null };
+  private value: Hover = { bar: null, live: true, open: false, row: null, cvd: null, ind: null, indicators: [] };
   private readonly listeners = new Set<() => void>();
 
   set = (h: Hover): void => {
@@ -69,6 +69,25 @@ const fmtChange = (v: number) => {
 
 const tone = (v: number) => (v > 0 ? 'text-of-buy-ink' : v < 0 ? 'text-of-sell-ink' : 'text-ink-2');
 
+/** Klasyczne wskaźniki na wykresie ceny: podpis z parametrami (kliknięcie otwiera ustawienia) i wartości w kolorze linii. */
+const IndicatorFields: React.FC<{ list: IndicatorReadout[]; onEdit?: (iid: string) => void }> = ({ list, onEdit }) => (
+  <>
+    {list.map((r) => (
+      <span key={r.iid} className="inline-flex items-baseline gap-1">
+        <button
+          type="button"
+          onClick={() => onEdit?.(r.iid)}
+          title={tr(`Ustawienia: ${r.label}`, `Settings: ${r.label}`)}
+          className="pointer-events-auto text-ink-3 hover:text-ink-1 hover:underline underline-offset-2"
+        >
+          {r.label}
+        </button>
+        <span style={{ color: r.color }}>{r.text}</span>
+      </span>
+    ))}
+  </>
+);
+
 const Field: React.FC<{ label: string; children: React.ReactNode; className?: string; title?: string; secondary?: boolean }> = ({
   label,
   children,
@@ -89,6 +108,7 @@ const Field: React.FC<{ label: string; children: React.ReactNode; className?: st
  * `onBottom` dostaje dolną krawędź legendy (px od góry wykresu) — tylko bez krzyża, żeby skala nie skakała przy ruchu kursora.
  * `compact` (telefon): jedna linia — zamknięcie, zmiana, wolumen i VWAP; czas świecy tylko pod palcem, rynek i interwał są w pasku.
  * `multi` — wykres w układzie kilku wykresów (osobny stan zwinięcia legendy).
+ * `onEditIndicator` — kliknięty podpis wskaźnika na wykresie ceny (okno jego ustawień).
  */
 export const Legend: React.FC<{
   signal: HoverSignal;
@@ -99,7 +119,8 @@ export const Legend: React.FC<{
   onBottom?: (px: number) => void;
   compact?: boolean;
   multi?: boolean;
-}> = ({ signal, intervalMs, intervalLabel, tapeSince, coin, onBottom, compact = false, multi = false }) => {
+  onEditIndicator?: (iid: string) => void;
+}> = ({ signal, intervalMs, intervalLabel, tapeSince, coin, onBottom, compact = false, multi = false, onEditIndicator }) => {
   const h = useSyncExternalStore(signal.subscribe, signal.get);
   const folded = useSyncExternalStore(subscribeFold, () => (multi ? fold.multi : fold.single));
   const ref = useRef<HTMLDivElement>(null);
@@ -138,6 +159,7 @@ export const Legend: React.FC<{
                 {fmtPx(h.ind.vwap.vwap)}
               </Field>
             )}
+            <IndicatorFields list={h.indicators} onEdit={onEditIndicator} />
           </div>
         ) : (
           <div className="text-ink-3">{tr('Wczytywanie świec…', 'Loading candles…')}</div>
@@ -247,6 +269,11 @@ export const Legend: React.FC<{
               {fmtPx(h.ind.svwap.vwap)}
             </Field>
           )}
+        </div>
+      )}
+      {h.indicators.length > 0 && c && (
+        <div className="flex flex-wrap items-baseline gap-x-2.5">
+          <IndicatorFields list={h.indicators} onEdit={onEditIndicator} />
         </div>
       )}
       {/* Szczegóły taśmy tylko na szerszym ekranie — na telefonie deltę i CVD pokazują opisy paneli */}

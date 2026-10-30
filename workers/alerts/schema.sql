@@ -34,3 +34,19 @@ CREATE TABLE IF NOT EXISTS meta (
   v INTEGER NOT NULL
 );
 INSERT OR IGNORE INTO meta (k, v) VALUES ('version', 0);
+-- Losowa sól skrótów limitu rejestracji (raz, przy pierwszym wdrożeniu; nie opuszcza bazy; 53 bity, liczba całkowita JS)
+INSERT OR IGNORE INTO meta (k, v) VALUES ('salt', abs(random() % 9007199254740991));
+
+-- Limit rejestracji z jednego adresu: `k` = skrót (sól, adres IP, godzina), bez samego adresu; wiersze starsze niż
+-- 2 h znikają przy kolejnej rejestracji, najpóźniej przy codziennym sprzątaniu.
+CREATE TABLE IF NOT EXISTS regs (
+  k TEXT PRIMARY KEY,
+  n INTEGER NOT NULL,
+  at INTEGER NOT NULL
+);
+
+-- Urządzenia bez pierwszej synchronizacji z przeglądarki (PUT po rejestracji); bez niej znikają po 7 dniach.
+CREATE TABLE IF NOT EXISTS fresh (
+  id TEXT PRIMARY KEY,
+  at INTEGER NOT NULL
+);
