@@ -120,6 +120,7 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 - Odczyt wykresu we wpisach bloga (`chartdata.mjs`): zmiany ceny, delty i open interest za 1 i 4 godziny liczone w czasie, a nie w liczbie świec z taśmą, więc luka w nagraniu nie rozciąga „ostatnich 4 godzin” do pięciu; delta okna, któremu brakuje ponad 10% świec taśmy, jest pusta zamiast sumy z kawałka. Taśma czytana z plików godzinowych i części 5 min bez spisu `index.json`, który tuż po pełnej godzinie wskazywał już skasowane części (notka z 12:00 26.10 dostała przez to dane bez ostatniej godziny). Poziom dnia poprzedniego poza zakresem mapy sesji stoi jako znacznik ze strzałką przy osi, jak w notkach, zamiast napisu w polu świec, gdzie wchodził w koło likwidacji.
 - Mapa sesji we wpisach bloga: podpis strefy scenariusza nie zasłania koła likwidacji ani jego kwoty; gdy koło stoi przy lewej krawędzi w tej samej wysokości, podpis przechodzi na prawy koniec strefy.
 - Footprint we wpisach bloga na telefonie: kolumna 30 min, w której jest tylko jedna świeca 15 min (początek okna albo przerwa w nagraniu taśmy), ma czas tej świecy, a nie początek półgodziny, więc podpisy zgadzają się z tytułem i z przypisem o brakujących świecach.
+- Mapa sesji we wpisach bloga: gdy coś stoi przy obu krawędziach strefy, jej podpis idzie tam, gdzie nie ucina podpisu kwoty likwidacji (Mapa dnia 30.10 na telefonie pokazywała „,1 mln USD” zamiast „14,1 mln USD”).
 
 ## [2.4.0] — 2026-10-22
 
