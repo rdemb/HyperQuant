@@ -163,7 +163,7 @@ export const IndicatorSettings: React.FC<{ x: IndicatorInstance; loaded: number;
               </span>
             </Row>
           ))}
-        {tab === 'params' && !def.period && (
+        {tab === 'params' && !def.period && !def.fit && (
           <Row label={tr('Interwał', 'Timeframe')}>
             <select aria-label={tr('Interwał wskaźnika', 'Indicator timeframe')} value={x.tf ?? ''} onChange={(e) => set({ tf: e.target.value || undefined })} className={`${FIELD} w-24`}>
               <option value="">{tr('Wykresu', 'Chart')}</option>
@@ -219,17 +219,18 @@ export const IndicatorSettings: React.FC<{ x: IndicatorInstance; loaded: number;
               {def.period
                 ? tr('Wzór jak we wbudowanym wskaźniku TradingView, liczony ze świec Hyperliquid.', "Formula as in TradingView's built-in indicator, computed from Hyperliquid candles.")
                 : x.tf
-                  ? tr(
-                      `Wzór i wartości domyślne jak we wbudowanym wskaźniku TradingView, liczone ze świec ${tf} Hyperliquid. Świeca wykresu ma wartość ostatniej świecy ${tf} zamkniętej do jej końca, bez zaglądania w przyszłość: linia zmienia się raz na ${tf}, a do zamknięcia świecy ${tf} jej wartość to podgląd.`,
-                      `Formula and defaults as in TradingView's built-in indicator, computed from Hyperliquid ${tf} candles. A chart candle gets the value of the last ${tf} candle closed by its end, without looking ahead: the line changes once per ${tf}, and until a ${tf} candle closes its value is a preview.`
-                    )
-                  : tr(
+                  ? `${def.convention ?? tr('Wzór i wartości domyślne jak we wbudowanym wskaźniku TradingView.', "Formula and defaults as in TradingView's built-in indicator.")} ${tr(
+                      `Liczone ze świec ${tf} Hyperliquid: świeca wykresu ma wartość ostatniej świecy ${tf} zamkniętej do jej końca, bez zaglądania w przyszłość, więc linia zmienia się raz na ${tf}, a do zamknięcia świecy ${tf} jej wartość to podgląd.`,
+                      `Computed from Hyperliquid ${tf} candles: a chart candle gets the value of the last ${tf} candle closed by its end, without looking ahead, so the line changes once per ${tf}, and until a ${tf} candle closes its value is a preview.`
+                    )}`
+                  : (def.convention ??
+                    tr(
                       'Wzór i wartości domyślne jak we wbudowanym wskaźniku TradingView, liczone ze świec Hyperliquid tego wykresu.',
                       "Formula and defaults as in TradingView's built-in indicator, computed from this chart's Hyperliquid candles."
-                    )}
+                    ))}
             </p>
             <p className="text-ink-2">
-              {def.period
+              {def.period || def.fit
                 ? ''
                 : warmup > 0
                   ? tr(`Rozbieg: na początku historii ${candles(warmup, tf)} bez wartości.`, `Warm-up: ${candles(warmup, tf)} without a value at the start of history.`)

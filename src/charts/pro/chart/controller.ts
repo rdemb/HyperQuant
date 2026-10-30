@@ -667,7 +667,10 @@ export class ProChartController {
   private indStyle(x: IndicatorInstance, p: PlotDef, gap = false): Partial<LineSeriesOptions> {
     const lastValueVisible = x.labels && !gap;
     if (p.hist) return { lastValueVisible };
-    return { color: rgba(p.color ?? x.color, x.alpha), lineWidth: x.width as LineWidth, lastValueVisible };
+    const color = rgba(p.color ?? x.color, x.alpha);
+    // Kropki (Parabolic SAR): sama linia niewidoczna, promień kropki rośnie z grubością
+    if (p.dots) return { color, lineVisible: false, pointMarkersVisible: true, pointMarkersRadius: x.width, lastValueVisible };
+    return { color, lineWidth: x.width as LineWidth, lastValueVisible };
   }
 
   /** Kolor wartości plotu w legendzie: słupki w kolorze znaku. */
@@ -908,12 +911,15 @@ export class ProChartController {
   private pushIndicators(): void {
     // Świece interwału wskaźnika sięgają do pierwszej świecy wykresu (bez świec wykresu — bez doczytywania)
     const first = this.bars[0]?.t ?? Number.POSITIVE_INFINITY;
-    const from = this.engine.sync(this.bars, this.series.interval.ms, (tf) => this.store.indicatorCandles(tf, first));
-    if (from >= this.bars.length) return;
-    // Zmiana przed ostatnią wysłaną świecą (wartości z innego interwału): pełna podmiana, bo aktualizacja wstecz psuje puste punkty
-    const start = from < this.indPushed - 1 ? 0 : from;
-    this.engine.runs.forEach((run, k) => run.out.forEach((_, p) => this.pushPlot(k, p, start)));
-    this.indPushed = this.bars.length;
+    const n = this.bars.length;
+    if (this.engine.sync(this.bars, this.series.interval.ms, (tf) => this.store.indicatorCandles(tf, first)) >= n) return;
+    this.engine.runs.forEach((run, k) => {
+      if (run.from >= n) return;
+      // Zmiana przed ostatnią wysłaną świecą (wartości z innego interwału, kanał regresji): pełna podmiana, bo aktualizacja wstecz psuje puste punkty
+      const start = run.from < this.indPushed - 1 ? 0 : run.from;
+      run.out.forEach((_, p) => this.pushPlot(k, p, start));
+    });
+    this.indPushed = n;
   }
 
   /**
@@ -934,8 +940,13 @@ export class ProChartController {
       if (hist) return { time, value: v, color: rgba(v < 0 ? HIST_DOWN : HIST_UP, 0.6 * x.alpha) };
       return breaks && i + 1 < n && ys[i + 1] !== v ? { time, value: v, color: CLEAR } : { time, value: v };
     };
-    // Bez zmiany wcześniejszych punktów (przeliczenie od zera to pełna podmiana), więc bez aktualizacji wstecz
-    if (from === 0 || n - from > MAX_POINT_UPDATES) series.setData(Array.from({ length: n }, (_, i) => point(i)));
+    // Bez zmiany wcześniejszych punktów (przeliczenie od zera to pełna podmiana), więc bez aktualizacji wstecz.
+    // Pełna podmiana bez pustych punktów przed pierwszą wartością (kanał regresji ma ich tysiące)
+    if (from === 0 || n - from > MAX_POINT_UPDATES) {
+      let s = 0;
+      while (s < n && Number.isNaN(ys[s])) s++;
+      series.setData(Array.from({ length: n - s }, (_, k) => point(s + k)));
+    }
     else for (let i = from; i < n; i++) series.update(point(i));
     const gap = n > 0 && Number.isNaN(ys[n - 1]);
     if (gap !== this.indGap[k][p]) {

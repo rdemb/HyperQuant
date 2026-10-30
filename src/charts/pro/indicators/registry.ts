@@ -1,6 +1,6 @@
 import type { Candle } from '../hl/parse';
 import { Extreme, Window, Wma, ema, rma } from './primitives';
-import { INTERVALS, intervalById } from '../core/time';
+import { DAY, INTERVALS, intervalById } from '../core/time';
 import { numLang } from '../../../ui/format';
 import { tr } from '../../../i18n';
 
@@ -31,7 +31,11 @@ export type IndicatorId =
   | 'obv'
   | 'cmf'
   | 'mfi'
-  | 'pivots';
+  | 'pivots'
+  | 'psar'
+  | 'linreg'
+  | 'hv'
+  | 'netvol';
 
 /** Grupy na liście okna wskaźników (jak kategorie TradingView). */
 export type IndicatorGroup = 'trend' | 'momentum' | 'volatility' | 'volume' | 'levels';
@@ -65,6 +69,8 @@ export interface PlotDef {
   title?: string;
   /** Poziom okresu: bez odcinka łączącego go z innym poziomem następnego okresu. */
   breaks?: boolean;
+  /** Kropki zamiast linii (Parabolic SAR). */
+  dots?: boolean;
 }
 
 /** Kolory stałych linii: drugiej i trzeciej linii wskaźnika oraz słupków dodatnich i ujemnych. */
@@ -97,6 +103,8 @@ export interface IndicatorDef {
   lag?(p: Params): number;
   /** Opis zależności od historii zamiast wyliczonego (np. suma od początku historii albo pasma trzymające poziom). */
   memoryNote?: string;
+  /** Zgodność z TradingView, gdy wzór świadomie się różni (np. skala roczna HV). */
+  convention?: string;
   /**
    * Stały okres (interwał świec, np. doba pivotów): liczone na jego świecach, a świeca wykresu bierze wartość okresu,
    * w którym leży — wzór sięga tylko po okresy zamknięte. Bez niego wskaźnik ma parametr „Interwał”.
@@ -111,7 +119,13 @@ export interface IndicatorDef {
   range?: readonly [number, number];
   /** Liczby: cena z dokładnością ticku rynku, odległość ceny (o miejsce dokładniej niż tick), dwa albo trzy miejsca, wolumen. */
   format: 'price' | 'range' | 'fixed2' | 'fixed3' | 'volume';
-  create(p: Params): Step;
+  /** Krok świeca po świecy; bez niego wskaźnik to rysunek na ostatnich świecach (`fit`). */
+  create?(p: Params): Step;
+  /**
+   * Rysunek na ostatnich świecach (kanał regresji, jak w TradingView): liczony od nowa z ostatnich `span` świec przy
+   * każdej zmianie; `at(0)` to najnowsza świeca, wartości plotu k świecy `end − j` trafiają do `out[k][end − j]`.
+   */
+  fit?: { span(p: Params): number; run(at: (j: number) => Candle, p: Params, out: Float64Array[], end: number): void };
 }
 
 const length = (def: number): ParamDef => ({ key: 'length', label: tr('Długość', 'Length'), min: 1, max: 1000, step: 1, def });
@@ -830,6 +844,220 @@ export const INDICATORS: readonly IndicatorDef[] = [
       };
     },
   },
+  {
+    id: 'psar',
+    short: 'SAR',
+    name: 'Parabolic SAR',
+    hint: tr(
+      'Punkt zatrzymania Wildera: zbliża się do skrajnej ceny trendu z przyspieszeniem rosnącym o przyrost przy każdym nowym szczycie (dołku) aż do maksimum, a po przebiciu przechodzi na drugą stronę ceny',
+      "Wilder's stop and reverse point: it approaches the trend's extreme price with an acceleration that grows by the increment at each new high (low) up to the maximum, and moves to the other side of price once crossed"
+    ),
+    group: 'trend',
+    aliases: 'parabolic sar psar stop and reverse wilder kropki punkty dots',
+    warmup: () => 1,
+    memoryNote: tr(
+      'Kierunek i skrajna cena trendu niosą się od początku wczytanej historii, więc pierwsze świece mogą różnić się od TradingView; po kilku zmianach kierunku wartości są zwykle już te same.',
+      "The trend's direction and extreme price carry over from the start of the loaded history, so the first candles may differ from TradingView; after a few reversals the values are usually the same."
+    ),
+    pane: 'price',
+    params: [
+      { key: 'start', label: 'Start', min: 0.001, max: 1, step: 0.001, def: 0.02 },
+      { key: 'inc', label: tr('Przyrost', 'Increment'), min: 0.001, max: 1, step: 0.001, def: 0.02 },
+      { key: 'max', label: tr('Maksimum', 'Maximum'), min: 0.01, max: 1, step: 0.01, def: 0.2 },
+    ],
+    plots: [{ dots: true }],
+    format: 'price',
+    create: (p) => {
+      // Stan zatwierdzony po zamkniętej świecy; kolejność kroków jak w przykładzie `ta.sar` z dokumentacji Pine
+      let bar = 0;
+      let result = Number.NaN;
+      let maxMin = Number.NaN;
+      let acc = Number.NaN;
+      let below = false;
+      let prevClose = Number.NaN;
+      let h1 = Number.NaN;
+      let l1 = Number.NaN;
+      let h2 = Number.NaN;
+      let l2 = Number.NaN;
+      return (c, keep, out) => {
+        let r = result;
+        let m = maxMin;
+        let a = acc;
+        let b = below;
+        let first = false;
+        if (bar === 1) {
+          b = c.c > prevClose;
+          m = b ? c.h : c.l;
+          r = b ? l1 : h1;
+          first = true;
+          a = p.start;
+        }
+        r += a * (m - r);
+        if (b && r > c.l) {
+          first = true;
+          b = false;
+          r = Math.max(c.h, m);
+          m = c.l;
+          a = p.start;
+        } else if (!b && r < c.h) {
+          first = true;
+          b = true;
+          r = Math.min(c.l, m);
+          m = c.h;
+          a = p.start;
+        }
+        if (!first) {
+          if (b && c.h > m) {
+            m = c.h;
+            a = Math.min(a + p.inc, p.max);
+          } else if (!b && c.l < m) {
+            m = c.l;
+            a = Math.min(a + p.inc, p.max);
+          }
+        }
+        // SAR nie wchodzi w zakres dwóch poprzednich świec
+        if (b) r = bar > 1 ? Math.min(r, l1, l2) : Math.min(r, l1);
+        else r = bar > 1 ? Math.max(r, h1, h2) : Math.max(r, h1);
+        out[0] = r;
+        if (!keep) return;
+        result = r;
+        maxMin = m;
+        acc = a;
+        below = b;
+        prevClose = c.c;
+        h2 = h1;
+        l2 = l1;
+        h1 = c.h;
+        l1 = c.l;
+        bar++;
+      };
+    },
+  },
+  {
+    id: 'linreg',
+    short: 'LinReg',
+    name: tr('Kanał regresji liniowej', 'Linear Regression Channel'),
+    hint: tr(
+      'Prosta najmniejszych kwadratów przez zamknięcia ostatnich n świec (przerywana) i linie odchylenia w górę i w dół: wielokrotność odchylenia standardowego zamknięć od prostej (dzielnik n − 1)',
+      'The least squares line through the closes of the last n candles (dashed) and upper and lower deviation lines: a multiple of the standard deviation of closes from the line (divisor n − 1)'
+    ),
+    group: 'trend',
+    aliases: 'linear regression channel linreg regresja liniowa kanał trend najmniejszych kwadratów least squares',
+    warmup: (p) => p.length - 1,
+    memoryNote: tr(
+      'Kanał liczony od nowa z ostatnich n świec przy każdej zmianie, jak w TradingView: to rysunek na ostatnich świecach, nie historia, więc wcześniejsze świece nie mają wartości, a kanał przesuwa się z każdą nową świecą.',
+      'The channel is recomputed from the last n candles at every change, as in TradingView: it is a drawing on the latest candles, not a history, so earlier candles have no value and the channel moves with every new candle.'
+    ),
+    pane: 'price',
+    params: [
+      { key: 'length', label: tr('Długość', 'Length'), min: 2, max: 1000, step: 1, def: 100 },
+      { key: 'up', label: tr('Odchylenie w górę', 'Upper deviation'), min: 0, max: 10, step: 0.1, def: 2 },
+      { key: 'down', label: tr('Odchylenie w dół', 'Lower deviation'), min: 0, max: 10, step: 0.1, def: 2 },
+    ],
+    plots: [{ dashed: true }, {}, {}],
+    format: 'price',
+    fit: {
+      span: (p) => p.length,
+      run: (at, p, out, end) => {
+        // Wzory kanału z TradingView: x = 1 dla najnowszej świecy, rosnące wstecz
+        const n = p.length;
+        let sx = 0;
+        let sy = 0;
+        let sxx = 0;
+        let sxy = 0;
+        for (let j = 0; j < n; j++) {
+          const y = at(j).c;
+          const x = j + 1;
+          sx += x;
+          sy += y;
+          sxx += x * x;
+          sxy += y * x;
+        }
+        const slope = (n * sxy - sx * sy) / (n * sxx - sx * sx);
+        const intercept = sy / n - (slope * sx) / n + slope;
+        let acc = 0;
+        for (let j = 0; j < n; j++) {
+          const d = at(j).c - (intercept + slope * j);
+          acc += d * d;
+        }
+        const sd = Math.sqrt(acc / (n - 1));
+        for (let j = 0; j < n; j++) {
+          const mid = intercept + slope * j;
+          out[0][end - j] = mid;
+          out[1][end - j] = mid + p.up * sd;
+          out[2][end - j] = mid - p.down * sd;
+        }
+      },
+    },
+  },
+  {
+    id: 'hv',
+    short: 'HV',
+    name: tr('Zmienność historyczna (HV)', 'Historical Volatility (HV)'),
+    hint: tr(
+      'Odchylenie standardowe logarytmicznych zmian zamknięcia z n świec, w % w skali roku (razy pierwiastek z liczby świec w roku przy rynku czynnym 24/7)',
+      'The standard deviation of log changes of the close over n candles, in % on an annual scale (times the square root of the number of candles per year in a 24/7 market)'
+    ),
+    group: 'volatility',
+    aliases: 'historical volatility hv zmienność historyczna roczna annualized logarytmiczne stopy log returns',
+    warmup: (p) => p.length,
+    convention: tr(
+      'Wzór i wartości domyślne jak we wbudowanym wskaźniku TradingView poza skalą roczną: TradingView na interwałach do 1D mnoży przez √365, jakby każda świeca była dobą, więc na 5m pokazuje ok. 17 razy mniej; tu mnożnik to √(liczba świec w roku). Na 1D wartości są te same.',
+      "Formula and defaults as in TradingView's built-in indicator except the annual scale: on timeframes up to 1D TradingView multiplies by √365 as if every candle were a day, so on 5m it shows about 17 times less; here the factor is √(candles per year). On 1D the values are the same."
+    ),
+    pane: 'own',
+    params: [length(10)],
+    plots: [{}],
+    format: 'fixed2',
+    create: (p) => {
+      const w = new Window(p.length);
+      let prev = Number.NaN;
+      let prevT = Number.NaN;
+      // Długość świecy z odstępu kolejnych świec (najmniejszy, gdyby w danych była luka)
+      let step = Number.POSITIVE_INFINITY;
+      return (c, keep, out) => {
+        const dt = c.t - prevT;
+        const ms = dt > 0 ? Math.min(step, dt) : step;
+        w.next(Math.log(c.c / prev), keep);
+        if (keep) {
+          prev = c.c;
+          prevT = c.t;
+          step = ms;
+        }
+        out[0] = 100 * w.sd * Math.sqrt((365 * DAY) / ms);
+      };
+    },
+  },
+  {
+    id: 'netvol',
+    short: 'Net Vol',
+    name: tr('Wolumen netto (Net Volume)', 'Net Volume'),
+    hint: tr(
+      'Wolumen świecy ze znakiem zmiany zamknięcia (wzrost +, spadek −, bez zmiany 0), w jednostkach rynku; panel Delta liczy to samo dokładniej, z kupna i sprzedaży agresorów',
+      'Candle volume signed by the change of the close (up +, down −, unchanged 0), in market units; the Delta pane computes the same more precisely, from aggressor buys and sells'
+    ),
+    group: 'volume',
+    aliases: 'net volume wolumen netto nv kierunek świecy',
+    warmup: () => 0,
+    memoryNote: tr(
+      'Wartość zależy od bieżącej i poprzedniej świecy (zmiana zamknięcia); pierwsza świeca historii ma 0.',
+      'The value depends on the current and the previous candle (the change of the close); the first candle of history has 0.'
+    ),
+    pane: 'own',
+    params: [],
+    plots: [{}],
+    levels: [0],
+    format: 'volume',
+    create: () => {
+      let prev = Number.NaN;
+      return (c, keep, out) => {
+        const d = c.c - prev;
+        if (keep) prev = c.c;
+        // Pierwsza świeca bez zmiany (`na`): oba porównania fałszywe, więc 0, jak w TradingView
+        out[0] = d > 0 ? c.v : d < 0 ? -c.v : 0;
+      };
+    },
+  },
 ];
 
 export const indicatorDef = (id: IndicatorId): IndicatorDef => INDICATORS.find((d) => d.id === id)!;
@@ -882,7 +1110,7 @@ export function indicatorLabel(x: IndicatorInstance): string {
 }
 
 /** Interwał wskaźnika: znany identyfikator interwału, a wskaźnik ze stałym okresem (pivoty) go nie ma. */
-const tfOk = (def: IndicatorDef, tf: unknown): tf is string => !def.period && INTERVALS.some((iv) => iv.id === tf);
+const tfOk = (def: IndicatorDef, tf: unknown): tf is string => !def.period && !def.fit && INTERVALS.some((iv) => iv.id === tf);
 
 /** Wartość parametru w zakresie (przy kroku 1 liczba całkowita). */
 export const paramOk = (v: unknown, p: ParamDef): v is number =>
