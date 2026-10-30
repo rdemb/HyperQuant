@@ -10,7 +10,7 @@ import { DAY } from './time';
 
 export const TPO_PERIOD_MS = 30 * 60_000;
 export const TPO_LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXabcdefghijklmnopqrstuvwx';
-/** Initial balance: dwa pierwsze okresy (pierwsza godzina doby). */
+/** Pierwsza godzina doby UTC (00:00–01:00): dwa pierwsze okresy; warstwa Initial balance liczy osobno pierwszą godzinę sesji. */
 export const TPO_IB_PERIODS = 2;
 
 export interface TpoProfile {
@@ -24,7 +24,7 @@ export interface TpoProfile {
   poc: number;
   vaLo: number;
   vaHi: number;
-  /** Zakres initial balance (ceny); null, gdy brak świec pierwszej godziny. */
+  /** Zakres pierwszej godziny doby UTC (ceny); null, gdy brak jej świec. */
   ib: { lo: number; hi: number } | null;
   /** Pierwsza i ostatnia świeca doby w tablicy wejściowej. */
   from: number;

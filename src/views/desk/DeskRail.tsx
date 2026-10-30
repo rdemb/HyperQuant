@@ -8,6 +8,7 @@ import { calibrate } from '../../utils/deskLedger';
 import { useAuctionContext } from '../../state/useAuctionContext';
 import { tr } from '../../i18n';
 import { sessionLabel } from '../../utils/shaakuniEngine';
+import { crossedLevels } from '../../utils/touchMc';
 
 const CAL_TITLE = tr('Skalibrowane na rozstrzygniętej historii (dziennik desku)', 'Calibrated on resolved history (desk ledger)');
 
@@ -18,8 +19,7 @@ export const DeskRail: React.FC = () => {
   // Poziom już przekroczony (cena nad PDH / pod PDL) — „100%” byłoby pozorną prognozą
   const lv = feed.realHtfLevels;
   const px = feed.currentPrice;
-  const pdhCrossed = !!lv && px > 0 && lv.pdh <= px;
-  const pdlCrossed = !!lv && px > 0 && lv.pdl >= px;
+  const { pdh: pdhCrossed, pdl: pdlCrossed } = crossedLevels(lv?.pdh, lv?.pdl, px);
   const crossedNote = (
     <div className="text-[10px] text-ink-3 font-sans whitespace-normal leading-tight" title={tr('Cena jest już za poziomem — dotknięcie nie jest prognozą', 'Price is already past the level, a touch is not a forecast')}>
       {tr('za poziomem', 'past level')}

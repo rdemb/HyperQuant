@@ -6,6 +6,12 @@ import { VOL_STEP_MIN } from './volatility.ts';
  * Silniki Monte Carlo wspólne dla desku (przeglądarka) i dziennika prognoz (skaner w Node 24 — importy z rozszerzeniem .ts).
  */
 
+/** Poziom już przekroczony (cena nad PDH / pod PDL): „100%” dotknięcia byłoby pozorną prognozą. */
+export function crossedLevels(pdh: number | null | undefined, pdl: number | null | undefined, px: number): { pdh: boolean; pdl: boolean } {
+  const ok = px > 0;
+  return { pdh: ok && pdh != null && pdh <= px, pdl: ok && pdl != null && pdl >= px };
+}
+
 /**
  * Prawdopodobieństwa dotknięcia PDH / PDL / D-EQ w 2 h: 2000 ścieżek, ziarno z bieżącej minuty (wspólne liczby losowe —
  * w obrębie minuty wynik zmienia się płynnie z ceną; błąd standardowy ≤ 1.1 pp). Bez przyciągania do D-EQ

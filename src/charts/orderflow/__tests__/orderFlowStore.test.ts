@@ -139,11 +139,29 @@ describe('footprint per świeca i kubełek', () => {
     s.setTimeframe(60);
     const a = tick(T0 + 1000, 100001, 1, 'buy');
     s.ingestTrades([a, tick(T0 + 1000, 100001, 1, 'buy', { isSynthetic: true }), tick(T0 + 1000, 100001, 1, 'buy', { exchange: 'BINANCE' })]);
-    // snapshot po reconnect: ta sama transakcja jeszcze raz + nowa
-    s.ingestTrades([{ ...a, id: 'inne-id' }, tick(T0 + 2000, 100002, 0.5, 'sell')]);
+    // snapshot po reconnect: ta sama transakcja (to samo id z tid) jeszcze raz + nowa
+    s.ingestTrades([{ ...a }, tick(T0 + 2000, 100002, 0.5, 'sell')]);
     const c = s.candleAt(T0)!;
     expect(c.buy).toBe(1);
     expect(c.sell).toBe(0.5);
+  });
+
+  it('dwa identyczne wypełnienia w tej samej ms z różnym id liczą się osobno, także w drugiej paczce', () => {
+    const s = new OrderFlowStore();
+    s.setTimeframe(60);
+    const a = tick(T0 + 1000, 100001, 1, 'buy', { id: 'hl-1-7' });
+    s.ingestTrades([a]);
+    s.ingestTrades([{ ...a, id: 'hl-1-8' }, { ...a }]); // nowe wypełnienie + powtórka pierwszego
+    expect(s.candleAt(T0)!.buy).toBe(2);
+  });
+
+  it('tick bez id: powtórka rozpoznawana po czasie, cenie, rozmiarze i stronie', () => {
+    const s = new OrderFlowStore();
+    s.setTimeframe(60);
+    const a = tick(T0 + 1000, 100001, 1, 'buy', { id: '' });
+    s.ingestTrades([a]);
+    s.ingestTrades([{ ...a }]);
+    expect(s.candleAt(T0)!.buy).toBe(1);
   });
 
   it('CVD agresora per sekunda od startu zapisu', () => {
