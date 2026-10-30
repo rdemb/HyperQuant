@@ -1,10 +1,12 @@
 import type { IChartApi } from 'lightweight-charts';
 import type { DrawingLayer, LayerState } from './layer';
 import {
+  DrawProps,
   DrawStyle,
   Drawing,
   MAX_BRUSH_POINTS,
   MAX_DRAWINGS,
+  Order,
   Pt,
   TOOLS,
   ToolKind,
@@ -13,14 +15,20 @@ import {
   moveDrawing,
   newPosition,
   parseDrawings,
+  parseProps,
+  parseStyle,
+  reorder,
   snapToOhlc,
+  stylePatchFor,
   toolDef,
+  visibleOn,
 } from './model';
 
 /**
  * Obsługa rysowania myszą, dotykiem i klawiaturą: stawianie punktów (klik-klik albo przeciągnięcie),
- * zaznaczanie, przesuwanie rysunku i jego uchwytów, magnes do OHLC, szybki pomiar z Shift, cofanie i ponawianie,
- * kopiowanie oraz zapis rysunków rynku w przeglądarce. Zdarzenia przejmowane w fazie przechwytywania,
+ * zaznaczanie (Ctrl + klik — kilka rysunków) i podświetlenie pod kursorem, przesuwanie rysunku albo zaznaczonej grupy i uchwytów (Ctrl + przeciągnięcie klonuje,
+ * Shift trzyma linię poziomo), blokada, kolejność warstw, menu i okno ustawień rysunku, magnes do OHLC, szybki pomiar z Shift,
+ * cofanie i ponawianie, kopiowanie oraz zapis rysunków rynku w przeglądarce. Zdarzenia przejmowane w fazie przechwytywania,
  * więc w trakcie rysowania wykres się nie przesuwa.
  */
 
@@ -37,6 +45,23 @@ export interface DrawState {
   canRedo: boolean;
   /** Rośnie przy każdym nowym tekście do wpisania (pasek stylu ustawia wtedy kursor w polu). */
   editTick: number;
+  /** Menu rysunku pod prawym przyciskiem: miejsce kliknięcia w pikselach panelu. */
+  menu: DrawMenuAt | null;
+  /** Otwarte okno ustawień zaznaczonego rysunku i jego zakładka. */
+  settings: SettingsTab | null;
+  /** Zaznaczone rysunki: najpierw główny (pasek, okno ustawień), potem dołączone Ctrl + klik. */
+  sel: readonly string[];
+  /** Rysunki rynku (lista obiektów), ostatni na wierzchu. */
+  drawings: readonly Drawing[];
+  /** Otwarta lista obiektów. */
+  list: boolean;
+}
+
+export type SettingsTab = 'style' | 'text' | 'coords' | 'visibility';
+
+export interface DrawMenuAt {
+  x: number;
+  y: number;
 }
 
 interface Pending {
@@ -53,12 +78,17 @@ interface Drag {
   id: string;
   handle: number;
   start: Pt;
-  orig: Pt[];
+  /** Przesuwane rysunki z punktami sprzed przeciągnięcia: uchwyt — jeden, całość — wszystkie zaznaczone poza zablokowanymi. */
+  items: { id: string; orig: Pt[] }[];
   before: Drawing[];
   moved: boolean;
+  /** Ctrl + przeciągnięcie: przesuwana jest kopia, oryginał zostaje (bez ruchu kopia znika). */
+  cloneOf: string | null;
 }
 
 const KEY = 'hq.charts.draw.v1';
+/** Styl domyślny narzędzi zapisany przez „Zapisz jako domyślny”. */
+const DEFAULTS_KEY = 'hq.charts.draw.defaults.v1';
 const UNDO_MAX = 100;
 /** Magnes przyciąga cenę do OHLC świecy z tej odległości (px). */
 const MAGNET_PX = 24;
@@ -69,6 +99,12 @@ const POSITION_RISK_PX = 40;
 const POSITION_W_PX = 140;
 
 const HOTKEYS = new Map(TOOLS.filter((t) => t.hotkey).map((t) => [`Key${t.hotkey}`, t.kind]));
+/** Linie z dwóch punktów, które Shift trzyma poziomo (cena jak na drugim końcu). */
+const FLAT = new Set<ToolKind>(['trend', 'ray', 'extended', 'arrow']);
+
+/** Shift: linia z dwóch punktów zostaje pozioma (punkt `i` dostaje cenę drugiego końca). */
+const flatten = (kind: ToolKind, pts: readonly Pt[], i: number, q: Pt, shift: boolean): Pt =>
+  shift && FLAT.has(kind) && pts.length === 2 && i < 2 ? { t: q.t, p: pts[1 - i].p } : q;
 
 const clone = (ds: readonly Drawing[]): Drawing[] =>
   ds.map((d) => ({
@@ -80,9 +116,9 @@ const clone = (ds: readonly Drawing[]): Drawing[] =>
 let seq = 0;
 const newId = () => `${Date.now().toString(36)}${(seq++).toString(36)}`;
 
-function loadAll(): Record<string, unknown> {
+function loadAll(key = KEY): Record<string, unknown> {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = localStorage.getItem(key);
     const v = raw ? (JSON.parse(raw) as unknown) : null;
     return v && typeof v === 'object' ? (v as Record<string, unknown>) : {};
   } catch {
@@ -107,20 +143,28 @@ export class DrawingTools {
   private temp: Drawing | null = null;
   private drag: Drag | null = null;
   private selectedId: string | null = null;
+  /** Pozostałe zaznaczone rysunki (bez głównego). */
+  private group: string[] = [];
   private tool: ToolKind | null = null;
   private magnet = false;
   private hidden = false;
   private locked = false;
   private keep = false;
+  private list = false;
   private editTick = 0;
-  /** Rysunek, którego tekst jest właśnie wpisywany (jeden wpis w historii cofania). */
-  private lastTextId: string | null = null;
+  private hoverId: string | null = null;
+  private menu: DrawMenuAt | null = null;
+  private settings: SettingsTab | null = null;
+  /** Zmiana scalana z poprzednią w jeden wpis cofania (`id:pole` — wpisywanie tekstu, suwak krycia). */
+  private mergeKey: string | null = null;
   private undoStack: Drawing[][] = [];
   private redoStack: Drawing[][] = [];
   private clipboard: Drawing | null = null;
   /** Wciśnięcie należy do rysowania — kolejne zdarzenia myszy i dotyku nie trafiają do wykresu. */
   private swallow = false;
   private lastStyle = new Map<ToolKind, DrawStyle>();
+  /** Ostatni styl narzędzia sprzed otwarcia okna ustawień („Anuluj” go przywraca). */
+  private lastBefore: DrawStyle | undefined;
   private snapshot: DrawState;
   private readonly listeners = new Set<() => void>();
 
@@ -137,10 +181,12 @@ export class DrawingTools {
     host.addEventListener('touchstart', this.onCompat, true);
     host.addEventListener('dblclick', this.onDblClick, true);
     host.addEventListener('pointermove', this.onHover);
+    host.addEventListener('pointerleave', this.onLeave);
     window.addEventListener('pointermove', this.onMove);
     window.addEventListener('pointerup', this.onUp);
     window.addEventListener('pointercancel', this.onUp);
     window.addEventListener('keydown', this.onKey);
+    layer.onInterval = this.onInterval;
     peers.add(this);
     focused ??= this;
     this.push();
@@ -152,11 +198,13 @@ export class DrawingTools {
   }
 
   destroy(): void {
+    this.layer.onInterval = null;
     this.host.removeEventListener('pointerdown', this.onDown, true);
     this.host.removeEventListener('mousedown', this.onCompat, true);
     this.host.removeEventListener('touchstart', this.onCompat, true);
     this.host.removeEventListener('dblclick', this.onDblClick, true);
     this.host.removeEventListener('pointermove', this.onHover);
+    this.host.removeEventListener('pointerleave', this.onLeave);
     window.removeEventListener('pointermove', this.onMove);
     window.removeEventListener('pointerup', this.onUp);
     window.removeEventListener('pointercancel', this.onUp);
@@ -196,20 +244,40 @@ export class DrawingTools {
       canUndo: this.undoStack.length > 0,
       canRedo: this.redoStack.length > 0,
       editTick: this.editTick,
+      menu: this.selectedId ? this.menu : null,
+      settings: this.selectedId ? this.settings : null,
+      sel: this.ids,
+      drawings: this.drawings,
+      list: this.list,
+    };
+  }
+
+  private layerState(): LayerState {
+    return {
+      drawings: this.temp ? [...this.drawings, this.temp] : this.drawings,
+      pending: this.pending?.d ?? null,
+      selectedId: this.selectedId,
+      group: this.group,
+      hoverId: this.hoverId,
+      hidden: this.hidden,
     };
   }
 
   /** Nowy stan do warstwy i paska. */
   private push(): void {
-    const s: LayerState = {
-      drawings: this.temp ? [...this.drawings, this.temp] : this.drawings,
-      pending: this.pending?.d ?? null,
-      selectedId: this.selectedId,
-      hidden: this.hidden,
-    };
-    this.layer.setState(s);
+    this.tidy();
+    this.layer.setState(this.layerState());
     this.snapshot = this.makeState();
     for (const fn of this.listeners) fn();
+  }
+
+  /** Zaznaczone tylko istniejące, nieukryte rysunki; bez głównego pierwszy z grupy staje się główny. */
+  private tidy(): void {
+    const ok = (id: string) => this.drawings.some((d) => d.id === id && !d.hidden);
+    if (this.selectedId && !ok(this.selectedId)) this.selectedId = null;
+    if (this.group.length === 0) return;
+    this.group = this.group.filter((id) => id !== this.selectedId && ok(id));
+    if (!this.selectedId && this.group.length) this.select(this.group.shift()!);
   }
 
   private save(): void {
@@ -226,6 +294,7 @@ export class DrawingTools {
 
   /** Zmiana listy rysunków z wpisem do historii cofania. */
   private commit(next: Drawing[], before: Drawing[] = this.drawings): void {
+    this.mergeKey = null;
     this.undoStack.push(clone(before));
     if (this.undoStack.length > UNDO_MAX) this.undoStack.shift();
     this.redoStack = [];
@@ -249,7 +318,10 @@ export class DrawingTools {
     this.focus();
     this.cancelPending();
     this.tool = this.tool === kind ? null : kind;
-    if (this.tool) this.selectedId = null;
+    if (this.tool) {
+      this.selectedId = null;
+      this.group = [];
+    }
     this.push();
   }
 
@@ -260,12 +332,20 @@ export class DrawingTools {
 
   toggleHidden(): void {
     this.hidden = !this.hidden;
-    if (this.hidden) this.selectedId = null;
+    if (this.hidden) {
+      this.selectedId = null;
+      this.group = [];
+    }
     this.push();
   }
 
   toggleLocked(): void {
     this.locked = !this.locked;
+    this.push();
+  }
+
+  toggleList(): void {
+    this.list = !this.list;
     this.push();
   }
 
@@ -283,6 +363,7 @@ export class DrawingTools {
   undo(): void {
     const prev = this.undoStack.pop();
     if (!prev) return;
+    this.mergeKey = null;
     this.redoStack.push(clone(this.drawings));
     this.drawings = prev;
     if (this.selectedId && !prev.some((d) => d.id === this.selectedId)) this.selectedId = null;
@@ -293,47 +374,265 @@ export class DrawingTools {
   redo(): void {
     const next = this.redoStack.pop();
     if (!next) return;
+    this.mergeKey = null;
     this.undoStack.push(clone(this.drawings));
     this.drawings = next;
     this.save();
     this.push();
   }
 
+  private get selected(): Drawing | undefined {
+    return this.drawings.find((x) => x.id === this.selectedId);
+  }
+
+  private get ids(): string[] {
+    return this.selectedId ? [this.selectedId, ...this.group] : [];
+  }
+
+  /** Usuwa wszystkie zaznaczone rysunki. */
   deleteSelected(): void {
-    if (!this.selectedId) return;
-    const id = this.selectedId;
+    const ids = new Set(this.ids);
+    if (ids.size === 0) return;
     this.selectedId = null;
-    this.commit(this.drawings.filter((d) => d.id !== id));
+    this.group = [];
+    this.commit(this.drawings.filter((d) => !ids.has(d.id)));
   }
 
   /** Kopia zaznaczonego rysunku przesunięta o kilka świec w prawo. */
   cloneSelected(): void {
-    const d = this.drawings.find((x) => x.id === this.selectedId);
+    const d = this.selected;
     if (d) this.paste(d);
   }
 
-  styleSelected(patch: Partial<DrawStyle>): void {
-    const d = this.drawings.find((x) => x.id === this.selectedId);
-    if (!d) return;
-    const style = { ...d.style, ...patch };
-    this.lastStyle.set(d.kind, style);
-    this.commit(this.drawings.map((x) => (x.id === d.id ? { ...x, style } : x)));
+  /** Zaznaczony rysunek do schowka (Ctrl+V wkleja kopię). */
+  copySelected(): void {
+    const d = this.selected;
+    if (d) this.clipboard = clone([d])[0];
+  }
+
+  /** Blokada wszystkich zaznaczonych według głównego. */
+  toggleLockSelected(): void {
+    const d = this.selected;
+    if (d) this.patchWhere(this.ids, () => ({ locked: !d.locked || undefined }));
+  }
+
+  reorderSelected(to: Order): void {
+    if (this.selectedId) this.commit(reorder(this.drawings, this.selectedId, to));
+  }
+
+  /**
+   * Styl zaznaczonych rysunków (pozostałe w grupie dostają tylko pola, które mają ich narzędzia);
+   * `merge` (suwak) scala kolejne zmiany tego samego pola w jeden krok cofania.
+   */
+  styleSelected(patch: Partial<DrawStyle>, merge = false): void {
+    const id = this.selectedId;
+    if (!id) return;
+    this.patchWhere(
+      this.ids,
+      (d) => {
+        const p = d.id === id ? patch : stylePatchFor(d.kind, patch);
+        if (!p) return null;
+        const style = { ...d.style, ...p };
+        this.lastStyle.set(d.kind, style);
+        return { style };
+      },
+      merge ? `${id}:${Object.keys(patch).join()}` : null
+    );
+  }
+
+  /** Lista obiektów: ukrycie albo blokada jednego rysunku bez zmiany zaznaczenia. */
+  toggleDrawing(id: string, key: 'hidden' | 'locked'): void {
+    const d = this.drawings.find((x) => x.id === id);
+    if (d) this.patchWhere([id], () => ({ [key]: !d[key] || undefined }));
+  }
+
+  removeDrawing(id: string): void {
+    if (this.drawings.some((d) => d.id === id)) this.commit(this.drawings.filter((d) => d.id !== id));
+  }
+
+  /** Zaznaczenie z listy obiektów; `add` (Ctrl + klik) dołącza rysunek do zaznaczenia albo go odłącza. */
+  pick(id: string, add: boolean): void {
+    const d = this.drawings.find((x) => x.id === id);
+    if (!d || d.hidden) return;
+    this.focus();
+    this.cancelPending();
+    this.tool = null;
+    this.menu = null;
+    if (add) this.toggleSelect(id);
+    else this.primary(id, false);
+    this.push();
   }
 
   setText(text: string): void {
-    const d = this.drawings.find((x) => x.id === this.selectedId);
-    if (!d || d.text === text) return;
-    const next = this.drawings.map((x) => (x.id === d.id ? { ...x, text: text.slice(0, 280) } : x));
+    const d = this.selected;
     // Wpisywanie znak po znaku to jeden krok cofania (świeży tekst nowego rysunku cofa się razem z nim)
-    if (this.lastTextId !== d.id) {
-      this.lastTextId = d.id;
-      this.commit(next);
-      return;
+    if (d && d.text !== text) this.patchSelected({ text: text.slice(0, 280) }, `${d.id}:text`);
+  }
+
+  /** Zmiana zaznaczonego rysunku z okna ustawień (przedłużenie, statystyki, poziomy, widoczność, tekst). */
+  editSelected(patch: Partial<Drawing>): void {
+    if (this.selected) this.patchSelected(patch);
+  }
+
+  /** Punkt `i` z pola współrzędnych (czas dociągnięty do początku świecy); pozycja: stop ma czas wejścia. */
+  setPoint(i: number, q: Pt): void {
+    const d = this.selected;
+    if (!d || !d.pts[i]) return;
+    const ms = this.layer.intervalMs;
+    const pts = d.pts.map((x) => ({ ...x }));
+    pts[i] = { t: Math.floor(q.t / ms) * ms, p: q.p };
+    if ((d.kind === 'long' || d.kind === 'short') && i === 0) pts[2].t = pts[0].t;
+    this.patchSelected({ pts });
+  }
+
+  /** Szablon zapisany przez „Zapisz jako domyślny” (styl i ustawienia narzędzia) albo null. */
+  private saved(kind: ToolKind): { style: DrawStyle; props: DrawProps } | null {
+    const raw = loadAll(DEFAULTS_KEY)[kind];
+    if (!raw || typeof raw !== 'object') return null;
+    return { style: parseStyle(kind, (raw as Record<string, unknown>).style), props: parseProps(kind, raw) };
+  }
+
+  /** Styl i ustawienia zaznaczonego rysunku stają się domyślnymi dla nowych rysunków tego narzędzia (zapis w przeglądarce). */
+  saveDefault(): void {
+    const d = this.selected;
+    if (!d) return;
+    try {
+      const all = loadAll(DEFAULTS_KEY);
+      all[d.kind] = { style: d.style, ...parseProps(d.kind, d) };
+      localStorage.setItem(DEFAULTS_KEY, JSON.stringify(all));
+    } catch {
+      // Prywatne okno — szablon zostaje do zamknięcia strony
     }
-    this.drawings = next;
-    this.save();
+    this.lastStyle.set(d.kind, { ...d.style });
+  }
+
+  /** Narzędzie zaznaczonego rysunku ma zapisany szablon. */
+  hasDefault(): boolean {
+    const d = this.selected;
+    return !!d && this.saved(d.kind) !== null;
+  }
+
+  /** Zaznaczony rysunek dostaje zapisany szablon albo (`factory`) ustawienia wbudowane. */
+  applyDefault(factory: boolean): void {
+    const d = this.selected;
+    if (!d) return;
+    const t = factory ? null : this.saved(d.kind);
+    const style = t?.style ?? defaultStyle(d.kind);
+    this.lastStyle.set(d.kind, { ...style });
+    this.patchSelected({ style, extL: undefined, extR: undefined, labels: undefined, stats: undefined, levels: undefined, ...t?.props });
+  }
+
+  /** Styl nowego rysunku: ostatnio użyty, zapisany jako domyślny albo wbudowany. */
+  private styleFor(kind: ToolKind): DrawStyle {
+    const last = this.lastStyle.get(kind);
+    return last ? { ...last } : (this.saved(kind)?.style ?? defaultStyle(kind));
+  }
+
+  openSettings(tab: SettingsTab = 'style'): void {
+    const d = this.selected;
+    if (!d) return;
+    this.menu = null;
+    this.settings = tab;
+    this.lastBefore = this.lastStyle.get(d.kind);
+    // Zmiany w oknie to jeden krok cofania; „Anuluj” go cofa
+    this.mergeKey = null;
     this.push();
   }
+
+  setSettingsTab(tab: SettingsTab): void {
+    if (!this.settings) return;
+    this.settings = tab;
+    this.push();
+  }
+
+  /** Zamknięcie okna: `apply` false (Anuluj, Esc) cofa zmiany zrobione w oknie. */
+  closeSettings(apply: boolean): void {
+    if (!this.settings) return;
+    const changed = this.mergeKey === `${this.selectedId}:dialog`;
+    this.settings = null;
+    if (!apply && changed) {
+      this.undo();
+      this.redoStack.pop();
+      // Styl dla nowych rysunków też wraca do stanu sprzed okna
+      const d = this.selected;
+      if (d && this.lastBefore) this.lastStyle.set(d.kind, this.lastBefore);
+      else if (d) this.lastStyle.delete(d.kind);
+    }
+    this.mergeKey = null;
+    // Rysunek ukryty na tym interwale nie zostaje zaznaczony (pasek bez widocznego rysunku)
+    const d = this.selected;
+    if (d && !visibleOn(d, this.layer.intervalMs)) this.selectedId = null;
+    this.push();
+  }
+
+  private patchSelected(patch: Partial<Drawing>, merge: string | null = null): void {
+    if (this.selectedId) this.patchWhere([this.selectedId], () => patch, merge);
+  }
+
+  /** Zmiana rysunków `ids` (null z `fn` — bez zmiany); w oknie ustawień całe okno to jeden krok cofania. */
+  private patchWhere(ids: readonly string[], fn: (d: Drawing) => Partial<Drawing> | null, merge: string | null = null): void {
+    if (this.settings) merge = `${this.selectedId}:dialog`;
+    const set = new Set(ids);
+    const next = this.drawings.map((x) => {
+      const p = set.has(x.id) ? fn(x) : null;
+      return p ? { ...x, ...p } : x;
+    });
+    if (merge !== null && merge === this.mergeKey) {
+      this.drawings = next;
+      this.save();
+      this.push();
+      return;
+    }
+    this.commit(next);
+    this.mergeKey = merge;
+  }
+
+  /** Menu rysunku pod prawym przyciskiem: true, gdy pod kursorem jest rysunek (zostaje zaznaczony). */
+  openMenu(clientX: number, clientY: number): boolean {
+    const { x, y, inPane } = this.local({ clientX, clientY });
+    if (!inPane || this.hidden || this.tool || this.pending) return false;
+    const h = this.layer.hit(x, y);
+    if (!h || h.id === 'temp') return false;
+    this.focus();
+    this.primary(h.id, this.ids.includes(h.id));
+    this.menu = { x, y };
+    this.push();
+    return true;
+  }
+
+  closeMenu(): void {
+    if (!this.menu) return;
+    this.menu = null;
+    this.push();
+  }
+
+  private select(id: string): void {
+    if (this.selectedId !== id) {
+      this.mergeKey = null;
+      this.settings = null;
+    }
+    this.selectedId = id;
+  }
+
+  /** Rysunek staje się głównym zaznaczonym; `keep` — reszta zaznaczenia zostaje (poprzedni główny w grupie). */
+  private primary(id: string, keep: boolean): void {
+    const rest = keep ? this.ids.filter((x) => x !== id) : [];
+    this.select(id);
+    this.group = rest;
+  }
+
+  /** Ctrl + klik: rysunek dołącza do zaznaczenia jako główny albo z niego wypada. */
+  private toggleSelect(id: string): void {
+    this.settings = null;
+    if (id === this.selectedId) this.selectedId = null;
+    else if (this.group.includes(id)) this.group = this.group.filter((x) => x !== id);
+    else this.primary(id, true);
+  }
+
+  private readonly onInterval = (): void => {
+    const d = this.selected;
+    if (d && !visibleOn(d, this.layer.intervalMs)) this.deselect();
+  };
 
   /** Linia pozioma w punkcie panelu ceny (menu kontekstowe wykresu). */
   addHorizontal(x: number, y: number): void {
@@ -343,7 +642,10 @@ export class DrawingTools {
 
   deselect(): void {
     this.selectedId = null;
-    this.lastTextId = null;
+    this.group = [];
+    this.mergeKey = null;
+    this.menu = null;
+    this.settings = null;
     this.push();
   }
 
@@ -356,6 +658,7 @@ export class DrawingTools {
       style: { ...src.style },
     };
     this.selectedId = d.id;
+    this.group = [];
     this.commit([...this.drawings, d]);
   }
 
@@ -405,6 +708,7 @@ export class DrawingTools {
     const { x, y, inPane } = this.local(e);
     if (!inPane) return;
     const invert = e.ctrlKey || e.metaKey;
+    this.menu = null;
     if (this.temp && !this.pending) {
       this.temp = null;
       this.push();
@@ -412,9 +716,10 @@ export class DrawingTools {
     // Kolejny punkt rysunku w trakcie stawiania
     if (this.pending) {
       const q = this.pointAt(x, y, invert);
-      this.pending.downX = x;
-      this.pending.downY = y;
-      if (q) this.placePoint(q);
+      const p = this.pending;
+      p.downX = x;
+      p.downY = y;
+      if (q) this.placePoint(flatten(p.d.kind, p.d.pts, p.d.pts.length - 1, q, e.shiftKey));
       this.consume(e);
       return;
     }
@@ -430,28 +735,34 @@ export class DrawingTools {
       if (this.selectedId) this.deselect();
       return;
     }
-    this.selectedId = h.id;
-    this.lastTextId = null;
     const d = this.drawings.find((x2) => x2.id === h.id);
-    if (d && !this.locked) {
-      const start = this.layer.toPt(x, y);
-      if (start)
-        this.drag = {
-          id: d.id,
-          handle: h.handle,
-          start,
-          orig: d.pts.map((q) => ({ ...q })),
-          before: clone(this.drawings),
-          moved: false,
-        };
-    }
+    const start = this.layer.toPt(x, y);
+    // Ctrl + klik dołącza rysunek do zaznaczenia albo go odłącza, Ctrl + przeciągnięcie przesuwa jego kopię
+    const ctrlBody = invert && h.handle < 0;
+    if (d && start && !this.locked && !d.locked) {
+      const before = clone(this.drawings);
+      const copy = ctrlBody ? { ...clone([d])[0], id: newId() } : null;
+      if (copy) this.drawings = [...this.drawings, copy];
+      else this.primary(d.id, this.ids.includes(d.id));
+      // Uchwyt zmienia swój rysunek, przeciągnięcie całości przesuwa wszystkie zaznaczone poza zablokowanymi
+      const ids = copy ? [copy.id] : h.handle >= 0 ? [d.id] : this.ids;
+      this.drag = {
+        id: copy?.id ?? d.id,
+        handle: h.handle,
+        start,
+        items: this.drawings.filter((x2) => ids.includes(x2.id) && !x2.locked).map((x2) => ({ id: x2.id, orig: x2.pts.map((q) => ({ ...q })) })),
+        before,
+        moved: false,
+        cloneOf: copy ? d.id : null,
+      };
+    } else if (ctrlBody) this.toggleSelect(h.id);
+    else this.primary(h.id, this.ids.includes(h.id));
     this.push();
     this.consume(e);
   };
 
   private begin(kind: ToolKind, q: Pt, temp: boolean, x: number, y: number): void {
-    const style = { ...(this.lastStyle.get(kind) ?? defaultStyle(kind)) };
-    const d: Drawing = { id: temp ? 'temp' : newId(), kind, pts: [q], style };
+    const d: Drawing = { id: temp ? 'temp' : newId(), kind, pts: [q], style: this.styleFor(kind), ...this.saved(kind)?.props };
     if (kind === 'long' || kind === 'short') {
       const ppu = this.layer.pxPerUsd(q.p);
       const bars = Math.max(4, Math.round(POSITION_W_PX / this.chart.timeScale().options().barSpacing));
@@ -492,9 +803,10 @@ export class DrawingTools {
     }
     if (!this.keep) this.tool = null;
     this.selectedId = d.id;
-    this.lastTextId = d.id;
+    this.group = [];
     if (d.kind === 'text' || d.kind === 'note') this.editTick++;
     this.commit([...this.drawings, d]);
+    this.mergeKey = `${d.id}:text`;
   }
 
   private cancelPending(): void {
@@ -505,9 +817,26 @@ export class DrawingTools {
     else if (p) this.push();
   }
 
+  private setHover(id: string | null): void {
+    if (id === this.hoverId) return;
+    this.hoverId = id;
+    this.layer.setState(this.layerState());
+  }
+
+  private readonly onLeave = (): void => this.setHover(null);
+
   private readonly onHover = (e: PointerEvent): void => {
     const p = this.pending;
-    if (!p || this.drag) return;
+    if (!p) {
+      // Podświetlenie rysunku pod kursorem (bez przycisku — w czasie przesuwania wykresu nie)
+      if (!this.drag && !this.tool && !this.hidden && e.buttons === 0) {
+        const { x, y } = this.local(e);
+        const h = this.layer.hit(x, y);
+        this.setHover(h && h.id !== 'temp' ? h.id : null);
+      }
+      return;
+    }
+    if (this.drag) return;
     const { x, y } = this.local(e);
     const q = this.pointAt(x, y, e.ctrlKey || e.metaKey);
     if (!q) return;
@@ -520,7 +849,7 @@ export class DrawingTools {
       }
       return;
     }
-    p.d.pts[p.d.pts.length - 1] = q;
+    p.d.pts[p.d.pts.length - 1] = flatten(p.d.kind, p.d.pts, p.d.pts.length - 1, q, e.shiftKey);
     this.push();
   };
 
@@ -528,26 +857,39 @@ export class DrawingTools {
     const g = this.drag;
     if (!g) return;
     const { x, y } = this.local(e);
-    const d = this.drawings.find((x2) => x2.id === g.id);
-    if (!d) return;
-    let pts: Pt[] | null = null;
+    const moved = new Map<string, Pt[]>();
     if (g.handle >= 0) {
+      const d = this.drawings.find((x2) => x2.id === g.id);
+      const orig = g.items[0]?.orig;
       const q = this.pointAt(x, y, e.ctrlKey || e.metaKey);
-      if (q) pts = dragHandle(d.kind, g.orig, g.handle, q);
+      if (!d || !orig || !q) return;
+      moved.set(d.id, dragHandle(d.kind, orig, g.handle, flatten(d.kind, orig, g.handle, q, e.shiftKey)));
     } else {
       const q = this.layer.toPt(x, y);
-      if (q) pts = moveDrawing(g.orig, q.t - g.start.t, q.p - g.start.p);
+      if (!q) return;
+      for (const it of g.items) moved.set(it.id, moveDrawing(it.orig, q.t - g.start.t, q.p - g.start.p));
     }
-    if (!pts) return;
     g.moved = true;
-    this.drawings = this.drawings.map((x2) => (x2.id === g.id ? { ...x2, pts } : x2));
+    this.drawings = this.drawings.map((x2) => {
+      const pts = moved.get(x2.id);
+      return pts ? { ...x2, pts } : x2;
+    });
     this.push();
   };
 
   private readonly onUp = (e: PointerEvent): void => {
     const g = this.drag;
     this.drag = null;
-    if (g?.moved) this.commit(this.drawings, g.before);
+    if (g?.moved) {
+      // Przesunięta kopia zostaje jedynym zaznaczonym rysunkiem
+      if (g.cloneOf) this.primary(g.id, false);
+      this.commit(this.drawings, g.before);
+    } else if (g?.cloneOf) {
+      // Ctrl + klik bez ruchu: bez kopii, rysunek dołącza do zaznaczenia albo z niego wypada
+      this.drawings = g.before;
+      this.toggleSelect(g.cloneOf);
+      this.push();
+    }
     const p = this.pending;
     if (p && this.swallow) {
       const { x, y } = this.local(e);
@@ -563,7 +905,7 @@ export class DrawingTools {
         if (q) {
           p.downX = x;
           p.downY = y;
-          this.placePoint(q);
+          this.placePoint(flatten(p.d.kind, p.d.pts, p.d.pts.length - 1, q, e.shiftKey));
         }
       } else {
         p.downX = x;
@@ -580,9 +922,9 @@ export class DrawingTools {
     const d = h ? this.drawings.find((x2) => x2.id === h.id) : null;
     if (!d) return;
     e.stopPropagation();
-    this.selectedId = d.id;
-    if (d.kind === 'text' || d.kind === 'note' || d.kind === 'hline' || d.kind === 'hray') this.editTick++;
-    this.push();
+    this.primary(d.id, false);
+    // Dwuklik otwiera ustawienia, tekst od razu w zakładce Tekst (jak w TradingView)
+    this.openSettings(d.kind === 'text' || d.kind === 'note' ? 'text' : 'style');
   };
 
   private readonly onKey = (e: KeyboardEvent): void => {
@@ -594,7 +936,9 @@ export class DrawingTools {
       return;
     }
     if (e.key === 'Escape') {
-      if (this.pending) this.cancelPending();
+      if (this.settings) this.closeSettings(false);
+      else if (this.menu) this.closeMenu();
+      else if (this.pending) this.cancelPending();
       else if (this.temp) {
         this.temp = null;
         this.push();
@@ -615,10 +959,8 @@ export class DrawingTools {
     } else if ((k === 'z' && e.shiftKey) || k === 'y') {
       e.preventDefault();
       this.redo();
-    } else if (k === 'c' && this.selectedId) {
-      const d = this.drawings.find((x) => x.id === this.selectedId);
-      if (d) this.clipboard = clone([d])[0];
-    } else if (k === 'v' && this.clipboard) {
+    } else if (k === 'c') this.copySelected();
+    else if (k === 'v' && this.clipboard) {
       e.preventDefault();
       this.paste(this.clipboard);
       this.clipboard = clone([this.drawings[this.drawings.length - 1]])[0];

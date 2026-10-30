@@ -4,21 +4,33 @@ import { FootprintBuilder } from '../core/footprintBar';
 import type { IndicatorBar } from '../core/indicators';
 import { logicalOfTime } from '../chart/overlay';
 import {
+  FIB_LEVELS,
   MAX_DRAWINGS,
   barIndexAt,
   distToSegment,
   dragHandle,
+  extension,
   farPoint,
   fibExtension,
+  fibLevels,
   fibRetrace,
   fmtDuration,
+  PALETTE_ROWS,
   measureStats,
+  mix,
   moveDrawing,
   newPosition,
   parseDrawings,
+  parseProps,
+  parseStyle,
   positionStats,
+  reorder,
   snapToOhlc,
+  styleCaps,
+  stylePatchFor,
+  textSize,
   timeOfLogical,
+  visibleOn,
 } from '../draw/model';
 
 const M1 = 60_000;
@@ -165,6 +177,75 @@ describe('edycja', () => {
     expect(dragHandle('long', pos, 0, { t: M1, p: 101 })[2]).toEqual({ t: M1, p: 95 });
     expect(dragHandle('vline', [{ t: 0, p: 5 }], 0, { t: 9, p: 50 })).toEqual([{ t: 9, p: 5 }]);
   });
+
+  it('kolejność warstw: na wierzch, do przodu, do tyłu, na spód', () => {
+    const l = ['a', 'b', 'c', 'd'].map((id) => ({ id }));
+    const ids = (to: Parameters<typeof reorder>[2], id = 'b') => reorder(l, id, to).map((d) => d.id).join('');
+    expect(ids('front')).toBe('acdb');
+    expect(ids('forward')).toBe('acbd');
+    expect(ids('backward')).toBe('bacd');
+    expect(ids('back')).toBe('bacd');
+    expect(ids('forward', 'd')).toBe('abcd');
+    expect(ids('backward', 'a')).toBe('abcd');
+    expect(ids('front', 'x')).toBe('abcd');
+  });
+
+  it('przedłużenie linii: domyślnie jak narzędzie, z ustawień w obie strony', () => {
+    const pts = [{ t: 0, p: 1 }, { t: 1, p: 2 }];
+    const style = { color: '#ffffff', width: 1, dash: 'solid' as const };
+    expect(extension({ id: 'a', kind: 'trend', pts, style })).toEqual({ left: false, right: false });
+    expect(extension({ id: 'a', kind: 'ray', pts, style })).toEqual({ left: false, right: true });
+    expect(extension({ id: 'a', kind: 'extended', pts, style })).toEqual({ left: true, right: true });
+    expect(extension({ id: 'a', kind: 'trend', pts, style, extL: true })).toEqual({ left: true, right: false });
+    expect(extension({ id: 'a', kind: 'ray', pts, style, extR: false })).toEqual({ left: false, right: false });
+    // Strzałka się nie przedłuża
+    expect(extension({ id: 'a', kind: 'arrow', pts, style, extL: true, extR: true })).toEqual({ left: false, right: false });
+  });
+
+  it('poziomy Fibonacciego: domyślne albo wybrane, w kolejności od 0', () => {
+    const pts = [{ t: 0, p: 1 }, { t: 1, p: 2 }];
+    const d = { id: 'f', kind: 'fib' as const, pts, style: { color: '#ffffff', width: 1, dash: 'solid' as const } };
+    expect(fibLevels(d).map((l) => l.v)).toEqual([0, 0.236, 0.382, 0.5, 0.618, 0.786, 1]);
+    expect(fibLevels({ ...d, levels: [1.618, 0.5] }).map((l) => l.v)).toEqual([0.5, 1.618]);
+    expect(fibLevels({ ...d, kind: 'fibext' }).map((l) => l.v)).toEqual([0, 0.618, 1, 1.272, 1.618, 2, 2.618]);
+    expect(new Set(FIB_LEVELS.fib.map((l) => l.v)).size).toBe(FIB_LEVELS.fib.length);
+  });
+
+  it('widoczność na interwałach', () => {
+    const d = { id: 'h', kind: 'hline' as const, pts: [{ t: 0, p: 1 }], style: { color: '#ffffff', width: 1, dash: 'solid' as const } };
+    expect(visibleOn(d, M1)).toBe(true);
+    expect(visibleOn({ ...d, hideIv: [M1] }, M1)).toBe(false);
+    expect(visibleOn({ ...d, hideIv: [M1] }, 5 * M1)).toBe(true);
+  });
+
+  it('styl kilku zaznaczonych: każdy rysunek dostaje tylko swoje pola', () => {
+    const patch = { color: '#4a9eff', width: 3, fillAlpha: 0.2 };
+    expect(stylePatchFor('rect', patch)).toEqual(patch);
+    expect(stylePatchFor('trend', patch)).toEqual({ color: '#4a9eff', width: 3 });
+    expect(stylePatchFor('text', patch)).toEqual({ color: '#4a9eff' });
+    expect(stylePatchFor('measure', patch)).toBeNull();
+    expect(stylePatchFor('note', { size: 20, bold: true })).toEqual({ size: 20, bold: true });
+  });
+
+  it('pasek pokazuje tylko ustawienia narzędzia', () => {
+    expect(styleCaps('trend')).toEqual({ color: true, stroke: true, fill: false, size: false, text: false });
+    expect(styleCaps('rect').fill).toBe(true);
+    expect(styleCaps('text')).toEqual({ color: true, stroke: false, fill: false, size: true, text: true });
+    expect(styleCaps('hline').text).toBe(true);
+    expect(styleCaps('long')).toEqual({ color: false, stroke: false, fill: false, size: false, text: false });
+  });
+});
+
+describe('kolory', () => {
+  it('mieszanka kolorów i paleta 6 × 10 bez powtórzeń', () => {
+    expect(mix('#000000', '#ffffff', 0.5)).toBe('#808080');
+    expect(mix('#ff4d5e', '#ffffff', 0)).toBe('#ff4d5e');
+    expect(mix('#ff4d5e', '#000000', 1)).toBe('#000000');
+    const all = PALETTE_ROWS.flat();
+    expect(PALETTE_ROWS.every((r) => r.length === 10)).toBe(true);
+    expect(new Set(all).size).toBe(all.length);
+    expect(all.every((c) => /^#[0-9a-f]{6}$/.test(c))).toBe(true);
+  });
 });
 
 describe('zapis rysunków', () => {
@@ -184,6 +265,51 @@ describe('zapis rysunków', () => {
     expect(out[1].style.color).toMatch(/^#[0-9a-f]{6}$/i);
     expect(out[1].text).toHaveLength(280);
     expect(parseDrawings('zły zapis')).toEqual([]);
+  });
+
+  it('krycie, tło, rozmiar tekstu i blokada: poprawne wartości zostają, złe są pomijane', () => {
+    const pts = [{ t: 0, p: 1 }, { t: 1, p: 2 }];
+    const [a, b] = parseDrawings([
+      { id: 'a', kind: 'rect', pts, locked: true, style: { color: '#ff0000', width: 1, dash: 'solid', alpha: 0.5, fill: '#00ff00', fillAlpha: 3, size: 99 } },
+      { id: 'b', kind: 'text', pts, locked: 'tak', style: { color: '#ff0000', width: 2, dash: 'solid', alpha: 'pół', fill: 'zielony' } },
+    ]);
+    expect(a.locked).toBe(true);
+    expect(a.style).toEqual({ color: '#ff0000', width: 1, dash: 'solid', alpha: 0.5, fill: '#00ff00', fillAlpha: 1, size: 48 });
+    expect(b.locked).toBeUndefined();
+    expect(b.style).toEqual({ color: '#ff0000', width: 2, dash: 'solid' });
+    // Stary zapis tekstu: rozmiar z grubości
+    expect(textSize(b)).toBe(16);
+    expect(textSize({ ...b, style: { ...b.style, size: 24 } })).toBe(24);
+    expect(textSize({ ...b, kind: 'note' })).toBe(12);
+  });
+
+  it('ustawienia z okna i listy: przedłużenie, opis, poziomy, widoczność, ukrycie i krój tekstu', () => {
+    const pts = [{ t: 0, p: 1 }, { t: 1, p: 2 }];
+    const [a, b, c] = parseDrawings([
+      { id: 'a', kind: 'trend', pts, extL: true, extR: 'tak', labels: true, stats: 1, hideIv: [M1, 'x', 5 * M1], style: { bold: true, italic: 'tak' } },
+      { id: 'b', kind: 'fib', pts, levels: [0.618, 7, 0, '1'] },
+      { id: 'c', kind: 'rect', pts, levels: [0.5], hideIv: [] },
+    ]);
+    expect(a).toMatchObject({ extL: true, labels: true, hideIv: [M1, 5 * M1] });
+    expect(a.extR).toBeUndefined();
+    expect(a.stats).toBeUndefined();
+    expect(a.style.bold).toBe(true);
+    expect(a.style.italic).toBeUndefined();
+    expect(b.levels).toEqual([0, 0.618]);
+    expect(c.levels).toBeUndefined();
+    expect(c.hideIv).toBeUndefined();
+    const [h, v] = parseDrawings([
+      { id: 'h', kind: 'hline', pts, hidden: true },
+      { id: 'v', kind: 'hline', pts, hidden: 'tak' },
+    ]);
+    expect(h.hidden).toBe(true);
+    expect(v.hidden).toBeUndefined();
+  });
+
+  it('szablon narzędzia: styl i ustawienia bez punktów, tekstu i blokady', () => {
+    expect(parseStyle('rect', { color: 'zły', width: 9, fillAlpha: 0.3 })).toEqual({ color: parseStyle('rect', null).color, width: 4, dash: 'solid', fillAlpha: 0.3 });
+    expect(parseProps('ray', { extL: true, labels: true, text: 'x', locked: true, pts: [] })).toEqual({ extL: true, labels: true });
+    expect(parseProps('fibext', { levels: [3.618, 0.236] })).toEqual({ levels: [3.618] });
   });
 
   it('najwyżej MAX_DRAWINGS rysunków', () => {

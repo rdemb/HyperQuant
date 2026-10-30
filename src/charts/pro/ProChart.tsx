@@ -32,7 +32,9 @@ import { SchrodiLauncher } from '../../components/schrodi/SchrodiLauncher';
 import { type ChartPalette, PALETTE, setPalette } from './chart/palette';
 import type { ChartView } from './chart/footprintSeries';
 import type { FootprintStyle } from './chart/layout';
-import { DrawHint, DrawStyleBar, DrawToolbar } from './draw/DrawToolbar';
+import { DrawHint, DrawMenu, DrawStyleBar, DrawToolbar } from './draw/DrawToolbar';
+import { DrawSettings } from './draw/DrawSettings';
+import { DrawList } from './draw/DrawList';
 import { TOOLS } from './draw/model';
 import { type DrawingTools, isTyping } from './draw/tools';
 import { CandleSeries, MARKETS, Market, ProStore, storeFor } from './store/proStore';
@@ -484,11 +486,18 @@ export const ProChart: React.FC<{
     markSeen(now);
     setSeen(now);
   };
+  // Alarm na poziomie linii poziomej z paska i menu rysunku (w powtórce bez alarmów)
+  const drawAlert = inReplay ? undefined : (p: number) => openAlerts({ price: toTick(p), kind: 'close' });
 
   const onContextMenu = (e: React.MouseEvent<HTMLDivElement>) => {
     // Tylko na samym wykresie (legenda, karty i menu mają własne zachowanie)
     if (!hostRef.current?.contains(e.target as Node)) return;
     e.preventDefault();
+    // Na rysunku — menu rysunku zamiast menu wykresu
+    if (tools?.openMenu(e.clientX, e.clientY)) {
+      setCtxMenu(null);
+      return;
+    }
     const r = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - r.left;
     const y = e.clientY - r.top;
@@ -702,10 +711,14 @@ export const ProChart: React.FC<{
       <div className="relative flex flex-1 min-h-0">
         <DrawToolbar tools={tools} className={drawOpen ? 'flex' : 'hidden'} />
         <div className="relative flex-1 min-h-0 min-w-0" onContextMenu={onContextMenu}>
-          <div ref={hostRef} className="absolute inset-0" />
+          {/* Własny kontekst warstw: uchwyt zmiany wysokości paneli wykresu (z-index 50) nie przykrywa pasków i okien rysunków */}
+          <div ref={hostRef} className="absolute inset-0 isolate" />
           <AutoScaleBtn scale={scale} onToggle={() => ctrlRef.current?.setAutoScale(!scale.auto)} />
           <Legend signal={signal} intervalMs={iv.ms} intervalLabel={iv.label} tapeSince={tapeSince} coin={store.coin} onBottom={onLegendBottom} compact={narrow} multi={layout > 1} />
-          <DrawStyleBar tools={tools} onAlert={inReplay ? undefined : (p) => openAlerts({ price: toTick(p), kind: 'close' })} />
+          <DrawStyleBar tools={tools} onAlert={drawAlert} />
+          <DrawMenu tools={tools} onAlert={drawAlert} />
+          <DrawSettings tools={tools} />
+          <DrawList tools={tools} />
           <DrawHint tools={tools} />
           <LoadOverlay series={series} onRetry={() => void series.load(true)} />
           {narrow && tab === 'tape' && (
