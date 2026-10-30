@@ -2,7 +2,22 @@ import { describe, expect, it } from 'vitest';
 import type { Candle } from '../hl/parse';
 import { Window, ema, rma } from '../indicators/primitives';
 import { IndicatorEngine } from '../indicators/engine';
-import { INDICATORS, INDICATOR_COLORS, IndicatorId, IndicatorInstance, MAX_INDICATORS, addIndicator, indicatorDef, indicatorLabel, parseIndicators, parseParams } from '../indicators/registry';
+import {
+  INDICATORS,
+  INDICATOR_COLORS,
+  IndicatorId,
+  IndicatorInstance,
+  MAX_INDICATORS,
+  addIndicator,
+  copyIndicator,
+  indicatorDef,
+  indicatorLabel,
+  indicatorsFromLink,
+  indicatorsLink,
+  memoryCandles,
+  parseIndicators,
+  parseParams,
+} from '../indicators/registry';
 
 const M5 = 300_000;
 
@@ -41,6 +56,9 @@ const inst = (id: IndicatorId, params: Record<string, number> = {}): IndicatorIn
   id,
   params: parseParams(indicatorDef(id), params),
   color: '#3987e5',
+  alpha: 1,
+  width: 2,
+  labels: true,
   visible: true,
 });
 
@@ -297,5 +315,65 @@ describe('lista wskaźników', () => {
     expect(list[1].color).toMatch(/^#[0-9a-f]{6}$/);
     expect(parseIndicators('x')).toEqual([]);
     expect(parseIndicators(new Array(30).fill({ id: 'ema' }))).toHaveLength(MAX_INDICATORS);
+  });
+
+  it('styl: zapis bez stylu dostaje domyślny (wstęgi cieńsze), błędny styl domyślny', () => {
+    const [ema, bb, bad] = parseIndicators([
+      { id: 'ema' },
+      { id: 'bb' },
+      { id: 'rsi', alpha: 1.5, width: 7, labels: 'tak' },
+    ]);
+    expect([ema.alpha, ema.width, ema.labels]).toEqual([1, 2, true]);
+    expect(bb.width).toBe(1);
+    expect([bad.alpha, bad.width, bad.labels]).toEqual([1, 2, true]);
+    const [kept] = parseIndicators([{ id: 'atr', alpha: 0.4, width: 3, labels: false }]);
+    expect([kept.alpha, kept.width, kept.labels]).toEqual([0.4, 3, false]);
+    expect(parseIndicators(addIndicator(addIndicator([], 'ema'), 'bb'))).toEqual(addIndicator(addIndicator([], 'ema'), 'bb'));
+  });
+
+  it('kopia: te same parametry i styl, nowy identyfikator i wolny kolor', () => {
+    const list = parseIndicators([{ iid: 'ema1', id: 'ema', params: { length: 21 }, color: '#3987e5', width: 3, visible: false }]);
+    const out = copyIndicator(list, 'ema1');
+    expect(out[1]).toMatchObject({ iid: 'ema2', id: 'ema', params: { length: 21 }, width: 3, visible: true });
+    expect(out[1].color).not.toBe(out[0].color);
+    expect(copyIndicator(list, 'brak')).toEqual(list);
+  });
+
+  it('link: widoczne wskaźniki z parametrami w kolejności rejestru, odczyt z walidacją', () => {
+    const list = parseIndicators([
+      { id: 'ema', params: { length: 21 } },
+      { id: 'rsi', params: { length: 14 }, visible: false },
+      { id: 'bb', params: { length: 20, mult: 2.5 } },
+    ]);
+    expect(indicatorsLink(list)).toBe('ema(21);bb(20,2.5)');
+    const back = indicatorsFromLink('ema(21);bb(20,2.5)');
+    expect(back.map((x) => [x.id, x.params])).toEqual([
+      ['ema', { length: 21 }],
+      ['bb', { length: 20, mult: 2.5 }],
+    ]);
+    expect(indicatorsLink(back)).toBe('ema(21);bb(20,2.5)');
+    expect(new Set(back.map((x) => x.color)).size).toBe(2);
+    // Nieznany wskaźnik i śmieci pominięte, parametr spoza zakresu i brakujący — domyślny
+    expect(indicatorsLink(indicatorsFromLink('supertrend(10,3);ema(0);bb(30);x;rsi()'))).toBe('ema(9);bb(30,2);rsi(14)');
+    expect(indicatorsFromLink('')).toEqual([]);
+  });
+
+  it('pamięć średnich rekurencyjnych: po ilu świecach starsza historia waży mniej niż 0,1%', () => {
+    const ema = indicatorDef('ema');
+    const rsi = indicatorDef('rsi');
+    // (1 − α)^N < 0,001 i (1 − α)^(N−1) ≥ 0,001
+    for (const [def, n] of [
+      [ema, 9],
+      [ema, 200],
+      [rsi, 14],
+    ] as const) {
+      const a = def.decay!({ length: n });
+      const m = memoryCandles(def, { length: n })!;
+      expect((1 - a) ** m).toBeLessThan(0.001);
+      expect((1 - a) ** (m - 1)).toBeGreaterThanOrEqual(0.001);
+    }
+    expect(memoryCandles(rsi, { length: 14 })).toBe(94);
+    expect(memoryCandles(ema, { length: 1 })).toBeNull();
+    expect(memoryCandles(indicatorDef('bb'), { length: 20, mult: 2 })).toBeNull();
   });
 });
