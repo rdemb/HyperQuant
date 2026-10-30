@@ -70,6 +70,11 @@ try {
   // Pierwszy start albo wszystko zgłoszone
 }
 const stats = { sent: 0, gone: 0, failed: 0 };
+const pulsePath = join(STATE_DIR, 'alerts-pulse.json');
+// Start liczy się jak synchronizacja: strażnik ocenia ciszę dopiero od uruchomienia
+let syncOkAt = Date.now();
+/** Ostatni komunikat Hyperliquid na rynek ze strumieniem (transakcje albo kontekst rynku ~co 1 s). */
+const heard = new Map<string, number>();
 /** Początek przerwy w strumieniu rynku (ostatnia przetworzona transakcja): po powrocie połączenia dociągane są świece 1m. */
 const gapFrom = new Map<string, number>();
 
@@ -161,6 +166,7 @@ function watch(): void {
       if (s) {
         s.stop();
         streams.delete(coin);
+        heard.delete(coin);
         engine.gap(coin);
         gapFrom.delete(coin);
       }
@@ -168,10 +174,17 @@ function watch(): void {
     }
     for (const iv of ivs) if (iv !== '1m') void seed(coin, iv);
     if (s) continue;
+    heard.set(coin, Date.now());
     const st = new HlStream(
       coin,
-      (t) => onTrades(coin, t),
-      (c) => engine.onOi(coin, c.oiBtc),
+      (t) => {
+        heard.set(coin, Date.now());
+        onTrades(coin, t);
+      },
+      (c) => {
+        heard.set(coin, Date.now());
+        engine.onOi(coin, c.oiBtc);
+      },
       WebSocket,
       null,
       (up) => {
@@ -203,6 +216,7 @@ async function syncTick(): Promise<void> {
       cursor = r.cursor;
       if (!r.more) break;
     }
+    syncOkAt = Date.now();
     if (book.devices.size !== n) log(`urządzenia: ${book.devices.size}, alarmy: ${book.rules.length}`);
     watch();
   } catch (e) {
@@ -229,6 +243,11 @@ async function reportTick(): Promise<void> {
   savePending();
 }
 
+/** Puls dla strażnika (scripts/watchdog.mjs): czas zapisu, ostatnia synchronizacja, najstarszy ostatni komunikat HL. */
+function savePulse(): void {
+  writeJsonAtomic(pulsePath, { v: 1, at: Date.now(), syncAt: mailbox ? syncOkAt : null, wsAt: heard.size > 0 ? Math.min(...heard.values()) : null });
+}
+
 let saved = '';
 function saveState(): void {
   const s = JSON.stringify(book.snapshot());
@@ -248,6 +267,8 @@ if (mailbox) {
   log(`start, skrzynka ${new URL(URL_).host}`);
 } else log('brak adresu skrzynki: klucze opublikowane, czekam na wdrożenie skrzynki');
 setInterval(saveState, SAVE_MS);
+savePulse();
+setInterval(savePulse, SAVE_MS);
 setInterval(() => {
   if (stats.sent + stats.gone + stats.failed === 0) return;
   log(`powiadomienia w ostatniej godzinie: wysłane ${stats.sent}, wygasłe subskrypcje ${stats.gone}, nieudane ${stats.failed}`);
