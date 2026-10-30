@@ -663,10 +663,11 @@ export class ProChartController {
     return p.hist ? (v < 0 ? HIST_DOWN : HIST_UP) : (p.color ?? x.color);
   }
 
-  /** Liczby wskaźnika: cena (tick rynku), odległość ceny (ATR: o miejsce dokładniej niż tick), dwa miejsca (RSI) albo wolumen (OBV). */
+  /** Liczby wskaźnika: cena (tick rynku), odległość ceny (ATR: o miejsce dokładniej niż tick), dwa lub trzy miejsca (RSI, CMF) albo wolumen (OBV). */
   private indFormat(def: IndicatorDef): (v: number) => string {
     if (def.format === 'price') return fmtPx;
     if (def.format === 'fixed2') return (v) => fmtPrice(v, 2);
+    if (def.format === 'fixed3') return (v) => fmtPrice(v, 3);
     if (def.format === 'volume') return fmtSignedVol;
     return (v) => fmtPrice(v, Math.max(0, -Math.floor(Math.log10(this.priceTick))) + 1);
   }

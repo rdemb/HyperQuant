@@ -141,3 +141,57 @@ export class Extreme {
     return v;
   }
 }
+
+/**
+ * Średnia ważona liniowo n ostatnich wartości (`ta.wma`): najnowsza waga n, najstarsza 1, dzielnik n(n + 1)/2. Sumy
+ * względem wartości odniesienia, liczone od nowa co n zatwierdzeń, jak w `Window`. NaN jest pomijane jak w `Window`.
+ */
+export class Wma {
+  private readonly buf: Float64Array;
+  private head = 0;
+  private count = 0;
+  private ref = 0;
+  /** Suma odchyleń od `ref` i suma ważona (najnowsza waga = liczba wartości w oknie). */
+  private s = 0;
+  private w = 0;
+  private since = 0;
+
+  constructor(private readonly n: number) {
+    this.buf = new Float64Array(n);
+  }
+
+  next(x: number, keep: boolean): number {
+    const n = this.n;
+    if (Number.isNaN(x)) return this.count === n ? this.ref + this.w / ((n * (n + 1)) / 2) : Number.NaN;
+    const full = this.count === n;
+    const ref = this.count === 0 ? x : this.ref;
+    const d = x - ref;
+    // Pełne okno: każda starsza wartość traci 1 z wagi, najstarsza (waga 1) wypada
+    const w = full ? this.w + n * d - this.s : this.w + (this.count + 1) * d;
+    const s = this.s + d - (full ? this.buf[this.head] - ref : 0);
+    const count = full ? n : this.count + 1;
+    if (keep) {
+      this.buf[this.head] = x;
+      this.head = (this.head + 1) % n;
+      this.count = count;
+      this.ref = ref;
+      this.s = s;
+      this.w = w;
+      if (++this.since >= n) this.reanchor(x);
+    }
+    return count === n ? ref + w / ((n * (n + 1)) / 2) : Number.NaN;
+  }
+
+  private reanchor(ref: number): void {
+    this.ref = ref;
+    this.s = this.w = 0;
+    // Od najstarszej (waga 1) do najnowszej (waga count)
+    const start = this.count === this.n ? this.head : 0;
+    for (let k = 0; k < this.count; k++) {
+      const d = this.buf[(start + k) % this.n] - ref;
+      this.s += d;
+      this.w += (k + 1) * d;
+    }
+    this.since = 0;
+  }
+}

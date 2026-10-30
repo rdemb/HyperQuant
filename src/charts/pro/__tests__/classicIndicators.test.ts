@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Candle } from '../hl/parse';
-import { Window, ema, rma } from '../indicators/primitives';
+import { Window, Wma, ema, rma } from '../indicators/primitives';
 import { IndicatorEngine } from '../indicators/engine';
 import {
   INDICATORS,
@@ -386,6 +386,107 @@ describe('wskaźniki: partia A (wzory TradingView)', () => {
   });
 });
 
+// ───────────── partia B: wzory wbudowanych skryptów TradingView przepisane wprost na tablice ─────────────
+
+/** Wzór na części serii od pierwszej liczby (rozbieg `na` na początku pomijany, jak w funkcjach `ta.*`). */
+function onFinite(xs: readonly number[], f: (ys: number[]) => number[]): number[] {
+  const k = xs.findIndex((x) => !Number.isNaN(x));
+  return k < 0 ? xs.map(() => NaN) : [...xs.slice(0, k).map(() => NaN), ...f(xs.slice(k))];
+}
+
+const wma = (xs: readonly number[], n: number) =>
+  xs.map((_, i) => (i < n - 1 ? NaN : xs.slice(i - n + 1, i + 1).reduce((a, x, k) => a + (k + 1) * x, 0) / ((n * (n + 1)) / 2)));
+
+describe('wskaźniki: partia B (wzory TradingView)', () => {
+  const cs = walk(700, 21);
+  const closes = cs.map((c) => c.c);
+  const highs = cs.map((c) => c.h);
+  const lows = cs.map((c) => c.l);
+  const vols = cs.map((c) => c.v);
+  const tp = cs.map((c) => (c.h + c.l + c.c) / 3);
+
+  it('WMA: wagi n…1 od najnowszej, bez utraty precyzji na długiej serii', () => {
+    const xs = walk(5000, 3, 100_000).map((c) => c.c);
+    const w = new Wma(200);
+    expectClose(xs.map((x) => w.next(x, true)), wma(xs, 200), 1e-11);
+  });
+
+  it('HMA: WMA(2·WMA(n/2) − WMA(n), ⌊√n⌋); stała cena daje tę cenę', () => {
+    const inner = wma(closes, 4).map((a, i) => 2 * a - wma(closes, 9)[i]);
+    expectClose(run(inst('hma', { length: 9 }), cs)[0], onFinite(inner, (ys) => wma(ys, 3)));
+    const flat = cs.slice(0, 40).map((c) => ({ ...c, o: 100, h: 100, l: 100, c: 100 }));
+    expect(run(inst('hma', { length: 9 }), flat)[0].slice(10).every((x) => Math.abs(x - 100) < 1e-9)).toBe(true);
+  });
+
+  it('VWMA: SMA(C·V) / SMA(V)', () => {
+    const pv = sma(closes.map((c, i) => c * vols[i]), 20);
+    const v = sma(vols, 20);
+    expectClose(run(inst('vwma'), cs)[0], pv.map((a, i) => a / v[i]));
+  });
+
+  it('CCI: (hlc3 − SMA) / (0,015 · średnie odchylenie bezwzględne)', () => {
+    const m = sma(tp, 20);
+    const want = tp.map((x, i) => {
+      if (Number.isNaN(m[i])) return NaN;
+      const dev = tp.slice(i - 19, i + 1).reduce((a, y) => a + Math.abs(y - m[i]), 0) / 20;
+      return (x - m[i]) / (0.015 * dev);
+    });
+    expectClose(run(inst('cci'), cs)[0], want, 1e-8);
+  });
+
+  it('Williams %R: 100·(C − max H)/(max H − min L) w [−100, 0]', () => {
+    const hh = highest(highs, 14);
+    const ll = lowest(lows, 14);
+    const got = run(inst('wpr'), cs)[0];
+    expectClose(got, closes.map((c, i) => (100 * (c - hh[i])) / (hh[i] - ll[i])));
+    expect(got.filter((x) => !Number.isNaN(x)).every((x) => x >= -100 && x <= 0)).toBe(true);
+  });
+
+  it('Stoch RSI: stochastyk na RSI 14 (od pierwszej wartości RSI), %K = SMA 3, %D = SMA 3', () => {
+    const [k, d] = run(inst('stochrsi'), cs);
+    const kb = onFinite(rsiBatch(closes, 14), (r) => {
+      const hh = highest(r, 14);
+      const ll = lowest(r, 14);
+      return sma(r.map((x, i) => (100 * (x - ll[i])) / (hh[i] - ll[i])), 3);
+    });
+    expectClose(k, kb, 1e-8);
+    expectClose(d, onFinite(kb, (ys) => sma(ys, 3)), 1e-8);
+    expect(Number.isNaN(k[28]) && !Number.isNaN(k[29]) && Number.isNaN(d[30]) && !Number.isNaN(d[31])).toBe(true);
+  });
+
+  it('CHOP: 100·log10(Σ TR / (max H − min L)) / log10(n), TR pierwszej świecy H − L', () => {
+    const tr = cs.map((c, i) => (i === 0 ? c.h - c.l : Math.max(c.h - c.l, Math.abs(c.h - cs[i - 1].c), Math.abs(c.l - cs[i - 1].c))));
+    const sum = sma(tr, 14).map((x) => x * 14);
+    const hh = highest(highs, 14);
+    const ll = lowest(lows, 14);
+    const got = run(inst('chop'), cs)[0];
+    expectClose(got, sum.map((x, i) => (100 * Math.log10(x / (hh[i] - ll[i]))) / Math.log10(14)), 1e-8);
+    expect(got.filter((x) => !Number.isNaN(x)).every((x) => x >= 0 && x <= 100)).toBe(true);
+  });
+
+  it('CMF: Σ(((C − L) − (H − C))/(H − L)·V) / ΣV w [−1, 1]', () => {
+    const ad = cs.map((c) => ((2 * c.c - c.l - c.h) / (c.h - c.l)) * c.v);
+    const got = run(inst('cmf'), cs)[0];
+    expectClose(got, sma(ad, 20).map((a, i) => a / sma(vols, 20)[i]));
+    expect(got.filter((x) => !Number.isNaN(x)).every((x) => x >= -1 && x <= 1)).toBe(true);
+  });
+
+  it('MFI: ta.mfi na hlc3 (pierwsza świeca bez zmiany w obu sumach, jak w Pine)', () => {
+    const f = tp.map((x, i) => x * vols[i]);
+    const up = sma(f.map((x, i) => (i > 0 && tp[i] - tp[i - 1] <= 0 ? 0 : x)), 14);
+    const down = sma(f.map((x, i) => (i > 0 && tp[i] - tp[i - 1] >= 0 ? 0 : x)), 14);
+    const got = run(inst('mfi'), cs)[0];
+    expectClose(got, up.map((u, i) => 100 - 100 / (1 + u / down[i])));
+    expect(got.filter((x) => !Number.isNaN(x)).every((x) => x >= 0 && x <= 100)).toBe(true);
+  });
+
+  it('przesunięcie ceny: CCI, %R, Stoch RSI, CHOP i CMF bez zmian; HMA i VWMA przesunięte', () => {
+    const shifted = cs.map((c) => ({ ...c, o: c.o + 5000, h: c.h + 5000, l: c.l + 5000, c: c.c + 5000 }));
+    for (const id of ['cci', 'wpr', 'stochrsi', 'chop', 'cmf'] as const) run(inst(id), shifted).forEach((ys, p) => expectClose(ys, run(inst(id), cs)[p], 1e-6));
+    for (const id of ['hma', 'vwma'] as const) run(inst(id), shifted).forEach((ys, p) => expectClose(ys, run(inst(id), cs)[p].map((x) => x + 5000), 1e-9));
+  });
+});
+
 describe('przeliczanie przyrostowe', () => {
   const all = INDICATORS.map((d) => inst(d.id, { length: 5 }));
 
@@ -547,5 +648,9 @@ describe('lista wskaźników', () => {
       const inside = w.slice(0, m).reduce((x, y) => x + y, 0);
       expect(1 - inside).toBeLessThan(0.001);
     }
+  });
+  it('pamięć Stoch RSI: granica RSI przesunięta o okno stochastyka i obie średnie proste', () => {
+    const p = { k: 3, d: 3, rsi: 14, stoch: 14 };
+    expect(memoryCandles(indicatorDef('stochrsi'), p)).toBe(memoryCandles(indicatorDef('rsi'), { length: 14 })! + 14 + 3 + 3 - 3);
   });
 });
