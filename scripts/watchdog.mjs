@@ -1,8 +1,9 @@
 /**
  * Strażnik skanera HyperQuant — uruchamiany na serwerze co 15 min (systemd: hyperquant-watchdog.timer), niezależnie od
  * harmonogramu GitHuba (best-effort, w praktyce często pomijany):
- *  1. samonaprawa — restart zawieszonego skanera (stan `failed`, brak lokalnej publikacji albo stojąca część skanera),
- *     najwyżej raz na godzinę i najwyżej 3 razy w epizodzie; ręcznie zatrzymanej usługi nie uruchamia;
+ *  1. samonaprawa — restart zawieszonego skanera (stan `failed`, brak lokalnej publikacji albo stojąca część skanera)
+ *     i serwera powiadomień o alarmach (stan `failed` albo stary puls `alerts-pulse.json`), każdej usługi najwyżej raz
+ *     na godzinę i najwyżej 3 razy w epizodzie; ręcznie zatrzymanej usługi nie uruchamia;
  *  2. alarm — stan zdrowia (ta sama ocena co scripts/check-data-health.mjs) trafia do gałęzi `health` repo danych przez
  *     klucz wdrożeniowy skanera; push uruchamia tam workflow, który otwiera / komentuje / zamyka zgłoszenie
  *     „alert-danych”. Problem wysyłany po potwierdzeniu w dwóch przebiegach (prywatność — od razu), przypomnienie co 6 h;
@@ -30,6 +31,11 @@ const REMIND = 6 * 60 * MIN;
 /** Puls przy „ok” — uruchamia codzienną niezależną weryfikację dziennika (workflow gałęzi health) */
 const HEARTBEAT = 24 * 60 * MIN;
 const SERVICE = 'hyperquant-scanner';
+const ALERTS_SERVICE = 'hyperquant-alerts';
+/** Serwer powiadomień zapisuje puls co 30 s; synchronizacja ze skrzynką co 3 s, kontekst rynku z WebSocket co ~1 s */
+const PULSE_STALE = 5 * MIN;
+const ALERTS_SYNC_STALE = 10 * MIN;
+const ALERTS_WS_STALE = 5 * MIN;
 /**
  * Problemy oceny oznaczające zawieszoną część skanera (nie sieć ani GitHub): publikacja, dziennik, płynność. Stojące
  * laboratorium folkloru tylko alarmuje — jego typowe przyczyny (klon archiwum w tyle, brak rejestracji przy przerwanym
@@ -70,19 +76,47 @@ export function decide({ now, localAsOf, serviceState, activeForMs, lastRestart,
   return { restart: true, reason, category: 'stall' };
 }
 
+/**
+ * Decyzja o restarcie serwera powiadomień (te same zasady co dla skanera). `pulse` — `alerts-pulse.json` usługi:
+ * `at` (zapis pulsu), `syncAt` (ostatnia udana synchronizacja ze skrzynką; null = bez skrzynki), `wsAt` (ostatni
+ * komunikat Hyperliquid; null = bez alarmów, więc bez strumienia); null = brak pliku.
+ */
+export function decideAlerts({ now, pulse, serviceState, activeForMs, lastRestart, restarts }) {
+  if (TRANSIENT.has(serviceState)) return none;
+  if (serviceState === 'inactive') return { restart: false, reason: 'serwer powiadomień zatrzymany (ręcznie?) — strażnik go nie uruchamia', category: 'inactive' };
+  const ago = (t) => Math.round((now - t) / MIN);
+  let reason = null;
+  if (serviceState !== 'active') reason = `serwer powiadomień w stanie ${serviceState}`;
+  else {
+    if ((activeForMs ?? Infinity) < GRACE) return none;
+    if (!pulse) reason = 'serwer powiadomień nie zapisuje pulsu';
+    else if (now - pulse.at > PULSE_STALE) reason = `serwer powiadomień nie zapisał pulsu od ${ago(pulse.at)} min`;
+    else if (pulse.syncAt !== null && now - pulse.syncAt > ALERTS_SYNC_STALE) reason = `serwer powiadomień bez synchronizacji ze skrzynką od ${ago(pulse.syncAt)} min`;
+    else if (pulse.wsAt !== null && now - pulse.wsAt > ALERTS_WS_STALE) reason = `serwer powiadomień bez danych z Hyperliquid od ${ago(pulse.wsAt)} min`;
+  }
+  if (!reason) return none;
+  const category = serviceState === 'active' ? 'stall' : 'failed';
+  if (restarts >= MAX_RESTARTS) return { restart: false, reason: `${reason}; ${MAX_RESTARTS} restarty nie pomogły — potrzebna interwencja`, category: 'giveup' };
+  if (lastRestart !== null && now - lastRestart <= RESTART_COOLDOWN) return { restart: false, reason: `${reason} (restart wstrzymany — poprzedni mniej niż godzinę temu)`, category };
+  return { restart: true, reason, category };
+}
+
 /** Problem bez zmiennych szczegółów: liczby → #, treść błędu pobrania pominięta. */
 const normalize = (p) => p.replace(/: nie udało się pobrać \(.*\)$/, ': nie udało się pobrać').replace(/\d+([.,]\d+)?/g, '#');
 
 /**
- * Stan alarmu: problemy oceny + informacja strażnika (do raportu). Klucz stanu — kategoria i znormalizowane problemy
+ * Stan alarmu: problemy oceny + informacja strażnika (do raportu). Klucz stanu — kategorie i znormalizowane problemy
  * oceny, bez słów strażnika (restart / wstrzymanie zmieniają się co przebieg i wysyłałyby alarm w kółko).
+ * `da` — decyzja dla serwera powiadomień (bez problemu klucz jak dawniej).
  */
-export function alertState(health, d) {
+export function alertState(health, d, da = none) {
   const problems = [...health.problems];
   if (d.restart) problems.push(`Strażnik zrestartował skaner: ${d.reason}.`);
   else if (d.reason) problems.push(`Strażnik: ${d.reason}.`);
+  if (da.restart) problems.push(`Strażnik zrestartował serwer powiadomień: ${da.reason}.`);
+  else if (da.reason) problems.push(`Strażnik: ${da.reason}.`);
   const ok = problems.length === 0;
-  const key = ok ? 'ok' : [d.category ?? '-', ...health.problems.map(normalize).sort()].join('|');
+  const key = ok ? 'ok' : [d.category ?? '-', ...(da.category ? [`alarmy:${da.category}`] : []), ...health.problems.map(normalize).sort()].join('|');
   return { ok, problems, key };
 }
 
@@ -124,9 +158,9 @@ export function gitEnv(work, key, now) {
   };
 }
 
-function serviceState() {
+function serviceState(unit = SERVICE) {
   try {
-    return execFileSync('systemctl', ['is-active', SERVICE], { encoding: 'utf8' }).trim();
+    return execFileSync('systemctl', ['is-active', unit], { encoding: 'utf8' }).trim();
   } catch (e) {
     // is-active kończy się kodem ≠ 0 dla każdego stanu poza active — stan jest na stdout
     const out = e && typeof e === 'object' && 'stdout' in e ? String(e.stdout).trim() : '';
@@ -135,9 +169,9 @@ function serviceState() {
 }
 
 /** Czas działania usługi: oba zegary CLOCK_MONOTONIC (systemd i libuv); null = nieznany. */
-function activeForMs() {
+function activeForMs(unit = SERVICE) {
   try {
-    const us = Number(execFileSync('systemctl', ['show', '-p', 'ActiveEnterTimestampMonotonic', '--value', SERVICE], { encoding: 'utf8' }).trim());
+    const us = Number(execFileSync('systemctl', ['show', '-p', 'ActiveEnterTimestampMonotonic', '--value', unit], { encoding: 'utf8' }).trim());
     if (!(us > 0)) return null;
     return Math.max(0, Number(process.hrtime.bigint() / 1000n) - us) / 1000;
   } catch {
@@ -145,19 +179,32 @@ function activeForMs() {
   }
 }
 
-/** Lokalny status.json skanera — tylko zwykły plik (bez dowiązań i kolejek FIFO podłożonych w katalogu usługi). */
-function readLocalAsOf(file) {
+/** JSON z katalogu usługi — tylko zwykły plik (bez dowiązań i kolejek FIFO podłożonych w katalogu usługi); null = brak. */
+function readServiceJson(file) {
   let fd = null;
   try {
     fd = openSync(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
     if (!fstatSync(fd).isFile()) return null;
-    const a = JSON.parse(readFileSync(fd, 'utf8')).asOf;
-    return typeof a === 'number' && Number.isFinite(a) ? a : null;
+    return JSON.parse(readFileSync(fd, 'utf8'));
   } catch {
-    return null; // skaner jeszcze nic nie opublikował albo plik uszkodzony
+    return null; // usługa jeszcze nic nie zapisała albo plik uszkodzony
   } finally {
     if (fd !== null) closeSync(fd);
   }
+}
+
+const finite = (v) => typeof v === 'number' && Number.isFinite(v);
+
+/** Lokalny status.json skanera: czas publikacji. */
+function readLocalAsOf(file) {
+  const a = readServiceJson(file)?.asOf;
+  return finite(a) ? a : null;
+}
+
+/** Puls serwera powiadomień; pola spoza liczb traktowane jak brak pliku albo brak źródła. */
+export function parsePulse(raw) {
+  if (!raw || typeof raw !== 'object' || !finite(raw.at)) return null;
+  return { at: raw.at, syncAt: finite(raw.syncAt) ? raw.syncAt : null, wsAt: finite(raw.wsAt) ? raw.wsAt : null };
 }
 
 /** Zapis stanu atomowo (plik tymczasowy + rename) — przerwany zapis nie gubi licznika restartów. */
@@ -194,6 +241,14 @@ function pushAlert(remote, key, work, a, report, now) {
   }
 }
 
+function restart(unit, d) {
+  try {
+    execFileSync('systemctl', ['restart', unit], { timeout: 120_000 });
+  } catch (e) {
+    d.reason = `${d.reason} — restart nieudany (${e instanceof Error ? e.message.split('\n')[0] : String(e)})`;
+  }
+}
+
 async function main() {
   const now = Date.now();
   const env = process.env;
@@ -202,7 +257,7 @@ async function main() {
   const work = env.HQ_WATCHDOG_DIR || '/var/lib/hyperquant-watchdog';
   mkdirSync(work, { recursive: true, mode: 0o700 });
   const stateFile = path.join(work, 'state.json');
-  let st = { lastRestart: null, restarts: 0, prevKey: null, seenKey: null, lastPushAt: null };
+  let st = { lastRestart: null, restarts: 0, alertsRestart: null, alertsRestarts: 0, prevKey: null, seenKey: null, lastPushAt: null };
   try {
     st = { ...st, ...JSON.parse(readFileSync(stateFile, 'utf8')) };
   } catch {
@@ -226,14 +281,25 @@ async function main() {
     st.lastRestart = now;
     st.restarts += 1;
     saveState(stateFile, st); // przed restartem — utrata zapisu nie może skasować przerwy między restartami
-    try {
-      execFileSync('systemctl', ['restart', SERVICE], { timeout: 120_000 });
-    } catch (e) {
-      d.reason = `${d.reason} — restart nieudany (${e instanceof Error ? e.message.split('\n')[0] : String(e)})`;
-    }
+    restart(SERVICE, d);
   }
-  const a = alertState(health, d);
-  if (a.ok) st.restarts = 0; // koniec epizodu
+  const alertsState = serviceState(ALERTS_SERVICE);
+  const da = decideAlerts({
+    now,
+    pulse: parsePulse(readServiceJson(path.join(env.HQ_STATE_DIR || '/var/lib/hyperquant/state', 'alerts-pulse.json'))),
+    serviceState: alertsState,
+    activeForMs: alertsState === 'active' ? activeForMs(ALERTS_SERVICE) : null,
+    lastRestart: st.alertsRestart,
+    restarts: st.alertsRestarts,
+  });
+  if (da.restart) {
+    st.alertsRestart = now;
+    st.alertsRestarts += 1;
+    saveState(stateFile, st);
+    restart(ALERTS_SERVICE, da);
+  }
+  const a = alertState(health, d, da);
+  if (a.ok) st.restarts = st.alertsRestarts = 0; // koniec epizodu
   console.log(`[strażnik] ${a.ok ? 'ok' : `problem: ${a.problems.join('; ')}`}`);
   const urgent = a.problems.some((p) => p.startsWith('PRYWATNOŚĆ'));
   const key = env.HQ_GIT_SSH_KEY;

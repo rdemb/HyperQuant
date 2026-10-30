@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { alertState, dataBaseFromRemote, decide, gitEnv, shouldPush } from './watchdog.mjs';
+import { alertState, dataBaseFromRemote, decide, decideAlerts, gitEnv, parsePulse, shouldPush } from './watchdog.mjs';
 
 const MIN = 60_000;
 const NOW = Date.UTC(2026, 9, 22, 14, 0);
@@ -57,6 +57,44 @@ describe('strażnik: decyzja o restarcie skanera', () => {
   it('bez repo danych (HQ_GIT_REMOTE puste) — tylko kontrole lokalne', () => {
     expect(decide({ ...base, publicCheck: false, health: stale })).toMatchObject({ restart: false, reason: null });
     expect(decide({ ...base, publicCheck: false, localAsOf: NOW - 30 * MIN })).toMatchObject({ restart: true });
+  });
+});
+
+describe('strażnik: serwer powiadomień o alarmach', () => {
+  const pulse = { at: NOW - MIN, syncAt: NOW - 5_000, wsAt: NOW - 2_000 };
+  const svc = { now: NOW, pulse, serviceState: 'active', activeForMs: 120 * MIN, lastRestart: null, restarts: 0 };
+  it('świeży puls → nic; stary puls, brak synchronizacji albo cisza Hyperliquid → restart', () => {
+    expect(decideAlerts(svc)).toMatchObject({ restart: false, reason: null, category: null });
+    expect(decideAlerts({ ...svc, pulse: { ...pulse, at: NOW - 6 * MIN } })).toMatchObject({ restart: true, category: 'stall' });
+    expect(decideAlerts({ ...svc, pulse: { ...pulse, syncAt: NOW - 11 * MIN } }).reason).toMatch(/skrzynką od 11 min/);
+    expect(decideAlerts({ ...svc, pulse: { ...pulse, wsAt: NOW - 6 * MIN } }).reason).toMatch(/Hyperliquid od 6 min/);
+    expect(decideAlerts({ ...svc, pulse: null })).toMatchObject({ restart: true, category: 'stall' });
+  });
+  it('bez skrzynki i bez alarmów (null) cisza tych źródeł nie jest problemem', () => {
+    expect(decideAlerts({ ...svc, pulse: { at: NOW - MIN, syncAt: null, wsAt: null } })).toMatchObject({ restart: false, reason: null });
+  });
+  it('te same zasady co dla skanera: 10 min po starcie, raz na godzinę, 3 restarty, zatrzymanej nie uruchamia', () => {
+    expect(decideAlerts({ ...svc, pulse: null, activeForMs: 5 * MIN })).toMatchObject({ restart: false, reason: null });
+    expect(decideAlerts({ ...svc, serviceState: 'failed', activeForMs: null })).toMatchObject({ restart: true, category: 'failed' });
+    expect(decideAlerts({ ...svc, serviceState: 'failed', activeForMs: null, lastRestart: NOW - 20 * MIN })).toMatchObject({ restart: false, category: 'failed' });
+    expect(decideAlerts({ ...svc, pulse: null, restarts: 3 })).toMatchObject({ restart: false, category: 'giveup' });
+    expect(decideAlerts({ ...svc, serviceState: 'inactive', activeForMs: null })).toMatchObject({ restart: false, category: 'inactive' });
+    expect(decideAlerts({ ...svc, serviceState: 'activating', pulse: null })).toMatchObject({ restart: false, reason: null });
+  });
+  it('puls z pliku: bez liczby czasu zapisu = brak pliku; pole bez liczby = brak źródła', () => {
+    expect(parsePulse({ v: 1, at: NOW, syncAt: NOW - 1, wsAt: null })).toEqual({ at: NOW, syncAt: NOW - 1, wsAt: null });
+    expect(parsePulse({ v: 1, at: 'x' })).toBeNull();
+    expect(parsePulse(null)).toBeNull();
+    expect(parsePulse({ at: NOW, syncAt: 'x' })).toEqual({ at: NOW, syncAt: null, wsAt: null });
+  });
+  it('problem serwera powiadomień w raporcie i w kluczu; bez niego klucz jak dawniej', () => {
+    const none = { restart: false, reason: null, category: null };
+    const da = { restart: true, reason: 'serwer powiadomień nie zapisał pulsu od 7 min', category: 'stall' };
+    const a = alertState(ok, none, da);
+    expect(a.ok).toBe(false);
+    expect(a.problems).toEqual(['Strażnik zrestartował serwer powiadomień: serwer powiadomień nie zapisał pulsu od 7 min.']);
+    expect(a.key).toBe('-|alarmy:stall');
+    expect(alertState(stale, none, none).key).toBe(alertState(stale, none).key);
   });
 });
 

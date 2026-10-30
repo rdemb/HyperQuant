@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, truncateSync, writeFileSync } from 'node:fs';
+import { basename, dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { gitEnv } from './gitPublish.ts';
 import { GENESIS, makeLine, verifyLines } from './ledger.ts';
@@ -25,6 +25,8 @@ export class LedgerStore {
   readonly coin: string;
   head = GENESIS;
   lines = 0;
+  /** Ucięta ostatnia linia usunięta przy ostatnim wczytaniu (plik, liczba bajtów); null = bez naprawy */
+  repairedTail: { file: string; bytes: number } | null = null;
   private broken = false;
 
   constructor(o: { dir: string; coin: string }) {
@@ -60,13 +62,15 @@ export class LedgerStore {
     const catHours = { forecasts: new Map<string, LedgerRecord>(), resolutions: new Map<string, LedgerRecord>() };
     const cd = this.coinDir();
     const files = existsSync(cd) ? readdirSync(cd).filter((f) => DAY_FILE.test(f)).sort() : [];
+    this.repairedTail = files.length > 0 ? repairTail(join(cd, files[files.length - 1])) : null;
+    if (this.repairedTail && !existsSync(join(cd, files[files.length - 1]))) files.pop();
     const fromDay = dayKey(now - 31 * DAY);
     let prev = GENESIS;
     let count = 0;
     let lastSlot: number | null = null;
     for (const f of files) {
       const lines = readFileSync(join(cd, f), 'utf8').split('\n').filter(Boolean);
-      // Najpierw łańcuch (także niepełna linia po awarii zapisu → ok = false, nie wyjątek)
+      // Najpierw łańcuch (niepełna linia poza końcem ostatniego pliku → ok = false, nie wyjątek)
       const v = verifyLines(lines, prev);
       if (!v.ok) {
         this.broken = true;
@@ -106,6 +110,8 @@ export class LedgerStore {
     this.head = prev;
     this.lines = count;
     this.broken = false;
+    // Naprawa zostaje w łańcuchu: rekord z nazwą pliku i liczbą usuniętych bajtów (weryfikator pomija nieznane rodzaje)
+    if (this.repairedTail) this.append([{ k: 'n', t: now, note: 'repair-tail', ...this.repairedTail }], now);
     return { ok: true, forecasts, resolutions, skips, lastSlot, preregs, catHours };
   }
 
@@ -160,6 +166,20 @@ export class LedgerStore {
   exists(rel: string): boolean {
     return existsSync(this.path(rel));
   }
+}
+
+/**
+ * Ucięta ostatnia linia ostatniego pliku dziennego (awaria w trakcie dopisywania): obcięcie do ostatniego pełnego
+ * wiersza, jak `repairTail` archiwum świec. Taka linia nigdy nie była opublikowana (commitLedger odrzuca plik bez
+ * końcowego znaku nowej linii), więc obcięcie nie zmienia historii. Każda inna niezgodność nadal zatrzymuje dziennik.
+ */
+function repairTail(p: string): { file: string; bytes: number } | null {
+  const b = readFileSync(p);
+  if (b.length === 0 || b[b.length - 1] === 0x0a) return null;
+  const i = b.lastIndexOf(0x0a);
+  if (i < 0) rmSync(p);
+  else truncateSync(p, i + 1);
+  return { file: basename(p), bytes: b.length - i - 1 };
 }
 
 export interface LedgerRepo {

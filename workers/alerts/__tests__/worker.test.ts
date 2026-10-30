@@ -185,3 +185,43 @@ describe('skrzynka alarmów (Worker + D1)', () => {
     expect((db.prepare('SELECT COUNT(*) AS n FROM events').get() as { n: number }).n).toBe(0);
   });
 });
+
+describe('skrzynka alarmów: limit rejestracji i urządzenia bez synchronizacji', () => {
+  const { db, d1 } = memoryD1();
+  const env: Env = { DB: d1, DATA_BASE_URL: 'https://data.example/main/', ORIGINS: ORIGIN };
+  const HOUR = 3_600_000;
+  const reg = (n: number, ip: string, now: number) =>
+    handle(
+      new Request(`${BASE}/v1/devices`, { method: 'POST', headers: { origin: ORIGIN, 'content-type': 'application/json', 'cf-connecting-ip': ip }, body: JSON.stringify({ sub: sub(n), rules: [] }) }),
+      env,
+      now
+    );
+
+  it('najwyżej 10 rejestracji z jednego adresu w godzinie; inny adres i następna godzina bez blokady; w bazie bez adresu', async () => {
+    const t = T0 - (T0 % HOUR) + 60_000;
+    for (let i = 0; i < 10; i++) expect((await reg(100 + i, '203.0.113.7', t + i)).status).toBe(200);
+    expect((await reg(120, '203.0.113.7', t + 20)).status).toBe(429);
+    expect((await reg(121, '198.51.100.4', t + 21)).status).toBe(200);
+    expect((await reg(122, '203.0.113.7', t + HOUR)).status).toBe(200);
+    const keys = db.prepare('SELECT k FROM regs').all() as { k: string }[];
+    expect(keys.length).toBeGreaterThan(0);
+    expect(JSON.stringify(keys)).not.toMatch(/203\.0\.113|198\.51\.100/);
+    // Liczniki starsze niż 2 h znikają przy kolejnej rejestracji
+    expect((await reg(123, '192.0.2.1', t + 3 * HOUR + 1000)).status).toBe(200);
+    expect((db.prepare('SELECT COUNT(*) AS n FROM regs').get() as { n: number }).n).toBe(1);
+  });
+
+  it('urządzenie bez żadnej synchronizacji znika po 7 dniach, zsynchronizowane zostaje', async () => {
+    const t = T0 + 10 * 86_400_000;
+    const lone = (await (await reg(200, '', t)).json()) as { id: string };
+    const used = (await (await reg(201, '', t)).json()) as { id: string; token: string };
+    expect((await call(env, 'PUT', `/v1/devices/${used.id}`, { body: { rules: [rule('a')] }, token: used.token, now: t + 1000 })).status).toBe(200);
+    await cleanup(env, t + 6 * 86_400_000);
+    const alive = (id: string) => (db.prepare('SELECT deleted FROM devices WHERE id = ?').get(id) as { deleted: number }).deleted === 0;
+    expect(alive(lone.id)).toBe(true);
+    await cleanup(env, t + 8 * 86_400_000);
+    expect(alive(lone.id)).toBe(false);
+    expect(alive(used.id)).toBe(true);
+    expect(db.prepare('SELECT id FROM fresh WHERE id IN (?, ?)').all(lone.id, used.id)).toEqual([]);
+  });
+});

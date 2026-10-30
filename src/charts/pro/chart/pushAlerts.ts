@@ -114,6 +114,8 @@ export async function enablePush(): Promise<boolean> {
     save({ id: res.id, token: res.token, since: prev?.since ?? Date.now() });
     lastSig = signature(alertBook.get());
     setStatus('on');
+    // Pierwsza synchronizacja od razu: skrzynka usuwa po 7 dniach urządzenia, które nigdy się nie zsynchronizowały
+    void syncPush(true);
     return true;
   } catch {
     setStatus(load() ? 'on' : 'error');
