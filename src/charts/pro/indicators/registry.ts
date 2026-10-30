@@ -36,10 +36,11 @@ export type IndicatorId =
   | 'ichimoku'
   | 'linreg'
   | 'hv'
-  | 'netvol';
+  | 'netvol'
+  | 'oiflow';
 
-/** Grupy na liście okna wskaźników (jak kategorie TradingView). */
-export type IndicatorGroup = 'trend' | 'momentum' | 'volatility' | 'volume' | 'levels';
+/** Grupy na liście okna wskaźników (jak kategorie TradingView); `hyperliquid` — wskaźniki z danych spoza świec, we własnej sekcji okna. */
+export type IndicatorGroup = 'trend' | 'momentum' | 'volatility' | 'volume' | 'levels' | 'hyperliquid';
 export const GROUPS: readonly { id: IndicatorGroup; name: string }[] = [
   { id: 'trend', name: 'Trend' },
   { id: 'momentum', name: 'Momentum' },
@@ -74,6 +75,10 @@ export interface PlotDef {
   dots?: boolean;
   /** Przesunięcie o tyle świec (jak `offset` w Pine): dodatnie w przód, poza ostatnią świecę (chmura Ichimoku), ujemne wstecz. */
   shift?(p: Params): number;
+  /** Słupki w kolorze znaku innego plotu (zmiana OI w kolorze delty). */
+  signOf?: number;
+  /** Bez rysowania, tylko wartość w legendzie (delta przy zmianie OI). */
+  hidden?: boolean;
 }
 
 /** Kolory stałych linii: drugiej i trzeciej linii wskaźnika oraz słupków dodatnich i ujemnych. */
@@ -88,6 +93,19 @@ export const HIST_DOWN = RED;
 
 /** Krok wskaźnika: wartości plotów świecy do `out` (NaN = brak); `keep` zatwierdza zamkniętą świecę. */
 export type Step = (c: Candle, keep: boolean, out: Float64Array) => void;
+
+/** Świeca wykresu z taśmą (ProBar): footprint z deltą agresorów, `complete` — świeca w całości objęta nagraniem. */
+export interface FlowBar {
+  candle: Candle;
+  fp?: { delta: number } | null;
+  complete?: boolean;
+}
+
+/** Dane Hyperliquid spoza świec: otwarte pozycje w chwili (null — brak odczytu) i bieżący czas serwera. */
+export interface FlowContext {
+  oiAt(t: number): number | null;
+  now: number;
+}
 
 export interface IndicatorDef {
   id: IndicatorId;
@@ -127,13 +145,18 @@ export interface IndicatorDef {
   range?: readonly [number, number];
   /** Liczby: cena z dokładnością ticku rynku, odległość ceny (o miejsce dokładniej niż tick), dwa albo trzy miejsca, wolumen. */
   format: 'price' | 'range' | 'fixed2' | 'fixed3' | 'volume';
-  /** Krok świeca po świecy; bez niego wskaźnik to rysunek na ostatnich świecach (`fit`). */
+  /** Krok świeca po świecy; bez niego wskaźnik to rysunek na ostatnich świecach (`fit`) albo z danych spoza świec (`flow`). */
   create?(p: Params): Step;
   /**
    * Rysunek na ostatnich świecach (kanał regresji, jak w TradingView): liczony od nowa z ostatnich `span` świec przy
    * każdej zmianie; `at(0)` to najnowsza świeca, wartości plotu k świecy `end − j` trafiają do `out[k][end − j]`.
    */
   fit?: { span(p: Params): number; run(at: (j: number) => Candle, p: Params, out: Float64Array[], end: number): void };
+  /**
+   * Wskaźnik z danych Hyperliquid spoza świec (taśma, otwarte pozycje): wartości plotów świecy `b` o interwale `ms`
+   * do `out`; liczony od nowa przy każdym przeliczeniu, bo dane dochodzą też do starszych świec.
+   */
+  flow?(b: FlowBar, ms: number, ctx: FlowContext, out: Float64Array): void;
 }
 
 const length = (def: number): ParamDef => ({ key: 'length', label: tr('Długość', 'Length'), min: 1, max: 1000, step: 1, def });
@@ -1111,6 +1134,44 @@ export const INDICATORS: readonly IndicatorDef[] = [
       };
     },
   },
+  {
+    id: 'oiflow',
+    short: 'OI × Delta',
+    name: tr('Zmiana OI i delta', 'OI change and delta'),
+    hint: tr(
+      'Słupek to zmiana otwartych pozycji Hyperliquid w świecy, w jednostkach rynku; kolor to znak delty z taśmy (przewaga kupna albo sprzedaży agresorów): turkus dodatnia, czerwień ujemna',
+      'The bar is the change of Hyperliquid open interest within the candle, in market units; the colour is the sign of the tape delta (aggressor buying or selling ahead): teal positive, red negative'
+    ),
+    group: 'hyperliquid',
+    aliases: 'oi open interest otwarte pozycje delta agresja aggressor otwarcia zamkniecia opens closes',
+    warmup: () => 0,
+    convention: tr(
+      'Tego wskaźnika nie ma w TradingView: liczony z danych Hyperliquid. Zmiana OI od początku świecy do jej zamknięcia (bieżąca: do teraz), delta z nagranej taśmy, jak w panelu Delta.',
+      'TradingView has no such indicator: it is computed from Hyperliquid data. The OI change runs from the start of the candle to its close (the current one: to now), the delta comes from the recorded tape, as in the Delta pane.'
+    ),
+    memoryNote: tr(
+      'Wartość ma tylko świeca w całości objęta nagraniem taśmy i z odczytami OI na początku i na końcu. To współruch, nie rozbicie: w każdej transakcji jedna strona kupuje, a druga sprzedaje, a dane giełdy nie mówią, która otwiera, a która zamyka pozycję, więc wzrost OI przy dodatniej delcie nie dowodzi, że przybyło długich pozycji.',
+      'Only a candle fully covered by the tape recording, with OI readings at its start and end, has a value. It is co-movement, not a split: in every trade one side buys and the other sells, and exchange data does not say which side opens and which closes a position, so rising OI with positive delta does not prove that longs were added.'
+    ),
+    pane: 'own',
+    params: [],
+    plots: [
+      { hist: true, signOf: 1, title: 'ΔOI' },
+      { hist: true, hidden: true, title: 'Delta' },
+    ],
+    levels: [0],
+    format: 'volume',
+    flow: (b, ms, ctx, out) => {
+      // Delta tylko ze świecy w całości objętej nagraniem — część taśmy dałaby część delty
+      const fp = b.complete ? b.fp : null;
+      const t = b.candle.t;
+      const a = ctx.oiAt(t);
+      const z = ctx.oiAt(Math.min(t + ms, ctx.now));
+      const ok = fp && a !== null && z !== null;
+      out[0] = ok ? z - a : Number.NaN;
+      out[1] = ok ? fp.delta : Number.NaN;
+    },
+  },
 ];
 
 export const indicatorDef = (id: IndicatorId): IndicatorDef => INDICATORS.find((d) => d.id === id)!;
@@ -1166,10 +1227,10 @@ export function indicatorLabel(x: IndicatorInstance): string {
 }
 
 /**
- * Parametr „Interwał”: bez niego wskaźnik ze stałym okresem (pivoty), rysunek na ostatnich świecach (kanał regresji)
- * i wskaźnik przesunięty o świece wykresu (Ichimoku).
+ * Parametr „Interwał”: bez niego wskaźnik ze stałym okresem (pivoty), rysunek na ostatnich świecach (kanał regresji),
+ * wskaźnik przesunięty o świece wykresu (Ichimoku) i wskaźnik z danych spoza świec (taśma, otwarte pozycje).
  */
-export const tfAllowed = (def: IndicatorDef): boolean => !def.period && !def.fit && !def.plots.some((p) => p.shift);
+export const tfAllowed = (def: IndicatorDef): boolean => !def.period && !def.fit && !def.flow && !def.plots.some((p) => p.shift);
 
 /** Interwał wskaźnika: znany identyfikator interwału, a wskaźnik bez parametru „Interwał” go nie ma. */
 const tfOk = (def: IndicatorDef, tf: unknown): tf is string => tfAllowed(def) && INTERVALS.some((iv) => iv.id === tf);

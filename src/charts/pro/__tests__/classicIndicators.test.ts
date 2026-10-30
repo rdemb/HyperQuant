@@ -751,6 +751,59 @@ describe('wskaźniki: Ichimoku', () => {
   });
 });
 
+describe('wskaźniki: zmiana OI i delta', () => {
+  const cs = walk(6, 81);
+  const t0 = cs[0].t;
+  /** Odczyty OI co minutę (jak z kontekstu rynku), bez odczytów w czwartej świecy (przerwa w danych). */
+  const oi = new Map<number, number>();
+  for (let k = 0; k <= 30; k++) if (k < 15 || k > 19) oi.set(t0 + k * 60_000, 1000 + k * k);
+  const oiAt = (t: number) => {
+    const m = t0 + Math.floor((t - t0) / 60_000) * 60_000;
+    return oi.get(m) ?? null;
+  };
+  const deltas = [5, -3, 0, 7, -2, 4];
+  // Druga świeca bez pełnego nagrania, trzecia bez taśmy
+  const tape = cs.map((candle, i) => ({ candle, fp: i === 2 ? null : { delta: deltas[i] }, complete: i !== 1 }));
+  const now = t0 + 5 * M5 + 2 * 60_000;
+  const sync = (e: IndicatorEngine, list = tape, at = oiAt) => e.sync(list, M5, () => [], { oiAt: at, now });
+
+  it('słupek to zmiana OI od początku do zamknięcia świecy (bieżąca: do teraz), druga wartość to delta; bez taśmy, pełnego nagrania albo odczytu OI — brak', () => {
+    const e = new IndicatorEngine();
+    e.setInstances([inst('oiflow')]);
+    sync(e);
+    const [d, delta] = e.runs[0].out.map((a) => Array.from(a.subarray(0, cs.length)));
+    const ch = (k: number, z: number) => oiAt(t0 + z * 60_000)! - oiAt(t0 + k * 60_000)!;
+    expect(d).toEqual([ch(0, 5), Number.NaN, Number.NaN, Number.NaN, ch(20, 25), ch(25, 27)]);
+    expect(delta).toEqual([5, Number.NaN, Number.NaN, Number.NaN, -2, 4]);
+  });
+
+  it('kolor słupka ze znaku delty, delta tylko w legendzie; bez parametru „Interwał” i we własnej sekcji okna', () => {
+    const def = indicatorDef('oiflow');
+    expect(def.plots).toEqual([
+      { hist: true, signOf: 1, title: 'ΔOI' },
+      { hist: true, hidden: true, title: 'Delta' },
+    ]);
+    expect(def.group).toBe('hyperliquid');
+    expect(indicatorLabel(inst('oiflow'))).toBe('OI × Delta');
+    expect(indicatorsLink([inst('oiflow')])).toBe('oiflow()');
+    const fromLink = indicatorsFromLink('oiflow()@1h')[0];
+    expect(fromLink.id).toBe('oiflow');
+    expect(fromLink.tf).toBeUndefined();
+    expect(parseIndicators([{ id: 'oiflow', tf: '1h' }])[0].tf).toBeUndefined();
+  });
+
+  it('przeliczenie zwraca pierwszą zmienioną świecę: bez zmian — liczba świec, nowy odczyt OI starszej świecy — jej indeks, doczytana historia z lewej — 0', () => {
+    const e = new IndicatorEngine();
+    e.setInstances([inst('oiflow')]);
+    expect(sync(e)).toBe(0);
+    expect(sync(e)).toBe(cs.length);
+    const late = (t: number) => (t >= t0 + 15 * 60_000 && t < t0 + 20 * 60_000 ? 1500 : oiAt(t));
+    expect(sync(e, tape, late)).toBe(3);
+    const older = { candle: { ...cs[0], t: t0 - M5 }, fp: null, complete: false };
+    expect(sync(e, [older, ...tape], late)).toBe(0);
+  });
+});
+
 describe('przeliczanie przyrostowe', () => {
   const all = INDICATORS.map((d) => inst(d.id, { length: 5 }));
 

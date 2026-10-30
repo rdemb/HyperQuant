@@ -1,11 +1,12 @@
 import type { Candle } from '../hl/parse';
 import { intervalById } from '../core/time';
-import { IndicatorInstance, Step, indicatorDef } from './registry';
+import { FlowBar, FlowContext, IndicatorInstance, Step, indicatorDef } from './registry';
 
-/** Świeca wejścia: wystarczy świeca z API (ProBar, IndicatorBar). */
-interface Bar {
-  candle: Candle;
-}
+/** Świeca wejścia: wystarczy świeca z API (ProBar, IndicatorBar); wskaźniki z taśmy biorą też footprint (ProBar). */
+type Bar = FlowBar;
+
+/** Bez danych spoza świec (testy, wykres bez rynku Hyperliquid): wskaźniki z taśmy i OI bez wartości. */
+const NO_FLOW: FlowContext = { oiAt: () => null, now: Number.POSITIVE_INFINITY };
 
 /** Świece interwału wskaźnika (seria rynku wczytywana przy pierwszym użyciu). */
 export type CandlesOf = (tf: string) => readonly Candle[];
@@ -187,6 +188,44 @@ class WindowRun implements IndicatorValues {
 }
 
 /**
+ * Wskaźnik z danych spoza świec (taśma, otwarte pozycje): każda świeca liczona od nowa przy każdym przeliczeniu, bo
+ * dane dochodzą też do starszych świec (historia taśmy, odczyty OI) bez zmiany samej świecy.
+ */
+class FlowRun implements IndicatorValues {
+  out: Float64Array[];
+  from = 0;
+  private readonly v: Float64Array;
+  /** Liczba świec i czas pierwszej z poprzedniego liczenia. */
+  private n = 0;
+  private t0 = Number.NaN;
+
+  constructor(private readonly x: IndicatorInstance) {
+    const def = indicatorDef(x.id);
+    this.v = new Float64Array(def.plots.length);
+    this.out = def.plots.map(() => new Float64Array(0));
+  }
+
+  /** Przelicza wszystkie świece; zwraca indeks pierwszej zmienionej wartości (doczytana historia z lewej zmienia wszystkie). */
+  sync(bars: readonly Bar[], ms: number, ctx: FlowContext): number {
+    const n = bars.length;
+    if (n > this.out[0].length) this.out = this.out.map((a) => grow(a, n));
+    const flow = indicatorDef(this.x.id).flow!;
+    const t0 = n > 0 ? bars[0].candle.t : Number.NaN;
+    let first = n < this.n || t0 !== this.t0 ? 0 : n;
+    for (let i = 0; i < n; i++) {
+      flow(bars[i], ms, ctx, this.v);
+      for (let p = 0; p < this.v.length; p++) {
+        if (first === n && (i >= this.n || !Object.is(this.out[p][i], this.v[p]))) first = i;
+        this.out[p][i] = this.v[p];
+      }
+    }
+    this.n = n;
+    this.t0 = t0;
+    return (this.from = first);
+  }
+}
+
+/**
  * Przeliczanie wskaźników po świecach wykresu — transakcja na bieżącej świecy kosztuje O(1) na wskaźnik. Wskaźniki
  * z innego interwału liczą się na jego świecach (`candlesOf`), a ich wartości są przenoszone na świece wykresu.
  */
@@ -197,6 +236,7 @@ export class IndicatorEngine {
   private own: IndicatorRun[] = [];
   private tfs: TfRun[] = [];
   private windows: WindowRun[] = [];
+  private flows: FlowRun[] = [];
 
   /** Liczba przeliczonych świec wykresu. */
   get count(): number {
@@ -207,8 +247,14 @@ export class IndicatorEngine {
     this.own = [];
     this.tfs = [];
     this.windows = [];
+    this.flows = [];
     this.runs = list.map((x) => {
       const def = indicatorDef(x.id);
+      if (def.flow) {
+        const r = new FlowRun(x);
+        this.flows.push(r);
+        return r;
+      }
       if (def.fit) {
         const r = new WindowRun(x);
         this.windows.push(r);
@@ -227,13 +273,17 @@ export class IndicatorEngine {
     this.chart = new Pass(this.own);
   }
 
-  /** Przelicza zmienione świece (`ms` — interwał wykresu); zwraca indeks pierwszej zmienionej wartości (liczba świec = bez zmian). */
-  sync(bars: readonly Bar[], ms = 0, candlesOf: CandlesOf = () => []): number {
+  /**
+   * Przelicza zmienione świece (`ms` — interwał wykresu, `flow` — dane Hyperliquid spoza świec); zwraca indeks pierwszej
+   * zmienionej wartości (liczba świec = bez zmian).
+   */
+  sync(bars: readonly Bar[], ms = 0, candlesOf: CandlesOf = () => [], flow: FlowContext = NO_FLOW): number {
     const from = this.chart.sync(bars.length, (i) => bars[i].candle);
     for (const r of this.own) r.from = from;
     let start = from;
     for (const r of this.tfs) start = Math.min(start, r.sync(bars, ms, from, candlesOf(r.tf)));
     for (const r of this.windows) start = Math.min(start, r.sync(bars, from));
+    for (const r of this.flows) start = Math.min(start, r.sync(bars, ms, flow));
     return start;
   }
 }
