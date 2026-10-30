@@ -11,7 +11,7 @@ import type {
   Time,
 } from 'lightweight-charts';
 import { IMB_BUY, IMB_SELL } from '../../orderflow/footprint';
-import { FootprintBar, FootprintRows, aggregateRows, hlTick, stackedRuns } from '../core/footprintBar';
+import { FootprintBar, FootprintRows, aggregateRows, baseTick, stackedRuns } from '../core/footprintBar';
 import type { ProBar } from '../store/proStore';
 import {
   CELL_MIN_ROW_PX,
@@ -159,7 +159,7 @@ export class FootprintSeries implements ICustomSeriesPaneView<Time, FootprintPoi
 
     let tick = Number.NaN;
     for (let i = from; i < to && Number.isNaN(tick); i++) tick = data.bars[i].originalData.bar.fp?.tick ?? Number.NaN;
-    if (Number.isNaN(tick)) tick = hlTick(ref * 0.95);
+    if (Number.isNaN(tick)) tick = baseTick(ref);
 
     let detail: Detail = 'candle';
     let step = 0;
