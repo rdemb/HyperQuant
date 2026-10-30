@@ -662,12 +662,13 @@ describe('wskaźniki: partia D (Parabolic SAR, kanał regresji, HV, Net Volume)'
     expect(run(inst('linreg', { length: n }), cs.slice(0, n - 1))[0].every(Number.isNaN)).toBe(true);
   });
 
-  it('HV: odchylenie populacyjne logarytmicznych zmian × √(świec w roku); na 1D jak TradingView (√365)', () => {
+  it('HV: odchylenie populacyjne logarytmicznych zmian × √365 jak TradingView, na każdym interwale', () => {
     const lr = closes.map((c, i) => (i === 0 ? NaN : Math.log(c / closes[i - 1])));
     const sd = [NaN, ...stdevPop(lr.slice(1), 10)];
-    expectClose(run(inst('hv', { length: 10 }), cs)[0], sd.map((x) => 100 * x * Math.sqrt(365 * 288)), 1e-9);
+    const want = sd.map((x) => 100 * x * Math.sqrt(365));
+    expectClose(run(inst('hv', { length: 10 }), cs)[0], want, 1e-9);
     const days = cs.map((c, i) => ({ ...c, t: i * 86_400_000 }));
-    expectClose(run(inst('hv', { length: 10 }), days)[0], sd.map((x) => 100 * x * Math.sqrt(365)), 1e-9);
+    expectClose(run(inst('hv', { length: 10 }), days)[0], want, 1e-9);
   });
 
   it('Net Volume: wolumen ze znakiem zmiany zamknięcia, pierwsza świeca i brak zmiany 0', () => {

@@ -1,6 +1,6 @@
 import type { Candle } from '../hl/parse';
 import { Extreme, Window, Wma, ema, rma } from './primitives';
-import { DAY, INTERVALS, intervalById } from '../core/time';
+import { INTERVALS, intervalById } from '../core/time';
 import { numLang } from '../../../ui/format';
 import { tr } from '../../../i18n';
 
@@ -995,15 +995,15 @@ export const INDICATORS: readonly IndicatorDef[] = [
     short: 'HV',
     name: tr('Zmienność historyczna (HV)', 'Historical Volatility (HV)'),
     hint: tr(
-      'Odchylenie standardowe logarytmicznych zmian zamknięcia z n świec, w % w skali roku (razy pierwiastek z liczby świec w roku przy rynku czynnym 24/7)',
-      'The standard deviation of log changes of the close over n candles, in % on an annual scale (times the square root of the number of candles per year in a 24/7 market)'
+      'Odchylenie standardowe logarytmicznych zmian zamknięcia z n świec razy √365, w %',
+      'The standard deviation of log changes of the close over n candles times √365, in %'
     ),
     group: 'volatility',
     aliases: 'historical volatility hv zmienność historyczna roczna annualized logarytmiczne stopy log returns',
     warmup: (p) => p.length,
     convention: tr(
-      'Wzór i wartości domyślne jak we wbudowanym wskaźniku TradingView poza skalą roczną: TradingView na interwałach do 1D mnoży przez √365, jakby każda świeca była dobą, więc na 5m pokazuje ok. 17 razy mniej; tu mnożnik to √(liczba świec w roku). Na 1D wartości są te same.',
-      "Formula and defaults as in TradingView's built-in indicator except the annual scale: on timeframes up to 1D TradingView multiplies by √365 as if every candle were a day, so on 5m it shows about 17 times less; here the factor is √(candles per year). On 1D the values are the same."
+      'Wzór, skala i wartości domyślne jak we wbudowanym wskaźniku TradingView, liczone ze świec Hyperliquid tego wykresu. Mnożnik √365 traktuje każdą świecę jak dobę, więc tylko na 1D liczba to zmienność roczna; na krótszych interwałach jest niższa od rocznej (na 5m ok. 17 razy, na 1h ok. 5 razy), a kształt linii jest ten sam.',
+      "Formula, scale and defaults as in TradingView's built-in indicator, computed from this chart's Hyperliquid candles. The √365 factor treats every candle as a day, so only on 1D is the number the annual volatility; on shorter timeframes it is lower than the annual one (about 17 times on 5m, about 5 times on 1h), while the shape of the line is the same."
     ),
     pane: 'own',
     params: [length(10)],
@@ -1012,19 +1012,11 @@ export const INDICATORS: readonly IndicatorDef[] = [
     create: (p) => {
       const w = new Window(p.length);
       let prev = Number.NaN;
-      let prevT = Number.NaN;
-      // Długość świecy z odstępu kolejnych świec (najmniejszy, gdyby w danych była luka)
-      let step = Number.POSITIVE_INFINITY;
       return (c, keep, out) => {
-        const dt = c.t - prevT;
-        const ms = dt > 0 ? Math.min(step, dt) : step;
         w.next(Math.log(c.c / prev), keep);
-        if (keep) {
-          prev = c.c;
-          prevT = c.t;
-          step = ms;
-        }
-        out[0] = 100 * w.sd * Math.sqrt((365 * DAY) / ms);
+        if (keep) prev = c.c;
+        // Jak TradingView na interwałach do 1D: √365 niezależnie od długości świecy
+        out[0] = 100 * w.sd * Math.sqrt(365);
       };
     },
   },
