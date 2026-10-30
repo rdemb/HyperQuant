@@ -17,6 +17,7 @@ import {
   memoryCandles,
   parseIndicators,
   parseParams,
+  plotShift,
 } from '../indicators/registry';
 
 const M5 = 300_000;
@@ -720,6 +721,36 @@ describe('wskaźniki: partia D (Parabolic SAR, kanał regresji, HV, Net Volume)'
   });
 });
 
+describe('wskaźniki: Ichimoku', () => {
+  const cs = walk(400, 71);
+  const mid = (n: number) => {
+    const hi = highest(cs.map((c) => c.h), n);
+    const lo = lowest(cs.map((c) => c.l), n);
+    return hi.map((h, i) => (h + lo[i]) / 2);
+  };
+
+  it('linie jak we wbudowanym Ichimoku TradingView: środki zakresu 9, 26 i 52 świec, Senkou A jako ich średnia, Chikou to zamknięcie', () => {
+    const [conv, base, lag, a, b] = run(inst('ichimoku'), cs);
+    expectClose(conv, mid(9), 1e-12);
+    expectClose(base, mid(26), 1e-12);
+    expect(lag).toEqual(cs.map((c) => c.c));
+    expectClose(a, mid(9).map((v, i) => (v + mid(26)[i]) / 2), 1e-12);
+    expectClose(b, mid(52), 1e-12);
+    expect(b.slice(0, 51).every(Number.isNaN)).toBe(true);
+  });
+
+  it('przesunięcie jak w TradingView: przy 26 chmura o 25 świec w przód, Chikou o 25 wstecz; bez parametru „Interwał”', () => {
+    const x = inst('ichimoku');
+    const def = indicatorDef('ichimoku');
+    expect(def.plots.map((p) => plotShift(x, p))).toEqual([0, 0, -25, 25, 25]);
+    expect(def.plots.map((p) => plotShift(inst('ichimoku', { disp: 1 }), p))).toEqual([0, 0, 0, 0, 0]);
+    expect(def.cloud).toEqual([3, 4]);
+    expect(indicatorLabel(x)).toBe('Ichimoku 9 26 52 26');
+    expect(indicatorsFromLink('ichimoku(9,26,52,26)@1h')[0].tf).toBeUndefined();
+    expect(parseIndicators([{ id: 'ichimoku', tf: '1h' }])[0].tf).toBeUndefined();
+  });
+});
+
 describe('przeliczanie przyrostowe', () => {
   const all = INDICATORS.map((d) => inst(d.id, { length: 5 }));
 
@@ -793,7 +824,7 @@ describe('lista wskaźników', () => {
     const list = parseIndicators([
       { iid: 'ema1', id: 'ema', params: { length: 21 }, color: '#112233', visible: false },
       { iid: 'ema1', id: 'ema', params: { length: 2.5 }, color: 'czerwony' },
-      { iid: 'x', id: 'ichimoku', params: {} },
+      { iid: 'x', id: 'zigzag', params: {} },
       { iid: 'bb1', id: 'bb', params: { length: 0, mult: 2.2 } },
       'śmieci',
     ]);
@@ -845,7 +876,7 @@ describe('lista wskaźników', () => {
     expect(indicatorsLink(back)).toBe('ema(21);bb(20,2.5)');
     expect(new Set(back.map((x) => x.color)).size).toBe(2);
     // Nieznany wskaźnik i śmieci pominięte, parametr spoza zakresu i brakujący — domyślny
-    expect(indicatorsLink(indicatorsFromLink('ichimoku(9,26);ema(0);bb(30);x;rsi()'))).toBe('ema(9);bb(30,2);rsi(14)');
+    expect(indicatorsLink(indicatorsFromLink('zigzag(9,26);ema(0);bb(30);x;rsi()'))).toBe('ema(9);bb(30,2);rsi(14)');
     expect(indicatorsFromLink('')).toEqual([]);
   });
 

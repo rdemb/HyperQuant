@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ChevronDown, X } from 'lucide-react';
 import { ColorPicker } from '../draw/DrawToolbar';
-import { INDICATOR_WIDTHS, IndicatorInstance, ParamDef, defaultWidth, indicatorDef, indicatorLabel, memoryCandles, paramOk, parseParams } from '../indicators/registry';
+import { INDICATOR_WIDTHS, IndicatorInstance, ParamDef, defaultWidth, indicatorDef, indicatorLabel, memoryCandles, paramOk, parseParams, tfAllowed } from '../indicators/registry';
 import { INTERVALS, intervalById } from '../core/time';
 import { tr } from '../../../i18n';
 
@@ -163,7 +163,7 @@ export const IndicatorSettings: React.FC<{ x: IndicatorInstance; loaded: number;
               </span>
             </Row>
           ))}
-        {tab === 'params' && !def.period && !def.fit && (
+        {tab === 'params' && tfAllowed(def) && (
           <Row label={tr('Interwał', 'Timeframe')}>
             <select aria-label={tr('Interwał wskaźnika', 'Indicator timeframe')} value={x.tf ?? ''} onChange={(e) => set({ tf: e.target.value || undefined })} className={`${FIELD} w-24`}>
               <option value="">{tr('Wykresu', 'Chart')}</option>
@@ -230,7 +230,8 @@ export const IndicatorSettings: React.FC<{ x: IndicatorInstance; loaded: number;
                     ))}
             </p>
             <p className="text-ink-2">
-              {def.period || def.fit
+              {/* Jeden rozbieg w świecach tylko bez stałego okresu, okna ostatnich świec i przesunięcia (Ichimoku opisuje go sam) */}
+              {!tfAllowed(def)
                 ? ''
                 : warmup > 0
                   ? tr(`Rozbieg: na początku historii ${candles(warmup, tf)} bez wartości.`, `Warm-up: ${candles(warmup, tf)} without a value at the start of history.`)

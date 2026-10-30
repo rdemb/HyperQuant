@@ -33,6 +33,7 @@ export type IndicatorId =
   | 'mfi'
   | 'pivots'
   | 'psar'
+  | 'ichimoku'
   | 'linreg'
   | 'hv'
   | 'netvol';
@@ -71,12 +72,17 @@ export interface PlotDef {
   breaks?: boolean;
   /** Kropki zamiast linii (Parabolic SAR). */
   dots?: boolean;
+  /** Przesunięcie o tyle świec (jak `offset` w Pine): dodatnie w przód, poza ostatnią świecę (chmura Ichimoku), ujemne wstecz. */
+  shift?(p: Params): number;
 }
 
 /** Kolory stałych linii: drugiej i trzeciej linii wskaźnika oraz słupków dodatnich i ujemnych. */
 const ORANGE = '#f2a93b';
 const TEAL = '#2ec4b6';
 const RED = '#e66767';
+/** Jaśniejsze odcienie dla granic chmury Ichimoku. */
+const LIGHT_TEAL = '#8ee0d8';
+const LIGHT_RED = '#f2a7a7';
 export const HIST_UP = TEAL;
 export const HIST_DOWN = RED;
 
@@ -114,6 +120,8 @@ export interface IndicatorDef {
   pane: 'price' | 'own';
   params: readonly ParamDef[];
   plots: readonly PlotDef[];
+  /** Wypełnienie między dwoma plotami o tym samym przesunięciu (chmura Ichimoku): turkus, gdy pierwszy jest wyżej, czerwień w przeciwnym razie. */
+  cloud?: readonly [number, number];
   /** Linie poziomów w panelu (liczby bez podpisów) i stały zakres jego skali. */
   levels?: readonly number[];
   range?: readonly [number, number];
@@ -934,6 +942,59 @@ export const INDICATORS: readonly IndicatorDef[] = [
     },
   },
   {
+    id: 'ichimoku',
+    short: 'Ichimoku',
+    name: tr('Chmura Ichimoku', 'Ichimoku Cloud'),
+    hint: tr(
+      'Tenkan (kolor wskaźnika) i Kijun (czerwień): środki zakresu, czyli (najwyższy szczyt + najniższy dołek) / 2, z 9 i 26 świec; chmura między Senkou A (średnia Tenkan i Kijun, turkus) i Senkou B (środek zakresu 52 świec, jasna czerwień), przesunięta w przód, turkusowa, gdy A jest nad B, czerwona, gdy pod; Chikou (pomarańcz): zamknięcie przesunięte wstecz',
+      'Tenkan (indicator colour) and Kijun (red): midpoints of the range, (highest high + lowest low) / 2, over 9 and 26 candles; the cloud between Senkou A (average of Tenkan and Kijun, teal) and Senkou B (range midpoint over 52 candles, light red), shifted forward, teal when A is above B, red when below; Chikou (orange): the close shifted back'
+    ),
+    group: 'trend',
+    aliases: 'ichimoku kinko hyo chmura cloud kumo tenkan kijun senkou chikou',
+    warmup: (p) => Math.max(p.conv, p.base, p.span2) - 1,
+    convention: tr(
+      'Wzór i wartości domyślne jak we wbudowanym wskaźniku TradingView, liczone ze świec Hyperliquid tego wykresu; przesunięcie też jak w TradingView: przy 26 chmura i Chikou przesuwają się o 25 świec, bo bieżąca świeca liczy się jako pierwsza.',
+      "Formula and defaults as in TradingView's built-in indicator, computed from this chart's Hyperliquid candles; the displacement too, as in TradingView: at 26 the cloud and Chikou move by 25 candles, because the current candle counts as the first."
+    ),
+    memoryNote: tr(
+      'Każda linia zależy tylko od ostatnich świec swojej długości, a na początku historii ma tyle świec bez wartości (chmura dodatkowo o przesunięcie dalej). Chmura przed ostatnią świecą to wartości z już znanych świec przesunięte w przód, nie prognoza; Chikou kończy się tyle świec przed ostatnią, o ile jest przesunięta.',
+      'Each line depends only on the last candles of its length and has as many candles without a value at the start of history (the cloud a displacement further). The cloud ahead of the last candle is values from candles already known, shifted forward, not a forecast; Chikou ends as many candles before the last one as it is shifted.'
+    ),
+    pane: 'price',
+    params: [
+      int('conv', tr('Długość Tenkan', 'Conversion line length'), 9),
+      int('base', tr('Długość Kijun', 'Base line length'), 26),
+      int('span2', tr('Długość Senkou B', 'Leading span B length'), 52),
+      int('disp', tr('Przesunięcie', 'Displacement'), 26),
+    ],
+    plots: [
+      {},
+      { color: RED },
+      { color: ORANGE, shift: (p) => 1 - p.disp },
+      { color: LIGHT_TEAL, shift: (p) => p.disp - 1 },
+      { color: LIGHT_RED, shift: (p) => p.disp - 1 },
+    ],
+    cloud: [3, 4],
+    format: 'price',
+    create: (p) => {
+      const mid = (n: number) => {
+        const hi = new Extreme(n, 1);
+        const lo = new Extreme(n, -1);
+        return (c: Candle, keep: boolean) => (hi.next(c.h, keep) + lo.next(c.l, keep)) / 2;
+      };
+      const conv = mid(p.conv);
+      const base = mid(p.base);
+      const span2 = mid(p.span2);
+      return (c, keep, out) => {
+        out[0] = conv(c, keep);
+        out[1] = base(c, keep);
+        out[2] = c.c;
+        out[3] = (out[0] + out[1]) / 2;
+        out[4] = span2(c, keep);
+      };
+    },
+  },
+  {
     id: 'linreg',
     short: 'LinReg',
     name: tr('Kanał regresji liniowej', 'Linear Regression Channel'),
@@ -1083,6 +1144,9 @@ export interface IndicatorInstance {
   tf?: string;
 }
 
+/** Przesunięcie plotu instancji w świecach (0: bez przesunięcia). */
+export const plotShift = (x: IndicatorInstance, p: PlotDef): number => p.shift?.(x.params) ?? 0;
+
 /** Grubości linii w oknie stylu. */
 export const INDICATOR_WIDTHS = [1, 2, 3, 4] as const;
 
@@ -1101,8 +1165,14 @@ export function indicatorLabel(x: IndicatorInstance): string {
   return [def.short, ...def.params.map((p) => numLang(String(x.params[p.key]))), ...(x.tf ? [intervalById(x.tf).label] : [])].join(' ');
 }
 
-/** Interwał wskaźnika: znany identyfikator interwału, a wskaźnik ze stałym okresem (pivoty) go nie ma. */
-const tfOk = (def: IndicatorDef, tf: unknown): tf is string => !def.period && !def.fit && INTERVALS.some((iv) => iv.id === tf);
+/**
+ * Parametr „Interwał”: bez niego wskaźnik ze stałym okresem (pivoty), rysunek na ostatnich świecach (kanał regresji)
+ * i wskaźnik przesunięty o świece wykresu (Ichimoku).
+ */
+export const tfAllowed = (def: IndicatorDef): boolean => !def.period && !def.fit && !def.plots.some((p) => p.shift);
+
+/** Interwał wskaźnika: znany identyfikator interwału, a wskaźnik bez parametru „Interwał” go nie ma. */
+const tfOk = (def: IndicatorDef, tf: unknown): tf is string => tfAllowed(def) && INTERVALS.some((iv) => iv.id === tf);
 
 /** Wartość parametru w zakresie (przy kroku 1 liczba całkowita). */
 export const paramOk = (v: unknown, p: ParamDef): v is number =>
