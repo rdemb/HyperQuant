@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AlertEngine, type AlertRule, type AlertTrade, defaultDir, eventText, factsText, fmtLevel, ruleText } from '../alertRules';
+import { AlertEngine, type AlertRule, type AlertTrade, defaultDir, eventBody, eventText, factsText, fmtLevel, ruleText } from '../alertRules';
 
 const T0 = Date.UTC(2026, 9, 29, 7, 0); // 08:00 PL, początek świecy 15m
 const M = 60_000;
@@ -107,6 +107,46 @@ describe('alarmy: zamknięcie świecy', () => {
     const { events } = run(e, [r], [tr(T0 + 16 * M, 64_640), tr(T0 + 31 * M, 64_640)]);
     expect(events.map((x) => x.at)).toEqual([T0 + 30 * M]);
     expect(events[0].facts?.partial).toBe(true);
+  });
+});
+
+describe('alarmy: dotknięcie w czasie przerwy w połączeniu', () => {
+  const candle = (t: number, h: number, l: number) => ({ t, h, l });
+
+  it('przerwa, w świecy 1m z API cena przechodzi przez poziom: alarm odpala raz, transakcje po powrocie go nie powtarzają', () => {
+    const e = new AlertEngine();
+    const r = rule({ price: 64_670, dir: -1 });
+    run(e, [r], [tr(T0 + 2 * M + 5000, 64_700)]);
+    const from = e.gap('BTC');
+    expect(from).toBe(T0 + 2 * M + 5000);
+    const g = e.onGapCandles([r], 'BTC', [candle(T0 + 2 * M, 64_710, 64_690), candle(T0 + 3 * M, 64_700, 64_660), candle(T0 + 4 * M, 64_680, 64_650)]);
+    expect(g.events).toHaveLength(1);
+    expect(g.events[0]).toMatchObject({ type: 'fire', at: T0 + 3 * M, px: 64_670, gap: true, facts: null });
+    expect(g.rules).toEqual([]);
+    expect(run(e, g.rules!, [tr(T0 + 5 * M, 64_640)]).events).toEqual([]);
+    expect(eventBody(g.events[0], 'pl')).toBe(`${eventText(g.events[0], 'pl')}. Dotknięcie w czasie przerwy w połączeniu z giełdą (świeca 1m).`);
+    expect(eventBody(g.events[0], 'en')).toMatch(/Touched while the connection to the exchange was down/);
+  });
+
+  it('liczy się tylko świeca w całości po ustawieniu alarmu i w jego oknie; inne warunki niż dotknięcie — bez zmian', () => {
+    const e = new AlertEngine();
+    const set = rule({ id: 'set', created: T0 + 3 * M + 20_000 }); // ustawiony w środku minuty 3
+    const win = rule({ id: 'win', from: T0, until: T0 + 3 * M + 30_000 }); // okno kończy się w środku minuty 3
+    const close = rule({ id: 'close', kind: 'close', iv: '1m' });
+    const g = e.onGapCandles([set, win, close], 'BTC', [candle(T0 + 3 * M, 64_700, 64_600)]);
+    expect(g.events).toEqual([]);
+    expect(g.rules).toBeNull();
+  });
+
+  it('para: dotknięcie z przerwy kasuje drugi alarm pary', () => {
+    const e = new AlertEngine();
+    const up = rule({ id: 'up', price: 64_800, dir: 1, pair: 'p' });
+    const down = rule({ id: 'down', price: 64_500, dir: -1, pair: 'p' });
+    const g = e.onGapCandles([up, down], 'BTC', [candle(T0 + M, 64_810, 64_700)]);
+    expect(g.events.map((x) => [x.type, x.rule.id])).toEqual([
+      ['fire', 'up'],
+      ['cancel', 'down'],
+    ]);
   });
 });
 

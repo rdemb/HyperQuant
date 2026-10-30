@@ -80,8 +80,12 @@ telefon ◄── usługa push przeglądarki (FCM, Mozilla, Apple, WNS) ◄─�
   ze skrzynki i pilnuje alarmów wszystkich urządzeń jednym silnikiem `src/utils/alertRules.ts` na taśmie Hyperliquid (WebSocket tylko
   dla rynków z alarmem). Identyfikatory, pary i łańcuchy dostają przedrostek urządzenia, więc alarmy różnych osób nie wpływają na
   siebie. Przy uruchomieniu wysyła Web Push (szyfrowanie aes128gcm wg RFC 8291, podpis VAPID; sprawdzone wektorem z RFC, bez
-  zależności npm). Zdarzenia (uruchomione, wygasłe, anulowane, starty z łańcucha) wracają do skrzynki co 1 s, a z niej do przeglądarki
-  przy następnej wizycie. Stan pilnowania (powrót uzbrojony, seria zamknięć) co 30 s w `HQ_STATE_DIR/alerts-state.json`.
+  zależności npm); przy błędzie przejściowym usługi push ponawia po 5 s, 30 s, 2 min i 10 min (`Retry-After` przy 429 wydłuża odstęp).
+  Po przerwie w WebSocket pobiera świece 1m z API od ostatniej przetworzonej transakcji i sprawdza na ich szczycie i dołku alarmy
+  dotknięcia (świeca w całości po ustawieniu alarmu i w jego oknie; powiadomienie z dopiskiem o przerwie). Zdarzenia (uruchomione,
+  wygasłe, anulowane, starty z łańcucha) wracają do skrzynki co 1 s, a z niej do przeglądarki przy następnej wizycie; do przyjęcia
+  przez skrzynkę są od razu zapisane w `HQ_STATE_DIR/alerts-pending.json`, więc po twardej awarii alarm nie wraca ze skrzynki
+  i nie uruchamia się drugi raz. Stan pilnowania (powrót uzbrojony, seria zamknięć) co 30 s w `HQ_STATE_DIR/alerts-state.json`.
 - **Klucze bez wspólnego sekretu.** Przy pierwszym starcie serwer tworzy klucze VAPID i Ed25519 w `HQ_STATE_DIR/alerts-keys.json`
   (`0600`), a części publiczne zapisuje do `HQ_OUT_DIR/alerts/keys.json`, które skaner publikuje w repo danych. Zapytania serwera
   do skrzynki są podpisane Ed25519 (metoda, ścieżka, czas, treść; okno 60 s), skrzynka sprawdza je kluczem z repo danych. Nowe klucze
