@@ -16,7 +16,8 @@ const FILL_ALPHA = 0.12;
 /**
  * Chmura Ichimoku: wypełnienie między dwiema granicami, turkusowe, gdy pierwsza jest wyżej, czerwone w przeciwnym razie;
  * odcinek, na którym granice się przecinają, dzieli się w punkcie przecięcia. Indeks logiczny osi czasu to indeks świecy
- * wykresu, więc część przesunięta za ostatnią świecę rysuje się na prawo od niej.
+ * wykresu, więc część przesunięta za ostatnią świecę rysuje się na prawo od niej. Z kolorem `tint` — pasmo przedziału
+ * w jednym kolorze (wskaźnika).
  */
 export class CloudFill implements ISeriesPrimitive<Time> {
   private chart: IChartApiBase<Time> | null = null;
@@ -28,17 +29,18 @@ export class CloudFill implements ISeriesPrimitive<Time> {
 
   constructor(
     private readonly source: () => CloudSource | null,
-    private alpha: number
+    private alpha: number,
+    private tint?: string
   ) {
     const renderer: IPrimitivePaneRenderer = {
       draw: (target) =>
         target.useMediaCoordinateSpace(({ context: ctx }) => {
           if (this.up) {
-            ctx.fillStyle = rgba(HIST_UP, FILL_ALPHA * this.alpha);
+            ctx.fillStyle = rgba(this.tint ?? HIST_UP, FILL_ALPHA * this.alpha);
             ctx.fill(this.up);
           }
           if (this.down) {
-            ctx.fillStyle = rgba(HIST_DOWN, FILL_ALPHA * this.alpha);
+            ctx.fillStyle = rgba(this.tint ?? HIST_DOWN, FILL_ALPHA * this.alpha);
             ctx.fill(this.down);
           }
         }),
@@ -62,8 +64,9 @@ export class CloudFill implements ISeriesPrimitive<Time> {
     return this.views;
   }
 
-  setAlpha(alpha: number): void {
+  setStyle(alpha: number, tint?: string): void {
     this.alpha = alpha;
+    this.tint = tint;
     this.requestUpdate?.();
   }
 
