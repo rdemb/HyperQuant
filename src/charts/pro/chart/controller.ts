@@ -1,4 +1,4 @@
-import { CandlestickSeries, HistogramSeries, LineSeries, LineStyle, LineType, createChart } from 'lightweight-charts';
+import { CandlestickSeries, HistogramSeries, LineSeries, LineStyle, LineType, PriceScaleMode, createChart } from 'lightweight-charts';
 import type {
   CandlestickData,
   HistogramData,
@@ -45,7 +45,7 @@ import { FlowVenue, OiVenue, oiMaxAge, per8h } from '../venues/parse';
 import { VenueStore, acquireVenues, venueStoreFor } from '../venues/venueStore';
 import { DOM_W_PX, PRO, RIGHT_GAP_PX, chartOptions, rgba } from './theme';
 import { tr } from '../../../i18n';
-import { fmtPrice, numLang } from '../../../ui/format';
+import { fmtCompact, fmtPrice, numLang } from '../../../ui/format';
 
 /**
  * Sterownik wykresu Pro (bez Reacta): tworzy wykres Lightweight Charts z serią footprintu, wolumenem
@@ -672,6 +672,7 @@ export class ProChartController {
             )
     );
     for (const price of def.levels ?? []) lines[0].createPriceLine({ price, color: LEVEL_COLOR, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false, title: '' });
+    if (def.log) lines[0].priceScale().applyOptions({ mode: PriceScaleMode.Logarithmic });
     return lines;
   }
 
@@ -701,6 +702,7 @@ export class ProChartController {
     if (format === 'fixed2') return (v) => fmtPrice(v, 2);
     if (format === 'fixed3') return (v) => fmtPrice(v, 3);
     if (format === 'volume') return fmtSignedVol;
+    if (format === 'usd') return (v) => fmtCompact(v, '$');
     return (v) => fmtPrice(v, Math.max(0, -Math.floor(Math.log10(this.priceTick))) + 1);
   }
 
@@ -934,6 +936,8 @@ export class ProChartController {
     const flow = {
       oiAt: (t: number) => this.store.oi.atWithin(t, HL_OI_MAX_AGE),
       book: () => this.store.book('near')?.list() ?? [],
+      orders: (from: number, to: number) => this.store.orders.range(from, to),
+      orderCount: (from: number, to: number) => this.store.orders.count(from, to),
       now: this.store.serverNow(),
     };
     if (this.engine.sync(this.bars, ms, (tf) => this.store.indicatorCandles(tf, first), flow) >= n) return;
@@ -1001,7 +1005,8 @@ export class ProChartController {
     const gap = n > 0 && Number.isNaN(ys[n - 1]);
     if (gap !== this.indGap[k][p]) {
       this.indGap[k][p] = gap;
-      series.applyOptions({ lastValueVisible: x.labels && !gap });
+      // Bez wartości ostatniej świecy także bez podpisu plotu (sam podpis przy osi niczego nie mówi)
+      series.applyOptions({ lastValueVisible: x.labels && !gap, ...(plot.title ? { title: gap ? '' : plot.title } : {}) });
     }
   }
 
