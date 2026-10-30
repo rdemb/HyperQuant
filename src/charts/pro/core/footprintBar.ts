@@ -37,14 +37,22 @@ export interface FootprintBar {
 }
 
 /**
- * Tick ceny perpów Hyperliquid: najwyżej 5 cyfr znaczących (BTC przy 80 tys. = 1 USD, od 100 tys. = 10 USD),
- * nie mniej niż 10^−(6 − szDecimals). Bez `szDecimals` — sama reguła cyfr znaczących (przy cenach BTC, ETH, SOL
- * i HYPE to ona wyznacza tick).
+ * Tick ceny perpów Hyperliquid: najwyżej 5 cyfr znaczących, ale cena całkowita jest zawsze dozwolona, więc tick nie
+ * przekracza 1 (BTC przy 80 tys. i od 100 tys. = 1 USD); nie mniej niż 10^−(6 − szDecimals). Bez `szDecimals` — sama
+ * reguła cyfr znaczących (przy cenach BTC, ETH, SOL i HYPE to ona wyznacza tick).
  */
 export function hlTick(px: number, szDecimals?: number): number {
   if (!(px > 0)) return 1;
-  const sig = 10 ** (Math.floor(Math.log10(px)) - 4);
+  const sig = Math.min(1, 10 ** (Math.floor(Math.log10(px)) - 4));
   return szDecimals === undefined ? sig : Math.max(sig, 10 ** -(6 - szDecimals));
+}
+
+/**
+ * Tick bazowy footprintu, profili i TPO: z ceny o 5% niższej (świeca tuż nad granicą rzędu, np. 100 tys., nie traci ticku
+ * 1 USD po spadku pod nią). Jedna kotwica dla wszystkich warstw wierszy, żeby leżały na tej samej siatce.
+ */
+export function baseTick(px: number): number {
+  return hlTick(px * 0.95);
 }
 
 /** Indeks wiersza ceny na siatce `step` (zaokrąglenie chroni przed błędem zmiennoprzecinkowym). */
@@ -79,8 +87,7 @@ export class FootprintBuilder {
 
   /** Dokłada transakcję; wymaga kolejności czasu (delta w trakcie świecy zależy od kolejności). */
   add(time: number, px: number, sz: number, side: Side): void {
-    // Tick z ceny o 5% niższej: świeca tuż nad granicą rzędu (np. 100 tys.) nie traci ticku 1 USD po spadku pod nią
-    if (Number.isNaN(this.tick)) this.tick = hlTick(px * 0.95);
+    if (Number.isNaN(this.tick)) this.tick = baseTick(px);
     const idx = rowIndex(px, this.tick);
     let r = this.rows.get(idx);
     if (!r) {

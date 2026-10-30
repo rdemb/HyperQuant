@@ -3,7 +3,7 @@ import { fetchAssetCtx, fetchCandles, fetchFunding } from '../hl/rest';
 import { HlStream, StreamStatus, Subscription } from '../hl/stream';
 import { BookFrame, BookHistory, bookSigFigs, bookStep, toFrame } from '../core/book';
 import { Coverage, Span } from '../core/coverage';
-import { FootprintBar, FootprintBuilder, hlTick } from '../core/footprintBar';
+import { FootprintBar, FootprintBuilder, baseTick, hlTick } from '../core/footprintBar';
 import { WallTracker } from '../core/clashes';
 import { OrderAggregator, OrderLog } from '../core/orders';
 import { PlayerFlow, bigPlayerUsd } from '../core/players';
@@ -745,11 +745,6 @@ export class CandleSeries {
 /** Świeca z footprintu (bieżąca świeca powtórki: z taśmy do chwili odtwarzania). */
 function fpCandle(t: number, fp: FootprintBar): Candle {
   return { t, o: fp.open, h: fp.high, l: fp.low, c: fp.close, v: fp.buyVol + fp.sellVol, n: fp.trades };
-}
-
-/** Tick bazowy footprintu z ceny o 5% niższej — patrz FootprintBuilder. */
-function baseTick(px: number): number {
-  return hlTick(px * 0.95);
 }
 
 const stores = new Map<Market, ProStore>();

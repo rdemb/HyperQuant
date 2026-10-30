@@ -220,6 +220,11 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
   private readonly lutFar = buildHeatLut(LIQ_RAMP.map((s) => ({ ...s, alpha: s.alpha * FAR_ALPHA })));
   private readonly tex = document.createElement('canvas');
   private texKey = '';
+  /** Piksele tekstury i ostatnie migawki warstw z pełnego malowania — upływ czasu domalowuje tylko nowe kolumny. */
+  private texImg: ImageData | null = null;
+  private tail: HeatTail[] = [];
+  /** Historie arkusza z pełnego malowania (nowa historia, np. po przewinięciu powtórki, zaczyna wersje od zera). */
+  private texSrc: readonly (BookHistory | null)[] = [];
   private readonly views: readonly IPrimitivePaneView[];
 
   constructor(toggles: LiquidityToggles) {
@@ -355,40 +360,72 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
 
   // ───────────────────────── mapa ciepła ─────────────────────────
 
-  /** Tekstura mapy ciepła w pikselach CSS panelu; przemalowanie tylko po zmianie widoku albo nowej migawce. */
+  /**
+   * Tekstura mapy ciepła w pikselach CSS panelu. Pełne malowanie tylko po zmianie widoku albo nowej migawce; między
+   * migawkami upływ czasu wydłuża tylko ostatnią migawkę każdej warstwy, więc domalowane są same nowe kolumny
+   * (z normą z pełnego malowania).
+   */
   private renderHeat(W: number, H: number): boolean {
     const g = this.geo;
     const { near, far } = this.src;
     if (!g || !(W > 0) || !(H > 0) || (!near && !far)) return false;
-    const key = `${W}|${H}|${g.xa.toFixed(2)}|${g.sp.toFixed(4)}|${g.a.toFixed(3)}|${g.b.toFixed(6)}|${near?.version}|${far?.version}|${Math.floor(this.now / 1000)}`;
-    if (key === this.texKey) return true;
+    const ctx = this.tex.getContext('2d');
+    if (!ctx) return false;
+    // Daleka agregacja najpierw; bliska (dokładniejsza) zastępuje ją w całym swoim zakresie cen, także tam,
+    // gdzie jej poziomy są przezroczyste — inaczej przez słabe poziomy prześwitywałyby grube pasy dalekiej
+    const layers = [far, near].map((h) => (h ? h.range(g.tFrom, g.tTo) : []));
+    // Ostatnia migawka w zakresie w kluczu: migawka z czasem giełdy chwilę przed zegarem strony wchodzi, gdy czas ją dogoni
+    const key = `${W}|${H}|${g.xa.toFixed(2)}|${g.sp.toFixed(4)}|${g.a.toFixed(3)}|${g.b.toFixed(6)}|${near?.version}|${far?.version}|${layers.map((l) => l.at(-1)?.t).join('|')}`;
+    if (key === this.texKey && this.texImg && this.texSrc[0] === near && this.texSrc[1] === far) {
+      this.paintTail(ctx, this.texImg, W, H, g);
+      return true;
+    }
     this.texKey = key;
+    this.texSrc = [near, far];
+    this.tail = [];
     if (this.tex.width !== W || this.tex.height !== H) {
       this.tex.width = W;
       this.tex.height = H;
     }
-    const ctx = this.tex.getContext('2d');
-    if (!ctx) return false;
     const img = ctx.createImageData(W, H);
+    this.texImg = img;
     const px = new Uint32Array(img.data.buffer);
-    // Daleka agregacja najpierw; bliska (dokładniejsza) zastępuje ją w całym swoim zakresie cen, także tam,
-    // gdzie jej poziomy są przezroczyste — inaczej przez słabe poziomy prześwitywałyby grube pasy dalekiej
-    for (const layer of [far, near]) {
-      if (!layer) continue;
-      const frames = layer.range(g.tFrom, g.tTo);
+    for (let li = 0; li < 2; li++) {
+      const frames = layers[li];
       if (frames.length === 0) continue;
+      const isNear = li === 1;
       const norm = heatNorm(frames);
+      const lut = isNear ? this.lut : this.lutFar;
       for (let i = 0; i < frames.length; i++) {
         const f = frames[i];
         const x0 = Math.max(0, Math.round(this.x(f.t, g)));
         const x1 = Math.min(W, Math.max(x0 + 1, Math.round(this.x(Math.min(frames[i + 1]?.t ?? this.now, f.t + FRAME_MAX_MS), g))));
+        if (i === frames.length - 1) this.tail.push({ f, x0, x1, norm, lut, clear: isNear });
         if (x1 <= 0 || x0 >= W) continue;
-        if (layer === near) clearSpan(px, W, H, f, x0, x1, g);
-        paintFrame(px, W, H, f, x0, x1, g, norm, layer === near ? this.lut : this.lutFar);
+        if (isNear) clearSpan(px, W, H, f, x0, x1, g);
+        paintFrame(px, W, H, f, x0, x1, g, norm, lut);
       }
     }
     ctx.putImageData(img, 0, 0);
     return true;
+  }
+
+  /** Domalowanie kolumn od poprzedniej prawej krawędzi ostatniej migawki do bieżącej chwili (w tej samej kolejności warstw). */
+  private paintTail(ctx: CanvasRenderingContext2D, img: ImageData, W: number, H: number, g: Geometry): void {
+    const px = new Uint32Array(img.data.buffer);
+    let lo = W;
+    let hi = 0;
+    for (const s of this.tail) {
+      const x1 = Math.min(W, Math.max(s.x0 + 1, Math.round(this.x(Math.min(this.now, s.f.t + FRAME_MAX_MS), g))));
+      const x0 = Math.max(0, s.x1);
+      s.x1 = Math.max(s.x1, x1);
+      if (x1 <= x0) continue;
+      if (s.clear) clearSpan(px, W, H, s.f, x0, x1, g);
+      paintFrame(px, W, H, s.f, x0, x1, g, s.norm, s.lut);
+      lo = Math.min(lo, x0);
+      hi = Math.max(hi, x1);
+    }
+    if (hi > lo) ctx.putImageData(img, 0, 0, lo, 0, hi - lo, H);
   }
 
   // ───────────────────────── bąble ─────────────────────────
@@ -545,6 +582,17 @@ function heatNorm(frames: readonly BookFrame[]): HeatScale {
 interface HeatScale {
   lo: number;
   span: number;
+}
+
+/** Ostatnia migawka warstwy z pełnego malowania: kolumny [x0, x1) i to, czym je domalować. */
+interface HeatTail {
+  f: BookFrame;
+  x0: number;
+  x1: number;
+  norm: HeatScale;
+  lut: Uint32Array;
+  /** Bliska agregacja czyści swój zakres cen (zastępuje daleką). */
+  clear: boolean;
 }
 
 /** Czyści teksturę w zakresie cen migawki (od najniższego do najwyższego poziomu) i jej kolumnach. */

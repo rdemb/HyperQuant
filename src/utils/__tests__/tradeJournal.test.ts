@@ -125,13 +125,18 @@ describe('poprawki po recenzji: okno MAE/MFE, walidacja importu', () => {
           trade({ id: 'ns', entryT: 1e20 }),
           trade({ id: 'neg', entryPx: -5 }),
           { ...trade({ id: 'ctx' }), ctx: { ib: {} } },
-          { ...trade({ id: 'ok' }), ctx: { vwapZ: 1.2, openLoc: 'above', ib: 'wybity ↑' } },
+          { ...trade({ id: 'ok' }), ctx: { vwapZ: 1.2, openLoc: 'above', ib: 'both' } },
+          { ...trade({ id: 'old' }), ctx: { vwapZ: null, openLoc: null, ib: 'wybity ↑' } },
+          { ...trade({ id: 'odd' }), ctx: { vwapZ: null, openLoc: null, ib: 'toString' } },
         ],
       })
     )!;
-    expect(j.trades.map((t) => t.id)).toEqual(['orphan', 'ctx', 'ok']);
+    expect(j.trades.map((t) => t.id)).toEqual(['orphan', 'ctx', 'ok', 'old', 'odd']);
     expect(j.trades[0].setupId).toBeNull();
     expect(j.trades[1].ctx).toBeNull();
-    expect(j.trades[2].ctx).toEqual({ vwapZ: 1.2, openLoc: 'above', ib: 'wybity ↑' });
+    expect(j.trades[2].ctx).toEqual({ vwapZ: 1.2, openLoc: 'above', ib: 'both' });
+    // Wpis sprzed kodów (polska etykieta) czyta się jako kod; nieznany stan odrzuca sam kontekst
+    expect(j.trades[3].ctx).toEqual({ vwapZ: null, openLoc: null, ib: 'up' });
+    expect(j.trades[4].ctx).toBeNull();
   });
 });

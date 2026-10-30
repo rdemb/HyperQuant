@@ -709,14 +709,29 @@ export function checkMarket(records, candles) {
 
 const NET_TIMEOUT_MS = 15_000;
 const blockCache = new Map();
+/** Dwa niezależne eksploratory z tym samym API (Esplora): blok liczy się tylko wtedy, gdy oba podają to samo. */
+export const EXPLORERS = ['https://mempool.space/api', 'https://blockstream.info/api'];
 
-/** Wysokość bloku → { hash, czas, korzeń Merkle } (publiczny eksplorator; ten sam wynik da każdy węzeł Bitcoina). */
+async function explorerGet(url, as) {
+  const res = await fetch(url, { signal: AbortSignal.timeout(NET_TIMEOUT_MS) });
+  if (!res.ok) throw new Error(`HTTP ${res.status} ${url}`);
+  return as === 'json' ? res.json() : (await res.text()).trim();
+}
+
+/** Wysokość bloku → { hash, czas, korzeń Merkle } (ten sam wynik da każdy węzeł Bitcoina); niezgodność eksploratorów = błąd. */
 function bitcoinBlock(height) {
   if (!blockCache.has(height)) {
     const p = (async () => {
-      const hash = (await (await fetch(`https://mempool.space/api/block-height/${height}`, { signal: AbortSignal.timeout(NET_TIMEOUT_MS) })).text()).trim();
-      const b = await (await fetch(`https://mempool.space/api/block/${hash}`, { signal: AbortSignal.timeout(NET_TIMEOUT_MS) })).json();
-      return { hash, time: b.timestamp * 1000, merkleRoot: b.merkle_root };
+      const got = await Promise.all(
+        EXPLORERS.map(async (base) => {
+          const hash = await explorerGet(`${base}/block-height/${height}`, 'text');
+          const b = await explorerGet(`${base}/block/${hash}`, 'json');
+          return { hash, time: b.timestamp * 1000, merkleRoot: b.merkle_root };
+        })
+      );
+      if (got.some((b) => b.hash !== got[0].hash || b.merkleRoot !== got[0].merkleRoot || b.time !== got[0].time))
+        throw new Error(`eksploratory podają różne bloki ${height}`);
+      return got[0];
     })();
     p.catch(() => blockCache.delete(height)); // błąd sieci — bez zapamiętywania
     blockCache.set(height, p);
@@ -758,7 +773,7 @@ export async function bitcoinTime(bytes) {
       if (Buffer.from(a.msg, 'hex').reverse().toString('hex') !== blk.merkleRoot) continue;
       if (best === null || blk.time < best) best = blk.time;
     } catch {
-      // eksplorator niedostępny
+      // eksplorator niedostępny albo eksploratory się nie zgadzają — bez czasu z tego poświadczenia
     }
   }
   return best;

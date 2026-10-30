@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { MAX_ALERTS, lineLabel, newAlert, parseAlerts, parseLog, parsePriceInput } from '../chart/alerts';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { MAX_ALERTS, lineLabel, newAlert, parseAlerts, parseLog, parsePriceInput, windowOf } from '../chart/alerts';
 import { DEFAULT_TTL_MS } from '../../../utils/alertRules';
 
 describe('alarmy cenowe w przeglądarce', () => {
@@ -36,5 +36,44 @@ describe('alarmy cenowe w przeglądarce', () => {
     expect(parsePriceInput('-5', 1)).toBeNull();
     expect(parsePriceInput('abc', 1)).toBeNull();
     expect(parsePriceInput('0', 1)).toBeNull();
+  });
+});
+
+describe('okno alarmu w dobie zmiany czasu', () => {
+  const tz = process.env.TZ;
+  beforeAll(() => {
+    process.env.TZ = 'Europe/Warsaw';
+  });
+  afterAll(() => {
+    if (tz === undefined) delete process.env.TZ;
+    else process.env.TZ = tz;
+  });
+  const at = (t: number) => {
+    const d = new Date(t);
+    return `${d.getDate()}.${d.getMonth() + 1} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  };
+
+  it('25.10.2026 (doba 25 h): koniec i początek trzymają godzinę zegara', () => {
+    // 24.10 20:00 CEST: najbliższe 16:00 to już 25.10 po cofnięciu zegara (nie 15:00)
+    const [f1, u1] = windowOf('08:00', '16:00', new Date(2026, 9, 24, 20, 0).getTime());
+    expect([at(f1), at(u1)]).toEqual(['25.10 08:00', '25.10 16:00']);
+    // Okno przez noc zmiany czasu: początek dzień wcześniej o 22:00, nie o 23:00
+    const [f2, u2] = windowOf('22:00', '06:00', new Date(2026, 9, 24, 23, 0).getTime());
+    expect([at(f2), at(u2)]).toEqual(['24.10 22:00', '25.10 06:00']);
+    expect(u2 - f2).toBe(9 * 3600_000);
+  });
+
+  it('29.03.2026 (doba 23 h): to samo przy przestawieniu zegara do przodu', () => {
+    const [f1, u1] = windowOf('08:00', '16:00', new Date(2026, 2, 28, 20, 0).getTime());
+    expect([at(f1), at(u1)]).toEqual(['29.3 08:00', '29.3 16:00']);
+    const [f2, u2] = windowOf('22:00', '06:00', new Date(2026, 2, 28, 23, 0).getTime());
+    expect([at(f2), at(u2)]).toEqual(['28.3 22:00', '29.3 06:00']);
+    expect(u2 - f2).toBe(7 * 3600_000);
+  });
+
+  it('zwykła doba bez zmian: samo „do” i samo „od”', () => {
+    const now = new Date(2026, 9, 30, 12, 0).getTime();
+    expect(at(windowOf('', '10:00', now)[1])).toBe('31.10 10:00');
+    expect(at(windowOf('13:30', '', now)[0])).toBe('30.10 13:30');
   });
 });

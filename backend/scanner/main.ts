@@ -344,6 +344,7 @@ async function initLedger(): Promise<void> {
     return;
   }
   ledger = runner;
+  if (store.repairedTail) log(`dziennik: ucięta ostatnia linia ${store.repairedTail.file} (${store.repairedTail.bytes} B) usunięta, rekord naprawy dopisany`);
   log(`dziennik: ${store.lines} linii, głowa ${store.head.slice(0, 12)}`);
 }
 

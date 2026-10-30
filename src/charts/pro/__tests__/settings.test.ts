@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_SETTINGS, NARROW_PATCH, hashFor, migrateSaved, parseSettings, phoneSettings, settingsFromHash } from '../chart/settings';
+import { applyTemplate, templateOf } from '../chart/templates';
+import { addIndicator } from '../indicators/registry';
 
 describe('parseSettings', () => {
   it('brak lub śmieci → wartości domyślne', () => {
@@ -55,6 +57,19 @@ describe('link do widoku', () => {
     expect(settingsFromHash('#charts?m=DOGE&i=7m&v=x')).toEqual({});
     expect(settingsFromHash('#charts')).toEqual({});
   });
+
+  it('widoczne wskaźniki w linku (&ind=…); bez widocznych link bez wskaźników', () => {
+    let list = addIndicator(addIndicator([], 'ema'), 'rsi');
+    list = list.map((x) => (x.id === 'ema' ? { ...x, params: { length: 21 } } : x));
+    const s = { ...DEFAULT_SETTINGS, coin: 'BTC' as const, interval: '5m', view: 'candles' as const, indicators: list };
+    expect(hashFor(s)).toBe('#charts?m=BTC&i=5m&v=candles&ind=ema(21);rsi(14)');
+    expect(settingsFromHash(hashFor(s)).indicators?.map((x) => [x.id, x.params])).toEqual([
+      ['ema', { length: 21 }],
+      ['rsi', { length: 14 }],
+    ]);
+    expect(hashFor({ ...s, indicators: list.map((x) => ({ ...x, visible: false })) })).toBe('#charts?m=BTC&i=5m&v=candles');
+    expect(settingsFromHash('#charts?m=BTC&ind=foo(1)')).toEqual({ coin: 'BTC' });
+  });
 });
 
 describe('warstwy startowe', () => {
@@ -92,5 +107,32 @@ describe('warstwy startowe', () => {
     const fresh = { ...old, layersV: 2 };
     expect(parseSettings(migrateSaved(fresh)).showWhales).toBe(true);
     expect(migrateSaved(null)).toBeNull();
+  });
+});
+
+describe('klasyczne wskaźniki w ustawieniach', () => {
+  const list = addIndicator(addIndicator(addIndicator(addIndicator([], 'ema'), 'rsi'), 'atr'), 'bb');
+
+  it('przechodzą przez zapis, szablon i odczyt; zapis bez listy → lista z wartości domyślnych', () => {
+    const s = { ...DEFAULT_SETTINGS, indicators: list };
+    expect(parseSettings(JSON.parse(JSON.stringify(s))).indicators).toEqual(list);
+    expect(applyTemplate(DEFAULT_SETTINGS, templateOf(s)).indicators).toEqual(list);
+    expect(parseSettings({ interval: '1h' }).indicators).toEqual([]);
+    expect(parseSettings({ indicators: 'x' }, s).indicators).toEqual(list);
+  });
+
+  it('telefon: najwyżej jeden panel wskaźnika (pierwszy widoczny), wskaźniki na cenie zostają; zapis bez zmian', () => {
+    const hidden = list.map((x) => (x.id === 'rsi' ? { ...x, visible: false } : x));
+    const p = phoneSettings({ ...DEFAULT_SETTINGS, indicators: hidden });
+    expect(p.indicators.map((x) => [x.id, x.visible])).toEqual([
+      ['ema', true],
+      ['rsi', false],
+      ['atr', true],
+      ['bb', true],
+    ]);
+    const both = phoneSettings({ ...DEFAULT_SETTINGS, indicators: list });
+    expect(both.indicators.filter((x) => x.visible).map((x) => x.id)).toEqual(['ema', 'rsi', 'bb']);
+    expect(both.showCvd).toBe(true);
+    expect(list.every((x) => x.visible)).toBe(true);
   });
 });

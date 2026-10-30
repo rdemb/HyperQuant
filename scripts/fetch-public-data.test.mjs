@@ -280,4 +280,19 @@ describe('runPipeline — dry-run ze wstrzykniętym fetch', () => {
     expect(written['onchain.json']).toBeUndefined();
     expect(summary.skippedFiles).toContain('onchain.json');
   });
+
+  it('changedFiles: tylko pliki, których dane różnią się od wersji na Pages (daty pobrania się nie liczą)', async () => {
+    const first = {};
+    const run1 = await runPipeline({ fetchImpl: fakeFetch({}).impl, now, write: async (f, obj) => (first[f] = obj), log: () => {} });
+    // Bez wersji na Pages każdy zapisany plik jest zmianą
+    expect(run1.changedFiles.sort()).toEqual(run1.writtenFiles.sort());
+    // Pół godziny później: te same dane źródeł, inna data; na Pages wersja z pierwszego przebiegu, w kalendarzu inne dane
+    const prev = { ...first, 'calendar.json': { ...first['calendar.json'], data: { bea: [] } } };
+    const run2 = await runPipeline({ fetchImpl: fakeFetch({ prev }).impl, now: new Date(now.getTime() + 30 * 60_000), write: async () => {}, log: () => {} });
+    expect(run2.changedFiles).toEqual(['calendar.json']);
+    // Wszystkie źródła padły: dane z Pages bez zmian, więc nic do wdrożenia
+    const run3 = await runPipeline({ fetchImpl: fakeFetch({ prev: first, fail: [/./] }).impl, now, write: async () => {}, log: () => {} });
+    expect(run3.writtenFiles.length).toBeGreaterThan(0);
+    expect(run3.changedFiles).toEqual([]);
+  });
 });

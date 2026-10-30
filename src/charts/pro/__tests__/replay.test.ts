@@ -155,6 +155,7 @@ describe('ReplaySession — odtwarzanie nagrania', () => {
     const f = twoHours();
     s = new ReplaySession({ source: 'history', coin: 'BTC', from: null, to: null, t: H0 + 2 * HIST_HOUR_MS - 3 * 60_000 }, f.fetcher, fakeCandles().load, BASE);
     await s.load();
+    await vi.waitFor(() => expect(s!.catchUp).toBeNull());
     s.setSpeed(60);
     s.play();
     vi.advanceTimersByTime(2000);
@@ -163,6 +164,38 @@ describe('ReplaySession — odtwarzanie nagrania', () => {
     vi.advanceTimersByTime(2000);
     expect(s.t).toBe(s.to);
     expect(s.playing).toBe(false);
+  });
+
+  it('długi odcinek porcjami po godzinie z postępem; przewinięcie wstecz w trakcie przerywa stare doganianie', async () => {
+    const t = H0 + 2 * HIST_HOUR_MS - 3 * 60_000;
+    s = new ReplaySession({ source: 'history', coin: 'BTC', from: null, to: null, t }, twoHours().fetcher, fakeCandles().load, BASE);
+    await s.load();
+    // Zaraz po wczytaniu: pierwsza godzina w magazynie, reszta czeka na następną porcję
+    expect(s.catchUp).toEqual({ done: HIST_HOUR_MS, total: t - H0 });
+    expect(s.store!.tape.count).toBe(tradesUpTo(H0 + HIST_HOUR_MS));
+    await vi.waitFor(() => expect(s!.catchUp).toBeNull());
+    expect(s.store!.tape.count).toBe(tradesUpTo(t));
+
+    s.seek(H0 + 5 * 60_000);
+    s.seek(t);
+    const second = s.store!;
+    expect(s.catchUp).toEqual({ done: HIST_HOUR_MS, total: t - H0 - 5 * 60_000 });
+    // Cofnięcie celu, ale za tym, co już dołożono: ten sam magazyn, doganianie kończy się na nowej chwili
+    s.seek(H0 + 90 * 60_000);
+    expect(s.store).toBe(second);
+    await vi.waitFor(() => expect(s!.catchUp).toBeNull());
+    expect(second.tape.count).toBe(tradesUpTo(H0 + 90 * 60_000));
+    // Wstecz przed dołożony odcinek w trakcie doganiania: nowy magazyn, stare porcje nie trafiają nigdzie
+    s.seek(H0 + 5 * 60_000);
+    s.seek(t);
+    const third = s.store!;
+    expect(s.catchUp).not.toBeNull();
+    s.seek(H0 + 30 * 60_000);
+    expect(s.store).not.toBe(third);
+    expect(s.catchUp).toBeNull();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(s.store!.tape.count).toBe(tradesUpTo(H0 + 30 * 60_000));
+    expect(third.tape.count).toBe(tradesUpTo(H0 + 65 * 60_000));
   });
 
   it('pliki już rozpakowane przez serwer — to samo nagranie co z gzip', async () => {
