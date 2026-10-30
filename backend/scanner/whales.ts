@@ -30,7 +30,24 @@ const minOrd = (coin: string) => MIN_ORDER_USD[coin] ?? MIN_ORDER_USD.BTC;
 
 const num = (v: unknown): number => (typeof v === 'number' ? v : typeof v === 'string' && v.trim() !== '' ? Number(v) : Number.NaN);
 
-type RawPos = Omit<WhalePosition, 'id'> & { coin: string };
+/** Siatka cen w pliku: wejście i likwidacja ~0,25% ceny, zlecenia ~0,05% (poziom zlecenia zostaje użyteczny na wykresie) */
+const POS_GRID = 0.0025;
+const ORD_GRID = 0.0005;
+
+/** Kwota do 2 cyfr znaczących. */
+const sig2 = (x: number): number => Number(x.toPrecision(2));
+
+/** Cena na siatce „okrągłego” kroku 1, 2, 2,5 albo 5 × 10^k najbliższego `rel` ceny (np. 0,25% przy 80 000 USD = 200 USD). */
+export function gridPx(px: number, rel: number): number {
+  const x = px * rel;
+  const e = 10 ** Math.floor(Math.log10(x));
+  const m = x / e;
+  const step = (m < 1.5 ? 1 : m < 2.25 ? 2 : m < 3.5 ? 2.5 : m < 7.5 ? 5 : 10) * e;
+  return Number((Math.round(px / step) * step).toPrecision(12));
+}
+
+/** Pozycja odczytana z API (dokładne wartości zostają na serwerze; wielkość — do TP/SL całej pozycji). */
+type RawPos = Omit<WhalePosition, 'id'> & { coin: string; sz: number };
 type RawOrd = Omit<WhaleOrder, 'id'> & { coin: string };
 
 /** Pozycje w wybranych rynkach z `clearinghouseState` (bez progu); zły kształt → null. */
@@ -47,8 +64,7 @@ export function parsePositions(state: unknown, coins: readonly string[], at: num
     if (!Number.isFinite(szi) || szi === 0 || !(entry > 0) || !(usd > 0)) continue;
     const liq = p.liquidationPx === null || p.liquidationPx === undefined ? Number.NaN : num(p.liquidationPx);
     const lev = num((p.leverage as { value?: unknown } | undefined)?.value);
-    const upnl = num(p.unrealizedPnl);
-    out.push({ coin: p.coin, side: szi > 0 ? 'long' : 'short', usd, sz: Math.abs(szi), entry, liq: liq > 0 ? liq : null, lev: Number.isFinite(lev) ? lev : 0, upnl: Number.isFinite(upnl) ? upnl : 0, at });
+    out.push({ coin: p.coin, side: szi > 0 ? 'long' : 'short', usd, sz: Math.abs(szi), entry, liq: liq > 0 ? liq : null, lev: Number.isFinite(lev) ? lev : 0, at });
   }
   return out;
 }
@@ -154,7 +170,10 @@ export class WhaleWatcher {
     return n;
   }
 
-  /** Plik warstwy: pozycje i zlecenia od progów rynku, z odczytów nie starszych niż 15 min, bez adresów. */
+  /**
+   * Plik warstwy: pozycje i zlecenia od progów rynku, z odczytów nie starszych niż 15 min, bez adresów. Dla prywatności
+   * kwoty mają 2 cyfry znaczące, ceny leżą na siatce (`POS_GRID`, `ORD_GRID`), a dźwignia jest całkowita.
+   */
   build(now: number): WhaleLayer {
     const markets: WhaleLayer['markets'] = {};
     for (const c of this.d.coins) markets[c] = { positions: [], orders: [] };
@@ -163,12 +182,24 @@ export class WhaleWatcher {
       if (now - a.posAt > STALE_MS) continue;
       accounts++;
       const id = this.alias(addr, now);
-      for (const { coin, ...p } of a.positions) if (p.usd >= minPos(coin)) markets[coin].positions.push({ id, ...p, usd: Math.round(p.usd) });
+      for (const p of a.positions) {
+        if (p.usd < minPos(p.coin)) continue;
+        markets[p.coin].positions.push({
+          id,
+          side: p.side,
+          usd: sig2(p.usd),
+          entry: gridPx(p.entry, POS_GRID),
+          liq: p.liq === null ? null : gridPx(p.liq, POS_GRID),
+          lev: Math.round(p.lev),
+          at: p.at,
+        });
+      }
       if (now - a.ordAt > STALE_MS) continue;
       const byCoin = new Map<string, RawOrd[]>();
       for (const o of a.orders) if (o.usd >= minOrd(o.coin)) byCoin.set(o.coin, [...(byCoin.get(o.coin) ?? []), o]);
       for (const [coin, list] of byCoin) {
-        for (const { coin: _c, ...o } of list.sort((x, y) => y.usd - x.usd).slice(0, ORD_PER_ACCOUNT)) markets[coin].orders.push({ id, ...o, usd: Math.round(o.usd) });
+        for (const { coin: _c, ...o } of list.sort((x, y) => y.usd - x.usd).slice(0, ORD_PER_ACCOUNT))
+          markets[coin].orders.push({ id, ...o, px: gridPx(o.px, ORD_GRID), usd: sig2(o.usd) });
       }
     }
     for (const m of Object.values(markets)) {

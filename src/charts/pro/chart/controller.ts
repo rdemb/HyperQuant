@@ -35,12 +35,14 @@ import { ZonesLayer } from './zonesLayer';
 import { TpoLayer } from './tpoLayer';
 import { tpoInterval } from '../core/tpo';
 import type { ChartSettings } from './settings';
+import { IndicatorEngine } from '../indicators/engine';
+import { IndicatorDef, IndicatorInstance, indicatorDef, indicatorLabel } from '../indicators/registry';
 import { CountdownLabel } from './countdown';
 import { FlowVenue, OiVenue, oiMaxAge, per8h } from '../venues/parse';
 import { VenueStore, acquireVenues, venueStoreFor } from '../venues/venueStore';
-import { DOM_W_PX, PRO, RIGHT_GAP_PX, chartOptions } from './theme';
+import { DOM_W_PX, PRO, RIGHT_GAP_PX, chartOptions, rgba } from './theme';
 import { tr } from '../../../i18n';
-import { numLang } from '../../../ui/format';
+import { fmtPrice, numLang } from '../../../ui/format';
 
 /**
  * Sterownik wykresu Pro (bez Reacta): tworzy wykres Lightweight Charts z serią footprintu, wolumenem
@@ -56,6 +58,14 @@ export interface HoverRow {
   sell: number;
 }
 
+/** Klasyczny wskaźnik na wykresie ceny w legendzie: podpis, kolor i wartości plotów pod krzyżem. */
+export interface IndicatorReadout {
+  iid: string;
+  label: string;
+  color: string;
+  text: string;
+}
+
 export interface Hover {
   bar: ProBar | null;
   /** true = brak krzyża, pokazujemy ostatnią świecę. */
@@ -65,6 +75,7 @@ export interface Hover {
   row: HoverRow | null;
   cvd: Ohlc | null;
   ind: IndicatorValues | null;
+  indicators: IndicatorReadout[];
 }
 
 const sec = (t: number) => (t / 1000) as UTCTimestamp;
@@ -111,6 +122,8 @@ const STATS_EVERY_MS = 1_000;
 /** Panele pod wykresem, które można ukryć krzyżykiem w ich rogu. */
 export const PANE_KEYS = ['showVolume', 'showDelta', 'showCvd', 'showVenueCvd', 'showVenueOi', 'showStats'] as const;
 export type PaneKey = (typeof PANE_KEYS)[number];
+/** Krzyżyk w rogu panelu: panel z ustawień albo wskaźnik we własnym panelu (`ind:<iid>`). */
+export type HideKey = PaneKey | `ind:${string}`;
 
 /** Autoskala ceny i wymiary rogu pod osią ceny (px), w którym stoi przycisk A. */
 export interface ScaleState {
@@ -171,6 +184,9 @@ function flowLegend(label: string, value: number | null): LegendPart[] {
   ];
 }
 
+/** Linie poziomów w panelu wskaźnika (RSI 70, 50, 30): widoczne, ale ciszej niż linia wskaźnika. */
+const LEVEL_COLOR = rgba(PRO.ink3, 0.45);
+
 const sameOhlc = (a: Ohlc | null, b: Ohlc | null) =>
   a === b || (a !== null && b !== null && a.open === b.open && a.high === b.high && a.low === b.low && a.close === b.close);
 
@@ -218,6 +234,11 @@ export class ProChartController {
   private venueOi: Partial<Record<VenueLineId, ISeriesApi<'Line'>>> | null = null;
   private venueCvdData: VenueLines = {};
   private venueOiData: VenueLines = {};
+  /** Klasyczne wskaźniki: przeliczanie, ich linie (po jednej na plot) i opisy własnych paneli, w kolejności instancji. */
+  private readonly engine = new IndicatorEngine();
+  private indSeries: ISeriesApi<'Line'>[][] = [];
+  private indLegends: (PaneLegend | null)[] = [];
+  private indKey = '';
   /** Przepływ Binance i Bybit tego rynku (tylko z włączonym panelem giełd) i zwolnienie jego połączeń. */
   private venue: VenueStore | null = null;
   private venueInterval: string | null = null;
@@ -253,7 +274,7 @@ export class ProChartController {
   private readonly unsubscribe: () => void;
   private readonly onHover: (h: Hover) => void;
   private readonly onPick: (p: LiquidityPick | null) => void;
-  private readonly onHidePane: (key: PaneKey) => void;
+  private readonly onHidePane: (key: HideKey) => void;
   private readonly onScale: (s: ScaleState) => void;
   private scale: ScaleState = { auto: true, width: 0, height: 0 };
   private scaleFrame = 0;
@@ -266,7 +287,7 @@ export class ProChartController {
     settings: ChartSettings,
     onHover: (h: Hover) => void,
     onPick: (p: LiquidityPick | null) => void,
-    onHidePane: (key: PaneKey) => void,
+    onHidePane: (key: HideKey) => void,
     onScale: (s: ScaleState) => void
   ) {
     this.settings = settings;
@@ -384,8 +405,13 @@ export class ProChartController {
       this.schedule();
     }
     this.syncVenueLive();
+    // Każda zmiana wskaźników (lista, parametry, kolor, widoczność) przebudowuje ich serie razem z panelami
+    const indKey = JSON.stringify(s.indicators);
+    const indChanged = indKey !== this.indKey;
+    this.indKey = indKey;
     const panesChanged =
       force ||
+      indChanged ||
       prev.showVolume !== s.showVolume ||
       prev.showDelta !== s.showDelta ||
       prev.showCvd !== s.showCvd ||
@@ -437,7 +463,7 @@ export class ProChartController {
   private rebuildPanes(): void {
     const s = this.settings;
     const venueSeries = [...Object.values(this.venueCvd ?? {}), ...Object.values(this.venueOi ?? {})];
-    for (const sr of [this.volume, this.delta, this.cvd, this.statsSeries, ...venueSeries]) if (sr) this.chart.removeSeries(sr);
+    for (const sr of [this.volume, this.delta, this.cvd, this.statsSeries, ...venueSeries, ...this.indSeries.flat()]) if (sr) this.chart.removeSeries(sr);
     this.volume = this.delta = this.cvd = this.statsSeries = null;
     this.venueCvd = this.venueOi = null;
     let pane = 1;
@@ -461,6 +487,19 @@ export class ProChartController {
     }
     if (s.showVenueCvd) this.venueCvd = this.addVenueLines(CVD_LINES, pane++, this.venueCvdLegend);
     if (s.showVenueOi) this.venueOi = this.addVenueLines(OI_LINES, pane++, this.venueOiLegend);
+    // Wskaźniki: na wykresie ceny albo każdy we własnym panelu pod panelami przepływu (nad Tablicą liczb)
+    const shown = s.indicators.filter((x) => x.visible);
+    this.engine.setInstances(shown);
+    this.indLegends = [];
+    this.indSeries = shown.map((x) => {
+      const def = indicatorDef(x.id);
+      const own = def.pane === 'own';
+      const lines = this.addIndicatorLines(def, x, own ? pane++ : 0);
+      const legend = own ? new PaneLegend(`ind:${x.iid}`) : null;
+      if (legend) lines[0].attachPrimitive(legend);
+      this.indLegends.push(legend);
+      return lines;
+    });
     if (s.showStats) {
       this.statsSeries = this.chart.addSeries(
         LineSeries,
@@ -478,20 +517,17 @@ export class ProChartController {
       this.statsSeries.attachPrimitive(this.statsTable);
     }
     // Opis najniższego panelu omija logo TradingView (tabela statystyk ma na nie własne miejsce)
-    const lowest = s.showStats
-      ? null
-      : s.showVenueOi
-        ? this.venueOiLegend
-        : s.showVenueCvd
-          ? this.venueCvdLegend
-          : s.showCvd
-            ? this.cvdLegend
-            : s.showDelta
-              ? this.deltaLegend
-              : s.showVolume && !this.phone
-                ? this.volumeLegend
-                : null;
-    for (const lg of [this.volumeLegend, this.deltaLegend, this.cvdLegend, this.venueCvdLegend, this.venueOiLegend]) lg.setBottom(lg === lowest);
+    const own = this.indLegends.filter((lg) => lg !== null);
+    const paneLegends = [
+      s.showVolume && !this.phone ? this.volumeLegend : null,
+      s.showDelta ? this.deltaLegend : null,
+      s.showCvd ? this.cvdLegend : null,
+      s.showVenueCvd ? this.venueCvdLegend : null,
+      s.showVenueOi ? this.venueOiLegend : null,
+      ...own,
+    ].filter((lg) => lg !== null);
+    const lowest = s.showStats ? null : (paneLegends[paneLegends.length - 1] ?? null);
+    for (const lg of [this.volumeLegend, this.deltaLegend, this.cvdLegend, this.venueCvdLegend, this.venueOiLegend, ...own]) lg.setBottom(lg === lowest);
     const panes = this.chart.panes();
     panes[0]?.setStretchFactor(1);
     const statsPane = this.statsSeries?.getPane();
@@ -557,6 +593,36 @@ export class ProChartController {
     first.createPriceLine({ price: 0, color: PRO.divider, lineWidth: 1, lineStyle: LineStyle.Solid, axisLabelVisible: false, title: '' });
     first.attachPrimitive(legend);
     return out;
+  }
+
+  /** Linie wskaźnika (po jednej na plot) w panelu `pane`; poziomy jako przerywane linie bez podpisów, stały zakres skali. */
+  private addIndicatorLines(def: IndicatorDef, x: IndicatorInstance, pane: number): ISeriesApi<'Line'>[] {
+    const range = def.range;
+    const lines = def.plots.map((p) =>
+      this.chart.addSeries(
+        LineSeries,
+        {
+          color: x.color,
+          lineWidth: def.plots.length > 1 ? 1 : 2,
+          lineStyle: p.dashed ? LineStyle.Dashed : LineStyle.Solid,
+          priceLineVisible: false,
+          lastValueVisible: true,
+          crosshairMarkerRadius: 3,
+          priceFormat: { type: 'custom', minMove: 0.0001, formatter: this.indFormat(def) },
+          ...(range ? { autoscaleInfoProvider: () => ({ priceRange: { minValue: range[0], maxValue: range[1] } }) } : {}),
+        },
+        pane
+      )
+    );
+    for (const price of def.levels ?? []) lines[0].createPriceLine({ price, color: LEVEL_COLOR, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false, title: '' });
+    return lines;
+  }
+
+  /** Liczby wskaźnika: cena (tick rynku), odległość ceny (ATR: o miejsce dokładniej niż tick) albo dwa miejsca (RSI). */
+  private indFormat(def: IndicatorDef): (v: number) => string {
+    if (def.format === 'price') return fmtPx;
+    if (def.format === 'fixed2') return (v) => fmtPrice(v, 2);
+    return (v) => fmtPrice(v, Math.max(0, -Math.floor(Math.log10(this.priceTick))) + 1);
   }
 
   /** Połączenia Binance i Bybit tylko z włączonym panelem giełd albo grupą giełdy w Tablicy liczb, dla bieżącego interwału. */
@@ -773,9 +839,27 @@ export class ProChartController {
     }
     this.pushCvd(full);
     this.pushVenues(full);
+    this.pushIndicators();
     this.emitHover();
     this.emitScale();
     this.tickCountdown();
+  }
+
+  /** Wskaźniki: przeliczenie od pierwszej zmienionej świecy i wysłanie tylko jej punktów (zwykle bieżącej świecy). */
+  private pushIndicators(): void {
+    const bars = this.bars;
+    const n = bars.length;
+    const from = this.engine.sync(bars);
+    if (from >= n) return;
+    this.engine.runs.forEach((run, k) =>
+      run.out.forEach((ys, p) => {
+        const series = this.indSeries[k][p];
+        const point = (i: number) => (Number.isNaN(ys[i]) ? { time: sec(bars[i].t) } : { time: sec(bars[i].t), value: ys[i] });
+        // Bez zmiany wcześniejszych punktów (przeliczenie od zera to pełna podmiana), więc bez aktualizacji wstecz
+        if (from === 0 || n - from > MAX_POINT_UPDATES) series.setData(Array.from({ length: n }, (_, i) => point(i)));
+        else for (let i = from; i < n; i++) series.update(point(i));
+      })
+    );
   }
 
   private tickCountdown(): void {
@@ -879,7 +963,7 @@ export class ProChartController {
     const hit = p.hoveredObjectId;
     if (typeof hit === 'string' && hit.startsWith('pane:')) {
       const key = hit.slice(5);
-      if ((PANE_KEYS as readonly string[]).includes(key)) this.onHidePane(key as PaneKey);
+      if ((PANE_KEYS as readonly string[]).includes(key) || key.startsWith('ind:')) this.onHidePane(key as HideKey);
       return;
     }
     const pick = p.point && p.paneIndex === 0 ? this.liquidity.pick(p.point.x, p.point.y) : null;
@@ -931,7 +1015,7 @@ export class ProChartController {
   private emitHover(): void {
     const bars = this.bars;
     if (bars.length === 0) {
-      this.onHover({ bar: null, live: true, open: false, row: null, cvd: null, ind: null });
+      this.onHover({ bar: null, live: true, open: false, row: null, cvd: null, ind: null, indicators: [] });
       return;
     }
     const i = this.hoverTime === null ? bars.length - 1 : indexOfTime(bars, this.hoverTime);
@@ -963,9 +1047,24 @@ export class ProChartController {
       this.venueOiLegend.set(compact ? lines : [...lines, ...funding]);
     }
     const ind = i >= 0 ? this.overlay.valuesAt(i) : null;
+    // Wskaźniki: na wykresie ceny w legendzie wykresu, we własnym panelu w opisie panelu
+    const indicators: IndicatorReadout[] = [];
+    this.engine.runs.forEach((run, k) => {
+      const x = run.x;
+      const def = indicatorDef(x.id);
+      const fmt = this.indFormat(def);
+      const text = run.out.map((ys) => (i >= 0 && i < this.engine.count && !Number.isNaN(ys[i]) ? fmt(ys[i]) : '—')).join(' ');
+      const legend = this.indLegends[k];
+      if (legend)
+        legend.set([
+          { text: indicatorLabel(x), color: PRO.ink3 },
+          { text, color: x.color },
+        ]);
+      else indicators.push({ iid: x.iid, label: indicatorLabel(x), color: x.color, text });
+    });
     this.statsTable.setHover(this.hoverTime === null ? -1 : i);
     const open = bar !== null && bar.t + this.series.interval.ms > this.store.serverNow();
-    this.onHover({ bar, live: this.hoverTime === null, open, row: bar ? this.rowAt(bar, this.hoverPrice) : null, cvd, ind });
+    this.onHover({ bar, live: this.hoverTime === null, open, row: bar ? this.rowAt(bar, this.hoverPrice) : null, cvd, ind, indicators });
   }
 
   /** Wiersz footprintu pod krzyżem — ta sama siatka co na wykresie (gdy widać footprint). */

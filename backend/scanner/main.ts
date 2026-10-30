@@ -262,7 +262,7 @@ const DATA_README = [
   '- `cohorts/BTC.json` — przepływ kohort (market makerzy, statystycznie poinformowani, wieloryby, reszta): kubełki 15 min z 24 h, markouty poza próbą; k-anonimowość (komórki z < 5 uczestnikami lub z dominującym uczestnikiem ukryte).',
   '- `liquidity/BTC.json` — profil płynności arkusza: mediana głębokości obu stron w ±10 / ±20 bp wg godziny UTC (do 30 dni), bieżąca płynność względem normy godziny, odporność po gwałtownych ruchach.',
   '- `lab/BTC.json` — laboratorium folkloru: reguły day tradingu (okrągłe poziomy, zebranie PDH/PDL, IB, VWAP, luka CME, finansowanie, 10:00 NY, momentum) — test historyczny z FDR i prerejestrowany test do przodu (e-wartości, e-BH) ze wszystkimi zdarzeniami do przeliczenia.',
-  '- `whales.json` — warstwa wielorybów (BTC, ETH, SOL, HYPE): pozycje (wartość, wejście, likwidacja, dźwignia) i zlecenia oczekujące z wyzwalanymi (limit, stop, TP) największych kont z publicznego rankingu i dużych pozycji BTC; konto jako pseudonim ważny jedną dobę UTC, bez adresów.',
+  '- `whales.json` — warstwa wielorybów (BTC, ETH, SOL, HYPE): pozycje (wartość, wejście, likwidacja, dźwignia) i zlecenia oczekujące z wyzwalanymi (limit, stop, TP) największych kont z publicznego rankingu i dużych pozycji BTC; konto jako pseudonim ważny jedną dobę UTC, bez adresów; kwoty i ceny zaokrąglone.',
   '- `status.json` — stan skanera (liczby adresów i pozycji, błędy API).',
   '- `alerts/keys.json` — klucze publiczne serwera powiadomień o alarmach: VAPID (subskrypcje push przeglądarek) i Ed25519 (podpis zapytań do skrzynki alarmów).',
   '',

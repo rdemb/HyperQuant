@@ -12,6 +12,7 @@ import {
   EyeOff,
   GripVertical,
   Layers,
+  ListTree,
   Lock,
   LockOpen,
   Magnet,
@@ -22,6 +23,7 @@ import {
   Plus,
   Redo2,
   SendToBack,
+  Settings,
   Trash2,
   Undo2,
 } from 'lucide-react';
@@ -46,6 +48,10 @@ const EMPTY: DrawState = {
   canRedo: false,
   editTick: 0,
   menu: null,
+  settings: null,
+  sel: [],
+  drawings: [],
+  list: false,
 };
 
 const noop = () => () => {};
@@ -172,7 +178,7 @@ const ICON: Record<ToolKind, React.ReactNode> = {
   ),
 };
 
-const ToolIcon: React.FC<{ kind: ToolKind }> = ({ kind }) => (
+export const ToolIcon: React.FC<{ kind: ToolKind }> = ({ kind }) => (
   <svg
     viewBox="0 0 24 24"
     className="w-[18px] h-[18px]"
@@ -338,6 +344,9 @@ export const DrawToolbar: React.FC<{
       <Toggle on={st.hidden} label={st.hidden ? tr('Pokaż rysunki', 'Show drawings') : tr('Ukryj rysunki', 'Hide drawings')} onClick={() => tools?.toggleHidden()}>
         {st.hidden ? <EyeOff className="w-[18px] h-[18px]" /> : <Eye className="w-[18px] h-[18px]" />}
       </Toggle>
+      <Toggle on={st.list} label={tr(`Lista obiektów (${st.count})`, `Object list (${st.count})`)} onClick={() => tools?.toggleList()}>
+        <ListTree className="w-[18px] h-[18px]" />
+      </Toggle>
       <div className="w-6 my-1 border-t border-line" />
       <button
         type="button"
@@ -384,13 +393,13 @@ const Toggle: React.FC<{
   </button>
 );
 
-const DASH_OPTIONS: { value: Dash; label: string; d: string }[] = [
+export const DASH_OPTIONS: { value: Dash; label: string; d: string }[] = [
   { value: 'solid', label: tr('Linia ciągła', 'Solid line'), d: '' },
   { value: 'dashed', label: tr('Linia przerywana', 'Dashed line'), d: '5 3' },
   { value: 'dotted', label: tr('Linia kropkowana', 'Dotted line'), d: '1.5 2.5' },
 ];
 
-const DashIcon: React.FC<{ d: string }> = ({ d }) => (
+export const DashIcon: React.FC<{ d: string }> = ({ d }) => (
   <svg viewBox="0 0 18 4" className="w-[18px] h-1" aria-hidden>
     <path d="M1 2h16" stroke="currentColor" strokeWidth="1.6" strokeDasharray={d || undefined} strokeLinecap="round" />
   </svg>
@@ -469,10 +478,18 @@ export const DrawStyleBar: React.FC<{ tools: DrawingTools | null; onAlert?: (pri
     };
   }, [pop]);
 
-  if (!d || !tools) return null;
+  // Okno ustawień zastępuje pasek, dopóki jest otwarte
+  if (!d || !tools || st.settings) return null;
   const s = d.style;
-  const caps = styleCaps(d.kind);
-  const level = onAlert && (d.kind === 'hline' || d.kind === 'hray');
+  // Kilka zaznaczonych: kolor, linia, blokada i usunięcie dla wszystkich (każdy rysunek bierze to, co ma jego narzędzie)
+  const multi = st.sel.length > 1;
+  const caps = multi
+    ? (() => {
+        const all = st.drawings.filter((x) => st.sel.includes(x.id)).map((x) => styleCaps(x.kind));
+        return { color: all.some((c) => c.color), stroke: all.some((c) => c.stroke), fill: false, size: false, text: false };
+      })()
+    : styleCaps(d.kind);
+  const level = !multi && onAlert && (d.kind === 'hline' || d.kind === 'hray');
 
   const toggle = (pid: PopId) => (e: React.MouseEvent<HTMLButtonElement>) => {
     if (pop?.id === pid) return setPop(null);
@@ -520,7 +537,7 @@ export const DrawStyleBar: React.FC<{ tools: DrawingTools | null; onAlert?: (pri
       <div
         ref={barRef}
         role="toolbar"
-        aria-label={tr(`Rysunek: ${toolDef(d.kind).label}`, `Drawing: ${toolDef(d.kind).label}`)}
+        aria-label={multi ? tr(`Zaznaczone: ${drawingsLabel(st.sel.length)}`, `Selected: ${drawingsLabel(st.sel.length)}`) : tr(`Rysunek: ${toolDef(d.kind).label}`, `Drawing: ${toolDef(d.kind).label}`)}
         style={{ left: `${pos.fx * 100}%`, top: `${pos.fy * 100}%`, transform: `translate(${-pos.fx * 100}%, ${-pos.fy * 100}%)` }}
         className="absolute pointer-events-auto w-max max-w-full flex flex-nowrap items-center gap-0.5 overflow-x-auto [scrollbar-width:none] rounded-lg border border-line-strong bg-surface-2/95 p-0.5 shadow-2xl"
       >
@@ -536,6 +553,7 @@ export const DrawStyleBar: React.FC<{ tools: DrawingTools | null; onAlert?: (pri
         >
           <GripVertical className="w-4 h-4" />
         </button>
+        {multi && <span className="px-1.5 text-xs text-ink-1 whitespace-nowrap">{drawingsLabel(st.sel.length)}</span>}
         {caps.color && (
           <BarBtn label={tr('Kolor', 'Colour')} open={pop?.id === 'color'} onClick={toggle('color')}>
             <Swatch icon={<PenLine className="w-4 h-4" />} color={s.color} alpha={alpha} />
@@ -584,6 +602,11 @@ export const DrawStyleBar: React.FC<{ tools: DrawingTools | null; onAlert?: (pri
           </>
         )}
         <Sep />
+        {!multi && (
+          <BarBtn label={tr('Ustawienia rysunku', 'Drawing settings')} onClick={() => tools.openSettings()}>
+            <Settings className="w-4 h-4" />
+          </BarBtn>
+        )}
         {level && (
           <BarBtn label={tr('Alarm na tym poziomie', 'Alert at this level')} onClick={() => onAlert(d.pts[0].p)}>
             <Bell className="w-4 h-4 text-warn" />
@@ -592,12 +615,14 @@ export const DrawStyleBar: React.FC<{ tools: DrawingTools | null; onAlert?: (pri
         <BarBtn label={d.locked ? tr('Odblokuj rysunek', 'Unlock drawing') : tr('Zablokuj rysunek', 'Lock drawing')} pressed={!!d.locked} onClick={() => tools.toggleLockSelected()}>
           {d.locked ? <Lock className="w-4 h-4" /> : <LockOpen className="w-4 h-4" />}
         </BarBtn>
-        <BarBtn label={tr('Usuń rysunek (Delete)', 'Delete drawing (Delete)')} danger onClick={() => tools.deleteSelected()}>
+        <BarBtn label={multi ? tr('Usuń zaznaczone (Delete)', 'Delete selected (Delete)') : tr('Usuń rysunek (Delete)', 'Delete drawing (Delete)')} danger onClick={() => tools.deleteSelected()}>
           <Trash2 className="w-4 h-4" />
         </BarBtn>
-        <BarBtn label={tr('Więcej', 'More')} open={pop?.id === 'more'} onClick={toggle('more')}>
-          <Ellipsis className="w-4 h-4" />
-        </BarBtn>
+        {!multi && (
+          <BarBtn label={tr('Więcej', 'More')} open={pop?.id === 'more'} onClick={toggle('more')}>
+            <Ellipsis className="w-4 h-4" />
+          </BarBtn>
+        )}
       </div>
       {pop && (
         <div
@@ -670,7 +695,7 @@ const Swatch: React.FC<{ icon: React.ReactNode; color: string; alpha: number }> 
 );
 
 /** Paleta (szarości i barwy w odcieniach), własny kolor i krycie. `merge` — zmiana z suwaka lub próbnika scalana w jeden krok cofania. */
-const ColorPicker: React.FC<{ color: string; alpha: number; onColor: (c: string, merge: boolean) => void; onAlpha: (a: number) => void }> = ({ color, alpha, onColor, onAlpha }) => {
+export const ColorPicker: React.FC<{ color: string; alpha: number; onColor: (c: string, merge: boolean) => void; onAlpha: (a: number) => void }> = ({ color, alpha, onColor, onAlpha }) => {
   const pct = Math.round(alpha * 100);
   return (
     <div className="p-0.5">
@@ -718,7 +743,7 @@ const ORDER: { value: Order; label: string; icon: React.ReactNode }[] = [
 ];
 
 /** Polecenia rysunku — wspólne dla menu pod prawym przyciskiem i „więcej” na pasku. */
-const DrawActions: React.FC<{ tools: DrawingTools; d: Drawing; onAlert?: (price: number) => void; onDone: () => void }> = ({ tools, d, onAlert, onDone }) => {
+const DrawActions: React.FC<{ tools: DrawingTools; d: Drawing; multi?: boolean; onAlert?: (price: number) => void; onDone: () => void }> = ({ tools, d, multi = false, onAlert, onDone }) => {
   const [order, setOrder] = useState(false);
   const item = (icon: React.ReactNode, label: string, keys: string, run: () => void, danger = false, indent = false) => (
     <button
@@ -735,16 +760,27 @@ const DrawActions: React.FC<{ tools: DrawingTools; d: Drawing; onAlert?: (price:
       {keys && <span className="hidden sm:inline font-mono text-[10px] text-ink-3 whitespace-nowrap">{keys}</span>}
     </button>
   );
+  const lock = item(
+    d.locked ? <LockOpen className="w-4 h-4" /> : <Lock className="w-4 h-4" />,
+    d.locked ? tr('Odblokuj', 'Unlock') : tr('Zablokuj', 'Lock'),
+    '',
+    () => tools.toggleLockSelected()
+  );
+  const remove = item(<Trash2 className="w-4 h-4" />, tr('Usuń', 'Remove'), 'Delete', () => tools.deleteSelected(), true);
+  // Kilka zaznaczonych: polecenia dla wszystkich naraz
+  if (multi)
+    return (
+      <>
+        {lock}
+        <div className="my-1 border-t border-line" />
+        {remove}
+      </>
+    );
   return (
     <>
       {item(<CopyPlus className="w-4 h-4" />, tr('Klonuj', 'Clone'), tr('Ctrl + przeciągnij', 'Ctrl + drag'), () => tools.cloneSelected())}
       {item(<Copy className="w-4 h-4" />, tr('Kopiuj', 'Copy'), 'Ctrl+C', () => tools.copySelected())}
-      {item(
-        d.locked ? <LockOpen className="w-4 h-4" /> : <Lock className="w-4 h-4" />,
-        d.locked ? tr('Odblokuj', 'Unlock') : tr('Zablokuj', 'Lock'),
-        '',
-        () => tools.toggleLockSelected()
-      )}
+      {lock}
       <button
         type="button"
         role="menuitem"
@@ -760,8 +796,9 @@ const DrawActions: React.FC<{ tools: DrawingTools; d: Drawing; onAlert?: (price:
       </button>
       {order && ORDER.map((o) => <React.Fragment key={o.value}>{item(o.icon, o.label, '', () => tools.reorderSelected(o.value), false, true)}</React.Fragment>)}
       {onAlert && item(<Bell className="w-4 h-4" />, tr('Alarm na tym poziomie', 'Alert at this level'), '', () => onAlert(d.pts[0].p))}
+      {item(<Settings className="w-4 h-4" />, tr('Ustawienia…', 'Settings…'), tr('dwuklik', 'double-click'), () => tools.openSettings())}
       <div className="my-1 border-t border-line" />
-      {item(<Trash2 className="w-4 h-4" />, tr('Usuń', 'Remove'), 'Delete', () => tools.deleteSelected(), true)}
+      {remove}
     </>
   );
 };
@@ -806,21 +843,29 @@ export const DrawMenu: React.FC<{ tools: DrawingTools | null; onAlert?: (price: 
   }, [at, tools]);
 
   if (!at || !d || !tools) return null;
+  const multi = st.sel.length > 1;
+  const title = multi ? drawingsLabel(st.sel.length) : toolDef(d.kind).label;
   return (
     <div
       ref={ref}
       role="menu"
-      aria-label={toolDef(d.kind).label}
+      aria-label={title}
       style={{ left: fit?.left ?? at.x, top: fit?.top ?? at.y, maxHeight: fit?.maxH, visibility: fit ? 'visible' : 'hidden' }}
       className="absolute z-40 w-60 overflow-y-auto rounded-xl border border-line-strong bg-surface-2 p-1.5 text-xs shadow-2xl"
     >
-      <div className="px-2.5 pt-1 pb-1.5 text-[11px] text-ink-3">{toolDef(d.kind).label}</div>
-      <DrawActions tools={tools} d={d} onAlert={onAlert && (d.kind === 'hline' || d.kind === 'hray') ? onAlert : undefined} onDone={() => tools.closeMenu()} />
+      <div className="px-2.5 pt-1 pb-1.5 text-[11px] text-ink-3">{title}</div>
+      <DrawActions tools={tools} d={d} multi={multi} onAlert={onAlert && (d.kind === 'hline' || d.kind === 'hray') ? onAlert : undefined} onDone={() => tools.closeMenu()} />
     </div>
   );
 };
 
 const Sep = () => <span className="w-px h-5 bg-line mx-0.5" aria-hidden />;
+
+/** „3 rysunki”, „5 rysunków”. */
+export const drawingsLabel = (n: number): string => {
+  const few = n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14);
+  return tr(`${n} ${n === 1 ? 'rysunek' : few ? 'rysunki' : 'rysunków'}`, `${n} ${n === 1 ? 'drawing' : 'drawings'}`);
+};
 
 const HINTS: Partial<Record<ToolKind, string>> = {
   brush: tr('Przeciągnij, żeby rysować', 'Drag to draw'),

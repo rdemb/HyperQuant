@@ -12,7 +12,7 @@ import type { AggressorOrder } from './core/orders';
 import type { ResetMode } from './core/sessions';
 import { tpoInterval } from './core/tpo';
 import { VENUE_GROUPS } from './core/stats';
-import { type PaneKey, ProChartController, type ScaleState } from './chart/controller';
+import { type HideKey, type PaneKey, ProChartController, type ScaleState } from './chart/controller';
 import { DomLadder, PickCard, TapePanel, compact } from './chart/FlowPanels';
 import { HoverSignal, Legend } from './chart/Legend';
 import { LOT_FLOOR, type LiquidityPick } from './chart/liquidity';
@@ -27,12 +27,16 @@ import { ChartLayout, ChartSettings, NARROW_QUERY, PHONE_PANES, PhonePane, hashF
 import { STATIONS, Station, StationId, stationKey, stationPanel } from './chart/stations';
 import { BUILT_IN_TEMPLATES, ChartTemplate, applyTemplate, loadTemplates, saveAs, saveTemplates } from './chart/templates';
 import { NumbersCard, StatGroupPicker } from './chart/NumbersCard';
+import { ClassicTab } from './chart/ClassicTab';
+import { indicatorLabel } from './indicators/registry';
 import { MarketStateBar } from './chart/MarketStateBar';
 import { SchrodiLauncher } from '../../components/schrodi/SchrodiLauncher';
 import { type ChartPalette, PALETTE, setPalette } from './chart/palette';
 import type { ChartView } from './chart/footprintSeries';
 import type { FootprintStyle } from './chart/layout';
 import { DrawHint, DrawMenu, DrawStyleBar, DrawToolbar } from './draw/DrawToolbar';
+import { DrawSettings } from './draw/DrawSettings';
+import { DrawList } from './draw/DrawList';
 import { TOOLS } from './draw/model';
 import { type DrawingTools, isTyping } from './draw/tools';
 import { CandleSeries, MARKETS, Market, ProStore, storeFor } from './store/proStore';
@@ -80,11 +84,12 @@ const PALETTE_OPTIONS: { value: ChartPalette; label: string }[] = [
   { value: 'desk', label: 'Desk' },
 ];
 
-/** Zakładki menu Wskaźniki: linie i warstwy na wykresie ceny albo panele pod nim. */
-type IndicatorsTab = 'price' | 'panes';
+/** Zakładki menu Wskaźniki: linie i warstwy na wykresie ceny, panele pod nim albo klasyczne wskaźniki (EMA, RSI…). */
+type IndicatorsTab = 'price' | 'panes' | 'classic';
 const INDICATOR_TABS: { id: IndicatorsTab; label: string }[] = [
-  { id: 'price', label: tr('Na wykresie ceny', 'On the price chart') },
+  { id: 'price', label: tr('Na cenie', 'On price') },
   { id: 'panes', label: tr('Pod wykresem', 'Below the chart') },
+  { id: 'classic', label: tr('Klasyczne', 'Classic') },
 ];
 
 /** Karty na telefonie: jedna naraz, więc wykres ma cały ekran. */
@@ -263,9 +268,17 @@ export const ProChart: React.FC<{
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
-    const ctrl = new ProChartController(host, store, series, shownSettings(settings, isNarrow(), layout, inReplay), signal.set, setPick, (key) => {
-      update({ [key]: false });
-      setToast(tr(`Ukryto panel: ${PANE_NAMES[key]} — włączysz go w menu Wskaźniki → Pod wykresem`, `Panel hidden: ${PANE_NAMES[key]} — turn it back on in Indicators → Below the chart`));
+    const ctrl = new ProChartController(host, store, series, shownSettings(settings, isNarrow(), layout, inReplay), signal.set, setPick, (key: HideKey) => {
+      if (key.startsWith('ind:')) {
+        const x = live.current.settings.indicators.find((y) => `ind:${y.iid}` === key);
+        if (!x) return;
+        setSettings((s) => ({ ...s, indicators: s.indicators.map((y) => (y.iid === x.iid ? { ...y, visible: false } : y)) }));
+        setToast(tr(`Ukryto wskaźnik: ${indicatorLabel(x)} — włączysz go w menu Wskaźniki → Klasyczne`, `Indicator hidden: ${indicatorLabel(x)} — turn it back on in Indicators → Classic`));
+        return;
+      }
+      const pane = key as PaneKey;
+      update({ [pane]: false });
+      setToast(tr(`Ukryto panel: ${PANE_NAMES[pane]} — włączysz go w menu Wskaźniki → Pod wykresem`, `Panel hidden: ${PANE_NAMES[pane]} — turn it back on in Indicators → Below the chart`));
     }, setScale);
     ctrl.setPhone(isNarrow());
     ctrlRef.current = ctrl;
@@ -709,11 +722,14 @@ export const ProChart: React.FC<{
       <div className="relative flex flex-1 min-h-0">
         <DrawToolbar tools={tools} className={drawOpen ? 'flex' : 'hidden'} />
         <div className="relative flex-1 min-h-0 min-w-0" onContextMenu={onContextMenu}>
-          <div ref={hostRef} className="absolute inset-0" />
+          {/* Własny kontekst warstw: uchwyt zmiany wysokości paneli wykresu (z-index 50) nie przykrywa pasków i okien rysunków */}
+          <div ref={hostRef} className="absolute inset-0 isolate" />
           <AutoScaleBtn scale={scale} onToggle={() => ctrlRef.current?.setAutoScale(!scale.auto)} />
           <Legend signal={signal} intervalMs={iv.ms} intervalLabel={iv.label} tapeSince={tapeSince} coin={store.coin} onBottom={onLegendBottom} compact={narrow} multi={layout > 1} />
           <DrawStyleBar tools={tools} onAlert={drawAlert} />
           <DrawMenu tools={tools} onAlert={drawAlert} />
+          <DrawSettings tools={tools} />
+          <DrawList tools={tools} />
           <DrawHint tools={tools} />
           <LoadOverlay series={series} onRetry={() => void series.load(true)} />
           {narrow && tab === 'tape' && (
@@ -1460,7 +1476,7 @@ const IndicatorsMenu: React.FC<{
   const all = items.every((i) => s[i.key]);
   return (
     <div className="bg-surface-2 border border-line-strong rounded-xl p-3 shadow-2xl flex flex-col gap-1 text-xs">
-      <div role="tablist" aria-label={tr('Wskaźniki', 'Indicators')} className="grid grid-cols-2 gap-0.5 p-0.5 mb-2 rounded-lg border border-line">
+      <div role="tablist" aria-label={tr('Wskaźniki', 'Indicators')} className="grid grid-cols-3 gap-0.5 p-0.5 mb-2 rounded-lg border border-line">
         {INDICATOR_TABS.map((t) => (
           <button
             key={t.id}
@@ -1478,6 +1494,8 @@ const IndicatorsMenu: React.FC<{
       </div>
       {tab === 'panes' ? (
         <PanesTab s={s} grid4={grid4} narrow={narrow} onChange={onChange} />
+      ) : tab === 'classic' ? (
+        <ClassicTab list={s.indicators} narrow={narrow} onChange={(indicators) => onChange({ indicators })} />
       ) : (
         <>
           <div className="flex justify-end mb-1">
