@@ -1,5 +1,5 @@
 import type { Candle } from '../hl/parse';
-import { Extreme, Window, ema, rma } from './primitives';
+import { Extreme, Window, Wma, ema, rma } from './primitives';
 import { numLang } from '../../../ui/format';
 import { tr } from '../../../i18n';
 
@@ -9,7 +9,27 @@ import { tr } from '../../../i18n';
  * to same liczby — wskaźnik opisuje ostatnie świece, nie podpowiada wejść.
  */
 
-export type IndicatorId = 'sma' | 'ema' | 'supertrend' | 'dmi' | 'rsi' | 'stoch' | 'macd' | 'bb' | 'keltner' | 'donchian' | 'atr' | 'obv';
+export type IndicatorId =
+  | 'sma'
+  | 'ema'
+  | 'hma'
+  | 'vwma'
+  | 'supertrend'
+  | 'dmi'
+  | 'rsi'
+  | 'stoch'
+  | 'stochrsi'
+  | 'macd'
+  | 'cci'
+  | 'wpr'
+  | 'bb'
+  | 'keltner'
+  | 'donchian'
+  | 'atr'
+  | 'chop'
+  | 'obv'
+  | 'cmf'
+  | 'mfi';
 
 /** Grupy na liście okna wskaźników (jak kategorie TradingView). */
 export type IndicatorGroup = 'trend' | 'momentum' | 'volatility' | 'volume';
@@ -66,6 +86,8 @@ export interface IndicatorDef {
    * Bez nich — tylko od ostatnich `warmup + 1` świec.
    */
   decay?(p: Params): number[];
+  /** Okna stałe po średnich rekurencyjnych (Stoch RSI: okno min i max RSI i średnie proste): o tyle świec dalej sięga pamięć. */
+  lag?(p: Params): number;
   /** Opis zależności od historii zamiast wyliczonego (np. suma od początku historii albo pasma trzymające poziom). */
   memoryNote?: string;
   /** Na wykresie ceny albo we własnym panelu pod nim. */
@@ -75,8 +97,8 @@ export interface IndicatorDef {
   /** Linie poziomów w panelu (liczby bez podpisów) i stały zakres jego skali. */
   levels?: readonly number[];
   range?: readonly [number, number];
-  /** Liczby: cena z dokładnością ticku rynku, odległość ceny (o miejsce dokładniej niż tick), dwa miejsca albo wolumen. */
-  format: 'price' | 'range' | 'fixed2' | 'volume';
+  /** Liczby: cena z dokładnością ticku rynku, odległość ceny (o miejsce dokładniej niż tick), dwa albo trzy miejsca, wolumen. */
+  format: 'price' | 'range' | 'fixed2' | 'fixed3' | 'volume';
   create(p: Params): Step;
 }
 
@@ -100,6 +122,24 @@ const smaOf = (n: number) => {
 
 /** EMA albo RMA serii z rozbiegiem `na`: wartości przed pierwszą liczbą pomijane, jak `ta.ema` na serii z `na` na początku. */
 const smoothOf = (s: ReturnType<typeof ema>) => (x: number, keep: boolean) => (Number.isNaN(x) ? Number.NaN : s.next(x, keep));
+
+/** RSI serii (`ta.rsi`): średnie Wildera wzrostów i spadków; pierwsza wartość nie ma zmiany (`na`), więc średnie zaczynają się od drugiej. */
+const rsiOf = (n: number) => {
+  const up = rma(n);
+  const down = rma(n);
+  let prev = Number.NaN;
+  return (x: number, keep: boolean) => {
+    const d = x - prev;
+    if (keep) prev = x;
+    if (Number.isNaN(d)) return Number.NaN;
+    const u = up.next(Math.max(d, 0), keep);
+    const w = down.next(Math.max(-d, 0), keep);
+    return Number.isNaN(u) ? Number.NaN : w === 0 ? 100 : u === 0 ? 0 : 100 - 100 / (1 + u / w);
+  };
+};
+
+/** Typowa cena świecy (`hlc3`). */
+const hlc3 = (c: Candle) => (c.h + c.l + c.c) / 3;
 
 export const INDICATORS: readonly IndicatorDef[] = [
   {
@@ -141,6 +181,52 @@ export const INDICATORS: readonly IndicatorDef[] = [
       const e = ema(p.length);
       return (c, keep, out) => {
         out[0] = e.next(c.c, keep);
+      };
+    },
+  },
+  {
+    id: 'hma',
+    short: 'HMA',
+    name: tr('Średnia Hulla (HMA)', 'Hull Moving Average (HMA)'),
+    hint: tr(
+      'Średnia ważona liniowo (WMA) z 2 × WMA(n/2) − WMA(n) na √n świecach: wygładza zamknięcia i mniej się spóźnia niż średnia prosta',
+      'A linearly weighted average (WMA) of 2 × WMA(n/2) − WMA(n) over √n candles: smooths closes and lags less than a simple average'
+    ),
+    group: 'trend',
+    aliases: 'hull średnia ważona weighted moving average wma ma',
+    warmup: (p) => p.length + Math.floor(Math.sqrt(p.length)) - 2,
+    pane: 'price',
+    params: [{ ...length(9), min: 2 }],
+    plots: [{}],
+    format: 'price',
+    create: (p) => {
+      const half = new Wma(Math.floor(p.length / 2));
+      const full = new Wma(p.length);
+      const outer = new Wma(Math.floor(Math.sqrt(p.length)));
+      return (c, keep, out) => {
+        out[0] = outer.next(2 * half.next(c.c, keep) - full.next(c.c, keep), keep);
+      };
+    },
+  },
+  {
+    id: 'vwma',
+    short: 'VWMA',
+    name: tr('Średnia ważona wolumenem (VWMA)', 'Volume Weighted Moving Average (VWMA)'),
+    hint: tr('Średnia zamknięć n świec z wagami równymi ich wolumenowi, Σ(C × V) / ΣV', 'The average close of n candles weighted by their volume, Σ(C × V) / ΣV'),
+    group: 'trend',
+    aliases: 'vwma średnia ważona wolumenem volume weighted moving average ma',
+    warmup: (p) => p.length - 1,
+    pane: 'price',
+    params: [length(20)],
+    plots: [{}],
+    format: 'price',
+    create: (p) => {
+      const pv = new Window(p.length);
+      const v = new Window(p.length);
+      return (c, keep, out) => {
+        pv.next(c.c * c.v, keep);
+        v.next(c.v, keep);
+        out[0] = v.mean > 0 ? pv.mean / v.mean : Number.NaN;
       };
     },
   },
@@ -271,20 +357,9 @@ export const INDICATORS: readonly IndicatorDef[] = [
     range: [0, 100],
     format: 'fixed2',
     create: (p) => {
-      const up = rma(p.length);
-      const down = rma(p.length);
-      let prev = Number.NaN;
+      const r = rsiOf(p.length);
       return (c, keep, out) => {
-        const d = c.c - prev;
-        if (keep) prev = c.c;
-        // Pierwsza świeca nie ma zmiany (`na` w Pine) — średnie zaczynają się od drugiej
-        if (Number.isNaN(d)) {
-          out[0] = Number.NaN;
-          return;
-        }
-        const u = up.next(Math.max(d, 0), keep);
-        const w = down.next(Math.max(-d, 0), keep);
-        out[0] = Number.isNaN(u) ? Number.NaN : w === 0 ? 100 : u === 0 ? 0 : 100 - 100 / (1 + u / w);
+        out[0] = r(c.c, keep);
       };
     },
   },
@@ -321,6 +396,50 @@ export const INDICATORS: readonly IndicatorDef[] = [
     },
   },
   {
+    id: 'stochrsi',
+    short: 'Stoch RSI',
+    name: tr('Stochastyczny RSI (Stoch RSI)', 'Stochastic RSI (Stoch RSI)'),
+    hint: tr(
+      'Oscylator stochastyczny liczony na RSI zamiast na cenie: położenie RSI w jego zakresie z n świec, %K wygładzone średnią prostą, %D (pomarańcz) to średnia %K; linie 80, 50 i 20 to tylko liczby odniesienia',
+      'The stochastic oscillator computed on RSI instead of price: where RSI sits in its n-candle range, %K smoothed with a simple average, %D (orange) is the average of %K; the 80, 50 and 20 lines are reference numbers only'
+    ),
+    group: 'momentum',
+    aliases: 'stochastic rsi stochrsi stochastyczny oscylator oscillator %k %d',
+    warmup: (p) => p.rsi + p.stoch + p.k + p.d - 3,
+    decay: (p) => [1 / p.rsi],
+    lag: (p) => p.stoch + p.k + p.d - 3,
+    pane: 'own',
+    params: [
+      int('k', tr('Wygładzenie %K', '%K smoothing'), 3),
+      int('d', tr('Wygładzenie %D', '%D smoothing'), 3),
+      int('rsi', tr('Długość RSI', 'RSI length'), 14),
+      int('stoch', tr('Długość stochastyka', 'Stochastic length'), 14),
+    ],
+    plots: [{}, { color: ORANGE }],
+    levels: [80, 50, 20],
+    range: [0, 100],
+    format: 'fixed2',
+    create: (p) => {
+      const r = rsiOf(p.rsi);
+      const hi = new Extreme(p.stoch, 1);
+      const lo = new Extreme(p.stoch, -1);
+      const k = smaOf(p.k);
+      const d = smaOf(p.d);
+      return (c, keep, out) => {
+        const x = r(c.c, keep);
+        let raw = Number.NaN;
+        // Rozbieg RSI (`na`) nie wchodzi do okna najwyższej i najniższej wartości
+        if (!Number.isNaN(x)) {
+          const h = hi.next(x, keep);
+          const l = lo.next(x, keep);
+          if (h > l) raw = (100 * (x - l)) / (h - l);
+        }
+        out[0] = k(raw, keep);
+        out[1] = d(out[0], keep);
+      };
+    },
+  },
+  {
     id: 'macd',
     short: 'MACD',
     name: 'MACD',
@@ -347,6 +466,73 @@ export const INDICATORS: readonly IndicatorDef[] = [
         out[0] = m;
         out[1] = s;
         out[2] = m - s;
+      };
+    },
+  },
+  {
+    id: 'cci',
+    short: 'CCI',
+    name: tr('Indeks kanału towarowego (CCI)', 'Commodity Channel Index (CCI)'),
+    hint: tr(
+      'Odległość typowej ceny (H+L+C)/3 od jej średniej prostej z n świec w jednostkach 0,015 × średniego odchylenia bezwzględnego; linie 100, 0 i −100 to tylko liczby odniesienia',
+      'The distance of the typical price (H+L+C)/3 from its n-candle simple average in units of 0.015 × the mean absolute deviation; the 100, 0 and −100 lines are reference numbers only'
+    ),
+    group: 'momentum',
+    aliases: 'cci commodity channel index kanał towarowy oscylator oscillator',
+    warmup: (p) => p.length - 1,
+    pane: 'own',
+    params: [length(20)],
+    plots: [{}],
+    levels: [100, 0, -100],
+    format: 'fixed2',
+    create: (p) => {
+      const n = p.length;
+      const w = new Window(n);
+      // n − 1 ostatnich zatwierdzonych typowych cen (bieżąca dochodzi przy liczeniu): `ta.dev` to O(n) na świecę
+      const buf = new Float64Array(Math.max(n - 1, 1));
+      let head = 0;
+      return (c, keep, out) => {
+        const x = hlc3(c);
+        w.next(x, keep);
+        const m = w.mean;
+        out[0] = Number.NaN;
+        if (!Number.isNaN(m)) {
+          let dev = Math.abs(x - m);
+          for (let k = 0; k < n - 1; k++) dev += Math.abs(buf[k] - m);
+          // Odchylenie zero (stała cena) daje `na`, jak dzielenie przez zero w Pine
+          if (dev > 0) out[0] = (x - m) / ((0.015 * dev) / n);
+        }
+        if (keep && n > 1) {
+          buf[head] = x;
+          head = (head + 1) % (n - 1);
+        }
+      };
+    },
+  },
+  {
+    id: 'wpr',
+    short: '%R',
+    name: 'Williams %R',
+    hint: tr(
+      'Położenie zamknięcia pod najwyższym szczytem n świec w skali od −100 do 0, 100 × (C − max H) / (max H − min L); linie −20, −50 i −80 to tylko liczby odniesienia',
+      'Where the close sits below the highest high of n candles on a −100 to 0 scale, 100 × (C − max H) / (max H − min L); the −20, −50 and −80 lines are reference numbers only'
+    ),
+    group: 'momentum',
+    aliases: 'williams %r wpr percent range oscylator oscillator',
+    warmup: (p) => p.length - 1,
+    pane: 'own',
+    params: [length(14)],
+    plots: [{}],
+    levels: [-20, -50, -80],
+    range: [-100, 0],
+    format: 'fixed2',
+    create: (p) => {
+      const hi = new Extreme(p.length, 1);
+      const lo = new Extreme(p.length, -1);
+      return (c, keep, out) => {
+        const h = hi.next(c.h, keep);
+        const l = lo.next(c.l, keep);
+        out[0] = h > l ? (100 * (c.c - h)) / (h - l) : Number.NaN;
       };
     },
   },
@@ -456,6 +642,38 @@ export const INDICATORS: readonly IndicatorDef[] = [
     },
   },
   {
+    id: 'chop',
+    short: 'CHOP',
+    name: 'Choppiness Index (CHOP)',
+    hint: tr(
+      '100 × log10(Σ TR / (max H − min L)) / log10(n) z n świec: wyżej, gdy suma ruchów świec jest duża wobec zakresu (cena chodzi w miejscu), niżej, gdy cena idzie w jedną stronę; linie 61,8 i 38,2 to tylko liczby odniesienia',
+      '100 × log10(Σ TR / (max H − min L)) / log10(n) over n candles: higher when the candles’ moves are large relative to the range (price going nowhere), lower when price goes one way; the 61.8 and 38.2 lines are reference numbers only'
+    ),
+    group: 'volatility',
+    aliases: 'choppiness chop konsolidacja szarpanie range trend',
+    warmup: (p) => p.length - 1,
+    pane: 'own',
+    params: [{ ...length(14), min: 2 }],
+    plots: [{}],
+    levels: [61.8, 38.2],
+    format: 'fixed2',
+    create: (p) => {
+      const n = p.length;
+      const tr1 = new Window(n);
+      const hi = new Extreme(n, 1);
+      const lo = new Extreme(n, -1);
+      let prevClose = Number.NaN;
+      return (c, keep, out) => {
+        // `ta.atr(1)` to true range świecy, na pierwszej H − L
+        tr1.next(trueRange(c, prevClose), keep);
+        if (keep) prevClose = c.c;
+        const h = hi.next(c.h, keep);
+        const l = lo.next(c.l, keep);
+        out[0] = h > l ? (100 * Math.log10((tr1.mean * n) / (h - l))) / Math.log10(n) : Number.NaN;
+      };
+    },
+  },
+  {
     id: 'obv',
     short: 'OBV',
     name: tr('Wolumen narastający (OBV)', 'On Balance Volume (OBV)'),
@@ -490,6 +708,67 @@ export const INDICATORS: readonly IndicatorDef[] = [
       };
     },
   },
+  {
+    id: 'cmf',
+    short: 'CMF',
+    name: tr('Przepływ pieniądza Chaikina (CMF)', 'Chaikin Money Flow (CMF)'),
+    hint: tr(
+      'Suma wolumenu ważonego położeniem zamknięcia w świecy, ((C − L) − (H − C)) / (H − L), przez sumę wolumenu n świec; od −1 do 1',
+      'The sum of volume weighted by where the close sits in the candle, ((C − L) − (H − C)) / (H − L), divided by the volume of n candles; from −1 to 1'
+    ),
+    group: 'volume',
+    aliases: 'chaikin money flow cmf przepływ pieniądza wolumen',
+    warmup: (p) => p.length - 1,
+    pane: 'own',
+    params: [length(20)],
+    plots: [{}],
+    levels: [0],
+    format: 'fixed3',
+    create: (p) => {
+      const ad = new Window(p.length);
+      const v = new Window(p.length);
+      return (c, keep, out) => {
+        // Świeca bez zakresu (H = L) waży zero
+        ad.next(c.h > c.l ? ((2 * c.c - c.l - c.h) / (c.h - c.l)) * c.v : 0, keep);
+        v.next(c.v, keep);
+        out[0] = v.mean > 0 ? ad.mean / v.mean : Number.NaN;
+      };
+    },
+  },
+  {
+    id: 'mfi',
+    short: 'MFI',
+    name: tr('Indeks przepływu pieniądza (MFI)', 'Money Flow Index (MFI)'),
+    hint: tr(
+      'Jak RSI, ale z wolumenem: sumy typowej ceny × wolumen ze świec n, w których typowa cena wzrosła i spadła, w skali 0–100; linie 80 i 20 to tylko liczby odniesienia',
+      'Like RSI but with volume: the sums of typical price × volume over n candles in which the typical price rose and fell, on a 0–100 scale; the 80 and 20 lines are reference numbers only'
+    ),
+    group: 'volume',
+    aliases: 'money flow index mfi przepływ pieniądza wolumen oscylator oscillator',
+    warmup: (p) => p.length - 1,
+    pane: 'own',
+    params: [length(14)],
+    plots: [{}],
+    levels: [80, 20],
+    range: [0, 100],
+    format: 'fixed2',
+    create: (p) => {
+      const up = new Window(p.length);
+      const down = new Window(p.length);
+      let prev = Number.NaN;
+      return (c, keep, out) => {
+        const x = hlc3(c);
+        const ch = x - prev;
+        if (keep) prev = x;
+        // Pierwsza świeca nie ma zmiany (`na`): w Pine oba porównania są fałszywe, więc trafia do obu sum
+        up.next(ch <= 0 ? 0 : c.v * x, keep);
+        down.next(ch >= 0 ? 0 : c.v * x, keep);
+        const u = up.mean;
+        const d = down.mean;
+        out[0] = Number.isNaN(u) ? Number.NaN : d === 0 ? (u === 0 ? Number.NaN : 100) : 100 - 100 / (1 + u / d);
+      };
+    },
+  },
 ];
 
 export const indicatorDef = (id: IndicatorId): IndicatorDef => INDICATORS.find((d) => d.id === id)!;
@@ -497,13 +776,13 @@ export const indicatorDef = (id: IndicatorId): IndicatorDef => INDICATORS.find((
 /**
  * Świece, poza którymi starsza historia waży łącznie mniej niż 0,1% (średnie rekurencyjne); null — okno stałe.
  * Kilka średnich po sobie (np. MACD: wolna EMA, potem EMA sygnału): suma ogonów, każdy poniżej 0,1% / liczba średnich —
- * ogon splotu nie przekracza sumy ogonów, więc granica jest ostrożna.
+ * ogon splotu nie przekracza sumy ogonów, więc granica jest ostrożna. Okna stałe za średnimi (`lag`) przesuwają granicę.
  */
 export function memoryCandles(def: IndicatorDef, p: Params): number | null {
   const alphas = (def.decay?.(p) ?? []).filter((a) => a < 1);
   if (alphas.length === 0) return null;
   const eps = 0.001 / alphas.length;
-  return alphas.reduce((sum, a) => sum + Math.ceil(Math.log(eps) / Math.log(1 - a)), 0);
+  return alphas.reduce((sum, a) => sum + Math.ceil(Math.log(eps) / Math.log(1 - a)), def.lag?.(p) ?? 0);
 }
 
 /** Wskaźnik na wykresie: instancja z parametrami i stylem (kilka instancji jednego wskaźnika, np. EMA 21 i 55). */
