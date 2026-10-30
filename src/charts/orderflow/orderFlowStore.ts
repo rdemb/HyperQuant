@@ -320,8 +320,10 @@ export class OrderFlowStore {
       if (t.exchange !== 'HYPERLIQUID' || t.isSynthetic) continue;
       const btc = t.sizeBtc > 0 ? t.sizeBtc : t.price > 0 ? t.sizeUsd / t.price : 0;
       if (!(btc > 0) || !(t.price > 0) || !Number.isFinite(t.timestamp)) continue;
-      // Powtórki (np. snapshot po ponownym połączeniu WS) — tylko dla transakcji nie nowszych niż już widziane
-      const sig = `${t.timestamp}|${t.price}|${btc}|${t.side}`;
+      // Powtórki (np. snapshot po ponownym połączeniu WS) — tylko dla transakcji nie nowszych niż już widziane.
+      // Klucz to id z tid giełdy: dwa prawdziwe identyczne wypełnienia w tej samej ms liczą się osobno;
+      // podpis z czasu, ceny, rozmiaru i strony tylko dla ticków bez id
+      const sig = t.id || `${t.timestamp}|${t.price}|${btc}|${t.side}`;
       if (t.timestamp <= prevMax && this.seen.has(sig)) continue;
       (batch ??= []).push(sig);
       this.recordTrade(t.timestamp, t.price, btc, t.sizeUsd > 0 ? t.sizeUsd : t.price * btc, t.side === 'buy' ? SIDE_BUY : SIDE_SELL);

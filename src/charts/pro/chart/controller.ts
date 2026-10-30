@@ -360,6 +360,8 @@ export class ProChartController {
     this.chart.unsubscribeCrosshairMove(this.onCrosshair);
     this.chart.unsubscribeClick(this.onClick);
     this.chart.timeScale().unsubscribeVisibleLogicalRangeChange(this.onRange);
+    // Klatka z fitStatsPane zaplanowana przed zamknięciem nie może sięgnąć do usuniętego wykresu
+    this.statsSeries = null;
     this.chart.remove();
   }
 

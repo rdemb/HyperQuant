@@ -1408,8 +1408,8 @@ function flowLayers(s: ChartSettings, intervalMs: number, liq: LiqMapState, whal
       key: 'showTpo',
       label: tr('TPO — profil czasowy doby', 'TPO — time profile of the day'),
       hint: tr(
-        'Litery 30-minutowych okresów doby UTC w każdym wierszu ceny: POC, value area, initial balance (pasek turkusowy), pojedyncze wydruki i ogony; zastępuje profile sesji',
-        'Letters of the 30-minute periods of the UTC day in every price row: POC, value area, initial balance (turquoise bar), single prints and tails; replaces session profiles'
+        'Litery 30-minutowych okresów doby UTC w każdym wierszu ceny: POC, value area, zakres pierwszej godziny doby UTC (pasek turkusowy; to nie initial balance sesji), pojedyncze wydruki i ogony; zastępuje profile sesji',
+        'Letters of the 30-minute periods of the UTC day in every price row: POC, value area, the range of the first hour of the UTC day (turquoise bar; not the session initial balance), single prints and tails; replaces session profiles'
       ),
       swatch: 'bg-of-svwap',
       off: tpoInterval(intervalMs) ? undefined : tr('Na interwałach do 30m', 'On timeframes up to 30m'),
