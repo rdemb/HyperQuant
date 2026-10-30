@@ -1125,7 +1125,8 @@ export class ProChartController {
 
   /**
    * Punkty plotu `p` instancji `k` od świecy `from` (słupki w kolorze znaku z kryciem instancji). Poziom okresu (pivot)
-   * kończy się na ostatniej świecy okresu: odcinek do innej wartości następnej świecy jest przezroczysty.
+   * kończy się na ostatniej świecy okresu: odcinek do innej wartości następnej świecy jest przezroczysty. Linia przerywa się
+   * na świecach bez wartości (biblioteka łączyłaby punkty po obu stronach przerwy): odcinek przed przerwą jest przezroczysty.
    */
   private pushPlot(k: number, p: number, from: number): void {
     const bars = this.bars;
@@ -1146,17 +1147,20 @@ export class ProChartController {
       const v = ys[i];
       if (Number.isNaN(v)) return { time };
       if (hist) return { time, value: v, color: rgba(signs[i] < 0 ? HIST_DOWN : HIST_UP, 0.6 * x.alpha) };
-      return breaks && i + 1 < n && ys[i + 1] !== v ? { time, value: v, color: CLEAR } : { time, value: v };
+      const cut = i + 1 < n && (Number.isNaN(ys[i + 1]) || (breaks && ys[i + 1] !== v));
+      return cut ? { time, value: v, color: CLEAR } : { time, value: v };
     };
+    // Ostatnia świeca zyskała albo straciła wartość: kolor odcinka przed nią się zmienia, więc pełna podmiana
+    const gap = n > 0 && Number.isNaN(ys[n - 1]);
+    const recolor = !hist && gap !== this.indGap[k][p];
     // Bez zmiany wcześniejszych punktów (przeliczenie od zera to pełna podmiana), więc bez aktualizacji wstecz.
     // Pełna podmiana bez pustych punktów przed pierwszą wartością (kanał regresji ma ich tysiące)
-    if (from === 0 || n - from > MAX_POINT_UPDATES) {
+    if (from === 0 || n - from > MAX_POINT_UPDATES || recolor) {
       let s = Math.max(0, -shift);
       while (s < n && Number.isNaN(ys[s])) s++;
       series.setData(Array.from({ length: Math.max(0, n - s) }, (_, k) => point(s + k)));
     }
     else for (let i = Math.max(from, -shift); i < n; i++) series.update(point(i));
-    const gap = n > 0 && Number.isNaN(ys[n - 1]);
     if (gap !== this.indGap[k][p]) {
       this.indGap[k][p] = gap;
       // Bez wartości ostatniej świecy także bez podpisu plotu (sam podpis przy osi niczego nie mówi)
