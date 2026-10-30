@@ -104,6 +104,15 @@ export interface AlertEvent {
   /** Cena transakcji albo zamknięcia świecy (przy wygaśnięciu i anulowaniu: ostatnia cena). */
   px: number;
   facts: AlertFacts | null;
+  /** Dotknięcie z przerwy w połączeniu, znalezione w świecy 1m z API (`at` = początek minuty, `px` = poziom, bez faktów). */
+  gap?: boolean;
+}
+
+/** Świeca 1m z API: początek minuty, szczyt i dołek. */
+export interface AlertCandle {
+  t: number;
+  h: number;
+  l: number;
 }
 
 interface Bar {
@@ -234,13 +243,18 @@ export class AlertEngine {
     return s;
   }
 
-  /** Przerwa w strumieniu: zamknięcie świecy z luki byłoby zgadywaniem, więc świece zaczynają się od nowa. */
-  gap(coin: string): void {
+  /**
+   * Przerwa w strumieniu: zamknięcie świecy z luki byłoby zgadywaniem, więc świece zaczynają się od nowa. Zwraca czas
+   * ostatniej przetworzonej transakcji (0 = brak), od którego po powrocie połączenia dociąga się dotknięcia (`onGapCandles`).
+   */
+  gap(coin: string): number {
     const s = this.state(coin);
+    const last = s.t;
     s.px = 0;
     s.t = 0;
     s.bars.clear();
     s.ticks = [];
+    return last;
   }
 
   /** Otwarte pozycje rynku (kontekst z WebSocket). */
@@ -323,13 +337,46 @@ export class AlertEngine {
       s.px = tr.px;
       s.t = tr.time;
     }
+    return this.finish(rules, work, done, events, s.t, s.px);
+  }
 
+  /**
+   * Dotknięcia z przerwy w strumieniu: szczyt i dołek świec 1m z API przeciw alarmom dotknięcia rynku. Minuta nie mówi,
+   * kiedy padła skrajna cena, więc liczy się tylko świeca w całości po ustawieniu alarmu i w jego oknie. Alarm uruchamia
+   * się raz (potem znika z listy, więc transakcje po powrocie połączenia go nie powtórzą); pary i łańcuchy jak przy taśmie.
+   */
+  onGapCandles(rules: readonly AlertRule[], coin: string, candles: readonly AlertCandle[]): { rules: AlertRule[] | null; events: AlertEvent[] } {
+    const events: AlertEvent[] = [];
+    const work = rules.filter((r) => r.coin === coin).map((r) => ({ ...r }));
+    const done = new Set<string>();
+    for (const c of [...candles].sort((a, b) => a.t - b.t)) {
+      for (const r of work) {
+        if (done.has(r.id) || r.after || r.kind !== 'touch' || c.t < Math.max(r.created, r.from) || c.t + MIN > r.until) continue;
+        if (r.dir === 1 ? c.h >= r.price : c.l <= r.price) {
+          done.add(r.id);
+          events.push({ type: 'fire', rule: r, at: c.t, px: r.price, facts: null, gap: true });
+        }
+      }
+    }
+    const last = events[events.length - 1];
+    return this.finish(rules, work, done, events, last?.at ?? 0, last?.px ?? 0);
+  }
+
+  /** Pary, łańcuchy i nowa lista alarmów po zdarzeniach; `at` i `px` — chwila i cena anulowania w parze. */
+  private finish(
+    rules: readonly AlertRule[],
+    work: AlertRule[],
+    done: Set<string>,
+    events: AlertEvent[],
+    at: number,
+    px: number
+  ): { rules: AlertRule[] | null; events: AlertEvent[] } {
     // Para scenariuszy: uruchomiony alarm kasuje pozostałe ze swojej pary
     const pairs = new Set(events.filter((e) => e.type === 'fire' && e.rule.pair).map((e) => e.rule.pair));
     for (const r of work)
       if (!done.has(r.id) && pairs.has(r.pair)) {
         done.add(r.id);
-        events.push({ type: 'cancel', rule: r, at: s.t, px: s.px, facts: null });
+        events.push({ type: 'cancel', rule: r, at, px, facts: null });
       }
     // Łańcuch: alarm po uruchomionym startuje od tej chwili, po wygasłym albo anulowanym — znika razem z nim
     for (let i = 0; i < events.length; i++) {
@@ -507,5 +554,6 @@ export function factsText(f: AlertFacts, coin: string, lang: Lang): string {
 export function eventBody(e: AlertEvent, lang: Lang): string {
   const head = `${e.rule.note ? `${e.rule.note} · ` : ''}${eventText(e, lang)}`;
   if (e.type === 'expire') return `${head}: ${ruleText(e.rule, lang)}.`;
+  if (e.gap) return `${head}. ${lang === 'en' ? 'Touched while the connection to the exchange was down (1m candle).' : 'Dotknięcie w czasie przerwy w połączeniu z giełdą (świeca 1m).'}`;
   return e.facts ? `${head}. ${factsText(e.facts, e.rule.coin, lang)}` : `${head}.`;
 }

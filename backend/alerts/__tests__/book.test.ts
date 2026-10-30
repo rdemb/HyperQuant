@@ -77,6 +77,31 @@ describe('serwer powiadomień: alarmy wielu urządzeń w jednym silniku', () => 
     again.apply(dev('A', [rule('r', { kind: 'close', closes: 3 })]));
     expect(again.rules[0].streak).toBe(2);
   });
+
+  it('uruchomiony alarm nie wraca z synchronizacji, zanim skrzynka przyjmie zdarzenie (także po restarcie); zmieniony wraca', () => {
+    const book = new DeviceBook();
+    book.apply(dev('A', [rule('1'), rule('2', { price: 70_000 })]));
+    const engine = new AlertEngine();
+    const before = book.rules;
+    const r = engine.onTrades(before, 'BTC', [tr(T0 + 1000, 65_100)]);
+    book.rules = r.rules!;
+    const out = book.split(r.events, before);
+    book.hold(out.events);
+    // Skrzynka jeszcze bez zdarzenia oddaje urządzenie z tym samym alarmem
+    book.apply(dev('A', [rule('1'), rule('2', { price: 70_000 })]));
+    expect(book.rules.map((x) => x.id)).toEqual(['A/2']);
+    // Po restarcie: zdarzenia z zapisanej kolejki trzymają alarm tak samo
+    const fresh = new DeviceBook();
+    fresh.hold(JSON.parse(JSON.stringify(out.events)));
+    fresh.apply(dev('A', [rule('1'), rule('2', { price: 70_000 })]));
+    expect(fresh.rules.map((x) => x.id)).toEqual(['A/2']);
+    // Alarm zmieniony po zdarzeniu (nowa chwila ustawienia) to nowy alarm
+    book.apply(dev('A', [rule('1', { created: T0 + 5000 }), rule('2', { price: 70_000 })]));
+    expect(book.rules.map((x) => x.id)).toEqual(['A/1', 'A/2']);
+    book.release(out.events);
+    book.apply(dev('A', [rule('1'), rule('2', { price: 70_000 })]));
+    expect(book.rules.map((x) => x.id)).toEqual(['A/1', 'A/2']);
+  });
 });
 
 describe('serwer powiadomień ↔ skrzynka', () => {

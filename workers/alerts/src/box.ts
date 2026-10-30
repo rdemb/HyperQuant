@@ -284,7 +284,7 @@ async function report(env: Env, data: Record<string, unknown>, now: number) {
     const [rule] = parseRules([e?.rule], now);
     if (typeof e?.device !== 'string' || !rule || (e.type !== 'fire' && e.type !== 'expire' && e.type !== 'cancel') || typeof e.at !== 'number' || typeof e.px !== 'number') continue;
     of(e.device).done.add(rule.id);
-    const body: AlertEvent = { type: e.type, rule, at: e.at, px: e.px, facts: e.facts && typeof e.facts === 'object' ? e.facts : null };
+    const body: AlertEvent = { type: e.type, rule, at: e.at, px: e.px, facts: e.facts && typeof e.facts === 'object' ? e.facts : null, ...(e.gap === true ? { gap: true } : {}) };
     stmts.push(env.DB.prepare('INSERT INTO events (device, rule, kind, at, body) VALUES (?, ?, ?, ?, ?)').bind(e.device, rule.id, e.type, e.at, JSON.stringify(body)));
   }
   for (const s of starts) {

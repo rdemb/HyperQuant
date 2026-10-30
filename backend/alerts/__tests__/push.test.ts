@@ -1,7 +1,7 @@
 import { createDecipheriv, createECDH, createHmac, createPublicKey, generateKeyPairSync, verify } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { pushHostOk } from '../../../src/utils/alertsServer.ts';
-import { b64u, encryptPayload, fromB64u, sendPush, vapidAuth, vapidKeys } from '../push.ts';
+import { RETRY_MS, b64u, encryptPayload, fromB64u, parseRetryAfter, retryDelay, sendPush, vapidAuth, vapidKeys } from '../push.ts';
 
 // Przykład z RFC 8291, dodatek A (stałe klucze i sól)
 const RFC = {
@@ -98,5 +98,27 @@ describe('Web Push: VAPID i wysyłka', () => {
     expect(await sendPush(target, { body: 'x' }, keys, 'mailto:a@b.c', { fetchFn: fail })).toBe('error');
     expect(await sendPush({ ...target, endpoint: 'https://evil.example/x' }, { body: 'x' }, keys, 'mailto:a@b.c', { fetchFn: reply(201) })).toBe('gone');
     expect(calls[0].headers).toMatchObject({ 'content-encoding': 'aes128gcm', ttl: '900', urgency: 'high' });
+  });
+
+  it('429 z Retry-After podaje, kiedy ponowić; 429 bez nagłówka to zwykły błąd przejściowy', async () => {
+    const reply = (headers: Record<string, string>) => (async () => new Response(null, { status: 429, headers })) as typeof fetch;
+    expect(await sendPush(target, { body: 'x' }, keys, 'mailto:a@b.c', { fetchFn: reply({ 'retry-after': '120' }) })).toEqual({ retryAfterMs: 120_000 });
+    expect(await sendPush(target, { body: 'x' }, keys, 'mailto:a@b.c', { fetchFn: reply({}) })).toBe('error');
+    const now = Date.UTC(2026, 9, 30, 16, 0, 0);
+    expect(parseRetryAfter('Fri, 30 Oct 2026 16:01:30 GMT', now)).toBe(90_000);
+    expect(parseRetryAfter('x', now)).toBeNull();
+    expect(parseRetryAfter(null, now)).toBeNull();
+  });
+});
+
+describe('Web Push: ponawianie po błędzie przejściowym', () => {
+  it('kolejka ponowień 5 s, 30 s, 2 min, 10 min, potem koniec; Retry-After wydłuża odstęp najwyżej do 10 min', () => {
+    const delays: number[] = [];
+    for (let a = 0, d = retryDelay(a, null); d !== null; d = retryDelay(++a, null)) delays.push(d);
+    expect(delays).toEqual([5_000, 30_000, 120_000, 600_000]);
+    expect(retryDelay(RETRY_MS.length, null)).toBeNull();
+    expect(retryDelay(0, 60_000)).toBe(60_000);
+    expect(retryDelay(2, 60_000)).toBe(120_000);
+    expect(retryDelay(1, 3_600_000)).toBe(600_000);
   });
 });

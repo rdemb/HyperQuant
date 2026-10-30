@@ -53,6 +53,8 @@ export class DeviceBook {
   private list: AlertRule[] = [];
   /** Stan pilnowania odczytany po restarcie, przyjmowany przy pierwszym pojawieniu się alarmu. */
   private restored = new Map<string, { armed: boolean; streak: number }>();
+  /** Alarmy zakończone (uruchomione, wygasłe, anulowane), których skrzynka jeszcze nie przyjęła: id → chwila zdarzenia. */
+  private readonly ended = new Map<string, number>();
 
   get rules(): readonly AlertRule[] {
     return this.list;
@@ -83,7 +85,9 @@ export class DeviceBook {
     }
     this.devices.set(d.id, { id: d.id, endpoint: d.endpoint, p256dh: d.p256dh, auth: d.auth, lang: d.lang === 'en' ? 'en' : 'pl' });
     const prev = new Map(this.list.filter(mine).map((r) => [r.id, r]));
-    const next = d.rules.map((r): AlertRule => {
+    // Zakończony alarm wraca ze skrzynki, dopóki nie dostanie ona zdarzenia; zmieniony później (nowa chwila ustawienia) jest nowym alarmem
+    const live = d.rules.filter((r) => !((this.ended.get(ns(d.id, r.id)) ?? Number.NEGATIVE_INFINITY) >= r.created));
+    const next = live.map((r): AlertRule => {
       const n = { ...r, id: ns(d.id, r.id), pair: ns(d.id, r.pair), after: ns(d.id, r.after) };
       const p = prev.get(n.id);
       if (p && definition(p) === definition(n) && n.created <= p.created) return p;
@@ -92,6 +96,16 @@ export class DeviceBook {
       return s ? { ...n, ...s } : n;
     });
     this.list = [...this.list.filter((r) => !mine(r)), ...next];
+  }
+
+  /** Zdarzenia czekające na skrzynkę (także odczytane po restarcie): ich alarmy nie wracają z synchronizacji. */
+  hold(events: readonly DeviceEvent[]): void {
+    for (const e of events) this.ended.set(ns(e.device, e.rule.id), e.at);
+  }
+
+  /** Skrzynka przyjęła zdarzenia. */
+  release(events: readonly DeviceEvent[]): void {
+    for (const e of events) this.ended.delete(ns(e.device, e.rule.id));
   }
 
   /** Zdarzenia silnika w przestrzeni urządzeń; starty z łańcucha z porównania listy przed i po. */
