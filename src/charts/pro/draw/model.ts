@@ -155,6 +155,8 @@ export interface Drawing {
   text?: string;
   /** Zablokowany: daje się zaznaczyć i zmienić styl, ale nie przesunąć. */
   locked?: boolean;
+  /** Ukryty z listy obiektów: zostaje w zapisie, ale nie jest rysowany ani zaznaczany. */
+  hidden?: boolean;
   /** Linia: przedłużenie w lewo i w prawo (brak = jak narzędzie: promień w prawo, linia rozszerzona w obie strony). */
   extL?: boolean;
   extR?: boolean;
@@ -223,6 +225,25 @@ export const styleCaps = (kind: ToolKind): StyleCaps => ({
   size: kind === 'text' || kind === 'note',
   text: kind === 'text' || kind === 'note' || kind === 'hline' || kind === 'hray',
 });
+
+const CAP_OF: Record<keyof DrawStyle, keyof StyleCaps> = {
+  color: 'color',
+  alpha: 'color',
+  width: 'stroke',
+  dash: 'stroke',
+  fill: 'fill',
+  fillAlpha: 'fill',
+  size: 'size',
+  bold: 'text',
+  italic: 'text',
+};
+
+/** Zmiana stylu kilku zaznaczonych rysunków: każdy dostaje tylko pola, które jego narzędzie ma (null — żadnego). */
+export function stylePatchFor(kind: ToolKind, patch: Partial<DrawStyle>): Partial<DrawStyle> | null {
+  const caps = styleCaps(kind);
+  const out = Object.fromEntries(Object.entries(patch).filter(([k]) => caps[CAP_OF[k as keyof DrawStyle]])) as Partial<DrawStyle>;
+  return Object.keys(out).length ? out : null;
+}
 
 export const defaultStyle = (kind: ToolKind): DrawStyle => ({
   color: kind === 'measure' || kind === 'profile' ? DRAW_COLORS[1] : kind === 'avwap' ? DRAW_COLORS[2] : DRAW_COLORS[0],
@@ -532,7 +553,7 @@ export function parseDrawings(raw: unknown): Drawing[] {
     if (pts.length < need) continue;
     const out1: Drawing = { id: d.id, kind, pts, style: parseStyle(kind, d.style), ...parseProps(kind, d) };
     if (typeof d.text === 'string') out1.text = d.text.slice(0, 280);
-    if (d.locked === true) out1.locked = true;
+    for (const k of ['locked', 'hidden'] as const) if (d[k] === true) out1[k] = true;
     if (Array.isArray(d.hideIv)) {
       const iv = (d.hideIv as unknown[]).filter(finite).slice(0, 16);
       if (iv.length) out1.hideIv = iv;
