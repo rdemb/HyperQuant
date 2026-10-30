@@ -277,8 +277,8 @@ const GROUPS: { title: string; rows: Row[] }[] = [
           'Hyperliquid WS and API for BTC, ETH, SOL and HYPE (a separate connection per market); alerts in browser storage'
         ),
         method: tr(
-          'Tick ceny = 5 cyfr znaczących ceny; arkusz bliski w kroku najbliższym 2 pb ceny, daleki w 10 × większym; alert = jednorazowy poziom z kierunkiem wg położenia względem ceny przy ustawianiu, sprawdzany co sekundę na cenie bieżącej świecy rynku; link = rynek, interwał i rodzaj wykresu w adresie strony',
-          'Price tick = 5 significant digits of the price; near book in the step closest to 2 bp of the price, far book in a 10 × larger one; alert = a one-off level with a direction from its position relative to the price when set, checked every second against the price of the market’s current candle; link = market, timeframe and chart type in the page address'
+          'Tick ceny = 5 cyfr znaczących ceny, najwyżej 1 (cena całkowita zawsze dozwolona); arkusz bliski w kroku najbliższym 2 pb ceny, daleki w 10 × większym; alert = jednorazowy poziom z kierunkiem wg położenia względem ceny przy ustawianiu, sprawdzany co sekundę na cenie bieżącej świecy rynku; link = rynek, interwał i rodzaj wykresu w adresie strony',
+          'Price tick = 5 significant digits of the price, at most 1 (an integer price is always allowed); near book in the step closest to 2 bp of the price, far book in a 10 × larger one; alert = a one-off level with a direction from its position relative to the price when set, checked every second against the price of the market’s current candle; link = market, timeframe and chart type in the page address'
         ),
         kinds: ['LIVE'],
         refresh: tr('na żywo · alerty co 1 s', 'live · alerts every 1 s'),
