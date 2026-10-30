@@ -62,10 +62,19 @@ export const ReplayBar: React.FC<{ session: ReplaySession; narrow: boolean; onEx
       {tr('Na żywo', 'Live')}
     </button>
   );
+  // Długi odcinek nagrania trafia na wykres porcjami: postęp do chwili odtwarzania
+  const c = session.catchUp;
   const clock = (
-    <span className="shrink-0 font-mono text-[11px] text-ink-1 tabular-nums" title={tr(`Chwila nagrania (czas lokalny); nagranie ${range}`, `Recording moment (local time); recording ${range}`)}>
-      {narrow ? fmtHms(t) : when}
-    </span>
+    <>
+      <span className="shrink-0 font-mono text-[11px] text-ink-1 tabular-nums" title={tr(`Chwila nagrania (czas lokalny); nagranie ${range}`, `Recording moment (local time); recording ${range}`)}>
+        {narrow ? fmtHms(t) : when}
+      </span>
+      {c && (
+        <span role="status" className="shrink-0 font-mono text-[10px] text-accent tabular-nums" title={tr('Wykres dochodzi do wybranej chwili nagrania', 'The chart is catching up to the chosen moment')}>
+          {tr('wczytuję', 'loading')} {Math.round((c.done / c.total) * 100)}%
+        </span>
+      )}
+    </>
   );
 
   if (narrow)

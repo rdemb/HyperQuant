@@ -5,6 +5,8 @@ import { modelProbabilities } from '../utils/hip4Model';
 import type { VolModel } from '../utils/volatility';
 
 const MIN = 60_000;
+/** Najwyżej tyle rynków (najbliższe terminy): arkusz każdego to zapytanie l2Book (waga 2) co minutę. */
+export const HIP4_MAX_MARKETS = 24;
 
 export type { Hip4Row };
 
@@ -59,7 +61,10 @@ function makeComputer(): { run: (qs: BtcOutcome[], model: VolModel | null, price
   };
 }
 
-/** Rynki wynikowe BTC (HIP-4): lista co 10 min, arkusze strony „Yes” i model co minutę (w Web Workerze). */
+/**
+ * Rynki wynikowe BTC (HIP-4): lista co 10 min, arkusze strony „Yes” i model co minutę (w Web Workerze), tylko w widocznej
+ * karcie (po powrocie od razu); najwyżej HIP4_MAX_MARKETS najbliższych terminów.
+ */
 export function useHip4(model: VolModel | null, price: number): Hip4State {
   const [state, setState] = useState<Hip4State>({ status: 'loading', rows: [], asOf: null });
   const ref = useRef({ model, price });
@@ -67,10 +72,13 @@ export function useHip4(model: VolModel | null, price: number): Hip4State {
   useEffect(() => {
     let alive = true;
     let gen = 0;
+    let lastAt = 0;
     const computer = makeComputer();
     const run = async () => {
+      if (document.visibilityState !== 'visible') return;
       const my = ++gen;
       const now = Date.now();
+      lastAt = now;
       // Starszy przebieg (np. zawieszone zapytanie) nie nadpisuje nowszego wyniku
       const current = () => alive && my === gen;
       try {
@@ -83,7 +91,7 @@ export function useHip4(model: VolModel | null, price: number): Hip4State {
           if (current()) setState((s) => (s.status === 'ready' ? s : { status: 'error', rows: [], asOf: null }));
           return;
         }
-        const qs = parseBtcOutcomes(metaCache.meta, now);
+        const qs = parseBtcOutcomes(metaCache.meta, now).slice(0, HIP4_MAX_MARKETS);
         const books = await Promise.all(qs.map((q) => postInfo({ type: 'l2Book', coin: q.coin })));
         const probs = await computer.run(qs, ref.current.model, ref.current.price, now);
         if (!current()) return;
@@ -94,9 +102,15 @@ export function useHip4(model: VolModel | null, price: number): Hip4State {
     };
     void run();
     const id = window.setInterval(run, MIN);
+    // Po powrocie do karty od razu, ale nie częściej niż co minutę (szybkie przełączanie kart)
+    const onVisible = () => {
+      if (Date.now() - lastAt >= MIN) void run();
+    };
+    document.addEventListener('visibilitychange', onVisible);
     return () => {
       alive = false;
       window.clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
       computer.close();
     };
   }, []);

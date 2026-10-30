@@ -22,6 +22,8 @@ export const REPLAY_WINDOW_MS = DAY;
 /** Bez chwili w linku powtórka startuje tyle przed końcem nagrania. */
 const START_BEFORE_END_MS = HIST_HOUR_MS;
 const TICK_MS = 200;
+/** Długi odcinek (wczytanie, przewinięcie wstecz) trafia do magazynu porcjami po godzinie, z oddechem dla strony między nimi. */
+const FEED_CHUNK_MS = HIST_HOUR_MS;
 
 export type ReplayState = 'loading' | 'ready' | 'empty' | 'error';
 
@@ -55,6 +57,8 @@ export class ReplaySession {
   /** Magazyn wykresu powtórki; nowy po przewinięciu wstecz (`storeGen` rośnie). */
   store: ProStore | null = null;
   storeGen = 0;
+  /** Doganianie chwili odtwarzania porcjami (ms nagrania dołożone / do dołożenia); null = magazyn aktualny. */
+  catchUp: { done: number; total: number } | null = null;
   version = 0;
   private data: ReplayData | null = null;
   private fed = Number.NEGATIVE_INFINITY;
@@ -183,6 +187,7 @@ export class ReplaySession {
     const clock: ReplayClock = { now: () => this.t, end: this.to, candles: (coin, iv, a, b) => this.candles(coin, iv, a, b) };
     this.store = new ProStore(new HlStream(), this.coin, clock);
     this.storeGen++;
+    this.catchUp = null;
     this.fed = Number.NEGATIVE_INFINITY;
     this.iFill = this.iFrame = this.iOi = 0;
     // Agregacje arkusza od ceny w chwili startu (ostatnia transakcja przed nią albo pierwsza nagrana)
@@ -191,12 +196,37 @@ export class ReplaySession {
     this.feed();
   }
 
-  /** Dokłada nagranie z odcinka (dotąd, t] do magazynu. */
+  /**
+   * Dokłada nagranie do chwili odtwarzania. Odcinek dłuższy niż FEED_CHUNK_MS idzie porcjami przez setTimeout(0) (postęp
+   * w `catchUp`), żeby wczytanie doby albo przewinięcie wstecz nie zamroziło strony; w tym czasie zegar może iść dalej.
+   */
   private feed(): void {
+    if (this.catchUp || !this.data || !this.store) return; // trwające doganianie samo dojdzie do bieżącej chwili
+    const start = Number.isFinite(this.fed) ? this.fed : this.from;
+    if (this.t - start <= FEED_CHUNK_MS) {
+      this.feedTo(this.t);
+      return;
+    }
+    const gen = this.storeGen;
+    const step = () => {
+      if (this.closed || gen !== this.storeGen) return; // nowy magazyn (przewinięcie wstecz) ma własne doganianie
+      this.feedTo(Math.min(this.t, Math.max(this.fed, start) + FEED_CHUNK_MS));
+      if (this.fed >= this.t) this.catchUp = null;
+      else {
+        this.catchUp = { done: this.fed - start, total: this.t - start };
+        setTimeout(step, 0);
+      }
+      this.emit();
+    };
+    this.catchUp = { done: 0, total: this.t - start };
+    step();
+  }
+
+  /** Dokłada nagranie z odcinka (dotąd, t] do magazynu. */
+  private feedTo(t: number): void {
     const d = this.data;
     const st = this.store;
-    if (!d || !st || !(this.t > this.fed)) return;
-    const t = this.t;
+    if (!d || !st || !(t > this.fed)) return;
     const a = this.fed;
     const fills = [];
     while (this.iFill < d.fills.length && d.fills[this.iFill].time <= t) fills.push(d.fills[this.iFill++]);
