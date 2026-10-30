@@ -43,7 +43,8 @@ export type IndicatorId =
   | 'absorption'
   | 'ofi'
   | 'regime'
-  | 'ordersize';
+  | 'ordersize'
+  | 'cone';
 
 /**
  * Grupy na liście okna wskaźników (jak kategorie TradingView); `hyperquant` — wskaźniki, których nie ma w TradingView
@@ -185,6 +186,11 @@ export interface IndicatorDef {
    * migawki arkusza); funkcja na instancję, więc może pamiętać wyniki świec między przeliczeniami.
    */
   series?(p: Params): SeriesFn;
+  /**
+   * Rysunek z publicznych prognoz Desku (stożek zakresu): bez wartości świec i bez plotów — warstwa na wykresie ceny
+   * i opis w legendzie z dziennika prognoz.
+   */
+  forecast?: true;
   /** Tyle świec przed lewą krawędzią widoku potrzeba danych z serwera (okno poprzednich świec: absorpcja, OFI). */
   lookback?(p: Params): number;
   /**
@@ -1526,6 +1532,31 @@ export const INDICATORS: readonly IndicatorDef[] = [
       };
     },
   },
+  {
+    id: 'cone',
+    short: tr('Stożek', 'Cone'),
+    name: tr('Stożek prognozy zakresu', 'Range forecast cone'),
+    hint: tr(
+      'Przedziały 90% i 60% oraz mediana ceny BTC na 1 h i 4 h od ostatniej prognozy z dziennika Desku i szanse dotknięcia PDH, PDL i środka dnia w 2 h; w legendzie pokrycie przedziałów z 30 dni',
+      'The 90% and 60% intervals and the median of the BTC price over 1 h and 4 h from the latest Desk ledger forecast, and the chances of touching PDH, PDL and the day midpoint within 2 h; the legend shows the interval coverage over 30 days'
+    ),
+    group: 'hyperquant',
+    aliases: 'cone stozek prognoza forecast zakres range przedzial interval kwantyl quantile pokrycie coverage kalibracja calibration kupiec har fhs dziennik ledger dotkniecie touch',
+    warmup: () => 0,
+    convention: tr(
+      'Tego wskaźnika nie ma w TradingView. Rysuje prognozy, które Desk co 15 minut zapisuje w publicznym dzienniku, zanim rynek je rozstrzygnie (model zmienności HAR z porą dnia i symulacja z historycznych reszt, ten sam co w Planie). Liczby są dokładne na horyzontach 1 h i 4 h od wydania (kreski); między nimi stożek jest rysowany w przybliżeniu, liniowo w pierwiastku czasu. Model nie prognozuje kierunku: mediana stoi przy cenie z chwili wydania. Pokrycie to odsetek prognoz 1 h z 30 dni, po których cena skończyła w przedziale (nominał 90% i 60%); prognozy co 15 min nakładają się, więc test Kupca liczony jest na prognozach rozłącznych. Tylko BTC; bez prognozy z ostatnich 3 h stożka nie ma.',
+      'TradingView has no such indicator. It draws the forecasts the Desk records every 15 minutes in a public ledger before the market settles them (a HAR volatility model with time of day and a simulation from historical residuals, the same as in the Plan). The numbers are exact at the 1 h and 4 h horizons from issue (tick marks); between them the cone is an approximation, linear in the square root of time. The model does not forecast direction: the median stays at the price at issue. Coverage is the share of 1 h forecasts over 30 days after which the price ended inside the interval (nominal 90% and 60%); forecasts every 15 min overlap, so the Kupiec test runs on disjoint forecasts. BTC only; without a forecast from the last 3 h there is no cone.'
+    ),
+    memoryNote: tr(
+      'Nie zależy od świec wykresu: najnowsza prognoza i wyniki z 30 dni z dziennika, sprawdzane co minutę.',
+      'It does not depend on the chart candles: the latest forecast and 30-day results from the ledger, checked every minute.'
+    ),
+    pane: 'price',
+    params: [],
+    plots: [],
+    format: 'price',
+    forecast: true,
+  },
 ];
 
 export const indicatorDef = (id: IndicatorId): IndicatorDef => INDICATORS.find((d) => d.id === id)!;
@@ -1585,7 +1616,7 @@ export function indicatorLabel(x: IndicatorInstance): string {
  * wskaźnik przesunięty o świece wykresu (Ichimoku) i wskaźnik z danych spoza świec (taśma, otwarte pozycje).
  */
 export const tfAllowed = (def: IndicatorDef): boolean =>
-  !def.period && !def.fit && !def.flow && !def.series && !def.sample && !def.plots.some((p) => p.shift);
+  !def.period && !def.fit && !def.flow && !def.series && !def.sample && !def.forecast && !def.plots.some((p) => p.shift);
 
 /** Interwał wskaźnika: znany identyfikator interwału, a wskaźnik bez parametru „Interwał” go nie ma. */
 const tfOk = (def: IndicatorDef, tf: unknown): tf is string => tfAllowed(def) && INTERVALS.some((iv) => iv.id === tf);

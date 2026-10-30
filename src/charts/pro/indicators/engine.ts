@@ -357,6 +357,8 @@ export class IndicatorEngine {
     this.samples = [];
     this.runs = list.map((x) => {
       const def = indicatorDef(x.id);
+      // Stożek z dziennika: bez wartości świec, nigdy nie zgłasza zmiany
+      if (def.forecast) return { out: [], from: Number.POSITIVE_INFINITY };
       if (def.sample) {
         const r = new SampleRun(x);
         this.samples.push(r);
