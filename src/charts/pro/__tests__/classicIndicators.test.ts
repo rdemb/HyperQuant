@@ -487,6 +487,142 @@ describe('wskaźniki: partia B (wzory TradingView)', () => {
   });
 });
 
+const H1 = 3_600_000;
+const D1 = 86_400_000;
+
+/** Świece interwału `ms` ze świec wykresu: wcześniejsze bez zmian (ten sam obiekt), ostatnia złożona od nowa (nowy obiekt, jak z API). */
+function rollup(prev: readonly Candle[], chart: readonly Candle[], ms: number): Candle[] {
+  const last = chart[chart.length - 1];
+  const t = Math.floor(last.t / ms) * ms;
+  const part = chart.filter((c) => c.t >= t);
+  const c: Candle = { t, o: part[0].o, h: Math.max(...part.map((x) => x.h)), l: Math.min(...part.map((x) => x.l)), c: last.c, v: part.reduce((a, x) => a + x.v, 0), n: 1 };
+  return [...prev.filter((x) => x.t < t), c];
+}
+
+describe('wskaźniki: partia C (pivoty, interwał wskaźnika)', () => {
+  /** Wartości instancji na świecach wykresu ze świecami interwałów z `src`. */
+  function runTf(x: IndicatorInstance, chart: readonly Candle[], ms: number, src: Record<string, readonly Candle[]>): number[][] {
+    const e = new IndicatorEngine();
+    e.setInstances([x]);
+    e.sync(bars(chart), ms, (tf) => src[tf] ?? []);
+    return e.runs[0].out.map((a) => Array.from(a.subarray(0, chart.length)));
+  }
+
+  it('pivoty Traditional: przykład liczbowy (H 120, L 90, C 105) i wzory z poprzedniej doby UTC', () => {
+    const days: Candle[] = [
+      { t: 0, o: 100, h: 120, l: 90, c: 105, v: 1, n: 1 },
+      { t: D1, o: 105, h: 111, l: 99, c: 103, v: 1, n: 1 },
+      { t: 2 * D1, o: 103, h: 104, l: 102, c: 103, v: 1, n: 1 },
+    ];
+    const chart = closeOnly(new Array(4 * 24).fill(100)).map((c, i) => ({ ...c, t: i * H1 }));
+    const out = runTf(inst('pivots'), chart, H1, { '1d': days });
+    // Doba 1 z doby 0: P 105, R1 120, S1 90, R2 135, S2 75, R3 150, S3 60 — od pierwszej do ostatniej godziny
+    for (const i of [24, 30, 47]) expect(out.map((ys) => ys[i])).toEqual([105, 120, 90, 135, 75, 150, 60]);
+    const { h, l, c } = days[1];
+    const p = (h + l + c) / 3;
+    expectClose(
+      out.map((ys) => ys[48]),
+      [p, 2 * p - l, 2 * p - h, p + (h - l), p - (h - l), h + 2 * (p - l), l - 2 * (h - p)]
+    );
+    // Pierwsza doba historii bez poprzedniej; doba bez swojej świecy 1D (jeszcze nie dotarła) bez poziomów, nie z doby wcześniej
+    expect(out[0][23]).toBeNaN();
+    expect(out[0][72]).toBeNaN();
+    // Przesunięcie cen o stałą przesuwa poziomy o tę stałą
+    const up = days.map((d) => ({ ...d, o: d.o + 50, h: d.h + 50, l: d.l + 50, c: d.c + 50 }));
+    runTf(inst('pivots'), chart, H1, { '1d': up }).forEach((ys, k) => expectClose(ys.slice(24, 72), out[k].slice(24, 72).map((v) => v + 50)));
+  });
+
+  it('interwał wskaźnika: świeca wykresu ma wartość ostatniej świecy interwału zamkniętej do jej końca', () => {
+    const hours = walk(60, 31).map((c, i) => ({ ...c, t: i * H1 }));
+    const chart = walk(60 * 12, 32).map((c, i) => ({ ...c, t: i * M5 }));
+    const own = run(inst('ema', { length: 5 }), hours)[0];
+    const ys = runTf({ ...inst('ema', { length: 5 }), tf: '1h' }, chart, M5, { '1h': hours })[0];
+    chart.forEach((b, i) => {
+      const j = Math.floor((b.t + M5) / H1) - 1;
+      expect(ys[i]).toBe(j >= 0 ? own[j] : NaN);
+    });
+    // Zmiana wartości tylko na ostatniej świecy 5m w godzinie
+    for (let i = 1; i < chart.length; i++) if (ys[i] !== ys[i - 1] && !Number.isNaN(ys[i - 1])) expect((i + 1) % 12).toBe(0);
+    // Interwał równy wykresowi: te same wartości co bez interwału
+    const same = runTf({ ...inst('rsi', { length: 7 }), tf: '1h' }, hours, H1, { '1h': hours })[0];
+    expect(same).toEqual(run(inst('rsi', { length: 7 }), hours)[0]);
+  });
+
+  it('na żywo (świece wykresu i interwałów rosną): zgłoszony indeks obejmuje każdą zmianę, wynik jak przeliczenie od zera', () => {
+    const list = [{ ...inst('rsi', { length: 5 }), tf: '4h' }, { ...inst('ema', { length: 3 }), tf: '1d' }, inst('pivots'), inst('sma', { length: 5 })];
+    const src = walk(24 * 6, 41).map((c, i) => ({ ...c, t: i * H1 }));
+    const e = new IndicatorEngine();
+    e.setInstances(list);
+    let chart: Candle[] = [];
+    let h4: Candle[] = [];
+    let d1: Candle[] = [];
+    const shown = list.map((x) => indicatorDef(x.id).plots.map(() => [] as number[]));
+    const candlesOf = (tf: string) => (tf === '4h' ? h4 : tf === '1d' ? d1 : []);
+    const push = () => {
+      const from = e.sync(bars(chart), H1, candlesOf);
+      e.runs.forEach((r, k) => r.out.forEach((a, p) => {
+        shown[k][p].length = chart.length;
+        for (let i = from; i < chart.length; i++) shown[k][p][i] = a[i];
+      }));
+    };
+    const r = rng(9);
+    for (const c of src) {
+      // Nowa świeca (świece interwałów dochodzą chwilę później), potem dwie transakcje na niej
+      let cur = c;
+      chart = [...chart, cur];
+      push();
+      h4 = rollup(h4, chart, 4 * H1);
+      d1 = rollup(d1, chart, D1);
+      push();
+      for (let k = 0; k < 2; k++) {
+        const px = cur.c + (r() - 0.5) * 30;
+        cur = { ...cur, c: px, h: Math.max(cur.h, px), l: Math.min(cur.l, px) };
+        chart = [...chart.slice(0, -1), cur];
+        h4 = rollup(h4, chart, 4 * H1);
+        d1 = rollup(d1, chart, D1);
+        push();
+      }
+      // Poprawka starszej świecy interwału z API (świece wykresu bez zmian)
+      if (r() < 0.25 && d1.length > 1) {
+        const j = Math.floor(r() * (h4.length - 1));
+        const k = Math.floor(r() * (d1.length - 1));
+        h4 = h4.map((x, i) => (i === j ? { ...x, c: x.c + 3 } : x));
+        d1 = d1.map((x, i) => (i === k ? { ...x, h: x.h + 3 } : x));
+        push();
+      }
+    }
+    const fresh = new IndicatorEngine();
+    fresh.setInstances(list);
+    fresh.sync(bars(chart), H1, candlesOf);
+    fresh.runs.forEach((run, k) => run.out.forEach((a, p) => expect(shown[k][p]).toEqual(Array.from(a.subarray(0, chart.length)))));
+    // Wartości są: RSI z 4h, EMA z doby i pivoty od drugiej doby
+    expect(fresh.runs.every((run) => Number.isFinite(run.out[0][chart.length - 1]))).toBe(true);
+  });
+
+  it('podpis, link i zapis z interwałem; pivoty bez interwału', () => {
+    const [rsi, piv] = parseIndicators([
+      { id: 'rsi', params: { length: 14 }, tf: '1h' },
+      { id: 'pivots', tf: '4h' },
+      { id: 'ema', tf: '7m' },
+    ]);
+    expect(indicatorLabel(rsi)).toBe('RSI 14 1h');
+    expect(piv.tf).toBeUndefined();
+    expect(indicatorLabel(piv)).toBe('Pivots');
+    const list = parseIndicators([{ id: 'rsi', params: { length: 14 }, tf: '1h' }, { id: 'ema', tf: '7m' }, { id: 'pivots' }, { id: 'bb', tf: '1d' }]);
+    expect(list[1].tf).toBeUndefined();
+    expect(indicatorsLink(list)).toBe('rsi(14)@1h;ema(9);pivots();bb(20,2)@1d');
+    const back = indicatorsFromLink('rsi(14)@1h;ema(9);pivots()@1d;bb(20,2)@1d;sma(5)@2h');
+    expect(back.map((x) => [x.id, x.tf])).toEqual([
+      ['rsi', '1h'],
+      ['ema', undefined],
+      ['pivots', undefined],
+      ['bb', '1d'],
+      ['sma', undefined],
+    ]);
+    expect(indicatorLabel(indicatorsFromLink('bb(20,2)@1d')[0])).toBe('BB 20 2 1D');
+  });
+});
+
 describe('przeliczanie przyrostowe', () => {
   const all = INDICATORS.map((d) => inst(d.id, { length: 5 }));
 

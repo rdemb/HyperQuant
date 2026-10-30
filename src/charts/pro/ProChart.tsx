@@ -97,9 +97,19 @@ const PALETTE_OPTIONS: { value: ChartPalette; label: string }[] = [
 const PANE_ITEMS: ToggleItem[] = [
   { key: 'showVolume', label: tr('Wolumen', 'Volume'), hint: tr('Wolumen świec z API Hyperliquid', 'Candle volume from the Hyperliquid API') },
   { key: 'showDelta', label: tr('Delta (świece delty)', 'Delta (delta candles)'), hint: tr('Kupno − sprzedaż agresorów w każdej świecy', 'Aggressor buys − sells in every candle') },
-  { key: 'showCvd', label: 'CVD', hint: tr('Skumulowana delta od zerowania (sesja, dzień albo tydzień)', 'Cumulative delta since the reset (session, day or week)') },
+  {
+    key: 'showCvd',
+    label: 'CVD',
+    hint: tr('Skumulowana delta od zerowania (sesja, dzień albo tydzień)', 'Cumulative delta since the reset (session, day or week)'),
+    aliases: 'cumulative volume delta skumulowana',
+  },
   { key: 'showVenueCvd', label: tr('CVD giełd: Hyperliquid, Binance, Bybit', 'Exchange CVD: Hyperliquid, Binance, Bybit'), hint: tr('Dane Binance i Bybit z Twojej przeglądarki', 'Binance and Bybit data from your browser') },
-  { key: 'showVenueOi', label: tr('ΔOI i funding giełd', 'Exchange ΔOI and funding'), hint: tr('Dane Binance i Bybit z Twojej przeglądarki', 'Binance and Bybit data from your browser') },
+  {
+    key: 'showVenueOi',
+    label: tr('ΔOI i funding giełd', 'Exchange ΔOI and funding'),
+    hint: tr('Dane Binance i Bybit z Twojej przeglądarki', 'Binance and Bybit data from your browser'),
+    aliases: 'open interest otwarte pozycje oi funding finansowanie hyperliquid binance bybit',
+  },
   { key: 'showStats', label: tr('Tablica liczb', 'Numbers table'), hint: tr('Liczby każdej świecy w wierszach pod wykresem', 'Numbers of every candle in rows below the chart') },
 ];
 
@@ -765,6 +775,7 @@ export const ProChart: React.FC<{
               key={editing.iid}
               x={editing}
               loaded={series.candles.length}
+              chart={settings.interval}
               onChange={(x) => setSettings((s) => ({ ...s, indicators: s.indicators.map((y) => (y.iid === x.iid ? x : y)) }))}
               onClose={() => setIndEdit(null)}
             />

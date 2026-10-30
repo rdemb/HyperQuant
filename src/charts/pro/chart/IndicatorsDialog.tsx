@@ -21,6 +21,8 @@ export interface ToggleItem {
   swatch?: string;
   /** Powód, dla którego warstwa nie działa na tym interwale lub rynku. */
   off?: string;
+  /** Dodatkowe słowa wyszukiwania (np. nazwa wskaźnika w TradingView). */
+  aliases?: string;
 }
 
 export type IndicatorsSection = 'fav' | 'chart' | 'flow' | 'classic' | 'panes';
@@ -105,7 +107,7 @@ export const IndicatorsDialog: React.FC<{
       hint: i.off ?? i.hint,
       swatch: i.swatch,
       off: i.off,
-      words: norm(`${i.label} ${i.key.replace(/^show/, '')}`),
+      words: norm(`${i.label} ${i.key.replace(/^show/, '')} ${i.aliases ?? ''}`),
       on: s[i.key],
       run: () => onChange({ [i.key]: !s[i.key] }),
     });
