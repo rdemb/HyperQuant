@@ -5,6 +5,7 @@ import {
   Drawing,
   MAX_BRUSH_POINTS,
   MAX_DRAWINGS,
+  Order,
   Pt,
   TOOLS,
   ToolKind,
@@ -13,14 +14,16 @@ import {
   moveDrawing,
   newPosition,
   parseDrawings,
+  reorder,
   snapToOhlc,
   toolDef,
 } from './model';
 
 /**
  * Obsługa rysowania myszą, dotykiem i klawiaturą: stawianie punktów (klik-klik albo przeciągnięcie),
- * zaznaczanie, przesuwanie rysunku i jego uchwytów, magnes do OHLC, szybki pomiar z Shift, cofanie i ponawianie,
- * kopiowanie oraz zapis rysunków rynku w przeglądarce. Zdarzenia przejmowane w fazie przechwytywania,
+ * zaznaczanie i podświetlenie pod kursorem, przesuwanie rysunku i jego uchwytów (Ctrl + przeciągnięcie klonuje,
+ * Shift trzyma linię poziomo), blokada, kolejność warstw, menu rysunku, magnes do OHLC, szybki pomiar z Shift,
+ * cofanie i ponawianie, kopiowanie oraz zapis rysunków rynku w przeglądarce. Zdarzenia przejmowane w fazie przechwytywania,
  * więc w trakcie rysowania wykres się nie przesuwa.
  */
 
@@ -37,6 +40,13 @@ export interface DrawState {
   canRedo: boolean;
   /** Rośnie przy każdym nowym tekście do wpisania (pasek stylu ustawia wtedy kursor w polu). */
   editTick: number;
+  /** Menu rysunku pod prawym przyciskiem: miejsce kliknięcia w pikselach panelu. */
+  menu: DrawMenuAt | null;
+}
+
+export interface DrawMenuAt {
+  x: number;
+  y: number;
 }
 
 interface Pending {
@@ -56,6 +66,8 @@ interface Drag {
   orig: Pt[];
   before: Drawing[];
   moved: boolean;
+  /** Ctrl + przeciągnięcie: przesuwana jest kopia, oryginał zostaje (bez ruchu kopia znika). */
+  cloneOf: string | null;
 }
 
 const KEY = 'hq.charts.draw.v1';
@@ -69,6 +81,12 @@ const POSITION_RISK_PX = 40;
 const POSITION_W_PX = 140;
 
 const HOTKEYS = new Map(TOOLS.filter((t) => t.hotkey).map((t) => [`Key${t.hotkey}`, t.kind]));
+/** Linie z dwóch punktów, które Shift trzyma poziomo (cena jak na drugim końcu). */
+const FLAT = new Set<ToolKind>(['trend', 'ray', 'extended', 'arrow']);
+
+/** Shift: linia z dwóch punktów zostaje pozioma (punkt `i` dostaje cenę drugiego końca). */
+const flatten = (kind: ToolKind, pts: readonly Pt[], i: number, q: Pt, shift: boolean): Pt =>
+  shift && FLAT.has(kind) && pts.length === 2 && i < 2 ? { t: q.t, p: pts[1 - i].p } : q;
 
 const clone = (ds: readonly Drawing[]): Drawing[] =>
   ds.map((d) => ({
@@ -113,8 +131,10 @@ export class DrawingTools {
   private locked = false;
   private keep = false;
   private editTick = 0;
-  /** Rysunek, którego tekst jest właśnie wpisywany (jeden wpis w historii cofania). */
-  private lastTextId: string | null = null;
+  private hoverId: string | null = null;
+  private menu: DrawMenuAt | null = null;
+  /** Zmiana scalana z poprzednią w jeden wpis cofania (`id:pole` — wpisywanie tekstu, suwak krycia). */
+  private mergeKey: string | null = null;
   private undoStack: Drawing[][] = [];
   private redoStack: Drawing[][] = [];
   private clipboard: Drawing | null = null;
@@ -137,6 +157,7 @@ export class DrawingTools {
     host.addEventListener('touchstart', this.onCompat, true);
     host.addEventListener('dblclick', this.onDblClick, true);
     host.addEventListener('pointermove', this.onHover);
+    host.addEventListener('pointerleave', this.onLeave);
     window.addEventListener('pointermove', this.onMove);
     window.addEventListener('pointerup', this.onUp);
     window.addEventListener('pointercancel', this.onUp);
@@ -157,6 +178,7 @@ export class DrawingTools {
     this.host.removeEventListener('touchstart', this.onCompat, true);
     this.host.removeEventListener('dblclick', this.onDblClick, true);
     this.host.removeEventListener('pointermove', this.onHover);
+    this.host.removeEventListener('pointerleave', this.onLeave);
     window.removeEventListener('pointermove', this.onMove);
     window.removeEventListener('pointerup', this.onUp);
     window.removeEventListener('pointercancel', this.onUp);
@@ -196,18 +218,23 @@ export class DrawingTools {
       canUndo: this.undoStack.length > 0,
       canRedo: this.redoStack.length > 0,
       editTick: this.editTick,
+      menu: this.selectedId ? this.menu : null,
+    };
+  }
+
+  private layerState(): LayerState {
+    return {
+      drawings: this.temp ? [...this.drawings, this.temp] : this.drawings,
+      pending: this.pending?.d ?? null,
+      selectedId: this.selectedId,
+      hoverId: this.hoverId,
+      hidden: this.hidden,
     };
   }
 
   /** Nowy stan do warstwy i paska. */
   private push(): void {
-    const s: LayerState = {
-      drawings: this.temp ? [...this.drawings, this.temp] : this.drawings,
-      pending: this.pending?.d ?? null,
-      selectedId: this.selectedId,
-      hidden: this.hidden,
-    };
-    this.layer.setState(s);
+    this.layer.setState(this.layerState());
     this.snapshot = this.makeState();
     for (const fn of this.listeners) fn();
   }
@@ -226,6 +253,7 @@ export class DrawingTools {
 
   /** Zmiana listy rysunków z wpisem do historii cofania. */
   private commit(next: Drawing[], before: Drawing[] = this.drawings): void {
+    this.mergeKey = null;
     this.undoStack.push(clone(before));
     if (this.undoStack.length > UNDO_MAX) this.undoStack.shift();
     this.redoStack = [];
@@ -283,6 +311,7 @@ export class DrawingTools {
   undo(): void {
     const prev = this.undoStack.pop();
     if (!prev) return;
+    this.mergeKey = null;
     this.redoStack.push(clone(this.drawings));
     this.drawings = prev;
     if (this.selectedId && !prev.some((d) => d.id === this.selectedId)) this.selectedId = null;
@@ -293,10 +322,15 @@ export class DrawingTools {
   redo(): void {
     const next = this.redoStack.pop();
     if (!next) return;
+    this.mergeKey = null;
     this.undoStack.push(clone(this.drawings));
     this.drawings = next;
     this.save();
     this.push();
+  }
+
+  private get selected(): Drawing | undefined {
+    return this.drawings.find((x) => x.id === this.selectedId);
   }
 
   deleteSelected(): void {
@@ -308,31 +342,75 @@ export class DrawingTools {
 
   /** Kopia zaznaczonego rysunku przesunięta o kilka świec w prawo. */
   cloneSelected(): void {
-    const d = this.drawings.find((x) => x.id === this.selectedId);
+    const d = this.selected;
     if (d) this.paste(d);
   }
 
-  styleSelected(patch: Partial<DrawStyle>): void {
-    const d = this.drawings.find((x) => x.id === this.selectedId);
+  /** Zaznaczony rysunek do schowka (Ctrl+V wkleja kopię). */
+  copySelected(): void {
+    const d = this.selected;
+    if (d) this.clipboard = clone([d])[0];
+  }
+
+  toggleLockSelected(): void {
+    const d = this.selected;
+    if (d) this.patchSelected({ locked: !d.locked || undefined });
+  }
+
+  reorderSelected(to: Order): void {
+    if (this.selectedId) this.commit(reorder(this.drawings, this.selectedId, to));
+  }
+
+  /** Styl zaznaczonego rysunku; `merge` (suwak) scala kolejne zmiany tego samego pola w jeden krok cofania. */
+  styleSelected(patch: Partial<DrawStyle>, merge = false): void {
+    const d = this.selected;
     if (!d) return;
     const style = { ...d.style, ...patch };
     this.lastStyle.set(d.kind, style);
-    this.commit(this.drawings.map((x) => (x.id === d.id ? { ...x, style } : x)));
+    this.patchSelected({ style }, merge ? `${d.id}:${Object.keys(patch).join()}` : null);
   }
 
   setText(text: string): void {
-    const d = this.drawings.find((x) => x.id === this.selectedId);
-    if (!d || d.text === text) return;
-    const next = this.drawings.map((x) => (x.id === d.id ? { ...x, text: text.slice(0, 280) } : x));
+    const d = this.selected;
     // Wpisywanie znak po znaku to jeden krok cofania (świeży tekst nowego rysunku cofa się razem z nim)
-    if (this.lastTextId !== d.id) {
-      this.lastTextId = d.id;
-      this.commit(next);
+    if (d && d.text !== text) this.patchSelected({ text: text.slice(0, 280) }, `${d.id}:text`);
+  }
+
+  private patchSelected(patch: Partial<Drawing>, merge: string | null = null): void {
+    const id = this.selectedId;
+    const next = this.drawings.map((x) => (x.id === id ? { ...x, ...patch } : x));
+    if (merge !== null && merge === this.mergeKey) {
+      this.drawings = next;
+      this.save();
+      this.push();
       return;
     }
-    this.drawings = next;
-    this.save();
+    this.commit(next);
+    this.mergeKey = merge;
+  }
+
+  /** Menu rysunku pod prawym przyciskiem: true, gdy pod kursorem jest rysunek (zostaje zaznaczony). */
+  openMenu(clientX: number, clientY: number): boolean {
+    const { x, y, inPane } = this.local({ clientX, clientY });
+    if (!inPane || this.hidden || this.tool || this.pending) return false;
+    const h = this.layer.hit(x, y);
+    if (!h || h.id === 'temp') return false;
+    this.focus();
+    this.select(h.id);
+    this.menu = { x, y };
     this.push();
+    return true;
+  }
+
+  closeMenu(): void {
+    if (!this.menu) return;
+    this.menu = null;
+    this.push();
+  }
+
+  private select(id: string): void {
+    if (this.selectedId !== id) this.mergeKey = null;
+    this.selectedId = id;
   }
 
   /** Linia pozioma w punkcie panelu ceny (menu kontekstowe wykresu). */
@@ -343,7 +421,8 @@ export class DrawingTools {
 
   deselect(): void {
     this.selectedId = null;
-    this.lastTextId = null;
+    this.mergeKey = null;
+    this.menu = null;
     this.push();
   }
 
@@ -405,6 +484,7 @@ export class DrawingTools {
     const { x, y, inPane } = this.local(e);
     if (!inPane) return;
     const invert = e.ctrlKey || e.metaKey;
+    this.menu = null;
     if (this.temp && !this.pending) {
       this.temp = null;
       this.push();
@@ -412,9 +492,10 @@ export class DrawingTools {
     // Kolejny punkt rysunku w trakcie stawiania
     if (this.pending) {
       const q = this.pointAt(x, y, invert);
-      this.pending.downX = x;
-      this.pending.downY = y;
-      if (q) this.placePoint(q);
+      const p = this.pending;
+      p.downX = x;
+      p.downY = y;
+      if (q) this.placePoint(flatten(p.d.kind, p.d.pts, p.d.pts.length - 1, q, e.shiftKey));
       this.consume(e);
       return;
     }
@@ -430,21 +511,24 @@ export class DrawingTools {
       if (this.selectedId) this.deselect();
       return;
     }
-    this.selectedId = h.id;
-    this.lastTextId = null;
     const d = this.drawings.find((x2) => x2.id === h.id);
-    if (d && !this.locked) {
-      const start = this.layer.toPt(x, y);
-      if (start)
-        this.drag = {
-          id: d.id,
-          handle: h.handle,
-          start,
-          orig: d.pts.map((q) => ({ ...q })),
-          before: clone(this.drawings),
-          moved: false,
-        };
+    const start = this.layer.toPt(x, y);
+    if (d && start && !this.locked && !d.locked) {
+      const before = clone(this.drawings);
+      // Ctrl + przeciągnięcie całego rysunku przesuwa jego kopię
+      const copy = invert && h.handle < 0 ? { ...clone([d])[0], id: newId() } : null;
+      if (copy) this.drawings = [...this.drawings, copy];
+      this.drag = {
+        id: copy?.id ?? d.id,
+        handle: h.handle,
+        start,
+        orig: d.pts.map((q) => ({ ...q })),
+        before,
+        moved: false,
+        cloneOf: copy ? d.id : null,
+      };
     }
+    this.select(this.drag?.id ?? h.id);
     this.push();
     this.consume(e);
   };
@@ -492,9 +576,9 @@ export class DrawingTools {
     }
     if (!this.keep) this.tool = null;
     this.selectedId = d.id;
-    this.lastTextId = d.id;
     if (d.kind === 'text' || d.kind === 'note') this.editTick++;
     this.commit([...this.drawings, d]);
+    this.mergeKey = `${d.id}:text`;
   }
 
   private cancelPending(): void {
@@ -505,9 +589,26 @@ export class DrawingTools {
     else if (p) this.push();
   }
 
+  private setHover(id: string | null): void {
+    if (id === this.hoverId) return;
+    this.hoverId = id;
+    this.layer.setState(this.layerState());
+  }
+
+  private readonly onLeave = (): void => this.setHover(null);
+
   private readonly onHover = (e: PointerEvent): void => {
     const p = this.pending;
-    if (!p || this.drag) return;
+    if (!p) {
+      // Podświetlenie rysunku pod kursorem (bez przycisku — w czasie przesuwania wykresu nie)
+      if (!this.drag && !this.tool && !this.hidden && e.buttons === 0) {
+        const { x, y } = this.local(e);
+        const h = this.layer.hit(x, y);
+        this.setHover(h && h.id !== 'temp' ? h.id : null);
+      }
+      return;
+    }
+    if (this.drag) return;
     const { x, y } = this.local(e);
     const q = this.pointAt(x, y, e.ctrlKey || e.metaKey);
     if (!q) return;
@@ -520,7 +621,7 @@ export class DrawingTools {
       }
       return;
     }
-    p.d.pts[p.d.pts.length - 1] = q;
+    p.d.pts[p.d.pts.length - 1] = flatten(p.d.kind, p.d.pts, p.d.pts.length - 1, q, e.shiftKey);
     this.push();
   };
 
@@ -533,7 +634,7 @@ export class DrawingTools {
     let pts: Pt[] | null = null;
     if (g.handle >= 0) {
       const q = this.pointAt(x, y, e.ctrlKey || e.metaKey);
-      if (q) pts = dragHandle(d.kind, g.orig, g.handle, q);
+      if (q) pts = dragHandle(d.kind, g.orig, g.handle, flatten(d.kind, g.orig, g.handle, q, e.shiftKey));
     } else {
       const q = this.layer.toPt(x, y);
       if (q) pts = moveDrawing(g.orig, q.t - g.start.t, q.p - g.start.p);
@@ -548,6 +649,12 @@ export class DrawingTools {
     const g = this.drag;
     this.drag = null;
     if (g?.moved) this.commit(this.drawings, g.before);
+    else if (g?.cloneOf) {
+      // Ctrl + klik bez ruchu: bez kopii, zaznaczony oryginał
+      this.drawings = g.before;
+      this.selectedId = g.cloneOf;
+      this.push();
+    }
     const p = this.pending;
     if (p && this.swallow) {
       const { x, y } = this.local(e);
@@ -563,7 +670,7 @@ export class DrawingTools {
         if (q) {
           p.downX = x;
           p.downY = y;
-          this.placePoint(q);
+          this.placePoint(flatten(p.d.kind, p.d.pts, p.d.pts.length - 1, q, e.shiftKey));
         }
       } else {
         p.downX = x;
@@ -580,7 +687,7 @@ export class DrawingTools {
     const d = h ? this.drawings.find((x2) => x2.id === h.id) : null;
     if (!d) return;
     e.stopPropagation();
-    this.selectedId = d.id;
+    this.select(d.id);
     if (d.kind === 'text' || d.kind === 'note' || d.kind === 'hline' || d.kind === 'hray') this.editTick++;
     this.push();
   };
@@ -594,7 +701,8 @@ export class DrawingTools {
       return;
     }
     if (e.key === 'Escape') {
-      if (this.pending) this.cancelPending();
+      if (this.menu) this.closeMenu();
+      else if (this.pending) this.cancelPending();
       else if (this.temp) {
         this.temp = null;
         this.push();
@@ -615,10 +723,8 @@ export class DrawingTools {
     } else if ((k === 'z' && e.shiftKey) || k === 'y') {
       e.preventDefault();
       this.redo();
-    } else if (k === 'c' && this.selectedId) {
-      const d = this.drawings.find((x) => x.id === this.selectedId);
-      if (d) this.clipboard = clone([d])[0];
-    } else if (k === 'v' && this.clipboard) {
+    } else if (k === 'c') this.copySelected();
+    else if (k === 'v' && this.clipboard) {
       e.preventDefault();
       this.paste(this.clipboard);
       this.clipboard = clone([this.drawings[this.drawings.length - 1]])[0];
