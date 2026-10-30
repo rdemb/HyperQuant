@@ -25,7 +25,7 @@ export async function enrichTrade(t: Trade, now = Date.now()): Promise<Pick<Trad
   const before = minute.filter((b) => b.time < entryMin);
   if (minute.length && minute[0].time <= dayStart(t.entryT) && before.length) {
     const c = computeAuctionContext(before, hourly, t.entryT);
-    const ib = !c.ib ? null : !c.ib.done ? 'w trakcie' : c.today ? (c.today.ibBreak.up && c.today.ibBreak.down ? 'wybity ↑↓' : c.today.ibBreak.up ? 'wybity ↑' : c.today.ibBreak.down ? 'wybity ↓' : 'w zakresie') : null;
+    const ib = !c.ib ? null : !c.ib.done ? 'open' : c.today ? (c.today.ibBreak.up && c.today.ibBreak.down ? 'both' : c.today.ibBreak.up ? 'up' : c.today.ibBreak.down ? 'down' : 'inside') : null;
     ctx = {
       vwapZ: c.vwap && c.vwap.sd > 0 ? Math.round(((t.entryPx - c.vwap.vwap) / c.vwap.sd) * 100) / 100 : null,
       openLoc: c.today?.openLoc ?? null,

@@ -5,7 +5,7 @@
 // mówi, kiedy dana część była naprawdę pobrana (przy fallbacku — data poprzedniej wersji z Pages).
 // Każde źródło jest niezależne: błąd jednego nie przerywa reszty. Celowo NIE używamy: FRED, DefiLlama,
 // Yahoo ani giełd CEX (warunki licencyjne / zakaz republikacji).
-import { mkdir, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -423,7 +423,8 @@ const shortError = (e) => `${e?.message ?? e}${e?.cause?.code ? ` (${e.cause.cod
 /**
  * Przebieg potoku. `fetchImpl` i `write` są wstrzykiwane (testy „dry-run” bez sieci).
  * Część, która zawiodła, bierzemy z poprzedniej wersji opublikowanej na Pages (z jej oryginalną datą asOf);
- * gdy i to zawiedzie — null. Plik bez żadnych danych nie jest zapisywany.
+ * gdy i to zawiedzie — null. Plik bez żadnych danych nie jest zapisywany. `changedFiles` — zapisane pliki, których dane
+ * (bez dat pobrania) różnią się od wersji na Pages: przebieg z harmonogramu bez zmian nie musi wdrażać strony.
  */
 export async function runPipeline({ fetchImpl = globalThis.fetch, now = new Date(), write, log = console.log }) {
   const get = makeGetter(fetchImpl);
@@ -431,6 +432,7 @@ export async function runPipeline({ fetchImpl = globalThis.fetch, now = new Date
   const writtenFiles = [];
   const skippedFiles = [];
   const failedParts = [];
+  const changedFiles = [];
 
   await Promise.all(
     FILES.map(async (spec) => {
@@ -462,10 +464,11 @@ export async function runPipeline({ fetchImpl = globalThis.fetch, now = new Date
       const parts = Object.fromEntries(names.map((n, i) => [n, results[i].meta]));
       await write(spec.file, { generatedAt: nowIso, source: spec.source, attribution: spec.attribution, data, parts });
       writtenFiles.push(spec.file);
+      if (JSON.stringify((await prev())?.data ?? null) !== JSON.stringify(data)) changedFiles.push(spec.file);
       log(`✓ ${spec.file}: ${names.map((n, i) => `${n}=${results[i].meta.ok ? 'ok' : results[i].value ? 'fallback' : 'brak'}`).join(', ')}`);
     })
   );
-  return { writtenFiles, skippedFiles, failedParts };
+  return { writtenFiles, skippedFiles, failedParts, changedFiles };
 }
 
 async function main() {
@@ -476,6 +479,8 @@ async function main() {
   });
   console.log(`Zapisano ${summary.writtenFiles.length}/${FILES.length} plików do ${outDir}`);
   if (summary.failedParts.length) console.log(`Części z błędem: ${summary.failedParts.join(', ')}`);
+  console.log(summary.changedFiles.length ? `Zmienione względem Pages: ${summary.changedFiles.join(', ')}` : 'Dane bez zmian względem Pages');
+  if (process.env.GITHUB_OUTPUT) await appendFile(process.env.GITHUB_OUTPUT, `changed=${summary.changedFiles.length > 0}\n`);
   if (summary.writtenFiles.length === 0) process.exitCode = 1;
 }
 
