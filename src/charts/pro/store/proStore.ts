@@ -264,6 +264,17 @@ export class ProStore {
     return s.candlesNow();
   }
 
+  /**
+   * Świece interwału wskaźnika (parametr „Interwał”, doba pivotów): seria wczytuje się przy pierwszym użyciu,
+   * a starsza historia, gdy wykres sięga dalej wstecz niż `from`.
+   */
+  indicatorCandles(id: string, from: number): readonly Candle[] {
+    const s = this.series(id);
+    if (s.loadState === 'idle') void s.load();
+    else if (s.candles.length > 0 && s.candles[0].t > from) void s.loadOlder();
+    return s.candlesNow();
+  }
+
   /** Ostatnia cena rynku: transakcja z taśmy, a przed pierwszą — zamknięcie najnowszej świecy którejś serii. */
   lastPrice(): number {
     if (this.lastTradePx > 0) return this.lastTradePx;

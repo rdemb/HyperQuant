@@ -1,4 +1,4 @@
-import { CandlestickSeries, HistogramSeries, LineSeries, LineStyle, createChart } from 'lightweight-charts';
+import { CandlestickSeries, HistogramSeries, LineSeries, LineStyle, LineType, createChart } from 'lightweight-charts';
 import type {
   CandlestickData,
   HistogramData,
@@ -190,6 +190,8 @@ function flowLegend(label: string, value: number | null): LegendPart[] {
 
 /** Linie poziomów w panelu wskaźnika (RSI 70, 50, 30): widoczne, ale ciszej niż linia wskaźnika. */
 const LEVEL_COLOR = rgba(PRO.ink3, 0.45);
+/** Odcinek bez koloru: przerwa między poziomami kolejnych okresów. */
+const CLEAR = 'rgba(0, 0, 0, 0)';
 
 const sameOhlc = (a: Ohlc | null, b: Ohlc | null) =>
   a === b || (a !== null && b !== null && a.open === b.open && a.high === b.high && a.low === b.low && a.close === b.close);
@@ -243,6 +245,8 @@ export class ProChartController {
   private indSeries: IndSeries[][] = [];
   /** Plot bez wartości na ostatniej świecy (np. nieaktywna linia Supertrendu): bez starej liczby na osi ceny, jak w TradingView. */
   private indGap: boolean[][] = [];
+  /** Liczba świec, których punkty wskaźników są już na wykresie. */
+  private indPushed = 0;
   private indLegends: (PaneLegend | null)[] = [];
   /** Widoczne instancje ze stylem (kolor legendy); przeliczanie trzyma je w silniku. */
   private indShown: IndicatorInstance[] = [];
@@ -418,7 +422,7 @@ export class ProChartController {
     this.syncVenueLive();
     // Lista, parametry i widoczność wskaźników przebudowują ich serie razem z panelami; sam styl zmienia opcje linii
     const indShown = s.indicators.filter((x) => x.visible);
-    const indKey = JSON.stringify(indShown.map((x) => [x.iid, x.id, x.params]));
+    const indKey = JSON.stringify(indShown.map((x) => [x.iid, x.id, x.params, x.tf]));
     const indChanged = indKey !== this.indKey;
     this.indKey = indKey;
     const indStyleKey = JSON.stringify(indShown);
@@ -528,6 +532,7 @@ export class ProChartController {
       return lines;
     });
     this.indGap = this.indSeries.map((lines) => lines.map(() => false));
+    this.indPushed = 0;
     if (s.showStats) {
       this.statsSeries = this.chart.addSeries(
         LineSeries,
@@ -625,7 +630,7 @@ export class ProChartController {
 
   /**
    * Serie wskaźnika (po jednej na plot: linia albo słupki) w panelu `pane`; poziomy jako przerywane linie bez podpisów,
-   * stały zakres skali.
+   * stały zakres skali. Wskaźnik z wyższego interwału stoi przez całą jego świecę, więc rysujemy go schodkami.
    */
   private addIndicatorLines(def: IndicatorDef, x: IndicatorInstance, pane: number): IndSeries[] {
     const range = def.range;
@@ -640,7 +645,14 @@ export class ProChartController {
           ? this.chart.addSeries(HistogramSeries, { ...common, ...this.indStyle(x, p) }, pane)
           : this.chart.addSeries(
               LineSeries,
-              { ...common, ...this.indStyle(x, p), lineStyle: p.dashed ? LineStyle.Dashed : LineStyle.Solid, crosshairMarkerRadius: 3 },
+              {
+                ...common,
+                ...this.indStyle(x, p),
+                title: p.title ?? '',
+                lineStyle: p.dashed ? LineStyle.Dashed : LineStyle.Solid,
+                lineType: x.tf ? LineType.WithSteps : LineType.Simple,
+                crosshairMarkerRadius: 3,
+              },
               pane
             )
     );
@@ -894,24 +906,33 @@ export class ProChartController {
 
   /** Wskaźniki: przeliczenie od pierwszej zmienionej świecy i wysłanie tylko jej punktów (zwykle bieżącej świecy). */
   private pushIndicators(): void {
-    const from = this.engine.sync(this.bars);
+    // Świece interwału wskaźnika sięgają do pierwszej świecy wykresu (bez świec wykresu — bez doczytywania)
+    const first = this.bars[0]?.t ?? Number.POSITIVE_INFINITY;
+    const from = this.engine.sync(this.bars, this.series.interval.ms, (tf) => this.store.indicatorCandles(tf, first));
     if (from >= this.bars.length) return;
-    this.engine.runs.forEach((run, k) => run.out.forEach((_, p) => this.pushPlot(k, p, from)));
+    // Zmiana przed ostatnią wysłaną świecą (wartości z innego interwału): pełna podmiana, bo aktualizacja wstecz psuje puste punkty
+    const start = from < this.indPushed - 1 ? 0 : from;
+    this.engine.runs.forEach((run, k) => run.out.forEach((_, p) => this.pushPlot(k, p, start)));
+    this.indPushed = this.bars.length;
   }
 
-  /** Punkty plotu `p` instancji `k` od świecy `from` (słupki w kolorze znaku z kryciem instancji). */
+  /**
+   * Punkty plotu `p` instancji `k` od świecy `from` (słupki w kolorze znaku z kryciem instancji). Poziom okresu (pivot)
+   * kończy się na ostatniej świecy okresu: odcinek do innej wartości następnej świecy jest przezroczysty.
+   */
   private pushPlot(k: number, p: number, from: number): void {
     const bars = this.bars;
     const n = Math.min(bars.length, this.engine.count);
     const x = this.indShown[k];
-    const hist = indicatorDef(x.id).plots[p].hist;
+    const { hist, breaks } = indicatorDef(x.id).plots[p];
     const ys = this.engine.runs[k].out[p];
     const series = this.indSeries[k][p] as ISeriesApi<'Line'>;
     const point = (i: number) => {
       const time = sec(bars[i].t);
       const v = ys[i];
       if (Number.isNaN(v)) return { time };
-      return hist ? { time, value: v, color: rgba(v < 0 ? HIST_DOWN : HIST_UP, 0.6 * x.alpha) } : { time, value: v };
+      if (hist) return { time, value: v, color: rgba(v < 0 ? HIST_DOWN : HIST_UP, 0.6 * x.alpha) };
+      return breaks && i + 1 < n && ys[i + 1] !== v ? { time, value: v, color: CLEAR } : { time, value: v };
     };
     // Bez zmiany wcześniejszych punktów (przeliczenie od zera to pełna podmiana), więc bez aktualizacji wstecz
     if (from === 0 || n - from > MAX_POINT_UPDATES) series.setData(Array.from({ length: n }, (_, i) => point(i)));
@@ -1120,7 +1141,10 @@ export class ProChartController {
       const fmt = this.indFormat(def);
       const values = run.out.map((ys, p) => {
         const v = i >= 0 && i < this.engine.count ? ys[i] : Number.NaN;
-        return { text: Number.isNaN(v) ? '—' : fmt(v), color: this.plotColor(x, def.plots[p], v) };
+        // Podpis poziomu (pivoty: P, R1, S1…) także w legendzie
+        const title = def.plots[p].title;
+        const text = Number.isNaN(v) ? '—' : fmt(v);
+        return { text: title ? `${title} ${text}` : text, color: this.plotColor(x, def.plots[p], v) };
       });
       const legend = this.indLegends[k];
       if (legend) legend.set([{ text: indicatorLabel(x), color: PRO.ink3 }, ...values.map((v) => ({ ...v, glue: true }))]);
