@@ -38,7 +38,7 @@ import { TpoLayer } from './tpoLayer';
 import { tpoInterval } from '../core/tpo';
 import type { ChartSettings } from './settings';
 import { IndicatorEngine } from '../indicators/engine';
-import { IndicatorDef, IndicatorInstance, indicatorDef, indicatorLabel } from '../indicators/registry';
+import { HIST_DOWN, HIST_UP, IndicatorDef, IndicatorInstance, PlotDef, indicatorDef, indicatorLabel } from '../indicators/registry';
 import { CountdownLabel } from './countdown';
 import { FlowVenue, OiVenue, oiMaxAge, per8h } from '../venues/parse';
 import { VenueStore, acquireVenues, venueStoreFor } from '../venues/venueStore';
@@ -60,13 +60,15 @@ export interface HoverRow {
   sell: number;
 }
 
-/** Klasyczny wskaźnik na wykresie ceny w legendzie: podpis, kolor i wartości plotów pod krzyżem. */
+/** Klasyczny wskaźnik na wykresie ceny w legendzie: podpis i wartości plotów pod krzyżem w ich kolorach. */
 export interface IndicatorReadout {
   iid: string;
   label: string;
-  color: string;
-  text: string;
+  values: { text: string; color: string }[];
 }
+
+/** Seria plotu wskaźnika: linia albo słupki (histogram MACD). */
+type IndSeries = ISeriesApi<'Line'> | ISeriesApi<'Histogram'>;
 
 export interface Hover {
   bar: ProBar | null;
@@ -238,7 +240,9 @@ export class ProChartController {
   private venueOiData: VenueLines = {};
   /** Klasyczne wskaźniki: przeliczanie, ich linie (po jednej na plot) i opisy własnych paneli, w kolejności instancji. */
   private readonly engine = new IndicatorEngine();
-  private indSeries: ISeriesApi<'Line'>[][] = [];
+  private indSeries: IndSeries[][] = [];
+  /** Plot bez wartości na ostatniej świecy (np. nieaktywna linia Supertrendu): bez starej liczby na osi ceny, jak w TradingView. */
+  private indGap: boolean[][] = [];
   private indLegends: (PaneLegend | null)[] = [];
   /** Widoczne instancje ze stylem (kolor legendy); przeliczanie trzyma je w silniku. */
   private indShown: IndicatorInstance[] = [];
@@ -440,7 +444,14 @@ export class ProChartController {
     if (panesChanged) this.rebuildPanes();
     else if (indRestyle) {
       this.indShown = indShown;
-      indShown.forEach((x, k) => this.indSeries[k].forEach((sr) => sr.applyOptions(this.indStyle(x))));
+      indShown.forEach((x, k) => {
+        const def = indicatorDef(x.id);
+        this.indSeries[k].forEach((sr, p) => {
+          sr.applyOptions(this.indStyle(x, def.plots[p], this.indGap[k][p]));
+          // Kolor słupków jest w punktach — krycie zmienia się z nimi
+          if (def.plots[p].hist) this.pushPlot(k, p, 0);
+        });
+      });
     }
     if (!panesChanged && prev.cvdReset !== s.cvdReset) {
       this.cvdData = [];
@@ -516,6 +527,7 @@ export class ProChartController {
       this.indLegends.push(legend);
       return lines;
     });
+    this.indGap = this.indSeries.map((lines) => lines.map(() => false));
     if (s.showStats) {
       this.statsSeries = this.chart.addSeries(
         LineSeries,
@@ -611,36 +623,51 @@ export class ProChartController {
     return out;
   }
 
-  /** Linie wskaźnika (po jednej na plot) w panelu `pane`; poziomy jako przerywane linie bez podpisów, stały zakres skali. */
-  private addIndicatorLines(def: IndicatorDef, x: IndicatorInstance, pane: number): ISeriesApi<'Line'>[] {
+  /**
+   * Serie wskaźnika (po jednej na plot: linia albo słupki) w panelu `pane`; poziomy jako przerywane linie bez podpisów,
+   * stały zakres skali.
+   */
+  private addIndicatorLines(def: IndicatorDef, x: IndicatorInstance, pane: number): IndSeries[] {
     const range = def.range;
-    const lines = def.plots.map((p) =>
-      this.chart.addSeries(
-        LineSeries,
-        {
-          ...this.indStyle(x),
-          lineStyle: p.dashed ? LineStyle.Dashed : LineStyle.Solid,
-          priceLineVisible: false,
-          crosshairMarkerRadius: 3,
-          priceFormat: { type: 'custom', minMove: 0.0001, formatter: this.indFormat(def) },
-          ...(range ? { autoscaleInfoProvider: () => ({ priceRange: { minValue: range[0], maxValue: range[1] } }) } : {}),
-        },
-        pane
-      )
+    const common = {
+      priceLineVisible: false,
+      priceFormat: { type: 'custom' as const, minMove: 0.0001, formatter: this.indFormat(def) },
+      ...(range ? { autoscaleInfoProvider: () => ({ priceRange: { minValue: range[0], maxValue: range[1] } }) } : {}),
+    };
+    const lines = def.plots.map(
+      (p): IndSeries =>
+        p.hist
+          ? this.chart.addSeries(HistogramSeries, { ...common, ...this.indStyle(x, p) }, pane)
+          : this.chart.addSeries(
+              LineSeries,
+              { ...common, ...this.indStyle(x, p), lineStyle: p.dashed ? LineStyle.Dashed : LineStyle.Solid, crosshairMarkerRadius: 3 },
+              pane
+            )
     );
     for (const price of def.levels ?? []) lines[0].createPriceLine({ price, color: LEVEL_COLOR, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false, title: '' });
     return lines;
   }
 
-  /** Styl linii instancji: kolor z kryciem, grubość i wartość na osi ceny. */
-  private indStyle(x: IndicatorInstance): Partial<LineSeriesOptions> {
-    return { color: rgba(x.color, x.alpha), lineWidth: x.width as LineWidth, lastValueVisible: x.labels };
+  /**
+   * Styl plotu instancji: kolor (instancji albo stały plotu) z kryciem, grubość i wartość na osi ceny (bez niej, gdy
+   * ostatnia świeca nie ma wartości — `gap`); słupki mają kolor w punktach.
+   */
+  private indStyle(x: IndicatorInstance, p: PlotDef, gap = false): Partial<LineSeriesOptions> {
+    const lastValueVisible = x.labels && !gap;
+    if (p.hist) return { lastValueVisible };
+    return { color: rgba(p.color ?? x.color, x.alpha), lineWidth: x.width as LineWidth, lastValueVisible };
   }
 
-  /** Liczby wskaźnika: cena (tick rynku), odległość ceny (ATR: o miejsce dokładniej niż tick) albo dwa miejsca (RSI). */
+  /** Kolor wartości plotu w legendzie: słupki w kolorze znaku. */
+  private plotColor(x: IndicatorInstance, p: PlotDef, v: number): string {
+    return p.hist ? (v < 0 ? HIST_DOWN : HIST_UP) : (p.color ?? x.color);
+  }
+
+  /** Liczby wskaźnika: cena (tick rynku), odległość ceny (ATR: o miejsce dokładniej niż tick), dwa miejsca (RSI) albo wolumen (OBV). */
   private indFormat(def: IndicatorDef): (v: number) => string {
     if (def.format === 'price') return fmtPx;
     if (def.format === 'fixed2') return (v) => fmtPrice(v, 2);
+    if (def.format === 'volume') return fmtSignedVol;
     return (v) => fmtPrice(v, Math.max(0, -Math.floor(Math.log10(this.priceTick))) + 1);
   }
 
@@ -866,19 +893,33 @@ export class ProChartController {
 
   /** Wskaźniki: przeliczenie od pierwszej zmienionej świecy i wysłanie tylko jej punktów (zwykle bieżącej świecy). */
   private pushIndicators(): void {
+    const from = this.engine.sync(this.bars);
+    if (from >= this.bars.length) return;
+    this.engine.runs.forEach((run, k) => run.out.forEach((_, p) => this.pushPlot(k, p, from)));
+  }
+
+  /** Punkty plotu `p` instancji `k` od świecy `from` (słupki w kolorze znaku z kryciem instancji). */
+  private pushPlot(k: number, p: number, from: number): void {
     const bars = this.bars;
-    const n = bars.length;
-    const from = this.engine.sync(bars);
-    if (from >= n) return;
-    this.engine.runs.forEach((run, k) =>
-      run.out.forEach((ys, p) => {
-        const series = this.indSeries[k][p];
-        const point = (i: number) => (Number.isNaN(ys[i]) ? { time: sec(bars[i].t) } : { time: sec(bars[i].t), value: ys[i] });
-        // Bez zmiany wcześniejszych punktów (przeliczenie od zera to pełna podmiana), więc bez aktualizacji wstecz
-        if (from === 0 || n - from > MAX_POINT_UPDATES) series.setData(Array.from({ length: n }, (_, i) => point(i)));
-        else for (let i = from; i < n; i++) series.update(point(i));
-      })
-    );
+    const n = Math.min(bars.length, this.engine.count);
+    const x = this.indShown[k];
+    const hist = indicatorDef(x.id).plots[p].hist;
+    const ys = this.engine.runs[k].out[p];
+    const series = this.indSeries[k][p] as ISeriesApi<'Line'>;
+    const point = (i: number) => {
+      const time = sec(bars[i].t);
+      const v = ys[i];
+      if (Number.isNaN(v)) return { time };
+      return hist ? { time, value: v, color: rgba(v < 0 ? HIST_DOWN : HIST_UP, 0.6 * x.alpha) } : { time, value: v };
+    };
+    // Bez zmiany wcześniejszych punktów (przeliczenie od zera to pełna podmiana), więc bez aktualizacji wstecz
+    if (from === 0 || n - from > MAX_POINT_UPDATES) series.setData(Array.from({ length: n }, (_, i) => point(i)));
+    else for (let i = from; i < n; i++) series.update(point(i));
+    const gap = n > 0 && Number.isNaN(ys[n - 1]);
+    if (gap !== this.indGap[k][p]) {
+      this.indGap[k][p] = gap;
+      series.applyOptions({ lastValueVisible: x.labels && !gap });
+    }
   }
 
   private tickCountdown(): void {
@@ -1076,14 +1117,13 @@ export class ProChartController {
       const x = this.indShown[k];
       const def = indicatorDef(x.id);
       const fmt = this.indFormat(def);
-      const text = run.out.map((ys) => (i >= 0 && i < this.engine.count && !Number.isNaN(ys[i]) ? fmt(ys[i]) : '—')).join(' ');
+      const values = run.out.map((ys, p) => {
+        const v = i >= 0 && i < this.engine.count ? ys[i] : Number.NaN;
+        return { text: Number.isNaN(v) ? '—' : fmt(v), color: this.plotColor(x, def.plots[p], v) };
+      });
       const legend = this.indLegends[k];
-      if (legend)
-        legend.set([
-          { text: indicatorLabel(x), color: PRO.ink3 },
-          { text, color: x.color },
-        ]);
-      else indicators.push({ iid: x.iid, label: indicatorLabel(x), color: x.color, text });
+      if (legend) legend.set([{ text: indicatorLabel(x), color: PRO.ink3 }, ...values.map((v) => ({ ...v, glue: true }))]);
+      else indicators.push({ iid: x.iid, label: indicatorLabel(x), values });
     });
     this.statsTable.setHover(this.hoverTime === null ? -1 : i);
     const open = bar !== null && bar.t + this.series.interval.ms > this.store.serverNow();
