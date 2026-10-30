@@ -7,7 +7,8 @@ import { pushHostOk, signedMessage } from '../../../src/utils/alertsServer.ts';
  * Przeglądarka z włączonym „24/7” zapisuje tu swoją subskrypcję push i alarmy (bez konta: losowy identyfikator i token
  * urządzenia). Serwer powiadomień na VPS co kilka sekund pobiera zmienione urządzenia, sam pilnuje alarmów na taśmie
  * Hyperliquid i odsyła zdarzenia. Serwer podpisuje zapytania kluczem Ed25519, którego część publiczną publikuje w repo
- * danych (`alerts/keys.json`); skrzynka nie ma żadnego wspólnego sekretu z serwerem. Bez adresów IP i bez e-maili.
+ * danych (`alerts/keys.json`); skrzynka nie ma żadnego wspólnego sekretu z serwerem. Bez adresów IP i bez e-maili
+ * (limit rejestracji liczy tylko skróty adresu z solą i godziną, kasowane po 2 h).
  */
 
 /** Minimalne typy D1 (bez pakietu typów Cloudflare). */
@@ -35,7 +36,12 @@ export const MAX_RULES = 30;
 const MAX_DEVICES = 20_000;
 const MAX_BODY = 48_000;
 const SYNC_PAGE = 500;
-const DAY = 86_400_000;
+const HOUR = 3_600_000;
+const DAY = 24 * HOUR;
+/** Rejestracje z jednego adresu na godzinę (z zapasem na wspólny adres sieci komórkowej albo firmy). */
+const REG_PER_HOUR = 10;
+/** Urządzenie bez ani jednej synchronizacji z przeglądarki po rejestracji znika po tym czasie. */
+const FRESH_MS = 7 * DAY;
 const LOG_MS = 7 * DAY;
 const IDLE_MS = 30 * DAY;
 const TOMBSTONE_MS = 2 * DAY;
@@ -193,16 +199,35 @@ function reconcile(rules: AlertRule[], done: Set<string>, starts: Map<string, { 
     });
 }
 
-async function register(env: Env, data: Record<string, unknown>, now: number) {
+/**
+ * Limit rejestracji z jednego adresu (REG_PER_HOUR w godzinie zegara): zapytanie licznika do paczki rejestracji;
+ * przekroczony → 429. Bez adresu (wywołanie spoza sieci Cloudflare, testy) bez limitu.
+ */
+async function regLimit(env: Env, ip: string, now: number): Promise<D1Stmt[]> {
+  if (!ip) return [];
+  const salt = await env.DB.prepare("SELECT v FROM meta WHERE k = 'salt'").first<{ v: number }>();
+  const k = await sha256(`${salt?.v ?? 0}|${ip}|${Math.floor(now / HOUR)}`);
+  const row = await env.DB.prepare('SELECT n FROM regs WHERE k = ?').bind(k).first<{ n: number }>();
+  if ((row?.n ?? 0) >= REG_PER_HOUR) throw new HttpError(429, 'too many registrations');
+  return [
+    env.DB.prepare('DELETE FROM regs WHERE at < ?').bind(now - 2 * HOUR),
+    env.DB.prepare('INSERT INTO regs (k, n, at) VALUES (?, 1, ?) ON CONFLICT (k) DO UPDATE SET n = n + 1').bind(k, now),
+  ];
+}
+
+async function register(env: Env, data: Record<string, unknown>, now: number, ip: string) {
   const sub = parseSub(data.sub);
   if (!sub) throw new HttpError(400, 'bad subscription');
   const n = await env.DB.prepare('SELECT COUNT(*) AS n FROM devices WHERE deleted = 0').first<{ n: number }>();
   if ((n?.n ?? 0) >= MAX_DEVICES) throw new HttpError(503, 'full');
+  const limit = await regLimit(env, ip, now);
   const id = randomId(16);
   const token = randomId(32);
   const rules = cleanRules(data.rules, now);
   await env.DB.batch([
     bump(env.DB),
+    ...limit,
+    env.DB.prepare('INSERT INTO fresh (id, at) VALUES (?, ?)').bind(id, now),
     // Ta sama subskrypcja zapisana wcześniej (np. po wyczyszczeniu danych strony) — stary wpis znika
     env.DB.prepare(`UPDATE devices SET deleted = 1, rules = '[]', endpoint = '', p256dh = '', auth = '', seen = ?, version = ${VER} WHERE endpoint = ? AND deleted = 0`).bind(now, sub.endpoint),
     env.DB.prepare(`INSERT INTO devices (id, token, endpoint, p256dh, auth, lang, rules, seen, version, deleted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ${VER}, 0)`).bind(
@@ -226,6 +251,7 @@ async function update(env: Env, row: DeviceRow, data: Record<string, unknown>, n
   const rules = reconcile(cleanRules(data.rules, now), done, starts);
   await env.DB.batch([
     bump(env.DB),
+    env.DB.prepare('DELETE FROM fresh WHERE id = ?').bind(row.id),
     env.DB.prepare(`UPDATE devices SET endpoint = ?, p256dh = ?, auth = ?, lang = ?, rules = ?, seen = ?, version = ${VER} WHERE id = ?`).bind(
       sub.endpoint,
       sub.p256dh,
@@ -304,11 +330,19 @@ async function report(env: Env, data: Record<string, unknown>, now: number) {
   return { ok: true };
 }
 
-/** Sprzątanie raz na dobę: nieużywane urządzenia (30 dni), puste wiersze po 2 dniach, zdarzenia po 7 dniach. */
+/**
+ * Sprzątanie raz na dobę: nieużywane urządzenia (30 dni), urządzenia bez synchronizacji po rejestracji (7 dni), puste
+ * wiersze po 2 dniach, zdarzenia po 7 dniach, liczniki limitu rejestracji po 2 h.
+ */
 export async function cleanup(env: Env, now: number): Promise<void> {
   await env.DB.batch([
     bump(env.DB),
     env.DB.prepare(`UPDATE devices SET deleted = 1, rules = '[]', endpoint = '', p256dh = '', auth = '', seen = ?, version = ${VER} WHERE deleted = 0 AND seen < ?`).bind(now, now - IDLE_MS),
+    env.DB.prepare(
+      `UPDATE devices SET deleted = 1, rules = '[]', endpoint = '', p256dh = '', auth = '', seen = ?, version = ${VER} WHERE deleted = 0 AND id IN (SELECT id FROM fresh WHERE at < ?)`
+    ).bind(now, now - FRESH_MS),
+    env.DB.prepare('DELETE FROM fresh WHERE at < ? OR id NOT IN (SELECT id FROM devices WHERE deleted = 0)').bind(now - FRESH_MS),
+    env.DB.prepare('DELETE FROM regs WHERE at < ?').bind(now - 2 * HOUR),
     env.DB.prepare('DELETE FROM devices WHERE deleted = 1 AND seen < ?').bind(now - TOMBSTONE_MS),
     env.DB.prepare('DELETE FROM events WHERE at < ? OR device NOT IN (SELECT id FROM devices WHERE deleted = 0)').bind(now - LOG_MS),
   ]);
@@ -333,7 +367,7 @@ export async function handle(req: Request, env: Env, now = Date.now()): Promise<
     const path = url.pathname.replace(/\/+$/, '');
     if (path === '/v1/health') return reply(200, { ok: true }, h);
     const dev = /^\/v1\/devices\/([A-Za-z0-9_-]{22})$/.exec(path);
-    if (path === '/v1/devices' && req.method === 'POST') return reply(200, await register(env, (await readJson(req)).data, now), h);
+    if (path === '/v1/devices' && req.method === 'POST') return reply(200, await register(env, (await readJson(req)).data, now, req.headers.get('cf-connecting-ip') ?? ''), h);
     if (dev && req.method === 'PUT') {
       const { data } = await readJson(req);
       return reply(200, await update(env, await deviceAuth(env, req, dev[1]), data, now), h);

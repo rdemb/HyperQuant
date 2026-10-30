@@ -51,16 +51,64 @@ describe('LedgerStore — pliki dzienne z łańcuchem hashy', () => {
 });
 
 describe('LedgerStore — ucięta linia', () => {
-  it('niepełna ostatnia linia (np. awaria w trakcie zapisu) → load zwraca ok = false zamiast wyjątku', () => {
+  it('niepełna ostatnia linia ostatniego pliku (awaria w trakcie zapisu) → obcięta, rekord naprawy w łańcuchu, dopisywanie dalej', () => {
     const dir = mkdtempSync(join(tmpdir(), 'hq-ledger-'));
     const s = new LedgerStore({ dir, coin: 'BTC' });
     s.load(T0);
     s.append([{ k: 'f', id: 'a', t: T0, kind: 'ret', h: 60, slot: T0 }], T0);
     const f = join(dir, 'BTC', '2026-10-22.jsonl');
     writeFileSync(f, readFileSync(f, 'utf8') + '{"k":"f","slot":12');
-    const st = new LedgerStore({ dir, coin: 'BTC' }).load(T0 + MIN);
+    const again = new LedgerStore({ dir, coin: 'BTC' });
+    const st = again.load(T0 + MIN);
+    expect(st.ok).toBe(true);
+    expect([...st.forecasts.keys()]).toEqual(['a']);
+    expect(again.repairedTail).toEqual({ file: '2026-10-22.jsonl', bytes: 18 });
+    again.append([{ k: 'r', id: 'a', t: T0 + 2 * MIN }], T0 + 2 * MIN);
+    const lines = readFileSync(f, 'utf8').split('\n').filter(Boolean);
+    expect(lines).toHaveLength(3);
+    expect(JSON.parse(lines[1])).toMatchObject({ k: 'n', note: 'repair-tail', file: '2026-10-22.jsonl', bytes: 18 });
+    expect(verifyLines(lines, '0'.repeat(64)).ok).toBe(true);
+    // Kolejne wczytanie: łańcuch cały, bez drugiej naprawy
+    const third = new LedgerStore({ dir, coin: 'BTC' });
+    expect(third.load(T0 + 3 * MIN).ok).toBe(true);
+    expect(third.repairedTail).toBeNull();
+    expect(third.lines).toBe(3);
+  });
+
+  it('plik dnia z samą uciętą linią znika, a rekord naprawy trafia do pliku bieżącego dnia', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hq-ledger-'));
+    const s = new LedgerStore({ dir, coin: 'BTC' });
+    s.load(T0);
+    s.append([{ k: 'f', id: 'a', t: T0 }], T0);
+    const f2 = join(dir, 'BTC', '2026-10-23.jsonl');
+    writeFileSync(f2, '{"k":"f","id":"b"');
+    const again = new LedgerStore({ dir, coin: 'BTC' });
+    expect(again.load(T0 + 20 * MIN).ok).toBe(true);
+    const lines = readFileSync(f2, 'utf8').split('\n').filter(Boolean);
+    expect(lines).toHaveLength(1);
+    expect(JSON.parse(lines[0])).toMatchObject({ k: 'n', file: '2026-10-23.jsonl', bytes: 17 });
+    expect(again.lines).toBe(2);
+  });
+
+  it('niepełna linia poza końcem ostatniego pliku albo zła linia z końcem wiersza → nadal ok = false', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hq-ledger-'));
+    const s = new LedgerStore({ dir, coin: 'BTC' });
+    s.load(T0);
+    s.append([{ k: 'f', id: 'a', t: T0, kind: 'ret', h: 60, slot: T0 }], T0);
+    const f = join(dir, 'BTC', '2026-10-22.jsonl');
+    writeFileSync(f, readFileSync(f, 'utf8') + '{"k":"f","slot":12');
+    s.append([{ k: 'f', id: 'b', t: T0 + 15 * MIN }], T0 + 15 * MIN); // następny dzień: ucięta linia w starszym pliku
+    const st = new LedgerStore({ dir, coin: 'BTC' }).load(T0 + 20 * MIN);
     expect(st.ok).toBe(false);
-    expect(st.error).toMatch(/linia 2/);
+    expect(st.error).toMatch(/2026-10-22\.jsonl, linia 2/);
+
+    const dir2 = mkdtempSync(join(tmpdir(), 'hq-ledger-'));
+    const s2 = new LedgerStore({ dir: dir2, coin: 'BTC' });
+    s2.load(T0);
+    s2.append([{ k: 'f', id: 'a', t: T0 }], T0);
+    const g = join(dir2, 'BTC', '2026-10-22.jsonl');
+    writeFileSync(g, readFileSync(g, 'utf8') + '{"k":"f","slot":12}\n');
+    expect(new LedgerStore({ dir: dir2, coin: 'BTC' }).load(T0 + MIN).ok).toBe(false);
   });
 });
 
