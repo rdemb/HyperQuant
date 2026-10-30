@@ -165,8 +165,13 @@ export const Legend: React.FC<{
             )}
             <IndicatorFields list={h.indicators} onEdit={onEditIndicator} />
           </div>
-        ) : (
+        ) : h.live ? (
           <div className="text-ink-3">{tr('Wczytywanie świec…', 'Loading candles…')}</div>
+        ) : (
+          // Krzyż za ostatnią świecą (chmura Ichimoku w przód): same wartości wskaźników
+          <div className="flex items-baseline gap-x-2 whitespace-nowrap overflow-hidden">
+            <IndicatorFields list={h.indicators} onEdit={onEditIndicator} />
+          </div>
         )}
         {h.row && (
           <div className="flex items-baseline gap-x-2 whitespace-nowrap overflow-hidden">
@@ -202,9 +207,9 @@ export const Legend: React.FC<{
       </Field>
       <span className={change >= 0 ? 'text-of-buy-ink' : 'text-of-sell-ink'}>{fmtChange(change)}</span>
     </>
-  ) : (
+  ) : h.live ? (
     <span className="text-ink-3">{tr('Wczytywanie świec…', 'Loading candles…')}</span>
-  );
+  ) : null;
   const toggle = (
     <button
       type="button"
@@ -275,7 +280,7 @@ export const Legend: React.FC<{
           )}
         </div>
       )}
-      {h.indicators.length > 0 && c && (
+      {h.indicators.length > 0 && (c || !h.live) && (
         <div className="flex flex-wrap items-baseline gap-x-2.5">
           <IndicatorFields list={h.indicators} onEdit={onEditIndicator} />
         </div>
