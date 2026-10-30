@@ -678,6 +678,8 @@ export class ProChartController {
    * ostatnia świeca nie ma wartości — `gap`); słupki mają kolor w punktach.
    */
   private indStyle(x: IndicatorInstance, p: PlotDef, gap = false): Partial<LineSeriesOptions> {
+    // Plot tylko do legendy (delta przy zmianie OI): seria ukryta, poza skalą panelu
+    if (p.hidden) return { visible: false };
     const lastValueVisible = x.labels && !gap;
     if (p.hist) return { lastValueVisible };
     const color = rgba(p.color ?? x.color, x.alpha);
@@ -686,9 +688,9 @@ export class ProChartController {
     return { color, lineWidth: x.width as LineWidth, lastValueVisible };
   }
 
-  /** Kolor wartości plotu w legendzie: słupki w kolorze znaku. */
-  private plotColor(x: IndicatorInstance, p: PlotDef, v: number): string {
-    return p.hist ? (v < 0 ? HIST_DOWN : HIST_UP) : (p.color ?? x.color);
+  /** Kolor wartości plotu w legendzie: słupki w kolorze znaku (`sign` — wartość własna albo plotu `signOf`). */
+  private plotColor(x: IndicatorInstance, p: PlotDef, sign: number): string {
+    return p.hist ? (sign < 0 ? HIST_DOWN : HIST_UP) : (p.color ?? x.color);
   }
 
   /** Liczby wskaźnika: cena (tick rynku), odległość ceny (ATR: o miejsce dokładniej niż tick), dwa lub trzy miejsca (RSI, CMF) albo wolumen (OBV). */
@@ -926,7 +928,9 @@ export class ProChartController {
     const first = this.bars[0]?.t ?? Number.POSITIVE_INFINITY;
     const n = this.bars.length;
     const ms = this.series.interval.ms;
-    if (this.engine.sync(this.bars, ms, (tf) => this.store.indicatorCandles(tf, first)) >= n) return;
+    // Wskaźniki z taśmy i OI: odczyt OI jak w panelu ΔOI (starszy niż kilka minut to przerwa w danych)
+    const flow = { oiAt: (t: number) => this.store.oi.atWithin(t, HL_OI_MAX_AGE), now: this.store.serverNow() };
+    if (this.engine.sync(this.bars, ms, (tf) => this.store.indicatorCandles(tf, first), flow) >= n) return;
     // Luka w świecach albo doczytana historia przesuwa czasy punktów za ostatnią świecą: te ploty idą w całości
     const anchor = this.bars[n - 1].t - (n - 1) * ms;
     const moved = anchor !== this.indAnchor;
@@ -966,6 +970,8 @@ export class ProChartController {
     const plot = indicatorDef(x.id).plots[p];
     const { hist, breaks } = plot;
     const ys = this.engine.runs[k].out[p];
+    // Kolor słupka ze znaku wartości albo innego plotu (zmiana OI w kolorze delty)
+    const signs = plot.signOf === undefined ? ys : this.engine.runs[k].out[plot.signOf];
     const series = this.indSeries[k][p] as ISeriesApi<'Line'>;
     // Przesunięcie (Ichimoku): wartość świecy i w miejscu świecy i + shift, za ostatnią świecą co interwał wykresu
     const shift = plotShift(x, plot);
@@ -975,7 +981,7 @@ export class ProChartController {
       const time = sec(j < n ? bars[j].t : bars[n - 1].t + (j - n + 1) * ms);
       const v = ys[i];
       if (Number.isNaN(v)) return { time };
-      if (hist) return { time, value: v, color: rgba(v < 0 ? HIST_DOWN : HIST_UP, 0.6 * x.alpha) };
+      if (hist) return { time, value: v, color: rgba(signs[i] < 0 ? HIST_DOWN : HIST_UP, 0.6 * x.alpha) };
       return breaks && i + 1 < n && ys[i + 1] !== v ? { time, value: v, color: CLEAR } : { time, value: v };
     };
     // Bez zmiany wcześniejszych punktów (przeliczenie od zera to pełna podmiana), więc bez aktualizacji wstecz.
@@ -1202,13 +1208,15 @@ export class ProChartController {
       const x = this.indShown[k];
       const def = indicatorDef(x.id);
       const fmt = this.indFormat(def);
-      const values = run.out.map((ys, p) => {
+      const vs = run.out.map((ys, p) => {
         const j = vi - plotShift(x, def.plots[p]);
-        const v = vi >= 0 && j >= 0 && j < this.engine.count ? ys[j] : Number.NaN;
+        return vi >= 0 && j >= 0 && j < this.engine.count ? ys[j] : Number.NaN;
+      });
+      const values = vs.map((v, p) => {
+        const plot = def.plots[p];
         // Podpis poziomu (pivoty: P, R1, S1…) także w legendzie
-        const title = def.plots[p].title;
         const text = Number.isNaN(v) ? '—' : fmt(v);
-        return { text: title ? `${title} ${text}` : text, color: this.plotColor(x, def.plots[p], v) };
+        return { text: plot.title ? `${plot.title} ${text}` : text, color: this.plotColor(x, plot, vs[plot.signOf ?? p]) };
       });
       const legend = this.indLegends[k];
       if (legend) legend.set([{ text: indicatorLabel(x), color: PRO.ink3 }, ...values.map((v) => ({ ...v, glue: true }))]);
