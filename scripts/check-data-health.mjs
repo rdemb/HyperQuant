@@ -11,15 +11,17 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 export const DATA_BASE = 'https://raw.githubusercontent.com/rdemb/hyperquant-data/main';
-export const FILES = ['status.json', 'liq-map/BTC.json', 'liq-tape/BTC.json', 'cohorts/BTC.json', 'ledger/BTC/summary.json', 'liquidity/BTC.json', 'lab/BTC.json', 'README.md'];
+export const FILES = ['status.json', 'liq-map/BTC.json', 'liq-tape/BTC.json', 'cohorts/BTC.json', 'ledger/BTC/summary.json', 'liquidity/BTC.json', 'lab/BTC.json', 'whales.json', 'README.md'];
 /** Pliki, których brak nie jest alarmem (nowsze niż część wdrożeń skanera) — gdy są, przechodzą strażnika prywatności */
-export const OPTIONAL = new Set(['liq-tape/BTC.json', 'cohorts/BTC.json', 'ledger/BTC/summary.json', 'liquidity/BTC.json', 'lab/BTC.json']);
+export const OPTIONAL = new Set(['liq-tape/BTC.json', 'cohorts/BTC.json', 'ledger/BTC/summary.json', 'liquidity/BTC.json', 'lab/BTC.json', 'whales.json']);
 /** Profil płynności arkusza (publikowany co 10 min) */
 export const LIQUIDITY_MAX_AGE_MIN = 30;
 /** Laboratorium folkloru (przeliczane co godzinę) */
 export const LAB_MAX_AGE_MIN = 180;
 /** Podsumowanie dziennika prognoz (prognozy co 15 min; pliki dziennika — gałąź `ledger`) */
 export const LEDGER_MAX_AGE_MIN = 60;
+/** Warstwa wielorybów (publikowana z mapą co 2 min; strona ukrywa plik starszy niż 20 min) */
+export const WHALES_MAX_AGE_MIN = 30;
 export const LIMITS = {
   /** Publikacja co 2 min (+ do 5 min pamięci podręcznej CDN) — 30 min to jednoznaczna awaria */
   maxAgeMin: 30,
@@ -105,6 +107,15 @@ export function assessHealth(input, nowMs, limits = LIMITS) {
     }
   }
 
+  if (input.whales && typeof input.whales === 'object') {
+    const a = ageOf('wieloryby (whales.json)', input.whales, nowMs);
+    if (!a.ok) problems.push(a.problem);
+    else {
+      facts.push({ label: 'Wiek warstwy wielorybów', value: fmtMin(a.ageMin) });
+      if (a.ageMin > WHALES_MAX_AGE_MIN) problems.push(`warstwa wielorybów: ostatnia aktualizacja ${fmtMin(a.ageMin)} temu (próg ${WHALES_MAX_AGE_MIN} min)`);
+    }
+  }
+
   const s = input.status;
   if (s && typeof s === 'object') {
     if (typeof s.coverage === 'number') {
@@ -172,6 +183,7 @@ export async function fetchInput(base = DATA_BASE) {
     ledger: json['ledger/BTC/summary.json'] ?? null,
     liquidity: json['liquidity/BTC.json'] ?? null,
     lab: json['lab/BTC.json'] ?? null,
+    whales: json['whales.json'] ?? null,
     raw,
     errors,
   };

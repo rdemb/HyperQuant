@@ -72,13 +72,17 @@ function quantile(sorted: number[], q: number): number {
   return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
 }
 
+/** Kubełek z mniej niż tyloma pozycjami ma nominał zaokrąglony do 2 cyfr znaczących (prywatność pojedynczych pozycji). */
+export const LIQ_MIN_N = 3;
+
 function toBuckets(map: Map<number, LiqBucket>): LiqBucket[] {
-  return [...map.values()].sort((a, b) => a.px - b.px);
+  return [...map.values()].map((b) => (b.n < LIQ_MIN_N ? { ...b, ntlUsd: Number(b.ntlUsd.toPrecision(2)) } : b)).sort((a, b) => a.px - b.px);
 }
 
 /**
- * Kubełki stałego kroku USD (~0.1% ceny), osobno longi i shorty, w zakresie ±rangePct od ceny mark.
- * Pokrycie: Σ|szi| / (2·OI) — OI z Hyperliquid liczy jedną stronę rynku, a skan widzi obie.
+ * Kubełki stałego kroku USD (~0.1% ceny), osobno longi i shorty, w zakresie ±rangePct od ceny mark; kubełek z mniej
+ * niż `LIQ_MIN_N` pozycjami ma zaokrąglony nominał. Pokrycie: Σ|szi| / (2·OI) — OI z Hyperliquid liczy jedną stronę
+ * rynku, a skan widzi obie.
  */
 export function buildLiqMap(
   positions: ScannedPosition[],

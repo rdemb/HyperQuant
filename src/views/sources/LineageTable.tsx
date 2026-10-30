@@ -172,8 +172,8 @@ const GROUPS: { title: string; rows: Row[] }[] = [
           'Hyperliquid API: clearinghouseState and frontendOpenOrders of accounts from the public leaderboard (largest account values) and large BTC positions from the tape, read by the scanner'
         ),
         method: tr(
-          'Pozycje od 1 mln USD (BTC), 500 tys. (ETH), 250 tys. (SOL, HYPE): cena wejścia, wartość po cenie mark, dźwignia, cena likwidacji; zlecenia od 250 tys. (BTC), 150 tys. (ETH), 50 tys. (SOL, HYPE), także stop i take profit po cenie wyzwolenia; na wykresie 4 największe pozycje i 6 zleceń w widoku. Konto ma pseudonim ważny jedną dobę UTC (skrót adresu z sekretem serwera), więc pozycję da się połączyć z jej zleceniami, ale nie z portfelem',
-          'Positions from USD 1M (BTC), 500k (ETH), 250k (SOL, HYPE): entry price, value at the mark price, leverage, liquidation price; orders from 250k (BTC), 150k (ETH), 50k (SOL, HYPE), including stops and take-profits at the trigger price; the chart shows the 4 largest positions and 6 orders in view. Each account has a pseudonym valid for one UTC day (a hash of the address with a server secret), so a position can be linked to its orders but not to a wallet'
+          'Pozycje od 1 mln USD (BTC), 500 tys. (ETH), 250 tys. (SOL, HYPE): cena wejścia, wartość po cenie mark, dźwignia, cena likwidacji; zlecenia od 250 tys. (BTC), 150 tys. (ETH), 50 tys. (SOL, HYPE), także stop i take profit po cenie wyzwolenia; na wykresie 4 największe pozycje i 6 zleceń w widoku. Konto ma pseudonim ważny jedną dobę UTC (skrót adresu z sekretem serwera), więc pozycję da się połączyć z jej zleceniami. Dla prywatności wartości mają 2 cyfry znaczące, ceny wejścia i likwidacji leżą na siatce ~0,25% ceny, ceny zleceń ~0,05%, a dźwignia jest całkowita',
+          'Positions from USD 1M (BTC), 500k (ETH), 250k (SOL, HYPE): entry price, value at the mark price, leverage, liquidation price; orders from 250k (BTC), 150k (ETH), 50k (SOL, HYPE), including stops and take-profits at the trigger price; the chart shows the 4 largest positions and 6 orders in view. Each account has a pseudonym valid for one UTC day (a hash of the address with a server secret), so a position can be linked to its orders. For privacy, values have 2 significant digits, entry and liquidation prices sit on a ~0.25% price grid, order prices on ~0.05%, and leverage is a whole number'
         ),
         kinds: ['LIVE'],
         refresh: tr('pozycje i zlecenia co ok. 5 min', 'positions and orders every ~5 min'),
@@ -472,8 +472,8 @@ const GROUPS: { title: string; rows: Row[] }[] = [
           'HyperQuant scanner: addresses from WS trades (users field) and from Hyperliquid’s public account leaderboard → clearinghouseState of each wallet; published through the public data repository on GitHub (rdemb/hyperquant-data)'
         ),
         method: tr(
-          'Kubełki ceny likwidacji (krok ~0,1% ceny) dla longów i shortów, nominał |szi|·cena likwidacji; pokrycie = Σ|szi| / (2·OI); tylko agregaty, bez adresów',
-          'Liquidation-price buckets (step ~0.1% of price) for longs and shorts, notional |szi|·liquidation price; coverage = Σ|szi| / (2·OI); aggregates only, no addresses'
+          'Kubełki ceny likwidacji (krok ~0,1% ceny) dla longów i shortów, nominał |szi|·cena likwidacji (w kubełku z mniej niż 3 pozycjami do 2 cyfr znaczących); pokrycie = Σ|szi| / (2·OI); tylko agregaty, bez adresów',
+          'Liquidation-price buckets (step ~0.1% of price) for longs and shorts, notional |szi|·liquidation price (to 2 significant digits in a bucket with fewer than 3 positions); coverage = Σ|szi| / (2·OI); aggregates only, no addresses'
         ),
         kinds: ['LIVE'],
         refresh: tr(

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ScannedPosition, buildLiqMap, isLiqMap, niceStep } from '../liqMap';
+import { LIQ_MIN_N, ScannedPosition, buildLiqMap, isLiqMap, niceStep } from '../liqMap';
 
 const T = 1_800_000_000_000;
 const pos = (szi: number, liqPx: number | null, ageMin = 1): ScannedPosition => ({ szi, entryPx: 83000, liqPx, scannedAt: T - ageMin * 60_000 });
@@ -16,18 +16,24 @@ describe('niceStep — krok kubełków', () => {
 
 describe('buildLiqMap — mapa z pozycji on-chain', () => {
   it('long z ceną likwidacji 82 040 trafia do kubełka 82 000 (krok 100), nominał = |szi|·liq', () => {
-    const m = buildLiqMap([pos(2, 82040)], opts);
+    const m = buildLiqMap([pos(2, 82040), pos(1, 82010), pos(0.5, 82090)], opts);
     expect(m.stepUsd).toBe(100);
-    expect(m.longs).toEqual([{ px: 82000, ntlUsd: 2 * 82040, n: 1 }]);
+    expect(m.longs).toEqual([{ px: 82000, ntlUsd: 2 * 82040 + 82010 + 0.5 * 82090, n: 3 }]);
     expect(m.shorts).toEqual([]);
   });
 
   it('shorty osobno; kubełki posortowane rosnąco po cenie i sumowane', () => {
-    const m = buildLiqMap([pos(-1, 85010), pos(-3, 85090), pos(-1, 84520)], opts);
+    const m = buildLiqMap([pos(-1, 85010), pos(-3, 85090), pos(-2, 85050), pos(-1, 84520), pos(-1, 84530), pos(-1, 84540)], opts);
     expect(m.shorts).toEqual([
-      { px: 84500, ntlUsd: 84520, n: 1 },
-      { px: 85000, ntlUsd: 85010 + 3 * 85090, n: 2 },
+      { px: 84500, ntlUsd: 84520 + 84530 + 84540, n: 3 },
+      { px: 85000, ntlUsd: 85010 + 3 * 85090 + 2 * 85050, n: 3 },
     ]);
+  });
+
+  it(`kubełek z mniej niż ${LIQ_MIN_N} pozycjami: nominał do 2 cyfr znaczących, nie dokładne |szi|·liq`, () => {
+    const m = buildLiqMap([pos(2.345, 82040), pos(-1, 85010), pos(-3, 85090)], opts);
+    expect(m.longs).toEqual([{ px: 82000, ntlUsd: 190_000, n: 1 }]);
+    expect(m.shorts).toEqual([{ px: 85000, ntlUsd: 340_000, n: 2 }]);
   });
 
   it('ceny likwidacji poza ±15% od ceny są pomijane w kubełkach', () => {

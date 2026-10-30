@@ -1,6 +1,6 @@
 // Testy nadzoru publicznych danych skanera (świeżość, pokrycie, strażnik prywatności).
 import { describe, expect, it } from 'vitest';
-import { LIMITS, assessHealth, findLeaks, renderReport } from './check-data-health.mjs';
+import { FILES, LIMITS, OPTIONAL, assessHealth, findLeaks, renderReport } from './check-data-health.mjs';
 
 const NOW = Date.UTC(2026, 9, 22, 12, 0, 0);
 const MIN = 60_000;
@@ -164,5 +164,25 @@ describe('laboratorium folkloru (plik opcjonalny, przeliczane co godzinę)', () 
     const stale = assessHealth(input({ lab: { v: 1, asOf: NOW - 200 * MIN } }), NOW);
     expect(stale.ok).toBe(false);
     expect(stale.problems.join(' ')).toMatch(/laboratorium folkloru: ostatnia aktualizacja/);
+  });
+});
+
+describe('warstwa wielorybów (plik opcjonalny)', () => {
+  it('brak pliku nie jest alarmem; świeży — fakt; starszy niż 30 min — problem; adres w pliku — alarm prywatności', () => {
+    expect(assessHealth(input({ errors: { 'whales.json': 'HTTP 404' } }), NOW).ok).toBe(true);
+    const fresh = assessHealth(input({ whales: { v: 2, asOf: NOW - 4 * MIN } }), NOW);
+    expect(fresh.ok).toBe(true);
+    expect(fresh.facts.map((f) => f.label)).toContain('Wiek warstwy wielorybów');
+    const stale = assessHealth(input({ whales: { v: 2, asOf: NOW - 45 * MIN } }), NOW);
+    expect(stale.ok).toBe(false);
+    expect(stale.problems.join(' ')).toMatch(/warstwa wielorybów: ostatnia aktualizacja 45 min/);
+    const inp = input();
+    inp.raw['whales.json'] = JSON.stringify({ markets: { BTC: { positions: [{ id: '0x' + 'ab'.repeat(20) }] } } });
+    expect(assessHealth(inp, NOW).problems.join(' ')).toMatch(/PRYWATNOŚĆ: whales\.json/);
+  });
+
+  it('strażnik pobiera whales.json', () => {
+    expect(FILES).toContain('whales.json');
+    expect(OPTIONAL.has('whales.json')).toBe(true);
   });
 });
