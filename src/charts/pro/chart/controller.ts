@@ -38,7 +38,8 @@ import { TpoLayer } from './tpoLayer';
 import { tpoInterval } from '../core/tpo';
 import type { ChartSettings } from './settings';
 import { IndicatorEngine } from '../indicators/engine';
-import { HIST_DOWN, HIST_UP, IndicatorDef, IndicatorInstance, PlotDef, indicatorDef, indicatorLabel } from '../indicators/registry';
+import { HIST_DOWN, HIST_UP, IndicatorDef, IndicatorInstance, PlotDef, indicatorDef, indicatorLabel, plotShift } from '../indicators/registry';
+import { CloudFill, CloudSource } from './cloudFill';
 import { CountdownLabel } from './countdown';
 import { FlowVenue, OiVenue, oiMaxAge, per8h } from '../venues/parse';
 import { VenueStore, acquireVenues, venueStoreFor } from '../venues/venueStore';
@@ -247,6 +248,12 @@ export class ProChartController {
   private indGap: boolean[][] = [];
   /** Liczba świec, których punkty wskaźników są już na wykresie. */
   private indPushed = 0;
+  /** Czas świecy o indeksie 0 przy świecach co interwał od ostatniej: punkty przesunięte za ostatnią świecę liczą czas od niej. */
+  private indAnchor = Number.NaN;
+  /** Wypełnienie chmury instancji (Ichimoku). */
+  private indClouds: (CloudFill | null)[] = [];
+  /** Po zmianie listy wskaźników: przy najbliższym wysłaniu dopasować odstęp świec do chmury w przód. */
+  private indFit = false;
   private indLegends: (PaneLegend | null)[] = [];
   /** Widoczne instancje ze stylem (kolor legendy); przeliczanie trzyma je w silniku. */
   private indShown: IndicatorInstance[] = [];
@@ -425,6 +432,7 @@ export class ProChartController {
     const indKey = JSON.stringify(indShown.map((x) => [x.iid, x.id, x.params, x.tf]));
     const indChanged = indKey !== this.indKey;
     this.indKey = indKey;
+    if (force || indChanged) this.indFit = true;
     const indStyleKey = JSON.stringify(indShown);
     const indRestyle = indStyleKey !== this.indStyleKey;
     this.indStyleKey = indStyleKey;
@@ -455,6 +463,7 @@ export class ProChartController {
           // Kolor słupków jest w punktach — krycie zmienia się z nimi
           if (def.plots[p].hist) this.pushPlot(k, p, 0);
         });
+        this.indClouds[k]?.setAlpha(x.alpha);
       });
     }
     if (!panesChanged && prev.cvdReset !== s.cvdReset) {
@@ -522,13 +531,17 @@ export class ProChartController {
     this.engine.setInstances(shown);
     this.indShown = shown;
     this.indLegends = [];
-    this.indSeries = shown.map((x) => {
+    this.indClouds = [];
+    this.indSeries = shown.map((x, k) => {
       const def = indicatorDef(x.id);
       const own = def.pane === 'own';
       const lines = this.addIndicatorLines(def, x, own ? pane++ : 0);
       const legend = own ? new PaneLegend(`ind:${x.iid}`, `ind:${x.iid}`) : null;
       if (legend) lines[0].attachPrimitive(legend);
       this.indLegends.push(legend);
+      const cloud = def.cloud ? new CloudFill(() => this.cloudOf(k), x.alpha) : null;
+      if (cloud && def.cloud) lines[def.cloud[0]].attachPrimitive(cloud);
+      this.indClouds.push(cloud);
       return lines;
     });
     this.indGap = this.indSeries.map((lines) => lines.map(() => false));
@@ -912,14 +925,34 @@ export class ProChartController {
     // Świece interwału wskaźnika sięgają do pierwszej świecy wykresu (bez świec wykresu — bez doczytywania)
     const first = this.bars[0]?.t ?? Number.POSITIVE_INFINITY;
     const n = this.bars.length;
-    if (this.engine.sync(this.bars, this.series.interval.ms, (tf) => this.store.indicatorCandles(tf, first)) >= n) return;
+    const ms = this.series.interval.ms;
+    if (this.engine.sync(this.bars, ms, (tf) => this.store.indicatorCandles(tf, first)) >= n) return;
+    // Luka w świecach albo doczytana historia przesuwa czasy punktów za ostatnią świecą: te ploty idą w całości
+    const anchor = this.bars[n - 1].t - (n - 1) * ms;
+    const moved = anchor !== this.indAnchor;
+    this.indAnchor = anchor;
     this.engine.runs.forEach((run, k) => {
       if (run.from >= n) return;
       // Zmiana przed ostatnią wysłaną świecą (wartości z innego interwału, kanał regresji): pełna podmiana, bo aktualizacja wstecz psuje puste punkty
       const start = run.from < this.indPushed - 1 ? 0 : run.from;
-      run.out.forEach((_, p) => this.pushPlot(k, p, start));
+      const { plots } = indicatorDef(this.indShown[k].id);
+      run.out.forEach((_, p) => this.pushPlot(k, p, moved && plotShift(this.indShown[k], plots[p]) > 0 ? 0 : start));
     });
     this.indPushed = n;
+    if (this.indFit) {
+      this.indFit = false;
+      this.fitAhead();
+    }
+  }
+
+  /** Chmura w przód (Ichimoku) zajmuje najwyżej trzecią część szerokości wykresu: na wąskim ekranie świece się zwężają. */
+  private fitAhead(): void {
+    const ahead = Math.max(0, ...this.indShown.flatMap((x) => indicatorDef(x.id).plots.map((p) => plotShift(x, p))));
+    const ts = this.chart.timeScale();
+    const fit = ts.width() / (3 * ahead);
+    if (ahead === 0 || !(fit > 0) || ts.options().barSpacing <= fit) return;
+    ts.applyOptions({ barSpacing: fit });
+    this.scrollToNow();
   }
 
   /**
@@ -930,11 +963,16 @@ export class ProChartController {
     const bars = this.bars;
     const n = Math.min(bars.length, this.engine.count);
     const x = this.indShown[k];
-    const { hist, breaks } = indicatorDef(x.id).plots[p];
+    const plot = indicatorDef(x.id).plots[p];
+    const { hist, breaks } = plot;
     const ys = this.engine.runs[k].out[p];
     const series = this.indSeries[k][p] as ISeriesApi<'Line'>;
+    // Przesunięcie (Ichimoku): wartość świecy i w miejscu świecy i + shift, za ostatnią świecą co interwał wykresu
+    const shift = plotShift(x, plot);
+    const ms = this.series.interval.ms;
     const point = (i: number) => {
-      const time = sec(bars[i].t);
+      const j = i + shift;
+      const time = sec(j < n ? bars[j].t : bars[n - 1].t + (j - n + 1) * ms);
       const v = ys[i];
       if (Number.isNaN(v)) return { time };
       if (hist) return { time, value: v, color: rgba(v < 0 ? HIST_DOWN : HIST_UP, 0.6 * x.alpha) };
@@ -943,16 +981,26 @@ export class ProChartController {
     // Bez zmiany wcześniejszych punktów (przeliczenie od zera to pełna podmiana), więc bez aktualizacji wstecz.
     // Pełna podmiana bez pustych punktów przed pierwszą wartością (kanał regresji ma ich tysiące)
     if (from === 0 || n - from > MAX_POINT_UPDATES) {
-      let s = 0;
+      let s = Math.max(0, -shift);
       while (s < n && Number.isNaN(ys[s])) s++;
-      series.setData(Array.from({ length: n - s }, (_, k) => point(s + k)));
+      series.setData(Array.from({ length: Math.max(0, n - s) }, (_, k) => point(s + k)));
     }
-    else for (let i = from; i < n; i++) series.update(point(i));
+    else for (let i = Math.max(from, -shift); i < n; i++) series.update(point(i));
     const gap = n > 0 && Number.isNaN(ys[n - 1]);
     if (gap !== this.indGap[k][p]) {
       this.indGap[k][p] = gap;
       series.applyOptions({ lastValueVisible: x.labels && !gap });
     }
+  }
+
+  /** Granice chmury instancji `k` z bieżących wartości silnika. */
+  private cloudOf(k: number): CloudSource | null {
+    const x = this.indShown[k];
+    const run = this.engine.runs[k];
+    const cloud = x && indicatorDef(x.id).cloud;
+    if (!cloud || !run) return null;
+    const [a, b] = cloud;
+    return { a: run.out[a], b: run.out[b], n: Math.min(this.bars.length, this.engine.count), shift: plotShift(x, indicatorDef(x.id).plots[a]) };
   }
 
   private tickCountdown(): void {
@@ -1144,14 +1192,19 @@ export class ProChartController {
       this.venueOiLegend.set(compact ? lines : [...lines, ...funding]);
     }
     const ind = i >= 0 ? this.overlay.valuesAt(i) : null;
-    // Wskaźniki: na wykresie ceny w legendzie wykresu, we własnym panelu w opisie panelu
+    // Wskaźniki: na wykresie ceny w legendzie wykresu, we własnym panelu w opisie panelu. Za ostatnią świecą (chmura
+    // Ichimoku w przód) indeks świecy liczony od ostatniej co interwał wykresu
+    const last = bars[bars.length - 1].t;
+    const ms = this.series.interval.ms;
+    const vi = i < 0 && this.hoverTime !== null && this.hoverTime > last ? bars.length - 1 + Math.round((this.hoverTime - last) / ms) : i;
     const indicators: IndicatorReadout[] = [];
     this.engine.runs.forEach((run, k) => {
       const x = this.indShown[k];
       const def = indicatorDef(x.id);
       const fmt = this.indFormat(def);
       const values = run.out.map((ys, p) => {
-        const v = i >= 0 && i < this.engine.count ? ys[i] : Number.NaN;
+        const j = vi - plotShift(x, def.plots[p]);
+        const v = vi >= 0 && j >= 0 && j < this.engine.count ? ys[j] : Number.NaN;
         // Podpis poziomu (pivoty: P, R1, S1…) także w legendzie
         const title = def.plots[p].title;
         const text = Number.isNaN(v) ? '—' : fmt(v);
