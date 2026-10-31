@@ -1,9 +1,9 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   addCancel,
   fitHawkes,
   hawkesLogLik,
-  nelderMead,
   ofiEvent,
   olsFit,
   weightedMid,
@@ -39,11 +39,6 @@ describe('regresja i optymalizacja', () => {
     expect(f.alpha).toBeCloseTo(1, 12);
     expect(f.r2).toBeCloseTo(1, 12);
     expect(olsFit([1, 1, 1], [1, 2, 3])).toBeNull(); // brak zmienności x
-  });
-  it('nelderMead znajduje minimum funkcji Rosenbrocka', () => {
-    const r = nelderMead(([x, y]) => (1 - x) ** 2 + 100 * (y - x * x) ** 2, [-1.2, 1], { maxIter: 4000, tol: 1e-12 });
-    expect(r.x[0]).toBeCloseTo(1, 3);
-    expect(r.x[1]).toBeCloseTo(1, 3);
   });
 });
 
@@ -85,6 +80,22 @@ describe('proces Hawkesa (jądro wykładnicze)', () => {
 
   it('za mało zdarzeń → null', () => {
     expect(fitHawkes([1, 2, 3])).toBeNull();
+  });
+
+  it('prawdziwa taśma: bez fałszywego optimum n = 0, w które wpadał sympleks (wiarygodność wyraźnie ponad procesem Poissona)', () => {
+    const { dt } = JSON.parse(readFileSync(new URL('./fixtures/hawkes-tape.json', import.meta.url), 'utf8')) as { dt: number[] };
+    let t = 0;
+    const times = dt.map((d) => (t += d) / 1000);
+    const f = fitHawkes(times)!;
+    expect(f.n).toBe(3000);
+    expect(f.branching).toBeGreaterThan(0.5);
+    expect(f.branching).toBeLessThan(0.8);
+    expect(f.halfLife).toBeGreaterThan(1);
+    expect(f.halfLife).toBeLessThan(10);
+    // Proces Poissona (n = 0) przy najlepszym μ = N/T; poprzednie dopasowanie kończyło tutaj
+    const T = times[times.length - 1] - times[0] + 1e-9;
+    const poisson = times.length * Math.log(times.length / T) - times.length;
+    expect(f.logLik - poisson).toBeGreaterThan(50);
   });
 });
 

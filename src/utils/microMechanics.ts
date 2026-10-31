@@ -1,12 +1,14 @@
 /**
  * Mikrostruktura jako mechanika — czyste funkcje z literatury zamiast heurystyk:
  *  - OFI na najlepszych kwotowaniach (Cont, Kukanov & Stoikov 2014) i regresja ΔP = α + β·OFI (wpływ, R²);
- *  - proces Hawkesa z jądrem wykładniczym (MLE, Nelder–Mead): współczynnik rozgałęzienia n = α/β — udział transakcji
+ *  - proces Hawkesa z jądrem wykładniczym (MLE): współczynnik rozgałęzienia n = α/β — udział transakcji
  *    wywołanych przez wcześniejsze transakcje (endogeniczność; Filimonov & Sornette 2012, Hardiman i in. 2013);
  *  - mikrocena: średnia ważona ilościami (pierwsze przybliżenie) i empiryczna korekta wg nierównowagi (Stoikov 2018);
  *  - dodawanie / anulowanie / wykonanie przy poziomach (pulling / stacking) z kolejnych migawek arkusza;
  *  - absorpcja jako „wysiłek vs efekt”: reszta regresji ruchu ceny na podpisanym wolumenie agresora.
  */
+
+import { fitBranching } from '../charts/pro/core/hawkes';
 
 export interface Quote {
   bid: number;
@@ -63,51 +65,6 @@ export function olsFit(xs: number[], ys: number[]): OlsFit | null {
   return { alpha, beta, r2, n, seBeta };
 }
 
-/** Metoda Neldera–Meada (minimalizacja bez gradientu). */
-export function nelderMead(f: (x: number[]) => number, x0: number[], o: { maxIter?: number; tol?: number; step?: number[] } = {}): { x: number[]; fx: number; iter: number } {
-  const n = x0.length;
-  const maxIter = o.maxIter ?? 500 * n;
-  const tol = o.tol ?? 1e-9;
-  let simplex: { x: number[]; fx: number }[] = [{ x: x0.slice(), fx: f(x0) }];
-  for (let i = 0; i < n; i++) {
-    const x = x0.slice();
-    x[i] += o.step?.[i] ?? 0.1 * Math.max(1, Math.abs(x0[i]));
-    simplex.push({ x, fx: f(x) });
-  }
-  let iter = 0;
-  for (; iter < maxIter; iter++) {
-    simplex.sort((a, b) => a.fx - b.fx);
-    if (Math.abs(simplex[n].fx - simplex[0].fx) <= tol * (Math.abs(simplex[0].fx) + tol)) break;
-    const centroid = Array<number>(n).fill(0);
-    for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) centroid[j] += simplex[i].x[j] / n;
-    const worst = simplex[n];
-    const at = (t: number) => centroid.map((c, j) => c + t * (worst.x[j] - c));
-    const xr = at(-1);
-    const fr = f(xr);
-    if (fr < simplex[0].fx) {
-      const xe = at(-2);
-      const fe = f(xe);
-      simplex[n] = fe < fr ? { x: xe, fx: fe } : { x: xr, fx: fr };
-    } else if (fr < simplex[n - 1].fx) {
-      simplex[n] = { x: xr, fx: fr };
-    } else {
-      const xc = fr < worst.fx ? at(-0.5) : at(0.5);
-      const fc = f(xc);
-      if (fc < Math.min(fr, worst.fx)) simplex[n] = { x: xc, fx: fc };
-      else {
-        const best = simplex[0].x;
-        simplex = simplex.map((p, i) => {
-          if (i === 0) return p;
-          const x = p.x.map((v, j) => best[j] + 0.5 * (v - best[j]));
-          return { x, fx: f(x) };
-        });
-      }
-    }
-  }
-  simplex.sort((a, b) => a.fx - b.fx);
-  return { x: simplex[0].x, fx: simplex[0].fx, iter };
-}
-
 /**
  * Log-wiarygodność procesu Hawkesa z jądrem α·e^{−βt} na [0, T] (czasy rosnąco, od 0):
  * Σ ln(μ + α·A_i) − μT − (α/β)·Σ(1 − e^{−β(T − t_i)}), A_i = e^{−β(t_i − t_{i−1})}(1 + A_{i−1}).
@@ -138,32 +95,20 @@ export interface HawkesFit {
   logLik: number;
 }
 
-/** MLE parametrów Hawkesa (parametryzacja logarytmiczna, warunek stacjonarności α < β); < 50 zdarzeń → null. */
+/**
+ * MLE parametrów Hawkesa tym samym dopasowaniem co wskaźnik endogeniczności na Wykresach (Newton przy stałym β, β z siatki
+ * z dokładnieniem): sympleks na prawdziwej taśmie wpadał w lokalne optima n = 0. Czasy rosnąco, powtórzenia liczą się
+ * raz; okno od pierwszego do ostatniego zdarzenia; < 100 zdarzeń → null.
+ */
 export function fitHawkes(times: number[]): HawkesFit | null {
-  if (times.length < 50) return null;
+  if (times.length === 0) return null;
   const t0 = times[0];
-  const ts = times.map((t) => t - t0);
+  const ts = times.map((t) => t - t0).filter((t, i, a) => i === 0 || t > a[i - 1]);
   const T = ts[ts.length - 1] + 1e-9;
-  const n = ts.length;
-  const rate = n / T;
-  const gaps = ts
-    .slice(1)
-    .map((t, i) => t - ts[i])
-    .filter((g) => g > 0)
-    .sort((a, b) => a - b);
-  const beta0 = gaps.length ? 1 / Math.max(gaps[Math.floor(gaps.length / 2)], 1e-6) : 1;
-  const neg = ([lm, la, lb]: number[]) => {
-    const mu = Math.exp(lm);
-    const alpha = Math.exp(la);
-    const beta = Math.exp(lb);
-    if (alpha >= beta * 0.999) return 1e12 + alpha / beta;
-    const ll = hawkesLogLik(ts, mu, alpha, beta, T);
-    return Number.isFinite(ll) ? -ll : 1e12;
-  };
-  const r = nelderMead(neg, [Math.log(rate * 0.5), Math.log(beta0 * 0.4), Math.log(beta0)], { maxIter: 2000, tol: 1e-10, step: [0.5, 0.5, 0.5] });
-  const [mu, alpha, beta] = r.x.map(Math.exp);
-  if (!(r.fx < 1e11)) return null;
-  return { mu, alpha, beta, branching: alpha / beta, halfLife: Math.LN2 / beta, n, logLik: -r.fx };
+  const f = fitBranching(Float64Array.from(ts), T);
+  if (!f) return null;
+  const alpha = f.n * f.beta;
+  return { mu: f.mu, alpha, beta: f.beta, branching: f.n, halfLife: Math.LN2 / f.beta, n: f.events, logLik: hawkesLogLik(ts, f.mu, alpha, f.beta, T) };
 }
 
 /** Średnia ważona ilościami na najlepszych poziomach (pierwsze przybliżenie mikroceny). */
