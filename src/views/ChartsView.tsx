@@ -81,17 +81,17 @@ const ChartsView: React.FC = () => {
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
-  // Pełny ekran całego układu (wszystkie panele naraz); pojedynczy wykres ma własny pełny ekran
-  const gridRef = useRef<HTMLDivElement>(null);
-  const [gridFs, setGridFs] = useState(false);
+  // Pełny ekran całego miejsca pracy: pasek kart i wszystkie panele układu (na telefonie wykres ma własny pełny ekran)
+  const wsRef = useRef<HTMLDivElement>(null);
+  const [fs, setFs] = useState(false);
   useEffect(() => {
-    const onFs = () => setGridFs(document.fullscreenElement === gridRef.current);
+    const onFs = () => setFs(document.fullscreenElement === wsRef.current);
     document.addEventListener('fullscreenchange', onFs);
     return () => document.removeEventListener('fullscreenchange', onFs);
   }, []);
-  const toggleGridFs = useCallback(() => {
+  const toggleFs = useCallback(() => {
     if (document.fullscreenElement) void document.exitFullscreen();
-    else void gridRef.current?.requestFullscreen?.();
+    else void wsRef.current?.requestFullscreen?.();
   }, []);
   const setLayout = useCallback(
     (l: ChartLayout) => {
@@ -195,9 +195,9 @@ const ChartsView: React.FC = () => {
 
   if (replay) return <ReplayView key={replayHash(replay)} link={replay} />;
   return (
-    <>
+    <div ref={wsRef} className={fs ? 'flex flex-col gap-2 h-full p-2 bg-page' : ''}>
       {!narrow && (
-        <div className="flex items-center gap-2 mb-2 min-w-0">
+        <div className={`flex items-center gap-2 min-w-0 ${fs ? '' : 'mb-2'}`}>
           <TabsBar st={tabs} tf={tf} a={actions} />
           {/* Pytanie karty (wzorca): od czego zacząć czytanie wykresów tej karty */}
           <p title={station.question} className="hidden xl:flex items-center gap-1.5 flex-1 min-w-[14rem] max-w-[30rem] text-[11px] text-ink-2">
@@ -222,8 +222,9 @@ const ChartsView: React.FC = () => {
       )}
       {/* Ten sam kontener dla każdego układu: pierwszy panel nie tworzy się od nowa przy zmianie układu */}
       <div
-        ref={gridRef}
-        className={n === 1 ? '' : gridFs ? `grid grid-cols-2 ${n === 4 ? 'grid-rows-2' : 'grid-rows-1'} gap-2 h-full p-2 bg-page` : 'grid grid-cols-2 gap-2'}
+        className={
+          fs ? (n === 1 ? 'flex-1 min-h-0 flex flex-col' : `flex-1 min-h-0 grid grid-cols-2 ${n === 4 ? 'grid-rows-2' : 'grid-rows-1'} gap-2`) : n === 1 ? '' : 'grid grid-cols-2 gap-2'
+        }
       >
         {Array.from({ length: n }, (_, i) => (
           <ProChart
@@ -236,7 +237,7 @@ const ChartsView: React.FC = () => {
             fromLink={gen === 0}
             layout={n}
             onLayout={i === 0 ? setLayout : undefined}
-            layoutFs={n > 1 ? { active: gridFs, toggle: toggleGridFs } : undefined}
+            layoutFs={narrow ? undefined : { active: fs, toggle: toggleFs }}
             phoneTabs={
               narrow && i === 0
                 ? {
@@ -270,7 +271,7 @@ const ChartsView: React.FC = () => {
           </button>
         </div>
       )}
-    </>
+    </div>
   );
 };
 

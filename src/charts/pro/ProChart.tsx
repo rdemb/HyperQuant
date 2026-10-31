@@ -8,7 +8,7 @@ import { useHip4 } from '../../state/useHip4';
 import { useVolModel } from '../../state/useVolModel';
 import { usePublished } from '../../state/usePublished';
 import { type WhaleLayer, isWhaleLayer } from '../../utils/whaleLayer';
-import { INTERVALS, fmtHm, fmtSince, intervalById } from './core/time';
+import { INTERVALS, fmtHm, fmtSince, fromDaily, intervalById } from './core/time';
 import { DEFAULT_THRESHOLD_USD, classify } from './core/clashes';
 import { hlTick } from './core/footprintBar';
 import { indicatorScope, liqLevels } from './core/indicators';
@@ -211,7 +211,7 @@ function useStoreVersion(store: ProStore, ms: number): number {
  * (domyślnie id stacji), `onSaved` — po zapisie ustawień (podpis karty), `coin` — rynek przeniesiony z poprzedniej karty,
  * `fromLink` — pierwsze otwarcie wykresów, więc link do widoku w adresie strony ma pierwszeństwo.
  * `replay` — powtórka nagrania zamiast rynku na żywo: ustawienia nie są zapisywane, adres strony zostaje linkiem powtórki.
- * `layoutFs` — pełny ekran całego układu kilku wykresów (przycisk pełnego ekranu i klawisz F obejmują wtedy wszystkie panele).
+ * `layoutFs` — pełny ekran miejsca pracy: pasek kart i wszystkie panele układu (przycisk pełnego ekranu i klawisz F).
  */
 export const ProChart: React.FC<{
   panel?: number;
@@ -593,7 +593,7 @@ export const ProChart: React.FC<{
   const onKeyRef = useRef<(e: KeyboardEvent) => void>(() => {});
   onKeyRef.current = (e) => {
     if (e.ctrlKey || e.metaKey || e.altKey || isTyping(e.target) || !tools?.isFocused) return;
-    const next = e.key.length === 1 ? INTERVALS['12345678'.indexOf(e.key)] : undefined;
+    const next = e.key.length === 1 ? INTERVALS['1234567890'.indexOf(e.key)] : undefined;
     if (e.key === '?') setMenu((m) => (m === 'keys' ? null : 'keys'));
     else if (e.key === '/') setMenu('indicators');
     else if (next) update({ interval: next.id });
@@ -708,7 +708,13 @@ export const ProChart: React.FC<{
             </ToolBtn>
             {layoutFs ? (
               <ToolBtn
-                label={layoutFs.active ? tr('Zamknij pełny ekran', 'Exit full screen') : tr('Pełny ekran układu: wszystkie wykresy (F)', 'Full screen layout: all charts (F)')}
+                label={
+                  layoutFs.active
+                    ? tr('Zamknij pełny ekran', 'Exit full screen')
+                    : layout > 1
+                      ? tr('Pełny ekran z kartami: wszystkie wykresy układu (F)', 'Full screen with tabs: all charts of the layout (F)')
+                      : tr('Pełny ekran z kartami (F)', 'Full screen with tabs (F)')
+                }
                 onClick={layoutFs.toggle}
               >
                 {layoutFs.active ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
@@ -1370,6 +1376,7 @@ function whaleHint(w: WhaleLayer | null, coin: string): string {
 function flowLayers(s: ChartSettings, intervalMs: number, liq: LiqMapState, whales: WhaleLayer | null, bigUsd: number): ToggleItem[] {
   const big = `${compact(bigUsd)} USD${s.bigTradeUsd === 0 ? tr(' (próg automatyczny)', ' (automatic threshold)') : ''}`;
   const scope = indicatorScope(intervalMs);
+  const vwapOff = fromDaily(intervalMs) ? tr('Na interwałach do 1D', 'On timeframes up to 1D') : undefined;
   return [
     {
       key: 'showHeatmap',
@@ -1416,12 +1423,14 @@ function flowLayers(s: ChartSettings, intervalMs: number, liq: LiqMapState, whal
           ? tr('Od poniedziałku 00:00 UTC, ze świec 5m (na świecach dziennych)', 'From Monday 00:00 UTC, from 5m candles (on daily candles)')
           : tr('Od 00:00 UTC, ze świec 1m: cena typowa (H+L+C)/3 ważona wolumenem, ta sama na każdym interwale', 'From 00:00 UTC, from 1m candles: typical price (H+L+C)/3 weighted by volume, the same on every timeframe'),
       swatch: 'bg-of-vwap',
+      off: vwapOff,
     },
     {
       key: 'showVwapBands',
       label: tr('Pasma VWAP ±1σ i ±2σ', 'VWAP bands ±1σ and ±2σ'),
       hint: tr('Odchylenie standardowe ceny od VWAP ważone wolumenem', 'Volume-weighted standard deviation of price from VWAP'),
       swatch: 'bg-of-vwap/40',
+      off: vwapOff,
     },
     {
       key: 'showSessionVwap',
@@ -1615,7 +1624,7 @@ const KEY_GROUPS: { title: string; keys: [string, string][] }[] = [
   {
     title: tr('Wykres', 'Chart'),
     keys: [
-      ['1 … 8', `${tr('Interwał', 'Timeframe')}: ${INTERVALS.map((i) => i.label).join(', ')}`],
+      ['1 … 9, 0', `${tr('Interwał', 'Timeframe')}: ${INTERVALS.map((i) => i.label).join(', ')}`],
       ['C', tr('Świece ↔ footprint', 'Candles ↔ footprint')],
       ['M', `${tr('Następny rynek', 'Next market')} (${MARKETS.join(', ')})`],
       ['T', tr('Taśma zleceń', 'Order tape')],

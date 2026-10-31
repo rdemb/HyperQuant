@@ -1,5 +1,6 @@
 import type { IChartApi } from 'lightweight-charts';
 import type { DrawingLayer, LayerState } from './layer';
+import { barStart } from '../core/time';
 import {
   DrawProps,
   DrawStyle,
@@ -481,7 +482,7 @@ export class DrawingTools {
     if (!d || !d.pts[i]) return;
     const ms = this.layer.intervalMs;
     const pts = d.pts.map((x) => ({ ...x }));
-    pts[i] = { t: Math.floor(q.t / ms) * ms, p: q.p };
+    pts[i] = { t: barStart(q.t, ms), p: q.p };
     if ((d.kind === 'long' || d.kind === 'short') && i === 0) pts[2].t = pts[0].t;
     this.patchSelected({ pts });
   }

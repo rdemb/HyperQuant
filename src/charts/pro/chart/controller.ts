@@ -38,7 +38,7 @@ import { ZonesLayer } from './zonesLayer';
 import { TpoLayer } from './tpoLayer';
 import { CoverageRow, CoverageStrip, DataSource, coverageRows, mergedRows, needsOf, storeSource } from './coverageStrip';
 import { tpoInterval } from '../core/tpo';
-import { fmtHm } from '../core/time';
+import { barEnd, barStart, fmtBarTime, fmtHm, fromDaily } from '../core/time';
 import { type ChartSettings, isNarrow } from './settings';
 import { IndicatorEngine } from '../indicators/engine';
 import { HIST_DOWN, HIST_UP, IndicatorDef, IndicatorInstance, PlotDef, indicatorDef, indicatorLabel, plotShift } from '../indicators/registry';
@@ -49,7 +49,7 @@ import type { Hip4State } from '../../../state/useHip4';
 import { CountdownLabel } from './countdown';
 import { FlowVenue, OiVenue, oiMaxAge, per8h } from '../venues/parse';
 import { VenueStore, acquireVenues, venueStoreFor } from '../venues/venueStore';
-import { DOM_W_PX, PRO, RIGHT_GAP_PX, chartOptions, rgba } from './theme';
+import { DOM_W_PX, PRO, RIGHT_GAP_PX, chartOptions, crosshairTimeFormatter, rgba } from './theme';
 import { tr } from '../../../i18n';
 import type { DeskLedgerSummary } from '../../../utils/deskLedger';
 import { fmtCompact, fmtPrice, numLang } from '../../../ui/format';
@@ -103,9 +103,10 @@ const liqToggles = (s: ChartSettings) => ({ showHeatmap: s.showHeatmap, showBubb
 /** TPO na interwale `ms` zajmuje miejsce profili sesji (oba rysują się od początku okresu w prawo). */
 const tpoShown = (s: ChartSettings, ms: number) => s.showTpo && tpoInterval(ms);
 
+// VWAP z resetem co tydzień nie ma sensu na świecach tygodnia i miesiąca
 const toggles = (s: ChartSettings, ms: number): IndicatorToggles => ({
-  showVwap: s.showVwap,
-  showVwapBands: s.showVwapBands,
+  showVwap: s.showVwap && !fromDaily(ms),
+  showVwapBands: s.showVwapBands && !fromDaily(ms),
   showSessionVwap: s.showSessionVwap,
   showProfile: s.showProfile,
   showPeriodProfiles: s.showPeriodProfiles && !tpoShown(s, ms),
@@ -379,6 +380,7 @@ export class ProChartController {
       walls: (from, to, t) => store.walls.walls(from, to, t),
     };
     this.chart = createChart(container, chartOptions());
+    this.applyTimeFormat();
     this.main = this.chart.addCustomSeries<FootprintPoint, FootprintOptions>(this.fpView, {
       priceFormat: { type: 'custom', minMove: 1, formatter: fmtPx },
       priceLineVisible: true,
@@ -447,10 +449,18 @@ export class ProChartController {
     return { rowStep: s.rowStep, imbalance: { ratio: s.imbalanceRatio, minVol: this.minVol(s) }, stackedMin: s.stackedMin };
   }
 
+  /** Czas krzyża na osi: na świecach 1W i 1M data początku tygodnia albo miesiąc i rok, bez godziny. */
+  private applyTimeFormat(): void {
+    const ms = this.series.interval.ms;
+    const timeFormatter = fromDaily(ms) ? (time: Time) => fmtBarTime((time as number) * 1000, ms) : crosshairTimeFormatter;
+    this.chart.applyOptions({ localization: { timeFormatter } });
+  }
+
   /** Inny interwał tego rynku: pełne odświeżenie danych wykresu z nowej serii. */
   setSeries(series: CandleSeries): void {
     if (series === this.series) return;
     this.series = series;
+    this.applyTimeFormat();
     this.bars = [];
     // Indeks świecy innego interwału to zupełnie inna chwila — zamiast przesuniętego widoku bieżąca świeca
     this.toNow = true;
@@ -1025,7 +1035,7 @@ export class ProChartController {
     }
     this.focusT = null;
     const ms = this.series.interval.ms;
-    let i = indexOfTime(bars, Math.floor(t / ms) * ms);
+    let i = indexOfTime(bars, barStart(t, ms));
     if (i < 0) i = t < bars[0].t ? 0 : bars.length - 1;
     const ts = this.chart.timeScale();
     const r = ts.getVisibleLogicalRange();
@@ -1306,7 +1316,7 @@ export class ProChartController {
 
   private tickCountdown(): void {
     const last = this.bars[this.bars.length - 1];
-    this.countdown.set(last?.candle.c ?? 0, last ? last.t + this.series.interval.ms - this.store.serverNow() : 0);
+    this.countdown.set(last?.candle.c ?? 0, last ? barEnd(last.t, this.series.interval.ms) - this.store.serverNow() : 0);
   }
 
   /** CVD zależy od wszystkich wcześniejszych świec okresu — liczymy całość i wysyłamy tylko zmienione punkty. */
@@ -1443,7 +1453,7 @@ export class ProChartController {
   /** Krzyż z innego panelu: świeca tego interwału obejmująca chwilę `t`; cena tylko z tego samego rynku. */
   private showCross(t: number | null, coin: string, price: number | null): void {
     const ms = this.series.interval.ms;
-    const i = t === null ? -1 : indexOfTime(this.bars, Math.floor(t / ms) * ms);
+    const i = t === null ? -1 : indexOfTime(this.bars, barStart(t, ms));
     if (i < 0) {
       this.chart.clearCrosshairPosition();
       return;
@@ -1528,7 +1538,7 @@ export class ProChartController {
       else indicators.push({ iid: x.iid, label: indicatorLabel(x), values });
     });
     this.statsTable.setHover(this.hoverTime === null ? -1 : i);
-    const open = bar !== null && bar.t + this.series.interval.ms > this.store.serverNow();
+    const open = bar !== null && barEnd(bar.t, this.series.interval.ms) > this.store.serverNow();
     this.onHover({ bar, live: this.hoverTime === null, open, row: bar ? this.rowAt(bar, this.hoverPrice) : null, cvd, ind, indicators });
   }
 

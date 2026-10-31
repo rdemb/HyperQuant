@@ -4,10 +4,11 @@ import { PRO } from './theme';
 /** Odstęp etykiety odliczania od środka etykiety ostatniej ceny (px CSS) — tuż pod nią. */
 const BELOW_PX = 18;
 
-/** Czas do zamknięcia świecy: „m:ss”, od godziny „g:mm:ss”. */
+/** Czas do zamknięcia świecy: „m:ss”, od godziny „g:mm:ss”, od doby „5d 13h” (świece 1W i 1M). */
 export function fmtLeft(ms: number): string {
   const s = Math.max(0, Math.ceil(ms / 1000));
   const h = Math.floor(s / 3600);
+  if (h >= 24) return `${Math.floor(h / 24)}d ${h % 24}h`;
   const mm = String(Math.floor((s % 3600) / 60)).padStart(h > 0 ? 2 : 1, '0');
   const ss = String(s % 60).padStart(2, '0');
   return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
