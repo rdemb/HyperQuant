@@ -1,4 +1,4 @@
-import type { Candle } from '../hl/parse';
+import type { Candle, Side } from '../hl/parse';
 import type { BookFrame } from '../core/book';
 import { ofiEvent } from '../../../utils/microMechanics';
 import { Extreme, OlsWindow, RegimeDetector, RobustLine, Window, Wma, ema, rma } from './primitives';
@@ -45,7 +45,8 @@ export type IndicatorId =
   | 'regime'
   | 'ordersize'
   | 'cone'
-  | 'slippage';
+  | 'slippage'
+  | 'breadth';
 
 /**
  * Grupy na liście okna wskaźników (jak kategorie TradingView); `hyperquant` — wskaźniki, których nie ma w TradingView
@@ -124,7 +125,9 @@ export interface FlowContext {
   book(): readonly BookFrame[];
   /** Migawki arkusza bez agregacji ceny (rosnąco po czasie): tylko od otwarcia strony. */
   exactBook(): readonly BookFrame[];
-  orders(from: number, to: number): readonly { notional: number }[];
+  orders(from: number, to: number): readonly { time: number; side: Side; notional: number; taker: string }[];
+  /** Czy taśma ma konta biorców przez cały [from, to) (strumień na żywo i historia serwera, bez zapisu przeglądarki). */
+  identified(from: number, to: number): boolean;
   orderCount(from: number, to: number): number;
   now: number;
 }
@@ -171,7 +174,7 @@ export interface IndicatorDef {
   /** Skala od zera (wartości nieujemne, np. koszt w pb): drobne wahania nie wyglądają jak skoki. */
   fromZero?: true;
   /** Liczby: cena z dokładnością ticku rynku, odległość ceny (o miejsce dokładniej niż tick), dwa albo trzy miejsca, wolumen, kwota USD. */
-  format: 'price' | 'range' | 'fixed2' | 'fixed3' | 'volume' | 'usd';
+  format: 'price' | 'range' | 'fixed1' | 'fixed2' | 'fixed3' | 'count' | 'volume' | 'usd';
   /** Skala logarytmiczna panelu (wartości od ułamków po wielokrotności, np. kwoty zleceń). */
   log?: boolean;
   /** Krok świeca po świecy; bez niego wskaźnik to rysunek na ostatnich świecach (`fit`) albo z danych spoza świec (`flow`, `sample`). */
@@ -374,6 +377,40 @@ export function marketCostBp(f: BookFrame, usd: number, buy: boolean): number {
   if (rest > usd * 1e-9) return Number.NaN;
   const avg = usd / qty;
   return ((buy ? avg - mid : mid - avg) / mid) * 1e4;
+}
+
+/** Konto ma w historii serwera numer ważny w godzinie UTC: świeca dłuższa nie łączy kont z różnych godzin. */
+export const BREADTH_MAX_MS = 3_600_000;
+
+/**
+ * Szerokość agresji w zleceniach świecy: N_eff = (Σ w)² / Σ w² z wartości wejść kont biorców po stronie kupna i sprzedaży
+ * (odwrotność indeksu Herfindahla; NaN bez zleceń po stronie) i największa liczba różnych biorców po jednej stronie
+ * w jednym bloku (ta sama milisekunda). Zlecenia bez konta pominięte.
+ */
+export function takerBreadth(orders: readonly { time: number; side: Side; notional: number; taker: string }[]): { buy: number; sell: number; race: number } {
+  const bySide = [new Map<string, number>(), new Map<string, number>()];
+  const blocks = new Map<string, Set<string>>();
+  let race = 0;
+  for (const o of orders) {
+    if (o.taker === '') continue;
+    const m = bySide[o.side > 0 ? 0 : 1];
+    m.set(o.taker, (m.get(o.taker) ?? 0) + o.notional);
+    const key = `${o.side}:${o.time}`;
+    let b = blocks.get(key);
+    if (!b) blocks.set(key, (b = new Set()));
+    b.add(o.taker);
+    race = Math.max(race, b.size);
+  }
+  const neff = (m: Map<string, number>) => {
+    let s = 0;
+    let s2 = 0;
+    for (const w of m.values()) {
+      s += w;
+      s2 += w * w;
+    }
+    return s2 > 0 ? (s * s) / s2 : Number.NaN;
+  };
+  return { buy: neff(bySide[0]), sell: neff(bySide[1]), race: race > 0 ? race : Number.NaN };
 }
 
 export const INDICATORS: readonly IndicatorDef[] = [
@@ -1631,6 +1668,56 @@ export const INDICATORS: readonly IndicatorDef[] = [
           // NaN w którejś migawce (za płytki arkusz) daje NaN świecy
           buy[i] = n > 0 ? b / n : Number.NaN;
           sell[i] = n > 0 ? s / n : Number.NaN;
+        }
+      };
+    },
+  },
+  {
+    id: 'breadth',
+    short: tr('Szerokość', 'Breadth'),
+    name: tr('Szerokość agresji (efektywna liczba biorców)', 'Aggression breadth (effective number of takers)'),
+    hint: tr(
+      'Efektywna liczba kont, które w świecy wchodziły zleceniami rynkowymi po stronie kupna i sprzedaży (1 — wszystko z jednego konta, więcej — szerzej rozłożone), na skali logarytmicznej; w legendzie największa liczba różnych biorców po jednej stronie w jednym bloku',
+      'The effective number of accounts that entered with market orders on the buy and sell side within the candle (1 means everything came from one account, more means more widely spread), on a log scale; the legend shows the largest number of different takers on one side within one block'
+    ),
+    group: 'hyperquant',
+    aliases: 'breadth szerokosc n_eff neff herfindahl hhi konta accounts biorcy takers agresor aggressor koncentracja concentration tlum crowd wyscig race blok block',
+    warmup: () => 0,
+    convention: tr(
+      'Tego wskaźnika nie ma w TradingView: liczony z nagranej taśmy Hyperliquid, która przy każdej transakcji podaje konto biorcy. Wypełnienia łączą się w zlecenia jak we wskaźniku wielkości zleceń. Udział konta to jego wartość wejść po danej stronie w świecy, a liczba efektywna to (Σ w)² / Σ w², czyli odwrotność indeksu Herfindahla: 1, gdy całość weszła z jednego konta, n przy n kontach po równo, mniej niż liczba kont, gdy kilka z nich przeważa. Wyścig to największa liczba różnych biorców, których zlecenia po tej samej stronie weszły w tym samym bloku. Pokazujemy tylko liczby, nigdy kont.',
+      'TradingView has no such indicator: it is computed from the recorded Hyperliquid tape, which gives the taker account with every trade. Fills are joined into orders as in the order size indicator. An account’s share is its entry value on a side within the candle, and the effective number is (Σ w)² / Σ w², the inverse of the Herfindahl index: 1 when everything came from one account, n with n equal accounts, fewer than the account count when a few of them dominate. The race is the largest number of different takers whose orders on the same side entered within the same block. Only numbers are shown, never accounts.'
+    ),
+    memoryNote: tr(
+      'Świeca zależy tylko od swoich zleceń. Historia serwera numeruje konta w obrębie godziny UTC, więc wskaźnik działa na interwałach do 1 h. W godzinie otwarcia strony to samo konto przed otwarciem i po nim liczy się jako dwa. Świece bez taśmy z kontami w całości (zapis z przeglądarki ich nie ma) nie mają wartości.',
+      'A candle depends only on its own orders. Server history numbers accounts within a UTC hour, so the indicator works on intervals up to 1 h. In the hour the page was opened, the same account before and after opening counts as two. Candles without the tape with accounts throughout (the browser recording has none) have no value.'
+    ),
+    pane: 'own',
+    params: [],
+    plots: [
+      { title: tr('kupujący', 'buyers') },
+      { color: ORANGE, title: tr('sprzedający', 'sellers') },
+      { hidden: true, title: tr('wyścig', 'race'), format: 'count' },
+    ],
+    format: 'fixed1',
+    log: true,
+    series: () => {
+      // Wynik świecy między przeliczeniami: ta sama świeca i ta sama liczba zleceń — bez ponownego liczenia
+      const memo = new WeakMap<FlowBar, { count: number; r: ReturnType<typeof takerBreadth> }>();
+      return (bars, ms, ctx, out) => {
+        const [buy, sell, race] = out;
+        for (let i = 0; i < bars.length; i++) {
+          const b = bars[i];
+          const t = b.candle.t;
+          let r: ReturnType<typeof takerBreadth> | null = null;
+          if (ms <= BREADTH_MAX_MS && ctx.identified(t, Math.min(t + ms, ctx.now))) {
+            const count = ctx.orderCount(t, t + ms);
+            let m = memo.get(b);
+            if (!m || m.count !== count) memo.set(b, (m = { count, r: takerBreadth(ctx.orders(t, t + ms)) }));
+            r = m.r;
+          }
+          buy[i] = r ? r.buy : Number.NaN;
+          sell[i] = r ? r.sell : Number.NaN;
+          race[i] = r ? r.race : Number.NaN;
         }
       };
     },

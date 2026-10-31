@@ -728,8 +728,10 @@ export class ProChartController {
   /** Liczby wskaźnika: cena (tick rynku), odległość ceny (ATR: o miejsce dokładniej niż tick), dwa lub trzy miejsca (RSI, CMF) albo wolumen (OBV). */
   private indFormat(format: IndicatorDef['format']): (v: number) => string {
     if (format === 'price') return fmtPx;
+    if (format === 'fixed1') return (v) => fmtPrice(v, 1);
     if (format === 'fixed2') return (v) => fmtPrice(v, 2);
     if (format === 'fixed3') return (v) => fmtPrice(v, 3);
+    if (format === 'count') return (v) => fmtPrice(v, 0);
     if (format === 'volume') return fmtSignedVol;
     if (format === 'usd') return (v) => fmtCompact(v, '$');
     return (v) => fmtPrice(v, Math.max(0, -Math.floor(Math.log10(this.priceTick))) + 1);
@@ -1084,6 +1086,7 @@ export class ProChartController {
       exactBook: () => this.store.exactBook()?.list() ?? [],
       orders: (from: number, to: number) => this.store.orders.range(from, to),
       orderCount: (from: number, to: number) => this.store.orders.count(from, to),
+      identified: (from: number, to: number) => this.store.addressed.covers(from, to),
       now: this.store.serverNow(),
     };
     if (this.engine.sync(this.bars, ms, (tf) => this.store.indicatorCandles(tf, first), flow) >= n) return;

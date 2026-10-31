@@ -37,6 +37,7 @@ const flowCtx = (c: Partial<FlowContext>): FlowContext => ({
   oiAt: () => null,
   book: () => [],
   exactBook: () => [],
+  identified: () => true,
   orders: () => [],
   orderCount: () => 0,
   now: Number.POSITIVE_INFINITY,
@@ -1216,13 +1217,13 @@ describe('wskaźniki: reżim zmienności (BOCPD)', () => {
 });
 
 describe('wskaźniki: wielkość zleceń agresora', () => {
-  type Order = { time: number; notional: number };
+  type Order = { time: number; side: 1 | -1; notional: number; taker: string };
   /** Zlecenia co ~3 s, kwoty log-normalne wokół `med(i)` USD w świecy i. */
   function ordersOf(n: number, seed: number, med: (i: number) => number): Order[] {
     const r = rng(seed);
     const g = () => Math.sqrt(-2 * Math.log(r() || 1e-12)) * Math.cos(2 * Math.PI * r());
     const out: Order[] = [];
-    for (let t = 500; t < n * M5; t += 1000 + Math.floor(4000 * r())) out.push({ time: t, notional: med(Math.floor(t / M5)) * Math.exp(1.2 * g()) });
+    for (let t = 500; t < n * M5; t += 1000 + Math.floor(4000 * r())) out.push({ time: t, side: 1, notional: med(Math.floor(t / M5)) * Math.exp(1.2 * g()), taker: '' });
     return out;
   }
   const ctxOf = (list: readonly Order[], now: number) => {
@@ -1283,7 +1284,7 @@ describe('wskaźniki: wielkość zleceń agresora', () => {
     expect(e.sync(bars, M5, () => [], ctx)).toBe(n);
     expect(spy).toHaveBeenCalledTimes(n);
     // Nowe zlecenie w bieżącej świecy (po zamknięciu poprzednich wypełnień): tylko ona
-    const more = [...list, { time: now - 500, notional: 1e6 }];
+    const more = [...list, { time: now - 500, side: 1 as const, notional: 1e6, taker: '' }];
     const ctx2 = ctxOf(more, now);
     const spy2 = vi.spyOn(ctx2, 'orders');
     expect(e.sync(bars, M5, () => [], ctx2)).toBe(n - 1);
