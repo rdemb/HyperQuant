@@ -323,7 +323,14 @@ export const TabsBar: React.FC<{ st: TabsState; tf: (t: ChartTab) => string; a: 
  * Karty na telefonie (arkusz na cały ekran): lista kart z przełączeniem, nazwą, kopią i zamknięciem, pod nią nowe karty.
  * Szybkie przełączanie zostaje w liście w pasku wykresu.
  */
-export const TabsSheet: React.FC<{ st: TabsState; tf: (t: ChartTab) => string; a: TabActions; onClose: () => void }> = ({ st, tf, a, onClose }) => {
+/** `activeExtra` — treść pod wierszem aktywnej karty (karta uczciwości szablonu). */
+export const TabsSheet: React.FC<{ st: TabsState; tf: (t: ChartTab) => string; a: TabActions; onClose: () => void; activeExtra?: React.ReactNode }> = ({
+  st,
+  tf,
+  a,
+  onClose,
+  activeExtra,
+}) => {
   const [editing, setEditing] = useState<string | null>(null);
   const icon = 'grid place-items-center w-9 h-9 rounded-lg text-ink-3 hover:text-ink-1 hover:bg-surface-3 disabled:opacity-30';
   return (
@@ -345,7 +352,8 @@ export const TabsSheet: React.FC<{ st: TabsState; tf: (t: ChartTab) => string; a
           {st.tabs.map((t) => {
             const on = t.id === st.active;
             return (
-              <li key={t.id} className={`flex items-center gap-1 rounded-xl border ${on ? 'border-line-strong bg-surface-2' : 'border-line'}`}>
+              <React.Fragment key={t.id}>
+                <li className={`flex items-center gap-1 rounded-xl border ${on ? 'border-line-strong bg-surface-2' : 'border-line'}`}>
                 {editing === t.id ? (
                   <NameInput
                     value={tabName(t)}
@@ -382,7 +390,9 @@ export const TabsSheet: React.FC<{ st: TabsState; tf: (t: ChartTab) => string; a
                 <button type="button" aria-label={tr('Zamknij kartę', 'Close tab')} disabled={st.tabs.length <= 1} className={`${icon} mr-1`} onClick={() => a.onClose(t.id)}>
                   <X className="w-4 h-4" />
                 </button>
-              </li>
+                </li>
+                {on && activeExtra && <li>{activeExtra}</li>}
+              </React.Fragment>
             );
           })}
         </ul>
