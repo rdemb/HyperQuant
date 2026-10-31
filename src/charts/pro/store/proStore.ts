@@ -54,6 +54,8 @@ export interface HistoryBatch {
     from: number;
     to: number;
     spans: Span[];
+    /** Odcinki z oznaczonymi hashami zerowymi (pliki rejestratora od wprowadzenia kolumny `z`). */
+    zeroSpans?: Span[];
     /** Rosnąco po czasie; biorca, maker i hash to numery ważne w obrębie godziny. */
     fills: Fill[];
     /** [czas, otwarte pozycje] co minutę. */
@@ -101,6 +103,8 @@ export class ProStore {
   readonly orders = new OrderLog();
   /** Czas z kontami biorców na taśmie (strumień na żywo i historia serwera; zapis przeglądarki ich nie ma). */
   readonly addressed = new Coverage();
+  /** Czas z oznaczonymi wypełnieniami z hashem zerowym (strumień na żywo i nowsze pliki historii serwera). */
+  readonly zeroKnown = new Coverage();
   /** Kto handluje: wejścia dużych graczy i reszty z kont biorców. */
   readonly players: PlayerFlow;
   /** Wchłanianie zleceń agresora przez makerów (ściany), z taśmy na żywo. */
@@ -168,6 +172,7 @@ export class ProStore {
       onClosed: (at) => {
         this.coverage.close(this.clock.toServer(at));
         this.addressed.close(this.clock.toServer(at));
+        this.zeroKnown.close(this.clock.toServer(at));
         this.bump();
       },
       onStatus: (s) => {
@@ -360,6 +365,7 @@ export class ProStore {
         this.tradesPending = false;
         this.coverage.open(newest);
         this.addressed.open(newest);
+        this.zeroKnown.open(newest);
       }
       this.ingestFills(fills, recvAt);
     } else if (channel === 'candle') {
@@ -481,6 +487,7 @@ export class ProStore {
         this.coverage.addSpan(a, z);
         this.addressed.addSpan(a, z);
       }
+      for (const [a, z] of tr.zeroSpans ?? []) this.zeroKnown.addSpan(a, z);
       const { accepted } = this.tape.insert(tr.fills);
       const fresh = new Set(accepted);
       const used = tr.fills.filter((f) => fresh.has(f) || (f.time < this.liveFrom && !this.derived.covers(f.time, f.time + 1)));
@@ -532,6 +539,7 @@ export class ProStore {
     this.derived.prune(cut);
     this.orders.prune(cut);
     this.addressed.prune(cut);
+    this.zeroKnown.prune(cut);
     this.players.prune(cut);
     this.walls.prune(this.serverNow(), cut);
     this.oi.prune(cut);

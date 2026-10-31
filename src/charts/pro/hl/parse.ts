@@ -21,6 +21,8 @@ export interface Fill {
   taker: string;
   /** Adres drugiej strony (makera) — tylko w pamięci, do klas zderzeń i ścian; nigdy nie jest zapisywany ani pokazywany. */
   maker: string;
+  /** Hash zerowy (m.in. podzlecenia TWAP); w historii serwera z kolumny `z`. */
+  zero?: true;
 }
 
 export interface Candle {
@@ -115,7 +117,9 @@ export function parseFill(raw: unknown, coin: string): Fill | null {
     if (typeof t === 'string') taker = t;
     if (typeof m === 'string') maker = m;
   }
-  return { time, px, sz, side, tid, hash, taker, maker };
+  const f: Fill = { time, px, sz, side, tid, hash, taker, maker };
+  if (ZERO_HASH.test(hash)) f.zero = true;
+  return f;
 }
 
 export function parseFills(raw: unknown, coin: string): Fill[] {

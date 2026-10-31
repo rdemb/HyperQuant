@@ -27,6 +27,8 @@ export interface HistTrade {
   /** Numer biorcy i makera w godzinie; −1 = nieznany */
   k: number;
   m: number;
+  /** Hash zerowy (m.in. podzlecenia TWAP) */
+  z?: true;
 }
 
 /** Kontekst rynku na koniec minuty: open interest (jednostki rynku), finansowanie za godzinę, cena mark. */
@@ -60,6 +62,8 @@ export interface TradesFile {
   o: number[];
   k: number[];
   m: number[];
+  /** Indeksy transakcji z hashem zerowym (różnicowo); brak kolumny — plik sprzed jej wprowadzenia albo scalony z takim. */
+  z?: number[];
   ctx: { t: number[]; oi: number[]; funding: number[]; mark: number[] };
 }
 
@@ -119,10 +123,11 @@ export function clipSpans(spans: readonly HistSpan[], from: number, to: number):
   return out;
 }
 
-export function encodeTrades(coin: string, from: number, to: number, spans: readonly HistSpan[], trades: readonly HistTrade[], ctx: readonly HistCtx[]): TradesFile {
+/** `zeroKnown` — wszystkie transakcje mają oznaczony hash zerowy (inaczej plik bez kolumny `z`). */
+export function encodeTrades(coin: string, from: number, to: number, spans: readonly HistSpan[], trades: readonly HistTrade[], ctx: readonly HistCtx[], zeroKnown = true): TradesFile {
   const ts = [...trades].sort((a, b) => a.t - b.t);
   const cs = [...ctx].sort((a, b) => a.t - b.t);
-  return {
+  const file: TradesFile = {
     v: HISTORY_VERSION,
     coin,
     from,
@@ -138,10 +143,15 @@ export function encodeTrades(coin: string, from: number, to: number, spans: read
     m: ts.map((x) => x.m),
     ctx: { t: cs.map((c) => c.t), oi: cs.map((c) => c.oi), funding: cs.map((c) => c.funding), mark: cs.map((c) => c.mark) },
   };
+  if (zeroKnown) file.z = deltas(ts.flatMap((x, i) => (x.z ? [i] : [])));
+  return file;
 }
 
-/** Odczyt pliku taśmy; zły kształt albo wersja → null (cały plik — kolumny muszą się zgadzać co do długości). */
-export function decodeTrades(raw: unknown): { coin: string; from: number; to: number; spans: HistSpan[]; trades: HistTrade[]; ctx: HistCtx[] } | null {
+/**
+ * Odczyt pliku taśmy; zły kształt albo wersja → null (cały plik — kolumny muszą się zgadzać co do długości).
+ * `zeroKnown` — plik ma kolumnę hashy zerowych (transakcje bez `z` na pewno mają inny hash).
+ */
+export function decodeTrades(raw: unknown): { coin: string; from: number; to: number; spans: HistSpan[]; trades: HistTrade[]; ctx: HistCtx[]; zeroKnown: boolean } | null {
   const f = raw as Partial<TradesFile> | null;
   if (!f || f.v !== HISTORY_VERSION || typeof f.coin !== 'string' || !fin(f.from) || !fin(f.to) || !Array.isArray(f.spans)) return null;
   const n = Array.isArray(f.t) ? f.t.length : -1;
@@ -150,16 +160,23 @@ export function decodeTrades(raw: unknown): { coin: string; from: number; to: nu
   const c = f.ctx;
   const k = Array.isArray(c?.t) ? c.t.length : -1;
   if (!c || !finArr(c.t) || !finArr(c.oi, k) || !finArr(c.funding, k) || !finArr(c.mark, k)) return null;
+  // Kolumna hashy zerowych: indeksy transakcji rosnąco
+  const zero = f.z === undefined ? null : finArr(f.z) ? undelta(f.z) : [Number.NaN];
+  if (zero && !zero.every((x, i) => Number.isInteger(x) && x >= 0 && x < n && (i === 0 || x > zero[i - 1]))) return null;
   const spans = f.spans.filter((s): s is HistSpan => finArr(s, 2) && s[1] > s[0]);
   const t = undelta(f.t);
   const tid = undelta(f.tid);
   const trades: HistTrade[] = [];
-  for (let i = 0; i < n; i++) {
+  for (let i = 0, j = 0; i < n; i++) {
+    const z = zero !== null && zero[j] === i;
+    if (z) j++;
     if (!(f.px[i] > 0) || !(f.sz[i] > 0)) continue;
-    trades.push({ t: t[i], px: f.px[i], sz: f.sz[i], side: f.side[i] as 'B' | 'A', tid: tid[i], o: f.o[i], k: f.k[i], m: f.m[i] });
+    const x: HistTrade = { t: t[i], px: f.px[i], sz: f.sz[i], side: f.side[i] as 'B' | 'A', tid: tid[i], o: f.o[i], k: f.k[i], m: f.m[i] };
+    if (z) x.z = true;
+    trades.push(x);
   }
   const ctx: HistCtx[] = c.t.map((tt, i) => ({ t: tt, oi: c.oi[i], funding: c.funding[i], mark: c.mark[i] }));
-  return { coin: f.coin, from: f.from, to: f.to, spans: clipSpans(spans, f.from, f.to), trades, ctx };
+  return { coin: f.coin, from: f.from, to: f.to, spans: clipSpans(spans, f.from, f.to), trades, ctx, zeroKnown: zero !== null };
 }
 
 export function encodeBook(coin: string, from: number, to: number, spans: readonly HistSpan[], frames: readonly HistFrame[]): BookFile {

@@ -53,7 +53,11 @@ export function toBookFrame(f: HistFrame): BookFrame {
 /** Wypełnienia z pliku: numery biorcy, makera i zlecenia w godzinie jako klucze (`~godzina:numer`), bez adresów. */
 export function toFills(trades: NonNullable<ReturnType<typeof decodeTrades>>['trades'], hour: number): Fill[] {
   const id = (n: number, p = '') => (n >= 0 ? `~${hour}:${p}${n}` : '');
-  return trades.map((x) => ({ time: x.t, px: x.px, sz: x.sz, side: x.side === 'B' ? 1 : -1, tid: x.tid, hash: id(x.o, 'o'), taker: id(x.k), maker: id(x.m) }));
+  return trades.map((x) => {
+    const f: Fill = { time: x.t, px: x.px, sz: x.sz, side: x.side === 'B' ? 1 : -1, tid: x.tid, hash: id(x.o, 'o'), taker: id(x.k), maker: id(x.m) };
+    if (x.z) f.zero = true;
+    return f;
+  });
 }
 
 export class ServerHistory {
@@ -183,7 +187,7 @@ export class ServerHistory {
     const bOk = b !== null && b.coin === coin;
     if (!tOk && !bOk) return;
     const batch: HistoryBatch = {
-      trades: tOk ? { from: t.from, to: t.to, spans: t.spans, fills: toFills(t.trades, hourOf(u.start)), oi: t.ctx.map((c) => [c.t, c.oi]) } : null,
+      trades: tOk ? { from: t.from, to: t.to, spans: t.spans, zeroSpans: t.zeroKnown ? t.spans : [], fills: toFills(t.trades, hourOf(u.start)), oi: t.ctx.map((c) => [c.t, c.oi]) } : null,
       frames: bOk ? b.frames.map(toBookFrame) : [],
     };
     this.store.restoreHistory(batch);
