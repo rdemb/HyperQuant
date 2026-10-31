@@ -836,7 +836,8 @@ export const LineageTable: React.FC = () => (
         'LIVE — real data; MODEL — model output from real data (method alongside); SIM — simulation. Missing data is always “—”, never a placeholder number.'
       )}
     </p>
-    <div className="m-4 mt-3 overflow-x-auto hq-scroll-cue border border-line rounded-lg" tabIndex={0} role="region" aria-label={tr('Tabela rodowodu danych (przewijana)', 'Data lineage table (scrollable)')}>
+    {/* relative: ukryte etykiety (sr-only, absolute) w tabeli liczą się do przewijanego pola, a nie poszerzają strony na telefonie */}
+    <div className="relative m-4 mt-3 overflow-x-auto hq-scroll-cue border border-line rounded-lg" tabIndex={0} role="region" aria-label={tr('Tabela rodowodu danych (przewijana)', 'Data lineage table (scrollable)')}>
       <table className="w-full min-w-[820px] text-left text-xs">
         <thead className="bg-surface-2 text-[11px] uppercase tracking-[0.08em] text-ink-3">
           <tr>

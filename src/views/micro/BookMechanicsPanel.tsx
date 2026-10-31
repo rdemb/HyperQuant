@@ -34,7 +34,8 @@ export const BookMechanicsPanel: React.FC = () => {
         </span>
       }
     >
-      <div className="grid gap-4 p-4 lg:grid-cols-2">
+      {/* grid-cols-1: kolumna nie szersza niż ramka; domyślna rośnie do treści i na telefonie karty wystawały poza nią */}
+      <div className="grid grid-cols-1 gap-4 p-4 lg:grid-cols-2">
         <OfiCard m={m} />
         <HawkesCard m={m} />
         <MicroCard m={m} />
