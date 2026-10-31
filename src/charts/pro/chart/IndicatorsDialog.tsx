@@ -318,8 +318,8 @@ export const IndicatorsDialog: React.FC<{
               {section === 'hl' && (
                 <p className="px-2 pt-1 text-[11px] leading-snug text-ink-3">
                   {tr(
-                    'Wskaźniki z danych, których nie ma w samych świecach: nagranej taśmy transakcji i otwartych pozycji Hyperliquid. Nie ma ich w TradingView. Opisują ostatnie świece, nie przewidują następnych.',
-                    'Indicators from data the candles alone do not carry: the recorded Hyperliquid trade tape and open interest. TradingView does not have them. They describe recent candles; they do not predict the next ones.'
+                    'Wskaźniki z danych, których nie ma w samych świecach: nagranej taśmy transakcji, migawek arkusza zleceń i otwartych pozycji Hyperliquid. Nie ma ich w TradingView. Opisują ostatnie świece, nie przewidują następnych.',
+                    'Indicators from data the candles alone do not carry: the recorded Hyperliquid trade tape, order book snapshots and open interest. TradingView does not have them. They describe recent candles; they do not predict the next ones.'
                   )}
                 </p>
               )}

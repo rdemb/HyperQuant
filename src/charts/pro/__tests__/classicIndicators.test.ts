@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Candle } from '../hl/parse';
-import { RobustLine, Window, Wma, ema, medianInPlace, rma } from '../indicators/primitives';
+import type { BookFrame } from '../core/book';
+import { ofiEvent, olsFit } from '../../../utils/microMechanics';
+import { OlsWindow, RobustLine, Window, Wma, ema, medianInPlace, rma } from '../indicators/primitives';
 import { IndicatorEngine } from '../indicators/engine';
 import {
   INDICATORS,
@@ -8,7 +10,10 @@ import {
   IndicatorId,
   IndicatorInstance,
   MAX_INDICATORS,
+  OFI_MAX_GAP,
+  OFI_MIN_R2,
   addIndicator,
+  bookFlow,
   copyIndicator,
   indicatorDef,
   indicatorLabel,
@@ -765,7 +770,7 @@ describe('wskaźniki: zmiana OI i delta', () => {
   // Druga świeca bez pełnego nagrania, trzecia bez taśmy
   const tape = cs.map((candle, i) => ({ candle, fp: i === 2 ? null : { delta: deltas[i] }, complete: i !== 1 }));
   const now = t0 + 5 * M5 + 2 * 60_000;
-  const sync = (e: IndicatorEngine, list = tape, at = oiAt) => e.sync(list, M5, () => [], { oiAt: at, now });
+  const sync = (e: IndicatorEngine, list = tape, at = oiAt) => e.sync(list, M5, () => [], { oiAt: at, book: () => [], now });
 
   it('słupek to zmiana OI od początku do zamknięcia świecy (bieżąca: do teraz), druga wartość to delta; bez taśmy, pełnego nagrania albo odczytu OI — brak', () => {
     const e = new IndicatorEngine();
@@ -942,6 +947,177 @@ describe('wskaźniki: absorpcja', () => {
     bs = tapeBars(200, 9);
     expect(e.sync(bs)).toBe(0);
     check(bs);
+  });
+});
+
+describe('wskaźniki: OFI z kalibracją', () => {
+  const S = 5_000;
+  const frame = (t: number, bid: number, bidSz: number, ask: number, askSz: number): BookFrame => ({
+    t,
+    step: 10,
+    px: Float64Array.of(bid, ask),
+    sz: Float64Array.of(bidSz, askSz),
+    n: Float64Array.of(1, 1),
+    nBids: 1,
+  });
+  /**
+   * Migawki co 5 s, w których każda zmiana środka to dokładnie β razy OFI pary: ruch o kubełek 10 USD w górę albo w dół
+   * z dobraną wielkością na nowym poziomie; bez ruchu ceny wielkości zmieniają się o szum (OFI bez zmiany środka).
+   * Od `quiet` cena stoi, a zostaje sam (większy) szum.
+   */
+  function book(until: number, beta: number, noise: number, seed: number, quiet = Number.POSITIVE_INFINITY): BookFrame[] {
+    const r = rng(seed);
+    const out: BookFrame[] = [];
+    let bid = 80_000;
+    let bidSz = 3;
+    let askSz = 3;
+    for (let t = 0; t < until; t += S) {
+      const u = t < quiet ? r() : 1;
+      if (u < 0.2) {
+        // W górę: OFI = wielkość nowego bidu + wielkość poprzedniego asku
+        bidSz = 10 / beta - askSz;
+        askSz = 1 + 4 * r();
+        bid += 10;
+      } else if (u < 0.4) {
+        // W dół: OFI = −(wielkość poprzedniego bidu + wielkość nowego asku)
+        askSz = 10 / beta - bidSz;
+        bidSz = 1 + 4 * r();
+        bid -= 10;
+      } else {
+        // Gdy cena stoi, szum większy (wielkości nie muszą już pasować do ruchu o kubełek)
+        const a = t < quiet ? noise : 8 * noise;
+        bidSz = Math.max(0.5, bidSz + a * (r() - 0.5));
+        askSz = Math.max(0.5, askSz + a * (r() - 0.5));
+      }
+      out.push(frame(t, bid, bidSz, bid + 10, askSz));
+    }
+    return out;
+  }
+  const flowBars = (n: number) => walk(n, 4).map((candle) => ({ candle }));
+  const run = (bs: readonly { candle: Candle }[], frames: readonly BookFrame[], now: number, length = 30) => {
+    const e = new IndicatorEngine();
+    e.setInstances([inst('ofi', { length })]);
+    e.sync(bs, M5, () => [], { oiAt: () => null, book: () => frames, now });
+    return e.runs[0].out.map((a) => Array.from(a.subarray(0, bs.length)));
+  };
+
+  it('OFI i Δp świecy to sumy par migawek, których późniejsza migawka leży w świecy; przerwa w danych arkusza — brak', () => {
+    const bs = flowBars(6);
+    const now = 5 * M5 + 2 * 60_000;
+    const frames = book(now, 0.5, 2, 1).filter((f) => f.t < 2 * M5 + 100_000 || f.t >= 2 * M5 + 100_000 + 15_000);
+    const ofi = new Float64Array(6);
+    const dp = new Float64Array(6);
+    bookFlow(frames, bs, M5, now, ofi, dp);
+    const mid = (f: BookFrame) => (f.px[0] + f.px[1]) / 2;
+    const q = (f: BookFrame) => ({ bid: f.px[0], bidSz: f.sz[0], ask: f.px[1], askSz: f.sz[1] });
+    for (const i of [1, 3, 4, 5]) {
+      let x = 0;
+      for (let j = 1; j < frames.length; j++) if (frames[j].t >= i * M5 && frames[j].t < (i + 1) * M5) x += ofiEvent(q(frames[j - 1]), q(frames[j]));
+      const inside = frames.filter((f) => f.t >= i * M5 && f.t < (i + 1) * M5);
+      const before = frames.filter((f) => f.t < i * M5).at(-1)!;
+      expect(ofi[i]).toBeCloseTo(x, 9);
+      expect(dp[i]).toBeCloseTo(mid(inside.at(-1)!) - mid(before), 9);
+    }
+    // Pierwsza świeca bez migawki przed nią, trzecia z przerwą 20 s między migawkami
+    expect(Number.isNaN(ofi[0]) && Number.isNaN(ofi[2]) && Number.isNaN(dp[2])).toBe(true);
+    // Bieżąca świeca: ostatnia migawka dalej od teraz niż przerwa graniczna — brak
+    bookFlow(frames, bs, M5, now + OFI_MAX_GAP + S, ofi, dp);
+    expect(Number.isNaN(ofi[5])).toBe(true);
+  });
+
+  it('bez szumu zmiana środka to β·OFI: R² = 1, a oczekiwana zmiana równa Δp świecy; R² i oczekiwana tylko z pełnym oknem', () => {
+    const bs = flowBars(80);
+    const now = 80 * M5;
+    const [ofi, dp, r2, expected] = run(bs, book(now, 0.4, 0, 2), now);
+    // Pierwsza świeca bez pary, potem 30 świec okna
+    expect(r2.slice(0, 31).every(Number.isNaN)).toBe(true);
+    for (let i = 31; i < 80; i++) {
+      expect(r2[i]).toBeCloseTo(1, 9);
+      expect(expected[i]).toBeCloseTo(dp[i], 6);
+      expect(dp[i]).toBeCloseTo(0.4 * ofi[i], 6);
+    }
+  });
+
+  it('R² i oczekiwana zmiana jak regresja MNK na OFI i Δp z ostatnich zamkniętych świec z wartością (bez bieżącej); oczekiwana od R² 0,1', () => {
+    const bs = flowBars(90);
+    const now = 89 * M5 + 150_000;
+    const frames = book(now, 0.4, 25, 3, 78 * M5).filter((f) => f.t < 40 * M5 || f.t >= 40 * M5 + 20_000);
+    const [ofi, dp, r2, expected] = run(bs, frames, now, 20);
+    const xs: number[] = [];
+    const ys: number[] = [];
+    let some = false;
+    for (let i = 0; i < 90; i++) {
+      const f = xs.length >= 20 && !Number.isNaN(ofi[i]) ? olsFit(xs.slice(-20), ys.slice(-20)) : null;
+      if (f) {
+        some ||= f.r2 < OFI_MIN_R2;
+        expect(r2[i]).toBeCloseTo(f.r2, 9);
+        if (f.r2 >= OFI_MIN_R2) expect(expected[i]).toBeCloseTo(f.beta * ofi[i], 6);
+        else expect(Number.isNaN(expected[i])).toBe(true);
+      } else expect(Number.isNaN(r2[i]) && Number.isNaN(expected[i])).toBe(true);
+      if (!Number.isNaN(ofi[i]) && i < 89) {
+        xs.push(ofi[i]);
+        ys.push(dp[i]);
+      }
+    }
+    expect(Number.isNaN(ofi[40])).toBe(true);
+    expect(Number.isNaN(r2[89])).toBe(false);
+    // Gdy cena stoi, a OFI szumi, związek słabnie: w ostatnich oknach R² poniżej progu
+    expect(some).toBe(true);
+  });
+
+  it('okno MNK kroczące: to samo co regresja z ostatnich n par', () => {
+    const r = rng(8);
+    const w = new OlsWindow(12);
+    const xs: number[] = [];
+    const ys: number[] = [];
+    for (let k = 0; k < 200; k++) {
+      const x = (r() - 0.5) * 100;
+      xs.push(x);
+      ys.push(3 + 0.7 * x + (r() - 0.5) * 40);
+      w.push(xs[k], ys[k]);
+      if (k < 2) continue;
+      const f = olsFit(xs.slice(-12), ys.slice(-12))!;
+      const g = w.fit()!;
+      expect(g.beta).toBeCloseTo(f.beta, 9);
+      expect(g.alpha).toBeCloseTo(f.alpha, 9);
+      expect(g.r2).toBeCloseTo(f.r2, 9);
+    }
+    const flat = new OlsWindow(3);
+    for (const x of [1, 1, 1]) flat.push(x, x * 2);
+    expect(flat.fit()).toBeNull();
+  });
+
+  it('nowe migawki bez zmiany świec: przeliczenie zwraca pierwszą zmienioną świecę', () => {
+    const bs = flowBars(60);
+    const now = 59 * M5 + 200_000;
+    const all = book(now, 0.4, 25, 5);
+    const e = new IndicatorEngine();
+    e.setInstances([inst('ofi', { length: 10 })]);
+    const sync = (frames: readonly BookFrame[]) => e.sync(bs, M5, () => [], { oiAt: () => null, book: () => frames, now });
+    // Historia arkusza od 30. świecy, potem z serwera wcześniejsza (pierwsza świeca z migawkami nie ma jeszcze pary)
+    expect(sync(all.filter((f) => f.t >= 30 * M5))).toBe(0);
+    expect(sync(all.filter((f) => f.t >= 30 * M5))).toBe(60);
+    expect(sync(all.filter((f) => f.t >= 20 * M5))).toBe(21);
+    // Migawka bieżącej świecy (zmieniona wielkość bidu) zmienia tylko ją
+    const live = all.filter((f) => f.t >= 20 * M5);
+    const last = live[live.length - 1];
+    const moved = [...live.slice(0, -1), frame(last.t, last.px[0], last.sz[0] + 2, last.px[1], last.sz[1])];
+    expect(sync(moved)).toBe(59);
+  });
+
+  it('słupek OFI w kolorze znaku, Δp, R² i oczekiwana w legendzie; bez parametru „Interwał” i we własnej sekcji okna', () => {
+    const def = indicatorDef('ofi');
+    expect(def.plots.map((p) => [!!p.hist, !!p.hidden, p.title ?? '', p.format ?? def.format])).toEqual([
+      [true, false, '', 'volume'],
+      [true, true, 'Δp', 'volume'],
+      [false, true, 'R²', 'fixed2'],
+      [true, true, 'oczek.', 'volume'],
+    ]);
+    expect(def.group).toBe('hyperliquid');
+    expect(indicatorLabel(inst('ofi'))).toBe('OFI 30');
+    expect(indicatorsLink([inst('ofi')])).toBe('ofi(30)');
+    expect(indicatorsFromLink('ofi(50)@1h')[0].tf).toBeUndefined();
+    expect(parseIndicators([{ id: 'ofi', tf: '1h' }])[0].tf).toBeUndefined();
   });
 });
 
