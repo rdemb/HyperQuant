@@ -36,9 +36,10 @@ import { LegendPart, PaneLegend } from './paneLegend';
 import { STATS_BAR_SPACING, StatsTable, tableHeight } from './statsTable';
 import { ZonesLayer } from './zonesLayer';
 import { TpoLayer } from './tpoLayer';
+import { CoverageRow, CoverageStrip, DataSource, coverageRows, mergedRows, needsOf, storeSource } from './coverageStrip';
 import { tpoInterval } from '../core/tpo';
 import { fmtHm } from '../core/time';
-import type { ChartSettings } from './settings';
+import { type ChartSettings, isNarrow } from './settings';
 import { IndicatorEngine } from '../indicators/engine';
 import { HIST_DOWN, HIST_UP, IndicatorDef, IndicatorInstance, PlotDef, indicatorDef, indicatorLabel, plotShift } from '../indicators/registry';
 import { CloudFill, CloudSource } from './cloudFill';
@@ -129,6 +130,8 @@ const AUTO_EVERY_MS = 5_000;
 const PHONE_VOLUME_H = 0.16;
 /** Statystyki świec przeliczane najwyżej co tyle ms (i po każdej pełnej podmianie danych). */
 const STATS_EVERY_MS = 1_000;
+/** Pasek pokrycia danych: przeliczenie odcinków najwyżej co tyle (otwarte odcinki rosną z czasem serwera). */
+const STRIP_EVERY_MS = 1_000;
 
 /** Panele pod wykresem, które można ukryć krzyżykiem w ich rogu. */
 export const PANE_KEYS = ['showVolume', 'showDelta', 'showCvd', 'showVenueCvd', 'showVenueOi', 'showStats'] as const;
@@ -262,6 +265,10 @@ export class ProChartController {
   private readonly statsTable = new StatsTable();
   private stats: BarStat[] = [];
   private statsAt = 0;
+  private readonly strip = new CoverageStrip();
+  private needs: DataSource[] = [];
+  private stripRows: CoverageRow[] = [];
+  private stripAt = 0;
   private readonly zones: ZonesLayer;
   private readonly tpo: TpoLayer;
   private priceTick = 1;
@@ -390,6 +397,7 @@ export class ProChartController {
     this.main.attachPrimitive(this.cone);
     this.main.attachPrimitive(this.hip4);
     this.main.attachPrimitive(this.countdown);
+    this.main.attachPrimitive(this.strip);
     // Rysunki dołączone ostatnie — nad wskaźnikami i świecami
     this.drawLayer.setUnit(store.coin);
     this.main.attachPrimitive(this.drawLayer);
@@ -465,6 +473,8 @@ export class ProChartController {
     });
     this.overlay.setToggles(toggles(s, this.series.interval.ms));
     this.tpo.setOn(s.showTpo);
+    this.needs = needsOf(s);
+    this.stripAt = 0;
     this.liquidity.setToggles(liqToggles(s));
     this.zones.setToggles({ showZones: s.showZones, showAuctions: s.showAuctions });
     this.zones.setParams(this.zoneParams(s));
@@ -1162,6 +1172,12 @@ export class ProChartController {
     this.liquidity.setData(next, ms, this.liqSource, now, this.bigTradeUsd);
     this.zones.setData(next, ms, now);
     this.tpo.setData(next, ms);
+    if (full || now - this.stripAt >= STRIP_EVERY_MS) {
+      this.stripAt = now;
+      const rows = coverageRows(storeSource(st), this.needs, now);
+      this.stripRows = isNarrow() ? mergedRows(rows) : rows;
+    }
+    this.strip.setData(this.stripRows, next, ms);
     // Historia giełd od pierwszej świecy (panele giełd i Tablica liczb)
     if (this.venue && next.length > 0) this.venue.ensure(this.series.interval, next[0].t);
     if (this.statsSeries && (full || now - this.statsAt >= STATS_EVERY_MS || next.length !== this.stats.length)) {

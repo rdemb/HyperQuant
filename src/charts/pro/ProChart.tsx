@@ -35,6 +35,8 @@ import { IndicatorsDialog, type IndicatorsSection, type ToggleItem } from './cha
 import { IndicatorSettings } from './chart/IndicatorSettings';
 import { indicatorLabel, indicatorsLink } from './indicators/registry';
 import { MarketStateBar } from './chart/MarketStateBar';
+import { CoverageLegend } from './chart/CoverageLegend';
+import { type DataSource, needsOf } from './chart/coverageStrip';
 import { SchrodiLauncher } from '../../components/schrodi/SchrodiLauncher';
 import { type ChartPalette, PALETTE, setPalette } from './chart/palette';
 import type { ChartView } from './chart/footprintSeries';
@@ -935,7 +937,13 @@ export const ProChart: React.FC<{
       </div>
 
       {/* Schrödi (prognoza BTC na godzinę) w pasku stanu, tylko w pierwszym panelu i poza powtórką */}
-      <StatusBar store={store} series={series} cat={panel === 0 && !inReplay ? <SchrodiLauncher className="shrink-0 pl-1 sm:pl-1.5" /> : null} />
+      <StatusBar
+        store={store}
+        series={series}
+        needs={needsOf(settings)}
+        narrow={narrow}
+        cat={panel === 0 && !inReplay ? <SchrodiLauncher className="shrink-0 pl-1 sm:pl-1.5" /> : null}
+      />
     </div>
   );
 };
@@ -1745,14 +1753,22 @@ function tzLabel(at: number): string {
 }
 
 /** Pasek stanu: połączenie, zakres taśmy i luki, liczba transakcji, strefa czasu, źródła i licencja wykresu. */
-const StatusBar: React.FC<{ store: ProStore; series: CandleSeries; cat?: React.ReactNode }> = ({ store, series, cat }) => {
+const StatusBar: React.FC<{ store: ProStore; series: CandleSeries; needs: readonly DataSource[]; narrow: boolean; cat?: React.ReactNode }> = ({
+  store,
+  series,
+  needs,
+  narrow,
+  cat,
+}) => {
   const st = store.replay ? REPLAY_STATUS : (STATUS[store.status] ?? STATUS.idle);
   const first = store.coverage.first();
   const gaps = Math.max(0, store.coverage.list().length - 1);
   return (
     // Kot poza przewijaną częścią: zawsze widoczny, a jego dymek nie jest przycinany
-    <div className={`flex items-center shrink-0 border-t border-line ${cat ? 'h-8' : 'h-7'}`}>
+    <div className={`relative flex items-center shrink-0 border-t border-line ${cat ? 'h-8' : 'h-7'}`}>
       {cat}
+      {/* Legenda pokrycia poza przewijaną częścią, żeby jej okienko nie było przycinane */}
+      <CoverageLegend store={store} needs={needs} narrow={narrow} />
       <div className="flex flex-1 min-w-0 items-center gap-x-3.5 px-2 sm:px-3 h-full font-mono text-[10px] text-ink-2 whitespace-nowrap overflow-x-auto [scrollbar-width:none]">
         <Badge tone={st.tone} title={st.title}>
           {st.text}

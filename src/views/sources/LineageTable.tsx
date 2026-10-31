@@ -319,6 +319,23 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         ),
       },
       {
+        metric: tr('Pasek pokrycia danych (Wykresy)', 'Data coverage strip (Charts)'),
+        source: tr(
+          'Pamięć wykresu w przeglądarce: odcinki nagrania taśmy (strumień na żywo i zapis serwera), taśmy z kontami i ze znacznikiem hasha zerowego, chwile migawek arkusza i odczytów OI',
+          'The chart memory in the browser: spans of the tape recording (live stream and server recording), of the tape with accounts and with the zero-hash mark, times of book snapshots and OI readings'
+        ),
+        method: tr(
+          'Źródła potrzebne włączonym warstwom, panelom i widocznym wskaźnikom; odcinki taśmy wprost z nagrania, odcinki arkusza i OI z chwil próbek, z luką po przerwie dłuższej niż 12 s (arkusz) i 3 min (OI); na telefonie przy kilku źródłach ich część wspólna',
+          'Sources needed by the enabled layers, panes and visible indicators; tape spans straight from the recording, book and OI spans from the sample times, with a gap after a pause longer than 12 s (book) and 3 min (OI); on a phone with several sources their intersection'
+        ),
+        kinds: ['LIVE'],
+        refresh: tr('najwyżej raz na sekundę', 'at most once per second'),
+        caveat: tr(
+          'Pokazuje, czy dane są, a nie ich jakość. Brak danych w odcinku to brak wartości wskaźnika, a nie zero.',
+          'Shows whether data is there, not its quality. No data in a span means no indicator value, not zero.'
+        ),
+      },
+      {
         metric: 'Open interest, funding, mark/oracle',
         source: 'Hyperliquid API: metaAndAssetCtxs',
         method: tr('Wartości wprost z API; basis = (mark − oracle) / oracle', 'Values straight from the API; basis = (mark − oracle) / oracle'),
