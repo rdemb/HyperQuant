@@ -28,7 +28,7 @@ import { onAlertEvents, startAlertWatch } from './chart/alertWatch';
 import { DEFAULT_TTL_MS, defaultDir, eventText } from '../../utils/alertRules';
 import { fmtPx, priceDigits } from './chart/layout';
 import { ChartLayout, ChartSettings, NARROW_QUERY, PHONE_PANES, PhonePane, hashFor, isNarrow, loadSettings, phoneSettings, saveSettings, settingsFromHash } from './chart/settings';
-import { STATIONS, Station, StationId, stationKey, stationPanel } from './chart/stations';
+import { STATIONS, Station, stationKey, stationPanel } from './chart/stations';
 import { BUILT_IN_TEMPLATES, ChartTemplate, applyTemplate, loadTemplates, saveAs, saveTemplates } from './chart/templates';
 import { NumbersCard, StatGroupPicker } from './chart/NumbersCard';
 import { IndicatorsDialog, type IndicatorsSection, type ToggleItem } from './chart/IndicatorsDialog';
@@ -126,11 +126,14 @@ const PHONE_TABS: { id: PhoneTab; label: string }[] = [
   { id: 'numbers', label: tr('Liczby', 'Numbers') },
 ];
 
-/** Stacja na telefonie: lista w pasku wykresu zamiast osobnego rzędu nad nim, przywrócenie wzorca w menu „Więcej”. */
-export interface PhoneStation {
-  value: StationId;
-  options: readonly { value: StationId; label: string }[];
-  onChange: (id: StationId) => void;
+/**
+ * Karty układów na telefonie: lista w pasku wykresu zamiast paska kart nad nim (ostatnia pozycja otwiera zarządzanie
+ * kartami), przywrócenie wzorca karty w menu „Więcej”.
+ */
+export interface PhoneTabs {
+  value: string;
+  options: readonly { value: string; label: string }[];
+  onChange: (id: string) => void;
   onRestore: () => void;
 }
 
@@ -157,18 +160,18 @@ export const subscribeNarrow = (fn: () => void) => {
   return () => mq.removeEventListener('change', fn);
 };
 
-function initialSettings(panel: number, station: Station, coin: Market | null, fromLink: boolean): ChartSettings {
+function initialSettings(panel: number, station: Station, tabId: string, coin: Market | null, fromLink: boolean): ChartSettings {
   const narrow = isNarrow();
   const pattern = stationPanel(station, panel, narrow);
   // Panel spoza wzorca stacji bez zapisu: wygląd pierwszego panelu, wyższy interwał, bez tablicy i taśmy (mniej miejsca)
   const base =
     panel < station.panels.length
       ? pattern
-      : { ...loadSettings(stationKey(station.id, 0), stationPanel(station, 0, narrow)), interval: pattern.interval, showStats: false, showTape: false };
-  let s = loadSettings(stationKey(station.id, panel), base);
+      : { ...loadSettings(stationKey(tabId, 0), stationPanel(station, 0, narrow)), interval: pattern.interval, showStats: false, showTape: false };
+  let s = loadSettings(stationKey(tabId, panel), base);
   // Link do widoku (#charts?m=…&i=…&v=…) ma pierwszeństwo przed zapisanymi ustawieniami pierwszego panelu
   if (panel === 0 && fromLink) s = withPatch(s, settingsFromHash(window.location.hash));
-  // Rynek zostaje przy zmianie stacji
+  // Rynek zostaje przy zmianie karty
   return coin ? withPatch(s, { coin }) : s;
 }
 
@@ -202,7 +205,8 @@ function useStoreVersion(store: ProStore, ms: number): number {
 /**
  * Wykres Pro: Lightweight Charts (TradingView) z footprintem, wolumenem, Deltą i CVD z taśmy Hyperliquid.
  * `panel` — miejsce w układzie kilku wykresów: pierwszy prowadzi link do widoku, alerty i przełącznik układu.
- * `station` — stacja robocza (wzorzec i zapis ustawień), `coin` — rynek przeniesiony z poprzedniej stacji,
+ * `station` — wzorzec karty układu (stacja robocza albo szablon), `tabId` — karta, pod którą zapisują się ustawienia
+ * (domyślnie id stacji), `onSaved` — po zapisie ustawień (podpis karty), `coin` — rynek przeniesiony z poprzedniej karty,
  * `fromLink` — pierwsze otwarcie wykresów, więc link do widoku w adresie strony ma pierwszeństwo.
  * `replay` — powtórka nagrania zamiast rynku na żywo: ustawienia nie są zapisywane, adres strony zostaje linkiem powtórki.
  * `layoutFs` — pełny ekran całego układu kilku wykresów (przycisk pełnego ekranu i klawisz F obejmują wtedy wszystkie panele).
@@ -212,16 +216,18 @@ export const ProChart: React.FC<{
   layout?: ChartLayout;
   onLayout?: (l: ChartLayout) => void;
   station?: Station;
+  tabId?: string;
+  onSaved?: () => void;
   coin?: Market | null;
   fromLink?: boolean;
-  phoneStation?: PhoneStation;
+  phoneTabs?: PhoneTabs;
   replay?: ProChartReplay;
   layoutFs?: { active: boolean; toggle: () => void };
-}> = ({ panel = 0, layout = 1, onLayout, station = STATIONS[0], coin = null, fromLink = true, phoneStation, replay, layoutFs }) => {
+}> = ({ panel = 0, layout = 1, onLayout, station = STATIONS[0], tabId = station.id, onSaved, coin = null, fromLink = true, phoneTabs, replay, layoutFs }) => {
   const [settings, setSettings] = useState<ChartSettings>(() => {
-    if (!replay) return initialSettings(panel, station, coin, fromLink);
+    if (!replay) return initialSettings(panel, station, tabId, coin, fromLink);
     // Link ze stacją (lekcja) — sam wzorzec stacji, bez zmian zapisanych przez oglądającego
-    const base = replay.link.station ? stationPanel(station, panel, isNarrow()) : initialSettings(panel, station, coin, false);
+    const base = replay.link.station ? stationPanel(station, panel, isNarrow()) : initialSettings(panel, station, tabId, coin, false);
     return withPatch(base, linkPatch(replay.link));
   });
   const inReplay = replay !== undefined;
@@ -280,6 +286,8 @@ export const ProChart: React.FC<{
   }, []);
   const live = useRef({ replay, settings });
   live.current = { replay, settings };
+  const onSavedRef = useRef(onSaved);
+  onSavedRef.current = onSaved;
   const setCoin = useCallback((coin: Market) => {
     // Powtórka innego rynku to inne nagranie — nowy link (ta sama chwila, interwał i rodzaj wykresu)
     const { replay: r, settings: s } = live.current;
@@ -340,8 +348,11 @@ export const ProChart: React.FC<{
     // Telefon i układ 2 × 2 chowają część paneli — zapisane ustawienia wracają na szerszym ekranie albo w mniejszym układzie
     ctrlRef.current?.setPhone(narrow);
     ctrlRef.current?.applySettings(shownSettings(settings, narrow, layout, inReplay));
-    if (!inReplay) saveSettings(settings, stationKey(station.id, panel));
-  }, [settings, panel, layout, station, narrow, inReplay]);
+    if (!inReplay) {
+      saveSettings(settings, stationKey(tabId, panel));
+      onSavedRef.current?.();
+    }
+  }, [settings, panel, layout, tabId, narrow, inReplay]);
 
   useEffect(() => {
     ctrlRef.current?.highlight(highlight);
@@ -709,11 +720,14 @@ export const ProChart: React.FC<{
         </div>
       )}
 
-      {/* Telefon: dwa rzędy — stacja, rynek, interwał i rodzaj wykresu; karty, wskaźniki, ustawienia i „Więcej” */}
+      {/* Telefon: dwa rzędy — karta układu, rynek, interwał i rodzaj wykresu; widoki, wskaźniki, ustawienia i „Więcej” */}
       {narrow && (
         <div className="flex flex-col gap-1.5 px-2 py-1.5 border-b border-line shrink-0">
           <div className="flex items-center gap-1 min-w-0 overflow-x-auto [scrollbar-width:none]">
-            {phoneStation && <PhoneSelect<StationId> ariaLabel={tr('Stacja robocza', 'Workstation')} value={phoneStation.value} options={phoneStation.options} onChange={phoneStation.onChange} />}
+            {/* Nazwa karty przycięta: rynek, interwał i rodzaj wykresu mieszczą się obok */}
+            {phoneTabs && (
+              <PhoneSelect<string> ariaLabel={tr('Karta układu', 'Layout tab')} value={phoneTabs.value} options={phoneTabs.options} onChange={phoneTabs.onChange} className="max-w-[9.5rem] truncate" />
+            )}
             <PhoneSelect<Market> ariaLabel={tr('Rynek', 'Market')} value={settings.coin} options={MARKET_OPTIONS} onChange={setCoin} />
             <PhoneSelect<string> ariaLabel={tr('Interwał wykresu', 'Chart timeframe')} value={settings.interval} options={INTERVAL_OPTIONS} onChange={(v) => update({ interval: v })} />
             <PhoneSelect<ChartView> ariaLabel={tr('Rodzaj wykresu', 'Chart type')} value={settings.view} options={VIEW_OPTIONS} onChange={(v) => update({ view: v })} />
@@ -885,7 +899,7 @@ export const ProChart: React.FC<{
                     ...(canReplay ? [{ icon: History, label: tr('Powtórka nagranej doby', 'Replay of the recorded day'), on: openReplay }] : []),
                     { icon: Link, label: inReplay ? tr('Kopiuj link do tej chwili', 'Copy link to this moment') : tr('Kopiuj link do widoku', 'Copy view link'), on: copyLink },
                     { icon: fullscreen ? Minimize2 : Maximize2, label: fullscreen ? tr('Zamknij pełny ekran', 'Exit full screen') : tr('Pełny ekran', 'Full screen'), on: toggleFullscreen },
-                    ...(phoneStation ? [{ icon: RotateCcw, label: tr(`Przywróć wzorzec stacji ${station.name}`, `Restore the ${station.name} workstation preset`), on: phoneStation.onRestore }] : []),
+                    ...(phoneTabs ? [{ icon: RotateCcw, label: tr(`Przywróć wzorzec karty: ${station.name}`, `Restore the tab preset: ${station.name}`), on: phoneTabs.onRestore }] : []),
                   ]}
                   onClose={() => setMenu(null)}
                 />
@@ -1029,11 +1043,13 @@ function PhoneSelect<T extends string>({
   value,
   options,
   onChange,
+  className = '',
 }: {
   ariaLabel: string;
   value: T;
   options: readonly { value: T; label: string }[];
   onChange: (v: T) => void;
+  className?: string;
 }) {
   return (
     <span className="relative inline-flex shrink-0">
@@ -1041,7 +1057,7 @@ function PhoneSelect<T extends string>({
         aria-label={ariaLabel}
         value={value}
         onChange={(e) => onChange(e.target.value as T)}
-        className="appearance-none h-8 pl-2 pr-5 rounded-md border border-line bg-surface-2 text-xs font-medium text-ink-1"
+        className={`appearance-none h-8 pl-2 pr-5 rounded-md border border-line bg-surface-2 text-xs font-medium text-ink-1 ${className}`}
       >
         {options.map((o) => (
           <option key={o.value} value={o.value}>
@@ -1303,10 +1319,10 @@ const SettingsMenu: React.FC<{
     <button
       type="button"
       onClick={onReset}
-      title={tr('Ustawienia tego wykresu jak we wzorcu stacji; rynek i interwał zostają', "Sets this chart as in the workstation preset; market and timeframe stay")}
+      title={tr('Ustawienia tego wykresu jak we wzorcu karty; rynek i interwał zostają', "Sets this chart as in the tab preset; market and timeframe stay")}
       className="self-start min-h-9 px-3 rounded-lg border border-line-strong text-ink-2 hover:text-ink-1 hover:bg-surface-3"
     >
-      {tr('Przywróć wzorzec stacji', 'Restore workstation preset')}
+      {tr('Przywróć wzorzec karty', 'Restore tab preset')}
     </button>
   </div>
 );
@@ -1602,6 +1618,16 @@ const KEY_GROUPS: { title: string; keys: [string, string][] }[] = [
       ['/', tr('Wskaźniki: szukaj i dodaj', 'Indicators: search and add')],
       ['?', tr('Ta lista', 'This list')],
       ['Esc', tr('Zamknij menu, przerwij rysowanie', 'Close menu, cancel drawing')],
+    ],
+  },
+  {
+    title: tr('Karty układów', 'Layout tabs'),
+    keys: [
+      ['Alt+1 … 9', tr('Karta o tym numerze na pasku (9 — ostatnia)', 'The tab with this number on the bar (9 — the last one)')],
+      ['Alt+↑ / Alt+↓', tr('Karta z wyższym / niższym interwałem, ta sama chwila na wykresie', 'The tab with the higher / lower timeframe, same moment on the chart')],
+      [tr('Dwuklik na karcie', 'Double-click a tab'), tr('Zmień nazwę', 'Rename')],
+      [tr('Prawy przycisk na karcie', 'Right-click a tab'), tr('Kopia, wzorzec, zamknięcie', 'Copy, preset, close')],
+      [tr('Przeciągnij kartę', 'Drag a tab'), tr('Zmień kolejność', 'Reorder')],
     ],
   },
   {

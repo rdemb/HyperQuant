@@ -151,11 +151,17 @@ const MAX_PANELS = 4;
 
 export const stationById = (id: unknown): Station => STATIONS.find((s) => s.id === id) ?? STATIONS[0];
 
-/** Klucz zapisu ustawień panelu stacji (Start — klucze sprzed stacji). */
-export const stationKey = (id: StationId, panel: number): string => (id === 'start' ? panelKey(panel) : `hq.charts.v1.${id}${panel > 0 ? `.p${panel}` : ''}`);
+/**
+ * Klucz zapisu ustawień panelu stacji albo karty (`id` — stacja lub karta układu; Start — klucze sprzed stacji).
+ */
+export const stationKey = (id: string, panel: number): string => (id === 'start' ? panelKey(panel) : `hq.charts.v1.${id}${panel > 0 ? `.p${panel}` : ''}`);
 
-const layoutKey = (id: StationId) => (id === 'start' ? 'hq.charts.layout.v1' : `hq.charts.layout.v1.${id}`);
+const layoutKey = (id: string) => (id === 'start' ? 'hq.charts.layout.v1' : `hq.charts.layout.v1.${id}`);
+/** Aktywna stacja sprzed kart układów (odczyt tylko przy pierwszym otwarciu kart). */
 const ACTIVE_KEY = 'hq.charts.station.v1';
+
+/** Wszystkie klucze zapisu stacji albo karty: ustawienia paneli i układ. */
+export const stationKeys = (id: string): string[] => [...Array.from({ length: MAX_PANELS }, (_, p) => stationKey(id, p)), layoutKey(id)];
 
 /**
  * Wzorzec panelu stacji (bez rynku z wykresu). Telefon: pierwszy panel ze zmianami telefonu. Panel spoza wzorca
@@ -186,18 +192,16 @@ function write(key: string, value: string | null): void {
 }
 
 export const loadStation = (): Station => stationById(read(ACTIVE_KEY));
-export const saveStation = (id: StationId): void => write(ACTIVE_KEY, id);
 
-/** Układ stacji: zapisany przez użytkownika albo z wzorca. */
-export function loadStationLayout(st: Station): ChartLayout {
-  const v = read(layoutKey(st.id));
+/** Układ stacji albo karty `id` (z wzorcem `st`): zapisany przez użytkownika albo z wzorca. */
+export function loadStationLayout(st: Station, id: string = st.id): ChartLayout {
+  const v = read(layoutKey(id));
   return v === null ? st.layout : parseLayout(Number(v));
 }
 
-export const saveStationLayout = (id: StationId, l: ChartLayout): void => write(layoutKey(id), String(l));
+export const saveStationLayout = (id: string, l: ChartLayout): void => write(layoutKey(id), String(l));
 
-/** Usuwa wersję użytkownika stacji (ustawienia paneli i układ) — stacja wraca do wzorca. */
-export function clearStation(id: StationId): void {
-  for (let p = 0; p < MAX_PANELS; p++) write(stationKey(id, p), null);
-  write(layoutKey(id), null);
+/** Usuwa wersję użytkownika stacji albo karty (ustawienia paneli i układ) — wraca wzorzec. */
+export function clearStation(id: string): void {
+  for (const k of stationKeys(id)) write(k, null);
 }
