@@ -84,8 +84,8 @@ export const IndicatorSettings: React.FC<{ x: IndicatorInstance; loaded: number;
     onClose();
   };
   const warmup = def.warmup(x.params);
-  // Same słupki w kolorach znaku (zmiana OI): kolor i grubość linii nic nie zmieniają, zostaje krycie
-  const bars = def.plots.every((p) => p.hist);
+  // Same słupki w kolorach znaku i wartości tylko w legendzie (zmiana OI, OFI): kolor i grubość linii nic nie zmieniają, zostaje krycie
+  const bars = def.plots.every((p) => p.hist || p.hidden);
   const memory = memoryCandles(def, x.params);
   const span = warmup + 1;
   // Interwał wskaźnika: wyższe niż wykres (i zapisany, gdy wykres przeszedł na wyższy)

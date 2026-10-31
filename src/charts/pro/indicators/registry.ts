@@ -1,5 +1,7 @@
 import type { Candle } from '../hl/parse';
-import { Extreme, RobustLine, Window, Wma, ema, rma } from './primitives';
+import type { BookFrame } from '../core/book';
+import { ofiEvent } from '../../../utils/microMechanics';
+import { Extreme, OlsWindow, RobustLine, Window, Wma, ema, rma } from './primitives';
 import { INTERVALS, intervalById } from '../core/time';
 import { numLang } from '../../../ui/format';
 import { tr } from '../../../i18n';
@@ -38,7 +40,8 @@ export type IndicatorId =
   | 'hv'
   | 'netvol'
   | 'oiflow'
-  | 'absorption';
+  | 'absorption'
+  | 'ofi';
 
 /** Grupy na liście okna wskaźników (jak kategorie TradingView); `hyperliquid` — wskaźniki z danych spoza świec, we własnej sekcji okna. */
 export type IndicatorGroup = 'trend' | 'momentum' | 'volatility' | 'volume' | 'levels' | 'hyperliquid';
@@ -80,6 +83,8 @@ export interface PlotDef {
   signOf?: number;
   /** Bez rysowania, tylko wartość w legendzie (delta przy zmianie OI). */
   hidden?: boolean;
+  /** Liczby tej wartości, gdy inne niż wskaźnika (OFI: β i R² obok wolumenu). */
+  format?: IndicatorDef['format'];
 }
 
 /** Kolory stałych linii: drugiej i trzeciej linii wskaźnika oraz słupków dodatnich i ujemnych. */
@@ -102,9 +107,13 @@ export interface FlowBar {
   complete?: boolean;
 }
 
-/** Dane Hyperliquid spoza świec: otwarte pozycje w chwili (null — brak odczytu) i bieżący czas serwera. */
+/**
+ * Dane Hyperliquid spoza świec: otwarte pozycje w chwili (null — brak odczytu), migawki arkusza najbliższej agregacji
+ * (rosnąco po czasie) i bieżący czas serwera.
+ */
 export interface FlowContext {
   oiAt(t: number): number | null;
+  book(): readonly BookFrame[];
   now: number;
 }
 
@@ -159,6 +168,13 @@ export interface IndicatorDef {
    */
   flow?(b: FlowBar, ms: number, ctx: FlowContext, out: Float64Array): void;
   /**
+   * Jak `flow`, ale na wszystkich świecach naraz (świeca zależy od poprzednich, a dane spoza świec przychodzą osobno, np.
+   * migawki arkusza): wartości plotu k świecy i do `out[k][i]`.
+   */
+  series?(bars: readonly FlowBar[], ms: number, ctx: FlowContext, p: Params, out: Float64Array[]): void;
+  /** Tyle świec przed lewą krawędzią widoku potrzeba danych z serwera (okno poprzednich świec: absorpcja, OFI). */
+  lookback?(p: Params): number;
+  /**
    * Wskaźnik z taśmy porównujący świecę z poprzednimi świecami (absorpcja): `point` zapisuje parę (x, y) świecy do `xy`
    * (false — świeca bez wartości), a krok z `create` liczy wartości plotów świecy z jej pary i par `span` poprzednich
    * świec z wartością (najnowsza pierwsza).
@@ -208,6 +224,44 @@ const rsiOf = (n: number) => {
 
 /** Typowa cena świecy (`hlc3`). */
 const hlc3 = (c: Candle) => (c.h + c.l + c.c) / 3;
+
+/** Najdłuższa przerwa między porównywanymi migawkami arkusza (kanał co ~5 s; dłuższa to przerwa w danych). */
+export const OFI_MAX_GAP = 12_000;
+/** Od tego R² podawana jest oczekiwana zmiana ceny; niżej OFI w oknie prawie nie tłumaczy ruchu ceny. */
+export const OFI_MIN_R2 = 0.1;
+
+/** Najlepsze kwotowania migawki (kubełki najbliższej agregacji); null bez obu stron. */
+const quoteOf = (f: BookFrame) =>
+  f.nBids > 0 && f.nBids < f.px.length ? { bid: f.px[0], bidSz: f.sz[0], ask: f.px[f.nBids], askSz: f.sz[f.nBids] } : null;
+
+/**
+ * OFI i zmiana środka arkusza w świecach: sumy po parach kolejnych migawek, para należy do świecy, w której leży jej
+ * późniejsza migawka. NaN, gdy świeca nie ma pary, gdy para jest dłuższa niż `OFI_MAX_GAP` albo gdy ostatnia migawka
+ * jest dalej od końca świecy (bieżącej: od teraz) niż `OFI_MAX_GAP`.
+ */
+export function bookFlow(frames: readonly BookFrame[], bars: readonly FlowBar[], ms: number, now: number, ofi: Float64Array, dp: Float64Array): void {
+  let j = 0;
+  for (let i = 0; i < bars.length; i++) {
+    const t = bars[i].candle.t;
+    const end = t + ms;
+    while (j < frames.length && frames[j].t < t) j++;
+    let x = 0;
+    let y = 0;
+    let ok = j < frames.length && frames[j].t < end;
+    for (; j < frames.length && frames[j].t < end; j++) {
+      const a = j > 0 ? quoteOf(frames[j - 1]) : null;
+      const b = quoteOf(frames[j]);
+      if (!a || !b || frames[j].t - frames[j - 1].t > OFI_MAX_GAP) ok = false;
+      else {
+        x += ofiEvent(a, b);
+        y += (b.bid + b.ask - a.bid - a.ask) / 2;
+      }
+    }
+    if (ok && frames[j - 1].t < Math.min(end, now) - OFI_MAX_GAP) ok = false;
+    ofi[i] = ok ? x : Number.NaN;
+    dp[i] = ok ? y : Number.NaN;
+  }
+}
 
 export const INDICATORS: readonly IndicatorDef[] = [
   {
@@ -1204,6 +1258,7 @@ export const INDICATORS: readonly IndicatorDef[] = [
     ),
     pane: 'own',
     params: [{ key: 'length', label: tr('Długość', 'Length'), min: 20, max: 200, step: 1, def: 120 }],
+    lookback: (p) => p.length,
     plots: [
       { hist: true, signOf: 1, title: 'z' },
       { hist: true, hidden: true, title: 'Delta' },
@@ -1231,6 +1286,49 @@ export const INDICATORS: readonly IndicatorDef[] = [
           out[1] = ok ? x : Number.NaN;
         };
       },
+    },
+  },
+  {
+    id: 'ofi',
+    short: 'OFI',
+    name: tr('OFI: nierównowaga arkusza i jej wpływ na cenę', 'OFI: order book imbalance and its price impact'),
+    hint: tr(
+      'Słupek to nierównowaga przepływu zleceń na najlepszych poziomach arkusza w świecy (OFI, w jednostkach rynku): dodatnia — przybyło popytu albo ubyło podaży; w legendzie zmiana środka arkusza w świecy, R² z ostatnich świec i zmiana ceny oczekiwana przy takim OFI',
+      'The bar is the order flow imbalance at the best book levels within the candle (OFI, in market units): positive means demand was added or supply removed; the legend shows the book mid change in the candle, R² from recent candles and the price change expected for such OFI'
+    ),
+    group: 'hyperliquid',
+    aliases: 'ofi order flow imbalance nierownowaga przeplyw zlecen arkusz book cont kukanov stoikov impact wplyw r2 beta',
+    warmup: () => 0,
+    convention: tr(
+      'Tego wskaźnika nie ma w TradingView: liczony z migawek arkusza Hyperliquid. OFI jak u Conta, Kukanova i Stoikova (2014): w każdej parze kolejnych migawek wyższy najlepszy bid albo więcej na nim dodaje, niższy albo mniej odejmuje, a po stronie asku odwrotnie; świeca to suma par. Migawki przychodzą co około 5 s, w kubełkach ceny najbliższej agregacji wykresu (dla BTC 10 USD), więc to przybliżenie OFI liczonego z każdej zmiany najlepszych cen: zmiany między migawkami się sumują, a w kubełku są zlecenia kilku cen. Δp to zmiana środka arkusza w tych samych parach. R² pochodzi z regresji Δp na OFI (z wyrazem wolnym) w poprzednich zamkniętych świecach z wartością, a oczekiwana zmiana to nachylenie tej regresji razy OFI świecy, podawana od R² 0,1.',
+      'TradingView has no such indicator: it is computed from Hyperliquid book snapshots. OFI follows Cont, Kukanov and Stoikov (2014): in every pair of consecutive snapshots a higher best bid or more size on it adds, a lower one or less size subtracts, and the ask side works the other way; the candle is the sum over pairs. Snapshots arrive about every 5 s, in price buckets of the chart’s nearest aggregation (10 USD for BTC), so this approximates OFI computed from every change of the best prices: changes between snapshots are summed, and a bucket holds orders at several prices. Δp is the book mid change over the same pairs. R² comes from regressing Δp on OFI (with an intercept) over the previous closed candles with a value, and the expected change is that regression’s slope times the candle’s OFI, shown from R² 0.1.'
+    ),
+    memoryNote: tr(
+      'OFI świecy zależy tylko od migawek arkusza w niej; świeca nie ma wartości, gdy w danych arkusza jest przerwa dłuższa niż 12 s. R² i oczekiwana zmiana zależą od ostatnich zamkniętych świec z wartością w liczbie „Długość”, bez bieżącej świecy. Arkusz z serwera sięga 12 godzin wstecz, starsze świece nie mają wartości. Brak R², dopóki nie ma tylu świec, i gdy w oknie OFI albo Δp się nie zmienia.',
+      'A candle’s OFI depends only on the book snapshots within it; a candle has no value when the book data has a gap longer than 12 s. R² and the expected change depend on the last “Length” closed candles with a value, excluding the current one. Server book history reaches 12 hours back; older candles have no value. No R² until there are that many candles, or when OFI or Δp does not change in the window.'
+    ),
+    pane: 'own',
+    params: [{ key: 'length', label: tr('Długość', 'Length'), min: 10, max: 200, step: 1, def: 30 }],
+    lookback: (p) => p.length,
+    plots: [
+      { hist: true },
+      { hist: true, hidden: true, title: 'Δp' },
+      { hidden: true, title: 'R²', format: 'fixed2' },
+      { hist: true, hidden: true, title: tr('oczek.', 'exp.') },
+    ],
+    levels: [0],
+    format: 'volume',
+    series: (bars, ms, ctx, p, out) => {
+      const [ofi, dp, r2, expected] = out;
+      bookFlow(ctx.book(), bars, ms, ctx.now, ofi, dp);
+      // Regresja z ostatnich zamkniętych świec z wartością przed świecą: bieżąca nie wchodzi do swojego okna
+      const w = new OlsWindow(p.length);
+      for (let i = 0; i < bars.length; i++) {
+        const f = w.count === p.length && !Number.isNaN(ofi[i]) ? w.fit() : null;
+        r2[i] = f ? f.r2 : Number.NaN;
+        expected[i] = f && f.r2 >= OFI_MIN_R2 ? f.beta * ofi[i] : Number.NaN;
+        if (!Number.isNaN(ofi[i]) && bars[i].candle.t + ms <= ctx.now) w.push(ofi[i], dp[i]);
+      }
     },
   },
 ];
@@ -1291,7 +1389,8 @@ export function indicatorLabel(x: IndicatorInstance): string {
  * Parametr „Interwał”: bez niego wskaźnik ze stałym okresem (pivoty), rysunek na ostatnich świecach (kanał regresji),
  * wskaźnik przesunięty o świece wykresu (Ichimoku) i wskaźnik z danych spoza świec (taśma, otwarte pozycje).
  */
-export const tfAllowed = (def: IndicatorDef): boolean => !def.period && !def.fit && !def.flow && !def.sample && !def.plots.some((p) => p.shift);
+export const tfAllowed = (def: IndicatorDef): boolean =>
+  !def.period && !def.fit && !def.flow && !def.series && !def.sample && !def.plots.some((p) => p.shift);
 
 /** Interwał wskaźnika: znany identyfikator interwału, a wskaźnik bez parametru „Interwał” go nie ma. */
 const tfOk = (def: IndicatorDef, tf: unknown): tf is string => tfAllowed(def) && INTERVALS.some((iv) => iv.id === tf);

@@ -651,7 +651,7 @@ export class ProChartController {
     const range = def.range;
     const common = {
       priceLineVisible: false,
-      priceFormat: { type: 'custom' as const, minMove: 0.0001, formatter: this.indFormat(def) },
+      priceFormat: { type: 'custom' as const, minMove: 0.0001, formatter: this.indFormat(def.format) },
       ...(range ? { autoscaleInfoProvider: () => ({ priceRange: { minValue: range[0], maxValue: range[1] } }) } : {}),
     };
     const lines = def.plots.map(
@@ -696,11 +696,11 @@ export class ProChartController {
   }
 
   /** Liczby wskaźnika: cena (tick rynku), odległość ceny (ATR: o miejsce dokładniej niż tick), dwa lub trzy miejsca (RSI, CMF) albo wolumen (OBV). */
-  private indFormat(def: IndicatorDef): (v: number) => string {
-    if (def.format === 'price') return fmtPx;
-    if (def.format === 'fixed2') return (v) => fmtPrice(v, 2);
-    if (def.format === 'fixed3') return (v) => fmtPrice(v, 3);
-    if (def.format === 'volume') return fmtSignedVol;
+  private indFormat(format: IndicatorDef['format']): (v: number) => string {
+    if (format === 'price') return fmtPx;
+    if (format === 'fixed2') return (v) => fmtPrice(v, 2);
+    if (format === 'fixed3') return (v) => fmtPrice(v, 3);
+    if (format === 'volume') return fmtSignedVol;
     return (v) => fmtPrice(v, Math.max(0, -Math.floor(Math.log10(this.priceTick))) + 1);
   }
 
@@ -930,8 +930,12 @@ export class ProChartController {
     const first = this.bars[0]?.t ?? Number.POSITIVE_INFINITY;
     const n = this.bars.length;
     const ms = this.series.interval.ms;
-    // Wskaźniki z taśmy i OI: odczyt OI jak w panelu ΔOI (starszy niż kilka minut to przerwa w danych)
-    const flow = { oiAt: (t: number) => this.store.oi.atWithin(t, HL_OI_MAX_AGE), now: this.store.serverNow() };
+    // Wskaźniki z taśmy, OI i arkusza: odczyt OI jak w panelu ΔOI (starszy niż kilka minut to przerwa w danych)
+    const flow = {
+      oiAt: (t: number) => this.store.oi.atWithin(t, HL_OI_MAX_AGE),
+      book: () => this.store.book('near')?.list() ?? [],
+      now: this.store.serverNow(),
+    };
     if (this.engine.sync(this.bars, ms, (tf) => this.store.indicatorCandles(tf, first), flow) >= n) return;
     // Luka w świecach albo doczytana historia przesuwa czasy punktów za ostatnią świecą: te ploty idą w całości
     const anchor = this.bars[n - 1].t - (n - 1) * ms;
@@ -1103,10 +1107,10 @@ export class ProChartController {
   private readonly onRange = (range: LogicalRange | null): void => {
     if (!range || this.bars.length === 0) return;
     if (range.from < LOAD_OLDER_MARGIN) void this.series.loadOlder();
-    // Historia taśmy i arkusza z serwera od lewej krawędzi widoku, a przy wskaźniku z oknem świec z taśmą (absorpcja)
-    // o to okno wcześniej — inaczej na wąskim ekranie świece z lewej nie miałyby wartości
+    // Historia taśmy i arkusza z serwera od lewej krawędzi widoku, a przy wskaźniku z oknem poprzednich świec (absorpcja,
+    // OFI) o to okno wcześniej — inaczej na wąskim ekranie świece z lewej nie miałyby wartości
     const left = this.bars[Math.min(this.bars.length - 1, Math.max(0, Math.floor(range.from)))].t;
-    const span = Math.max(0, ...this.indShown.map((x) => indicatorDef(x.id).sample?.span(x.params) ?? 0));
+    const span = Math.max(0, ...this.indShown.map((x) => indicatorDef(x.id).lookback?.(x.params) ?? 0));
     requestHistory(this.store, left - span * this.series.interval.ms);
   };
 
@@ -1212,7 +1216,6 @@ export class ProChartController {
     this.engine.runs.forEach((run, k) => {
       const x = this.indShown[k];
       const def = indicatorDef(x.id);
-      const fmt = this.indFormat(def);
       const vs = run.out.map((ys, p) => {
         const j = vi - plotShift(x, def.plots[p]);
         return vi >= 0 && j >= 0 && j < this.engine.count ? ys[j] : Number.NaN;
@@ -1220,11 +1223,12 @@ export class ProChartController {
       const values = vs.map((v, p) => {
         const plot = def.plots[p];
         // Podpis poziomu (pivoty: P, R1, S1…) także w legendzie
-        const text = Number.isNaN(v) ? '—' : fmt(v);
+        const text = Number.isNaN(v) ? '—' : this.indFormat(plot.format ?? def.format)(v);
         return { text: plot.title ? `${plot.title} ${text}` : text, color: this.plotColor(x, plot, vs[plot.signOf ?? p]) };
       });
       const legend = this.indLegends[k];
-      if (legend) legend.set([{ text: indicatorLabel(x), color: PRO.ink3 }, ...values.map((v) => ({ ...v, glue: true }))]);
+      // Pierwsza wartość przy nazwie, dalsze (OFI: Δp, R², oczekiwana) mogą przejść do następnego wiersza na wąskim panelu
+      if (legend) legend.set([{ text: indicatorLabel(x), color: PRO.ink3 }, ...values.map((v, p) => ({ ...v, glue: p === 0 }))]);
       else indicators.push({ iid: x.iid, label: indicatorLabel(x), values });
     });
     this.statsTable.setHover(this.hoverTime === null ? -1 : i);

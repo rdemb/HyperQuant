@@ -169,6 +169,11 @@ export class BookHistory {
     this.version++;
   }
 
+  /** Wszystkie migawki, rosnąco po czasie (bez kopii). */
+  list(): readonly BookFrame[] {
+    return this.frames;
+  }
+
   latest(): BookFrame | null {
     return this.frames[this.frames.length - 1] ?? null;
   }

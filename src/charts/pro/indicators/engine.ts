@@ -6,7 +6,7 @@ import { FlowBar, FlowContext, IndicatorInstance, Step, indicatorDef } from './r
 type Bar = FlowBar;
 
 /** Bez danych spoza świec (testy, wykres bez rynku Hyperliquid): wskaźniki z taśmy i OI bez wartości. */
-const NO_FLOW: FlowContext = { oiAt: () => null, now: Number.POSITIVE_INFINITY };
+const NO_FLOW: FlowContext = { oiAt: () => null, book: () => [], now: Number.POSITIVE_INFINITY };
 
 /** Świece interwału wskaźnika (seria rynku wczytywana przy pierwszym użyciu). */
 export type CandlesOf = (tf: string) => readonly Candle[];
@@ -188,13 +188,15 @@ class WindowRun implements IndicatorValues {
 }
 
 /**
- * Wskaźnik z danych spoza świec (taśma, otwarte pozycje): każda świeca liczona od nowa przy każdym przeliczeniu, bo
- * dane dochodzą też do starszych świec (historia taśmy, odczyty OI) bez zmiany samej świecy.
+ * Wskaźnik z danych spoza świec (taśma, otwarte pozycje, migawki arkusza): każda świeca liczona od nowa przy każdym
+ * przeliczeniu, bo dane dochodzą też do starszych świec (historia taśmy i arkusza, odczyty OI) bez zmiany samej świecy.
  */
 class FlowRun implements IndicatorValues {
   out: Float64Array[];
   from = 0;
   private readonly v: Float64Array;
+  /** Wartości z `series` przed porównaniem z poprzednimi. */
+  private next: Float64Array[];
   /** Liczba świec i czas pierwszej z poprzedniego liczenia. */
   private n = 0;
   private t0 = Number.NaN;
@@ -203,17 +205,23 @@ class FlowRun implements IndicatorValues {
     const def = indicatorDef(x.id);
     this.v = new Float64Array(def.plots.length);
     this.out = def.plots.map(() => new Float64Array(0));
+    this.next = def.plots.map(() => new Float64Array(0));
   }
 
   /** Przelicza wszystkie świece; zwraca indeks pierwszej zmienionej wartości (doczytana historia z lewej zmienia wszystkie). */
   sync(bars: readonly Bar[], ms: number, ctx: FlowContext): number {
     const n = bars.length;
     if (n > this.out[0].length) this.out = this.out.map((a) => grow(a, n));
-    const flow = indicatorDef(this.x.id).flow!;
+    const { flow, series } = indicatorDef(this.x.id);
+    if (series) {
+      if (n > this.next[0].length) this.next = this.next.map((a) => grow(a, n));
+      series(bars, ms, ctx, this.x.params, this.next);
+    }
     const t0 = n > 0 ? bars[0].candle.t : Number.NaN;
     let first = n < this.n || t0 !== this.t0 ? 0 : n;
     for (let i = 0; i < n; i++) {
-      flow(bars[i], ms, ctx, this.v);
+      if (flow) flow(bars[i], ms, ctx, this.v);
+      else for (let p = 0; p < this.v.length; p++) this.v[p] = this.next[p][i];
       for (let p = 0; p < this.v.length; p++) {
         if (first === n && (i >= this.n || !Object.is(this.out[p][i], this.v[p]))) first = i;
         this.out[p][i] = this.v[p];
@@ -352,7 +360,7 @@ export class IndicatorEngine {
         this.samples.push(r);
         return r;
       }
-      if (def.flow) {
+      if (def.flow || def.series) {
         const r = new FlowRun(x);
         this.flows.push(r);
         return r;
