@@ -73,7 +73,7 @@ telefon ◄── usługa push przeglądarki (FCM, Mozilla, Apple, WNS) ◄─�
 
 - **Skrzynka** (`workers/alerts/`, wdrażana przez `.github/workflows/alerts-worker.yml` po ustawieniu sekretów `CLOUDFLARE_API_TOKEN`
   i `CLOUDFLARE_ACCOUNT_ID`; baza D1 i adres `*.workers.dev` tworzone przy pierwszym wdrożeniu): subskrypcja push urządzenia
-  (adres usługi push i klucze szyfrowania), do 30 alarmów, język i zdarzenia z 7 dni. Urządzenie to losowy identyfikator z tokenem
+  (adres usługi push i klucze szyfrowania), do 30 najnowszych alarmów (panel ostrzega, gdy jest ich więcej), język i zdarzenia z 7 dni. Urządzenie to losowy identyfikator z tokenem
   (w bazie tylko SHA-256 tokenu), bez konta, e-maila i adresu IP. Wyłączenie przełącznika usuwa urządzenie, nieużywane 30 dni znika
   samo (sprzątanie raz na dobę), a takie, które po rejestracji ani razu się nie zsynchronizowało (przeglądarka robi to od razu),
   po 7 dniach. Przyjmowane tylko adresy push FCM, Mozilli, Apple i WNS. Najwyżej 10 rejestracji na godzinę z jednego adresu
@@ -83,13 +83,22 @@ telefon ◄── usługa push przeglądarki (FCM, Mozilla, Apple, WNS) ◄─�
   dla rynków z alarmem). Identyfikatory, pary i łańcuchy dostają przedrostek urządzenia, więc alarmy różnych osób nie wpływają na
   siebie. Przy uruchomieniu wysyła Web Push (szyfrowanie aes128gcm wg RFC 8291, podpis VAPID; sprawdzone wektorem z RFC, bez
   zależności npm); przy błędzie przejściowym usługi push ponawia po 5 s, 30 s, 2 min i 10 min (`Retry-After` przy 429 wydłuża odstęp).
-  Po przerwie w WebSocket pobiera świece 1m z API od ostatniej przetworzonej transakcji i sprawdza na ich szczycie i dołku alarmy
-  dotknięcia (świeca w całości po ustawieniu alarmu i w jego oknie; powiadomienie z dopiskiem o przerwie). Zdarzenia (uruchomione,
-  wygasłe, anulowane, starty z łańcucha) wracają do skrzynki co 1 s, a z niej do przeglądarki przy następnej wizycie; do przyjęcia
+  Tytuł powiadomienia to rynek i co się stało. Luka w taśmie (przerwa w WebSocket albo restart usługi) trwa od ostatniej
+  przetworzonej transakcji do pierwszej po niej; transakcje z migawki po powrocie połączenia sprzed luki nie liczą się drugi raz.
+  Lukę uzupełnia jedno zapytanie o świece 1m z API: dotknięcia ze szczytu i dołka (minuta w całości po ustawieniu alarmu i w jego
+  oknie), uzbrojenie powrotów, skrajne ceny dla wyciskania i zamknięcia świec każdego interwału, które skończyły się w luce
+  (zamknięcie = ostatnia świeca 1m przed końcem; przy filtrze delty dopisek, że delty nie dało się sprawdzić). Do tego czasu silnik
+  wstrzymuje zamknięcia świec z taśmy po luce (seria zamknięć liczy się po kolei) i wygaśnięcia z końcem okna w luce; dotknięcia
+  z taśmy działają bez czekania. Gdy API nie odpowie po 3 próbach, alarmy, którym luka mogła coś zakryć, wysyłają „krok”
+  (powiadomienie, że luki nie sprawdzono; alarm pilnuje dalej, a seria zamknięć zaczyna się od nowa). Zdarzenia (uruchomione,
+  wygasłe, anulowane, kroki, starty z łańcucha) wracają do skrzynki co 1 s, a z niej do przeglądarki przy następnej wizycie; do przyjęcia
   przez skrzynkę są od razu zapisane w `HQ_STATE_DIR/alerts-pending.json`, więc po twardej awarii alarm nie wraca ze skrzynki
-  i nie uruchamia się drugi raz. Stan pilnowania (powrót uzbrojony, seria zamknięć) co 30 s w `HQ_STATE_DIR/alerts-state.json`,
-  a obok puls dla strażnika `alerts-pulse.json` (czas zapisu, ostatnia udana synchronizacja ze skrzynką, najstarszy ostatni
-  komunikat Hyperliquid z rynków z alarmem).
+  i nie uruchamia się drugi raz. Stan pilnowania (powrót uzbrojony, seria zamknięć) i ostatnia transakcja każdego rynku (po
+  restarcie od niej liczy się luka) co 30 s i przy zatrzymaniu w `HQ_STATE_DIR/alerts-state.json`, a obok puls dla strażnika
+  `alerts-pulse.json` (czas zapisu, ostatnia udana synchronizacja ze skrzynką, najstarszy ostatni komunikat Hyperliquid z rynków
+  z alarmem). Co godzinę dziennik podaje opóźnienie od zdarzenia z taśmy (transakcja albo koniec świecy) do przyjęcia powiadomienia
+  przez usługę push: p50, p95 i najwięcej. Rodzaj alarmu i pola z nowszej wersji strony skrzynka i serwer zachowują bez zmian,
+  a silnik pomija nieznany rodzaj, więc nowe rodzaje można wdrażać stroną po skrzynce i serwerze.
 - **Klucze bez wspólnego sekretu.** Przy pierwszym starcie serwer tworzy klucze VAPID i Ed25519 w `HQ_STATE_DIR/alerts-keys.json`
   (`0600`), a części publiczne zapisuje do `HQ_OUT_DIR/alerts/keys.json`, które skaner publikuje w repo danych. Zapytania serwera
   do skrzynki są podpisane Ed25519 (metoda, ścieżka, czas, treść; okno 60 s), skrzynka sprawdza je kluczem z repo danych. Nowe klucze

@@ -1,5 +1,24 @@
 import { describe, expect, it } from 'vitest';
-import { AlertEngine, type AlertRule, type AlertTrade, defaultDir, eventBody, eventText, factsText, fmtLevel, ruleText } from '../alertRules';
+import {
+  AlertEngine,
+  type AlertEvent,
+  type AlertRule,
+  type AlertTrade,
+  EVENT_TYPES,
+  defaultDir,
+  endsAlert,
+  eventBody,
+  eventText,
+  eventTitle,
+  factsText,
+  fmtLevel,
+  isZeroHash,
+  knownKind,
+  parseEvent,
+  parseRules,
+  ruleText,
+  tradeKey,
+} from '../alertRules';
 
 const T0 = Date.UTC(2026, 9, 29, 7, 0); // 08:00 PL, początek świecy 15m
 const M = 60_000;
@@ -110,43 +129,274 @@ describe('alarmy: zamknięcie świecy', () => {
   });
 });
 
-describe('alarmy: dotknięcie w czasie przerwy w połączeniu', () => {
-  const candle = (t: number, h: number, l: number) => ({ t, h, l });
+describe('alarmy: luka w taśmie (serwer uzupełnia ją świecami 1m z API)', () => {
+  const candle = (t: number, h: number, l: number, c = (h + l) / 2) => ({ t, h, l, c });
+  /** Silnik serwera z luką w taśmie od transakcji `from` do pierwszej po przerwie `to` (obie po `px`). */
+  function withHole(rules: AlertRule[], from: number, to: number, px = 64_700) {
+    const e = new AlertEngine(true);
+    let { list } = run(e, rules, [tr(from, px)]);
+    e.gap('BTC');
+    ({ list } = run(e, list, [tr(to, px)]));
+    return { e, list };
+  }
 
-  it('przerwa, w świecy 1m z API cena przechodzi przez poziom: alarm odpala raz, transakcje po powrocie go nie powtarzają', () => {
-    const e = new AlertEngine();
+  it('dotknięcie w luce: alarm odpala raz ze świecy 1m, transakcje z migawki sprzed przerwy się nie liczą, po luce bez powtórki', () => {
+    const e = new AlertEngine(true);
     const r = rule({ price: 64_670, dir: -1 });
-    run(e, [r], [tr(T0 + 2 * M + 5000, 64_700)]);
-    const from = e.gap('BTC');
-    expect(from).toBe(T0 + 2 * M + 5000);
-    const g = e.onGapCandles([r], 'BTC', [candle(T0 + 2 * M, 64_710, 64_690), candle(T0 + 3 * M, 64_700, 64_660), candle(T0 + 4 * M, 64_680, 64_650)]);
+    let res = run(e, [r], [tr(T0 + 2 * M + 5000, 64_700)]);
+    expect(e.gap('BTC')).toBe(T0 + 2 * M + 5000);
+    expect(e.hole('BTC')).toBeNull();
+    // Migawka po powrocie połączenia: transakcja sprzed przerwy (i ta sama ostatnia) pominięta, luka do pierwszej nowej
+    res = run(e, res.list, [tr(T0 + 2 * M + 1000, 64_700), tr(T0 + 2 * M + 5000, 64_700), tr(T0 + 5 * M + 10_000, 64_690)]);
+    expect(e.hole('BTC')).toEqual({ from: T0 + 2 * M + 5000, to: T0 + 5 * M + 10_000 });
+    const g = e.fillGap(res.list, 'BTC', T0 + 5 * M + 10_000, [candle(T0 + 2 * M, 64_710, 64_690), candle(T0 + 3 * M, 64_700, 64_660), candle(T0 + 4 * M, 64_680, 64_650)]);
     expect(g.events).toHaveLength(1);
     expect(g.events[0]).toMatchObject({ type: 'fire', at: T0 + 3 * M, px: 64_670, gap: true, facts: null });
     expect(g.rules).toEqual([]);
-    expect(run(e, g.rules!, [tr(T0 + 5 * M, 64_640)]).events).toEqual([]);
+    expect(e.hole('BTC')).toBeNull();
+    expect(run(e, g.rules!, [tr(T0 + 6 * M, 64_640)]).events).toEqual([]);
     expect(eventBody(g.events[0], 'pl')).toBe(`${eventText(g.events[0], 'pl')}. Dotknięcie w czasie przerwy w połączeniu z giełdą (świeca 1m).`);
     expect(eventBody(g.events[0], 'en')).toMatch(/Touched while the connection to the exchange was down/);
   });
 
-  it('liczy się tylko świeca w całości po ustawieniu alarmu i w jego oknie; inne warunki niż dotknięcie — bez zmian', () => {
-    const e = new AlertEngine();
+  it('dotknięcie: liczy się tylko minuta w całości po ustawieniu alarmu i w jego oknie', () => {
     const set = rule({ id: 'set', created: T0 + 3 * M + 20_000 }); // ustawiony w środku minuty 3
     const win = rule({ id: 'win', from: T0, until: T0 + 3 * M + 30_000 }); // okno kończy się w środku minuty 3
-    const close = rule({ id: 'close', kind: 'close', iv: '1m' });
-    const g = e.onGapCandles([set, win, close], 'BTC', [candle(T0 + 3 * M, 64_700, 64_600)]);
+    const { e, list } = withHole([set, win], T0 + 3 * M + 25_000, T0 + 3 * M + 29_000);
+    const g = e.fillGap(list, 'BTC', T0 + 3 * M + 29_000, [candle(T0 + 3 * M, 64_700, 64_600)]);
     expect(g.events).toEqual([]);
     expect(g.rules).toBeNull();
   });
 
-  it('para: dotknięcie z przerwy kasuje drugi alarm pary', () => {
-    const e = new AlertEngine();
+  it('para: dotknięcie z luki kasuje drugi alarm pary', () => {
     const up = rule({ id: 'up', price: 64_800, dir: 1, pair: 'p' });
     const down = rule({ id: 'down', price: 64_500, dir: -1, pair: 'p' });
-    const g = e.onGapCandles([up, down], 'BTC', [candle(T0 + M, 64_810, 64_700)]);
+    const { e, list } = withHole([up, down], T0 + 10_000, T0 + M + 50_000);
+    const g = e.fillGap(list, 'BTC', T0 + M + 50_000, [candle(T0 + M, 64_810, 64_700)]);
     expect(g.events.map((x) => [x.type, x.rule.id])).toEqual([
       ['fire', 'up'],
       ['cancel', 'down'],
     ]);
+  });
+
+  it('przerwa na granicy świecy 5m: zamknięcie z luki dzwoni ze świec 1m; przy filtrze delty dopisek, że delty nie sprawdzono', () => {
+    const c = rule({ id: 'c', kind: 'close', iv: '5m', dir: -1, price: 64_660 });
+    const d = rule({ id: 'd', kind: 'close', iv: '5m', dir: -1, price: 64_660, delta: true });
+    const e = new AlertEngine(true);
+    let res = run(e, [c, d], [tr(T0 + M, 64_700), tr(T0 + 5 * M - 100, 64_650, 1, -1)]);
+    e.gap('BTC');
+    res = run(e, res.list, [tr(T0 + 5 * M + 3000, 64_655)]);
+    expect(res.events).toEqual([]);
+    expect(e.hole('BTC')).toEqual({ from: T0 + 5 * M - 100, to: T0 + 5 * M + 3000 });
+    const g = e.fillGap(res.list, 'BTC', T0 + 5 * M + 3000, [candle(T0 + 4 * M, 64_700, 64_640, 64_650), candle(T0 + 5 * M, 64_660, 64_650, 64_655)]);
+    expect(g.events.map((x) => [x.type, x.rule.id, x.at, x.px, x.gap])).toEqual([
+      ['fire', 'c', T0 + 5 * M, 64_650, true],
+      ['fire', 'd', T0 + 5 * M, 64_650, true],
+    ]);
+    expect(eventBody(g.events[0], 'pl')).toMatch(/: świeca 5m zamknięta pod 64\u00a0660 \(64\u00a0650\)\. Zamknięcie świecy w czasie przerwy w połączeniu z giełdą \(ze świec 1m\)\.$/);
+    expect(eventBody(g.events[1], 'pl')).toMatch(/\(ze świec 1m\)\. Delta nieznana \(przerwa\), filtr delty niesprawdzony\.$/);
+    expect(eventBody(g.events[1], 'en')).toMatch(/Delta unknown \(gap\), the delta filter was not checked\.$/);
+    // Powiadomienie po dłuższej chwili mówi, ile minęło
+    expect(eventBody(g.events[0], 'pl', T0 + 25 * M)).toMatch(/ 20 min przed tym powiadomieniem\.$/);
+    expect(eventBody(g.events[0], 'pl', T0 + 5 * M + 30_000)).not.toMatch(/przed tym powiadomieniem/);
+    // Strona (bez uzupełniania luk) tego zamknięcia nie zna: seria liczy się od świecy po luce
+    const page = new AlertEngine();
+    let p = run(page, [c], [tr(T0 + M, 64_700), tr(T0 + 5 * M - 100, 64_650)]);
+    page.gap('BTC');
+    p = run(page, p.list, [tr(T0 + 5 * M + 3000, 64_655)]);
+    expect(p.events).toEqual([]);
+    expect(page.hole('BTC')).toBeNull();
+  });
+
+  it('seria przez lukę: zamknięcia z taśmy po luce czekają na nią, świeca z luki po złej stronie przerywa serię', () => {
+    const r = rule({ kind: 'close', iv: '5m', dir: -1, price: 64_660, closes: 2 });
+    const tape = (e: AlertEngine) => {
+      let res = run(e, [r], [tr(T0 + M, 64_700), tr(T0 + 4 * M, 64_650), tr(T0 + 5 * M + 1000, 64_650)]);
+      expect(res.list[0].streak).toBe(1);
+      e.gap('BTC');
+      // Po luce taśma zamyka świecę 10–15 za poziomem, zanim przyjdą świece z API: wynik czeka
+      res = run(e, res.list, [tr(T0 + 10 * M + 2000, 64_640), tr(T0 + 14 * M, 64_640), tr(T0 + 15 * M + 500, 64_640)]);
+      expect(res.events).toEqual([]);
+      return res.list;
+    };
+    const minutes = (last: number) => [5, 6, 7, 8, 9].map((k) => candle(T0 + k * M, 64_710, 64_640, k === 9 ? last : 64_650));
+    const back = new AlertEngine(true);
+    const list = tape(back);
+    const g1 = back.fillGap(list, 'BTC', T0 + 10 * M + 2000, minutes(64_700));
+    expect(g1.events).toEqual([]);
+    // Świeca 5–10 (z luki) nad poziomem zeruje serię, świeca 10–15 (z taśmy, po niej) zaczyna nową
+    expect((g1.rules ?? list)[0].streak).toBe(1);
+    const on = new AlertEngine(true);
+    const g2 = on.fillGap(tape(on), 'BTC', T0 + 10 * M + 2000, minutes(64_650));
+    expect(g2.events.map((x) => [x.type, x.at, x.px, x.gap])).toEqual([['fire', T0 + 10 * M, 64_650, true]]);
+  });
+
+  it('koniec okna w luce: wygaśnięcie dopiero po uzupełnieniu, zamknięcie świecy dokładnie o „do” dzwoni', () => {
+    const r = rule({ kind: 'close', dir: -1, price: 64_660, until: T0 + 15 * M });
+    const tape = (e: AlertEngine) => {
+      let res = run(e, [r], [tr(T0 + M, 64_700), tr(T0 + 14 * M + 50_000, 64_650)]);
+      e.gap('BTC');
+      res = run(e, res.list, [tr(T0 + 15 * M + 20_000, 64_650)]);
+      expect(res.events).toEqual([]);
+      return res.list;
+    };
+    const fire = new AlertEngine(true);
+    const g1 = fire.fillGap(tape(fire), 'BTC', T0 + 15 * M + 20_000, [candle(T0 + 14 * M, 64_700, 64_640, 64_650)]);
+    expect(g1.events.map((x) => [x.type, x.at])).toEqual([['fire', T0 + 15 * M]]);
+    const off = new AlertEngine(true);
+    const g2 = off.fillGap(tape(off), 'BTC', T0 + 15 * M + 20_000, [candle(T0 + 14 * M, 64_700, 64_640, 64_680)]);
+    expect(g2.events.map((x) => [x.type, x.at])).toEqual([['expire', T0 + 15 * M]]);
+  });
+
+  it('powrót: zejście pod poziom w luce uzbraja alarm, zamknięcie z powrotem z taśmy po luce go uruchamia', () => {
+    const r = rule({ kind: 'reclaim', iv: '15m', dir: 1, price: 64_670 });
+    const { e, list } = withHole([r], T0 + M, T0 + 3 * M + 30_000);
+    const g = e.fillGap(list, 'BTC', T0 + 3 * M + 30_000, [candle(T0 + 2 * M, 64_700, 64_620, 64_690)]);
+    expect(g.rules?.[0].armed).toBe(true);
+    const res = run(e, g.rules!, [tr(T0 + 14 * M, 64_690), tr(T0 + 15 * M + 1, 64_700)]);
+    expect(res.events.map((x) => [x.type, x.at, x.px])).toEqual([['fire', T0 + 15 * M, 64_690]]);
+  });
+
+  it('API bez świec: „krok” z informacją o niesprawdzonej luce (alarm pilnuje dalej), seria zamknięć od nowa', () => {
+    const t = rule({ id: 't', price: 64_500 });
+    const c = rule({ id: 'c', kind: 'close', iv: '5m', dir: -1, price: 64_660, closes: 2, streak: 1 });
+    const h = rule({ id: 'h', kind: 'close', iv: '1h', dir: -1, price: 64_660 }); // żadna świeca 1h nie skończyła się w luce
+    const x = rule({ id: 'x', price: 64_000, after: 't' });
+    const { e, list } = withHole([t, c, h, x], T0 + 3 * M, T0 + 7 * M);
+    const g = e.fillGap(list, 'BTC', T0 + 7 * M, null);
+    expect(g.events.map((v) => [v.type, v.rule.id, v.hole])).toEqual([
+      ['step', 't', { from: T0 + 3 * M, to: T0 + 7 * M }],
+      ['step', 'c', { from: T0 + 3 * M, to: T0 + 7 * M }],
+    ]);
+    expect(g.rules?.map((v) => [v.id, v.streak, v.after])).toEqual([
+      ['t', 0, ''],
+      ['c', 0, ''],
+      ['h', 0, ''],
+      ['x', 0, 't'],
+    ]);
+    expect(e.hole('BTC')).toBeNull();
+    expect(eventText(g.events[0], 'pl')).toBe('Alarm BTC 64\u00a0500 nadal działa, ale nie sprawdził 4 min przerwy w danych z giełdy (API nie dało świec)');
+    expect(eventText(g.events[0], 'en')).toBe('BTC alert at 64,500 is still on, but could not check a 4 min gap in the exchange data (no candles from the API)');
+    expect(eventTitle(g.events[0], 'pl')).toBe('BTC · alarm 64\u00a0500: przerwa w danych niesprawdzona');
+  });
+
+  it('druga przerwa przed uzupełnieniem wydłuża lukę; odpowiedź do starego końca zostawia resztę', () => {
+    const r = rule({ kind: 'close', iv: '5m', dir: -1, price: 64_660 });
+    const e = new AlertEngine(true);
+    let res = run(e, [r], [tr(T0 + M, 64_700)]);
+    e.gap('BTC');
+    res = run(e, res.list, [tr(T0 + 2 * M, 64_700)]);
+    e.gap('BTC');
+    res = run(e, res.list, [tr(T0 + 7 * M, 64_700)]);
+    expect(e.hole('BTC')).toEqual({ from: T0 + M, to: T0 + 7 * M });
+    const part = e.fillGap(res.list, 'BTC', T0 + 2 * M, [candle(T0 + M, 64_710, 64_690)]);
+    expect(part.events).toEqual([]);
+    expect(e.hole('BTC')).toEqual({ from: T0 + 2 * M, to: T0 + 7 * M });
+    const rest = e.fillGap(res.list, 'BTC', T0 + 7 * M, [2, 3, 4, 5, 6].map((k) => candle(T0 + k * M, 64_700, 64_640, 64_650)));
+    expect(rest.events.map((x) => [x.type, x.at])).toEqual([['fire', T0 + 5 * M]]);
+    expect(e.hole('BTC')).toBeNull();
+  });
+
+  it('stan do zapisu: ostatnia transakcja rynku, przy luce jej początek; po restarcie luka od zapisanej chwili', () => {
+    const e = new AlertEngine(true);
+    run(e, [rule({})], [tr(T0 + M, 64_700)]);
+    expect(e.lastTrades()).toEqual({ BTC: T0 + M });
+    e.gap('BTC');
+    run(e, [rule({})], [tr(T0 + 3 * M, 64_700)]);
+    expect(e.lastTrades()).toEqual({ BTC: T0 + M });
+    const fresh = new AlertEngine(true);
+    fresh.gap('BTC', T0 + M);
+    run(fresh, [rule({})], [tr(T0 + M, 64_700), tr(T0 + 2 * M, 64_700)]);
+    expect(fresh.hole('BTC')).toEqual({ from: T0 + M, to: T0 + 2 * M });
+    fresh.reset('BTC');
+    expect(fresh.lastTrades()).toEqual({});
+  });
+});
+
+describe('alarmy: zamknięcie o końcu okna (bez luki)', () => {
+  it('świeca kończąca się dokładnie o „do” uruchamia alarm zamiast wygaśnięcia', () => {
+    const e = new AlertEngine();
+    const r = rule({ kind: 'close', dir: -1, price: 64_660, until: T0 + 15 * M });
+    const { events } = run(e, [r], [tr(T0 + M, 64_700), tr(T0 + 14 * M, 64_650), tr(T0 + 15 * M + 500, 64_640)]);
+    expect(events.map((x) => [x.type, x.at])).toEqual([['fire', T0 + 15 * M]]);
+    // Następna świeca jest już po oknie
+    const late = rule({ kind: 'close', dir: -1, price: 64_660, until: T0 + 14 * M });
+    expect(run(new AlertEngine(), [late], [tr(T0 + M, 64_700), tr(T0 + 14 * M - 1, 64_650), tr(T0 + 15 * M + 500, 64_640)]).events.map((x) => x.type)).toEqual(['expire']);
+  });
+});
+
+describe('alarmy: zgodność w przód i „krok”', () => {
+  it('rodzaj i pola z nowszej wersji zostają w zapisie; alarm bez rodzaju z poprzedniej wersji to dotknięcie', () => {
+    const raw = [
+      { id: 'n', coin: 'BTC', price: 64_700, kind: 'time', dir: 1, created: T0, mins: 45, fillBy: T0 + 5 * M, label: 'wyjście', bad: { x: 1 }, 'x-y': 1 },
+      { id: 'o', coin: 'BTC', price: 64_700, dir: 1, created: T0 },
+    ];
+    const [n, o] = parseRules(JSON.parse(JSON.stringify(raw)), T0);
+    expect(n).toMatchObject({ kind: 'time', mins: 45, fillBy: T0 + 5 * M, label: 'wyjście' });
+    expect(n).not.toHaveProperty('bad');
+    expect(n).not.toHaveProperty('x-y');
+    expect(parseRules([n], T0)).toEqual([n]);
+    expect(o.kind).toBe('touch');
+    expect(knownKind('time')).toBe(false);
+    expect(ruleText(n, 'pl')).toBe('alarm z nowszej wersji strony');
+  });
+
+  it('silnik pomija nieznany rodzaj (bez strumienia, bez zdarzeń, bez wygaśnięcia), para i łańcuch działają', () => {
+    const e = new AlertEngine();
+    const future = rule({ id: 'f', kind: 'time', until: T0 + M });
+    expect(e.intervals([future], 'BTC')).toEqual([]);
+    expect(run(e, [future], [tr(T0 + 2 * M, 1)]).events).toEqual([]);
+    const touch = rule({ id: 't', price: 64_600, pair: 'p' });
+    const paired = rule({ id: 'g', kind: 'time', pair: 'p' });
+    const child = rule({ id: 'c', kind: 'time', after: 't' });
+    const { events, list } = run(new AlertEngine(), [touch, paired, child], [tr(T0 + 1000, 64_590)]);
+    expect(events.map((x) => [x.type, x.rule.id])).toEqual([
+      ['fire', 't'],
+      ['cancel', 'g'],
+    ]);
+    expect(list).toEqual([expect.objectContaining({ id: 'c', after: '', created: T0 + 1000 })]);
+    expect(eventText({ type: 'fire', rule: future, at: 0, px: 64_000, facts: null }, 'pl')).toBe('Alarm BTC 64\u00a0670 zadziałał (64\u00a0000)');
+  });
+
+  it('krok nie kończy alarmu i nie rusza łańcucha; zdarzenia czytane z sieci zachowują lukę i jej informację', () => {
+    expect(EVENT_TYPES.filter((t) => endsAlert({ type: t }))).toEqual(['fire', 'expire', 'cancel']);
+    const step = { type: 'step', rule: rule({}), at: T0, px: 64_700, facts: null, hole: { from: T0 - M, to: T0 } };
+    expect(parseEvent(JSON.parse(JSON.stringify(step)), T0)).toEqual(step);
+    expect(parseEvent({ ...step, type: 'later' }, T0)).toBeNull();
+    expect(parseEvent({ ...step, type: 'fire', hole: undefined, gap: true }, T0)).toMatchObject({ type: 'fire', gap: true });
+  });
+});
+
+describe('alarmy: hash zerowy i tytuł powiadomienia', () => {
+  it('wypełnienia z hashem zerowym liczą się każde osobno w największych zleceniach, ich suma osobno', () => {
+    const Z = `0x${'0'.repeat(64)}`;
+    expect(tradeKey(Z, 7)).toBe('t7');
+    expect(tradeKey('0xab12', 7)).toBe('0xab12');
+    expect(tradeKey(undefined, 7)).toBe('t7');
+    expect(isZeroHash(Z)).toBe(true);
+    expect(isZeroHash('0xab12')).toBe(false);
+    const e = new AlertEngine();
+    const r = rule({ kind: 'close', dir: -1, price: 64_660 });
+    const z = (time: number, tid: number): AlertTrade => ({ time, px: 64_650, sz: 0.5, side: -1, key: tradeKey(Z, tid), zero: true });
+    run(e, [r], [tr(T0 - 1, 64_700), z(T0 + M, 1), z(T0 + 2 * M, 2), z(T0 + 3 * M, 3), tr(T0 + 4 * M, 64_640, 0.4, -1, '0xab12'), tr(T0 + 4 * M, 64_640, 0.3, -1, '0xab12')]);
+    const f = run(e, [r], [tr(T0 + 15 * M + 1, 64_640)]).events[0].facts!;
+    expect(f.maxSell).toBeCloseTo(0.7 * 64_640);
+    expect(f.noHashUsd).toBeCloseTo(1.5 * 64_650);
+    expect(factsText(f, 'BTC', 'pl')).toMatch(/, wypełnienia z hashem zerowym \(m\.in\. TWAP\) 97 tys\. \$/);
+    expect(factsText(f, 'BTC', 'en')).toMatch(/, zero-hash fills \(incl\. TWAP\) \$97K/);
+    expect(factsText({ ...f, noHashUsd: undefined }, 'BTC', 'pl')).not.toMatch(/hashem/);
+  });
+
+  it('tytuł: rynek i co się stało (PL/EN)', () => {
+    const ev = (p: Partial<AlertRule>, type: AlertEvent['type'] = 'fire'): AlertEvent => ({ type, rule: rule(p), at: T0, px: 64_650, facts: null });
+    expect(eventTitle(ev({}), 'pl')).toBe('BTC · cena doszła do 64\u00a0670');
+    expect(eventTitle(ev({}), 'en')).toBe('BTC · price at 64,670');
+    expect(eventTitle(ev({ kind: 'close', price: 64_660 }), 'pl')).toBe('BTC · zamknięcie 15m pod 64\u00a0660');
+    expect(eventTitle(ev({ kind: 'reclaim', dir: 1, iv: '5m' }), 'en')).toBe('BTC · back above 64,670 (5m)');
+    expect(eventTitle(ev({ kind: 'squeeze', dir: 1, price: 1 }), 'pl')).toBe('BTC · wyciskanie shortów');
+    expect(eventTitle(ev({ kind: 'squeeze', price: 1 }, 'expire'), 'en')).toBe('BTC · squeeze alert expired');
+    expect(eventTitle(ev({}, 'expire'), 'pl')).toBe('BTC · alarm 64\u00a0670 wygasł');
+    expect(eventTitle(ev({ kind: 'time' }), 'pl')).toBe('BTC · alarm 64\u00a0670');
   });
 });
 

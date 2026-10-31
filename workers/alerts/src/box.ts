@@ -1,4 +1,4 @@
-import { ALERT_MARKETS, type AlertEvent, type AlertRule, parseRules } from '../../../src/utils/alertRules.ts';
+import { ALERT_MARKETS, type AlertEvent, type AlertRule, endsAlert, parseEvent, parseRules } from '../../../src/utils/alertRules.ts';
 import { pushHostOk, signedMessage } from '../../../src/utils/alertsServer.ts';
 
 /**
@@ -105,11 +105,11 @@ export function parseSub(v: unknown): Sub | null {
   return { endpoint: s.endpoint, p256dh: p, auth: a };
 }
 
-/** Alarmy z przeglądarki: poprawne, na rynkach desku, najwyżej MAX_RULES. */
+/** Alarmy z przeglądarki: poprawne, na rynkach desku, najwyżej MAX_RULES najnowszych (strona dopisuje nowe na końcu listy). */
 const cleanRules = (raw: unknown, now: number): AlertRule[] =>
   parseRules(raw, now)
     .filter((r) => (ALERT_MARKETS as readonly string[]).includes(r.coin))
-    .slice(0, MAX_RULES);
+    .slice(-MAX_RULES);
 
 async function readJson(req: Request): Promise<{ text: string; data: Record<string, unknown> }> {
   const text = await req.text();
@@ -173,7 +173,7 @@ interface EventRow {
   body: string;
 }
 
-/** Zdarzenia serwera dla urządzenia: zakończone alarmy (do usunięcia), starty z łańcucha i historia od `since`. */
+/** Zdarzenia serwera dla urządzenia: zakończone alarmy (do usunięcia; krok nie kończy), starty z łańcucha i historia od `since`. */
 async function deviceEvents(env: Env, id: string, since: number) {
   const rows = (await env.DB.prepare('SELECT rule, kind, at, body FROM events WHERE device = ? ORDER BY at').bind(id).all<EventRow>()).results;
   const done = new Set<string>();
@@ -182,7 +182,7 @@ async function deviceEvents(env: Env, id: string, since: number) {
   for (const r of rows) {
     if (r.kind === 'start') starts.set(r.rule, JSON.parse(r.body) as { created: number; from: number });
     else {
-      done.add(r.rule);
+      if (endsAlert({ type: r.kind })) done.add(r.rule);
       if (r.at > since) log.push(JSON.parse(r.body) as AlertEvent);
     }
   }
@@ -298,7 +298,7 @@ interface ReportEvent extends AlertEvent {
   device: string;
 }
 
-/** Zdarzenia z serwera: zakończone alarmy znikają z urządzeń, starty z łańcucha są zapisane, wygasłe subskrypcje usunięte. */
+/** Zdarzenia z serwera: zakończone alarmy znikają z urządzeń (po kroku zostają), starty z łańcucha są zapisane, wygasłe subskrypcje usunięte. */
 async function report(env: Env, data: Record<string, unknown>, now: number) {
   const events = (Array.isArray(data.events) ? data.events : []).slice(0, 1000) as ReportEvent[];
   const starts = (Array.isArray(data.starts) ? data.starts : []).slice(0, 1000) as { device: string; id: string; created: number; from: number }[];
@@ -307,11 +307,10 @@ async function report(env: Env, data: Record<string, unknown>, now: number) {
   const of = (d: string) => byDevice.get(d) ?? byDevice.set(d, { done: new Set(), starts: new Map() }).get(d)!;
   const stmts: D1Stmt[] = [bump(env.DB)];
   for (const e of events) {
-    const [rule] = parseRules([e?.rule], now);
-    if (typeof e?.device !== 'string' || !rule || (e.type !== 'fire' && e.type !== 'expire' && e.type !== 'cancel') || typeof e.at !== 'number' || typeof e.px !== 'number') continue;
-    of(e.device).done.add(rule.id);
-    const body: AlertEvent = { type: e.type, rule, at: e.at, px: e.px, facts: e.facts && typeof e.facts === 'object' ? e.facts : null, ...(e.gap === true ? { gap: true } : {}) };
-    stmts.push(env.DB.prepare('INSERT INTO events (device, rule, kind, at, body) VALUES (?, ?, ?, ?, ?)').bind(e.device, rule.id, e.type, e.at, JSON.stringify(body)));
+    const body = parseEvent(e, now);
+    if (typeof e?.device !== 'string' || !body) continue;
+    if (endsAlert(body)) of(e.device).done.add(body.rule.id);
+    stmts.push(env.DB.prepare('INSERT INTO events (device, rule, kind, at, body) VALUES (?, ?, ?, ?, ?)').bind(e.device, body.rule.id, body.type, body.at, JSON.stringify(body)));
   }
   for (const s of starts) {
     if (typeof s?.device !== 'string' || typeof s.id !== 'string' || typeof s.created !== 'number' || typeof s.from !== 'number') continue;

@@ -2,12 +2,12 @@ import React, { useState, useSyncExternalStore } from 'react';
 import { Bell, Pencil, Trash2, Volume2, X } from 'lucide-react';
 import { Segmented } from '../../../ui';
 import { lang, tr } from '../../../i18n';
-import { ALERT_INTERVALS, type AlertKind, DEFAULT_TTL_MS, NOTE_MAX, defaultDir, eventBody, ruleText } from '../../../utils/alertRules';
+import { ALERT_INTERVALS, type AlertKind, DEFAULT_TTL_MS, NOTE_MAX, defaultDir, eventBody, knownKind, ruleText } from '../../../utils/alertRules';
 import { fmtHm, fmtSince } from '../core/time';
 import { fmtPx } from './layout';
 import { type AlertSpec, MAX_ALERTS, type PriceAlert, alertBook, alertLog, askNotifications, newAlert, parsePriceInput, primeAlertSound, removeAlert, windowOf } from './alerts';
 import { testAlert } from './alertWatch';
-import { PUSH_MAX, disablePush, enablePush, pushNeedsHomeScreen, usePushStatus } from './pushAlerts';
+import { PUSH_MAX, disablePush, enablePush, pushNeedsHomeScreen, pushWatched, usePushStatus } from './pushAlerts';
 
 /** Cena z wykresu, od której zaczyna formularz (menu pod prawym przyciskiem albo zaznaczona linia pozioma). */
 export interface AlertDraft {
@@ -52,6 +52,8 @@ export const AlertsMenu: React.FC<{ coin: string; price: number; draft: AlertDra
   const [editing, setEditing] = useState<string | null>(null);
   const [perm, setPerm] = useState<NotificationPermission | 'none'>(() => ('Notification' in window ? Notification.permission : 'none'));
   const push = usePushStatus();
+  // Ponad limit serwera: starsze alarmy pilnuje tylko otwarta strona
+  const served = push === 'on' && alerts.length > PUSH_MAX ? pushWatched(alerts) : null;
 
   const squeeze = kind === 'squeeze';
   const candle = kind === 'close' || kind === 'reclaim';
@@ -89,6 +91,7 @@ export const AlertsMenu: React.FC<{ coin: string; price: number; draft: AlertDra
   };
 
   const edit = (a: PriceAlert) => {
+    if (!knownKind(a.kind)) return;
     setEditing(a.id);
     setKind(a.kind);
     setText(a.kind === 'squeeze' ? fmtPct(a.price) : fmtPx(a.price));
@@ -284,10 +287,15 @@ export const AlertsMenu: React.FC<{ coin: string; price: number; draft: AlertDra
                     <span className="font-mono text-ink-3">{a.coin}</span> {ruleText(a, lang)}
                   </div>
                   <div className="text-[11px] text-ink-3 leading-snug">{statusText(a, alerts)}</div>
+                  {served && !served.has(a.id) && (
+                    <div className="text-[11px] text-warn leading-snug">{tr('Poza limitem serwera 24/7: tylko przy otwartej stronie', 'Over the 24/7 server limit: only while the page is open')}</div>
+                  )}
                 </div>
-                <IconBtn label={tr('Zmień alarm', 'Edit alert')} onClick={() => edit(a)}>
-                  <Pencil className="w-3.5 h-3.5" />
-                </IconBtn>
+                {knownKind(a.kind) && (
+                  <IconBtn label={tr('Zmień alarm', 'Edit alert')} onClick={() => edit(a)}>
+                    <Pencil className="w-3.5 h-3.5" />
+                  </IconBtn>
+                )}
                 <IconBtn
                   label={a.kind === 'squeeze' ? tr(`Usuń alarm wyciskania ${a.coin}`, `Remove ${a.coin} squeeze alert`) : tr(`Usuń alarm ${a.coin} ${fmtPx(a.price)}`, `Remove alert ${a.coin} ${fmtPx(a.price)}`)}
                   onClick={() => removeAlert(a.id)}
@@ -365,6 +373,14 @@ export const AlertsMenu: React.FC<{ coin: string; price: number; draft: AlertDra
                     `The alert arrives even with the page closed and the phone locked: the HyperQuant server watches it (up to ${PUSH_MAX} alerts on this device).`
                   )}
             </p>
+            {served && (
+              <p className="text-[11px] leading-snug text-warn">
+                {tr(
+                  `Serwer pilnuje ${PUSH_MAX} najnowszych z ${alerts.length} alarmów. Starsze (oznaczone na liście) dzwonią tylko przy otwartej stronie: usuń zbędne albo zostaw kartę otwartą.`,
+                  `The server watches the ${PUSH_MAX} newest of ${alerts.length} alerts. Older ones (marked in the list) ring only while the page is open: remove the ones you don't need or keep the tab open.`
+                )}
+              </p>
+            )}
             <p className="text-[11px] leading-snug text-ink-3">
               {tr(
                 'Zapisujemy tylko adres powiadomień tej przeglądarki, alarmy i język. Bez konta i e-maila, adresu IP nie zapisujemy. Wyłączenie usuwa wszystko, a urządzenie nieużywane 30 dni znika samo.',

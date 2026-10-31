@@ -1,13 +1,13 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { ALERT_MARKETS, AlertEngine, type AlertEvent, type AlertRule, type AlertTrade, eventBody, ivMs } from '../../src/utils/alertRules.ts';
+import { ALERT_MARKETS, type AlertCandle, AlertEngine, type AlertEvent, type AlertRule, type AlertTrade, eventBody, eventTitle, isZeroHash, ivMs, tradeKey } from '../../src/utils/alertRules.ts';
 import { ALERTS_URL } from '../../src/utils/alertsServer.ts';
 import { HlRest, HlStream, type HlTrade } from '../scanner/hl.ts';
 import { WeightLimiter } from '../scanner/rateLimiter.ts';
-import { DeviceBook, type DeviceEvent, type DeviceStart } from './book.ts';
+import { DeviceBook, type DeviceEvent, type DeviceStart, readState } from './book.ts';
 import { loadKeys } from './keys.ts';
 import { Mailbox } from './mailbox.ts';
-import { retryDelay, sendPush } from './push.ts';
+import { quantile, retryDelay, sendPush } from './push.ts';
 
 /**
  * Serwer powiadomień HyperQuant (VPS): pobiera ze skrzynki alarmy urządzeń z włączonym „24/7”, pilnuje ich na taśmie
@@ -28,6 +28,7 @@ const REPORT_MS = 1000;
 const SAVE_MS = 30_000;
 const SEED_MS = 6 * 3600_000;
 const PENDING_MAX = 5000;
+const MIN = 60_000;
 
 const log = (msg: string) => console.log(`[alarmy] ${msg}`);
 
@@ -45,15 +46,19 @@ const statePath = join(STATE_DIR, 'alerts-state.json');
 /** Zdarzenia jeszcze niezgłoszone skrzynce (zapisywane od razu: po twardej awarii alarm nie uruchomi się drugi raz) */
 const pendingPath = join(STATE_DIR, 'alerts-pending.json');
 const book = new DeviceBook();
+const engine = new AlertEngine(true);
 try {
-  book.restore(JSON.parse(readFileSync(statePath, 'utf8')) as Record<string, { armed?: unknown; streak?: unknown }>);
+  const st = readState(JSON.parse(readFileSync(statePath, 'utf8')));
+  book.restore(st.rules);
+  // Czas od ostatniej transakcji sprzed restartu to luka: świece 1m z API po pierwszej transakcji po starcie
+  for (const [coin, t] of Object.entries(st.last)) engine.gap(coin, t);
 } catch {
   // Pierwszy start albo brak alarmów w toku
 }
 
-const engine = new AlertEngine();
 const mailbox = URL_ ? new Mailbox(URL_, keys.sign) : null;
-const rest = new HlRest(new WeightLimiter(60));
+// Ten sam adres IP co skaner (razem najwyżej 800 wag/min z limitu giełdy 1200): luka w taśmie to jedno zapytanie od razu
+const rest = new HlRest(new WeightLimiter(120));
 const streams = new Map<string, HlStream>();
 const seeded = new Map<string, number>();
 let cursor = '0';
@@ -70,13 +75,15 @@ try {
   // Pierwszy start albo wszystko zgłoszone
 }
 const stats = { sent: 0, gone: 0, failed: 0 };
+/** Opóźnienie uruchomienia z taśmy (transakcja albo koniec świecy) do przyjęcia powiadomienia przez usługę push, ms. */
+let latency: number[] = [];
 const pulsePath = join(STATE_DIR, 'alerts-pulse.json');
 // Start liczy się jak synchronizacja: strażnik ocenia ciszę dopiero od uruchomienia
 let syncOkAt = Date.now();
 /** Ostatni komunikat Hyperliquid na rynek ze strumieniem (transakcje albo kontekst rynku ~co 1 s). */
 const heard = new Map<string, number>();
-/** Początek przerwy w strumieniu rynku (ostatnia przetworzona transakcja): po powrocie połączenia dociągane są świece 1m. */
-const gapFrom = new Map<string, number>();
+/** Rynki, dla których trwa uzupełnianie luki w taśmie. */
+const filling = new Set<string>();
 
 function savePending(): void {
   writeJsonAtomic(pendingPath, { events: pending.events, starts: pending.starts, gone: [...pending.gone] });
@@ -96,14 +103,22 @@ async function seed(coin: string, iv: string): Promise<void> {
   engine.seedVolumes(coin, iv, (raw as { t: number; v: string }[]).map((c) => ({ t: Number(c.t), v: Number(c.v) })), Date.now());
 }
 
-/** Web Push alarmu; błąd przejściowy usługi push — ponowienia z rosnącym odstępem (`retryDelay`), dopiero potem nieudane. */
+/**
+ * Web Push alarmu (tytuł: rynek i co się stało); błąd przejściowy usługi push — ponowienia z rosnącym odstępem
+ * (`retryDelay`), dopiero potem nieudane. Kroki o niesprawdzonej luce mają wspólny znacznik rynku: na telefonie jedno
+ * powiadomienie zamiast jednego na każdy alarm.
+ */
 async function notify(e: DeviceEvent, attempt = 0): Promise<void> {
   const d = book.devices.get(e.device);
   if (!d) return;
-  const payload = { title: d.lang === 'en' ? 'HyperQuant · alert' : 'HyperQuant · alarm', body: eventBody(e, d.lang), tag: e.rule.id, url: `./#charts?m=${e.rule.coin}` };
-  const r = await sendPush(d, payload, keys.vapid, SUBJECT);
-  if (r === 'ok') stats.sent++;
-  else if (r === 'gone') {
+  const now = Date.now();
+  const tag = e.hole ? `gap-${e.rule.coin}` : e.rule.id;
+  const payload = { title: eventTitle(e, d.lang), body: eventBody(e, d.lang, now), tag, url: `./#charts?m=${e.rule.coin}` };
+  const r = await sendPush(d, payload, keys.vapid, SUBJECT, { now });
+  if (r === 'ok') {
+    stats.sent++;
+    if (e.type === 'fire' && !e.gap) latency.push(Date.now() - e.at);
+  } else if (r === 'gone') {
     stats.gone++;
     pending.gone.add(d.id);
     book.apply({ ...d, rules: null });
@@ -123,25 +138,42 @@ function apply(before: readonly AlertRule[], r: { rules: AlertRule[] | null; eve
   pending.events.push(...out.events);
   pending.starts.push(...out.starts);
   savePending();
-  for (const e of out.events) if (e.type === 'fire') void notify(e);
+  for (const e of out.events) if (e.type === 'fire' || e.type === 'step') void notify(e);
+}
+
+/** Świece 1m z API od `from` do `to`; null, gdy API nie odpowiedziało 3 razy. */
+async function minutes(coin: string, from: number, to: number): Promise<AlertCandle[] | null> {
+  const req = { type: 'candleSnapshot', req: { coin, interval: '1m', startTime: Math.floor(from / MIN) * MIN, endTime: to } };
+  let raw: unknown = null;
+  for (let k = 0; k < 3 && !Array.isArray(raw); k++) raw = await rest.info(req, 21);
+  if (!Array.isArray(raw)) return null;
+  return (raw as Record<string, unknown>[])
+    .map((c) => ({ t: Number(c.t), h: Number(c.h), l: Number(c.l), c: Number(c.c) }))
+    .filter((c) => c.t > 0 && c.h > 0 && c.l > 0 && c.c > 0);
 }
 
 /**
- * Po przerwie w strumieniu: świece 1m z API od początku przerwy przeciw alarmom dotknięcia (cena mogła dojść do poziomu,
- * gdy połączenie nie działało). Ten sam budżet wag co średnie wolumenu; bez odpowiedzi po 3 próbach — tylko wpis w dzienniku.
+ * Luka w taśmie rynku (przerwa w połączeniu albo restart usługi): świece 1m z API od ostatniej transakcji przed luką
+ * (albo od najstarszego alarmu rynku, gdy jest późniejszy) do pierwszej po niej, aż luka się zamknie. Do tego czasu
+ * silnik wstrzymuje zamknięcia świec i wygaśnięcia rynku; dotknięcia z taśmy działają bez czekania.
  */
-async function backfill(coin: string, from: number, to: number): Promise<void> {
-  if (!book.rules.some((r) => r.coin === coin && r.kind === 'touch')) return;
-  const req = { type: 'candleSnapshot', req: { coin, interval: '1m', startTime: Math.floor(from / 60_000) * 60_000, endTime: to } };
-  let raw: unknown = null;
-  for (let k = 0; k < 3 && !Array.isArray(raw); k++) raw = await rest.info(req, 21);
-  if (!Array.isArray(raw)) {
-    log(`${coin}: brak świec 1m z przerwy w połączeniu (${Math.round((to - from) / 1000)} s), dotknięcia z niej niesprawdzone`);
-    return;
+async function backfill(coin: string): Promise<void> {
+  if (filling.has(coin)) return;
+  filling.add(coin);
+  try {
+    for (let h = engine.hole(coin); h; h = engine.hole(coin)) {
+      const mine = book.rules.filter((r) => r.coin === coin);
+      const from = Math.max(h.from, Math.min(h.to, ...mine.map((r) => r.created)));
+      const candles = mine.length > 0 && from < h.to ? await minutes(coin, from, h.to) : [];
+      const before = book.rules;
+      const r = engine.fillGap(before, coin, h.to, candles);
+      apply(before, r);
+      const what = candles ? `uzupełniona (świece 1m: ${candles.length})` : 'NIESPRAWDZONA (API nie dało świec 1m po 3 próbach)';
+      log(`${coin}: luka w taśmie ${Math.round((h.to - h.from) / 1000)} s ${what}, zdarzenia: ${r.events.length}`);
+    }
+  } finally {
+    filling.delete(coin);
   }
-  const candles = (raw as { t: unknown; h: unknown; l: unknown }[]).map((c) => ({ t: Number(c.t), h: Number(c.h), l: Number(c.l) })).filter((c) => c.t > 0 && c.h > 0 && c.l > 0);
-  const before = book.rules;
-  apply(before, engine.onGapCandles(before, coin, candles));
 }
 
 function onTrades(coin: string, hl: HlTrade[]): void {
@@ -150,11 +182,12 @@ function onTrades(coin: string, hl: HlTrade[]): void {
     const px = Number(t.px);
     const sz = Number(t.sz);
     if (!(px > 0 && sz > 0) || (t.side !== 'B' && t.side !== 'A')) continue;
-    trades.push({ time: t.time, px, sz, side: t.side === 'B' ? 1 : -1, key: t.hash || `t${t.tid}` });
+    trades.push({ time: t.time, px, sz, side: t.side === 'B' ? 1 : -1, key: tradeKey(t.hash, t.tid), ...(isZeroHash(t.hash) ? { zero: true } : {}) });
   }
   if (trades.length === 0) return;
   const before = book.rules;
   apply(before, engine.onTrades(before, coin, trades));
+  if (engine.hole(coin)) void backfill(coin).catch((e) => log(`${coin}: błąd uzupełniania luki (${String(e)})`));
 }
 
 /** Strumień dla każdego rynku z alarmem (bez alarmów: zamknięty). */
@@ -167,8 +200,7 @@ function watch(): void {
         s.stop();
         streams.delete(coin);
         heard.delete(coin);
-        engine.gap(coin);
-        gapFrom.delete(coin);
+        engine.reset(coin);
       }
       continue;
     }
@@ -188,16 +220,8 @@ function watch(): void {
       WebSocket,
       null,
       (up) => {
-        // Zamknięcie strumienia bez alarmów (watch) to nie przerwa
-        if (streams.get(coin) !== st) return;
-        if (!up) {
-          const last = engine.gap(coin);
-          if (last > 0 && !gapFrom.has(coin)) gapFrom.set(coin, last);
-          return;
-        }
-        const from = gapFrom.get(coin);
-        gapFrom.delete(coin);
-        if (from !== undefined) void backfill(coin, from, Date.now()).catch((e) => log(`${coin}: błąd dociągania świec (${String(e)})`));
+        // Zamknięcie strumienia bez alarmów (watch) to nie przerwa; lukę zamyka pierwsza transakcja po powrocie połączenia
+        if (streams.get(coin) === st && !up) engine.gap(coin);
       }
     );
     streams.set(coin, st);
@@ -249,8 +273,9 @@ function savePulse(): void {
 }
 
 let saved = '';
+/** Stan pilnowania i ostatnia transakcja na rynek (po restarcie od niej liczy się luka do uzupełnienia). */
 function saveState(): void {
-  const s = JSON.stringify(book.snapshot());
+  const s = JSON.stringify({ v: 2, rules: book.snapshot(), last: engine.lastTrades() });
   if (s === saved) return;
   writeJsonAtomic(statePath, JSON.parse(s));
   saved = s;
@@ -272,7 +297,12 @@ setInterval(savePulse, SAVE_MS);
 setInterval(() => {
   if (stats.sent + stats.gone + stats.failed === 0) return;
   log(`powiadomienia w ostatniej godzinie: wysłane ${stats.sent}, wygasłe subskrypcje ${stats.gone}, nieudane ${stats.failed}`);
+  if (latency.length > 0) {
+    const l = [...latency].sort((a, b) => a - b);
+    log(`opóźnienie zdarzenie z taśmy → push przyjęty (${l.length}): p50 ${quantile(l, 0.5)} ms, p95 ${quantile(l, 0.95)} ms, najwięcej ${l[l.length - 1]} ms`);
+  }
   stats.sent = stats.gone = stats.failed = 0;
+  latency = [];
 }, 3600_000);
 
 for (const sig of ['SIGTERM', 'SIGINT'] as const)

@@ -1,5 +1,5 @@
-import { tr } from '../../../i18n';
-import { type AlertEvent, type AlertKind, type AlertRule, DEFAULT_TTL_MS, parseRules } from '../../../utils/alertRules';
+import { lang, tr } from '../../../i18n';
+import { type AlertEvent, type AlertKind, type AlertRule, DEFAULT_TTL_MS, eventBody, eventTitle, parseEvent, parseRules } from '../../../utils/alertRules';
 /**
  * Alarmy cenowe zapisywane w przeglądarce (warunki sprawdza `AlertEngine` z utils/alertRules, pilnowanie: alertWatch.ts):
  * lista alarmów, historia zdarzeń, dźwięk i powiadomienie systemowe. Bez serwera i bez kont.
@@ -60,11 +60,10 @@ export const parseAlerts = (raw: unknown): PriceAlert[] => parseRules(raw, Date.
 export function parseLog(raw: unknown): AlertEvent[] {
   if (!Array.isArray(raw)) return [];
   const out: AlertEvent[] = [];
+  const now = Date.now();
   for (const v of raw) {
-    const e = v as Partial<AlertEvent> | null;
-    if (!e || (e.type !== 'fire' && e.type !== 'expire' && e.type !== 'cancel') || typeof e.at !== 'number' || typeof e.px !== 'number') continue;
-    const [rule] = parseAlerts([e.rule]);
-    if (rule) out.push({ type: e.type, rule, at: e.at, px: e.px, facts: e.facts && typeof e.facts === 'object' ? e.facts : null });
+    const e = parseEvent(v, now);
+    if (e) out.push(e);
   }
   return out.slice(0, LOG_MAX);
 }
@@ -159,6 +158,9 @@ export function windowOf(fromHm: string, untilHm: string, now: number): [number,
   return [f < until ? f : clockAt(fromHm, until, -1), until];
 }
 
+/** Alarm z linią poziomu na wykresie (wyciskanie i rodzaje z nowszej wersji strony jej nie mają). */
+export const hasLine = (a: PriceAlert): boolean => a.kind === 'touch' || a.kind === 'close' || a.kind === 'reclaim';
+
 /** Krótki podpis linii alarmu przy osi ceny. */
 export function lineLabel(a: PriceAlert): string {
   const wait = a.after ? tr(' · czeka', ' · waiting') : '';
@@ -228,12 +230,11 @@ function alertTone(): void {
 }
 
 /**
- * Powiadomienie systemowe (po zgodzie przeglądarki), zostaje na ekranie do kliknięcia; `sound` — także sygnał.
- * Przez service worker, gdy jest (Android pozwala tylko tak, a kliknięcie wraca do karty desku).
+ * Powiadomienie systemowe (po zgodzie przeglądarki); `loud` — sygnał i powiadomienie zostaje na ekranie do kliknięcia
+ * (bez tego znika samo, jak każde inne). Przez service worker, gdy jest (Android pozwala tylko tak, a kliknięcie wraca do karty desku).
  */
-export function notifyAlert(body: string, tag: string, sound = true): void {
-  const title = tr('HyperQuant · alarm', 'HyperQuant · alert');
-  const opts: NotificationOptions = { body, tag, requireInteraction: true, icon: './icons/icon-192.png' };
+export function notifyAlert(title: string, body: string, tag: string, loud = true): void {
+  const opts: NotificationOptions = { body, tag, requireInteraction: loud, icon: './icons/icon-192.png' };
   try {
     if ('Notification' in window && Notification.permission === 'granted') {
       const plain = () => {
@@ -247,7 +248,13 @@ export function notifyAlert(body: string, tag: string, sound = true): void {
   } catch {
     // Część przeglądarek mobilnych nie ma konstruktora Notification — zostaje dźwięk i komunikat na wykresie
   }
-  if (sound) alertTone();
+  if (loud) alertTone();
+}
+
+/** Powiadomienie o zdarzeniu alarmu: uruchomienie (i krok) z sygnałem do kliknięcia, wygaśnięcie cicho i bez trzymania ekranu; anulowanie tylko w historii. */
+export function notifyEvent(e: AlertEvent): void {
+  if (e.type === 'cancel') return;
+  notifyAlert(eventTitle(e, lang), eventBody(e, lang, Date.now()), e.rule.id, e.type !== 'expire');
 }
 
 /** Prośba o zgodę na powiadomienia (raz, przy pierwszym alarmie albo przyciskiem w panelu). */

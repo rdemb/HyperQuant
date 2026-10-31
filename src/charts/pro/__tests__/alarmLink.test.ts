@@ -25,6 +25,14 @@ describe('link z alarmami', () => {
     expect(parseAlarmLink('#charts?alarm=1.@@@')).toBeNull();
   });
 
+  it('łańcuch w kółko odrzuca link; zwykły łańcuch kilku wpisów przechodzi', () => {
+    const a = (k: number): LinkAlarm => ({ c: 'BTC', p: 64_000 + k * 100, k: 't', a: k });
+    expect(parseAlarmLink(`#charts?alarm=${alarmParam([{ ...a(1) }, { ...a(0) }])}`)).toBeNull();
+    expect(parseAlarmLink(`#charts?alarm=${alarmParam([PLAN[0], { ...a(2) }, { ...a(1) }])}`)).toBeNull();
+    const chain = [PLAN[0], { ...a(0) }, { ...a(1) }];
+    expect(parseAlarmLink(`#charts?alarm=${alarmParam(chain)}`)).toEqual(chain);
+  });
+
   it('alarmy z zestawu: kierunek dotknięcia z ceny, okno z godzin lokalnych, para i łańcuch', () => {
     const local = new Date(2026, 9, 29, 10, 2).getTime();
     const list = linkAlerts(PLAN, () => 64_970, 1_000, local);

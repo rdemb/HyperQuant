@@ -77,6 +77,9 @@ export function retryDelay(attempt: number, retryAfterMs: number | null): number
   return Math.min(RETRY_MS[RETRY_MS.length - 1], Math.max(RETRY_MS[attempt], retryAfterMs ?? 0));
 }
 
+/** Kwantyl `q` posortowanych rosnąco wartości (najbliższa ranga: p50 z 4 wartości to druga). */
+export const quantile = (sorted: readonly number[], q: number): number => sorted[Math.min(sorted.length - 1, Math.max(0, Math.ceil(q * sorted.length) - 1))];
+
 /** Nagłówek `Retry-After` (sekundy albo data HTTP) w ms; brak albo zły — null. */
 export function parseRetryAfter(h: string | null, now: number): number | null {
   if (!h) return null;

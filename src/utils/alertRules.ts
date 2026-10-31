@@ -9,7 +9,14 @@ import type { Lang } from '../i18n.ts';
  * policzone z tej samej taśmy. Opis faktów, nie sygnał.
  */
 
-export type AlertKind = 'touch' | 'close' | 'reclaim' | 'squeeze';
+export const ALERT_KINDS = ['touch', 'close', 'reclaim', 'squeeze'] as const;
+export type AlertKind = (typeof ALERT_KINDS)[number];
+/**
+ * Rodzaj w zapisanym alarmie: znany tej wersji albo z nowszej wersji strony. Nieznany zostaje bez zmian w zapisie,
+ * skrzynce i na serwerze, a silnik go pomija (para i łańcuch nadal mogą go anulować albo uruchomić).
+ */
+export type RuleKind = AlertKind | (string & {});
+export const knownKind = (k: string): k is AlertKind => (ALERT_KINDS as readonly string[]).includes(k);
 
 export const ALERT_INTERVALS = ['1m', '5m', '15m', '30m', '1h', '4h'] as const;
 /** Rynki z alarmami (perpy Hyperliquid z widoku Wykresy). */
@@ -36,7 +43,7 @@ export interface AlertRule {
   coin: string;
   /** Poziom ceny; przy wyciskaniu próg ruchu ceny w % w oknie `SQUEEZE_MS`. */
   price: number;
-  kind: AlertKind;
+  kind: RuleKind;
   /**
    * Dotknięcie: 1 = cena ma wzrosnąć do poziomu, −1 = spaść do niego. Zamknięcie: 1 = nad poziomem, −1 = pod nim.
    * Powrót: 1 = po zejściu pod poziom zamknięcie z powrotem nad nim, −1 = po wyjściu nad poziom zamknięcie pod nim.
@@ -49,7 +56,10 @@ export interface AlertRule {
   closes: number;
   /** Świeca, która spełnia warunek, musi mieć deltę agresorów w kierunku `dir`. */
   delta: boolean;
-  /** Okno czasu [from, until) w zegarze giełdy (ms): poza nim alarm milczy, po `until` wygasa. */
+  /**
+   * Okno czasu w zegarze giełdy (ms): transakcje z [from, until), świece kończące się w [from, until] (także dokładnie
+   * o `until`); poza nim alarm milczy, po `until` wygasa.
+   */
   from: number;
   until: number;
   /** Para scenariuszy: pierwszy uruchomiony alarm kasuje pozostałe z tym samym znacznikiem ('' = bez pary). */
@@ -73,7 +83,14 @@ export interface AlertTrade {
   sz: number;
   side: 1 | -1;
   key: string;
+  /** Hash zerowy (m.in. podzlecenia TWAP): wypełnienie bez wspólnego zlecenia (`key` = numer transakcji). */
+  zero?: boolean;
 }
+
+const ZERO_HASH = /^0x0+$/;
+export const isZeroHash = (hash: string | undefined): boolean => typeof hash === 'string' && ZERO_HASH.test(hash);
+/** Klucz zlecenia transakcji z kanału `trades`: hash biorcy; bez hasha albo z zerowym (nie łączy wypełnień) — numer transakcji. */
+export const tradeKey = (hash: string | undefined, tid: unknown): string => (hash && !isZeroHash(hash) ? hash : `t${String(tid)}`);
 
 /** Fakty świecy z chwili alarmu (przy dotknięciu: bieżąca minuta). */
 export interface AlertFacts {
@@ -85,9 +102,11 @@ export interface AlertFacts {
   volX: number;
   /** Zmiana otwartych pozycji od początku świecy, % (NaN bez danych). */
   oiPct: number;
-  /** Największe zlecenie agresora po każdej stronie, USD. */
+  /** Największe zlecenie agresora po każdej stronie, USD (wypełnienia z hashem zerowym każde osobno). */
   maxBuy: number;
   maxSell: number;
+  /** Wartość wypełnień z hashem zerowym (m.in. podzlecenia TWAP), obie strony, USD; brak w zdarzeniach sprzed tej wersji. */
+  noHashUsd?: number;
   /** Świeca widziana od środka (strona otwarta albo połączenie wróciło w trakcie). */
   partial: boolean;
   /** Fakty z bieżącej minuty przy dotknięciu (świeca jeszcze trwa). */
@@ -96,23 +115,36 @@ export interface AlertFacts {
   move?: { from: number; at: number; oiPct: number };
 }
 
+/**
+ * Rodzaje zdarzeń: uruchomienie, wygaśnięcie i anulowanie kończą alarm; „krok” to wiadomość z alarmu, który pilnuje
+ * dalej (np. luka w danych, której nie dało się sprawdzić). Skrzynka, serwer i strona nie usuwają alarmu po kroku.
+ */
+export const EVENT_TYPES = ['fire', 'expire', 'cancel', 'step'] as const;
+export const endsAlert = (e: { type: string }): boolean => e.type !== 'step';
+
 export interface AlertEvent {
-  type: 'fire' | 'expire' | 'cancel';
+  type: (typeof EVENT_TYPES)[number];
   rule: AlertRule;
   /** Chwila zdarzenia: transakcja albo koniec świecy (zegar giełdy). */
   at: number;
   /** Cena transakcji albo zamknięcia świecy (przy wygaśnięciu i anulowaniu: ostatnia cena). */
   px: number;
   facts: AlertFacts | null;
-  /** Dotknięcie z przerwy w połączeniu, znalezione w świecy 1m z API (`at` = początek minuty, `px` = poziom, bez faktów). */
+  /**
+   * Uruchomienie z luki w taśmie, znalezione w świecach 1m z API, bez faktów: dotknięcie (`at` = początek minuty,
+   * `px` = poziom) albo zamknięcie (`at` = koniec świecy, `px` = zamknięcie; delta nieznana).
+   */
   gap?: boolean;
+  /** Krok: luka w taśmie [from, to], której nie dało się sprawdzić (API bez świec). */
+  hole?: { from: number; to: number };
 }
 
-/** Świeca 1m z API: początek minuty, szczyt i dołek. */
+/** Świeca 1m z API: początek minuty, szczyt, dołek i zamknięcie. */
 export interface AlertCandle {
   t: number;
   h: number;
   l: number;
+  c: number;
 }
 
 interface Bar {
@@ -123,6 +155,17 @@ interface Bar {
   sells: Map<string, number>;
   oi0: number;
   partial: boolean;
+  /** Wartość wypełnień z hashem zerowym, USD. */
+  zero: number;
+}
+
+/** Zamknięcie świecy z taśmy po luce, wstrzymane do jej uzupełnienia. */
+interface Held {
+  iv: string;
+  end: number;
+  close: number;
+  delta: number;
+  facts: AlertFacts;
 }
 
 /** Sekunda taśmy do wyciskania: skrajne ceny i otwarte pozycje na jej początku. */
@@ -141,13 +184,37 @@ interface CoinState {
   vols: Map<string, number[]>;
   /** Ostatnie `SQUEEZE_MS` taśmy po sekundzie (tylko przy alarmie wyciskania). */
   ticks: Tick[];
+  /** Ostatnia transakcja przed przerwą w strumieniu (0 = bez przerwy): starsze, np. z migawki po powrocie połączenia, są już policzone. */
+  gapAt: number;
+  /** Luka w taśmie czekająca na świece z API (silnik z `fillsGaps`): od ostatniej transakcji przed przerwą do pierwszej po niej. */
+  hole: { from: number; to: number } | null;
+  /** Zamknięcia świec z taśmy po luce, wstrzymane do jej uzupełnienia (seria zamknięć liczy się po kolei). */
+  held: Held[];
 }
 
 const num = (v: unknown, fallback: number): number => (typeof v === 'number' && Number.isFinite(v) ? v : fallback);
 
+const FIELDS = new Set(['id', 'coin', 'price', 'kind', 'dir', 'iv', 'closes', 'delta', 'from', 'until', 'pair', 'note', 'after', 'created', 'armed', 'streak']);
+const EXTRA_MAX = 8;
+
+/** Pola z nowszej wersji strony (krótkie liczby, teksty i flagi): przechodzą bez zmian, żeby stara skrzynka i serwer ich nie gubiły. */
+function extras(a: object): Record<string, number | string | boolean> {
+  const out: Record<string, number | string | boolean> = {};
+  let n = 0;
+  for (const [k, v] of Object.entries(a)) {
+    if (n >= EXTRA_MAX || FIELDS.has(k) || !/^[a-z][A-Za-z0-9]{0,15}$/.test(k)) continue;
+    if ((typeof v === 'number' && Number.isFinite(v)) || typeof v === 'boolean' || (typeof v === 'string' && v.length <= NOTE_MAX)) {
+      out[k] = v;
+      n++;
+    }
+  }
+  return out;
+}
+
 /**
  * Alarmy z zapisu przeglądarki albo z sieci: uszkodzone wpisy odpadają, brakujące pola dostają wartości domyślne
- * (alarmy z poprzedniej wersji strony to samo dotknięcie). `now` — chwila ustawienia alarmu bez zapisanej.
+ * (alarm z poprzedniej wersji strony bez rodzaju to samo dotknięcie). Rodzaj i pola z nowszej wersji zostają bez zmian.
+ * `now` — chwila ustawienia alarmu bez zapisanej.
  */
 export function parseRules(raw: unknown, now: number): AlertRule[] {
   if (!Array.isArray(raw)) return [];
@@ -158,10 +225,11 @@ export function parseRules(raw: unknown, now: number): AlertRule[] {
     if (a.dir !== 1 && a.dir !== -1) continue;
     const created = num(a.created, 0) || now;
     out.push({
+      ...extras(a),
       id: a.id.slice(0, 40),
       coin: a.coin,
       price: a.price,
-      kind: a.kind === 'close' || a.kind === 'reclaim' || a.kind === 'squeeze' ? a.kind : 'touch',
+      kind: typeof a.kind === 'string' && a.kind ? a.kind.slice(0, 20) : 'touch',
       dir: a.dir,
       iv: (ALERT_INTERVALS as readonly string[]).includes(a.iv ?? '') ? (a.iv as string) : '15m',
       closes: Math.min(MAX_CLOSES, Math.max(1, Math.round(num(a.closes, 1)))),
@@ -179,6 +247,24 @@ export function parseRules(raw: unknown, now: number): AlertRule[] {
   return out;
 }
 
+/** Zdarzenie z historii albo z sieci (skrzynka, serwer); null przy złym kształcie. */
+export function parseEvent(raw: unknown, now: number): AlertEvent | null {
+  const e = raw as Partial<AlertEvent> | null;
+  if (!e || !(EVENT_TYPES as readonly unknown[]).includes(e.type) || typeof e.at !== 'number' || typeof e.px !== 'number') return null;
+  const [rule] = parseRules([e.rule], now);
+  if (!rule) return null;
+  const h = e.hole;
+  return {
+    type: e.type as AlertEvent['type'],
+    rule,
+    at: e.at,
+    px: e.px,
+    facts: e.facts && typeof e.facts === 'object' ? e.facts : null,
+    ...(e.gap === true ? { gap: true } : {}),
+    ...(h && typeof h.from === 'number' && typeof h.to === 'number' ? { hole: { from: h.from, to: h.to } } : {}),
+  };
+}
+
 /** Kierunek domyślny z położenia poziomu względem ceny: dotknięcie i zamknięcie po tej stronie, powrót po przeciwnej. */
 export function defaultDir(kind: AlertKind, price: number, current: number): 1 | -1 {
   const side: 1 | -1 = price >= current ? 1 : -1;
@@ -187,6 +273,8 @@ export function defaultDir(kind: AlertKind, price: number, current: number): 1 |
 
 const beyond = (r: AlertRule, px: number): boolean => (r.dir === 1 ? px > r.price : px < r.price);
 const inWindow = (r: AlertRule, t: number): boolean => t >= r.from && t < r.until;
+/** Świeca kończąca się dokładnie o `until` też się liczy (zamknięcie o końcu okna to jeszcze okno). */
+const closeInWindow = (r: AlertRule, end: number): boolean => end >= r.from && end <= r.until;
 const maxOf = (m: Map<string, number>): number => {
   let v = 0;
   for (const x of m.values()) if (x > v) v = x;
@@ -233,28 +321,59 @@ function squeezeMove(s: CoinState, r: AlertRule, px: number): { from: number; at
   return ((px - from) / from) * 100 * r.dir >= r.price ? { from, at: ext.t, oiPct } : null;
 }
 
-/** Silnik alarmów: stan świec każdego rynku z alarmem, wspólny dla wszystkich alarmów tego rynku. */
+/**
+ * Silnik alarmów: stan świec każdego rynku z alarmem, wspólny dla wszystkich alarmów tego rynku. Z `fillsGaps` (serwer
+ * powiadomień) luki w taśmie uzupełnia wywołujący świecami 1m z API (`hole`, `fillGap`); bez tego (strona) zamknięcia
+ * świec z luki przepadają, a seria liczy się dalej od świecy po niej.
+ */
 export class AlertEngine {
   private readonly coins = new Map<string, CoinState>();
+  private readonly fillsGaps: boolean;
+
+  constructor(fillsGaps = false) {
+    this.fillsGaps = fillsGaps;
+  }
 
   private state(coin: string): CoinState {
     let s = this.coins.get(coin);
-    if (!s) this.coins.set(coin, (s = { px: 0, t: 0, oi: Number.NaN, bars: new Map(), vols: new Map(), ticks: [] }));
+    if (!s) this.coins.set(coin, (s = { px: 0, t: 0, oi: Number.NaN, bars: new Map(), vols: new Map(), ticks: [], gapAt: 0, hole: null, held: [] }));
     return s;
   }
 
   /**
-   * Przerwa w strumieniu: zamknięcie świecy z luki byłoby zgadywaniem, więc świece zaczynają się od nowa. Zwraca czas
-   * ostatniej przetworzonej transakcji (0 = brak), od którego po powrocie połączenia dociąga się dotknięcia (`onGapCandles`).
+   * Przerwa w strumieniu (albo restart serwera: `from` = ostatnia transakcja zapisana przed nim): zamknięcie świecy
+   * z luki byłoby zgadywaniem, więc świece zaczynają się od nowa, a transakcje sprzed przerwy z migawki po powrocie
+   * połączenia nie liczą się drugi raz. Pierwsza transakcja po przerwie zamyka lukę (`hole`). Zwraca czas ostatniej
+   * przetworzonej transakcji (0 = brak).
    */
-  gap(coin: string): number {
+  gap(coin: string, from = 0): number {
     const s = this.state(coin);
-    const last = s.t;
+    s.gapAt = Math.max(s.gapAt, s.t, from);
     s.px = 0;
     s.t = 0;
     s.bars.clear();
-    s.ticks = [];
-    return last;
+    return s.gapAt;
+  }
+
+  /** Rynek bez alarmów: stan znika (następny strumień zaczyna bez luki). */
+  reset(coin: string): void {
+    this.coins.delete(coin);
+  }
+
+  /** Luka w taśmie do uzupełnienia świecami z API (tylko z `fillsGaps`); null — bez luki. */
+  hole(coin: string): { from: number; to: number } | null {
+    const h = this.coins.get(coin)?.hole;
+    return h ? { ...h } : null;
+  }
+
+  /** Ostatnia transakcja każdego rynku do zapisu stanu (przy luce — jej początek): po restarcie od niej zaczyna się luka. */
+  lastTrades(): Record<string, number> {
+    const out: Record<string, number> = {};
+    for (const [coin, s] of this.coins) {
+      const t = s.hole ? s.hole.from : Math.max(s.t, s.gapAt);
+      if (t > 0) out[coin] = t;
+    }
+    return out;
   }
 
   /** Otwarte pozycje rynku (kontekst z WebSocket). */
@@ -272,10 +391,10 @@ export class AlertEngine {
     this.state(coin).vols.set(iv, v.slice(-VOL_BARS));
   }
 
-  /** Interwały, których świece są potrzebne: alarmów rynku i minuta do faktów przy dotknięciu. */
+  /** Interwały, których świece są potrzebne: alarmów rynku i minuta do faktów przy dotknięciu (rodzaje nieznane — żadne). */
   intervals(rules: readonly AlertRule[], coin: string): string[] {
     const set = new Set<string>();
-    for (const r of rules) if (r.coin === coin) set.add(r.kind === 'touch' || r.kind === 'squeeze' ? '1m' : r.iv);
+    for (const r of rules) if (r.coin === coin && knownKind(r.kind)) set.add(r.kind === 'touch' || r.kind === 'squeeze' ? '1m' : r.iv);
     return [...set];
   }
 
@@ -295,8 +414,18 @@ export class AlertEngine {
     if (!squeeze && s.ticks.length > 0) s.ticks = [];
 
     for (const tr of sorted) {
-      // Starsze niż ostatnia przetworzona (migawka po ponownym połączeniu) — już policzone albo sprzed przerwy
-      if (tr.time < s.t) continue;
+      // Starsze niż ostatnia przetworzona — już policzone; z migawki po powrocie połączenia do ostatniej transakcji przed
+      // przerwą włącznie (ta sama milisekunda to ten sam blok): inaczej powtórzona ostatnia transakcja zszyłaby lukę
+      if (tr.time < s.t || (s.gapAt > 0 && tr.time <= s.gapAt)) continue;
+      if (s.gapAt > 0) {
+        // Pierwsza transakcja po przerwie zamyka lukę; druga przerwa przed jej uzupełnieniem lukę wydłuża, a wstrzymane
+        // w międzyczasie zamknięcia i tak przyjdą ze świec z API
+        if (this.fillsGaps) {
+          s.hole = { from: s.hole?.from ?? s.gapAt, to: tr.time };
+          s.held = [];
+        }
+        s.gapAt = 0;
+      }
       for (const iv of ivs) {
         const ms = ivMs(iv);
         let b = s.bars.get(iv);
@@ -306,18 +435,21 @@ export class AlertEngine {
         }
         if (!b) {
           const start = Math.floor(tr.time / ms) * ms;
-          b = { start, delta: 0, vol: 0, buys: new Map(), sells: new Map(), oi0: s.oi, partial: !(s.t > 0 && s.t < start) };
+          b = { start, delta: 0, vol: 0, buys: new Map(), sells: new Map(), oi0: s.oi, partial: !(s.t > 0 && s.t < start), zero: 0 };
           s.bars.set(iv, b);
         }
         b.delta += tr.side * tr.sz;
         b.vol += tr.sz;
         const book = tr.side === 1 ? b.buys : b.sells;
         book.set(tr.key, (book.get(tr.key) ?? 0) + tr.px * tr.sz);
+        if (tr.zero) b.zero += tr.px * tr.sz;
       }
       if (squeeze) tick(s, tr);
       for (const r of work) {
-        if (done.has(r.id) || r.after || tr.time < r.created) continue;
+        if (done.has(r.id) || r.after || tr.time < r.created || !knownKind(r.kind)) continue;
         if (tr.time >= r.until) {
+          // Koniec okna w luce: wygaśnięcie dopiero po jej uzupełnieniu (warunek mógł się spełnić w luce)
+          if (s.hole && r.until > s.hole.from) continue;
           done.add(r.id);
           events.push({ type: 'expire', rule: r, at: r.until, px: tr.px, facts: null });
         } else if (r.kind === 'touch' && inWindow(r, tr.time) && (r.dir === 1 ? tr.px >= r.price : tr.px <= r.price)) {
@@ -341,25 +473,70 @@ export class AlertEngine {
   }
 
   /**
-   * Dotknięcia z przerwy w strumieniu: szczyt i dołek świec 1m z API przeciw alarmom dotknięcia rynku. Minuta nie mówi,
-   * kiedy padła skrajna cena, więc liczy się tylko świeca w całości po ustawieniu alarmu i w jego oknie. Alarm uruchamia
-   * się raz (potem znika z listy, więc transakcje po powrocie połączenia go nie powtórzą); pary i łańcuchy jak przy taśmie.
+   * Uzupełnienie luki (`hole`) świecami 1m z API do chwili `to` (koniec luki z chwili zapytania; jeśli luka się w tym
+   * czasie wydłużyła, zostaje jej reszta). Po kolei minuta po minucie: dotknięcia ze szczytu i dołka (tylko minuta
+   * w całości po ustawieniu alarmu i w jego oknie), uzbrojenie powrotów, sekundy wyciskania, zamknięcia świec każdego
+   * interwału, które skończyły się w luce (zamknięcie = ostatnia świeca 1m przed końcem; delta nieznana). Potem
+   * zamknięcia z taśmy wstrzymane na czas luki i wygaśnięcia z luki. `candles` null (API nie odpowiedziało): alarmy,
+   * którym luka mogła coś zakryć, dostają „krok” z informacją, że jej nie sprawdzono, a seria zamknięć zaczyna się od nowa.
    */
-  onGapCandles(rules: readonly AlertRule[], coin: string, candles: readonly AlertCandle[]): { rules: AlertRule[] | null; events: AlertEvent[] } {
+  fillGap(rules: readonly AlertRule[], coin: string, to: number, candles: readonly AlertCandle[] | null): { rules: AlertRule[] | null; events: AlertEvent[] } {
     const events: AlertEvent[] = [];
+    const s = this.coins.get(coin);
+    const h = s?.hole;
+    if (!s || !h) return { rules: null, events };
     const work = rules.filter((r) => r.coin === coin).map((r) => ({ ...r }));
     const done = new Set<string>();
-    for (const c of [...candles].sort((a, b) => a.t - b.t)) {
-      for (const r of work) {
-        if (done.has(r.id) || r.after || r.kind !== 'touch' || c.t < Math.max(r.created, r.from) || c.t + MIN > r.until) continue;
-        if (r.dir === 1 ? c.h >= r.price : c.l <= r.price) {
-          done.add(r.id);
-          events.push({ type: 'fire', rule: r, at: c.t, px: r.price, facts: null, gap: true });
+    const end = Math.min(to, h.to);
+    const live = (r: AlertRule) => !done.has(r.id) && !r.after && knownKind(r.kind);
+    const closeIvs = [...new Set(work.filter((r) => r.kind === 'close' || r.kind === 'reclaim').map((r) => r.iv))];
+    if (candles) {
+      const byT = new Map(candles.map((c) => [c.t, c]));
+      const squeeze = work.some((r) => r.kind === 'squeeze');
+      let close = 0;
+      for (let m = Math.floor(h.from / MIN) * MIN; m < end; m += MIN) {
+        const c = byT.get(m);
+        if (c) {
+          close = c.c;
+          for (const r of work) {
+            if (!live(r) || m < r.created) continue;
+            if (r.kind === 'touch' && m >= r.from && m + MIN <= r.until && (r.dir === 1 ? c.h >= r.price : c.l <= r.price)) {
+              done.add(r.id);
+              events.push({ type: 'fire', rule: r, at: m, px: r.price, facts: null, gap: true });
+            } else if (r.kind === 'reclaim' && !r.armed && (r.dir === 1 ? c.l < r.price : c.h > r.price)) r.armed = true;
+          }
+          // Wyciskanie: skrajne ceny minut z luki (bez otwartych pozycji) w oknie ruchu
+          if (squeeze && m >= end - SQUEEZE_MS) s.ticks.push({ t: m, hi: c.h, lo: c.l, oi: Number.NaN });
         }
+        // Minuta bez świecy (bez transakcji) zostawia zamknięcie poprzedniej
+        const e = m + MIN;
+        if (close > 0 && e <= end) for (const iv of closeIvs) if (e % ivMs(iv) === 0) this.closes(work, iv, e, close, Number.NaN, () => null, done, events, true);
+      }
+      if (squeeze) s.ticks.sort((a, b) => a.t - b.t);
+    } else {
+      for (const r of work) {
+        if (!live(r) || r.created >= end || r.from >= end || r.until <= h.from) continue;
+        if (r.kind === 'close' || r.kind === 'reclaim') {
+          const ms = ivMs(r.iv);
+          const missed = Math.floor(end / ms) * ms > Math.max(h.from, r.created);
+          if (missed) r.streak = 0;
+          else if (r.kind === 'close' || r.armed) continue;
+        }
+        events.push({ type: 'step', rule: r, at: end, px: s.px, facts: null, hole: { from: h.from, to: end } });
       }
     }
-    const last = events[events.length - 1];
-    return this.finish(rules, work, done, events, last?.at ?? 0, last?.px ?? 0);
+    if (end < h.to) s.hole = { from: end, to: h.to };
+    else {
+      s.hole = null;
+      for (const x of s.held) this.closes(work, x.iv, x.end, x.close, x.delta, () => x.facts, done, events, false);
+      s.held = [];
+      for (const r of work)
+        if (live(r) && s.t >= r.until) {
+          done.add(r.id);
+          events.push({ type: 'expire', rule: r, at: r.until, px: s.px, facts: null });
+        }
+    }
+    return this.finish(rules, work, done, events, end, s.px);
   }
 
   /** Pary, łańcuchy i nowa lista alarmów po zdarzeniach; `at` i `px` — chwila i cena anulowania w parze. */
@@ -378,9 +555,10 @@ export class AlertEngine {
         done.add(r.id);
         events.push({ type: 'cancel', rule: r, at, px, facts: null });
       }
-    // Łańcuch: alarm po uruchomionym startuje od tej chwili, po wygasłym albo anulowanym — znika razem z nim
+    // Łańcuch: alarm po uruchomionym startuje od tej chwili, po wygasłym albo anulowanym — znika razem z nim (krok nic nie zmienia)
     for (let i = 0; i < events.length; i++) {
       const e = events[i];
+      if (!endsAlert(e)) continue;
       for (const r of work) {
         if (r.after !== e.rule.id || done.has(r.id)) continue;
         if (e.type === 'fire') {
@@ -411,29 +589,46 @@ export class AlertEngine {
     return { rules: next, events };
   }
 
-  /** Koniec świecy `iv`: zamknięcie = ostatnia transakcja przed jej końcem. */
+  /** Koniec świecy `iv` z taśmy: zamknięcie = ostatnia transakcja przed jej końcem (przy luce w taśmie — wstrzymane do jej uzupełnienia). */
   private closeBar(s: CoinState, iv: string, b: Bar, work: AlertRule[], done: Set<string>, events: AlertEvent[]): void {
-    const ms = ivMs(iv);
-    const end = b.start + ms;
-    const close = s.px;
-    let facts: AlertFacts | null = null;
+    const end = b.start + ivMs(iv);
+    if (s.hole) s.held.push({ iv, end, close: s.px, delta: b.delta, facts: this.facts(s, iv, b, false) });
+    else this.closes(work, iv, end, s.px, b.delta, () => this.facts(s, iv, b, false), done, events, false);
+    if (!b.partial) {
+      const hist = s.vols.get(iv) ?? [];
+      hist.push(b.vol);
+      s.vols.set(iv, hist.slice(-VOL_BARS));
+    }
+  }
+
+  /**
+   * Świeca `iv` zamknięta o `end` po cenie `close` przeciw alarmom zamknięcia i powrotu: seria, okno i filtr delty
+   * (`delta` NaN — świeca z luki, delta nieznana: alarm dzwoni z dopiskiem w treści zamiast przepaść).
+   */
+  private closes(
+    work: AlertRule[],
+    iv: string,
+    end: number,
+    close: number,
+    delta: number,
+    facts: () => AlertFacts | null,
+    done: Set<string>,
+    events: AlertEvent[],
+    gap: boolean
+  ): void {
+    let f: AlertFacts | null | undefined;
     for (const r of work) {
-      if (done.has(r.id) || r.after || r.kind === 'touch' || r.kind === 'squeeze' || r.iv !== iv || end <= r.created) continue;
+      if (done.has(r.id) || r.after || (r.kind !== 'close' && r.kind !== 'reclaim') || r.iv !== iv || end <= r.created) continue;
       if (r.kind === 'reclaim' && !r.armed) continue;
       if (!beyond(r, close)) {
         r.streak = 0;
         continue;
       }
       r.streak++;
-      if (r.streak < r.closes || !inWindow(r, end) || (r.delta && Math.sign(b.delta) !== r.dir)) continue;
+      if (r.streak < r.closes || !closeInWindow(r, end) || (r.delta && !Number.isNaN(delta) && Math.sign(delta) !== r.dir)) continue;
       done.add(r.id);
-      facts ??= this.facts(s, iv, b, false);
-      events.push({ type: 'fire', rule: r, at: end, px: close, facts });
-    }
-    if (!b.partial) {
-      const hist = s.vols.get(iv) ?? [];
-      hist.push(b.vol);
-      s.vols.set(iv, hist.slice(-VOL_BARS));
+      if (f === undefined) f = facts();
+      events.push({ type: 'fire', rule: r, at: end, px: close, facts: f, ...(gap ? { gap: true } : {}) });
     }
   }
 
@@ -448,6 +643,7 @@ export class AlertEngine {
       oiPct: b.oi0 > 0 && s.oi > 0 ? ((s.oi - b.oi0) / b.oi0) * 100 : Number.NaN,
       maxBuy: maxOf(b.buys),
       maxSell: maxOf(b.sells),
+      noHashUsd: b.zero,
       partial: b.partial,
       touch,
     };
@@ -464,6 +660,13 @@ const fixed = (v: number, d: number, lang: Lang): string =>
 export const fmtLevel = (p: number, lang: Lang): string => fixed(p, Math.max(0, 4 - Math.floor(Math.log10(Math.abs(p) || 1))), lang);
 
 const signed = (v: number, d: number, lang: Lang): string => `${v > 0 ? '+' : ''}${fixed(v, d, lang)}`;
+/** Czas trwania: „45 s”, „4 min”, „2 h 5 min”. */
+const duration = (ms: number): string => {
+  const s = Math.max(1, Math.round(ms / 1000));
+  if (s < 60) return `${s} s`;
+  const m = Math.round(s / 60);
+  return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ''}`;
+};
 const sizeDigits = (v: number): number => (Math.abs(v) >= 100 ? 0 : Math.abs(v) >= 10 ? 1 : 2);
 const usd = (v: number, lang: Lang): string => {
   const unit = v >= 1e6 ? 1e6 : v >= 1e3 ? 1e3 : 1;
@@ -478,6 +681,7 @@ export function ruleText(r: Pick<AlertRule, 'kind' | 'dir' | 'price' | 'iv' | 'c
   const iv = r.iv;
   const en = lang === 'en';
   const up = r.dir === 1;
+  if (!knownKind(r.kind)) return en ? 'alert from a newer version of the page' : 'alarm z nowszej wersji strony';
   let t: string;
   if (r.kind === 'touch') t = en ? `${up ? 'rise' : 'drop'} to ${L}` : `${up ? 'wzrost' : 'spadek'} do ${L}`;
   else if (r.kind === 'squeeze') {
@@ -512,11 +716,18 @@ export function eventText(e: AlertEvent, lang: Lang): string {
   // Alarm wyciskania nie ma poziomu ceny (pole `price` to próg w %)
   const name = r.kind === 'squeeze' ? (en ? `${r.coin} squeeze alert` : `Alarm wyciskania ${r.coin}`) : en ? `${r.coin} alert at ${L}` : `Alarm ${r.coin} ${L}`;
   if (e.type === 'expire') return en ? `${name} expired without triggering` : `${name} wygasł bez uruchomienia`;
+  if (e.type === 'step' && e.hole) {
+    const d = duration(e.hole.to - e.hole.from);
+    return en
+      ? `${name} is still on, but could not check a ${d} gap in the exchange data (no candles from the API)`
+      : `${name} nadal działa, ale nie sprawdził ${d} przerwy w danych z giełdy (API nie dało świec)`;
+  }
   // Anulowany alarm z łańcucha wciąż czeka (`after`): alarm przed nim wygasł albo został anulowany
   if (e.type === 'cancel')
     return r.after
       ? en ? `${name} cancelled: the alert it was waiting for did not fire` : `${name} anulowany: alarm, na który czekał, nie zadziałał`
       : en ? `${name} cancelled: its paired alert fired` : `${name} anulowany: zadziałał alarm z pary`;
+  if (!knownKind(r.kind)) return en ? `${name} triggered (${C})` : `${name} zadziałał (${C})`;
   if (r.kind === 'touch') return en ? `${r.coin} price reached ${L}` : `Cena ${r.coin} doszła do ${L}`;
   if (r.kind === 'squeeze') {
     const m = e.facts?.move;
@@ -547,13 +758,45 @@ export function factsText(f: AlertFacts, coin: string, lang: Lang): string {
   if (Number.isFinite(f.oiPct)) parts.push(`OI ${signed(f.oiPct, 1, lang)}%`);
   if (f.maxBuy > 0 || f.maxSell > 0)
     parts.push(en ? `largest orders: buy ${usd(f.maxBuy, lang)}, sell ${usd(f.maxSell, lang)}` : `największe zlecenia: kupno ${usd(f.maxBuy, lang)}, sprzedaż ${usd(f.maxSell, lang)}`);
+  if (f.noHashUsd !== undefined && f.noHashUsd > 0) parts.push(en ? `zero-hash fills (incl. TWAP) ${usd(f.noHashUsd, lang)}` : `wypełnienia z hashem zerowym (m.in. TWAP) ${usd(f.noHashUsd, lang)}`);
   return `${head}: ${parts.join(', ')}${f.partial ? (en ? ' (part of the candle)' : ' (część świecy)') : ''}.`;
 }
 
-/** Pełna treść komunikatu i powiadomienia: opis z planu, co się stało, fakty ze świecy (wygaśnięcie: jaki był warunek). */
-export function eventBody(e: AlertEvent, lang: Lang): string {
+/**
+ * Pełna treść komunikatu i powiadomienia: opis z planu, co się stało, fakty ze świecy (wygaśnięcie: jaki był warunek).
+ * Uruchomienie z luki mówi, czego nie dało się sprawdzić; `now` (powiadomienie) — także ile minęło od zdarzenia.
+ */
+export function eventBody(e: AlertEvent, lang: Lang, now?: number): string {
+  const en = lang === 'en';
   const head = `${e.rule.note ? `${e.rule.note} · ` : ''}${eventText(e, lang)}`;
   if (e.type === 'expire') return `${head}: ${ruleText(e.rule, lang)}.`;
-  if (e.gap) return `${head}. ${lang === 'en' ? 'Touched while the connection to the exchange was down (1m candle).' : 'Dotknięcie w czasie przerwy w połączeniu z giełdą (świeca 1m).'}`;
+  if (e.gap) {
+    const touch = e.rule.kind === 'touch';
+    let t = touch
+      ? en ? 'Touched while the connection to the exchange was down (1m candle).' : 'Dotknięcie w czasie przerwy w połączeniu z giełdą (świeca 1m).'
+      : en ? 'Candle closed while the connection to the exchange was down (from 1m candles).' : 'Zamknięcie świecy w czasie przerwy w połączeniu z giełdą (ze świec 1m).';
+    if (!touch && e.rule.delta) t += en ? ' Delta unknown (gap), the delta filter was not checked.' : ' Delta nieznana (przerwa), filtr delty niesprawdzony.';
+    if (now !== undefined && now - e.at >= 2 * MIN) t += en ? ` ${duration(now - e.at)} before this notification.` : ` ${duration(now - e.at)} przed tym powiadomieniem.`;
+    return `${head}. ${t}`;
+  }
   return e.facts ? `${head}. ${factsText(e.facts, e.rule.coin, lang)}` : `${head}.`;
+}
+
+/** Tytuł powiadomienia: rynek i co się stało, krótko (treść zaczyna się od opisu z planu). */
+export function eventTitle(e: AlertEvent, lang: Lang): string {
+  const r = e.rule;
+  const en = lang === 'en';
+  const L = fmtLevel(r.price, lang);
+  const name = r.kind === 'squeeze' ? (en ? 'squeeze alert' : 'alarm wyciskania') : en ? `alert ${L}` : `alarm ${L}`;
+  const side = r.dir === 1 ? (en ? 'above' : 'nad') : en ? 'below' : 'pod';
+  let what: string;
+  if (e.type === 'step' && e.hole) what = en ? `${name}: gap in data not checked` : `${name}: przerwa w danych niesprawdzona`;
+  else if (e.type === 'expire') what = en ? `${name} expired` : `${name} wygasł`;
+  else if (e.type === 'cancel') what = en ? `${name} cancelled` : `${name} anulowany`;
+  else if (!knownKind(r.kind)) what = name;
+  else if (r.kind === 'touch') what = en ? `price at ${L}` : `cena doszła do ${L}`;
+  else if (r.kind === 'squeeze') what = en ? `${r.dir === 1 ? 'short' : 'long'} squeeze` : `wyciskanie ${r.dir === 1 ? 'shortów' : 'longów'}`;
+  else if (r.kind === 'close') what = en ? `${r.iv} close ${side} ${L}` : `zamknięcie ${r.iv} ${side} ${L}`;
+  else what = en ? `back ${side} ${L} (${r.iv})` : `powrót ${side} ${L} (${r.iv})`;
+  return `${r.coin} · ${what}`;
 }

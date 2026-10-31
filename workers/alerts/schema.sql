@@ -19,7 +19,8 @@ CREATE TABLE IF NOT EXISTS devices (
 CREATE INDEX IF NOT EXISTS devices_version ON devices (version, id);
 CREATE INDEX IF NOT EXISTS devices_endpoint ON devices (endpoint);
 
--- Zdarzenia z serwera (7 dni): uruchomienie, wygaśnięcie, anulowanie (historia w przeglądarce) i start alarmu z łańcucha.
+-- Zdarzenia z serwera (7 dni): uruchomienie, wygaśnięcie, anulowanie, krok (alarm pilnuje dalej; historia w przeglądarce)
+-- i start alarmu z łańcucha.
 CREATE TABLE IF NOT EXISTS events (
   device TEXT NOT NULL,
   rule TEXT NOT NULL,
