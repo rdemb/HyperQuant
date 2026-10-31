@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { Candle } from '../hl/parse';
-import { Window, Wma, ema, rma } from '../indicators/primitives';
+import { RobustLine, Window, Wma, ema, medianInPlace, rma } from '../indicators/primitives';
 import { IndicatorEngine } from '../indicators/engine';
 import {
   INDICATORS,
@@ -804,6 +804,147 @@ describe('wskaźniki: zmiana OI i delta', () => {
   });
 });
 
+describe('wskaźniki: absorpcja', () => {
+  const sortedMedian = (xs: readonly number[]) => {
+    const s = [...xs].sort((a, b) => a - b);
+    const m = s.length >> 1;
+    return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+  };
+  /** Theil–Sen i MAD wprost z sortowania (niezależnie od wyboru Hoare'a w silniku). */
+  const batchLine = (xs: readonly number[], ys: readonly number[]) => {
+    const slopes: number[] = [];
+    for (let i = 0; i < xs.length; i++) for (let j = i + 1; j < xs.length; j++) if (xs[j] !== xs[i]) slopes.push((ys[j] - ys[i]) / (xs[j] - xs[i]));
+    const beta = sortedMedian(slopes);
+    const alpha = sortedMedian(ys.map((y, i) => y - beta * xs[i]));
+    return { alpha, beta, scale: 1.4826 * sortedMedian(ys.map((y, i) => Math.abs(y - alpha - beta * xs[i]))) };
+  };
+  /** Świece z taśmą: ruch w świecy = 2 USD na jednostkę delty plus szum; co siódma bez pełnego nagrania. */
+  function tapeBars(n: number, seed: number) {
+    const r = rng(seed);
+    return walk(n, seed).map((c, i) => {
+      const delta = Math.round((r() - 0.5) * 400) / 10;
+      const close = c.o + 2 * delta + (r() - 0.5) * 30;
+      return { candle: { ...c, c: close }, fp: { delta }, complete: i % 7 !== 3 };
+    });
+  }
+  type TapeBar = ReturnType<typeof tapeBars>[number];
+  /** Wartości z definicji: okno `span` poprzednich świec z pełną taśmą, reszta w stronę agresji przez rozrzut. */
+  function batch(bs: readonly TapeBar[], span: number): number[] {
+    const ok = bs.map((b) => b.complete);
+    return bs.map((b, i) => {
+      if (!ok[i]) return Number.NaN;
+      const prev = bs.slice(0, i).filter((_, j) => ok[j]).slice(-span);
+      if (prev.length < span) return Number.NaN;
+      const f = batchLine(
+        prev.map((p) => p.fp.delta),
+        prev.map((p) => p.candle.c - p.candle.o)
+      );
+      if (!(f.beta > 0) || !(f.scale > 0)) return Number.NaN;
+      return (Math.sign(b.fp.delta) * (b.candle.c - b.candle.o - f.alpha - f.beta * b.fp.delta)) / f.scale;
+    });
+  }
+  const runOn = (bs: readonly TapeBar[], span = 30) => {
+    const e = new IndicatorEngine();
+    e.setInstances([inst('absorption', { length: span })]);
+    e.sync(bs);
+    return e;
+  };
+
+  it('mediana wyborem Hoare’a jak z sortowania (parzyste i nieparzyste liczby, powtórzenia)', () => {
+    const r = rng(5);
+    for (const n of [1, 2, 3, 4, 7, 10, 101, 1000]) {
+      const xs = Array.from({ length: n }, () => Math.round(r() * 20));
+      expect(medianInPlace(Float64Array.from(xs), n)).toBe(sortedMedian(xs));
+    }
+  });
+
+  it('prosta Theila–Sena odporna: 10% skrajnych punktów nie przestawia nachylenia, jak z sortowania', () => {
+    const r = rng(9);
+    const xs = Array.from({ length: 120 }, () => (r() - 0.5) * 100);
+    const ys = xs.map((x, i) => (i % 10 === 0 ? -800 : 3 * x + 5 + (r() - 0.5) * 4));
+    const f = new RobustLine(120).fit(xs, ys, 120)!;
+    expect(Math.abs(f.beta - 3)).toBeLessThan(0.1);
+    const b = batchLine(xs, ys);
+    expect(f.beta).toBe(b.beta);
+    expect(f.alpha).toBe(b.alpha);
+    expect(f.scale).toBe(b.scale);
+    expect(new RobustLine(3).fit([1, 1, 1], [1, 2, 3], 3)).toBeNull();
+  });
+
+  it('wartości jak z definicji: reszta świecy względem prostej z poprzednich świec z pełną taśmą, ze znakiem strony agresji', () => {
+    const bs = tapeBars(300, 21);
+    const [z, delta] = runOn(bs).runs[0].out.map((a) => Array.from(a.subarray(0, bs.length)));
+    const want = batch(bs, 30);
+    expectClose(z, want, 1e-9);
+    expect(want.filter((v) => !Number.isNaN(v)).length).toBeGreaterThan(200);
+    expect(delta).toEqual(want.map((v, i) => (Number.isNaN(v) ? Number.NaN : bs[i].fp.delta)));
+  });
+
+  it('duża delta kupna bez ruchu ceny daje mocno ujemny słupek w kolorze kupna; delta tylko w legendzie, bez interwału', () => {
+    const bs = tapeBars(120, 33);
+    const last = bs[bs.length - 1];
+    bs[bs.length - 1] = { ...last, candle: { ...last.candle, c: last.candle.o }, fp: { delta: 40 }, complete: true };
+    const [z] = runOn(bs).runs[0].out;
+    expect(z[bs.length - 1]).toBeLessThan(-3);
+    const def = indicatorDef('absorption');
+    expect(def.plots[0]).toMatchObject({ hist: true, signOf: 1 });
+    expect(def.plots[1]).toMatchObject({ hidden: true });
+    expect(def.levels).toEqual([-2, 0, 2]);
+    expect(indicatorsLink([inst('absorption')])).toBe('absorption(120)');
+    expect(parseIndicators([{ id: 'absorption', tf: '1h' }])[0].tf).toBeUndefined();
+  });
+
+  it('przeliczanie przyrostowe: żywa świeca, nowe świece, doczytana godzina taśmy w środku i historia z lewej — jak od zera', () => {
+    const src = tapeBars(400, 44);
+    // Taśma tylko od świecy 150 (jak po otwarciu strony), potem historia dochodzi do 100–149 i do 60–99
+    const noTape = (b: TapeBar) => ({ ...b, complete: false });
+    const view = (k: number, from: number) => src.slice(0, k).map((b, i) => (i < from ? noTape(b) : b));
+    const e = new IndicatorEngine();
+    e.setInstances([inst('absorption', { length: 30 })]);
+    const check = (bs: readonly TapeBar[]) => {
+      const fresh = runOn(bs).runs[0].out[0];
+      expect(Array.from(e.runs[0].out[0].subarray(0, bs.length))).toEqual(Array.from(fresh.subarray(0, bs.length)));
+    };
+    let bs = view(300, 150);
+    e.sync(bs);
+    check(bs);
+    // Żywa świeca: nowy obiekt ostatniej, przeliczona tylko ona
+    const live = bs[bs.length - 1];
+    bs = [...bs.slice(0, -1), { ...live, fp: { delta: live.fp.delta + 3 } }];
+    expect(e.sync(bs)).toBe(bs.length - 1);
+    check(bs);
+    // Doczytana godzina taśmy: świece 100–149 dostają taśmę; zwrócony indeks to pierwsza zmieniona wartość (rozbieg
+    // okna: świece tuż po 100 mają za mało poprzednich świec z taśmą i dalej są bez wartości)
+    const before = Array.from(e.runs[0].out[0].subarray(0, bs.length));
+    bs = [...bs.slice(0, 100), ...src.slice(100, 150), ...bs.slice(150)];
+    const changed = e.sync(bs);
+    check(bs);
+    expect(changed).toBe(before.findIndex((v, i) => !Object.is(v, e.runs[0].out[0][i])));
+    expect(changed).toBeGreaterThan(100);
+    bs = [...bs.slice(0, 60), ...src.slice(60, 100), ...bs.slice(100)];
+    e.sync(bs);
+    check(bs);
+    // Nowe świece i historia z lewej (inne indeksy)
+    bs = [...bs, ...src.slice(300, 330)];
+    e.sync(bs);
+    check(bs);
+    // Historia z lewej (czasy przed pierwszą świecą), z taśmą, razem ze zmianą żywej świecy: wartości przesunięte, a para
+    // liczona tylko dla nowych świec i żywej
+    const point = vi.spyOn(indicatorDef('absorption').sample!, 'point');
+    const older = tapeBars(40, 7).map((b, i) => ({ ...b, candle: { ...b.candle, t: bs[0].candle.t - (40 - i) * M5 } }));
+    const end = bs[bs.length - 1];
+    bs = [...older, ...bs.slice(0, -1), { ...end, fp: { delta: -end.fp.delta } }];
+    expect(e.sync(bs)).toBe(0);
+    expect(point).toHaveBeenCalledTimes(41);
+    point.mockRestore();
+    check(bs);
+    // Inny początek bez wspólnej świecy: liczenie od zera
+    bs = tapeBars(200, 9);
+    expect(e.sync(bs)).toBe(0);
+    check(bs);
+  });
+});
+
 describe('przeliczanie przyrostowe', () => {
   const all = INDICATORS.map((d) => inst(d.id, { length: 5 }));
 
@@ -820,10 +961,11 @@ describe('przeliczanie przyrostowe', () => {
     const src = walk(300, 11);
     const e = new IndicatorEngine();
     e.setInstances(all);
-    // Indeks zmian wskaźników liczonych świeca po świecy (kanał regresji przelicza całe okno)
+    // Indeks zmian wskaźników liczonych świeca po świecy (kanał regresji przelicza całe okno, a absorpcja porównuje
+    // obiekty świec, które `bars` tworzy za każdym razem od nowa)
     const stepFrom = (cs: readonly Candle[]) => {
       e.sync(bars(cs));
-      return Math.min(...e.runs.filter((_, k) => !indicatorDef(all[k].id).fit).map((run) => run.from));
+      return Math.min(...e.runs.filter((_, k) => !indicatorDef(all[k].id).fit && !indicatorDef(all[k].id).sample).map((run) => run.from));
     };
     let cs = src.slice(0, 50);
     expect(stepFrom(cs)).toBe(0);

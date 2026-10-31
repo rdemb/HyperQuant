@@ -226,6 +226,101 @@ class FlowRun implements IndicatorValues {
 }
 
 /**
+ * Wskaźnik z taśmy porównujący świecę z poprzednimi świecami z wartością (absorpcja). Świeca po zmianie jest nowym
+ * obiektem, więc zmienione świece wskazuje porównanie referencji; przeliczane są one i świece, w których oknie leżą
+ * (`span` następnych świec z wartością). Doczytana godzina taśmy, żywa świeca i historia z lewej (wartości przesunięte
+ * o nowe świece) nie przeliczają całej historii — okno kosztuje O(span²).
+ */
+class SampleRun implements IndicatorValues {
+  out: Float64Array[];
+  from = 0;
+  private readonly span: number;
+  private readonly calc: (x: number, y: number, xs: Float64Array, ys: Float64Array, out: Float64Array) => void;
+  private readonly v: Float64Array;
+  private readonly xy = new Float64Array(2);
+  /** Okno poprzednich par (najnowsza pierwsza). */
+  private readonly wx: Float64Array;
+  private readonly wy: Float64Array;
+  /** Świece z ostatniego liczenia i ich pary (`ok` — świeca z wartością). */
+  private seen: (Bar | undefined)[] = [];
+  private xs = new Float64Array(0);
+  private ys = new Float64Array(0);
+  private ok = new Uint8Array(0);
+
+  constructor(private readonly x: IndicatorInstance) {
+    const def = indicatorDef(x.id);
+    this.span = def.sample!.span(x.params);
+    this.calc = def.sample!.create(x.params);
+    this.v = new Float64Array(def.plots.length);
+    this.wx = new Float64Array(this.span);
+    this.wy = new Float64Array(this.span);
+    this.out = def.plots.map(() => new Float64Array(0));
+  }
+
+  /** Przelicza zmienione świece i świece, w których oknie leżą; zwraca indeks pierwszej zmienionej wartości (liczba świec = bez zmian). */
+  sync(bars: readonly Bar[]): number {
+    const n = bars.length;
+    // Historia z lewej: dotychczasowe świece zaczynają się od indeksu `shift`; inna zmiana początku — liczenie od zera
+    let shift = 0;
+    if (n > 0 && this.seen.length > 0 && bars[0].candle.t !== this.seen[0]!.candle.t) {
+      shift = lastStartedBy(bars.map((b) => b.candle), this.seen[0]!.candle.t);
+      if (shift <= 0 || bars[shift].candle.t !== this.seen[0]!.candle.t) this.seen = [];
+    }
+    this.reserve(this.seen.length + Math.max(0, shift), n);
+    if (shift > 0 && this.seen.length > 0) {
+      const m = this.seen.length;
+      for (const a of [this.xs, this.ys, this.ok, ...this.out]) a.copyWithin(shift, 0, m);
+      this.seen = [...new Array<undefined>(shift), ...this.seen];
+    }
+    if (n < this.seen.length) this.seen = [];
+    const m = this.seen.length;
+    const point = indicatorDef(this.x.id).sample!.point;
+    let first = n;
+    // Ile następnych świec z wartością ma w oknie zmienioną świecę
+    let need = 0;
+    for (let i = 0; i < n; i++) {
+      const changed = i >= m || bars[i] !== this.seen[i];
+      if (!changed && need === 0) continue;
+      if (changed) {
+        this.ok[i] = point(bars[i], this.xy) ? 1 : 0;
+        this.xs[i] = this.xy[0];
+        this.ys[i] = this.xy[1];
+        this.seen[i] = bars[i];
+        need = this.span;
+      } else if (this.ok[i]) need--;
+      let k = 0;
+      if (this.ok[i]) {
+        for (let j = i - 1; j >= 0 && k < this.span; j--) {
+          if (!this.ok[j]) continue;
+          this.wx[k] = this.xs[j];
+          this.wy[k++] = this.ys[j];
+        }
+      }
+      if (k === this.span) this.calc(this.xs[i], this.ys[i], this.wx, this.wy, this.v);
+      else this.v.fill(Number.NaN);
+      for (let p = 0; p < this.v.length; p++) {
+        if (first === n && (i >= m || !Object.is(this.out[p][i], this.v[p]))) first = i;
+        this.out[p][i] = this.v[p];
+      }
+    }
+    this.seen.length = n;
+    return (this.from = shift > 0 ? 0 : first);
+  }
+
+  /** Bufory na `n` świec (z zachowaniem `keep` pierwszych). */
+  private reserve(keep: number, n: number): void {
+    const size = Math.max(keep, n);
+    if (size <= this.ok.length) return;
+    const cap = Math.max(size, this.ok.length * 2, 256);
+    const copy = <T extends Float64Array | Uint8Array>(a: T, b: T): T => (b.set(a), b);
+    this.xs = copy(this.xs, new Float64Array(cap));
+    this.ys = copy(this.ys, new Float64Array(cap));
+    this.ok = copy(this.ok, new Uint8Array(cap));
+    this.out = this.out.map((a) => copy(a, new Float64Array(cap)));
+  }
+}
+
+/**
  * Przeliczanie wskaźników po świecach wykresu — transakcja na bieżącej świecy kosztuje O(1) na wskaźnik. Wskaźniki
  * z innego interwału liczą się na jego świecach (`candlesOf`), a ich wartości są przenoszone na świece wykresu.
  */
@@ -237,6 +332,7 @@ export class IndicatorEngine {
   private tfs: TfRun[] = [];
   private windows: WindowRun[] = [];
   private flows: FlowRun[] = [];
+  private samples: SampleRun[] = [];
 
   /** Liczba przeliczonych świec wykresu. */
   get count(): number {
@@ -248,8 +344,14 @@ export class IndicatorEngine {
     this.tfs = [];
     this.windows = [];
     this.flows = [];
+    this.samples = [];
     this.runs = list.map((x) => {
       const def = indicatorDef(x.id);
+      if (def.sample) {
+        const r = new SampleRun(x);
+        this.samples.push(r);
+        return r;
+      }
       if (def.flow) {
         const r = new FlowRun(x);
         this.flows.push(r);
@@ -284,6 +386,7 @@ export class IndicatorEngine {
     for (const r of this.tfs) start = Math.min(start, r.sync(bars, ms, from, candlesOf(r.tf)));
     for (const r of this.windows) start = Math.min(start, r.sync(bars, from));
     for (const r of this.flows) start = Math.min(start, r.sync(bars, ms, flow));
+    for (const r of this.samples) start = Math.min(start, r.sync(bars));
     return start;
   }
 }

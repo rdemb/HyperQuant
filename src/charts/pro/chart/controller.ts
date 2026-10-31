@@ -546,6 +546,8 @@ export class ProChartController {
     });
     this.indGap = this.indSeries.map((lines) => lines.map(() => false));
     this.indPushed = 0;
+    // Nowy wskaźnik z oknem świec z taśmą może potrzebować starszej historii taśmy
+    this.onRange(this.chart.timeScale().getVisibleLogicalRange());
     if (s.showStats) {
       this.statsSeries = this.chart.addSeries(
         LineSeries,
@@ -1101,8 +1103,11 @@ export class ProChartController {
   private readonly onRange = (range: LogicalRange | null): void => {
     if (!range || this.bars.length === 0) return;
     if (range.from < LOAD_OLDER_MARGIN) void this.series.loadOlder();
-    // Historia taśmy i arkusza z serwera od lewej krawędzi widoku
-    requestHistory(this.store, this.bars[Math.min(this.bars.length - 1, Math.max(0, Math.floor(range.from)))].t);
+    // Historia taśmy i arkusza z serwera od lewej krawędzi widoku, a przy wskaźniku z oknem świec z taśmą (absorpcja)
+    // o to okno wcześniej — inaczej na wąskim ekranie świece z lewej nie miałyby wartości
+    const left = this.bars[Math.min(this.bars.length - 1, Math.max(0, Math.floor(range.from)))].t;
+    const span = Math.max(0, ...this.indShown.map((x) => indicatorDef(x.id).sample?.span(x.params) ?? 0));
+    requestHistory(this.store, left - span * this.series.interval.ms);
   };
 
   /** Kliknięcie: opis wskaźnika (jego ustawienia), krzyżyk ukrycia panelu, obiekt warstwy płynności pod kursorem albo nic (zamyka kartę). */

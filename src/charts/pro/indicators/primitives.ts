@@ -195,3 +195,60 @@ export class Wma {
     this.since = 0;
   }
 }
+
+/** Mediana pierwszych `n` liczb tablicy wyborem Hoare'a (średnio O(n)); kolejność liczb w tablicy się zmienia. */
+export function medianInPlace(a: Float64Array, n: number): number {
+  const m = n >> 1;
+  let lo = 0;
+  let hi = n - 1;
+  while (lo < hi) {
+    const pivot = a[(lo + hi) >> 1];
+    let i = lo;
+    let j = hi;
+    while (i <= j) {
+      while (a[i] < pivot) i++;
+      while (a[j] > pivot) j--;
+      if (i <= j) {
+        const t = a[i];
+        a[i++] = a[j];
+        a[j--] = t;
+      }
+    }
+    if (m <= j) hi = j;
+    else if (m >= i) lo = i;
+    else break;
+  }
+  if (n % 2 === 1) return a[m];
+  // Parzysta liczba: druga środkowa to największa z liczb przed `m` (po wyborze wszystkie są ≤ a[m])
+  let below = Number.NEGATIVE_INFINITY;
+  for (let k = 0; k < m; k++) if (a[k] > below) below = a[k];
+  return (below + a[m]) / 2;
+}
+
+/**
+ * Prosta Theila–Sena (nachylenie = mediana nachyleń par, wyraz wolny = mediana reszt) i rozrzut reszt z MAD
+ * (× 1,4826 — odchylenie standardowe przy rozkładzie normalnym): odporne na pojedyncze skrajne punkty, w przeciwieństwie
+ * do zwykłej regresji. Bufory na okno do `n` punktów.
+ */
+export class RobustLine {
+  private readonly slopes: Float64Array;
+  private readonly res: Float64Array;
+
+  constructor(n: number) {
+    this.slopes = new Float64Array((n * (n - 1)) / 2);
+    this.res = new Float64Array(n);
+  }
+
+  /** Dopasowanie do `n` punktów (x, y); null, gdy wszystkie x są równe. */
+  fit(xs: ArrayLike<number>, ys: ArrayLike<number>, n: number): { alpha: number; beta: number; scale: number } | null {
+    let k = 0;
+    for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) if (xs[j] !== xs[i]) this.slopes[k++] = (ys[j] - ys[i]) / (xs[j] - xs[i]);
+    if (k === 0) return null;
+    const beta = medianInPlace(this.slopes, k);
+    for (let i = 0; i < n; i++) this.res[i] = ys[i] - beta * xs[i];
+    const alpha = medianInPlace(this.res, n);
+    // Mediana reszt to zero (z definicji wyrazu wolnego), więc MAD to mediana ich wartości bezwzględnych
+    for (let i = 0; i < n; i++) this.res[i] = Math.abs(ys[i] - alpha - beta * xs[i]);
+    return { alpha, beta, scale: 1.4826 * medianInPlace(this.res, n) };
+  }
+}
