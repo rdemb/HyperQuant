@@ -1,5 +1,5 @@
 import type { Candle } from '../hl/parse';
-import { Extreme, Window, Wma, ema, rma } from './primitives';
+import { Extreme, RobustLine, Window, Wma, ema, rma } from './primitives';
 import { INTERVALS, intervalById } from '../core/time';
 import { numLang } from '../../../ui/format';
 import { tr } from '../../../i18n';
@@ -37,7 +37,8 @@ export type IndicatorId =
   | 'linreg'
   | 'hv'
   | 'netvol'
-  | 'oiflow';
+  | 'oiflow'
+  | 'absorption';
 
 /** Grupy na liście okna wskaźników (jak kategorie TradingView); `hyperliquid` — wskaźniki z danych spoza świec, we własnej sekcji okna. */
 export type IndicatorGroup = 'trend' | 'momentum' | 'volatility' | 'volume' | 'levels' | 'hyperliquid';
@@ -145,7 +146,7 @@ export interface IndicatorDef {
   range?: readonly [number, number];
   /** Liczby: cena z dokładnością ticku rynku, odległość ceny (o miejsce dokładniej niż tick), dwa albo trzy miejsca, wolumen. */
   format: 'price' | 'range' | 'fixed2' | 'fixed3' | 'volume';
-  /** Krok świeca po świecy; bez niego wskaźnik to rysunek na ostatnich świecach (`fit`) albo z danych spoza świec (`flow`). */
+  /** Krok świeca po świecy; bez niego wskaźnik to rysunek na ostatnich świecach (`fit`) albo z danych spoza świec (`flow`, `sample`). */
   create?(p: Params): Step;
   /**
    * Rysunek na ostatnich świecach (kanał regresji, jak w TradingView): liczony od nowa z ostatnich `span` świec przy
@@ -157,6 +158,16 @@ export interface IndicatorDef {
    * do `out`; liczony od nowa przy każdym przeliczeniu, bo dane dochodzą też do starszych świec.
    */
   flow?(b: FlowBar, ms: number, ctx: FlowContext, out: Float64Array): void;
+  /**
+   * Wskaźnik z taśmy porównujący świecę z poprzednimi świecami (absorpcja): `point` zapisuje parę (x, y) świecy do `xy`
+   * (false — świeca bez wartości), a krok z `create` liczy wartości plotów świecy z jej pary i par `span` poprzednich
+   * świec z wartością (najnowsza pierwsza).
+   */
+  sample?: {
+    span(p: Params): number;
+    point(b: FlowBar, xy: Float64Array): boolean;
+    create(p: Params): (x: number, y: number, xs: Float64Array, ys: Float64Array, out: Float64Array) => void;
+  };
 }
 
 const length = (def: number): ParamDef => ({ key: 'length', label: tr('Długość', 'Length'), min: 1, max: 1000, step: 1, def });
@@ -1172,6 +1183,56 @@ export const INDICATORS: readonly IndicatorDef[] = [
       out[1] = ok ? fp.delta : Number.NaN;
     },
   },
+  {
+    id: 'absorption',
+    short: tr('Absorpcja', 'Absorption'),
+    name: tr('Absorpcja: wysiłek a efekt', 'Absorption: effort vs result'),
+    hint: tr(
+      'O ile ruch ceny w świecy odbiegł od zwykłego przy takiej delcie, w jednostkach rozrzutu ostatnich świec: ujemny słupek — cena przesunęła się w stronę agresji mniej niż zwykle, dodatni — bardziej; kolor to strona agresji (turkus kupno, czerwień sprzedaż)',
+      'How far the price move within the candle departed from the usual move for such a delta, in units of recent candles’ spread: a negative bar means price moved in the direction of aggression less than usual, a positive one more; the colour is the aggressor side (teal buying, red selling)'
+    ),
+    group: 'hyperliquid',
+    aliases: 'absorption absorpcja wysilek efekt effort result theil sen delta odporna robust',
+    warmup: () => 0,
+    convention: tr(
+      'Tego wskaźnika nie ma w TradingView: liczony z nagranej taśmy Hyperliquid. Zwykły ruch to prosta Theila–Sena (mediana nachyleń par) ruchu ceny w świecy (zamknięcie − otwarcie) względem delty w poprzednich świecach z taśmą; rozrzut to mediana odchyleń bezwzględnych (MAD) razy 1,4826. Pojedyncza skrajna świeca w oknie nie przestawia prostej, w przeciwieństwie do zwykłej regresji. Słupek to reszta świecy podzielona przez rozrzut, ze znakiem strony agresji.',
+      'TradingView has no such indicator: it is computed from the recorded Hyperliquid tape. The usual move is the Theil–Sen line (median of pairwise slopes) of the in-candle price move (close − open) against delta over the previous candles with tape; the spread is the median absolute deviation (MAD) times 1.4826. A single extreme candle in the window does not shift the line, unlike ordinary regression. The bar is the candle’s residual divided by the spread, signed by the aggressor side.'
+    ),
+    memoryNote: tr(
+      'Wartość zależy od bieżącej świecy i od ostatnich świec w liczbie „Długość”, w całości objętych nagraniem taśmy (świece z luką się pomija). Bieżąca świeca jest porównywana z tymi samymi świecami co po zamknięciu, więc wartość na żywo liczy się tak samo jak końcowa. Brak wartości, dopóki nie ma tylu świec z taśmą, i gdy w oknie delta nie przesuwa ceny w swoją stronę (nachylenie ≤ 0).',
+      'The value depends on the current candle and on the last “Length” candles fully covered by the tape recording (candles with a gap are skipped). The current candle is compared with the same candles as after its close, so the live value is computed the same way as the final one. No value until there are that many candles with tape, or when delta does not move price its own way in the window (slope ≤ 0).'
+    ),
+    pane: 'own',
+    params: [{ key: 'length', label: tr('Długość', 'Length'), min: 20, max: 200, step: 1, def: 120 }],
+    plots: [
+      { hist: true, signOf: 1, title: 'z' },
+      { hist: true, hidden: true, title: 'Delta' },
+    ],
+    levels: [-2, 0, 2],
+    // Liczby ze znakiem jak delta (z i delta w legendzie)
+    format: 'volume',
+    sample: {
+      span: (p) => p.length,
+      point: (b, xy) => {
+        // Tylko świeca w całości objęta nagraniem — część taśmy dałaby część delty
+        const fp = b.complete ? b.fp : null;
+        if (!fp) return false;
+        xy[0] = fp.delta;
+        xy[1] = b.candle.c - b.candle.o;
+        return true;
+      },
+      create: (p) => {
+        const line = new RobustLine(p.length);
+        return (x, y, xs, ys, out) => {
+          const f = line.fit(xs, ys, p.length);
+          const ok = f !== null && f.beta > 0 && f.scale > 0;
+          // Reszta w stronę agresji: ujemna — cena przesunęła się w stronę delty mniej, niż wynika z prostej
+          out[0] = ok ? (Math.sign(x) * (y - f.alpha - f.beta * x)) / f.scale : Number.NaN;
+          out[1] = ok ? x : Number.NaN;
+        };
+      },
+    },
+  },
 ];
 
 export const indicatorDef = (id: IndicatorId): IndicatorDef => INDICATORS.find((d) => d.id === id)!;
@@ -1230,7 +1291,7 @@ export function indicatorLabel(x: IndicatorInstance): string {
  * Parametr „Interwał”: bez niego wskaźnik ze stałym okresem (pivoty), rysunek na ostatnich świecach (kanał regresji),
  * wskaźnik przesunięty o świece wykresu (Ichimoku) i wskaźnik z danych spoza świec (taśma, otwarte pozycje).
  */
-export const tfAllowed = (def: IndicatorDef): boolean => !def.period && !def.fit && !def.flow && !def.plots.some((p) => p.shift);
+export const tfAllowed = (def: IndicatorDef): boolean => !def.period && !def.fit && !def.flow && !def.sample && !def.plots.some((p) => p.shift);
 
 /** Interwał wskaźnika: znany identyfikator interwału, a wskaźnik bez parametru „Interwał” go nie ma. */
 const tfOk = (def: IndicatorDef, tf: unknown): tf is string => tfAllowed(def) && INTERVALS.some((iv) => iv.id === tf);
