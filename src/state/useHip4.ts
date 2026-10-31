@@ -63,13 +63,16 @@ function makeComputer(): { run: (qs: BtcOutcome[], model: VolModel | null, price
 
 /**
  * Rynki wynikowe BTC (HIP-4): lista co 10 min, arkusze strony „Yes” i model co minutę (w Web Workerze), tylko w widocznej
- * karcie (po powrocie od razu); najwyżej HIP4_MAX_MARKETS najbliższych terminów.
+ * karcie (po powrocie od razu); najwyżej HIP4_MAX_MARKETS najbliższych terminów. `enabled` false — bez zapytań.
  */
-export function useHip4(model: VolModel | null, price: number): Hip4State {
+export function useHip4(model: VolModel | null, price: number, enabled = true): Hip4State {
   const [state, setState] = useState<Hip4State>({ status: 'loading', rows: [], asOf: null });
   const ref = useRef({ model, price });
   ref.current = { model, price };
+  // Model doczytany po pierwszym przebiegu: od razu nowy przebieg, bez czekania minuty
+  const hasModel = model !== null;
   useEffect(() => {
+    if (!enabled) return;
     let alive = true;
     let gen = 0;
     let lastAt = 0;
@@ -113,6 +116,6 @@ export function useHip4(model: VolModel | null, price: number): Hip4State {
       document.removeEventListener('visibilitychange', onVisible);
       computer.close();
     };
-  }, []);
+  }, [enabled, hasModel]);
   return state;
 }

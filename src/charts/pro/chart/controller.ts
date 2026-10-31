@@ -43,6 +43,8 @@ import { IndicatorEngine } from '../indicators/engine';
 import { HIST_DOWN, HIST_UP, IndicatorDef, IndicatorInstance, PlotDef, indicatorDef, indicatorLabel, plotShift } from '../indicators/registry';
 import { CloudFill, CloudSource } from './cloudFill';
 import { ConeForecast, ConeLayer, ConeSource } from './coneLayer';
+import { Hip4Layer, Hip4Source, outcomeLevels } from './hip4Layer';
+import type { Hip4State } from '../../../state/useHip4';
 import { CountdownLabel } from './countdown';
 import { FlowVenue, OiVenue, oiMaxAge, per8h } from '../venues/parse';
 import { VenueStore, acquireVenues, venueStoreFor } from '../venues/venueStore';
@@ -187,6 +189,8 @@ const CONE_TOUCH_MIN = 120;
 /** Pokrycie przedziałów w legendzie stożka od tylu rozstrzygnięć (jak w Planie). */
 const CONE_MIN_N = 20;
 const horizonLabel = (h: number) => (h % 60 === 0 ? `${h / 60} h` : `${h} min`);
+/** Notowania rynków HIP-4 starsze niż tyle nie są rysowane (pobierane co minutę). */
+const HIP4_MAX_AGE_MS = 3 * 60_000;
 const pctLabel = (v: number) => `${numLang(String(Math.round(v * 100)))}%`;
 const CONE_LEVELS = [
   ['pdh', 'PDH'],
@@ -290,6 +294,9 @@ export class ProChartController {
   /** Stożek prognozy zakresu z dziennika Desku (wskaźnik „Stożek”). */
   private readonly cone = new ConeLayer(() => this.coneSource());
   private ledger: DeskLedgerSummary | null = null;
+  /** Rynki wynikowe HIP-4 z modelem Desku (wskaźnik „HIP-4”); null — niepobierane (inny rynek, powtórka, wskaźnik ukryty). */
+  private readonly hip4 = new Hip4Layer(() => this.hip4Source());
+  private outcomes: Hip4State | null = null;
   private countdownTimer = 0;
   /** Narzędzia rysowania (pasek narzędzi w ProChart). */
   readonly draw: DrawingTools;
@@ -361,6 +368,7 @@ export class ProChartController {
     this.tpo = new TpoLayer(settings.showTpo);
     this.main.attachPrimitive(this.tpo);
     this.main.attachPrimitive(this.cone);
+    this.main.attachPrimitive(this.hip4);
     this.main.attachPrimitive(this.countdown);
     // Rysunki dołączone ostatnie — nad wskaźnikami i świecami
     this.drawLayer.setUnit(store.coin);
@@ -824,6 +832,45 @@ export class ProChartController {
     this.cone.update();
     if (this.coneShown()) this.applyDomInset();
     this.emitHover();
+  }
+
+  /** Rynki wynikowe HIP-4 z prawdopodobieństwami modelu (null — niepobierane): poziomy i ich opis w legendzie. */
+  setOutcomes(o: Hip4State | null): void {
+    this.outcomes = o;
+    this.hip4.update();
+    this.emitHover();
+  }
+
+  /** Notowania HIP-4 z ostatnich minut (pobierane co minutę; starsze po błędach zapytań nie udają bieżących). */
+  private hip4Fresh(): Hip4State | null {
+    const o = this.outcomes;
+    return o && o.status === 'ready' && o.asOf !== null && Date.now() - o.asOf <= HIP4_MAX_AGE_MS ? o : null;
+  }
+
+  private hip4Source(): Hip4Source | null {
+    const x = this.indShown.find((y) => indicatorDef(y.id).outcomes);
+    const o = this.hip4Fresh();
+    const last = this.bars[this.bars.length - 1];
+    if (!x || !o || this.store.coin !== 'BTC' || !last) return null;
+    // Telefon: tylko poziom najbliższy ceny
+    return { levels: outcomeLevels(o.rows, this.store.serverNow(), last.candle.c, this.phone), color: x.color, alpha: x.alpha, width: x.width };
+  }
+
+  /** Opis rynków HIP-4 w legendzie: ile płynnych i wynik Briera rynku i modelu z dziennika (rynki 15-minutowe). */
+  private hip4Legend(): { text: string; color: string }[] {
+    const o = this.outcomes;
+    if (this.store.coin !== 'BTC') return [{ text: tr('tylko BTC', 'BTC only'), color: PRO.ink3 }];
+    if (this.store.replay) return [{ text: tr('w powtórce bez rynków', 'no markets in replay'), color: PRO.ink3 }];
+    if (!o || o.status === 'loading') return [{ text: tr('pobieram rynki…', 'loading markets…'), color: PRO.ink3 }];
+    if (!this.hip4Fresh()) return [{ text: tr('rynki chwilowo niedostępne', 'markets temporarily unavailable'), color: PRO.ink3 }];
+    const liquid = o.rows.filter((r) => r.quote?.liquid).length;
+    const parts = [{ text: tr(`płynne ${liquid} z ${o.rows.length}`, `liquid ${liquid} of ${o.rows.length}`), color: PRO.ink2 }];
+    const sc = this.ledger?.market?.scores;
+    if (!this.phone && sc && sc.brierMarket !== null && sc.brierModel !== null) {
+      const b = (v: number) => numLang(v.toFixed(3));
+      parts.push({ text: `Brier 15 min (n ${sc.n}): ${tr('rynek', 'market')} ${b(sc.brierMarket)} · model ${b(sc.brierModel)}`, color: PRO.ink2 });
+    }
+    return parts;
   }
 
   private coneShown(): boolean {
@@ -1388,15 +1435,17 @@ export class ProChartController {
       });
       const values = def.forecast
         ? this.coneLegend(x.color)
-        : vs.flatMap((v, p) => {
-            const plot = def.plots[p];
-            if (def.band?.includes(p)) return [];
-            // Podpis poziomu (pivoty: P, R1, S1…) także w legendzie; przedział w nawiasie za wartością
-            const fmt = this.indFormat(plot.format ?? def.format);
-            const text = Number.isNaN(v) ? '—' : fmt(v);
-            const band = def.band && p === 0 && !Number.isNaN(v) ? ` (${fmt(vs[def.band[0]])}–${fmt(vs[def.band[1]])})` : '';
-            return [{ text: plot.title ? `${plot.title} ${text}${band}` : `${text}${band}`, color: this.plotColor(x, plot, vs[plot.signOf ?? p]) }];
-          });
+        : def.outcomes
+          ? this.hip4Legend()
+          : vs.flatMap((v, p) => {
+              const plot = def.plots[p];
+              if (def.band?.includes(p)) return [];
+              // Podpis poziomu (pivoty: P, R1, S1…) także w legendzie; przedział w nawiasie za wartością
+              const fmt = this.indFormat(plot.format ?? def.format);
+              const text = Number.isNaN(v) ? '—' : fmt(v);
+              const band = def.band && p === 0 && !Number.isNaN(v) ? ` (${fmt(vs[def.band[0]])}–${fmt(vs[def.band[1]])})` : '';
+              return [{ text: plot.title ? `${plot.title} ${text}${band}` : `${text}${band}`, color: this.plotColor(x, plot, vs[plot.signOf ?? p]) }];
+            });
       const legend = this.indLegends[k];
       // Pierwsza wartość przy nazwie, dalsze (OFI: Δp, R², oczekiwana) mogą przejść do następnego wiersza na wąskim panelu
       if (legend) legend.set([{ text: indicatorLabel(x), color: PRO.ink3 }, ...values.map((v, p) => ({ ...v, glue: p === 0 }))]);
