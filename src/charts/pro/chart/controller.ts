@@ -1087,6 +1087,7 @@ export class ProChartController {
       orders: (from: number, to: number) => this.store.orders.range(from, to),
       orderCount: (from: number, to: number) => this.store.orders.count(from, to),
       identified: (from: number, to: number) => this.store.addressed.covers(from, to),
+      makers: (from: number, to: number) => this.store.makerSplit(from, to),
       now: this.store.serverNow(),
     };
     if (this.engine.sync(this.bars, ms, (tf) => this.store.indicatorCandles(tf, first), flow) >= n) return;
