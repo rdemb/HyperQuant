@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState, useSyncExternalStore }
 import { CircleHelp, RotateCcw } from 'lucide-react';
 import { ProChart, subscribeNarrow } from '../charts/pro/ProChart';
 import { ChartLayout, isNarrow, loadSettings } from '../charts/pro/chart/settings';
-import { clearStation, saveStationLayout, stationKey } from '../charts/pro/chart/stations';
+import { clearStation, saveStationLayout, stationKey, stationPanel } from '../charts/pro/chart/stations';
 import { carryViewTime } from '../charts/pro/chart/controller';
 import {
   ChartTab,
@@ -109,7 +109,7 @@ const ChartsView: React.FC = () => {
   const n = wide ? layout : 1;
   // Karta uczciwości szablonu: rynek i interwał pierwszego wykresu karty (odczyt zapisu; zapis wykresu odświeża widok)
   const honestyId = honestyTemplate(tab.preset);
-  const first = honestyId ? loadSettings(stationKey(tab.id, 0)) : null;
+  const first = honestyId ? loadSettings(stationKey(tab.id, 0), stationPanel(station, 0, narrow)) : null;
   /** Podpis karty: interwały jej wykresów widocznych na tym ekranie (aktywna — bieżący układ). */
   const tf = (t: ChartTab) => tfLabel(tabIntervals(t, wide ? (t.id === tab.id ? layout : tabLayout(t)) : 1, narrow));
 
