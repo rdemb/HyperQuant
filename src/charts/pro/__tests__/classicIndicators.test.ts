@@ -6,6 +6,7 @@ import { Bocpd } from '../../../utils/bocpd';
 import { OlsWindow, RegimeDetector, RobustLine, Window, Wma, ema, medianInPlace, rma } from '../indicators/primitives';
 import { IndicatorEngine } from '../indicators/engine';
 import {
+  FlowContext,
   INDICATORS,
   INDICATOR_COLORS,
   IndicatorId,
@@ -25,10 +26,21 @@ import {
   parseIndicators,
   parseParams,
   plotShift,
+  quantileSorted,
   regimePrior,
 } from '../indicators/registry';
 
 const M5 = 300_000;
+
+/** Dane spoza świec w testach: bez odczytów, z podanymi polami. */
+const flowCtx = (c: Partial<FlowContext>): FlowContext => ({
+  oiAt: () => null,
+  book: () => [],
+  orders: () => [],
+  orderCount: () => 0,
+  now: Number.POSITIVE_INFINITY,
+  ...c,
+});
 
 /** Generator z ziarnem (mulberry32) — powtarzalne serie losowe. */
 function rng(seed: number): () => number {
@@ -773,7 +785,7 @@ describe('wskaźniki: zmiana OI i delta', () => {
   // Druga świeca bez pełnego nagrania, trzecia bez taśmy
   const tape = cs.map((candle, i) => ({ candle, fp: i === 2 ? null : { delta: deltas[i] }, complete: i !== 1 }));
   const now = t0 + 5 * M5 + 2 * 60_000;
-  const sync = (e: IndicatorEngine, list = tape, at = oiAt) => e.sync(list, M5, () => [], { oiAt: at, book: () => [], now });
+  const sync = (e: IndicatorEngine, list = tape, at = oiAt) => e.sync(list, M5, () => [], flowCtx({ oiAt: at, now }));
 
   it('słupek to zmiana OI od początku do zamknięcia świecy (bieżąca: do teraz), druga wartość to delta; bez taśmy, pełnego nagrania albo odczytu OI — brak', () => {
     const e = new IndicatorEngine();
@@ -1000,7 +1012,7 @@ describe('wskaźniki: OFI z kalibracją', () => {
   const run = (bs: readonly { candle: Candle }[], frames: readonly BookFrame[], now: number, length = 30) => {
     const e = new IndicatorEngine();
     e.setInstances([inst('ofi', { length })]);
-    e.sync(bs, M5, () => [], { oiAt: () => null, book: () => frames, now });
+    e.sync(bs, M5, () => [], flowCtx({ book: () => frames, now }));
     return e.runs[0].out.map((a) => Array.from(a.subarray(0, bs.length)));
   };
 
@@ -1096,7 +1108,7 @@ describe('wskaźniki: OFI z kalibracją', () => {
     const all = book(now, 0.4, 25, 5);
     const e = new IndicatorEngine();
     e.setInstances([inst('ofi', { length: 10 })]);
-    const sync = (frames: readonly BookFrame[]) => e.sync(bs, M5, () => [], { oiAt: () => null, book: () => frames, now });
+    const sync = (frames: readonly BookFrame[]) => e.sync(bs, M5, () => [], flowCtx({ book: () => frames, now }));
     // Historia arkusza od 30. świecy, potem z serwera wcześniejsza (pierwsza świeca z migawkami nie ma jeszcze pary)
     expect(sync(all.filter((f) => f.t >= 30 * M5))).toBe(0);
     expect(sync(all.filter((f) => f.t >= 30 * M5))).toBe(60);
@@ -1199,6 +1211,93 @@ describe('wskaźniki: reżim zmienności (BOCPD)', () => {
     expect(def.group).toBe('hyperquant');
     expect(indicatorLabel(inst('regime'))).toBe('Reżim 200 20');
     expect(indicatorsLink([inst('regime', { length: 288 })])).toBe('regime(288,20)');
+  });
+});
+
+describe('wskaźniki: wielkość zleceń agresora', () => {
+  type Order = { time: number; notional: number };
+  /** Zlecenia co ~3 s, kwoty log-normalne wokół `med(i)` USD w świecy i. */
+  function ordersOf(n: number, seed: number, med: (i: number) => number): Order[] {
+    const r = rng(seed);
+    const g = () => Math.sqrt(-2 * Math.log(r() || 1e-12)) * Math.cos(2 * Math.PI * r());
+    const out: Order[] = [];
+    for (let t = 500; t < n * M5; t += 1000 + Math.floor(4000 * r())) out.push({ time: t, notional: med(Math.floor(t / M5)) * Math.exp(1.2 * g()) });
+    return out;
+  }
+  const ctxOf = (list: readonly Order[], now: number) => {
+    const inRange = (a: number, b: number) => list.filter((o) => o.time >= a && o.time < b);
+    return flowCtx({ orders: inRange, orderCount: (a, b) => inRange(a, b).length, now });
+  };
+  const tapeOf = (n: number, gap = -1) => walk(n, 3).map((candle, i) => ({ candle, fp: { delta: 0 }, complete: i !== gap }));
+
+  it('kwantyle z interpolacją liniową (jak domyślne w R i numpy)', () => {
+    expect(quantileSorted([1, 2, 3, 4], 0.5)).toBe(2.5);
+    expect(quantileSorted([10, 20, 30, 40, 50], 0.9)).toBeCloseTo(46, 12);
+    expect(quantileSorted([7], 0.99)).toBe(7);
+    expect(Number.isNaN(quantileSorted([], 0.5))).toBe(true);
+  });
+
+  it('percentyle świecy z jej zleceń, baza p90 z poprzednich świec (w przedziale ok. 12%), KS dodatni przy większych zleceniach', () => {
+    const n = 60;
+    // Od świecy 50 zlecenia dziesięć razy większe
+    const list = ordersOf(n, 1, (i) => (i >= 50 ? 20_000 : 2_000));
+    const bars = tapeOf(n, 30);
+    const e = new IndicatorEngine();
+    e.setInstances([inst('ordersize', { length: 20 })]);
+    const now = n * M5 - 1000;
+    e.sync(bars, M5, () => [], ctxOf(list, now));
+    const [p50, p90, p99, base, ks] = e.runs[0].out.map((a) => Array.from(a.subarray(0, n)));
+    const usd = (a: number, b: number) => list.filter((o) => o.time >= a && o.time < b).map((o) => o.notional).sort((x, y) => x - y);
+    for (const i of [3, 40, 55]) {
+      const xs = usd(i * M5, (i + 1) * M5);
+      expect(p50[i]).toBeCloseTo(quantileSorted(xs, 0.5), 9);
+      expect(p90[i]).toBeCloseTo(quantileSorted(xs, 0.9), 9);
+      expect(p99[i]).toBeCloseTo(quantileSorted(xs, 0.99), 9);
+    }
+    // Świeca bez pełnego nagrania: bez wartości i poza bazą (baza świecy 45: świece 25–44 bez 30, czyli 24–44)
+    expect([p50[30], base[30], ks[30]].every(Number.isNaN)).toBe(true);
+    const pooled = [...usd(24 * M5, 30 * M5), ...usd(31 * M5, 45 * M5)].sort((a, b) => a - b);
+    expect(base[45] / quantileSorted(pooled, 0.9)).toBeGreaterThan(1 / 1.13);
+    expect(base[45] / quantileSorted(pooled, 0.9)).toBeLessThan(1.13);
+    // Baza dopiero z 20 świec
+    expect(base.slice(0, 20).every(Number.isNaN)).toBe(true);
+    expect(Number.isNaN(base[20])).toBe(false);
+    expect(Math.abs(ks[40])).toBeLessThan(0.25);
+    expect(ks[50]).toBeGreaterThan(0.5);
+    // Po kilkunastu świecach większe zlecenia są już w bazie
+    expect(Math.abs(ks[59])).toBeLessThan(ks[50]);
+  });
+
+  it('świeca liczona od nowa tylko po zmianie: inna świeca albo inna liczba zleceń', () => {
+    const n = 40;
+    const list = ordersOf(n, 2, () => 3_000);
+    const bars = tapeOf(n);
+    const e = new IndicatorEngine();
+    e.setInstances([inst('ordersize', { length: 10 })]);
+    const now = n * M5 - 1000;
+    const ctx = ctxOf(list, now);
+    const spy = vi.spyOn(ctx, 'orders');
+    expect(e.sync(bars, M5, () => [], ctx)).toBe(0);
+    expect(spy).toHaveBeenCalledTimes(n);
+    expect(e.sync(bars, M5, () => [], ctx)).toBe(n);
+    expect(spy).toHaveBeenCalledTimes(n);
+    // Nowe zlecenie w bieżącej świecy (po zamknięciu poprzednich wypełnień): tylko ona
+    const more = [...list, { time: now - 500, notional: 1e6 }];
+    const ctx2 = ctxOf(more, now);
+    const spy2 = vi.spyOn(ctx2, 'orders');
+    expect(e.sync(bars, M5, () => [], ctx2)).toBe(n - 1);
+    expect(spy2).toHaveBeenCalledTimes(1);
+  });
+
+  it('skala logarytmiczna, kwoty USD, KS w legendzie w kolorze kierunku; bez parametru „Interwał”', () => {
+    const def = indicatorDef('ordersize');
+    expect(def.log).toBe(true);
+    expect(def.format).toBe('usd');
+    expect(def.plots.map((p) => p.title)).toEqual(['p50', 'p90', 'p99', 'baza p90', 'KS']);
+    expect(def.plots[4]).toMatchObject({ hist: true, hidden: true, format: 'fixed2' });
+    expect(def.group).toBe('hyperquant');
+    expect(indicatorLabel(inst('ordersize'))).toBe('Zlecenia 100');
+    expect(indicatorsFromLink('ordersize(50)@1h')[0].tf).toBeUndefined();
   });
 });
 
