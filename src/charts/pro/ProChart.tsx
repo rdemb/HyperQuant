@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExtern
 import { Bell, BellOff, BellPlus, Camera, ChevronDown, ChevronsRight, Columns2, Copy, Grid2x2, History, Keyboard, Layers, Link, ListOrdered, Maximize2, Minimize2, Minus, MoreHorizontal, PenTool, RotateCcw, SlidersHorizontal, Square, X } from 'lucide-react';
 import { Badge, BadgeTone, Segmented, numLang } from '../../ui';
 import { LiqMapState, useLiqMap } from '../../state/useLiqMap';
+import { useDeskLedger } from '../../state/useDeskLedger';
 import { usePublished } from '../../state/usePublished';
 import { type WhaleLayer, isWhaleLayer } from '../../utils/whaleLayer';
 import { INTERVALS, fmtHm, fmtSince, intervalById } from './core/time';
@@ -256,6 +257,7 @@ export const ProChart: React.FC<{
   const legendBottom = useRef(0);
   const signal = useMemo(() => new HoverSignal(), []);
   const liq = useLiqMap();
+  const { summary: ledger } = useDeskLedger();
   const whalePub = usePublished('whales.json', isWhaleLayer);
   // Wieloryby i mapa likwidacji to stan na teraz — w powtórce ich nie ma
   const whales = !inReplay && whalePub.value && Date.now() - whalePub.value.asOf < WHALES_STALE_MS ? whalePub.value : null;
@@ -442,6 +444,11 @@ export const ProChart: React.FC<{
     const fresh = liq.map && (liq.status === 'ready' || liq.status === 'delayed') && store.coin === 'BTC' && !store.replay;
     ctrlRef.current?.setLiqLevels(fresh ? liqLevels(liq.map!) : []);
   }, [liq.map, liq.status, store]);
+
+  // Stożek prognozy z dziennika Desku tylko na żywo: prognoza „teraz” nie pasuje do odtwarzanej chwili
+  useEffect(() => {
+    ctrlRef.current?.setLedger(store.replay ? null : ledger);
+  }, [ledger, store]);
 
   useEffect(() => {
     const onFs = () => setFullscreen(document.fullscreenElement === cardRef.current);
