@@ -52,7 +52,8 @@ export type IndicatorId =
   | 'breadth'
   | 'repeat'
   | 'makers'
-  | 'hawkes';
+  | 'hawkes'
+  | 'outcomes';
 
 /**
  * Grupy na liście okna wskaźników (jak kategorie TradingView); `hyperquant` — wskaźniki, których nie ma w TradingView
@@ -211,6 +212,8 @@ export interface IndicatorDef {
    * i opis w legendzie z dziennika prognoz.
    */
   forecast?: true;
+  /** Rynki wynikowe HIP-4 (ceny rynku i modelu Desku): bez wartości świec i bez plotów — poziomy na wykresie ceny. */
+  outcomes?: true;
   /** Tyle świec przed lewą krawędzią widoku potrzeba danych z serwera (okno poprzednich świec: absorpcja, OFI). */
   lookback?(p: Params): number;
   /**
@@ -1938,6 +1941,31 @@ export const INDICATORS: readonly IndicatorDef[] = [
       };
     },
   },
+  {
+    id: 'outcomes',
+    short: 'HIP-4',
+    name: tr('Rynki wynikowe HIP-4: rynek i model', 'HIP-4 outcome markets: market and model'),
+    hint: tr(
+      'Progi otwartych rynków wynikowych Hyperliquid na BTC („cena powyżej K w terminie”, „dotknięcie K do terminu”) jako poziomy na wykresie: cena udziału „Tak” obok prawdopodobieństwa z modelu Desku dla tego samego pytania; im większa różnica, tym mocniejszy kolor',
+      'The thresholds of open Hyperliquid BTC outcome markets (“price above K at expiry”, “touch K before expiry”) as levels on the chart: the price of a “Yes” share next to the Desk model probability for the same question; the bigger the difference, the stronger the colour'
+    ),
+    group: 'hyperquant',
+    aliases: 'hip4 hip-4 outcome wynikowe predykcyjne prediction polymarket kalshi binarne binary prawdopodobienstwo probability model rynek market prog threshold dotkniecie touch termin expiry',
+    warmup: () => 0,
+    convention: tr(
+      'Tego wskaźnika nie ma w TradingView. Rynki i arkusze z publicznego API Hyperliquid (strona „Tak”), odświeżane co minutę tylko przy widocznej karcie; model to ten sam symulator Desku co w panelu „Model vs rynek” w zakładce Rynek (zmienność z sezonowego log-HAR, reszty historyczne, Monte Carlo — błąd symulacji ok. 1 pp). Pokazujemy tylko rynki z płynnym arkuszem (spread do 5 pp i co najmniej 50 USDC w ±5 pp od środka po obu stronach), bo przy rzadkim cena rynku nic nie mówi. Kolor jest pełny przy różnicy 20 pp. W legendzie wynik Briera z dziennika Desku na rozstrzygniętych rynkach 15-minutowych — to pomiar trafności obu, nie przewaga. Tylko BTC; w powtórce bez rynków.',
+      'TradingView has no such indicator. Markets and books come from the public Hyperliquid API (the “Yes” side), refreshed every minute only while the tab is visible; the model is the same Desk simulator as in the “Model vs market” panel on the Market tab (seasonal log-HAR volatility, historical residuals, Monte Carlo with about 1 pp simulation error). Only markets with a liquid book are shown (spread up to 5 pp and at least 50 USDC within ±5 pp of the mid on both sides), because with a thin book the market price says nothing. The colour is full at a 20 pp difference. The legend shows the Brier score from the Desk ledger on settled 15-minute markets: a measure of how accurate both are, not an edge. BTC only; no markets in replay.'
+    ),
+    memoryNote: tr(
+      'Nie zależy od świec wykresu: bieżące rynki, ich notowania i model na teraz, a w legendzie wyniki z dziennika.',
+      'It does not depend on the chart candles: current markets, their quotes and the model as of now, and ledger results in the legend.'
+    ),
+    pane: 'price',
+    params: [],
+    plots: [],
+    format: 'price',
+    outcomes: true,
+  },
 ];
 
 export const indicatorDef = (id: IndicatorId): IndicatorDef => INDICATORS.find((d) => d.id === id)!;
@@ -1997,7 +2025,7 @@ export function indicatorLabel(x: IndicatorInstance): string {
  * wskaźnik przesunięty o świece wykresu (Ichimoku) i wskaźnik z danych spoza świec (taśma, otwarte pozycje).
  */
 export const tfAllowed = (def: IndicatorDef): boolean =>
-  !def.period && !def.fit && !def.flow && !def.series && !def.sample && !def.forecast && !def.plots.some((p) => p.shift);
+  !def.period && !def.fit && !def.flow && !def.series && !def.sample && !def.forecast && !def.outcomes && !def.plots.some((p) => p.shift);
 
 /** Interwał wskaźnika: znany identyfikator interwału, a wskaźnik bez parametru „Interwał” go nie ma. */
 const tfOk = (def: IndicatorDef, tf: unknown): tf is string => tfAllowed(def) && INTERVALS.some((iv) => iv.id === tf);
