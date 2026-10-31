@@ -6,7 +6,7 @@ import { FlowBar, FlowContext, IndicatorInstance, SeriesFn, Step, indicatorDef }
 type Bar = FlowBar;
 
 /** Bez danych spoza świec (testy, wykres bez rynku Hyperliquid): wskaźniki z taśmy i OI bez wartości. */
-const NO_FLOW: FlowContext = { oiAt: () => null, book: () => [], orders: () => [], orderCount: () => 0, now: Number.POSITIVE_INFINITY };
+const NO_FLOW: FlowContext = { oiAt: () => null, book: () => [], exactBook: () => [], orders: () => [], orderCount: () => 0, now: Number.POSITIVE_INFINITY };
 
 /** Świece interwału wskaźnika (seria rynku wczytywana przy pierwszym użyciu). */
 export type CandlesOf = (tf: string) => readonly Candle[];
