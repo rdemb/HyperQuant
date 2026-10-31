@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useSyncExternalStore } from 'react';
 import { Radio } from 'lucide-react';
 import { ProChart } from '../ProChart';
-import { loadStation, stationById } from '../chart/stations';
+import { stationById } from '../chart/stations';
+import { activeTab, loadTabs, presetStation } from '../chart/tabs';
 import type { ReplayLink } from './link';
 import { ReplaySession } from './session';
 import { tr } from '../../../i18n';
@@ -10,7 +11,7 @@ const none = () => () => {};
 
 /**
  * Widok powtórki (#charts?replay=…): wczytuje nagranie z linku i pokazuje je na jednym wykresie z paskiem odtwarzania.
- * Bez stacji w linku wygląd z bieżącej stacji (zapisane ustawienia pierwszego panelu), a z linku — z wzorca stacji.
+ * Bez stacji w linku wygląd z bieżącej karty układu (zapisane ustawienia pierwszego panelu), a z linku — z wzorca stacji.
  */
 export const ReplayView: React.FC<{ link: ReplayLink }> = ({ link }) => {
   const [session, setSession] = useState<ReplaySession | null>(null);
@@ -22,7 +23,8 @@ export const ReplayView: React.FC<{ link: ReplayLink }> = ({ link }) => {
     // Nowa powtórka tylko dla innego nagrania albo chwili; wygląd z linku czyta wykres przy starcie
   }, [link.source, link.coin, link.from, link.to, link.t]);
   useSyncExternalStore(session?.subscribe ?? none, () => (session ? `${session.state}:${session.storeGen}:${session.progress.done}` : ''));
-  const [station] = useState(() => (link.station ? stationById(link.station) : loadStation()));
+  const [tab] = useState(() => activeTab(loadTabs()));
+  const [station] = useState(() => (link.station ? stationById(link.station) : presetStation(tab.preset)));
 
   const exit = () => {
     window.location.hash = '#charts';
@@ -32,6 +34,7 @@ export const ReplayView: React.FC<{ link: ReplayLink }> = ({ link }) => {
   return (
     <ProChart
       station={station}
+      tabId={tab.id}
       coin={link.coin}
       fromLink={false}
       replay={{ session, store, link, onExit: exit }}

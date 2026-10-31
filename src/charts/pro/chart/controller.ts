@@ -230,6 +230,23 @@ const FLOW_CANDLE = {
 
 /** Wykresy na stronie (układ kilku paneli): chwila pod kursorem jednego pokazuje krzyż na pozostałych. */
 const crossPeers = new Set<ProChartController>();
+
+/** Chwila widoku przenoszona do wykresów karty otwieranej przy przełączeniu kart (ważna kilka sekund). */
+let carried: { t: number; until: number } | null = null;
+const CARRY_MS = 5000;
+/** Najwięcej stron starszej historii doczytywanych, żeby wykres nowej karty objął przeniesioną chwilę. */
+const CARRY_PAGES = 4;
+
+/**
+ * Przełączenie karty: środek widoku wykresu, w którym ostatnio kliknięto (inaczej pierwszego), przechodzi do wykresów
+ * nowej karty. Widok przy bieżącej świecy nic nie przenosi — nowa karta też otworzy się przy bieżącej świecy.
+ */
+export function carryViewTime(): void {
+  const peers = [...crossPeers];
+  const from = peers.find((p) => p.draw.isFocused) ?? peers[0];
+  const t = from?.viewTime() ?? null;
+  carried = t === null ? null : { t, until: Date.now() + CARRY_MS };
+}
 /** W trakcie ustawiania krzyża na innych panelach (ich zdarzenia krzyża nie są ruchem użytkownika). */
 let crossSyncing = false;
 
@@ -317,6 +334,9 @@ export class ProChartController {
   private horzLine = true;
   /** Po pierwszych danych nowej serii przewiń do bieżącej świecy. */
   private toNow = false;
+  /** Chwila z poprzedniej karty: po pierwszych danych widok na niej zamiast na bieżącej świecy. */
+  private focusT: number | null = null;
+  private focusPages = 0;
   private autoUsd = DEFAULT_THRESHOLD_USD;
   private autoAt = 0;
   private readonly liqSource: LiquiditySource;
@@ -386,6 +406,7 @@ export class ProChartController {
     // Odliczanie do zamknięcia świecy biegnie co sekundę także bez nowych transakcji
     this.countdownTimer = window.setInterval(() => this.tickCountdown(), 1000);
     crossPeers.add(this);
+    if (carried && Date.now() < carried.until) this.focusT = carried.t;
     this.schedule();
   }
 
@@ -970,6 +991,43 @@ export class ProChartController {
     return parts;
   }
 
+  /** Środek widoku (ms) albo null, gdy widać bieżącą świecę lub nie ma jeszcze świec. */
+  viewTime(): number | null {
+    const r = this.chart.timeScale().getVisibleLogicalRange();
+    const n = this.bars.length;
+    if (!r || n === 0 || r.to >= n - 1) return null;
+    const i = Math.max(0, Math.min(n - 1, Math.round((r.from + r.to) / 2)));
+    return this.bars[i].t + this.series.interval.ms / 2;
+  }
+
+  /**
+   * Widok na chwili `t` z poprzedniej karty (to samo zbliżenie, krzyż na świecy tej chwili). Chwila sprzed pierwszej
+   * świecy: doczytanie starszej historii (najwyżej kilka stron), potem najstarsza dostępna świeca.
+   */
+  private focus(t: number): void {
+    const bars = this.bars;
+    if (t < bars[0].t && !this.series.historyExhausted && this.focusPages < CARRY_PAGES) {
+      if (!this.series.loadingOlder) {
+        this.focusPages++;
+        void this.series.loadOlder();
+      }
+      return;
+    }
+    this.focusT = null;
+    const ms = this.series.interval.ms;
+    let i = indexOfTime(bars, Math.floor(t / ms) * ms);
+    if (i < 0) i = t < bars[0].t ? 0 : bars.length - 1;
+    const ts = this.chart.timeScale();
+    const r = ts.getVisibleLogicalRange();
+    const half = r ? (r.to - r.from) / 2 : 40;
+    ts.setVisibleLogicalRange({ from: i - half, to: i + half });
+    // Krzyż po przewinięciu (biblioteka stosuje nowy zakres przy najbliższym rysowaniu, a krzyż trzyma piksel)
+    const bar = bars[i];
+    requestAnimationFrame(() => {
+      if (crossPeers.has(this)) this.chart.setCrosshairPosition(bar.candle.c, sec(bar.t), this.main);
+    });
+  }
+
   /** Przewija do bieżącej świecy (z zachowaniem zbliżenia); odstęp od osi ceny stały w pikselach. */
   scrollToNow(): void {
     const ts = this.chart.timeScale();
@@ -1074,8 +1132,9 @@ export class ProChartController {
       this.statsSeries?.setData(next.map((b) => ({ time: sec(b.t) })));
       if (this.toNow && next.length > 0) {
         this.toNow = false;
-        this.scrollToNow();
+        if (this.focusT === null) this.scrollToNow();
       }
+      if (this.focusT !== null && next.length > 0) this.focus(this.focusT);
     } else {
       const deltaReset = flipsEmpty(changed, prev.length, (i) => !prev[i].fp, (i) => !next[i].fp);
       for (const i of changed) {

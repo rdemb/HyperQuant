@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { ChartCandlestick, ChevronDown } from 'lucide-react';
-import { saveStation, stationById } from '../../charts/pro/chart/stations';
+import { stationById } from '../../charts/pro/chart/stations';
+import { openStationTab } from '../../charts/pro/chart/tabs';
 import type { AtlasEntry, AtlasGroup, LessonsContent } from '../../lessons/content/types';
 import { useDesk } from '../../state/DeskContext';
 import { Figure, FigureStatus, useSlice } from './Figure';
@@ -82,7 +83,7 @@ const Entry: React.FC<{ e: AtlasEntry; c: LessonsContent; open: boolean; onToggl
               type="button"
               className={`${BTN_SECONDARY} self-start`}
               onClick={() => {
-                saveStation(station.id);
+                openStationTab(station.id);
                 setView('charts');
                 window.scrollTo({ top: 0 });
               }}

@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useReducedMotion } from 'motion/react';
 import { ArrowLeft, ArrowRight, ChartCandlestick, Check, Eye, History, RotateCcw } from 'lucide-react';
-import { saveStation, stationById } from '../../charts/pro/chart/stations';
+import { stationById } from '../../charts/pro/chart/stations';
+import { openStationTab } from '../../charts/pro/chart/tabs';
 import type { ChartZone } from '../../lessons/chart/LessonChart';
 import { MIN } from '../../lessons/chart/model';
 import type { ExerciseText, LessonsContent, QuestionText } from '../../lessons/content/types';
@@ -465,7 +466,7 @@ const Debrief: React.FC<{
           type="button"
           className={`${replay ? BTN_SECONDARY : BTN_PRIMARY} self-start`}
           onClick={() => {
-            saveStation(station.id);
+            openStationTab(station.id);
             setView('charts');
             window.scrollTo({ top: 0 });
           }}

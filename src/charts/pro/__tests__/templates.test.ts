@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_SETTINGS, parseLayout, parseSettings, panelKey } from '../chart/settings';
-import { BUILT_IN_TEMPLATES, MAX_TEMPLATES, applyTemplate, parseTemplates, saveAs, templateOf } from '../chart/templates';
+import { DEFAULT_SETTINGS, NARROW_PATCH, parseLayout, parseSettings, panelKey, phoneSettings } from '../chart/settings';
+import { BUILT_IN_TEMPLATES, MAX_TEMPLATES, TEMPLATE_PHONE, TEMPLATE_QUESTIONS, applyTemplate, parseTemplates, saveAs, templateOf } from '../chart/templates';
+import { indicatorDef } from '../indicators/registry';
 
 describe('szablony wykresu', () => {
   it('szablon nie zmienia rynku ani wysokości wiersza', () => {
@@ -40,6 +41,32 @@ describe('szablony wykresu', () => {
     expect(out[0].s.interval).toBe(DEFAULT_SETTINGS.interval);
     expect(out[0].s.showTape).toBe(true);
     expect(parseTemplates({})).toEqual([]);
+  });
+});
+
+describe('szablony z metodologii (pytanie, wskaźniki, telefon)', () => {
+  const ownPanes = (s: { indicators: { id: Parameters<typeof indicatorDef>[0]; visible: boolean }[] }) => s.indicators.filter((x) => x.visible && indicatorDef(x.id).pane === 'own').length;
+
+  it('szablon zachowuje wskaźniki z interwałem (tf), parametrami i stylem; zapis JSON wraca bez zmian', () => {
+    for (const t of BUILT_IN_TEMPLATES) {
+      const s = applyTemplate({ ...DEFAULT_SETTINGS, coin: 'ETH', rowStep: 5 }, t.s);
+      expect([s.coin, s.rowStep, s.interval, s.view]).toEqual(['ETH', 5, t.s.interval, t.s.view]);
+      expect(s.indicators, t.id).toEqual(t.s.indicators);
+    }
+    const back = parseTemplates(JSON.parse(JSON.stringify(BUILT_IN_TEMPLATES)));
+    expect(back.map((t) => t.s)).toEqual(BUILT_IN_TEMPLATES.map((t) => t.s));
+    expect(BUILT_IN_TEMPLATES.find((t) => t.id === 'triple')!.s.indicators.map((x) => x.tf)).toEqual(['1h', '4h']);
+  });
+
+  it('id unikalne; każdy szablon ma pytanie i najwyżej 2 panele wskaźników, a na telefonie najwyżej 1', () => {
+    const ids = BUILT_IN_TEMPLATES.map((t) => t.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const t of BUILT_IN_TEMPLATES) {
+      const phone = phoneSettings(applyTemplate(DEFAULT_SETTINGS, { ...t.s, ...(TEMPLATE_PHONE[t.id] ?? NARROW_PATCH) }));
+      expect(ownPanes(t.s), t.id).toBeLessThanOrEqual(2);
+      expect(ownPanes(phone), t.id).toBeLessThanOrEqual(1);
+    }
+    for (const id of ids.filter((x) => !['orderflow', 'scalp', 'swing', 'clean'].includes(x))) expect(TEMPLATE_QUESTIONS[id], id).toBeTruthy();
   });
 });
 
