@@ -18,6 +18,8 @@ export interface BookFrame {
   /** Liczba zleceń na poziomie (NaN, gdy API jej nie podało). */
   n: Float64Array;
   nBids: number;
+  /** Migawka arkusza bez agregacji ceny z historii serwera (na żywo osobny kanał rozpoznaje sklep). */
+  exact?: true;
 }
 
 /** Krok agregacji migawki: najmniejsza różnica sąsiednich cen po jednej stronie, zaokrąglona do potęgi 10. */

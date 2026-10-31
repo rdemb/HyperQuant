@@ -71,14 +71,33 @@ function levelsOf(levels: unknown): [number[], number[]] | null {
   return [side(levels[0]), side(levels[1])];
 }
 
-/** Bez duplikatów: transakcja (czas, tid), migawka (czas, krok), kontekst (minuta — późniejszy wygrywa). */
+/**
+ * Rynki z nagraniem arkusza także bez agregacji ceny (koszt zlecenia rynkowego na wykresie potrzebuje poziomów co tick;
+ * bliska agregacja BTC to 10 USD). Pliki arkusza rosną o około połowę, więc tylko tam, gdzie wskaźnik jest używany.
+ */
+const EXACT_BOOK = new Set(['BTC']);
+
+/** Krok migawki arkusza dokładnego: najmniejszy odstęp sąsiednich cen po jednej stronie, zaokrąglony do potęgi 10. */
+function gapStep(lv: [number[], number[]]): number {
+  let min = Number.POSITIVE_INFINITY;
+  for (const side of lv) {
+    for (let i = 3; i < side.length; i += 3) {
+      const d = Math.abs(side[i] - side[i - 3]);
+      if (d > 0 && d < min) min = d;
+    }
+  }
+  return Number.isFinite(min) ? 10 ** Math.round(Math.log10(min)) : Number.NaN;
+}
+
+/** Bez duplikatów: transakcja (czas, tid), migawka (czas, krok, dokładna), kontekst (minuta — późniejszy wygrywa). */
 function uniqTrades(xs: readonly HistTrade[]): HistTrade[] {
   const seen = new Set<string>();
   return xs.filter((x) => !seen.has(`${x.t}:${x.tid}`) && (seen.add(`${x.t}:${x.tid}`), true));
 }
 function uniqFrames(xs: readonly HistFrame[]): HistFrame[] {
   const seen = new Set<string>();
-  return xs.filter((x) => !seen.has(`${x.t}:${x.step}`) && (seen.add(`${x.t}:${x.step}`), true));
+  const key = (x: HistFrame) => `${x.t}:${x.step}:${x.exact ? 1 : 0}`;
+  return xs.filter((x) => !seen.has(key(x)) && (seen.add(key(x)), true));
 }
 function uniqCtx(xs: readonly HistCtx[]): HistCtx[] {
   return [...new Map(xs.map((c) => [c.t, c])).values()];
@@ -173,25 +192,35 @@ export class MarketRecorder {
     this.steps = [10 ** (digits - sf.near), 10 ** (digits - sf.far)];
   }
 
+  /** Dodatkowa subskrypcja arkusza bez agregacji ceny (tylko rynki z EXACT_BOOK). */
+  exactBook(): boolean {
+    return EXACT_BOOK.has(this.coin);
+  }
+
   /** Agregacje arkusza do subskrypcji (bliska i daleka); null przed pierwszą ceną. */
   aggs(): BookAgg[] | null {
     if (!this.sigFigs) return null;
     return [{ nSigFigs: this.sigFigs.near as BookAgg['nSigFigs'] }, { nSigFigs: this.sigFigs.far as BookAgg['nSigFigs'] }];
   }
 
-  /** Migawka arkusza: agregacja rozpoznana po siatce cen (daleka — wszystkie ceny na siatce dalekiej); inna — pominięta. */
+  /**
+   * Migawka arkusza: agregacja rozpoznana po siatce cen (daleka — wszystkie ceny na siatce dalekiej); cena poza siatką
+   * bliskiej to arkusz dokładny (zapisywany tylko na rynkach z EXACT_BOOK), inaczej migawka pominięta.
+   */
   onBook(t: number, levels: unknown): void {
     if (!this.steps || !(t > 0)) return;
     const lv = levelsOf(levels);
     if (!lv || (lv[0].length === 0 && lv[1].length === 0)) return;
     const prices = [...lv[0].filter((_, i) => i % 3 === 0), ...lv[1].filter((_, i) => i % 3 === 0)];
     const [near, far] = this.steps;
-    const step = prices.every((px) => isMultiple(px, far)) ? far : prices.every((px) => isMultiple(px, near)) ? near : Number.NaN;
+    const agg = prices.every((px) => isMultiple(px, far)) ? far : prices.every((px) => isMultiple(px, near)) ? near : Number.NaN;
+    const exact = !Number.isFinite(agg) && this.exactBook();
+    const step = exact ? gapStep(lv) : agg;
     if (!Number.isFinite(step)) return;
     const p = partOf(t);
     if (p <= this.lastPart) return;
     const acc = this.frames.get(p);
-    const f: HistFrame = { t, step, bids: lv[0], asks: lv[1] };
+    const f: HistFrame = { t, step, bids: lv[0], asks: lv[1], ...(exact ? { exact: true as const } : {}) };
     if (acc) acc.push(f);
     else this.frames.set(p, [f]);
   }
@@ -347,7 +376,8 @@ export const HISTORY_README = [
   '  agresora (B/A), numery zlecenia agresora, biorcy i makera w obrębie godziny, indeksy transakcji z hashem zerowym (`z`,',
   '  m.in. podzlecenia TWAP; brak kolumny — plik sprzed jej wprowadzenia); kontekst minutowy (OI, finansowanie, mark); pokrycie.',
   '- `<RYNEK>/<RRRR-MM-DD>/<GG>.book.json.gz` — migawki arkusza (co ok. 5 s, 20 poziomów na stronę: cena, wielkość, liczba',
-  '  zleceń) w agregacji bliskiej (~2 pb ceny) i dalekiej (10 × większy krok); pokrycie.',
+  '  zleceń) w agregacji bliskiej (~2 pb ceny) i dalekiej (10 × większy krok), dla BTC także bez agregacji (migawka z piątym',
+  '  elementem 1); pokrycie.',
   '- `<GG>-<MM>.*.json.gz` — części 5-minutowe godziny w toku (po jej zamknięciu łączone w plik godzinowy).',
   '',
   'Pokrycie (`spans`) to odcinki ciągłego nagrania: luka po zerwaniu połączenia albo restarcie zostaje jawną luką.',

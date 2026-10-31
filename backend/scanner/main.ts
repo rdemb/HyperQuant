@@ -162,8 +162,9 @@ const stream = new HlStream(
 
 /**
  * Rejestrator historii (gałąź `history` repo danych, rynki z HQ_HISTORY_MARKETS): na rynek osobne połączenie WebSocket
- * (taśma, kontekst, arkusz bliski i daleki jak na stronie). Części 5-minutowe i pliki godzinowe w katalogu repo gałęzi,
- * commit po każdym zapisie; raz na dobę (po 00:15 UTC) usunięcie dni spoza okna i spłaszczenie gałęzi do jednego commita.
+ * (taśma, kontekst, arkusz bliski i daleki jak na stronie, dla BTC także dokładny). Części 5-minutowe i pliki godzinowe
+ * w katalogu repo gałęzi, commit po każdym zapisie; raz na dobę (po 00:15 UTC) usunięcie dni spoza okna i spłaszczenie
+ * gałęzi do jednego commita.
  */
 const DAY_MS = 86_400_000;
 const historyRepo = cfg.git && cfg.history ? { remote: cfg.git.remote, dir: join(cfg.stateDir, 'git', 'history'), sshKey: cfg.git.sshKey, branch: 'history' } : null;
@@ -177,7 +178,7 @@ const recorders = (cfg.history?.markets ?? []).map((coin) => {
     (c) => {
       rec.onCtx(c, Date.now());
       const aggs = rec.aggs();
-      if (aggs) s.setBookAggs(aggs);
+      if (aggs) s.setBookAggs(aggs, rec.exactBook());
     },
     WebSocket,
     (t, levels) => rec.onBook(t, levels),

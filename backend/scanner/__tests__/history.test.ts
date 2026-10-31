@@ -97,7 +97,7 @@ describe('MarketRecorder — nagranie taśmy, arkusza i kontekstu jednego rynku'
     expect(existsSync(join(dir, historyPath('ETH', T0 + 15 * MIN, 'trades', true)))).toBe(false); // bez nagrania — bez pliku
   });
 
-  it('arkusz: agregacja bliska i daleka rozpoznana po siatce cen, inna pominięta; agregacje do subskrypcji z ceny', () => {
+  it('arkusz: agregacja bliska i daleka rozpoznana po siatce cen, dokładny tylko na BTC; agregacje do subskrypcji z ceny', () => {
     const dir = mkdtempSync(join(tmpdir(), 'hq-hist-'));
     const r = new MarketRecorder('BTC', dir);
     expect(r.aggs()).toBeNull();
@@ -107,14 +107,29 @@ describe('MarketRecorder — nagranie taśmy, arkusza i kontekstu jednego rynku'
     r.onTrades([trade(T0, 1, 'B', 1, 2, HASH(3))]);
     r.onBook(T0 + 100, [[lv(80_000, 1, 3), lv(79_990, 2, 4)], [lv(80_010, 1, 1)]]); // bliska
     r.onBook(T0 + 200, [[lv(80_000, 5, 30), lv(79_900, 6, 40)], [lv(80_100, 7, 20)]]); // daleka
-    r.onBook(T0 + 300, [[lv(80_000, 1, 1), lv(79_999, 1, 1)], [lv(80_001, 1, 1)]]); // dokładny — pominięty
+    r.onBook(T0 + 300, [[lv(80_000, 1, 1), lv(79_999, 1, 1)], [lv(80_001, 1, 1)]]); // dokładny (krok 1 USD)
+    expect(r.exactBook()).toBe(true);
     r.flush(T0 + 5 * MIN + SETTLE_MS);
-    const b = decodeBook(read(dir, 'BTC', T0, 'book', true))!;
-    expect(b.frames.map((x) => [x.t, x.step, x.bids.length / 3, x.asks.length / 3])).toEqual([
-      [T0 + 100, 10, 2, 1],
-      [T0 + 200, 100, 2, 1],
+    const raw = read(dir, 'BTC', T0, 'book', true);
+    // Migawka dokładna ma piąty element, więc starszy odczyt (dokładnie cztery) ją pomija
+    expect(raw.frames.map((x: unknown[]) => x.length)).toEqual([4, 4, 5]);
+    const b = decodeBook(raw)!;
+    expect(b.frames.map((x) => [x.t, x.step, x.bids.length / 3, x.asks.length / 3, x.exact ?? false])).toEqual([
+      [T0 + 100, 10, 2, 1, false],
+      [T0 + 200, 100, 2, 1, false],
+      [T0 + 300, 1, 2, 1, true],
     ]);
     expect(b.frames[0].bids).toEqual([80_000, 1, 3, 79_990, 2, 4]);
+    // Inny rynek: arkusz dokładny pominięty, bez subskrypcji
+    const dirE = mkdtempSync(join(tmpdir(), 'hq-hist-'));
+    const e = new MarketRecorder('ETH', dirE);
+    expect(e.exactBook()).toBe(false);
+    e.onCtx({ markPx: 2_800, oiBtc: 1, dayNtlVlm: 1, funding: 0 }, T0);
+    e.onState(true, T0);
+    e.onTrades([{ ...trade(T0, 1, 'B', 1, 2, HASH(3)), coin: 'ETH' }]);
+    e.onBook(T0 + 100, [[lv(2_800.1, 1, 1), lv(2_799.9, 1, 1)], [lv(2_800.3, 1, 1)]]);
+    e.flush(T0 + 5 * MIN + SETTLE_MS);
+    expect(decodeBook(read(dirE, 'ETH', T0, 'book', true))?.frames ?? []).toEqual([]);
   });
 
   it('po zamknięciu godziny części łączą się w plik godzinowy; restart: numeracja dalej, zapisana część scalona, nie nadpisana', () => {
