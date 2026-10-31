@@ -3,6 +3,9 @@ import { Bell, BellOff, BellPlus, Camera, ChevronDown, ChevronsRight, Columns2, 
 import { Badge, BadgeTone, Segmented, numLang } from '../../ui';
 import { LiqMapState, useLiqMap } from '../../state/useLiqMap';
 import { useDeskLedger } from '../../state/useDeskLedger';
+import { useDesk } from '../../state/DeskContext';
+import { useHip4 } from '../../state/useHip4';
+import { useVolModel } from '../../state/useVolModel';
 import { usePublished } from '../../state/usePublished';
 import { type WhaleLayer, isWhaleLayer } from '../../utils/whaleLayer';
 import { INTERVALS, fmtHm, fmtSince, intervalById } from './core/time';
@@ -258,6 +261,12 @@ export const ProChart: React.FC<{
   const signal = useMemo(() => new HoverSignal(), []);
   const liq = useLiqMap();
   const { summary: ledger } = useDeskLedger();
+  // Rynki HIP-4 (zapytania do Hyperliquid) i model zmienności Desku (w tym widoku liczony tylko dla nich) tylko z widocznym
+  // wskaźnikiem, na BTC i na żywo
+  const { feed } = useDesk();
+  const hip4On = !inReplay && settings.coin === 'BTC' && settings.indicators.some((x) => x.visible && x.id === 'outcomes');
+  const vol = useVolModel(hip4On);
+  const hip4 = useHip4(vol.model, feed.currentPrice, hip4On);
   const whalePub = usePublished('whales.json', isWhaleLayer);
   // Wieloryby i mapa likwidacji to stan na teraz — w powtórce ich nie ma
   const whales = !inReplay && whalePub.value && Date.now() - whalePub.value.asOf < WHALES_STALE_MS ? whalePub.value : null;
@@ -449,6 +458,10 @@ export const ProChart: React.FC<{
   useEffect(() => {
     ctrlRef.current?.setLedger(store.replay ? null : ledger);
   }, [ledger, store]);
+
+  useEffect(() => {
+    ctrlRef.current?.setOutcomes(hip4On ? hip4 : null);
+  }, [hip4, hip4On]);
 
   useEffect(() => {
     const onFs = () => setFullscreen(document.fullscreenElement === cardRef.current);
