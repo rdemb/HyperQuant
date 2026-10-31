@@ -308,13 +308,15 @@ export const AppShell: React.FC = () => {
   );
 };
 
-const IconBtn: React.FC<{ label: string; onClick: () => void; children: React.ReactNode; className?: string }> = ({ label, onClick, children, className = '' }) => (
+// `className` niesie też sposób wyświetlania (domyślnie inline-flex): stałe inline-flex w klasie bazowej wygrywało z „hidden sm:inline-flex”,
+// więc na telefonie przyciski miały być ukryte, a były widoczne i z przyciskiem instalacji nagłówek wychodził poza ekran
+const IconBtn: React.FC<{ label: string; onClick: () => void; children: React.ReactNode; className?: string }> = ({ label, onClick, children, className = 'inline-flex' }) => (
   <button
     type="button"
     aria-label={label}
     title={label}
     onClick={onClick}
-    className={`inline-flex items-center justify-center w-9 h-9 rounded-lg text-ink-2 hover:text-ink-1 hover:bg-surface-2 border border-transparent hover:border-line transition-colors duration-150 ${className}`}
+    className={`items-center justify-center w-9 h-9 rounded-lg text-ink-2 hover:text-ink-1 hover:bg-surface-2 border border-transparent hover:border-line transition-colors duration-150 ${className}`}
   >
     {children}
   </button>

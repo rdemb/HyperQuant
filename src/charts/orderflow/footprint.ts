@@ -76,12 +76,14 @@ export function valueArea(vol: ArrayLike<number>, n: number, pct = 0.7): { poc: 
   return { poc, lo, hi };
 }
 
-/** Wolumen BTC w ≤ 4 znakach (komórki footprintu: tabular mono 10 px). */
+/** Wolumen BTC w ≤ 4 znakach (komórki footprintu: tabular mono 10 px); od miliona 5 znaków („1,03M”). */
 export function fmtVol(v: number): string {
   if (!(v > 0)) return '0';
   if (v < 0.01) return numLang('<.01');
   if (v < 10) return numLang(v.toFixed(2));
   if (v < 100) return numLang(v.toFixed(1));
   if (v < 1000) return v.toFixed(0);
-  return numLang(`${(v / 1000).toFixed(1)}K`);
+  // Od miliona (świece 1M, a na tygodniu wolumen kilku rynków) w milionach, a nie „1025,1K”
+  if (v < 999_950) return numLang(`${(v / 1000).toFixed(1)}K`);
+  return numLang(`${(v / 1e6).toFixed(2)}M`);
 }
