@@ -380,4 +380,23 @@ describe('HlStream — odporność połączenia', () => {
     s.stop();
     vi.useRealTimers();
   });
+
+  it('zerwanie po ciszy: koniec odcinka w chwili ostatniej wiadomości, nie wykrycia (z taśmy 31.10: cisza 28 s)', () => {
+    vi.useFakeTimers();
+    FakeWs.instances = [];
+    const states: [boolean, number][] = [];
+    const s = new HlStream('BTC', () => {}, () => {}, FakeWs as unknown as typeof WebSocket, () => {}, (up, at) => states.push([up, at]));
+    s.start();
+    const ws = FakeWs.instances[0];
+    ws.open();
+    vi.advanceTimersByTime(5_000);
+    ws.onmessage?.({ data: '{"channel":"pong"}' });
+    const last = Date.now();
+    vi.advanceTimersByTime(28_000);
+    ws.close(); // zamknięcie wykryte dopiero po ciszy
+    expect(states.map(([up]) => up)).toEqual([true, false]);
+    expect(states[1][1]).toBe(last);
+    s.stop();
+    vi.useRealTimers();
+  });
 });
