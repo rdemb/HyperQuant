@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { MAX_ALERTS, hasLine, lineLabel, newAlert, notifyEvent, parseAlerts, parseLog, parsePriceInput, windowOf } from '../chart/alerts';
+import { MAX_ALERTS, alertLines, hasLine, lineLabel, newAlert, notifyEvent, parseAlerts, parseLog, parsePriceInput, windowOf } from '../chart/alerts';
 import { PUSH_MAX, pushWatched, serverList } from '../chart/pushAlerts';
 import { type AlertEvent, type AlertRule, DEFAULT_TTL_MS } from '../../../utils/alertRules';
 
@@ -123,5 +123,28 @@ describe('powiadomienia i lista z serwera 24/7', () => {
     expect(w.has('r0')).toBe(false);
     expect(w.has(`r${PUSH_MAX + 2}`)).toBe(true);
     expect([rule('t'), rule('s', { kind: 'squeeze' }), rule('n', { kind: 'time' })].map(hasLine)).toEqual([true, false, false]);
+  });
+});
+
+describe('linie alarmów na wykresie', () => {
+  const real = globalThis.localStorage;
+  beforeAll(() => {
+    const m = new Map<string, string>();
+    globalThis.localStorage = { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v) } as Storage;
+  });
+  afterAll(() => {
+    globalThis.localStorage = real;
+  });
+
+  it('ukrycie zapisuje się w przeglądarce i odświeża wszystkie wykresy; pokazanie wraca do stanu startowego', () => {
+    const seen: boolean[] = [];
+    const off = alertLines.subscribe(() => seen.push(alertLines.shown()));
+    expect(alertLines.shown()).toBe(true);
+    alertLines.set(false);
+    expect(localStorage.getItem('hq.charts.alerts.lines.v1')).toBe('[true]');
+    alertLines.set(true);
+    expect(localStorage.getItem('hq.charts.alerts.lines.v1')).toBe('[]');
+    expect(seen).toEqual([false, true]);
+    off();
   });
 });

@@ -5,7 +5,7 @@ import { lang, tr } from '../../../i18n';
 import { ALERT_INTERVALS, type AlertKind, DEFAULT_TTL_MS, NOTE_MAX, defaultDir, eventBody, knownKind, ruleText } from '../../../utils/alertRules';
 import { fmtHm, fmtSince } from '../core/time';
 import { fmtPx } from './layout';
-import { type AlertSpec, MAX_ALERTS, type PriceAlert, alertBook, alertLog, askNotifications, newAlert, parsePriceInput, primeAlertSound, removeAlert, windowOf } from './alerts';
+import { type AlertSpec, MAX_ALERTS, type PriceAlert, alertBook, alertLines, alertLog, askNotifications, hasLine, newAlert, parsePriceInput, primeAlertSound, removeAlert, windowOf } from './alerts';
 import { testAlert } from './alertWatch';
 import { PUSH_MAX, disablePush, enablePush, pushNeedsHomeScreen, pushWatched, usePushStatus } from './pushAlerts';
 
@@ -27,6 +27,10 @@ const SQUEEZE_DIRS = [
   { value: 1 as const, label: tr('W górę', 'Up'), title: tr('Zamykane shorty', 'Shorts closing') },
   { value: -1 as const, label: tr('W dół', 'Down'), title: tr('Zamykane longi', 'Longs closing') },
 ];
+const LINES_OPTIONS = [
+  { value: 'show' as const, label: tr('Pokaż', 'Show') },
+  { value: 'hide' as const, label: tr('Ukryj', 'Hide'), title: tr('Ukrywa linie alarmów, alarmy działają dalej', 'Hides alert lines, alerts stay active') },
+];
 /** Próg wyciskania wpisany ręcznie: „1”, „1,2” albo „1.2 %”, od 0,2 do 10. */
 function parsePct(text: string): number | null {
   const v = Number(text.replace(/[\s%]/g, '').replace(',', '.'));
@@ -37,6 +41,7 @@ const fmtPct = (v: number): string => (lang === 'en' ? v.toFixed(1) : v.toFixed(
 /** Panel alarmów: nowy alarm (warunek, cena, świeca, filtry, okno, łańcuch, para, opis), lista do edycji, historia i powiadomienia. */
 export const AlertsMenu: React.FC<{ coin: string; price: number; draft: AlertDraft | null; serverNow: () => number }> = ({ coin, price, draft, serverNow }) => {
   const alerts = useSyncExternalStore(alertBook.subscribe, alertBook.get);
+  const linesShown = useSyncExternalStore(alertLines.subscribe, alertLines.shown);
   const log = useSyncExternalStore(alertLog.subscribe, alertLog.get);
   const [kind, setKind] = useState<AlertKind>(draft?.kind ?? 'touch');
   const [text, setText] = useState(draft ? fmtPx(draft.price) : '');
@@ -275,6 +280,12 @@ export const AlertsMenu: React.FC<{ coin: string; price: number; draft: AlertDra
         title={tr(`Aktywne (${alerts.length})`, `Active (${alerts.length})`)}
         action={alerts.length > 1 ? { label: tr('Usuń wszystkie', 'Remove all'), on: () => alertBook.update(() => []) } : undefined}
       >
+        {alerts.some(hasLine) && (
+          <Row label={tr('Na wykresie', 'On the chart')}>
+            <Segmented<'show' | 'hide'> ariaLabel={tr('Linie alarmów na wykresie', 'Alert lines on the chart')} value={linesShown ? 'show' : 'hide'} onChange={(v) => alertLines.set(v === 'show')} options={LINES_OPTIONS} size="xs" />
+          </Row>
+        )}
+        {!linesShown && alerts.some(hasLine) && <p className="text-[11px] text-ink-3 leading-snug">{tr('Linie ukryte na wszystkich wykresach. Alarmy działają i dzwonią jak zawsze.', 'Lines hidden on all charts. Alerts stay active and ring as usual.')}</p>}
         {alerts.length === 0 ? (
           <p className="text-[11px] text-ink-3">{tr('Brak alarmów.', 'No alerts.')}</p>
         ) : (
