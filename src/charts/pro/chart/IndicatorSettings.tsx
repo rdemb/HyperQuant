@@ -84,8 +84,9 @@ export const IndicatorSettings: React.FC<{ x: IndicatorInstance; loaded: number;
     onClose();
   };
   const warmup = def.warmup(x.params);
-  // Same słupki w kolorach znaku i wartości tylko w legendzie (zmiana OI, OFI): kolor i grubość linii nic nie zmieniają, zostaje krycie
-  const bars = def.plots.every((p) => p.hist || p.hidden);
+  // Same słupki w kolorach znaku i wartości tylko w legendzie (zmiana OI, OFI): kolor i grubość linii nic nie zmieniają, zostaje
+  // krycie; stożek nie ma plotów, ale ma kolor i grubość mediany
+  const bars = !def.forecast && def.plots.every((p) => p.hist || p.hidden);
   const memory = memoryCandles(def, x.params);
   const span = warmup + 1;
   // Interwał wskaźnika: wyższe niż wykres (i zapisany, gdy wykres przeszedł na wyższy)
@@ -183,6 +184,11 @@ export const IndicatorSettings: React.FC<{ x: IndicatorInstance; loaded: number;
         {tab === 'params' && def.flow && (
           <p className="py-2 text-ink-2 leading-snug">{tr('Bez parametrów: każda świeca wykresu ma swoją wartość.', 'No inputs: every chart candle has its own value.')}</p>
         )}
+        {tab === 'params' && def.forecast && (
+          <p className="py-2 text-ink-2 leading-snug">
+            {tr('Bez parametrów: przedziały i horyzonty są takie, jak zapisane w dzienniku Desku.', 'No inputs: the intervals and horizons are those recorded in the Desk ledger.')}
+          </p>
+        )}
         {tab === 'style' && (
           <div className="flex flex-col gap-1">
             {bars ? (
@@ -225,10 +231,12 @@ export const IndicatorSettings: React.FC<{ x: IndicatorInstance; loaded: number;
                 <ColorPicker color={x.color} alpha={x.alpha} onColor={(color) => set({ color })} onAlpha={(alpha) => set({ alpha })} />
               </div>
             )}
-            <label className="flex items-center gap-2.5 min-h-10 cursor-pointer text-ink-1">
-              <input type="checkbox" checked={x.labels} onChange={(e) => set({ labels: e.target.checked })} className="w-4 h-4 shrink-0 accent-accent" />
-              {tr('Wartość na osi ceny', 'Value on the price scale')}
-            </label>
+            {!def.forecast && (
+              <label className="flex items-center gap-2.5 min-h-10 cursor-pointer text-ink-1">
+                <input type="checkbox" checked={x.labels} onChange={(e) => set({ labels: e.target.checked })} className="w-4 h-4 shrink-0 accent-accent" />
+                {tr('Wartość na osi ceny', 'Value on the price scale')}
+              </label>
+            )}
           </div>
         )}
         {tab === 'info' && (
@@ -266,7 +274,14 @@ export const IndicatorSettings: React.FC<{ x: IndicatorInstance; loaded: number;
                 )}
               </p>
             )}
-            <p className="text-ink-3">{tr('Wskaźnik opisuje ostatnie świece, nie przewiduje następnych.', 'An indicator describes recent candles; it does not predict the next ones.')}</p>
+            <p className="text-ink-3">
+              {def.forecast
+                ? tr(
+                    'To prognoza zakresu, nie kierunku: mówi, jak daleko cena zwykle dochodzi, a pokrycie w legendzie mówi, jak często wcześniejsze przedziały się sprawdzały.',
+                    'This is a range forecast, not a direction: it says how far the price usually travels, and the coverage in the legend says how often earlier intervals held.'
+                  )
+                : tr('Wskaźnik opisuje ostatnie świece, nie przewiduje następnych.', 'An indicator describes recent candles; it does not predict the next ones.')}
+            </p>
           </div>
         )}
       </div>

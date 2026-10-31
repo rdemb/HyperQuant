@@ -36,15 +36,18 @@ import { STATS_BAR_SPACING, StatsTable, tableHeight } from './statsTable';
 import { ZonesLayer } from './zonesLayer';
 import { TpoLayer } from './tpoLayer';
 import { tpoInterval } from '../core/tpo';
+import { fmtHm } from '../core/time';
 import type { ChartSettings } from './settings';
 import { IndicatorEngine } from '../indicators/engine';
 import { HIST_DOWN, HIST_UP, IndicatorDef, IndicatorInstance, PlotDef, indicatorDef, indicatorLabel, plotShift } from '../indicators/registry';
 import { CloudFill, CloudSource } from './cloudFill';
+import { ConeForecast, ConeLayer, ConeSource } from './coneLayer';
 import { CountdownLabel } from './countdown';
 import { FlowVenue, OiVenue, oiMaxAge, per8h } from '../venues/parse';
 import { VenueStore, acquireVenues, venueStoreFor } from '../venues/venueStore';
 import { DOM_W_PX, PRO, RIGHT_GAP_PX, chartOptions, rgba } from './theme';
 import { tr } from '../../../i18n';
+import type { DeskLedgerSummary } from '../../../utils/deskLedger';
 import { fmtCompact, fmtPrice, numLang } from '../../../ui/format';
 
 /**
@@ -176,6 +179,19 @@ const OI_LINES: readonly ('hl' | OiVenue)[] = ['hl', 'binance', 'bybit'];
 const HL_OI_MAX_AGE = 3 * 60_000;
 /** Węższy obszar wykresu (px) dostaje zwięzły opis paneli giełd. */
 const COMPACT_LEGEND_PX = 480;
+/** Stożek: prognoza z dziennika starsza niż to nie jest rysowana (jak przeterminowany dziennik w Planie). */
+const CONE_MAX_AGE_MS = 3 * 3_600_000;
+/** Dziennik: szanse dotknięcia poziomów w 2 h od początku horyzontu (jak w Planie). */
+const CONE_TOUCH_MIN = 120;
+/** Pokrycie przedziałów w legendzie stożka od tylu rozstrzygnięć (jak w Planie). */
+const CONE_MIN_N = 20;
+const horizonLabel = (h: number) => (h % 60 === 0 ? `${h / 60} h` : `${h} min`);
+const pctLabel = (v: number) => `${numLang(String(Math.round(v * 100)))}%`;
+const CONE_LEVELS = [
+  ['pdh', 'PDH'],
+  ['deq', 'D-EQ'],
+  ['pdl', 'PDL'],
+] as const;
 
 type VenueLines = Partial<Record<VenueLineId, (number | null)[]>>;
 
@@ -270,6 +286,9 @@ export class ProChartController {
   private readonly liquidity: LiquidityLayer;
   private readonly drawLayer = new DrawingLayer();
   private readonly countdown = new CountdownLabel();
+  /** Stożek prognozy zakresu z dziennika Desku (wskaźnik „Stożek”). */
+  private readonly cone = new ConeLayer(() => this.coneSource());
+  private ledger: DeskLedgerSummary | null = null;
   private countdownTimer = 0;
   /** Narzędzia rysowania (pasek narzędzi w ProChart). */
   readonly draw: DrawingTools;
@@ -340,6 +359,7 @@ export class ProChartController {
     this.main.attachPrimitive(this.zones);
     this.tpo = new TpoLayer(settings.showTpo);
     this.main.attachPrimitive(this.tpo);
+    this.main.attachPrimitive(this.cone);
     this.main.attachPrimitive(this.countdown);
     // Rysunki dołączone ostatnie — nad wskaźnikami i świecami
     this.drawLayer.setUnit(store.coin);
@@ -772,7 +792,123 @@ export class ProChartController {
 
   /** Odstęp najnowszej świecy od osi ceny (px): stały, a z mapą ciepła powiększony o drabinę DOM. */
   private rightGap(): number {
-    return RIGHT_GAP_PX + (this.domShown() ? DOM_W_PX : 0);
+    return RIGHT_GAP_PX + (this.domShown() ? DOM_W_PX : 0) + this.coneGap();
+  }
+
+  /** Miejsce na część stożka za ostatnią świecą przy bieżącym odstępie świec, najwyżej trzecia część szerokości wykresu. */
+  private coneGap(): number {
+    const f = this.coneShown() ? this.coneDrawn() : null;
+    const last = this.bars[this.bars.length - 1];
+    const h = f?.horizons[f.horizons.length - 1]?.h;
+    if (!f || !last || h === undefined) return 0;
+    const ts = this.chart.timeScale();
+    const ahead = (f.t + h * 60_000 - last.t) / this.series.interval.ms;
+    return Math.max(0, Math.min(ts.width() / 3, ahead * ts.options().barSpacing));
+  }
+
+  /** Podsumowanie dziennika prognoz Desku (null — brak albo powtórka): stożek i jego opis w legendzie. */
+  setLedger(s: DeskLedgerSummary | null): void {
+    this.ledger = s;
+    this.cone.update();
+    if (this.coneShown()) this.applyDomInset();
+    this.emitHover();
+  }
+
+  private coneShown(): boolean {
+    return this.indShown.some((x) => indicatorDef(x.id).forecast);
+  }
+
+  /**
+   * Najnowsza prognoza dziennika dla stożka: rynek wykresu, horyzonty z tej samej chwili, nie starsza niż 3 h i nie
+   * z przyszłości względem czasu wykresu (powtórka).
+   */
+  private coneForecast(): ConeForecast | null {
+    const s = this.ledger;
+    if (!s || s.coin !== this.store.coin || s.latest.ret.length === 0) return null;
+    const t = Math.max(...s.latest.ret.map((r) => r.t));
+    const now = this.store.serverNow();
+    if (t > now || now - t > CONE_MAX_AGE_MS) return null;
+    const rets = s.latest.ret.filter((r) => r.t === t).sort((a, b) => a.h - b.h);
+    return { t, px0: rets[0].px0, horizons: rets.map((r) => ({ h: r.h, taus: r.taus, q: r.q })) };
+  }
+
+  /** Rysowana część prognozy: na telefonie tylko pierwszy horyzont (1 h), cały stożek nie mieści się w wąskim wykresie. */
+  private coneDrawn(): ConeForecast | null {
+    const f = this.coneForecast();
+    return f && this.phone ? { ...f, horizons: f.horizons.slice(0, 1) } : f;
+  }
+
+  /** Pokrycie przedziałów prognoz 1 h z 30 dni (null — za mało rozstrzygnięć). */
+  private coneScores(f: ConeForecast) {
+    const sc = this.ledger?.scores.ret[String(f.horizons[0].h)];
+    return sc && sc.n >= CONE_MIN_N && sc.cov90 && sc.cov60 ? { cov90: sc.cov90, cov60: sc.cov60 } : null;
+  }
+
+  private coneSource(): ConeSource | null {
+    const x = this.indShown.find((y) => indicatorDef(y.id).forecast);
+    const f = x ? this.coneDrawn() : null;
+    if (!x || !f || this.bars.length === 0) return null;
+    // Szanse dotknięcia z tej samej chwili; poziom już przekroczony przy wydaniu nie ma szansy (null)
+    const touch = this.ledger?.latest.touch;
+    const levels =
+      touch && touch.t === f.t
+        ? CONE_LEVELS.flatMap(([k, label]) => {
+            const p = touch.p[k];
+            return p === null ? [] : [{ px: touch.lv[k], text: `${label} ${numLang(String(Math.round(p * 100)))}%` }];
+          })
+        : [];
+    // Telefon: legenda w jednym wierszu się nie mieści, więc pokrycie przy kresce 1 h
+    const sc = this.coneScores(f);
+    const tickLabels = f.horizons.map((hz, k) =>
+      this.phone && k === 0 && sc ? `${horizonLabel(hz.h)} · ${tr('pokrycie', 'coverage')} ${pctLabel(sc.cov60.rate)} / 60%` : horizonLabel(hz.h)
+    );
+    return {
+      forecast: f,
+      tickLabels,
+      touch: levels.length > 0 ? { t: f.t, h: CONE_TOUCH_MIN, levels } : null,
+      logical: (t) => this.logicalOf(t),
+      color: x.color,
+      alpha: x.alpha,
+      width: x.width,
+      compact: this.phone,
+    };
+  }
+
+  /** Pozycja chwili na osi czasu: indeks świecy, w której leży, z ułamkiem interwału; za ostatnią świecą co interwał. */
+  private logicalOf(t: number): number | null {
+    const bars = this.bars;
+    const n = bars.length;
+    const ms = this.series.interval.ms;
+    if (n === 0 || t < bars[0].t) return null;
+    if (t >= bars[n - 1].t) return n - 1 + (t - bars[n - 1].t) / ms;
+    let lo = 0;
+    let hi = n - 1;
+    while (lo < hi) {
+      const m = (lo + hi + 1) >> 1;
+      if (bars[m].t <= t) lo = m;
+      else hi = m - 1;
+    }
+    return lo + Math.min(1, (t - bars[lo].t) / ms);
+  }
+
+  /** Opis stożka w legendzie: początek horyzontu, przedziały na horyzontach dziennika i pokrycie 1 h z 30 dni (telefon: 60%). */
+  private coneLegend(color: string): { text: string; color: string }[] {
+    const f = this.coneDrawn();
+    if (!f)
+      return [{ text: this.store.coin === 'BTC' ? tr('brak prognozy z ostatnich 3 h', 'no forecast from the last 3 h') : tr('tylko BTC', 'BTC only'), color: PRO.ink3 }];
+    const [lo, hi, level] = this.phone ? [0.2, 0.8, '60%'] : [0.05, 0.95, '90%'];
+    const px = (hz: ConeForecast['horizons'][number], tau: number) => fmtPx(f.px0 * Math.exp(hz.q[hz.taus.indexOf(tau)]));
+    const parts: { text: string; color: string }[] = [{ text: `${tr('od', 'from')} ${fmtHm(f.t)}`, color: PRO.ink3 }];
+    // Kropka między horyzontami: spacja tysięcy nie skleja ceny z następnym „4 h”
+    f.horizons.forEach((hz, k) => parts.push({ text: `${k ? '· ' : ''}${horizonLabel(hz.h)} ${level} ${px(hz, lo)}–${px(hz, hi)}`, color }));
+    const sc = this.coneScores(f);
+    if (!sc) parts.push({ text: tr('pokrycie: za mało rozstrzygnięć', 'coverage: too few settlements'), color: PRO.ink3 });
+    else if (this.phone) parts.push({ text: `${tr('pokrycie', 'coverage')} ${pctLabel(sc.cov60.rate)} / 60%`, color: PRO.ink2 });
+    else {
+      const kupiec = sc.cov90.kupiecP === null ? '' : ` · ${tr('test Kupca', 'Kupiec test')} p ${numLang(sc.cov90.kupiecP.toFixed(2))}`;
+      parts.push({ text: `${tr('pokrycie 1 h z 30 dni', '1 h coverage over 30 days')} 90%: ${pctLabel(sc.cov90.rate)} · 60%: ${pctLabel(sc.cov60.rate)}${kupiec}`, color: PRO.ink2 });
+    }
+    return parts;
   }
 
   /** Przewija do bieżącej świecy (z zachowaniem zbliżenia); odstęp od osi ceny stały w pikselach. */
@@ -961,6 +1097,11 @@ export class ProChartController {
 
   /** Chmura w przód (Ichimoku) zajmuje najwyżej trzecią część szerokości wykresu: na wąskim ekranie świece się zwężają. */
   private fitAhead(): void {
+    // Stożek: miejsce na część za ostatnią świecą i przewinięcie do niej
+    if (this.coneShown()) {
+      this.applyDomInset();
+      this.scrollToNow();
+    }
     const ahead = Math.max(0, ...this.indShown.flatMap((x) => indicatorDef(x.id).plots.map((p) => plotShift(x, p))));
     const ts = this.chart.timeScale();
     const fit = ts.width() / (3 * ahead);
@@ -1225,12 +1366,14 @@ export class ProChartController {
         const j = vi - plotShift(x, def.plots[p]);
         return vi >= 0 && j >= 0 && j < this.engine.count ? ys[j] : Number.NaN;
       });
-      const values = vs.map((v, p) => {
-        const plot = def.plots[p];
-        // Podpis poziomu (pivoty: P, R1, S1…) także w legendzie
-        const text = Number.isNaN(v) ? '—' : this.indFormat(plot.format ?? def.format)(v);
-        return { text: plot.title ? `${plot.title} ${text}` : text, color: this.plotColor(x, plot, vs[plot.signOf ?? p]) };
-      });
+      const values = def.forecast
+        ? this.coneLegend(x.color)
+        : vs.map((v, p) => {
+            const plot = def.plots[p];
+            // Podpis poziomu (pivoty: P, R1, S1…) także w legendzie
+            const text = Number.isNaN(v) ? '—' : this.indFormat(plot.format ?? def.format)(v);
+            return { text: plot.title ? `${plot.title} ${text}` : text, color: this.plotColor(x, plot, vs[plot.signOf ?? p]) };
+          });
       const legend = this.indLegends[k];
       // Pierwsza wartość przy nazwie, dalsze (OFI: Δp, R², oczekiwana) mogą przejść do następnego wiersza na wąskim panelu
       if (legend) legend.set([{ text: indicatorLabel(x), color: PRO.ink3 }, ...values.map((v, p) => ({ ...v, glue: p === 0 }))]);
