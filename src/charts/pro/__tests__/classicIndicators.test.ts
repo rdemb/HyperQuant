@@ -38,6 +38,7 @@ const flowCtx = (c: Partial<FlowContext>): FlowContext => ({
   book: () => [],
   exactBook: () => [],
   identified: () => true,
+  makers: () => null,
   orders: () => [],
   orderCount: () => 0,
   now: Number.POSITIVE_INFINITY,

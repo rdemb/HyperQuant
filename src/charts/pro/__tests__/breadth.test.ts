@@ -53,6 +53,7 @@ describe('szerokość agresji: efektywna liczba biorców', () => {
       orders: inRange,
       orderCount: (a, b) => inRange(a, b).length,
       identified,
+      makers: () => null,
       now: 2 * H,
     });
     const c = { o: 1, h: 1, l: 1, c: 1, v: 1, n: 1 };

@@ -35,6 +35,7 @@ describe('powracający i nowi biorcy', () => {
         orders: inRange,
         orderCount: (a, b) => inRange(a, b).length,
         identified: () => true,
+        makers: () => null,
         now: t0 + 10 * M,
       };
       const c = { o: 1, h: 1, l: 1, c: 1, v: 1, n: 1 };
