@@ -1135,6 +1135,7 @@ export class ProChartController {
       orders: (from: number, to: number) => this.store.orders.range(from, to),
       orderCount: (from: number, to: number) => this.store.orders.count(from, to),
       identified: (from: number, to: number) => this.store.addressed.covers(from, to),
+      zeroKnown: (from: number, to: number) => this.store.zeroKnown.covers(from, to),
       makers: (from: number, to: number) => this.store.makerSplit(from, to),
       now: this.store.serverNow(),
       later: () => this.schedule(),

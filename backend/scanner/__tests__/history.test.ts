@@ -2,9 +2,9 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { gunzipSync } from 'node:zlib';
+import { gunzipSync, gzipSync } from 'node:zlib';
 import { describe, expect, it, vi } from 'vitest';
-import { decodeBook, decodeTrades, historyPath } from '../../../src/utils/tapeHistory.ts';
+import { decodeBook, decodeTrades, encodeTrades, historyPath } from '../../../src/utils/tapeHistory.ts';
 import { MarketRecorder, SETTLE_MS, historyIndex, pruneHistory } from '../history.ts';
 import { prepareHistoryRepo, publishHistory } from '../historyGit.ts';
 import type { HlTrade } from '../hl.ts';
@@ -57,6 +57,29 @@ describe('MarketRecorder — nagranie taśmy, arkusza i kontekstu jednego rynku'
     // W pliku nie ma adresów ani hashy
     const raw = gunzipSync(readFileSync(join(dir, historyPath('BTC', T0, 'trades', true)))).toString('utf8');
     expect(raw).not.toMatch(/0x/);
+  });
+
+  it('hash zerowy: kolumna `z` z indeksami transakcji; godzina scalona z częścią bez kolumny (sprzed jej wprowadzenia) — bez znacznika', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hq-hist-'));
+    const r = new MarketRecorder('BTC', dir);
+    r.onState(true, T0);
+    r.onTrades([trade(T0 + 1000, 1, 'B', 1, 9, HASH(1))]); // migawka
+    r.onTrades([trade(T0 + 3000, 2, 'A', 2, 9, ZERO), trade(T0 + 4000, 3, 'B', 1, 9, HASH(2)), trade(T0 + 5000, 4, 'B', 3, 9, ZERO)]);
+    r.flush(T0 + 5 * MIN + SETTLE_MS);
+    const raw = read(dir, 'BTC', T0, 'trades', true);
+    expect(raw.z).toEqual([1, 2]); // indeksy 1 i 3, różnicowo
+    const f = decodeTrades(raw)!;
+    expect(f.zeroKnown).toBe(true);
+    expect(f.trades.map((x) => x.z === true)).toEqual([false, true, false, true]);
+    // Część zapisana przez rejestrator bez kolumny: po scaleniu godzina bez znacznika (nie wiadomo, które transakcje go miały)
+    const p5 = T0 + 5 * MIN;
+    const old = encodeTrades('BTC', p5, p5 + 5 * MIN, [[p5, p5 + 5 * MIN]], [{ t: p5 + 1000, px: 80_000, sz: 0.1, side: 'A', tid: 5, o: 9, k: 4, m: 1 }], [], false);
+    writeFileSync(join(dir, historyPath('BTC', p5, 'trades', true)), gzipSync(JSON.stringify(old)));
+    r.flush(T0 + 60 * MIN + SETTLE_MS);
+    const h = decodeTrades(read(dir, 'BTC', T0, 'trades', false))!;
+    expect(h.trades.map((x) => x.tid)).toEqual([1, 2, 3, 4, 5]);
+    expect(h.zeroKnown).toBe(false);
+    expect(h.trades.some((x) => x.z)).toBe(false);
   });
 
   it('cisza na rynku w trakcie nagrania: pusta część z pokryciem; zerwanie połączenia zamyka odcinek', () => {

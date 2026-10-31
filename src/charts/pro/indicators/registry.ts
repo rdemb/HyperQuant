@@ -53,7 +53,8 @@ export type IndicatorId =
   | 'repeat'
   | 'makers'
   | 'hawkes'
-  | 'outcomes';
+  | 'outcomes'
+  | 'twap';
 
 /**
  * Grupy na liście okna wskaźników (jak kategorie TradingView); `hyperquant` — wskaźniki, których nie ma w TradingView
@@ -132,9 +133,11 @@ export interface FlowContext {
   book(): readonly BookFrame[];
   /** Migawki arkusza bez agregacji ceny (rosnąco po czasie): tylko od otwarcia strony. */
   exactBook(): readonly BookFrame[];
-  orders(from: number, to: number): readonly { time: number; side: Side; notional: number; taker: string }[];
+  orders(from: number, to: number): readonly { time: number; side: Side; notional: number; taker: string; zero?: true }[];
   /** Czy taśma ma konta biorców przez cały [from, to) (strumień na żywo i historia serwera, bez zapisu przeglądarki). */
   identified(from: number, to: number): boolean;
+  /** Czy taśma ma oznaczone hashe zerowe przez cały [from, to) (strumień na żywo i nowsze pliki historii serwera). */
+  zeroKnown?(from: number, to: number): boolean;
   /** Delta agresorów w [from, to) przyjęta przez animatorów rynku i resztę makerów; null bez wypełnień z kontem makera. */
   makers(from: number, to: number): MakerSplit | null;
   orderCount(from: number, to: number): number;
@@ -396,6 +399,24 @@ export function marketCostBp(f: BookFrame, usd: number, buy: boolean): number {
 
 /** Konto ma w historii serwera numer ważny w godzinie UTC: świeca dłuższa nie łączy kont z różnych godzin. */
 export const ACCOUNT_HOUR_MS = 3_600_000;
+
+/** Siatka podzleceń TWAP Hyperliquid i tolerancja fazy w niej przy łączeniu podzleceń jednego TWAP-u. */
+const TWAP_SLICE_MS = 30_000;
+const TWAP_PHASE_MS = 2_000;
+
+/** Liczba TWAP-ów: fazy podzleceń w siatce 30 s (osobno dla konta i strony) skupione z tolerancją, po okręgu. */
+export function twapCount(phases: ReadonlyMap<string, number[]>): number {
+  let n = 0;
+  for (const ps of phases.values()) {
+    ps.sort((a, b) => a - b);
+    let k = 1;
+    for (let i = 1; i < ps.length; i++) if (ps[i] - ps[i - 1] > TWAP_PHASE_MS) k++;
+    // Faza tuż przed końcem siatki i tuż po jej początku to ten sam TWAP
+    if (k > 1 && ps[0] + TWAP_SLICE_MS - ps[ps.length - 1] <= TWAP_PHASE_MS) k--;
+    n += k;
+  }
+  return n;
+}
 
 /**
  * Szerokość agresji w zleceniach świecy: N_eff = (Σ w)² / Σ w² z wartości wejść kont biorców po stronie kupna i sprzedaży
@@ -1965,6 +1986,62 @@ export const INDICATORS: readonly IndicatorDef[] = [
     plots: [],
     format: 'price',
     outcomes: true,
+  },
+  {
+    id: 'twap',
+    short: 'TWAP',
+    name: tr('Udział TWAP w taśmie', 'TWAP share of the tape'),
+    hint: tr(
+      'Jaka część wartości transakcji świecy to wypełnienia z hashem zerowym, czyli m.in. podzlecenia TWAP (algorytm Hyperliquid, który dzieli zlecenie na części co 30 s): kupno nad zerem, sprzedaż pod zerem, w procentach; w legendzie liczba TWAP-ów w świecy',
+      'What share of the candle’s trade value comes from fills with a zero hash, i.e. among others TWAP suborders (the Hyperliquid algorithm that splits an order into parts every 30 s): buying above zero, selling below zero, in percent; the legend shows the number of TWAPs within the candle'
+    ),
+    group: 'hyperquant',
+    aliases: 'twap algorytm algorithm algo podzlecenia suborders plastry slices hash zerowy zero hash udzial share',
+    warmup: () => 0,
+    convention: tr(
+      'Tego wskaźnika nie ma w TradingView: liczony z nagranej taśmy Hyperliquid, w której podzlecenia TWAP mają hash zerowy (bez identyfikatora transakcji). W pomiarze na taśmie BTC z 30–31.10.2026 (17,7 h, 38 tys. wypełnień z hashem zerowym) 99,97% z nich należało do znanych TWAP-ów, a reszta to pierwsze podzlecenia nowych; żadne z ok. 1 tys. wypełnień likwidacji nie miało hasha zerowego, a wykonanie każdego zakończonego TWAP-u pokrywały wypełnienia z hashem zerowym. W tym oknie nie było ADL, więc dla niego jest to niesprawdzone. Udział to wartość (USD) wypełnień z hashem zerowym po stronie agresora kupna (słupek nad zerem) i sprzedaży (pod zerem) podzielona przez wartość wszystkich transakcji świecy. TWAP-y w legendzie to podzlecenia jednego konta po jednej stronie, których czasy leżą na wspólnej siatce co 30 s (tolerancja 2 s); dwa TWAP-y jednego konta w tej samej fazie liczą się jako jeden. Pokazujemy tylko liczbę, nigdy kont.',
+      'TradingView has no such indicator: it is computed from the recorded Hyperliquid tape, where TWAP suborders carry a zero hash (no transaction id). In a measurement on the BTC tape of 30–31 Oct 2026 (17.7 h, 38k zero-hash fills), 99.97% of them belonged to known TWAPs and the rest were the first suborders of new ones; none of about 1k liquidation fills had a zero hash, and zero-hash fills covered the execution of every finished TWAP. There was no ADL in that window, so it is unverified for ADL. The share is the value (USD) of zero-hash fills on the buying (bar above zero) and selling (below zero) aggressor side divided by the value of all trades in the candle. TWAPs in the legend are suborders of one account on one side whose times lie on a common 30 s grid (2 s tolerance); two TWAPs of one account in the same phase count as one. Only the number is shown, never the accounts.'
+    ),
+    memoryNote: tr(
+      'Świeca zależy tylko od swoich transakcji, na interwałach do 1 h (historia serwera numeruje konta w obrębie godziny). Hash zerowy jest oznaczony w strumieniu na żywo i w plikach historii serwera nagranych od wprowadzenia tego oznaczenia; świece bez niego w całości nie mają wartości.',
+      'A candle depends only on its own trades, on intervals up to 1 h (server history numbers accounts within an hour). The zero hash is marked in the live stream and in server history files recorded since that mark was introduced; candles without it throughout have no value.'
+    ),
+    pane: 'own',
+    params: [],
+    plots: [
+      { hist: true, title: tr('kupno %', 'buying %') },
+      { hist: true, title: tr('sprzedaż %', 'selling %') },
+      { hidden: true, title: tr('TWAP-y', 'TWAPs'), format: 'count' },
+    ],
+    levels: [0],
+    format: 'fixed1',
+    series: () => (bars, ms, ctx, out) => {
+      const [buy, sell, count] = out;
+      for (let i = 0; i < bars.length; i++) {
+        const t = bars[i].candle.t;
+        let all = 0;
+        let up = 0;
+        // Sprzedaż ze znakiem minus (bez sprzedaży zostaje 0, nie −0)
+        let down = 0;
+        const phases = new Map<string, number[]>();
+        if (ms <= ACCOUNT_HOUR_MS && ctx.zeroKnown?.(t, Math.min(t + ms, ctx.now))) {
+          for (const o of ctx.orders(t, t + ms)) {
+            all += o.notional;
+            if (!o.zero) continue;
+            if (o.side === 1) up += o.notional;
+            else down -= o.notional;
+            if (!o.taker) continue;
+            const key = `${o.side}|${o.taker}`;
+            const ps = phases.get(key);
+            if (ps) ps.push(o.time % TWAP_SLICE_MS);
+            else phases.set(key, [o.time % TWAP_SLICE_MS]);
+          }
+        }
+        buy[i] = all > 0 ? (100 * up) / all : Number.NaN;
+        sell[i] = all > 0 ? (100 * down) / all : Number.NaN;
+        count[i] = all > 0 ? twapCount(phases) : Number.NaN;
+      }
+    },
   },
 ];
 

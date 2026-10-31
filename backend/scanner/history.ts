@@ -151,6 +151,7 @@ export class MarketRecorder {
       if (p <= this.lastPart) continue; // część już zapisana — spóźniona transakcja pominięta
       const acc = this.trades.get(p);
       const row: HistTrade = { t, px, sz, side: x.side, tid, o, k, m };
+      if (typeof x.hash === 'string' && ZERO_HASH.test(x.hash)) row.z = true;
       if (acc) acc.push(row);
       else this.trades.set(p, [row]);
     }
@@ -246,7 +247,7 @@ export class MarketRecorder {
       const bPath = join(this.dir, historyPath(this.coin, p, 'book', true));
       const oldT = existsSync(tPath) ? decodeTrades(readGz(tPath)) : null;
       const oldB = existsSync(bPath) ? decodeBook(readGz(bPath)) : null;
-      writeGz(tPath, encodeTrades(this.coin, p, p + HIST_PART_MS, [...spans, ...(oldT?.spans ?? [])], uniqTrades([...(oldT?.trades ?? []), ...trades]), uniqCtx([...(oldT?.ctx ?? []), ...ctx])));
+      writeGz(tPath, encodeTrades(this.coin, p, p + HIST_PART_MS, [...spans, ...(oldT?.spans ?? [])], uniqTrades([...(oldT?.trades ?? []), ...trades]), uniqCtx([...(oldT?.ctx ?? []), ...ctx]), oldT?.zeroKnown ?? true));
       writeGz(bPath, encodeBook(this.coin, p, p + HIST_PART_MS, [...spans, ...(oldB?.spans ?? [])], uniqFrames([...(oldB?.frames ?? []), ...frames])));
       this.lastPart = p;
       written += 2;
@@ -280,7 +281,7 @@ export class MarketRecorder {
       const trades = uniqTrades(tFiles.flatMap((f) => f.trades));
       const ctx = uniqCtx(tFiles.flatMap((f) => f.ctx));
       const frames = uniqFrames(bFiles.flatMap((f) => f.frames));
-      writeGz(join(this.dir, historyPath(this.coin, h, 'trades', false)), encodeTrades(this.coin, h, h + HIST_HOUR_MS, tFiles.flatMap((f) => f.spans), trades, ctx));
+      writeGz(join(this.dir, historyPath(this.coin, h, 'trades', false)), encodeTrades(this.coin, h, h + HIST_HOUR_MS, tFiles.flatMap((f) => f.spans), trades, ctx, tFiles.every((f) => f.zeroKnown)));
       writeGz(join(this.dir, historyPath(this.coin, h, 'book', false)), encodeBook(this.coin, h, h + HIST_HOUR_MS, bFiles.flatMap((f) => f.spans), frames));
       written += 2;
       for (const p of parts) for (const kind of ['trades', 'book'] as const) rmSync(join(this.dir, historyPath(this.coin, p, kind, true)), { force: true });
@@ -343,7 +344,8 @@ export const HISTORY_README = [
   '',
   '- `index.json` — spis: godziny z plikiem godzinowym i części 5-minutowe bieżącej godziny dla każdego rynku.',
   '- `<RYNEK>/<RRRR-MM-DD>/<GG>.trades.json.gz` — taśma godziny (JSON w gzip): czas i tid różnicowo, cena, wielkość, strona',
-  '  agresora (B/A), numery zlecenia agresora, biorcy i makera w obrębie godziny; kontekst minutowy (OI, finansowanie, mark); pokrycie.',
+  '  agresora (B/A), numery zlecenia agresora, biorcy i makera w obrębie godziny, indeksy transakcji z hashem zerowym (`z`,',
+  '  m.in. podzlecenia TWAP; brak kolumny — plik sprzed jej wprowadzenia); kontekst minutowy (OI, finansowanie, mark); pokrycie.',
   '- `<RYNEK>/<RRRR-MM-DD>/<GG>.book.json.gz` — migawki arkusza (co ok. 5 s, 20 poziomów na stronę: cena, wielkość, liczba',
   '  zleceń) w agregacji bliskiej (~2 pb ceny) i dalekiej (10 × większy krok); pokrycie.',
   '- `<GG>-<MM>.*.json.gz` — części 5-minutowe godziny w toku (po jej zamknięciu łączone w plik godzinowy).',

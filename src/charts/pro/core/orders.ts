@@ -28,6 +28,8 @@ export interface AggressorOrder {
   /** Liczba różnych makerów i wartość (USD) dostarczona przez największego z nich. */
   makers: number;
   topMakerUsd: number;
+  /** Wypełnienia z hashem zerowym (m.in. podzlecenie TWAP). */
+  zero?: true;
 }
 
 interface Open {
@@ -103,7 +105,9 @@ export class OrderAggregator {
 
 function single(f: Fill): AggressorOrder {
   const usd = f.px * f.sz;
-  return { time: f.time, side: f.side, sz: f.sz, notional: usd, vwap: f.px, pxFirst: f.px, pxLast: f.px, fills: 1, levels: 1, taker: f.taker, makers: 1, topMakerUsd: usd };
+  const o: AggressorOrder = { time: f.time, side: f.side, sz: f.sz, notional: usd, vwap: f.px, pxFirst: f.px, pxLast: f.px, fills: 1, levels: 1, taker: f.taker, makers: 1, topMakerUsd: usd };
+  if (f.zero) o.zero = true;
+  return o;
 }
 
 /** Dziennik zakończonych zleceń agresora, rosnąco po czasie (zapytania o zakres przez wyszukiwanie binarne). */
