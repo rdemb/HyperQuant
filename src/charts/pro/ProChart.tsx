@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { Bell, BellOff, BellPlus, Camera, ChevronDown, ChevronsRight, Columns2, Copy, Grid2x2, History, Keyboard, Layers, Link, ListOrdered, Maximize2, Minimize2, Minus, MoreHorizontal, PenTool, RotateCcw, SlidersHorizontal, Square, X } from 'lucide-react';
+import { Bell, BellOff, BellPlus, Camera, ChevronDown, ChevronsRight, Columns2, Copy, Eye, EyeOff, Grid2x2, History, Keyboard, Layers, Link, ListOrdered, Maximize2, Minimize2, Minus, MoreHorizontal, PenTool, RotateCcw, SlidersHorizontal, Square, X } from 'lucide-react';
 import { Badge, BadgeTone, Segmented, numLang } from '../../ui';
 import { LiqMapState, useLiqMap } from '../../state/useLiqMap';
 import { useDeskLedger } from '../../state/useDeskLedger';
@@ -21,7 +21,7 @@ import { DomLadder, PickCard, TapePanel, compact } from './chart/FlowPanels';
 import { HoverSignal, Legend } from './chart/Legend';
 import { LOT_FLOOR, type LiquidityPick } from './chart/liquidity';
 import { brandedScreenshot, downloadCanvas } from './chart/screenshot';
-import { MAX_ALERTS, type PriceAlert, addAlert, alertBook, alertLog, askNotifications, hasLine, lastSeen, lineLabel, markSeen, primeAlertSound, removeAlert } from './chart/alerts';
+import { MAX_ALERTS, type PriceAlert, addAlert, alertBook, alertLines, alertLog, askNotifications, hasLine, lastSeen, lineLabel, markSeen, primeAlertSound, removeAlert } from './chart/alerts';
 import { type LinkAlarm, linkAlerts, parseAlarmLink } from './chart/alarmLink';
 import { AlarmLinkCard, type AlertDraft, AlertsMenu } from './chart/AlertsMenu';
 import { onAlertEvents, startAlertWatch } from './chart/alertWatch';
@@ -251,6 +251,7 @@ export const ProChart: React.FC<{
   // Menu pod prawym przyciskiem (punkt w pikselach wykresu i cena w tym punkcie), alerty cenowe, krótki komunikat
   const [ctxMenu, setCtxMenu] = useState<CtxMenuAt | null>(null);
   const alerts = useSyncExternalStore(alertBook.subscribe, alertBook.get);
+  const linesShown = useSyncExternalStore(alertLines.subscribe, alertLines.shown);
   const log = useSyncExternalStore(alertLog.subscribe, alertLog.get);
   // Cena z wykresu dla formularza alarmu i chwila ostatniego obejrzenia historii (kropka na dzwonku)
   const [alertDraft, setAlertDraft] = useState<AlertDraft | null>(null);
@@ -381,10 +382,10 @@ export const ProChart: React.FC<{
     return () => window.removeEventListener('hashchange', onHash);
   }, [panel, inReplay]);
 
-  // Alarmy działają na cenie na żywo — w powtórce bez ich linii
+  // Alarmy działają na cenie na żywo — w powtórce bez ich linii; ukryte linie nie wyłączają alarmów
   useEffect(() => {
-    ctrlRef.current?.setAlerts(store.replay ? [] : alerts.filter((a) => a.coin === store.coin && hasLine(a)).map((a) => ({ price: a.price, title: lineLabel(a), armed: a.armed || a.streak > 0 })));
-  }, [alerts, store]);
+    ctrlRef.current?.setAlerts(store.replay || !linesShown ? [] : alerts.filter((a) => a.coin === store.coin && hasLine(a)).map((a) => ({ price: a.price, title: lineLabel(a), armed: a.armed || a.streak > 0 })));
+  }, [alerts, linesShown, store]);
 
   // Strefa ceny z linku powtórki (np. z lekcji)
   const zone = replay?.link.zone ?? null;
@@ -667,8 +668,8 @@ export const ProChart: React.FC<{
               <ListOrdered className="w-4 h-4" />
             </ToolBtn>
             {!inReplay && (
-              <ToolBtn label={tr('Alarmy cenowe', 'Price alerts')} onClick={() => (menu === 'alerts' ? setMenu(null) : openAlerts(null))} active={menu === 'alerts'} expanded={menu === 'alerts'}>
-                <BellBadge count={alerts.length} fresh={freshAlert} />
+              <ToolBtn label={linesShown ? tr('Alarmy cenowe', 'Price alerts') : tr('Alarmy cenowe (ukryte na wykresie)', 'Price alerts (hidden on the chart)')} onClick={() => (menu === 'alerts' ? setMenu(null) : openAlerts(null))} active={menu === 'alerts'} expanded={menu === 'alerts'}>
+                <BellBadge count={alerts.length} fresh={freshAlert} hidden={!linesShown} />
               </ToolBtn>
             )}
             <ToolBtn label={tr('Ustawienia wykresu', 'Chart settings')} onClick={() => setMenu((m) => (m === 'settings' ? null : 'settings'))} active={menu === 'settings'} expanded={menu === 'settings'}>
@@ -761,8 +762,8 @@ export const ProChart: React.FC<{
               <Layers className="w-4 h-4" />
             </ToolBtn>
             {!inReplay && (
-              <ToolBtn label={tr('Alarmy cenowe', 'Price alerts')} onClick={() => (menu === 'alerts' ? setMenu(null) : openAlerts(null))} active={menu === 'alerts'} expanded={menu === 'alerts'}>
-                <BellBadge count={alerts.length} fresh={freshAlert} />
+              <ToolBtn label={linesShown ? tr('Alarmy cenowe', 'Price alerts') : tr('Alarmy cenowe (ukryte na wykresie)', 'Price alerts (hidden on the chart)')} onClick={() => (menu === 'alerts' ? setMenu(null) : openAlerts(null))} active={menu === 'alerts'} expanded={menu === 'alerts'}>
+                <BellBadge count={alerts.length} fresh={freshAlert} hidden={!linesShown} />
               </ToolBtn>
             )}
             <ToolBtn label={tr('Ustawienia wykresu', 'Chart settings')} onClick={() => setMenu((m) => (m === 'settings' ? null : 'settings'))} active={menu === 'settings'} expanded={menu === 'settings'}>
@@ -847,7 +848,12 @@ export const ProChart: React.FC<{
               ref={ctxRef}
               at={ctxMenu}
               coin={store.coin}
-              nearAlert={alerts.find((a) => a.coin === store.coin && hasLine(a) && Math.abs((ctrlRef.current?.yOf(a.price) ?? -1e9) - ctxMenu.y) <= 8) ?? null}
+              nearAlert={(linesShown && alerts.find((a) => a.coin === store.coin && hasLine(a) && Math.abs((ctrlRef.current?.yOf(a.price) ?? -1e9) - ctxMenu.y) <= 8)) || null}
+              linesShown={!inReplay && alerts.some((a) => a.coin === store.coin && hasLine(a)) ? linesShown : null}
+              onLines={() => {
+                alertLines.set(!linesShown);
+                setToast(linesShown ? tr('Alarmy ukryte na wykresie, dalej działają', 'Alerts hidden on the chart, still active') : tr('Alarmy znowu na wykresie', 'Alerts back on the chart'));
+              }}
               onClose={() => setCtxMenu(null)}
               onAlert={addTouch}
               onAlertMore={(p) => openAlerts({ price: toTick(p), kind: 'close' })}
@@ -1128,12 +1134,12 @@ const ToolBtn: React.FC<{ label: string; onClick: () => void; children: React.Re
   </button>
 );
 
-/** Dzwonek alarmów: liczba aktywnych i kropka przy zdarzeniu, którego jeszcze nie obejrzano. */
-const BellBadge: React.FC<{ count: number; fresh: boolean }> = ({ count, fresh }) => (
+/** Dzwonek alarmów: liczba aktywnych (szara, gdy linie są ukryte na wykresie) i kropka przy zdarzeniu, którego jeszcze nie obejrzano. */
+const BellBadge: React.FC<{ count: number; fresh: boolean; hidden: boolean }> = ({ count, fresh, hidden }) => (
   <span className="relative inline-flex">
     <Bell className={`w-4 h-4 ${fresh ? 'text-warn' : ''}`} />
     {count > 0 && (
-      <span className="absolute -top-1.5 -right-2 min-w-3.5 h-3.5 px-0.5 rounded-full bg-warn text-page text-[9px] leading-[14px] font-semibold text-center tabular-nums">{count}</span>
+      <span className={`absolute -top-1.5 -right-2 min-w-3.5 h-3.5 px-0.5 rounded-full ${hidden ? 'bg-ink-3' : 'bg-warn'} text-page text-[9px] leading-[14px] font-semibold text-center tabular-nums`}>{count}</span>
     )}
     {fresh && <span className="absolute -top-1 -left-1 w-2 h-2 rounded-full bg-critical ring-2 ring-surface-1" />}
   </span>
@@ -1155,6 +1161,9 @@ const ChartMenu = React.forwardRef<
     at: CtxMenuAt;
     coin: string;
     nearAlert: PriceAlert | null;
+    /** Linie alarmów tego rynku pokazane albo ukryte; null — rynek bez alarmów z linią. */
+    linesShown: boolean | null;
+    onLines: () => void;
     onClose: () => void;
     onAlert: (price: number) => void;
     onAlertMore: (price: number) => void;
@@ -1166,7 +1175,7 @@ const ChartMenu = React.forwardRef<
     onReset: () => void;
     onShot: () => void;
   }
->(({ at, coin, nearAlert, onClose, onAlert, onAlertMore, onRemoveAlert, onLine, onCopyPrice, onCopyLink, onNow, onReset, onShot }, ref) => {
+>(({ at, coin, nearAlert, linesShown, onLines, onClose, onAlert, onAlertMore, onRemoveAlert, onLine, onCopyPrice, onCopyLink, onNow, onReset, onShot }, ref) => {
   const p = at.price;
   const item = (icon: React.ReactNode, label: string, run: () => void) => (
     <button
@@ -1203,6 +1212,12 @@ const ChartMenu = React.forwardRef<
           <div className="my-1 border-t border-line" />
         </>
       )}
+      {linesShown !== null &&
+        item(
+          linesShown ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />,
+          linesShown ? tr('Ukryj alarmy na wykresie', 'Hide alerts on the chart') : tr('Pokaż alarmy na wykresie', 'Show alerts on the chart'),
+          onLines
+        )}
       {item(<Link className="w-4 h-4" />, tr('Kopiuj link do widoku', 'Copy view link'), onCopyLink)}
       {item(<ChevronsRight className="w-4 h-4" />, tr('Przewiń do bieżącej świecy', 'Scroll to the current candle'), onNow)}
       {item(<RotateCcw className="w-4 h-4" />, tr('Przywróć skalę', 'Reset scale'), onReset)}
