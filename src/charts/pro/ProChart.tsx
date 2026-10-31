@@ -209,7 +209,7 @@ function useStoreVersion(store: ProStore, ms: number): number {
  * (domyślnie id stacji), `onSaved` — po zapisie ustawień (podpis karty), `coin` — rynek przeniesiony z poprzedniej karty,
  * `fromLink` — pierwsze otwarcie wykresów, więc link do widoku w adresie strony ma pierwszeństwo.
  * `replay` — powtórka nagrania zamiast rynku na żywo: ustawienia nie są zapisywane, adres strony zostaje linkiem powtórki.
- * `layoutFs` — pełny ekran całego układu kilku wykresów (przycisk pełnego ekranu i klawisz F obejmują wtedy wszystkie panele).
+ * `layoutFs` — pełny ekran miejsca pracy: pasek kart i wszystkie panele układu (przycisk pełnego ekranu i klawisz F).
  */
 export const ProChart: React.FC<{
   panel?: number;
@@ -706,7 +706,13 @@ export const ProChart: React.FC<{
             </ToolBtn>
             {layoutFs ? (
               <ToolBtn
-                label={layoutFs.active ? tr('Zamknij pełny ekran', 'Exit full screen') : tr('Pełny ekran układu: wszystkie wykresy (F)', 'Full screen layout: all charts (F)')}
+                label={
+                  layoutFs.active
+                    ? tr('Zamknij pełny ekran', 'Exit full screen')
+                    : layout > 1
+                      ? tr('Pełny ekran z kartami: wszystkie wykresy układu (F)', 'Full screen with tabs: all charts of the layout (F)')
+                      : tr('Pełny ekran z kartami (F)', 'Full screen with tabs (F)')
+                }
                 onClick={layoutFs.toggle}
               >
                 {layoutFs.active ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
