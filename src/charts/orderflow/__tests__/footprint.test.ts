@@ -76,4 +76,11 @@ describe('fmtVol', () => {
     expect(fmtVol(245.4)).toBe('245');
     expect(fmtVol(1234)).toBe('1,2K');
   });
+
+  it('od miliona w milionach (wolumen świecy miesiąca), bez „1000,0K” na granicy', () => {
+    expect(fmtVol(884_512)).toBe('884,5K');
+    expect(fmtVol(999_949)).toBe('999,9K');
+    expect(fmtVol(999_950)).toBe('1,00M');
+    expect(fmtVol(1_025_100)).toBe('1,03M');
+  });
 });
