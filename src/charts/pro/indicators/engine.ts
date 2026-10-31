@@ -1,12 +1,12 @@
 import type { Candle } from '../hl/parse';
 import { intervalById } from '../core/time';
-import { FlowBar, FlowContext, IndicatorInstance, Step, indicatorDef } from './registry';
+import { FlowBar, FlowContext, IndicatorInstance, SeriesFn, Step, indicatorDef } from './registry';
 
 /** Świeca wejścia: wystarczy świeca z API (ProBar, IndicatorBar); wskaźniki z taśmy biorą też footprint (ProBar). */
 type Bar = FlowBar;
 
 /** Bez danych spoza świec (testy, wykres bez rynku Hyperliquid): wskaźniki z taśmy i OI bez wartości. */
-const NO_FLOW: FlowContext = { oiAt: () => null, book: () => [], now: Number.POSITIVE_INFINITY };
+const NO_FLOW: FlowContext = { oiAt: () => null, book: () => [], orders: () => [], orderCount: () => 0, now: Number.POSITIVE_INFINITY };
 
 /** Świece interwału wskaźnika (seria rynku wczytywana przy pierwszym użyciu). */
 export type CandlesOf = (tf: string) => readonly Candle[];
@@ -197,6 +197,7 @@ class FlowRun implements IndicatorValues {
   private readonly v: Float64Array;
   /** Wartości z `series` przed porównaniem z poprzednimi. */
   private next: Float64Array[];
+  private readonly series: SeriesFn | null;
   /** Liczba świec i czas pierwszej z poprzedniego liczenia. */
   private n = 0;
   private t0 = Number.NaN;
@@ -206,16 +207,17 @@ class FlowRun implements IndicatorValues {
     this.v = new Float64Array(def.plots.length);
     this.out = def.plots.map(() => new Float64Array(0));
     this.next = def.plots.map(() => new Float64Array(0));
+    this.series = def.series?.(x.params) ?? null;
   }
 
   /** Przelicza wszystkie świece; zwraca indeks pierwszej zmienionej wartości (doczytana historia z lewej zmienia wszystkie). */
   sync(bars: readonly Bar[], ms: number, ctx: FlowContext): number {
     const n = bars.length;
     if (n > this.out[0].length) this.out = this.out.map((a) => grow(a, n));
-    const { flow, series } = indicatorDef(this.x.id);
-    if (series) {
+    const { flow } = indicatorDef(this.x.id);
+    if (this.series) {
       if (n > this.next[0].length) this.next = this.next.map((a) => grow(a, n));
-      series(bars, ms, ctx, this.x.params, this.next);
+      this.series(bars, ms, ctx, this.next);
     }
     const t0 = n > 0 ? bars[0].candle.t : Number.NaN;
     let first = n < this.n || t0 !== this.t0 ? 0 : n;

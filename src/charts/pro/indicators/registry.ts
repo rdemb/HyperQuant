@@ -42,7 +42,8 @@ export type IndicatorId =
   | 'oiflow'
   | 'absorption'
   | 'ofi'
-  | 'regime';
+  | 'regime'
+  | 'ordersize';
 
 /**
  * Grupy na liście okna wskaźników (jak kategorie TradingView); `hyperquant` — wskaźniki, których nie ma w TradingView
@@ -113,13 +114,19 @@ export interface FlowBar {
 
 /**
  * Dane Hyperliquid spoza świec: otwarte pozycje w chwili (null — brak odczytu), migawki arkusza najbliższej agregacji
- * (rosnąco po czasie) i bieżący czas serwera.
+ * (rosnąco po czasie), zlecenia agresora z taśmy (wypełnienia złożone w zlecenia) z [from, to) i ich liczba oraz bieżący
+ * czas serwera.
  */
 export interface FlowContext {
   oiAt(t: number): number | null;
   book(): readonly BookFrame[];
+  orders(from: number, to: number): readonly { notional: number }[];
+  orderCount(from: number, to: number): number;
   now: number;
 }
+
+/** Wskaźnik liczony na wszystkich świecach naraz: wartości plotu k świecy i do `out[k][i]`. */
+export type SeriesFn = (bars: readonly FlowBar[], ms: number, ctx: FlowContext, out: Float64Array[]) => void;
 
 export interface IndicatorDef {
   id: IndicatorId;
@@ -157,8 +164,10 @@ export interface IndicatorDef {
   /** Linie poziomów w panelu (liczby bez podpisów) i stały zakres jego skali. */
   levels?: readonly number[];
   range?: readonly [number, number];
-  /** Liczby: cena z dokładnością ticku rynku, odległość ceny (o miejsce dokładniej niż tick), dwa albo trzy miejsca, wolumen. */
-  format: 'price' | 'range' | 'fixed2' | 'fixed3' | 'volume';
+  /** Liczby: cena z dokładnością ticku rynku, odległość ceny (o miejsce dokładniej niż tick), dwa albo trzy miejsca, wolumen, kwota USD. */
+  format: 'price' | 'range' | 'fixed2' | 'fixed3' | 'volume' | 'usd';
+  /** Skala logarytmiczna panelu (wartości od ułamków po wielokrotności, np. kwoty zleceń). */
+  log?: boolean;
   /** Krok świeca po świecy; bez niego wskaźnik to rysunek na ostatnich świecach (`fit`) albo z danych spoza świec (`flow`, `sample`). */
   create?(p: Params): Step;
   /**
@@ -173,9 +182,9 @@ export interface IndicatorDef {
   flow?(b: FlowBar, ms: number, ctx: FlowContext, out: Float64Array): void;
   /**
    * Jak `flow`, ale na wszystkich świecach naraz (świeca zależy od poprzednich, a dane spoza świec przychodzą osobno, np.
-   * migawki arkusza): wartości plotu k świecy i do `out[k][i]`.
+   * migawki arkusza); funkcja na instancję, więc może pamiętać wyniki świec między przeliczeniami.
    */
-  series?(bars: readonly FlowBar[], ms: number, ctx: FlowContext, p: Params, out: Float64Array[]): void;
+  series?(p: Params): SeriesFn;
   /** Tyle świec przed lewą krawędzią widoku potrzeba danych z serwera (okno poprzednich świec: absorpcja, OFI). */
   lookback?(p: Params): number;
   /**
@@ -239,6 +248,63 @@ export function regimePrior(xs: readonly number[]): number {
   const sq = xs.map((x) => x * x).sort((a, b) => a - b);
   const mean = sq.reduce((s, x) => s + x, 0) / sq.length;
   return Math.max(1e-12, sq[sq.length >> 1] / 0.4549, 0.25 * mean);
+}
+
+/** Przedziały kwot zleceń: 20 na dekadę (krok ok. 12%) od 1 do 100 mln USD; skrajne zbierają resztę. */
+export const SIZE_BINS_PER_DECADE = 20;
+const SIZE_BINS = 8 * SIZE_BINS_PER_DECADE;
+const sizeBin = (usd: number) => Math.min(SIZE_BINS - 1, Math.max(0, Math.floor(SIZE_BINS_PER_DECADE * Math.log10(usd))));
+
+/** Kwantyl próby posortowanej rosnąco z interpolacją liniową (jak domyślny w R i numpy). */
+export function quantileSorted(xs: ArrayLike<number>, q: number): number {
+  const n = xs.length;
+  if (n === 0) return Number.NaN;
+  const h = (n - 1) * q;
+  const lo = Math.floor(h);
+  return lo + 1 < n ? xs[lo] + (h - lo) * (xs[lo + 1] - xs[lo]) : xs[lo];
+}
+
+/** Kwantyl z przedziałów: przedział z kwantylem, w nim interpolacja na skali logarytmicznej. */
+function quantileBins(h: ArrayLike<number>, total: number, q: number): number {
+  const target = q * total;
+  let acc = 0;
+  for (let k = 0; k < h.length; k++) {
+    if (h[k] > 0 && acc + h[k] >= target) return 10 ** ((k + (target - acc) / h[k]) / SIZE_BINS_PER_DECADE);
+    acc += h[k];
+  }
+  return Number.NaN;
+}
+
+/**
+ * Statystyka Kołmogorowa–Smirnowa na przedziałach ze znakiem przesunięcia: dodatnia, gdy zlecenia świecy są większe niż
+ * w bazie (jej dystrybuanta leży niżej), ujemna, gdy mniejsze.
+ */
+function signedKs(a: ArrayLike<number>, na: number, b: ArrayLike<number>, nb: number): number {
+  let fa = 0;
+  let fb = 0;
+  let up = 0;
+  let down = 0;
+  for (let k = 0; k < a.length; k++) {
+    fa += a[k] / na;
+    fb += b[k] / nb;
+    up = Math.max(up, fb - fa);
+    down = Math.max(down, fa - fb);
+  }
+  return up >= down ? up : -down;
+}
+
+/** Zlecenia agresora jednej świecy: kwantyle kwot i ich przedziały. */
+interface SizeStats {
+  n: number;
+  q: [number, number, number];
+  bins: Uint32Array;
+}
+
+function sizeStats(orders: readonly { notional: number }[]): SizeStats {
+  const xs = Float64Array.from(orders, (o) => o.notional).sort();
+  const bins = new Uint32Array(SIZE_BINS);
+  for (const x of xs) bins[sizeBin(x)]++;
+  return { n: xs.length, q: [quantileSorted(xs, 0.5), quantileSorted(xs, 0.9), quantileSorted(xs, 0.99)], bins };
 }
 
 /** Najdłuższa przerwa między porównywanymi migawkami arkusza (kanał co ~5 s; dłuższa to przerwa w danych). */
@@ -1334,7 +1400,7 @@ export const INDICATORS: readonly IndicatorDef[] = [
     ],
     levels: [0],
     format: 'volume',
-    series: (bars, ms, ctx, p, out) => {
+    series: (p) => (bars, ms, ctx, out) => {
       const [ofi, dp, r2, expected] = out;
       bookFlow(ctx.book(), bars, ms, ctx.now, ofi, dp);
       // Regresja z ostatnich zamkniętych świec z wartością przed świecą: bieżąca nie wchodzi do swojego okna
@@ -1390,6 +1456,73 @@ export const INDICATORS: readonly IndicatorDef[] = [
         const s = !det ? null : keep ? det.state() : det.peek(x);
         out[0] = s ? s.pRecent : Number.NaN;
         out[1] = s ? 100 * s.sigma : Number.NaN;
+      };
+    },
+  },
+  {
+    id: 'ordersize',
+    short: tr('Zlecenia', 'Orders'),
+    name: tr('Wielkość zleceń agresora', 'Aggressor order size'),
+    hint: tr(
+      'Mediana, 90. i 99. percentyl kwoty zleceń rynkowych (wypełnienia złożone w zlecenia) w świecy, na skali logarytmicznej, i 90. percentyl z poprzednich świec jako baza; w legendzie przesunięcie rozkładu względem bazy (KS: dodatnie — zlecenia większe niż zwykle)',
+      'Median, 90th and 99th percentile of market order size (fills combined into orders) within the candle, on a log scale, with the 90th percentile of previous candles as the baseline; the legend shows the distribution shift against the baseline (KS: positive means larger orders than usual)'
+    ),
+    group: 'hyperquant',
+    aliases: 'order size wielkosc zlecen agresor aggressor big trades duze zlecenia kwantyl percentyl ks kolmogorov smirnov',
+    warmup: () => 0,
+    convention: tr(
+      'Tego wskaźnika nie ma w TradingView: liczony z nagranej taśmy Hyperliquid. Wypełnienia jednego zlecenia rynkowego łączą się po adresie biorcy i hashu transakcji (bez hasha, np. TWAP — po biorcy i tej samej milisekundzie), więc kwota to całe zlecenie, a nie pojedyncza transakcja. Percentyle świecy z interpolacją liniową. Baza to zlecenia z poprzednich świec w liczbie „Baza” razem, w przedziałach co 1/20 dekady (ok. 12%), z interpolacją w przedziale; KS to największa różnica dystrybuant świecy i bazy na tych przedziałach, ze znakiem kierunku. Przy małej liczbie zleceń w świecy KS jest głośny: na poziomie 1% znaczący dopiero powyżej około 1,63 / √n.',
+      'TradingView has no such indicator: it is computed from the recorded Hyperliquid tape. Fills of one market order are joined by taker address and transaction hash (without a hash, e.g. TWAP, by taker and the same millisecond), so the size is the whole order, not a single trade. Candle percentiles use linear interpolation. The baseline is all orders from the previous “Baseline” candles, in bins of 1/20 of a decade (about 12%), interpolated within a bin; KS is the largest gap between the candle’s and the baseline’s distribution functions on those bins, signed by direction. With few orders in a candle KS is noisy: at the 1% level it is significant only above about 1.63 / √n.'
+    ),
+    memoryNote: tr(
+      'Percentyle świecy zależą tylko od jej zleceń; baza i KS od poprzednich świec w liczbie „Baza”, w całości objętych nagraniem taśmy. Świece bez pełnego nagrania nie mają wartości. Brak bazy i KS, dopóki nie ma tylu świec z taśmą.',
+      'Candle percentiles depend only on its orders; the baseline and KS on the previous “Baseline” candles fully covered by the tape recording. Candles without full recording have no value. No baseline or KS until there are that many candles with tape.'
+    ),
+    pane: 'own',
+    params: [{ key: 'length', label: tr('Baza', 'Baseline'), min: 10, max: 500, step: 1, def: 100 }],
+    lookback: (p) => p.length,
+    plots: [
+      { title: 'p50' },
+      { color: ORANGE, title: 'p90' },
+      { color: TEAL, title: 'p99' },
+      { color: ORANGE, dashed: true, title: tr('baza p90', 'base p90') },
+      { hist: true, hidden: true, title: 'KS', format: 'fixed2' },
+    ],
+    format: 'usd',
+    log: true,
+    series: (p) => {
+      // Wyniki świec między przeliczeniami: ta sama świeca i ta sama liczba zleceń — bez ponownego liczenia
+      const memo = new WeakMap<FlowBar, { count: number; stats: SizeStats }>();
+      const base = new Float64Array(SIZE_BINS);
+      return (bars, ms, ctx, out) => {
+        const window: SizeStats[] = [];
+        let total = 0;
+        base.fill(0);
+        for (let i = 0; i < bars.length; i++) {
+          const b = bars[i];
+          const t = b.candle.t;
+          let stats: SizeStats | null = null;
+          if (b.complete) {
+            const count = ctx.orderCount(t, t + ms);
+            let m = memo.get(b);
+            if (!m || m.count !== count) memo.set(b, (m = { count, stats: sizeStats(ctx.orders(t, t + ms)) }));
+            stats = m.stats;
+          }
+          const full = window.length === p.length && total > 0;
+          for (let k = 0; k < 3; k++) out[k][i] = stats && stats.n > 0 ? stats.q[k] : Number.NaN;
+          out[3][i] = stats && full ? quantileBins(base, total, 0.9) : Number.NaN;
+          out[4][i] = stats && stats.n > 0 && full ? signedKs(stats.bins, stats.n, base, total) : Number.NaN;
+          // Baza z zamkniętych świec przed świecą
+          if (!stats || t + ms > ctx.now) continue;
+          window.push(stats);
+          for (let k = 0; k < SIZE_BINS; k++) base[k] += stats.bins[k];
+          total += stats.n;
+          if (window.length > p.length) {
+            const old = window.shift()!;
+            for (let k = 0; k < SIZE_BINS; k++) base[k] -= old.bins[k];
+            total -= old.n;
+          }
+        }
       };
     },
   },
