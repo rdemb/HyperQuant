@@ -271,8 +271,8 @@ export function honestyCard(h: HonestyStats): HonestyCard {
     const { days, outside, filled } = h.s;
     return {
       intro: tr(
-        `TPO dób UTC ze świec 30m, ostatnie ${days} pełnych dób; VA 70% liczona z czasu (liter), jak na wykresie.`,
-        `UTC-day TPO from 30m candles, the last ${days} full days; the 70% VA counted from time (letters), as on the chart.`
+        `TPO dób UTC ze świec 30m (pełne doby w próbie: ${days}); VA 70% liczona z czasu (liter), jak na wykresie.`,
+        `UTC-day TPO from 30m candles (full days in the sample: ${days}); the 70% VA counted from time (letters), as on the chart.`
       ),
       rows: [
         [tr('Otwarcie doby poza wczorajszą VA', 'Day opened outside yesterday’s VA'), tr(`${outside} z ${days}`, `${outside} of ${days}`)],
@@ -321,7 +321,7 @@ export function honestyCard(h: HonestyStats): HonestyCard {
         tr(`Zakres ${SQUEEZE_AFTER} świec po wyjściu wobec typowego`, `Range of ${SQUEEZE_AFTER} candles after the release vs typical`),
         tr(`${fmtFixed(s.ratio, 2)} × (mediany)`, `${fmtFixed(s.ratio, 2)} × (medians)`),
       ],
-      [tr('Większy niż typowy (bez związku ok. 50%)', 'Wider than typical (no link: about 50%)'), rateText(s.wider)],
+      [tr('Większy niż typowy (bez związku byłoby ok. 50%)', 'Wider than typical (about 50% if unrelated)'), rateText(s.wider)],
     ],
   };
 }
