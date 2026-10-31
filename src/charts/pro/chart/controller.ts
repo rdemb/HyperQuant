@@ -484,7 +484,7 @@ export class ProChartController {
           // Kolor słupków jest w punktach — krycie zmienia się z nimi
           if (def.plots[p].hist) this.pushPlot(k, p, 0);
         });
-        this.indClouds[k]?.setAlpha(x.alpha);
+        this.indClouds[k]?.setStyle(x.alpha, def.band && x.color);
       });
     }
     if (!panesChanged && prev.cvdReset !== s.cvdReset) {
@@ -560,8 +560,9 @@ export class ProChartController {
       const legend = own ? new PaneLegend(`ind:${x.iid}`, `ind:${x.iid}`) : null;
       if (legend) lines[0].attachPrimitive(legend);
       this.indLegends.push(legend);
-      const cloud = def.cloud ? new CloudFill(() => this.cloudOf(k), x.alpha) : null;
-      if (cloud && def.cloud) lines[def.cloud[0]].attachPrimitive(cloud);
+      // Pasmo przedziału w kolorze wskaźnika, przy jego linii (granice są ukryte)
+      const cloud = def.cloud || def.band ? new CloudFill(() => this.cloudOf(k), x.alpha, def.band && x.color) : null;
+      if (cloud) lines[def.cloud?.[0] ?? 0].attachPrimitive(cloud);
       this.indClouds.push(cloud);
       return lines;
     });
@@ -1089,6 +1090,7 @@ export class ProChartController {
       identified: (from: number, to: number) => this.store.addressed.covers(from, to),
       makers: (from: number, to: number) => this.store.makerSplit(from, to),
       now: this.store.serverNow(),
+      later: () => this.schedule(),
     };
     if (this.engine.sync(this.bars, ms, (tf) => this.store.indicatorCandles(tf, first), flow) >= n) return;
     // Luka w świecach albo doczytana historia przesuwa czasy punktów za ostatnią świecą: te ploty idą w całości
@@ -1173,7 +1175,7 @@ export class ProChartController {
   private cloudOf(k: number): CloudSource | null {
     const x = this.indShown[k];
     const run = this.engine.runs[k];
-    const cloud = x && indicatorDef(x.id).cloud;
+    const cloud = x && (indicatorDef(x.id).cloud ?? indicatorDef(x.id).band);
     if (!cloud || !run) return null;
     const [a, b] = cloud;
     return { a: run.out[a], b: run.out[b], n: Math.min(this.bars.length, this.engine.count), shift: plotShift(x, indicatorDef(x.id).plots[a]) };
@@ -1386,11 +1388,14 @@ export class ProChartController {
       });
       const values = def.forecast
         ? this.coneLegend(x.color)
-        : vs.map((v, p) => {
+        : vs.flatMap((v, p) => {
             const plot = def.plots[p];
-            // Podpis poziomu (pivoty: P, R1, S1…) także w legendzie
-            const text = Number.isNaN(v) ? '—' : this.indFormat(plot.format ?? def.format)(v);
-            return { text: plot.title ? `${plot.title} ${text}` : text, color: this.plotColor(x, plot, vs[plot.signOf ?? p]) };
+            if (def.band?.includes(p)) return [];
+            // Podpis poziomu (pivoty: P, R1, S1…) także w legendzie; przedział w nawiasie za wartością
+            const fmt = this.indFormat(plot.format ?? def.format);
+            const text = Number.isNaN(v) ? '—' : fmt(v);
+            const band = def.band && p === 0 && !Number.isNaN(v) ? ` (${fmt(vs[def.band[0]])}–${fmt(vs[def.band[1]])})` : '';
+            return [{ text: plot.title ? `${plot.title} ${text}${band}` : `${text}${band}`, color: this.plotColor(x, plot, vs[plot.signOf ?? p]) }];
           });
       const legend = this.indLegends[k];
       // Pierwsza wartość przy nazwie, dalsze (OFI: Δp, R², oczekiwana) mogą przejść do następnego wiersza na wąskim panelu

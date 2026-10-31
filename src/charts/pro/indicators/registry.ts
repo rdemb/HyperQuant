@@ -1,6 +1,8 @@
 import type { Candle, Side } from '../hl/parse';
 import type { BookFrame } from '../core/book';
 import type { MakerSplit } from '../core/makers';
+import { type Branching, MIN_EVENTS, fitBranching } from '../core/hawkes';
+import { fitBranchingLater, inBackground } from '../core/hawkesWorker';
 import { ofiEvent } from '../../../utils/microMechanics';
 import { Extreme, OlsWindow, RegimeDetector, RobustLine, Window, Wma, ema, rma } from './primitives';
 import { INTERVALS, intervalById } from '../core/time';
@@ -49,7 +51,8 @@ export type IndicatorId =
   | 'slippage'
   | 'breadth'
   | 'repeat'
-  | 'makers';
+  | 'makers'
+  | 'hawkes';
 
 /**
  * Grupy na liście okna wskaźników (jak kategorie TradingView); `hyperquant` — wskaźniki, których nie ma w TradingView
@@ -135,6 +138,8 @@ export interface FlowContext {
   makers(from: number, to: number): MakerSplit | null;
   orderCount(from: number, to: number): number;
   now: number;
+  /** Ponowne przeliczenie, gdy dojdą wyniki liczone w tle (Web Worker). */
+  later?(): void;
 }
 
 /** Wskaźnik liczony na wszystkich świecach naraz: wartości plotu k świecy i do `out[k][i]`. */
@@ -173,6 +178,8 @@ export interface IndicatorDef {
   plots: readonly PlotDef[];
   /** Wypełnienie między dwoma plotami o tym samym przesunięciu (chmura Ichimoku): turkus, gdy pierwszy jest wyżej, czerwień w przeciwnym razie. */
   cloud?: readonly [number, number];
+  /** Przedział wokół pierwszego plotu (dolna i górna granica): pasmo w kolorze wskaźnika, w legendzie w nawiasie. */
+  band?: readonly [number, number];
   /** Linie poziomów w panelu (liczby bez podpisów) i stały zakres jego skali. */
   levels?: readonly number[];
   range?: readonly [number, number];
@@ -1847,6 +1854,88 @@ export const INDICATORS: readonly IndicatorDef[] = [
         rest[i] = r ? r.rest : Number.NaN;
         share[i] = r ? r.mmShare : Number.NaN;
       }
+    },
+  },
+  {
+    id: 'hawkes',
+    short: 'Hawkes',
+    name: tr('Endogeniczność taśmy (współczynnik rozgałęzienia Hawkesa)', 'Tape endogeneity (Hawkes branching ratio)'),
+    hint: tr(
+      'Jaka część transakcji w oknie wynika z wcześniejszych transakcji, a jaka przychodzi z zewnątrz: n procesu Hawkesa, czyli oczekiwana liczba transakcji wywołanych przez jedną, z 95% przedziałem; okno „Okno (min)” minut co minutę; przy 1 taśma podtrzymywałaby się sama',
+      'What share of the trades within the window follows from earlier trades and what share comes from outside: the Hawkes process n, the expected number of trades triggered by one, with a 95% interval; a “Window (min)” minute window every minute; at 1 the tape would sustain itself'
+    ),
+    group: 'hyperquant',
+    aliases: 'hawkes endogenicznosc endogeneity rozgalezienie branching ratio samowzbudzenie self-exciting refleksyjnosc reflexivity kaskada cascade krytycznosc criticality klastry clustering intensywnosc intensity',
+    warmup: () => 0,
+    convention: tr(
+      'Tego wskaźnika nie ma w TradingView: liczony z nagranej taśmy Hyperliquid. Zdarzenie to blok z transakcjami (wypełnienia z tej samej chwili liczą się raz). Model: proces Hawkesa z jądrem wykładniczym dopasowany metodą największej wiarygodności w oknie „Okno (min)” minut, które kończy się z końcem świecy (w bieżącej świecy z ostatnią pełną minutą); pasmo to 95% przedział z profilu wiarygodności. Półokres wygasania pobudzenia jest szukany od kilku milisekund do 1/10 okna, a n jest ograniczone do 0,99 (proces stacjonarny). n mierzy skupianie się transakcji w tym modelu: zmiana napływu z zewnątrz w trakcie okna (np. publikacja danych) i pobudzenie o innym kształcie też podnoszą n, więc wysokie n nie dowodzi, że rynek napędza sam siebie.',
+      'TradingView has no such indicator: it is computed from the recorded Hyperliquid tape. An event is a block with trades (fills at the same moment count once). Model: a Hawkes process with an exponential kernel fitted by maximum likelihood within a “Window (min)” minute window ending at the candle close (in the current candle at the last full minute); the band is the 95% profile likelihood interval. The half-life of the excitation is searched from a few milliseconds to 1/10 of the window, and n is capped at 0.99 (stationary process). n measures how trades cluster under this model: a change in the outside inflow during the window (e.g. a data release) and an excitation of another shape raise n too, so a high n does not prove that the market is feeding on itself.'
+    ),
+    memoryNote: tr(
+      'Świeca zależy tylko od zleceń w swoim oknie. Okno musi mieć w całości taśmę z kontami (historia serwera i strumień na żywo; zapis z przeglądarki nie składa zleceń) i co najmniej 100 zdarzeń. Liczone w tle, od najnowszych świec, więc starsze wartości dochodzą po chwili.',
+      'A candle depends only on the orders within its window. The window needs the tape with accounts throughout (server history and the live stream; the browser recording does not join orders) and at least 100 events. Computed in the background from the newest candles, so older values arrive after a moment.'
+    ),
+    pane: 'own',
+    params: [{ key: 'window', label: tr('Okno (min)', 'Window (min)'), min: 5, max: 60, step: 1, def: 15 }],
+    plots: [{ title: 'n' }, { hidden: true }, { hidden: true }],
+    band: [1, 2],
+    range: [0, 1],
+    levels: [1],
+    format: 'fixed2',
+    series: (p) => {
+      const W = p.window * 60_000;
+      /** Wynik świecy (po początku): okno, liczba zleceń w nim przy liczeniu i wynik; stary pokazywany do nowego. */
+      const done = new Map<number, { ms: number; end: number; count: number; r: Branching | null }>();
+      const busy = new Set<number>();
+      let woke = 0;
+      const events = (ctx: FlowContext, end: number) => {
+        const ts: number[] = [];
+        for (const o of ctx.orders(end - W, end)) {
+          const x = (o.time - end + W) / 1000;
+          if (ts.length === 0 || x > ts[ts.length - 1]) ts.push(x);
+        }
+        return Float64Array.from(ts);
+      };
+      return (bars, ms, ctx, out) => {
+        const [n, lo, hi] = out;
+        const minute = Math.floor(ctx.now / 60_000) * 60_000;
+        const bg = inBackground();
+        // Od najnowszej świecy: do workera najwyżej 8 okien naraz, kolejne przy następnym przeliczeniu; przeliczenie po
+        // wynikach najwyżej co 200 ms albo po ostatnim z wysłanych
+        for (let i = bars.length - 1; i >= 0; i--) {
+          const t = bars[i].candle.t;
+          // Bieżąca świeca: okno do ostatniej pełnej minuty (na 1 m — to samo co poprzedniej świecy)
+          const end = Math.min(t + ms, minute);
+          let r: Branching | null = null;
+          if (ctx.identified(end - W, end)) {
+            const count = ctx.orderCount(end - W, end);
+            const hit = done.get(t);
+            const fresh = hit !== undefined && hit.ms === ms && hit.end === end && hit.count === count;
+            if (fresh) r = hit.r;
+            else if (count < MIN_EVENTS || !bg) {
+              r = count < MIN_EVENTS ? null : fitBranching(events(ctx, end), W / 1000);
+              done.set(t, { ms, end, count, r });
+            } else {
+              if (hit?.ms === ms) r = hit.r;
+              if (!busy.has(t) && busy.size < 8) {
+                busy.add(t);
+                void fitBranchingLater(events(ctx, end), W / 1000).then((x) => {
+                  busy.delete(t);
+                  done.set(t, { ms, end, count, r: x });
+                  if (busy.size > 0 && Date.now() - woke < 200) return;
+                  woke = Date.now();
+                  ctx.later?.();
+                });
+              }
+            }
+          }
+          n[i] = r ? r.n : Number.NaN;
+          lo[i] = r ? r.lo : Number.NaN;
+          hi[i] = r ? r.hi : Number.NaN;
+        }
+        const first = bars[0]?.candle.t ?? Number.POSITIVE_INFINITY;
+        for (const t of done.keys()) if (t < first) done.delete(t);
+      };
     },
   },
 ];
