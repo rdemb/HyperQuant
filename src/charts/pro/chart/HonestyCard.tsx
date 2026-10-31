@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { ShieldCheck } from 'lucide-react';
 import type { Candle } from '../hl/parse';
 import { MAX_CANDLES } from '../hl/rest';
 import { utcDayStart } from '../core/sessions';
@@ -11,6 +12,12 @@ import { tr } from '../../../i18n';
  * Karta uczciwości szablonu: jak często układ z pytania szablonu wystąpił i czym się skończył na historii świec rynku
  * wykresu. Świece pobierane raz na rynek, interwał i dobę UTC (w powtórce do końca nagrania), liczone w przeglądarce.
  */
+
+/** Szablon wzorca karty układu (`tpl:<id>`), dla którego jest karta uczciwości; inaczej null. */
+export function honestyTemplate(preset: string): string | null {
+  const id = preset.startsWith('tpl:') ? preset.slice(4) : '';
+  return id in TEMPLATE_HONESTY ? id : null;
+}
 
 const memo = new WeakMap<ProStore, Map<string, Promise<readonly Candle[]>>>();
 
@@ -32,25 +39,49 @@ function historyOf(store: ProStore, interval: string): Promise<readonly Candle[]
 
 type State = { kind: 'loading' } | { kind: 'error' } | { kind: 'ready'; card: Card };
 
-export const HonestyCard: React.FC<{ store: ProStore; templateId: string; className?: string }> = ({ store, templateId, className = '' }) => {
+/**
+ * `tf` — interwał karty układu (zestawy MTF); zmienia tylko kartę ściśnięcia, bo VA i IB mają interwał z definicji.
+ */
+export const HonestyCard: React.FC<{
+  store: ProStore;
+  templateId: string;
+  tf?: string;
+  className?: string;
+}> = ({ store, templateId, tf, className = '' }) => {
   const spec = TEMPLATE_HONESTY[templateId];
+  const interval = spec?.kind === 'squeeze' && tf ? tf : spec?.interval;
   const [state, setState] = useState<State>({ kind: 'loading' });
   useEffect(() => {
-    if (!spec) return;
+    if (!spec || !interval) return;
     let live = true;
     setState({ kind: 'loading' });
-    historyOf(store, spec.interval)
-      .then((bars) => live && setState(bars.length > 1 ? { kind: 'ready', card: honestyCard(honestyStats(spec.kind, bars)) } : { kind: 'error' }))
+    historyOf(store, interval)
+      .then(
+        (bars) =>
+          live &&
+          setState(
+            bars.length > 1
+              ? {
+                  kind: 'ready',
+                  card: honestyCard(honestyStats(spec.kind, bars, interval)),
+                }
+              : { kind: 'error' }
+          )
+      )
       .catch(() => live && setState({ kind: 'error' }));
     return () => {
       live = false;
     };
-  }, [store, spec]);
+  }, [store, spec, interval]);
   if (!spec) return null;
   return (
-    <section aria-label={tr('Karta uczciwości szablonu', 'Template honesty card')} className={`rounded-lg border border-line bg-surface-1 px-2.5 py-2 text-[11px] leading-snug ${className}`}>
+    <section
+      aria-label={tr('Karta uczciwości szablonu', 'Template honesty card')}
+      className={`rounded-lg border border-line bg-surface-1 px-2.5 py-2 text-[11px] leading-snug ${className}`}
+    >
       <div className="uppercase tracking-[0.08em] text-ink-3 font-medium">
-        {tr('Karta uczciwości', 'Honesty card')} · <span className="normal-case tracking-normal">{tr('opis historii, nie test strategii', 'a description of history, not a strategy test')}</span>
+        {tr('Karta uczciwości', 'Honesty card')} ·{' '}
+        <span className="normal-case tracking-normal">{tr('opis historii, nie test strategii', 'a description of history, not a strategy test')}</span>
       </div>
       {state.kind === 'loading' && <p className="mt-1 text-ink-3">{tr('Liczę na historii świec…', 'Counting on the candle history…')}</p>}
       {state.kind === 'error' && <p className="mt-1 text-ink-3">{tr('Świece chwilowo niedostępne.', 'Candles are temporarily unavailable.')}</p>}
@@ -74,5 +105,50 @@ export const HonestyCard: React.FC<{ store: ProStore; templateId: string; classN
         </>
       )}
     </section>
+  );
+};
+
+/** Przycisk przy pytaniu karty (komputer): karta uczciwości w okienku pod nim; Esc albo klik obok zamyka. */
+export const HonestyButton: React.FC<{
+  store: ProStore;
+  templateId: string;
+  tf?: string;
+}> = ({ store, templateId, tf }) => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: PointerEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    window.addEventListener('pointerdown', onDown);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('pointerdown', onDown);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+  return (
+    <div ref={ref} className="relative shrink-0">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        title={tr(
+          'Jak często ten układ wystąpił i czym się skończył na historii świec, z liczbą przypadków',
+          'How often this setup occurred and how it ended on the candle history, with the number of cases'
+        )}
+        className={`inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg border text-xs font-medium transition-colors duration-150 ${open ? 'border-line-strong bg-surface-2 text-ink-1' : 'border-line text-ink-2 hover:text-ink-1 hover:bg-surface-2'}`}
+      >
+        <ShieldCheck className="w-4 h-4" aria-hidden="true" />
+        {tr('Karta uczciwości', 'Honesty card')}
+      </button>
+      {open && (
+        <div className="absolute z-40 right-0 top-full mt-1 w-[26rem] max-w-[calc(100vw-32px)] rounded-lg shadow-2xl">
+          <HonestyCard store={store} templateId={templateId} tf={tf} className="bg-surface-2 border-line-strong" />
+        </div>
+      )}
+    </div>
   );
 };

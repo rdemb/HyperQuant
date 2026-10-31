@@ -2,7 +2,7 @@ import type { Candle } from '../hl/parse';
 import { TPO_PERIOD_MS, tpoProfiles } from '../core/tpo';
 import { IB_MS } from '../core/indicators';
 import { sessionOpens } from '../core/sessions';
-import { DAY } from '../core/time';
+import { DAY, intervalById } from '../core/time';
 import { indicatorDef, parseParams } from '../indicators/registry';
 import { baseTick } from '../core/footprintBar';
 import { autoRowStep } from './layout';
@@ -146,7 +146,14 @@ export function ibStats(bars: readonly Candle[], intervalMs = TPO_PERIOD_MS): Ib
       ext.push(Math.max(0, hi - ibHi, ibLo - lo) / range);
     }
   }
-  return { sessions: c.n, up: rate(c.up, c.n), down: rate(c.down, c.n), both: rate(c.both, c.n), none: rate(c.none, c.n), medianExt: median(ext) };
+  return {
+    sessions: c.n,
+    up: rate(c.up, c.n),
+    down: rate(c.down, c.n),
+    both: rate(c.both, c.n),
+    none: rate(c.none, c.n),
+    medianExt: median(ext),
+  };
 }
 
 export interface SqueezeStats {
@@ -211,27 +218,36 @@ export function squeezeStats(bars: readonly Candle[], after = SQUEEZE_AFTER): Sq
   }
   const typical = median(all);
   const wider = rel.filter((r) => r > typical).length;
-  return { bars: n, inSqueeze: inSq, wider: rate(wider, rel.length), ratio: median(rel) / typical };
+  return {
+    bars: n,
+    inSqueeze: inSq,
+    wider: rate(wider, rel.length),
+    ratio: median(rel) / typical,
+  };
 }
 
 // ───────────────────────── karta ─────────────────────────
 
 export type HonestyKind = 'va' | 'ib' | 'squeeze';
 
-/** Szablon → karta uczciwości i interwał świec, na których liczy (VA i IB z 30m, ściśnięcie z interwału szablonu). */
-export const TEMPLATE_HONESTY: Readonly<Record<string, { kind: HonestyKind; interval: '30m' | '15m' }>> = {
+/**
+ * Szablon → karta uczciwości i interwał świec, na których liczy: VA i IB zawsze z 30m (definicja okresu TPO i godziny IB),
+ * ściśnięcie z interwału szablonu, a w karcie z własnym interwałem (zestawy kart MTF) z interwału karty.
+ */
+export const TEMPLATE_HONESTY: Readonly<Record<string, { kind: HonestyKind; interval: string }>> = {
   tpo: { kind: 'va', interval: '30m' },
   'open-range': { kind: 'ib', interval: '30m' },
   squeeze: { kind: 'squeeze', interval: '15m' },
 };
 
-export type HonestyStats = { kind: 'va'; s: VaStats } | { kind: 'ib'; s: IbStats } | { kind: 'squeeze'; s: SqueezeStats; days: number };
+export type HonestyStats = { kind: 'va'; s: VaStats } | { kind: 'ib'; s: IbStats } | { kind: 'squeeze'; s: SqueezeStats; days: number; interval: string };
 
-export function honestyStats(kind: HonestyKind, bars: readonly Candle[]): HonestyStats {
+/** Statystyka karty na świecach interwału `interval` (ostatnia świeca — bieżąca). */
+export function honestyStats(kind: HonestyKind, bars: readonly Candle[], interval = '15m'): HonestyStats {
   if (kind === 'va') return { kind, s: vaStats(bars) };
   if (kind === 'ib') return { kind, s: ibStats(bars) };
   const days = bars.length > 1 ? Math.round((bars[bars.length - 1].t - bars[0].t) / DAY) : 0;
-  return { kind, s: squeezeStats(bars), days };
+  return { kind, s: squeezeStats(bars), days, interval };
 }
 
 export interface HonestyCard {
@@ -279,14 +295,18 @@ export function honestyCard(h: HonestyStats): HonestyCard {
         [tr('Tylko w dół', 'Only downward'), rateText(s.down)],
         [tr('W obie strony', 'Both ways'), rateText(s.both)],
         [tr('Wcale', 'Not at all'), rateText(s.none)],
-        [tr('Mediana większego wyjścia', 'Median of the larger move out'), tr(`${fmtFixed(s.medianExt, 2)} × zakresu IB`, `${fmtFixed(s.medianExt, 2)} × the IB range`)],
+        [
+          tr('Mediana większego wyjścia', 'Median of the larger move out'),
+          tr(`${fmtFixed(s.medianExt, 2)} × zakresu IB`, `${fmtFixed(s.medianExt, 2)} × the IB range`),
+        ],
       ],
     };
   }
   const s = h.s;
+  const iv = intervalById(h.interval).label;
   const intro = tr(
-    `Świece 15m z ostatnich ${h.days} dni; ściśnięcie = BB(20, 2) w całości w KC(20, 1,5, ATR 10).`,
-    `15m candles from the last ${h.days} days; squeeze = BB(20, 2) fully inside KC(20, 1.5, ATR 10).`
+    `Świece ${iv} z ostatnich ${h.days} dni; ściśnięcie = BB(20, 2) w całości w KC(20, 1,5, ATR 10).`,
+    `${iv} candles from the last ${h.days} days; squeeze = BB(20, 2) fully inside KC(20, 1.5, ATR 10).`
   );
   const share: [string, string] = [
     tr('Świece w ściśnięciu', 'Candles in a squeeze'),
@@ -297,7 +317,10 @@ export function honestyCard(h: HonestyStats): HonestyCard {
     intro,
     rows: [
       share,
-      [tr(`Zakres ${SQUEEZE_AFTER} świec po wyjściu wobec typowego`, `Range of ${SQUEEZE_AFTER} candles after the release vs typical`), tr(`${fmtFixed(s.ratio, 2)} × (mediany)`, `${fmtFixed(s.ratio, 2)} × (medians)`)],
+      [
+        tr(`Zakres ${SQUEEZE_AFTER} świec po wyjściu wobec typowego`, `Range of ${SQUEEZE_AFTER} candles after the release vs typical`),
+        tr(`${fmtFixed(s.ratio, 2)} × (mediany)`, `${fmtFixed(s.ratio, 2)} × (medians)`),
+      ],
       [tr('Większy niż typowy (bez związku ok. 50%)', 'Wider than typical (no link: about 50%)'), rateText(s.wider)],
     ],
   };

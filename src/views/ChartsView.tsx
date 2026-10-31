@@ -32,7 +32,8 @@ import {
 } from '../charts/pro/chart/tabs';
 import { NewTab, TabActions, TabsBar, TabsSheet, tfLabel } from '../charts/pro/chart/TabsBar';
 import { isTyping } from '../charts/pro/draw/tools';
-import type { Market } from '../charts/pro/store/proStore';
+import { type Market, storeFor } from '../charts/pro/store/proStore';
+import { HonestyButton, HonestyCard, honestyTemplate } from '../charts/pro/chart/HonestyCard';
 import { parseReplayLink, replayHash } from '../charts/pro/replay/link';
 import { ReplayView } from '../charts/pro/replay/ReplayView';
 import { tr } from '../i18n';
@@ -106,6 +107,9 @@ const ChartsView: React.FC = () => {
   }, [undo]);
 
   const n = wide ? layout : 1;
+  // Karta uczciwości szablonu: rynek i interwał pierwszego wykresu karty (odczyt zapisu; zapis wykresu odświeża widok)
+  const honestyId = honestyTemplate(tab.preset);
+  const first = honestyId ? loadSettings(stationKey(tab.id, 0)) : null;
   /** Podpis karty: interwały jej wykresów widocznych na tym ekranie (aktywna — bieżący układ). */
   const tf = (t: ChartTab) => tfLabel(tabIntervals(t, wide ? (t.id === tab.id ? layout : tabLayout(t)) : 1, narrow));
 
@@ -200,6 +204,7 @@ const ChartsView: React.FC = () => {
             <CircleHelp className="w-3.5 h-3.5 shrink-0 text-ink-3" aria-label={tr('Pytanie karty', 'Tab question')} />
             <span className="truncate">{presetQuestion(tab.preset)}</span>
           </p>
+          {honestyId && first && <HonestyButton key={`${tab.id}.${first.coin}`} store={storeFor(first.coin)} templateId={honestyId} tf={first.interval} />}
           <button
             type="button"
             onClick={() => actions.onRestore(tab.id)}
@@ -248,7 +253,15 @@ const ChartsView: React.FC = () => {
           />
         ))}
       </div>
-      {sheet && narrow && <TabsSheet st={tabs} tf={tf} a={actions} onClose={() => setSheet(false)} />}
+      {sheet && narrow && (
+        <TabsSheet
+          st={tabs}
+          tf={tf}
+          a={actions}
+          onClose={() => setSheet(false)}
+          activeExtra={honestyId && first ? <HonestyCard store={storeFor(first.coin)} templateId={honestyId} tf={first.interval} /> : undefined}
+        />
+      )}
       {undo && (
         <div role="status" className="fixed z-50 bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-3 max-w-[calc(100vw-32px)] pl-3 pr-1.5 py-1.5 rounded-xl border border-line-strong bg-surface-2 shadow-2xl text-xs">
           <span className="text-ink-2 truncate">{tr(`Zamknięto kartę „${tabName(undo.tab)}”`, `Closed the “${tabName(undo.tab)}” tab`)}</span>

@@ -7,7 +7,15 @@ import { wilson } from '../../../utils/auction';
 
 const M30 = 30 * 60_000;
 const M15 = 15 * 60_000;
-const c = (t: number, o: number, h: number, l: number, cl: number): Candle => ({ t, o, h, l, c: cl, v: 1, n: 1 });
+const c = (t: number, o: number, h: number, l: number, cl: number): Candle => ({
+  t,
+  o,
+  h,
+  l,
+  c: cl,
+  v: 1,
+  n: 1,
+});
 /** Doba 30m: podane okresy od 00:00 UTC, reszta do 48 płasko przy `rest`. */
 const day = (d: number, periods: [number, number, number, number][], rest: number): Candle[] =>
   Array.from({ length: 48 }, (_, i) => {
@@ -16,23 +24,46 @@ const day = (d: number, periods: [number, number, number, number][], rest: numbe
   });
 
 // Doba wzorcowa przy wierszu 1 USD: 40 okresów 100–100,9 i 8 okresów 100–104,9 → VA = wiersze 100–101, czyli 100–102
-const prevDay = (d: number) => day(d, Array.from({ length: 48 }, (_, i) => (i < 8 ? [100.5, 104.9, 100, 100.5] : [100.5, 100.9, 100, 100.5])), 100.5);
+const prevDay = (d: number) =>
+  day(
+    d,
+    Array.from({ length: 48 }, (_, i) => (i < 8 ? [100.5, 104.9, 100, 100.5] : [100.5, 100.9, 100, 100.5])),
+    100.5
+  );
 
 describe('karta uczciwości: VA doby (reguła Daltona na TPO)', () => {
   // Pary (wzorcowa, badana) przedzielone brakującą dobą, żeby badana nie była poprzednią dla następnej pary
   const cases: [number, number, number, number][][] = [
     // 1. Otwarcie nad VA, powrót (zamknięcia 101,5 i 101), potem dołek 99,5 ≤ VAL → doszło
-    [[103, 103.5, 102.5, 103], [103, 103, 101, 101.5], [101.5, 101.8, 100.8, 101], [101, 101.2, 99.5, 100]],
+    [
+      [103, 103.5, 102.5, 103],
+      [103, 103, 101, 101.5],
+      [101.5, 101.8, 100.8, 101],
+      [101, 101.2, 99.5, 100],
+    ],
     // 2. Nad VA, powrót, bez dojścia do 100
-    [[103, 103.5, 102.5, 103], [103, 103, 101, 101.5], [101.5, 101.8, 100.8, 101]],
+    [
+      [103, 103.5, 102.5, 103],
+      [103, 103, 101, 101.5],
+      [101.5, 101.8, 100.8, 101],
+    ],
     // 3. Pod VA, powrót, potem szczyt 102,5 ≥ VAH → doszło
-    [[99, 99.5, 98.5, 99], [99, 100.8, 99, 100.5], [100.5, 101, 100.2, 101], [101, 102.5, 100.8, 102]],
+    [
+      [99, 99.5, 98.5, 99],
+      [99, 100.8, 99, 100.5],
+      [100.5, 101, 100.2, 101],
+      [101, 102.5, 100.8, 102],
+    ],
     // 4. Nad VA bez powrotu (cała doba przy 103)
     [[103, 103.5, 102.5, 103]],
     // 5. Otwarcie w VA
     [[101, 101.2, 100.8, 101]],
     // 6. Nad VA, dołek 99,9 tylko w okresie potwierdzenia, później nie → nie liczy się (bez podglądania)
-    [[103, 103.5, 102.5, 103], [103, 103, 101, 101.5], [101.5, 101.8, 99.9, 101]],
+    [
+      [103, 103.5, 102.5, 103],
+      [103, 103, 101, 101.5],
+      [101.5, 101.8, 99.9, 101],
+    ],
   ];
   const rests = [100.5, 101.2, 101.2, 103, 101, 101.2];
   const bars: Candle[] = [];
