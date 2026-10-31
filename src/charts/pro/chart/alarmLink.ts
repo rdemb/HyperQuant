@@ -68,6 +68,14 @@ export function parseAlarmLink(hash: string): LinkAlarm[] | null {
     if ((e.g !== undefined && typeof e.g !== 'string') || (e.o !== undefined && typeof e.o !== 'string')) return null;
     out.push({ ...e, c: e.c as string, p: e.p, k: e.k });
   }
+  // Łańcuch w kółko (wpis czeka na wpis, który czeka na niego) nigdy by nie ruszył
+  for (let i = 0; i < out.length; i++) {
+    const seen = new Set<number>();
+    for (let k: number | undefined = i; k !== undefined; k = out[k].a) {
+      if (seen.has(k)) return null;
+      seen.add(k);
+    }
+  }
   return out;
 }
 

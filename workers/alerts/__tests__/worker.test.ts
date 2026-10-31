@@ -86,7 +86,8 @@ describe('skrzynka alarmów (Worker + D1)', () => {
     expect(res.headers.get('access-control-allow-origin')).toBe(ORIGIN);
     const out = (await res.json()) as { id: string; token: string; rules: { id: string }[] };
     expect(out.id).toMatch(/^[\w-]{22}$/);
-    expect(out.rules.map((r) => r.id)).toEqual(many.slice(0, MAX_RULES).map((r) => r.id));
+    // Ponad limit: serwer pilnuje najnowszych (strona dopisuje nowe na końcu listy)
+    expect(out.rules.map((r) => r.id)).toEqual(many.slice(-MAX_RULES).map((r) => r.id));
     const row = db.prepare('SELECT token, lang FROM devices WHERE id = ?').get(out.id) as { token: string; lang: string };
     expect(row.token).not.toBe(out.token);
     expect(row.lang).toBe('en');
@@ -159,6 +160,23 @@ describe('skrzynka alarmów (Worker + D1)', () => {
       ['fire', 'a'],
       ['cancel', 'c'],
     ]);
+  });
+
+  it('krok z serwera trafia do historii i nie kasuje alarmu; rodzaj i pola z nowszej wersji przechodzą bez zmian', async () => {
+    const put = await call(env, 'PUT', `/v1/devices/${dev.id}`, {
+      body: { lang: 'pl', since: T0, rules: [rule('b'), rule('d'), rule('e'), rule('n', { kind: 'time', mins: 45 })] },
+      token: dev.token,
+      now: T0 + 10_000,
+    });
+    expect(((await put.json()) as { rules: Record<string, unknown>[] }).rules.at(-1)).toMatchObject({ id: 'n', kind: 'time', mins: 45 });
+    const step = { device: dev.id, type: 'step', rule: rule('e'), at: T0 + 11_000, px: 65_001, facts: null, hole: { from: T0 + 5000, to: T0 + 11_000 } };
+    expect((await call(env, 'POST', '/v1/report', { body: { events: [step] }, signed: true, now: T0 + 12_000 })).status).toBe(200);
+    const again = await call(env, 'PUT', `/v1/devices/${dev.id}`, { body: { lang: 'pl', since: T0 + 10_000, rules: [rule('b'), rule('d'), rule('e'), rule('n', { kind: 'time', mins: 45 })] }, token: dev.token, now: T0 + 13_000 });
+    const out = (await again.json()) as { rules: { id: string }[]; events: { type: string; rule: { id: string }; hole?: unknown }[] };
+    expect(out.rules.map((r) => r.id)).toEqual(['b', 'd', 'e', 'n']);
+    expect(out.events).toEqual([expect.objectContaining({ type: 'step', rule: expect.objectContaining({ id: 'e' }), hole: { from: T0 + 5000, to: T0 + 11_000 } })]);
+    const synced = (await (await call(env, 'GET', '/v1/sync?cursor=0', { signed: true, now: T0 + 13_000 })).json()) as { devices: { id: string; rules: Record<string, unknown>[] }[] };
+    expect(synced.devices.find((d) => d.id === dev.id)?.rules.at(-1)).toMatchObject({ id: 'n', kind: 'time', mins: 45 });
   });
 
   it('wygasła subskrypcja i wyłączenie przez użytkownika usuwają urządzenie (serwer dostaje pusty wpis)', async () => {

@@ -1,5 +1,5 @@
 import type { Lang } from '../../src/i18n.ts';
-import type { AlertEvent, AlertRule } from '../../src/utils/alertRules.ts';
+import { type AlertEvent, type AlertRule, endsAlert } from '../../src/utils/alertRules.ts';
 import type { PushTarget } from './push.ts';
 
 /**
@@ -45,6 +45,17 @@ const strip = (id: string): string => {
 };
 const owner = (id: string): string => id.slice(0, Math.max(0, id.indexOf(SEP)));
 
+type Watch = Record<string, { armed?: unknown; streak?: unknown }>;
+
+/** Stan serwera z pliku: alarmy w toku i ostatnia transakcja na rynek (zapis sprzed tej wersji to same alarmy). */
+export function readState(raw: unknown): { rules: Watch; last: Record<string, number> } {
+  const o = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  if (o.v !== 2) return { rules: o as Watch, last: {} };
+  const last: Record<string, number> = {};
+  for (const [coin, t] of Object.entries((o.last as Record<string, unknown> | null) ?? {})) if (typeof t === 'number' && t > 0) last[coin] = t;
+  return { rules: (o.rules as Watch | null) ?? {}, last };
+}
+
 /** Definicja alarmu bez stanu pilnowania. */
 const definition = (r: AlertRule): string => JSON.stringify([r.coin, r.price, r.kind, r.dir, r.iv, r.closes, r.delta, r.until, r.pair, r.note]);
 
@@ -64,7 +75,7 @@ export class DeviceBook {
     this.list = [...next];
   }
 
-  restore(state: Record<string, { armed?: unknown; streak?: unknown }>): void {
+  restore(state: Watch): void {
     for (const [id, s] of Object.entries(state)) this.restored.set(id, { armed: s.armed === true, streak: typeof s.streak === 'number' ? s.streak : 0 });
   }
 
@@ -98,14 +109,14 @@ export class DeviceBook {
     this.list = [...this.list.filter((r) => !mine(r)), ...next];
   }
 
-  /** Zdarzenia czekające na skrzynkę (także odczytane po restarcie): ich alarmy nie wracają z synchronizacji. */
+  /** Zdarzenia czekające na skrzynkę (także odczytane po restarcie): alarmy zakończone nimi nie wracają z synchronizacji (po kroku alarm pilnuje dalej). */
   hold(events: readonly DeviceEvent[]): void {
-    for (const e of events) this.ended.set(ns(e.device, e.rule.id), e.at);
+    for (const e of events) if (endsAlert(e)) this.ended.set(ns(e.device, e.rule.id), e.at);
   }
 
   /** Skrzynka przyjęła zdarzenia. */
   release(events: readonly DeviceEvent[]): void {
-    for (const e of events) this.ended.delete(ns(e.device, e.rule.id));
+    for (const e of events) if (endsAlert(e)) this.ended.delete(ns(e.device, e.rule.id));
   }
 
   /** Zdarzenia silnika w przestrzeni urządzeń; starty z łańcucha z porównania listy przed i po. */

@@ -1,6 +1,7 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { MAX_ALERTS, lineLabel, newAlert, parseAlerts, parseLog, parsePriceInput, windowOf } from '../chart/alerts';
-import { DEFAULT_TTL_MS } from '../../../utils/alertRules';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { MAX_ALERTS, hasLine, lineLabel, newAlert, notifyEvent, parseAlerts, parseLog, parsePriceInput, windowOf } from '../chart/alerts';
+import { PUSH_MAX, pushWatched, serverList } from '../chart/pushAlerts';
+import { type AlertEvent, type AlertRule, DEFAULT_TTL_MS } from '../../../utils/alertRules';
 
 describe('alarmy cenowe w przeglądarce', () => {
   it('alarm z poprzedniej wersji (samo dotknięcie) czyta się z domyślnymi polami; uszkodzone wpisy odpadają', () => {
@@ -75,5 +76,52 @@ describe('okno alarmu w dobie zmiany czasu', () => {
     const now = new Date(2026, 9, 30, 12, 0).getTime();
     expect(at(windowOf('', '10:00', now)[1])).toBe('31.10 10:00');
     expect(at(windowOf('13:30', '', now)[0])).toBe('30.10 13:30');
+  });
+});
+
+describe('powiadomienia i lista z serwera 24/7', () => {
+  const rule = (id: string, p: Partial<AlertRule> = {}): AlertRule => ({ ...newAlert({ coin: 'BTC', price: 64_670, kind: 'touch', dir: -1, iv: '15m', closes: 1, delta: false, from: 0, until: 9e15, pair: '', note: '', after: '' }, 1), id, ...p });
+  const ev = (type: AlertEvent['type'], r: AlertRule): AlertEvent => ({ type, rule: r, at: 5, px: 64_660, facts: null });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('wygaśnięcie: powiadomienie znika samo i bez sygnału; uruchomienie zostaje do kliknięcia; tytuł mówi, co się stało', () => {
+    const shown: { title: string; opts: NotificationOptions }[] = [];
+    class FakeNotification {
+      static permission = 'granted';
+      onclick: (() => void) | null = null;
+      constructor(title: string, opts: NotificationOptions) {
+        shown.push({ title, opts });
+      }
+    }
+    vi.stubGlobal('Notification', FakeNotification);
+    vi.stubGlobal('window', globalThis);
+    vi.stubGlobal('navigator', {});
+    notifyEvent(ev('expire', rule('a')));
+    notifyEvent(ev('fire', rule('b')));
+    notifyEvent(ev('cancel', rule('c')));
+    expect(shown.map((n) => [n.opts.tag, n.opts.requireInteraction])).toEqual([
+      ['a', false],
+      ['b', true],
+    ]);
+    expect(shown[1].title).toBe('BTC · cena doszła do 64\u00a0670');
+  });
+
+  it('krok z serwera nie usuwa alarmu z listy, uruchomienie usuwa; start z łańcucha przyjęty', () => {
+    const list = [rule('a'), rule('b'), rule('c', { after: 'a' })];
+    expect(serverList(list, list, [ev('step', rule('a'))])).toBeNull();
+    const started = { ...rule('c'), after: '', created: 7, from: 7 };
+    expect(serverList(list, [rule('b'), started], [ev('fire', rule('a'))])?.map((r) => [r.id, r.after, r.created])).toEqual([
+      ['b', '', 1],
+      ['c', '', 7],
+    ]);
+  });
+
+  it('serwer pilnuje najnowszych alarmów; linia na wykresie tylko dla alarmów z poziomem', () => {
+    const many = Array.from({ length: PUSH_MAX + 3 }, (_, i) => rule(`r${i}`));
+    const w = pushWatched(many);
+    expect(w.size).toBe(PUSH_MAX);
+    expect(w.has('r0')).toBe(false);
+    expect(w.has(`r${PUSH_MAX + 2}`)).toBe(true);
+    expect([rule('t'), rule('s', { kind: 'squeeze' }), rule('n', { kind: 'time' })].map(hasLine)).toEqual([true, false, false]);
   });
 });

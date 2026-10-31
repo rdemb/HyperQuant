@@ -21,7 +21,7 @@ import { DomLadder, PickCard, TapePanel, compact } from './chart/FlowPanels';
 import { HoverSignal, Legend } from './chart/Legend';
 import { LOT_FLOOR, type LiquidityPick } from './chart/liquidity';
 import { brandedScreenshot, downloadCanvas } from './chart/screenshot';
-import { MAX_ALERTS, type PriceAlert, addAlert, alertBook, alertLog, askNotifications, lastSeen, lineLabel, markSeen, primeAlertSound, removeAlert } from './chart/alerts';
+import { MAX_ALERTS, type PriceAlert, addAlert, alertBook, alertLog, askNotifications, hasLine, lastSeen, lineLabel, markSeen, primeAlertSound, removeAlert } from './chart/alerts';
 import { type LinkAlarm, linkAlerts, parseAlarmLink } from './chart/alarmLink';
 import { AlarmLinkCard, type AlertDraft, AlertsMenu } from './chart/AlertsMenu';
 import { onAlertEvents, startAlertWatch } from './chart/alertWatch';
@@ -370,7 +370,7 @@ export const ProChart: React.FC<{
 
   // Alarmy działają na cenie na żywo — w powtórce bez ich linii
   useEffect(() => {
-    ctrlRef.current?.setAlerts(store.replay ? [] : alerts.filter((a) => a.coin === store.coin && a.kind !== 'squeeze').map((a) => ({ price: a.price, title: lineLabel(a), armed: a.armed || a.streak > 0 })));
+    ctrlRef.current?.setAlerts(store.replay ? [] : alerts.filter((a) => a.coin === store.coin && hasLine(a)).map((a) => ({ price: a.price, title: lineLabel(a), armed: a.armed || a.streak > 0 })));
   }, [alerts, store]);
 
   // Strefa ceny z linku powtórki (np. z lekcji)
@@ -825,7 +825,7 @@ export const ProChart: React.FC<{
               ref={ctxRef}
               at={ctxMenu}
               coin={store.coin}
-              nearAlert={alerts.find((a) => a.coin === store.coin && a.kind !== 'squeeze' && Math.abs((ctrlRef.current?.yOf(a.price) ?? -1e9) - ctxMenu.y) <= 8) ?? null}
+              nearAlert={alerts.find((a) => a.coin === store.coin && hasLine(a) && Math.abs((ctrlRef.current?.yOf(a.price) ?? -1e9) - ctxMenu.y) <= 8) ?? null}
               onClose={() => setCtxMenu(null)}
               onAlert={addTouch}
               onAlertMore={(p) => openAlerts({ price: toTick(p), kind: 'close' })}
