@@ -45,6 +45,8 @@ export interface HistFrame {
   step: number;
   bids: number[];
   asks: number[];
+  /** Arkusz bez agregacji ceny (krok = najmniejszy odstęp cen w migawce). */
+  exact?: true;
 }
 
 /** Plik taśmy: kolumny transakcji (czas i tid różnicowo — pierwszy bezwzględnie), kontekst minutowy, pokrycie. */
@@ -67,14 +69,17 @@ export interface TradesFile {
   ctx: { t: number[]; oi: number[]; funding: number[]; mark: number[] };
 }
 
-/** Plik arkusza: migawki [czas, krok, bidy, aski] i pokrycie. */
+/**
+ * Plik arkusza: migawki [czas, krok, bidy, aski] i pokrycie; migawka arkusza dokładnego ma piąty element 1 (starszy odczyt
+ * wymaga dokładnie czterech, więc ją pomija).
+ */
 export interface BookFile {
   v: number;
   coin: string;
   from: number;
   to: number;
   spans: HistSpan[];
-  frames: [number, number, number[], number[]][];
+  frames: ([number, number, number[], number[]] | [number, number, number[], number[], 1])[];
 }
 
 /** Spis gałęzi: godziny z plikiem godzinowym i części godzin jeszcze niepołączonych, dla każdego rynku. */
@@ -181,7 +186,7 @@ export function decodeTrades(raw: unknown): { coin: string; from: number; to: nu
 
 export function encodeBook(coin: string, from: number, to: number, spans: readonly HistSpan[], frames: readonly HistFrame[]): BookFile {
   const fs = [...frames].sort((a, b) => a.t - b.t);
-  return { v: HISTORY_VERSION, coin, from, to, spans: clipSpans(spans, from, to), frames: fs.map((x) => [x.t, x.step, x.bids, x.asks]) };
+  return { v: HISTORY_VERSION, coin, from, to, spans: clipSpans(spans, from, to), frames: fs.map((x) => (x.exact ? [x.t, x.step, x.bids, x.asks, 1] : [x.t, x.step, x.bids, x.asks])) };
 }
 
 /** Odczyt pliku arkusza; zły kształt albo wersja → null, pojedyncza zła migawka pomijana. */
@@ -192,8 +197,8 @@ export function decodeBook(raw: unknown): { coin: string; from: number; to: numb
   const levels = (x: unknown): x is number[] => finArr(x) && x.length % 3 === 0;
   const frames: HistFrame[] = [];
   for (const fr of f.frames as unknown[]) {
-    if (!Array.isArray(fr) || fr.length !== 4 || !fin(fr[0]) || !(fr[1] > 0) || !levels(fr[2]) || !levels(fr[3])) continue;
-    frames.push({ t: fr[0], step: fr[1], bids: fr[2], asks: fr[3] });
+    if (!Array.isArray(fr) || !(fr.length === 4 || (fr.length === 5 && fr[4] === 1)) || !fin(fr[0]) || !(fr[1] > 0) || !levels(fr[2]) || !levels(fr[3])) continue;
+    frames.push({ t: fr[0], step: fr[1], bids: fr[2], asks: fr[3], ...(fr.length === 5 ? { exact: true as const } : {}) });
   }
   return { coin: f.coin, from: f.from, to: f.to, spans: clipSpans(spans, f.from, f.to), frames };
 }

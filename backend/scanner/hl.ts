@@ -105,6 +105,8 @@ export class HlStream {
   private readonly onState: ((up: boolean, at: number) => void) | null;
   /** Agregacje arkusza (dobierane do ceny); kilka naraz na jednym połączeniu — migawki rozróżnia krok cen */
   private bookAggs: BookAgg[] = [{ nSigFigs: 4 }];
+  /** Dodatkowo arkusz bez agregacji ceny (subskrypcja l2Book bez nSigFigs) */
+  private bookExact = false;
   private readonly WS: typeof WebSocket;
   private ws: WebSocket | null = null;
   private timers: ReturnType<typeof setTimeout>[] = [];
@@ -141,19 +143,22 @@ export class HlStream {
     this.setBookAggs([a]);
   }
 
-  /** Zmiana zestawu agregacji: wypisanie tych, których już nie ma, i zapis nowych (bez zmian — bez wiadomości). */
-  setBookAggs(list: BookAgg[]): void {
+  /** Zmiana zestawu agregacji i arkusza dokładnego: wypisanie zbędnych, zapis nowych (bez zmian — bez wiadomości). */
+  setBookAggs(list: BookAgg[], exact = false): void {
     const key = (a: BookAgg) => `${a.nSigFigs}:${a.mantissa ?? 0}`;
     const prev = this.bookAggs;
+    const prevExact = this.bookExact;
     const next = list.map((a) => ({ nSigFigs: a.nSigFigs, ...(a.mantissa ? { mantissa: a.mantissa } : {}) }));
     const prevKeys = new Set(prev.map(key));
     const nextKeys = new Set(next.map(key));
-    if (prevKeys.size === nextKeys.size && [...nextKeys].every((k) => prevKeys.has(k))) return;
+    if (exact === prevExact && prevKeys.size === nextKeys.size && [...nextKeys].every((k) => prevKeys.has(k))) return;
     this.bookAggs = next;
+    this.bookExact = exact;
     const ws = this.ws;
     if (!this.onBook || !ws || ws.readyState !== this.WS.OPEN) return;
     for (const a of prev) if (!nextKeys.has(key(a))) ws.send(JSON.stringify({ method: 'unsubscribe', subscription: this.bookSub(a) }));
     for (const a of next) if (!prevKeys.has(key(a))) ws.send(JSON.stringify({ method: 'subscribe', subscription: this.bookSub(a) }));
+    if (exact !== prevExact) ws.send(JSON.stringify({ method: exact ? 'subscribe' : 'unsubscribe', subscription: { type: 'l2Book', coin: this.coin } }));
   }
 
   start(): void {
@@ -186,6 +191,7 @@ export class HlStream {
       }
       // Arkusz zagregowany (~co 5 s) tak, by 20 poziomów pokrywało ±20 bp (agregacja dobierana do ceny)
       if (this.onBook) for (const a of this.bookAggs) ws.send(JSON.stringify({ method: 'subscribe', subscription: this.bookSub(a) }));
+      if (this.onBook && this.bookExact) ws.send(JSON.stringify({ method: 'subscribe', subscription: { type: 'l2Book', coin: this.coin } }));
       this.onState?.(true, Date.now());
       this.timers.push(
         setInterval(() => ws.readyState === this.WS.OPEN && ws.send('{"method":"ping"}'), 50_000),

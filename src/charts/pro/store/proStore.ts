@@ -502,7 +502,9 @@ export class ProStore {
       this.oi.restore(tr.oi);
     }
     const bySteps = new Map<number, BookFrame[]>();
-    for (const f of b.frames) bySteps.set(f.step, [...(bySteps.get(f.step) ?? []), f]);
+    // Arkusz dokładny z nagrania (BTC) do tej samej historii co migawki dokładne na żywo
+    this.exact.restore(b.frames.filter((f) => f.exact));
+    for (const f of b.frames) if (!f.exact) bySteps.set(f.step, [...(bySteps.get(f.step) ?? []), f]);
     for (const [step, list] of bySteps) {
       let h = this.books.get(step);
       if (!h) this.books.set(step, (h = new BookHistory(step)));
@@ -518,6 +520,10 @@ export class ProStore {
   feedReplay(b: HistoryBatch): void {
     this.restoreHistory({ trades: b.trades, frames: [] });
     for (const f of b.frames) {
+      if (f.exact) {
+        this.exact.add(f);
+        continue;
+      }
       let h = this.books.get(f.step);
       if (!h) this.books.set(f.step, (h = new BookHistory(f.step)));
       h.add(f);

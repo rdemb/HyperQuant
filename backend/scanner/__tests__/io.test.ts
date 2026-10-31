@@ -337,7 +337,22 @@ describe('HlStream — odporność połączenia', () => {
     ]);
     s3.setBookAgg({ nSigFigs: 5, mantissa: 2 }); // bez zmian — bez wiadomości
     expect(ws3.sent).toHaveLength(2);
+    // arkusz dokładny: subskrypcja bez nSigFigs, także po ponownym połączeniu; wyłączenie — wypisanie
+    s3.setBookAggs([{ nSigFigs: 5, mantissa: 2 }], true);
+    expect(JSON.parse(ws3.sent[2])).toEqual({ method: 'subscribe', subscription: { type: 'l2Book', coin: 'BTC' } });
+    s3.setBookAggs([{ nSigFigs: 5, mantissa: 2 }], true);
+    expect(ws3.sent).toHaveLength(3);
     s3.stop();
+    const s4 = new HlStream('BTC', () => {}, () => {}, FakeWs as unknown as typeof WebSocket, () => {});
+    s4.setBookAggs([{ nSigFigs: 4 }], true);
+    s4.start();
+    const ws4 = FakeWs.instances[FakeWs.instances.length - 1];
+    ws4.open();
+    expect(ws4.sent.map((x) => JSON.parse(x).subscription).filter(Boolean)).toContainEqual({ type: 'l2Book', coin: 'BTC' });
+    ws4.sent.length = 0;
+    s4.setBookAggs([{ nSigFigs: 4 }], false);
+    expect(ws4.sent.map((x) => JSON.parse(x))).toEqual([{ method: 'unsubscribe', subscription: { type: 'l2Book', coin: 'BTC' } }]);
+    s4.stop();
     // bez callbacku — bez subskrypcji arkusza
     FakeWs.instances = [];
     const s2 = new HlStream('BTC', () => {}, () => {}, FakeWs as unknown as typeof WebSocket);
