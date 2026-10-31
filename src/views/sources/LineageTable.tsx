@@ -302,6 +302,23 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         ),
       },
       {
+        metric: tr('Karta uczciwości szablonu (Wykresy)', 'Template honesty card (Charts)'),
+        source: tr(
+          'Hyperliquid API: candleSnapshot rynku wykresu, ok. 5000 ostatnich świec 30m (Market Profile, Otwarcie sesji) albo interwału karty (Ściśnięcie)',
+          'Hyperliquid API: candleSnapshot of the chart market, about the last 5000 candles of 30m (Market Profile, Session open) or of the tab timeframe (Squeeze)'
+        ),
+        method: tr(
+          'Market Profile: TPO doby UTC z okresów 30 min, value area 70% liter (wiersz = najmniejszy krok drabiny ticków ≥ 0,04% ceny); otwarcie doby poza VA poprzedniej doby, potem dwa kolejne zamknięcia okresów w tej VA, i czy cena doszła do drugiej krawędzi VA przed 00:00 UTC, licząc od okresu po potwierdzeniu. Otwarcie sesji: IB = pierwsza godzina od 9:30 czasu NY w dni robocze; reszta sesji do 00:00 UTC poza IB tylko w górę, tylko w dół, w obie strony albo wcale; mediana większego wyjścia w zakresach IB. Ściśnięcie: BB(20, 2) w całości w KC(20, 1,5, ATR 10), wzory jak wskaźniki; wyjście = pierwsza świeca poza ściśnięciem, zakres 8 kolejnych świec / zamknięcie wobec mediany tego zakresu po każdej świecy, okna po wyjściach bez nakładania. Odsetek z 95% przedziałem Wilsona; tylko pełne doby i sesje bez luk, bez bieżącej świecy',
+          'Market Profile: UTC-day TPO from 30 min periods, 70% value area of letters (row = the smallest tick-ladder step ≥ 0.04% of price); the day opens outside the previous day’s VA, then two consecutive period closes in that VA, and whether price reached the other VA edge before 00:00 UTC, counted from the period after the confirmation. Session open: IB = the first hour from 9:30 NY time on weekdays; the rest of the session until 00:00 UTC outside the IB only up, only down, both ways or not at all; median of the larger exit in IB ranges. Squeeze: BB(20, 2) fully inside KC(20, 1.5, ATR 10), formulas as the indicators; release = the first candle out of the squeeze, range of the next 8 candles / close against the median of that range after every candle, windows after releases without overlap. Rate with the 95% Wilson interval; only full days and sessions without gaps, no current candle'
+        ),
+        kinds: ['LIVE'],
+        refresh: tr('raz na rynek, interwał i dobę UTC', 'once per market, timeframe and UTC day'),
+        caveat: tr(
+          'Opis historii, nie test strategii: bez kosztów, wykonania i kierunku. Około 100 dób to mała próba; poniżej 20 przypadków karta nie podaje odsetka. Przedział zakłada niezależne przypadki.',
+          'A description of history, not a strategy test: no costs, execution or direction. About 100 days is a small sample; below 20 cases the card gives no percentage. The interval assumes independent cases.'
+        ),
+      },
+      {
         metric: 'Open interest, funding, mark/oracle',
         source: 'Hyperliquid API: metaAndAssetCtxs',
         method: tr('Wartości wprost z API; basis = (mark − oracle) / oracle', 'Values straight from the API; basis = (mark − oracle) / oracle'),
