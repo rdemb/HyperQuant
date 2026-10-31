@@ -2,7 +2,7 @@ import { useSyncExternalStore } from 'react';
 import { lang } from '../../../i18n';
 import { DATA_BASE } from '../../../state/usePublished';
 import { ALERTS_URL } from '../../../utils/alertsServer';
-import { type AlertEvent, type AlertRule } from '../../../utils/alertRules';
+import { type AlertEvent, type AlertRule, endsAlert } from '../../../utils/alertRules';
 import { LOG_MAX, alertBook, alertLog, parseLog } from './alerts';
 
 /**
@@ -13,8 +13,9 @@ import { LOG_MAX, alertBook, alertLog, parseLog } from './alerts';
  */
 
 const KEY = 'hq.charts.push.v1';
-/** Tyle alarmów urządzenia pilnuje serwer. */
+/** Tyle alarmów urządzenia pilnuje serwer: najnowsze (skrzynka bierze koniec listy). */
 export const PUSH_MAX = 30;
+export const pushWatched = (list: readonly AlertRule[]): Set<string> => new Set(list.slice(-PUSH_MAX).map((r) => r.id));
 
 interface Stored {
   id: string;
@@ -143,10 +144,22 @@ const eventKey = (e: AlertEvent): string => `${e.type}:${e.rule.id}:${e.at}`;
 let lastSig = '';
 let timer: ReturnType<typeof setTimeout> | undefined;
 
-/** Zdarzenia z serwera: do historii (bez powtórek), zakończone alarmy znikają z listy, starty z łańcucha przyjęte. */
+/** Lista po zdarzeniach z serwera: zakończone alarmy znikają (po kroku zostają), starty z łańcucha przyjęte; null — bez zmian. */
+export function serverList(list: readonly AlertRule[], rules: readonly AlertRule[], events: readonly AlertEvent[]): AlertRule[] | null {
+  const done = new Set(events.filter(endsAlert).map((e) => e.rule.id));
+  const started = new Map(rules.filter((r) => !r.after).map((r) => [r.id, r]));
+  if (!list.some((r) => done.has(r.id) || (r.after && started.has(r.id)))) return null;
+  return list
+    .filter((r) => !done.has(r.id))
+    .map((r) => {
+      const st = started.get(r.id);
+      return st && r.after ? { ...r, after: '', created: st.created, from: st.from } : r;
+    });
+}
+
+/** Zdarzenia z serwera: do historii (bez powtórek), lista alarmów jak w `serverList`. */
 function applyServer(rules: AlertRule[], raw: unknown, s: Stored): void {
   const events = parseLog(raw);
-  const done = new Set(events.map((e) => e.rule.id));
   if (events.length) {
     alertLog.update((l) => {
       const seen = new Set(l.map(eventKey));
@@ -154,17 +167,7 @@ function applyServer(rules: AlertRule[], raw: unknown, s: Stored): void {
     });
     save({ ...s, since: Math.max(s.since, ...events.map((e) => e.at)) });
   }
-  const started = new Map(rules.filter((r) => !r.after).map((r) => [r.id, r]));
-  const list = alertBook.get();
-  if (list.some((r) => done.has(r.id) || (r.after && started.has(r.id))))
-    alertBook.update((l) =>
-      l
-        .filter((r) => !done.has(r.id))
-        .map((r) => {
-          const st = started.get(r.id);
-          return st && r.after ? { ...r, after: '', created: st.created, from: st.from } : r;
-        })
-    );
+  if (serverList(alertBook.get(), rules, events)) alertBook.update((l) => serverList(l, rules, events) ?? l);
 }
 
 /** Synchronizacja ze skrzynką (`force`: także bez zmian listy, np. po powrocie do strony). */

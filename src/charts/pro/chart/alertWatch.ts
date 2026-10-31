@@ -1,9 +1,9 @@
 import { lang, tr } from '../../../i18n';
-import { type AlertEvent, AlertEngine, eventBody, eventText, ivMs } from '../../../utils/alertRules';
+import { type AlertEvent, AlertEngine, eventText, ivMs, tradeKey } from '../../../utils/alertRules';
 import { parseAssetCtx, parseFills } from '../hl/parse';
 import { fetchCandles } from '../hl/rest';
 import { MARKETS, storeFor } from '../store/proStore';
-import { LOG_MAX, alertBook, alertLog, notifyAlert, primeAlertSound } from './alerts';
+import { LOG_MAX, alertBook, alertLog, notifyAlert, notifyEvent, primeAlertSound } from './alerts';
 import { startPushSync } from './pushAlerts';
 
 /**
@@ -38,12 +38,12 @@ function flagTitle(text: string): void {
 function onTrades(coin: string, data: unknown): void {
   const fills = parseFills(data, coin);
   if (fills.length === 0) return;
-  const trades = fills.map((f) => ({ time: f.time, px: f.px, sz: f.sz, side: f.side, key: f.hash || `t${f.tid}` }));
+  const trades = fills.map((f) => ({ time: f.time, px: f.px, sz: f.sz, side: f.side, key: tradeKey(f.hash, f.tid), ...(f.zero ? { zero: true } : {}) }));
   const { rules, events } = engine.onTrades(alertBook.get(), coin, trades);
   if (rules) alertBook.update(() => rules);
   if (events.length === 0) return;
   alertLog.update((l) => [...[...events].reverse(), ...l].slice(0, LOG_MAX));
-  for (const e of events) if (e.type !== 'cancel') notifyAlert(eventBody(e, lang), e.rule.id, e.type === 'fire');
+  for (const e of events) notifyEvent(e);
   const fired = events.find((e) => e.type === 'fire');
   if (fired) flagTitle(eventText(fired, lang));
   listeners.forEach((fn) => fn(events));
@@ -105,5 +105,5 @@ export function onAlertEvents(fn: (events: AlertEvent[]) => void): () => void {
 /** Test z panelu: sygnał i przykładowe powiadomienie. */
 export function testAlert(): void {
   primeAlertSound();
-  notifyAlert(tr('Test alarmu: tak wygląda powiadomienie z HyperQuant.', 'Alert test: this is how a HyperQuant notification looks.'), 'hq-test');
+  notifyAlert(tr('HyperQuant · test', 'HyperQuant · test'), tr('Test alarmu: tak wygląda powiadomienie z HyperQuant.', 'Alert test: this is how a HyperQuant notification looks.'), 'hq-test');
 }
