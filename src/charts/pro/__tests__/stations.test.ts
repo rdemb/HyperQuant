@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { DEFAULT_SETTINGS, NARROW_PATCH, parseSettings } from '../chart/settings';
-import { STATIONS, clearStation, loadStation, loadStationLayout, saveStation, saveStationLayout, stationById, stationKey, stationPanel } from '../chart/stations';
+import { STATIONS, clearStation, loadStation, loadStationLayout, saveStationLayout, stationById, stationKey, stationKeys, stationPanel } from '../chart/stations';
 
 /** Pamięć przeglądarki w testach (środowisko node). */
 function memoryStorage(): Storage {
@@ -74,9 +74,9 @@ describe('zapis stacji', () => {
     globalThis.localStorage = real;
   });
 
-  it('aktywna stacja i układ: wzorzec bez zapisu, potem wersja użytkownika; przywrócenie usuwa tylko tę stację', () => {
+  it('aktywna stacja sprzed kart i układ: wzorzec bez zapisu, potem wersja użytkownika; przywrócenie usuwa tylko tę stację', () => {
     expect(loadStation().id).toBe('start');
-    saveStation('auction');
+    localStorage.setItem('hq.charts.station.v1', 'auction');
     expect(loadStation().id).toBe('auction');
     const auction = stationById('auction');
     expect(loadStationLayout(auction)).toBe(2);
@@ -93,5 +93,13 @@ describe('zapis stacji', () => {
   it('Start czyta układ zapisany przed stacjami', () => {
     localStorage.setItem('hq.charts.layout.v1', '4');
     expect(loadStationLayout(stationById('start'))).toBe(4);
+  });
+
+  it('karta układu: klucze zapisu pod jej id, układ z wzorca stacji do pierwszego zapisu', () => {
+    expect(stationKeys('k1')).toEqual(['hq.charts.v1.k1', 'hq.charts.v1.k1.p1', 'hq.charts.v1.k1.p2', 'hq.charts.v1.k1.p3', 'hq.charts.layout.v1.k1']);
+    const auction = stationById('auction');
+    expect(loadStationLayout(auction, 'k1')).toBe(2);
+    saveStationLayout('k1', 1);
+    expect([loadStationLayout(auction, 'k1'), loadStationLayout(auction)]).toEqual([1, 2]);
   });
 });
