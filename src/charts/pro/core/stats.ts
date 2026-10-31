@@ -46,6 +46,11 @@ export class OiLog {
     this.v = this.t.map((t) => m.get(t)!);
   }
 
+  /** Chwile próbek, rosnąco (pasek pokrycia danych). */
+  times(): readonly number[] {
+    return this.t;
+  }
+
   /** Ostatnia próbka nie późniejsza niż `time`; null przed pierwszą. */
   at(time: number): number | null {
     const k = this.indexAt(time);
