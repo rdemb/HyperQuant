@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ChevronDown, X } from 'lucide-react';
 import { ColorPicker } from '../draw/DrawToolbar';
 import { INDICATOR_WIDTHS, IndicatorInstance, ParamDef, defaultWidth, indicatorDef, indicatorLabel, memoryCandles, paramOk, parseParams, tfAllowed } from '../indicators/registry';
-import { INTERVALS, intervalById } from '../core/time';
+import { INTERVALS, MONTH, intervalById } from '../core/time';
 import { tr } from '../../../i18n';
 
 /**
@@ -91,7 +91,8 @@ export const IndicatorSettings: React.FC<{ x: IndicatorInstance; loaded: number;
   const span = warmup + 1;
   // Interwał wskaźnika: wyższe niż wykres (i zapisany, gdy wykres przeszedł na wyższy)
   const chartMs = intervalById(chart).ms;
-  const tfs = INTERVALS.filter((iv) => iv.ms > chartMs || iv.id === x.tf);
+  // Bez 1M: miesiące mają różną długość, a wskaźnik bierze świece zamknięte do końca świecy wykresu
+  const tfs = INTERVALS.filter((iv) => iv.ms !== MONTH && (iv.ms > chartMs || iv.id === x.tf));
   const tf = x.tf ? intervalById(x.tf).label : '';
   const memoryText =
     def.memoryNote ??

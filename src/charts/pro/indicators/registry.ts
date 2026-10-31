@@ -5,7 +5,7 @@ import { type Branching, MIN_EVENTS, fitBranching } from '../core/hawkes';
 import { fitBranchingLater, inBackground } from '../core/hawkesWorker';
 import { ofiEvent } from '../../../utils/microMechanics';
 import { Extreme, OlsWindow, RegimeDetector, RobustLine, Window, Wma, ema, rma } from './primitives';
-import { INTERVALS, intervalById } from '../core/time';
+import { INTERVALS, MONTH, intervalById } from '../core/time';
 import { numLang } from '../../../ui/format';
 import { tr } from '../../../i18n';
 
@@ -2105,7 +2105,7 @@ export const tfAllowed = (def: IndicatorDef): boolean =>
   !def.period && !def.fit && !def.flow && !def.series && !def.sample && !def.forecast && !def.outcomes && !def.plots.some((p) => p.shift);
 
 /** Interwał wskaźnika: znany identyfikator interwału, a wskaźnik bez parametru „Interwał” go nie ma. */
-const tfOk = (def: IndicatorDef, tf: unknown): tf is string => tfAllowed(def) && INTERVALS.some((iv) => iv.id === tf);
+const tfOk = (def: IndicatorDef, tf: unknown): tf is string => tfAllowed(def) && INTERVALS.some((iv) => iv.id === tf && iv.ms !== MONTH);
 
 /** Wartość parametru w zakresie (przy kroku 1 liczba całkowita). */
 export const paramOk = (v: unknown, p: ParamDef): v is number =>

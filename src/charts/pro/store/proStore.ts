@@ -12,7 +12,7 @@ import { FundingBook, HOUR_MS, OiLog } from '../core/stats';
 import { Tape, TradeRow } from '../core/tape';
 import { periodStart, utcDayStart } from '../core/sessions';
 import { indicatorScope, vwapSourceId } from '../core/indicators';
-import { DAY, Interval, barStart, intervalById } from '../core/time';
+import { DAY, Interval, aggregateCandles, barEnd, barStart, fromDaily, intervalById } from '../core/time';
 
 /**
  * Magazyn wykresu Pro (bez Reacta, jeden na rynek): taśma transakcji od otwarcia widoku z pokryciem
@@ -167,7 +167,7 @@ export class ProStore {
       onSubscribed: (sub, recvAt) => {
         if (sub.type === 'trades') this.tradesPending = true;
         // Po ponownym połączeniu dociągamy świece, które mogły przyjść w trakcie przerwy
-        if (sub.type === 'candle') void this.seriesById.get(sub.interval)?.refreshRecent();
+        if (sub.type === 'candle') for (const s of this.seriesById.values()) if (s.src === sub.interval) void s.refreshRecent();
       },
       onClosed: (at) => {
         this.coverage.close(this.clock.toServer(at));
@@ -371,10 +371,15 @@ export class ProStore {
     } else if (channel === 'candle') {
       const c = parseCandle(data);
       const d = data as { s?: unknown; i?: unknown } | null;
-      const series = typeof d?.i === 'string' ? this.seriesById.get(d.i) : undefined;
-      if (!c || d?.s !== this.coin || !series || series.loadState !== 'ready') return;
-      series.mergeCandles([c]);
-      this.bump();
+      if (!c || d?.s !== this.coin || typeof d.i !== 'string') return;
+      // Świeca 1D trafia też do serii 1W i 1M (składanych z doby)
+      let hit = false;
+      for (const s of this.seriesById.values()) {
+        if (s.src !== d.i || s.loadState !== 'ready') continue;
+        s.mergeSource(c);
+        hit = true;
+      }
+      if (hit) this.bump();
     } else if (channel === 'activeAssetCtx') {
       const d = data as { coin?: unknown; ctx?: unknown } | null;
       if (d?.coin !== this.coin) return;
@@ -586,11 +591,46 @@ export class CandleSeries {
   private live: FootprintBuilder | null = null;
   private liveFp: FootprintBar | null = null;
   private liveFpTrades = -1;
+  /** Interwał świec z API i strumienia: 1W i 1M składamy ze świec 1D (własne granice tygodnia i miesiąca). */
+  readonly src: string;
+  private readonly composite: boolean;
+  /** Świece 1D serii składanej (posortowane). */
+  private daily: Candle[] = [];
 
   constructor(
     private readonly m: ProStore,
     readonly interval: Interval
-  ) {}
+  ) {
+    this.composite = fromDaily(interval.ms);
+    this.src = this.composite ? '1d' : interval.id;
+  }
+
+  /** Świece interwału z API; seria składana pobiera świece 1D od początku tygodnia albo miesiąca `from`. */
+  private async fetch(from: number, to: number): Promise<Candle[]> {
+    const ms = this.interval.ms;
+    if (!this.composite) return this.m.candles(this.src, from, to);
+    const list = await this.m.candles(this.src, barStart(from, ms), to);
+    this.daily = mergeByTime(this.daily, list);
+    return aggregateCandles(list, ms);
+  }
+
+  /** Świeca ze strumienia (interwał `src`); w serii składanej przelicza świecę tygodnia albo miesiąca z jej świec 1D. */
+  mergeSource(c: Candle): void {
+    if (!this.composite) {
+      this.mergeCandles([c]);
+      return;
+    }
+    const d = this.daily;
+    const last = d[d.length - 1];
+    if (last && c.t === last.t) d[d.length - 1] = c;
+    else if (!last || c.t > last.t) d.push(c);
+    else this.daily = mergeByTime(d, [c]);
+    const ms = this.interval.ms;
+    const t = barStart(c.t, ms);
+    let i = this.daily.length;
+    while (i > 0 && this.daily[i - 1].t >= t) i--;
+    this.mergeCandles(aggregateCandles(this.daily.slice(i).filter((x) => x.t < barEnd(t, ms)), ms));
+  }
 
   /** Historia świec i subskrypcja bieżącej; drugi raz tylko po błędzie albo z `force`. */
   async load(force = false): Promise<void> {
@@ -603,17 +643,18 @@ export class CandleSeries {
     this.live = null;
     this.liveFp = null;
     this.liveFpTrades = -1;
+    this.daily = [];
     this.historyExhausted = false;
     this.loadState = 'loading';
     if (!this.sub) {
-      this.sub = { type: 'candle', coin: m.coin, interval: iv.id };
+      this.sub = { type: 'candle', coin: m.coin, interval: this.src };
       m.stream.add(this.sub);
     }
     m.bump();
 
     const seq = ++this.loadSeq;
     const now = m.apiNow();
-    const list = await m.candles(iv.id, now - PAGE_BARS * iv.ms, now + iv.ms);
+    const list = await this.fetch(now - PAGE_BARS * iv.ms, now + iv.ms);
     if (seq !== this.loadSeq) return;
     if (list.length === 0) {
       this.loadState = 'error';
@@ -633,7 +674,7 @@ export class CandleSeries {
     const seq = this.loadSeq;
     const iv = this.interval;
     const first = this.candles[0].t;
-    const list = await this.m.candles(iv.id, first - PAGE_BARS * iv.ms, first - 1);
+    const list = await this.fetch(first - PAGE_BARS * iv.ms, first - 1);
     this.loadingOlder = false;
     if (seq !== this.loadSeq) return;
     const older = list.filter((c) => c.t < first);
@@ -649,7 +690,7 @@ export class CandleSeries {
     const iv = this.interval;
     const seq = this.loadSeq;
     const now = this.m.apiNow();
-    const list = await this.m.candles(iv.id, now - 60 * iv.ms, now + iv.ms);
+    const list = await this.fetch(now - 60 * iv.ms, now + iv.ms);
     if (seq !== this.loadSeq || list.length === 0) return;
     this.mergeCandles(list);
     this.m.bump();
@@ -674,7 +715,7 @@ export class CandleSeries {
 
   /** Bieżąca świeca od nowa z taśmy (taśma dostała starsze transakcje z zapisu). */
   rebuildLive(): void {
-    if (this.live) this.live = this.buildFromTape(this.live.t);
+    if (this.live && !this.composite) this.live = this.buildFromTape(this.live.t);
   }
 
   /**
@@ -682,6 +723,7 @@ export class CandleSeries {
    * → przeliczenie świecy z taśmy (taśma ma już całą paczkę).
    */
   feedLive(fills: readonly Fill[]): void {
+    if (this.composite) return; // świeca tygodnia i miesiąca bez footprintu
     const ms = this.interval.ms;
     let maxT = Number.NEGATIVE_INFINITY;
     for (const f of fills) maxT = Math.max(maxT, barStart(f.time, ms));
@@ -741,9 +783,9 @@ export class CandleSeries {
     for (const api of this.candles) {
       const t = api.t;
       if (replay && t > now) break;
-      const end = Math.min(t + ms, now);
-      // Świece sprzed nagrania nie mają taśmy — bez przeglądania pamięci podręcznej
-      const fp = t + ms > firstTape ? this.footprintFor(t) : null;
+      const end = Math.min(barEnd(t, ms), now);
+      // Świece sprzed nagrania nie mają taśmy — bez przeglądania pamięci podręcznej; tydzień i miesiąc bez footprintu
+      const fp = !this.composite && t + ms > firstTape ? this.footprintFor(t) : null;
       const prev = this.barCache.get(t);
       let c = api;
       if (replay && t + ms > now) {
@@ -788,6 +830,14 @@ export class CandleSeries {
       if (t + ms < cut) this.fpCache.delete(t);
     });
   }
+}
+
+/** Świece po czasie: nowsza wersja tej samej świecy wygrywa. */
+function mergeByTime(arr: readonly Candle[], list: readonly Candle[]): Candle[] {
+  const byT = new Map<number, Candle>();
+  for (const c of arr) byT.set(c.t, c);
+  for (const c of list) byT.set(c.t, c);
+  return [...byT.values()].sort((a, b) => a.t - b.t);
 }
 
 /** Świeca z footprintu (bieżąca świeca powtórki: z taśmy do chwili odtwarzania). */

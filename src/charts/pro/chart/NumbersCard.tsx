@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { BIG_PLAYER_USD } from '../core/players';
 import { type StatGroup, STAT_GROUPS, VENUE_GROUPS, barStat } from '../core/stats';
-import { fmtHm } from '../core/time';
+import { barEnd, fmtHm } from '../core/time';
 import type { CandleSeries, ProStore } from '../store/proStore';
 import { acquireVenues, venueStoreFor } from '../venues/venueStore';
 import { compact } from './FlowPanels';
@@ -109,7 +109,7 @@ export const NumbersCard: React.FC<{
                   className="sticky top-0 bg-surface-1 px-2 py-1.5 text-right font-medium text-ink-3"
                   style={stats[i].partial ? { color: PRO.partial } : undefined}
                 >
-                  {b.t + iv.ms > now ? tr('teraz', 'now') : fmtHm(b.t)}
+                  {barEnd(b.t, iv.ms) > now ? tr('teraz', 'now') : fmtHm(b.t)}
                   {stats[i].partial && '*'}
                 </th>
               ))}
