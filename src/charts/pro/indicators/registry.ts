@@ -46,7 +46,8 @@ export type IndicatorId =
   | 'ordersize'
   | 'cone'
   | 'slippage'
-  | 'breadth';
+  | 'breadth'
+  | 'repeat';
 
 /**
  * Grupy na liście okna wskaźników (jak kategorie TradingView); `hyperquant` — wskaźniki, których nie ma w TradingView
@@ -380,7 +381,7 @@ export function marketCostBp(f: BookFrame, usd: number, buy: boolean): number {
 }
 
 /** Konto ma w historii serwera numer ważny w godzinie UTC: świeca dłuższa nie łączy kont z różnych godzin. */
-export const BREADTH_MAX_MS = 3_600_000;
+export const ACCOUNT_HOUR_MS = 3_600_000;
 
 /**
  * Szerokość agresji w zleceniach świecy: N_eff = (Σ w)² / Σ w² z wartości wejść kont biorców po stronie kupna i sprzedaży
@@ -411,6 +412,30 @@ export function takerBreadth(orders: readonly { time: number; side: Side; notion
     return s2 > 0 ? (s * s) / s2 : Number.NaN;
   };
   return { buy: neff(bySide[0]), sell: neff(bySide[1]), race: race > 0 ? race : Number.NaN };
+}
+
+/**
+ * Trwałość przepływu w zleceniach świecy: udział wartości wejść kont, które w oknie przed świecą wchodziły po tej samej
+ * stronie (powracający), tylko po przeciwnej (odwracający) i wcale (nowi); NaN bez zleceń z kontem w świecy.
+ */
+export function takerPersistence(
+  before: readonly { side: Side; taker: string }[],
+  during: readonly { side: Side; notional: number; taker: string }[]
+): { back: number; flip: number; fresh: number } {
+  const seen = [new Set<string>(), new Set<string>()];
+  for (const o of before) if (o.taker !== '') seen[o.side > 0 ? 0 : 1].add(o.taker);
+  let back = 0;
+  let flip = 0;
+  let fresh = 0;
+  for (const o of during) {
+    if (o.taker === '') continue;
+    const k = o.side > 0 ? 0 : 1;
+    if (seen[k].has(o.taker)) back += o.notional;
+    else if (seen[1 - k].has(o.taker)) flip += o.notional;
+    else fresh += o.notional;
+  }
+  const sum = back + flip + fresh;
+  return sum > 0 ? { back: back / sum, flip: flip / sum, fresh: fresh / sum } : { back: Number.NaN, flip: Number.NaN, fresh: Number.NaN };
 }
 
 export const INDICATORS: readonly IndicatorDef[] = [
@@ -1709,7 +1734,7 @@ export const INDICATORS: readonly IndicatorDef[] = [
           const b = bars[i];
           const t = b.candle.t;
           let r: ReturnType<typeof takerBreadth> | null = null;
-          if (ms <= BREADTH_MAX_MS && ctx.identified(t, Math.min(t + ms, ctx.now))) {
+          if (ms <= ACCOUNT_HOUR_MS && ctx.identified(t, Math.min(t + ms, ctx.now))) {
             const count = ctx.orderCount(t, t + ms);
             let m = memo.get(b);
             if (!m || m.count !== count) memo.set(b, (m = { count, r: takerBreadth(ctx.orders(t, t + ms)) }));
@@ -1718,6 +1743,65 @@ export const INDICATORS: readonly IndicatorDef[] = [
           buy[i] = r ? r.buy : Number.NaN;
           sell[i] = r ? r.sell : Number.NaN;
           race[i] = r ? r.race : Number.NaN;
+        }
+      };
+    },
+  },
+  {
+    id: 'repeat',
+    short: tr('Powroty', 'Returning'),
+    name: tr('Powracający i nowi biorcy', 'Returning and new takers'),
+    hint: tr(
+      'Jaka część wartości wejść zleceniami rynkowymi w świecy pochodzi od kont, które w oknie przed świecą wchodziły już po tej samej stronie (powracający), tylko po przeciwnej (odwracający), a jaka od nowych; od 0 do 1',
+      'What share of the value entered with market orders within the candle comes from accounts that in the window before the candle had already entered on the same side (returning), only on the opposite side (switching), and what share from new ones; 0 to 1'
+    ),
+    group: 'hyperquant',
+    aliases: 'returning repeat powracajacy nowi new odwracajacy flip trwalosc persistence konta accounts biorcy takers agresor aggressor tozsamosc identity',
+    warmup: () => 0,
+    convention: tr(
+      'Tego wskaźnika nie ma w TradingView: liczony z nagranej taśmy Hyperliquid, która przy każdej transakcji podaje konto biorcy. Wypełnienia łączą się w zlecenia jak we wskaźniku wielkości zleceń. Okno to „Okno (min)” minut przed początkiem świecy; konto, które w nim wchodziło po tej samej stronie, jest powracające, a które tylko po przeciwnej — odwracające. Udziały liczone są z wartości wejść w świecy i sumują się do 1 razem z nowymi (w legendzie). Pokazujemy tylko udziały, nigdy kont.',
+      'TradingView has no such indicator: it is computed from the recorded Hyperliquid tape, which gives the taker account with every trade. Fills are joined into orders as in the order size indicator. The window is “Window (min)” minutes before the candle starts; an account that entered on the same side within it is returning, one that entered only on the opposite side is switching. Shares come from the value entered within the candle and add up to 1 together with the new ones (in the legend). Only shares are shown, never accounts.'
+    ),
+    memoryNote: tr(
+      'Świeca zależy od swoich zleceń i od zleceń z okna przed nią; obie części muszą mieć taśmę z kontami w całości (zapis z przeglądarki ich nie ma). Historia serwera numeruje konta w obrębie godziny UTC, więc w niej świeca ma wartość tylko wtedy, gdy okno i świeca leżą w jednej godzinie; na żywo okno może przekraczać pełną godzinę. W godzinie otwarcia strony konto sprzed otwarcia liczy się po nim jako nowe.',
+      'A candle depends on its own orders and on the orders in the window before it; both need the tape with accounts throughout (the browser recording has none). Server history numbers accounts within a UTC hour, so there a candle has a value only when the window and the candle lie in one hour; live, the window can cross the full hour. In the hour the page was opened, an account from before opening counts as new after it.'
+    ),
+    pane: 'own',
+    params: [{ key: 'window', label: tr('Okno (min)', 'Window (min)'), min: 5, max: 60, step: 1, def: 15 }],
+    plots: [
+      { title: tr('powracający', 'returning') },
+      { color: ORANGE, title: tr('odwracający', 'switching') },
+      { hidden: true, title: tr('nowi', 'new') },
+    ],
+    range: [0, 1],
+    format: 'fixed2',
+    series: (p) => {
+      const W = p.window * 60_000;
+      // Wynik świecy między przeliczeniami: te same liczby zleceń w oknie i w świecy — bez ponownego liczenia
+      const memo = new WeakMap<FlowBar, { n0: number; n1: number; r: ReturnType<typeof takerPersistence> | null }>();
+      return (bars, ms, ctx, out) => {
+        const [back, flip, fresh] = out;
+        for (let i = 0; i < bars.length; i++) {
+          const b = bars[i];
+          const t = b.candle.t;
+          let r: ReturnType<typeof takerPersistence> | null = null;
+          if (ms <= ACCOUNT_HOUR_MS && ctx.identified(t - W, Math.min(t + ms, ctx.now))) {
+            const n0 = ctx.orderCount(t - W, t);
+            const n1 = ctx.orderCount(t, t + ms);
+            let m = memo.get(b);
+            if (!m || m.n0 !== n0 || m.n1 !== n1) {
+              const before = ctx.orders(t - W, t);
+              const during = ctx.orders(t, t + ms);
+              // Numer konta z historii serwera (`~godzina:numer`) nie łączy się z numerem z innej godziny
+              const split = Math.floor((t - W) / ACCOUNT_HOUR_MS) !== Math.floor((t + ms - 1) / ACCOUNT_HOUR_MS);
+              const keyed = split && [...before, ...during].some((o) => o.taker.startsWith('~'));
+              memo.set(b, (m = { n0, n1, r: keyed ? null : takerPersistence(before, during) }));
+            }
+            r = m.r;
+          }
+          back[i] = r ? r.back : Number.NaN;
+          flip[i] = r ? r.flip : Number.NaN;
+          fresh[i] = r ? r.fresh : Number.NaN;
         }
       };
     },
