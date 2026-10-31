@@ -3,7 +3,7 @@ import { fmtSignedVol } from '../../orderflow/renderer';
 import { fmtCompact, numLang } from '../../../ui/format';
 import type { Candle } from '../hl/parse';
 import type { FootprintBar } from '../core/footprintBar';
-import type { VwapPoint } from '../core/indicators';
+import { type VwapPoint, sdUsable } from '../core/indicators';
 import type { PlayerSplit } from '../core/players';
 import { fmtDuration } from '../draw/model';
 import { fmtPx } from './layout';
@@ -85,7 +85,7 @@ const bars = (n: number) =>
 
 function vwapFact(x: StateInput, close: number): StateFact | null {
   const v = x.vwap;
-  if (!v || !(v.sd > 0)) return null;
+  if (!v || !sdUsable(v)) return null;
   const z = round((close - v.vwap) / v.sd, 1);
   const a = Math.abs(z);
   const name = tr(`VWAP ${x.vwapPeriod}`, `${x.vwapPeriod} VWAP`);

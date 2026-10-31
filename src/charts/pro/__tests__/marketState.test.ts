@@ -76,6 +76,11 @@ describe('Stan rynku', () => {
     expect(facts[1].why).toContain('(+5% wolumenu)');
   });
 
+  it('odchylenie z szumu zmiennoprzecinkowego (jedna świeca w okresie) nie daje faktu VWAP', () => {
+    const facts = marketState(base([bar(0, 523, 477), bar(1, 523, 477)], { vwap: { vwap: 99_954, sd: 1e-9, start: false } }));
+    expect(facts.map((f) => f.key)).not.toContain('vwap');
+  });
+
   it('bieżąca świeca w przeciwną stronę nie przerywa ciągu; giełdy w różne strony; daleko pod VWAP', () => {
     const bars = [bar(0, 1, 6), bar(1, 1, 5), bar(2, 2, 7), bar(3, 3, 1)];
     const facts = marketState(base(bars, { vwap: { vwap: 100_250, sd: 100, start: false }, venues: { binance: () => -3, bybit: () => 0.5 } }));

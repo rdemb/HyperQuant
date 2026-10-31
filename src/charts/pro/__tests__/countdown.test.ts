@@ -10,4 +10,10 @@ describe('odliczanie do zamknięcia świecy', () => {
     expect(fmtLeft(23 * 3_600_000 + 59 * 60_000 + 59_000)).toBe('23:59:59');
     expect(fmtLeft(-5)).toBe('0:00');
   });
+
+  it('od doby dni i godziny (świece 1W i 1M)', () => {
+    expect(fmtLeft(24 * 3_600_000)).toBe('1d 0h');
+    expect(fmtLeft(37 * 3_600_000 + 25 * 60_000)).toBe('1d 13h');
+    expect(fmtLeft(30 * 24 * 3_600_000)).toBe('30d 0h');
+  });
 });

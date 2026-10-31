@@ -3,7 +3,8 @@ import { ChevronDown, ChevronRight } from 'lucide-react';
 import { fmtVol } from '../../orderflow/footprint';
 import { fmtSignedVol } from '../../orderflow/renderer';
 import { DASH, fmtFixed, numLang } from '../../../ui';
-import { fmtBarTime, fmtSince } from '../core/time';
+import { sdUsable } from '../core/indicators';
+import { fmtBarTime, fmtSince, fromDaily } from '../core/time';
 import type { Hover, IndicatorReadout } from './controller';
 import { fmtPx } from './layout';
 import { tr } from '../../../i18n';
@@ -263,7 +264,7 @@ export const Legend: React.FC<{
               {fmtPx(h.ind.vwap.vwap)}
             </Field>
           )}
-          {h.ind.vwap && h.ind.vwap.sd > 0 && (
+          {h.ind.vwap && sdUsable(h.ind.vwap) && (
             <Field
               label={tr('Odch.', 'Dev.')}
               className={tone(c.c - h.ind.vwap.vwap)}
@@ -319,14 +320,17 @@ export const Legend: React.FC<{
           )}
         </div>
       ) : (
-        bar && (
+        bar &&
+        (fromDaily(intervalMs) ? (
+          <div className="hidden sm:block text-ink-3">{tr('Footprint: na interwałach do 1D', 'Footprint: on timeframes up to 1D')}</div>
+        ) : (
           <div className="hidden sm:block text-ink-3">
             {tr('Footprint: brak taśmy dla tej świecy', 'Footprint: no tape for this candle')}
             {Number.isFinite(tapeSince)
               ? tr(` — nagrywanie od ${fmtSince(tapeSince, Date.now())}`, ` — recording since ${fmtSince(tapeSince, Date.now())}`)
               : tr(' — czekam na pierwsze transakcje', ' — waiting for the first trades')}
           </div>
-        )
+        ))
       )}
       {h.row && (
         <div className="flex flex-wrap items-baseline gap-x-2.5">

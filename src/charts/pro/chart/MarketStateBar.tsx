@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import { indicatorScope, vwapFrom } from '../core/indicators';
+import { fromDaily } from '../core/time';
 import { periodStart } from '../core/sessions';
 import type { CandleSeries, ProStore } from '../store/proStore';
 import { venueStoreFor } from '../venues/venueStore';
@@ -33,7 +34,8 @@ function readState(store: ProStore, series: CandleSeries, venueOn: boolean): Sta
   const p0 = periodStart(all[n - 1].t, anchor);
   let k = n - 1;
   while (k > 0 && all[k - 1].t >= p0) k--;
-  const vw = vwapFrom(all.slice(k), store.vwapCandles(iv), iv.ms, anchor);
+  // Na 1W i 1M VWAP z resetem tygodniowym nie ma sensu (linie wyłączone), więc stan rynku go nie podaje
+  const vw = fromDaily(iv.ms) ? [] : vwapFrom(all.slice(k), store.vwapCandles(iv), iv.ms, anchor);
   let venues: StateInput['venues'] = null;
   if (venueOn) {
     const r = venueStoreFor(store.coin).reads(iv, now);

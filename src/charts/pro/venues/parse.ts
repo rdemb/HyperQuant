@@ -29,10 +29,10 @@ export const symbolOf = (coin: string): string => `${coin}USDT`;
 
 const MIN = 60_000;
 
-/** Okres historii OI Binance (`openInterestHist`) dla interwału wykresu — najkrótszy dostępny to 5 min. */
-export const BINANCE_OI_PERIOD: Record<string, string> = { '1m': '5m', '3m': '5m', '5m': '5m', '15m': '15m', '30m': '30m', '1h': '1h', '4h': '4h', '1d': '1d' };
+/** Okres historii OI Binance (`openInterestHist`) dla interwału wykresu — najkrótszy dostępny to 5 min, najdłuższy 1 dzień. */
+export const BINANCE_OI_PERIOD: Record<string, string> = { '1m': '5m', '3m': '5m', '5m': '5m', '15m': '15m', '30m': '30m', '1h': '1h', '4h': '4h', '1d': '1d', '1w': '1d', '1M': '1d' };
 /** Okres historii OI Bybit (`open-interest`) w nazwach Bybit. */
-export const BYBIT_OI_PERIOD: Record<string, string> = { '5m': '5min', '15m': '15min', '30m': '30min', '1h': '1h', '4h': '4h', '1d': '1d' };
+export const BYBIT_OI_PERIOD: Record<string, string> = { '5m': '5min', '15m': '15min', '30m': '30min', '1h': '1h', '4h': '4h', '1d': '1d', '1w': '1d', '1M': '1d' };
 export const OI_PERIOD_MS: Record<string, number> = { '5m': 5 * MIN, '15m': 15 * MIN, '30m': 30 * MIN, '1h': 60 * MIN, '4h': 240 * MIN, '1d': 1440 * MIN };
 /** Historia OI giełd co 5 min i dłużej: odczyt do dwóch okresów wstecz nadal opisuje świecę interwału. */
 export const oiMaxAge = (interval: string): number => 2 * OI_PERIOD_MS[BINANCE_OI_PERIOD[interval]];
