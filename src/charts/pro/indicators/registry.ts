@@ -1,7 +1,7 @@
 import type { Candle } from '../hl/parse';
 import type { BookFrame } from '../core/book';
 import { ofiEvent } from '../../../utils/microMechanics';
-import { Extreme, OlsWindow, RobustLine, Window, Wma, ema, rma } from './primitives';
+import { Extreme, OlsWindow, RegimeDetector, RobustLine, Window, Wma, ema, rma } from './primitives';
 import { INTERVALS, intervalById } from '../core/time';
 import { numLang } from '../../../ui/format';
 import { tr } from '../../../i18n';
@@ -41,10 +41,14 @@ export type IndicatorId =
   | 'netvol'
   | 'oiflow'
   | 'absorption'
-  | 'ofi';
+  | 'ofi'
+  | 'regime';
 
-/** Grupy na liście okna wskaźników (jak kategorie TradingView); `hyperliquid` — wskaźniki z danych spoza świec, we własnej sekcji okna. */
-export type IndicatorGroup = 'trend' | 'momentum' | 'volatility' | 'volume' | 'levels' | 'hyperliquid';
+/**
+ * Grupy na liście okna wskaźników (jak kategorie TradingView); `hyperquant` — wskaźniki, których nie ma w TradingView
+ * (z danych Hyperliquid spoza świec albo z modeli na świecach), we własnej sekcji okna.
+ */
+export type IndicatorGroup = 'trend' | 'momentum' | 'volatility' | 'volume' | 'levels' | 'hyperquant';
 export const GROUPS: readonly { id: IndicatorGroup; name: string }[] = [
   { id: 'trend', name: 'Trend' },
   { id: 'momentum', name: 'Momentum' },
@@ -224,6 +228,18 @@ const rsiOf = (n: number) => {
 
 /** Typowa cena świecy (`hlc3`). */
 const hlc3 = (c: Candle) => (c.h + c.l + c.c) / 3;
+
+/** Zwroty, z których liczony jest prior wariancji reżimu (jak w prognozie zakresu: co najmniej 100). */
+export const REGIME_PRIOR = 100;
+/** Najdłuższy śledzony reżim (świece); dłuższe w ostatniej komórce rozkładu. */
+const REGIME_RUNS = 600;
+
+/** Średnia a priori wariancji zwrotów: odporna (mediana kwadratów / 0,4549), nie mniej niż ¼ średniej kwadratów. */
+export function regimePrior(xs: readonly number[]): number {
+  const sq = xs.map((x) => x * x).sort((a, b) => a - b);
+  const mean = sq.reduce((s, x) => s + x, 0) / sq.length;
+  return Math.max(1e-12, sq[sq.length >> 1] / 0.4549, 0.25 * mean);
+}
 
 /** Najdłuższa przerwa między porównywanymi migawkami arkusza (kanał co ~5 s; dłuższa to przerwa w danych). */
 export const OFI_MAX_GAP = 12_000;
@@ -1207,7 +1223,7 @@ export const INDICATORS: readonly IndicatorDef[] = [
       'Słupek to zmiana otwartych pozycji Hyperliquid w świecy, w jednostkach rynku; kolor to znak delty z taśmy (przewaga kupna albo sprzedaży agresorów): turkus dodatnia, czerwień ujemna',
       'The bar is the change of Hyperliquid open interest within the candle, in market units; the colour is the sign of the tape delta (aggressor buying or selling ahead): teal positive, red negative'
     ),
-    group: 'hyperliquid',
+    group: 'hyperquant',
     aliases: 'oi open interest otwarte pozycje delta agresja aggressor otwarcia zamkniecia opens closes',
     warmup: () => 0,
     convention: tr(
@@ -1245,7 +1261,7 @@ export const INDICATORS: readonly IndicatorDef[] = [
       'O ile ruch ceny w świecy odbiegł od zwykłego przy takiej delcie, w jednostkach rozrzutu ostatnich świec: ujemny słupek — cena przesunęła się w stronę agresji mniej niż zwykle, dodatni — bardziej; kolor to strona agresji (turkus kupno, czerwień sprzedaż)',
       'How far the price move within the candle departed from the usual move for such a delta, in units of recent candles’ spread: a negative bar means price moved in the direction of aggression less than usual, a positive one more; the colour is the aggressor side (teal buying, red selling)'
     ),
-    group: 'hyperliquid',
+    group: 'hyperquant',
     aliases: 'absorption absorpcja wysilek efekt effort result theil sen delta odporna robust',
     warmup: () => 0,
     convention: tr(
@@ -1296,7 +1312,7 @@ export const INDICATORS: readonly IndicatorDef[] = [
       'Słupek to nierównowaga przepływu zleceń na najlepszych poziomach arkusza w świecy (OFI, w jednostkach rynku): dodatnia — przybyło popytu albo ubyło podaży; w legendzie zmiana środka arkusza w świecy, R² z ostatnich świec i zmiana ceny oczekiwana przy takim OFI',
       'The bar is the order flow imbalance at the best book levels within the candle (OFI, in market units): positive means demand was added or supply removed; the legend shows the book mid change in the candle, R² from recent candles and the price change expected for such OFI'
     ),
-    group: 'hyperliquid',
+    group: 'hyperquant',
     aliases: 'ofi order flow imbalance nierownowaga przeplyw zlecen arkusz book cont kukanov stoikov impact wplyw r2 beta',
     warmup: () => 0,
     convention: tr(
@@ -1329,6 +1345,52 @@ export const INDICATORS: readonly IndicatorDef[] = [
         expected[i] = f && f.r2 >= OFI_MIN_R2 ? f.beta * ofi[i] : Number.NaN;
         if (!Number.isNaN(ofi[i]) && bars[i].candle.t + ms <= ctx.now) w.push(ofi[i], dp[i]);
       }
+    },
+  },
+  {
+    id: 'regime',
+    short: tr('Reżim', 'Regime'),
+    name: tr('Reżim zmienności (BOCPD)', 'Volatility regime (BOCPD)'),
+    hint: tr(
+      'Linia to prawdopodobieństwo, że bieżący reżim zmienności zaczął się w ostatnich świecach („Okno zmiany”, od 0 do 1), z bayesowskiego wykrywania punktów zmiany na zwrotach świec; w legendzie σ bieżącego reżimu na świecę, w %',
+      'The line is the probability that the current volatility regime began within the last candles (“Change window”, 0 to 1), from Bayesian change-point detection on candle returns; the legend shows the current regime’s σ per candle, in %'
+    ),
+    group: 'hyperquant',
+    aliases: 'bocpd regime rezim zmiennosc volatility change point punkt zmiany adams mackay bayes sigma',
+    warmup: () => REGIME_PRIOR,
+    convention: tr(
+      'Tego wskaźnika nie ma w TradingView. BOCPD (Adams i MacKay 2007) na logarytmicznych zmianach zamknięcia: zwroty o średniej 0 i wariancji, która zmienia się skokowo; po każdej świecy rozkład długości bieżącego reżimu (do 600 świec), a linia to jego część krótsza niż „Okno zmiany”. Ryzyko zmiany w każdej świecy to 1 / „Długość reżimu”, a prior wariancji pochodzi z pierwszych 100 zwrotów (mediana kwadratów / 0,4549, nie mniej niż ¼ średniej). σ reżimu to pierwiastek wariancji przewidywanej, uśrednionej po długości reżimu. Zwykły rytm doby (np. otwarcie sesji w USA) też podnosi zmienność, więc i on może wyglądać jak zmiana reżimu.',
+      'TradingView has no such indicator. BOCPD (Adams and MacKay 2007) on log changes of the close: returns with zero mean and a variance that changes in jumps; after every candle, a distribution of the current regime’s length (up to 600 candles), and the line is its share shorter than the “Change window”. The change risk in each candle is 1 / “Regime length”, and the variance prior comes from the first 100 returns (median of squares / 0.4549, at least ¼ of the mean). Regime σ is the square root of the predictive variance averaged over the regime length. The ordinary daily rhythm (e.g. the US session open) also lifts volatility, so it can look like a regime change too.'
+    ),
+    memoryNote: tr(
+      'Wartość zależy od całej wczytanej historii: prior z pierwszych 100 zwrotów, a rozkład długości reżimu sięga 600 świec (starsze w ostatniej komórce), więc doczytana historia z lewej przelicza wszystko. Zmianę widać dopiero po kilku świecach nowego reżimu (tym później, im mniejsza), a linia spada, gdy reżim jest starszy niż okno. Przy stałym reżimie to zwykle kilka procent (samo ryzyko zmiany daje około „Okno zmiany” / „Długość reżimu”).',
+      'The value depends on the whole loaded history: the prior comes from the first 100 returns and the regime length distribution reaches 600 candles (older ones in the last cell), so older history loaded on the left recomputes everything. A change shows only after a few candles of the new regime (later for a smaller one), and the line falls once the regime is older than the window. In a steady regime it is usually a few percent (the change risk alone gives about “Change window” / “Regime length”).'
+    ),
+    pane: 'own',
+    params: [
+      { key: 'length', label: tr('Długość reżimu', 'Regime length'), min: 20, max: 2000, step: 1, def: 200 },
+      { key: 'recent', label: tr('Okno zmiany', 'Change window'), min: 1, max: 100, step: 1, def: 20 },
+    ],
+    plots: [{}, { hidden: true, title: 'σ%', format: 'fixed3' }],
+    levels: [0.5],
+    range: [0, 1],
+    format: 'fixed2',
+    create: (p) => {
+      const first: number[] = [];
+      let det: RegimeDetector | null = null;
+      let prev = Number.NaN;
+      return (c, keep, out) => {
+        const x = Math.log(c.c / prev);
+        if (keep) prev = c.c;
+        // Rozbieg: prior z pierwszych zwrotów, potem te same zwroty jako pierwsze obserwacje
+        if (!det && keep && Number.isFinite(x) && first.push(x) === REGIME_PRIOR) {
+          det = new RegimeDetector(1 / p.length, 2, regimePrior(first), REGIME_RUNS, p.recent);
+          for (const y of first) det.update(y);
+        } else if (det && keep) det.update(x);
+        const s = !det ? null : keep ? det.state() : det.peek(x);
+        out[0] = s ? s.pRecent : Number.NaN;
+        out[1] = s ? 100 * s.sigma : Number.NaN;
+      };
     },
   },
 ];

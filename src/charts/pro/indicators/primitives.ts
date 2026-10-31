@@ -1,3 +1,5 @@
+import { lnGamma } from '../../../utils/bocpd';
+
 /**
  * Klocki wskaźników liczone przyrostowo, z konwencjami Pine (`ta.*`) TradingView. Każdy ma `next(x, keep)`:
  * `keep = true` zatwierdza wartość zamkniętej świecy, `keep = false` liczy bieżącą świecę bez zmiany stanu (podgląd
@@ -296,5 +298,115 @@ export class OlsWindow {
     this.sxx += s * x * x;
     this.sxy += s * x * y;
     this.syy += s * y * y;
+  }
+}
+
+/**
+ * BOCPD (Adams i MacKay 2007) jak `Bocpd` z `utils/bocpd`: zwroty o średniej 0, prior Gamma(α₀, β₀) na precyzję, stałe
+ * ryzyko zmiany, rozkład długości przebiegu obcięty do `rMax` (ogon scalany w ostatniej komórce). Wersja dla wskaźnika:
+ * prawdopodobieństwa wprost (nie logarytmy; normowane co krok), ln β komórki zapamiętany z poprzedniego kroku, więc gęstość
+ * t-Studenta to jeden logarytm i jedna potęga e na komórkę; bez alokacji w kroku i z podglądem bieżącej świecy. Wynik:
+ * P(długość < `recent`) — reżim zaczął się w ostatnich `recent` obserwacjach — i σ reżimu.
+ */
+export class RegimeDetector {
+  private p: Float64Array;
+  private alpha: Float64Array;
+  private beta: Float64Array;
+  private lnb: Float64Array;
+  private np: Float64Array;
+  private na: Float64Array;
+  private nb: Float64Array;
+  private nlnb: Float64Array;
+  /** ln Γ(α + ½) − ln Γ(α) − ½ ln 2π + (α + ½) ln 2 dla α = α₀ + k/2. */
+  private readonly lnC: number[] = [];
+  private len = 1;
+  private nextLen = 1;
+
+  constructor(
+    private readonly hazard: number,
+    private readonly alpha0: number,
+    private readonly beta0: number,
+    private readonly rMax: number,
+    private readonly recent: number
+  ) {
+    const cells = () => new Float64Array(rMax + 1);
+    [this.p, this.alpha, this.beta, this.lnb, this.np, this.na, this.nb, this.nlnb] = Array.from({ length: 8 }, cells);
+    this.p[0] = 1;
+    this.alpha[0] = alpha0;
+    this.beta[0] = beta0;
+    this.lnb[0] = Math.log(beta0);
+  }
+
+  /** Obserwacja zatwierdzona (zamknięta świeca). */
+  update(x: number): void {
+    if (!this.next(x)) return;
+    [this.p, this.np] = [this.np, this.p];
+    [this.alpha, this.na] = [this.na, this.alpha];
+    [this.beta, this.nb] = [this.nb, this.beta];
+    [this.lnb, this.nlnb] = [this.nlnb, this.lnb];
+    this.len = this.nextLen;
+  }
+
+  /** Stan po obserwacji `x` bez jej zatwierdzenia. */
+  peek(x: number): { pRecent: number; sigma: number } {
+    return this.next(x) ? this.read(this.np, this.na, this.nb, this.nextLen) : this.state();
+  }
+
+  /** P(długość < `recent`) i σ reżimu: √(Σ_r P(r)·β_r/(α_r − 1)) — predykcyjna wariancja uśredniona po długości przebiegu. */
+  state(): { pRecent: number; sigma: number } {
+    return this.read(this.p, this.alpha, this.beta, this.len);
+  }
+
+  private constOf(a: number): number {
+    const k = Math.round(2 * (a - this.alpha0));
+    return (this.lnC[k] ??= lnGamma(a + 0.5) - lnGamma(a) - 0.5 * Math.log(2 * Math.PI) + (a + 0.5) * Math.LN2);
+  }
+
+  /** Rozkład po obserwacji `x` w buforach następnego kroku; false dla wartości nieskończonej. */
+  private next(x: number): boolean {
+    if (!Number.isFinite(x)) return false;
+    const { rMax, np, na, nb, nlnb } = this;
+    const n = this.len;
+    const newLen = Math.min(n + 1, rMax + 1);
+    const x2 = x * x;
+    np.fill(0, 0, newLen);
+    let change = 0;
+    // Gęstość t-Studenta (2α stopni swobody, skala √(β/α)) w x: ln f = C(α) + α ln β − (α + ½) ln(2β + x²)
+    for (let r = 0; r < n; r++) {
+      const a = this.alpha[r];
+      const l = Math.log(2 * this.beta[r] + x2);
+      const m = this.p[r] * Math.exp(this.constOf(a) + a * this.lnb[r] - (a + 0.5) * l);
+      change += m;
+      // Wzrost: przebieg r → r + 1 (ogon obcięty — ostatnia komórka zbiera masę, parametry z przebiegu o większej masie)
+      const to = Math.min(r + 1, rMax);
+      const g = m * (1 - this.hazard);
+      if (np[to] === 0 || g > np[to]) {
+        na[to] = a + 0.5;
+        nb[to] = this.beta[r] + x2 / 2;
+        nlnb[to] = l - Math.LN2;
+      }
+      np[to] += g;
+    }
+    // Zmiana: suma po wszystkich przebiegach
+    np[0] = change * this.hazard;
+    na[0] = this.alpha0;
+    nb[0] = this.beta0;
+    nlnb[0] = Math.log(this.beta0);
+    let z = 0;
+    for (let r = 0; r < newLen; r++) z += np[r];
+    for (let r = 0; r < newLen; r++) np[r] /= z;
+    this.nextLen = newLen;
+    return true;
+  }
+
+  private read(p: Float64Array, alpha: Float64Array, beta: Float64Array, len: number): { pRecent: number; sigma: number } {
+    let recent = 0;
+    let v = 0;
+    for (let r = 0; r < len; r++) {
+      if (r < this.recent) recent += p[r];
+      const a = alpha[r];
+      v += p[r] * (a > 1 ? beta[r] / (a - 1) : beta[r] / a);
+    }
+    return { pRecent: recent, sigma: Math.sqrt(v) };
   }
 }

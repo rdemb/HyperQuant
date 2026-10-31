@@ -73,7 +73,7 @@ const SECTION_NAME: Record<IndicatorsSection, string> = {
   chart: tr('Na wykresie', 'On the chart'),
   flow: 'Orderflow',
   classic: tr('Klasyczne', 'Classic'),
-  hl: tr('Tylko Hyperliquid', 'Hyperliquid only'),
+  hl: tr('Tylko w HyperQuant', 'HyperQuant only'),
   panes: tr('Pod wykresem', 'Below the chart'),
 };
 
@@ -117,7 +117,7 @@ export const IndicatorsDialog: React.FC<{
       ...INDICATORS.map(
         (d): Entry => ({
           key: d.id,
-          section: d.group === 'hyperliquid' ? 'hl' : 'classic',
+          section: d.group === 'hyperquant' ? 'hl' : 'classic',
           label: d.name,
           hint: d.hint,
           // Długi skrót (Supertrend, Stoch RSI) nie mieści się w kolumnie skrótów; jest też w nazwie
@@ -318,8 +318,8 @@ export const IndicatorsDialog: React.FC<{
               {section === 'hl' && (
                 <p className="px-2 pt-1 text-[11px] leading-snug text-ink-3">
                   {tr(
-                    'Wskaźniki z danych, których nie ma w samych świecach: nagranej taśmy transakcji, migawek arkusza zleceń i otwartych pozycji Hyperliquid. Nie ma ich w TradingView. Opisują ostatnie świece, nie przewidują następnych.',
-                    'Indicators from data the candles alone do not carry: the recorded Hyperliquid trade tape, order book snapshots and open interest. TradingView does not have them. They describe recent candles; they do not predict the next ones.'
+                    'Wskaźniki, których nie ma w TradingView: z danych Hyperliquid spoza świec (nagranej taśmy transakcji, migawek arkusza zleceń i otwartych pozycji) albo z modeli na świecach. Opisują ostatnie świece, nie przewidują następnych.',
+                    'Indicators TradingView does not have: from Hyperliquid data beyond the candles (the recorded trade tape, order book snapshots and open interest) or from models on the candles. They describe recent candles; they do not predict the next ones.'
                   )}
                 </p>
               )}
