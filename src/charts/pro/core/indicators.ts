@@ -27,6 +27,9 @@ export interface VwapPoint {
   start: boolean;
 }
 
+/** Odchylenie VWAP, od którego liczymy odległość w σ: okres z jedną świecą daje σ z szumu zaokrągleń (rzędu 1e-9 ceny). */
+export const sdUsable = (p: VwapPoint): boolean => p.sd > Math.abs(p.vwap) * 1e-7;
+
 /** VWAP z resetem na początku okresu (sesja, doba UTC, tydzień); null do pierwszej świecy z wolumenem. */
 export function vwapSeries(bars: readonly IndicatorBar[], mode: ResetMode): (VwapPoint | null)[] {
   const out: (VwapPoint | null)[] = new Array(bars.length);

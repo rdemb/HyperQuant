@@ -3,6 +3,7 @@ import { ChevronDown, ChevronRight } from 'lucide-react';
 import { fmtVol } from '../../orderflow/footprint';
 import { fmtSignedVol } from '../../orderflow/renderer';
 import { DASH, fmtFixed, numLang } from '../../../ui';
+import { sdUsable } from '../core/indicators';
 import { fmtBarTime, fmtSince, fromDaily } from '../core/time';
 import type { Hover, IndicatorReadout } from './controller';
 import { fmtPx } from './layout';
@@ -263,7 +264,7 @@ export const Legend: React.FC<{
               {fmtPx(h.ind.vwap.vwap)}
             </Field>
           )}
-          {h.ind.vwap && h.ind.vwap.sd > 0 && (
+          {h.ind.vwap && sdUsable(h.ind.vwap) && (
             <Field
               label={tr('Odch.', 'Dev.')}
               className={tone(c.c - h.ind.vwap.vwap)}

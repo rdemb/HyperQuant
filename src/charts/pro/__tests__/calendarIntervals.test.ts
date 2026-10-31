@@ -42,6 +42,11 @@ describe('granice świec 1W i 1M', () => {
     expect(fmtBarTime(utc(2026, 10, 1), MONTH)).toBe('paź 2026');
     expect(fmtBarTime(utc(2027, 1, 1), MONTH)).toBe('sty 2027');
   });
+
+  it('etykieta świecy tygodnia i doby: data UTC', () => {
+    expect(fmtBarTime(utc(2026, 10, 26), WEEK)).toBe('pn 26.10.2026');
+    expect(fmtBarTime(utc(2026, 10, 31), DAY)).toBe('sb 31.10.2026');
+  });
 });
 
 class FakeWs {
@@ -121,6 +126,17 @@ describe('seria 1W i 1M ze świec 1D', () => {
     expect(s.candles[0]).toBe(prev);
     // Bez footprintu w świecy tygodnia
     expect(s.bars().every((b) => b.fp === null)).toBe(true);
+  });
+
+  it('dni bez wolumenu i transakcji (przed startem handlu) nie tworzą świec tygodnia', async () => {
+    const now = utc(2026, 10, 28, 12);
+    const empty = (t: number) => ({ ...daily(t, 100, 100, 0), n: 0 });
+    boot(now, [empty(utc(2026, 10, 15)), empty(utc(2026, 10, 16)), daily(utc(2026, 10, 26), 105, 120), daily(utc(2026, 10, 27), 120, 118)]);
+    const s = store.series('1w');
+    store.start();
+    FakeWs.last!.open();
+    await vi.waitFor(() => expect(s.loadState).toBe('ready'));
+    expect(s.candles.map((c) => c.t)).toEqual([utc(2026, 10, 26)]);
   });
 
   it('miesiąc kalendarza: świece 1D z przełomu miesiąca trafiają do dwóch świec', async () => {

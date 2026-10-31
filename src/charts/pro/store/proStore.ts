@@ -609,7 +609,8 @@ export class CandleSeries {
   private async fetch(from: number, to: number): Promise<Candle[]> {
     const ms = this.interval.ms;
     if (!this.composite) return this.m.candles(this.src, from, to);
-    const list = await this.m.candles(this.src, barStart(from, ms), to);
+    // Świece 1D sprzed startu handlu na Hyperliquid (bez wolumenu i transakcji) nie wchodzą do tygodnia ani miesiąca
+    const list = (await this.m.candles(this.src, barStart(from, ms), to)).filter((c) => c.v > 0 || c.n > 0);
     this.daily = mergeByTime(this.daily, list);
     return aggregateCandles(list, ms);
   }

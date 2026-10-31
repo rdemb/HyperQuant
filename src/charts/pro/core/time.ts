@@ -103,13 +103,16 @@ export function fmtDm(t: number): string {
 const MONTHS_PL = ['sty', 'lut', 'mar', 'kwi', 'maj', 'cze', 'lip', 'sie', 'wrz', 'paź', 'lis', 'gru'];
 const MONTHS_EN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-/** Pełna etykieta czasu świecy do legendy i krzyża (np. „pt 24.10 14:35”). */
+/**
+ * Pełna etykieta czasu świecy do legendy i krzyża (np. „pt 24.10 14:35”). Świece od doby zaczynają się o 00:00 UTC, więc
+ * ich data jest w UTC (na zachód od Greenwich czas lokalny dałby dzień wcześniej).
+ */
 export function fmtBarTime(t: number, ms: number): string {
   const d = new Date(t);
-  const wd = tr(['nd', 'pn', 'wt', 'śr', 'cz', 'pt', 'sb'], ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'])[d.getDay()];
+  const WD = tr(['nd', 'pn', 'wt', 'śr', 'cz', 'pt', 'sb'], ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']);
   if (ms === MONTH) return `${tr(MONTHS_PL, MONTHS_EN)[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
-  const date = `${wd} ${fmtDm(t)}${ms >= DAY ? `.${d.getFullYear()}` : ''}`;
-  return ms >= DAY ? date : `${date} ${fmtHm(t)}`;
+  if (ms >= DAY) return `${WD[d.getUTCDay()]} ${pad(d.getUTCDate())}.${pad(d.getUTCMonth() + 1)}.${d.getUTCFullYear()}`;
+  return `${WD[d.getDay()]} ${fmtDm(t)} ${fmtHm(t)}`;
 }
 
 /** Chwila w przeszłości: HH:MM dziś, „DD.MM HH:MM” dla wcześniejszych dni (czas lokalny). */
