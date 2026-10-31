@@ -10,6 +10,7 @@ export type PriceAlert = AlertRule;
 const KEY = 'hq.charts.alerts.v1';
 const LOG_KEY = 'hq.charts.alerts.log.v1';
 const SEEN_KEY = 'hq.charts.alerts.seen.v1';
+const LINES_KEY = 'hq.charts.alerts.lines.v1';
 /** Najwięcej alarmów naraz (wszystkie rynki) i wpisów w historii. */
 export const MAX_ALERTS = 50;
 export const LOG_MAX = 30;
@@ -118,6 +119,19 @@ class StoredList<T> {
 
 export const alertBook = new StoredList<PriceAlert>(KEY, parseAlerts);
 export const alertLog = new StoredList<AlertEvent>(LOG_KEY, parseLog);
+
+/** Ukrycie linii zapisane jako lista [true] (pusta — linie widać), żeby zapis i zmiana w innej karcie działały jak przy alarmach. */
+const linesHidden = new StoredList<true>(LINES_KEY, (raw) => (Array.isArray(raw) && raw[0] === true ? [true] : []));
+
+/**
+ * Linie alarmów na wykresach: pokazane albo ukryte. Ukrycie nie wyłącza alarmów (dzwonią i wysyłają powiadomienia
+ * jak zawsze). Jedno ustawienie dla wszystkich paneli, kart układów i pełnego ekranu.
+ */
+export const alertLines = {
+  shown: (): boolean => linesHidden.get().length === 0,
+  set: (shown: boolean): void => linesHidden.update(() => (shown ? [] : [true])),
+  subscribe: linesHidden.subscribe,
+};
 
 /** Chwila ostatniego obejrzenia historii (znacznik nowych zdarzeń na dzwonku). */
 export function lastSeen(): number {
