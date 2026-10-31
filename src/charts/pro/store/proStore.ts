@@ -144,6 +144,8 @@ export class ProStore {
   private readonly books = new Map<number, BookHistory>();
   private bookSteps: [number, number] = [Number.NaN, Number.NaN];
   private exactSub = false;
+  /** Dokładny arkusz (bez agregacji ceny) od otwarcia strony, gdy bliska agregacja jest grubsza niż tick; serwer go nie nagrywa. */
+  private readonly exact = new BookHistory(Number.NaN);
 
   constructor(
     stream?: HlStream,
@@ -382,6 +384,8 @@ export class ProStore {
       const exact = [...snap.bids, ...snap.asks].some((l) => Math.abs(l.px / near - Math.round(l.px / near)) > 1e-6);
       if (exact) {
         this.walls.observeBook(snap);
+        this.exact.add(toFrame(snap, bookStep(snap)));
+        this.bump();
         return;
       }
       const step = bookStep(snap);
@@ -417,6 +421,11 @@ export class ProStore {
   /** Historia arkusza w agregacji bliskiej (~2 pb ceny) i dalekiej (10 × większy krok); null przed pierwszą migawką. */
   book(which: 'near' | 'far'): BookHistory | null {
     return this.books.get(this.bookSteps[which === 'near' ? 0 : 1]) ?? null;
+  }
+
+  /** Migawki arkusza bez agregacji ceny: osobny kanał albo bliska agregacja, gdy równa się tickowi. */
+  exactBook(): BookHistory | null {
+    return this.exactSub ? this.exact : this.book('near');
   }
 
   /** Początek strumienia na żywo w tej sesji (najstarsza transakcja jego pierwszej wiadomości); +∞ przed nią. */
@@ -515,6 +524,7 @@ export class ProStore {
     this.walls.prune(this.serverNow(), cut);
     this.oi.prune(cut);
     this.books.forEach((b) => b.prune(cut));
+    this.exact.prune(cut);
     for (const s of this.seriesById.values()) s.prune(cut);
   }
 

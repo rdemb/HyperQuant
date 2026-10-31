@@ -1,5 +1,6 @@
 import { CandlestickSeries, HistogramSeries, LineSeries, LineStyle, LineType, PriceScaleMode, createChart } from 'lightweight-charts';
 import type {
+  AutoscaleInfo,
   CandlestickData,
   HistogramData,
   IChartApi,
@@ -673,6 +674,14 @@ export class ProChartController {
       priceLineVisible: false,
       priceFormat: { type: 'custom' as const, minMove: 0.0001, formatter: this.indFormat(def.format) },
       ...(range ? { autoscaleInfoProvider: () => ({ priceRange: { minValue: range[0], maxValue: range[1] } }) } : {}),
+      ...(def.fromZero
+        ? {
+            autoscaleInfoProvider: (base: () => AutoscaleInfo | null) => {
+              const r = base();
+              return r?.priceRange ? { ...r, priceRange: { minValue: Math.min(0, r.priceRange.minValue), maxValue: r.priceRange.maxValue } } : r;
+            },
+          }
+        : {}),
     };
     const lines = def.plots.map(
       (p): IndSeries =>
@@ -1072,6 +1081,7 @@ export class ProChartController {
     const flow = {
       oiAt: (t: number) => this.store.oi.atWithin(t, HL_OI_MAX_AGE),
       book: () => this.store.book('near')?.list() ?? [],
+      exactBook: () => this.store.exactBook()?.list() ?? [],
       orders: (from: number, to: number) => this.store.orders.range(from, to),
       orderCount: (from: number, to: number) => this.store.orders.count(from, to),
       now: this.store.serverNow(),

@@ -44,7 +44,8 @@ export type IndicatorId =
   | 'ofi'
   | 'regime'
   | 'ordersize'
-  | 'cone';
+  | 'cone'
+  | 'slippage';
 
 /**
  * Grupy na liście okna wskaźników (jak kategorie TradingView); `hyperquant` — wskaźniki, których nie ma w TradingView
@@ -121,6 +122,8 @@ export interface FlowBar {
 export interface FlowContext {
   oiAt(t: number): number | null;
   book(): readonly BookFrame[];
+  /** Migawki arkusza bez agregacji ceny (rosnąco po czasie): tylko od otwarcia strony. */
+  exactBook(): readonly BookFrame[];
   orders(from: number, to: number): readonly { notional: number }[];
   orderCount(from: number, to: number): number;
   now: number;
@@ -165,6 +168,8 @@ export interface IndicatorDef {
   /** Linie poziomów w panelu (liczby bez podpisów) i stały zakres jego skali. */
   levels?: readonly number[];
   range?: readonly [number, number];
+  /** Skala od zera (wartości nieujemne, np. koszt w pb): drobne wahania nie wyglądają jak skoki. */
+  fromZero?: true;
   /** Liczby: cena z dokładnością ticku rynku, odległość ceny (o miejsce dokładniej niż tick), dwa albo trzy miejsca, wolumen, kwota USD. */
   format: 'price' | 'range' | 'fixed2' | 'fixed3' | 'volume' | 'usd';
   /** Skala logarytmiczna panelu (wartości od ułamków po wielokrotności, np. kwoty zleceń). */
@@ -349,6 +354,26 @@ export function bookFlow(frames: readonly BookFrame[], bars: readonly FlowBar[],
     ofi[i] = ok ? x : Number.NaN;
     dp[i] = ok ? y : Number.NaN;
   }
+}
+
+/**
+ * Koszt zlecenia rynkowego `usd` po arkuszu migawki, w pb od środka najlepszych cen: średnia cena wykonania po kolejnych
+ * poziomach strony (kupno — aski, sprzedaż — bidy). NaN bez obu stron albo gdy poziomy migawki nie mieszczą kwoty.
+ */
+export function marketCostBp(f: BookFrame, usd: number, buy: boolean): number {
+  if (!(f.nBids > 0 && f.nBids < f.px.length)) return Number.NaN;
+  const mid = (f.px[0] + f.px[f.nBids]) / 2;
+  const end = buy ? f.px.length : f.nBids;
+  let rest = usd;
+  let qty = 0;
+  for (let k = buy ? f.nBids : 0; k < end && rest > 0; k++) {
+    const take = Math.min(rest, f.px[k] * f.sz[k]);
+    qty += take / f.px[k];
+    rest -= take;
+  }
+  if (rest > usd * 1e-9) return Number.NaN;
+  const avg = usd / qty;
+  return ((buy ? avg - mid : mid - avg) / mid) * 1e4;
 }
 
 export const INDICATORS: readonly IndicatorDef[] = [
@@ -1556,6 +1581,59 @@ export const INDICATORS: readonly IndicatorDef[] = [
     plots: [],
     format: 'price',
     forecast: true,
+  },
+  {
+    id: 'slippage',
+    short: tr('Koszt', 'Cost'),
+    name: tr('Koszt zlecenia rynkowego (poślizg)', 'Market order cost (slippage)'),
+    hint: tr(
+      'Ile punktów bazowych od środka arkusza kosztuje zlecenie rynkowe o zadanej kwocie: ask — kupno zbierające aski, bid — sprzedaż zbierająca bidy; średnia z migawek dokładnego arkusza Hyperliquid w świecy, od otwarcia strony',
+      'How many basis points from the book mid a market order of the given amount costs: ask is a buy taking the asks, bid a sell taking the bids; the average over exact Hyperliquid book snapshots within the candle, since the page was opened'
+    ),
+    group: 'hyperquant',
+    aliases: 'slippage poslizg koszt cost market rynkowe wykonanie execution vwap arkusz book depth glebokosc plynnosc liquidity spread bp',
+    warmup: () => 0,
+    convention: tr(
+      'Tego wskaźnika nie ma w TradingView: liczony z arkusza Hyperliquid bez agregacji ceny (20 poziomów na stronę, migawka co około 5 s). W każdej migawce kwota przechodzi po kolejnych poziomach strony; koszt to różnica średniej ceny wykonania i środka najlepszych cen, w pb (0,01%), razem z połową spreadu, bez opłaty takera. Świeca to średnia z jej migawek. Widoczne zlecenia, bez ukrytych; samo zlecenie zmienia arkusz, więc to koszt w chwili migawki, a nie gwarancja. Serwer nagrywa arkusz tylko w kubełkach ceny (dla BTC 10 USD), z których koszt małych kwot wychodzi zawyżony o pół kubełka, więc historia zaczyna się od otwarcia strony.',
+      'TradingView has no such indicator: it is computed from the Hyperliquid book without price aggregation (20 levels per side, a snapshot about every 5 s). In each snapshot the amount walks the side’s successive levels; the cost is the gap between the average fill price and the mid of the best prices, in bp (0.01%), including half the spread, without the taker fee. A candle is the average of its snapshots. Visible orders only, no hidden ones; the order itself changes the book, so this is the cost at the snapshot, not a guarantee. The server records the book only in price buckets (10 USD for BTC), which overstate the cost of small amounts by half a bucket, so the history starts when the page is opened.'
+    ),
+    memoryNote: tr(
+      'Świeca zależy tylko od migawek arkusza w niej. Wartości są od otwarcia strony (najdłużej z ostatniej doby) i nie ma ich w powtórce. Świeca nie ma wartości bez migawki albo gdy w którejś 20 poziomów strony nie mieści kwoty.',
+      'A candle depends only on the book snapshots within it. Values start when the page is opened (at most the last day) and are not available in replay. A candle has no value without a snapshot or when in any of them 20 levels of the side cannot hold the amount.'
+    ),
+    pane: 'own',
+    params: [{ key: 'usd', label: tr('Kwota (USD)', 'Amount (USD)'), min: 1000, max: 10_000_000, step: 1000, def: 50_000 }],
+    // Strony arkusza zamiast „kupno/sprzedaż” i neutralne kolory: koszt, nie kierunek
+    plots: [{ title: 'ask' }, { color: ORANGE, title: 'bid' }],
+    format: 'fixed2',
+    fromZero: true,
+    series: (p) => {
+      // Koszt migawki liczony raz (migawki się nie zmieniają, kwota stała w instancji)
+      const memo = new WeakMap<BookFrame, [number, number]>();
+      return (bars, ms, ctx, out) => {
+        const [buy, sell] = out;
+        const frames = ctx.exactBook();
+        let j = 0;
+        for (let i = 0; i < bars.length; i++) {
+          const t = bars[i].candle.t;
+          while (j < frames.length && frames[j].t < t) j++;
+          let n = 0;
+          let b = 0;
+          let s = 0;
+          for (; j < frames.length && frames[j].t < t + ms; j++) {
+            const f = frames[j];
+            let c = memo.get(f);
+            if (!c) memo.set(f, (c = [marketCostBp(f, p.usd, true), marketCostBp(f, p.usd, false)]));
+            b += c[0];
+            s += c[1];
+            n++;
+          }
+          // NaN w którejś migawce (za płytki arkusz) daje NaN świecy
+          buy[i] = n > 0 ? b / n : Number.NaN;
+          sell[i] = n > 0 ? s / n : Number.NaN;
+        }
+      };
+    },
   },
 ];
 

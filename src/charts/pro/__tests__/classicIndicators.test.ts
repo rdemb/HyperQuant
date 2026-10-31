@@ -36,6 +36,7 @@ const M5 = 300_000;
 const flowCtx = (c: Partial<FlowContext>): FlowContext => ({
   oiAt: () => null,
   book: () => [],
+  exactBook: () => [],
   orders: () => [],
   orderCount: () => 0,
   now: Number.POSITIVE_INFINITY,
