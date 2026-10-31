@@ -47,7 +47,7 @@ export function toBookFrame(f: HistFrame): BookFrame {
     sz[i] = all[3 * i + 1];
     cnt[i] = all[3 * i + 2];
   }
-  return { t: f.t, step: f.step, px, sz, n: cnt, nBids };
+  return { t: f.t, step: f.step, px, sz, n: cnt, nBids, ...(f.exact ? { exact: true as const } : {}) };
 }
 
 /** Wypełnienia z pliku: numery biorcy, makera i zlecenia w godzinie jako klucze (`~godzina:numer`), bez adresów. */
