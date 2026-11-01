@@ -21,12 +21,13 @@ import { DomLadder, PickCard, TapePanel, compact } from './chart/FlowPanels';
 import { HoverSignal, Legend } from './chart/Legend';
 import { LOT_FLOOR, type LiquidityPick } from './chart/liquidity';
 import { brandedScreenshot, downloadCanvas } from './chart/screenshot';
-import { MAX_ALERTS, type PriceAlert, addAlert, alertBook, alertLines, alertLog, askNotifications, hasLine, lastSeen, lineLabel, markSeen, primeAlertSound, removeAlert } from './chart/alerts';
+import { MAX_ALERTS, type PriceAlert, addAlert, alertBook, alertLines, alertLog, askNotifications, hasLine, lastSeen, lineLabel, markSeen, newAlert, primeAlertSound, removeAlert } from './chart/alerts';
 import { type LinkAlarm, linkAlerts, parseAlarmLink } from './chart/alarmLink';
 import { AlarmLinkCard, type AlertDraft, AlertsMenu } from './chart/AlertsMenu';
 import { onAlertEvents, startAlertWatch } from './chart/alertWatch';
 import { DEFAULT_TTL_MS, defaultDir, eventText } from '../../utils/alertRules';
 import { fmtPx, priceDigits } from './chart/layout';
+import type { PbZone } from './chart/pbRangeLayer';
 import { ChartLayout, ChartSettings, NARROW_QUERY, PHONE_PANES, PhonePane, hashFor, isNarrow, loadSettings, phoneSettings, saveSettings, settingsFromHash } from './chart/settings';
 import { STATIONS, Station, stationKey, stationPanel } from './chart/stations';
 import { BUILT_IN_TEMPLATES, ChartTemplate, applyTemplate, loadTemplates, saveAs, saveTemplates } from './chart/templates';
@@ -552,6 +553,32 @@ export const ProChart: React.FC<{
     addAlert({ coin: store.coin, price, kind: 'touch', dir, iv: '15m', closes: 1, delta: false, from: now, until: now + DEFAULT_TTL_MS, pair: '', note: '', after: '' }, now);
     setToast(tr(`Alarm przy ${fmtPx(price)} (${store.coin}): dotknięcie poziomu`, `Alert at ${fmtPx(price)} (${store.coin}): level touch`));
   };
+  // Alarmy aktywnej strefy P/b do końca jej życia: dotknięcie góry i dołu, zamknięcie 5m poza strefą, powrót do strefy
+  const addZoneAlerts = (z: PbZone) => {
+    if (!liveOnly()) return;
+    const now = store.serverNow();
+    const name = z.s > 0 ? 'P' : 'b';
+    const base = { coin: store.coin, iv: '5m', closes: 1, delta: false, from: now, until: z.until, pair: '', after: '' };
+    const made = (
+      [
+        [z.hi, 'touch', 1, tr(`Strefa ${name}: dotknięcie góry`, `Zone ${name}: top touch`)],
+        [z.lo, 'touch', -1, tr(`Strefa ${name}: dotknięcie dołu`, `Zone ${name}: bottom touch`)],
+        [z.hi, 'close', 1, tr(`Strefa ${name}: zamknięcie nad strefą`, `Zone ${name}: close above`)],
+        [z.lo, 'close', -1, tr(`Strefa ${name}: zamknięcie pod strefą`, `Zone ${name}: close below`)],
+        [z.hi, 'reclaim', -1, tr(`Strefa ${name}: powrót pod górę`, `Zone ${name}: back below the top`)],
+        [z.lo, 'reclaim', 1, tr(`Strefa ${name}: powrót nad dół`, `Zone ${name}: back above the bottom`)],
+      ] as const
+    ).map(([price, kind, dir, note]) => newAlert({ ...base, price, kind, dir, note }, now));
+    alertBook.update((l) => [...l, ...made].slice(-MAX_ALERTS));
+    primeAlertSound();
+    void askNotifications();
+    setToast(
+      tr(
+        `Alarmy strefy ${name} ${fmtPx(z.lo)}–${fmtPx(z.hi)} (${store.coin}): ${made.length}, do ${fmtHm(z.until)}`,
+        `Zone ${name} ${fmtPx(z.lo)}–${fmtPx(z.hi)} alerts (${store.coin}): ${made.length}, until ${fmtHm(z.until)}`
+      )
+    );
+  };
   const openAlerts = (draft: AlertDraft | null) => {
     if (draft && !liveOnly()) return;
     setAlertDraft(draft);
@@ -849,6 +876,7 @@ export const ProChart: React.FC<{
               at={ctxMenu}
               coin={store.coin}
               nearAlert={(linesShown && alerts.find((a) => a.coin === store.coin && hasLine(a) && Math.abs((ctrlRef.current?.yOf(a.price) ?? -1e9) - ctxMenu.y) <= 8)) || null}
+              pbZone={inReplay ? null : (ctrlRef.current?.pbZone() ?? null)}
               linesShown={!inReplay && alerts.some((a) => a.coin === store.coin && hasLine(a)) ? linesShown : null}
               onLines={() => {
                 alertLines.set(!linesShown);
@@ -857,6 +885,7 @@ export const ProChart: React.FC<{
               onClose={() => setCtxMenu(null)}
               onAlert={addTouch}
               onAlertMore={(p) => openAlerts({ price: toTick(p), kind: 'close' })}
+              onZoneAlerts={addZoneAlerts}
               onRemoveAlert={(a) => removeAlert(a.id)}
               onLine={() => tools?.addHorizontal(ctxMenu.x, ctxMenu.y)}
               onCopyPrice={(p) => copy(fmtPx(p).replace(/,/g, ''), tr(`Skopiowano cenę ${fmtPx(p)}`, `Price ${fmtPx(p)} copied`))}
@@ -1161,12 +1190,15 @@ const ChartMenu = React.forwardRef<
     at: CtxMenuAt;
     coin: string;
     nearAlert: PriceAlert | null;
+    /** Aktywna strefa wskaźnika „Zakresy P/b” (null — wskaźnik ukryty albo brak ważnej strefy). */
+    pbZone: PbZone | null;
     /** Linie alarmów tego rynku pokazane albo ukryte; null — rynek bez alarmów z linią. */
     linesShown: boolean | null;
     onLines: () => void;
     onClose: () => void;
     onAlert: (price: number) => void;
     onAlertMore: (price: number) => void;
+    onZoneAlerts: (z: PbZone) => void;
     onRemoveAlert: (a: PriceAlert) => void;
     onLine: () => void;
     onCopyPrice: (price: number) => void;
@@ -1175,7 +1207,7 @@ const ChartMenu = React.forwardRef<
     onReset: () => void;
     onShot: () => void;
   }
->(({ at, coin, nearAlert, linesShown, onLines, onClose, onAlert, onAlertMore, onRemoveAlert, onLine, onCopyPrice, onCopyLink, onNow, onReset, onShot }, ref) => {
+>(({ at, coin, nearAlert, pbZone, linesShown, onLines, onClose, onAlert, onAlertMore, onZoneAlerts, onRemoveAlert, onLine, onCopyPrice, onCopyLink, onNow, onReset, onShot }, ref) => {
   const p = at.price;
   const item = (icon: React.ReactNode, label: string, run: () => void) => (
     <button
@@ -1209,6 +1241,19 @@ const ChartMenu = React.forwardRef<
           {nearAlert && item(<BellOff className="w-4 h-4" />, tr(`Usuń alarm ${fmtPx(nearAlert.price)}`, `Remove alert ${fmtPx(nearAlert.price)}`), () => onRemoveAlert(nearAlert))}
           {item(<Minus className="w-4 h-4" />, tr(`Linia pozioma przy ${fmtPx(p)}`, `Horizontal line at ${fmtPx(p)}`), onLine)}
           {item(<Copy className="w-4 h-4" />, tr(`Kopiuj cenę ${fmtPx(p)}`, `Copy price ${fmtPx(p)}`), () => onCopyPrice(p))}
+          <div className="my-1 border-t border-line" />
+        </>
+      )}
+      {pbZone && (
+        <>
+          {item(
+            <Bell className="w-4 h-4" />,
+            tr(
+              `Alarmy strefy ${pbZone.s > 0 ? 'P' : 'b'} ${fmtPx(pbZone.lo)}–${fmtPx(pbZone.hi)} (6)`,
+              `Zone ${pbZone.s > 0 ? 'P' : 'b'} ${fmtPx(pbZone.lo)}–${fmtPx(pbZone.hi)} alerts (6)`
+            ),
+            () => onZoneAlerts(pbZone)
+          )}
           <div className="my-1 border-t border-line" />
         </>
       )}

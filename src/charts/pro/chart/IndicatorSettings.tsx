@@ -85,8 +85,8 @@ export const IndicatorSettings: React.FC<{ x: IndicatorInstance; loaded: number;
   };
   const warmup = def.warmup(x.params);
   // Same słupki w kolorach znaku i wartości tylko w legendzie (zmiana OI, OFI): kolor i grubość linii nic nie zmieniają, zostaje
-  // krycie; stożek i rynki HIP-4 nie mają plotów, ale mają kolor i grubość linii
-  const bars = !def.forecast && !def.outcomes && def.plots.every((p) => p.hist || p.hidden);
+  // krycie; stożek, rynki HIP-4 i zakresy P/b nie mają plotów, ale mają kolor i grubość linii
+  const bars = !def.forecast && !def.outcomes && !def.pbRanges && def.plots.every((p) => p.hist || p.hidden);
   const memory = memoryCandles(def, x.params);
   const span = warmup + 1;
   // Interwał wskaźnika: wyższe niż wykres (i zapisany, gdy wykres przeszedł na wyższy)
@@ -195,6 +195,9 @@ export const IndicatorSettings: React.FC<{ x: IndicatorInstance; loaded: number;
             {tr('Bez parametrów: rynki, progi i terminy są takie, jak notuje je Hyperliquid.', 'No inputs: the markets, thresholds and expiries are those listed by Hyperliquid.')}
           </p>
         )}
+        {tab === 'params' && def.pbRanges && (
+          <p className="py-2 text-ink-2 leading-snug">{tr('Bez parametrów: reguły jak w opisie, zawsze ze świec 5m.', 'No inputs: the rules are as in the description, always from 5m candles.')}</p>
+        )}
         {tab === 'style' && (
           <div className="flex flex-col gap-1">
             {bars ? (
@@ -237,7 +240,7 @@ export const IndicatorSettings: React.FC<{ x: IndicatorInstance; loaded: number;
                 <ColorPicker color={x.color} alpha={x.alpha} onColor={(color) => set({ color })} onAlpha={(alpha) => set({ alpha })} />
               </div>
             )}
-            {!def.forecast && !def.outcomes && (
+            {!def.forecast && !def.outcomes && !def.pbRanges && (
               <label className="flex items-center gap-2.5 min-h-10 cursor-pointer text-ink-1">
                 <input type="checkbox" checked={x.labels} onChange={(e) => set({ labels: e.target.checked })} className="w-4 h-4 shrink-0 accent-accent" />
                 {tr('Wartość na osi ceny', 'Value on the price scale')}
@@ -291,7 +294,12 @@ export const IndicatorSettings: React.FC<{ x: IndicatorInstance; loaded: number;
                       'Różnica między rynkiem a modelem to dwie wyceny tego samego pytania, nie sygnał: wynik Briera w legendzie mówi, jak trafne były dotąd obie.',
                       'The difference between the market and the model is two prices of the same question, not a signal: the Brier score in the legend says how accurate both have been so far.'
                     )
-                  : tr('Wskaźnik opisuje ostatnie świece, nie przewiduje następnych.', 'An indicator describes recent candles; it does not predict the next ones.')}
+                  : def.pbRanges
+                    ? tr(
+                        'To miejsca do obserwacji, nie sygnały: ✓ i ✗ przy 👀 oraz wynik w legendzie mówią, jak często cena szła potem dalej w stronę 👀. Alarmy aktywnej strefy ustawisz z menu wykresu (prawy przycisk).',
+                        'These are places to watch, not signals: ✓ and ✗ at 👀 and the result in the legend say how often the price then travelled further toward 👀. Set alerts for the active zone from the chart menu (right click).'
+                      )
+                    : tr('Wskaźnik opisuje ostatnie świece, nie przewiduje następnych.', 'An indicator describes recent candles; it does not predict the next ones.')}
             </p>
           </div>
         )}

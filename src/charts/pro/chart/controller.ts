@@ -46,6 +46,7 @@ import { HIST_DOWN, HIST_UP, IndicatorDef, IndicatorInstance, PlotDef, indicator
 import { CloudFill, CloudSource } from './cloudFill';
 import { ConeForecast, ConeLayer, ConeSource } from './coneLayer';
 import { Hip4Layer, Hip4Source, outcomeLevels } from './hip4Layer';
+import { PbRangeLayer, PbStyle, PbZone } from './pbRangeLayer';
 import type { Hip4State } from '../../../state/useHip4';
 import { CountdownLabel } from './countdown';
 import { FlowVenue, OiVenue, oiMaxAge, per8h } from '../venues/parse';
@@ -324,6 +325,8 @@ export class ProChartController {
   /** Rynki wynikowe HIP-4 z modelem Desku (wskaźnik „HIP-4”); null — niepobierane (inny rynek, powtórka, wskaźnik ukryty). */
   private readonly hip4 = new Hip4Layer(() => this.hip4Source());
   private outcomes: Hip4State | null = null;
+  /** Zakresy P/b ze świec 5m (wskaźnik „Zakresy P/b”). */
+  private readonly pb = new PbRangeLayer(() => this.pbStyle());
   private countdownTimer = 0;
   /** Narzędzia rysowania (pasek narzędzi w ProChart). */
   readonly draw: DrawingTools;
@@ -405,6 +408,7 @@ export class ProChartController {
     }
     this.main.attachPrimitive(this.cone);
     this.main.attachPrimitive(this.hip4);
+    this.main.attachPrimitive(this.pb);
     this.main.attachPrimitive(this.countdown);
     this.main.attachPrimitive(this.strip);
     // Rysunki dołączone ostatnie — nad wskaźnikami i świecami
@@ -570,6 +574,7 @@ export class ProChartController {
     this.zones.setRightInset(px);
     this.tpo.setRightInset(px);
     for (const p of this.plugins) p.setRightInset?.(px);
+    this.pb.setRightInset(px);
     this.chart.timeScale().applyOptions({ rightOffsetPixels: this.rightGap() });
   }
 
@@ -922,6 +927,17 @@ export class ProChartController {
     return parts;
   }
 
+  /** Styl pierwszego widocznego wskaźnika zakresów P/b (null — żaden). */
+  private pbStyle(): PbStyle | null {
+    const x = this.indShown.find((y) => indicatorDef(y.id).pbRanges);
+    return x ? { color: x.color, alpha: x.alpha, width: x.width } : null;
+  }
+
+  /** Aktywna strefa P/b do alarmów z menu wykresu (null — wskaźnik ukryty albo brak ważnej strefy). */
+  pbZone(): PbZone | null {
+    return this.pbStyle() ? this.pb.zone() : null;
+  }
+
   private coneShown(): boolean {
     return this.indShown.some((x) => indicatorDef(x.id).forecast);
   }
@@ -1191,6 +1207,7 @@ export class ProChartController {
     this.zones.setData(next, ms, now);
     this.tpo.setData(next, ms);
     for (const p of this.plugins) p.setData(next, ms, now, st);
+    this.pb.setData(next, ms, now, st, this.phone);
     if (full || now - this.stripAt >= STRIP_EVERY_MS) {
       this.stripAt = now;
       const rows = coverageRows(storeSource(st), this.needs, now);
@@ -1532,15 +1549,17 @@ export class ProChartController {
         ? this.coneLegend(x.color)
         : def.outcomes
           ? this.hip4Legend()
-          : vs.flatMap((v, p) => {
-              const plot = def.plots[p];
-              if (def.band?.includes(p)) return [];
-              // Podpis poziomu (pivoty: P, R1, S1…) także w legendzie; przedział w nawiasie za wartością
-              const fmt = this.indFormat(plot.format ?? def.format);
-              const text = Number.isNaN(v) ? '—' : fmt(v);
-              const band = def.band && p === 0 && !Number.isNaN(v) ? ` (${fmt(vs[def.band[0]])}–${fmt(vs[def.band[1]])})` : '';
-              return [{ text: plot.title ? `${plot.title} ${text}${band}` : `${text}${band}`, color: this.plotColor(x, plot, vs[plot.signOf ?? p]) }];
-            });
+          : def.pbRanges
+            ? this.pb.legend(x.color)
+            : vs.flatMap((v, p) => {
+                const plot = def.plots[p];
+                if (def.band?.includes(p)) return [];
+                // Podpis poziomu (pivoty: P, R1, S1…) także w legendzie; przedział w nawiasie za wartością
+                const fmt = this.indFormat(plot.format ?? def.format);
+                const text = Number.isNaN(v) ? '—' : fmt(v);
+                const band = def.band && p === 0 && !Number.isNaN(v) ? ` (${fmt(vs[def.band[0]])}–${fmt(vs[def.band[1]])})` : '';
+                return [{ text: plot.title ? `${plot.title} ${text}${band}` : `${text}${band}`, color: this.plotColor(x, plot, vs[plot.signOf ?? p]) }];
+              });
       const legend = this.indLegends[k];
       // Pierwsza wartość przy nazwie, dalsze (OFI: Δp, R², oczekiwana) mogą przejść do następnego wiersza na wąskim panelu
       if (legend) legend.set([{ text: indicatorLabel(x), color: PRO.ink3 }, ...values.map((v, p) => ({ ...v, glue: p === 0 }))]);

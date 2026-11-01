@@ -54,6 +54,7 @@ export type IndicatorId =
   | 'makers'
   | 'hawkes'
   | 'outcomes'
+  | 'pbrange'
   | 'twap';
 
 /**
@@ -217,6 +218,8 @@ export interface IndicatorDef {
   forecast?: true;
   /** Rynki wynikowe HIP-4 (ceny rynku i modelu Desku): bez wartości świec i bez plotów — poziomy na wykresie ceny. */
   outcomes?: true;
+  /** Zakresy P/b ze świec 5m (warstwa na wykresie ceny i opis w legendzie): bez wartości świec i bez plotów. */
+  pbRanges?: true;
   /** Tyle świec przed lewą krawędzią widoku potrzeba danych z serwera (okno poprzednich świec: absorpcja, OFI). */
   lookback?(p: Params): number;
   /**
@@ -1988,6 +1991,31 @@ export const INDICATORS: readonly IndicatorDef[] = [
     outcomes: true,
   },
   {
+    id: 'pbrange',
+    short: 'P/b',
+    name: tr('Zakresy P/b (Nill)', 'P/b ranges (Nill)'),
+    hint: tr(
+      'Strefy konsolidacji po impulsie (P po wzroście, b po spadku) ze świec 5m z numerami dotknięć krawędzi, poziomy profilu wolumenu poprzedniego tygodnia i doby oraz miejsca 👀, w których metoda Patricka Nilla by weszła (A gra w zakresie, B wybicie z potwierdzeniem, C fałszywe wybicie i powrót), bez celów i pozycji; w legendzie stan strefy, typowa godzina i wynik 👀 na historii świec',
+      'Consolidation zones after an impulse (P after a rise, b after a drop) from 5m candles with numbered edge touches, volume profile levels of the previous week and day, and 👀 places where Patrick Nill’s method would enter (A range play, B confirmed breakout, C fake breakout and reclaim), without targets or positions; the legend shows the zone state, the typical hour and the 👀 result on candle history'
+    ),
+    group: 'hyperquant',
+    aliases: 'nill patrick p b pb zakres range konsolidacja consolidation impuls impulse wybicie breakout powrot reclaim falszywe fake profil profile vah val poc lvn tydzien week doba day dotkniecia touches strefa zone day trading',
+    warmup: () => 0,
+    convention: tr(
+      'Tego wskaźnika nie ma w TradingView. To mechanizacja HyperQuant metody zakresów P i b Patricka Nilla: Nill nie publikuje dokładnych reguł rysowania, więc to nasza wersja, nie jego. Liczona zawsze ze świec 5m Hyperliquid, niezależnie od interwału wykresu: impuls do 16 świec o ruchu netto co najmniej 4 ATR (ATR z 96 świec sprzed impulsu), po nim zakres co najmniej 4 h (48 świec) z co najmniej 3 naprzemiennymi dotknięciami krawędzi (pasy po 20% szerokości) i kształtem P po impulsie w górę (dół zakresu w górnej połowie impulsu) albo b po impulsie w dół (lustrzanie); strefa żyje 16 h albo do pierwszego zamknięcia poza nią. 👀 to miejsca, w których metoda by weszła, bez celu i bez pozycji: A gra w zakresie (cena w 10% szerokości od krawędzi, naprzemiennie dół i góra), B wybicie z potwierdzeniem (test krawędzi i zamknięcie za świecą wybicia, R:R metody co najmniej 3), C fałszywe wybicie i powrót do strefy w 2 świece (R:R co najmniej 3). ⚡ przy B i C: od wybicia do miejsca agresja taśmy szła w stronę wybicia, a OI rosło. Przygaszone 👀 są poza oknem day tradingu (dni robocze od 08:00 Londynu do 14:00 Nowego Jorku). Linie: VAH, POC, VAL i LVN profilu wolumenu poprzedniego tygodnia (od poniedziałku UTC, koszyki 10 bp) oraz VAH, POC i VAL poprzedniej doby UTC (5 bp); „poziom tyg.” przy strefie znaczy, że poziom tygodnia leży w jej zasięgu ± 0,5 ATR. Każde 👀 jest sprawdzane wyścigiem do bariery: czy cena przeszła typową godzinę (mediana zakresu 24 ostatnich pełnych godzin) w stronę 👀, zanim przeszła ją przeciw, w ciągu 4 h (✓ albo ✗; obie w jednej świecy liczą się przeciw). W legendzie wynik z wczytanej historii świec (ok. 2 tygodnie): bez przewagi wychodzi ok. 50%, a przy kilkunastu rozstrzygnięciach przedział 95% jest szeroki. To pomiar kierunku, nie wynik transakcji: bez kosztów, wejścia i celu.',
+      'TradingView has no such indicator. It is HyperQuant’s mechanization of Patrick Nill’s P and b range method: Nill does not publish exact drawing rules, so this is our version, not his. It is always computed from Hyperliquid 5m candles, whatever the chart interval: an impulse of up to 16 candles with a net move of at least 4 ATR (ATR of the 96 candles before the impulse), then a range of at least 4 h (48 candles) with at least 3 alternating edge touches (bands of 20% of the width) and a P shape after an up impulse (the range low in the upper half of the impulse) or b after a down impulse (mirrored); a zone lives 16 h or until the first close outside it. 👀 are places where the method would enter, without a target or a position: A range play (price within 10% of the width from an edge, alternating low and high), B confirmed breakout (edge retest and a close beyond the breakout candle, the method’s R:R at least 3), C fake breakout and a return into the zone within 2 candles (R:R at least 3). ⚡ at B and C: from the breakout to the place, tape aggression went the breakout’s way and OI rose. Dimmed 👀 are outside the day trading window (weekdays from 08:00 London to 14:00 New York). Lines: VAH, POC, VAL and LVN of the previous week’s volume profile (from Monday UTC, 10 bp bins) and VAH, POC and VAL of the previous UTC day (5 bp); “weekly level” at a zone means a weekly level lies within its reach ± 0.5 ATR. Every 👀 is checked with a barrier race: did the price travel one typical hour (the median range of the last 24 full hours) toward 👀 before travelling it against, within 4 h (✓ or ✗; both within one candle count against). The legend shows the result over the loaded candle history (about 2 weeks): without an edge it comes out near 50%, and with a dozen or so settlements the 95% interval is wide. It measures direction, not a trade result: no costs, entry or target.'
+    ),
+    memoryNote: tr(
+      'Liczone od nowa po każdej zamkniętej świecy 5m, z historii od tygodnia przed początkiem bieżącego tygodnia (profil poprzedniego tygodnia); świeca w trakcie nie wchodzi. Na interwałach do 1 h, na żywo (bez powtórki), na każdym rynku.',
+      'Recomputed after every closed 5m candle, from history starting a week before the current week (the previous week’s profile); the forming candle is not used. On intervals up to 1 h, live (not in replay), on every market.'
+    ),
+    pane: 'price',
+    params: [],
+    plots: [],
+    format: 'price',
+    pbRanges: true,
+  },
+  {
     id: 'twap',
     short: 'TWAP',
     name: tr('Udział TWAP w taśmie', 'TWAP share of the tape'),
@@ -2102,7 +2130,7 @@ export function indicatorLabel(x: IndicatorInstance): string {
  * wskaźnik przesunięty o świece wykresu (Ichimoku) i wskaźnik z danych spoza świec (taśma, otwarte pozycje).
  */
 export const tfAllowed = (def: IndicatorDef): boolean =>
-  !def.period && !def.fit && !def.flow && !def.series && !def.sample && !def.forecast && !def.outcomes && !def.plots.some((p) => p.shift);
+  !def.period && !def.fit && !def.flow && !def.series && !def.sample && !def.forecast && !def.outcomes && !def.pbRanges && !def.plots.some((p) => p.shift);
 
 /** Interwał wskaźnika: znany identyfikator interwału, a wskaźnik bez parametru „Interwał” go nie ma. */
 const tfOk = (def: IndicatorDef, tf: unknown): tf is string => tfAllowed(def) && INTERVALS.some((iv) => iv.id === tf && iv.ms !== MONTH);
