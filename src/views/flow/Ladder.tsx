@@ -251,7 +251,7 @@ export const Ladder: React.FC<LadderProps> = ({ store, hist, steps, stepId, onSt
         )}
         {!narrow && (
           <span className="relative text-right text-ink-2">
-            {trUsd > 0 && <span aria-hidden="true" className={`absolute bottom-0.5 right-0 h-[3px] rounded-full ${r.bid ? 'bg-of-sell/70' : 'bg-of-buy/60'}`} style={{ width: `${maxTr > 0 ? (trUsd / maxTr) * 100 : 0}%` }} />}
+            {trUsd > 0 && <span aria-hidden="true" className={`absolute bottom-0 right-0 h-[2px] rounded-full ${r.bid ? 'bg-of-sell/70' : 'bg-of-buy/60'}`} style={{ width: `max(6px, ${maxTr > 0 ? (trUsd / maxTr) * 100 : 0}%)` }} />}
             <span className="relative">{trUsd > 0 ? compact(trUsd) : ''}</span>
           </span>
         )}

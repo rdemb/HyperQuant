@@ -206,8 +206,9 @@ export const FlowTape: React.FC<{
       <div className="flex-1 min-h-0 overflow-y-auto [scrollbar-width:thin]">
         {rows.length === 0 && <p className="px-3 py-4 text-[11px] text-ink-3">{tr('Brak zleceń od tej wartości w nagraniu taśmy.', 'No orders from this value in the tape recording.')}</p>}
         {rows.map((r, i) => {
-          // Luka w nagraniu między tym wierszem a nowszym (np. historia serwera kończy się kilka minut przed otwarciem strony)
-          const gap = i > 0 ? tapeGap(spans, rowEnd(r), rowStart(rows[i - 1]), GAP_MIN_MS) : null;
+          // Luka w nagraniu między tym wierszem a nowszym albo, nad najnowszym, do teraz (np. historia serwera kończy się
+          // kilka minut przed otwarciem strony, a od otwarcia nie było jeszcze zlecenia od progu)
+          const gap = tapeGap(spans, rowEnd(r), i > 0 ? rowStart(rows[i - 1]) : store.serverNow(), GAP_MIN_MS);
           return (
             <React.Fragment key={`${r.kind}|${(r.kind === 'twap' ? r.latest : r.order).time}|${i}`}>
               {gap && (
