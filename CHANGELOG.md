@@ -155,6 +155,7 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 - Mapa sesji we wpisach bloga: podpis strefy scenariusza nie zasłania koła likwidacji ani jego kwoty; gdy koło stoi przy lewej krawędzi w tej samej wysokości, podpis przechodzi na prawy koniec strefy.
 - Footprint we wpisach bloga na telefonie: kolumna 30 min, w której jest tylko jedna świeca 15 min (początek okna albo przerwa w nagraniu taśmy), ma czas tej świecy, a nie początek półgodziny, więc podpisy zgadzają się z tytułem i z przypisem o brakujących świecach.
 - Mapa sesji we wpisach bloga: gdy coś stoi przy obu krawędziach strefy, jej podpis idzie tam, gdzie nie ucina podpisu kwoty likwidacji (Mapa dnia 30.10 na telefonie pokazywała „,1 mln USD” zamiast „14,1 mln USD”).
+- Mapa sesji we wpisach bloga: podpisy stref, które na siebie zachodzą, są rozsunięte o wysokość tła i nie przykrywają się nawzajem (Mapa tygodnia 1.11: podpis strefy bocznej zasłaniał dolną połowę podpisu „▲ 77 920–78 020”, na telefonie mocniej).
 
 ## [2.4.0] — 2026-10-22
 
