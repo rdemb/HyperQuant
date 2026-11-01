@@ -202,7 +202,8 @@ function addFootprint(vol: Float64Array, fp: FootprintBar, step: number, lo: num
   }
 }
 
-function addCandle(vol: Float64Array, c: Candle, step: number, lo: number, n: number): void {
+/** Wolumen świecy bez taśmy rozłożony równo na jej zakres H–L (wiersze `lo`..`lo + n − 1`). */
+export function addCandle(vol: Float64Array, c: Candle, step: number, lo: number, n: number): void {
   if (!(c.v > 0)) return;
   const k0 = Math.max(0, rowIndex(c.l, step) - lo);
   const k1 = Math.min(n - 1, rowIndex(c.h, step) - lo);

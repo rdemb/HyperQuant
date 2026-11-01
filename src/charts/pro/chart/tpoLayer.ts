@@ -5,33 +5,56 @@ import type {
   ISeriesApi,
   ISeriesPrimitive,
   Logical,
+  MouseEventParams,
+  Point,
   SeriesAttachedParameter,
   SeriesType,
   Time,
 } from 'lightweight-charts';
+import { fmtVol } from '../../orderflow/footprint';
+import { fmtSignedVol } from '../../orderflow/renderer';
 import { baseTick } from '../core/footprintBar';
 import { nakedPocs } from '../core/indicators';
 import { DAY } from '../core/time';
-import { TPO_LETTERS, TpoProfile, tpoInterval, tpoPocPx, tpoProfiles, tpoSingles } from '../core/tpo';
+import { TpoProfile, tpoDay, tpoDays, tpoInterval, tpoPocPx, tpoSingles } from '../core/tpo';
 import type { ProBar } from '../store/proStore';
-import { autoRowStep } from './layout';
+import { autoRowStep, fmtPx } from './layout';
 import { logicalOfTime } from './overlay';
 import { MONO, PRO, rgba } from './theme';
+import { tr } from '../../../i18n';
+import { numLang } from '../../../ui/format';
 
 /**
- * Profil czasowy (TPO) każdej doby na wykresie ceny: litery 30-minutowych okresów od początku doby w prawo
- * (przy małym zbliżeniu kolorowe kratki), kolor litery od pory dnia. POC dnia linią przez całą dobę, nagi POC
- * do prawej krawędzi, z lewej pasek value area i initial balance, z prawej znacznik pojedynczych wydruków i ogonów.
+ * Profil aukcji każdej doby na wykresie ceny (szablon Market Profile): od początku doby w prawo słupek wolumenu w każdym
+ * wierszu ceny. Kolor słupka mówi, która strona była agresywna na tej cenie (delta z taśmy: zieleń kupno, fiolet
+ * sprzedaż, im mocniejszy, tym większa przewaga; szary = bez przewagi albo bez taśmy). Cienki obrys to czas (TPO: ile
+ * 30-minutowych okresów doby dotknęło wiersza), przeskalowany do tego samego pola co wolumen doby: słupek dłuższy niż obrys
+ * znaczy, że na tej cenie obrót był szybszy niż średnio w dobie, obrys dłuższy niż słupek — cena tam stała przy małym
+ * obrocie. POC wolumenu linią przez dobę, nagi POC do prawej krawędzi, z lewej pasek value area i zakresu pierwszej
+ * godziny doby, przy wierszu znacznik pojedynczych wydruków i ogonów, pod profilem delta doby, pod krzyżem liczby wiersza.
  */
 
-/** Docelowa wysokość wiersza TPO (px) — litery muszą być czytelne. */
-const TPO_ROW_PX = 11;
-/** Profil zajmuje najwyżej taki ułamek szerokości doby. */
-const DAY_FILL = 0.92;
+/** Docelowa wysokość wiersza profilu (px). */
+const ROW_PX = 5;
+/** Najdłuższy słupek widocznych dób zajmuje taki ułamek szerokości doby. */
+const DAY_FILL = 0.75;
 const NAKED_MAX = 6;
-/** Poniżej tej wielkości czcionki litery zastępują kratki. */
-const MIN_FONT_PX = 7;
+/**
+ * Progi |kupno − sprzedaż| / (kupno + sprzedaż) wiersza dla kolejnych odcieni rampy strony (strona ma 55, 60, 67,5 i 77,5%
+ * wolumenu); poniżej pierwszego równowaga. Na taśmie BTC z 7 dób (25.10–1.11.2026, wiersz 25 USD) najsilniejszy odcień
+ * ma ok. 10% wolumenu, a równowagę ok. 30%.
+ */
+export const DELTA_STEPS = [0.1, 0.2, 0.35, 0.55] as const;
+/** Wiersz, w którym taśma ma mniejszy udział w wolumenie, rysujemy jako „bez taśmy”. */
+export const TAPE_MIN = 0.5;
+/** Delta doby pod profilem tylko na dobie szerszej niż tyle px. */
+const LABEL_MIN_W = 56;
+const FONT = `500 10px ${MONO}`;
 
+/** Krycie odcieni 1–4 strony agresywnej (0 = szary jak bez taśmy); poza value area słabiej. */
+const SIDE_ALPHA = [0.2, 0.34, 0.52, 0.74];
+const OUT_FACTOR = 0.6;
+const ramp = (c: string, f: number) => ['', ...SIDE_ALPHA.map((a) => rgba(c, a * f))];
 const T = {
   poc: PRO.profilePoc,
   nakedPoc: PRO.nakedPoc,
@@ -39,21 +62,68 @@ const T = {
   ib: PRO.svwap,
   single: PRO.warn,
   tail: rgba(PRO.ink2, 0.55),
-  outAlpha: 0.42,
-  // Tło pod literami przygasza świece pod profilem, żeby litery były czytelne
-  rowBg: rgba(PRO.bg, 0.8),
+  time: rgba(PRO.ink1, 0.7),
+  buyVa: ramp(PRO.buyInk, 1),
+  buyOut: ramp(PRO.buyInk, OUT_FACTOR),
+  sellVa: ramp(PRO.sellInk, 1),
+  sellOut: ramp(PRO.sellInk, OUT_FACTOR),
+  grayVa: rgba(PRO.profileVa, 0.6),
+  grayOut: rgba(PRO.profileOut, 0.4),
+  labelBg: rgba(PRO.bg, 0.8),
+  tipBg: rgba(PRO.bg, 0.94),
+  tipLine: rgba(PRO.ink3, 0.6),
 };
 
-/** Kolor okresu: od chłodnego (noc UTC) przez zielony i żółty do czerwonego (koniec doby). */
-const periodColor = (p: number): string => `hsl(${Math.round(205 - (p / (TPO_LETTERS.length - 1)) * 205)} 70% 62%)`;
-const COLORS = Array.from({ length: TPO_LETTERS.length }, (_, p) => periodColor(p));
+/** Odcień rampy strony (0 = równowaga, 4 = najsilniejsza przewaga) z agresywnego kupna i sprzedaży wiersza. */
+export function deltaLevel(buy: number, sell: number): number {
+  const v = buy + sell;
+  if (!(v > 0)) return 0;
+  const d = Math.abs(buy - sell) / v;
+  let k = 0;
+  while (k < DELTA_STEPS.length && d >= DELTA_STEPS[k]) k++;
+  return k;
+}
 
-interface Cell {
+/** Kolor wiersza: strona agresywna z taśmy; szary bez przewagi strony albo bez taśmy (liczby pod krzyżem mówią które). */
+function rowColor(p: TpoProfile, r: number): string {
+  const va = r >= p.vaLo && r <= p.vaHi;
+  const b = p.buy[r];
+  const s = p.sell[r];
+  const k = p.vol[r] > 0 && (b + s) / p.vol[r] >= TAPE_MIN ? deltaLevel(b, s) : 0;
+  if (k === 0) return va ? T.grayVa : T.grayOut;
+  return (b >= s ? (va ? T.buyVa : T.buyOut) : va ? T.sellVa : T.sellOut)[k];
+}
+
+const pct0 = (x: number) => `${Math.round(x * 100)}%`;
+const pct1 = (x: number) => `${numLang((x * 100).toFixed(1))}%`;
+
+/** Liczby wiersza pod krzyżem: zakres ceny, wolumen, strony agresji (albo brak taśmy) i czas. */
+export function rowTip(p: TpoProfile, r: number): string[] {
+  const lo = (p.lo + r) * p.step;
+  const v = p.vol[r];
+  const b = p.buy[r];
+  const s = p.sell[r];
+  const tape = v > 0 ? (b + s) / v : 0;
+  const side =
+    tape >= TAPE_MIN
+      ? tr(`Kupno ${pct0(b / (b + s))} · sprzedaż ${pct0(s / (b + s))}`, `Buy ${pct0(b / (b + s))} · sell ${pct0(s / (b + s))}`) +
+        (tape < 0.995 ? tr(` (taśma ${pct0(tape)})`, ` (tape ${pct0(tape)})`) : '')
+      : tr('Bez taśmy: wolumen ze świec', 'No tape: volume from candles');
+  const n = p.rows[r].length;
+  return [
+    `${fmtPx(lo)}–${fmtPx(lo + p.step)}`,
+    tr(`Wolumen ${fmtVol(v)} · ${pct1(p.total > 0 ? v / p.total : 0)} doby`, `Volume ${fmtVol(v)} · ${pct1(p.total > 0 ? v / p.total : 0)} of the day`),
+    side,
+    tr(`Czas: ${n} × 30 min`, `Time: ${n} × 30 min`),
+  ];
+}
+
+interface Rect {
   x: number;
   y: number;
-  p: number;
-  va: boolean;
-  poc: boolean;
+  w: number;
+  h: number;
+  color: string;
 }
 
 interface Mark {
@@ -72,6 +142,32 @@ interface Line {
   dash: boolean;
 }
 
+interface Label {
+  x: number;
+  y: number;
+  text: string;
+  color: string;
+}
+
+interface Tip {
+  x: number;
+  y: number;
+  right: number;
+  lines: string[];
+}
+
+interface DayCache {
+  step: number;
+  refs: readonly ProBar[];
+  p: TpoProfile | null;
+}
+
+const sameRefs = (refs: readonly ProBar[], bars: readonly ProBar[], from: number, to: number) => {
+  if (refs.length !== to - from + 1) return false;
+  for (let i = 0; i < refs.length; i++) if (refs[i] !== bars[from + i]) return false;
+  return true;
+};
+
 export class TpoLayer implements ISeriesPrimitive<Time> {
   private chart: IChartApiBase<Time> | null = null;
   private series: ISeriesApi<SeriesType, Time> | null = null;
@@ -81,39 +177,51 @@ export class TpoLayer implements ISeriesPrimitive<Time> {
   private bars: readonly ProBar[] = [];
   private ms = 60_000;
   private rightInset = 0;
-  private cache: { bars: readonly ProBar[]; step: number; list: TpoProfile[] } | null = null;
+  private hover: Point | null = null;
+  private cache = new Map<number, DayCache>();
 
-  private rowBgs: { x: number; y: number; w: number }[] = [];
-  private cells: Cell[] = [];
+  private rects: Rect[] = [];
+  private outlines: number[][] = [];
   private marks: Mark[] = [];
   private lines: Line[] = [];
-  private cw = 0;
-  private rh = 0;
-  private font = 0;
+  private labels: Label[] = [];
+  private tip: Tip | null = null;
   private readonly views: readonly IPrimitivePaneView[];
+
+  private readonly onMove = (p: MouseEventParams<Time>) => {
+    const next = p.point && p.paneIndex === 0 ? p.point : null;
+    if (next === null && this.hover === null) return;
+    this.hover = next;
+    if (this.on) this.requestUpdate?.();
+  };
 
   constructor(on: boolean) {
     this.on = on;
-    const renderer: IPrimitivePaneRenderer = {
+    // Słupki pod świecami (świece zostają czytelne), obrys czasu, linie i znaczniki nad nimi, liczby wiersza na wierzchu
+    const bars: IPrimitivePaneRenderer = {
       draw: (target) =>
         target.useMediaCoordinateSpace(({ context: ctx }) => {
-          if (this.cells.length === 0 && this.lines.length === 0) return;
-          ctx.fillStyle = T.rowBg;
-          for (const b of this.rowBgs) ctx.fillRect(b.x, b.y, b.w, this.rh);
-          const letters = this.font >= MIN_FONT_PX;
-          if (letters) {
-            ctx.font = `600 ${this.font}px ${MONO}`;
-            ctx.textAlign = 'left';
-            ctx.textBaseline = 'middle';
+          for (const r of this.rects) {
+            ctx.fillStyle = r.color;
+            ctx.fillRect(r.x, r.y, r.w, r.h);
           }
-          for (const c of this.cells) {
-            ctx.globalAlpha = c.va ? 1 : T.outAlpha;
-            ctx.fillStyle = c.poc ? PRO.pocFrame : COLORS[c.p];
-            if (letters) ctx.fillText(TPO_LETTERS[c.p], c.x, c.y + this.rh / 2);
-            else ctx.fillRect(c.x, c.y, Math.max(1, this.cw - 1), Math.max(1, this.rh - 1));
-          }
-          ctx.globalAlpha = 1;
+        }),
+    };
+    const over: IPrimitivePaneRenderer = {
+      draw: (target) =>
+        target.useMediaCoordinateSpace(({ context: ctx }) => {
           ctx.lineWidth = 1;
+          ctx.strokeStyle = T.time;
+          for (const pts of this.outlines) {
+            ctx.beginPath();
+            for (let i = 0; i < pts.length; i += 2) {
+              const px = Math.round(pts[i]) + 0.5;
+              const py = Math.round(pts[i + 1]) + 0.5;
+              if (i === 0) ctx.moveTo(px, py);
+              else ctx.lineTo(px, py);
+            }
+            ctx.stroke();
+          }
           for (const l of this.lines) {
             ctx.strokeStyle = l.color;
             ctx.setLineDash(l.dash ? [4, 3] : []);
@@ -128,18 +236,58 @@ export class TpoLayer implements ISeriesPrimitive<Time> {
             ctx.fillStyle = m.color;
             ctx.fillRect(m.x, Math.min(m.y0, m.y1), m.w, Math.max(1, Math.abs(m.y1 - m.y0)));
           }
+          ctx.font = FONT;
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'middle';
+          for (const l of this.labels) {
+            const w = ctx.measureText(l.text).width;
+            ctx.fillStyle = T.labelBg;
+            ctx.fillRect(l.x - 2, l.y - 7, w + 4, 14);
+            ctx.fillStyle = l.color;
+            ctx.fillText(l.text, l.x, l.y);
+          }
         }),
     };
-    this.views = [{ zOrder: () => 'normal', renderer: () => renderer }];
+    const tipR: IPrimitivePaneRenderer = {
+      draw: (target) =>
+        target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
+          const tip = this.tip;
+          if (!tip) return;
+          ctx.font = FONT;
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'middle';
+          const lh = 14;
+          const w = Math.max(...tip.lines.map((s) => ctx.measureText(s).width)) + 12;
+          const h = tip.lines.length * lh + 8;
+          const x = Math.max(4, Math.min(tip.x, tip.right - w - 4));
+          const y = Math.max(4, Math.min(tip.y - h / 2, mediaSize.height - h - 4));
+          ctx.fillStyle = T.tipBg;
+          ctx.fillRect(x, y, w, h);
+          ctx.lineWidth = 1;
+          ctx.strokeStyle = T.tipLine;
+          ctx.strokeRect(Math.round(x) + 0.5, Math.round(y) + 0.5, Math.round(w) - 1, Math.round(h) - 1);
+          tip.lines.forEach((s, i) => {
+            ctx.fillStyle = i === 0 ? PRO.ink1 : PRO.ink2;
+            ctx.fillText(s, x + 6, y + 4 + lh / 2 + i * lh);
+          });
+        }),
+    };
+    this.views = [
+      { zOrder: () => 'bottom', renderer: () => bars },
+      { zOrder: () => 'normal', renderer: () => over },
+      { zOrder: () => 'top', renderer: () => tipR },
+    ];
   }
 
   attached(p: SeriesAttachedParameter<Time>): void {
     this.chart = p.chart;
     this.series = p.series;
     this.requestUpdate = p.requestUpdate;
+    p.chart.subscribeCrosshairMove(this.onMove);
   }
 
   detached(): void {
+    this.chart?.unsubscribeCrosshairMove(this.onMove);
     this.chart = null;
     this.series = null;
     this.requestUpdate = null;
@@ -165,11 +313,31 @@ export class TpoLayer implements ISeriesPrimitive<Time> {
     this.requestUpdate?.();
   }
 
+  /** Profile dób na siatce `step`; doba liczona od nowa tylko wtedy, gdy zmieniła się któraś jej świeca albo krok. */
+  private profiles(bars: readonly ProBar[], step: number): TpoProfile[] {
+    const next = new Map<number, DayCache>();
+    const out: TpoProfile[] = [];
+    for (const d of tpoDays(bars)) {
+      const key = bars[d.from].t;
+      const hit = this.cache.get(key);
+      const entry =
+        hit && hit.step === step && sameRefs(hit.refs, bars, d.from, d.to) && hit.p?.complete === d.complete
+          ? hit
+          : { step, refs: bars.slice(d.from, d.to + 1), p: tpoDay(bars, d.from, d.to, step, d.complete) };
+      next.set(key, entry);
+      if (entry.p) out.push(entry.p);
+    }
+    this.cache = next;
+    return out;
+  }
+
   updateAllViews(): void {
-    this.rowBgs = [];
-    this.cells = [];
+    this.rects = [];
+    this.outlines = [];
     this.marks = [];
     this.lines = [];
+    this.labels = [];
+    this.tip = null;
     const chart = this.chart;
     const series = this.series;
     const bars = this.bars;
@@ -187,30 +355,21 @@ export class TpoLayer implements ISeriesPrimitive<Time> {
     const yb = y(ref + 100);
     if (ya === null || yb === null) return;
     const pxPerUsd = Math.abs(ya - yb) / 100;
-    const step = pxPerUsd > 0 ? autoRowStep(pxPerUsd, baseTick(ref), TPO_ROW_PX) : 0;
+    const step = pxPerUsd > 0 ? autoRowStep(pxPerUsd, baseTick(ref), ROW_PX) : 0;
     if (!(step > 0)) return;
-    if (!this.cache || this.cache.bars !== bars || this.cache.step !== step) this.cache = { bars, step, list: tpoProfiles(bars, step) };
-    const list = this.cache.list;
-    const rh = step * pxPerUsd;
+    const list = this.profiles(bars, step);
+    const gap = step * pxPerUsd >= 3 ? 1 : 0;
     // Lewa krawędź świecy o początku t (także poza danymi)
     const x = (t: number) => xa + (logicalOfTime(bars, t, this.ms) - 0.5) * sp;
     const vf = bars[Math.max(0, Math.floor(range.from))]?.t ?? bars[0].t;
     const vt = bars[Math.min(bars.length - 1, Math.ceil(range.to))]?.t ?? bars[bars.length - 1].t;
+    const visible = (p: TpoProfile) => p.day + DAY > vf && p.day <= vt;
 
-    // Wspólna szerokość litery dla widocznych dób, żeby profile dało się porównać
-    let maxCount = 1;
-    for (const p of list) {
-      if (p.day + DAY <= vf || p.day > vt) continue;
-      for (const r of p.rows) maxCount = Math.max(maxCount, r.length);
-    }
-    const dayW = DAY / this.ms * sp;
-    let font = Math.min(12, Math.floor(rh) - 1);
-    let cw = Math.min(font * 0.62 + 2, (dayW * DAY_FILL) / maxCount);
-    if (cw < font * 0.62 + 1) font = Math.floor((cw - 1) / 0.62);
-    if (cw < 1) cw = 1;
-    this.cw = cw;
-    this.rh = rh;
-    this.font = font;
+    // Wspólna skala wolumenu widocznych dób, żeby profile dało się porównać
+    let maxVol = 0;
+    for (const p of list) if (visible(p)) maxVol = Math.max(maxVol, p.max);
+    const kVol = maxVol > 0 ? ((DAY / this.ms) * sp * DAY_FILL) / maxVol : 0;
+    const hv = this.hover;
 
     const naked = nakedPocs(bars, list.map((p) => ({ to: p.to, complete: p.complete, pocPx: tpoPocPx(p) })));
     let shownNaked = 0;
@@ -223,38 +382,55 @@ export class TpoLayer implements ISeriesPrimitive<Time> {
         shownNaked++;
         this.lines.push({ x0: Math.max(0, x1), x1: right, y: yPoc, color: T.nakedPoc, dash: true });
       }
-      if (p.day + DAY <= vf || p.day > vt || x0 > right) continue;
+      if (!visible(p) || x0 > right) continue;
+      const w = Math.max(0, x1 - x0);
+      // Czas w tym samym polu co wolumen doby: px na jeden okres 30 min
+      let periods = 0;
+      for (const r of p.rows) periods += r.length;
+      const kTime = periods > 0 ? (p.total * kVol) / periods : 0;
       const { singles, tails } = tpoSingles(p);
-      let widest = 0;
+      const pts: number[] = [];
       for (let r = 0; r < p.rows.length; r++) {
-        const yTop = y((p.lo + r + 1) * step);
-        if (yTop === null) continue;
-        const row = p.rows[r];
-        const va = r >= p.vaLo && r <= p.vaHi;
-        this.rowBgs.push({ x: x0 - 1, y: yTop, w: Math.max(0, Math.min(row.length * cw, x1 - x0)) + 2 });
-        for (let i = 0; i < row.length; i++) {
-          const cx = x0 + i * cw;
-          if (cx >= x1) break;
-          this.cells.push({ x: cx, y: yTop, p: row[i], va, poc: r === p.poc });
+        const yTop = y((p.lo + r + 1) * p.step);
+        const yBot = y((p.lo + r) * p.step);
+        if (yTop === null || yBot === null) continue;
+        const wv = Math.min(w, p.vol[r] * kVol);
+        const wt = Math.min(w, p.rows[r].length * kTime);
+        if (wv > 0) this.rects.push({ x: x0, y: yTop, w: Math.max(1, wv), h: Math.max(1, yBot - yTop - gap), color: rowColor(p, r) });
+        if (pts.length === 0) pts.push(x0, yBot);
+        pts.push(x0 + wt, yBot, x0 + wt, yTop);
+        const end = x0 + Math.max(wv, wt);
+        if (singles[r] || tails[r]) this.marks.push({ x: Math.min(x1, end + 2), y0: yTop, y1: yBot, color: singles[r] ? T.single : T.tail, w: 2 });
+        if (hv && hv.y >= yTop && hv.y < yBot && hv.x >= x0 && hv.x <= Math.min(x1, end + 4)) {
+          this.tip = { x: Math.min(x1, end) + 10, y: (yTop + yBot) / 2, right, lines: rowTip(p, r) };
         }
-        widest = Math.max(widest, row.length);
+      }
+      if (pts.length > 0) {
+        pts.push(x0, pts[pts.length - 1]);
+        this.outlines.push(pts);
       }
       if (yPoc !== null) this.lines.push({ x0, x1, y: yPoc, color: T.poc, dash: false });
-      // Pasek value area i initial balance z lewej strony profilu
-      const yVah = y((p.lo + p.vaHi + 1) * step);
-      const yVal = y((p.lo + p.vaLo) * step);
+      // Pasek value area i pierwszej godziny doby z lewej strony profilu
+      const yVah = y((p.lo + p.vaHi + 1) * p.step);
+      const yVal = y((p.lo + p.vaLo) * p.step);
       if (yVah !== null && yVal !== null) this.marks.push({ x: x0 - 3, y0: yVah, y1: yVal, color: T.va, w: 2 });
       if (p.ib) {
         const yh = y(p.ib.hi);
         const yl = y(p.ib.lo);
         if (yh !== null && yl !== null) this.marks.push({ x: x0 - 7, y0: yh, y1: yl, color: T.ib, w: 2 });
       }
-      // Pojedyncze wydruki i ogony: pasek za ostatnią literą wiersza
+      // Delta doby z taśmy pod profilem (z udziałem taśmy w wolumenie, gdy nie objęła całej doby)
+      let buy = 0;
+      let sell = 0;
       for (let r = 0; r < p.rows.length; r++) {
-        if (!singles[r] && !tails[r]) continue;
-        const yTop = y((p.lo + r + 1) * step);
-        if (yTop === null) continue;
-        this.marks.push({ x: Math.min(x1, x0 + widest * cw + 2), y0: yTop, y1: yTop + rh, color: singles[r] ? T.single : T.tail, w: 2 });
+        buy += p.buy[r];
+        sell += p.sell[r];
+      }
+      const share = p.total > 0 ? (buy + sell) / p.total : 0;
+      const yLow = y(p.lo * p.step);
+      if (share >= 0.05 && w >= LABEL_MIN_W && yLow !== null) {
+        const tape = share < 0.995 ? tr(` · taśma ${pct0(share)}`, ` · tape ${pct0(share)}`) : '';
+        this.labels.push({ x: x0 + 2, y: yLow + 10, text: `Δ ${fmtSignedVol(buy - sell)}${tape}`, color: buy >= sell ? PRO.buyInk : PRO.sellInk });
       }
     }
   }

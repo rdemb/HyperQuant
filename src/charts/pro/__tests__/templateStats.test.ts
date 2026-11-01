@@ -23,15 +23,16 @@ const day = (d: number, periods: [number, number, number, number][], rest: numbe
     return p ? c(d + i * M30, ...p) : c(d + i * M30, rest, rest + 0.2, rest - 0.2, rest);
   });
 
-// Doba wzorcowa przy wierszu 1 USD: 40 okresów 100–100,9 i 8 okresów 100–104,9 → VA = wiersze 100–101, czyli 100–102
+// Doba wzorcowa przy wierszu 1 USD: 40 okresów 100–101,9 i 8 okresów 100–104,9 (wolumen 1 równo w zakresie świecy)
+// → wiersze 100 i 101 mają 22,7 i 20,6 z 48, VA = wiersze 100–101, czyli 100–102
 const prevDay = (d: number) =>
   day(
     d,
-    Array.from({ length: 48 }, (_, i) => (i < 8 ? [100.5, 104.9, 100, 100.5] : [100.5, 100.9, 100, 100.5])),
+    Array.from({ length: 48 }, (_, i) => (i < 8 ? [100.5, 104.9, 100, 100.5] : [100.5, 101.9, 100, 100.5])),
     100.5
   );
 
-describe('karta uczciwości: VA doby (reguła Daltona na TPO)', () => {
+describe('karta uczciwości: VA doby (reguła Daltona na profilu wolumenu)', () => {
   // Pary (wzorcowa, badana) przedzielone brakującą dobą, żeby badana nie była poprzednią dla następnej pary
   const cases: [number, number, number, number][][] = [
     // 1. Otwarcie nad VA, powrót (zamknięcia 101,5 i 101), potem dołek 99,5 ≤ VAL → doszło
