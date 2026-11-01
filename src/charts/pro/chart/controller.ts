@@ -35,6 +35,7 @@ import { IndicatorOverlay, IndicatorToggles, IndicatorValues, WhaleView } from '
 import { LegendPart, PaneLegend } from './paneLegend';
 import { STATS_BAR_SPACING, StatsTable, tableHeight } from './statsTable';
 import { ZonesLayer } from './zonesLayer';
+import { CHART_PLUGINS, ChartPluginLayer } from './plugins';
 import { TpoLayer } from './tpoLayer';
 import { CoverageRow, CoverageStrip, DataSource, coverageRows, mergedRows, needsOf, storeSource } from './coverageStrip';
 import { tpoInterval } from '../core/tpo';
@@ -271,6 +272,7 @@ export class ProChartController {
   private stripRows: CoverageRow[] = [];
   private stripAt = 0;
   private readonly zones: ZonesLayer;
+  private readonly plugins: ChartPluginLayer[] = [];
   private readonly tpo: TpoLayer;
   private priceTick = 1;
   /** Cena przeliczenia progu nierównowagi z USD na jednostki rynku (ustalana przy pełnym odświeżeniu danych). */
@@ -396,6 +398,11 @@ export class ProChartController {
     this.main.attachPrimitive(this.zones);
     this.tpo = new TpoLayer(settings.showTpo);
     this.main.attachPrimitive(this.tpo);
+    for (const p of CHART_PLUGINS) {
+      const layer = p.create();
+      this.plugins.push(layer);
+      this.main.attachPrimitive(layer);
+    }
     this.main.attachPrimitive(this.cone);
     this.main.attachPrimitive(this.hip4);
     this.main.attachPrimitive(this.countdown);
@@ -562,6 +569,7 @@ export class ProChartController {
     this.overlay.setRightInset(px);
     this.zones.setRightInset(px);
     this.tpo.setRightInset(px);
+    for (const p of this.plugins) p.setRightInset?.(px);
     this.chart.timeScale().applyOptions({ rightOffsetPixels: this.rightGap() });
   }
 
@@ -1182,6 +1190,7 @@ export class ProChartController {
     this.liquidity.setData(next, ms, this.liqSource, now, this.bigTradeUsd);
     this.zones.setData(next, ms, now);
     this.tpo.setData(next, ms);
+    for (const p of this.plugins) p.setData(next, ms, now, st);
     if (full || now - this.stripAt >= STRIP_EVERY_MS) {
       this.stripAt = now;
       const rows = coverageRows(storeSource(st), this.needs, now);
