@@ -291,11 +291,17 @@ export function sessionSvg(s, { narrow = false, zones = [], levels = null, uid =
     out.push(text(x, biggest.cy, label, { size: 9, fill: C.ink2, anchor: left ? 'end' : 'start' }));
   }
 
-  // Podpisy stref na wierzchu, na tle wykresu (czytelne także nad świecami); przy lewej krawędzi, a gdy tam zasłaniają koło likwidacji, przy prawej
-  for (const z of zones) {
+  // Podpisy stref na wierzchu, na tle wykresu (czytelne także nad świecami); przy lewej krawędzi, a gdy tam zasłaniają koło likwidacji, przy prawej.
+  // Strefy zachodzące na siebie mają środki blisko, więc podpisy rozsuwamy o wysokość tła, żeby jedno nie przykrywało drugiego.
+  const zoneRows = spreadLabels(
+    zones.map((z) => ({ z, y: (y(z.zone[0]) + y(z.zone[1])) / 2 })),
+    15,
+    priceTop + 7,
+    priceTop + priceH - 7
+  );
+  for (const { z, ly: yy } of zoneRows) {
     const [a, b] = z.zone;
     const label = `${z.bias === 'up' ? '▲' : z.bias === 'down' ? '▼' : '◆'} ${px0(a)}–${px0(b)}`;
-    const yy = (y(a) + y(b)) / 2;
     const w = label.length * 5.6 + 8;
     const x0 = zoneLabelX(marks, yy, w, plotW);
     out.push(rect(x0, yy - 7, w, 14, C.bg, ' fill-opacity="0.85" rx="2"'));
