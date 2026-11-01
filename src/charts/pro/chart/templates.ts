@@ -130,8 +130,8 @@ export const BUILT_IN_TEMPLATES: readonly ChartTemplate[] = [
     showLiq: true,
     showWhales: true,
   }),
-  // Teoria aukcji (Steidlmayer, Dalton): TPO dób z value area, pasma VWAP i IB sesji
-  built('tpo', tr('Market Profile 30m: TPO, value area, IB', 'Market Profile 30m: TPO, value area, IB'), {
+  // Teoria aukcji (Steidlmayer, Dalton): profile dób (wolumen, agresja, czas TPO) z value area, pasma VWAP i IB sesji
+  built('tpo', tr('Market Profile 30m: wolumen, agresja, czas, value area, IB', 'Market Profile 30m: volume, aggression, time, value area, IB'), {
     ...bare,
     interval: '30m',
     showTpo: true,
