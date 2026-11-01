@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { Candle } from '../hl/parse';
 import { FootprintBuilder } from '../core/footprintBar';
-import { TPO_PERIOD_MS, tpoDays, tpoInterval, tpoPocPx, tpoProfiles, tpoSingles } from '../core/tpo';
+import { TPO_PERIOD_MS, tapeDayProfile, tpoDay, tpoDays, tpoInterval, tpoPocPx, tpoProfiles, tpoSingles } from '../core/tpo';
+import { OiLog } from '../core/stats';
+import { Tape } from '../core/tape';
 import { DAY } from '../core/time';
-import { deltaLevel, rowTip } from '../chart/tpoLayer';
+import { deltaLevel, posOf, posTip, rowTip } from '../chart/tpoLayer';
+import type { DayProfile } from '../../../utils/dayProfile';
 
 const D0 = 20_000 * DAY;
 const P = TPO_PERIOD_MS;
@@ -107,5 +110,67 @@ describe('profil aukcji doby (TPO + wolumen + agresja)', () => {
     expect(rowTip(p, 0).slice(1)).toEqual(['Wolumen 4,00 · 100,0% doby', 'Kupno 67% · sprzedaż 33% (taśma 75%)', 'Czas: 2 × 30 min']);
     const [q] = tpoProfiles([bar(D0, 100, 100.5)], 1);
     expect(rowTip(q, 0)[2]).toBe('Bez taśmy: wolumen ze świec');
+  });
+
+  it('doba z profilem serwera: kupno, sprzedaż i OI z pliku zamiast footprintu, reszta wolumenu świecy z wolumenu minut pliku', () => {
+    const mv = new Array<number>(1440).fill(0);
+    mv[0] = 4; // pierwsza świeca 30m: taśma 4 z 5, druga bez taśmy
+    const file: DayProfile = { coin: 'BTC', day: D0, tick: 1, lo: 100, buy: [2, 1, 0], sell: [0, 1, 0], ob: [1, 0, 0], os: [0, 0, 0], cb: [0, 0, 0], cs: [0, 0.5, 0], mv, oiVol: 4 };
+    const fp = new FootprintBuilder(D0, 1);
+    fp.add(D0, 101.5, 9, -1);
+    const bars = [
+      { ...bar(D0, 100, 102), candle: { t: D0, o: 100, h: 102, l: 100, c: 101, v: 5, n: 1 }, fp: fp.build(), complete: true },
+      { ...bar(D0 + P, 100, 102), candle: { t: D0 + P, o: 100, h: 102, l: 100, c: 101, v: 0.4, n: 1 } },
+    ];
+    const p = tpoDay(bars, 0, 1, 1, false, { file, ms: P })!;
+    expect([...p.buy]).toEqual([2, 1, 0]);
+    expect([...p.sell]).toEqual([0, 1, 0]);
+    // Reszta 1 i 0,4 równo na 100–102 (wiersze 100 i 101)
+    expect([...p.vol].map((v) => +v.toFixed(6))).toEqual([2.7, 2.7, 0]);
+    expect(p.total).toBeCloseTo(5.4);
+    expect([...p.ob, ...p.cs]).toEqual([1, 0, 0, 0, 0.5, 0]);
+    expect(p.oiShare).toBe(1);
+    // Wiersz 100: OI netto +1 przy taśmie 2 → nowe longi, najsilniejszy odcień; 101: −0,5 → zamykanie longów; 102 bez taśmy
+    expect(posOf(p, 0)).toMatchObject({ kind: 1, level: 4, net: 1, known: true });
+    expect(posOf(p, 1)).toMatchObject({ kind: 4, level: 3, known: true });
+    expect(posOf(p, 2)).toMatchObject({ kind: 0, known: false });
+    expect(posTip(p, 0)).toEqual(['OI +1,00 · nowe longi', 'OI rośnie: przy kupnie 1,00 · przy sprzedaży 0', 'OI spada: przy kupnie 0 · przy sprzedaży 0']);
+    // Za mało taśmy w minutach z odczytem OI — bez koloru pozycji
+    const q = tpoDay(bars, 0, 1, 1, false, { file: { ...file, oiVol: 1 }, ms: P })!;
+    expect(posOf(q, 0).known).toBe(false);
+    expect(posTip(q, 0)).toEqual(['Pozycje: bez danych OI']);
+  });
+
+  it('doba bez pliku: kupno i sprzedaż z footprintu świec, OI z profilu taśmy w pamięci (odczyt OI na koniec minuty)', () => {
+    const tape = new Tape();
+    tape.insert([
+      { t: D0 + 1_000, px: 100.5, sz: 2, side: 1, tid: 1 },
+      { t: D0 + 2_000, px: 101.5, sz: 2, side: 1, tid: 2 },
+      { t: D0 + 60_000 + 1_000, px: 100.5, sz: 1, side: -1, tid: 3 },
+      { t: D0 + 120_000 + 1_000, px: 100.5, sz: 1, side: 1, tid: 4 },
+    ]);
+    const oi = new OiLog();
+    // Z serwera: odczyt minuty opisany jej początkiem (stan na koniec minuty); na żywo — chwilą odczytu
+    oi.restore([
+      [D0 - 60_000, 1000],
+      [D0, 1004],
+    ]);
+    oi.push(D0 + 60_000 + 30_000, 1003);
+    const flow = tapeDayProfile(tape, oi, 'BTC', D0, 1)!;
+    // Minuta 0: OI +4 na wolumenie 4 przy kupnie; minuta 1: −1 przy sprzedaży; minuta 2: brak odczytu po jej początku
+    expect(Array.from(flow.ob)).toEqual([2, 2]);
+    expect(Array.from(flow.cs)).toEqual([1, 0]);
+    expect(flow.oiVol).toBe(5);
+    const fp = new FootprintBuilder(D0, 1);
+    fp.add(D0 + 1_000, 100.5, 2, 1);
+    fp.add(D0 + 2_000, 101.5, 2, 1);
+    fp.add(D0 + 61_000, 100.5, 1, -1);
+    fp.add(D0 + 121_000, 100.5, 1, 1);
+    const bars = [{ ...bar(D0, 100, 101.5), candle: { t: D0, o: 100, h: 101.5, l: 100, c: 101, v: 6, n: 4 }, fp: fp.build(), complete: true }];
+    const p = tpoDay(bars, 0, 0, 1, false, { flow, ms: P })!;
+    expect([...p.buy]).toEqual([3, 2]);
+    expect([...p.sell]).toEqual([1, 0]);
+    expect([...p.ob]).toEqual([2, 2]);
+    expect(p.oiShare).toBeCloseTo(5 / 6);
   });
 });

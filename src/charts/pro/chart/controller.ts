@@ -25,6 +25,7 @@ import { hlTick, rowAt } from '../core/footprintBar';
 import type { LiqLevel } from '../core/indicators';
 import type { ResetMode } from '../core/sessions';
 import type { CandleSeries, ProBar, ProStore } from '../store/proStore';
+import { requestDayProfiles } from '../store/dayProfiles';
 import { requestHistory } from '../store/serverHistory';
 import { DrawingLayer } from '../draw/layer';
 import { DrawingTools } from '../draw/tools';
@@ -399,7 +400,7 @@ export class ProChartController {
     this.main.attachPrimitive(this.overlay);
     this.zones = new ZonesLayer({ showZones: settings.showZones, showAuctions: settings.showAuctions });
     this.main.attachPrimitive(this.zones);
-    this.tpo = new TpoLayer(settings.showTpo);
+    this.tpo = new TpoLayer(settings.showTpo, settings.showTpoOi);
     this.main.attachPrimitive(this.tpo);
     for (const p of CHART_PLUGINS) {
       const layer = p.create();
@@ -493,7 +494,8 @@ export class ProChartController {
       stackedMin: s.stackedMin,
     });
     this.overlay.setToggles(toggles(s, this.series.interval.ms));
-    this.tpo.setOn(s.showTpo);
+    this.tpo.setOn(s.showTpo, s.showTpoOi);
+    if (tpoShown(s, this.series.interval.ms) && this.bars.length > 0) requestDayProfiles(this.store, this.bars[0].t);
     this.needs = needsOf(s);
     this.stripAt = 0;
     this.liquidity.setToggles(liqToggles(s));
@@ -1205,7 +1207,7 @@ export class ProChartController {
     this.liqSource.far = st.book('far');
     this.liquidity.setData(next, ms, this.liqSource, now, this.bigTradeUsd);
     this.zones.setData(next, ms, now);
-    this.tpo.setData(next, ms);
+    this.tpo.setData(next, ms, st);
     for (const p of this.plugins) p.setData(next, ms, now, st);
     this.pb.setData(next, ms, now, st, this.phone);
     if (full || now - this.stripAt >= STRIP_EVERY_MS) {
@@ -1437,6 +1439,8 @@ export class ProChartController {
     const left = this.bars[Math.min(this.bars.length - 1, Math.max(0, Math.floor(range.from)))].t;
     const span = Math.max(0, ...this.indShown.map((x) => indicatorDef(x.id).lookback?.(x.params) ?? 0));
     requestHistory(this.store, left - span * this.series.interval.ms);
+    // Profile zamkniętych dób z serwera (kolor profilu doby starszych dób)
+    if (tpoShown(this.settings, this.series.interval.ms)) requestDayProfiles(this.store, left);
   };
 
   /** Kliknięcie: opis wskaźnika (jego ustawienia), krzyżyk ukrycia panelu, obiekt warstwy płynności pod kursorem albo nic (zamyka kartę). */

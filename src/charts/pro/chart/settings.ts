@@ -45,6 +45,8 @@ export interface ChartSettings {
   showDevPoc: boolean;
   /** Profil każdej doby (wolumen, agresja z taśmy, czas TPO); zastępuje profile sesji. */
   showTpo: boolean;
+  /** Kolor profilu doby ze zmiany OI na cenach (nowe i zamykane pozycje) zamiast agresji. */
+  showTpoOi: boolean;
   showLevels: boolean;
   showSessions: boolean;
   showIb: boolean;
@@ -102,6 +104,7 @@ export const DEFAULT_SETTINGS: ChartSettings = {
   showPeriodProfiles: false,
   showDevPoc: false,
   showTpo: false,
+  showTpoOi: false,
   showLevels: true,
   showSessions: true,
   showIb: false,
@@ -194,6 +197,7 @@ export function parseSettings(raw: unknown, d: ChartSettings = DEFAULT_SETTINGS)
     showPeriodProfiles: bool(r.showPeriodProfiles, d.showPeriodProfiles),
     showDevPoc: bool(r.showDevPoc, d.showDevPoc),
     showTpo: bool(r.showTpo, d.showTpo),
+    showTpoOi: bool(r.showTpoOi, d.showTpoOi),
     showLevels: bool(r.showLevels, d.showLevels),
     showSessions: bool(r.showSessions, d.showSessions),
     showIb: bool(r.showIb, d.showIb),
