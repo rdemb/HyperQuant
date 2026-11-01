@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import { describe, expect, it, vi } from 'vitest';
 import { decodeBook, decodeTrades, encodeTrades, historyPath } from '../../../src/utils/tapeHistory.ts';
+import { decodeDayProfile, dayProfilePath } from '../../../src/utils/dayProfile.ts';
 import { MarketRecorder, SETTLE_MS, historyIndex, pruneHistory } from '../history.ts';
 import { prepareHistoryRepo, publishHistory } from '../historyGit.ts';
 import type { HlTrade } from '../hl.ts';
@@ -198,10 +199,56 @@ describe('historyIndex i pruneHistory', () => {
     }
     put(historyPath('BTC', T0 + 65 * MIN, 'trades', true)); // bez pliku arkusza — pominięta
     const idx = historyIndex(dir, ['BTC', 'ETH'], 2, T0);
-    expect(idx.markets.BTC).toEqual({ hours: [T0 - 3 * 86_400_000, T0], parts: [T0 + 60 * MIN] });
-    expect(idx.markets.ETH).toEqual({ hours: [], parts: [] });
+    expect(idx.markets.BTC).toEqual({ hours: [T0 - 3 * 86_400_000, T0], parts: [T0 + 60 * MIN], days: [] });
+    expect(idx.markets.ETH).toEqual({ hours: [], parts: [], days: [] });
     expect(pruneHistory(dir, ['BTC'], 2, T0)).toBe(1);
     expect(historyIndex(dir, ['BTC'], 2, T0).markets.BTC.hours).toEqual([T0]);
+  });
+});
+
+describe('profile dób — kupno, sprzedaż i zmiana OI na cenach z plików godzinowych', () => {
+  it('doba zamknięta bez części: profil z OI minut (pierwsza minuta z doby poprzedniej); doba z częściami i bieżąca czekają', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hq-hist-'));
+    const D = Date.UTC(2026, 9, 24);
+    const DAY = 86_400_000;
+    const hist = (t: number, tid: number, side: 'B' | 'A', px: number, sz: number) => ({ t, px, sz, side, tid, o: -1, k: -1, m: -1 });
+    const ctx = (t: number, oi: number) => ({ t, oi, funding: 0, mark: 80_000 });
+    const put = (start: number, trades: ReturnType<typeof hist>[], cs: ReturnType<typeof ctx>[], part = false) => {
+      const rel = historyPath('BTC', start, 'trades', part);
+      mkdirSync(join(dir, rel, '..'), { recursive: true });
+      writeFileSync(join(dir, rel), gzipSync(JSON.stringify(encodeTrades('BTC', start, start + (part ? 5 : 60) * MIN, [[start, start + 60 * MIN]], trades, cs))));
+    };
+    // Ostatnia minuta doby poprzedniej: OI 1000
+    put(D - 60 * MIN, [], [ctx(D - MIN, 1000)]);
+    // Minuta 0: kupno 2 na 80 000, sprzedaż 1 na 80 001, OI +6; minuta 1: sprzedaż 1 na 80 000, OI −2; minuta 2 bez OI
+    put(
+      D,
+      [hist(D + 1, 1, 'B', 80_000, 2), hist(D + 2, 2, 'A', 80_001, 1), hist(D + MIN + 1, 3, 'A', 80_000, 1), hist(D + 2 * MIN + 1, 4, 'B', 80_002, 1)],
+      [ctx(D, 1006), ctx(D + MIN, 1004)]
+    );
+    // Doba następna jeszcze z częścią (niepołączona godzina) i doba bieżąca
+    put(D + DAY + 60 * MIN, [hist(D + DAY + 60 * MIN + 1, 5, 'B', 80_000, 1)], [], true);
+    put(D + 2 * DAY, [hist(D + 2 * DAY + 1, 6, 'B', 80_000, 1)], []);
+    const r = new MarketRecorder('BTC', dir);
+    const now = D + 2 * DAY + 3 * 60 * MIN;
+    expect(r.profiles(now)).toBe(1);
+    expect(r.profiles(now)).toBe(0);
+    const p = decodeDayProfile(JSON.parse(gunzipSync(readFileSync(join(dir, dayProfilePath('BTC', D)))).toString('utf8')));
+    expect(p).not.toBeNull();
+    expect([p!.tick, p!.lo]).toEqual([1, 80_000]);
+    expect(Array.from(p!.buy)).toEqual([2, 0, 1]);
+    expect(Array.from(p!.sell)).toEqual([1, 1, 0]);
+    // OI +6 na wolumenie 3 przy przewadze kupna: 4 i 2 w części „OI rośnie przy kupnie”; −2 przy sprzedaży
+    expect(Array.from(p!.ob)).toEqual([4, 2, 0]);
+    expect([...Array.from(p!.os), ...Array.from(p!.cb)]).toEqual([0, 0, 0, 0, 0, 0]);
+    expect(Array.from(p!.cs)).toEqual([2, 0, 0]);
+    expect([p!.mv[0], p!.mv[1], p!.mv[2], p!.mv[3]]).toEqual([3, 1, 1, 0]);
+    expect(p!.oiVol).toBe(4);
+    expect(existsSync(join(dir, dayProfilePath('BTC', D + DAY)))).toBe(false);
+    expect(existsSync(join(dir, dayProfilePath('BTC', D + 2 * DAY)))).toBe(false);
+    expect(historyIndex(dir, ['BTC'], 7, now).markets.BTC.days).toEqual([D]);
+    // Nowe uruchomienie: ważny plik zostaje bez ponownego liczenia
+    expect(new MarketRecorder('BTC', dir).profiles(now)).toBe(0);
   });
 });
 

@@ -163,8 +163,8 @@ const stream = new HlStream(
 /**
  * Rejestrator historii (gałąź `history` repo danych, rynki z HQ_HISTORY_MARKETS): na rynek osobne połączenie WebSocket
  * (taśma, kontekst, arkusz bliski i daleki jak na stronie, dla BTC także dokładny). Części 5-minutowe i pliki godzinowe
- * w katalogu repo gałęzi, commit po każdym zapisie; raz na dobę (po 00:15 UTC) usunięcie dni spoza okna i spłaszczenie
- * gałęzi do jednego commita.
+ * w katalogu repo gałęzi, commit po każdym zapisie; po zamknięciu doby jej profil (kupno, sprzedaż i zmiana OI na cenach);
+ * raz na dobę (po 00:15 UTC) usunięcie dni spoza okna i spłaszczenie gałęzi do jednego commita.
  */
 const DAY_MS = 86_400_000;
 const historyRepo = cfg.git && cfg.history ? { remote: cfg.git.remote, dir: join(cfg.stateDir, 'git', 'history'), sshKey: cfg.git.sshKey, branch: 'history' } : null;
@@ -198,6 +198,8 @@ async function historyTick(): Promise<void> {
     const now = Date.now();
     let written = 0;
     for (const { rec } of recorders) written += rec.flush(now);
+    // Profile zamkniętych dób (po połączeniu ostatniej godziny doby; po wdrożeniu — po jednej dobie wstecz na takt)
+    for (const { rec } of recorders) written += rec.profiles(now);
     const day = Math.floor(now / DAY_MS);
     const daily = day !== historyDay && now - day * DAY_MS >= 15 * 60_000;
     if (daily) pruneHistory(historyDir, cfg.history.markets, cfg.history.keepDays, now);
@@ -267,7 +269,7 @@ const DATA_README = [
   '- `status.json` — stan skanera (liczby adresów i pozycji, błędy API).',
   '- `alerts/keys.json` — klucze publiczne serwera powiadomień o alarmach: VAPID (subskrypcje push przeglądarek) i Ed25519 (podpis zapytań do skrzynki alarmów).',
   '',
-  'Gałąź `history` — nagranie taśmy, arkusza i kontekstu rynków (części 5-minutowe i pliki godzinowe JSON w gzip, okno ostatnich dni, jeden commit): historia footprintu, Delty, CVD i mapy ciepła od pierwszej sekundy na stronie; opis w README gałęzi.',
+  'Gałąź `history` — nagranie taśmy, arkusza i kontekstu rynków (części 5-minutowe i pliki godzinowe JSON w gzip, okno ostatnich dni, jeden commit): historia footprintu, Delty, CVD i mapy ciepła od pierwszej sekundy na stronie, profile zamkniętych dób (kupno, sprzedaż i zmiana OI na cenach); opis w README gałęzi.',
   '',
   'Gałąź `ledger` — weryfikowalny dziennik prognoz desku (historia przyrostowa): pliki dzienne `BTC/RRRR-MM-DD.jsonl` z łańcuchem hashy SHA-256,',
   'kotwice OpenTimestamps `BTC/ots/`, podsumowanie `BTC/summary.json`. Weryfikacja: `node scripts/verify-ledger.mjs` w repo HyperQuant.',

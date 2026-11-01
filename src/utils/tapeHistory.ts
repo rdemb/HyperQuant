@@ -82,13 +82,16 @@ export interface BookFile {
   frames: ([number, number, number[], number[]] | [number, number, number[], number[], 1])[];
 }
 
-/** Spis gałęzi: godziny z plikiem godzinowym i części godzin jeszcze niepołączonych, dla każdego rynku. */
+/**
+ * Spis gałęzi: godziny z plikiem godzinowym i części godzin jeszcze niepołączonych, dla każdego rynku; `days` — doby
+ * z plikiem profilu (src/utils/dayProfile.ts; brak pola w spisach sprzed profili).
+ */
 export interface HistoryIndex {
   v: number;
   asOf: number;
   keepDays: number;
   partMs: number;
-  markets: Record<string, { hours: number[]; parts: number[] }>;
+  markets: Record<string, { hours: number[]; parts: number[]; days?: number[] }>;
 }
 
 export type HistKind = 'trades' | 'book';
@@ -206,7 +209,7 @@ export function decodeBook(raw: unknown): { coin: string; from: number; to: numb
 export function isHistoryIndex(x: unknown): x is HistoryIndex {
   const o = x as Partial<HistoryIndex> | null;
   if (!o || o.v !== HISTORY_VERSION || !fin(o.asOf) || !fin(o.partMs) || !o.markets || typeof o.markets !== 'object') return false;
-  return Object.values(o.markets).every((m) => !!m && finArr(m.hours) && finArr(m.parts));
+  return Object.values(o.markets).every((m) => !!m && finArr(m.hours) && finArr(m.parts) && (m.days === undefined || finArr(m.days)));
 }
 
 /**
