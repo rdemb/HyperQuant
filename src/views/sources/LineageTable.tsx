@@ -288,17 +288,20 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         ),
       },
       {
-        metric: tr('TPO — profil czasowy doby (Wykresy)', 'TPO — daily time profile (Charts)'),
-        source: tr('Świece Hyperliquid (API i WS) interwału wykresu do 30m', 'Hyperliquid candles (API and WS) at chart timeframes up to 30m'),
+        metric: tr('Profil doby: wolumen, agresja, czas TPO (Wykresy)', 'Day profile: volume, aggression, TPO time (Charts)'),
+        source: tr(
+          'Świece Hyperliquid (API i WS) interwału wykresu do 30m; taśma transakcji (strumień na żywo i zapis serwera z ostatniej doby)',
+          'Hyperliquid candles (API and WS) at chart timeframes up to 30m; the trade tape (live stream and the server recording of the last day)'
+        ),
         method: tr(
-          'Doba UTC dzielona na 48 okresów po 30 min (A–X, a–x); okres = H i L jego świec, litera w każdym wierszu ceny między nimi. POC = wiersz z największą liczbą liter (remis: bliżej środka profilu), value area = 70% liter od POC w stronę większego sąsiada, initial balance = zakres okresów A i B, pojedynczy wydruk = wiersz z jedną literą wewnątrz profilu, ogon = co najmniej dwa takie wiersze na skraju; nagi POC = POC zamkniętej doby, którego cena potem nie dotknęła. Wysokość wiersza z zakresu ceny na ekranie',
-          'The UTC day split into 48 periods of 30 min (A–X, a–x); period = H and L of its candles, a letter on every price row between them. POC = the row with the most letters (tie: closer to the profile middle), value area = 70% of letters from the POC towards the larger neighbour, initial balance = range of periods A and B, single print = a row with one letter inside the profile, tail = at least two such rows at the edge; naked POC = POC of a closed day that price has not touched since. Row height from the price range on screen'
+          'Wolumen wiersza ceny: transakcje z taśmy dokładnie na swoich cenach, z podziałem na agresywne kupno i sprzedaż; wolumen świecy z API poza taśmą (świece sprzed nagrania, luki) rozłożony równo na jej zakres H–L, bez podziału na strony. Kolor wiersza: |kupno − sprzedaż| / (kupno + sprzedaż) z taśmy, progi 10, 20, 35 i 55%; poniżej 10% albo w wierszu, w którym taśma ma mniej niż połowę wolumenu, szary. Czas: doba UTC dzielona na 48 okresów po 30 min, okres = H i L jego świec, wiersz liczy okresy, które go dotknęły; obrys czasu ma to samo pole co wolumen doby. POC = wiersz z największym wolumenem, value area = 70% wolumenu od POC w stronę większego sąsiada, zakres pierwszej godziny = dwa pierwsze okresy, pojedynczy wydruk = wiersz z jednym okresem wewnątrz profilu, ogon = co najmniej dwa takie wiersze na skraju; nagi POC = POC zamkniętej doby, którego cena potem nie dotknęła; delta doby = kupno − sprzedaż z taśmy z udziałem taśmy w wolumenie doby. Wysokość wiersza z zakresu ceny na ekranie',
+          'Volume of a price row: tape trades exactly at their prices, split into aggressive buying and selling; candle volume from the API outside the tape (candles before the recording, gaps) spread evenly across its H–L range, without sides. Row colour: |buy − sell| / (buy + sell) from the tape, thresholds 10, 20, 35 and 55%; below 10%, or in a row where the tape holds less than half of the volume, grey. Time: the UTC day split into 48 periods of 30 min, period = H and L of its candles, a row counts the periods that touched it; the time outline has the same area as the day volume. POC = the row with the most volume, value area = 70% of volume from the POC towards the larger neighbour, first-hour range = the first two periods, single print = a row with one period inside the profile, tail = at least two such rows at the edge; naked POC = POC of a closed day that price has not touched since; day delta = buy − sell from the tape with the tape share of the day volume. Row height from the price range on screen'
         ),
         kinds: ['LIVE'],
         refresh: tr('na żywo', 'live'),
         caveat: tr(
-          'Kontekst aukcji, nie sygnał. Liczba liter zależy od wysokości wiersza, więc POC i value area mogą się nieznacznie przesuwać przy zmianie zbliżenia.',
-          'Auction context, not a signal. The letter count depends on row height, so the POC and value area can shift slightly when zooming.'
+          'Kontekst aukcji, nie sygnał. Profil zależy od wysokości wiersza, więc POC i value area mogą się nieznacznie przesuwać przy zmianie zbliżenia. Starsze doby nie mają taśmy: wolumen bez stron i rozłożony równo w świecach, więc dokładny kształt i kolor tylko tam, gdzie była taśma.',
+          'Auction context, not a signal. The profile depends on row height, so the POC and value area can shift slightly when zooming. Older days have no tape: volume without sides, spread evenly within candles, so the exact shape and colour only where the tape was.'
         ),
       },
       {

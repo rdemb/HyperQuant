@@ -43,7 +43,7 @@ export interface ChartSettings {
   showPeriodProfiles: boolean;
   /** Rozwijający się POC i value area sesji (na 1–4 h doby), świeca po świecy. */
   showDevPoc: boolean;
-  /** Profil czasowy (TPO) każdej doby; zastępuje profile sesji. */
+  /** Profil każdej doby (wolumen, agresja z taśmy, czas TPO); zastępuje profile sesji. */
   showTpo: boolean;
   showLevels: boolean;
   showSessions: boolean;

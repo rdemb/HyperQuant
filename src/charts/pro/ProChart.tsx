@@ -1485,10 +1485,10 @@ function flowLayers(s: ChartSettings, intervalMs: number, liq: LiqMapState, whal
     },
     {
       key: 'showTpo',
-      label: tr('TPO — profil czasowy doby', 'TPO — time profile of the day'),
+      label: tr('Profil doby: wolumen, agresja, czas (TPO)', 'Day profile: volume, aggression, time (TPO)'),
       hint: tr(
-        'Litery 30-minutowych okresów doby UTC w każdym wierszu ceny: POC, value area, zakres pierwszej godziny doby UTC (pasek turkusowy; to nie initial balance sesji), pojedyncze wydruki i ogony; zastępuje profile sesji',
-        'Letters of the 30-minute periods of the UTC day in every price row: POC, value area, the range of the first hour of the UTC day (turquoise bar; not the session initial balance), single prints and tails; replaces session profiles'
+        'Profil wolumenu każdej doby UTC; kolor wiersza to strona agresywna z taśmy (zieleń kupno, fiolet sprzedaż, szary bez przewagi albo bez taśmy), cienki obrys to czas (ile okresów 30 min dotknęło ceny). POC i value area z wolumenu, zakres pierwszej godziny doby UTC (pasek turkusowy; to nie initial balance sesji), pojedyncze wydruki i ogony, delta doby pod profilem; liczby wiersza pod krzyżem; zastępuje profile sesji',
+        'A volume profile of every UTC day; the row colour is the aggressive side from the tape (green buy, violet sell, grey no edge or no tape), the thin outline is time (how many 30-minute periods touched the price). POC and value area from volume, the range of the first hour of the UTC day (turquoise bar; not the session initial balance), single prints and tails, the day delta under the profile; row numbers under the crosshair; replaces session profiles'
       ),
       swatch: 'bg-of-svwap',
       off: tpoInterval(intervalMs) ? undefined : tr('Na interwałach do 30m', 'On timeframes up to 30m'),

@@ -18,7 +18,7 @@ import { tr } from '../../../i18n';
  */
 
 export const MIN_CASES = 20;
-/** Wiersz profilu TPO w statystyce: najmniejszy krok z drabiny ticków wykresu ≥ 0,04% ceny (BTC przy 110 tys.: 50 USD). */
+/** Wiersz profilu doby w statystyce: najmniejszy krok z drabiny ticków wykresu ≥ 0,04% ceny (BTC przy 110 tys.: 50 USD). */
 export const STATS_ROW_PCT = 0.0004;
 /** Okno zakresu po wyjściu ze ściśnięcia (świece). */
 export const SQUEEZE_AFTER = 8;
@@ -44,10 +44,10 @@ export interface VaStats {
 }
 
 /**
- * Reguła wartości Daltona na TPO dób UTC (świece 30m, jedna świeca = jeden okres TPO): otwarcie doby poza VA 70%
- * poprzedniej doby, potem dwa kolejne okresy z zamknięciem w tej VA. Wynik: czy cena dotknęła przeciwległej krawędzi
- * VA przed końcem doby, licząc dopiero od okresu po potwierdzeniu (bez podglądania). Ta sama definicja co reguła 80%
- * w Planie (`utils/auction.ts`), ale na VA czasowej z TPO, którą rysuje szablon.
+ * Reguła wartości Daltona na profilach dób UTC (świece 30m, jedna świeca = jeden okres): otwarcie doby poza VA 70%
+ * wolumenu poprzedniej doby, potem dwa kolejne okresy z zamknięciem w tej VA. Wynik: czy cena dotknęła przeciwległej
+ * krawędzi VA przed końcem doby, licząc dopiero od okresu po potwierdzeniu (bez podglądania). Ta sama definicja co reguła
+ * 80% w Planie (`utils/auction.ts`); VA z wolumenu świecy rozłożonego równo w jej zakresie, jak szablon na dobach bez taśmy.
  */
 export function vaStats(bars: readonly Candle[], step = statsRowStep(bars[bars.length - 1]?.c ?? 0)): VaStats {
   const closed = bars.slice(0, -1);
@@ -231,7 +231,7 @@ export function squeezeStats(bars: readonly Candle[], after = SQUEEZE_AFTER): Sq
 export type HonestyKind = 'va' | 'ib' | 'squeeze';
 
 /**
- * Szablon → karta uczciwości i interwał świec, na których liczy: VA i IB zawsze z 30m (definicja okresu TPO i godziny IB),
+ * Szablon → karta uczciwości i interwał świec, na których liczy: VA i IB zawsze z 30m (okres profilu doby i godzina IB),
  * ściśnięcie z interwału szablonu, a w karcie z własnym interwałem (zestawy kart MTF) z interwału karty.
  */
 export const TEMPLATE_HONESTY: Readonly<Record<string, { kind: HonestyKind; interval: string }>> = {
@@ -271,8 +271,8 @@ export function honestyCard(h: HonestyStats): HonestyCard {
     const { days, outside, filled } = h.s;
     return {
       intro: tr(
-        `TPO dób UTC ze świec 30m (pełne doby w próbie: ${days}); VA 70% liczona z czasu (liter), jak na wykresie.`,
-        `UTC-day TPO from 30m candles (full days in the sample: ${days}); the 70% VA counted from time (letters), as on the chart.`
+        `Profile dób UTC ze świec 30m (pełne doby w próbie: ${days}); VA 70% wolumenu, wolumen świecy rozłożony równo w jej zakresie.`,
+        `UTC-day profiles from 30m candles (full days in the sample: ${days}); the 70% volume VA, each candle’s volume spread evenly across its range.`
       ),
       rows: [
         [tr('Otwarcie doby poza wczorajszą VA', 'Day opened outside yesterday’s VA'), tr(`${outside} z ${days}`, `${outside} of ${days}`)],
