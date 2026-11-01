@@ -19,6 +19,7 @@ import {
   type HistTrade,
   type HistoryIndex,
 } from '../../src/utils/tapeHistory.ts';
+import { DayProfileBuilder, PROFILE_DAY_MS, type DayProfile, dayProfilePath, decodeDayProfile, encodeDayProfile, profileTick } from '../../src/utils/dayProfile.ts';
 import type { HlCtx, HlTrade } from './hl.ts';
 import type { BookAgg } from './liquidity.ts';
 
@@ -127,6 +128,8 @@ export class MarketRecorder {
   private sigFigs: { near: number; far: number } | null = null;
   /** Ostatnio zapisana część (kolejne zapisy tylko nowszych) */
   private lastPart = Number.NEGATIVE_INFINITY;
+  /** Doby z ważnym profilem (sprawdzone albo zapisane w tym uruchomieniu) */
+  private readonly profiled = new Set<number>();
 
   constructor(coin: string, dir: string) {
     this.coin = coin;
@@ -318,10 +321,69 @@ export class MarketRecorder {
     return written;
   }
 
+  /**
+   * Profil każdej zamkniętej doby na dysku bez ważnego pliku profilu (najwyżej jeden na wywołanie — doba to do 24 plików
+   * godzinowych); doba z niepołączonymi częściami czeka. Zwraca liczbę zapisanych plików.
+   */
+  profiles(now: number): number {
+    const root = join(this.dir, this.coin);
+    if (!existsSync(root)) return 0;
+    const today = Math.floor(now / PROFILE_DAY_MS) * PROFILE_DAY_MS;
+    for (const name of readdirSync(root).sort()) {
+      const day = Date.parse(`${name}T00:00:00Z`);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(name) || !Number.isFinite(day) || day >= today || this.profiled.has(day)) continue;
+      if (readdirSync(join(root, name)).some((f) => /^\d{2}-\d{2}\.trades\.json\.gz$/.test(f))) continue;
+      this.profiled.add(day);
+      const path = join(this.dir, dayProfilePath(this.coin, day));
+      if (existsSync(path) && decodeDayProfile(readGz(path)) !== null) continue;
+      const p = buildDayProfile(this.dir, this.coin, day);
+      if (!p) continue;
+      writeGz(path, encodeDayProfile(p));
+      return 1;
+    }
+    return 0;
+  }
+
   /** Zamknięcie (koniec procesu): otwarty odcinek domknięty, bez zapisu bieżących części (luka zamiast niepełnej części). */
   stop(at: number): void {
     this.onState(false, at);
   }
+}
+
+/**
+ * Profil doby UTC z jej plików godzinowych (src/utils/dayProfile.ts): godziny po kolei, w pamięci jedna naraz; zmiana OI
+ * minuty z kontekstu minutowego, dla pierwszej minuty doby z ostatniej godziny doby poprzedniej. null bez transakcji.
+ */
+export function buildDayProfile(dir: string, coin: string, day: number): DayProfile | null {
+  const oi = new Map<number, number>();
+  const prev = decodeTrades(readGz(join(dir, historyPath(coin, day - HIST_HOUR_MS, 'trades', false))));
+  for (const c of prev?.ctx ?? []) oi.set(c.t, c.oi);
+  let b: DayProfileBuilder | null = null;
+  for (let h = day; h < day + PROFILE_DAY_MS; h += HIST_HOUR_MS) {
+    const path = join(dir, historyPath(coin, h, 'trades', false));
+    const f = existsSync(path) ? decodeTrades(readGz(path)) : null;
+    if (!f || f.coin !== coin) continue;
+    for (const c of f.ctx) oi.set(c.t, c.oi);
+    const ts = f.trades;
+    let i = 0;
+    while (i < ts.length) {
+      const m = Math.floor(ts[i].t / MIN) * MIN;
+      const px: number[] = [];
+      const sz: number[] = [];
+      const side: number[] = [];
+      for (; i < ts.length && ts[i].t < m + MIN; i++) {
+        px.push(ts[i].px);
+        sz.push(ts[i].sz);
+        side.push(ts[i].side === 'B' ? 1 : -1);
+      }
+      b ??= new DayProfileBuilder(coin, day, profileTick(px[0]));
+      // Kontekst minuty = ostatni odczyt w niej (stan na jej koniec)
+      const a = oi.get(m - MIN);
+      const e = oi.get(m);
+      b.addMinute(m, px, sz, side, a !== undefined && e !== undefined ? e - a : null);
+    }
+  }
+  return b?.build() ?? null;
 }
 
 /** Usuwa dni starsze niż `keepDays` (pełne dni UTC przed dzisiejszym) i pliki tymczasowe po przerwanym zapisie. */
@@ -349,8 +411,11 @@ export function historyIndex(dir: string, coins: readonly string[], keepDays: nu
   for (const coin of coins) {
     const hours: number[] = [];
     const parts: number[] = [];
+    const days: number[] = [];
     const root = join(dir, coin);
     for (const day of existsSync(root) ? readdirSync(root).sort() : []) {
+      const d = Date.parse(`${day}T00:00:00Z`);
+      if (Number.isFinite(d) && existsSync(join(dir, dayProfilePath(coin, d)))) days.push(d);
       for (const f of readdirSync(join(root, day)).sort()) {
         const m = /^(\d{2})(?:-(\d{2}))?\.trades\.json\.gz$/.exec(f);
         if (!m || !existsSync(join(root, day, f.replace('.trades.', '.book.')))) continue;
@@ -359,7 +424,7 @@ export function historyIndex(dir: string, coins: readonly string[], keepDays: nu
         (m[2] === undefined ? hours : parts).push(t);
       }
     }
-    markets[coin] = { hours, parts };
+    markets[coin] = { hours, parts, days };
   }
   return { v: HISTORY_VERSION, asOf: now, keepDays, partMs: HIST_PART_MS, markets };
 }
@@ -379,6 +444,9 @@ export const HISTORY_README = [
   '  zleceń) w agregacji bliskiej (~2 pb ceny) i dalekiej (10 × większy krok), dla BTC także bez agregacji (migawka z piątym',
   '  elementem 1); pokrycie.',
   '- `<GG>-<MM>.*.json.gz` — części 5-minutowe godziny w toku (po jej zamknięciu łączone w plik godzinowy).',
+  '- `<RYNEK>/<RRRR-MM-DD>/profile.json.gz` — profil zamkniętej doby (spis: `days`): na każdej cenie agresywne kupno',
+  '  i sprzedaż oraz zmiana OI minut przypisana cenom w proporcji do wolumenu, w czterech częściach (OI rośnie albo spada',
+  '  przy przewadze kupna albo sprzedaży w minucie), wolumen taśmy w każdej minucie; format: src/utils/dayProfile.ts.',
   '',
   'Pokrycie (`spans`) to odcinki ciągłego nagrania: luka po zerwaniu połączenia albo restarcie zostaje jawną luką.',
   'Bez adresów portfeli i hashy transakcji. Gałąź zawiera jeden commit z oknem ostatnich dni (starsze dni są usuwane).',

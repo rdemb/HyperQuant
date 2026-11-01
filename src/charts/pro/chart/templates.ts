@@ -40,6 +40,7 @@ export const LAYERS_OFF = {
   showPeriodProfiles: false,
   showDevPoc: false,
   showTpo: false,
+  showTpoOi: false,
   showLevels: false,
   showSessions: false,
   showIb: false,
