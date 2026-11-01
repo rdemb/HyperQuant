@@ -235,7 +235,8 @@ export class HlStream {
       }
     };
     ws.onclose = () => {
-      if (this.connected) this.onState?.(false, Date.now());
+      // Koniec odcinka w chwili ostatniej wiadomości: cisza przed wykryciem zerwania (do 90 s) to luka, nie pokrycie
+      if (this.connected) this.onState?.(false, this.lastMsgAt);
       this.connected = false;
       this.clearTimers();
       if (this.stopped) return;
