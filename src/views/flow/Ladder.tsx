@@ -36,6 +36,8 @@ const WALL_MARK_MS = 60_000;
 const HEAT_GAMMA = 1.6;
 /** Przerwa między migawkami, po której kolumna mapy zostaje pusta. */
 const HEAT_GAP_MS = 20_000;
+/** Drabina węższa niż tyle px (komputer) chowa kolumnę średniego zlecenia i zwęża mapę, żeby „kto / co” zostało widoczne. */
+const COMPACT_W = 660;
 
 const LUT = buildHeatLut(LIQ_RAMP);
 
@@ -53,6 +55,9 @@ function whaleKey(o: WhaleOrder, mid: number, step: number): string {
   return levelKey(bid, bucketOf(o.px, step, bid));
 }
 
+/** Wielkość poziomu lub zlecenia; poniżej 0,01 jednostki zapis z zerem przed przecinkiem. */
+export const fmtSize = (sz: number) => (sz > 0 && sz < 0.01 ? numLang('<0.01') : fmtVol(sz));
+
 const fmtDur = (ms: number) => {
   const m = Math.floor(ms / 60_000);
   return m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`;
@@ -69,21 +74,25 @@ export interface LadderProps {
   open: readonly OpenWall[];
   /** Średnie zlecenie poziomu od tej wartości (USD) jest wyróżnione jako duże. */
   lotUsd: number;
+  /** Najlepszy bid i ask z dokładnego arkusza (krok ceny) — środek i spread niezależne od agregacji drabiny. */
+  top: { bid: number; ask: number } | null;
   narrow: boolean;
   className: string;
 }
 
-export const Ladder: React.FC<LadderProps> = ({ store, hist, steps, stepId, onStep, whales, fates, open, lotUsd, narrow, className }) => {
+export const Ladder: React.FC<LadderProps> = ({ store, hist, steps, stepId, onStep, whales, fates, open, lotUsd, top, narrow, className }) => {
   const bodyRef = useRef<HTMLDivElement>(null);
-  const [h, setH] = useState(0);
+  const [{ h, w }, setBox] = useState({ h: 0, w: 0 });
   useLayoutEffect(() => {
     const el = bodyRef.current;
     if (!el) return;
-    const ro = new ResizeObserver(() => setH(el.clientHeight));
+    const measure = () => setBox((b) => (b.h === el.clientHeight && b.w === el.clientWidth ? b : { h: el.clientHeight, w: el.clientWidth }));
+    const ro = new ResizeObserver(measure);
     ro.observe(el);
-    setH(el.clientHeight);
+    measure();
     return () => ro.disconnect();
   }, []);
+  const compactW = !narrow && w > 0 && w < COMPACT_W;
 
   const f: BookFrame | null = hist?.latest() ?? null;
   const now = store.serverNow();
@@ -92,7 +101,10 @@ export const Ladder: React.FC<LadderProps> = ({ store, hist, steps, stepId, onSt
   const ready = f !== null && f.nBids > 0 && f.nBids < f.px.length;
   const { asks, bids } = ready ? ladderRows(f, perSide) : { asks: [] as LadderRow[], bids: [] as LadderRow[] };
   const step = f?.step ?? Number.NaN;
-  const mid = ready ? (f.px[0] + f.px[f.nBids]) / 2 : Number.NaN;
+  // Środek i spread z dokładnego arkusza: kubełki agregacji przesuwają środek o pół kroku i zawyżają spread do kroku
+  const bestBid = top?.bid ?? (ready ? f.px[0] : Number.NaN);
+  const bestAsk = top?.ask ?? (ready ? f.px[f.nBids] : Number.NaN);
+  const mid = (bestBid + bestAsk) / 2;
 
   // Transakcje z ostatnich 15 min na poziomach (strona zdejmowana przez agresora)
   const traded = ready ? tradedAt((a, b, fn) => store.tape.forEach(a, b, fn), now - HEAT_MS, now + 1, step) : new Map<string, number>();
@@ -135,8 +147,8 @@ export const Ladder: React.FC<LadderProps> = ({ store, hist, steps, stepId, onSt
   for (const w of open) wallAt.set(levelKey(w.bid, w.px), w);
 
   // Mini mapa ciepła: osobne płótno dla asków i bidów, kolumna = kilka sekund
-  const heatW = narrow ? 44 : 132;
-  const cols = narrow ? 44 : 90;
+  const heatW = narrow ? 44 : compactW ? 96 : 132;
+  const cols = narrow ? 44 : compactW ? 64 : 90;
   const askCanvas = useRef<HTMLCanvasElement>(null);
   const bidCanvas = useRef<HTMLCanvasElement>(null);
   const frames = ready && hist ? hist.range(now - HEAT_MS, now + 1) : [];
@@ -161,7 +173,7 @@ export const Ladder: React.FC<LadderProps> = ({ store, hist, steps, stepId, onSt
       const px = new Uint32Array(img.data.buffer);
       for (let i = 0; i < m.length; i++) {
         const v = m[i];
-        if (Number.isNaN(v)) px[i] = 0x14ffffff; // poza zasięgiem migawki — słaby ślad (niewiadoma, nie pustka)
+        if (Number.isNaN(v)) px[i] = 0x0fffffff; // poza zasięgiem migawki — słaby ślad (niewiadoma, nie pustka)
         else if (v > 0 && norm > 0) px[i] = LUT[Math.min(255, Math.round((v / norm) ** HEAT_GAMMA * 255))];
       }
       ctx.putImageData(img, 0, 0);
@@ -170,7 +182,12 @@ export const Ladder: React.FC<LadderProps> = ({ store, hist, steps, stepId, onSt
     paint(bidCanvas.current, b, bids.length);
   });
 
-  const grid = narrow ? 'grid-cols-[4.6rem_1fr_2.1rem_1.6rem]' : 'grid-cols-[5.4rem_minmax(5rem,1fr)_2.6rem_3.8rem_4.6rem_7.5rem]';
+  const grid = narrow
+    ? 'grid-cols-[4.6rem_1fr_2.1rem_1.6rem]'
+    : compactW
+      ? 'grid-cols-[5.4rem_minmax(4.5rem,1fr)_2.6rem_4.6rem_6rem]'
+      : 'grid-cols-[5.4rem_minmax(5rem,1fr)_2.6rem_3.8rem_4.6rem_7.5rem]';
+  const showAvg = !narrow && !compactW;
   const row = (r: LadderRow) => {
     const k = levelKey(r.bid, r.px);
     const far = Number.isNaN(r.sz);
@@ -195,7 +212,7 @@ export const Ladder: React.FC<LadderProps> = ({ store, hist, steps, stepId, onSt
             )}
             className={`px-1 rounded-sm text-[10px] font-semibold ${stop ? 'bg-warn/20 text-warn' : 'bg-surface-3 text-ink-1'}`}
           >
-            {narrow ? 'W' : `${stop ? (whale.kinds.has('stop') ? 'stop ' : 'TP ') : ''}${whale.top.id} ${compact(whale.usd)}`}
+            {narrow ? 'W' : `${stop && !compactW ? (whale.kinds.has('stop') ? 'stop ' : 'TP ') : ''}${whale.top.id} ${compact(whale.usd)}`}
           </span>
         );
       }
@@ -203,7 +220,7 @@ export const Ladder: React.FC<LadderProps> = ({ store, hist, steps, stepId, onSt
         const v = VERDICT[fate.verdict];
         parts.push(
           <span key="f" title={v.title(fate)} className={`text-[10px] font-semibold ${v.cls}`}>
-            {narrow ? v.icon : `${v.icon} ${v.short()}`}
+            {narrow || compactW ? v.icon : `${v.icon} ${v.short()}`}
           </span>
         );
       } else if (wall && now - wall.since >= WALL_MARK_MS && !narrow) {
@@ -218,23 +235,23 @@ export const Ladder: React.FC<LadderProps> = ({ store, hist, steps, stepId, onSt
     return (
       <div key={k} className={`relative grid ${grid} gap-x-2 pr-2 items-center h-5 font-mono text-[11px] ${far ? 'opacity-40' : ''}`}>
         <span className={`relative ${ink}`}>{fmtPx(r.px)}</span>
-        <span className="relative text-right">
+        <span className="relative text-right" title={compactW && avg > 0 ? tr(`Średnie zlecenie ${compact(avg)} USD`, `Average order ${compact(avg)} USD`) : undefined}>
           {r.sz > 0 && (
             <span aria-hidden="true" className={`absolute inset-y-px right-0 ${r.bid ? 'bg-of-buy/20' : 'bg-of-sell/25'}`} style={{ width: `${maxSz > 0 ? (r.sz / maxSz) * 100 : 0}%` }} />
           )}
-          <span className={`relative ${big ? 'text-warn font-semibold' : 'text-ink-1'}`}>{far ? '·' : r.sz > 0 ? fmtVol(r.sz) : ''}</span>
+          <span className={`relative ${big ? 'text-warn font-semibold' : 'text-ink-1'}`}>{far ? '·' : r.sz > 0 ? fmtSize(r.sz) : ''}</span>
         </span>
         <span className="relative text-right text-ink-3" title={tr('Liczba zleceń na poziomie', 'Orders at the level')}>
           {r.n >= 1 ? r.n : ''}
         </span>
-        {!narrow && (
+        {showAvg && (
           <span className={`relative text-right ${big ? 'text-warn font-semibold' : 'text-ink-3'}`} title={tr('Średnie zlecenie na poziomie (wartość / liczba zleceń)', 'Average order at the level (value / order count)')}>
             {avg > 0 ? compact(avg) : ''}
           </span>
         )}
         {!narrow && (
           <span className="relative text-right text-ink-2">
-            {trUsd > 0 && <span aria-hidden="true" className={`absolute inset-y-[5px] left-0 ${r.bid ? 'bg-of-sell/40' : 'bg-of-buy/30'}`} style={{ width: `${maxTr > 0 ? (trUsd / maxTr) * 100 : 0}%` }} />}
+            {trUsd > 0 && <span aria-hidden="true" className={`absolute bottom-0.5 right-0 h-[3px] rounded-full ${r.bid ? 'bg-of-sell/70' : 'bg-of-buy/60'}`} style={{ width: `${maxTr > 0 ? (trUsd / maxTr) * 100 : 0}%` }} />}
             <span className="relative">{trUsd > 0 ? compact(trUsd) : ''}</span>
           </span>
         )}
@@ -276,7 +293,7 @@ export const Ladder: React.FC<LadderProps> = ({ store, hist, steps, stepId, onSt
         <span>{tr('Cena', 'Price')}</span>
         <span className="text-right">{store.coin}</span>
         <span className="text-right" title={tr('Liczba zleceń na poziomie', 'Orders at the level')}>{tr('zl.', 'ord.')}</span>
-        {!narrow && <span className="text-right">{tr('śr. zl.', 'avg ord.')}</span>}
+        {showAvg && <span className="text-right">{tr('śr. zl.', 'avg ord.')}</span>}
         {!narrow && <span className="text-right" title={tr('Wartość transakcji, które w ostatnich 15 min zdjęły ten poziom', 'Value of trades that hit this level in the last 15 min')}>{tr('taśma 15m', 'tape 15m')}</span>}
         <span className="text-right">{narrow ? '' : tr('kto / co', 'who / what')}</span>
       </div>
@@ -288,10 +305,13 @@ export const Ladder: React.FC<LadderProps> = ({ store, hist, steps, stepId, onSt
             {side(shownAsks, askCanvas, true)}
             <div className="flex items-center justify-between gap-2 px-3 shrink-0 border-y border-line bg-surface-2 font-mono text-[11px]" style={{ height: MID_H }}>
               <span className="text-ink-3 hidden sm:inline" style={{ width: heatW - 12 }}>
-                ← {tr('15 min', '15 min')} · {tr('teraz', 'now')}
+                ← {tr('15 min', '15 min')}
+                {!compactW && ` · ${tr('teraz', 'now')}`}
               </span>
               <span className="text-ink-1">{fmtPx(mid)}</span>
-              <span className="text-ink-3">spread {numLang(String(Number((f.px[f.nBids] - f.px[0]).toPrecision(6))))}</span>
+              <span className="text-ink-3" title={tr('Najlepszy bid i ask z dokładnego arkusza, bez agregacji', 'Best bid and ask from the exact book, without aggregation')}>
+                spread {numLang(String(Number((bestAsk - bestBid).toPrecision(6))))}
+              </span>
               <span title={tr('Udział bidów i asków w widocznej głębokości arkusza', 'Share of bids and asks in the visible book depth')}>
                 <span className="text-of-buy-ink">{Math.round((sb / (sb + sa || 1)) * 100)}%</span>
                 <span className="text-ink-3"> / </span>
@@ -324,9 +344,25 @@ export const Ladder: React.FC<LadderProps> = ({ store, hist, steps, stepId, onSt
         ) : (
           <p>
             {tr(
-              `Migawka arkusza co ok. 5 s, 20 poziomów na stronę (dalej „·” = poza zasięgiem). Żółte: średnie zlecenie od ${compact(lotUsd)} USD, czyli jedna duża ręka, nie tłum. Mapa: ostatnie 15 min przy tej cenie.`,
-              `Book snapshot every ~5 s, 20 levels per side (beyond: “·” = out of range). Yellow: average order from ${compact(lotUsd)} USD, one large hand rather than a crowd. Map: the last 15 min at this price.`
+              `Migawka arkusza co ok. 5 s, 20 poziomów na stronę (dalej „·” = poza zasięgiem). Żółte: średnie zlecenie od ${compact(lotUsd)} USD, czyli jedna duża ręka, nie tłum. Mapa: ostatnie 15 min przy tej cenie, szare = brak migawki (poza zasięgiem arkusza albo luka w zapisie).`,
+              `Book snapshot every ~5 s, 20 levels per side (beyond: “·” = out of range). Yellow: average order from ${compact(lotUsd)} USD, one large hand rather than a crowd. Map: the last 15 min at this price, grey = no snapshot (out of the book's range or a gap in the recording).`
             )}
+            {stepId === 'exact' &&
+              tr(
+                ' Przy kroku 1 USD arkusz sięga tylko kilkudziesięciu dolarów od ceny, więc mapa ma dane głównie przy ostatnich cenach.',
+                ' At the 1 USD step the book reaches only a few dozen dollars from the price, so the map has data mostly near recent prices.'
+              )}
+          </p>
+        )}
+        {(narrow || compactW) && (
+          <p>
+            {(['eaten', 'moved', 'pulled'] as const).map((k, i) => (
+              <span key={k} className={VERDICT[k].cls}>
+                {i > 0 && <span className="text-ink-3"> · </span>}
+                {VERDICT[k].icon} {VERDICT[k].short()}
+              </span>
+            ))}
+            <span className="text-ink-3"> {tr('(los ściany z ostatnich 2 min)', '(wall fate in the last 2 min)')}</span>
           </p>
         )}
       </div>

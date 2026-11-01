@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AggressorOrder } from '../core/orders';
-import { TWAP_GAP_MS, tapePace, tapeRows } from '../core/tapeMemory';
+import { TWAP_GAP_MS, tapeGap, tapePace, tapeRows } from '../core/tapeMemory';
 import type { Side } from '../hl/parse';
 
 const order = (time: number, taker: string, notional: number, side: Side = 1, zero = false): AggressorOrder => {
@@ -57,5 +57,22 @@ describe('tapePace', () => {
     expect(p.median).toBeCloseTo(1000);
     expect(p.minutes).toBe(60);
     expect(Number.isNaN(tapePace(scan, now, () => false).median)).toBe(true);
+  });
+});
+
+describe('tapeGap', () => {
+  it('najdłuższa niepokryta część przedziału; krótsze niż minMs pomijane', () => {
+    const spans: [number, number][] = [
+      [0, 100],
+      [105, 200],
+      [500, 1000],
+    ];
+    expect(tapeGap(spans, 50, 700, 10)).toEqual([200, 500]);
+    expect(tapeGap(spans, 50, 150, 10)).toBeNull();
+    expect(tapeGap(spans, 50, 150, 3)).toEqual([100, 105]);
+    // Brak pokrycia na końcu i przed pierwszym odcinkiem
+    expect(tapeGap(spans, 900, 1200, 10)).toEqual([1000, 1200]);
+    expect(tapeGap([[100, 200]], 0, 150, 10)).toEqual([0, 100]);
+    expect(tapeGap([], 0, 50, 10)).toEqual([0, 50]);
   });
 });

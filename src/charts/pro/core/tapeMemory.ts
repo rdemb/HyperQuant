@@ -97,3 +97,24 @@ export function tapePace(scan: TradeScan, now: number, covered: (from: number, t
   const median = mins.length >= 10 ? mins[Math.floor(mins.length / 2)] : Number.NaN;
   return { usd1m, buyShare: usd1m > 0 ? buy / usd1m : 0.5, median, minutes: mins.length };
 }
+
+/**
+ * Najdłuższa luka w nagraniu taśmy w [from, to] (odcinki pokrycia rosnąco, rozłączne), od `minMs`, albo null. Taśma
+ * z historii serwera i ze strumienia na żywo może mieć przerwę, której nie widać po samych czasach wierszy.
+ */
+export function tapeGap(spans: readonly (readonly [number, number])[], from: number, to: number, minMs: number): [number, number] | null {
+  let best: [number, number] | null = null;
+  const take = (a: number, b: number) => {
+    if (b - a >= minMs && (!best || b - a > best[1] - best[0])) best = [a, b];
+  };
+  let cur = from;
+  for (const [a, b] of spans) {
+    if (b <= cur) continue;
+    if (a >= to) break;
+    if (a > cur) take(cur, a);
+    cur = Math.max(cur, b);
+    if (cur >= to) return best;
+  }
+  take(cur, to);
+  return best;
+}

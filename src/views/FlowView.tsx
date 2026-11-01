@@ -43,6 +43,8 @@ const AUTO_WINDOW_MS = 3_600_000;
 const LOT_WINDOW_MS = 30 * 60_000;
 const WALL_FLOOR_USD = 100_000;
 const WHALES_STALE_MS = 20 * 60_000;
+/** Dokładny arkusz starszy niż tyle ms nie daje środka i spreadu (drabina wraca do swojej agregacji). */
+const TOP_STALE_MS = 30_000;
 const NARROW = '(max-width: 1023.98px)';
 
 function loadPrefs(): Prefs {
@@ -133,6 +135,10 @@ const FlowView: React.FC = () => {
     setHighlight('');
   }, []);
 
+  // Najlepszy bid i ask z dokładnego arkusza (świeży), żeby środek i spread nie zależały od kroku drabiny
+  const ex = books.exact?.latest() ?? null;
+  const top = ex && ex.nBids > 0 && ex.nBids < ex.px.length && now - ex.t <= TOP_STALE_MS ? { bid: ex.px[0], ask: ex.px[ex.nBids] } : null;
+
   const since = store.coverage.first();
   const frame = narrow ? 'h-full' : 'h-full rounded-xl border border-line overflow-hidden';
   const ladder = (
@@ -146,6 +152,7 @@ const FlowView: React.FC = () => {
       fates={walls.fates}
       open={walls.open}
       lotUsd={walls.lotUsd}
+      top={top}
       narrow={narrow}
       className={frame}
     />

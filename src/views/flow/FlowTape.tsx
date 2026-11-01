@@ -5,11 +5,12 @@ import { TAPE_MIN_OPTIONS, beep, compact } from '../../charts/pro/chart/FlowPane
 import { fmtPx } from '../../charts/pro/chart/layout';
 import { takerAlias } from '../../charts/pro/core/clashes';
 import type { AggressorOrder } from '../../charts/pro/core/orders';
-import { type TapePace, type TapeRow, tapeRows } from '../../charts/pro/core/tapeMemory';
+import { type TapePace, type TapeRow, tapeGap, tapeRows } from '../../charts/pro/core/tapeMemory';
 import { fmtHms } from '../../charts/pro/core/time';
 import type { ProStore } from '../../charts/pro/store/proStore';
 import { numLang } from '../../ui/format';
 import { tr } from '../../i18n';
+import { fmtSize } from './Ladder';
 
 /**
  * Taśma z pamięcią: zlecenia agresora, TWAP-y sklejone w jeden rosnący wiersz, bitwy z jednym makerem, licznik
@@ -22,6 +23,8 @@ const ROWS = 160;
 const BAR_FULL = 10;
 /** Konto z tyloma zleceniami w 15 min dostaje podpis „Konto N ×k”. */
 const REPEAT_MIN = 3;
+/** Przerwa w nagraniu taśmy od tylu ms między sąsiednimi wierszami dostaje wiersz „brak zapisu”. */
+const GAP_MIN_MS = 10_000;
 
 const Tag: React.FC<{ tone: 'twap' | 'clash' | 'acct'; title: string; children: React.ReactNode }> = ({ tone, title, children }) => (
   <span
@@ -31,6 +34,10 @@ const Tag: React.FC<{ tone: 'twap' | 'clash' | 'acct'; title: string; children: 
     {children}
   </span>
 );
+
+/** Najwcześniejsza i najpóźniejsza chwila wiersza (TWAP obejmuje swoje plasterki). */
+const rowStart = (r: TapeRow) => (r.kind === 'twap' ? r.first : r.order.time);
+const rowEnd = (r: TapeRow) => (r.kind === 'twap' ? r.last : r.order.time);
 
 export const FlowTape: React.FC<{
   store: ProStore;
@@ -83,6 +90,7 @@ export const FlowTape: React.FC<{
   };
 
   const ratio = pace.median > 0 ? pace.usd1m / pace.median : Number.NaN;
+  const spans = store.coverage.list();
   const grid = narrow ? 'grid-cols-[4.1rem_1fr_3.4rem_4.4rem]' : 'grid-cols-[4.2rem_5.2rem_3.6rem_3.8rem_1fr]';
   const row = (r: TapeRow, i: number) => {
     const o = r.kind === 'twap' ? r.latest : r.order;
@@ -114,7 +122,15 @@ export const FlowTape: React.FC<{
       );
     if (r.kind === 'order' && r.repeat >= REPEAT_MIN && !narrow)
       tags.push(
-        <Tag key="a" tone="acct" title={tr(`To konto złożyło ${r.repeat} zleceń w ostatnich 15 min (pseudonim tylko na tę sesję strony)`, `This account placed ${r.repeat} orders in the last 15 min (pseudonym for this page session only)`)}>
+        <Tag
+          key="a"
+          tone="acct"
+          title={
+            o.taker.startsWith('~')
+              ? tr(`To konto złożyło ${r.repeat} zleceń w ostatnich 15 min (pseudonim z zapisu serwera, nowy co godzinę)`, `This account placed ${r.repeat} orders in the last 15 min (pseudonym from the server recording, new every hour)`)
+              : tr(`To konto złożyło ${r.repeat} zleceń w ostatnich 15 min (pseudonim tylko na tę sesję strony)`, `This account placed ${r.repeat} orders in the last 15 min (pseudonym for this page session only)`)
+          }
+        >
           {takerAlias(o.taker)} ×{r.repeat}
         </Tag>
       );
@@ -128,7 +144,7 @@ export const FlowTape: React.FC<{
         <span aria-hidden="true" className={`absolute inset-y-0 right-0 ${buy ? 'bg-of-buy/15' : 'bg-of-sell/25'}`} style={{ width: `${Math.min(1, Math.sqrt(usd / (BAR_FULL * bigUsd))) * 100}%` }} />
         <span className="relative text-ink-3">{fmtHms(r.kind === 'twap' ? r.last : o.time)}</span>
         <span className={`relative text-right ${buy ? 'text-of-buy-ink' : 'text-of-sell-ink'} ${cls ? 'font-semibold' : ''}`}>{fmtPx(px)}</span>
-        {!narrow && <span className={`relative text-right ${cls ? 'text-ink-1 font-semibold' : 'text-ink-2'}`}>{fmtVol(sz)}</span>}
+        {!narrow && <span className={`relative text-right ${cls ? 'text-ink-1 font-semibold' : 'text-ink-2'}`}>{fmtSize(sz)}</span>}
         <span className={`relative text-right ${cls === 'clash' ? 'text-warn font-semibold' : cls ? 'text-ink-1 font-semibold' : 'text-ink-2'}`}>{compact(usd)}</span>
         <span className="relative flex items-center justify-end gap-1 min-w-0 overflow-hidden">{tags}</span>
       </button>
@@ -188,8 +204,21 @@ export const FlowTape: React.FC<{
         <span className="text-right">{tr('co to', 'what')}</span>
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto [scrollbar-width:thin]">
-        {rows.length === 0 && <p className="px-3 py-4 text-[11px] text-ink-3">{tr('Brak zleceń od tej wartości od otwarcia strony.', 'No orders from this value since the page opened.')}</p>}
-        {rows.map(row)}
+        {rows.length === 0 && <p className="px-3 py-4 text-[11px] text-ink-3">{tr('Brak zleceń od tej wartości w nagraniu taśmy.', 'No orders from this value in the tape recording.')}</p>}
+        {rows.map((r, i) => {
+          // Luka w nagraniu między tym wierszem a nowszym (np. historia serwera kończy się kilka minut przed otwarciem strony)
+          const gap = i > 0 ? tapeGap(spans, rowEnd(r), rowStart(rows[i - 1]), GAP_MIN_MS) : null;
+          return (
+            <React.Fragment key={`${r.kind}|${(r.kind === 'twap' ? r.latest : r.order).time}|${i}`}>
+              {gap && (
+                <div className="px-2 h-5 flex items-center border-y border-dashed border-line font-mono text-[10px] text-ink-3" title={tr('W tym czasie taśma nie była nagrywana — zlecenia z tej przerwy nie są pokazane.', 'The tape was not recorded during this time — orders from the gap are not shown.')}>
+                  {tr('brak zapisu', 'no recording')} {fmtHms(gap[0])}–{fmtHms(gap[1])}
+                </div>
+              )}
+              {row(r, i)}
+            </React.Fragment>
+          );
+        })}
       </div>
       <p className="px-2 py-1.5 border-t border-line text-[10px] leading-snug text-ink-3 shrink-0">
         {tr('Zlecenia agresora złożone z wypełnień · pogrubione od', 'Aggressor orders assembled from fills · bold from')} {compact(bigUsd)} USD ·{' '}
