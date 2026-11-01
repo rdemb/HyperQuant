@@ -44,6 +44,9 @@ public/data/feeds/*.json
 # Notatki robocze (plan, wnioski) — tylko lokalnie
 tasks/
 
+# Wtyczki wykresu (src/charts/pro/chart/plugins.ts) — tylko lokalnie
+src/plugins/
+
 # Lokalne narzędzia asystenta i notatki sesji
 .remember/
 .superpowers/
