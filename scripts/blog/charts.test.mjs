@@ -328,6 +328,20 @@ describe('wykresy: rysunek (charts.mjs)', () => {
     ).toBe(2);
   });
 
+  it('podpisy zachodzących stref nie przykrywają się nawzajem', () => {
+    // Mapa tygodnia 1.11: strefa wzrostu 77 920–78 020 w środku strefy bocznej 77 675–78 175, środki podpisów 8 px od siebie
+    const mid = (SESSION.candles[0][2] + SESSION.candles[0][3]) / 2;
+    const zones = [
+      { bias: 'up', zone: [mid + 20, mid + 120] },
+      { bias: 'flat', zone: [mid - 225, mid + 275] },
+    ];
+    const rows = (svg) => [...svg.matchAll(/<text x="[\d.]+" y="([\d.]+)"[^>]*>[▲◆] /g)].map((m) => Number(m[1]));
+    for (const svg of [sessionSvg(SESSION, { zones }), sessionSvg(SESSION, { zones, narrow: true, uid: 'n' })]) {
+      const [a, b] = rows(svg);
+      expect(Math.abs(a - b)).toBeGreaterThanOrEqual(14);
+    }
+  });
+
   it('CVD liczone ze świec bazowych: ten sam wynik w obu układach, gdy część świecy 30 min jest bez delty', () => {
     // Ostatnia świeca bez taśmy (nagranie skończyło się przed jej końcem): 11 świec po +20
     const s = { ...SESSION, candles: SESSION.candles.map((c, i) => (i === 95 ? [...c.slice(0, 6), null, null] : c)) };
