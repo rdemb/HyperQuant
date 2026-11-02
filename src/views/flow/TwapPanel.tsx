@@ -44,6 +44,11 @@ const fmtLeftShort = (ms: number) => {
   const m = Math.max(0, Math.round(ms / 60_000));
   return m < 60 ? `${m} min` : m < 2880 ? `${Math.floor(m / 60)} h ${m % 60}` : `${Math.round(m / 1440)} d`;
 };
+/** Udział w procentach: poniżej 1% z jednym miejscem po przecinku. */
+const fmtPct = (x: number) => `${numLang(x < 0.01 ? (x * 100).toFixed(1) : String(Math.round(x * 100)))}%`;
+/** Polska forma liczebnika: 1 plan, 2–4 plany, 5 planów (12–14 jak 5). */
+const plForm = (n: number, one: string, few: string, many: string) =>
+  n === 1 ? one : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? few : many;
 /** Tempo ciągu z jego plasterków (USD/min przy takcie 30 s). */
 const pace = (s: TwapStream) => (s.usd / s.slices) * 2;
 
@@ -70,9 +75,17 @@ export const TwapPanel: React.FC<{
   const cache = twapPlansFor(store.coin, () => store.serverNow());
   const now = store.serverNow();
   const sec = Math.floor(now / 1000);
-  const streams = useMemo(() => {
+  const { streams, share } = useMemo(() => {
     const t = store.serverNow();
-    return twapStreams(store.orders.range(t - WINDOW_MS, t + 1)).filter((s) => t - s.last <= ACTIVE_MS);
+    const orders = store.orders.range(t - WINDOW_MS, t + 1);
+    // Udział plasterków TWAP w wartości całej taśmy z tego samego okna
+    let all = 0;
+    let zero = 0;
+    for (const o of orders) {
+      all += o.notional;
+      if (o.zero) zero += o.notional;
+    }
+    return { streams: twapStreams(orders).filter((s) => t - s.last <= ACTIVE_MS), share: all > 0 ? zero / all : Number.NaN };
   }, [store, sec]);
 
   const rows: Row[] = streams
@@ -132,12 +145,12 @@ export const TwapPanel: React.FC<{
       <div
         className="flex items-center gap-3 px-3 h-8 border-b border-line font-mono text-[11px] whitespace-nowrap shrink-0"
         title={tr(
-          `Ile według ${known} znanych planów wejdzie w rynek w najbliższych 15 min (harmonogram liniowy, cena ostatnich plasterków, USD)`,
-          `How much the ${known} known plans will put into the market in the next 15 min (linear schedule, price of recent slices, USD)`
+          `Ile według znanych planów (${known}) wejdzie w rynek w najbliższych 15 min (harmonogram liniowy, cena ostatnich plasterków, USD)`,
+          `How much the known plans (${known}) will put into the market in the next 15 min (linear schedule, price of recent slices, USD)`
         )}
       >
         <span className="text-ink-3">
-          15 min<span className={WIDE}>{tr(` · ${known} planów`, ` · ${known} plans`)}</span>
+          15 min<span className={WIDE}>{tr(` · ${known} ${plForm(known, 'plan', 'plany', 'planów')}`, ` · ${known} ${known === 1 ? 'plan' : 'plans'}`)}</span>
         </span>
         <span className="text-of-buy-ink">
           {tr('kupno', 'buy')} {compact(buy)}
@@ -223,14 +236,17 @@ export const TwapPanel: React.FC<{
         })}
         {dust.length > 0 && (
           <p className="px-3 h-7 flex items-center font-mono text-[10px] text-ink-3" title={tr(`Razem ~${compact(dust.reduce((a, r) => a + pace(r.s), 0))} USD/min`, `~${compact(dust.reduce((a, r) => a + pace(r.s), 0))} USD/min in total`)}>
-            {tr(`i ${dust.length} drobnych TWAP-ów poniżej ${DUST_USD_MIN} USD/min`, `and ${dust.length} small TWAPs below ${DUST_USD_MIN} USD/min`)}
+            {tr(
+              `i ${dust.length} ${plForm(dust.length, 'drobny TWAP', 'drobne TWAP-y', 'drobnych TWAP-ów')} poniżej ${DUST_USD_MIN} USD/min`,
+              `and ${dust.length} small ${dust.length === 1 ? 'TWAP' : 'TWAPs'} below ${DUST_USD_MIN} USD/min`
+            )}
           </p>
         )}
       </div>
       <p className="px-3 py-1.5 border-t border-line text-[10px] leading-snug text-ink-3 shrink-0">
         {tr(
-          `Plasterki TWAP (hash zerowy, co 30 s) z taśmy na żywo. Plan z publicznego dziennika Hyperliquid: sam dla ${auto} największych kont, reszta po kliknięciu; bez planu tempo z plasterków. Postęp z harmonogramu liniowego, a konto może przerwać TWAP w każdej chwili.`,
-          `TWAP slices (zero hash, every 30 s) from the live tape. The plan comes from the public Hyperliquid log: automatically for the ${auto} largest accounts, the rest on click; without a plan, pace from slices. Progress follows the linear schedule, and the account can stop the TWAP at any time.`
+          `${Number.isFinite(share) ? `TWAP-y to ${fmtPct(share)} wartości taśmy z ostatnich 10 min. ` : ''}Plasterki TWAP (hash zerowy, co 30 s) z taśmy na żywo. Plan z publicznego dziennika Hyperliquid: sam dla ${auto} największych kont, reszta po kliknięciu; bez planu tempo z plasterków. Postęp z harmonogramu liniowego, a konto może przerwać TWAP w każdej chwili.`,
+          `${Number.isFinite(share) ? `TWAPs are ${fmtPct(share)} of the tape value in the last 10 min. ` : ''}TWAP slices (zero hash, every 30 s) from the live tape. The plan comes from the public Hyperliquid log: automatically for the ${auto} largest accounts, the rest on click; without a plan, pace from slices. Progress follows the linear schedule, and the account can stop the TWAP at any time.`
         )}
       </p>
     </section>
