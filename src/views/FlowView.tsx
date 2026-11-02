@@ -243,7 +243,7 @@ const FlowView: React.FC = () => {
         ) : (
           <>
             {ladder}
-            <div className="grid grid-rows-[minmax(0,3fr)_minmax(0,2fr)] gap-3 min-h-0">
+            <div className="grid grid-rows-[minmax(0,3fr)_minmax(17rem,2fr)] gap-3 min-h-0">
               {tape}
               {side === 'walls' ? fates : twaps}
             </div>

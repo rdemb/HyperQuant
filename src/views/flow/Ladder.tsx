@@ -41,6 +41,9 @@ const COMPACT_W = 660;
 /** Ściana w arkuszu najwyżej tyle poziomów od najlepszej ceny (jak przedziały `nearPrice`) dostaje bilans ścian zakończonych przy cenie, gdy było ich co najmniej NEAR_MIN. */
 const NEAR_LEVELS = 1;
 const NEAR_MIN = 3;
+/** Ikona końca ściany na mapie: połowa szerokości (px, trzyma ikonę w polu) i najmniejszy odstęp ikon w jednym wierszu. */
+const ICON_HALF = 5;
+const ICON_GAP = 10;
 
 const LUT = buildHeatLut(LIQ_RAMP);
 
@@ -222,9 +225,17 @@ export const Ladder: React.FC<LadderProps> = ({ store, hist, steps, stepId, onSt
               `Zlecenia wielorybów na tej cenie: ${whale.n}, razem ${compact(whale.usd)} USD (największe: ${whale.top.id}, ${whale.top.kind === 'limit' ? 'limit' : whale.top.kind === 'stop' ? 'stop' : 'TP'}${whale.top.reduce ? ', tylko zmniejsza pozycję' : ''}). Pseudonim ważny jedną dobę.`,
               `Whale orders at this price: ${whale.n}, total ${compact(whale.usd)} USD (largest: ${whale.top.id}, ${whale.top.kind === 'limit' ? 'limit' : whale.top.kind === 'stop' ? 'stop' : 'TP'}${whale.top.reduce ? ', reduce only' : ''}). The pseudonym is valid for one day.`
             )}
-            className={`min-w-0 truncate px-1 rounded-sm text-[10px] font-semibold ${stop ? 'bg-warn/20 text-warn' : 'bg-surface-3 text-ink-1'}`}
+            className={`inline-flex min-w-0 gap-1 px-1 rounded-sm text-[10px] font-semibold ${stop ? 'bg-warn/20 text-warn' : 'bg-surface-3 text-ink-1'}`}
           >
-            {narrow ? 'W' : `${stop && !compactW ? (whale.kinds.has('stop') ? 'stop ' : 'TP ') : ''}${whale.top.id} ${compact(whale.usd)}`}
+            {narrow ? (
+              'W'
+            ) : (
+              <>
+                {/* Przy braku miejsca skraca się pseudonim, kwota zostaje */}
+                <span className="truncate">{`${stop && !compactW ? (whale.kinds.has('stop') ? 'stop ' : 'TP ') : ''}${whale.top.id}`}</span>
+                <span className="shrink-0">{compact(whale.usd)}</span>
+              </>
+            )}
           </span>
         );
       }
@@ -286,24 +297,33 @@ export const Ladder: React.FC<LadderProps> = ({ store, hist, steps, stepId, onSt
     );
   };
 
-  // Końce ścian z ostatnich 15 min na mapie: ikona werdyktu tam, gdzie smuga się urywa (czas × cena wiersza)
+  // Końce ścian z ostatnich 15 min na mapie: ikona werdyktu tam, gdzie smuga się urywa (czas × cena wiersza).
+  // Ikona cała w polu mapy; w jednym wierszu bez nakładania (zostaje nowsza), żeby nie zakryć kolorów na wąskiej mapie.
   const ends = (rows: readonly LadderRow[], bid: boolean) => {
     const at = new Map(rows.map((r, i) => [r.px, i]));
-    return fates.map((x) => {
+    const placed = new Map<number, number[]>();
+    const out: React.ReactNode[] = [];
+    for (const x of [...fates].sort((a, b) => b.t - a.t)) {
       const y = x.bid === bid ? at.get(x.px) : undefined;
-      if (y === undefined || x.t < now - HEAT_MS || x.t > now) return null;
+      if (y === undefined || x.t < now - HEAT_MS || x.t > now) continue;
+      const left = Math.min(heatW - ICON_HALF, Math.max(ICON_HALF, ((x.t - (now - HEAT_MS)) / HEAT_MS) * heatW));
+      const taken = placed.get(y) ?? [];
+      if (taken.some((p) => Math.abs(p - left) < ICON_GAP)) continue;
+      taken.push(left);
+      placed.set(y, taken);
       const v = VERDICT[x.verdict];
-      return (
+      out.push(
         <span
           key={`${x.px}|${x.t}`}
           title={`${fmtHms(x.t)} · ${fateTitle(x)}`}
           className={`absolute -translate-x-1/2 -translate-y-1/2 text-[9px] leading-none font-bold [text-shadow:0_0_2px_#000,0_0_2px_#000] ${v.cls}`}
-          style={{ left: ((x.t - (now - HEAT_MS)) / HEAT_MS) * heatW, top: (y + 0.5) * ROW_H }}
+          style={{ left, top: (y + 0.5) * ROW_H }}
         >
           {v.icon}
         </span>
       );
-    });
+    }
+    return out;
   };
 
   const side = (rows: LadderRow[], ref: React.RefObject<HTMLCanvasElement | null>, top: boolean) => (

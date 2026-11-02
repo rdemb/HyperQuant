@@ -44,6 +44,10 @@ export const WallFatesPanel: React.FC<{
   const binMax = Math.max(1, ...bins.map((b) => b.eaten + b.moved + b.pulled));
   const near = nearPrice(bins);
   const list = fates.filter((f) => f.t - f.since >= MIN_LIFE_MS).slice(-LIST_MAX).reverse();
+  const note = tr(
+    `Bez żadnej transakcji zniknęło ${untouched} z ${fates.length}; przy cenie (do 1 poziomu) zjedzono ${near.eaten} z ${near.n}. Ściana: poziom co ${step} USD od ${compact(minUsd)} USD (5% największych poziomów z ostatniej godziny). Werdykt z porównania migawek co ok. 5 s, netto: zlecenie krótsze niż odstęp migawek jest niewidoczne, więc to nie jest wykrywanie spoofingu. Lista: ściany żyjące od 30 s.`,
+    `${untouched} of ${fates.length} vanished without any trade; at the price (up to 1 level) ${near.eaten} of ${near.n} were eaten. Wall: a level every ${step} USD from ${compact(minUsd)} USD (top 5% of levels in the last hour). The verdict compares snapshots every ~5 s, net: an order shorter than the snapshot gap is invisible, so this is not spoofing detection. List: walls alive for 30 s or more.`
+  );
   return (
     <section aria-label={tr('Losy ścian arkusza', 'Fates of book walls')} className={`@container flex flex-col min-h-0 bg-surface-1 ${className}`}>
       <div className="flex items-center gap-2 px-3 h-10 border-b border-line shrink-0">
@@ -55,12 +59,15 @@ export const WallFatesPanel: React.FC<{
       </div>
       <div className="grid grid-cols-3 gap-px bg-line border-b border-line shrink-0">
         {counts.map((c) => (
-          <div key={c.v} className="bg-surface-1 px-3 py-2" title={VERDICT[c.v].desc()}>
+          <div key={c.v} className={`bg-surface-1 px-3 ${narrow ? 'py-2' : 'py-1.5'}`} title={VERDICT[c.v].desc()}>
             <div className={`text-[10px] uppercase tracking-[0.06em] ${VERDICT[c.v].cls}`}>
               {VERDICT[c.v].icon} {VERDICT[c.v].short()}
             </div>
-            <div className="font-mono text-[15px] text-ink-1">{c.n}</div>
-            <div className="font-mono text-[10px] text-ink-3">{compact(c.usd)} USD</div>
+            {/* Na komputerze liczba i wartość w jednej linii, żeby lista ścian zmieściła się w niskim panelu */}
+            <div className={narrow ? '' : 'flex items-baseline gap-1.5 whitespace-nowrap'}>
+              <div className="font-mono text-[15px] text-ink-1">{c.n}</div>
+              <div className="font-mono text-[10px] text-ink-3">{compact(c.usd)} USD</div>
+            </div>
           </div>
         ))}
       </div>
@@ -119,12 +126,13 @@ export const WallFatesPanel: React.FC<{
           );
         })}
       </div>
-      <p className="px-3 py-1.5 border-t border-line text-[10px] leading-snug text-ink-3 shrink-0">
-        {tr(
-          `Ściana: poziom co ${step} USD od ${compact(minUsd)} USD (5% największych poziomów z ostatniej godziny). Werdykt z porównania migawek co ok. 5 s, netto: zlecenie krótsze niż odstęp migawek jest niewidoczne, więc to nie jest wykrywanie spoofingu. Bez żadnej transakcji zniknęło ${untouched} z ${fates.length}; przy cenie (do 1 poziomu) zjedzono ${near.eaten} z ${near.n}. Lista: ściany żyjące od 30 s.`,
-          `Wall: a level every ${step} USD from ${compact(minUsd)} USD (top 5% of levels in the last hour). The verdict compares snapshots every ~5 s, net: an order shorter than the snapshot gap is invisible, so this is not spoofing detection. ${untouched} of ${fates.length} vanished without any trade; at the price (up to 1 level) ${near.eaten} of ${near.n} were eaten. List: walls alive for 30 s or more.`
-        )}
-      </p>
+      {/* Na komputerze dolny panel jest niski: dwie linie (liczby na początku), całość w podpowiedzi */}
+      {/* Odstęp na obudowie, nie na akapicie: przy line-clamp dopełnienie odsłaniałoby kawałek trzeciej linii */}
+      <div className="px-3 py-1.5 border-t border-line shrink-0">
+        <p className={`text-[10px] leading-snug text-ink-3 ${narrow ? '' : 'line-clamp-2'}`} title={narrow ? undefined : note}>
+          {note}
+        </p>
+      </div>
     </section>
   );
 };

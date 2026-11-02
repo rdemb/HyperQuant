@@ -138,6 +138,10 @@ export const TwapPanel: React.FC<{
     return tr('brak pasującego planu w dzienniku', 'no matching plan in the log');
   };
 
+  const note = tr(
+    `${Number.isFinite(share) ? `TWAP-y to ${fmtPct(share)} wartości taśmy z ostatnich 10 min. ` : ''}Plasterki TWAP (hash zerowy, co 30 s) z taśmy na żywo. Plan z publicznego dziennika Hyperliquid: sam dla ${auto} największych kont, reszta po kliknięciu; bez planu tempo z plasterków. Postęp z harmonogramu liniowego, a konto może przerwać TWAP w każdej chwili.`,
+    `${Number.isFinite(share) ? `TWAPs are ${fmtPct(share)} of the tape value in the last 10 min. ` : ''}TWAP slices (zero hash, every 30 s) from the live tape. The plan comes from the public Hyperliquid log: automatically for the ${auto} largest accounts, the rest on click; without a plan, pace from slices. Progress follows the linear schedule, and the account can stop the TWAP at any time.`
+  );
   return (
     <section aria-label={tr('TWAP-y w drodze', 'TWAPs en route')} className={`@container flex flex-col min-h-0 bg-surface-1 ${className}`}>
       <div className="flex items-center gap-2 px-3 h-10 border-b border-line shrink-0">{head}</div>
@@ -187,7 +191,7 @@ export const TwapPanel: React.FC<{
             return (
               <div
                 key={key}
-                title={tr(`${s.slices} plasterków od ${fmtHms(s.first)}, razem ${compact(s.usd)} USD`, `${s.slices} slices since ${fmtHms(s.first)}, ${compact(s.usd)} USD in total`)}
+                title={tr(`${s.slices} ${plForm(s.slices, 'plasterek', 'plasterki', 'plasterków')} od ${fmtHms(s.first)}, razem ${compact(s.usd)} USD`, `${s.slices} ${s.slices === 1 ? 'slice' : 'slices'} since ${fmtHms(s.first)}, ${compact(s.usd)} USD in total`)}
                 className={`grid ${GRID} gap-x-2 px-3 h-7 items-center font-mono text-[11px] whitespace-nowrap`}
               >
                 <span className="truncate text-ink-2">
@@ -204,8 +208,8 @@ export const TwapPanel: React.FC<{
             <div
               key={key}
               title={tr(
-                `${alias}: TWAP ${plan.side === 1 ? 'kupna' : 'sprzedaży'} ${fmtVol(plan.sz)} ${store.coin} w ${plan.minutes} min, start ${fmtSince(plan.start, now)}, koniec ${fmtSince(end, now)} (za ${fmtLeft(end - now)})${plan.reduceOnly ? ', tylko zmniejsza pozycję' : ''}. Na taśmie ${s.slices} plasterków od ${fmtHms(s.first)}.`,
-                `${alias}: ${plan.side === 1 ? 'buy' : 'sell'} TWAP of ${fmtVol(plan.sz)} ${store.coin} over ${plan.minutes} min, start ${fmtSince(plan.start, now)}, end ${fmtSince(end, now)} (in ${fmtLeft(end - now)})${plan.reduceOnly ? ', reduce only' : ''}. ${s.slices} slices on the tape since ${fmtHms(s.first)}.`
+                `${alias}: TWAP ${plan.side === 1 ? 'kupna' : 'sprzedaży'} ${fmtVol(plan.sz)} ${store.coin} w ${plan.minutes} min, start ${fmtSince(plan.start, now)}, koniec ${fmtSince(end, now)} (za ${fmtLeft(end - now)})${plan.reduceOnly ? ', tylko zmniejsza pozycję' : ''}. Na taśmie ${s.slices} ${plForm(s.slices, 'plasterek', 'plasterki', 'plasterków')} od ${fmtHms(s.first)}.`,
+                `${alias}: ${plan.side === 1 ? 'buy' : 'sell'} TWAP of ${fmtVol(plan.sz)} ${store.coin} over ${plan.minutes} min, start ${fmtSince(plan.start, now)}, end ${fmtSince(end, now)} (in ${fmtLeft(end - now)})${plan.reduceOnly ? ', reduce only' : ''}. ${s.slices} ${s.slices === 1 ? 'slice' : 'slices'} on the tape since ${fmtHms(s.first)}.`
               )}
               className={`grid ${GRID} gap-x-2 px-3 h-7 items-center font-mono text-[11px] whitespace-nowrap`}
             >
@@ -243,12 +247,13 @@ export const TwapPanel: React.FC<{
           </p>
         )}
       </div>
-      <p className="px-3 py-1.5 border-t border-line text-[10px] leading-snug text-ink-3 shrink-0">
-        {tr(
-          `${Number.isFinite(share) ? `TWAP-y to ${fmtPct(share)} wartości taśmy z ostatnich 10 min. ` : ''}Plasterki TWAP (hash zerowy, co 30 s) z taśmy na żywo. Plan z publicznego dziennika Hyperliquid: sam dla ${auto} największych kont, reszta po kliknięciu; bez planu tempo z plasterków. Postęp z harmonogramu liniowego, a konto może przerwać TWAP w każdej chwili.`,
-          `${Number.isFinite(share) ? `TWAPs are ${fmtPct(share)} of the tape value in the last 10 min. ` : ''}TWAP slices (zero hash, every 30 s) from the live tape. The plan comes from the public Hyperliquid log: automatically for the ${auto} largest accounts, the rest on click; without a plan, pace from slices. Progress follows the linear schedule, and the account can stop the TWAP at any time.`
-        )}
-      </p>
+      {/* Na komputerze dolny panel jest niski: dwie linie (udział na początku), całość w podpowiedzi */}
+      {/* Odstęp na obudowie, nie na akapicie: przy line-clamp dopełnienie odsłaniałoby kawałek trzeciej linii */}
+      <div className="px-3 py-1.5 border-t border-line shrink-0">
+        <p className={`text-[10px] leading-snug text-ink-3 ${narrow ? '' : 'line-clamp-2'}`} title={narrow ? undefined : note}>
+          {note}
+        </p>
+      </div>
     </section>
   );
 };
