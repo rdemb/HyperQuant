@@ -185,6 +185,15 @@ export function parseBook(raw: unknown, coin: string): BookSnapshot | null {
   return { time, bids, asks };
 }
 
+/** Najlepszy bid i ask z kanału `bbo` (`bbo: [bid, ask]`, strona bez zleceń = null). */
+export function parseBbo(raw: unknown, coin: string): { time: number; bid: BookLevel | null; ask: BookLevel | null } | null {
+  if (!isRecord(raw) || raw.coin !== coin || !Array.isArray(raw.bbo) || raw.bbo.length !== 2) return null;
+  const time = num(raw.time);
+  if (!(time > 0)) return null;
+  const side = (x: unknown): BookLevel | null => parseLevels([x])[0] ?? null;
+  return { time, bid: side(raw.bbo[0]), ask: side(raw.bbo[1]) };
+}
+
 /** Kontekst rynku z kanału `activeAssetCtx` (`data.ctx`) lub z `metaAndAssetCtxs`. */
 export function parseAssetCtx(raw: unknown): AssetCtx | null {
   if (!isRecord(raw)) return null;

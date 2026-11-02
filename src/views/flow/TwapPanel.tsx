@@ -64,14 +64,23 @@ const SideLabel: React.FC<{ side: 1 | -1 }> = ({ side }) => (
   </span>
 );
 
-export const TwapPanel: React.FC<{
-  store: ProStore;
-  /** Nagłówek panelu (przełącznik zakładek na komputerze). */
-  head: React.ReactNode;
-  /** Telefon: mniej planów pobieranych samodzielnie. */
-  narrow: boolean;
-  className: string;
-}> = ({ store, head, narrow, className }) => {
+/** Ciągi TWAP z taśmy połączone z planami i bilans najbliższych 15 min (także dla paska na górze widoku). */
+export interface TwapData {
+  now: number;
+  rows: Row[];
+  shown: Row[];
+  dust: Row[];
+  buy: number;
+  sell: number;
+  net: number;
+  known: number;
+  /** Udział plasterków TWAP w wartości taśmy z 10 min (NaN bez taśmy). */
+  share: number;
+  auto: number;
+  cache: ReturnType<typeof twapPlansFor>;
+}
+
+export function useTwaps(store: ProStore, narrow: boolean): TwapData {
   const cache = twapPlansFor(store.coin, () => store.serverNow());
   const now = store.serverNow();
   const sec = Math.floor(now / 1000);
@@ -119,10 +128,22 @@ export const TwapPanel: React.FC<{
     if (r.plan.side === 1) buy += v;
     else sell += v;
   }
-  const net = buy - sell;
   // Znane plany zawsze na liście; ciągi bez planu tylko od progu tempa, reszta w jednym wierszu
   const shown = rows.filter((r) => r.plan || pace(r.s) >= DUST_USD_MIN);
   const dust = rows.filter((r) => !r.plan && pace(r.s) < DUST_USD_MIN);
+  return { now, rows, shown, dust, buy, sell, net: buy - sell, known, share, auto, cache };
+}
+
+export const TwapPanel: React.FC<{
+  store: ProStore;
+  data: TwapData;
+  /** Nagłówek panelu (przełącznik zakładek na komputerze) i przyciski po prawej (powiększenie). */
+  head: React.ReactNode;
+  tools?: React.ReactNode;
+  narrow: boolean;
+  className: string;
+}> = ({ store, data, head, tools, narrow, className }) => {
+  const { now, rows, shown, dust, buy, sell, net, known, share, auto, cache } = data;
 
   const status = (r: Row): React.ReactNode => {
     const { s, entry } = r;
@@ -144,7 +165,10 @@ export const TwapPanel: React.FC<{
   );
   return (
     <section aria-label={tr('TWAP-y w drodze', 'TWAPs en route')} className={`@container flex flex-col min-h-0 bg-surface-1 ${className}`}>
-      <div className="flex items-center gap-2 px-3 h-10 border-b border-line shrink-0">{head}</div>
+      <div className="flex items-center gap-2 px-3 h-10 border-b border-line shrink-0">
+        {head}
+        {tools && <span className="ml-auto flex items-center">{tools}</span>}
+      </div>
       {/* Najbliższe 15 min według znanych planów: ile kupią, ile sprzedadzą, netto */}
       <div
         className="flex items-center gap-3 px-3 h-8 border-b border-line font-mono text-[11px] whitespace-nowrap shrink-0"

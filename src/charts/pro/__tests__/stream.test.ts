@@ -113,6 +113,7 @@ describe('subKey i parseSubscription', () => {
     expect(subKey({ type: 'l2Book', coin: 'BTC', nSigFigs: 4 })).not.toBe(subKey({ type: 'l2Book', coin: 'BTC' }));
     expect(parseSubscription({ type: 'l2Book', coin: 'BTC', nSigFigs: 3 })).toEqual({ type: 'l2Book', coin: 'BTC', nSigFigs: 3 });
     expect(parseSubscription({ type: 'candle', coin: 'BTC', interval: '5m' })).toEqual({ type: 'candle', coin: 'BTC', interval: '5m' });
-    expect(parseSubscription({ type: 'bbo', coin: 'BTC' })).toBeNull();
+    expect(parseSubscription({ type: 'bbo', coin: 'BTC' })).toEqual({ type: 'bbo', coin: 'BTC' });
+    expect(parseSubscription({ type: 'webData2', coin: 'BTC' })).toBeNull();
   });
 });
