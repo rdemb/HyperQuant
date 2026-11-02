@@ -7,12 +7,12 @@ import { LIQ_RAMP } from '../../charts/pro/chart/theme';
 import type { BookFrame, BookHistory } from '../../charts/pro/core/book';
 import { type LadderRow, bucketOf, heatHistory, ladderRows, levelKey, tradedAt } from '../../charts/pro/core/ladder';
 import { fmtHms } from '../../charts/pro/core/time';
-import type { OpenWall, WallFate } from '../../charts/pro/core/wallFates';
+import { type OpenWall, type WallFate, distanceBins, nearPrice } from '../../charts/pro/core/wallFates';
 import type { ProStore } from '../../charts/pro/store/proStore';
 import type { WhaleOrder } from '../../utils/whaleLayer';
 import { numLang } from '../../ui/format';
 import { tr } from '../../i18n';
-import { VERDICT } from './verdicts';
+import { VERDICT, fateTitle } from './verdicts';
 
 /**
  * Drabina „kto stoi w kolejce”: stała siatka cen wybranej agregacji arkusza Hyperliquid z wielkością, liczbą zleceń
@@ -38,6 +38,12 @@ const HEAT_GAMMA = 1.6;
 const HEAT_GAP_MS = 20_000;
 /** Drabina węższa niż tyle px (komputer) chowa kolumnę średniego zlecenia i zwęża mapę, żeby „kto / co” zostało widoczne. */
 const COMPACT_W = 660;
+/** Ściana w arkuszu najwyżej tyle poziomów od najlepszej ceny (jak przedziały `nearPrice`) dostaje bilans ścian zakończonych przy cenie, gdy było ich co najmniej NEAR_MIN. */
+const NEAR_LEVELS = 1;
+const NEAR_MIN = 3;
+/** Ikona końca ściany na mapie: połowa szerokości (px, trzyma ikonę w polu) i najmniejszy odstęp ikon w jednym wierszu. */
+const ICON_HALF = 5;
+const ICON_GAP = 10;
 
 const LUT = buildHeatLut(LIQ_RAMP);
 
@@ -145,6 +151,11 @@ export const Ladder: React.FC<LadderProps> = ({ store, hist, steps, stepId, onSt
   for (const x of fates) if (now - x.t <= FATE_MARK_MS) fateAt.set(levelKey(x.bid, x.px), x);
   const wallAt = new Map<string, OpenWall>();
   for (const w of open) wallAt.set(levelKey(w.bid, w.px), w);
+  // Bilans ścian, które w ostatniej godzinie zniknęły przy cenie — podpis dla ściany stojącej teraz przy cenie
+  const bins = distanceBins(fates);
+  const near = nearPrice(bins);
+  const nearMoved = bins.filter((b) => b.from <= NEAR_LEVELS).reduce((a, b) => a + b.moved, 0);
+  const nearPulled = bins.filter((b) => b.from <= NEAR_LEVELS).reduce((a, b) => a + b.pulled, 0);
 
   // Mini mapa ciepła: osobne płótno dla asków i bidów, kolumna = kilka sekund
   const heatW = narrow ? 44 : compactW ? 96 : 132;
@@ -190,6 +201,8 @@ export const Ladder: React.FC<LadderProps> = ({ store, hist, steps, stepId, onSt
   const showAvg = !narrow && !compactW;
   const row = (r: LadderRow) => {
     const k = levelKey(r.bid, r.px);
+    const head = r.bid ? bids[0] : asks[0];
+    const lvl = head ? Math.round(Math.abs(r.px - head.px) / step) : Number.POSITIVE_INFINITY;
     const far = Number.isNaN(r.sz);
     const usd = r.sz * r.px;
     const avg = r.n >= 1 ? usd / r.n : Number.NaN;
@@ -201,6 +214,8 @@ export const Ladder: React.FC<LadderProps> = ({ store, hist, steps, stepId, onSt
     const ink = r.bid ? 'text-of-buy-ink' : 'text-of-sell-ink';
     const mark = (() => {
       const parts: React.ReactNode[] = [];
+      // Przy wielorybie komórka „kto / co” jest za wąska na dwa pełne podpisy: los ściany i bilans skrócone, wiek ściany ukryty
+      const tight = narrow || compactW || !!whale;
       if (whale) {
         const stop = whale.kinds.has('stop') || whale.kinds.has('tp');
         parts.push(
@@ -210,20 +225,42 @@ export const Ladder: React.FC<LadderProps> = ({ store, hist, steps, stepId, onSt
               `Zlecenia wielorybów na tej cenie: ${whale.n}, razem ${compact(whale.usd)} USD (największe: ${whale.top.id}, ${whale.top.kind === 'limit' ? 'limit' : whale.top.kind === 'stop' ? 'stop' : 'TP'}${whale.top.reduce ? ', tylko zmniejsza pozycję' : ''}). Pseudonim ważny jedną dobę.`,
               `Whale orders at this price: ${whale.n}, total ${compact(whale.usd)} USD (largest: ${whale.top.id}, ${whale.top.kind === 'limit' ? 'limit' : whale.top.kind === 'stop' ? 'stop' : 'TP'}${whale.top.reduce ? ', reduce only' : ''}). The pseudonym is valid for one day.`
             )}
-            className={`px-1 rounded-sm text-[10px] font-semibold ${stop ? 'bg-warn/20 text-warn' : 'bg-surface-3 text-ink-1'}`}
+            className={`inline-flex min-w-0 gap-1 px-1 rounded-sm text-[10px] font-semibold ${stop ? 'bg-warn/20 text-warn' : 'bg-surface-3 text-ink-1'}`}
           >
-            {narrow ? 'W' : `${stop && !compactW ? (whale.kinds.has('stop') ? 'stop ' : 'TP ') : ''}${whale.top.id} ${compact(whale.usd)}`}
+            {narrow ? (
+              'W'
+            ) : (
+              <>
+                {/* Przy braku miejsca skraca się pseudonim, kwota zostaje */}
+                <span className="truncate">{`${stop && !compactW ? (whale.kinds.has('stop') ? 'stop ' : 'TP ') : ''}${whale.top.id}`}</span>
+                <span className="shrink-0">{compact(whale.usd)}</span>
+              </>
+            )}
           </span>
         );
       }
       if (fate) {
         const v = VERDICT[fate.verdict];
         parts.push(
-          <span key="f" title={v.title(fate)} className={`text-[10px] font-semibold ${v.cls}`}>
-            {narrow || compactW ? v.icon : `${v.icon} ${v.short()}`}
+          <span key="f" title={fateTitle(fate)} className={`shrink-0 text-[10px] font-semibold ${v.cls}`}>
+            {tight ? v.icon : `${v.icon} ${v.short()}`}
           </span>
         );
-      } else if (wall && now - wall.since >= WALL_MARK_MS && !narrow) {
+      } else if (wall && !narrow && lvl <= NEAR_LEVELS && near.n >= NEAR_MIN) {
+        parts.push(
+          <span
+            key="n"
+            title={tr(
+              `Ściana ${compact(wall.usd)} USD stoi przy cenie (w arkuszu od ${fmtHms(wall.since)}). W ostatniej godzinie z ${near.n} ścian, które zniknęły przy cenie (najwyżej ${NEAR_LEVELS} poziom od najlepszej), zjedzono ${near.eaten}, przesunięto ${nearMoved}, zdjęto ${nearPulled}. To opis tego, co działo się z innymi ścianami, nie prognoza tej.`,
+              `A wall of ${compact(wall.usd)} USD stands at the price (in the book since ${fmtHms(wall.since)}). In the last hour, of ${near.n} walls that vanished at the price (at most ${NEAR_LEVELS} level from the best), ${near.eaten} were eaten, ${nearMoved} moved and ${nearPulled} pulled. A description of what happened to other walls, not a forecast for this one.`
+            )}
+            className="shrink-0 text-[10px] text-ink-2"
+          >
+            {tight ? '' : tr('zjedz. ', 'eaten ')}
+            <span className={near.eaten > 0 ? 'text-warn' : 'text-ink-1'}>{near.eaten}</span>/{near.n}
+          </span>
+        );
+      } else if (wall && now - wall.since >= WALL_MARK_MS && !narrow && !whale) {
         parts.push(
           <span key="s" title={tr(`Ściana w arkuszu od ${fmtHms(wall.since)}`, `Wall in the book since ${fmtHms(wall.since)}`)} className="text-[10px] text-ink-3">
             {tr('ściana', 'wall')} {fmtDur(now - wall.since)}
@@ -260,10 +297,42 @@ export const Ladder: React.FC<LadderProps> = ({ store, hist, steps, stepId, onSt
     );
   };
 
+  // Końce ścian z ostatnich 15 min na mapie: ikona werdyktu tam, gdzie smuga się urywa (czas × cena wiersza).
+  // Ikona cała w polu mapy; w jednym wierszu bez nakładania (zostaje nowsza), żeby nie zakryć kolorów na wąskiej mapie.
+  const ends = (rows: readonly LadderRow[], bid: boolean) => {
+    const at = new Map(rows.map((r, i) => [r.px, i]));
+    const placed = new Map<number, number[]>();
+    const out: React.ReactNode[] = [];
+    for (const x of [...fates].sort((a, b) => b.t - a.t)) {
+      const y = x.bid === bid ? at.get(x.px) : undefined;
+      if (y === undefined || x.t < now - HEAT_MS || x.t > now) continue;
+      const left = Math.min(heatW - ICON_HALF, Math.max(ICON_HALF, ((x.t - (now - HEAT_MS)) / HEAT_MS) * heatW));
+      const taken = placed.get(y) ?? [];
+      if (taken.some((p) => Math.abs(p - left) < ICON_GAP)) continue;
+      taken.push(left);
+      placed.set(y, taken);
+      const v = VERDICT[x.verdict];
+      out.push(
+        <span
+          key={`${x.px}|${x.t}`}
+          title={`${fmtHms(x.t)} · ${fateTitle(x)}`}
+          className={`absolute -translate-x-1/2 -translate-y-1/2 text-[9px] leading-none font-bold [text-shadow:0_0_2px_#000,0_0_2px_#000] ${v.cls}`}
+          style={{ left, top: (y + 0.5) * ROW_H }}
+        >
+          {v.icon}
+        </span>
+      );
+    }
+    return out;
+  };
+
   const side = (rows: LadderRow[], ref: React.RefObject<HTMLCanvasElement | null>, top: boolean) => (
     <div className={`relative flex ${top ? 'items-end' : 'items-start'} min-h-0 flex-1 overflow-hidden`}>
       <div className="relative flex w-full">
         <canvas ref={ref} aria-hidden="true" className="shrink-0 [image-rendering:pixelated] border-r border-line" style={{ width: heatW, height: rows.length * ROW_H }} />
+        <div className="absolute left-0 top-0" style={{ width: heatW, height: rows.length * ROW_H }}>
+          {ends(rows, !top)}
+        </div>
         <div className="flex-1 min-w-0 pl-2">{rows.map(row)}</div>
       </div>
     </div>
@@ -362,7 +431,7 @@ export const Ladder: React.FC<LadderProps> = ({ store, hist, steps, stepId, onSt
                 {VERDICT[k].icon} {VERDICT[k].short()}
               </span>
             ))}
-            <span className="text-ink-3"> {tr('(los ściany z ostatnich 2 min)', '(wall fate in the last 2 min)')}</span>
+            <span className="text-ink-3"> {tr('(los ściany: na mapie w chwili jej końca, w wierszu ceny przez 2 min)', '(wall fate: on the map at the moment it ended, in the price row for 2 min)')}</span>
           </p>
         )}
       </div>

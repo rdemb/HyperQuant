@@ -127,8 +127,8 @@ export const FlowTape: React.FC<{
           tone="acct"
           title={
             o.taker.startsWith('~')
-              ? tr(`To konto złożyło ${r.repeat} zleceń w ostatnich 15 min (pseudonim z zapisu serwera, nowy co godzinę)`, `This account placed ${r.repeat} orders in the last 15 min (pseudonym from the server recording, new every hour)`)
-              : tr(`To konto złożyło ${r.repeat} zleceń w ostatnich 15 min (pseudonim tylko na tę sesję strony)`, `This account placed ${r.repeat} orders in the last 15 min (pseudonym for this page session only)`)
+              ? tr(`Zlecenia tego konta w ostatnich 15 min: ${r.repeat} (pseudonim z zapisu serwera, nowy co godzinę)`, `This account placed ${r.repeat} orders in the last 15 min (pseudonym from the server recording, new every hour)`)
+              : tr(`Zlecenia tego konta w ostatnich 15 min: ${r.repeat} (pseudonim tylko na tę sesję strony)`, `This account placed ${r.repeat} orders in the last 15 min (pseudonym for this page session only)`)
           }
         >
           {takerAlias(o.taker)} ×{r.repeat}

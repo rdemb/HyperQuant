@@ -30,6 +30,11 @@ export interface WallFate {
   /** Czy na kubełku była jakakolwiek transakcja w czasie życia ściany. */
   touched: boolean;
   verdict: WallVerdict;
+  /**
+   * Dystans zniknięcia: ile poziomów (kroków agregacji) od najlepszej ceny swojej strony stała ściana w migawce, w której
+   * zniknęła; 0 = na czele kolejki albo cena już przez nią przeszła, NaN = strona migawki pusta.
+   */
+  levels: number;
 }
 
 /** Ściana nadal w arkuszu (stan do drabiny). */
@@ -77,9 +82,10 @@ function verdictOf(w: OpenWall): WallVerdict {
 export function wallFates(frames: readonly BookFrame[], scan: TradeScan, minUsd: number): { fates: WallFate[]; open: OpenWall[] } {
   const live = new Map<string, Track>();
   const fates: WallFate[] = [];
-  const end = (w: Track, t: number) => {
+  const end = (w: Track, f: BookFrame) => {
+    const best = w.bid ? (f.nBids > 0 ? f.px[0] : Number.NaN) : f.nBids < f.px.length ? f.px[f.nBids] : Number.NaN;
     fates.push({
-      t,
+      t: f.t,
       since: w.since,
       px: w.px,
       bid: w.bid,
@@ -90,6 +96,7 @@ export function wallFates(frames: readonly BookFrame[], scan: TradeScan, minUsd:
       refillUsd: w.refillUsd,
       touched: w.eatenUsd + w.refillUsd > 0,
       verdict: verdictOf(w),
+      levels: Math.max(0, Math.round((w.bid ? best - w.px : w.px - best) / f.step)),
     });
   };
   let prev: BookFrame | null = null;
@@ -133,7 +140,7 @@ export function wallFates(frames: readonly BookFrame[], scan: TradeScan, minUsd:
       w.lastSeen = f.t;
       if (usd > w.peakUsd) w.peakUsd = usd;
       if (usd < END_SHARE * w.peakUsd) {
-        end(w, f.t);
+        end(w, f);
         live.delete(k);
       }
     }
@@ -164,4 +171,39 @@ export function wallThreshold(frames: readonly BookFrame[], floorUsd: number, q 
   if (xs.length === 0) return floorUsd;
   xs.sort((a, b) => a - b);
   return Math.max(floorUsd, xs[Math.min(xs.length - 1, Math.floor(q * xs.length))]);
+}
+
+/** Przedziały dystansu zniknięcia (poziomy od najlepszej ceny): przy cenie, 1 poziom, 2–4, 5 i dalej. */
+export const DIST_BINS = [0, 1, 2, 5] as const;
+
+export interface DistBin {
+  /** Najmniejszy dystans przedziału (poziomy). */
+  from: number;
+  eaten: number;
+  moved: number;
+  pulled: number;
+}
+
+/** Losy ścian w przedziałach dystansu zniknięcia (ściany z pustą stroną migawki pominięte). */
+export function distanceBins(fates: readonly WallFate[]): DistBin[] {
+  const bins: DistBin[] = DIST_BINS.map((from) => ({ from, eaten: 0, moved: 0, pulled: 0 }));
+  for (const f of fates) {
+    if (!Number.isFinite(f.levels)) continue;
+    let i = DIST_BINS.length - 1;
+    while (i > 0 && f.levels < DIST_BINS[i]) i--;
+    bins[i][f.verdict]++;
+  }
+  return bins;
+}
+
+/** Ściany zakończone przy cenie (przedziały 0 i 1 poziom): ile ich było i ile z nich zjedzono. */
+export function nearPrice(bins: readonly DistBin[]): { n: number; eaten: number } {
+  let n = 0;
+  let eaten = 0;
+  for (const b of bins) {
+    if (b.from > 1) continue;
+    n += b.eaten + b.moved + b.pulled;
+    eaten += b.eaten;
+  }
+  return { n, eaten };
 }
