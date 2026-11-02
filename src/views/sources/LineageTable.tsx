@@ -356,6 +356,37 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         ),
       },
       {
+        metric: tr('DOM i taśma: dystans zniknięcia ściany, końce ścian na mapie', 'DOM & tape: wall vanishing distance, wall ends on the map'),
+        source: tr('Te same migawki Hyperliquid l2Book i werdykty losu ścian z ostatniej godziny', 'The same Hyperliquid l2Book snapshots and wall fate verdicts from the last hour'),
+        method: tr(
+          'Dystans = liczba poziomów kroku arkusza między ceną ściany a najlepszą ceną jej strony w migawce, w której ściana spadła poniżej 25% szczytu (0, gdy cena przeszła przez ścianę). Przedziały: przy cenie, 1 poziom, 2–4 i 5+ poziomów, w każdym liczba ścian i podział na zjedzone, przesunięte i zdjęte. Przy ścianie stojącej teraz najwyżej 1 poziom od najlepszej ceny drabina podaje, ile ścian zakończonych przy cenie w ostatniej godzinie zjedzono (od 3 takich ścian). Na mapie 15 min ikona werdyktu w chwili końca ściany i w wierszu jej ceny',
+          'Distance = the number of book-step levels between the wall price and the best price of its side in the snapshot where the wall fell below 25% of its peak (0 when the price went through the wall). Bins: at the price, 1 level, 2–4 and 5+ levels, each with the wall count split into eaten, moved and pulled. Next to a wall standing now at most 1 level from the best price, the ladder shows how many walls that ended at the price in the last hour were eaten (from 3 such walls). On the 15 min map a verdict icon at the moment the wall ended, in the row of its price'
+        ),
+        kinds: ['LIVE', 'MODEL'],
+        refresh: tr('arkusz co ok. 5 s', 'book about every 5 s'),
+        caveat: tr(
+          'Bilans opisuje inne ściany z ostatniej godziny, nie przewiduje losu ściany, która stoi teraz. Pomiar na zapisie z 1.11 (krok 10 USD, 1684 ściany): zjedzono 7, zdjęte znikały w połowie przypadków najwyżej 1,3 pb od ceny.',
+          'The tally describes other walls from the last hour and does not forecast the wall standing now. Measured on the 1 Nov recording (10 USD step, 1684 walls): 7 eaten, half of the pulled ones vanished at most 1.3 bp from the price.'
+        ),
+      },
+      {
+        metric: tr('DOM i taśma: TWAP-y w drodze', 'DOM & tape: TWAPs en route'),
+        source: tr(
+          'Hyperliquid WS trades (plasterki z hashem zerowym) i info twapHistory konta, pytane z przeglądarki widza po jednym zapytaniu naraz: samo dla 6 największych kont (telefon 3), reszta po kliknięciu',
+          'Hyperliquid WS trades (zero-hash slices) and the account’s info twapHistory, queried from the viewer’s browser one request at a time: automatically for the 6 largest accounts (phone 3), the rest on click'
+        ),
+        method: tr(
+          'Ciąg = plasterki jednego konta i strony w tej samej fazie taktu 30 s (±2,5 s) z 10 min, trwający, gdy ostatni najwyżej 75 s temu. Plan w toku = wpis „activated” bez wpisu końcowego (finished, terminated, stopped, error); dopasowanie po stronie i fazie startu + 1,5 s (pomiar 1.11). Postęp = czas od startu / czas trwania (Hyperliquid wykonuje TWAP równo w czasie), reszta i 15 min po średniej cenie plasterków. Ciągi poniżej 100 USD/min zwinięte w jeden wiersz. Udział TWAP-ów = wartość plasterków z hashem zerowym / wartość całej taśmy z 10 min',
+          'Stream = slices of one account and side in the same phase of the 30 s cycle (±2.5 s) over 10 min, running when the last one is at most 75 s old. Running plan = an “activated” entry without a terminal entry (finished, terminated, stopped, error); matched by side and start phase + 1.5 s (measured 1 Nov). Progress = time since start / duration (Hyperliquid executes a TWAP evenly in time), the remainder and 15 min at the average slice price. Streams below 100 USD/min are folded into one row. TWAP share = the value of zero-hash slices / the value of the whole tape over 10 min'
+        ),
+        kinds: ['LIVE', 'MODEL'],
+        refresh: tr('taśma na żywo · plan raz na konto (ponownie po 3 min, gdy ciąg nie pasuje)', 'tape live · plan once per account (again after 3 min when a stream does not match)'),
+        caveat: tr(
+          'Plan to zamiar: konto może przerwać TWAP w każdej chwili, a plasterek może się nie wykonać. Bez planu widać tylko tempo z plasterków. Adres konta służy tylko do zapytania i zostaje w pamięci strony; na ekranie pseudonimy jak na taśmie.',
+          'A plan is an intention: the account can stop the TWAP at any time and a slice may not execute. Without a plan only the pace from slices is shown. The account address is used only for the query and stays in page memory; the screen shows pseudonyms as on the tape.'
+        ),
+      },
+      {
         metric: 'Open interest, funding, mark/oracle',
         source: 'Hyperliquid API: metaAndAssetCtxs',
         method: tr('Wartości wprost z API; basis = (mark − oracle) / oracle', 'Values straight from the API; basis = (mark − oracle) / oracle'),

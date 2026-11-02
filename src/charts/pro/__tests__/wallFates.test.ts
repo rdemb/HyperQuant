@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { BookFrame } from '../core/book';
 import type { TradeScan } from '../core/ladder';
-import { BEYOND_MS, MAX_GAP_MS, wallFates, wallThreshold } from '../core/wallFates';
+import { BEYOND_MS, MAX_GAP_MS, type WallFate, distanceBins, nearPrice, wallFates, wallThreshold } from '../core/wallFates';
 import type { Side } from '../hl/parse';
 
 /** Migawka kroku `step`: poziomy [cena, wielkość], najpierw bidy (malejąco), potem aski (rosnąco). */
@@ -38,9 +38,21 @@ describe('wallFates', () => {
   it('ściana zdjęta: zniknęła bez transakcji i bez przyrostu obok', () => {
     const frames = [frame(0, [[99, 1], [98, 80], [97, 1], [96, 1], [95, 1]], [[100, 1]]), frame(5000, [[99, 1], [97, 1], [96, 1], [95, 1]], [[100, 1]])];
     const [f] = wallFates(frames, tape([]), 5000).fates;
-    expect(f).toMatchObject({ px: 98, bid: true, verdict: 'pulled', touched: false });
+    expect(f).toMatchObject({ px: 98, bid: true, verdict: 'pulled', touched: false, levels: 1 });
     expect(f.movedUsd).toBe(0);
     expect(f.pulledUsd).toBeCloseTo(80 * 98);
+  });
+
+  it('dystans zniknięcia: poziomy od najlepszej ceny w migawce końca, 0 gdy cena przeszła przez ścianę', () => {
+    // Ask 101 zjedzony przy najlepszym asku 100 — jeden poziom za czołem kolejki
+    const eaten = [frame(0, bids(), [[100, 1], [101, 100], [102, 1]]), frame(5000, bids(), [[100, 1], [101, 10], [102, 1]])];
+    expect(wallFates(eaten, tape([[3000, 101, 90, 1]]), 5000).fates[0].levels).toBe(1);
+    // Bid 30 (krok 10) zdjęty, a cena w tej samej migawce zeszła pod niego — liczy się jako przy cenie
+    const through = [frame(0, [[40, 1], [30, 1000], [20, 1]], [[50, 1]], 10), frame(5000, [[20, 1], [10, 1]], [[30, 1], [40, 1]], 10)];
+    expect(wallFates(through, tape([]), 5000).fates[0]).toMatchObject({ px: 30, bid: true, levels: 0 });
+    // Ściana głęboko w arkuszu: trzy poziomy za najlepszym bidem
+    const deep = [frame(0, [[99, 1], [98, 1], [97, 1], [96, 90]], [[100, 1]]), frame(5000, [[99, 1], [98, 1], [97, 1], [95, 1]], [[100, 1]])];
+    expect(wallFates(deep, tape([]), 5000).fates[0].levels).toBe(3);
   });
 
   it('ściana przesunięta: w tej samej migawce tyle samo przybyło dwa poziomy dalej', () => {
@@ -89,5 +101,20 @@ describe('wallFates', () => {
     expect(wallThreshold([f], 0, 0.95)).toBeCloseTo(200 * 50);
     expect(wallThreshold([f], 1e6, 0.95)).toBe(1e6);
     expect(wallThreshold([], 7)).toBe(7);
+  });
+});
+
+describe('distanceBins', () => {
+  it('losy w przedziałach 0, 1, 2–4 i 5+ poziomów; pusta strona pominięta', () => {
+    const f = (levels: number, verdict: WallFate['verdict']) => ({ levels, verdict }) as WallFate;
+    const bins = distanceBins([f(0, 'pulled'), f(0, 'eaten'), f(1, 'pulled'), f(3, 'moved'), f(4, 'pulled'), f(9, 'pulled'), f(Number.NaN, 'pulled')]);
+    expect(bins.map((b) => [b.from, b.eaten, b.moved, b.pulled])).toEqual([
+      [0, 1, 0, 1],
+      [1, 0, 0, 1],
+      [2, 0, 1, 1],
+      [5, 0, 0, 1],
+    ]);
+    // Przy cenie = przedziały 0 i 1 poziom
+    expect(nearPrice(bins)).toEqual({ n: 3, eaten: 1 });
   });
 });

@@ -39,3 +39,15 @@ export const VERDICT: Record<WallVerdict, { icon: string; cls: string; short: ()
       ),
   },
 };
+
+/** Dystans zniknięcia ściany słownie (poziomy od najlepszej ceny swojej strony). */
+export const distLabel = (levels: number) => {
+  if (levels === 0) return tr('przy cenie', 'at the price');
+  if (levels === 1) return tr('1 poziom od ceny', '1 level from the price');
+  const few = levels % 10 >= 2 && levels % 10 <= 4 && (levels % 100 < 12 || levels % 100 > 14);
+  return tr(`${levels} ${few ? 'poziomy' : 'poziomów'} od ceny`, `${levels} levels from the price`);
+};
+
+/** Opis losu ściany z dystansem zniknięcia (podpowiedź na drabinie i na liście). */
+export const fateTitle = (f: WallFate) =>
+  VERDICT[f.verdict].title(f) + (Number.isFinite(f.levels) ? ' ' + tr(`Zniknęła ${distLabel(f.levels)}.`, `It vanished ${distLabel(f.levels)}.`) : '');
