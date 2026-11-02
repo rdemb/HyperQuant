@@ -29,6 +29,13 @@ export interface MakerSplit {
   mmShare: number;
 }
 
+/** Makerzy jednej strony w oknie: liczba kont, wartość (USD) i największe konta malejąco. */
+export interface MakerTop {
+  n: number;
+  usd: number;
+  top: { key: string; usd: number }[];
+}
+
 export class MakerFlow {
   private readonly minutes = new Map<number, Map<string, Entry>>();
   /** Liczba wypełnień godziny (klucz pamięci podręcznej klas). */
@@ -74,6 +81,32 @@ export class MakerFlow {
       }
     }
     return usd > 0 ? { mm: dMm, rest: dRest, mmShare: usdMm / usd } : null;
+  }
+
+  /**
+   * Koncentracja w [from, to) (z dokładnością do minuty): bid = makerzy kupujący (przyjmują sprzedaż agresorów),
+   * ask = sprzedający (przyjmują kupno). W historii serwera konto ma numer na godzinę, więc okno przechodzące przez
+   * pełną godzinę UTC liczy jedno konto jako dwa.
+   */
+  top(from: number, to: number, k: number): { bid: MakerTop; ask: MakerTop } {
+    const bid = new Map<string, number>();
+    const ask = new Map<string, number>();
+    for (let t = Math.floor(from / MIN) * MIN; t < to; t += MIN) {
+      for (const [key, e] of this.minutes.get(t) ?? []) {
+        if (e.bid > 0) bid.set(key, (bid.get(key) ?? 0) + e.bid);
+        if (e.ask > 0) ask.set(key, (ask.get(key) ?? 0) + e.ask);
+      }
+    }
+    const pack = (m: Map<string, number>): MakerTop => {
+      let usd = 0;
+      for (const v of m.values()) usd += v;
+      const top = [...m.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, k)
+        .map(([key, v]) => ({ key, usd: v }));
+      return { n: m.size, usd, top };
+    };
+    return { bid: pack(bid), ask: pack(ask) };
   }
 
   prune(before: number): void {

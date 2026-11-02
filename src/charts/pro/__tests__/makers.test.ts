@@ -20,6 +20,19 @@ function hour(): Fill[] {
   return out;
 }
 
+describe('koncentracja makerów', () => {
+  it('bid = makerzy przyjmujący sprzedaż, ask = kupno; największe konta malejąco, wypełnienia bez konta pominięte', () => {
+    const f = new MakerFlow();
+    f.add(hour());
+    const t = f.top(10 * M, 11 * M, 2);
+    // Minuta 10: mm przyjął sprzedaż 1 (minuta parzysta), one i dir kupno 0,5 i 4; sprzedaż 9 bez konta makera pominięta
+    expect(t.bid).toEqual({ n: 1, usd: 100, top: [{ key: 'mm', usd: 100 }] });
+    expect(t.ask.n).toBe(2);
+    expect(t.ask.usd).toBeCloseTo(450, 12);
+    expect(t.ask.top.map((x) => x.key)).toEqual(['dir', 'one']);
+  });
+});
+
 describe('delta według klasy makera', () => {
   it('animator: płynność w co najmniej połowie minut i po obu stronach; reszta — pozostali', () => {
     const f = new MakerFlow();

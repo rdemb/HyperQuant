@@ -5,8 +5,9 @@ import { compact } from '../../charts/pro/chart/FlowPanels';
 import { fmtPx } from '../../charts/pro/chart/layout';
 import { LIQ_RAMP } from '../../charts/pro/chart/theme';
 import type { BookFrame, BookHistory } from '../../charts/pro/core/book';
-import { type LadderRow, bucketOf, heatHistory, ladderRows, levelKey, tradedAt } from '../../charts/pro/core/ladder';
+import { type LadderRow, bidShare, bucketOf, heatHistory, ladderRows, levelKey, tradedAt } from '../../charts/pro/core/ladder';
 import { fmtHms } from '../../charts/pro/core/time';
+import type { HeadFlow, HeadNow } from '../../charts/pro/core/queueHead';
 import { type OpenWall, type WallFate, distanceBins, nearPrice } from '../../charts/pro/core/wallFates';
 import type { ProStore } from '../../charts/pro/store/proStore';
 import type { WhaleOrder } from '../../utils/whaleLayer';
@@ -16,14 +17,20 @@ import { VERDICT, fateTitle } from './verdicts';
 
 /**
  * Drabina „kto stoi w kolejce”: stała siatka cen wybranej agregacji arkusza Hyperliquid z wielkością, liczbą zleceń
- * i średnim zleceniem poziomu (jedna duża ręka czy tłum), mini mapą ciepła ostatnich 15 minut przy każdej cenie,
+ * i średnim zleceniem poziomu (jedna duża ręka czy tłum), mini mapą ciepła ostatnich 15 minut (w powiększeniu godziny) przy każdej cenie,
  * wartością transakcji, które w tym czasie zdjęły ten poziom, i znacznikami: zlecenia wielorybów (pseudonimy na dobę,
  * także stopy i TP spoza arkusza), ściany w arkuszu i losy ścian z ostatnich minut.
  */
 
 export const HEAT_MS = 15 * 60_000;
+/** Mapa w powiększonej drabinie (historia serwera sięga godzinę wstecz). */
+export const HEAT_WIDE_MS = 60 * 60_000;
 const ROW_H = 20;
 const MID_H = 30;
+/** Wiersz czoła kolejki nad i pod środkiem. */
+const HEAD_H = 18;
+/** Bilans czoła z tylu ostatnich ms. */
+export const HEAD_FLOW_MS = 5 * 60_000;
 /** Najwięcej wierszy na stronę (dalej i tak tylko poza zasięgiem migawki). */
 const MAX_PER_SIDE = 32;
 /** Migawka starsza niż tyle ms jest nieaktualna (zerwane połączenie). */
@@ -68,6 +75,22 @@ const fmtDur = (ms: number) => {
   const m = Math.floor(ms / 60_000);
   return m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`;
 };
+/** Jak długo cena stoi na czole: sekundy, potem minuty i sekundy. */
+const fmtStand = (ms: number) => {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${s % 60} s`;
+};
+const pctOf = (x: number, total: number) => (total > 0 ? `${numLang(String(Math.round((x / total) * 100)))}%` : '—');
+
+/** Czoło kolejki z kanału bbo: najlepszy poziom teraz i bilans z ostatnich minut. */
+export interface LadderHead {
+  bid: HeadNow | null;
+  ask: HeadNow | null;
+  flow: { bid: HeadFlow; ask: HeadFlow };
+  /** Początek rozliczonego czasu i pierwsza aktualizacja w tej sesji (ms). */
+  from: number;
+  first: number;
+}
 
 export interface LadderProps {
   store: ProStore;
@@ -82,11 +105,17 @@ export interface LadderProps {
   lotUsd: number;
   /** Najlepszy bid i ask z dokładnego arkusza (krok ceny) — środek i spread niezależne od agregacji drabiny. */
   top: { bid: number; ask: number } | null;
+  /** Czoło kolejki (null bez kanału bbo). */
+  head: LadderHead | null;
+  /** Powiększona drabina: mapa z ostatniej godziny i szersza. */
+  wide: boolean;
   narrow: boolean;
   className: string;
+  /** Przyciski po prawej w nagłówku (powiększenie). */
+  tools?: React.ReactNode;
 }
 
-export const Ladder: React.FC<LadderProps> = ({ store, hist, steps, stepId, onStep, whales, fates, open, lotUsd, top, narrow, className }) => {
+export const Ladder: React.FC<LadderProps> = ({ store, hist, steps, stepId, onStep, whales, fates, open, lotUsd, top, head, wide, narrow, className, tools }) => {
   const bodyRef = useRef<HTMLDivElement>(null);
   const [{ h, w }, setBox] = useState({ h: 0, w: 0 });
   useLayoutEffect(() => {
@@ -99,11 +128,13 @@ export const Ladder: React.FC<LadderProps> = ({ store, hist, steps, stepId, onSt
     return () => ro.disconnect();
   }, []);
   const compactW = !narrow && w > 0 && w < COMPACT_W;
+  const heatMs = wide ? HEAT_WIDE_MS : HEAT_MS;
+  const heads = !narrow && head !== null && (head.bid !== null || head.ask !== null);
 
   const f: BookFrame | null = hist?.latest() ?? null;
   const now = store.serverNow();
   const stale = f !== null && now - f.t > STALE_MS;
-  const perSide = Math.max(4, Math.min(MAX_PER_SIDE, Math.floor((h - MID_H) / ROW_H / 2)));
+  const perSide = Math.max(4, Math.min(MAX_PER_SIDE, Math.floor((h - MID_H - (heads ? 2 * HEAD_H : 0)) / ROW_H / 2)));
   const ready = f !== null && f.nBids > 0 && f.nBids < f.px.length;
   const { asks, bids } = ready ? ladderRows(f, perSide) : { asks: [] as LadderRow[], bids: [] as LadderRow[] };
   const step = f?.step ?? Number.NaN;
@@ -120,9 +151,7 @@ export const Ladder: React.FC<LadderProps> = ({ store, hist, steps, stepId, onSt
     if (r.sz > maxSz) maxSz = r.sz;
     maxTr = Math.max(maxTr, traded.get(levelKey(r.bid, r.px)) ?? 0);
   }
-  let sb = 0;
-  let sa = 0;
-  if (ready) for (let i = 0; i < f.px.length; i++) i < f.nBids ? (sb += f.sz[i]) : (sa += f.sz[i]);
+  const bs = ready ? bidShare(f) : Number.NaN;
 
   // Znaczniki: wieloryby (na wierszu albo poza drabiną), ściany w arkuszu, losy ścian
   const rowKeys = new Set([...asks, ...bids].map((r) => levelKey(r.bid, r.px)));
@@ -158,16 +187,17 @@ export const Ladder: React.FC<LadderProps> = ({ store, hist, steps, stepId, onSt
   const nearPulled = bins.filter((b) => b.from <= NEAR_LEVELS).reduce((a, b) => a + b.pulled, 0);
 
   // Mini mapa ciepła: osobne płótno dla asków i bidów, kolumna = kilka sekund
-  const heatW = narrow ? 44 : compactW ? 96 : 132;
-  const cols = narrow ? 44 : compactW ? 64 : 90;
+  // Powiększenie: mapa zajmuje to, co zostaje po kolumnach liczb (najwyżej ok. 55% szerokości), kolumna co ok. 3 px
+  const heatW = narrow ? 44 : wide ? Math.round(Math.max(360, Math.min(w - 780, w * 0.55))) : compactW ? 96 : 132;
+  const cols = narrow ? 44 : wide ? Math.round(heatW / 3) : compactW ? 64 : 90;
   const askCanvas = useRef<HTMLCanvasElement>(null);
   const bidCanvas = useRef<HTMLCanvasElement>(null);
-  const frames = ready && hist ? hist.range(now - HEAT_MS, now + 1) : [];
+  const frames = ready && hist ? hist.range(now - heatMs, now + 1) : [];
   const shownAsks = [...asks].reverse();
   useEffect(() => {
     if (!ready) return;
-    const a = heatHistory(frames, shownAsks, now - HEAT_MS, now, cols, HEAT_GAP_MS);
-    const b = heatHistory(frames, bids, now - HEAT_MS, now, cols, HEAT_GAP_MS);
+    const a = heatHistory(frames, shownAsks, now - heatMs, now, cols, HEAT_GAP_MS);
+    const b = heatHistory(frames, bids, now - heatMs, now, cols, HEAT_GAP_MS);
     // Normalizacja do p99 wielkości z obu stron okna, potęga HEAT_GAMMA: poziomy agregacji są podobnego rzędu, więc
     // skala logarytmiczna (jak na wykresie) zlewa je w jeden gorący kolor, a tu gorące zostają tylko ściany
     const xs: number[] = [];
@@ -297,7 +327,7 @@ export const Ladder: React.FC<LadderProps> = ({ store, hist, steps, stepId, onSt
     );
   };
 
-  // Końce ścian z ostatnich 15 min na mapie: ikona werdyktu tam, gdzie smuga się urywa (czas × cena wiersza).
+  // Końce ścian z okna mapy: ikona werdyktu tam, gdzie smuga się urywa (czas × cena wiersza).
   // Ikona cała w polu mapy; w jednym wierszu bez nakładania (zostaje nowsza), żeby nie zakryć kolorów na wąskiej mapie.
   const ends = (rows: readonly LadderRow[], bid: boolean) => {
     const at = new Map(rows.map((r, i) => [r.px, i]));
@@ -305,8 +335,8 @@ export const Ladder: React.FC<LadderProps> = ({ store, hist, steps, stepId, onSt
     const out: React.ReactNode[] = [];
     for (const x of [...fates].sort((a, b) => b.t - a.t)) {
       const y = x.bid === bid ? at.get(x.px) : undefined;
-      if (y === undefined || x.t < now - HEAT_MS || x.t > now) continue;
-      const left = Math.min(heatW - ICON_HALF, Math.max(ICON_HALF, ((x.t - (now - HEAT_MS)) / HEAT_MS) * heatW));
+      if (y === undefined || x.t < now - heatMs || x.t > now) continue;
+      const left = Math.min(heatW - ICON_HALF, Math.max(ICON_HALF, ((x.t - (now - heatMs)) / heatMs) * heatW));
       const taken = placed.get(y) ?? [];
       if (taken.some((p) => Math.abs(p - left) < ICON_GAP)) continue;
       taken.push(left);
@@ -324,6 +354,53 @@ export const Ladder: React.FC<LadderProps> = ({ store, hist, steps, stepId, onSt
       );
     }
     return out;
+  };
+
+  // Czoło kolejki (kanał bbo) przy środku: cena, wartość, zlecenia, jak długo stoi i bilans ubytku z 5 min
+  const headLine = (x: HeadNow | null, f: HeadFlow, bid: boolean) => {
+    const h0 = head!;
+    const out = f.eaten + f.pulled;
+    const fresh = !(h0.from <= now - HEAD_FLOW_MS);
+    const atLeast = x !== null && x.since <= h0.first;
+    const title = tr(
+      `Czoło kolejki z kanału bbo Hyperliquid (najlepszy ${bid ? 'bid' : 'ask'}, aktualizacja kilka razy na sekundę): cena, wartość, liczba zleceń i jak długo ta cena jest najlepsza${atLeast ? ' (co najmniej od otwarcia strony)' : ''}. Ubytek czoła z ostatnich 5 min: zjedzone = transakcje na tej cenie, anulowane = reszta ubytku; ponad ubytek dolano ${compact(f.refill)} USD. Bilans netto między aktualizacjami, nie wykrywanie spoofingu.`,
+      `Head of the queue from the Hyperliquid bbo channel (best ${bid ? 'bid' : 'ask'}, updated several times a second): price, value, order count and how long this price has been the best${atLeast ? ' (at least since the page opened)' : ''}. Head depletion in the last 5 min: eaten = trades at this price, cancelled = the rest of the depletion; ${compact(f.refill)} USD was added beyond it. Net balance between updates, not spoofing detection.`
+    );
+    return (
+      <div className="flex items-center gap-2 px-3 shrink-0 font-mono text-[10px] text-ink-3 whitespace-nowrap overflow-hidden" style={{ height: HEAD_H }} title={title}>
+        <span className={`font-semibold ${bid ? 'text-of-buy-ink' : 'text-of-sell-ink'}`}>
+          {tr('czoło', 'head')}
+          {x && !compactW && ` ${fmtPx(x.px)}`}
+        </span>
+        {x ? (
+          <>
+            <span className="text-ink-1">{compact(x.sz * x.px)}</span>
+            <span>
+              {x.n >= 1 ? x.n : '—'} {tr('zl.', 'ord.')}
+            </span>
+            <span>
+              {compactW ? '' : `${tr('stoi', 'stands')} `}
+              {atLeast ? '≥' : ''}
+              {fmtStand(now - x.since)}
+            </span>
+          </>
+        ) : (
+          <span>—</span>
+        )}
+        <span className="ml-auto">
+          {!compactW && (fresh ? (Number.isFinite(h0.from) ? tr(`od ${fmtHms(h0.from)} · `, `since ${fmtHms(h0.from)} · `) : '') : '5 min · ')}
+          {compactW ? tr('zjedz. ', 'eaten ') : tr('zjedzone ', 'eaten ')}
+          <span className="text-ink-1">{pctOf(f.eaten, out)}</span>
+          {!compactW && (
+            <>
+              {' · '}
+              {tr('anulowane ', 'cancelled ')}
+              <span className="text-ink-1">{pctOf(f.pulled, out)}</span>
+            </>
+          )}
+        </span>
+      </div>
+    );
   };
 
   const side = (rows: LadderRow[], ref: React.RefObject<HTMLCanvasElement | null>, top: boolean) => (
@@ -357,6 +434,7 @@ export const Ladder: React.FC<LadderProps> = ({ store, hist, steps, stepId, onSt
             </button>
           ))}
         </div>
+        {tools}
       </div>
       <div className={`grid ${grid} gap-x-2 pr-2 py-1 border-b border-line font-mono text-[10px] text-ink-3 shrink-0`} style={{ paddingLeft: heatW + 8 }}>
         <span>{tr('Cena', 'Price')}</span>
@@ -372,21 +450,35 @@ export const Ladder: React.FC<LadderProps> = ({ store, hist, steps, stepId, onSt
         ) : (
           <>
             {side(shownAsks, askCanvas, true)}
+            {heads && headLine(head.ask, head.flow.ask, false)}
             <div className="flex items-center justify-between gap-2 px-3 shrink-0 border-y border-line bg-surface-2 font-mono text-[11px]" style={{ height: MID_H }}>
-              <span className="text-ink-3 hidden sm:inline" style={{ width: heatW - 12 }}>
-                ← {tr('15 min', '15 min')}
-                {!compactW && ` · ${tr('teraz', 'now')}`}
-              </span>
+              {wide ? (
+                // Podziałka czasu pod szeroką mapą: co 15 min
+                <span className="relative self-stretch shrink-0 -ml-3 text-ink-3 text-[10px]" style={{ width: heatW }}>
+                  {[45, 30, 15, 0].map((m) => (
+                    <span key={m} className={`absolute top-1/2 -translate-y-1/2 ${m === 0 ? '-translate-x-full pr-1' : '-translate-x-1/2'}`} style={{ left: heatW * (1 - m / 60) }}>
+                      {m === 0 ? tr('teraz', 'now') : `−${m}`}
+                    </span>
+                  ))}
+                  <span className="absolute top-1/2 -translate-y-1/2 left-1">← 60 min</span>
+                </span>
+              ) : (
+                <span className="text-ink-3 hidden sm:inline" style={{ width: heatW - 12 }}>
+                  ← {`${heatMs / 60_000} min`}
+                  {!compactW && ` · ${tr('teraz', 'now')}`}
+                </span>
+              )}
               <span className="text-ink-1">{fmtPx(mid)}</span>
               <span className="text-ink-3" title={tr('Najlepszy bid i ask z dokładnego arkusza, bez agregacji', 'Best bid and ask from the exact book, without aggregation')}>
                 spread {numLang(String(Number((bestAsk - bestBid).toPrecision(6))))}
               </span>
               <span title={tr('Udział bidów i asków w widocznej głębokości arkusza', 'Share of bids and asks in the visible book depth')}>
-                <span className="text-of-buy-ink">{Math.round((sb / (sb + sa || 1)) * 100)}%</span>
+                <span className="text-of-buy-ink">{Number.isFinite(bs) ? Math.round(bs * 100) : '—'}%</span>
                 <span className="text-ink-3"> / </span>
-                <span className="text-of-sell-ink">{Math.round((sa / (sb + sa || 1)) * 100)}%</span>
+                <span className="text-of-sell-ink">{Number.isFinite(bs) ? 100 - Math.round(bs * 100) : '—'}%</span>
               </span>
             </div>
+            {heads && headLine(head.bid, head.flow.bid, true)}
             {side(bids, bidCanvas, false)}
           </>
         )}
@@ -413,8 +505,8 @@ export const Ladder: React.FC<LadderProps> = ({ store, hist, steps, stepId, onSt
         ) : (
           <p>
             {tr(
-              `Migawka arkusza co ok. 5 s, 20 poziomów na stronę (dalej „·” = poza zasięgiem). Żółte: średnie zlecenie od ${compact(lotUsd)} USD, czyli jedna duża ręka, nie tłum. Mapa: ostatnie 15 min przy tej cenie, szare = brak migawki (poza zasięgiem arkusza albo luka w zapisie).`,
-              `Book snapshot every ~5 s, 20 levels per side (beyond: “·” = out of range). Yellow: average order from ${compact(lotUsd)} USD, one large hand rather than a crowd. Map: the last 15 min at this price, grey = no snapshot (out of the book's range or a gap in the recording).`
+              `Migawka arkusza co ok. 5 s, 20 poziomów na stronę (dalej „·” = poza zasięgiem). Żółte: średnie zlecenie od ${compact(lotUsd)} USD, czyli jedna duża ręka, nie tłum. Mapa: ostatnie ${heatMs / 60_000} min przy tej cenie, szare = brak migawki (poza zasięgiem arkusza albo luka w zapisie).`,
+              `Book snapshot every ~5 s, 20 levels per side (beyond: “·” = out of range). Yellow: average order from ${compact(lotUsd)} USD, one large hand rather than a crowd. Map: the last ${heatMs / 60_000} min at this price, grey = no snapshot (out of the book's range or a gap in the recording).`
             )}
             {stepId === 'exact' &&
               tr(

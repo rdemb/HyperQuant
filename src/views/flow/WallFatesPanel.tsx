@@ -31,9 +31,10 @@ export const WallFatesPanel: React.FC<{
   since: number | null;
   narrow: boolean;
   className: string;
-  /** Nagłówek zamiast tytułu (przełącznik zakładek na komputerze). */
+  /** Nagłówek zamiast tytułu (przełącznik zakładek na komputerze) i przyciski po prawej (powiększenie). */
   head?: React.ReactNode;
-}> = ({ fates, minUsd, step, since, narrow, className, head }) => {
+  tools?: React.ReactNode;
+}> = ({ fates, minUsd, step, since, narrow, className, head, tools }) => {
   const counts = ORDER.map((v) => {
     const xs = fates.filter((f) => f.verdict === v);
     return { v, n: xs.length, usd: xs.reduce((s, f) => s + f.peakUsd, 0) };
@@ -56,6 +57,7 @@ export const WallFatesPanel: React.FC<{
         <span className={`ml-auto font-mono text-[10px] text-ink-3 whitespace-nowrap ${head ? '@max-lg:hidden' : ''}`}>
           {since !== null ? tr(`od ${fmtHms(since)}`, `since ${fmtHms(since)}`) : ''}
         </span>
+        {tools}
       </div>
       <div className="grid grid-cols-3 gap-px bg-line border-b border-line shrink-0">
         {counts.map((c) => (

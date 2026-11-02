@@ -9,6 +9,7 @@ export const HL_WS_URL = 'wss://api.hyperliquid.xyz/ws';
 export type Subscription =
   | { type: 'trades'; coin: string }
   | { type: 'l2Book'; coin: string; nSigFigs?: number }
+  | { type: 'bbo'; coin: string }
   | { type: 'candle'; coin: string; interval: string }
   | { type: 'activeAssetCtx'; coin: string };
 
@@ -41,6 +42,7 @@ export function subKey(s: Subscription): string {
   switch (s.type) {
     case 'trades':
     case 'activeAssetCtx':
+    case 'bbo':
       return `${s.type}|${s.coin}`;
     case 'l2Book':
       return `l2Book|${s.coin}|${s.nSigFigs ?? ''}`;
@@ -55,7 +57,7 @@ export function parseSubscription(raw: unknown): Subscription | null {
   const r = raw as Record<string, unknown>;
   const coin = typeof r.coin === 'string' ? r.coin : null;
   if (!coin) return null;
-  if (r.type === 'trades' || r.type === 'activeAssetCtx') return { type: r.type, coin };
+  if (r.type === 'trades' || r.type === 'activeAssetCtx' || r.type === 'bbo') return { type: r.type, coin };
   if (r.type === 'candle' && typeof r.interval === 'string') return { type: 'candle', coin, interval: r.interval };
   if (r.type === 'l2Book') {
     const n = r.nSigFigs;

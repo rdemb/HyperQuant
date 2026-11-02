@@ -387,6 +387,34 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         ),
       },
       {
+        metric: tr('DOM i taśma: czoło kolejki', 'DOM & tape: head of the queue'),
+        source: tr('Hyperliquid WS bbo (najlepszy bid i ask z wielkością i liczbą zleceń, kilka razy na sekundę) i WS trades; kanał bbo tylko przy otwartym widoku', 'Hyperliquid WS bbo (best bid and ask with size and order count, several times a second) and WS trades; the bbo channel only while the view is open'),
+        method: tr(
+          'Między kolejnymi aktualizacjami bbo ubytek czoła = wielkość przed minus wielkość po (cała, gdy cena czoła cofnęła się dalej od środka). Zjedzone = transakcje agresora na cenie czoła w tym odstępie (sprzedający dla bidu, kupujący dla asku), anulowane = ubytek ponad transakcje, dolane = transakcje ponad ubytek. Rozliczenie 2 s po aktualizacji (transakcje z tej chwili są już na taśmie); odstęp dłuższy niż 10 s albo zerwane połączenie nie jest rozliczany. „Stoi” = czas od chwili, gdy ta cena stała się najlepsza (najwyżej od otwarcia strony). W drabinie bilans z 5 min',
+          'Between consecutive bbo updates the head depletion = size before minus size after (all of it when the head price moved away from the mid). Eaten = aggressor trades at the head price in that gap (sellers for the bid, buyers for the ask), cancelled = depletion beyond trades, added = trades beyond depletion. Settled 2 s after the update (trades from that moment are on the tape); a gap longer than 10 s or a dropped connection is not settled. “Stands” = time since this price became the best (at most since the page opened). The ladder shows the last 5 min'
+        ),
+        kinds: ['LIVE'],
+        refresh: tr('kilka razy na sekundę, od otwarcia widoku', 'several times a second, since the view opened'),
+        caveat: tr(
+          'Bilans netto między aktualizacjami: zlecenie dołożone i zdjęte w jednym odstępie jest niewidoczne, więc to nie jest wykrywanie spoofingu. Bez historii serwera: liczy się od otwarcia widoku.',
+          'Net balance between updates: an order added and removed within one gap is invisible, so this is not spoofing detection. No server history: it counts from when the view opened.'
+        ),
+      },
+      {
+        metric: tr('DOM i taśma: kto przyjmuje uderzenia', 'DOM & tape: who absorbs the hits'),
+        source: tr('Hyperliquid WS trades (konto makera i biorcy przy każdej transakcji) i zapis serwera z ostatniej godziny', 'Hyperliquid WS trades (maker and taker account of every trade) and the server recording of the last hour'),
+        method: tr(
+          'Z 15 min: wartość po stronie makera każdego konta osobno dla bidów (przyjmują sprzedaż agresorów) i asków (przyjmują kupno), dla biorców wartość zleceń agresora konta. Udział 3 największych kont w wartości strony; „zwykle” = mediana z 10 okien 15 min kończących się co 5 min w ostatniej godzinie (tylko okna z co najmniej 90% nagrania kont), żółte od 1,25× zwykłego. W powiększeniu 10 największych kont i przebieg udziału z godziny',
+          'Over 15 min: the maker-side value of each account separately for bids (absorbing aggressor selling) and asks (absorbing buying); for takers the value of the account’s aggressor orders. Share of the 3 largest accounts in the side’s value; “usually” = the median of 10 windows of 15 min ending every 5 min in the last hour (only windows with at least 90% of the account recording), yellow from 1.25× usual. Enlarged: the 10 largest accounts and the share over the hour'
+        ),
+        kinds: ['LIVE', 'MODEL'],
+        refresh: tr('co 5 s', 'every 5 s'),
+        caveat: tr(
+          'Na ekranie pseudonimy jak na taśmie, nigdy adresy. W zapisie serwera konto ma numer na godzinę UTC, więc okno przez przełom godziny może liczyć jedno konto jako dwa (udział zaniżony). Opis, kto daje płynność, nie sygnał kierunku.',
+          'The screen shows pseudonyms as on the tape, never addresses. In the server recording an account has a number per UTC hour, so a window across the turn of the hour can count one account as two (share understated). A description of who provides liquidity, not a direction signal.'
+        ),
+      },
+      {
         metric: 'Open interest, funding, mark/oracle',
         source: 'Hyperliquid API: metaAndAssetCtxs',
         method: tr('Wartości wprost z API; basis = (mark − oracle) / oracle', 'Values straight from the API; basis = (mark − oracle) / oracle'),
