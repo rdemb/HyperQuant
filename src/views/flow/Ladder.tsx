@@ -211,6 +211,8 @@ export const Ladder: React.FC<LadderProps> = ({ store, hist, steps, stepId, onSt
     const ink = r.bid ? 'text-of-buy-ink' : 'text-of-sell-ink';
     const mark = (() => {
       const parts: React.ReactNode[] = [];
+      // Przy wielorybie komórka „kto / co” jest za wąska na dwa pełne podpisy: los ściany i bilans skrócone, wiek ściany ukryty
+      const tight = narrow || compactW || !!whale;
       if (whale) {
         const stop = whale.kinds.has('stop') || whale.kinds.has('tp');
         parts.push(
@@ -220,7 +222,7 @@ export const Ladder: React.FC<LadderProps> = ({ store, hist, steps, stepId, onSt
               `Zlecenia wielorybów na tej cenie: ${whale.n}, razem ${compact(whale.usd)} USD (największe: ${whale.top.id}, ${whale.top.kind === 'limit' ? 'limit' : whale.top.kind === 'stop' ? 'stop' : 'TP'}${whale.top.reduce ? ', tylko zmniejsza pozycję' : ''}). Pseudonim ważny jedną dobę.`,
               `Whale orders at this price: ${whale.n}, total ${compact(whale.usd)} USD (largest: ${whale.top.id}, ${whale.top.kind === 'limit' ? 'limit' : whale.top.kind === 'stop' ? 'stop' : 'TP'}${whale.top.reduce ? ', reduce only' : ''}). The pseudonym is valid for one day.`
             )}
-            className={`px-1 rounded-sm text-[10px] font-semibold ${stop ? 'bg-warn/20 text-warn' : 'bg-surface-3 text-ink-1'}`}
+            className={`min-w-0 truncate px-1 rounded-sm text-[10px] font-semibold ${stop ? 'bg-warn/20 text-warn' : 'bg-surface-3 text-ink-1'}`}
           >
             {narrow ? 'W' : `${stop && !compactW ? (whale.kinds.has('stop') ? 'stop ' : 'TP ') : ''}${whale.top.id} ${compact(whale.usd)}`}
           </span>
@@ -229,8 +231,8 @@ export const Ladder: React.FC<LadderProps> = ({ store, hist, steps, stepId, onSt
       if (fate) {
         const v = VERDICT[fate.verdict];
         parts.push(
-          <span key="f" title={fateTitle(fate)} className={`text-[10px] font-semibold ${v.cls}`}>
-            {narrow || compactW ? v.icon : `${v.icon} ${v.short()}`}
+          <span key="f" title={fateTitle(fate)} className={`shrink-0 text-[10px] font-semibold ${v.cls}`}>
+            {tight ? v.icon : `${v.icon} ${v.short()}`}
           </span>
         );
       } else if (wall && !narrow && lvl <= NEAR_LEVELS && near.n >= NEAR_MIN) {
@@ -241,13 +243,13 @@ export const Ladder: React.FC<LadderProps> = ({ store, hist, steps, stepId, onSt
               `Ściana ${compact(wall.usd)} USD stoi przy cenie (w arkuszu od ${fmtHms(wall.since)}). W ostatniej godzinie z ${near.n} ścian, które zniknęły przy cenie (najwyżej ${NEAR_LEVELS} poziom od najlepszej), zjedzono ${near.eaten}, przesunięto ${nearMoved}, zdjęto ${nearPulled}. To opis tego, co działo się z innymi ścianami, nie prognoza tej.`,
               `A wall of ${compact(wall.usd)} USD stands at the price (in the book since ${fmtHms(wall.since)}). In the last hour, of ${near.n} walls that vanished at the price (at most ${NEAR_LEVELS} level from the best), ${near.eaten} were eaten, ${nearMoved} moved and ${nearPulled} pulled. A description of what happened to other walls, not a forecast for this one.`
             )}
-            className="text-[10px] text-ink-2"
+            className="shrink-0 text-[10px] text-ink-2"
           >
-            {compactW ? '' : tr('zjedz. ', 'eaten ')}
+            {tight ? '' : tr('zjedz. ', 'eaten ')}
             <span className={near.eaten > 0 ? 'text-warn' : 'text-ink-1'}>{near.eaten}</span>/{near.n}
           </span>
         );
-      } else if (wall && now - wall.since >= WALL_MARK_MS && !narrow) {
+      } else if (wall && now - wall.since >= WALL_MARK_MS && !narrow && !whale) {
         parts.push(
           <span key="s" title={tr(`Ściana w arkuszu od ${fmtHms(wall.since)}`, `Wall in the book since ${fmtHms(wall.since)}`)} className="text-[10px] text-ink-3">
             {tr('ściana', 'wall')} {fmtDur(now - wall.since)}
