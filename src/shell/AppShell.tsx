@@ -14,6 +14,7 @@ import {
   Pause,
   Play,
   RefreshCw,
+  Rows3,
   Volume2,
   VolumeX,
 } from 'lucide-react';
@@ -32,6 +33,7 @@ const PlanView = lazy(() => import('../views/PlanView'));
 const MarketView = lazy(() => import('../views/MarketView'));
 const LabView = lazy(() => import('../views/LabView'));
 const MicroView = lazy(() => import('../views/MicroView'));
+const FlowView = lazy(() => import('../views/FlowView'));
 const LessonsView = lazy(() => import('../views/LessonsView'));
 const SourcesView = lazy(() => import('../views/SourcesView'));
 
@@ -42,6 +44,7 @@ const NAV: { id: ViewId; label: string; short: string; icon: React.ReactNode }[]
   { id: 'market', label: tr('Rynek', 'Market'), short: tr('Rynek', 'Market'), icon: <Globe2 className="w-4 h-4" /> },
   { id: 'lab', label: 'Lab 3D', short: 'Lab', icon: <Box className="w-4 h-4" /> },
   { id: 'micro', label: tr('Mikrostruktura', 'Microstructure'), short: tr('Mikro', 'Micro'), icon: <Activity className="w-4 h-4" /> },
+  { id: 'flow', label: tr('DOM i taśma', 'DOM & tape'), short: 'DOM', icon: <Rows3 className="w-4 h-4" /> },
   { id: 'lessons', label: tr('Lekcje', 'Lessons'), short: tr('Lekcje', 'Lessons'), icon: <GraduationCap className="w-4 h-4" /> },
   { id: 'sources', label: tr('Źródła', 'Sources'), short: tr('Źródła', 'Sources'), icon: <Database className="w-4 h-4" /> },
 ];
@@ -127,7 +130,7 @@ const ViewFallback = () => <EmptyState title={tr('Ładowanie widoku…', 'Loadin
 
 // Desk sam czeka na dane pod powitaniem (powitanie i mapa strony nie zależą od danych)
 const NEEDS_BARS: ViewId[] = ['plan', 'lab', 'micro'];
-const OWN_INTERVALS: ViewId[] = ['charts', 'lessons'];
+const OWN_INTERVALS: ViewId[] = ['charts', 'flow', 'lessons'];
 
 /** Powłoka aplikacji: nawigacja (górna na desktopie, dolna na telefonie), status danych, przejścia widoków. */
 export const AppShell: React.FC = () => {
@@ -250,6 +253,7 @@ export const AppShell: React.FC = () => {
               {view === 'market' && <MarketView />}
               {!awaitingData && view === 'lab' && <LabView />}
               {!awaitingData && view === 'micro' && <MicroView />}
+              {view === 'flow' && <FlowView />}
               {view === 'lessons' && <LessonsView />}
               {view === 'sources' && <SourcesView />}
             </Suspense>

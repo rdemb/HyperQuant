@@ -204,13 +204,13 @@ export const PickCard: React.FC<{
   );
 };
 
-const TAPE_MIN_OPTIONS = [0, 10_000, 50_000, 100_000, 250_000, 1_000_000];
+export const TAPE_MIN_OPTIONS = [0, 10_000, 50_000, 100_000, 250_000, 1_000_000];
 /** Przeglądane najnowsze zlecenia i najwięcej wierszy taśmy. */
 const TAPE_SCAN = 3000;
 const TAPE_ROWS = 160;
 
 /** Krótki ton: kupno wyżej, sprzedaż niżej. */
-function beep(ctx: AudioContext, buy: boolean): void {
+export function beep(ctx: AudioContext, buy: boolean): void {
   const t = ctx.currentTime;
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();

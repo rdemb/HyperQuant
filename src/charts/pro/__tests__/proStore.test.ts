@@ -185,6 +185,9 @@ describe('ProStore', () => {
     ws.msg({ channel: 'trades', data: [trade(server - 9000, 81020, 0.3, 'A', 1), trade(server - 2000, 81025, 0.5, 'B', 2)] });
     expect(store.coverage.covers(now, server - 2000)).toBe(false);
     expect(store.coverage.covers(server - 2000, server)).toBe(true);
+    // Migawka to ostatnie transakcje z rzędu: taśma kompletna od milisekundy po najstarszej z nich
+    expect(store.coverage.covers(server - 8999, server)).toBe(true);
+    expect(store.coverage.covers(server - 9000, server)).toBe(false);
   });
 
   it('migawka bez transakcji nowszych niż zerwanie połączenia zachowuje ciągłość nagrania', async () => {

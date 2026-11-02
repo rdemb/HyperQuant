@@ -49,6 +49,7 @@ import { TOOLS } from './draw/model';
 import { type DrawingTools, isTyping } from './draw/tools';
 import { CandleSeries, MARKETS, Market, ProStore, storeFor } from './store/proStore';
 import { startRecording } from './store/recording';
+import { useStoreVersion } from './store/useStoreVersion';
 import { ReplayBar } from './replay/ReplayBar';
 import { type ReplayLink, linkPatch, parseReplayLink, replayHash } from './replay/link';
 import { type ReplaySession, replayBase } from './replay/session';
@@ -176,33 +177,6 @@ function initialSettings(panel: number, station: Station, tabId: string, coin: M
   if (panel === 0 && fromLink) s = withPatch(s, settingsFromHash(window.location.hash));
   // Rynek zostaje przy zmianie karty
   return coin ? withPatch(s, { coin }) : s;
-}
-
-/** Odświeżanie paska stanu i paska narzędzi z magazynu — najwyżej co `ms` (taśma bywa bardzo szybka). */
-function useStoreVersion(store: ProStore, ms: number): number {
-  const ref = useRef({ version: store.version, last: 0, timer: 0 as ReturnType<typeof setTimeout> | 0 });
-  const subscribe = useCallback(
-    (notify: () => void) => {
-      const st = ref.current;
-      const unsub = store.subscribe(() => {
-        if (st.timer) return;
-        const wait = Math.max(0, st.last + ms - Date.now());
-        st.timer = setTimeout(() => {
-          st.timer = 0;
-          st.last = Date.now();
-          st.version = store.version;
-          notify();
-        }, wait);
-      });
-      return () => {
-        unsub();
-        if (st.timer) clearTimeout(st.timer);
-        st.timer = 0;
-      };
-    },
-    [store, ms]
-  );
-  return useSyncExternalStore(subscribe, () => ref.current.version);
 }
 
 /**
