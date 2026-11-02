@@ -360,12 +360,14 @@ export class ProStore {
       this.clock.observe(newest, recvAt);
       if (this.liveFrom === Number.POSITIVE_INFINITY) this.liveFrom = oldest;
       if (this.tradesPending) {
-        // Pierwsza wiadomość po subskrypcji to migawka ostatnich transakcji, więc od najnowszej z nich taśma
-        // jest kompletna — początek nagrania w zegarze giełdy, niezależnie od zegara przeglądarki
+        // Pierwsza wiadomość po subskrypcji to migawka 30 ostatnich transakcji z rzędu, więc taśma jest kompletna
+        // już od najstarszej z nich (bez jej milisekundy, w której mogły zostać wcześniejsze wypełnienia) — początek
+        // nagrania w zegarze giełdy, niezależnie od zegara przeglądarki
         this.tradesPending = false;
-        this.coverage.open(newest);
-        this.addressed.open(newest);
-        this.zeroKnown.open(newest);
+        const start = Math.min(oldest + 1, newest);
+        this.coverage.open(start);
+        this.addressed.open(start);
+        this.zeroKnown.open(start);
       }
       this.ingestFills(fills, recvAt);
     } else if (channel === 'candle') {

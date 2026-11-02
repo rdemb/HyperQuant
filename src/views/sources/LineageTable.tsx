@@ -339,6 +339,23 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         ),
       },
       {
+        metric: tr('DOM i taśma: drabina, mapa 15 min, los ścian, taśma z pamięcią', 'DOM & tape: ladder, 15 min map, wall fates, tape with memory'),
+        source: tr(
+          'Hyperliquid WS l2Book (krok 1, 10 i 100 USD, po 20 poziomów na stronę) i trades, z zapisem serwera z ostatniej godziny; whales.json (wieloryby, pseudonimy dnia)',
+          'Hyperliquid WS l2Book (1, 10 and 100 USD steps, 20 levels per side) and trades, with the server recording of the last hour; whales.json (whales, daily pseudonyms)'
+        ),
+        method: tr(
+          'Drabina: stała siatka od najlepszych cen (środek i spread zawsze z dokładnego arkusza), wielkość i liczba zleceń wprost z arkusza, średnie zlecenie = wartość / liczba (żółte od progu dużego zlecenia w arkuszu z 30 min), obrót z taśmy z 15 min w kubełku poziomu (bid [b, b + krok), ask (a − krok, a]). Mapa: migawka obowiązująca w środku kolumny, kolor do 99. percentyla. Los ściany (poziom od 95. percentyla wartości poziomów z godziny, nie mniej niż 100 tys. USD): w każdej parze migawek ubytek pokryty transakcjami na jej cenie = zjedzona, reszta pokryta netto przyrostem w ±3 poziomach = przesunięta, reszta = zdjęta; koniec poniżej 25% szczytu, werdykt = największa z trzech części. Taśma: zlecenia agresora z wypełnień, plasterki z hashem zerowym jednego konta i strony z przerwą do 75 s sklejone w TWAP, licznik zleceń konta z 15 min, tempo = ostatnia minuta wobec mediany pełnych minut z godziny',
+          'Ladder: a fixed grid from the best prices (mid and spread always from the exact book), size and order count straight from the book, average order = value / count (yellow from the large resting order threshold of 30 min), traded value from 15 min of tape in the level bucket (bid [b, b + step), ask (a − step, a]). Map: the snapshot valid at the middle of the column, colour up to the 99th percentile. Wall fate (a level from the 95th percentile of level values over the hour, at least 100k USD): in every pair of snapshots the drop covered by trades at its price = eaten, the rest covered by net growth within ±3 levels = moved, the rest = pulled; the end below 25% of the peak, verdict = the largest of the three parts. Tape: aggressor orders from fills, zero-hash slices of one account and side with gaps up to 75 s glued into a TWAP, an account order count over 15 min, pace = the last minute against the median full minute of the hour'
+        ),
+        kinds: ['LIVE', 'MODEL'],
+        refresh: tr('arkusz co ok. 5 s · taśma na żywo', 'book about every 5 s · tape live'),
+        caveat: tr(
+          'Arkusz Hyperliquid to migawki co ok. 5 s, więc zmiany między nimi są niewidoczne, a przypisanie ubytku do transakcji, przesunięcia albo zdjęcia jest przybliżeniem, nie wykrywaniem spoofingu. Pseudonimy kont tylko na tę sesję strony, bez adresów.',
+          'The Hyperliquid book is snapshots about every 5 s, so changes between them are invisible, and attributing a drop to trades, a move or a pull is an approximation, not spoofing detection. Account pseudonyms for this page session only, no addresses.'
+        ),
+      },
+      {
         metric: 'Open interest, funding, mark/oracle',
         source: 'Hyperliquid API: metaAndAssetCtxs',
         method: tr('Wartości wprost z API; basis = (mark − oracle) / oracle', 'Values straight from the API; basis = (mark − oracle) / oracle'),

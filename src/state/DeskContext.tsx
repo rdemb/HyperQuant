@@ -6,7 +6,7 @@ import { soundEngine } from '../utils/soundEngine';
 import { DeskFeed, useDeskFeed } from './useDeskFeed';
 import { PlanDraft, ViewId } from './types';
 
-const VIEWS: ViewId[] = ['desk', 'charts', 'plan', 'market', 'lab', 'micro', 'lessons', 'sources'];
+const VIEWS: ViewId[] = ['desk', 'charts', 'flow', 'plan', 'market', 'lab', 'micro', 'lessons', 'sources'];
 // Widoki z modelem zmienności (pas MC, mapa likwidacji, plan, model vs rynek, Lab) — pozostałe go nie pobierają
 const VOL_VIEWS: ViewId[] = ['desk', 'plan', 'market', 'lab'];
 const CEX_KEY = 'hq.cexEnabled';
