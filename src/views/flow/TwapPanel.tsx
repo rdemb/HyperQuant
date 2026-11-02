@@ -53,7 +53,7 @@ const plForm = (n: number, one: string, few: string, many: string) =>
 const pace = (s: TwapStream) => (s.usd / s.slices) * 2;
 
 /** Układ zależy od szerokości panelu (zapytanie kontenera): szeroki od 32rem, wąski poniżej (telefon, laptop 1024 px). */
-const GRID = 'grid-cols-[8.6rem_minmax(3.5rem,1fr)_6.2rem_3.4rem_4.4rem] @max-lg:grid-cols-[5.6rem_1fr_3.6rem_3.6rem]';
+const GRID = 'grid-cols-[10.75rem_minmax(3.5rem,1fr)_6.2rem_3.4rem_4.4rem] @max-lg:grid-cols-[5.6rem_1fr_3.6rem_3.6rem]';
 const WIDE = '@max-lg:hidden';
 const SMALL = 'hidden @max-lg:inline';
 
