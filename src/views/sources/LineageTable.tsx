@@ -356,6 +356,23 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         ),
       },
       {
+        metric: tr('DOM i taśma: TWAP-y w drodze', 'DOM & tape: TWAPs en route'),
+        source: tr(
+          'Hyperliquid WS trades (plasterki z hashem zerowym) i info twapHistory konta, pytane z przeglądarki widza po jednym zapytaniu naraz: samo dla 6 największych kont (telefon 3), reszta po kliknięciu',
+          'Hyperliquid WS trades (zero-hash slices) and the account’s info twapHistory, queried from the viewer’s browser one request at a time: automatically for the 6 largest accounts (phone 3), the rest on click'
+        ),
+        method: tr(
+          'Ciąg = plasterki jednego konta i strony w tej samej fazie taktu 30 s (±2,5 s) z 10 min, trwający, gdy ostatni najwyżej 75 s temu. Plan w toku = wpis „activated” bez wpisu końcowego (finished, terminated, stopped, error); dopasowanie po stronie i fazie startu + 1,5 s (pomiar 1.11). Postęp = czas od startu / czas trwania (Hyperliquid wykonuje TWAP równo w czasie), reszta i 15 min po średniej cenie plasterków. Ciągi poniżej 100 USD/min zwinięte w jeden wiersz',
+          'Stream = slices of one account and side in the same phase of the 30 s cycle (±2.5 s) over 10 min, running when the last one is at most 75 s old. Running plan = an “activated” entry without a terminal entry (finished, terminated, stopped, error); matched by side and start phase + 1.5 s (measured 1 Nov). Progress = time since start / duration (Hyperliquid executes a TWAP evenly in time), the remainder and 15 min at the average slice price. Streams below 100 USD/min are folded into one row'
+        ),
+        kinds: ['LIVE', 'MODEL'],
+        refresh: tr('taśma na żywo · plan raz na konto (ponownie po 3 min, gdy ciąg nie pasuje)', 'tape live · plan once per account (again after 3 min when a stream does not match)'),
+        caveat: tr(
+          'Plan to zamiar: konto może przerwać TWAP w każdej chwili, a plasterek może się nie wykonać. Bez planu widać tylko tempo z plasterków. Adres konta służy tylko do zapytania i zostaje w pamięci strony; na ekranie pseudonimy jak na taśmie.',
+          'A plan is an intention: the account can stop the TWAP at any time and a slice may not execute. Without a plan only the pace from slices is shown. The account address is used only for the query and stays in page memory; the screen shows pseudonyms as on the tape.'
+        ),
+      },
+      {
         metric: 'Open interest, funding, mark/oracle',
         source: 'Hyperliquid API: metaAndAssetCtxs',
         method: tr('Wartości wprost z API; basis = (mark − oracle) / oracle', 'Values straight from the API; basis = (mark − oracle) / oracle'),

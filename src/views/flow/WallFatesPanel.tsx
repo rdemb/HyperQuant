@@ -27,7 +27,9 @@ export const WallFatesPanel: React.FC<{
   since: number | null;
   narrow: boolean;
   className: string;
-}> = ({ fates, minUsd, step, since, narrow, className }) => {
+  /** Nagłówek zamiast tytułu (przełącznik zakładek na komputerze). */
+  head?: React.ReactNode;
+}> = ({ fates, minUsd, step, since, narrow, className, head }) => {
   const counts = ORDER.map((v) => {
     const xs = fates.filter((f) => f.verdict === v);
     return { v, n: xs.length, usd: xs.reduce((s, f) => s + f.peakUsd, 0) };
@@ -35,10 +37,11 @@ export const WallFatesPanel: React.FC<{
   const untouched = fates.filter((f) => f.verdict !== 'eaten' && !f.touched).length;
   const list = fates.filter((f) => f.t - f.since >= MIN_LIFE_MS).slice(-LIST_MAX).reverse();
   return (
-    <section aria-label={tr('Losy ścian arkusza', 'Fates of book walls')} className={`flex flex-col min-h-0 bg-surface-1 ${className}`}>
-      <div className="flex items-baseline gap-2 px-3 h-10 pt-3 border-b border-line shrink-0">
-        <span className="text-[11px] uppercase tracking-[0.08em] text-ink-2 font-medium mr-auto">{tr('Ściany: zjedzone czy zdjęte', 'Walls: eaten or pulled')}</span>
-        <span className="font-mono text-[10px] text-ink-3">
+    <section aria-label={tr('Losy ścian arkusza', 'Fates of book walls')} className={`@container flex flex-col min-h-0 bg-surface-1 ${className}`}>
+      <div className="flex items-center gap-2 px-3 h-10 border-b border-line shrink-0">
+        {head ?? <span className="text-[11px] uppercase tracking-[0.08em] text-ink-2 font-medium">{tr('Ściany: zjedzone czy zdjęte', 'Walls: eaten or pulled')}</span>}
+        {/* Przy zakładkach w nagłówku i wąskim panelu (laptop 1024 px) godzina początku okna się nie mieści */}
+        <span className={`ml-auto font-mono text-[10px] text-ink-3 whitespace-nowrap ${head ? '@max-lg:hidden' : ''}`}>
           {since !== null ? tr(`od ${fmtHms(since)}`, `since ${fmtHms(since)}`) : ''}
         </span>
       </div>

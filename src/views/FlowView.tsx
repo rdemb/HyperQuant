@@ -18,6 +18,7 @@ import { isWhaleLayer } from '../utils/whaleLayer';
 import { tr } from '../i18n';
 import { FlowTape } from './flow/FlowTape';
 import { HEAT_MS, Ladder } from './flow/Ladder';
+import { TwapPanel } from './flow/TwapPanel';
 import { WallFatesPanel } from './flow/WallFatesPanel';
 
 /**
@@ -27,7 +28,8 @@ import { WallFatesPanel } from './flow/WallFatesPanel';
  */
 
 type StepId = 'exact' | 'near' | 'far';
-type PhoneTab = 'dom' | 'tape' | 'walls';
+type PhoneTab = 'dom' | 'tape' | 'walls' | 'twap';
+type SideTab = 'walls' | 'twap';
 interface Prefs {
   minUsd: number;
   sound: boolean;
@@ -85,6 +87,7 @@ const FlowView: React.FC = () => {
   useStoreVersion(store, 250);
   const narrow = useSyncExternalStore(subscribeNarrow, isNarrow);
   const [tab, setTab] = useState<PhoneTab>('dom');
+  const [side, setSide] = useState<SideTab>('walls');
   const [prefs, setPrefs] = useState<Prefs>(loadPrefs);
   const patch = useCallback((p: Partial<Prefs>) => {
     setPrefs((cur) => {
@@ -173,7 +176,27 @@ const FlowView: React.FC = () => {
       onSound={(v) => patch({ sound: v })}
     />
   );
-  const fates = <WallFatesPanel fates={walls.fates} minUsd={walls.minUsd} step={chosen?.step ?? Number.NaN} since={walls.since} narrow={narrow} className={frame} />;
+  // Komputer: ściany i TWAP-y dzielą dolne pole po prawej (zakładki w nagłówku); telefon: osobne zakładki
+  const sideHead = narrow ? undefined : (
+    <Segmented<SideTab>
+      ariaLabel={tr('Dolny panel', 'Lower panel')}
+      value={side}
+      onChange={setSide}
+      options={[
+        { value: 'walls', label: tr('Ściany: zjedzone czy zdjęte', 'Walls: eaten or pulled') },
+        { value: 'twap', label: tr('TWAP-y w drodze', 'TWAPs en route') },
+      ]}
+    />
+  );
+  const fates = <WallFatesPanel fates={walls.fates} minUsd={walls.minUsd} step={chosen?.step ?? Number.NaN} since={walls.since} narrow={narrow} className={frame} head={sideHead} />;
+  const twaps = (
+    <TwapPanel
+      store={store}
+      head={sideHead ?? <span className="text-[11px] uppercase tracking-[0.08em] text-ink-2 font-medium">{tr('TWAP-y w drodze', 'TWAPs en route')}</span>}
+      narrow={narrow}
+      className={frame}
+    />
+  );
 
   return (
     <div className="flex flex-col gap-3">
@@ -203,6 +226,7 @@ const FlowView: React.FC = () => {
             { value: 'dom', label: tr('Arkusz', 'Book') },
             { value: 'tape', label: tr('Taśma', 'Tape') },
             { value: 'walls', label: tr('Ściany', 'Walls') },
+            { value: 'twap', label: 'TWAP' },
           ]}
         />
       )}
@@ -215,13 +239,13 @@ const FlowView: React.FC = () => {
         }`}
       >
         {narrow ? (
-          tab === 'dom' ? ladder : tab === 'tape' ? tape : fates
+          tab === 'dom' ? ladder : tab === 'tape' ? tape : tab === 'walls' ? fates : twaps
         ) : (
           <>
             {ladder}
             <div className="grid grid-rows-[minmax(0,3fr)_minmax(0,2fr)] gap-3 min-h-0">
               {tape}
-              {fates}
+              {side === 'walls' ? fates : twaps}
             </div>
           </>
         )}
