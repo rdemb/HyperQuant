@@ -13,9 +13,10 @@ import { tr } from '../../i18n';
  */
 
 export const WHO_MS = 15 * 60_000;
-/** Udział liczymy dla trzech największych; w powiększeniu lista dziesięciu. */
+/** Udział liczymy dla trzech największych; w powiększeniu lista dwudziestu, na telefonie pięciu. */
 const TOP = 3;
-const LIST = 10;
+const LIST = 20;
+const LIST_PHONE = 5;
 /** Zwykły udział: mediana z okien 15 min kończących się co 5 min w ostatniej godzinie (z pełnym nagraniem kont). */
 const BASE_STEP_MS = 5 * 60_000;
 const BASE_WINDOWS = 10;
@@ -120,6 +121,11 @@ const Spark: React.FC<{ xs: number[]; usual: number; cls: string }> = ({ xs, usu
         <span>{tr('udział 3 największych, okna 15 min · 0–100%', 'top 3 share, 15 min windows · 0–100%')}</span>
         <span>{tr('teraz', 'now')}</span>
       </div>
+      {!Number.isFinite(last) && (
+        <p className="font-mono text-[9px] text-ink-3 mt-0.5">
+          {tr('Okna z luką w nagraniu kont (np. tuż po otwarciu strony) są pominięte; linia dojdzie do „teraz” do 15 min po luce.', 'Windows with a gap in the account recording (e.g. right after opening the page) are skipped; the line reaches “now” within 15 min after the gap.')}
+        </p>
+      )}
     </div>
   );
 };
@@ -131,7 +137,7 @@ export const WhoPanel: React.FC<{
   /** Nagłówek zamiast tytułu (przełącznik zakładek na komputerze) i przyciski po prawej (powiększenie). */
   head?: React.ReactNode;
   tools?: React.ReactNode;
-  /** Powiększony panel: trzy kolumny, dziesięć największych kont i przebieg z ostatniej godziny. */
+  /** Powiększony panel: trzy kolumny, dwadzieścia największych kont z resztą i przebieg z ostatniej godziny. */
   wide: boolean;
   narrow: boolean;
   className: string;
@@ -175,6 +181,10 @@ export const WhoPanel: React.FC<{
         {Number.isFinite(r.usual) && tr(` · zwykle ${pct(r.usual)}`, ` · usually ${pct(r.usual)}`)}
       </span>
     );
+    // Lista kont i reszta strony poza nią (razem 100% wartości)
+    const shown = wide ? r.top : r.top.slice(0, LIST_PHONE);
+    const restN = r.n - shown.length;
+    const restUsd = r.usd - shown.reduce((a, x) => a + x.usd, 0);
     return (
       <div className={list ? 'flex flex-col gap-2 px-4 py-3 min-h-0' : 'px-3 py-1.5'} title={hint}>
         <div className="flex items-baseline gap-2 text-[11px]">
@@ -196,7 +206,19 @@ export const WhoPanel: React.FC<{
           <>
             <div className="font-mono text-[10px] text-right">{summary}</div>
             <Spark xs={r.series} usual={r.usual} cls={ink} />
-            <div className="font-mono text-[11px] space-y-0.5">{(wide ? r.top : r.top.slice(0, 5)).map(who)}</div>
+            <div className="font-mono text-[11px] space-y-0.5">
+              {shown.map(who)}
+              {restN > 0 && r.usd > 0 && (
+                <div className="grid grid-cols-[1.4rem_6.5rem_minmax(0,1fr)_3rem] items-center gap-2 h-6 px-1 text-ink-3">
+                  <span />
+                  <span className="truncate">{tr(`+${restN} ${kont(restN)}`, `+${restN} more`)}</span>
+                  <span className="relative h-1.5 rounded-full bg-surface-3 overflow-hidden">
+                    <span className="absolute inset-y-0 left-0 bg-ink-3/40" style={{ width: `${(restUsd / r.usd) * 100}%` }} />
+                  </span>
+                  <span className="text-right">{pct(restUsd / r.usd)}</span>
+                </div>
+              )}
+            </div>
           </>
         ) : (
           <div className="flex items-center gap-x-3 mt-1 font-mono text-[10px] min-w-0 overflow-hidden whitespace-nowrap">{r.top.slice(0, TOP).map(who)}</div>
