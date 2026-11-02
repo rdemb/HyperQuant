@@ -52,7 +52,9 @@ export const FlowTape: React.FC<{
   onPick: (o: AggressorOrder) => void;
   onMinUsd: (v: number) => void;
   onSound: (v: boolean) => void;
-}> = ({ store, minUsd, sound, bigUsd, pace, selected, highlight, narrow, className, onPick, onMinUsd, onSound }) => {
+  /** Przyciski po prawej w nagłówku (powiększenie). */
+  tools?: React.ReactNode;
+}> = ({ store, minUsd, sound, bigUsd, pace, selected, highlight, narrow, className, onPick, onMinUsd, onSound, tools }) => {
   const recent = store.orders.latest(SCAN);
   const rows = tapeRows(recent, minUsd, bigUsd, ROWS, store.serverNow());
 
@@ -177,6 +179,7 @@ export const FlowTape: React.FC<{
         >
           {sound ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
         </button>
+        {tools}
       </div>
       {/* Tempo: ostatnia minuta wobec mediany minut z godziny i udział kupujących */}
       <div

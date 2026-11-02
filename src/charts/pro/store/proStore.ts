@@ -1,13 +1,14 @@
-import { AssetCtx, Candle, Fill, parseAssetCtx, parseBook, parseCandle, parseFills } from '../hl/parse';
+import { AssetCtx, Candle, Fill, parseAssetCtx, parseBbo, parseBook, parseCandle, parseFills } from '../hl/parse';
 import { fetchAssetCtx, fetchCandles, fetchFunding } from '../hl/rest';
 import { HlStream, StreamStatus, Subscription } from '../hl/stream';
 import { BookFrame, BookHistory, bookSigFigs, bookStep, toFrame } from '../core/book';
 import { Coverage, Span } from '../core/coverage';
 import { FootprintBar, FootprintBuilder, baseTick, hlTick } from '../core/footprintBar';
 import { WallTracker } from '../core/clashes';
-import { MakerFlow, MakerSplit } from '../core/makers';
+import { MakerFlow, MakerSplit, MakerTop } from '../core/makers';
 import { OrderAggregator, OrderLog } from '../core/orders';
 import { PlayerFlow, bigPlayerUsd } from '../core/players';
+import { QueueHead } from '../core/queueHead';
 import { FundingBook, HOUR_MS, OiLog } from '../core/stats';
 import { Tape, TradeRow } from '../core/tape';
 import { periodStart, utcDayStart } from '../core/sessions';
@@ -111,6 +112,9 @@ export class ProStore {
   readonly walls = new WallTracker();
   /** Kto przyjmuje agresję: animatorzy rynku i reszta makerów, z kont makerów. */
   private readonly makers = new MakerFlow();
+  /** Czoło kolejki z kanału `bbo` (tylko gdy jakiś widok go obserwuje, np. DOM i taśma). */
+  readonly head = new QueueHead();
+  private bboWatchers = 0;
   /** Otwarte pozycje z kanału activeAssetCtx (od otwarcia strony) i stawki finansowania z historii API. */
   readonly oi = new OiLog();
   readonly funding = new FundingBook();
@@ -170,6 +174,7 @@ export class ProStore {
         if (sub.type === 'candle') for (const s of this.seriesById.values()) if (s.src === sub.interval) void s.refreshRecent();
       },
       onClosed: (at) => {
+        this.head.reset();
         this.coverage.close(this.clock.toServer(at));
         this.addressed.close(this.clock.toServer(at));
         this.zeroKnown.close(this.clock.toServer(at));
@@ -392,6 +397,12 @@ export class ProStore {
         this.ensureBookSubs(ctx.markPx);
         this.bump();
       }
+    } else if (channel === 'bbo') {
+      const b = parseBbo(data, this.coin);
+      if (!b) return;
+      this.head.push(b.time, b.bid, b.ask);
+      this.head.settle(this.serverNow(), (a, z, fn) => this.tape.forEach(a, z, fn));
+      this.bump();
     } else if (channel === 'l2Book') {
       const snap = parseBook(data, this.coin);
       if (!snap) return;
@@ -442,6 +453,26 @@ export class ProStore {
   /** Migawki arkusza bez agregacji ceny: osobny kanał albo bliska agregacja, gdy równa się tickowi. */
   exactBook(): BookHistory | null {
     return this.exactSub ? this.exact : this.book('near');
+  }
+
+  /** Kanał `bbo` (czoło kolejki) na czas obserwacji; zwraca wyłączenie. Kilka widoków dzieli jedną subskrypcję. */
+  watchBbo(): () => void {
+    const sub: Subscription = { type: 'bbo', coin: this.coin };
+    if (this.bboWatchers++ === 0) this.stream.add(sub);
+    let done = false;
+    return () => {
+      if (done) return;
+      done = true;
+      if (--this.bboWatchers === 0) {
+        this.stream.remove(sub);
+        this.head.reset();
+      }
+    };
+  }
+
+  /** Koncentracja makerów w [from, to): liczba kont i największe konta po stronie bidów i asków. */
+  makerTop(from: number, to: number, k: number): { bid: MakerTop; ask: MakerTop } {
+    return this.makers.top(from, to, k);
   }
 
   /** Delta agresorów w [from, to) (w jednej godzinie UTC) przyjęta przez animatorów rynku i resztę makerów. */

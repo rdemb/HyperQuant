@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isUsableHash, num, parseAssetCtx, parseBook, parseCandle, parseCandles, parseFill, parseFundingHistory, pickAssetCtx } from '../hl/parse';
+import { isUsableHash, num, parseAssetCtx, parseBbo, parseBook, parseCandle, parseCandles, parseFill, parseFundingHistory, pickAssetCtx } from '../hl/parse';
 
 describe('num', () => {
   it('przyjmuje liczby i tekst liczbowy, resztę zamienia na NaN', () => {
@@ -106,6 +106,15 @@ describe('parseBook', () => {
   it('pusty arkusz albo inna moneta → null', () => {
     expect(parseBook({ coin: 'BTC', time: 5, levels: [[], []] }, 'BTC')).toBeNull();
     expect(parseBook({ coin: 'ETH', time: 5, levels: [[{ px: '1', sz: '1', n: 1 }], []] }, 'BTC')).toBeNull();
+  });
+});
+
+describe('parseBbo', () => {
+  it('czyta najlepszy bid i ask; strona bez zleceń = null; inna moneta albo zły kształt → null', () => {
+    expect(parseBbo({ coin: 'BTC', time: 7, bbo: [{ px: '81000', sz: '1.5', n: 3 }, null] }, 'BTC')).toEqual({ time: 7, bid: { px: 81000, sz: 1.5, n: 3 }, ask: null });
+    expect(parseBbo({ coin: 'ETH', time: 7, bbo: [null, null] }, 'BTC')).toBeNull();
+    expect(parseBbo({ coin: 'BTC', time: 7, bbo: [null] }, 'BTC')).toBeNull();
+    expect(parseBbo({ coin: 'BTC', bbo: [null, null] }, 'BTC')).toBeNull();
   });
 });
 

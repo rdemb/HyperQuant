@@ -101,6 +101,14 @@ export function heatHistory(frames: readonly BookFrame[], rows: readonly LadderR
   return out;
 }
 
+/** Udział bidów w widocznej głębokości migawki (jednostki rynku po obu stronach); NaN bez poziomów. */
+export function bidShare(f: BookFrame): number {
+  let b = 0;
+  let a = 0;
+  for (let i = 0; i < f.px.length; i++) i < f.nBids ? (b += f.sz[i]) : (a += f.sz[i]);
+  return b + a > 0 ? b / (b + a) : Number.NaN;
+}
+
 /** Wartość (USD) transakcji w [from, to) na wierszach: sprzedający agresor zdejmuje bidy, kupujący aski. */
 export function tradedAt(scan: TradeScan, from: number, to: number, step: number): Map<string, number> {
   const m = new Map<string, number>();
