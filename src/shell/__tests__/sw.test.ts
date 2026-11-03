@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 type Win = { url: string; focus: () => Promise<Win>; navigate?: (u: string) => Promise<Win | null> };
 
 /** Worker z public/sw.js w piaskownicy: zdarzenia rejestrowane przez self.addEventListener, karty z listy `tabs`. */
-function loadWorker(tabs: Win[]) {
+function loadWorker(tabs: Win[], env: Record<string, unknown> = {}) {
   const on: Record<string, (e: unknown) => void> = {};
   const opened: string[] = [];
   const self = {
@@ -14,13 +14,13 @@ function loadWorker(tabs: Win[]) {
     addEventListener: (k: string, fn: (e: unknown) => void) => (on[k] = fn),
     clients: { matchAll: async () => tabs, openWindow: async (u: string) => void opened.push(u) },
   };
-  runInNewContext(readFileSync('public/sw.js', 'utf8'), { self, URL, caches: {}, fetch });
+  runInNewContext(readFileSync('public/sw.js', 'utf8'), { self, URL, caches: {}, fetch, ...env });
   const click = async (data: unknown) => {
     let done: Promise<unknown> = Promise.resolve();
     on.notificationclick({ notification: { data, close: () => undefined }, waitUntil: (p: Promise<unknown>) => (done = p) });
     await done;
   };
-  return { click, opened };
+  return { click, opened, on };
 }
 
 function tab(url: string, log: string[], navigate = true): Win {
@@ -57,5 +57,27 @@ describe('kliknięcie powiadomienia alarmu', () => {
     const w = loadWorker([]);
     await w.click({ url: './#charts?m=HYPE' });
     expect(w.opened).toEqual(['./#charts?m=HYPE']);
+  });
+});
+
+describe('nawigacja do powłoki aplikacji', () => {
+  const shell = { cached: 'index.html' };
+  /** Odpowiedź workera na wejście w ./ przy podanej odpowiedzi sieci. */
+  async function navigate(net: Record<string, unknown>) {
+    const puts: string[] = [];
+    const cache = { match: async (k: string) => (k === './index.html' ? shell : undefined), put: (k: string) => void puts.push(k) };
+    const w = loadWorker([], { caches: { open: async () => cache }, fetch: async () => net });
+    let res: unknown;
+    w.on.fetch({ request: { method: 'GET', url: 'https://x.test/HyperQuant/', mode: 'navigate' }, respondWith: (p: unknown) => (res = p) });
+    return { res: await res, puts };
+  }
+
+  it('zwykła odpowiedź: strona z sieci, zapis powłoki do cache', async () => {
+    const net = { type: 'basic', ok: true, headers: { get: () => 'text/html' }, clone: () => net };
+    expect(await navigate(net)).toEqual({ res: net, puts: ['./index.html'] });
+  });
+
+  it('przekierowanie po przeprowadzce domeny: zcache\'owana aplikacja (przenosi ustawienia), bez zapisu', async () => {
+    expect(await navigate({ type: 'opaqueredirect', ok: false, headers: { get: () => null } })).toEqual({ res: shell, puts: [] });
   });
 });
