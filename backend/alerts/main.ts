@@ -22,7 +22,7 @@ if (!STATE_DIR || !OUT_DIR) {
 }
 const URL_ = (process.env.HQ_ALERTS_URL || ALERTS_URL).replace(/\/+$/, '');
 /** Kontakt VAPID dla usług push (strona projektu). */
-const SUBJECT = 'https://rdemb.github.io/HyperQuant/';
+const SUBJECT = 'https://hyperquant.tech/';
 const SYNC_MS = 3000;
 const REPORT_MS = 1000;
 const SAVE_MS = 30_000;

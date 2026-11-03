@@ -10,7 +10,7 @@ Describe what and where (file, view, URL), how to reproduce the problem and what
 
 ## Scope
 
-- the code in this repository and the site https://rdemb.github.io/HyperQuant/,
+- the code in this repository and the site https://hyperquant.tech/,
 - the GitHub Actions workflows and public data fetching (`scripts/fetch-public-data.mjs`).
 
 Out of scope: availability and data of external APIs (Hyperliquid, exchanges, public sources).

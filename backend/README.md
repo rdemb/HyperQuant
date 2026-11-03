@@ -166,7 +166,7 @@ Wymaga konta Cloudflare z metodą płatności (darmowy limit: 10 GB, 1 mln zapis
    **Prywatność serwera:** nie używaj domeny ze strefy Cloudflare, w której jest też serwer skanera — DNS mógłby powiązać stronę z serwerem. Bezpiecznie: `*.r2.dev` albo osobna domena.
 3. **Settings → CORS Policy**:
    ```json
-   [{ "AllowedOrigins": ["https://rdemb.github.io", "http://localhost:3000"], "AllowedMethods": ["GET"], "AllowedHeaders": ["*"], "MaxAgeSeconds": 3600 }]
+   [{ "AllowedOrigins": ["https://hyperquant.tech", "http://localhost:3000"], "AllowedMethods": ["GET"], "AllowedHeaders": ["*"], "MaxAgeSeconds": 3600 }]
    ```
 4. R2 → **Manage API Tokens → Create API Token**: uprawnienie *Object Read & Write*, tylko ten bucket.
 5. Na serwerze uzupełnij `/etc/hyperquant/scanner.env` (`R2_ACCOUNT_ID`, `R2_BUCKET`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`) i `systemctl restart hyperquant-scanner`.

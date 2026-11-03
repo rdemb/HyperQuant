@@ -5,6 +5,7 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 ## [Unreleased]
 
 ### Zmienione
+- **Adres strony: hyperquant.tech** (`package.json`, `index.html`, `public/robots.txt`): adres kanoniczny, karty OG, JSON-LD, sitemap, kanał RSS, IndexNow, podpis zrzutu wykresu i stopka kart bloga wskazują https://hyperquant.tech/. Stary adres rdemb.github.io/HyperQuant/ przekierowuje (301) na tę samą ścieżkę w nowej domenie. Strona jest teraz w głównym katalogu domeny, więc ma własny `robots.txt` z adresem mapy strony. Kontakt VAPID serwera powiadomień 24/7 to nowy adres.
 - **Profil doby zamiast liter TPO** (`src/charts/pro/core/tpo.ts`, `src/charts/pro/chart/tpoLayer.ts`): warstwa „Profil doby: wolumen, agresja, czas (TPO)” (szablon Market Profile 30m) rysuje każdą dobę UTC jako profil wolumenu pod świecami zamiast liter okresów. Kolor wiersza to strona agresywna z taśmy (zieleń kupno, fiolet sprzedaż, cztery odcienie od 55 do 77,5% wolumenu jednej strony, progi z rozkładu na taśmie BTC z 7 dób; szary bez przewagi albo bez taśmy), a cienki obrys to czas TPO w tym samym polu co wolumen doby, więc widać ceny z szybkim obrotem i ceny, na których rynek stał przy małym obrocie. Wolumen z taśmy na cenach transakcji, reszta wolumenu świec (świece sprzed nagrania, luki) równo na zakres H–L. POC i value area z wolumenu (także w karcie uczciwości szablonu), pod profilem delta doby z udziałem taśmy, a pod krzyżem zakres ceny, wolumen, udział stron i liczba okresów wiersza.
 
 ### Dodane

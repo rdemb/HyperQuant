@@ -33,7 +33,7 @@ Nad wykresem jest też Stan rynku. To jedno zdanie złożone ze stałych reguł 
 
 Hyperliquid nie udostępnia historii taśmy transakcji ani arkusza zleceń, więc HyperQuant nagrywa je sam. Dlatego footprint i mapa płynności są na wykresie od pierwszej sekundy, a nagraną dobę możesz odtworzyć jak film: w tempie 1×, 5×, 15× albo 60×, z suwakiem czasu, na tym samym wykresie co na żywo.
 
-Przykład z 24 października. Chwilę przed 19:00 sprzedający wrzucili na rynek 319 BTC w jedną minutę, a cena skończyła tę minutę tylko 36 dolarów niżej. Zlecenia z limitem po drugiej stronie przyjęły wszystko. To jest absorpcja i na zwykłej świecy jej nie widać. To ostatnia świeca na zrzucie na górze, z deltą −293 BTC. [Ten moment otworzysz tutaj](https://rdemb.github.io/HyperQuant/#charts?replay=lessons&m=BTC&i=1m&v=footprint&from=2026-10-24T16:00:00Z&to=2026-10-24T22:00:00Z&t=2026-10-24T16:52:00Z&station=scalp) i sam przewiniesz, co działo się dalej.
+Przykład z 24 października. Chwilę przed 19:00 sprzedający wrzucili na rynek 319 BTC w jedną minutę, a cena skończyła tę minutę tylko 36 dolarów niżej. Zlecenia z limitem po drugiej stronie przyjęły wszystko. To jest absorpcja i na zwykłej świecy jej nie widać. To ostatnia świeca na zrzucie na górze, z deltą −293 BTC. [Ten moment otworzysz tutaj](https://hyperquant.tech/#charts?replay=lessons&m=BTC&i=1m&v=footprint&from=2026-10-24T16:00:00Z&to=2026-10-24T22:00:00Z&t=2026-10-24T16:52:00Z&station=scalp) i sam przewiniesz, co działo się dalej.
 
 ## Lekcje na prawdziwych dniach
 
@@ -75,6 +75,6 @@ To jest publiczna wersja HyperQuant. Przez najbliższy czas nie dokładam nowych
 
 Napisz mi, co jest niejasne, co nie działa na Twoim telefonie i czego brakuje Ci najbardziej. Najprościej w komentarzu pod postem na Facebooku, na stronie [HyperQuant PL](https://www.facebook.com/share/1CF58c91dc/). Błędy techniczne możesz też [zgłosić na GitHubie](https://github.com/rdemb/HyperQuant/issues). Przeczytam każdą uwagę.
 
-[Otwórz HyperQuant](https://rdemb.github.io/HyperQuant/)
+[Otwórz HyperQuant](https://hyperquant.tech/)
 
 Materiał edukacyjny, nie porada inwestycyjna. Handel z dźwignią niesie wysokie ryzyko utraty kapitału.

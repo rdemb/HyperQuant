@@ -10,7 +10,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 export const USER_AGENT = 'HyperQuant-data (+https://github.com/rdemb/HyperQuant)';
-export const PAGES_BASE = 'https://rdemb.github.io/HyperQuant/data/feeds/';
+export const PAGES_BASE = 'https://hyperquant.tech/data/feeds/';
 const TIMEOUT_MS = 15000;
 const NEWS_MAX = 60;
 const DAY_MS = 86400000;
