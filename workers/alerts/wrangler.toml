@@ -5,8 +5,8 @@ compatibility_date = "2026-09-01"
 workers_dev = true
 
 [vars]
-# Strona i lokalny podgląd builda (vite preview)
-ORIGINS = "https://rdemb.github.io,http://localhost:4173"
+# Strona (hyperquant.tech; stary adres do końca przeprowadzki) i lokalny podgląd builda (vite preview)
+ORIGINS = "https://hyperquant.tech,https://rdemb.github.io,http://localhost:4173"
 # DATA_BASE_URL (publiczny adres repo danych) dopisuje wdrożenie ze zmiennej repozytorium o tej samej nazwie
 
 [[d1_databases]]
