@@ -266,7 +266,7 @@ const LAKA: typeof NEON = {
 
 /**
  * „Atrament”: na nocne sesje — stonowana morska mgła kupna i przygaszony róż sprzedaży (różna jasność), mniej blasku,
- * przyciemniona płynność w sepii bez bieli, VWAP barwinkowy, POC w matowym złocie.
+ * przyciemniona fioletowa płynność bez bieli, VWAP barwinkowy, POC w matowym złocie.
  */
 const ATRAMENT: typeof NEON = {
   bg: '#100f12',
@@ -328,7 +328,7 @@ export const PRO = {
 /**
  * Rampy mapy ciepła arkusza, od przezroczystej (świece widać przez słabą płynność) do ścian. Neon: ciemny morski →
  * jasny morski → biel → żółty → pomarańcz → czerwień. Desk: granat → błękit → lód → biel. Kobalt: grafit → srebro →
- * biel. Zorza: purpura → fiolet → orchidea. Laka: indygo → barwinek → lawenda. Atrament: przyciemniona sepia bez bieli
+ * biel. Zorza: purpura → fiolet → orchidea. Laka: indygo → barwinek → lawenda. Atrament: przygaszony fiolet bez bieli
  * (najjaśniejsza ściana ciemniejsza od świec).
  */
 export const LIQ_RAMPS: Record<ChartPalette, HeatRamp> = {

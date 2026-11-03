@@ -137,9 +137,9 @@
   --color-of-vol: #5f5a6a;
   --color-of-vwap: #8fb3ff;
   --color-of-svwap: #f0ede6;
-  --color-of-heat-1: #4c4131;
-  --color-of-heat-2: #6c5d43;
-  --color-of-heat-3: #806f50;
+  --color-of-heat-1: #4b3a60;
+  --color-of-heat-2: #66507c;
+  --color-of-heat-3: #765e8f;
 }
 
 @layer base {
