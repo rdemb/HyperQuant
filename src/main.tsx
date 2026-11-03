@@ -1,3 +1,5 @@
+// Pierwszy import: przeniesione ze starego adresu ustawienia trafiają do pamięci przed modułami aplikacji
+import { moveOut } from './shell/originMove';
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
@@ -92,3 +94,5 @@ createRoot(document.getElementById('root')!).render(
 
 // Service worker tylko w buildzie produkcyjnym (w dev przeszkadzałby HMR)
 if (import.meta.env.PROD) registerServiceWorker();
+// Stary adres po przeprowadzce na hyperquant.tech: ustawienia i widok przechodzą na nową domenę
+void moveOut(window);

@@ -50,6 +50,9 @@ async function networkFirstShell(request) {
   const cache = await caches.open(CACHE);
   try {
     const res = await fetch(request);
+    // Strona przeniesiona na hyperquant.tech (GitHub odpowiada przekierowaniem): zcache'owana aplikacja przenosi
+    // ustawienia z pamięci tego adresu na nową domenę (src/shell/originMove.ts)
+    if (res.type === 'opaqueredirect') return (await cache.match('./index.html')) || res;
     // Jako powłokę zapisujemy tylko dokument HTML (np. otwarty w karcie obrazek nie nadpisze index.html)
     if ((res.headers.get('content-type') || '').includes('text/html')) store(cache, './index.html', res);
     return res;
