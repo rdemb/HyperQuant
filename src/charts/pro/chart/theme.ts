@@ -4,7 +4,7 @@ import type { HeatRamp } from '../../orderflow/heatColor';
 import { C, MONO, rgba } from '../../orderflow/renderer';
 import { fmtHm, fmtHms } from '../core/time';
 import { locale, tr } from '../../../i18n';
-import { PALETTE } from './palette';
+import { type ChartPalette, PALETTE } from './palette';
 
 /** Wygląd wykresu Pro: tokeny projektu (src/index.css), oś czasu w czasie lokalnym, polskie skróty miesięcy. */
 
@@ -14,7 +14,7 @@ const MONTHS = tr(
 );
 
 /**
- * Kolory płótna wykresu Pro w dwóch paletach (wybór w Ustawieniach wykresu, ./palette). Te same wartości są tokenami
+ * Kolory płótna wykresu Pro w sześciu paletach (wybór w Ustawieniach wykresu, ./palette). Te same wartości są tokenami
  * `of-*` w src/index.css (legenda i menu). Gotowe napisy z kryciem — bez budowania w pętli rysowania.
  */
 
@@ -120,6 +120,200 @@ const DESK: typeof NEON = {
   venueBybit: '#d55181',
 };
 
+/**
+ * „Kobalt”: lazur kupna i szafran sprzedaży na atramentowej czerni — oś niebieski–żółty, którą rozróżnia też oko
+ * z protanopią i deuteranopią; płynność w srebrze (kolor zostaje dla agresji), POC morski, VWAP sesji lawendowy.
+ */
+const KOBALT: typeof NEON = {
+  bg: '#0c0f16',
+  axisText: '#c3cad6',
+  buy: '#3d8ef5',
+  sell: '#f4a62a',
+  buyWick: '#3d8ef5',
+  sellWick: '#f4a62a',
+  buyInk: '#6aa9ff',
+  sellInk: '#ffbd55',
+  volBuy: rgba('#3d8ef5', 0.55),
+  volSell: rgba('#f4a62a', 0.5),
+  priceLine: '#9aa8bd',
+  vwap: '#f2f4f8',
+  svwap: '#c9b8ff',
+  zone: '#c9b8ff',
+  fpNeutral: '#262d3a',
+  fpBidRamp: ['#262d3a', '#554a41', '#876843', '#bc873e', '#f4a62a'],
+  fpAskRamp: ['#262d3a', '#2e4465', '#355c92', '#3a75c3', '#3d8ef5'],
+  fpDeltaPosRamp: ['#262d3a', '#2e4465', '#355c92', '#3a75c3', '#3d8ef5'],
+  fpDeltaNegRamp: ['#262d3a', '#554a41', '#876843', '#bc873e', '#f4a62a'],
+  fpText: '#0c0f16',
+  fpTextLight: '#eef2f7',
+  fpTextProfile: '#d3dae4',
+  fpRowLine: '#1a202b',
+  imbBuy: '#5cc8ff',
+  imbSell: '#ffcf3f',
+  pocFrame: '#45e3c8',
+  volBar: '#5f6b80',
+  deltaPosBar: '#3d8ef5',
+  deltaNegBar: '#f4a62a',
+  profileVa: '#3a4457',
+  profileOut: '#20262f',
+  profilePoc: '#45e3c8',
+  nakedPoc: '#8a94a6',
+  domBid: '#3d8ef5',
+  domAsk: '#f4a62a',
+  domText: '#e4e8ee',
+  bubbleBuy: ['#5aa2ff', '#173c75', '#a8ccff'],
+  bubbleSell: ['#ffb43f', '#7a4c0c', '#ffd99a'],
+  venueHl: '#2fc5b0',
+  venueBinance: '#c9b8ff',
+  venueBybit: '#eef1f5',
+};
+
+/**
+ * „Zorza”: noc polarna — miętowe kupno i malinowa sprzedaż (różna jasność, czytelne także przy daltonizmie), płynność
+ * jak niebo zorzy od purpury do orchidei, złoty POC, nierównowagi w limonce i różu.
+ */
+const ZORZA: typeof NEON = {
+  bg: '#0a0b1d',
+  axisText: '#c8cbe0',
+  buy: '#5ef2b5',
+  sell: '#e0407e',
+  buyWick: '#5ef2b5',
+  sellWick: '#e0407e',
+  buyInk: '#7af5c4',
+  sellInk: '#ff6a9e',
+  volBuy: rgba('#5ef2b5', 0.45),
+  volSell: rgba('#e0407e', 0.55),
+  priceLine: '#a9b0d6',
+  vwap: '#f5f3ff',
+  svwap: '#7fd0ff',
+  zone: '#7fd0ff',
+  fpNeutral: '#24263f',
+  fpBidRamp: ['#24263f', '#51314f', '#7f395e', '#af3f6e', '#e0407e'],
+  fpAskRamp: ['#24263f', '#36545c', '#458679', '#52bb97', '#5ef2b5'],
+  fpDeltaPosRamp: ['#24263f', '#36545c', '#458679', '#52bb97', '#5ef2b5'],
+  fpDeltaNegRamp: ['#24263f', '#51314f', '#7f395e', '#af3f6e', '#e0407e'],
+  fpText: '#0a0b1d',
+  fpTextLight: '#f0f1fa',
+  fpTextProfile: '#d6d8ea',
+  fpRowLine: '#181a30',
+  imbBuy: '#e2ff5c',
+  imbSell: '#ffa3c8',
+  pocFrame: '#ffcf5c',
+  volBar: '#6a6f9a',
+  deltaPosBar: '#5ef2b5',
+  deltaNegBar: '#e0407e',
+  profileVa: '#363a5c',
+  profileOut: '#1f2238',
+  profilePoc: '#ffcf5c',
+  nakedPoc: '#8a8eb0',
+  domBid: '#5ef2b5',
+  domAsk: '#e0407e',
+  domText: '#e6e7f2',
+  bubbleBuy: ['#6ff5c0', '#11634a', '#b5fbe0'],
+  bubbleSell: ['#ea5a8e', '#6e1438', '#ffa6c6'],
+  venueHl: '#7fd0ff',
+  venueBinance: '#ffcf5c',
+  venueBybit: '#f5f3ff',
+};
+
+/**
+ * „Laka”: czarna laka, złoto kupna i cynober sprzedaży, płynność w indygo, POC nefrytowy, VWAP w kolorze kości
+ * słoniowej.
+ */
+const LAKA: typeof NEON = {
+  bg: '#100d0c',
+  axisText: '#d6cfc6',
+  buy: '#e6bb4f',
+  sell: '#e5482f',
+  buyWick: '#e6bb4f',
+  sellWick: '#e5482f',
+  buyInk: '#f2cc6b',
+  sellInk: '#ff6a4d',
+  volBuy: rgba('#e6bb4f', 0.5),
+  volSell: rgba('#e5482f', 0.55),
+  priceLine: '#bfb4a6',
+  vwap: '#efe6d8',
+  svwap: '#9fb4ff',
+  zone: '#9fb4ff',
+  fpNeutral: '#2a2420',
+  fpBidRamp: ['#2a2420', '#563027', '#833a2b', '#b3422e', '#e5482f'],
+  fpAskRamp: ['#2a2420', '#54462e', '#816b3b', '#b29246', '#e6bb4f'],
+  fpDeltaPosRamp: ['#2a2420', '#54462e', '#816b3b', '#b29246', '#e6bb4f'],
+  fpDeltaNegRamp: ['#2a2420', '#563027', '#833a2b', '#b3422e', '#e5482f'],
+  fpText: '#100d0c',
+  fpTextLight: '#f4efe6',
+  fpTextProfile: '#ddd5ca',
+  fpRowLine: '#1d1916',
+  imbBuy: '#ffe69a',
+  imbSell: '#ff9a82',
+  pocFrame: '#3fd4a4',
+  volBar: '#6e6358',
+  deltaPosBar: '#e6bb4f',
+  deltaNegBar: '#e5482f',
+  profileVa: '#3d3631',
+  profileOut: '#231f1c',
+  profilePoc: '#3fd4a4',
+  nakedPoc: '#8e857a',
+  domBid: '#e6bb4f',
+  domAsk: '#e5482f',
+  domText: '#ece5da',
+  bubbleBuy: ['#f0c75e', '#6e5318', '#ffe3a0'],
+  bubbleSell: ['#f05a3e', '#74210f', '#ffa08a'],
+  venueHl: '#3fd4a4',
+  venueBinance: '#efe6d8',
+  venueBybit: '#c9a0ff',
+};
+
+/**
+ * „Atrament”: na nocne sesje — stonowana morska mgła kupna i przygaszony róż sprzedaży (różna jasność), mniej blasku,
+ * przyciemniona płynność w sepii bez bieli, VWAP barwinkowy, POC w matowym złocie.
+ */
+const ATRAMENT: typeof NEON = {
+  bg: '#100f12',
+  axisText: '#b9b6c2',
+  buy: '#a6dccd',
+  sell: '#b9707f',
+  buyWick: '#a6dccd',
+  sellWick: '#b9707f',
+  buyInk: '#b5e3d6',
+  sellInk: '#d48b99',
+  volBuy: rgba('#a6dccd', 0.4),
+  volSell: rgba('#b9707f', 0.5),
+  priceLine: '#8f8a9c',
+  vwap: '#8fb3ff',
+  svwap: '#f0ede6',
+  zone: '#8fb3ff',
+  fpNeutral: '#25232b',
+  fpBidRamp: ['#25232b', '#47353f', '#6b4853', '#915c69', '#b9707f'],
+  fpAskRamp: ['#25232b', '#434c4f', '#627977', '#83a9a1', '#a6dccd'],
+  fpDeltaPosRamp: ['#25232b', '#434c4f', '#627977', '#83a9a1', '#a6dccd'],
+  fpDeltaNegRamp: ['#25232b', '#47353f', '#6b4853', '#915c69', '#b9707f'],
+  fpText: '#100f12',
+  fpTextLight: '#e8e6ee',
+  fpTextProfile: '#cfccd8',
+  fpRowLine: '#1b1a20',
+  imbBuy: '#d9fff2',
+  imbSell: '#ff9fb3',
+  pocFrame: '#d9b26a',
+  volBar: '#5f5a6a',
+  deltaPosBar: '#a6dccd',
+  deltaNegBar: '#b9707f',
+  profileVa: '#37343f',
+  profileOut: '#211f26',
+  profilePoc: '#d9b26a',
+  nakedPoc: '#7f7a8a',
+  domBid: '#a6dccd',
+  domAsk: '#b9707f',
+  domText: '#dcd9e2',
+  bubbleBuy: ['#b0e3d5', '#3b6a5e', '#dcf5ee'],
+  bubbleSell: ['#c47c8a', '#5a2e37', '#e8b0ba'],
+  venueHl: '#a6dccd',
+  venueBinance: '#d9b26a',
+  venueBybit: '#8fb3ff',
+};
+
+export const PALETTES: Record<ChartPalette, typeof NEON> = { neon: NEON, desk: DESK, kobalt: KOBALT, zorza: ZORZA, laka: LAKA, atrament: ATRAMENT };
+
 export const PRO = {
   ...C,
   cross: rgba(C.ink2, 0.5),
@@ -128,39 +322,86 @@ export const PRO = {
   partial: rgba('#fab219', 0.85),
   // Grupa „Kto handluje” w Tablicy liczb: neutralna jasna (to nie giełda, nie bierze koloru z palety giełd)
   players: '#e4e8ee',
-  ...(PALETTE === 'desk' ? DESK : NEON),
+  ...PALETTES[PALETTE],
 } as const;
 
 /**
- * Rampa mapy ciepła arkusza. Neon: przezroczysty → ciemny morski (półprzezroczysty, świece widać przez niego) → jasny
- * morski (pasy płynności) → biel → żółty → pomarańcz → czerwień (ściany). Desk: przezroczysty → granat → błękit → lód →
- * biel (ściany).
+ * Rampy mapy ciepła arkusza, od przezroczystej (świece widać przez słabą płynność) do ścian. Neon: ciemny morski →
+ * jasny morski → biel → żółty → pomarańcz → czerwień. Desk: granat → błękit → lód → biel. Kobalt: grafit → srebro →
+ * biel. Zorza: purpura → fiolet → orchidea. Laka: indygo → barwinek → lawenda. Atrament: przyciemniona sepia bez bieli
+ * (najjaśniejsza ściana ciemniejsza od świec).
  */
-export const LIQ_RAMP: HeatRamp =
-  PALETTE === 'desk'
-    ? [
-        { t: 0, color: '#0b1019', alpha: 0 },
-        { t: 0.12, color: '#14284a', alpha: 0.45 },
-        { t: 0.28, color: '#1b4373', alpha: 0.65 },
-        { t: 0.42, color: '#22609a', alpha: 0.8 },
-        { t: 0.55, color: '#2a80b8', alpha: 0.9 },
-        { t: 0.68, color: '#3fa9d6', alpha: 1 },
-        { t: 0.8, color: '#7fdcee', alpha: 1 },
-        { t: 0.9, color: '#c9f2f9', alpha: 1 },
-        { t: 1, color: '#ffffff', alpha: 1 },
-      ]
-    : [
-        { t: 0, color: '#151521', alpha: 0 },
-        { t: 0.12, color: '#172526', alpha: 0.35 },
-        { t: 0.28, color: '#124950', alpha: 0.55 },
-        { t: 0.42, color: '#0d5c67', alpha: 0.7 },
-        { t: 0.55, color: '#017979', alpha: 0.85 },
-        { t: 0.68, color: '#c9e0eb', alpha: 1 },
-        { t: 0.78, color: '#f5e611', alpha: 1 },
-        { t: 0.86, color: '#f8c30c', alpha: 1 },
-        { t: 0.94, color: '#f5620f', alpha: 1 },
-        { t: 1, color: '#f5290d', alpha: 1 },
-      ];
+export const LIQ_RAMPS: Record<ChartPalette, HeatRamp> = {
+  neon: [
+    { t: 0, color: '#151521', alpha: 0 },
+    { t: 0.12, color: '#172526', alpha: 0.35 },
+    { t: 0.28, color: '#124950', alpha: 0.55 },
+    { t: 0.42, color: '#0d5c67', alpha: 0.7 },
+    { t: 0.55, color: '#017979', alpha: 0.85 },
+    { t: 0.68, color: '#c9e0eb', alpha: 1 },
+    { t: 0.78, color: '#f5e611', alpha: 1 },
+    { t: 0.86, color: '#f8c30c', alpha: 1 },
+    { t: 0.94, color: '#f5620f', alpha: 1 },
+    { t: 1, color: '#f5290d', alpha: 1 },
+  ],
+  desk: [
+    { t: 0, color: '#0b1019', alpha: 0 },
+    { t: 0.12, color: '#14284a', alpha: 0.45 },
+    { t: 0.28, color: '#1b4373', alpha: 0.65 },
+    { t: 0.42, color: '#22609a', alpha: 0.8 },
+    { t: 0.55, color: '#2a80b8', alpha: 0.9 },
+    { t: 0.68, color: '#3fa9d6', alpha: 1 },
+    { t: 0.8, color: '#7fdcee', alpha: 1 },
+    { t: 0.9, color: '#c9f2f9', alpha: 1 },
+    { t: 1, color: '#ffffff', alpha: 1 },
+  ],
+  kobalt: [
+    { t: 0, color: '#0c0f16', alpha: 0 },
+    { t: 0.12, color: '#1b2130', alpha: 0.4 },
+    { t: 0.28, color: '#2a3346', alpha: 0.58 },
+    { t: 0.42, color: '#3c475e', alpha: 0.72 },
+    { t: 0.55, color: '#56627b', alpha: 0.85 },
+    { t: 0.68, color: '#7d899f', alpha: 1 },
+    { t: 0.8, color: '#a9b3c4', alpha: 1 },
+    { t: 0.9, color: '#d3d9e3', alpha: 1 },
+    { t: 1, color: '#ffffff', alpha: 1 },
+  ],
+  zorza: [
+    { t: 0, color: '#0a0b1d', alpha: 0 },
+    { t: 0.12, color: '#1c1745', alpha: 0.4 },
+    { t: 0.28, color: '#2c1d68', alpha: 0.58 },
+    { t: 0.42, color: '#40248c', alpha: 0.72 },
+    { t: 0.55, color: '#5a2ba6', alpha: 0.85 },
+    { t: 0.68, color: '#7a37c2', alpha: 1 },
+    { t: 0.8, color: '#9f50d8', alpha: 1 },
+    { t: 0.9, color: '#c47fe6', alpha: 1 },
+    { t: 1, color: '#e6b8f4', alpha: 1 },
+  ],
+  laka: [
+    { t: 0, color: '#100d0c', alpha: 0 },
+    { t: 0.12, color: '#15142e', alpha: 0.4 },
+    { t: 0.28, color: '#1f1d4d', alpha: 0.58 },
+    { t: 0.42, color: '#2b2970', alpha: 0.72 },
+    { t: 0.55, color: '#3a3794', alpha: 0.85 },
+    { t: 0.68, color: '#4f4bb8', alpha: 1 },
+    { t: 0.8, color: '#7470d6', alpha: 1 },
+    { t: 0.9, color: '#aaa6ee', alpha: 1 },
+    { t: 1, color: '#e4e2ff', alpha: 1 },
+  ],
+  atrament: [
+    { t: 0, color: '#100f12', alpha: 0 },
+    { t: 0.12, color: '#1f1a28', alpha: 0.4 },
+    { t: 0.28, color: '#2c2338', alpha: 0.55 },
+    { t: 0.42, color: '#3a2e4b', alpha: 0.7 },
+    { t: 0.55, color: '#4b3a60', alpha: 0.82 },
+    { t: 0.68, color: '#5a466f', alpha: 0.92 },
+    { t: 0.8, color: '#66507c', alpha: 1 },
+    { t: 0.9, color: '#6e5786', alpha: 1 },
+    { t: 1, color: '#765e8f', alpha: 1 },
+  ],
+};
+
+export const LIQ_RAMP: HeatRamp = LIQ_RAMPS[PALETTE];
 
 const hexRgb = (hex: string): [number, number, number] => {
   const n = parseInt(hex.slice(1), 16);

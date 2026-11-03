@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { CHART_PALETTES } from '../../charts/pro/chart/palette';
 import { diagonalImbalances } from '../chart/FootprintFigure';
 import { MIN, dayProfile, figureModel, visibleCount } from '../chart/model';
 import { en } from '../content/en';
@@ -194,7 +195,7 @@ describe('kolory rycin jak na Wykresach', () => {
     vi.resetModules();
   });
 
-  it.each(['neon', 'desk'])('paleta %s: kafle footprintu, delta, liczby i profil takie same', async (palette) => {
+  it.each(CHART_PALETTES)('paleta %s: kafle footprintu, delta, liczby i profil takie same', async (palette) => {
     vi.stubGlobal('localStorage', { getItem: () => palette, setItem: () => undefined });
     vi.resetModules();
     const { FIG, inkOn } = await import('../chart/palette');

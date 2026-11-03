@@ -73,6 +73,75 @@
   --color-of-heat-3: #ffffff;
 }
 
+/* Własne palety wykresów (te same wartości w src/charts/pro/chart/theme.ts) */
+:root[data-chart-palette='kobalt'] {
+  --color-of-bg: #0c0f16;
+  --color-of-buy: #3d8ef5;
+  --color-of-sell: #f4a62a;
+  --color-of-buy-ink: #6aa9ff;
+  --color-of-sell-ink: #ffbd55;
+  --color-of-imb-buy: #5cc8ff;
+  --color-of-imb-sell: #ffcf3f;
+  --color-of-poc: #45e3c8;
+  --color-of-vol: #5f6b80;
+  --color-of-vwap: #f2f4f8;
+  --color-of-svwap: #c9b8ff;
+  --color-of-heat-1: #56627b;
+  --color-of-heat-2: #a9b3c4;
+  --color-of-heat-3: #ffffff;
+}
+
+:root[data-chart-palette='zorza'] {
+  --color-of-bg: #0a0b1d;
+  --color-of-buy: #5ef2b5;
+  --color-of-sell: #e0407e;
+  --color-of-buy-ink: #7af5c4;
+  --color-of-sell-ink: #ff6a9e;
+  --color-of-imb-buy: #e2ff5c;
+  --color-of-imb-sell: #ffa3c8;
+  --color-of-poc: #ffcf5c;
+  --color-of-vol: #6a6f9a;
+  --color-of-vwap: #f5f3ff;
+  --color-of-svwap: #7fd0ff;
+  --color-of-heat-1: #5a2ba6;
+  --color-of-heat-2: #9f50d8;
+  --color-of-heat-3: #e6b8f4;
+}
+
+:root[data-chart-palette='laka'] {
+  --color-of-bg: #100d0c;
+  --color-of-buy: #e6bb4f;
+  --color-of-sell: #e5482f;
+  --color-of-buy-ink: #f2cc6b;
+  --color-of-sell-ink: #ff6a4d;
+  --color-of-imb-buy: #ffe69a;
+  --color-of-imb-sell: #ff9a82;
+  --color-of-poc: #3fd4a4;
+  --color-of-vol: #6e6358;
+  --color-of-vwap: #efe6d8;
+  --color-of-svwap: #9fb4ff;
+  --color-of-heat-1: #3a3794;
+  --color-of-heat-2: #7470d6;
+  --color-of-heat-3: #e4e2ff;
+}
+
+:root[data-chart-palette='atrament'] {
+  --color-of-bg: #100f12;
+  --color-of-buy: #a6dccd;
+  --color-of-sell: #b9707f;
+  --color-of-buy-ink: #b5e3d6;
+  --color-of-sell-ink: #d48b99;
+  --color-of-imb-buy: #d9fff2;
+  --color-of-imb-sell: #ff9fb3;
+  --color-of-poc: #d9b26a;
+  --color-of-vol: #5f5a6a;
+  --color-of-vwap: #8fb3ff;
+  --color-of-svwap: #f0ede6;
+  --color-of-heat-1: #4c4131;
+  --color-of-heat-2: #6c5d43;
+  --color-of-heat-3: #806f50;
+}
+
 @layer base {
   :root {
     color-scheme: dark;

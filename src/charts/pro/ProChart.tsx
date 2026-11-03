@@ -39,7 +39,8 @@ import { MarketStateBar } from './chart/MarketStateBar';
 import { CoverageLegend } from './chart/CoverageLegend';
 import { type DataSource, needsOf } from './chart/coverageStrip';
 import { SchrodiLauncher } from '../../components/schrodi/SchrodiLauncher';
-import { type ChartPalette, PALETTE, setPalette } from './chart/palette';
+import { CHART_PALETTES, type ChartPalette, PALETTE, setPalette } from './chart/palette';
+import { LIQ_RAMPS, PALETTES } from './chart/theme';
 import type { ChartView } from './chart/footprintSeries';
 import type { FootprintStyle } from './chart/layout';
 import { DrawHint, DrawMenu, DrawStyleBar, DrawToolbar } from './draw/DrawToolbar';
@@ -96,10 +97,39 @@ const LAYOUT_OPTIONS: { value: ChartLayout; label: React.ReactNode; title: strin
   { value: 4, label: <Grid2x2 className="w-3.5 h-3.5" />, title: tr('Cztery wykresy (2 × 2)', 'Four charts (2 × 2)') },
 ];
 
-const PALETTE_OPTIONS: { value: ChartPalette; label: string }[] = [
-  { value: 'neon', label: 'Neon' },
-  { value: 'desk', label: 'Desk' },
-];
+/** Opis palety w Ustawieniach wykresu (nazwa własna bez tłumaczenia). */
+const PALETTE_INFO: Record<ChartPalette, { name: string; desc: string }> = {
+  neon: { name: 'Neon', desc: tr('zieleń i fiolet na grafitowym tle', 'green and violet on graphite') },
+  desk: { name: 'Desk', desc: tr('morska zieleń i miedź na granatowym tle', 'sea green and copper on navy') },
+  kobalt: { name: 'Kobalt', desc: tr('lazur i szafran, płynność w srebrze', 'azure and saffron, silver liquidity') },
+  zorza: { name: 'Zorza', desc: tr('mięta i malina, płynność w purpurze', 'mint and raspberry, purple liquidity') },
+  laka: { name: 'Laka', desc: tr('złoto i cynober, płynność w indygo', 'gold and vermilion, indigo liquidity') },
+  atrament: { name: 'Atrament', desc: tr('stonowana na noc, mniej blasku', 'muted for night sessions, less glare') },
+};
+
+/** Próbka palety: tło, pas płynności i dwie świece (kupno, sprzedaż). */
+const PaletteSwatch: React.FC<{ p: ChartPalette }> = ({ p }) => {
+  const c = PALETTES[p];
+  const heat = LIQ_RAMPS[p].filter((s) => s.t >= 0.55).map((s) => s.color);
+  return (
+    <span aria-hidden className="relative inline-flex h-4 w-7 shrink-0 items-end justify-center gap-[3px] overflow-hidden rounded-[3px] pb-[2px]" style={{ background: c.bg }}>
+      <span className="absolute inset-x-0 top-[5px] h-[3px]" style={{ background: `linear-gradient(90deg, ${heat.join(', ')})` }} />
+      <span className="relative w-[5px] h-[10px] rounded-[1px]" style={{ background: c.buy }} />
+      <span className="relative w-[5px] h-[6px] rounded-[1px]" style={{ background: c.sell }} />
+    </span>
+  );
+};
+
+const PALETTE_OPTIONS: { value: ChartPalette; label: React.ReactNode; title: string }[] = CHART_PALETTES.map((p) => ({
+  value: p,
+  title: `${PALETTE_INFO[p].name}: ${PALETTE_INFO[p].desc}`,
+  label: (
+    <span className="flex items-center gap-1.5">
+      <PaletteSwatch p={p} />
+      {PALETTE_INFO[p].name}
+    </span>
+  ),
+}));
 
 /** Panele pod wykresem w wynikach wyszukiwania okna wskaźników i na liście sekcji „Pod wykresem” (komputer). */
 const PANE_ITEMS: ToggleItem[] = [
@@ -1340,12 +1370,13 @@ const SettingsMenu: React.FC<{
     </Group>
     <Group title={tr('Kolory', 'Colours')}>
       <div className="flex flex-col items-start">
-        <Segmented<ChartPalette> ariaLabel={tr('Paleta wykresów', 'Chart palette')} value={PALETTE} onChange={setPalette} options={PALETTE_OPTIONS} />
+        <Segmented<ChartPalette> ariaLabel={tr('Paleta wykresów', 'Chart palette')} value={PALETTE} onChange={setPalette} options={PALETTE_OPTIONS} cols={2} />
       </div>
       <p className="text-[11px] leading-snug text-ink-3">
+        {PALETTE_INFO[PALETTE].name}: {PALETTE_INFO[PALETTE].desc}.{' '}
         {tr(
-          'Neon: zieleń i fiolet na grafitowym tle. Desk: morska zieleń i miedź na granatowym. Dla wszystkich wykresów; zmiana przeładowuje stronę.',
-          'Neon: green and violet on graphite. Desk: sea green and copper on navy. For all charts; changing it reloads the page.'
+          'Kupno i sprzedaż rozróżnisz także przy daltonizmie, najwyraźniej w palecie Kobalt. Dla wszystkich wykresów; zmiana przeładowuje stronę.',
+          'Buys and sells stay distinct with colour blindness too, most clearly in Kobalt. For all charts; changing it reloads the page.'
         )}
       </p>
     </Group>

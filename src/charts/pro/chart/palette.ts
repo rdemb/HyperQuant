@@ -1,16 +1,19 @@
 /**
- * Paleta kolorów wykresów: „Neon” (domyślna — neonowa zieleń i fiolet na grafitowym tle) albo „Desk” (morska zieleń
- * i miedź na granatowym tle Desku). Jedna dla wszystkich wykresów, zapamiętana w tej przeglądarce; atrybut
- * `data-chart-palette` na <html> przełącza tokeny `of-*` w src/index.css. Bez zależności od biblioteki wykresów —
- * moduł ładuje się przy starcie strony (lekcje też używają tokenów `of-*`).
+ * Paleta kolorów wykresów: „Neon” (domyślna — neonowa zieleń i fiolet na grafitowym tle), „Desk” (morska zieleń i miedź
+ * na granatowym tle Desku) albo jedna z własnych: „Kobalt”, „Zorza”, „Laka”, „Atrament” (opisy w ./theme). Jedna dla
+ * wszystkich wykresów, zapamiętana w tej przeglądarce; atrybut `data-chart-palette` na <html> przełącza tokeny `of-*`
+ * w src/index.css. Bez zależności od biblioteki wykresów — moduł ładuje się przy starcie strony (lekcje też używają
+ * tokenów `of-*`).
  */
-export type ChartPalette = 'neon' | 'desk';
+export const CHART_PALETTES = ['neon', 'desk', 'kobalt', 'zorza', 'laka', 'atrament'] as const;
+export type ChartPalette = (typeof CHART_PALETTES)[number];
 
 const PALETTE_KEY = 'hq.charts.palette.v1';
 
 function savedPalette(): ChartPalette {
   try {
-    return localStorage.getItem(PALETTE_KEY) === 'desk' ? 'desk' : 'neon';
+    const p = localStorage.getItem(PALETTE_KEY);
+    return CHART_PALETTES.find((x) => x === p) ?? 'neon';
   } catch {
     // Zablokowany localStorage: paleta domyślna
     return 'neon';
