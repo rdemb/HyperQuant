@@ -29,7 +29,7 @@ export function brandedScreenshot(chartCanvas: HTMLCanvasElement, cssWidth: numb
   ctx.fillText(`${subtitle} · ${stamp}`, pad + brandW + Math.round(12 * ratio), mid);
   ctx.textAlign = 'right';
   ctx.fillStyle = PRO.accent;
-  ctx.fillText('rdemb.github.io/HyperQuant', out.width - pad, mid);
+  ctx.fillText('hyperquant.tech', out.width - pad, mid);
   return out;
 }
 

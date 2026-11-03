@@ -3,14 +3,14 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![CI](https://github.com/rdemb/HyperQuant/actions/workflows/ci.yml/badge.svg)](https://github.com/rdemb/HyperQuant/actions/workflows/ci.yml)
 [![Desk ledger — daily independent verification](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Frdemb%2Fhyperquant-data%2Fhealth%2Fbadge%2Fledger.json)](https://github.com/rdemb/hyperquant-data/actions)
-[![Live: GitHub Pages](https://img.shields.io/badge/Live-GitHub%20Pages-0b1019)](https://rdemb.github.io/HyperQuant/)
+[![Live: GitHub Pages](https://img.shields.io/badge/Live-GitHub%20Pages-0b1019)](https://hyperquant.tech/)
 [![Stack](https://img.shields.io/badge/React%2019%20·%20Vite%208%20·%20Canvas%20·%20Three.js-PWA-3fc6dd)](https://github.com/rdemb/HyperQuant)
 
 Open-source, installable (PWA) day-trading desk for BTC perpetuals on Hyperliquid. It combines live order-flow charts on TradingView Lightweight Charts™ (footprint, delta and CVD, order-book heatmap, aggressor bubbles, TPO, drawing tools), a Plan Analyzer that scores *your* trade plan (probability of target before stop, slippage from the live book, liquidation buffer, EV after fees) instead of giving buy/sell signals, cross-market context from Hyperliquid's public API, an official US macro calendar, a verifiable forecast ledger, a blog with BTC analyses written before the fact, and a data-lineage page that tells you where every number comes from. Real data only; anything modelled is labelled.
 
 The interface is available in English and Polish: the language follows your browser and can be switched with **PL | EN** in the header (the choice is remembered). The blog is written in Polish. For readers of the Polish version, the Polish UI label is given in *italics* next to the English name.
 
-**Live:** https://rdemb.github.io/HyperQuant/ ([Charts](https://rdemb.github.io/HyperQuant/en/charts/), [Lessons](https://rdemb.github.io/HyperQuant/en/lessons/), [Blog](https://rdemb.github.io/HyperQuant/blog/)) · install on a phone: Share → Add to Home Screen (iOS) or Install app (Android/Chrome).
+**Live:** https://hyperquant.tech/ ([Charts](https://hyperquant.tech/en/charts/), [Lessons](https://hyperquant.tech/en/lessons/), [Blog](https://hyperquant.tech/blog/)) · install on a phone: Share → Add to Home Screen (iOS) or Install app (Android/Chrome).
 
 ---
 

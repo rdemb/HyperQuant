@@ -65,11 +65,11 @@ describe('Web Push: VAPID i wysyłka', () => {
 
   it('token VAPID: odbiorca, ważność 12 h, podpis ES256 sprawdzalny kluczem publicznym', () => {
     const now = 1_800_000_000_000;
-    const h = vapidAuth(target.endpoint, keys, 'https://rdemb.github.io/HyperQuant/', now);
+    const h = vapidAuth(target.endpoint, keys, 'https://hyperquant.tech/', now);
     const [, t, k] = /^vapid t=([^,]+), k=(.+)$/.exec(h) ?? [];
     expect(k).toBe(keys.publicKey);
     const [head, claims, sig] = t.split('.');
-    expect(JSON.parse(fromB64u(claims).toString())).toEqual({ aud: 'https://fcm.googleapis.com', exp: now / 1000 + 43_200, sub: 'https://rdemb.github.io/HyperQuant/' });
+    expect(JSON.parse(fromB64u(claims).toString())).toEqual({ aud: 'https://fcm.googleapis.com', exp: now / 1000 + 43_200, sub: 'https://hyperquant.tech/' });
     const pub = createPublicKey({ key: { kty: 'EC', crv: 'P-256', x: jwk.x, y: jwk.y }, format: 'jwk' });
     expect(verify('sha256', Buffer.from(`${head}.${claims}`), { key: pub, dsaEncoding: 'ieee-p1363' }, fromB64u(sig))).toBe(true);
   });
