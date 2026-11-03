@@ -9,7 +9,7 @@ Code: `scripts/blog/`, posts: `content/blog/`. Posts are written in Polish, so t
 ## File
 
 `content/blog/YYYY-MM-DD-slug.md`, e.g. `content/blog/2026-10-26-mapa-dnia.md`. The file name is the post's URL
-(`https://rdemb.github.io/HyperQuant/blog/2026-10-26-mapa-dnia/`), so it does not change after publication.
+(`https://hyperquant.tech/blog/2026-10-26-mapa-dnia/`), so it does not change after publication.
 The date in the name is the publication day in Polish time; several posts on one day differ by slug (`2026-10-26-aktualizacja-12`).
 
 A post's images live in a folder with the same name (`content/blog/2026-10-26-mapa-dnia/wykres.png`) and are embedded in the body as `![Description](wykres.png)`.
