@@ -74,72 +74,89 @@
 }
 
 /* Własne palety wykresów (te same wartości w src/charts/pro/chart/theme.ts) */
-:root[data-chart-palette='kobalt'] {
-  --color-of-bg: #0c0f16;
-  --color-of-buy: #3d8ef5;
-  --color-of-sell: #f4a62a;
-  --color-of-buy-ink: #6aa9ff;
-  --color-of-sell-ink: #ffbd55;
-  --color-of-imb-buy: #5cc8ff;
-  --color-of-imb-sell: #ffcf3f;
-  --color-of-poc: #45e3c8;
-  --color-of-vol: #5f6b80;
-  --color-of-vwap: #f2f4f8;
-  --color-of-svwap: #c9b8ff;
-  --color-of-heat-1: #56627b;
-  --color-of-heat-2: #a9b3c4;
-  --color-of-heat-3: #ffffff;
+:root[data-chart-palette='swiatlokopia'] {
+  --color-of-bg: #10305e;
+  --color-of-buy: #eef4ff;
+  --color-of-sell: #ff4f45;
+  --color-of-buy-ink: #f4f8ff;
+  --color-of-sell-ink: #ff7a70;
+  --color-of-imb-buy: #4fd8ff;
+  --color-of-imb-sell: #ffc07a;
+  --color-of-poc: #ff7ad9;
+  --color-of-vol: #6d8fbf;
+  --color-of-vwap: #ffd23f;
+  --color-of-svwap: #7dff9b;
+  --color-of-heat-1: #2d64a8;
+  --color-of-heat-2: #4a85c8;
+  --color-of-heat-3: #a9cdf2;
 }
 
-:root[data-chart-palette='zorza'] {
-  --color-of-bg: #0a0b1d;
-  --color-of-buy: #5ef2b5;
-  --color-of-sell: #e0407e;
-  --color-of-buy-ink: #7af5c4;
-  --color-of-sell-ink: #ff6a9e;
-  --color-of-imb-buy: #e2ff5c;
-  --color-of-imb-sell: #ffa3c8;
-  --color-of-poc: #ffcf5c;
-  --color-of-vol: #6a6f9a;
-  --color-of-vwap: #f5f3ff;
-  --color-of-svwap: #7fd0ff;
-  --color-of-heat-1: #5a2ba6;
-  --color-of-heat-2: #9f50d8;
-  --color-of-heat-3: #e6b8f4;
+:root[data-chart-palette='bauhaus'] {
+  --color-of-bg: #151413;
+  --color-of-buy: #2e6bff;
+  --color-of-sell: #ef2b2d;
+  --color-of-buy-ink: #6f9bff;
+  --color-of-sell-ink: #ff5a55;
+  --color-of-imb-buy: #8fb4ff;
+  --color-of-imb-sell: #ff8a8a;
+  --color-of-poc: #ffffff;
+  --color-of-vol: #5f5a52;
+  --color-of-vwap: #b8b3a8;
+  --color-of-svwap: #7d7a74;
+  --color-of-heat-1: #5a4b12;
+  --color-of-heat-2: #f2cc12;
+  --color-of-heat-3: #ffe45c;
 }
 
-:root[data-chart-palette='laka'] {
-  --color-of-bg: #100d0c;
-  --color-of-buy: #e6bb4f;
-  --color-of-sell: #e5482f;
-  --color-of-buy-ink: #f2cc6b;
-  --color-of-sell-ink: #ff6a4d;
-  --color-of-imb-buy: #ffe69a;
-  --color-of-imb-sell: #ff9a82;
-  --color-of-poc: #3fd4a4;
-  --color-of-vol: #6e6358;
-  --color-of-vwap: #efe6d8;
-  --color-of-svwap: #9fb4ff;
-  --color-of-heat-1: #3a3794;
-  --color-of-heat-2: #7470d6;
-  --color-of-heat-3: #e4e2ff;
+:root[data-chart-palette='termowizja'] {
+  --color-of-bg: #04060c;
+  --color-of-buy: #38d9ff;
+  --color-of-sell: #7a6bff;
+  --color-of-buy-ink: #6fe4ff;
+  --color-of-sell-ink: #a197ff;
+  --color-of-imb-buy: #e6fdff;
+  --color-of-imb-sell: #b9b0ff;
+  --color-of-poc: #ff5ad1;
+  --color-of-vol: #5a6175;
+  --color-of-vwap: #c9ff3d;
+  --color-of-svwap: #ffffff;
+  --color-of-heat-1: #931a0c;
+  --color-of-heat-2: #ec6512;
+  --color-of-heat-3: #ffce55;
 }
 
-:root[data-chart-palette='atrament'] {
-  --color-of-bg: #100f12;
-  --color-of-buy: #a6dccd;
-  --color-of-sell: #b9707f;
-  --color-of-buy-ink: #b5e3d6;
-  --color-of-sell-ink: #d48b99;
-  --color-of-imb-buy: #d9fff2;
-  --color-of-imb-sell: #ff9fb3;
-  --color-of-poc: #d9b26a;
-  --color-of-vol: #5f5a6a;
-  --color-of-vwap: #8fb3ff;
-  --color-of-svwap: #f0ede6;
-  --color-of-heat-1: #4b3a60;
-  --color-of-heat-2: #66507c;
-  --color-of-heat-3: #765e8f;
+:root[data-chart-palette='wycinanka'] {
+  --color-of-bg: #0c0b0d;
+  --color-of-buy: #5cf0a0;
+  --color-of-sell: #e8197a;
+  --color-of-buy-ink: #7af5b4;
+  --color-of-sell-ink: #ff4d97;
+  --color-of-imb-buy: #b6ff4a;
+  --color-of-imb-sell: #ffb0d6;
+  --color-of-poc: #ffd21a;
+  --color-of-vol: #6a6470;
+  --color-of-vwap: #ffffff;
+  --color-of-svwap: #ff8a1a;
+  --color-of-heat-1: #3d5bd9;
+  --color-of-heat-2: #6a85f0;
+  --color-of-heat-3: #a6b8ff;
+}
+
+:root[data-chart-palette='nokturn'] {
+  --color-of-bg: #0b1a45;
+  --color-of-buy: #ffd43b;
+  --color-of-sell: #ff6a2b;
+  --color-of-buy-ink: #ffe066;
+  --color-of-sell-ink: #ff8a55;
+  --color-of-imb-buy: #fff3a6;
+  --color-of-imb-sell: #ffb08a;
+  --color-of-poc: #e57cff;
+  --color-of-vol: #5b6fa8;
+  --color-of-vwap: #f4f7ff;
+  --color-of-svwap: #5ff2c8;
+  --color-of-heat-1: #3a70d0;
+  --color-of-heat-2: #6a9ce6;
+  --color-of-heat-3: #a9c8f2;
 }
 
 @layer base {

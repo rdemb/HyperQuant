@@ -101,10 +101,11 @@ const LAYOUT_OPTIONS: { value: ChartLayout; label: React.ReactNode; title: strin
 const PALETTE_INFO: Record<ChartPalette, { name: string; desc: string }> = {
   neon: { name: 'Neon', desc: tr('zieleń i fiolet na grafitowym tle', 'green and violet on graphite') },
   desk: { name: 'Desk', desc: tr('morska zieleń i miedź na granatowym tle', 'sea green and copper on navy') },
-  kobalt: { name: 'Kobalt', desc: tr('lazur i szafran, płynność w srebrze', 'azure and saffron, silver liquidity') },
-  zorza: { name: 'Zorza', desc: tr('mięta i malina, płynność w purpurze', 'mint and raspberry, purple liquidity') },
-  laka: { name: 'Laka', desc: tr('złoto i cynober, płynność w indygo', 'gold and vermilion, indigo liquidity') },
-  atrament: { name: 'Atrament', desc: tr('stonowana na noc, mniej blasku', 'muted for night sessions, less glare') },
+  swiatlokopia: { name: 'Światłokopia', desc: tr('plan techniczny: biel i czerwień na granacie', 'blueprint: white and red on navy') },
+  bauhaus: { name: 'Bauhaus', desc: tr('niebieski i czerwony, żółta płynność na czerni', 'blue and red, yellow liquidity on black') },
+  termowizja: { name: 'Termowizja', desc: tr('kamera termiczna: gorąca płynność, zimny przepływ', 'thermal camera: hot liquidity, cold flow') },
+  wycinanka: { name: 'Wycinanka', desc: tr('łowicka wycinanka: szmaragd, fuksja i kobalt', 'Łowicz paper-cut: emerald, fuchsia and cobalt') },
+  nokturn: { name: 'Nokturn', desc: tr('gwiaździsta noc: złoto i pomarańcz w błękitnych wirach', 'starry night: gold and orange in blue swirls') },
 };
 
 /** Próbka palety: tło, pas płynności i dwie świece (kupno, sprzedaż). */
@@ -1375,8 +1376,8 @@ const SettingsMenu: React.FC<{
       <p className="text-[11px] leading-snug text-ink-3">
         {PALETTE_INFO[PALETTE].name}: {PALETTE_INFO[PALETTE].desc}.{' '}
         {tr(
-          'Kupno i sprzedaż rozróżnisz także przy daltonizmie, najwyraźniej w palecie Kobalt. Dla wszystkich wykresów; zmiana przeładowuje stronę.',
-          'Buys and sells stay distinct with colour blindness too, most clearly in Kobalt. For all charts; changing it reloads the page.'
+          'Kupno i sprzedaż rozróżnisz także przy daltonizmie, najwyraźniej w paletach Bauhaus i Światłokopia. Dla wszystkich wykresów; zmiana przeładowuje stronę.',
+          'Buys and sells stay distinct with colour blindness too, most clearly in Bauhaus and Światłokopia. For all charts; changing it reloads the page.'
         )}
       </p>
     </Group>

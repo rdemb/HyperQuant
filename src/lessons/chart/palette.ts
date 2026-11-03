@@ -28,51 +28,70 @@ const DESK: typeof NEON = {
   profileOut: '#1f2b3d',
 };
 
-const KOBALT: typeof NEON = {
-  fpBidRamp: ['#262d3a', '#554a41', '#876843', '#bc873e', '#f4a62a'],
-  fpAskRamp: ['#262d3a', '#2e4465', '#355c92', '#3a75c3', '#3d8ef5'],
-  fpDeltaPosRamp: ['#262d3a', '#2e4465', '#355c92', '#3a75c3', '#3d8ef5'],
-  fpDeltaNegRamp: ['#262d3a', '#554a41', '#876843', '#bc873e', '#f4a62a'],
-  fpText: '#0c0f16',
-  fpTextLight: '#eef2f7',
-  profileVa: '#3a4457',
-  profileOut: '#20262f',
+const SWIATLOKOPIA: typeof NEON = {
+  fpBidRamp: ['#22487a', '#615373', '#96596a', '#ca585c', '#ff4f45'],
+  fpAskRamp: ['#22487a', '#52719b', '#849bbc', '#b8c7dd', '#eef4ff'],
+  fpDeltaPosRamp: ['#22487a', '#52719b', '#849bbc', '#b8c7dd', '#eef4ff'],
+  fpDeltaNegRamp: ['#22487a', '#615373', '#96596a', '#ca585c', '#ff4f45'],
+  fpText: '#0b2246',
+  fpTextLight: '#f2f6ff',
+  profileVa: '#2a5590',
+  profileOut: '#1a3f72',
 };
 
-const ZORZA: typeof NEON = {
-  fpBidRamp: ['#24263f', '#51314f', '#7f395e', '#af3f6e', '#e0407e'],
-  fpAskRamp: ['#24263f', '#36545c', '#458679', '#52bb97', '#5ef2b5'],
-  fpDeltaPosRamp: ['#24263f', '#36545c', '#458679', '#52bb97', '#5ef2b5'],
-  fpDeltaNegRamp: ['#24263f', '#51314f', '#7f395e', '#af3f6e', '#e0407e'],
-  fpText: '#0a0b1d',
-  fpTextLight: '#f0f1fa',
-  profileVa: '#363a5c',
-  profileOut: '#1f2238',
+const BAUHAUS: typeof NEON = {
+  fpBidRamp: ['#2a2826', '#59312b', '#89362e', '#bb352f', '#ef2b2d'],
+  fpAskRamp: ['#2a2826', '#2d3b58', '#2f4c8d', '#2f5cc4', '#2e6bff'],
+  fpDeltaPosRamp: ['#2a2826', '#2d3b58', '#2f4c8d', '#2f5cc4', '#2e6bff'],
+  fpDeltaNegRamp: ['#2a2826', '#59312b', '#89362e', '#bb352f', '#ef2b2d'],
+  fpText: '#151413',
+  fpTextLight: '#f4f1ea',
+  profileVa: '#3a3733',
+  profileOut: '#24221f',
 };
 
-const LAKA: typeof NEON = {
-  fpBidRamp: ['#2a2420', '#563027', '#833a2b', '#b3422e', '#e5482f'],
-  fpAskRamp: ['#2a2420', '#54462e', '#816b3b', '#b29246', '#e6bb4f'],
-  fpDeltaPosRamp: ['#2a2420', '#54462e', '#816b3b', '#b29246', '#e6bb4f'],
-  fpDeltaNegRamp: ['#2a2420', '#563027', '#833a2b', '#b3422e', '#e5482f'],
-  fpText: '#100d0c',
-  fpTextLight: '#f4efe6',
-  profileVa: '#3d3631',
-  profileOut: '#231f1c',
+const TERMOWIZJA: typeof NEON = {
+  fpBidRamp: ['#1b1f2c', '#30325b', '#47458e', '#6058c5', '#7a6bff'],
+  fpAskRamp: ['#1b1f2c', '#2a485b', '#34758e', '#39a6c5', '#38d9ff'],
+  fpDeltaPosRamp: ['#1b1f2c', '#2a485b', '#34758e', '#39a6c5', '#38d9ff'],
+  fpDeltaNegRamp: ['#1b1f2c', '#30325b', '#47458e', '#6058c5', '#7a6bff'],
+  fpText: '#04060c',
+  fpTextLight: '#eef2f8',
+  profileVa: '#2a3040',
+  profileOut: '#151925',
 };
 
-const ATRAMENT: typeof NEON = {
-  fpBidRamp: ['#25232b', '#47353f', '#6b4853', '#915c69', '#b9707f'],
-  fpAskRamp: ['#25232b', '#434c4f', '#627977', '#83a9a1', '#a6dccd'],
-  fpDeltaPosRamp: ['#25232b', '#434c4f', '#627977', '#83a9a1', '#a6dccd'],
-  fpDeltaNegRamp: ['#25232b', '#47353f', '#6b4853', '#915c69', '#b9707f'],
-  fpText: '#100f12',
-  fpTextLight: '#e8e6ee',
-  profileVa: '#37343f',
-  profileOut: '#211f26',
+const WYCINANKA: typeof NEON = {
+  fpBidRamp: ['#262428', '#542c3b', '#832f4f', '#b52b64', '#e8197a'],
+  fpAskRamp: ['#262428', '#395144', '#488362', '#54b880', '#5cf0a0'],
+  fpDeltaPosRamp: ['#262428', '#395144', '#488362', '#54b880', '#5cf0a0'],
+  fpDeltaNegRamp: ['#262428', '#542c3b', '#832f4f', '#b52b64', '#e8197a'],
+  fpText: '#0c0b0d',
+  fpTextLight: '#f4f2f6',
+  profileVa: '#38343c',
+  profileOut: '#1f1d22',
 };
 
-const FIGS: Record<ChartPalette, typeof NEON> = { neon: NEON, desk: DESK, kobalt: KOBALT, zorza: ZORZA, laka: LAKA, atrament: ATRAMENT };
+const NOKTURN: typeof NEON = {
+  fpBidRamp: ['#1d2f63', '#554461', '#8b555b', '#c4614c', '#ff6a2b'],
+  fpAskRamp: ['#1d2f63', '#4f596a', '#868269', '#c1aa5e', '#ffd43b'],
+  fpDeltaPosRamp: ['#1d2f63', '#4f596a', '#868269', '#c1aa5e', '#ffd43b'],
+  fpDeltaNegRamp: ['#1d2f63', '#554461', '#8b555b', '#c4614c', '#ff6a2b'],
+  fpText: '#0b1a45',
+  fpTextLight: '#f2f5ff',
+  profileVa: '#283f7a',
+  profileOut: '#172a5c',
+};
+
+const FIGS: Record<ChartPalette, typeof NEON> = {
+  neon: NEON,
+  desk: DESK,
+  swiatlokopia: SWIATLOKOPIA,
+  bauhaus: BAUHAUS,
+  termowizja: TERMOWIZJA,
+  wycinanka: WYCINANKA,
+  nokturn: NOKTURN,
+};
 
 export const FIG = FIGS[PALETTE];
 

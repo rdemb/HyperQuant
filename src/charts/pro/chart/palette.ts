@@ -1,11 +1,11 @@
 /**
  * Paleta kolorów wykresów: „Neon” (domyślna — neonowa zieleń i fiolet na grafitowym tle), „Desk” (morska zieleń i miedź
- * na granatowym tle Desku) albo jedna z własnych: „Kobalt”, „Zorza”, „Laka”, „Atrament” (opisy w ./theme). Jedna dla
- * wszystkich wykresów, zapamiętana w tej przeglądarce; atrybut `data-chart-palette` na <html> przełącza tokeny `of-*`
- * w src/index.css. Bez zależności od biblioteki wykresów — moduł ładuje się przy starcie strony (lekcje też używają
- * tokenów `of-*`).
+ * na granatowym tle Desku) albo jedna z własnych: „Światłokopia”, „Bauhaus”, „Termowizja”, „Wycinanka”, „Nokturn”
+ * (opisy w ./theme). Jedna dla wszystkich wykresów, zapamiętana w tej przeglądarce; atrybut `data-chart-palette`
+ * na <html> przełącza tokeny `of-*` w src/index.css. Bez zależności od biblioteki wykresów — moduł ładuje się przy
+ * starcie strony (lekcje też używają tokenów `of-*`).
  */
-export const CHART_PALETTES = ['neon', 'desk', 'kobalt', 'zorza', 'laka', 'atrament'] as const;
+export const CHART_PALETTES = ['neon', 'desk', 'swiatlokopia', 'bauhaus', 'termowizja', 'wycinanka', 'nokturn'] as const;
 export type ChartPalette = (typeof CHART_PALETTES)[number];
 
 const PALETTE_KEY = 'hq.charts.palette.v1';
