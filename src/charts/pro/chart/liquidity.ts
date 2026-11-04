@@ -117,7 +117,7 @@ const K = {
   sellRim: rgba(PRO.bubbleSell[2], 0.9),
   label: '#ffffff',
   mark: PRO.warn,
-  selected: '#ffffff',
+  selected: PRO.ink1,
   domBid: rgba(PRO.domBid, 0.92),
   domAsk: rgba(PRO.domAsk, 0.92),
   domText: PRO.domText,

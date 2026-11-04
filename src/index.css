@@ -74,89 +74,91 @@
 }
 
 /* Własne palety wykresów (te same wartości w src/charts/pro/chart/theme.ts) */
-:root[data-chart-palette='swiatlokopia'] {
-  --color-of-bg: #10305e;
-  --color-of-buy: #eef4ff;
-  --color-of-sell: #ff4f45;
-  --color-of-buy-ink: #f4f8ff;
-  --color-of-sell-ink: #ff7a70;
-  --color-of-imb-buy: #4fd8ff;
-  --color-of-imb-sell: #ffc07a;
-  --color-of-poc: #ff7ad9;
-  --color-of-vol: #6d8fbf;
-  --color-of-vwap: #ffd23f;
-  --color-of-svwap: #7dff9b;
-  --color-of-heat-1: #2d64a8;
-  --color-of-heat-2: #4a85c8;
-  --color-of-heat-3: #a9cdf2;
+/* „Drzeworyt”: płótno wykresu jest jasne, a te tokeny to ciemna odmiana palety dla paneli i lekcji na ciemnej stronie */
+:root[data-chart-palette='drzeworyt'] {
+  --color-of-bg: #1c1a17;
+  --color-of-buy: #5b8fd6;
+  --color-of-sell: #e2654a;
+  --color-of-buy-ink: #7aa6e6;
+  --color-of-sell-ink: #f07c5f;
+  --color-of-imb-buy: #5cb8ff;
+  --color-of-imb-sell: #ff9a5c;
+  --color-of-poc: #5cb88a;
+  --color-of-vol: #9a9080;
+  --color-of-vwap: #efe6d6;
+  --color-of-svwap: #c98a4a;
+  --color-of-heat-1: #5e574d;
+  --color-of-heat-2: #8a8276;
+  --color-of-heat-3: #cfc6b5;
 }
 
-:root[data-chart-palette='bauhaus'] {
-  --color-of-bg: #151413;
-  --color-of-buy: #2e6bff;
-  --color-of-sell: #ef2b2d;
-  --color-of-buy-ink: #6f9bff;
-  --color-of-sell-ink: #ff5a55;
-  --color-of-imb-buy: #8fb4ff;
-  --color-of-imb-sell: #ff8a8a;
-  --color-of-poc: #ffffff;
-  --color-of-vol: #5f5a52;
-  --color-of-vwap: #b8b3a8;
-  --color-of-svwap: #7d7a74;
-  --color-of-heat-1: #5a4b12;
-  --color-of-heat-2: #f2cc12;
-  --color-of-heat-3: #ffe45c;
+/* „Porcelana”: płótno wykresu jest jasne, a te tokeny to ciemna odmiana palety dla paneli i lekcji na ciemnej stronie */
+:root[data-chart-palette='porcelana'] {
+  --color-of-bg: #151a24;
+  --color-of-buy: #5a86ee;
+  --color-of-sell: #d9a63a;
+  --color-of-buy-ink: #7fa2f2;
+  --color-of-sell-ink: #e6b856;
+  --color-of-imb-buy: #6fa8ff;
+  --color-of-imb-sell: #ffc94d;
+  --color-of-poc: #ee5a7e;
+  --color-of-vol: #8e99aa;
+  --color-of-vwap: #eef2f7;
+  --color-of-svwap: #3fc0ae;
+  --color-of-heat-1: #4f7a6c;
+  --color-of-heat-2: #8bb0a2;
+  --color-of-heat-3: #c8dad3;
 }
 
-:root[data-chart-palette='termowizja'] {
-  --color-of-bg: #04060c;
-  --color-of-buy: #38d9ff;
-  --color-of-sell: #7a6bff;
-  --color-of-buy-ink: #6fe4ff;
-  --color-of-sell-ink: #a197ff;
-  --color-of-imb-buy: #e6fdff;
-  --color-of-imb-sell: #b9b0ff;
-  --color-of-poc: #ff5ad1;
-  --color-of-vol: #5a6175;
-  --color-of-vwap: #c9ff3d;
-  --color-of-svwap: #ffffff;
-  --color-of-heat-1: #931a0c;
-  --color-of-heat-2: #ec6512;
-  --color-of-heat-3: #ffce55;
-}
-
-:root[data-chart-palette='wycinanka'] {
-  --color-of-bg: #0c0b0d;
-  --color-of-buy: #5cf0a0;
-  --color-of-sell: #e8197a;
-  --color-of-buy-ink: #7af5b4;
-  --color-of-sell-ink: #ff4d97;
-  --color-of-imb-buy: #b6ff4a;
-  --color-of-imb-sell: #ffb0d6;
-  --color-of-poc: #ffd21a;
-  --color-of-vol: #6a6470;
+:root[data-chart-palette='glebina'] {
+  --color-of-bg: #01070d;
+  --color-of-buy: #4dffc3;
+  --color-of-sell: #ff6b5a;
+  --color-of-buy-ink: #6fffd0;
+  --color-of-sell-ink: #ff8a7a;
+  --color-of-imb-buy: #c9fff0;
+  --color-of-imb-sell: #ffb3a8;
+  --color-of-poc: #ffe45c;
+  --color-of-vol: #4f7f8f;
   --color-of-vwap: #ffffff;
-  --color-of-svwap: #ff8a1a;
-  --color-of-heat-1: #3d5bd9;
-  --color-of-heat-2: #6a85f0;
-  --color-of-heat-3: #a6b8ff;
+  --color-of-svwap: #7fd4ff;
+  --color-of-heat-1: #4a2390;
+  --color-of-heat-2: #9b5cff;
+  --color-of-heat-3: #f2b8ff;
 }
 
-:root[data-chart-palette='nokturn'] {
-  --color-of-bg: #0b1a45;
-  --color-of-buy: #ffd43b;
-  --color-of-sell: #ff6a2b;
-  --color-of-buy-ink: #ffe066;
-  --color-of-sell-ink: #ff8a55;
-  --color-of-imb-buy: #fff3a6;
+:root[data-chart-palette='zmierzch'] {
+  --color-of-bg: #140a17;
+  --color-of-buy: #3fe0cf;
+  --color-of-sell: #f06a3c;
+  --color-of-buy-ink: #62eadb;
+  --color-of-sell-ink: #ff8a5c;
+  --color-of-imb-buy: #c6fff8;
   --color-of-imb-sell: #ffb08a;
-  --color-of-poc: #e57cff;
-  --color-of-vol: #5b6fa8;
-  --color-of-vwap: #f4f7ff;
-  --color-of-svwap: #5ff2c8;
-  --color-of-heat-1: #3a70d0;
-  --color-of-heat-2: #6a9ce6;
-  --color-of-heat-3: #a9c8f2;
+  --color-of-poc: #ffd25a;
+  --color-of-vol: #7d5f80;
+  --color-of-vwap: #fff4e6;
+  --color-of-svwap: #a99bff;
+  --color-of-heat-1: #6a2650;
+  --color-of-heat-2: #c2507e;
+  --color-of-heat-3: #d46a95;
+}
+
+:root[data-chart-palette='malachit'] {
+  --color-of-bg: #03170f;
+  --color-of-buy: #fff3d6;
+  --color-of-sell: #ff7a3d;
+  --color-of-buy-ink: #fff6e2;
+  --color-of-sell-ink: #ff9663;
+  --color-of-imb-buy: #ffffff;
+  --color-of-imb-sell: #ffb28a;
+  --color-of-poc: #ffcf4a;
+  --color-of-vol: #5f8f78;
+  --color-of-vwap: #9fd8ff;
+  --color-of-svwap: #ff9ec7;
+  --color-of-heat-1: #1a5c42;
+  --color-of-heat-2: #3fa474;
+  --color-of-heat-3: #6fd8a4;
 }
 
 @layer base {

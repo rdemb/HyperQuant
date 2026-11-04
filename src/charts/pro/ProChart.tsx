@@ -101,11 +101,11 @@ const LAYOUT_OPTIONS: { value: ChartLayout; label: React.ReactNode; title: strin
 const PALETTE_INFO: Record<ChartPalette, { name: string; desc: string }> = {
   neon: { name: 'Neon', desc: tr('zieleń i fiolet na grafitowym tle', 'green and violet on graphite') },
   desk: { name: 'Desk', desc: tr('morska zieleń i miedź na granatowym tle', 'sea green and copper on navy') },
-  swiatlokopia: { name: 'Światłokopia', desc: tr('plan techniczny: biel i czerwień na granacie', 'blueprint: white and red on navy') },
-  bauhaus: { name: 'Bauhaus', desc: tr('niebieski i czerwony, żółta płynność na czerni', 'blue and red, yellow liquidity on black') },
-  termowizja: { name: 'Termowizja', desc: tr('kamera termiczna: gorąca płynność, zimny przepływ', 'thermal camera: hot liquidity, cold flow') },
-  wycinanka: { name: 'Wycinanka', desc: tr('łowicka wycinanka: szmaragd, fuksja i kobalt', 'Łowicz paper-cut: emerald, fuchsia and cobalt') },
-  nokturn: { name: 'Nokturn', desc: tr('gwiaździsta noc: złoto i pomarańcz w błękitnych wirach', 'starry night: gold and orange in blue swirls') },
+  drzeworyt: { name: 'Drzeworyt', desc: tr('pruski błękit i cynober na jasnym papierze, płynność jak tusz', 'Prussian blue and vermilion on light paper, ink-wash liquidity') },
+  porcelana: { name: 'Porcelana', desc: tr('kobalt i złoto na białej porcelanie, seledynowa płynność', 'cobalt and gold on white porcelain, celadon liquidity') },
+  glebina: { name: 'Głębina', desc: tr('świecący plankton i koral w morskiej toni, płynność jak meduzy', 'glowing plankton and coral in deep water, jellyfish liquidity') },
+  zmierzch: { name: 'Zmierzch', desc: tr('turkus i terakota pod niebem pustyni, płynność w różach zachodu', 'turquoise and terracotta under a desert sky, sunset-pink liquidity') },
+  malachit: { name: 'Malachit', desc: tr('kość słoniowa i miedź na zielonym kamieniu, płynność w pasach', 'ivory and copper on green stone, banded liquidity') },
 };
 
 /** Próbka palety: tło, pas płynności i dwie świece (kupno, sprzedaż). */
@@ -1376,8 +1376,8 @@ const SettingsMenu: React.FC<{
       <p className="text-[11px] leading-snug text-ink-3">
         {PALETTE_INFO[PALETTE].name}: {PALETTE_INFO[PALETTE].desc}.{' '}
         {tr(
-          'Kupno i sprzedaż rozróżnisz także przy daltonizmie, najwyraźniej w paletach Bauhaus i Światłokopia. Dla wszystkich wykresów; zmiana przeładowuje stronę.',
-          'Buys and sells stay distinct with colour blindness too, most clearly in Bauhaus and Światłokopia. For all charts; changing it reloads the page.'
+          'Kupno i sprzedaż rozróżnisz także przy daltonizmie, najwyraźniej w paletach Drzeworyt i Porcelana. Dla wszystkich wykresów; zmiana przeładowuje stronę.',
+          'Buys and sells stay distinct with colour blindness too, most clearly in Drzeworyt and Porcelana. For all charts; changing it reloads the page.'
         )}
       </p>
     </Group>

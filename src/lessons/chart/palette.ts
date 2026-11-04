@@ -28,69 +28,69 @@ const DESK: typeof NEON = {
   profileOut: '#1f2b3d',
 };
 
-const SWIATLOKOPIA: typeof NEON = {
-  fpBidRamp: ['#22487a', '#615373', '#96596a', '#ca585c', '#ff4f45'],
-  fpAskRamp: ['#22487a', '#52719b', '#849bbc', '#b8c7dd', '#eef4ff'],
-  fpDeltaPosRamp: ['#22487a', '#52719b', '#849bbc', '#b8c7dd', '#eef4ff'],
-  fpDeltaNegRamp: ['#22487a', '#615373', '#96596a', '#ca585c', '#ff4f45'],
-  fpText: '#0b2246',
-  fpTextLight: '#f2f6ff',
-  profileVa: '#2a5590',
-  profileOut: '#1a3f72',
+const DRZEWORYT: typeof NEON = {
+  fpBidRamp: ['#e3dccd', '#e0b6a3', '#da907a', '#d16951', '#c43b22'],
+  fpAskRamp: ['#e3dccd', '#b0b8c0', '#7f95b1', '#5072a1', '#1f4f8f'],
+  fpDeltaPosRamp: ['#e3dccd', '#b0b8c0', '#7f95b1', '#5072a1', '#1f4f8f'],
+  fpDeltaNegRamp: ['#e3dccd', '#e0b6a3', '#da907a', '#d16951', '#c43b22'],
+  fpText: '#1c1a17',
+  fpTextLight: '#fbf7ef',
+  profileVa: '#d6cdbb',
+  profileOut: '#e6dfd0',
 };
 
-const BAUHAUS: typeof NEON = {
-  fpBidRamp: ['#2a2826', '#59312b', '#89362e', '#bb352f', '#ef2b2d'],
-  fpAskRamp: ['#2a2826', '#2d3b58', '#2f4c8d', '#2f5cc4', '#2e6bff'],
-  fpDeltaPosRamp: ['#2a2826', '#2d3b58', '#2f4c8d', '#2f5cc4', '#2e6bff'],
-  fpDeltaNegRamp: ['#2a2826', '#59312b', '#89362e', '#bb352f', '#ef2b2d'],
-  fpText: '#151413',
-  fpTextLight: '#f4f1ea',
-  profileVa: '#3a3733',
-  profileOut: '#24221f',
+const PORCELANA: typeof NEON = {
+  fpBidRamp: ['#e2e7ee', '#d1c7ba', '#c0a887', '#ae8952', '#9c6a00'],
+  fpAskRamp: ['#e2e7ee', '#afc2e7', '#7d9edd', '#4d78d2', '#1d4fc4'],
+  fpDeltaPosRamp: ['#e2e7ee', '#afc2e7', '#7d9edd', '#4d78d2', '#1d4fc4'],
+  fpDeltaNegRamp: ['#e2e7ee', '#d1c7ba', '#c0a887', '#ae8952', '#9c6a00'],
+  fpText: '#151a24',
+  fpTextLight: '#fafbfd',
+  profileVa: '#d5dce6',
+  profileOut: '#e6eaf0',
 };
 
-const TERMOWIZJA: typeof NEON = {
-  fpBidRamp: ['#1b1f2c', '#30325b', '#47458e', '#6058c5', '#7a6bff'],
-  fpAskRamp: ['#1b1f2c', '#2a485b', '#34758e', '#39a6c5', '#38d9ff'],
-  fpDeltaPosRamp: ['#1b1f2c', '#2a485b', '#34758e', '#39a6c5', '#38d9ff'],
-  fpDeltaNegRamp: ['#1b1f2c', '#30325b', '#47458e', '#6058c5', '#7a6bff'],
-  fpText: '#04060c',
-  fpTextLight: '#eef2f8',
-  profileVa: '#2a3040',
-  profileOut: '#151925',
+const GLEBINA: typeof NEON = {
+  fpBidRamp: ['#13262f', '#4c3a3c', '#854c48', '#c15c52', '#ff6b5a'],
+  fpAskRamp: ['#13262f', '#235651', '#318b76', '#3fc39c', '#4dffc3'],
+  fpDeltaPosRamp: ['#13262f', '#235651', '#318b76', '#3fc39c', '#4dffc3'],
+  fpDeltaNegRamp: ['#13262f', '#4c3a3c', '#854c48', '#c15c52', '#ff6b5a'],
+  fpText: '#01070d',
+  fpTextLight: '#eefbff',
+  profileVa: '#1d3a46',
+  profileOut: '#0f242d',
 };
 
-const WYCINANKA: typeof NEON = {
-  fpBidRamp: ['#262428', '#542c3b', '#832f4f', '#b52b64', '#e8197a'],
-  fpAskRamp: ['#262428', '#395144', '#488362', '#54b880', '#5cf0a0'],
-  fpDeltaPosRamp: ['#262428', '#395144', '#488362', '#54b880', '#5cf0a0'],
-  fpDeltaNegRamp: ['#262428', '#542c3b', '#832f4f', '#b52b64', '#e8197a'],
-  fpText: '#0c0b0d',
-  fpTextLight: '#f4f2f6',
-  profileVa: '#38343c',
-  profileOut: '#1f1d22',
+const ZMIERZCH: typeof NEON = {
+  fpBidRamp: ['#2e1a31', '#592e3a', '#89423f', '#bb5640', '#f06a3c'],
+  fpAskRamp: ['#2e1a31', '#404755', '#4a777c', '#4baaa4', '#3fe0cf'],
+  fpDeltaPosRamp: ['#2e1a31', '#404755', '#4a777c', '#4baaa4', '#3fe0cf'],
+  fpDeltaNegRamp: ['#2e1a31', '#592e3a', '#89423f', '#bb5640', '#f06a3c'],
+  fpText: '#140a17',
+  fpTextLight: '#fbf2f8',
+  profileVa: '#3e2742',
+  profileOut: '#26162a',
 };
 
-const NOKTURN: typeof NEON = {
-  fpBidRamp: ['#1d2f63', '#554461', '#8b555b', '#c4614c', '#ff6a2b'],
-  fpAskRamp: ['#1d2f63', '#4f596a', '#868269', '#c1aa5e', '#ffd43b'],
-  fpDeltaPosRamp: ['#1d2f63', '#4f596a', '#868269', '#c1aa5e', '#ffd43b'],
-  fpDeltaNegRamp: ['#1d2f63', '#554461', '#8b555b', '#c4614c', '#ff6a2b'],
-  fpText: '#0b1a45',
-  fpTextLight: '#f2f5ff',
-  profileVa: '#283f7a',
-  profileOut: '#172a5c',
+const MALACHIT: typeof NEON = {
+  fpBidRamp: ['#173a2c', '#544d34', '#8c5e39', '#c46d3c', '#ff7a3d'],
+  fpAskRamp: ['#173a2c', '#4e6452', '#85917b', '#c1c1a8', '#fff3d6'],
+  fpDeltaPosRamp: ['#173a2c', '#4e6452', '#85917b', '#c1c1a8', '#fff3d6'],
+  fpDeltaNegRamp: ['#173a2c', '#544d34', '#8c5e39', '#c46d3c', '#ff7a3d'],
+  fpText: '#03170f',
+  fpTextLight: '#f4fbf7',
+  profileVa: '#21503d',
+  profileOut: '#123526',
 };
 
 const FIGS: Record<ChartPalette, typeof NEON> = {
   neon: NEON,
   desk: DESK,
-  swiatlokopia: SWIATLOKOPIA,
-  bauhaus: BAUHAUS,
-  termowizja: TERMOWIZJA,
-  wycinanka: WYCINANKA,
-  nokturn: NOKTURN,
+  drzeworyt: DRZEWORYT,
+  porcelana: PORCELANA,
+  glebina: GLEBINA,
+  zmierzch: ZMIERZCH,
+  malachit: MALACHIT,
 };
 
 export const FIG = FIGS[PALETTE];

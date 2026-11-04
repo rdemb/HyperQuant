@@ -5,6 +5,7 @@ import type { ProStore } from '../store/proStore';
 import type { ChartSettings } from './settings';
 import { logicalOfTime } from './overlay';
 import { tr } from '../../../i18n';
+import { PRO, rgba } from './theme';
 
 /**
  * Pasek pokrycia danych pod osią czasu: dla każdego źródła spoza świec, którego potrzebują włączone warstwy i wskaźniki
@@ -194,7 +195,7 @@ export function coverageRows(src: CoverageSource, needs: readonly DataSource[], 
 }
 
 /** Tło wiersza (czas bez danych) i wysokość wiersza: przy więcej niż trzech źródłach cieńsze, żeby nie wejść na etykiety osi. */
-const TRACK = 'rgba(255,255,255,0.07)';
+const TRACK = rgba(PRO.ink1, 0.07);
 export const ALL_COLOR = '#e2e8f0';
 export const rowColor = (src: CoverageRow['src']): string => (src === 'all' ? ALL_COLOR : SOURCE_INFO[src].color);
 const rowPx = (rows: number) => (rows > 3 ? 1 : 2);
