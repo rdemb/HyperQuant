@@ -48,8 +48,8 @@ const VENUE_ROWS: ExchangeId[] = ['HYPERLIQUID', 'BINANCE_FUTURES', 'BYBIT', 'OK
 
 // Kolory tokenów (src/index.css) dla stylów inline: kupno/sprzedaż, poziom (likwidacje/wyczerpanie), ink
 const TOKEN = {
-  buy: '25, 168, 142', // --color-buy
-  sell: '217, 88, 46', // --color-sell
+  buy: '50, 128, 221', // --color-buy
+  sell: '202, 56, 41', // --color-sell
   level: '224, 160, 69', // --color-level
   line: '27, 37, 51', // --color-line
   ink1: '#EEF2F7',

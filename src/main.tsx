@@ -8,7 +8,6 @@ import { UpdateBanner } from './shell/UpdateBanner';
 import { registerServiceWorker } from './shell/usePwa';
 import './index.css';
 // Paleta wykresów od pierwszego renderu (tokeny of-* także w lekcjach)
-import './charts/pro/chart/palette';
 
 // Osłona reconcilera React 19 przed zmianami DOM z zewnątrz (tłumacz Google, rozszerzenia).
 // Każde odstępstwo jest logowane — nie połykamy błędów po cichu.
