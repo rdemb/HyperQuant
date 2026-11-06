@@ -47,6 +47,7 @@ export interface AtlasEntry {
   combine: readonly string[];
   /** Gdzie włączyć na Wykresach. */
   where: string;
+  /** Układ Wykresów z tym wskaźnikiem (przycisk pod hasłem). */
   station: StationId;
   /** Rycina z wycinka (gdy wskaźnik da się pokazać z zapisanych danych). */
   figure?: { slice: string; view?: 'candles' | 'footprint'; layers: FigureLayers; at?: string; caption: string };
@@ -88,7 +89,7 @@ export interface LessonsContent {
     debrief: string;
     honest: string;
     practice: string;
-    /** Przycisk stacji Wykresów; `name` to nazwa ze stations.ts (Wykresy mają jeszcze tylko polskie nazwy). */
+    /** Przycisk układu Wykresów; `name` to nazwa ze stations.ts. */
     openStation: (id: StationId, name: string) => string;
     /** Przycisk powtórki tej samej chwili w Wykresach i zdanie pod nim. */
     openReplay: string;

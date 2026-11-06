@@ -1,13 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Copy, Layers3, Pencil, Plus, RotateCcw, X } from 'lucide-react';
-import { STATIONS, stationPanel } from './stations';
-import { BUILT_IN_TEMPLATES, MTF_SETS } from './templates';
-import { ChartTab, MAX_TABS, TabPreset, TabsState, presetName, presetQuestion, presetStation, setNewCount, tabName } from './tabs';
+import { Copy, type LucideIcon, Pencil, Plus, RotateCcw, X } from 'lucide-react';
+import { STATIONS, StationId, stationPanel } from './stations';
+import { ChartTab, MAX_TABS, TabsState, canClose, canRestore, presetName, presetQuestion, presetStation, tabName, tabsFull } from './tabs';
 import { intervalById } from '../core/time';
 import { tr } from '../../../i18n';
 
-/** Sposób utworzenia nowej karty: pusta (ustawienia startowe), kopia aktywnej, z wzorca albo zestaw kart MTF. */
-export type NewTab = 'blank' | 'copy' | TabPreset | `set:${string}`;
+/** Sposób utworzenia nowej karty: pusta (karta własna z ustawieniami startowymi), kopia aktywnej albo z wzorca układu. */
+export type NewTab = 'blank' | 'copy' | StationId;
 
 export interface TabActions {
   onSelect: (id: string) => void;
@@ -22,24 +21,10 @@ export interface TabActions {
 /** Interwały paneli jako podpis: „30m · 4h”. */
 export const tfLabel = (intervals: readonly string[]): string => intervals.map((i) => intervalById(i).label).join(' · ');
 
-const presetTf = (p: TabPreset, tf?: string): string => {
-  const st = presetStation(p, tf);
+const presetTf = (p: StationId): string => {
+  const st = presetStation(p);
   return tfLabel(st.panels.map((_, i) => stationPanel(st, i, false).interval));
 };
-
-/** Interwały kart zestawu od góry: „1D → 4h → 1h → 30m → 5m → 1m”. */
-const setTf = (set: (typeof MTF_SETS)[number]): string => set.tabs.map((e) => presetTf(e.preset as TabPreset, e.tf)).join(' → ');
-
-const PRESETS: { title: string; items: { preset: TabPreset; hint: string }[] }[] = [
-  {
-    title: tr('Stacje robocze', 'Workstations'),
-    items: STATIONS.filter((s) => s.id !== 'start').map((s) => ({ preset: s.id, hint: s.question })),
-  },
-  {
-    title: tr('Szablony: jeden wykres', 'Templates: one chart'),
-    items: BUILT_IN_TEMPLATES.map((t) => ({ preset: `tpl:${t.id}` as TabPreset, hint: presetQuestion(`tpl:${t.id}`) })),
-  },
-];
 
 /** Zamknięcie menu: Escape albo kliknięcie poza nim. */
 function useDismiss(ref: React.RefObject<HTMLElement | null>, open: boolean, onClose: () => void): void {
@@ -84,14 +69,14 @@ const NameInput: React.FC<{ value: string; onDone: (name: string | null) => void
   );
 };
 
-/** Lista „Nowa karta”: pusta, kopia aktywnej, stacje robocze i szablony (na komputerze w menu przycisku +, na telefonie w arkuszu). */
+/** Lista „Nowa karta”: pusta, kopia aktywnej i sześć układów (na komputerze w menu przycisku +, na telefonie w arkuszu). */
 export const NewTabList: React.FC<{ st: TabsState; onNew: (how: NewTab) => void }> = ({ st, onNew }) => {
   const active = st.tabs.find((t) => t.id === st.active) ?? st.tabs[0];
-  const full = st.tabs.length >= MAX_TABS;
+  const full = tabsFull(st);
   const item = 'w-full flex items-start gap-2 text-left px-2 py-1.5 rounded-lg hover:bg-surface-3 disabled:opacity-40 disabled:hover:bg-transparent';
   return (
     <div className="flex flex-col gap-2 text-xs">
-      {full && <p className="px-2 text-[11px] leading-snug text-warn">{tr(`Masz już ${MAX_TABS} kart — zamknij jedną, żeby dodać nową.`, `You already have ${MAX_TABS} tabs — close one to add a new one.`)}</p>}
+      {full && <p className="px-2 text-[11px] leading-snug text-warn">{tr(`Masz już ${MAX_TABS} kart własnych — zamknij jedną, żeby dodać nową.`, `You already have ${MAX_TABS} tabs of your own — close one to add a new one.`)}</p>}
       <div className="flex flex-col">
         <button type="button" disabled={full} className={item} onClick={() => onNew('blank')}>
           <Plus className="w-4 h-4 mt-px shrink-0 text-ink-3" />
@@ -109,49 +94,19 @@ export const NewTabList: React.FC<{ st: TabsState; onNew: (how: NewTab) => void 
         </button>
       </div>
       <div className="flex flex-col">
-        <div className="px-2 pb-1 text-[10px] uppercase tracking-[0.08em] text-ink-3 font-medium">{tr('Zestawy kart MTF: od wyższego interwału', 'MTF tab sets: from the higher timeframe')}</div>
-        {MTF_SETS.map((set) => {
-          const add = setNewCount(st, set.id);
-          const fits = st.tabs.length + add <= MAX_TABS;
-          return (
-            <button
-              key={set.id}
-              type="button"
-              disabled={!fits}
-              title={fits ? set.tabs.map((e) => presetName(e.preset as TabPreset)).join(' → ') : tr(`Zestaw doda ${add} kart — zamknij część, żeby się zmieścił`, `The set adds ${add} tabs — close some to make room`)}
-              className={item}
-              onClick={() => onNew(`set:${set.id}`)}
-            >
-              <Layers3 className="w-4 h-4 mt-px shrink-0 text-accent" />
-              <span className="min-w-0">
-                <span className="block font-medium text-ink-1">{set.name}</span>
-                <span className="block font-mono text-[10px] text-ink-3">{setTf(set)}</span>
-                <span className="block text-[11px] text-ink-3">
-                  {add === 0
-                    ? tr('Wszystkie karty zestawu są już otwarte — przejdziesz do pierwszej', 'All tabs of the set are already open — you will go to the first one')
-                    : tr(`Doda kart: ${add}; karty już otwarte zostają`, `Adds ${add} tabs; tabs already open stay`)}
-                </span>
+        <div className="px-2 pb-1 text-[10px] uppercase tracking-[0.08em] text-ink-3 font-medium">{tr('Układy: nowa karta z wzorca', 'Layouts: a new tab from the preset')}</div>
+        {STATIONS.map((s) => (
+          <button key={s.id} type="button" disabled={full} title={s.question} className={item} onClick={() => onNew(s.id)}>
+            <span className="min-w-0 flex-1">
+              <span className="flex items-baseline gap-2">
+                <span className="font-medium text-ink-1 truncate">{s.name}</span>
+                <span className="font-mono text-[10px] text-ink-3 shrink-0">{presetTf(s.id)}</span>
               </span>
-            </button>
-          );
-        })}
+              <span className="text-[11px] text-ink-3 line-clamp-2">{s.question}</span>
+            </span>
+          </button>
+        ))}
       </div>
-      {PRESETS.map((g) => (
-        <div key={g.title} className="flex flex-col">
-          <div className="px-2 pb-1 text-[10px] uppercase tracking-[0.08em] text-ink-3 font-medium">{g.title}</div>
-          {g.items.map(({ preset, hint }) => (
-            <button key={preset} type="button" disabled={full} title={hint} className={item} onClick={() => onNew(preset)}>
-              <span className="min-w-0 flex-1">
-                <span className="flex items-baseline gap-2">
-                  <span className="font-medium text-ink-1 truncate">{presetName(preset)}</span>
-                  <span className="font-mono text-[10px] text-ink-3 shrink-0">{presetTf(preset)}</span>
-                </span>
-                <span className="text-[11px] text-ink-3 line-clamp-2">{hint}</span>
-              </span>
-            </button>
-          ))}
-        </div>
-      ))}
     </div>
   );
 };
@@ -170,7 +125,7 @@ export const TabsBar: React.FC<{ st: TabsState; tf: (t: ChartTab) => string; a: 
   const activeRef = useRef<HTMLDivElement>(null);
   useDismiss(menuRef, menu !== null, () => setMenu(null));
   useDismiss(addRef, adding, () => setAdding(false));
-  const full = st.tabs.length >= MAX_TABS;
+  const full = tabsFull(st);
   // Aktywna karta zawsze widoczna na przewijanym pasku (np. po Alt+9)
   useEffect(() => {
     activeRef.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
@@ -216,7 +171,7 @@ export const TabsBar: React.FC<{ st: TabsState; tf: (t: ChartTab) => string; a: 
                 e.preventDefault();
                 setMenu({ id: t.id, x: e.clientX, y: e.clientY });
               }}
-              onAuxClick={(e) => e.button === 1 && st.tabs.length > 1 && a.onClose(t.id)}
+              onAuxClick={(e) => e.button === 1 && canClose(st, t) && a.onClose(t.id)}
               className={`group shrink-0 flex items-center h-8 rounded-lg border transition-colors duration-150 ${
                 on ? 'bg-surface-3 border-line-strong text-ink-1' : 'border-line text-ink-3 hover:text-ink-1 hover:bg-surface-2'
               } ${drag && drag.over === i && drag.id !== t.id ? 'ring-1 ring-accent' : ''} ${drag?.id === t.id ? 'opacity-50' : ''}`}
@@ -244,7 +199,7 @@ export const TabsBar: React.FC<{ st: TabsState; tf: (t: ChartTab) => string; a: 
                   <span className={`font-mono text-[10px] whitespace-nowrap ${on ? 'text-accent' : 'text-ink-3'}`}>{tf(t)}</span>
                 </button>
               )}
-              {st.tabs.length > 1 && editing !== t.id && (
+              {canClose(st, t) && editing !== t.id && (
                 <button
                   type="button"
                   aria-label={tr(`Zamknij kartę ${name}`, `Close the ${name} tab`)}
@@ -294,9 +249,12 @@ export const TabsBar: React.FC<{ st: TabsState; tf: (t: ChartTab) => string; a: 
             [
               [Pencil, tr('Zmień nazwę', 'Rename'), () => setEditing(menuTab.id), false],
               [Copy, tr('Kopia karty', 'Copy tab'), () => a.onCopy(menuTab.id), full],
-              [RotateCcw, tr(`Przywróć wzorzec: ${presetName(menuTab.preset)}`, `Restore preset: ${presetName(menuTab.preset)}`), () => a.onRestore(menuTab.id), false],
-              [X, tr('Zamknij kartę', 'Close tab'), () => a.onClose(menuTab.id), st.tabs.length <= 1],
-            ] as const
+              // Karta własna nie ma wzorca do przywrócenia
+              ...(canRestore(menuTab)
+                ? [[RotateCcw, tr(`Przywróć wzorzec: ${presetName(menuTab.preset)}`, `Restore preset: ${presetName(menuTab.preset)}`), () => a.onRestore(menuTab.id), false] as const]
+                : []),
+              [X, tr('Zamknij kartę', 'Close tab'), () => a.onClose(menuTab.id), !canClose(st, menuTab)],
+            ] satisfies (readonly [LucideIcon, string, () => void, boolean])[]
           ).map(([Icon, label, on, off]) => (
             <button
               key={label}
@@ -384,10 +342,10 @@ export const TabsSheet: React.FC<{ st: TabsState; tf: (t: ChartTab) => string; a
                 <button type="button" aria-label={tr('Zmień nazwę', 'Rename')} className={icon} onClick={() => setEditing(t.id)}>
                   <Pencil className="w-4 h-4" />
                 </button>
-                <button type="button" aria-label={tr('Kopia karty', 'Copy tab')} disabled={st.tabs.length >= MAX_TABS} className={icon} onClick={() => a.onCopy(t.id)}>
+                <button type="button" aria-label={tr('Kopia karty', 'Copy tab')} disabled={tabsFull(st)} className={icon} onClick={() => a.onCopy(t.id)}>
                   <Copy className="w-4 h-4" />
                 </button>
-                <button type="button" aria-label={tr('Zamknij kartę', 'Close tab')} disabled={st.tabs.length <= 1} className={`${icon} mr-1`} onClick={() => a.onClose(t.id)}>
+                <button type="button" aria-label={tr('Zamknij kartę', 'Close tab')} disabled={!canClose(st, t)} className={`${icon} mr-1`} onClick={() => a.onClose(t.id)}>
                   <X className="w-4 h-4" />
                 </button>
                 </li>

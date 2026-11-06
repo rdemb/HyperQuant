@@ -76,7 +76,7 @@ export interface ChartSettings {
 /**
  * Ustawienia startowe: świece mają być czytelne od pierwszej sekundy, więc na wykresie ceny tylko lekkie warstwy
  * (VWAP dnia, profil widocznego zakresu, poziomy dnia, otwarcia sesji). Mapa ciepła, bąble, wieloryby, ściany, duże
- * zlecenia w arkuszu, strefy, IB i profile sesji włącza się w „Wskaźnikach” albo szablonem „Pełny orderflow”
+ * zlecenia w arkuszu, strefy, IB i profile sesji włącza się w „Wskaźnikach” albo w układach faz dnia
  * (z historią ostatniej doby bąble i mapa ciepła zakrywają świece całego widoku).
  */
 export const DEFAULT_SETTINGS: ChartSettings = {
@@ -282,7 +282,7 @@ export function settingsFromHash(hash: string): Partial<ChartSettings> {
   return out;
 }
 
-/** Klucz zapisu panelu układu: pierwszy panel ma klucz sprzed układów, więc zapisane ustawienia zostają. */
+/** Klucz zapisu panelu sprzed układów faz (dawna stacja Start): dziś tylko do odczytu przy migracji kart. */
 export const panelKey = (panel: number) => (panel === 0 ? KEY : `${KEY}.p${panel}`);
 
 /** Ustawienia panelu; bez zapisu — `fallback` (domyślnie wartości startowe). */
@@ -295,9 +295,12 @@ export function loadSettings(key = KEY, fallback: ChartSettings = startSettings(
   }
 }
 
+/** Zapis ustawień jako tekst (z wersją zestawu warstw, więc odczyt nie zdejmuje warstw jak w zapisie sprzed wersji 2). */
+export const settingsJson = (s: ChartSettings): string => JSON.stringify({ ...s, layersV: LAYERS_V });
+
 export function saveSettings(s: ChartSettings, key = KEY): void {
   try {
-    localStorage.setItem(key, JSON.stringify({ ...s, layersV: LAYERS_V }));
+    localStorage.setItem(key, settingsJson(s));
   } catch {
     // Prywatne okno albo zablokowana pamięć — ustawienia działają do końca sesji
   }

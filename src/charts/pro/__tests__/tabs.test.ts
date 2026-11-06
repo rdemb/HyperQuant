@@ -1,42 +1,51 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { DEFAULT_SETTINGS, NARROW_PATCH, parseSettings, saveSettings } from '../chart/settings';
-import { STATIONS, saveStationLayout, stationKey, stationPanel } from '../chart/stations';
-import { BUILT_IN_TEMPLATES, MTF_SETS, TEMPLATE_PHONE } from '../chart/templates';
+import { ChartSettings, DEFAULT_SETTINGS, parseSettings, saveSettings } from '../chart/settings';
+import { STATIONS, saveStationLayout, stationById, stationKey, stationPanel } from '../chart/stations';
+import { inds } from '../chart/templates';
+import { LEGACY_STATIONS, LEGACY_TEMPLATES } from '../chart/legacyPresets';
 import {
   ChartTab,
   MAX_TABS,
+  TabPreset,
   TabsState,
   activeTab,
-  addSet,
   addTab,
   blankName,
+  canClose,
+  canRestore,
   closeTab,
   defaultTabs,
+  dismissRestoreOffer,
   insertTab,
   ladderTab,
+  loadPhaseActive,
   loadTabs,
+  migrateTabsV2,
   moveTab,
   newTabId,
   openPreset,
   openStationTab,
   parseTabs,
+  phaseTabs,
   presetName,
   presetQuestion,
   presetStation,
   renameTab,
+  restoreLegacyStart,
   restoreTab,
+  savePhaseActive,
   saveTabs,
-  setNewCount,
   snapshotTab,
   tabIntervals,
   tabLayout,
   tabName,
   tabStation,
+  tabsFull,
 } from '../chart/tabs';
 
 /** Pamięć przeglądarki w testach (środowisko node). */
-function memoryStorage(): Storage {
-  const m = new Map<string, string>();
+function memoryStorage(init: Record<string, string> = {}): Storage {
+  const m = new Map<string, string>(Object.entries(init));
   return {
     get length() {
       return m.size;
@@ -49,54 +58,75 @@ function memoryStorage(): Storage {
   };
 }
 
-const tab = (id: string, preset: ChartTab['preset'] = 'start', name: string | null = null): ChartTab => ({ id, preset, name });
+/** Cała zawartość pamięci (porównanie przed i po). */
+const dump = (s: Storage) => Object.fromEntries(Array.from({ length: s.length }, (_, i) => s.key(i)!).map((k) => [k, s.getItem(k)]));
+
+/** Zapis ustawień jak `saveSettings` (z wersją warstw). */
+const saved = (s: Partial<ChartSettings>) => JSON.stringify({ ...DEFAULT_SETTINGS, ...s, layersV: 2 });
+const read = (s: Storage, key: string) => parseSettings(JSON.parse(s.getItem(key)!));
+
+const LAYOUT_IDS = STATIONS.map((s) => s.id);
+const tab = (id: string, preset: TabPreset = 'own', name: string | null = null): ChartTab => ({ id, preset, name });
 const state = (ids: string[], active = ids[0]): TabsState => ({ tabs: ids.map((id) => tab(id)), active });
 
-describe('karty układów: stan', () => {
-  it('karty startowe to stacje robocze w ich kolejności, z ich zapisem', () => {
+describe('karty: stan', () => {
+  it('karty startowe: sześć układów (id = wzorzec), aktywny Kokpit', () => {
     const st = defaultTabs();
-    expect(st.tabs.map((t) => [t.id, t.preset])).toEqual(STATIONS.map((s) => [s.id, s.id]));
-    expect(st.active).toBe('start');
+    expect(st.tabs.map((t) => t.id)).toEqual(LAYOUT_IDS);
+    expect(st.tabs.map((t) => t.preset)).toEqual(LAYOUT_IDS);
+    expect(st.active).toBe('cockpit');
     expect(st.tabs.map(tabName)).toEqual(STATIONS.map((s) => s.name));
   });
 
-  it('odczyt: błędne i powtórzone id pomijane, nieznany wzorzec → Start, nazwa przycięta, limit kart', () => {
+  it('odczyt: układy zawsze na początku w kolejności faz, własne karty po nich; błędne i powtórzone id pomijane', () => {
     const raw = {
       tabs: [
-        { id: 'k1', preset: 'scalp', name: '  Moje 1m  ' },
-        { id: 'k1', preset: 'auction' },
-        { id: 'Zły klucz', preset: 'start' },
+        { id: 'k1', preset: 'cockpit', name: '  Moje 1m  ' },
+        { id: 'review', preset: 'review', name: 'Wieczór' },
+        { id: 'k1', preset: 'fuel' },
+        { id: 'Zły klucz', preset: 'own' },
         { id: 'k2', preset: 'nie-ma', name: '' },
-        { id: 'k3', preset: 'tpl:swing', name: 'x'.repeat(50) },
+        { id: 'k3', preset: 'own', name: 'x'.repeat(50) },
+        { id: 'cockpit', preset: 'own' },
         null,
       ],
       active: 'k3',
     };
-    const st = parseTabs(raw)!;
-    expect(st.tabs).toEqual([tab('k1', 'scalp', 'Moje 1m'), tab('k2', 'start'), tab('k3', 'tpl:swing', 'x'.repeat(32))]);
+    const st = parseTabs(raw);
+    expect(st.tabs.map((t) => t.id)).toEqual([...LAYOUT_IDS, 'k1', 'k2', 'k3']);
+    expect(st.tabs.slice(0, 6).map((t) => t.preset)).toEqual(LAYOUT_IDS);
+    expect(st.tabs.find((t) => t.id === 'review')!.name).toBe('Wieczór');
+    expect(st.tabs.slice(6)).toEqual([tab('k1', 'cockpit', 'Moje 1m'), tab('k2'), tab('k3', 'own', 'x'.repeat(32))]);
     expect(st.active).toBe('k3');
-    expect(parseTabs({ tabs: [{ id: 'k1' }], active: 'k9' })!.active).toBe('k1');
-    expect(parseTabs({ tabs: [] })).toBeNull();
-    expect(parseTabs('x')).toBeNull();
-    const many = parseTabs({ tabs: Array.from({ length: 20 }, (_, i) => ({ id: `k${i}`, preset: 'start' })) })!;
-    expect(many.tabs).toHaveLength(MAX_TABS);
+    expect(parseTabs({ tabs: [{ id: 'k1' }], active: 'k9' }).active).toBe('cockpit');
+    expect(parseTabs({ tabs: [] })).toEqual(defaultTabs());
+    expect(parseTabs('x')).toEqual(defaultTabs());
   });
 
-  it('nowa karta na końcu i aktywna; limit kart i powtórzone id bez zmian', () => {
+  it('limit liczy tylko karty własne: układy są zawsze', () => {
+    const many = parseTabs({ tabs: Array.from({ length: MAX_TABS + 5 }, (_, i) => ({ id: `k${i}`, preset: 'own' })) });
+    expect(many.tabs).toHaveLength(LAYOUT_IDS.length + MAX_TABS);
+    expect(tabsFull(many)).toBe(true);
+    expect(addTab(many, tab('x'))).toBe(many);
+    expect(tabsFull(defaultTabs())).toBe(false);
+  });
+
+  it('nowa karta na końcu i aktywna; powtórzone id bez zmian', () => {
     const st = state(['a', 'b']);
     expect(addTab(st, tab('c'))).toEqual({ tabs: [tab('a'), tab('b'), tab('c')], active: 'c' });
     expect(addTab(st, tab('a'))).toBe(st);
-    const full = state(Array.from({ length: MAX_TABS }, (_, i) => `k${i}`));
-    expect(addTab(full, tab('x'))).toBe(full);
   });
 
-  it('zamknięcie: aktywna sąsiadka z prawej (ostatnia — z lewej), ostatniej karty nie da się zamknąć', () => {
+  it('zamknięcie: aktywna sąsiadka z prawej (ostatnia — z lewej); ostatniej karty i kart układów nie da się zamknąć', () => {
     expect(closeTab(state(['a', 'b', 'c'], 'b'), 'b')).toEqual(state(['a', 'c'], 'c'));
     expect(closeTab(state(['a', 'b', 'c'], 'c'), 'c')).toEqual(state(['a', 'b'], 'b'));
     expect(closeTab(state(['a', 'b', 'c'], 'a'), 'c')).toEqual(state(['a', 'b'], 'a'));
     const one = state(['a']);
     expect(closeTab(one, 'a')).toBe(one);
     expect(closeTab(one, 'x')).toBe(one);
+    const st = addTab(defaultTabs(), tab('k1'));
+    expect(closeTab(st, 'cockpit')).toBe(st);
+    expect([canClose(st, st.tabs[2]), canClose(st, tab('k1')), canClose(state(['a']), tab('a'))]).toEqual([false, true, false]);
   });
 
   it('cofnięcie zamknięcia wstawia kartę na dawne miejsce', () => {
@@ -105,117 +135,68 @@ describe('karty układów: stan', () => {
     expect(insertTab(st, tab('b'), 9, false)).toEqual(state(['a', 'c', 'b'], 'c'));
   });
 
-  it('nazwa: własna, pusta wraca do nazwy wzorca; kolejność po przeciągnięciu', () => {
-    const st = { tabs: [tab('a', 'scalp'), tab('b')], active: 'a' };
-    const named = renameTab(st, 'a', '  Wykonanie 1m ');
-    expect(tabName(named.tabs[0])).toBe('Wykonanie 1m');
-    expect(tabName(renameTab(named, 'a', '   ').tabs[0])).toBe(presetName('scalp'));
+  it('nazwa: własna, pusta wraca do nazwy wzorca; przeciąganie nie rusza kart układów', () => {
+    const st = { tabs: [tab('a', 'big-hands'), tab('b')], active: 'a' };
+    const named = renameTab(st, 'a', '  Wykonanie 5m ');
+    expect(tabName(named.tabs[0])).toBe('Wykonanie 5m');
+    expect(tabName(renameTab(named, 'a', '   ').tabs[0])).toBe(presetName('big-hands'));
     expect(moveTab(state(['a', 'b', 'c']), 'a', 2).tabs.map((t) => t.id)).toEqual(['b', 'c', 'a']);
     expect(moveTab(state(['a', 'b', 'c']), 'c', 0).tabs.map((t) => t.id)).toEqual(['c', 'a', 'b']);
+    const withOwn = addTab(addTab(defaultTabs(), tab('k1')), tab('k2'));
+    expect(moveTab(withOwn, 'k2', 0).tabs.map((t) => t.id)).toEqual([...LAYOUT_IDS, 'k2', 'k1']);
+    expect(moveTab(withOwn, 'cockpit', 7)).toBe(withOwn);
   });
 
-  it('wzorzec z lekcji: istniejąca karta z tym wzorcem, a bez niej nowa (przy limicie zastępuje aktywną)', () => {
-    const st = defaultTabs();
-    expect(openPreset(st, 'auction', 'k1').active).toBe('auction');
-    const without = closeTab(st, 'auction');
-    const opened = openPreset(without, 'auction', 'k1');
-    expect([opened.active, opened.tabs[opened.tabs.length - 1]]).toEqual(['k1', tab('k1', 'auction')]);
-    const full = state(Array.from({ length: MAX_TABS }, (_, i) => `k${i}`), 'k3');
-    const replaced = openPreset(full, 'scalp', 'n1');
-    expect([replaced.tabs.length, replaced.tabs[3], replaced.active]).toEqual([MAX_TABS, tab('n1', 'scalp'), 'n1']);
+  it('wzorzec z lekcji: karta układu staje się aktywna', () => {
+    const st = addTab(defaultTabs(), tab('k1', 'day-map'));
+    expect(openPreset(st, 'day-map').active).toBe('day-map');
+    expect(openPreset(st, 'review').active).toBe('review');
   });
 
   it('drabina interwałów: najbliższa karta w tę stronę paska z niższym (↓) albo wyższym (↑) interwałem, potem cały pasek', () => {
-    // Zestaw od wyższego interwału po kartach startowych: krok po kroku w obrębie zestawu
     const tf: Record<string, string> = { s5: '5m', s1: '1m', s30: '30m', d: '1d', h4: '4h', a15: '15m', b15: '15m', c5: '5m' };
     const st = state(Object.keys(tf), 'h4');
     const main = (t: ChartTab) => tf[t.id];
     const go = (from: string, dir: 1 | -1) => ladderTab({ ...st, active: from }, main, dir);
     expect([go('d', -1), go('h4', -1), go('a15', -1), go('b15', -1)]).toEqual(['h4', 'a15', 'c5', 'c5']);
     expect([go('c5', 1), go('b15', 1), go('a15', 1), go('h4', 1)]).toEqual(['b15', 'h4', 'h4', 'd']);
-    // Bez karty w tę stronę: najbliższy interwał na całym pasku
     expect(go('c5', -1)).toBe('s1');
     expect(go('s5', 1)).toBe('a15');
     expect([go('d', 1), go('s1', -1)]).toEqual([null, null]);
   });
 
-  it('wzorzec szablonu: jeden wykres z ustawieniami szablonu, krótka nazwa', () => {
-    for (const t of BUILT_IN_TEMPLATES) {
-      const st = presetStation(`tpl:${t.id}`);
-      expect(st.layout).toBe(1);
-      const s = stationPanel(st, 0, false);
-      expect(parseSettings(s)).toEqual(s);
-      expect(s.interval).toBe(t.s.interval);
-      expect(stationPanel(st, 0, true)).toEqual({ ...s, ...(TEMPLATE_PHONE[t.id] ?? NARROW_PATCH) });
-      expect(presetName(`tpl:${t.id}`)).not.toContain(':');
-    }
-    expect(presetName('tpl:swing')).toBe('Swing 1h');
-    expect(presetStation('auction').id).toBe('auction');
+  it('karta własna: jeden wykres z ustawieniami startowymi, bez wzorca do przywrócenia', () => {
+    const own = presetStation('own');
+    expect(own.layout).toBe(1);
+    expect(stationPanel(own, 0, false)).toEqual(DEFAULT_SETTINGS);
+    expect(tabName(tab('k1'))).toBe(presetName('own'));
+    expect(presetName('own').length).toBeGreaterThan(0);
+    expect(presetQuestion('own').length).toBeGreaterThan(5);
+    expect([canRestore(tab('k1')), canRestore(tab('k1', 'fuel')), canRestore(defaultTabs().tabs[0])]).toEqual([false, true, true]);
+    expect(tabStation(tab('k1', 'auction-open')).id).toBe('auction-open');
+    expect(presetQuestion('review')).toBe(stationById('review').question);
   });
 
-  it('telefon szablonu: własna łatka, gdy NARROW_PATCH zdejmuje sedno pytania (otwarcia sesji)', () => {
-    expect(stationPanel(presetStation('tpl:open-range'), 0, true)).toEqual({ ...stationPanel(presetStation('tpl:open-range'), 0, false), ...TEMPLATE_PHONE['open-range'] });
-    expect(stationPanel(presetStation('tpl:open-range'), 0, true).showSessions).toBe(true);
+  it('karty fazy: układy fazy, a w sesji także karty własne', () => {
+    const st = addTab(addTab(defaultTabs(), tab('k1')), tab('k2', 'day-map'));
+    expect(phaseTabs(st, 'before').map((t) => t.id)).toEqual(['day-map', 'fuel']);
+    expect(phaseTabs(st, 'session').map((t) => t.id)).toEqual(['cockpit', 'auction-open', 'big-hands', 'k1', 'k2']);
+    expect(phaseTabs(st, 'after').map((t) => t.id)).toEqual(['review']);
   });
 
-  it('pytanie wzorca: szablon — jego pytanie, stacja — pierwsze zdanie opisu', () => {
-    expect(presetQuestion('auction')).toBe(STATIONS.find((s) => s.id === 'auction')!.question.split('?')[0] + '?');
-    expect(presetQuestion('tpl:context-1d').endsWith('?')).toBe(true);
-    for (const t of BUILT_IN_TEMPLATES) expect(presetQuestion(`tpl:${t.id}`).length).toBeGreaterThan(5);
-  });
-
-  it('interwał zmieniony w karcie: pierwszy wykres wzorca na tym interwale; zły interwał pomijany', () => {
-    expect(stationPanel(tabStation({ id: 'k1', preset: 'tpl:squeeze', name: null, tf: '1h' }), 0, false).interval).toBe('1h');
-    expect(stationPanel(presetStation('tpl:squeeze', '7m'), 0, false).interval).toBe('15m');
-    expect(parseTabs({ tabs: [{ id: 'k1', preset: 'tpl:squeeze', tf: '1h' }, { id: 'k2', preset: 'start', tf: 'x' }] })!.tabs).toEqual([
-      { id: 'k1', preset: 'tpl:squeeze', name: null, tf: '1h' },
-      tab('k2'),
-    ]);
-  });
-
-  it('zestawy MTF: wzorce istnieją, karty od wyższego interwału do niższego, zaczynają od kontekstu 1D i 4H', () => {
-    const rank = (p: string, tf?: string) => ['1m', '3m', '5m', '15m', '30m', '1h', '4h', '1d'].indexOf(stationPanel(presetStation(p as ChartTab['preset'], tf), 0, false).interval);
-    for (const set of MTF_SETS) {
-      expect(set.tabs.slice(0, 2).map((e) => e.preset)).toEqual(['tpl:context-1d', 'tpl:context-4h']);
-      for (const e of set.tabs) expect(parseTabs({ tabs: [{ id: 'k1', preset: e.preset }] })!.tabs[0].preset).toBe(e.preset);
-      const r = set.tabs.map((e) => rank(e.preset, e.tf));
-      for (let i = 1; i < r.length; i++) expect(r[i], `${set.id} ${i}`).toBeLessThanOrEqual(r[i - 1]);
-    }
-  });
-
-  it('zestaw dodaje brakujące karty w swojej kolejności, otwarte zostają, aktywna — pierwsza karta zestawu', () => {
-    let n = 0;
-    const id = () => `n${n++}`;
-    const st = defaultTabs();
-    const trend = MTF_SETS.find((x) => x.id === 'trend')!;
-    // Skalper (stacja) jest już otwarty
-    expect(setNewCount(st, 'trend')).toBe(trend.tabs.length - 1);
-    const a = addSet(st, 'trend', id);
-    expect(a.tabs.length).toBe(st.tabs.length + trend.tabs.length - 1);
-    expect(activeTab(a).preset).toBe('tpl:context-1d');
-    expect(a.tabs.slice(st.tabs.length).map((t) => t.preset)).toEqual(trend.tabs.slice(0, -1).map((e) => e.preset));
-    // Drugi zestaw nie powiela kontekstu 1D i 4H
-    const b = addSet(a, 'volatility', id);
-    expect(b.tabs.length).toBe(a.tabs.length + 4);
-    expect(activeTab(b).id).toBe(a.tabs[st.tabs.length].id);
-    expect(b.tabs.find((t) => t.preset === 'tpl:squeeze')!.tf).toBe('1h');
-    expect(setNewCount(b, 'volatility')).toBe(0);
-    // Bez miejsca na cały zestaw — bez zmian; nieznany zestaw — bez zmian
-    const full = state(Array.from({ length: MAX_TABS - 2 }, (_, i) => `k${i}`));
-    expect(addSet(full, 'trend', id)).toBe(full);
-    expect(addSet(st, 'nie-ma', id)).toBe(st);
-  });
-
-  it('nowa pusta karta: pierwszy wolny numer; id kart różne i bez kolizji ze stacjami', () => {
-    const st = { tabs: [tab('a'), tab('b', 'start', 'Karta 3')], active: 'a' };
+  it('nowa pusta karta: pierwszy wolny numer; id kart różne i bez kolizji z układami', () => {
+    const st = { tabs: [tab('a'), tab('b', 'own', 'Karta 3')], active: 'a' };
     expect(blankName(st)).toBe('Karta 4');
     const ids = new Set([newTabId(1), newTabId(1), newTabId(2)]);
     expect(ids.size).toBe(3);
-    for (const id of ids) expect(STATIONS.some((s) => s.id === id)).toBe(false);
+    for (const id of ids) {
+      expect(LAYOUT_IDS.includes(id as never)).toBe(false);
+      expect(parseTabs({ tabs: [{ id, preset: 'own' }] }).tabs.some((t) => t.id === id)).toBe(true);
+    }
   });
 });
 
-describe('karty układów: zapis', () => {
+describe('karty: zapis', () => {
   const real = globalThis.localStorage;
   beforeEach(() => {
     globalThis.localStorage = memoryStorage();
@@ -224,10 +205,9 @@ describe('karty układów: zapis', () => {
     globalThis.localStorage = real;
   });
 
-  it('bez zapisu kart: stacje startowe z aktywną stacją sprzed kart; potem zapisane karty', () => {
-    localStorage.setItem('hq.charts.station.v1', 'liquidity');
-    expect(loadTabs().active).toBe('liquidity');
-    const st = addTab(loadTabs(), tab('k1', 'tpl:tpo', 'Profil'));
+  it('świeża pamięć: sześć układów; potem zapisane karty; zepsuty zapis — karty startowe', () => {
+    expect(loadTabs().tabs.map((t) => t.id)).toEqual(LAYOUT_IDS);
+    const st = addTab(loadTabs(), tab('k1', 'own', 'Profil'));
     saveTabs(st);
     expect(loadTabs()).toEqual(st);
     localStorage.setItem('hq.charts.tabs.v1', '{zepsute');
@@ -235,13 +215,14 @@ describe('karty układów: zapis', () => {
   });
 
   it('podpis karty: interwały paneli z zapisu albo wzorca; układ z zapisu karty', () => {
-    const t = tab('k1', 'auction');
-    expect(tabIntervals(t, 2, false)).toEqual(['30m', '4h']);
+    const t = tab('k1', 'day-map');
+    expect(tabIntervals(t, 2, false)).toEqual(['4h', '30m']);
     expect(tabLayout(t)).toBe(2);
     saveSettings({ ...DEFAULT_SETTINGS, interval: '15m' }, stationKey('k1', 1));
     saveStationLayout('k1', 4);
-    expect(tabIntervals(t, 4, false)).toEqual(['30m', '15m', '1h', '4h']);
+    expect(tabIntervals(t, 4, false)).toEqual(['4h', '15m', '1h', '4h']);
     expect(tabLayout(t)).toBe(4);
+    expect([tabIntervals(tab('k2'), 1, false), tabLayout(tab('k2'))]).toEqual([['5m'], 1]);
   });
 
   it('kopia i cofnięcie zamknięcia: zapis karty przenoszony pod inne id albo przywracany', () => {
@@ -256,13 +237,181 @@ describe('karty układów: zapis', () => {
     expect(tabIntervals(tab('k1'), 1, false)).toEqual(['1h']);
   });
 
-  it('przycisk lekcji otwiera kartę stacji (zamkniętą — jako nową na końcu)', () => {
-    saveTabs(closeTab(defaultTabs(), 'auction'));
-    openStationTab('auction');
-    const st = loadTabs();
-    expect(activeTab(st).preset).toBe('auction');
-    expect(st.tabs[st.tabs.length - 1].id).toBe(st.active);
-    openStationTab('scalp');
-    expect(loadTabs().active).toBe('scalp');
+  it('przycisk lekcji otwiera kartę układu', () => {
+    openStationTab('day-map');
+    expect(loadTabs().active).toBe('day-map');
+    openStationTab('big-hands');
+    expect(activeTab(loadTabs()).preset).toBe('big-hands');
+  });
+
+  it('aktywna karta każdej fazy: domyślnie pierwszy układ fazy (w sesji Kokpit), zapis i walidacja', () => {
+    expect(loadPhaseActive()).toEqual({ before: 'day-map', session: 'cockpit', after: 'review' });
+    savePhaseActive({ before: 'fuel', session: 'k1', after: 'review' });
+    expect(localStorage.getItem('hq.charts.phaseActive.v1')).not.toBeNull();
+    expect(loadPhaseActive()).toEqual({ before: 'fuel', session: 'k1', after: 'review' });
+    localStorage.setItem('hq.charts.phaseActive.v1', JSON.stringify({ before: 'cockpit', session: 'day-map', after: 7 }));
+    expect(loadPhaseActive()).toEqual({ before: 'day-map', session: 'cockpit', after: 'review' });
+    localStorage.setItem('hq.charts.phaseActive.v1', '{zepsute');
+    expect(loadPhaseActive()).toEqual({ before: 'day-map', session: 'cockpit', after: 'review' });
+  });
+});
+
+describe('migracja kart do układów faz', () => {
+  const OLD_TABS = JSON.stringify({
+    tabs: [
+      { id: 'start', preset: 'start' },
+      { id: 'scalp', preset: 'scalp' },
+      { id: 'k1', preset: 'tpl:swing', name: null },
+    ],
+    active: 'k1',
+  });
+  const START = saved({ coin: 'ETH', interval: '15m', indicators: inds(['rsi']), showHeatmap: false, view: 'candles' });
+  const SCALP = saved({ interval: '3m', showTape: true });
+  const returning = () => memoryStorage({ 'hq.charts.tabs.v1': OLD_TABS, 'hq.charts.v1': START, 'hq.charts.v1.scalp': SCALP });
+  const tabsOf = (s: Storage) => parseTabs(JSON.parse(s.getItem('hq.charts.tabs.v1')!));
+
+  it('świeża pamięć: sześć układów, bez paska przywrócenia', () => {
+    const s = memoryStorage();
+    expect(migrateTabsV2(s)).toEqual({ restoreStart: false });
+    expect(tabsOf(s)).toEqual(defaultTabs());
+    expect(s.getItem('hq.charts.tabs.migrated.v2')).not.toBeNull();
+  });
+
+  it('powracający użytkownik: nietknięta karta startowa znika, reszta to karty własne z dawnym wyglądem, Kokpit dostaje rynek, interwał i wskaźniki', () => {
+    const s = returning();
+    expect(migrateTabsV2(s)).toEqual({ restoreStart: true });
+    const st = tabsOf(s);
+    expect(st.tabs.map((t) => t.id)).toEqual([...LAYOUT_IDS, 'scalp', 'k1']);
+    expect(st.tabs.slice(6).map((t) => t.preset)).toEqual(['own', 'own']);
+    expect(st.active).toBe('k1');
+    // Karta bez własnej nazwy zachowuje nazwę dawnego wzorca
+    expect(st.tabs.slice(6).map(tabName)).toEqual(['Skalper', 'Swing 1h']);
+    // k1: wzorzec szablonu „Swing 1h” zapisany pod kluczami karty, z układem
+    const swing = LEGACY_TEMPLATES.find((t) => t.id === 'swing')!;
+    expect(read(s, 'hq.charts.v1.k1')).toEqual(parseSettings({ ...DEFAULT_SETTINGS, ...swing.patch }));
+    expect([read(s, 'hq.charts.v1.k1').interval, read(s, 'hq.charts.v1.k1').showLiq, read(s, 'hq.charts.v1.k1').showWhales]).toEqual(['1h', true, true]);
+    expect(s.getItem('hq.charts.layout.v1.k1')).toBe('1');
+    // scalp: zapis użytkownika bez zmian
+    expect(s.getItem('hq.charts.v1.scalp')).toBe(SCALP);
+    // Kokpit: rynek, interwał i wskaźniki z dawnego Startu, warstwy z wzorca Kokpitu
+    const cockpit = read(s, 'hq.charts.v1.cockpit');
+    expect([cockpit.coin, cockpit.interval, cockpit.indicators.map((x) => x.id)]).toEqual(['ETH', '15m', ['rsi']]);
+    const pattern = stationPanel(stationById('cockpit'), 0, false);
+    expect(cockpit).toEqual({ ...pattern, coin: 'ETH', interval: '15m', indicators: cockpit.indicators });
+    expect([cockpit.view, cockpit.showHeatmap, cockpit.showClashes]).toEqual(['footprint', true, true]);
+    // Dawny klucz Startu nietknięty
+    expect(s.getItem('hq.charts.v1')).toBe(START);
+  });
+
+  it('druga migracja nic nie zmienia (znacznik)', () => {
+    const s = returning();
+    migrateTabsV2(s);
+    const before = dump(s);
+    expect(migrateTabsV2(s)).toEqual({ restoreStart: true });
+    expect(dump(s)).toEqual(before);
+    // Nawet dawny zapis kart wpisany ponownie nie jest migrowany drugi raz
+    s.setItem('hq.charts.tabs.v1', OLD_TABS);
+    migrateTabsV2(s);
+    expect(s.getItem('hq.charts.tabs.v1')).toBe(OLD_TABS);
+  });
+
+  it('pasek przywrócenia raz: po zamknięciu migracja już go nie proponuje', () => {
+    const s = returning();
+    migrateTabsV2(s);
+    dismissRestoreOffer(s);
+    expect(s.getItem('hq.charts.restoreOffer.v1')).toBe('done');
+    expect(migrateTabsV2(s)).toEqual({ restoreStart: false });
+  });
+
+  it('dawny wzorzec bez zapisu: panele i układ wzorca; zapis częściowy uzupełniony, zapis użytkownika bez zmian', () => {
+    const P0 = saved({ interval: '1h' });
+    const s = memoryStorage({
+      'hq.charts.tabs.v1': JSON.stringify({
+        tabs: [
+          { id: 'auction', preset: 'auction' },
+          { id: 'liquidity', preset: 'liquidity', name: 'Nietknięta' },
+          { id: 'k2', preset: 'tpl:squeeze', tf: '1h' },
+          { id: 'k3', preset: 'mtf', name: 'Moje MTF' },
+          { id: 'k4', preset: 'start', name: 'Karta 7' },
+          { id: 'k5', preset: 'tpl:nie-ma' },
+        ],
+        active: 'auction',
+      }),
+      'hq.charts.v1.auction': P0,
+    });
+    expect(migrateTabsV2(s)).toEqual({ restoreStart: false });
+    const st = tabsOf(s);
+    expect(st.tabs.slice(6).map((t) => [t.id, t.preset, tabName(t)])).toEqual([
+      ['auction', 'own', 'Aukcja'],
+      ['k2', 'own', 'Ściśnięcie zmienności'],
+      ['k3', 'own', 'Moje MTF'],
+      ['k4', 'own', 'Karta 7'],
+      ['k5', 'own', 'Start'],
+    ]);
+    expect(st.active).toBe('auction');
+    const auction = LEGACY_STATIONS.find((x) => x.id === 'auction')!;
+    // Zapisany panel 0 bez zmian, panel 1 i układ z dawnego wzorca
+    expect(s.getItem('hq.charts.v1.auction')).toBe(P0);
+    expect(read(s, 'hq.charts.v1.auction.p1')).toEqual(parseSettings({ ...DEFAULT_SETTINGS, ...auction.panels[1] }));
+    expect(s.getItem('hq.charts.layout.v1.auction')).toBe('2');
+    // Interwał zmieniony w karcie zestawu MTF
+    expect(read(s, 'hq.charts.v1.k2').interval).toBe('1h');
+    expect(read(s, 'hq.charts.v1.k2').indicators.map((x) => x.id)).toEqual(['bb', 'keltner', 'regime', 'hv']);
+    // Stacja dwóch wykresów: oba panele i układ 2
+    expect([read(s, 'hq.charts.v1.k3').interval, read(s, 'hq.charts.v1.k3.p1').interval, s.getItem('hq.charts.layout.v1.k3')]).toEqual(['5m', '1h', '2']);
+    // Pusta karta: ustawienia startowe
+    expect(read(s, 'hq.charts.v1.k4')).toEqual(DEFAULT_SETTINGS);
+    expect(s.getItem('hq.charts.v1.liquidity')).toBeNull();
+  });
+
+  it('bez zapisu kart (sprzed kart): dawne stacje z zapisem zostają jako karty własne', () => {
+    const LIQ = saved({ interval: '15m' });
+    const s = memoryStorage({ 'hq.charts.v1.liquidity': LIQ, 'hq.charts.station.v1': 'liquidity' });
+    migrateTabsV2(s);
+    const st = tabsOf(s);
+    expect(st.tabs.map((t) => t.id)).toEqual([...LAYOUT_IDS, 'liquidity']);
+    expect(st.active).toBe('liquidity');
+    expect(s.getItem('hq.charts.v1.liquidity')).toBe(LIQ);
+  });
+
+  it('istniejący zapis Kokpitu zostaje', () => {
+    const COCKPIT = saved({ interval: '1m', coin: 'SOL' });
+    const s = memoryStorage({ 'hq.charts.v1': START, 'hq.charts.v1.cockpit': COCKPIT });
+    expect(migrateTabsV2(s)).toEqual({ restoreStart: true });
+    expect(s.getItem('hq.charts.v1.cockpit')).toBe(COCKPIT);
+  });
+
+  it('20 dawnych kart z zapisem: żadna nie ginie', () => {
+    const init: Record<string, string> = {
+      'hq.charts.tabs.v1': JSON.stringify({ tabs: Array.from({ length: 20 }, (_, i) => ({ id: `k${i}`, preset: 'tpl:tpo' })), active: 'k0' }),
+    };
+    for (let i = 0; i < 20; i++) init[`hq.charts.v1.k${i}`] = saved({ interval: '30m' });
+    const s = memoryStorage(init);
+    migrateTabsV2(s);
+    expect(tabsOf(s).tabs).toHaveLength(LAYOUT_IDS.length + 20);
+  });
+
+  it('przywrócenie dawnego Startu: karta własna z pełną zawartością dawnych kluczy; dawne klucze bez zmian', () => {
+    const P1 = saved({ interval: '4h' });
+    const s = memoryStorage({ 'hq.charts.v1': START, 'hq.charts.v1.p1': P1, 'hq.charts.layout.v1': '2' });
+    const before = dump(s);
+    const t = restoreLegacyStart(s);
+    expect([t.preset, t.name]).toEqual(['own', 'Moje dawne ustawienia']);
+    expect(parseTabs({ tabs: [t] }).tabs.some((x) => x.id === t.id)).toBe(true);
+    expect([s.getItem(stationKey(t.id, 0)), s.getItem(stationKey(t.id, 1)), s.getItem(stationKey(t.id, 2)), s.getItem(`hq.charts.layout.v1.${t.id}`)]).toEqual([START, P1, null, '2']);
+    for (const [k, v] of Object.entries(before)) expect(s.getItem(k)).toBe(v);
+  });
+
+  it('pierwsze otwarcie kart z innego miejsca (lekcje) też przechodzi przez migrację', () => {
+    const real = globalThis.localStorage;
+    globalThis.localStorage = returning();
+    try {
+      openStationTab('fuel');
+      expect(localStorage.getItem('hq.charts.tabs.migrated.v2')).not.toBeNull();
+      expect(read(localStorage, 'hq.charts.v1.k1').interval).toBe('1h');
+      expect(loadTabs().active).toBe('fuel');
+    } finally {
+      globalThis.localStorage = real;
+    }
   });
 });

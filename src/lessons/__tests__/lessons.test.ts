@@ -11,6 +11,7 @@ import { RISK_DEFAULTS, expectancyR, mulberry32, simulateRisk } from '../risk';
 import { REPLAY_SUPPORTED, exerciseReplayHash } from '../replay';
 import { vwapSeries } from '../../charts/pro/core/indicators';
 import { parseReplayLink } from '../../charts/pro/replay/link';
+import { STATIONS } from '../../charts/pro/chart/stations';
 import { HIST_HOUR_MS, historyPath, isHistoryIndex } from '../../utils/tapeHistory';
 
 const slice = (id: string): LessonSlice => JSON.parse(readFileSync(new URL(`../../../public/lessons/${id}.json`, import.meta.url), 'utf8'));
@@ -74,6 +75,13 @@ describe('ćwiczenia: struktura zgodna z treścią i danymi', () => {
     const ids = new Set(pl.atlas.entries.map((a) => a.id));
     for (const a of e.atlas) expect(ids.has(a)).toBe(true);
     if (e.view === 'footprint') expect(s.fp?.bars.length).toBeGreaterThan(0);
+  });
+
+  it('każda stacja w treści lekcji to układ Wykresów', () => {
+    const ids = new Set<string>(STATIONS.map((s) => s.id));
+    const all = [...EXERCISES.map((e) => e.station), ...pl.atlas.entries.map((a) => a.station), ...en.atlas.entries.map((a) => a.station)];
+    expect(all.length).toBeGreaterThan(20);
+    for (const s of all) expect(ids.has(s), s).toBe(true);
   });
 
   it('hasła atlasu mają unikalne identyfikatory, a ryciny poprawne chwile', () => {

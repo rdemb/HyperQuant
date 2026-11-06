@@ -9,14 +9,13 @@ import { type HonestyCard as Card, MIN_CASES, TEMPLATE_HONESTY, honestyCard, hon
 import { tr } from '../../../i18n';
 
 /**
- * Karta uczciwości szablonu: jak często układ z pytania szablonu wystąpił i czym się skończył na historii świec rynku
+ * Karta uczciwości układu: jak często układ z pytania układu wystąpił i czym się skończył na historii świec rynku
  * wykresu. Świece pobierane raz na rynek, interwał i dobę UTC (w powtórce do końca nagrania), liczone w przeglądarce.
  */
 
-/** Szablon wzorca karty układu (`tpl:<id>`), dla którego jest karta uczciwości; inaczej null. */
+/** Wzorzec karty (układ: `day-map`, `auction-open`), dla którego jest karta uczciwości; inaczej null. */
 export function honestyTemplate(preset: string): string | null {
-  const id = preset.startsWith('tpl:') ? preset.slice(4) : '';
-  return id in TEMPLATE_HONESTY ? id : null;
+  return Object.hasOwn(TEMPLATE_HONESTY, preset) ? preset : null;
 }
 
 const memo = new WeakMap<ProStore, Map<string, Promise<readonly Candle[]>>>();
@@ -40,7 +39,7 @@ function historyOf(store: ProStore, interval: string): Promise<readonly Candle[]
 type State = { kind: 'loading' } | { kind: 'error' } | { kind: 'ready'; card: Card };
 
 /**
- * `tf` — interwał karty układu (zestawy MTF); zmienia tylko kartę ściśnięcia, bo VA i IB mają interwał z definicji.
+ * `tf` — interwał pierwszego wykresu karty; zmienia tylko kartę ściśnięcia (dziś bez układu), bo VA i IB mają interwał z definicji.
  */
 export const HonestyCard: React.FC<{
   store: ProStore;
