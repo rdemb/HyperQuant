@@ -21,16 +21,16 @@ Applies to every new and reworked component. Code and identifiers in English, **
 | Secondary text | `text-ink-2` | `#A9B4C4` |
 | Muted text (min. 4.5:1) | `text-ink-3` | `#7A889C` |
 | Brand accent (HL) | `text-accent` / `bg-accent` | `#3FC6DD` |
-| Buy (mark/bar) | `bg-buy` / `text-buy-ink` | `#19A88E` / `#35C9A8` |
-| Sell (mark/bar) | `bg-sell` / `text-sell-ink` | `#D9582E` / `#F07C55` |
+| Buy (mark/bar) | `bg-buy` / `text-buy-ink` | `#3280DD` / `#82BCFC` |
+| Sell (mark/bar) | `bg-sell` / `text-sell-ink` | `#CA3829` / `#F68771` |
 | HTF levels (PDH/PDL) | `level` | `#E0A045` |
 | OB zones | `zone` | `#9085E9` |
 | Status | `good` / `warn` / `critical` | `#0CA30C` / `#FAB219` / `#D03B3B` (always with an icon + label) |
 
-The buy/sell pair passed the palette validator (CVD ΔE 11.8, contrast ≥ 3:1). **Always add a second channel**: a `+/−` sign, a ▲▼ arrow or position (bid below the price, ask above).
+The buy/sell pair (azure and ember, palette „Głębia”, one for the whole app) passed the palette validator (CVD ΔE 26.8 deutan, contrast ≥ 3:1). **Always add a second channel**: a `+/−` sign, a ▲▼ arrow or position (bid below the price, ask above).
 
 Categorical series on charts (fixed order, never cycled): `series-1…8` = `#3987e5 #d95926 #199e70 #c98500 #d55181 #008300 #9085e9 #e66767`. More than 3 series on a scatter/map → "Other" or small multiples.
-Exception: flow panels (buy/sell direction in the background) skip `series-2` and `series-3`, which are too close to `sell`/`buy`. Participant cohorts: `series-1` market makers, `series-4` informed, `series-5` whales, `series-7` everyone else (a set checked with the palette validator on `surface-1`: lightness band, chroma, CVD ΔE ≥ 13, contrast ≥ 3:1).
+Exception: flow panels (buy/sell direction in the background) do not use the series colours; participant cohorts have their own tokens (identity, not direction): `cohort-mm` `#059583` market makers, `cohort-informed` `#B18E15` informed, `cohort-whale` `#A878DB` whales, `cohort-rest` `#7A889C` everyone else (checked with the palette validator on `#05101E`: CVD ΔE 11.9, contrast ≥ 3:1). The same three colours mark the exchanges on the canvas (Hyperliquid, Binance, Bybit).
 
 ## 3. Typography
 - `font-display` (Outfit 600/700): section headings and the app name only. **Never on numbers.**
@@ -46,23 +46,23 @@ Exception: flow panels (buy/sell direction in the background) skip `series-2` an
 - Data refresh: keep the previous render (no skeletons, no layout jumps).
 
 ### Order-flow chart (Charts tab)
-The canvas has two palettes (`of-*` tokens, the same values in `src/charts/pro/chart/theme.ts`), picked in Chart settings → Colours for all charts and kept in the browser (`src/charts/pro/chart/palette.ts`, the `data-chart-palette` attribute on `<html>` switches the tokens; changing it reloads the page). **Neon** (default): neon-green buys and violet sells on a graphite background, cyan and magenta imbalances, a yellow POC. **Desk**: sea-green buys and copper sells on the Desk's navy background. The frame, toolbar and menus stay in the page tokens in both.
+The canvas has one palette, **„Głębia”** (`of-*` tokens, the same values in `src/charts/pro/chart/theme.ts`): buyers are the deep (azure), sellers the ember (red), on an abyss-blue background; liquidity in the book glows like moonlight through water, from graphite to white. There is no palette switch. The frame, toolbar and menus stay in the page tokens.
 
-| Role | Token / class | Neon (default) | Desk |
-|---|---|---|---|
-| Canvas background (no grid) | `of-bg` | `#151521` | `#0B1019` |
-| Buy / sell candle | `of-buy` / `of-sell` | `#10FF21` / `#8A2BE2` | `#19A88E` / `#D9582E` |
-| Buy / sell flow (text, bubbles, liquidations, whales) | `text-of-buy-ink` / `text-of-sell-ink` | `#3DFF4F` / `#A66BFF` | `#35C9A8` / `#F07C55` |
-| Buy / sell imbalance | `of-imb-buy` / `of-imb-sell` | `#00FFFF` / `#FF00FF` | `#5CF2CF` / `#FF9A6A` |
-| POC frame in a candle | `of-poc` | `#FFFF20` | `#E0A045` |
-| Row volume | `of-vol` | `#D08A10` | `#5B7AA6` |
-| Session profile: value area / rest / POC / naked POC | — | `#555557` / `#3C6265` / `#C58109` / `#5C6166` | `#34425A` / `#1F2B3D` / `#E0A045` / `#7A889C` |
-| DOM ladder: bids / asks | — | `#06AF23` / `#8A2BE2` | `#19A88E` / `#D9582E` |
-| VWAP / session VWAP | `of-vwap` / `of-svwap` | `#D0D3D9` / `#14C8C8` | `#E6EBF2` / `#9085E9` |
-| Order-book heatmap (weak → walls) | `of-heat-1…3` | `#017979` → `#F5E611` → `#F5290D` | `#22609A` → `#7FDCEE` → `#FFFFFF` |
-| Exchanges: Hyperliquid / Binance / Bybit | — | `#199E70` / `#D95926` / `#3987E5` | `#3987E5` / `#C98500` / `#D55181` |
+| Role | Token / class | Głębia |
+|---|---|---|
+| Canvas background (no grid) | `of-bg` | `#05101E` |
+| Buy / sell candle | `of-buy` / `of-sell` | `#3280DD` / `#CA3829` |
+| Buy / sell flow (text, bubbles, liquidations, whales) | `text-of-buy-ink` / `text-of-sell-ink` | `#82BCFC` / `#F68771` |
+| Buy / sell imbalance | `of-imb-buy` / `of-imb-sell` | `#A2CFFF` / `#FFA28A` |
+| POC frame in a candle | `of-poc` | `#F1C45E` |
+| Row volume | `of-vol` | `#46576C` |
+| Session profile: value area / rest / POC / naked POC | — | `#34425A` / `#1F2B3D` / `#F1C45E` / `#7A889C` |
+| DOM ladder: bids / asks | — | `#3280DD` / `#CA3829` |
+| VWAP / session VWAP | `of-vwap` / `of-svwap` | `#E2E9F0` / `#C1B3F2` |
+| Order-book heatmap (weak → walls) | `of-heat-1…3` | `#647386` → `#B4C6DB` → `#EFF6FD` (canvas: five steps `#424E5E #647386 #879AB1 #B4C6DB #EFF6FD`) |
+| Exchanges: Hyperliquid / Binance / Bybit | — | `#059583` / `#B18E15` / `#A878DB` |
 
-Bid × Ask footprint cells are tiles from grey `#A0A0A0` (Neon) or graphite `#2A3446` (Desk) at low volume to the saturated side colour; dark numbers on a light tile, light numbers on a dark one. The Delta and Volume styles are bars from the left edge of the candle (delta and volume in the colour of the dominant side) with light bid and ask numbers. Second channel: position (sells on the left, buys on the right), and the imbalance number is bold and outlined.
+Bid × Ask footprint cells are tiles from graphite `#1E2A3A` at low volume to the saturated side colour; dark numbers on a light tile, light numbers on a dark one. The Delta and Volume styles are bars from the left edge of the candle (delta and volume in the colour of the dominant side) with light bid and ask numbers. Second channel: position (sells on the left, buys on the right), and the imbalance number is bold and outlined.
 
 ## 5. Motion (`motion/react`, tokens in `src/ui/motion.ts`)
 - Default spring: `stiffness 260, damping 26, mass 1` (ζ ≈ 0.8, "premium"). Position and size may spring; **opacity and colour never**.

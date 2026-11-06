@@ -4,7 +4,6 @@ import type { HeatRamp } from '../../orderflow/heatColor';
 import { C, MONO, rgba } from '../../orderflow/renderer';
 import { fmtHm, fmtHms } from '../core/time';
 import { locale, tr } from '../../../i18n';
-import { PALETTE } from './palette';
 
 /** Wygląd wykresu Pro: tokeny projektu (src/index.css), oś czasu w czasie lokalnym, polskie skróty miesięcy. */
 
@@ -14,110 +13,59 @@ const MONTHS = tr(
 );
 
 /**
- * Kolory płótna wykresu Pro w dwóch paletach (wybór w Ustawieniach wykresu, ./palette). Te same wartości są tokenami
- * `of-*` w src/index.css (legenda i menu). Gotowe napisy z kryciem — bez budowania w pętli rysowania.
+ * Kolory płótna wykresu Pro: paleta „Głębia” (kupujący to lazur, sprzedający to żar, na tle „otchłani”). Te same wartości
+ * są tokenami `of-*` w src/index.css (legenda i menu). Gotowe napisy z kryciem — bez budowania w pętli rysowania.
  */
-
-/** „Neon”: neonowa zieleń kupna i fiolet sprzedaży na grafitowym tle, nierównowagi w cyjanie i magencie, żółty POC. */
-const NEON = {
-  bg: '#151521',
-  axisText: '#d8dadc',
-  // Świece: korpusy i knoty
-  buy: '#10ff21',
-  sell: '#8a2be2',
-  buyWick: '#10ff21',
-  sellWick: '#8a2be2',
-  // Kierunek przepływu w liczbach, opisach, likwidacjach i wielorybach
-  buyInk: '#3dff4f',
-  sellInk: '#a66bff',
-  volBuy: rgba('#10ff21', 0.42),
-  volSell: rgba('#8a2be2', 0.62),
-  priceLine: '#2f8088',
-  vwap: '#d0d3d9',
-  svwap: '#14c8c8',
-  /** Strefa ceny z linku powtórki (token zone). */
-  zone: '#4a9eff',
-  // Footprint: kafle komórek od szarości (mały wolumen) do nasyconego koloru strony, ciemne liczby
-  fpNeutral: '#a0a0a0',
-  fpBidRamp: ['#a0a0a0', '#a392b5', '#8d6fad', '#7a48aa', '#6725a3'],
-  fpAskRamp: ['#a0a0a0', '#8ab88b', '#61b861', '#33b934', '#11b920'],
-  // Delta wiersza: dodatnia niebieska, ujemna czerwona
-  fpDeltaPosRamp: ['#a0a0a0', '#8a8bb9', '#6161b9', '#4a4ab8', '#3333b8'],
-  fpDeltaNegRamp: ['#a0a0a0', '#b88a8a', '#b96161', '#b94a4b', '#b93234'],
-  fpText: '#111326',
-  fpTextLight: '#f2f3f5',
-  fpTextProfile: '#d1dee5',
-  fpRowLine: '#434343',
-  imbBuy: '#00ffff',
-  imbSell: '#ff00ff',
-  pocFrame: '#ffff20',
-  volBar: '#d08a10',
-  deltaPosBar: '#159a10',
-  deltaNegBar: '#4b1d80',
-  // Profile wolumenu: obszar wartości szary, reszta przytłumiona szaromorska, POC pomarańczowy, nagi POC szary
-  profileVa: '#555557',
-  profileOut: '#3c6265',
-  profilePoc: '#c58109',
-  nakedPoc: '#5c6166',
-  // Drabina DOM: aski fioletowe nad ceną, bidy zielone pod nią
-  domBid: '#06af23',
-  domAsk: '#8a2be2',
-  domText: '#e4e6ea',
-  // Bąble agresji: środek, brzeg i obrys kuli (kupno morskie, sprzedaż magenta)
-  bubbleBuy: ['#2fd8c8', '#0b6e66', '#78f0e4'],
-  bubbleSell: ['#e23be9', '#7a1280', '#f68cfa'],
-  // Giełdy w panelach „CVD giełd” i „ΔOI giełd” (paleta kategorii sprawdzona na tle wykresu, także dla daltonistów)
-  venueHl: '#199e70',
-  venueBinance: '#d95926',
-  venueBybit: '#3987e5',
-};
-
-/** „Desk”: morska zieleń kupna i miedź sprzedaży na granatowym tle Desku. */
-const DESK: typeof NEON = {
-  bg: '#0b1019',
+const GLEBIA = {
+  bg: '#05101E',
   axisText: '#c3ccd8',
-  buy: '#19a88e',
-  sell: '#d9582e',
-  buyWick: '#19a88e',
-  sellWick: '#d9582e',
-  buyInk: '#35c9a8',
-  sellInk: '#f07c55',
-  volBuy: rgba('#19a88e', 0.5),
-  volSell: rgba('#d9582e', 0.6),
+  // Świece: korpusy i knoty
+  buy: '#3280DD',
+  sell: '#CA3829',
+  buyWick: '#3280DD',
+  sellWick: '#CA3829',
+  // Kierunek przepływu w liczbach, opisach, likwidacjach i wielorybach
+  buyInk: '#82BCFC',
+  sellInk: '#F68771',
+  volBuy: rgba('#3280DD', 0.5),
+  volSell: rgba('#CA3829', 0.6),
   priceLine: '#3fc6dd',
-  vwap: '#e6ebf2',
-  svwap: '#9085e9',
-  zone: '#9085e9',
+  vwap: '#E2E9F0',
+  svwap: '#C1B3F2',
+  /** Strefa ceny z linku powtórki (token zone). */
+  zone: '#A878DB',
   // Footprint: kafle komórek od grafitu (mały wolumen) do nasyconego koloru strony; delta wiersza w tych samych kolorach
   fpNeutral: '#2a3446',
-  fpBidRamp: ['#2a3446', '#4c3532', '#743d2e', '#a6492f', '#d9582e'],
-  fpAskRamp: ['#2a3446', '#1f4b52', '#1a6d63', '#19907d', '#1fb597'],
-  fpDeltaPosRamp: ['#2a3446', '#1f4b52', '#1a6d63', '#19907d', '#1fb597'],
-  fpDeltaNegRamp: ['#2a3446', '#4c3532', '#743d2e', '#a6492f', '#d9582e'],
+  fpBidRamp: ['#1E2A3A', '#253E5F', '#2A5387', '#2F69B1', '#3280DD'],
+  fpAskRamp: ['#1E2A3A', '#4A333B', '#733939', '#9E3B34', '#CA3829'],
+  fpDeltaPosRamp: ['#1E2A3A', '#253E5F', '#2A5387', '#2F69B1', '#3280DD'],
+  fpDeltaNegRamp: ['#1E2A3A', '#4A333B', '#733939', '#9E3B34', '#CA3829'],
   fpText: '#0b1019',
   fpTextLight: '#eef2f7',
   fpTextProfile: '#c9d4df',
   fpRowLine: '#1b2533',
   // Nierównowagi: rozjaśnione kolory stron
-  imbBuy: '#5cf2cf',
-  imbSell: '#ff9a6a',
-  pocFrame: '#e0a045',
-  volBar: '#5b7aa6',
-  deltaPosBar: '#19a88e',
-  deltaNegBar: '#d9582e',
-  // Profile wolumenu: obszar wartości grafitowy, reszta przygaszona, POC bursztynowy, nagi POC szary
+  imbBuy: '#A2CFFF',
+  imbSell: '#FFA28A',
+  pocFrame: '#F1C45E',
+  volBar: '#46576C',
+  deltaPosBar: '#3280DD',
+  deltaNegBar: '#CA3829',
+  // Profile wolumenu: obszar wartości grafitowy, reszta przygaszona, POC złoty, nagi POC szary
   profileVa: '#34425a',
   profileOut: '#1f2b3d',
-  profilePoc: '#e0a045',
-  nakedPoc: '#7a889c',
-  domBid: '#19a88e',
-  domAsk: '#d9582e',
+  profilePoc: '#F1C45E',
+  nakedPoc: '#7A889C',
+  domBid: '#3280DD',
+  domAsk: '#CA3829',
   domText: '#e4e8ee',
-  bubbleBuy: ['#2fd1ae', '#0e5f52', '#8ef0d9'],
-  bubbleSell: ['#ee7445', '#7a2c14', '#ffb592'],
-  venueHl: '#3987e5',
-  venueBinance: '#c98500',
-  venueBybit: '#d55181',
+  // Bąble agresji: środek, brzeg i obrys kuli
+  bubbleBuy: ['#3280DD', '#82BCFC', '#A2CFFF'],
+  bubbleSell: ['#CA3829', '#F68771', '#FFA28A'],
+  // Kategorie (giełdy w panelach „CVD giełd” i „ΔOI giełd”, kohorty): turkus, złoto, fiolet
+  venueHl: '#059583',
+  venueBinance: '#B18E15',
+  venueBybit: '#A878DB',
 };
 
 export const PRO = {
@@ -128,44 +76,62 @@ export const PRO = {
   partial: rgba('#fab219', 0.85),
   // Grupa „Kto handluje” w Tablicy liczb: neutralna jasna (to nie giełda, nie bierze koloru z palety giełd)
   players: '#e4e8ee',
-  ...(PALETTE === 'desk' ? DESK : NEON),
+  ...GLEBIA,
 } as const;
 
-/**
- * Rampa mapy ciepła arkusza. Neon: przezroczysty → ciemny morski (półprzezroczysty, świece widać przez niego) → jasny
- * morski (pasy płynności) → biel → żółty → pomarańcz → czerwień (ściany). Desk: przezroczysty → granat → błękit → lód →
- * biel (ściany).
- */
-export const LIQ_RAMP: HeatRamp =
-  PALETTE === 'desk'
-    ? [
-        { t: 0, color: '#0b1019', alpha: 0 },
-        { t: 0.12, color: '#14284a', alpha: 0.45 },
-        { t: 0.28, color: '#1b4373', alpha: 0.65 },
-        { t: 0.42, color: '#22609a', alpha: 0.8 },
-        { t: 0.55, color: '#2a80b8', alpha: 0.9 },
-        { t: 0.68, color: '#3fa9d6', alpha: 1 },
-        { t: 0.8, color: '#7fdcee', alpha: 1 },
-        { t: 0.9, color: '#c9f2f9', alpha: 1 },
-        { t: 1, color: '#ffffff', alpha: 1 },
-      ]
-    : [
-        { t: 0, color: '#151521', alpha: 0 },
-        { t: 0.12, color: '#172526', alpha: 0.35 },
-        { t: 0.28, color: '#124950', alpha: 0.55 },
-        { t: 0.42, color: '#0d5c67', alpha: 0.7 },
-        { t: 0.55, color: '#017979', alpha: 0.85 },
-        { t: 0.68, color: '#c9e0eb', alpha: 1 },
-        { t: 0.78, color: '#f5e611', alpha: 1 },
-        { t: 0.86, color: '#f8c30c', alpha: 1 },
-        { t: 0.94, color: '#f5620f', alpha: 1 },
-        { t: 1, color: '#f5290d', alpha: 1 },
-      ];
+/** Konwersja sRGB ↔ OKLab (Ottosson) do mieszania stopni rampy bez brudnych środków. */
+const toLin = (c: number) => ((c /= 255) <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+const fromLin = (x: number) => Math.round(255 * Math.min(1, Math.max(0, x <= 0.0031308 ? 12.92 * x : 1.055 * x ** (1 / 2.4) - 0.055)));
 
-const hexRgb = (hex: string): [number, number, number] => {
+function toOklab(hex: string): [number, number, number] {
+  const [r, g, b] = hexRgb(hex).map(toLin);
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+  return [0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s, 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s, 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s];
+}
+
+function fromOklab([L, a, b]: [number, number, number]): string {
+  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  const ch = [4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s, -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s, -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s];
+  return '#' + ch.map((x) => fromLin(x).toString(16).padStart(2, '0')).join('').toUpperCase();
+}
+
+/** Kolor w punkcie t ∈ [0, 1] rampy `stops` równo rozłożonych, mieszany w OKLab. */
+function oklabAt(stops: readonly string[], t: number): string {
+  const u = t * (stops.length - 1);
+  const k = Math.min(stops.length - 2, Math.floor(u));
+  const f = u - k;
+  const a = toOklab(stops[k]);
+  const b = toOklab(stops[k + 1]);
+  return fromOklab([a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f]);
+}
+
+/** „Światło księżyca”: pięć stopni od grafitu do bieli (kolejność: jasność rośnie). */
+const MOON = ['#424E5E', '#647386', '#879AB1', '#B4C6DB', '#EFF6FD'];
+
+/**
+ * Rampa mapy ciepła arkusza „Głębia”: przezroczysty → grafit (półprzezroczysty, świece widać przez niego) → błękitna
+ * szarość → biel (ściany). Kolory z rampy `MOON` w OKLab, pozycje i krycie stopni stałe.
+ */
+export const LIQ_RAMP: HeatRamp = [
+  [0, 0],
+  [0.12, 0.45],
+  [0.28, 0.65],
+  [0.42, 0.8],
+  [0.55, 0.9],
+  [0.68, 1],
+  [0.8, 1],
+  [0.9, 1],
+  [1, 1],
+].map(([t, alpha]) => ({ t, color: t === 0 ? MOON[0] : t === 1 ? MOON[4] : oklabAt(MOON, t), alpha }));
+
+function hexRgb(hex: string): [number, number, number] {
   const n = parseInt(hex.slice(1), 16);
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
-};
+}
 
 /** Rampa n + 1 nieprzezroczystych kolorów przez równo rozłożone punkty `stops` (bez budowania napisów w pętli rysowania). */
 export function mixRamp(stops: readonly string[], n: number): string[] {

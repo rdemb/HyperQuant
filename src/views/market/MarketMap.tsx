@@ -31,8 +31,8 @@ function readTokens() {
   const css = typeof document !== 'undefined' ? getComputedStyle(document.documentElement) : null;
   const get = (name: string, fallback: string) => css?.getPropertyValue(name).trim() || fallback;
   return {
-    buy: get('--color-buy', '#19a88e'),
-    sell: get('--color-sell', '#d9582e'),
+    buy: get('--color-buy', '#3280dd'),
+    sell: get('--color-sell', '#ca3829'),
     mid: get('--color-line-strong', '#283447'),
     inkLight: get('--color-ink-1', '#eef2f7'),
     inkDark: get('--color-page', '#070a11'),

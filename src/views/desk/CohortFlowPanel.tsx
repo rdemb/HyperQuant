@@ -7,14 +7,14 @@ import { useElementWidth } from '../market/MarketMap';
 import { locale, tr } from '../../i18n';
 
 /**
- * Kolory kohort: tożsamość, nie kierunek — dlatego bez series-2/series-3 (zbyt bliskie barwom sprzedaży/kupna).
- * Zestaw zwalidowany dla ciemnego tła (CVD, kontrast): series-1, -4, -5, -7.
+ * Kolory kohort: tożsamość, nie kierunek — dlatego bez barw kupna i sprzedaży.
+ * Zestaw zwalidowany dla ciemnego tła (CVD, kontrast): tokeny cohort-* z src/index.css.
  */
 const COLOR: Record<CohortId, string> = {
-  mm: 'var(--color-series-1)',
-  informed: 'var(--color-series-4)',
-  whale: 'var(--color-series-5)',
-  rest: 'var(--color-series-7)',
+  mm: 'var(--color-cohort-mm)',
+  informed: 'var(--color-cohort-informed)',
+  whale: 'var(--color-cohort-whale)',
+  rest: 'var(--color-cohort-rest)',
 };
 /** Krótkie nazwy do etykiet bezpośrednich na wykresie */
 const SHORT: Record<CohortId, string> = { mm: 'MM', informed: tr('Poinf.', 'Inf.'), whale: tr('Wieloryby', 'Whales'), rest: tr('Reszta', 'Rest') };

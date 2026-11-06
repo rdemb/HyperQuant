@@ -16,8 +16,8 @@ const C = {
   ink2: '#a9b4c4',
   ink3: '#7a889c',
   accent: '#3fc6dd',
-  buy: '#19a88e',
-  sell: '#d9582e',
+  buy: '#3280dd',
+  sell: '#ca3829',
   level: '#e0a045',
   zone: '#9085e9',
 };
