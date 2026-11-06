@@ -1,27 +1,30 @@
 import React, { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { CircleHelp, RotateCcw } from 'lucide-react';
+import { CircleHelp, RotateCcw, X } from 'lucide-react';
 import { ProChart, subscribeNarrow } from '../charts/pro/ProChart';
 import { ChartLayout, isNarrow, loadSettings } from '../charts/pro/chart/settings';
 import { clearStation, saveStationLayout, stationKey, stationPanel } from '../charts/pro/chart/stations';
 import { carryViewTime } from '../charts/pro/chart/controller';
 import {
   ChartTab,
-  TabPreset,
+  MAX_TABS,
   TabSnapshot,
   TabsState,
   activeTab,
   addTab,
   blankName,
+  canRestore,
   closeTab,
+  dismissRestoreOffer,
   insertTab,
   ladderTab,
   loadTabs,
+  migrateTabsV2,
   moveTab,
   newTabId,
-  addSet,
   presetName,
   presetQuestion,
   renameTab,
+  restoreLegacyStart,
   restoreTab,
   saveTabs,
   snapshotTab,
@@ -29,6 +32,7 @@ import {
   tabLayout,
   tabName,
   tabStation,
+  tabsFull,
 } from '../charts/pro/chart/tabs';
 import { NewTab, TabActions, TabsBar, TabsSheet, tfLabel } from '../charts/pro/chart/TabsBar';
 import { isTyping } from '../charts/pro/draw/tools';
@@ -61,6 +65,14 @@ const UNDO_MS = 8000;
  * albo niższym interwałem. Link powtórki (#charts?replay=…) pokazuje zamiast nich nagranie z serwera.
  */
 const ChartsView: React.FC = () => {
+  // Migracja kart sprzed układów faz przed pierwszym odczytem kart; pasek przywrócenia dawnego Startu raz
+  const [restoreOffer, setRestoreOffer] = useState(() => {
+    try {
+      return migrateTabsV2(localStorage).restoreStart;
+    } catch {
+      return false;
+    }
+  });
   const [tabs, setTabsState] = useState<TabsState>(loadTabs);
   const tab = activeTab(tabs);
   const station = tabStation(tab);
@@ -158,12 +170,31 @@ const ChartsView: React.FC = () => {
   };
   const create = (how: NewTab) => {
     if (how === 'copy') return copy(tab.id);
-    const next = how.startsWith('set:')
-      ? addSet(tabs, how.slice(4), () => newTabId())
-      : addTab(tabs, how === 'blank' ? { id: newTabId(), preset: 'start', name: blankName(tabs) } : { id: newTabId(), preset: how as TabPreset, name: null });
+    const next = addTab(tabs, how === 'blank' ? { id: newTabId(), preset: 'own', name: blankName(tabs) } : { id: newTabId(), preset: how, name: null });
     if (next === tabs) return;
     if (next.active !== tabs.active) open(next);
     else save(next);
+  };
+  const closeOffer = () => {
+    try {
+      dismissRestoreOffer(localStorage);
+    } catch {
+      // Pamięć niedostępna — pasek znika do końca sesji
+    }
+    setRestoreOffer(false);
+  };
+  /** Cała dawna wersja Startu jako karta własna „Moje dawne ustawienia”, od razu otwarta. */
+  const restoreStart = () => {
+    if (tabsFull(tabs)) return;
+    let t: ChartTab;
+    try {
+      t = restoreLegacyStart(localStorage);
+    } catch {
+      return;
+    }
+    closeOffer();
+    const next = addTab(tabs, t);
+    if (next !== tabs) open(next);
   };
   const actions: TabActions = {
     onSelect: select,
@@ -171,7 +202,10 @@ const ChartsView: React.FC = () => {
     onRename: (id, name) => save(renameTab(tabs, id, name)),
     onCopy: copy,
     onClose: close,
-    onRestore: (id) => open({ ...tabs, active: id }, true),
+    onRestore: (id) => {
+      const t = tabs.tabs.find((x) => x.id === id);
+      if (t && canRestore(t)) open({ ...tabs, active: id }, true);
+    },
     onMove: (id, to) => save(moveTab(tabs, id, to)),
   };
 
@@ -196,6 +230,38 @@ const ChartsView: React.FC = () => {
   if (replay) return <ReplayView key={replayHash(replay)} link={replay} />;
   return (
     <div ref={wsRef} className={fs ? 'flex flex-col gap-2 h-full p-2 bg-page' : ''}>
+      {restoreOffer && !fs && (
+        <div role="status" className="mb-2 flex flex-wrap items-center gap-2 pl-3 pr-1.5 py-1.5 rounded-xl border border-line-strong bg-surface-2 text-xs">
+          <span className="flex-1 min-w-[14rem] text-ink-2 leading-snug">
+            {tr(
+              'Wykresy mają teraz układy faz dnia. Kokpit przejął z Twojego dawnego wykresu rynek, interwał i wskaźniki; całą dawną wersję możesz przywrócić jako własną kartę.',
+              'Charts now have layouts for the phases of the day. The Cockpit took the market, timeframe and indicators from your previous chart; you can restore the whole previous version as a tab of your own.'
+            )}
+          </span>
+          <button
+            type="button"
+            onClick={restoreStart}
+            disabled={tabsFull(tabs)}
+            title={
+              tabsFull(tabs)
+                ? tr(`Masz już ${MAX_TABS} kart własnych — zamknij jedną, żeby przywrócić`, `You already have ${MAX_TABS} tabs of your own — close one to restore`)
+                : undefined
+            }
+            className="shrink-0 min-h-11 sm:min-h-8 px-3 rounded-lg bg-surface-3 border border-line-strong font-medium text-ink-1 hover:bg-surface-1 disabled:opacity-40"
+          >
+            {tr('Przywróć moje poprzednie ustawienia', 'Restore my previous settings')}
+          </button>
+          <button
+            type="button"
+            onClick={closeOffer}
+            aria-label={tr('Zamknij', 'Close')}
+            title={tr('Zamknij: pasek już nie wróci', 'Close: the bar will not come back')}
+            className="shrink-0 grid place-items-center w-11 h-11 sm:w-8 sm:h-8 rounded-lg text-ink-3 hover:text-ink-1 hover:bg-surface-3"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
       {!narrow && (
         <div className={`flex items-center gap-2 min-w-0 ${fs ? '' : 'mb-2'}`}>
           <TabsBar st={tabs} tf={tf} a={actions} />
@@ -205,19 +271,22 @@ const ChartsView: React.FC = () => {
             <span className="truncate">{presetQuestion(tab.preset)}</span>
           </p>
           {honestyId && first && <HonestyButton key={`${tab.id}.${first.coin}`} store={storeFor(first.coin)} templateId={honestyId} tf={first.interval} />}
-          <button
-            type="button"
-            onClick={() => actions.onRestore(tab.id)}
-            aria-label={tr(`Przywróć wzorzec karty ${tabName(tab)}`, `Restore the ${tabName(tab)} tab preset`)}
-            title={tr(
-              `Przywróć wzorzec „${presetName(tab.preset)}” w karcie ${tabName(tab)}: Twoje zmiany w tej karcie (ustawienia wykresów i układ) zostaną zastąpione`,
-              `Restore the “${presetName(tab.preset)}” preset in the ${tabName(tab)} tab: your changes in this tab (chart settings and layout) will be replaced`
-            )}
-            className="ml-auto shrink-0 inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-line text-xs font-medium text-ink-2 hover:text-ink-1 hover:bg-surface-2 transition-colors duration-150"
-          >
-            <RotateCcw className="w-4 h-4" />
-            <span className="hidden sm:inline">{tr('Przywróć', 'Restore')}</span>
-          </button>
+          {/* Karta własna nie ma wzorca do przywrócenia */}
+          {canRestore(tab) && (
+            <button
+              type="button"
+              onClick={() => actions.onRestore(tab.id)}
+              aria-label={tr(`Przywróć wzorzec karty ${tabName(tab)}`, `Restore the ${tabName(tab)} tab preset`)}
+              title={tr(
+                `Przywróć wzorzec „${presetName(tab.preset)}” w karcie ${tabName(tab)}: Twoje zmiany w tej karcie (ustawienia wykresów i układ) zostaną zastąpione`,
+                `Restore the “${presetName(tab.preset)}” preset in the ${tabName(tab)} tab: your changes in this tab (chart settings and layout) will be replaced`
+              )}
+              className="ml-auto shrink-0 inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-line text-xs font-medium text-ink-2 hover:text-ink-1 hover:bg-surface-2 transition-colors duration-150"
+            >
+              <RotateCcw className="w-4 h-4" />
+              <span className="hidden sm:inline">{tr('Przywróć', 'Restore')}</span>
+            </button>
+          )}
         </div>
       )}
       {/* Ten sam kontener dla każdego układu: pierwszy panel nie tworzy się od nowa przy zmianie układu */}
@@ -247,7 +316,7 @@ const ChartsView: React.FC = () => {
                       { value: MANAGE, label: tr('Karty: nowa, nazwa, zamknij…', 'Tabs: new, rename, close…') },
                     ],
                     onChange: (id) => (id === MANAGE ? setSheet(true) : select(id)),
-                    onRestore: () => actions.onRestore(tab.id),
+                    onRestore: canRestore(tab) ? () => actions.onRestore(tab.id) : undefined,
                   }
                 : undefined
             }

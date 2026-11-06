@@ -29,8 +29,8 @@ import { DEFAULT_TTL_MS, defaultDir, eventText } from '../../utils/alertRules';
 import { fmtPx, priceDigits } from './chart/layout';
 import type { PbZone } from './chart/pbRangeLayer';
 import { ChartLayout, ChartSettings, NARROW_QUERY, PHONE_PANES, PhonePane, hashFor, isNarrow, loadSettings, phoneSettings, saveSettings, settingsFromHash } from './chart/settings';
-import { STATIONS, Station, stationKey, stationPanel } from './chart/stations';
-import { BUILT_IN_TEMPLATES, ChartTemplate, applyTemplate, loadTemplates, saveAs, saveTemplates } from './chart/templates';
+import { Station, stationById, stationKey, stationPanel } from './chart/stations';
+import { ChartTemplate, applyTemplate, loadTemplates, saveAs, saveTemplates } from './chart/templates';
 import { NumbersCard, StatGroupPicker } from './chart/NumbersCard';
 import { IndicatorsDialog, type IndicatorsSection, type ToggleItem } from './chart/IndicatorsDialog';
 import { IndicatorSettings } from './chart/IndicatorSettings';
@@ -126,13 +126,13 @@ const PHONE_TABS: { id: PhoneTab; label: string }[] = [
 
 /**
  * Karty układów na telefonie: lista w pasku wykresu zamiast paska kart nad nim (ostatnia pozycja otwiera zarządzanie
- * kartami), przywrócenie wzorca karty w menu „Więcej”.
+ * kartami), przywrócenie wzorca karty w menu „Więcej” (karta własna nie ma wzorca — bez `onRestore`).
  */
 export interface PhoneTabs {
   value: string;
   options: readonly { value: string; label: string }[];
   onChange: (id: string) => void;
-  onRestore: () => void;
+  onRestore?: () => void;
 }
 
 /**
@@ -176,7 +176,7 @@ function initialSettings(panel: number, station: Station, tabId: string, coin: M
 /**
  * Wykres Pro: Lightweight Charts (TradingView) z footprintem, wolumenem, Deltą i CVD z taśmy Hyperliquid.
  * `panel` — miejsce w układzie kilku wykresów: pierwszy prowadzi link do widoku, alerty i przełącznik układu.
- * `station` — wzorzec karty układu (stacja robocza albo szablon), `tabId` — karta, pod którą zapisują się ustawienia
+ * `station` — wzorzec karty (układ faz albo ustawienia startowe karty własnej), `tabId` — karta, pod którą zapisują się ustawienia
  * (domyślnie id stacji), `onSaved` — po zapisie ustawień (podpis karty), `coin` — rynek przeniesiony z poprzedniej karty,
  * `fromLink` — pierwsze otwarcie wykresów, więc link do widoku w adresie strony ma pierwszeństwo.
  * `replay` — powtórka nagrania zamiast rynku na żywo: ustawienia nie są zapisywane, adres strony zostaje linkiem powtórki.
@@ -194,10 +194,10 @@ export const ProChart: React.FC<{
   phoneTabs?: PhoneTabs;
   replay?: ProChartReplay;
   layoutFs?: { active: boolean; toggle: () => void };
-}> = ({ panel = 0, layout = 1, onLayout, station = STATIONS[0], tabId = station.id, onSaved, coin = null, fromLink = true, phoneTabs, replay, layoutFs }) => {
+}> = ({ panel = 0, layout = 1, onLayout, station = stationById('cockpit'), tabId = station.id, onSaved, coin = null, fromLink = true, phoneTabs, replay, layoutFs }) => {
   const [settings, setSettings] = useState<ChartSettings>(() => {
     if (!replay) return initialSettings(panel, station, tabId, coin, fromLink);
-    // Link ze stacją (lekcja) — sam wzorzec stacji, bez zmian zapisanych przez oglądającego
+    // Link z układem (lekcja, blog) — sam wzorzec układu, bez zmian zapisanych przez oglądającego
     const base = replay.link.station ? stationPanel(station, panel, isNarrow()) : initialSettings(panel, station, tabId, coin, false);
     return withPatch(base, linkPatch(replay.link));
   });
@@ -910,7 +910,7 @@ export const ProChart: React.FC<{
                     ...(canReplay ? [{ icon: History, label: tr('Powtórka nagranej doby', 'Replay of the recorded day'), on: openReplay }] : []),
                     { icon: Link, label: inReplay ? tr('Kopiuj link do tej chwili', 'Copy link to this moment') : tr('Kopiuj link do widoku', 'Copy view link'), on: copyLink },
                     { icon: fullscreen ? Minimize2 : Maximize2, label: fullscreen ? tr('Zamknij pełny ekran', 'Exit full screen') : tr('Pełny ekran', 'Full screen'), on: toggleFullscreen },
-                    ...(phoneTabs ? [{ icon: RotateCcw, label: tr(`Przywróć wzorzec karty: ${station.name}`, `Restore the tab preset: ${station.name}`), on: phoneTabs.onRestore }] : []),
+                    ...(phoneTabs?.onRestore ? [{ icon: RotateCcw, label: tr(`Przywróć wzorzec karty: ${station.name}`, `Restore the tab preset: ${station.name}`), on: phoneTabs.onRestore }] : []),
                   ]}
                   onClose={() => setMenu(null)}
                 />
@@ -1564,61 +1564,57 @@ function flowLayers(s: ChartSettings, intervalMs: number, liq: LiqMapState, whal
   ];
 }
 
-/** Szablony: wbudowane i własne (z bieżących ustawień), nakładane bez zmiany rynku. */
+/** Szablony: własne (z bieżących ustawień), nakładane bez zmiany rynku. Gotowe wzorce to układy na pasku kart. */
 const Templates: React.FC<{ settings: ChartSettings; onApply: (s: ChartSettings) => void }> = ({ settings, onApply }) => {
   const [own, setOwn] = useState<ChartTemplate[]>(loadTemplates);
-  const [pick, setPick] = useState(BUILT_IN_TEMPLATES[0].id);
+  const [pick, setPick] = useState(() => own[0]?.id ?? '');
   const [name, setName] = useState('');
-  const all = [...BUILT_IN_TEMPLATES, ...own];
-  const chosen = all.find((t) => t.id === pick) ?? all[0];
+  const chosen = own.find((t) => t.id === pick) ?? own[0];
   const store = (list: ChartTemplate[]) => {
     setOwn(list);
     saveTemplates(list);
   };
   const btn = 'inline-flex items-center h-9 px-2.5 rounded-lg border border-line-strong bg-surface-3 font-medium text-ink-1 disabled:opacity-40';
   return (
-    <Group title={tr('Szablony', 'Templates')}>
-      <div className="flex items-center gap-1.5">
-        <select
-          aria-label={tr('Szablon', 'Template')}
-          value={chosen.id}
-          onChange={(e) => setPick(e.target.value)}
-          className="min-w-0 flex-1 h-9 bg-page border border-line rounded-md px-2 text-ink-1"
-        >
-          <optgroup label={tr('Wbudowane', 'Built-in')}>
-            {BUILT_IN_TEMPLATES.map((t) => (
+    <Group title={tr('Moje szablony', 'My templates')}>
+      {chosen ? (
+        <div className="flex items-center gap-1.5">
+          <select
+            aria-label={tr('Szablon', 'Template')}
+            value={chosen.id}
+            onChange={(e) => setPick(e.target.value)}
+            className="min-w-0 flex-1 h-9 bg-page border border-line rounded-md px-2 text-ink-1"
+          >
+            {own.map((t) => (
               <option key={t.id} value={t.id}>
                 {t.name}
               </option>
             ))}
-          </optgroup>
-          {own.length > 0 && (
-            <optgroup label={tr('Własne', 'Your own')}>
-              {own.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
-            </optgroup>
-          )}
-        </select>
-        <button type="button" className={btn} onClick={() => onApply(applyTemplate(settings, chosen.s))}>
-          {tr('Zastosuj', 'Apply')}
-        </button>
-        {!chosen.builtIn && (
+          </select>
+          <button type="button" className={btn} onClick={() => onApply(applyTemplate(settings, chosen.s))}>
+            {tr('Zastosuj', 'Apply')}
+          </button>
           <button
             type="button"
             aria-label={tr(`Usuń szablon ${chosen.name}`, `Delete template ${chosen.name}`)}
             onClick={() => {
-              store(own.filter((t) => t.id !== chosen.id));
-              setPick(BUILT_IN_TEMPLATES[0].id);
+              const rest = own.filter((t) => t.id !== chosen.id);
+              store(rest);
+              setPick(rest[0]?.id ?? '');
             }}
             className="inline-flex items-center justify-center w-9 h-9 rounded-lg text-ink-3 hover:text-ink-1 hover:bg-surface-3"
           >
             <X className="w-4 h-4" />
           </button>
-        )}
-      </div>
+        </div>
+      ) : (
+        <p className="text-[11px] leading-snug text-ink-3">
+          {tr(
+            'Nie masz jeszcze własnych szablonów. Zapisz bieżące ustawienia wykresu pod nazwą, żeby nałożyć je jednym kliknięciem na innym wykresie.',
+            'You have no templates of your own yet. Save the current chart settings under a name to apply them with one click on another chart.'
+          )}
+        </p>
+      )}
       <form
         className="flex items-center gap-1.5"
         onSubmit={(e) => {

@@ -81,6 +81,14 @@ describe('link do chwili w powtórce', () => {
     expect(parseReplayLink('#charts?replay=history&m=XRP&i=2m&v=x&t=wczoraj&station=nie&zone=1')).toMatchObject({ coin: 'BTC', interval: null, view: null, t: null, station: null, zone: null, layers: null });
   });
 
+  it('stacja z linku: układ faz, a stary identyfikator (blog, lekcje) prowadzi do nowego układu', () => {
+    expect(parseReplayLink('#charts?replay=history&m=BTC&station=scalp')!.station).toBe('cockpit');
+    expect(parseReplayLink('#charts?replay=history&m=BTC&station=auction')!.station).toBe('day-map');
+    expect(parseReplayLink('#charts?replay=history&m=BTC&station=auction-open')!.station).toBe('auction-open');
+    expect(parseReplayLink('#charts?replay=history&m=BTC&station=constructor')!.station).toBeNull();
+    expect(replayHash(parseReplayLink('#charts?replay=history&m=BTC&station=venues')!)).toBe('#charts?replay=history&m=BTC&station=big-hands');
+  });
+
   it('warstwy z linku: wymienione włączone, pozostałe wyłączone; bez warstw — ustawienia bez zmian', () => {
     const p = linkPatch(parseReplayLink('#charts?replay=history&m=BTC&i=5m&layers=heatmap')!);
     expect(p).toMatchObject({ coin: 'BTC', interval: '5m', showHeatmap: true, showVwap: false, showProfile: false });

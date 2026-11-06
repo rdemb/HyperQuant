@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_SETTINGS, NARROW_PATCH, parseLayout, parseSettings, panelKey, phoneSettings } from '../chart/settings';
-import { BUILT_IN_TEMPLATES, MAX_TEMPLATES, TEMPLATE_PHONE, TEMPLATE_QUESTIONS, applyTemplate, parseTemplates, saveAs, templateOf } from '../chart/templates';
-import { indicatorDef } from '../indicators/registry';
+import { DEFAULT_SETTINGS, parseLayout, parseSettings, panelKey } from '../chart/settings';
+import * as templates from '../chart/templates';
+import { LAYERS_OFF, MAX_TEMPLATES, applyTemplate, inds, parseTemplates, saveAs, templateOf } from '../chart/templates';
 
 describe('szablony wykresu', () => {
   it('szablon nie zmienia rynku ani wysokości wiersza', () => {
     const s = { ...DEFAULT_SETTINGS, coin: 'ETH' as const, rowStep: 0.5, interval: '5m' };
-    const clean = BUILT_IN_TEMPLATES.find((t) => t.id === 'clean')!;
-    const out = applyTemplate(s, clean.s);
+    const clean = { ...templateOf(DEFAULT_SETTINGS), ...LAYERS_OFF, view: 'candles' as const, showDelta: false, showCvd: false };
+    const out = applyTemplate(s, clean);
     expect(out.coin).toBe('ETH');
     expect(out.rowStep).toBe(0.5);
     expect(out.view).toBe('candles');
@@ -15,11 +15,17 @@ describe('szablony wykresu', () => {
     expect(out.showVolume).toBe(true);
   });
 
-  it('wbudowane szablony przechodzą walidację ustawień bez zmian', () => {
-    for (const t of BUILT_IN_TEMPLATES) {
-      const s = { ...DEFAULT_SETTINGS, ...t.s };
-      expect(parseSettings(s)).toEqual(s);
-    }
+  it('bez wbudowanych szablonów i zestawów kart MTF', () => {
+    for (const name of ['BUILT_IN_TEMPLATES', 'TEMPLATE_QUESTIONS', 'TEMPLATE_PHONE', 'MTF_SETS']) expect(name in templates, name).toBe(false);
+  });
+
+  it('lista wskaźników wzorca: identyfikatory jak z menu, kolejne kolory, parametry przechodzą walidację', () => {
+    const list = inds(['sma', { length: 20 }], ['sma', { length: 50 }], ['twap'], ['hv', { length: 10 }, { visible: false }]);
+    expect(list.map((x) => x.iid)).toEqual(['sma1', 'sma2', 'twap1', 'hv1']);
+    expect(new Set(list.map((x) => x.color)).size).toBe(4);
+    expect(list[3].visible).toBe(false);
+    const s = { ...DEFAULT_SETTINGS, indicators: list };
+    expect(parseSettings(s)).toEqual(s);
   });
 
   it('zapis własnego: ta sama nazwa zastępuje poprzedni, pusta nazwa nic nie dodaje, limit liczby', () => {
@@ -42,31 +48,13 @@ describe('szablony wykresu', () => {
     expect(out[0].s.showTape).toBe(true);
     expect(parseTemplates({})).toEqual([]);
   });
-});
 
-describe('szablony z metodologii (pytanie, wskaźniki, telefon)', () => {
-  const ownPanes = (s: { indicators: { id: Parameters<typeof indicatorDef>[0]; visible: boolean }[] }) => s.indicators.filter((x) => x.visible && indicatorDef(x.id).pane === 'own').length;
-
-  it('szablon zachowuje wskaźniki z interwałem (tf), parametrami i stylem; zapis JSON wraca bez zmian', () => {
-    for (const t of BUILT_IN_TEMPLATES) {
-      const s = applyTemplate({ ...DEFAULT_SETTINGS, coin: 'ETH', rowStep: 5 }, t.s);
-      expect([s.coin, s.rowStep, s.interval, s.view]).toEqual(['ETH', 5, t.s.interval, t.s.view]);
-      expect(s.indicators, t.id).toEqual(t.s.indicators);
-    }
-    const back = parseTemplates(JSON.parse(JSON.stringify(BUILT_IN_TEMPLATES)));
-    expect(back.map((t) => t.s)).toEqual(BUILT_IN_TEMPLATES.map((t) => t.s));
-    expect(BUILT_IN_TEMPLATES.find((t) => t.id === 'triple')!.s.indicators.map((x) => x.tf)).toEqual(['1h', '4h']);
-  });
-
-  it('id unikalne; każdy szablon ma pytanie i najwyżej 2 panele wskaźników, a na telefonie najwyżej 1', () => {
-    const ids = BUILT_IN_TEMPLATES.map((t) => t.id);
-    expect(new Set(ids).size).toBe(ids.length);
-    for (const t of BUILT_IN_TEMPLATES) {
-      const phone = phoneSettings(applyTemplate(DEFAULT_SETTINGS, { ...t.s, ...(TEMPLATE_PHONE[t.id] ?? NARROW_PATCH) }));
-      expect(ownPanes(t.s), t.id).toBeLessThanOrEqual(2);
-      expect(ownPanes(phone), t.id).toBeLessThanOrEqual(1);
-    }
-    for (const id of ids.filter((x) => !['orderflow', 'scalp', 'swing', 'clean'].includes(x))) expect(TEMPLATE_QUESTIONS[id], id).toBeTruthy();
+  it('własny szablon zachowuje wskaźniki z interwałem (tf); zapis JSON wraca bez zmian', () => {
+    const s = { ...DEFAULT_SETTINGS, indicators: inds(['ema', { length: 20 }, { tf: '1h' }], ['macd', { fast: 12, slow: 26, signal: 9 }, { tf: '4h' }]) };
+    const list = saveAs([], 'Trzy ekrany', s, 1);
+    const back = parseTemplates(JSON.parse(JSON.stringify(list)));
+    expect(back.map((t) => t.s)).toEqual(list.map((t) => t.s));
+    expect(applyTemplate({ ...DEFAULT_SETTINGS, coin: 'ETH' }, back[0].s).indicators.map((x) => x.tf)).toEqual(['1h', '4h']);
   });
 });
 

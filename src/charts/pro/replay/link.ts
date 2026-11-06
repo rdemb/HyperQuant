@@ -1,6 +1,6 @@
 import { INTERVALS } from '../core/time';
 import { type ChartSettings } from '../chart/settings';
-import { STATIONS, type StationId } from '../chart/stations';
+import { stationIdOf, type StationId } from '../chart/stations';
 import { LAYERS_OFF } from '../chart/templates';
 import { MARKETS, type Market } from '../store/proStore';
 
@@ -11,9 +11,9 @@ import { MARKETS, type Market } from '../store/proStore';
  * do widoku; `from` i `to` — zakres nagrania (bez nich: ostatnia doba z nagrania), `t` — chwila pauzy na start (bez niej:
  * godzina przed końcem); `layers` — warstwy wykresu ceny (nazwy pól ustawień bez „show”, od małej litery: vwap,
  * vwapBands, sessionVwap, profile, periodProfiles, devPoc, tpo, levels, sessions, ib, zones, auctions, heatmap, bubbles,
- * clashes, lots; liq i whales w powtórce nic nie pokazują) albo `station` — wzorzec stacji (z `layers` warstwy z linku
- * zastępują warstwy stacji); `zone` — podświetlony przedział ceny `od-do`. Zakres najwyżej doba (dłuższy jest przycinany
- * od początku).
+ * clashes, lots; liq i whales w powtórce nic nie pokazują) albo `station` — wzorzec układu (z `layers` warstwy z linku
+ * zastępują warstwy układu; dawne id stacji, np. `scalp` z bloga, prowadzą do nowego układu przez LEGACY_STATION);
+ * `zone` — podświetlony przedział ceny `od-do`. Zakres najwyżej doba (dłuższy jest przycinany od początku).
  */
 
 /** Wersja formatu linku (lekcje sprawdzają ją przed zbudowaniem linków); zmiana znaczenia pól = nowa wersja. */
@@ -29,7 +29,7 @@ export interface ReplayLink {
   from: number | null;
   to: number | null;
   t: number | null;
-  /** Klucze ustawień warstw (showVwap…); null — warstwy z ustawień albo stacji. */
+  /** Klucze ustawień warstw (showVwap…); null — warstwy z ustawień albo układu. */
   layers: (keyof typeof LAYERS_OFF)[] | null;
   station: StationId | null;
   zone: [number, number] | null;
@@ -68,7 +68,7 @@ export function parseReplayLink(hash: string): ReplayLink | null {
     to: time(q.get('to')),
     t: time(q.get('t')),
     layers: layers === null ? null : LAYER_KEYS.filter((k) => layers.split(',').includes(layerName(k))),
-    station: STATIONS.some((s) => s.id === st) ? (st as StationId) : null,
+    station: stationIdOf(st),
     zone: zone.length === 2 && zone.every((x) => x > 0) ? [Math.min(zone[0], zone[1]), Math.max(zone[0], zone[1])] : null,
   };
 }

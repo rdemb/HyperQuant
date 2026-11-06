@@ -33,7 +33,7 @@ export const pl: LessonsContent = {
     debrief: 'Czego uczy ta sytuacja',
     honest: 'Uczciwie',
     practice: 'Ćwicz na żywo',
-    openStation: (_id, name) => `Otwórz stację „${name}” w Wykresach`,
+    openStation: (_id, name) => `Otwórz układ „${name}” w Wykresach`,
     openReplay: 'Otwórz ten moment w Wykresach',
     replayNote: 'Powtórka nagranej taśmy i arkusza z tego wieczoru na pełnym wykresie: start na pauzie w chwili pytania, dalej odtwarzasz sam.',
     atlasLinks: 'Wskaźniki z tego ćwiczenia',
@@ -406,7 +406,7 @@ export const pl: LessonsContent = {
         traps: ['Pasmo ±2σ to nie sygnał odwrócenia: w dniu trendu „drogo” robi się coraz drożej.', 'Rano, przy małej liczbie świec, pasma są wąskie i łatwo je przebić.'],
         combine: ['Z profilem: VWAP przy POC to zgoda co do wartości dnia.', 'Z przepływem: utrzymanie VWAP przy agresywnej sprzedaży mówi więcej niż samo dotknięcie.'],
         where: 'Wskaźniki → VWAP dnia, Pasma VWAP ±1σ i ±2σ, VWAP sesji',
-        station: 'start',
+        station: 'cockpit',
         figure: { slice: '2026-10-21-trend', layers: { vwap: true, bands: true }, caption: 'Środa 21.10: dzień trendu. VWAP rośnie, cena godzinami jedzie po paśmie +1σ…+2σ.' },
       },
       {
@@ -423,7 +423,7 @@ export const pl: LessonsContent = {
         traps: ['Profil zależy od zakresu: widoczny zakres, sesja i doba dają różne POC.', 'POC to nie magnes z gwarancją: wraca się do niego często, bo zwykle leży blisko bieżącej ceny.'],
         combine: ['Z VWAP i poziomami dnia: zbieg kilku poziomów to mocniejsza mapa.', 'Z przepływem na krawędzi: czy przy VAH agresywne kupno przechodzi, czy jest wchłaniane.'],
         where: 'Wskaźniki → Profil wolumenu, Profile sesji i nagie POC, Rozwijający się POC i value area',
-        station: 'auction',
+        station: 'day-map',
         figure: { slice: '2026-10-23-balance', layers: { vwap: true, profile: true }, caption: 'Piątek 23.10: dzień równowagi. Wąski obszar wartości, POC tuż przy płaskim VWAP.' },
       },
       {
@@ -436,7 +436,7 @@ export const pl: LessonsContent = {
         traps: ['Nagi POC to miejsce, a nie cel: częste powroty to w dużej mierze geometria (POC zwykle leży blisko ceny).'],
         combine: ['Z sesjami: POC Londynu kontra cena po otwarciu Nowego Jorku.', 'Z poziomami dnia: nagi POC przy PDH albo PDL.'],
         where: 'Wskaźniki → Profile sesji i nagie POC, Rozwijający się POC i value area',
-        station: 'auction',
+        station: 'day-map',
       },
       {
         id: 'tpo',
@@ -448,7 +448,7 @@ export const pl: LessonsContent = {
         traps: ['Kolor jest tylko tam, gdzie była taśma (ostatnia doba): starsze doby są szare i rozłożone równo w świecach.', 'Agresja to nie wynik: dużo kupna na cenie nie znaczy, że cena pójdzie w górę.'],
         combine: ['Z VWAP: wartość doby (POC) blisko VWAP to równowaga.', 'Z IB: wyjście z IB i budowa wolumenu poza nim to akceptacja.'],
         where: 'Wskaźniki → Profil doby: wolumen, agresja, czas (TPO)',
-        station: 'auction',
+        station: 'day-map',
       },
       {
         id: 'levels',
@@ -460,7 +460,7 @@ export const pl: LessonsContent = {
         traps: ['Samo dotknięcie poziomu nic nie znaczy. Pod PDL i nad PDH często stoją stopy, więc ruch bywa gwałtowny w obie strony.'],
         combine: ['Z likwidacjami: przebity PDL potrafi uruchomić kaskadę.', 'Z profilem i VWAP: poziom dnia przy krawędzi wartości jest ważniejszy.'],
         where: 'Wskaźniki → Poziomy dnia',
-        station: 'start',
+        station: 'cockpit',
         figure: { slice: '2026-10-20-ny', layers: { levels: true, vwap: true, sessions: true }, caption: 'Wtorek 20.10: rano cena pod PDL, po otwarciu Nowego Jorku przebicie PDH i szybki powrót pod niego.' },
       },
       {
@@ -473,7 +473,7 @@ export const pl: LessonsContent = {
         traps: ['Otwarcie to nie kierunek: ruch po otwarciu bywa w obie strony i często jest szybko oddawany.'],
         combine: ['Z IB: zakres pierwszej godziny sesji jako mapa dnia.', 'Z VWAP sesji: czy nowa sesja handluje nad czy pod ceną poprzedniej.'],
         where: 'Wskaźniki → Otwarcia sesji',
-        station: 'start',
+        station: 'cockpit',
       },
       {
         id: 'ib',
@@ -485,7 +485,7 @@ export const pl: LessonsContent = {
         traps: ['Na BTC sesje nie mają prawdziwego otwarcia jak giełda: IB bywa bardzo szeroki (cały ruch w pierwszej godzinie) albo bardzo wąski.'],
         combine: ['Z profilem: krawędź IB przy VAH albo VAL to mocniejsza granica.', 'Z przepływem: wybicie z IB z agresją i rosnącym OI kontra wybicie bez nich.'],
         where: 'Wskaźniki → Initial balance',
-        station: 'auction',
+        station: 'day-map',
         figure: { slice: '2026-10-23-balance', layers: { ib: 'ny', sessions: true, vwap: true }, caption: 'Piątek 23.10: IB Nowego Jorku objął skok w górę i zrzut w dół; reszta dnia została w środku.' },
       },
       {
@@ -502,7 +502,7 @@ export const pl: LessonsContent = {
         traps: ['Footprint opisuje przeszłość świecy. Bez lokalizacji (poziomy, profil, VWAP) łatwo w nim zobaczyć wszystko.', 'Historia taśmy sięga tylko tak daleko, jak nagranie desku.'],
         combine: ['Z open interest: agresja z rosnącym OI to nowe pozycje, ze spadającym to zamykanie.', 'Z poziomami: footprint na krawędzi wartości mówi więcej niż w środku zakresu.'],
         where: 'Widok Footprint i styl Bid × Ask, Delta, Wolumen nad wykresem',
-        station: 'scalp',
+        station: 'cockpit',
         figure: { slice: '2026-10-24-footprint', view: 'footprint', layers: {}, caption: 'Sobota 24.10, 20:00–23:30: skok z agresywnym kupnem i spadkiem OI, potem gasnący wolumen i świeca z nowymi shortami.' },
       },
       {
@@ -515,7 +515,7 @@ export const pl: LessonsContent = {
         traps: ['Strefa nierównowagi to nie wsparcie z gwarancją (ćwiczenie z footprintem).', 'W naszych testach same nierównowagi i ich serie nie dawały przewagi po kosztach.'],
         combine: ['Z open interest i lokalizacją: strefa przy krawędzi wartości z rosnącym OI to mocniejszy kontekst niż strefa w środku zakresu.'],
         where: 'Wskaźniki → Strefy nierównowagi, Niedokończone aukcje; próg w ustawieniach footprintu',
-        station: 'scalp',
+        station: 'cockpit',
       },
       {
         id: 'delta',
@@ -527,7 +527,7 @@ export const pl: LessonsContent = {
         traps: ['Delta opisuje świecę, a nie przyszłość.', 'Każda transakcja ma kupującego i sprzedającego; delta mówi tylko, kto był niecierpliwy.'],
         combine: ['Z open interest: czy agresja otwiera, czy zamyka pozycje.', 'Z poziomem: delta przy teście krawędzi.'],
         where: 'Panel Delta pod wykresem',
-        station: 'start',
+        station: 'cockpit',
         figure: { slice: '2026-10-24-cascade', layers: { delta: true, vwap: true }, at: '2026-10-24T21:30Z', caption: 'Sobota 24.10: delta od początku nagrania taśmy (18:25). Wcześniej panel jest kreskowany.' },
       },
       {
@@ -540,7 +540,7 @@ export const pl: LessonsContent = {
         traps: ['Dywergencje CVD wyglądają przekonująco na wykresie, ale w naszych testach nie dawały przewagi po kosztach.', 'Kształt CVD zależy od miejsca resetu.'],
         combine: ['Z open interest i ceną (cztery ćwiartki z ćwiczenia o kaskadzie).', 'Z panelami giełd: zgoda HL, Binance i Bybit wzmacnia odczyt.'],
         where: 'Panel CVD pod wykresem; reset w ustawieniach; Wskaźniki → CVD giełd',
-        station: 'venues',
+        station: 'big-hands',
         figure: { slice: '2026-10-24-cascade', layers: { cvd: true, oi: true, vwap: true }, at: '2026-10-24T21:30Z', caption: 'Sobota 24.10: CVD rośnie razem z ceną, a open interest spada. Zamykanie shortów.' },
       },
       {
@@ -553,7 +553,7 @@ export const pl: LessonsContent = {
         traps: ['Jedno duże zlecenie to jeszcze nie trend; często to zamknięcie pozycji albo zabezpieczenie.'],
         combine: ['Z taśmą i DOM: co stało w arkuszu, zanim przyszło zlecenie.', 'Z wielorybami: czy duże konta się ruszają.'],
         where: 'Wskaźniki → Bąble zleceń agresora',
-        station: 'scalp',
+        station: 'cockpit',
       },
       {
         id: 'clashes',
@@ -565,7 +565,7 @@ export const pl: LessonsContent = {
         traps: ['Ściana może zniknąć w każdej chwili; to opis tego, co się stało, a nie obietnica.'],
         combine: ['Z mapą ciepła i DOM: widoczna płynność kontra wchłonięta naprawdę.'],
         where: 'Wskaźniki → Serie i ściany',
-        station: 'scalp',
+        station: 'cockpit',
       },
       {
         id: 'tape',
@@ -577,7 +577,7 @@ export const pl: LessonsContent = {
         traps: ['Taśma kusi do reagowania na każdy wydruk. Bez planu to głównie szum.'],
         combine: ['Z DOM: kto zdejmuje płynność i czy arkusz ją odnawia.'],
         where: 'Wskaźniki → Taśma zleceń; na telefonie zakładka Taśma',
-        station: 'scalp',
+        station: 'cockpit',
       },
       {
         id: 'venues',
@@ -588,8 +588,8 @@ export const pl: LessonsContent = {
         read: ['Ruch na Hyperliquid bez potwierdzenia na Binance bywa lokalny i krótkotrwały.', 'Rozjazd finansowania między giełdami pokazuje, gdzie tłoczy się dźwignia.'],
         traps: ['Różne giełdy, różne kontrakty i różni uczestnicy: zgodność to kontekst, nie sygnał.'],
         combine: ['Z CVD i OI na Hyperliquid: czy przepływ jest wspólny dla całego rynku.'],
-        where: 'Wskaźniki → CVD giełd, ΔOI giełd; Tablica liczb pod wykresem; stacja Giełdy',
-        station: 'venues',
+        where: 'Wskaźniki → CVD giełd, ΔOI giełd; Tablica liczb pod wykresem',
+        station: 'big-hands',
       },
       {
         id: 'heatmap',
@@ -600,8 +600,8 @@ export const pl: LessonsContent = {
         read: ['Jasny pas, przy którym cena się zatrzymuje, to płynność, która przyjmuje ruch.', 'Pas, który znika tuż przed dojściem ceny, to zlecenie zdjęte, a nie wypełnione.'],
         traps: ['Zlecenia oczekujące można zdjąć w milisekundę. Widoczna płynność to nie obietnica.', 'Arkusz pokazuje tylko 20 poziomów na stronę.'],
         combine: ['Z bąblami i ścianami: czy płynność została wypełniona, czy zdjęta.', 'Z poziomami: płynność przy PDH albo PDL.'],
-        where: 'Wskaźniki → Mapa ciepła arkusza; stacje Skalper i Płynność',
-        station: 'liquidity',
+        where: 'Wskaźniki → Mapa ciepła arkusza',
+        station: 'fuel',
       },
       {
         id: 'dom',
@@ -613,7 +613,7 @@ export const pl: LessonsContent = {
         traps: ['DOM zmienia się kilka razy na sekundę; pojedyncze ściany często są stawiane i zdejmowane.'],
         combine: ['Z taśmą: czy agresorzy zjadają ścianę, czy ściana się odnawia.'],
         where: 'Drabina przy mapie ciepła; na telefonie zakładka DOM',
-        station: 'scalp',
+        station: 'cockpit',
       },
       {
         id: 'lots',
@@ -625,7 +625,7 @@ export const pl: LessonsContent = {
         traps: ['Duże zlecenie może być przynętą i zniknąć, zanim cena dojdzie.'],
         combine: ['Ze ścianami: czy duże zlecenie zostało rzeczywiście wypełnione.'],
         where: 'Wskaźniki → Duże zlecenia w arkuszu',
-        station: 'liquidity',
+        station: 'fuel',
       },
       {
         id: 'liq',
@@ -637,7 +637,7 @@ export const pl: LessonsContent = {
         traps: ['Klaster to szacunek z publicznych pozycji, a nie pewność; pozycje się zmieniają.', 'Koniec kaskady trudno trafić w czasie rzeczywistym.'],
         combine: ['Z poziomami dnia: stopy i likwidacje często leżą tuż za PDH i PDL.', 'Z open interest: kaskada to gwałtowny spadek OI.'],
         where: 'Wskaźniki → Klastry likwidacji; Desk → mapa i taśma likwidacji',
-        station: 'liquidity',
+        station: 'fuel',
         figure: { slice: '2026-10-24-cascade', layers: { liq: true, levels: true, vwap: true }, at: '2026-10-24T17:30Z', caption: 'Sobota 24.10: przebicie PDL 80 500 i dwie fale likwidacji longów, razem około 45 mln USD.' },
       },
       {
@@ -650,7 +650,7 @@ export const pl: LessonsContent = {
         traps: ['Wieloryb też się myli, a część pozycji to zabezpieczenia innych pozycji.', 'Kopiowanie bez znajomości całego portfela innego gracza to zgadywanie.'],
         combine: ['Z klastrami likwidacji i poziomami: gdzie kilka rzeczy wypada w jednym miejscu.'],
         where: 'Wskaźniki → Wieloryby',
-        station: 'liquidity',
+        station: 'fuel',
       },
       {
         id: 'oi',
@@ -662,7 +662,7 @@ export const pl: LessonsContent = {
         traps: ['Każdy kontrakt ma dwie strony; OI mówi ile, ale nie kto ma rację.', 'Skrajne finansowanie potrafi trwać długo.'],
         combine: ['Z deltą i ceną (ćwiczenie o kaskadzie).', 'Z likwidacjami: gwałtowny spadek OI przy ruchu to zamykanie przymusowe.'],
         where: 'Wskaźniki → ΔOI giełd; Tablica liczb',
-        station: 'venues',
+        station: 'big-hands',
         figure: { slice: '2026-10-24-cascade', layers: { oi: true, vwap: true }, at: '2026-10-24T21:30Z', caption: 'Sobota 24.10: odbicie po kaskadzie przy spadającym open interest.' },
       },
     ],

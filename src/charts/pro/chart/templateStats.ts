@@ -231,13 +231,12 @@ export function squeezeStats(bars: readonly Candle[], after = SQUEEZE_AFTER): Sq
 export type HonestyKind = 'va' | 'ib' | 'squeeze';
 
 /**
- * Szablon → karta uczciwości i interwał świec, na których liczy: VA i IB zawsze z 30m (okres profilu doby i godzina IB),
- * ściśnięcie z interwału szablonu, a w karcie z własnym interwałem (zestawy kart MTF) z interwału karty.
+ * Układ wykresu → karta uczciwości i interwał świec, na których liczy: VA (Mapa dnia) i IB (Aukcja i otwarcie) zawsze
+ * z 30m (okres profilu doby i godzina IB). Statystyka ściśnięcia zostaje w kodzie, ale żaden układ nie ma jej karty.
  */
 export const TEMPLATE_HONESTY: Readonly<Record<string, { kind: HonestyKind; interval: string }>> = {
-  tpo: { kind: 'va', interval: '30m' },
-  'open-range': { kind: 'ib', interval: '30m' },
-  squeeze: { kind: 'squeeze', interval: '15m' },
+  'day-map': { kind: 'va', interval: '30m' },
+  'auction-open': { kind: 'ib', interval: '30m' },
 };
 
 export type HonestyStats = { kind: 'va'; s: VaStats } | { kind: 'ib'; s: IbStats } | { kind: 'squeeze'; s: SqueezeStats; days: number; interval: string };
