@@ -141,10 +141,13 @@ const NextSession: React.FC<{ s: TradeSession }> = ({ s }) => (
   </Panel>
 );
 
-const toneOf = (r: ReviewRow) => (r.value === DASH ? 'neutral' : r.why ? 'stale' : r.badge === 'LIVE' ? 'live' : 'model');
+const toneOf = (r: ReviewRow) => (r.why ? 'stale' : r.badge === 'LIVE' ? 'live' : 'model');
 
-/** Wiersz: podpis, wartość z plakietką i powodem braku; dotknięcie rozwija źródło liczby; obok link do powtórki minuty. */
-const RowView: React.FC<{ row: ReviewRow; replay: string | null }> = ({ row, replay }) => {
+/**
+ * Wiersz: podpis, wartość z plakietką (przy „—” bez plakietki źródła) i powodem braku; dotknięcie rozwija źródło liczby;
+ * obok link do powtórki minuty.
+ */
+export const RowView: React.FC<{ row: ReviewRow; replay: string | null }> = ({ row, replay }) => {
   const [open, setOpen] = useState(false);
   const hintId = useId();
   const missing = row.value === DASH;
@@ -163,7 +166,7 @@ const RowView: React.FC<{ row: ReviewRow; replay: string | null }> = ({ row, rep
           <span className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
             {/* Krój zwykły (cyfry proporcjonalne): wartości to zdania z liczbami, nie kolumna liczb (w tym CSS tabular-nums = mono) */}
             <span className={`text-[13px] font-medium ${missing ? 'text-ink-3' : 'text-ink-1'}`}>{row.value}</span>
-            <Badge tone={toneOf(row)}>{row.badge}</Badge>
+            {!missing && <Badge tone={toneOf(row)}>{row.badge}</Badge>}
             {row.why && <span className={`text-[11px] leading-snug ${missing ? 'text-ink-3' : 'text-warn'}`}>{row.why}</span>}
           </span>
         </button>

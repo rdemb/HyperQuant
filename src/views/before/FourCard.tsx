@@ -1,6 +1,6 @@
 import React, { useEffect, useId, useState } from 'react';
 import { Frame as FrameIcon } from 'lucide-react';
-import { Badge, DASH } from '../../ui';
+import { Badge, DASH, sourceTag } from '../../ui';
 import { FrameDialog, type FrameSource } from '../../charts/pro/chart/FrameDialog';
 import { mapQuality } from '../../charts/pro/chart/frame';
 import { type Market, storeFor } from '../../charts/pro/store/proStore';
@@ -10,7 +10,7 @@ import { useBlogMaps } from '../../state/useBlogMaps';
 import { useLiqMap } from '../../state/useLiqMap';
 import { type FourNumber, type FourNumbers, fourNumbersText } from '../../utils/fourNumbers';
 import { fourNumbers, readFourInputs } from './fourInputs';
-import { fourCanvas, fourTitle, fourTone } from './fourFrame';
+import { fourCanvas, fourTitle } from './fourFrame';
 import { tr } from '../../i18n';
 
 /** Bez zmian w magazynie (cisza, brak połączenia) i tak co tyle przeliczamy: wiek migawki skanera, granice sesji. */
@@ -100,6 +100,8 @@ export const FourCardView: React.FC<{ n: FourNumbers; action?: React.ReactNode }
 const Tile: React.FC<{ n: FourNumber }> = ({ n }) => {
   const [open, setOpen] = useState(false);
   const missing = n.value === DASH;
+  // „—” bez plakietki źródła (najwyżej powód, np. „tylko BTC”); powód braku w podpowiedzi pod wartością
+  const tag = sourceTag(n);
   return (
     <button
       type="button"
@@ -113,7 +115,7 @@ const Tile: React.FC<{ n: FourNumber }> = ({ n }) => {
       <span className="text-[10.5px] font-medium uppercase leading-snug tracking-[0.08em] text-ink-3">{n.title}</span>
       <span className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1">
         <span className={`text-[15px] font-medium leading-tight ${missing ? 'text-ink-3' : 'text-ink-1'}`}>{n.value}</span>
-        <Badge tone={fourTone(n)}>{n.note ?? n.badge}</Badge>
+        {tag && <Badge tone={tag.tone}>{tag.text}</Badge>}
         {/* Liczba częściowo rozliczona (luka w świecach 1m): uwaga obok plakietki, jak w nagłówku Rozliczenia */}
         {n.flag && <Badge tone="stale">{n.flag}</Badge>}
       </span>
