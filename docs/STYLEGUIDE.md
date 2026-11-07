@@ -63,6 +63,8 @@ The canvas has one palette, **„Głębia”** (`of-*` tokens, the same values i
 | Exchanges: Hyperliquid / Binance / Bybit | — | `#059583` / `#B18E15` / `#A878DB` |
 | Blog map levels (the author's map, BTC; dashed line, label box with a bar in this colour, text in ink) | `of-blog` | `#059583` — the Hyperliquid turquoise of the category palette; nothing else on the price chart uses it, and it is not a side colour, POC, VWAP or IB |
 | Initial balance of a session (IBH/IBL, 1.5× and 2× extensions, labels) | `of-ib` | `#56DB8F` — a green outside the side colours, VWAP, POC, levels and the blog map (it used to be `series-1`, almost the azure of buy candles). The TPO bar of the first UTC hour stays lilac (`of-svwap`): it is not the session IB |
+| Data coverage strip under the time axis (tape / taker accounts / TWAP marks / book / exact book / OI; the "all" row) | — | `#059583` / `#A878DB` / `#3FC6DD` / `#B18E15` / `#F1C45E` / `#7A889C`; `ink-1` |
+| Measure tool: move up / down | — | `of-buy-ink` / `of-sell-ink` |
 
 #### Indicators (registry `src/charts/pro/indicators/registry.ts`)
 - **Instance colours** (`INDICATOR_COLORS`, fixed order, a fifth instance starts again): `#E9548D` rose, `#C3E143` lime, `#F190DD` orchid, `#5CE4D5` aquamarine. Each is at least ΔE 9 (OKLab ×100) from the side colours, VWAP, POC, levels, IB, the blog map and the fixed indicator lines below, with ≥ 4.5:1 contrast on `of-bg`. Saved instances keep their old colour (user data); the fixed lines are chosen so they never coincide with the old Neon/Desk instance colours either.

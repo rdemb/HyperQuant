@@ -60,6 +60,21 @@ const GLEBIA = {
   domBid: '#3280DD',
   domAsk: '#CA3829',
   domText: '#e4e8ee',
+  // Góra lodowa przy ścianie arkusza (romb i podpis „ICE”): lodowy błękit jaśniejszy niż kolory stron i linia ceny
+  ice: '#7FE7FF',
+  // Biel podpisów na bąblach i zaznaczenia, ciemny tusz na jasnym tle rysunku
+  white: '#FFFFFF',
+  inkOnLight: '#0B0B12',
+  // Panel podniesiony (token surface-2 strony): tło etykiet ramki zrzutu
+  surface2: '#101826',
+  // Pasek pokrycia danych pod osią czasu: źródło w kolorze kategorii (taśma w turkusie Hyperliquid, znaczniki TWAP w akcencie
+  // jak w taśmie, arkusz i arkusz dokładny w złocie, OI w szarości), wiersz „wszystkie” w tuszu
+  coverTape: '#059583',
+  coverAccounts: '#A878DB',
+  coverTwap: '#3FC6DD',
+  coverBook: '#B18E15',
+  coverExact: '#F1C45E',
+  coverOi: '#7A889C',
   // Bąble agresji: środek, brzeg i obrys kuli
   bubbleBuy: ['#3280DD', '#82BCFC', '#A2CFFF'],
   bubbleSell: ['#CA3829', '#F68771', '#FFA28A'],

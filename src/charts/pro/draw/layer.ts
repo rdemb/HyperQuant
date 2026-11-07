@@ -106,14 +106,15 @@ const DASH: Record<DrawStyle['dash'], number[]> = {
 };
 const PROFIT = PRO.buyInk;
 const LOSS = PRO.sellInk;
-const MEASURE_UP = '#4a9eff';
-const MEASURE_DOWN = '#ff4d5e';
+// Pomiar: ruch w górę w kolorze kupna, w dół w kolorze sprzedaży (paleta Głębia; dawniej niebieski i czerwony palety Neon)
+const MEASURE_UP = PRO.buyInk;
+const MEASURE_DOWN = PRO.sellInk;
 /** Profil zakresu: najdłuższy wiersz jako ułamek szerokości zakresu, minimalna wysokość wiersza (px). */
 const RANGE_PROFILE_FRAC = 0.6;
 const RANGE_PROFILE_ROW_PX = 4;
 
 
-const inkOn = (bg: string) => (luminance(bg) > 0.4 ? '#0b0b12' : '#ffffff');
+const inkOn = (bg: string) => (luminance(bg) > 0.4 ? PRO.inkOnLight : PRO.white);
 
 /** Kolor rysunku z jego kryciem (razy dodatkowe `a`). */
 const tint = (s: DrawStyle, a = 1): string => {
@@ -130,7 +131,7 @@ const backdrop = (s: DrawStyle, kind: ToolKind): string => rgba(s.fill ?? s.colo
 class AxisLabel implements ISeriesPrimitiveAxisView {
   at = 0;
   label = '';
-  bg = '#000';
+  bg = PRO.bg;
   coordinate(): number {
     return this.at;
   }
@@ -268,10 +269,10 @@ export class DrawingLayer implements ISeriesPrimitive<Time> {
   };
   private items: Item[] = [];
   private selectedItem: Item | null = null;
-  private selectedColor = '#ffffff';
+  private selectedColor = PRO.white;
   private groupItems: { it: Item; color: string }[] = [];
   private hoverItem: Item | null = null;
-  private hoverColor = '#ffffff';
+  private hoverColor = PRO.white;
   private profiles = new Map<string, ProfileCache>();
   private vwaps = new Map<string, VwapCache>();
   private measureCtx: CanvasRenderingContext2D | null = null;
@@ -804,13 +805,13 @@ export class DrawingLayer implements ISeriesPrimitive<Time> {
       const tRows = [
         {
           text: `${tr('Cel', 'Target')} ${fmtPx(pt.p)} · ${fmtPct(tUp ? ps0.rewardPct : -ps0.rewardPct)}`,
-          color: '#0b0b12',
+          color: PRO.inkOnLight,
         },
       ];
       const sRows = [
         {
           text: `Stop ${fmtPx(ps.p)} · ${fmtPct(sUp ? ps0.riskPct : -ps0.riskPct)}`,
-          color: '#ffffff',
+          color: PRO.white,
         },
       ];
       textBox(c, tRows, cx, tUp ? T.y - 4 - boxHeight(1) : T.y + 4, PROFIT);

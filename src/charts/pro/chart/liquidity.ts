@@ -117,15 +117,15 @@ const K = {
   sellCore: rgba(PRO.bubbleSell[0], 0.7),
   sellEdge: rgba(PRO.bubbleSell[1], 0.55),
   sellRim: rgba(PRO.bubbleSell[2], 0.9),
-  label: '#ffffff',
+  label: PRO.white,
   mark: PRO.warn,
-  selected: '#ffffff',
+  selected: PRO.white,
   domBid: rgba(PRO.domBid, 0.92),
   domAsk: rgba(PRO.domAsk, 0.92),
   domText: PRO.domText,
   labelBg: rgba(PRO.bg, 0.85),
   /** Góra lodowa: romb na końcu belki i podpis „ICE”. */
-  ice: '#7fe7ff',
+  ice: PRO.ice,
   lotBid: PRO.buyInk,
   lotAsk: PRO.sellInk,
 };
