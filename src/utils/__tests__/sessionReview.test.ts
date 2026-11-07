@@ -10,6 +10,7 @@ import type { DeskLedgerSummary } from '../deskLedger';
 import type { LiqTape } from '../liqTape';
 import { currentTradeSession, tradeSessionOn } from '../sessionDay';
 import { type ReviewInputs, type ReviewRow, reviewCards, reviewRows } from '../sessionReview';
+import { mapHitsText } from '../sessionText';
 import { fmtDayTime, fmtHm } from '../../charts/pro/core/time';
 import { fmtPx } from '../../charts/pro/chart/layout';
 
@@ -213,7 +214,9 @@ describe('reviewRows: braki danych dają „—” z powodem', () => {
     const gap = ALL.filter((b) => b.time < L.start + 4 * H || b.time >= L.start + 4 * H + 10 * MIN);
     const m = row(reviewRows(inputs({ bars1m: gap })), 'map');
     expect(m.value).toBe('2/4 dotknięte');
-    expect(m.why).toBe('reszta nierozliczona: luka w świecach 1m');
+    // Ten sam tekst luki co nagłówek układu i Czwórka (mapHitsText)
+    expect(m.why).toBe(mapHitsText(2, 4, false).gap);
+    expect(m.why).toBe('reszta nierozliczona: luka w świecach 1m (brak ✓ nie znaczy „nie dotknięto”)');
     expect(m.detail).toContain(`nierozliczone: PDL ${fmtPx(99_150)}, VAH wczoraj ${fmtPx(101_000)}`);
     expect(m.detail).not.toMatch(/chybione/);
   });

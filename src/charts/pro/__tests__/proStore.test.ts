@@ -237,4 +237,43 @@ describe('ProStore', () => {
     await series.loadOlder();
     expect([series.historyExhausted, series.olderFailed]).toEqual([true, false]);
   });
+
+  it('po nieudanej starszej stronie zegar sam budzi odbiorców po 30 s (bez czekania na kolejny render)', async () => {
+    await boot();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init: { body: string }) => (JSON.parse(init.body).type === 'candleSnapshot' ? { ok: false, json: async () => null } : { ok: true, json: async () => [] }))
+    );
+    await series.loadOlder();
+    expect(series.olderFailed).toBe(true);
+    const bumps: number[] = [];
+    const off = store.subscribe(() => bumps.push(Date.now()));
+    vi.advanceTimersByTime(29_000);
+    expect(bumps).toEqual([]);
+    vi.advanceTimersByTime(1_100);
+    expect(bumps.length).toBeGreaterThan(0);
+    off();
+  });
+
+  it('w trakcie ponownej próby to nie „błąd” (bez „kolejna próba” przy zapytaniu w drodze); nowy błąd wraca po odpowiedzi', async () => {
+    await boot();
+    let answer: (v: unknown) => void = () => {};
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init: { body: string }) => {
+        if (JSON.parse(init.body).type !== 'candleSnapshot') return { ok: true, json: async () => [] };
+        return new Promise((r) => (answer = r));
+      })
+    );
+    const first = series.loadOlder();
+    answer({ ok: false, json: async () => null });
+    await first;
+    expect(series.olderFailed).toBe(true);
+    vi.setSystemTime(Date.now() + 30_000);
+    const retry = series.loadOlder();
+    expect([series.loadingOlder, series.olderFailed]).toEqual([true, false]);
+    answer({ ok: false, json: async () => null });
+    await retry;
+    expect([series.loadingOlder, series.olderFailed]).toEqual([false, true]);
+  });
 });
