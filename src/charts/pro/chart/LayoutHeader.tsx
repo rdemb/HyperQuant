@@ -11,7 +11,7 @@ import { type Branching, MIN_EVENTS } from '../core/hawkes';
 import { fitBranchingLater } from '../core/hawkesWorker';
 import type { ProStore } from '../store/proStore';
 import { type InputScan, readInputs } from './layoutInputs';
-import { FLOW_WINDOW_MS, type Got, type LayoutInputs, type LayoutNumber, layoutNumbers } from './layoutNumbers';
+import { FLOW_WINDOW_MS, type Got, type LayoutInputs, type LayoutNumber, failedNumbers, layoutNumbers } from './layoutNumbers';
 import type { StationId } from './stations';
 import { tr } from '../../../i18n';
 
@@ -68,6 +68,7 @@ export const LayoutHeader: React.FC<{
   // Hawkes liczony w tle (Web Worker) raz na minutę okna; do nowego wyniku zostaje poprzedni tego rynku
   const hk = useRef<{ coin: string; key: string; r: Got<Branching> } | null>(null);
   const busy = useRef(false);
+  const logged = useRef(false);
 
   const hawkesInput = (): LayoutInputs['hawkes'] => {
     const now = store.serverNow();
@@ -101,14 +102,29 @@ export const LayoutHeader: React.FC<{
   useEffect(() => {
     let timer = 0;
     const started = Date.now();
+    // Liczby tego układu i rynku już policzone (po błędzie zostają one zamiast „—”)
+    let good = false;
     const run = () => {
       window.clearTimeout(timer);
       let waiting = Date.now() - started < WARMUP_MS;
       try {
         const n = layoutNumbers(id, readInputs(id, store, scan.current, id === 'big-hands' ? hawkesInput() : undefined));
+        good = true;
         setNums(n);
         onNumbersRef.current?.(n);
         waiting &&= n.some((v) => v.value === DASH);
+      } catch (e) {
+        // Zły ładunek z zewnątrz (migawka skanera, mapa z bloga, świece): zostają ostatnie dobre liczby, bez nich „—”
+        // z powodem; wpis w konsoli raz na nagłówek, nie co 5 s
+        if (!logged.current) {
+          logged.current = true;
+          console.error('[HyperQuant] Nagłówek układu: błąd liczenia liczb — zostają ostatnie dobre albo „—”', e);
+        }
+        if (!good) {
+          const n = failedNumbers(id, store.coin, Date.now());
+          setNums(n);
+          onNumbersRef.current?.(n);
+        }
       } finally {
         // Następne przeliczenie także po wyjątku (nagłówek nie może zamarznąć na starych liczbach)
         timer = window.setTimeout(run, waiting ? WAIT_MS : EVERY_MS);
