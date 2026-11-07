@@ -762,6 +762,8 @@ describe('publishHistory — gałąź history repo danych', () => {
       expect(msg.startsWith(prefix)).toBe(true);
       expect(msg.length - prefix.length).toBeGreaterThan(0);
       expect(msg.length - prefix.length).toBeLessThanOrEqual(200);
+      // Adres repo zdalnego (mógłby zawierać token) nigdy nie trafia do logu
+      expect(msg).not.toContain(repo.remote);
     } finally {
       err.mockRestore();
     }
