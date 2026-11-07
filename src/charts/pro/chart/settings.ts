@@ -2,7 +2,7 @@ import type { ResetMode } from '../core/sessions';
 import { STAT_GROUPS, type StatGroup } from '../core/stats';
 import { DEFAULT_INTERVAL, INTERVALS } from '../core/time';
 import { COIN, MARKETS, Market } from '../store/proStore';
-import { IndicatorInstance, indicatorDef, indicatorsFromLink, indicatorsLink, parseIndicators } from '../indicators/registry';
+import { IndicatorInstance, indicatorDef, indicatorsFromLink, indicatorsLink, parseIndicators, REMOVED_INDICATORS } from '../indicators/registry';
 import type { ChartView } from './footprintSeries';
 import type { FootprintStyle } from './layout';
 
@@ -217,12 +217,19 @@ export function parseSettings(raw: unknown, d: ChartSettings = DEFAULT_SETTINGS)
   };
 }
 
-/** Identyfikatory wskaźników pominiętych przy wczytaniu zapisu (jednorazowa informacja o usuniętych wskaźnikach). */
-const droppedSeen = new Set<string>();
-export const droppedIndicators = (): string[] => [...droppedSeen];
+/** Jednorazowa informacja o usuniętych wskaźnikach: 'pending' po wykryciu w zapisie, 'done' po zamknięciu. */
+export const DROPPED_NOTICE_KEY = 'hq.charts.droppedNotice.v1';
+export function noteDropped(dropped: readonly string[]): void {
+  if (!dropped.some((id) => REMOVED_INDICATORS.includes(id))) return;
+  try {
+    if (localStorage.getItem(DROPPED_NOTICE_KEY) !== 'done') localStorage.setItem(DROPPED_NOTICE_KEY, 'pending');
+  } catch {
+    // Zablokowana pamięć — bez informacji
+  }
+}
 function readIndicators(raw: unknown[]): IndicatorInstance[] {
   const { list, dropped } = parseIndicators(raw);
-  dropped.forEach((id) => droppedSeen.add(id));
+  noteDropped(dropped);
   return list;
 }
 

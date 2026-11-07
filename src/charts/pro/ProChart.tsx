@@ -28,7 +28,7 @@ import { onAlertEvents, startAlertWatch } from './chart/alertWatch';
 import { DEFAULT_TTL_MS, defaultDir, eventText } from '../../utils/alertRules';
 import { fmtPx, priceDigits } from './chart/layout';
 import type { PbZone } from './chart/pbRangeLayer';
-import { ChartLayout, ChartSettings, NARROW_QUERY, PHONE_PANES, PhonePane, droppedIndicators, hashFor, isNarrow, loadSettings, phoneSettings, saveSettings, settingsFromHash } from './chart/settings';
+import { ChartLayout, ChartSettings, NARROW_QUERY, PHONE_PANES, PhonePane, DROPPED_NOTICE_KEY, hashFor, isNarrow, loadSettings, phoneSettings, saveSettings, settingsFromHash } from './chart/settings';
 import { Station, stationById, stationKey, stationPanel } from './chart/stations';
 import { ChartTemplate, applyTemplate, loadTemplates, saveAs, saveTemplates } from './chart/templates';
 import { NumbersCard, StatGroupPicker } from './chart/NumbersCard';
@@ -117,11 +117,9 @@ const PANE_ITEMS: ToggleItem[] = [
 
 /** Karty na telefonie: jedna naraz, więc wykres ma cały ekran. */
 type PhoneTab = 'chart' | 'tape' | 'dom' | 'numbers';
-const DROPPED_NOTICE_KEY = 'hq.charts.droppedNotice.v1';
-const REMOVED_INDICATORS = ['obv', 'cmf', 'mfi', 'netvol'];
-const readFlag = (key: string): boolean => {
+const noticePending = (): boolean => {
   try {
-    return localStorage.getItem(key) !== null;
+    return localStorage.getItem(DROPPED_NOTICE_KEY) === 'pending';
   } catch {
     return false;
   }
@@ -240,7 +238,11 @@ export const ProChart: React.FC<{
   const [linkSet, setLinkSet] = useState<LinkAlarm[] | null>(() => (panel === 0 && !inReplay ? parseAlarmLink(window.location.hash) : null));
   const [toast, setToast] = useState<string | null>(null);
   // Jednorazowa informacja o usuniętych wskaźnikach wolumenu (klucz ustawiany po zamknięciu; tylko panel 1)
-  const [droppedNote, setDroppedNote] = useState(() => panel === 0 && !inReplay && REMOVED_INDICATORS.some((id) => droppedIndicators().includes(id)) && !readFlag(DROPPED_NOTICE_KEY));
+  const [droppedNote, setDroppedNote] = useState(() => panel === 0 && !inReplay && noticePending());
+  // Zapis innego panelu mógł zostać wczytany po tym panelu
+  useEffect(() => {
+    if (panel === 0 && !inReplay && noticePending()) setDroppedNote(true);
+  }, [panel, inReplay]);
   const ctxRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   const hostRef = useRef<HTMLDivElement>(null);
@@ -894,7 +896,7 @@ export const ProChart: React.FC<{
                 onClick={() => {
                   setDroppedNote(false);
                   try {
-                    localStorage.setItem(DROPPED_NOTICE_KEY, '1');
+                    localStorage.setItem(DROPPED_NOTICE_KEY, 'done');
                   } catch {
                     // Zablokowana pamięć — informacja wróci przy następnym wejściu
                   }
