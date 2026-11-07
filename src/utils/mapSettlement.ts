@@ -12,11 +12,12 @@ export type SettledLevel = { label: string; price: number; touchedAt: number | n
 
 /**
  * Okno ważności mapy [from, to): od publikacji do końca sesji handlowej, w której mapę opublikowano (Londyn albo NY wg
- * `sessionDay`). „Mapa dnia” zawsze trwa do końca sesji NY doby UTC publikacji (obejmuje Londyn i NY). Mapa opublikowana
- * w Azji (przed Londynem) obejmuje najbliższą sesję Londynu (`aktualizacja`, `ny`, `otwarcie`, `inne`).
+ * `sessionDay`). „Mapa dnia” (`dzien`) i „Mapa przed Nowym Jorkiem” (`ny`) obejmują sesję NY, którą zapowiadają: trwają do
+ * końca sesji NY doby UTC publikacji (opublikowane w Azji, Londynie albo w NY). Pozostałe rodzaje (`aktualizacja`,
+ * `otwarcie`, `inne`) kończą się z sesją w toku, a opublikowane w Azji obejmują najbliższą sesję Londynu.
  */
 export function mapWindow(kind: MapKind, publishedAt: number): { from: number; to: number } {
-  if (kind === 'dzien') return { from: publishedAt, to: tradeSessionOn(utcDayStart(publishedAt), 'ny').end };
+  if (kind === 'dzien' || kind === 'ny') return { from: publishedAt, to: tradeSessionOn(utcDayStart(publishedAt), 'ny').end };
   const session = currentTradeSession(publishedAt) ?? nextTradeSession(publishedAt);
   return { from: publishedAt, to: session.end };
 }

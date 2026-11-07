@@ -10,7 +10,8 @@ import type { StationId } from './stations';
 import { type VBar, profile, sessionVwap } from '../../../utils/auction';
 import { type DayType, type VaMigration, classifyDay, vaMigration } from '../../../utils/dayType';
 import { RVOL_MIN_DAYS, rvolHour } from '../../../utils/rvol';
-import { TRADE_SESSION_NAME, type TradeSession, currentTradeSession, lastClosedSessions, nextTradeSession, previousSameSession, rangeBudget } from '../../../utils/sessionDay';
+import { type TradeSession, currentTradeSession, lastClosedSessions, nextTradeSession, previousSameSession, rangeBudget } from '../../../utils/sessionDay';
+import { TRADE_SESSION_NAME } from '../../../utils/sessionNames';
 import { DASH, fmtFixed, fmtPct, fmtSigned } from '../../../ui/format';
 import { tr } from '../../../i18n';
 

@@ -6,7 +6,7 @@ import { NextEventStat } from '../market/NextEventStat';
 import { useDeskLedger } from '../../state/useDeskLedger';
 import { calibrate } from '../../utils/deskLedger';
 import { useAuctionContext } from '../../state/useAuctionContext';
-import { TRADE_SESSION_NAME } from '../../utils/sessionDay';
+import { TRADE_SESSION_NAME } from '../../utils/sessionNames';
 import { tr } from '../../i18n';
 import { sessionLabel } from '../../utils/shaakuniEngine';
 import { crossedLevels } from '../../utils/touchMc';

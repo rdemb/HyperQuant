@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { mapWindow, settleLevels } from '../mapSettlement';
 import { tradeSessionOn } from '../sessionDay';
@@ -49,6 +50,17 @@ describe('mapWindow', () => {
   it('wpis z Azji (inne rodzaje) obejmuje najbliższą sesję Londynu', () => {
     const asia = day + 2 * 3600_000;
     expect(mapWindow('otwarcie', asia)).toEqual({ from: asia, to: london.end });
-    expect(mapWindow('ny', asia).to).toBe(london.end);
+  });
+  it('Mapa przed NY trwa do końca sesji NY, opublikowana w Azji, Londynie albo NY', () => {
+    for (const t of [day + 2 * 3600_000, london.start + 3600_000, ny.start + 3600_000]) expect(mapWindow('ny', t)).toEqual({ from: t, to: ny.end });
+  });
+});
+
+describe('czystość modułów rozliczenia', () => {
+  it('mapSettlement.ts i sessionDay.ts nie importują i18n', () => {
+    for (const f of ['../mapSettlement.ts', '../sessionDay.ts']) {
+      const src = readFileSync(new URL(f, import.meta.url), 'utf8');
+      expect(src, f).not.toMatch(/froms+['"][^'"]*i18n['"]/);
+    }
   });
 });

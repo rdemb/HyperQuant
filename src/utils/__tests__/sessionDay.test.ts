@@ -1,7 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
-  TRADE_SESSION_NAME,
   currentTradeSession,
   expectedRange,
   hourlyWindow,
@@ -11,6 +10,7 @@ import {
   rangeBudget,
   tradeSessionOn,
 } from '../sessionDay';
+import { TRADE_SESSION_NAME } from '../sessionNames';
 import type { VolModel } from '../volatility';
 import type { VBar } from '../auction';
 
