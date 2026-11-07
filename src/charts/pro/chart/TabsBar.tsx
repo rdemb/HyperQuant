@@ -3,6 +3,7 @@ import { Copy, type LucideIcon, Pencil, Plus, RotateCcw, X } from 'lucide-react'
 import { type PanelSet, type PhaseId, STATIONS, StationId, stationPanel } from './stations';
 import { ChartTab, MAX_TABS, TabsState, canClose, canRestore, presetName, presetQuestion, presetStation, tabName, tabShortcut, tabsFull } from './tabs';
 import { intervalById } from '../core/time';
+import { deferred, radioStep } from '../../../ui/deferred';
 import { tr } from '../../../i18n';
 
 /** Sposób utworzenia nowej karty: pusta (karta własna z ustawieniami startowymi), kopia aktywnej albo z wzorca układu. */
@@ -17,6 +18,9 @@ export interface TabActions {
   onRestore: (id: string) => void;
   onMove: (id: string, to: number) => void;
 }
+
+/** Przerwa po ostatniej strzałce w przełączniku zestawu paneli, po której wykresy się przebudowują (ms). */
+const PANEL_SET_DELAY_MS = 350;
 
 /** Interwały paneli jako podpis: „30m · 4h”. */
 export const tfLabel = (intervals: readonly string[]): string => intervals.map((i) => intervalById(i).label).join(' · ');
@@ -302,40 +306,70 @@ export const TabsBar: React.FC<{ st: TabsState; tf: (t: ChartTab) => string; a: 
  * Przełącznik zestawu paneli układu (np. Aukcja | Absorpcja w układzie Aukcja i otwarcie): w wierszu paska kart na
  * komputerze, nad wykresem na telefonie (cel dotyku 44 px). Podpisy to nazwy zestawów.
  */
-export const PanelSetSwitch: React.FC<{ sets: readonly PanelSet[]; value: string; onChange: (id: string) => void }> = ({ sets, value, onChange }) => (
-  <div
-    role="radiogroup"
-    aria-label={tr('Zestaw paneli pod wykresem', 'Panel set below the chart')}
-    // Strzałki jak w natywnej grupie radio (jak w Segmented)
-    onKeyDown={(e) => {
-      if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
-      e.preventDefault();
-      const i = sets.findIndex((s) => s.id === value);
-      onChange(sets[(i + (e.key === 'ArrowRight' ? 1 : sets.length - 1)) % sets.length].id);
-    }}
-    className="shrink-0 inline-flex items-center gap-0.5 bg-page border border-line rounded-lg p-0.5"
-  >
-    {sets.map((s) => {
-      const on = s.id === value;
-      return (
-        <button
-          key={s.id}
-          type="button"
-          role="radio"
-          aria-checked={on}
-          tabIndex={on ? 0 : -1}
-          title={tr(`Panele pod wykresem: ${s.name}`, `Panels below the chart: ${s.name}`)}
-          onClick={() => !on && onChange(s.id)}
-          className={`min-h-11 sm:min-h-0 sm:h-7 px-3 sm:px-2.5 rounded-md text-xs font-medium whitespace-nowrap transition-colors duration-150 ${
-            on ? 'bg-surface-3 text-ink-1 shadow-[inset_0_0_0_1px_var(--color-line-strong)]' : 'text-ink-3 hover:text-ink-1'
-          }`}
-        >
-          {s.name}
-        </button>
-      );
-    })}
-  </div>
-);
+export const PanelSetSwitch: React.FC<{ sets: readonly PanelSet[]; value: string; onChange: (id: string) => void }> = ({ sets, value, onChange }) => {
+  // Strzałki jak w natywnej grupie radio: zaznaczenie i fokus od razu, zatwierdzenie (przebudowa wykresów) po przerwie
+  // w naciskaniu; kliknięcie zatwierdza od razu
+  const [pending, setPending] = useState<string | null>(null);
+  const shown = pending ?? value;
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+  const [commit] = useState(() =>
+    deferred<string>(PANEL_SET_DELAY_MS, (id) => {
+      setPending(null);
+      onChangeRef.current(id);
+    })
+  );
+  useEffect(() => commit.cancel, [commit]);
+  const btns = useRef(new Map<string, HTMLButtonElement>());
+  return (
+    <div
+      role="radiogroup"
+      aria-label={tr('Zestaw paneli pod wykresem', 'Panel set below the chart')}
+      onKeyDown={(e) => {
+        const next = radioStep(
+          sets.map((s) => s.id),
+          shown,
+          e.key
+        );
+        if (next === null) return;
+        e.preventDefault();
+        setPending(next === value ? null : next);
+        btns.current.get(next)?.focus();
+        if (next === value) commit.cancel();
+        else commit.push(next);
+      }}
+      className="shrink-0 inline-flex items-center gap-0.5 bg-page border border-line rounded-lg p-0.5"
+    >
+      {sets.map((s) => {
+        const on = s.id === shown;
+        return (
+          <button
+            key={s.id}
+            ref={(el) => {
+              if (el) btns.current.set(s.id, el);
+              else btns.current.delete(s.id);
+            }}
+            type="button"
+            role="radio"
+            aria-checked={on}
+            tabIndex={on ? 0 : -1}
+            title={tr(`Panele pod wykresem: ${s.name}`, `Panels below the chart: ${s.name}`)}
+            onClick={() => {
+              commit.cancel();
+              setPending(null);
+              if (s.id !== value) onChange(s.id);
+            }}
+            className={`min-h-11 sm:min-h-0 sm:h-7 px-3 sm:px-2.5 rounded-md text-xs font-medium whitespace-nowrap transition-colors duration-150 ${
+              on ? 'bg-surface-3 text-ink-1 shadow-[inset_0_0_0_1px_var(--color-line-strong)]' : 'text-ink-3 hover:text-ink-1'
+            }`}
+          >
+            {s.name}
+          </button>
+        );
+      })}
+    </div>
+  );
+};
 
 /**
  * Karty na telefonie (arkusz na cały ekran): lista kart z przełączeniem, nazwą, kopią i zamknięciem, pod nią nowe karty.
