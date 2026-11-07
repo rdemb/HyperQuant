@@ -32,6 +32,13 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 - Przełączenie zestawu paneli (Aukcja, Absorpcja) nie usuwa własnego wskaźnika z tym samym identyfikatorem instancji (nowy klucz `panelSetIids` w zapisie ustawień wykresu; inne pola zapisu bez zmian).
 - Telefon: przewijany w bok pasek narzędzi wykresu i rząd liczb nagłówka wygaszają krawędź, za którą jest dalsza treść.
 - Dostępność: fokus wraca na przycisk „Więcej” po Klatce otwartej z menu na telefonie i przechodzi dalej po zamknięciu karty pierwszego kontaktu; przełącznik zestawu paneli przenosi fokus za zaznaczeniem, a strzałki nie przebudowują wykresów przy każdym naciśnięciu; `aria-controls` tylko przy otwartym menu; na stronach bloga `aria-current` tylko na linku do bieżącej strony.
+- Budżet zakresu nie zmienia metody po cichu: na BTC, póki model HAR się wczytuje, „—” z powodem „Czekam na model zmienności (HAR)…” zamiast liczby z Parkinsona, która potem przeskakiwała na HAR pod tą samą plakietką (np. 81% → 42%). Liczba z Parkinsona (model się nie wczytał, inne rynki) ma metodę na etykiecie: „Budżet · NY · Parkinson”, na telefonie „Budżet (P)”, także w domyślnym tytule Klatki. W Rozliczeniu wiersz zakresu ma „ex ante · Parkinson” na kartach zamkniętych i nazwę metody na karcie w toku.
+- Panele z mapą z bloga zamiast poziomów dnia (Mapa dnia 30m, Rozliczenie doby) bez mapy na wykresie (weekend, rano przed wpisem, inny rynek) rysują PDH i PDL; tylko na rysunku, zapis ustawień bez zmian, mapa i poziomy nigdy razem.
+- Czwórka, Rozliczenie sesji i nagłówek układu mają własne osłony błędu: zły plik albo odpowiedź z zewnątrz wygasza tylko tę część („—” z powodem i „Spróbuj ponownie”), nie całą aplikację; nagłówek po błędzie liczenia zostawia ostatnie dobre liczby.
+- Nagłówek Rozliczenia doby opisuje jedną sesję: w Azji liczba „Mapa” bierze mapę wczorajszej sesji NY, jak typ dnia i migracja VA (wcześniej szukała dzisiejszej Mapy dnia).
+- Rozliczenie po angielsku: „(PL blog)” na karcie przy pierwszej mapie, nie tylko w podpowiedzi.
+- Pierwsza wizyta, która zaczyna się od Przed sesją albo Po sesji, nie gubi karty pierwszego kontaktu W sesji (zapis pierwszej wizyty przy starcie aplikacji); stali użytkownicy jej nie widzą.
+- Tekst alternatywny Klatki Czwórki podaje każdą liczbę raz.
 
 ### Wydajność na komputerze (2026-11-07)
 
