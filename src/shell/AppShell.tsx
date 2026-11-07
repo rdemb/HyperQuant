@@ -248,7 +248,7 @@ export const AppShell: React.FC = () => {
             <Suspense fallback={<ViewFallback />}>
               {awaitingData && <ConnectingState onRetry={feed.syncNow} startedAt={startedAt} now={feed.nowTick} />}
               {!awaitingData && view === 'desk' && <DeskView />}
-              {view === 'charts' && <ChartsView />}
+              {view === 'charts' && <ChartsView phase="session" />}
               {!awaitingData && view === 'plan' && <PlanView />}
               {view === 'market' && <MarketView />}
               {!awaitingData && view === 'lab' && <LabView />}

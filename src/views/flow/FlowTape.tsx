@@ -54,7 +54,9 @@ export const FlowTape: React.FC<{
   onSound: (v: boolean) => void;
   /** Przyciski po prawej w nagłówku (powiększenie). */
   tools?: React.ReactNode;
-}> = ({ store, minUsd, sound, bigUsd, pace, selected, highlight, narrow, className, onPick, onMinUsd, onSound, tools }) => {
+  /** Nagłówek zamiast tytułu (przełącznik kart w kolumnie obok wykresu). */
+  head?: React.ReactNode;
+}> = ({ store, minUsd, sound, bigUsd, pace, selected, highlight, narrow, className, onPick, onMinUsd, onSound, tools, head }) => {
   const recent = store.orders.latest(SCAN);
   const rows = tapeRows(recent, minUsd, bigUsd, ROWS, store.serverNow());
 
@@ -156,7 +158,11 @@ export const FlowTape: React.FC<{
   return (
     <section aria-label={tr('Taśma z pamięcią', 'Tape with memory')} className={`flex flex-col min-h-0 bg-surface-1 ${className}`}>
       <div className="flex items-center gap-1 px-2 h-10 border-b border-line shrink-0">
-        <span className="text-[11px] uppercase tracking-[0.08em] text-ink-2 font-medium mr-auto">{tr('Taśma z pamięcią', 'Tape with memory')}</span>
+        {head !== undefined ? (
+          <span className="mr-auto min-w-0">{head}</span>
+        ) : (
+          <span className="text-[11px] uppercase tracking-[0.08em] text-ink-2 font-medium mr-auto">{tr('Taśma z pamięcią', 'Tape with memory')}</span>
+        )}
         <select
           aria-label={tr('Najmniejsza wartość zlecenia na taśmie', 'Smallest order value on the tape')}
           value={minUsd}

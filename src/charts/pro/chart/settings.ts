@@ -71,7 +71,15 @@ export interface ChartSettings {
   tapeSound: boolean;
   /** Klasyczne wskaźniki (EMA, RSI, ATR, Bollinger): instancje z parametrami i kolorem, w kolejności dodania. */
   indicators: IndicatorInstance[];
+  /** Włączony zestaw paneli układu z zestawami (np. Absorpcja w Aukcji i otwarciu); brak — pierwszy zestaw układu. */
+  panelSet?: string;
 }
+
+/**
+ * Identyfikatory zestawów paneli układów (`panelSets` w stations.ts) do walidacji zapisu. Lista jest tutaj, bo
+ * stations.ts importuje ten moduł; test pilnuje, że obie listy są równe.
+ */
+export const PANEL_SET_IDS = ['auction', 'absorption'] as const;
 
 /**
  * Ustawienia startowe: świece mają być czytelne od pierwszej sekundy, więc na wykresie ceny tylko lekkie warstwy
@@ -172,6 +180,7 @@ const groups = (v: unknown, fallback: StatGroup[]): StatGroup[] => {
 /** Odczyt z walidacją każdego pola (stary lub uszkodzony zapis → wartości domyślne `d`). */
 export function parseSettings(raw: unknown, d: ChartSettings = DEFAULT_SETTINGS): ChartSettings {
   const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  const panelSet = oneOf<string | undefined>(r.panelSet, PANEL_SET_IDS, d.panelSet);
   return {
     coin: oneOf(r.coin, MARKETS, d.coin),
     interval: oneOf(r.interval, INTERVALS.map((i) => i.id), d.interval),
@@ -214,6 +223,8 @@ export function parseSettings(raw: unknown, d: ChartSettings = DEFAULT_SETTINGS)
     tapeMinUsd: numIn(r.tapeMinUsd, 0, 100_000_000, d.tapeMinUsd),
     tapeSound: bool(r.tapeSound, d.tapeSound),
     indicators: Array.isArray(r.indicators) ? readIndicators(r.indicators) : d.indicators,
+    // Bez zestawu pola nie ma (zapis i porównania ze wzorcem bez pustego klucza)
+    ...(panelSet !== undefined ? { panelSet } : {}),
   };
 }
 

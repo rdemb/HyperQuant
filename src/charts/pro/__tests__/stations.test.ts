@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { DEFAULT_SETTINGS, NARROW_PATCH, parseSettings, phoneSettings } from '../chart/settings';
+import { DEFAULT_SETTINGS, NARROW_PATCH, PANEL_SET_IDS, parseSettings, phoneSettings } from '../chart/settings';
 import { inds } from '../chart/templates';
 import {
+  LAYOUT_ORDER,
   LEGACY_STATION,
   PHASE_LAYOUTS,
   STATIONS,
+  activePanelSet,
   clearStation,
   loadStationLayout,
   panelSetPanel,
@@ -15,6 +17,7 @@ import {
   stationKey,
   stationKeys,
   stationPanel,
+  switchPanelSet,
   underPaneCount,
 } from '../chart/stations';
 
@@ -121,6 +124,47 @@ describe('układy faz dnia', () => {
     expect(panelSetPanel(stationById('cockpit'), 'absorption', 0, false)).toEqual(stationPanel(stationById('cockpit'), 0, false));
     const big = stationPanel(stationById('big-hands'), 0, false);
     expect([big.showVolume, big.showDelta, big.showCvd, underPaneCount(big)]).toEqual([false, false, false, 3]);
+  });
+
+  it('identyfikatory zestawów paneli w walidacji ustawień: te same co w układach; kolejność układów skrótów', () => {
+    expect([...PANEL_SET_IDS].sort()).toEqual(STATIONS.flatMap((s) => s.panelSets?.map((p) => p.id) ?? []).sort());
+    expect(LAYOUT_ORDER).toEqual(STATIONS.map((s) => s.id));
+  });
+
+  it('zestaw w użyciu: z ustawień, nieznany albo brak — pierwszy; układ bez zestawów — null', () => {
+    const st = stationById('auction-open');
+    const base = stationPanel(st, 0, false);
+    expect(activePanelSet(st, base)?.id).toBe('auction');
+    expect(activePanelSet(st, { ...base, panelSet: 'absorption' })?.id).toBe('absorption');
+    expect(activePanelSet(st, { ...base, panelSet: 'nie-ma' })?.id).toBe('auction');
+    expect(activePanelSet(stationById('cockpit'), { ...base, panelSet: 'absorption' })).toBeNull();
+  });
+
+  it('przełączenie zestawu: wskaźniki i łatka zestawu, zmiany użytkownika zostają', () => {
+    const st = stationById('auction-open');
+    for (const narrow of [false, true]) {
+      const base = stationPanel(st, 0, narrow);
+      // Wzorzec z pierwszym zestawem → drugi zestaw to dokładnie panelSetPanel
+      expect(switchPanelSet(st, base, 'absorption', narrow)).toEqual({ ...panelSetPanel(st, 'absorption', 0, narrow), panelSet: 'absorption' });
+      expect(switchPanelSet(st, switchPanelSet(st, base, 'absorption', narrow), 'auction', narrow)).toEqual({ ...base, panelSet: 'auction' });
+    }
+    // Zmiany użytkownika: rynek, interwał, warstwa, EMA na cenie i własny panel RSI zostają w obu zestawach
+    const ema = inds(['ema'], ['rsi']);
+    const user = { ...stationPanel(st, 0, false), coin: 'ETH' as const, interval: '15m', showVwap: true, indicators: [...stationPanel(st, 0, false).indicators, ...ema] };
+    const abs = switchPanelSet(st, user, 'absorption', false);
+    expect([abs.coin, abs.interval, abs.showVwap, abs.showCvd, abs.panelSet]).toEqual(['ETH', '15m', true, false, 'absorption']);
+    expect(abs.indicators.map((x) => x.id)).toEqual(['ema', 'rsi', 'absorption', 'makers', 'ofi']);
+    const back = switchPanelSet(st, abs, 'auction', false);
+    expect([back.showCvd, back.panelSet, back.indicators.map((x) => x.id)]).toEqual([true, 'auction', ['ema', 'rsi', 'oiflow', 'breadth']]);
+    // Wskaźnik zestawu dodany już przez użytkownika nie powtarza się
+    const withOfi = { ...user, indicators: [...user.indicators, ...inds(['ofi'])] };
+    expect(switchPanelSet(st, withOfi, 'absorption', false).indicators.filter((x) => x.id === 'ofi')).toHaveLength(1);
+    // Ten sam albo nieznany zestaw, układ bez zestawów — bez zmian
+    expect(switchPanelSet(st, abs, 'absorption', false)).toBe(abs);
+    expect(switchPanelSet(st, abs, 'nie-ma', false)).toBe(abs);
+    const cockpit = stationPanel(stationById('cockpit'), 0, false);
+    expect(switchPanelSet(stationById('cockpit'), cockpit, 'absorption', false)).toBe(cockpit);
+    expect(parseSettings(abs)).toEqual(abs);
   });
 
   it('Aukcja i otwarcie: dwa zestawy paneli, domyślny Aukcja', () => {

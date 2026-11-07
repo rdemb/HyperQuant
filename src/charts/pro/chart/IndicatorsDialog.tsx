@@ -12,7 +12,8 @@ import { visibleEntries } from './menuSelection';
  */
 
 /** Przełącznik ustawień wykresu (warstwa orderflow albo panel pod wykresem). */
-export type ToggleKey = { [K in keyof ChartSettings]: ChartSettings[K] extends boolean ? K : never }[keyof ChartSettings];
+// `-?`: pola opcjonalne (zestaw paneli) nie dokładają `undefined` do listy kluczy
+export type ToggleKey = { [K in keyof ChartSettings]-?: ChartSettings[K] extends boolean ? K : never }[keyof ChartSettings];
 
 export interface ToggleItem {
   key: ToggleKey;

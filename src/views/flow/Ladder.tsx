@@ -45,6 +45,8 @@ const HEAT_GAMMA = 1.6;
 const HEAT_GAP_MS = 20_000;
 /** Drabina węższa niż tyle px (komputer) chowa kolumnę średniego zlecenia i zwęża mapę, żeby „kto / co” zostało widoczne. */
 const COMPACT_W = 660;
+/** Drabina węższa niż tyle px (kolumna 400 px obok wykresu) ma węższe kolumny liczb i mapę. */
+const TIGHT_W = 480;
 /** Ściana w arkuszu najwyżej tyle poziomów od najlepszej ceny (jak przedziały `nearPrice`) dostaje bilans ścian zakończonych przy cenie, gdy było ich co najmniej NEAR_MIN. */
 const NEAR_LEVELS = 1;
 const NEAR_MIN = 3;
@@ -128,6 +130,7 @@ export const Ladder: React.FC<LadderProps> = ({ store, hist, steps, stepId, onSt
     return () => ro.disconnect();
   }, []);
   const compactW = !narrow && w > 0 && w < COMPACT_W;
+  const tightW = compactW && w < TIGHT_W;
   const heatMs = wide ? HEAT_WIDE_MS : HEAT_MS;
   const heads = !narrow && head !== null && (head.bid !== null || head.ask !== null);
 
@@ -185,11 +188,23 @@ export const Ladder: React.FC<LadderProps> = ({ store, hist, steps, stepId, onSt
   const near = nearPrice(bins);
   const nearMoved = bins.filter((b) => b.from <= NEAR_LEVELS).reduce((a, b) => a + b.moved, 0);
   const nearPulled = bins.filter((b) => b.from <= NEAR_LEVELS).reduce((a, b) => a + b.pulled, 0);
+  const legend = tr('(los ściany: na mapie w chwili jej końca, w wierszu ceny przez 2 min)', '(wall fate: on the map at the moment it ended, in the price row for 2 min)');
+  const note =
+    tr(
+      `Migawka arkusza co ok. 5 s, 20 poziomów na stronę (dalej „·” = poza zasięgiem). Żółte: średnie zlecenie od ${compact(lotUsd)} USD, czyli jedna duża ręka, nie tłum. Mapa: ostatnie ${heatMs / 60_000} min przy tej cenie, szare = brak migawki (poza zasięgiem arkusza albo luka w zapisie).`,
+      `Book snapshot every ~5 s, 20 levels per side (beyond: “·” = out of range). Yellow: average order from ${compact(lotUsd)} USD, one large hand rather than a crowd. Map: the last ${heatMs / 60_000} min at this price, grey = no snapshot (out of the book's range or a gap in the recording).`
+    ) +
+    (stepId === 'exact'
+      ? tr(
+          ' Przy kroku 1 USD arkusz sięga tylko kilkudziesięciu dolarów od ceny, więc mapa ma dane głównie przy ostatnich cenach.',
+          ' At the 1 USD step the book reaches only a few dozen dollars from the price, so the map has data mostly near recent prices.'
+        )
+      : '');
 
   // Mini mapa ciepła: osobne płótno dla asków i bidów, kolumna = kilka sekund
   // Powiększenie: mapa zajmuje to, co zostaje po kolumnach liczb (najwyżej ok. 55% szerokości), kolumna co ok. 3 px
-  const heatW = narrow ? 44 : wide ? Math.round(Math.max(360, Math.min(w - 780, w * 0.55))) : compactW ? 96 : 132;
-  const cols = narrow ? 44 : wide ? Math.round(heatW / 3) : compactW ? 64 : 90;
+  const heatW = narrow ? 44 : wide ? Math.round(Math.max(360, Math.min(w - 780, w * 0.55))) : tightW ? 56 : compactW ? 96 : 132;
+  const cols = narrow ? 44 : wide ? Math.round(heatW / 3) : tightW ? 40 : compactW ? 64 : 90;
   const askCanvas = useRef<HTMLCanvasElement>(null);
   const bidCanvas = useRef<HTMLCanvasElement>(null);
   const frames = ready && hist ? hist.range(now - heatMs, now + 1) : [];
@@ -225,9 +240,11 @@ export const Ladder: React.FC<LadderProps> = ({ store, hist, steps, stepId, onSt
 
   const grid = narrow
     ? 'grid-cols-[4.6rem_1fr_2.1rem_1.6rem]'
-    : compactW
-      ? 'grid-cols-[5.4rem_minmax(4.5rem,1fr)_2.6rem_4.6rem_6rem]'
-      : 'grid-cols-[5.4rem_minmax(5rem,1fr)_2.6rem_3.8rem_4.6rem_7.5rem]';
+    : tightW
+      ? 'grid-cols-[4.4rem_minmax(3.2rem,1fr)_2rem_3.8rem_3.6rem]'
+      : compactW
+        ? 'grid-cols-[5.4rem_minmax(4.5rem,1fr)_2.6rem_4.6rem_6rem]'
+        : 'grid-cols-[5.4rem_minmax(5rem,1fr)_2.6rem_3.8rem_4.6rem_7.5rem]';
   const showAvg = !narrow && !compactW;
   const row = (r: LadderRow) => {
     const k = levelKey(r.bid, r.px);
@@ -418,8 +435,8 @@ export const Ladder: React.FC<LadderProps> = ({ store, hist, steps, stepId, onSt
   return (
     <section aria-label={tr('Drabina arkusza zleceń', 'Order book ladder')} className={`flex flex-col min-h-0 bg-surface-1 ${className}`}>
       <div className="flex items-center gap-2 px-3 h-10 border-b border-line shrink-0">
-        <span className="text-[11px] uppercase tracking-[0.08em] text-ink-2 font-medium mr-auto">{tr('Kto stoi w kolejce', 'Who is in the queue')}</span>
-        <span className="text-[10px] text-ink-3 hidden sm:inline">{tr('poziomy co', 'levels every')}</span>
+        <span className="min-w-0 truncate text-[11px] uppercase tracking-[0.08em] text-ink-2 font-medium mr-auto">{tr('Kto stoi w kolejce', 'Who is in the queue')}</span>
+        {!tightW && <span className="text-[10px] text-ink-3 hidden sm:inline">{tr('poziomy co', 'levels every')}</span>}
         <div role="radiogroup" aria-label={tr('Krok poziomów', 'Level step')} className="inline-flex items-center gap-0.5 bg-page border border-line rounded-lg p-0.5">
           {steps.map((s) => (
             <button
@@ -436,7 +453,7 @@ export const Ladder: React.FC<LadderProps> = ({ store, hist, steps, stepId, onSt
         </div>
         {tools}
       </div>
-      <div className={`grid ${grid} gap-x-2 pr-2 py-1 border-b border-line font-mono text-[10px] text-ink-3 shrink-0`} style={{ paddingLeft: heatW + 8 }}>
+      <div className={`grid ${grid} gap-x-2 pr-2 py-1 border-b border-line font-mono text-[10px] text-ink-3 whitespace-nowrap shrink-0`} style={{ paddingLeft: heatW + 8 }}>
         <span>{tr('Cena', 'Price')}</span>
         <span className="text-right">{store.coin}</span>
         <span className="text-right" title={tr('Liczba zleceń na poziomie', 'Orders at the level')}>{tr('zl.', 'ord.')}</span>
@@ -463,8 +480,9 @@ export const Ladder: React.FC<LadderProps> = ({ store, hist, steps, stepId, onSt
                   <span className="absolute top-1/2 -translate-y-1/2 left-1">← 60 min</span>
                 </span>
               ) : (
-                <span className="text-ink-3 hidden sm:inline" style={{ width: heatW - 12 }}>
-                  ← {`${heatMs / 60_000} min`}
+                <span className="text-ink-3 hidden sm:inline whitespace-nowrap" style={{ width: heatW - 12 }}>
+                  {tightW ? '' : '← '}
+                  {`${heatMs / 60_000} min`}
                   {!compactW && ` · ${tr('teraz', 'now')}`}
                 </span>
               )}
@@ -503,27 +521,21 @@ export const Ladder: React.FC<LadderProps> = ({ store, hist, steps, stepId, onSt
         {stale ? (
           <p className="text-warn">{tr(`Arkusz nieaktualny — ostatnia migawka ${fmtHms(f!.t)}.`, `Book out of date — last snapshot ${fmtHms(f!.t)}.`)}</p>
         ) : (
-          <p>
-            {tr(
-              `Migawka arkusza co ok. 5 s, 20 poziomów na stronę (dalej „·” = poza zasięgiem). Żółte: średnie zlecenie od ${compact(lotUsd)} USD, czyli jedna duża ręka, nie tłum. Mapa: ostatnie ${heatMs / 60_000} min przy tej cenie, szare = brak migawki (poza zasięgiem arkusza albo luka w zapisie).`,
-              `Book snapshot every ~5 s, 20 levels per side (beyond: “·” = out of range). Yellow: average order from ${compact(lotUsd)} USD, one large hand rather than a crowd. Map: the last ${heatMs / 60_000} min at this price, grey = no snapshot (out of the book's range or a gap in the recording).`
-            )}
-            {stepId === 'exact' &&
-              tr(
-                ' Przy kroku 1 USD arkusz sięga tylko kilkudziesięciu dolarów od ceny, więc mapa ma dane głównie przy ostatnich cenach.',
-                ' At the 1 USD step the book reaches only a few dozen dollars from the price, so the map has data mostly near recent prices.'
-              )}
+          // W wąskiej kolumnie obok wykresu dwie linie, całość w podpowiedzi (drabina dostaje więcej wierszy)
+          <p className={tightW ? 'line-clamp-2' : undefined} title={tightW ? note : undefined}>
+            {note}
           </p>
         )}
         {(narrow || compactW) && (
-          <p>
+          // W wąskiej kolumnie jedna linia, objaśnienie w podpowiedzi
+          <p className={tightW ? 'truncate' : undefined} title={tightW ? legend : undefined}>
             {(['eaten', 'moved', 'pulled'] as const).map((k, i) => (
               <span key={k} className={VERDICT[k].cls}>
                 {i > 0 && <span className="text-ink-3"> · </span>}
                 {VERDICT[k].icon} {VERDICT[k].short()}
               </span>
             ))}
-            <span className="text-ink-3"> {tr('(los ściany: na mapie w chwili jej końca, w wierszu ceny przez 2 min)', '(wall fate: on the map at the moment it ended, in the price row for 2 min)')}</span>
+            <span className="text-ink-3"> {legend}</span>
           </p>
         )}
       </div>

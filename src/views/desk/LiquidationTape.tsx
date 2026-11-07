@@ -12,13 +12,16 @@ const BUCKET = 5 * MIN;
 const timeFmt = new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit' });
 const bp = (v: number | null, signed = false) => (v === null ? DASH : signed ? fmtSigned(v, 0, ' bp') : `${Math.round(v)} bp`);
 
-/** Zrealizowane likwidacje śledzonych pozycji (potwierdzone fillami) — uzupełnienie mapy: co faktycznie zostało zlikwidowane. */
-export const LiquidationTape: React.FC<{ coverage: number | null }> = ({ coverage }) => {
+/**
+ * Zrealizowane likwidacje śledzonych pozycji (potwierdzone fillami) — uzupełnienie mapy: co faktycznie zostało zlikwidowane.
+ * `frame` — obramowanie sekcji: domyślnie linia nad nią (pod mapą likwidacji), osobno — własna karta.
+ */
+export const LiquidationTape: React.FC<{ coverage: number | null; frame?: string }> = ({ coverage, frame = 'border-t border-line pt-4' }) => {
   const { status, tape } = useLiqTape();
   if (status === 'unconfigured') return null;
 
   return (
-    <section className="flex flex-col gap-3 border-t border-line pt-4" aria-labelledby="liq-tape-title">
+    <section className={`flex flex-col gap-3 ${frame}`} aria-labelledby="liq-tape-title">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h3 id="liq-tape-title" className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium">
           {tr('Zrealizowane likwidacje · 24 h', 'Realised liquidations · 24 h')}

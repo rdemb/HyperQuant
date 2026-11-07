@@ -8,6 +8,7 @@ import type { ProStore } from '../../charts/pro/store/proStore';
 import { twapPlansFor, type PlanEntry } from '../../charts/pro/store/twapCache';
 import { numLang } from '../../ui/format';
 import { tr } from '../../i18n';
+import { BTC_ONLY, BTC_ONLY_TITLE } from './flowColumnModel';
 
 /**
  * TWAP-y w drodze: ciągi plasterków z taśmy na żywo połączone z planem konta z publicznego dziennika Hyperliquid.
@@ -136,13 +137,29 @@ export function useTwaps(store: ProStore, narrow: boolean): TwapData {
 
 export const TwapPanel: React.FC<{
   store: ProStore;
-  data: TwapData;
+  /** null — rynek bez planów TWAP ze skanera (inny niż BTC): komunikat zamiast liczb. */
+  data: TwapData | null;
   /** Nagłówek panelu (przełącznik zakładek na komputerze) i przyciski po prawej (powiększenie). */
   head: React.ReactNode;
   tools?: React.ReactNode;
   narrow: boolean;
   className: string;
 }> = ({ store, data, head, tools, narrow, className }) => {
+  const header = (
+    <div className="flex items-center gap-2 px-3 h-10 border-b border-line shrink-0">
+      {head}
+      {tools && <span className="ml-auto flex items-center">{tools}</span>}
+    </div>
+  );
+  if (!data)
+    return (
+      <section aria-label={tr('TWAP-y w drodze', 'TWAPs en route')} className={`@container flex flex-col min-h-0 bg-surface-1 ${className}`}>
+        {header}
+        <p className="px-3 py-4 font-mono text-[11px] text-ink-3" title={BTC_ONLY_TITLE}>
+          {BTC_ONLY}
+        </p>
+      </section>
+    );
   const { now, rows, shown, dust, buy, sell, net, known, share, auto, cache } = data;
 
   const status = (r: Row): React.ReactNode => {
@@ -165,10 +182,7 @@ export const TwapPanel: React.FC<{
   );
   return (
     <section aria-label={tr('TWAP-y w drodze', 'TWAPs en route')} className={`@container flex flex-col min-h-0 bg-surface-1 ${className}`}>
-      <div className="flex items-center gap-2 px-3 h-10 border-b border-line shrink-0">
-        {head}
-        {tools && <span className="ml-auto flex items-center">{tools}</span>}
-      </div>
+      {header}
       {/* Najbliższe 15 min według znanych planów: ile kupią, ile sprzedadzą, netto */}
       <div
         className="flex items-center gap-3 px-3 h-8 border-b border-line font-mono text-[11px] whitespace-nowrap shrink-0"
