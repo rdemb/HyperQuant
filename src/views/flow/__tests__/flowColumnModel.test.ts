@@ -46,19 +46,27 @@ describe('kolumna po zmianie adresu (otwarty już W sesji)', () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it('#flow przy kolumnie schowanej klawiszem D (≥ 1280 px): po hashchange kolumna widoczna, szuflada dla W sesji', () => {
+  it('#flow przy kolumnie schowanej klawiszem D (≥ 1280 px): po hashchange kolumna widoczna i szuflada, raz', () => {
     store.set(DOCK_KEY, '0');
-    expect(columnAfterHash('session')).toEqual({ dock: false, drawer: false });
     followHash(win('#flow'));
     expect(columnAfterHash('session')).toEqual({ dock: true, drawer: true });
-    // Prośba o szufladę jednorazowa
-    expect(columnAfterHash('session')).toEqual({ dock: true, drawer: false });
+    // Prośba jednorazowa: kolejna zmiana adresu niczego nie zmienia
+    expect(columnAfterHash('session')).toBeNull();
   });
 
-  it('Wykresy innej fazy czytają zapis kolumny, ale nie zabierają prośby o szufladę', () => {
+  it('zwykła zmiana adresu (bez #flow) nie czyta zapisu kolumny ponownie', () => {
+    store.set(DOCK_KEY, '0');
+    followHash(win('#charts?m=ETH'));
+    expect(columnAfterHash('session')).toBeNull();
+    store.set(DOCK_KEY, '1');
+    followHash(win('#before'));
+    expect(columnAfterHash('session')).toBeNull();
+  });
+
+  it('Wykresy innej fazy nie zabierają prośby: odbierają ją Wykresy W sesji', () => {
     store.set(DOCK_KEY, '0');
     followHash(win('#flow'));
-    expect(columnAfterHash('before')).toEqual({ dock: true, drawer: false });
+    expect(columnAfterHash('before')).toBeNull();
     expect(columnAfterHash('session')).toEqual({ dock: true, drawer: true });
   });
 });

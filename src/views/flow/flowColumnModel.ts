@@ -3,8 +3,9 @@ import { tr } from '../../i18n';
 import { takeFlowAsk } from '../../state/route';
 
 /**
- * Czyste pomocniki prawej kolumny DOM i taśmy (W sesji) i skrótów układów: zakres paneli skanera, szerokość, od
- * której kolumna jest przypięta obok wykresu, jej zapis i preferencje taśmy i drabiny (`hq.flow.v1`).
+ * Pomocniki prawej kolumny DOM i taśmy (W sesji): zakres paneli skanera, szerokość, od której kolumna jest przypięta obok
+ * wykresu, jej zapis (`hq.charts.dock.v1`) i odpowiedź na dawny adres #flow, preferencje taśmy i drabiny (`hq.flow.v1`).
+ * Zapis i adres czytają `loadDock` i `columnAfterHash`; reszta to czyste funkcje.
  */
 
 /**
@@ -57,11 +58,13 @@ export function saveDock(on: boolean): void {
 }
 
 /**
- * Kolumna po zmianie adresu w otwartym już widoku: zapis kolumny czytany ponownie (dawny adres #flow zapisuje „1”, także
- * gdy kolumnę schowano klawiszem D), a jednorazową prośbę o szufladę (640–1279 px) odbierają tylko Wykresy W sesji.
+ * Kolumna po zmianie adresu w otwartym już widoku: tylko gdy adres był dawnym #flow (jednorazowa prośba z `followHash`,
+ * odbierana wyłącznie przez Wykresy W sesji) — zapis kolumny czytany ponownie (#flow zapisuje „1”, także gdy kolumnę
+ * schowano klawiszem D) i szuflada (640–1279 px) otwarta. Inna zmiana adresu albo inna faza — null (bez zmian).
  */
-export function columnAfterHash(phase: PhaseId): { dock: boolean; drawer: boolean } {
-  return { dock: loadDock(), drawer: phase === 'session' && takeFlowAsk() };
+export function columnAfterHash(phase: PhaseId): { dock: boolean; drawer: true } | null {
+  if (phase !== 'session' || !takeFlowAsk()) return null;
+  return { dock: loadDock(), drawer: true };
 }
 
 // ───────────────────────── preferencje taśmy i drabiny ─────────────────────────
