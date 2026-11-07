@@ -36,10 +36,13 @@ import {
   restoreTab,
   savePhaseActive,
   saveTabs,
+  shortcutTab,
   snapshotTab,
   tabIntervals,
   tabLayout,
   tabName,
+  tabPhase,
+  tabShortcut,
   tabStation,
   tabsFull,
 } from '../chart/tabs';
@@ -259,14 +262,71 @@ describe('karty: zapis', () => {
   });
 
   it('aktywna karta każdej fazy: domyślnie pierwszy układ fazy (w sesji Kokpit), zapis i walidacja', () => {
-    expect(loadPhaseActive()).toEqual({ before: 'day-map', session: 'cockpit', after: 'review' });
+    const st = addTab(defaultTabs(), tab('k1'));
+    expect(loadPhaseActive(st)).toEqual({ before: 'day-map', session: 'cockpit', after: 'review' });
     savePhaseActive({ before: 'fuel', session: 'k1', after: 'review' });
     expect(localStorage.getItem('hq.charts.phaseActive.v1')).not.toBeNull();
-    expect(loadPhaseActive()).toEqual({ before: 'fuel', session: 'k1', after: 'review' });
+    expect(loadPhaseActive(st)).toEqual({ before: 'fuel', session: 'k1', after: 'review' });
     localStorage.setItem('hq.charts.phaseActive.v1', JSON.stringify({ before: 'cockpit', session: 'day-map', after: 7 }));
-    expect(loadPhaseActive()).toEqual({ before: 'day-map', session: 'cockpit', after: 'review' });
+    expect(loadPhaseActive(st)).toEqual({ before: 'day-map', session: 'cockpit', after: 'review' });
     localStorage.setItem('hq.charts.phaseActive.v1', '{zepsute');
-    expect(loadPhaseActive()).toEqual({ before: 'day-map', session: 'cockpit', after: 'review' });
+    expect(loadPhaseActive(st)).toEqual({ before: 'day-map', session: 'cockpit', after: 'review' });
+  });
+
+  it('aktywna karta fazy: każda karta z kart tej fazy (także kopia układu przed i po sesji); zamknięta — pierwszy układ fazy', () => {
+    const st = addTab(addTab(addTab(defaultTabs(), tab('k1')), tab('k2', 'day-map')), tab('k3', 'review'));
+    savePhaseActive({ before: 'k2', session: 'k1', after: 'k3' });
+    expect(loadPhaseActive(st)).toEqual({ before: 'k2', session: 'k1', after: 'k3' });
+    // Karta innej fazy nie jest aktywną kartą tej fazy
+    savePhaseActive({ before: 'k3', session: 'k2', after: 'k1' });
+    expect(loadPhaseActive(st)).toEqual({ before: 'day-map', session: 'cockpit', after: 'review' });
+    // Zamknięta karta (brak w kartach fazy) — pierwszy układ fazy
+    savePhaseActive({ before: 'k2', session: 'k1', after: 'k3' });
+    expect(loadPhaseActive(closeTab(closeTab(st, 'k2'), 'k3'))).toEqual({ before: 'day-map', session: 'k1', after: 'review' });
+    expect(loadPhaseActive(closeTab(st, 'k1')).session).toBe('cockpit');
+  });
+
+  it('przycisk lekcji zapamiętuje też aktywną kartę fazy układu', () => {
+    openStationTab('fuel');
+    expect(loadPhaseActive(loadTabs()).before).toBe('fuel');
+    openStationTab('big-hands');
+    expect(loadPhaseActive(loadTabs())).toEqual({ before: 'fuel', session: 'big-hands', after: 'review' });
+  });
+});
+
+describe('karty: skróty', () => {
+  // Bar: sześć układów, potem karty własne: kopia Mapy dnia, pusta, kopia Rozliczenia, dwie puste
+  const st = [tab('k1', 'day-map'), tab('k2'), tab('k3', 'review'), tab('k4'), tab('k5')].reduce(addTab, defaultTabs());
+
+  it('faza karty: faza wzorca, karta własna — sesja', () => {
+    expect(['day-map', 'fuel', 'cockpit', 'review'].map((id) => tabPhase(tab(id, id as TabPreset)))).toEqual(['before', 'before', 'session', 'after']);
+    expect([tabPhase(tab('k1', 'day-map')), tabPhase(tab('k2')), tabPhase(tab('k3', 'review'))]).toEqual(['before', 'session', 'after']);
+  });
+
+  it('Alt+1…6 — układy w kolejności faz, Alt+7…9 — karty własne w kolejności paska; dalej nic', () => {
+    expect([1, 2, 3, 4, 5, 6].map((d) => shortcutTab(st, d))).toEqual(['day-map', 'fuel', 'cockpit', 'auction-open', 'big-hands', 'review']);
+    expect([7, 8, 9].map((d) => shortcutTab(st, d))).toEqual(['k1', 'k2', 'k3']);
+    expect([0, 10, 1.5].map((d) => shortcutTab(st, d))).toEqual([null, null, null]);
+    // Bez kart własnych Alt+7…9 nic nie robi
+    expect([7, 8, 9].map((d) => shortcutTab(defaultTabs(), d))).toEqual([null, null, null]);
+    expect(shortcutTab(addTab(defaultTabs(), tab('k1')), 8)).toBeNull();
+  });
+
+  it('numer skrótu karty (podpowiedź na pasku): odwrotność shortcutTab', () => {
+    for (const t of st.tabs) {
+      const d = tabShortcut(st, t.id);
+      if (d !== null) expect(shortcutTab(st, d), t.id).toBe(t.id);
+    }
+    expect(['day-map', 'review', 'k1', 'k3', 'k4', 'k5', 'nie-ma'].map((id) => tabShortcut(st, id))).toEqual([1, 6, 7, 9, null, null, null]);
+  });
+
+  it('Alt+↑/↓ zostaje w kartach fazy', () => {
+    // W sesji: Kokpit 1m, Aukcja i otwarcie 5m, Wielkie ręce 5m i karty własne 5m — 4h (Mapa dnia) jest w innej fazie
+    const tf = (t: ChartTab) => tabIntervals(t, 1, false)[0];
+    const session = { tabs: phaseTabs(st, 'session'), active: 'cockpit' };
+    expect(ladderTab(session, tf, 1)).toBe('auction-open');
+    expect(ladderTab({ ...session, active: 'big-hands' }, tf, 1)).toBeNull();
+    expect(ladderTab({ tabs: phaseTabs(st, 'before'), active: 'fuel' }, tf, 1)).toBe('day-map');
   });
 });
 

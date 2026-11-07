@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Copy, type LucideIcon, Pencil, Plus, RotateCcw, X } from 'lucide-react';
-import { STATIONS, StationId, stationPanel } from './stations';
-import { ChartTab, MAX_TABS, TabsState, canClose, canRestore, presetName, presetQuestion, presetStation, tabName, tabsFull } from './tabs';
+import { type PanelSet, STATIONS, StationId, stationPanel } from './stations';
+import { ChartTab, MAX_TABS, TabsState, canClose, canRestore, presetName, presetQuestion, presetStation, tabName, tabShortcut, tabsFull } from './tabs';
 import { intervalById } from '../core/time';
 import { tr } from '../../../i18n';
 
@@ -69,10 +69,14 @@ const NameInput: React.FC<{ value: string; onDone: (name: string | null) => void
   );
 };
 
-/** Lista „Nowa karta”: pusta, kopia aktywnej i sześć układów (na komputerze w menu przycisku +, na telefonie w arkuszu). */
-export const NewTabList: React.FC<{ st: TabsState; onNew: (how: NewTab) => void }> = ({ st, onNew }) => {
+/**
+ * Lista „Nowa karta”: pusta, kopia aktywnej i układy (na komputerze w menu przycisku +, na telefonie w arkuszu).
+ * `presets` — układy do wyboru (układy fazy na ekranie), domyślnie wszystkie sześć.
+ */
+export const NewTabList: React.FC<{ st: TabsState; onNew: (how: NewTab) => void; presets?: readonly StationId[] }> = ({ st, onNew, presets }) => {
   const active = st.tabs.find((t) => t.id === st.active) ?? st.tabs[0];
   const full = tabsFull(st);
+  const layouts = presets ? STATIONS.filter((s) => presets.includes(s.id)) : STATIONS;
   const item = 'w-full flex items-start gap-2 text-left px-2 py-1.5 rounded-lg hover:bg-surface-3 disabled:opacity-40 disabled:hover:bg-transparent';
   return (
     <div className="flex flex-col gap-2 text-xs">
@@ -95,7 +99,7 @@ export const NewTabList: React.FC<{ st: TabsState; onNew: (how: NewTab) => void 
       </div>
       <div className="flex flex-col">
         <div className="px-2 pb-1 text-[10px] uppercase tracking-[0.08em] text-ink-3 font-medium">{tr('Układy: nowa karta z wzorca', 'Layouts: a new tab from the preset')}</div>
-        {STATIONS.map((s) => (
+        {layouts.map((s) => (
           <button key={s.id} type="button" disabled={full} title={s.question} className={item} onClick={() => onNew(s.id)}>
             <span className="min-w-0 flex-1">
               <span className="flex items-baseline gap-2">
@@ -114,8 +118,15 @@ export const NewTabList: React.FC<{ st: TabsState; onNew: (how: NewTab) => void 
 /**
  * Pasek kart układów nad wykresami (komputer i tablet): kliknięcie przełącza, dwuklik zmienia nazwę, prawy przycisk
  * otwiera menu karty, środkowy zamyka, przeciągnięcie zmienia kolejność. Podpis karty to interwały jej wykresów.
+ * `tabs` — karty na pasku (pod-karty fazy dnia na ekranie), domyślnie wszystkie; `presets` — układy w menu „+”.
  */
-export const TabsBar: React.FC<{ st: TabsState; tf: (t: ChartTab) => string; a: TabActions }> = ({ st, tf, a }) => {
+export const TabsBar: React.FC<{ st: TabsState; tf: (t: ChartTab) => string; a: TabActions; tabs?: readonly ChartTab[]; presets?: readonly StationId[] }> = ({
+  st,
+  tf,
+  a,
+  tabs = st.tabs,
+  presets,
+}) => {
   const [editing, setEditing] = useState<string | null>(null);
   const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const [adding, setAdding] = useState(false);
@@ -143,9 +154,10 @@ export const TabsBar: React.FC<{ st: TabsState; tf: (t: ChartTab) => string; a: 
         }}
         className="flex items-center gap-1 min-w-0 overflow-x-auto [scrollbar-width:none]"
       >
-        {st.tabs.map((t, i) => {
+        {tabs.map((t, i) => {
           const on = t.id === st.active;
           const name = tabName(t);
+          const key = tabShortcut(st, t.id);
           return (
             <div
               key={t.id}
@@ -163,7 +175,8 @@ export const TabsBar: React.FC<{ st: TabsState; tf: (t: ChartTab) => string; a: 
               }}
               onDrop={(e) => {
                 e.preventDefault();
-                if (drag && drag.id !== t.id) a.onMove(drag.id, i);
+                // Miejsce na całym pasku (na ekranie są tylko karty fazy)
+                if (drag && drag.id !== t.id) a.onMove(drag.id, st.tabs.findIndex((x) => x.id === t.id));
                 setDrag(null);
               }}
               onDragEnd={() => setDrag(null)}
@@ -190,7 +203,7 @@ export const TabsBar: React.FC<{ st: TabsState; tf: (t: ChartTab) => string; a: 
                   type="button"
                   role="tab"
                   aria-selected={on}
-                  title={`${name} · ${tf(t)}${i < 9 ? ` (Alt+${i + 1})` : ''} — ${tr('dwuklik: nazwa, prawy przycisk: menu', 'double-click: rename, right-click: menu')}`}
+                  title={`${name} · ${tf(t)}${key !== null ? ` (Alt+${key})` : ''} — ${tr('dwuklik: nazwa, prawy przycisk: menu', 'double-click: rename, right-click: menu')}`}
                   onClick={() => !on && a.onSelect(t.id)}
                   onDoubleClick={() => setEditing(t.id)}
                   className="flex items-baseline gap-1.5 h-full pl-2.5 pr-1 min-w-0"
@@ -229,6 +242,7 @@ export const TabsBar: React.FC<{ st: TabsState; tf: (t: ChartTab) => string; a: 
           <div className="absolute left-0 top-9 z-40 w-[min(360px,calc(100vw-32px))] max-h-[min(560px,calc(100dvh-160px))] overflow-y-auto bg-surface-2 border border-line-strong rounded-xl p-1.5 shadow-2xl">
             <NewTabList
               st={st}
+              presets={presets}
               onNew={(how) => {
                 setAdding(false);
                 a.onNew(how);
@@ -278,17 +292,61 @@ export const TabsBar: React.FC<{ st: TabsState; tf: (t: ChartTab) => string; a: 
 };
 
 /**
+ * Przełącznik zestawu paneli układu (np. Aukcja | Absorpcja w układzie Aukcja i otwarcie): w wierszu paska kart na
+ * komputerze, nad wykresem na telefonie (cel dotyku 44 px). Podpisy to nazwy zestawów.
+ */
+export const PanelSetSwitch: React.FC<{ sets: readonly PanelSet[]; value: string; onChange: (id: string) => void }> = ({ sets, value, onChange }) => (
+  <div
+    role="radiogroup"
+    aria-label={tr('Zestaw paneli pod wykresem', 'Panel set below the chart')}
+    // Strzałki jak w natywnej grupie radio (jak w Segmented)
+    onKeyDown={(e) => {
+      if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+      e.preventDefault();
+      const i = sets.findIndex((s) => s.id === value);
+      onChange(sets[(i + (e.key === 'ArrowRight' ? 1 : sets.length - 1)) % sets.length].id);
+    }}
+    className="shrink-0 inline-flex items-center gap-0.5 bg-page border border-line rounded-lg p-0.5"
+  >
+    {sets.map((s) => {
+      const on = s.id === value;
+      return (
+        <button
+          key={s.id}
+          type="button"
+          role="radio"
+          aria-checked={on}
+          tabIndex={on ? 0 : -1}
+          title={tr(`Panele pod wykresem: ${s.name}`, `Panels below the chart: ${s.name}`)}
+          onClick={() => !on && onChange(s.id)}
+          className={`min-h-11 sm:min-h-0 sm:h-7 px-3 sm:px-2.5 rounded-md text-xs font-medium whitespace-nowrap transition-colors duration-150 ${
+            on ? 'bg-surface-3 text-ink-1 shadow-[inset_0_0_0_1px_var(--color-line-strong)]' : 'text-ink-3 hover:text-ink-1'
+          }`}
+        >
+          {s.name}
+        </button>
+      );
+    })}
+  </div>
+);
+
+/**
  * Karty na telefonie (arkusz na cały ekran): lista kart z przełączeniem, nazwą, kopią i zamknięciem, pod nią nowe karty.
  * Szybkie przełączanie zostaje w liście w pasku wykresu.
  */
-/** `activeExtra` — treść pod wierszem aktywnej karty (karta uczciwości szablonu). */
-export const TabsSheet: React.FC<{ st: TabsState; tf: (t: ChartTab) => string; a: TabActions; onClose: () => void; activeExtra?: React.ReactNode }> = ({
-  st,
-  tf,
-  a,
-  onClose,
-  activeExtra,
-}) => {
+/**
+ * `activeExtra` — treść pod wierszem aktywnej karty (karta uczciwości szablonu); `tabs` — karty na liście (karty fazy
+ * dnia na ekranie), domyślnie wszystkie; `presets` — układy w „Nowa karta”.
+ */
+export const TabsSheet: React.FC<{
+  st: TabsState;
+  tf: (t: ChartTab) => string;
+  a: TabActions;
+  onClose: () => void;
+  activeExtra?: React.ReactNode;
+  tabs?: readonly ChartTab[];
+  presets?: readonly StationId[];
+}> = ({ st, tf, a, onClose, activeExtra, tabs = st.tabs, presets }) => {
   const [editing, setEditing] = useState<string | null>(null);
   const icon = 'grid place-items-center w-9 h-9 rounded-lg text-ink-3 hover:text-ink-1 hover:bg-surface-3 disabled:opacity-30';
   return (
@@ -307,7 +365,7 @@ export const TabsSheet: React.FC<{ st: TabsState; tf: (t: ChartTab) => string; a
           )}
         </p>
         <ul className="flex flex-col gap-1">
-          {st.tabs.map((t) => {
+          {tabs.map((t) => {
             const on = t.id === st.active;
             return (
               <React.Fragment key={t.id}>
@@ -358,6 +416,7 @@ export const TabsSheet: React.FC<{ st: TabsState; tf: (t: ChartTab) => string; a
           <div className="px-2 pt-1 pb-2 text-[10px] uppercase tracking-[0.08em] text-ink-3 font-medium">{tr('Nowa karta', 'New tab')}</div>
           <NewTabList
             st={st}
+            presets={presets}
             onNew={(how) => {
               a.onNew(how);
               onClose();

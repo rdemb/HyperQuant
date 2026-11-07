@@ -5,6 +5,7 @@ import type { MakerTop } from '../../charts/pro/core/makers';
 import type { ProStore } from '../../charts/pro/store/proStore';
 import { numLang } from '../../ui/format';
 import { tr } from '../../i18n';
+import { BTC_ONLY, BTC_ONLY_TITLE } from './flowColumnModel';
 
 /**
  * Kto przyjmuje uderzenia: Hyperliquid podaje przy każdej transakcji konto makera i biorcy, więc widać, czy płynność
@@ -131,7 +132,8 @@ const Spark: React.FC<{ xs: number[]; usual: number; cls: string }> = ({ xs, usu
 };
 
 export const WhoPanel: React.FC<{
-  data: WhoData;
+  /** null — rynek bez danych skanera kont (inny niż BTC): komunikat zamiast liczb. */
+  data: WhoData | null;
   highlight: string;
   onHighlight: (key: string) => void;
   /** Nagłówek zamiast tytułu (przełącznik zakładek na komputerze) i przyciski po prawej (powiększenie). */
@@ -142,6 +144,22 @@ export const WhoPanel: React.FC<{
   narrow: boolean;
   className: string;
 }> = ({ data, highlight, onHighlight, head, tools, wide, narrow, className }) => {
+  const header = (
+    <div className="flex items-center gap-2 px-3 h-10 border-b border-line shrink-0">
+      {head ?? <span className="text-[11px] uppercase tracking-[0.08em] text-ink-2 font-medium truncate">{tr('Kto przyjmuje uderzenia', 'Who absorbs the hits')}</span>}
+      <span className="ml-auto font-mono text-[10px] text-ink-3">15 min</span>
+      {tools}
+    </div>
+  );
+  if (!data)
+    return (
+      <section aria-label={tr('Kto przyjmuje uderzenia', 'Who absorbs the hits')} className={`flex flex-col min-h-0 bg-surface-1 ${className}`}>
+        {header}
+        <p className="px-3 py-4 font-mono text-[11px] text-ink-3" title={BTC_ONLY_TITLE}>
+          {BTC_ONLY}
+        </p>
+      </section>
+    );
   // Powiększenie i telefon: lista kont i przebieg z godziny (telefon: jedna kolumna, pięć kont)
   const list = wide || narrow;
   const line = (id: keyof WhoData, label: string, hint: string) => {
@@ -232,11 +250,7 @@ export const WhoPanel: React.FC<{
   );
   return (
     <section aria-label={tr('Kto przyjmuje uderzenia', 'Who absorbs the hits')} className={`flex flex-col min-h-0 bg-surface-1 ${className}`}>
-      <div className="flex items-center gap-2 px-3 h-10 border-b border-line shrink-0">
-        {head ?? <span className="text-[11px] uppercase tracking-[0.08em] text-ink-2 font-medium truncate">{tr('Kto przyjmuje uderzenia', 'Who absorbs the hits')}</span>}
-        <span className="ml-auto font-mono text-[10px] text-ink-3">15 min</span>
-        {tools}
-      </div>
+      {header}
       <div className={`flex-1 min-h-0 overflow-y-auto [scrollbar-width:thin] ${wide ? 'grid grid-cols-3 content-start divide-x divide-line' : 'divide-y divide-line'}`}>
         {line('bid', tr('Przyjmują sprzedaż (bidy)', 'Absorb selling (bids)'), tr('Makerzy kupujący: zlecenia w arkuszu po stronie bidów, w które weszli sprzedający', 'Buying makers: resting bid orders that sellers hit'))}
         {line('ask', tr('Przyjmują kupno (aski)', 'Absorb buying (asks)'), tr('Makerzy sprzedający: zlecenia w arkuszu po stronie asków, w które weszli kupujący', 'Selling makers: resting ask orders that buyers lifted'))}

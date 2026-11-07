@@ -1,5 +1,5 @@
 import { ChartLayout, ChartSettings, DEFAULT_SETTINGS, NARROW_PATCH, isNarrow, loadSettings, migrateSaved, panelKey, parseLayout, parseSettings, settingsJson } from './settings';
-import { PHASE_LAYOUTS, PhaseId, STATIONS, Station, StationId, loadStationLayout, stationById, stationKey, stationKeys, stationPanel } from './stations';
+import { LAYOUT_ORDER, PHASE_LAYOUTS, PhaseId, STATIONS, Station, StationId, loadStationLayout, stationById, stationKey, stationKeys, stationPanel } from './stations';
 import { LEGACY_ACTIVE_KEY, LEGACY_NARROW, LEGACY_START_KEYS, LEGACY_STATIONS, LEGACY_TEMPLATES, LEGACY_TEMPLATE_PHONE, LegacyStation } from './legacyPresets';
 import { INTERVALS } from '../core/time';
 import type { Market } from '../store/proStore';
@@ -196,13 +196,19 @@ export function openPreset(st: TabsState, preset: StationId): TabsState {
   return found ? { ...st, active: found.id } : st;
 }
 
-/** Otwiera w Wykresach kartę układu (przycisk w lekcjach i atlasie, przed przejściem do Wykresów). */
+/**
+ * Otwiera w Wykresach kartę układu (przycisk w lekcjach i atlasie, przed przejściem do Wykresów): karta staje się
+ * aktywna i zostaje aktywną kartą fazy swojego układu.
+ */
 export function openStationTab(preset: StationId): void {
-  saveTabs(openPreset(loadTabs(), preset));
+  const st = openPreset(loadTabs(), preset);
+  saveTabs(st);
+  const t = activeTab(st);
+  savePhaseActive({ ...loadPhaseActive(st), [tabPhase(t)]: t.id });
 }
 
 /** Faza karty: faza jej wzorca (karta układu i jej kopia z „+”), karta własna — sesja. */
-const tabPhase = (t: ChartTab): PhaseId => (t.preset === 'own' ? 'session' : stationById(t.preset).phase);
+export const tabPhase = (t: ChartTab): PhaseId => (t.preset === 'own' ? 'session' : stationById(t.preset).phase);
 
 /**
  * Karty fazy dnia: najpierw układy fazy, po nich pozostałe karty tej fazy w kolejności paska — kopie układów fazy,
@@ -227,10 +233,10 @@ const PHASE_KEY = 'hq.charts.phaseActive.v1';
 const PHASE_DEFAULT: Record<PhaseId, string> = { before: PHASE_LAYOUTS.before[0], session: DEFAULT_ACTIVE, after: PHASE_LAYOUTS.after[0] };
 
 /**
- * Ostatnio wybrana karta każdej fazy. Przed i po sesji — tylko układy tej fazy, w sesji także karta własna (czy
- * jeszcze istnieje, sprawdza wywołujący); błędna wartość → pierwszy układ fazy (w sesji Kokpit).
+ * Ostatnio wybrana karta każdej fazy: dowolna karta z `phaseTabs(st, faza)` (układ fazy, kopia układu tej fazy, w
+ * sesji także karta własna). Karta zamknięta, z innej fazy albo błędny zapis → pierwszy układ fazy (w sesji Kokpit).
  */
-export function loadPhaseActive(): Record<PhaseId, string> {
+export function loadPhaseActive(st: TabsState): Record<PhaseId, string> {
   let r: Record<string, unknown> = {};
   try {
     const v: unknown = JSON.parse(read(PHASE_KEY) ?? 'null');
@@ -240,13 +246,40 @@ export function loadPhaseActive(): Record<PhaseId, string> {
   }
   const pick = (p: PhaseId): string => {
     const v = r[p];
-    const ok = typeof v === 'string' && ID_RE.test(v) && ((PHASE_LAYOUTS[p] as readonly string[]).includes(v) || (p === 'session' && !LAYOUT_IDS.has(v)));
-    return ok ? (v as string) : PHASE_DEFAULT[p];
+    return typeof v === 'string' && phaseTabs(st, p).some((t) => t.id === v) ? v : PHASE_DEFAULT[p];
   };
   return { before: pick('before'), session: pick('session'), after: pick('after') };
 }
 
 export const savePhaseActive = (p: Record<PhaseId, string>): void => write(PHASE_KEY, JSON.stringify(p));
+
+// ───────────────────────── skróty kart ─────────────────────────
+
+/** Karty własne (spoza sześciu kart układów) w kolejności paska. */
+export const ownTabs = (st: TabsState): ChartTab[] => st.tabs.filter((t) => !isLayoutTab(t));
+
+/** Karty własne pod Alt+7…9. */
+const OWN_FIRST = LAYOUT_ORDER.length + 1;
+const OWN_KEYS = 3;
+
+/**
+ * Karta pod Alt+`digit`: 1…6 — układy w kolejności faz (przed sesją, w sesji, po sesji), 7…9 — pierwsze trzy karty
+ * własne w kolejności paska (także kopie układów przed i po sesji). Inaczej (albo bez takiej karty) — null.
+ */
+export function shortcutTab(st: TabsState, digit: number): string | null {
+  if (!Number.isInteger(digit) || digit < 1) return null;
+  if (digit <= LAYOUT_ORDER.length) return LAYOUT_ORDER[digit - 1];
+  if (digit >= OWN_FIRST + OWN_KEYS) return null;
+  return ownTabs(st)[digit - OWN_FIRST]?.id ?? null;
+}
+
+/** Numer skrótu Alt+n karty `id` (podpowiedź na pasku); bez skrótu — null. */
+export function tabShortcut(st: TabsState, id: string): number | null {
+  const layout = LAYOUT_ORDER.indexOf(id as StationId);
+  if (layout >= 0) return layout + 1;
+  const own = ownTabs(st).findIndex((t) => t.id === id);
+  return own >= 0 && own < OWN_KEYS ? OWN_FIRST + own : null;
+}
 
 // ───────────────────────── zapis paneli karty ─────────────────────────
 

@@ -125,6 +125,9 @@ const noticePending = (): boolean => {
   }
 };
 
+/** Od tej szerokości karty (px) przełączniki i narzędzia mieszczą się w jednym wierszu paska. */
+const ONE_ROW_MIN_W = 1100;
+
 const PHONE_TABS: { id: PhoneTab; label: string }[] = [
   { id: 'chart', label: tr('Wykres', 'Chart') },
   { id: 'tape', label: tr('Taśma', 'Tape') },
@@ -245,6 +248,17 @@ export const ProChart: React.FC<{
   }, [panel, inReplay, settings]);
   const ctxRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
+  // Szerokość karty wykresu (układ paska narzędzi)
+  const [cardW, setCardW] = useState(0);
+  useEffect(() => {
+    const el = cardRef.current;
+    if (!el) return;
+    const measure = () => setCardW(el.clientWidth);
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    measure();
+    return () => ro.disconnect();
+  }, []);
   const hostRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const ctrlRef = useRef<ProChartController | null>(null);
@@ -590,7 +604,9 @@ export const ProChart: React.FC<{
   };
 
   const iv = intervalById(settings.interval);
-  const twoRow = layout > 1;
+  // Pasek narzędzi w dwóch wierszach: układ kilku wykresów albo wąski wykres (np. obok kolumny DOM i taśmy), w którym
+  // przełączniki w jednym wierszu z narzędziami nachodziły na przycisk Wskaźniki
+  const twoRow = layout > 1 || (cardW > 0 && cardW < ONE_ROW_MIN_W);
   // Wykres pobiera dane Binance i Bybit (panele giełd albo ich grupa w tablicy) — tylko wtedy Stan rynku je porównuje
   const shown = shownSettings(settings, narrow, layout, inReplay);
   const venueOn = shown.showVenueCvd || shown.showVenueOi || (shown.showStats && shown.statGroups.some((g) => VENUE_GROUPS.includes(g)));
@@ -1701,8 +1717,10 @@ const KEY_GROUPS: { title: string; keys: [string, string][] }[] = [
   {
     title: tr('Karty układów', 'Layout tabs'),
     keys: [
-      ['Alt+1 … 9', tr('Karta o tym numerze na pasku (9 — ostatnia)', 'The tab with this number on the bar (9 — the last one)')],
-      ['Alt+↑ / Alt+↓', tr('Karta z wyższym / niższym interwałem, ta sama chwila na wykresie', 'The tab with the higher / lower timeframe, same moment on the chart')],
+      ['Alt+1 … 6', tr('Układ w kolejności faz: Mapa dnia, Paliwo, Kokpit, Aukcja, Wielkie ręce, Rozliczenie', 'Layout in phase order: Day map, Fuel, Cockpit, Auction, Big hands, Day review')],
+      ['Alt+7 … 9', tr('Pierwsze trzy karty własne', 'The first three tabs of your own')],
+      ['Alt+↑ / Alt+↓', tr('Karta tej fazy z wyższym / niższym interwałem, ta sama chwila na wykresie', 'The tab of this phase with the higher / lower timeframe, same moment on the chart')],
+      ['D', tr('Kolumna DOM i taśmy obok wykresu (W sesji, od 1280 px)', 'The DOM and tape column next to the chart (In session, from 1280 px)')],
       [tr('Dwuklik na karcie', 'Double-click a tab'), tr('Zmień nazwę', 'Rename')],
       [tr('Prawy przycisk na karcie', 'Right-click a tab'), tr('Kopia, wzorzec, zamknięcie', 'Copy, preset, close')],
       [tr('Przeciągnij kartę', 'Drag a tab'), tr('Zmień kolejność', 'Reorder')],

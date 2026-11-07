@@ -47,6 +47,12 @@ export const PHASE_LAYOUTS: Record<PhaseId, readonly StationId[]> = {
   after: ['review'],
 };
 
+/** Fazy dnia w kolejności. */
+export const PHASES: readonly PhaseId[] = ['before', 'session', 'after'];
+
+/** Wszystkie układy w kolejności faz (skróty Alt+1…6). */
+export const LAYOUT_ORDER: readonly StationId[] = PHASES.flatMap((p) => PHASE_LAYOUTS[p]);
+
 /** Dawne stacje robocze (karty, linki powtórki z bloga i lekcji) → układ, który przejął ich pytanie. */
 export const LEGACY_STATION: Readonly<Record<string, StationId>> = {
   start: 'cockpit',
@@ -276,6 +282,32 @@ export function panelSetPanel(st: Station, setId: string, panel: number, narrow:
   const base = stationPanel(st, panel, narrow);
   const set = st.panelSets?.find((x) => x.id === setId);
   return set && panel === 0 ? { ...base, ...set.patch, indicators: set.indicators } : base;
+}
+
+/** Zestaw paneli w użyciu: z ustawień pierwszego panelu, bez zapisu albo nieznany — pierwszy; układ bez zestawów — null. */
+export function activePanelSet(st: Pick<Station, 'panelSets'>, s: Pick<ChartSettings, 'panelSet'>): PanelSet | null {
+  const sets = st.panelSets;
+  if (!sets || sets.length === 0) return null;
+  return sets.find((x) => x.id === s.panelSet) ?? sets[0];
+}
+
+/**
+ * Przełączenie zestawu paneli w ustawieniach pierwszego panelu `s`: wskaźniki poprzedniego zestawu wychodzą, wchodzą
+ * wskaźniki nowego (bez powtórzeń), pola z łatki poprzedniego zestawu wracają do wzorca układu, potem łatka nowego.
+ * Reszta zmian użytkownika (rynek, interwał, warstwy, własne wskaźniki) zostaje. Ten sam lub nieznany zestaw — `s`.
+ */
+export function switchPanelSet(st: Station, s: ChartSettings, to: string, narrow: boolean): ChartSettings {
+  const from = activePanelSet(st, s);
+  const next = st.panelSets?.find((x) => x.id === to);
+  if (!from || !next || next.id === from.id) return s;
+  const base = stationPanel(st, 0, narrow);
+  const out: Record<string, unknown> = { ...s };
+  for (const k of Object.keys(from.patch ?? {}) as (keyof ChartSettings)[]) out[k] = base[k];
+  Object.assign(out, next.patch);
+  const gone = new Set(from.indicators.map((x) => x.id));
+  const kept = s.indicators.filter((x) => !gone.has(x.id));
+  const have = new Set(kept.map((x) => x.id));
+  return { ...(out as unknown as ChartSettings), indicators: [...kept, ...next.indicators.filter((x) => !have.has(x.id))], panelSet: next.id };
 }
 
 // Pamięć przeglądarki bywa niedostępna (prywatne okno, zablokowane dane strony) — układy działają wtedy do końca sesji

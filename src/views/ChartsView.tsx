@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { CircleHelp, RotateCcw, X } from 'lucide-react';
+import { CircleHelp, PanelRightClose, PanelRightOpen, RotateCcw, X } from 'lucide-react';
 import { ProChart, subscribeNarrow } from '../charts/pro/ProChart';
-import { ChartLayout, isNarrow, loadSettings } from '../charts/pro/chart/settings';
-import { clearStation, saveStationLayout, stationKey, stationPanel } from '../charts/pro/chart/stations';
+import { ChartLayout, isNarrow, loadSettings, saveSettings } from '../charts/pro/chart/settings';
+import { PHASE_LAYOUTS, type PhaseId, activePanelSet, clearStation, saveStationLayout, stationKey, stationPanel, switchPanelSet } from '../charts/pro/chart/stations';
 import { carryViewTime } from '../charts/pro/chart/controller';
 import {
   ChartTab,
@@ -17,31 +17,38 @@ import {
   dismissRestoreOffer,
   insertTab,
   ladderTab,
+  loadPhaseActive,
   loadTabs,
   migrateTabsV2,
   moveTab,
   newTabId,
   openCoin,
+  phaseTabs,
   presetName,
   presetQuestion,
   renameTab,
   restoreLegacyStart,
   restoreTab,
+  savePhaseActive,
   saveTabs,
+  shortcutTab,
   snapshotTab,
   tabIntervals,
   tabLayout,
   tabName,
+  tabPhase,
   tabStation,
   tabsFull,
 } from '../charts/pro/chart/tabs';
-import { NewTab, TabActions, TabsBar, TabsSheet, tfLabel } from '../charts/pro/chart/TabsBar';
+import { NewTab, PanelSetSwitch, TabActions, TabsBar, TabsSheet, tfLabel } from '../charts/pro/chart/TabsBar';
 import { isTyping } from '../charts/pro/draw/tools';
 import { type Market, storeFor } from '../charts/pro/store/proStore';
 import { HonestyButton, HonestyCard, honestyTemplate } from '../charts/pro/chart/HonestyCard';
 import { parseReplayLink, replayHash } from '../charts/pro/replay/link';
 import { ReplayView } from '../charts/pro/replay/ReplayView';
 import { tr } from '../i18n';
+import { FlowColumn } from './flow/FlowColumn';
+import { DOCK_MIN_W, DOCK_W, dockAllowed, loadDock, saveDock, shortcutTarget } from './flow/flowColumnModel';
 
 const WIDE = '(min-width: 1024px)';
 
@@ -53,19 +60,50 @@ const subscribeWide = (fn: () => void) => {
 
 const isWide = () => window.matchMedia(WIDE).matches;
 
+const DOCK_QUERY = `(min-width: ${DOCK_MIN_W}px)`;
+const subscribeDock = (fn: () => void) => {
+  const mq = window.matchMedia(DOCK_QUERY);
+  mq.addEventListener('change', fn);
+  return () => mq.removeEventListener('change', fn);
+};
+const isDockWide = () => dockAllowed(window.innerWidth);
+
+/** Karty na start: aktywna karta fazy `phase` (ostatnio wybrana w tej fazie albo jej pierwszy układ). */
+function initialTabs(phase: PhaseId): TabsState {
+  const st = loadTabs();
+  const id = loadPhaseActive(st)[phase];
+  if (id === st.active) return st;
+  const next = { ...st, active: id };
+  saveTabs(next);
+  return next;
+}
+
 /** Pozycja listy kart na telefonie, która otwiera arkusz zarządzania kartami. */
 const MANAGE = '__tabs';
 /** Jak długo widać „Cofnij” po zamknięciu karty. */
 const UNDO_MS = 8000;
 
+export interface ChartsViewProps {
+  /** Faza dnia na ekranie: na pasku jej karty (`phaseTabs`), w sesji obok wykresu prawa kolumna DOM i taśmy. */
+  phase: PhaseId;
+  /**
+   * Przejście do innej fazy (Alt+1…9 do karty innej fazy, nowa karta innej fazy): widok faz w aplikacji. Bez niego
+   * (zanim pasek główny ma fazy) Wykresy same pokazują karty tej fazy.
+   */
+  onPhase?: (phase: PhaseId) => void;
+  /** Rynek pierwszego wykresu aktywnej karty (pasek Pulse nad wykresem na telefonie). */
+  onMarket?: (coin: Market) => void;
+}
+
 /**
  * Wykresy: świece i footprint perpów (BTC, ETH, SOL, HYPE) na silniku TradingView Lightweight Charts z danymi Hyperliquid
- * na żywo. Nad wykresami karty układów (na telefonie lista w pasku wykresu): każda karta ma własny układ 1, 2 albo 4
- * wykresów, a każdy wykres własny interwał, wskaźniki i warstwy. Przełączenie karty przenosi rynek i chwilę widoku
- * (wykres przewinięty w historię otwiera się w nowej karcie w tym samym miejscu), Alt+↑/↓ przechodzi do karty z wyższym
- * albo niższym interwałem. Link powtórki (#charts?replay=…) pokazuje zamiast nich nagranie z serwera.
+ * na żywo. Nad wykresami karty układów fazy dnia (na telefonie lista w pasku wykresu): każda karta ma własny układ 1, 2
+ * albo 4 wykresów, a każdy wykres własny interwał, wskaźniki i warstwy. Przełączenie karty przenosi rynek i chwilę widoku
+ * (wykres przewinięty w historię otwiera się w nowej karcie w tym samym miejscu). Alt+1…6 otwiera układ (także innej
+ * fazy), Alt+7…9 karty własne, Alt+↑/↓ kartę fazy z wyższym albo niższym interwałem. W sesji od 1280 px obok wykresu
+ * stoi kolumna DOM i taśmy (klawisz D chowa i pokazuje). Link powtórki (#charts?replay=…) pokazuje nagranie z serwera.
  */
-const ChartsView: React.FC = () => {
+const ChartsView: React.FC<ChartsViewProps> = ({ phase, onPhase, onMarket }) => {
   // Migracja kart sprzed układów faz przed pierwszym odczytem kart; pasek przywrócenia dawnego Startu raz
   const [restoreOffer, setRestoreOffer] = useState(() => {
     try {
@@ -74,9 +112,15 @@ const ChartsView: React.FC = () => {
       return false;
     }
   });
-  const [tabs, setTabsState] = useState<TabsState>(loadTabs);
+  // Faza na ekranie: z `phase`, a bez `onPhase` zmieniana tutaj (skróty do układu innej fazy)
+  const [ownPhase, setOwnPhase] = useState<PhaseId>(phase);
+  useEffect(() => setOwnPhase(phase), [phase]);
+  const shown = onPhase ? phase : ownPhase;
+  const goPhase = (p: PhaseId) => (onPhase ? onPhase(p) : setOwnPhase(p));
+  const [tabs, setTabsState] = useState<TabsState>(() => initialTabs(phase));
   const tab = activeTab(tabs);
   const station = tabStation(tab);
+  const visible = phaseTabs(tabs, shown);
   const [layout, setLayoutState] = useState<ChartLayout>(() => tabLayout(tab));
   // Zmiana karty i przywrócenie wzorca tworzą wykresy od nowa; rynek bieżącego wykresu przechodzi do nowych
   const [gen, setGen] = useState(0);
@@ -120,11 +164,26 @@ const ChartsView: React.FC = () => {
   }, [undo]);
 
   const n = wide ? layout : 1;
-  // Karta uczciwości szablonu: rynek i interwał pierwszego wykresu karty (odczyt zapisu; zapis wykresu odświeża widok)
+  // Ustawienia pierwszego wykresu karty z zapisu (wykres zapisuje je przy każdej zmianie i odświeża ten widok):
+  // rynek kolumny DOM i taśmy, karta uczciwości szablonu i zestaw paneli
+  const first = loadSettings(stationKey(tab.id, 0), stationPanel(station, 0, narrow));
   const honestyId = honestyTemplate(tab.preset);
-  const first = honestyId ? loadSettings(stationKey(tab.id, 0), stationPanel(station, 0, narrow)) : null;
+  const panelSet = activePanelSet(station, first);
   /** Podpis karty: interwały jej wykresów widocznych na tym ekranie (aktywna — bieżący układ). */
   const tf = (t: ChartTab) => tfLabel(tabIntervals(t, wide ? (t.id === tab.id ? layout : tabLayout(t)) : 1, narrow));
+
+  // Prawa kolumna DOM i taśmy: w sesji, od 1280 px, dopóki użytkownik jej nie schowa (klawisz D, zapis)
+  const [dock, setDock] = useState(loadDock);
+  const dockWide = useSyncExternalStore(subscribeDock, isDockWide);
+  const dockable = shown === 'session' && dockWide && !narrow;
+  const docked = dockable && dock;
+  const toggleDock = () => {
+    setDock(!dock);
+    saveDock(!dock);
+  };
+  useEffect(() => {
+    onMarket?.(first.coin);
+  }, [first.coin, onMarket]);
 
   const save = (next: TabsState) => {
     setTabsState(next);
@@ -132,7 +191,8 @@ const ChartsView: React.FC = () => {
   };
   /**
    * Nowy stan kart z inną aktywną kartą (albo przywróconym wzorcem): wykresy od nowa z rynkiem i chwilą bieżącej karty.
-   * `keepSaved` — karta otwiera się z rynkiem ze swojego zapisu (przywrócony dawny Start).
+   * `keepSaved` — karta otwiera się z rynkiem ze swojego zapisu (przywrócony dawny Start). Karta zostaje aktywną kartą
+   * swojej fazy; karta innej fazy (skrót, nowa karta) przenosi widok do tej fazy.
    */
   const open = (next: TabsState, restore = false, keepSaved = false) => {
     const t = activeTab(next);
@@ -143,11 +203,37 @@ const ChartsView: React.FC = () => {
     save(next);
     setLayoutState(tabLayout(t));
     setGen((g) => g + 1);
+    const p = tabPhase(t);
+    savePhaseActive({ ...loadPhaseActive(next), [p]: t.id });
+    if (p !== shown) goPhase(p);
   };
   const select = (id: string) => id !== tab.id && open({ ...tabs, active: id });
+  // Inna faza na ekranie (z `phase`): jej ostatnio wybrana karta
+  useEffect(() => {
+    if (!phaseTabs(tabs, shown).some((t) => t.id === tabs.active)) open({ ...tabs, active: loadPhaseActive(tabs)[shown] });
+    // Tylko przy zmianie fazy; karty i open z tego samego renderu
+  }, [shown]);
+  /** Zestaw paneli układu: wykresy od nowa z ustawieniami pierwszego panelu po przełączeniu (zmiany użytkownika zostają). */
+  const pickPanelSet = (id: string) => {
+    const key = stationKey(tab.id, 0);
+    const cur = loadSettings(key, stationPanel(station, 0, narrow));
+    const next = switchPanelSet(station, cur, id, narrow);
+    if (next === cur) return;
+    carryViewTime();
+    saveSettings(next, key);
+    setCoin(null);
+    setGen((g) => g + 1);
+  };
   const close = (id: string) => {
-    const next = closeTab(tabs, id);
+    let next = closeTab(tabs, id);
     if (next === tabs) return;
+    // Zamknięta aktywna karta: aktywną zostaje sąsiadka z kart tej fazy (nie karta innej fazy z całego paska)
+    if (id === tabs.active) {
+      const i = visible.findIndex((t) => t.id === id);
+      const rest = visible.filter((t) => t.id !== id);
+      const nb = rest[i] ?? rest[i - 1];
+      if (nb) next = { ...next, active: nb.id };
+    }
     const index = tabs.tabs.findIndex((t) => t.id === id);
     setUndo({ tab: tabs.tabs[index], index, snap: snapshotTab(id), active: id === tab.id });
     // Najpierw przełączenie (rynek i chwila z zamykanej karty), potem usunięcie jej zapisu
@@ -214,14 +300,21 @@ const ChartsView: React.FC = () => {
     onMove: (id, to) => save(moveTab(tabs, id, to)),
   };
 
-  // Alt+1…9: karta o tym numerze (9 — ostatnia); Alt+↑/↓: karta z wyższym / niższym interwałem głównego wykresu
+  // Alt+1…6: układ w kolejności faz (widok przechodzi do jego fazy), Alt+7…9: karty własne w kolejności paska;
+  // Alt+↑/↓: karta fazy z wyższym / niższym interwałem głównego wykresu; D: kolumna DOM i taśmy (w sesji, od 1280 px)
   const keyRef = useRef<(e: KeyboardEvent) => void>(() => {});
   keyRef.current = (e) => {
-    if (!e.altKey || e.ctrlKey || e.metaKey || isTyping(e.target) || replay) return;
+    if (e.ctrlKey || e.metaKey || isTyping(e.target) || replay) return;
+    if (!e.altKey) {
+      if (e.key.toLowerCase() !== 'd' || !dockable) return;
+      e.preventDefault();
+      toggleDock();
+      return;
+    }
     const digit = /^Digit([1-9])$/.exec(e.code);
     let id: string | null = null;
-    if (digit) id = (Number(digit[1]) === 9 ? tabs.tabs[tabs.tabs.length - 1] : tabs.tabs[Number(digit[1]) - 1])?.id ?? null;
-    else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') id = ladderTab(tabs, (t) => tabIntervals(t, 1, narrow)[0], e.key === 'ArrowUp' ? 1 : -1);
+    if (digit) id = shortcutTarget(Number(digit[1]))?.layout ?? shortcutTab(tabs, Number(digit[1]));
+    else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') id = ladderTab({ tabs: visible, active: tab.id }, (t) => tabIntervals(t, 1, narrow)[0], e.key === 'ArrowUp' ? 1 : -1);
     else return;
     e.preventDefault();
     if (id) select(id);
@@ -269,72 +362,107 @@ const ChartsView: React.FC = () => {
       )}
       {!narrow && (
         <div className={`flex items-center gap-2 min-w-0 ${fs ? '' : 'mb-2'}`}>
-          <TabsBar st={tabs} tf={tf} a={actions} />
+          <TabsBar st={tabs} tf={tf} a={actions} tabs={visible} presets={PHASE_LAYOUTS[shown]} />
+          {/* Zestaw paneli pod wykresem (np. Aukcja | Absorpcja): należy do aktywnej karty */}
+          {panelSet && <PanelSetSwitch sets={station.panelSets ?? []} value={panelSet.id} onChange={pickPanelSet} />}
           {/* Pytanie karty (wzorca): od czego zacząć czytanie wykresów tej karty */}
           <p title={station.question} className="hidden xl:flex items-center gap-1.5 flex-1 min-w-[14rem] max-w-[30rem] text-[11px] text-ink-2">
             <CircleHelp className="w-3.5 h-3.5 shrink-0 text-ink-3" aria-label={tr('Pytanie karty', 'Tab question')} />
             <span className="truncate">{presetQuestion(tab.preset)}</span>
           </p>
-          {honestyId && first && <HonestyButton key={`${tab.id}.${first.coin}`} store={storeFor(first.coin)} templateId={honestyId} tf={first.interval} />}
-          {/* Karta własna nie ma wzorca do przywrócenia */}
-          {canRestore(tab) && (
-            <button
-              type="button"
-              onClick={() => actions.onRestore(tab.id)}
-              aria-label={tr(`Przywróć wzorzec karty ${tabName(tab)}`, `Restore the ${tabName(tab)} tab preset`)}
-              title={tr(
-                `Przywróć wzorzec „${presetName(tab.preset)}” w karcie ${tabName(tab)}: Twoje zmiany w tej karcie (ustawienia wykresów i układ) zostaną zastąpione`,
-                `Restore the “${presetName(tab.preset)}” preset in the ${tabName(tab)} tab: your changes in this tab (chart settings and layout) will be replaced`
-              )}
-              className="ml-auto shrink-0 inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-line text-xs font-medium text-ink-2 hover:text-ink-1 hover:bg-surface-2 transition-colors duration-150"
-            >
-              <RotateCcw className="w-4 h-4" />
-              <span className="hidden sm:inline">{tr('Przywróć', 'Restore')}</span>
-            </button>
-          )}
+          {honestyId && <HonestyButton key={`${tab.id}.${first.coin}`} store={storeFor(first.coin)} templateId={honestyId} tf={first.interval} />}
+          <div className="ml-auto shrink-0 flex items-center gap-2">
+            {dockable && (
+              <button
+                type="button"
+                onClick={toggleDock}
+                aria-pressed={dock}
+                aria-label={dock ? tr('Schowaj kolumnę DOM i taśmy (D)', 'Hide the DOM and tape column (D)') : tr('Pokaż kolumnę DOM i taśmy (D)', 'Show the DOM and tape column (D)')}
+                title={dock ? tr('Schowaj kolumnę DOM i taśmy (D)', 'Hide the DOM and tape column (D)') : tr('Pokaż kolumnę DOM i taśmy (D)', 'Show the DOM and tape column (D)')}
+                className={`grid place-items-center w-8 h-8 rounded-lg border transition-colors duration-150 ${dock ? 'bg-surface-3 border-line-strong text-ink-1' : 'border-line text-ink-2 hover:text-ink-1 hover:bg-surface-2'}`}
+              >
+                {dock ? <PanelRightClose className="w-4 h-4" /> : <PanelRightOpen className="w-4 h-4" />}
+              </button>
+            )}
+            {/* Karta własna nie ma wzorca do przywrócenia */}
+            {canRestore(tab) && (
+              <button
+                type="button"
+                onClick={() => actions.onRestore(tab.id)}
+                aria-label={tr(`Przywróć wzorzec karty ${tabName(tab)}`, `Restore the ${tabName(tab)} tab preset`)}
+                title={tr(
+                  `Przywróć wzorzec „${presetName(tab.preset)}” w karcie ${tabName(tab)}: Twoje zmiany w tej karcie (ustawienia wykresów i układ) zostaną zastąpione`,
+                  `Restore the “${presetName(tab.preset)}” preset in the ${tabName(tab)} tab: your changes in this tab (chart settings and layout) will be replaced`
+                )}
+                className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-line text-xs font-medium text-ink-2 hover:text-ink-1 hover:bg-surface-2 transition-colors duration-150"
+              >
+                <RotateCcw className="w-4 h-4" />
+                <span className="hidden sm:inline">{tr('Przywróć', 'Restore')}</span>
+              </button>
+            )}
+          </div>
         </div>
       )}
-      {/* Ten sam kontener dla każdego układu: pierwszy panel nie tworzy się od nowa przy zmianie układu */}
-      <div
-        className={
-          fs ? (n === 1 ? 'flex-1 min-h-0 flex flex-col' : `flex-1 min-h-0 grid grid-cols-2 ${n === 4 ? 'grid-rows-2' : 'grid-rows-1'} gap-2`) : n === 1 ? '' : 'grid grid-cols-2 gap-2'
-        }
-      >
-        {Array.from({ length: n }, (_, i) => (
-          <ProChart
-            key={`${tab.id}.${gen}.${i}`}
-            panel={i}
-            station={station}
-            tabId={tab.id}
-            onSaved={onSaved}
-            coin={coin}
-            fromLink={gen === 0}
-            layout={n}
-            onLayout={i === 0 ? setLayout : undefined}
-            layoutFs={narrow ? undefined : { active: fs, toggle: toggleFs }}
-            phoneTabs={
-              narrow && i === 0
-                ? {
-                    value: tab.id,
-                    options: [
-                      ...tabs.tabs.map((t) => ({ value: t.id, label: `${tabName(t)} · ${tf(t)}` })),
-                      { value: MANAGE, label: tr('Karty: nowa, nazwa, zamknij…', 'Tabs: new, rename, close…') },
-                    ],
-                    onChange: (id) => (id === MANAGE ? setSheet(true) : select(id)),
-                    onRestore: canRestore(tab) ? () => actions.onRestore(tab.id) : undefined,
-                  }
-                : undefined
-            }
-          />
-        ))}
+      {/* Telefon: zestaw paneli nad wykresem (pasek kart jest listą w pasku wykresu) */}
+      {narrow && panelSet && (
+        <div className="mb-2 flex">
+          <PanelSetSwitch sets={station.panelSets ?? []} value={panelSet.id} onChange={pickPanelSet} />
+        </div>
+      )}
+      {/* Wiersz: wykresy i (w sesji) kolumna DOM i taśmy o wysokości wykresów */}
+      <div className={`flex gap-2 ${fs ? 'flex-1 min-h-0' : ''}`}>
+        {/* Ten sam kontener dla każdego układu: pierwszy panel nie tworzy się od nowa przy zmianie układu ani kolumny */}
+        <div
+          className={`flex-1 min-w-0 ${
+            fs ? (n === 1 ? 'min-h-0 flex flex-col' : `min-h-0 grid grid-cols-2 ${n === 4 ? 'grid-rows-2' : 'grid-rows-1'} gap-2`) : n === 1 ? '' : 'grid grid-cols-2 gap-2'
+          }`}
+        >
+          {Array.from({ length: n }, (_, i) => (
+            <ProChart
+              key={`${tab.id}.${gen}.${i}`}
+              panel={i}
+              station={station}
+              tabId={tab.id}
+              onSaved={onSaved}
+              coin={coin}
+              fromLink={gen === 0}
+              layout={n}
+              onLayout={i === 0 ? setLayout : undefined}
+              layoutFs={narrow ? undefined : { active: fs, toggle: toggleFs }}
+              phoneTabs={
+                narrow && i === 0
+                  ? {
+                      value: tab.id,
+                      options: [
+                        ...visible.map((t) => ({ value: t.id, label: `${tabName(t)} · ${tf(t)}` })),
+                        { value: MANAGE, label: tr('Karty: nowa, nazwa, zamknij…', 'Tabs: new, rename, close…') },
+                      ],
+                      onChange: (id) => (id === MANAGE ? setSheet(true) : select(id)),
+                      onRestore: canRestore(tab) ? () => actions.onRestore(tab.id) : undefined,
+                    }
+                  : undefined
+              }
+            />
+          ))}
+        </div>
+        {/* Kolumna bez własnej wysokości (wypełnia wiersz), więc ma dokładnie wysokość wykresów */}
+        {docked && (
+          <aside aria-label={tr('DOM i taśma', 'DOM & tape')} className="relative shrink-0" style={{ width: DOCK_W }}>
+            <div className="absolute inset-0">
+              <FlowColumn coin={first.coin} narrow={false} variant="column" />
+            </div>
+          </aside>
+        )}
       </div>
       {sheet && narrow && (
         <TabsSheet
           st={tabs}
           tf={tf}
           a={actions}
+          tabs={visible}
+          presets={PHASE_LAYOUTS[shown]}
           onClose={() => setSheet(false)}
-          activeExtra={honestyId && first ? <HonestyCard store={storeFor(first.coin)} templateId={honestyId} tf={first.interval} /> : undefined}
+          activeExtra={honestyId ? <HonestyCard store={storeFor(first.coin)} templateId={honestyId} tf={first.interval} /> : undefined}
         />
       )}
       {undo && (

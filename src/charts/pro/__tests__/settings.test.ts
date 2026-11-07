@@ -37,6 +37,16 @@ describe('parseSettings', () => {
     expect(parseSettings({ coin: 'ETH' }).coin).toBe('ETH');
     expect(parseSettings({ coin: 'DOGE' }).coin).toBe('BTC');
   });
+
+  it('zestaw paneli układu: tylko znany identyfikator, nieprawidłowy → undefined (pierwszy zestaw układu)', () => {
+    expect(parseSettings({ panelSet: 'absorption' }).panelSet).toBe('absorption');
+    expect(parseSettings({ panelSet: 'auction' }).panelSet).toBe('auction');
+    for (const bad of ['nie-ma', 'Absorption', '', 42, null, ['absorption']]) expect(parseSettings({ panelSet: bad }).panelSet, String(bad)).toBeUndefined();
+    expect(parseSettings({}).panelSet).toBeUndefined();
+    // Bez zestawu w zapisie — zestaw wartości domyślnych
+    expect(parseSettings({}, { ...DEFAULT_SETTINGS, panelSet: 'absorption' }).panelSet).toBe('absorption');
+    expect('panelSet' in parseSettings(null)).toBe(false);
+  });
 });
 
 describe('grupy Tablicy liczb', () => {
