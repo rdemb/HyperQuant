@@ -20,6 +20,7 @@ The interface is available in English and Polish: the language follows your brow
 2. **The desk describes the market; it does not suggest entries.** No automatic LONG/SHORT signals. Panels show measured facts, history with uncertainty and models labelled as such.
 3. **Public, legal data.** The core is Hyperliquid's public API. Centralised exchanges (Binance, Bybit, OKX, Coinbase) are strictly *opt-in*: the connection is made by the user's own browser, for personal use, and is off by default in the public build (the terms of some exchanges forbid public display of their data).
 4. **Your data stays with you.** The trade journal, drawings, tabs and settings live only in your browser (localStorage and IndexedDB).
+5. **One palette, „Głębia”.** Buy is azure `#3280DD` and sell is ember `#CA3829`, a blue/red pair chosen because it stays distinguishable for colour-blind readers; the liquidity heatmap runs from grey to white, so yellow is reserved for the POC alone. Details in [docs/STYLEGUIDE.md](docs/STYLEGUIDE.md).
 
 ## What's inside
 
