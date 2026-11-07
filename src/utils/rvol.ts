@@ -35,10 +35,10 @@ const bySlot = (bars: readonly VBar[]): Map<number, VBar[]> => {
 
 /**
  * RVOL każdej świecy: wolumen / mediana wolumenu świec z tej samej godziny i minuty UTC z poprzednich `days` dni.
+ * `intervalMs` jest zarezerwowany (miejsce doby wynika z czasu świecy, więc interwał nie zmienia wzoru).
  * `null`, gdy próba ma mniej niż 10 dni albo mediana wynosi 0. Świece muszą być rosnąco po czasie.
  */
 export function rvolSeries(bars: VBar[], intervalMs: number, days = 20): (number | null)[] {
-  void intervalMs; // miejsce doby wynika z czasu świecy, więc interwał nie zmienia wzoru
   const slots = bySlot(bars);
   const pos = new Map<number, number>();
   return bars.map((b) => {

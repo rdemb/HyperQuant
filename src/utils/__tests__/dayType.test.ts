@@ -23,6 +23,16 @@ describe('classifyDay', () => {
     expect(classifyDay({ ...ib, hi: 300, lo: 100, close: 290 })).toBe('trend');
     expect(classifyDay({ ibHi: 200, ibLo: 100, hi: 200, lo: 0, close: 10 })).toBe('trend');
   });
+  it('dokładna krawędź 20%: close = hi − 0,2·R to trend, tuż przed nią normal-variation', () => {
+    const hi = 300;
+    const lo = 100;
+    const edge = hi - 0.2 * (hi - lo);
+    expect(classifyDay({ ...ib, hi, lo, close: edge })).toBe('trend');
+    expect(classifyDay({ ...ib, hi, lo, close: edge - 1e-6 })).toBe('normal-variation');
+    const edgeDown = lo + 0.2 * (hi - lo);
+    expect(classifyDay({ ibHi: 200, ibLo: 100, hi: 200, lo: 0, close: 0 + 0.2 * 200 })).toBe('trend');
+    expect(edgeDown).toBe(140);
+  });
   it('szeroki zakres bez zamknięcia przy skraju — normal-variation', () => {
     expect(classifyDay({ ...ib, hi: 300, lo: 100, close: 200 })).toBe('normal-variation');
     expect(classifyDay({ ...ib, hi: 250, lo: 100, close: 240 })).toBe('normal-variation');
@@ -39,6 +49,12 @@ describe('vaMigration', () => {
     expect(vaMigration({ val: 150, vah: 260 }, prev)).toBe('overlap-higher');
     expect(vaMigration({ val: 40, vah: 150 }, prev)).toBe('overlap-lower');
     expect(vaMigration({ val: 200, vah: 260 }, prev)).toBe('overlap-higher');
+  });
+  it('brak liczby albo odwrócona value area — unknown', () => {
+    expect(vaMigration({ val: Number.NaN, vah: 300 }, prev)).toBe('unknown');
+    expect(vaMigration({ val: 120, vah: 180 }, { val: 100, vah: Number.POSITIVE_INFINITY })).toBe('unknown');
+    expect(vaMigration({ val: 300, vah: 200 }, prev)).toBe('unknown');
+    expect(vaMigration({ val: 120, vah: 180 }, { val: 200, vah: 100 })).toBe('unknown');
   });
   it('inside i outside', () => {
     expect(vaMigration({ val: 120, vah: 180 }, prev)).toBe('inside');
