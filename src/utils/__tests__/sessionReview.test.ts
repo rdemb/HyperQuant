@@ -368,8 +368,8 @@ describe('sessionCloseOf: cena do oczekiwanego zakresu karty', () => {
 });
 
 describe('czystość modułów Rozliczenia', () => {
-  it('sessionReview, sessionFacts, sessionText, fourNumbers (Czwórka), dayVwap i rvol nie importują modułów UI wykresu ani powtórki', () => {
-    for (const f of ['../sessionReview.ts', '../sessionFacts.ts', '../sessionText.ts', '../fourNumbers.ts', '../dayVwap.ts', '../rvol.ts']) {
+  it('sessionReview, sessionFacts, sessionText, fourNumbers (Czwórka), dayVwap, rvol i rvolOf nie importują modułów UI wykresu ani powtórki', () => {
+    for (const f of ['../sessionReview.ts', '../sessionFacts.ts', '../sessionText.ts', '../fourNumbers.ts', '../dayVwap.ts', '../rvol.ts', '../rvolOf.ts']) {
       const src = readFileSync(new URL(f, import.meta.url), 'utf8');
       expect(src, f).not.toMatch(/from\s+['"][^'"]*charts\/pro\/(chart|replay)\//);
     }

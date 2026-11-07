@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { VBar } from '../auction';
-import { currentTradeSession, previousSameSession } from '../sessionDay';
-import { reviewSession, sessionFacts, sessionNowOf } from '../sessionFacts';
+import { currentTradeSession, expectedRange, previousSameSession } from '../sessionDay';
+import { classifyDay } from '../dayType';
+import { dayTypeOf, expectedFrom, reviewSession, sessionFacts, sessionNowOf } from '../sessionFacts';
+import type { VolModel } from '../volatility';
+import { fmtHm } from '../../charts/pro/core/time';
 import * as layoutNumbers from '../../charts/pro/chart/layoutNumbers';
 
 const MIN = 60_000;
@@ -53,5 +56,51 @@ describe('sessionFacts: jedno źródło faktów sesji (nagłówek Rozliczenia i 
 describe('sessionNowOf poza modułami wykresu', () => {
   it('import ze starego miejsca (nagłówek układu) daje tę samą funkcję', () => {
     expect(layoutNumbers.sessionNowOf).toBe(sessionNowOf);
+  });
+});
+
+describe('dayTypeOf: typ dnia z faktów sesji (nagłówek Rozliczenie, karta, serwer MCP)', () => {
+  it('po IB — typ z classifyDay; IB w budowie albo zakres IB zerowy — powód', () => {
+    const f = sessionFacts(minutes(at(2026, 11, 2, 14, 30), NOW + MIN, (t) => (t >= NY.ibEnd ? 100_600 : 100_000)), NY, NOW);
+    if ('why' in f) throw new Error(f.why);
+    expect(dayTypeOf(f)).toBe(classifyDay(f));
+    expect(dayTypeOf(f)).toBe('trend');
+    expect(dayTypeOf({ ...f, ibDone: false })).toEqual({ why: `IB w budowie do ${fmtHm(NY.ibEnd)}` });
+    expect(dayTypeOf({ ...f, ibHi: f.ibLo })).toEqual({ why: 'zakres IB zerowy albo brak liczb' });
+  });
+});
+
+/** Model ze stałą wariancją godziny `v` (profil płaski, HAR = stała). */
+const flatModel = (v: number, nextHourStartMs: number): VolModel => ({
+  builtAt: nextHourStartMs,
+  profile: { factors: Array(24).fill(1), counts: Array(24).fill(0) },
+  har: { coef: [Math.log(v), 0, 0, 0], smear: 1, smearByH: [], n: 0, r2: 0, oos: null, lastY: Array(168).fill(Math.log(v)) },
+  residuals: new Float64Array(0),
+  jump: null,
+  lmJumps: { count: 0, days: 0, maxAbsMovePct: 0 },
+  hourlyBars: 0,
+  fiveMinBars: 0,
+  nextHourStartMs,
+});
+
+describe('expectedFrom: oczekiwany zakres albo powód braku (nagłówek układu, karta Rozliczenia, serwer MCP)', () => {
+  /** `n` zamkniętych świec 5m kończących się `end`. */
+  const fiveMin = (n: number, end: number): VBar[] =>
+    Array.from({ length: n }, (_, i) => ({ time: end - (n - i) * 5 * MIN, open: 100_000, high: 100_200, low: 100_000, close: 100_000, volume: 1 }));
+
+  it('z modelem HAR — wynik expectedRange; model bez zmienności dla sesji — powód modelu', () => {
+    const m = flatModel(1e-5, at(2026, 11, 3, 16));
+    expect(expectedFrom(m, [], NY, NOW, NOW, 100_000)).toEqual(expectedRange(m, [], NY, NOW, 100_000));
+    expect(expectedFrom(m, [], NY, NOW, NOW, 0)).toEqual({ why: 'Model HAR nie daje zmienności dla tej sesji' });
+  });
+
+  it('bez modelu: Parkinson ze świec 5m; za mało świec — powód na żywo, a dla sesji zamkniętej (asOf < now) ex ante', () => {
+    const bars = fiveMin(20, NOW);
+    expect(expectedFrom(null, bars, NY, NOW, NOW, 100_000)).toEqual(expectedRange(null, bars, NY, NOW, 100_000));
+    expect(expectedFrom(null, bars, NY, NOW, NOW, 100_000)).toMatchObject({ method: 'parkinson' });
+    expect(expectedFrom(null, fiveMin(5, NOW), NY, NOW, NOW, 100_000)).toEqual({ why: 'Bez modelu HAR, a za mało zamkniętych świec 5m z ostatniej doby (min. 12)' });
+    expect(expectedFrom(null, fiveMin(5, NY.start), NY, NOW, NY.start, 100_000)).toEqual({
+      why: 'Ocena ex ante (Parkinson sprzed otwarcia): za mało zamkniętych świec 5m z doby przed sesją (min. 12)',
+    });
   });
 });

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { dayVwapOf, rvolOf, sessionNowOf } from '../../src/charts/pro/chart/layoutNumbers';
+import { type InputSeries, type InputStore, sessionExpectedOf } from '../../src/charts/pro/chart/layoutInputs';
+import { dayVwapOf, layoutNumbers, rvolOf, sessionNowOf } from '../../src/charts/pro/chart/layoutNumbers';
 import { vwapSigma } from '../../src/charts/pro/chart/marketState';
 import { parseBlogMaps } from '../../src/state/useBlogMaps';
 import type { CohortFlowState } from '../../src/state/useCohortFlow';
@@ -12,14 +13,13 @@ import { classifyDay } from '../../src/utils/dayType';
 import { type DeskLedgerSummary, isDeskLedgerSummary, ledgerFreshness } from '../../src/utils/deskLedger';
 import { type LiqTape, isLiqTape, liqTapeFreshness } from '../../src/utils/liqTape';
 import { type TradeSession, expectedRange, previousSameSession, rangeBudget, tradeSessionOn } from '../../src/utils/sessionDay';
-import { sessionFacts } from '../../src/utils/sessionFacts';
+import { dayTypeOf, sessionFacts } from '../../src/utils/sessionFacts';
 import { type ReviewInputs, type ReviewRow, reviewRows, sessionCloseOf } from '../../src/utils/sessionReview';
-import { isAbsent } from '../../src/utils/sessionText';
+import { DAY_TYPE_LABEL, type Expected, type Got, isAbsent } from '../../src/utils/sessionText';
 import { buildVolModel } from '../../src/utils/volatility';
 import { BLOCK_MARK, type Envelope, type Num } from '../src/envelope';
 import { type Bar, DATA_BASE, HL_INFO, HOUR, MAPS_URL, MIN, type Route, asCandles, connect, hlCandles, testSources, walkBars } from './helpers';
 
-const DAY = 24 * HOUR;
 // Środa 4.11.2026, czas zimowy: Londyn 08:00–14:30 UTC, NY 14:30–24:00 UTC (IB NY do 15:30); teraz 15:45 — NY w toku po IB
 const DAY0 = Date.UTC(2026, 10, 4);
 const NOW = Date.UTC(2026, 10, 4, 15, 45);
@@ -50,7 +50,9 @@ for (let t = previousSameSession(L).start; t <= NOW; t += MIN) {
 const H1 = walkBars(1200, HOUR, NOW, 0.004, 3);
 const M5 = walkBars(2000, 5 * MIN, NOW, 0.0015, 7);
 
-const hl = (h1: readonly Bar[] = H1, clock?: { now: number }) => hlCandles({ '1m': M1, '5m': M5, '1h': h1 }, clock);
+/** Trasa Hyperliquid z domyślnymi świecami; `clock` — tylko świece rozpoczęte do chwili żądania. */
+const hl = (o: { m1?: readonly Bar[]; m5?: readonly Bar[]; h1?: readonly Bar[]; clock?: { now: number } } = {}) =>
+  hlCandles({ '1m': o.m1 ?? M1, '5m': o.m5 ?? M5, '1h': o.h1 ?? H1 }, o.clock);
 
 // ───────── syntetyczne pliki publiczne (przechodzą strażniki strony; bez adresów i hashy) ─────────
 
@@ -190,6 +192,32 @@ function got<T>(v: T | { why: string }): T {
   return v;
 }
 
+/** Magazyn rynku strony (atrapa `InputStore`): zegar i seria świec 5m — wejścia `sessionExpectedOf`. */
+function siteStore(bars5m: readonly Bar[]): InputStore {
+  const series: InputSeries = { loadState: 'ready', load: async () => undefined, candlesNow: () => upTo(bars5m, NOW) };
+  return {
+    coin: 'BTC',
+    serverNow: () => NOW,
+    lastPrice: () => 0,
+    series: () => series,
+    indicatorCandles: () => series.candlesNow(),
+    exactBook: () => null,
+    zeroKnown: { covers: () => false },
+    orders: { range: () => [] },
+  };
+}
+
+/** Oczekiwany zakres tak, jak liczy go strona (`sessionExpectedOf`): model HAR wczytany albo nie (błąd), seria 5m z magazynu. */
+function siteExpected(s: TradeSession, inProgress: boolean, price: number, o: { h1?: readonly Bar[]; m5?: readonly Bar[] } = {}): Got<Expected> | undefined {
+  const m5 = o.m5 ?? M5;
+  const model = buildVolModel(toVBars(upTo(o.h1 ?? H1, NOW)), toVBars(upTo(m5, NOW)), NOW);
+  return sessionExpectedOf(siteStore(m5), model ? { status: 'ready', model } : { status: 'error', model: null }, s, inProgress, price);
+}
+
+/** Liczba odpowiedzi z wyniku strony: wartość i metoda albo null z tym samym powodem. */
+const expectedNum = (e: Got<Expected> | undefined) =>
+  e === undefined || isAbsent(e) ? { value: null, why: e?.why } : { value: e.usd, method: e.method, why: null };
+
 // ───────── session_context ─────────
 
 describe('session_context', () => {
@@ -247,7 +275,7 @@ describe('session_context', () => {
 
   it('NY o 15:00, przed końcem IB (15:30 UTC): ib.complete false z dotychczasowym zakresem, typ dnia null', async () => {
     const at = Date.UTC(2026, 10, 4, 15, 0);
-    const { env } = await call<ContextData>('session_context', { [HL_INFO]: hl(H1, { now: at }) }, { now: at });
+    const { env } = await call<ContextData>('session_context', { [HL_INFO]: hl({ clock: { now: at } }) }, { now: at });
     const sn = got(sessionNowOf(upTo(M1, at), at));
     expect(env.data.session?.id).toBe('ny');
     expect(env.data.ib?.complete).toBe(false);
@@ -259,7 +287,7 @@ describe('session_context', () => {
 
   it('bez modelu HAR (za krótka historia 1h): oczekiwany zakres z Parkinsona ze świec 5m, jak na stronie', async () => {
     const short = H1.slice(-600);
-    const { env } = await call<ContextData>('session_context', { [HL_INFO]: hl(short) });
+    const { env } = await call<ContextData>('session_context', { [HL_INFO]: hl({ h1: short }) });
     const c1 = upTo(M1, NOW);
     const price = c1[c1.length - 1].c;
     expect(buildVolModel(toVBars(upTo(short, NOW)), toVBars(upTo(M5, NOW)), NOW)).toBeNull();
@@ -274,7 +302,7 @@ describe('session_context', () => {
 
   it('świece 1h z pamięci (migawka sprzed 40 s): RVOL na chwilę migawki, nie z upływem godziny do teraz', async () => {
     const snapshotAt = Date.UTC(2026, 10, 4, 15, 5, 30);
-    const ts = testSources({ [HL_INFO]: (req) => hl(H1, ts.clock)(req) }, snapshotAt);
+    const ts = testSources({ [HL_INFO]: (req) => hl({ clock: ts.clock })(req) }, snapshotAt);
     const c = await connect(ts.src);
     close = c.close;
     await c.client.callTool({ name: 'session_context', arguments: {} });
@@ -289,7 +317,7 @@ describe('session_context', () => {
 
   it('godziny azjatyckie (02:00 UTC): session null, następna sesja Londyn z godziną otwarcia, liczby sesji null z powodem', async () => {
     const asia = Date.UTC(2026, 10, 4, 2, 0);
-    const { res, env } = await call<ContextData>('session_context', { [HL_INFO]: hl(H1, { now: asia }) }, { now: asia });
+    const { res, env } = await call<ContextData>('session_context', { [HL_INFO]: hl({ clock: { now: asia } }) }, { now: asia });
     expect(res.isError).toBeFalsy();
     const d = env.data;
     expect(d.session).toBeNull();
@@ -322,29 +350,91 @@ describe('session_context', () => {
     expect(env.sources.every((s) => s.asOf === null)).toBe(true);
   });
 
-  it('Hyperliquid nie odpowiada: wszystkie żądania równolegle, wynik po jednym limicie czasu, liczby null z powodem', async () => {
-    const hang: Route = (req) => new Promise((_, reject) => req.signal?.addEventListener('abort', () => reject(req.signal?.reason), { once: true }));
-    const timeoutMs = 400;
-    const t0 = performance.now();
-    const { res, env } = await call<ContextData>('session_context', { [HL_INFO]: hang }, { timeoutMs });
-    const elapsed = performance.now() - t0;
+  it('Hyperliquid nie odpowiada: wszystkie żądania wysłane naraz (oczekują razem przed pierwszym limitem czasu), liczby null z powodem', async () => {
+    let sent = 0;
+    let pending = 0;
+    let pendingAtFirstAbort: number | null = null;
+    const hang: Route = (req) => {
+      sent++;
+      pending++;
+      return new Promise((_, reject) =>
+        req.signal?.addEventListener(
+          'abort',
+          () => {
+            pendingAtFirstAbort ??= pending;
+            pending--;
+            reject(req.signal?.reason);
+          },
+          { once: true }
+        )
+      );
+    };
+    const { res, env } = await call<ContextData>('session_context', { [HL_INFO]: hang }, { timeoutMs: 50 });
     expect(res.isError).toBeFalsy();
     expect(numsOf(env.data).every((n) => n.value === null && !!n.why)).toBe(true);
-    // Kolejne żądania po sobie trwałyby co najmniej dwa limity czasu
-    expect(elapsed).toBeLessThan(2 * timeoutMs);
+    // Świece 1m, 1h i 5m oraz 1h i 5m modelu zmienności; przy żądaniach po kolei pierwszy limit czasu zastałby jedno
+    expect(sent).toBe(5);
+    expect(pendingAtFirstAbort).toBe(sent);
+  });
+
+  it('oczekiwany zakres i powód braku z funkcji strony (sessionExpectedOf) na tych samych świecach: HAR, Parkinson, brak danych', async () => {
+    const c1 = upTo(M1, NOW);
+    const price = c1[c1.length - 1].c;
+    const short = H1.slice(-600);
+    // Za mało świec 5m z ostatniej doby: tylko z ostatnich 30 min
+    const sparse = M5.filter((b) => b.t > NOW - 30 * MIN);
+    const cases: { name: string; h1?: Bar[]; m5?: Bar[]; method: string | null }[] = [
+      { name: 'HAR', method: 'har' },
+      { name: 'Parkinson', h1: short, method: 'parkinson' },
+      { name: 'brak danych', h1: short, m5: sparse, method: null },
+    ];
+    for (const k of cases) {
+      const { env } = await call<ContextData>('session_context', { [HL_INFO]: hl({ h1: k.h1, m5: k.m5 }) });
+      const site = siteExpected(NY, true, price, k);
+      expect(env.data.expectedRange, k.name).toMatchObject(expectedNum(site));
+      expect(env.data.expectedRange.method ?? null, k.name).toBe(k.method);
+      if (k.method === null) expect(env.data.rangeBudget.why, k.name).toBe(env.data.expectedRange.why);
+      await close?.();
+      close = null;
+    }
+  });
+
+  it('typ dnia z tej samej funkcji co nagłówek układu Rozliczenie: wartość po IB, ten sam powód w IB', async () => {
+    for (const t of [Date.UTC(2026, 10, 4, 15, 0), NOW]) {
+      const { env } = await call<ContextData>('session_context', { [HL_INFO]: hl({ clock: { now: t } }) }, { now: t });
+      const f = got(sessionFacts(toVBars(upTo(M1, t)), NY, t));
+      const site = layoutNumbers('review', { coin: 'BTC', now: t, review: { ...f, inProgress: true } })[0];
+      const d = dayTypeOf(f);
+      if (isAbsent(d)) {
+        expect(env.data.dayTypeSoFar).toBeNull();
+        expect(env.notes).toContain(`dayTypeSoFar: ${site.hint}`);
+      } else {
+        expect(env.data.dayTypeSoFar).toBe(d);
+        expect(site.value).toBe(DAY_TYPE_LABEL[d]);
+      }
+      await close?.();
+      close = null;
+    }
+  });
+
+  it('świece 1m bez pierwszej godziny sesji: IB null z powodem o braku świec IB (nie „czekam na dane”)', async () => {
+    const holes = M1.filter((b) => b.t < NY.start || b.t >= NY.ibEnd);
+    const { env } = await call<ContextData>('session_context', { [HL_INFO]: hl({ m1: holes }) });
+    for (const n of [env.data.ib?.high, env.data.ib?.low]) {
+      expect(n?.value).toBeNull();
+      expect(n?.why).toContain('IB');
+      expect(n?.why).not.toBe('Czekam na dane…');
+    }
   });
 });
 
 // ───────── session_review ─────────
 
 /** Wejścia karty Rozliczenia tak jak buduje je strona (Po sesji), na tych samych świecach i plikach. */
-function siteRows(s: TradeSession, inProgress: boolean, patch: Partial<ReviewInputs> = {}): ReviewRow[] {
+function siteRows(s: TradeSession, inProgress: boolean, patch: Partial<ReviewInputs> = {}, o: { h1?: readonly Bar[]; m5?: readonly Bar[] } = {}): ReviewRow[] {
   const bars1m = toVBars(asCandles(M1.filter((b) => b.t >= previousSameSession(s).start && b.t <= NOW)));
   const price = sessionCloseOf(bars1m, s, NOW, bars1m[bars1m.length - 1].close);
-  const bars5m = toVBars(upTo(M5, NOW));
-  const model = inProgress ? buildVolModel(toVBars(upTo(H1, NOW)), bars5m, NOW) : null;
-  const e = inProgress ? expectedRange(model, model ? [] : bars5m, s, NOW, price) : expectedRange(null, bars5m, s, s.start, price);
-  if (!e) throw new Error('fixture: oczekiwany zakres');
+  const e = siteExpected(s, inProgress, price, o);
   const liq: LiqTapeState = { status: liqTapeFreshness(TAPE, NOW), tape: TAPE };
   const cohorts: CohortFlowState = { status: cohortFreshness(FLOW, NOW), flow: FLOW };
   const ledger: DeskLedgerState = { status: ledgerFreshness(SUMMARY, NOW), summary: SUMMARY };
@@ -380,6 +470,23 @@ describe('session_review', () => {
     const { env } = await call<ReviewData>('session_review', allRoutes());
     expect(env.data.session).toMatchObject({ id: 'london', inProgress: false });
     expect(env.data.rows).toEqual(asTool(siteRows(L, false)));
+  });
+
+  it('zamknięta sesja z za małą liczbą świec 5m przed otwarciem: wiersz zakresu z powodem ex ante jak na stronie', async () => {
+    const sparse = M5.filter((b) => b.t >= L.start - 30 * MIN);
+    const { env } = await call<ReviewData>('session_review', allRoutes({ [HL_INFO]: hl({ m5: sparse }) }), { args: { session: 'london' } });
+    expect(env.data.rows).toEqual(asTool(siteRows(L, false, {}, { m5: sparse })));
+    const range = env.data.rows.find((r) => r.id === 'range');
+    expect(range).toMatchObject({ value: DASH, badge: null });
+    expect(range?.why).toContain('ex ante');
+  });
+
+  it("session:'ny' bez modelu HAR i bez świec 5m z ostatniej doby: powód braku jak na karcie „w toku”", async () => {
+    const short = H1.slice(-600);
+    const sparse = M5.filter((b) => b.t > NOW - 30 * MIN);
+    const { env } = await call<ReviewData>('session_review', allRoutes({ [HL_INFO]: hl({ h1: short, m5: sparse }) }), { args: { session: 'ny' } });
+    expect(env.data.rows).toEqual(asTool(siteRows(NY, true, {}, { h1: short, m5: sparse })));
+    expect(env.data.rows.find((r) => r.id === 'range')?.why).toContain('Bez modelu HAR');
   });
 
   it("session:'ny' podczas sesji NY: sesja w toku, wiersze jak na karcie „w toku” (model HAR)", async () => {

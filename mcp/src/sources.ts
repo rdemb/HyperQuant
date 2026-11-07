@@ -20,8 +20,11 @@ const HL_INFO = 'https://api.hyperliquid.xyz/info';
 
 /** Limit czasu jednego żądania. */
 export const TIMEOUT_MS = 10_000;
-/** Pamięć podręczna: pliki skanera, mapy z bloga, świece, model zmienności. */
-export const TTL = { published: 60_000, maps: 5 * 60_000, candles: 60_000, volModel: 15 * 60_000 } as const;
+/**
+ * Pamięć podręczna: pliki skanera, mapy z bloga, świece, model zmienności; nieudane żądanie (błąd sieci, limit czasu, kod
+ * HTTP, zły JSON) przez `failed`, odpowiedź 429 przez `rateLimited` — kolejne wywołania nie ponawiają go od razu.
+ */
+export const TTL = { published: 60_000, maps: 5 * 60_000, candles: 60_000, volModel: 15 * 60_000, failed: 30_000, rateLimited: 60_000 } as const;
 /** Hyperliquid oddaje najwyżej tyle świec na jedno żądanie `candleSnapshot`. */
 export const MAX_CANDLES = 5000;
 /** Najwięcej części jednego okna świec (20 000 świec; HL i tak przechowuje ~5000 ostatnich na interwał). */
@@ -82,7 +85,7 @@ export function configFromEnv(env: Record<string, string | undefined>, fetchImpl
   };
 }
 
-type Raw = { ok: true; raw: unknown; at: number } | { ok: false; why: string };
+type Raw = { ok: true; raw: unknown; at: number } | { ok: false; why: string; status?: number };
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
@@ -164,7 +167,7 @@ export class Sources {
   /**
    * Model zmienności HAR BTC (`buildVolModel`) z ostatnich 5000 świec 1h i 5000 świec 5m — te same dane co model strony
    * (`loadVolModel`); jedno żądanie na interwał, oba równolegle. TTL 15 min. Nieudane pobranie — `{ ok: false }`, za mało
-   * świec — `value: null`; żadne z nich nie zostaje w pamięci (świece i tak przez swój TTL 60 s).
+   * świec — `value: null`; żaden z nich nie zostaje w pamięci modelu (same świece — przez swój TTL albo TTL porażki).
    */
   volModel(): Promise<Fetched<VolModel | null>> {
     const now = this.now();
@@ -196,15 +199,18 @@ export class Sources {
     return asOf === undefined ? { ok: true, value: d.value, url, at: r.at } : { ok: true, value: d.value, url, at: r.at, asOf };
   }
 
-  /** Surowy JSON z pamięci (w TTL) albo z sieci. Nieudane pobranie wypada z pamięci — następne wywołanie próbuje znowu. */
+  /**
+   * Surowy JSON z pamięci (w TTL wpisu) albo z sieci. Nieudane pobranie zostaje w pamięci krótko (`TTL.failed`, przy 429
+   * `TTL.rateLimited`) od chwili porażki: limit zapytań albo awaria źródła nie mnoży żądań z każdym wywołaniem narzędzia.
+   */
   private raw(url: string, body: string | null, ttl: number): Promise<Raw> {
     const key = body === null ? url : `${url}\n${body}`;
     const now = this.now();
     const hit = this.cache.get(key);
-    if (hit && now - hit.at < ttl) return hit.p;
+    if (hit && now - hit.at < hit.ttl) return hit.p;
     for (const [k, e] of this.cache) if (now - e.at >= e.ttl) this.cache.delete(k);
     const p: Promise<Raw> = this.request(url, body, now).then((r) => {
-      if (!r.ok && this.cache.get(key)?.p === p) this.cache.delete(key);
+      if (!r.ok && this.cache.get(key)?.p === p) this.cache.set(key, { at: this.now(), ttl: r.status === 429 ? TTL.rateLimited : TTL.failed, p });
       return r;
     });
     this.cache.set(key, { at: now, ttl, p });
@@ -220,7 +226,7 @@ export class Sources {
       const res = await this.cfg.fetch(url, { method: body === null ? 'GET' : 'POST', headers, body: body ?? undefined, signal });
       if (!res.ok) {
         void res.body?.cancel().catch(() => undefined);
-        return { ok: false, why: res.status === 429 ? `HTTP 429 (${tr('limit zapytań', 'rate limited')})` : `HTTP ${res.status}` };
+        return { ok: false, status: res.status, why: res.status === 429 ? `HTTP 429 (${tr('limit zapytań', 'rate limited')})` : `HTTP ${res.status}` };
       }
       const text = await res.text();
       try {

@@ -2,15 +2,18 @@
  * Fakty sesji Londynu albo NY ze świec 1m — jedno źródło dla nagłówka układu Rozliczenie i kart Rozliczenia sesji Po sesji:
  * zakres z minutami ekstremów, IB (pierwsza godzina) i pierwsze wyjście z niego, zamknięcie, value area 70% (`profile`)
  * tej i poprzedniej sesji tego samego typu. Oraz sesja w toku na żywo (`sessionNowOf`: nagłówek Kokpitu i Otwarcia
- * aukcji, serwer MCP). Bez modułów wykresu.
+ * aukcji, serwer MCP), typ dnia z faktów (`dayTypeOf`) i oczekiwany zakres z powodem braku (`expectedFrom`). Bez modułów
+ * wykresu (i18n tutaj, nie w `sessionDay`).
  */
 import { tr } from '../i18n';
 import { fmtDayTime, fmtDm, fmtHm } from '../charts/pro/core/time';
 import type { Candle } from '../charts/pro/hl/parse';
 import { type VBar, profile, profileStep, sessionVwap, toVBars } from './auction';
-import { type TradeSession, currentTradeSession, lastClosedSessions, nextTradeSession, previousSameSession } from './sessionDay';
+import { type DayType, classifyDay } from './dayType';
+import { type TradeSession, currentTradeSession, expectedRange, lastClosedSessions, nextTradeSession, previousSameSession } from './sessionDay';
 import { TRADE_SESSION_NAME } from './sessionNames';
-import type { Got } from './sessionText';
+import type { Expected, Got } from './sessionText';
+import type { VolModel } from './volatility';
 
 const MIN = 60_000;
 /** Fakty tylko przy ≥ 95% minut okresu w świecach 1m. */
@@ -100,6 +103,16 @@ export function sessionFacts(bars1m: readonly VBar[], s: TradeSession, now: numb
   };
 }
 
+/**
+ * Typ dnia (MODEL · Dalton) z faktów sesji: dopiero po IB; IB w budowie albo zakres IB zerowy — powód. Jedno źródło dla
+ * nagłówka układu Rozliczenie, karty Rozliczenia i serwera MCP.
+ */
+export function dayTypeOf(f: SessionFacts): Got<Exclude<DayType, 'unknown'>> {
+  if (!f.ibDone) return { why: tr(`IB w budowie do ${fmtHm(f.s.ibEnd)}`, `IB forming until ${fmtHm(f.s.ibEnd)}`) };
+  const t = classifyDay(f);
+  return t === 'unknown' ? { why: tr('zakres IB zerowy albo brak liczb', 'zero IB range or missing numbers') } : t;
+}
+
 /** Powód braku migracji VA (ten sam w nagłówku i na karcie); null — obie value area są. */
 export function vaMissing(f: SessionFacts): string | null {
   const pn = `${TRADE_SESSION_NAME[f.prev.id]} ${fmtDm(f.prev.start)}`;
@@ -120,7 +133,8 @@ export interface SessionNow {
   vwap: { vwap: number; sd: number } | null;
 }
 
-const asiaWhy = (now: number) => {
+/** Powód braku liczb sesji w sesji azjatyckiej, z godziną najbliższego otwarcia (nagłówek układu, serwer MCP). */
+export const asianSessionWhy = (now: number): string => {
   const next = nextTradeSession(now);
   return tr(
     `Sesja azjatycka: budżet, IB i VWAP sesji liczymy w sesjach Londynu i NY; ${TRADE_SESSION_NAME[next.id]} otwiera o ${fmtHm(next.start)}`,
@@ -131,7 +145,7 @@ const asiaWhy = (now: number) => {
 /** Sesja Londynu albo NY w toku ze świec 1m (rosnąco), które obejmują jej otwarcie; w Azji — powód. */
 export function sessionNowOf(c1m: readonly Candle[], now: number): Got<SessionNow> {
   const s = currentTradeSession(now);
-  if (!s) return { why: asiaWhy(now) };
+  if (!s) return { why: asianSessionWhy(now) };
   if (c1m.length === 0) return { why: tr('Czekam na świece 1m', 'Waiting for 1m candles') };
   if (c1m[0].t > s.start) return { why: tr('Świece 1m nie obejmują otwarcia sesji', 'The 1m candles do not cover the session open') };
   const bars = toVBars(c1m.filter((c) => c.t >= s.start && c.t < Math.min(now, s.end)));
@@ -147,5 +161,26 @@ export function sessionNowOf(c1m: readonly Candle[], now: number): Got<SessionNo
     ibLo: Math.min(...ib.map((b) => b.low)),
     ibDone: now >= s.ibEnd,
     vwap: v ? { vwap: v.vwap, sd: v.sd } : null,
+  };
+}
+
+/**
+ * Oczekiwany zakres sesji albo powód braku — jedno źródło dla nagłówka układu, karty Rozliczenia i serwera MCP (świece 5m
+ * i model rozwiązuje wywołujący). Z modelem HAR liczba z modelu; bez niego σ Parkinsona ze świec 5m do chwili `asOf`.
+ * `asOf < now` — sesja zamknięta, ocena ex ante (Parkinson sprzed otwarcia).
+ */
+export function expectedFrom(model: VolModel | null, bars5m: VBar[], s: TradeSession, now: number, asOf: number, price: number): Got<Expected> {
+  const e = expectedRange(model, bars5m, s, asOf, price);
+  if (e) return e;
+  return {
+    why: model
+      ? tr('Model HAR nie daje zmienności dla tej sesji', 'The HAR model gives no volatility for this session')
+      : asOf < now
+        ? // Zamknięta sesja: zawsze Parkinson sprzed otwarcia, także przy wczytanym modelu HAR (sessionExpectedOf)
+          tr(
+            'Ocena ex ante (Parkinson sprzed otwarcia): za mało zamkniętych świec 5m z doby przed sesją (min. 12)',
+            'Ex ante estimate (Parkinson before the open): too few closed 5m candles from the day before the session (min. 12)'
+          )
+        : tr('Bez modelu HAR, a za mało zamkniętych świec 5m z ostatniej doby (min. 12)', 'No HAR model and too few closed 5m candles from the last day (min. 12)'),
   };
 }
