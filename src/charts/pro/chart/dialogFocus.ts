@@ -48,12 +48,15 @@ export function dialogKeyDown<T extends Focusable>(e: DialogKey, items: readonly
 
 /**
  * Zapamiętuje element aktywny dokumentu i przenosi fokus na `target`; zwrócona funkcja oddaje fokus zapamiętanemu
- * elementowi (jeśli jest jeszcze w dokumencie).
+ * elementowi, jeśli jest jeszcze w dokumencie. Gdy go nie ma (okno otwarte z menu, które zniknęło razem z kliknięciem,
+ * więc aktywny był sam dokument, albo element odpięty do chwili zamknięcia) — elementowi z `fallback`, np. przyciskowi
+ * „Więcej” na telefonie.
  */
-export function holdFocus(doc: { activeElement: unknown }, target: Focusable | null): () => void {
+export function holdFocus(doc: { activeElement: unknown; body?: unknown }, target: Focusable | null, fallback?: () => Focusable | null | undefined): () => void {
   const opener = doc.activeElement as (Partial<Focusable> & { isConnected?: boolean }) | null;
   target?.focus();
   return () => {
-    if (opener && opener.isConnected !== false && typeof opener.focus === 'function') opener.focus();
+    if (opener && opener !== doc.body && opener.isConnected !== false && typeof opener.focus === 'function') opener.focus();
+    else fallback?.()?.focus();
   };
 }

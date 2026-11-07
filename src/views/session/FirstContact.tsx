@@ -1,5 +1,6 @@
 import { History, X } from 'lucide-react';
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { FOCUSABLE } from '../../charts/pro/chart/dialogFocus';
 import { fetchIndex } from '../../charts/pro/replay/data';
 import { replayBase } from '../../charts/pro/replay/session';
 import type { Market } from '../../charts/pro/store/proStore';
@@ -13,6 +14,18 @@ function storage(): Storage | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Pierwszy widoczny element do fokusu za kartą w kolejności dokumentu (przycisk powtórki 15 min, a bez niego pierwszy
+ * przycisk wykresu): tam przechodzi fokus po zamknięciu karty, zamiast przepaść w dokumencie.
+ */
+function focusAfter(card: HTMLElement): HTMLElement | null {
+  for (const el of document.querySelectorAll<HTMLElement>(FOCUSABLE)) {
+    if (el.tabIndex < 0 || card.contains(el) || !(card.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING)) continue;
+    if (el.getClientRects().length > 0) return el;
+  }
+  return null;
 }
 
 /** Trzy krótkie objaśnienia (bez słów kupno/sprzedaż). */
@@ -43,10 +56,19 @@ export const FirstContact: React.FC<{ coin: Market }> = ({ coin }) => {
   const [busy, setBusy] = useState(false);
   const [why, setWhy] = useState<string | null>(null);
 
+  // Zamknięcie z fokusem w karcie (Esc, „Rozumiem”, krzyżyk): fokus na następny element za kartą
+  const next = useRef<HTMLElement | null>(null);
   const close = () => {
+    const card = cardRef.current;
+    next.current = card && card.contains(document.activeElement) ? focusAfter(card) : null;
     if (store) markSeen(store, Date.now());
     setTips(false);
   };
+  useEffect(() => {
+    if (tips || !next.current) return;
+    if (next.current.isConnected) next.current.focus();
+    next.current = null;
+  }, [tips]);
   const showReplay = store !== null && (tips || quickReplayVisible(store, now));
   if (!tips && !showReplay) return null;
 

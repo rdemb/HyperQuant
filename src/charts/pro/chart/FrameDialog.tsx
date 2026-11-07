@@ -40,7 +40,12 @@ const TITLE_MAX = 200;
 /** Podgląd po przerwie w pisaniu (kodowanie PNG trwa kilkadziesiąt ms). */
 const PREVIEW_DELAY_MS = 150;
 
-export const FrameDialog: React.FC<{ src: FrameSource; onClose: () => void }> = ({ src, onClose }) => {
+export const FrameDialog: React.FC<{
+  src: FrameSource;
+  onClose: () => void;
+  /** Fokus po zamknięciu, gdy elementu, który otworzył okno, już nie ma (pozycja menu „Więcej” na telefonie). */
+  returnFocus?: () => HTMLElement | null;
+}> = ({ src, onClose, returnFocus }) => {
   const [ratio, setRatio] = useState<FrameRatio>('16:9');
   const [title, setTitle] = useState(src.title);
   // Ostatni tytuł bez rad: podgląd i opis nie pokazują zablokowanego tytułu (podglądu też nie da się zapisać z nim)
@@ -83,8 +88,10 @@ export const FrameDialog: React.FC<{ src: FrameSource; onClose: () => void }> = 
   const warnings = frameWarnings(src.layersShown, src.presetLayers);
   const shown = FRAME_SIZE[preview.ratio];
 
-  // Fokus w oknie od otwarcia; przy zamknięciu wraca do elementu, który okno otworzył
-  useEffect(() => holdFocus(document, ref.current), []);
+  // Fokus w oknie od otwarcia; przy zamknięciu wraca do elementu, który okno otworzył (bez niego — `returnFocus`)
+  const returnRef = useRef(returnFocus);
+  returnRef.current = returnFocus;
+  useEffect(() => holdFocus(document, ref.current, () => returnRef.current?.() ?? null), []);
   useEffect(() => {
     if (!note) return;
     const id = window.setTimeout(() => setNote(null), 4000);

@@ -552,6 +552,7 @@ export const ProChart: React.FC<{
     headerNums.current = n;
   }, []);
   const [frameSrc, setFrameSrc] = useState<FrameSource | null>(null);
+  const moreBtnRef = useRef<HTMLButtonElement>(null);
   /** Wzorzec tego panelu w układzie (z aktywnym zestawem paneli): ostrzeżenie Klatki tylko o warstwach ponad nim. */
   const presetPanel = (): ChartSettings => {
     const set = activePanelSet(station, settings);
@@ -873,7 +874,7 @@ export const ProChart: React.FC<{
             <ToolBtn label={tr('Ustawienia wykresu', 'Chart settings')} onClick={() => setMenu((m) => (m === 'settings' ? null : 'settings'))} active={menu === 'settings'} expanded={menu === 'settings'}>
               <SlidersHorizontal className="w-4 h-4" />
             </ToolBtn>
-            <ToolBtn label={tr('Więcej: rysowanie, skala, zrzut, link, pełny ekran', 'More: drawing, scale, screenshot, link, full screen')} onClick={() => setMenu((m) => (m === 'more' ? null : 'more'))} active={menu === 'more'} expanded={menu === 'more'}>
+            <ToolBtn btnRef={moreBtnRef} label={tr('Więcej: rysowanie, skala, zrzut, link, pełny ekran', 'More: drawing, scale, screenshot, link, full screen')} onClick={() => setMenu((m) => (m === 'more' ? null : 'more'))} active={menu === 'more'} expanded={menu === 'more'}>
               <MoreHorizontal className="w-4 h-4" />
             </ToolBtn>
           </div>
@@ -896,7 +897,8 @@ export const ProChart: React.FC<{
           onNumbers={onHeaderNumbers}
         />
       )}
-      {frameSrc && <FrameDialog src={frameSrc} onClose={() => setFrameSrc(null)} />}
+      {/* Klatka z menu „Więcej” na telefonie: po zamknięciu fokus na przycisk „Więcej” (pozycji menu już nie ma) */}
+      {frameSrc && <FrameDialog src={frameSrc} onClose={() => setFrameSrc(null)} returnFocus={() => moreBtnRef.current} />}
 
       {replay && <ReplayBar session={replay.session} narrow={narrow} onExit={replay.onExit} />}
 
@@ -1263,15 +1265,17 @@ const MoreMenu: React.FC<{ items: { icon: React.ComponentType<{ className?: stri
   </div>
 );
 
-const ToolBtn: React.FC<{ label: string; onClick: () => void; children: React.ReactNode; active?: boolean; expanded?: boolean; className?: string }> = ({
-  label,
-  onClick,
-  children,
-  active,
-  expanded,
-  className = 'inline-flex',
-}) => (
+const ToolBtn: React.FC<{
+  label: string;
+  onClick: () => void;
+  children: React.ReactNode;
+  active?: boolean;
+  expanded?: boolean;
+  className?: string;
+  btnRef?: React.Ref<HTMLButtonElement>;
+}> = ({ label, onClick, children, active, expanded, className = 'inline-flex', btnRef }) => (
   <button
+    ref={btnRef}
     type="button"
     aria-label={label}
     title={label}
