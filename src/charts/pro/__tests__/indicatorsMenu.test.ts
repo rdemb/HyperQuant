@@ -3,7 +3,7 @@ import { INDICATORS, menuEntries, parseIndicators } from '../indicators/registry
 import { visibleEntries } from '../chart/menuSelection';
 import { DROPPED_NOTICE_KEY, parseSettings, startSettings } from '../chart/settings';
 
-const FRONT = ['oiflow', 'absorption', 'breadth', 'repeat', 'makers', 'twap', 'slippage', 'ofi', 'ordersize'];
+const FRONT = ['oiflow', 'absorption', 'breadth', 'repeat', 'makers', 'twap', 'slippage', 'rvol', 'ofi', 'ordersize'];
 const SECOND = ['cone', 'outcomes', 'regime', 'hawkes', 'pbrange'];
 const CLASSIC = ['ema', 'sma', 'vwma', 'atr', 'bb', 'keltner', 'pivots'];
 

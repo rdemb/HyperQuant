@@ -1,0 +1,57 @@
+import { describe, expect, it } from 'vitest';
+import type { VBar } from '../auction';
+import { rvolHour, rvolSeries } from '../rvol';
+
+const H = 3_600_000;
+const DAY = 24 * H;
+const T0 = Date.UTC(2026, 0, 1);
+
+/** Typowo 100; `spike` — godzina 14 UTC ostatniej doby ma 2× wolumen. */
+const hourly = (days: number, spike = true): VBar[] => {
+  const out: VBar[] = [];
+  for (let i = 0; i < days * 24; i++) out.push({ time: T0 + i * H, open: 1, high: 1, low: 1, close: 1, volume: spike && i === days * 24 - 10 ? 200 : 100 });
+  return out;
+};
+
+describe('rvolSeries', () => {
+  it('25 dni 1h: godzina 14 daje 2, reszta 1', () => {
+    const bars = hourly(25);
+    const r = rvolSeries(bars, H);
+    expect(r).toHaveLength(bars.length);
+    const last = bars.length - 24;
+    expect(r[last + 14]).toBe(2);
+    expect(r[last + 3]).toBe(1);
+  });
+  it('mniej niż 10 dni próby daje null', () => {
+    const r = rvolSeries(hourly(9), H);
+    expect(r.every((x) => x === null)).toBe(true);
+    // dokładnie 10 dni historii przed świecą: 11. doba ma już wartość
+    expect(rvolSeries(hourly(11), H)[10 * 24 + 5]).toBe(1);
+    expect(rvolSeries(hourly(11), H)[9 * 24 + 5]).toBeNull();
+  });
+  it('mediana zera daje null', () => {
+    const bars = hourly(12).map((b) => ({ ...b, volume: 0 }));
+    expect(rvolSeries(bars, H)[11 * 24]).toBeNull();
+  });
+});
+
+describe('rvolHour', () => {
+  it('w połowie godziny z połową typowego wolumenu daje 1', () => {
+    const bars = hourly(24, false);
+    const start = T0 + 24 * DAY + 3 * H; // doba 25, godzina 3 (typowo 100)
+    bars.push({ time: start, open: 1, high: 1, low: 1, close: 1, volume: 50 });
+    const r = rvolHour(bars, start + H / 2);
+    expect(r.n).toBe(20);
+    expect(r.value).toBe(1);
+  });
+  it('za mało dni albo początek godziny — null', () => {
+    const bars = hourly(8, false);
+    const start = T0 + 8 * DAY;
+    bars.push({ time: start, open: 1, high: 1, low: 1, close: 1, volume: 50 });
+    expect(rvolHour(bars, start + H / 2).value).toBeNull();
+    const b2 = hourly(25, false);
+    const s2 = T0 + 25 * DAY;
+    b2.push({ time: s2, open: 1, high: 1, low: 1, close: 1, volume: 5 });
+    expect(rvolHour(b2, s2 + 60_000).value).toBeNull();
+  });
+});
