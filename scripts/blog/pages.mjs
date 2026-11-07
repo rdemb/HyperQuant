@@ -41,7 +41,7 @@ const T = {
     atlas: 'Atlas wskaźników',
     openCharts: 'Otwórz Wykresy',
     openInLessons: 'Zobacz w Lekcjach',
-    figureNote: 'Rycina z prawdziwego wycinka rynku, ćwiczenia i przycisk stacji Wykresów są w zakładce Lekcje.',
+    figureNote: 'Rycina z prawdziwego wycinka rynku, ćwiczenia i przycisk układu Wykresów są w zakładce Lekcje.',
     prev: 'Poprzednie hasło',
     next: 'Następne hasło',
     desk: {
@@ -57,7 +57,7 @@ const T = {
       lead: 'Darmowe wykresy kontraktów BTC, ETH, SOL i HYPE z Hyperliquid na silniku TradingView Lightweight Charts™. Footprint, delta, CVD i mapa ciepła arkusza działają od pierwszej sekundy, bo serwer HyperQuant nagrywa taśmę i arkusz z ostatniej doby. Bez rejestracji i bez sygnałów kupna albo sprzedaży.',
       replay: 'Powtórka ostatniej doby',
       shotAlt: 'Wykresy HyperQuant: footprint BTC 1 min z mapą ciepła arkusza, bąblami dużych zleceń, panelem Kto handluje i taśmą zleceń',
-      caption: 'Stacja Skalper w powtórce sesji z soboty 24 października 2026: footprint 1 min, mapa ciepła arkusza, bąble dużych zleceń, Kto handluje i taśma zleceń.',
+      caption: 'Układ Kokpit w powtórce sesji z soboty 24 października 2026: footprint 1 min, mapa ciepła arkusza, bąble dużych zleceń, Kto handluje i taśma zleceń.',
       card: { title: 'Wykresy orderflow BTC na żywo', subtitle: 'Footprint, delta, CVD, mapa ciepła arkusza i powtórka nagranej doby' },
       featuresTitle: 'Co jest na Wykresach',
       features: [
@@ -78,8 +78,8 @@ const T = {
           'Ostatnia doba taśmy i arkusza z nagrania serwera, więc nie trzeba czekać, aż wykres się zapełni. Powtórka odtwarza nagraną dobę na tym samym wykresie w tempie 1×, 5×, 15× albo 60×, a link otwiera wybraną chwilę.',
         ],
         [
-          'Stacje robocze',
-          'Start, Skalper, Płynność, Aukcja, Giełdy i Dwa interwały: układ, interwały, warstwy i panele pod jedno pytanie tradera, jednym kliknięciem. Twoje zmiany zostają jako Twoja wersja stacji.',
+          'Układy w fazach dnia',
+          'Mapa dnia i Paliwo i godziny (przed sesją), Kokpit, Aukcja i otwarcie oraz Wielkie ręce i reszta rynku (w sesji), Rozliczenie doby (po sesji): układ, interwały, warstwy i panele pod jedno pytanie tradera, jednym kliknięciem. Twoje zmiany zostają jako Twoja wersja układu.',
         ],
         [
           'Wskaźniki i rysowanie',
@@ -129,7 +129,7 @@ const T = {
     atlas: 'Indicator atlas',
     openCharts: 'Open Charts',
     openInLessons: 'See it in Lessons',
-    figureNote: 'The figure from a real market slice, the exercises and the Charts workstation button are in the Lessons tab.',
+    figureNote: 'The figure from a real market slice, the exercises and the Charts layout button are in the Lessons tab.',
     prev: 'Previous entry',
     next: 'Next entry',
     desk: {
@@ -145,7 +145,7 @@ const T = {
       lead: 'Free charts of BTC, ETH, SOL and HYPE perpetuals on Hyperliquid, on the TradingView Lightweight Charts™ engine. Footprint, delta, CVD and the order-book heatmap work from the first second, because the HyperQuant server records the last 24 hours of tape and book. No sign-up and no buy or sell signals.',
       replay: 'Replay the last 24 hours',
       shotAlt: 'HyperQuant Charts: 1-minute BTC footprint with the order-book heatmap, large-order bubbles, the Who is trading panel and the order tape',
-      caption: 'The Scalper workstation replaying the session of Saturday 24 October 2026: 1-minute footprint, order-book heatmap, large-order bubbles, Who is trading and the order tape.',
+      caption: 'The Cockpit layout replaying the session of Saturday 24 October 2026: 1-minute footprint, order-book heatmap, large-order bubbles, Who is trading and the order tape.',
       card: { title: 'Live BTC order-flow charts', subtitle: 'Footprint, delta, CVD, order-book heatmap and a 24-hour replay' },
       featuresTitle: 'What is in Charts',
       features: [
@@ -166,8 +166,8 @@ const T = {
           'The last 24 hours of tape and book come from the server recording, so there is no waiting for the chart to fill. Replay plays the recorded day on the same chart at 1×, 5×, 15× or 60×, and a link opens a chosen moment.',
         ],
         [
-          'Workstations',
-          'Start, Scalper, Liquidity, Auction, Exchanges and Two timeframes: layout, timeframes, layers and panels for one trader question in a single click. Your changes are kept as your own version of the workstation.',
+          'Layouts by phase of the day',
+          'Day map and Fuel and hours (before the session), Cockpit, Auction and open, and Big hands and the rest of the market (in session), Day review (after): layout, timeframes, layers and panels for one trader question in a single click. Your changes are kept as your own version of the layout.',
         ],
         [
           'Indicators and drawing',
