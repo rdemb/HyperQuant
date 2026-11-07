@@ -4,6 +4,7 @@ import { useCohortFlow } from '../../state/useCohortFlow';
 import { Badge, EmptyState, Panel, Segmented, Stat, DASH, fmtCompact, fmtSigned, fmtFixed } from '../../ui';
 import { COHORTS, COHORT_LABEL, CohortFlow, CohortId, CohortTotal, cumulativeNet } from '../../utils/cohorts';
 import { useElementWidth } from '../market/MarketMap';
+import { BTC_ONLY, scannerScope } from '../flow/flowColumnModel';
 import { locale, tr } from '../../i18n';
 
 /**
@@ -27,11 +28,29 @@ const netTotal = (t: CohortTotal) => t.buy - t.sell;
 const takerTotal = (t: CohortTotal) => t.takerBuy - t.takerSell;
 type Mode = 'net' | 'taker';
 
-/** Kto kupuje, kto sprzedaje: przepływ netto (zmiana zapasów) i agresywna delta per kohorta uczestników Hyperliquid. */
-export const CohortFlowPanel: React.FC = () => {
+/**
+ * Kto kupuje, kto sprzedaje: przepływ netto (zmiana zapasów) i agresywna delta per kohorta uczestników Hyperliquid na
+ * rynku BTC. `coin` — rynek wykresu obok: na innym niż BTC sama ramka z „—, tylko BTC” (bez liczb BTC pod wykresem ETH).
+ */
+export const CohortFlowPanel: React.FC<{ coin: string }> = ({ coin }) => {
   const { status, flow } = useCohortFlow();
   const [mode, setMode] = useState<Mode>('net');
   if (status === 'unconfigured') return null;
+  const eyebrow = tr('Kto kupuje, kto sprzedaje · BTC · Hyperliquid', 'Who buys, who sells · BTC · Hyperliquid');
+  if (scannerScope(coin) === 'btc-only')
+    return (
+      <Panel eyebrow={eyebrow} title={tr('Przepływ kohort', 'Cohort flow')}>
+        <p
+          className="px-4 py-4 font-mono text-[11px] text-ink-3"
+          title={tr(
+            `Kohorty liczymy z publicznej taśmy BTC na Hyperliquid; wykres pokazuje ${coin}.`,
+            `Cohorts are computed from the public BTC tape on Hyperliquid; the chart shows ${coin}.`
+          )}
+        >
+          {BTC_ONLY}
+        </p>
+      </Panel>
+    );
 
   const badge =
     status === 'ready' ? (
@@ -48,7 +67,7 @@ export const CohortFlowPanel: React.FC = () => {
     ) : null;
 
   return (
-    <Panel eyebrow={tr('Kto kupuje, kto sprzedaje · Hyperliquid', 'Who buys, who sells · Hyperliquid')} title={tr('Przepływ kohort', 'Cohort flow')} actions={badge}>
+    <Panel eyebrow={eyebrow} title={tr('Przepływ kohort', 'Cohort flow')} actions={badge}>
       {status !== 'ready' || !flow ? (
         <EmptyState
           title={

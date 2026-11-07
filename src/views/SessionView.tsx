@@ -18,8 +18,9 @@ const subscribeHash = (fn: () => void) => {
 const inReplay = () => parseReplayLink(window.location.hash) !== null;
 
 /**
- * Ekran „W sesji”: wykres z układami sesji (Kokpit domyślnie, od 1280 px z prawą kolumną DOM i taśmy), pod nim
- * przepływ kohort i zrealizowane likwidacje (na każdej szerokości). Na telefonie zamiast kolumny pasek Pulse rynku
+ * Ekran „W sesji”: wykres z układami sesji (Kokpit domyślnie, od 1280 px z prawą kolumną DOM i taśmy, od 640 px
+ * z tą kolumną jako szufladą nad wykresem), pod nim przepływ kohort i zrealizowane likwidacje BTC (na każdej
+ * szerokości; na wykresie innego rynku „—, tylko BTC”). Na telefonie zamiast kolumny pasek Pulse rynku
  * wykresu, przypięty pod nagłówkiem aplikacji także przy przewijaniu (karty Wykres, DOM, Taśma są w pasku wykresu).
  * W powtórce (link #charts?replay=…) sama powtórka: panele na żywo nie mieszają się z przeszłością.
  * `onPhase` — karta układu innej fazy (Alt+1…6, nowa karta) przenosi do ekranu tej fazy.
@@ -40,19 +41,20 @@ const SessionView: React.FC<{ onPhase?: (phase: PhaseId) => void }> = ({ onPhase
       <ChartsView phase="session" onPhase={onPhase} onMarket={setCoin} />
       {!replay && (
         <>
-          <CohortFlowPanel />
-          <SessionLiquidations />
+          <CohortFlowPanel coin={coin} />
+          <SessionLiquidations coin={coin} />
         </>
       )}
     </div>
   );
 };
 
-/** Taśma zrealizowanych likwidacji jako osobna karta, z pokryciem open interest z mapy likwidacji. */
-const SessionLiquidations: React.FC = () => {
+/** Taśma zrealizowanych likwidacji BTC jako osobna karta, z pokryciem open interest z mapy likwidacji. */
+const SessionLiquidations: React.FC<{ coin: Market }> = ({ coin }) => {
   const { status, map } = useLiqMap();
   return (
     <LiquidationTape
+      coin={coin}
       coverage={map && (status === 'ready' || status === 'delayed') ? map.coverage.share : null}
       frame="rounded-xl border border-line bg-surface-1 p-4"
     />
