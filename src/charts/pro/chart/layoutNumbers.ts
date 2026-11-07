@@ -8,12 +8,12 @@ import { WAIT_TEXT } from '../../../utils/sessionText';
 import { fmtPx } from './layout';
 import type { StationId } from './stations';
 import { profile, profileStep, toVBars } from '../../../utils/auction';
-import { classifyDay, vaMigration } from '../../../utils/dayType';
+import { vaMigration } from '../../../utils/dayType';
 import { dayVwapOf, vwapSigma } from '../../../utils/dayVwap';
 import type { MapKind } from '../../../utils/mapSettlement';
-import { rvolOf } from '../../../utils/rvol';
+import { rvolOf } from '../../../utils/rvolOf';
 import { type TradeSession, rangeBudget } from '../../../utils/sessionDay';
-import { type SessionFacts, type SessionNow, sessionNowOf, vaMissing } from '../../../utils/sessionFacts';
+import { type SessionFacts, type SessionNow, dayTypeOf, sessionNowOf, vaMissing } from '../../../utils/sessionFacts';
 import { TRADE_SESSION_NAME } from '../../../utils/sessionNames';
 import {
   type Absent,
@@ -55,7 +55,7 @@ export interface LayoutNumber {
 
 // Wspólne z Rozliczeniem sesji (utils/sessionText, utils/auction) — dawne miejsce eksportu
 export { type Absent, type Expected, type Got, isAbsent, profileStep, toVBars };
-// Liczby ze świec bez modułów wykresu (utils/dayVwap, utils/sessionFacts, utils/rvol; też serwer MCP) — dawne miejsce eksportu
+// Liczby ze świec bez modułów wykresu (utils/dayVwap, utils/sessionFacts, utils/rvolOf; też serwer MCP) — dawne miejsce eksportu
 export { type SessionNow, dayVwapOf, rvolOf, sessionNowOf };
 
 /** Sesja do rozliczenia w nagłówku (w toku albo ostatnia zamknięta): fakty ze świec 1m, te same co na karcie Rozliczenia. */
@@ -403,9 +403,9 @@ function dayTypeNum(x: LayoutInputs): LayoutNumber {
   const r = val(x.review);
   const label = reviewLabel(tr('Typ dnia', 'Day type'), r);
   if (!r) return dash(label, 'MODEL', `MODEL · Dalton: ${whyOf(x.review)}`);
-  if (!r.ibDone) return dash(label, 'MODEL', tr(`MODEL · Dalton: IB w budowie do ${fmtHm(r.s.ibEnd)}`, `MODEL · Dalton: IB forming until ${fmtHm(r.s.ibEnd)}`));
-  const t = classifyDay(r);
-  if (t === 'unknown') return dash(label, 'MODEL', tr('MODEL · Dalton: zakres IB zerowy albo brak liczb', 'MODEL · Dalton: zero IB range or missing numbers'));
+  // IB w budowie albo zakres IB zerowy — powód wspólny z kartą Rozliczenia i serwerem MCP (`dayTypeOf`)
+  const t = dayTypeOf(r);
+  if (isAbsent(t)) return dash(label, 'MODEL', `MODEL · Dalton: ${t.why}`);
   const k = fmtFixed((r.hi - r.lo) / (r.ibHi - r.ibLo), 1);
   return {
     label,

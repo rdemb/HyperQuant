@@ -67,13 +67,42 @@ describe('Sources.published', () => {
     expect(b.ok && b.at).toBe(NOW + 61_000);
   });
 
-  it('fetch odrzuca — {ok:false, why}, bez wyjątku; błąd nie zostaje w pamięci', async () => {
-    const { src, calls } = testSources({ [FILE]: new Error('ECONNRESET') }, NOW);
+  it('fetch odrzuca — {ok:false, why}, bez wyjątku; porażka w pamięci 30 s, potem nowe żądanie', async () => {
+    const { src, calls, clock } = testSources({ [FILE]: new Error('ECONNRESET') }, NOW);
     const r = await src.published('BTC/test.json', isV);
     expect(r.ok).toBe(false);
     expect(!r.ok && r.why).toBeTruthy();
     expect(r.url).toBe(FILE);
+    clock.now = NOW + 29_000;
+    const again = await src.published('BTC/test.json', isV);
+    expect(again.ok).toBe(false);
+    expect(calls).toHaveLength(1);
+    clock.now = NOW + 31_000;
     await src.published('BTC/test.json', isV);
+    expect(calls).toHaveLength(2);
+  });
+
+  it('HTTP 5xx — porażka w pamięci 30 s', async () => {
+    const { src, calls, clock } = testSources({ [FILE]: { status: 503, json: {} } }, NOW);
+    await src.published('BTC/test.json', isV);
+    clock.now = NOW + 29_000;
+    await src.published('BTC/test.json', isV);
+    expect(calls).toHaveLength(1);
+    clock.now = NOW + 30_000;
+    await src.published('BTC/test.json', isV);
+    expect(calls).toHaveLength(2);
+  });
+
+  it('HTTP 429 — porażka w pamięci 60 s: drugie wywołanie w tym czasie bez żądania, po 60 s nowe', async () => {
+    const { src, calls, clock } = testSources({ [HL_INFO]: { status: 429, json: {} } }, NOW);
+    const a = await src.candles('1m', NOW - 60 * MIN);
+    expect(!a.ok && a.why).toContain('429');
+    clock.now = NOW + 59_000;
+    const b = await src.candles('1m', NOW - 60 * MIN);
+    expect(!b.ok && b.why).toContain('429');
+    expect(calls).toHaveLength(1);
+    clock.now = NOW + 60_000;
+    await src.candles('1m', NOW - 60 * MIN);
     expect(calls).toHaveLength(2);
   });
 
@@ -206,11 +235,15 @@ describe('Sources.volModel', () => {
     expect(calls).toHaveLength(4);
   });
 
-  it('Hyperliquid odrzuca — {ok:false} z powodem, bez pamięci: następne wywołanie pyta znowu', async () => {
-    const { src, calls } = testSources({ [HL_INFO]: { status: 502, json: {} } }, NOW);
+  it('Hyperliquid odrzuca — {ok:false} z powodem; modelu nie ma w pamięci, świece z porażką 30 s, potem nowe żądania', async () => {
+    const { src, calls, clock } = testSources({ [HL_INFO]: { status: 502, json: {} } }, NOW);
     const r = await src.volModel();
     expect(r.ok).toBe(false);
     expect(!r.ok && r.why).toContain('502');
+    clock.now = NOW + 20_000;
+    expect((await src.volModel()).ok).toBe(false);
+    expect(calls).toHaveLength(2);
+    clock.now = NOW + 31_000;
     await src.volModel();
     expect(calls).toHaveLength(4);
   });

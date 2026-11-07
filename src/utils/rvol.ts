@@ -1,13 +1,9 @@
-import { tr } from '../i18n';
-import type { Candle } from '../charts/pro/hl/parse';
-import { type VBar, toVBars } from './auction';
-import type { Got } from './sessionText';
+import type { VBar } from './auction';
 
 /** RVOL wg godzin (MODEL): wolumen świecy wobec mediany wolumenu świec z tego samego miejsca doby z poprzednich dni. */
 
 const DAY = 86_400_000;
 const HOUR = 3_600_000;
-const MIN = 60_000;
 /** Najmniej dni w próbie; mniej — brak wartości (nie zgadujemy). */
 export const RVOL_MIN_DAYS = 10;
 /** Najkrótszy upływ bieżącej godziny, od którego liczymy proporcję (wcześniej szum z kilku transakcji). */
@@ -73,18 +69,4 @@ export function rvolHour(hourly: VBar[], now: number, days = 20): { value: numbe
   if (xs.length < RVOL_MIN_DAYS || !cur || elapsed < MIN_ELAPSED_MS || !Number.isFinite(cur.volume)) return { value: null, n: xs.length };
   const med = median(xs);
   return { value: med > 0 ? cur.volume / (med * (elapsed / HOUR)) : null, n: xs.length };
-}
-
-/**
- * RVOL bieżącej godziny ze świec 1h (nagłówek układu, serwer MCP); brak — powód (krótka historia, pierwsze 5 min
- * godziny, brak świecy).
- */
-export function rvolOf(c1h: readonly Candle[], now: number): Got<{ value: number; n: number; hour: number }> {
-  if (c1h.length === 0) return { why: tr('Czekam na świece 1h', 'Waiting for 1h candles') };
-  const hour = Math.floor(now / HOUR) * HOUR;
-  const r = rvolHour(toVBars(c1h), now);
-  if (r.value !== null) return { value: r.value, n: r.n, hour };
-  if (r.n < RVOL_MIN_DAYS) return { why: tr(`za mało historii (min. ${RVOL_MIN_DAYS} dni)`, `not enough history (min. ${RVOL_MIN_DAYS} days)`) };
-  if (now - hour < 5 * MIN) return { why: tr('Liczone od 5. minuty godziny', 'Computed from the 5th minute of the hour') };
-  return { why: tr('Brak świecy bieżącej godziny albo mediana wolumenu 0', 'No candle for the current hour or a zero median volume') };
 }

@@ -4,8 +4,8 @@ import type { LiqMap } from '../../../utils/liqMap';
 import { mapWindow, settleRange } from '../../../utils/mapSettlement';
 import type { VolModel } from '../../../utils/volatility';
 import type { WhaleLayer } from '../../../utils/whaleLayer';
-import { type TradeSession, currentTradeSession, expectedRange, previousSameSession } from '../../../utils/sessionDay';
-import { reviewSession, sessionFacts } from '../../../utils/sessionFacts';
+import { type TradeSession, currentTradeSession, previousSameSession } from '../../../utils/sessionDay';
+import { expectedFrom, reviewSession, sessionFacts } from '../../../utils/sessionFacts';
 import { nyMap } from '../../../utils/fourNumbers';
 import { TRADE_SESSION_NAME } from '../../../utils/sessionNames';
 import { sessionMaps } from '../../../utils/sessionReview';
@@ -139,19 +139,8 @@ function expectedOf(store: InputStore, model: VolModel | null, s: TradeSession, 
     if (c5 === undefined || isAbsent(c5)) return c5;
     bars5m = [...c5];
   }
-  const e = expectedRange(model, toVBars(bars5m), s, asOf, price);
-  if (e) return e;
-  return {
-    why: model
-      ? tr('Model HAR nie daje zmienności dla tej sesji', 'The HAR model gives no volatility for this session')
-      : asOf < now
-        ? // Zamknięta sesja: zawsze Parkinson sprzed otwarcia, także przy wczytanym modelu HAR (sessionExpectedOf)
-          tr(
-            'Ocena ex ante (Parkinson sprzed otwarcia): za mało zamkniętych świec 5m z doby przed sesją (min. 12)',
-            'Ex ante estimate (Parkinson before the open): too few closed 5m candles from the day before the session (min. 12)'
-          )
-        : tr('Bez modelu HAR, a za mało zamkniętych świec 5m z ostatniej doby (min. 12)', 'No HAR model and too few closed 5m candles from the last day (min. 12)'),
-  };
+  // Liczba albo powód braku — wspólne z kartą Rozliczenia i serwerem MCP (`expectedFrom`); tu tylko świece 5m z magazynu
+  return expectedFrom(model, toVBars(bars5m), s, now, asOf, price);
 }
 
 /** Model HAR rynku `coin` w drodze: liczy go tylko BTC, więc na innym rynku nie czekamy (Parkinson od razu). */

@@ -14,10 +14,10 @@ import type { DeskLedgerState } from '../state/useDeskLedger';
 import type { LiqTapeState } from '../state/useLiqTape';
 import type { VBar } from './auction';
 import { COHORTS, COHORT_LABEL, type CohortId } from './cohorts';
-import { classifyDay, vaMigration } from './dayType';
+import { vaMigration } from './dayType';
 import { mapWindow, settleRange } from './mapSettlement';
 import { type TradeSession, currentTradeSession, lastClosedSessions, nextTradeSession, rangeBudget } from './sessionDay';
-import { type SessionFacts, sessionFacts, vaMissing } from './sessionFacts';
+import { type SessionFacts, dayTypeOf, sessionFacts, vaMissing } from './sessionFacts';
 import { TRADE_SESSION_NAME } from './sessionNames';
 import {
   DAY_TYPE_LABEL,
@@ -115,9 +115,8 @@ function dayTypeRow(x: ReviewInputs, f: Got<SessionFacts> | undefined): ReviewRo
   const m = 'MODEL · Dalton';
   const no = (why: string) => absent('dayType', label, 'MODEL', why, { hint: `${m}: ${why}` });
   if (!f || isAbsent(f)) return no(whyOf(f));
-  if (!f.ibDone) return no(tr(`IB w budowie do ${fmtHm(x.s.ibEnd)}`, `IB forming until ${fmtHm(x.s.ibEnd)}`));
-  const t = classifyDay(f);
-  if (t === 'unknown') return no(tr('zakres IB zerowy albo brak liczb', 'zero IB range or missing numbers'));
+  const t = dayTypeOf(f);
+  if (isAbsent(t)) return no(t.why);
   const k = fmtFixed((f.hi - f.lo) / (f.ibHi - f.ibLo), 1);
   return {
     id: 'dayType',
