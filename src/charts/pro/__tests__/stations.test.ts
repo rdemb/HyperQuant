@@ -77,7 +77,8 @@ describe('układy faz dnia', () => {
     const cockpit = stationPanel(stationById('cockpit'), 0, false);
     expect([cockpit.interval, cockpit.view, cockpit.showHeatmap, cockpit.showCvd, cockpit.showDelta]).toEqual(['1m', 'footprint', true, true, false]);
     expect([stationPanel(stationById('cockpit'), 0, true).showClashes, stationPanel(stationById('cockpit'), 0, true).showLots]).toEqual([false, false]);
-    expect(stationPanel(stationById('fuel'), 0, false).indicators.map((x) => x.id)).toEqual(['slippage', 'regime']);
+    expect(stationPanel(stationById('fuel'), 0, false).indicators.map((x) => x.id)).toEqual(['slippage', 'regime', 'rvol']);
+    expect(stationPanel(stationById('fuel'), 0, false).showVolume).toBe(false);
     expect(stationPanel(stationById('fuel'), 0, true).showWhales).toBe(false);
     const open = stationPanel(stationById('auction-open'), 0, false);
     expect([open.interval, open.fpStyle, open.cvdReset, open.showDevPoc, open.showDelta]).toEqual(['5m', 'delta', 'session', true, false]);

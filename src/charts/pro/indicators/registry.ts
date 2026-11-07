@@ -4,6 +4,7 @@ import type { MakerSplit } from '../core/makers';
 import { type Branching, MIN_EVENTS, fitBranching } from '../core/hawkes';
 import { fitBranchingLater, inBackground } from '../core/hawkesWorker';
 import { ofiEvent } from '../../../utils/microMechanics';
+import { rvolSeries } from '../../../utils/rvol';
 import { Extreme, OlsWindow, RegimeDetector, RobustLine, Window, Wma, ema, rma } from './primitives';
 import { INTERVALS, MONTH, intervalById } from '../core/time';
 import { numLang } from '../../../ui/format';
@@ -46,6 +47,7 @@ export type IndicatorId =
   | 'cone'
   | 'slippage'
   | 'breadth'
+  | 'rvol'
   | 'repeat'
   | 'makers'
   | 'hawkes'
@@ -1653,6 +1655,44 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
     },
   },
   {
+    id: 'rvol',
+    short: 'RVOL',
+    name: tr('RVOL wg godzin (wolumen wobec normy)', 'Hourly RVOL (volume vs. norm)'),
+    hint: tr(
+      'MODEL: wolumen wobec mediany tej samej godziny z 20 dni (1 — typowy wolumen o tej porze, 2 — dwa razy większy); bez wartości, gdy historia wykresu ma mniej niż 10 dni, i w świecy jeszcze trwającej',
+      'MODEL: volume versus the median of the same hour over 20 days (1 is the typical volume at that time, 2 is twice as much); no value when the chart history is shorter than 10 days, or in a candle still forming'
+    ),
+    group: 'hyperquant',
+    aliases: 'rvol relative volume wzgledny wolumen godzina hour norma mediana median aktywnosc activity',
+    warmup: () => 0,
+    convention: tr(
+      'Tego wskaźnika nie ma w TradingView w tej postaci. Model na świecach wykresu: wolumen świecy dzielony przez medianę wolumenu świec z tej samej godziny i minuty UTC z poprzednich 20 dni; próba musi mieć co najmniej 10 dni, inaczej świeca nie ma wartości. Świeca jeszcze trwająca też jej nie ma (wolumen niepełny). Wolumen tej samej giełdy, bez ruchu w innych miejscach.',
+      'TradingView has no such indicator in this form. A model on the chart candles: the candle volume divided by the median volume of candles at the same UTC hour and minute over the previous 20 days; the sample needs at least 10 days, otherwise the candle has no value. A candle still forming has none either (partial volume). Volume of this exchange only, not other venues.'
+    ),
+    memoryNote: tr(
+      'Świeca zależy od świec z tej samej pory doby z 20 poprzednich dni, o ile wykres je ma (przy drobnym interwale ładuje się mniej dni).',
+      'A candle depends on candles at the same time of day over the previous 20 days, as far as the chart has them (a small interval loads fewer days).'
+    ),
+    pane: 'own',
+    params: [],
+    plots: [{ title: 'RVOL' }],
+    levels: [1],
+    format: 'fixed2',
+    fromZero: true,
+    series: () => (bars, ms, ctx, out) => {
+      const [o] = out;
+      const r = rvolSeries(
+        bars.map((b) => ({ time: b.candle.t, open: b.candle.o, high: b.candle.h, low: b.candle.l, close: b.candle.c, volume: b.candle.v })),
+        ms
+      );
+      for (let i = 0; i < bars.length; i++) {
+        // Świeca w toku ma wolumen niepełny: bez wartości
+        const v = bars[i].candle.t + ms > ctx.now ? null : r[i];
+        o[i] = v ?? Number.NaN;
+      }
+    },
+  },
+  {
     id: 'repeat',
     short: tr('Powroty', 'Returning'),
     name: tr('Powracający i nowi biorcy', 'Returning and new takers'),
@@ -1945,7 +1985,7 @@ export const REMOVED_INDICATORS: readonly string[] = ['obv', 'cmf', 'mfi', 'netv
 
 /** Kolejność wskaźników w warstwach menu (poza `search`, który zostaje w kolejności rejestru). */
 const TIER_IDS: Record<Exclude<IndicatorTier, 'search'>, readonly IndicatorId[]> = {
-  front: ['oiflow', 'absorption', 'breadth', 'repeat', 'makers', 'twap', 'slippage', 'ofi', 'ordersize'],
+  front: ['oiflow', 'absorption', 'breadth', 'repeat', 'makers', 'twap', 'slippage', 'rvol', 'ofi', 'ordersize'],
   second: ['cone', 'outcomes', 'regime', 'hawkes', 'pbrange'],
   classic: ['ema', 'sma', 'vwma', 'atr', 'bb', 'keltner', 'pivots'],
 };
