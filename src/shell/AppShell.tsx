@@ -24,7 +24,8 @@ import { AnimatedNumber, Badge, BadgeTone, EmptyState, Segmented, VIEW_TRANSITIO
 import { InstallButton } from './InstallButton';
 import { ConnectingState } from './ConnectingState';
 import { Lang, lang, setLang, tr } from '../i18n';
-import { levelStatusLabel, sessionLabel } from '../utils/shaakuniEngine';
+import { levelStatusLabel } from '../utils/shaakuniEngine';
+import { sessionNameAt } from '../utils/sessionNames';
 
 // Widoki ładowane leniwie (mniejszy pierwszy bundle; wykresy faz w osobnym pakiecie)
 const BeforeView = lazy(() => import('../views/BeforeView'));
@@ -107,7 +108,8 @@ const TickerStrip: React.FC = () => {
       </span>
       <Item label="PDH" value={shaakuni.pdh ? `${fmtPrice(shaakuni.pdh, 0)} · ${levelStatusLabel(shaakuni.pdhStatus)}` : DASH} />
       <Item label="PDL" value={shaakuni.pdl ? `${fmtPrice(shaakuni.pdl, 0)} · ${levelStatusLabel(shaakuni.pdlStatus)}` : DASH} />
-      <Item label={tr('Sesja', 'Session')} value={`${sessionLabel(shaakuni.nySession)} · ${shaakuni.nyTimeFormatted}`} />
+      {/* Sesja dnia tradera (§7.11), te same granice co nagłówki W sesji i Po sesji; godzina NY bez zmian */}
+      <Item label={tr('Sesja', 'Session')} value={`${sessionNameAt(feed.nowTick)} · ${shaakuni.nyTimeFormatted}`} />
     </div>
   );
 };

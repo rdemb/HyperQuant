@@ -6,16 +6,15 @@ import { NextEventStat } from '../market/NextEventStat';
 import { useDeskLedger } from '../../state/useDeskLedger';
 import { calibrate } from '../../utils/deskLedger';
 import { useAuctionContext } from '../../state/useAuctionContext';
-import { TRADE_SESSION_NAME } from '../../utils/sessionNames';
+import { TRADE_SESSION_NAME, sessionNameAt } from '../../utils/sessionNames';
 import { tr } from '../../i18n';
-import { sessionLabel } from '../../utils/shaakuniEngine';
 import { crossedLevels } from '../../utils/touchMc';
 
 const CAL_TITLE = tr('Skalibrowane na rozstrzygniętej historii (dziennik desku)', 'Calibrated on resolved history (desk ledger)');
 
 /** Pas kontekstu pod wykresem: zasięg MC, głębokość arkusza, mikrostruktura, funding, najbliższe makro. */
 export const DeskRail: React.FC = () => {
-  const { feed, quant, shaakuni } = useDesk();
+  const { feed, quant } = useDesk();
   const mc = feed.backendTelemetry?.monteCarlo ?? null;
   // Poziom już przekroczony (cena nad PDH / pod PDL) — „100%” byłoby pozorną prognozą
   const lv = feed.realHtfLevels;
@@ -153,7 +152,7 @@ export const DeskRail: React.FC = () => {
           label={tr(<>Powrót do <span className="whitespace-nowrap">D-EQ</span></>, <>Reversion to <span className="whitespace-nowrap">D-EQ</span></>)}
           source={{ tone: 'model', label: 'MODEL', title: tr('Regresja OU wokół 0,65·D-EQ + 0,35·W-EQ', 'OU regression around 0.65·D-EQ + 0.35·W-EQ') }}
           value={<span className="text-base">Z {quant.ouZScore > 0 ? '+' : ''}{fmtNum(quant.ouZScore)}σ</span>}
-          hint={`t½ ${Number.isFinite(quant.ouHalfLifeBars) ? `${fmtNum(quant.ouHalfLifeBars)} ${tr('świec', 'bars')}` : tr('∞ (brak powrotu)', '∞ (no reversion)')} · ${sessionLabel(shaakuni.nySession)}`}
+          hint={`t½ ${Number.isFinite(quant.ouHalfLifeBars) ? `${fmtNum(quant.ouHalfLifeBars)} ${tr('świec', 'bars')}` : tr('∞ (brak powrotu)', '∞ (no reversion)')} · ${sessionNameAt(feed.nowTick)}`}
         />
       </div>
 
