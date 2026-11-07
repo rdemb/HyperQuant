@@ -3,17 +3,31 @@ import type { Branching } from '../core/hawkes';
 import { type LiqLevel, vwapSeries } from '../core/indicators';
 import { utcDayStart } from '../core/sessions';
 import { fmtDayTime, fmtHm, fmtHms } from '../core/time';
-import { blogMapName } from './blogMapLayer';
-import { WAIT_TEXT, scannerAge } from './layerSources';
+import { scannerAge } from './layerSources';
+import { WAIT_TEXT } from '../../../utils/sessionText';
 import { fmtPx } from './layout';
 import { vwapSigma } from './marketState';
 import type { StationId } from './stations';
-import { type VBar, profile, sessionVwap } from '../../../utils/auction';
-import { type DayType, type VaMigration, classifyDay, vaMigration } from '../../../utils/dayType';
+import { profile, profileStep, sessionVwap, toVBars } from '../../../utils/auction';
+import { classifyDay, vaMigration } from '../../../utils/dayType';
 import type { MapKind } from '../../../utils/mapSettlement';
 import { RVOL_MIN_DAYS, rvolHour } from '../../../utils/rvol';
-import { type TradeSession, currentTradeSession, lastClosedSessions, nextTradeSession, previousSameSession, rangeBudget } from '../../../utils/sessionDay';
+import { type TradeSession, currentTradeSession, nextTradeSession, rangeBudget } from '../../../utils/sessionDay';
+import { type SessionFacts, vaMissing } from '../../../utils/sessionFacts';
 import { TRADE_SESSION_NAME } from '../../../utils/sessionNames';
+import {
+  type Absent,
+  DAY_TYPE_LABEL,
+  type Expected,
+  type Got,
+  METHOD,
+  METHOD_NOTE,
+  VA_MIGRATION_LABEL,
+  amt,
+  blogMapName,
+  isAbsent,
+  pctOf,
+} from '../../../utils/sessionText';
 import { DASH, fmtFixed, fmtPct, fmtSigned } from '../../../ui/format';
 import { tr } from '../../../i18n';
 
@@ -37,12 +51,8 @@ export interface LayoutNumber {
   short?: string;
 }
 
-/** Brak liczby z powodem (widok: „—” i powód w podpowiedzi). */
-export interface Absent {
-  why: string;
-}
-export type Got<T> = T | Absent;
-export const isAbsent = (v: unknown): v is Absent => typeof v === 'object' && v !== null && 'why' in v;
+// Wspólne z Rozliczeniem sesji (utils/sessionText, utils/auction) — dawne miejsce eksportu
+export { type Absent, type Expected, type Got, isAbsent, profileStep, toVBars };
 
 /** Sesja Londynu albo NY w toku ze świec 1m: zakres od otwarcia, Initial Balance (pierwsza godzina) i VWAP sesji. */
 export interface SessionNow {
@@ -56,22 +66,8 @@ export interface SessionNow {
   vwap: { vwap: number; sd: number } | null;
 }
 
-/** Sesja do rozliczenia (w toku albo ostatnia zamknięta) ze świec 5m: IB, zakres, zamknięcie i value area obu sesji. */
-export interface ReviewFacts {
-  s: TradeSession;
-  inProgress: boolean;
-  ibHi: number;
-  ibLo: number;
-  ibDone: boolean;
-  hi: number;
-  lo: number;
-  close: number;
-  va: { vah: number; val: number } | null;
-  /** Value area poprzedniej sesji tego samego typu; null — świece jej nie obejmują. */
-  prevVa: { vah: number; val: number } | null;
-}
-
-export type Expected = { usd: number; method: 'har' | 'parkinson' };
+/** Sesja do rozliczenia w nagłówku (w toku albo ostatnia zamknięta): fakty ze świec 1m, te same co na karcie Rozliczenia. */
+export type ReviewFacts = SessionFacts & { inProgress: boolean };
 
 /** Rozliczenie mapy z bloga wybranej na wykresie (ta sama reguła co ✓ warstwy): dotknięte poziomy w oknie [from, to). */
 export interface MapHits {
@@ -112,13 +108,10 @@ export interface LayoutInputs {
 const MIN = 60_000;
 const HOUR = 60 * MIN;
 const DAY = 24 * HOUR;
-const M5 = 5 * MIN;
 /** Okno udziału TWAP i dopasowania Hawkesa (jak domyślne okno wskaźnika Hawkesa). */
 export const FLOW_WINDOW_MS = 15 * MIN;
 /** Kwota zlecenia do kosztu wejścia. */
 export const COST_USD = 100_000;
-/** Profil sesji ze świec 5m tylko przy ≥ 95% świec okresu (jak profil poprzedniej sesji w kontekście aukcji). */
-const COVERAGE = 0.95;
 
 const WAIT = WAIT_TEXT;
 const val = <T>(v: Got<T> | undefined): T | null => (v === undefined || isAbsent(v) ? null : v);
@@ -146,41 +139,7 @@ const utcDm = (t: number) => {
   const d = new Date(t);
   return `${String(d.getUTCDate()).padStart(2, '0')}.${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
 };
-const pctOf = (b: number) => `${fmtFixed(b * 100, 0)}%`;
-/** Kwota albo odległość ceny (zakres, σ): bez groszy od 100, mniejsze z dokładnością pasującą do ceny rynku. */
-const amt = (v: number) => fmtFixed(v, Math.abs(v) >= 100 ? 0 : Math.abs(v) >= 1 ? 2 : 4);
 const sessionName = (s: TradeSession) => TRADE_SESSION_NAME[s.id];
-
-/** Nazwa metody oczekiwanego zakresu w podpowiedzi MODEL. */
-export const METHOD: Record<Expected['method'], string> = { har: 'HAR', parkinson: 'Parkinson' };
-export const METHOD_NOTE: Record<Expected['method'], string> = {
-  har: tr(
-    'Oczekiwany zakres E[H−L] = √(8/π)·σ sesji z modelu zmienności HAR (BTC, liczony w przeglądarce, z profilem godzin).',
-    'Expected range E[H−L] = √(8/π)·session σ from the HAR volatility model (BTC, computed in the browser, with the hourly profile).'
-  ),
-  parkinson: tr(
-    'Bez modelu HAR: σ Parkinsona z ostatnich zamkniętych świec 5m tego rynku przeskalowana do długości sesji, E[H−L] = √(8/π)·σ.',
-    'Without the HAR model: Parkinson σ from the latest closed 5m candles of this market scaled to the session length, E[H−L] = √(8/π)·σ.'
-  ),
-};
-
-export const DAY_TYPE_LABEL: Record<DayType, string> = {
-  normal: tr('normalny', 'normal'),
-  'normal-variation': tr('wariant normalny', 'normal variation'),
-  trend: tr('trendowy', 'trend'),
-  neutral: tr('neutralny', 'neutral'),
-  unknown: DASH,
-};
-
-export const VA_MIGRATION_LABEL: Record<VaMigration, string> = {
-  higher: tr('wyżej', 'higher'),
-  lower: tr('niżej', 'lower'),
-  'overlap-higher': tr('częściowo wyżej', 'overlap, higher'),
-  'overlap-lower': tr('częściowo niżej', 'overlap, lower'),
-  inside: tr('wewnątrz', 'inside'),
-  outside: tr('szersza', 'wider'),
-  unknown: DASH,
-};
 
 // ───────────────────────── liczby ─────────────────────────
 
@@ -453,9 +412,8 @@ function migrationNum(x: LayoutInputs): LayoutNumber {
   const label = tr('Migracja VA', 'VA migration');
   const r = val(x.review);
   if (!r) return dash(label, 'LIVE', whyOf(x.review));
-  if (!r.va || !r.prevVa) {
-    return dash(label, 'LIVE', tr('Świece 5m nie obejmują całej tej albo poprzedniej sesji tego samego typu (min. 95%)', 'The 5m candles do not cover all of this or the previous session of the same type (min. 95%)'));
-  }
+  const missing = vaMissing(r);
+  if (missing || !r.va || !r.prevVa) return dash(label, 'LIVE', missing ?? WAIT_TEXT);
   const m = vaMigration(r.va, r.prevVa);
   if (m === 'unknown') return dash(label, 'LIVE', tr('Value area bez liczb', 'Value area without numbers'));
   return {
@@ -463,8 +421,8 @@ function migrationNum(x: LayoutInputs): LayoutNumber {
     value: VA_MIGRATION_LABEL[m],
     badge: 'LIVE',
     hint: tr(
-      `Value area 70% sesji ${sessionName(r.s)} ${fmtPx(r.va.val)}–${fmtPx(r.va.vah)} wobec poprzedniej sesji ${sessionName(r.s)} ${fmtPx(r.prevVa.val)}–${fmtPx(r.prevVa.vah)}; profile ze świec 5m.`,
-      `The ${sessionName(r.s)} session 70% value area ${fmtPx(r.va.val)}–${fmtPx(r.va.vah)} against the previous ${sessionName(r.s)} session ${fmtPx(r.prevVa.val)}–${fmtPx(r.prevVa.vah)}; profiles from 5m candles.`
+      `Value area 70% sesji ${sessionName(r.s)} ${fmtPx(r.va.val)}–${fmtPx(r.va.vah)} wobec poprzedniej sesji ${sessionName(r.s)} ${fmtPx(r.prevVa.val)}–${fmtPx(r.prevVa.vah)}; profile ze świec 1m (te same co na karcie Rozliczenia sesji).`,
+      `The ${sessionName(r.s)} session 70% value area ${fmtPx(r.va.val)}–${fmtPx(r.va.vah)} against the previous ${sessionName(r.s)} session ${fmtPx(r.prevVa.val)}–${fmtPx(r.prevVa.vah)}; profiles from 1m candles (the same as on the Session review card).`
     ),
   };
 }
@@ -523,18 +481,6 @@ export function layoutNumbers(id: StationId, x: LayoutInputs): LayoutNumber[] {
 }
 
 // ───────────────────────── wejścia ze świec i migawek ─────────────────────────
-
-export const toVBars = (list: readonly Candle[]): VBar[] => list.map((c) => ({ time: c.t, open: c.o, high: c.h, low: c.l, close: c.c, volume: c.v }));
-
-/** Koszyk profilu wolumenu ok. 0,01% ceny, okrągły (1, 2 albo 5 × 10^k): BTC 100 000 → 10 USD. */
-export function profileStep(price: number): number {
-  if (!(Number.isFinite(price) && price > 0)) return Number.NaN;
-  const x = price * 1e-4;
-  const p = 10 ** Math.floor(Math.log10(x));
-  let best = p;
-  for (const k of [1, 2, 5, 10]) if (Math.abs(Math.log((k * p) / x)) < Math.abs(Math.log(best / x))) best = k * p;
-  return Number(best.toPrecision(12));
-}
 
 const asiaWhy = (now: number) => {
   const next = nextTradeSession(now);
@@ -661,45 +607,4 @@ export function whaleBalanceOf(positions: readonly { side: 'long' | 'short'; usd
     else short += p.usd;
   }
   return { long, short, n: positions.length, asOf };
-}
-
-/** Sesja do rozliczenia: w toku albo ostatnia zamknięta. */
-export function reviewSession(now: number): { s: TradeSession; inProgress: boolean } {
-  const cur = currentTradeSession(now);
-  return cur ? { s: cur, inProgress: true } : { s: lastClosedSessions(now, 1)[0], inProgress: false };
-}
-
-/** Świece 5m okresu [from, min(to, now)), gdy obejmują jego początek i ≥ 95% świec; inaczej null. */
-function covered(c5m: readonly Candle[], from: number, to: number, now: number): VBar[] | null {
-  const end = Math.min(to, now);
-  if (c5m.length === 0 || c5m[0].t > from || !(end > from)) return null;
-  const list = c5m.filter((c) => c.t >= from && c.t < end);
-  return list.length >= COVERAGE * Math.ceil((end - from) / M5) ? toVBars(list) : null;
-}
-
-/** Fakty sesji do rozliczenia (w toku albo ostatniej zamkniętej) ze świec 5m (rosnąco). */
-export function reviewOf(c5m: readonly Candle[], now: number): Got<ReviewFacts> {
-  if (c5m.length === 0) return { why: tr('Czekam na świece 5m', 'Waiting for 5m candles') };
-  const { s, inProgress } = reviewSession(now);
-  const bars = covered(c5m, s.start, s.end, now);
-  if (!bars || bars.length === 0) return { why: tr(`Świece 5m nie obejmują całej sesji ${sessionName(s)} od ${fmtHm(s.start)}`, `The 5m candles do not cover the whole ${sessionName(s)} session since ${fmtHm(s.start)}`) };
-  const ib = bars.filter((b) => b.time < s.ibEnd);
-  const close = bars[bars.length - 1].close;
-  const step = profileStep(close);
-  const p0 = previousSameSession(s);
-  const prevBars = covered(c5m, p0.start, p0.end, now);
-  const va = profile(bars, step);
-  const pv = prevBars ? profile(prevBars, step) : null;
-  return {
-    s,
-    inProgress,
-    ibHi: Math.max(...ib.map((b) => b.high)),
-    ibLo: Math.min(...ib.map((b) => b.low)),
-    ibDone: now >= s.ibEnd,
-    hi: Math.max(...bars.map((b) => b.high)),
-    lo: Math.min(...bars.map((b) => b.low)),
-    close,
-    va: va ? { vah: va.vah, val: va.val } : null,
-    prevVa: pv ? { vah: pv.vah, val: pv.val } : null,
-  };
 }

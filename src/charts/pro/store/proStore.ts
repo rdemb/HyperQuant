@@ -1,5 +1,5 @@
 import { AssetCtx, Candle, Fill, parseAssetCtx, parseBbo, parseBook, parseCandle, parseFills } from '../hl/parse';
-import { fetchAssetCtx, fetchCandles, fetchFunding } from '../hl/rest';
+import { fetchAssetCtx, fetchCandles, fetchCandlesOrNull, fetchFunding } from '../hl/rest';
 import { HlStream, StreamStatus, Subscription } from '../hl/stream';
 import { BookFrame, BookHistory, bookSigFigs, bookStep, toFrame } from '../core/book';
 import { Coverage, Span } from '../core/coverage';
@@ -28,6 +28,8 @@ export type Market = (typeof MARKETS)[number];
 export const COIN: Market = 'BTC';
 /** Tyle świec pobieramy na start i przy każdym doczytaniu historii. */
 export const PAGE_BARS = 1500;
+/** Po nieudanym pobraniu starszej strony świec kolejna próba najwcześniej po tylu ms (błąd to nie koniec historii). */
+export const OLDER_RETRY_MS = 30_000;
 /** Taśma i zlecenia są trzymane w pamięci przez dobę. */
 export const RETENTION_MS = 24 * 3600_000;
 /** Historia finansowania do statystyk świec: najwyżej tyle wstecz (6 stron API po 500 godzin). */
@@ -249,6 +251,11 @@ export class ProStore {
   /** Świece z API (w powtórce z jej pamięci). */
   candles(interval: string, from: number, to: number): Promise<Candle[]> {
     return this.replay ? this.replay.candles(this.coin, interval, from, to) : fetchCandles(this.coin, interval, from, to);
+  }
+
+  /** Jak `candles`, ale nieudane zapytanie → null (odróżnione od pustej odpowiedzi: limitu historii API). */
+  candlesOrNull(interval: string, from: number, to: number): Promise<Candle[] | null> {
+    return this.replay ? this.replay.candles(this.coin, interval, from, to) : fetchCandlesOrNull(this.coin, interval, from, to);
   }
 
   /** Powtórka: agregacje arkusza od ceny nagrania (bez połączenia) i świece dzienne do poziomów dnia. */
@@ -613,9 +620,11 @@ export class ProStore {
 export class CandleSeries {
   candles: Candle[] = [];
   loadState: LoadState = 'idle';
-  /** Doczytywanie starszej historii w toku / historia wyczerpana (limit API). */
+  /** Doczytywanie starszej historii w toku / historia wyczerpana (limit API: pusta odpowiedź). */
   loadingOlder = false;
   historyExhausted = false;
+  /** Po nieudanym pobraniu starszej strony: chwila (zegar przeglądarki) najbliższej próby; 0 — bez błędu. */
+  private olderRetryAt = 0;
   private sub: Subscription | null = null;
   private loadSeq = 0;
   private fpCache = new Map<number, FpCacheEntry>();
@@ -638,12 +647,17 @@ export class CandleSeries {
     this.src = this.composite ? '1d' : interval.id;
   }
 
-  /** Świece interwału z API; seria składana pobiera świece 1D od początku tygodnia albo miesiąca `from`. */
-  private async fetch(from: number, to: number): Promise<Candle[]> {
+  /**
+   * Świece interwału z API; seria składana pobiera świece 1D od początku tygodnia albo miesiąca `from`. Nieudane zapytanie
+   * → null (pusta lista to odpowiedź API).
+   */
+  private async fetch(from: number, to: number): Promise<Candle[] | null> {
     const ms = this.interval.ms;
-    if (!this.composite) return this.m.candles(this.src, from, to);
+    if (!this.composite) return this.m.candlesOrNull(this.src, from, to);
+    const raw = await this.m.candlesOrNull(this.src, barStart(from, ms), to);
+    if (raw === null) return null;
     // Świece 1D sprzed startu handlu na Hyperliquid (bez wolumenu i transakcji) nie wchodzą do tygodnia ani miesiąca
-    const list = (await this.m.candles(this.src, barStart(from, ms), to)).filter((c) => c.v > 0 || c.n > 0);
+    const list = raw.filter((c) => c.v > 0 || c.n > 0);
     this.daily = mergeByTime(this.daily, list);
     return aggregateCandles(list, ms);
   }
@@ -679,6 +693,7 @@ export class CandleSeries {
     this.liveFpTrades = -1;
     this.daily = [];
     this.historyExhausted = false;
+    this.olderRetryAt = 0;
     this.loadState = 'loading';
     if (!this.sub) {
       this.sub = { type: 'candle', coin: m.coin, interval: this.src };
@@ -690,7 +705,7 @@ export class CandleSeries {
     const now = m.apiNow();
     const list = await this.fetch(now - PAGE_BARS * iv.ms, now + iv.ms);
     if (seq !== this.loadSeq) return;
-    if (list.length === 0) {
+    if (!list || list.length === 0) {
       this.loadState = 'error';
       m.bump();
       return;
@@ -701,9 +716,17 @@ export class CandleSeries {
     void m.requestFunding(this.candles[0].t);
   }
 
-  /** Doczytuje starszą historię (przewinięcie wykresu w lewo). */
+  /** Ostatnie doczytanie starszej strony się nie udało (sieć, limit API); kolejna próba po OLDER_RETRY_MS. */
+  get olderFailed(): boolean {
+    return this.olderRetryAt > 0;
+  }
+
+  /**
+   * Doczytuje starszą historię (przewinięcie wykresu w lewo, wskaźniki, Rozliczenie). Pusta odpowiedź API kończy historię;
+   * nieudane zapytanie nie — kolejna próba najwcześniej po OLDER_RETRY_MS.
+   */
   async loadOlder(): Promise<void> {
-    if (this.loadingOlder || this.historyExhausted || this.candles.length === 0) return;
+    if (this.loadingOlder || this.historyExhausted || this.candles.length === 0 || Date.now() < this.olderRetryAt) return;
     this.loadingOlder = true;
     const seq = this.loadSeq;
     const iv = this.interval;
@@ -711,6 +734,12 @@ export class CandleSeries {
     const list = await this.fetch(first - PAGE_BARS * iv.ms, first - 1);
     this.loadingOlder = false;
     if (seq !== this.loadSeq) return;
+    if (list === null) {
+      this.olderRetryAt = Date.now() + OLDER_RETRY_MS;
+      this.m.bump();
+      return;
+    }
+    this.olderRetryAt = 0;
     const older = list.filter((c) => c.t < first);
     if (older.length === 0) this.historyExhausted = true;
     else this.mergeCandles(older);
@@ -725,7 +754,7 @@ export class CandleSeries {
     const seq = this.loadSeq;
     const now = this.m.apiNow();
     const list = await this.fetch(now - 60 * iv.ms, now + iv.ms);
-    if (seq !== this.loadSeq || list.length === 0) return;
+    if (seq !== this.loadSeq || !list || list.length === 0) return;
     this.mergeCandles(list);
     this.m.bump();
   }

@@ -4,7 +4,9 @@ import type { BookFrame } from '../core/book';
 import type { BlogMap } from '../../../state/useBlogMaps';
 import { type InputScan, type InputSeries, type InputStore, RETRY_MS, readInputs, sessionExpectedOf } from '../chart/layoutInputs';
 import { isAbsent, layoutNumbers, toVBars } from '../chart/layoutNumbers';
-import { currentTradeSession, expectedRange } from '../../../utils/sessionDay';
+import { currentTradeSession, expectedRange, previousSameSession } from '../../../utils/sessionDay';
+import { reviewRows } from '../../../utils/sessionReview';
+import type { VolModel } from '../../../utils/volatility';
 
 const MIN = 60_000;
 const M5 = 5 * MIN;
@@ -15,14 +17,15 @@ const NY = currentTradeSession(IN_NY)!;
 
 const SCAN: InputScan = { model: null, liq: { status: 'loading', map: null }, whales: null, whalesConfigured: true, blog: { state: { status: 'loading', maps: [] }, map: null } };
 
-type Spec = { state?: InputSeries['loadState']; list?: Candle[] };
+/** Seria atrapy: stan wczytania, świece, historia wyczerpana (limit API) albo nieudane doczytanie starszej strony. */
+type Spec = { state?: InputSeries['loadState']; list?: Candle[]; exhausted?: boolean; olderFailed?: boolean };
 
 /** Atrapa magazynu rynku: serie świec według interwału, migawka arkusza, taśma; `now` można przesuwać. */
 function fakeStore(o: { now: number; price?: number; series?: Record<string, Spec>; book?: BookFrame | null }) {
   const loads: Record<string, number> = {};
-  const older: Record<string, number> = {};
+  const older: Record<string, number[]> = {};
   const made = new Map<string, InputSeries>();
-  const st: InputStore & { now: number; loads: Record<string, number>; older: Record<string, number> } = {
+  const st: InputStore & { now: number; loads: Record<string, number>; older: Record<string, number[]> } = {
     now: o.now,
     loads,
     older,
@@ -39,13 +42,15 @@ function fakeStore(o: { now: number; price?: number; series?: Record<string, Spe
             loads[id] = (loads[id] ?? 0) + 1;
           },
           candlesNow: () => spec.list ?? [],
+          historyExhausted: spec.exhausted ?? false,
+          olderFailed: spec.olderFailed ?? false,
         };
         made.set(id, s);
       }
       return s;
     },
     indicatorCandles(id: string, from: number) {
-      older[id] = from;
+      (older[id] ??= []).push(from);
       return st.series(id).candlesNow();
     },
     exactBook: () => (o.book === undefined ? null : { latest: () => o.book ?? null }),
@@ -77,29 +82,56 @@ describe('wejścia nagłówka z magazynu rynku', () => {
     expect(readInputs('cockpit', fakeStore({ now: IN_NY, series: { '1m': { state: 'loading' } } }), SCAN).session).toBeUndefined();
   });
 
-  it('oczekiwany zakres sesji do rozliczenia: w toku — na teraz; zamknięta — sprzed jej otwarcia (ex ante)', () => {
+  it('oczekiwany zakres sesji do rozliczenia: w toku — na teraz; zamknięta — sprzed jej otwarcia (ex ante), także z modelem HAR', () => {
     // Spokojnie (zakres świecy 10) do otwarcia NY 3.11, w sesji NY nerwowo (200), potem znów spokojnie
     const range = (t: number) => (t >= NY.start && t < NY.end ? 200 : 10);
     const live = bars5m(at(2026, 11, 2, 14, 30), IN_NY, range);
-    const inProgress = readInputs('review', fakeStore({ now: IN_NY, series: { '5m': { list: live } } }), SCAN);
-    if (!inProgress.review || isAbsent(inProgress.review)) throw new Error('brak sesji');
-    expect(inProgress.review.inProgress).toBe(true);
     expect(sessionExpectedOf(fakeStore({ now: IN_NY, series: { '5m': { list: live } } }), null, NY, true, 100_000)).toEqual(expectedRange(null, toVBars(live), NY, IN_NY, 100_000));
 
     const asia = at(2026, 11, 4, 2);
     const all = bars5m(at(2026, 11, 2, 14, 30), asia, range);
-    const closed = readInputs('review', fakeStore({ now: asia, series: { '5m': { list: all } } }), SCAN);
-    if (!closed.review || isAbsent(closed.review)) throw new Error('brak sesji');
-    expect(closed.review).toMatchObject({ inProgress: false, s: NY });
-    const got = sessionExpectedOf(fakeStore({ now: asia, series: { '5m': { list: all } } }), null, NY, false, closed.review.close);
-    const exAnte = expectedRange(null, toVBars(all), NY, NY.start, closed.review.close)!;
-    const atNow = expectedRange(null, toVBars(all), NY, asia, closed.review.close)!;
+    const got = sessionExpectedOf(fakeStore({ now: asia, series: { '5m': { list: all } } }), null, NY, false, 100_000);
+    const exAnte = expectedRange(null, toVBars(all), NY, NY.start, 100_000)!;
+    const atNow = expectedRange(null, toVBars(all), NY, asia, 100_000)!;
     expect(got).toEqual(exAnte);
     // Ze świec sprzed sesji (spokojnych) oczekiwanie jest mniejsze niż z ostatniej doby, w której była już nerwowa sesja
     expect(exAnte.usd).toBeLessThan(atNow.usd / 5);
     expect(exAnte.method).toBe('parkinson');
+    // Model HAR zna tylko dzisiejszy poziom zmienności: zamkniętą sesję i tak ocenia Parkinson sprzed jej otwarcia
+    const har = {} as VolModel;
+    expect(sessionExpectedOf(fakeStore({ now: asia, series: { '5m': { list: all } } }), har, NY, false, 100_000)).toEqual(exAnte);
     // 5m jeszcze się wczytują — undefined (czekamy), nie liczba zastępcza
     expect(sessionExpectedOf(fakeStore({ now: asia, series: { '5m': { state: 'loading' } } }), null, NY, false, 100_000)).toBeUndefined();
+  });
+
+  it('nagłówek Rozliczenia i karta liczą typ dnia i migrację VA z tych samych faktów (świece 1m od poprzedniej sesji)', () => {
+    // NY 2.11 płasko 99 500, potem do otwarcia NY 3.11 100 000; NY 3.11: IB 100 000–100 300, wybicie w górę do 100 700
+    const px = (t: number) => (t < NY.start ? (t < at(2026, 11, 3, 0) ? 99_500 : 100_000) : t < NY.start + 30 * MIN ? 100_005 : t < NY.ibEnd ? 100_295 : 100_690);
+    const ones: Candle[] = [];
+    for (let t = at(2026, 11, 2, 14, 30); t <= IN_NY; t += MIN) ones.push({ t, o: px(t), h: px(t) + 5, l: px(t) - 5, c: px(t), v: 1, n: 1 });
+    const store = fakeStore({ now: IN_NY, series: { '1m': { list: ones } } });
+    const head = layoutNumbers('review', readInputs('review', store, SCAN));
+    // Świece 1m od otwarcia poprzedniej sesji NY (migracja VA)
+    expect(store.older['1m']).toContain(previousSameSession(NY).start);
+    const rows = reviewRows({
+      s: NY,
+      inProgress: true,
+      now: IN_NY,
+      bars1m: toVBars(ones),
+      maps: { status: 'loading', maps: [] },
+      expected: undefined,
+      liq: { status: 'loading', tape: null },
+      cohorts: { status: 'loading', flow: null },
+      ledger: { status: 'loading', summary: null },
+    });
+    const card = (id: string) => rows.find((r) => r.id === id)!.value;
+    expect([head[0].value, head[1].value]).toEqual([card('dayType'), card('vaMigration')]);
+    expect([head[0].value, head[1].value]).toEqual(['trendowy', 'wyżej']);
+    // Starsze świece 1m nie dotarły: nagłówek czeka albo podaje powód, bez liczby z części danych
+    const partial = (o: Partial<Spec>) => fakeStore({ now: IN_NY, series: { '1m': { list: ones.filter((c) => c.t >= NY.start - 60 * MIN), ...o } } });
+    expect(readInputs('review', partial({}), SCAN).review).toBeUndefined();
+    expect(readInputs('review', partial({ olderFailed: true }), SCAN).review).toEqual({ why: 'Nie udało się pobrać starszych świec 1m — kolejna próba za ≤ 30 s' });
+    expect(layoutNumbers('review', readInputs('review', partial({ exhausted: true }), SCAN))[1]).toMatchObject({ value: '—', hint: expect.stringContaining('poprzedniej sesji') });
   });
 
   it('Rozliczenie: poziomy mapy z bloga dotknięte w oknie mapy — ta sama reguła co ✓ na wykresie (świece 1m od wpisu)', () => {
@@ -122,7 +154,7 @@ describe('wejścia nagłówka z magazynu rynku', () => {
     const x = readInputs('review', store, { ...SCAN, blog: { state: { status: 'ready', maps: [map] }, map } });
     expect(x.mapHits).toEqual({ kind: 'dzien', publishedAt: pub, touched: 1, total: 2, complete: true, from: pub, to: NY.end });
     // Świece 1m od początku okna mapy (wykres doczytuje starsze, jak warstwa)
-    expect(store.older['1m']).toBe(pub);
+    expect(store.older['1m']).toContain(pub);
     // Luka w środku okna: dotknięcie zostaje, rozliczenie niepełne
     const gap = fakeStore({ now: IN_NY, series: { '1m': { list: ones.filter((c) => c.t < at(2026, 11, 3, 12) || c.t >= at(2026, 11, 3, 12, 5)) } } });
     expect(readInputs('review', gap, { ...SCAN, blog: { state: { status: 'ready', maps: [map] }, map } }).mapHits).toMatchObject({ touched: 1, complete: false });
@@ -131,9 +163,13 @@ describe('wejścia nagłówka z magazynu rynku', () => {
     expect(readInputs('review', store, { ...SCAN, blog: { state: { status: 'ready', maps: [map] }, map: { ...map, kind: 'inne' } } }).mapHits).toMatchObject({
       why: expect.stringContaining('bez rozliczenia'),
     });
-    // Świece 1m nie sięgają wpisu: czekamy (brak ✓ nie znaczy „nie dotknięto”)
-    const late = fakeStore({ now: IN_NY, series: { '1m': { list: ones.filter((c) => c.t >= at(2026, 11, 3, 8)) } } });
-    expect(readInputs('review', late, { ...SCAN, blog: { state: { status: 'ready', maps: [map] }, map } }).mapHits).toMatchObject({ why: expect.stringContaining('świece 1m') });
+    // Świece 1m nie sięgają wpisu: starsze w drodze — czekamy (undefined); historia wyczerpana — powód; nieudane doczytanie —
+    // powód z ponowną próbą (brak ✓ nigdy nie znaczy „nie dotknięto”)
+    const late = (o: Partial<Spec>) => fakeStore({ now: IN_NY, series: { '1m': { list: ones.filter((c) => c.t >= at(2026, 11, 3, 8)), ...o } } });
+    const blog = { ...SCAN, blog: { state: { status: 'ready' as const, maps: [map] }, map } };
+    expect(readInputs('review', late({}), blog).mapHits).toBeUndefined();
+    expect(readInputs('review', late({ exhausted: true }), blog).mapHits).toMatchObject({ why: expect.stringContaining('nie sięgają wpisu') });
+    expect(readInputs('review', late({ olderFailed: true }), blog).mapHits).toEqual({ why: 'Nie udało się pobrać starszych świec 1m — kolejna próba za ≤ 30 s' });
   });
 
   it('koszt 100k: migawka arkusza starsza niż 30 s — „—” z powodem; świeża — ask i bid w pb', () => {

@@ -10,14 +10,13 @@ import {
   nakedPocOf,
   prevDayOf,
   profileStep,
-  reviewOf,
   rvolOf,
   sessionNowOf,
   twapShareOf,
   whaleBalanceOf,
 } from '../chart/layoutNumbers';
 import { profile } from '../../../utils/auction';
-import { currentTradeSession } from '../../../utils/sessionDay';
+import { currentTradeSession, previousSameSession } from '../../../utils/sessionDay';
 
 const MIN = 60_000;
 const H = 60 * MIN;
@@ -163,7 +162,23 @@ describe('nagłówek układu: trzy liczby', () => {
   });
 
   it('Rozliczenie: typ dnia (MODEL · Dalton), migracja VA, poziomy mapy dotknięte (LIVE), z oznaczeniem „w toku”', () => {
-    const review = { s: NY, inProgress: true, ibHi: 100_300, ibLo: 100_000, ibDone: true, hi: 100_700, lo: 100_000, close: 100_650, va: { vah: 100_600, val: 100_350 }, prevVa: { vah: 100_200, val: 99_800 } };
+    const review = {
+      s: NY,
+      inProgress: true,
+      ibHi: 100_300,
+      ibLo: 100_000,
+      ibDone: true,
+      hi: 100_700,
+      lo: 100_000,
+      hiAt: NY.start + 2 * H,
+      loAt: NY.start,
+      breakAt: NY.ibEnd,
+      close: 100_650,
+      step: 10,
+      va: { vah: 100_600, val: 100_350 },
+      prev: previousSameSession(NY),
+      prevVa: { vah: 100_200, val: 99_800 },
+    };
     const pub = at(2026, 11, 3, 7, 5);
     const mapHits = { kind: 'dzien' as const, publishedAt: pub, touched: 3, total: 9, complete: true, from: pub, to: NY.end };
     const n = layoutNumbers('review', { coin: 'BTC', now: NOW, review, mapHits });
@@ -295,31 +310,5 @@ describe('liczby nagłówka ze świec i migawek', () => {
         NOW
       )
     ).toEqual({ long: 320e6, short: 210e6, n: 3, asOf: NOW });
-  });
-
-  it('reviewOf: sesja w toku (albo ostatnia zamknięta) ze świec 5m — IB, zakres, VA i VA poprzedniej sesji tego samego typu', () => {
-    const M5 = 5 * MIN;
-    const bars: Candle[] = [];
-    // Od NY poprzedniego dnia (14:30 2.11) do teraz, cena 100 000; w bieżącej sesji NY po IB wyżej
-    for (let t = at(2026, 11, 2, 14, 30); t < NOW; t += M5) {
-      const px = t >= NY.ibEnd ? 100_600 : 100_000;
-      bars.push(c(t, px, px + 20, px - 20, px));
-    }
-    const r = reviewOf(bars, NOW);
-    if ('why' in r) throw new Error(r.why);
-    expect(r).toMatchObject({ inProgress: true, ibHi: 100_020, ibLo: 99_980, hi: 100_620, lo: 99_980, close: 100_600, ibDone: true });
-    expect(r.s.id).toBe('ny');
-    expect(r.prevVa!.vah).toBeLessThanOrEqual(100_030);
-    expect(r.va!.vah).toBeGreaterThan(100_500);
-    // Asia: ostatnia zamknięta sesja NY, bez „w toku”
-    const asia = at(2026, 11, 4, 2);
-    const later: Candle[] = [...bars];
-    for (let t = NOW; t < asia; t += M5) later.push(c(t, 100_600, 100_620, 100_580, 100_600));
-    const closed = reviewOf(later, asia);
-    if ('why' in closed) throw new Error(closed.why);
-    expect(closed).toMatchObject({ inProgress: false });
-    expect(closed.s.start).toBe(NY.start);
-    // Świece bez początku sesji — powód
-    expect(reviewOf(bars.filter((b) => b.t > NY.start + H), NOW)).toMatchObject({ why: expect.any(String) });
   });
 });

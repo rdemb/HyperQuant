@@ -5,33 +5,39 @@
  * dziennika, kohorty: ostatnie 24 h) są tak podpisane i oznaczone `scope: 'window'`. Opis, nie sygnał.
  */
 import { tr } from '../i18n';
-import { DASH, fmtCompact, fmtFixed, fmtSigned } from '../ui/format';
+import { DASH, fmtCompact, fmtFixed, fmtPrice, fmtSigned } from '../ui/format';
 import { utcDayStart } from '../charts/pro/core/sessions';
 import { fmtDayTime, fmtDm, fmtHm } from '../charts/pro/core/time';
-import { blogMapName } from '../charts/pro/chart/blogMapLayer';
-import { fmtPx } from '../charts/pro/chart/layout';
-import { WAIT_TEXT } from '../charts/pro/chart/layerSources';
-import { DAY_TYPE_LABEL, type Expected, type Got, METHOD, METHOD_NOTE, VA_MIGRATION_LABEL, isAbsent, profileStep } from '../charts/pro/chart/layoutNumbers';
-import { replayHash } from '../charts/pro/replay/link';
 import type { BlogMap, BlogMapsState } from '../state/useBlogMaps';
 import type { CohortFlowState } from '../state/useCohortFlow';
 import type { DeskLedgerState } from '../state/useDeskLedger';
 import type { LiqTapeState } from '../state/useLiqTape';
-import { type VBar, profile } from './auction';
+import type { VBar } from './auction';
 import { COHORTS, COHORT_LABEL, type CohortId } from './cohorts';
 import { classifyDay, vaMigration } from './dayType';
 import { mapWindow, settleRange } from './mapSettlement';
-import { type TradeSession, currentTradeSession, lastClosedSessions, nextTradeSession, previousSameSession, rangeBudget } from './sessionDay';
+import { type TradeSession, currentTradeSession, lastClosedSessions, nextTradeSession, rangeBudget } from './sessionDay';
+import { type SessionFacts, sessionFacts, vaMissing } from './sessionFacts';
 import { TRADE_SESSION_NAME } from './sessionNames';
+import {
+  DAY_TYPE_LABEL,
+  EX_ANTE_NOTE,
+  type Expected,
+  type Got,
+  METHOD,
+  METHOD_NOTE,
+  VA_MIGRATION_LABEL,
+  WAIT_TEXT,
+  amt,
+  blogMapName,
+  isAbsent,
+  pctOf,
+} from './sessionText';
 
 const MIN = 60_000;
 const DAY = 24 * 60 * MIN;
-/** Fakty sesji tylko przy ≥ 95% minut sesji w świecach 1m (jak profil sesji w nagłówku Rozliczenia). */
-const COVERAGE = 0.95;
 /** Pokrycie stożka od tylu rozstrzygniętych prognoz 1 h (jak opis stożka w legendzie wykresu). */
 const CONE_MIN_N = 20;
-/** Serwer trzyma nagranie taśmy i arkusza przez 7 dni — starsze minuty nie mają powtórki. */
-export const REPLAY_KEEP_MS = 7 * DAY;
 
 export type ReviewRowId = 'dayType' | 'vaMigration' | 'ib' | 'range' | 'map' | 'liq' | 'cone' | 'cohorts';
 
@@ -51,7 +57,7 @@ export interface ReviewRow {
   detail?: string;
   /** `window` — wiersz z okna danych innego niż sesja (30 dni, ostatnie 24 h); widok pokazuje go raz, pod kartami. */
   scope: 'session' | 'window';
-  /** Minuta do linku powtórki (`reviewReplay`); null — bez linku. */
+  /** Minuta do linku powtórki (widok: `reviewReplay`); null — bez linku. */
   replayAt: number | null;
 }
 
@@ -70,31 +76,12 @@ export interface ReviewInputs {
   ledger: DeskLedgerState;
 }
 
-/** Fakty sesji ze świec 1m: zakres z minutami ekstremów, IB i pierwsze wyjście z niego, value area tej i poprzedniej sesji. */
-interface Facts {
-  hi: number;
-  lo: number;
-  hiAt: number;
-  loAt: number;
-  close: number;
-  ibHi: number;
-  ibLo: number;
-  ibDone: boolean;
-  /** Pierwsza minuta po IB z ceną poza nim; null — bez wybicia. */
-  breakAt: number | null;
-  step: number;
-  va: { vah: number; val: number } | null;
-  prev: TradeSession;
-  /** Value area poprzedniej sesji tego samego typu; null — świece jej nie obejmują. */
-  prevVa: { vah: number; val: number } | null;
-}
-
 const name = (s: TradeSession) => TRADE_SESSION_NAME[s.id];
 const whyOf = (v: Got<unknown> | undefined): string => (v === undefined ? WAIT_TEXT : isAbsent(v) ? v.why : WAIT_TEXT);
-const pctOf = (b: number) => `${fmtFixed(b * 100, 0)}%`;
 /** Odsetek bez „−0%”. */
 const pct = (v: number) => `${fmtFixed(Math.round(v * 100) || 0, 0)}%`;
-const amt = (v: number) => fmtFixed(v, Math.abs(v) >= 100 ? 0 : 2);
+/** Cena BTC jak na wykresie (tick Hyperliquid przy BTC ≥ 10 000 USD: 1 USD, bez miejsc po przecinku). */
+const fmtPx = (v: number) => fmtPrice(v, 0);
 const BP = tr('pb', 'bp');
 
 const absent = (id: ReviewRowId, label: string, badge: ReviewRow['badge'], why: string, o: { key?: string; hint?: string; scope?: ReviewRow['scope'] } = {}): ReviewRow => ({
@@ -109,67 +96,17 @@ const absent = (id: ReviewRowId, label: string, badge: ReviewRow['badge'], why: 
   replayAt: null,
 });
 
-/** Świece okresu [from, min(to, now)), gdy obejmują jego początek i ≥ 95% minut; inaczej null. */
-function windowBars(bars: readonly VBar[], from: number, to: number, now: number): VBar[] | null {
-  const end = Math.min(to, now);
-  if (bars.length === 0 || bars[0].time > from || !(end > from)) return null;
-  const list = bars.filter((b) => b.time >= from && b.time < end);
-  return list.length > 0 && list.length >= COVERAGE * Math.ceil((end - from) / MIN) ? list : null;
-}
-
-function factsOf(x: ReviewInputs): Got<Facts> | undefined {
+/** Fakty sesji z jednego źródła (`sessionFacts`, to samo co nagłówek układu Rozliczenie). */
+function factsOf(x: ReviewInputs): Got<SessionFacts> | undefined {
   const all = x.bars1m;
   if (all === undefined || isAbsent(all)) return all;
-  const { s, now } = x;
-  const bars = windowBars(all, s.start, s.end, now);
-  const ib = bars ? bars.filter((b) => b.time < s.ibEnd) : [];
-  if (!bars || ib.length === 0) {
-    const since = all.length ? tr(`; świece od ${fmtDayTime(all[0].time, now)}`, `; candles from ${fmtDayTime(all[0].time, now)}`) : '';
-    return {
-      why: tr(
-        `Świece 1m nie obejmują całej sesji ${name(s)} od ${fmtHm(s.start)} (min. 95% minut${since})`,
-        `The 1m candles do not cover the whole ${name(s)} session since ${fmtHm(s.start)} (min. 95% of minutes${since})`
-      ),
-    };
-  }
-  let hi = -Infinity;
-  let lo = Infinity;
-  let hiAt = 0;
-  let loAt = 0;
-  for (const b of bars) {
-    if (b.high > hi) [hi, hiAt] = [b.high, b.time];
-    if (b.low < lo) [lo, loAt] = [b.low, b.time];
-  }
-  const ibHi = Math.max(...ib.map((b) => b.high));
-  const ibLo = Math.min(...ib.map((b) => b.low));
-  const brk = bars.find((b) => b.time >= s.ibEnd && (b.high > ibHi || b.low < ibLo));
-  const close = bars[bars.length - 1].close;
-  const step = profileStep(close);
-  const prev = previousSameSession(s);
-  const prevBars = windowBars(all, prev.start, prev.end, now);
-  const va = profile(bars, step);
-  const pv = prevBars ? profile(prevBars, step) : null;
-  return {
-    hi,
-    lo,
-    hiAt,
-    loAt,
-    close,
-    ibHi,
-    ibLo,
-    ibDone: now >= s.ibEnd,
-    breakAt: brk ? brk.time : null,
-    step,
-    va: va ? { vah: va.vah, val: va.val } : null,
-    prev,
-    prevVa: pv ? { vah: pv.vah, val: pv.val } : null,
-  };
+  return sessionFacts(all, x.s, x.now);
 }
 
 /** Ostatnia minuta zamkniętej sesji (powtórka pokazuje całą sesję); sesja w toku — bez linku, wykres na żywo jest wyżej. */
 const sessionEnd = (x: ReviewInputs) => (x.inProgress ? null : x.s.end - MIN);
 
-function dayTypeRow(x: ReviewInputs, f: Got<Facts> | undefined): ReviewRow {
+function dayTypeRow(x: ReviewInputs, f: Got<SessionFacts> | undefined): ReviewRow {
   const label = tr('Typ dnia', 'Day type');
   const m = 'MODEL · Dalton';
   const no = (why: string) => absent('dayType', label, 'MODEL', why, { hint: `${m}: ${why}` });
@@ -193,13 +130,13 @@ function dayTypeRow(x: ReviewInputs, f: Got<Facts> | undefined): ReviewRow {
   };
 }
 
-function vaRow(x: ReviewInputs, f: Got<Facts> | undefined): ReviewRow {
+function vaRow(x: ReviewInputs, f: Got<SessionFacts> | undefined): ReviewRow {
   const label = tr('Migracja VA', 'VA migration');
   const no = (why: string) => absent('vaMigration', label, 'LIVE', why);
   if (!f || isAbsent(f)) return no(whyOf(f));
+  const missing = vaMissing(f);
+  if (missing || !f.va || !f.prevVa) return no(missing ?? WAIT_TEXT);
   const pn = `${name(f.prev)} ${fmtDm(f.prev.start)}`;
-  if (!f.prevVa) return no(tr(`Świece 1m nie obejmują poprzedniej sesji ${pn} (min. 95% minut)`, `The 1m candles do not cover the previous session ${pn} (min. 95% of minutes)`));
-  if (!f.va) return no(tr('Brak wolumenu w świecach sesji', 'No volume in the session candles'));
   const m = vaMigration(f.va, f.prevVa);
   if (m === 'unknown') return no(tr('Value area bez liczb', 'Value area without numbers'));
   return {
@@ -217,7 +154,7 @@ function vaRow(x: ReviewInputs, f: Got<Facts> | undefined): ReviewRow {
   };
 }
 
-function ibRow(x: ReviewInputs, f: Got<Facts> | undefined): ReviewRow {
+function ibRow(x: ReviewInputs, f: Got<SessionFacts> | undefined): ReviewRow {
   const label = tr('Wynik IB', 'IB result');
   const no = (why: string) => absent('ib', label, 'LIVE', why);
   if (!f || isAbsent(f)) return no(whyOf(f));
@@ -241,7 +178,15 @@ function ibRow(x: ReviewInputs, f: Got<Facts> | undefined): ReviewRow {
   const down = f.lo < f.ibLo;
   const k = `${fmtFixed((f.hi - f.lo) / ibr, 1)}×`;
   const value =
-    up && down ? tr(`w obie strony · ${k}`, `both sides · ${k}`) : up ? tr(`w górę · ${k}`, `up · ${k}`) : down ? tr(`w dół · ${k}`, `down · ${k}`) : tr('brak wybicia', 'no breakout');
+    up && down
+      ? tr(`w obie strony · ${k}`, `both sides · ${k}`)
+      : up
+        ? tr(`w górę · ${k}`, `up · ${k}`)
+        : down
+          ? tr(`w dół · ${k}`, `down · ${k}`)
+          : x.inProgress
+            ? tr('brak wybicia (dotąd)', 'no breakout (so far)')
+            : tr('brak wybicia', 'no breakout');
   const first = f.breakAt === null ? '' : tr(`; pierwsze wyjście poza IB o ${fmtHm(f.breakAt)}`, `; first move out of the IB at ${fmtHm(f.breakAt)}`);
   return {
     id: 'ib',
@@ -258,7 +203,7 @@ function ibRow(x: ReviewInputs, f: Got<Facts> | undefined): ReviewRow {
   };
 }
 
-function rangeRow(x: ReviewInputs, f: Got<Facts> | undefined): ReviewRow {
+function rangeRow(x: ReviewInputs, f: Got<SessionFacts> | undefined): ReviewRow {
   const label = tr('Zakres / oczekiwany', 'Range / expected');
   const no = (why: string, m = tr('HAR albo Parkinson', 'HAR or Parkinson')) => absent('range', label, 'MODEL', why, { hint: `MODEL · ${m}: ${why}` });
   if (!f || isAbsent(f)) return no(whyOf(f));
@@ -268,18 +213,8 @@ function rangeRow(x: ReviewInputs, f: Got<Facts> | undefined): ReviewRow {
   const b = rangeBudget(f.hi, f.lo, e.usd);
   if (!Number.isFinite(b)) return no(tr('brak zakresu sesji', 'no session range'), m);
   const closed = !x.inProgress;
-  const note =
-    closed && e.method === 'parkinson'
-      ? tr(
-          'Bez modelu HAR: σ Parkinsona ze świec 5m z doby przed otwarciem sesji (oczekiwanie sprzed sesji), E[H−L] = √(8/π)·σ.',
-          'Without the HAR model: Parkinson σ from 5m candles of the day before the session open (the expectation before the session), E[H−L] = √(8/π)·σ.'
-        )
-      : closed
-        ? `${METHOD_NOTE.har} ${tr(
-            'Dla zamkniętej sesji poziom zmienności z bieżącego modelu przeniesiony profilem godzin na jej godziny — model nie zapisuje prognozy sprzed sesji.',
-            'For a closed session the volatility level of the current model is carried to its hours by the hourly profile; the model keeps no forecast from before the session.'
-          )}`
-        : METHOD_NOTE[e.method];
+  // Zamknięta sesja: oczekiwanie sprzed jej otwarcia (sessionExpectedOf liczy je Parkinsonem ze świec 5m doby przed otwarciem)
+  const note = closed && e.method === 'parkinson' ? EX_ANTE_NOTE : METHOD_NOTE[e.method];
   return {
     id: 'range',
     key: 'range',
@@ -296,8 +231,8 @@ function rangeRow(x: ReviewInputs, f: Got<Facts> | undefined): ReviewRow {
 }
 
 /**
- * Mapy z bloga sesji: rozliczane, których okno ważności zachodzi na sesję, oraz mapy tygodnia i weekendu (bez okna)
- * opublikowane w jej części doby (Azja i Londyn — karta Londynu, NY — karta NY). Od najstarszej.
+ * Mapy z bloga karty: rozliczane — każda karta sesji, na którą zachodzi okno ważności mapy; mapy tygodnia i weekendu
+ * (bez okna) — karta części doby, w której je opublikowano (Azja i Londyn — Londyn, NY — NY). Od najstarszej.
  */
 function sessionMaps(maps: readonly BlogMap[], s: TradeSession, now: number): BlogMap[] {
   const dayFrom = s.id === 'london' ? utcDayStart(s.start) : s.start;
@@ -324,8 +259,10 @@ function mapRow(x: ReviewInputs, m: BlogMap): ReviewRow {
   }
   const bars = x.bars1m;
   if (bars === undefined || isAbsent(bars)) return no(whyOf(bars));
-  const from = Math.max(w.from, s.start);
+  // Okres ✓ na wykresie (od wpisu, także dotknięcia sprzed otwarcia sesji) ucięty na końcu karty
+  const from = w.from;
   const to = Math.min(w.to, s.end);
+  const upTo = Math.min(to, now);
   const r = settleRange(m.levels, bars, from, to, now);
   if (!r) {
     // Świece w drodze widok podaje jako `undefined`; tu historia 1m (limit API albo błąd) nie sięga początku okresu
@@ -335,11 +272,18 @@ function mapRow(x: ReviewInputs, m: BlogMap): ReviewRow {
   const hit = r.levels.filter((l) => l.touchedAt !== null).sort((a, b) => a.touchedAt! - b.touchedAt!);
   const miss = r.levels.filter((l) => l.touchedAt === null);
   const k = `${hit.length}/${r.levels.length}`;
-  const missWord = !r.complete ? tr('nierozliczone', 'unsettled') : inProgress ? tr('jeszcze niedotknięte', 'not touched yet') : tr('chybione', 'missed');
+  // „Chybione” dopiero po końcu okna mapy; wcześniej (okno trwa dalej, w kolejnej sesji albo teraz) — do której minuty
+  const missWord = !r.complete
+    ? tr('nierozliczone', 'unsettled')
+    : upTo >= w.to
+      ? tr('chybione', 'missed')
+      : tr(`niedotknięte do ${fmtHm(upTo)}`, `not touched until ${fmtHm(upTo)}`);
   // Z ceną: mapa bywa z dwoma poziomami o tym samym podpisie (np. dwa klastry likwidacji longów)
   const px = (l: { label: string; price: number }) => `${l.label} ${fmtPx(l.price)}`;
   const detail = [...hit.map((l) => `${px(l)} ✓ ${fmtHm(l.touchedAt!)}`), ...(miss.length ? [`${missWord}: ${miss.map(px).join(', ')}`] : [])].join(' · ');
-  const until = inProgress && now < to ? tr('teraz', 'now') : fmtHm(to);
+  const live = inProgress && now < to;
+  const until = live ? tr('teraz (sesja w toku)', 'now (session in progress)') : tr(`${fmtDayTime(to, now)}, końca sesji ${name(s)}`, `${fmtDayTime(to, now)}, the end of the ${name(s)} session`);
+  const rest = w.to > to ? tr(` (okno mapy trwa do ${fmtDayTime(w.to, now)})`, ` (the map window runs until ${fmtDayTime(w.to, now)})`) : '';
   return {
     id: 'map',
     key,
@@ -347,8 +291,8 @@ function mapRow(x: ReviewInputs, m: BlogMap): ReviewRow {
     value: tr(`${k} dotknięte`, `${k} touched`),
     badge: 'LIVE',
     hint: tr(
-      `Wpis „${m.title}”: poziomy z tekstu autora, nie model HyperQuant. Rozliczenie w sesji ${name(s)} od ${fmtHm(from)} do ${until}: dotknięcie = świeca 1m Hyperliquid z low ≤ poziom ≤ high, ta sama reguła co ✓ na wykresie; bez świecy każdej pełnej minuty niedotknięte poziomy zostają nierozliczone.`,
-      `Post “${m.title}” (PL blog): levels from the author's text, not a HyperQuant model. Settled in the ${name(s)} session from ${fmtHm(from)} until ${until}: a touch is a Hyperliquid 1m candle with low ≤ level ≤ high, the same rule as the ✓ on the chart; without a candle for every full minute, untouched levels stay unsettled.`
+      `Wpis „${m.title}”: poziomy z tekstu autora, nie model HyperQuant. Rozliczenie od wpisu (${fmtDayTime(from, now)}) do ${until}${rest}: dotknięcie = świeca 1m Hyperliquid z low ≤ poziom ≤ high, ta sama reguła i ten sam okres co ✓ na wykresie; bez świecy każdej pełnej minuty niedotknięte poziomy zostają nierozliczone.`,
+      `Post “${m.title}” (PL blog): levels from the author's text, not a HyperQuant model. Settled from the post (${fmtDayTime(from, now)}) until ${until}${rest}: a touch is a Hyperliquid 1m candle with low ≤ level ≤ high, the same rule and period as the ✓ on the chart; without a candle for every full minute, untouched levels stay unsettled.`
     ),
     ...(r.complete ? {} : { why: tr('reszta nierozliczona: luka w świecach 1m', 'the rest is unsettled: a gap in the 1m candles') }),
     detail,
@@ -504,13 +448,4 @@ export function reviewCards(now: number): { cards: ReviewCard[]; next: TradeSess
   const closed = lastClosedSessions(now, 2).map((s): ReviewCard => ({ s, inProgress: false }));
   const live = currentTradeSession(now);
   return live ? { cards: [...closed, { s: live, inProgress: true }], next: null } : { cards: closed, next: nextTradeSession(now) };
-}
-
-/**
- * Link do powtórki minuty `at` w układzie Rozliczenie (5m, zakres sesji). Tylko minuty z ostatnich 7 dni — starsze
- * nagranie serwer już usunął; brak minuty albo minuta z przyszłości — null.
- */
-export function reviewReplay(at: number | null, s: TradeSession, now: number): string | null {
-  if (at === null || !Number.isFinite(at) || at > now || now - at > REPLAY_KEEP_MS) return null;
-  return replayHash({ source: 'history', coin: 'BTC', interval: '5m', from: Math.max(s.start, now - REPLAY_KEEP_MS), to: s.end, t: at, station: 'review' });
 }

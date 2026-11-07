@@ -19,9 +19,15 @@ export const MAX_CANDLES = 5000;
 
 /** Świece z zakresu [startTime, endTime]; błąd sieci → pusta lista. */
 export async function fetchCandles(coin: string, interval: string, startTime: number, endTime?: number): Promise<Candle[]> {
+  return (await fetchCandlesOrNull(coin, interval, startTime, endTime)) ?? [];
+}
+
+/** Jak `fetchCandles`, ale nieudane zapytanie (sieć, limit API, błąd serwera) → null, odróżnione od pustej odpowiedzi. */
+export async function fetchCandlesOrNull(coin: string, interval: string, startTime: number, endTime?: number): Promise<Candle[] | null> {
   const req: Record<string, unknown> = { coin, interval, startTime: Math.max(0, Math.floor(startTime)) };
   if (endTime !== undefined) req.endTime = Math.floor(endTime);
-  return parseCandles(await postInfo({ type: 'candleSnapshot', req }));
+  const raw = await postInfo({ type: 'candleSnapshot', req });
+  return raw === null ? null : parseCandles(raw);
 }
 
 export async function fetchAssetCtx(coin: string): Promise<AssetCtx | null> {
