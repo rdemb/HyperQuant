@@ -1,5 +1,6 @@
 import React from 'react';
 import { Badge, BadgeTone } from './Badge';
+import { DASH } from './format';
 
 interface StatProps {
   label: React.ReactNode;
@@ -8,16 +9,28 @@ interface StatProps {
   delta?: { value: number | null; text: string } | null;
   hint?: React.ReactNode;
   source?: { tone: BadgeTone; label: string; title?: string };
+  /**
+   * Brak liczby: bez plakietki źródła (LIVE, MODEL, SIM — obok „—” udawałaby dane). Domyślnie, gdy wartość to „—”;
+   * „—” owinięte w JSX trzeba podać jawnie. Stan danych (BRAK, STALE, „< 24 h”) zostaje, bo to powód braku.
+   */
+  missing?: boolean;
   trend?: React.ReactNode;
   className?: string;
 }
 
+/** Tony plakietek źródła liczby; pozostałe (stale, warn, neutral) opisują stan danych. */
+const SOURCE_TONES: ReadonlySet<BadgeTone> = new Set(['live', 'model', 'sim']);
+
 /** Kafel liczby: etykieta, wartość (cyfry proporcjonalne), delta ze strzałką, opcjonalne źródło i sparkline. */
-export const Stat: React.FC<StatProps> = ({ label, value, delta, hint, source, trend, className = '' }) => (
+export const Stat: React.FC<StatProps> = ({ label, value, delta, hint, source, missing = value === DASH, trend, className = '' }) => (
   <div className={`min-w-0 flex flex-col gap-1 ${className}`}>
     <div className="flex items-center justify-between gap-2">
       <span className="min-w-0 text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium leading-snug">{label}</span>
-      {source && <Badge tone={source.tone} title={source.title}>{source.label}</Badge>}
+      {source && !(missing && SOURCE_TONES.has(source.tone)) && (
+        <Badge tone={source.tone} title={source.title}>
+          {source.label}
+        </Badge>
+      )}
     </div>
     <div className="flex items-end justify-between gap-2">
       <div className="min-w-0 flex-1">

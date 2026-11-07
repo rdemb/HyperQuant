@@ -16,4 +16,10 @@ describe('plakietka obok liczby', () => {
     expect(sourceTag({ value: '31%', badge: 'MODEL' })).toEqual({ text: 'MODEL', tone: 'model' });
     expect(sourceTag({ value: '−0,4% · 12M', badge: 'LIVE', note: '4 min' })).toEqual({ text: '4 min', tone: 'stale' });
   });
+
+  it('liczba częściowa (luka w świecach 1m, wiersz Rozliczenia): plakietka źródła w tonie nieaktualnym; przy „—” nadal bez plakietki', () => {
+    expect(sourceTag({ value: '2/4 dotknięte', badge: 'LIVE', partial: true })).toEqual({ text: 'LIVE', tone: 'stale' });
+    expect(sourceTag({ value: '97%', badge: 'MODEL', partial: true })).toEqual({ text: 'MODEL', tone: 'stale' });
+    expect(sourceTag({ value: '—', badge: 'LIVE', partial: true })).toBeNull();
+  });
 });

@@ -66,6 +66,7 @@ export const DeskRail: React.FC = () => {
       <div className="bg-surface-1 border border-line rounded-xl p-3.5 col-span-2 xl:col-span-1">
         <Stat
           label={tr('Zasięg 2h · MC', '2h reach · MC')}
+          missing={!mc}
           source={{
             tone: 'model',
             label: 'MODEL',
@@ -159,6 +160,7 @@ export const DeskRail: React.FC = () => {
       <div className="bg-surface-1 border border-line rounded-xl p-3.5">
         <Stat
           label={auctionLabel}
+          missing={vwapZ === null}
           source={
             auctionStale
               ? { tone: 'stale', label: 'STALE', title: tr('Świece nie odświeżyły się od ponad 3 min', 'Candles have not refreshed for over 3 min') }

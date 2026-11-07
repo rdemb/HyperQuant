@@ -27,6 +27,7 @@ export const FundingStrip: React.FC = () => {
           ),
         }}
         value={<span className="text-base">{hl ? fmtPct(hl.aprPct, 2) : DASH}</span>}
+        missing={!hl}
         hint={f ? `vs Binance ${pp(f.spreadHlBinancePp)} · Bybit ${pp(f.spreadHlBybitPp)}` : tr('Czekam na API Hyperliquid', 'Waiting for the Hyperliquid API')}
       />
     </div>

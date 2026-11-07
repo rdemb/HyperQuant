@@ -222,6 +222,7 @@ export const QuantMetricTiles: React.FC<{ quant: QuantMathMetrics; className?: s
       node: (
         <Stat
           label="Kyle"
+          missing={quant.kyleLambdaPer1M === null}
           source={{
             tone: 'model',
             label: 'MODEL',
