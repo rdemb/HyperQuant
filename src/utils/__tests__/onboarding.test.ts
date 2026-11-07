@@ -108,15 +108,24 @@ describe('quickReplay', () => {
   it('nagranie kończy się przed początkiem okna: „no-recording”', () => {
     expect(quickReplay('BTC', NOW, idx([hourStart - 5 * H]))).toEqual({ ok: false, reason: 'no-recording' });
   });
-  it('nagranie pokrywa tylko 9 z 15 min: „no-recording”; 10 min wystarcza', () => {
-    const idx2 = (end: number): HistoryIndex => ({ ...idx([]), markets: { BTC: { hours: [], parts: [end - 5 * MIN, end - 10 * MIN, end - 15 * MIN].slice(0, 1) } } });
-    // jedna część 5 min kończąca się teraz: 5 min pokrycia
-    expect(quickReplay('BTC', NOW, idx2(NOW))).toEqual({ ok: false, reason: 'no-recording' });
+  it('luka w nagraniu: części NOW−15 min i NOW−1 min dają 6 min pokrycia (nie 15), więc „no-recording”', () => {
+    const gapped: HistoryIndex = { ...idx([]), markets: { BTC: { hours: [], parts: [NOW - 15 * MIN, NOW - 1 * MIN] } } };
+    expect(quickReplay('BTC', NOW, gapped)).toEqual({ ok: false, reason: 'no-recording' });
+  });
+  it('9 min pokrycia (plik godziny od 12:00, teraz 12:09): „no-recording”', () => {
+    const now9 = Date.parse('2026-11-07T12:09:00Z');
+    expect(quickReplay('BTC', now9, idx([hourStart]))).toEqual({ ok: false, reason: 'no-recording' });
+  });
+  it('10 min pokrycia (plik godziny od 12:00, teraz 12:10): link', () => {
+    const now10 = Date.parse('2026-11-07T12:10:00Z');
+    expect(quickReplay('BTC', now10, idx([hourStart])).ok).toBe(true);
+  });
+  it('dwie części po 5 min bez luki dają 10 min: link', () => {
     const two: HistoryIndex = { ...idx([]), markets: { BTC: { hours: [], parts: [NOW - 10 * MIN, NOW - 5 * MIN] } } };
     expect(quickReplay('BTC', NOW, two).ok).toBe(true);
   });
   it('koniec nagrania po „teraz” nie dolicza pokrycia z przyszłości', () => {
-    const future: HistoryIndex = { ...idx([]), markets: { BTC: { hours: [], parts: [NOW - 2 * MIN, NOW + 5 * MIN] } } };
+    const future: HistoryIndex = { ...idx([]), markets: { BTC: { hours: [], parts: [NOW - 5 * MIN, NOW + 5 * MIN] } } };
     expect(quickReplay('BTC', NOW, future)).toEqual({ ok: false, reason: 'no-recording' });
   });
 });
