@@ -504,9 +504,10 @@ const ChartsView: React.FC<ChartsViewProps> = ({ phase, onPhase, onMarket }) => 
             </div>
           </aside>
         )}
-        {/* Szuflada: ta sama kolumna nad prawą częścią wykresu (zewnętrzna ramka przycina wjazd z prawej) */}
+        {/* Szuflada: ta sama kolumna nad prawą częścią wykresu (zewnętrzna ramka przycina wjazd z prawej); z-20 — pod
+            przypiętym nagłówkiem aplikacji (z-30), gdy strona jest przewinięta */}
         {drawerOpen && (
-          <div className="absolute inset-y-0 right-0 z-30 overflow-hidden rounded-l-xl shadow-2xl" style={{ width: 'min(400px, 92vw)' }}>
+          <div className="absolute inset-y-0 right-0 z-20 overflow-hidden rounded-l-xl shadow-2xl" style={{ width: 'min(400px, 92vw)' }}>
             <aside
               ref={drawerRef}
               tabIndex={-1}

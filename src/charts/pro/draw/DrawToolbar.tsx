@@ -249,7 +249,9 @@ export const DrawToolbar: React.FC<{
       role="toolbar"
       aria-orientation="vertical"
       aria-label={tr('Narzędzia rysowania', 'Drawing tools')}
-      className={`relative z-30 flex-col items-center gap-0.5 w-11 shrink-0 py-1.5 border-r border-line bg-surface-1 overflow-y-auto overflow-x-visible [scrollbar-width:none] ${className}`}
+      // Bez własnej warstwy (z-index): przy przewiniętej stronie pasek chowa się pod przypiętym nagłówkiem i paskiem Pulse;
+      // listy narzędzi obok (fixed z-40) i tak są nad wykresem
+      className={`relative flex-col items-center gap-0.5 w-11 shrink-0 py-1.5 border-r border-line bg-surface-1 overflow-y-auto overflow-x-visible [scrollbar-width:none] ${className}`}
     >
       <button
         type="button"
