@@ -19,6 +19,7 @@ import type { PhaseId } from '../charts/pro/chart/stations';
 import { useDesk } from '../state/DeskContext';
 import { PHASE_VIEW } from '../state/route';
 import { ViewId } from '../state/types';
+import { awaitingBars } from '../state/viewNeeds';
 import { AnimatedNumber, Badge, BadgeTone, EmptyState, Segmented, VIEW_TRANSITION, fmtCompact, fmtPrice, numLang, DASH, fmtNum } from '../ui';
 import { InstallButton } from './InstallButton';
 import { ConnectingState } from './ConnectingState';
@@ -131,8 +132,6 @@ const Item: React.FC<{ label: string; value: string }> = ({ label, value }) => (
 
 const ViewFallback = () => <EmptyState title={tr('Ładowanie widoku…', 'Loading view…')} />;
 
-// Widoki, które czekają na pierwsze świece przed renderem: żaden z obecnych (każdy pokazuje brak danych jako „—”)
-const NEEDS_BARS: ViewId[] = [];
 // Widoki z własnymi interwałami (wykresy faz dnia, Lekcje): bez globalnego przełącznika interwału
 const OWN_INTERVALS: ViewId[] = ['before', 'charts', 'after', 'lessons'];
 
@@ -223,7 +222,8 @@ export const AppShell: React.FC = () => {
   const topMoreId = useId();
   const phoneMoreId = useId();
   const transition = reduce ? { initial: { opacity: 0 }, animate: { opacity: 1 }, exit: { opacity: 0 } } : VIEW_TRANSITION;
-  const awaitingData = feed.bars.length === 0 && NEEDS_BARS.includes(view);
+  // Badania do pierwszych świec pokazują stan „łączenie” (viewNeeds.ts); pas kontekstu Przed sesją czeka w BeforeView
+  const awaitingData = awaitingBars(view, feed.bars.length);
   const replay = useSyncExternalStore(subscribeHash, inReplay);
   const moreView = MORE.find((n) => n.id === view);
   // Karta układu innej fazy w Wykresach (Alt+1…6, nowa karta) przenosi do ekranu tej fazy
