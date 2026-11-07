@@ -92,14 +92,14 @@ export function flatBars(from: number, to: number, lo: number, hi: number, spike
 
 /**
  * Trasa `candleSnapshot`: świece z `bars` w zakresie [startTime, endTime] z treści żądania, w formacie API (liczby jako
- * tekst). Inny typ żądania — 400.
+ * tekst). Z `clock` — jak prawdziwe API: tylko świece rozpoczęte do chwili żądania. Inny typ żądania — 400.
  */
-export function hlRoute(bars: readonly Bar[]): (req: FakeRequest) => Reply {
+export function hlRoute(bars: readonly Bar[], clock?: { now: number }): (req: FakeRequest) => Reply {
   return (req) => {
     const body = JSON.parse(req.body ?? '{}') as { type?: string; req?: { coin?: string; interval?: string; startTime?: number; endTime?: number } };
     if (body.type !== 'candleSnapshot' || body.req?.coin !== 'BTC') return { status: 400, json: { error: 'bad request' } };
     const from = body.req.startTime ?? 0;
-    const to = body.req.endTime ?? Number.POSITIVE_INFINITY;
+    const to = Math.min(body.req.endTime ?? Number.POSITIVE_INFINITY, clock?.now ?? Number.POSITIVE_INFINITY);
     const json = bars
       .filter((b) => b.t >= from && b.t <= to)
       .map((b) => ({ t: b.t, T: b.t + MIN - 1, s: 'BTC', i: body.req?.interval, o: String(b.o), c: String(b.c), h: String(b.h), l: String(b.l), v: String(b.v), n: 12 }));

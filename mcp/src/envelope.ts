@@ -100,6 +100,16 @@ export function blockReasons(x: unknown): string[] {
 }
 
 /**
+ * Tekst z zewnątrz (komunikat błędu) przycięty do `max` znaków. Bezpieczniki najpierw na całości (adres przecięty na
+ * granicy przeszedłby jako krótszy ciąg hex), potem na wyniku (ucięte słowo może dać wzorzec rady, np. „kupony” → „kup”).
+ * Trafienie — sam znacznik blokady, bez treści.
+ */
+export function guardedCut(text: string, max: number): string {
+  const cut = text.slice(0, max);
+  return blockReasons(text).length === 0 && blockReasons(cut).length === 0 ? cut : BLOCK_MARK;
+}
+
+/**
  * Koperta jako wynik narzędzia: tekst to JSON koperty, `structuredContent` ten sam obiekt po JSON (bez `undefined`).
  * Trafienie bezpiecznika — `blocked` z powodem „blokada treści”, bez żadnej treści koperty (fail closed).
  */

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Envelope, Num } from '../src/envelope';
 import { Sources } from '../src/sources';
-import { DISCLAIMER } from '../src/envelope';
+import { BLOCK_MARK, DISCLAIMER } from '../src/envelope';
 import { HL_INFO, MAPS_URL, MIN, type Route, connect, flatBars, hlRoute, testSources } from './helpers';
 
 // Środa 4.11.2026, 15:00 UTC (sesja NY w toku); Mapa dnia wyszła o 07:00 UTC
@@ -104,6 +104,51 @@ describe('day_map', () => {
     expect(cov?.note).toBeTruthy();
   });
 
+  it('przed pierwszą pełną minutą od wpisu: brak dotknięcia to null (nie false), pokrycie null z powodem', async () => {
+    const { res, env } = await call(testSources({ [MAPS_URL]: mapsFile(), [HL_INFO]: hlRoute(BARS) }, PUB + 30_000).src);
+    expect(res.isError).toBeFalsy();
+    expect(env?.data.map?.levels.map((l) => l.touched)).toEqual([null, null]);
+    expect(env?.data.coverage.value).toBeNull();
+    expect(env?.data.coverage.why).toBeTruthy();
+    expect(env?.data.why).toBeTruthy();
+  });
+
+  it('świece z pamięci (migawka sprzed 40 s): rozliczenie na chwilę migawki, bez minut, których nie widziała', async () => {
+    const snapshotAt = PUB + 30_000;
+    // Migawka o 07:00:30 ma tylko niepełną świecę 07:00; 40 s później, z pamięci, minuta 07:00 nie może być „pełna”
+    const ts = testSources({ [MAPS_URL]: mapsFile(), [HL_INFO]: (req) => hlRoute(BARS, ts.clock)(req) }, snapshotAt);
+    const c = await connect(ts.src);
+    close = c.close;
+    await c.client.callTool({ name: 'day_map', arguments: {} });
+    ts.clock.now = PUB + 70_000;
+    const res = await c.client.callTool({ name: 'day_map', arguments: {} });
+    const env = res.structuredContent as unknown as Envelope<DayMapData>;
+    expect(ts.calls.filter((x) => x.url === HL_INFO)).toHaveLength(1);
+    expect(env.data.map?.levels.map((l) => l.touched)).toEqual([null, null]);
+    expect(env.data.coverage.value).toBeNull();
+    expect(env.sources.find((s) => s.url === HL_INFO)?.asOf).toBe(new Date(snapshotAt).toISOString());
+  });
+
+  it('Hyperliquid oddaje pustą listę świec: touched:null, pokrycie null z powodem (jak przy błędzie)', async () => {
+    const { res, env } = await run({ [MAPS_URL]: mapsFile(), [HL_INFO]: { json: [] } });
+    expect(res.isError).toBeFalsy();
+    expect(env?.data.map?.levels.map((l) => l.touched)).toEqual([null, null]);
+    expect(env?.data.coverage.value).toBeNull();
+    expect(env?.data.coverage.why).toBeTruthy();
+    expect(env?.data.why).toBeTruthy();
+  });
+
+  it('świece 1m zaczynają się po wpisie: touched:null z powodem, pokrycie to udział minut ze świecą', async () => {
+    const late = BARS.filter((b) => b.t >= PUB + 120 * MIN);
+    const { res, env } = await run({ [MAPS_URL]: mapsFile(), [HL_INFO]: hlRoute(late) });
+    expect(res.isError).toBeFalsy();
+    // Dotknięcie o 10:30 jest w świecach, ale bez początku okna strona nie rozlicza mapy — tu też nie
+    expect(env?.data.map?.levels.map((l) => l.touched)).toEqual([null, null]);
+    expect(env?.data.why).toBeTruthy();
+    // 360 z 480 pełnych minut 07:00–14:59 (świece od 09:00) = 75%
+    expect(env?.data.coverage).toMatchObject({ value: 75, unit: 'pct', badge: 'LIVE' });
+  });
+
   it('brak maps.json (404): map null z powodem, bez isError', async () => {
     const { res, env } = await run({ [HL_INFO]: hlRoute(BARS) });
     expect(res.isError).toBeFalsy();
@@ -113,7 +158,7 @@ describe('day_map', () => {
     expect(env?.data.coverage.why).toBeTruthy();
   });
 
-  it('Review Focus 1: Hyperliquid odrzuca — poziomy touched:null, pokrycie null z powodem, bez isError', async () => {
+  it('Hyperliquid odrzuca żądanie: poziomy touched:null, pokrycie null z powodem, bez isError', async () => {
     const { res, env } = await run({ [MAPS_URL]: mapsFile(), [HL_INFO]: new Error('ETIMEDOUT') });
     expect(res.isError).toBeFalsy();
     const levels = env?.data.map?.levels ?? [];
@@ -130,7 +175,7 @@ describe('day_map', () => {
     expect(env?.sources.find((s) => s.url === HL_INFO)?.asOf).toBeNull();
   });
 
-  it('Review Focus 1: mapy i świece pobierane równolegle (jeden limit czasu na całość, nie suma dwóch)', async () => {
+  it('mapy i świece pobierane równolegle: jeden limit czasu na całość, nie suma dwóch', async () => {
     // Plik map odpowiada dopiero, gdy przyszło żądanie świec: przy pobieraniu po kolei mapy czekałyby do limitu czasu
     let hlSeen = () => {};
     const seen = new Promise<void>((resolve) => (hlSeen = resolve));
@@ -150,14 +195,14 @@ describe('day_map', () => {
     expect(env?.data.map?.levels.map((l) => l.touched)).toEqual([true, false]);
   });
 
-  it('Review Focus 1: HTTP 429 z Hyperliquid — to samo, bez isError', async () => {
+  it('HTTP 429 z Hyperliquid: poziomy touched:null, pokrycie null, bez isError', async () => {
     const { res, env } = await run({ [MAPS_URL]: mapsFile(), [HL_INFO]: { status: 429, json: {} } });
     expect(res.isError).toBeFalsy();
     expect(env?.data.map?.levels.every((l) => l.touched === null)).toBe(true);
     expect(env?.data.coverage.value).toBeNull();
   });
 
-  it('Review Focus 5: etykieta poziomu z adresem — isError z blokadą treści, adres nie wychodzi', async () => {
+  it('etykieta poziomu z adresem: isError z blokadą treści, adres nie wychodzi', async () => {
     const { res } = await run({ [MAPS_URL]: mapsFile([`opór ${ADDR}`, 'wsparcie']), [HL_INFO]: hlRoute(BARS) });
     expect(res.isError).toBe(true);
     expect(JSON.stringify(res)).not.toContain(ADDR);
@@ -176,5 +221,20 @@ describe('day_map', () => {
     expect(JSON.stringify(res.content)).toContain('błąd narzędzia');
     const again = await client.listTools();
     expect(again.tools.length).toBeGreaterThan(0);
+  });
+
+  it('komunikat wyjątku z adresem na granicy przycięcia (200 znaków): treść wstrzymana, nie wychodzi ciąg ≥ 20 znaków hex', async () => {
+    // 178 znaków bez ciągów hex, potem adres: przycięcie przed sprawdzeniem zostawiłoby „0x” i 20 znaków hex
+    const filler = 'awaria '.repeat(25) + 'zzz';
+    expect(filler).toHaveLength(178);
+    class Leaky extends Sources {
+      override async blogMaps(): Promise<never> {
+        throw new Error(filler + ADDR);
+      }
+    }
+    const { res } = await call(new Leaky(testSources({}, NOW).src.cfg));
+    expect(res.isError).toBe(true);
+    expect(JSON.stringify(res)).not.toMatch(/[0-9a-fA-F]{20,}/);
+    expect(JSON.stringify(res.content)).toContain(BLOCK_MARK);
   });
 });

@@ -19,7 +19,7 @@ export interface DayMapLevel {
   label: string;
   /** Poziom z tekstu wpisu (nie z modelu). */
   price: Num;
-  /** true — dotknięty (low ≤ poziom ≤ high świecy 1m); false — bez dotknięcia do teraz przy pełnych świecach; null — nierozliczony. */
+  /** true — dotknięty (low ≤ poziom ≤ high świecy 1m); false — bez dotknięcia do chwili świec przy pełnych świecach; null — nierozliczony. */
   touched: boolean | null;
   /** Początek świecy 1m pierwszego dotknięcia (ISO UTC). */
   touchedAt: string | null;
@@ -28,21 +28,27 @@ export interface DayMapLevel {
 export interface DayMapData {
   map: { id: string; kind: MapKind; publishedAt: string; postUrl: string; levels: DayMapLevel[] } | null;
   why: string | null;
-  /** Procent pełnych minut okna mapy (od wpisu do teraz) ze świecą 1m; 100 — rozliczenie pełne. */
+  /** Procent pełnych minut okna mapy (od wpisu do chwili świec) ze świecą 1m; 100 — rozliczenie pełne. */
   coverage: Num;
 }
 
 const LEVEL_NOTE = tr('poziom z wpisu na blogu (tekst autora, nie model)', 'level from the blog post (author text, not a model)');
 
+const NO_MINUTE = tr('od wpisu nie minęła jeszcze pełna minuta', 'not a full minute since the post yet');
+
+/** Pełne minuty okna mapy w chwili `at`: [ceil(from), min(at, to) − 1 min] — ten sam przedział co `complete` w `settleRange`. */
+function fullMinutes(from: number, to: number, at: number): { start: number; last: number } {
+  return { start: Math.ceil(from / MIN) * MIN, last: Math.floor(Math.min(at, to) / MIN) * MIN - MIN };
+}
+
 /**
- * Pokrycie świecami 1m pełnych minut [ceil(from), min(now, to) − 1 min] — ten sam przedział co `complete` w `settleRange`,
- * więc 100% wtedy i tylko wtedy, gdy rozliczenie jest pełne. Przy luce udział minut ze świecą, zaokrąglony w dół.
+ * Pokrycie świecami 1m pełnych minut okna w chwili `at` (`fullMinutes`), więc 100% wtedy i tylko wtedy, gdy rozliczenie
+ * jest pełne. Przy luce udział minut ze świecą, zaokrąglony w dół; bez pełnej minuty — null z powodem.
  */
-function coverageOf(bars: readonly VBar[], from: number, to: number, now: number): Num {
-  const start = Math.ceil(from / MIN) * MIN;
-  const last = Math.floor(Math.min(now, to) / MIN) * MIN - MIN;
+function coverageOf(bars: readonly VBar[], from: number, to: number, at: number): Num {
+  const { start, last } = fullMinutes(from, to, at);
   const method = 'minutesCovered';
-  if (last < start) return num(null, 'pct', 'LIVE', { why: tr('od wpisu nie minęła jeszcze pełna minuta', 'not a full minute since the post yet'), method });
+  if (last < start) return num(null, 'pct', 'LIVE', { why: NO_MINUTE, method });
   if (minutesCovered(bars, start, last)) return num(100, 'pct', 'LIVE', { method });
   const total = (last - start) / MIN + 1;
   const have = new Set(bars.filter((b) => b.time >= start && b.time <= last && b.time % MIN === 0).map((b) => b.time)).size;
@@ -72,29 +78,38 @@ async function run(src: Sources): Promise<Envelope<DayMapData>> {
     envelope(NAME, { map: { ...head, levels: levels(() => ({ touched: null, touchedAt: null })) }, why, coverage }, sources, now, notes);
 
   const w = mapWindow(m.kind, m.publishedAt);
-  if (!w) return unsettled(tr('bez rozliczenia (mapa tygodnia/weekendu)', 'not settled (weekly/weekend map)'));
+  // `pickMap` bez wybranego id zwraca tylko Mapę dnia (`dzien`), a ona zawsze ma okno: null tu to błąd programu (zwężenie typu)
+  if (!w) throw new Error(`mapWindow: brak okna dla mapy rodzaju ${m.kind}`);
 
   sources.push({ name: 'Hyperliquid candleSnapshot BTC 1m', url: c.url, asOf: c.ok ? iso(c.at) : null });
   if (!c.ok) return unsettled(tr(`świece 1m Hyperliquid niedostępne (${c.why})`, `Hyperliquid 1m candles unavailable (${c.why})`));
+  // Pusta lista to brak danych, jak nieudane żądanie, a nie „0% pokrycia”
+  if (c.value.length === 0) return unsettled(tr('Hyperliquid nie zwrócił świec 1m', 'Hyperliquid returned no 1m candles'));
 
   const bars = toVBars(c.value);
-  const r = settleRange(m.levels, bars, w.from, w.to, now);
+  // Rozliczenie na chwilę migawki świec (z pamięci do 60 s starszej niż `now`): bez minut, których migawka nie widziała
+  const settledAt = Math.min(now, c.at);
+  const r = settleRange(m.levels, bars, w.from, w.to, settledAt);
+  const coverage = coverageOf(bars, w.from, w.to, settledAt);
   const window = tr(
-    `Okno mapy od wpisu do końca sesji NY (${iso(w.to)}); touched:false znaczy „bez dotknięcia do teraz”.`,
-    `Map window from the post to the end of the NY session (${iso(w.to)}); touched:false means “not touched so far”.`
+    `Okno mapy od wpisu do końca sesji NY (${iso(w.to)}); touched:false znaczy „bez dotknięcia do ${iso(settledAt)}” (chwila świec).`,
+    `Map window from the post to the end of the NY session (${iso(w.to)}); touched:false means “not touched up to ${iso(settledAt)}” (the candle time).`
   );
-  if (!r) return unsettled(tr('świece 1m nie sięgają wpisu', 'the 1m candles do not reach the post'), coverageOf(bars, w.from, w.to, now), [window]);
+  if (!r) return unsettled(tr('świece 1m nie sięgają wpisu', 'the 1m candles do not reach the post'), coverage, [window]);
+  const { start, last } = fullMinutes(w.from, w.to, settledAt);
+  // Przed pierwszą pełną minutą `complete` to prawda pustego przedziału: nic jeszcze nie rozliczono
+  const settled = r.complete && last >= start;
   const data: DayMapData = {
     map: {
       ...head,
       levels: levels((i) => {
         const at = r.levels[i]?.touchedAt ?? null;
-        // Przy luce w świecach brak dotknięcia nic nie znaczy — null, nie false
-        return { touched: at !== null ? true : r.complete ? false : null, touchedAt: at };
+        // Przy luce w świecach albo przed pierwszą pełną minutą brak dotknięcia nic nie znaczy — null, nie false
+        return { touched: at !== null ? true : settled ? false : null, touchedAt: at };
       }),
     },
-    why: r.complete ? null : tr('luka w świecach 1m: poziomy bez dotknięcia są nierozliczone', 'gap in the 1m candles: levels without a touch are unsettled'),
-    coverage: coverageOf(bars, w.from, w.to, now),
+    why: settled ? null : last < start ? NO_MINUTE : tr('luka w świecach 1m: poziomy bez dotknięcia są nierozliczone', 'gap in the 1m candles: levels without a touch are unsettled'),
+    coverage,
   };
   return envelope(NAME, data, sources, now, [window]);
 }
