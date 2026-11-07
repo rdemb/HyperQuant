@@ -18,7 +18,7 @@ export function visibleEntries<E extends SelectableEntry>(
 ): E[] {
   const { q, section, classicOpen, favs, hlOrder, norm } = o;
   if (q) {
-    const words = q.split(/s+/);
+    const words = q.split(/\s+/);
     const hits = entries.filter((e) => words.every((w) => e.words.includes(w)));
     // Najpierw trafienia od początku skrótu albo nazwy („rsi”, „vwap”)
     const head = (e: E) => norm(e.badge ?? '').startsWith(q) || norm(e.label).startsWith(q);
