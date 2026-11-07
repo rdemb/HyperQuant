@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { DEFAULT_SETTINGS, NARROW_PATCH, PANEL_SET_IDS, parseSettings, phoneSettings } from '../chart/settings';
 import { inds } from '../chart/templates';
+import { addIndicator } from '../indicators/registry';
 import {
   LAYOUT_ORDER,
   LEGACY_STATION,
@@ -159,6 +160,11 @@ describe('układy faz dnia', () => {
     // Wskaźnik zestawu dodany już przez użytkownika nie powtarza się
     const withOfi = { ...user, indicators: [...user.indicators, ...inds(['ofi'])] };
     expect(switchPanelSet(st, withOfi, 'absorption', false).indicators.filter((x) => x.id === 'ofi')).toHaveLength(1);
+    // Własna, dostrojona kopia wskaźnika tego samego typu co wskaźnik zestawu zostaje; wychodzi tylko instancja zestawu
+    const own = addIndicator(abs.indicators, 'ofi').map((x) => (x.iid === 'ofi2' ? { ...x, color: '#ffffff' } : x));
+    const left = switchPanelSet(st, { ...abs, indicators: own }, 'auction', false);
+    expect(left.indicators.map((x) => x.iid)).toEqual(['ema1', 'rsi1', 'ofi2', 'oiflow1', 'breadth1']);
+    expect(left.indicators.find((x) => x.iid === 'ofi2')?.color).toBe('#ffffff');
     // Ten sam albo nieznany zestaw, układ bez zestawów — bez zmian
     expect(switchPanelSet(st, abs, 'absorption', false)).toBe(abs);
     expect(switchPanelSet(st, abs, 'nie-ma', false)).toBe(abs);

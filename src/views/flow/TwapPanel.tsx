@@ -6,7 +6,7 @@ import { fmtHms, fmtSince } from '../../charts/pro/core/time';
 import { END_GRACE_MS, matchPlan, planAhead, planDone, planEnd, twapStreams, type TwapPlan, type TwapStream } from '../../charts/pro/core/twapPlans';
 import type { ProStore } from '../../charts/pro/store/proStore';
 import { twapPlansFor, type PlanEntry } from '../../charts/pro/store/twapCache';
-import { numLang } from '../../ui/format';
+import { numLang, plForm } from '../../ui/format';
 import { tr } from '../../i18n';
 import { BTC_ONLY, BTC_ONLY_TITLE } from './flowColumnModel';
 
@@ -47,9 +47,6 @@ const fmtLeftShort = (ms: number) => {
 };
 /** Udział w procentach: poniżej 1% z jednym miejscem po przecinku. */
 const fmtPct = (x: number) => `${numLang(x < 0.01 ? (x * 100).toFixed(1) : String(Math.round(x * 100)))}%`;
-/** Polska forma liczebnika: 1 plan, 2–4 plany, 5 planów (12–14 jak 5). */
-const plForm = (n: number, one: string, few: string, many: string) =>
-  n === 1 ? one : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? few : many;
 /** Tempo ciągu z jego plasterków (USD/min przy takcie 30 s). */
 const pace = (s: TwapStream) => (s.usd / s.slices) * 2;
 

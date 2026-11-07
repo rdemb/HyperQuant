@@ -28,7 +28,7 @@ import { numLang } from '../../../ui/format';
 
 /**
  * Profil aukcji każdej doby na wykresie ceny (szablon Market Profile): od początku doby w prawo słupek wolumenu w każdym
- * wierszu ceny. Kolor słupka mówi, która strona była agresywna na tej cenie (delta z taśmy: zieleń kupno, fiolet
+ * wierszu ceny. Kolor słupka mówi, która strona była agresywna na tej cenie (delta z taśmy: lazur kupno, żar
  * sprzedaż, im mocniejszy, tym większa przewaga; szary = bez przewagi albo bez taśmy). Cienki obrys to czas (TPO: ile
  * 30-minutowych okresów doby dotknęło wiersza), przeskalowany do tego samego pola co wolumen doby: słupek dłuższy niż obrys
  * znaczy, że na tej cenie obrót był szybszy niż średnio w dobie, obrys dłuższy niż słupek — cena tam stała przy małym
@@ -36,8 +36,8 @@ import { numLang } from '../../../ui/format';
  * godziny doby, przy wierszu znacznik pojedynczych wydruków i ogonów, pod profilem delta doby, pod krzyżem liczby wiersza.
  *
  * Tryb pozycji: kolor wiersza z zmiany OI przypisanej cenie (src/utils/dayProfile.ts) — pełny słupek, gdy OI netto rosło
- * (zieleń przy przewadze kupna: nowe longi, fiolet przy sprzedaży: nowe shorty), obrys, gdy spadało (zieleń: zamykanie
- * shortów, fiolet: zamykanie longów); odcień z udziału zmiany OI netto w wolumenie wiersza. Doby zamknięte z profilem
+ * (lazur przy przewadze kupna: nowe longi, żar przy sprzedaży: nowe shorty), obrys, gdy spadało (lazur: zamykanie
+ * shortów, żar: zamykanie longów); odcień z udziału zmiany OI netto w wolumenie wiersza. Doby zamknięte z profilem
  * serwera mają kolor z jego pliku (7 dób), bieżąca — z taśmy i OI w pamięci (przeliczana najwyżej co FLOW_EVERY_MS).
  */
 

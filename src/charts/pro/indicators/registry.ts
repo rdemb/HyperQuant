@@ -54,16 +54,10 @@ export type IndicatorId =
   | 'twap';
 
 /**
- * Grupy na liście okna wskaźników (jak kategorie TradingView); `hyperquant` — wskaźniki, których nie ma w TradingView
- * (z danych Hyperliquid spoza świec albo z modeli na świecach), we własnej sekcji okna.
+ * Rodzaj wskaźnika: trend, momentum, zmienność, poziomy; `hyperquant` — wskaźniki, których nie ma w TradingView (z danych
+ * Hyperliquid spoza świec albo z modeli na świecach). Sekcję w oknie wskaźników wyznacza `tier`, nie rodzaj.
  */
 export type IndicatorGroup = 'trend' | 'momentum' | 'volatility' | 'levels' | 'hyperquant';
-export const GROUPS: readonly { id: IndicatorGroup; name: string }[] = [
-  { id: 'trend', name: 'Trend' },
-  { id: 'momentum', name: 'Momentum' },
-  { id: 'volatility', name: tr('Zmienność', 'Volatility') },
-  { id: 'levels', name: tr('Poziomy', 'Levels') },
-];
 
 /** Parametr liczbowy: zakres, krok pola i wartość domyślna (krok 1 = liczba całkowita). */
 export interface ParamDef {

@@ -413,7 +413,7 @@ const ChartsView: React.FC<ChartsViewProps> = ({ phase, onPhase, onMarket }) => 
       )}
       {!narrow && (
         <div className={`flex items-center gap-2 min-w-0 ${fs ? '' : 'mb-2'}`}>
-          <TabsBar st={tabs} tf={tf} a={actions} tabs={visible} presets={PHASE_LAYOUTS[shown]} />
+          <TabsBar st={tabs} tf={tf} a={actions} tabs={visible} presets={PHASE_LAYOUTS[shown]} phase={shown} />
           {/* Zestaw paneli pod wykresem (np. Aukcja | Absorpcja): należy do aktywnej karty */}
           {panelSet && <PanelSetSwitch sets={station.panelSets ?? []} value={panelSet.id} onChange={pickPanelSet} />}
           {/* Pytanie karty (wzorca): od czego zacząć czytanie wykresów tej karty */}
@@ -429,8 +429,8 @@ const ChartsView: React.FC<ChartsViewProps> = ({ phase, onPhase, onMarket }) => 
                 type="button"
                 onClick={toggleDock}
                 aria-pressed={columnOn}
-                aria-label={columnOn ? tr('Schowaj kolumnę DOM i taśmy (D)', 'Hide the DOM and tape column (D)') : tr('Pokaż kolumnę DOM i taśmy (D)', 'Show the DOM and tape column (D)')}
-                title={columnOn ? tr('Schowaj kolumnę DOM i taśmy (D)', 'Hide the DOM and tape column (D)') : tr('Pokaż kolumnę DOM i taśmy (D)', 'Show the DOM and tape column (D)')}
+                aria-label={tr('Kolumna DOM i taśmy (D)', 'DOM & tape column (D)')}
+                title={tr('Kolumna DOM i taśmy (D)', 'DOM & tape column (D)')}
                 className={`grid place-items-center w-8 h-8 rounded-lg border transition-colors duration-150 ${columnOn ? 'bg-surface-3 border-line-strong text-ink-1' : 'border-line text-ink-2 hover:text-ink-1 hover:bg-surface-2'}`}
               >
                 {columnOn ? <PanelRightClose className="w-4 h-4" /> : <PanelRightOpen className="w-4 h-4" />}
@@ -527,6 +527,7 @@ const ChartsView: React.FC<ChartsViewProps> = ({ phase, onPhase, onMarket }) => 
           a={actions}
           tabs={visible}
           presets={PHASE_LAYOUTS[shown]}
+          phase={shown}
           onClose={() => setSheet(false)}
           activeExtra={honestyId ? <HonestyCard store={storeFor(first.coin)} templateId={honestyId} tf={first.interval} /> : undefined}
         />

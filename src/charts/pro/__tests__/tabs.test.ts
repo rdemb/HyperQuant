@@ -3,6 +3,7 @@ import { ChartSettings, DEFAULT_SETTINGS, loadSettings, parseSettings, saveSetti
 import { STATIONS, saveStationLayout, stationById, stationKey, stationPanel } from '../chart/stations';
 import { inds } from '../chart/templates';
 import { LEGACY_STATIONS, LEGACY_TEMPLATES } from '../chart/legacyPresets';
+import { blankTabLabel } from '../chart/TabsBar';
 import {
   ChartTab,
   MAX_TABS,
@@ -307,6 +308,11 @@ describe('karty: skróty', () => {
   it('faza karty: faza wzorca, karta własna — sesja', () => {
     expect(['day-map', 'fuel', 'cockpit', 'review'].map((id) => tabPhase(tab(id, id as TabPreset)))).toEqual(['before', 'before', 'session', 'after']);
     expect([tabPhase(tab('k1', 'day-map')), tabPhase(tab('k2')), tabPhase(tab('k3', 'review'))]).toEqual(['before', 'session', 'after']);
+  });
+
+  it('pusta karta z innej fazy niż sesja mówi, że otworzy się W sesji', () => {
+    expect([blankTabLabel('session'), blankTabLabel(undefined)]).toEqual(['Pusta karta', 'Pusta karta']);
+    expect([blankTabLabel('before'), blankTabLabel('after')]).toEqual(['Pusta karta (W sesji)', 'Pusta karta (W sesji)']);
   });
 
   it('Alt+1…6 — układy w kolejności faz, Alt+7…9 — karty własne w kolejności paska; dalej nic', () => {

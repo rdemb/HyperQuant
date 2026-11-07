@@ -157,7 +157,6 @@ export const FlowColumn: React.FC<{ coin: string; narrow: boolean; variant: 'col
           lotUsd={f.walls.lotUsd}
           top={f.top}
           head={f.head}
-          wide={false}
           narrow={narrow}
           className={frame}
         />
