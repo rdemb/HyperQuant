@@ -132,6 +132,9 @@ const ViewFallback = () => <EmptyState title={tr('Ładowanie widoku…', 'Loadin
 const NEEDS_BARS: ViewId[] = ['plan', 'lab', 'micro'];
 const OWN_INTERVALS: ViewId[] = ['charts', 'flow', 'lessons'];
 
+/** Zmienna CSS z wysokością przypiętego nagłówka aplikacji (px); widoki używają jej w klasie `top-[var(--hq-header-h,0px)]`. */
+const HEADER_H_VAR = '--hq-header-h';
+
 /** Powłoka aplikacji: nawigacja (górna na desktopie, dolna na telefonie), status danych, przejścia widoków. */
 export const AppShell: React.FC = () => {
   const { view, setView, feed, audioEnabled, setAudioEnabled } = useDesk();
@@ -161,9 +164,26 @@ export const AppShell: React.FC = () => {
     };
   }, [moreOpen]);
 
+  // Wysokość przypiętego nagłówka (pasek, ceny, bezpieczna strefa) jako zmienna CSS: elementy przypinane w widokach
+  // (pasek Pulse na telefonie) stają pod nim, nie pod nim schowane
+  const headerRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const el = headerRef.current;
+    if (!el) return;
+    const root = document.documentElement;
+    const set = () => root.style.setProperty(HEADER_H_VAR, `${el.offsetHeight}px`);
+    const ro = new ResizeObserver(set);
+    ro.observe(el);
+    set();
+    return () => {
+      ro.disconnect();
+      root.style.removeProperty(HEADER_H_VAR);
+    };
+  }, []);
+
   return (
     <div className="min-h-dvh bg-page text-ink-1 flex flex-col">
-      <header className="pt-safe sticky top-0 z-30 bg-page/95 backdrop-blur border-b border-line">
+      <header ref={headerRef} className="pt-safe sticky top-0 z-30 bg-page/95 backdrop-blur border-b border-line">
         <div className="flex items-center justify-between gap-3 xl:gap-4 px-4 lg:px-6 h-14">
           <a
             href="#desk"

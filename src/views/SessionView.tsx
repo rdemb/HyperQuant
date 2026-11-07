@@ -10,8 +10,8 @@ import { FlowColumn } from './flow/FlowColumn';
 
 /**
  * Ekran „W sesji”: wykres z układami sesji (Kokpit domyślnie, od 1280 px z prawą kolumną DOM i taśmy), pod nim
- * przepływ kohort i zrealizowane likwidacje. Na telefonie nad wykresem przypięty pasek Pulse rynku wykresu (karty
- * Wykres, DOM, Taśma są w pasku wykresu).
+ * przepływ kohort i zrealizowane likwidacje (na każdej szerokości). Na telefonie zamiast kolumny pasek Pulse rynku
+ * wykresu, przypięty pod nagłówkiem aplikacji także przy przewijaniu (karty Wykres, DOM, Taśma są w pasku wykresu).
  */
 const SessionView: React.FC = () => {
   const narrow = useSyncExternalStore(subscribeNarrow, isNarrow);
@@ -19,14 +19,15 @@ const SessionView: React.FC = () => {
   const [coin, setCoin] = useState<Market>(COIN);
   return (
     <div className="flex flex-col gap-4">
-      {narrow && <FlowColumn coin={coin} narrow variant="pulse" />}
-      <ChartsView phase="session" onMarket={setCoin} />
-      {!narrow && (
-        <>
-          <CohortFlowPanel />
-          <SessionLiquidations />
-        </>
+      {narrow && (
+        // Pod przypiętym nagłówkiem (z-30, wysokość w --hq-header-h z AppShell), pod menu i arkuszami (z-40, z-50)
+        <div className="sticky top-[var(--hq-header-h,0px)] z-20 -mx-4 px-4 py-1.5 bg-page/95 backdrop-blur border-b border-line">
+          <FlowColumn coin={coin} narrow variant="pulse" />
+        </div>
       )}
+      <ChartsView phase="session" onMarket={setCoin} />
+      <CohortFlowPanel />
+      <SessionLiquidations />
     </div>
   );
 };
