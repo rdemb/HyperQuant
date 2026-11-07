@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Bell, BellOff, BellPlus, Camera, ChevronDown, ChevronsRight, Columns2, Copy, Eye, EyeOff, Frame as FrameIcon, Grid2x2, History, Keyboard, Layers, Link, ListOrdered, Maximize2, Minimize2, Minus, MoreHorizontal, PenTool, RotateCcw, SlidersHorizontal, Square, X } from 'lucide-react';
-import { Badge, BadgeTone, Segmented, numLang } from '../../ui';
+import { Badge, BadgeTone, LocalBoundary, Segmented, numLang } from '../../ui';
 import { scrollFadeRef } from '../../ui/scrollFade';
 import { LiqMapState, useLiqMap } from '../../state/useLiqMap';
 import { useDeskLedger } from '../../state/useDeskLedger';
@@ -884,22 +884,24 @@ export const ProChart: React.FC<{
         </div>
       )}
 
-      {/* Nagłówek układu: pytanie i trzy liczby (na żywo, pierwszy panel karty) */}
+      {/* Nagłówek układu: pytanie i trzy liczby (na żywo, pierwszy panel karty); zły ładunek wygasza tylko jego */}
       {layoutHeader && !inReplay && (
-        <LayoutHeader
-          id={station.id}
-          question={station.question}
-          store={store}
-          model={store.coin === 'BTC' ? feed.vol.model : null}
-          volStatus={feed.vol.status}
-          liq={liq}
-          whales={whales}
-          whalesConfigured={whalePub.configured}
-          blogMaps={blogMaps}
-          blogMap={pickMap(blogMaps.maps, store.serverNow(), settings.blogMapId)}
-          narrow={narrow}
-          onNumbers={onHeaderNumbers}
-        />
+        <LocalBoundary what={tr('Nagłówek układu', 'Layout header')} inline>
+          <LayoutHeader
+            id={station.id}
+            question={station.question}
+            store={store}
+            model={store.coin === 'BTC' ? feed.vol.model : null}
+            volStatus={feed.vol.status}
+            liq={liq}
+            whales={whales}
+            whalesConfigured={whalePub.configured}
+            blogMaps={blogMaps}
+            blogMap={pickMap(blogMaps.maps, store.serverNow(), settings.blogMapId)}
+            narrow={narrow}
+            onNumbers={onHeaderNumbers}
+          />
+        </LocalBoundary>
       )}
       {/* Klatka z menu „Więcej” na telefonie: po zamknięciu fokus na przycisk „Więcej” (pozycji menu już nie ma) */}
       {frameSrc && <FrameDialog src={frameSrc} onClose={() => setFrameSrc(null)} returnFocus={() => moreBtnRef.current} />}

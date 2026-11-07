@@ -1,5 +1,6 @@
 import React from 'react';
 import { tr } from '../i18n';
+import { LocalBoundary } from '../ui';
 import { useDeskLedger } from '../state/useDeskLedger';
 import type { PhaseId } from '../charts/pro/chart/stations';
 import ChartsView from './ChartsView';
@@ -15,7 +16,10 @@ import { SessionReview } from './after/SessionReview';
 const AfterView: React.FC<{ onPhase?: (phase: PhaseId) => void }> = ({ onPhase }) => (
   <div className="flex flex-col gap-4">
     <ChartsView phase="after" onPhase={onPhase} />
-    <SessionReview />
+    {/* Zły ładunek z zewnątrz (taśma likwidacji, kohorty, dziennik, blog) wygasza tylko Rozliczenie */}
+    <LocalBoundary what={tr('Rozliczenie sesji', 'Session review')}>
+      <SessionReview />
+    </LocalBoundary>
     <LedgerSection />
     <section aria-labelledby="po-dziennik-transakcji" className="flex flex-col gap-2">
       <h2 id="po-dziennik-transakcji" className="text-sm font-semibold text-ink-1">

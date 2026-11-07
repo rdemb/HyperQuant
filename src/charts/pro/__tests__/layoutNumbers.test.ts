@@ -5,6 +5,7 @@ import { vwapSigma } from '../chart/marketState';
 import {
   type LayoutInputs,
   dayVwapOf,
+  failedNumbers,
   layoutNumbers,
   liqNearestOf,
   nakedPocOf,
@@ -91,6 +92,18 @@ describe('nagłówek układu: trzy liczby', () => {
   it('MODEL zawsze z nazwą metody w podpowiedzi, także przy braku liczby', () => {
     for (const st of STATIONS) {
       for (const x of layoutNumbers(st.id, { coin: 'BTC', now: NOW })) if (x.badge === 'MODEL') expect(x.hint, `${st.id} ${x.label}`).toMatch(/^MODEL · \S/);
+    }
+  });
+
+  it('po błędzie liczenia: trzy „—” z powodem, MODEL dalej z nazwą metody', () => {
+    for (const st of STATIONS) {
+      const n = failedNumbers(st.id, 'BTC', NOW);
+      expect(n.map((x) => x.label), st.id).toEqual(layoutNumbers(st.id, { coin: 'BTC', now: NOW }).map((x) => x.label));
+      for (const x of n) {
+        expect(x.value, `${st.id} ${x.label}`).toBe('—');
+        expect(x.hint, `${st.id} ${x.label}`).toContain('Nie udało się policzyć liczby z bieżących danych');
+        if (x.badge === 'MODEL') expect(x.hint, `${st.id} ${x.label}`).toMatch(/^MODEL · [^:]+: Nie udało się/);
+      }
     }
   });
 

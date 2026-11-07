@@ -496,6 +496,19 @@ export function layoutNumbers(id: StationId, x: LayoutInputs): LayoutNumber[] {
   }
 }
 
+/**
+ * Liczby układu po błędzie liczenia (zły ładunek z zewnątrz): trzy „—” z powodem i ponowną próbą, MODEL z nazwą metody
+ * w podpowiedzi jak zawsze.
+ */
+export function failedNumbers(id: StationId, coin: string, now: number): LayoutNumber[] {
+  const why = tr('Nie udało się policzyć liczby z bieżących danych — kolejna próba za ≤ 5 s', 'Could not compute the number from the current data — next attempt within 5 s');
+  return layoutNumbers(id, { coin, now }).map((n) => ({
+    ...n,
+    value: DASH,
+    hint: n.badge === 'MODEL' ? `${/^MODEL · [^:]+: /.exec(n.hint)?.[0] ?? 'MODEL · '}${why}` : why,
+  }));
+}
+
 // ───────────────────────── wejścia ze świec i migawek ─────────────────────────
 
 const asiaWhy = (now: number) => {

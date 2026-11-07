@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import type { PhaseId } from '../charts/pro/chart/stations';
 import { COIN, type Market } from '../charts/pro/store/proStore';
 import { ConnectingState } from '../shell/ConnectingState';
+import { LocalBoundary } from '../ui';
+import { tr } from '../i18n';
 import { useDesk } from '../state/DeskContext';
 import ChartsView from './ChartsView';
 import { AuctionContextPanel } from './before/AuctionContextPanel';
@@ -25,7 +27,10 @@ const BeforeView: React.FC<{ onPhase?: (phase: PhaseId) => void }> = ({ onPhase 
   const [coin, setCoin] = useState<Market>(COIN);
   return (
     <div className="flex flex-col gap-4">
-      <FourCard coin={coin} />
+      {/* Zły ładunek z zewnątrz (mapa skanera, blog) wygasza tylko Czwórkę, nie cały ekran */}
+      <LocalBoundary what={tr('Czwórka', 'Four numbers')}>
+        <FourCard coin={coin} />
+      </LocalBoundary>
       <ChartsView phase="before" onPhase={onPhase} onMarket={setCoin} />
       <ContextRail />
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 [&>*]:min-w-0">

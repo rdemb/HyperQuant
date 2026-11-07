@@ -7,5 +7,6 @@ export { Segmented } from './Segmented';
 export { AnimatedNumber } from './AnimatedNumber';
 export { Sparkline } from './Sparkline';
 export { EmptyState } from './EmptyState';
+export { LocalBoundary } from './LocalBoundary';
 export * from './format';
 export * from './motion';
