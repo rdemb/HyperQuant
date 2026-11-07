@@ -18,7 +18,6 @@ out/
 *.swp
 *.swo
 .claude/
-CLAUDE.md
 
 # Operating System files
 .DS_Store
