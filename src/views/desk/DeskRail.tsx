@@ -1,7 +1,9 @@
 import React from 'react';
 import { useDesk } from '../../state/DeskContext';
-import { Stat, fmtCompact, fmtPct, DASH, fmtFixed, fmtNum } from '../../ui';
+import { Stat, fmtPct, DASH, fmtFixed, fmtNum } from '../../ui';
 import { FundingStrip } from '../market/FundingStrip';
+import { DepthStat } from './DepthStat';
+import { bookDepth } from '../../utils/bookDepth';
 import { NextEventStat } from '../market/NextEventStat';
 import { useDeskLedger } from '../../state/useDeskLedger';
 import { calibrate } from '../../utils/deskLedger';
@@ -25,10 +27,6 @@ export const DeskRail: React.FC = () => {
       {tr('za poziomem', 'past level')}
     </div>
   );
-  const depthAsk = quant.bookDepthAskUsd;
-  const depthBid = quant.bookDepthBidUsd;
-  const depthTotal = depthAsk + depthBid;
-  const bidShare = depthTotal > 0 ? depthBid / depthTotal : null;
   const mins = (v: number | null | undefined) => (typeof v === 'number' ? `~${fmtNum(v)} min` : tr('b/d', 'n/a'));
   // Kalibracja z weryfikowalnego dziennika (izotonicznie na rozstrzygniętych prognozach tego samego silnika): tylko przy
   // ≥ 300 ocenionych parach, aktualnym podsumowaniu i tej samej metodzie (mapa z HAR+FHS nie pasuje do zapasu Mertona)
@@ -116,27 +114,8 @@ export const DeskRail: React.FC = () => {
       </div>
 
       <div className="bg-surface-1 border border-line rounded-xl p-3.5">
-        <Stat
-          label={tr('Głębokość L2', 'L2 depth')}
-          source={{
-            tone: depthTotal > 0 ? 'live' : 'stale',
-            label: depthTotal > 0 ? 'LIVE' : tr('BRAK', 'NONE'),
-            title: tr('Suma płynności 12 poziomów arkusza Hyperliquid', 'Total liquidity of 12 Hyperliquid book levels'),
-          }}
-          value={<span className="text-base">{fmtCompact(depthBid, '$')} <span className="text-ink-3">/</span> {fmtCompact(depthAsk, '$')}</span>}
-          hint={
-            bidShare !== null ? (
-              <span className="flex items-center gap-1.5">
-                <span className="relative h-1.5 w-20 rounded-full bg-sell/70 overflow-hidden" aria-hidden="true">
-                  <span className="absolute inset-y-0 left-0 bg-buy" style={{ width: `${(bidShare * 100).toFixed(0)}%` }} />
-                </span>
-                BID {fmtFixed(bidShare * 100, 0)}%
-              </span>
-            ) : (
-              tr('Czekam na arkusz', 'Waiting for the book')
-            )
-          }
-        />
+        {/* Z migawki arkusza: bez niej „—” z powodem, nie $0 */}
+        <DepthStat depth={bookDepth(feed.bids, feed.asks)} />
       </div>
 
       <div className="bg-surface-1 border border-line rounded-xl p-3.5">
