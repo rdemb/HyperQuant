@@ -4,6 +4,10 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Dokumentacja (2026-11-07)
+
+- `CLAUDE.md`: zwięzłe instrukcje dla Claude Code (stack, komendy, struktura po etapie 1a, zasady danych i prywatności, czego nie ruszać). Plik przestaje być ignorowany przez git.
+
 ### Etap 1a: dzień tradera w trzech fazach (2026-11-07)
 
 #### Dodane
