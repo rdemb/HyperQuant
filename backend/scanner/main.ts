@@ -23,7 +23,7 @@ import { Scanner } from './scanner.ts';
 import { fetchLeaderboardAccounts } from './seed.ts';
 import { publishToGit } from './gitPublish.ts';
 import { HISTORY_README, MarketRecorder, historyIndex, pruneHistory } from './history.ts';
-import { prepareHistoryRepo, publishHistory } from './historyGit.ts';
+import { prepareHistoryRepo, publishHistory, startWhenReady } from './historyGit.ts';
 import { WHALE_MARKETS, WhaleWatcher } from './whales.ts';
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -186,13 +186,15 @@ const recorders = (cfg.history?.markets ?? []).map((coin) => {
   );
   return { rec, stream: s };
 });
+/** Repo gałęzi przygotowane (bez repo — od razu): dopiero wtedy rejestratory słuchają, a takt historii zapisuje i wypycha */
 let historyReady = historyRepo === null;
 let historyBusy = false;
 /** Doba UTC ostatniego sprzątania (od startu bieżąca — pierwsze spłaszczenie następnej doby) */
 let historyDay = Math.floor(Date.now() / DAY_MS);
 
 async function historyTick(): Promise<void> {
-  if (!cfg.history || historyBusy) return;
+  // Przed przygotowaniem repo (startWhenReady przy starcie) rejestratory jeszcze nie słuchają — nic do zapisu ani pushu
+  if (!cfg.history || historyBusy || !historyReady) return;
   historyBusy = true;
   try {
     const now = Date.now();
@@ -212,12 +214,6 @@ async function historyTick(): Promise<void> {
       return;
     }
     if (written === 0 && !daily) return;
-    // Pliki mogą powstawać przed przygotowaniem repo (przygotowanie działa na miejscu), push — dopiero po nim
-    if (!historyReady) historyReady = await prepareHistoryRepo(historyRepo, now);
-    if (!historyReady) {
-      console.error('[skaner] historia: repo gałęzi niedostępne — spróbuję przy następnym zapisie');
-      return;
-    }
     const r = await publishHistory(historyRepo, `historia: ${new Date(now).toISOString()}`, now, daily);
     if (r.ok && r.pushed) {
       if (daily) historyDay = day;
@@ -540,7 +536,22 @@ log(
 // Agregacja arkusza dobrana do ceny przed pierwszym połączeniem (z ostatniej zapisanej minuty), potem co 10 min
 adjustBookAgg();
 stream.start();
-for (const r of recorders) r.stream.start();
+// Rejestratory historii z repo gałęzi dopiero po jego przygotowaniu: na świeżym klonie numeracja doby musi widzieć pliki
+// doby odtworzone z gałęzi (inaczej numery od 0 powtórzyłyby numery innych kont); reszta skanera startuje od razu
+const startRecorders = () => {
+  for (const r of recorders) r.stream.start();
+};
+if (historyRepo)
+  void startWhenReady(
+    () => prepareHistoryRepo(historyRepo, Date.now()),
+    () => {
+      historyReady = true;
+      startRecorders();
+    },
+    30_000,
+    () => console.error('[skaner] historia: repo gałęzi niedostępne — nagrywanie wstrzymane, spróbuję za 30 s')
+  );
+else startRecorders();
 setTimeout(guarded('agregacja arkusza', adjustBookAgg), 60_000);
 void scanLoop();
 void whaleLoop();
