@@ -4,9 +4,9 @@ import type { MakerSplit } from '../core/makers';
 import { type Branching, MIN_EVENTS, fitBranching } from '../core/hawkes';
 import { fitBranchingLater, inBackground } from '../core/hawkesWorker';
 import { ofiEvent } from '../../../utils/microMechanics';
-import { rvolSeries } from '../../../utils/rvol';
+import { RVOL_MIN_DAYS, rvolSeries } from '../../../utils/rvol';
 import { Extreme, OlsWindow, RegimeDetector, RobustLine, Window, Wma, ema, rma } from './primitives';
-import { INTERVALS, MONTH, intervalById } from '../core/time';
+import { DAY, INTERVALS, MONTH, intervalById } from '../core/time';
 import { numLang } from '../../../ui/format';
 import { PRO } from '../chart/theme';
 import { tr } from '../../../i18n';
@@ -184,6 +184,11 @@ export interface IndicatorDef {
    * w którym leży — wzór sięga tylko po okresy zamknięte. Bez niego wskaźnik ma parametr „Interwał”.
    */
   period?: string;
+  /**
+   * Najkrótsza historia świec wykresu (ms), przy której wskaźnik ma jakąkolwiek wartość (RVOL: 10 dni); przy krótszej
+   * legenda panelu podaje powód (`shortHistoryNote`) zamiast pustego panelu z „—”.
+   */
+  minHistoryMs?: number;
   /** Na wykresie ceny albo we własnym panelu pod nim. */
   pane: 'price' | 'own';
   params: readonly ParamDef[];
@@ -1685,6 +1690,8 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
       'Świeca zależy od świec z tej samej pory doby z 20 poprzednich dni, o ile wykres je ma (przy drobnym interwale ładuje się mniej dni).',
       'A candle depends on candles at the same time of day over the previous 20 days, as far as the chart has them (a small interval loads fewer days).'
     ),
+    // 1m i 5m ładują zwykle 1–5 dób świec: bez 10 dni historii panel byłby pusty
+    minHistoryMs: RVOL_MIN_DAYS * DAY,
     pane: 'own',
     params: [],
     plots: [{ title: 'RVOL' }],
@@ -2091,6 +2098,14 @@ export const axisTitle = (def: IndicatorDef, p: PlotDef, narrow: boolean): strin
 
 /** Podpis wartości plotu w legendzie: tytuł plotu, bez powtórzenia nazwy wskaźnika stojącej przed wartościami (RVOL). */
 export const legendTitle = (def: IndicatorDef, p: PlotDef): string => (p.title && p.title !== def.short ? p.title : '');
+
+/** Powód pustego panelu przy historii wykresu `spanMs` krótszej niż próg wskaźnika (`minHistoryMs`); inaczej null. */
+export function shortHistoryNote(def: IndicatorDef, spanMs: number): string | null {
+  const min = def.minHistoryMs;
+  if (min === undefined || spanMs >= min) return null;
+  const days = Math.round(min / DAY);
+  return tr(`za mało historii (min. ${days} dni)`, `not enough history (min. ${days} days)`);
+}
 
 /**
  * Znacznik instancji na liście i w oknie ustawień (wartość CSS `background`): kolor pierwszej rysowanej linii, a przy

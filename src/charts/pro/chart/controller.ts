@@ -43,7 +43,7 @@ import { tpoInterval } from '../core/tpo';
 import { DAY, barEnd, barStart, fmtBarTime, fmtHm, fromDaily, visibleSpan } from '../core/time';
 import { type ChartSettings, isNarrow } from './settings';
 import { IndicatorEngine } from '../indicators/engine';
-import { HIST_DOWN, HIST_UP, IndicatorDef, IndicatorInstance, PlotDef, indicatorDef, axisTitle, indicatorLabel, legendColor, legendTitle, plotColor, plotShift } from '../indicators/registry';
+import { HIST_DOWN, HIST_UP, IndicatorDef, IndicatorInstance, PlotDef, indicatorDef, axisTitle, indicatorLabel, legendColor, legendTitle, plotColor, plotShift, shortHistoryNote } from '../indicators/registry';
 import { CloudFill, CloudSource } from './cloudFill';
 import { ConeForecast, ConeLayer, ConeSource } from './coneLayer';
 import { Hip4Layer, Hip4Source, outcomeLevels } from './hip4Layer';
@@ -1606,9 +1606,12 @@ export class ProChartController {
     const ms = this.series.interval.ms;
     const vi = i < 0 && this.hoverTime !== null && this.hoverTime > last ? bars.length - 1 + Math.round((this.hoverTime - last) / ms) : i;
     const indicators: IndicatorReadout[] = [];
+    // Historia świec wykresu (RVOL potrzebuje 10 dni: na 1m i 5m panel byłby pusty bez słowa)
+    const span = last - bars[0].t;
     this.engine.runs.forEach((run, k) => {
       const x = this.indShown[k];
       const def = indicatorDef(x.id);
+      const short = shortHistoryNote(def, span);
       const vs = run.out.map((ys, p) => {
         const j = vi - plotShift(x, def.plots[p]);
         return vi >= 0 && j >= 0 && j < this.engine.count ? ys[j] : Number.NaN;
@@ -1619,16 +1622,18 @@ export class ProChartController {
           ? this.hip4Legend()
           : def.pbRanges
             ? this.pb.legend(x.color)
-            : vs.flatMap((v, p) => {
-                const plot = def.plots[p];
-                if (def.band?.includes(p)) return [];
-                // Podpis poziomu (pivoty: P, R1, S1…) także w legendzie; przedział w nawiasie za wartością
-                const fmt = this.indFormat(plot.format ?? def.format);
-                const text = Number.isNaN(v) ? '—' : fmt(v);
-                const band = def.band && p === 0 && !Number.isNaN(v) ? ` (${fmt(vs[def.band[0]])}–${fmt(vs[def.band[1]])})` : '';
-                const title = legendTitle(def, plot);
-                return [{ text: title ? `${title} ${text}${band}` : `${text}${band}`, color: legendColor(x, plot, vs[plot.signOf ?? p]) }];
-              });
+            : short
+              ? [{ text: `—, ${short}`, color: PRO.ink3 }]
+              : vs.flatMap((v, p) => {
+                  const plot = def.plots[p];
+                  if (def.band?.includes(p)) return [];
+                  // Podpis poziomu (pivoty: P, R1, S1…) także w legendzie; przedział w nawiasie za wartością
+                  const fmt = this.indFormat(plot.format ?? def.format);
+                  const text = Number.isNaN(v) ? '—' : fmt(v);
+                  const band = def.band && p === 0 && !Number.isNaN(v) ? ` (${fmt(vs[def.band[0]])}–${fmt(vs[def.band[1]])})` : '';
+                  const title = legendTitle(def, plot);
+                  return [{ text: title ? `${title} ${text}${band}` : `${text}${band}`, color: legendColor(x, plot, vs[plot.signOf ?? p]) }];
+                });
       const legend = this.indLegends[k];
       // Pierwsza wartość przy nazwie, dalsze (OFI: Δp, R², oczekiwana) mogą przejść do następnego wiersza na wąskim panelu
       if (legend) legend.set([{ text: indicatorLabel(x), color: PRO.ink3 }, ...values.map((v, p) => ({ ...v, glue: p === 0 }))]);
