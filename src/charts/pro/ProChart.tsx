@@ -37,7 +37,7 @@ import { IndicatorSettings } from './chart/IndicatorSettings';
 import { indicatorLabel, indicatorsLink } from './indicators/registry';
 import { MarketStateBar } from './chart/MarketStateBar';
 import { LayoutHeader } from './chart/LayoutHeader';
-import { legendChips } from './chart/layerSources';
+import { legendChips, liqScan, whalesScan } from './chart/layerSources';
 import { CoverageLegend } from './chart/CoverageLegend';
 import { type DataSource, needsOf } from './chart/coverageStrip';
 import { SchrodiLauncher } from '../../components/schrodi/SchrodiLauncher';
@@ -615,11 +615,16 @@ export const ProChart: React.FC<{
   const shown = shownSettings(settings, narrow, layout, inReplay);
   const venueOn = shown.showVenueCvd || shown.showVenueOi || (shown.showStats && shown.statGroups.some((g) => VENUE_GROUPS.includes(g)));
   const tapeSince = store.coverage.first();
-  // Plakietki źródeł warstw w legendzie (w powtórce bez nich: nagranie, nie dane na żywo, i bez warstw skanera)
-  const liqShown = liq.map && (liq.status === 'ready' || liq.status === 'delayed') ? liq.map.asOf : null;
+  // Plakietki źródeł warstw w legendzie (w powtórce bez nich: nagranie, nie dane na żywo, i bez warstw skanera); stan
+  // migawek skanera i powody ich braku te same co w nagłówku układu
   const chips = inReplay
     ? []
-    : legendChips(shown, { coin: store.coin, now: Date.now(), intervalMs: iv.ms, asOf: { showLiq: liqShown, showWhales: whales?.markets[store.coin] ? whales.asOf : null } });
+    : legendChips(shown, {
+        coin: store.coin,
+        now: Date.now(),
+        intervalMs: iv.ms,
+        scan: { showLiq: liqScan(liq), showWhales: whalesScan(whales, store.coin, whalePub.configured) },
+      });
   const bigUsd = ctrlRef.current?.bigTradeUsd ?? DEFAULT_THRESHOLD_USD;
   const tick = hlTick(store.lastPrice());
   const editing = indEdit ? (settings.indicators.find((x) => x.iid === indEdit) ?? null) : null;
@@ -819,6 +824,7 @@ export const ProChart: React.FC<{
           model={store.coin === 'BTC' ? feed.vol.model : null}
           liq={liq}
           whales={whales}
+          whalesConfigured={whalePub.configured}
           narrow={narrow}
         />
       )}

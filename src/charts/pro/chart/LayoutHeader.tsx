@@ -4,40 +4,17 @@ import { Badge, DASH } from '../../../ui';
 import type { LiqMapState } from '../../../state/useLiqMap';
 import type { VolModel } from '../../../utils/volatility';
 import type { WhaleLayer } from '../../../utils/whaleLayer';
-import { type TradeSession, currentTradeSession, expectedRange } from '../../../utils/sessionDay';
-import type { Candle } from '../hl/parse';
 import { type Branching, MIN_EVENTS } from '../core/hawkes';
 import { fitBranchingLater } from '../core/hawkesWorker';
-import { liqLevels } from '../core/indicators';
-import { fmtHm } from '../core/time';
-import { marketCostBp } from '../indicators/registry';
 import type { ProStore } from '../store/proStore';
-import {
-  type Absent,
-  COST_USD,
-  FLOW_WINDOW_MS,
-  type Got,
-  type LayoutInputs,
-  type LayoutNumber,
-  dayVwapOf,
-  isAbsent,
-  layoutNumbers,
-  liqNearestOf,
-  nakedPocOf,
-  prevDayOf,
-  profileStep,
-  reviewOf,
-  rvolOf,
-  sessionNowOf,
-  toVBars,
-  twapShareOf,
-  whaleBalanceOf,
-} from './layoutNumbers';
+import { type InputScan, readInputs } from './layoutInputs';
+import { FLOW_WINDOW_MS, type Got, type LayoutInputs, type LayoutNumber, layoutNumbers } from './layoutNumbers';
 import type { StationId } from './stations';
 import { tr } from '../../../i18n';
 
 /**
- * Nagłówek układu nad wykresem (pierwszy panel karty): pytanie układu i trzy liczby z plakietkami (layoutNumbers.ts).
+ * Nagłówek układu nad wykresem (pierwszy panel karty): pytanie układu i trzy liczby z plakietkami (layoutNumbers.ts,
+ * wejścia z magazynu w layoutInputs.ts).
  * Liczby z danych, które wykres już ma — świece magazynu rynku (1m, 5m, 1h; seria wczytuje się przy pierwszym użyciu),
  * taśma i arkusz magazynu, migawki skanera i model zmienności HAR z Desku. Przeliczane co 5 s (na starcie częściej),
  * dotknięcie liczby rozwija ich źródła. Na telefonie jedna linia z przewijaniem w bok: najpierw liczby, potem pytanie.
@@ -47,137 +24,7 @@ const EVERY_MS = 5_000;
 /** Przez pierwsze sekundy (dane dopiero dochodzą) — co sekundę. */
 const WAIT_MS = 1_000;
 const WARMUP_MS = 15_000;
-/** Migawka arkusza starsza niż tyle ms jest nieaktualna (zerwane połączenie), jak w Stanie rynku. */
-const BOOK_STALE_MS = 30_000;
 const MIN = 60_000;
-
-interface Scan {
-  model: VolModel | null;
-  liq: LiqMapState;
-  whales: WhaleLayer | null;
-}
-
-/** Świece interwału `id` z magazynu (seria wczytuje się przy pierwszym użyciu); w trakcie wczytywania — undefined. */
-function candles(store: ProStore, id: string): Got<readonly Candle[]> | undefined {
-  const s = store.series(id);
-  if (s.loadState === 'idle') void s.load();
-  if (s.loadState === 'error') return { why: tr(`Nie udało się pobrać świec ${id} z Hyperliquid`, `Could not load ${id} candles from Hyperliquid`) };
-  return s.loadState === 'ready' ? s.candlesNow() : undefined;
-}
-
-/** Brak albo wczytywanie wejścia, od którego zależy liczba (gotowe wejście — tu nie trafia). */
-const pass = (v: Got<unknown> | undefined): Absent | undefined => (v !== undefined && isAbsent(v) ? v : undefined);
-
-/** Oczekiwany zakres sesji: z modelem HAR (BTC) od razu, bez niego ze świec 5m tego rynku (Parkinson). */
-function expectedOf(store: ProStore, model: VolModel | null, s: TradeSession, now: number, price: number): LayoutInputs['expected'] {
-  let bars5m: Candle[] = [];
-  if (!model) {
-    const c5 = candles(store, '5m');
-    if (c5 === undefined || isAbsent(c5)) return c5;
-    bars5m = [...c5];
-  }
-  const e = expectedRange(model, toVBars(bars5m), s, now, price);
-  if (e) return e;
-  return {
-    why: model
-      ? tr('Model HAR nie daje zmienności dla tej sesji', 'The HAR model gives no volatility for this session')
-      : tr('Bez modelu HAR, a za mało zamkniętych świec 5m z ostatniej doby (min. 12)', 'No HAR model and too few closed 5m candles from the last day (min. 12)'),
-  };
-}
-
-function liqOf(liq: LiqMapState, price: number): LayoutInputs['liq'] {
-  switch (liq.status) {
-    case 'ready':
-    case 'delayed':
-      return liqNearestOf(liqLevels(liq.map!), price, liq.map!.asOf);
-    case 'loading':
-      return undefined;
-    case 'unconfigured':
-      return { why: tr('Mapa likwidacji niedostępna w tej wersji strony', 'Liquidation map unavailable in this version of the site') };
-    case 'error':
-      return { why: tr('Nie udało się pobrać mapy likwidacji', 'Could not load the liquidation map') };
-    default:
-      return { why: tr('Skaner nie publikuje teraz aktualnej mapy — klastry ukryte', 'The scanner is not publishing a current map right now — clusters hidden') };
-  }
-}
-
-/** Wejścia liczb układu `id` z magazynu rynku i migawek skanera (tylko to, czego układ potrzebuje). */
-function readInputs(id: StationId, store: ProStore, scan: Scan, hawkes: LayoutInputs['hawkes']): LayoutInputs {
-  const now = store.serverNow();
-  const lp = store.lastPrice();
-  const x: LayoutInputs = { coin: store.coin, now, price: lp > 0 ? lp : undefined };
-  const model = store.coin === 'BTC' ? scan.model : null;
-  if (id === 'cockpit' || id === 'auction-open') {
-    const c1 = candles(store, '1m');
-    if (c1 !== undefined && !isAbsent(c1)) {
-      x.dayVwap = dayVwapOf(c1, now);
-      x.session = sessionNowOf(c1, now);
-    } else {
-      x.dayVwap = pass(c1);
-      // Sesja azjatycka: powód nie zależy od świec
-      x.session = currentTradeSession(now) ? pass(c1) : sessionNowOf([], now);
-    }
-    const sn = x.session;
-    x.expected = sn === undefined || isAbsent(sn) ? pass(sn) : expectedOf(store, model, sn.s, now, lp > 0 ? lp : sn.close);
-  }
-  if (id === 'cockpit' || id === 'fuel') {
-    const c1h = candles(store, '1h');
-    x.rvol = c1h === undefined || isAbsent(c1h) ? pass(c1h) : rvolOf(c1h, now);
-  }
-  if (id === 'day-map') {
-    const c1h = candles(store, '1h');
-    if (c1h === undefined || isAbsent(c1h) || !(lp > 0)) {
-      x.prevDay = x.nakedPoc = pass(c1h);
-    } else {
-      const step = profileStep(lp);
-      x.prevDay = prevDayOf(c1h, now, step);
-      x.nakedPoc = nakedPocOf(c1h, now, lp, step);
-    }
-  }
-  if (id === 'fuel') {
-    if (lp > 0) x.liq = liqOf(scan.liq, lp);
-    const f = store.exactBook()?.latest() ?? null;
-    if (!f) x.cost = undefined;
-    else if (now - f.t > BOOK_STALE_MS) x.cost = { why: tr(`Migawka arkusza z ${fmtHm(f.t)} nieaktualna (połączenie?)`, `Book snapshot from ${fmtHm(f.t)} is stale (connection?)`) };
-    else {
-      const ask = marketCostBp(f, COST_USD, true);
-      const bid = marketCostBp(f, COST_USD, false);
-      x.cost = Number.isFinite(ask) || Number.isFinite(bid) ? { ask, bid, at: f.t } : { why: tr('20 poziomów arkusza nie mieści 100 000 USD po żadnej stronie', '20 book levels cannot hold 100,000 USD on either side') };
-    }
-  }
-  if (id === 'big-hands') {
-    const from = now - FLOW_WINDOW_MS;
-    x.twap = store.zeroKnown.covers(from, now)
-      ? twapShareOf(store.orders.range(from, now))
-      : { why: tr('Taśma bez znaczników TWAP (hash zerowy) w całych ostatnich 15 min', 'The tape lacks TWAP marks (zero hash) over the whole last 15 min') };
-    x.hawkes = hawkes;
-    const w = scan.whales;
-    const m = w?.markets[store.coin];
-    // Adres danych skanera jest wspólny: bez niego (mapa likwidacji „unconfigured”) nie ma też wielorybów
-    x.whales = !w
-      ? scan.liq.status === 'unconfigured'
-        ? { why: tr('Warstwa wielorybów niedostępna w tej wersji strony', 'Whale layer unavailable in this version of the site') }
-        : { why: tr('Skaner nie publikuje teraz warstwy wielorybów', 'The scanner is not publishing the whale layer right now') }
-      : !m
-        ? { why: tr(`Skaner nie publikuje wielorybów dla ${store.coin}`, `The scanner publishes no whales for ${store.coin}`) }
-        : whaleBalanceOf(m.positions, w.asOf);
-  }
-  if (id === 'review') {
-    const c5 = candles(store, '5m');
-    if (c5 === undefined || isAbsent(c5)) x.review = x.reviewExpected = pass(c5);
-    else {
-      const r = reviewOf(c5, now);
-      x.review = r;
-      // Zamknięta sesja: oczekiwanie sprzed jej otwarcia (Parkinson ze świec 5m doby przed otwarciem), nie z dzisiejszych świec
-      x.reviewExpected = isAbsent(r)
-        ? r
-        : (expectedRange(model, toVBars([...c5]), r.s, r.inProgress ? now : r.s.start, r.close) ?? {
-            why: tr('Bez modelu HAR, a za mało zamkniętych świec 5m z doby przed sesją (min. 12)', 'No HAR model and too few closed 5m candles from the day before the session (min. 12)'),
-          });
-    }
-  }
-  return x;
-}
 
 const badgeTone = (n: LayoutNumber) => (n.note ? (n.value === DASH ? 'neutral' : 'stale') : n.badge === 'LIVE' ? 'live' : 'model');
 
@@ -188,13 +35,15 @@ export const LayoutHeader: React.FC<{
   model: VolModel | null;
   liq: LiqMapState;
   whales: WhaleLayer | null;
+  /** Build ma adres danych skanera (bez niego warstwa wielorybów jest niedostępna, nie „nieaktualna”). */
+  whalesConfigured: boolean;
   narrow: boolean;
-}> = ({ id, question, store, model, liq, whales, narrow }) => {
+}> = ({ id, question, store, model, liq, whales, whalesConfigured, narrow }) => {
   const [nums, setNums] = useState<LayoutNumber[]>(() => layoutNumbers(id, { coin: store.coin, now: Date.now() }));
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  const scan = useRef<Scan>({ model, liq, whales });
-  scan.current = { model, liq, whales };
+  const scan = useRef<InputScan>({ model, liq, whales, whalesConfigured });
+  scan.current = { model, liq, whales, whalesConfigured };
   const runRef = useRef<() => void>(() => {});
   // Hawkes liczony w tle (Web Worker) raz na minutę okna; do nowego wyniku zostaje poprzedni tego rynku
   const hk = useRef<{ coin: string; key: string; r: Got<Branching> } | null>(null);
@@ -234,10 +83,15 @@ export const LayoutHeader: React.FC<{
     const started = Date.now();
     const run = () => {
       window.clearTimeout(timer);
-      const n = layoutNumbers(id, readInputs(id, store, scan.current, id === 'big-hands' ? hawkesInput() : undefined));
-      setNums(n);
-      const waiting = n.some((v) => v.value === DASH) && Date.now() - started < WARMUP_MS;
-      timer = window.setTimeout(run, waiting ? WAIT_MS : EVERY_MS);
+      let waiting = Date.now() - started < WARMUP_MS;
+      try {
+        const n = layoutNumbers(id, readInputs(id, store, scan.current, id === 'big-hands' ? hawkesInput() : undefined));
+        setNums(n);
+        waiting &&= n.some((v) => v.value === DASH);
+      } finally {
+        // Następne przeliczenie także po wyjątku (nagłówek nie może zamarznąć na starych liczbach)
+        timer = window.setTimeout(run, waiting ? WAIT_MS : EVERY_MS);
+      }
     };
     runRef.current = run;
     run();
@@ -251,7 +105,7 @@ export const LayoutHeader: React.FC<{
   // Nowa migawka skanera albo model zmienności — od razu
   useEffect(() => {
     runRef.current();
-  }, [model, liq.status, liq.map, whales]);
+  }, [model, liq.status, liq.map, whales, whalesConfigured]);
 
   // Rozwinięcie zamyka dotknięcie obok i Escape
   useEffect(() => {

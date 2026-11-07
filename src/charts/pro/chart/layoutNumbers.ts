@@ -3,7 +3,7 @@ import type { Branching } from '../core/hawkes';
 import { type LiqLevel, vwapSeries } from '../core/indicators';
 import { utcDayStart } from '../core/sessions';
 import { fmtHm, fmtHms } from '../core/time';
-import { scannerAge } from './layerSources';
+import { WAIT_TEXT, scannerAge } from './layerSources';
 import { fmtPx } from './layout';
 import { vwapSigma } from './marketState';
 import type { StationId } from './stations';
@@ -105,7 +105,7 @@ export const COST_USD = 100_000;
 /** Profil sesji ze świec 5m tylko przy ≥ 95% świec okresu (jak profil poprzedniej sesji w kontekście aukcji). */
 const COVERAGE = 0.95;
 
-const WAIT = tr('Czekam na dane…', 'Waiting for data…');
+const WAIT = WAIT_TEXT;
 const val = <T>(v: Got<T> | undefined): T | null => (v === undefined || isAbsent(v) ? null : v);
 /** Powód pierwszego brakującego wejścia. */
 const whyOf = (...vs: (Got<unknown> | undefined)[]): string => {
