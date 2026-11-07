@@ -49,7 +49,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         refresh: tr('na żywo', 'live'),
       },
       {
-        metric: tr('Footprint, świece delty, CVD (Wykresy)', 'Footprint, delta candles, CVD (Charts)'),
+        metric: tr('Footprint, świece delty, CVD (W sesji)', 'Footprint, delta candles, CVD (In session)'),
         source: tr(
           'Hyperliquid WS trades nagrywane od otwarcia widoku (zapis w przeglądarce do 24 h)',
           'Hyperliquid WS trades recorded since the view opened (stored in the browser for up to 24 h)'
@@ -67,8 +67,8 @@ const GROUPS: { title: string; rows: Row[] }[] = [
       },
       {
         metric: tr(
-          'Wskaźniki na wykresie (Wykresy): VWAP ±σ, profil wolumenu, PDH/PDL, IB, klastry likwidacji',
-          'Chart indicators (Charts): VWAP ±σ, volume profile, PDH/PDL, IB, liquidation clusters'
+          'Wskaźniki na wykresie (W sesji): VWAP ±σ, profil wolumenu, PDH/PDL, IB, klastry likwidacji',
+          'Chart indicators (In session): VWAP ±σ, volume profile, PDH/PDL, IB, liquidation clusters'
         ),
         source: tr(
           'Hyperliquid API: candleSnapshot (świece interwału i dzienne), taśma WS trades; mapa likwidacji skanera HyperQuant',
@@ -87,8 +87,8 @@ const GROUPS: { title: string; rows: Row[] }[] = [
       },
       {
         metric: tr(
-          'Narzędzia rysowania (Wykresy): pomiar, profil zakresu, VWAP zakotwiczony, pozycja',
-          'Drawing tools (Charts): measure, range profile, anchored VWAP, position'
+          'Narzędzia rysowania (W sesji): pomiar, profil zakresu, VWAP zakotwiczony, pozycja',
+          'Drawing tools (In session): measure, range profile, anchored VWAP, position'
         ),
         source: tr(
           'Hyperliquid API: candleSnapshot; taśma WS trades nagrywana od otwarcia widoku',
@@ -107,8 +107,8 @@ const GROUPS: { title: string; rows: Row[] }[] = [
       },
       {
         metric: tr(
-          'Zderzenia z adresów (Wykresy): duże zlecenie, bitwa, seria, ściana, góra lodowa; taśma zleceń; podsumowanie adresu',
-          'Address-level clashes (Charts): large order, battle, burst, wall, iceberg; order tape; address summary'
+          'Zderzenia z adresów (W sesji): duże zlecenie, bitwa, seria, ściana, góra lodowa; taśma zleceń; podsumowanie adresu',
+          'Address-level clashes (In session): large order, battle, burst, wall, iceberg; order tape; address summary'
         ),
         source: tr(
           'Hyperliquid WS trades (adresy kupującego i sprzedającego, hash transakcji) i dokładny arkusz l2Book, nagrywane od otwarcia widoku',
@@ -126,7 +126,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         ),
       },
       {
-        metric: tr('Duże zlecenia w arkuszu (Wykresy)', 'Large resting orders in the book (Charts)'),
+        metric: tr('Duże zlecenia w arkuszu (W sesji)', 'Large resting orders in the book (In session)'),
         source: tr(
           'Hyperliquid WS l2Book w bliskiej agregacji (20 poziomów na stronę: cena, wielkość, liczba zleceń), nagrywany od otwarcia widoku',
           'Hyperliquid WS l2Book at near aggregation (20 levels per side: price, size, order count), recorded since the view opened'
@@ -144,8 +144,8 @@ const GROUPS: { title: string; rows: Row[] }[] = [
       },
       {
         metric: tr(
-          'Historia ostatniej doby (Wykresy): taśma, zlecenia agresora, serie, ściany, ΔOI i arkusz sprzed otwarcia strony',
-          'Last 24 hours of history (Charts): tape, aggressor orders, bursts, walls, ΔOI and the book from before the page opened'
+          'Historia ostatniej doby (W sesji): taśma, zlecenia agresora, serie, ściany, ΔOI i arkusz sprzed otwarcia strony',
+          'Last 24 hours of history (In session): tape, aggressor orders, bursts, walls, ΔOI and the book from before the page opened'
         ),
         source: tr(
           'Rejestrator skanera na serwerze: Hyperliquid WS trades, activeAssetCtx i l2Book (agregacja bliska i daleka jak na stronie) dla BTC, ETH, SOL i HYPE; gałąź history publicznego repo danych',
@@ -164,8 +164,8 @@ const GROUPS: { title: string; rows: Row[] }[] = [
       },
       {
         metric: tr(
-          'Wieloryby (Wykresy): pozycje i duże zlecenia oczekujące największych kont',
-          'Whales (Charts): positions and large resting orders of the largest accounts'
+          'Wieloryby (W sesji): pozycje i duże zlecenia oczekujące największych kont',
+          'Whales (In session): positions and large resting orders of the largest accounts'
         ),
         source: tr(
           'Hyperliquid API: clearinghouseState i frontendOpenOrders kont z publicznego rankingu (największe wartości kont) i dużych pozycji BTC z taśmy, odczytywane przez skaner',
@@ -184,8 +184,8 @@ const GROUPS: { title: string; rows: Row[] }[] = [
       },
       {
         metric: tr(
-          'Tablica liczb (Wykresy): wolumen, delta, delta %, max i min delty, transakcje, tempo taśmy, ΔOI, finansowanie',
-          'Numbers table (Charts): volume, delta, delta %, delta max and min, trades, tape pace, ΔOI, funding'
+          'Tablica liczb (W sesji): wolumen, delta, delta %, max i min delty, transakcje, tempo taśmy, ΔOI, finansowanie',
+          'Numbers table (In session): volume, delta, delta %, delta max and min, trades, tape pace, ΔOI, funding'
         ),
         source: tr(
           'Hyperliquid API: candleSnapshot, fundingHistory; WS trades i activeAssetCtx nagrywane od otwarcia widoku',
@@ -204,8 +204,8 @@ const GROUPS: { title: string; rows: Row[] }[] = [
       },
       {
         metric: tr(
-          'Kto handluje (Tablica liczb, Wykresy): delta dużych graczy i reszty, udział dużych w wartości wejść',
-          'Who is trading (Numbers table, Charts): delta of large players and the rest, large players’ share of entry value'
+          'Kto handluje (Tablica liczb, W sesji): delta dużych graczy i reszty, udział dużych w wartości wejść',
+          'Who is trading (Numbers table, In session): delta of large players and the rest, large players’ share of entry value'
         ),
         source: tr(
           'Hyperliquid: WS trades (adres biorcy przy każdej transakcji) nagrywane od otwarcia widoku i historia taśmy ostatniej doby z repo danych (konta jako numery w obrębie godziny)',
@@ -223,7 +223,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         ),
       },
       {
-        metric: tr('Stan rynku (zdanie nad wykresem, Wykresy)', 'Market state (sentence above the chart, Charts)'),
+        metric: tr('Stan rynku (zdanie nad wykresem, W sesji)', 'Market state (sentence above the chart, In session)'),
         source: tr(
           'Te same dane co wykres: świece i taśma Hyperliquid, VWAP dnia, otwarte pozycje (activeAssetCtx), Kto handluje, bliski arkusz l2Book; Binance i Bybit tylko, gdy wykres już je pobiera',
           'The same data as the chart: Hyperliquid candles and tape, daily VWAP, open interest (activeAssetCtx), Who is trading, near l2Book; Binance and Bybit only when the chart already fetches them'
@@ -240,7 +240,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         ),
       },
       {
-        metric: tr('Powtórka nagranej doby (Wykresy)', 'Replay of the recorded day (Charts)'),
+        metric: tr('Powtórka nagranej doby (W sesji)', 'Replay of the recorded day (In session)'),
         source: tr(
           'Gałąź history publicznego repo danych (ten sam zapis rejestratora co historia ostatniej doby) albo kopia jej plików przy lekcjach; świece z API Hyperliquid (candleSnapshot) do końca nagrania, a tam, gdzie API ich już nie ma, z taśmy nagrania',
           'The history branch of the public data repository (the same recorder output as the last-24-hours history) or a copy of its files next to the lessons; candles from the Hyperliquid API (candleSnapshot) up to the end of the recording, and from the recorded tape where the API no longer has them'
@@ -257,7 +257,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         ),
       },
       {
-        metric: tr('Strefy nierównowagi i niedokończone aukcje (Wykresy)', 'Imbalance zones and unfinished auctions (Charts)'),
+        metric: tr('Strefy nierównowagi i niedokończone aukcje (W sesji)', 'Imbalance zones and unfinished auctions (In session)'),
         source: tr('Taśma WS trades nagrywana od otwarcia widoku', 'WS trades tape recorded since the view opened'),
         method: tr(
           'Siatka stała dla wszystkich świec: wysokość wiersza z ustawień albo 1/12 mediany zakresu ostatnich świec z taśmą (1, 2 lub 5 × 10^k USD). Strefa = co najmniej N kolejnych wierszy z nierównowagą diagonalną po jednej stronie; kończy się na świecy, która przechodzi przez strefę (dołek poniżej wsparcia, szczyt powyżej oporu). Niedokończona aukcja = skrajny wiersz zamkniętej, w całości nagranej świecy z kupnem i sprzedażą agresorów; kończy się na świecy, która wraca do tej ceny',
@@ -271,7 +271,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         ),
       },
       {
-        metric: tr('Rynki, alerty cenowe i link do widoku (Wykresy)', 'Markets, price alerts and view link (Charts)'),
+        metric: tr('Rynki, alerty cenowe i link do widoku (W sesji)', 'Markets, price alerts and view link (In session)'),
         source: tr(
           'Hyperliquid WS i API dla BTC, ETH, SOL i HYPE (każdy rynek osobnym połączeniem); alerty w pamięci przeglądarki',
           'Hyperliquid WS and API for BTC, ETH, SOL and HYPE (a separate connection per market); alerts in browser storage'
@@ -288,7 +288,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         ),
       },
       {
-        metric: tr('Profil doby: wolumen, agresja, czas TPO (Wykresy)', 'Day profile: volume, aggression, TPO time (Charts)'),
+        metric: tr('Profil doby: wolumen, agresja, czas TPO (W sesji)', 'Day profile: volume, aggression, TPO time (In session)'),
         source: tr(
           'Świece Hyperliquid (API i WS) interwału wykresu do 30m; taśma transakcji (strumień na żywo i zapis serwera z ostatniej doby); profile zamkniętych dób z rejestratora serwera (7 dób); otwarte pozycje z kanału activeAssetCtx (odczyt na koniec każdej minuty)',
           'Hyperliquid candles (API and WS) at chart timeframes up to 30m; the trade tape (live stream and the server recording of the last day); closed-day profiles from the server recorder (7 days); open interest from the activeAssetCtx channel (reading at the end of every minute)'
@@ -305,7 +305,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         ),
       },
       {
-        metric: tr('Karta uczciwości szablonu (Wykresy)', 'Template honesty card (Charts)'),
+        metric: tr('Karta uczciwości szablonu (W sesji)', 'Template honesty card (In session)'),
         source: tr(
           'Hyperliquid API: candleSnapshot rynku wykresu, ok. 5000 ostatnich świec 30m (Market Profile, Otwarcie sesji) albo interwału karty (Ściśnięcie)',
           'Hyperliquid API: candleSnapshot of the chart market, about the last 5000 candles of 30m (Market Profile, Session open) or of the tab timeframe (Squeeze)'
@@ -322,7 +322,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         ),
       },
       {
-        metric: tr('Pasek pokrycia danych (Wykresy)', 'Data coverage strip (Charts)'),
+        metric: tr('Pasek pokrycia danych (W sesji)', 'Data coverage strip (In session)'),
         source: tr(
           'Pamięć wykresu w przeglądarce: odcinki nagrania taśmy (strumień na żywo i zapis serwera), taśmy z kontami i ze znacznikiem hasha zerowego, chwile migawek arkusza i odczytów OI',
           'The chart memory in the browser: spans of the tape recording (live stream and server recording), of the tape with accounts and with the zero-hash mark, times of book snapshots and OI readings'
@@ -448,7 +448,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
     title: tr('Modele liczone z danych', 'Models computed from data'),
     rows: [
       {
-        metric: tr('Schrödi: duży ruch i kierunek BTC na 1 h (Wykresy)', 'Schrödi: BTC big move and direction for 1 h (Charts)'),
+        metric: tr('Schrödi: duży ruch i kierunek BTC na 1 h (W sesji)', 'Schrödi: BTC big move and direction for 1 h (In session)'),
         source: tr('Świece HL 1m, 5m, 1h, 1d + kalendarz makro desku', 'HL 1m, 5m, 1h, 1d candles + the desk macro calendar'),
         method: tr(
           '22 cechy (ruch, zmienność, aukcja, zegar); średnia regresji logistycznej i 300 drzew LightGBM z public/schrodi/model-v1.json, uczonych na minutówkach BTCUSDT 2022 do 10.2026; walidacja krocząca kwartałami (docs/SCHRODI.md)',
@@ -679,8 +679,8 @@ const GROUPS: { title: string; rows: Row[] }[] = [
           'BTC candles from the desk archive (archive branch of the data repository; 1m for VWAP), the recorded trade and book tape (history branch) and the liquidation tape; slices saved at site build time in lessons/*.json, and a copy of the 24 Oct evening recording (16:00–22:00 UTC) for the Charts replay in lessons/replay/'
         ),
         method: tr(
-          'Ryciny: VWAP, profil wolumenu, initial balance i footprint liczone tymi samymi funkcjami co na Wykresach, tylko ze świec zamkniętych przed chwilą zatrzymania (także zakres osi ceny). Symulator: 1000 serii transakcji o stałym ułamku ryzyka i kosztach w R, stałe ziarno (wspólne liczby losowe)',
-          'Figures: VWAP, volume profile, initial balance and footprint computed with the same functions as in Charts, only from candles closed before the pause point (the price axis range too). Simulator: 1000 series of trades with a fixed risk fraction and costs in R, fixed seed (common random numbers)'
+          'Ryciny: VWAP, profil wolumenu, initial balance i footprint liczone tymi samymi funkcjami co wykresy W sesji, tylko ze świec zamkniętych przed chwilą zatrzymania (także zakres osi ceny). Symulator: 1000 serii transakcji o stałym ułamku ryzyka i kosztach w R, stałe ziarno (wspólne liczby losowe)',
+          'Figures: VWAP, volume profile, initial balance and footprint computed with the same functions as the In session charts, only from candles closed before the pause point (the price axis range too). Simulator: 1000 series of trades with a fixed risk fraction and costs in R, fixed seed (common random numbers)'
         ),
         kinds: ['LIVE', 'SIM'],
         refresh: tr('wycinki stałe · symulacja przy zmianie parametrów', 'fixed slices · simulation on parameter change'),
@@ -879,8 +879,8 @@ const GROUPS: { title: string; rows: Row[] }[] = [
       },
       {
         metric: tr(
-          'CVD, ΔOI i funding giełd, grupy Binance i Bybit Tablicy liczb (Wykresy)',
-          'Exchange CVD, ΔOI and funding, Binance and Bybit groups of the Numbers table (Charts)'
+          'CVD, ΔOI i funding giełd, grupy Binance i Bybit Tablicy liczb (W sesji)',
+          'Exchange CVD, ΔOI and funding, Binance and Bybit groups of the Numbers table (In session)'
         ),
         source: tr(
           'Binance USDT-M (świece, openInterestHist, openInterest, premiumIndex, fundingInfo, fundingRate), Binance Spot (świece), Bybit Linear (open-interest, publicTrade, tickers) — publiczne API pobierane przez przeglądarkę',
