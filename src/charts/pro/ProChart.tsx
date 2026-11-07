@@ -239,10 +239,10 @@ export const ProChart: React.FC<{
   const [toast, setToast] = useState<string | null>(null);
   // Jednorazowa informacja o usuniętych wskaźnikach wolumenu (klucz ustawiany po zamknięciu; tylko panel 1)
   const [droppedNote, setDroppedNote] = useState(() => panel === 0 && !inReplay && noticePending());
-  // Zapis innego panelu mógł zostać wczytany po tym panelu
+  // Zapis innego panelu mógł zostać wczytany po tym panelu; sprawdzane też przy zmianie ustawień
   useEffect(() => {
     if (panel === 0 && !inReplay && noticePending()) setDroppedNote(true);
-  }, [panel, inReplay]);
+  }, [panel, inReplay, settings]);
   const ctxRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   const hostRef = useRef<HTMLDivElement>(null);

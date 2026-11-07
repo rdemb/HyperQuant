@@ -71,3 +71,17 @@ describe('jednorazowa informacja o usuniętych wskaźnikach', () => {
     expect(store.get(DROPPED_NOTICE_KEY)).toBe('done');
   });
 });
+
+describe('wyszukiwanie po wielu słowach', () => {
+  const all = INDICATORS.map((d) => ({ key: d.id, section: 'x', words: `${d.short} ${d.name} ${d.aliases}`.toLowerCase(), label: d.name, badge: d.short }));
+  const o = { section: 'hl', classicOpen: false, favs: [], hlOrder: [], norm: (t: string) => t.toLowerCase() };
+  const find = (q: string) => visibleEntries(all, { ...o, q }).map((e) => e.key);
+  it('kolejność słów nie ma znaczenia', () => {
+    expect(find('open interest')).toContain('oiflow');
+    expect(find('interest open')).toContain('oiflow');
+  });
+  it('zapytanie z literą s nie jest dzielone po niej', () => {
+    expect(find('slippage')).toContain('slippage');
+    expect(find('koszt cost')).toContain('slippage');
+  });
+});
