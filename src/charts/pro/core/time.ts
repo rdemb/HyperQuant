@@ -60,6 +60,22 @@ export function barEnd(t: number, ms: number): number {
 /** Interwał dłuższy niż doba: świece składamy ze świec 1D (własne granice tygodnia i miesiąca, bez taśmy w świecy). */
 export const fromDaily = (ms: number): boolean => ms > DAY;
 
+/**
+ * Widoczny zakres czasu wykresu (np. do pokrycia taśmą w pasku jakości): od początku pierwszej do końca ostatniej
+ * widocznej świecy (`r` — zakres logiczny, `at(i)` — początek i-tej z `n` świec interwału `ms`), najwyżej do `now`
+ * (świeca w toku). Bez świec albo zakresu — null.
+ */
+export function visibleSpan(r: { from: number; to: number } | null, n: number, at: (i: number) => number, ms: number, now: number): { from: number; to: number } | null {
+  if (!r || n <= 0) return null;
+  const clamp = (i: number) => Math.max(0, Math.min(n - 1, Math.round(i)));
+  const a = clamp(r.from);
+  const b = clamp(r.to);
+  if (b < a) return null;
+  const from = at(a);
+  const to = Math.min(now, barEnd(at(b), ms));
+  return to > from ? { from, to } : null;
+}
+
 /** Świece interwału `ms` złożone ze świec krótszych (posortowanych): OHLC, suma wolumenu i transakcji. */
 export function aggregateCandles(list: readonly Candle[], ms: number): Candle[] {
   const out: Candle[] = [];

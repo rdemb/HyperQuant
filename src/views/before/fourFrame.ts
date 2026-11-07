@@ -4,7 +4,8 @@
  * `composeFrame`; tekst alternatywny to `fourNumbersText`.
  */
 import { tr, locale } from '../../i18n';
-import { type FrameRatio, SANS, drawBadge, numberText, wrapLines } from '../../charts/pro/chart/frame';
+import { type FrameRatio, drawBadge, numberText, wrapLines } from '../../charts/pro/chart/frame';
+import { SANS } from '../../charts/pro/chart/screenshot';
 import { PRO } from '../../charts/pro/chart/theme';
 import type { BadgeTone } from '../../ui/Badge';
 import { DASH } from '../../ui/format';
@@ -56,14 +57,14 @@ function drawTile(ctx: CanvasRenderingContext2D, n: FourNumber, x: number, y: nu
   }
 }
 
-/** Karta Czwórki na płótnie dla proporcji Klatki `ratio`. */
-export function fourCanvas(n: FourNumbers, ratio: FrameRatio): HTMLCanvasElement {
+/** Karta Czwórki na płótnie dla proporcji Klatki `ratio`; bez kontekstu 2D — null. */
+export function fourCanvas(n: FourNumbers, ratio: FrameRatio): HTMLCanvasElement | null {
   const { w: W, h: H, cols } = SIZE[ratio];
   const out = document.createElement('canvas');
   out.width = W;
   out.height = H;
   const ctx = out.getContext('2d');
-  if (!ctx) return out;
+  if (!ctx) return null;
   ctx.fillStyle = SURFACE_1;
   ctx.fillRect(0, 0, W, H);
   // Podpis karty: rynek po lewej, „opis, nie sygnał” po prawej

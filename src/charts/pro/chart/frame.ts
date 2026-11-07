@@ -2,10 +2,10 @@ import { PRO } from './theme';
 import { C, MONO, rgba } from '../../orderflow/renderer';
 import type { BadgeTone } from '../../../ui/Badge';
 import { DASH } from '../../../ui/format';
-import { TITLE_GUARDS, guardHits } from '../../../utils/safeguards';
+import { TITLE_GUARDS, guardHits } from '../../../utils/safeguards.mjs';
 import { WAIT_TEXT, liqScan } from './layerSources';
 import type { LayoutNumber } from './layoutNumbers';
-import { type FrameQuality, QUALITY_LEGEND, coverageText, fileStamp, qualityText } from './screenshot';
+import { type FrameQuality, QUALITY_LEGEND, SANS, coverageText, fileStamp, qualityText, stampText } from './screenshot';
 import { locale, tr } from '../../../i18n';
 
 /**
@@ -25,7 +25,7 @@ export const FRAME_SIZE = {
 /** Najwięcej warstw na wykresie ceny, przy których Klatka zostaje czytelna. */
 export const FRAME_MAX_LAYERS = 4;
 
-export type { FrameQuality };
+export { type FrameQuality, SANS };
 
 export interface FrameInput {
   /** Obraz do kadru: zrzut wykresu albo karta Czwórki. */
@@ -40,12 +40,10 @@ export interface FrameInput {
   quality: FrameQuality;
   /**
    * Warstwy na wykresie ceny (`priceLayerCount`); Czwórka — 0. Kadr ich nie zmienia (obraz pokazuje wszystkie), ostrzeżenie
-   * powyżej 4 daje `frameWarnings` w oknie Klatki.
+   * ponad 4 i ponad wzorzec układu daje `frameWarnings` w oknie Klatki.
    */
   layersShown: number;
 }
-
-export const SANS = '"Plus Jakarta Sans", sans-serif';
 
 /** Rozmiary w kadrze (px): marginesy, marka, tytuł (linie), godzina ze źródłem, pasek jakości. */
 const METRICS: Record<FrameRatio, { pad: number; brand: number; title: number; titleLh: number; titleLines: number; meta: number; strip: number; q: number; legend: number; gap: number }> = {
@@ -116,18 +114,18 @@ function contain(sw: number, sh: number, box: { x: number; y: number; w: number;
   return { x: box.x + (box.w - w) / 2, y: box.y + (box.h - h) / 2, w, h };
 }
 
-/** Data i godzina w czasie lokalnym (jak zrzut ekranu). */
-const stampOf = (t: number) => new Date(t).toLocaleString(locale, { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-
-/** Klatka 1200 × 675 albo 1080 × 1080 (zawsze ten rozmiar, niezależnie od gęstości pikseli ekranu). */
-export function composeFrame(o: FrameInput): HTMLCanvasElement {
+/**
+ * Klatka 1200 × 675 albo 1080 × 1080 (zawsze ten rozmiar, niezależnie od gęstości pikseli ekranu). Bez kontekstu 2D — null
+ * (nigdy obraz bez paska jakości).
+ */
+export function composeFrame(o: FrameInput): HTMLCanvasElement | null {
   const { w: W, h: H } = FRAME_SIZE[o.ratio];
   const m = METRICS[o.ratio];
   const out = document.createElement('canvas');
   out.width = W;
   out.height = H;
   const ctx = out.getContext('2d');
-  if (!ctx) return out;
+  if (!ctx) return null;
   const measure = (s: string) => ctx.measureText(s).width;
   const inner = W - 2 * m.pad;
   ctx.fillStyle = PRO.page;
@@ -149,7 +147,7 @@ export function composeFrame(o: FrameInput): HTMLCanvasElement {
   y += m.gap / 2;
   ctx.font = `500 ${m.meta}px ${SANS}`;
   ctx.fillStyle = PRO.ink2;
-  ctx.fillText(wrapLines(`${stampOf(o.time)} · ${o.source}`, inner, measure, 1)[0] ?? '', m.pad, y);
+  ctx.fillText(wrapLines(`${stampText(o.time)} · ${o.source}`, inner, measure, 1)[0] ?? '', m.pad, y);
   y += Math.round(m.meta * 1.4) + m.gap;
 
   // Obraz wpisany w kadr bez przycinania (na środku wolnego miejsca), z cienką ramką
@@ -209,26 +207,31 @@ export function frameAlt(o: { title: string; time: number; source: string; quali
     : tr(`mapa ${DASH} (${q.mapWhy ?? none})`, `map ${DASH} (${q.mapWhy ?? none})`);
   const body = o.body?.trim() ? ` ${dot(o.body.trim())}` : '';
   return tr(
-    `Klatka HyperQuant: ${title}${body} Źródło: ${o.source}, ${stampOf(o.time)}. Jakość danych: ${tape}, ${map}. hyperquant.tech`,
-    `HyperQuant frame: ${title}${body} Source: ${o.source}, ${stampOf(o.time)}. Data quality: ${tape}, ${map}. hyperquant.tech`
+    `Klatka HyperQuant: ${title}${body} Źródło: ${o.source}, ${stampText(o.time)}. Jakość danych: ${tape}, ${map}. hyperquant.tech`,
+    `HyperQuant frame: ${title}${body} Source: ${o.source}, ${stampText(o.time)}. Data quality: ${tape}, ${map}. hyperquant.tech`
   );
 }
 
-/** Ostrzeżenia przed pobraniem: więcej niż 4 warstwy ceny (pobrać można mimo to — żadna warstwa nie znika z obrazu). */
-export function frameWarnings(layersShown: number): string[] {
-  if (!(layersShown > FRAME_MAX_LAYERS)) return [];
+/**
+ * Ostrzeżenia przed pobraniem: więcej warstw ceny niż 4 i niż we wzorcu panelu układu (`presetLayers`), czyli warstwy
+ * dodane przez użytkownika ponad wzorzec; nietknięty wzorzec — bez ostrzeżenia. Pobrać można mimo to (obraz pokazuje
+ * wszystkie warstwy).
+ */
+export function frameWarnings(layersShown: number, presetLayers = 0): string[] {
+  const limit = Math.max(FRAME_MAX_LAYERS, presetLayers);
+  if (!(layersShown > limit)) return [];
   return [
     tr(
-      `Na wykresie ceny jest ${layersShown} warstw, a Klatka jest czytelna przy najwyżej ${FRAME_MAX_LAYERS}. Możesz ukryć część w menu Wskaźniki albo pobrać Klatkę mimo to: obraz pokaże wszystkie warstwy.`,
-      `The price chart shows ${layersShown} layers, and a frame stays readable with at most ${FRAME_MAX_LAYERS}. You can hide some in the Indicators menu or download the frame anyway: the image will show every layer.`
+      `Na wykresie ceny jest ${layersShown} warstw, więcej niż we wzorcu układu (${presetLayers}) i niż ${FRAME_MAX_LAYERS} czytelne w Klatce. Możesz ukryć dodane w menu Wskaźniki albo pobrać Klatkę mimo to: obraz pokaże wszystkie warstwy.`,
+      `The price chart shows ${layersShown} layers, more than the layout preset (${presetLayers}) and the ${FRAME_MAX_LAYERS} a frame shows readably. You can hide the added ones in the Indicators menu or download the frame anyway: the image will show every layer.`
     ),
   ];
 }
 
-/** Nazwa pliku: hyperquant-<układ>-<RRRRMMDD-GGmm>.png (czas lokalny). */
-export function frameFileName(layout: string, time: number): string {
+/** Nazwa pliku: hyperquant-<układ>-<RRRRMMDD-GGmm>.png (czas lokalny), kwadrat z dopiskiem „-1x1”. */
+export function frameFileName(layout: string, time: number, ratio: FrameRatio = '16:9'): string {
   const slug = layout.toLowerCase().replace(/[^a-z0-9-]+/g, '-');
-  return `hyperquant-${slug}-${fileStamp(time)}.png`;
+  return `hyperquant-${slug}-${fileStamp(time)}${ratio === '1:1' ? '-1x1' : ''}.png`;
 }
 
 /** Liczba w tekście Klatki: „Etykieta: wartość (plakietka)”; brak — „—” z uwagą albo „brak danych” (jak `fourNumbersText`). */
@@ -273,21 +276,6 @@ export function mapQuality(
 /** Pokrycie taśmą widocznego zakresu (`tapeCoveragePct`); NaN (brak świec) — null z powodem. */
 export function tapeQuality(pct: number): Pick<FrameQuality, 'tapePct' | 'tapeWhy'> {
   return Number.isFinite(pct) ? { tapePct: pct } : { tapePct: null, tapeWhy: tr('brak świec w widocznym zakresie', 'no candles in the visible range') };
-}
-
-/**
- * Widoczny zakres czasu wykresu do pokrycia taśmą: od początku pierwszej do końca ostatniej widocznej świecy (`r` —
- * zakres logiczny, `at(i)` — początek i-tej z `n` świec), najwyżej do `now` (świeca w toku). Bez świec — null.
- */
-export function visibleSpan(r: { from: number; to: number } | null, n: number, at: (i: number) => number, ms: number, now: number): { from: number; to: number } | null {
-  if (!r || n <= 0) return null;
-  const clamp = (i: number) => Math.max(0, Math.min(n - 1, Math.round(i)));
-  const a = clamp(r.from);
-  const b = clamp(r.to);
-  if (b < a) return null;
-  const from = at(a);
-  const to = Math.min(now, at(b) + ms);
-  return to > from ? { from, to } : null;
 }
 
 // ───────────────────────── plakietki na płótnie ─────────────────────────

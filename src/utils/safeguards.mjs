@@ -1,27 +1,38 @@
+// @ts-check
 /**
  * Bezpieczniki treści wspólne dla walidatora bloga (scripts/blog/posts.mjs, docs/BLOG.md „Safeguards”) i strony (tytuł
  * Klatki). Każdy wzorzec ma rodzaj, powód po polsku (komunikat walidatora bloga) i po angielsku (interfejs EN).
- * Moduł bez importów i tylko ze składnią TS usuwalną przez type stripping: budowanie bloga uruchamia go natywnie w Node 24.
+ * Czysty JavaScript bez importów (typy w JSDoc): blog sprawdza się i buduje także poza CI, na Node bez obsługi TS.
  * Granice słów przez \p{L}, bo \b w JS nie zna polskich liter.
  */
 
-export type GuardKind = 'privacy' | 'advice' | 'style';
+/** @typedef {'privacy' | 'advice' | 'style'} GuardKind */
 
-export interface Guard {
-  re: RegExp;
-  /** Powód po polsku (komunikat walidatora bloga). */
-  why: string;
-  /** Powód po angielsku. */
-  en: string;
-  kind: GuardKind;
-}
+/**
+ * @typedef {object} Guard
+ * @property {RegExp} re
+ * @property {string} why Powód po polsku (komunikat walidatora bloga).
+ * @property {string} en Powód po angielsku.
+ * @property {GuardKind} kind
+ */
 
-const word = (alts: string) => new RegExp(`(?<![\\p{L}\\d])(?:${alts})(?![\\p{L}\\d])`, 'iu');
+/**
+ * @typedef {object} GuardHit
+ * @property {Guard} guard
+ * @property {string} fragment Dopasowanie z kontekstem (do 25 znaków z każdej strony), białe znaki jako spacje.
+ */
 
-const CALL = { why: 'wezwanie do transakcji', en: 'a call to trade', kind: 'advice' } as const;
+/** @param {string} alts */
+const word = (alts) => new RegExp(`(?<![\\p{L}\\d])(?:${alts})(?![\\p{L}\\d])`, 'iu');
 
-/** Bezpieczniki bloga w kolejności komunikatów walidatora. */
-export const GUARDS: readonly Guard[] = [
+/** @type {Pick<Guard, 'why' | 'en' | 'kind'>} */
+const CALL = { why: 'wezwanie do transakcji', en: 'a call to trade', kind: 'advice' };
+
+/**
+ * Bezpieczniki bloga w kolejności komunikatów walidatora.
+ * @type {readonly Guard[]}
+ */
+export const GUARDS = [
   // Prywatność: nic, co identyfikuje portfel, transakcję, serwer albo dostęp
   { re: /0x[0-9a-f]{40,}/i, why: 'adres portfela lub hash transakcji', en: 'a wallet address or transaction hash', kind: 'privacy' },
   { re: /(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?![\d.])/, why: 'adres IP', en: 'an IP address', kind: 'privacy' },
@@ -48,8 +59,9 @@ export const GUARDS: readonly Guard[] = [
 /**
  * Bezpieczniki tytułu Klatki: prywatność i rady z bloga (bez reguł stylu — „—” to tam brak liczby) oraz rady, których
  * blog nie potrzebuje: angielski tryb rozkazujący (interfejs EN) i skrót wejścia bez przyimka („long 80 500”, „short @ 82000”).
+ * @type {readonly Guard[]}
  */
-export const TITLE_GUARDS: readonly Guard[] = [
+export const TITLE_GUARDS = [
   ...GUARDS.filter((g) => g.kind !== 'style'),
   // buy/sell jako polecenie: przed słowem, które czyni z nich polecenie, albo na końcu zdania („Buy the dip”, „Sell now”);
   // „buy volume”, „buyers”, „buy-side” to opis
@@ -68,15 +80,15 @@ export const TITLE_GUARDS: readonly Guard[] = [
   },
 ];
 
-export interface GuardHit {
-  guard: Guard;
-  /** Dopasowanie z kontekstem (do 25 znaków z każdej strony), białe znaki jako spacje. */
-  fragment: string;
-}
-
-/** Trafienia wzorców `guards` w tekście: najwyżej jedno na wzorzec, w kolejności listy. */
-export function guardHits(text: string, guards: readonly Guard[] = GUARDS): GuardHit[] {
-  const out: GuardHit[] = [];
+/**
+ * Trafienia wzorców `guards` w tekście: najwyżej jedno na wzorzec, w kolejności listy.
+ * @param {string} text
+ * @param {readonly Guard[]} [guards]
+ * @returns {GuardHit[]}
+ */
+export function guardHits(text, guards = GUARDS) {
+  /** @type {GuardHit[]} */
+  const out = [];
   for (const g of guards) {
     const m = g.re.exec(text);
     if (!m) continue;
@@ -86,7 +98,11 @@ export function guardHits(text: string, guards: readonly Guard[] = GUARDS): Guar
   return out;
 }
 
-/** Wszystkie naruszenia bezpieczników w tekście (powód + fragment z kontekstem) — komunikaty walidatora bloga. */
-export function guardViolations(text: string): string[] {
+/**
+ * Wszystkie naruszenia bezpieczników w tekście (powód + fragment z kontekstem) — komunikaty walidatora bloga.
+ * @param {string} text
+ * @returns {string[]}
+ */
+export function guardViolations(text) {
   return guardHits(text).map((h) => `${h.guard.why}: „…${h.fragment}…”`);
 }

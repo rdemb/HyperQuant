@@ -129,7 +129,7 @@ The same validator runs before publication (`npm run blog:check`) and on every b
 - **Style:** no dashes (— and – with spaces) and no arrows. Number ranges with an en dash and no spaces (`80 100–80 200`) are fine.
 - **Schema:** the fields and lengths from the table above, the day in the file name matching `date`, no `#` heading in the body, existing image files.
 
-The privacy, advice and style patterns live in `src/utils/safeguards.ts`, shared with the desk: the title of a chart frame (*Klatka*) passes the privacy and advice patterns plus English imperatives („buy the dip”, „go long”) and shorthand entries („long 80 500”), but not the style rules, because there „—” marks a missing number.
+The privacy, advice and style patterns live in `src/utils/safeguards.mjs` (plain JavaScript, so the blog check runs on any Node), shared with the desk: the title of a chart frame (*Klatka*) passes the privacy and advice patterns plus English imperatives („buy the dip”, „go long”) and shorthand entries („long 80 500”), but not the style rules, because there „—” marks a missing number.
 
 ## Publishing
 

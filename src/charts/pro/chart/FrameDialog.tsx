@@ -1,14 +1,16 @@
-import React, { useDeferredValue, useEffect, useId, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AlertTriangle, Copy, Download, OctagonAlert, X } from 'lucide-react';
 import { Segmented } from '../../../ui';
+import { FOCUSABLE, dialogKeyDown, holdFocus } from './dialogFocus';
 import { FRAME_SIZE, type FrameQuality, type FrameRatio, composeFrame, frameAlt, frameFileName, frameWarnings, titleProblems } from './frame';
-import { downloadCanvas } from './screenshot';
+import { IMAGE_FAILED, downloadCanvas } from './screenshot';
 import { tr } from '../../../i18n';
 
 /**
  * Okno Klatki: proporcja (16:9 albo 1:1), tytuł do edycji z blokadą rad, podgląd obrazu, ostrzeżenia, tekst alternatywny
  * do skopiowania i pobranie PNG. Obraz powstaje w przeglądarce i zostaje na komputerze — nic nie jest wysyłane.
+ * Okno modalne: fokus w środku (Tab krąży, dialogFocus), Escape zamyka, fokus wraca do przycisku, który je otworzył.
  */
 
 /** Co trafia do Klatki: obraz, domyślny tytuł, źródło, chwila danych i jakość — z chwili otwarcia okna. */
@@ -20,10 +22,12 @@ export interface FrameSource {
   source: string;
   time: number;
   quality: FrameQuality;
-  /** Warstwy na wykresie ceny (ostrzeżenie powyżej 4); Czwórka — 0. */
+  /** Warstwy na wykresie ceny; Czwórka — 0. */
   layersShown: number;
-  /** Obraz do kadru w proporcji `ratio` (wykres: ten sam zrzut, Czwórka: karta 4 × 1 albo 2 × 2). */
-  image: (ratio: FrameRatio) => HTMLCanvasElement;
+  /** Warstwy ceny we wzorcu panelu układu: ostrzeżenie tylko ponad wzorzec i ponad 4 (`frameWarnings`). */
+  presetLayers: number;
+  /** Obraz do kadru w proporcji `ratio` (wykres: ten sam zrzut, Czwórka: karta 4 × 1 albo 2 × 2); null — brak płótna. */
+  image: (ratio: FrameRatio) => HTMLCanvasElement | null;
   /** Opis obrazu do tekstu alternatywnego (Czwórka: wszystkie cztery liczby). */
   body?: string;
 }
@@ -33,6 +37,8 @@ const RATIOS: { value: FrameRatio; label: string; title: string }[] = [
   { value: '1:1', label: '1:1', title: `${FRAME_SIZE['1:1'].w} × ${FRAME_SIZE['1:1'].h} px` },
 ];
 const TITLE_MAX = 200;
+/** Podgląd po przerwie w pisaniu (kodowanie PNG trwa kilkadziesiąt ms). */
+const PREVIEW_DELAY_MS = 150;
 
 export const FrameDialog: React.FC<{ src: FrameSource; onClose: () => void }> = ({ src, onClose }) => {
   const [ratio, setRatio] = useState<FrameRatio>('16:9');
@@ -47,29 +53,38 @@ export const FrameDialog: React.FC<{ src: FrameSource; onClose: () => void }> = 
     setTitle(t);
     if (titleProblems(t).length === 0) setGood(t);
   };
-  // Podgląd za pisaniem (kodowanie PNG trwa kilkadziesiąt ms), pobranie zawsze z bieżącego tytułu
-  const shownTitle = useDeferredValue(good);
   // Obraz każdej proporcji raz: zrzut z chwili otwarcia i karta z tych samych liczb co tytuł i opis
-  const images = useRef(new Map<FrameRatio, HTMLCanvasElement>());
+  const images = useRef(new Map<FrameRatio, HTMLCanvasElement | null>());
   const imageFor = (r: FrameRatio) => {
-    let c = images.current.get(r);
-    if (!c) {
-      c = src.image(r);
-      images.current.set(r, c);
-    }
-    return c;
+    if (!images.current.has(r)) images.current.set(r, src.image(r));
+    return images.current.get(r) ?? null;
   };
-  const make = (t: string) => composeFrame({ canvas: imageFor(ratio), ratio, title: t, time: src.time, source: src.source, quality: src.quality, layersShown: src.layersShown });
-  // imageFor i make czytają tylko src i ratio
-  const preview = useMemo(() => make(shownTitle).toDataURL('image/png'), [shownTitle, ratio, src]);
+  /** Klatka z tytułem `t` w proporcji `r`; brak płótna — null (bez obrazu, nigdy obraz bez paska jakości). */
+  const make = (t: string, r: FrameRatio) => {
+    const canvas = imageFor(r);
+    return canvas ? composeFrame({ canvas, ratio: r, title: t, time: src.time, source: src.source, quality: src.quality, layersShown: src.layersShown }) : null;
+  };
+  const encode = (t: string, r: FrameRatio) => ({ url: make(t, r)?.toDataURL('image/png') ?? null, ratio: r });
+  // Pierwszy podgląd od razu, kolejne po przerwie w pisaniu albo po zmianie proporcji
+  const [preview, setPreview] = useState(() => encode(good, ratio));
+  const firstPreview = useRef(true);
+  useEffect(() => {
+    if (firstPreview.current) {
+      firstPreview.current = false;
+      return;
+    }
+    const id = window.setTimeout(() => setPreview(encode(good, ratio)), PREVIEW_DELAY_MS);
+    return () => window.clearTimeout(id);
+    // encode czyta tylko src (stałe przez życie okna)
+  }, [good, ratio]);
   const alt = useMemo(() => frameAlt({ title: good, time: src.time, source: src.source, quality: src.quality, body: src.body }), [good, src]);
   const problems = titleProblems(title);
   const blocked = problems.length > 0;
-  const warnings = frameWarnings(src.layersShown);
-  const { w, h } = FRAME_SIZE[ratio];
+  const warnings = frameWarnings(src.layersShown, src.presetLayers);
+  const shown = FRAME_SIZE[preview.ratio];
 
-  // Fokus w oknie: Escape działa od razu
-  useEffect(() => ref.current?.focus(), []);
+  // Fokus w oknie od otwarcia; przy zamknięciu wraca do elementu, który okno otworzył
+  useEffect(() => holdFocus(document, ref.current), []);
   useEffect(() => {
     if (!note) return;
     const id = window.setTimeout(() => setNote(null), 4000);
@@ -78,7 +93,9 @@ export const FrameDialog: React.FC<{ src: FrameSource; onClose: () => void }> = 
 
   const download = () => {
     if (blocked) return;
-    downloadCanvas(make(title), frameFileName(src.layout, src.time));
+    const out = make(title, ratio);
+    if (!out) return setNote(IMAGE_FAILED);
+    downloadCanvas(out, frameFileName(src.layout, src.time, ratio));
     setNote(tr('Zapisano PNG na tym komputerze', 'PNG saved on this computer'));
   };
   const copyAlt = () => {
@@ -88,14 +105,21 @@ export const FrameDialog: React.FC<{ src: FrameSource; onClose: () => void }> = 
     navigator.clipboard.writeText(alt).then(() => setNote(tr('Skopiowano opis obrazu', 'Image description copied')), fail);
   };
 
-  // W pełnym ekranie wykresu okno musi być w elemencie pełnego ekranu (inaczej byłoby pod nim)
-  const host = document.fullscreenElement ?? document.body;
+  // Miejsce okna ustalone przy otwarciu: w pełnym ekranie wykresu w jego elemencie (inaczej byłoby pod nim). Wyjście
+  // z pełnego ekranu nie przenosi okna (bez ponownego montowania i utraty fokusu).
+  const [host] = useState(() => document.fullscreenElement ?? document.body);
+  // Tło zamyka tylko kliknięcie zaczęte i skończone na nim (przewijanie dotykiem od marginesu go nie zamyka)
+  const downOnBackdrop = useRef(false);
   return createPortal(
     <div
       // Wyśrodkowanie marginesem (my-auto), nie items-center: wyższe od ekranu okno przewija się od góry, bez uciętego nagłówka
       className="fixed inset-0 z-50 flex justify-center overflow-y-auto bg-page/80 backdrop-blur-sm p-2 sm:p-4"
       onPointerDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        downOnBackdrop.current = e.target === e.currentTarget;
+      }}
+      onClick={(e) => {
+        if (downOnBackdrop.current && e.target === e.currentTarget) onClose();
+        downOnBackdrop.current = false;
       }}
     >
       <div
@@ -106,9 +130,11 @@ export const FrameDialog: React.FC<{ src: FrameSource; onClose: () => void }> = 
         tabIndex={-1}
         className="w-full max-w-[760px] h-fit my-auto rounded-xl border border-line-strong bg-surface-2 text-xs text-ink-1 shadow-2xl outline-none"
         onKeyDown={(e) => {
-          // Klawisze okna nie trafiają do skrótów wykresu
+          // Klawisze okna nie trafiają do skrótów wykresu; Tab krąży w oknie, Escape zamyka
           e.stopPropagation();
-          if (e.key === 'Escape') onClose();
+          // Bez pól z tabIndex −1 (nieaktywne opcje przełącznika proporcji)
+          const items = ref.current ? [...ref.current.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((x) => x.tabIndex >= 0) : [];
+          dialogKeyDown(e, items, document.activeElement as HTMLElement | null, onClose);
         }}
       >
         <div className="flex items-start gap-2 border-b border-line pl-3 pr-1 py-1.5">
@@ -138,7 +164,7 @@ export const FrameDialog: React.FC<{ src: FrameSource; onClose: () => void }> = 
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
             <Segmented<FrameRatio> ariaLabel={tr('Proporcja Klatki', 'Frame aspect ratio')} value={ratio} onChange={setRatio} options={RATIOS} />
             <span className="font-mono tabular-nums text-ink-3">
-              {w} × {h} px
+              {FRAME_SIZE[ratio].w} × {FRAME_SIZE[ratio].h} px
             </span>
           </div>
 
@@ -186,13 +212,20 @@ export const FrameDialog: React.FC<{ src: FrameSource; onClose: () => void }> = 
             </p>
           ))}
 
-          <img
-            src={preview}
-            alt={alt}
-            width={w}
-            height={h}
-            className={`block h-auto rounded-lg border border-line ${ratio === '1:1' ? 'w-full sm:w-[min(100%,420px)] sm:mx-auto' : 'w-full'} ${blocked ? 'opacity-40' : ''}`}
-          />
+          {preview.url ? (
+            <img
+              src={preview.url}
+              alt={alt}
+              width={shown.w}
+              height={shown.h}
+              className={`block h-auto rounded-lg border border-line ${preview.ratio === '1:1' ? 'w-full sm:w-[min(100%,420px)] sm:mx-auto' : 'w-full'} ${blocked ? 'opacity-40' : ''}`}
+            />
+          ) : (
+            <p role="alert" className="flex items-start gap-1.5 rounded-lg border border-critical/50 bg-critical/10 px-2.5 py-2 leading-snug text-ink-1">
+              <OctagonAlert className="w-3.5 h-3.5 mt-px shrink-0 text-critical" aria-hidden="true" />
+              <span>{tr(`${IMAGE_FAILED}: przeglądarka nie dała płótna do rysowania.`, `${IMAGE_FAILED}: the browser gave no drawing canvas.`)}</span>
+            </p>
+          )}
 
           <div className="flex flex-col gap-1">
             <span className="text-[11px] font-medium uppercase tracking-[0.08em] text-ink-3">{tr('Opis obrazu (tekst alternatywny)', 'Image description (alt text)')}</span>
@@ -217,8 +250,8 @@ export const FrameDialog: React.FC<{ src: FrameSource; onClose: () => void }> = 
             <button
               type="button"
               onClick={download}
-              disabled={blocked}
-              title={blocked ? problems[0] : frameFileName(src.layout, src.time)}
+              disabled={blocked || !preview.url}
+              title={blocked ? problems[0] : frameFileName(src.layout, src.time, ratio)}
               className="inline-flex items-center gap-1.5 h-11 sm:h-9 px-3 rounded-lg bg-accent text-page font-medium hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40 transition-opacity duration-150"
             >
               <Download className="w-4 h-4" />
