@@ -4,7 +4,7 @@ Applies to every new and reworked component. Code and identifiers in English, **
 
 ## 1. Core rules
 1. **Data honesty.** A number without a source does not exist. Every value is `LIVE` (real data), `MODEL` (model output from real data; name the method) or `SIM` (simulation; only in model mode, always labelled). Missing data = `—` or `n/a`, never a placeholder number.
-2. **The desk scores the plan; it does not suggest entries.** No automatic LONG/SHORT signals. "Signal" buttons in panels pass the direction and levels to the Plan Analyzer (`onPrefillPlan`).
+2. **The desk describes the market; it does not suggest entries.** No automatic LONG/SHORT signals and no buttons that turn a panel reading into a trade plan.
 3. **One hero per screen.** Every view has one main element (the hero); everything else is quieter (ink-2/ink-3, lower weight).
 4. **Mobile first for content, desktop for density.** Every view works from 360 px (16 px gutter, no horizontal page scroll; wide tables scroll inside their frame).
 
