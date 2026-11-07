@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import { describe, expect, it, vi } from 'vitest';
-import { decodeBook, decodeTrades, encodeTrades, historyPath } from '../../../src/utils/tapeHistory.ts';
+import { type HistTrade, decodeBook, decodeTrades, encodeTrades, historyPath, idScopeOf } from '../../../src/utils/tapeHistory.ts';
 import { decodeDayProfile, dayProfilePath } from '../../../src/utils/dayProfile.ts';
 import { MarketRecorder, SETTLE_MS, historyIndex, pruneHistory } from '../history.ts';
 import { prepareHistoryRepo, publishHistory } from '../historyGit.ts';
@@ -182,6 +182,153 @@ describe('MarketRecorder — nagranie taśmy, arkusza i kontekstu jednego rynku'
       [T0 + 1000, T0 + 2 * MIN],
       [T0 + 2 * MIN + 10_000, T0 + 5 * MIN],
     ]);
+  });
+});
+
+describe('numeracja kont i zleceń w obrębie doby UTC', () => {
+  const HOUR = 60 * MIN;
+  const DAY = 24 * HOUR;
+  const D = Date.UTC(2026, 10, 7);
+  const H10 = D + 10 * HOUR;
+  const H11 = D + 11 * HOUR;
+  /** Konta i hash jako nieprzejrzyste napisy — w testach nie ma adresów ani hashy */
+  const deal = (t: number, tid: number, side: 'B' | 'A', taker: string, maker: string, tx: string): HlTrade => ({
+    coin: 'BTC',
+    side,
+    px: '80000',
+    sz: '0.1',
+    time: t,
+    tid,
+    hash: tx,
+    users: side === 'B' ? [taker, maker] : [maker, taker],
+  });
+  const row = (t: number, tid: number, o: number, k: number, m: number): HistTrade => ({ t, px: 80_000, sz: 0.1, side: 'B', tid, o, k, m });
+  const put = (dir: string, start: number, part: boolean, trades: HistTrade[], idScope?: 'day') => {
+    const rel = historyPath('BTC', start, 'trades', part);
+    const len = part ? 5 * MIN : HOUR;
+    mkdirSync(join(dir, rel, '..'), { recursive: true });
+    writeFileSync(join(dir, rel), gzipSync(JSON.stringify(encodeTrades('BTC', start, start + len, [[start, start + len]], trades, [], true, idScope))));
+  };
+  const ids = (dir: string, start: number, part: boolean) => decodeTrades(read(dir, 'BTC', start, 'trades', part))!.trades.map((x) => [x.tid, x.o, x.k, x.m]);
+
+  it('ten sam biorca o 10:59 i 11:01 UTC ma ten sam numer; plik godzinowy i część z `idScope: "day"`, bez kont i hashy', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hq-hist-'));
+    const r = new MarketRecorder('BTC', dir);
+    r.onState(true, H10 + 58 * MIN);
+    r.onTrades([deal(H10 + 58 * MIN, 1, 'B', 'acct-X', 'acct-M', 'tx-1')]); // migawka
+    r.onTrades([deal(H10 + 59 * MIN, 2, 'B', 'acct-A', 'acct-M', 'tx-2')]);
+    r.onTrades([deal(H11 + MIN, 3, 'A', 'acct-A', 'acct-N', 'tx-3')]);
+    r.flush(H11 + 5 * MIN + SETTLE_MS);
+    // X → 0, M → 1, A → 2 o 10:59 i dalej o 11:01; N → 3; zlecenia dalej w tej samej numeracji
+    expect(ids(dir, H10, false)).toEqual([
+      [1, 0, 0, 1],
+      [2, 1, 2, 1],
+    ]);
+    expect(ids(dir, H11, true)).toEqual([[3, 2, 2, 3]]);
+    const hour = read(dir, 'BTC', H10, 'trades', false);
+    const part = read(dir, 'BTC', H11, 'trades', true);
+    expect([hour.idScope, part.idScope]).toEqual(['day', 'day']);
+    expect([decodeTrades(hour)!.idScope, decodeTrades(part)!.idScope]).toEqual(['day', 'day']);
+    for (const [start, isPart] of [[H10, false], [H11, true]] as const) {
+      const raw = gunzipSync(readFileSync(join(dir, historyPath('BTC', start, 'trades', isPart)))).toString('utf8');
+      expect(raw).not.toMatch(/acct-|tx-/);
+    }
+  });
+
+  it('nowa doba: po zapisie ostatniej części doby jej mapy zwolnione, o 00:01 numeracja od 0 (konto z poprzedniej doby — nowy numer)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hq-hist-'));
+    const r = new MarketRecorder('BTC', dir);
+    r.onState(true, D + DAY - 2 * MIN);
+    r.onTrades([deal(D + DAY - 2 * MIN, 1, 'B', 'acct-X', 'acct-M', 'tx-1')]); // migawka
+    r.onTrades([deal(D + DAY - MIN, 2, 'B', 'acct-A', 'acct-M', 'tx-2')]);
+    expect(r.heldIds()).toEqual({ days: 1, users: 3, orders: 2 });
+    r.flush(D + DAY + SETTLE_MS); // część 23:55 zapisana i połączona w godzinę 23:00
+    expect(r.heldIds()).toEqual({ days: 0, users: 0, orders: 0 });
+    expect(ids(dir, D + DAY - HOUR, false)).toEqual([
+      [1, 0, 0, 1],
+      [2, 1, 2, 1],
+    ]);
+    r.onTrades([deal(D + DAY + MIN, 3, 'B', 'acct-A', 'acct-N', 'tx-3')]);
+    expect(r.heldIds()).toEqual({ days: 1, users: 2, orders: 1 });
+    r.flush(D + DAY + 5 * MIN + SETTLE_MS);
+    expect(ids(dir, D + DAY, true)).toEqual([[3, 0, 0, 1]]);
+  });
+
+  it('spóźniona transakcja doby poprzedniej (przed zapisem jej ostatniej części) dostaje numer tamtej doby', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hq-hist-'));
+    const r = new MarketRecorder('BTC', dir);
+    r.onState(true, D + DAY - 2000);
+    r.onTrades([deal(D + DAY - 2000, 1, 'B', 'acct-A', 'acct-M', 'tx-1')]); // migawka
+    r.onTrades([deal(D + DAY + 1000, 2, 'B', 'acct-B', 'acct-N', 'tx-2')]);
+    r.onTrades([deal(D + DAY - 1000, 3, 'B', 'acct-A', 'acct-P', 'tx-3')]);
+    expect(r.heldIds().days).toBe(2);
+    r.flush(D + DAY + SETTLE_MS);
+    expect(r.heldIds()).toEqual({ days: 1, users: 2, orders: 1 });
+    expect(ids(dir, D + DAY - HOUR, false)).toEqual([
+      [1, 0, 0, 1],
+      [3, 1, 0, 2],
+    ]);
+    r.flush(D + DAY + 5 * MIN + SETTLE_MS);
+    expect(ids(dir, D + DAY, true)).toEqual([[2, 0, 0, 1]]);
+  });
+
+  it('restart o 11:30: numeracja dalej od największych numerów z plików doby (godzina 10:00 i część 11:00), bez plików doby poprzedniej', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hq-hist-'));
+    put(dir, D - HOUR, false, [row(D - HOUR + 1000, 1, 99, 99, 99)], 'day'); // doba poprzednia — nie liczy się
+    put(dir, H10, false, [row(H10 + 1000, 10, 20, 7, 9), row(H10 + 2000, 11, 4, 3, 2)], 'day'); // największe `o`
+    put(dir, H11, true, [row(H11 + 1000, 12, 5, 3, 30)], 'day'); // największe `m`
+    const r = new MarketRecorder('BTC', dir);
+    r.onState(true, H11 + 30 * MIN);
+    r.onTrades([deal(H11 + 30 * MIN + 1000, 13, 'B', 'acct-A', 'acct-M', 'tx-1')]);
+    r.flush(H11 + 35 * MIN + SETTLE_MS);
+    expect(ids(dir, H11 + 30 * MIN, true)).toEqual([[13, 21, 31, 32]]);
+  });
+
+  it('zlecenia w pamięci tylko z bieżącej i poprzedniej godziny (numer dalej dobowy), konta przez całą dobę', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hq-hist-'));
+    const r = new MarketRecorder('BTC', dir);
+    r.onState(true, H10);
+    r.onTrades([deal(H10 + 1000, 1, 'B', 'acct-A', 'acct-M', 'tx-1')]); // migawka
+    r.onTrades([deal(H11 + 1000, 2, 'B', 'acct-B', 'acct-M', 'tx-2')]);
+    r.onTrades([deal(H11 + HOUR + 1000, 3, 'B', 'acct-A', 'acct-N', 'tx-3')]);
+    expect(r.heldIds()).toEqual({ days: 1, users: 4, orders: 2 });
+    r.flush(H11 + HOUR + 5 * MIN + SETTLE_MS);
+    expect(ids(dir, H11 + HOUR, true)).toEqual([[3, 2, 0, 3]]);
+  });
+
+  it('scalenie z plikiem bez pola (sprzed numeracji dobowej): część i godzina z `idScope: "hour"`', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hq-hist-'));
+    put(dir, H10, true, [row(H10 + 1000, 1, 3, 1, 2)]); // część zapisana przez rejestrator godzinowy
+    const r = new MarketRecorder('BTC', dir);
+    r.onState(true, H10 + 2 * MIN);
+    r.onTrades([deal(H10 + 2 * MIN, 2, 'B', 'acct-A', 'acct-M', 'tx-1')]);
+    r.onTrades([deal(H10 + 6 * MIN, 3, 'B', 'acct-A', 'acct-M', 'tx-2')]);
+    r.flush(H10 + 10 * MIN + SETTLE_MS);
+    expect(ids(dir, H10, true)).toEqual([
+      [1, 3, 1, 2],
+      [2, 4, 3, 4],
+    ]);
+    expect(read(dir, 'BTC', H10, 'trades', true).idScope).toBe('hour');
+    expect(read(dir, 'BTC', H10 + 5 * MIN, 'trades', true).idScope).toBe('day');
+    r.flush(H11 + SETTLE_MS);
+    expect(read(dir, 'BTC', H10, 'trades', false).idScope).toBe('hour');
+  });
+});
+
+describe('format taśmy: zakres numerów `idScope`', () => {
+  it('pole zapisane na żądanie; odczyt z polem i bez (bez pola — godzina); nieznana wartość — plik odrzucony', () => {
+    const T = Date.UTC(2026, 10, 7, 10);
+    const tr: HistTrade = { t: T + 1000, px: 80_000, sz: 0.1, side: 'B', tid: 1, o: 0, k: 0, m: 1 };
+    const day = encodeTrades('BTC', T, T + 5 * MIN, [[T, T + 5 * MIN]], [tr], [], true, 'day');
+    const legacy = encodeTrades('BTC', T, T + 5 * MIN, [[T, T + 5 * MIN]], [tr], []);
+    expect(day.idScope).toBe('day');
+    expect('idScope' in legacy).toBe(false);
+    expect(decodeTrades(day)!.idScope).toBe('day');
+    expect(decodeTrades(legacy)!.idScope).toBe('hour');
+    expect(decodeTrades({ ...day, idScope: 'hour' })!.idScope).toBe('hour');
+    expect(decodeTrades({ ...day, idScope: 'week' })).toBeNull();
+    expect(decodeTrades({ ...day, idScope: 1 })).toBeNull();
+    expect([idScopeOf(day), idScopeOf(legacy), idScopeOf(decodeTrades(day)!), idScopeOf(decodeTrades(legacy)!)]).toEqual(['day', 'hour', 'day', 'hour']);
   });
 });
 

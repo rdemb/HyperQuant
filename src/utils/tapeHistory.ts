@@ -4,8 +4,9 @@
  *
  * Publiczne API nie daje historii transakcji ani arkusza, więc rejestrator nagrywa je na serwerze i publikuje w gałęzi
  * `history` repo danych: części 5-minutowe bieżącej godziny, łączone po jej zamknięciu w plik godzinowy (JSON w gzip).
- * Pliki nie zawierają adresów ani hashy: zlecenie agresora, biorca i maker to numery ważne tylko w obrębie jednej godziny
- * (`o`, `k`, `m`) — wystarczą do złożenia zleceń, serii i ścian, a nie da się z nich odczytać portfela.
+ * Pliki nie zawierają adresów ani hashy: zlecenie agresora, biorca i maker to numery (`o`, `k`, `m`) ważne najwyżej
+ * w obrębie doby UTC (`idScope: 'day'`; pliki bez pola — w obrębie godziny) — wystarczą do złożenia zleceń, serii
+ * i ścian, a nie da się z nich odczytać portfela.
  */
 
 export const HISTORY_VERSION = 1;
@@ -15,6 +16,12 @@ export const HIST_HOUR_MS = 60 * 60_000;
 /** Odcinek ciągłego nagrania [początek, koniec) w zegarze giełdy (ms). */
 export type HistSpan = [number, number];
 
+/**
+ * Zakres numerów `o`, `k`, `m` pliku taśmy: `day` — doba UTC (ten sam numer w różnych godzinach doby to to samo konto
+ * albo zlecenie), `hour` — tylko godzina pliku (pliki sprzed numeracji dobowej i scalone z takimi).
+ */
+export type IdScope = 'hour' | 'day';
+
 export interface HistTrade {
   t: number;
   px: number;
@@ -22,9 +29,9 @@ export interface HistTrade {
   /** B = agresywne kupno, A = agresywna sprzedaż (jak w API) */
   side: 'B' | 'A';
   tid: number;
-  /** Numer zlecenia agresora w godzinie (ten sam biorca i hash albo milisekunda bez hasha); −1 = nieznany */
+  /** Numer zlecenia agresora w zakresie pliku (ten sam biorca i hash albo milisekunda bez hasha); −1 = nieznany */
   o: number;
-  /** Numer biorcy i makera w godzinie; −1 = nieznany */
+  /** Numer biorcy i makera w zakresie pliku (`IdScope`); −1 = nieznany */
   k: number;
   m: number;
   /** Hash zerowy (m.in. podzlecenia TWAP) */
@@ -66,6 +73,8 @@ export interface TradesFile {
   m: number[];
   /** Indeksy transakcji z hashem zerowym (różnicowo); brak kolumny — plik sprzed jej wprowadzenia albo scalony z takim. */
   z?: number[];
+  /** Zakres numerów `o`, `k`, `m`; brak pola — `hour` (plik sprzed pola). */
+  idScope?: IdScope;
   ctx: { t: number[]; oi: number[]; funding: number[]; mark: number[] };
 }
 
@@ -131,8 +140,20 @@ export function clipSpans(spans: readonly HistSpan[], from: number, to: number):
   return out;
 }
 
-/** `zeroKnown` — wszystkie transakcje mają oznaczony hash zerowy (inaczej plik bez kolumny `z`). */
-export function encodeTrades(coin: string, from: number, to: number, spans: readonly HistSpan[], trades: readonly HistTrade[], ctx: readonly HistCtx[], zeroKnown = true): TradesFile {
+/**
+ * `zeroKnown` — wszystkie transakcje mają oznaczony hash zerowy (inaczej plik bez kolumny `z`); `idScope` — zakres
+ * numerów (bez argumentu plik bez pola, jak sprzed numeracji dobowej).
+ */
+export function encodeTrades(
+  coin: string,
+  from: number,
+  to: number,
+  spans: readonly HistSpan[],
+  trades: readonly HistTrade[],
+  ctx: readonly HistCtx[],
+  zeroKnown = true,
+  idScope?: IdScope
+): TradesFile {
   const ts = [...trades].sort((a, b) => a.t - b.t);
   const cs = [...ctx].sort((a, b) => a.t - b.t);
   const file: TradesFile = {
@@ -152,16 +173,26 @@ export function encodeTrades(coin: string, from: number, to: number, spans: read
     ctx: { t: cs.map((c) => c.t), oi: cs.map((c) => c.oi), funding: cs.map((c) => c.funding), mark: cs.map((c) => c.mark) },
   };
   if (zeroKnown) file.z = deltas(ts.flatMap((x, i) => (x.z ? [i] : [])));
+  if (idScope) file.idScope = idScope;
   return file;
+}
+
+/** Zakres numerów pliku taśmy (surowego albo odczytanego): `day` tylko z jawnym polem, inaczej `hour`. */
+export function idScopeOf(file: { idScope?: unknown }): IdScope {
+  return file.idScope === 'day' ? 'day' : 'hour';
 }
 
 /**
  * Odczyt pliku taśmy; zły kształt albo wersja → null (cały plik — kolumny muszą się zgadzać co do długości).
- * `zeroKnown` — plik ma kolumnę hashy zerowych (transakcje bez `z` na pewno mają inny hash).
+ * `zeroKnown` — plik ma kolumnę hashy zerowych (transakcje bez `z` na pewno mają inny hash); `idScope` — zakres numerów
+ * (brak pola → `hour`, nieznana wartość → null, bo numerów nie da się bezpiecznie łączyć).
  */
-export function decodeTrades(raw: unknown): { coin: string; from: number; to: number; spans: HistSpan[]; trades: HistTrade[]; ctx: HistCtx[]; zeroKnown: boolean } | null {
+export function decodeTrades(
+  raw: unknown
+): { coin: string; from: number; to: number; spans: HistSpan[]; trades: HistTrade[]; ctx: HistCtx[]; zeroKnown: boolean; idScope: IdScope } | null {
   const f = raw as Partial<TradesFile> | null;
   if (!f || f.v !== HISTORY_VERSION || typeof f.coin !== 'string' || !fin(f.from) || !fin(f.to) || !Array.isArray(f.spans)) return null;
+  if (f.idScope !== undefined && f.idScope !== 'hour' && f.idScope !== 'day') return null;
   const n = Array.isArray(f.t) ? f.t.length : -1;
   if (!finArr(f.t) || !finArr(f.px, n) || !finArr(f.sz, n) || !finArr(f.tid, n) || !finArr(f.o, n) || !finArr(f.k, n) || !finArr(f.m, n)) return null;
   if (typeof f.side !== 'string' || f.side.length !== n || !/^[AB]*$/.test(f.side)) return null;
@@ -184,7 +215,7 @@ export function decodeTrades(raw: unknown): { coin: string; from: number; to: nu
     trades.push(x);
   }
   const ctx: HistCtx[] = c.t.map((tt, i) => ({ t: tt, oi: c.oi[i], funding: c.funding[i], mark: c.mark[i] }));
-  return { coin: f.coin, from: f.from, to: f.to, spans: clipSpans(spans, f.from, f.to), trades, ctx, zeroKnown: zero !== null };
+  return { coin: f.coin, from: f.from, to: f.to, spans: clipSpans(spans, f.from, f.to), trades, ctx, zeroKnown: zero !== null, idScope: idScopeOf(f) };
 }
 
 export function encodeBook(coin: string, from: number, to: number, spans: readonly HistSpan[], frames: readonly HistFrame[]): BookFile {

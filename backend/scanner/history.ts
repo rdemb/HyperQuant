@@ -24,7 +24,7 @@ import type { HlCtx, HlTrade } from './hl.ts';
 import type { BookAgg } from './liquidity.ts';
 
 /**
- * Rejestrator historii jednego rynku: taśma (bez adresów — numery zleceń agresora, biorców i makerów w obrębie godziny),
+ * Rejestrator historii jednego rynku: taśma (bez adresów — numery zleceń agresora, biorców i makerów w obrębie doby UTC),
  * arkusz w agregacji bliskiej i dalekiej (te same co na stronie) i kontekst minutowy. Bufor w pamięci tylko dla części
  * jeszcze niezamkniętych; część 5-minutowa trafia na dysk 10 s po końcu, a po zamknięciu godziny części łączą się w plik
  * godzinowy. Pokrycie: od najnowszej transakcji pierwszej wiadomości po (ponownym) połączeniu do zamknięcia połączenia —
@@ -37,8 +37,12 @@ export const SETTLE_MS = 10_000;
 
 const ZERO_HASH = /^0x0+$/;
 const isMultiple = (px: number, step: number) => Math.abs(px / step - Math.round(px / step)) < 1e-6;
+const DAY_MS = 24 * HIST_HOUR_MS;
 const partOf = (t: number) => Math.floor(t / HIST_PART_MS) * HIST_PART_MS;
 const hourOf = (t: number) => Math.floor(t / HIST_HOUR_MS) * HIST_HOUR_MS;
+const dayOf = (t: number) => Math.floor(t / DAY_MS) * DAY_MS;
+/** Pliki taśmy w katalogu doby: godzinowe (`13.trades.json.gz`) i części (`13-05.trades.json.gz`) */
+const TRADES_FILE = /^\d{2}(?:-\d{2})?\.trades\.json\.gz$/;
 
 function writeGz(path: string, value: unknown): void {
   mkdirSync(dirname(path), { recursive: true });
@@ -104,12 +108,27 @@ function uniqCtx(xs: readonly HistCtx[]): HistCtx[] {
   return [...new Map(xs.map((c) => [c.t, c])).values()];
 }
 
+/** Numeracja jednej doby UTC: numer ważny dobę, nowa doba od 0. */
 interface Ids {
-  orders: Map<string, number>;
-  /** Biorcy i makerzy w jednej numeracji (ten sam adres po obu stronach = ten sam numer) */
+  /** Biorcy i makerzy w jednej numeracji (ten sam adres po obu stronach = ten sam numer) przez całą dobę */
   users: Map<string, number>;
+  /**
+   * Zlecenia agresora według godziny, tylko bieżąca i poprzednia: wypełnienia jednego zlecenia mają czas jednego bloku,
+   * więc zlecenie nie wraca po godzinie, a mapa nie rośnie przez dobę. Numer (`nextO`) dalej dobowy.
+   */
+  orders: Map<number, Map<string, number>>;
   nextO: number;
   nextU: number;
+}
+
+/** Mapa zleceń godziny; nowa godzina zwalnia starsze od poprzedniej. */
+function ordersOf(ids: Ids, hour: number): Map<string, number> {
+  let m = ids.orders.get(hour);
+  if (m) return m;
+  m = new Map();
+  ids.orders.set(hour, m);
+  for (const h of ids.orders.keys()) if (h < hour - HIST_HOUR_MS) ids.orders.delete(h);
+  return m;
 }
 
 export class MarketRecorder {
@@ -122,6 +141,7 @@ export class MarketRecorder {
   private spans: HistSpan[] = [];
   private openAt: number | null = null;
   private waitingSnapshot = false;
+  /** Numeracje dób (bieżąca, a do zapisu ostatniej części — także poprzednia) według początku doby */
   private readonly ids = new Map<number, Ids>();
   /** Kroki agregacji bliskiej i dalekiej dobrane do ceny (zmiana tylko przy przejściu przez 10^k) */
   private steps: [number, number] | null = null;
@@ -156,21 +176,23 @@ export class MarketRecorder {
       const tid = Number(x.tid);
       if (!(t > 0) || !(px > 0) || !(sz > 0) || !Number.isFinite(tid) || (x.side !== 'B' && x.side !== 'A')) continue;
       newest = Math.max(newest, t);
+      const p = partOf(t);
+      // Część już zapisana — spóźniona transakcja pominięta, bez numeru (i bez wczytywania numeracji zamkniętej doby)
+      if (p <= this.lastPart) continue;
       let o = -1;
       let k = -1;
       let m = -1;
       if (Array.isArray(x.users) && x.users.length === 2) {
-        const ids = this.idsFor(hourOf(t));
+        const ids = this.idsFor(dayOf(t));
+        const orders = ordersOf(ids, hourOf(t));
         const taker = x.side === 'B' ? x.users[0] : x.users[1];
         const maker = x.side === 'B' ? x.users[1] : x.users[0];
         const key = typeof x.hash === 'string' && x.hash.length > 2 && !ZERO_HASH.test(x.hash) ? `${taker}|${x.hash}` : `${taker}|t${t}|${x.side}`;
         const user = (a: string) => ids.users.get(a) ?? (ids.users.set(a, ids.nextU), ids.nextU++);
-        o = ids.orders.get(key) ?? (ids.orders.set(key, ids.nextO), ids.nextO++);
+        o = orders.get(key) ?? (orders.set(key, ids.nextO), ids.nextO++);
         k = user(taker);
         m = user(maker);
       }
-      const p = partOf(t);
-      if (p <= this.lastPart) continue; // część już zapisana — spóźniona transakcja pominięta
       const acc = this.trades.get(p);
       const row: HistTrade = { t, px, sz, side: x.side, tid, o, k, m };
       if (typeof x.hash === 'string' && ZERO_HASH.test(x.hash)) row.z = true;
@@ -228,22 +250,37 @@ export class MarketRecorder {
     else this.frames.set(p, [f]);
   }
 
-  /** Numery zleceń i makerów godziny; po restarcie numeracja ciągnie się od największych w zapisanych plikach godziny. */
-  private idsFor(hour: number): Ids {
-    let ids = this.ids.get(hour);
+  /**
+   * Numeracja doby UTC; po restarcie ciągnie się od największych numerów we wszystkich zapisanych plikach tej doby
+   * (godzinowych i częściach, także sprzed numeracji dobowej), więc nowy numer nie powtarza żadnego z wcześniejszych
+   * godzin doby. Nowa doba — od 0 (pliki doby poprzedniej się nie liczą).
+   */
+  private idsFor(day: number): Ids {
+    let ids = this.ids.get(day);
     if (ids) return ids;
-    ids = { orders: new Map(), users: new Map(), nextO: 0, nextU: 0 };
-    const files = [historyPath(this.coin, hour, 'trades', false), ...this.partsOnDisk(hour).map((p) => historyPath(this.coin, p, 'trades', true))];
-    for (const rel of files) {
-      const f = decodeTrades(readGz(join(this.dir, rel)));
+    ids = { users: new Map(), orders: new Map(), nextO: 0, nextU: 0 };
+    const dayDir = join(this.dir, dirname(historyPath(this.coin, day, 'trades', false)));
+    for (const name of existsSync(dayDir) ? readdirSync(dayDir) : []) {
+      if (!TRADES_FILE.test(name)) continue;
+      const f = decodeTrades(readGz(join(dayDir, name)));
       for (const x of f?.trades ?? []) {
         ids.nextO = Math.max(ids.nextO, x.o + 1);
         ids.nextU = Math.max(ids.nextU, x.k + 1, x.m + 1);
       }
     }
-    this.ids.set(hour, ids);
-    for (const h of this.ids.keys()) if (h < hour - HIST_HOUR_MS) this.ids.delete(h);
+    this.ids.set(day, ids);
     return ids;
+  }
+
+  /** Numery w pamięci (kontrola zwalniania): doby, konta i zlecenia z map. */
+  heldIds(): { days: number; users: number; orders: number } {
+    let users = 0;
+    let orders = 0;
+    for (const ids of this.ids.values()) {
+      users += ids.users.size;
+      for (const hour of ids.orders.values()) orders += hour.size;
+    }
+    return { days: this.ids.size, users, orders };
   }
 
   /** Części godziny zapisane na dysku (początki, rosnąco). */
@@ -279,13 +316,27 @@ export class MarketRecorder {
       const bPath = join(this.dir, historyPath(this.coin, p, 'book', true));
       const oldT = existsSync(tPath) ? decodeTrades(readGz(tPath)) : null;
       const oldB = existsSync(bPath) ? decodeBook(readGz(bPath)) : null;
-      writeGz(tPath, encodeTrades(this.coin, p, p + HIST_PART_MS, [...spans, ...(oldT?.spans ?? [])], uniqTrades([...(oldT?.trades ?? []), ...trades]), uniqCtx([...(oldT?.ctx ?? []), ...ctx]), oldT?.zeroKnown ?? true));
+      // Scalenie z częścią numerowaną w godzinie (rejestrator sprzed numeracji dobowej) — zakres godzinowy dla całej części
+      const tFile = encodeTrades(
+        this.coin,
+        p,
+        p + HIST_PART_MS,
+        [...spans, ...(oldT?.spans ?? [])],
+        uniqTrades([...(oldT?.trades ?? []), ...trades]),
+        uniqCtx([...(oldT?.ctx ?? []), ...ctx]),
+        oldT?.zeroKnown ?? true,
+        oldT?.idScope ?? 'day'
+      );
+      writeGz(tPath, tFile);
       writeGz(bPath, encodeBook(this.coin, p, p + HIST_PART_MS, [...spans, ...(oldB?.spans ?? [])], uniqFrames([...(oldB?.frames ?? []), ...frames])));
       this.lastPart = p;
       written += 2;
     }
     for (const k of this.ctx.keys()) if (k < due) this.ctx.delete(k);
     this.spans = this.spans.filter(([, b]) => b > due);
+    // Doba, której ostatnia część jest już zapisana: numeracja i mapy kont zapomniane (numer ważny najwyżej dobę)
+    const open = dayOf(now - SETTLE_MS);
+    for (const d of this.ids.keys()) if (d < open) this.ids.delete(d);
     written += this.consolidate(now);
     return written;
   }
@@ -313,7 +364,9 @@ export class MarketRecorder {
       const trades = uniqTrades(tFiles.flatMap((f) => f.trades));
       const ctx = uniqCtx(tFiles.flatMap((f) => f.ctx));
       const frames = uniqFrames(bFiles.flatMap((f) => f.frames));
-      writeGz(join(this.dir, historyPath(this.coin, h, 'trades', false)), encodeTrades(this.coin, h, h + HIST_HOUR_MS, tFiles.flatMap((f) => f.spans), trades, ctx, tFiles.every((f) => f.zeroKnown)));
+      // Zakres dobowy tylko wtedy, gdy każdy łączony plik go ma (jak kolumna `z`)
+      const idScope = tFiles.every((f) => f.idScope === 'day') ? 'day' : 'hour';
+      writeGz(join(this.dir, historyPath(this.coin, h, 'trades', false)), encodeTrades(this.coin, h, h + HIST_HOUR_MS, tFiles.flatMap((f) => f.spans), trades, ctx, tFiles.every((f) => f.zeroKnown), idScope));
       writeGz(join(this.dir, historyPath(this.coin, h, 'book', false)), encodeBook(this.coin, h, h + HIST_HOUR_MS, bFiles.flatMap((f) => f.spans), frames));
       written += 2;
       for (const p of parts) for (const kind of ['trades', 'book'] as const) rmSync(join(this.dir, historyPath(this.coin, p, kind, true)), { force: true });
@@ -438,8 +491,10 @@ export const HISTORY_README = [
   '',
   '- `index.json` — spis: godziny z plikiem godzinowym i części 5-minutowe bieżącej godziny dla każdego rynku.',
   '- `<RYNEK>/<RRRR-MM-DD>/<GG>.trades.json.gz` — taśma godziny (JSON w gzip): czas i tid różnicowo, cena, wielkość, strona',
-  '  agresora (B/A), numery zlecenia agresora, biorcy i makera w obrębie godziny, indeksy transakcji z hashem zerowym (`z`,',
-  '  m.in. podzlecenia TWAP; brak kolumny — plik sprzed jej wprowadzenia); kontekst minutowy (OI, finansowanie, mark); pokrycie.',
+  '  agresora (B/A), numery zlecenia agresora, biorcy i makera w obrębie doby UTC (`idScope: "day"`; nowa doba od 0; brak pola',
+  '  albo `"hour"` — w obrębie godziny: plik sprzed numeracji dobowej albo scalony z takim), indeksy transakcji z hashem',
+  '  zerowym (`z`, m.in. podzlecenia TWAP; brak kolumny — plik sprzed jej wprowadzenia); kontekst minutowy (OI, finansowanie,',
+  '  mark); pokrycie.',
   '- `<RYNEK>/<RRRR-MM-DD>/<GG>.book.json.gz` — migawki arkusza (co ok. 5 s, 20 poziomów na stronę: cena, wielkość, liczba',
   '  zleceń) w agregacji bliskiej (~2 pb ceny) i dalekiej (10 × większy krok), dla BTC także bez agregacji (migawka z piątym',
   '  elementem 1); pokrycie.',
