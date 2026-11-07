@@ -6,6 +6,7 @@ import { NextEventStat } from '../market/NextEventStat';
 import { useDeskLedger } from '../../state/useDeskLedger';
 import { calibrate } from '../../utils/deskLedger';
 import { useAuctionContext } from '../../state/useAuctionContext';
+import { TRADE_SESSION_NAME } from '../../utils/sessionDay';
 import { tr } from '../../i18n';
 import { sessionLabel } from '../../utils/shaakuniEngine';
 import { crossedLevels } from '../../utils/touchMc';
@@ -44,7 +45,7 @@ export const DeskRail: React.FC = () => {
   const auction = useAuctionContext();
   const auctionStale = auction.asOf !== null && Date.now() - auction.asOf > 3 * 60_000;
   const ses = auction.session;
-  const sesName = ses ? (ses.id === 'london' ? tr('Londyn', 'London') : 'NY') : null;
+  const sesName = ses ? TRADE_SESSION_NAME[ses.id] : null;
   const auctionLabel = !ses
     ? tr('Aukcja · sesja', 'Auction · session')
     : ses.closed

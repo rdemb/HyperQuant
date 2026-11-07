@@ -313,8 +313,10 @@ export interface TodayState {
 }
 
 /**
- * Stan bieżącej sesji `win` względem poprzedniej (świece 1h albo 1m tej sesji, rosnąco; ta sama reguła co statystyki).
- * IB = pierwsza godzina od początku sesji. Reguła 80% liczy tylko zamknięte okna godzinne liczone od otwarcia sesji
+ * Stan bieżącej sesji `win` względem poprzedniej (ta sama reguła co statystyki). `bars` = świece 1m tej sesji, rosnąco
+ * (tak liczy kontekst aukcji). Świece 1h tylko z oknem zaczynającym się o pełnej godzinie (np. `hourlyWindow`) — przy
+ * otwarciu o 13:30/14:30 okna godzinne sesji nie pokrywają się ze świecami 1h.
+ * IB = pierwsza godzina od początku okna. Reguła 80% liczy tylko zamknięte okna godzinne liczone od otwarcia sesji
  * (koniec okna ≤ now; ostatnie okno kończy się z końcem sesji) — bez rozstrzygania na niedomkniętej świecy.
  */
 export function todayState(prev: Session, bars: RangeBar[], now: number, win: { start: number; end: number }, hourMs = HOUR): TodayState | null {

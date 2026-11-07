@@ -479,7 +479,7 @@ export function recalculateIndicatorSeries(bars: OHLCVBar[]): OHLCVBar[] {
  * σ²_bar = ln(H/L)² / (4·ln2), skalowane do horyzontu √(horizon / tf).
  */
 export function parkinsonSigma(
-  bars: ReadonlyArray<Pick<OHLCVBar, 'high' | 'low'>>,
+  bars: OHLCVBar[],
   horizonSec: number,
   timeframeSec: number,
   lookback: number = 60
