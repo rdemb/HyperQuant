@@ -68,6 +68,18 @@ const MAP_KIND_NAME: Record<MapKind, string> = {
 /** Nazwa rodzaju mapy z bloga (etykieta na wykresie, lista map w ustawieniach, nagłówek i Rozliczenie). */
 export const blogMapName = (kind: MapKind): string => MAP_KIND_NAME[kind];
 
+/**
+ * Dotknięte poziomy mapy z bloga „X/Y” i uwaga przy luce w świecach 1m (`note` obok liczby, `gap` do podpowiedzi) —
+ * jedno źródło dla nagłówka Rozliczenia i Czwórki. Przy luce dotknięcia zostają, a reszta poziomów jest nierozliczona.
+ */
+export function mapHitsText(touched: number, total: number, complete: boolean): { value: string; note: string | null; gap: string | null } {
+  return {
+    value: `${touched}/${total}`,
+    note: complete ? null : tr('luka', 'gap'),
+    gap: complete ? null : tr('reszta nierozliczona: luka w świecach 1m (brak ✓ nie znaczy „nie dotknięto”)', 'the rest is unsettled: a gap in the 1m candles (no ✓ does not mean “not touched”)'),
+  };
+}
+
 /** Ułamek jako procent bez miejsc po przecinku. */
 export const pctOf = (b: number) => `${fmtFixed(b * 100, 0)}%`;
 /** Kwota albo odległość ceny (zakres, σ): bez groszy od 100, mniejsze z dokładnością pasującą do ceny rynku. */

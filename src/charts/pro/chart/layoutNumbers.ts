@@ -26,6 +26,7 @@ import {
   amt,
   blogMapName,
   isAbsent,
+  mapHitsText,
   pctOf,
 } from '../../../utils/sessionText';
 import { DASH, fmtFixed, fmtPct, fmtSigned } from '../../../ui/format';
@@ -435,12 +436,12 @@ function mapHitsNum(x: LayoutInputs): LayoutNumber {
   if (x.coin !== 'BTC') return { ...dash(label, 'LIVE', tr('Tylko BTC: mapy z bloga opisują BTC', 'BTC only: the blog maps describe BTC'), tr('tylko BTC', 'BTC only')), short };
   const h = val(x.mapHits);
   if (!h) return { ...dash(label, 'LIVE', whyOf(x.mapHits)), short };
-  const k = `${h.touched}/${h.total}`;
+  // „X/Y” i uwaga przy luce — ten sam pomocnik co Czwórka Przed sesją
+  const t = mapHitsText(h.touched, h.total, h.complete);
+  const k = t.value;
   const name = `${blogMapName(h.kind)} ${fmtDayTime(h.publishedAt, x.now)}`;
   const until = x.now < h.to ? tr('teraz', 'now') : fmtDayTime(h.to, x.now);
-  const gap = h.complete
-    ? ''
-    : tr('; reszta nierozliczona: luka w świecach 1m (brak ✓ nie znaczy „nie dotknięto”)', '; the rest is unsettled: a gap in the 1m candles (no ✓ does not mean “not touched”)');
+  const gap = t.gap ? `; ${t.gap}` : '';
   return {
     label,
     short,
@@ -450,7 +451,7 @@ function mapHitsNum(x: LayoutInputs): LayoutNumber {
       `Poziomy dotknięte ${k}: ${name}, od wpisu do ${until}${gap}. Dotknięcie = świeca 1m Hyperliquid z low ≤ poziom ≤ high, jak ✓ na wykresie. Poziomy z tekstu wpisu autora, nie model HyperQuant.`,
       `Levels touched ${k}: ${name}, from the post until ${until}${gap}. A touch is a Hyperliquid 1m candle with low ≤ level ≤ high, like the ✓ on the chart. Levels from the author's post (PL blog), not a HyperQuant model.`
     ),
-    ...(h.complete ? {} : { note: tr('luka', 'gap') }),
+    ...(t.note ? { note: t.note } : {}),
   };
 }
 

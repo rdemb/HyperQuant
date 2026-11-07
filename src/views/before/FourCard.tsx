@@ -5,14 +5,15 @@ import { startRecording } from '../../charts/pro/store/recording';
 import { useStoreVersion } from '../../charts/pro/store/useStoreVersion';
 import { useBlogMaps } from '../../state/useBlogMaps';
 import { useLiqMap } from '../../state/useLiqMap';
-import { type FourNumber, type FourNumbers, fourNumbers, readFourInputs } from '../../utils/fourNumbers';
+import type { FourNumber, FourNumbers } from '../../utils/fourNumbers';
+import { fourNumbers, readFourInputs } from './fourInputs';
 import { tr } from '../../i18n';
 
 /** Bez zmian w magazynie (cisza, brak połączenia) i tak co tyle przeliczamy: wiek migawki skanera, granice sesji. */
 const TICK_MS = 30_000;
 
 /**
- * Czwórka nad wykresem Przed sesją: cztery liczby (utils/fourNumbers) dla rynku wykresu — świece z jego magazynu
+ * Czwórka nad wykresem Przed sesją: cztery liczby (utils/fourNumbers, before/fourInputs) dla rynku wykresu — świece z jego magazynu
  * (jak nagłówek układu), mapa likwidacji skanera i mapy z bloga (BTC). Przeliczana najwyżej co 2 s przy zmianach magazynu.
  */
 export const FourCard: React.FC<{ coin: Market }> = ({ coin }) => {
@@ -33,7 +34,7 @@ const toneOf = (n: FourNumber): BadgeTone => (n.value === DASH ? 'neutral' : n.n
 
 /**
  * Karta Czwórki (też do Klatki, zadanie 9): na komputerze jeden rząd czterech kafli, na telefonie 2×2. Kafel: tytuł, wartość,
- * plakietka (wiek migawki albo „tylko BTC” zamiast niej) i podpowiedź — źródło liczby albo powód „—”; dotknięcie rozwija
+ * plakietka (wiek migawki albo „tylko BTC” zamiast niej, „luka” obok niej) i podpowiedź — źródło liczby albo powód „—”; dotknięcie rozwija
  * przyciętą podpowiedź.
  */
 export const FourCardView: React.FC<{ n: FourNumbers }> = ({ n }) => {
@@ -73,6 +74,8 @@ const Tile: React.FC<{ n: FourNumber }> = ({ n }) => {
       <span className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1">
         <span className={`text-[15px] font-medium leading-tight ${missing ? 'text-ink-3' : 'text-ink-1'}`}>{n.value}</span>
         <Badge tone={toneOf(n)}>{n.note ?? n.badge}</Badge>
+        {/* Liczba częściowo rozliczona (luka w świecach 1m): uwaga obok plakietki, jak w nagłówku Rozliczenia */}
+        {n.flag && <Badge tone="stale">{n.flag}</Badge>}
       </span>
       {/* Przycięcie do 2 linii (line-clamp ustawia własne display — bez „block”); całość w podpowiedzi i po dotknięciu */}
       <span className={`mt-1 text-[11px] leading-snug text-ink-3 ${open ? '' : 'line-clamp-2'}`}>{n.hint}</span>
