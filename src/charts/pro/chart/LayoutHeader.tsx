@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { CircleHelp } from 'lucide-react';
 import { Badge, DASH, sourceTag } from '../../../ui';
+import { scrollFadeRef } from '../../../ui/scrollFade';
 import type { BlogMap, BlogMapsState } from '../../../state/useBlogMaps';
 import type { LiqMapState } from '../../../state/useLiqMap';
 import type { VolModel } from '../../../utils/volatility';
@@ -141,7 +142,7 @@ export const LayoutHeader: React.FC<{
 
   return (
     <div ref={ref} className="relative shrink-0 border-b border-line">
-      <div className={`flex items-center min-w-0 overflow-x-auto [scrollbar-width:none] whitespace-nowrap ${narrow ? 'h-11 gap-x-2 px-1.5' : 'h-8 gap-x-3 px-2 sm:px-3'}`}>
+      <div ref={scrollFadeRef} className={`hq-fade-x flex items-center min-w-0 overflow-x-auto [scrollbar-width:none] whitespace-nowrap ${narrow ? 'h-11 gap-x-2 px-1.5' : 'h-8 gap-x-3 px-2 sm:px-3'}`}>
         {/* Pytanie układu: na komputerze pierwsze (przycięte, całe w podpowiedzi), na telefonie po liczbach, z przewijaniem */}
         <p title={question} className={`flex items-center gap-1.5 text-[11.5px] text-ink-2 ${narrow ? 'order-last shrink-0' : 'flex-1 min-w-0'}`}>
           <CircleHelp className="w-3.5 h-3.5 shrink-0 text-ink-3" aria-label={tr('Pytanie układu', 'Layout question')} />
