@@ -106,7 +106,7 @@ export interface PlotDef {
 /**
  * Kolory stałych linii (paleta Głębia, src/charts/pro/chart/theme.ts): seria strony — kupno w lazurze, sprzedaż w żarze
  * (linie w odcieniach ink, czytelne także jako liczby legendy), druga i trzecia linia bez strony w kolejności kategorii
- * (złoto, fiolet), linia bazy w szarości. Kolor instancji (INDICATOR_COLORS) żadnego z nich nie używa.
+ * (złoto, zieleń), linia bazy w szarości. Kolor instancji (INDICATOR_COLORS) żadnego z nich nie używa.
  */
 const BUY_LINE = PRO.buyInk;
 const SELL_LINE = PRO.sellInk;
