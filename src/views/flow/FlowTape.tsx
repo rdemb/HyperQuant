@@ -199,10 +199,13 @@ export const FlowTape: React.FC<{
         <span className="text-ink-1">{compact(pace.usd1m)} USD/min</span>
         <span className={ratio >= 2 ? 'text-warn font-semibold' : 'text-ink-2'}>{Number.isFinite(ratio) ? `${numLang(ratio.toFixed(1))}×` : '—'}</span>
         <span className="ml-auto flex items-center gap-1">
-          <span className="relative inline-block w-16 h-1.5 rounded-full bg-of-sell/50 overflow-hidden">
-            <span className="absolute inset-y-0 left-0 bg-of-buy" style={{ width: `${pace.buyShare * 100}%` }} />
-          </span>
-          <span className="text-of-buy-ink">{Math.round(pace.buyShare * 100)}%</span>
+          {/* Bez transakcji albo bez nagrania ostatniej minuty: udział kupujących to „—”, bez paska */}
+          {Number.isFinite(pace.buyShare) && (
+            <span className="relative inline-block w-16 h-1.5 rounded-full bg-of-sell/50 overflow-hidden">
+              <span className="absolute inset-y-0 left-0 bg-of-buy" style={{ width: `${pace.buyShare * 100}%` }} />
+            </span>
+          )}
+          <span className={Number.isFinite(pace.buyShare) ? 'text-of-buy-ink' : 'text-ink-3'}>{Number.isFinite(pace.buyShare) ? `${Math.round(pace.buyShare * 100)}%` : '—'}</span>
         </span>
       </div>
       <div className={`grid ${grid} gap-x-1.5 px-2 py-1 border-b border-line font-mono text-[10px] text-ink-3 shrink-0`}>

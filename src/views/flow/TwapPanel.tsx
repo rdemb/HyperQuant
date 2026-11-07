@@ -65,6 +65,8 @@ const SideLabel: React.FC<{ side: 1 | -1 }> = ({ side }) => (
 /** Ciągi TWAP z taśmy połączone z planami i bilans najbliższych 15 min (także dla paska na górze widoku). */
 export interface TwapData {
   now: number;
+  /** Taśma nagrana przez ostatnie ACTIVE_MS (strumień na żywo): bez niej liczby TWAP-ów to brak danych, nie zero. */
+  live: boolean;
   rows: Row[];
   shown: Row[];
   dust: Row[];
@@ -129,7 +131,8 @@ export function useTwaps(store: ProStore, narrow: boolean): TwapData {
   // Znane plany zawsze na liście; ciągi bez planu tylko od progu tempa, reszta w jednym wierszu
   const shown = rows.filter((r) => r.plan || pace(r.s) >= DUST_USD_MIN);
   const dust = rows.filter((r) => !r.plan && pace(r.s) < DUST_USD_MIN);
-  return { now, rows, shown, dust, buy, sell, net: buy - sell, known, share, auto, cache };
+  const live = store.coverage.covers(now - ACTIVE_MS, now);
+  return { now, live, rows, shown, dust, buy, sell, net: buy - sell, known, share, auto, cache };
 }
 
 export const TwapPanel: React.FC<{
@@ -157,7 +160,9 @@ export const TwapPanel: React.FC<{
         </p>
       </section>
     );
-  const { now, rows, shown, dust, buy, sell, net, known, share, auto, cache } = data;
+  const { now, live, rows, shown, dust, buy, sell, net, known, share, auto, cache } = data;
+  // Bez taśmy na żywo sumy planów to brak danych („—”), a nie zero
+  const sum = (v: number) => (live ? compact(v) : '—');
 
   const status = (r: Row): React.ReactNode => {
     const { s, entry } = r;
@@ -192,14 +197,20 @@ export const TwapPanel: React.FC<{
           15 min<span className={WIDE}>{tr(` · ${known} ${plForm(known, 'plan', 'plany', 'planów')}`, ` · ${known} ${known === 1 ? 'plan' : 'plans'}`)}</span>
         </span>
         <span className="text-of-buy-ink">
-          {tr('kupno', 'buy')} {compact(buy)}
+          {tr('kupno', 'buy')} {sum(buy)}
         </span>
         <span className="text-of-sell-ink">
-          {tr('sprzedaż', 'sell')} {compact(sell)}
+          {tr('sprzedaż', 'sell')} {sum(sell)}
         </span>
-        <span className={`ml-auto font-semibold ${net >= 0 ? 'text-of-buy-ink' : 'text-of-sell-ink'}`}>
-          {tr('netto', 'net')} {net > 0 ? '+' : ''}
-          {compact(net)}
+        <span className={`ml-auto font-semibold ${!live ? 'text-ink-3' : net >= 0 ? 'text-of-buy-ink' : 'text-of-sell-ink'}`}>
+          {live ? (
+            <>
+              {tr('netto', 'net')} {net > 0 ? '+' : ''}
+              {compact(net)}
+            </>
+          ) : (
+            tr('netto — · brak taśmy na żywo', 'net — · no live tape')
+          )}
         </span>
       </div>
       <div className={`grid ${GRID} gap-x-2 px-3 py-1 border-b border-line font-mono text-[10px] text-ink-3 shrink-0`}>

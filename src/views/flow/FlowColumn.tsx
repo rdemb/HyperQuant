@@ -52,6 +52,8 @@ export function pulseTiles(f: FlowColumnData, scanner: ScannerData | null, short
     );
   };
   const btcOnly = tr('tylko BTC', 'BTC only');
+  // Bez nagrania ostatnich chwil (zerwane połączenie) tempo i TWAP-y to brak danych z powodem, nie zero
+  const noTape = tr('brak taśmy na żywo', 'no live tape');
   const who = scanner?.who ?? null;
   const twap = scanner?.twap ?? null;
   const whoTitle = tr('Kto przyjmuje uderzenia: udział 3 największych kont makerów po stronie bidów i asków z 15 min.', 'Who absorbs the hits: share of the 3 largest maker accounts on the bid and ask side in 15 min.');
@@ -68,7 +70,7 @@ export function pulseTiles(f: FlowColumnData, scanner: ScannerData | null, short
       id: 'tape',
       label: tr('Taśma', 'Tape'),
       value: <span className={ratio >= 2 ? 'text-warn font-semibold' : undefined}>{Number.isFinite(ratio) ? `${numLang(ratio.toFixed(1))}×` : '—'}</span>,
-      sub: tr(`${compact(pace.usd1m)}/min · kupno ${pctS(pace.buyShare)}`, `${compact(pace.usd1m)}/min · buy ${pctS(pace.buyShare)}`),
+      sub: Number.isNaN(pace.usd1m) ? noTape : tr(`${compact(pace.usd1m)}/min · kupno ${pctS(pace.buyShare)}`, `${compact(pace.usd1m)}/min · buy ${pctS(pace.buyShare)}`),
       title: tr('Taśma: wartość transakcji z ostatniej minuty wobec mediany minut z godziny i udział kupujących.', 'Tape: trade value in the last minute against the median minute of the hour, and the buyers’ share.'),
     },
     {
@@ -88,8 +90,8 @@ export function pulseTiles(f: FlowColumnData, scanner: ScannerData | null, short
     {
       id: 'twap',
       label: short ? 'TWAP' : tr('TWAP-y w drodze', 'TWAPs en route'),
-      value: twap ? <span className={twap.net >= 0 ? 'text-of-buy-ink' : 'text-of-sell-ink'}>{`${twap.net > 0 ? '+' : ''}${compact(twap.net)}`}</span> : '—',
-      sub: twap ? tr(`netto 15 min · plany ${twap.known}`, `net 15 min · plans ${twap.known}`) : btcOnly,
+      value: twap?.live ? <span className={twap.net >= 0 ? 'text-of-buy-ink' : 'text-of-sell-ink'}>{`${twap.net > 0 ? '+' : ''}${compact(twap.net)}`}</span> : '—',
+      sub: twap ? (twap.live ? tr(`netto 15 min · plany ${twap.known}`, `net 15 min · plans ${twap.known}`) : noTape) : btcOnly,
       title: twap ? twapTitle : `${twapTitle} ${BTC_ONLY_TITLE}`,
     },
   ];
