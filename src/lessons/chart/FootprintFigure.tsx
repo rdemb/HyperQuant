@@ -24,7 +24,7 @@ interface Props {
   locale: string;
 }
 
-// Kafle jak w stylu Bid × Ask Wykresów, w palecie wybranej w Wykresach: sprzedaż agresorów po stronie bidu, kupno po stronie asku
+// Kafle jak w stylu Bid × Ask Wykresów (paleta Głębia): sprzedaż agresorów po stronie bidu (żar), kupno po stronie asku (lazur)
 const SELL_RAMP = FIG.fpBidRamp;
 const BUY_RAMP = FIG.fpAskRamp;
 const TONE: Record<ChartZone['tone'], string> = { buy: 'var(--color-of-buy)', sell: 'var(--color-of-sell)', accent: 'var(--color-accent)', neutral: 'var(--color-ink-3)' };

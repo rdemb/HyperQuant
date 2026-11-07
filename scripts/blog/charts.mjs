@@ -1,11 +1,11 @@
 // Wykresy wpisu jako SVG w treści strony (bez skryptów): mapa sesji i footprint z content/blog/<id>/wykresy.json.
 // Każdy wykres w dwóch układach: szerokim (komputer) i wąskim (telefon, świece 30 min); CSS pokazuje jeden z nich.
-// Kolory jak w wykresach desku (src/charts/pro/chart/theme.ts, paleta „Desk”).
+// Kolory stron, footprintu i nierównowag jak w wykresach desku (src/charts/pro/chart/theme.ts, paleta „Głębia”; test pilnuje zgodności).
 import { TIME_ZONE } from './posts.mjs';
 
 const MIN = 60_000;
 
-const C = {
+export const C = {
   bg: '#0b1019',
   grid: '#141c29',
   line: '#1b2533',
@@ -24,8 +24,9 @@ const C = {
   profileVa: '#34425a',
   profileOut: '#1f2b3d',
   fpNeutral: '#1c2534',
-  fpBidRamp: ['#1e2a3a', '#253e5f', '#2a5387', '#2f69b1', '#3280dd'],
-  fpAskRamp: ['#1e2a3a', '#4a333b', '#733939', '#9e3b34', '#ca3829'],
+  // Bid: sprzedaż agresorów (żar), ask: kupno agresorów (lazur)
+  fpBidRamp: ['#1e2a3a', '#4a333b', '#733939', '#9e3b34', '#ca3829'],
+  fpAskRamp: ['#1e2a3a', '#253e5f', '#2a5387', '#2f69b1', '#3280dd'],
   imbBuy: '#a2cfff',
   imbSell: '#ffa28a',
 };

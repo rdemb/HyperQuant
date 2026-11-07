@@ -4,8 +4,9 @@
  */
 
 export const FIG = {
-  fpBidRamp: ['#1E2A3A', '#253E5F', '#2A5387', '#2F69B1', '#3280DD'],
-  fpAskRamp: ['#1E2A3A', '#4A333B', '#733939', '#9E3B34', '#CA3829'],
+  // Bid: sprzedaż agresorów (żar), ask: kupno agresorów (lazur)
+  fpBidRamp: ['#1E2A3A', '#4A333B', '#733939', '#9E3B34', '#CA3829'],
+  fpAskRamp: ['#1E2A3A', '#253E5F', '#2A5387', '#2F69B1', '#3280DD'],
   fpDeltaPosRamp: ['#1E2A3A', '#253E5F', '#2A5387', '#2F69B1', '#3280DD'],
   fpDeltaNegRamp: ['#1E2A3A', '#4A333B', '#733939', '#9E3B34', '#CA3829'],
   fpText: '#0b1019',

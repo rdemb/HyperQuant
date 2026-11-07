@@ -4,7 +4,9 @@ import path from 'node:path';
 import { gzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { anchoredVwap, buildCharts, decodeTape, mergeSpans, openSource, readCharts, volumeProfile } from './chartdata.mjs';
+import { PRO } from '../../src/charts/pro/chart/theme.ts';
 import {
+  C,
   diagonalImbalances,
   footprintHtml,
   footprintSvg,
@@ -277,6 +279,21 @@ describe('wykresy: rysunek (charts.mjs)', () => {
     const imb = diagonalImbalances(FP.bars[0].cells, 25);
     expect([...imb.buy]).toEqual([80100, 80025]);
     expect([...imb.sell]).toEqual([80050]);
+  });
+
+  it('kolory jak w Wykresach (paleta Głębia): kupno, sprzedaż, rampy footprintu, nierównowagi', () => {
+    const up = (v) => (Array.isArray(v) ? v.map((x) => x.toUpperCase()) : v.toUpperCase());
+    // Wpisy nie rysują mapy ciepła arkusza, więc C nie ma jej rampy
+    for (const k of ['buy', 'sell', 'buyInk', 'sellInk', 'fpBidRamp', 'fpAskRamp', 'imbBuy', 'imbSell', 'profileVa', 'profileOut']) expect(up(C[k]), k).toEqual(up(PRO[k]));
+  });
+
+  it('footprint: sprzedaż na kaflach żaru, kupno na kaflach lazuru', () => {
+    // Sprzedaż 9 przy największej komórce 30 to czwarty stopień rampy (żar); żadne kupno nie trafia w czwarty stopień (lazur)
+    const svg = footprintSvg(FP);
+    expect(svg).toContain('fill="#9e3b34"');
+    expect(svg).not.toContain('fill="#2f69b1"');
+    expect(C.fpBidRamp.at(-1)).toBe(C.sell);
+    expect(C.fpAskRamp.at(-1)).toBe(C.buy);
   });
 
   it('mapa sesji i footprint: dwa układy, bez NaN, strefy, kreskowanie poza taśmą, poziomy poza zakresem', () => {

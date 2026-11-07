@@ -1,15 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { LIQ_RAMP, PRO } from '../chart/theme';
 
+const EMBER = ['#1E2A3A', '#4A333B', '#733939', '#9E3B34', '#CA3829'];
+const AZURE = ['#1E2A3A', '#253E5F', '#2A5387', '#2F69B1', '#3280DD'];
+
 describe('paleta Głębia', () => {
   it('ma jedną paletę Głębia', () => {
     expect(PRO.bg).toBe('#05101E');
     expect(PRO.buy).toBe('#3280DD');
     expect(PRO.sell).toBe('#CA3829');
     expect(PRO.pocFrame).toBe('#F1C45E');
-    expect(PRO.fpBidRamp).toEqual(['#1E2A3A', '#253E5F', '#2A5387', '#2F69B1', '#3280DD']);
-    // Środowisko testów to Node (bez DOM); w przeglądarce nic nie ustawia atrybutu palety
-    if (typeof document !== 'undefined') expect(document.documentElement.dataset.chartPalette).toBeUndefined();
   });
 
   it('kupno lazur, sprzedaż żar we wszystkich rolach', () => {
@@ -17,12 +17,27 @@ describe('paleta Głębia', () => {
     expect([PRO.sellWick, PRO.domAsk]).toEqual(['#CA3829', '#CA3829']);
     expect([PRO.buyInk, PRO.sellInk]).toEqual(['#82BCFC', '#F68771']);
     expect([PRO.imbBuy, PRO.imbSell]).toEqual(['#A2CFFF', '#FFA28A']);
-    expect(PRO.fpAskRamp).toEqual(['#1E2A3A', '#4A333B', '#733939', '#9E3B34', '#CA3829']);
-    expect(PRO.fpDeltaPosRamp).toEqual(PRO.fpBidRamp);
-    expect(PRO.fpDeltaNegRamp).toEqual(PRO.fpAskRamp);
+    // Strona bidu to sprzedaż agresorów (żar), strona asku to kupno (lazur)
+    expect(PRO.fpBidRamp).toEqual(EMBER);
+    expect(PRO.fpAskRamp).toEqual(AZURE);
+    expect(PRO.fpDeltaPosRamp).toEqual(PRO.fpAskRamp);
+    expect(PRO.fpDeltaNegRamp).toEqual(PRO.fpBidRamp);
     expect(PRO.bubbleBuy).toEqual(['#3280DD', '#82BCFC', '#A2CFFF']);
     expect(PRO.bubbleSell).toEqual(['#CA3829', '#F68771', '#FFA28A']);
     expect([PRO.venueHl, PRO.venueBinance, PRO.venueBybit]).toEqual(['#059583', '#B18E15', '#A878DB']);
+  });
+
+  it('rampy i bąble kończą się kolorem swojej strony', () => {
+    // Footprint rysuje sprzedaż na kaflach rampy bidu, kupno na kaflach rampy asku
+    expect(PRO.fpBidRamp.at(-1)).toBe(PRO.sell);
+    expect(PRO.fpAskRamp.at(-1)).toBe(PRO.buy);
+    expect(PRO.fpDeltaNegRamp.at(-1)).toBe(PRO.sell);
+    expect(PRO.fpDeltaPosRamp.at(-1)).toBe(PRO.buy);
+    expect(PRO.bubbleBuy[0]).toBe(PRO.buy);
+    expect(PRO.bubbleSell[0]).toBe(PRO.sell);
+    // Rozjaśniona nierównowaga leży po stronie własnego koloru (kupno: lazur, sprzedaż: żar)
+    expect(PRO.bubbleBuy.at(-1)).toBe(PRO.imbBuy);
+    expect(PRO.bubbleSell.at(-1)).toBe(PRO.imbSell);
   });
 
   it('mapa ciepła: 9 stopni jak w Desku, od szarego do bieli', () => {
