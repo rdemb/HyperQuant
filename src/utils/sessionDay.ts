@@ -8,7 +8,6 @@
 import { sessionOpens, utcDayStart } from '../charts/pro/core/sessions';
 import { forecastHourlyVariances, isValidBar, parkinsonVar, stepSigmas, VOL_STEP_MIN, type VolModel } from './volatility';
 import type { VBar } from './auction';
-import { tr } from '../i18n';
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -19,9 +18,6 @@ const PARKINSON_MIN_BARS = 12;
 const PARKINSON_LOOKBACK = 60;
 
 export type TradeSessionId = 'london' | 'ny';
-
-/** Nazwa sesji w podpisach („sesja Londyn”, „sesja NY”) — wspólna dla panelu aukcji i pasa desku. */
-export const TRADE_SESSION_NAME: Record<TradeSessionId, string> = { london: tr('Londyn', 'London'), ny: 'NY' };
 
 export type TradeSession = {
   id: TradeSessionId;

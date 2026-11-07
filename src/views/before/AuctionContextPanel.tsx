@@ -3,7 +3,7 @@ import { useDesk } from '../../state/DeskContext';
 import { useAuctionContext, type AuctionContext } from '../../state/useAuctionContext';
 import { Badge, EmptyState, Panel, DASH, fmtPrice, fmtFixed } from '../../ui';
 import type { OpenLoc, Rate } from '../../utils/auction';
-import { TRADE_SESSION_NAME as SES_NAME } from '../../utils/sessionDay';
+import { TRADE_SESSION_NAME as SES_NAME } from '../../utils/sessionNames';
 import { locale, tr } from '../../i18n';
 
 const dayFmt = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', timeZone: 'UTC' });
