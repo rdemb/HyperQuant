@@ -285,7 +285,8 @@ export const AppShell: React.FC = () => {
                 ref={topMoreBtn}
                 type="button"
                 aria-expanded={topMore}
-                aria-controls={topMoreId}
+                // Menu jest w dokumencie tylko otwarte
+                aria-controls={topMore ? topMoreId : undefined}
                 onClick={() => setTopMore((o) => !o)}
                 className={`${navLink(!!moreView)} inline-flex items-center gap-1.5`}
               >
@@ -428,7 +429,7 @@ const IconBtn: React.FC<{ label: string; onClick: () => void; children: React.Re
   </button>
 );
 
-/** Przycisk dolnego paska telefonu; z `expanded` — przycisk menu (bez aria-current, z aria-expanded). */
+/** Przycisk dolnego paska telefonu; z `expanded` — przycisk menu (bez aria-current, z aria-expanded, aria-controls tylko otwarte). */
 const TabBtn: React.FC<{
   active: boolean;
   label: string;
@@ -444,7 +445,7 @@ const TabBtn: React.FC<{
     onClick={onClick}
     aria-current={active && expanded === undefined ? 'page' : undefined}
     aria-expanded={expanded}
-    aria-controls={expanded === undefined ? undefined : controls}
+    aria-controls={expanded ? controls : undefined}
     className={`min-h-14 flex flex-col items-center justify-center gap-1 text-[11px] font-medium ${active ? 'text-accent' : 'text-ink-3'}`}
   >
     {icon}

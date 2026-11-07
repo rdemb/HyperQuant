@@ -51,7 +51,7 @@ const Entry: React.FC<{ e: AtlasEntry; c: LessonsContent; open: boolean; onToggl
         <button
           type="button"
           aria-expanded={open}
-          aria-controls={`atlas-body-${e.id}`}
+          aria-controls={open ? `atlas-body-${e.id}` : undefined}
           onClick={onToggle}
           className="w-full flex items-start justify-between gap-3 p-4 text-left hover:bg-surface-2/60 rounded-xl"
         >
