@@ -1,10 +1,10 @@
 import { History, X } from 'lucide-react';
-import React, { useEffect, useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { fetchIndex } from '../../charts/pro/replay/data';
 import { replayBase } from '../../charts/pro/replay/session';
 import type { Market } from '../../charts/pro/store/proStore';
 import { tr } from '../../i18n';
-import { markSeen, quickReplay, quickReplayVisible, startOnboarding, tipsPending } from '../../utils/onboarding';
+import { dismissOnEscape, markSeen, quickReplay, quickReplayVisible, startOnboarding, tipsPending } from '../../utils/onboarding';
 
 /** Pamięć przeglądarki; null, gdy zablokowana (wtedy nic się nie pokazuje). */
 function storage(): Storage | null {
@@ -26,7 +26,7 @@ const TIPS: readonly { pl: string; en: string }[] = [
  * Pierwszy kontakt na ekranie W sesji. Dymki: jedna mała karta z trzema numerowanymi punktami nad wykresem — kotwiczenie
  * przy footprincie, legendzie mapy ciepła i plakietce LIVE/MODEL zależy od układu i szerokości (zasłaniałoby oś cen
  * albo dolną nawigację na telefonie), a karta w przepływie strony nie zasłania niczego. Nie jest oknem modalnym:
- * Esc albo „Rozumiem” zamyka i zapisuje `hq.onboarding.v1`. Obok (przez 7 dni od pierwszej wizyty) przycisk powtórki
+ * Esc (przy fokusie w karcie) albo „Rozumiem” zamyka i zapisuje `hq.onboarding.v1`. Obok (przez 7 dni od pierwszej wizyty) przycisk powtórki
  * ostatnich 15 minut; na rynku innym niż BTC albo bez nagrania mówi, dlaczego nie otwiera powtórki.
  */
 export const FirstContact: React.FC<{ coin: Market }> = ({ coin }) => {
@@ -39,6 +39,7 @@ export const FirstContact: React.FC<{ coin: Market }> = ({ coin }) => {
     return tipsPending(store);
   });
   const [now] = useState(() => Date.now());
+  const cardRef = useRef<HTMLElement>(null);
   const [busy, setBusy] = useState(false);
   const [why, setWhy] = useState<string | null>(null);
 
@@ -46,17 +47,6 @@ export const FirstContact: React.FC<{ coin: Market }> = ({ coin }) => {
     if (store) markSeen(store, Date.now());
     setTips(false);
   };
-  useEffect(() => {
-    if (!tips) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      if (store) markSeen(store, Date.now());
-      setTips(false);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [tips, store]);
-
   const showReplay = store !== null && (tips || quickReplayVisible(store, now));
   if (!tips && !showReplay) return null;
 
@@ -64,8 +54,13 @@ export const FirstContact: React.FC<{ coin: Market }> = ({ coin }) => {
     if (busy) return;
     setBusy(true);
     setWhy(null);
+    if (typeof DecompressionStream === 'undefined') {
+      setBusy(false);
+      setWhy(tr('Ta przeglądarka nie odczyta nagrania — użyj nowszej wersji.', 'This browser cannot read the recording — use a newer version.'));
+      return;
+    }
     const base = replayBase('history');
-    const index = base && typeof DecompressionStream !== 'undefined' ? await fetchIndex(base, (u) => fetch(u, { signal: AbortSignal.timeout(20_000) })) : null;
+    const index = base ? await fetchIndex(base, (u) => fetch(u, { signal: AbortSignal.timeout(20_000) })) : null;
     const r = quickReplay(coin, Date.now(), index);
     setBusy(false);
     if (r.ok) window.location.hash = r.hash;
@@ -80,7 +75,7 @@ export const FirstContact: React.FC<{ coin: Market }> = ({ coin }) => {
   return (
     <div className="flex flex-col gap-2">
       {tips && (
-        <section aria-label={tr('Jak czytać ten ekran', 'How to read this screen')} className="rounded-xl border border-line-strong bg-surface-2 p-3 text-xs">
+        <section ref={cardRef} onKeyDown={(e) => dismissOnEscape(e, cardRef.current, close)} aria-label={tr('Jak czytać ten ekran', 'How to read this screen')} className="rounded-xl border border-line-strong bg-surface-2 p-3 text-xs">
           <div className="flex items-start gap-2">
             <h2 className="flex-1 font-semibold text-ink-1">{tr('Jak czytać ten ekran', 'How to read this screen')}</h2>
             <button type="button" onClick={close} aria-label={tr('Zamknij', 'Close')} className="shrink-0 grid place-items-center w-11 h-11 sm:w-8 sm:h-8 -m-2 rounded-lg text-ink-3 hover:text-ink-1 hover:bg-surface-3">

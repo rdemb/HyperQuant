@@ -12,8 +12,10 @@ import type { HistoryIndex } from './tapeHistory';
 export const ONBOARDING_KEY = 'hq.onboarding.v1';
 /** Okno powtórki: ostatnie 15 minut. */
 export const QUICK_REPLAY_MS = 15 * 60_000;
+/** Najmniej minut okna, które musi pokrywać nagranie, żeby powtórka miała sens. */
+export const QUICK_REPLAY_MIN_COVER_MS = 10 * 60_000;
 /** Przycisk powtórki zostaje przez 7 dni od pierwszej wizyty. */
-export const TIPS_PENDING_MS = 7 * 86_400_000;
+export const QUICK_REPLAY_WINDOW_MS = 7 * 86_400_000;
 
 interface Record_ {
   firstAt: number;
@@ -72,7 +74,17 @@ export function tipsPending(storage: Storage): boolean {
 /** Przycisk powtórki: tylko do 7 dni od pierwszej wizyty (bez zapisu — stały użytkownik — go nie ma). */
 export function quickReplayVisible(storage: Storage, now: number): boolean {
   const r = read(storage);
-  return r !== null && now - r.firstAt < TIPS_PENDING_MS;
+  return r !== null && now - r.firstAt < QUICK_REPLAY_WINDOW_MS;
+}
+
+/**
+ * Escape zamyka kartę tylko, gdy fokus jest w niej i nikt inny nie obsłużył klawisza (okno, menu, pole): Esc gdzie indziej
+ * na ekranie ma swoje znaczenie. Zwraca true, gdy zamknął.
+ */
+export function dismissOnEscape(e: { key: string; defaultPrevented: boolean; target: unknown }, card: { contains(n: never): boolean } | null, close: () => void): boolean {
+  if (e.key !== 'Escape' || e.defaultPrevented || !card || !card.contains(e.target as never)) return false;
+  close();
+  return true;
 }
 
 export type QuickReplay = { ok: true; hash: string } | { ok: false; reason: 'market' | 'no-recording' };
@@ -85,6 +97,8 @@ export function quickReplay(coin: Market, now: number, index: HistoryIndex | nul
   if (coin !== 'BTC') return { ok: false, reason: 'market' };
   const range = index ? recordedRange(index, coin) : null;
   const from = now - QUICK_REPLAY_MS;
-  if (!range || range.to <= from) return { ok: false, reason: 'no-recording' };
+  // Pokrycie okna [from, now]: koniec nagrania ucięty na `now` (spis może wybiegać w przyszłość)
+  const covered = range ? Math.min(range.to, now) - Math.max(range.from, from) : 0;
+  if (!range || covered < QUICK_REPLAY_MIN_COVER_MS) return { ok: false, reason: 'no-recording' };
   return { ok: true, hash: replayHash({ source: 'history', coin, from, to: now, station: 'cockpit' }) };
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ONBOARDING_KEY, QUICK_REPLAY_MS, TIPS_PENDING_MS, isFirstVisit, markSeen, quickReplay, quickReplayVisible, startOnboarding, tipsPending } from '../onboarding';
+import { ONBOARDING_KEY, dismissOnEscape, QUICK_REPLAY_MS, QUICK_REPLAY_WINDOW_MS, isFirstVisit, markSeen, quickReplay, quickReplayVisible, startOnboarding, tipsPending } from '../onboarding';
 import type { HistoryIndex } from '../tapeHistory';
 
 /** Atrapa Storage: Map z length/key; opcjonalnie rzuca (tryb prywatny). */
@@ -71,7 +71,7 @@ describe('dymki i przycisk powtórki w ciągu 7 dni', () => {
     startOnboarding(s, NOW);
     markSeen(s, NOW + 3 * 86_400_000);
     expect(quickReplayVisible(s, NOW + 6 * 86_400_000)).toBe(true);
-    expect(quickReplayVisible(s, NOW + TIPS_PENDING_MS + 1)).toBe(false);
+    expect(quickReplayVisible(s, NOW + QUICK_REPLAY_WINDOW_MS + 1)).toBe(false);
   });
   it('stały użytkownik bez zapisu nie dostaje przycisku', () => {
     expect(quickReplayVisible(fake({ 'hq.charts.v1': '{}' }), NOW)).toBe(false);
@@ -107,5 +107,33 @@ describe('quickReplay', () => {
   });
   it('nagranie kończy się przed początkiem okna: „no-recording”', () => {
     expect(quickReplay('BTC', NOW, idx([hourStart - 5 * H]))).toEqual({ ok: false, reason: 'no-recording' });
+  });
+  it('nagranie pokrywa tylko 9 z 15 min: „no-recording”; 10 min wystarcza', () => {
+    const idx2 = (end: number): HistoryIndex => ({ ...idx([]), markets: { BTC: { hours: [], parts: [end - 5 * MIN, end - 10 * MIN, end - 15 * MIN].slice(0, 1) } } });
+    // jedna część 5 min kończąca się teraz: 5 min pokrycia
+    expect(quickReplay('BTC', NOW, idx2(NOW))).toEqual({ ok: false, reason: 'no-recording' });
+    const two: HistoryIndex = { ...idx([]), markets: { BTC: { hours: [], parts: [NOW - 10 * MIN, NOW - 5 * MIN] } } };
+    expect(quickReplay('BTC', NOW, two).ok).toBe(true);
+  });
+  it('koniec nagrania po „teraz” nie dolicza pokrycia z przyszłości', () => {
+    const future: HistoryIndex = { ...idx([]), markets: { BTC: { hours: [], parts: [NOW - 2 * MIN, NOW + 5 * MIN] } } };
+    expect(quickReplay('BTC', NOW, future)).toEqual({ ok: false, reason: 'no-recording' });
+  });
+});
+
+describe('dismissOnEscape', () => {
+  const inside = {};
+  const outside = {};
+  const card = { contains: (n: unknown) => n === inside };
+  it('Esc poza kartą nie zamyka', () => {
+    let closed = 0;
+    expect(dismissOnEscape({ key: 'Escape', defaultPrevented: false, target: outside }, card, () => closed++)).toBe(false);
+    expect(closed).toBe(0);
+  });
+  it('Esc w karcie zamyka, chyba że ktoś już go obsłużył', () => {
+    let closed = 0;
+    expect(dismissOnEscape({ key: 'Escape', defaultPrevented: true, target: inside }, card, () => closed++)).toBe(false);
+    expect(dismissOnEscape({ key: 'Escape', defaultPrevented: false, target: inside }, card, () => closed++)).toBe(true);
+    expect(closed).toBe(1);
   });
 });
