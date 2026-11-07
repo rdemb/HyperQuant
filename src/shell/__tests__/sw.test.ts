@@ -35,7 +35,7 @@ function tab(url: string, log: string[], navigate = true): Win {
 describe('kliknięcie powiadomienia alarmu', () => {
   it('powiadomienie 24/7: otwarta karta Wykresów dostaje focus i przechodzi na rynek alarmu', async () => {
     const log: string[] = [];
-    const w = loadWorker([tab('https://x.test/HyperQuant/#desk', log), tab('https://x.test/HyperQuant/#charts?m=BTC&i=5m&v=candles', log)]);
+    const w = loadWorker([tab('https://x.test/HyperQuant/#before', log), tab('https://x.test/HyperQuant/#charts?m=BTC&i=5m&v=candles', log)]);
     await w.click({ url: './#charts?m=ETH' });
     expect(log).toEqual(['focus https://x.test/HyperQuant/#charts?m=BTC&i=5m&v=candles', 'navigate ./#charts?m=ETH']);
     expect(w.opened).toEqual([]);
@@ -43,8 +43,8 @@ describe('kliknięcie powiadomienia alarmu', () => {
 
   it('alarm z otwartej karty (bez rynku w powiadomieniu): sam focus, bez zmiany widoku', async () => {
     const log: string[] = [];
-    await loadWorker([tab('https://x.test/HyperQuant/#desk', log)]).click(undefined);
-    expect(log).toEqual(['focus https://x.test/HyperQuant/#desk']);
+    await loadWorker([tab('https://x.test/HyperQuant/#before', log)]).click(undefined);
+    expect(log).toEqual(['focus https://x.test/HyperQuant/#before']);
   });
 
   it('karta spoza workera (navigate odrzuca) albo bez navigate: focus zostaje; bez karty: nowe okno na rynku', async () => {

@@ -10,8 +10,8 @@ export const ConnectingState: React.FC<{ onRetry: () => void; startedAt: number;
       <h2 className="font-display text-lg font-semibold">{tr('Łączenie z danymi rynkowymi…', 'Connecting to market data…')}</h2>
       <p className="text-sm text-ink-2 leading-relaxed">
         {tr(
-          'Desk nie pokazuje danych zastępczych — wykres, metryki i Analizator planu pojawią się po pierwszej udanej synchronizacji z publicznym API Hyperliquid.',
-          'The Desk never shows placeholder data. The chart, metrics and Plan Analyzer appear after the first successful sync with the public Hyperliquid API.'
+          'HyperQuant nie pokazuje danych zastępczych — wykres i metryki pojawią się po pierwszej udanej synchronizacji z publicznym API Hyperliquid.',
+          'HyperQuant never shows placeholder data. The chart and metrics appear after the first successful sync with the public Hyperliquid API.'
         )}
       </p>
       {slow && (

@@ -11,6 +11,7 @@ import { EXERCISES, maxScore, pickSide, scoreAnswer, type ExerciseSpec, type Que
 import type { Progress } from '../../lessons/progress';
 import { exerciseReplayHash } from '../../lessons/replay';
 import { useDesk } from '../../state/DeskContext';
+import { PHASE_VIEW } from '../../state/route';
 import { useFolkloreLab } from '../../state/useFolkloreLab';
 import { Badge, Panel } from '../../ui';
 import { LAB_TEXT } from '../../utils/folkloreLab';
@@ -466,8 +467,8 @@ const Debrief: React.FC<{
           type="button"
           className={`${replay ? BTN_SECONDARY : BTN_PRIMARY} self-start`}
           onClick={() => {
-            openStationTab(station.id);
-            setView('charts');
+            // Ekran fazy układu (Przed sesją, W sesji albo Po sesji)
+            setView(PHASE_VIEW[openStationTab(station.id)]);
             window.scrollTo({ top: 0 });
           }}
         >

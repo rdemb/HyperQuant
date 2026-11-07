@@ -44,4 +44,4 @@ Zmienność jest spokojna, model liczy około 3,8 bp na 5 minut. Finansowanie tr
 
 Obraz zmienia utrzymanie się nad szczytem soboty 81 214 i powrót nad 81 407, czyli cenę z chwili zamknięcia CME w piątek. Wtedy spadkowy tydzień kończy się odbiciem od dołka, a nie jego przebiciem. W drugą stronę liczy się zejście pod 80 500 i pozostanie pod tym poziomem. Wtedy cena wchodzi w strefę 80 100 do 80 200, gdzie likwidacje mogą wzmocnić ruch, a pod nią jest jeszcze 79 800 i dołek poprzedniego tygodnia 79 732.
 
-Prawdopodobieństwa pochodzą z modelu desku (HAR + FHS) z godziny 9:00 i są zapisane przed faktem w [publicznym dzienniku prognoz](../../#plan). Kolejna notka o 14:00, mapa na noc i niedzielę o 22:00.
+Prawdopodobieństwa pochodzą z modelu desku (HAR + FHS) z godziny 9:00 i są zapisane przed faktem w [publicznym dzienniku prognoz](../../#after). Kolejna notka o 14:00, mapa na noc i niedzielę o 22:00.

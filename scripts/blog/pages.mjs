@@ -233,7 +233,7 @@ function chartsPage(site, lang) {
 <p class="eyebrow"><span>${esc(t.charts)}</span></p>
 <h1>${esc(c.h1)}</h1>
 <p class="lead">${esc(c.lead)}</p>
-<p class="cta"><a class="btn btn--primary" href="${root}#charts">${esc(t.openCharts)}</a><a class="btn" href="${root}#charts?replay=history&amp;m=BTC&amp;station=scalp">${esc(c.replay)}</a></p>
+<p class="cta"><a class="btn btn--primary" href="${root}#charts">${esc(t.openCharts)}</a><a class="btn" href="${root}#charts?replay=history&amp;m=BTC&amp;station=cockpit">${esc(c.replay)}</a></p>
 ${shotFigure(root, 'charts', lang, c.shotAlt, c.caption)}
 <section class="block"><h2>${esc(c.featuresTitle)}</h2><ul class="features">${c.features.map(([h, p]) => `<li><h3>${esc(h)}</h3><p>${esc(p)}</p></li>`).join('')}</ul></section>
 <section class="block"><h2>${esc(c.principlesTitle)}</h2><p>${esc(c.principles)}</p></section>

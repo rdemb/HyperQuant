@@ -286,6 +286,12 @@ describe('karty: zapis', () => {
     expect(loadPhaseActive(closeTab(st, 'k1')).session).toBe('cockpit');
   });
 
+  it('przycisk lekcji zwraca fazę otwartej karty (ekran, na który przechodzi)', () => {
+    expect(openStationTab('day-map')).toBe('before');
+    expect(openStationTab('cockpit')).toBe('session');
+    expect(openStationTab('review')).toBe('after');
+  });
+
   it('przycisk lekcji zapamiętuje też aktywną kartę fazy układu', () => {
     openStationTab('fuel');
     expect(loadPhaseActive(loadTabs()).before).toBe('fuel');

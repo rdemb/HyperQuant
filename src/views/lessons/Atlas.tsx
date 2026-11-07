@@ -4,6 +4,7 @@ import { stationById } from '../../charts/pro/chart/stations';
 import { openStationTab } from '../../charts/pro/chart/tabs';
 import type { AtlasEntry, AtlasGroup, LessonsContent } from '../../lessons/content/types';
 import { useDesk } from '../../state/DeskContext';
+import { PHASE_VIEW } from '../../state/route';
 import { Figure, FigureStatus, useSlice } from './Figure';
 import { BTN_SECONDARY } from './format';
 
@@ -83,8 +84,8 @@ const Entry: React.FC<{ e: AtlasEntry; c: LessonsContent; open: boolean; onToggl
               type="button"
               className={`${BTN_SECONDARY} self-start`}
               onClick={() => {
-                openStationTab(station.id);
-                setView('charts');
+                // Ekran fazy układu (Przed sesją, W sesji albo Po sesji)
+                setView(PHASE_VIEW[openStationTab(station.id)]);
                 window.scrollTo({ top: 0 });
               }}
             >

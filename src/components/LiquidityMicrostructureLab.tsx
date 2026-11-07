@@ -42,7 +42,7 @@ function layoutFor(width: number, height: number, rows: number): ProfileLayout {
   };
 }
 
-/** Bohater widoku Mikrostruktura: profil wolumenu (LIVE) + szacowane paliwo likwidacyjne i krzywa U(p) (MODEL). */
+/** Bohater laboratorium mikrostruktury w Badaniach: profil wolumenu (LIVE) + szacowane paliwo likwidacyjne i krzywa U(p) (MODEL). */
 export const LiquidityMicrostructureLab: React.FC<{
   quant: QuantMathMetrics;
   shaakuni: ShaakuniState;

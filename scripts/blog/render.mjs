@@ -280,25 +280,32 @@ export function postBody(post) {
 const FONTS =
   'https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Outfit:wght@500;600;700&family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap';
 
-/** Pozycje nawigacji: klucz, etykieta i ścieżka od korzenia desku (wersja angielska prowadzi do stron EN). */
+/**
+ * Pozycje nawigacji: klucz, etykieta i ścieżka od korzenia desku (wersja angielska prowadzi do stron EN). Jak pasek
+ * aplikacji: trzy fazy dnia (ekrany aplikacji), Lekcje i Blog; strona Wykresów jest w stopce.
+ */
 const NAV = {
   pl: [
-    ['desk', 'Desk', ''],
-    ['charts', 'Wykresy', 'wykresy/'],
+    ['before', 'Przed sesją', '#before'],
+    ['charts', 'W sesji', '#charts'],
+    ['after', 'Po sesji', '#after'],
     ['lessons', 'Lekcje', 'lekcje/'],
     ['blog', 'Blog', 'blog/'],
   ],
   en: [
-    ['desk', 'Desk', ''],
-    ['charts', 'Charts', 'en/charts/'],
+    ['before', 'Pre-session', '#before'],
+    ['charts', 'In session', '#charts'],
+    ['after', 'Post-session', '#after'],
     ['lessons', 'Lessons', 'en/lessons/'],
     ['blog', 'Blog (PL)', 'blog/'],
   ],
 };
 const OG_LOCALE = { pl: 'pl_PL', en: 'en_GB' };
 const FOOTER = {
-  pl: (root, site) => `<a href="${root}">Desk HyperQuant</a> · <a href="${site.repo}">Kod na GitHubie</a> · <a href="${root}blog/feed.xml">RSS</a>`,
-  en: (root, site) => `<a href="${root}">HyperQuant Desk</a> · <a href="${site.repo}">Code on GitHub</a> · <a href="${root}blog/feed.xml">Blog RSS (PL)</a>`,
+  pl: (root, site) =>
+    `<a href="${root}">Desk HyperQuant</a> · <a href="${root}wykresy/">Wykresy</a> · <a href="${site.repo}">Kod na GitHubie</a> · <a href="${root}blog/feed.xml">RSS</a>`,
+  en: (root, site) =>
+    `<a href="${root}">HyperQuant Desk</a> · <a href="${root}en/charts/">Charts</a> · <a href="${site.repo}">Code on GitHub</a> · <a href="${root}blog/feed.xml">Blog RSS (PL)</a>`,
 };
 const BLOG_DISCLAIMER = 'Prawdopodobieństwa i scenariusze, nie porada inwestycyjna ani sygnał do transakcji. Handel kontraktami z dźwignią wiąże się z wysokim ryzykiem utraty środków.';
 

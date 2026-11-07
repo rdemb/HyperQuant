@@ -136,8 +136,8 @@ export const MacroCalendar: React.FC = () => {
       )}
       <p className="px-4 py-2.5 border-t border-line text-[11px] text-ink-3 leading-relaxed">
         {tr(
-          'σ² × m — założony mnożnik wariancji okna zawierającego publikację (prior do kalibracji; Kroner 2025, Benigno & Rosa 2023, Corbet i in. 2020). Analizator planu poszerza nim zakres zmienności, gdy horyzont planu obejmuje zdarzenie. Czas lokalny: ',
-          'σ² × m: the assumed variance multiplier of a window containing a release (prior to be calibrated; Kroner 2025, Benigno & Rosa 2023, Corbet et al. 2020). The Plan Analyzer widens the volatility range with it when the plan horizon covers the event. Local time: '
+          'σ² × m — założony mnożnik wariancji okna zawierającego publikację (prior do kalibracji; Kroner 2025, Benigno & Rosa 2023, Corbet i in. 2020). Czas lokalny: ',
+          'σ² × m: the assumed variance multiplier of a window containing a release (prior to be calibrated; Kroner 2025, Benigno & Rosa 2023, Corbet et al. 2020). Local time: '
         )}
         {tz}.
       </p>

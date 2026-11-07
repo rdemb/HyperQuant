@@ -4,17 +4,17 @@ import { computeAggrLiquidationHeatmap, computeShaakuniIndicator } from '../util
 import { computeOrderFlowImbalanceHeatmap, computeQuantMathAndNeuralForecast } from '../utils/quantMathEngine';
 import { soundEngine } from '../utils/soundEngine';
 import { DeskFeed, useDeskFeed } from './useDeskFeed';
-import { PlanDraft, ViewId } from './types';
+import { followHash } from './route';
+import { ViewId } from './types';
 
-const VIEWS: ViewId[] = ['desk', 'charts', 'flow', 'plan', 'market', 'lab', 'micro', 'lessons', 'sources'];
-// Widoki z modelem zmienności (pas MC, mapa likwidacji, plan, model vs rynek, Lab) — pozostałe go nie pobierają
-const VOL_VIEWS: ViewId[] = ['desk', 'plan', 'market', 'lab'];
+// Widoki z modelem zmienności: pas MC i mapa likwidacji (Przed sesją), Po sesji (miejsce dawnego Analizatora planu),
+// model vs rynek HIP-4 (Badania) — pozostałe go nie pobierają
+const VOL_VIEWS: ViewId[] = ['before', 'after', 'research'];
 const CEX_KEY = 'hq.cexEnabled';
 
+/** Widok z adresu strony; stary adres (#desk, #plan…) zastępuje nowym (`#move=` obsłużył już originMove.ts). */
 function readHashView(): ViewId {
-  // Po „?” parametry widoku (np. link do wykresu: #charts?m=ETH&i=5m)
-  const h = typeof window !== 'undefined' ? window.location.hash.replace('#', '').split('?')[0] : '';
-  return (VIEWS as string[]).includes(h) ? (h as ViewId) : 'desk';
+  return followHash(window);
 }
 
 function readBool(key: string): boolean {
@@ -48,13 +48,17 @@ function useDeskState() {
   const [cexEnabled, setCexEnabledState] = useState<boolean>(() => readBool(CEX_KEY));
   const [audioEnabled, setAudioEnabledState] = useState<boolean>(false);
   const [shaakuniConfig, setShaakuniConfig] = useState<ShaakuniConfig>(DEFAULT_SHAAKUNI);
-  const [planDraft, setPlanDraft] = useState<PlanDraft | null>(null);
 
   const feed: DeskFeed = useDeskFeed({ cexEnabled, volModel: VOL_VIEWS.includes(view) });
 
-  // Nawigacja synchronizowana z hashem (głębokie linki, przycisk Wstecz, skróty PWA)
+  // Nawigacja synchronizowana z hashem (głębokie linki, przycisk Wstecz, skróty PWA). Przepisany stary adres
+  // (replaceState nie wysyła zdarzenia) ogłaszamy jeszcze raz, żeby inne widoki przeczytały już nowy adres.
   useEffect(() => {
-    const onHash = () => setViewState(readHashView());
+    const onHash = () => {
+      const before = window.location.hash;
+      setViewState(readHashView());
+      if (window.location.hash !== before) window.dispatchEvent(new HashChangeEvent('hashchange'));
+    };
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
@@ -76,15 +80,6 @@ function useDeskState() {
     soundEngine.setEnabled(v);
     setAudioEnabledState(v);
   }, []);
-
-  /** Przekazuje kierunek/poziomy z dowolnego panelu do Analizatora planu i przełącza widok. */
-  const prefillPlan = useCallback(
-    (draft: PlanDraft) => {
-      setPlanDraft(draft);
-      setView('plan');
-    },
-    [setView]
-  );
 
   const shaakuni = useMemo(
     () => computeShaakuniIndicator(feed.bars, shaakuniConfig, feed.timeframeSec, feed.realHtfLevels),
@@ -119,8 +114,6 @@ function useDeskState() {
     setCexEnabled,
     audioEnabled,
     setAudioEnabled,
-    planDraft,
-    prefillPlan,
   };
 }
 
@@ -138,14 +131,4 @@ export function useDesk(): DeskState {
   const v = useContext(Ctx);
   if (!v) throw new Error('useDesk musi być użyte wewnątrz <DeskProvider>');
   return v;
-}
-
-/** Adapter starych przycisków „Signal” (dir, title, reason) → szkic planu. */
-export function usePrefillFromSignal(source: string) {
-  const { prefillPlan } = useDesk();
-  return useCallback(
-    (direction: 'LONG' | 'SHORT', title?: string, reason?: string) =>
-      prefillPlan({ direction, source, note: [title, reason].filter(Boolean).join(' — ') }),
-    [prefillPlan, source]
-  );
 }
