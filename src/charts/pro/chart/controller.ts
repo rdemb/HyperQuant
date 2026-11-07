@@ -43,7 +43,7 @@ import { tpoInterval } from '../core/tpo';
 import { DAY, barEnd, barStart, fmtBarTime, fmtHm, fromDaily, visibleSpan } from '../core/time';
 import { type ChartSettings, isNarrow } from './settings';
 import { IndicatorEngine } from '../indicators/engine';
-import { HIST_DOWN, HIST_UP, IndicatorDef, IndicatorInstance, PlotDef, indicatorDef, indicatorLabel, legendColor, legendTitle, plotColor, plotShift } from '../indicators/registry';
+import { HIST_DOWN, HIST_UP, IndicatorDef, IndicatorInstance, PlotDef, indicatorDef, axisTitle, indicatorLabel, legendColor, legendTitle, plotColor, plotShift } from '../indicators/registry';
 import { CloudFill, CloudSource } from './cloudFill';
 import { ConeForecast, ConeLayer, ConeSource } from './coneLayer';
 import { Hip4Layer, Hip4Source, outcomeLevels } from './hip4Layer';
@@ -783,7 +783,7 @@ export class ProChartController {
               {
                 ...common,
                 ...this.indStyle(x, p),
-                title: p.title ?? '',
+                title: axisTitle(def, p, this.phone),
                 lineStyle: p.dashed ? LineStyle.Dashed : LineStyle.Solid,
                 lineType: x.tf ? LineType.WithSteps : LineType.Simple,
                 crosshairMarkerRadius: 3,
@@ -1392,7 +1392,7 @@ export class ProChartController {
     if (gap !== this.indGap[k][p]) {
       this.indGap[k][p] = gap;
       // Bez wartości ostatniej świecy także bez podpisu plotu (sam podpis przy osi niczego nie mówi)
-      series.applyOptions({ lastValueVisible: x.labels && !gap, ...(plot.title ? { title: gap ? '' : plot.title } : {}) });
+      series.applyOptions({ lastValueVisible: x.labels && !gap, ...(plot.title ? { title: gap ? '' : axisTitle(indicatorDef(x.id), plot, this.phone) } : {}) });
     }
   }
 
