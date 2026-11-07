@@ -9,7 +9,8 @@ export const RVOL_MIN_DAYS = 10;
 /** Najkrótszy upływ bieżącej godziny, od którego liczymy proporcję (wcześniej szum z kilku transakcji). */
 const MIN_ELAPSED_MS = 5 * 60_000;
 
-const median = (xs: number[]): number => {
+/** Mediana niepustej próby (wspólna z typową szerokością godziny w Czwórce). */
+export const median = (xs: readonly number[]): number => {
   const s = [...xs].sort((a, b) => a - b);
   const m = s.length >> 1;
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
