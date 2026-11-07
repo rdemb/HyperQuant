@@ -1,4 +1,5 @@
 import type { BlogMap, BlogMapsState } from '../../../state/useBlogMaps';
+import type { VolModelState } from '../../../state/useVolModel';
 import type { LiqMap } from '../../../utils/liqMap';
 import { mapWindow, settleRange } from '../../../utils/mapSettlement';
 import type { VolModel } from '../../../utils/volatility';
@@ -63,9 +64,17 @@ export interface InputStore {
   orders: { range(from: number, to: number): readonly { notional: number; side: Side; zero?: true }[] };
 }
 
+/** Model zmienności Desku (`feed.vol`): stan wczytania i model. */
+export interface VolInput {
+  status: VolModelState['status'];
+  model: VolModel | null;
+}
+
 /** Migawki skanera i model zmienności z wykresu (ProChart). */
 export interface InputScan {
   model: VolModel | null;
+  /** Stan wczytania modelu: `loading` na BTC — budżet zakresu czeka na HAR (bez Parkinsona w zastępstwie). */
+  volStatus: VolModelState['status'];
   liq: { status: string; map: LiqMap | null };
   whales: WhaleLayer | null;
   /** Build ma adres danych skanera. */
@@ -142,14 +151,20 @@ function expectedOf(store: InputStore, model: VolModel | null, s: TradeSession, 
   };
 }
 
+/** Model HAR rynku `coin` w drodze: liczy go tylko BTC, więc na innym rynku nie czekamy (Parkinson od razu). */
+export const volLoadingFor = (coin: string, vol: VolInput): boolean => coin === 'BTC' && !vol.model && vol.status === 'loading';
+
 /**
  * Oczekiwany zakres sesji do rozliczenia (MODEL): sesja w toku — ta sama metoda co budżet zakresu na żywo (HAR, bez modelu
  * Parkinson), oczekiwanie na teraz; zamknięta — zawsze ex ante: Parkinson ze świec 5m z doby przed jej otwarciem (model HAR
- * zna tylko dzisiejszy poziom zmienności, nie prognozę sprzed tamtej sesji). Świece 5m w drodze — undefined.
+ * zna tylko dzisiejszy poziom zmienności, nie prognozę sprzed tamtej sesji). Świece 5m albo model HAR sesji w toku (BTC)
+ * w drodze — undefined (nigdy Parkinson na chwilę przed HAR).
  */
-export function sessionExpectedOf(store: InputStore, model: VolModel | null, s: TradeSession, inProgress: boolean, price: number): Got<Expected> | undefined {
+export function sessionExpectedOf(store: InputStore, vol: VolInput, s: TradeSession, inProgress: boolean, price: number): Got<Expected> | undefined {
   const now = store.serverNow();
-  return inProgress ? expectedOf(store, model, s, now, now, price) : expectedOf(store, null, s, now, s.start, price);
+  if (!inProgress) return expectedOf(store, null, s, now, s.start, price);
+  if (volLoadingFor(store.coin, vol)) return undefined;
+  return expectedOf(store, store.coin === 'BTC' ? vol.model : null, s, now, now, price);
 }
 
 /**
@@ -176,8 +191,9 @@ export function readInputs(id: StationId, store: InputStore, scan: InputScan, ha
   const now = store.serverNow();
   const lp = store.lastPrice();
   const x: LayoutInputs = { coin: store.coin, now, price: lp > 0 ? lp : undefined };
-  // Model zmienności Desku liczy BTC; inne rynki — Parkinson z własnych świec
+  // Model zmienności Desku liczy BTC; inne rynki — Parkinson z własnych świec. BTC z modelem w drodze czeka na HAR.
   const model = store.coin === 'BTC' ? scan.model : null;
+  const volLoading = volLoadingFor(store.coin, { status: scan.volStatus, model: scan.model });
   if (id === 'cockpit' || id === 'auction-open') {
     const c1 = seriesCandles(store, '1m', now);
     if (c1 !== undefined && !isAbsent(c1)) {
@@ -189,7 +205,8 @@ export function readInputs(id: StationId, store: InputStore, scan: InputScan, ha
       x.session = currentTradeSession(now) ? pass(c1) : sessionNowOf([], now);
     }
     const sn = x.session;
-    x.expected = sn === undefined || isAbsent(sn) ? pass(sn) : expectedOf(store, model, sn.s, now, now, lp > 0 ? lp : sn.close);
+    x.volLoading = volLoading;
+    x.expected = sn === undefined || isAbsent(sn) ? pass(sn) : volLoading ? undefined : expectedOf(store, model, sn.s, now, now, lp > 0 ? lp : sn.close);
   }
   if (id === 'cockpit' || id === 'fuel') {
     const c1h = seriesCandles(store, '1h', now);

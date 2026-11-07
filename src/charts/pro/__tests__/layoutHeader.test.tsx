@@ -12,6 +12,7 @@ const header = (id: (typeof STATIONS)[number]['id'], coin: string, narrow: boole
       question="Pytanie układu"
       store={{ coin } as ProStore}
       model={null}
+      volStatus="loading"
       liq={{ status: 'loading' } as never}
       whales={null}
       whalesConfigured={false}

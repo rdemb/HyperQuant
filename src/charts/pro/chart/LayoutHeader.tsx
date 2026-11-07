@@ -4,6 +4,7 @@ import { Badge, DASH, sourceTag } from '../../../ui';
 import { scrollFadeRef } from '../../../ui/scrollFade';
 import type { BlogMap, BlogMapsState } from '../../../state/useBlogMaps';
 import type { LiqMapState } from '../../../state/useLiqMap';
+import type { VolModelState } from '../../../state/useVolModel';
 import type { VolModel } from '../../../utils/volatility';
 import type { WhaleLayer } from '../../../utils/whaleLayer';
 import { type Branching, MIN_EVENTS } from '../core/hawkes';
@@ -43,6 +44,8 @@ export const LayoutHeader: React.FC<{
   question: string;
   store: ProStore;
   model: VolModel | null;
+  /** Stan wczytania modelu (`feed.vol.status`): na BTC w drodze budżet zakresu czeka na HAR. */
+  volStatus: VolModelState['status'];
   liq: LiqMapState;
   whales: WhaleLayer | null;
   /** Build ma adres danych skanera (bez niego warstwa wielorybów jest niedostępna, nie „nieaktualna”). */
@@ -53,14 +56,14 @@ export const LayoutHeader: React.FC<{
   narrow: boolean;
   /** Po każdym przeliczeniu: trzy liczby nagłówka (domyślny tytuł Klatki). */
   onNumbers?: (nums: LayoutNumber[]) => void;
-}> = ({ id, question, store, model, liq, whales, whalesConfigured, blogMaps, blogMap, narrow, onNumbers }) => {
+}> = ({ id, question, store, model, volStatus, liq, whales, whalesConfigured, blogMaps, blogMap, narrow, onNumbers }) => {
   const [nums, setNums] = useState<LayoutNumber[]>(() => layoutNumbers(id, { coin: store.coin, now: Date.now() }));
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const onNumbersRef = useRef(onNumbers);
   onNumbersRef.current = onNumbers;
-  const scan = useRef<InputScan>({ model, liq, whales, whalesConfigured, blog: { state: blogMaps, map: blogMap } });
-  scan.current = { model, liq, whales, whalesConfigured, blog: { state: blogMaps, map: blogMap } };
+  const scan = useRef<InputScan>({ model, volStatus, liq, whales, whalesConfigured, blog: { state: blogMaps, map: blogMap } });
+  scan.current = { model, volStatus, liq, whales, whalesConfigured, blog: { state: blogMaps, map: blogMap } };
   const runRef = useRef<() => void>(() => {});
   // Hawkes liczony w tle (Web Worker) raz na minutę okna; do nowego wyniku zostaje poprzedni tego rynku
   const hk = useRef<{ coin: string; key: string; r: Got<Branching> } | null>(null);
@@ -123,7 +126,7 @@ export const LayoutHeader: React.FC<{
   // Nowa migawka skanera, model zmienności albo mapa z bloga — od razu
   useEffect(() => {
     runRef.current();
-  }, [model, liq.status, liq.map, whales, whalesConfigured, blogMaps, blogMap]);
+  }, [model, volStatus, liq.status, liq.map, whales, whalesConfigured, blogMaps, blogMap]);
 
   // Rozwinięcie zamyka dotknięcie obok i Escape
   useEffect(() => {

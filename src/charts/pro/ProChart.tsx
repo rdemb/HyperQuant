@@ -888,6 +888,7 @@ export const ProChart: React.FC<{
           question={station.question}
           store={store}
           model={store.coin === 'BTC' ? feed.vol.model : null}
+          volStatus={feed.vol.status}
           liq={liq}
           whales={whales}
           whalesConfigured={whalePub.configured}

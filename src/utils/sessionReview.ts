@@ -27,6 +27,7 @@ import {
   METHOD,
   METHOD_NOTE,
   VA_MIGRATION_LABEL,
+  VOL_WAIT_TEXT,
   WAIT_TEXT,
   amt,
   blogMapName,
@@ -72,6 +73,8 @@ export interface ReviewInputs {
   maps: BlogMapsState;
   /** Oczekiwany zakres sesji (MODEL: HAR albo Parkinson, ta sama metoda co budżet zakresu na żywo). */
   expected: Got<Expected> | undefined;
+  /** Sesja w toku: model HAR w drodze — `expected` czeka na niego (powód „czekam na model zmienności”). */
+  volLoading?: boolean;
   liq: LiqTapeState;
   cohorts: CohortFlowState;
   ledger: DeskLedgerState;
@@ -204,18 +207,25 @@ function ibRow(x: ReviewInputs, f: Got<SessionFacts> | undefined): ReviewRow {
   };
 }
 
+/**
+ * Zakres sesji wobec oczekiwanego. Metoda na etykiecie (jak budżet w nagłówku, tu zawsze): zamknięta sesja — „ex ante ·
+ * Parkinson” (oczekiwanie sprzed jej otwarcia), w toku — nazwa metody (HAR albo Parkinson bez modelu).
+ */
 function rangeRow(x: ReviewInputs, f: Got<SessionFacts> | undefined): ReviewRow {
-  const label = tr('Zakres / oczekiwany', 'Range / expected');
-  const no = (why: string, m = tr('HAR albo Parkinson', 'HAR or Parkinson')) => absent('range', label, 'MODEL', why, { hint: `MODEL · ${m}: ${why}` });
+  const base = tr('Zakres / oczekiwany', 'Range / expected');
+  const no = (why: string, m = tr('HAR albo Parkinson', 'HAR or Parkinson'), label = base) => absent('range', label, 'MODEL', why, { hint: `MODEL · ${m}: ${why}` });
   if (!f || isAbsent(f)) return no(whyOf(f));
   const e = x.expected;
+  if (e === undefined && x.inProgress && x.volLoading) return no(VOL_WAIT_TEXT, 'HAR');
   if (e === undefined || isAbsent(e)) return no(whyOf(e));
   const m = METHOD[e.method];
-  const b = rangeBudget(f.hi, f.lo, e.usd);
-  if (!Number.isFinite(b)) return no(tr('brak zakresu sesji', 'no session range'), m);
   const closed = !x.inProgress;
   // Zamknięta sesja: oczekiwanie sprzed jej otwarcia (sessionExpectedOf liczy je Parkinsonem ze świec 5m doby przed otwarciem)
-  const note = closed && e.method === 'parkinson' ? EX_ANTE_NOTE : METHOD_NOTE[e.method];
+  const exAnte = closed && e.method === 'parkinson';
+  const label = `${base} · ${exAnte ? `ex ante · ${m}` : m}`;
+  const b = rangeBudget(f.hi, f.lo, e.usd);
+  if (!Number.isFinite(b)) return no(tr('brak zakresu sesji', 'no session range'), m, label);
+  const note = exAnte ? EX_ANTE_NOTE : METHOD_NOTE[e.method];
   return {
     id: 'range',
     key: 'range',

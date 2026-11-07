@@ -21,6 +21,12 @@ export const isAbsent = (v: unknown): v is Absent => typeof v === 'object' && v 
 /** Oczekiwany zakres sesji (MODEL) i metoda. */
 export type Expected = { usd: number; method: 'har' | 'parkinson' };
 
+/**
+ * Model HAR (BTC) jeszcze się wczytuje: budżet zakresu czeka na niego („—”), zamiast pokazać na chwilę liczbę z Parkinsona
+ * i potem bez słowa przeskoczyć na HAR.
+ */
+export const VOL_WAIT_TEXT = tr('Czekam na model zmienności (HAR)…', 'Waiting for the volatility model (HAR)…');
+
 /** Nazwa metody oczekiwanego zakresu w podpowiedzi MODEL. */
 export const METHOD: Record<Expected['method'], string> = { har: 'HAR', parkinson: 'Parkinson' };
 export const METHOD_NOTE: Record<Expected['method'], string> = {
