@@ -20,6 +20,14 @@ describe('nazwa trwającej sesji (pasek „W sesji”)', () => {
     expect(sessionNameAt(at(2026, 11, 8, 0, 0))).toBe('Azja');
   });
 
+  it('tydzień rozjazdu czasu (Europa już zimowy, USA jeszcze letni): 28.10 NY od 13:30 UTC (09:30 EDT)', () => {
+    expect(sessionNameAt(at(2026, 10, 28, 7, 59))).toBe('Azja');
+    expect(sessionNameAt(at(2026, 10, 28, 8, 0))).toBe('Londyn');
+    expect(sessionNameAt(at(2026, 10, 28, 13, 29))).toBe('Londyn');
+    expect(sessionNameAt(at(2026, 10, 28, 13, 30))).toBe('Nowy Jork');
+    expect(currentTradeSession(at(2026, 10, 28, 13, 30))?.id).toBe('ny');
+  });
+
   it('latem Londyn od 07:00 UTC (BST)', () => {
     expect(sessionNameAt(at(2026, 7, 7, 6, 59))).toBe('Azja');
     expect(sessionNameAt(at(2026, 7, 7, 7, 0))).toBe('Londyn');

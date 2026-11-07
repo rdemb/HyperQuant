@@ -359,8 +359,8 @@ export const AlertsMenu: React.FC<{ coin: string; price: number; draft: AlertDra
         </div>
         <p className="text-[11px] leading-snug text-ink-3">
           {tr(
-            'Alarm jest jednorazowy, a warunek sprawdza każda transakcja. Działa, gdy strona jest otwarta, także w tle i w innych widokach (Przed sesją, Po sesji, Badania): dźwięk, powiadomienie i 🔔 w tytule karty.',
-            'Each alert fires once, and every trade checks its condition. It works while the page is open, also in the background and in other views (Pre-session, Post-session, Research): sound, notification and 🔔 in the tab title.'
+            'Alarm jest jednorazowy, a warunek sprawdza każda transakcja. Działa, gdy strona jest otwarta, także w tle i w innych widokach aplikacji: dźwięk, powiadomienie i 🔔 w tytule karty.',
+            'Each alert fires once, and every trade checks its condition. It works while the page is open, also in the background and in other views of the app: sound, notification and 🔔 in the tab title.'
           )}
         </p>
         {push !== 'unsupported' ? (
