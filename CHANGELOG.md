@@ -4,6 +4,17 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Etap 1c: numery kont dobowe w historii taśmy (2026-11-07)
+
+#### Zmienione
+- **Skaner numeruje konta i zlecenia w obrębie doby UTC** (`backend/scanner/history.ts`): numer biorcy, makera i zlecenia jest ważny przez całą dobę UTC, nie przez jedną godzinę. O północy UTC numeracja zaczyna się od 0, a mapy poprzedniej doby znikają z pamięci. Po restarcie w trakcie doby numeracja kontynuuje od maksimum z plików tej doby. Adresów i hashy w plikach nadal nie ma. Pliki mają pole `idScope: 'day'`. Plik scalony z plikiem starego rejestratora, plik bez pola i plik z nieznaną wartością są traktowane jako godzinowe (`'hour'`).
+- **Powracający biorcy przez pełne godziny** (`src/charts/pro/indicators/registry.ts`, `store/serverHistory.ts`, `replay/data.ts`): na plikach z numeracją dobową okno przed świecą może przekraczać pełną godzinę w obrębie doby UTC. Na starszych plikach zostaje „—” przez godzinę, jak dotąd. Konta łączą się tylko w jednym zakresie numeracji. Okno przez północ UTC albo przez granicę historii i strumienia na żywo nie ma wartości, a nie zaniżoną liczbę powrotów.
+- Teksty o zakresie numeracji (legendy wskaźników, Kto handluje, Źródła) opisują oba rodzaje plików.
+
+#### Naprawione
+- Na świeżym klonie repo historii (nowy serwer, wyczyszczony stan) rejestratory startują dopiero po odtworzeniu plików z gałęzi `history`. Wcześniej numeracja mogła zacząć od 0 i powtórzyć numery innych kont. Przy niedostępnym repo ponawia co 30 s, a reszta skanera działa od razu.
+- Spóźniona transakcja dla zapisanej już części nie zużywa numeru.
+
 ### Etap 1b: nowe elementy dnia tradera (2026-11-07)
 
 #### Dodane
