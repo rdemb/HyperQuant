@@ -36,7 +36,12 @@ export function useVolModel(enabled = true): VolModelState {
         setState((s) => (s.model === m ? s : { status: 'ready', model: m }));
         return;
       }
-      if (!inflight) inflight = afterFirstSync().then(() => loadVolModel()).finally(() => (inflight = null));
+      // Odrzucone wczytanie to brak modelu (status error), nie wieczne „loading” — budżet zakresu czeka tylko na wczytywanie
+      if (!inflight)
+        inflight = afterFirstSync()
+          .then(() => loadVolModel())
+          .catch(() => null)
+          .finally(() => (inflight = null));
       inflight.then((m) => {
         if (m) cache = { model: m, at: Date.now() };
         if (!alive) return;
