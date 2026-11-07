@@ -790,7 +790,7 @@ export class ProChartController {
     return p.hist ? (sign < 0 ? HIST_DOWN : HIST_UP) : (p.color ?? x.color);
   }
 
-  /** Liczby wskaźnika: cena (tick rynku), odległość ceny (ATR: o miejsce dokładniej niż tick), dwa lub trzy miejsca (RSI, CMF) albo wolumen (OBV). */
+  /** Liczby wskaźnika: cena (tick rynku), odległość ceny (ATR: o miejsce dokładniej niż tick), dwa lub trzy miejsca (RSI, MACD) albo wolumen (np. delta). */
   private indFormat(format: IndicatorDef['format']): (v: number) => string {
     if (format === 'price') return fmtPx;
     if (format === 'fixed1') return (v) => fmtPrice(v, 1);

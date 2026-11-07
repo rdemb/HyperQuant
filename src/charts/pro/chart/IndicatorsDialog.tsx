@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Copy, Eye, EyeOff, Plus, Search, Settings, Star, Trash2, X } from 'lucide-react';
 import type { ChartSettings } from './settings';
-import { GROUPS, INDICATORS, IndicatorInstance, MAX_INDICATORS, addIndicator, copyIndicator, indicatorDef, indicatorLabel } from '../indicators/registry';
+import { INDICATORS, IndicatorInstance, IndicatorTier, MAX_INDICATORS, addIndicator, copyIndicator, indicatorDef, indicatorLabel, menuEntries } from '../indicators/registry';
 import { tr } from '../../../i18n';
 
 /**
@@ -31,6 +31,8 @@ export type IndicatorsSection = 'fav' | 'chart' | 'flow' | 'classic' | 'hl' | 'p
 interface Entry {
   key: string;
   section: 'flow' | 'classic' | 'hl' | 'panes';
+  /** Warstwa menu wskaźnika (przełączniki warstw i paneli jej nie mają). */
+  tier?: IndicatorTier;
   label: string;
   hint: string;
   badge?: string;
@@ -69,11 +71,11 @@ const norm = (t: string) =>
     .replace(/ł/g, 'l');
 
 const SECTION_NAME: Record<IndicatorsSection, string> = {
+  hl: tr('Tylko w HyperQuant', 'HyperQuant only'),
   fav: tr('Ulubione', 'Favourites'),
   chart: tr('Na wykresie', 'On the chart'),
   flow: 'Orderflow',
   classic: tr('Klasyczne', 'Classic'),
-  hl: tr('Tylko w HyperQuant', 'HyperQuant only'),
   panes: tr('Pod wykresem', 'Below the chart'),
 };
 
@@ -96,6 +98,8 @@ export const IndicatorsDialog: React.FC<{
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
   const [favs, setFavs] = useState(loadFavs);
+  // „Klasyczne” zaczynają zwinięte
+  const [classicOpen, setClassicOpen] = useState(false);
   const list = s.indicators;
   const full = list.length >= MAX_INDICATORS;
   const setList = (indicators: IndicatorInstance[]) => onChange({ indicators });
@@ -117,7 +121,8 @@ export const IndicatorsDialog: React.FC<{
       ...INDICATORS.map(
         (d): Entry => ({
           key: d.id,
-          section: d.group === 'hyperquant' ? 'hl' : 'classic',
+          section: d.tier === 'front' || d.tier === 'second' ? 'hl' : 'classic',
+          tier: d.tier,
           label: d.name,
           hint: d.hint,
           // Długi skrót (Supertrend, Stoch RSI) nie mieści się w kolumnie skrótów; jest też w nazwie
@@ -140,7 +145,10 @@ export const IndicatorsDialog: React.FC<{
       return [...hits.filter(head), ...hits.filter((e) => !head(e))];
     }
     if (section === 'fav') return favs.map((k) => entries.find((e) => e.key === k)).filter((e): e is Entry => e !== undefined);
-    if (section === 'flow' || section === 'classic' || section === 'hl') return entries.filter((e) => e.section === section);
+    // Warstwa `search` jest tylko w wynikach wyszukiwania
+    if (section === 'flow') return entries.filter((e) => e.section === section);
+    if (section === 'classic') return entries.filter((e) => e.tier === 'classic');
+    if (section === 'hl') return [...menuEntries('front'), ...menuEntries('second')].map((d) => entries.find((e) => e.key === d.id)).filter((e): e is Entry => e !== undefined);
     return [];
   }, [q, entries, section, favs]);
   const at = Math.min(active, shown.length - 1);
@@ -200,6 +208,7 @@ export const IndicatorsDialog: React.FC<{
   };
 
   const ownShown = list.filter((x) => x.visible && indicatorDef(x.id).pane === 'own').length;
+  const frontN = menuEntries('front').length;
   const flowAll = layers.every((i) => s[i.key]);
   const counts: Partial<Record<IndicatorsSection, number>> = {
     fav: favs.length,
@@ -288,16 +297,21 @@ export const IndicatorsDialog: React.FC<{
             </p>
           ) : section === 'classic' ? (
             <>
-              {GROUPS.map((g) => (
-                <div key={g.id} className="mb-1.5">
-                  <div className="px-2 pt-1 pb-0.5 text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium">{g.name}</div>
-                  <ul className="flex flex-col gap-0.5">{shown.map((e, i) => (indicatorDef(e.key as IndicatorInstance['id']).group === g.id ? row(e, i) : null))}</ul>
-                </div>
-              ))}
+              <button
+                type="button"
+                aria-expanded={classicOpen}
+                onClick={() => setClassicOpen(!classicOpen)}
+                className="w-full flex items-center gap-1.5 px-2 h-8 rounded-md text-left text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium hover:text-ink-1 hover:bg-surface-3/60"
+              >
+                <span aria-hidden="true">{classicOpen ? '▾' : '▸'}</span>
+                {SECTION_NAME.classic}
+                <span className="font-mono text-[10px]">{shown.length}</span>
+              </button>
+              {classicOpen && <ul className="flex flex-col gap-0.5">{shown.map(row)}</ul>}
               <p className="px-2 pt-1 text-[11px] leading-snug text-ink-3">
                 {tr(
-                  'Wzory i wartości domyślne jak we wbudowanych wskaźnikach TradingView, liczone ze świec Hyperliquid. Wskaźnik opisuje ostatnie świece, nie przewiduje następnych.',
-                  "Formulas and defaults as in TradingView's built-in indicators, computed from Hyperliquid candles. An indicator describes recent candles; it does not predict the next ones."
+                  'Wzory i wartości domyślne jak we wbudowanych wskaźnikach TradingView, liczone ze świec Hyperliquid. Wskaźnik opisuje ostatnie świece, nie przewiduje następnych. Pozostałych klasycznych (RSI, MACD i inne) szukaj w wyszukiwarce.',
+                  "Formulas and defaults as in TradingView's built-in indicators, computed from Hyperliquid candles. An indicator describes recent candles; it does not predict the next ones. Find the other classic ones (RSI, MACD and more) with search."
                 )}
               </p>
             </>
@@ -314,7 +328,15 @@ export const IndicatorsDialog: React.FC<{
                   </button>
                 </div>
               )}
-              <ul className="flex flex-col gap-0.5">{shown.map(row)}</ul>
+              {section === 'hl' ? (
+                <>
+                  <ul className="flex flex-col gap-0.5">{shown.slice(0, frontN).map(row)}</ul>
+                  <div className="px-2 pt-2 pb-0.5 text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium">{tr('Więcej z HyperQuant', 'More from HyperQuant')}</div>
+                  <ul className="flex flex-col gap-0.5">{shown.slice(frontN).map((e, i) => row(e, frontN + i))}</ul>
+                </>
+              ) : (
+                <ul className="flex flex-col gap-0.5">{shown.map(row)}</ul>
+              )}
               {section === 'hl' && (
                 <p className="px-2 pt-1 text-[11px] leading-snug text-ink-3">
                   {tr(
