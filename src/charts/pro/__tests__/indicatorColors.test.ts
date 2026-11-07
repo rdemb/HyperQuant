@@ -10,6 +10,7 @@ import {
   type PlotDef,
   indicatorDef,
   legendColor,
+  legendTitle,
   plotColor,
   usesInstanceColor,
 } from '../indicators/registry';
@@ -104,6 +105,9 @@ describe('kolory serii wskaźników', () => {
     const [buy, sell] = indicatorDef('twap').plots;
     expect(legendColor(twap, buy, 12)).toBe(PRO.buyInk);
     expect(legendColor(twap, sell, -7)).toBe(PRO.sellInk);
+    // Bez wartości (—) bez koloru znaku: „sprzedaż % —” nie może świecić kolorem kupna
+    expect(legendColor(twap, sell, Number.NaN)).toBe(PRO.ink2);
+    expect(legendColor(twap, buy, Number.NaN)).toBe(PRO.ink2);
   });
 
   it('Szerokość agresji w układzie Aukcja: kupujący i sprzedający w różnych kolorach stron, wyścig neutralny (zgłoszenie 7.11)', () => {
@@ -149,5 +153,13 @@ describe('kolory serii wskaźników', () => {
     expect(usesInstanceColor(indicatorDef('hawkes'))).toBe(true);
     // Wszystkie linie w stałych kolorach albo same słupki w kolorach znaku
     for (const id of ['breadth', 'makers', 'supertrend', 'twap', 'oiflow'] as const) expect(usesInstanceColor(indicatorDef(id)), id).toBe(false);
+  });
+
+  it('podpis wartości w legendzie bez powtórzenia nazwy wskaźnika („RVOL RVOL —”)', () => {
+    const rvol = indicatorDef('rvol');
+    expect(legendTitle(rvol, rvol.plots[0])).toBe('');
+    const breadth = indicatorDef('breadth');
+    expect(legendTitle(breadth, breadth.plots[0])).toBe('kupujący');
+    for (const def of INDICATORS) for (const p of def.plots) expect(legendTitle(def, p), def.id).not.toBe(def.short);
   });
 });
