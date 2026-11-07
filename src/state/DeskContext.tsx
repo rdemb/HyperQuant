@@ -6,10 +6,8 @@ import { soundEngine } from '../utils/soundEngine';
 import { DeskFeed, useDeskFeed } from './useDeskFeed';
 import { followHash } from './route';
 import { ViewId } from './types';
+import { needsVolModel } from './viewNeeds';
 
-// Widoki z modelem zmienności: pas MC i mapa likwidacji (Przed sesją), Po sesji (miejsce dawnego Analizatora planu),
-// model vs rynek HIP-4 (Badania) — pozostałe go nie pobierają
-const VOL_VIEWS: ViewId[] = ['before', 'after', 'research'];
 const CEX_KEY = 'hq.cexEnabled';
 
 /** Widok z adresu strony; stary adres (#desk, #plan…) zastępuje nowym (`#move=` obsłużył już originMove.ts). */
@@ -49,7 +47,7 @@ function useDeskState() {
   const [audioEnabled, setAudioEnabledState] = useState<boolean>(false);
   const [shaakuniConfig, setShaakuniConfig] = useState<ShaakuniConfig>(DEFAULT_SHAAKUNI);
 
-  const feed: DeskFeed = useDeskFeed({ cexEnabled, volModel: VOL_VIEWS.includes(view) });
+  const feed: DeskFeed = useDeskFeed({ cexEnabled, volModel: needsVolModel(view) });
 
   // Nawigacja synchronizowana z hashem (głębokie linki, przycisk Wstecz, skróty PWA). Przepisany stary adres
   // (replaceState nie wysyła zdarzenia) ogłaszamy jeszcze raz, żeby inne widoki przeczytały już nowy adres.

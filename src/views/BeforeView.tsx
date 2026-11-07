@@ -1,5 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import type { PhaseId } from '../charts/pro/chart/stations';
+import { ConnectingState } from '../shell/ConnectingState';
+import { useDesk } from '../state/DeskContext';
 import ChartsView from './ChartsView';
 import { AuctionContextPanel } from './before/AuctionContextPanel';
 import { LiquidityByHourPanel } from './before/LiquidityByHourPanel';
@@ -18,7 +20,7 @@ import { NewsFeed } from './market/NewsFeed';
 const BeforeView: React.FC<{ onPhase?: (phase: PhaseId) => void }> = ({ onPhase }) => (
   <div className="flex flex-col gap-4">
     <ChartsView phase="before" onPhase={onPhase} />
-    <DeskRail />
+    <ContextRail />
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 [&>*]:min-w-0">
       <MacroCalendar />
       <FundingVenues />
@@ -30,4 +32,16 @@ const BeforeView: React.FC<{ onPhase?: (phase: PhaseId) => void }> = ({ onPhase 
     </div>
   </div>
 );
+
+/**
+ * Pas kontekstu dopiero po pierwszych świecach desku: wcześniej jego metryki (OU, VPIN, głębokość) liczyłyby się z pustych
+ * danych, więc w jego miejscu krótki stan „łączenie” z ponowieniem (wykres i panele obok mają własne dane).
+ */
+const ContextRail: React.FC = () => {
+  const { feed } = useDesk();
+  const [startedAt] = useState(() => Date.now());
+  if (feed.bars.length > 0) return <DeskRail />;
+  return <ConnectingState compact onRetry={feed.syncNow} startedAt={startedAt} now={feed.nowTick} />;
+};
+
 export default BeforeView;

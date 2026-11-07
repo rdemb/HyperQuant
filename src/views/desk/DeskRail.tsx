@@ -40,7 +40,7 @@ export const DeskRail: React.FC = () => {
     return c === null ? null : `${tr('skal.', 'cal.')} ${Math.round(c * 100)}%`;
   };
 
-  // Kontekst aukcji sesji UTC (ten sam stan co panel w widoku Plan — jedno pobieranie)
+  // Kontekst aukcji sesji UTC (ten sam stan co panel „Kontekst aukcji” Przed sesją — jedno pobieranie)
   const auction = useAuctionContext();
   const auctionStale = auction.asOf !== null && Date.now() - auction.asOf > 3 * 60_000;
   const vw = auction.vwap;
