@@ -96,12 +96,12 @@ const METHOD_HINT: Record<ModelKey, string> = {
   ),
   rvol: tr('MODEL · mediana 20 dni: wolumen wobec mediany tej samej godziny UTC z 20 dni', 'MODEL · 20-day median: volume against the median of the same UTC hour over 20 days'),
   cone: tr(
-    'MODEL · HAR: przedziały z modelu zmienności log-HAR z FHS, prognozy z dziennika Desku',
-    'MODEL · HAR: intervals from the log-HAR volatility model with FHS, forecasts from the Desk ledger'
+    'MODEL · HAR: przedziały z modelu zmienności log-HAR z FHS, prognozy z dziennika desku (Po sesji)',
+    'MODEL · HAR: intervals from the log-HAR volatility model with FHS, forecasts from the desk ledger (Post-session)'
   ),
   outcomes: tr(
-    'MODEL · HAR: prawdopodobieństwo z modelu zmienności Desku (log-HAR z FHS) obok ceny udziału na rynku HIP-4',
-    'MODEL · HAR: the probability from the Desk volatility model (log-HAR with FHS) next to the share price on the HIP-4 market'
+    'MODEL · HAR: prawdopodobieństwo z modelu zmienności desku (log-HAR z FHS) obok ceny udziału na rynku HIP-4',
+    'MODEL · HAR: the probability from the desk volatility model (log-HAR with FHS) next to the share price on the HIP-4 market'
   ),
   regime: tr('MODEL · BOCPD: bayesowskie wykrywanie punktów zmiany na zwrotach świec', 'MODEL · BOCPD: Bayesian change-point detection on candle returns'),
   hawkes: tr('MODEL · Hawkes: proces z jądrem wykładniczym dopasowany metodą największej wiarygodności', 'MODEL · Hawkes: a process with an exponential kernel fitted by maximum likelihood'),
@@ -161,7 +161,7 @@ export function blogMapScan(st: BlogMapsState, picked: Pick<BlogMap, 'publishedA
 
 /** Warstwy z migawek skanera (plik z `asOf`): po 2 min wiek zamiast LIVE. */
 const SCANNER = new Set(['showLiq', 'showWhales']);
-/** Dane tylko dla BTC: mapa likwidacji skanera, dziennik prognoz Desku (stożek), rynki HIP-4 na BTC, mapy bloga o BTC. */
+/** Dane tylko dla BTC: mapa likwidacji skanera, dziennik prognoz desku (stożek), rynki HIP-4 na BTC, mapy bloga o BTC. */
 const BTC_ONLY = new Set(['showLiq', 'cone', 'outcomes', 'showBlogMap']);
 /** Migawka skanera świeża do tylu ms. */
 export const SCANNER_FRESH_MS = 2 * 60_000;

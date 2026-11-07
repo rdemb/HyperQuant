@@ -9,7 +9,7 @@ import { startPushSync } from './pushAlerts';
 /**
  * Pilnowanie alarmów na stronie: każda wiadomość z transakcjami rynku z alarmem przechodzi przez silnik reguł.
  * Zdarzenia sieci, a nie zegar, więc karta w tle sprawdza tak samo szybko (przeglądarki zwalniają zegary kart w tle
- * nawet do raz na minutę). Działa od pierwszego otwarcia Wykresów do zamknięcia strony, także w innych zakładkach desku.
+ * nawet do raz na minutę). Działa od pierwszego otwarcia W sesji do zamknięcia strony, także w innych widokach (Przed sesją, Po sesji, Badania).
  */
 
 const engine = new AlertEngine();

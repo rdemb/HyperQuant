@@ -173,7 +173,7 @@ export const RowView: React.FC<{ row: ReviewRow; replay: string | null }> = ({ r
         {replay && (
           <a
             href={replay}
-            title={tr(`Powtórka na Wykresach od ${fmtHm(row.replayAt!)}`, `Replay on Charts from ${fmtHm(row.replayAt!)}`)}
+            title={tr(`Powtórka na wykresie W sesji od ${fmtHm(row.replayAt!)}`, `Replay on the In session chart from ${fmtHm(row.replayAt!)}`)}
             aria-label={tr(`Powtórka: ${row.label}, ${fmtHm(row.replayAt!)}`, `Replay: ${row.label}, ${fmtHm(row.replayAt!)}`)}
             className="shrink-0 inline-flex items-center justify-center w-11 h-11 sm:w-8 sm:h-8 rounded-md border border-line text-ink-3 hover:text-ink-1 hover:bg-surface-2 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           >

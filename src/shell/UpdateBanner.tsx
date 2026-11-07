@@ -26,7 +26,7 @@ export const UpdateBanner: React.FC = () => {
           <RefreshCw className="w-4 h-4 text-accent shrink-0" aria-hidden="true" />
           <div className="min-w-0 flex-1">
             <div className="text-sm font-medium text-ink-1">{tr('Dostępna nowa wersja', 'New version available')}</div>
-            <div className="text-xs text-ink-3">{tr('Odśwież, aby wczytać aktualizację desku.', 'Reload to load the Desk update.')}</div>
+            <div className="text-xs text-ink-3">{tr('Odśwież, aby wczytać aktualizację desku.', 'Reload to load the desk update.')}</div>
           </div>
           <button
             type="button"

@@ -474,7 +474,7 @@ export const ProChart: React.FC<{
     ctrlRef.current?.setWhales(whales?.markets[store.coin] ?? null);
   }, [whales, store]);
 
-  // Klastry likwidacji tylko z aktualnej mapy skanera (jak w Desku: nieaktualna mapa nie jest pokazywana); skaner mapuje BTC
+  // Klastry likwidacji tylko z aktualnej mapy skanera (jak w Przed sesją: nieaktualna mapa nie jest pokazywana); skaner mapuje BTC
   useEffect(() => {
     const fresh = liq.map && (liq.status === 'ready' || liq.status === 'delayed') && store.coin === 'BTC' && !store.replay;
     ctrlRef.current?.setLiqLevels(fresh ? liqLevels(liq.map!) : []);
