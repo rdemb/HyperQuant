@@ -101,6 +101,13 @@
 .hq-flash-up { animation: hq-flash-up 160ms var(--ease-out-quint); }
 .hq-flash-down { animation: hq-flash-down 160ms var(--ease-out-quint); }
 
+/* Szuflada DOM i taśmy (W sesji, 640–1279 px): wjeżdża nad wykres z prawej */
+@keyframes hq-drawer-in {
+  from { transform: translateX(100%); }
+  to { transform: none; }
+}
+.hq-drawer-in { animation: hq-drawer-in 200ms var(--ease-out-quint); }
+
 /* Schrödi: oddech kota (we śnie wolniejszy) i unoszące się „z” */
 @keyframes hq-cat-breathe {
   0%, 100% { transform: scale(1); }

@@ -48,7 +48,8 @@ import { parseReplayLink, replayHash } from '../charts/pro/replay/link';
 import { ReplayView } from '../charts/pro/replay/ReplayView';
 import { tr } from '../i18n';
 import { FlowColumn } from './flow/FlowColumn';
-import { DOCK_MIN_W, DOCK_W, dockAllowed, loadDock, saveDock, shortcutTarget } from './flow/flowColumnModel';
+import { DOCK_MIN_W, DOCK_W, DRAWER_MIN_W, dockMode, loadDock, saveDock, shortcutTarget } from './flow/flowColumnModel';
+import { takeFlowAsk } from '../state/route';
 
 const WIDE = '(min-width: 1024px)';
 
@@ -60,13 +61,16 @@ const subscribeWide = (fn: () => void) => {
 
 const isWide = () => window.matchMedia(WIDE).matches;
 
-const DOCK_QUERY = `(min-width: ${DOCK_MIN_W}px)`;
+// Kolumna DOM i taśmy: przypięta od 1280 px, szuflada od 640 px (granice z `dockMode`)
+const DOCK_QUERIES = [`(min-width: ${DOCK_MIN_W}px)`, `(min-width: ${DRAWER_MIN_W}px)`];
 const subscribeDock = (fn: () => void) => {
-  const mq = window.matchMedia(DOCK_QUERY);
-  mq.addEventListener('change', fn);
-  return () => mq.removeEventListener('change', fn);
+  const mqs = DOCK_QUERIES.map((q) => window.matchMedia(q));
+  for (const mq of mqs) mq.addEventListener('change', fn);
+  return () => {
+    for (const mq of mqs) mq.removeEventListener('change', fn);
+  };
 };
-const isDockWide = () => dockAllowed(window.innerWidth);
+const dockModeNow = () => dockMode(window.innerWidth);
 
 /** Karty na start: aktywna karta fazy `phase` (ostatnio wybrana w tej fazie albo jej pierwszy układ). */
 function initialTabs(phase: PhaseId): TabsState {
@@ -113,7 +117,8 @@ export interface ChartsViewProps {
  * albo 4 wykresów, a każdy wykres własny interwał, wskaźniki i warstwy. Przełączenie karty przenosi rynek i chwilę widoku
  * (wykres przewinięty w historię otwiera się w nowej karcie w tym samym miejscu). Alt+1…6 otwiera układ (także innej
  * fazy), Alt+7…9 karty własne, Alt+↑/↓ kartę fazy z wyższym albo niższym interwałem. W sesji od 1280 px obok wykresu
- * stoi kolumna DOM i taśmy (klawisz D chowa i pokazuje). Link powtórki (#charts?replay=…) pokazuje nagranie z serwera.
+ * stoi kolumna DOM i taśmy, a od 640 px ta sama kolumna jest szufladą nad wykresem (klawisz D chowa i pokazuje, Esc
+ * zamyka szufladę). Link powtórki (#charts?replay=…) pokazuje nagranie z serwera.
  */
 const ChartsView: React.FC<ChartsViewProps> = ({ phase, onPhase, onMarket }) => {
   // Migracja kart sprzed układów faz przed pierwszym odczytem kart; pasek przywrócenia dawnego Startu raz
@@ -144,8 +149,16 @@ const ChartsView: React.FC<ChartsViewProps> = ({ phase, onPhase, onMarket }) => 
   const wide = useSyncExternalStore(subscribeWide, isWide);
   const narrow = useSyncExternalStore(subscribeNarrow, isNarrow);
   const [replay, setReplay] = useState(() => parseReplayLink(window.location.hash));
+  // Szuflada DOM i taśmy (640–1279 px): zamknięta na start, bez zapisu; dawny adres #flow ją otwiera. Prośbę z adresu
+  // odbierają tylko Wykresy W sesji (Wykresy znikającego ekranu Przed sesją jej nie zabierają)
+  const [drawer, setDrawer] = useState(() => phase === 'session' && takeFlowAsk());
+  const phaseRef = useRef(phase);
+  phaseRef.current = phase;
   useEffect(() => {
-    const onHash = () => setReplay(parseReplayLink(window.location.hash));
+    const onHash = () => {
+      setReplay(parseReplayLink(window.location.hash));
+      if (phaseRef.current === 'session' && takeFlowAsk()) setDrawer(true);
+    };
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
@@ -183,14 +196,33 @@ const ChartsView: React.FC<ChartsViewProps> = ({ phase, onPhase, onMarket }) => 
   /** Podpis karty: interwały jej wykresów widocznych na tym ekranie (aktywna — bieżący układ). */
   const tf = (t: ChartTab) => tfLabel(tabIntervals(t, wide ? (t.id === tab.id ? layout : tabLayout(t)) : 1, narrow));
 
-  // Prawa kolumna DOM i taśmy: w sesji, od 1280 px, dopóki użytkownik jej nie schowa (klawisz D, zapis)
+  // Prawa kolumna DOM i taśmy w sesji: od 1280 px obok wykresu, dopóki użytkownik jej nie schowa (klawisz D, zapis);
+  // od 640 px szuflada nad wykresem (przycisk, D, Esc w szufladzie); na telefonie pasek Pulse z SessionView
   const [dock, setDock] = useState(loadDock);
-  const dockWide = useSyncExternalStore(subscribeDock, isDockWide);
-  const dockable = shown === 'session' && dockWide && !narrow;
-  const docked = dockable && dock;
+  const mode = useSyncExternalStore(subscribeDock, dockModeNow);
+  const dockable = shown === 'session' && !narrow && mode !== 'none';
+  const docked = dockable && mode === 'docked' && dock;
+  const drawerOpen = dockable && mode === 'drawer' && drawer;
+  const columnOn = mode === 'docked' ? dock : drawer;
+  const dockBtnRef = useRef<HTMLButtonElement>(null);
+  const drawerRef = useRef<HTMLElement>(null);
+  // Otwarta szuflada dostaje fokus (Esc ją zamyka); zamknięcie z fokusem w szufladzie oddaje go przyciskowi
+  useEffect(() => {
+    if (drawerOpen) drawerRef.current?.focus({ preventScroll: true });
+  }, [drawerOpen]);
+  const shutDrawer = () => {
+    if (drawerRef.current?.contains(document.activeElement)) dockBtnRef.current?.focus();
+    setDrawer(false);
+  };
   const toggleDock = () => {
+    if (mode === 'drawer') return drawer ? shutDrawer() : setDrawer(true);
     setDock(!dock);
     saveDock(!dock);
+  };
+  const escDrawer = (e: React.KeyboardEvent) => {
+    if (e.key !== 'Escape') return;
+    e.stopPropagation();
+    shutDrawer();
   };
   useEffect(() => {
     onMarket?.(first.coin);
@@ -320,7 +352,7 @@ const ChartsView: React.FC<ChartsViewProps> = ({ phase, onPhase, onMarket }) => 
   };
 
   // Alt+1…6: układ w kolejności faz (widok przechodzi do jego fazy), Alt+7…9: karty własne w kolejności paska;
-  // Alt+↑/↓: karta fazy z wyższym / niższym interwałem głównego wykresu; D: kolumna DOM i taśmy (w sesji, od 1280 px)
+  // Alt+↑/↓: karta fazy z wyższym / niższym interwałem głównego wykresu; D: kolumna DOM i taśmy (w sesji, od 640 px)
   const keyRef = useRef<(e: KeyboardEvent) => void>(() => {});
   keyRef.current = (e) => {
     if (e.ctrlKey || e.metaKey || isTyping(e.target) || replay) return;
@@ -393,14 +425,15 @@ const ChartsView: React.FC<ChartsViewProps> = ({ phase, onPhase, onMarket }) => 
           <div className="ml-auto shrink-0 flex items-center gap-2">
             {dockable && (
               <button
+                ref={dockBtnRef}
                 type="button"
                 onClick={toggleDock}
-                aria-pressed={dock}
-                aria-label={dock ? tr('Schowaj kolumnę DOM i taśmy (D)', 'Hide the DOM and tape column (D)') : tr('Pokaż kolumnę DOM i taśmy (D)', 'Show the DOM and tape column (D)')}
-                title={dock ? tr('Schowaj kolumnę DOM i taśmy (D)', 'Hide the DOM and tape column (D)') : tr('Pokaż kolumnę DOM i taśmy (D)', 'Show the DOM and tape column (D)')}
-                className={`grid place-items-center w-8 h-8 rounded-lg border transition-colors duration-150 ${dock ? 'bg-surface-3 border-line-strong text-ink-1' : 'border-line text-ink-2 hover:text-ink-1 hover:bg-surface-2'}`}
+                aria-pressed={columnOn}
+                aria-label={columnOn ? tr('Schowaj kolumnę DOM i taśmy (D)', 'Hide the DOM and tape column (D)') : tr('Pokaż kolumnę DOM i taśmy (D)', 'Show the DOM and tape column (D)')}
+                title={columnOn ? tr('Schowaj kolumnę DOM i taśmy (D)', 'Hide the DOM and tape column (D)') : tr('Pokaż kolumnę DOM i taśmy (D)', 'Show the DOM and tape column (D)')}
+                className={`grid place-items-center w-8 h-8 rounded-lg border transition-colors duration-150 ${columnOn ? 'bg-surface-3 border-line-strong text-ink-1' : 'border-line text-ink-2 hover:text-ink-1 hover:bg-surface-2'}`}
               >
-                {dock ? <PanelRightClose className="w-4 h-4" /> : <PanelRightOpen className="w-4 h-4" />}
+                {columnOn ? <PanelRightClose className="w-4 h-4" /> : <PanelRightOpen className="w-4 h-4" />}
               </button>
             )}
             {/* Karta własna nie ma wzorca do przywrócenia */}
@@ -428,8 +461,8 @@ const ChartsView: React.FC<ChartsViewProps> = ({ phase, onPhase, onMarket }) => 
           <PanelSetSwitch sets={station.panelSets ?? []} value={panelSet.id} onChange={pickPanelSet} />
         </div>
       )}
-      {/* Wiersz: wykresy i (w sesji) kolumna DOM i taśmy o wysokości wykresów */}
-      <div className={`flex gap-2 ${fs ? 'flex-1 min-h-0' : ''}`}>
+      {/* Wiersz: wykresy i (w sesji) kolumna DOM i taśmy o wysokości wykresów, obok nich albo w szufladzie nad nimi */}
+      <div className={`relative flex gap-2 ${fs ? 'flex-1 min-h-0' : ''}`}>
         {/* Ten sam kontener dla każdego układu: pierwszy panel nie tworzy się od nowa przy zmianie układu ani kolumny */}
         <div
           className={`flex-1 min-w-0 ${
@@ -471,6 +504,20 @@ const ChartsView: React.FC<ChartsViewProps> = ({ phase, onPhase, onMarket }) => 
               <FlowColumn coin={first.coin} narrow={false} variant="column" />
             </div>
           </aside>
+        )}
+        {/* Szuflada: ta sama kolumna nad prawą częścią wykresu (zewnętrzna ramka przycina wjazd z prawej) */}
+        {drawerOpen && (
+          <div className="absolute inset-y-0 right-0 z-30 overflow-hidden rounded-l-xl shadow-2xl" style={{ width: 'min(400px, 92vw)' }}>
+            <aside
+              ref={drawerRef}
+              tabIndex={-1}
+              onKeyDown={escDrawer}
+              aria-label={tr('DOM i taśma', 'DOM & tape')}
+              className="hq-drawer-in h-full p-2 bg-page border-l border-line-strong rounded-l-xl outline-none"
+            >
+              <FlowColumn coin={first.coin} narrow={false} variant="column" />
+            </aside>
+          </div>
         )}
       </div>
       {sheet && narrow && (

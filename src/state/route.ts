@@ -44,16 +44,27 @@ type RouteWin = {
   localStorage: Pick<Storage, 'setItem'>;
 };
 
+/** Adres #flow od ostatniego odczytu: Wykresy otwierają wtedy szufladę DOM i taśmy (ekran 640–1279 px). */
+let flowAsked = false;
+
+/** Jednorazowa prośba o kolumnę DOM i taśmy z adresu #flow (odczyt ją kasuje). */
+export function takeFlowAsk(): boolean {
+  const asked = flowAsked;
+  flowAsked = false;
+  return asked;
+}
+
 /**
  * Przekierowanie bieżącego adresu (przy starcie i przy hashchange): stary adres zastąpiony nowym w historii
  * (`replaceState`, bez nowego wpisu dla Wstecz), a dawne „DOM i taśma” (#flow) otwiera też kolumnę DOM i taśmy
- * obok wykresu. Zwraca widok do pokazania.
+ * (obok wykresu zapisem, na średnim ekranie szufladę przez `takeFlowAsk`). Zwraca widok do pokazania.
  */
 export function followHash(win: RouteWin): ViewId {
   const { hash, pathname, search } = win.location;
   const { view, rewrite } = resolveHash(hash);
   if (rewrite === null) return view;
   if (splitHash(hash).id === 'flow') {
+    flowAsked = true;
     try {
       win.localStorage.setItem(DOCK_KEY, '1');
     } catch {

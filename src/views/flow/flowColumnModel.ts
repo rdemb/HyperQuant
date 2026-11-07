@@ -25,10 +25,15 @@ export const BTC_ONLY_TITLE = tr(
 export const DOCK_W = 400;
 /** Od tej szerokości okna (px) kolumna mieści się obok wykresu. */
 export const DOCK_MIN_W = 1280;
+/** Od tej szerokości okna (px) do `DOCK_MIN_W` kolumna jest szufladą nad wykresem; węższy ekran to telefon (pasek Pulse). */
+export const DRAWER_MIN_W = 640;
 
-export const dockAllowed = (widthPx: number): boolean => widthPx >= DOCK_MIN_W;
+/** Kolumna DOM i taśmy przy szerokości okna: przypięta obok wykresu, szuflada nad wykresem albo brak (telefon). */
+export function dockMode(widthPx: number): 'docked' | 'drawer' | 'none' {
+  return widthPx >= DOCK_MIN_W ? 'docked' : widthPx >= DRAWER_MIN_W ? 'drawer' : 'none';
+}
 
-/** Zapis: kolumna widoczna („1”) albo schowana klawiszem D („0”). */
+/** Zapis: kolumna przypięta widoczna („1”) albo schowana klawiszem D („0”). Szuflada nie ma zapisu (zawsze zamknięta na start). */
 export const DOCK_KEY = 'hq.charts.dock.v1';
 
 /** Kolumna widoczna, chyba że użytkownik ją schował. */

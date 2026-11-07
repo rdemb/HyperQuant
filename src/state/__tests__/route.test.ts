@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DOCK_KEY } from '../../views/flow/flowColumnModel';
-import { LEGACY_VIEW, PHASE_VIEW, followHash, resolveHash } from '../route';
+import { LEGACY_VIEW, PHASE_VIEW, followHash, resolveHash, takeFlowAsk } from '../route';
 
 describe('adres strony → widok', () => {
   it('pusty adres: W sesji, bez przepisania', () => {
@@ -87,6 +87,17 @@ describe('przekierowanie w oknie (start i hashchange)', () => {
     const p = fakeWin('#lab', { store: { 'hq.charts.dock.v1': '0' } });
     followHash(p.win);
     expect(p.store.get('hq.charts.dock.v1')).toBe('0');
+  });
+
+  it('#flow zostawia jednorazową prośbę o kolumnę (na średnim ekranie otwiera szufladę)', () => {
+    takeFlowAsk();
+    followHash(fakeWin('#lab').win);
+    expect(takeFlowAsk()).toBe(false);
+    followHash(fakeWin('#flow?m=ETH', { throws: true }).win);
+    expect(takeFlowAsk()).toBe(true);
+    expect(takeFlowAsk()).toBe(false);
+    followHash(fakeWin('#charts').win);
+    expect(takeFlowAsk()).toBe(false);
   });
 
   it('pamięć niedostępna: przekierowanie i tak działa', () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_FLOW_PREFS, DOCK_MIN_W, dockAllowed, parseDock, parseFlowPrefs, scannerScope, shortcutTarget } from '../flowColumnModel';
+import { DEFAULT_FLOW_PREFS, DOCK_MIN_W, DRAWER_MIN_W, dockMode, parseDock, parseFlowPrefs, scannerScope, shortcutTarget } from '../flowColumnModel';
 
 describe('kolumna DOM i taśmy: czyste pomocniki', () => {
   it('panele skanera (kto przyjmuje, TWAP-y) tylko dla BTC', () => {
@@ -8,12 +8,12 @@ describe('kolumna DOM i taśmy: czyste pomocniki', () => {
     expect([scannerScope('SOL'), scannerScope('HYPE'), scannerScope('btc'), scannerScope('')]).toEqual(['btc-only', 'btc-only', 'btc-only', 'btc-only']);
   });
 
-  it('kolumna przypięta od 1280 px szerokości', () => {
-    expect(dockAllowed(1279)).toBe(false);
-    expect(dockAllowed(1280)).toBe(true);
-    expect(dockAllowed(390)).toBe(false);
-    expect(dockAllowed(1920)).toBe(true);
+  it('kolumna przypięta od 1280 px, szuflada od 640 do 1279 px, na telefonie bez kolumny', () => {
     expect(DOCK_MIN_W).toBe(1280);
+    expect(DRAWER_MIN_W).toBe(640);
+    expect([dockMode(1280), dockMode(1920)]).toEqual(['docked', 'docked']);
+    expect([dockMode(1279), dockMode(1024), dockMode(640)]).toEqual(['drawer', 'drawer', 'drawer']);
+    expect([dockMode(639), dockMode(390), dockMode(0)]).toEqual(['none', 'none', 'none']);
   });
 
   it('Alt+1…6: układy w kolejności przed sesją, w sesji, po sesji; poza tym null', () => {

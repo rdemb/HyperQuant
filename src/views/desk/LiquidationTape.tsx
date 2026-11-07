@@ -4,6 +4,7 @@ import { useLiqTape } from '../../state/useLiqTape';
 import { Badge, Stat, DASH, fmtCompact, fmtPrice, fmtSigned, fmtFixed, fmtNum } from '../../ui';
 import { LiqTape, calibErrorBp } from '../../utils/liqTape';
 import { useElementWidth } from '../market/MarketMap';
+import { BTC_ONLY, scannerScope } from '../flow/flowColumnModel';
 import { locale, tr } from '../../i18n';
 
 const MIN = 60_000;
@@ -14,19 +15,21 @@ const bp = (v: number | null, signed = false) => (v === null ? DASH : signed ? f
 
 /**
  * Zrealizowane likwidacje śledzonych pozycji (potwierdzone fillami) — uzupełnienie mapy: co faktycznie zostało zlikwidowane.
- * `frame` — obramowanie sekcji: domyślnie linia nad nią (pod mapą likwidacji), osobno — własna karta.
+ * `frame` — obramowanie sekcji: domyślnie linia nad nią (pod mapą likwidacji), osobno — własna karta. `coin` — rynek
+ * wykresu obok (W sesji): taśma śledzi pozycje BTC, więc na innym rynku sam nagłówek z „—, tylko BTC”.
  */
-export const LiquidationTape: React.FC<{ coverage: number | null; frame?: string }> = ({ coverage, frame = 'border-t border-line pt-4' }) => {
+export const LiquidationTape: React.FC<{ coverage: number | null; frame?: string; coin?: string }> = ({ coverage, frame = 'border-t border-line pt-4', coin = 'BTC' }) => {
   const { status, tape } = useLiqTape();
   if (status === 'unconfigured') return null;
+  const btcOnly = scannerScope(coin) === 'btc-only';
 
   return (
     <section className={`flex flex-col gap-3 ${frame}`} aria-labelledby="liq-tape-title">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h3 id="liq-tape-title" className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium">
-          {tr('Zrealizowane likwidacje · 24 h', 'Realised liquidations · 24 h')}
+          {tr('Zrealizowane likwidacje BTC · 24 h', 'Realised BTC liquidations · 24 h')}
         </h3>
-        {status === 'ready' ? (
+        {btcOnly ? null : status === 'ready' ? (
           <Badge
             tone="live"
             title={tr(
@@ -42,7 +45,14 @@ export const LiquidationTape: React.FC<{ coverage: number | null; frame?: string
           </Badge>
         ) : null}
       </div>
-      {status === 'loading' ? (
+      {btcOnly ? (
+        <p
+          className="font-mono text-[11px] text-ink-3"
+          title={tr(`Skaner śledzi pozycje BTC na Hyperliquid; wykres pokazuje ${coin}.`, `The scanner tracks BTC positions on Hyperliquid; the chart shows ${coin}.`)}
+        >
+          {BTC_ONLY}
+        </p>
+      ) : status === 'loading' ? (
         <div className="text-xs text-ink-3">{tr('Pobieram taśmę likwidacji…', 'Loading the liquidation tape…')}</div>
       ) : status === 'error' || !tape ? (
         <div className="text-xs text-ink-3">{tr('Taśma likwidacji chwilowo niedostępna.', 'Liquidation tape temporarily unavailable.')}</div>
