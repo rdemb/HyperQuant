@@ -36,13 +36,8 @@ export const NewsFeed: React.FC = () => {
         <EmptyState
           title={tr('Brak danych publicznych', 'No public data')}
           detail={tr(
-            <>
-              Uruchom <code className="font-mono text-ink-2">npm run data</code> lokalnie albo poczekaj na wdrożenie (GitHub
-              Actions odświeża pliki co ~30 min).
-            </>,
-            <>
-              Run <code className="font-mono text-ink-2">npm run data</code> locally or wait for the deployment (GitHub Actions refreshes the files every ~30 min).
-            </>
+            'Pliki z danymi publicznymi (nagłówki z publicznych kanałów RSS) nie są teraz dostępne. Odświeżamy je co ok. 30 min.',
+            'The public data files (headlines from public RSS feeds) are not available right now. They refresh about every 30 min.'
           )}
         />
       ) : (
