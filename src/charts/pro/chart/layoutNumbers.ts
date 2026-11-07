@@ -143,7 +143,8 @@ const sessionName = (s: TradeSession) => TRADE_SESSION_NAME[s.id];
 
 // ───────────────────────── liczby ─────────────────────────
 
-function vwapNum(x: LayoutInputs): LayoutNumber {
+/** Odległość ceny od VWAP doby UTC w σ (Kokpit; ta sama liczba w Czwórce Przed sesją). */
+export function vwapNum(x: LayoutInputs): LayoutNumber {
   const label = 'VWAP';
   const v = val(x.dayVwap);
   const p = val(x.price);

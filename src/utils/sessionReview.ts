@@ -233,8 +233,9 @@ function rangeRow(x: ReviewInputs, f: Got<SessionFacts> | undefined): ReviewRow 
 /**
  * Mapy z bloga karty: rozliczane — każda karta sesji, na którą zachodzi okno ważności mapy; mapy tygodnia i weekendu
  * (bez okna) — karta części doby, w której je opublikowano (Azja i Londyn — Londyn, NY — NY). Od najstarszej.
+ * Wspólne z Czwórką Przed sesją (mapa ostatniej sesji NY).
  */
-function sessionMaps(maps: readonly BlogMap[], s: TradeSession, now: number): BlogMap[] {
+export function sessionMaps(maps: readonly BlogMap[], s: TradeSession, now: number): BlogMap[] {
   const dayFrom = s.id === 'london' ? utcDayStart(s.start) : s.start;
   return maps
     .filter((m) => {
