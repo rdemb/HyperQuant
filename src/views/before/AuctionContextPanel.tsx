@@ -3,9 +3,20 @@ import { useDesk } from '../../state/DeskContext';
 import { useAuctionContext, type AuctionContext } from '../../state/useAuctionContext';
 import { Badge, EmptyState, Panel, DASH, fmtPrice, fmtFixed } from '../../ui';
 import type { OpenLoc, Rate } from '../../utils/auction';
+import type { TradeSessionId } from '../../utils/sessionDay';
 import { locale, tr } from '../../i18n';
 
 const dayFmt = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', timeZone: 'UTC' });
+const hmFmt = new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'UTC' });
+const SES_NAME: Record<TradeSessionId, string> = { london: tr('Londyn', 'London'), ny: 'NY' };
+
+/** Podpis sesji: „Sesja Londyn” / „Sesja NY”, zamknięta z dopiskiem; przed pierwszymi danymi ogólnie. */
+function sessionCaption(s: AuctionContext['session']): string {
+  if (!s) return tr('Sesja Londyn albo NY', 'London or NY session');
+  const n = SES_NAME[s.id];
+  return s.closed ? tr(`Sesja ${n} (zamknięta)`, `${n} session (closed)`) : tr(`Sesja ${n}`, `${n} session`);
+}
+
 /** Minimalna liczba sesji dla częstości — mniej to szum */
 const MIN_N = 30;
 /** Dane starsze niż 3 min (odświeżanie co minutę) = nieaktualne */
@@ -27,7 +38,10 @@ function RateText({ r }: { r: Rate }) {
 
 const LOC_LABEL: Record<OpenLoc, string> = { above: tr('nad VA', 'above VA'), inside: tr('w VA', 'inside VA'), below: tr('pod VA', 'below VA') };
 
-/** Kontekst aukcji sesji UTC: poziomy (VWAP ±σ, IB, profil wczoraj) i częstości historyczne z przedziałami Wilsona. */
+/**
+ * Kontekst aukcji sesji Londynu albo NY (w Azji: ostatnia zamknięta): poziomy (VWAP ±σ, IB, profil poprzedniej sesji
+ * tego samego typu) i częstości historyczne tej sesji z przedziałami Wilsona.
+ */
 export const AuctionContextPanel: React.FC = () => {
   const ctx = useAuctionContext();
   const { feed } = useDesk();
@@ -41,7 +55,7 @@ export const AuctionContextPanel: React.FC = () => {
   const stale = ctx.asOf !== null && now - ctx.asOf > STALE_MS;
   return (
     <Panel
-      eyebrow={tr('Sesja UTC · świece 1m i 1h Hyperliquid · historycznie, nie prognoza', 'UTC session · Hyperliquid 1m and 1h candles · historical, not a forecast')}
+      eyebrow={`${sessionCaption(ctx.session)} · ${tr('świece 1m i 1h Hyperliquid · historycznie, nie prognoza', 'Hyperliquid 1m and 1h candles · historical, not a forecast')}`}
       title={tr('Kontekst aukcji', 'Auction context')}
       actions={
         ctx.status === 'ready' ? (
@@ -50,7 +64,13 @@ export const AuctionContextPanel: React.FC = () => {
               STALE
             </Badge>
           ) : (
-            <Badge tone="live" title={tr('Poziomy z publicznych świec Hyperliquid; częstości z ~200 pełnych sesji UTC', 'Levels from public Hyperliquid candles; frequencies from ~200 full UTC sessions')}>
+            <Badge
+              tone="live"
+              title={tr(
+                'Poziomy z publicznych świec Hyperliquid; częstości z ~200 pełnych sesji tego samego typu (Londyn albo NY)',
+                'Levels from public Hyperliquid candles; frequencies from ~200 full sessions of the same kind (London or NY)'
+              )}
+            >
               LIVE
             </Badge>
           )
@@ -61,8 +81,8 @@ export const AuctionContextPanel: React.FC = () => {
         <EmptyState
           title={ctx.status === 'loading' ? tr('Pobieram świece sesji…', 'Loading session candles…') : tr('Świece chwilowo niedostępne', 'Candles temporarily unavailable')}
           detail={tr(
-            'VWAP sesji, Initial Balance, profil poprzedniego dnia i to, jak często na BTC faktycznie działają klasyczne reguły aukcji.',
-            "Session VWAP, Initial Balance, the previous day's profile and how often the classic auction rules actually work on BTC."
+            'VWAP sesji Londynu albo NY, Initial Balance, profil poprzedniej takiej sesji i to, jak często na BTC faktycznie działają klasyczne reguły aukcji.',
+            "London or NY session VWAP, Initial Balance, the previous such session's profile and how often the classic auction rules actually work on BTC."
           )}
         />
       ) : (
@@ -104,12 +124,12 @@ function levels(ctx: AuctionContext, price: number | null): Level[] {
     const p = ctx.prev;
     // Słabość wg tej samej definicji co statystyka (świece 1h), żeby drabina i tabela się nie przeczyły
     const h1 = ctx.today?.prev1h;
-    out.push({ label: 'PDH', px: p.high, tone: 'prev', note: h1?.poorHigh ? tr('słaby szczyt', 'poor high') : undefined });
-    out.push({ label: 'PDL', px: p.low, tone: 'prev', note: h1?.poorLow ? tr('słabe dno', 'poor low') : undefined });
+    out.push({ label: tr('High poprz. sesji', 'Prev. session high'), px: p.high, tone: 'prev', note: h1?.poorHigh ? tr('słaby szczyt', 'poor high') : undefined });
+    out.push({ label: tr('Low poprz. sesji', 'Prev. session low'), px: p.low, tone: 'prev', note: h1?.poorLow ? tr('słabe dno', 'poor low') : undefined });
     out.push(
-      { label: tr('VAH wczoraj', 'Yesterday VAH'), px: p.vah, tone: 'prev' },
-      { label: tr('POC wczoraj', 'Yesterday POC'), px: p.poc, tone: 'prev' },
-      { label: tr('VAL wczoraj', 'Yesterday VAL'), px: p.val, tone: 'prev' }
+      { label: tr('VAH poprz. sesji', 'Prev. session VAH'), px: p.vah, tone: 'prev' },
+      { label: tr('POC poprz. sesji', 'Prev. session POC'), px: p.poc, tone: 'prev' },
+      { label: tr('VAL poprz. sesji', 'Prev. session VAL'), px: p.val, tone: 'prev' }
     );
   }
   if (price !== null) out.push({ label: tr('Cena', 'Price'), px: price, tone: 'price' });
@@ -129,8 +149,22 @@ const Body: React.FC<{ ctx: AuctionContext; price: number | null }> = ({ ctx, pr
   const z = ctx.vwap && ctx.vwap.sd > 0 && price !== null ? (price - ctx.vwap.vwap) / ctx.vwap.sd : null;
   const t = ctx.today;
   const st = ctx.stats;
+  const closed = ctx.session?.closed === true;
+  // Zamknięta sesja: „jeszcze nie” byłoby nieprawdą — sesja już się nie zmieni
+  const notYet = closed ? NO : NOT_YET;
+  const r80 = closed ? RULE80_CLOSED : RULE80;
   return (
     <div className="flex flex-col gap-5 p-4">
+      {closed && ctx.session && (
+        <p className="text-xs text-ink-2">
+          {ctx.next
+            ? tr(
+                `Sesja azjatycka: poziomy i stan z ostatniej zamkniętej sesji ${SES_NAME[ctx.session.id]}. Następna: ${SES_NAME[ctx.next.id]} o ${hmFmt.format(ctx.next.start)} UTC.`,
+                `Asian session: levels and state from the last closed ${SES_NAME[ctx.session.id]} session. Next: ${SES_NAME[ctx.next.id]} at ${hmFmt.format(ctx.next.start)} UTC.`
+              )
+            : tr(`Ostatnia zamknięta sesja ${SES_NAME[ctx.session.id]}.`, `Last closed ${SES_NAME[ctx.session.id]} session.`)}
+        </p>
+      )}
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
         <section aria-label={tr('Poziomy sesji', 'Session levels')}>
           <div className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium mb-2">{tr('Poziomy', 'Levels')}</div>
@@ -141,11 +175,11 @@ const Body: React.FC<{ ctx: AuctionContext; price: number | null }> = ({ ctx, pr
             {t && (
               <span
                 title={tr(
-                  'Położenie otwarcia liczone tą samą metodą co częstości (profil wczorajszej sesji ze świec 1h)',
-                  "Open location computed with the same method as the frequencies (yesterday's session profile from 1h candles)"
+                  'Położenie otwarcia liczone tą samą metodą co częstości (profil poprzedniej sesji tego samego typu ze świec 1h)',
+                  'Open location computed with the same method as the frequencies (previous session of the same kind, profile from 1h candles)'
                 )}
               >
-                {tr('otwarcie', 'open')}: <span className="text-ink-1">{LOC_LABEL[t.openLoc]}</span> {tr('wczoraj', 'of yesterday')}{' '}
+                {tr('otwarcie', 'open')}: <span className="text-ink-1">{LOC_LABEL[t.openLoc]}</span> {tr('poprz. sesji', 'of prev. session')}{' '}
                 <span className="text-ink-3">
                   ({tr('VA z 1h', 'VA from 1h')}: {fmtPrice(t.prev1h.val, 0)}–{fmtPrice(t.prev1h.vah, 0)})
                 </span>
@@ -187,51 +221,51 @@ const Body: React.FC<{ ctx: AuctionContext; price: number | null }> = ({ ctx, pr
                 <tr>
                   <th className="py-1 pr-2 font-medium">{tr('Reguła', 'Rule')}</th>
                   <th className="py-1 pr-2 font-medium">{tr('Częstość (95%)', 'Frequency (95%)')}</th>
-                  <th className="py-1 font-medium">{tr('Dziś', 'Today')}</th>
+                  <th className="py-1 font-medium">{tr('Ta sesja', 'This session')}</th>
                 </tr>
               </thead>
               <tbody>
-                <Row label={tr('IB wybity w górę', 'IB broken up')} rate={st.ib.up} today={t ? (t.ibBreak.up ? YES : t.ibDone ? NOT_YET : IB_FORMING) : undefined} />
-                <Row label={tr('IB wybity w dół', 'IB broken down')} rate={st.ib.down} today={t ? (t.ibBreak.down ? YES : t.ibDone ? NOT_YET : IB_FORMING) : undefined} />
+                <Row label={tr('IB wybity w górę', 'IB broken up')} rate={st.ib.up} today={t ? (t.ibBreak.up ? YES : t.ibDone ? notYet : IB_FORMING) : undefined} />
+                <Row label={tr('IB wybity w dół', 'IB broken down')} rate={st.ib.down} today={t ? (t.ibBreak.down ? YES : t.ibDone ? notYet : IB_FORMING) : undefined} />
                 <Row label={tr('IB wybity w obie strony', 'IB broken both ways')} rate={st.ib.both} />
                 <Row
                   label={tr('Reguła 80%: otwarcie nad VA → powrót do VA → dojście do VAL', '80% rule: open above VA → back into VA → reaches VAL')}
                   rate={st.rule80.above}
-                  today={t?.openLoc === 'above' ? RULE80[t.rule80] : undefined}
+                  today={t?.openLoc === 'above' ? r80[t.rule80] : undefined}
                   highlight={t?.openLoc === 'above'}
                 />
                 <Row
                   label={tr('Reguła 80%: otwarcie pod VA → powrót do VA → dojście do VAH', '80% rule: open below VA → back into VA → reaches VAH')}
                   rate={st.rule80.below}
-                  today={t?.openLoc === 'below' ? RULE80[t.rule80] : undefined}
+                  today={t?.openLoc === 'below' ? r80[t.rule80] : undefined}
                   highlight={t?.openLoc === 'below'}
                 />
                 <Row
-                  label={tr('Słaby szczyt wczoraj → przebity dziś', 'Poor high yesterday → taken out today')}
+                  label={tr('Słaby szczyt poprz. sesji → przebity w sesji', 'Poor prev. session high → taken out in session')}
                   rate={st.poor.high.poor}
-                  today={t?.prev1h.poorHigh ? (t.pdhBroken ? tr('przebity', 'taken out') : tr('wczoraj słaby', 'poor yesterday')) : undefined}
+                  today={t?.prev1h.poorHigh ? (t.pdhBroken ? tr('przebity', 'taken out') : tr('poprz. słaby', 'prev. poor')) : undefined}
                   highlight={t?.prev1h.poorHigh}
                 />
-                <Row label={tr('Mocny szczyt wczoraj → przebity dziś', 'Strong high yesterday → taken out today')} rate={st.poor.high.strong} highlight={t ? !t.prev1h.poorHigh : false} />
+                <Row label={tr('Mocny szczyt poprz. sesji → przebity w sesji', 'Strong prev. session high → taken out in session')} rate={st.poor.high.strong} highlight={t ? !t.prev1h.poorHigh : false} />
                 <Row
-                  label={tr('Słabe dno wczoraj → przebite dziś', 'Poor low yesterday → taken out today')}
+                  label={tr('Słabe dno poprz. sesji → przebite w sesji', 'Poor prev. session low → taken out in session')}
                   rate={st.poor.low.poor}
-                  today={t?.prev1h.poorLow ? (t.pdlBroken ? tr('przebite', 'taken out') : tr('wczoraj słabe', 'poor yesterday')) : undefined}
+                  today={t?.prev1h.poorLow ? (t.pdlBroken ? tr('przebite', 'taken out') : tr('poprz. słabe', 'prev. poor')) : undefined}
                   highlight={t?.prev1h.poorLow}
                 />
-                <Row label={tr('Mocne dno wczoraj → przebite dziś', 'Strong low yesterday → taken out today')} rate={st.poor.low.strong} highlight={t ? !t.prev1h.poorLow : false} />
+                <Row label={tr('Mocne dno poprz. sesji → przebite w sesji', 'Strong prev. session low → taken out in session')} rate={st.poor.low.strong} highlight={t ? !t.prev1h.poorLow : false} />
                 {(['above', 'inside', 'below'] as OpenLoc[]).map((loc) => (
                   <React.Fragment key={loc}>
                     <Row
-                      label={`${tr('Otwarcie', 'Open')} ${LOC_LABEL[loc]} → ${tr('dotknięcie PDH', 'PDH touch')}`}
+                      label={`${tr('Otwarcie', 'Open')} ${LOC_LABEL[loc]} → ${tr('dotknięcie high poprz. sesji', 'prev. session high touch')}`}
                       rate={st.pdTouch[loc].pdh}
-                      today={t?.openLoc === loc ? (t.pdhTouched ? YES : NOT_YET) : undefined}
+                      today={t?.openLoc === loc ? (t.pdhTouched ? YES : notYet) : undefined}
                       highlight={t?.openLoc === loc}
                     />
                     <Row
-                      label={`${tr('Otwarcie', 'Open')} ${LOC_LABEL[loc]} → ${tr('dotknięcie PDL', 'PDL touch')}`}
+                      label={`${tr('Otwarcie', 'Open')} ${LOC_LABEL[loc]} → ${tr('dotknięcie low poprz. sesji', 'prev. session low touch')}`}
                       rate={st.pdTouch[loc].pdl}
-                      today={t?.openLoc === loc ? (t.pdlTouched ? YES : NOT_YET) : undefined}
+                      today={t?.openLoc === loc ? (t.pdlTouched ? YES : notYet) : undefined}
                       highlight={t?.openLoc === loc}
                     />
                   </React.Fragment>
@@ -264,14 +298,14 @@ const Body: React.FC<{ ctx: AuctionContext; price: number | null }> = ({ ctx, pr
         <summary className="cursor-pointer select-none text-ink-1 font-medium py-1">{tr('Metoda i zastrzeżenia', 'Method and caveats')}</summary>
         <p className="mt-1">
           {tr(
-            'Sesja = dzień UTC (otwarcie 00:00 UTC). VWAP z ceny typowej (H+L+C)/3 świec 1m ważonej wolumenem, pasma ±σ z ważonego odchylenia — cena typowa przybliża ceny transakcji. Initial Balance = zakres 00:00–01:00 UTC. Profil poprzedniego dnia: wolumen świecy 1m rozłożony równomiernie w jej zakresie, koszyki 10 USD, value area 70% od POC. Słaby szczyt/dno: ekstremum osiągnięte w co najmniej dwóch różnych godzinach (w odległości ≤ 0,02%) — płaskie zakończenie aukcji bez ekscesu, jak dwa TPO na skrajnym poziomie (wierzchołek na granicy godzin też liczy się podwójnie, tak jak w Market Profile).',
-            "Session = UTC day (open 00:00 UTC). VWAP from the volume-weighted typical price (H+L+C)/3 of 1m candles, ±σ bands from the weighted deviation; the typical price approximates trade prices. Initial Balance = the 00:00–01:00 UTC range. Previous day's profile: each 1m candle's volume spread evenly across its range, 10 USD buckets, 70% value area from the POC. Poor high/low: an extreme reached in at least two different hours (within ≤ 0.02%), a flat end of the auction with no excess, like two TPOs at the extreme level (a top on an hour boundary also counts twice, as in Market Profile)."
+            'Sesja = Londyn (od 08:00 czasu londyńskiego do otwarcia NY) albo Nowy Jork (od 09:30 czasu nowojorskiego do 00:00 UTC), z czasem letnim; każda liczona osobno. W sesji azjatyckiej (od 00:00 UTC do otwarcia Londynu) panel pokazuje ostatnią zamkniętą sesję NY. Poprzednia sesja = ta sama sesja dnia poprzedniego (Londyn ← Londyn wczoraj, NY ← NY wczoraj). VWAP z ceny typowej (H+L+C)/3 świec 1m ważonej wolumenem, pasma ±σ z ważonego odchylenia — cena typowa przybliża ceny transakcji. Initial Balance = zakres pierwszej godziny sesji. Profil poprzedniej sesji: wolumen świecy 1m rozłożony równomiernie w jej zakresie, koszyki 10 USD, value area 70% od POC. Słaby szczyt/dno: ekstremum osiągnięte w co najmniej dwóch różnych godzinach (w odległości ≤ 0,02%) — płaskie zakończenie aukcji bez ekscesu, jak dwa TPO na skrajnym poziomie (wierzchołek na granicy godzin też liczy się podwójnie, tak jak w Market Profile).',
+            'Session = London (from 08:00 London time to the NY open) or New York (from 09:30 New York time to 00:00 UTC), with daylight saving time; each counted separately. During the Asian session (00:00 UTC to the London open) the panel shows the last closed NY session. Previous session = the same session on the previous day (London ← yesterday’s London, NY ← yesterday’s NY). VWAP from the volume-weighted typical price (H+L+C)/3 of 1m candles, ±σ bands from the weighted deviation; the typical price approximates trade prices. Initial Balance = the range of the first hour of the session. Previous session profile: each 1m candle’s volume spread evenly across its range, 10 USD buckets, 70% value area from the POC. Poor high/low: an extreme reached in at least two different hours (within ≤ 0.02%), a flat end of the auction with no excess, like two TPOs at the extreme level (a top on an hour boundary also counts twice, as in Market Profile).'
           )}
         </p>
         <p className="mt-1">
           {tr(
-            `Częstości liczone są ze świec 1h z ostatnich ~208 dni (tyle udostępnia API). Profil i słabość ekstremów są tam przybliżone (godziny zamiast okien 30 min), a „Dziś” klasyfikuje bieżącą sesję tą samą metodą co historia. Reguła 80%: dwie kolejne zamknięte godziny z zamknięciem w VA, dojście liczone od kolejnej godziny (bez podglądania). Przedziały Wilsona 95%; różnica proporcji z przedziałem Newcombe'a. Mniej niż ${MIN_N} sesji = „—”. To opis przeszłości, nie prognoza ani sygnał.`,
-            `Frequencies are computed from 1h candles over the last ~208 days (as much as the API provides). Profile and extreme weakness are approximate there (hours instead of 30-min periods), and "Today" classifies the current session with the same method as history. 80% rule: two consecutive closed hours closing inside the VA, the target counted from the next hour (no look-ahead). 95% Wilson intervals; difference of proportions with Newcombe's interval. Fewer than ${MIN_N} sessions = "—". This describes the past; it is not a forecast or a signal.`
+            `Częstości liczone są osobno dla Londynu i NY ze świec 1h z ostatnich ~208 dni (tyle udostępnia API). Świeca 1h należy do sesji, w której się zaczyna, a IB w historii to pierwsza świeca 1h sesji — dla NY świeca od pełnej godziny po otwarciu (10:00–11:00 czasu NY zamiast 09:30–10:30), a ostatnia świeca Londynu obejmuje pierwsze 30 min NY. To przybliżenie; bieżąca sesja ma dokładne granice ze świec 1m. Profil i słabość ekstremów są tam też przybliżone (godziny zamiast okien 30 min), a „Ta sesja” klasyfikuje bieżącą sesję tą samą metodą co historia. Reguła 80%: dwie kolejne zamknięte godziny sesji z zamknięciem w VA, dojście liczone od kolejnej godziny (bez podglądania). Przedziały Wilsona 95%; różnica proporcji z przedziałem Newcombe'a. Mniej niż ${MIN_N} sesji = „—”. To opis przeszłości, nie prognoza ani sygnał.`,
+            `Frequencies are computed separately for London and NY from 1h candles over the last ~208 days (as much as the API provides). A 1h candle belongs to the session in which it starts, and the historical IB is the first 1h candle of the session: for NY the candle from the full hour after the open (10:00–11:00 New York time instead of 09:30–10:30), and the last London candle includes the first 30 min of NY. This is an approximation; the current session has exact bounds from 1m candles. Profile and extreme weakness are approximate there too (hours instead of 30-min periods), and "This session" classifies the current session with the same method as history. 80% rule: two consecutive closed session hours closing inside the VA, the target counted from the next hour (no look-ahead). 95% Wilson intervals; difference of proportions with Newcombe's interval. Fewer than ${MIN_N} sessions = "—". This describes the past; it is not a forecast or a signal.`
           )}
         </p>
       </details>
@@ -286,7 +320,15 @@ const RULE80: Record<'n/a' | 'armed' | 'triggered' | 'done', string> = {
   done: tr('dotarła', 'reached'),
 };
 
+/** Reguła 80% w zamkniętej sesji: bez „czeka” — sesja się skończyła */
+const RULE80_CLOSED: typeof RULE80 = {
+  ...RULE80,
+  armed: tr('bez powrotu', 'no re-entry'),
+  triggered: tr('powrót, bez dojścia', 're-entry, not reached'),
+};
+
 const YES = tr('tak', 'yes');
+const NO = tr('nie', 'no');
 const NOT_YET = tr('jeszcze nie', 'not yet');
 const IB_FORMING = tr('IB w trakcie', 'IB forming');
 

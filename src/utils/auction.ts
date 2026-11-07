@@ -1,13 +1,15 @@
 /**
  * Kontekst aukcji (Auction Market Theory / Market Profile) dla BTC: poziomy sesji i empiryczne częstości z przedziałami
- * ufności. Sesja = dzień UTC (otwarcie 00:00 UTC) — rynek całodobowy nie ma naturalnego otwarcia, a dzień UTC jest
- * też okresem rozliczeń świec dziennych i rynków HIP-4.
+ * ufności. Sesja = Londyn albo Nowy Jork (spec §7.11, granice w `./sessionDay`), każda liczona osobno: IB = pierwsza
+ * godzina sesji, poprzednia sesja = ta sama sesja dnia poprzedniego. Doba UTC zostaje tylko jako podsumowanie.
  *
  * Poziomy bieżącej sesji liczone są ze świec 1m; statystyki historyczne — ze świec 1h (Hyperliquid udostępnia ~5000
- * ostatnich, czyli ~208 dni), więc profil i „słabe” ekstrema są tam przybliżeniem (opis w panelu).
+ * ostatnich, czyli ~208 dni), więc profil, „słabe” ekstrema i IB NY (świeca od 10:00 czasu NY) są tam przybliżeniem
+ * (opis w panelu).
  */
 import { valueArea } from '../charts/orderflow/footprint';
 import type { RangeBar } from './volatility';
+import { hourlyWindow, tradeSessionOn, type TradeSessionId } from './sessionDay';
 
 export interface VBar extends RangeBar {
   /** Wolumen świecy (BTC) */
@@ -124,8 +126,15 @@ export function extremeTouches(bars: RangeBar[], windowMs: number, eps = POOR_EP
   return { high, low, hiTouches: hiW.size, loTouches: loW.size };
 }
 
+/** Jednostka sesji w statystyce: Londyn, NY albo doba UTC (podsumowanie). */
+export type SessionUnit = TradeSessionId | 'utc';
+
 export interface Session {
+  id: SessionUnit;
+  /** Początek doby UTC, w której leży sesja */
   day: number;
+  /** Początek okna sesji w świecach 1h (pierwsza świeca = IB) */
+  start: number;
   open: number;
   high: number;
   low: number;
@@ -140,8 +149,14 @@ export interface Session {
   bars: VBar[];
 }
 
-/** Pełne sesje UTC (dokładnie 24 kolejne świece 1h) z poziomami; niepełne dni są pomijane. */
-export function sessionsFromHourly(bars: VBar[], step = PROFILE_STEP): Session[] {
+/** Okno jednostki w świecach 1h dla doby UTC `day`: Londyn i NY wg `hourlyWindow`, doba UTC = 24 świece od 00:00. */
+const unitWindow = (day: number, unit: SessionUnit) => (unit === 'utc' ? { start: day, end: day + DAY } : hourlyWindow(tradeSessionOn(day, unit)));
+
+/**
+ * Pełne sesje jednostki `unit` ze świec 1h (wszystkie świece okna, kolejno, bez luk) z poziomami; niepełne są pomijane.
+ * IB = pierwsza świeca okna.
+ */
+export function sessionsFromHourly(bars: VBar[], unit: SessionUnit, step = PROFILE_STEP): Session[] {
   const byDay = new Map<number, VBar[]>();
   for (const b of bars) {
     const d = dayStart(b.time);
@@ -150,18 +165,22 @@ export function sessionsFromHourly(bars: VBar[], step = PROFILE_STEP): Session[]
     else byDay.set(d, [b]);
   }
   const out: Session[] = [];
-  for (const [d, arr] of [...byDay.entries()].sort((a, b) => a[0] - b[0])) {
-    arr.sort((a, b) => a.time - b.time);
-    if (arr.length !== 24 || arr.some((b, i) => b.time !== d + i * HOUR)) continue;
+  for (const [d, all] of [...byDay.entries()].sort((a, b) => a[0] - b[0])) {
+    const w = unitWindow(d, unit);
+    const arr = all.filter((b) => b.time >= w.start && b.time < w.end).sort((a, b) => a.time - b.time);
+    const n = Math.round((w.end - w.start) / HOUR);
+    if (arr.length !== n || arr.some((b, i) => b.time !== w.start + i * HOUR)) continue;
     const p = profile(arr, step);
     const t = extremeTouches(arr, HOUR);
     if (!p || !t) continue;
     out.push({
+      id: unit,
       day: d,
+      start: w.start,
       open: arr[0].open,
       high: t.high,
       low: t.low,
-      close: arr[23].close,
+      close: arr[n - 1].close,
       ibHi: arr[0].high,
       ibLo: arr[0].low,
       ...p,
@@ -195,7 +214,7 @@ function rule80(prev: Session, bars: VBar[]): boolean | null {
 }
 
 export interface AuctionStats {
-  /** Sesje z poprzednikiem (pary kolejnych pełnych dni) */
+  /** Sesje z poprzednikiem (pary tej samej sesji z kolejnych dni) */
   n: number;
   from: number | null;
   to: number | null;
@@ -208,7 +227,10 @@ export interface AuctionStats {
   pdTouch: Record<OpenLoc, { pdh: Rate; pdl: Rate }>;
 }
 
-/** Częstości z kolejnych pełnych sesji (tylko pary dzień poprzedni → dzień bieżący, bez luk). */
+/**
+ * Częstości z kolejnych pełnych sesji: tylko pary tej samej sesji z dnia poprzedniego i bieżącego (Londyn ← Londyn
+ * wczoraj, NY ← NY wczoraj), bez luk.
+ */
 export function auctionStats(sessions: Session[]): AuctionStats {
   let n = 0;
   const c = { up: 0, down: 0, both: 0, none: 0 };
@@ -224,7 +246,7 @@ export function auctionStats(sessions: Session[]): AuctionStats {
   for (let i = 1; i < sessions.length; i++) {
     const prev = sessions[i - 1];
     const s = sessions[i];
-    if (s.day - prev.day !== DAY) continue;
+    if (s.id !== prev.id || s.day - prev.day !== DAY) continue;
     n++;
     from ??= s.day;
     to = s.day;
@@ -272,7 +294,8 @@ export function auctionStats(sessions: Session[]): AuctionStats {
 }
 
 export interface TodayState {
-  day: number;
+  /** Początek sesji */
+  start: number;
   open: number;
   openLoc: OpenLoc;
   ibHi: number;
@@ -290,43 +313,44 @@ export interface TodayState {
 }
 
 /**
- * Stan bieżącej sesji względem poprzedniej (świece 1h albo 1m bieżącego dnia, rosnąco; ta sama reguła co statystyki).
- * Reguła 80% liczy tylko zamknięte okna godzinne (koniec okna ≤ now) — bez rozstrzygania na niedomkniętej świecy.
+ * Stan bieżącej sesji `win` względem poprzedniej (świece 1h albo 1m tej sesji, rosnąco; ta sama reguła co statystyki).
+ * IB = pierwsza godzina od początku sesji. Reguła 80% liczy tylko zamknięte okna godzinne liczone od otwarcia sesji
+ * (koniec okna ≤ now; ostatnie okno kończy się z końcem sesji) — bez rozstrzygania na niedomkniętej świecy.
  */
-export function todayState(prev: Session, bars: RangeBar[], now: number, hourMs = HOUR): TodayState | null {
+export function todayState(prev: Session, bars: RangeBar[], now: number, win: { start: number; end: number }, hourMs = HOUR): TodayState | null {
   if (bars.length === 0) return null;
-  const d = dayStart(bars[0].time);
-  const ib = bars.filter((b) => b.time < d + HOUR);
-  const after = bars.filter((b) => b.time >= d + HOUR);
+  const ibEnd = win.start + hourMs;
+  const ib = bars.filter((b) => b.time < ibEnd);
+  const after = bars.filter((b) => b.time >= ibEnd);
   if (ib.length === 0) return null;
   const ibHi = Math.max(...ib.map((b) => b.high));
   const ibLo = Math.min(...ib.map((b) => b.low));
   const loc = openLoc(bars[0].open, prev);
-  // Reguła 80% na zamknięciach okien godzinnych (spójnie ze statystyką z 1h)
+  // Reguła 80% na zamknięciach okien godzinnych sesji (spójnie ze statystyką z 1h)
   let r80: TodayState['rule80'] = loc === 'inside' ? 'n/a' : 'armed';
   if (loc !== 'inside') {
+    const windowEnd = (w: number) => Math.min(win.start + (w + 1) * hourMs, win.end);
     const hours = new Map<number, RangeBar>();
-    for (const b of bars) hours.set(Math.floor(b.time / hourMs), b); // ostatnia świeca okna = zamknięcie okna
+    for (const b of bars) hours.set(Math.floor((b.time - win.start) / hourMs), b); // ostatnia świeca okna = zamknięcie okna
     const closes = [...hours.entries()]
-      .filter(([w]) => (w + 1) * hourMs <= now)
-      .sort((a, b) => a[0] - b[0])
-      .map(([, b]) => b);
+      .filter(([w]) => windowEnd(w) <= now)
+      .sort((a, b) => a[0] - b[0]);
     const inVa = (c: number) => c >= prev.val && c <= prev.vah;
     for (let i = 0; i + 1 < closes.length; i++) {
-      if (!inVa(closes[i].close) || !inVa(closes[i + 1].close)) continue;
-      const confirmedAt = Math.floor(closes[i + 1].time / hourMs) * hourMs + hourMs;
+      if (!inVa(closes[i][1].close) || !inVa(closes[i + 1][1].close)) continue;
+      const confirmedAt = windowEnd(closes[i + 1][0]);
       const rest = bars.filter((b) => b.time >= confirmedAt);
       r80 = (loc === 'above' ? rest.some((b) => b.low <= prev.val) : rest.some((b) => b.high >= prev.vah)) ? 'done' : 'triggered';
       break;
     }
   }
   return {
-    day: d,
+    start: win.start,
     open: bars[0].open,
     openLoc: loc,
     ibHi,
     ibLo,
-    ibDone: now >= d + HOUR,
+    ibDone: now >= ibEnd,
     ibBreak: { up: after.some((b) => b.high > ibHi), down: after.some((b) => b.low < ibLo) },
     rule80: r80,
     pdhTouched: bars.some((b) => b.high >= prev.high),

@@ -28,7 +28,10 @@ export interface TradeCtx {
   ib: IbState | null;
 }
 
-/** Stan IB: w trakcie (00–01 UTC), w zakresie, wybity w górę, w dół, w obie strony. Kod, nie etykieta (etykieta w widoku). */
+/**
+ * Stan IB: w trakcie (pierwsza godzina sesji Londynu albo NY; wpisy sprzed etapu 1b — 00–01 UTC), w zakresie, wybity
+ * w górę, w dół, w obie strony. Kod, nie etykieta (etykieta w widoku).
+ */
 export type IbState = 'open' | 'inside' | 'up' | 'down' | 'both';
 
 export interface Trade {

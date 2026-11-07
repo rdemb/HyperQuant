@@ -726,12 +726,12 @@ const GROUPS: { title: string; rows: Row[] }[] = [
       {
         metric: tr('Kontekst aukcji (Przed sesją)', 'Auction context (Pre-session)'),
         source: tr(
-          'Świece BTC 1m (bieżąca i poprzednia sesja UTC) i 1h (~5000 ≈ 208 dni) z candleSnapshot Hyperliquid',
-          'BTC 1m candles (current and previous UTC session) and 1h (~5000 ≈ 208 days) from Hyperliquid candleSnapshot'
+          'Świece BTC 1m (bieżąca sesja i poprzednia sesja tego samego typu) i 1h (~5000 ≈ 208 dni) z candleSnapshot Hyperliquid',
+          'BTC 1m candles (current session and the previous session of the same kind) and 1h (~5000 ≈ 208 days) from Hyperliquid candleSnapshot'
         ),
         method: tr(
-          'Sesja = dzień UTC. VWAP z ceny typowej ważonej wolumenem i pasma ±1σ/±2σ; Initial Balance 00:00–01:00 UTC z rozszerzeniami 1,5×/2×; profil poprzedniej sesji (wolumen świecy rozłożony w jej zakresie, koszyki 10 USD, VA 70%); słaby szczyt/dno = ekstremum w ≥ 2 oknach 30 min (≤ 0,02%). Częstości z pełnych sesji 1h: wybicia IB, reguła 80%, przebicie słabych vs mocnych ekstremów (różnica Newcombe’a), dotknięcie PDH/PDL wg otwarcia; przedziały Wilsona 95%',
-          'Session = UTC day. VWAP from the volume-weighted typical price and ±1σ/±2σ bands; Initial Balance 00:00–01:00 UTC with 1.5×/2× extensions; previous session profile (candle volume spread over its range, USD 10 buckets, 70% VA); weak high/low = an extreme in ≥ 2 30-min windows (≤ 0.02%). Frequencies from full 1h sessions: IB breakouts, the 80% rule, weak vs strong extremes taken out (Newcombe difference), PDH/PDL touch by open; 95% Wilson intervals'
+          'Sesja = Londyn (08:00 czasu londyńskiego do otwarcia NY) albo NY (09:30 czasu nowojorskiego do 00:00 UTC), każda osobno; w Azji ostatnia zamknięta sesja NY; poprzednia sesja = ta sama sesja wczoraj. VWAP z ceny typowej ważonej wolumenem i pasma ±1σ/±2σ; Initial Balance = pierwsza godzina sesji z rozszerzeniami 1,5×/2×; profil poprzedniej sesji (wolumen świecy rozłożony w jej zakresie, koszyki 10 USD, VA 70%); słaby szczyt/dno = ekstremum w ≥ 2 oknach 30 min (≤ 0,02%). Częstości z pełnych sesji 1h tego samego typu (IB NY = świeca 10:00–11:00 czasu NY): wybicia IB, reguła 80%, przebicie słabych vs mocnych ekstremów (różnica Newcombe’a), dotknięcie szczytu/dna poprzedniej sesji wg otwarcia; przedziały Wilsona 95%',
+          'Session = London (08:00 London time to the NY open) or NY (09:30 New York time to 00:00 UTC), each separately; during Asia the last closed NY session; previous session = the same session yesterday. VWAP from the volume-weighted typical price and ±1σ/±2σ bands; Initial Balance = the first session hour with 1.5×/2× extensions; previous session profile (candle volume spread over its range, USD 10 buckets, 70% VA); weak high/low = an extreme in ≥ 2 30-min windows (≤ 0.02%). Frequencies from full 1h sessions of the same kind (NY IB = the 10:00–11:00 New York candle): IB breakouts, the 80% rule, weak vs strong extremes taken out (Newcombe difference), previous session high/low touch by open; 95% Wilson intervals'
         ),
         kinds: ['LIVE'],
         refresh: tr('świece 1m co minutę, 1h co 30 min', '1m candles every minute, 1h every 30 min'),
