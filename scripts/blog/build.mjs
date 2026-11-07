@@ -62,7 +62,44 @@ export async function buildPages({ outDir, site }) {
  * Buduje blog do `outDir/blog`, strony serwisu (bez `pages: false`) i `outDir/sitemap.xml`. Błędny wpis zatrzymuje build
  * (nic nie trafia na stronę po cichu). Zwraca liczbę opublikowanych wpisów.
  */
-export async function buildBlog({ contentDir = CONTENT_DIR, outDir, site, drafts = false, pages = true }) {
+/** Mapy z ostatnich 14 dni trafiają do maps.json (rozliczenie poziomów w aplikacji). */
+const MAPS_DAYS = 14;
+
+/** Rodzaj mapy z rubryki wpisu (albo tytułu): dzień, przed NY, otwarcie sesji, aktualizacja 4h, inne. */
+export function mapKind(section, title) {
+  const t = `${section} ${title}`.toLowerCase();
+  const sec = section.toLowerCase();
+  if (sec.startsWith('mapa dnia')) return 'dzien';
+  if (sec.startsWith('mapa przed nowym jorkiem')) return 'ny';
+  if (sec.startsWith('otwarcie')) return 'otwarcie';
+  if (sec.startsWith('aktualizacja')) return 'aktualizacja';
+  if (sec.startsWith('mapa') || sec.startsWith('rozliczenie') || sec.startsWith('podsumowanie')) return 'inne';
+  if (t.includes('mapa dnia')) return 'dzien';
+  if (t.includes('przed nowym jorkiem')) return 'ny';
+  if (t.includes('otwarcie')) return 'otwarcie';
+  if (t.includes('aktualizacja')) return 'aktualizacja';
+  return 'inne';
+}
+
+/** Zawartość blog/maps.json: tylko wpisy z poziomami i ceną z ostatnich 14 dni, od najnowszego (bez treści wpisów). */
+export function mapsJson(posts, now) {
+  const since = now - MAPS_DAYS * 24 * 3600_000;
+  const maps = posts
+    .filter((p) => p.levels.length > 0 && p.price != null && p.ms >= since && p.ms <= now)
+    .sort((a, b) => b.ms - a.ms)
+    .map((p) => ({
+      id: p.id,
+      title: p.title,
+      kind: mapKind(p.section, p.title),
+      publishedAt: p.ms,
+      price: p.price,
+      levels: p.levels.map((l) => (l.note ? { label: l.label, price: l.price, note: l.note } : { label: l.label, price: l.price })),
+      url: `blog/${p.id}/`,
+    }));
+  return { v: 1, asOf: now, maps };
+}
+
+export async function buildBlog({ contentDir = CONTENT_DIR, outDir, site, drafts = false, pages = true, now = Date.now() }) {
   const { posts, problems } = loadPosts(contentDir);
   if (problems.length) throw new Error(`Błędne wpisy bloga:\n${formatProblems(problems)}`);
   const visible = posts.filter((p) => drafts || !p.draft);
@@ -99,6 +136,7 @@ export async function buildBlog({ contentDir = CONTENT_DIR, outDir, site, drafts
     );
   }
   await writeFile(path.join(blogDir, 'feed.xml'), feedXml(s, visible));
+  await writeFile(path.join(blogDir, 'maps.json'), JSON.stringify(mapsJson(visible, now)));
   await writeFile(path.join(outDir, 'sitemap.xml'), sitemapXml(s, visible, pages ? await buildPages({ outDir, site: s }) : []));
   await writeFile(
     path.join(blogDir, 'og.png'),
