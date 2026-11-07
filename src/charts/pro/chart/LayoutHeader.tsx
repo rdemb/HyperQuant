@@ -42,10 +42,14 @@ export const LayoutHeader: React.FC<{
   blogMaps: BlogMapsState;
   blogMap: BlogMap | null;
   narrow: boolean;
-}> = ({ id, question, store, model, liq, whales, whalesConfigured, blogMaps, blogMap, narrow }) => {
+  /** Po każdym przeliczeniu: trzy liczby nagłówka (domyślny tytuł Klatki). */
+  onNumbers?: (nums: LayoutNumber[]) => void;
+}> = ({ id, question, store, model, liq, whales, whalesConfigured, blogMaps, blogMap, narrow, onNumbers }) => {
   const [nums, setNums] = useState<LayoutNumber[]>(() => layoutNumbers(id, { coin: store.coin, now: Date.now() }));
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const onNumbersRef = useRef(onNumbers);
+  onNumbersRef.current = onNumbers;
   const scan = useRef<InputScan>({ model, liq, whales, whalesConfigured, blog: { state: blogMaps, map: blogMap } });
   scan.current = { model, liq, whales, whalesConfigured, blog: { state: blogMaps, map: blogMap } };
   const runRef = useRef<() => void>(() => {});
@@ -91,6 +95,7 @@ export const LayoutHeader: React.FC<{
       try {
         const n = layoutNumbers(id, readInputs(id, store, scan.current, id === 'big-hands' ? hawkesInput() : undefined));
         setNums(n);
+        onNumbersRef.current?.(n);
         waiting &&= n.some((v) => v.value === DASH);
       } finally {
         // Następne przeliczenie także po wyjątku (nagłówek nie może zamarznąć na starych liczbach)

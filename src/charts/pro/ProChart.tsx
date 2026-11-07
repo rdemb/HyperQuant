@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { Bell, BellOff, BellPlus, Camera, ChevronDown, ChevronsRight, Columns2, Copy, Eye, EyeOff, Grid2x2, History, Keyboard, Layers, Link, ListOrdered, Maximize2, Minimize2, Minus, MoreHorizontal, PenTool, RotateCcw, SlidersHorizontal, Square, X } from 'lucide-react';
+import { Bell, BellOff, BellPlus, Camera, ChevronDown, ChevronsRight, Columns2, Copy, Eye, EyeOff, Frame as FrameIcon, Grid2x2, History, Keyboard, Layers, Link, ListOrdered, Maximize2, Minimize2, Minus, MoreHorizontal, PenTool, RotateCcw, SlidersHorizontal, Square, X } from 'lucide-react';
 import { Badge, BadgeTone, Segmented, numLang } from '../../ui';
 import { LiqMapState, useLiqMap } from '../../state/useLiqMap';
 import { useDeskLedger } from '../../state/useDeskLedger';
@@ -21,7 +21,9 @@ import { type HideKey, type PaneKey, ProChartController, type ScaleState } from 
 import { DomLadder, PickCard, TapePanel, compact } from './chart/FlowPanels';
 import { HoverSignal, Legend } from './chart/Legend';
 import { LOT_FLOOR, type LiquidityPick } from './chart/liquidity';
-import { brandedScreenshot, downloadCanvas } from './chart/screenshot';
+import { type FrameQuality, brandedScreenshot, downloadCanvas, fileStamp } from './chart/screenshot';
+import { defaultFrameTitle, mapQuality, tapeQuality } from './chart/frame';
+import { FrameDialog, type FrameSource } from './chart/FrameDialog';
 import { MAX_ALERTS, type PriceAlert, addAlert, alertBook, alertLines, alertLog, askNotifications, hasLine, lastSeen, lineLabel, markSeen, newAlert, primeAlertSound, removeAlert } from './chart/alerts';
 import { type LinkAlarm, linkAlerts, parseAlarmLink } from './chart/alarmLink';
 import { AlarmLinkCard, type AlertDraft, AlertsMenu } from './chart/AlertsMenu';
@@ -30,7 +32,7 @@ import { DEFAULT_TTL_MS, defaultDir, eventText } from '../../utils/alertRules';
 import { fmtPx, priceDigits } from './chart/layout';
 import type { PbZone } from './chart/pbRangeLayer';
 import { ChartLayout, ChartSettings, NARROW_QUERY, PHONE_PANES, PhonePane, DROPPED_NOTICE_KEY, hashFor, isNarrow, loadSettings, phoneSettings, saveSettings, settingsFromHash } from './chart/settings';
-import { Station, stationById, stationKey, stationPanel } from './chart/stations';
+import { Station, priceLayerCount, stationById, stationKey, stationPanel } from './chart/stations';
 import { ChartTemplate, applyTemplate, loadTemplates, saveAs, saveTemplates } from './chart/templates';
 import { NumbersCard, StatGroupPicker } from './chart/NumbersCard';
 import { IndicatorsDialog, type IndicatorsSection, type ToggleItem } from './chart/IndicatorsDialog';
@@ -38,7 +40,8 @@ import { IndicatorSettings } from './chart/IndicatorSettings';
 import { indicatorLabel, indicatorsLink } from './indicators/registry';
 import { MarketStateBar } from './chart/MarketStateBar';
 import { LayoutHeader } from './chart/LayoutHeader';
-import { blogMapScan, legendChips, liqScan, whalesScan } from './chart/layerSources';
+import type { LayoutNumber } from './chart/layoutNumbers';
+import { blogMapScan, legendChips, liqScan, tapeCoveragePct, whalesScan } from './chart/layerSources';
 import { blogMapName } from './chart/blogMapLayer';
 import { CoverageLegend } from './chart/CoverageLegend';
 import { type DataSource, needsOf } from './chart/coverageStrip';
@@ -128,6 +131,8 @@ const noticePending = (): boolean => {
     return false;
   }
 };
+
+const FRAME_LABEL = tr('Klatka: obraz 16:9 albo 1:1 z tytułem i paskiem jakości (PNG)', 'Frame: a 16:9 or 1:1 image with a title and the quality strip (PNG)');
 
 /** Od tej szerokości karty (px) przełączniki i narzędzia mieszczą się w jednym wierszu paska. */
 const ONE_ROW_MIN_W = 1100;
@@ -518,16 +523,46 @@ export const ProChart: React.FC<{
     else void el.requestFullscreen?.();
   };
 
+  /** Rynek, giełda, interwał i rodzaj wykresu (podpis zrzutu i źródło Klatki). */
+  const chartSource = () => `${store.coin}-PERP · Hyperliquid · ${intervalById(settings.interval).label} · ${settings.view === 'footprint' ? 'Footprint' : tr('Świece', 'Candles')}`;
+  /** Pasek jakości: pokrycie widocznego zakresu taśmą i pokrycie open interest przez mapę skanera (chwila `now` magazynu). */
+  const quality = (ctrl: ProChartController, now: number): FrameQuality => {
+    const span = ctrl.visibleSpan(now);
+    return { ...tapeQuality(span ? tapeCoveragePct(store.coverage, span.from, span.to) : Number.NaN), ...mapQuality(liq, store.coin, inReplay) };
+  };
+
   const screenshot = () => {
     const ctrl = ctrlRef.current;
     const host = hostRef.current;
     if (!ctrl || !host) return;
-    const iv = intervalById(settings.interval);
-    const when = new Date();
-    const mode = settings.view === 'footprint' ? 'Footprint' : tr('Świece', 'Candles');
-    const img = brandedScreenshot(ctrl.chart.takeScreenshot(true), host.clientWidth, `${store.coin}-PERP · Hyperliquid · ${iv.label} · ${mode}`, when);
-    const stamp = `${when.getFullYear()}${String(when.getMonth() + 1).padStart(2, '0')}${String(when.getDate()).padStart(2, '0')}-${fmtHm(when.getTime()).replace(':', '')}`;
-    downloadCanvas(img, `hyperquant-${store.coin.toLowerCase()}-${iv.id}-${stamp}.png`);
+    // Chwila danych (w powtórce — odtwarzana), w czasie lokalnym
+    const now = store.serverNow();
+    const img = brandedScreenshot(ctrl.chart.takeScreenshot(true), host.clientWidth, chartSource(), new Date(now), quality(ctrl, now));
+    downloadCanvas(img, `hyperquant-${store.coin.toLowerCase()}-${intervalById(settings.interval).id}-${fileStamp(now)}.png`);
+  };
+
+  // Klatka: zrzut z chwili otwarcia, domyślny tytuł z pytania układu i trzech liczb nagłówka (pierwszy panel karty)
+  const headerNums = useRef<LayoutNumber[] | null>(null);
+  const onHeaderNumbers = useCallback((n: LayoutNumber[]) => {
+    headerNums.current = n;
+  }, []);
+  const [frameSrc, setFrameSrc] = useState<FrameSource | null>(null);
+  const openFrame = () => {
+    const ctrl = ctrlRef.current;
+    if (!ctrl) return;
+    const now = store.serverNow();
+    const shot = ctrl.chart.takeScreenshot(true);
+    setMenu(null);
+    setFrameSrc({
+      layout: station.id,
+      title: defaultFrameTitle(station.question, layoutHeader && !inReplay ? headerNums.current : null),
+      source: chartSource(),
+      time: now,
+      quality: quality(ctrl, now),
+      // Warstwy, które widać na tym wykresie (telefon i układ 2 × 2 chowają część ustawień)
+      layersShown: priceLayerCount(shownSettings(settings, narrow, layout, inReplay)),
+      image: () => shot,
+    });
   };
 
   const copy = (text: string, done: string) => {
@@ -751,6 +786,9 @@ export const ProChart: React.FC<{
             <ToolBtn label={tr('Zrzut ekranu (PNG)', 'Screenshot (PNG)')} onClick={screenshot}>
               <Camera className="w-4 h-4" />
             </ToolBtn>
+            <ToolBtn label={FRAME_LABEL} onClick={openFrame} active={frameSrc !== null}>
+              <FrameIcon className="w-4 h-4" />
+            </ToolBtn>
             <ToolBtn
               label={tr('Skróty klawiszowe (?)', 'Keyboard shortcuts (?)')}
               className="hidden lg:inline-flex"
@@ -842,8 +880,10 @@ export const ProChart: React.FC<{
           blogMaps={blogMaps}
           blogMap={pickMap(blogMaps.maps, store.serverNow(), settings.blogMapId)}
           narrow={narrow}
+          onNumbers={onHeaderNumbers}
         />
       )}
+      {frameSrc && <FrameDialog src={frameSrc} onClose={() => setFrameSrc(null)} />}
 
       {replay && <ReplayBar session={replay.session} narrow={narrow} onExit={replay.onExit} />}
 
@@ -1008,6 +1048,7 @@ export const ProChart: React.FC<{
                     { icon: ChevronsRight, label: tr('Przewiń do bieżącej świecy', 'Scroll to the current candle'), on: () => ctrlRef.current?.scrollToNow() },
                     { icon: RotateCcw, label: tr('Przywróć skalę', 'Reset scale'), on: () => ctrlRef.current?.resetScales() },
                     { icon: Camera, label: tr('Zrzut ekranu (PNG)', 'Screenshot (PNG)'), on: screenshot },
+                    { icon: FrameIcon, label: tr('Klatka (PNG 16:9 albo 1:1)', 'Frame (PNG 16:9 or 1:1)'), on: openFrame },
                     ...(canReplay ? [{ icon: History, label: tr('Powtórka nagranej doby', 'Replay of the recorded day'), on: openReplay }] : []),
                     { icon: Link, label: inReplay ? tr('Kopiuj link do tej chwili', 'Copy link to this moment') : tr('Kopiuj link do widoku', 'Copy view link'), on: copyLink },
                     { icon: fullscreen ? Minimize2 : Maximize2, label: fullscreen ? tr('Zamknij pełny ekran', 'Exit full screen') : tr('Pełny ekran', 'Full screen'), on: toggleFullscreen },

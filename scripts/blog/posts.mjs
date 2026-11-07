@@ -4,6 +4,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { parse as parseYaml } from 'yaml';
+import { GUARDS, guardViolations } from '../../src/utils/safeguards.ts';
 
 export const TIME_ZONE = 'Europe/Warsaw';
 export const TYPES = ['article', 'note'];
@@ -40,41 +41,10 @@ const MARK_RE = /^[ \t]*\[\[([^\]\n]*)\]\][ \t]*$/gm;
 const extraKeys = (o, known) => (o && typeof o === 'object' ? Object.keys(o).filter((k) => !known.has(k)) : []);
 
 /**
- * Bezpieczniki treści. Każdy wzorzec ma powód, który trafia do komunikatu błędu.
- * Granice słów przez \p{L}, bo \b w JS nie zna polskich liter.
+ * Bezpieczniki treści (prywatność, analiza zamiast sygnałów, styl) i ich komunikaty: wspólny moduł z tytułem Klatki
+ * na stronie (src/utils/safeguards.ts), więc jedna lista dla bloga i wykresów.
  */
-const word = (alts) => new RegExp(`(?<![\\p{L}\\d])(?:${alts})(?![\\p{L}\\d])`, 'iu');
-export const GUARDS = [
-  // Prywatność: nic, co identyfikuje portfel, transakcję, serwer albo dostęp
-  { re: /0x[0-9a-f]{40,}/i, why: 'adres portfela lub hash transakcji' },
-  { re: /(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?![\d.])/, why: 'adres IP' },
-  { re: /[\w.+-]+@[\w-]+\.[a-z]{2,}/i, why: 'adres e-mail' },
-  { re: /\d{8,10}:[A-Za-z0-9_-]{35}|gh[pousr]_[A-Za-z0-9]{30,}|sk-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}/, why: 'token lub klucz dostępu' },
-  // Analiza, nie sygnały: bez trybu rozkazującego kup/sprzedaj i bez gotowych wejść
-  { re: word('kup|kupuj|kupcie|kupujcie|sprzedaj|sprzedawaj|sprzedajcie|shortuj|shortujcie|longuj|longujcie'), why: 'wezwanie do transakcji' },
-  {
-    re: word('(?:wejdź|wejdźcie|wchodź|wchodźcie|otwórz|otwórzcie|otwieraj|zajmij|zajmijcie|zamknij|zamykaj)\\s+(?:w\\s+)?(?:long\\p{L}*|short\\p{L}*|pozycj\\p{L}*)'),
-    why: 'wezwanie do transakcji',
-  },
-  { re: /(?<![\p{L}])(?:long|short)\s+(?:od|z|przy|po)\s+\d/iu, why: 'gotowe wejście (long/short od ceny)' },
-  { re: /(?<![\p{L}])(?:TP|SL|take[ -]profit|stop[ -]loss)\s*[:=]?\s*\d/iu, why: 'poziom TP/SL' },
-  // Styl: bez myślników i strzałek
-  { re: /—|\s–\s/, why: 'myślnik' },
-  { re: /[→←⇒⇐➜➔↑↓]/, why: 'strzałka' },
-];
-
-/** Wszystkie naruszenia bezpieczników w tekście (powód + fragment z kontekstem). */
-export function guardViolations(text) {
-  const out = [];
-  for (const g of GUARDS) {
-    const m = g.re.exec(text);
-    if (m) {
-      const from = Math.max(0, m.index - 25);
-      out.push(`${g.why}: „…${text.slice(from, m.index + m[0].length + 25).replace(/\s+/g, ' ').trim()}…”`);
-    }
-  }
-  return out;
-}
+export { GUARDS, guardViolations };
 
 /** Rozdzielenie frontmattera YAML (między liniami ---) i treści. */
 export function splitFrontmatter(src) {

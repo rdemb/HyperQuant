@@ -53,6 +53,7 @@ import type { Hip4State } from '../../../state/useHip4';
 import { type BlogMap, type BlogMapsState, pickMap } from '../../../state/useBlogMaps';
 import { mapWindow } from '../../../utils/mapSettlement';
 import { CountdownLabel } from './countdown';
+import { visibleSpan } from './frame';
 import { FlowVenue, OiVenue, oiMaxAge, per8h } from '../venues/parse';
 import { VenueStore, acquireVenues, venueStoreFor } from '../venues/venueStore';
 import { DOM_W_PX, PRO, RIGHT_GAP_PX, chartOptions, crosshairTimeFormatter, rgba } from './theme';
@@ -1104,6 +1105,12 @@ export class ProChartController {
     if (!r || n === 0 || r.to >= n - 1) return null;
     const i = Math.max(0, Math.min(n - 1, Math.round((r.from + r.to) / 2)));
     return this.bars[i].t + this.series.interval.ms / 2;
+  }
+
+  /** Widoczny zakres czasu (ms) od pierwszej do końca ostatniej widocznej świecy, najwyżej do `now`; bez świec — null. */
+  visibleSpan(now: number): { from: number; to: number } | null {
+    const bars = this.bars;
+    return visibleSpan(this.chart.timeScale().getVisibleLogicalRange(), bars.length, (i) => bars[i].t, this.series.interval.ms, now);
   }
 
   /**
