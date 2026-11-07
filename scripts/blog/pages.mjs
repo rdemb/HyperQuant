@@ -39,9 +39,9 @@ const T = {
     lessons: 'Lekcje',
     charts: 'Wykresy',
     atlas: 'Atlas wskaźników',
-    openCharts: 'Otwórz Wykresy',
+    openCharts: 'Otwórz W sesji',
     openInLessons: 'Zobacz w Lekcjach',
-    figureNote: 'Rycina z prawdziwego wycinka rynku, ćwiczenia i przycisk układu Wykresów są w zakładce Lekcje.',
+    figureNote: 'Rycina z prawdziwego wycinka rynku, ćwiczenia i przycisk otwierający układ wykresu są w zakładce Lekcje.',
     prev: 'Poprzednie hasło',
     next: 'Następne hasło',
     desk: {
@@ -127,9 +127,9 @@ const T = {
     lessons: 'Lessons',
     charts: 'Charts',
     atlas: 'Indicator atlas',
-    openCharts: 'Open Charts',
+    openCharts: 'Open In session',
     openInLessons: 'See it in Lessons',
-    figureNote: 'The figure from a real market slice, the exercises and the Charts layout button are in the Lessons tab.',
+    figureNote: 'The figure from a real market slice, the exercises and the button that opens the chart layout are in the Lessons tab.',
     prev: 'Previous entry',
     next: 'Next entry',
     desk: {
@@ -347,7 +347,7 @@ ${shotFigure(root, 'lessons', lang, c.shotAlt, c.caption)}
   };
 }
 
-/** Hasło atlasu: co to jest, jak liczymy, jak czytać, pułapki, z czym łączyć, gdzie na Wykresach. */
+/** Hasło atlasu: co to jest, jak liczymy, jak czytać, pułapki, z czym łączyć, gdzie w aplikacji. */
 function atlasPage(site, lang, entry, prev, next) {
   const t = T[lang];
   const L = LESSONS[lang];

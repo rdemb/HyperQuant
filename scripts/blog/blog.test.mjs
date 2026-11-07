@@ -369,7 +369,7 @@ describe('blog: budowanie', () => {
   });
 });
 
-describe('blog: powtórka chwili wpisu na Wykresach', () => {
+describe('blog: powtórka chwili wpisu W sesji', () => {
   const at = (section, date = BASE.date) => validatePost(ID, { ...BASE, section, date }, BODY_ARTICLE).post;
 
   it('link w formacie powtórki Wykresów: zatrzymanie w chwili wpisu, okno 2 h przed i 10 h po', () => {
@@ -395,9 +395,32 @@ describe('blog: powtórka chwili wpisu na Wykresach', () => {
     const html = postPage(SITE, post, {});
     expect(html).toContain(`<section class="block replay" data-until="${post.ms + 7 * 24 * 3_600_000}"`);
     expect(html).toContain('href="../../#charts?replay=history&amp;m=BTC&amp;i=5m&amp;v=footprint&amp;from=2026-10-24T05:30:00Z&amp;to=2026-10-24T17:30:00Z&amp;t=2026-10-24T07:30:00Z');
-    expect(html).toMatch(/<div class="replay-off" hidden>[\s\S]*href="\.\.\/\.\.\/#charts">Otwórz Wykresy/);
+    expect(html).toMatch(/<div class="replay-off" hidden>[\s\S]*href="\.\.\/\.\.\/#charts">Otwórz W sesji/);
     // blok stoi przed udostępnianiem pod treścią
     expect(html.indexOf('class="block replay"')).toBeLessThan(html.indexOf('<section class="block share"'));
+  });
+  it('szablon wpisu bez dawnej zakładki „Wykresy”: miejsce w aplikacji to W sesji; link do strony „Wykresy” zostaje jej nazwą', () => {
+    for (const section of ['Mapa dnia', 'Podsumowanie dnia']) {
+      const html = postPage(SITE, at(section), {});
+      expect(html, section).not.toMatch(/(na|w) wykresach|otwórz wykresy|powtórk\S* (na|w) wykres/i);
+      // „Wykresy” wielką literą tylko jako nazwa statycznej strony wykresy/ (stopka)
+      expect(html.replace(/<a href="[^"]*wykresy\/">Wykresy<\/a>/g, ''), section).not.toMatch(/Wykres(y|ach|ów|om|ami)/);
+      expect(html).toContain('Otwórz powtórkę W sesji');
+    }
+  });
+});
+
+describe('strony serwisu i wpisy: linki do aplikacji podpisane nowymi miejscami', () => {
+  it('każdy link do ekranu W sesji (#charts) bez „Wykresy” / „Charts” w podpisie', () => {
+    const post = validatePost(ID, BASE, BODY_ARTICLE).post;
+    const pages = [...sitePages(SITE).filter((p) => p.html), { path: `blog/${ID}/`, html: postPage(SITE, post, {}) }];
+    const bad = [];
+    for (const p of pages) {
+      for (const [, href, text] of p.html.matchAll(/<a [^>]*href="([^"]*#charts[^"]*)"[^>]*>([\s\S]*?)<\/a>/g)) {
+        if (/wykres|charts/i.test(text)) bad.push(`${p.path}: ${href} → ${text}`);
+      }
+    }
+    expect(bad).toEqual([]);
   });
 });
 
