@@ -301,6 +301,16 @@ const NAV = {
   ],
 };
 const OG_LOCALE = { pl: 'pl_PL', en: 'en_GB' };
+
+/** Czy link `href` (względem strony `url`) prowadzi do tego samego dokumentu (bez części #, która wskazuje aplikację). */
+function sameDocument(href, url) {
+  try {
+    const u = new URL(href, url);
+    return u.hash === '' && u.href === new URL(url).href;
+  } catch {
+    return false;
+  }
+}
 const FOOTER = {
   pl: (root, site) =>
     `<a href="${root}">Desk HyperQuant</a> · <a href="${root}wykresy/">Wykresy</a> · <a href="${site.repo}">Kod na GitHubie</a> · <a href="${root}blog/feed.xml">RSS</a>`,
@@ -344,8 +354,14 @@ export function layout(
     ? `\n${[...alternates, { lang: 'x-default', url: alternates.find((a) => a.lang === 'en')?.url ?? url }].map((a) => `<link rel="alternate" hreflang="${a.lang}" href="${esc(a.url)}">`).join('\n')}`
     : '';
   const localeAlt = other.map((a) => `\n<meta property="og:locale:alternate" content="${OG_LOCALE[a.lang]}">`).join('');
+  // aria-current="page" tylko na linku do tego dokumentu; dział strony (W sesji przy stronie Wykresów, Lekcje przy haśle
+  // atlasu, Blog przy wpisie) prowadzi do innego dokumentu, więc jest tylko podświetlony klasą
   const nav = NAV[lang]
-    .map(([key, label, href]) => `<a class="nav-${key}" href="${root}${href}"${key === current ? ' aria-current="page"' : ''}>${label}</a>`)
+    .map(([key, label, href]) => {
+      const here = key === current;
+      const doc = here && sameDocument(`${root}${href}`, url);
+      return `<a class="nav-${key}${here && !doc ? ' is-section' : ''}" href="${root}${href}"${doc ? ' aria-current="page"' : ''}>${label}</a>`;
+    })
     .join('');
   const rss = current === 'blog' ? `<a class="nav-rss" href="${root}blog/feed.xml">RSS</a>` : '';
   const langLink = other.map((a) => `<a class="nav-lang" href="${esc(a.url)}" hreflang="${a.lang}" lang="${a.lang}">${a.lang.toUpperCase()}</a>`).join('');
