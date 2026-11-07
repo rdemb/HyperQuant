@@ -59,7 +59,7 @@ export interface HistoryBatch {
     spans: Span[];
     /** Odcinki z oznaczonymi hashami zerowymi (pliki rejestratora od wprowadzenia kolumny `z`). */
     zeroSpans?: Span[];
-    /** Rosnąco po czasie; biorca, maker i hash to numery ważne w obrębie godziny. */
+    /** Rosnąco po czasie; biorca, maker i hash to numery ważne w obrębie godziny albo doby UTC (zakres pliku, `toFills`). */
     fills: Fill[];
     /** [czas, otwarte pozycje] co minutę. */
     oi: [number, number][];

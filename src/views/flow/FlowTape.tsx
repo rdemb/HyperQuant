@@ -7,6 +7,7 @@ import { takerAlias } from '../../charts/pro/core/clashes';
 import type { AggressorOrder } from '../../charts/pro/core/orders';
 import { type TapePace, type TapeRow, tapeGap, tapeRows } from '../../charts/pro/core/tapeMemory';
 import { fmtHms } from '../../charts/pro/core/time';
+import { accountScopeKey } from '../../charts/pro/indicators/registry';
 import type { ProStore } from '../../charts/pro/store/proStore';
 import { numLang } from '../../ui/format';
 import { tr } from '../../i18n';
@@ -130,9 +131,12 @@ export const FlowTape: React.FC<{
           key="a"
           tone="acct"
           title={
-            o.taker.startsWith('~')
-              ? tr(`Zlecenia tego konta w ostatnich 15 min: ${r.repeat} (pseudonim z zapisu serwera, nowy co godzinę)`, `This account placed ${r.repeat} orders in the last 15 min (pseudonym from the server recording, new every hour)`)
-              : tr(`Zlecenia tego konta w ostatnich 15 min: ${r.repeat} (pseudonim tylko na tę sesję strony)`, `This account placed ${r.repeat} orders in the last 15 min (pseudonym for this page session only)`)
+            // Konto z zapisu serwera (`~…`): numer ważny godzinę albo dobę UTC (zakres pliku)
+            accountScopeKey(o.taker)?.startsWith('d:')
+              ? tr(`Zlecenia tego konta w ostatnich 15 min: ${r.repeat} (pseudonim z zapisu serwera, nowy co dobę UTC)`, `This account placed ${r.repeat} orders in the last 15 min (pseudonym from the server recording, new every UTC day)`)
+              : o.taker.startsWith('~')
+                ? tr(`Zlecenia tego konta w ostatnich 15 min: ${r.repeat} (pseudonim z zapisu serwera, nowy co godzinę)`, `This account placed ${r.repeat} orders in the last 15 min (pseudonym from the server recording, new every hour)`)
+                : tr(`Zlecenia tego konta w ostatnich 15 min: ${r.repeat} (pseudonim tylko na tę sesję strony)`, `This account placed ${r.repeat} orders in the last 15 min (pseudonym for this page session only)`)
           }
         >
           {takerAlias(o.taker)} ×{r.repeat}

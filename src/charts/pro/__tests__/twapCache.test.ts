@@ -18,6 +18,7 @@ describe('TwapPlanCache', () => {
     cache.want('a', 60_000);
     cache.want('b', 60_000);
     cache.want('~k3', 60_000);
+    cache.want(`~d${T0}:3`, 60_000);
     await vi.advanceTimersByTimeAsync(0);
     expect(calls).toEqual(['a']);
     expect(cache.get('a')).toMatchObject({ pending: false, at: T0 });
@@ -26,6 +27,7 @@ describe('TwapPlanCache', () => {
     await vi.advanceTimersByTimeAsync(2000);
     expect(calls).toEqual(['a', 'b']);
     expect(cache.get('~k3')).toBeUndefined();
+    expect(cache.get(`~d${T0}:3`)).toBeUndefined();
   });
 
   it('świeża odpowiedź nie jest pobierana ponownie, starsza niż maxAge tak; błąd = plans null', async () => {

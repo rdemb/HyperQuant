@@ -1,6 +1,7 @@
 import { DATA_BASE } from '../../../state/usePublished';
-import { HIST_HOUR_MS, HIST_PART_MS, type HistFrame, type HistoryIndex, decodeBook, decodeTrades, historyPath, isHistoryIndex } from '../../../utils/tapeHistory';
+import { HIST_HOUR_MS, HIST_PART_MS, type HistFrame, type HistoryIndex, type IdScope, decodeBook, decodeTrades, historyPath, isHistoryIndex } from '../../../utils/tapeHistory';
 import type { BookFrame } from '../core/book';
+import { DAY } from '../core/time';
 import type { Fill } from '../hl/parse';
 import { type HistoryBatch, type ProStore, RETENTION_MS } from './proStore';
 
@@ -50,9 +51,14 @@ export function toBookFrame(f: HistFrame): BookFrame {
   return { t: f.t, step: f.step, px, sz, n: cnt, nBids, ...(f.exact ? { exact: true as const } : {}) };
 }
 
-/** Wypełnienia z pliku: numery biorcy, makera i zlecenia w godzinie jako klucze (`~godzina:numer`), bez adresów. */
-export function toFills(trades: NonNullable<ReturnType<typeof decodeTrades>>['trades'], hour: number): Fill[] {
-  const id = (n: number, p = '') => (n >= 0 ? `~${hour}:${p}${n}` : '');
+/**
+ * Wypełnienia z pliku zaczynającego się w `start`: numery biorcy, makera i zlecenia jako klucze w zakresie numeracji
+ * pliku, bez adresów — `~godzina:numer` (`hour`) albo `~ddoba:numer` (`day`; godzina i doba to początki UTC w ms).
+ * Klucze z różnych zakresów nigdy się nie łączą; prefiks `~` znaczy konto z historii serwera (na żywo — adres).
+ */
+export function toFills(trades: NonNullable<ReturnType<typeof decodeTrades>>['trades'], start: number, idScope: IdScope): Fill[] {
+  const scope = idScope === 'day' ? `d${Math.floor(start / DAY) * DAY}` : `${hourOf(start)}`;
+  const id = (n: number, p = '') => (n >= 0 ? `~${scope}:${p}${n}` : '');
   return trades.map((x) => {
     const f: Fill = { time: x.t, px: x.px, sz: x.sz, side: x.side === 'B' ? 1 : -1, tid: x.tid, hash: id(x.o, 'o'), taker: id(x.k), maker: id(x.m) };
     if (x.z) f.zero = true;
@@ -187,7 +193,7 @@ export class ServerHistory {
     const bOk = b !== null && b.coin === coin;
     if (!tOk && !bOk) return;
     const batch: HistoryBatch = {
-      trades: tOk ? { from: t.from, to: t.to, spans: t.spans, zeroSpans: t.zeroKnown ? t.spans : [], fills: toFills(t.trades, hourOf(u.start)), oi: t.ctx.map((c) => [c.t, c.oi]) } : null,
+      trades: tOk ? { from: t.from, to: t.to, spans: t.spans, zeroSpans: t.zeroKnown ? t.spans : [], fills: toFills(t.trades, u.start, t.idScope), oi: t.ctx.map((c) => [c.t, c.oi]) } : null,
       frames: bOk ? b.frames.map(toBookFrame) : [],
     };
     this.store.restoreHistory(batch);

@@ -82,7 +82,7 @@ export function joinUnits(coin: string, parts: readonly { unit: ReplayUnit; trad
     if (t && t.coin === coin) {
       out.spans.push(...t.spans);
       if (t.zeroKnown) out.zeroSpans.push(...t.spans);
-      for (const f of toFills(t.trades, hourOf(unit.start))) out.fills.push(f);
+      for (const f of toFills(t.trades, unit.start, t.idScope)) out.fills.push(f);
       for (const c of t.ctx) out.oi.push([c.t, c.oi]);
     }
     const b = decodeBook(book);

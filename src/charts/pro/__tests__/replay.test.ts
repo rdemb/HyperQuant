@@ -2,7 +2,7 @@ import { gzipSync } from 'node:zlib';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { HIST_HOUR_MS, HIST_PART_MS, type HistTrade, encodeBook, encodeTrades, historyPath } from '../../../utils/tapeHistory';
 import type { Candle } from '../hl/parse';
-import { recordedRange, replayUnits } from '../replay/data';
+import { joinUnits, recordedRange, replayUnits } from '../replay/data';
 import { linkPatch, parseReplayLink, replayHash } from '../replay/link';
 import { ReplaySession } from '../replay/session';
 
@@ -67,6 +67,18 @@ describe('nagranie do powtórki — pliki i zakres', () => {
       { start: H0 + HIST_HOUR_MS, part: false },
       { start: H0 + 2 * HIST_HOUR_MS, part: true },
     ]);
+  });
+
+  it('klucze kont z zakresu numeracji pliku: doba dla „day”, godzina dla pliku bez pola', () => {
+    const day = Date.UTC(2026, 9, 24);
+    const ctx = [{ t: H0, oi: 30_000, funding: 1e-5, mark: 80_000 }];
+    const h1 = H0 + HIST_HOUR_MS;
+    const d = joinUnits('BTC', [
+      { unit: { start: H0, part: false }, trades: encodeTrades('BTC', H0, h1, [[H0, h1]], tradesIn(H0, h1), ctx, true, 'day'), book: null },
+      { unit: { start: h1, part: false }, trades: encodeTrades('BTC', h1, h1 + HIST_HOUR_MS, [[h1, h1 + HIST_HOUR_MS]], tradesIn(h1, h1 + HIST_HOUR_MS), ctx), book: null },
+    ]);
+    expect(new Set(d.fills.filter((f) => f.time < h1).map((f) => f.taker))).toEqual(new Set([`~d${day}:1`]));
+    expect(new Set(d.fills.filter((f) => f.time >= h1).map((f) => f.taker))).toEqual(new Set([`~${h1}:1`]));
   });
 });
 

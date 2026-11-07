@@ -1,6 +1,6 @@
 import { gzipSync } from 'node:zlib';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { HIST_HOUR_MS, HIST_PART_MS, type HistFrame, type HistTrade, encodeBook, encodeTrades, historyPath } from '../../../utils/tapeHistory';
+import { HIST_HOUR_MS, HIST_PART_MS, type HistFrame, type HistTrade, type IdScope, decodeTrades, encodeBook, encodeTrades, historyPath } from '../../../utils/tapeHistory';
 import { WallTracker } from '../core/clashes';
 import { BookHistory } from '../core/book';
 import { type AggressorOrder, OrderLog } from '../core/orders';
@@ -27,11 +27,12 @@ function tradesIn(from: number, to: number, tid0: number): HistTrade[] {
 
 const frameAt = (t: number): HistFrame => ({ t, step: 10, bids: [79_990, 2, 3, 79_980, 1, 1], asks: [80_020, 1, 2] });
 
-function files(units: { start: number; part: boolean }[]): Map<string, unknown> {
+/** Pliki taśmy i arkusza; `idScope` — zakres numeracji (bez — plik sprzed pola). */
+function files(units: { start: number; part: boolean }[], idScope?: IdScope): Map<string, unknown> {
   const m = new Map<string, unknown>();
   for (const u of units) {
     const end = u.start + (u.part ? HIST_PART_MS : HIST_HOUR_MS);
-    m.set(historyPath('BTC', u.start, 'trades', u.part), encodeTrades('BTC', u.start, end, [[u.start, end]], tradesIn(u.start, end, u.start / 1000), [{ t: u.start, oi: 30_000, funding: 1e-5, mark: 80_000 }]));
+    m.set(historyPath('BTC', u.start, 'trades', u.part), encodeTrades('BTC', u.start, end, [[u.start, end]], tradesIn(u.start, end, u.start / 1000), [{ t: u.start, oi: 30_000, funding: 1e-5, mark: 80_000 }], true, idScope));
     m.set(historyPath('BTC', u.start, 'book', u.part), encodeBook('BTC', u.start, end, [[u.start, end]], [frameAt(u.start + 1000)]));
   }
   return m;
@@ -113,6 +114,23 @@ describe('ServerHistory — historia z serwera do magazynu wykresu', () => {
     expect(store.coverage.covers(p, p + HIST_PART_MS)).toBe(true);
   });
 
+  it('pliki „day”: konta z kluczem doby, ten sam biorca w dwóch godzinach to jedno konto; pliki bez pola — klucz godziny', async () => {
+    const day = Date.UTC(2026, 9, 24);
+    const units = [
+      { start: H0, part: false },
+      { start: H0 + HIST_HOUR_MS, part: false },
+    ];
+    const f = fakeFetch(files(units, 'day'), index(NOW - 30_000, units.map((u) => u.start), []));
+    h = new ServerHistory(store, BASE, f.fetcher);
+    await h.ensure(H0);
+    expect(new Set(store.orders.range(H0, H0 + 2 * HIST_HOUR_MS).map((o) => o.taker))).toEqual(new Set([`~d${day}:1`]));
+    h.stop();
+    const s2 = new ProStore(new HlStream({ wsFactory: () => ({}) as WebSocket }));
+    h = new ServerHistory(s2, BASE, fakeFetch(files(units), index(NOW - 30_000, units.map((u) => u.start), [])).fetcher);
+    await h.ensure(H0);
+    expect(new Set(s2.orders.range(H0, H0 + 2 * HIST_HOUR_MS).map((o) => o.taker))).toEqual(new Set([`~${H0}:1`, `~${H0 + HIST_HOUR_MS}:1`]));
+  });
+
   it('świeży spis bez pliku — serwer nie nagrywał, plik nie jest pobierany', async () => {
     const f = fakeFetch(new Map(), index(NOW - 10_000, [], []));
     h = new ServerHistory(store, BASE, f.fetcher);
@@ -127,10 +145,10 @@ describe('ProStore.restoreHistory — bez dublowania zleceń', () => {
 
   it('ten sam plik drugi raz (część, potem godzina) nie dubluje zleceń', () => {
     const s = store();
-    const fills = toFills(tradesIn(H0, H0 + HIST_PART_MS, 1), H0);
+    const fills = toFills(tradesIn(H0, H0 + HIST_PART_MS, 1), H0, 'hour');
     s.restoreHistory(batch(fills, H0, H0 + HIST_PART_MS));
     expect(s.orders.length).toBe(10);
-    s.restoreHistory(batch(toFills(tradesIn(H0, H0 + HIST_HOUR_MS, 1), H0), H0, H0 + HIST_HOUR_MS));
+    s.restoreHistory(batch(toFills(tradesIn(H0, H0 + HIST_HOUR_MS, 1), H0, 'hour'), H0, H0 + HIST_HOUR_MS));
     expect(s.orders.length).toBe(HIST_HOUR_MS / 30_000);
   });
 
@@ -140,11 +158,35 @@ describe('ProStore.restoreHistory — bez dublowania zleceń', () => {
     (s as unknown as { liveFrom: number }).liveFrom = live;
     // Strumień widział transakcje od `live` do +1 min (taśma ma je bez zleceń z historii)
     const seen = tradesIn(live, live + 60_000, 1 + (live - H0) / 15_000);
-    s.ingestFills(toFills(seen, H0));
+    s.ingestFills(toFills(seen, H0, 'hour'));
     const before = s.orders.length;
-    s.restoreHistory(batch(toFills(tradesIn(H0, H0 + HIST_PART_MS, 1), H0), H0, H0 + HIST_PART_MS));
+    s.restoreHistory(batch(toFills(tradesIn(H0, H0 + HIST_PART_MS, 1), H0, 'hour'), H0, H0 + HIST_PART_MS));
     // Nowe: 4 zlecenia sprzed strumienia i 4 po minucie widzianej na żywo (luka)
     expect(s.orders.length - before).toBe(HIST_PART_MS / 30_000 - 2);
+  });
+
+  it('klucze kont z zakresu numeracji pliku: `~ddoba:` dla „day”, `~godzina:` dla plików bez pola', () => {
+    const day = Date.UTC(2026, 9, 24);
+    const f = decodeTrades(encodeTrades('BTC', H0, H0 + HIST_PART_MS, [[H0, H0 + HIST_PART_MS]], tradesIn(H0, H0 + HIST_PART_MS, 1), [], true, 'day'))!;
+    expect(toFills(f.trades, H0 + HIST_PART_MS, f.idScope)[0]).toMatchObject({ taker: `~d${day}:1`, maker: `~d${day}:7`, hash: `~d${day}:o0` });
+    const old = decodeTrades(encodeTrades('BTC', H0, H0 + HIST_PART_MS, [[H0, H0 + HIST_PART_MS]], tradesIn(H0, H0 + HIST_PART_MS, 1), []))!;
+    expect(toFills(old.trades, H0 + HIST_PART_MS, old.idScope)[0]).toMatchObject({ taker: `~${H0}:1`, maker: `~${H0}:7`, hash: `~${H0}:o0` });
+  });
+
+  it('godzina przejściowa: transakcja z części „day” i z pliku godzinowego „hour” liczy się raz, z kluczem z części', () => {
+    const s = store();
+    const day = Date.UTC(2026, 9, 24);
+    const file = (to: number, idScope: 'hour' | 'day') => decodeTrades(encodeTrades('BTC', H0, to, [[H0, to]], tradesIn(H0, to, 1), [], true, idScope))!;
+    const part = file(H0 + HIST_PART_MS, 'day');
+    s.restoreHistory(batch(toFills(part.trades, H0, part.idScope), H0, H0 + HIST_PART_MS));
+    // Plik godzinowy scalony ze starym plikiem rejestratora: zakres godzinowy, te same transakcje części
+    const hour = file(H0 + HIST_HOUR_MS, 'hour');
+    s.restoreHistory(batch(toFills(hour.trades, H0, hour.idScope), H0, H0 + HIST_HOUR_MS));
+    expect(s.tape.count).toBe((HIST_HOUR_MS / 30_000) * 2);
+    expect(s.orders.length).toBe(HIST_HOUR_MS / 30_000);
+    const takers = (a: number, b: number) => [...new Set(s.orders.range(a, b).map((o) => o.taker))];
+    expect(takers(H0, H0 + HIST_PART_MS)).toEqual([`~d${day}:1`]);
+    expect(takers(H0 + HIST_PART_MS, H0 + HIST_HOUR_MS)).toEqual([`~${H0}:1`]);
   });
 });
 
@@ -179,7 +221,7 @@ describe('scalanie historii w strukturach wykresu', () => {
 
   it('WallTracker.pushHistory: ściana z historii bez góry lodowej', () => {
     const w = new WallTracker();
-    w.pushHistory(toFills(tradesIn(H0, H0 + 3 * 30_000, 1), H0).map((f) => ({ ...f, side: -1 as const })));
+    w.pushHistory(toFills(tradesIn(H0, H0 + 3 * 30_000, 1), H0, 'hour').map((f) => ({ ...f, side: -1 as const })));
     const walls = w.walls(H0, H0 + HIST_HOUR_MS, 1);
     expect(walls.map((x) => [x.px, x.hits, x.iceberg])).toEqual([
       [80_000, 3, false],
