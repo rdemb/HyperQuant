@@ -58,7 +58,7 @@ export const PickCard: React.FC<{
     const o = pick.order;
     const buy = o.side === 1;
     const top = o.notional > 0 ? o.topMakerUsd / o.notional : 0;
-    // Zlecenie z historii serwera ma numer biorcy zamiast adresu (`~godzina:numer`) — bez podsumowania portfela
+    // Zlecenie z historii serwera ma numer biorcy zamiast adresu (`~godzina:numer`, `~ddoba:numer`) — bez podsumowania portfela
     const fromServer = o.taker.startsWith('~');
     const w = o.taker && !fromServer ? walletSummary(store.orders.range(0, Number.MAX_SAFE_INTEGER), o.taker) : null;
     head = (

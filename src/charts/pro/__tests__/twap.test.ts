@@ -23,7 +23,7 @@ describe('hash zerowy na taśmie', () => {
     const file = encodeTrades('BTC', H0, H0 + HIST_PART_MS, [[H0, H0 + HIST_PART_MS]], [tr(H0 + 1000, 1, false), tr(H0 + 2000, 2, true)], []);
     const f = decodeTrades(file)!;
     expect(f.zeroKnown).toBe(true);
-    const fills = toFills(f.trades, H0);
+    const fills = toFills(f.trades, H0, f.idScope);
     expect(fills.map((x) => x.zero === true)).toEqual([false, true]);
     expect(decodeTrades({ ...file, z: [2] })).toBeNull();
     expect(decodeTrades({ ...file, z: [1, 0] })).toBeNull();

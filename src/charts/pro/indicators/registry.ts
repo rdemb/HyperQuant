@@ -412,8 +412,37 @@ export function marketCostBp(f: BookFrame, usd: number, buy: boolean): number {
   return ((buy ? avg - mid : mid - avg) / mid) * 1e4;
 }
 
-/** Konto ma w historii serwera numer ważny w godzinie UTC: świeca dłuższa nie łączy kont z różnych godzin. */
+/**
+ * Konto ma w historii serwera numer ważny w godzinie UTC (pliki bez `idScope`) albo w dobie UTC (`idScope: 'day'`):
+ * wskaźniki liczące konta w świecy działają na świecach do godziny, więc nie łączą kont z różnych godzin starych plików.
+ */
 export const ACCOUNT_HOUR_MS = 3_600_000;
+
+/**
+ * Zakres numeracji konta z klucza `toFills` (src/charts/pro/store/serverHistory.ts): `h:<godzina>` dla `~<godzina>:…`,
+ * `d:<doba>` dla `~d<doba>:…` (początki UTC w ms), null dla konta na żywo (adres). Ten sam numer to to samo konto tylko
+ * w jednym zakresie; konto z historii nie łączy się z kontem na żywo.
+ */
+export function accountScopeKey(id: string): string | null {
+  if (!id.startsWith('~')) return null;
+  const end = id.indexOf(':');
+  const scope = id.slice(1, end < 0 ? id.length : end);
+  return scope.startsWith('d') ? `d:${scope.slice(1)}` : `h:${scope}`;
+}
+
+/** Czy konta zleceń (bez zleceń bez konta) leżą w jednym zakresie numeracji: wszystkie na żywo albo z jednej godziny lub doby. */
+function oneAccountScope(lists: readonly (readonly { taker: string }[])[]): boolean {
+  let first: string | null | undefined;
+  for (const list of lists) {
+    for (const o of list) {
+      if (o.taker === '') continue;
+      const k = accountScopeKey(o.taker);
+      if (first === undefined) first = k;
+      else if (k !== first) return false;
+    }
+  }
+  return true;
+}
 
 /** Siatka podzleceń TWAP Hyperliquid i tolerancja fazy w niej przy łączeniu podzleceń jednego TWAP-u. */
 const TWAP_SLICE_MS = 30_000;
@@ -1727,8 +1756,8 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
       'TradingView has no such indicator: it is computed from the recorded Hyperliquid tape, which gives the taker account with every trade. Fills are joined into orders as in the order size indicator. The window is “Window (min)” minutes before the candle starts; an account that entered on the same side within it is returning, one that entered only on the opposite side is switching. Shares come from the value entered within the candle and add up to 1 together with the new ones (in the legend). Only shares are shown, never accounts.'
     ),
     memoryNote: tr(
-      'Świeca zależy od swoich zleceń i od zleceń z okna przed nią; obie części muszą mieć taśmę z kontami w całości (zapis z przeglądarki ich nie ma). Historia serwera numeruje konta w obrębie godziny UTC, więc w niej świeca ma wartość tylko wtedy, gdy okno i świeca leżą w jednej godzinie; na żywo okno może przekraczać pełną godzinę. W godzinie otwarcia strony konto sprzed otwarcia liczy się po nim jako nowe.',
-      'A candle depends on its own orders and on the orders in the window before it; both need the tape with accounts throughout (the browser recording has none). Server history numbers accounts within a UTC hour, so there a candle has a value only when the window and the candle lie in one hour; live, the window can cross the full hour. In the hour the page was opened, an account from before opening counts as new after it.'
+      'Świeca zależy od swoich zleceń i od zleceń z okna przed nią; obie części muszą mieć taśmę z kontami w całości (zapis z przeglądarki ich nie ma). Historia serwera numeruje konta w obrębie doby UTC (starsze pliki — w obrębie godziny), więc w niej świeca ma wartość tylko wtedy, gdy okno i świeca leżą w jednej dobie (w starszych plikach — w jednej godzinie); na żywo okno może przekraczać pełną godzinę. Świeca, której okno albo ona sama obejmuje zlecenia sprzed otwarcia strony i po nim, nie ma wartości: numer z historii nie łączy się z kontem na żywo.',
+      'A candle depends on its own orders and on the orders in the window before it; both need the tape with accounts throughout (the browser recording has none). Server history numbers accounts within a UTC day (older files within an hour), so there a candle has a value only when the window and the candle lie in one day (in older files, in one hour); live, the window can cross the full hour. A candle whose window or the candle itself spans orders from before and after the page was opened has no value: a number from history does not link to a live account.'
     ),
     pane: 'own',
     params: [{ key: 'window', label: tr('Okno (min)', 'Window (min)'), min: 5, max: 60, step: 1, def: 15 }],
@@ -1756,10 +1785,9 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
             if (!m || m.n0 !== n0 || m.n1 !== n1) {
               const before = ctx.orders(t - W, t);
               const during = ctx.orders(t, t + ms);
-              // Numer konta z historii serwera (`~godzina:numer`) nie łączy się z numerem z innej godziny
-              const split = Math.floor((t - W) / ACCOUNT_HOUR_MS) !== Math.floor((t + ms - 1) / ACCOUNT_HOUR_MS);
-              const keyed = split && [...before, ...during].some((o) => o.taker.startsWith('~'));
-              memo.set(b, (m = { n0, n1, r: keyed ? null : takerPersistence(before, during) }));
+              // Konta łączą się tylko w jednym zakresie numeracji: numer z historii serwera (`~godzina:numer`,
+              // `~ddoba:numer`) nie łączy się z numerem z innej godziny albo doby ani z kontem na żywo — inaczej brak wartości
+              memo.set(b, (m = { n0, n1, r: oneAccountScope([before, during]) ? takerPersistence(before, during) : null }));
             }
             r = m.r;
           }
