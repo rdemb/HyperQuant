@@ -1,19 +1,19 @@
 import type { Candle, Side } from '../hl/parse';
 import type { Branching } from '../core/hawkes';
-import { type LiqLevel, vwapSeries } from '../core/indicators';
+import type { LiqLevel } from '../core/indicators';
 import { utcDayStart } from '../core/sessions';
 import { fmtDayTime, fmtDm, fmtHm, fmtHms } from '../core/time';
 import { scannerAge } from './layerSources';
 import { WAIT_TEXT } from '../../../utils/sessionText';
 import { fmtPx } from './layout';
-import { vwapSigma } from './marketState';
 import type { StationId } from './stations';
-import { profile, profileStep, sessionVwap, toVBars } from '../../../utils/auction';
+import { profile, profileStep, toVBars } from '../../../utils/auction';
 import { classifyDay, vaMigration } from '../../../utils/dayType';
+import { dayVwapOf, vwapSigma } from '../../../utils/dayVwap';
 import type { MapKind } from '../../../utils/mapSettlement';
-import { RVOL_MIN_DAYS, rvolHour } from '../../../utils/rvol';
-import { type TradeSession, currentTradeSession, nextTradeSession, rangeBudget } from '../../../utils/sessionDay';
-import { type SessionFacts, vaMissing } from '../../../utils/sessionFacts';
+import { rvolOf } from '../../../utils/rvol';
+import { type TradeSession, rangeBudget } from '../../../utils/sessionDay';
+import { type SessionFacts, type SessionNow, sessionNowOf, vaMissing } from '../../../utils/sessionFacts';
 import { TRADE_SESSION_NAME } from '../../../utils/sessionNames';
 import {
   type Absent,
@@ -55,18 +55,8 @@ export interface LayoutNumber {
 
 // Wspólne z Rozliczeniem sesji (utils/sessionText, utils/auction) — dawne miejsce eksportu
 export { type Absent, type Expected, type Got, isAbsent, profileStep, toVBars };
-
-/** Sesja Londynu albo NY w toku ze świec 1m: zakres od otwarcia, Initial Balance (pierwsza godzina) i VWAP sesji. */
-export interface SessionNow {
-  s: TradeSession;
-  hi: number;
-  lo: number;
-  close: number;
-  ibHi: number;
-  ibLo: number;
-  ibDone: boolean;
-  vwap: { vwap: number; sd: number } | null;
-}
+// Liczby ze świec bez modułów wykresu (utils/dayVwap, utils/sessionFacts, utils/rvol; też serwer MCP) — dawne miejsce eksportu
+export { type SessionNow, dayVwapOf, rvolOf, sessionNowOf };
 
 /** Sesja do rozliczenia w nagłówku (w toku albo ostatnia zamknięta): fakty ze świec 1m, te same co na karcie Rozliczenia. */
 export type ReviewFacts = SessionFacts & { inProgress: boolean };
@@ -515,58 +505,6 @@ export function failedNumbers(id: StationId, coin: string, now: number): LayoutN
 }
 
 // ───────────────────────── wejścia ze świec i migawek ─────────────────────────
-
-const asiaWhy = (now: number) => {
-  const next = nextTradeSession(now);
-  return tr(
-    `Sesja azjatycka: budżet, IB i VWAP sesji liczymy w sesjach Londynu i NY; ${sessionName(next)} otwiera o ${fmtHm(next.start)}`,
-    `Asian session: the budget, IB and session VWAP are computed in the London and NY sessions; ${sessionName(next)} opens at ${fmtHm(next.start)}`
-  );
-};
-
-/** VWAP doby UTC z 1m (rosnąco): świece muszą obejmować 00:00 UTC, inaczej VWAP byłby z części doby. */
-export function dayVwapOf(c1m: readonly Candle[], now: number): Got<{ vwap: number; sd: number }> {
-  if (c1m.length === 0) return { why: tr('Czekam na świece 1m', 'Waiting for 1m candles') };
-  const day = utcDayStart(now);
-  if (c1m[0].t > day) return { why: tr('Świece 1m nie obejmują początku doby (00:00 UTC)', 'The 1m candles do not cover the start of the day (00:00 UTC)') };
-  const bars = c1m.filter((c) => c.t >= day && c.t <= now).map((c) => ({ t: c.t, candle: c }));
-  const pts = vwapSeries(bars, 'day');
-  const last = pts[pts.length - 1];
-  return last ? { vwap: last.vwap, sd: last.sd } : { why: tr('Brak wolumenu od 00:00 UTC', 'No volume since 00:00 UTC') };
-}
-
-/** Sesja Londynu albo NY w toku ze świec 1m (rosnąco), które obejmują jej otwarcie; w Azji — powód. */
-export function sessionNowOf(c1m: readonly Candle[], now: number): Got<SessionNow> {
-  const s = currentTradeSession(now);
-  if (!s) return { why: asiaWhy(now) };
-  if (c1m.length === 0) return { why: tr('Czekam na świece 1m', 'Waiting for 1m candles') };
-  if (c1m[0].t > s.start) return { why: tr('Świece 1m nie obejmują otwarcia sesji', 'The 1m candles do not cover the session open') };
-  const bars = toVBars(c1m.filter((c) => c.t >= s.start && c.t < Math.min(now, s.end)));
-  if (bars.length === 0) return { why: tr('Brak świec sesji', 'No session candles') };
-  const ib = bars.filter((b) => b.time < s.ibEnd);
-  const v = sessionVwap(bars);
-  return {
-    s,
-    hi: Math.max(...bars.map((b) => b.high)),
-    lo: Math.min(...bars.map((b) => b.low)),
-    close: bars[bars.length - 1].close,
-    ibHi: Math.max(...ib.map((b) => b.high)),
-    ibLo: Math.min(...ib.map((b) => b.low)),
-    ibDone: now >= s.ibEnd,
-    vwap: v ? { vwap: v.vwap, sd: v.sd } : null,
-  };
-}
-
-/** RVOL bieżącej godziny ze świec 1h; brak — powód (krótka historia, pierwsze 5 min godziny, brak świecy). */
-export function rvolOf(c1h: readonly Candle[], now: number): Got<{ value: number; n: number; hour: number }> {
-  if (c1h.length === 0) return { why: tr('Czekam na świece 1h', 'Waiting for 1h candles') };
-  const hour = Math.floor(now / HOUR) * HOUR;
-  const r = rvolHour(toVBars(c1h), now);
-  if (r.value !== null) return { value: r.value, n: r.n, hour };
-  if (r.n < RVOL_MIN_DAYS) return { why: tr(`za mało historii (min. ${RVOL_MIN_DAYS} dni)`, `not enough history (min. ${RVOL_MIN_DAYS} days)`) };
-  if (now - hour < 5 * MIN) return { why: tr('Liczone od 5. minuty godziny', 'Computed from the 5th minute of the hour') };
-  return { why: tr('Brak świecy bieżącej godziny albo mediana wolumenu 0', 'No candle for the current hour or a zero median volume') };
-}
 
 /** Profile zamkniętych dób UTC ze świec 1h (doba tylko z kompletem 24 świec), rosnąco. */
 function dayProfiles(c1h: readonly Candle[], now: number, step: number): { day: number; end: number; poc: number; vah: number; val: number }[] {

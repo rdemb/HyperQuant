@@ -450,6 +450,18 @@ export function reviewRows(x: ReviewInputs): ReviewRow[] {
   return [dayTypeRow(x, f), vaRow(x, f), ibRow(x, f), rangeRow(x, f), ...mapRows(x), liqRow(x), coneRow(x), cohortsRow(x)];
 }
 
+/**
+ * Zamknięcie sesji (ostatnia świeca 1m przed jej końcem albo przed `now`) — cena do oczekiwanego zakresu karty; bez świec
+ * sesji — `fallback` (ostatnia cena rynku).
+ */
+export function sessionCloseOf(bars: Got<readonly VBar[]> | undefined, s: TradeSession, now: number, fallback: number): number {
+  if (bars && !isAbsent(bars)) {
+    const end = Math.min(s.end, now);
+    for (let i = bars.length - 1; i >= 0; i--) if (bars[i].time < end && bars[i].time >= s.start) return bars[i].close;
+  }
+  return fallback;
+}
+
 export interface ReviewCard {
   s: TradeSession;
   inProgress: boolean;

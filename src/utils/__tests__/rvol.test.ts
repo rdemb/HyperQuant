@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { VBar } from '../auction';
-import { rvolHour, rvolSeries } from '../rvol';
+import { rvolHour, rvolOf, rvolSeries } from '../rvol';
+import * as layoutNumbers from '../../charts/pro/chart/layoutNumbers';
 
 const H = 3_600_000;
 const DAY = 24 * H;
@@ -53,5 +54,11 @@ describe('rvolHour', () => {
     const s2 = T0 + 25 * DAY;
     b2.push({ time: s2, open: 1, high: 1, low: 1, close: 1, volume: 5 });
     expect(rvolHour(b2, s2 + 60_000).value).toBeNull();
+  });
+});
+
+describe('rvolOf poza modułami wykresu', () => {
+  it('import ze starego miejsca (nagłówek układu) daje tę samą funkcję', () => {
+    expect(layoutNumbers.rvolOf).toBe(rvolOf);
   });
 });

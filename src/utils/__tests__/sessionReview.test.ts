@@ -9,7 +9,7 @@ import type { CohortFlow } from '../cohorts';
 import type { DeskLedgerSummary } from '../deskLedger';
 import type { LiqTape } from '../liqTape';
 import { currentTradeSession, tradeSessionOn } from '../sessionDay';
-import { type ReviewInputs, type ReviewRow, reviewCards, reviewRows } from '../sessionReview';
+import { type ReviewInputs, type ReviewRow, reviewCards, reviewRows, sessionCloseOf } from '../sessionReview';
 import { mapHitsText } from '../sessionText';
 import { fmtDayTime, fmtHm } from '../../charts/pro/core/time';
 import { fmtPx } from '../../charts/pro/chart/layout';
@@ -355,9 +355,21 @@ describe('reviewRows: likwidacje i oczekiwany zakres — pozostałe gałęzie', 
   });
 });
 
+describe('sessionCloseOf: cena do oczekiwanego zakresu karty', () => {
+  it('ostatnie zamknięcie w sesji przed jej końcem (albo przed teraz); bez świec sesji — cena zastępcza z rynku', () => {
+    expect(sessionCloseOf(ALL, L, NOW, 1)).toBe(100_650);
+    // NY w toku: świeca z bieżącej minuty (NOW) jeszcze się nie zamknęła
+    const live = [...ALL.filter((b) => b.time < NOW), { time: NOW, open: 1, high: 1, low: 1, close: 1, volume: 1 }];
+    expect(sessionCloseOf(live, NY, NOW, 1)).toBe(100_600);
+    expect(sessionCloseOf(ALL.filter((b) => b.time < L.start), L, NOW, 99_999)).toBe(99_999);
+    expect(sessionCloseOf({ why: 'brak' }, L, NOW, 99_999)).toBe(99_999);
+    expect(sessionCloseOf(undefined, L, NOW, 99_999)).toBe(99_999);
+  });
+});
+
 describe('czystość modułów Rozliczenia', () => {
-  it('sessionReview, sessionFacts, sessionText i fourNumbers (Czwórka) nie importują modułów UI wykresu ani powtórki', () => {
-    for (const f of ['../sessionReview.ts', '../sessionFacts.ts', '../sessionText.ts', '../fourNumbers.ts']) {
+  it('sessionReview, sessionFacts, sessionText, fourNumbers (Czwórka), dayVwap i rvol nie importują modułów UI wykresu ani powtórki', () => {
+    for (const f of ['../sessionReview.ts', '../sessionFacts.ts', '../sessionText.ts', '../fourNumbers.ts', '../dayVwap.ts', '../rvol.ts']) {
       const src = readFileSync(new URL(f, import.meta.url), 'utf8');
       expect(src, f).not.toMatch(/from\s+['"][^'"]*charts\/pro\/(chart|replay)\//);
     }

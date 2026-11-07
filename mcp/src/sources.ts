@@ -1,11 +1,14 @@
 /**
  * Źródła danych publicznych serwera MCP: pliki repo `hyperquant-data` (skaner), `blog/maps.json` strony i świece
- * `candleSnapshot` Hyperliquid. Każde żądanie z limitem czasu i nagłówkiem paczki (bez danych użytkownika), wynik
- * w pamięci procesu przez TTL. Błąd sieci, kod HTTP, zły JSON albo kształt to `{ ok: false, why }`, nigdy wyjątek.
+ * `candleSnapshot` Hyperliquid (oraz model zmienności HAR z tych świec). Każde żądanie z limitem czasu i nagłówkiem paczki
+ * (bez danych użytkownika), wynik w pamięci procesu przez TTL. Błąd sieci, kod HTTP, zły JSON albo kształt to
+ * `{ ok: false, why }`, nigdy wyjątek.
  */
 import { type Candle, parseCandles } from '../../src/charts/pro/hl/parse';
 import { tr } from '../../src/i18n';
 import { type BlogMapsState, parseBlogMaps } from '../../src/state/useBlogMaps';
+import { toVBars } from '../../src/utils/auction';
+import { type VolModel, buildVolModel } from '../../src/utils/volatility';
 import { guardedCut } from './envelope';
 
 /** Wersja paczki (test pilnuje zgodności z `mcp/package.json`). */
@@ -101,6 +104,8 @@ function netWhy(e: unknown): string {
 export class Sources {
   /** Klucz: URL i treść żądania. Obietnica w pamięci, więc równoległe wywołania narzędzi dzielą jedno żądanie. */
   private readonly cache = new Map<string, { at: number; ttl: number; p: Promise<Raw> }>();
+  /** Model zmienności (obietnica, jak wyżej): tylko zbudowany model zostaje w pamięci przez TTL. */
+  private vol: { at: number; p: Promise<Fetched<VolModel | null>> } | null = null;
 
   constructor(readonly cfg: SourcesConfig) {}
 
@@ -154,6 +159,32 @@ export class Sources {
       for (const c of g.value) if (c.t >= start && c.t <= end) byT.set(c.t, c);
     }
     return { ok: true, value: [...byT.values()].sort((a, b) => a.t - b.t), url, at };
+  }
+
+  /**
+   * Model zmienności HAR BTC (`buildVolModel`) z ostatnich 5000 świec 1h i 5000 świec 5m — te same dane co model strony
+   * (`loadVolModel`); jedno żądanie na interwał, oba równolegle. TTL 15 min. Nieudane pobranie — `{ ok: false }`, za mało
+   * świec — `value: null`; żadne z nich nie zostaje w pamięci (świece i tak przez swój TTL 60 s).
+   */
+  volModel(): Promise<Fetched<VolModel | null>> {
+    const now = this.now();
+    if (this.vol && now - this.vol.at < TTL.volModel) return this.vol.p;
+    const p = (async (): Promise<Fetched<VolModel | null>> => {
+      // 4999 kroków wstecz: okno z bieżącą świecą mieści się w jednej części (≤ 5000 świec)
+      const [h, f] = await Promise.all([this.candles('1h', now - (MAX_CANDLES - 1) * INTERVAL_MS['1h']), this.candles('5m', now - (MAX_CANDLES - 1) * INTERVAL_MS['5m'])]);
+      if (!h.ok) return h;
+      if (!f.ok) return f;
+      const at = Math.min(h.at, f.at);
+      // Model na chwilę migawki świec: świeca w toku w chwili pobrania nie liczy się jako zamknięta
+      return { ok: true, value: buildVolModel(toVBars(h.value), toVBars(f.value), Math.min(now, at)), url: h.url, at };
+    })();
+    const entry = { at: now, p };
+    this.vol = entry;
+    const drop = () => {
+      if (this.vol === entry) this.vol = null;
+    };
+    p.then((r) => (!r.ok || r.value === null ? drop() : undefined), drop);
+    return p;
   }
 
   private async get<T>(url: string, body: string | null, ttl: number, decode: (raw: unknown) => { value: T } | null): Promise<Fetched<T>> {

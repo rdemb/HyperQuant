@@ -11,26 +11,15 @@ import { useBlogMaps } from '../../state/useBlogMaps';
 import { useCohortFlow } from '../../state/useCohortFlow';
 import { useDeskLedger } from '../../state/useDeskLedger';
 import { useLiqTape } from '../../state/useLiqTape';
-import type { VBar } from '../../utils/auction';
 import type { TradeSession } from '../../utils/sessionDay';
 import { TRADE_SESSION_NAME } from '../../utils/sessionNames';
-import { type ReviewCard, type ReviewRow, reviewCards, reviewRows } from '../../utils/sessionReview';
-import { type Got, isAbsent } from '../../utils/sessionText';
+import { type ReviewCard, type ReviewRow, reviewCards, reviewRows, sessionCloseOf } from '../../utils/sessionReview';
 import { cardBars1m } from './reviewInputs';
 import { reviewReplay } from './reviewReplay';
 import { tr } from '../../i18n';
 
 /** Bez zmian w magazynie (cisza, brak połączenia) i tak co tyle przeliczamy: koniec sesji zmienia karty. */
 const TICK_MS = 30_000;
-
-/** Zamknięcie sesji (ostatnia świeca 1m przed jej końcem) — cena do oczekiwanego zakresu; bez świec — ostatnia cena rynku. */
-function closeOf(bars: Got<readonly VBar[]> | undefined, s: TradeSession, now: number, fallback: number): number {
-  if (bars && !isAbsent(bars)) {
-    const end = Math.min(s.end, now);
-    for (let i = bars.length - 1; i >= 0; i--) if (bars[i].time < end && bars[i].time >= s.start) return bars[i].close;
-  }
-  return fallback;
-}
 
 /**
  * Rozliczenie sesji (Po sesji, `#rozliczenie`): karty ostatniej zamkniętej sesji Londynu i NY oraz sesji w toku (w Azji
@@ -58,7 +47,7 @@ export const SessionReview: React.FC = () => {
   const all = cards.map((card) => {
     // Świece każdej karty osobno: brak starszych minut wygasza tylko karty, które ich potrzebują
     const bars1m = cardBars1m(store, card.s, now);
-    const price = closeOf(bars1m, card.s, now, lp);
+    const price = sessionCloseOf(bars1m, card.s, now, lp);
     // Zamknięta sesja: oczekiwanie sprzed jej otwarcia (Parkinson), model HAR tylko dla sesji w toku (w drodze — czekamy na niego)
     const expected = price > 0 ? sessionExpectedOf(store, feed.vol, card.s, card.inProgress, price) : undefined;
     const volLoading = card.inProgress && volLoadingFor(store.coin, feed.vol);

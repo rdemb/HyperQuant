@@ -1,12 +1,14 @@
 /**
  * Fakty sesji Londynu albo NY ze świec 1m — jedno źródło dla nagłówka układu Rozliczenie i kart Rozliczenia sesji Po sesji:
  * zakres z minutami ekstremów, IB (pierwsza godzina) i pierwsze wyjście z niego, zamknięcie, value area 70% (`profile`)
- * tej i poprzedniej sesji tego samego typu. Bez modułów wykresu.
+ * tej i poprzedniej sesji tego samego typu. Oraz sesja w toku na żywo (`sessionNowOf`: nagłówek Kokpitu i Otwarcia
+ * aukcji, serwer MCP). Bez modułów wykresu.
  */
 import { tr } from '../i18n';
 import { fmtDayTime, fmtDm, fmtHm } from '../charts/pro/core/time';
-import { type VBar, profile, profileStep } from './auction';
-import { type TradeSession, currentTradeSession, lastClosedSessions, previousSameSession } from './sessionDay';
+import type { Candle } from '../charts/pro/hl/parse';
+import { type VBar, profile, profileStep, sessionVwap, toVBars } from './auction';
+import { type TradeSession, currentTradeSession, lastClosedSessions, nextTradeSession, previousSameSession } from './sessionDay';
 import { TRADE_SESSION_NAME } from './sessionNames';
 import type { Got } from './sessionText';
 
@@ -104,4 +106,46 @@ export function vaMissing(f: SessionFacts): string | null {
   if (!f.prevVa) return tr(`Świece 1m nie obejmują poprzedniej sesji ${pn} (min. 95% minut)`, `The 1m candles do not cover the previous session ${pn} (min. 95% of minutes)`);
   if (!f.va) return tr('Brak wolumenu w świecach sesji', 'No volume in the session candles');
   return null;
+}
+
+/** Sesja Londynu albo NY w toku ze świec 1m: zakres od otwarcia, Initial Balance (pierwsza godzina) i VWAP sesji. */
+export interface SessionNow {
+  s: TradeSession;
+  hi: number;
+  lo: number;
+  close: number;
+  ibHi: number;
+  ibLo: number;
+  ibDone: boolean;
+  vwap: { vwap: number; sd: number } | null;
+}
+
+const asiaWhy = (now: number) => {
+  const next = nextTradeSession(now);
+  return tr(
+    `Sesja azjatycka: budżet, IB i VWAP sesji liczymy w sesjach Londynu i NY; ${TRADE_SESSION_NAME[next.id]} otwiera o ${fmtHm(next.start)}`,
+    `Asian session: the budget, IB and session VWAP are computed in the London and NY sessions; ${TRADE_SESSION_NAME[next.id]} opens at ${fmtHm(next.start)}`
+  );
+};
+
+/** Sesja Londynu albo NY w toku ze świec 1m (rosnąco), które obejmują jej otwarcie; w Azji — powód. */
+export function sessionNowOf(c1m: readonly Candle[], now: number): Got<SessionNow> {
+  const s = currentTradeSession(now);
+  if (!s) return { why: asiaWhy(now) };
+  if (c1m.length === 0) return { why: tr('Czekam na świece 1m', 'Waiting for 1m candles') };
+  if (c1m[0].t > s.start) return { why: tr('Świece 1m nie obejmują otwarcia sesji', 'The 1m candles do not cover the session open') };
+  const bars = toVBars(c1m.filter((c) => c.t >= s.start && c.t < Math.min(now, s.end)));
+  if (bars.length === 0) return { why: tr('Brak świec sesji', 'No session candles') };
+  const ib = bars.filter((b) => b.time < s.ibEnd);
+  const v = sessionVwap(bars);
+  return {
+    s,
+    hi: Math.max(...bars.map((b) => b.high)),
+    lo: Math.min(...bars.map((b) => b.low)),
+    close: bars[bars.length - 1].close,
+    ibHi: Math.max(...ib.map((b) => b.high)),
+    ibLo: Math.min(...ib.map((b) => b.low)),
+    ibDone: now >= s.ibEnd,
+    vwap: v ? { vwap: v.vwap, sd: v.sd } : null,
+  };
 }
