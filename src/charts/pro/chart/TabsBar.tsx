@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Copy, type LucideIcon, Pencil, Plus, RotateCcw, X } from 'lucide-react';
-import { type PanelSet, STATIONS, StationId, stationPanel } from './stations';
+import { type PanelSet, type PhaseId, STATIONS, StationId, stationPanel } from './stations';
 import { ChartTab, MAX_TABS, TabsState, canClose, canRestore, presetName, presetQuestion, presetStation, tabName, tabShortcut, tabsFull } from './tabs';
 import { intervalById } from '../core/time';
 import { tr } from '../../../i18n';
@@ -69,11 +69,15 @@ const NameInput: React.FC<{ value: string; onDone: (name: string | null) => void
   );
 };
 
+/** Podpis pustej karty: karty własne należą do W sesji, więc z innej fazy pusta karta przenosi tam i mówi o tym. */
+export const blankTabLabel = (phase?: PhaseId): string =>
+  phase && phase !== 'session' ? tr('Pusta karta (W sesji)', 'Blank tab (In session)') : tr('Pusta karta', 'Blank tab');
+
 /**
  * Lista „Nowa karta”: pusta, kopia aktywnej i układy (na komputerze w menu przycisku +, na telefonie w arkuszu).
- * `presets` — układy do wyboru (układy fazy na ekranie), domyślnie wszystkie sześć.
+ * `presets` — układy do wyboru (układy fazy na ekranie), domyślnie wszystkie sześć; `phase` — faza na ekranie.
  */
-export const NewTabList: React.FC<{ st: TabsState; onNew: (how: NewTab) => void; presets?: readonly StationId[] }> = ({ st, onNew, presets }) => {
+export const NewTabList: React.FC<{ st: TabsState; onNew: (how: NewTab) => void; presets?: readonly StationId[]; phase?: PhaseId }> = ({ st, onNew, presets, phase }) => {
   const active = st.tabs.find((t) => t.id === st.active) ?? st.tabs[0];
   const full = tabsFull(st);
   const layouts = presets ? STATIONS.filter((s) => presets.includes(s.id)) : STATIONS;
@@ -85,7 +89,7 @@ export const NewTabList: React.FC<{ st: TabsState; onNew: (how: NewTab) => void;
         <button type="button" disabled={full} className={item} onClick={() => onNew('blank')}>
           <Plus className="w-4 h-4 mt-px shrink-0 text-ink-3" />
           <span className="min-w-0">
-            <span className="block font-medium text-ink-1">{tr('Pusta karta', 'Blank tab')}</span>
+            <span className="block font-medium text-ink-1">{blankTabLabel(phase)}</span>
             <span className="block text-[11px] text-ink-3">{tr('Ustawienia startowe: footprint 5m z VWAP, profilem i poziomami dnia', 'Start settings: 5m footprint with VWAP, profile and daily levels')}</span>
           </span>
         </button>
@@ -118,14 +122,16 @@ export const NewTabList: React.FC<{ st: TabsState; onNew: (how: NewTab) => void;
 /**
  * Pasek kart układów nad wykresami (komputer i tablet): kliknięcie przełącza, dwuklik zmienia nazwę, prawy przycisk
  * otwiera menu karty, środkowy zamyka, przeciągnięcie zmienia kolejność. Podpis karty to interwały jej wykresów.
- * `tabs` — karty na pasku (pod-karty fazy dnia na ekranie), domyślnie wszystkie; `presets` — układy w menu „+”.
+ * `tabs` — karty na pasku (pod-karty fazy dnia na ekranie), domyślnie wszystkie; `presets` — układy w menu „+”;
+ * `phase` — faza na ekranie (podpis pustej karty).
  */
-export const TabsBar: React.FC<{ st: TabsState; tf: (t: ChartTab) => string; a: TabActions; tabs?: readonly ChartTab[]; presets?: readonly StationId[] }> = ({
+export const TabsBar: React.FC<{ st: TabsState; tf: (t: ChartTab) => string; a: TabActions; tabs?: readonly ChartTab[]; presets?: readonly StationId[]; phase?: PhaseId }> = ({
   st,
   tf,
   a,
   tabs = st.tabs,
   presets,
+  phase,
 }) => {
   const [editing, setEditing] = useState<string | null>(null);
   const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
@@ -243,6 +249,7 @@ export const TabsBar: React.FC<{ st: TabsState; tf: (t: ChartTab) => string; a: 
             <NewTabList
               st={st}
               presets={presets}
+              phase={phase}
               onNew={(how) => {
                 setAdding(false);
                 a.onNew(how);
@@ -336,7 +343,7 @@ export const PanelSetSwitch: React.FC<{ sets: readonly PanelSet[]; value: string
  */
 /**
  * `activeExtra` — treść pod wierszem aktywnej karty (karta uczciwości szablonu); `tabs` — karty na liście (karty fazy
- * dnia na ekranie), domyślnie wszystkie; `presets` — układy w „Nowa karta”.
+ * dnia na ekranie), domyślnie wszystkie; `presets` — układy w „Nowa karta”; `phase` — faza na ekranie.
  */
 export const TabsSheet: React.FC<{
   st: TabsState;
@@ -346,7 +353,8 @@ export const TabsSheet: React.FC<{
   activeExtra?: React.ReactNode;
   tabs?: readonly ChartTab[];
   presets?: readonly StationId[];
-}> = ({ st, tf, a, onClose, activeExtra, tabs = st.tabs, presets }) => {
+  phase?: PhaseId;
+}> = ({ st, tf, a, onClose, activeExtra, tabs = st.tabs, presets, phase }) => {
   const [editing, setEditing] = useState<string | null>(null);
   const icon = 'grid place-items-center w-9 h-9 rounded-lg text-ink-3 hover:text-ink-1 hover:bg-surface-3 disabled:opacity-30';
   return (
@@ -417,6 +425,7 @@ export const TabsSheet: React.FC<{
           <NewTabList
             st={st}
             presets={presets}
+            phase={phase}
             onNew={(how) => {
               a.onNew(how);
               onClose();

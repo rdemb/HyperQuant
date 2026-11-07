@@ -15,6 +15,10 @@ export const numLang = (s: string): string => (lang === 'en' ? s : s.replace(/,/
 export const fmtFixed = (v: number, digits: number): string =>
   numLang(v.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits })).replace(/^-/, '−');
 
+/** Polska forma liczebnika: 1 plan, 2–4 plany, 5 planów (12–14 jak 5, 22–24 jak 2). */
+export const plForm = (n: number, one: string, few: string, many: string): string =>
+  n === 1 ? one : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? few : many;
+
 /** Liczba bez zaokrąglania (już zaokrąglona w modelu) w zapisie języka strony, ujemna ze znakiem „−”. */
 export const fmtNum = (v: number): string => numLang(String(v)).replace(/^-/, '−');
 

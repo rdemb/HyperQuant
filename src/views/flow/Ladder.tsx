@@ -17,14 +17,12 @@ import { VERDICT, fateTitle } from './verdicts';
 
 /**
  * Drabina „kto stoi w kolejce”: stała siatka cen wybranej agregacji arkusza Hyperliquid z wielkością, liczbą zleceń
- * i średnim zleceniem poziomu (jedna duża ręka czy tłum), mini mapą ciepła ostatnich 15 minut (w powiększeniu godziny) przy każdej cenie,
+ * i średnim zleceniem poziomu (jedna duża ręka czy tłum), mini mapą ciepła ostatnich 15 minut przy każdej cenie,
  * wartością transakcji, które w tym czasie zdjęły ten poziom, i znacznikami: zlecenia wielorybów (pseudonimy na dobę,
  * także stopy i TP spoza arkusza), ściany w arkuszu i losy ścian z ostatnich minut.
  */
 
 export const HEAT_MS = 15 * 60_000;
-/** Mapa w powiększonej drabinie (historia serwera sięga godzinę wstecz). */
-export const HEAT_WIDE_MS = 60 * 60_000;
 const ROW_H = 20;
 const MID_H = 30;
 /** Wiersz czoła kolejki nad i pod środkiem. */
@@ -109,15 +107,13 @@ export interface LadderProps {
   top: { bid: number; ask: number } | null;
   /** Czoło kolejki (null bez kanału bbo). */
   head: LadderHead | null;
-  /** Powiększona drabina: mapa z ostatniej godziny i szersza. */
-  wide: boolean;
   narrow: boolean;
   className: string;
   /** Przyciski po prawej w nagłówku (powiększenie). */
   tools?: React.ReactNode;
 }
 
-export const Ladder: React.FC<LadderProps> = ({ store, hist, steps, stepId, onStep, whales, fates, open, lotUsd, top, head, wide, narrow, className, tools }) => {
+export const Ladder: React.FC<LadderProps> = ({ store, hist, steps, stepId, onStep, whales, fates, open, lotUsd, top, head, narrow, className, tools }) => {
   const bodyRef = useRef<HTMLDivElement>(null);
   const [{ h, w }, setBox] = useState({ h: 0, w: 0 });
   useLayoutEffect(() => {
@@ -131,7 +127,7 @@ export const Ladder: React.FC<LadderProps> = ({ store, hist, steps, stepId, onSt
   }, []);
   const compactW = !narrow && w > 0 && w < COMPACT_W;
   const tightW = compactW && w < TIGHT_W;
-  const heatMs = wide ? HEAT_WIDE_MS : HEAT_MS;
+  const heatMs = HEAT_MS;
   const heads = !narrow && head !== null && (head.bid !== null || head.ask !== null);
 
   const f: BookFrame | null = hist?.latest() ?? null;
@@ -202,9 +198,8 @@ export const Ladder: React.FC<LadderProps> = ({ store, hist, steps, stepId, onSt
       : '');
 
   // Mini mapa ciepła: osobne płótno dla asków i bidów, kolumna = kilka sekund
-  // Powiększenie: mapa zajmuje to, co zostaje po kolumnach liczb (najwyżej ok. 55% szerokości), kolumna co ok. 3 px
-  const heatW = narrow ? 44 : wide ? Math.round(Math.max(360, Math.min(w - 780, w * 0.55))) : tightW ? 56 : compactW ? 96 : 132;
-  const cols = narrow ? 44 : wide ? Math.round(heatW / 3) : tightW ? 40 : compactW ? 64 : 90;
+  const heatW = narrow ? 44 : tightW ? 56 : compactW ? 96 : 132;
+  const cols = narrow ? 44 : tightW ? 40 : compactW ? 64 : 90;
   const askCanvas = useRef<HTMLCanvasElement>(null);
   const bidCanvas = useRef<HTMLCanvasElement>(null);
   const frames = ready && hist ? hist.range(now - heatMs, now + 1) : [];
@@ -469,23 +464,11 @@ export const Ladder: React.FC<LadderProps> = ({ store, hist, steps, stepId, onSt
             {side(shownAsks, askCanvas, true)}
             {heads && headLine(head.ask, head.flow.ask, false)}
             <div className="flex items-center justify-between gap-2 px-3 shrink-0 border-y border-line bg-surface-2 font-mono text-[11px]" style={{ height: MID_H }}>
-              {wide ? (
-                // Podziałka czasu pod szeroką mapą: co 15 min
-                <span className="relative self-stretch shrink-0 -ml-3 text-ink-3 text-[10px]" style={{ width: heatW }}>
-                  {[45, 30, 15, 0].map((m) => (
-                    <span key={m} className={`absolute top-1/2 -translate-y-1/2 ${m === 0 ? '-translate-x-full pr-1' : '-translate-x-1/2'}`} style={{ left: heatW * (1 - m / 60) }}>
-                      {m === 0 ? tr('teraz', 'now') : `−${m}`}
-                    </span>
-                  ))}
-                  <span className="absolute top-1/2 -translate-y-1/2 left-1">← 60 min</span>
-                </span>
-              ) : (
-                <span className="text-ink-3 hidden sm:inline whitespace-nowrap" style={{ width: heatW - 12 }}>
-                  {tightW ? '' : '← '}
-                  {`${heatMs / 60_000} min`}
-                  {!compactW && ` · ${tr('teraz', 'now')}`}
-                </span>
-              )}
+              <span className="text-ink-3 hidden sm:inline whitespace-nowrap" style={{ width: heatW - 12 }}>
+                {tightW ? '' : '← '}
+                {`${heatMs / 60_000} min`}
+                {!compactW && ` · ${tr('teraz', 'now')}`}
+              </span>
               <span className="text-ink-1">{fmtPx(mid)}</span>
               <span className="text-ink-3" title={tr('Najlepszy bid i ask z dokładnego arkusza, bez agregacji', 'Best bid and ask from the exact book, without aggregation')}>
                 spread {numLang(String(Number((bestAsk - bestBid).toPrecision(6))))}

@@ -504,6 +504,16 @@ const Debrief: React.FC<{
   );
 };
 
+/**
+ * Po przejściu do Mitów: przewinięcie do Laboratorium folkloru jak przycisk w Mitach. Sekcja pojawia się po
+ * przerysowaniu Lekcji, więc szukamy jej co klatkę, najwyżej przez ok. pół sekundy.
+ */
+function scrollToLab(frames = 30): void {
+  const el = document.getElementById('folklore-lab');
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  else if (frames > 0) requestAnimationFrame(() => scrollToLab(frames - 1));
+}
+
 /** Wynik reguły z Laboratorium folkloru desku (historia BTC): sukces wobec ceny błądzącej losowo. */
 export const LabResult: React.FC<{ id: string; c: LessonsContent }> = ({ id, c }) => {
   const { status, report } = useFolkloreLab();
@@ -530,7 +540,7 @@ export const LabResult: React.FC<{ id: string; c: LessonsContent }> = ({ id, c }
         type="button"
         onClick={() => {
           window.location.hash = '#lessons?tab=myths';
-          window.scrollTo({ top: 0 });
+          scrollToLab();
         }}
         className={`${BTN_LINK} self-start text-xs`}
       >
