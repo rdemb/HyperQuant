@@ -1,0 +1,30 @@
+{
+  "name": "hyperquant-mcp",
+  "version": "0.1.0",
+  "description": "MCP server for HyperQuant: read-only BTC market context from public data (blog day map, Hyperliquid candles, scanner files). Market description, not investment advice.",
+  "license": "MIT",
+  "homepage": "https://hyperquant.tech/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rdemb/HyperQuant.git",
+    "directory": "mcp"
+  },
+  "type": "module",
+  "bin": {
+    "hyperquant-mcp": "dist/hyperquant-mcp.mjs"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "2.4.0",
+    "zod": "^4.2.0"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "2.4.0"
+  }
+}
