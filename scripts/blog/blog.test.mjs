@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { guardViolations, splitFrontmatter, validatePost } from './posts.mjs';
 import { REPLAY_LINK_VERSION, parseReplayLink } from '../../src/charts/pro/replay/link';
 import { absolutize, esc, feedXml, flowsHtml, ladderLayout, layout, liquidationsHtml, postBody, postPage, renderMarkdown, replayLink, setupsHtml, sitemapXml } from './render.mjs';
-import { buildBlog, checkPosts } from './build.mjs';
+import { buildBlog, checkPosts, mapKind } from './build.mjs';
 import { ogSvg, wrapTitle } from './og.mjs';
 import { PATHS, clip, sitePages, sitemapEntries } from './pages.mjs';
 import { INDEXNOW_KEY, changedPostUrls, indexNowBody, sitemapUrls } from './indexnow.mjs';
@@ -530,5 +530,39 @@ describe('IndexNow: nowe wpisy z pusha', () => {
 
   it('plik klucza leży w public/ pod nazwą klucza i zawiera sam klucz', () => {
     expect(readFileSync(path.join('public', `${INDEXNOW_KEY}.txt`), 'utf8')).toBe(INDEXNOW_KEY);
+  });
+});
+
+describe('blog: maps.json', () => {
+  it('emituje mapy z 14 dni z właściwym kind, pomija wpisy bez poziomów i starsze', async () => {
+    const content = mkdtempSync(path.join(tmpdir(), 'hq-blog-'));
+    const out = mkdtempSync(path.join(tmpdir(), 'hq-dist-'));
+    writePost(content, ID, BASE, BODY_ARTICLE);
+    writePost(content, '2026-10-24-aktualizacja-14', { ...BASE, type: 'note', section: 'Aktualizacja 4h', date: '2026-10-24T14:00:00+02:00', levels: [], scenarios: [] }, 'Cena bez zmian od rana, zakres z mapy dnia się utrzymuje, a na mapie płynności nie pojawiło się nic nowego od 9:30.');
+    writePost(content, '2026-10-01-mapa-dnia', { ...BASE, date: '2026-10-01T09:30:00+02:00' }, BODY_ARTICLE);
+    const now = Date.parse('2026-10-25T12:00:00Z');
+    await buildBlog({ contentDir: content, outDir: out, site: SITE, now });
+    const j = JSON.parse(readFileSync(path.join(out, 'blog', 'maps.json'), 'utf8'));
+    expect(j).toMatchObject({ v: 1, asOf: now });
+    expect(j.maps).toHaveLength(1);
+    expect(j.maps[0]).toEqual({
+      id: ID,
+      title: BASE.title,
+      kind: 'dzien',
+      publishedAt: Date.parse('2026-10-24T07:30:00Z'),
+      price: 80777,
+      levels: [
+        { label: 'PDH', price: 82088 },
+        { label: 'PDL', price: 80500, note: 'dołek tygodnia' },
+      ],
+      url: `blog/${ID}/`,
+    });
+  });
+  it('mapKind rozpoznaje rubryki i tytuły', () => {
+    expect(mapKind('Mapa dnia', 'x')).toBe('dzien');
+    expect(mapKind('Mapa przed Nowym Jorkiem', 'x')).toBe('ny');
+    expect(mapKind('Otwarcie Londynu', 'x')).toBe('otwarcie');
+    expect(mapKind('Aktualizacja 4h', 'x')).toBe('aktualizacja');
+    expect(mapKind('Rozliczenie Londynu', 'x')).toBe('inne');
   });
 });
