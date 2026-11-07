@@ -1,7 +1,7 @@
 import React, { useEffect, useId, useState } from 'react';
 import { History } from 'lucide-react';
 import { Badge, DASH, EmptyState, Panel, sourceTag } from '../../ui';
-import { sessionExpectedOf } from '../../charts/pro/chart/layoutInputs';
+import { sessionExpectedOf, volLoadingFor } from '../../charts/pro/chart/layoutInputs';
 import { fmtDm, fmtHm } from '../../charts/pro/core/time';
 import { storeFor } from '../../charts/pro/store/proStore';
 import { startRecording } from '../../charts/pro/store/recording';
@@ -59,9 +59,10 @@ export const SessionReview: React.FC = () => {
     // Świece każdej karty osobno: brak starszych minut wygasza tylko karty, które ich potrzebują
     const bars1m = cardBars1m(store, card.s, now);
     const price = closeOf(bars1m, card.s, now, lp);
-    // Zamknięta sesja: oczekiwanie sprzed jej otwarcia (Parkinson), model HAR tylko dla sesji w toku
-    const expected = price > 0 ? sessionExpectedOf(store, card.inProgress ? feed.vol.model : null, card.s, card.inProgress, price) : undefined;
-    return { card, rows: reviewRows({ s: card.s, inProgress: card.inProgress, now, bars1m, maps, expected, liq, cohorts, ledger }) };
+    // Zamknięta sesja: oczekiwanie sprzed jej otwarcia (Parkinson), model HAR tylko dla sesji w toku (w drodze — czekamy na niego)
+    const expected = price > 0 ? sessionExpectedOf(store, feed.vol, card.s, card.inProgress, price) : undefined;
+    const volLoading = card.inProgress && volLoadingFor(store.coin, feed.vol);
+    return { card, rows: reviewRows({ s: card.s, inProgress: card.inProgress, now, bars1m, maps, expected, volLoading, liq, cohorts, ledger }) };
   });
   const windowRows = all[0]?.rows.filter((r) => r.scope === 'window') ?? [];
 

@@ -6,6 +6,7 @@ import { type InputScan, type InputSeries, type InputStore, RETRY_MS, readInputs
 import { isAbsent, layoutNumbers, toVBars } from '../chart/layoutNumbers';
 import { currentTradeSession, expectedRange, previousSameSession } from '../../../utils/sessionDay';
 import { reviewRows } from '../../../utils/sessionReview';
+import { defaultFrameTitle } from '../chart/frame';
 import type { VolModel } from '../../../utils/volatility';
 
 const MIN = 60_000;
@@ -15,13 +16,23 @@ const at = (y: number, mo: number, d: number, h: number, mi = 0) => Date.UTC(y, 
 const IN_NY = at(2026, 11, 3, 16, 20);
 const NY = currentTradeSession(IN_NY)!;
 
-const SCAN: InputScan = { model: null, liq: { status: 'loading', map: null }, whales: null, whalesConfigured: true, blog: { state: { status: 'loading', maps: [] }, map: null } };
+const SCAN: InputScan = {
+  model: null,
+  volStatus: 'error',
+  liq: { status: 'loading', map: null },
+  whales: null,
+  whalesConfigured: true,
+  blog: { state: { status: 'loading', maps: [] }, map: null },
+};
+
+/** Model zmienności nie wczytał się (błąd): budżet z σ Parkinsona. */
+const NO_MODEL = { status: 'error', model: null } as const;
 
 /** Seria atrapy: stan wczytania, świece, historia wyczerpana (limit API) albo nieudane doczytanie starszej strony. */
 type Spec = { state?: InputSeries['loadState']; list?: Candle[]; exhausted?: boolean; olderFailed?: boolean };
 
 /** Atrapa magazynu rynku: serie świec według interwału, migawka arkusza, taśma; `now` można przesuwać. */
-function fakeStore(o: { now: number; price?: number; series?: Record<string, Spec>; book?: BookFrame | null }) {
+function fakeStore(o: { now: number; coin?: string; price?: number; series?: Record<string, Spec>; book?: BookFrame | null }) {
   const loads: Record<string, number> = {};
   const older: Record<string, number[]> = {};
   const made = new Map<string, InputSeries>();
@@ -29,7 +40,7 @@ function fakeStore(o: { now: number; price?: number; series?: Record<string, Spe
     now: o.now,
     loads,
     older,
-    coin: 'BTC',
+    coin: o.coin ?? 'BTC',
     serverNow: () => st.now,
     lastPrice: () => o.price ?? 100_000,
     series(id: string): InputSeries {
@@ -86,11 +97,11 @@ describe('wejścia nagłówka z magazynu rynku', () => {
     // Spokojnie (zakres świecy 10) do otwarcia NY 3.11, w sesji NY nerwowo (200), potem znów spokojnie
     const range = (t: number) => (t >= NY.start && t < NY.end ? 200 : 10);
     const live = bars5m(at(2026, 11, 2, 14, 30), IN_NY, range);
-    expect(sessionExpectedOf(fakeStore({ now: IN_NY, series: { '5m': { list: live } } }), null, NY, true, 100_000)).toEqual(expectedRange(null, toVBars(live), NY, IN_NY, 100_000));
+    expect(sessionExpectedOf(fakeStore({ now: IN_NY, series: { '5m': { list: live } } }), NO_MODEL, NY, true, 100_000)).toEqual(expectedRange(null, toVBars(live), NY, IN_NY, 100_000));
 
     const asia = at(2026, 11, 4, 2);
     const all = bars5m(at(2026, 11, 2, 14, 30), asia, range);
-    const got = sessionExpectedOf(fakeStore({ now: asia, series: { '5m': { list: all } } }), null, NY, false, 100_000);
+    const got = sessionExpectedOf(fakeStore({ now: asia, series: { '5m': { list: all } } }), NO_MODEL, NY, false, 100_000);
     const exAnte = expectedRange(null, toVBars(all), NY, NY.start, 100_000)!;
     const atNow = expectedRange(null, toVBars(all), NY, asia, 100_000)!;
     expect(got).toEqual(exAnte);
@@ -99,22 +110,31 @@ describe('wejścia nagłówka z magazynu rynku', () => {
     expect(exAnte.method).toBe('parkinson');
     // Model HAR zna tylko dzisiejszy poziom zmienności: zamkniętą sesję i tak ocenia Parkinson sprzed jej otwarcia
     const har = {} as VolModel;
-    expect(sessionExpectedOf(fakeStore({ now: asia, series: { '5m': { list: all } } }), har, NY, false, 100_000)).toEqual(exAnte);
+    expect(sessionExpectedOf(fakeStore({ now: asia, series: { '5m': { list: all } } }), { status: 'ready', model: har }, NY, false, 100_000)).toEqual(exAnte);
+    // Model w drodze też nie zmienia oceny zamkniętej sesji
+    expect(sessionExpectedOf(fakeStore({ now: asia, series: { '5m': { list: all } } }), { status: 'loading', model: null }, NY, false, 100_000)).toEqual(exAnte);
     // 5m jeszcze się wczytują — undefined (czekamy), nie liczba zastępcza
-    expect(sessionExpectedOf(fakeStore({ now: asia, series: { '5m': { state: 'loading' } } }), null, NY, false, 100_000)).toBeUndefined();
+    expect(sessionExpectedOf(fakeStore({ now: asia, series: { '5m': { state: 'loading' } } }), NO_MODEL, NY, false, 100_000)).toBeUndefined();
   });
 
   it('zamknięta sesja bez świec 5m sprzed otwarcia: powód to ocena ex ante, nie „Bez modelu HAR” (także z wczytanym modelem)', () => {
     const asia = at(2026, 11, 4, 2);
     // Świece 5m dopiero od otwarcia NY — z doby przed sesją ani jednej
     const late = bars5m(NY.start, asia, () => 10);
-    for (const model of [{} as VolModel, null]) {
-      const got = sessionExpectedOf(fakeStore({ now: asia, series: { '5m': { list: late } } }), model, NY, false, 100_000);
+    for (const vol of [{ status: 'ready', model: {} as VolModel }, NO_MODEL] as const) {
+      const got = sessionExpectedOf(fakeStore({ now: asia, series: { '5m': { list: late } } }), vol, NY, false, 100_000);
       expect(got).toEqual({ why: 'Ocena ex ante (Parkinson sprzed otwarcia): za mało zamkniętych świec 5m z doby przed sesją (min. 12)' });
     }
     // Sesja w toku bez modelu — tu „Bez modelu HAR” jest prawdą
-    const live = sessionExpectedOf(fakeStore({ now: IN_NY, series: { '5m': { list: [] } } }), null, NY, true, 100_000);
+    const live = sessionExpectedOf(fakeStore({ now: IN_NY, series: { '5m': { list: [] } } }), NO_MODEL, NY, true, 100_000);
     expect(live).toEqual({ why: 'Bez modelu HAR, a za mało zamkniętych świec 5m z ostatniej doby (min. 12)' });
+  });
+
+  it('sesja w toku do rozliczenia: model HAR w drodze — czekamy (undefined), bez Parkinsona w zastępstwie; błąd modelu — Parkinson', () => {
+    const live = bars5m(at(2026, 11, 2, 14, 30), IN_NY, () => 10);
+    const store = () => fakeStore({ now: IN_NY, series: { '5m': { list: live } } });
+    expect(sessionExpectedOf(store(), { status: 'loading', model: null }, NY, true, 100_000)).toBeUndefined();
+    expect(sessionExpectedOf(store(), NO_MODEL, NY, true, 100_000)).toMatchObject({ method: 'parkinson' });
   });
 
   it('nagłówek Rozliczenia i karta liczą typ dnia i migrację VA z tych samych faktów (świece 1m od poprzedniej sesji)', () => {
@@ -222,6 +242,53 @@ describe('wejścia nagłówka z magazynu rynku', () => {
     store.now += RETRY_MS;
     readInputs('fuel', store, SCAN);
     expect(store.loads['1h']).toBe(2);
+  });
+
+  describe('budżet zakresu: jedna metoda albo jej nazwa na liczbie', () => {
+    // Świece 1m od godziny przed otwarciem NY i 5m z ostatniej doby: Parkinson miałby z czego liczyć
+    const ones: Candle[] = [];
+    for (let t = NY.start - 60 * MIN; t <= IN_NY; t += MIN) ones.push({ t, o: 100_000, h: 100_100, l: 99_900, c: 100_000, v: 1, n: 1 });
+    const store = (coin = 'BTC') => fakeStore({ now: IN_NY, coin, series: { '1m': { list: ones }, '5m': { list: bars5m(at(2026, 11, 2, 14, 30), IN_NY, () => 40) } } });
+
+    it('BTC, model HAR w drodze: „—” z powodem „czekam na model zmienności (HAR)”, nie liczba z Parkinsona', () => {
+      for (const id of ['cockpit', 'auction-open'] as const) {
+        const x = readInputs(id, store(), { ...SCAN, volStatus: 'loading' });
+        expect(x.session, id).toMatchObject({ s: NY });
+        expect(x.expected, id).toBeUndefined();
+        const b = layoutNumbers(id, x)[1];
+        expect(b, id).toMatchObject({ label: 'Budżet · NY', value: '—', badge: 'MODEL' });
+        expect(b.hint, id).toBe('MODEL · HAR: Czekam na model zmienności (HAR)…');
+      }
+    });
+
+    it('BTC, model nie wczytał się: Parkinson z nazwą metody na etykiecie (telefon: „Budżet (P)”)', () => {
+      const x = readInputs('cockpit', store(), { ...SCAN, volStatus: 'error' });
+      expect(x.expected).toMatchObject({ method: 'parkinson' });
+      const b = layoutNumbers('cockpit', x)[1];
+      expect(b).toMatchObject({ label: 'Budżet · NY · Parkinson', short: 'Budżet (P)', badge: 'MODEL' });
+      expect(b.value).toMatch(/^\d+%$/);
+      expect(b.hint).toMatch(/^MODEL · Parkinson: /);
+    });
+
+    it('ETH: zawsze Parkinson z nazwą metody, także gdy model BTC jeszcze się wczytuje albo jest gotowy', () => {
+      for (const vol of [
+        { model: null, volStatus: 'loading' },
+        { model: {} as VolModel, volStatus: 'ready' },
+        { model: null, volStatus: 'error' },
+      ] as const) {
+        const x = readInputs('cockpit', store('ETH'), { ...SCAN, ...vol });
+        expect(x.expected, vol.volStatus).toMatchObject({ method: 'parkinson' });
+        expect(layoutNumbers('cockpit', x)[1], vol.volStatus).toMatchObject({ label: 'Budżet · NY · Parkinson', short: 'Budżet (P)', value: expect.stringMatching(/^\d+%$/) });
+      }
+    });
+
+    it('domyślny tytuł Klatki niesie nazwę metody, gdy budżet liczy Parkinson', () => {
+      const nums = layoutNumbers('cockpit', readInputs('cockpit', store(), { ...SCAN, volStatus: 'error' }));
+      expect(defaultFrameTitle('Kokpit?', nums)).toMatch(/; Budżet · NY · Parkinson: \d+% \(MODEL\); /);
+      // Model w drodze: w tytule „—”, nie liczba z innej metody
+      const wait = layoutNumbers('cockpit', readInputs('cockpit', store(), { ...SCAN, volStatus: 'loading' }));
+      expect(defaultFrameTitle('Kokpit?', wait)).toContain('; Budżet · NY: — (brak danych); ');
+    });
   });
 
   it('wieloryby i mapa likwidacji: te same powody co plakietki legendy', () => {

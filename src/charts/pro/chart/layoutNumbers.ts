@@ -23,6 +23,7 @@ import {
   METHOD,
   METHOD_NOTE,
   VA_MIGRATION_LABEL,
+  VOL_WAIT_TEXT,
   amt,
   blogMapName,
   isAbsent,
@@ -93,6 +94,8 @@ export interface LayoutInputs {
   session?: Got<SessionNow>;
   /** Oczekiwany zakres sesji w toku (MODEL). */
   expected?: Got<Expected>;
+  /** Model HAR (BTC) w drodze: `expected` czeka na niego (powód „czekam na model zmienności”), bez Parkinsona w zastępstwie. */
+  volLoading?: boolean;
   rvol?: Got<{ value: number; n: number; hour: number }>;
   prevDay?: Got<{ day: number; vah: number; val: number }>;
   nakedPoc?: Got<{ day: number; px: number }>;
@@ -164,11 +167,22 @@ export function vwapNum(x: LayoutInputs): LayoutNumber {
   };
 }
 
+/**
+ * Budżet zakresu sesji. HAR to metoda domyślna (BTC z modelem); liczba z Parkinsona (model nie wczytał się, inny rynek)
+ * ma nazwę metody na etykiecie („Budżet · NY · Parkinson”, na telefonie „Budżet (P)”) — także w tytule Klatki. Model w drodze:
+ * „—” z powodem, nigdy Parkinson na chwilę przed HAR.
+ */
 function budgetNum(x: LayoutInputs): LayoutNumber {
   const sn = val(x.session);
-  const label = sn ? tr(`Budżet · ${sessionName(sn.s)}`, `Budget · ${sessionName(sn.s)}`) : tr('Budżet zakresu', 'Range budget');
-  const short = tr('Budżet', 'Budget');
   const e = val(x.expected);
+  const park = e?.method === 'parkinson';
+  const label = !sn
+    ? tr('Budżet zakresu', 'Range budget')
+    : park
+      ? tr(`Budżet · ${sessionName(sn.s)} · Parkinson`, `Budget · ${sessionName(sn.s)} · Parkinson`)
+      : tr(`Budżet · ${sessionName(sn.s)}`, `Budget · ${sessionName(sn.s)}`);
+  const short = park ? tr('Budżet (P)', 'Budget (P)') : tr('Budżet', 'Budget');
+  if (sn && x.expected === undefined && x.volLoading) return { ...dash(label, 'MODEL', `MODEL · HAR: ${VOL_WAIT_TEXT}`), short };
   if (!sn || !e) return { ...dash(label, 'MODEL', tr(`MODEL · HAR albo Parkinson: ${whyOf(x.session, x.expected)}`, `MODEL · HAR or Parkinson: ${whyOf(x.session, x.expected)}`)), short };
   const m = METHOD[e.method];
   const b = rangeBudget(sn.hi, sn.lo, e.usd);

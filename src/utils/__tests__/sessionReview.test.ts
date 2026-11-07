@@ -121,7 +121,7 @@ describe('reviewRows: rozliczenie zamkniętej sesji Londynu z mapą', () => {
       ['dayType', 'Typ dnia', 'trendowy', 'MODEL'],
       ['vaMigration', 'Migracja VA', 'wyżej', 'LIVE'],
       ['ib', 'Wynik IB', 'w górę · 2,3×', 'LIVE'],
-      ['range', 'Zakres / oczekiwany', '80%', 'MODEL'],
+      ['range', 'Zakres / oczekiwany · HAR', '80%', 'MODEL'],
       ['map', `Mapa dnia ${fmtDayTime(PUB, NOW)}`, '2/4 dotknięte', 'LIVE'],
       ['liq', 'Likwidacje w sesji', 'longi 1,0M · shorty 6,5M', 'LIVE'],
       ['cone', 'Pokrycie stożka 1 h · 30 dni', '90%: 88% · 60%: 61%', 'MODEL'],
@@ -337,6 +337,21 @@ describe('reviewRows: likwidacje i oczekiwany zakres — pozostałe gałęzie', 
     expect(p).toMatchObject({ value: '50%', badge: 'MODEL' });
     expect(p.hint).toMatch(/^MODEL · Parkinson: .*doby przed otwarciem sesji/);
     expect(row(reviewRows(inputs()), 'range').hint).not.toMatch(/bieżącego modelu/);
+  });
+
+  it('metoda oczekiwanego zakresu na etykiecie: zamknięta — „ex ante · Parkinson”, w toku — nazwa metody', () => {
+    const park = { usd: 1_400, method: 'parkinson' } as const;
+    expect(row(reviewRows(inputs({ expected: park })), 'range').label).toBe('Zakres / oczekiwany · ex ante · Parkinson');
+    expect(row(reviewRows(inputs({ s: NY, inProgress: true, expected: park })), 'range').label).toBe('Zakres / oczekiwany · Parkinson');
+    expect(row(reviewRows(inputs({ s: NY, inProgress: true })), 'range').label).toBe('Zakres / oczekiwany · HAR');
+  });
+
+  it('sesja w toku, model HAR w drodze: „—” z powodem „czekam na model zmienności (HAR)”', () => {
+    const r = row(reviewRows(inputs({ s: NY, inProgress: true, expected: undefined, volLoading: true })), 'range');
+    expect(r).toMatchObject({ value: '—', badge: 'MODEL', why: 'Czekam na model zmienności (HAR)…' });
+    expect(r.hint).toBe('MODEL · HAR: Czekam na model zmienności (HAR)…');
+    // Bez modelu w drodze — zwykłe „czekam na dane” (świece 5m)
+    expect(row(reviewRows(inputs({ s: NY, inProgress: true, expected: undefined })), 'range').why).toBe('Czekam na dane…');
   });
 });
 
