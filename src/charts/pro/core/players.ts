@@ -5,8 +5,8 @@ import type { AggressorOrder } from './orders';
  * Kto handluje: wejścia biorców (zlecenia agresora z taśmy) rozdzielone na dużych graczy i resztę rynku. Hyperliquid podaje
  * konto biorcy przy każdej transakcji, więc liczymy wartość wejść każdego konta w godzinie UTC; konto, które w tej godzinie
  * weszło za co najmniej próg rynku, jest w niej dużym graczem — także wtedy, gdy tnie zlecenie na wiele małych. Pokazujemy
- * tylko sumy, bez kont. W historii serwera konto ma numer ważny w obrębie godziny, więc w godzinie otwarcia strony jego
- * wejścia sprzed i po otwarciu liczą się osobno.
+ * tylko sumy, bez kont. W historii serwera konto ma numer (ważny dobę UTC w plikach `idScope: 'day'`, godzinę w starszych),
+ * a na żywo adres, więc w godzinie otwarcia strony jego wejścia sprzed i po otwarciu liczą się osobno.
  */
 
 const HOUR = 3_600_000;

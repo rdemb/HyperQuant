@@ -7,7 +7,6 @@ import { takerAlias } from '../../charts/pro/core/clashes';
 import type { AggressorOrder } from '../../charts/pro/core/orders';
 import { type TapePace, type TapeRow, tapeGap, tapeRows } from '../../charts/pro/core/tapeMemory';
 import { fmtHms } from '../../charts/pro/core/time';
-import { accountScopeKey } from '../../charts/pro/indicators/registry';
 import type { ProStore } from '../../charts/pro/store/proStore';
 import { numLang } from '../../ui/format';
 import { tr } from '../../i18n';
@@ -26,6 +25,16 @@ const BAR_FULL = 10;
 const REPEAT_MIN = 3;
 /** Przerwa w nagraniu taśmy od tylu ms między sąsiednimi wierszami dostaje wiersz „brak zapisu”. */
 const GAP_MIN_MS = 10_000;
+
+/**
+ * Podpis „Konto N ×k”: konto z zapisu serwera ma numer ważny dobę UTC (`~ddoba:…`, pliki z numeracją dobową) albo
+ * godzinę (`~godzina:…`, starsze pliki); konto na żywo — pseudonim na sesję strony.
+ */
+function repeatTitle(taker: string, n: number): string {
+  if (taker.startsWith('~d')) return tr(`Zlecenia tego konta w ostatnich 15 min: ${n} (pseudonim z zapisu serwera, nowy co dobę UTC)`, `This account placed ${n} orders in the last 15 min (pseudonym from the server recording, new every UTC day)`);
+  if (taker.startsWith('~')) return tr(`Zlecenia tego konta w ostatnich 15 min: ${n} (pseudonim z zapisu serwera, nowy co godzinę)`, `This account placed ${n} orders in the last 15 min (pseudonym from the server recording, new every hour)`);
+  return tr(`Zlecenia tego konta w ostatnich 15 min: ${n} (pseudonim tylko na tę sesję strony)`, `This account placed ${n} orders in the last 15 min (pseudonym for this page session only)`);
+}
 
 const Tag: React.FC<{ tone: 'twap' | 'clash' | 'acct'; title: string; children: React.ReactNode }> = ({ tone, title, children }) => (
   <span
@@ -130,14 +139,7 @@ export const FlowTape: React.FC<{
         <Tag
           key="a"
           tone="acct"
-          title={
-            // Konto z zapisu serwera (`~…`): numer ważny godzinę albo dobę UTC (zakres pliku)
-            accountScopeKey(o.taker)?.startsWith('d:')
-              ? tr(`Zlecenia tego konta w ostatnich 15 min: ${r.repeat} (pseudonim z zapisu serwera, nowy co dobę UTC)`, `This account placed ${r.repeat} orders in the last 15 min (pseudonym from the server recording, new every UTC day)`)
-              : o.taker.startsWith('~')
-                ? tr(`Zlecenia tego konta w ostatnich 15 min: ${r.repeat} (pseudonim z zapisu serwera, nowy co godzinę)`, `This account placed ${r.repeat} orders in the last 15 min (pseudonym from the server recording, new every hour)`)
-                : tr(`Zlecenia tego konta w ostatnich 15 min: ${r.repeat} (pseudonim tylko na tę sesję strony)`, `This account placed ${r.repeat} orders in the last 15 min (pseudonym for this page session only)`)
-          }
+          title={repeatTitle(o.taker, r.repeat)}
         >
           {takerAlias(o.taker)} ×{r.repeat}
         </Tag>

@@ -4,7 +4,8 @@ import type { Fill } from '../hl/parse';
  * Kto przyjmuje agresję: wypełnienia po stronie makera (każda transakcja Hyperliquid ma konto makera) rozdzielone na
  * animatorów rynku i resztę. Konto jest w godzinie UTC animatorem, gdy dawało płynność w co najmniej połowie jej minut
  * z taśmą z kontami i po obu stronach (każda co najmniej 20% jego wartości po stronie makera). W historii serwera konto ma
- * numer ważny w obrębie godziny, więc klasa też jest godzinowa; w bieżącej godzinie liczy się z minut, które już minęły.
+ * numer ważny w obrębie doby UTC (pliki `idScope: 'day'`) albo godziny (starsze pliki); klasa jest liczona dla każdej
+ * godziny osobno, a w bieżącej godzinie z minut, które już minęły.
  * Pokazujemy tylko sumy, bez kont.
  */
 
@@ -85,8 +86,8 @@ export class MakerFlow {
 
   /**
    * Koncentracja w [from, to) (z dokładnością do minuty): bid = makerzy kupujący (przyjmują sprzedaż agresorów),
-   * ask = sprzedający (przyjmują kupno). W historii serwera konto ma numer na godzinę, więc okno przechodzące przez
-   * pełną godzinę UTC liczy jedno konto jako dwa.
+   * ask = sprzedający (przyjmują kupno). W historii serwera konto ma numer na dobę UTC (pliki `idScope: 'day'`) albo na
+   * godzinę (starsze pliki), więc okno przez przełom doby (w starszych plikach — godziny) liczy jedno konto jako dwa.
    */
   top(from: number, to: number, k: number): { bid: MakerTop; ask: MakerTop } {
     const bid = new Map<string, number>();

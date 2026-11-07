@@ -69,6 +69,24 @@ describe('powracający i nowi biorcy', () => {
     // Zlecenia bez konta nie zmieniają zakresu
     expect(run([o(u - 10 * M, 1, 1, `~d${d}:1`), o(u - 5 * M, 1, 1, ''), o(u + M, 1, 1, `~d${d}:1`)], u)[0][0]).toBe(1);
   });
+
+  it('okno przez pełną godzinę bez zleceń przed świecą (numeracja godzinowa): wszyscy nowi — świadoma zmiana wobec 1b', () => {
+    const run = (list: Order[], t0: number) => {
+      const inRange = (a: number, b: number) => list.filter((q) => q.time >= a && q.time < b);
+      const ctx: FlowContext = { oiAt: () => null, book: () => [], exactBook: () => [], orders: inRange, orderCount: (a, b) => inRange(a, b).length, identified: () => true, makers: () => null, now: t0 + 10 * M };
+      const e = new IndicatorEngine();
+      e.setInstances(indicatorsFromLink('repeat(15)'));
+      e.sync([{ candle: { t: t0, o: 1, h: 1, l: 1, c: 1, v: 1, n: 1 } }], 5 * M, () => [], ctx);
+      return e.runs[0].out;
+    };
+    const u = 11 * H + 5 * M;
+    // Okno 10:50–11:05 z taśmą z kontami, ale bez zleceń; w świecy konta z jednej godziny — jeden zakres, więc nowi
+    const [back, flip, fresh] = run([o(u + M, 1, 1, `~${11 * H}:1`), o(u + 2 * M, -1, 1, `~${11 * H}:2`)], u);
+    expect([back[0], flip[0], fresh[0]]).toEqual([0, 0, 1]);
+    // Godzina przejściowa: numer godzinowy w oknie i dobowy w świecy to dwie przestrzenie kluczy — brak wartości
+    const d = Date.UTC(2026, 10, 7);
+    expect(run([o(u - 10 * M, 1, 1, `~${10 * H}:1`), o(u + M, 1, 1, `~d${d}:1`)], u)[2][0]).toBeNaN();
+  });
 });
 
 describe('zakres numeracji kont z historii serwera', () => {
