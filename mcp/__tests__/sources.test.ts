@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { BLOCK_MARK } from '../src/envelope';
 import { configFromEnv } from '../src/sources';
 import { DATA_BASE, HL_INFO, MAPS_URL, MIN, type FakeRequest, fakeFetch, flatBars, hlRoute, testSources } from './helpers';
 
@@ -30,6 +31,23 @@ describe('configFromEnv', () => {
   it('adres spoza http(s) jest odrzucany', () => {
     expect(() => configFromEnv({ HQ_DATA_BASE: 'file:///etc' }, f)).toThrow();
   });
+
+  it('login, hasło, zapytanie albo kotwica w adresie bazowym — błąd startu z nazwą zmiennej, bez wartości w komunikacie', () => {
+    const bad = ['https://user:s3cret-word@example.test/data', 'https://user@example.test/data', 'https://example.test/data?token=s3cret-word', 'https://example.test/data?', 'https://example.test/data#s3cret-word'];
+    for (const v of bad) {
+      let msg = '';
+      try {
+        configFromEnv({ HQ_DATA_BASE: v }, f);
+      } catch (e) {
+        msg = (e as Error).message;
+      }
+      expect(msg, v).toContain('HQ_DATA_BASE');
+      expect(msg, v).not.toContain('s3cret-word');
+    }
+    expect(() => configFromEnv({ HQ_SITE_BASE: 'https://a:b@site.test' }, f)).toThrow(/HQ_SITE_BASE/);
+    // Adres lokalny do testów: nazwa hosta, nie IP (IP w `sources[].url` zablokowałby każdą odpowiedź)
+    expect(configFromEnv({ HQ_DATA_BASE: 'http://localhost:8080/data' }, f).dataBase).toBe('http://localhost:8080/data');
+  });
 });
 
 describe('Sources.published', () => {
@@ -55,6 +73,18 @@ describe('Sources.published', () => {
     expect(r.url).toBe(FILE);
     await src.published('BTC/test.json', isV);
     expect(calls).toHaveLength(2);
+  });
+
+  it('błąd sieci z adresem na granicy przycięcia: powód bez ciągu ≥ 20 znaków hex, z blokadą treści', async () => {
+    // Komunikat z adresem od znaku 116: przycięcie przed sprawdzeniem zostawiłoby „0x” i 30 znaków hex
+    const filler = 'awaria '.repeat(16) + 'zzzz';
+    expect(filler).toHaveLength(116);
+    const { src } = testSources({ [FILE]: new Error(filler + '0x' + 'b'.repeat(40)) }, NOW);
+    const r = await src.published('BTC/test.json', isV);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.why).not.toMatch(/[0-9a-fA-F]{20,}/);
+    expect(r.why).toContain(BLOCK_MARK);
   });
 
   it('odpowiedź 429 — {ok:false} z kodem w powodzie', async () => {
@@ -119,6 +149,27 @@ describe('Sources.candles', () => {
     expect((await src.candles('1m', from)).ok).toBe(true);
     await src.candles('1m', from);
     expect(calls).toHaveLength(1);
+  });
+
+  it('okno ponad 4 części (20 000 świec) — {ok:false} bez żadnego żądania', async () => {
+    const { src, calls } = testSources({ [HL_INFO]: hlRoute([]) }, NOW);
+    const r = await src.candles('1m', NOW - 20_001 * MIN);
+    expect(r.ok).toBe(false);
+    expect(!r.ok && r.why).toBeTruthy();
+    expect(calls).toHaveLength(0);
+  });
+
+  it('jawne `to`: endTime w żądaniu, świece po `to` odrzucone', async () => {
+    const from = NOW - 120 * MIN;
+    const to = NOW - 60 * MIN;
+    const { src, calls } = testSources({ [HL_INFO]: hlRoute(flatBars(from, NOW, 79_900, 80_100)) }, NOW);
+    const r = await src.candles('1m', from, to);
+    expect(JSON.parse(calls[0].body ?? '{}')).toEqual({ type: 'candleSnapshot', req: { coin: 'BTC', interval: '1m', startTime: from, endTime: to } });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value).toHaveLength(61);
+    expect(r.value[0].t).toBe(from);
+    expect(r.value[r.value.length - 1].t).toBe(to);
   });
 
   it('nieudane żądanie którejkolwiek części — {ok:false}', async () => {

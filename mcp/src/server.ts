@@ -5,17 +5,18 @@
 import { McpServer } from '@modelcontextprotocol/server';
 import type { CallToolResult } from '@modelcontextprotocol/server';
 import { tr } from '../../src/i18n';
-import { blockReasons, blocked, toToolResult } from './envelope';
+import { blocked, guardedCut, toToolResult } from './envelope';
 import type { Sources } from './sources';
 import { TOOLS, type ToolDef } from './tools/index';
 
 const MSG_MAX = 200;
 
-/** Komunikat wyjątku przycięty do 200 znaków; z adresem albo radą (np. cytat obcego JSON-a) — bez treści. */
+/**
+ * Komunikat wyjątku do 200 znaków; bezpieczniki na pełnym komunikacie przed przycięciem (`guardedCut`), więc adres
+ * albo rada (np. cytat obcego JSON-a) nie przejdzie ucięta — zostaje sam znacznik blokady.
+ */
 function toolError(e: unknown): string {
-  const msg = (e instanceof Error ? e.message : String(e)).slice(0, MSG_MAX);
-  const safe = blockReasons(msg).length === 0 ? msg : tr('komunikat zablokowany przez bezpieczniki treści', 'message withheld by the content guards');
-  return `błąd narzędzia / tool error: ${safe}`;
+  return `błąd narzędzia / tool error: ${guardedCut(e instanceof Error ? e.message : String(e), MSG_MAX)}`;
 }
 
 async function call(t: ToolDef, src: Sources, args: unknown): Promise<CallToolResult> {

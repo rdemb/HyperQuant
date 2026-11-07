@@ -6,6 +6,7 @@
 import { type Candle, parseCandles } from '../../src/charts/pro/hl/parse';
 import { tr } from '../../src/i18n';
 import { type BlogMapsState, parseBlogMaps } from '../../src/state/useBlogMaps';
+import { guardedCut } from './envelope';
 
 /** Wersja paczki (test pilnuje zgodności z `mcp/package.json`). */
 export const VERSION = '0.1.0';
@@ -41,7 +42,11 @@ export interface SourcesConfig {
 /** Wynik pobrania: wartość z czasem pobrania (`at`) i czasem danych według źródła (`asOf` pliku), albo powód braku. */
 export type Fetched<T> = { ok: true; value: T; url: string; at: number; asOf?: number } | { ok: false; why: string; url: string };
 
-/** Adres bazowy ze zmiennej środowiska: tylko http(s), bez końcowego ukośnika; brak — domyślny. */
+/**
+ * Adres bazowy ze zmiennej środowiska: tylko http(s), bez loginu i hasła (trafiłyby do `sources[].url` każdej
+ * odpowiedzi), bez zapytania i kotwicy (psułyby doklejaną ścieżkę), bez końcowego ukośnika; brak — domyślny. Błąd
+ * zatrzymuje start serwera z nazwą zmiennej na stderr, bez jej wartości (mogłaby zawierać hasło).
+ */
 function baseUrl(v: string | undefined, fallback: string, name: string): string {
   const s = v?.trim();
   if (!s) return fallback;
@@ -52,10 +57,16 @@ function baseUrl(v: string | undefined, fallback: string, name: string): string 
     throw new Error(`${name}: ${tr('nieprawidłowy adres', 'invalid URL')}`);
   }
   if (u.protocol !== 'https:' && u.protocol !== 'http:') throw new Error(`${name}: ${tr('tylko adres http(s)', 'http(s) URL only')}`);
+  // „@” w części hosta także przy pustym loginie („https://@host”), którego `URL` nie pokazuje w `username`
+  if (u.username || u.password || /^[a-z][a-z0-9+.-]*:\/\/[^/?#]*@/i.test(s)) throw new Error(`${name}: ${tr('adres bez loginu i hasła', 'URL without user name or password')}`);
+  // „?” i „#” w surowym tekście: puste zapytanie („…/data?”) daje `search === ''`, a i tak psuje ścieżkę
+  if (u.search || u.hash || /[?#]/.test(s)) throw new Error(`${name}: ${tr('adres bez zapytania (?) i kotwicy (#)', 'URL without a query (?) or fragment (#)')}`);
   return s.replace(/\/+$/, '');
 }
 
 export function configFromEnv(env: Record<string, string | undefined>, fetchImpl: typeof fetch): SourcesConfig {
+  // Baza jako IP (np. http://127.0.0.1:8080) trafiłaby do `sources[].url` i bezpiecznik prywatności („adres IP”) zablokowałby
+  // każdą odpowiedź — do testów lokalnych `http://localhost:…`
   const dataBase = baseUrl(env.HQ_DATA_BASE, DATA_BASE, 'HQ_DATA_BASE');
   return {
     dataBase,
@@ -80,11 +91,11 @@ function sourceAsOf(raw: unknown): number | undefined {
   return Number.isFinite(t) && t > 0 ? t : undefined;
 }
 
-/** Krótki opis błędu sieci (komunikat i kod przyczyny), bez treści odpowiedzi. */
+/** Krótki opis błędu sieci (komunikat i kod przyczyny, do 140 znaków), bez treści odpowiedzi; bezpieczniki przed przycięciem. */
 function netWhy(e: unknown): string {
   const msg = e instanceof Error ? e.message : String(e);
   const cause = e instanceof Error && isObj(e.cause) && typeof e.cause.code === 'string' ? ` (${e.cause.code})` : '';
-  return `${tr('błąd sieci', 'network error')}: ${msg}${cause}`.slice(0, 160);
+  return `${tr('błąd sieci', 'network error')}: ${guardedCut(`${msg}${cause}`, 140)}`;
 }
 
 export class Sources {
