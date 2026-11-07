@@ -42,8 +42,10 @@ export async function prepareHistoryRepo(o: LedgerRepo, now: number): Promise<bo
     writeFileSync(marker, '');
     return true;
   } catch (e) {
-    // Przyczyna przycięta jak przy publikacji (zdalny adres i ścieżka klucza to konfiguracja serwera)
-    console.error(`[skaner] historia: przygotowanie repo nieudane: ${String(e).slice(0, 200)}`);
+    // Przyczyna z wyjścia błędu gita (bez linii polecenia), adres repo zdalnego zastąpiony — mógłby zawierać token
+    const stderr = (e as { stderr?: unknown }).stderr;
+    const why = (typeof stderr === 'string' && stderr.trim() ? stderr : String(e)).split(o.remote).join('<remote>').trim();
+    console.error(`[skaner] historia: przygotowanie repo nieudane: ${why.slice(0, 200)}`);
     return false;
   }
 }
