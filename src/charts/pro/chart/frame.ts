@@ -188,11 +188,25 @@ export function composeFrame(o: FrameInput): HTMLCanvasElement | null {
 /** Zdanie z kropką na końcu (bez podwójnej po „.”, „?”, „!” i „…”). */
 const dot = (s: string) => (/[.?!…]$/.test(s) ? s : `${s}.`);
 
-/** Tekst alternatywny Klatki: tytuł (te same liczby), opis obrazu (`body`, np. Czwórka), źródło z godziną i jakość danych. */
+/** Liczba w tekście Klatki („Etykieta: wartość (plakietka)”, `numberText`). */
+const NUMBER_TEXT = /^[^:]+: .+ \([^()]+\)$/;
+
+/**
+ * Tekst alternatywny Klatki: tytuł (te same liczby), opis obrazu (`body`, np. Czwórka), źródło z godziną i jakość danych.
+ * Liczba z tytułu, którą opis już podaje słowo w słowo (domyślny tytuł Czwórki ma dwie z jej czterech), jest w tekście raz —
+ * w opisie; resztę tytułu (też zmienionego przez użytkownika) tekst zachowuje.
+ */
 export function frameAlt(o: { title: string; time: number; source: string; quality: FrameQuality; body?: string }): string {
+  const described = (seg: string) => !!o.body && NUMBER_TEXT.test(seg) && o.body.includes(seg);
   const title = o.title
     .split('\n')
-    .map((s) => s.trim())
+    .map((line) =>
+      line
+        .split(';')
+        .map((s) => s.trim())
+        .filter((s) => s && !described(s))
+        .join('; ')
+    )
     .filter(Boolean)
     .map(dot)
     .join(' ');

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { FourNumbers } from '../../../utils/fourNumbers';
+import { type FourNumbers, fourNumbersText } from '../../../utils/fourNumbers';
+import { frameAlt } from '../../../charts/pro/chart/frame';
 import { fourCanvas, fourTitle } from '../fourFrame';
 import { ctxOf, fakeDocument } from '../../../charts/pro/__tests__/fakeCanvas';
 
@@ -50,6 +51,19 @@ describe('Czwórka w Klatce: karta na płótnie', () => {
   it('bez kontekstu 2D — null (Klatka pokaże błąd zamiast pustej karty)', () => {
     vi.stubGlobal('document', { createElement: () => ({ width: 0, height: 0, getContext: () => null }) });
     expect(fourCanvas(N, '16:9')).toBeNull();
+  });
+
+  it('tekst alternatywny Klatki Czwórki: każda liczba raz (opis ma wszystkie cztery, tytuł ich nie powtarza)', () => {
+    const q = { tapePct: null, mapPct: null, tapeWhy: 'Czwórka liczy ze świec', mapWhy: 'tylko BTC' };
+    const alt = frameAlt({ title: fourTitle(N), time: N.now, source: 'Hyperliquid', quality: q, body: fourNumbersText(N) });
+    const count = (s: string) => alt.split(s).length - 1;
+    for (const i of N.items) expect(count(`${i.title}: `), i.id).toBe(1);
+    expect(count('pod 3,5M · nad 3,4M')).toBe(1);
+    expect(count('trendowy · mapa 2/4')).toBe(1);
+    expect(alt).toContain('Czwórka BTC przed sesją.');
+    // Tytuł zmieniony przez użytkownika zostaje w całości (inne słowa niż w opisie)
+    const own = frameAlt({ title: 'Paliwo blisko ceny\nPaliwo ±1%: pod 3,5M (LIVE)', time: N.now, source: 'Hyperliquid', quality: q, body: fourNumbersText(N) });
+    expect(own).toContain('Paliwo blisko ceny. Paliwo ±1%: pod 3,5M (LIVE).');
   });
 
   it('domyślny tytuł Klatki Czwórki: rynek i liczba z karty, bez rad', () => {
