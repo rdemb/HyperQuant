@@ -1,7 +1,8 @@
 import type { IChartApiBase, IPrimitivePaneRenderer, IPrimitivePaneView, ISeriesApi, ISeriesPrimitive, SeriesAttachedParameter, SeriesType, Time } from 'lightweight-charts';
 import type { BlogMap } from '../../../state/useBlogMaps';
-import { type MapKind, type SettledLevel, mapWindow, settleRange } from '../../../utils/mapSettlement';
-import type { VBar } from '../../../utils/auction';
+import { type SettledLevel, mapWindow, settleRange } from '../../../utils/mapSettlement';
+import { toVBars } from '../../../utils/auction';
+import { blogMapName } from '../../../utils/sessionText';
 import { tr } from '../../../i18n';
 import type { Candle } from '../hl/parse';
 import { fmtDayTime, fmtHm } from '../core/time';
@@ -33,16 +34,8 @@ export interface BlogMapModel {
   tag: string;
 }
 
-const KIND_NAME: Record<MapKind, string> = {
-  dzien: tr('Mapa dnia', 'Day map'),
-  ny: tr('Mapa przed NY', 'Pre-NY map'),
-  otwarcie: tr('Otwarcie sesji', 'Session open'),
-  aktualizacja: tr('Aktualizacja', 'Update'),
-  inne: tr('Mapa z bloga', 'Blog map'),
-};
-
-/** Nazwa rodzaju mapy (etykieta na wykresie i lista map w ustawieniach). */
-export const blogMapName = (kind: MapKind): string => KIND_NAME[kind];
+/** Nazwa rodzaju mapy (etykieta na wykresie i lista map w ustawieniach) — wspólna z utils/sessionText. */
+export { blogMapName };
 
 /** Podpisy poziomów i etykieta mapy w chwili `now` (godzina wpisu, z datą, gdy wpis nie jest z dzisiaj). */
 export function blogMapModel(map: BlogMap, x: { now: number; marks: BlogMarks }): BlogMapModel {
@@ -54,11 +47,8 @@ export function blogMapModel(map: BlogMap, x: { now: number; marks: BlogMarks })
     })
     .sort((a, b) => b.price - a.price);
   const note = x.marks.note ? ` · ${x.marks.note}` : '';
-  return { levels, tag: `${KIND_NAME[map.kind]} ${fmtDayTime(map.publishedAt, x.now)}${tr('', ' (PL blog)')}${note}` };
+  return { levels, tag: `${blogMapName(map.kind)} ${fmtDayTime(map.publishedAt, x.now)}${tr('', ' (PL blog)')}${note}` };
 }
-
-/** Świece 1m magazynu w zapisie rozliczenia (`VBar`). */
-const candleBars = (c: readonly Candle[]): VBar[] => c.map((k) => ({ time: k.t, open: k.o, high: k.h, low: k.l, close: k.c, volume: k.v }));
 
 /**
  * Rozliczenie poziomów mapy (tylko z `settle`, czyli w układzie Rozliczenie) w chwili wykresu `now`: dotknięcie w oknie
@@ -71,7 +61,7 @@ export function blogMapMarks(map: BlogMap, candles1m: (from: number) => readonly
   if (!settle) return { settled: null, note: null };
   const w = mapWindow(map.kind, map.publishedAt);
   if (!w) return { settled: null, note: tr('bez rozliczenia', 'not settled') };
-  const r = settleRange(map.levels, candleBars(candles1m(w.from)), w.from, w.to, now);
+  const r = settleRange(map.levels, toVBars(candles1m(w.from)), w.from, w.to, now);
   if (!r) return { settled: null, note: tr('czekam na świece 1m', 'waiting for 1m candles') };
   return { settled: r.levels, note: r.complete ? null : tr('luka w świecach 1m', 'gap in 1m candles') };
 }

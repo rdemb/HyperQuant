@@ -8,6 +8,7 @@ import { type HqIndicatorId, indicatorDef } from '../indicators/registry';
 import type { ChartSettings } from './settings';
 import { LAYERS_OFF } from './templates';
 import { tr } from '../../../i18n';
+import { WAIT_TEXT } from '../../../utils/sessionText';
 
 /**
  * Plakietki danych przy warstwach legendy (spec §7.4): skąd pochodzi warstwa — LIVE (dane Hyperliquid i skanera),
@@ -110,8 +111,8 @@ const METHOD_HINT: Record<ModelKey, string> = {
   ),
 };
 
-/** Tekst brakującej, jeszcze wczytywanej liczby (nagłówek i legenda). */
-export const WAIT_TEXT = tr('Czekam na dane…', 'Waiting for data…');
+/** Tekst brakującej, jeszcze wczytywanej liczby (nagłówek, legenda, Rozliczenie) — wspólny z utils/sessionText. */
+export { WAIT_TEXT };
 
 /** Migawka skanera dla warstwy: chwila stanu albo powód braku — ten sam w nagłówku układu i w legendzie. */
 export type ScanState = { asOf: number } | { why: string };

@@ -3,7 +3,8 @@ import type { LiqMap } from '../../../utils/liqMap';
 import { mapWindow, settleRange } from '../../../utils/mapSettlement';
 import type { VolModel } from '../../../utils/volatility';
 import type { WhaleLayer } from '../../../utils/whaleLayer';
-import { type TradeSession, currentTradeSession, expectedRange } from '../../../utils/sessionDay';
+import { type TradeSession, currentTradeSession, expectedRange, previousSameSession } from '../../../utils/sessionDay';
+import { reviewSession, sessionFacts } from '../../../utils/sessionFacts';
 import type { BookFrame } from '../core/book';
 import { liqLevels } from '../core/indicators';
 import { fmtHm } from '../core/time';
@@ -23,7 +24,6 @@ import {
   nakedPocOf,
   prevDayOf,
   profileStep,
-  reviewOf,
   rvolOf,
   sessionNowOf,
   toVBars,
@@ -44,6 +44,10 @@ export interface InputSeries {
   loadState: 'idle' | 'loading' | 'ready' | 'error';
   load(): Promise<void>;
   candlesNow(): readonly Candle[];
+  /** Starszej historii już nie ma (limit API). */
+  historyExhausted?: boolean;
+  /** Ostatnie doczytanie starszej strony się nie udało; seria ponawia je po 30 s. */
+  olderFailed?: boolean;
 }
 
 /** Część magazynu rynku (ProStore), z której liczymy liczby nagłówka. */
@@ -98,6 +102,20 @@ export function seriesCandles(store: InputStore, id: string, now: number): Got<r
   return s.loadState === 'ready' ? s.candlesNow() : undefined;
 }
 
+/**
+ * Świece interwału `id` od `from` (seria doczytuje starsze strony): pełna lista, gdy sięga `from` albo historia API się
+ * skończyła; w trakcie doczytywania — undefined; nieudane doczytanie — powód z ponowną próbą (nigdy liczba z części danych).
+ */
+export function candlesFrom(store: InputStore, id: string, from: number, now: number): Got<readonly Candle[]> | undefined {
+  const c = seriesCandles(store, id, now);
+  if (c === undefined || isAbsent(c)) return c;
+  const list = store.indicatorCandles(id, from);
+  if (list.length > 0 && list[0].t <= from) return list;
+  const s = store.series(id);
+  if (s.olderFailed) return { why: tr(`Nie udało się pobrać starszych świec ${id} — kolejna próba za ≤ 30 s`, `Could not load older ${id} candles — next attempt within 30 s`) };
+  return s.historyExhausted ? list : undefined;
+}
+
 /** Brak albo wczytywanie wejścia, od którego zależy liczba (gotowe wejście — tu nie trafia). */
 const pass = (v: Got<unknown> | undefined): Absent | undefined => (v !== undefined && isAbsent(v) ? v : undefined);
 
@@ -121,13 +139,13 @@ function expectedOf(store: InputStore, model: VolModel | null, s: TradeSession, 
 }
 
 /**
- * Oczekiwany zakres sesji do rozliczenia (MODEL), ta sama metoda co budżet zakresu na żywo: sesja w toku — oczekiwanie na
- * teraz; zamknięta — z modelem HAR jego poziom zmienności przeniesiony profilem godzin, bez modelu Parkinson ze świec 5m
- * z doby przed jej otwarciem (oczekiwanie sprzed sesji). Świece 5m w drodze — undefined.
+ * Oczekiwany zakres sesji do rozliczenia (MODEL): sesja w toku — ta sama metoda co budżet zakresu na żywo (HAR, bez modelu
+ * Parkinson), oczekiwanie na teraz; zamknięta — zawsze ex ante: Parkinson ze świec 5m z doby przed jej otwarciem (model HAR
+ * zna tylko dzisiejszy poziom zmienności, nie prognozę sprzed tamtej sesji). Świece 5m w drodze — undefined.
  */
 export function sessionExpectedOf(store: InputStore, model: VolModel | null, s: TradeSession, inProgress: boolean, price: number): Got<Expected> | undefined {
   const now = store.serverNow();
-  return expectedOf(store, model, s, now, inProgress ? now : s.start, price);
+  return inProgress ? expectedOf(store, model, s, now, now, price) : expectedOf(store, null, s, now, s.start, price);
 }
 
 /**
@@ -141,10 +159,11 @@ function mapHitsOf(store: InputStore, blog: InputScan['blog'], now: number): Lay
   if (!map) return undefined;
   const w = mapWindow(map.kind, map.publishedAt);
   if (!w) return { why: tr('Mapa tygodnia albo weekendu — bez rozliczenia', 'A weekly or weekend map — not settled') };
-  const c1 = seriesCandles(store, '1m', now);
+  const c1 = candlesFrom(store, '1m', w.from, now);
   if (c1 === undefined || isAbsent(c1)) return c1;
-  const r = settleRange(map.levels, toVBars(store.indicatorCandles('1m', w.from)), w.from, w.to, now);
-  if (!r) return { why: tr(`Czekam na świece 1m od wpisu (${fmtHm(w.from)})`, `Waiting for 1m candles from the post (${fmtHm(w.from)})`) };
+  const r = settleRange(map.levels, toVBars(c1), w.from, w.to, now);
+  // Lista sięga wpisu albo historia API się skończyła — tu tylko ten drugi przypadek
+  if (!r) return { why: tr(`Świece 1m nie sięgają wpisu (${fmtHm(w.from)}): limit historii API`, `The 1m candles do not reach the post (${fmtHm(w.from)}): API history limit`) };
   return { kind: map.kind, publishedAt: map.publishedAt, touched: r.levels.filter((l) => l.touchedAt !== null).length, total: r.levels.length, complete: r.complete, from: w.from, to: w.to };
 }
 
@@ -204,8 +223,14 @@ export function readInputs(id: StationId, store: InputStore, scan: InputScan, ha
     x.whales = 'why' in ws ? ws : whaleBalanceOf(scan.whales!.markets[store.coin].positions, ws.asOf);
   }
   if (id === 'review') {
-    const c5 = seriesCandles(store, '5m', now);
-    x.review = c5 === undefined || isAbsent(c5) ? pass(c5) : reviewOf(c5, now);
+    // Te same fakty co karta Rozliczenia sesji: świece 1m od otwarcia poprzedniej sesji tego samego typu (migracja VA)
+    const { s, inProgress } = reviewSession(now);
+    const c1 = candlesFrom(store, '1m', previousSameSession(s).start, now);
+    if (c1 === undefined || isAbsent(c1)) x.review = pass(c1);
+    else {
+      const f = sessionFacts(toVBars(c1), s, now);
+      x.review = isAbsent(f) ? f : { ...f, inProgress };
+    }
     // Mapy z bloga opisują BTC (inny rynek: liczba mówi „tylko BTC”)
     if (store.coin === 'BTC') x.mapHits = mapHitsOf(store, scan.blog, now);
   }

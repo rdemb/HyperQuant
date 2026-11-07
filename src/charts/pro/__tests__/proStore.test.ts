@@ -205,4 +205,36 @@ describe('ProStore', () => {
     ws2.msg({ channel: 'trades', data: [trade(now - 10_000, 81025, 0.1, 'B', 1), trade(now - 6000, 81026, 0.2, 'B', 2)] });
     expect(store.coverage.covers(now - 10_000, now)).toBe(true);
   });
+
+  it('nieudane pobranie starszej strony to nie koniec historii: ponowna próba najwcześniej po 30 s; pusta strona — koniec', async () => {
+    await boot();
+    let fail = true;
+    let calls = 0;
+    const older = [candle(T0 - M5, 80990, 81000, 3)];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init: { body: string }) => {
+        // Liczymy tylko zapytania o świece (po doczytaniu seria pyta też o funding)
+        if (JSON.parse(init.body).type !== 'candleSnapshot') return { ok: true, json: async () => [] };
+        calls++;
+        return fail ? { ok: false, json: async () => null } : { ok: true, json: async () => older };
+      })
+    );
+    const failedAt = Date.now();
+    await series.loadOlder();
+    expect([series.historyExhausted, series.olderFailed, calls]).toEqual([false, true, 1]);
+    // Przed upływem 30 s od błędu bez kolejnego zapytania (zegar testu: od chwili błędu)
+    vi.setSystemTime(failedAt + 29_000);
+    await series.loadOlder();
+    expect(calls).toBe(1);
+    // Po 30 s ponowna próba, tym razem udana: starsza świeca dołączona, błąd zapomniany
+    fail = false;
+    vi.setSystemTime(failedAt + 30_000);
+    await series.loadOlder();
+    expect([series.candles[0].t, series.olderFailed, series.historyExhausted, calls]).toEqual([T0 - M5, false, false, 2]);
+    // Prawdziwie pusta odpowiedź (limit historii API) kończy doczytywanie
+    older.length = 0;
+    await series.loadOlder();
+    expect([series.historyExhausted, series.olderFailed]).toEqual([true, false]);
+  });
 });

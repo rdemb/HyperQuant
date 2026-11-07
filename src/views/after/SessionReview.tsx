@@ -1,8 +1,7 @@
 import React, { useEffect, useId, useState } from 'react';
 import { History } from 'lucide-react';
 import { Badge, DASH, EmptyState, Panel } from '../../ui';
-import { type Got, isAbsent, toVBars } from '../../charts/pro/chart/layoutNumbers';
-import { seriesCandles, sessionExpectedOf } from '../../charts/pro/chart/layoutInputs';
+import { candlesFrom, sessionExpectedOf } from '../../charts/pro/chart/layoutInputs';
 import { fmtDm, fmtHm } from '../../charts/pro/core/time';
 import { type ProStore, storeFor } from '../../charts/pro/store/proStore';
 import { startRecording } from '../../charts/pro/store/recording';
@@ -12,26 +11,24 @@ import { useBlogMaps } from '../../state/useBlogMaps';
 import { useCohortFlow } from '../../state/useCohortFlow';
 import { useDeskLedger } from '../../state/useDeskLedger';
 import { useLiqTape } from '../../state/useLiqTape';
-import type { VBar } from '../../utils/auction';
+import { type VBar, toVBars } from '../../utils/auction';
 import { type TradeSession, previousSameSession } from '../../utils/sessionDay';
 import { TRADE_SESSION_NAME } from '../../utils/sessionNames';
-import { type ReviewCard, type ReviewRow, reviewCards, reviewReplay, reviewRows } from '../../utils/sessionReview';
+import { type ReviewCard, type ReviewRow, reviewCards, reviewRows } from '../../utils/sessionReview';
+import { type Got, isAbsent } from '../../utils/sessionText';
+import { reviewReplay } from './reviewReplay';
 import { tr } from '../../i18n';
 
 /** Bez zmian w magazynie (cisza, brak połączenia) i tak co tyle przeliczamy: koniec sesji zmienia karty. */
 const TICK_MS = 30_000;
 
 /**
- * Świece 1m BTC od `from` (poprzednia sesja tego samego typu najstarszej karty): seria wczytuje się przy pierwszym użyciu,
- * po błędzie ponawia co 30 s, starszą historię doczytuje stronami (do tego czasu — undefined, czyli „czekam”).
+ * Świece 1m BTC od `from` (poprzednia sesja tego samego typu najstarszej karty), jak w nagłówku układu (`candlesFrom`): do
+ * dociągnięcia starszych stron — undefined („czekam”), nieudane doczytanie — powód z ponowną próbą po 30 s.
  */
 function bars1mOf(store: ProStore, from: number, now: number): Got<readonly VBar[]> | undefined {
-  const c = seriesCandles(store, '1m', now);
-  if (c === undefined || isAbsent(c)) return c;
-  const list = store.indicatorCandles('1m', from);
-  const s = store.series('1m');
-  if (list.length > 0 && list[0].t > from && !s.historyExhausted) return undefined;
-  return toVBars(list);
+  const c = candlesFrom(store, '1m', from, now);
+  return c === undefined || isAbsent(c) ? c : toVBars(c);
 }
 
 /** Zamknięcie sesji (ostatnia świeca 1m przed jej końcem) — cena do oczekiwanego zakresu; bez świec — ostatnia cena rynku. */
@@ -70,7 +67,8 @@ export const SessionReview: React.FC = () => {
   const lp = store.lastPrice();
   const all = cards.map((card) => {
     const price = closeOf(bars1m, card.s, now, lp);
-    const expected = price > 0 ? sessionExpectedOf(store, feed.vol.model, card.s, card.inProgress, price) : undefined;
+    // Zamknięta sesja: oczekiwanie sprzed jej otwarcia (Parkinson), model HAR tylko dla sesji w toku
+    const expected = price > 0 ? sessionExpectedOf(store, card.inProgress ? feed.vol.model : null, card.s, card.inProgress, price) : undefined;
     return { card, rows: reviewRows({ s: card.s, inProgress: card.inProgress, now, bars1m, maps, expected, liq, cohorts, ledger }) };
   });
   const windowRows = all[0]?.rows.filter((r) => r.scope === 'window') ?? [];

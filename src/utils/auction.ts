@@ -26,6 +26,20 @@ export const PROFILE_STEP = 10;
 
 export const dayStart = (t: number) => Math.floor(t / DAY) * DAY;
 
+/** Świece w zapisie magazynu wykresu (pola jak w `Candle` z charts/pro/hl/parse) → `VBar`. */
+export const toVBars = (list: readonly { t: number; o: number; h: number; l: number; c: number; v: number }[]): VBar[] =>
+  list.map((c) => ({ time: c.t, open: c.o, high: c.h, low: c.l, close: c.c, volume: c.v }));
+
+/** Koszyk profilu wolumenu ok. 0,01% ceny, okrągły (1, 2 albo 5 × 10^k): BTC 100 000 → 10 USD. */
+export function profileStep(price: number): number {
+  if (!(Number.isFinite(price) && price > 0)) return Number.NaN;
+  const x = price * 1e-4;
+  const p = 10 ** Math.floor(Math.log10(x));
+  let best = p;
+  for (const k of [1, 2, 5, 10]) if (Math.abs(Math.log((k * p) / x)) < Math.abs(Math.log(best / x))) best = k * p;
+  return Number(best.toPrecision(12));
+}
+
 export interface Rate {
   k: number;
   n: number;

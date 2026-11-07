@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { BlogMap, BlogMapsState } from '../../state/useBlogMaps';
 import type { CohortFlowState } from '../../state/useCohortFlow';
@@ -8,7 +9,7 @@ import type { CohortFlow } from '../cohorts';
 import type { DeskLedgerSummary } from '../deskLedger';
 import type { LiqTape } from '../liqTape';
 import { currentTradeSession, tradeSessionOn } from '../sessionDay';
-import { type ReviewInputs, type ReviewRow, REPLAY_KEEP_MS, reviewCards, reviewReplay, reviewRows } from '../sessionReview';
+import { type ReviewInputs, type ReviewRow, reviewCards, reviewRows } from '../sessionReview';
 import { fmtDayTime, fmtHm } from '../../charts/pro/core/time';
 import { fmtPx } from '../../charts/pro/chart/layout';
 
@@ -153,8 +154,32 @@ describe('reviewRows: rozliczenie zamkniętej sesji Londynu z mapą', () => {
     expect(m.why).toBeUndefined();
     expect(m.detail).toContain(`Szczyt Azji ${fmtPx(100_300)} ✓ ${fmtHm(L.start + 30 * MIN)}`);
     expect(m.detail).toContain(`Likwidacje shortów ${fmtPx(100_700)} ✓ ${fmtHm(L.start + 3 * H)}`);
-    // Chybione z ceną (mapa bywa z dwoma poziomami o tym samym podpisie)
-    expect(m.detail).toContain(`chybione: PDL ${fmtPx(99_150)}, VAH wczoraj ${fmtPx(101_000)}`);
+    // Okno Mapy dnia trwa do końca NY: na karcie Londynu nie „chybione”, tylko „niedotknięte do” końca Londynu (z ceną —
+    // mapa bywa z dwoma poziomami o tym samym podpisie)
+    expect(m.detail).toContain(`niedotknięte do ${fmtHm(L.end)}: PDL ${fmtPx(99_150)}, VAH wczoraj ${fmtPx(101_000)}`);
+    expect(m.detail).not.toMatch(/chybione/);
+  });
+
+  it('mapa rozliczana jak ✓ na wykresie: od wpisu (także dotknięcie w Azji) do końca karty; „chybione” dopiero po końcu okna mapy', () => {
+    // Poziom 99 600 dotknięty w Azji o 07:06 (pierwsza pełna minuta po wpisie 07:05:20), przed otwarciem Londynu
+    const asia: BlogMap = { ...MAP, levels: [{ label: 'Środek Azji', price: 99_600 }, ...MAP.levels] };
+    const m = row(reviewRows(inputs({ maps: { status: 'ready', maps: [asia] } })), 'map');
+    expect(m.value).toBe('3/5 dotknięte');
+    expect(m.detail).toContain(`Środek Azji ${fmtPx(99_600)} ✓ ${fmtHm(PUB - 20_000 + MIN)}`);
+    expect(m.replayAt).toBe(PUB - 20_000 + MIN);
+    // Mapa przed NY opublikowana w Londynie (okno do końca NY) — na karcie Londynu nigdy „chybione”
+    const preNy: BlogMap = { ...MAP, id: '2026-11-03-mapa-przed-nowym-jorkiem', kind: 'ny', publishedAt: L.start + 5 * H + 50 * MIN };
+    const p = row(reviewRows(inputs({ maps: { status: 'ready', maps: [preNy] } })), 'map');
+    expect(p.detail).toContain(`niedotknięte do ${fmtHm(L.end)}`);
+    expect(p.detail).not.toMatch(/chybione/);
+    // Aktualizacja z Londynu (okno do końca Londynu) — po końcu okna „chybione”
+    const upd: BlogMap = { ...MAP, id: '2026-11-03-aktualizacja-12', kind: 'aktualizacja', publishedAt: L.start + 3 * H };
+    const u = row(reviewRows(inputs({ maps: { status: 'ready', maps: [upd] } })), 'map');
+    expect(u.detail).toContain(`chybione: PDL ${fmtPx(99_150)}`);
+    // NY w toku: ta sama Mapa dnia rozliczana od wpisu, tak jak ✓ na wykresie i liczba w nagłówku
+    const ny = row(reviewRows(inputs({ s: NY, inProgress: true })), 'map');
+    expect(ny.value).toBe('2/4 dotknięte');
+    expect(ny.detail).toContain(`niedotknięte do ${fmtHm(NOW)}`);
   });
 
   it('VA i IB z 1m sesji: value area z profilu 70% (auction.profile) wyżej niż poprzedni Londyn', () => {
@@ -247,15 +272,14 @@ describe('reviewRows: braki danych dają „—” z powodem', () => {
 });
 
 describe('reviewRows: sesja w toku', () => {
-  it('NY w toku: typ dnia z dopiskiem o zmianie, brak wybicia IB, mapa „jeszcze niedotknięte”, bez powtórki końca sesji', () => {
+  it('NY w toku: typ dnia z dopiskiem o zmianie, brak wybicia IB „(dotąd)”, bez powtórki końca sesji', () => {
     const rows = reviewRows(inputs({ s: NY, inProgress: true }));
     expect(row(rows, 'dayType').value).toBe('normalny');
     expect(row(rows, 'dayType').hint).toContain('w toku');
     expect(row(rows, 'dayType').replayAt).toBeNull();
-    expect(row(rows, 'ib').value).toBe('brak wybicia');
-    const m = row(rows, 'map');
-    expect(m.value).toBe('0/4 dotknięte');
-    expect(m.detail).toMatch(/jeszcze niedotknięte/);
+    expect(row(rows, 'ib').value).toBe('brak wybicia (dotąd)');
+    // Ta sama sesja po zamknięciu: bez „(dotąd)”
+    expect(row(reviewRows(inputs({ s: NY, inProgress: false, now: NY.end + H, bars1m: bars(PREV_L.start, NY.end + H) })), 'ib').value).toBe('brak wybicia');
     expect(row(rows, 'liq').value).toBe('longi 3,0M · shorty 0');
   });
 
@@ -294,18 +318,30 @@ describe('karty Rozliczenia', () => {
   });
 });
 
-describe('link powtórki minuty', () => {
-  it('układ Rozliczenie na 5m w zakresie sesji, zatrzymany w minucie wiersza', () => {
-    expect(reviewReplay(L.start + 30 * MIN, L, NOW)).toBe(
-      '#charts?replay=history&m=BTC&i=5m&from=2026-11-03T08:00:00Z&to=2026-11-03T14:30:00Z&t=2026-11-03T08:30:00Z&station=review'
-    );
+describe('reviewRows: likwidacje i oczekiwany zakres — pozostałe gałęzie', () => {
+  it('taśma kończy się przed końcem zamkniętej sesji albo w toku jest nieaktualna: „—” z powodem', () => {
+    // Zamknięty Londyn, taśma z 12:00 (skaner przestał publikować w trakcie sesji)
+    const short: LiqTapeState = { status: 'expired', tape: { ...TAPE, asOf: L.start + 4 * H } };
+    const closed = row(reviewRows(inputs({ liq: short })), 'liq');
+    expect(closed).toMatchObject({ value: '—', why: expect.stringContaining('przed końcem sesji') });
+    // NY w toku, taśma sprzed 70 min (po otwarciu NY): suma do jej chwili byłaby nieaktualna
+    const expired: LiqTapeState = { status: 'expired', tape: { ...TAPE, asOf: NOW - 70 * MIN } };
+    expect(row(reviewRows(inputs({ s: NY, inProgress: true, liq: expired })), 'liq')).toMatchObject({ value: '—', why: expect.stringContaining('nieaktualna') });
   });
 
-  it('tylko minuty z ostatnich 7 dni (tyle serwer trzyma nagranie); starsze i brak minuty — bez linku', () => {
-    const t = L.start + 30 * MIN;
-    expect(REPLAY_KEEP_MS).toBe(7 * DAY);
-    expect(reviewReplay(t, L, t + REPLAY_KEEP_MS)).not.toBeNull();
-    expect(reviewReplay(t, L, t + REPLAY_KEEP_MS + 1)).toBeNull();
-    expect(reviewReplay(null, L, NOW)).toBeNull();
+  it('zamknięta sesja: oczekiwanie Parkinsona sprzed otwarcia opisane w podpowiedzi; bez dopisku o bieżącym modelu HAR', () => {
+    const p = row(reviewRows(inputs({ expected: { usd: 1_400, method: 'parkinson' } })), 'range');
+    expect(p).toMatchObject({ value: '50%', badge: 'MODEL' });
+    expect(p.hint).toMatch(/^MODEL · Parkinson: .*doby przed otwarciem sesji/);
+    expect(row(reviewRows(inputs()), 'range').hint).not.toMatch(/bieżącego modelu/);
+  });
+});
+
+describe('czystość modułów Rozliczenia', () => {
+  it('sessionReview, sessionFacts i sessionText nie importują modułów UI wykresu ani powtórki', () => {
+    for (const f of ['../sessionReview.ts', '../sessionFacts.ts', '../sessionText.ts']) {
+      const src = readFileSync(new URL(f, import.meta.url), 'utf8');
+      expect(src, f).not.toMatch(/from\s+['"][^'"]*charts\/pro\/(chart|replay)\//);
+    }
   });
 });
