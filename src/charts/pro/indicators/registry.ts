@@ -2074,10 +2074,14 @@ export const plotColor = (x: Pick<IndicatorInstance, 'color'>, p: PlotDef): stri
 
 /**
  * Kolor liczby plotu w legendzie: słupki w kolorze znaku (`sign` — wartość własna albo plotu `signOf`) w odcieniach ink
- * (czytelne na tle), wartości tylko do legendy (bez linii, np. wyścig, R²) w neutralnym tuszu, linie w kolorze linii.
+ * (czytelne na tle; bez wartości — w neutralnym tuszu, bo „—” nie ma znaku), wartości tylko do legendy (bez linii, np. wyścig,
+ * R²) w neutralnym tuszu, linie w kolorze linii.
  */
 export const legendColor = (x: Pick<IndicatorInstance, 'color'>, p: PlotDef, sign: number): string =>
-  p.hist ? (sign < 0 ? PRO.sellInk : PRO.buyInk) : p.hidden ? PRO.ink2 : plotColor(x, p);
+  p.hist ? (Number.isNaN(sign) ? PRO.ink2 : sign < 0 ? PRO.sellInk : PRO.buyInk) : p.hidden ? PRO.ink2 : plotColor(x, p);
+
+/** Podpis wartości plotu w legendzie: tytuł plotu, bez powtórzenia nazwy wskaźnika stojącej przed wartościami (RVOL). */
+export const legendTitle = (def: IndicatorDef, p: PlotDef): string => (p.title && p.title !== def.short ? p.title : '');
 
 /** Kolor znacznika instancji na liście i w oknie ustawień: pierwszej rysowanej linii (stały albo instancji). */
 export const swatchColor = (x: IndicatorInstance): string => {
