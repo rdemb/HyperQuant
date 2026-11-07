@@ -19,11 +19,11 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 #### Zmienione
 - **Kolory wskaźników**: różne kolory serii w każdym wskaźniku (Szerokość agresji miała kupujących i sprzedających w tym samym pomarańczu), sześć nowych kolorów instancji, linie i słupki stron w kolorach Głębi, IB we własnym kolorze, legenda bez koloru znaku przy „—”. Zapisane kolory użytkowników bez zmian.
-- **Nazwy miejsc w tekstach**: odwołania do dawnych zakładek Desk i Wykresy prowadzą do Przed sesją, W sesji, Po sesji i Badań („desk” jako opis produktu zostaje).
+- **Nazwy miejsc w tekstach**: odwołania do dawnych zakładek Desk i Wykresy prowadzą do Przed sesją, W sesji, Po sesji i Badań (także atlas w Lekcjach i Źródła; „desk” jako opis produktu zostaje).
 - **Pasek ceny**: nazwa sesji z sesji dnia tradera (zimą o 07:41 UTC to jeszcze Azja, nie Londyn z okien wskaźnika Shaakuni).
 
 #### Naprawione
-- Liczba bez danych nie ma plakietki LIVE ani MODEL (nagłówek układu, Czwórka, Rozliczenie).
+- Liczba bez danych nie ma plakietki LIVE ani MODEL (nagłówek układu, Czwórka, Rozliczenie, kafle liczb, np. pas kontekstu Przed sesją); stan danych (BRAK, STALE) zostaje jako powód.
 - Nieudana starsza strona świec 1m wygasza w Rozliczeniu tylko karty, którym brakuje minut; ponowna próba po 30 s z zegara, bez „kolejna próba” w trakcie próby.
 - `#flow` na otwartym W sesji pokazuje kolumnę DOM i taśmy schowaną wcześniej klawiszem `d`.
 - Szuflada DOM i pasek narzędzi rysowania nie zachodzą na przypięty nagłówek przy przewiniętej stronie.
