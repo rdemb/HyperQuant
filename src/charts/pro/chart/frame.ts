@@ -288,7 +288,7 @@ const BADGE: Record<BadgeTone, { ink: string; line: string; fill: string }> = {
   stale: { ink: PRO.warn, line: rgba(PRO.warn, 0.4), fill: rgba(PRO.warn, 0.1) },
   warn: { ink: PRO.warn, line: rgba(PRO.warn, 0.4), fill: rgba(PRO.warn, 0.1) },
   // Tło surface-2
-  neutral: { ink: PRO.ink2, line: PRO.divider, fill: '#101826' },
+  neutral: { ink: PRO.ink2, line: PRO.divider, fill: PRO.surface2 },
 };
 
 /** Plakietka (wielkie litery) od `x`, wyśrodkowana na `mid`; zwraca jej szerokość. */

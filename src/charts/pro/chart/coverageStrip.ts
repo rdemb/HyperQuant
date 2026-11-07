@@ -4,6 +4,7 @@ import type { IndicatorId } from '../indicators/registry';
 import type { ProStore } from '../store/proStore';
 import type { ChartSettings } from './settings';
 import { logicalOfTime } from './overlay';
+import { PRO, rgba } from './theme';
 import { tr } from '../../../i18n';
 
 /**
@@ -23,7 +24,7 @@ export const SOURCE_INFO: Readonly<Record<DataSource, { label: string; hint: str
       'Transakcje Hyperliquid: nagranie od otwarcia strony i zapis serwera z ostatniej doby',
       'Hyperliquid trades: recorded since the page opened plus the server recording of the last day'
     ),
-    color: '#2fd8c8',
+    color: PRO.coverTape,
   },
   accounts: {
     label: tr('Konta biorców', 'Taker accounts'),
@@ -31,7 +32,7 @@ export const SOURCE_INFO: Readonly<Record<DataSource, { label: string; hint: str
       'Taśma z kontami biorców (strumień na żywo i zapis serwera; zapis przeglądarki ich nie ma)',
       'Tape with taker accounts (live stream and server recording; the browser recording has none)'
     ),
-    color: '#4a9eff',
+    color: PRO.coverAccounts,
   },
   twap: {
     label: tr('Znaczniki TWAP', 'TWAP marks'),
@@ -39,12 +40,12 @@ export const SOURCE_INFO: Readonly<Record<DataSource, { label: string; hint: str
       'Taśma z oznaczonym hashem zerowym (strumień na żywo i nowsze pliki zapisu serwera)',
       'Tape with the zero hash marked (live stream and newer server recording files)'
     ),
-    color: '#c084fc',
+    color: PRO.coverTwap,
   },
   book: {
     label: tr('Arkusz', 'Book'),
     hint: tr('Migawki arkusza co ok. 5 s; przerwa dłuższa niż 12 s to luka', 'Book snapshots every ~5 s; a pause longer than 12 s is a gap'),
-    color: '#d08a10',
+    color: PRO.coverBook,
   },
   exact: {
     label: tr('Arkusz dokładny', 'Exact book'),
@@ -52,7 +53,7 @@ export const SOURCE_INFO: Readonly<Record<DataSource, { label: string; hint: str
       'Migawki arkusza bez agregacji ceny; przerwa dłuższa niż 12 s to luka',
       'Book snapshots without price aggregation; a pause longer than 12 s is a gap'
     ),
-    color: '#f6c177',
+    color: PRO.coverExact,
   },
   oi: {
     label: 'OI',
@@ -60,7 +61,7 @@ export const SOURCE_INFO: Readonly<Record<DataSource, { label: string; hint: str
       'Odczyty otwartych pozycji Hyperliquid; przerwa dłuższa niż 3 min to luka',
       'Hyperliquid open interest readings; a pause longer than 3 min is a gap'
     ),
-    color: '#a0aec0',
+    color: PRO.coverOi,
   },
 };
 
@@ -194,8 +195,8 @@ export function coverageRows(src: CoverageSource, needs: readonly DataSource[], 
 }
 
 /** Tło wiersza (czas bez danych) i wysokość wiersza: przy więcej niż trzech źródłach cieńsze, żeby nie wejść na etykiety osi. */
-const TRACK = 'rgba(255,255,255,0.07)';
-export const ALL_COLOR = '#e2e8f0';
+const TRACK = rgba(PRO.white, 0.07);
+export const ALL_COLOR = PRO.ink1;
 export const rowColor = (src: CoverageRow['src']): string => (src === 'all' ? ALL_COLOR : SOURCE_INFO[src].color);
 const rowPx = (rows: number) => (rows > 3 ? 1 : 2);
 const GAP_PX = 1;

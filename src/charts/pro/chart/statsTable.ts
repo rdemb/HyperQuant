@@ -100,10 +100,10 @@ const C = {
   pos: PRO.buyInk,
   neg: PRO.sellInk,
   size: PRO.volBar,
-  text: '#eef0f2',
+  text: PRO.ink1,
   dim: PRO.ink3,
   grid: rgba(PRO.ink3, 0.18),
-  hover: rgba('#ffffff', 0.55),
+  hover: rgba(PRO.white, 0.55),
   label: PRO.ink2,
   partial: PRO.partial,
 };
