@@ -42,6 +42,12 @@ describe('Czwórka: karta czterech liczb przed sesją', () => {
     expect(html).toContain('id="czworka"');
   });
 
+  it('przycisk Klatki w nagłówku karty (miejsce na akcję)', () => {
+    const withAction = renderToStaticMarkup(<FourCardView n={N} action={<button type="button">Klatka</button>} />);
+    expect(withAction).toMatch(/<header[^>]*>.*<button type="button">Klatka<\/button>.*<\/header>/s);
+    expect(html).not.toContain('Klatka</button>');
+  });
+
   it('bez słów kupna i sprzedaży', () => {
     expect(html.toLowerCase()).not.toMatch(/kupuj|sprzedaj|\bbuy\b|\bsell\b|long\b|short\b/);
   });
