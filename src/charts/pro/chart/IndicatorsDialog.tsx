@@ -3,6 +3,7 @@ import { Copy, Eye, EyeOff, Plus, Search, Settings, Star, Trash2, X } from 'luci
 import type { ChartSettings } from './settings';
 import { INDICATORS, IndicatorInstance, IndicatorTier, MAX_INDICATORS, addIndicator, copyIndicator, indicatorDef, indicatorLabel, menuEntries } from '../indicators/registry';
 import { tr } from '../../../i18n';
+import { visibleEntries } from './menuSelection';
 
 /**
  * Okno wskaźników, jak w TradingView: wyszukiwarka (PL i EN, skróty, aliasy), ulubione, lista „Na wykresie”
@@ -136,21 +137,8 @@ export const IndicatorsDialog: React.FC<{
   }, [s, layers, panes, onChange]);
 
   const q = norm(query.trim());
-  const shown = useMemo(() => {
-    if (q) {
-      const words = q.split(/\s+/);
-      const hits = entries.filter((e) => words.every((w) => e.words.includes(w)));
-      // Najpierw trafienia od początku skrótu albo nazwy („rsi”, „vwap”)
-      const head = (e: Entry) => norm(e.badge ?? '').startsWith(q) || norm(e.label).startsWith(q);
-      return [...hits.filter(head), ...hits.filter((e) => !head(e))];
-    }
-    if (section === 'fav') return favs.map((k) => entries.find((e) => e.key === k)).filter((e): e is Entry => e !== undefined);
-    // Warstwa `search` jest tylko w wynikach wyszukiwania
-    if (section === 'flow') return entries.filter((e) => e.section === section);
-    if (section === 'classic') return entries.filter((e) => e.tier === 'classic');
-    if (section === 'hl') return [...menuEntries('front'), ...menuEntries('second')].map((d) => entries.find((e) => e.key === d.id)).filter((e): e is Entry => e !== undefined);
-    return [];
-  }, [q, entries, section, favs]);
+  const hlOrder = useMemo(() => [...menuEntries('front'), ...menuEntries('second')].map((d) => d.id as string), []);
+  const shown = useMemo(() => visibleEntries(entries, { q, section, classicOpen, favs, hlOrder, norm }), [q, entries, section, classicOpen, favs, hlOrder]);
   const at = Math.min(active, shown.length - 1);
 
   const toggleFav = (key: string) => {

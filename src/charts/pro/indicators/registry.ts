@@ -1946,6 +1946,9 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
   },
 ];
 
+/** Wskaźniki usunięte z rejestru (przybliżenia wolumenu); zapis z którymś z nich uruchamia jednorazową informację. */
+export const REMOVED_INDICATORS: readonly string[] = ['obv', 'cmf', 'mfi', 'netvol'];
+
 /** Kolejność wskaźników w warstwach menu (poza `search`, który zostaje w kolejności rejestru). */
 const TIER_IDS: Record<Exclude<IndicatorTier, 'search'>, readonly IndicatorId[]> = {
   front: ['oiflow', 'absorption', 'breadth', 'repeat', 'makers', 'twap', 'slippage', 'ofi', 'ordersize'],

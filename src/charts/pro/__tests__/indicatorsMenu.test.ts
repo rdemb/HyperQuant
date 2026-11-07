@@ -1,5 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { INDICATORS, menuEntries, parseIndicators } from '../indicators/registry';
+import { visibleEntries } from '../chart/menuSelection';
+import { DROPPED_NOTICE_KEY, parseSettings, startSettings } from '../chart/settings';
 
 const FRONT = ['oiflow', 'absorption', 'breadth', 'repeat', 'makers', 'twap', 'slippage', 'ofi', 'ordersize'];
 const SECOND = ['cone', 'outcomes', 'regime', 'hawkes', 'pbrange'];
@@ -27,5 +29,45 @@ describe('menu wskaźników', () => {
     expect(r.dropped).toEqual(['obv']);
     expect(r.list).toHaveLength(1);
     expect(r.list[0].id).toBe('ema');
+  });
+});
+
+describe('Klasyczne zwinięte nie podpowiadają niewidocznych wierszy', () => {
+  const entries = [
+    ...menuEntries('classic').map((d) => ({ key: d.id, section: 'classic', tier: 'classic', words: d.id, label: d.id })),
+    { key: 'oiflow', section: 'hl', tier: 'front', words: 'oiflow', label: 'oiflow' },
+  ];
+  const o = { q: '', section: 'classic', classicOpen: false, favs: [], hlOrder: ['oiflow'], norm: (t: string) => t.toLowerCase() };
+  it('zwinięte bez zapytania: pusto; rozwinięte: siedem; z zapytaniem: wyniki', () => {
+    expect(visibleEntries(entries, o)).toEqual([]);
+    expect(visibleEntries(entries, { ...o, classicOpen: true })).toHaveLength(7);
+    expect(visibleEntries(entries, { ...o, q: 'ema' }).map((e) => e.key)).toEqual(['ema']);
+    expect(visibleEntries(entries, { ...o, section: 'hl' }).map((e) => e.key)).toEqual(['oiflow']);
+  });
+});
+
+describe('jednorazowa informacja o usuniętych wskaźnikach', () => {
+  const store = new Map<string, string>();
+  const real = globalThis.localStorage;
+  beforeEach(() => {
+    store.clear();
+    globalThis.localStorage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v) } as Storage;
+  });
+  afterEach(() => {
+    globalThis.localStorage = real;
+  });
+  const saved = (id: string) => ({ indicators: [{ iid: 'a', id }] });
+  it('obv ustawia pending', () => {
+    parseSettings(saved('obv'), startSettings());
+    expect(store.get(DROPPED_NOTICE_KEY)).toBe('pending');
+  });
+  it('nieznany xyz nie ustawia', () => {
+    parseSettings(saved('xyz'), startSettings());
+    expect(store.has(DROPPED_NOTICE_KEY)).toBe(false);
+  });
+  it('done nie jest nadpisane', () => {
+    store.set(DROPPED_NOTICE_KEY, 'done');
+    parseSettings(saved('mfi'), startSettings());
+    expect(store.get(DROPPED_NOTICE_KEY)).toBe('done');
   });
 });
