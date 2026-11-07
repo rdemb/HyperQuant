@@ -11,17 +11,18 @@ const TONES: Record<BadgeTone, string> = {
   neutral: 'text-ink-2 border-line-strong bg-surface-2',
 };
 
-/** Znacznik pochodzenia/stanu danych: LIVE / MODEL / SIM / STALE. */
-export const Badge: React.FC<{ tone: BadgeTone; children: React.ReactNode; title?: string; testId?: string }> = ({
+/** Znacznik pochodzenia/stanu danych: LIVE / MODEL / SIM / STALE. `size="sm"` — mniejszy (nagłówek układu na telefonie). */
+export const Badge: React.FC<{ tone: BadgeTone; children: React.ReactNode; title?: string; testId?: string; size?: 'sm' }> = ({
   tone,
   children,
   title,
   testId,
+  size,
 }) => (
   <span
     data-testid={testId}
     title={title}
-    className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] font-semibold tracking-wide uppercase whitespace-nowrap ${TONES[tone]}`}
+    className={`inline-flex items-center gap-1 rounded border font-semibold tracking-wide uppercase whitespace-nowrap ${size === 'sm' ? 'px-1 py-px text-[9px]' : 'px-1.5 py-0.5 text-[10px]'} ${TONES[tone]}`}
   >
     {children}
   </span>

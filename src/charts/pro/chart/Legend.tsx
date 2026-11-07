@@ -2,10 +2,11 @@ import React, { useEffect, useRef, useSyncExternalStore } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { fmtVol } from '../../orderflow/footprint';
 import { fmtSignedVol } from '../../orderflow/renderer';
-import { DASH, fmtFixed, numLang } from '../../../ui';
+import { Badge, DASH, fmtFixed, numLang } from '../../../ui';
 import { sdUsable } from '../core/indicators';
 import { fmtBarTime, fmtSince, fromDaily } from '../core/time';
 import type { Hover, IndicatorReadout } from './controller';
+import type { LayerChip } from './layerSources';
 import { fmtPx } from './layout';
 import { tr } from '../../../i18n';
 
@@ -93,6 +94,21 @@ const IndicatorFields: React.FC<{ list: IndicatorReadout[]; onEdit?: (iid: strin
   </>
 );
 
+/**
+ * Plakietki źródeł włączonych warstw i wskaźników (LIVE, MODEL, SIM, wiek migawki skanera, „—, tylko BTC”) w jednym
+ * wierszu; podpowiedź mówi, skąd są dane.
+ */
+const Chips: React.FC<{ list: readonly LayerChip[]; nowrap?: boolean }> = ({ list, nowrap = false }) => (
+  <div className={`flex items-center gap-x-2 gap-y-0.5 font-sans text-[10.5px] ${nowrap ? 'whitespace-nowrap overflow-hidden' : 'flex-wrap'}`}>
+    {list.map((c) => (
+      <span key={c.key} className="pointer-events-auto inline-flex items-center gap-1" title={c.hint}>
+        <span className="text-ink-3">{c.label}</span>
+        <Badge tone={c.tone}>{c.text}</Badge>
+      </span>
+    ))}
+  </div>
+);
+
 const Field: React.FC<{ label: string; children: React.ReactNode; className?: string; title?: string; secondary?: boolean }> = ({
   label,
   children,
@@ -114,6 +130,7 @@ const Field: React.FC<{ label: string; children: React.ReactNode; className?: st
  * `compact` (telefon): jedna linia — zamknięcie, zmiana, wolumen i VWAP; czas świecy tylko pod palcem, rynek i interwał są w pasku.
  * `multi` — wykres w układzie kilku wykresów (osobny stan zwinięcia legendy).
  * `onEditIndicator` — kliknięty podpis wskaźnika na wykresie ceny (okno jego ustawień).
+ * `chips` — plakietki źródeł włączonych warstw i wskaźników (wiersz pod liczbami; w zwiniętej legendzie ukryte).
  */
 export const Legend: React.FC<{
   signal: HoverSignal;
@@ -125,7 +142,8 @@ export const Legend: React.FC<{
   compact?: boolean;
   multi?: boolean;
   onEditIndicator?: (iid: string) => void;
-}> = ({ signal, intervalMs, intervalLabel, tapeSince, coin, onBottom, compact = false, multi = false, onEditIndicator }) => {
+  chips?: readonly LayerChip[];
+}> = ({ signal, intervalMs, intervalLabel, tapeSince, coin, onBottom, compact = false, multi = false, onEditIndicator, chips = [] }) => {
   const h = useSyncExternalStore(signal.subscribe, signal.get);
   const folded = useSyncExternalStore(subscribeFold, () => (multi ? fold.multi : fold.single));
   const ref = useRef<HTMLDivElement>(null);
@@ -188,6 +206,7 @@ export const Legend: React.FC<{
             </Field>
           </div>
         )}
+        {chips.length > 0 && <Chips list={chips} nowrap />}
       </div>
     );
   }
@@ -284,6 +303,12 @@ export const Legend: React.FC<{
       {h.indicators.length > 0 && (c || !h.live) && (
         <div className="flex flex-wrap items-baseline gap-x-2.5">
           <IndicatorFields list={h.indicators} onEdit={onEditIndicator} />
+        </div>
+      )}
+      {/* Źródła warstw stałym wierszem nad liczbami taśmy (wiersz pod krzyżem dochodzi niżej, bez przesuwania plakietek) */}
+      {chips.length > 0 && (
+        <div className="py-0.5">
+          <Chips list={chips} />
         </div>
       )}
       {/* Szczegóły taśmy tylko na szerszym ekranie — na telefonie deltę i CVD pokazują opisy paneli */}
