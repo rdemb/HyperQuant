@@ -2,7 +2,7 @@ import type { OHLCVBar } from '../../types/trading';
 import { IMB_BUY, IMB_SELL, detectImbalances, fmtVol, valueArea } from './footprint';
 import { HeatTexture } from './heatTexture';
 import { FP_TICK, FpCandle, FpCell, OrderFlowStore } from './orderFlowStore';
-import { numLang } from '../../ui/format';
+import { fmtFixedEn, numLang } from '../../ui/format';
 import { tr } from '../../i18n';
 import { Frame, bucketFor, priceTickStep, priceToY, timeStep, timeToX } from './scales';
 
@@ -165,7 +165,7 @@ function hhmm(t: number, withSec: boolean): string {
 }
 
 export function fmtAxisPrice(p: number, step: number): string {
-  return numLang(p.toLocaleString('en-US', { minimumFractionDigits: step < 1 ? 1 : 0, maximumFractionDigits: step < 1 ? 1 : 0 }));
+  return numLang(fmtFixedEn(p, step < 1 ? 1 : 0));
 }
 
 /** Pierwszy indeks świecy z czasem ≥ t (świece rosnąco po czasie). */
