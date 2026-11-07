@@ -44,8 +44,8 @@ const TIPS: readonly { pl: string; en: string }[] = [
  */
 export const FirstContact: React.FC<{ coin: Market }> = ({ coin }) => {
   const [store] = useState(storage);
-  // Ustalane i zapisywane przy pierwszym renderze, przed efektami wykresu, który sam zapisuje klucze hq.charts.*
-  // (po nich nie byłoby już widać pierwszej wizyty); zapis jest idempotentny, więc podwójny render go nie psuje
+  // Pierwszą wizytę zapisuje już start aplikacji (DeskProvider), zanim wykres zapisze klucze hq.charts.*; tu powtórzone
+  // na wszelki wypadek przy pierwszym renderze (zapis jest idempotentny, więc podwójny render go nie psuje)
   const [tips, setTips] = useState(() => {
     if (!store) return false;
     startOnboarding(store, Date.now());
