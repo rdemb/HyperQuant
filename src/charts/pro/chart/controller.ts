@@ -48,7 +48,7 @@ import { CloudFill, CloudSource } from './cloudFill';
 import { ConeForecast, ConeLayer, ConeSource } from './coneLayer';
 import { Hip4Layer, Hip4Source, outcomeLevels } from './hip4Layer';
 import { PbRangeLayer, PbStyle, PbZone } from './pbRangeLayer';
-import { BlogMapLayer, blogMapMarks, blogMapModel } from './blogMapLayer';
+import { BlogMapLayer, blogMapMarks, blogMapModel, levelsInsteadOfMap } from './blogMapLayer';
 import type { Hip4State } from '../../../state/useHip4';
 import { type BlogMap, type BlogMapsState, pickMap } from '../../../state/useBlogMaps';
 import { mapWindow } from '../../../utils/mapSettlement';
@@ -109,15 +109,16 @@ const liqToggles = (s: ChartSettings) => ({ showHeatmap: s.showHeatmap, showBubb
 /** TPO na interwale `ms` zajmuje miejsce profili sesji (oba rysują się od początku okresu w prawo). */
 const tpoShown = (s: ChartSettings, ms: number) => s.showTpo && tpoInterval(ms);
 
-// VWAP z resetem co tydzień nie ma sensu na świecach tygodnia i miesiąca
-const toggles = (s: ChartSettings, ms: number): IndicatorToggles => ({
+// VWAP z resetem co tydzień nie ma sensu na świecach tygodnia i miesiąca; `levelsInstead` — poziomy dnia w zastępstwie mapy
+// z bloga, której nie ma na wykresie (levelsInsteadOfMap)
+const toggles = (s: ChartSettings, ms: number, levelsInstead = false): IndicatorToggles => ({
   showVwap: s.showVwap && !fromDaily(ms),
   showVwapBands: s.showVwapBands && !fromDaily(ms),
   showSessionVwap: s.showSessionVwap,
   showProfile: s.showProfile,
   showPeriodProfiles: s.showPeriodProfiles && !tpoShown(s, ms),
   showDevPoc: s.showDevPoc,
-  showLevels: s.showLevels,
+  showLevels: s.showLevels || levelsInstead,
   showSessions: s.showSessions,
   showIb: s.showIb,
   showLiq: s.showLiq,
@@ -347,6 +348,8 @@ export class ProChartController {
   private blogAt = Number.NEGATIVE_INFINITY;
   /** Rozliczenie czeka na świece 1m sięgające wpisu: kolejna próba szybciej niż co minutę. */
   private blogWait = false;
+  /** Poziomy dnia rysowane w zastępstwie mapy z bloga, której nie ma na wykresie (weekend, rano przed wpisem, inny rynek). */
+  private levelsInstead = false;
   private countdownTimer = 0;
   /** Narzędzia rysowania (pasek narzędzi w ProChart). */
   readonly draw: DrawingTools;
@@ -499,7 +502,7 @@ export class ProChartController {
     this.bars = [];
     // Indeks świecy innego interwału to zupełnie inna chwila — zamiast przesuniętego widoku bieżąca świeca
     this.toNow = true;
-    this.overlay.setToggles(toggles(this.settings, series.interval.ms));
+    this.overlay.setToggles(toggles(this.settings, series.interval.ms, this.levelsInstead));
     this.syncVenueLive();
     this.syncBlog(this.store.serverNow());
     this.schedule();
@@ -517,7 +520,7 @@ export class ProChartController {
       imbalanceMinVol: this.minVol(s),
       stackedMin: s.stackedMin,
     });
-    this.overlay.setToggles(toggles(s, this.series.interval.ms));
+    this.overlay.setToggles(toggles(s, this.series.interval.ms, this.levelsInstead));
     this.tpo.setOn(s.showTpo, s.showTpoOi);
     if (tpoShown(s, this.series.interval.ms) && this.bars.length > 0) requestDayProfiles(this.store, this.bars[0].t);
     this.needs = needsOf(s);
@@ -935,6 +938,15 @@ export class ProChartController {
    * najwyżej raz na minutę (rozliczenie poziomów, data przy godzinie wpisu po północy), a czekając na świece 1m — co 5 s.
    */
   private syncBlog(now: number): void {
+    this.syncBlogMap(now);
+    // Bez mapy na wykresie panel z mapą zamiast poziomów dnia rysuje PDH i PDL (tylko rysunek, zapis ustawień bez zmian)
+    const instead = levelsInsteadOfMap(this.settings, this.store.coin, this.blogMaps.status, this.blogShown);
+    if (instead === this.levelsInstead) return;
+    this.levelsInstead = instead;
+    this.overlay.setToggles(toggles(this.settings, this.series.interval.ms, instead));
+  }
+
+  private syncBlogMap(now: number): void {
     const s = this.settings;
     // Jak poziomy dnia: interwały poniżej 1D (warunek `indicatorScope().levels` bez budowania obiektu w każdej klatce)
     const on = s.showBlogMap && this.store.coin === 'BTC' && this.series.interval.ms < DAY;

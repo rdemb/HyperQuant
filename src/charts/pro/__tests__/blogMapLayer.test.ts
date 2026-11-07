@@ -4,7 +4,8 @@ import type { Candle } from '../hl/parse';
 import { DEFAULT_SETTINGS } from '../chart/settings';
 import { LAYERS_OFF } from '../chart/templates';
 import { fmtPx } from '../chart/layout';
-import { blogEdgeTags, blogMapMarks, blogMapModel } from '../chart/blogMapLayer';
+import { blogEdgeTags, blogMapMarks, blogMapModel, levelsDrawn, levelsInsteadOfMap, levelsLegend } from '../chart/blogMapLayer';
+import { priceLayerCount, stationById, stationPanel } from '../chart/stations';
 import { LAYER_SOURCE, WAIT_TEXT, blogMapScan, layerBadge, legendChips } from '../chart/layerSources';
 import { TAG_H, edgeTagsIn, placeTags } from '../chart/overlay';
 import { PRO } from '../chart/theme';
@@ -240,5 +241,49 @@ describe('plakietka mapy z bloga w legendzie', () => {
     const chips = legendChips(s, { coin: 'BTC', now: NOW, intervalMs: 30 * MIN, scan: { showBlogMap: { asOf: PUB } } });
     expect(chips.map((c) => [c.key, c.label, c.text])).toEqual([['showBlogMap', 'Mapa z bloga', 'LIVE']]);
     expect(legendChips(s, { coin: 'BTC', now: NOW, intervalMs: DAY, scan: {} })).toEqual([]);
+  });
+});
+
+describe('poziomy dnia w zastępstwie mapy z bloga (weekend, rano przed wpisem, inny rynek)', () => {
+  const dayMap = stationPanel(stationById('day-map'), 1, false);
+  const review = stationPanel(stationById('review'), 0, false);
+  const READY: BlogMapsState['status'] = 'ready';
+
+  it('wzorce z mapą zamiast poziomów dnia: bez mapy na wykresie — PDH i PDL; z mapą — sama mapa', () => {
+    for (const [name, p] of [
+      ['day-map 30m', dayMap],
+      ['day-map telefon', stationPanel(stationById('day-map'), 0, true)],
+      ['review', review],
+      ['review telefon', stationPanel(stationById('review'), 0, true)],
+    ] as const) {
+      expect([p.showBlogMap, p.showLevels], name).toEqual([true, false]);
+      expect(levelsInsteadOfMap(p, 'BTC', READY, null), name).toBe(true);
+      expect(levelsInsteadOfMap(p, 'BTC', 'missing', null), name).toBe(true);
+      expect(levelsInsteadOfMap(p, 'BTC', READY, MAP), name).toBe(false);
+      // Inny rynek: mapy z bloga są tylko o BTC
+      expect(levelsInsteadOfMap(p, 'ETH', 'loading', null), name).toBe(true);
+      // Plik map w drodze: jeszcze bez poziomów (bez mignięcia przed mapą)
+      expect(levelsInsteadOfMap(p, 'BTC', 'loading', null), name).toBe(false);
+      // Rysunek zamienia warstwę na warstwę: liczba warstw ceny bez zmian (mapa i poziomy nigdy razem)
+      expect(priceLayerCount(levelsDrawn(p, true)), name).toBe(priceLayerCount(p));
+      expect(priceLayerCount(levelsDrawn(p, true)), name).toBeLessThanOrEqual(5);
+      expect(levelsDrawn(p, true), name).toMatchObject({ showLevels: true, showBlogMap: false });
+      expect(levelsDrawn(p, false), name).toBe(p);
+    }
+  });
+
+  it('poza tymi wzorcami bez zmian: poziomy już włączone albo mapa wyłączona', () => {
+    expect(levelsInsteadOfMap({ showLevels: true, showBlogMap: true }, 'BTC', READY, null)).toBe(false);
+    expect(levelsInsteadOfMap({ showLevels: false, showBlogMap: false }, 'BTC', READY, null)).toBe(false);
+    expect(levelsInsteadOfMap(stationPanel(stationById('day-map'), 0, false), 'BTC', READY, null)).toBe(false);
+  });
+
+  it('legenda: przy zastępstwie plakietka poziomów dnia i mapa „—” z powodem', () => {
+    const chips = legendChips(levelsLegend(dayMap, true), { coin: 'BTC', now: NOW, intervalMs: 30 * MIN, scan: { showBlogMap: blogMapScan({ status: 'ready', maps: [] }, null) } });
+    expect(chips.filter((c) => c.key === 'showLevels' || c.key === 'showBlogMap').map((c) => [c.key, c.text])).toEqual([
+      ['showLevels', 'LIVE'],
+      ['showBlogMap', '—'],
+    ]);
+    expect(legendChips(levelsLegend(dayMap, false), { coin: 'BTC', now: NOW, intervalMs: 30 * MIN, scan: {} }).some((c) => c.key === 'showLevels')).toBe(false);
   });
 });
