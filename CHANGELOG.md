@@ -4,6 +4,11 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Wydajność na komputerze (2026-11-07)
+
+#### Poprawione
+- **W sesji na komputerze o ok. 40% mniej CPU** (`src/ui/format.ts`, `src/charts/pro/chart/liquidity.ts`): przy 1920×1080 strona zajmowała ok. 43% jednego rdzenia (skrypty ok. 26%), teraz ok. 26% (skrypty ok. 9%). Formatowanie liczb (`fmtFixed` i wszystko, co z niej korzysta) budowało formatter Intl przy każdym podpisie; teraz jeden formatter na liczbę miejsc po przecinku, zapis bez zmian. Warstwa płynności składała bąble, serie, ściany, duże zlecenia i drabinę DOM przy każdym odświeżeniu wykresu (kilka razy na klatkę); teraz tylko po zmianie widoku, danych albo przełączników. Rysunek bez zmian.
+
 ### Etap 1a: dzień tradera w trzech fazach (2026-11-07)
 
 #### Dodane
