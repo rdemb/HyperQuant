@@ -26,6 +26,8 @@ const bp = (v: number | null) => (v === null ? DASH : fmtSigned(v, 1, ' bp'));
 const approx = (n: number) => (n < 10 ? '< 10' : `≈ ${n.toLocaleString(locale)}`);
 const netTotal = (t: CohortTotal) => t.buy - t.sell;
 const takerTotal = (t: CohortTotal) => t.takerBuy - t.takerSell;
+/** Kohorta ma dane w oknie: widoczne transakcje albo ukryte kubełki; bez nich liczby to „—”, nie zero. */
+const seen = (t: CohortTotal) => t.buy + t.sell > 0 || t.hidden > 0 || t.takerHidden > 0;
 type Mode = 'net' | 'taker';
 
 /**
@@ -218,7 +220,8 @@ const CumulativeChart: React.FC<{ flow: CohortFlow; mode: Mode }> = ({ flow, mod
   const H = 200;
   const direct = width >= 480;
   const pad = { l: 56, r: direct ? 124 : 10, t: 10, b: 24 };
-  const series = useMemo(() => COHORTS.map((c) => ({ c, pts: cumulativeNet(flow, c, mode === 'taker') })), [flow, mode]);
+  // Kohorta bez transakcji i ukrytych kubełków w 24 h nie ma linii (płaska linia na zerze udawałaby zerowy przepływ)
+  const series = useMemo(() => COHORTS.filter((c) => seen(flow.totals.h24[c])).map((c) => ({ c, pts: cumulativeNet(flow, c, mode === 'taker') })), [flow, mode]);
   const stepMs = flow.bucketMin * 60_000;
   const ts = flow.buckets.map((b) => b.t + stepMs);
   const ext = Math.max(0, ...series.flatMap((s) => s.pts.map((p) => Math.abs(p.v))));
@@ -253,6 +256,7 @@ const CumulativeChart: React.FC<{ flow: CohortFlow; mode: Mode }> = ({ flow, mod
           <span key={c} className="flex items-center gap-1.5">
             <span className="w-3 h-0.5 rounded" style={{ background: COLOR[c] }} />
             {COHORT_LABEL[c]}
+            {!series.some((x) => x.c === c) && <span className="text-ink-3">{DASH}</span>}
           </span>
         ))}
         <span className="flex items-center gap-1.5 text-ink-3">
@@ -357,6 +361,7 @@ const TotalsTable: React.FC<{ flow: CohortFlow }> = ({ flow }) => (
       <tbody>
         {COHORTS.map((c) => {
           const t = flow.totals.h24[c];
+          const on = seen(t);
           return (
             <tr key={c} className="border-t border-line">
               <td className="py-1 pr-3 font-sans">
@@ -365,9 +370,9 @@ const TotalsTable: React.FC<{ flow: CohortFlow }> = ({ flow }) => (
                   {COHORT_LABEL[c]}
                 </span>
               </td>
-              <td className="py-1 pr-3">{usd(netTotal(t))}</td>
-              <td className="py-1 pr-3">{usd(takerTotal(t))}</td>
-              <td className="py-1 pr-3">{fmtCompact(t.buy + t.sell, '$')}</td>
+              <td className="py-1 pr-3">{on ? usd(netTotal(t)) : DASH}</td>
+              <td className="py-1 pr-3">{on ? usd(takerTotal(t)) : DASH}</td>
+              <td className="py-1 pr-3">{on ? fmtCompact(t.buy + t.sell, '$') : DASH}</td>
               <td className="py-1">{t.hidden || t.takerHidden ? `${t.hidden} / ${t.takerHidden} ${tr('agr.', 'aggr.')}` : DASH}</td>
             </tr>
           );
