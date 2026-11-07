@@ -232,3 +232,18 @@
   background-repeat: no-repeat;
   background-attachment: local, local, scroll, scroll;
 }
+
+/* Rząd przewijany w bok z elementami o własnym tle (pasek narzędzi wykresu na telefonie, liczby nagłówka): krawędź, za
+   którą jest jeszcze treść, wygasa (maska, więc działa także na listach wyboru z tłem); `data-fade` ustawia scrollFadeRef */
+.hq-fade-x[data-fade='right'] {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent);
+}
+.hq-fade-x[data-fade='left'] {
+  -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 32px), transparent);
+  mask-image: linear-gradient(to left, #000 calc(100% - 32px), transparent);
+}
+.hq-fade-x[data-fade='both'] {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 32px, #000 calc(100% - 32px), transparent);
+  mask-image: linear-gradient(to right, transparent, #000 32px, #000 calc(100% - 32px), transparent);
+}

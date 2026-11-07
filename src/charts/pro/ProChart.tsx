@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Bell, BellOff, BellPlus, Camera, ChevronDown, ChevronsRight, Columns2, Copy, Eye, EyeOff, Frame as FrameIcon, Grid2x2, History, Keyboard, Layers, Link, ListOrdered, Maximize2, Minimize2, Minus, MoreHorizontal, PenTool, RotateCcw, SlidersHorizontal, Square, X } from 'lucide-react';
 import { Badge, BadgeTone, Segmented, numLang } from '../../ui';
+import { scrollFadeRef } from '../../ui/scrollFade';
 import { LiqMapState, useLiqMap } from '../../state/useLiqMap';
 import { useDeskLedger } from '../../state/useDeskLedger';
 import { useDesk } from '../../state/DeskContext';
@@ -832,7 +833,8 @@ export const ProChart: React.FC<{
       {/* Telefon: dwa rzędy — karta układu, rynek, interwał i rodzaj wykresu; widoki, wskaźniki, ustawienia i „Więcej” */}
       {narrow && (
         <div className="flex flex-col gap-1.5 px-2 py-1.5 border-b border-line shrink-0">
-          <div className="flex items-center gap-1 min-w-0 overflow-x-auto [scrollbar-width:none]">
+          {/* Przewijany w bok: krawędź, za którą są jeszcze listy, wygasa (scrollFadeRef) */}
+          <div ref={scrollFadeRef} className="hq-fade-x flex items-center gap-1 min-w-0 overflow-x-auto [scrollbar-width:none]">
             {/* Nazwa karty przycięta: rynek, interwał i rodzaj wykresu mieszczą się obok */}
             {phoneTabs && (
               <PhoneSelect<string> ariaLabel={tr('Karta układu', 'Layout tab')} value={phoneTabs.value} options={phoneTabs.options} onChange={phoneTabs.onChange} className="max-w-[9.5rem] truncate" />
