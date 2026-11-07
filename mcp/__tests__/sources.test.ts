@@ -1,10 +1,12 @@
 import { readFileSync } from 'node:fs';
+import { gzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { BLOCK_MARK } from '../src/envelope';
 import { configFromEnv } from '../src/sources';
 import { toVBars } from '../../src/utils/auction';
+import { historyBaseOf } from '../../src/utils/tapeHistory';
 import { buildVolModel } from '../../src/utils/volatility';
-import { DATA_BASE, HL_INFO, HOUR, MAPS_URL, MIN, type FakeRequest, asCandles, fakeFetch, flatBars, hlCandles, hlRoute, testSources, walkBars } from './helpers';
+import { DATA_BASE, HISTORY_BASE, HL_INFO, HOUR, MAPS_URL, MIN, type FakeRequest, asCandles, fakeFetch, flatBars, hlCandles, hlRoute, testSources, walkBars } from './helpers';
 
 const NOW = Date.UTC(2026, 10, 4, 15, 0);
 const FILE = `${DATA_BASE}/BTC/test.json`;
@@ -13,21 +15,23 @@ const isV = (x: unknown): x is { v: number } => typeof x === 'object' && x !== n
 describe('configFromEnv', () => {
   const f = fakeFetch({}).fetch;
 
-  it('domyślne adresy publiczne i wersja paczki', () => {
+  it('domyślne adresy publiczne i wersja paczki; historia z gałęzi `history` repo danych (jak na stronie)', () => {
     const c = configFromEnv({}, f);
     expect(c.dataBase).toBe(DATA_BASE);
-    expect(c.historyBase).toBe(`${DATA_BASE}/history`);
+    expect(c.historyBase).toBe(HISTORY_BASE);
+    expect(c.historyBase).toBe(historyBaseOf(DATA_BASE));
     expect(c.siteBase).toBe('https://hyperquant.tech');
     expect(c.hlInfo).toBe(HL_INFO);
     const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string };
     expect(c.version).toBe(pkg.version);
   });
 
-  it('HQ_DATA_BASE i HQ_SITE_BASE nadpisują adresy (bez końcowego ukośnika)', () => {
+  it('HQ_DATA_BASE i HQ_SITE_BASE nadpisują adresy (bez końcowego ukośnika); baza bez „/main” — historia pod tym samym adresem', () => {
     const c = configFromEnv({ HQ_DATA_BASE: 'https://example.test/data/', HQ_SITE_BASE: 'https://site.test/' }, f);
     expect(c.dataBase).toBe('https://example.test/data');
-    expect(c.historyBase).toBe('https://example.test/data/history');
+    expect(c.historyBase).toBe('https://example.test/data');
     expect(c.siteBase).toBe('https://site.test');
+    expect(configFromEnv({ HQ_DATA_BASE: 'https://mirror.test/hq-data/main' }, f).historyBase).toBe('https://mirror.test/hq-data/history');
   });
 
   it('adres spoza http(s) jest odrzucany', () => {
@@ -140,6 +144,57 @@ describe('Sources.published', () => {
     const r = await src.published('BTC/test.json', isV);
     expect(r.ok).toBe(false);
     expect(performance.now() - t0).toBeLessThan(2_000);
+  });
+});
+
+describe('Sources.history', () => {
+  const GZ = `${HISTORY_BASE}/BTC/2026-11-04/14.trades.json.gz`;
+  const decode = (raw: unknown) => (isV(raw) ? raw : null);
+
+  it('plik JSON w gzip z gałęzi history: rozpakowany i odczytany; drugie pobranie w TTL z pamięci', async () => {
+    const { src, calls } = testSources({ [GZ]: { bytes: gzipSync(JSON.stringify({ v: 1, n: 3 })) } }, NOW);
+    const r = await src.history('BTC/2026-11-04/14.trades.json.gz', decode);
+    expect(r).toMatchObject({ ok: true, value: { v: 1, n: 3 }, url: GZ });
+    await src.history('BTC/2026-11-04/14.trades.json.gz', decode);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].headers.get('user-agent')).toBe('hyperquant-mcp/0.1.0');
+  });
+
+  it('treść już rozpakowana (serwer z Content-Encoding: gzip) — zwykły JSON też przechodzi', async () => {
+    const { src } = testSources({ [GZ]: { json: { v: 1 } } }, NOW);
+    expect(await src.history('BTC/2026-11-04/14.trades.json.gz', decode)).toMatchObject({ ok: true, value: { v: 1 } });
+  });
+
+  it('uszkodzony gzip — {ok:false} z powodem, bez wyjątku', async () => {
+    const broken = gzipSync(JSON.stringify({ v: 1, pad: 'x'.repeat(500) })).subarray(0, 40);
+    const { src } = testSources({ [GZ]: { bytes: broken } }, NOW);
+    const r = await src.history('BTC/2026-11-04/14.trades.json.gz', decode);
+    expect(r.ok).toBe(false);
+    expect(!r.ok && r.why).toBeTruthy();
+  });
+
+  it('Content-Length ponad limit — {ok:false} od razu, bez czytania treści (strumień bez końca zostaje anulowany)', async () => {
+    let cancelled = false;
+    // Treść, która nigdy się nie kończy: czytanie jej zawiesiłoby pobranie do limitu czasu
+    const body = new ReadableStream<Uint8Array>({
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const f: typeof fetch = async () => new Response(body, { headers: { 'content-length': String(1 << 20) } });
+    const { src } = testSources({}, NOW, { fetch: f, maxUnzipBytes: 4096 });
+    const r = await src.history('BTC/2026-11-04/14.trades.json.gz', decode);
+    expect(r.ok).toBe(false);
+    expect(!r.ok && r.why).toContain('4 KB');
+    expect(cancelled).toBe(true);
+  });
+
+  it('po rozpakowaniu ponad limit (domyślnie 64 MB) — {ok:false} z powodem o rozmiarze', async () => {
+    const big = gzipSync(JSON.stringify({ v: 1, pad: 'x'.repeat(10_000) }));
+    const { src } = testSources({ [GZ]: { bytes: big } }, NOW, { maxUnzipBytes: 4096 });
+    const r = await src.history('BTC/2026-11-04/14.trades.json.gz', decode);
+    expect(r.ok).toBe(false);
+    expect(!r.ok && r.why).toContain('4 KB');
   });
 });
 

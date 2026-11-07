@@ -1,15 +1,20 @@
 /**
- * Źródła danych publicznych serwera MCP: pliki repo `hyperquant-data` (skaner), `blog/maps.json` strony i świece
- * `candleSnapshot` Hyperliquid (oraz model zmienności HAR z tych świec). Każde żądanie z limitem czasu i nagłówkiem paczki
- * (bez danych użytkownika), wynik w pamięci procesu przez TTL. Błąd sieci, kod HTTP, zły JSON albo kształt to
- * `{ ok: false, why }`, nigdy wyjątek.
+ * Źródła danych publicznych serwera MCP: pliki repo `hyperquant-data` (skaner na gałęzi `main`, nagrania taśmy na gałęzi
+ * `history`), `blog/maps.json` strony i świece `candleSnapshot` Hyperliquid (oraz model zmienności HAR z tych świec). Każde
+ * żądanie z limitem czasu i nagłówkiem paczki (bez danych użytkownika), wynik w pamięci procesu przez TTL. Błąd sieci, kod
+ * HTTP, zły JSON albo kształt to `{ ok: false, why }`, nigdy wyjątek.
  */
+import { promisify } from 'node:util';
+import { gunzip } from 'node:zlib';
 import { type Candle, parseCandles } from '../../src/charts/pro/hl/parse';
 import { tr } from '../../src/i18n';
 import { type BlogMapsState, parseBlogMaps } from '../../src/state/useBlogMaps';
 import { toVBars } from '../../src/utils/auction';
+import { historyBaseOf } from '../../src/utils/tapeHistory';
 import { type VolModel, buildVolModel } from '../../src/utils/volatility';
 import { guardedCut } from './envelope';
+
+const gunzipAsync = promisify(gunzip);
 
 /** Wersja paczki (test pilnuje zgodności z `mcp/package.json`). */
 export const VERSION = '0.1.0';
@@ -29,6 +34,8 @@ export const TTL = { published: 60_000, maps: 5 * 60_000, candles: 60_000, volMo
 export const MAX_CANDLES = 5000;
 /** Najwięcej części jednego okna świec (20 000 świec; HL i tak przechowuje ~5000 ostatnich na interwał). */
 const MAX_PARTS = 4;
+/** Najwięcej bajtów pliku z gałęzi `history` przed rozpakowaniem i po nim (plik godzinowy taśmy BTC ma kilka MB). */
+export const MAX_UNZIP_BYTES = 64 << 20;
 
 const INTERVAL_MS = { '1m': 60_000, '5m': 300_000, '1h': 3_600_000 } as const;
 export type CandleInterval = keyof typeof INTERVAL_MS;
@@ -43,6 +50,8 @@ export interface SourcesConfig {
   version: string;
   /** Limit czasu żądania (ms); domyślnie `TIMEOUT_MS`. Krótszy tylko w testach. */
   timeoutMs?: number;
+  /** Limit rozmiaru pliku z gałęzi `history` (bajty); domyślnie `MAX_UNZIP_BYTES`. Mniejszy tylko w testach. */
+  maxUnzipBytes?: number;
 }
 
 /** Wynik pobrania: wartość z czasem pobrania (`at`) i czasem danych według źródła (`asOf` pliku), albo powód braku. */
@@ -76,7 +85,8 @@ export function configFromEnv(env: Record<string, string | undefined>, fetchImpl
   const dataBase = baseUrl(env.HQ_DATA_BASE, DATA_BASE, 'HQ_DATA_BASE');
   return {
     dataBase,
-    historyBase: `${dataBase}/history`,
+    // Gałąź `history` jak na stronie (`HISTORY_BASE`): …/main → …/history, baza bez „/main” — ten sam katalog
+    historyBase: historyBaseOf(dataBase),
     siteBase: baseUrl(env.HQ_SITE_BASE, SITE_BASE, 'HQ_SITE_BASE'),
     hlInfo: HL_INFO,
     fetch: fetchImpl,
@@ -86,6 +96,10 @@ export function configFromEnv(env: Record<string, string | undefined>, fetchImpl
 }
 
 type Raw = { ok: true; raw: unknown; at: number } | { ok: false; why: string; status?: number };
+type Text = { ok: true; text: string } | { ok: false; why: string };
+
+/** Rozmiar w MB albo KB (powód odrzucenia za dużego pliku). */
+const sizeOf = (bytes: number) => (bytes >= 1 << 20 ? `${Math.round(bytes / (1 << 20))} MB` : `${Math.round(bytes / 1024)} KB`);
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
@@ -120,6 +134,24 @@ export class Sources {
   published<T>(path: string, guard: (x: unknown) => x is T): Promise<Fetched<T>> {
     const url = `${this.cfg.dataBase}/${path.replace(/^\/+/, '')}`;
     return this.get(url, null, TTL.published, (raw) => (guard(raw) ? { value: raw } : null));
+  }
+
+  /**
+   * Plik z gałęzi `history` repo danych (`historyBase/<path>`): JSON w gzip (rozpakowany najwyżej do 64 MB) albo zwykły JSON
+   * (spis `index.json`, plik już rozpakowany przez serwer z Content-Encoding: gzip), odczytany przez `decode`; TTL 60 s.
+   */
+  history<T>(path: string, decode: (raw: unknown) => T | null): Promise<Fetched<T>> {
+    const url = `${this.cfg.historyBase}/${path.replace(/^\/+/, '')}`;
+    return this.get(
+      url,
+      null,
+      TTL.published,
+      (raw) => {
+        const v = decode(raw);
+        return v === null ? null : { value: v };
+      },
+      true
+    );
   }
 
   /** Mapy z bloga (`<siteBase>/blog/maps.json`) przez `parseBlogMaps` strony; TTL 5 min. */
@@ -190,8 +222,8 @@ export class Sources {
     return p;
   }
 
-  private async get<T>(url: string, body: string | null, ttl: number, decode: (raw: unknown) => { value: T } | null): Promise<Fetched<T>> {
-    const r = await this.raw(url, body, ttl);
+  private async get<T>(url: string, body: string | null, ttl: number, decode: (raw: unknown) => { value: T } | null, gz = false): Promise<Fetched<T>> {
+    const r = await this.raw(url, body, ttl, gz);
     if (!r.ok) return { ok: false, why: r.why, url };
     const d = decode(r.raw);
     if (!d) return { ok: false, why: tr('nieoczekiwany format danych', 'unexpected data format'), url };
@@ -203,13 +235,13 @@ export class Sources {
    * Surowy JSON z pamięci (w TTL wpisu) albo z sieci. Nieudane pobranie zostaje w pamięci krótko (`TTL.failed`, przy 429
    * `TTL.rateLimited`) od chwili porażki: limit zapytań albo awaria źródła nie mnoży żądań z każdym wywołaniem narzędzia.
    */
-  private raw(url: string, body: string | null, ttl: number): Promise<Raw> {
+  private raw(url: string, body: string | null, ttl: number, gz: boolean): Promise<Raw> {
     const key = body === null ? url : `${url}\n${body}`;
     const now = this.now();
     const hit = this.cache.get(key);
     if (hit && now - hit.at < hit.ttl) return hit.p;
     for (const [k, e] of this.cache) if (now - e.at >= e.ttl) this.cache.delete(k);
-    const p: Promise<Raw> = this.request(url, body, now).then((r) => {
+    const p: Promise<Raw> = this.request(url, body, now, gz).then((r) => {
       if (!r.ok && this.cache.get(key)?.p === p) this.cache.set(key, { at: this.now(), ttl: r.status === 429 ? TTL.rateLimited : TTL.failed, p });
       return r;
     });
@@ -217,7 +249,7 @@ export class Sources {
     return p;
   }
 
-  private async request(url: string, body: string | null, now: number): Promise<Raw> {
+  private async request(url: string, body: string | null, now: number, gz: boolean): Promise<Raw> {
     const timeout = this.cfg.timeoutMs ?? TIMEOUT_MS;
     const signal = AbortSignal.timeout(timeout);
     const headers: Record<string, string> = { 'User-Agent': `hyperquant-mcp/${this.cfg.version}`, Accept: 'application/json' };
@@ -228,15 +260,38 @@ export class Sources {
         void res.body?.cancel().catch(() => undefined);
         return { ok: false, status: res.status, why: res.status === 429 ? `HTTP 429 (${tr('limit zapytań', 'rate limited')})` : `HTTP ${res.status}` };
       }
-      const text = await res.text();
+      const t = gz ? await this.unzip(res) : { ok: true as const, text: await res.text() };
+      if (!t.ok) return t;
       try {
-        return { ok: true, raw: JSON.parse(text) as unknown, at: now };
+        return { ok: true, raw: JSON.parse(t.text) as unknown, at: now };
       } catch {
         return { ok: false, why: tr('zły JSON', 'invalid JSON') };
       }
     } catch (e) {
       if (signal.aborted) return { ok: false, why: tr(`brak odpowiedzi w ${timeout / 1000} s`, `no response within ${timeout / 1000} s`) };
       return { ok: false, why: netWhy(e) };
+    }
+  }
+
+  /**
+   * Treść pliku z gałęzi `history`: gzip (nagłówek 1f 8b) rozpakowany z limitem `maxUnzipBytes` — także przed rozpakowaniem,
+   * bo plik bez kompresji idzie wprost do `JSON.parse`; bez nagłówka gzip — tekst UTF-8 bez zmian.
+   */
+  private async unzip(res: Response): Promise<Text> {
+    const max = this.cfg.maxUnzipBytes ?? MAX_UNZIP_BYTES;
+    const tooBig: Text = { ok: false, why: tr(`plik większy niż ${sizeOf(max)} po rozpakowaniu`, `file larger than ${sizeOf(max)} after decompression`) };
+    // Zadeklarowany rozmiar ponad limit — bez czytania treści
+    if (Number(res.headers.get('content-length')) > max) {
+      void res.body?.cancel().catch(() => undefined);
+      return tooBig;
+    }
+    const buf = new Uint8Array(await res.arrayBuffer());
+    if (buf.byteLength > max) return tooBig;
+    if (buf[0] !== 0x1f || buf[1] !== 0x8b) return { ok: true, text: new TextDecoder().decode(buf) };
+    try {
+      return { ok: true, text: (await gunzipAsync(buf, { maxOutputLength: max })).toString('utf8') };
+    } catch (e) {
+      return isObj(e) && e.code === 'ERR_BUFFER_TOO_LARGE' ? tooBig : { ok: false, why: tr('uszkodzony plik gzip', 'corrupt gzip file') };
     }
   }
 }

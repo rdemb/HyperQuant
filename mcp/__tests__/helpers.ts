@@ -10,6 +10,8 @@ import { Sources, configFromEnv, type SourcesConfig } from '../src/sources';
 export const MIN = 60_000;
 export const HL_INFO = 'https://api.hyperliquid.xyz/info';
 export const DATA_BASE = 'https://raw.githubusercontent.com/rdemb/hyperquant-data/main';
+/** Gałąź `history` tego samego repo (jak `HISTORY_BASE` strony). */
+export const HISTORY_BASE = 'https://raw.githubusercontent.com/rdemb/hyperquant-data/history';
 export const MAPS_URL = 'https://hyperquant.tech/blog/maps.json';
 
 export interface FakeRequest {
@@ -20,8 +22,8 @@ export interface FakeRequest {
   signal: AbortSignal | null;
 }
 
-/** Odpowiedź trasy: JSON (domyślnie 200), surowy tekst albo błąd sieci (odrzucenie `fetch`). */
-export type Reply = { status?: number; json?: unknown; text?: string } | Error;
+/** Odpowiedź trasy: JSON (domyślnie 200), surowy tekst, bajty (np. plik gzip) albo błąd sieci (odrzucenie `fetch`). */
+export type Reply = { status?: number; json?: unknown; text?: string; bytes?: Uint8Array } | Error;
 export type Route = Reply | ((req: FakeRequest) => Reply | Promise<Reply>);
 
 /** `fetch` z mapy URL → odpowiedź; adres spoza mapy dostaje 404, więc test nigdy nie wychodzi do sieci. */
@@ -41,6 +43,7 @@ export function fakeFetch(routes: Record<string, Route>): { fetch: typeof fetch;
     const reply = typeof route === 'function' ? await route(req) : route;
     if (reply === undefined) return new Response('not found', { status: 404 });
     if (reply instanceof Error) throw reply;
+    if (reply.bytes) return new Response(new Uint8Array(reply.bytes), { status: reply.status ?? 200, headers: { 'content-type': 'application/octet-stream' } });
     const body = reply.text ?? JSON.stringify(reply.json);
     return new Response(body, { status: reply.status ?? 200, headers: { 'content-type': 'application/json' } });
   };

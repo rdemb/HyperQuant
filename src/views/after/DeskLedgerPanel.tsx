@@ -5,7 +5,7 @@ import { CatLedgerCard } from './CatLedgerCard';
 import { ModelAbCard } from './ModelAbCard';
 import { LEDGER_BASE } from '../../state/usePublished';
 import { Badge, EmptyState, Panel, Stat, DASH, fmtPrice, fmtFixed } from '../../ui';
-import { DeskLedgerSummary, MktScores, RetScores, TouchLevel, isAb, isCat } from '../../utils/deskLedger';
+import { DeskLedgerSummary, LEDGER_MIN_N, MktScores, RetScores, TouchLevel, isAb, isCat } from '../../utils/deskLedger';
 import { locale, tr } from '../../i18n';
 
 const timeFmt = new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit' });
@@ -15,8 +15,8 @@ const pct = (v: number | null | undefined, d = 0) => {
   if (v === null || v === undefined || !Number.isFinite(v)) return DASH;
   return `${fmtFixed(Number((v * 100).toFixed(d)) || 0, d)}%`;
 };
-/** Wyniki pokazujemy dopiero od 20 rozstrzygnięć — mniejsza próba to szum, nie ocena */
-const MIN_N = 20;
+/** Wyniki pokazujemy dopiero od 20 rozstrzygnięć (utils/deskLedger, też serwer MCP) */
+const MIN_N = LEDGER_MIN_N;
 const LEVEL_LABEL: Record<TouchLevel, string> = { pdh: 'PDH', deq: 'D-EQ', pdl: 'PDL' };
 const HORIZON_LABEL: Record<number, string> = { 60: '1 h', 240: '4 h' };
 const LIQUID = tr('płynne', 'liquid');

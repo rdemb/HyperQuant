@@ -1,5 +1,5 @@
 import { DATA_BASE } from '../../../state/usePublished';
-import { HIST_HOUR_MS, HIST_PART_MS, type HistFrame, type HistoryIndex, type IdScope, decodeBook, decodeTrades, historyPath, isHistoryIndex } from '../../../utils/tapeHistory';
+import { HIST_HOUR_MS, HIST_PART_MS, type HistFrame, type HistoryIndex, type IdScope, decodeBook, decodeTrades, historyBaseOf, historyPath, isHistoryIndex } from '../../../utils/tapeHistory';
 import type { BookFrame } from '../core/book';
 import { DAY } from '../core/time';
 import type { Fill } from '../hl/parse';
@@ -13,7 +13,7 @@ import { type HistoryBatch, type ProStore, RETENTION_MS } from './proStore';
  * z opóźnieniem) i przerwy połączenia. Plik w całości pokryty strumieniem na żywo nie jest pobierany.
  */
 
-export const HISTORY_BASE = DATA_BASE ? DATA_BASE.replace(/\/main$/, '/history') : '';
+export const HISTORY_BASE = DATA_BASE ? historyBaseOf(DATA_BASE) : '';
 /** Część trafia do repo ok. 25 s po swoim końcu (zapis po 10 s, takt 15 s), do tego push. */
 const PUBLISH_LAG_MS = 90_000;
 const INDEX_TTL_MS = 60_000;

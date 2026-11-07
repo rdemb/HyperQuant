@@ -18,6 +18,8 @@ import {
 } from '../chart/layoutNumbers';
 import { profile } from '../../../utils/auction';
 import { currentTradeSession, previousSameSession } from '../../../utils/sessionDay';
+import { twapShareOf as twapShareUtil } from '../../../utils/twapShare';
+import { whaleBalanceOf as whaleBalanceUtil } from '../../../utils/whaleLayer';
 
 const MIN = 60_000;
 const H = 60 * MIN;
@@ -323,5 +325,10 @@ describe('liczby nagłówka ze świec i migawek', () => {
         NOW
       )
     ).toEqual({ long: 320e6, short: 210e6, n: 3, asOf: NOW });
+  });
+
+  it('jedna implementacja: twapShareOf (utils/twapShare) i whaleBalanceOf (utils/whaleLayer), tu re-eksport (też serwer MCP)', () => {
+    expect(twapShareOf).toBe(twapShareUtil);
+    expect(whaleBalanceOf).toBe(whaleBalanceUtil);
   });
 });

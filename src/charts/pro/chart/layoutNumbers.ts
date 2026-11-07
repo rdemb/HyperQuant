@@ -1,4 +1,4 @@
-import type { Candle, Side } from '../hl/parse';
+import type { Candle } from '../hl/parse';
 import type { Branching } from '../core/hawkes';
 import type { LiqLevel } from '../core/indicators';
 import { utcDayStart } from '../core/sessions';
@@ -15,6 +15,8 @@ import { rvolOf } from '../../../utils/rvolOf';
 import { type TradeSession, rangeBudget } from '../../../utils/sessionDay';
 import { type SessionFacts, type SessionNow, dayTypeOf, sessionNowOf, vaMissing } from '../../../utils/sessionFacts';
 import { TRADE_SESSION_NAME } from '../../../utils/sessionNames';
+import { twapShareOf } from '../../../utils/twapShare';
+import { whaleBalanceOf } from '../../../utils/whaleLayer';
 import {
   type Absent,
   DAY_TYPE_LABEL,
@@ -57,6 +59,8 @@ export interface LayoutNumber {
 export { type Absent, type Expected, type Got, isAbsent, profileStep, toVBars };
 // Liczby ze świec bez modułów wykresu (utils/dayVwap, utils/sessionFacts, utils/rvolOf; też serwer MCP) — dawne miejsce eksportu
 export { type SessionNow, dayVwapOf, rvolOf, sessionNowOf };
+// Udział TWAP i saldo wielorybów bez modułów wykresu (utils/twapShare, utils/whaleLayer; też serwer MCP) — dawne miejsce eksportu
+export { twapShareOf, whaleBalanceOf };
 
 /** Sesja do rozliczenia w nagłówku (w toku albo ostatnia zamknięta): fakty ze świec 1m, te same co na karcie Rozliczenia. */
 export type ReviewFacts = SessionFacts & { inProgress: boolean };
@@ -553,30 +557,4 @@ export function liqNearestOf(levels: readonly LiqLevel[], price: number, asOf: n
   let best: LiqLevel | null = null;
   for (const l of levels) if (!best || Math.abs(l.px - price) < Math.abs(best.px - price)) best = l;
   return best ? { px: best.px, ntlUsd: best.ntlUsd, side: best.side, asOf } : { why: tr('Brak klastra od 1M USD na mapie', 'No cluster of 1M USD or more on the map') };
-}
-
-/** Udział wypełnień z hashem zerowym (m.in. TWAP) w wartości zleceń agresora, łącznie i po stronach. */
-export function twapShareOf(orders: readonly { notional: number; side: Side; zero?: true }[]): Got<{ share: number; buy: number; sell: number }> {
-  let all = 0;
-  let up = 0;
-  let down = 0;
-  for (const o of orders) {
-    all += o.notional;
-    if (!o.zero) continue;
-    if (o.side === 1) up += o.notional;
-    else down += o.notional;
-  }
-  if (!(all > 0)) return { why: tr('Brak zleceń agresora w oknie', 'No aggressor orders in the window') };
-  return { share: (up + down) / all, buy: up / all, sell: down / all };
-}
-
-/** Wartość longów i shortów pozycji warstwy wielorybów. */
-export function whaleBalanceOf(positions: readonly { side: 'long' | 'short'; usd: number }[], asOf: number): { long: number; short: number; n: number; asOf: number } {
-  let long = 0;
-  let short = 0;
-  for (const p of positions) {
-    if (p.side === 'long') long += p.usd;
-    else short += p.usd;
-  }
-  return { long, short, n: positions.length, asOf };
 }

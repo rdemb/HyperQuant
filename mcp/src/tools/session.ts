@@ -34,8 +34,9 @@ import { type ReviewRow, reviewRows, sessionCloseOf } from '../../../src/utils/s
 import { type Expected, type Got, amt, isAbsent } from '../../../src/utils/sessionText';
 import type { VolModel } from '../../../src/utils/volatility';
 import { type Badge, type Envelope, type Num, type SourceRef, envelope, iso, num } from '../envelope';
-import type { CandleInterval, Fetched, Sources } from '../sources';
+import type { Fetched, Sources } from '../sources';
 import type { ToolDef } from './index';
+import { candleSource, candlesGot, closeNum, fileSource } from './shared';
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -46,17 +47,6 @@ const RVOL_DAYS = 20;
 // ───────────────────────── wspólne ─────────────────────────
 
 const px = (v: number) => fmtPrice(v, 0);
-
-/** Świece z Hyperliquid jako `Got`: nieudane żądanie albo pusta lista — powód (nigdy liczba z braku danych). */
-function candlesGot(c: Fetched<Candle[]>, iv: CandleInterval): Got<Candle[]> {
-  if (!c.ok) return { why: tr(`świece ${iv} Hyperliquid niedostępne (${c.why})`, `Hyperliquid ${iv} candles unavailable (${c.why})`) };
-  if (c.value.length === 0) return { why: tr(`Hyperliquid nie zwrócił świec ${iv}`, `Hyperliquid returned no ${iv} candles`) };
-  return c.value;
-}
-
-const candleSource = (iv: CandleInterval, c: Fetched<Candle[]>): SourceRef => ({ name: `Hyperliquid candleSnapshot BTC ${iv}`, url: c.url, asOf: c.ok ? iso(c.at) : null });
-
-const fileSource = (name: string, f: Fetched<unknown>): SourceRef => ({ name, url: f.url, asOf: f.ok ? iso(f.asOf ?? f.at) : null });
 
 function volSource(v: Fetched<VolModel | null>): SourceRef {
   return {
@@ -196,9 +186,9 @@ async function sessionPart(src: Sources, s: TradeSession, p1: Promise<Fetched<Ca
 
 /** Cena (zamknięcie ostatniej świecy 1m), VWAP doby UTC i odległość od niego w σ — jak liczba VWAP w nagłówku układu. */
 function vwapPart(c1: Got<Candle[]>, now: number): { price: Num; vwap: Num; vwapDistance: Num } {
-  if (isAbsent(c1)) return { price: num(null, 'price', 'LIVE', { why: c1.why }), vwap: num(null, 'price', 'LIVE', { why: c1.why }), vwapDistance: num(null, 'sigma', 'LIVE', { why: c1.why }) };
+  const price = closeNum(c1);
+  if (isAbsent(c1)) return { price, vwap: num(null, 'price', 'LIVE', { why: c1.why }), vwapDistance: num(null, 'sigma', 'LIVE', { why: c1.why }) };
   const last = c1[c1.length - 1];
-  const price = num(last.c, 'price', 'LIVE', { note: tr(`zamknięcie świecy 1m z ${iso(last.t)}`, `close of the 1m candle from ${iso(last.t)}`) });
   const dv = dayVwapOf(c1, now);
   if (isAbsent(dv)) return { price, vwap: num(null, 'price', 'LIVE', { why: dv.why }), vwapDistance: num(null, 'sigma', 'LIVE', { why: dv.why }) };
   return {

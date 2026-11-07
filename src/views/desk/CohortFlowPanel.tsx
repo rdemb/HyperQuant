@@ -2,7 +2,7 @@ import React, { useMemo, useRef, useState } from 'react';
 import { scaleLinear } from 'd3';
 import { useCohortFlow } from '../../state/useCohortFlow';
 import { Badge, EmptyState, Panel, Segmented, Stat, DASH, fmtCompact, fmtSigned, fmtFixed } from '../../ui';
-import { COHORTS, COHORT_LABEL, CohortFlow, CohortId, CohortTotal, cumulativeNet } from '../../utils/cohorts';
+import { COHORTS, COHORT_LABEL, CohortFlow, CohortId, cohortNet, cohortSeen, cohortTakerNet, cohortVolume, cohortWindowEnd, cumulativeNet } from '../../utils/cohorts';
 import { useElementWidth } from '../market/MarketMap';
 import { BTC_ONLY, scannerScope } from '../flow/flowColumnModel';
 import { locale, tr } from '../../i18n';
@@ -24,10 +24,6 @@ const usd = (v: number) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${fmtCompact(Math
 const bp = (v: number | null) => (v === null ? DASH : fmtSigned(v, 1, ' bp'));
 /** Liczności publikowane w dół do dziesiątek: 0 = mniej niż 10 */
 const approx = (n: number) => (n < 10 ? '< 10' : `≈ ${n.toLocaleString(locale)}`);
-const netTotal = (t: CohortTotal) => t.buy - t.sell;
-const takerTotal = (t: CohortTotal) => t.takerBuy - t.takerSell;
-/** Kohorta ma dane w oknie: widoczne transakcje albo ukryte kubełki; bez nich liczby to „—”, nie zero. */
-const seen = (t: CohortTotal) => t.buy + t.sell > 0 || t.hidden > 0 || t.takerHidden > 0;
 type Mode = 'net' | 'taker';
 
 /**
@@ -94,7 +90,7 @@ export const CohortFlowPanel: React.FC<{ coin: string }> = ({ coin }) => {
 const FlowBody: React.FC<{ flow: CohortFlow; mode: Mode; setMode: (m: Mode) => void }> = ({ flow, mode, setMode }) => {
   const partial = flow.since > flow.asOf - 24 * 3600_000;
   const inf = flow.informed;
-  const last = flow.buckets[flow.buckets.length - 1];
+  const end = cohortWindowEnd(flow);
   return (
     <div className="flex flex-col gap-4 p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -113,7 +109,7 @@ const FlowBody: React.FC<{ flow: CohortFlow; mode: Mode; setMode: (m: Mode) => v
         />
         <span className="text-[11px] text-ink-3">
           {tr(`ostatnia godzina = 4 zamknięte kubełki ${flow.bucketMin} min`, `last hour = 4 closed ${flow.bucketMin}-min buckets`)}
-          {last ? ` (${tr('do', 'to')} ${timeFmt.format(last.t + flow.bucketMin * 60_000)})` : ''}
+          {end !== null ? ` (${tr('do', 'to')} ${timeFmt.format(end)})` : ''}
           {partial ? ` · ${tr('obserwacja od', 'observed since')} ${timeFmt.format(flow.since)}` : ''}
         </span>
       </div>
@@ -122,8 +118,8 @@ const FlowBody: React.FC<{ flow: CohortFlow; mode: Mode; setMode: (m: Mode) => v
         {COHORTS.map((c) => {
           const t = flow.totals.h1[c];
           const active = t.buy + t.sell > 0;
-          const v = mode === 'net' ? netTotal(t) : takerTotal(t);
-          const other = mode === 'net' ? takerTotal(t) : netTotal(t);
+          const v = mode === 'net' ? cohortNet(t) : cohortTakerNet(t);
+          const other = mode === 'net' ? cohortTakerNet(t) : cohortNet(t);
           const hid = mode === 'net' ? t.hidden : t.hidden + t.takerHidden;
           return (
             <Stat
@@ -221,7 +217,7 @@ const CumulativeChart: React.FC<{ flow: CohortFlow; mode: Mode }> = ({ flow, mod
   const direct = width >= 480;
   const pad = { l: 56, r: direct ? 124 : 10, t: 10, b: 24 };
   // Kohorta bez transakcji i ukrytych kubełków w 24 h nie ma linii (płaska linia na zerze udawałaby zerowy przepływ)
-  const series = useMemo(() => COHORTS.filter((c) => seen(flow.totals.h24[c])).map((c) => ({ c, pts: cumulativeNet(flow, c, mode === 'taker') })), [flow, mode]);
+  const series = useMemo(() => COHORTS.filter((c) => cohortSeen(flow.totals.h24[c])).map((c) => ({ c, pts: cumulativeNet(flow, c, mode === 'taker') })), [flow, mode]);
   const stepMs = flow.bucketMin * 60_000;
   const ts = flow.buckets.map((b) => b.t + stepMs);
   const ext = Math.max(0, ...series.flatMap((s) => s.pts.map((p) => Math.abs(p.v))));
@@ -361,7 +357,7 @@ const TotalsTable: React.FC<{ flow: CohortFlow }> = ({ flow }) => (
       <tbody>
         {COHORTS.map((c) => {
           const t = flow.totals.h24[c];
-          const on = seen(t);
+          const on = cohortSeen(t);
           return (
             <tr key={c} className="border-t border-line">
               <td className="py-1 pr-3 font-sans">
@@ -370,9 +366,9 @@ const TotalsTable: React.FC<{ flow: CohortFlow }> = ({ flow }) => (
                   {COHORT_LABEL[c]}
                 </span>
               </td>
-              <td className="py-1 pr-3">{on ? usd(netTotal(t)) : DASH}</td>
-              <td className="py-1 pr-3">{on ? usd(takerTotal(t)) : DASH}</td>
-              <td className="py-1 pr-3">{on ? fmtCompact(t.buy + t.sell, '$') : DASH}</td>
+              <td className="py-1 pr-3">{on ? usd(cohortNet(t)) : DASH}</td>
+              <td className="py-1 pr-3">{on ? usd(cohortTakerNet(t)) : DASH}</td>
+              <td className="py-1 pr-3">{on ? fmtCompact(cohortVolume(t), '$') : DASH}</td>
               <td className="py-1">{t.hidden || t.takerHidden ? `${t.hidden} / ${t.takerHidden} ${tr('agr.', 'aggr.')}` : DASH}</td>
             </tr>
           );

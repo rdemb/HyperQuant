@@ -77,6 +77,12 @@ describe('liqFuel (2): paliwo 1% pod i nad ceną z mapy likwidacji', () => {
     // Kubełek dokładnie na cenie nie należy do żadnej strony
     expect(liqFuel(LIQ_MAP, 100_050)).toEqual({ below: 1e6 + 2e6 + 5e5, above: 4e5 + 8e6 });
   });
+
+  it('pasmo 3% (band = 0,03): [p·0,97, p) i (p, p·1,03]; bez pasma — 1% jak dotąd', () => {
+    // Pod: 98 950 (9M) + 99 050 (1M) + 99 850 (2M) + 99 950 (0,5M); nad: 100 050 (3M) + 100 950 (0,4M) + 101 050 (8M)
+    expect(liqFuel(LIQ_MAP, 100_000, 0.03)).toEqual({ below: 12.5e6, above: 11.4e6 });
+    expect(liqFuel(LIQ_MAP, 100_000, 0.01)).toEqual(liqFuel(LIQ_MAP, 100_000));
+  });
 });
 
 describe('nextSessionHour i hourWidth (3): typowa szerokość najbliższej godziny sesji', () => {
