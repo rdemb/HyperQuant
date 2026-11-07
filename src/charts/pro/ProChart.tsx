@@ -1644,8 +1644,8 @@ function flowLayers(s: ChartSettings, intervalMs: number, liq: LiqMapState, whal
       key: 'showTpo',
       label: tr('Profil doby: wolumen, agresja, czas (TPO)', 'Day profile: volume, aggression, time (TPO)'),
       hint: tr(
-        'Profil wolumenu każdej doby UTC; kolor wiersza to strona agresywna z taśmy (zieleń kupno, fiolet sprzedaż, szary bez przewagi albo bez taśmy; starsze doby z nagrania serwera, 7 dób), cienki obrys to czas (ile okresów 30 min dotknęło ceny). POC i value area z wolumenu, zakres pierwszej godziny doby UTC (pasek turkusowy; to nie initial balance sesji), pojedyncze wydruki i ogony, delta doby pod profilem; liczby wiersza pod krzyżem; zastępuje profile sesji',
-        'A volume profile of every UTC day; the row colour is the aggressive side from the tape (green buy, violet sell, grey no edge or no tape; older days from the server recording, 7 days), the thin outline is time (how many 30-minute periods touched the price). POC and value area from volume, the range of the first hour of the UTC day (turquoise bar; not the session initial balance), single prints and tails, the day delta under the profile; row numbers under the crosshair; replaces session profiles'
+        'Profil wolumenu każdej doby UTC; kolor wiersza to strona agresywna z taśmy (niebieski kupno, czerwony sprzedaż, szary bez przewagi albo bez taśmy; starsze doby z nagrania serwera, 7 dób), cienki obrys to czas (ile okresów 30 min dotknęło ceny). POC i value area z wolumenu, zakres pierwszej godziny doby UTC (pasek liliowy; to nie initial balance sesji), pojedyncze wydruki i ogony, delta doby pod profilem; liczby wiersza pod krzyżem; zastępuje profile sesji',
+        'A volume profile of every UTC day; the row colour is the aggressive side from the tape (blue buy, red sell, grey no edge or no tape; older days from the server recording, 7 days), the thin outline is time (how many 30-minute periods touched the price). POC and value area from volume, the range of the first hour of the UTC day (lilac bar; not the session initial balance), single prints and tails, the day delta under the profile; row numbers under the crosshair; replaces session profiles'
       ),
       swatch: 'bg-of-svwap',
       off: tpoInterval(intervalMs) ? undefined : tr('Na interwałach do 30m', 'On timeframes up to 30m'),
@@ -1654,8 +1654,8 @@ function flowLayers(s: ChartSettings, intervalMs: number, liq: LiqMapState, whal
       key: 'showTpoOi',
       label: tr('Profil doby: kolor pozycji (OI)', 'Day profile: positions colour (OI)'),
       hint: tr(
-        'Kolor wiersza profilu doby ze zmiany otwartych pozycji (OI) zamiast agresji: pełny słupek, gdy OI na tej cenie rosło (zieleń przy przewadze kupna w minucie, umownie nowe longi; fiolet przy przewadze sprzedaży, nowe shorty), obrys, gdy spadało (zieleń: zamykanie shortów, fiolet: zamykanie longów); szary bez wyraźnej przewagi albo bez danych OI. OI jest minutowe, więc zmianę minuty dzielimy na ceny według jej wolumenu; Hyperliquid liczy OI obu stron. Starsze doby z nagrania serwera (7 dób), liczby wiersza pod krzyżem',
-        'The day profile row colour from the change in open interest (OI) instead of aggression: a solid bar where OI rose at that price (green when buying led the minute, by convention new longs; violet when selling led, new shorts), an outline where it fell (green: shorts closing, violet: longs closing); grey with no clear lead or no OI data. OI is per minute, so a minute change is split across prices by its volume; Hyperliquid counts OI on both sides. Older days from the server recording (7 days), row numbers under the crosshair'
+        'Kolor wiersza profilu doby ze zmiany otwartych pozycji (OI) zamiast agresji: pełny słupek, gdy OI na tej cenie rosło (niebieski przy przewadze kupna w minucie, umownie nowe longi; czerwony przy przewadze sprzedaży, nowe shorty), obrys, gdy spadało (niebieski: zamykanie shortów, czerwony: zamykanie longów); szary bez wyraźnej przewagi albo bez danych OI. OI jest minutowe, więc zmianę minuty dzielimy na ceny według jej wolumenu; Hyperliquid liczy OI obu stron. Starsze doby z nagrania serwera (7 dób), liczby wiersza pod krzyżem',
+        'The day profile row colour from the change in open interest (OI) instead of aggression: a solid bar where OI rose at that price (blue when buying led the minute, by convention new longs; red when selling led, new shorts), an outline where it fell (blue: shorts closing, red: longs closing); grey with no clear lead or no OI data. OI is per minute, so a minute change is split across prices by its volume; Hyperliquid counts OI on both sides. Older days from the server recording (7 days), row numbers under the crosshair'
       ),
       swatch: 'bg-gradient-to-r from-of-buy-ink to-of-sell-ink',
       off: !tpoInterval(intervalMs) ? tr('Na interwałach do 30m', 'On timeframes up to 30m') : s.showTpo ? undefined : tr('Po włączeniu profilu doby', 'With the day profile on'),
@@ -1689,7 +1689,7 @@ function flowLayers(s: ChartSettings, intervalMs: number, liq: LiqMapState, whal
       key: 'showIb',
       label: 'Initial balance',
       hint: tr('Zakres pierwszej godziny każdej sesji i rozszerzenia 1,5× i 2×', 'The range of the first hour of each session and its 1.5× and 2× extensions'),
-      swatch: 'bg-series-1',
+      swatch: 'bg-of-ib',
       off: scope.ib ? undefined : tr('Na interwałach do 30m', 'On timeframes up to 30m'),
     },
     {
