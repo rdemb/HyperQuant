@@ -21,6 +21,7 @@ import {
   migrateTabsV2,
   moveTab,
   newTabId,
+  openCoin,
   presetName,
   presetQuestion,
   renameTab,
@@ -129,12 +130,15 @@ const ChartsView: React.FC = () => {
     setTabsState(next);
     saveTabs(next);
   };
-  /** Nowy stan kart z inną aktywną kartą (albo przywróconym wzorcem): wykresy od nowa z rynkiem i chwilą bieżącej karty. */
-  const open = (next: TabsState, restore = false) => {
-    // Ustawienia pierwszego panelu są zapisywane przy każdej zmianie, więc zapis ma bieżący rynek
-    setCoin(loadSettings(stationKey(tab.id, 0)).coin);
-    carryViewTime();
+  /**
+   * Nowy stan kart z inną aktywną kartą (albo przywróconym wzorcem): wykresy od nowa z rynkiem i chwilą bieżącej karty.
+   * `keepSaved` — karta otwiera się z rynkiem ze swojego zapisu (przywrócony dawny Start).
+   */
+  const open = (next: TabsState, restore = false, keepSaved = false) => {
     const t = activeTab(next);
+    // Ustawienia pierwszego panelu są zapisywane przy każdej zmianie, więc zapis ma bieżący rynek
+    setCoin(openCoin(tab.id, keepSaved));
+    carryViewTime();
     if (restore) clearStation(t.id);
     save(next);
     setLayoutState(tabLayout(t));
@@ -194,7 +198,8 @@ const ChartsView: React.FC = () => {
     }
     closeOffer();
     const next = addTab(tabs, t);
-    if (next !== tabs) open(next);
+    // Cała dawna wersja, także jej rynek
+    if (next !== tabs) open(next, false, true);
   };
   const actions: TabActions = {
     onSelect: select,

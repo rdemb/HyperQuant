@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { ChartSettings, DEFAULT_SETTINGS, parseSettings, saveSettings } from '../chart/settings';
+import { ChartSettings, DEFAULT_SETTINGS, loadSettings, parseSettings, saveSettings } from '../chart/settings';
 import { STATIONS, saveStationLayout, stationById, stationKey, stationPanel } from '../chart/stations';
 import { inds } from '../chart/templates';
 import { LEGACY_STATIONS, LEGACY_TEMPLATES } from '../chart/legacyPresets';
@@ -23,6 +23,7 @@ import {
   migrateTabsV2,
   moveTab,
   newTabId,
+  openCoin,
   openPreset,
   openStationTab,
   parseTabs,
@@ -177,11 +178,12 @@ describe('karty: stan', () => {
     expect(presetQuestion('review')).toBe(stationById('review').question);
   });
 
-  it('karty fazy: układy fazy, a w sesji także karty własne', () => {
-    const st = addTab(addTab(defaultTabs(), tab('k1')), tab('k2', 'day-map'));
-    expect(phaseTabs(st, 'before').map((t) => t.id)).toEqual(['day-map', 'fuel']);
-    expect(phaseTabs(st, 'session').map((t) => t.id)).toEqual(['cockpit', 'auction-open', 'big-hands', 'k1', 'k2']);
-    expect(phaseTabs(st, 'after').map((t) => t.id)).toEqual(['review']);
+  it('karty fazy: układy fazy, kopia układu w fazie swojego wzorca, karty własne tylko w sesji', () => {
+    expect(phaseTabs(defaultTabs(), 'before').map((t) => t.id)).toEqual(['day-map', 'fuel']);
+    const st = addTab(addTab(addTab(addTab(defaultTabs(), tab('k1')), tab('k2', 'day-map')), tab('k3', 'review')), tab('k4', 'cockpit'));
+    expect(phaseTabs(st, 'before').map((t) => t.id)).toEqual(['day-map', 'fuel', 'k2']);
+    expect(phaseTabs(st, 'session').map((t) => t.id)).toEqual(['cockpit', 'auction-open', 'big-hands', 'k1', 'k4']);
+    expect(phaseTabs(st, 'after').map((t) => t.id)).toEqual(['review', 'k3']);
   });
 
   it('nowa pusta karta: pierwszy wolny numer; id kart różne i bez kolizji z układami', () => {
@@ -235,6 +237,18 @@ describe('karty: zapis', () => {
     expect(localStorage.getItem(stationKey('k1', 0))).toBeNull();
     restoreTab('k1', snap);
     expect(tabIntervals(tab('k1'), 1, false)).toEqual(['1h']);
+  });
+
+  it('rynek otwieranej karty: zwykłe przełączenie przenosi rynek bieżącej karty, przywrócony dawny Start ma rynki ze swojego zapisu', () => {
+    saveSettings({ ...DEFAULT_SETTINGS, coin: 'SOL' }, stationKey('cockpit', 0));
+    localStorage.setItem('hq.charts.v1', saved({ coin: 'ETH', interval: '15m' }));
+    localStorage.setItem('hq.charts.v1.p1', saved({ coin: 'HYPE', interval: '4h' }));
+    const t = restoreLegacyStart(localStorage);
+    expect(openCoin('cockpit', false)).toBe('SOL');
+    expect(openCoin('k-bez-zapisu', false)).toBe(DEFAULT_SETTINGS.coin);
+    // Bez rynku z bieżącej karty każdy wykres przywróconej karty czyta rynek ze swojego zapisu
+    expect(openCoin('cockpit', true)).toBeNull();
+    expect([0, 1].map((p) => loadSettings(stationKey(t.id, p)).coin)).toEqual(['ETH', 'HYPE']);
   });
 
   it('przycisk lekcji otwiera kartę układu', () => {
@@ -313,6 +327,65 @@ describe('migracja kart do układów faz', () => {
     s.setItem('hq.charts.tabs.v1', OLD_TABS);
     migrateTabsV2(s);
     expect(s.getItem('hq.charts.tabs.v1')).toBe(OLD_TABS);
+  });
+
+  it('kopia dawnej listy kart przed zapisem nowej, raz (istniejąca kopia zostaje)', () => {
+    const s = returning();
+    migrateTabsV2(s);
+    expect(s.getItem('hq.charts.tabs.v1.pre-v2')).toBe(OLD_TABS);
+    const kept = memoryStorage({ 'hq.charts.tabs.v1': OLD_TABS, 'hq.charts.tabs.v1.pre-v2': 'starsza kopia' });
+    migrateTabsV2(kept);
+    expect(kept.getItem('hq.charts.tabs.v1.pre-v2')).toBe('starsza kopia');
+    const fresh = memoryStorage();
+    migrateTabsV2(fresh);
+    expect(fresh.getItem('hq.charts.tabs.v1.pre-v2')).toBeNull();
+  });
+
+  it('dawna karta stacji tylko obejrzana (zapis = wzorzec, inny rynek) znika; zmieniona zostaje jako własna', () => {
+    const scalp = LEGACY_STATIONS.find((x) => x.id === 'scalp')!;
+    const auction = LEGACY_STATIONS.find((x) => x.id === 'auction')!;
+    const viewed = (st: typeof scalp, p: number, patch: Partial<ChartSettings> = {}, narrow = false) =>
+      JSON.stringify({ ...stationPanel(st, p, narrow), coin: 'ETH', rowStep: 5, ...patch, layersV: 2 });
+    const s = memoryStorage({
+      'hq.charts.tabs.v1': JSON.stringify({
+        tabs: ['scalp', 'liquidity', 'auction', 'venues', 'mtf'].map((id) => ({ id, preset: id })),
+        active: 'scalp',
+      }),
+      // Skalper obejrzany: zapis = wzorzec (inny rynek i wysokość wiersza)
+      'hq.charts.v1.scalp': viewed(scalp, 0),
+      // Płynność obejrzana na telefonie: wzorzec z łatką telefonu
+      'hq.charts.v1.liquidity': viewed(LEGACY_STATIONS.find((x) => x.id === 'liquidity')!, 0, {}, true),
+      // Aukcja: oba panele jak we wzorcu, układ zapisany równy wzorcowi
+      'hq.charts.v1.auction': viewed(auction, 0),
+      'hq.charts.v1.auction.p1': viewed(auction, 1),
+      'hq.charts.layout.v1.auction': '2',
+      // Giełdy: zmieniony interwał
+      'hq.charts.v1.venues': viewed(LEGACY_STATIONS.find((x) => x.id === 'venues')!, 0, { interval: '15m' }),
+      // Dwa interwały: wzorzec, ale układ 4 zamiast 2
+      'hq.charts.v1.mtf': viewed(LEGACY_STATIONS.find((x) => x.id === 'mtf')!, 0),
+      'hq.charts.layout.v1.mtf': '4',
+    });
+    migrateTabsV2(s);
+    const st = tabsOf(s);
+    expect(st.tabs.slice(6).map((t) => [t.id, t.preset])).toEqual([
+      ['venues', 'own'],
+      ['mtf', 'own'],
+    ]);
+    expect(read(s, 'hq.charts.v1.venues').interval).toBe('15m');
+    expect(st.active).toBe('cockpit');
+  });
+
+  it('Skalper zapisany jak wzorzec, ale z innym interwałem, zostaje jako karta własna', () => {
+    const scalp = LEGACY_STATIONS.find((x) => x.id === 'scalp')!;
+    const tabs = JSON.stringify({ tabs: [{ id: 'scalp', preset: 'scalp' }], active: 'scalp' });
+    const pattern = (patch: Partial<ChartSettings>) => JSON.stringify({ ...stationPanel(scalp, 0, false), ...patch, layersV: 2 });
+    const same = memoryStorage({ 'hq.charts.tabs.v1': tabs, 'hq.charts.v1.scalp': pattern({ coin: 'ETH' }) });
+    migrateTabsV2(same);
+    expect(tabsOf(same).tabs.map((t) => t.id)).toEqual(LAYOUT_IDS);
+    const changed = memoryStorage({ 'hq.charts.tabs.v1': tabs, 'hq.charts.v1.scalp': pattern({ interval: '5m' }) });
+    migrateTabsV2(changed);
+    expect(tabsOf(changed).tabs.slice(6)).toEqual([tab('scalp', 'own', 'Skalper')]);
+    expect(read(changed, 'hq.charts.v1.scalp').interval).toBe('5m');
   });
 
   it('pasek przywrócenia raz: po zamknięciu migracja już go nie proponuje', () => {

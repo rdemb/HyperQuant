@@ -414,7 +414,7 @@ export const en: LessonsContent = {
         traps: ['The ±2σ band is not a reversal signal: on a trend day “expensive” keeps getting more expensive.', 'In the morning, with few candles, the bands are narrow and easy to break.'],
         combine: ["With the profile: VWAP near the POC means agreement on the day's value.", 'With flow: VWAP holding against aggressive selling says more than a mere touch.'],
         where: 'Indicators → Daily VWAP, VWAP bands ±1σ and ±2σ, Session VWAP',
-        station: 'day-map', // VWAP dnia z pasmami σ (30m)
+        station: 'day-map', // VWAP dnia (pasma σ: Wskaźniki)
         figure: { slice: '2026-10-21-trend', layers: { vwap: true, bands: true }, caption: 'Wednesday 21 Oct: a trend day. VWAP rises and price rides the +1σ…+2σ band for hours.' },
       },
       {
@@ -534,7 +534,7 @@ export const en: LessonsContent = {
         read: ["Delta in line with the candle's direction is a move with aggression; opposite delta is a move without it (for example price rising because sellers stepped back).", 'Large delta with no price movement is absorption by resting orders.'],
         traps: ['Delta describes the candle, not the future.', 'Every trade has a buyer and a seller; delta only tells you who was impatient.'],
         combine: ['With open interest: is the aggression opening or closing positions.', 'With a level: delta when an edge is tested.'],
-        where: 'Delta panel under the chart',
+        where: 'Footprint in the Delta style in the Auction and open layout; the Delta panel under the chart: Indicators → Below the chart',
         station: 'auction-open', // footprint w stylu Delta
         figure: { slice: '2026-10-24-cascade', layers: { delta: true, vwap: true }, at: '2026-10-24T21:30Z', caption: 'Saturday 24 Oct: delta since the tape recording began (16:25 UTC). Before that the panel is hatched.' },
       },
