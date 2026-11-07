@@ -94,8 +94,8 @@ export const MacroTiles: React.FC = () => {
         <EmptyState
           title={tr('Brak danych publicznych', 'No public data')}
           detail={tr(
-            'Pliki z danymi publicznymi (makro, sentyment i dane on-chain) nie są teraz dostępne. Odświeżamy je co ok. 30 min; do tego czasu w miejscu liczb jest „—”.',
-            'The public data files (macro, sentiment and on-chain data) are not available right now. They refresh about every 30 min; until then the numbers show “—”.'
+            'Pliki z danymi publicznymi (makro, sentyment i dane on-chain) nie są teraz dostępne. Odświeżamy je co ok. 30 min; kafle z liczbami wrócą, gdy pojawią się dane.',
+            'The public data files (macro, sentiment and on-chain data) are not available right now. They refresh about every 30 min; the tiles with numbers come back when the data does.'
           )}
         />
       </Panel>
