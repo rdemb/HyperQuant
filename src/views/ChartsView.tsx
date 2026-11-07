@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { CircleHelp, PanelRightClose, PanelRightOpen, RotateCcw, X } from 'lucide-react';
+import { PanelRightClose, PanelRightOpen, RotateCcw, X } from 'lucide-react';
 import { ProChart, subscribeNarrow } from '../charts/pro/ProChart';
 import { ChartLayout, isNarrow, loadSettings, saveSettings } from '../charts/pro/chart/settings';
 import { PHASE_LAYOUTS, type PhaseId, activePanelSet, clearStation, saveStationLayout, stationKey, stationPanel, switchPanelSet } from '../charts/pro/chart/stations';
@@ -25,7 +25,6 @@ import {
   openCoin,
   phaseTabs,
   presetName,
-  presetQuestion,
   renameTab,
   restoreLegacyStart,
   restoreTab,
@@ -416,11 +415,6 @@ const ChartsView: React.FC<ChartsViewProps> = ({ phase, onPhase, onMarket }) => 
           <TabsBar st={tabs} tf={tf} a={actions} tabs={visible} presets={PHASE_LAYOUTS[shown]} phase={shown} />
           {/* Zestaw paneli pod wykresem (np. Aukcja | Absorpcja): należy do aktywnej karty */}
           {panelSet && <PanelSetSwitch sets={station.panelSets ?? []} value={panelSet.id} onChange={pickPanelSet} />}
-          {/* Pytanie karty (wzorca): od czego zacząć czytanie wykresów tej karty */}
-          <p title={station.question} className="hidden xl:flex items-center gap-1.5 flex-1 min-w-[14rem] max-w-[30rem] text-[11px] text-ink-2">
-            <CircleHelp className="w-3.5 h-3.5 shrink-0 text-ink-3" aria-label={tr('Pytanie karty', 'Tab question')} />
-            <span className="truncate">{presetQuestion(tab.preset)}</span>
-          </p>
           {honestyId && <HonestyButton key={`${tab.id}.${first.coin}`} store={storeFor(first.coin)} templateId={honestyId} tf={first.interval} />}
           <div className="ml-auto shrink-0 flex items-center gap-2">
             {dockable && (
@@ -481,6 +475,8 @@ const ChartsView: React.FC<ChartsViewProps> = ({ phase, onPhase, onMarket }) => 
               layout={n}
               onLayout={i === 0 ? setLayout : undefined}
               layoutFs={narrow ? undefined : { active: fs, toggle: toggleFs }}
+              // Pytanie karty i trzy liczby układu: nagłówek w pierwszym wykresie (na każdej szerokości)
+              layoutHeader={i === 0}
               phoneTabs={
                 narrow && i === 0
                   ? {

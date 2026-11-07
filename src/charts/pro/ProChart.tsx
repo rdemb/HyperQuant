@@ -36,6 +36,8 @@ import { IndicatorsDialog, type IndicatorsSection, type ToggleItem } from './cha
 import { IndicatorSettings } from './chart/IndicatorSettings';
 import { indicatorLabel, indicatorsLink } from './indicators/registry';
 import { MarketStateBar } from './chart/MarketStateBar';
+import { LayoutHeader } from './chart/LayoutHeader';
+import { legendChips } from './chart/layerSources';
 import { CoverageLegend } from './chart/CoverageLegend';
 import { type DataSource, needsOf } from './chart/coverageStrip';
 import { SchrodiLauncher } from '../../components/schrodi/SchrodiLauncher';
@@ -192,6 +194,7 @@ function initialSettings(panel: number, station: Station, tabId: string, coin: M
  * `fromLink` — pierwsze otwarcie wykresów, więc link do widoku w adresie strony ma pierwszeństwo.
  * `replay` — powtórka nagrania zamiast rynku na żywo: ustawienia nie są zapisywane, adres strony zostaje linkiem powtórki.
  * `layoutFs` — pełny ekran miejsca pracy: pasek kart i wszystkie panele układu (przycisk pełnego ekranu i klawisz F).
+ * `layoutHeader` — nad wykresem nagłówek układu: pytanie `station` i trzy liczby z plakietkami (pierwszy panel karty).
  */
 export const ProChart: React.FC<{
   panel?: number;
@@ -205,7 +208,8 @@ export const ProChart: React.FC<{
   phoneTabs?: PhoneTabs;
   replay?: ProChartReplay;
   layoutFs?: { active: boolean; toggle: () => void };
-}> = ({ panel = 0, layout = 1, onLayout, station = stationById('cockpit'), tabId = station.id, onSaved, coin = null, fromLink = true, phoneTabs, replay, layoutFs }) => {
+  layoutHeader?: boolean;
+}> = ({ panel = 0, layout = 1, onLayout, station = stationById('cockpit'), tabId = station.id, onSaved, coin = null, fromLink = true, phoneTabs, replay, layoutFs, layoutHeader = false }) => {
   const [settings, setSettings] = useState<ChartSettings>(() => {
     if (!replay) return initialSettings(panel, station, tabId, coin, fromLink);
     // Link z układem (lekcja, blog) — sam wzorzec układu, bez zmian zapisanych przez oglądającego
@@ -611,6 +615,11 @@ export const ProChart: React.FC<{
   const shown = shownSettings(settings, narrow, layout, inReplay);
   const venueOn = shown.showVenueCvd || shown.showVenueOi || (shown.showStats && shown.statGroups.some((g) => VENUE_GROUPS.includes(g)));
   const tapeSince = store.coverage.first();
+  // Plakietki źródeł warstw w legendzie (w powtórce bez nich: nagranie, nie dane na żywo, i bez warstw skanera)
+  const liqShown = liq.map && (liq.status === 'ready' || liq.status === 'delayed') ? liq.map.asOf : null;
+  const chips = inReplay
+    ? []
+    : legendChips(shown, { coin: store.coin, now: Date.now(), intervalMs: iv.ms, asOf: { showLiq: liqShown, showWhales: whales?.markets[store.coin] ? whales.asOf : null } });
   const bigUsd = ctrlRef.current?.bigTradeUsd ?? DEFAULT_THRESHOLD_USD;
   const tick = hlTick(store.lastPrice());
   const editing = indEdit ? (settings.indicators.find((x) => x.iid === indEdit) ?? null) : null;
@@ -801,6 +810,19 @@ export const ProChart: React.FC<{
         </div>
       )}
 
+      {/* Nagłówek układu: pytanie i trzy liczby (na żywo, pierwszy panel karty) */}
+      {layoutHeader && !inReplay && (
+        <LayoutHeader
+          id={station.id}
+          question={station.question}
+          store={store}
+          model={store.coin === 'BTC' ? feed.vol.model : null}
+          liq={liq}
+          whales={whales}
+          narrow={narrow}
+        />
+      )}
+
       {replay && <ReplayBar session={replay.session} narrow={narrow} onExit={replay.onExit} />}
 
       {/* Stan rynku: zdanie z faktów nad wykresem (w układzie 2 × 2 za mało miejsca) */}
@@ -834,6 +856,7 @@ export const ProChart: React.FC<{
             compact={narrow}
             multi={layout > 1}
             onEditIndicator={editIndicator}
+            chips={chips}
           />
           <DrawStyleBar tools={tools} onAlert={drawAlert} />
           <DrawMenu tools={tools} onAlert={drawAlert} />

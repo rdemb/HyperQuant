@@ -83,10 +83,19 @@ const usd = (v: number) => `${fmtCompact(v).replace(/[.,]0([KMB])$/, '$1')} USD`
 const bars = (n: number) =>
   lang === 'en' ? (n === 1 ? 'candle' : 'candles') : n === 1 ? 'świeca' : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? 'świece' : 'świec';
 
+/**
+ * Odległość ceny od VWAP w σ, zaokrąglona do 0,1 (tę liczbę widać w opisie i z nią porównujemy progi). Brak liczby albo
+ * σ z szumu zaokrągleń (okres z jedną świecą) — null.
+ */
+export function vwapSigma(close: number, vwap: number, sd: number): number | null {
+  if (![close, vwap, sd].every(Number.isFinite) || !sdUsable({ vwap, sd, start: false })) return null;
+  return round((close - vwap) / sd, 1);
+}
+
 function vwapFact(x: StateInput, close: number): StateFact | null {
   const v = x.vwap;
-  if (!v || !sdUsable(v)) return null;
-  const z = round((close - v.vwap) / v.sd, 1);
+  const z = v ? vwapSigma(close, v.vwap, v.sd) : null;
+  if (!v || z === null) return null;
   const a = Math.abs(z);
   const name = tr(`VWAP ${x.vwapPeriod}`, `${x.vwapPeriod} VWAP`);
   const where =
