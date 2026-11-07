@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Candle } from '../hl/parse';
 import { DAY } from '../core/time';
 import { sessionOpens } from '../core/sessions';
-import { MIN_CASES, honestyCard, honestyStats, ibStats, rateText, squeezeStats, statsRowStep, vaStats } from '../chart/templateStats';
+import { MIN_CASES, honestyCard, honestyStats, ibStats, rateText, statsRowStep, vaStats } from '../chart/templateStats';
 import { wilson } from '../../../utils/auction';
 
 const M30 = 30 * 60_000;
@@ -144,43 +144,6 @@ describe('karta uczciwości: IB sesji Nowego Jorku', () => {
   });
 });
 
-describe('karta uczciwości: ściśnięcie BB w KC', () => {
-  /** Cykle: 40 świec ciszy (zamknięcia ±0,1 przy zakresie 2), potem 12 świec trendu (+5 na świecę). */
-  const cycles = (k: number): Candle[] => {
-    const out: Candle[] = [];
-    let px = 1000;
-    let t = 20_000 * DAY;
-    for (let j = 0; j < k; j++) {
-      for (let i = 0; i < 40; i++, t += M15) {
-        const cl = px + (i % 2 ? 0.1 : -0.1);
-        out.push(c(t, px, px + 1, px - 1, cl));
-      }
-      for (let i = 0; i < 12; i++, t += M15) {
-        out.push(c(t, px, px + 6, px - 1, px + 5));
-        px += 5;
-      }
-    }
-    out.push(c(t, px, px, px, px));
-    return out;
-  };
-
-  it('jedno wyjście na cykl, okno po wyjściu szersze niż typowe', () => {
-    const s = squeezeStats(cycles(25));
-    expect(s.wider.n).toBe(25);
-    expect(s.wider.k).toBe(25);
-    expect(s.ratio).toBeGreaterThan(2);
-    expect(s.inSqueeze).toBeGreaterThan(0);
-    expect(s.inSqueeze).toBeLessThan(s.bars);
-  });
-
-  it('brak danych: zera bez błędu', () => {
-    const s = squeezeStats([]);
-    expect(s.bars).toBe(0);
-    expect(s.wider.n).toBe(0);
-    expect(Number.isNaN(s.ratio)).toBe(true);
-  });
-});
-
 describe('karta uczciwości: tekst', () => {
   it('przedział Wilsona 9 z 20 jak w tablicach (25,8–65,8%)', () => {
     const w = wilson(9, 20)!;
@@ -197,7 +160,7 @@ describe('karta uczciwości: tekst', () => {
   });
 
   it('brak świec: każda karta daje treść bez wyjątku', () => {
-    for (const kind of ['va', 'ib', 'squeeze'] as const) {
+    for (const kind of ['va', 'ib'] as const) {
       const card = honestyCard(honestyStats(kind, []));
       expect(card.intro.length).toBeGreaterThan(0);
       expect(card.rows.length).toBeGreaterThan(0);

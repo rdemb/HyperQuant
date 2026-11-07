@@ -47,7 +47,7 @@ import { parseReplayLink, replayHash } from '../charts/pro/replay/link';
 import { ReplayView } from '../charts/pro/replay/ReplayView';
 import { tr } from '../i18n';
 import { FlowColumn } from './flow/FlowColumn';
-import { DOCK_MIN_W, DOCK_W, DRAWER_MIN_W, columnAfterHash, dockMode, loadDock, saveDock, shortcutTarget } from './flow/flowColumnModel';
+import { DOCK_MIN_W, DOCK_W, DRAWER_MIN_W, columnAfterHash, dockMode, loadDock, saveDock } from './flow/flowColumnModel';
 import { takeFlowAsk } from '../state/route';
 
 const WIDE = '(min-width: 1024px)';
@@ -366,7 +366,8 @@ const ChartsView: React.FC<ChartsViewProps> = ({ phase, onPhase, onMarket }) => 
     }
     const digit = /^Digit([1-9])$/.exec(e.code);
     let id: string | null = null;
-    if (digit) id = shortcutTarget(Number(digit[1]))?.layout ?? shortcutTab(tabs, Number(digit[1]));
+    // Alt+1…6 — układy faz (shortcutTab), Alt+7…9 — karty własne
+    if (digit) id = shortcutTab(tabs, Number(digit[1]));
     else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') id = ladderTab({ tabs: visible, active: tab.id }, (t) => tabIntervals(t, 1, narrow)[0], e.key === 'ArrowUp' ? 1 : -1);
     else return;
     e.preventDefault();
@@ -418,7 +419,7 @@ const ChartsView: React.FC<ChartsViewProps> = ({ phase, onPhase, onMarket }) => 
           <TabsBar st={tabs} tf={tf} a={actions} tabs={visible} presets={PHASE_LAYOUTS[shown]} phase={shown} />
           {/* Zestaw paneli pod wykresem (np. Aukcja | Absorpcja): należy do aktywnej karty */}
           {panelSet && <PanelSetSwitch sets={station.panelSets ?? []} value={panelSet.id} onChange={pickPanelSet} />}
-          {honestyId && <HonestyButton key={`${tab.id}.${first.coin}`} store={storeFor(first.coin)} templateId={honestyId} tf={first.interval} />}
+          {honestyId && <HonestyButton key={`${tab.id}.${first.coin}`} store={storeFor(first.coin)} templateId={honestyId} />}
           <div className="ml-auto shrink-0 flex items-center gap-2">
             {dockable && (
               <button
@@ -529,7 +530,7 @@ const ChartsView: React.FC<ChartsViewProps> = ({ phase, onPhase, onMarket }) => 
           presets={PHASE_LAYOUTS[shown]}
           phase={shown}
           onClose={() => setSheet(false)}
-          activeExtra={honestyId ? <HonestyCard store={storeFor(first.coin)} templateId={honestyId} tf={first.interval} /> : undefined}
+          activeExtra={honestyId ? <HonestyCard store={storeFor(first.coin)} templateId={honestyId} /> : undefined}
         />
       )}
       {undo && (

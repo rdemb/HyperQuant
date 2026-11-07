@@ -317,6 +317,8 @@ describe('karty: skróty', () => {
 
   it('Alt+1…6 — układy w kolejności faz, Alt+7…9 — karty własne w kolejności paska; dalej nic', () => {
     expect([1, 2, 3, 4, 5, 6].map((d) => shortcutTab(st, d))).toEqual(['day-map', 'fuel', 'cockpit', 'auction-open', 'big-hands', 'review']);
+    // Fazy układów pod Alt+1…6: przed sesją (1–2), w sesji (3–5), po sesji (6)
+    expect([1, 2, 3, 4, 5, 6].map((d) => stationById(shortcutTab(st, d)).phase)).toEqual(['before', 'before', 'session', 'session', 'session', 'after']);
     expect([7, 8, 9].map((d) => shortcutTab(st, d))).toEqual(['k1', 'k2', 'k3']);
     expect([0, 10, 1.5].map((d) => shortcutTab(st, d))).toEqual([null, null, null]);
     // Bez kart własnych Alt+7…9 nic nie robi

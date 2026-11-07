@@ -2,8 +2,7 @@ import type { Candle } from '../hl/parse';
 import { TPO_PERIOD_MS, tpoProfiles } from '../core/tpo';
 import { IB_MS } from '../core/indicators';
 import { sessionOpens } from '../core/sessions';
-import { DAY, intervalById } from '../core/time';
-import { indicatorDef, parseParams } from '../indicators/registry';
+import { DAY } from '../core/time';
 import { baseTick } from '../core/footprintBar';
 import { autoRowStep } from './layout';
 import { type Rate, wilson } from '../../../utils/auction';
@@ -20,8 +19,6 @@ import { tr } from '../../../i18n';
 export const MIN_CASES = 20;
 /** Wiersz profilu doby w statystyce: najmniejszy krok z drabiny ticków wykresu ≥ 0,04% ceny (BTC przy 110 tys.: 50 USD). */
 export const STATS_ROW_PCT = 0.0004;
-/** Okno zakresu po wyjściu ze ściśnięcia (świece). */
-export const SQUEEZE_AFTER = 8;
 
 const rate = (k: number, n: number): Rate => ({ k, n, ci: wilson(k, n) });
 
@@ -156,97 +153,24 @@ export function ibStats(bars: readonly Candle[], intervalMs = TPO_PERIOD_MS): Ib
   };
 }
 
-export interface SqueezeStats {
-  /** Świece z wartością obu wstęg (po rozbiegu) i z nich świece w ściśnięciu. */
-  bars: number;
-  inSqueeze: number;
-  /** Wyjścia ze ściśnięcia (okna 8 świec po nich nie nakładają się); k = zakres okna większy niż mediana wszystkich okien. */
-  wider: Rate;
-  /** Mediana zakresu okna po wyjściu przez medianę zakresu okna w dowolnej chwili. */
-  ratio: number;
-}
-
-/**
- * Ściśnięcie zmienności (Carter): BB(20, 2) w całości wewnątrz KC(20, 1,5, ATR 10), wzory jak wskaźniki wykresu.
- * Wyjście = pierwsza świeca z BB poza KC po świecy w ściśnięciu. Zakres okna = (najwyższy szczyt − najniższy dołek)
- * 8 kolejnych zamkniętych świec po świecy wyjścia, przez zamknięcie świecy wyjścia (bez kierunku). Odniesienie: to samo
- * okno po każdej świecy historii.
- */
-export function squeezeStats(bars: readonly Candle[], after = SQUEEZE_AFTER): SqueezeStats {
-  const closed = bars.slice(0, -1);
-  const bbDef = indicatorDef('bb');
-  const kcDef = indicatorDef('keltner');
-  const bb = bbDef.create!(parseParams(bbDef, { length: 20, mult: 2 }));
-  const kc = kcDef.create!(parseParams(kcDef, { length: 20, mult: 1.5, atr: 10 }));
-  const ob = new Float64Array(3);
-  const ok = new Float64Array(3);
-  // 1 = ściśnięcie, 0 = brak, −1 = rozbieg (brak wartości)
-  const sq = new Int8Array(closed.length);
-  let n = 0;
-  let inSq = 0;
-  closed.forEach((c, i) => {
-    bb(c, true, ob);
-    kc(c, true, ok);
-    if (![ob[1], ob[2], ok[1], ok[2]].every(Number.isFinite)) {
-      sq[i] = -1;
-      return;
-    }
-    n++;
-    sq[i] = ob[1] < ok[1] && ob[2] > ok[2] ? 1 : 0;
-    if (sq[i] === 1) inSq++;
-  });
-  const windowRange = (i: number): number => {
-    let hi = Number.NEGATIVE_INFINITY;
-    let lo = Number.POSITIVE_INFINITY;
-    for (let j = i + 1; j <= i + after; j++) {
-      hi = Math.max(hi, closed[j].h);
-      lo = Math.min(lo, closed[j].l);
-    }
-    return (hi - lo) / closed[i].c;
-  };
-  const all: number[] = [];
-  const rel: number[] = [];
-  let next = 0;
-  for (let i = 0; i + after < closed.length; i++) {
-    if (sq[i] < 0) continue;
-    const r = windowRange(i);
-    all.push(r);
-    if (i >= next && i > 0 && sq[i - 1] === 1 && sq[i] === 0) {
-      rel.push(r);
-      next = i + after;
-    }
-  }
-  const typical = median(all);
-  const wider = rel.filter((r) => r > typical).length;
-  return {
-    bars: n,
-    inSqueeze: inSq,
-    wider: rate(wider, rel.length),
-    ratio: median(rel) / typical,
-  };
-}
-
 // ───────────────────────── karta ─────────────────────────
 
-export type HonestyKind = 'va' | 'ib' | 'squeeze';
+export type HonestyKind = 'va' | 'ib';
 
 /**
  * Układ wykresu → karta uczciwości i interwał świec, na których liczy: VA (Mapa dnia) i IB (Aukcja i otwarcie) zawsze
- * z 30m (okres profilu doby i godzina IB). Statystyka ściśnięcia zostaje w kodzie, ale żaden układ nie ma jej karty.
+ * z 30m (okres profilu doby i godzina IB).
  */
 export const TEMPLATE_HONESTY: Readonly<Record<string, { kind: HonestyKind; interval: string }>> = {
   'day-map': { kind: 'va', interval: '30m' },
   'auction-open': { kind: 'ib', interval: '30m' },
 };
 
-export type HonestyStats = { kind: 'va'; s: VaStats } | { kind: 'ib'; s: IbStats } | { kind: 'squeeze'; s: SqueezeStats; days: number; interval: string };
+export type HonestyStats = { kind: 'va'; s: VaStats } | { kind: 'ib'; s: IbStats };
 
-/** Statystyka karty na świecach interwału `interval` (ostatnia świeca — bieżąca). */
-export function honestyStats(kind: HonestyKind, bars: readonly Candle[], interval = '15m'): HonestyStats {
-  if (kind === 'va') return { kind, s: vaStats(bars) };
-  if (kind === 'ib') return { kind, s: ibStats(bars) };
-  const days = bars.length > 1 ? Math.round((bars[bars.length - 1].t - bars[0].t) / DAY) : 0;
-  return { kind, s: squeezeStats(bars), days, interval };
+/** Statystyka karty na świecach z API (ostatnia świeca — bieżąca). */
+export function honestyStats(kind: HonestyKind, bars: readonly Candle[]): HonestyStats {
+  return kind === 'va' ? { kind, s: vaStats(bars) } : { kind, s: ibStats(bars) };
 }
 
 export interface HonestyCard {
@@ -280,47 +204,23 @@ export function honestyCard(h: HonestyStats): HonestyCard {
       ],
     };
   }
-  if (h.kind === 'ib') {
-    const s = h.s;
-    const intro = tr(
-      `Sesje Nowego Jorku w dni robocze, ostatnie ${s.sessions}; IB = pierwsza godzina od 9:30 czasu NY, reszta sesji do 00:00 UTC.`,
-      `New York sessions on weekdays, the last ${s.sessions}; IB = the first hour from 9:30 NY time, the rest of the session until 00:00 UTC.`
-    );
-    if (s.sessions < MIN_CASES) return { intro, rows: [few(s.sessions)] };
-    return {
-      intro,
-      rows: [
-        [tr('Wyjście poza IB tylko w górę', 'Left the IB only upward'), rateText(s.up)],
-        [tr('Tylko w dół', 'Only downward'), rateText(s.down)],
-        [tr('W obie strony', 'Both ways'), rateText(s.both)],
-        [tr('Wcale', 'Not at all'), rateText(s.none)],
-        [
-          tr('Mediana większego wyjścia', 'Median of the larger move out'),
-          tr(`${fmtFixed(s.medianExt, 2)} × zakresu IB`, `${fmtFixed(s.medianExt, 2)} × the IB range`),
-        ],
-      ],
-    };
-  }
   const s = h.s;
-  const iv = intervalById(h.interval).label;
   const intro = tr(
-    `Świece ${iv} z ostatnich ${h.days} dni; ściśnięcie = BB(20, 2) w całości w KC(20, 1,5, ATR 10).`,
-    `${iv} candles from the last ${h.days} days; squeeze = BB(20, 2) fully inside KC(20, 1.5, ATR 10).`
+    `Sesje Nowego Jorku w dni robocze, ostatnie ${s.sessions}; IB = pierwsza godzina od 9:30 czasu NY, reszta sesji do 00:00 UTC.`,
+    `New York sessions on weekdays, the last ${s.sessions}; IB = the first hour from 9:30 NY time, the rest of the session until 00:00 UTC.`
   );
-  const share: [string, string] = [
-    tr('Świece w ściśnięciu', 'Candles in a squeeze'),
-    s.bars > 0 ? tr(`${pc(s.inSqueeze / s.bars)} z ${s.bars}`, `${pc(s.inSqueeze / s.bars)} of ${s.bars}`) : '0',
-  ];
-  if (s.wider.n < MIN_CASES) return { intro, rows: [share, few(s.wider.n)] };
+  if (s.sessions < MIN_CASES) return { intro, rows: [few(s.sessions)] };
   return {
     intro,
     rows: [
-      share,
+      [tr('Wyjście poza IB tylko w górę', 'Left the IB only upward'), rateText(s.up)],
+      [tr('Tylko w dół', 'Only downward'), rateText(s.down)],
+      [tr('W obie strony', 'Both ways'), rateText(s.both)],
+      [tr('Wcale', 'Not at all'), rateText(s.none)],
       [
-        tr(`Zakres ${SQUEEZE_AFTER} świec po wyjściu wobec typowego`, `Range of ${SQUEEZE_AFTER} candles after the release vs typical`),
-        tr(`${fmtFixed(s.ratio, 2)} × (mediany)`, `${fmtFixed(s.ratio, 2)} × (medians)`),
+        tr('Mediana większego wyjścia', 'Median of the larger move out'),
+        tr(`${fmtFixed(s.medianExt, 2)} × zakresu IB`, `${fmtFixed(s.medianExt, 2)} × the IB range`),
       ],
-      [tr('Większy niż typowy (bez związku byłoby ok. 50%)', 'Wider than typical (about 50% if unrelated)'), rateText(s.wider)],
     ],
   };
 }

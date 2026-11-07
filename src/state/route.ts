@@ -44,6 +44,12 @@ type RouteWin = {
   localStorage: Pick<Storage, 'setItem'>;
 };
 
+/** Subskrypcja zmiany adresu (hashchange) dla `useSyncExternalStore` (pasek ceny, ekran W sesji). */
+export function subscribeHash(fn: () => void): () => void {
+  window.addEventListener('hashchange', fn);
+  return () => window.removeEventListener('hashchange', fn);
+}
+
 /** Adres #flow od ostatniego odczytu: Wykresy otwierają wtedy szufladę DOM i taśmy (ekran 640–1279 px). */
 let flowAsked = false;
 
