@@ -92,7 +92,7 @@ describe('mapWindow', () => {
     expect(mapWindow('aktualizacja', london.start + 3600_000)?.to).toBe(london.end);
     expect(mapWindow('aktualizacja', ny.start + 3600_000)?.to).toBe(ny.end);
   });
-  it('wpis z Azji (inne rodzaje) obejmuje najbliższą sesję Londynu', () => {
+  it('„Otwarcie” opublikowane w Azji obejmuje najbliższą sesję Londynu', () => {
     const asia = day + 2 * 3600_000;
     expect(mapWindow('otwarcie', asia)).toEqual({ from: asia, to: london.end });
   });

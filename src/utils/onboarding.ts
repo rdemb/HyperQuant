@@ -108,7 +108,7 @@ function coveredMs(index: HistoryIndex, coin: string, from: number, to: number):
 
 /**
  * Link powtórki ostatnich 15 min na Kokpicie. Nagranie serwera jest tylko dla BTC w tej wersji ekranu (inny rynek —
- * powód `market`). Gdy pliki ze spisu (godziny i części, każdy uciety do okna [now − 15 min, now]) pokrywają razem mniej
+ * powód `market`). Gdy pliki ze spisu (godziny i części, każdy ucięty do okna [now − 15 min, now]) pokrywają razem mniej
  * niż 10 min — albo nie ma spisu — wynik to `no-recording`, zamiast niemal pustej powtórki; luki w nagraniu nie liczą się.
  */
 export function quickReplay(coin: Market, now: number, index: HistoryIndex | null): QuickReplay {

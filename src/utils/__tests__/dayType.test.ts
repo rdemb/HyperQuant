@@ -29,9 +29,11 @@ describe('classifyDay', () => {
     const edge = hi - 0.2 * (hi - lo);
     expect(classifyDay({ ...ib, hi, lo, close: edge })).toBe('trend');
     expect(classifyDay({ ...ib, hi, lo, close: edge - 1e-6 })).toBe('normal-variation');
-    const edgeDown = lo + 0.2 * (hi - lo);
-    expect(classifyDay({ ibHi: 200, ibLo: 100, hi: 200, lo: 0, close: 0 + 0.2 * 200 })).toBe('trend');
-    expect(edgeDown).toBe(140);
+    // Wybicie w dół: krawędź dolnych 20% to lo + 0,2·R
+    const down = { ibHi: 200, ibLo: 100, hi: 200, lo: 0 };
+    const edgeDown = down.lo + 0.2 * (down.hi - down.lo);
+    expect(classifyDay({ ...down, close: edgeDown })).toBe('trend');
+    expect(classifyDay({ ...down, close: edgeDown + 1e-6 })).toBe('normal-variation');
   });
   it('szeroki zakres bez zamknięcia przy skraju — normal-variation', () => {
     expect(classifyDay({ ...ib, hi: 300, lo: 100, close: 200 })).toBe('normal-variation');
