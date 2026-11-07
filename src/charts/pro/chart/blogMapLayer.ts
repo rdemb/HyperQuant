@@ -1,5 +1,5 @@
 import type { IChartApiBase, IPrimitivePaneRenderer, IPrimitivePaneView, ISeriesApi, ISeriesPrimitive, SeriesAttachedParameter, SeriesType, Time } from 'lightweight-charts';
-import type { BlogMap } from '../../../state/useBlogMaps';
+import type { BlogMap, BlogMapsState } from '../../../state/useBlogMaps';
 import { type SettledLevel, mapWindow, settleRange } from '../../../utils/mapSettlement';
 import { toVBars } from '../../../utils/auction';
 import { blogMapName } from '../../../utils/sessionText';
@@ -8,6 +8,7 @@ import type { Candle } from '../hl/parse';
 import { fmtDayTime, fmtHm } from '../core/time';
 import { fmtPx } from './layout';
 import type { EdgeTags } from './overlay';
+import type { ChartSettings } from './settings';
 import { PRO, rgba } from './theme';
 
 /**
@@ -36,6 +37,26 @@ export interface BlogMapModel {
 
 /** Nazwa rodzaju mapy (etykieta na wykresie i lista map w ustawieniach) — wspólna z utils/sessionText. */
 export { blogMapName };
+
+type MapOrLevels = Pick<ChartSettings, 'showLevels' | 'showBlogMap'>;
+
+/**
+ * Poziomy dnia (PDH, PDL) w zastępstwie mapy z bloga: panel, w którym mapa zajęła miejsce poziomów dnia (wzorce Mapy dnia
+ * i Rozliczenia: mapa włączona, poziomy wyłączone), a mapy na wykresie nie ma — weekend, rano przed wpisem, inny rynek niż
+ * BTC. Plik map w drodze — jeszcze nie (poziomy nie migają przed mapą).
+ */
+export function levelsInsteadOfMap(s: MapOrLevels, coin: string, maps: BlogMapsState['status'], shown: BlogMap | null): boolean {
+  return s.showBlogMap && !s.showLevels && !shown && (coin !== 'BTC' || maps !== 'loading');
+}
+
+/**
+ * Warstwy na rysunku przy zastępstwie: poziomy dnia zamiast mapy (nigdy razem, więc liczba warstw ceny się nie zmienia).
+ * Tylko rysunek — zapis ustawień zostaje bez zmian i mapa wraca sama, gdy pojawi się wpis.
+ */
+export const levelsDrawn = <T extends MapOrLevels>(s: T, instead: boolean): T => (instead ? { ...s, showLevels: true, showBlogMap: false } : s);
+
+/** Legenda przy zastępstwie: plakietka poziomów dnia, a mapa zostaje z „—” i powodem (widać, czego brakuje). */
+export const levelsLegend = <T extends MapOrLevels>(s: T, instead: boolean): T => (instead ? { ...s, showLevels: true } : s);
 
 /** Podpisy poziomów i etykieta mapy w chwili `now` (godzina wpisu, z datą, gdy wpis nie jest z dzisiaj). */
 export function blogMapModel(map: BlogMap, x: { now: number; marks: BlogMarks }): BlogMapModel {

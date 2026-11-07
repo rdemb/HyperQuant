@@ -10,7 +10,7 @@ import { useVolModel } from '../../state/useVolModel';
 import { usePublished } from '../../state/usePublished';
 import { type BlogMapsState, pickMap, useBlogMaps } from '../../state/useBlogMaps';
 import { type WhaleLayer, isWhaleLayer } from '../../utils/whaleLayer';
-import { INTERVALS, fmtDayTime, fmtHm, fmtSince, fromDaily, intervalById } from './core/time';
+import { DAY, INTERVALS, fmtDayTime, fmtHm, fmtSince, fromDaily, intervalById } from './core/time';
 import { DEFAULT_THRESHOLD_USD, classify } from './core/clashes';
 import { hlTick } from './core/footprintBar';
 import { indicatorScope, liqLevels } from './core/indicators';
@@ -43,7 +43,7 @@ import { MarketStateBar } from './chart/MarketStateBar';
 import { LayoutHeader } from './chart/LayoutHeader';
 import type { LayoutNumber } from './chart/layoutNumbers';
 import { blogMapScan, legendChips, liqScan, tapeCoveragePct, whalesScan } from './chart/layerSources';
-import { blogMapName } from './chart/blogMapLayer';
+import { blogMapName, levelsInsteadOfMap, levelsLegend } from './chart/blogMapLayer';
 import { CoverageLegend } from './chart/CoverageLegend';
 import { type DataSource, needsOf } from './chart/coverageStrip';
 import { SchrodiLauncher } from '../../components/schrodi/SchrodiLauncher';
@@ -674,10 +674,13 @@ export const ProChart: React.FC<{
   const venueOn = shown.showVenueCvd || shown.showVenueOi || (shown.showStats && shown.statGroups.some((g) => VENUE_GROUPS.includes(g)));
   const tapeSince = store.coverage.first();
   // Plakietki źródeł warstw w legendzie (w powtórce bez nich: nagranie, nie dane na żywo, i bez warstw skanera); stan
-  // migawek skanera i powody ich braku te same co w nagłówku układu
+  // migawek skanera i powody ich braku te same co w nagłówku układu. Bez mapy z bloga na wykresie (weekend, rano przed
+  // wpisem, inny rynek) panel z mapą zamiast poziomów dnia rysuje PDH i PDL — w legendzie ich plakietka, mapa z „—”
+  const mapShown = store.coin === 'BTC' && iv.ms < DAY ? pickMap(blogMaps.maps, store.serverNow(), settings.blogMapId) : null;
+  const levelsInstead = levelsInsteadOfMap(shown, store.coin, blogMaps.status, mapShown);
   const chips = inReplay
     ? []
-    : legendChips(shown, {
+    : legendChips(levelsLegend(shown, levelsInstead), {
         coin: store.coin,
         now: Date.now(),
         intervalMs: iv.ms,
