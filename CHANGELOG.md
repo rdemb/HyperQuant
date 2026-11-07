@@ -7,10 +7,10 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 ### Etap 1a: dzień tradera w trzech fazach (2026-11-07)
 
 #### Dodane
-- **Trzy fazy dnia zamiast zakładek narzędzi**: **Przed sesją** (`#before`: wykres z układami Mapa dnia i Paliwo i godziny, pas kontekstu, kalendarz makro, funding między giełdami, kontekst aukcji, mapa likwidacji z kaskadą, płynność wg godzin, kafle makro i wiadomości), **W sesji** (`#charts`: wykres z układami Kokpit, Aukcja i otwarcie oraz Wielkie ręce i reszta rynku; od 1280 px prawa kolumna DOM i taśmy chowana klawiszem `d`, na telefonie pasek Pulse; pod wykresem przepływ kohort i taśma likwidacji) i **Po sesji** (`#after`: układ Rozliczenie doby, dziennik prognoz z weryfikacją i dziennik transakcji). Panele skanera pokazują „—, tylko BTC” dla innych rynków. Alt+1…6 przełącza układy i przenosi do ekranu ich fazy.
+- **Trzy fazy dnia zamiast zakładek narzędzi**: **Przed sesją** (`#before`: wykres z układami Mapa dnia i Paliwo i godziny, pas kontekstu, kalendarz makro, funding między giełdami, kontekst aukcji, mapa likwidacji z kaskadą, płynność wg godzin, kafle makro i wiadomości), **W sesji** (`#charts`: wykres z układami Kokpit, Aukcja i otwarcie oraz Wielkie ręce i reszta rynku; od 1280 px prawa kolumna DOM i taśmy chowana klawiszem `d`, od 640 do 1279 px ta sama kolumna jako szuflada nad wykresem, na telefonie pasek Pulse; pod wykresem przepływ kohort i taśma likwidacji BTC) i **Po sesji** (`#after`: układ Rozliczenie doby, dziennik prognoz z weryfikacją i dziennik transakcji). Panele skanera (Kto przyjmuje, TWAP-y, kohorty, likwidacje) pokazują „—, tylko BTC” dla innych rynków. Alt+1…6 przełącza układy i przenosi do ekranu ich fazy.
 - **Badania** (`#research`, w menu „Więcej”): model kontra rynek HIP-4, proxy makro, mapa rynku, mechanika arkusza, laboratorium mikrostruktury, metryki reżimu, kalkulator wielkości pozycji i taśma przepływu zleceń.
 - **Laboratorium folkloru w Lekcjach**: wyniki reguł folkloru obok ćwiczeń, których dotyczą.
-- **Eksport danych dawnego Analizatora planu w Źródłach** (`src/views/sources/LegacyPlanDataCard.tsx`): karta (tylko gdy w przeglądarce są zapisane plany) pobiera plany i kapitał jako plik JSON. Dane w `localStorage` zostają nietknięte.
+- **Eksport danych dawnego Analizatora planu w Źródłach** (`src/views/sources/LegacyPlanDataCard.tsx`): karta (tylko gdy w przeglądarce są zapisane plany) pobiera plany i kapitał jako plik JSON (`key`, `exportedAt`, `entries`, `equity`). Dane w `localStorage` zostają nietknięte.
 - **Przekierowania starych adresów**: `#desk`, `#plan`, `#market`, `#lab`, `#micro`, `#flow` i stare linki powtórki (`#charts?replay=…&station=scalp`) prowadzą do odpowiedniego ekranu.
 - **Pasek „Przywróć moje poprzednie ustawienia”**: odtwarza dawną kartę Start; kopia dawnej listy kart jest zapisana osobno.
 
@@ -18,7 +18,7 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 - **Paleta Głębia wszędzie**: jedna paleta na wykresach, w interfejsie, w lekcjach i na statycznych stronach bloga (zgodna z odróżnianiem barw przy daltonizmie).
 - **Sześć układów w fazach zamiast sześciu stacji roboczych** (`src/charts/pro/chart/stations.ts`): Mapa dnia, Paliwo i godziny, Kokpit, Aukcja i otwarcie, Wielkie ręce i reszta rynku, Rozliczenie doby. Dawne stacje (Start, Skalper, Płynność, Aukcja, Giełdy, Dwa interwały) prowadzą do nowych układów.
 - **Migracja kart**: własne karty użytkownika zostają bez zmian, dawna karta Start jest do przywrócenia z paska, a surowa stara lista kart trafia raz do klucza `hq.charts.tabs.v1.pre-v2`. Dziennik transakcji, dziennik prognoz, szablony, rysunki i alarmy nie są ruszane.
-- **Nowe menu wskaźników**: grupy jak w TradingView, osobna sekcja „Tylko w HyperQuant”.
+- **Nowe menu wskaźników**: sekcje Ulubione, Na wykresie, Orderflow, Klasyczne (jedna lista), Pod wykresem i „Tylko w HyperQuant”, z wyszukiwaniem.
 - **Teksty**: przyciski w Lekcjach, statyczne strony Wykresów (PL i EN), szablon zgłoszenia błędu i README używają nazw układów i faz zamiast starych zakładek.
 
 #### Usunięte

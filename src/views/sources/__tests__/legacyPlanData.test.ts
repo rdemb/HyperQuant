@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { LEDGER_KEY, makeEntry } from '../../../utils/forecastLedger';
-import { legacyPlanSummary } from '../legacyPlanData';
+import { legacyPlanJson, legacyPlanSummary } from '../legacyPlanData';
 
 function fakeStorage(init: Record<string, string> = {}): Storage {
   const m = new Map(Object.entries(init));
@@ -28,5 +28,25 @@ describe('legacyPlanSummary', () => {
   });
   it('wykrywa zapisany kapitał hq.plan.equity', () => {
     expect(legacyPlanSummary(fakeStorage({ 'hq.plan.equity': '10000' })).hasEquity).toBe(true);
+  });
+});
+
+describe('legacyPlanJson', () => {
+  const NOW = Date.UTC(2026, 10, 7, 12, 0);
+  it('plik eksportu: klucz, chwila eksportu, plany i kapitał (napis z pamięci)', () => {
+    const s = fakeStorage({ [LEDGER_KEY]: JSON.stringify([entry(1), entry(2)]), 'hq.plan.equity': '25000' });
+    const j = JSON.parse(legacyPlanJson(s, NOW));
+    expect(Object.keys(j)).toEqual(['key', 'exportedAt', 'entries', 'equity']);
+    expect(j.key).toBe(LEDGER_KEY);
+    expect(j.exportedAt).toBe('2026-11-07T12:00:00.000Z');
+    expect(j.entries).toHaveLength(2);
+    expect(j.equity).toBe('25000');
+  });
+  it('bez zapisanego kapitału equity = null; pamięć nietknięta', () => {
+    const before = { [LEDGER_KEY]: JSON.stringify([entry(1)]) };
+    const s = fakeStorage(before);
+    expect(JSON.parse(legacyPlanJson(s, NOW)).equity).toBeNull();
+    expect(s.getItem(LEDGER_KEY)).toBe(before[LEDGER_KEY]);
+    expect(s.length).toBe(1);
   });
 });
