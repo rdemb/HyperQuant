@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { mapKind } from '../../../scripts/blog/build.mjs';
 import { mapWindow, settleLevels } from '../mapSettlement';
 import { tradeSessionOn } from '../sessionDay';
 import type { VBar } from '../auction';
@@ -44,8 +45,8 @@ describe('mapWindow', () => {
     expect(mapWindow('dzien', london.start + 5 * MIN)).toEqual({ from: london.start + 5 * MIN, to: ny.end });
   });
   it('aktualizacja w Londynie kończy się z sesją Londynu, w NY z sesją NY', () => {
-    expect(mapWindow('aktualizacja', london.start + 3600_000).to).toBe(london.end);
-    expect(mapWindow('aktualizacja', ny.start + 3600_000).to).toBe(ny.end);
+    expect(mapWindow('aktualizacja', london.start + 3600_000)?.to).toBe(london.end);
+    expect(mapWindow('aktualizacja', ny.start + 3600_000)?.to).toBe(ny.end);
   });
   it('wpis z Azji (inne rodzaje) obejmuje najbliższą sesję Londynu', () => {
     const asia = day + 2 * 3600_000;
@@ -56,11 +57,32 @@ describe('mapWindow', () => {
   });
 });
 
+describe('mapWindow: czas letni i inne', () => {
+  it('tydzień po zmianie czasu w Europie, przed zmianą w USA (25.10–1.11): NY otwiera 13:30 UTC, Londyn kończy 13:30', () => {
+    const day = Date.UTC(2026, 9, 28);
+    const london = tradeSessionOn(day, 'london');
+    expect(london.end).toBe(day + 13.5 * 3600_000);
+    const t = london.start + 3600_000;
+    expect(mapWindow('aktualizacja', t)).toEqual({ from: t, to: day + 13.5 * 3600_000 });
+    expect(mapWindow('ny', t)).toEqual({ from: t, to: day + 24 * 3600_000 });
+  });
+  it('lato: Londyn 07:00 UTC, NY 13:30 UTC', () => {
+    const day = Date.UTC(2026, 6, 15);
+    const t = day + 8 * 3600_000;
+    expect(mapWindow('otwarcie', t)).toEqual({ from: t, to: day + 13.5 * 3600_000 });
+    expect(mapWindow('dzien', day + 7 * 3600_000)).toEqual({ from: day + 7 * 3600_000, to: day + 24 * 3600_000 });
+  });
+  it('mapy weekendu i tygodnia (inne) nie mają okna, więc się ich nie rozlicza', () => {
+    expect(mapKind('Mapa na weekend', 'BTC w piątek wieczorem')).toBe('inne');
+    expect(mapWindow(mapKind('Mapa tygodnia', 'Tydzień'), Date.UTC(2026, 10, 1, 20))).toBeNull();
+  });
+});
+
 describe('czystość modułów rozliczenia', () => {
   it('mapSettlement.ts i sessionDay.ts nie importują i18n', () => {
     for (const f of ['../mapSettlement.ts', '../sessionDay.ts']) {
       const src = readFileSync(new URL(f, import.meta.url), 'utf8');
-      expect(src, f).not.toMatch(/froms+['"][^'"]*i18n['"]/);
+      expect(src, f).not.toMatch(/from\s+['"][^'"]*i18n['"]/);
     }
   });
 });
