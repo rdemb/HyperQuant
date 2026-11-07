@@ -1,6 +1,6 @@
 import React, { useEffect, useId, useState } from 'react';
 import { History } from 'lucide-react';
-import { Badge, DASH, EmptyState, Panel } from '../../ui';
+import { Badge, DASH, EmptyState, Panel, sourceTag } from '../../ui';
 import { sessionExpectedOf } from '../../charts/pro/chart/layoutInputs';
 import { fmtDm, fmtHm } from '../../charts/pro/core/time';
 import { storeFor } from '../../charts/pro/store/proStore';
@@ -133,8 +133,6 @@ const NextSession: React.FC<{ s: TradeSession }> = ({ s }) => (
   </Panel>
 );
 
-const toneOf = (r: ReviewRow) => (r.why ? 'stale' : r.badge === 'LIVE' ? 'live' : 'model');
-
 /**
  * Wiersz: podpis, wartość z plakietką (przy „—” bez plakietki źródła) i powodem braku; dotknięcie rozwija źródło liczby;
  * obok link do powtórki minuty.
@@ -143,6 +141,8 @@ export const RowView: React.FC<{ row: ReviewRow; replay: string | null }> = ({ r
   const [open, setOpen] = useState(false);
   const hintId = useId();
   const missing = row.value === DASH;
+  // Wspólna reguła plakietki (ui/sourceTag): „—” bez plakietki źródła, wynik z luką w tonie nieaktualnym
+  const tag = sourceTag({ value: row.value, badge: row.badge, partial: !!row.why });
   return (
     <div className="py-2 border-t border-line first:border-t-0">
       <div className="flex items-start gap-2">
@@ -158,7 +158,7 @@ export const RowView: React.FC<{ row: ReviewRow; replay: string | null }> = ({ r
           <span className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
             {/* Krój zwykły (cyfry proporcjonalne): wartości to zdania z liczbami, nie kolumna liczb (w tym CSS tabular-nums = mono) */}
             <span className={`text-[13px] font-medium ${missing ? 'text-ink-3' : 'text-ink-1'}`}>{row.value}</span>
-            {!missing && <Badge tone={toneOf(row)}>{row.badge}</Badge>}
+            {tag && <Badge tone={tag.tone}>{tag.text}</Badge>}
             {row.why && <span className={`text-[11px] leading-snug ${missing ? 'text-ink-3' : 'text-warn'}`}>{row.why}</span>}
           </span>
         </button>

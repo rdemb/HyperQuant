@@ -7,15 +7,19 @@ export interface Sourced {
   badge: 'LIVE' | 'MODEL';
   /** Wiek migawki skanera, „opóźnione” albo „tylko BTC”. */
   note?: string;
+  /** Liczba tylko częściowa (np. luka w świecach 1m w wierszu Rozliczenia): plakietka źródła w tonie nieaktualnym. */
+  partial?: boolean;
 }
 
 /**
- * Plakietka obok liczby (nagłówek układu, Czwórka). Brak liczby („—”) nie ma plakietki źródła: LIVE albo MODEL obok „—”
- * udawałoby dane; zostaje najwyżej uwaga z powodem („tylko BTC”) w tonie neutralnym, a powód braku — w podpowiedzi.
- * Uwaga przy liczbie (wiek migawki) zastępuje plakietkę w tonie nieaktualnym.
+ * Plakietka obok liczby (nagłówek układu, Czwórka, wiersz Rozliczenia). Brak liczby („—”) nie ma plakietki źródła: LIVE
+ * albo MODEL obok „—” udawałoby dane; zostaje najwyżej uwaga z powodem („tylko BTC”) w tonie neutralnym, a powód braku —
+ * w podpowiedzi albo obok. Uwaga przy liczbie (wiek migawki) zastępuje plakietkę w tonie nieaktualnym; liczba częściowa
+ * ma plakietkę źródła w tonie nieaktualnym.
  */
 export function sourceTag(n: Sourced): { text: string; tone: BadgeTone } | null {
   if (n.value === DASH) return n.note ? { text: n.note, tone: 'neutral' } : null;
   if (n.note) return { text: n.note, tone: 'stale' };
+  if (n.partial) return { text: n.badge, tone: 'stale' };
   return n.badge === 'LIVE' ? { text: 'LIVE', tone: 'live' } : { text: 'MODEL', tone: 'model' };
 }
