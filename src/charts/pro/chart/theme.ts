@@ -34,10 +34,11 @@ const GLEBIA = {
   svwap: '#C1B3F2',
   /** Strefa ceny z linku powtórki (token zone). */
   zone: '#A878DB',
-  // Footprint: kafle komórek od grafitu (mały wolumen) do nasyconego koloru strony; delta wiersza w tych samych kolorach
+  // Footprint: kafle komórek od grafitu (mały wolumen) do nasyconego koloru strony; delta wiersza w tych samych kolorach.
+  // Strona bidu to sprzedaż agresorów (żar), strona asku to kupno agresorów (lazur).
   fpNeutral: '#2a3446',
-  fpBidRamp: ['#1E2A3A', '#253E5F', '#2A5387', '#2F69B1', '#3280DD'],
-  fpAskRamp: ['#1E2A3A', '#4A333B', '#733939', '#9E3B34', '#CA3829'],
+  fpBidRamp: ['#1E2A3A', '#4A333B', '#733939', '#9E3B34', '#CA3829'],
+  fpAskRamp: ['#1E2A3A', '#253E5F', '#2A5387', '#2F69B1', '#3280DD'],
   fpDeltaPosRamp: ['#1E2A3A', '#253E5F', '#2A5387', '#2F69B1', '#3280DD'],
   fpDeltaNegRamp: ['#1E2A3A', '#4A333B', '#733939', '#9E3B34', '#CA3829'],
   fpText: '#0b1019',
