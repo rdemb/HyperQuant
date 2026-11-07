@@ -295,10 +295,11 @@ export function activePanelSet(st: Pick<Station, 'panelSets'>, s: Pick<ChartSett
 }
 
 /**
- * Przełączenie zestawu paneli w ustawieniach pierwszego panelu `s`: wychodzą instancje poprzedniego zestawu (po `iid`,
- * więc własna kopia wskaźnika tego samego typu zostaje), wchodzą wskaźniki nowego (bez powtórzeń typu), pola z łatki
- * poprzedniego zestawu wracają do wzorca układu, potem łatka nowego. Reszta zmian użytkownika (rynek, interwał, warstwy,
- * własne wskaźniki) zostaje. Ten sam lub nieznany zestaw — `s`.
+ * Przełączenie zestawu paneli w ustawieniach pierwszego panelu `s`: wychodzą tylko instancje, które dodał poprzedni zestaw
+ * (`panelSetIids`; zapis bez tej listy — instancje wzorca zestawu, po `iid` i typie), więc własny wskaźnik użytkownika,
+ * także z tym samym iid, zostaje; wchodzą wskaźniki nowego (bez powtórzeń typu) i ich lista trafia do `panelSetIids`.
+ * Pola z łatki poprzedniego zestawu wracają do wzorca układu, potem łatka nowego. Reszta zmian użytkownika (rynek,
+ * interwał, warstwy, własne wskaźniki) zostaje. Ten sam lub nieznany zestaw — `s`.
  */
 export function switchPanelSet(st: Station, s: ChartSettings, to: string, narrow: boolean): ChartSettings {
   const from = activePanelSet(st, s);
@@ -308,10 +309,11 @@ export function switchPanelSet(st: Station, s: ChartSettings, to: string, narrow
   const out: Record<string, unknown> = { ...s };
   for (const k of Object.keys(from.patch ?? {}) as (keyof ChartSettings)[]) out[k] = base[k];
   Object.assign(out, next.patch);
-  const gone = new Set(from.indicators.map((x) => x.iid));
+  const gone = new Set(s.panelSetIids ?? s.indicators.filter((x) => from.indicators.some((y) => y.iid === x.iid && y.id === x.id)).map((x) => x.iid));
   const kept = s.indicators.filter((x) => !gone.has(x.iid));
   const have = new Set(kept.map((x) => x.id));
-  return { ...(out as unknown as ChartSettings), indicators: [...kept, ...next.indicators.filter((x) => !have.has(x.id))], panelSet: next.id };
+  const added = next.indicators.filter((x) => !have.has(x.id));
+  return { ...(out as unknown as ChartSettings), indicators: [...kept, ...added], panelSet: next.id, panelSetIids: added.map((x) => x.iid) };
 }
 
 // Pamięć przeglądarki bywa niedostępna (prywatne okno, zablokowane dane strony) — układy działają wtedy do końca sesji
