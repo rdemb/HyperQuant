@@ -116,7 +116,9 @@ a {
 .site-header nav a:hover {
   color: var(--ink-1);
 }
-.site-header nav a[aria-current='page'] {
+/* Bieżąca strona (aria-current) i dział strony bez własnego linku w menu (is-section) wyglądają tak samo */
+.site-header nav a[aria-current='page'],
+.site-header nav a.is-section {
   color: var(--ink-1);
   background: var(--surface-2);
   border-color: var(--line);
