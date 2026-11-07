@@ -10,7 +10,7 @@ import { startRecording } from '../../charts/pro/store/recording';
 import { requestHistory } from '../../charts/pro/store/serverHistory';
 import { useStoreVersion } from '../../charts/pro/store/useStoreVersion';
 import { usePublished } from '../../state/usePublished';
-import { type WhaleOrder, isWhaleLayer } from '../../utils/whaleLayer';
+import { WHALES_STALE_MS, type WhaleOrder, isWhaleLayer } from '../../utils/whaleLayer';
 import { DEFAULT_FLOW_PREFS, FLOW_PREFS_KEY, type FlowPrefs, type StepId, parseFlowPrefs } from './flowColumnModel';
 import { HEAD_FLOW_MS, type LadderHead } from './Ladder';
 
@@ -26,7 +26,6 @@ const WALL_WINDOW_MS = 3_600_000;
 const AUTO_WINDOW_MS = 3_600_000;
 const LOT_WINDOW_MS = 30 * 60_000;
 const WALL_FLOOR_USD = 100_000;
-const WHALES_STALE_MS = 20 * 60_000;
 /** Dokładny arkusz starszy niż tyle ms nie daje środka i spreadu (drabina wraca do swojej agregacji). */
 const TOP_STALE_MS = 30_000;
 

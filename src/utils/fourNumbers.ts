@@ -179,12 +179,13 @@ export function clarityNum(x: FourInputs): FourNumber {
 // ───────────────────────── (2) paliwo ±1% ─────────────────────────
 
 /**
- * USD likwidacji z kubełków mapy (longi i shorty razem — liczy się cena, nie strona) w [p·0,99, p) i (p, p·1,01]. Cena
- * kubełka to jego środek (jak histogram i klastry panelu mapy likwidacji); kubełek dokładnie na cenie nie należy do żadnej strony.
+ * USD likwidacji z kubełków mapy (longi i shorty razem — liczy się cena, nie strona) w [p·(1 − band), p) i (p, p·(1 + band)],
+ * domyślnie 1% (Czwórka; serwer MCP liczy też 3%). Cena kubełka to jego środek (jak histogram i klastry panelu mapy
+ * likwidacji); kubełek dokładnie na cenie nie należy do żadnej strony.
  */
-export function liqFuel(map: Pick<LiqMap, 'longs' | 'shorts' | 'stepUsd'>, price: number): { below: number; above: number } {
-  const lo = price * (1 - FUEL_BAND);
-  const hi = price * (1 + FUEL_BAND);
+export function liqFuel(map: Pick<LiqMap, 'longs' | 'shorts' | 'stepUsd'>, price: number, band: number = FUEL_BAND): { below: number; above: number } {
+  const lo = price * (1 - band);
+  const hi = price * (1 + band);
   let below = 0;
   let above = 0;
   for (const b of [...map.longs, ...map.shorts]) {

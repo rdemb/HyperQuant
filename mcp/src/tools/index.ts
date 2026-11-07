@@ -3,6 +3,7 @@ import type * as z from 'zod';
 import type { Envelope } from '../envelope';
 import type { Sources } from '../sources';
 import { dayMap } from './dayMap';
+import { cohortFlow, forecastLedger, liquidationMap, liquidationTape, twaps, whales } from './scanner';
 import { sessionContext, sessionReview } from './session';
 
 export interface ToolDef {
@@ -14,4 +15,4 @@ export interface ToolDef {
   run(src: Sources, args: unknown): Promise<Envelope<unknown>>;
 }
 
-export const TOOLS: ToolDef[] = [dayMap, sessionContext, sessionReview];
+export const TOOLS: ToolDef[] = [dayMap, sessionContext, sessionReview, liquidationMap, liquidationTape, cohortFlow, whales, twaps, forecastLedger];

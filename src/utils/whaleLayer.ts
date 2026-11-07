@@ -9,6 +9,8 @@
  */
 
 export const WHALES_VERSION = 2;
+/** Plik wielorybów starszy niż tyle (ms) nie jest pokazywany (wykres, kolumna przepływu, serwer MCP). */
+export const WHALES_STALE_MS = 20 * 60_000;
 
 export interface WhalePosition {
   /** Pseudonim konta na dobę UTC */
@@ -95,4 +97,15 @@ export function groupWhaleOrders(orders: readonly WhaleOrder[]): WhaleOrderGroup
     } else by.set(key, { id: o.id, side: o.side, kind: o.kind, lo: o.px, hi: o.px, n: 1, usd: o.usd });
   }
   return [...by.values()].sort((a, b) => b.usd - a.usd);
+}
+
+/** Wartość longów i shortów pozycji warstwy wielorybów (saldo w nagłówku układu „Duże ręce” i serwerze MCP). */
+export function whaleBalanceOf(positions: readonly { side: 'long' | 'short'; usd: number }[], asOf: number): { long: number; short: number; n: number; asOf: number } {
+  let long = 0;
+  let short = 0;
+  for (const p of positions) {
+    if (p.side === 'long') long += p.usd;
+    else short += p.usd;
+  }
+  return { long, short, n: positions.length, asOf };
 }

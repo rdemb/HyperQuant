@@ -3,7 +3,8 @@ import { Coverage } from '../core/coverage';
 import { INDICATORS } from '../indicators/registry';
 import { DEFAULT_SETTINGS } from '../chart/settings';
 import { LAYERS_OFF, inds } from '../chart/templates';
-import { LAYER_SOURCE, WAIT_TEXT, chipsFor, layerBadge, legendChips, liqScan, scannerAge, tapeCoveragePct, whalesScan } from '../chart/layerSources';
+import { LAYER_SOURCE, SCANNER_FRESH_MS, WAIT_TEXT, chipsFor, layerBadge, legendChips, liqScan, scannerAge, tapeCoveragePct, whalesScan } from '../chart/layerSources';
+import * as scanState from '../../../utils/scanState';
 import { readInputs } from '../chart/layoutInputs';
 import { layoutNumbers } from '../chart/layoutNumbers';
 
@@ -51,6 +52,13 @@ describe('wiek migawki skanera', () => {
     expect(scannerAge(NOW - 59 * 60_000 - 59_000, NOW)).toBe('59 min');
     expect(scannerAge(NOW - 75 * 60_000, NOW)).toBe('1 h');
     expect(scannerAge(NOW - 50 * 3_600_000, NOW)).toBe('2 d');
+  });
+
+  it('jedna implementacja: wiek i stan migawek skanera z utils/scanState (też serwer MCP), tu re-eksport', () => {
+    expect(scannerAge).toBe(scanState.scannerAge);
+    expect(liqScan).toBe(scanState.liqScan);
+    expect(whalesScan).toBe(scanState.whalesScan);
+    expect(SCANNER_FRESH_MS).toBe(2 * 60_000);
   });
 });
 

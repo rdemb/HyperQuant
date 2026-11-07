@@ -9,7 +9,7 @@ import { useHip4 } from '../../state/useHip4';
 import { useVolModel } from '../../state/useVolModel';
 import { usePublished } from '../../state/usePublished';
 import { type BlogMapsState, pickMap, useBlogMaps } from '../../state/useBlogMaps';
-import { type WhaleLayer, isWhaleLayer } from '../../utils/whaleLayer';
+import { WHALES_STALE_MS, type WhaleLayer, isWhaleLayer } from '../../utils/whaleLayer';
 import { DAY, INTERVALS, fmtDayTime, fmtHm, fmtSince, fromDaily, intervalById } from './core/time';
 import { DEFAULT_THRESHOLD_USD, classify } from './core/clashes';
 import { hlTick } from './core/footprintBar';
@@ -1545,9 +1545,6 @@ function liqHint(liq: LiqMapState): string {
       return tr('Skaner nie publikuje teraz aktualnej mapy — klastry ukryte', 'The scanner is not publishing a current map right now — clusters hidden');
   }
 }
-
-/** Plik wielorybów starszy niż tyle (ms) nie jest pokazywany. */
-const WHALES_STALE_MS = 20 * 60_000;
 
 function whaleHint(w: WhaleLayer | null, coin: string): string {
   const m = w?.markets[coin];

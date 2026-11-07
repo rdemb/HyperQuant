@@ -99,6 +99,21 @@ export const netOf = (c: CohortCell) => c.buy - c.sell;
 /** Agresywna delta komórki (CVD biorców), USD; null = warstwa biorcy ukryta */
 export const takerNetOf = (c: CohortCell): number | null => (c.takerBuy === null || c.takerSell === null ? null : c.takerBuy - c.takerSell);
 
+/** Przepływ netto kohorty w oknie sum (zmiana zapasów), USD */
+export const cohortNet = (t: CohortTotal) => t.buy - t.sell;
+/** Agresywna delta kohorty w oknie sum (CVD biorców z widocznych warstw biorcy), USD */
+export const cohortTakerNet = (t: CohortTotal) => t.takerBuy - t.takerSell;
+/** Obrót kohorty w oknie sum (kupno + sprzedaż), USD */
+export const cohortVolume = (t: CohortTotal) => t.buy + t.sell;
+/** Kohorta ma dane w oknie: widoczne transakcje albo ukryte kubełki; bez nich liczby to „—”, nie zero. */
+export const cohortSeen = (t: CohortTotal) => cohortVolume(t) > 0 || t.hidden > 0 || t.takerHidden > 0;
+
+/** Koniec okna sum `totals`: koniec ostatniego kubełka w pliku (etykieta „do …” panelu); bez kubełków — null. */
+export function cohortWindowEnd(flow: Pick<CohortFlow, 'buckets' | 'bucketMin'>): number | null {
+  const last = flow.buckets[flow.buckets.length - 1];
+  return last ? last.t + flow.bucketMin * 60_000 : null;
+}
+
 /** Skumulowany przepływ netto kohorty po kubełkach (ukryte komórki = 0, oznaczone osobno) */
 export function cumulativeNet(flow: CohortFlow, id: CohortId, taker = false): { t: number; v: number; hidden: boolean }[] {
   let acc = 0;

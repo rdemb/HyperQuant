@@ -216,6 +216,9 @@ export function calibrate(map: [number, number][], p: number): number | null {
   return v;
 }
 
+/** Wyniki (trafność, pokrycie, Brier) pokazujemy dopiero od tylu rozstrzygnięć — mniejsza próba to szum, nie ocena. */
+export const LEDGER_MIN_N = 20;
+
 /** Prognozy co 15 min: ready ≤ 35 min od ostatniej publikacji, stale ≤ 3 h, potem expired. */
 export function ledgerFreshness(s: DeskLedgerSummary, now: number): 'ready' | 'stale' | 'expired' {
   const min = 60_000;

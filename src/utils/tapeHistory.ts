@@ -106,6 +106,12 @@ export interface HistoryIndex {
 
 export type HistKind = 'trades' | 'book';
 
+/**
+ * Adres gałęzi `history` z adresu danych (gałąź `main`): …/hyperquant-data/main → …/hyperquant-data/history. Adres bez
+ * „/main” (lokalny podgląd) serwuje oba zestawy plików z jednego katalogu — bez zmian.
+ */
+export const historyBaseOf = (dataBase: string): string => dataBase.replace(/\/main$/, '/history');
+
 const pad = (x: number) => String(x).padStart(2, '0');
 
 /** Ścieżka pliku w gałęzi: `BTC/2026-10-24/13.trades.json.gz` (godzina) albo `BTC/2026-10-24/13-05.trades.json.gz` (część). */
