@@ -384,6 +384,7 @@ export class ProChartController {
       far: null,
       orders: (from, to) => store.orders.range(from, to),
       walls: (from, to, t) => store.walls.walls(from, to, t),
+      version: () => store.version,
     };
     this.chart = createChart(container, chartOptions());
     this.applyTimeFormat();
