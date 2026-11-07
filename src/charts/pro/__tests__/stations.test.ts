@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { DEFAULT_SETTINGS, NARROW_PATCH, PANEL_SET_IDS, migrateSaved, parseSettings, phoneSettings } from '../chart/settings';
+import { DEFAULT_SETTINGS, NARROW_PATCH, PANEL_SET_IDS, keepPanelSetIids, migrateSaved, parseSettings, phoneSettings } from '../chart/settings';
 import { inds } from '../chart/templates';
 import { addIndicator } from '../indicators/registry';
 import {
@@ -199,8 +199,13 @@ describe('układy faz dnia', () => {
     for (const narrow of [false, true]) {
       const base = stationPanel(st, 0, narrow);
       // Wzorzec z pierwszym zestawem → drugi zestaw to dokładnie panelSetPanel
-      expect(switchPanelSet(st, base, 'absorption', narrow)).toEqual({ ...panelSetPanel(st, 'absorption', 0, narrow), panelSet: 'absorption' });
-      expect(switchPanelSet(st, switchPanelSet(st, base, 'absorption', narrow), 'auction', narrow)).toEqual({ ...base, panelSet: 'auction' });
+      // (z listą instancji, które dodał zestaw)
+      const iids = (id: string) => st.panelSets!.find((x) => x.id === id)!.indicators.map((x) => x.iid);
+      expect(switchPanelSet(st, base, 'absorption', narrow)).toEqual({ ...panelSetPanel(st, 'absorption', 0, narrow), panelSet: 'absorption', panelSetIids: iids('absorption') });
+      expect(switchPanelSet(st, switchPanelSet(st, base, 'absorption', narrow), 'auction', narrow)).toEqual({ ...base, panelSet: 'auction', panelSetIids: iids('auction') });
+      // Zapis sprzed listy instancji (wzorzec zestawu): wychodzą wskaźniki wzorca zestawu
+      const legacy = { ...panelSetPanel(st, 'absorption', 0, narrow), panelSet: 'absorption' };
+      expect(switchPanelSet(st, legacy, 'auction', narrow)).toEqual({ ...base, panelSet: 'auction', panelSetIids: iids('auction') });
     }
     // Zmiany użytkownika: rynek, interwał, warstwa, EMA na cenie i własny panel RSI zostają w obu zestawach
     const ema = inds(['ema'], ['rsi']);
@@ -224,6 +229,38 @@ describe('układy faz dnia', () => {
     const cockpit = stationPanel(stationById('cockpit'), 0, false);
     expect(switchPanelSet(stationById('cockpit'), cockpit, 'absorption', false)).toBe(cockpit);
     expect(parseSettings(abs)).toEqual(abs);
+  });
+
+  it('przełączenie zdejmuje tylko instancje dodane przez zestaw: własny wskaźnik z tym samym iid zostaje', () => {
+    const st = stationById('auction-open');
+    const base = stationPanel(st, 0, false);
+    // W Aukcji własny OFI z własnym kolorem — iid „ofi1”, jak OFI zestawu Absorpcja
+    const mine = addIndicator(base.indicators, 'ofi').map((x) => (x.id === 'ofi' ? { ...x, color: '#ffffff' } : x));
+    expect(mine.map((x) => x.iid)).toEqual(['oiflow1', 'breadth1', 'ofi1']);
+    const abs = switchPanelSet(st, { ...base, indicators: mine }, 'absorption', false);
+    // Zestaw nie dubluje OFI i nie zapisuje cudzego jako swojego
+    expect(abs.indicators.map((x) => x.iid)).toEqual(['ofi1', 'absorption1', 'makers1']);
+    expect(abs.panelSetIids).toEqual(['absorption1', 'makers1']);
+    const back = switchPanelSet(st, abs, 'auction', false);
+    expect(back.indicators.map((x) => x.iid)).toEqual(['ofi1', 'oiflow1', 'breadth1']);
+    expect(back.indicators.find((x) => x.iid === 'ofi1')?.color).toBe('#ffffff');
+    expect(parseSettings(abs)).toEqual(abs);
+  });
+
+  it('usunięty wskaźnik zestawu wypada z listy instancji zestawu; nowy własny z tym samym iid zostaje', () => {
+    const st = stationById('auction-open');
+    const abs = switchPanelSet(st, stationPanel(st, 0, false), 'absorption', false);
+    expect(abs.panelSetIids).toEqual(['absorption1', 'makers1', 'ofi1']);
+    const without = keepPanelSetIids({ ...abs, indicators: abs.indicators.filter((x) => x.iid !== 'ofi1') });
+    expect(without.panelSetIids).toEqual(['absorption1', 'makers1']);
+    // Bez zmiany listy wskaźników — ten sam obiekt
+    expect(keepPanelSetIids(abs)).toBe(abs);
+    const readd = { ...without, indicators: addIndicator(without.indicators, 'ofi') };
+    expect(switchPanelSet(st, readd, 'auction', false).indicators.map((x) => x.iid)).toEqual(['ofi1', 'oiflow1', 'breadth1']);
+    // Odczyt zapisu: lista instancji tylko z obecnych wskaźników i tylko z tekstów
+    expect(parseSettings({ ...abs, indicators: abs.indicators.slice(0, 1) }).panelSetIids).toEqual(['absorption1']);
+    expect(parseSettings({ ...abs, panelSetIids: ['makers1', 7, null, 'makers1'] }).panelSetIids).toEqual(['makers1']);
+    expect('panelSetIids' in parseSettings({ ...abs, panelSetIids: 'ofi1' })).toBe(false);
   });
 
   it('Aukcja i otwarcie: dwa zestawy paneli, domyślny Aukcja', () => {

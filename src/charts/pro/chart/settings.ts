@@ -77,6 +77,11 @@ export interface ChartSettings {
   indicators: IndicatorInstance[];
   /** Włączony zestaw paneli układu z zestawami (np. Absorpcja w Aukcji i otwarciu); brak — pierwszy zestaw układu. */
   panelSet?: string;
+  /**
+   * Instancje wskaźników (iid), które dodał zestaw paneli przy ostatnim przełączeniu: kolejne przełączenie zdejmuje tylko je,
+   * więc własny wskaźnik użytkownika z tym samym iid zostaje. Brak — zapis ze wzorca zestawu (zestaw dodał swoje wskaźniki).
+   */
+  panelSetIids?: string[];
 }
 
 /**
@@ -182,6 +187,17 @@ const groups = (v: unknown, fallback: StatGroup[]): StatGroup[] => {
   return g.length > 0 ? g : fallback;
 };
 
+/**
+ * Lista instancji zestawu paneli tylko z wskaźnikami, które jeszcze są na liście: usunięty wskaźnik zestawu nie zabiera
+ * przy przełączeniu własnego, dodanego później z tym samym iid. Bez zmiany — ten sam obiekt.
+ */
+export function keepPanelSetIids(s: ChartSettings): ChartSettings {
+  const ids = s.panelSetIids;
+  if (!ids) return s;
+  const kept = ids.filter((iid) => s.indicators.some((x) => x.iid === iid));
+  return kept.length === ids.length ? s : { ...s, panelSetIids: kept };
+}
+
 /** Odczyt z walidacją każdego pola (stary lub uszkodzony zapis → wartości domyślne `d`). */
 export function parseSettings(raw: unknown, d: ChartSettings = DEFAULT_SETTINGS): ChartSettings {
   const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
@@ -191,6 +207,10 @@ export function parseSettings(raw: unknown, d: ChartSettings = DEFAULT_SETTINGS)
   // Zapis sprzed warstwy „Mapa z bloga” (bez jej klucza) w panelu, którego wzorzec ma mapę zamiast poziomów dnia: oba pola
   // z wzorca — inaczej szósta warstwa i PDL dwa razy. Zapis z kluczem zostaje, jak go zapisał użytkownik; reszta pól bez zmian.
   const blogSwap = r.showBlogMap === undefined && d.showBlogMap && !d.showLevels;
+  const indicators = Array.isArray(r.indicators) ? readIndicators(r.indicators) : d.indicators;
+  // Instancje zestawu: teksty bez powtórzeń, tylko obecne na liście wskaźników; bez listy w zapisie — z `d`
+  const iids = Array.isArray(r.panelSetIids) ? r.panelSetIids : d.panelSetIids;
+  const panelSetIids = iids && [...new Set(iids.filter((x): x is string => typeof x === 'string' && indicators.some((i) => i.iid === x)))];
   return {
     coin: oneOf(r.coin, MARKETS, d.coin),
     interval: oneOf(r.interval, INTERVALS.map((i) => i.id), d.interval),
@@ -233,9 +253,10 @@ export function parseSettings(raw: unknown, d: ChartSettings = DEFAULT_SETTINGS)
     showTape: bool(r.showTape, d.showTape),
     tapeMinUsd: numIn(r.tapeMinUsd, 0, 100_000_000, d.tapeMinUsd),
     tapeSound: bool(r.tapeSound, d.tapeSound),
-    indicators: Array.isArray(r.indicators) ? readIndicators(r.indicators) : d.indicators,
+    indicators,
     // Bez zestawu i bez wybranej mapy pól nie ma (zapis i porównania ze wzorcem bez pustego klucza)
     ...(panelSet !== undefined ? { panelSet } : {}),
+    ...(panelSetIids ? { panelSetIids } : {}),
     ...(blogMapId !== undefined ? { blogMapId } : {}),
   };
 }

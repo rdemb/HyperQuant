@@ -32,7 +32,7 @@ import { onAlertEvents, startAlertWatch } from './chart/alertWatch';
 import { DEFAULT_TTL_MS, defaultDir, eventText } from '../../utils/alertRules';
 import { fmtPx, priceDigits } from './chart/layout';
 import type { PbZone } from './chart/pbRangeLayer';
-import { ChartLayout, ChartSettings, NARROW_QUERY, PHONE_PANES, PhonePane, DROPPED_NOTICE_KEY, hashFor, isNarrow, loadSettings, phoneSettings, saveSettings, settingsFromHash } from './chart/settings';
+import { ChartLayout, ChartSettings, NARROW_QUERY, PHONE_PANES, PhonePane, DROPPED_NOTICE_KEY, hashFor, isNarrow, keepPanelSetIids, loadSettings, phoneSettings, saveSettings, settingsFromHash } from './chart/settings';
 import { Station, activePanelSet, panelSetPanel, priceLayerCount, stationById, stationKey, stationPanel } from './chart/stations';
 import { ChartTemplate, applyTemplate, loadTemplates, saveAs, saveTemplates } from './chart/templates';
 import { NumbersCard, StatGroupPicker } from './chart/NumbersCard';
@@ -78,12 +78,13 @@ const STYLE_OPTIONS: { value: FootprintStyle; label: string; title: string }[] =
  * Zmiana z linku albo przełącznika rynku; wysokość wiersza w USD nie pasuje do rynku o innej cenie — wtedy automatyczna.
  * Wskaźniki z linku zastępują listę tylko wtedy, gdy różnią się od widocznych — odświeżenie strony zachowuje styl i ukryte.
  */
-const withPatch = (s: ChartSettings, p: Partial<ChartSettings>): ChartSettings => ({
-  ...s,
-  ...p,
-  indicators: p.indicators && indicatorsLink(p.indicators) !== indicatorsLink(s.indicators) ? p.indicators : s.indicators,
-  rowStep: p.coin && p.coin !== s.coin ? 0 : s.rowStep,
-});
+const withPatch = (s: ChartSettings, p: Partial<ChartSettings>): ChartSettings =>
+  keepPanelSetIids({
+    ...s,
+    ...p,
+    indicators: p.indicators && indicatorsLink(p.indicators) !== indicatorsLink(s.indicators) ? p.indicators : s.indicators,
+    rowStep: p.coin && p.coin !== s.coin ? 0 : s.rowStep,
+  });
 
 /** Cena zaokrąglona do ticku rynku. */
 const toTick = (p: number) => Number(p.toFixed(priceDigits(p)));
@@ -294,7 +295,8 @@ export const ProChart: React.FC<{
   const blogMaps = useBlogMaps((settings.showBlogMap || (layoutHeader && blogSettle && !inReplay)) && settings.coin === 'BTC');
   useStoreVersion(store, 400);
 
-  const update = useCallback((patch: Partial<ChartSettings>) => setSettings((s) => ({ ...s, ...patch })), []);
+  // Usunięty wskaźnik zestawu paneli wypada też z listy instancji zestawu (keepPanelSetIids)
+  const update = useCallback((patch: Partial<ChartSettings>) => setSettings((s) => keepPanelSetIids({ ...s, ...patch })), []);
   // Okno ustawień wskaźnika (z legendy, opisu jego panelu albo listy „Na wykresie”) zamiast menu
   const editIndicator = useCallback((iid: string) => {
     setMenu(null);
