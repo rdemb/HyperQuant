@@ -838,9 +838,9 @@ export const ProChart: React.FC<{
         <div className="flex flex-col gap-1.5 px-2 py-1.5 border-b border-line shrink-0">
           {/* Przewijany w bok: krawędź, za którą są jeszcze listy, wygasa (scrollFadeRef) */}
           <div ref={scrollFadeRef} className="hq-fade-x flex items-center gap-1 min-w-0 overflow-x-auto [scrollbar-width:none]">
-            {/* Nazwa karty przycięta: rynek, interwał i rodzaj wykresu mieszczą się obok */}
+            {/* Nazwa karty przycięta (7,5rem): przy 390 px rynek, interwał i rodzaj wykresu („Footprint”) mieszczą się obok */}
             {phoneTabs && (
-              <PhoneSelect<string> ariaLabel={tr('Karta układu', 'Layout tab')} value={phoneTabs.value} options={phoneTabs.options} onChange={phoneTabs.onChange} className="max-w-[9.5rem] truncate" />
+              <PhoneSelect<string> ariaLabel={tr('Karta układu', 'Layout tab')} value={phoneTabs.value} options={phoneTabs.options} onChange={phoneTabs.onChange} className="max-w-[7.5rem] truncate" />
             )}
             <PhoneSelect<Market> ariaLabel={tr('Rynek', 'Market')} value={settings.coin} options={MARKET_OPTIONS} onChange={setCoin} />
             <PhoneSelect<string> ariaLabel={tr('Interwał wykresu', 'Chart timeframe')} value={settings.interval} options={INTERVAL_OPTIONS} onChange={(v) => update({ interval: v })} />
