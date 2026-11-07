@@ -152,14 +152,14 @@ const GROUPS: { title: string; rows: Row[] }[] = [
           'The scanner’s recorder on the server: Hyperliquid WS trades, activeAssetCtx and l2Book (near and far aggregation as on the page) for BTC, ETH, SOL and HYPE; the history branch of the public data repository'
         ),
         method: tr(
-          'Części 5-minutowe bieżącej godziny i pliki godzinowe (JSON w gzip) z odcinkami ciągłego nagrania; biorca, maker i zlecenie agresora jako numery zamiast adresów i hashy, ważne w obrębie doby UTC w plikach z numeracją dobową (nowy skaner), a w starszych plikach — w obrębie godziny. Strona wczytuje pliki od lewej krawędzi widoku (taśma do doby, arkusz do 12 h), co 2 min dociąga brakujące części i przerwy połączenia, a taśma odrzuca duplikaty po tid',
-          '5-minute parts of the current hour and hourly files (gzipped JSON) with spans of continuous recording; taker, maker and aggressor order as numbers instead of addresses and hashes, valid within a UTC day in files with daily numbering (new scanner) and within the hour in older files. The page loads files from the left edge of the view (tape up to a day, book up to 12 h), fetches missing parts and connection gaps every 2 min, and the tape drops duplicates by tid'
+          'Części 5-minutowe bieżącej godziny i pliki godzinowe (JSON w gzip) z odcinkami ciągłego nagrania; biorca, maker i zlecenie agresora jako numery zamiast adresów i hashy, ważne w obrębie doby UTC w nowszych plikach (numeracja dobowa), a w starszych plikach — w obrębie godziny. Strona wczytuje pliki od lewej krawędzi widoku (taśma do doby, arkusz do 12 h), co 2 min dociąga brakujące części i przerwy połączenia, a taśma odrzuca duplikaty po tid',
+          '5-minute parts of the current hour and hourly files (gzipped JSON) with spans of continuous recording; taker, maker and aggressor order as numbers instead of addresses and hashes, valid within a UTC day in newer files (daily numbering) and within the hour in older files. The page loads files from the left edge of the view (tape up to a day, book up to 12 h), fetches missing parts and connection gaps every 2 min, and the tape drops duplicates by tid'
         ),
         kinds: ['LIVE'],
         refresh: tr('część co 5 min (publikacja ok. 1–2 min po jej końcu)', 'a part every 5 min (published ~1–2 min after it ends)'),
         caveat: tr(
-          'Z zapisu serwera nie ma adresów (podsumowanie portfela tylko dla zleceń od otwarcia strony) ani gór lodowych (rejestrator nie nagrywa dokładnego arkusza). Przerwa w nagraniu serwera jest jawną luką. Ostatnie minuty przed otwarciem strony dochodzą z kilkuminutowym opóźnieniem.',
-          'The server record has no addresses (wallet summary only for orders since the page opened) and no icebergs (the recorder does not record the exact book). A gap in the server recording is an explicit gap. The last minutes before the page opened arrive with a delay of a few minutes.'
+          'Z zapisu serwera nie ma adresów (podsumowanie portfela tylko dla zleceń od otwarcia strony) ani gór lodowych (rejestrator nie nagrywa dokładnego arkusza). Numery to nie anonimizacja: wiersz ma tid, a publiczny strumień Hyperliquid podaje przy tid adresy, więc każdą transakcję z pliku da się dopasować do jej kont — pliki tylko nie przedrukowują adresów. Przerwa w nagraniu serwera jest jawną luką. Ostatnie minuty przed otwarciem strony dochodzą z kilkuminutowym opóźnieniem.',
+          'The server record has no addresses (wallet summary only for orders since the page opened) and no icebergs (the recorder does not record the exact book). The numbers are not anonymisation: each row has a tid, and the public Hyperliquid stream gives addresses with the tid, so any trade in a file can be matched to its accounts — the files just do not reprint addresses. A gap in the server recording is an explicit gap. The last minutes before the page opened arrive with a delay of a few minutes.'
         ),
       },
       {
@@ -208,8 +208,8 @@ const GROUPS: { title: string; rows: Row[] }[] = [
           'Who is trading (Numbers table, In session): delta of large players and the rest, large players’ share of entry value'
         ),
         source: tr(
-          'Hyperliquid: WS trades (adres biorcy przy każdej transakcji) nagrywane od otwarcia widoku i historia taśmy ostatniej doby z repo danych (konta jako numery: w obrębie doby UTC w plikach z numeracją dobową, nowy skaner, a w starszych plikach — w obrębie godziny)',
-          'Hyperliquid: WS trades (taker address on every trade) recorded since the view opened and the last 24 h of tape history from the data repository (accounts as numbers: within a UTC day in files with daily numbering, new scanner, and within the hour in older files)'
+          'Hyperliquid: WS trades (adres biorcy przy każdej transakcji) nagrywane od otwarcia widoku i historia taśmy ostatniej doby z repo danych (konta jako numery: w obrębie doby UTC w nowszych plikach z numeracją dobową, a w starszych plikach — w obrębie godziny)',
+          'Hyperliquid: WS trades (taker address on every trade) recorded since the view opened and the last 24 h of tape history from the data repository (accounts as numbers: within a UTC day in newer files with daily numbering and within the hour in older files)'
         ),
         method: tr(
           'Wypełnienia składane w zlecenia agresora; wartość wejść każdego konta biorcy sumowana w godzinie UTC. Konto, które w tej godzinie weszło za co najmniej 1 mln USD (BTC), 500 tys. (ETH) albo 250 tys. (SOL, HYPE), jest w niej dużym graczem — także gdy tnie zlecenie na wiele małych. Delta dużych i reszty = kupno − sprzedaż ich zleceń w świecy (jednostki rynku); udział dużych = ich wartość wejść / wartość wszystkich wejść świecy. Pokazujemy tylko sumy, bez kont',
@@ -410,8 +410,8 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         kinds: ['LIVE', 'MODEL'],
         refresh: tr('co 5 s', 'every 5 s'),
         caveat: tr(
-          'Na ekranie pseudonimy jak na taśmie, nigdy adresy. W zapisie serwera konto ma numer na dobę UTC w plikach z numeracją dobową (nowy skaner), a w starszych plikach — na godzinę UTC, więc okno przez przełom doby (w starszych plikach — godziny) może liczyć jedno konto jako dwa (udział zaniżony). Opis, kto daje płynność, nie sygnał kierunku.',
-          'The screen shows pseudonyms as on the tape, never addresses. In the server recording an account has a number per UTC day in files with daily numbering (new scanner) and per UTC hour in older files, so a window across the turn of the day (in older files, of the hour) can count one account as two (share understated). A description of who provides liquidity, not a direction signal.'
+          'Na ekranie pseudonimy jak na taśmie, nigdy adresy. W zapisie serwera konto ma numer na dobę UTC w nowszych plikach (numeracja dobowa), a w starszych plikach — na godzinę UTC, więc okno przez przełom doby (w starszych plikach — godziny) może liczyć jedno konto jako dwa (udział zaniżony). Opis, kto daje płynność, nie sygnał kierunku.',
+          'The screen shows pseudonyms as on the tape, never addresses. In the server recording an account has a number per UTC day in newer files (daily numbering) and per UTC hour in older files, so a window across the turn of the day (in older files, of the hour) can count one account as two (share understated). A description of who provides liquidity, not a direction signal.'
         ),
       },
       {

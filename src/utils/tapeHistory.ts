@@ -6,7 +6,8 @@
  * `history` repo danych: części 5-minutowe bieżącej godziny, łączone po jej zamknięciu w plik godzinowy (JSON w gzip).
  * Pliki nie zawierają adresów ani hashy: zlecenie agresora, biorca i maker to numery (`o`, `k`, `m`) ważne najwyżej
  * w obrębie doby UTC (`idScope: 'day'`; pliki bez pola — w obrębie godziny) — wystarczą do złożenia zleceń, serii
- * i ścian, a nie da się z nich odczytać portfela.
+ * i ścian. To nie jest anonimizacja: wiersz ma `tid`, a publiczny strumień Hyperliquid podaje przy `tid` adresy obu
+ * stron, więc wiersz da się dopasować do publicznej transakcji i jej kont. Numery to tylko brak przedruku adresów.
  */
 
 export const HISTORY_VERSION = 1;
@@ -116,6 +117,9 @@ export function historyPath(coin: string, start: number, kind: HistKind, part: b
 
 const fin = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x);
 const finArr = (x: unknown, n?: number): x is number[] => Array.isArray(x) && (n === undefined || x.length === n) && x.every(fin);
+/** Kolumna numerów `o`, `k`, `m`: bezpieczne liczby całkowite od −1 (−1 = nieznany) */
+const idArr = (x: unknown, n: number): x is number[] =>
+  Array.isArray(x) && x.length === n && x.every((v) => typeof v === 'number' && Number.isSafeInteger(v) && v >= -1);
 
 const deltas = (xs: readonly number[]) => xs.map((x, i) => (i === 0 ? x : x - xs[i - 1]));
 const undelta = (xs: readonly number[]) => {
@@ -183,9 +187,10 @@ export function idScopeOf(file: { idScope?: unknown }): IdScope {
 }
 
 /**
- * Odczyt pliku taśmy; zły kształt albo wersja → null (cały plik — kolumny muszą się zgadzać co do długości).
- * `zeroKnown` — plik ma kolumnę hashy zerowych (transakcje bez `z` na pewno mają inny hash); `idScope` — zakres numerów
- * (brak pola albo nieznana wartość → `hour`: najwęższy zakres, nic nie łączy się ponad godzinę).
+ * Odczyt pliku taśmy; zły kształt albo wersja → null (cały plik — kolumny muszą się zgadzać co do długości, a numery
+ * `o`, `k`, `m` to bezpieczne liczby całkowite od −1). `zeroKnown` — plik ma kolumnę hashy zerowych (transakcje bez `z`
+ * na pewno mają inny hash); `idScope` — zakres numerów (brak pola albo nieznana wartość → `hour`: najwęższy zakres, nic
+ * nie łączy się ponad godzinę).
  */
 export function decodeTrades(
   raw: unknown
@@ -193,7 +198,7 @@ export function decodeTrades(
   const f = raw as Partial<TradesFile> | null;
   if (!f || f.v !== HISTORY_VERSION || typeof f.coin !== 'string' || !fin(f.from) || !fin(f.to) || !Array.isArray(f.spans)) return null;
   const n = Array.isArray(f.t) ? f.t.length : -1;
-  if (!finArr(f.t) || !finArr(f.px, n) || !finArr(f.sz, n) || !finArr(f.tid, n) || !finArr(f.o, n) || !finArr(f.k, n) || !finArr(f.m, n)) return null;
+  if (!finArr(f.t) || !finArr(f.px, n) || !finArr(f.sz, n) || !finArr(f.tid, n) || !idArr(f.o, n) || !idArr(f.k, n) || !idArr(f.m, n)) return null;
   if (typeof f.side !== 'string' || f.side.length !== n || !/^[AB]*$/.test(f.side)) return null;
   const c = f.ctx;
   const k = Array.isArray(c?.t) ? c.t.length : -1;
