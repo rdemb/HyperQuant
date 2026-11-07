@@ -1,5 +1,6 @@
 import { LAYOUT_ORDER, type PhaseId, type StationId, stationById } from '../../charts/pro/chart/stations';
 import { tr } from '../../i18n';
+import { takeFlowAsk } from '../../state/route';
 
 /**
  * Czyste pomocniki prawej kolumny DOM i taśmy (W sesji) i skrótów układów: zakres paneli skanera, szerokość, od
@@ -53,6 +54,14 @@ export function saveDock(on: boolean): void {
   } catch {
     // Zapis niedostępny (tryb prywatny) — stan kolumny zostaje do zamknięcia strony
   }
+}
+
+/**
+ * Kolumna po zmianie adresu w otwartym już widoku: zapis kolumny czytany ponownie (dawny adres #flow zapisuje „1”, także
+ * gdy kolumnę schowano klawiszem D), a jednorazową prośbę o szufladę (640–1279 px) odbierają tylko Wykresy W sesji.
+ */
+export function columnAfterHash(phase: PhaseId): { dock: boolean; drawer: boolean } {
+  return { dock: loadDock(), drawer: phase === 'session' && takeFlowAsk() };
 }
 
 /** Alt+1…6: faza i układ w kolejności przed sesją, w sesji, po sesji; inna cyfra — null. */

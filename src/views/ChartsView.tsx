@@ -47,7 +47,7 @@ import { parseReplayLink, replayHash } from '../charts/pro/replay/link';
 import { ReplayView } from '../charts/pro/replay/ReplayView';
 import { tr } from '../i18n';
 import { FlowColumn } from './flow/FlowColumn';
-import { DOCK_MIN_W, DOCK_W, DRAWER_MIN_W, dockMode, loadDock, saveDock, shortcutTarget } from './flow/flowColumnModel';
+import { DOCK_MIN_W, DOCK_W, DRAWER_MIN_W, columnAfterHash, dockMode, loadDock, saveDock, shortcutTarget } from './flow/flowColumnModel';
 import { takeFlowAsk } from '../state/route';
 
 const WIDE = '(min-width: 1024px)';
@@ -156,7 +156,10 @@ const ChartsView: React.FC<ChartsViewProps> = ({ phase, onPhase, onMarket }) => 
   useEffect(() => {
     const onHash = () => {
       setReplay(parseReplayLink(window.location.hash));
-      if (phaseRef.current === 'session' && takeFlowAsk()) setDrawer(true);
+      // Dawny adres #flow na otwartym W sesji: kolumna z zapisu (także schowana wcześniej klawiszem D) i szuflada
+      const c = columnAfterHash(phaseRef.current);
+      setDock(c.dock);
+      if (c.drawer) setDrawer(true);
     };
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
