@@ -511,7 +511,7 @@ ${row}
 </section>`;
 }
 
-// ───────────────────────── Powtórka na Wykresach ─────────────────────────
+// ───────────────────────── Powtórka W sesji ─────────────────────────
 
 const HOUR_MS = 3_600_000;
 /** Serwer trzyma nagranie taśmy i arkusza przez 7 dni (gałąź historii repozytorium danych). */
@@ -521,7 +521,7 @@ const LOOKS_BACK = /podsumowanie|rozliczenie/i;
 const isoTime = (ms) => new Date(ms).toISOString().replace('.000Z', 'Z');
 
 /**
- * Powtórka chwili publikacji w Wykresach (format linku src/charts/pro/replay/link.ts, wersja 1): footprint 5 min z VWAP,
+ * Powtórka chwili publikacji na wykresie W sesji (format linku src/charts/pro/replay/link.ts, wersja 1): footprint 5 min z VWAP,
  * profilem, poziomami dnia i bąblami, zatrzymany w chwili wpisu. Okno 12 h: 10 h przed i 2 h po wpisie podsumowującym,
  * 2 h przed i 10 h po pozostałych. Powtórka przycina koniec do nagrania, więc świeży wpis pokazuje tyle dalszego ciągu,
  * ile serwer już nagrał.
@@ -534,7 +534,7 @@ export function replayLink(post) {
   return { back, from, to, hash };
 }
 
-// Po 7 dniach nagrania już nie ma: zamiast powtórki tej chwili Wykresy na żywo i powtórka ostatniej doby
+// Po 7 dniach nagrania już nie ma: zamiast powtórki tej chwili W sesji na żywo i powtórka ostatniej doby
 const REPLAY_SCRIPT = `<script>
 (() => {
   const box = document.querySelector('.replay[data-until]');
@@ -549,12 +549,12 @@ const REPLAY_SCRIPT = `<script>
 export function replayHtml(post, root) {
   const r = replayLink(post);
   const text = r.back
-    ? `Nagrana taśma i arkusz z ${fmtTime(r.from)}–${fmtTime(post.ms)} na Wykresach HyperQuant: footprint, delta, CVD i mapa ciepła całego opisanego okresu. Przewiń go albo odtwórz od początku w przyspieszeniu do 60×.`
-    : `Nagrana taśma i arkusz na Wykresach HyperQuant: footprint, delta, CVD i mapa ciepła, zatrzymane w chwili publikacji (${fmtTime(post.ms)}). Odtwórz dalszy ciąg w przyspieszeniu do 60×: powtórka obejmuje 10 godzin po wpisie, w miarę jak serwer je nagrywa.`;
+    ? `Nagrana taśma i arkusz HyperQuant z ${fmtTime(r.from)}–${fmtTime(post.ms)} na wykresie W sesji: footprint, delta, CVD i mapa ciepła całego opisanego okresu. Przewiń go albo odtwórz od początku w przyspieszeniu do 60×.`
+    : `Nagrana taśma i arkusz HyperQuant na wykresie W sesji: footprint, delta, CVD i mapa ciepła, zatrzymane w chwili publikacji (${fmtTime(post.ms)}). Odtwórz dalszy ciąg w przyspieszeniu do 60×: powtórka obejmuje 10 godzin po wpisie, w miarę jak serwer je nagrywa.`;
   return `<section class="block replay" data-until="${post.ms + REPLAY_KEEP_MS}" aria-labelledby="replay-title">
 <h2 id="replay-title">Zobacz na wykresie</h2>
-<div class="replay-on"><p>${esc(text)}</p><p class="cta"><a class="btn btn--primary" href="${esc(root + r.hash)}">Otwórz powtórkę na Wykresach</a></p><p class="fig-note">Nagranie jest dostępne przez 7 dni od publikacji.</p></div>
-<div class="replay-off" hidden><p>Nagranie z chwili tego wpisu minęło już 7 dni, przez które serwer je przechowuje. Na Wykresach jest rynek na żywo i powtórka ostatniej doby.</p><p class="cta"><a class="btn btn--primary" href="${root}#charts">Otwórz Wykresy</a><a class="btn" href="${root}#charts?replay=history&amp;m=BTC">Powtórka ostatniej doby</a></p></div>
+<div class="replay-on"><p>${esc(text)}</p><p class="cta"><a class="btn btn--primary" href="${esc(root + r.hash)}">Otwórz powtórkę W sesji</a></p><p class="fig-note">Nagranie jest dostępne przez 7 dni od publikacji.</p></div>
+<div class="replay-off" hidden><p>Nagranie z chwili tego wpisu minęło już 7 dni, przez które serwer je przechowuje. Ekran W sesji pokazuje rynek na żywo i powtórkę ostatniej doby.</p><p class="cta"><a class="btn btn--primary" href="${root}#charts">Otwórz W sesji</a><a class="btn" href="${root}#charts?replay=history&amp;m=BTC">Powtórka ostatniej doby</a></p></div>
 </section>
 ${REPLAY_SCRIPT}`;
 }
