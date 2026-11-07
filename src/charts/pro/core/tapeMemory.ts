@@ -67,7 +67,10 @@ export function tapeRows(orders: readonly AggressorOrder[], minUsd: number, bigU
 }
 
 export interface TapePace {
-  /** Wartość transakcji w ostatniej minucie (USD) i udział kupujących agresorów. */
+  /**
+   * Wartość transakcji w ostatniej minucie (USD) i udział kupujących agresorów; NaN, gdy ostatnia minuta nie jest w całości
+   * nagrana (zerwane połączenie: brak danych, a nie zero), udział także NaN przy minucie bez transakcji.
+   */
   usd1m: number;
   buyShare: number;
   /** Mediana wartości minutowej z okna (USD); NaN przy zbyt krótkim nagraniu. */
@@ -83,6 +86,8 @@ export function tapePace(scan: TradeScan, now: number, covered: (from: number, t
     usd1m += px * sz;
     if (side === 1) buy += px * sz;
   });
+  // Ostatnia minuta bez pełnego nagrania (np. po zerwaniu połączenia): suma z części minuty nie jest tempem
+  if (!covered(now - 60_000, now)) usd1m = Number.NaN;
   const mins: number[] = [];
   const end = Math.floor(now / 60_000) * 60_000;
   for (let m = end - 60 * 60_000; m < end; m += 60_000) {
@@ -95,7 +100,7 @@ export function tapePace(scan: TradeScan, now: number, covered: (from: number, t
   }
   mins.sort((a, b) => a - b);
   const median = mins.length >= 10 ? mins[Math.floor(mins.length / 2)] : Number.NaN;
-  return { usd1m, buyShare: usd1m > 0 ? buy / usd1m : 0.5, median, minutes: mins.length };
+  return { usd1m, buyShare: usd1m > 0 ? buy / usd1m : Number.NaN, median, minutes: mins.length };
 }
 
 /**

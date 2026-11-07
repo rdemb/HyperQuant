@@ -58,6 +58,23 @@ describe('tapePace', () => {
     expect(p.minutes).toBe(60);
     expect(Number.isNaN(tapePace(scan, now, () => false).median)).toBe(true);
   });
+
+  it('ostatnia minuta bez nagrania (zerwane połączenie) to brak danych, nie zero; minuta bez transakcji to 0 bez udziału kupujących', () => {
+    const now = 120 * 60_000 + 30_000;
+    const rows: [number, number, number, Side][] = [];
+    for (let m = 60; m < 119; m++) rows.push([m * 60_000 + 10, 100, 10, 1]);
+    const scan = (from: number, to: number, fn: (t: number, px: number, sz: number, side: Side) => void) => {
+      for (const [t, px, sz, side] of rows) if (t >= from && t < to) fn(t, px, sz, side);
+    };
+    // Nagranie urwało się 2 min temu: pełne minuty godziny są, ostatniej minuty nie ma
+    const cut = now - 120_000;
+    const p = tapePace(scan, now, (a, b) => b <= cut);
+    expect([Number.isNaN(p.usd1m), Number.isNaN(p.buyShare)]).toEqual([true, true]);
+    // Nagranie trwa, ale w ostatniej minucie nie było transakcji
+    const q = tapePace(scan, now, () => true);
+    expect(q.usd1m).toBe(0);
+    expect(Number.isNaN(q.buyShare)).toBe(true);
+  });
 });
 
 describe('tapeGap', () => {
