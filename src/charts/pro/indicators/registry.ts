@@ -219,7 +219,7 @@ export interface IndicatorDef {
    */
   series?(p: Params): SeriesFn;
   /**
-   * Rysunek z publicznych prognoz Desku (stożek zakresu): bez wartości świec i bez plotów — warstwa na wykresie ceny
+   * Rysunek z publicznych prognoz desku (stożek zakresu): bez wartości świec i bez plotów — warstwa na wykresie ceny
    * i opis w legendzie z dziennika prognoz.
    */
   forecast?: true;
@@ -1543,15 +1543,15 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
     short: tr('Stożek', 'Cone'),
     name: tr('Stożek prognozy zakresu', 'Range forecast cone'),
     hint: tr(
-      'Przedziały 90% i 60% oraz mediana ceny BTC na 1 h i 4 h od ostatniej prognozy z dziennika Desku i szanse dotknięcia PDH, PDL i środka dnia w 2 h; w legendzie pokrycie przedziałów z 30 dni',
-      'The 90% and 60% intervals and the median of the BTC price over 1 h and 4 h from the latest Desk ledger forecast, and the chances of touching PDH, PDL and the day midpoint within 2 h; the legend shows the interval coverage over 30 days'
+      'Przedziały 90% i 60% oraz mediana ceny BTC na 1 h i 4 h od ostatniej prognozy z dziennika desku (Po sesji) i szanse dotknięcia PDH, PDL i środka dnia w 2 h; w legendzie pokrycie przedziałów z 30 dni',
+      'The 90% and 60% intervals and the median of the BTC price over 1 h and 4 h from the latest forecast in the desk ledger (Post-session), and the chances of touching PDH, PDL and the day midpoint within 2 h; the legend shows the interval coverage over 30 days'
     ),
     group: 'hyperquant',
     aliases: 'cone stozek prognoza forecast zakres range przedzial interval kwantyl quantile pokrycie coverage kalibracja calibration kupiec har fhs dziennik ledger dotkniecie touch',
     warmup: () => 0,
     convention: tr(
-      'Tego wskaźnika nie ma w TradingView. Rysuje prognozy, które Desk co 15 minut zapisuje w publicznym dzienniku, zanim rynek je rozstrzygnie (model zmienności HAR z porą dnia i symulacja z historycznych reszt). Liczby są dokładne na horyzontach 1 h i 4 h od wydania (kreski); między nimi stożek jest rysowany w przybliżeniu, liniowo w pierwiastku czasu. Model nie prognozuje kierunku: mediana stoi przy cenie z chwili wydania. Pokrycie to odsetek prognoz 1 h z 30 dni, po których cena skończyła w przedziale (nominał 90% i 60%); prognozy co 15 min nakładają się, więc test Kupca liczony jest na prognozach rozłącznych. Tylko BTC; bez prognozy z ostatnich 3 h stożka nie ma.',
-      'TradingView has no such indicator. It draws the forecasts the Desk records every 15 minutes in a public ledger before the market settles them (a HAR volatility model with time of day and a simulation from historical residuals). The numbers are exact at the 1 h and 4 h horizons from issue (tick marks); between them the cone is an approximation, linear in the square root of time. The model does not forecast direction: the median stays at the price at issue. Coverage is the share of 1 h forecasts over 30 days after which the price ended inside the interval (nominal 90% and 60%); forecasts every 15 min overlap, so the Kupiec test runs on disjoint forecasts. BTC only; without a forecast from the last 3 h there is no cone.'
+      'Tego wskaźnika nie ma w TradingView. Rysuje prognozy, które desk co 15 minut zapisuje w publicznym dzienniku (Po sesji), zanim rynek je rozstrzygnie (model zmienności HAR z porą dnia i symulacja z historycznych reszt). Liczby są dokładne na horyzontach 1 h i 4 h od wydania (kreski); między nimi stożek jest rysowany w przybliżeniu, liniowo w pierwiastku czasu. Model nie prognozuje kierunku: mediana stoi przy cenie z chwili wydania. Pokrycie to odsetek prognoz 1 h z 30 dni, po których cena skończyła w przedziale (nominał 90% i 60%); prognozy co 15 min nakładają się, więc test Kupca liczony jest na prognozach rozłącznych. Tylko BTC; bez prognozy z ostatnich 3 h stożka nie ma.',
+      'TradingView has no such indicator. It draws the forecasts the desk records every 15 minutes in a public ledger (Post-session) before the market settles them (a HAR volatility model with time of day and a simulation from historical residuals). The numbers are exact at the 1 h and 4 h horizons from issue (tick marks); between them the cone is an approximation, linear in the square root of time. The model does not forecast direction: the median stays at the price at issue. Coverage is the share of 1 h forecasts over 30 days after which the price ended inside the interval (nominal 90% and 60%); forecasts every 15 min overlap, so the Kupiec test runs on disjoint forecasts. BTC only; without a forecast from the last 3 h there is no cone.'
     ),
     memoryNote: tr(
       'Nie zależy od świec wykresu: najnowsza prognoza i wyniki z 30 dni z dziennika, sprawdzane co minutę.',
@@ -1889,15 +1889,15 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
     short: 'HIP-4',
     name: tr('Rynki wynikowe HIP-4: rynek i model', 'HIP-4 outcome markets: market and model'),
     hint: tr(
-      'Progi otwartych rynków wynikowych Hyperliquid na BTC („cena powyżej K w terminie”, „dotknięcie K do terminu”) jako poziomy na wykresie: cena udziału „Tak” obok prawdopodobieństwa z modelu Desku dla tego samego pytania; im większa różnica, tym mocniejszy kolor',
-      'The thresholds of open Hyperliquid BTC outcome markets (“price above K at expiry”, “touch K before expiry”) as levels on the chart: the price of a “Yes” share next to the Desk model probability for the same question; the bigger the difference, the stronger the colour'
+      'Progi otwartych rynków wynikowych Hyperliquid na BTC („cena powyżej K w terminie”, „dotknięcie K do terminu”) jako poziomy na wykresie: cena udziału „Tak” obok prawdopodobieństwa z modelu desku dla tego samego pytania; im większa różnica, tym mocniejszy kolor',
+      'The thresholds of open Hyperliquid BTC outcome markets (“price above K at expiry”, “touch K before expiry”) as levels on the chart: the price of a “Yes” share next to the desk model probability for the same question; the bigger the difference, the stronger the colour'
     ),
     group: 'hyperquant',
     aliases: 'hip4 hip-4 outcome wynikowe predykcyjne prediction polymarket kalshi binarne binary prawdopodobienstwo probability model rynek market prog threshold dotkniecie touch termin expiry',
     warmup: () => 0,
     convention: tr(
-      'Tego wskaźnika nie ma w TradingView. Rynki i arkusze z publicznego API Hyperliquid (strona „Tak”), odświeżane co minutę tylko przy widocznej karcie; model to ten sam symulator Desku co w panelu „Model vs rynek” w Badaniach (zmienność z sezonowego log-HAR, reszty historyczne, Monte Carlo — błąd symulacji ok. 1 pp). Pokazujemy tylko rynki z płynnym arkuszem (spread do 5 pp i co najmniej 50 USDC w ±5 pp od środka po obu stronach), bo przy rzadkim cena rynku nic nie mówi. Kolor jest pełny przy różnicy 20 pp. W legendzie wynik Briera z dziennika Desku na rozstrzygniętych rynkach 15-minutowych — to pomiar trafności obu, nie przewaga. Tylko BTC; w powtórce bez rynków.',
-      'TradingView has no such indicator. Markets and books come from the public Hyperliquid API (the “Yes” side), refreshed every minute only while the tab is visible; the model is the same Desk simulator as in the “Model vs market” panel in Research (seasonal log-HAR volatility, historical residuals, Monte Carlo with about 1 pp simulation error). Only markets with a liquid book are shown (spread up to 5 pp and at least 50 USDC within ±5 pp of the mid on both sides), because with a thin book the market price says nothing. The colour is full at a 20 pp difference. The legend shows the Brier score from the Desk ledger on settled 15-minute markets: a measure of how accurate both are, not an edge. BTC only; no markets in replay.'
+      'Tego wskaźnika nie ma w TradingView. Rynki i arkusze z publicznego API Hyperliquid (strona „Tak”), odświeżane co minutę tylko przy widocznej karcie; model to ten sam symulator desku co w panelu „Model vs rynek” w Badaniach (zmienność z sezonowego log-HAR, reszty historyczne, Monte Carlo — błąd symulacji ok. 1 pp). Pokazujemy tylko rynki z płynnym arkuszem (spread do 5 pp i co najmniej 50 USDC w ±5 pp od środka po obu stronach), bo przy rzadkim cena rynku nic nie mówi. Kolor jest pełny przy różnicy 20 pp. W legendzie wynik Briera z dziennika desku (Po sesji) na rozstrzygniętych rynkach 15-minutowych — to pomiar trafności obu, nie przewaga. Tylko BTC; w powtórce bez rynków.',
+      'TradingView has no such indicator. Markets and books come from the public Hyperliquid API (the “Yes” side), refreshed every minute only while the tab is visible; the model is the same desk simulator as in the “Model vs market” panel in Research (seasonal log-HAR volatility, historical residuals, Monte Carlo with about 1 pp simulation error). Only markets with a liquid book are shown (spread up to 5 pp and at least 50 USDC within ±5 pp of the mid on both sides), because with a thin book the market price says nothing. The colour is full at a 20 pp difference. The legend shows the Brier score from the desk ledger (Post-session) on settled 15-minute markets: a measure of how accurate both are, not an edge. BTC only; no markets in replay.'
     ),
     memoryNote: tr(
       'Nie zależy od świec wykresu: bieżące rynki, ich notowania i model na teraz, a w legendzie wyniki z dziennika.',

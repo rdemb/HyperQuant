@@ -202,7 +202,7 @@ export const IndicatorSettings: React.FC<{ x: IndicatorInstance; loaded: number;
         )}
         {tab === 'params' && def.forecast && (
           <p className="py-2 text-ink-2 leading-snug">
-            {tr('Bez parametrów: przedziały i horyzonty są takie, jak zapisane w dzienniku Desku.', 'No inputs: the intervals and horizons are those recorded in the Desk ledger.')}
+            {tr('Bez parametrów: przedziały i horyzonty są takie, jak zapisane w dzienniku desku (Po sesji).', 'No inputs: the intervals and horizons are those recorded in the desk ledger (Post-session).')}
           </p>
         )}
         {tab === 'params' && def.outcomes && (

@@ -430,7 +430,7 @@ function notFoundPage(site) {
   const main = `<article class="page page--404">
 <h1>${esc(t.notFound.h1)}</h1>
 <p class="lead">${esc(t.notFound.text)}</p>
-<ul class="more">${link('', 'Desk')}${link(PATHS.charts.pl, T.pl.charts)}${link(PATHS.lessons.pl, T.pl.lessons)}${link('blog/', 'Blog')}</ul>
+<ul class="more">${link('', 'W sesji')}${link(PATHS.charts.pl, T.pl.charts)}${link(PATHS.lessons.pl, T.pl.lessons)}${link('blog/', 'Blog')}</ul>
 <p lang="en">This page does not exist. In English: <a href="${u}${PATHS.charts.en}">Charts</a> · <a href="${u}${PATHS.lessons.en}">Lessons</a></p>
 </article>`;
   return {

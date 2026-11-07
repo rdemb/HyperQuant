@@ -903,7 +903,7 @@ export class ProChartController {
     return Math.max(0, Math.min(ts.width() / 3, ahead * ts.options().barSpacing));
   }
 
-  /** Podsumowanie dziennika prognoz Desku (null — brak albo powtórka): stożek i jego opis w legendzie. */
+  /** Podsumowanie dziennika prognoz desku (null — brak albo powtórka): stożek i jego opis w legendzie. */
   setLedger(s: DeskLedgerSummary | null): void {
     this.ledger = s;
     this.cone.update();
