@@ -2,7 +2,8 @@ import React from 'react';
 import { X } from 'lucide-react';
 import { Segmented, fmtPrice, fmtSigned, fmtFixed } from '../../ui';
 import { PlanDirection } from '../../utils/planAnalyzer';
-import { HORIZONS, parseNum } from './hooks';
+import { HORIZONS } from './hooks';
+import { parseNum } from '../after/format';
 import { tr } from '../../i18n';
 
 export interface PlanFormState {

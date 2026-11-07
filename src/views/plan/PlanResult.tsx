@@ -17,7 +17,8 @@ import { useLiqMap } from '../../state/useLiqMap';
 import { stopNearCluster } from '../../utils/liqMapView';
 import { ProbabilityBar } from './ProbabilityBar';
 import { PathFan } from './PathFan';
-import { PlanMarket, fmtMinutes } from './hooks';
+import { PlanMarket } from './hooks';
+import { fmtMinutes } from '../after/format';
 import { locale, tr } from '../../i18n';
 
 /** Minimalna liczba rozstrzygniętych planów, zanim pokażemy ćwierć-Kelly. */

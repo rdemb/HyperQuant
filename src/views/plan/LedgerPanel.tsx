@@ -3,7 +3,7 @@ import { Download, Trash2 } from 'lucide-react';
 import { Badge, EmptyState, Panel, Stat, fmtPrice, fmtFixed } from '../../ui';
 import { LedgerEntry, LedgerStatus, ReliabilityBin } from '../../utils/forecastLedger';
 import { PlanLedger } from './usePlanLedger';
-import { fmtMinutes } from './hooks';
+import { fmtMinutes } from '../after/format';
 import { locale, tr } from '../../i18n';
 
 const STATUS: Record<LedgerStatus, { icon: string; label: string; cls: string }> = {

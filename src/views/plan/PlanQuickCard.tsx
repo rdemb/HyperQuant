@@ -4,7 +4,8 @@ import { useDesk } from '../../state/DeskContext';
 import { Badge, Panel, Segmented, fmtPrice, fmtSigned, fmtFixed } from '../../ui';
 import { PlanDirection, analyzePlan, attachMarketModel, proposeLevels } from '../../utils/planAnalyzer';
 import { ProbabilityBar } from './ProbabilityBar';
-import { parseNum, useDebounced, usePlanMarket } from './hooks';
+import { useDebounced, usePlanMarket } from './hooks';
+import { parseNum } from '../after/format';
 import { tr } from '../../i18n';
 
 const HORIZON_MIN = 120;
