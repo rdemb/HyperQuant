@@ -1,10 +1,11 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import { describe, expect, it, vi } from 'vitest';
-import { type HistTrade, decodeBook, decodeTrades, encodeTrades, historyPath, idScopeOf } from '../../../src/utils/tapeHistory.ts';
+import { toFills } from '../../../src/charts/pro/store/serverHistory.ts';
+import { type HistTrade, type IdScope, decodeBook, decodeTrades, encodeTrades, historyPath, idScopeOf } from '../../../src/utils/tapeHistory.ts';
 import { decodeDayProfile, dayProfilePath } from '../../../src/utils/dayProfile.ts';
 import { MarketRecorder, SETTLE_MS, historyIndex, pruneHistory } from '../history.ts';
 import { prepareHistoryRepo, publishHistory, startWhenReady } from '../historyGit.ts';
@@ -384,6 +385,172 @@ describe('numeracja kont i zleceń w obrębie doby UTC', () => {
     expect(existsSync(join(dir, historyPath('BTC', H10 + 55 * MIN, 'trades', true)))).toBe(false);
     expect(read(dir, 'BTC', H10, 'trades', false).idScope).toBe('hour');
   });
+
+  it('wznowienie: numer > 1e9 w pliku doby pominięty przy maksimum (numeracja nie skacze), jeden log z nazwą pliku bez jego danych', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hq-hist-'));
+    put(dir, H10, false, [row(H10 + 1000, 10, 20, 7, 9)], 'day');
+    // Część z numerami ponad 1e9 (uszkodzona albo podrzucona); poprawne numery tego pliku dalej się liczą (`m` = 30)
+    put(dir, H11, true, [row(H11 + 1000, 11, 5, 2e9, 30), row(H11 + 2000, 12, 3e9, 4, 4e9)], 'day');
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const r = new MarketRecorder('BTC', dir);
+      r.onState(true, H11 + 30 * MIN);
+      r.onTrades([deal(H11 + 30 * MIN + 1000, 13, 'B', 'acct-A', 'acct-M', 'tx-1')]);
+      r.onTrades([deal(H11 + 31 * MIN, 14, 'B', 'acct-B', 'acct-A', 'tx-2')]);
+      r.flush(H11 + 35 * MIN + SETTLE_MS);
+      expect(ids(dir, H11 + 30 * MIN, true)).toEqual([
+        [13, 21, 31, 32],
+        [14, 22, 33, 31],
+      ]);
+      expect(err).toHaveBeenCalledTimes(1);
+      const msg = err.mock.calls[0].map(String).join(' ');
+      expect(msg).toContain('BTC/2026-11-07/11-00.trades.json.gz');
+      expect(msg).not.toMatch(/2e\+?9|3e\+?9|4e\+?9|[234]0{9}|acct-|tx-/);
+    } finally {
+      err.mockRestore();
+    }
+  });
+
+  it('bomba gzip w plikach doby (rozpakowanie ponad 128 MB): plik nieczytelny i pominięty, rejestrator działa dalej', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hq-hist-'));
+    put(dir, H11, true, [row(H11 + 1000, 1, 5, 3, 30)], 'day');
+    // Poprawny plik z dużymi numerami, a za nim 200 MB spacji w kolejnych członach gzip (JSON.parse przyjmuje końcowe
+    // spacje, więc bez limitu plik byłby czytelny); na dysku ok. 200 kB, generowanie w milisekundach
+    const big = encodeTrades('BTC', H10, H10 + HOUR, [[H10, H10 + HOUR]], [row(H10 + 1000, 2, 500, 500, 500)], [], true, 'day');
+    const pad = gzipSync(Buffer.alloc(1 << 20, 0x20));
+    const rel = historyPath('BTC', H10, 'trades', false);
+    writeFileSync(join(dir, rel), Buffer.concat([gzipSync(JSON.stringify(big)), ...Array.from({ length: 200 }, () => pad)]));
+    const r = new MarketRecorder('BTC', dir);
+    r.onState(true, H11 + 30 * MIN);
+    r.onTrades([deal(H11 + 30 * MIN + 1000, 13, 'B', 'acct-A', 'acct-M', 'tx-1')]);
+    expect(r.flush(H11 + 35 * MIN + SETTLE_MS)).toBe(2);
+    // Numeracja tylko z części 11:00 — numery z bomby się nie liczą
+    expect(ids(dir, H11 + 30 * MIN, true)).toEqual([[13, 6, 31, 32]]);
+  });
+
+  it('cały łańcuch: stare pliki 00–09 bez pola, restart 10:27 i 11:40, północ — każdy klucz strony (nowa reguła i godzinowa) to jedno konto', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hq-hist-'));
+    const ACC = ['acct-1', 'acct-2', 'acct-3', 'acct-4', 'acct-5', 'acct-6', 'acct-7'];
+    interface Fill1 {
+      t: number;
+      tid: number;
+      side: 'B' | 'A';
+      taker: string;
+      maker: string;
+      tx: string;
+    }
+    /** Prawda o każdej transakcji (po tid): konto biorcy, makera i zlecenie */
+    const truth = new Map<number, Fill1>();
+    let tid = 0;
+    let n = 0;
+    // Zlecenie: biorca i 1–2 wypełnienia z innymi makerami w jednej milisekundzie (jeden blok); konta krążą po puli
+    const order = (t: number): Fill1[] => {
+      const i = n++;
+      const taker = ACC[(i * 3) % ACC.length];
+      return Array.from({ length: i % 3 === 0 ? 2 : 1 }, (_, j) => {
+        const x: Fill1 = { t, tid: ++tid, side: i % 2 ? 'A' : 'B', taker, maker: ACC[(i * 3 + 1 + j) % ACC.length], tx: `tx-${i}` };
+        truth.set(x.tid, x);
+        return x;
+      });
+    };
+    const toDeal = (x: Fill1) => deal(x.t, x.tid, x.side, x.taker, x.maker, x.tx);
+    // Stary rejestrator: numery od 0 w każdej godzinie, pliki bez `idScope`
+    const num = (m: Map<string, number>, key: string) => m.get(key) ?? (m.set(key, m.size), m.size - 1);
+    const oldRows = (xs: Fill1[], users: Map<string, number>, orders: Map<string, number>): HistTrade[] =>
+      xs.map((x) => ({ t: x.t, px: 80_000, sz: 0.1, side: x.side, tid: x.tid, o: num(orders, `${x.taker}|${x.tx}`), k: num(users, x.taker), m: num(users, x.maker) }));
+    for (let h = D; h < H10; h += HOUR) {
+      const xs = [10, 30, 50].flatMap((mm) => order(h + mm * MIN));
+      put(dir, h, false, oldRows(xs, new Map(), new Map()));
+    }
+    // Godzina 10 starego rejestratora: części 10:00–10:25 w jednej numeracji godziny (ostatnia do zatrzymania o 10:27)
+    const users10 = new Map<string, number>();
+    const orders10 = new Map<string, number>();
+    let lastOld: Fill1[] = [];
+    for (let p = H10; p <= H10 + 25 * MIN; p += 5 * MIN) {
+      lastOld = [...order(p + MIN), ...order(p + MIN + 30_000)];
+      put(dir, p, true, oldRows(lastOld, users10, orders10));
+    }
+
+    const keys = { day: new Map<string, Set<string>>(), hour: new Map<string, Set<string>>() };
+    const orderKeys = { day: new Map<string, Set<string>>(), hour: new Map<string, Set<string>>() };
+    /** Godziny UTC, w których klucz biorcy z nowej reguły wystąpił */
+    const spread = new Map<string, Set<number>>();
+    const add = <T>(m: Map<string, Set<T>>, key: string, who: T) => {
+      expect(key).not.toBe('');
+      m.set(key, (m.get(key) ?? new Set<T>()).add(who));
+    };
+    /** Strona w tej chwili: wszystkie pliki taśmy na dysku, klucze z nowej reguły (zakres pliku) i ze starej (godzina) */
+    const collect = () => {
+      const files: { name: string; idScope: IdScope; tids: number[] }[] = [];
+      for (const day of readdirSync(join(dir, 'BTC')).sort()) {
+        for (const name of readdirSync(join(dir, 'BTC', day)).sort()) {
+          if (!name.endsWith('.trades.json.gz')) continue;
+          const f = decodeTrades(JSON.parse(gunzipSync(readFileSync(join(dir, 'BTC', day, name))).toString('utf8')));
+          expect(f, name).not.toBeNull();
+          for (const [rule, scope] of [['day', f!.idScope], ['hour', 'hour']] as const) {
+            for (const x of toFills(f!.trades, f!.from, scope)) {
+              const tr = truth.get(x.tid)!;
+              add(keys[rule], x.taker, tr.taker);
+              add(keys[rule], x.maker, tr.maker);
+              add(orderKeys[rule], x.hash, `${tr.taker}|${tr.tx}`);
+              if (rule === 'day') add(spread, x.taker, Math.floor(x.time / HOUR) * HOUR);
+            }
+          }
+          files.push({ name: `${day}/${name}`, idScope: f!.idScope, tids: f!.trades.map((x) => x.tid) });
+        }
+      }
+      return files;
+    };
+    /** Takt rejestratora co minutę: zlecenie w 20. sekundzie, potem zapis */
+    const run = (r: MarketRecorder, from: number, to: number) => {
+      for (let t = from; t < to; t += MIN) {
+        r.onTrades(order(t + 20_000).map(toDeal));
+        r.flush(t + MIN);
+      }
+    };
+
+    // Restart 10:27 (nowy rejestrator): migawka powtarza ostatnią transakcję starego i dokłada nowe
+    const r1 = new MarketRecorder('BTC', dir);
+    r1.onState(true, H10 + 27 * MIN);
+    r1.onTrades([...lastOld.slice(-1), ...order(H10 + 26 * MIN + 40_000), ...order(H10 + 26 * MIN + 50_000)].map(toDeal));
+    run(r1, H10 + 27 * MIN, H11);
+    collect(); // części godziny 10 przed scaleniem (zakres godzinowy i dobowy obok siebie)
+    run(r1, H11, H11 + 40 * MIN);
+    // Restart 11:40: zapis bieżącej części przy zatrzymaniu, nowy proces z migawką
+    r1.flush(H11 + 40 * MIN, true);
+    const lastR1 = [...truth.values()].slice(-1);
+    const r2 = new MarketRecorder('BTC', dir);
+    r2.onState(true, H11 + 40 * MIN + 5000);
+    r2.onTrades([...lastR1, ...order(H11 + 40 * MIN + 2000)].map(toDeal));
+    run(r2, H11 + 41 * MIN, H11 + 70 * MIN);
+    r2.onState(false, H11 + 70 * MIN);
+    r2.flush(H11 + 80 * MIN);
+    collect();
+    // Przerwa w nagraniu do 23:50, potem przez północ do 00:15 doby następnej
+    r2.flush(D + 23 * HOUR + 50 * MIN);
+    r2.onState(true, D + 23 * HOUR + 50 * MIN);
+    r2.onTrades(order(D + 23 * HOUR + 49 * MIN + 50_000).map(toDeal));
+    run(r2, D + 23 * HOUR + 50 * MIN, D + DAY + 15 * MIN);
+    r2.flush(D + DAY + 20 * MIN + SETTLE_MS);
+    const files = collect();
+
+    // Każdy klucz konta i zlecenia — dokładnie jedno konto (zlecenie) w obu regułach: zero fałszywych połączeń
+    for (const m of [keys.day, keys.hour, orderKeys.day, orderKeys.hour]) {
+      const merged = [...m].filter(([, who]) => who.size !== 1).map(([key, who]) => `${key}: ${[...who].join(',')}`);
+      expect(merged).toEqual([]);
+    }
+    // Każda transakcja w dokładnie jednym pliku końcowym (powtórzenia z migawek raz)
+    const count = new Map<number, number>();
+    for (const f of files) for (const x of f.tids) count.set(x, (count.get(x) ?? 0) + 1);
+    expect([...truth.keys()].filter((x) => count.get(x) !== 1)).toEqual([]);
+    // Zakresy: godziny 00–10 godzinowe (10 scalona ze starymi częściami), 11, 12 i 23 dobowe, doba następna dobowa
+    const scope = (name: string) => files.find((f) => f.name === name)?.idScope;
+    expect([0, 9, 10].map((h) => scope(`2026-11-07/${String(h).padStart(2, '0')}.trades.json.gz`))).toEqual(['hour', 'hour', 'hour']);
+    expect([11, 12, 23].map((h) => scope(`2026-11-07/${h}.trades.json.gz`))).toEqual(['day', 'day', 'day']);
+    expect(files.filter((f) => f.name.startsWith('2026-11-08/')).map((f) => f.idScope)).toEqual(['day', 'day', 'day', 'day']);
+    // Test nie jest pusty: w nowej regule to samo konto ma jeden klucz przez kilka godzin doby (np. 11 i 12)
+    expect([...spread].some(([key, hours]) => key.startsWith(`~d${D}:`) && hours.size > 1)).toBe(true);
+  });
 });
 
 describe('format taśmy: zakres numerów `idScope`', () => {
@@ -403,6 +570,20 @@ describe('format taśmy: zakres numerów `idScope`', () => {
       expect([f.idScope, f.trades.length]).toEqual(['hour', 1]);
     }
     expect([idScopeOf(day), idScopeOf(legacy), idScopeOf(decodeTrades(day)!), idScopeOf(decodeTrades(legacy)!)]).toEqual(['day', 'hour', 'day', 'hour']);
+  });
+});
+
+describe('format taśmy: numery `o`, `k`, `m`', () => {
+  it('tylko bezpieczne liczby całkowite od −1: ogromna, ułamek albo poniżej −1 — cały plik odrzucony', () => {
+    const T = Date.UTC(2026, 10, 7, 10);
+    const tr: HistTrade = { t: T + 1000, px: 80_000, sz: 0.1, side: 'B', tid: 1, o: 0, k: 0, m: 1 };
+    const file = encodeTrades('BTC', T, T + 5 * MIN, [[T, T + 5 * MIN]], [tr], [], true, 'day');
+    expect(decodeTrades(file)!.trades.map((x) => [x.o, x.k, x.m])).toEqual([[0, 0, 1]]);
+    expect(decodeTrades({ ...file, o: [-1], k: [-1], m: [-1] })!.trades.map((x) => [x.o, x.k, x.m])).toEqual([[-1, -1, -1]]); // nieznany
+    expect(decodeTrades({ ...file, k: [1e300] })).toBeNull();
+    expect(decodeTrades({ ...file, k: [1.5] })).toBeNull();
+    expect(decodeTrades({ ...file, o: [-2] })).toBeNull();
+    expect(decodeTrades({ ...file, m: [2 ** 53] })).toBeNull();
   });
 });
 
@@ -568,6 +749,22 @@ describe('publishHistory — gałąź history repo danych', () => {
     expect(git(remote, 'rev-list', '--count', 'history')).toBe('2');
     // Ponowne przygotowanie istniejącego klonu nie sprawdza zgodności z origin
     expect(await prepareHistoryRepo(repo, T0 + 4 * MIN)).toBe(true);
+  });
+
+  it('przygotowanie nieudane (repo zdalne nie istnieje): false, przyczyna w jednym logu, przycięta do 200 znaków', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const repo = { remote: join(mkdtempSync(join(tmpdir(), 'hq-remote-')), 'brak'), dir: join(mkdtempSync(join(tmpdir(), 'hq-work-')), 'history'), branch: 'history' };
+      expect(await prepareHistoryRepo(repo, T0)).toBe(false);
+      expect(err).toHaveBeenCalledTimes(1);
+      const msg = String(err.mock.calls[0][0]);
+      const prefix = '[skaner] historia: przygotowanie repo nieudane: ';
+      expect(msg.startsWith(prefix)).toBe(true);
+      expect(msg.length - prefix.length).toBeGreaterThan(0);
+      expect(msg.length - prefix.length).toBeLessThanOrEqual(200);
+    } finally {
+      err.mockRestore();
+    }
   });
 
   it('katalog z plikami rejestratora bez repo (np. nowy serwer): gałąź z origin jako HEAD, jej pliki odtworzone, lokalne zostają', async () => {

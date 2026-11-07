@@ -42,6 +42,10 @@ const hourOf = (t: number) => Math.floor(t / HIST_HOUR_MS) * HIST_HOUR_MS;
 const dayOf = (t: number) => Math.floor(t / PROFILE_DAY_MS) * PROFILE_DAY_MS;
 /** Pliki taśmy w katalogu doby: godzinowe (`13.trades.json.gz`) i części (`13-05.trades.json.gz`) */
 const TRADES_FILE = /^\d{2}(?:-\d{2})?\.trades\.json\.gz$/;
+/** Numer ponad tym progiem w pliku doby to uszkodzenie albo podrzucony plik: pomijany przy wznowieniu numeracji */
+const MAX_ID = 1e9;
+/** Limit rozpakowania pliku (godzina taśmy to kilka MB): bomba gzip w gałęzi to plik nieczytelny, nie brak pamięci */
+const MAX_UNZIPPED = 128 << 20;
 
 function writeGz(path: string, value: unknown): void {
   mkdirSync(dirname(path), { recursive: true });
@@ -50,9 +54,10 @@ function writeGz(path: string, value: unknown): void {
   renameSync(tmp, path);
 }
 
+/** JSON z pliku .json.gz; brak, zły gzip, przekroczony limit rozpakowania albo zły JSON → null (jak zły kształt). */
 function readGz(path: string): unknown {
   try {
-    return JSON.parse(gunzipSync(readFileSync(path)).toString('utf8'));
+    return JSON.parse(gunzipSync(readFileSync(path), { maxOutputLength: MAX_UNZIPPED }).toString('utf8'));
   } catch {
     return null;
   }
@@ -252,20 +257,26 @@ export class MarketRecorder {
   /**
    * Numeracja doby UTC; po restarcie ciągnie się od największych numerów we wszystkich zapisanych plikach tej doby
    * (godzinowych i częściach, także sprzed numeracji dobowej), więc nowy numer nie powtarza żadnego z wcześniejszych
-   * godzin doby. Nowa doba — od 0 (pliki doby poprzedniej się nie liczą).
+   * godzin doby. Nowa doba — od 0 (pliki doby poprzedniej się nie liczą). Numer ponad MAX_ID nie podnosi numeracji
+   * (jeden log na plik, tylko jego nazwa).
    */
   private idsFor(day: number): Ids {
     let ids = this.ids.get(day);
     if (ids) return ids;
     ids = { users: new Map(), orders: new Map(), nextO: 0, nextU: 0 };
-    const dayDir = join(this.dir, dirname(historyPath(this.coin, day, 'trades', false)));
+    const rel = dirname(historyPath(this.coin, day, 'trades', false));
+    const dayDir = join(this.dir, rel);
     for (const name of existsSync(dayDir) ? readdirSync(dayDir) : []) {
       if (!TRADES_FILE.test(name)) continue;
       const f = decodeTrades(readGz(join(dayDir, name)));
+      let skipped = false;
       for (const x of f?.trades ?? []) {
-        ids.nextO = Math.max(ids.nextO, x.o + 1);
-        ids.nextU = Math.max(ids.nextU, x.k + 1, x.m + 1);
+        if (x.o > MAX_ID || x.k > MAX_ID || x.m > MAX_ID) skipped = true;
+        if (x.o <= MAX_ID) ids.nextO = Math.max(ids.nextO, x.o + 1);
+        if (x.k <= MAX_ID) ids.nextU = Math.max(ids.nextU, x.k + 1);
+        if (x.m <= MAX_ID) ids.nextU = Math.max(ids.nextU, x.m + 1);
       }
+      if (skipped) console.error(`[skaner] historia: numery ponad 1e9 w ${rel}/${name} pominięte przy wznowieniu numeracji`);
     }
     this.ids.set(day, ids);
     return ids;
