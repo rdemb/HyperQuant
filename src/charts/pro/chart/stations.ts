@@ -1,6 +1,6 @@
 import { ChartLayout, ChartSettings, DEFAULT_SETTINGS, NARROW_PATCH, parseLayout } from './settings';
 import { LAYERS_OFF, inds } from './templates';
-import type { IndicatorInstance } from '../indicators/registry';
+import { type IndicatorInstance, indicatorDef } from '../indicators/registry';
 import { tr } from '../../../i18n';
 
 /**
@@ -12,11 +12,15 @@ import { tr } from '../../../i18n';
 export type StationId = 'day-map' | 'fuel' | 'cockpit' | 'auction-open' | 'big-hands' | 'review';
 export type PhaseId = 'before' | 'session' | 'after';
 
-/** Zestaw paneli wskaźników przełączany jednym kliknięciem (np. Aukcja i Absorpcja w układzie Aukcja i otwarcie). */
+/**
+ * Zestaw paneli wskaźników przełączany jednym kliknięciem (np. Aukcja i Absorpcja w układzie Aukcja i otwarcie).
+ * `patch` — zmiany ustawień nakładane na wzorzec układu, gdy zestaw jest włączony (np. Absorpcja chowa CVD).
+ */
 export interface PanelSet {
   id: string;
   name: string;
   indicators: IndicatorInstance[];
+  patch?: Partial<ChartSettings>;
 }
 
 export interface Station {
@@ -68,9 +72,11 @@ const DAY_MAP_30M: Partial<ChartSettings> = {
   indicators: inds(['cone']),
 };
 
+// Pod wykresem najwyżej 3 panele: Aukcja — CVD, Zmiana OI i delta, Szerokość agresji; Absorpcja — Absorpcja, Delta
+// według klasy makera i OFI (bez CVD)
 const AUCTION_SETS: readonly PanelSet[] = [
   { id: 'auction', name: tr('Aukcja', 'Auction'), indicators: inds(['oiflow'], ['breadth']) },
-  { id: 'absorption', name: tr('Absorpcja', 'Absorption'), indicators: inds(['absorption'], ['makers'], ['ofi']) },
+  { id: 'absorption', name: tr('Absorpcja', 'Absorption'), indicators: inds(['absorption'], ['makers'], ['ofi']), patch: { showCvd: false } },
 ];
 
 const BIG_HANDS_INDS = inds(['twap'], ['ordersize'], ['hawkes']);
@@ -150,7 +156,9 @@ export const STATIONS: readonly Station[] = [
         showSessionVwap: true,
         showLevels: true,
         showZones: true,
-        showDelta: true,
+        showVolume: false,
+        showDelta: false,
+        showCvd: true,
         cvdReset: 'session',
         indicators: AUCTION_SETS[0].indicators,
       },
@@ -164,7 +172,21 @@ export const STATIONS: readonly Station[] = [
     question: tr('Czy ruch napędza TWAP, samowzbudna kaskada, czy cały rynek?', 'Is the move driven by a TWAP, a self-exciting cascade, or the whole market?'),
     phase: 'session',
     layout: 1,
-    panels: [{ ...LAYERS_OFF, interval: '5m', view: 'candles', showWhales: true, showBubbles: true, showVwap: true, showDelta: false, indicators: BIG_HANDS_INDS }],
+    // Pod wykresem tylko trzy wskaźniki: Udział TWAP, Wielkość zleceń agresora, Endogeniczność (Hawkes)
+    panels: [
+      {
+        ...LAYERS_OFF,
+        interval: '5m',
+        view: 'candles',
+        showWhales: true,
+        showBubbles: true,
+        showVwap: true,
+        showVolume: false,
+        showDelta: false,
+        showCvd: false,
+        indicators: BIG_HANDS_INDS,
+      },
+    ],
     // Na telefonie jeden panel wskaźnika: udział TWAP
     phone: { ...NARROW_PATCH, indicators: BIG_HANDS_INDS.filter((x) => x.id === 'twap') },
   },
@@ -204,6 +226,13 @@ const PRICE_LAYERS = [
 /** Liczba warstw włączonych na wykresie ceny. */
 export const priceLayerCount = (s: ChartSettings): number => PRICE_LAYERS.filter((k) => s[k] === true).length;
 
+/** Panele pod wykresem ceny z ustawień (jak PANE_KEYS w controller.ts): wolumen, delta, CVD, panele giełd, Tablica liczb. */
+const UNDER_PANES = ['showVolume', 'showDelta', 'showCvd', 'showVenueCvd', 'showVenueOi', 'showStats'] as const;
+
+/** Liczba paneli pod wykresem ceny: panele z ustawień i widoczne wskaźniki we własnym panelu (układ ma ich najwyżej 3). */
+export const underPaneCount = (s: ChartSettings): number =>
+  UNDER_PANES.filter((k) => s[k]).length + s.indicators.filter((x) => x.visible && indicatorDef(x.id).pane === 'own').length;
+
 /** Interwał panelu spoza wzorca układu (układ większy niż we wzorcu): kolejne panele pokazują wyższe interwały. */
 export const PANEL_INTERVALS = ['5m', '15m', '1h', '4h'];
 /** Najwięcej paneli układu (2 × 2). */
@@ -237,6 +266,16 @@ export function stationPanel(st: Pick<Station, 'panels' | 'phone'>, panel: numbe
   const p = st.panels[panel];
   if (!p) return { ...DEFAULT_SETTINGS, ...st.panels[0], interval: PANEL_INTERVALS[panel] ?? '1h', showStats: false, showTape: false };
   return { ...DEFAULT_SETTINGS, ...p, ...(narrow && panel === 0 ? st.phone : {}) };
+}
+
+/**
+ * Wzorzec panelu układu z włączonym zestawem paneli `setId`: wskaźniki zestawu i jego zmiany na wzorcu pierwszego
+ * panelu. Nieznany zestaw albo inny panel — sam wzorzec.
+ */
+export function panelSetPanel(st: Station, setId: string, panel: number, narrow: boolean): ChartSettings {
+  const base = stationPanel(st, panel, narrow);
+  const set = st.panelSets?.find((x) => x.id === setId);
+  return set && panel === 0 ? { ...base, ...set.patch, indicators: set.indicators } : base;
 }
 
 // Pamięć przeglądarki bywa niedostępna (prywatne okno, zablokowane dane strony) — układy działają wtedy do końca sesji

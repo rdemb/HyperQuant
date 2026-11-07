@@ -79,7 +79,7 @@ export const EXERCISES: readonly ExerciseSpec[] = [
     ],
     lab: 'pdh-sweep',
     atlas: ['vwap', 'profile', 'levels', 'sessions'],
-    station: 'day-map',
+    station: 'day-map', // PDH, profil i VWAP z pasmami
     level: 1,
   },
   {
@@ -90,7 +90,7 @@ export const EXERCISES: readonly ExerciseSpec[] = [
     checkpoints: [{ at: '2026-10-21T14:45Z', questions: [{ kind: 'choice', options: 4, correct: 1, partial: [2] }] }],
     lab: 'vwap-revert',
     atlas: ['vwap', 'levels', 'sessions'],
-    station: 'cockpit',
+    station: 'day-map', // VWAP z pasmami σ i poziomy dnia
     level: 1,
   },
   {
@@ -111,7 +111,7 @@ export const EXERCISES: readonly ExerciseSpec[] = [
     ],
     lab: 'pdl-sweep',
     atlas: ['vwap', 'profile', 'levels'],
-    station: 'day-map',
+    station: 'day-map', // VWAP z pasmami, profil i poziomy dnia
     level: 2,
   },
   {
@@ -125,7 +125,7 @@ export const EXERCISES: readonly ExerciseSpec[] = [
     ],
     lab: 'ib-break',
     atlas: ['vwap', 'profile', 'ib', 'sessions'],
-    station: 'day-map',
+    station: 'auction-open', // równowaga i wybicie z IB
     level: 2,
   },
   {
@@ -146,7 +146,7 @@ export const EXERCISES: readonly ExerciseSpec[] = [
     ],
     endMarks: [{ n: '4', t: T('2026-10-24T21:10Z'), px: 80259 }],
     atlas: ['liq', 'oi', 'cvd', 'vwap', 'levels'],
-    station: 'fuel',
+    station: 'fuel', // klastry likwidacji
     replay: {
       from: '2026-10-24T16:00Z',
       to: '2026-10-24T22:00Z',
@@ -176,7 +176,7 @@ export const EXERCISES: readonly ExerciseSpec[] = [
     endZones: [{ lo: 80360, hi: 80500, tone: 'buy' }],
     endMarks: [{ n: '2', t: T('2026-10-24T21:00Z'), px: 80280 }],
     atlas: ['footprint', 'imbalance', 'delta', 'oi'],
-    station: 'cockpit',
+    station: 'auction-open', // footprint ze strefami nierównowagi
     replay: {
       from: '2026-10-24T16:00Z',
       to: '2026-10-24T22:00Z',
