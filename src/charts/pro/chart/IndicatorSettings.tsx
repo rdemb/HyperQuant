@@ -1,7 +1,20 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ChevronDown, X } from 'lucide-react';
 import { ColorPicker } from '../draw/DrawToolbar';
-import { INDICATOR_WIDTHS, IndicatorInstance, ParamDef, defaultWidth, indicatorDef, indicatorLabel, memoryCandles, paramOk, parseParams, tfAllowed } from '../indicators/registry';
+import {
+  INDICATOR_WIDTHS,
+  IndicatorInstance,
+  ParamDef,
+  defaultWidth,
+  indicatorDef,
+  indicatorLabel,
+  memoryCandles,
+  paramOk,
+  parseParams,
+  swatchColor,
+  tfAllowed,
+  usesInstanceColor,
+} from '../indicators/registry';
 import { INTERVALS, MONTH, intervalById } from '../core/time';
 import { tr } from '../../../i18n';
 
@@ -87,6 +100,8 @@ export const IndicatorSettings: React.FC<{ x: IndicatorInstance; loaded: number;
   // Same słupki w kolorach znaku i wartości tylko w legendzie (zmiana OI, OFI): kolor i grubość linii nic nie zmieniają, zostaje
   // krycie; stożek, rynki HIP-4 i zakresy P/b nie mają plotów, ale mają kolor i grubość linii
   const bars = !def.forecast && !def.outcomes && !def.pbRanges && def.plots.every((p) => p.hist || p.hidden);
+  // Kolor instancji tylko tam, gdzie coś zmienia: linie strony i kohort mają stałe kolory palety
+  const tinted = usesInstanceColor(def);
   const memory = memoryCandles(def, x.params);
   const span = warmup + 1;
   // Interwał wskaźnika: wyższe niż wykres (i zapisany, gdy wykres przeszedł na wyższy)
@@ -137,7 +152,7 @@ export const IndicatorSettings: React.FC<{ x: IndicatorInstance; loaded: number;
         onPointerCancel={() => (grab.current = null)}
         className="flex items-center gap-2 pl-3 pr-1 pt-1 cursor-grab active:cursor-grabbing touch-none select-none"
       >
-        <span className="inline-block w-3.5 h-[3px] rounded-full shrink-0" style={{ background: x.color }} aria-hidden="true" />
+        <span className="inline-block w-3.5 h-[3px] rounded-full shrink-0" style={{ background: swatchColor(x) }} aria-hidden="true" />
         <span className="flex-1 truncate text-sm font-medium text-ink-1">{indicatorLabel(x)}</span>
         <button type="button" aria-label={tr('Zamknij', 'Close')} title={tr('Zamknij', 'Close')} onClick={onClose} className="w-8 h-8 inline-flex items-center justify-center rounded-md text-ink-3 hover:text-ink-1 hover:bg-surface-3">
           <X className="w-4 h-4" />
@@ -200,8 +215,8 @@ export const IndicatorSettings: React.FC<{ x: IndicatorInstance; loaded: number;
         )}
         {tab === 'style' && (
           <div className="flex flex-col gap-1">
-            {bars ? (
-              <Row label={tr('Słupki', 'Bars')}>
+            {(bars || !tinted) && (
+              <Row label={bars ? tr('Słupki', 'Bars') : tr('Krycie', 'Opacity')}>
                 <input
                   type="range"
                   min={0}
@@ -213,19 +228,25 @@ export const IndicatorSettings: React.FC<{ x: IndicatorInstance; loaded: number;
                 />
                 <span className="w-9 text-right font-mono tabular-nums text-ink-2">{Math.round(x.alpha * 100)}%</span>
               </Row>
-            ) : (
+            )}
+            {!bars && (
               <Row label={tr('Linia', 'Line')}>
-                <button
-                  type="button"
-                  title={tr('Kolor', 'Colour')}
-                  aria-label={tr('Kolor', 'Colour')}
-                  aria-expanded={pick}
-                  onClick={() => setPick((v) => !v)}
-                  className={`h-8 px-1.5 rounded-md border inline-flex items-center gap-1.5 ${pick ? 'border-accent' : 'border-line hover:border-line-strong'}`}
-                >
-                  <span className="w-5 h-5 rounded" style={{ background: x.color, opacity: Math.max(x.alpha, 0.15) }} />
-                  <ChevronDown className="w-3.5 h-3.5 text-ink-3" />
-                </button>
+                {tinted ? (
+                  <button
+                    type="button"
+                    title={tr('Kolor', 'Colour')}
+                    aria-label={tr('Kolor', 'Colour')}
+                    aria-expanded={pick}
+                    onClick={() => setPick((v) => !v)}
+                    className={`h-8 px-1.5 rounded-md border inline-flex items-center gap-1.5 ${pick ? 'border-accent' : 'border-line hover:border-line-strong'}`}
+                  >
+                    <span className="w-5 h-5 rounded" style={{ background: x.color, opacity: Math.max(x.alpha, 0.15) }} />
+                    <ChevronDown className="w-3.5 h-3.5 text-ink-3" />
+                  </button>
+                ) : (
+                  // Linie w stałych kolorach palety (strony, kohorty): kolor niesie znaczenie, więc nie do zmiany
+                  <span className="text-ink-3">{tr('kolory stałe: strony i kategorie', 'fixed colours: sides and categories')}</span>
+                )}
                 <select aria-label={tr('Grubość linii', 'Line width')} value={x.width} onChange={(e) => set({ width: Number(e.target.value) })} className={`${FIELD} w-[4.5rem]`}>
                   {INDICATOR_WIDTHS.map((w) => (
                     <option key={w} value={w}>

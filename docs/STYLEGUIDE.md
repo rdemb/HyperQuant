@@ -63,6 +63,13 @@ The canvas has one palette, **„Głębia”** (`of-*` tokens, the same values i
 | Exchanges: Hyperliquid / Binance / Bybit | — | `#059583` / `#B18E15` / `#A878DB` |
 | Blog map levels (the author's map, BTC; dashed line, label box with a bar in this colour, text in ink) | `of-blog` | `#059583` — the Hyperliquid turquoise of the category palette; nothing else on the price chart uses it, and it is not a side colour, POC, VWAP or IB |
 
+#### Indicators (registry `src/charts/pro/indicators/registry.ts`)
+- **Instance colours** (`INDICATOR_COLORS`, fixed order, a fifth instance starts again): `#E9548D` rose, `#C3E143` lime, `#F190DD` orchid, `#5CE4D5` aquamarine. Each is at least ΔE 9 (OKLab ×100) from the side colours, VWAP, POC, levels, IB, the blog map and the fixed indicator lines below, with ≥ 4.5:1 contrast on `of-bg`. Saved instances keep their old colour (user data); the fixed lines are chosen so they never coincide with the old Neon/Desk instance colours either.
+- **A series that is a side** uses the side colours: lines in `of-buy-ink` / `of-sell-ink` (buyers and sellers in aggression breadth, +DI and −DI, the Supertrend up and down line, Senkou A and B), bars and the Ichimoku cloud by sign in `of-buy` / `of-sell` (positive = buy/up), at 90% opacity so a sell bar keeps ≥ 3:1 on the background. The legend prints bar values in the ink shades.
+- **Other fixed lines** follow the category order: second line gold `#B18E15` (MACD signal, %D, p90, Kijun, the bid cost, switching takers), third violet `#A878DB` (p99, Chikou), a baseline grey `#7A889C` dashed (base p90). Market makers and the rest (delta by maker class) use the cohort tokens `cohort-mm` / `cohort-rest`.
+- **One structure on the price chart** (Bollinger, Keltner, Donchian and regression channels; pivot levels) keeps the instance colour for all its lines: the middle is dashed, the bands are told apart by position and pivot levels by their axis titles (P, R1, S1…). This is the only case where two lines of one indicator share a colour.
+- Values that are only in the legend (race, R², σ, the new-taker share, TWAP count) are in `ink-2`, never in a series colour. The colour picker in the indicator style tab only appears when the instance colour is drawn.
+
 Bid × Ask footprint cells are tiles from graphite `#1E2A3A` at low volume to the saturated side colour; dark numbers on a light tile, light numbers on a dark one. The Delta and Volume styles are bars from the left edge of the candle (delta and volume in the colour of the dominant side) with light bid and ask numbers. Second channel: position (sells on the left, buys on the right), and the imbalance number is bold and outlined.
 
 ## 5. Motion (`motion/react`, tokens in `src/ui/motion.ts`)
