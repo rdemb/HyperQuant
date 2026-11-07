@@ -346,8 +346,8 @@ export const AggrOrderFlowTape: React.FC<AggrOrderFlowTapeProps> = ({
             <div className="flex items-center justify-between pl-2">
               <span
                 title={tr(
-                  'Wolumen agresora z ostatnich 60 s przypisany do poziomu (kupno/sprzedaż) — nie OFI z literatury; OFI Cont–Kukanov–Stoikov: widok Mikrostruktura',
-                  'Aggressor volume over the last 60 s assigned to the level (buy/sell), not the textbook OFI; Cont–Kukanov–Stoikov OFI: Microstructure view'
+                  'Wolumen agresora z ostatnich 60 s przypisany do poziomu (kupno/sprzedaż) — nie OFI z literatury; OFI Cont–Kukanov–Stoikov: mechanika arkusza w Badaniach',
+                  'Aggressor volume over the last 60 s assigned to the level (buy/sell), not the textbook OFI; Cont–Kukanov–Stoikov OFI: book mechanics in Research'
                 )}
               >
                 {tr('Agresor kup/sprz', 'Aggressor buy/sell')}
@@ -425,8 +425,8 @@ export const AggrOrderFlowTape: React.FC<AggrOrderFlowTapeProps> = ({
                     <p
                       className="text-[11px] leading-snug mt-0.5 text-ink-1"
                       title={tr(
-                        'Reszta odpornej regresji ruchu ceny na wolumenie agresora (interwały 10 s) — widok Mikrostruktura',
-                        'Residual of a robust regression of price move on aggressor volume (10 s intervals), see the Microstructure view'
+                        'Reszta odpornej regresji ruchu ceny na wolumenie agresora (interwały 10 s) — mechanika arkusza w Badaniach',
+                        'Residual of a robust regression of price move on aggressor volume (10 s intervals), see book mechanics in Research'
                       )}
                     >
                       {tr('Absorpcja (regresja)', 'Absorption (regression)')} {absTimeFmt.format(lastAbsorption.t)}:{' '}

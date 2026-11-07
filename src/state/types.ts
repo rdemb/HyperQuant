@@ -1,13 +1,2 @@
-/** Widoki aplikacji (hash w URL: #desk, #plan, …) */
-export type ViewId = 'desk' | 'charts' | 'flow' | 'plan' | 'market' | 'lab' | 'micro' | 'lessons' | 'sources';
-
-/** Szkic planu przekazywany do Analizatora planu (z dowolnego panelu lub ręcznie). */
-export interface PlanDraft {
-  direction: 'LONG' | 'SHORT';
-  entry?: number;
-  stop?: number;
-  target?: number;
-  /** Skąd przyszedł szkic (np. „OFI Tape”, „Liquidity Lab”) i krótka notatka */
-  source?: string;
-  note?: string;
-}
+/** Widoki aplikacji (hash w URL: #before, #charts, …); stare adresy przekierowuje `resolveHash` z route.ts. */
+export type ViewId = 'before' | 'charts' | 'after' | 'research' | 'lessons' | 'sources';

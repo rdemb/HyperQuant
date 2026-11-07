@@ -78,6 +78,18 @@ function initialTabs(phase: PhaseId): TabsState {
   return next;
 }
 
+/**
+ * Rynek dla wykresów innej fazy: karta innej fazy (Alt+1…6, nowa karta) przenosi do ekranu tej fazy z własnymi
+ * Wykresami, a te biorą rynek stąd (jak przy przełączeniu karty na jednym ekranie). Ważny chwilę, jak chwila widoku.
+ */
+let handoff: { coin: Market | null; until: number } | null = null;
+const HANDOFF_MS = 5000;
+const takeHandoff = (): Market | null => {
+  const h = handoff;
+  handoff = null;
+  return h && Date.now() < h.until ? h.coin : null;
+};
+
 /** Pozycja listy kart na telefonie, która otwiera arkusz zarządzania kartami. */
 const MANAGE = '__tabs';
 /** Jak długo widać „Cofnij” po zamknięciu karty. */
@@ -87,8 +99,8 @@ export interface ChartsViewProps {
   /** Faza dnia na ekranie: na pasku jej karty (`phaseTabs`), w sesji obok wykresu prawa kolumna DOM i taśmy. */
   phase: PhaseId;
   /**
-   * Przejście do innej fazy (Alt+1…9 do karty innej fazy, nowa karta innej fazy): widok faz w aplikacji. Bez niego
-   * (zanim pasek główny ma fazy) Wykresy same pokazują karty tej fazy.
+   * Przejście do innej fazy (Alt+1…9 do karty innej fazy, nowa karta innej fazy): ekran tej fazy w aplikacji. Bez niego
+   * Wykresy same pokazują karty tej fazy.
    */
   onPhase?: (phase: PhaseId) => void;
   /** Rynek pierwszego wykresu aktywnej karty (pasek Pulse nad wykresem na telefonie). */
@@ -116,7 +128,6 @@ const ChartsView: React.FC<ChartsViewProps> = ({ phase, onPhase, onMarket }) => 
   const [ownPhase, setOwnPhase] = useState<PhaseId>(phase);
   useEffect(() => setOwnPhase(phase), [phase]);
   const shown = onPhase ? phase : ownPhase;
-  const goPhase = (p: PhaseId) => (onPhase ? onPhase(p) : setOwnPhase(p));
   const [tabs, setTabsState] = useState<TabsState>(() => initialTabs(phase));
   const tab = activeTab(tabs);
   const station = tabStation(tab);
@@ -124,7 +135,7 @@ const ChartsView: React.FC<ChartsViewProps> = ({ phase, onPhase, onMarket }) => 
   const [layout, setLayoutState] = useState<ChartLayout>(() => tabLayout(tab));
   // Zmiana karty i przywrócenie wzorca tworzą wykresy od nowa; rynek bieżącego wykresu przechodzi do nowych
   const [gen, setGen] = useState(0);
-  const [coin, setCoin] = useState<Market | null>(null);
+  const [coin, setCoin] = useState<Market | null>(takeHandoff);
   // Zapis ustawień wykresu zmienia podpis karty (interwały)
   const [, setSaved] = useState(0);
   const onSaved = useCallback(() => setSaved((v) => v + 1), []);
@@ -197,15 +208,23 @@ const ChartsView: React.FC<ChartsViewProps> = ({ phase, onPhase, onMarket }) => 
   const open = (next: TabsState, restore = false, keepSaved = false) => {
     const t = activeTab(next);
     // Ustawienia pierwszego panelu są zapisywane przy każdej zmianie, więc zapis ma bieżący rynek
-    setCoin(openCoin(tab.id, keepSaved));
+    const carry = openCoin(tab.id, keepSaved);
     carryViewTime();
     if (restore) clearStation(t.id);
+    const p = tabPhase(t);
+    savePhaseActive({ ...loadPhaseActive(next), [p]: t.id });
+    if (p !== shown && onPhase) {
+      // Ekran innej fazy ma własne Wykresy: tu tylko zapis kart i rynek dla nich (znikający ekran nie buduje wykresów)
+      saveTabs(next);
+      handoff = { coin: carry, until: Date.now() + HANDOFF_MS };
+      onPhase(p);
+      return;
+    }
+    setCoin(carry);
     save(next);
     setLayoutState(tabLayout(t));
     setGen((g) => g + 1);
-    const p = tabPhase(t);
-    savePhaseActive({ ...loadPhaseActive(next), [p]: t.id });
-    if (p !== shown) goPhase(p);
+    if (p !== shown) setOwnPhase(p);
   };
   const select = (id: string) => id !== tab.id && open({ ...tabs, active: id });
   // Inna faza na ekranie (z `phase`): jej ostatnio wybrana karta

@@ -234,7 +234,7 @@ const LiveRecord: React.FC<{ live: Live }> = ({ live }) => {
           )}
         </>
       )}{' '}
-      <a href="#plan" className="underline decoration-line-strong hover:text-ink-1">
+      <a href="#after" className="underline decoration-line-strong hover:text-ink-1">
         {tr('Dziennik', 'Ledger')}
       </a>
     </p>

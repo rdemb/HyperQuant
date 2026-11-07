@@ -197,14 +197,16 @@ export function openPreset(st: TabsState, preset: StationId): TabsState {
 }
 
 /**
- * Otwiera w Wykresach kartę układu (przycisk w lekcjach i atlasie, przed przejściem do Wykresów): karta staje się
- * aktywna i zostaje aktywną kartą fazy swojego układu.
+ * Otwiera kartę układu (przycisk w lekcjach i atlasie, przed przejściem do ekranu jego fazy): karta staje się aktywna
+ * i zostaje aktywną kartą fazy swojego układu. Zwraca tę fazę (ekran, na który trzeba przejść).
  */
-export function openStationTab(preset: StationId): void {
+export function openStationTab(preset: StationId): PhaseId {
   const st = openPreset(loadTabs(), preset);
   saveTabs(st);
   const t = activeTab(st);
-  savePhaseActive({ ...loadPhaseActive(st), [tabPhase(t)]: t.id });
+  const phase = tabPhase(t);
+  savePhaseActive({ ...loadPhaseActive(st), [phase]: t.id });
+  return phase;
 }
 
 /** Faza karty: faza jej wzorca (karta układu i jej kopia z „+”), karta własna — sesja. */

@@ -159,8 +159,8 @@ export const DeskRail: React.FC = () => {
                   tone: 'live',
                   label: 'LIVE',
                   title: tr(
-                    'VWAP sesji UTC ze świec 1m (cena typowa ważona wolumenem) i Initial Balance 00:00–01:00 UTC; szczegóły w widoku Plan',
-                    'UTC session VWAP from 1m candles (volume-weighted typical price) and Initial Balance 00:00–01:00 UTC; details in the Plan view'
+                    'VWAP sesji UTC ze świec 1m (cena typowa ważona wolumenem) i Initial Balance 00:00–01:00 UTC; szczegóły w panelu „Kontekst aukcji” niżej',
+                    'UTC session VWAP from 1m candles (volume-weighted typical price) and Initial Balance 00:00–01:00 UTC; details in the “Auction context” panel below'
                   ),
                 }
           }

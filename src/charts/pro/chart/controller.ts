@@ -189,11 +189,11 @@ const OI_LINES: readonly ('hl' | OiVenue)[] = ['hl', 'binance', 'bybit'];
 const HL_OI_MAX_AGE = 3 * 60_000;
 /** Węższy obszar wykresu (px) dostaje zwięzły opis paneli giełd. */
 const COMPACT_LEGEND_PX = 480;
-/** Stożek: prognoza z dziennika starsza niż to nie jest rysowana (jak przeterminowany dziennik w Planie). */
+/** Stożek: prognoza z dziennika starsza niż to nie jest rysowana (jak przeterminowany dziennik prognoz Po sesji). */
 const CONE_MAX_AGE_MS = 3 * 3_600_000;
-/** Dziennik: szanse dotknięcia poziomów w 2 h od początku horyzontu (jak w Planie). */
+/** Dziennik: szanse dotknięcia poziomów w 2 h od początku horyzontu (jak w dzienniku prognoz Po sesji). */
 const CONE_TOUCH_MIN = 120;
-/** Pokrycie przedziałów w legendzie stożka od tylu rozstrzygnięć (jak w Planie). */
+/** Pokrycie przedziałów w legendzie stożka od tylu rozstrzygnięć (jak w dzienniku prognoz Po sesji). */
 const CONE_MIN_N = 20;
 const horizonLabel = (h: number) => (h % 60 === 0 ? `${h / 60} h` : `${h} min`);
 /** Notowania rynków HIP-4 starsze niż tyle nie są rysowane (pobierane co minutę). */

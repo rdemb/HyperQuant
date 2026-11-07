@@ -1,10 +1,10 @@
 {
   "name": "HyperQuant — BTC Day Trading Desk",
   "short_name": "HyperQuant",
-  "description": "Darmowy desk do day tradingu BTC-PERP na Hyperliquid. Ocenia Twój plan transakcji na danych rynkowych — nie generuje sygnałów.",
+  "description": "Darmowy desk do day tradingu BTC-PERP na Hyperliquid: przygotowanie, sesja i rozliczenie dnia na danych rynkowych — nie generuje sygnałów.",
   "lang": "pl",
   "dir": "ltr",
-  "start_url": "./#desk",
+  "start_url": "./#charts",
   "scope": "./",
   "display": "standalone",
   "orientation": "any",
@@ -18,24 +18,24 @@
   ],
   "shortcuts": [
     {
-      "name": "Desk",
-      "short_name": "Desk",
-      "description": "Powitanie, mapa strony, arkusz L2, taśma i kontekst rynku",
-      "url": "./#desk",
+      "name": "Przed sesją",
+      "short_name": "Przed sesją",
+      "description": "Przygotowanie: mapa dnia, paliwo i godziny, kalendarz makro, funding i mapa likwidacji",
+      "url": "./#before",
       "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
     },
     {
-      "name": "Analizator planu",
-      "short_name": "Plan",
-      "description": "Oceń wejście, stop i cel przed transakcją",
-      "url": "./#plan",
+      "name": "W sesji",
+      "short_name": "W sesji",
+      "description": "Kokpit: footprint na żywo, kolumna DOM i taśmy, kohorty i likwidacje",
+      "url": "./#charts",
       "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
     },
     {
-      "name": "Rynek",
-      "short_name": "Rynek",
-      "description": "Kontekst rynku i kalendarz makro",
-      "url": "./#market",
+      "name": "Po sesji",
+      "short_name": "Po sesji",
+      "description": "Rozliczenie: przegląd dnia, dziennik prognoz i dziennik transakcji",
+      "url": "./#after",
       "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
     }
   ]

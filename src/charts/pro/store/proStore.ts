@@ -112,7 +112,7 @@ export class ProStore {
   readonly walls = new WallTracker();
   /** Kto przyjmuje agresję: animatorzy rynku i reszta makerów, z kont makerów. */
   private readonly makers = new MakerFlow();
-  /** Czoło kolejki z kanału `bbo` (tylko gdy jakiś widok go obserwuje, np. DOM i taśma). */
+  /** Czoło kolejki z kanału `bbo` (tylko gdy jakiś widok go obserwuje, np. kolumna DOM i taśmy). */
   readonly head = new QueueHead();
   private bboWatchers = 0;
   /** Otwarte pozycje z kanału activeAssetCtx (od otwarcia strony) i stawki finansowania z historii API. */

@@ -465,7 +465,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         ),
       },
       {
-        metric: tr('Schrödi: dowód przewagi, alarm dryfu, kalibracja (Plan, dymek kota)', 'Schrödi: proof of edge, drift alarm, calibration (Plan, cat panel)'),
+        metric: tr('Schrödi: dowód przewagi, alarm dryfu, kalibracja (Po sesji, dymek kota)', 'Schrödi: proof of edge, drift alarm, calibration (Post-session, cat panel)'),
         source: tr('Weryfikowalny dziennik prognoz: pełne godziny kota od rejestracji planu schrodi-trust-v1', 'Verifiable forecast ledger: full-hour cat forecasts since the schrodi-trust-v1 plan was recorded'),
         method: tr(
           'E-proces wobec prostej reguły na różnicy wyników Briera (Henzi i Ziegel 2022), e-detektor dryfu CUSUM (Shin, Ramdas, Rinaldo 2022), rozkład CORP (Dimitriadis, Gneiting, Jordan 2021), pasma Wilsona 90%, test Spiegelhaltera (1986); src/utils/schrodiTrust.ts',
@@ -565,31 +565,17 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         ),
       },
       {
-        metric: tr('Monte Carlo — zasięg 2 h i Analizator planu', 'Monte Carlo — 2 h range and Plan Analyzer'),
+        metric: tr('Monte Carlo — zasięg 2 h', 'Monte Carlo — 2 h range'),
         source: tr('Model zmienności, świece HL, poziomy PDH/PDL/D-EQ, arkusz L2', 'Volatility model, HL candles, PDH/PDL/D-EQ levels, L2 book'),
         method: tr(
-          '2000 ścieżek, krok 5 min (σ z HAR, innowacje FHS), korekta mostu Browna; Analizator: faza wypełnienia od bieżącej ceny i wynik warunkowy jak w dzienniku. Wspólne liczby losowe w obrębie minuty — w tej minucie wynik zmienia się płynnie z ceną; co minutę nowe ścieżki (błąd standardowy ≤ 1,1 pp)',
-          '2000 paths, 5-min step (σ from HAR, FHS innovations), Brownian-bridge correction; Analyzer: fill phase from the current price and a conditional result as in the journal. Common random numbers within a minute — within that minute the result changes smoothly with price; new paths every minute (standard error ≤ 1.1 pp)'
+          '2000 ścieżek, krok 5 min (σ z HAR, innowacje FHS), korekta mostu Browna. Wspólne liczby losowe w obrębie minuty — w tej minucie wynik zmienia się płynnie z ceną; co minutę nowe ścieżki (błąd standardowy ≤ 1,1 pp)',
+          '2000 paths, 5-min step (σ from HAR, FHS innovations), Brownian-bridge correction. Common random numbers within a minute — within that minute the result changes smoothly with price; new paths every minute (standard error ≤ 1.1 pp)'
         ),
         kinds: ['MODEL'],
         refresh: tr('z każdą synchronizacją', 'every sync'),
         caveat: tr(
           'Bez modelu zmienności: Merton z założonym udziałem skoków 20%, krok 1 min (oznaczone w pasku).',
           'Without the volatility model: Merton with an assumed 20% jump share, 1-min step (labelled in the strip).'
-        ),
-      },
-      {
-        metric: tr('Drabina kosztów planu', 'Plan cost ladder'),
-        source: tr('Wynik Analizatora (P cel / stop / żadne), arkusz L2 Hyperliquid, opłaty Hyperliquid tier 0', 'Analyzer result (P target / stop / neither), Hyperliquid L2 book, Hyperliquid tier 0 fees'),
-        method: tr(
-          'Koszt w bp nominału dla trzech wykonań: rynkowe (taker 0,045% dwa razy, poślizg wejścia z arkusza, P(stop) × poślizg stopu), limit na wejściu (maker 0,015% bez poślizgu), limit na wejściu i celu (maker przy celu, taker przy stopie i wyjściu z końca horyzontu); koszt w R = bp × E / (|E − S|·10⁴); próg P(cel) = P(cel) − EV/(R + 1)',
-          'Cost in bp of notional for three executions: market (taker 0.045% twice, entry slippage from the book, P(stop) × stop slippage), limit entry (maker 0.015% with no slippage), limit entry and target (maker at the target, taker at the stop and at the end-of-horizon exit); cost in R = bp × E / (|E − S|·10⁴); break-even P(target) = P(target) − EV/(R + 1)'
-        ),
-        kinds: ['MODEL'],
-        refresh: tr('z każdą synchronizacją', 'every sync'),
-        caveat: tr(
-          'Limit zakłada wypełnienie po cenie zlecenia, bez kolejki i selekcji negatywnej; opłaty tier 0 to założenie (wyższe tiery płacą mniej); funding pominięty.',
-          'A limit order is assumed to fill at its price, with no queue and no adverse selection; tier 0 fees are an assumption (higher tiers pay less); funding ignored.'
         ),
       },
       {
@@ -653,7 +639,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         ),
       },
       {
-        metric: tr('Płynność arkusza w ciągu doby (Mikrostruktura)', 'Book liquidity across the day (Microstructure)'),
+        metric: tr('Płynność arkusza w ciągu doby (Przed sesją)', 'Book liquidity across the day (Pre-session)'),
         source: tr(
           'Skaner HyperQuant: WS l2Book Hyperliquid zagregowany w koszyki dobierane do ceny (~10–20 USD), co ~5 s; plik liquidity/BTC.json w repo danych',
           'HyperQuant scanner: Hyperliquid WS l2Book aggregated into price-scaled buckets (~USD 10–20), every ~5 s; the liquidity/BTC.json file in the data repository'
@@ -670,7 +656,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         ),
       },
       {
-        metric: tr('Laboratorium folkloru (Plan)', 'Folklore lab (Plan)'),
+        metric: tr('Laboratorium folkloru (Lekcje)', 'Folklore lab (Lessons)'),
         source: tr(
           'Skaner HyperQuant: archiwum świec BTC 1h/1d i godzinowego finansowania z candleSnapshot / fundingHistory Hyperliquid (gałąź archive repo danych); katalog reguł zapisany w gałęzi ledger; plik lab/BTC.json',
           'HyperQuant scanner: archive of BTC 1h/1d candles and hourly funding from Hyperliquid candleSnapshot / fundingHistory (archive branch of the data repository); the rule catalogue recorded on the ledger branch; the lab/BTC.json file'
@@ -704,7 +690,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         ),
       },
       {
-        metric: tr('Dziennik zagrań i playbook (Plan)', 'Trade journal and playbook (Plan)'),
+        metric: tr('Dziennik zagrań i playbook (Po sesji)', 'Trade journal and playbook (Post-session)'),
         source: tr(
           'Twoje wpisy w tej przeglądarce (localStorage, nic nie jest wysyłane) + świece BTC 1m i 1h z candleSnapshot Hyperliquid',
           'Your entries in this browser (localStorage, nothing is sent) + BTC 1m and 1h candles from Hyperliquid candleSnapshot'
@@ -721,7 +707,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         ),
       },
       {
-        metric: tr('Model vs rynek (HIP-4, Rynek)', 'Model vs market (HIP-4, Market)'),
+        metric: tr('Model vs rynek (HIP-4, Badania)', 'Model vs market (HIP-4, Research)'),
         source: tr(
           'outcomeMeta i l2Book rynków wynikowych Hyperliquid (strona „Tak” = arkusz #<10·outcome>); model zmienności desku (świece 1h/5m)',
           'outcomeMeta and l2Book of Hyperliquid outcome markets (the “Yes” side = book #<10·outcome>); the desk volatility model (1h/5m candles)'
@@ -738,7 +724,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         ),
       },
       {
-        metric: tr('Kontekst aukcji (Plan, kafel na Desku)', 'Auction context (Plan, tile on the Desk)'),
+        metric: tr('Kontekst aukcji (Przed sesją)', 'Auction context (Pre-session)'),
         source: tr(
           'Świece BTC 1m (bieżąca i poprzednia sesja UTC) i 1h (~5000 ≈ 208 dni) z candleSnapshot Hyperliquid',
           'BTC 1m candles (current and previous UTC session) and 1h (~5000 ≈ 208 days) from Hyperliquid candleSnapshot'
@@ -755,7 +741,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         ),
       },
       {
-        metric: tr('Mechanika arkusza (Mikrostruktura)', 'Book mechanics (Microstructure)'),
+        metric: tr('Mechanika arkusza (Badania)', 'Book mechanics (Research)'),
         source: tr(
           'WS bbo (najlepsze kwotowania, ~co 150 ms), l2Book (~co 5 s) i trades Hyperliquid w przeglądarce — od otwarcia strony, maks. 30 min',
           'Hyperliquid WS bbo (best quotes, every ~150 ms), l2Book (every ~5 s) and trades in the browser — since the page opened, max 30 min'
@@ -820,34 +806,12 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         ),
       },
       {
-        metric: tr('Heatmapa likwidacji (Lab 3D)', 'Liquidation heatmap (Lab 3D)'),
-        source: tr('Ekstrema świec HL', 'HL candle extremes'),
-        method: tr(
-          'Teoretyczne ceny likwidacji dla dźwigni 5× / 20× / 100× od ekstremów świec',
-          'Theoretical liquidation prices for 5× / 20× / 100× leverage from candle extremes'
-        ),
-        kinds: ['MODEL'],
-        refresh: tr('z każdą świecą', 'every candle'),
-        caveat: tr(
-          'Szacunek, nie pozycje — zmierzona mapa jest w panelu „Mapa likwidacji i kaskada”.',
-          'An estimate, not positions — the measured map is in the “Liquidation map and cascade” panel.'
-        ),
-      },
-      {
         metric: 'Order blocks',
         source: tr('Świece HL', 'HL candles'),
         method: tr('Świeca impulsu > k·ATR(14), strefa świeża / zmitygowana (Shaakuni)', 'Impulse candle > k·ATR(14), fresh / mitigated zone (Shaakuni)'),
         kinds: ['MODEL'],
         refresh: tr('z każdą świecą', 'every candle'),
         caveat: tr('Heurystyka bez walidacji statystycznej.', 'A heuristic without statistical validation.'),
-      },
-      {
-        metric: tr('Opcje 3D (Lab)', 'Options 3D (Lab)'),
-        source: tr('Cena BTC z HL', 'BTC price from HL'),
-        method: tr('Ręcznie sparametryzowany uśmiech IV + Black-Scholes (greki)', 'Hand-parameterised IV smile + Black-Scholes (Greeks)'),
-        kinds: ['MODEL'],
-        refresh: tr('z ceną', 'with price'),
-        caveat: tr('Ilustracja — brak danych opcyjnych (bez GEX, max pain, zero-gamma).', 'An illustration — no options data (no GEX, max pain, zero-gamma).'),
       },
     ],
   },

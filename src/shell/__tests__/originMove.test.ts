@@ -63,10 +63,10 @@ describe('nowy adres: przyjęcie pakietu', () => {
     expect(store.getItem('other')).toBeNull();
 
     store.setItem('hq.lang', 'pl');
-    const b = win(link('#desk'), store, { referrer: `${OLD_ORIGIN}/` });
+    const b = win(link('#before'), store, { referrer: `${OLD_ORIGIN}/` });
     expect(moveIn(b.w)).toBe(false);
     expect(store.getItem('hq.lang')).toBe('pl');
-    expect(b.calls).toEqual(['state /#desk']);
+    expect(b.calls).toEqual(['state /#before']);
   });
 
   it('bez śladu starego adresu: pyta o zgodę; odmowa nic nie zapisuje', () => {

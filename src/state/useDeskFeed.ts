@@ -60,7 +60,7 @@ export function useDeskFeed(options: { cexEnabled: boolean; volModel: boolean })
   // Osobny bufor HL — ticki CEX nie mogą wypychać transakcji HL używanych przez OFI i metryki
   const [hlTrades, setHlTrades] = useState<AggrTradeTick[]>([]);
 
-  // Model zmienności (sezonowy log-HAR + FHS) — pas MC 2h i Analizator planu; ref, bo sync jest stabilnym callbackiem
+  // Model zmienności (sezonowy log-HAR + FHS) — pas MC 2h i mapa likwidacji; ref, bo sync jest stabilnym callbackiem
   const vol = useVolModel(options.volModel);
   const volRef = useRef<VolModel | null>(null);
   volRef.current = vol.model;

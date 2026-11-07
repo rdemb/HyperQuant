@@ -19,7 +19,7 @@ import {
 } from '../utils/hlMarkets';
 
 /**
- * Dane międzyrynkowe z publicznego API Hyperliquid dla widoku „Rynek” i paska na Desku.
+ * Dane międzyrynkowe z publicznego API Hyperliquid dla Badań (mapa rynków, proxy makro) oraz pasa kontekstu i fundingu Przed sesją.
  * Jeden wspólny harmonogram w module (cache przeżywa zmianę widoku), odpytuje tylko to, czego
  * potrzebują zamontowane komponenty. Budżet wag (limit 1200/min na IP; desk zużywa już część):
  * - funding: predictedFundings (20) co 60 s + fundingHistory BTC 7 dni (~20 + 9) co 15 min ≈ 22/min

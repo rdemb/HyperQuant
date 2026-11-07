@@ -15,7 +15,7 @@ import { DEFAULT_FLOW_PREFS, FLOW_PREFS_KEY, type FlowPrefs, type StepId, parseF
 import { HEAD_FLOW_MS, type LadderHead } from './Ladder';
 
 /**
- * Obliczenia drabiny, taśmy i losów ścian dla jednego rynku (ekran DOM i taśma oraz kolumna obok wykresu): magazyn
+ * Obliczenia drabiny, taśmy i losów ścian dla jednego rynku (kolumna DOM i taśmy obok wykresu i pasek Pulse na telefonie): magazyn
  * rynku z nagraniem i ostatnią godziną z serwera, kanał bbo (czoło kolejki) na czas montowania, agregacje arkusza,
  * losy ścian, tempo taśmy, próg dużego zlecenia, najlepszy bid i ask oraz preferencje `hq.flow.v1`.
  */
