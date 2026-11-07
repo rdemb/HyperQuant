@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Copy, Eye, EyeOff, Plus, Search, Settings, Star, Trash2, X } from 'lucide-react';
 import type { ChartSettings } from './settings';
-import { INDICATORS, IndicatorInstance, IndicatorTier, MAX_INDICATORS, addIndicator, copyIndicator, indicatorDef, indicatorLabel, menuEntries } from '../indicators/registry';
+import { INDICATORS, IndicatorInstance, IndicatorTier, MAX_INDICATORS, addIndicator, copyIndicator, indicatorDef, indicatorLabel, menuEntries, swatchColor } from '../indicators/registry';
 import { tr } from '../../../i18n';
 import { visibleEntries } from './menuSelection';
 
@@ -365,7 +365,7 @@ const OnChart: React.FC<{ list: IndicatorInstance[]; onList: (l: IndicatorInstan
           return (
             <li key={x.iid} className={`flex items-center gap-1 min-h-10 rounded-lg pl-2 ${x.visible ? '' : 'opacity-55'}`}>
               <button type="button" onClick={() => onEdit(x.iid)} title={tr('Ustawienia', 'Settings')} className="flex-1 min-w-0 flex items-center gap-2.5 h-9 text-left text-ink-1 hover:underline underline-offset-2">
-                <span className="inline-block w-4 h-[3px] rounded-full shrink-0" style={{ background: x.color, opacity: Math.max(x.alpha, 0.15) }} aria-hidden="true" />
+                <span className="inline-block w-4 h-[3px] rounded-full shrink-0" style={{ background: swatchColor(x), opacity: Math.max(x.alpha, 0.15) }} aria-hidden="true" />
                 <span className="font-mono truncate">{label}</span>
                 <span className="text-ink-3 truncate hidden sm:inline">{indicatorDef(x.id).pane === 'own' ? tr('własny panel', 'own pane') : tr('na cenie', 'on price')}</span>
               </button>

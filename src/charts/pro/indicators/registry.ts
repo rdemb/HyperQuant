@@ -8,6 +8,7 @@ import { rvolSeries } from '../../../utils/rvol';
 import { Extreme, OlsWindow, RegimeDetector, RobustLine, Window, Wma, ema, rma } from './primitives';
 import { INTERVALS, MONTH, intervalById } from '../core/time';
 import { numLang } from '../../../ui/format';
+import { PRO } from '../chart/theme';
 import { tr } from '../../../i18n';
 
 /**
@@ -93,17 +94,26 @@ export interface PlotDef {
   hidden?: boolean;
   /** Liczby tej wartości, gdy inne niż wskaźnika (OFI: β i R² obok wolumenu). */
   format?: IndicatorDef['format'];
+  /**
+   * Poziom jednej struktury na wykresie ceny (wstęgi i środek kanału, poziomy pivotów): dzieli kolor instancji z pozostałymi
+   * poziomami struktury, a odróżnia go położenie, kreska środka albo podpis na osi.
+   */
+  shareColor?: true;
 }
 
-/** Kolory stałych linii: drugiej i trzeciej linii wskaźnika oraz słupków dodatnich i ujemnych. */
-const ORANGE = '#f2a93b';
-const TEAL = '#2ec4b6';
-const RED = '#e66767';
-/** Jaśniejsze odcienie dla granic chmury Ichimoku. */
-const LIGHT_TEAL = '#8ee0d8';
-const LIGHT_RED = '#f2a7a7';
-export const HIST_UP = TEAL;
-export const HIST_DOWN = RED;
+/**
+ * Kolory stałych linii (paleta Głębia, src/charts/pro/chart/theme.ts): seria strony — kupno w lazurze, sprzedaż w żarze
+ * (linie w odcieniach ink, czytelne także jako liczby legendy), druga i trzecia linia bez strony w kolejności kategorii
+ * (złoto, fiolet), linia bazy w szarości. Kolor instancji (INDICATOR_COLORS) żadnego z nich nie używa.
+ */
+const BUY_LINE = PRO.buyInk;
+const SELL_LINE = PRO.sellInk;
+const SECOND = PRO.indSecond;
+const THIRD = PRO.indThird;
+const BASE = PRO.cohortRest;
+/** Słupki i chmura: dodatnie (kupno, wzrost) w kolorze kupna, ujemne w kolorze sprzedaży. */
+export const HIST_UP = PRO.buy;
+export const HIST_DOWN = PRO.sell;
 
 /** Krok wskaźnika: wartości plotów świecy do `out` (NaN = brak); `keep` zatwierdza zamkniętą świecę. */
 export type Step = (c: Candle, keep: boolean, out: Float64Array) => void;
@@ -565,8 +575,8 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
     short: 'Supertrend',
     name: 'Supertrend',
     hint: tr(
-      'Pasma (H+L)/2 ± mnożnik × ATR, które trzymają poziom, dopóki zamknięcie ich nie przetnie; linia ciągła pod ceną po przecięciu górnego pasma, przerywana nad ceną po przecięciu dolnego',
-      'Bands (H+L)/2 ± multiplier × ATR that hold their level until a close crosses them; a solid line below price after the upper band is crossed, a dashed one above price after the lower band is crossed'
+      'Pasma (H+L)/2 ± mnożnik × ATR, które trzymają poziom, dopóki zamknięcie ich nie przetnie; linia ciągła w kolorze kupna (niebieska) pod ceną po przecięciu górnego pasma, przerywana w kolorze sprzedaży (czerwona) nad ceną po przecięciu dolnego',
+      'Bands (H+L)/2 ± multiplier × ATR that hold their level until a close crosses them; a solid line in the buy colour (blue) below price after the upper band is crossed, a dashed one in the sell colour (red) above price after the lower band is crossed'
     ),
     group: 'trend',
     aliases: 'supertrend super trend atr pasma bands',
@@ -577,7 +587,7 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
     ),
     pane: 'price',
     params: [int('atr', tr('Okres ATR', 'ATR period'), 10), { ...mult(3), label: tr('Mnożnik ATR', 'ATR multiplier') }],
-    plots: [{}, { dashed: true, color: RED }],
+    plots: [{ color: BUY_LINE }, { dashed: true, color: SELL_LINE }],
     format: 'price',
     create: (p) => {
       const atr = rma(p.atr);
@@ -621,8 +631,8 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
     short: 'DMI',
     name: tr('Kierunkowy ruch (DMI, ADX)', 'Directional Movement Index (DMI, ADX)'),
     hint: tr(
-      'ADX (kolor wskaźnika): siła ruchu bez kierunku, RMA z |+DI − −DI| / (+DI + −DI); +DI (turkus) i −DI (pomarańcz): średnie Wildera ruchów szczytów w górę i dołków w dół wobec ATR',
-      'ADX (indicator colour): strength of movement without direction, RMA of |+DI − −DI| / (+DI + −DI); +DI (teal) and −DI (orange): Wilder averages of highs moving up and lows moving down relative to ATR'
+      'ADX (kolor wskaźnika): siła ruchu bez kierunku, RMA z |+DI − −DI| / (+DI + −DI); +DI (niebieska, kolor kupna) i −DI (czerwona, kolor sprzedaży): średnie Wildera ruchów szczytów w górę i dołków w dół wobec ATR',
+      'ADX (indicator colour): strength of movement without direction, RMA of |+DI − −DI| / (+DI + −DI); +DI (blue, the buy colour) and −DI (red, the sell colour): Wilder averages of highs moving up and lows moving down relative to ATR'
     ),
     group: 'trend',
     aliases: 'dmi adx di directional movement kierunkowy ruch siła trendu',
@@ -630,7 +640,7 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
     decay: (p) => [1 / p.length, 1 / p.adx],
     pane: 'own',
     params: [int('length', tr('Długość DI', 'DI length'), 14), int('adx', tr('Wygładzenie ADX', 'ADX smoothing'), 14)],
-    plots: [{}, { color: TEAL }, { color: ORANGE }],
+    plots: [{ title: 'ADX' }, { color: BUY_LINE, title: '+DI' }, { color: SELL_LINE, title: '−DI' }],
     format: 'fixed2',
     create: (p) => {
       const trr = rma(p.length);
@@ -698,15 +708,15 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
     short: 'Stoch',
     name: tr('Oscylator stochastyczny (Stoch)', 'Stochastic (Stoch)'),
     hint: tr(
-      '%K: położenie zamknięcia w zakresie n świec, 100 × (C − min L) / (max H − min L), wygładzone średnią prostą; %D (pomarańcz): średnia prosta %K; linie 80, 50 i 20 to tylko liczby odniesienia',
-      '%K: position of the close within the n-candle range, 100 × (C − min L) / (max H − min L), smoothed with a simple average; %D (orange): simple average of %K; the 80, 50 and 20 lines are reference numbers only'
+      '%K: położenie zamknięcia w zakresie n świec, 100 × (C − min L) / (max H − min L), wygładzone średnią prostą; %D (złota): średnia prosta %K; linie 80, 50 i 20 to tylko liczby odniesienia',
+      '%K: position of the close within the n-candle range, 100 × (C − min L) / (max H − min L), smoothed with a simple average; %D (gold): simple average of %K; the 80, 50 and 20 lines are reference numbers only'
     ),
     group: 'momentum',
     aliases: 'stochastic stochastyczny oscylator oscillator %k %d',
     warmup: (p) => p.length + p.smooth + p.d - 3,
     pane: 'own',
     params: [int('length', tr('Długość %K', '%K length'), 14), int('smooth', tr('Wygładzenie %K', '%K smoothing'), 1), int('d', tr('Wygładzenie %D', '%D smoothing'), 3)],
-    plots: [{}, { color: ORANGE }],
+    plots: [{ title: '%K' }, { color: SECOND, title: '%D' }],
     levels: [80, 50, 20],
     range: [0, 100],
     format: 'fixed2',
@@ -730,8 +740,8 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
     short: 'Stoch RSI',
     name: tr('Stochastyczny RSI (Stoch RSI)', 'Stochastic RSI (Stoch RSI)'),
     hint: tr(
-      'Oscylator stochastyczny liczony na RSI zamiast na cenie: położenie RSI w jego zakresie z n świec, %K wygładzone średnią prostą, %D (pomarańcz) to średnia %K; linie 80, 50 i 20 to tylko liczby odniesienia',
-      'The stochastic oscillator computed on RSI instead of price: where RSI sits in its n-candle range, %K smoothed with a simple average, %D (orange) is the average of %K; the 80, 50 and 20 lines are reference numbers only'
+      'Oscylator stochastyczny liczony na RSI zamiast na cenie: położenie RSI w jego zakresie z n świec, %K wygładzone średnią prostą, %D (złota) to średnia %K; linie 80, 50 i 20 to tylko liczby odniesienia',
+      'The stochastic oscillator computed on RSI instead of price: where RSI sits in its n-candle range, %K smoothed with a simple average, %D (gold) is the average of %K; the 80, 50 and 20 lines are reference numbers only'
     ),
     group: 'momentum',
     aliases: 'stochastic rsi stochrsi stochastyczny oscylator oscillator %k %d',
@@ -745,7 +755,7 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
       int('rsi', tr('Długość RSI', 'RSI length'), 14),
       int('stoch', tr('Długość stochastyka', 'Stochastic length'), 14),
     ],
-    plots: [{}, { color: ORANGE }],
+    plots: [{ title: '%K' }, { color: SECOND, title: '%D' }],
     levels: [80, 50, 20],
     range: [0, 100],
     format: 'fixed2',
@@ -774,8 +784,8 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
     short: 'MACD',
     name: 'MACD',
     hint: tr(
-      'Różnica EMA szybkiej i wolnej z zamknięć, linia sygnału (pomarańcz) to EMA tej różnicy, słupki to MACD − sygnał',
-      'The difference between the fast and slow EMA of closes, the signal line (orange) is an EMA of that difference, the bars are MACD − signal'
+      'Różnica EMA szybkiej i wolnej z zamknięć, linia sygnału (złota) to EMA tej różnicy, słupki to MACD − sygnał (dodatnie w kolorze kupna, ujemne w kolorze sprzedaży)',
+      'The difference between the fast and slow EMA of closes, the signal line (gold) is an EMA of that difference, the bars are MACD − signal (positive in the buy colour, negative in the sell colour)'
     ),
     group: 'momentum',
     aliases: 'macd moving average convergence divergence zbieżność rozbieżność histogram',
@@ -783,7 +793,7 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
     decay: (p) => [2 / (Math.max(p.fast, p.slow) + 1), 2 / (p.signal + 1)],
     pane: 'own',
     params: [int('fast', tr('Szybka EMA', 'Fast EMA'), 12), int('slow', tr('Wolna EMA', 'Slow EMA'), 26), int('signal', tr('Sygnał EMA', 'Signal EMA'), 9)],
-    plots: [{}, { color: ORANGE }, { hist: true }],
+    plots: [{}, { color: SECOND, title: tr('sygnał', 'signal') }, { hist: true }],
     levels: [0],
     format: 'range',
     create: (p) => {
@@ -879,7 +889,7 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
     warmup: (p) => p.length - 1,
     pane: 'price',
     params: [length(20), { key: 'mult', label: tr('Mnożnik σ', 'StdDev multiplier'), min: 0.1, max: 10, step: 0.1, def: 2 }],
-    plots: [{ dashed: true }, {}, {}],
+    plots: [{ dashed: true, shareColor: true }, { shareColor: true }, { shareColor: true }],
     format: 'price',
     create: (p) => {
       const w = new Window(p.length);
@@ -905,7 +915,7 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
     decay: (p) => [2 / (p.length + 1), 1 / p.atr],
     pane: 'price',
     params: [length(20), mult(2), int('atr', tr('Okres ATR', 'ATR length'), 10)],
-    plots: [{ dashed: true }, {}, {}],
+    plots: [{ dashed: true, shareColor: true }, { shareColor: true }, { shareColor: true }],
     format: 'price',
     create: (p) => {
       const basis = ema(p.length);
@@ -931,7 +941,7 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
     warmup: (p) => p.length - 1,
     pane: 'price',
     params: [length(20)],
-    plots: [{ dashed: true }, {}, {}],
+    plots: [{ dashed: true, shareColor: true }, { shareColor: true }, { shareColor: true }],
     format: 'price',
     create: (p) => {
       const hi = new Extreme(p.length, 1);
@@ -1022,13 +1032,13 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
     pane: 'price',
     params: [],
     plots: [
-      { title: 'P', breaks: true },
-      { title: 'R1', breaks: true },
-      { title: 'S1', breaks: true },
-      { title: 'R2', breaks: true },
-      { title: 'S2', breaks: true },
-      { title: 'R3', breaks: true },
-      { title: 'S3', breaks: true },
+      { title: 'P', breaks: true, shareColor: true },
+      { title: 'R1', breaks: true, shareColor: true },
+      { title: 'S1', breaks: true, shareColor: true },
+      { title: 'R2', breaks: true, shareColor: true },
+      { title: 'S2', breaks: true, shareColor: true },
+      { title: 'R3', breaks: true, shareColor: true },
+      { title: 'S3', breaks: true, shareColor: true },
     ],
     format: 'price',
     create: () => {
@@ -1146,8 +1156,8 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
     short: 'Ichimoku',
     name: tr('Chmura Ichimoku', 'Ichimoku Cloud'),
     hint: tr(
-      'Tenkan (kolor wskaźnika) i Kijun (czerwień): środki zakresu, czyli (najwyższy szczyt + najniższy dołek) / 2, z 9 i 26 świec; chmura między Senkou A (średnia Tenkan i Kijun, turkus) i Senkou B (środek zakresu 52 świec, jasna czerwień), przesunięta w przód, turkusowa, gdy A jest nad B, czerwona, gdy pod; Chikou (pomarańcz): zamknięcie przesunięte wstecz',
-      'Tenkan (indicator colour) and Kijun (red): midpoints of the range, (highest high + lowest low) / 2, over 9 and 26 candles; the cloud between Senkou A (average of Tenkan and Kijun, teal) and Senkou B (range midpoint over 52 candles, light red), shifted forward, teal when A is above B, red when below; Chikou (orange): the close shifted back'
+      'Tenkan (kolor wskaźnika) i Kijun (złota): środki zakresu, czyli (najwyższy szczyt + najniższy dołek) / 2, z 9 i 26 świec; chmura między Senkou A (średnia Tenkan i Kijun, niebieska) i Senkou B (środek zakresu 52 świec, czerwona), przesunięta w przód, niebieska (kolor kupna), gdy A jest nad B, czerwona (kolor sprzedaży), gdy pod; Chikou (fioletowa): zamknięcie przesunięte wstecz',
+      'Tenkan (indicator colour) and Kijun (gold): midpoints of the range, (highest high + lowest low) / 2, over 9 and 26 candles; the cloud between Senkou A (average of Tenkan and Kijun, blue) and Senkou B (range midpoint over 52 candles, red), shifted forward, blue (the buy colour) when A is above B, red (the sell colour) when below; Chikou (violet): the close shifted back'
     ),
     group: 'trend',
     aliases: 'ichimoku kinko hyo chmura cloud kumo tenkan kijun senkou chikou',
@@ -1168,11 +1178,11 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
       int('disp', tr('Przesunięcie', 'Displacement'), 26),
     ],
     plots: [
-      {},
-      { color: RED },
-      { color: ORANGE, shift: (p) => 1 - p.disp },
-      { color: LIGHT_TEAL, shift: (p) => p.disp - 1 },
-      { color: LIGHT_RED, shift: (p) => p.disp - 1 },
+      { title: 'Tenkan' },
+      { color: SECOND, title: 'Kijun' },
+      { color: THIRD, title: 'Chikou', shift: (p) => 1 - p.disp },
+      { color: BUY_LINE, title: 'Senkou A', shift: (p) => p.disp - 1 },
+      { color: SELL_LINE, title: 'Senkou B', shift: (p) => p.disp - 1 },
     ],
     cloud: [3, 4],
     format: 'price',
@@ -1215,7 +1225,7 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
       { key: 'up', label: tr('Odchylenie w górę', 'Upper deviation'), min: 0, max: 10, step: 0.1, def: 2 },
       { key: 'down', label: tr('Odchylenie w dół', 'Lower deviation'), min: 0, max: 10, step: 0.1, def: 2 },
     ],
-    plots: [{ dashed: true }, {}, {}],
+    plots: [{ dashed: true, shareColor: true }, { shareColor: true }, { shareColor: true }],
     format: 'price',
     fit: {
       span: (p) => p.length,
@@ -1286,8 +1296,8 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
     short: 'OI × Delta',
     name: tr('Zmiana OI i delta', 'OI change and delta'),
     hint: tr(
-      'Słupek to zmiana otwartych pozycji Hyperliquid w świecy, w jednostkach rynku; kolor to znak delty z taśmy (przewaga kupna albo sprzedaży agresorów): turkus dodatnia, czerwień ujemna',
-      'The bar is the change of Hyperliquid open interest within the candle, in market units; the colour is the sign of the tape delta (aggressor buying or selling ahead): teal positive, red negative'
+      'Słupek to zmiana otwartych pozycji Hyperliquid w świecy, w jednostkach rynku; kolor to znak delty z taśmy (przewaga kupna albo sprzedaży agresorów): niebieski (kolor kupna) dodatnia, czerwony (kolor sprzedaży) ujemna',
+      'The bar is the change of Hyperliquid open interest within the candle, in market units; the colour is the sign of the tape delta (aggressor buying or selling ahead): blue (the buy colour) positive, red (the sell colour) negative'
     ),
     group: 'hyperquant',
     aliases: 'oi open interest otwarte pozycje delta agresja aggressor otwarcia zamkniecia opens closes',
@@ -1324,8 +1334,8 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
     short: tr('Absorpcja', 'Absorption'),
     name: tr('Absorpcja: wysiłek a efekt', 'Absorption: effort vs result'),
     hint: tr(
-      'O ile ruch ceny w świecy odbiegł od zwykłego przy takiej delcie, w jednostkach rozrzutu ostatnich świec: ujemny słupek — cena przesunęła się w stronę agresji mniej niż zwykle, dodatni — bardziej; kolor to strona agresji (turkus kupno, czerwień sprzedaż)',
-      'How far the price move within the candle departed from the usual move for such a delta, in units of recent candles’ spread: a negative bar means price moved in the direction of aggression less than usual, a positive one more; the colour is the aggressor side (teal buying, red selling)'
+      'O ile ruch ceny w świecy odbiegł od zwykłego przy takiej delcie, w jednostkach rozrzutu ostatnich świec: ujemny słupek — cena przesunęła się w stronę agresji mniej niż zwykle, dodatni — bardziej; kolor to strona agresji (niebieski kupno, czerwony sprzedaż)',
+      'How far the price move within the candle departed from the usual move for such a delta, in units of recent candles’ spread: a negative bar means price moved in the direction of aggression less than usual, a positive one more; the colour is the aggressor side (blue buying, red selling)'
     ),
     group: 'hyperquant',
     aliases: 'absorption absorpcja wysilek efekt effort result theil sen delta odporna robust',
@@ -1483,9 +1493,9 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
     lookback: (p) => p.length,
     plots: [
       { title: 'p50' },
-      { color: ORANGE, title: 'p90' },
-      { color: TEAL, title: 'p99' },
-      { color: ORANGE, dashed: true, title: tr('baza p90', 'base p90') },
+      { color: SECOND, title: 'p90' },
+      { color: THIRD, title: 'p99' },
+      { color: BASE, dashed: true, title: tr('baza p90', 'base p90') },
       { hist: true, hidden: true, title: 'KS', format: 'fixed2' },
     ],
     format: 'usd',
@@ -1573,7 +1583,7 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
     pane: 'own',
     params: [{ key: 'usd', label: tr('Kwota (USD)', 'Amount (USD)'), min: 1000, max: 10_000_000, step: 1000, def: 50_000 }],
     // Strony arkusza zamiast „kupno/sprzedaż” i neutralne kolory: koszt, nie kierunek
-    plots: [{ title: 'ask' }, { color: ORANGE, title: 'bid' }],
+    plots: [{ title: 'ask' }, { color: SECOND, title: 'bid' }],
     format: 'fixed2',
     fromZero: true,
     series: (p) => {
@@ -1626,8 +1636,8 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
     pane: 'own',
     params: [],
     plots: [
-      { title: tr('kupujący', 'buyers') },
-      { color: ORANGE, title: tr('sprzedający', 'sellers') },
+      { color: BUY_LINE, title: tr('kupujący', 'buyers') },
+      { color: SELL_LINE, title: tr('sprzedający', 'sellers') },
       { hidden: true, title: tr('wyścig', 'race'), format: 'count' },
     ],
     format: 'fixed1',
@@ -1715,7 +1725,7 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
     params: [{ key: 'window', label: tr('Okno (min)', 'Window (min)'), min: 5, max: 60, step: 1, def: 15 }],
     plots: [
       { title: tr('powracający', 'returning') },
-      { color: ORANGE, title: tr('odwracający', 'switching') },
+      { color: SECOND, title: tr('odwracający', 'switching') },
       { hidden: true, title: tr('nowi', 'new') },
     ],
     range: [0, 1],
@@ -1773,8 +1783,8 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
     pane: 'own',
     params: [],
     plots: [
-      { title: tr('animatorzy', 'market makers') },
-      { color: ORANGE, title: tr('reszta', 'rest') },
+      { color: PRO.cohortMm, title: tr('animatorzy', 'market makers') },
+      { color: PRO.cohortRest, title: tr('reszta', 'rest') },
       { hidden: true, title: tr('udział animatorów', 'market maker share'), format: 'fixed2' },
     ],
     levels: [0],
@@ -2046,8 +2056,38 @@ export const defaultWidth = (def: IndicatorDef) => (def.plots.length > 1 ? 1 : 2
 /** Najwięcej wskaźników na jednym wykresie. */
 export const MAX_INDICATORS = 12;
 
-/** Kolory kolejnych instancji: odróżnialne od świec, VWAP i POC w obu paletach wykresu. */
-export const INDICATOR_COLORS = ['#3987e5', '#f2a93b', '#e66767', '#2ec4b6', '#d55181', '#b388ff'] as const;
+/**
+ * Kolory kolejnych instancji (paleta Głębia, docs/STYLEGUIDE.md §4): róż, limonka, orchidea, akwamaryna — z dala od kolorów
+ * stron (lazur, żar), VWAP, POC, poziomów, IB, mapy z bloga i stałych linii wskaźników (złoto, fiolet, szary, turkus),
+ * kontrast z tłem wykresu ≥ 4,5:1. Kolejność stała; piąta instancja wraca do pierwszego koloru.
+ */
+export const INDICATOR_COLORS = ['#e9548d', '#c3e143', '#f190dd', '#5ce4d5'] as const;
+
+/**
+ * Kolory instancji z dawnych palet (Neon i Desk) — zostają w zapisach użytkowników (`hq.charts.*`, szablony) i w dawnych
+ * presetach. Nie przepisujemy ich; stałe linie wskaźników są tak dobrane, żeby z żadnym z nich się nie pokryć.
+ */
+export const LEGACY_INDICATOR_COLORS = ['#3987e5', '#f2a93b', '#e66767', '#2ec4b6', '#d55181', '#b388ff'] as const;
+
+/** Kolor linii plotu instancji: stały plotu (seria strony, druga linia) albo kolor instancji. */
+export const plotColor = (x: Pick<IndicatorInstance, 'color'>, p: PlotDef): string => p.color ?? x.color;
+
+/**
+ * Kolor liczby plotu w legendzie: słupki w kolorze znaku (`sign` — wartość własna albo plotu `signOf`) w odcieniach ink
+ * (czytelne na tle), wartości tylko do legendy (bez linii, np. wyścig, R²) w neutralnym tuszu, linie w kolorze linii.
+ */
+export const legendColor = (x: Pick<IndicatorInstance, 'color'>, p: PlotDef, sign: number): string =>
+  p.hist ? (sign < 0 ? PRO.sellInk : PRO.buyInk) : p.hidden ? PRO.ink2 : plotColor(x, p);
+
+/** Kolor znacznika instancji na liście i w oknie ustawień: pierwszej rysowanej linii (stały albo instancji). */
+export const swatchColor = (x: IndicatorInstance): string => {
+  const p = indicatorDef(x.id).plots.find((q) => !q.hidden && !q.hist);
+  return p ? plotColor(x, p) : x.color;
+};
+
+/** Czy kolor instancji coś zmienia na wykresie (inaczej okno stylu go nie pokazuje). */
+export const usesInstanceColor = (def: IndicatorDef): boolean =>
+  !!(def.forecast || def.outcomes || def.pbRanges || def.band) || def.plots.some((p) => !p.hidden && !p.hist && p.color === undefined);
 
 /** Podpis w legendzie i na liście: skrót, parametry i interwał spoza wykresu („EMA 21”, „BB 20 2,5”, „RSI 14 1h”). */
 export function indicatorLabel(x: IndicatorInstance): string {

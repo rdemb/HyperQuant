@@ -70,6 +70,14 @@ const GLEBIA = {
   // Poziomy mapy z bloga (tekst autora): turkus z palety kategorii — na wykresie ceny nic innego go nie używa, nie jest
   // kolorem strony (kupno/sprzedaż), POC, VWAP ani IB
   blogMap: '#059583',
+  // Initial balance sesji (linie, rozszerzenia i podpisy): zieleń spoza kolorów stron, VWAP, POC, poziomów i mapy z bloga
+  ib: '#56DB8F',
+  // Stałe linie wskaźników, które nie są stroną (sygnał MACD, %D, p90, „reszta”): kolejność kategorii — złoto, fiolet,
+  // szary; animatorzy rynku w turkusie kohorty. Linie strony to buyInk i sellInk, słupki strony buy i sell.
+  indSecond: '#B18E15',
+  indThird: '#A878DB',
+  cohortMm: '#059583',
+  cohortRest: '#7A889C',
 };
 
 export const PRO = {
@@ -131,6 +139,13 @@ export const LIQ_RAMP: HeatRamp = [
   [0.9, 1],
   [1, 1],
 ].map(([t, alpha]) => ({ t, color: t === 0 ? MOON[0] : t === 1 ? MOON[4] : oklabAt(MOON, t), alpha }));
+
+/** Odległość dwóch kolorów #rrggbb w OKLab (×100, jak ΔE walidatora palet): poniżej ok. 10 trudno je odróżnić na wykresie. */
+export function colorDistance(a: string, b: string): number {
+  const x = toOklab(a);
+  const y = toOklab(b);
+  return 100 * Math.hypot(x[0] - y[0], x[1] - y[1], x[2] - y[2]);
+}
 
 function hexRgb(hex: string): [number, number, number] {
   const n = parseInt(hex.slice(1), 16);

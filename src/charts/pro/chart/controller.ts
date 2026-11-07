@@ -43,7 +43,7 @@ import { tpoInterval } from '../core/tpo';
 import { DAY, barEnd, barStart, fmtBarTime, fmtHm, fromDaily, visibleSpan } from '../core/time';
 import { type ChartSettings, isNarrow } from './settings';
 import { IndicatorEngine } from '../indicators/engine';
-import { HIST_DOWN, HIST_UP, IndicatorDef, IndicatorInstance, PlotDef, indicatorDef, indicatorLabel, plotShift } from '../indicators/registry';
+import { HIST_DOWN, HIST_UP, IndicatorDef, IndicatorInstance, PlotDef, indicatorDef, indicatorLabel, legendColor, plotColor, plotShift } from '../indicators/registry';
 import { CloudFill, CloudSource } from './cloudFill';
 import { ConeForecast, ConeLayer, ConeSource } from './coneLayer';
 import { Hip4Layer, Hip4Source, outcomeLevels } from './hip4Layer';
@@ -225,6 +225,8 @@ function flowLegend(label: string, value: number | null): LegendPart[] {
 
 /** Linie poziomów w panelu wskaźnika (RSI 70, 50, 30): widoczne, ale ciszej niż linia wskaźnika. */
 const LEVEL_COLOR = rgba(PRO.ink3, 0.45);
+/** Krycie słupków wskaźnika (przy kryciu instancji 100%): słupek sprzedaży ma jeszcze kontrast ≥ 3:1 z tłem wykresu. */
+const HIST_ALPHA = 0.9;
 /** Odcinek bez koloru: przerwa między poziomami kolejnych okresów. */
 const CLEAR = 'rgba(0, 0, 0, 0)';
 
@@ -803,15 +805,10 @@ export class ProChartController {
     if (p.hidden) return { visible: false };
     const lastValueVisible = x.labels && !gap;
     if (p.hist) return { lastValueVisible };
-    const color = rgba(p.color ?? x.color, x.alpha);
+    const color = rgba(plotColor(x, p), x.alpha);
     // Kropki (Parabolic SAR): sama linia niewidoczna, promień kropki rośnie z grubością
     if (p.dots) return { color, lineVisible: false, pointMarkersVisible: true, pointMarkersRadius: x.width, lastValueVisible };
     return { color, lineWidth: x.width as LineWidth, lastValueVisible };
-  }
-
-  /** Kolor wartości plotu w legendzie: słupki w kolorze znaku (`sign` — wartość własna albo plotu `signOf`). */
-  private plotColor(x: IndicatorInstance, p: PlotDef, sign: number): string {
-    return p.hist ? (sign < 0 ? HIST_DOWN : HIST_UP) : (p.color ?? x.color);
   }
 
   /** Liczby wskaźnika: cena (tick rynku), odległość ceny (ATR: o miejsce dokładniej niż tick), dwa lub trzy miejsca (RSI, MACD) albo wolumen (np. delta). */
@@ -1377,7 +1374,7 @@ export class ProChartController {
       const time = sec(j < n ? bars[j].t : bars[n - 1].t + (j - n + 1) * ms);
       const v = ys[i];
       if (Number.isNaN(v)) return { time };
-      if (hist) return { time, value: v, color: rgba(signs[i] < 0 ? HIST_DOWN : HIST_UP, 0.6 * x.alpha) };
+      if (hist) return { time, value: v, color: rgba(signs[i] < 0 ? HIST_DOWN : HIST_UP, HIST_ALPHA * x.alpha) };
       const cut = i + 1 < n && (Number.isNaN(ys[i + 1]) || (breaks && ys[i + 1] !== v));
       return cut ? { time, value: v, color: CLEAR } : { time, value: v };
     };
@@ -1629,7 +1626,7 @@ export class ProChartController {
                 const fmt = this.indFormat(plot.format ?? def.format);
                 const text = Number.isNaN(v) ? '—' : fmt(v);
                 const band = def.band && p === 0 && !Number.isNaN(v) ? ` (${fmt(vs[def.band[0]])}–${fmt(vs[def.band[1]])})` : '';
-                return [{ text: plot.title ? `${plot.title} ${text}${band}` : `${text}${band}`, color: this.plotColor(x, plot, vs[plot.signOf ?? p]) }];
+                return [{ text: plot.title ? `${plot.title} ${text}${band}` : `${text}${band}`, color: legendColor(x, plot, vs[plot.signOf ?? p]) }];
               });
       const legend = this.indLegends[k];
       // Pierwsza wartość przy nazwie, dalsze (OFI: Δp, R², oczekiwana) mogą przejść do następnego wiersza na wąskim panelu
