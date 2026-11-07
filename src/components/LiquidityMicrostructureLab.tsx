@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { LiquidityProfileBucket, QuantMathMetrics, ShaakuniState } from '../types/trading';
+import { L2OrderbookLevel, LiquidityProfileBucket, QuantMathMetrics, ShaakuniState } from '../types/trading';
+import { bookDepth } from '../utils/bookDepth';
 import { Badge, Panel, Stat, DASH, fmtCompact, fmtPct, fmtPrice, fmtSigned, fmtFixed, fmtNum } from '../ui';
 import { tr } from '../i18n';
 
@@ -47,7 +48,9 @@ export const LiquidityMicrostructureLab: React.FC<{
   quant: QuantMathMetrics;
   shaakuni: ShaakuniState;
   currentPrice: number;
-}> = ({ quant, shaakuni, currentPrice }) => {
+  /** Arkusz L2 (migawka Hyperliquid); bez poziomów głębokość to „—” z powodem, nie $0. */
+  book: { bids: readonly L2OrderbookLevel[]; asks: readonly L2OrderbookLevel[] };
+}> = ({ quant, shaakuni, currentPrice, book }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const [size, setSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
@@ -237,8 +240,9 @@ export const LiquidityMicrostructureLab: React.FC<{
   const magnetDistPct = currentPrice > 0 ? ((quant.primaryMagnetPrice - currentPrice) / currentPrice) * 100 : null;
   const fuelTotal = quant.shortSqueezeFuelUsd + quant.longCascadeFuelUsd;
   const fuelAboveShare = fuelTotal > 0 ? quant.shortSqueezeFuelUsd / fuelTotal : null;
-  const depthTotal = quant.bookDepthAskUsd + quant.bookDepthBidUsd;
-  const bidShare = depthTotal > 0 ? quant.bookDepthBidUsd / depthTotal : null;
+  // Głębokość z migawki arkusza: bez niej brak liczby (nie $0); pusta strona przy migawce to prawdziwe 0
+  const depth = bookDepth(book.bids, book.asks);
+  const bidShare = depth?.bidShare ?? null;
 
   return (
     <Panel
@@ -305,14 +309,18 @@ export const LiquidityMicrostructureLab: React.FC<{
         <Stat
           label={tr('Arkusz L2', 'L2 book')}
           source={
-            depthTotal > 0
+            depth
               ? { tone: 'live', label: 'LIVE', title: tr('Suma płynności 12 poziomów arkusza Hyperliquid', 'Total liquidity of 12 Hyperliquid book levels') }
-              : { tone: 'stale', label: tr('BRAK', 'NONE'), title: tr('Brak arkusza', 'No book') }
+              : { tone: 'stale', label: tr('BRAK', 'NONE'), title: tr('Brak migawki arkusza L2 Hyperliquid', 'No Hyperliquid L2 book snapshot') }
           }
           value={
-            <span className="text-base">
-              {fmtCompact(quant.bookDepthBidUsd, '$')} <span className="text-ink-3">/</span> {fmtCompact(quant.bookDepthAskUsd, '$')}
-            </span>
+            depth ? (
+              <span className="text-base">
+                {fmtCompact(depth.bid, '$')} <span className="text-ink-3">/</span> {fmtCompact(depth.ask, '$')}
+              </span>
+            ) : (
+              DASH
+            )
           }
           hint={
             bidShare !== null ? (
@@ -428,8 +436,11 @@ export const MicrostructureMethods: React.FC<{
   quant: QuantMathMetrics;
   shaakuni: ShaakuniState;
   currentPrice: number;
-}> = ({ quant, shaakuni, currentPrice }) => {
+  /** Arkusz L2 (migawka Hyperliquid); bez poziomów głębokość to „—” z powodem, nie $0. */
+  book: { bids: readonly L2OrderbookLevel[]; asks: readonly L2OrderbookLevel[] };
+}> = ({ quant, shaakuni, currentPrice, book }) => {
   const [selectedId, setSelectedId] = useState('gravity');
+  const depth = bookDepth(book.bids, book.asks);
   const magnetPct = currentPrice > 0 ? ((quant.primaryMagnetPrice - currentPrice) / currentPrice) * 100 : null;
 
   const methods: Method[] = [
@@ -479,7 +490,7 @@ export const MicrostructureMethods: React.FC<{
         'Compare λ at different times of day and before macro releases; a rising λ means a market that is easier to push.'
       ),
       metricLabel: tr('λ · głębokość BID / ASK', 'λ · BID / ASK depth'),
-      metricValue: `${quant.kyleLambdaPer1M !== null ? `$${fmtFixed(quant.kyleLambdaPer1M, 2)} / $1M` : tr('b/d', 'n/a')} · ${fmtCompact(quant.bookDepthBidUsd, '$')} / ${fmtCompact(quant.bookDepthAskUsd, '$')}`,
+      metricValue: `${quant.kyleLambdaPer1M !== null ? `$${fmtFixed(quant.kyleLambdaPer1M, 2)} / $1M` : tr('b/d', 'n/a')} · ${depth ? `${fmtCompact(depth.bid, '$')} / ${fmtCompact(depth.ask, '$')}` : DASH}`,
     },
     {
       id: 'hawkes',

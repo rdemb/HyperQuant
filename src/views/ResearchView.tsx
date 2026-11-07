@@ -34,14 +34,14 @@ const ResearchView: React.FC = () => {
         <BookMechanicsPanel />
       </div>
       <div className="lg:col-span-8 min-w-0">
-        <LiquidityMicrostructureLab quant={quant} shaakuni={shaakuni} currentPrice={feed.currentPrice} />
+        <LiquidityMicrostructureLab quant={quant} shaakuni={shaakuni} currentPrice={feed.currentPrice} book={feed} />
       </div>
       <div className="lg:col-span-4 min-w-0 flex flex-col gap-4">
         <QuantRegimePanel quant={quant} currentPrice={feed.currentPrice} timeframeSec={feed.timeframeSec} />
         <QuantMetricTiles quant={quant} className="grid-cols-2 md:grid-cols-3 lg:grid-cols-2" />
       </div>
       <div className="lg:col-span-12 min-w-0">
-        <MicrostructureMethods quant={quant} shaakuni={shaakuni} currentPrice={feed.currentPrice} />
+        <MicrostructureMethods quant={quant} shaakuni={shaakuni} currentPrice={feed.currentPrice} book={feed} />
       </div>
     </div>
   );

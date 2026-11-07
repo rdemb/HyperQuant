@@ -25,6 +25,8 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 #### Naprawione
 - Liczba bez danych nie ma plakietki LIVE ani MODEL (nagłówek układu, Czwórka, Rozliczenie, kafle liczb, np. pas kontekstu Przed sesją); stan danych (BRAK, STALE) zostaje jako powód.
 - Nieudana starsza strona świec 1m wygasza w Rozliczeniu tylko karty, którym brakuje minut; ponowna próba po 30 s z zegara, bez „kolejna próba” w trakcie próby.
+- Głębokość arkusza L2 (Przed sesją, Badania) bez migawki arkusza to „—” z powodem, nie „$0 / $0”; pusta strona przy migawce zostaje prawdziwym zerem.
+- Blok powtórki pod wpisami bloga i przyciski statycznych stron prowadzą do „W sesji” zamiast dawnych „Wykresów”.
 - `#flow` na otwartym W sesji pokazuje kolumnę DOM i taśmy schowaną wcześniej klawiszem `d`.
 - Szuflada DOM i pasek narzędzi rysowania nie zachodzą na przypięty nagłówek przy przewiniętej stronie.
 - Przełączenie zestawu paneli (Aukcja, Absorpcja) nie usuwa własnego wskaźnika z tym samym identyfikatorem instancji (nowy klucz `panelSetIids` w zapisie ustawień wykresu; inne pola zapisu bez zmian).
