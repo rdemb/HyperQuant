@@ -257,9 +257,10 @@ export function sessionMaps(maps: readonly BlogMap[], s: TradeSession, now: numb
     .sort((a, b) => a.publishedAt - b.publishedAt);
 }
 
-function mapRow(x: ReviewInputs, m: BlogMap): ReviewRow {
+/** Wiersz mapy; `first` — pierwsza mapa karty: po angielsku z dopiskiem „(PL blog)” (spec §7.6, raz na kartę, jak na wykresie). */
+function mapRow(x: ReviewInputs, m: BlogMap, first: boolean): ReviewRow {
   const { s, now, inProgress } = x;
-  const label = `${blogMapName(m.kind)} ${fmtDayTime(m.publishedAt, now)}`;
+  const label = `${blogMapName(m.kind)} ${fmtDayTime(m.publishedAt, now)}${first ? tr('', ' (PL blog)') : ''}`;
   const key = `map:${m.id}`;
   const no = (why: string, hint?: string) => absent('map', label, 'LIVE', why, { key, hint });
   const w = mapWindow(m.kind, m.publishedAt);
@@ -323,7 +324,7 @@ function mapRows(x: ReviewInputs): ReviewRow[] {
   if (list.length === 0) {
     return [absent('map', label, 'LIVE', tr(`Brak mapy z bloga dla sesji ${name(x.s)} (plik ma mapy z ostatnich 3 dni)`, `No blog map for the ${name(x.s)} session (the file holds maps from the last 3 days)`))];
   }
-  return list.map((m) => mapRow(x, m));
+  return list.map((m, i) => mapRow(x, m, i === 0));
 }
 
 function liqRow(x: ReviewInputs): ReviewRow {
