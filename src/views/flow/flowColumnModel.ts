@@ -1,4 +1,4 @@
-import { LAYOUT_ORDER, type PhaseId, type StationId, stationById } from '../../charts/pro/chart/stations';
+import type { PhaseId } from '../../charts/pro/chart/stations';
 import { tr } from '../../i18n';
 import { takeFlowAsk } from '../../state/route';
 
@@ -62,13 +62,6 @@ export function saveDock(on: boolean): void {
  */
 export function columnAfterHash(phase: PhaseId): { dock: boolean; drawer: boolean } {
   return { dock: loadDock(), drawer: phase === 'session' && takeFlowAsk() };
-}
-
-/** Alt+1…6: faza i układ w kolejności przed sesją, w sesji, po sesji; inna cyfra — null. */
-export function shortcutTarget(digit: number): { phase: PhaseId; layout: StationId } | null {
-  if (!Number.isInteger(digit) || digit < 1 || digit > LAYOUT_ORDER.length) return null;
-  const layout = LAYOUT_ORDER[digit - 1];
-  return { phase: stationById(layout).phase, layout };
 }
 
 // ───────────────────────── preferencje taśmy i drabiny ─────────────────────────

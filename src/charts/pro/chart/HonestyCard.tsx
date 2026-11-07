@@ -38,17 +38,14 @@ function historyOf(store: ProStore, interval: string): Promise<readonly Candle[]
 
 type State = { kind: 'loading' } | { kind: 'error' } | { kind: 'ready'; card: Card };
 
-/**
- * `tf` — interwał pierwszego wykresu karty; zmienia tylko kartę ściśnięcia (dziś bez układu), bo VA i IB mają interwał z definicji.
- */
+/** Karta liczy na interwale z definicji układu (VA i IB: 30m), niezależnie od interwału wykresu. */
 export const HonestyCard: React.FC<{
   store: ProStore;
   templateId: string;
-  tf?: string;
   className?: string;
-}> = ({ store, templateId, tf, className = '' }) => {
+}> = ({ store, templateId, className = '' }) => {
   const spec = TEMPLATE_HONESTY[templateId];
-  const interval = spec?.kind === 'squeeze' && tf ? tf : spec?.interval;
+  const interval = spec?.interval;
   const [state, setState] = useState<State>({ kind: 'loading' });
   useEffect(() => {
     if (!spec || !interval) return;
@@ -62,7 +59,7 @@ export const HonestyCard: React.FC<{
             bars.length > 1
               ? {
                   kind: 'ready',
-                  card: honestyCard(honestyStats(spec.kind, bars, interval)),
+                  card: honestyCard(honestyStats(spec.kind, bars)),
                 }
               : { kind: 'error' }
           )
@@ -111,8 +108,7 @@ export const HonestyCard: React.FC<{
 export const HonestyButton: React.FC<{
   store: ProStore;
   templateId: string;
-  tf?: string;
-}> = ({ store, templateId, tf }) => {
+}> = ({ store, templateId }) => {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -145,7 +141,7 @@ export const HonestyButton: React.FC<{
       </button>
       {open && (
         <div className="absolute z-40 right-0 top-full mt-1 w-[26rem] max-w-[calc(100vw-32px)] rounded-lg shadow-2xl">
-          <HonestyCard store={store} templateId={templateId} tf={tf} className="bg-surface-2 border-line-strong" />
+          <HonestyCard store={store} templateId={templateId} className="bg-surface-2 border-line-strong" />
         </div>
       )}
     </div>

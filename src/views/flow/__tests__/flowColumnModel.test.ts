@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { followHash } from '../../../state/route';
-import { DEFAULT_FLOW_PREFS, DOCK_KEY, DOCK_MIN_W, DRAWER_MIN_W, columnAfterHash, dockMode, parseDock, parseFlowPrefs, scannerScope, shortcutTarget } from '../flowColumnModel';
+import { DEFAULT_FLOW_PREFS, DOCK_KEY, DOCK_MIN_W, DRAWER_MIN_W, columnAfterHash, dockMode, parseDock, parseFlowPrefs, scannerScope } from '../flowColumnModel';
 
 describe('kolumna DOM i taśmy: czyste pomocniki', () => {
   it('panele skanera (kto przyjmuje, TWAP-y) tylko dla BTC', () => {
@@ -15,17 +15,6 @@ describe('kolumna DOM i taśmy: czyste pomocniki', () => {
     expect([dockMode(1280), dockMode(1920)]).toEqual(['docked', 'docked']);
     expect([dockMode(1279), dockMode(1024), dockMode(640)]).toEqual(['drawer', 'drawer', 'drawer']);
     expect([dockMode(639), dockMode(390), dockMode(0)]).toEqual(['none', 'none', 'none']);
-  });
-
-  it('Alt+1…6: układy w kolejności przed sesją, w sesji, po sesji; poza tym null', () => {
-    expect(shortcutTarget(1)).toEqual({ phase: 'before', layout: 'day-map' });
-    expect(shortcutTarget(2)).toEqual({ phase: 'before', layout: 'fuel' });
-    expect(shortcutTarget(3)).toEqual({ phase: 'session', layout: 'cockpit' });
-    expect(shortcutTarget(4)).toEqual({ phase: 'session', layout: 'auction-open' });
-    expect(shortcutTarget(5)).toEqual({ phase: 'session', layout: 'big-hands' });
-    expect(shortcutTarget(6)).toEqual({ phase: 'after', layout: 'review' });
-    expect(shortcutTarget(7)).toBeNull();
-    expect([shortcutTarget(0), shortcutTarget(-1), shortcutTarget(1.5), shortcutTarget(Number.NaN)]).toEqual([null, null, null, null]);
   });
 
   it('stan kolumny: domyślnie widoczna, schowana tylko z zapisem „0”', () => {

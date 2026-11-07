@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import type { PhaseId } from '../charts/pro/chart/stations';
 import { useDesk } from '../state/DeskContext';
-import { PHASE_VIEW } from '../state/route';
+import { PHASE_VIEW, subscribeHash } from '../state/route';
 import { ViewId } from '../state/types';
 import { awaitingBars } from '../state/viewNeeds';
 import { AnimatedNumber, Badge, BadgeTone, EmptyState, Segmented, VIEW_TRANSITION, fmtCompact, fmtPrice, numLang, DASH, fmtNum } from '../ui';
@@ -114,10 +114,6 @@ const TickerStrip: React.FC = () => {
   );
 };
 
-const subscribeHash = (fn: () => void) => {
-  window.addEventListener('hashchange', fn);
-  return () => window.removeEventListener('hashchange', fn);
-};
 /** Powtórka w W sesji (#charts?replay=history|lessons…) pokazuje przeszłość — wtedy bez paska ceny na żywo (jak parseReplayLink). */
 const inReplay = () => {
   const h = window.location.hash;

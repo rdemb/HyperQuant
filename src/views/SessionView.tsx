@@ -4,6 +4,7 @@ import { isNarrow } from '../charts/pro/chart/settings';
 import type { PhaseId } from '../charts/pro/chart/stations';
 import { COIN, type Market } from '../charts/pro/store/proStore';
 import { parseReplayLink } from '../charts/pro/replay/link';
+import { subscribeHash } from '../state/route';
 import { useLiqMap } from '../state/useLiqMap';
 import ChartsView from './ChartsView';
 import { CohortFlowPanel } from './desk/CohortFlowPanel';
@@ -11,10 +12,6 @@ import { LiquidationTape } from './desk/LiquidationTape';
 import { FlowColumn } from './flow/FlowColumn';
 import { FirstContact } from './session/FirstContact';
 
-const subscribeHash = (fn: () => void) => {
-  window.addEventListener('hashchange', fn);
-  return () => window.removeEventListener('hashchange', fn);
-};
 /** Link powtórki w adresie (#charts?replay=…): wykres pokazuje przeszłość. */
 const inReplay = () => parseReplayLink(window.location.hash) !== null;
 
