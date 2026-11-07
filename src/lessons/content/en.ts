@@ -414,7 +414,7 @@ export const en: LessonsContent = {
         traps: ['The ±2σ band is not a reversal signal: on a trend day “expensive” keeps getting more expensive.', 'In the morning, with few candles, the bands are narrow and easy to break.'],
         combine: ["With the profile: VWAP near the POC means agreement on the day's value.", 'With flow: VWAP holding against aggressive selling says more than a mere touch.'],
         where: 'Indicators → Daily VWAP, VWAP bands ±1σ and ±2σ, Session VWAP',
-        station: 'cockpit',
+        station: 'day-map', // VWAP dnia z pasmami σ (30m)
         figure: { slice: '2026-10-21-trend', layers: { vwap: true, bands: true }, caption: 'Wednesday 21 Oct: a trend day. VWAP rises and price rides the +1σ…+2σ band for hours.' },
       },
       {
@@ -431,7 +431,7 @@ export const en: LessonsContent = {
         traps: ['The profile depends on the range: the visible range, the session and the day give different POCs.', 'The POC is not a guaranteed magnet: price returns to it often because it usually sits close to the current price.'],
         combine: ["With VWAP and the day's levels: several levels lining up make a stronger map.", 'With flow at the edge: does aggressive buying at VAH get through or get absorbed?'],
         where: 'Indicators → Volume profile, Session profiles and naked POCs, Developing POC and value area',
-        station: 'day-map',
+        station: 'day-map', // profile okresów i TPO
         figure: { slice: '2026-10-23-balance', layers: { vwap: true, profile: true }, caption: 'Friday 23 Oct: a balance day. A narrow value area, the POC right next to a flat VWAP.' },
       },
       {
@@ -444,7 +444,7 @@ export const en: LessonsContent = {
         traps: ['A naked POC is a place, not a target: frequent returns are largely geometry (the POC usually lies close to price).'],
         combine: ['With sessions: the London POC versus price after the New York open.', "With the day's levels: a naked POC near PDH or PDL."],
         where: 'Indicators → Session profiles and naked POCs, Developing POC and value area',
-        station: 'day-map',
+        station: 'day-map', // profile sesji i nagie POC (4h)
       },
       {
         id: 'tpo',
@@ -456,7 +456,7 @@ export const en: LessonsContent = {
         traps: ['Colour exists only where the tape was (the last day): older days are grey and spread evenly within candles.', 'Aggression is not the outcome: heavy buying at a price does not mean price will go up.'],
         combine: ['With VWAP: day value (POC) near VWAP means balance.', 'With the IB: leaving the IB and building volume outside it is acceptance.'],
         where: 'Indicators → Day profile: volume, aggression, time (TPO)',
-        station: 'day-map',
+        station: 'day-map', // profil doby TPO (30m)
       },
       {
         id: 'levels',
@@ -468,7 +468,7 @@ export const en: LessonsContent = {
         traps: ['Touching a level means nothing on its own. Stops often sit below PDL and above PDH, so the move can be violent in both directions.'],
         combine: ['With liquidations: a broken PDL can trigger a cascade.', 'With the profile and VWAP: a daily level at a value edge matters more.'],
         where: 'Indicators → Daily levels',
-        station: 'cockpit',
+        station: 'day-map', // PDH/PDL i otwarcie dnia
         figure: { slice: '2026-10-20-ny', layers: { levels: true, vwap: true, sessions: true }, caption: 'Tuesday 20 Oct: price below PDL in the morning, then after the New York open a break of PDH and a quick return below it.' },
       },
       {
@@ -481,7 +481,7 @@ export const en: LessonsContent = {
         traps: ['An open is not a direction: the move after an open goes both ways and is often quickly given back.'],
         combine: ["With the IB: the range of the session's first hour as a map of the day.", "With session VWAP: is the new session trading above or below the previous one's price."],
         where: 'Indicators → Session opens',
-        station: 'cockpit',
+        station: 'fuel', // otwarcia sesji na osi czasu
       },
       {
         id: 'ib',
@@ -493,7 +493,7 @@ export const en: LessonsContent = {
         traps: ['BTC sessions have no real open like an exchange: the IB can be very wide (the whole move in the first hour) or very narrow.'],
         combine: ['With the profile: an IB edge at VAH or VAL is a stronger boundary.', 'With flow: an IB breakout with aggression and rising OI versus one without them.'],
         where: 'Indicators → Initial balance',
-        station: 'day-map',
+        station: 'auction-open', // IB z rozszerzeniami
         figure: { slice: '2026-10-23-balance', layers: { ib: 'ny', sessions: true, vwap: true }, caption: 'Friday 23 Oct: the New York IB contained the jump up and the drop down; the rest of the day stayed inside.' },
       },
       {
@@ -510,7 +510,7 @@ export const en: LessonsContent = {
         traps: ["The footprint describes the candle's past. Without location (levels, profile, VWAP) it is easy to see anything in it.", "Tape history only goes back as far as the desk's recording."],
         combine: ['With open interest: aggression with rising OI means new positions, with falling OI closing.', 'With levels: a footprint at a value edge says more than one in the middle of the range.'],
         where: 'Footprint view and the Bid × Ask, Delta and Volume styles above the chart',
-        station: 'cockpit',
+        station: 'cockpit', // footprint 1m Bid × Ask
         figure: { slice: '2026-10-24-footprint', view: 'footprint', layers: {}, caption: 'Saturday 24 Oct, 18:00–21:30 UTC: a jump with aggressive buying and falling OI, then fading volume and a candle with new shorts.' },
       },
       {
@@ -523,7 +523,7 @@ export const en: LessonsContent = {
         traps: ['An imbalance zone is not guaranteed support (see the footprint exercise).', 'In our tests imbalances and their runs on their own gave no edge after costs.'],
         combine: ['With open interest and location: a zone at a value edge with rising OI is stronger context than a zone in the middle of the range.'],
         where: 'Indicators → Imbalance zones, Unfinished auctions; threshold in the footprint settings',
-        station: 'cockpit',
+        station: 'auction-open', // strefy nierównowagi na footprincie
       },
       {
         id: 'delta',
@@ -535,7 +535,7 @@ export const en: LessonsContent = {
         traps: ['Delta describes the candle, not the future.', 'Every trade has a buyer and a seller; delta only tells you who was impatient.'],
         combine: ['With open interest: is the aggression opening or closing positions.', 'With a level: delta when an edge is tested.'],
         where: 'Delta panel under the chart',
-        station: 'cockpit',
+        station: 'auction-open', // footprint w stylu Delta
         figure: { slice: '2026-10-24-cascade', layers: { delta: true, vwap: true }, at: '2026-10-24T21:30Z', caption: 'Saturday 24 Oct: delta since the tape recording began (16:25 UTC). Before that the panel is hatched.' },
       },
       {
@@ -548,7 +548,7 @@ export const en: LessonsContent = {
         traps: ['CVD divergences look convincing on a chart, but in our tests they gave no edge after costs.', 'The shape of CVD depends on where it resets.'],
         combine: ['With open interest and price (the four quadrants from the cascade exercise).', 'With the exchange panels: agreement between HL, Binance and Bybit strengthens the reading.'],
         where: 'CVD panel under the chart; reset in the settings; Indicators → Exchange CVD',
-        station: 'big-hands',
+        station: 'cockpit', // CVD pod wykresem
         figure: { slice: '2026-10-24-cascade', layers: { cvd: true, oi: true, vwap: true }, at: '2026-10-24T21:30Z', caption: 'Saturday 24 Oct: CVD rises together with price while open interest falls. Short covering.' },
       },
       {
@@ -561,7 +561,7 @@ export const en: LessonsContent = {
         traps: ['One large order is not a trend yet; often it is a position being closed or a hedge.'],
         combine: ['With the tape and DOM: what was resting in the book before the order came.', 'With whales: are large accounts moving.'],
         where: 'Indicators → Aggressor order bubbles',
-        station: 'cockpit',
+        station: 'cockpit', // bąble zleceń agresora
       },
       {
         id: 'clashes',
@@ -573,7 +573,7 @@ export const en: LessonsContent = {
         traps: ['A wall can disappear at any moment; it describes what happened, it is not a promise.'],
         combine: ['With the heatmap and DOM: visible liquidity versus liquidity actually absorbed.'],
         where: 'Indicators → Bursts and walls',
-        station: 'cockpit',
+        station: 'cockpit', // serie i ściany
       },
       {
         id: 'tape',
@@ -585,7 +585,7 @@ export const en: LessonsContent = {
         traps: ['The tape tempts you to react to every print. Without a plan it is mostly noise.'],
         combine: ['With the DOM: who is taking liquidity and whether the book refills it.'],
         where: 'Indicators → Order tape; on phones the Tape card',
-        station: 'cockpit',
+        station: 'cockpit', // taśma w prawej kolumnie Kokpitu
       },
       {
         id: 'venues',
@@ -597,7 +597,7 @@ export const en: LessonsContent = {
         traps: ['Different exchanges, different contracts and different participants: agreement is context, not a signal.'],
         combine: ['With CVD and OI on Hyperliquid: is the flow shared by the whole market.'],
         where: 'Indicators → Exchange CVD, Exchange ΔOI; Numbers table under the chart',
-        station: 'big-hands',
+        station: 'big-hands', // pytanie o cały rynek; panele giełd na życzenie
       },
       {
         id: 'heatmap',
@@ -609,7 +609,7 @@ export const en: LessonsContent = {
         traps: ['Resting orders can be pulled in a millisecond. Visible liquidity is not a promise.', 'The book only shows 20 levels per side.'],
         combine: ['With bubbles and walls: was the liquidity filled or pulled.', 'With levels: liquidity at PDH or PDL.'],
         where: 'Indicators → Order book heatmap',
-        station: 'fuel',
+        station: 'cockpit', // mapa ciepła arkusza
       },
       {
         id: 'dom',
@@ -621,7 +621,7 @@ export const en: LessonsContent = {
         traps: ['The DOM changes several times a second; individual walls are often placed and pulled.'],
         combine: ['With the tape: are aggressors eating the wall, or is the wall refilling.'],
         where: 'Ladder next to the heatmap; on phones the DOM card',
-        station: 'cockpit',
+        station: 'cockpit', // drabina przy mapie ciepła
       },
       {
         id: 'lots',
@@ -633,7 +633,7 @@ export const en: LessonsContent = {
         traps: ['A large order can be bait and disappear before price gets there.'],
         combine: ['With walls: was the large order actually filled.'],
         where: 'Indicators → Large orders in the book',
-        station: 'fuel',
+        station: 'cockpit', // duże zlecenia w arkuszu
       },
       {
         id: 'liq',
@@ -645,7 +645,7 @@ export const en: LessonsContent = {
         traps: ['A cluster is an estimate from public positions, not a certainty; positions change.', 'The end of a cascade is hard to time in real time.'],
         combine: ["With the day's levels: stops and liquidations often sit just beyond PDH and PDL.", 'With open interest: a cascade is a sharp drop in OI.'],
         where: 'Indicators → Liquidation clusters; Desk → liquidation map and tape',
-        station: 'fuel',
+        station: 'fuel', // klastry likwidacji
         figure: { slice: '2026-10-24-cascade', layers: { liq: true, levels: true, vwap: true }, at: '2026-10-24T17:30Z', caption: 'Saturday 24 Oct: a break of PDL 80,500 and two waves of long liquidations, about $45M in total.' },
       },
       {
@@ -658,7 +658,7 @@ export const en: LessonsContent = {
         traps: ['Whales are wrong too, and some positions hedge other positions.', "Copying without knowing another player's whole portfolio is guessing."],
         combine: ['With liquidation clusters and levels: where several things fall in one place.'],
         where: 'Indicators → Whales',
-        station: 'fuel',
+        station: 'fuel', // wieloryby
       },
       {
         id: 'oi',
@@ -670,7 +670,7 @@ export const en: LessonsContent = {
         traps: ['Every contract has two sides; OI tells you how many, not who is right.', 'Extreme funding can last a long time.'],
         combine: ['With delta and price (the cascade exercise).', 'With liquidations: a sharp OI drop during a move is forced closing.'],
         where: 'Indicators → Exchange ΔOI; Numbers table',
-        station: 'big-hands',
+        station: 'auction-open', // Zmiana OI i delta w zestawie Aukcja
         figure: { slice: '2026-10-24-cascade', layers: { oi: true, vwap: true }, at: '2026-10-24T21:30Z', caption: 'Saturday 24 Oct: the bounce after the cascade with falling open interest.' },
       },
     ],

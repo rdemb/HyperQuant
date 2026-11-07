@@ -1,11 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { DEFAULT_SETTINGS, NARROW_PATCH, parseSettings } from '../chart/settings';
+import { DEFAULT_SETTINGS, NARROW_PATCH, parseSettings, phoneSettings } from '../chart/settings';
+import { inds } from '../chart/templates';
 import {
   LEGACY_STATION,
   PHASE_LAYOUTS,
   STATIONS,
   clearStation,
   loadStationLayout,
+  panelSetPanel,
   priceLayerCount,
   saveStationLayout,
   stationById,
@@ -13,6 +15,7 @@ import {
   stationKey,
   stationKeys,
   stationPanel,
+  underPaneCount,
 } from '../chart/stations';
 
 /** Pamięć przeglądarki w testach (środowisko node). */
@@ -67,7 +70,7 @@ describe('układy faz dnia', () => {
     expect(stationPanel(stationById('fuel'), 0, false).indicators.map((x) => x.id)).toEqual(['slippage', 'regime']);
     expect(stationPanel(stationById('fuel'), 0, true).showWhales).toBe(false);
     const open = stationPanel(stationById('auction-open'), 0, false);
-    expect([open.interval, open.fpStyle, open.cvdReset, open.showDevPoc, open.showDelta]).toEqual(['5m', 'delta', 'session', true, true]);
+    expect([open.interval, open.fpStyle, open.cvdReset, open.showDevPoc, open.showDelta]).toEqual(['5m', 'delta', 'session', true, false]);
     expect(stationPanel(stationById('auction-open'), 0, true).showZones).toBe(false);
     expect(stationPanel(stationById('big-hands'), 0, false).indicators.map((x) => x.id)).toEqual(['twap', 'ordersize', 'hawkes']);
     expect(stationPanel(stationById('big-hands'), 0, true).indicators.map((x) => x.id)).toEqual(['twap']);
@@ -81,6 +84,37 @@ describe('układy faz dnia', () => {
       expect(s.question.indexOf('?'), s.id).toBe(s.question.length - 1);
     }
     expect(stationById('cockpit').question).toBe('Kto teraz naciska, kto przyjmuje uderzenia i co stoi w kolejce?');
+  });
+
+  it('najwyżej 3 panele pod wykresem ceny w każdym panelu i zestawie paneli, na telefonie najwyżej 2', () => {
+    for (const st of STATIONS) {
+      for (let p = 0; p < 4; p++) expect(underPaneCount(stationPanel(st, p, false)), `${st.id} ${p}`).toBeLessThanOrEqual(3);
+      expect(underPaneCount(phoneSettings(stationPanel(st, 0, true))), `${st.id} telefon`).toBeLessThanOrEqual(2);
+      for (const set of st.panelSets ?? []) {
+        expect(underPaneCount(panelSetPanel(st, set.id, 0, false)), `${st.id} ${set.id}`).toBeLessThanOrEqual(3);
+        expect(underPaneCount(phoneSettings(panelSetPanel(st, set.id, 0, true))), `${st.id} ${set.id} telefon`).toBeLessThanOrEqual(2);
+      }
+    }
+    // Licznik: wolumen, delta, CVD (oraz panele giełd i tablica) i widoczne wskaźniki we własnym panelu; stożek jest na wykresie ceny
+    expect(underPaneCount(DEFAULT_SETTINGS)).toBe(3);
+    expect(underPaneCount({ ...DEFAULT_SETTINGS, indicators: inds(['rsi'], ['cone'], ['hv', {}, { visible: false }]) })).toBe(4);
+    expect(underPaneCount({ ...DEFAULT_SETTINGS, showVenueCvd: true, showStats: true })).toBe(5);
+  });
+
+  it('panele pod wykresem: Aukcja i otwarcie — CVD na sesję i 2 panele Aukcji, Absorpcja chowa CVD; Wielkie ręce — tylko 3 wskaźniki', () => {
+    const st = stationById('auction-open');
+    const auction = panelSetPanel(st, 'auction', 0, false);
+    expect(auction).toEqual(stationPanel(st, 0, false));
+    expect([auction.showVolume, auction.showDelta, auction.showCvd, auction.cvdReset]).toEqual([false, false, true, 'session']);
+    expect(underPaneCount(auction)).toBe(3);
+    const absorption = panelSetPanel(st, 'absorption', 0, false);
+    expect(st.panelSets![1].patch).toEqual({ showCvd: false });
+    expect([absorption.showCvd, absorption.indicators.map((x) => x.id), underPaneCount(absorption)]).toEqual([false, ['absorption', 'makers', 'ofi'], 3]);
+    expect(parseSettings(absorption)).toEqual(absorption);
+    expect(panelSetPanel(st, 'nie-ma', 0, false)).toEqual(stationPanel(st, 0, false));
+    expect(panelSetPanel(stationById('cockpit'), 'absorption', 0, false)).toEqual(stationPanel(stationById('cockpit'), 0, false));
+    const big = stationPanel(stationById('big-hands'), 0, false);
+    expect([big.showVolume, big.showDelta, big.showCvd, underPaneCount(big)]).toEqual([false, false, false, 3]);
   });
 
   it('Aukcja i otwarcie: dwa zestawy paneli, domyślny Aukcja', () => {

@@ -11,8 +11,40 @@ import { RISK_DEFAULTS, expectancyR, mulberry32, simulateRisk } from '../risk';
 import { REPLAY_SUPPORTED, exerciseReplayHash } from '../replay';
 import { vwapSeries } from '../../charts/pro/core/indicators';
 import { parseReplayLink } from '../../charts/pro/replay/link';
-import { STATIONS } from '../../charts/pro/chart/stations';
+import { STATIONS, type Station, panelSetPanel, stationById, stationPanel } from '../../charts/pro/chart/stations';
+import type { ChartSettings } from '../../charts/pro/chart/settings';
 import { HIST_HOUR_MS, historyPath, isHistoryIndex } from '../../utils/tapeHistory';
+
+/** Wzorce wykresów układu na komputerze: panele wzorca i każdy zestaw paneli. */
+const patterns = (st: Station): ChartSettings[] => [...st.panels.map((_, p) => stationPanel(st, p, false)), ...(st.panelSets ?? []).map((x) => panelSetPanel(st, x.id, 0, false))];
+/**
+ * Hasło atlasu → warstwa albo wskaźnik, który musi być we wzorcu układu otwieranego przyciskiem hasła; tekst — dlaczego
+ * żaden wzorzec go nie ma (sprawdzenie pominięte). Nowe hasło wymaga wpisu tutaj.
+ */
+const NEEDS: Record<string, ((s: ChartSettings) => boolean) | string> = {
+  vwap: (s) => s.showVwap && s.showVwapBands,
+  profile: (s) => s.showProfile || s.showPeriodProfiles || s.showTpo,
+  devpoc: (s) => s.showPeriodProfiles || s.showDevPoc,
+  tpo: (s) => s.showTpo,
+  levels: (s) => s.showLevels,
+  sessions: (s) => s.showSessions,
+  ib: (s) => s.showIb,
+  footprint: (s) => s.view === 'footprint',
+  imbalance: (s) => s.showZones || s.showAuctions,
+  delta: (s) => s.showDelta || (s.view === 'footprint' && s.fpStyle === 'delta'),
+  cvd: (s) => s.showCvd,
+  bubbles: (s) => s.showBubbles,
+  clashes: (s) => s.showClashes,
+  tape: 'taśma to prawa kolumna Kokpitu (spec §5.3), nie warstwa wzorca wykresu',
+  venues: 'panele giełd Binance i Bybit są tylko na życzenie (CEX opt-in), więc żaden wzorzec ich nie włącza',
+  heatmap: (s) => s.showHeatmap,
+  // Drabina arkusza stoi przy mapie ciepła
+  dom: (s) => s.showHeatmap,
+  lots: (s) => s.showLots,
+  liq: (s) => s.showLiq,
+  whales: (s) => s.showWhales,
+  oi: (s) => s.indicators.some((x) => x.visible && x.id === 'oiflow') || s.showVenueOi || s.showTpoOi,
+};
 
 const slice = (id: string): LessonSlice => JSON.parse(readFileSync(new URL(`../../../public/lessons/${id}.json`, import.meta.url), 'utf8'));
 const SLICES = [...new Set([...EXERCISES.map((e) => e.slice), ...pl.atlas.entries.flatMap((e) => (e.figure ? [e.figure.slice] : []))])];
@@ -82,6 +114,22 @@ describe('ćwiczenia: struktura zgodna z treścią i danymi', () => {
     const all = [...EXERCISES.map((e) => e.station), ...pl.atlas.entries.map((a) => a.station), ...en.atlas.entries.map((a) => a.station)];
     expect(all.length).toBeGreaterThan(20);
     for (const s of all) expect(ids.has(s), s).toBe(true);
+  });
+
+  it('przycisk hasła atlasu otwiera układ z warstwą albo wskaźnikiem tego hasła', () => {
+    for (const c of [pl, en])
+      for (const e of c.atlas.entries) {
+        expect(Object.hasOwn(NEEDS, e.id), `${e.id}: brak w tabeli NEEDS`).toBe(true);
+        const need = NEEDS[e.id];
+        if (typeof need !== 'string') expect(patterns(stationById(e.station)).some(need), `${e.id} → ${e.station}`).toBe(true);
+      }
+  });
+
+  it('ćwiczenie otwiera układ z warstwą co najmniej jednego ze swoich haseł', () => {
+    for (const e of EXERCISES) {
+      const needs = e.atlas.map((a) => NEEDS[a]).filter((n) => typeof n === 'function');
+      expect(needs.some((n) => patterns(stationById(e.station)).some(n)), `${e.id} → ${e.station}`).toBe(true);
+    }
   });
 
   it('hasła atlasu mają unikalne identyfikatory, a ryciny poprawne chwile', () => {
