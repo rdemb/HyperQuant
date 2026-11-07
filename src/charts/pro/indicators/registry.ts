@@ -99,6 +99,8 @@ export interface PlotDef {
    * poziomami struktury, a odróżnia go położenie, kreska środka albo podpis na osi.
    */
   shareColor?: true;
+  /** Liczba bez strony (KS: przesunięcie rozkładu kwot): w legendzie neutralny tusz, choć to słupek ze znakiem. */
+  neutral?: true;
 }
 
 /**
@@ -1156,8 +1158,8 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
     short: 'Ichimoku',
     name: tr('Chmura Ichimoku', 'Ichimoku Cloud'),
     hint: tr(
-      'Tenkan (kolor wskaźnika) i Kijun (złota): środki zakresu, czyli (najwyższy szczyt + najniższy dołek) / 2, z 9 i 26 świec; chmura między Senkou A (średnia Tenkan i Kijun, niebieska) i Senkou B (środek zakresu 52 świec, czerwona), przesunięta w przód, niebieska (kolor kupna), gdy A jest nad B, czerwona (kolor sprzedaży), gdy pod; Chikou (fioletowa): zamknięcie przesunięte wstecz',
-      'Tenkan (indicator colour) and Kijun (gold): midpoints of the range, (highest high + lowest low) / 2, over 9 and 26 candles; the cloud between Senkou A (average of Tenkan and Kijun, blue) and Senkou B (range midpoint over 52 candles, red), shifted forward, blue (the buy colour) when A is above B, red (the sell colour) when below; Chikou (violet): the close shifted back'
+      'Tenkan (kolor wskaźnika) i Kijun (złota): środki zakresu, czyli (najwyższy szczyt + najniższy dołek) / 2, z 9 i 26 świec; chmura między Senkou A (średnia Tenkan i Kijun, niebieska) i Senkou B (środek zakresu 52 świec, czerwona), przesunięta w przód, niebieska (kolor kupna), gdy A jest nad B, czerwona (kolor sprzedaży), gdy pod; Chikou (szara): zamknięcie przesunięte wstecz',
+      'Tenkan (indicator colour) and Kijun (gold): midpoints of the range, (highest high + lowest low) / 2, over 9 and 26 candles; the cloud between Senkou A (average of Tenkan and Kijun, blue) and Senkou B (range midpoint over 52 candles, red), shifted forward, blue (the buy colour) when A is above B, red (the sell colour) when below; Chikou (grey): the close shifted back'
     ),
     group: 'trend',
     aliases: 'ichimoku kinko hyo chmura cloud kumo tenkan kijun senkou chikou',
@@ -1180,7 +1182,7 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
     plots: [
       { title: 'Tenkan' },
       { color: SECOND, title: 'Kijun' },
-      { color: THIRD, title: 'Chikou', shift: (p) => 1 - p.disp },
+      { color: BASE, title: 'Chikou', shift: (p) => 1 - p.disp },
       { color: BUY_LINE, title: 'Senkou A', shift: (p) => p.disp - 1 },
       { color: SELL_LINE, title: 'Senkou B', shift: (p) => p.disp - 1 },
     ],
@@ -1496,7 +1498,7 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
       { color: SECOND, title: 'p90' },
       { color: THIRD, title: 'p99' },
       { color: BASE, dashed: true, title: tr('baza p90', 'base p90') },
-      { hist: true, hidden: true, title: 'KS', format: 'fixed2' },
+      { hist: true, hidden: true, neutral: true, title: 'KS', format: 'fixed2' },
     ],
     format: 'usd',
     log: true,
@@ -2057,11 +2059,11 @@ export const defaultWidth = (def: IndicatorDef) => (def.plots.length > 1 ? 1 : 2
 export const MAX_INDICATORS = 12;
 
 /**
- * Kolory kolejnych instancji (paleta Głębia, docs/STYLEGUIDE.md §4): róż, limonka, orchidea, akwamaryna — z dala od kolorów
- * stron (lazur, żar), VWAP, POC, poziomów, IB, mapy z bloga i stałych linii wskaźników (złoto, fiolet, szary, turkus),
- * kontrast z tłem wykresu ≥ 4,5:1. Kolejność stała; piąta instancja wraca do pierwszego koloru.
+ * Kolory kolejnych instancji (paleta Głębia, docs/STYLEGUIDE.md §4): róż, limonka, orchidea, akwamaryna, zieleń, róż
+ * przygaszony — ΔE ≥ 10 od stałych linii wskaźników (kolory stron, złoto, zieleń series-3, szary) i od siebie, ≥ 9 od VWAP,
+ * POC, poziomów, IB i mapy z bloga, kontrast z tłem wykresu ≥ 4,5:1. Kolejność stała; siódma instancja wraca do pierwszego.
  */
-export const INDICATOR_COLORS = ['#e9548d', '#c3e143', '#f190dd', '#5ce4d5'] as const;
+export const INDICATOR_COLORS = ['#e9548d', '#c3e143', '#f190dd', '#5ce4d5', '#6fb120', '#aa6c73'] as const;
 
 /**
  * Kolory instancji z dawnych palet (Neon i Desk) — zostają w zapisach użytkowników (`hq.charts.*`, szablony) i w dawnych
@@ -2078,15 +2080,27 @@ export const plotColor = (x: Pick<IndicatorInstance, 'color'>, p: PlotDef): stri
  * R²) w neutralnym tuszu, linie w kolorze linii.
  */
 export const legendColor = (x: Pick<IndicatorInstance, 'color'>, p: PlotDef, sign: number): string =>
-  p.hist ? (Number.isNaN(sign) ? PRO.ink2 : sign < 0 ? PRO.sellInk : PRO.buyInk) : p.hidden ? PRO.ink2 : plotColor(x, p);
+  p.hist && !p.neutral ? (Number.isNaN(sign) ? PRO.ink2 : sign < 0 ? PRO.sellInk : PRO.buyInk) : p.hidden ? PRO.ink2 : plotColor(x, p);
+
+/**
+ * Podpis linii przy wartości na osi ceny. Na wąskim ekranie (telefon) bez podpisów dłuższych niż 2 znaki na wykresie ceny:
+ * pięć etykiet Ichimoku („Senkou A”…) zasłaniało świece; pivoty (P, R1, S1) i podpisy we własnych panelach zostają.
+ */
+export const axisTitle = (def: IndicatorDef, p: PlotDef, narrow: boolean): string =>
+  !p.title || (narrow && def.pane === 'price' && p.title.length > 2) ? '' : p.title;
 
 /** Podpis wartości plotu w legendzie: tytuł plotu, bez powtórzenia nazwy wskaźnika stojącej przed wartościami (RVOL). */
 export const legendTitle = (def: IndicatorDef, p: PlotDef): string => (p.title && p.title !== def.short ? p.title : '');
 
-/** Kolor znacznika instancji na liście i w oknie ustawień: pierwszej rysowanej linii (stały albo instancji). */
+/**
+ * Znacznik instancji na liście i w oknie ustawień (wartość CSS `background`): kolor pierwszej rysowanej linii, a przy
+ * samych słupkach w kolorach znaku (Zmiana OI, Absorpcja, OFI, Udział TWAP) pół na pół kupno i sprzedaż.
+ */
 export const swatchColor = (x: IndicatorInstance): string => {
-  const p = indicatorDef(x.id).plots.find((q) => !q.hidden && !q.hist);
-  return p ? plotColor(x, p) : x.color;
+  const def = indicatorDef(x.id);
+  const p = def.plots.find((q) => !q.hidden && !q.hist);
+  if (p) return plotColor(x, p);
+  return def.plots.some((q) => q.hist && !q.hidden) ? `linear-gradient(90deg, ${HIST_UP} 50%, ${HIST_DOWN} 50%)` : x.color;
 };
 
 /** Czy kolor instancji coś zmienia na wykresie (inaczej okno stylu go nie pokazuje). */

@@ -13,6 +13,14 @@ const MONTHS = tr(
 );
 
 /**
+ * Kolory kategorii (kohorty, giełdy, źródła danych, stałe linie wskaźników) — zdefiniowane raz, w stałej kolejności:
+ * turkus, złoto, fiolet, szary (docs/STYLEGUIDE.md §2), i zieleń series-3 z kategorycznej palety strony.
+ */
+const CAT = { teal: '#059583', gold: '#B18E15', violet: '#A878DB', grey: '#7A889C', green: '#199E70' } as const;
+/** POC: ramka w świecy, linia profilu i źródło „arkusz dokładny” na pasku pokrycia. */
+const POC = '#F1C45E';
+
+/**
  * Kolory płótna wykresu Pro: paleta „Głębia” (kupujący to lazur, sprzedający to żar, na tle „otchłani”). Te same wartości
  * są tokenami `of-*` w src/index.css (legenda i menu). Gotowe napisy z kryciem — bez budowania w pętli rysowania.
  */
@@ -32,8 +40,8 @@ const GLEBIA = {
   priceLine: '#3fc6dd',
   vwap: '#E2E9F0',
   svwap: '#C1B3F2',
-  /** Strefa ceny z linku powtórki (token zone). */
-  zone: '#A878DB',
+  /** Strefa ceny z linku powtórki (token zone, fiolet kategorii). */
+  zone: CAT.violet,
   // Footprint: kafle komórek od grafitu (mały wolumen) do nasyconego koloru strony; delta wiersza w tych samych kolorach.
   // Strona bidu to sprzedaż agresorów (żar), strona asku to kupno agresorów (lazur).
   fpNeutral: '#2a3446',
@@ -48,15 +56,15 @@ const GLEBIA = {
   // Nierównowagi: rozjaśnione kolory stron
   imbBuy: '#A2CFFF',
   imbSell: '#FFA28A',
-  pocFrame: '#F1C45E',
+  pocFrame: POC,
   volBar: '#46576C',
   deltaPosBar: '#3280DD',
   deltaNegBar: '#CA3829',
   // Profile wolumenu: obszar wartości grafitowy, reszta przygaszona, POC złoty, nagi POC szary
   profileVa: '#34425a',
   profileOut: '#1f2b3d',
-  profilePoc: '#F1C45E',
-  nakedPoc: '#7A889C',
+  profilePoc: POC,
+  nakedPoc: CAT.grey,
   domBid: '#3280DD',
   domAsk: '#CA3829',
   domText: '#e4e8ee',
@@ -69,30 +77,31 @@ const GLEBIA = {
   surface2: '#101826',
   // Pasek pokrycia danych pod osią czasu: źródło w kolorze kategorii (taśma w turkusie Hyperliquid, znaczniki TWAP w akcencie
   // jak w taśmie, arkusz i arkusz dokładny w złocie, OI w szarości), wiersz „wszystkie” w tuszu
-  coverTape: '#059583',
-  coverAccounts: '#A878DB',
-  coverTwap: '#3FC6DD',
-  coverBook: '#B18E15',
-  coverExact: '#F1C45E',
-  coverOi: '#7A889C',
+  coverTape: CAT.teal,
+  coverAccounts: CAT.violet,
+  coverTwap: C.accent,
+  coverBook: CAT.gold,
+  coverExact: POC,
+  coverOi: CAT.grey,
   // Bąble agresji: środek, brzeg i obrys kuli
   bubbleBuy: ['#3280DD', '#82BCFC', '#A2CFFF'],
   bubbleSell: ['#CA3829', '#F68771', '#FFA28A'],
   // Kategorie (giełdy w panelach „CVD giełd” i „ΔOI giełd”, kohorty): turkus, złoto, fiolet
-  venueHl: '#059583',
-  venueBinance: '#B18E15',
-  venueBybit: '#A878DB',
+  venueHl: CAT.teal,
+  venueBinance: CAT.gold,
+  venueBybit: CAT.violet,
   // Poziomy mapy z bloga (tekst autora): turkus z palety kategorii — na wykresie ceny nic innego go nie używa, nie jest
   // kolorem strony (kupno/sprzedaż), POC, VWAP ani IB
-  blogMap: '#059583',
+  blogMap: CAT.teal,
   // Initial balance sesji (linie, rozszerzenia i podpisy): zieleń spoza kolorów stron, VWAP, POC, poziomów i mapy z bloga
   ib: '#56DB8F',
-  // Stałe linie wskaźników, które nie są stroną (sygnał MACD, %D, p90, „reszta”): kolejność kategorii — złoto, fiolet,
-  // szary; animatorzy rynku w turkusie kohorty. Linie strony to buyInk i sellInk, słupki strony buy i sell.
-  indSecond: '#B18E15',
-  indThird: '#A878DB',
-  cohortMm: '#059583',
-  cohortRest: '#7A889C',
+  // Stałe linie wskaźników, które nie są stroną: druga linia złota (sygnał MACD, %D, p90, Kijun), trzecia zielona series-3
+  // (p99; fiolet kategorii leżał przy dawnym kolorze instancji #b388ff, ΔE 6), baza i Chikou szare; animatorzy rynku
+  // w turkusie kohorty. Linie strony to buyInk i sellInk, słupki strony buy i sell.
+  indSecond: CAT.gold,
+  indThird: CAT.green,
+  cohortMm: CAT.teal,
+  cohortRest: CAT.grey,
 };
 
 export const PRO = {
