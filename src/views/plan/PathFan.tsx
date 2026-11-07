@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { scaleLinear } from 'd3';
 import { McResult, PathOutcome } from '../../utils/planAnalyzer';
 import { fmtPrice, fmtFixed } from '../../ui';
-import { fmtMinutes } from './hooks';
+import { fmtMinutes } from '../after/format';
 import { tr } from '../../i18n';
 
 interface PathFanProps {

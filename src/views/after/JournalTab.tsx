@@ -2,7 +2,7 @@ import React, { useMemo, useRef, useState } from 'react';
 import { useJournal } from '../../state/useJournal';
 import { Badge, EmptyState, Panel, Segmented, DASH, fmtPrice, fmtFixed } from '../../ui';
 import { rMultiple, setupStats, type IbState, type Setup, type Trade } from '../../utils/tradeJournal';
-import { parseNum } from './hooks';
+import { parseNum } from './format';
 import { locale, tr } from '../../i18n';
 
 const inputCls =

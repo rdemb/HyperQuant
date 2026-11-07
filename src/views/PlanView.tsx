@@ -8,12 +8,13 @@ import { DayTradingPrepDesk } from '../components/DayTradingPrepDesk';
 import { PlanForm, PlanFormState } from './plan/PlanForm';
 import { PlanResult } from './plan/PlanResult';
 import { LedgerPanel } from './plan/LedgerPanel';
-import { DeskLedgerPanel } from './plan/DeskLedgerPanel';
+import { DeskLedgerPanel } from './after/DeskLedgerPanel';
 import { AuctionContextPanel } from './before/AuctionContextPanel';
 import { FolkloreLabPanel } from './plan/FolkloreLabPanel';
-import { JournalTab } from './plan/JournalTab';
+import { JournalTab } from './after/JournalTab';
 import { usePlanLedger } from './plan/usePlanLedger';
-import { parseNum, planSigma, useDebounced, usePlanMarket, useStoredString } from './plan/hooks';
+import { planSigma, useDebounced, usePlanMarket } from './plan/hooks';
+import { parseNum, useStoredString } from './after/format';
 import { tr } from '../i18n';
 
 type Tab = 'analyzer' | 'tomorrow' | 'journal';
