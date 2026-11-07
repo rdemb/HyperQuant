@@ -104,6 +104,19 @@ describe('wejścia nagłówka z magazynu rynku', () => {
     expect(sessionExpectedOf(fakeStore({ now: asia, series: { '5m': { state: 'loading' } } }), null, NY, false, 100_000)).toBeUndefined();
   });
 
+  it('zamknięta sesja bez świec 5m sprzed otwarcia: powód to ocena ex ante, nie „Bez modelu HAR” (także z wczytanym modelem)', () => {
+    const asia = at(2026, 11, 4, 2);
+    // Świece 5m dopiero od otwarcia NY — z doby przed sesją ani jednej
+    const late = bars5m(NY.start, asia, () => 10);
+    for (const model of [{} as VolModel, null]) {
+      const got = sessionExpectedOf(fakeStore({ now: asia, series: { '5m': { list: late } } }), model, NY, false, 100_000);
+      expect(got).toEqual({ why: 'Ocena ex ante (Parkinson sprzed otwarcia): za mało zamkniętych świec 5m z doby przed sesją (min. 12)' });
+    }
+    // Sesja w toku bez modelu — tu „Bez modelu HAR” jest prawdą
+    const live = sessionExpectedOf(fakeStore({ now: IN_NY, series: { '5m': { list: [] } } }), null, NY, true, 100_000);
+    expect(live).toEqual({ why: 'Bez modelu HAR, a za mało zamkniętych świec 5m z ostatniej doby (min. 12)' });
+  });
+
   it('nagłówek Rozliczenia i karta liczą typ dnia i migrację VA z tych samych faktów (świece 1m od poprzedniej sesji)', () => {
     // NY 2.11 płasko 99 500, potem do otwarcia NY 3.11 100 000; NY 3.11: IB 100 000–100 300, wybicie w górę do 100 700
     const px = (t: number) => (t < NY.start ? (t < at(2026, 11, 3, 0) ? 99_500 : 100_000) : t < NY.start + 30 * MIN ? 100_005 : t < NY.ibEnd ? 100_295 : 100_690);

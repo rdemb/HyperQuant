@@ -31,6 +31,7 @@ import {
   amt,
   blogMapName,
   isAbsent,
+  mapHitsText,
   pctOf,
 } from './sessionText';
 
@@ -272,7 +273,9 @@ function mapRow(x: ReviewInputs, m: BlogMap): ReviewRow {
   }
   const hit = r.levels.filter((l) => l.touchedAt !== null).sort((a, b) => a.touchedAt! - b.touchedAt!);
   const miss = r.levels.filter((l) => l.touchedAt === null);
-  const k = `${hit.length}/${r.levels.length}`;
+  // „X/Y” i tekst luki z tego samego pomocnika co nagłówek układu i Czwórka
+  const t = mapHitsText(hit.length, r.levels.length, r.complete);
+  const k = t.value;
   // „Chybione” dopiero po końcu okna mapy; wcześniej (okno trwa dalej, w kolejnej sesji albo teraz) — do której minuty
   const missWord = !r.complete
     ? tr('nierozliczone', 'unsettled')
@@ -295,7 +298,7 @@ function mapRow(x: ReviewInputs, m: BlogMap): ReviewRow {
       `Wpis „${m.title}”: poziomy z tekstu autora, nie model HyperQuant. Rozliczenie od wpisu (${fmtDayTime(from, now)}) do ${until}${rest}: dotknięcie = świeca 1m Hyperliquid z low ≤ poziom ≤ high, ta sama reguła i ten sam okres co ✓ na wykresie; bez świecy każdej pełnej minuty niedotknięte poziomy zostają nierozliczone.`,
       `Post “${m.title}” (PL blog): levels from the author's text, not a HyperQuant model. Settled from the post (${fmtDayTime(from, now)}) until ${until}${rest}: a touch is a Hyperliquid 1m candle with low ≤ level ≤ high, the same rule and period as the ✓ on the chart; without a candle for every full minute, untouched levels stay unsettled.`
     ),
-    ...(r.complete ? {} : { why: tr('reszta nierozliczona: luka w świecach 1m', 'the rest is unsettled: a gap in the 1m candles') }),
+    ...(t.gap ? { why: t.gap } : {}),
     detail,
     scope: 'session',
     replayAt: hit.length ? hit[0].touchedAt : null,

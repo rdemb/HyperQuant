@@ -716,9 +716,13 @@ export class CandleSeries {
     void m.requestFunding(this.candles[0].t);
   }
 
-  /** Ostatnie doczytanie starszej strony się nie udało (sieć, limit API); kolejna próba po OLDER_RETRY_MS. */
+  /**
+   * Ostatnie doczytanie starszej strony się nie udało (sieć, limit API) i nie trwa ponowna próba; kolejna po OLDER_RETRY_MS
+   * (zegar budzi wtedy odbiorców magazynu, więc ci, którzy nadal potrzebują starszych świec, pytają ponownie bez czekania na
+   * inny render).
+   */
   get olderFailed(): boolean {
-    return this.olderRetryAt > 0;
+    return this.olderRetryAt > 0 && !this.loadingOlder;
   }
 
   /**
@@ -737,6 +741,8 @@ export class CandleSeries {
     if (list === null) {
       this.olderRetryAt = Date.now() + OLDER_RETRY_MS;
       this.m.bump();
+      // Po upływie przerwy powiadomienie: odbiorcy (Rozliczenie, nagłówek, wskaźniki) proszą o starsze świece ponownie
+      setTimeout(() => seq === this.loadSeq && this.m.bump(), OLDER_RETRY_MS + 50);
       return;
     }
     this.olderRetryAt = 0;

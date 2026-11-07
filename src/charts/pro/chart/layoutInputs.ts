@@ -133,7 +133,11 @@ function expectedOf(store: InputStore, model: VolModel | null, s: TradeSession, 
     why: model
       ? tr('Model HAR nie daje zmienności dla tej sesji', 'The HAR model gives no volatility for this session')
       : asOf < now
-        ? tr('Bez modelu HAR, a za mało zamkniętych świec 5m z doby przed sesją (min. 12)', 'No HAR model and too few closed 5m candles from the day before the session (min. 12)')
+        ? // Zamknięta sesja: zawsze Parkinson sprzed otwarcia, także przy wczytanym modelu HAR (sessionExpectedOf)
+          tr(
+            'Ocena ex ante (Parkinson sprzed otwarcia): za mało zamkniętych świec 5m z doby przed sesją (min. 12)',
+            'Ex ante estimate (Parkinson before the open): too few closed 5m candles from the day before the session (min. 12)'
+          )
         : tr('Bez modelu HAR, a za mało zamkniętych świec 5m z ostatniej doby (min. 12)', 'No HAR model and too few closed 5m candles from the last day (min. 12)'),
   };
 }
