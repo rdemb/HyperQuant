@@ -42,6 +42,8 @@ export interface LiquiditySource {
   far: BookHistory | null;
   orders: (from: number, to: number) => AggressorOrder[];
   walls: (from: number, to: number, t: number) => Wall[];
+  /** Wersja danych magazynu (rośnie z każdą zmianą zleceń i ścian); bez niej scenę odświeża tylko setData. */
+  version?: () => number;
 }
 
 /** Obiekt pod kliknięciem: zlecenie agresora (z klasą), seria albo ściana. */
@@ -214,6 +216,10 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
   private domRight = 0;
   /** Drabina DOM przy prawej krawędzi (na telefonie jest osobną kartą). */
   private domOn = true;
+  /** Licznik wywołań setData (nowe świece, źródło, zegar albo próg). */
+  private dataVersion = 0;
+  /** Wejścia ostatnio złożonej sceny bąbli, ścian, dużych zleceń i drabiny (null — scena do złożenia). */
+  private sceneKey: readonly unknown[] | null = null;
 
   private readonly lut = buildHeatLut(LIQ_RAMP);
   /** Daleka agregacja przygaszona: tło dla szerszego widoku, bez ostrej granicy z dokładnym arkuszem przy cenie. */
@@ -298,6 +304,7 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
     this.src = src;
     this.now = now;
     this.threshold = threshold;
+    this.dataVersion++;
     this.requestUpdate?.();
   }
 
@@ -312,12 +319,50 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
     this.requestUpdate?.();
   }
 
+  /**
+   * Lightweight Charts woła updateAllViews przy każdym odświeżeniu (kilka razy na klatkę, także przy ruchu kursora),
+   * więc scena powstaje od nowa tylko po zmianie wejść: widoku, danych albo przełączników.
+   */
   updateAllViews(): void {
-    this.geo = this.geometry();
-    this.bubbles = this.toggles.showBubbles && this.geo ? this.sceneBubbles(this.geo) : [];
-    this.walls = this.toggles.showBubbles && this.toggles.showClashes && this.geo ? this.sceneWalls(this.geo) : [];
-    this.lots = this.toggles.showLots && this.geo ? this.sceneLots(this.geo) : [];
-    this.dom = this.toggles.showHeatmap && this.domOn && this.geo ? this.sceneDom(this.geo) : [];
+    const g = this.geometry();
+    this.geo = g;
+    const key = g ? this.sceneInputs(g) : null;
+    if (key && this.sceneKey && sameInputs(key, this.sceneKey)) return;
+    this.sceneKey = key;
+    this.bubbles = this.toggles.showBubbles && g ? this.sceneBubbles(g) : [];
+    this.walls = this.toggles.showBubbles && this.toggles.showClashes && g ? this.sceneWalls(g) : [];
+    this.lots = this.toggles.showLots && g ? this.sceneLots(g) : [];
+    this.dom = this.toggles.showHeatmap && this.domOn && g ? this.sceneDom(g) : [];
+  }
+
+  /** Wszystko, od czego zależy scena (porównanie po wartościach i referencjach). */
+  private sceneInputs(g: Geometry): unknown[] {
+    const t = this.toggles;
+    const near = this.src.near;
+    // Szerokość panelu przycina duże zlecenia i ustawia drabinę — tylko gdy któreś z nich jest włączone
+    const width = t.showLots || (t.showHeatmap && this.domOn) ? this.chart?.paneSize(0).width : 0;
+    return [
+      g.xa,
+      g.sp,
+      g.a,
+      g.b,
+      g.tFrom,
+      g.tTo,
+      width,
+      this.dataVersion,
+      this.src.version?.(),
+      near,
+      near?.version,
+      t.showHeatmap,
+      t.showBubbles,
+      t.showClashes,
+      t.showLots,
+      this.threshold,
+      this.highlight,
+      this.selected,
+      this.domOn,
+      this.now,
+    ];
   }
 
   /** Bąbel, seria albo ściana pod punktem (px CSS panelu); najpierw to, co narysowane na wierzchu. */
@@ -560,6 +605,12 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
     }
     return out;
   }
+}
+
+function sameInputs(a: readonly unknown[], b: readonly unknown[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (!Object.is(a[i], b[i])) return false;
+  return true;
 }
 
 /** Wielkości (jednostki rynku) przy percentylach HEAT_LO_Q i HEAT_Q z próbki poziomów widocznych migawek. */
