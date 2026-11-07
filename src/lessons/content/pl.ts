@@ -388,9 +388,9 @@ export const pl: LessonsContent = {
   },
   atlas: {
     intro:
-      'Każdy wskaźnik z zakładki Wykresy: co to jest, jak go liczymy, jak go czytać, gdzie się na nim łatwo pomylić i z czym go łączyć. Ryciny pochodzą z tych samych wycinków co ćwiczenia.',
+      'Każdy wskaźnik wykresów faz dnia (Przed sesją, W sesji, Po sesji): co to jest, jak go liczymy, jak go czytać, gdzie się na nim łatwo pomylić i z czym go łączyć. Ryciny pochodzą z tych samych wycinków co ćwiczenia.',
     groups: { price: 'Cena i wartość', flow: 'Przepływ: kto jest agresywny', book: 'Arkusz i płynność', context: 'Pozycje i dźwignia' },
-    labels: { what: 'Co to jest', how: 'Jak liczymy', read: 'Jak czytać', traps: 'Pułapki', combine: 'Z czym łączyć', where: 'Na Wykresach' },
+    labels: { what: 'Co to jest', how: 'Jak liczymy', read: 'Jak czytać', traps: 'Pułapki', combine: 'Z czym łączyć', where: 'Gdzie w aplikacji' },
     entries: [
       {
         id: 'vwap',
@@ -535,7 +535,7 @@ export const pl: LessonsContent = {
         name: 'CVD: skumulowana delta',
         group: 'flow',
         what: 'Suma delt od początku okresu: kierunek agresji w czasie.',
-        how: 'Delta kolejnych świec dodawana od resetu (sesja, doba UTC, tydzień albo bez resetu). Na Wykresach do tego CVD giełd: Hyperliquid, Binance (perp i spot) i Bybit, liczone w przeglądarce czytelnika.',
+        how: 'Delta kolejnych świec dodawana od resetu (sesja, doba UTC, tydzień albo bez resetu). Na wykresie W sesji do tego CVD giełd: Hyperliquid, Binance (perp i spot) i Bybit, liczone w przeglądarce czytelnika.',
         read: ['Cena i CVD w jednym kierunku: ruch z agresją. Rozjazd (dywergencja): ruch bez agresji albo agresja wchłaniana.', 'CVD giełd mówi, czy Hyperliquid idzie razem z większymi rynkami.'],
         traps: ['Dywergencje CVD wyglądają przekonująco na wykresie, ale w naszych testach nie dawały przewagi po kosztach.', 'Kształt CVD zależy od miejsca resetu.'],
         combine: ['Z open interest i ceną (cztery ćwiartki z ćwiczenia o kaskadzie).', 'Z panelami giełd: zgoda HL, Binance i Bybit wzmacnia odczyt.'],
@@ -632,7 +632,7 @@ export const pl: LessonsContent = {
         name: 'Likwidacje i klastry likwidacji',
         group: 'context',
         what: 'Przymusowe zamknięcia pozycji z dźwignią: te, które już się wydarzyły, i miejsca, gdzie mogą się wydarzyć.',
-        how: 'Klastry na wykresach to szacunek skanera desku: gdzie leżą ceny likwidacji otwartych pozycji. Koła na rycinach lekcji to likwidacje, które już się wydarzyły (taśma likwidacji desku, w mln USD na świecę).',
+        how: 'Klastry na wykresie to szacunek skanera desku: gdzie leżą ceny likwidacji otwartych pozycji. Koła na rycinach lekcji to likwidacje, które już się wydarzyły (taśma likwidacji desku, w mln USD na świecę).',
         read: ['Kaskada likwidacji to sprzedaż (albo kupno) przymusowa, a nie decyzja kogoś, kto wie więcej.', 'Duży klaster blisko ceny to paliwo: dojście do niego może przyspieszyć ruch.'],
         traps: ['Klaster to szacunek z publicznych pozycji, a nie pewność; pozycje się zmieniają.', 'Koniec kaskady trudno trafić w czasie rzeczywistym.'],
         combine: ['Z poziomami dnia: stopy i likwidacje często leżą tuż za PDH i PDL.', 'Z open interest: kaskada to gwałtowny spadek OI.'],
@@ -657,7 +657,7 @@ export const pl: LessonsContent = {
         name: 'Open interest i finansowanie',
         group: 'context',
         what: 'Liczba otwartych kontraktów (ile jest pozycji) i stawka, którą płaci tłoczniejsza strona.',
-        how: 'Open interest z kontekstu rynku Hyperliquid zapisywanego co minutę razem z taśmą; finansowanie za godzinę z tego samego źródła (na wykresach też z Binance i Bybit).',
+        how: 'Open interest z kontekstu rynku Hyperliquid zapisywanego co minutę razem z taśmą; finansowanie za godzinę z tego samego źródła (na wykresie także z Binance i Bybit).',
         read: ['Cena ↑ i OI ↑: nowe longi. Cena ↑ i OI ↓: zamykanie shortów. Cena ↓ i OI ↑: nowe shorty. Cena ↓ i OI ↓: zamykanie longów.', 'Skrajne finansowanie pokazuje, która strona jest przepełniona.'],
         traps: ['Każdy kontrakt ma dwie strony; OI mówi ile, ale nie kto ma rację.', 'Skrajne finansowanie potrafi trwać długo.'],
         combine: ['Z deltą i ceną (ćwiczenie o kaskadzie).', 'Z likwidacjami: gwałtowny spadek OI przy ruchu to zamykanie przymusowe.'],

@@ -47,8 +47,8 @@ export const CatLedgerCard: React.FC<{ cat: NonNullable<DeskLedgerSummary['cat']
       </div>
       <p className="text-[10px] text-ink-3 leading-snug">
         {tr(
-          `Ten sam model i kod co wskaźnik kota na wykresach, zapisany co 15 min razem z prognozami desku. Cechy w rekordzie, więc każdy przeliczy p publicznym modelem. Duży ruch = zakres godziny ponad medianę z 30 dni. Prognozy na 1 h co 15 min nakładają się, więc oceniamy od ${MIN_EFF} rozłącznych godzin. Test kroczący 2023 do 2026: AUC 0,83 (ruch) i 0,54 (kierunek).`,
-          `The same model and code as the cat indicator on the charts, recorded every 15 min with the desk forecasts. Features are in the record, so anyone can recompute p with the public model. Big move = hourly range above the 30-day median. 1 h forecasts every 15 min overlap, so scores start from ${MIN_EFF} non-overlapping hours. Walk-forward test 2023 to 2026: AUC 0.83 (move) and 0.54 (direction).`
+          `Ten sam model i kod co wskaźnik kota na wykresie, zapisany co 15 min razem z prognozami desku. Cechy w rekordzie, więc każdy przeliczy p publicznym modelem. Duży ruch = zakres godziny ponad medianę z 30 dni. Prognozy na 1 h co 15 min nakładają się, więc oceniamy od ${MIN_EFF} rozłącznych godzin. Test kroczący 2023 do 2026: AUC 0,83 (ruch) i 0,54 (kierunek).`,
+          `The same model and code as the cat indicator on the chart, recorded every 15 min with the desk forecasts. Features are in the record, so anyone can recompute p with the public model. Big move = hourly range above the 30-day median. 1 h forecasts every 15 min overlap, so scores start from ${MIN_EFF} non-overlapping hours. Walk-forward test 2023 to 2026: AUC 0.83 (move) and 0.54 (direction).`
         )}
         {cat.since !== null && (
           <>
