@@ -8,6 +8,11 @@ import { utcDayStart } from '../charts/pro/core/sessions';
 
 export type MapKind = 'dzien' | 'ny' | 'otwarcie' | 'aktualizacja' | 'inne';
 
+/** Identyfikator wpisu z mapą jak w skrypcie bloga (scripts/blog/posts.mjs): data i słowa z małych liter i cyfr. */
+export const MAP_ID = /^\d{4}-\d{2}-\d{2}-[a-z0-9]+(?:-[a-z0-9]+)*$/;
+export const MAP_ID_MAX = 120;
+export const isMapId = (v: unknown): v is string => typeof v === 'string' && v.length <= MAP_ID_MAX && MAP_ID.test(v);
+
 export type SettledLevel = { label: string; price: number; touchedAt: number | null };
 
 /**

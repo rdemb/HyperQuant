@@ -10,8 +10,8 @@ import { MARKETS, type Market } from '../store/proStore';
  * `replay` — źródło nagrania: `history` (gałąź historii serwera) albo `lessons` (kopia przy lekcjach); `m`, `i`, `v` jak w linku
  * do widoku; `from` i `to` — zakres nagrania (bez nich: ostatnia doba z nagrania), `t` — chwila pauzy na start (bez niej:
  * godzina przed końcem); `layers` — warstwy wykresu ceny (nazwy pól ustawień bez „show”, od małej litery: vwap,
- * vwapBands, sessionVwap, profile, periodProfiles, devPoc, tpo, levels, sessions, ib, zones, auctions, heatmap, bubbles,
- * clashes, lots; liq i whales w powtórce nic nie pokazują) albo `station` — wzorzec układu (z `layers` warstwy z linku
+ * vwapBands, sessionVwap, profile, periodProfiles, devPoc, tpo, levels, blogMap, sessions, ib, zones, auctions, heatmap,
+ * bubbles, clashes, lots; liq i whales w powtórce nic nie pokazują) albo `station` — wzorzec układu (z `layers` warstwy z linku
  * zastępują warstwy układu; dawne id stacji, np. `scalp` z bloga, prowadzą do nowego układu przez LEGACY_STATION);
  * `zone` — podświetlony przedział ceny `od-do`. Zakres najwyżej doba (dłuższy jest przycinany od początku).
  */

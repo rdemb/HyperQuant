@@ -47,6 +47,17 @@ describe('parseSettings', () => {
     expect(parseSettings({}, { ...DEFAULT_SETTINGS, panelSet: 'absorption' }).panelSet).toBe('absorption');
     expect('panelSet' in parseSettings(null)).toBe(false);
   });
+
+  it('mapa z bloga: przełącznik i wybrana mapa (identyfikator wpisu bloga; błędny → brak wyboru, czyli mapa domyślna)', () => {
+    expect(DEFAULT_SETTINGS.showBlogMap).toBe(false);
+    expect(parseSettings({ showBlogMap: true }).showBlogMap).toBe(true);
+    expect(parseSettings({ showBlogMap: 'tak' }).showBlogMap).toBe(false);
+    expect(parseSettings({ blogMapId: '2026-11-06-mapa-przed-nowym-jorkiem' }).blogMapId).toBe('2026-11-06-mapa-przed-nowym-jorkiem');
+    const bad = ['', 'mapa-dnia', '2026-11-06-', '2026-11-06-Mapa', '2026-11-06-mapa--dnia', '../2026-11-06-x', `2026-11-06-${'a'.repeat(200)}`, 42, null, ['2026-11-06-mapa-dnia']];
+    for (const b of bad) expect(parseSettings({ blogMapId: b }).blogMapId, String(b)).toBeUndefined();
+    expect('blogMapId' in parseSettings(null)).toBe(false);
+    expect(parseSettings({}, { ...DEFAULT_SETTINGS, blogMapId: '2026-11-06-mapa-dnia' }).blogMapId).toBe('2026-11-06-mapa-dnia');
+  });
 });
 
 describe('grupy Tablicy liczb', () => {

@@ -67,6 +67,9 @@ const GLEBIA = {
   venueHl: '#059583',
   venueBinance: '#B18E15',
   venueBybit: '#A878DB',
+  // Poziomy mapy z bloga (tekst autora): turkus z palety kategorii — na wykresie ceny nic innego go nie używa, nie jest
+  // kolorem strony (kupno/sprzedaż), POC, VWAP ani IB
+  blogMap: '#059583',
 };
 
 export const PRO = {

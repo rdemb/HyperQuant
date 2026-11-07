@@ -62,9 +62,26 @@ describe('układy faz dnia', () => {
     // Ustawienia startowe: VWAP, profil, poziomy dnia i otwarcia sesji; stożek na cenie +1, ukryty i we własnym panelu — nie
     expect(priceLayerCount(DEFAULT_SETTINGS)).toBe(4);
     expect(priceLayerCount({ ...DEFAULT_SETTINGS, indicators: inds(['cone'], ['rsi'], ['ema', {}, { visible: false }]) })).toBe(5);
-    // Mapa dnia 30m: TPO z OI, VWAP, poziomy dnia i stożek — bez pasm VWAP
+    // Mapa dnia 30m: TPO z OI, VWAP, mapa z bloga i stożek — bez pasm VWAP
     const map30 = stationPanel(stationById('day-map'), 1, false);
     expect([map30.showVwapBands, priceLayerCount(map30)]).toEqual([false, 5]);
+  });
+
+  it('mapa z bloga zamiast poziomów dnia: Mapa dnia 30m (także telefon) i Rozliczenie, warstwa liczy się do limitu', () => {
+    const map = stationById('day-map');
+    const map30 = stationPanel(map, 1, false);
+    expect([map30.showBlogMap, map30.showLevels]).toEqual([true, false]);
+    expect(priceLayerCount({ ...map30, showBlogMap: false })).toBe(4);
+    expect([stationPanel(map, 0, true).showBlogMap, stationPanel(map, 0, true).showLevels]).toEqual([true, false]);
+    // 4h zostaje z poziomami dnia (PDH/PDL z wykresu)
+    expect([stationPanel(map, 0, false).showBlogMap, stationPanel(map, 0, false).showLevels]).toEqual([false, true]);
+    for (const narrow of [false, true]) {
+      const review = stationPanel(stationById('review'), 0, narrow);
+      expect([review.showBlogMap, review.showLevels], String(narrow)).toEqual([true, false]);
+    }
+    expect(priceLayerCount(stationPanel(stationById('review'), 0, false))).toBe(5);
+    for (const id of ['fuel', 'cockpit', 'auction-open', 'big-hands']) expect(stationPanel(stationById(id), 0, false).showBlogMap, id).toBe(false);
+    expect(DEFAULT_SETTINGS.showBlogMap).toBe(false);
   });
 
   it('wzorce odpowiadają pytaniom układów', () => {

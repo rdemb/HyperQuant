@@ -63,7 +63,8 @@ export const LEGACY_STATION: Readonly<Record<string, StationId>> = {
   mtf: 'cockpit',
 };
 
-// Mapa dnia: 30m z TPO z OI i VA, VWAP, PDH/PDL i stożkiem zakresu — 5 warstw na cenie (na telefonie ten sam wykres)
+// Mapa dnia: 30m z TPO z OI i VA, VWAP, mapą z bloga (zamiast poziomów dnia — PDH i PDL są w mapie) i stożkiem zakresu —
+// 5 warstw na cenie (na telefonie ten sam wykres)
 const DAY_MAP_30M: Partial<ChartSettings> = {
   ...LAYERS_OFF,
   interval: '30m',
@@ -71,7 +72,7 @@ const DAY_MAP_30M: Partial<ChartSettings> = {
   showTpo: true,
   showTpoOi: true,
   showVwap: true,
-  showLevels: true,
+  showBlogMap: true,
   showDelta: false,
   showCvd: false,
   indicators: inds(['cone']),
@@ -202,8 +203,9 @@ export const STATIONS: readonly Station[] = [
     question: tr('Jaki to był dzień i czy mapa się sprawdziła?', 'What kind of day was it, and did the map hold up?'),
     phase: 'after',
     layout: 1,
+    // Mapa z bloga z rozliczeniem poziomów (✓ i minuta dotknięcia) zamiast poziomów dnia
     panels: [
-      { ...LAYERS_OFF, interval: '30m', view: 'candles', showTpo: true, showIb: true, showLevels: true, showSessions: true, showVwap: true, showDelta: false, showCvd: false },
+      { ...LAYERS_OFF, interval: '30m', view: 'candles', showTpo: true, showIb: true, showBlogMap: true, showSessions: true, showVwap: true, showDelta: false, showCvd: false },
     ],
     phone: NARROW_PATCH,
   },

@@ -100,6 +100,11 @@ export function fmtDm(t: number): string {
   return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}`;
 }
 
+/** HH:MM, gdy `t` jest tego samego dnia co `now`, inaczej DD.MM HH:MM (czas lokalny). */
+export function fmtDayTime(t: number, now: number): string {
+  return new Date(t).toDateString() === new Date(now).toDateString() ? fmtHm(t) : `${fmtDm(t)} ${fmtHm(t)}`;
+}
+
 const MONTHS_PL = ['sty', 'lut', 'mar', 'kwi', 'maj', 'cze', 'lip', 'sie', 'wrz', 'paź', 'lis', 'gru'];
 const MONTHS_EN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 

@@ -7,8 +7,9 @@ import { useDesk } from '../../state/DeskContext';
 import { useHip4 } from '../../state/useHip4';
 import { useVolModel } from '../../state/useVolModel';
 import { usePublished } from '../../state/usePublished';
+import { type BlogMapsState, pickMap, useBlogMaps } from '../../state/useBlogMaps';
 import { type WhaleLayer, isWhaleLayer } from '../../utils/whaleLayer';
-import { INTERVALS, fmtHm, fmtSince, fromDaily, intervalById } from './core/time';
+import { INTERVALS, fmtDayTime, fmtHm, fmtSince, fromDaily, intervalById } from './core/time';
 import { DEFAULT_THRESHOLD_USD, classify } from './core/clashes';
 import { hlTick } from './core/footprintBar';
 import { indicatorScope, liqLevels } from './core/indicators';
@@ -37,7 +38,8 @@ import { IndicatorSettings } from './chart/IndicatorSettings';
 import { indicatorLabel, indicatorsLink } from './indicators/registry';
 import { MarketStateBar } from './chart/MarketStateBar';
 import { LayoutHeader } from './chart/LayoutHeader';
-import { legendChips, liqScan, whalesScan } from './chart/layerSources';
+import { blogMapScan, legendChips, liqScan, whalesScan } from './chart/layerSources';
+import { blogMapName } from './chart/blogMapLayer';
 import { CoverageLegend } from './chart/CoverageLegend';
 import { type DataSource, needsOf } from './chart/coverageStrip';
 import { SchrodiLauncher } from '../../components/schrodi/SchrodiLauncher';
@@ -280,6 +282,9 @@ export const ProChart: React.FC<{
   const whalePub = usePublished('whales.json', isWhaleLayer);
   // Wieloryby i mapa likwidacji to stan na teraz — w powtórce ich nie ma
   const whales = !inReplay && whalePub.value && Date.now() - whalePub.value.asOf < WHALES_STALE_MS ? whalePub.value : null;
+  // Mapy z bloga (plik bloga z tej samej domeny) tylko z włączoną warstwą na BTC; rozliczenie poziomów w układzie Rozliczenie
+  const blogMaps = useBlogMaps(settings.showBlogMap && settings.coin === 'BTC');
+  const blogSettle = station.id === 'review';
   useStoreVersion(store, 400);
 
   const update = useCallback((patch: Partial<ChartSettings>) => setSettings((s) => ({ ...s, ...patch })), []);
@@ -479,6 +484,10 @@ export const ProChart: React.FC<{
   }, [hip4, hip4On]);
 
   useEffect(() => {
+    ctrlRef.current?.setBlogMaps(blogMaps, blogSettle);
+  }, [blogMaps, blogSettle, store]);
+
+  useEffect(() => {
     const onFs = () => setFullscreen(document.fullscreenElement === cardRef.current);
     document.addEventListener('fullscreenchange', onFs);
     return () => document.removeEventListener('fullscreenchange', onFs);
@@ -623,7 +632,11 @@ export const ProChart: React.FC<{
         coin: store.coin,
         now: Date.now(),
         intervalMs: iv.ms,
-        scan: { showLiq: liqScan(liq), showWhales: whalesScan(whales, store.coin, whalePub.configured) },
+        scan: {
+          showLiq: liqScan(liq),
+          showWhales: whalesScan(whales, store.coin, whalePub.configured),
+          showBlogMap: blogMapScan(blogMaps, pickMap(blogMaps.maps, store.serverNow(), settings.blogMapId)),
+        },
       });
   const bigUsd = ctrlRef.current?.bigTradeUsd ?? DEFAULT_THRESHOLD_USD;
   const tick = hlTick(store.lastPrice());
@@ -978,6 +991,8 @@ export const ProChart: React.FC<{
                   onChange={update}
                   onReset={() => setSettings({ ...stationPanel(station, panel, isNarrow()), coin: settings.coin, interval: settings.interval })}
                   narrow={narrow}
+                  blogMaps={blogMaps}
+                  now={store.serverNow()}
                 />
               ) : menu === 'alerts' ? (
                 <AlertsMenu key={alertDraft ? `${alertDraft.price}-${alertDraft.kind}` : 'new'} coin={store.coin} price={store.lastPrice()} draft={alertDraft} serverNow={() => store.serverNow()} />
@@ -1368,7 +1383,10 @@ const SettingsMenu: React.FC<{
   onReset: () => void;
   /** Telefon: styl footprintu tutaj (nie w pasku). */
   narrow: boolean;
-}> = ({ settings: s, bigUsd, tick, onChange, onReset, narrow }) => (
+  /** Mapy z bloga do wyboru (z włączoną warstwą „Mapa z bloga”) i chwila wykresu. */
+  blogMaps: BlogMapsState;
+  now: number;
+}> = ({ settings: s, bigUsd, tick, onChange, onReset, narrow, blogMaps, now }) => (
   <div className="bg-surface-2 border border-line-strong rounded-xl p-3 shadow-2xl flex flex-col gap-3 text-xs">
     <Group title="Footprint">
       {narrow && (
@@ -1415,6 +1433,7 @@ const SettingsMenu: React.FC<{
     <Group title={tr('Nad wykresem', 'Above the chart')}>
       <Check label={tr('Stan rynku (zdanie z faktów)', 'Market state (a sentence of facts)')} checked={s.showState} onChange={(v) => onChange({ showState: v })} />
     </Group>
+    {s.showBlogMap && <BlogMapPicker s={s} maps={blogMaps} now={now} onChange={onChange} />}
     <Group title={tr('Duże zlecenia', 'Large orders')}>
       <Select
         label={tr('Próg dużego zlecenia', 'Large order threshold')}
@@ -1594,6 +1613,17 @@ function flowLayers(s: ChartSettings, intervalMs: number, liq: LiqMapState, whal
       hint: tr('PDH i PDL — szczyt i dołek poprzedniego dnia UTC — oraz otwarcie dnia (00:00 UTC)', "PDH and PDL — the previous UTC day's high and low — and the daily open (00:00 UTC)"),
       swatch: 'bg-level',
       off: scope.levels ? undefined : tr('Na interwałach poniżej 1D', 'On timeframes below 1D'),
+    },
+    {
+      key: 'showBlogMap',
+      label: tr('Mapa z bloga', 'Blog map'),
+      hint: tr(
+        'Poziomy z mapy autora na blogu HyperQuant (tekst wpisu, nie model): domyślnie najnowsza Mapa dnia z bieżącej doby UTC, inną mapę z ostatnich 3 dni wybierzesz w Ustawieniach wykresu; w układzie Rozliczenie dotknięty poziom ma ✓ i godzinę',
+        "Levels from the author's map on the HyperQuant blog (post text, not a model): by default the latest Day map of the current UTC day, pick another map from the last 3 days in Chart settings; in the Day review layout a touched level gets ✓ and the time"
+      ),
+      aliases: 'blog mapa dnia poziomy autora map levels',
+      swatch: 'bg-of-blog',
+      off: s.coin !== 'BTC' ? tr('Tylko BTC: blog opisuje BTC', 'BTC only: the blog covers BTC') : scope.levels ? undefined : tr('Na interwałach poniżej 1D', 'On timeframes below 1D'),
     },
     {
       key: 'showSessions',
@@ -1798,6 +1828,47 @@ const KeysMenu: React.FC = () => (
     <p className="text-[11px] leading-snug text-ink-3">{tr('W układzie kilku wykresów skróty trafiają do wykresu, w którym ostatnio kliknięto.', 'With several charts, shortcuts go to the chart you clicked last.')}</p>
   </div>
 );
+
+/**
+ * Wybór mapy z bloga: domyślna (najnowsza Mapa dnia z bieżącej doby UTC) albo każda mapa z pliku (ostatnie 3 dni) z nazwą
+ * rodzaju, godziną wpisu i tytułem. Mapa zapisana w ustawieniach, której już nie ma w pliku, wraca do domyślnej.
+ */
+const BlogMapPicker: React.FC<{ s: ChartSettings; maps: BlogMapsState; now: number; onChange: (p: Partial<ChartSettings>) => void }> = ({ s, maps, now, onChange }) => {
+  const list = maps.maps.filter((m) => m.publishedAt <= now);
+  const value = list.some((m) => m.id === s.blogMapId) ? s.blogMapId! : '';
+  // Poza BTC i bez pliku map — powód zamiast listy (ten sam co w legendzie)
+  const scan = s.coin !== 'BTC' ? { why: tr('Tylko BTC: blog opisuje BTC', 'BTC only: the blog covers BTC') } : maps.status === 'ready' ? null : blogMapScan(maps, null);
+  const why = scan && 'why' in scan ? scan.why : null;
+  return (
+    <Group title={tr('Mapa z bloga', 'Blog map')}>
+      {why ? (
+        <p className="text-[11px] leading-snug text-ink-3">{why}</p>
+      ) : (
+        <label className="flex flex-col items-stretch gap-1.5">
+          <span className="text-ink-2">{tr('Mapa na wykresie', 'Map on the chart')}</span>
+          <select
+            value={value}
+            onChange={(e) => onChange({ blogMapId: e.target.value || undefined })}
+            className="w-full h-9 bg-page border border-line rounded-md px-2 text-ink-1"
+          >
+            <option value="">{tr('Domyślnie: Mapa dnia z bieżącej doby UTC', 'Default: Day map of the current UTC day')}</option>
+            {list.map((m) => (
+              <option key={m.id} value={m.id}>
+                {`${blogMapName(m.kind)} ${fmtDayTime(m.publishedAt, now)} · ${m.title}`}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      <p className="text-[11px] leading-snug text-ink-3">
+        {tr(
+          'Poziomy z tekstu wpisu autora, nie model HyperQuant. W układzie Rozliczenie poziom dotknięty w oknie mapy ma ✓ i godzinę.',
+          "Levels from the author's post text, not a HyperQuant model; labels stay in Polish. In the Day review layout a level touched within the map's window gets ✓ and the time."
+        )}
+      </p>
+    </Group>
+  );
+};
 
 const Group: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
   <fieldset className="flex flex-col gap-2 min-w-0">

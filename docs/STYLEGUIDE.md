@@ -61,6 +61,7 @@ The canvas has one palette, **„Głębia”** (`of-*` tokens, the same values i
 | VWAP / session VWAP | `of-vwap` / `of-svwap` | `#E2E9F0` / `#C1B3F2` |
 | Order-book heatmap (weak → walls) | `of-heat-1…3` | `#647386` → `#B4C6DB` → `#EFF6FD` (canvas: five steps `#424E5E #647386 #879AB1 #B4C6DB #EFF6FD`) |
 | Exchanges: Hyperliquid / Binance / Bybit | — | `#059583` / `#B18E15` / `#A878DB` |
+| Blog map levels (the author's map, BTC; dashed line, label box with a bar in this colour, text in ink) | `of-blog` | `#059583` — the Hyperliquid turquoise of the category palette; nothing else on the price chart uses it, and it is not a side colour, POC, VWAP or IB |
 
 Bid × Ask footprint cells are tiles from graphite `#1E2A3A` at low volume to the saturated side colour; dark numbers on a light tile, light numbers on a dark one. The Delta and Volume styles are bars from the left edge of the candle (delta and volume in the colour of the dominant side) with light bid and ask numbers. Second channel: position (sells on the left, buys on the right), and the imbalance number is bold and outlined.
 
