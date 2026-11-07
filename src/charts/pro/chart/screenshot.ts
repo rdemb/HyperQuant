@@ -27,6 +27,12 @@ export function qualityText(q: Pick<FrameQuality, 'tapePct' | 'mapPct'>, time: n
   return tr(`taśma ${tape} · mapa ${map} · ${fmtHm(time)}`, `tape ${tape} · map ${map} · ${fmtHm(time)}`);
 }
 
+/** Krój interfejsu na płótnie (zrzut, Klatka, karta Czwórki). */
+export const SANS = '"Plus Jakarta Sans", sans-serif';
+
+/** Data i godzina w czasie lokalnym (podpis zrzutu, Klatka i jej tekst alternatywny). */
+export const stampText = (t: number): string => new Date(t).toLocaleString(locale, { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+
 /** Objaśnienie paska jakości (po prawej, gdy się mieści). */
 export const QUALITY_LEGEND = tr('taśma: pokrycie widocznego zakresu · mapa: pokrycie open interest przez skaner', 'tape: coverage of the visible range · map: open interest covered by the scanner');
 
@@ -35,9 +41,9 @@ const QUALITY_BAND = 24;
 
 /**
  * Zrzut wykresu z paskiem marki (do publikacji): nazwa, rynek, interwał, czas i adres strony; pod wykresem zawsze pasek
- * jakości (`qualityText`) — bez możliwości wyłączenia.
+ * jakości (`qualityText`) — bez możliwości wyłączenia. Bez kontekstu 2D — null (nigdy obraz bez paska jakości).
  */
-export function brandedScreenshot(chartCanvas: HTMLCanvasElement, cssWidth: number, subtitle: string, when: Date, quality: FrameQuality): HTMLCanvasElement {
+export function brandedScreenshot(chartCanvas: HTMLCanvasElement, cssWidth: number, subtitle: string, when: Date, quality: FrameQuality): HTMLCanvasElement | null {
   const ratio = cssWidth > 0 ? chartCanvas.width / cssWidth : 1;
   const band = Math.round(40 * ratio);
   const strip = Math.round(QUALITY_BAND * ratio);
@@ -45,7 +51,7 @@ export function brandedScreenshot(chartCanvas: HTMLCanvasElement, cssWidth: numb
   out.width = chartCanvas.width;
   out.height = chartCanvas.height + band + strip;
   const ctx = out.getContext('2d');
-  if (!ctx) return chartCanvas;
+  if (!ctx) return null;
   const hair = Math.max(1, Math.round(ratio));
   ctx.fillStyle = PRO.page;
   ctx.fillRect(0, 0, out.width, band);
@@ -60,10 +66,9 @@ export function brandedScreenshot(chartCanvas: HTMLCanvasElement, cssWidth: numb
   ctx.fillStyle = PRO.ink1;
   ctx.fillText('HyperQuant', pad, mid);
   const brandW = ctx.measureText('HyperQuant').width;
-  ctx.font = `500 ${Math.round(12 * ratio)}px "Plus Jakarta Sans", sans-serif`;
+  ctx.font = `500 ${Math.round(12 * ratio)}px ${SANS}`;
   ctx.fillStyle = PRO.ink2;
-  const stamp = when.toLocaleString(locale, { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-  ctx.fillText(`${subtitle} · ${stamp}`, pad + brandW + Math.round(12 * ratio), mid);
+  ctx.fillText(`${subtitle} · ${stampText(when.getTime())}`, pad + brandW + Math.round(12 * ratio), mid);
   ctx.textAlign = 'right';
   ctx.fillStyle = PRO.accent;
   ctx.fillText('hyperquant.tech', out.width - pad, mid);
@@ -81,7 +86,7 @@ export function brandedScreenshot(chartCanvas: HTMLCanvasElement, cssWidth: numb
   const text = qualityText(quality, when.getTime());
   ctx.fillText(text, pad, sm);
   const textW = ctx.measureText(text).width;
-  ctx.font = `500 ${Math.round(11 * ratio)}px "Plus Jakarta Sans", sans-serif`;
+  ctx.font = `500 ${Math.round(11 * ratio)}px ${SANS}`;
   // Objaśnienie tylko wtedy, gdy nie nachodzi na liczby (wąski wykres na telefonie)
   if (pad + textW + Math.round(24 * ratio) + ctx.measureText(QUALITY_LEGEND).width <= out.width - pad) {
     ctx.textAlign = 'right';
@@ -97,6 +102,9 @@ export function fileStamp(t: number): string {
   const p = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
 }
+
+/** Komunikat, gdy przeglądarka nie dała płótna do obrazu (zrzut i Klatka nie powstają). */
+export const IMAGE_FAILED = tr('Nie udało się przygotować obrazu', 'Could not prepare the image');
 
 /** Zapisuje płótno jako PNG (lokalnie, przez pobranie w przeglądarce — bez wysyłania gdziekolwiek). */
 export function downloadCanvas(canvas: HTMLCanvasElement, filename: string): void {

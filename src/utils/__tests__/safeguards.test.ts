@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { GUARDS, TITLE_GUARDS, guardHits, guardViolations } from '../safeguards';
+import { GUARDS, TITLE_GUARDS, guardHits, guardViolations } from '../safeguards.mjs';
 // Walidator bloga korzysta z tego samego modułu (jedna lista bezpieczników)
 import { GUARDS as BLOG_GUARDS, guardViolations as blogViolations } from '../../../scripts/blog/posts.mjs';
 

@@ -21,7 +21,7 @@ import { type HideKey, type PaneKey, ProChartController, type ScaleState } from 
 import { DomLadder, PickCard, TapePanel, compact } from './chart/FlowPanels';
 import { HoverSignal, Legend } from './chart/Legend';
 import { LOT_FLOOR, type LiquidityPick } from './chart/liquidity';
-import { type FrameQuality, brandedScreenshot, downloadCanvas, fileStamp } from './chart/screenshot';
+import { type FrameQuality, IMAGE_FAILED, brandedScreenshot, downloadCanvas, fileStamp } from './chart/screenshot';
 import { defaultFrameTitle, mapQuality, tapeQuality } from './chart/frame';
 import { FrameDialog, type FrameSource } from './chart/FrameDialog';
 import { MAX_ALERTS, type PriceAlert, addAlert, alertBook, alertLines, alertLog, askNotifications, hasLine, lastSeen, lineLabel, markSeen, newAlert, primeAlertSound, removeAlert } from './chart/alerts';
@@ -32,7 +32,7 @@ import { DEFAULT_TTL_MS, defaultDir, eventText } from '../../utils/alertRules';
 import { fmtPx, priceDigits } from './chart/layout';
 import type { PbZone } from './chart/pbRangeLayer';
 import { ChartLayout, ChartSettings, NARROW_QUERY, PHONE_PANES, PhonePane, DROPPED_NOTICE_KEY, hashFor, isNarrow, loadSettings, phoneSettings, saveSettings, settingsFromHash } from './chart/settings';
-import { Station, priceLayerCount, stationById, stationKey, stationPanel } from './chart/stations';
+import { Station, activePanelSet, panelSetPanel, priceLayerCount, stationById, stationKey, stationPanel } from './chart/stations';
 import { ChartTemplate, applyTemplate, loadTemplates, saveAs, saveTemplates } from './chart/templates';
 import { NumbersCard, StatGroupPicker } from './chart/NumbersCard';
 import { IndicatorsDialog, type IndicatorsSection, type ToggleItem } from './chart/IndicatorsDialog';
@@ -538,6 +538,8 @@ export const ProChart: React.FC<{
     // Chwila danych (w powtórce — odtwarzana), w czasie lokalnym
     const now = store.serverNow();
     const img = brandedScreenshot(ctrl.chart.takeScreenshot(true), host.clientWidth, chartSource(), new Date(now), quality(ctrl, now));
+    // Bez płótna nie ma paska jakości — zamiast obrazu bez niego komunikat
+    if (!img) return setToast(IMAGE_FAILED);
     downloadCanvas(img, `hyperquant-${store.coin.toLowerCase()}-${intervalById(settings.interval).id}-${fileStamp(now)}.png`);
   };
 
@@ -547,6 +549,11 @@ export const ProChart: React.FC<{
     headerNums.current = n;
   }, []);
   const [frameSrc, setFrameSrc] = useState<FrameSource | null>(null);
+  /** Wzorzec tego panelu w układzie (z aktywnym zestawem paneli): ostrzeżenie Klatki tylko o warstwach ponad nim. */
+  const presetPanel = (): ChartSettings => {
+    const set = activePanelSet(station, settings);
+    return set ? panelSetPanel(station, set.id, panel, narrow) : stationPanel(station, panel, narrow);
+  };
   const openFrame = () => {
     const ctrl = ctrlRef.current;
     if (!ctrl) return;
@@ -559,8 +566,10 @@ export const ProChart: React.FC<{
       source: chartSource(),
       time: now,
       quality: quality(ctrl, now),
-      // Warstwy, które widać na tym wykresie (telefon i układ 2 × 2 chowają część ustawień)
+      // Warstwy, które widać na tym wykresie, i we wzorcu tego panelu układu (z aktywnym zestawem paneli) — telefon i
+      // układ 2 × 2 chowają część ustawień w obu
       layersShown: priceLayerCount(shownSettings(settings, narrow, layout, inReplay)),
+      presetLayers: priceLayerCount(shownSettings(presetPanel(), narrow, layout, inReplay)),
       image: () => shot,
     });
   };

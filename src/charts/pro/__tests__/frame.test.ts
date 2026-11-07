@@ -11,12 +11,12 @@ import {
   mapQuality,
   tapeQuality,
   titleProblems,
-  visibleSpan,
   wrapLines,
 } from '../chart/frame';
+import { visibleSpan } from '../core/time';
 import type { LayoutNumber } from '../chart/layoutNumbers';
 import { brandedScreenshot, qualityText } from '../chart/screenshot';
-import { STATIONS } from '../chart/stations';
+import { STATIONS, panelSetPanel, priceLayerCount, stationPanel } from '../chart/stations';
 import { asCanvas, ctxOf, fakeCanvas, fakeDocument } from './fakeCanvas';
 
 // Czas lokalny (pasek jakości i nazwa pliku pokazują godzinę użytkownika, jak oś wykresu)
@@ -56,7 +56,7 @@ describe('pasek jakości', () => {
 
   it('zrzut ekranu zawsze ma pasek jakości pod wykresem (pasek marki nad nim bez zmian)', () => {
     const chart = asCanvas(fakeCanvas(1000, 500));
-    const out = brandedScreenshot(chart, 500, 'BTC-PERP · Hyperliquid · 1m', new Date(T), { tapePct: null, mapPct: 0.47 });
+    const out = brandedScreenshot(chart, 500, 'BTC-PERP · Hyperliquid · 1m', new Date(T), { tapePct: null, mapPct: 0.47 })!;
     // Gęstość 2×: pasek marki 40 px i pasek jakości 24 px
     expect([out.width, out.height]).toEqual([1000, 500 + 80 + 48]);
     const ctx = ctxOf(out);
@@ -72,14 +72,14 @@ describe('Klatka: composeFrame', () => {
     ['16:9', 1200, 675],
     ['1:1', 1080, 1080],
   ] as const)('%s daje dokładnie %i × %i', (ratio, w, h) => {
-    const out = composeFrame(input(ratio));
+    const out = composeFrame(input(ratio))!;
     expect([out.width, out.height]).toEqual([w, h]);
     expect(FRAME_SIZE[ratio]).toEqual({ w, h });
   });
 
   it.each(['16:9', '1:1'] as const)('%s: tytuł z liczbą, godzina i źródło, obraz w kadrze, pasek jakości i hyperquant.tech w rogu', (ratio) => {
     const o = input(ratio);
-    const out = composeFrame(o);
+    const out = composeFrame(o)!;
     const ctx = ctxOf(out);
     const texts = ctx.texts.map((t) => t.text);
     expect(texts).toContain('Kokpit BTC');
@@ -106,11 +106,20 @@ describe('Klatka: composeFrame', () => {
 
   it('długi tytuł: najwyżej kilka linii, ostatnia z wielokropkiem, każda w szerokości kadru', () => {
     const title = Array.from({ length: 80 }, (_, i) => `słowo${i}`).join(' ');
-    const out = composeFrame(input('16:9', { title }));
+    const out = composeFrame(input('16:9', { title }))!;
     const lines = ctxOf(out).texts.filter((t) => t.text.startsWith('słowo'));
     expect(lines.length).toBeGreaterThan(1);
     expect(lines.length).toBeLessThanOrEqual(4);
     expect(lines[lines.length - 1].text.endsWith('…')).toBe(true);
+  });
+});
+
+describe('bez płótna 2D: żaden obraz bez paska jakości', () => {
+  it('zrzut i Klatka zwracają null, gdy przeglądarka nie daje kontekstu 2D', () => {
+    vi.stubGlobal('document', { createElement: () => ({ width: 0, height: 0, getContext: () => null }) });
+    expect(brandedScreenshot(asCanvas(fakeCanvas(1000, 500)), 500, 'BTC-PERP', new Date(T), Q)).toBeNull();
+    expect(composeFrame(input('16:9'))).toBeNull();
+    expect(composeFrame(input('1:1'))).toBeNull();
   });
 });
 
@@ -161,8 +170,40 @@ describe('Klatka: ostrzeżenia, nazwa pliku, tytuł', () => {
     expect(frameWarnings(0)).toEqual([]);
   });
 
-  it('plik hyperquant-<układ>-<RRRRMMDD-GGmm>.png w czasie lokalnym', () => {
+  it('nietknięty wzorzec układu bez ostrzeżenia, nawet z 5 warstwami (Kokpit, Mapa dnia 30m, Rozliczenie)', () => {
+    let five = 0;
+    for (const st of STATIONS) {
+      for (const narrow of [false, true]) {
+        for (let p = 0; p < st.panels.length; p++) {
+          const preset = priceLayerCount(stationPanel(st, p, narrow));
+          if (preset > 4) five++;
+          expect(frameWarnings(preset, preset), `${st.id} ${p} ${narrow}`).toEqual([]);
+        }
+        for (const set of st.panelSets ?? []) {
+          const preset = priceLayerCount(panelSetPanel(st, set.id, 0, narrow));
+          expect(frameWarnings(preset, preset), `${st.id} ${set.id}`).toEqual([]);
+        }
+      }
+    }
+    expect(five).toBeGreaterThan(0);
+  });
+
+  it('warstwa dodana ponad wzorzec (i ponad 4) daje ostrzeżenie', () => {
+    const cockpit = stationPanel(STATIONS.find((s) => s.id === 'cockpit')!, 0, false);
+    const preset = priceLayerCount(cockpit);
+    const added = priceLayerCount({ ...cockpit, showLevels: true });
+    expect(added).toBe(preset + 1);
+    expect(frameWarnings(added, preset)).toHaveLength(1);
+    expect(frameWarnings(added, preset)[0]).toMatch(new RegExp(`${added}`));
+    // Wzorzec z 3 warstwami: do 4 bez ostrzeżenia, 5 — z nim
+    expect(frameWarnings(4, 3)).toEqual([]);
+    expect(frameWarnings(5, 3)).toHaveLength(1);
+  });
+
+  it('plik hyperquant-<układ>-<RRRRMMDD-GGmm>.png w czasie lokalnym, kwadrat z „-1x1”', () => {
     expect(frameFileName('cockpit', T)).toBe('hyperquant-cockpit-20261107-1622.png');
+    expect(frameFileName('cockpit', T, '16:9')).toBe('hyperquant-cockpit-20261107-1622.png');
+    expect(frameFileName('cockpit', T, '1:1')).toBe('hyperquant-cockpit-20261107-1622-1x1.png');
     expect(frameFileName('day-map', new Date(2026, 0, 5, 7, 3).getTime())).toBe('hyperquant-day-map-20260105-0703.png');
   });
 

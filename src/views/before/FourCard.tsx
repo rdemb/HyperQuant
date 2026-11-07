@@ -43,6 +43,7 @@ export const FourCard: React.FC<{ coin: Market }> = ({ coin }) => {
       // Czwórka nie korzysta z taśmy; mapa — pokrycie open interest jak w liczbie „Paliwo ±1%”
       quality: { tapePct: null, tapeWhy: tr('Czwórka liczy ze świec i mapy, nie z taśmy', 'The Four numbers use candles and the map, not the tape'), ...mapQuality(liq, n.coin, false) },
       layersShown: 0,
+      presetLayers: 0,
       image: (ratio) => fourCanvas(n, ratio),
       body: fourNumbersText(n),
     });

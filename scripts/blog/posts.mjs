@@ -4,7 +4,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { parse as parseYaml } from 'yaml';
-import { GUARDS, guardViolations } from '../../src/utils/safeguards.ts';
+import { GUARDS, guardViolations } from '../../src/utils/safeguards.mjs';
 
 export const TIME_ZONE = 'Europe/Warsaw';
 export const TYPES = ['article', 'note'];
@@ -41,8 +41,8 @@ const MARK_RE = /^[ \t]*\[\[([^\]\n]*)\]\][ \t]*$/gm;
 const extraKeys = (o, known) => (o && typeof o === 'object' ? Object.keys(o).filter((k) => !known.has(k)) : []);
 
 /**
- * Bezpieczniki treści (prywatność, analiza zamiast sygnałów, styl) i ich komunikaty: wspólny moduł z tytułem Klatki
- * na stronie (src/utils/safeguards.ts), więc jedna lista dla bloga i wykresów.
+ * Bezpieczniki treści (prywatność, analiza zamiast sygnałów, styl) i ich komunikaty: wspólny moduł (czysty JS) z tytułem Klatki
+ * na stronie (src/utils/safeguards.mjs), więc jedna lista dla bloga i wykresów.
  */
 export { GUARDS, guardViolations };
 
