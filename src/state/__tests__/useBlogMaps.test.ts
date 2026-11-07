@@ -168,4 +168,17 @@ describe('stan map z bloga', () => {
     // Blog bez map z ostatnich 3 dni: plik jest, map nie ma
     expect(nextBlogMaps(ready, [])).toEqual({ status: 'ready', maps: [] });
   });
+
+  it('bez zmian ten sam obiekt stanu (bez odświeżania wykresów co 10 min): kolejny brak pliku i ten sam plik', () => {
+    const m = map('2026-11-07-mapa-dnia', 'dzien', TODAY + 7 * H);
+    const missing = nextBlogMaps({ status: 'loading', maps: [] }, null);
+    expect(nextBlogMaps(missing, null)).toBe(missing);
+    const ready = nextBlogMaps(missing, [m]);
+    // Ten sam plik pobrany ponownie (nowe obiekty z tą samą treścią)
+    expect(nextBlogMaps(ready, [structuredClone(m)])).toBe(ready);
+    // Zmieniona treść — nowy stan
+    const moved = nextBlogMaps(ready, [{ ...m, levels: [{ label: 'PDH', price: 76_100 }] }]);
+    expect(moved).not.toBe(ready);
+    expect(moved.maps[0].levels[0].price).toBe(76_100);
+  });
 });

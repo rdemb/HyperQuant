@@ -131,7 +131,8 @@ const PERIOD_PROFILE_MAX_PX = 120;
 const NAKED_POC_MAX = 8;
 /** Od tylu widocznych świec VWAP wchodzi do autoskali. */
 const AUTOSCALE_MIN_BARS = 40;
-const TAG_H = 15;
+/** Wysokość etykiety przy prawej krawędzi (px); etykiety rozsuwane co TAG_H + 1 w granicach [TAG_H / 2, H − TAG_H / 2]. */
+export const TAG_H = 15;
 
 /** Pozycja logiczna chwili `t` na osi świec co `ms`: indeks świecy plus ułamek jej trwania (także przed i za danymi). */
 export function logicalOfTime(bars: readonly { t: number }[], t: number, ms: number): number {
@@ -190,10 +191,44 @@ interface Text {
   /** Tło pod napisem (podpis na linii). */
   bg?: boolean;
 }
-interface Tag {
+/** Etykieta przy prawej krawędzi: y linii, tekst, kolor znacznika (pasek) i tekstu; `ink` — inny kolor tekstu. */
+export interface Tag {
   y: number;
   text: string;
   color: string;
+  ink?: string;
+}
+
+/**
+ * Podpisy innej warstwy przy prawej krawędzi (mapa z bloga), rozsuwane razem z etykietami wskaźników: pasek w kolorze
+ * `color`, tekst w kolorze tuszu poziomu, nad najwyższym widocznym — etykieta grupy `head`.
+ */
+export interface EdgeTags {
+  color: string;
+  head: string;
+  headInk: string;
+  items: readonly { price: number; text: string; ink: string }[];
+}
+
+/** Etykiety `e` dla poziomów w widoku (y z ceny przez `Y`); etykieta grupy pierwsza, tuż nad najwyższą (nie wyżej niż y = 0). */
+export function edgeTagsIn(e: EdgeTags, Y: (p: number) => number, H: number): Tag[] {
+  const out: Tag[] = [];
+  let top = Number.POSITIVE_INFINITY;
+  for (const it of e.items) {
+    const y = Y(it.price);
+    if (!(y >= 0 && y <= H)) continue;
+    out.push({ y, text: it.text, color: e.color, ink: it.ink });
+    if (y < top) top = y;
+  }
+  // Pierwsza w kolejności i nie niżej niż najwyższy poziom: po rozsunięciu zostaje nad nim
+  if (out.length > 0) out.unshift({ y: Math.max(0, top - (TAG_H + 1)), text: e.head, color: e.color, ink: e.headInk });
+  return out;
+}
+
+/** Etykiety w panelu wysokości `H`: tylko widoczne, po y, rozsunięte co TAG_H + 1 w granicach [TAG_H / 2, H − TAG_H / 2]. */
+export function placeTags(tags: readonly Tag[], H: number): { tags: Tag[]; ys: number[] } {
+  const shown = tags.filter((g) => g.y >= 0 && g.y <= H).sort((a, b) => a.y - b.y);
+  return { tags: shown, ys: spreadTags(shown.map((g) => g.y), TAG_H + 1, TAG_H / 2, H - TAG_H / 2) };
 }
 
 interface Scene {
@@ -288,6 +323,7 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
   private compact = false;
   private whaleSel = '';
   private whaleHits: { y: number; key: string }[] = [];
+  private edge: (() => EdgeTags | null) | null = null;
   private scene: Scene = emptyScene();
 
   private readonly axisVwap = new AxisLabel(K.vwap);
@@ -393,6 +429,12 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
 
   setLiq(levels: LiqLevel[]): void {
     this.liq = levels;
+    this.requestUpdate?.();
+  }
+
+  /** Źródło podpisów innej warstwy przy prawej krawędzi (mapa z bloga): rozsuwane razem z etykietami wskaźników. */
+  setEdgeTags(src: (() => EdgeTags | null) | null): void {
+    this.edge = src;
     this.requestUpdate?.();
   }
 
@@ -616,14 +658,14 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
       }
     }
 
+    // Podpisy innej warstwy przy prawej krawędzi (mapa z bloga) — rozsuwane razem z etykietami wskaźników
+    const other = this.edge?.();
+    if (other) for (const g of edgeTagsIn(other, Y, H)) s.tags.push(g);
+
     // Etykiety po prawej: tylko widoczne, rozsunięte, żeby się nie nakładały
-    s.tags = s.tags.filter((g) => g.y >= 0 && g.y <= H).sort((a, b) => a.y - b.y);
-    s.tagYs = spreadTags(
-      s.tags.map((g) => g.y),
-      TAG_H + 1,
-      TAG_H / 2,
-      H - TAG_H / 2
-    );
+    const placed = placeTags(s.tags, H);
+    s.tags = placed.tags;
+    s.tagYs = placed.ys;
     return s;
   }
 
@@ -910,6 +952,7 @@ function drawOver(ctx: CanvasRenderingContext2D, s: Scene, hr: number, vr: numbe
     ctx.fillRect(x, y - h / 2, w, h);
     ctx.fillStyle = g.color;
     ctx.fillRect(x, y - h / 2, Math.max(1, Math.round(2 * hr)), h);
+    if (g.ink) ctx.fillStyle = g.ink;
     ctx.fillText(g.text, x + w - padX, y + 0.5);
   });
 }

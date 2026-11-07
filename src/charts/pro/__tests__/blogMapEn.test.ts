@@ -11,7 +11,10 @@ const { blogMapModel } = await import('../chart/blogMapLayer');
 const { fmtPx } = await import('../chart/layout');
 const { fmtHm } = await import('../core/time');
 
+const MIN = 60_000;
 const PUB = Date.UTC(2026, 10, 7, 7, 12);
+// Pół godziny po wpisie: ten sam dzień lokalny w każdej strefie czasowej
+const NOW = PUB + 30 * MIN;
 const MAP: BlogMap = {
   id: '2026-11-07-mapa-dnia',
   title: 'BTC 75 696 przed Londynem',
@@ -27,10 +30,10 @@ const MAP: BlogMap = {
 
 describe('mapa z bloga w wersji angielskiej', () => {
   it('podpisy poziomów w brzmieniu autora, „(PL blog)” raz w etykiecie mapy', () => {
-    const m = blogMapModel(MAP, { now: PUB + 3_600_000, marks: { settled: null, note: null } });
+    const m = blogMapModel(MAP, { now: NOW, marks: { settled: null, note: null } });
     expect(m.tag).toBe(`Day map ${fmtHm(PUB)} (PL blog)`);
     expect(m.levels.map((l) => l.text)).toEqual([`Likwidacje shortów ${fmtPx(76_650)}`, `Szczyt Azji ${fmtPx(76_400)}`]);
     expect(m.levels.some((l) => l.text.includes('PL blog'))).toBe(false);
-    expect(blogMapModel(MAP, { now: PUB, marks: { settled: null, note: 'not settled' } }).tag).toBe(`Day map ${fmtHm(PUB)} (PL blog) · not settled`);
+    expect(blogMapModel(MAP, { now: NOW, marks: { settled: null, note: 'not settled' } }).tag).toBe(`Day map ${fmtHm(PUB)} (PL blog) · not settled`);
   });
 });

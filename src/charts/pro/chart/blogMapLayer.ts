@@ -6,7 +6,8 @@ import { tr } from '../../../i18n';
 import type { Candle } from '../hl/parse';
 import { fmtDayTime, fmtHm } from '../core/time';
 import { fmtPx } from './layout';
-import { MONO, PRO, rgba } from './theme';
+import type { EdgeTags } from './overlay';
+import { PRO, rgba } from './theme';
 
 /**
  * Mapa z bloga na wykresie ceny BTC: poziomy z wpisu autora (przerywana linia i podpis „etykieta cena” przy prawej
@@ -59,60 +60,71 @@ export function blogMapModel(map: BlogMap, x: { now: number; marks: BlogMarks })
 const MIN = 60_000;
 
 /**
- * Rozliczenie poziomów mapy (tylko z `settle`, czyli w układzie Rozliczenie): dotknięcie w oknie ważności mapy na świecach 1m
- * (`candles1m(from)` — świece od początku okna). Mapa weekendu i tygodnia nie ma okna; świece, które jeszcze nie sięgają
- * wpisu, nie dają znaczników (brak ✓ nie może znaczyć „nie dotknięto”, gdy świec brakuje).
+ * Czy świece 1m (posortowane) pokrywają bez przerwy minuty od `start` do `last` włącznie (początki świec). Brak minuty
+ * w środku albo świece kończące się przed `last` — luka.
  */
-export function blogMapMarks(map: BlogMap, candles1m: (from: number) => readonly Candle[], settle: boolean): BlogMarks {
+export function minutesCovered(c: readonly Candle[], start: number, last: number): boolean {
+  let want = start;
+  for (const k of c) {
+    if (want > last || k.t > last) break;
+    if (k.t < want) continue;
+    if (k.t !== want) return false;
+    want += MIN;
+  }
+  return want > last;
+}
+
+/**
+ * Rozliczenie poziomów mapy (tylko z `settle`, czyli w układzie Rozliczenie) w chwili wykresu `now`: dotknięcie w oknie
+ * ważności mapy na świecach 1m (`candles1m(from)` — świece od początku okna) do `now`. Mapa weekendu i tygodnia nie ma okna;
+ * świece, które jeszcze nie sięgają wpisu, nie dają znaczników. Wymagane są świece każdej pełnej minuty od wpisu do
+ * min(now, koniec okna): przy luce dotknięcia znalezione zostają, reszta poziomów jest nierozliczona (brak ✓ nie znaczy
+ * wtedy „nie dotknięto”), a etykieta mapy mówi o luce.
+ */
+export function blogMapMarks(map: BlogMap, candles1m: (from: number) => readonly Candle[], now: number, settle: boolean): BlogMarks {
   if (!settle) return { settled: null, note: null };
   const w = mapWindow(map.kind, map.publishedAt);
   if (!w) return { settled: null, note: tr('bez rozliczenia', 'not settled') };
   const c = candles1m(w.from);
   // Pierwsza potrzebna świeca to minuta po wpisie: świeca, w której wpis wyszedł, zaczęła się przed nim i się nie liczy
-  if (c.length === 0 || c[0].t > Math.ceil(w.from / MIN) * MIN) return { settled: null, note: tr('czekam na świece 1m', 'waiting for 1m candles') };
+  const start = Math.ceil(w.from / MIN) * MIN;
+  if (c.length === 0 || c[0].t > start) return { settled: null, note: tr('czekam na świece 1m', 'waiting for 1m candles') };
+  const end = Math.min(now, w.to);
   const bars: VBar[] = [];
-  for (const k of c) if (k.t >= w.from && k.t < w.to) bars.push({ time: k.t, open: k.o, high: k.h, low: k.l, close: k.c, volume: k.v });
-  return { settled: settleLevels(map.levels, bars, w.from, w.to), note: null };
+  for (const k of c) if (k.t >= w.from && k.t < w.to && k.t <= now) bars.push({ time: k.t, open: k.o, high: k.h, low: k.l, close: k.c, volume: k.v });
+  // Ostatnia pełna minuta przed min(now, koniec okna); bieżąca, niepełna świeca nie jest wymagana
+  const covered = minutesCovered(c, start, Math.floor(end / MIN) * MIN - MIN);
+  return { settled: settleLevels(map.levels, bars, w.from, w.to), note: covered ? null : tr('luka w świecach 1m', 'gap in 1m candles') };
 }
 
-const FONT = `10px ${MONO}`;
-const TAG_FONT = `600 10px ${MONO}`;
-const LABEL_H = 13;
-const PAD = 4;
-const BAR_W = 2;
-/** Odstęp podpisów od prawej krawędzi panelu (px). */
-const EDGE = 6;
+/**
+ * Podpisy mapy przy prawej krawędzi dla nakładki wskaźników (rozsuwane razem z jej etykietami, ta sama geometria): pasek
+ * w kolorze mapy, tekst w kolorze tuszu (dotknięty poziom i etykieta mapy jaśniej), nad najwyższym — etykieta mapy.
+ */
+export function blogEdgeTags(m: BlogMapModel): EdgeTags {
+  return { color: PRO.blogMap, head: m.tag, headInk: PRO.ink1, items: m.levels.map((l) => ({ price: l.price, text: l.text, ink: l.touched ? PRO.ink1 : PRO.ink2 })) };
+}
+
 // Stałe tablice kreskowania i kolory z kryciem — bez budowania w pętli rysowania
 const DASH = [5, 4];
 const SOLID: number[] = [];
-const K = {
-  line: rgba(PRO.blogMap, 0.75),
-  lineTouched: rgba(PRO.blogMap, 1),
-  bar: PRO.blogMap,
-  bg: rgba(PRO.bg, 0.85),
-  text: PRO.ink2,
-  textTouched: PRO.ink1,
-  tag: PRO.ink1,
-};
+const LINE = rgba(PRO.blogMap, 0.75);
+const LINE_TOUCHED = rgba(PRO.blogMap, 1);
 
 /**
- * Warstwa mapy z bloga (prymityw serii ceny). Model zmienia się najwyżej raz na minutę (`setModel`); w klatce tylko
- * położenia poziomów w tablicach liczb przygotowanych przy zmianie modelu, a szerokości podpisów mierzone raz. Skali ceny
- * nie rozciąga — poziomy poza widokiem nie są rysowane.
+ * Warstwa mapy z bloga (prymityw serii ceny): przerywane linie poziomów. Podpisy rysuje nakładka wskaźników
+ * (`edgeTags()`), żeby nie nachodziły na jej etykiety. Model zmienia się najwyżej raz na minutę (`setModel`); w klatce tylko
+ * położenia poziomów w tablicy liczb przygotowanej przy zmianie modelu. Skali ceny nie rozciąga — poziomy poza widokiem nie
+ * są rysowane.
  */
 export class BlogMapLayer implements ISeriesPrimitive<Time> {
   private chart: IChartApiBase<Time> | null = null;
   private series: ISeriesApi<SeriesType, Time> | null = null;
   private requestUpdate: (() => void) | null = null;
   private model: BlogMapModel | null = null;
-  /** y linii każdego poziomu (NaN — brak), y środka podpisu, szerokość podpisu (NaN — do zmierzenia). */
+  private edge: EdgeTags | null = null;
+  /** y linii każdego poziomu (NaN — brak). */
   private ys = new Float64Array(0);
-  private labelYs = new Float64Array(0);
-  private widths = new Float64Array(0);
-  private tagW = Number.NaN;
-  private tagY = Number.NaN;
-  /** Prawa krawędź podpisów (px) z ostatniej klatki. */
-  private right = 0;
   private rightInset = 0;
   private readonly views: readonly IPrimitivePaneView[];
 
@@ -121,72 +133,24 @@ export class BlogMapLayer implements ISeriesPrimitive<Time> {
       draw: (target) =>
         target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
           const m = this.model;
-          this.tagY = Number.NaN;
           if (!m) return;
           const w = mediaSize.width - this.rightInset;
           const h = mediaSize.height;
-          this.right = w - EDGE;
           ctx.lineWidth = 1;
           ctx.setLineDash(DASH);
-          // Podpis nad linią; kolejny co najmniej wysokość podpisu niżej od poprzedniego (poziomy od najwyższej ceny)
-          let prev = Number.NEGATIVE_INFINITY;
-          let first = Number.NaN;
           for (let i = 0; i < m.levels.length; i++) {
             const y = this.ys[i];
-            if (!(y >= 0 && y <= h)) {
-              this.labelYs[i] = Number.NaN;
-              continue;
-            }
-            ctx.strokeStyle = m.levels[i].touched ? K.lineTouched : K.line;
+            if (!(y >= 0 && y <= h)) continue;
+            ctx.strokeStyle = m.levels[i].touched ? LINE_TOUCHED : LINE;
             ctx.beginPath();
             ctx.moveTo(0, Math.round(y) + 0.5);
             ctx.lineTo(w, Math.round(y) + 0.5);
             ctx.stroke();
-            const ly = Math.max(y - LABEL_H / 2 - 1, prev + LABEL_H + 1);
-            this.labelYs[i] = ly;
-            prev = ly;
-            if (Number.isNaN(first)) first = ly;
           }
           ctx.setLineDash(SOLID);
-          // Etykieta mapy raz: nad najwyższym podpisem, a bez miejsca nad nim — pod najniższym
-          if (!Number.isNaN(first)) this.tagY = first - LABEL_H - 1 >= LABEL_H / 2 ? first - LABEL_H - 1 : prev + LABEL_H + 1;
         }),
     };
-    const labels: IPrimitivePaneRenderer = {
-      draw: (target) =>
-        target.useMediaCoordinateSpace(({ context: ctx }) => {
-          const m = this.model;
-          if (!m || Number.isNaN(this.tagY)) return;
-          ctx.textAlign = 'right';
-          ctx.textBaseline = 'middle';
-          ctx.font = FONT;
-          for (let i = 0; i < m.levels.length; i++) {
-            const ly = this.labelYs[i];
-            if (Number.isNaN(ly)) continue;
-            const l = m.levels[i];
-            if (Number.isNaN(this.widths[i])) this.widths[i] = Math.ceil(ctx.measureText(l.text).width) + 2 * PAD + BAR_W;
-            this.box(ctx, this.widths[i], ly, l.touched ? K.textTouched : K.text, l.text);
-          }
-          ctx.font = TAG_FONT;
-          if (Number.isNaN(this.tagW)) this.tagW = Math.ceil(ctx.measureText(m.tag).width) + 2 * PAD + BAR_W;
-          this.box(ctx, this.tagW, this.tagY, K.tag, m.tag);
-        }),
-    };
-    this.views = [
-      { zOrder: () => 'bottom', renderer: () => lines },
-      { zOrder: () => 'top', renderer: () => labels },
-    ];
-  }
-
-  /** Podpis w ramce przy prawej krawędzi z paskiem w kolorze mapy (kolor niesie znacznik, tekst w kolorze tuszu). */
-  private box(ctx: CanvasRenderingContext2D, w: number, y: number, color: string, text: string): void {
-    const x = this.right - w;
-    ctx.fillStyle = K.bg;
-    ctx.fillRect(x, y - LABEL_H / 2, w, LABEL_H);
-    ctx.fillStyle = K.bar;
-    ctx.fillRect(x, y - LABEL_H / 2, BAR_W, LABEL_H);
-    ctx.fillStyle = color;
-    ctx.fillText(text, this.right - PAD, y + 0.5);
+    this.views = [{ zOrder: () => 'bottom', renderer: () => lines }];
   }
 
   attached(p: SeriesAttachedParameter<Time>): void {
@@ -208,17 +172,16 @@ export class BlogMapLayer implements ISeriesPrimitive<Time> {
   /** Nowa mapa albo nowe znaczniki (null — nic do narysowania). */
   setModel(m: BlogMapModel | null): void {
     this.model = m;
+    this.edge = m ? blogEdgeTags(m) : null;
     const n = m ? m.levels.length : 0;
-    if (this.ys.length !== n) {
-      this.ys = new Float64Array(n);
-      this.labelYs = new Float64Array(n);
-      this.widths = new Float64Array(n);
-    }
+    if (this.ys.length !== n) this.ys = new Float64Array(n);
     this.ys.fill(Number.NaN);
-    this.labelYs.fill(Number.NaN);
-    this.widths.fill(Number.NaN);
-    this.tagW = Number.NaN;
     this.requestUpdate?.();
+  }
+
+  /** Podpisy dla nakładki wskaźników (ten sam obiekt do następnej zmiany modelu); bez mapy — null. */
+  edgeTags(): EdgeTags | null {
+    return this.edge;
   }
 
   /** Miejsce przy prawej krawędzi zajęte przez drabinę DOM (px). */
