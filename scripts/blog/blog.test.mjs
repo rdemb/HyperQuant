@@ -534,12 +534,12 @@ describe('IndexNow: nowe wpisy z pusha', () => {
 });
 
 describe('blog: maps.json', () => {
-  it('emituje mapy z 14 dni z właściwym kind, pomija wpisy bez poziomów i starsze', async () => {
+  it('emituje mapy z 3 dni z właściwym kind, pomija wpisy bez poziomów i starsze', async () => {
     const content = mkdtempSync(path.join(tmpdir(), 'hq-blog-'));
     const out = mkdtempSync(path.join(tmpdir(), 'hq-dist-'));
     writePost(content, ID, BASE, BODY_ARTICLE);
     writePost(content, '2026-10-24-aktualizacja-14', { ...BASE, type: 'note', section: 'Aktualizacja 4h', date: '2026-10-24T14:00:00+02:00', levels: [], scenarios: [] }, 'Cena bez zmian od rana, zakres z mapy dnia się utrzymuje, a na mapie płynności nie pojawiło się nic nowego od 9:30.');
-    writePost(content, '2026-10-01-mapa-dnia', { ...BASE, date: '2026-10-01T09:30:00+02:00' }, BODY_ARTICLE);
+    writePost(content, '2026-10-20-mapa-dnia', { ...BASE, date: '2026-10-20T09:30:00+02:00' }, BODY_ARTICLE);
     const now = Date.parse('2026-10-25T12:00:00Z');
     await buildBlog({ contentDir: content, outDir: out, site: SITE, now });
     const j = JSON.parse(readFileSync(path.join(out, 'blog', 'maps.json'), 'utf8'));

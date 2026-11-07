@@ -58,12 +58,8 @@ export async function buildPages({ outDir, site }) {
   return sitemapEntries(site, pages);
 }
 
-/**
- * Buduje blog do `outDir/blog`, strony serwisu (bez `pages: false`) i `outDir/sitemap.xml`. Błędny wpis zatrzymuje build
- * (nic nie trafia na stronę po cichu). Zwraca liczbę opublikowanych wpisów.
- */
-/** Mapy z ostatnich 14 dni trafiają do maps.json (rozliczenie poziomów w aplikacji). */
-const MAPS_DAYS = 14;
+/** Mapy z ostatnich 3 dni trafiają do maps.json (rozliczenie poziomów w aplikacji). */
+const MAPS_DAYS = 3;
 
 /** Rodzaj mapy z rubryki wpisu (albo tytułu): dzień, przed NY, otwarcie sesji, aktualizacja 4h, inne. */
 export function mapKind(section, title) {
@@ -81,7 +77,7 @@ export function mapKind(section, title) {
   return 'inne';
 }
 
-/** Zawartość blog/maps.json: tylko wpisy z poziomami i ceną z ostatnich 14 dni, od najnowszego (bez treści wpisów). */
+/** Zawartość blog/maps.json: tylko wpisy z poziomami i ceną z ostatnich 3 dni (dziś i ostatnie zamknięte sesje), od najnowszego (bez treści wpisów). */
 export function mapsJson(posts, now) {
   const since = now - MAPS_DAYS * 24 * 3600_000;
   const maps = posts
@@ -99,6 +95,10 @@ export function mapsJson(posts, now) {
   return { v: 1, asOf: now, maps };
 }
 
+/**
+ * Buduje blog do `outDir/blog`, strony serwisu (bez `pages: false`) i `outDir/sitemap.xml`. Błędny wpis zatrzymuje build
+ * (nic nie trafia na stronę po cichu). Zwraca liczbę opublikowanych wpisów.
+ */
 export async function buildBlog({ contentDir = CONTENT_DIR, outDir, site, drafts = false, pages = true, now = Date.now() }) {
   const { posts, problems } = loadPosts(contentDir);
   if (problems.length) throw new Error(`Błędne wpisy bloga:\n${formatProblems(problems)}`);
