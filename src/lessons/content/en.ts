@@ -396,9 +396,9 @@ export const en: LessonsContent = {
   },
   atlas: {
     intro:
-      'Every indicator from the Charts tab: what it is, how we compute it, how to read it, where it is easy to go wrong and what to combine it with. The figures come from the same slices as the exercises.',
+      'Every indicator of the phase charts (Pre-session, In session, Post-session): what it is, how we compute it, how to read it, where it is easy to go wrong and what to combine it with. The figures come from the same slices as the exercises.',
     groups: { price: 'Price and value', flow: 'Flow: who is aggressive', book: 'Order book and liquidity', context: 'Positions and leverage' },
-    labels: { what: 'What it is', how: 'How we compute it', read: 'How to read it', traps: 'Traps', combine: 'Combine with', where: 'In Charts' },
+    labels: { what: 'What it is', how: 'How we compute it', read: 'How to read it', traps: 'Traps', combine: 'Combine with', where: 'Where in the app' },
     entries: [
       {
         id: 'vwap',
@@ -543,7 +543,7 @@ export const en: LessonsContent = {
         name: 'CVD: cumulative delta',
         group: 'flow',
         what: 'The sum of deltas since the start of a period: the direction of aggression over time.',
-        how: "The delta of successive candles added up from the reset (session, UTC day, week or no reset). In Charts there is also exchange CVD: Hyperliquid, Binance (perp and spot) and Bybit, computed in the reader's browser.",
+        how: "The delta of successive candles added up from the reset (session, UTC day, week or no reset). On the In session chart there is also exchange CVD: Hyperliquid, Binance (perp and spot) and Bybit, computed in the reader's browser.",
         read: ['Price and CVD in the same direction: a move with aggression. A divergence: a move without aggression, or aggression being absorbed.', 'Exchange CVD tells you whether Hyperliquid moves together with the larger markets.'],
         traps: ['CVD divergences look convincing on a chart, but in our tests they gave no edge after costs.', 'The shape of CVD depends on where it resets.'],
         combine: ['With open interest and price (the four quadrants from the cascade exercise).', 'With the exchange panels: agreement between HL, Binance and Bybit strengthens the reading.'],
@@ -640,7 +640,7 @@ export const en: LessonsContent = {
         name: 'Liquidations and liquidation clusters',
         group: 'context',
         what: 'Forced closes of leveraged positions: those that have already happened, and places where they might happen.',
-        how: "The clusters on the charts are the desk scanner's estimate of where the liquidation prices of open positions lie. The circles on the lesson figures are liquidations that have already happened (the desk's liquidation tape, in USD millions per candle).",
+        how: "The clusters on the chart are the desk scanner's estimate of where the liquidation prices of open positions lie. The circles on the lesson figures are liquidations that have already happened (the desk's liquidation tape, in USD millions per candle).",
         read: ['A liquidation cascade is forced selling (or buying), not the decision of someone who knows more.', 'A large cluster close to price is fuel: reaching it can accelerate the move.'],
         traps: ['A cluster is an estimate from public positions, not a certainty; positions change.', 'The end of a cascade is hard to time in real time.'],
         combine: ["With the day's levels: stops and liquidations often sit just beyond PDH and PDL.", 'With open interest: a cascade is a sharp drop in OI.'],
@@ -665,7 +665,7 @@ export const en: LessonsContent = {
         name: 'Open interest and funding',
         group: 'context',
         what: 'The number of open contracts (how many positions there are) and the rate the more crowded side pays.',
-        how: 'Open interest from the Hyperliquid market context, recorded every minute together with the tape; hourly funding from the same source (on the charts also from Binance and Bybit).',
+        how: 'Open interest from the Hyperliquid market context, recorded every minute together with the tape; hourly funding from the same source (on the chart also from Binance and Bybit).',
         read: ['Price ↑ and OI ↑: new longs. Price ↑ and OI ↓: short covering. Price ↓ and OI ↑: new shorts. Price ↓ and OI ↓: longs closing.', 'Extreme funding shows which side is overcrowded.'],
         traps: ['Every contract has two sides; OI tells you how many, not who is right.', 'Extreme funding can last a long time.'],
         combine: ['With delta and price (the cascade exercise).', 'With liquidations: a sharp OI drop during a move is forced closing.'],

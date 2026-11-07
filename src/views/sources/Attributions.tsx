@@ -30,7 +30,7 @@ const ITEMS: { title: string; body: React.ReactNode }[] = [
     title: 'TradingView Lightweight Charts™',
     body: (
       <>
-        {tr('Silnik widoku Wykresy', 'Engine of the Charts view')}: TradingView Lightweight Charts™, Copyright (c) 2025 TradingView, Inc.,{' '}
+        {tr('Silnik wykresów faz dnia (Przed sesją, W sesji, Po sesji)', 'Engine of the phase charts (Pre-session, In session, Post-session)')}: TradingView Lightweight Charts™, Copyright (c) 2025 TradingView, Inc.,{' '}
         <A href="https://www.tradingview.com/">tradingview.com</A> · {tr('licencja', 'license')}{' '}
         <A href="https://github.com/tradingview/lightweight-charts/blob/master/LICENSE">Apache 2.0</A>.
       </>

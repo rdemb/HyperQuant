@@ -386,8 +386,8 @@ const ChartsView: React.FC<ChartsViewProps> = ({ phase, onPhase, onMarket }) => 
         <div role="status" className="mb-2 flex flex-wrap items-center gap-2 pl-3 pr-1.5 py-1.5 rounded-xl border border-line-strong bg-surface-2 text-xs">
           <span className="flex-1 min-w-[14rem] text-ink-2 leading-snug">
             {tr(
-              'Wykresy mają teraz układy faz dnia. Kokpit przejął z Twojego dawnego wykresu rynek, interwał i wskaźniki; całą dawną wersję możesz przywrócić jako własną kartę.',
-              'Charts now have layouts for the phases of the day. The Cockpit took the market, timeframe and indicators from your previous chart; you can restore the whole previous version as a tab of your own.'
+              'Wykres ma teraz układy faz dnia (Przed sesją, W sesji, Po sesji). Kokpit przejął z Twojego dawnego wykresu rynek, interwał i wskaźniki; całą dawną wersję możesz przywrócić jako własną kartę.',
+              'The chart now has layouts for the phases of the day (Pre-session, In session, Post-session). The Cockpit took the market, timeframe and indicators from your previous chart; you can restore the whole previous version as a tab of your own.'
             )}
           </span>
           <button
