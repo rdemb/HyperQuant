@@ -156,10 +156,13 @@ const ChartsView: React.FC<ChartsViewProps> = ({ phase, onPhase, onMarket }) => 
   useEffect(() => {
     const onHash = () => {
       setReplay(parseReplayLink(window.location.hash));
-      // Dawny adres #flow na otwartym W sesji: kolumna z zapisu (także schowana wcześniej klawiszem D) i szuflada
+      // Dawny adres #flow na otwartym W sesji: kolumna z zapisu (także schowana wcześniej klawiszem D) i szuflada; inna
+      // zmiana adresu nie rusza kolumny
       const c = columnAfterHash(phaseRef.current);
-      setDock(c.dock);
-      if (c.drawer) setDrawer(true);
+      if (c) {
+        setDock(c.dock);
+        setDrawer(true);
+      }
     };
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
