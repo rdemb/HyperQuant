@@ -57,19 +57,19 @@ describe('fmtFixed z formatterem w pamięci', () => {
     for (const step of [0.5, 1]) for (const v of VALUES) expect(fmtAxisPrice(v, step), `${v} / ${step}`).toBe(legacyAxis(v, step, false));
   });
 
-  it('wielokrotnie szybszy od toLocaleString z opcjami (podpisy płócien przy każdym odświeżeniu)', () => {
-    const N = 20_000;
-    const xs = Array.from({ length: N }, (_, i) => ((i * 7919.37) % 100_000) - 50_000);
-    let sink = 0;
-    // Rozgrzewka obu ścieżek (JIT)
-    for (let i = 0; i < 2_000; i++) sink += legacyFixed(xs[i], i % 4, false).length + fmtFixed(xs[i], i % 4).length;
-    let a = performance.now();
-    for (let i = 0; i < N; i++) sink += legacyFixed(xs[i], i % 4, false).length;
-    const legacyMs = performance.now() - a;
-    a = performance.now();
-    for (let i = 0; i < N; i++) sink += fmtFixed(xs[i], i % 4).length;
-    const ms = performance.now() - a;
-    expect(sink).toBeGreaterThan(0);
-    expect(ms * 5).toBeLessThan(legacyMs);
+  it('jeden Intl.NumberFormat na liczbę miejsc, bez toLocaleString', async () => {
+    // Świeży moduł (pusta pamięć formatterów), niezależnie od wcześniejszych testów w pliku
+    vi.resetModules();
+    const ctor = vi.spyOn(Intl, 'NumberFormat');
+    const tl = vi.spyOn(Number.prototype, 'toLocaleString');
+    try {
+      const fresh = await import('../format');
+      for (let i = 0; i < 2_000; i++) fresh.fmtFixed(i * 13.37 - 5_000, i % 5);
+      expect(ctor).toHaveBeenCalledTimes(5);
+      expect(tl).not.toHaveBeenCalled();
+    } finally {
+      ctor.mockRestore();
+      tl.mockRestore();
+    }
   });
 });
