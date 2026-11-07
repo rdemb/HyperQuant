@@ -75,6 +75,12 @@ The canvas has one palette, **„Głębia”** (`of-*` tokens, the same values i
 
 Bid × Ask footprint cells are tiles from graphite `#1E2A3A` at low volume to the saturated side colour; dark numbers on a light tile, light numbers on a dark one. The Delta and Volume styles are bars from the left edge of the candle (delta and volume in the colour of the dominant side) with light bid and ask numbers. Second channel: position (sells on the left, buys on the right), and the imbalance number is bold and outlined.
 
+#### Data-quality strip and Frame (`screenshot.ts`, `frame.ts`)
+- **The strip is always burned in.** Every chart screenshot and every Frame carries the quality strip (`qualityText`: tape and map coverage plus the time) with its legend; there is no switch to turn it off, and without a 2D context no image is produced at all. Missing coverage reads „—” with a reason, never 0.
+- **Frame sizes:** 1200×675 (16:9) and 1080×1080 (1:1). The image (a chart screenshot or the Four numbers card) is fitted into the frame without cropping; title, time with source, the strip and „hyperquant.tech” sit in fixed margins.
+- **Layer warning only above the preset.** The dialog warns when the price chart has more layers than both the layout preset and 4 (`FRAME_MAX_LAYERS`); the image still shows every layer.
+- **Title:** numbers and facts only. Phrases that are advice are blocked by the shared blog safeguards (`TITLE_GUARDS` in `src/utils/safeguards.mjs`: buy/sell as a command, „go long”, a ready entry at a price, TP/SL levels, wallet addresses, e-mail, IP, tokens). Each Frame has alt text with the same numbers, to copy.
+
 ## 5. Motion (`motion/react`, tokens in `src/ui/motion.ts`)
 - Default spring: `stiffness 260, damping 26, mass 1` (ζ ≈ 0.8, "premium"). Position and size may spring; **opacity and colour never**.
 - Durations: feedback 100–160 ms; UI motion 200–300 ms; hero entrance 600–720 ms. Exits 40–50% shorter than entrances.
