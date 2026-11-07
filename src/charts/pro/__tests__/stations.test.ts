@@ -49,12 +49,18 @@ describe('układy faz dnia', () => {
         }
   });
 
-  it('najwyżej 5 warstw na wykresie ceny w każdym panelu', () => {
+  it('najwyżej 5 warstw na wykresie ceny w każdym panelu i zestawie paneli (wskaźniki na cenie też się liczą)', () => {
     for (const st of STATIONS)
-      for (const narrow of [false, true])
+      for (const narrow of [false, true]) {
         for (let p = 0; p < 4; p++) expect(priceLayerCount(stationPanel(st, p, narrow)), `${st.id} ${p} ${narrow}`).toBeLessThanOrEqual(5);
-    // Ustawienia startowe: VWAP, profil, poziomy dnia i otwarcia sesji
+        for (const set of st.panelSets ?? []) expect(priceLayerCount(panelSetPanel(st, set.id, 0, narrow)), `${st.id} ${set.id} ${narrow}`).toBeLessThanOrEqual(5);
+      }
+    // Ustawienia startowe: VWAP, profil, poziomy dnia i otwarcia sesji; stożek na cenie +1, ukryty i we własnym panelu — nie
     expect(priceLayerCount(DEFAULT_SETTINGS)).toBe(4);
+    expect(priceLayerCount({ ...DEFAULT_SETTINGS, indicators: inds(['cone'], ['rsi'], ['ema', {}, { visible: false }]) })).toBe(5);
+    // Mapa dnia 30m: TPO z OI, VWAP, poziomy dnia i stożek — bez pasm VWAP
+    const map30 = stationPanel(stationById('day-map'), 1, false);
+    expect([map30.showVwapBands, priceLayerCount(map30)]).toEqual([false, 5]);
   });
 
   it('wzorce odpowiadają pytaniom układów', () => {

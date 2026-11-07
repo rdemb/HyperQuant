@@ -79,7 +79,7 @@ export const EXERCISES: readonly ExerciseSpec[] = [
     ],
     lab: 'pdh-sweep',
     atlas: ['vwap', 'profile', 'levels', 'sessions'],
-    station: 'day-map', // PDH, profil i VWAP z pasmami
+    station: 'day-map', // PDH, profil i VWAP
     level: 1,
   },
   {
@@ -90,7 +90,7 @@ export const EXERCISES: readonly ExerciseSpec[] = [
     checkpoints: [{ at: '2026-10-21T14:45Z', questions: [{ kind: 'choice', options: 4, correct: 1, partial: [2] }] }],
     lab: 'vwap-revert',
     atlas: ['vwap', 'levels', 'sessions'],
-    station: 'day-map', // VWAP z pasmami σ i poziomy dnia
+    station: 'day-map', // VWAP i poziomy dnia
     level: 1,
   },
   {
@@ -111,7 +111,7 @@ export const EXERCISES: readonly ExerciseSpec[] = [
     ],
     lab: 'pdl-sweep',
     atlas: ['vwap', 'profile', 'levels'],
-    station: 'day-map', // VWAP z pasmami, profil i poziomy dnia
+    station: 'day-map', // VWAP, profil i poziomy dnia
     level: 2,
   },
   {

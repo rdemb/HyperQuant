@@ -406,7 +406,7 @@ export const pl: LessonsContent = {
         traps: ['Pasmo ±2σ to nie sygnał odwrócenia: w dniu trendu „drogo” robi się coraz drożej.', 'Rano, przy małej liczbie świec, pasma są wąskie i łatwo je przebić.'],
         combine: ['Z profilem: VWAP przy POC to zgoda co do wartości dnia.', 'Z przepływem: utrzymanie VWAP przy agresywnej sprzedaży mówi więcej niż samo dotknięcie.'],
         where: 'Wskaźniki → VWAP dnia, Pasma VWAP ±1σ i ±2σ, VWAP sesji',
-        station: 'day-map', // VWAP dnia z pasmami σ (30m)
+        station: 'day-map', // VWAP dnia (pasma σ: Wskaźniki)
         figure: { slice: '2026-10-21-trend', layers: { vwap: true, bands: true }, caption: 'Środa 21.10: dzień trendu. VWAP rośnie, cena godzinami jedzie po paśmie +1σ…+2σ.' },
       },
       {
@@ -526,7 +526,7 @@ export const pl: LessonsContent = {
         read: ['Delta zgodna z kierunkiem świecy to ruch z agresją; przeciwna to ruch bez niej (np. cena rośnie, bo sprzedający się wycofali).', 'Duża delta bez ruchu ceny to wchłanianie przez zlecenia oczekujące.'],
         traps: ['Delta opisuje świecę, a nie przyszłość.', 'Każda transakcja ma kupującego i sprzedającego; delta mówi tylko, kto był niecierpliwy.'],
         combine: ['Z open interest: czy agresja otwiera, czy zamyka pozycje.', 'Z poziomem: delta przy teście krawędzi.'],
-        where: 'Panel Delta pod wykresem',
+        where: 'Footprint w stylu Delta w układzie Aukcja i otwarcie; panel Delta pod wykresem: Wskaźniki → Pod wykresem',
         station: 'auction-open', // footprint w stylu Delta
         figure: { slice: '2026-10-24-cascade', layers: { delta: true, vwap: true }, at: '2026-10-24T21:30Z', caption: 'Sobota 24.10: delta od początku nagrania taśmy (18:25). Wcześniej panel jest kreskowany.' },
       },

@@ -57,7 +57,7 @@ export const LEGACY_STATION: Readonly<Record<string, StationId>> = {
   mtf: 'cockpit',
 };
 
-// Mapa dnia: 30m z TPO z OI i VA (na telefonie ten sam wykres)
+// Mapa dnia: 30m z TPO z OI i VA, VWAP, PDH/PDL i stożkiem zakresu — 5 warstw na cenie (na telefonie ten sam wykres)
 const DAY_MAP_30M: Partial<ChartSettings> = {
   ...LAYERS_OFF,
   interval: '30m',
@@ -65,7 +65,6 @@ const DAY_MAP_30M: Partial<ChartSettings> = {
   showTpo: true,
   showTpoOi: true,
   showVwap: true,
-  showVwapBands: true,
   showLevels: true,
   showDelta: false,
   showCvd: false,
@@ -223,8 +222,9 @@ const PRICE_LAYERS = [
   ]),
 ];
 
-/** Liczba warstw włączonych na wykresie ceny. */
-export const priceLayerCount = (s: ChartSettings): number => PRICE_LAYERS.filter((k) => s[k] === true).length;
+/** Liczba warstw na wykresie ceny: włączone warstwy z ustawień i widoczne wskaźniki rysowane na cenie (np. stożek). */
+export const priceLayerCount = (s: ChartSettings): number =>
+  PRICE_LAYERS.filter((k) => s[k] === true).length + s.indicators.filter((x) => x.visible && indicatorDef(x.id).pane === 'price').length;
 
 /** Panele pod wykresem ceny z ustawień (jak PANE_KEYS w controller.ts): wolumen, delta, CVD, panele giełd, Tablica liczb. */
 const UNDER_PANES = ['showVolume', 'showDelta', 'showCvd', 'showVenueCvd', 'showVenueOi', 'showStats'] as const;

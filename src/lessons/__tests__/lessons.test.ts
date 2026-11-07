@@ -22,7 +22,7 @@ const patterns = (st: Station): ChartSettings[] => [...st.panels.map((_, p) => s
  * żaden wzorzec go nie ma (sprawdzenie pominięte). Nowe hasło wymaga wpisu tutaj.
  */
 const NEEDS: Record<string, ((s: ChartSettings) => boolean) | string> = {
-  vwap: (s) => s.showVwap && s.showVwapBands,
+  vwap: (s) => s.showVwap,
   profile: (s) => s.showProfile || s.showPeriodProfiles || s.showTpo,
   devpoc: (s) => s.showPeriodProfiles || s.showDevPoc,
   tpo: (s) => s.showTpo,
@@ -123,6 +123,13 @@ describe('ćwiczenia: struktura zgodna z treścią i danymi', () => {
         const need = NEEDS[e.id];
         if (typeof need !== 'string') expect(patterns(stationById(e.station)).some(need), `${e.id} → ${e.station}`).toBe(true);
       }
+  });
+
+  it('delta: opis miejsca zgodny z układem (footprint w stylu Delta, bez panelu Delta we wzorcu)', () => {
+    const st = stationById(pl.atlas.entries.find((e) => e.id === 'delta')!.station);
+    expect(patterns(st).some((s) => s.showDelta)).toBe(false);
+    expect(pl.atlas.entries.find((e) => e.id === 'delta')!.where).toContain(`w stylu Delta w układzie ${st.name}`);
+    expect(en.atlas.entries.find((e) => e.id === 'delta')!.where).toContain('Delta style in the Auction and open layout');
   });
 
   it('ćwiczenie otwiera układ z warstwą co najmniej jednego ze swoich haseł', () => {

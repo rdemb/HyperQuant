@@ -1,7 +1,8 @@
-import { ChartLayout, ChartSettings, DEFAULT_SETTINGS, NARROW_PATCH, isNarrow, loadSettings, migrateSaved, panelKey, parseSettings, settingsJson } from './settings';
+import { ChartLayout, ChartSettings, DEFAULT_SETTINGS, NARROW_PATCH, isNarrow, loadSettings, migrateSaved, panelKey, parseLayout, parseSettings, settingsJson } from './settings';
 import { PHASE_LAYOUTS, PhaseId, STATIONS, Station, StationId, loadStationLayout, stationById, stationKey, stationKeys, stationPanel } from './stations';
 import { LEGACY_ACTIVE_KEY, LEGACY_NARROW, LEGACY_START_KEYS, LEGACY_STATIONS, LEGACY_TEMPLATES, LEGACY_TEMPLATE_PHONE, LegacyStation } from './legacyPresets';
 import { INTERVALS } from '../core/time';
+import type { Market } from '../store/proStore';
 import { tr } from '../../../i18n';
 
 /**
@@ -200,12 +201,25 @@ export function openStationTab(preset: StationId): void {
   saveTabs(openPreset(loadTabs(), preset));
 }
 
-/** Karty fazy dnia: układy fazy, a w sesji także karty własne użytkownika (po układach). */
+/** Faza karty: faza jej wzorca (karta układu i jej kopia z „+”), karta własna — sesja. */
+const tabPhase = (t: ChartTab): PhaseId => (t.preset === 'own' ? 'session' : stationById(t.preset).phase);
+
+/**
+ * Karty fazy dnia: najpierw układy fazy, po nich pozostałe karty tej fazy w kolejności paska — kopie układów fazy,
+ * a w sesji także karty własne (`own`).
+ */
 export function phaseTabs(st: TabsState, phase: PhaseId): ChartTab[] {
   const ids: readonly string[] = PHASE_LAYOUTS[phase];
   const layouts = st.tabs.filter((t) => isLayoutTab(t) && ids.includes(t.id));
-  return phase === 'session' ? [...layouts, ...st.tabs.filter((t) => !isLayoutTab(t))] : layouts;
+  return [...layouts, ...st.tabs.filter((t) => !isLayoutTab(t) && tabPhase(t) === phase)];
 }
+
+/**
+ * Rynek przenoszony na wykresy otwieranej karty: przy przełączeniu rynek bieżącej karty `from`; karta z przywróconą
+ * dawną wersją (`keepSaved`) — null, więc każdy jej wykres otwiera się z rynkiem ze swojego zapisu, a zapis przy
+ * montowaniu go nie nadpisuje.
+ */
+export const openCoin = (from: string, keepSaved: boolean): Market | null => (keepSaved ? null : loadSettings(stationKey(from, 0)).coin);
 
 // ───────────────────────── aktywna karta faz ─────────────────────────
 
@@ -286,6 +300,8 @@ export function blankName(st: TabsState): string {
 // ───────────────────────── migracja kart (układy faz) ─────────────────────────
 
 const MIGRATED_KEY = 'hq.charts.tabs.migrated.v2';
+/** Kopia surowej dawnej listy kart (zapisywana raz, przed pierwszym zapisem nowego formatu). */
+const BACKUP_KEY = 'hq.charts.tabs.v1.pre-v2';
 const RESTORE_OFFER_KEY = 'hq.charts.restoreOffer.v1';
 const LEGACY_IDS: ReadonlySet<string> = new Set(LEGACY_STATIONS.map((s) => s.id));
 const LEGACY_START = LEGACY_STATIONS[0];
@@ -343,14 +359,38 @@ function legacyPanel(legacy: LegacyStation, panel: number, narrow: boolean, tf: 
   return parseSettings(panel === 0 && tf ? { ...s, interval: tf } : s);
 }
 
+/** Zapis panelu równy wzorcowi po walidacji (bez rynku i wysokości wiersza, które przechodzą z innej karty). */
+function sameAsPattern(raw: string, pattern: ChartSettings): boolean {
+  try {
+    const norm = (s: ChartSettings) => JSON.stringify({ ...s, coin: DEFAULT_SETTINGS.coin, rowStep: 0 });
+    return norm(parseSettings(migrateSaved(JSON.parse(raw)), pattern)) === norm(parseSettings(pattern));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Dawna karta startowa stacji tylko obejrzana: bez zapisu albo każdy zapisany panel równy wzorcowi (na komputerze albo
+ * telefonie — wykres zapisuje ustawienia przy każdym otwarciu) i zapisany układ równy układowi wzorca.
+ */
+function untouched(storage: Storage, id: string, legacy: LegacyStation): boolean {
+  const keys = stationKeys(id);
+  const layout = get(storage, keys[keys.length - 1]);
+  if (layout !== null && parseLayout(Number(layout)) !== legacy.layout) return false;
+  return keys.slice(0, -1).every((k, p) => {
+    const raw = get(storage, k);
+    return raw === null || [false, true].some((narrow) => sameAsPattern(raw, legacyPanel(legacy, p, narrow, undefined)));
+  });
+}
+
 /**
  * Jednorazowa migracja kart do układów faz (znacznik `hq.charts.tabs.migrated.v2`):
- * 1. karta dawnej stacji (id = id stacji) bez zapisu ustawień to nietknięta karta startowa — znika;
+ * 1. karta dawnej stacji (id i wzorzec = id stacji) tylko obejrzana (bez zapisu albo zapis równy wzorcowi) znika;
  * 2. każda inna karta z dawnym wzorcem (stacja albo `tpl:…`) staje się kartą własną z nazwą dawnego wzorca; brakujące
  *    panele wzorca i układ zapisuje się pod jej kluczami z kopii `legacyPresets.ts` (zapis użytkownika zostaje);
  * 3. dawny Start (`hq.charts.v1`) przekazuje Kokpitowi rynek, interwał i wskaźniki (warstwy z wzorca Kokpitu), o ile
  *    Kokpit nie ma jeszcze zapisu;
- * 4. dawne klucze zostają nietknięte.
+ * 4. dawne klucze zostają nietknięte, a surowa dawna lista kart trafia raz do `hq.charts.tabs.v1.pre-v2`.
  * `restoreStart` — jest dawny Start, a pasek „Przywróć moje poprzednie ustawienia” nie został jeszcze zamknięty.
  */
 export function migrateTabsV2(storage: Storage): { restoreStart: boolean } {
@@ -366,8 +406,8 @@ export function migrateTabsV2(storage: Storage): { restoreStart: boolean } {
       continue;
     }
     const keys = stationKeys(t.id);
-    if (LEGACY_IDS.has(t.id) && keys.every((k) => get(storage, k) === null)) continue;
     const legacy = legacyPattern(t.preset);
+    if (t.id === t.preset && LEGACY_IDS.has(t.id) && untouched(storage, t.id, legacy)) continue;
     legacy.panels.forEach((_, p) => {
       if (get(storage, keys[p]) === null) set(storage, keys[p], settingsJson(legacyPanel(legacy, p, narrow, t.tf)));
     });
@@ -386,6 +426,8 @@ export function migrateTabsV2(storage: Storage): { restoreStart: boolean } {
     if (prev) set(storage, cockpitKey, settingsJson({ ...stationPanel(stationById(DEFAULT_ACTIVE), 0, narrow), coin: prev.coin, interval: prev.interval, indicators: prev.indicators }));
   }
   const ids = new Set(kept.map((t) => t.id));
+  const oldRaw = get(storage, KEY);
+  if (oldRaw !== null && get(storage, BACKUP_KEY) === null) set(storage, BACKUP_KEY, oldRaw);
   set(storage, KEY, JSON.stringify(parseTabs({ tabs: kept, active: typeof old.active === 'string' && ids.has(old.active) ? old.active : DEFAULT_ACTIVE })));
   set(storage, MIGRATED_KEY, '1');
   return { restoreStart };
