@@ -3,7 +3,7 @@ import { useDesk, usePrefillFromSignal } from '../state/DeskContext';
 import { LiquidityMicrostructureLab, MicrostructureMethods } from '../components/LiquidityMicrostructureLab';
 import { PositionSizer, QuantMetricTiles, QuantRegimePanel } from '../components/QuantSignalDesk';
 import { BookMechanicsPanel } from './micro/BookMechanicsPanel';
-import { LiquidityByHourPanel } from './micro/LiquidityByHourPanel';
+import { LiquidityByHourPanel } from './before/LiquidityByHourPanel';
 import { tr } from '../i18n';
 
 /** Mikrostruktura: mechanika arkusza (estymatory z literatury), profil płynności, kafle (reżim, metryki, metody, wielkość pozycji). */

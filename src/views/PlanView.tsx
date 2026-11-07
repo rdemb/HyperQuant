@@ -9,7 +9,7 @@ import { PlanForm, PlanFormState } from './plan/PlanForm';
 import { PlanResult } from './plan/PlanResult';
 import { LedgerPanel } from './plan/LedgerPanel';
 import { DeskLedgerPanel } from './plan/DeskLedgerPanel';
-import { AuctionContextPanel } from './plan/AuctionContextPanel';
+import { AuctionContextPanel } from './before/AuctionContextPanel';
 import { FolkloreLabPanel } from './plan/FolkloreLabPanel';
 import { JournalTab } from './plan/JournalTab';
 import { usePlanLedger } from './plan/usePlanLedger';
