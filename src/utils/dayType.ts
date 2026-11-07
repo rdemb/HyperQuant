@@ -6,7 +6,7 @@
 
 export type DayType = 'normal' | 'normal-variation' | 'trend' | 'neutral' | 'unknown';
 
-export type VaMigration = 'higher' | 'lower' | 'overlap-higher' | 'overlap-lower' | 'inside' | 'outside';
+export type VaMigration = 'higher' | 'lower' | 'overlap-higher' | 'overlap-lower' | 'inside' | 'outside' | 'unknown';
 
 /** Zakres dnia do ≤ 1,15 IB to „normal”; trend wymaga zakresu ≥ 2 IB; zamknięcie „przy skraju” to skrajne 20% zakresu. */
 const NORMAL_MAX = 1.15;
@@ -31,8 +31,13 @@ export function classifyDay(x: { ibHi: number; ibLo: number; hi: number; lo: num
   return 'normal-variation';
 }
 
-/** Gdzie leży value area dzisiejszej sesji względem poprzedniej (krawędzie stykające się liczą się jako nakładanie). */
+/**
+ * Gdzie leży value area dzisiejszej sesji względem poprzedniej (krawędzie stykające się liczą się jako nakładanie).
+ * Brak liczby albo odwrócona value area (VAH < VAL) — `unknown`, bez zgadywania.
+ */
 export function vaMigration(today: { vah: number; val: number }, prev: { vah: number; val: number }): VaMigration {
+  const ok = (v: { vah: number; val: number }) => Number.isFinite(v.vah) && Number.isFinite(v.val) && v.vah >= v.val;
+  if (!ok(today) || !ok(prev)) return 'unknown';
   if (today.val > prev.vah) return 'higher';
   if (today.vah < prev.val) return 'lower';
   if (today.val >= prev.val && today.vah <= prev.vah) return 'inside';
