@@ -22,6 +22,27 @@ describe('okno Klatki: fokus', () => {
     expect(() => holdFocus({ activeElement: null }, null)()).not.toThrow();
   });
 
+  it('Klatka z menu „Więcej” na telefonie: pozycji menu już nie ma — fokus na przycisk „Więcej” (zapas), nie na dokument', () => {
+    const more = el('Więcej');
+    // Menu znika w tym samym renderze, w którym otwiera się okno: aktywny jest wtedy sam dokument (body)
+    const body = el('body');
+    holdFocus({ activeElement: body, body }, el('okno'), () => more)();
+    expect(more.focus).toHaveBeenCalledTimes(1);
+    expect(body.focus).not.toHaveBeenCalled();
+    // Pozycja menu odpięta do chwili zamknięcia — też zapas
+    const gone = { ...el('pozycja menu'), isConnected: false };
+    const more2 = el('Więcej');
+    holdFocus({ activeElement: gone }, el('okno'), () => more2)();
+    expect(more2.focus).toHaveBeenCalledTimes(1);
+    // Otwierający przycisk jest — zapas nieużyty
+    const opener = el('Klatka');
+    const spare = el('Więcej');
+    holdFocus({ activeElement: opener, body }, el('okno'), () => spare)();
+    expect([opener.focus.mock.calls.length, spare.focus.mock.calls.length]).toEqual([1, 0]);
+    // Zapas bez elementu (przycisk schowany) — bez błędu
+    expect(() => holdFocus({ activeElement: body, body }, el('okno'), () => null)()).not.toThrow();
+  });
+
   it('Tab z ostatniego wraca na pierwszy, Shift+Tab z pierwszego na ostatni', () => {
     const [a, b, c] = [el('zamknij'), el('tytuł'), el('pobierz')];
     const items = [a, b, c];
