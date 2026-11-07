@@ -16,6 +16,8 @@ describe('Dane publiczne: pusty stan mówi do czytelnika, nie do programisty', (
       expect(html).toContain('Brak danych publicznych');
       expect(html).not.toMatch(/npm|GitHub Actions|lokalnie/);
       expect(html).toContain('co ok. 30 min');
+      // Pusty stan zastępuje cały panel: tekst nie obiecuje „—” w miejscu liczb, których nie ma na ekranie
+      expect(html).not.toContain('w miejscu liczb');
     }
   });
 });
