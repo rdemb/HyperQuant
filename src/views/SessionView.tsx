@@ -9,6 +9,7 @@ import ChartsView from './ChartsView';
 import { CohortFlowPanel } from './desk/CohortFlowPanel';
 import { LiquidationTape } from './desk/LiquidationTape';
 import { FlowColumn } from './flow/FlowColumn';
+import { FirstContact } from './session/FirstContact';
 
 const subscribeHash = (fn: () => void) => {
   window.addEventListener('hashchange', fn);
@@ -22,6 +23,7 @@ const inReplay = () => parseReplayLink(window.location.hash) !== null;
  * z tą kolumną jako szufladą nad wykresem), pod nim przepływ kohort i zrealizowane likwidacje BTC (na każdej
  * szerokości; na wykresie innego rynku „—, tylko BTC”). Na telefonie zamiast kolumny pasek Pulse rynku
  * wykresu, przypięty pod nagłówkiem aplikacji także przy przewijaniu (karty Wykres, DOM, Taśma są w pasku wykresu).
+ * Nad wykresem pierwszy kontakt (dymki i przycisk powtórki 15 min, FirstContact).
  * W powtórce (link #charts?replay=…) sama powtórka: panele na żywo nie mieszają się z przeszłością.
  * `onPhase` — karta układu innej fazy (Alt+1…6, nowa karta) przenosi do ekranu tej fazy.
  */
@@ -38,6 +40,7 @@ const SessionView: React.FC<{ onPhase?: (phase: PhaseId) => void }> = ({ onPhase
           <FlowColumn coin={coin} narrow variant="pulse" />
         </div>
       )}
+      {!replay && <FirstContact coin={coin} />}
       <ChartsView phase="session" onPhase={onPhase} onMarket={setCoin} />
       {!replay && (
         <>
