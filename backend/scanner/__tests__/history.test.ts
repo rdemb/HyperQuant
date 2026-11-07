@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { type HistTrade, decodeBook, decodeTrades, encodeTrades, historyPath, idScopeOf } from '../../../src/utils/tapeHistory.ts';
 import { decodeDayProfile, dayProfilePath } from '../../../src/utils/dayProfile.ts';
 import { MarketRecorder, SETTLE_MS, historyIndex, pruneHistory } from '../history.ts';
-import { prepareHistoryRepo, publishHistory } from '../historyGit.ts';
+import { prepareHistoryRepo, publishHistory, startWhenReady } from '../historyGit.ts';
 import type { HlTrade } from '../hl.ts';
 
 vi.setConfig({ testTimeout: 30_000 });
@@ -313,10 +313,81 @@ describe('numeracja kont i zleceń w obrębie doby UTC', () => {
     r.flush(H11 + SETTLE_MS);
     expect(read(dir, 'BTC', H10, 'trades', false).idScope).toBe('hour');
   });
+
+  it('spóźniona transakcja dla zapisanej części: bez numeru i bez odtworzenia zwolnionej mapy doby', () => {
+    // W ciągu doby: część 10:00 zapisana, spóźniona transakcja z 10:04 (nowe konta) nie zużywa numerów
+    const dir = mkdtempSync(join(tmpdir(), 'hq-hist-'));
+    const r = new MarketRecorder('BTC', dir);
+    r.onState(true, H10);
+    r.onTrades([deal(H10 + 1000, 1, 'B', 'acct-A', 'acct-M', 'tx-1')]); // migawka
+    r.flush(H10 + 5 * MIN + SETTLE_MS);
+    expect(r.heldIds()).toEqual({ days: 1, users: 2, orders: 1 });
+    r.onTrades([deal(H10 + 4 * MIN, 2, 'B', 'acct-L', 'acct-Q', 'tx-2')]);
+    expect(r.heldIds()).toEqual({ days: 1, users: 2, orders: 1 });
+    r.onTrades([deal(H10 + 6 * MIN, 3, 'B', 'acct-B', 'acct-N', 'tx-3')]);
+    r.flush(H10 + 10 * MIN + SETTLE_MS);
+    expect(ids(dir, H10, true)).toEqual([[1, 0, 0, 1]]);
+    expect(ids(dir, H10 + 5 * MIN, true)).toEqual([[3, 1, 2, 3]]);
+    // Po zapisie ostatniej części doby: spóźniona transakcja z 23:59:59 nie tworzy na nowo zwolnionej mapy doby
+    const dir2 = mkdtempSync(join(tmpdir(), 'hq-hist-'));
+    const r2 = new MarketRecorder('BTC', dir2);
+    r2.onState(true, D + DAY - 2 * MIN);
+    r2.onTrades([deal(D + DAY - 2 * MIN, 4, 'B', 'acct-A', 'acct-M', 'tx-4')]); // migawka
+    r2.flush(D + DAY + SETTLE_MS);
+    expect(r2.heldIds()).toEqual({ days: 0, users: 0, orders: 0 });
+    r2.onTrades([deal(D + DAY - 1000, 5, 'B', 'acct-C', 'acct-P', 'tx-5')]);
+    expect(r2.heldIds()).toEqual({ days: 0, users: 0, orders: 0 });
+    r2.onTrades([deal(D + DAY + MIN, 6, 'B', 'acct-C', 'acct-P', 'tx-6')]);
+    r2.flush(D + DAY + 5 * MIN + SETTLE_MS);
+    expect(ids(dir2, D + DAY - HOUR, false)).toEqual([[4, 0, 0, 1]]);
+    expect(ids(dir2, D + DAY, true)).toEqual([[6, 0, 0, 1]]);
+  });
+
+  it('restart o 00:00:05 z migawką z 23:59 (godzina 23 już scalona): numery dalej od maksimum doby poprzedniej, nowa doba od 0', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hq-hist-'));
+    const H23 = D + 23 * HOUR;
+    put(dir, H10, false, [row(H10 + 1000, 1, 40, 12, 50)], 'day'); // największe `o` i `m` doby
+    put(dir, H23, false, [row(H23 + 1000, 2, 7, 20, 3), row(D + DAY - 3000, 3, 8, 21, 4)], 'day'); // godzina 23 scalona
+    const r = new MarketRecorder('BTC', dir);
+    r.onState(true, D + DAY + 5000);
+    // Migawka: 23:59:57 już w pliku godziny 23, 23:59:58 i 23:59:59 nowe, 00:00:02 z nowej doby
+    r.onTrades([
+      deal(D + DAY - 3000, 3, 'B', 'acct-A', 'acct-M', 'tx-3'),
+      deal(D + DAY - 2000, 4, 'B', 'acct-A', 'acct-N', 'tx-4'),
+      deal(D + DAY - 1000, 5, 'A', 'acct-B', 'acct-M', 'tx-5'),
+      deal(D + DAY + 2000, 6, 'B', 'acct-A', 'acct-M', 'tx-6'),
+    ]);
+    r.flush(D + DAY + 5 * MIN + SETTLE_MS);
+    // Godzina 23 scalona ponownie: zapisane numery bez zmian, nowe powyżej maksimum doby (`o` > 40, konta > 50)
+    expect(ids(dir, H23, false)).toEqual([
+      [2, 7, 20, 3],
+      [3, 8, 21, 4],
+      [4, 42, 51, 53],
+      [5, 43, 54, 52],
+    ]);
+    expect(read(dir, 'BTC', H23, 'trades', false).idScope).toBe('day');
+    // Nowa doba od 0 (konto z doby poprzedniej — nowy numer)
+    expect(ids(dir, D + DAY, true)).toEqual([[6, 0, 0, 1]]);
+  });
+
+  it('scalenie starego pliku godzinowego bez pola z częścią `day` (restart po zamknięciu godziny): godzina z `idScope: "hour"`', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hq-hist-'));
+    put(dir, H10, false, [row(H10 + 1000, 1, 3, 1, 2)]); // plik godzinowy rejestratora godzinowego
+    const r = new MarketRecorder('BTC', dir);
+    r.onState(true, H11 + 5000);
+    r.onTrades([deal(H11 - 2000, 2, 'B', 'acct-A', 'acct-M', 'tx-1')]); // migawka z 10:59:58 — nowa część 10:55
+    r.flush(H11 + SETTLE_MS);
+    expect(ids(dir, H10, false)).toEqual([
+      [1, 3, 1, 2],
+      [2, 4, 3, 4],
+    ]);
+    expect(existsSync(join(dir, historyPath('BTC', H10 + 55 * MIN, 'trades', true)))).toBe(false);
+    expect(read(dir, 'BTC', H10, 'trades', false).idScope).toBe('hour');
+  });
 });
 
 describe('format taśmy: zakres numerów `idScope`', () => {
-  it('pole zapisane na żądanie; odczyt z polem i bez (bez pola — godzina); nieznana wartość — plik odrzucony', () => {
+  it('pole zapisane na żądanie; odczyt z polem i bez (bez pola — godzina); nieznana wartość — godzina, plik nie odrzucony', () => {
     const T = Date.UTC(2026, 10, 7, 10);
     const tr: HistTrade = { t: T + 1000, px: 80_000, sz: 0.1, side: 'B', tid: 1, o: 0, k: 0, m: 1 };
     const day = encodeTrades('BTC', T, T + 5 * MIN, [[T, T + 5 * MIN]], [tr], [], true, 'day');
@@ -326,8 +397,11 @@ describe('format taśmy: zakres numerów `idScope`', () => {
     expect(decodeTrades(day)!.idScope).toBe('day');
     expect(decodeTrades(legacy)!.idScope).toBe('hour');
     expect(decodeTrades({ ...day, idScope: 'hour' })!.idScope).toBe('hour');
-    expect(decodeTrades({ ...day, idScope: 'week' })).toBeNull();
-    expect(decodeTrades({ ...day, idScope: 1 })).toBeNull();
+    // Nieznana wartość — najwęższy zakres (nic nie łączy się ponad godzinę), transakcje zostają
+    for (const idScope of ['week', 1]) {
+      const f = decodeTrades({ ...day, idScope })!;
+      expect([f.idScope, f.trades.length]).toEqual(['hour', 1]);
+    }
     expect([idScopeOf(day), idScopeOf(legacy), idScopeOf(decodeTrades(day)!), idScopeOf(decodeTrades(legacy)!)]).toEqual(['day', 'hour', 'day', 'hour']);
   });
 });
@@ -396,6 +470,74 @@ describe('profile dób — kupno, sprzedaż i zmiana OI na cenach z plików godz
     expect(historyIndex(dir, ['BTC'], 7, now).markets.BTC.days).toEqual([D]);
     // Nowe uruchomienie: ważny plik zostaje bez ponownego liczenia
     expect(new MarketRecorder('BTC', dir).profiles(now)).toBe(0);
+  });
+});
+
+describe('startWhenReady — rejestratory dopiero po przygotowaniu repo historii', () => {
+  it('przygotowanie dwa razy nieudane, potem udane: ponowienie co `retryMs`, start dokładnie raz i dopiero po sukcesie', async () => {
+    vi.useFakeTimers();
+    try {
+      const results = [false, false, true];
+      const log: string[] = [];
+      const prepare = async () => {
+        const ok = results.shift() ?? true;
+        log.push(ok ? 'gotowe' : 'nieudane');
+        return ok;
+      };
+      const done = startWhenReady(prepare, () => log.push('start'), 30_000, () => log.push('ponowienie'));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(log).toEqual(['nieudane', 'ponowienie']);
+      await vi.advanceTimersByTimeAsync(29_999); // przed upływem `retryMs` — bez drugiej próby
+      expect(log).toEqual(['nieudane', 'ponowienie']);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(log).toEqual(['nieudane', 'ponowienie', 'nieudane', 'ponowienie']);
+      await vi.advanceTimersByTimeAsync(30_000);
+      await done;
+      expect(log).toEqual(['nieudane', 'ponowienie', 'nieudane', 'ponowienie', 'gotowe', 'start']);
+      // Po starcie bez kolejnych prób i bez timera
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect([log.length, vi.getTimerCount()]).toEqual([6, 0]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('przygotowanie od razu udane: start od razu (bez czekania na timer), raz', async () => {
+    vi.useFakeTimers();
+    try {
+      let starts = 0;
+      let fails = 0;
+      await startWhenReady(async () => true, () => starts++, 30_000, () => fails++);
+      expect([starts, fails, vi.getTimerCount()]).toEqual([1, 0, 0]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('wyjątek przygotowania = porażka (obietnica nie odrzucona); timer ponowienia nie trzyma procesu (unref)', async () => {
+    vi.useFakeTimers();
+    const timeout = vi.spyOn(globalThis, 'setTimeout');
+    try {
+      let calls = 0;
+      const done = startWhenReady(
+        async () => {
+          if (calls++ === 0) throw new Error('git');
+          return true;
+        },
+        () => {},
+        30_000
+      );
+      await vi.advanceTimersByTimeAsync(0);
+      const i = timeout.mock.calls.findIndex((c) => c[1] === 30_000);
+      expect(i).toBeGreaterThanOrEqual(0);
+      expect((timeout.mock.results[i].value as { hasRef(): boolean }).hasRef()).toBe(false);
+      await vi.advanceTimersByTimeAsync(30_000);
+      await expect(done).resolves.toBeUndefined();
+      expect(calls).toBe(2);
+    } finally {
+      timeout.mockRestore();
+      vi.useRealTimers();
+    }
   });
 });
 

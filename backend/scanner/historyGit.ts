@@ -16,9 +16,10 @@ const run = promisify(execFile);
 const LEAN = ['-c', 'gc.auto=0', '-c', 'pack.window=0', '-c', 'pack.depth=0', '-c', 'pack.threads=1', '-c', 'core.compression=0'];
 
 /**
- * Repo gałęzi w katalogu rejestratora (pliki mogą już tam być — rejestrator pisze od startu): `git init` na miejscu,
- * a gdy gałąź istnieje — jej stan jako HEAD i brakujące pliki odtworzone z niej (lokalne zostają). Znacznik gotowości
- * dopiero po całości: przerwane przygotowanie powtarza się, zamiast wypchnąć niepełne drzewo w miejsce gałęzi.
+ * Repo gałęzi w katalogu rejestratora (pliki mogą już tam być, np. po utracie klonu; rejestratory startują dopiero po
+ * przygotowaniu — `startWhenReady`): `git init` na miejscu, a gdy gałąź istnieje — jej stan jako HEAD i brakujące pliki
+ * odtworzone z niej (lokalne zostają). Znacznik gotowości dopiero po całości: przerwane przygotowanie powtarza się,
+ * zamiast wypchnąć niepełne drzewo w miejsce gałęzi.
  */
 export async function prepareHistoryRepo(o: LedgerRepo, now: number): Promise<boolean> {
   const marker = join(o.dir, '.git', 'hq-ready');
@@ -43,6 +44,20 @@ export async function prepareHistoryRepo(o: LedgerRepo, now: number): Promise<bo
   } catch {
     return false;
   }
+}
+
+/**
+ * `start` dopiero po udanym `prepare` (rejestratory po przygotowaniu repo: numeracja doby czyta pliki doby przy pierwszej
+ * transakcji, więc na świeżym klonie musi już widzieć pliki odtworzone z gałęzi — inaczej numery od 0 powtórzyłyby
+ * numery innych kont do końca doby). Porażka albo wyjątek — `onFail` i ponowienie co `retryMs`; timer bez `ref`,
+ * więc nie trzyma procesu przy zamknięciu.
+ */
+export async function startWhenReady(prepare: () => Promise<boolean>, start: () => void, retryMs: number, onFail?: () => void): Promise<void> {
+  while (!(await prepare().catch(() => false))) {
+    onFail?.();
+    await new Promise<void>((r) => setTimeout(r, retryMs).unref());
+  }
+  start();
 }
 
 /** Commit wszystkich zmian (także usunięć) i push; `squash` — gałąź od nowa jako jeden commit z bieżącym drzewem. */

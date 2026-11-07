@@ -185,14 +185,13 @@ export function idScopeOf(file: { idScope?: unknown }): IdScope {
 /**
  * Odczyt pliku taśmy; zły kształt albo wersja → null (cały plik — kolumny muszą się zgadzać co do długości).
  * `zeroKnown` — plik ma kolumnę hashy zerowych (transakcje bez `z` na pewno mają inny hash); `idScope` — zakres numerów
- * (brak pola → `hour`, nieznana wartość → null, bo numerów nie da się bezpiecznie łączyć).
+ * (brak pola albo nieznana wartość → `hour`: najwęższy zakres, nic nie łączy się ponad godzinę).
  */
 export function decodeTrades(
   raw: unknown
 ): { coin: string; from: number; to: number; spans: HistSpan[]; trades: HistTrade[]; ctx: HistCtx[]; zeroKnown: boolean; idScope: IdScope } | null {
   const f = raw as Partial<TradesFile> | null;
   if (!f || f.v !== HISTORY_VERSION || typeof f.coin !== 'string' || !fin(f.from) || !fin(f.to) || !Array.isArray(f.spans)) return null;
-  if (f.idScope !== undefined && f.idScope !== 'hour' && f.idScope !== 'day') return null;
   const n = Array.isArray(f.t) ? f.t.length : -1;
   if (!finArr(f.t) || !finArr(f.px, n) || !finArr(f.sz, n) || !finArr(f.tid, n) || !finArr(f.o, n) || !finArr(f.k, n) || !finArr(f.m, n)) return null;
   if (typeof f.side !== 'string' || f.side.length !== n || !/^[AB]*$/.test(f.side)) return null;

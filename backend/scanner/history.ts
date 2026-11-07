@@ -37,10 +37,9 @@ export const SETTLE_MS = 10_000;
 
 const ZERO_HASH = /^0x0+$/;
 const isMultiple = (px: number, step: number) => Math.abs(px / step - Math.round(px / step)) < 1e-6;
-const DAY_MS = 24 * HIST_HOUR_MS;
 const partOf = (t: number) => Math.floor(t / HIST_PART_MS) * HIST_PART_MS;
 const hourOf = (t: number) => Math.floor(t / HIST_HOUR_MS) * HIST_HOUR_MS;
-const dayOf = (t: number) => Math.floor(t / DAY_MS) * DAY_MS;
+const dayOf = (t: number) => Math.floor(t / PROFILE_DAY_MS) * PROFILE_DAY_MS;
 /** Pliki taśmy w katalogu doby: godzinowe (`13.trades.json.gz`) i części (`13-05.trades.json.gz`) */
 const TRADES_FILE = /^\d{2}(?:-\d{2})?\.trades\.json\.gz$/;
 
