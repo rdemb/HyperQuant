@@ -3,6 +3,7 @@
  * klient MCP w pamięci i syntetyczne świece w formacie `candleSnapshot` Hyperliquid.
  */
 import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
+import type { Candle } from '../../src/charts/pro/hl/parse';
 import { createServer } from '../src/server';
 import { Sources, configFromEnv, type SourcesConfig } from '../src/sources';
 
@@ -95,14 +96,48 @@ export function flatBars(from: number, to: number, lo: number, hi: number, spike
  * tekst). Z `clock` — jak prawdziwe API: tylko świece rozpoczęte do chwili żądania. Inny typ żądania — 400.
  */
 export function hlRoute(bars: readonly Bar[], clock?: { now: number }): (req: FakeRequest) => Reply {
+  return hlCandles({ '1m': bars, '5m': bars, '1h': bars }, clock, MIN);
+}
+
+export const HOUR = 60 * MIN;
+const STEP = { '1m': MIN, '5m': 5 * MIN, '1h': HOUR } as const;
+export type Interval = keyof typeof STEP;
+
+/**
+ * Trasa `candleSnapshot` z osobnymi świecami każdego interwału (interwał bez świec — pusta lista), poza tym jak `hlRoute`.
+ * `span` — długość świecy w polu `T` (domyślnie długość interwału).
+ */
+export function hlCandles(byInterval: Partial<Record<Interval, readonly Bar[]>>, clock?: { now: number }, span?: number): (req: FakeRequest) => Reply {
   return (req) => {
     const body = JSON.parse(req.body ?? '{}') as { type?: string; req?: { coin?: string; interval?: string; startTime?: number; endTime?: number } };
-    if (body.type !== 'candleSnapshot' || body.req?.coin !== 'BTC') return { status: 400, json: { error: 'bad request' } };
+    const iv = body.req?.interval;
+    if (body.type !== 'candleSnapshot' || body.req?.coin !== 'BTC' || iv === undefined || !(iv in STEP)) return { status: 400, json: { error: 'bad request' } };
     const from = body.req.startTime ?? 0;
     const to = Math.min(body.req.endTime ?? Number.POSITIVE_INFINITY, clock?.now ?? Number.POSITIVE_INFINITY);
-    const json = bars
+    const len = span ?? STEP[iv as Interval];
+    const json = (byInterval[iv as Interval] ?? [])
       .filter((b) => b.t >= from && b.t <= to)
-      .map((b) => ({ t: b.t, T: b.t + MIN - 1, s: 'BTC', i: body.req?.interval, o: String(b.o), c: String(b.c), h: String(b.h), l: String(b.l), v: String(b.v), n: 12 }));
+      .map((b) => ({ t: b.t, T: b.t + len - 1, s: 'BTC', i: iv, o: String(b.o), c: String(b.c), h: String(b.h), l: String(b.l), v: String(b.v), n: 12 }));
     return { json };
   };
 }
+
+/**
+ * `n` świec co `stepMs`, ostatnia rozpoczęta w pełnym kroku ≤ `end`: błądzenie losowe wokół 100 000 z generatora
+ * Parka–Millera (ziarno `seed`), więc przy każdym uruchomieniu te same świece; wolumen 50–150.
+ */
+export function walkBars(n: number, stepMs: number, end: number, sigma: number, seed = 1): Bar[] {
+  let s = seed;
+  const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+  const last = Math.floor(end / stepMs) * stepMs;
+  let px = 100_000;
+  return Array.from({ length: n }, (_, k) => {
+    const o = px;
+    const c = o * Math.exp(sigma * (rnd() - 0.5) * 3.4);
+    px = c;
+    return { t: last - (n - 1 - k) * stepMs, o, h: Math.max(o, c) * (1 + sigma * rnd()), l: Math.min(o, c) * (1 - sigma * rnd()), c, v: 50 + 100 * rnd() };
+  });
+}
+
+/** Świece w kształcie `Candle` strony (jak po `parseCandles`) — do porównań z funkcjami strony na tych samych danych. */
+export const asCandles = (bars: readonly Bar[]): Candle[] => bars.map((b) => ({ ...b, n: 12 }));

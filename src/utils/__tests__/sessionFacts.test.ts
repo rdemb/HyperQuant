@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { VBar } from '../auction';
 import { currentTradeSession, previousSameSession } from '../sessionDay';
-import { reviewSession, sessionFacts } from '../sessionFacts';
+import { reviewSession, sessionFacts, sessionNowOf } from '../sessionFacts';
+import * as layoutNumbers from '../../charts/pro/chart/layoutNumbers';
 
 const MIN = 60_000;
 const H = 60 * MIN;
@@ -46,5 +47,11 @@ describe('sessionFacts: jedno źródło faktów sesji (nagłówek Rozliczenia i 
     const f = sessionFacts(bars.filter((b) => b.time >= NY.start), NY, NOW);
     if ('why' in f) throw new Error(f.why);
     expect(f.prevVa).toBeNull();
+  });
+});
+
+describe('sessionNowOf poza modułami wykresu', () => {
+  it('import ze starego miejsca (nagłówek układu) daje tę samą funkcję', () => {
+    expect(layoutNumbers.sessionNowOf).toBe(sessionNowOf);
   });
 });

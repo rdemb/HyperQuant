@@ -3,6 +3,7 @@ import type * as z from 'zod';
 import type { Envelope } from '../envelope';
 import type { Sources } from '../sources';
 import { dayMap } from './dayMap';
+import { sessionContext, sessionReview } from './session';
 
 export interface ToolDef {
   name: string;
@@ -13,4 +14,4 @@ export interface ToolDef {
   run(src: Sources, args: unknown): Promise<Envelope<unknown>>;
 }
 
-export const TOOLS: ToolDef[] = [dayMap];
+export const TOOLS: ToolDef[] = [dayMap, sessionContext, sessionReview];

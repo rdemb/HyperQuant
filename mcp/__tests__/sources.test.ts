@@ -2,7 +2,9 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { BLOCK_MARK } from '../src/envelope';
 import { configFromEnv } from '../src/sources';
-import { DATA_BASE, HL_INFO, MAPS_URL, MIN, type FakeRequest, fakeFetch, flatBars, hlRoute, testSources } from './helpers';
+import { toVBars } from '../../src/utils/auction';
+import { buildVolModel } from '../../src/utils/volatility';
+import { DATA_BASE, HL_INFO, HOUR, MAPS_URL, MIN, type FakeRequest, asCandles, fakeFetch, flatBars, hlCandles, hlRoute, testSources, walkBars } from './helpers';
 
 const NOW = Date.UTC(2026, 10, 4, 15, 0);
 const FILE = `${DATA_BASE}/BTC/test.json`;
@@ -176,5 +178,49 @@ describe('Sources.candles', () => {
     const { src } = testSources({ [HL_INFO]: { status: 500, json: {} } }, NOW);
     const r = await src.candles('5m', NOW - 600 * MIN);
     expect(r.ok).toBe(false);
+  });
+});
+
+describe('Sources.volModel', () => {
+  const h1 = walkBars(1200, HOUR, NOW, 0.004, 3);
+  const m5 = walkBars(2000, 5 * MIN, NOW, 0.0015, 7);
+
+  it('model HAR ze świec 1h i 5m (po ≤ 5000, jedno żądanie na interwał) przez buildVolModel; w TTL 15 min bez nowych żądań', async () => {
+    const { src, calls, clock } = testSources({ [HL_INFO]: hlCandles({ '1h': h1, '5m': m5 }) }, NOW);
+    const r = await src.volModel();
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const ref = buildVolModel(toVBars(asCandles(h1)), toVBars(asCandles(m5)), NOW);
+    expect(ref).not.toBeNull();
+    expect(r.value?.har.coef).toEqual(ref?.har.coef);
+    expect(r.value?.nextHourStartMs).toBe(ref?.nextHourStartMs);
+    expect(calls.map((c) => JSON.parse(c.body ?? '{}').req)).toEqual([
+      { coin: 'BTC', interval: '1h', startTime: Math.floor((NOW - 4999 * HOUR) / HOUR) * HOUR },
+      { coin: 'BTC', interval: '5m', startTime: Math.floor((NOW - 4999 * 5 * MIN) / (5 * MIN)) * 5 * MIN },
+    ]);
+    clock.now = NOW + 14 * MIN;
+    await src.volModel();
+    expect(calls).toHaveLength(2);
+    clock.now = NOW + 16 * MIN;
+    await src.volModel();
+    expect(calls).toHaveLength(4);
+  });
+
+  it('Hyperliquid odrzuca — {ok:false} z powodem, bez pamięci: następne wywołanie pyta znowu', async () => {
+    const { src, calls } = testSources({ [HL_INFO]: { status: 502, json: {} } }, NOW);
+    const r = await src.volModel();
+    expect(r.ok).toBe(false);
+    expect(!r.ok && r.why).toContain('502');
+    await src.volModel();
+    expect(calls).toHaveLength(4);
+  });
+
+  it('za mało świec na model — value null (bez pamięci modelu: kolejne wywołanie po TTL świec buduje znowu)', async () => {
+    const { src, calls, clock } = testSources({ [HL_INFO]: hlCandles({ '1h': h1.slice(-600), '5m': m5 }) }, NOW);
+    const r = await src.volModel();
+    expect(r.ok && r.value).toBeNull();
+    clock.now = NOW + 2 * MIN;
+    await src.volModel();
+    expect(calls).toHaveLength(4);
   });
 });

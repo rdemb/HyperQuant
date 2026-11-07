@@ -3,11 +3,15 @@ import { fmtSignedVol } from '../../orderflow/renderer';
 import { fmtCompact, numLang } from '../../../ui/format';
 import type { Candle } from '../hl/parse';
 import type { FootprintBar } from '../core/footprintBar';
-import { type VwapPoint, sdUsable } from '../core/indicators';
+import type { VwapPoint } from '../core/indicators';
 import type { PlayerSplit } from '../core/players';
 import { fmtDuration } from '../draw/model';
 import { fmtPx } from './layout';
 import { lang, tr } from '../../../i18n';
+import { vwapSigma } from '../../../utils/dayVwap';
+
+// Odległość od VWAP w σ liczy `utils/dayVwap` (wspólna z nagłówkiem układu i serwerem MCP) — dawne miejsce eksportu
+export { vwapSigma };
 
 /**
  * Stan rynku: jedno zdanie o bieżącej sytuacji złożone ze stałych reguł — położenie ceny względem VWAP w σ, kierunek
@@ -82,15 +86,6 @@ const usd = (v: number) => `${fmtCompact(v).replace(/[.,]0([KMB])$/, '$1')} USD`
 /** „świeca”, „świece”, „świec” po liczbie. */
 const bars = (n: number) =>
   lang === 'en' ? (n === 1 ? 'candle' : 'candles') : n === 1 ? 'świeca' : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? 'świece' : 'świec';
-
-/**
- * Odległość ceny od VWAP w σ, zaokrąglona do 0,1 (tę liczbę widać w opisie i z nią porównujemy progi). Brak liczby albo
- * σ z szumu zaokrągleń (okres z jedną świecą) — null.
- */
-export function vwapSigma(close: number, vwap: number, sd: number): number | null {
-  if (![close, vwap, sd].every(Number.isFinite) || !sdUsable({ vwap, sd, start: false })) return null;
-  return round((close - vwap) / sd, 1);
-}
 
 function vwapFact(x: StateInput, close: number): StateFact | null {
   const v = x.vwap;
