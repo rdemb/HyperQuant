@@ -188,6 +188,9 @@ export function parseSettings(raw: unknown, d: ChartSettings = DEFAULT_SETTINGS)
   const panelSet = oneOf<string | undefined>(r.panelSet, PANEL_SET_IDS, d.panelSet);
   // Mapa spoza pliku map (np. starsza niż 3 dni) to przy rysowaniu wybór domyślny; tu tylko format identyfikatora wpisu
   const blogMapId = isMapId(r.blogMapId) ? r.blogMapId : d.blogMapId;
+  // Zapis sprzed warstwy „Mapa z bloga” (bez jej klucza) w panelu, którego wzorzec ma mapę zamiast poziomów dnia: oba pola
+  // z wzorca — inaczej szósta warstwa i PDL dwa razy. Zapis z kluczem zostaje, jak go zapisał użytkownik; reszta pól bez zmian.
+  const blogSwap = r.showBlogMap === undefined && d.showBlogMap && !d.showLevels;
   return {
     coin: oneOf(r.coin, MARKETS, d.coin),
     interval: oneOf(r.interval, INTERVALS.map((i) => i.id), d.interval),
@@ -214,7 +217,7 @@ export function parseSettings(raw: unknown, d: ChartSettings = DEFAULT_SETTINGS)
     showDevPoc: bool(r.showDevPoc, d.showDevPoc),
     showTpo: bool(r.showTpo, d.showTpo),
     showTpoOi: bool(r.showTpoOi, d.showTpoOi),
-    showLevels: bool(r.showLevels, d.showLevels),
+    showLevels: blogSwap ? d.showLevels : bool(r.showLevels, d.showLevels),
     showBlogMap: bool(r.showBlogMap, d.showBlogMap),
     showSessions: bool(r.showSessions, d.showSessions),
     showIb: bool(r.showIb, d.showIb),

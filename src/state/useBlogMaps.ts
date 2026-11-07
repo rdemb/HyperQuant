@@ -94,10 +94,15 @@ export async function fetchBlogMaps(fetchImpl: FetchLike = (u, i) => fetch(u, i)
   }
 }
 
-/** Stan po pobraniu: plik — ready; brak pliku przy pierwszym pobraniu — missing; nieudane odświeżenie zostawia poprzednie mapy. */
+/**
+ * Stan po pobraniu: plik — ready; brak pliku przy pierwszym pobraniu — missing; nieudane odświeżenie zostawia poprzednie mapy.
+ * Bez zmiany (kolejny brak pliku, ten sam plik) — ten sam obiekt, więc wykresy nie przeliczają się co 10 min.
+ */
 export function nextBlogMaps(prev: BlogMapsState, got: BlogMap[] | null): BlogMapsState {
-  if (got) return { status: 'ready', maps: got };
-  return prev.status === 'ready' ? prev : { status: 'missing', maps: [] };
+  if (!got) return prev.status === 'loading' ? { status: 'missing', maps: [] } : prev;
+  // Plik ma kilkanaście map bez treści wpisów — porównanie raz na 10 min jest tanie
+  if (prev.status === 'ready' && JSON.stringify(prev.maps) === JSON.stringify(got)) return prev;
+  return { status: 'ready', maps: got };
 }
 
 // Jeden plik dla wszystkich wykresów strony: pobierany, dopóki któryś wykres ma włączoną warstwę

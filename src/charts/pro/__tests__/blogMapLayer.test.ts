@@ -4,8 +4,10 @@ import type { Candle } from '../hl/parse';
 import { DEFAULT_SETTINGS } from '../chart/settings';
 import { LAYERS_OFF } from '../chart/templates';
 import { fmtPx } from '../chart/layout';
-import { blogMapMarks, blogMapModel } from '../chart/blogMapLayer';
+import { blogEdgeTags, blogMapMarks, blogMapModel } from '../chart/blogMapLayer';
 import { LAYER_SOURCE, WAIT_TEXT, blogMapScan, layerBadge, legendChips } from '../chart/layerSources';
+import { TAG_H, edgeTagsIn, placeTags } from '../chart/overlay';
+import { PRO } from '../chart/theme';
 import { fmtDayTime, fmtDm, fmtHm } from '../core/time';
 
 const MIN = 60_000;
@@ -74,6 +76,10 @@ describe('blogMapMarks: znaczniki dotknięcia tylko w układzie Rozliczenie', ()
     c.t === TODAY + 9 * H + 31 * MIN ? { ...c, h: 76_450 } : c.t === TODAY + 7 * H + 5 * MIN ? { ...c, l: 75_100 } : c
   );
 
+  // Chwila wykresu 10:00:30: ostatnia pełna minuta to 09:59, świece sięgają do niej bez przerw
+  const T10 = TODAY + 10 * H + 30_000;
+  const touches = (r: ReturnType<typeof blogMapMarks>) => r.settled!.map((x) => [x.label, x.touchedAt]);
+
   it('poza Rozliczeniem bez znaczników i bez pobierania świec 1m', () => {
     let asked = 0;
     expect(
@@ -83,6 +89,7 @@ describe('blogMapMarks: znaczniki dotknięcia tylko w układzie Rozliczenie', ()
           asked++;
           return candles;
         },
+        T10,
         false
       )
     ).toEqual(NO_MARKS);
@@ -97,11 +104,12 @@ describe('blogMapMarks: znaczniki dotknięcia tylko w układzie Rozliczenie', ()
         from = f;
         return candles;
       },
+      T10,
       true
     );
     expect(from).toBe(PUB);
     expect(r.note).toBeNull();
-    expect(r.settled!.map((x) => [x.label, x.touchedAt])).toEqual([
+    expect(touches(r)).toEqual([
       ['PDL', null],
       ['Szczyt Azji', TODAY + 9 * H + 31 * MIN],
       ['VWAP dnia', TODAY + 7 * H + 13 * MIN],
@@ -109,15 +117,96 @@ describe('blogMapMarks: znaczniki dotknięcia tylko w układzie Rozliczenie', ()
   });
 
   it('mapa weekendu albo tygodnia (bez okna): bez znaczników, z uwagą „bez rozliczenia”', () => {
-    expect(blogMapMarks({ ...MAP, kind: 'inne' }, () => candles, true)).toEqual({ settled: null, note: 'bez rozliczenia' });
+    expect(blogMapMarks({ ...MAP, kind: 'inne' }, () => candles, T10, true)).toEqual({ settled: null, note: 'bez rozliczenia' });
   });
 
   it('świece 1m jeszcze nie sięgają wpisu: bez znaczników (brak ✓ nie znaczy „nie dotknięto”), z uwagą o czekaniu', () => {
-    const r = blogMapMarks(MAP, () => flat(TODAY + 8 * H, 60, 75_800, 76_000), true);
+    const r = blogMapMarks(MAP, () => flat(TODAY + 8 * H, 60, 75_800, 76_000), T10, true);
     expect(r).toEqual({ settled: null, note: 'czekam na świece 1m' });
-    expect(blogMapMarks(MAP, () => [], true)).toEqual({ settled: null, note: 'czekam na świece 1m' });
-    // Pierwsza świeca w oknie to minuta po wpisie (07:13): świeca 07:12 zaczęła się przed wpisem i nie jest potrzebna
-    expect(blogMapMarks(MAP, () => flat(TODAY + 7 * H + 13 * MIN, 60, 75_800, 76_000), true).settled).not.toBeNull();
+    expect(blogMapMarks(MAP, () => [], T10, true)).toEqual({ settled: null, note: 'czekam na świece 1m' });
+    // Pierwsza świeca w oknie to minuta po wpisie (07:13): świeca 07:12 zaczęła się przed wpisem i nie jest potrzebna;
+    // świece 07:13–08:12 bez przerw do ostatniej pełnej minuty przed 08:13:30
+    const r2 = blogMapMarks(MAP, () => flat(TODAY + 7 * H + 13 * MIN, 60, 75_800, 76_000), TODAY + 8 * H + 13 * MIN + 30_000, true);
+    expect([r2.settled === null, r2.note]).toEqual([false, null]);
+  });
+
+  it('luka w świecach w środku okna: dotknięcia znalezione zostają, reszta nierozliczona, jedna uwaga w etykiecie', () => {
+    // Brak świec 08:00–08:09; PDL dotknięty tylko w luce (o 08:05, tej świecy nie ma) — bez ✓, uwaga mówi, że to nie „nie dotknięto”
+    const withPdl = candles.map((c) => (c.t === TODAY + 8 * H + 5 * MIN ? { ...c, l: 75_100 } : c));
+    expect(touches(blogMapMarks(MAP, () => withPdl, T10, true))[0]).toEqual(['PDL', TODAY + 8 * H + 5 * MIN]);
+    const gap = withPdl.filter((c) => c.t < TODAY + 8 * H || c.t >= TODAY + 8 * H + 10 * MIN);
+    const r = blogMapMarks(MAP, () => gap, T10, true);
+    expect(r.note).toBe('luka w świecach 1m');
+    expect(touches(r)).toEqual([
+      ['PDL', null],
+      ['Szczyt Azji', TODAY + 9 * H + 31 * MIN],
+      ['VWAP dnia', TODAY + 7 * H + 13 * MIN],
+    ]);
+    expect(blogMapModel(MAP, { now: NOW, marks: r }).tag).toBe(`Mapa dnia ${fmtHm(PUB)} · luka w świecach 1m`);
+  });
+
+  it('świece kończą się przed chwilą wykresu (nieaktualny koniec): uwaga o luce, dotknięcia sprzed końca zostają', () => {
+    // Świece do 09:00, chwila wykresu 10:00:30 — minuty 09:01–09:59 brakują (dotknięcie szczytu o 09:31 jest w tej części)
+    const stale = candles.filter((c) => c.t <= TODAY + 9 * H);
+    const r = blogMapMarks(MAP, () => stale, T10, true);
+    expect(r.note).toBe('luka w świecach 1m');
+    expect(touches(r)).toEqual([
+      ['PDL', null],
+      ['Szczyt Azji', null],
+      ['VWAP dnia', TODAY + 7 * H + 13 * MIN],
+    ]);
+    // Świeca bieżącej, niepełnej minuty nie jest wymagana: chwila 09:01:20, świece do 09:00 — bez uwagi
+    expect(blogMapMarks(MAP, () => stale, TODAY + 9 * H + MIN + 20_000, true).note).toBeNull();
+  });
+
+  it('świece późniejsze niż chwila wykresu (powtórka) się nie liczą', () => {
+    // Chwila 09:00:30: dotknięcie szczytu o 09:31 jeszcze się nie wydarzyło
+    const r = blogMapMarks(MAP, () => candles, TODAY + 9 * H + 30_000, true);
+    expect(r.note).toBeNull();
+    expect(touches(r)).toEqual([
+      ['PDL', null],
+      ['Szczyt Azji', null],
+      ['VWAP dnia', TODAY + 7 * H + 13 * MIN],
+    ]);
+  });
+});
+
+describe('podpisy mapy przy prawej krawędzi razem z etykietami wskaźników', () => {
+  const PANE_H = 300;
+  const model = blogMapModel(MAP, { now: NOW, marks: { settled: [{ label: 'PDL', price: 75_189, touchedAt: null }, { label: 'Szczyt Azji', price: 76_400, touchedAt: NOW }, { label: 'VWAP dnia', price: 75_896, touchedAt: null }], note: null } });
+  const edge = blogEdgeTags(model);
+  /** Cena → y panelu: 76 400 → 60, 75 896 → 160,8, 75 189 → 302,2 (pod panelem). */
+  const Y = (p: number) => (76_700 - p) / 5;
+  const gaps = (ys: number[]) => ys.slice(1).map((y, i) => y - ys[i]);
+
+  it('podpis każdego widocznego poziomu (pasek w kolorze mapy, tekst w kolorze tuszu) i etykieta mapy tuż nad najwyższym', () => {
+    expect(edge.color).toBe(PRO.blogMap);
+    const tags = edgeTagsIn(edge, Y, PANE_H);
+    expect(tags.map((t) => [t.text, t.y])).toEqual([
+      [model.tag, 60 - (TAG_H + 1)],
+      [model.levels[0].text, 60],
+      [model.levels[1].text, 160.8],
+    ]);
+    expect(tags.every((t) => t.color === PRO.blogMap)).toBe(true);
+    // Etykieta mapy i dotknięty poziom jaśniejszym tuszem
+    expect(tags.map((t) => t.ink)).toEqual([PRO.ink1, PRO.ink1, PRO.ink2]);
+    // Żaden poziom w widoku — nic, także bez etykiety mapy
+    expect(edgeTagsIn(edge, (p) => Y(p) + 1_000, PANE_H)).toEqual([]);
+  });
+
+  it('rozsunięcie razem z etykietami wskaźników: bez nakładania, nigdy poza widoczną częścią panelu', () => {
+    // Poziomy przy dolnej krawędzi (296, 298) i etykieta VWAP z nakładki na 294; najwyższy poziom przy górnej krawędzi
+    const near = (p: number) => (p > 76_000 ? 2 : p > 75_500 ? 296 : 298);
+    const all = [...edgeTagsIn({ ...edge, items: [...edge.items, { price: 75_000, text: 'x', ink: PRO.ink2 }] }, near, PANE_H), { y: 294, text: 'VWAP', color: PRO.vwap }];
+    const { tags, ys } = placeTags(all, PANE_H);
+    expect(tags.length).toBe(6);
+    expect(Math.min(...ys)).toBeGreaterThanOrEqual(TAG_H / 2);
+    expect(Math.max(...ys)).toBeLessThanOrEqual(PANE_H - TAG_H / 2);
+    expect(Math.min(...gaps(ys))).toBeGreaterThanOrEqual(TAG_H + 1);
+    // Etykieta mapy (przyciśnięta do górnej granicy) zostaje nad najwyższym poziomem
+    expect(tags.map((t) => t.text).slice(0, 2)).toEqual([model.tag, model.levels[0].text]);
+    // Podpis spoza panelu (y > H) odpada przed rozsunięciem
+    expect(placeTags([{ y: PANE_H + 5, text: 'poza', color: PRO.blogMap }], PANE_H).tags).toEqual([]);
   });
 });
 

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { DEFAULT_SETTINGS, NARROW_PATCH, PANEL_SET_IDS, parseSettings, phoneSettings } from '../chart/settings';
+import { DEFAULT_SETTINGS, NARROW_PATCH, PANEL_SET_IDS, migrateSaved, parseSettings, phoneSettings } from '../chart/settings';
 import { inds } from '../chart/templates';
 import { addIndicator } from '../indicators/registry';
 import {
@@ -82,6 +82,41 @@ describe('układy faz dnia', () => {
     expect(priceLayerCount(stationPanel(stationById('review'), 0, false))).toBe(5);
     for (const id of ['fuel', 'cockpit', 'auction-open', 'big-hands']) expect(stationPanel(stationById(id), 0, false).showBlogMap, id).toBe(false);
     expect(DEFAULT_SETTINGS.showBlogMap).toBe(false);
+  });
+
+  it('zapis sprzed mapy z bloga (bez klucza showBlogMap): mapa i poziomy dnia z wzorca — 5 warstw, bez podwójnego PDL; reszta zapisu zostaje', () => {
+    const cases = [
+      ['day-map', 1, false],
+      ['day-map', 0, true],
+      ['review', 0, false],
+      ['review', 0, true],
+    ] as const;
+    for (const [id, p, narrow] of cases) {
+      const base = stationPanel(stationById(id), p, narrow);
+      // Zapis wersji 2 z dawnym wzorcem (poziomy dnia włączone) i własną zmianą użytkownika (interwał)
+      const { showBlogMap: _gone, ...old } = { ...base, showLevels: true, interval: '15m', layersV: 2 };
+      const raw = JSON.parse(JSON.stringify(old)) as Record<string, unknown>;
+      expect('showBlogMap' in raw).toBe(false);
+      const s = parseSettings(migrateSaved(raw), base);
+      const tag = `${id} ${p} ${narrow}`;
+      expect([s.showBlogMap, s.showLevels], tag).toEqual([true, false]);
+      expect(priceLayerCount(s), tag).toBeLessThanOrEqual(5);
+      expect(s.interval, tag).toBe('15m');
+    }
+    // Zapis z kluczem (dowolna wartość) zostaje, jak go zapisał użytkownik
+    const base = stationPanel(stationById('day-map'), 1, false);
+    for (const [blog, levels] of [
+      [false, true],
+      [true, true],
+      [false, false],
+    ] as const) {
+      const s = parseSettings(migrateSaved({ ...base, showBlogMap: blog, showLevels: levels, layersV: 2 }), base);
+      expect([s.showBlogMap, s.showLevels], `${blog} ${levels}`).toEqual([blog, levels]);
+    }
+    // Wzorzec bez mapy z bloga (4h Mapy dnia, Kokpit): poziomy dnia z zapisu bez zmian
+    const h4 = stationPanel(stationById('day-map'), 0, false);
+    const { showBlogMap: _x, ...old4h } = { ...h4, showLevels: false, layersV: 2 };
+    expect([parseSettings(migrateSaved(old4h), h4).showLevels, parseSettings(migrateSaved(old4h), h4).showBlogMap]).toEqual([false, false]);
   });
 
   it('wzorce odpowiadają pytaniom układów', () => {

@@ -415,6 +415,8 @@ export class ProChartController {
     this.liquidity = new LiquidityLayer(liqToggles(settings));
     this.main.attachPrimitive(this.liquidity);
     this.overlay = new IndicatorOverlay(toggles(settings, series.interval.ms));
+    // Podpisy mapy z bloga przy prawej krawędzi rozsuwa nakładka razem ze swoimi etykietami (VWAP, IB, poziomy dnia)
+    this.overlay.setEdgeTags(() => this.blog.edgeTags());
     this.main.attachPrimitive(this.overlay);
     this.zones = new ZonesLayer({ showZones: settings.showZones, showAuctions: settings.showAuctions });
     this.main.attachPrimitive(this.zones);
@@ -950,7 +952,7 @@ export class ProChartController {
       if (changed) this.blog.setModel(null);
       return;
     }
-    const marks = blogMapMarks(map, (from) => this.store.indicatorCandles('1m', from), this.blogSettle);
+    const marks = blogMapMarks(map, (from) => this.store.indicatorCandles('1m', from), now, this.blogSettle);
     this.blogWait = this.blogSettle && marks.settled === null && mapWindow(map.kind, map.publishedAt) !== null;
     this.blog.setModel(blogMapModel(map, { now, marks }));
   }
