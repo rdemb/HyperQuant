@@ -1,6 +1,6 @@
 import type { IChartApiBase, IPrimitivePaneRenderer, IPrimitivePaneView, ISeriesApi, ISeriesPrimitive, SeriesAttachedParameter, SeriesType, Time } from 'lightweight-charts';
 import type { BlogMap } from '../../../state/useBlogMaps';
-import { type MapKind, type SettledLevel, mapWindow, settleLevels } from '../../../utils/mapSettlement';
+import { type MapKind, type SettledLevel, mapWindow, settleRange } from '../../../utils/mapSettlement';
 import type { VBar } from '../../../utils/auction';
 import { tr } from '../../../i18n';
 import type { Candle } from '../hl/parse';
@@ -57,44 +57,23 @@ export function blogMapModel(map: BlogMap, x: { now: number; marks: BlogMarks })
   return { levels, tag: `${KIND_NAME[map.kind]} ${fmtDayTime(map.publishedAt, x.now)}${tr('', ' (PL blog)')}${note}` };
 }
 
-const MIN = 60_000;
-
-/**
- * Czy świece 1m (posortowane) pokrywają bez przerwy minuty od `start` do `last` włącznie (początki świec). Brak minuty
- * w środku albo świece kończące się przed `last` — luka.
- */
-export function minutesCovered(c: readonly Candle[], start: number, last: number): boolean {
-  let want = start;
-  for (const k of c) {
-    if (want > last || k.t > last) break;
-    if (k.t < want) continue;
-    if (k.t !== want) return false;
-    want += MIN;
-  }
-  return want > last;
-}
+/** Świece 1m magazynu w zapisie rozliczenia (`VBar`). */
+const candleBars = (c: readonly Candle[]): VBar[] => c.map((k) => ({ time: k.t, open: k.o, high: k.h, low: k.l, close: k.c, volume: k.v }));
 
 /**
  * Rozliczenie poziomów mapy (tylko z `settle`, czyli w układzie Rozliczenie) w chwili wykresu `now`: dotknięcie w oknie
- * ważności mapy na świecach 1m (`candles1m(from)` — świece od początku okna) do `now`. Mapa weekendu i tygodnia nie ma okna;
- * świece, które jeszcze nie sięgają wpisu, nie dają znaczników. Wymagane są świece każdej pełnej minuty od wpisu do
- * min(now, koniec okna): przy luce dotknięcia znalezione zostają, reszta poziomów jest nierozliczona (brak ✓ nie znaczy
+ * ważności mapy na świecach 1m (`candles1m(from)` — świece od początku okna) do `now`, wspólną regułą `settleRange`
+ * (ta sama w Rozliczeniu doby). Mapa weekendu i tygodnia nie ma okna; świece, które jeszcze nie sięgają wpisu, nie dają
+ * znaczników. Przy luce w świecach dotknięcia znalezione zostają, reszta poziomów jest nierozliczona (brak ✓ nie znaczy
  * wtedy „nie dotknięto”), a etykieta mapy mówi o luce.
  */
 export function blogMapMarks(map: BlogMap, candles1m: (from: number) => readonly Candle[], now: number, settle: boolean): BlogMarks {
   if (!settle) return { settled: null, note: null };
   const w = mapWindow(map.kind, map.publishedAt);
   if (!w) return { settled: null, note: tr('bez rozliczenia', 'not settled') };
-  const c = candles1m(w.from);
-  // Pierwsza potrzebna świeca to minuta po wpisie: świeca, w której wpis wyszedł, zaczęła się przed nim i się nie liczy
-  const start = Math.ceil(w.from / MIN) * MIN;
-  if (c.length === 0 || c[0].t > start) return { settled: null, note: tr('czekam na świece 1m', 'waiting for 1m candles') };
-  const end = Math.min(now, w.to);
-  const bars: VBar[] = [];
-  for (const k of c) if (k.t >= w.from && k.t < w.to && k.t <= now) bars.push({ time: k.t, open: k.o, high: k.h, low: k.l, close: k.c, volume: k.v });
-  // Ostatnia pełna minuta przed min(now, koniec okna); bieżąca, niepełna świeca nie jest wymagana
-  const covered = minutesCovered(c, start, Math.floor(end / MIN) * MIN - MIN);
-  return { settled: settleLevels(map.levels, bars, w.from, w.to), note: covered ? null : tr('luka w świecach 1m', 'gap in 1m candles') };
+  const r = settleRange(map.levels, candleBars(candles1m(w.from)), w.from, w.to, now);
+  if (!r) return { settled: null, note: tr('czekam na świece 1m', 'waiting for 1m candles') };
+  return { settled: r.levels, note: r.complete ? null : tr('luka w świecach 1m', 'gap in 1m candles') };
 }
 
 /**

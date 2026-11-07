@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { CircleHelp } from 'lucide-react';
 import { Badge, DASH } from '../../../ui';
+import type { BlogMap, BlogMapsState } from '../../../state/useBlogMaps';
 import type { LiqMapState } from '../../../state/useLiqMap';
 import type { VolModel } from '../../../utils/volatility';
 import type { WhaleLayer } from '../../../utils/whaleLayer';
@@ -16,7 +17,7 @@ import { tr } from '../../../i18n';
  * Nagłówek układu nad wykresem (pierwszy panel karty): pytanie układu i trzy liczby z plakietkami (layoutNumbers.ts,
  * wejścia z magazynu w layoutInputs.ts).
  * Liczby z danych, które wykres już ma — świece magazynu rynku (1m, 5m, 1h; seria wczytuje się przy pierwszym użyciu),
- * taśma i arkusz magazynu, migawki skanera i model zmienności HAR z Desku. Przeliczane co 5 s (na starcie częściej),
+ * taśma i arkusz magazynu, migawki skanera, model zmienności HAR z Desku i mapy z bloga. Przeliczane co 5 s (na starcie częściej),
  * dotknięcie liczby rozwija ich źródła. Na telefonie jedna linia z przewijaniem w bok: najpierw liczby, potem pytanie.
  */
 
@@ -37,13 +38,16 @@ export const LayoutHeader: React.FC<{
   whales: WhaleLayer | null;
   /** Build ma adres danych skanera (bez niego warstwa wielorybów jest niedostępna, nie „nieaktualna”). */
   whalesConfigured: boolean;
+  /** Mapy z bloga i mapa wybrana na wykresie (liczba „Mapa: dotknięte” w Rozliczeniu). */
+  blogMaps: BlogMapsState;
+  blogMap: BlogMap | null;
   narrow: boolean;
-}> = ({ id, question, store, model, liq, whales, whalesConfigured, narrow }) => {
+}> = ({ id, question, store, model, liq, whales, whalesConfigured, blogMaps, blogMap, narrow }) => {
   const [nums, setNums] = useState<LayoutNumber[]>(() => layoutNumbers(id, { coin: store.coin, now: Date.now() }));
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  const scan = useRef<InputScan>({ model, liq, whales, whalesConfigured });
-  scan.current = { model, liq, whales, whalesConfigured };
+  const scan = useRef<InputScan>({ model, liq, whales, whalesConfigured, blog: { state: blogMaps, map: blogMap } });
+  scan.current = { model, liq, whales, whalesConfigured, blog: { state: blogMaps, map: blogMap } };
   const runRef = useRef<() => void>(() => {});
   // Hawkes liczony w tle (Web Worker) raz na minutę okna; do nowego wyniku zostaje poprzedni tego rynku
   const hk = useRef<{ coin: string; key: string; r: Got<Branching> } | null>(null);
@@ -102,10 +106,10 @@ export const LayoutHeader: React.FC<{
     // hawkesInput czyta tylko refy i magazyn z tego renderu
   }, [id, store]);
 
-  // Nowa migawka skanera albo model zmienności — od razu
+  // Nowa migawka skanera, model zmienności albo mapa z bloga — od razu
   useEffect(() => {
     runRef.current();
-  }, [model, liq.status, liq.map, whales, whalesConfigured]);
+  }, [model, liq.status, liq.map, whales, whalesConfigured, blogMaps, blogMap]);
 
   // Rozwinięcie zamyka dotknięcie obok i Escape
   useEffect(() => {

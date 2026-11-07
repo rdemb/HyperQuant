@@ -2,13 +2,15 @@ import type { Candle, Side } from '../hl/parse';
 import type { Branching } from '../core/hawkes';
 import { type LiqLevel, vwapSeries } from '../core/indicators';
 import { utcDayStart } from '../core/sessions';
-import { fmtHm, fmtHms } from '../core/time';
+import { fmtDayTime, fmtHm, fmtHms } from '../core/time';
+import { blogMapName } from './blogMapLayer';
 import { WAIT_TEXT, scannerAge } from './layerSources';
 import { fmtPx } from './layout';
 import { vwapSigma } from './marketState';
 import type { StationId } from './stations';
 import { type VBar, profile, sessionVwap } from '../../../utils/auction';
 import { type DayType, type VaMigration, classifyDay, vaMigration } from '../../../utils/dayType';
+import type { MapKind } from '../../../utils/mapSettlement';
 import { RVOL_MIN_DAYS, rvolHour } from '../../../utils/rvol';
 import { type TradeSession, currentTradeSession, lastClosedSessions, nextTradeSession, previousSameSession, rangeBudget } from '../../../utils/sessionDay';
 import { TRADE_SESSION_NAME } from '../../../utils/sessionNames';
@@ -69,7 +71,19 @@ export interface ReviewFacts {
   prevVa: { vah: number; val: number } | null;
 }
 
-type Expected = { usd: number; method: 'har' | 'parkinson' };
+export type Expected = { usd: number; method: 'har' | 'parkinson' };
+
+/** Rozliczenie mapy z bloga wybranej na wykresie (ta sama reguła co ✓ warstwy): dotknięte poziomy w oknie [from, to). */
+export interface MapHits {
+  kind: MapKind;
+  publishedAt: number;
+  touched: number;
+  total: number;
+  /** Świece 1m każdej pełnej minuty okresu; bez nich niedotknięte poziomy są nierozliczone. */
+  complete: boolean;
+  from: number;
+  to: number;
+}
 
 /** Wejścia nagłówka; pole bez wartości (`undefined`) — jeszcze się wczytuje. */
 export interface LayoutInputs {
@@ -91,8 +105,8 @@ export interface LayoutInputs {
   hawkes?: Got<Branching>;
   whales?: Got<{ long: number; short: number; n: number; asOf: number }>;
   review?: Got<ReviewFacts>;
-  /** Oczekiwany zakres sesji z `review` (MODEL). */
-  reviewExpected?: Got<Expected>;
+  /** Poziomy mapy z bloga dotknięte w jej oknie (BTC). */
+  mapHits?: Got<MapHits>;
 }
 
 const MIN = 60_000;
@@ -137,8 +151,9 @@ const pctOf = (b: number) => `${fmtFixed(b * 100, 0)}%`;
 const amt = (v: number) => fmtFixed(v, Math.abs(v) >= 100 ? 0 : Math.abs(v) >= 1 ? 2 : 4);
 const sessionName = (s: TradeSession) => TRADE_SESSION_NAME[s.id];
 
-const METHOD: Record<Expected['method'], string> = { har: 'HAR', parkinson: 'Parkinson' };
-const METHOD_NOTE: Record<Expected['method'], string> = {
+/** Nazwa metody oczekiwanego zakresu w podpowiedzi MODEL. */
+export const METHOD: Record<Expected['method'], string> = { har: 'HAR', parkinson: 'Parkinson' };
+export const METHOD_NOTE: Record<Expected['method'], string> = {
   har: tr(
     'Oczekiwany zakres E[H−L] = √(8/π)·σ sesji z modelu zmienności HAR (BTC, liczony w przeglądarce, z profilem godzin).',
     'Expected range E[H−L] = √(8/π)·session σ from the HAR volatility model (BTC, computed in the browser, with the hourly profile).'
@@ -454,29 +469,29 @@ function migrationNum(x: LayoutInputs): LayoutNumber {
   };
 }
 
-function reviewBudgetNum(x: LayoutInputs): LayoutNumber {
-  const label = tr('Zakres / oczekiwany', 'Range / expected');
-  const r = val(x.review);
-  const e = val(x.reviewExpected);
-  if (!r || !e) return dash(label, 'MODEL', tr(`MODEL · HAR albo Parkinson: ${whyOf(x.review, x.reviewExpected)}`, `MODEL · HAR or Parkinson: ${whyOf(x.review, x.reviewExpected)}`));
-  const m = METHOD[e.method];
-  const b = rangeBudget(r.hi, r.lo, e.usd);
-  if (!Number.isFinite(b)) return dash(label, 'MODEL', tr(`MODEL · ${m}: brak zakresu sesji`, `MODEL · ${m}: no session range`));
-  const note =
-    e.method === 'parkinson' && !r.inProgress
-      ? tr(
-          'Bez modelu HAR: σ Parkinsona ze świec 5m z doby przed otwarciem sesji (oczekiwanie sprzed sesji), E[H−L] = √(8/π)·σ.',
-          'Without the HAR model: Parkinson σ from 5m candles of the day before the session open (the expectation before the session), E[H−L] = √(8/π)·σ.'
-        )
-      : METHOD_NOTE[e.method];
+/** Poziomy mapy z bloga (tej z wykresu) dotknięte w jej oknie: liczba z ✓ warstwy, przy luce w świecach z uwagą. */
+function mapHitsNum(x: LayoutInputs): LayoutNumber {
+  const label = tr('Mapa: dotknięte', 'Map: touched');
+  const short = tr('Mapa', 'Map');
+  if (x.coin !== 'BTC') return { ...dash(label, 'LIVE', tr('Tylko BTC: mapy z bloga opisują BTC', 'BTC only: the blog maps describe BTC'), tr('tylko BTC', 'BTC only')), short };
+  const h = val(x.mapHits);
+  if (!h) return { ...dash(label, 'LIVE', whyOf(x.mapHits)), short };
+  const k = `${h.touched}/${h.total}`;
+  const name = `${blogMapName(h.kind)} ${fmtDayTime(h.publishedAt, x.now)}`;
+  const until = x.now < h.to ? tr('teraz', 'now') : fmtDayTime(h.to, x.now);
+  const gap = h.complete
+    ? ''
+    : tr('; reszta nierozliczona: luka w świecach 1m (brak ✓ nie znaczy „nie dotknięto”)', '; the rest is unsettled: a gap in the 1m candles (no ✓ does not mean “not touched”)');
   return {
     label,
-    value: pctOf(b),
-    badge: 'MODEL',
+    short,
+    value: k,
+    badge: 'LIVE',
     hint: tr(
-      `MODEL · ${m}: zakres sesji ${sessionName(r.s)} ${amt(r.hi - r.lo)} USD wobec oczekiwanych ${amt(e.usd)} USD${r.inProgress ? ' (sesja w toku)' : ''}: czy prognoza zakresu się sprawdziła (100% — dokładnie, ponad 100% — ruch większy niż oczekiwany). ${note}`,
-      `MODEL · ${m}: the ${sessionName(r.s)} session range ${amt(r.hi - r.lo)} USD against an expected ${amt(e.usd)} USD${r.inProgress ? ' (session in progress)' : ''}: whether the range forecast held (100% exactly, over 100% a bigger move than expected). ${note}`
+      `Poziomy dotknięte ${k}: ${name}, od wpisu do ${until}${gap}. Dotknięcie = świeca 1m Hyperliquid z low ≤ poziom ≤ high, jak ✓ na wykresie. Poziomy z tekstu wpisu autora, nie model HyperQuant.`,
+      `Levels touched ${k}: ${name}, from the post until ${until}${gap}. A touch is a Hyperliquid 1m candle with low ≤ level ≤ high, like the ✓ on the chart. Levels from the author's post (PL blog), not a HyperQuant model.`
     ),
+    ...(h.complete ? {} : { note: tr('luka', 'gap') }),
   };
 }
 
@@ -498,7 +513,7 @@ export function layoutNumbers(id: StationId, x: LayoutInputs): LayoutNumber[] {
       return [
         { ...dayTypeNum(x), short: typeShort },
         { ...migrationNum(x), short: 'VA' },
-        { ...reviewBudgetNum(x), short: tr('Budżet', 'Budget') },
+        mapHitsNum(x),
       ];
     }
     case 'cockpit':

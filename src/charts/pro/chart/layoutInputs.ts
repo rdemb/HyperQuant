@@ -1,4 +1,6 @@
+import type { BlogMap, BlogMapsState } from '../../../state/useBlogMaps';
 import type { LiqMap } from '../../../utils/liqMap';
+import { mapWindow, settleRange } from '../../../utils/mapSettlement';
 import type { VolModel } from '../../../utils/volatility';
 import type { WhaleLayer } from '../../../utils/whaleLayer';
 import { type TradeSession, currentTradeSession, expectedRange } from '../../../utils/sessionDay';
@@ -7,10 +9,11 @@ import { liqLevels } from '../core/indicators';
 import { fmtHm } from '../core/time';
 import type { Candle, Side } from '../hl/parse';
 import { marketCostBp } from '../indicators/registry';
-import { liqScan, whalesScan } from './layerSources';
+import { blogMapScan, liqScan, whalesScan } from './layerSources';
 import {
   type Absent,
   COST_USD,
+  type Expected,
   FLOW_WINDOW_MS,
   type Got,
   type LayoutInputs,
@@ -49,6 +52,8 @@ export interface InputStore {
   serverNow(): number;
   lastPrice(): number;
   series(id: string): InputSeries;
+  /** Świece interwału od `from` (seria doczytuje starszą historię, jak warstwy wykresu). */
+  indicatorCandles(id: string, from: number): readonly Candle[];
   exactBook(): { latest(): BookFrame | null } | null;
   zeroKnown: { covers(from: number, to: number): boolean };
   orders: { range(from: number, to: number): readonly { notional: number; side: Side; zero?: true }[] };
@@ -61,6 +66,8 @@ export interface InputScan {
   whales: WhaleLayer | null;
   /** Build ma adres danych skanera. */
   whalesConfigured: boolean;
+  /** Mapy z bloga i mapa wybrana na wykresie (`pickMap` z ustawieniem `blogMapId`). */
+  blog: { state: BlogMapsState; map: BlogMap | null };
 }
 
 /** Migawka arkusza starsza niż tyle ms jest nieaktualna (zerwane połączenie), jak w Stanie rynku. */
@@ -75,7 +82,7 @@ const retryAt = new WeakMap<InputSeries, number>();
  * Świece interwału `id` z magazynu: seria wczytuje się przy pierwszym użyciu, po błędzie ponownie co RETRY_MS (z powodem
  * do tego czasu); w trakcie wczytywania — undefined.
  */
-function candles(store: InputStore, id: string, now: number): Got<readonly Candle[]> | undefined {
+export function seriesCandles(store: InputStore, id: string, now: number): Got<readonly Candle[]> | undefined {
   const s = store.series(id);
   if (s.loadState === 'idle') void s.load();
   if (s.loadState === 'error') {
@@ -95,10 +102,10 @@ function candles(store: InputStore, id: string, now: number): Got<readonly Candl
 const pass = (v: Got<unknown> | undefined): Absent | undefined => (v !== undefined && isAbsent(v) ? v : undefined);
 
 /** Oczekiwany zakres sesji: z modelem HAR (BTC) od razu, bez niego ze świec 5m tego rynku (Parkinson) do chwili `asOf`. */
-function expectedOf(store: InputStore, model: VolModel | null, s: TradeSession, now: number, asOf: number, price: number): LayoutInputs['expected'] {
+function expectedOf(store: InputStore, model: VolModel | null, s: TradeSession, now: number, asOf: number, price: number): Got<Expected> | undefined {
   let bars5m: Candle[] = [];
   if (!model) {
-    const c5 = candles(store, '5m', now);
+    const c5 = seriesCandles(store, '5m', now);
     if (c5 === undefined || isAbsent(c5)) return c5;
     bars5m = [...c5];
   }
@@ -113,6 +120,34 @@ function expectedOf(store: InputStore, model: VolModel | null, s: TradeSession, 
   };
 }
 
+/**
+ * Oczekiwany zakres sesji do rozliczenia (MODEL), ta sama metoda co budżet zakresu na żywo: sesja w toku — oczekiwanie na
+ * teraz; zamknięta — z modelem HAR jego poziom zmienności przeniesiony profilem godzin, bez modelu Parkinson ze świec 5m
+ * z doby przed jej otwarciem (oczekiwanie sprzed sesji). Świece 5m w drodze — undefined.
+ */
+export function sessionExpectedOf(store: InputStore, model: VolModel | null, s: TradeSession, inProgress: boolean, price: number): Got<Expected> | undefined {
+  const now = store.serverNow();
+  return expectedOf(store, model, s, now, inProgress ? now : s.start, price);
+}
+
+/**
+ * Poziomy mapy z bloga wybranej na wykresie dotknięte w jej oknie — ta sama reguła co ✓ warstwy (`settleRange` na świecach 1m
+ * od wpisu, doczytywanych jak na wykresie). Powody braku jak w legendzie warstwy.
+ */
+function mapHitsOf(store: InputStore, blog: InputScan['blog'], now: number): LayoutInputs['mapHits'] {
+  const scan = blogMapScan(blog.state, blog.map);
+  if ('why' in scan) return scan;
+  const map = blog.map;
+  if (!map) return undefined;
+  const w = mapWindow(map.kind, map.publishedAt);
+  if (!w) return { why: tr('Mapa tygodnia albo weekendu — bez rozliczenia', 'A weekly or weekend map — not settled') };
+  const c1 = seriesCandles(store, '1m', now);
+  if (c1 === undefined || isAbsent(c1)) return c1;
+  const r = settleRange(map.levels, toVBars(store.indicatorCandles('1m', w.from)), w.from, w.to, now);
+  if (!r) return { why: tr(`Czekam na świece 1m od wpisu (${fmtHm(w.from)})`, `Waiting for 1m candles from the post (${fmtHm(w.from)})`) };
+  return { kind: map.kind, publishedAt: map.publishedAt, touched: r.levels.filter((l) => l.touchedAt !== null).length, total: r.levels.length, complete: r.complete, from: w.from, to: w.to };
+}
+
 /** Wejścia liczb układu `id`; `hawkes` liczy nagłówek w tle (Web Worker) i podaje gotowy. */
 export function readInputs(id: StationId, store: InputStore, scan: InputScan, hawkes?: LayoutInputs['hawkes']): LayoutInputs {
   const now = store.serverNow();
@@ -121,7 +156,7 @@ export function readInputs(id: StationId, store: InputStore, scan: InputScan, ha
   // Model zmienności Desku liczy BTC; inne rynki — Parkinson z własnych świec
   const model = store.coin === 'BTC' ? scan.model : null;
   if (id === 'cockpit' || id === 'auction-open') {
-    const c1 = candles(store, '1m', now);
+    const c1 = seriesCandles(store, '1m', now);
     if (c1 !== undefined && !isAbsent(c1)) {
       x.dayVwap = dayVwapOf(c1, now);
       x.session = sessionNowOf(c1, now);
@@ -134,11 +169,11 @@ export function readInputs(id: StationId, store: InputStore, scan: InputScan, ha
     x.expected = sn === undefined || isAbsent(sn) ? pass(sn) : expectedOf(store, model, sn.s, now, now, lp > 0 ? lp : sn.close);
   }
   if (id === 'cockpit' || id === 'fuel') {
-    const c1h = candles(store, '1h', now);
+    const c1h = seriesCandles(store, '1h', now);
     x.rvol = c1h === undefined || isAbsent(c1h) ? pass(c1h) : rvolOf(c1h, now);
   }
   if (id === 'day-map') {
-    const c1h = candles(store, '1h', now);
+    const c1h = seriesCandles(store, '1h', now);
     if (c1h === undefined || isAbsent(c1h) || !(lp > 0)) {
       x.prevDay = x.nakedPoc = pass(c1h);
     } else {
@@ -169,14 +204,10 @@ export function readInputs(id: StationId, store: InputStore, scan: InputScan, ha
     x.whales = 'why' in ws ? ws : whaleBalanceOf(scan.whales!.markets[store.coin].positions, ws.asOf);
   }
   if (id === 'review') {
-    const c5 = candles(store, '5m', now);
-    if (c5 === undefined || isAbsent(c5)) x.review = x.reviewExpected = pass(c5);
-    else {
-      const r = reviewOf(c5, now);
-      x.review = r;
-      // Sesja w toku: oczekiwanie na teraz; zamknięta: sprzed jej otwarcia (Parkinson ze świec 5m doby przed otwarciem)
-      x.reviewExpected = isAbsent(r) ? r : expectedOf(store, model, r.s, now, r.inProgress ? now : r.s.start, r.close);
-    }
+    const c5 = seriesCandles(store, '5m', now);
+    x.review = c5 === undefined || isAbsent(c5) ? pass(c5) : reviewOf(c5, now);
+    // Mapy z bloga opisują BTC (inny rynek: liczba mówi „tylko BTC”)
+    if (store.coin === 'BTC') x.mapHits = mapHitsOf(store, scan.blog, now);
   }
   return x;
 }

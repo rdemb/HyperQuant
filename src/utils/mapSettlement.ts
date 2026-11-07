@@ -33,7 +33,7 @@ export function mapWindow(kind: MapKind, publishedAt: number): { from: number; t
  * Dla każdego poziomu minuta (początek świecy 1m) pierwszego dotknięcia w oknie [from, to) albo null. Świece
  * nieprawidłowe (NaN) są pomijane, kolejność świec nie ma znaczenia.
  */
-export function settleLevels(levels: { label: string; price: number }[], bars1m: VBar[], from: number, to: number): SettledLevel[] {
+export function settleLevels(levels: readonly { label: string; price: number }[], bars1m: readonly VBar[], from: number, to: number): SettledLevel[] {
   const inWindow = bars1m
     .filter((b) => b.time >= from && b.time < to && Number.isFinite(b.low) && Number.isFinite(b.high))
     .sort((a, b) => a.time - b.time);
@@ -41,4 +41,42 @@ export function settleLevels(levels: { label: string; price: number }[], bars1m:
     const hit = inWindow.find((b) => b.low <= l.price && l.price <= b.high);
     return { label: l.label, price: l.price, touchedAt: hit ? hit.time : null };
   });
+}
+
+const MIN = 60_000;
+
+/**
+ * Czy świece 1m (rosnąco) pokrywają bez przerwy minuty od `start` do `last` włącznie (początki świec). Brak minuty
+ * w środku albo świece kończące się przed `last` — luka; pusty przedział (`last` < `start`) jest pokryty.
+ */
+export function minutesCovered(bars: readonly { time: number }[], start: number, last: number): boolean {
+  let want = start;
+  for (const b of bars) {
+    if (want > last || b.time > last) break;
+    if (b.time < want) continue;
+    if (b.time !== want) return false;
+    want += MIN;
+  }
+  return want > last;
+}
+
+/** Rozliczenie poziomów w okresie: minuty dotknięcia i czy świece objęły cały okres (bez tego brak dotknięcia nic nie znaczy). */
+export interface RangeSettlement {
+  levels: SettledLevel[];
+  complete: boolean;
+}
+
+/**
+ * Rozliczenie poziomów w okresie [from, to) w chwili `now` na świecach 1m (rosnąco) — jedna uczciwa reguła dla warstwy mapy
+ * na wykresie i Rozliczenia doby. Pierwsza potrzebna świeca to pełna minuta od `from` (świeca, w której wpis wyszedł,
+ * zaczęła się przed nim i się nie liczy); świece po `now` (powtórka) się nie liczą. Wymagane są świece każdej pełnej minuty
+ * do min(now, to) — bieżąca, niepełna nie. Przy luce dotknięcia znalezione zostają, a `complete: false` mówi, że reszta
+ * poziomów jest nierozliczona (brak dotknięcia nie znaczy wtedy „nie dotknięto”). Świece niesięgające początku — null.
+ */
+export function settleRange(levels: readonly { label: string; price: number }[], bars1m: readonly VBar[], from: number, to: number, now: number): RangeSettlement | null {
+  const start = Math.ceil(from / MIN) * MIN;
+  if (bars1m.length === 0 || bars1m[0].time > start) return null;
+  const end = Math.min(now, to);
+  const upToNow = bars1m.filter((b) => b.time <= now);
+  return { levels: settleLevels(levels, upToNow, from, to), complete: minutesCovered(bars1m, start, Math.floor(end / MIN) * MIN - MIN) };
 }
