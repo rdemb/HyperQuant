@@ -386,7 +386,7 @@ const Row: React.FC<{ h: LabHypResult; open: boolean; onToggle: () => void }> = 
     <>
       <tr className="border-t border-line/60 hover:bg-surface-2/40 cursor-pointer" onClick={onToggle}>
         <td className="py-1.5 pr-2 min-w-[150px]">
-          <button type="button" className="text-left text-ink-1 font-medium hover:text-accent" aria-expanded={open} aria-controls={detailsId}>
+          <button type="button" className="text-left text-ink-1 font-medium hover:text-accent" aria-expanded={open} aria-controls={open ? detailsId : undefined}>
             <span className="text-ink-3 mr-1" aria-hidden="true">
               {open ? '▾' : '▸'}
             </span>
