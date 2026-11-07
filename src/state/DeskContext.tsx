@@ -7,6 +7,7 @@ import { DeskFeed, useDeskFeed } from './useDeskFeed';
 import { followHash } from './route';
 import { ViewId } from './types';
 import { needsVolModel } from './viewNeeds';
+import { startOnboarding } from '../utils/firstVisit';
 
 const CEX_KEY = 'hq.cexEnabled';
 
@@ -41,7 +42,24 @@ const DEFAULT_SHAAKUNI: ShaakuniConfig = {
   showNeuralCone: false,
 };
 
+/** Pamięć przeglądarki; null, gdy zablokowana (tryb prywatny). */
+function storageOrNull(): Storage | null {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
 function useDeskState() {
+  // Pierwsza wizyta zapisana raz, pierwszym hookiem: zanim adres #flow albo wykresy (Przed sesją, Po sesji) zapiszą klucze
+  // hq.charts.* — dymki W sesji pokażą się także po wejściu z innej fazy; stały użytkownik (hq.charts.* sprzed tej wersji)
+  // ich nie zobaczy
+  useState(() => {
+    const s = storageOrNull();
+    if (s) startOnboarding(s, Date.now());
+    return null;
+  });
   const [view, setViewState] = useState<ViewId>(readHashView);
   const [cexEnabled, setCexEnabledState] = useState<boolean>(() => readBool(CEX_KEY));
   const [audioEnabled, setAudioEnabledState] = useState<boolean>(false);

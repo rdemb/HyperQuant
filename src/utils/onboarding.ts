@@ -3,78 +3,15 @@ import type { Market } from '../charts/pro/store/proStore';
 import { HIST_HOUR_MS, type HistoryIndex } from './tapeHistory';
 
 /**
- * Pierwszy kontakt z ekranem W sesji: dymki objaśniające i przycisk „Powtórka ostatnich 15 min”.
- * Jedyny klucz, który ten moduł zapisuje: `hq.onboarding.v1` = `{ firstAt, done }`; innych kluczy nie rusza.
- * Dostęp do pamięci jest osłonięty (tryb prywatny, zablokowana pamięć): każdy błąd = „już widziane”.
+ * Pierwszy kontakt z ekranem W sesji: dymki objaśniające i przycisk „Powtórka ostatnich 15 min”. Zapis pierwszej wizyty
+ * (`hq.onboarding.v1`) w utils/firstVisit — bez modułów wykresu, bo zapisuje go już start aplikacji (DeskProvider).
  */
+export { ONBOARDING_KEY, QUICK_REPLAY_WINDOW_MS, isFirstVisit, markSeen, quickReplayVisible, startOnboarding, tipsPending } from './firstVisit';
 
-export const ONBOARDING_KEY = 'hq.onboarding.v1';
 /** Okno powtórki: ostatnie 15 minut. */
 export const QUICK_REPLAY_MS = 15 * 60_000;
 /** Najmniej minut okna, które musi pokrywać nagranie, żeby powtórka miała sens. */
 export const QUICK_REPLAY_MIN_COVER_MS = 10 * 60_000;
-/** Przycisk powtórki zostaje przez 7 dni od pierwszej wizyty. */
-export const QUICK_REPLAY_WINDOW_MS = 7 * 86_400_000;
-
-interface Record_ {
-  firstAt: number;
-  done: boolean;
-}
-
-function read(storage: Storage): Record_ | null {
-  try {
-    const raw = storage.getItem(ONBOARDING_KEY);
-    if (raw === null) return null;
-    const o = JSON.parse(raw) as Partial<Record_> | null;
-    if (!o || typeof o.firstAt !== 'number' || !Number.isFinite(o.firstAt)) return null;
-    return { firstAt: o.firstAt, done: o.done === true };
-  } catch {
-    return null;
-  }
-}
-
-function write(storage: Storage, r: Record_): void {
-  try {
-    storage.setItem(ONBOARDING_KEY, JSON.stringify(r));
-  } catch {
-    // Pełna albo zablokowana pamięć: dymki mogą wrócić, nic więcej
-  }
-}
-
-/** Czy to pierwsza wizyta: brak `hq.onboarding.v1` i brak kluczy `hq.charts.*` (stali użytkownicy nie widzą dymków). */
-export function isFirstVisit(storage: Storage): boolean {
-  try {
-    if (storage.getItem(ONBOARDING_KEY) !== null) return false;
-    for (let i = 0; i < storage.length; i++) if (storage.key(i)?.startsWith('hq.charts.')) return false;
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/** Zapamiętuje pierwszą wizytę (dymki czekają na „Rozumiem”); nie nadpisuje istniejącego zapisu. */
-export function startOnboarding(storage: Storage, now: number): void {
-  if (!isFirstVisit(storage)) return;
-  write(storage, { firstAt: now, done: false });
-}
-
-/** Zamyka dymki na stałe; czas pierwszej wizyty zostaje (albo jest teraz, gdy zapisu nie było). */
-export function markSeen(storage: Storage, now: number): void {
-  const prev = read(storage);
-  write(storage, { firstAt: prev?.firstAt ?? now, done: true });
-}
-
-/** Dymki mają się pokazać: pierwsza wizyta zapisana, ale jeszcze nie zamknięta. */
-export function tipsPending(storage: Storage): boolean {
-  const r = read(storage);
-  return r !== null && !r.done;
-}
-
-/** Przycisk powtórki: tylko do 7 dni od pierwszej wizyty (bez zapisu — stały użytkownik — go nie ma). */
-export function quickReplayVisible(storage: Storage, now: number): boolean {
-  const r = read(storage);
-  return r !== null && now - r.firstAt < QUICK_REPLAY_WINDOW_MS;
-}
 
 /**
  * Escape zamyka kartę tylko, gdy fokus jest w niej i nikt inny nie obsłużył klawisza (okno, menu, pole): Esc gdzie indziej
