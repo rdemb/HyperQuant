@@ -40,7 +40,7 @@ import { CHART_PLUGINS, ChartPluginLayer } from './plugins';
 import { TpoLayer } from './tpoLayer';
 import { CoverageRow, CoverageStrip, DataSource, coverageRows, mergedRows, needsOf, storeSource } from './coverageStrip';
 import { tpoInterval } from '../core/tpo';
-import { barEnd, barStart, fmtBarTime, fmtHm, fromDaily } from '../core/time';
+import { DAY, barEnd, barStart, fmtBarTime, fmtHm, fromDaily } from '../core/time';
 import { type ChartSettings, isNarrow } from './settings';
 import { IndicatorEngine } from '../indicators/engine';
 import { HIST_DOWN, HIST_UP, IndicatorDef, IndicatorInstance, PlotDef, indicatorDef, indicatorLabel, plotShift } from '../indicators/registry';
@@ -48,7 +48,10 @@ import { CloudFill, CloudSource } from './cloudFill';
 import { ConeForecast, ConeLayer, ConeSource } from './coneLayer';
 import { Hip4Layer, Hip4Source, outcomeLevels } from './hip4Layer';
 import { PbRangeLayer, PbStyle, PbZone } from './pbRangeLayer';
+import { BlogMapLayer, blogMapMarks, blogMapModel } from './blogMapLayer';
 import type { Hip4State } from '../../../state/useHip4';
+import { type BlogMap, type BlogMapsState, pickMap } from '../../../state/useBlogMaps';
+import { mapWindow } from '../../../utils/mapSettlement';
 import { CountdownLabel } from './countdown';
 import { FlowVenue, OiVenue, oiMaxAge, per8h } from '../venues/parse';
 import { VenueStore, acquireVenues, venueStoreFor } from '../venues/venueStore';
@@ -198,6 +201,9 @@ const CONE_MIN_N = 20;
 const horizonLabel = (h: number) => (h % 60 === 0 ? `${h / 60} h` : `${h} min`);
 /** Notowania rynków HIP-4 starsze niż tyle nie są rysowane (pobierane co minutę). */
 const HIP4_MAX_AGE_MS = 3 * 60_000;
+/** Mapa z bloga: przeliczenie znaczników rozliczenia co minutę, a czekając na świece 1m — co 5 s. */
+const BLOG_EVERY_MS = 60_000;
+const BLOG_RETRY_MS = 5_000;
 const pctLabel = (v: number) => `${numLang(String(Math.round(v * 100)))}%`;
 const CONE_LEVELS = [
   ['pdh', 'PDH'],
@@ -328,6 +334,17 @@ export class ProChartController {
   private outcomes: Hip4State | null = null;
   /** Zakresy P/b ze świec 5m (wskaźnik „Zakresy P/b”). */
   private readonly pb = new PbRangeLayer(() => this.pbStyle());
+  /**
+   * Mapa z bloga (warstwa „Mapa z bloga”, tylko BTC): mapy z pliku bloga, rozliczenie poziomów (układ Rozliczenie),
+   * mapa na wykresie i chwila ostatniego przeliczenia znaczników (najwyżej raz na minutę).
+   */
+  private readonly blog = new BlogMapLayer();
+  private blogMaps: BlogMapsState = { status: 'loading', maps: [] };
+  private blogSettle = false;
+  private blogShown: BlogMap | null = null;
+  private blogAt = Number.NEGATIVE_INFINITY;
+  /** Rozliczenie czeka na świece 1m sięgające wpisu: kolejna próba szybciej niż co minutę. */
+  private blogWait = false;
   private countdownTimer = 0;
   /** Narzędzia rysowania (pasek narzędzi w ProChart). */
   readonly draw: DrawingTools;
@@ -410,6 +427,7 @@ export class ProChartController {
     }
     this.main.attachPrimitive(this.cone);
     this.main.attachPrimitive(this.hip4);
+    this.main.attachPrimitive(this.blog);
     this.main.attachPrimitive(this.pb);
     this.main.attachPrimitive(this.countdown);
     this.main.attachPrimitive(this.strip);
@@ -479,6 +497,7 @@ export class ProChartController {
     this.toNow = true;
     this.overlay.setToggles(toggles(this.settings, series.interval.ms));
     this.syncVenueLive();
+    this.syncBlog(this.store.serverNow());
     this.schedule();
   }
 
@@ -557,6 +576,7 @@ export class ProChartController {
       this.pushCvd(true);
       this.pushVenues(true);
     }
+    this.syncBlog(this.store.serverNow());
     this.emitHover();
   }
 
@@ -578,6 +598,7 @@ export class ProChartController {
     this.tpo.setRightInset(px);
     for (const p of this.plugins) p.setRightInset?.(px);
     this.pb.setRightInset(px);
+    this.blog.setRightInset(px);
     this.chart.timeScale().applyOptions({ rightOffsetPixels: this.rightGap() });
   }
 
@@ -898,6 +919,42 @@ export class ProChartController {
     this.emitHover();
   }
 
+  /**
+   * Mapy z bloga (plik `blog/maps.json`) i czy rozliczać poziomy (układ Rozliczenie: „✓ HH:MM” przy dotkniętych).
+   * Mapa na wykresie przeliczana od razu, potem najwyżej raz na minutę.
+   */
+  setBlogMaps(st: BlogMapsState, settle: boolean): void {
+    this.blogMaps = st;
+    this.blogSettle = settle;
+    // Przeliczenie od razu; mapa z nowego pliku to nowy obiekt, a mapa, której już nie ma, znika z wykresu
+    this.blogAt = Number.NEGATIVE_INFINITY;
+    this.syncBlog(this.store.serverNow());
+  }
+
+  /**
+   * Mapa z bloga na wykresie: wybrana albo domyślna (`pickMap`) na BTC i interwałach poniżej 1D. Ta sama mapa przeliczana
+   * najwyżej raz na minutę (rozliczenie poziomów, data przy godzinie wpisu po północy), a czekając na świece 1m — co 5 s.
+   */
+  private syncBlog(now: number): void {
+    const s = this.settings;
+    // Jak poziomy dnia: interwały poniżej 1D (warunek `indicatorScope().levels` bez budowania obiektu w każdej klatce)
+    const on = s.showBlogMap && this.store.coin === 'BTC' && this.series.interval.ms < DAY;
+    const map = on ? pickMap(this.blogMaps.maps, now, s.blogMapId) : null;
+    // Powtórka może cofnąć czas wykresu — wtedy też przeliczenie
+    if (map === this.blogShown && Math.abs(now - this.blogAt) < (this.blogWait ? BLOG_RETRY_MS : BLOG_EVERY_MS)) return;
+    const changed = map !== this.blogShown;
+    this.blogShown = map;
+    this.blogAt = now;
+    if (!map) {
+      this.blogWait = false;
+      if (changed) this.blog.setModel(null);
+      return;
+    }
+    const marks = blogMapMarks(map, (from) => this.store.indicatorCandles('1m', from), this.blogSettle);
+    this.blogWait = this.blogSettle && marks.settled === null && mapWindow(map.kind, map.publishedAt) !== null;
+    this.blog.setModel(blogMapModel(map, { now, marks }));
+  }
+
   /** Notowania HIP-4 z ostatnich minut (pobierane co minutę; starsze po błędach zapytań nie udają bieżących). */
   private hip4Fresh(): Hip4State | null {
     const o = this.outcomes;
@@ -1211,6 +1268,7 @@ export class ProChartController {
     this.tpo.setData(next, ms, st);
     for (const p of this.plugins) p.setData(next, ms, now, st);
     this.pb.setData(next, ms, now, st, this.phone);
+    this.syncBlog(now);
     if (full || now - this.stripAt >= STRIP_EVERY_MS) {
       this.stripAt = now;
       const rows = coverageRows(storeSource(st), this.needs, now);

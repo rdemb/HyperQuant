@@ -42,6 +42,7 @@ export const LAYERS_OFF = {
   showTpo: false,
   showTpoOi: false,
   showLevels: false,
+  showBlogMap: false,
   showSessions: false,
   showIb: false,
   showLiq: false,

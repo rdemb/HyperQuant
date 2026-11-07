@@ -2,6 +2,7 @@ import type { ResetMode } from '../core/sessions';
 import { STAT_GROUPS, type StatGroup } from '../core/stats';
 import { DEFAULT_INTERVAL, INTERVALS } from '../core/time';
 import { COIN, MARKETS, Market } from '../store/proStore';
+import { isMapId } from '../../../utils/mapSettlement';
 import { IndicatorInstance, indicatorDef, indicatorsFromLink, indicatorsLink, parseIndicators, REMOVED_INDICATORS } from '../indicators/registry';
 import type { ChartView } from './footprintSeries';
 import type { FootprintStyle } from './layout';
@@ -48,6 +49,9 @@ export interface ChartSettings {
   /** Kolor profilu doby ze zmiany OI na cenach (nowe i zamykane pozycje) zamiast agresji. */
   showTpoOi: boolean;
   showLevels: boolean;
+  /** Poziomy mapy z bloga HyperQuant (tekst autora, tylko BTC) i wybrana mapa; bez wyboru — najnowsza Mapa dnia z bieżącej doby UTC. */
+  showBlogMap: boolean;
+  blogMapId?: string;
   showSessions: boolean;
   showIb: boolean;
   showLiq: boolean;
@@ -114,6 +118,7 @@ export const DEFAULT_SETTINGS: ChartSettings = {
   showTpo: false,
   showTpoOi: false,
   showLevels: true,
+  showBlogMap: false,
   showSessions: true,
   showIb: false,
   showLiq: false,
@@ -181,6 +186,8 @@ const groups = (v: unknown, fallback: StatGroup[]): StatGroup[] => {
 export function parseSettings(raw: unknown, d: ChartSettings = DEFAULT_SETTINGS): ChartSettings {
   const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
   const panelSet = oneOf<string | undefined>(r.panelSet, PANEL_SET_IDS, d.panelSet);
+  // Mapa spoza pliku map (np. starsza niż 3 dni) to przy rysowaniu wybór domyślny; tu tylko format identyfikatora wpisu
+  const blogMapId = isMapId(r.blogMapId) ? r.blogMapId : d.blogMapId;
   return {
     coin: oneOf(r.coin, MARKETS, d.coin),
     interval: oneOf(r.interval, INTERVALS.map((i) => i.id), d.interval),
@@ -208,6 +215,7 @@ export function parseSettings(raw: unknown, d: ChartSettings = DEFAULT_SETTINGS)
     showTpo: bool(r.showTpo, d.showTpo),
     showTpoOi: bool(r.showTpoOi, d.showTpoOi),
     showLevels: bool(r.showLevels, d.showLevels),
+    showBlogMap: bool(r.showBlogMap, d.showBlogMap),
     showSessions: bool(r.showSessions, d.showSessions),
     showIb: bool(r.showIb, d.showIb),
     showLiq: bool(r.showLiq, d.showLiq),
@@ -223,8 +231,9 @@ export function parseSettings(raw: unknown, d: ChartSettings = DEFAULT_SETTINGS)
     tapeMinUsd: numIn(r.tapeMinUsd, 0, 100_000_000, d.tapeMinUsd),
     tapeSound: bool(r.tapeSound, d.tapeSound),
     indicators: Array.isArray(r.indicators) ? readIndicators(r.indicators) : d.indicators,
-    // Bez zestawu pola nie ma (zapis i porównania ze wzorcem bez pustego klucza)
+    // Bez zestawu i bez wybranej mapy pól nie ma (zapis i porównania ze wzorcem bez pustego klucza)
     ...(panelSet !== undefined ? { panelSet } : {}),
+    ...(blogMapId !== undefined ? { blogMapId } : {}),
   };
 }
 

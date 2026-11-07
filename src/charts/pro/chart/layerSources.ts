@@ -1,7 +1,8 @@
 import type { BadgeTone } from '../../../ui/Badge';
+import type { BlogMap, BlogMapsState } from '../../../state/useBlogMaps';
 import type { Coverage } from '../core/coverage';
 import { indicatorScope } from '../core/indicators';
-import { fmtHm, fromDaily } from '../core/time';
+import { fmtDayTime, fmtHm, fromDaily } from '../core/time';
 import { tpoInterval } from '../core/tpo';
 import { type HqIndicatorId, indicatorDef } from '../indicators/registry';
 import type { ChartSettings } from './settings';
@@ -33,6 +34,8 @@ const SOURCES = {
   // Zmiana OI minuty rozdzielona na ceny według wolumenu — przybliżenie, nie odczyt
   showTpoOi: 'MODEL',
   showLevels: 'LIVE',
+  // Tekst opublikowanego wpisu (poziomy autora), nie wynik modelu
+  showBlogMap: 'LIVE',
   showSessions: 'LIVE',
   showIb: 'LIVE',
   showLiq: 'LIVE',
@@ -138,10 +141,27 @@ export function whalesScan(w: { asOf: number; markets: Readonly<Record<string, u
   return { asOf: w.asOf };
 }
 
+/**
+ * Stan mapy z bloga (`useBlogMaps` i mapa wybrana przez `pickMap`): chwila wpisu albo powód, czemu poziomów nie ma —
+ * ten sam w legendzie i w ustawieniach wykresu.
+ */
+export function blogMapScan(st: BlogMapsState, picked: Pick<BlogMap, 'publishedAt'> | null): ScanState {
+  if (st.status === 'loading') return { why: WAIT_TEXT };
+  if (st.status === 'missing') return { why: tr('Brak map z bloga', 'No maps from the blog') };
+  if (!picked)
+    return {
+      why: tr(
+        'Brak Mapy dnia z bieżącej doby UTC — inną mapę z bloga (ostatnie 3 dni) wybierzesz w Ustawieniach wykresu',
+        'No Day map from the current UTC day yet — pick another blog map (last 3 days) in Chart settings'
+      ),
+    };
+  return { asOf: picked.publishedAt };
+}
+
 /** Warstwy z migawek skanera (plik z `asOf`): po 2 min wiek zamiast LIVE. */
 const SCANNER = new Set(['showLiq', 'showWhales']);
-/** Dane tylko dla BTC: mapa likwidacji skanera, dziennik prognoz Desku (stożek), rynki HIP-4 na BTC. */
-const BTC_ONLY = new Set(['showLiq', 'cone', 'outcomes']);
+/** Dane tylko dla BTC: mapa likwidacji skanera, dziennik prognoz Desku (stożek), rynki HIP-4 na BTC, mapy bloga o BTC. */
+const BTC_ONLY = new Set(['showLiq', 'cone', 'outcomes', 'showBlogMap']);
 /** Migawka skanera świeża do tylu ms. */
 export const SCANNER_FRESH_MS = 2 * 60_000;
 
@@ -181,7 +201,7 @@ export interface LayerBadge {
  */
 export function layerBadge(key: string, ctx: { coin: string; now: number; scan?: ScanState }): LayerBadge {
   if (BTC_ONLY.has(key) && ctx.coin !== 'BTC') {
-    return { tone: 'neutral', text: tr('—, tylko BTC', '—, BTC only'), hint: tr('Te dane są tylko dla BTC (skaner i dziennik prognoz liczą BTC)', 'This data exists for BTC only (the scanner and the forecast ledger cover BTC)') };
+    return { tone: 'neutral', text: tr('—, tylko BTC', '—, BTC only'), hint: tr('Te dane są tylko dla BTC (skaner, dziennik prognoz i mapy z bloga dotyczą BTC)', 'This data exists for BTC only (the scanner, the forecast ledger and the blog maps cover BTC)') };
   }
   const src = LAYER_SOURCE[key] ?? 'LIVE';
   if (SCANNER.has(key)) {
@@ -190,6 +210,19 @@ export function layerBadge(key: string, ctx: { coin: string; now: number; scan?:
     const age = scannerAge(scan.asOf, ctx.now);
     if (age) return { tone: 'stale', text: age, hint: tr(`Migawka skanera sprzed ${age} (stan z ${fmtHm(scan.asOf)})`, `Scanner snapshot from ${age} ago (as of ${fmtHm(scan.asOf)})`) };
     return { tone: 'live', text: 'LIVE', hint: tr(`LIVE: migawka skanera z ${fmtHm(scan.asOf)}`, `LIVE: scanner snapshot as of ${fmtHm(scan.asOf)}`) };
+  }
+  if (key === 'showBlogMap') {
+    const scan = ctx.scan ?? { why: WAIT_TEXT };
+    if ('why' in scan) return { tone: 'stale', text: '—', hint: scan.why };
+    const when = fmtDayTime(scan.asOf, ctx.now);
+    return {
+      tone: 'live',
+      text: 'LIVE',
+      hint: tr(
+        `LIVE: mapa autora z bloga HyperQuant opublikowana ${when} — poziomy z tekstu wpisu, nie model HyperQuant`,
+        `LIVE: the author's map from the HyperQuant blog published ${when} — levels from the post text, not a HyperQuant model`
+      ),
+    };
   }
   const method = (METHOD_HINT as Readonly<Record<string, string>>)[key];
   return { tone: TONE[src], text: src, hint: method ?? SOURCE_HINT[src] };
@@ -206,6 +239,7 @@ const LAYER_LABEL: Record<keyof typeof LAYERS_OFF, string> = {
   showTpo: 'TPO',
   showTpoOi: 'TPO OI',
   showLevels: tr('Poziomy dnia', 'Daily levels'),
+  showBlogMap: tr('Mapa z bloga', 'Blog map'),
   showSessions: tr('Sesje', 'Sessions'),
   showIb: 'IB',
   showLiq: tr('Klastry likw.', 'Liq. clusters'),
@@ -235,6 +269,7 @@ function drawn(s: Pick<ChartSettings, 'showTpo' | 'showBubbles' | 'stackedMin'>,
     case 'showTpoOi':
       return tpoInterval(ms) && s.showTpo;
     case 'showLevels':
+    case 'showBlogMap':
       return scope.levels;
     case 'showSessions':
       return scope.sessions;
