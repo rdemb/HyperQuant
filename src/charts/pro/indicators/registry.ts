@@ -33,15 +33,11 @@ export type IndicatorId =
   | 'donchian'
   | 'atr'
   | 'chop'
-  | 'obv'
-  | 'cmf'
-  | 'mfi'
   | 'pivots'
   | 'psar'
   | 'ichimoku'
   | 'linreg'
   | 'hv'
-  | 'netvol'
   | 'oiflow'
   | 'absorption'
   | 'ofi'
@@ -61,12 +57,11 @@ export type IndicatorId =
  * Grupy na liście okna wskaźników (jak kategorie TradingView); `hyperquant` — wskaźniki, których nie ma w TradingView
  * (z danych Hyperliquid spoza świec albo z modeli na świecach), we własnej sekcji okna.
  */
-export type IndicatorGroup = 'trend' | 'momentum' | 'volatility' | 'volume' | 'levels' | 'hyperquant';
+export type IndicatorGroup = 'trend' | 'momentum' | 'volatility' | 'levels' | 'hyperquant';
 export const GROUPS: readonly { id: IndicatorGroup; name: string }[] = [
   { id: 'trend', name: 'Trend' },
   { id: 'momentum', name: 'Momentum' },
   { id: 'volatility', name: tr('Zmienność', 'Volatility') },
-  { id: 'volume', name: tr('Wolumen', 'Volume') },
   { id: 'levels', name: tr('Poziomy', 'Levels') },
 ];
 
@@ -150,8 +145,12 @@ export interface FlowContext {
 /** Wskaźnik liczony na wszystkich świecach naraz: wartości plotu k świecy i do `out[k][i]`. */
 export type SeriesFn = (bars: readonly FlowBar[], ms: number, ctx: FlowContext, out: Float64Array[]) => void;
 
+/** Warstwa menu: `front` na górze „Tylko w HyperQuant”, `second` pod „Więcej z HyperQuant”, `classic` w „Klasycznych”, `search` tylko w wynikach wyszukiwania. */
+export type IndicatorTier = 'front' | 'second' | 'classic' | 'search';
+
 export interface IndicatorDef {
   id: IndicatorId;
+  tier: IndicatorTier;
   /** Skrót w legendzie i na liście (nazwy międzynarodowe bez tłumaczenia). */
   short: string;
   name: string;
@@ -476,7 +475,7 @@ export function takerPersistence(
   return sum > 0 ? { back: back / sum, flip: flip / sum, fresh: fresh / sum } : { back: Number.NaN, flip: Number.NaN, fresh: Number.NaN };
 }
 
-export const INDICATORS: readonly IndicatorDef[] = [
+const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
   {
     id: 'sma',
     short: 'MA',
@@ -1009,102 +1008,6 @@ export const INDICATORS: readonly IndicatorDef[] = [
     },
   },
   {
-    id: 'obv',
-    short: 'OBV',
-    name: tr('Wolumen narastający (OBV)', 'On Balance Volume (OBV)'),
-    hint: tr(
-      'Suma wolumenu świec ze znakiem zmiany zamknięcia (wzrost +, spadek −), w jednostkach rynku (np. BTC)',
-      'A running sum of candle volume signed by the change of the close (up +, down −), in market units (e.g. BTC)'
-    ),
-    group: 'volume',
-    aliases: 'obv on balance volume wolumen narastający skumulowany cumulative',
-    warmup: () => 1,
-    memoryNote: tr(
-      'Suma od początku wczytanej historii: poziom zależy od tego, gdzie historia się zaczyna, znaczenie mają zmiany linii.',
-      'A sum from the start of the loaded history: the level depends on where history begins; the changes of the line are what matter.'
-    ),
-    pane: 'own',
-    params: [],
-    plots: [{}],
-    format: 'volume',
-    create: () => {
-      let prevClose = Number.NaN;
-      let sum = 0;
-      return (c, keep, out) => {
-        const d = c.c - prevClose;
-        if (keep) prevClose = c.c;
-        if (Number.isNaN(d)) {
-          out[0] = Number.NaN;
-          return;
-        }
-        const v = sum + Math.sign(d) * c.v;
-        if (keep) sum = v;
-        out[0] = v;
-      };
-    },
-  },
-  {
-    id: 'cmf',
-    short: 'CMF',
-    name: tr('Przepływ pieniądza Chaikina (CMF)', 'Chaikin Money Flow (CMF)'),
-    hint: tr(
-      'Suma wolumenu ważonego położeniem zamknięcia w świecy, ((C − L) − (H − C)) / (H − L), przez sumę wolumenu n świec; od −1 do 1',
-      'The sum of volume weighted by where the close sits in the candle, ((C − L) − (H − C)) / (H − L), divided by the volume of n candles; from −1 to 1'
-    ),
-    group: 'volume',
-    aliases: 'chaikin money flow cmf przepływ pieniądza wolumen',
-    warmup: (p) => p.length - 1,
-    pane: 'own',
-    params: [length(20)],
-    plots: [{}],
-    levels: [0],
-    format: 'fixed3',
-    create: (p) => {
-      const ad = new Window(p.length);
-      const v = new Window(p.length);
-      return (c, keep, out) => {
-        // Świeca bez zakresu (H = L) waży zero
-        ad.next(c.h > c.l ? ((2 * c.c - c.l - c.h) / (c.h - c.l)) * c.v : 0, keep);
-        v.next(c.v, keep);
-        out[0] = v.mean > 0 ? ad.mean / v.mean : Number.NaN;
-      };
-    },
-  },
-  {
-    id: 'mfi',
-    short: 'MFI',
-    name: tr('Indeks przepływu pieniądza (MFI)', 'Money Flow Index (MFI)'),
-    hint: tr(
-      'Jak RSI, ale z wolumenem: sumy typowej ceny × wolumen ze świec n, w których typowa cena wzrosła i spadła, w skali 0–100; linie 80 i 20 to tylko liczby odniesienia',
-      'Like RSI but with volume: the sums of typical price × volume over n candles in which the typical price rose and fell, on a 0–100 scale; the 80 and 20 lines are reference numbers only'
-    ),
-    group: 'volume',
-    aliases: 'money flow index mfi przepływ pieniądza wolumen oscylator oscillator',
-    warmup: (p) => p.length - 1,
-    pane: 'own',
-    params: [length(14)],
-    plots: [{}],
-    levels: [80, 20],
-    range: [0, 100],
-    format: 'fixed2',
-    create: (p) => {
-      const up = new Window(p.length);
-      const down = new Window(p.length);
-      let prev = Number.NaN;
-      return (c, keep, out) => {
-        const x = hlc3(c);
-        const ch = x - prev;
-        if (keep) prev = x;
-        // Pierwsza świeca nie ma zmiany (`na`): w Pine oba porównania są fałszywe, więc trafia do obu sum
-        up.next(ch <= 0 ? 0 : c.v * x, keep);
-        down.next(ch >= 0 ? 0 : c.v * x, keep);
-        const u = up.mean;
-        const d = down.mean;
-        out[0] = Number.isNaN(u) ? Number.NaN : d === 0 ? (u === 0 ? Number.NaN : 100) : 100 - 100 / (1 + u / d);
-      };
-    },
-  },
-  {
     id: 'pivots',
     short: 'Pivots',
     name: tr('Punkty pivot (Traditional)', 'Pivot Points Standard (Traditional)'),
@@ -1379,36 +1282,6 @@ export const INDICATORS: readonly IndicatorDef[] = [
         if (keep) prev = c.c;
         // Jak TradingView na interwałach do 1D: √365 niezależnie od długości świecy
         out[0] = 100 * w.sd * Math.sqrt(365);
-      };
-    },
-  },
-  {
-    id: 'netvol',
-    short: 'Net Vol',
-    name: tr('Wolumen netto (Net Volume)', 'Net Volume'),
-    hint: tr(
-      'Wolumen świecy ze znakiem zmiany zamknięcia (wzrost +, spadek −, bez zmiany 0), w jednostkach rynku; panel Delta liczy to samo dokładniej, z kupna i sprzedaży agresorów',
-      'Candle volume signed by the change of the close (up +, down −, unchanged 0), in market units; the Delta pane computes the same more precisely, from aggressor buys and sells'
-    ),
-    group: 'volume',
-    aliases: 'net volume wolumen netto nv kierunek świecy',
-    warmup: () => 0,
-    memoryNote: tr(
-      'Wartość zależy od bieżącej i poprzedniej świecy (zmiana zamknięcia); pierwsza świeca historii ma 0.',
-      'The value depends on the current and the previous candle (the change of the close); the first candle of history has 0.'
-    ),
-    pane: 'own',
-    params: [],
-    plots: [{}],
-    levels: [0],
-    format: 'volume',
-    create: () => {
-      let prev = Number.NaN;
-      return (c, keep, out) => {
-        const d = c.c - prev;
-        if (keep) prev = c.c;
-        // Pierwsza świeca bez zmiany (`na`): oba porównania fałszywe, więc 0, jak w TradingView
-        out[0] = d > 0 ? c.v : d < 0 ? -c.v : 0;
       };
     },
   },
@@ -2073,6 +1946,20 @@ export const INDICATORS: readonly IndicatorDef[] = [
   },
 ];
 
+/** Kolejność wskaźników w warstwach menu (poza `search`, który zostaje w kolejności rejestru). */
+const TIER_IDS: Record<Exclude<IndicatorTier, 'search'>, readonly IndicatorId[]> = {
+  front: ['oiflow', 'absorption', 'breadth', 'repeat', 'makers', 'twap', 'slippage', 'ofi', 'ordersize'],
+  second: ['cone', 'outcomes', 'regime', 'hawkes', 'pbrange'],
+  classic: ['ema', 'sma', 'vwma', 'atr', 'bb', 'keltner', 'pivots'],
+};
+const tierOf = (id: IndicatorId): IndicatorTier => (['front', 'second', 'classic'] as const).find((t) => TIER_IDS[t].includes(id)) ?? 'search';
+
+export const INDICATORS: readonly IndicatorDef[] = INDICATOR_DEFS.map((d) => ({ ...d, tier: tierOf(d.id) }));
+
+/** Wskaźniki jednej warstwy menu (czysta funkcja okna wskaźników): w ustalonej kolejności, `search` w kolejności rejestru. */
+export const menuEntries = (tier: IndicatorTier): IndicatorDef[] =>
+  tier === 'search' ? INDICATORS.filter((d) => d.tier === 'search') : TIER_IDS[tier].map((id) => INDICATORS.find((d) => d.id === id)!);
+
 export const indicatorDef = (id: IndicatorId): IndicatorDef => INDICATORS.find((d) => d.id === id)!;
 
 /**
@@ -2170,14 +2057,19 @@ export function copyIndicator(list: readonly IndicatorInstance[], iid: string): 
 }
 
 /** Zapisana lista z walidacją: nieznany wskaźnik pominięty, błędny parametr domyślny, powtórzony identyfikator nowy. */
-export function parseIndicators(raw: unknown): IndicatorInstance[] {
-  if (!Array.isArray(raw)) return [];
+export function parseIndicators(raw: unknown): { list: IndicatorInstance[]; dropped: string[] } {
   const out: IndicatorInstance[] = [];
+  const dropped: string[] = [];
+  if (!Array.isArray(raw)) return { list: out, dropped };
   const taken = new Set<string>();
   for (const v of raw) {
     const r = (v && typeof v === 'object' ? v : {}) as Record<string, unknown>;
     const def = INDICATORS.find((d) => d.id === r.id);
-    if (!def || out.length >= MAX_INDICATORS) continue;
+    if (!def) {
+      if (typeof r.id === 'string' && !dropped.includes(r.id)) dropped.push(r.id);
+      continue;
+    }
+    if (out.length >= MAX_INDICATORS) continue;
     const iid = typeof r.iid === 'string' && /^[a-z0-9]{1,16}$/.test(r.iid) && !taken.has(r.iid) ? r.iid : freeIid(taken, def.id);
     taken.add(iid);
     const color = typeof r.color === 'string' && /^#[0-9a-f]{6}$/i.test(r.color) ? r.color : freeColor(out);
@@ -2188,7 +2080,7 @@ export function parseIndicators(raw: unknown): IndicatorInstance[] {
     if (tfOk(def, r.tf)) x.tf = r.tf;
     out.push(x);
   }
-  return out;
+  return { list: out, dropped };
 }
 
 /** Widoczne wskaźniki w linku do widoku: `ema(21);rsi(14)@1h;bb(20,2.5)` (parametry w kolejności z rejestru i interwał, bez stylu). */
@@ -2207,5 +2099,5 @@ export function indicatorsFromLink(link: string): IndicatorInstance[] {
     const vals = m[2].split(',');
     return { id: def.id, params: Object.fromEntries(def.params.map((p, i) => [p.key, vals[i] ? Number(vals[i]) : undefined])), tf: m[3] };
   });
-  return parseIndicators(raw.filter((r) => r !== null));
+  return parseIndicators(raw.filter((r) => r !== null)).list;
 }

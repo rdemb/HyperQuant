@@ -137,6 +137,8 @@ function expectClose(a: readonly number[], b: readonly number[], rel = 1e-9): vo
   });
 }
 
+const parseList = (raw: unknown) => parseIndicators(raw).list;
+
 describe('klocki wskaźników', () => {
   it('RMA i EMA: brak wartości do n-tej, na niej średnia prosta, dalej wygładzanie', () => {
     const r = rma(3); // α = 1/3
@@ -395,13 +397,6 @@ describe('wskaźniki: partia A (wzory TradingView)', () => {
     expectClose(mid, highest(highs, 20).map((h, i) => (h + lowest(lows, 20)[i]) / 2));
   });
 
-  it('OBV: suma wolumenu ze znakiem zmiany zamknięcia', () => {
-    const obv = run(inst('obv'), cs)[0];
-    let sum = 0;
-    const want = closes.map((c, i) => (i === 0 ? NaN : (sum += Math.sign(c - closes[i - 1]) * cs[i].v)));
-    expectClose(obv, want, 1e-12);
-  });
-
   it('przesunięcie ceny: MACD, Stochastic, DMI bez zmian; MA, Keltner, Donchian i Supertrend przesunięte', () => {
     const shifted = cs.map((c) => ({ ...c, o: c.o + 5000, h: c.h + 5000, l: c.l + 5000, c: c.c + 5000 }));
     for (const id of ['macd', 'stoch', 'dmi'] as const) run(inst(id), shifted).forEach((ys, p) => expectClose(ys, run(inst(id), cs)[p], 1e-7));
@@ -488,25 +483,9 @@ describe('wskaźniki: partia B (wzory TradingView)', () => {
     expect(got.filter((x) => !Number.isNaN(x)).every((x) => x >= 0 && x <= 100)).toBe(true);
   });
 
-  it('CMF: Σ(((C − L) − (H − C))/(H − L)·V) / ΣV w [−1, 1]', () => {
-    const ad = cs.map((c) => ((2 * c.c - c.l - c.h) / (c.h - c.l)) * c.v);
-    const got = run(inst('cmf'), cs)[0];
-    expectClose(got, sma(ad, 20).map((a, i) => a / sma(vols, 20)[i]));
-    expect(got.filter((x) => !Number.isNaN(x)).every((x) => x >= -1 && x <= 1)).toBe(true);
-  });
-
-  it('MFI: ta.mfi na hlc3 (pierwsza świeca bez zmiany w obu sumach, jak w Pine)', () => {
-    const f = tp.map((x, i) => x * vols[i]);
-    const up = sma(f.map((x, i) => (i > 0 && tp[i] - tp[i - 1] <= 0 ? 0 : x)), 14);
-    const down = sma(f.map((x, i) => (i > 0 && tp[i] - tp[i - 1] >= 0 ? 0 : x)), 14);
-    const got = run(inst('mfi'), cs)[0];
-    expectClose(got, up.map((u, i) => 100 - 100 / (1 + u / down[i])));
-    expect(got.filter((x) => !Number.isNaN(x)).every((x) => x >= 0 && x <= 100)).toBe(true);
-  });
-
-  it('przesunięcie ceny: CCI, %R, Stoch RSI, CHOP i CMF bez zmian; HMA i VWMA przesunięte', () => {
+  it('przesunięcie ceny: CCI, %R, Stoch RSI i CHOP bez zmian; HMA i VWMA przesunięte', () => {
     const shifted = cs.map((c) => ({ ...c, o: c.o + 5000, h: c.h + 5000, l: c.l + 5000, c: c.c + 5000 }));
-    for (const id of ['cci', 'wpr', 'stochrsi', 'chop', 'cmf'] as const) run(inst(id), shifted).forEach((ys, p) => expectClose(ys, run(inst(id), cs)[p], 1e-6));
+    for (const id of ['cci', 'wpr', 'stochrsi', 'chop'] as const) run(inst(id), shifted).forEach((ys, p) => expectClose(ys, run(inst(id), cs)[p], 1e-6));
     for (const id of ['hma', 'vwma'] as const) run(inst(id), shifted).forEach((ys, p) => expectClose(ys, run(inst(id), cs)[p].map((x) => x + 5000), 1e-9));
   });
 });
@@ -624,7 +603,7 @@ describe('wskaźniki: partia C (pivoty, interwał wskaźnika)', () => {
   });
 
   it('podpis, link i zapis z interwałem; pivoty bez interwału', () => {
-    const [rsi, piv] = parseIndicators([
+    const [rsi, piv] = parseList([
       { id: 'rsi', params: { length: 14 }, tf: '1h' },
       { id: 'pivots', tf: '4h' },
       { id: 'ema', tf: '7m' },
@@ -632,7 +611,7 @@ describe('wskaźniki: partia C (pivoty, interwał wskaźnika)', () => {
     expect(indicatorLabel(rsi)).toBe('RSI 14 1h');
     expect(piv.tf).toBeUndefined();
     expect(indicatorLabel(piv)).toBe('Pivots');
-    const list = parseIndicators([{ id: 'rsi', params: { length: 14 }, tf: '1h' }, { id: 'ema', tf: '7m' }, { id: 'pivots' }, { id: 'bb', tf: '1d' }]);
+    const list = parseList([{ id: 'rsi', params: { length: 14 }, tf: '1h' }, { id: 'ema', tf: '7m' }, { id: 'pivots' }, { id: 'bb', tf: '1d' }]);
     expect(list[1].tf).toBeUndefined();
     expect(indicatorsLink(list)).toBe('rsi(14)@1h;ema(9);pivots();bb(20,2)@1d');
     const back = indicatorsFromLink('rsi(14)@1h;ema(9);pivots()@1d;bb(20,2)@1d;sma(5)@2h');
@@ -695,15 +674,8 @@ describe('wskaźniki: partia D (Parabolic SAR, kanał regresji, HV, Net Volume)'
     expectClose(run(inst('hv', { length: 10 }), days)[0], want, 1e-9);
   });
 
-  it('Net Volume: wolumen ze znakiem zmiany zamknięcia, pierwsza świeca i brak zmiany 0', () => {
-    const flat = cs.slice(0, 30).map((c, i) => (i === 10 ? { ...c, c: cs[9].c } : c));
-    const want = flat.map((c, i) => (i === 0 ? 0 : c.c > flat[i - 1].c ? c.v : c.c < flat[i - 1].c ? -c.v : 0));
-    expect(run(inst('netvol'), flat)[0]).toEqual(want);
-    expect(want[10]).toBe(0);
-  });
-
   it('na żywo z indeksem zmian każdej instancji osobno: kanał przesuwa się z nową świecą, wynik jak przeliczenie od zera', () => {
-    const list = [inst('linreg', { length: 20 }), inst('psar'), inst('hv'), inst('netvol'), { ...inst('ema', { length: 3 }), tf: '4h' }];
+    const list = [inst('linreg', { length: 20 }), inst('psar'), inst('hv'), { ...inst('ema', { length: 3 }), tf: '4h' }];
     const src = walk(24 * 3, 61).map((c, i) => ({ ...c, t: i * H1 }));
     const e = new IndicatorEngine();
     e.setInstances(list);
@@ -770,7 +742,7 @@ describe('wskaźniki: Ichimoku', () => {
     expect(def.cloud).toEqual([3, 4]);
     expect(indicatorLabel(x)).toBe('Ichimoku 9 26 52 26');
     expect(indicatorsFromLink('ichimoku(9,26,52,26)@1h')[0].tf).toBeUndefined();
-    expect(parseIndicators([{ id: 'ichimoku', tf: '1h' }])[0].tf).toBeUndefined();
+    expect(parseList([{ id: 'ichimoku', tf: '1h' }])[0].tf).toBeUndefined();
   });
 });
 
@@ -812,7 +784,7 @@ describe('wskaźniki: zmiana OI i delta', () => {
     const fromLink = indicatorsFromLink('oiflow()@1h')[0];
     expect(fromLink.id).toBe('oiflow');
     expect(fromLink.tf).toBeUndefined();
-    expect(parseIndicators([{ id: 'oiflow', tf: '1h' }])[0].tf).toBeUndefined();
+    expect(parseList([{ id: 'oiflow', tf: '1h' }])[0].tf).toBeUndefined();
   });
 
   it('przeliczenie zwraca pierwszą zmienioną świecę: bez zmian — liczba świec, nowy odczyt OI starszej świecy — jej indeks, doczytana historia z lewej — 0', () => {
@@ -914,7 +886,7 @@ describe('wskaźniki: absorpcja', () => {
     expect(def.plots[1]).toMatchObject({ hidden: true });
     expect(def.levels).toEqual([-2, 0, 2]);
     expect(indicatorsLink([inst('absorption')])).toBe('absorption(120)');
-    expect(parseIndicators([{ id: 'absorption', tf: '1h' }])[0].tf).toBeUndefined();
+    expect(parseList([{ id: 'absorption', tf: '1h' }])[0].tf).toBeUndefined();
   });
 
   it('przeliczanie przyrostowe: żywa świeca, nowe świece, doczytana godzina taśmy w środku i historia z lewej — jak od zera', () => {
@@ -1135,7 +1107,7 @@ describe('wskaźniki: OFI z kalibracją', () => {
     expect(indicatorLabel(inst('ofi'))).toBe('OFI 30');
     expect(indicatorsLink([inst('ofi')])).toBe('ofi(30)');
     expect(indicatorsFromLink('ofi(50)@1h')[0].tf).toBeUndefined();
-    expect(parseIndicators([{ id: 'ofi', tf: '1h' }])[0].tf).toBeUndefined();
+    expect(parseList([{ id: 'ofi', tf: '1h' }])[0].tf).toBeUndefined();
   });
 });
 
@@ -1375,7 +1347,7 @@ describe('lista wskaźników', () => {
   });
 
   it('odczyt zapisu: nieznany wskaźnik pominięty, błędny parametr domyślny, powtórzony identyfikator nowy', () => {
-    const list = parseIndicators([
+    const list = parseList([
       { iid: 'ema1', id: 'ema', params: { length: 21 }, color: '#112233', visible: false },
       { iid: 'ema1', id: 'ema', params: { length: 2.5 }, color: 'czerwony' },
       { iid: 'x', id: 'zigzag', params: {} },
@@ -1389,12 +1361,12 @@ describe('lista wskaźników', () => {
     ]);
     expect(list[0].color).toBe('#112233');
     expect(list[1].color).toMatch(/^#[0-9a-f]{6}$/);
-    expect(parseIndicators('x')).toEqual([]);
-    expect(parseIndicators(new Array(30).fill({ id: 'ema' }))).toHaveLength(MAX_INDICATORS);
+    expect(parseList('x')).toEqual([]);
+    expect(parseList(new Array(30).fill({ id: 'ema' }))).toHaveLength(MAX_INDICATORS);
   });
 
   it('styl: zapis bez stylu dostaje domyślny (wstęgi cieńsze), błędny styl domyślny', () => {
-    const [ema, bb, bad] = parseIndicators([
+    const [ema, bb, bad] = parseList([
       { id: 'ema' },
       { id: 'bb' },
       { id: 'rsi', alpha: 1.5, width: 7, labels: 'tak' },
@@ -1402,13 +1374,13 @@ describe('lista wskaźników', () => {
     expect([ema.alpha, ema.width, ema.labels]).toEqual([1, 2, true]);
     expect(bb.width).toBe(1);
     expect([bad.alpha, bad.width, bad.labels]).toEqual([1, 2, true]);
-    const [kept] = parseIndicators([{ id: 'atr', alpha: 0.4, width: 3, labels: false }]);
+    const [kept] = parseList([{ id: 'atr', alpha: 0.4, width: 3, labels: false }]);
     expect([kept.alpha, kept.width, kept.labels]).toEqual([0.4, 3, false]);
-    expect(parseIndicators(addIndicator(addIndicator([], 'ema'), 'bb'))).toEqual(addIndicator(addIndicator([], 'ema'), 'bb'));
+    expect(parseList(addIndicator(addIndicator([], 'ema'), 'bb'))).toEqual(addIndicator(addIndicator([], 'ema'), 'bb'));
   });
 
   it('kopia: te same parametry i styl, nowy identyfikator i wolny kolor', () => {
-    const list = parseIndicators([{ iid: 'ema1', id: 'ema', params: { length: 21 }, color: '#3987e5', width: 3, visible: false }]);
+    const list = parseList([{ iid: 'ema1', id: 'ema', params: { length: 21 }, color: '#3987e5', width: 3, visible: false }]);
     const out = copyIndicator(list, 'ema1');
     expect(out[1]).toMatchObject({ iid: 'ema2', id: 'ema', params: { length: 21 }, width: 3, visible: true });
     expect(out[1].color).not.toBe(out[0].color);
@@ -1416,7 +1388,7 @@ describe('lista wskaźników', () => {
   });
 
   it('link: widoczne wskaźniki z parametrami w kolejności rejestru, odczyt z walidacją', () => {
-    const list = parseIndicators([
+    const list = parseList([
       { id: 'ema', params: { length: 21 } },
       { id: 'rsi', params: { length: 14 }, visible: false },
       { id: 'bb', params: { length: 20, mult: 2.5 } },

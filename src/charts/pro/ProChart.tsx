@@ -28,7 +28,7 @@ import { onAlertEvents, startAlertWatch } from './chart/alertWatch';
 import { DEFAULT_TTL_MS, defaultDir, eventText } from '../../utils/alertRules';
 import { fmtPx, priceDigits } from './chart/layout';
 import type { PbZone } from './chart/pbRangeLayer';
-import { ChartLayout, ChartSettings, NARROW_QUERY, PHONE_PANES, PhonePane, hashFor, isNarrow, loadSettings, phoneSettings, saveSettings, settingsFromHash } from './chart/settings';
+import { ChartLayout, ChartSettings, NARROW_QUERY, PHONE_PANES, PhonePane, droppedIndicators, hashFor, isNarrow, loadSettings, phoneSettings, saveSettings, settingsFromHash } from './chart/settings';
 import { Station, stationById, stationKey, stationPanel } from './chart/stations';
 import { ChartTemplate, applyTemplate, loadTemplates, saveAs, saveTemplates } from './chart/templates';
 import { NumbersCard, StatGroupPicker } from './chart/NumbersCard';
@@ -117,6 +117,16 @@ const PANE_ITEMS: ToggleItem[] = [
 
 /** Karty na telefonie: jedna naraz, więc wykres ma cały ekran. */
 type PhoneTab = 'chart' | 'tape' | 'dom' | 'numbers';
+const DROPPED_NOTICE_KEY = 'hq.charts.droppedNotice.v1';
+const REMOVED_INDICATORS = ['obv', 'cmf', 'mfi', 'netvol'];
+const readFlag = (key: string): boolean => {
+  try {
+    return localStorage.getItem(key) !== null;
+  } catch {
+    return false;
+  }
+};
+
 const PHONE_TABS: { id: PhoneTab; label: string }[] = [
   { id: 'chart', label: tr('Wykres', 'Chart') },
   { id: 'tape', label: tr('Taśma', 'Tape') },
@@ -205,7 +215,7 @@ export const ProChart: React.FC<{
   const store = replay ? replay.store : storeFor(settings.coin);
   const series = store.series(settings.interval);
   const [menu, setMenu] = useState<'settings' | 'indicators' | 'alerts' | 'keys' | 'more' | null>(null);
-  const [indicatorsSection, setIndicatorsSection] = useState<IndicatorsSection>('flow');
+  const [indicatorsSection, setIndicatorsSection] = useState<IndicatorsSection>('hl');
   // Wskaźnik w oknie ustawień (identyfikator instancji)
   const [indEdit, setIndEdit] = useState<string | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
@@ -229,6 +239,8 @@ export const ProChart: React.FC<{
   // Zestaw alarmów z linku (czytany przed pierwszym przepisaniem adresu na link do widoku)
   const [linkSet, setLinkSet] = useState<LinkAlarm[] | null>(() => (panel === 0 && !inReplay ? parseAlarmLink(window.location.hash) : null));
   const [toast, setToast] = useState<string | null>(null);
+  // Jednorazowa informacja o usuniętych wskaźnikach wolumenu (klucz ustawiany po zamknięciu; tylko panel 1)
+  const [droppedNote, setDroppedNote] = useState(() => panel === 0 && !inReplay && REMOVED_INDICATORS.some((id) => droppedIndicators().includes(id)) && !readFlag(DROPPED_NOTICE_KEY));
   const ctxRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   const hostRef = useRef<HTMLDivElement>(null);
@@ -866,6 +878,30 @@ export const ProChart: React.FC<{
           {linkPreview && (
             <div className="absolute left-2 top-2 z-40 w-[min(380px,calc(100%-16px))] max-h-[calc(100%-16px)] overflow-y-auto rounded-xl">
               <AlarmLinkCard list={linkPreview} existing={alerts.length} onAdd={addLinkSet} onClose={() => setLinkSet(null)} />
+            </div>
+          )}
+          {droppedNote && (
+            <div role="status" className="absolute left-1/2 -translate-x-1/2 top-2 z-40 flex items-start gap-2 max-w-[calc(100%-16px)] rounded-lg border border-line-strong bg-surface-2 px-3 py-2 text-xs text-ink-1 shadow-2xl">
+              <span>
+                {tr(
+                  'Usunęliśmy wskaźniki OBV, CMF, MFI i Net Volume: HyperQuant liczy prawdziwą deltę z taśmy (panel Delta i CVD).',
+                  'We removed the OBV, CMF, MFI and Net Volume indicators: HyperQuant computes true delta from the tape (Delta and CVD panes).'
+                )}
+              </span>
+              <button
+                type="button"
+                className="shrink-0 text-ink-3 hover:text-ink-1"
+                onClick={() => {
+                  setDroppedNote(false);
+                  try {
+                    localStorage.setItem(DROPPED_NOTICE_KEY, '1');
+                  } catch {
+                    // Zablokowana pamięć — informacja wróci przy następnym wejściu
+                  }
+                }}
+              >
+                {tr('Zamknij', 'Close')}
+              </button>
             </div>
           )}
           {toast && (

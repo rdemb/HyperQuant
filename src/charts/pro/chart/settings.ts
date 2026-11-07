@@ -213,8 +213,17 @@ export function parseSettings(raw: unknown, d: ChartSettings = DEFAULT_SETTINGS)
     showTape: bool(r.showTape, d.showTape),
     tapeMinUsd: numIn(r.tapeMinUsd, 0, 100_000_000, d.tapeMinUsd),
     tapeSound: bool(r.tapeSound, d.tapeSound),
-    indicators: Array.isArray(r.indicators) ? parseIndicators(r.indicators) : d.indicators,
+    indicators: Array.isArray(r.indicators) ? readIndicators(r.indicators) : d.indicators,
   };
+}
+
+/** Identyfikatory wskaźników pominiętych przy wczytaniu zapisu (jednorazowa informacja o usuniętych wskaźnikach). */
+const droppedSeen = new Set<string>();
+export const droppedIndicators = (): string[] => [...droppedSeen];
+function readIndicators(raw: unknown[]): IndicatorInstance[] {
+  const { list, dropped } = parseIndicators(raw);
+  dropped.forEach((id) => droppedSeen.add(id));
+  return list;
 }
 
 /** Telefon: ekran do 639 px. */
