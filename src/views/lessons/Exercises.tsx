@@ -505,7 +505,6 @@ const Debrief: React.FC<{
 
 /** Wynik reguły z Laboratorium folkloru desku (historia BTC): sukces wobec ceny błądzącej losowo. */
 export const LabResult: React.FC<{ id: string; c: LessonsContent }> = ({ id, c }) => {
-  const { setView } = useDesk();
   const { status, report } = useFolkloreLab();
   const h = report?.hypotheses.find((x) => x.id === id);
   const name = LAB_TEXT[id]?.name ?? id;
@@ -529,7 +528,7 @@ export const LabResult: React.FC<{ id: string; c: LessonsContent }> = ({ id, c }
       <button
         type="button"
         onClick={() => {
-          setView('plan');
+          window.location.hash = '#lessons?tab=myths';
           window.scrollTo({ top: 0 });
         }}
         className={`${BTN_LINK} self-start text-xs`}

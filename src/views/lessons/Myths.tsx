@@ -1,7 +1,6 @@
 import React from 'react';
 import { ArrowRight } from 'lucide-react';
 import type { LessonsContent } from '../../lessons/content/types';
-import { useDesk } from '../../state/DeskContext';
 import { useFolkloreLab } from '../../state/useFolkloreLab';
 import { Badge } from '../../ui';
 import { LAB_TEXT, type HistVerdict } from '../../utils/folkloreLab';
@@ -11,7 +10,6 @@ const VERDICT_TONE: Record<HistVerdict, 'model' | 'warn' | 'neutral'> = { suppor
 
 /** Mity i dane: popularne reguły zestawione z historią BTC (wyniki Laboratorium folkloru desku, odświeżane co godzinę). */
 export const Myths: React.FC<{ c: LessonsContent }> = ({ c }) => {
-  const { setView } = useDesk();
   const { status, report } = useFolkloreLab();
   const rows = report?.hypotheses.filter((h) => h.family === 'folklore') ?? [];
   const m = c.myths;
@@ -58,8 +56,7 @@ export const Myths: React.FC<{ c: LessonsContent }> = ({ c }) => {
       <button
         type="button"
         onClick={() => {
-          setView('plan');
-          window.scrollTo({ top: 0 });
+          document.getElementById('folklore-lab')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }}
         className={`${BTN_LINK} self-start`}
       >

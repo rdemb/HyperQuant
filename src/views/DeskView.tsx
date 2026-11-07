@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useDesk, usePrefillFromSignal } from '../state/DeskContext';
+import { useDesk } from '../state/DeskContext';
 import { AggrOrderFlowTape } from '../components/AggrOrderFlowTape';
 import { ConnectingState } from '../shell/ConnectingState';
 import { DeskRail } from './desk/DeskRail';
@@ -14,7 +14,6 @@ import { PlanQuickCard } from './plan/PlanQuickCard';
  */
 const DeskView: React.FC = () => {
   const { feed, ofi } = useDesk();
-  const onExhaustion = usePrefillFromSignal('OFI Tape');
   const [startedAt] = useState(() => Date.now());
   const ready = feed.bars.length > 0;
 
@@ -34,7 +33,6 @@ const DeskView: React.FC = () => {
                 latestBar={feed.latestBar}
                 ofiSummary={ofi}
                 currentPrice={feed.currentPrice}
-                onTriggerExhaustionSignal={onExhaustion}
               />
             </div>
           </div>

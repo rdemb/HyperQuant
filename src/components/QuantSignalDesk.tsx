@@ -1,5 +1,4 @@
 import React, { useId, useState } from 'react';
-import { ClipboardList } from 'lucide-react';
 import { QuantMathMetrics } from '../types/trading';
 import { Badge, Panel, Stat, DASH, fmtCompact, fmtPrice, fmtSigned, fmtFixed, fmtNum } from '../ui';
 import { candlesLabel, horizonDuration } from '../views/micro/horizon';
@@ -7,7 +6,6 @@ import { tr } from '../i18n';
 
 // Panel metryk mikrostruktury — bez sygnałów transakcyjnych (desk ocenia plan tradera, nie podsuwa wejść).
 
-type Direction = 'LONG' | 'SHORT';
 
 // Polskie nazwy reżimów z regułowej klasyfikacji silnika
 const REGIME_PL: Record<QuantMathMetrics['regimeClassification'], { label: string; detail: string }> = {
@@ -44,36 +42,12 @@ const WEIGHT_SERIES: { key: keyof QuantMathMetrics['neuralAttentionWeights']; la
 
 const fmtHalfLife = (v: number) => (Number.isFinite(v) ? `${fmtFixed(v, 1)} ${tr('świec', 'candles')}` : tr('∞ (brak powrotu)', '∞ (no reversion)'));
 
-/** Przyciski przekazania kierunku do Analizatora planu — kierunek wybiera trader. */
-export const PrefillButtons: React.FC<{ onPick: (dir: Direction) => void }> = ({ onPick }) => (
-  <div className="flex flex-wrap items-center gap-2">
-    <span className="inline-flex items-center gap-1.5 text-xs text-ink-2">
-      <ClipboardList className="w-3.5 h-3.5 text-ink-3" aria-hidden="true" />
-      {tr('Przekaż do planu', 'Send to plan')}
-    </span>
-    {(['LONG', 'SHORT'] as const).map((dir) => (
-      <button
-        key={dir}
-        type="button"
-        onClick={() => onPick(dir)}
-        aria-label={`${tr('Przekaż do planu', 'Send to plan')}: ${dir === 'LONG' ? 'Long' : 'Short'}`}
-        className={`min-h-11 sm:min-h-8 px-3 rounded-lg border text-xs font-semibold transition-colors duration-150 bg-surface-2 hover:bg-surface-3 ${
-          dir === 'LONG' ? 'text-buy-ink border-buy/40' : 'text-sell-ink border-sell/40'
-        }`}
-      >
-        <span aria-hidden="true">{dir === 'LONG' ? '▲' : '▼'}</span> {dir === 'LONG' ? 'Long' : 'Short'}
-      </button>
-    ))}
-  </div>
-);
-
 /** Reżim (reguły), trajektoria heurystyczna w świecach i wagi cech heurystyki. */
 export const QuantRegimePanel: React.FC<{
   quant: QuantMathMetrics;
   currentPrice: number;
   timeframeSec: number;
-  onPrefillPlan?: (dir: Direction, title?: string, reason?: string) => void;
-}> = ({ quant, currentPrice, timeframeSec, onPrefillPlan }) => {
+}> = ({ quant, currentPrice, timeframeSec }) => {
   const regime = REGIME_PL[quant.regimeClassification];
   const weights = quant.neuralAttentionWeights;
 
@@ -149,19 +123,6 @@ export const QuantRegimePanel: React.FC<{
         </ul>
       </div>
 
-      {onPrefillPlan && (
-        <div className="pt-3 border-t border-line">
-          <PrefillButtons
-            onPick={(dir) =>
-              onPrefillPlan(
-                dir,
-                tr('Mikrostruktura', 'Microstructure'),
-                `${tr('Reżim', 'Regime')}: ${regime.label} · OU Z ${fmtSigned(quant.ouZScore, 2)}σ · Hurst ${quant.hurstExponent} · VPIN ${fmtFixed(quant.vpinToxicity * 100, 0)}%`
-              )
-            }
-          />
-        </div>
-      )}
     </Panel>
   );
 };

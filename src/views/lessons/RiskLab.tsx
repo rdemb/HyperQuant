@@ -2,7 +2,6 @@ import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ArrowRight, RotateCcw } from 'lucide-react';
 import type { LessonsContent } from '../../lessons/content/types';
 import { RISK_DEFAULTS, simulateRisk, type RiskParams, type RiskResult } from '../../lessons/risk';
-import { useDesk } from '../../state/DeskContext';
 import { Badge } from '../../ui';
 import { BTN_LINK, BTN_SECONDARY, fmtNum, fmtPct } from './format';
 
@@ -24,12 +23,11 @@ const SLIDERS: SliderDef[] = [
 
 /** Laboratorium ryzyka: ta sama skuteczność przy różnym ryzyku na transakcję i z kosztami (symulacja, zawsze oznaczona). */
 export const RiskLab: React.FC<{ c: LessonsContent }> = ({ c }) => {
-  const { setView } = useDesk();
   const [p, setP] = useState<RiskParams>(RISK_DEFAULTS);
   const r = useMemo(() => simulateRisk(p), [p]);
   const k = c.risk;
-  const go = (v: 'micro' | 'plan') => {
-    setView(v);
+  const go = (hash: '#research' | '#lessons?tab=myths') => {
+    window.location.hash = hash;
     window.scrollTo({ top: 0 });
   };
   const tiles: { label: string; value: string; tone?: string }[] = [
@@ -93,11 +91,11 @@ export const RiskLab: React.FC<{ c: LessonsContent }> = ({ c }) => {
         ))}
       </ul>
       <div className="flex flex-wrap gap-x-5 gap-y-2">
-        <button type="button" onClick={() => go('micro')} className={BTN_LINK}>
+        <button type="button" onClick={() => go('#research')} className={BTN_LINK}>
           {k.sizeLink}
           <ArrowRight className="w-4 h-4" aria-hidden="true" />
         </button>
-        <button type="button" onClick={() => go('plan')} className={BTN_LINK}>
+        <button type="button" onClick={() => go('#lessons?tab=myths')} className={BTN_LINK}>
           {k.planLink}
           <ArrowRight className="w-4 h-4" aria-hidden="true" />
         </button>

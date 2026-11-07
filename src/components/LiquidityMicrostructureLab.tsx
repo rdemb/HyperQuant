@@ -1,10 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { LiquidityProfileBucket, QuantMathMetrics, ShaakuniState } from '../types/trading';
 import { Badge, Panel, Stat, DASH, fmtCompact, fmtPct, fmtPrice, fmtSigned, fmtFixed, fmtNum } from '../ui';
-import { PrefillButtons } from './QuantSignalDesk';
 import { tr } from '../i18n';
 
-type Direction = 'LONG' | 'SHORT';
 
 // Kolory tokenów (docs/STYLEGUIDE.md §2) — canvas nie czyta klas Tailwind
 const C = {
@@ -430,8 +428,7 @@ export const MicrostructureMethods: React.FC<{
   quant: QuantMathMetrics;
   shaakuni: ShaakuniState;
   currentPrice: number;
-  onPrefillPlan?: (dir: Direction, title?: string, reason?: string) => void;
-}> = ({ quant, shaakuni, currentPrice, onPrefillPlan }) => {
+}> = ({ quant, shaakuni, currentPrice }) => {
   const [selectedId, setSelectedId] = useState('gravity');
   const magnetPct = currentPrice > 0 ? ((quant.primaryMagnetPrice - currentPrice) / currentPrice) * 100 : null;
 
@@ -564,9 +561,6 @@ export const MicrostructureMethods: React.FC<{
             <div className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium">{sel.metricLabel}</div>
             <div className="font-mono tabular-nums text-sm text-ink-1 break-words">{sel.metricValue}</div>
           </div>
-          {onPrefillPlan && (
-            <PrefillButtons onPick={(dir) => onPrefillPlan(dir, `${tr('Mikrostruktura', 'Microstructure')} · ${sel.title}`, `${sel.metricLabel}: ${sel.metricValue}`)} />
-          )}
         </div>
       </div>
     </Panel>

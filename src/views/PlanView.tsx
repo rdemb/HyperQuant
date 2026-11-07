@@ -10,7 +10,7 @@ import { PlanResult } from './plan/PlanResult';
 import { LedgerPanel } from './plan/LedgerPanel';
 import { DeskLedgerPanel } from './after/DeskLedgerPanel';
 import { AuctionContextPanel } from './before/AuctionContextPanel';
-import { FolkloreLabPanel } from './plan/FolkloreLabPanel';
+import { FolkloreLabPanel } from './lessons/FolkloreLabPanel';
 import { JournalTab } from './after/JournalTab';
 import { usePlanLedger } from './plan/usePlanLedger';
 import { planSigma, useDebounced, usePlanMarket } from './plan/hooks';
