@@ -36,6 +36,14 @@ describe('Czwórka: karta czterech liczb przed sesją', () => {
     expect(html).toMatch(/MODEL<\/span><span[^>]*>luka</);
   });
 
+  it('„—” bez plakietki źródła: kafel bez liczby nie ma LIVE ani MODEL, „tylko BTC” zostaje jako powód', () => {
+    const tiles = html.split('data-four=').slice(1);
+    const tile = (id: string) => tiles.find((t) => t.startsWith(`"${id}"`))!;
+    expect(tile('hourWidth')).not.toMatch(/>(LIVE|MODEL)</);
+    expect(tile('vwap')).not.toMatch(/>(LIVE|MODEL)</);
+    expect(tile('vwap')).toContain('>tylko BTC<');
+  });
+
   it('podpis karty z rynkiem i kotwica karty (Klatka, zadanie 9)', () => {
     expect(html).toContain('Czwórka');
     expect(html).toContain('BTC');

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { CircleHelp } from 'lucide-react';
-import { Badge, DASH } from '../../../ui';
+import { Badge, DASH, sourceTag } from '../../../ui';
 import type { BlogMap, BlogMapsState } from '../../../state/useBlogMaps';
 import type { LiqMapState } from '../../../state/useLiqMap';
 import type { VolModel } from '../../../utils/volatility';
@@ -17,7 +17,7 @@ import { tr } from '../../../i18n';
  * Nagłówek układu nad wykresem (pierwszy panel karty): pytanie układu i trzy liczby z plakietkami (layoutNumbers.ts,
  * wejścia z magazynu w layoutInputs.ts).
  * Liczby z danych, które wykres już ma — świece magazynu rynku (1m, 5m, 1h; seria wczytuje się przy pierwszym użyciu),
- * taśma i arkusz magazynu, migawki skanera, model zmienności HAR z Desku i mapy z bloga. Przeliczane co 5 s (na starcie częściej),
+ * taśma i arkusz magazynu, migawki skanera, model zmienności HAR i mapy z bloga. Przeliczane co 5 s (na starcie częściej),
  * dotknięcie liczby rozwija ich źródła. Na telefonie jedna linia z przewijaniem w bok: najpierw liczby, potem pytanie.
  */
 
@@ -27,7 +27,15 @@ const WAIT_MS = 1_000;
 const WARMUP_MS = 15_000;
 const MIN = 60_000;
 
-const badgeTone = (n: LayoutNumber) => (n.note ? (n.value === DASH ? 'neutral' : 'stale') : n.badge === 'LIVE' ? 'live' : 'model');
+/** Plakietka liczby: „—” bez plakietki źródła (najwyżej powód, np. „tylko BTC”), powód braku w podpowiedzi. */
+const Tag: React.FC<{ n: LayoutNumber; size?: 'sm' }> = ({ n, size }) => {
+  const t = sourceTag(n);
+  return t ? (
+    <Badge tone={t.tone} size={size}>
+      {t.text}
+    </Badge>
+  ) : null;
+};
 
 export const LayoutHeader: React.FC<{
   id: StationId;
@@ -153,9 +161,7 @@ export const LayoutHeader: React.FC<{
               <span className="flex items-center gap-1 leading-none">
                 {/* Liczby krojem o stałej szerokości, opisy (typ dnia, migracja) zwykłym — węższe na telefonie */}
                 <span className={`${/\d/.test(n.value) ? 'font-mono tabular-nums text-[12px]' : 'text-[11px]'} ${n.value === DASH ? 'text-ink-3' : 'text-ink-1'}`}>{n.value}</span>
-                <Badge tone={badgeTone(n)} size={narrow ? 'sm' : undefined}>
-                  {n.note ?? n.badge}
-                </Badge>
+                <Tag n={n} size={narrow ? 'sm' : undefined} />
               </span>
             </button>
           ))}
@@ -169,7 +175,7 @@ export const LayoutHeader: React.FC<{
               <div key={n.label}>
                 <dt className="flex items-center gap-1.5 font-medium text-ink-1">
                   {n.label}: <span className="font-mono tabular-nums font-normal">{n.value}</span>
-                  <Badge tone={badgeTone(n)}>{n.note ?? n.badge}</Badge>
+                  <Tag n={n} />
                 </dt>
                 <dd className="mt-0.5 leading-snug text-ink-3">{n.hint}</dd>
               </div>

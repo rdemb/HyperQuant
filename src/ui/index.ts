@@ -2,6 +2,7 @@ export { Panel } from './Panel';
 export { Stat } from './Stat';
 export { Badge } from './Badge';
 export type { BadgeTone } from './Badge';
+export { sourceTag } from './sourceTag';
 export { Segmented } from './Segmented';
 export { AnimatedNumber } from './AnimatedNumber';
 export { Sparkline } from './Sparkline';

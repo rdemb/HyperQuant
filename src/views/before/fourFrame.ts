@@ -7,8 +7,8 @@ import { tr, locale } from '../../i18n';
 import { type FrameRatio, drawBadge, numberText, wrapLines } from '../../charts/pro/chart/frame';
 import { SANS } from '../../charts/pro/chart/screenshot';
 import { PRO } from '../../charts/pro/chart/theme';
-import type { BadgeTone } from '../../ui/Badge';
 import { DASH } from '../../ui/format';
+import { sourceTag } from '../../ui/sourceTag';
 import type { FourNumber, FourNumbers } from '../../utils/fourNumbers';
 
 /** Rozmiar karty (px) bliski proporcji miejsca na obraz w kadrze, `cols` — kafle w rzędzie. */
@@ -21,9 +21,6 @@ const SURFACE_1 = '#0b1019';
 const LINE = '#1b2533';
 const HEAD_H = 52;
 const PAD = 22;
-
-/** Ton plakietki kafla (jak na karcie): brak liczby — neutralny, wiek migawki albo „tylko BTC” — nieaktualny. */
-export const fourTone = (n: FourNumber): BadgeTone => (n.value === DASH ? 'neutral' : n.note ? 'stale' : n.badge === 'LIVE' ? 'live' : 'model');
 
 function drawTile(ctx: CanvasRenderingContext2D, n: FourNumber, x: number, y: number, w: number, h: number): void {
   const measure = (s: string) => ctx.measureText(s).width;
@@ -42,9 +39,10 @@ function drawTile(ctx: CanvasRenderingContext2D, n: FourNumber, x: number, y: nu
     cy += 27;
   }
   cy += 4;
-  // Plakietka (wiek migawki albo „tylko BTC” zamiast niej), „luka” obok
-  const bw = drawBadge(ctx, n.note ?? n.badge, x + PAD, cy + 11, 12, fourTone(n));
-  if (n.flag) drawBadge(ctx, n.flag, x + PAD + bw + 8, cy + 11, 12, 'stale');
+  // Plakietka jak na karcie (wiek migawki albo „tylko BTC” zamiast niej, „—” bez plakietki źródła), „luka” obok
+  const tag = sourceTag(n);
+  const bw = tag ? drawBadge(ctx, tag.text, x + PAD, cy + 11, 12, tag.tone) + 8 : 0;
+  if (n.flag) drawBadge(ctx, n.flag, x + PAD + bw, cy + 11, 12, 'stale');
   cy += 34;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
