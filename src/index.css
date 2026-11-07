@@ -53,6 +53,8 @@
   --color-of-heat-3: #eff6fd;
   /* Poziomy mapy z bloga (turkus z palety kategorii, na wykresie ceny tylko tutaj) */
   --color-of-blog: #059583;
+  /* Initial balance sesji (zieleń spoza kolorów stron, VWAP, POC i poziomów) */
+  --color-of-ib: #56db8f;
 
   --font-display: 'Outfit', sans-serif;
   --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
