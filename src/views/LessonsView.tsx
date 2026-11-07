@@ -9,6 +9,7 @@ import { Atlas } from './lessons/Atlas';
 import { Combine } from './lessons/Combine';
 import { ExerciseList, ExercisePlayer } from './lessons/Exercises';
 import { Myths } from './lessons/Myths';
+import { FolkloreLabPanel } from './lessons/FolkloreLabPanel';
 import { RiskLab } from './lessons/RiskLab';
 
 /** Treść w języku interfejsu (język jest stały przez cały czas życia strony). */
@@ -99,7 +100,14 @@ const LessonsView: React.FC = () => {
         ))}
       {route.tab === 'atlas' && <Atlas c={c} open={route.id} onOpen={(id) => setRoute({ tab: 'atlas', id })} />}
       {route.tab === 'combine' && <Combine c={c} />}
-      {route.tab === 'myths' && <Myths c={c} />}
+      {route.tab === 'myths' && (
+        <>
+          <Myths c={c} />
+          <div id="folklore-lab" className="mt-4 scroll-mt-24">
+            <FolkloreLabPanel />
+          </div>
+        </>
+      )}
       {route.tab === 'risk' && <RiskLab c={c} />}
     </div>
   );

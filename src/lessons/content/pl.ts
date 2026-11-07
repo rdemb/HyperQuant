@@ -49,7 +49,7 @@ export const pl: LessonsContent = {
       few: 'Za mało zdarzeń na werdykt.',
     },
     labShort: { support: 'wspiera', against: 'przeczy', none: 'brak dowodu', few: 'za mało danych' },
-    labOpen: 'Pełne wyniki w Analizatorze planu',
+    labOpen: 'Pełne wyniki w Laboratorium folkloru (Lekcje, Mity)',
     loading: 'Wczytuję wycinek rynku…',
     loadError: 'Nie udało się wczytać danych ćwiczenia. Odśwież stronę.',
     dataNote: 'Dane: świece Hyperliquid z archiwum desku; delta, open interest i footprint z taśmy nagrywanej przez desk; likwidacje z taśmy likwidacji desku.',
@@ -743,7 +743,7 @@ export const pl: LessonsContent = {
       { title: 'Ryzyko na transakcję decyduje o przetrwaniu', text: 'Ta sama przewaga przy 1% ryzyka daje gładką ścieżkę, a przy 5% głębokie obsunięcia. Po stracie 50% potrzebujesz 100% zysku, żeby wrócić.' },
       { title: 'Bez przewagi koszty zjadają kapitał', text: 'Przy oczekiwanym wyniku 0 R przed kosztami (moneta) opłaty i poślizg sprawiają, że mediana kapitału spada. Przewagę wykaże tylko uczciwy dziennik, a nie kilka udanych transakcji.' },
     ],
-    sizeLink: 'Kalkulator wielkości pozycji: zakładka Mikrostruktura',
-    planLink: 'Wpisz konkretny plan w Analizatorze planu',
+    sizeLink: 'Kalkulator wielkości pozycji: ekran Badania',
+    planLink: 'Sprawdź regułę na historii w Laboratorium folkloru (Lekcje, Mity)',
   },
 };

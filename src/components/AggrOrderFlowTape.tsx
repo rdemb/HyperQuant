@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Flame, Layers, ShieldAlert, Zap } from 'lucide-react';
+import { Flame, Layers, ShieldAlert } from 'lucide-react';
 import { Badge, fmtFixed, fmtNum, fmtPrice } from '../ui';
 import { useDesk } from '../state/DeskContext';
 import { useMicroMechanics } from '../state/useMicroMechanics';
@@ -19,11 +19,6 @@ interface AggrOrderFlowTapeProps {
   latestBar: OHLCVBar;
   ofiSummary: OFIMomentumSummary;
   currentPrice: number;
-  onTriggerExhaustionSignal?: (
-    dir: 'LONG' | 'SHORT',
-    title: string,
-    reason: string
-  ) => void;
 }
 
 const EXCHANGE_BADGE: Record<
@@ -230,7 +225,6 @@ export const AggrOrderFlowTape: React.FC<AggrOrderFlowTapeProps> = ({
   latestBar,
   ofiSummary,
   currentPrice,
-  onTriggerExhaustionSignal,
 }) => {
   const [viewMode, setViewMode] = useState<'dom_ofi' | 'tape' | 'venues'>(
     'dom_ofi'
@@ -289,19 +283,6 @@ export const AggrOrderFlowTape: React.FC<AggrOrderFlowTapeProps> = ({
       : ofiSummary.exhaustionBias === 'BEARISH_EXHAUSTION_BOTTOM_REVERSAL'
       ? 'LONG'
       : null;
-
-  const handleFireExhaustionTrade = () => {
-    if (!onTriggerExhaustionSignal || !exhaustionDir) return;
-    const dir = exhaustionDir;
-    const px = ofiSummary.dominantExhaustionTick ?? currentPrice;
-    onTriggerExhaustionSignal(
-      dir,
-      dir === 'SHORT'
-        ? `HYPERLIQUID OFI EXHAUSTION SHORT // ASK ABSORPTION @ $${fmtPrice(px, 1)}`
-        : `HYPERLIQUID OFI EXHAUSTION LONG // BID ABSORPTION @ $${fmtPrice(px, 1)}`,
-      ofiSummary.exhaustionNote
-    );
-  };
 
   return (
     <div className="flex flex-col h-full bg-surface-1 border border-line rounded-xl overflow-hidden">
@@ -454,27 +435,6 @@ export const AggrOrderFlowTape: React.FC<AggrOrderFlowTapeProps> = ({
                     </p>
                   )}
                 </div>
-                {onTriggerExhaustionSignal && (
-                  <button
-                    type="button"
-                    onClick={handleFireExhaustionTrade}
-                    disabled={!exhaustionDir}
-                    aria-label={
-                      exhaustionDir
-                        ? tr(`Przekaż scenariusz ${exhaustionDir} do Analizatora planu`, `Send the ${exhaustionDir} scenario to the Plan Analyzer`)
-                        : tr('Brak wyczerpania — brak scenariusza do oceny', 'No exhaustion, no scenario to assess')
-                    }
-                    title={
-                      exhaustionDir
-                        ? tr(`Ręczny scenariusz ${exhaustionDir} → Analizator planu`, `Manual ${exhaustionDir} scenario → Plan Analyzer`)
-                        : tr('Brak wyczerpania — brak kierunku odwrócenia', 'No exhaustion, no reversal direction')
-                    }
-                    className="min-h-11 lg:min-h-8 px-2.5 text-[11px] font-medium text-ink-1 bg-surface-3 hover:bg-line-strong border border-line-strong rounded-lg flex items-center gap-1 shrink-0 transition-colors duration-150 disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    <Zap className="w-3 h-3 text-level" aria-hidden="true" />
-                    <span>{tr('Do planu', 'To plan')}</span>
-                  </button>
-                )}
               </div>
             )}
 

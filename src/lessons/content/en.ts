@@ -57,7 +57,7 @@ export const en: LessonsContent = {
       few: 'Too few events for a verdict.',
     },
     labShort: { support: 'supports', against: 'contradicts', none: 'no evidence', few: 'too little data' },
-    labOpen: 'Full results in the Plan Analyzer',
+    labOpen: 'Full results in the Folklore Lab (Lessons, Myths)',
     loading: 'Loading the market slice…',
     loadError: 'Could not load the exercise data. Refresh the page.',
     dataNote: "Data: Hyperliquid candles from the desk archive; delta, open interest and footprint from the tape recorded by the desk; liquidations from the desk's liquidation tape.",
@@ -751,7 +751,7 @@ export const en: LessonsContent = {
       { title: 'Risk per trade decides survival', text: 'The same edge gives a smooth path at 1% risk and deep drawdowns at 5%. After losing 50% you need a 100% gain to get back.' },
       { title: 'Without an edge, costs eat your capital', text: 'With an expected result of 0 R before costs (a coin flip), fees and slippage push median equity down. Only an honest journal can show an edge, not a few winning trades.' },
     ],
-    sizeLink: 'Position size calculator: Microstructure tab',
-    planLink: 'Enter a concrete plan in the Plan Analyzer',
+    sizeLink: 'Position size calculator: Research screen',
+    planLink: 'Test a rule on history in the Folklore Lab (Lessons, Myths)',
   },
 };

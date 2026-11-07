@@ -3,6 +3,7 @@ import { CexSettings } from './sources/CexSettings';
 import { LineageTable } from './sources/LineageTable';
 import { Attributions } from './sources/Attributions';
 import { AggrTemplateCard } from './sources/AggrTemplateCard';
+import { LegacyPlanDataCard } from './sources/LegacyPlanDataCard';
 import { tr } from '../i18n';
 
 /**
@@ -16,6 +17,7 @@ const SourcesView: React.FC = () => (
         <CexSettings />
         <Attributions />
         <AggrTemplateCard />
+        <LegacyPlanDataCard />
       </div>
       <div className="lg:col-span-8 lg:order-1 min-w-0">
         <LineageTable />
