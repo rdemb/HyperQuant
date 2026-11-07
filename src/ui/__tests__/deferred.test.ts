@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { deferred, radioStep } from '../deferred';
+import { debouncedRadio, deferred, radioStep } from '../deferred';
 
 describe('przełącznik zestawu paneli: strzałki', () => {
   beforeEach(() => vi.useFakeTimers());
@@ -43,7 +43,67 @@ describe('przełącznik zestawu paneli: strzałki', () => {
   it('PanelSetSwitch: fokus idzie za zaznaczonym radio, strzałki zatwierdzane z opóźnieniem', () => {
     const src = readFileSync('src/charts/pro/chart/TabsBar.tsx', 'utf8');
     const body = src.slice(src.indexOf('export const PanelSetSwitch'));
-    expect(body).toMatch(/deferred</);
+    expect(body).toMatch(/debouncedRadio\(/);
     expect(body).toMatch(/\.focus\(\)/);
+  });
+});
+
+describe('PanelSetSwitch: zachowanie przełącznika (debouncedRadio)', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+  const IDS = ['auction', 'absorption'];
+  const make = () => {
+    const focus = vi.fn();
+    const change = vi.fn();
+    const setPending = vi.fn();
+    return { focus, change, setPending, r: debouncedRadio(350, { focus, change, setPending }) };
+  };
+
+  it('strzałka: zaznaczenie i fokus od razu na nowym radio, jedno onChange dopiero po przerwie', () => {
+    const { focus, change, setPending, r } = make();
+    expect(r.key('ArrowRight', IDS, 'auction')).toBe(true);
+    expect(focus).toHaveBeenLastCalledWith('absorption');
+    expect(setPending).toHaveBeenLastCalledWith('absorption');
+    vi.advanceTimersByTime(349);
+    expect(change).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(change).toHaveBeenCalledTimes(1);
+    expect(change).toHaveBeenCalledWith('absorption');
+    expect(setPending).toHaveBeenLastCalledWith(null);
+  });
+
+  it('powtarzane strzałki: fokus za każdą, jedno onChange z ostatnim wyborem; powrót na bieżący — bez onChange', () => {
+    const { focus, change, r } = make();
+    r.key('ArrowRight', IDS, 'auction');
+    vi.advanceTimersByTime(100);
+    r.key('ArrowRight', IDS, 'auction');
+    vi.advanceTimersByTime(100);
+    r.key('ArrowRight', IDS, 'auction');
+    expect(focus.mock.calls.map((c) => c[0])).toEqual(['absorption', 'auction', 'absorption']);
+    vi.advanceTimersByTime(350);
+    expect(change.mock.calls).toEqual([['absorption']]);
+    // Tam i z powrotem: zaznaczenie wraca na bieżący zestaw, wykresy się nie przebudowują
+    r.key('ArrowLeft', IDS, 'absorption');
+    r.key('ArrowRight', IDS, 'absorption');
+    vi.advanceTimersByTime(1000);
+    expect(change).toHaveBeenCalledTimes(1);
+  });
+
+  it('kliknięcie zatwierdza od razu i porzuca oczekującą strzałkę; kliknięcie bieżącego — nic', () => {
+    const { change, r } = make();
+    r.key('ArrowRight', IDS, 'auction');
+    r.click('absorption', 'auction');
+    expect(change.mock.calls).toEqual([['absorption']]);
+    vi.advanceTimersByTime(1000);
+    expect(change).toHaveBeenCalledTimes(1);
+    r.click('auction', 'auction');
+    expect(change).toHaveBeenCalledTimes(1);
+  });
+
+  it('inny klawisz — nieobsłużony, bez fokusu i bez zmiany', () => {
+    const { focus, change, r } = make();
+    expect(r.key('Enter', IDS, 'auction')).toBe(false);
+    vi.advanceTimersByTime(1000);
+    expect([focus.mock.calls.length, change.mock.calls.length]).toEqual([0, 0]);
   });
 });
