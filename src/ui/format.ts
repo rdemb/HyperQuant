@@ -11,9 +11,24 @@ const isNum = (v: number | null | undefined): v is number => typeof v === 'numbe
  */
 export const numLang = (s: string): string => (lang === 'en' ? s : s.replace(/,/g, '\u00a0').replace(/\./g, ','));
 
+/**
+ * Formattery Intl według liczby miejsc po przecinku, tworzone raz. `toLocaleString` z opcjami buduje nowy formatter
+ * przy każdym wywołaniu (~50 × wolniej), a warstwy wykresu formatują każdy podpis przy każdym odświeżeniu.
+ */
+const enFormats = new Map<number, Intl.NumberFormat>();
+
+/** Zapis angielski (80,768.5) ze stałą liczbą miejsc po przecinku — to samo co `v.toLocaleString('en-US', …)`. */
+export function fmtFixedEn(v: number, digits: number): string {
+  let f = enFormats.get(digits);
+  if (!f) {
+    f = new Intl.NumberFormat('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits });
+    enFormats.set(digits, f);
+  }
+  return f.format(v);
+}
+
 /** Stała liczba miejsc po przecinku w zapisie języka strony (separator tysięcy, po polsku przecinek dziesiętny), ujemna ze znakiem „−”. */
-export const fmtFixed = (v: number, digits: number): string =>
-  numLang(v.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits })).replace(/^-/, '−');
+export const fmtFixed = (v: number, digits: number): string => numLang(fmtFixedEn(v, digits)).replace(/^-/, '−');
 
 /** Polska forma liczebnika: 1 plan, 2–4 plany, 5 planów (12–14 jak 5, 22–24 jak 2). */
 export const plForm = (n: number, one: string, few: string, many: string): string =>
