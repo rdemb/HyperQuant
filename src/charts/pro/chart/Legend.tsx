@@ -6,7 +6,7 @@ import { Badge, DASH, fmtFixed, numLang } from '../../../ui';
 import { sdUsable } from '../core/indicators';
 import { fmtBarTime, fmtSince, fromDaily } from '../core/time';
 import type { Hover, IndicatorReadout } from './controller';
-import type { LayerChip } from './layerSources';
+import { type LayerChip, chipsFor } from './layerSources';
 import { fmtPx } from './layout';
 import { tr } from '../../../i18n';
 
@@ -98,12 +98,14 @@ const IndicatorFields: React.FC<{ list: IndicatorReadout[]; onEdit?: (iid: strin
  * Plakietki źródeł włączonych warstw i wskaźników (LIVE, MODEL, SIM, wiek migawki skanera, „—, tylko BTC”) w jednym
  * wierszu; podpowiedź mówi, skąd są dane.
  */
-const Chips: React.FC<{ list: readonly LayerChip[]; nowrap?: boolean }> = ({ list, nowrap = false }) => (
-  <div className={`flex items-center gap-x-2 gap-y-0.5 font-sans text-[10.5px] ${nowrap ? 'whitespace-nowrap overflow-hidden' : 'flex-wrap'}`}>
+const Chips: React.FC<{ list: readonly LayerChip[]; small?: boolean }> = ({ list, small = false }) => (
+  <div className={`flex flex-wrap items-center gap-x-2 gap-y-0.5 font-sans ${small ? 'text-[10px]' : 'text-[10.5px]'}`}>
     {list.map((c) => (
       <span key={c.key} className="pointer-events-auto inline-flex items-center gap-1" title={c.hint}>
         <span className="text-ink-3">{c.label}</span>
-        <Badge tone={c.tone}>{c.text}</Badge>
+        <Badge tone={c.tone} size={small ? 'sm' : undefined}>
+          {c.text}
+        </Badge>
       </span>
     ))}
   </div>
@@ -130,7 +132,8 @@ const Field: React.FC<{ label: string; children: React.ReactNode; className?: st
  * `compact` (telefon): jedna linia — zamknięcie, zmiana, wolumen i VWAP; czas świecy tylko pod palcem, rynek i interwał są w pasku.
  * `multi` — wykres w układzie kilku wykresów (osobny stan zwinięcia legendy).
  * `onEditIndicator` — kliknięty podpis wskaźnika na wykresie ceny (okno jego ustawień).
- * `chips` — plakietki źródeł włączonych warstw i wskaźników (wiersz pod liczbami; w zwiniętej legendzie ukryte).
+ * `chips` — plakietki źródeł włączonych warstw i wskaźników: wiersz pod liczbami; zwinięta legenda pokazuje tylko nie-LIVE
+ * (MODEL, SIM, wiek migawki, „—, tylko BTC”), telefon — nie-LIVE najpierw, z zawijaniem (nic nie jest ucięte).
  */
 export const Legend: React.FC<{
   signal: HoverSignal;
@@ -206,7 +209,7 @@ export const Legend: React.FC<{
             </Field>
           </div>
         )}
-        {chips.length > 0 && <Chips list={chips} nowrap />}
+        {chips.length > 0 && <Chips list={chipsFor(chips, 'compact')} small />}
       </div>
     );
   }
@@ -243,8 +246,9 @@ export const Legend: React.FC<{
     </button>
   );
 
-  // Zwinięta: jedna linia bez tła — symbol, interwał, czas świecy spoza bieżącej i OHLC
+  // Zwinięta: jedna linia bez tła — symbol, interwał, czas świecy spoza bieżącej i OHLC; pod nią tylko plakietki nie-LIVE
   if (folded) {
+    const foldedChips = chipsFor(chips, 'folded');
     return (
       <div ref={ref} className="absolute left-2 top-2 z-10 pointer-events-none max-w-[calc(100%-5rem)] rounded-md bg-surface-1/60 px-2 py-0.5 font-mono tabular-nums text-[11px] leading-[1.55] text-ink-2">
         <div className="flex items-baseline gap-x-2 whitespace-nowrap overflow-hidden">
@@ -254,6 +258,7 @@ export const Legend: React.FC<{
           {!h.live && bar && <span className="text-ink-2">{fmtBarTime(bar.t, intervalMs)}</span>}
           {ohlc}
         </div>
+        {foldedChips.length > 0 && <Chips list={foldedChips} small />}
       </div>
     );
   }

@@ -3,7 +3,7 @@ import type { Coverage } from '../core/coverage';
 import { indicatorScope } from '../core/indicators';
 import { fmtHm, fromDaily } from '../core/time';
 import { tpoInterval } from '../core/tpo';
-import { indicatorDef } from '../indicators/registry';
+import { type HqIndicatorId, indicatorDef } from '../indicators/registry';
 import type { ChartSettings } from './settings';
 import { LAYERS_OFF } from './templates';
 import { tr } from '../../../i18n';
@@ -16,8 +16,12 @@ import { tr } from '../../../i18n';
 
 export type LayerSource = 'LIVE' | 'MODEL' | 'SIM';
 
-/** Źródło każdej warstwy `show*` (na wykresie ceny i panele pod nim) i każdego wskaźnika z warstw menu front i second. */
-export const LAYER_SOURCE: Readonly<Record<string, LayerSource>> = {
+/** Każdy przełącznik `show*` ustawień wykresu (warstwy ceny, panele pod nim, taśma, Stan rynku). */
+type ShowKey = Extract<keyof ChartSettings, `show${string}`>;
+/** Klucz plakietki: brak wpisu dla nowej warstwy albo nowego wskaźnika front/second to błąd kompilacji. */
+export type SourceKey = ShowKey | HqIndicatorId;
+
+const SOURCES = {
   // Warstwy na wykresie ceny
   showVwap: 'LIVE',
   showVwapBands: 'LIVE',
@@ -46,6 +50,9 @@ export const LAYER_SOURCE: Readonly<Record<string, LayerSource>> = {
   showVenueCvd: 'LIVE',
   showVenueOi: 'LIVE',
   showStats: 'LIVE',
+  // Taśma obok wykresu i Stan rynku (zdanie ze stałych reguł na tych samych danych)
+  showTape: 'LIVE',
+  showState: 'LIVE',
   // Wskaźniki „Tylko w HyperQuant”
   oiflow: 'LIVE',
   // Ruch ceny wobec zwykłego przy takiej delcie (regresja z ostatnich świec)
@@ -65,7 +72,71 @@ export const LAYER_SOURCE: Readonly<Record<string, LayerSource>> = {
   hawkes: 'MODEL',
   // Wejścia metody Nilla i ich wynik na historii
   pbrange: 'SIM',
+} as const satisfies Record<SourceKey, LayerSource>;
+
+/** Źródło każdej warstwy `show*` (na wykresie ceny i panele pod nim) i każdego wskaźnika z warstw menu front i second. */
+export const LAYER_SOURCE: Readonly<Record<string, LayerSource>> = SOURCES;
+
+/** Klucze z wynikiem modelu albo symulacji: każdy ma metodę w podpowiedzi plakietki (brak to błąd kompilacji). */
+type ModelKey = { [K in keyof typeof SOURCES]: (typeof SOURCES)[K] extends 'LIVE' ? never : K }[keyof typeof SOURCES];
+
+/** Podpowiedź plakietki MODEL i SIM: „MODEL · metoda: …”. */
+const METHOD_HINT: Record<ModelKey, string> = {
+  showTpoOi: tr(
+    'MODEL · podział OI według wolumenu: zmiana otwartych pozycji minuty rozłożona na ceny według jej wolumenu, nie odczyt OI na cenie',
+    "MODEL · OI split by volume: a minute's open-interest change spread across prices by its volume, not an OI reading at the price"
+  ),
+  absorption: tr(
+    'MODEL · Theil–Sen: zwykły ruch ceny przy takiej delcie z prostej Theila–Sena na poprzednich świecach, odchylenie w jednostkach MAD',
+    'MODEL · Theil–Sen: the usual price move for such a delta from a Theil–Sen line over previous candles, the deviation in MAD units'
+  ),
+  rvol: tr('MODEL · mediana 20 dni: wolumen wobec mediany tej samej godziny UTC z 20 dni', 'MODEL · 20-day median: volume against the median of the same UTC hour over 20 days'),
+  cone: tr(
+    'MODEL · HAR: przedziały z modelu zmienności log-HAR z FHS, prognozy z dziennika Desku',
+    'MODEL · HAR: intervals from the log-HAR volatility model with FHS, forecasts from the Desk ledger'
+  ),
+  outcomes: tr(
+    'MODEL · HAR: prawdopodobieństwo z modelu zmienności Desku (log-HAR z FHS) obok ceny udziału na rynku HIP-4',
+    'MODEL · HAR: the probability from the Desk volatility model (log-HAR with FHS) next to the share price on the HIP-4 market'
+  ),
+  regime: tr('MODEL · BOCPD: bayesowskie wykrywanie punktów zmiany na zwrotach świec', 'MODEL · BOCPD: Bayesian change-point detection on candle returns'),
+  hawkes: tr('MODEL · Hawkes: proces z jądrem wykładniczym dopasowany metodą największej wiarygodności', 'MODEL · Hawkes: a process with an exponential kernel fitted by maximum likelihood'),
+  pbrange: tr(
+    'SIM · metoda Nilla: strefy P/b i miejsca, w których metoda by weszła (👀), z wynikiem na historii; to nie transakcje',
+    "SIM · Nill's method: P/b zones and places where the method would enter (👀), with their result on history; not trades"
+  ),
 };
+
+/** Tekst brakującej, jeszcze wczytywanej liczby (nagłówek i legenda). */
+export const WAIT_TEXT = tr('Czekam na dane…', 'Waiting for data…');
+
+/** Migawka skanera dla warstwy: chwila stanu albo powód braku — ten sam w nagłówku układu i w legendzie. */
+export type ScanState = { asOf: number } | { why: string };
+
+/** Stan mapy likwidacji (`useLiqMap`): chwila pokazanej mapy albo powód, czemu klastrów nie ma. */
+export function liqScan(liq: { status: string; map: { asOf: number } | null }): ScanState {
+  switch (liq.status) {
+    case 'ready':
+    case 'delayed':
+      return liq.map ? { asOf: liq.map.asOf } : { why: WAIT_TEXT };
+    case 'loading':
+      return { why: WAIT_TEXT };
+    case 'unconfigured':
+      return { why: tr('Mapa likwidacji niedostępna w tej wersji strony', 'Liquidation map unavailable in this version of the site') };
+    case 'error':
+      return { why: tr('Nie udało się pobrać mapy likwidacji', 'Could not load the liquidation map') };
+    default:
+      return { why: tr('Skaner nie publikuje teraz aktualnej mapy — klastry ukryte', 'The scanner is not publishing a current map right now — clusters hidden') };
+  }
+}
+
+/** Stan warstwy wielorybów dla rynku `coin`: chwila aktualnego pliku albo powód (bez adresu danych, nieaktualny plik, brak rynku). */
+export function whalesScan(w: { asOf: number; markets: Readonly<Record<string, unknown>> } | null, coin: string, configured: boolean): ScanState {
+  if (!configured) return { why: tr('Warstwa wielorybów niedostępna w tej wersji strony', 'Whale layer unavailable in this version of the site') };
+  if (!w) return { why: tr('Skaner nie publikuje teraz warstwy wielorybów', 'The scanner is not publishing the whale layer right now') };
+  if (!w.markets[coin]) return { why: tr(`Skaner nie publikuje wielorybów dla ${coin}`, `The scanner publishes no whales for ${coin}`) };
+  return { asOf: w.asOf };
+}
 
 /** Warstwy z migawek skanera (plik z `asOf`): po 2 min wiek zamiast LIVE. */
 const SCANNER = new Set(['showLiq', 'showWhales']);
@@ -104,20 +175,24 @@ export interface LayerBadge {
   hint: string;
 }
 
-/** Plakietka warstwy albo wskaźnika `key` na rynku `coin`; `asOf` — chwila migawki skanera (warstwy skanera). */
-export function layerBadge(key: string, ctx: { coin: string; now: number; asOf?: number | null }): LayerBadge {
+/**
+ * Plakietka warstwy albo wskaźnika `key` na rynku `coin`; `scan` — migawka skanera albo powód jej braku (warstwy skanera).
+ * MODEL i SIM z nazwą metody w podpowiedzi.
+ */
+export function layerBadge(key: string, ctx: { coin: string; now: number; scan?: ScanState }): LayerBadge {
   if (BTC_ONLY.has(key) && ctx.coin !== 'BTC') {
     return { tone: 'neutral', text: tr('—, tylko BTC', '—, BTC only'), hint: tr('Te dane są tylko dla BTC (skaner i dziennik prognoz liczą BTC)', 'This data exists for BTC only (the scanner and the forecast ledger cover BTC)') };
   }
   const src = LAYER_SOURCE[key] ?? 'LIVE';
   if (SCANNER.has(key)) {
-    const asOf = ctx.asOf ?? null;
-    if (asOf === null) return { tone: 'stale', text: '—', hint: tr('Skaner nie publikuje teraz aktualnej migawki tej warstwy', 'The scanner is not publishing a current snapshot of this layer right now') };
-    const age = scannerAge(asOf, ctx.now);
-    if (age) return { tone: 'stale', text: age, hint: tr(`Migawka skanera sprzed ${age} (stan z ${fmtHm(asOf)})`, `Scanner snapshot from ${age} ago (as of ${fmtHm(asOf)})`) };
-    return { tone: 'live', text: 'LIVE', hint: tr(`LIVE: migawka skanera z ${fmtHm(asOf)}`, `LIVE: scanner snapshot as of ${fmtHm(asOf)}`) };
+    const scan = ctx.scan ?? { why: WAIT_TEXT };
+    if ('why' in scan) return { tone: 'stale', text: '—', hint: scan.why };
+    const age = scannerAge(scan.asOf, ctx.now);
+    if (age) return { tone: 'stale', text: age, hint: tr(`Migawka skanera sprzed ${age} (stan z ${fmtHm(scan.asOf)})`, `Scanner snapshot from ${age} ago (as of ${fmtHm(scan.asOf)})`) };
+    return { tone: 'live', text: 'LIVE', hint: tr(`LIVE: migawka skanera z ${fmtHm(scan.asOf)}`, `LIVE: scanner snapshot as of ${fmtHm(scan.asOf)}`) };
   }
-  return { tone: TONE[src], text: src, hint: SOURCE_HINT[src] };
+  const method = (METHOD_HINT as Readonly<Record<string, string>>)[key];
+  return { tone: TONE[src], text: src, hint: method ?? SOURCE_HINT[src] };
 }
 
 /** Krótkie nazwy warstw w legendzie. */
@@ -181,16 +256,16 @@ export interface LayerChip extends LayerBadge {
 
 /**
  * Plakietki legendy: włączone warstwy wykresu ceny rysowane na interwale `intervalMs` (w kolejności warstw) i widoczne
- * wskaźniki z warstw menu front i second (każdy typ raz). `asOf` — chwile migawek skanera warstw skanera.
+ * wskaźniki z warstw menu front i second (każdy typ raz). `scan` — migawki skanera (albo powody braku) warstw skanera.
  */
 export function legendChips(
   s: Pick<ChartSettings, keyof typeof LAYERS_OFF | 'indicators' | 'stackedMin'>,
-  x: { coin: string; now: number; intervalMs: number; asOf: Partial<Record<string, number | null>> }
+  x: { coin: string; now: number; intervalMs: number; scan: Partial<Record<string, ScanState>> }
 ): LayerChip[] {
   const out: LayerChip[] = [];
   for (const key of Object.keys(LAYERS_OFF) as (keyof typeof LAYERS_OFF)[]) {
     if (s[key] !== true || !drawn(s, key, x.intervalMs)) continue;
-    out.push({ key, label: LAYER_LABEL[key], ...layerBadge(key, { coin: x.coin, now: x.now, asOf: x.asOf[key] }) });
+    out.push({ key, label: LAYER_LABEL[key], ...layerBadge(key, { coin: x.coin, now: x.now, scan: x.scan[key] }) });
   }
   const seen = new Set<string>();
   for (const ind of s.indicators) {
@@ -200,4 +275,14 @@ export function legendChips(
     out.push({ key: ind.id, label: def.short, ...layerBadge(ind.id, { coin: x.coin, now: x.now }) });
   }
   return out;
+}
+
+/**
+ * Plakietki do pokazania w danej postaci legendy: pełna — wszystkie; telefon — najpierw nie-LIVE (MODEL, SIM, wiek migawki,
+ * „—, tylko BTC”), potem LIVE; zwinięta — tylko nie-LIVE (to, co odbiega od danych na żywo, widać zawsze).
+ */
+export function chipsFor(chips: readonly LayerChip[], mode: 'full' | 'compact' | 'folded'): LayerChip[] {
+  const other = chips.filter((c) => c.tone !== 'live');
+  if (mode === 'folded') return other;
+  return mode === 'compact' ? [...other, ...chips.filter((c) => c.tone === 'live')] : [...chips];
 }

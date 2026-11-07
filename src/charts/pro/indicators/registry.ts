@@ -1983,10 +1983,16 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
 /** Wskaźniki usunięte z rejestru (przybliżenia wolumenu); zapis z którymś z nich uruchamia jednorazową informację. */
 export const REMOVED_INDICATORS: readonly string[] = ['obv', 'cmf', 'mfi', 'netvol'];
 
+/** Wskaźniki „Tylko w HyperQuant” (front) i „Więcej z HyperQuant” (second) w kolejności menu. */
+const FRONT_IDS = ['oiflow', 'absorption', 'breadth', 'repeat', 'makers', 'twap', 'slippage', 'rvol', 'ofi', 'ordersize'] as const satisfies readonly IndicatorId[];
+const SECOND_IDS = ['cone', 'outcomes', 'regime', 'hawkes', 'pbrange'] as const satisfies readonly IndicatorId[];
+/** Identyfikator wskaźnika z warstw menu front i second (plakietki źródeł: każdy musi mieć źródło). */
+export type HqIndicatorId = (typeof FRONT_IDS)[number] | (typeof SECOND_IDS)[number];
+
 /** Kolejność wskaźników w warstwach menu (poza `search`, który zostaje w kolejności rejestru). */
 const TIER_IDS: Record<Exclude<IndicatorTier, 'search'>, readonly IndicatorId[]> = {
-  front: ['oiflow', 'absorption', 'breadth', 'repeat', 'makers', 'twap', 'slippage', 'rvol', 'ofi', 'ordersize'],
-  second: ['cone', 'outcomes', 'regime', 'hawkes', 'pbrange'],
+  front: FRONT_IDS,
+  second: SECOND_IDS,
   classic: ['ema', 'sma', 'vwma', 'atr', 'bb', 'keltner', 'pivots'],
 };
 const tierOf = (id: IndicatorId): IndicatorTier => (['front', 'second', 'classic'] as const).find((t) => TIER_IDS[t].includes(id)) ?? 'search';
