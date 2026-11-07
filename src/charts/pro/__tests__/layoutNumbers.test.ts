@@ -162,24 +162,31 @@ describe('nagłówek układu: trzy liczby', () => {
     ]);
   });
 
-  it('Rozliczenie: typ dnia (MODEL · Dalton), migracja VA, zakres wobec oczekiwanego (MODEL), z oznaczeniem „w toku”', () => {
+  it('Rozliczenie: typ dnia (MODEL · Dalton), migracja VA, poziomy mapy dotknięte (LIVE), z oznaczeniem „w toku”', () => {
     const review = { s: NY, inProgress: true, ibHi: 100_300, ibLo: 100_000, ibDone: true, hi: 100_700, lo: 100_000, close: 100_650, va: { vah: 100_600, val: 100_350 }, prevVa: { vah: 100_200, val: 99_800 } };
-    const n = layoutNumbers('review', { coin: 'BTC', now: NOW, review, reviewExpected: { usd: 875, method: 'har' } });
-    expect(n.map((x) => [x.label, x.value, x.badge])).toEqual([
-      ['Typ dnia · NY w toku', 'trendowy', 'MODEL'],
-      ['Migracja VA', 'wyżej', 'LIVE'],
-      ['Zakres / oczekiwany', '80%', 'MODEL'],
+    const pub = at(2026, 11, 3, 7, 5);
+    const mapHits = { kind: 'dzien' as const, publishedAt: pub, touched: 3, total: 9, complete: true, from: pub, to: NY.end };
+    const n = layoutNumbers('review', { coin: 'BTC', now: NOW, review, mapHits });
+    expect(n.map((x) => [x.label, x.value, x.badge, x.note ?? null])).toEqual([
+      ['Typ dnia · NY w toku', 'trendowy', 'MODEL', null],
+      ['Migracja VA', 'wyżej', 'LIVE', null],
+      ['Mapa: dotknięte', '3/9', 'LIVE', null],
     ]);
     expect(n[0].hint).toMatch(/^MODEL · Dalton/);
-    expect(n[2].hint).toMatch(/^MODEL · HAR/);
+    expect(n[2].hint).toMatch(/^Poziomy dotknięte 3\/9: Mapa dnia /);
     // Telefon: krótsze podpisy, „w toku” zostaje
-    expect(n.map((x) => x.short)).toEqual(['NY w toku', 'VA', 'Budżet']);
+    expect(n.map((x) => x.short)).toEqual(['NY w toku', 'VA', 'Mapa']);
     expect(layoutNumbers('review', { coin: 'BTC', now: NOW, review: { ...review, inProgress: false, prevVa: null } })[1].value).toBe('—');
-    // Zamknięta sesja bez modelu HAR: oczekiwanie Parkinsona sprzed otwarcia sesji, opisane w podpowiedzi
-    const closed = layoutNumbers('review', { coin: 'BTC', now: NOW, review: { ...review, inProgress: false }, reviewExpected: { usd: 1_400, method: 'parkinson' } });
+    const closed = layoutNumbers('review', { coin: 'BTC', now: NOW, review: { ...review, inProgress: false }, mapHits });
     expect(closed[0].label).toBe('Typ dnia · NY');
-    expect(closed[2]).toMatchObject({ value: '50%', badge: 'MODEL' });
-    expect(closed[2].hint).toMatch(/^MODEL · Parkinson: .*doby przed otwarciem sesji/);
+    // Luka w świecach 1m: liczba dotkniętych zostaje, reszta nierozliczona — uwaga zamiast plakietki
+    const gap = layoutNumbers('review', { coin: 'BTC', now: NOW, review, mapHits: { ...mapHits, complete: false } })[2];
+    expect(gap).toMatchObject({ value: '3/9', note: 'luka' });
+    expect(gap.hint).toContain('reszta nierozliczona: luka w świecach 1m');
+    // Bez mapy: „—” z powodem
+    expect(layoutNumbers('review', { coin: 'BTC', now: NOW, review, mapHits: { why: 'Brak map z bloga' } })[2]).toMatchObject({ value: '—', hint: 'Brak map z bloga' });
+    // Inny rynek: mapy z bloga opisują BTC
+    expect(layoutNumbers('review', { coin: 'ETH', now: NOW, review, mapHits })[2]).toMatchObject({ value: '—', note: 'tylko BTC' });
   });
 });
 

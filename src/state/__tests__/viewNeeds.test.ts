@@ -15,7 +15,7 @@ describe('czego widok potrzebuje przed renderem', () => {
     expect(VIEWS.filter((v) => awaitingBars(v, 500))).toEqual([]);
   });
 
-  it('model zmienności (ok. 1,3 MB świec) Przed sesją, W sesji (budżet zakresu w nagłówku) i w Badaniach', () => {
-    expect(VIEWS.filter(needsVolModel)).toEqual(['before', 'charts', 'research']);
+  it('model zmienności (ok. 1,3 MB świec) Przed sesją, W sesji (budżet zakresu w nagłówku), Po sesji (oczekiwany zakres w Rozliczeniu) i w Badaniach', () => {
+    expect(VIEWS.filter(needsVolModel)).toEqual(['before', 'charts', 'after', 'research']);
   });
 });

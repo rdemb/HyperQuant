@@ -5,15 +5,17 @@ import type { PhaseId } from '../charts/pro/chart/stations';
 import ChartsView from './ChartsView';
 import { DeskLedgerPanel } from './after/DeskLedgerPanel';
 import { JournalTab } from './after/JournalTab';
+import { SessionReview } from './after/SessionReview';
 
 /**
- * Ekran „Po sesji”: wykres z układem przeglądu (`review`), niżej „Dziennik prognoz” (weryfikowalny dziennik Desku)
- * i „Dziennik transakcji” (zagrania zapisane przez użytkownika). Miejsce na Rozliczenie doby (etap 1b) to
- * `<section id="rozliczenie">`, którego w 1a jeszcze nie renderujemy.
+ * Ekran „Po sesji”: wykres z układem przeglądu (`review`), pod nim Rozliczenie sesji (`#rozliczenie`: ostatnia zamknięta
+ * sesja Londynu i NY oraz sesja w toku), niżej „Dziennik prognoz” (weryfikowalny dziennik Desku) i „Dziennik transakcji”
+ * (zagrania zapisane przez użytkownika).
  */
 const AfterView: React.FC<{ onPhase?: (phase: PhaseId) => void }> = ({ onPhase }) => (
   <div className="flex flex-col gap-4">
     <ChartsView phase="after" onPhase={onPhase} />
+    <SessionReview />
     <LedgerSection />
     <section aria-labelledby="po-dziennik-transakcji" className="flex flex-col gap-2">
       <h2 id="po-dziennik-transakcji" className="text-sm font-semibold text-ink-1">

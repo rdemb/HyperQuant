@@ -9,9 +9,10 @@ const NEEDS_BARS: readonly ViewId[] = ['research'];
 
 /**
  * Widoki z modelem zmienności (ok. 1,3 MB świec): pas MC i mapa likwidacji Przed sesją, budżet zakresu sesji
- * w nagłówku W sesji, Model vs rynek (HIP-4) w Badaniach. Pozostałe go nie pobierają.
+ * w nagłówku W sesji, oczekiwany zakres sesji w Rozliczeniu Po sesji (ta sama metoda HAR co budżet na żywo), Model vs rynek
+ * (HIP-4) w Badaniach. Pozostałe go nie pobierają.
  */
-const VOL_VIEWS: readonly ViewId[] = ['before', 'charts', 'research'];
+const VOL_VIEWS: readonly ViewId[] = ['before', 'charts', 'after', 'research'];
 
 /** Czy widok czeka na pierwsze świece (`bars` — liczba świec desku). */
 export const awaitingBars = (view: ViewId, bars: number): boolean => bars === 0 && NEEDS_BARS.includes(view);

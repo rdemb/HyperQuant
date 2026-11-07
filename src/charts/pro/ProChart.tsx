@@ -282,9 +282,10 @@ export const ProChart: React.FC<{
   const whalePub = usePublished('whales.json', isWhaleLayer);
   // Wieloryby i mapa likwidacji to stan na teraz — w powtórce ich nie ma
   const whales = !inReplay && whalePub.value && Date.now() - whalePub.value.asOf < WHALES_STALE_MS ? whalePub.value : null;
-  // Mapy z bloga (plik bloga z tej samej domeny) tylko z włączoną warstwą na BTC; rozliczenie poziomów w układzie Rozliczenie
-  const blogMaps = useBlogMaps(settings.showBlogMap && settings.coin === 'BTC');
+  // Mapy z bloga (plik bloga z tej samej domeny) tylko z włączoną warstwą na BTC albo dla liczby „Mapa: dotknięte” w nagłówku
+  // Rozliczenia; rozliczenie poziomów w układzie Rozliczenie
   const blogSettle = station.id === 'review';
+  const blogMaps = useBlogMaps((settings.showBlogMap || (layoutHeader && blogSettle && !inReplay)) && settings.coin === 'BTC');
   useStoreVersion(store, 400);
 
   const update = useCallback((patch: Partial<ChartSettings>) => setSettings((s) => ({ ...s, ...patch })), []);
@@ -838,6 +839,8 @@ export const ProChart: React.FC<{
           liq={liq}
           whales={whales}
           whalesConfigured={whalePub.configured}
+          blogMaps={blogMaps}
+          blogMap={pickMap(blogMaps.maps, store.serverNow(), settings.blogMapId)}
           narrow={narrow}
         />
       )}

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { mapKind } from '../../../scripts/blog/build.mjs';
-import { mapWindow, settleLevels } from '../mapSettlement';
+import { mapWindow, minutesCovered, settleLevels, settleRange } from '../mapSettlement';
 import { tradeSessionOn } from '../sessionDay';
 import type { VBar } from '../auction';
 
@@ -32,6 +32,50 @@ describe('settleLevels', () => {
   it('świece niekolejne i z nieskończonością nie psują wyniku', () => {
     const bars = [bar(3, 100, 100), bar(1, 100, 100), { ...bar(0, 100, 100), low: NaN }];
     expect(settleLevels(levels, bars, T0, T0 + 10 * MIN)[0].touchedAt).toBe(T0 + MIN);
+  });
+});
+
+describe('settleRange: wspólna uczciwa reguła wykresu i Rozliczenia doby', () => {
+  const levels = [
+    { label: 'A', price: 100 },
+    { label: 'B', price: 150 },
+  ];
+  /** Minuty od T0 przez `n` minut w zakresie 90–101 (A dotknięty w pierwszej). */
+  const run = (n: number, from = T0) => Array.from({ length: n }, (_, i): VBar => ({ time: from + i * MIN, open: 90, high: 101, low: 90, close: 95, volume: 1 }));
+
+  it('świece każdej pełnej minuty do min(now, to): pełne rozliczenie; bieżąca niepełna minuta nie jest wymagana', () => {
+    const r = settleRange(levels, run(30), T0, T0 + 60 * MIN, T0 + 29 * MIN + 20_000);
+    expect(r).toEqual({ levels: [{ label: 'A', price: 100, touchedAt: T0 }, { label: 'B', price: 150, touchedAt: null }], complete: true });
+  });
+
+  it('luka w środku albo świece kończące się przed chwilą: dotknięcia znalezione zostają, rozliczenie niepełne', () => {
+    const gap = run(30).filter((b) => b.time < T0 + 10 * MIN || b.time >= T0 + 12 * MIN);
+    expect(settleRange(levels, gap, T0, T0 + 60 * MIN, T0 + 29 * MIN + 20_000)).toMatchObject({ complete: false, levels: [{ touchedAt: T0 }, { touchedAt: null }] });
+    expect(settleRange(levels, run(10), T0, T0 + 60 * MIN, T0 + 29 * MIN)?.complete).toBe(false);
+  });
+
+  it('początek okresu w środku minuty (wpis o 09:00:20): pierwsza potrzebna świeca to 09:01; świece niesięgające jej — null', () => {
+    const from = T0 + 20_000;
+    expect(settleRange(levels, run(29, T0 + MIN), from, T0 + 60 * MIN, T0 + 30 * MIN)?.complete).toBe(true);
+    // Świeca 09:00 zaczęła się przed wpisem: dotknięcie w niej się nie liczy
+    expect(settleRange(levels, run(30), from, T0 + 60 * MIN, T0 + 30 * MIN)?.levels[0].touchedAt).toBe(T0 + MIN);
+    expect(settleRange(levels, run(29, T0 + 2 * MIN), from, T0 + 60 * MIN, T0 + 30 * MIN)).toBeNull();
+    expect(settleRange(levels, [], from, T0 + 60 * MIN, T0 + 30 * MIN)).toBeNull();
+  });
+
+  it('świece po chwili `now` (powtórka) i po końcu okresu się nie liczą', () => {
+    const late = run(30).map((b) => (b.time === T0 + 20 * MIN ? { ...b, high: 160 } : b));
+    expect(settleRange(levels, late, T0, T0 + 60 * MIN, T0 + 15 * MIN)?.levels[1].touchedAt).toBeNull();
+    expect(settleRange(levels, late, T0, T0 + 20 * MIN, T0 + 30 * MIN)?.levels[1].touchedAt).toBeNull();
+    expect(settleRange(levels, late, T0, T0 + 21 * MIN, T0 + 30 * MIN)?.levels[1].touchedAt).toBe(T0 + 20 * MIN);
+  });
+
+  it('minutesCovered: każda minuta od start do last włącznie', () => {
+    expect(minutesCovered(run(5), T0, T0 + 4 * MIN)).toBe(true);
+    expect(minutesCovered(run(5), T0, T0 + 5 * MIN)).toBe(false);
+    expect(minutesCovered(run(5).filter((b) => b.time !== T0 + 2 * MIN), T0, T0 + 4 * MIN)).toBe(false);
+    // Pusty przedział (last przed start) jest pokryty
+    expect(minutesCovered([], T0, T0 - MIN)).toBe(true);
   });
 });
 
