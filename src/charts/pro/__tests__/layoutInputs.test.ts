@@ -185,16 +185,21 @@ describe('wejścia nagłówka z magazynu rynku', () => {
     for (let t = at(2026, 11, 3, 7); t <= IN_NY; t += MIN) ones.push({ t, o: 100_000, h: t === at(2026, 11, 3, 9) ? 100_060 : 100_010, l: 99_990, c: 100_000, v: 1, n: 1 });
     const store = fakeStore({ now: IN_NY, series: { '5m': { list: bars5m(at(2026, 11, 2, 14, 30), IN_NY, () => 10) }, '1m': { list: ones } } });
     const x = readInputs('review', store, { ...SCAN, blog: { state: { status: 'ready', maps: [map] }, map } });
-    expect(x.mapHits).toEqual({ kind: 'dzien', publishedAt: pub, touched: 1, total: 2, complete: true, from: pub, to: NY.end });
+    expect(x.mapHits).toEqual({ s: NY, kind: 'dzien', publishedAt: pub, touched: 1, total: 2, complete: true, from: pub, to: NY.end });
     // Świece 1m od początku okna mapy (wykres doczytuje starsze, jak warstwa)
     expect(store.older['1m']).toContain(pub);
     // Luka w środku okna: dotknięcie zostaje, rozliczenie niepełne
     const gap = fakeStore({ now: IN_NY, series: { '1m': { list: ones.filter((c) => c.t < at(2026, 11, 3, 12) || c.t >= at(2026, 11, 3, 12, 5)) } } });
     expect(readInputs('review', gap, { ...SCAN, blog: { state: { status: 'ready', maps: [map] }, map } }).mapHits).toMatchObject({ touched: 1, complete: false });
-    // Bez mapy: powód z legendy warstwy; mapa tygodnia — bez rozliczenia; inny rynek — tylko BTC
+    // Bez pliku map: powód z legendy warstwy; w sesji tylko mapa tygodnia — bez rozliczenia; bez mapy sesji — powód z sesją
     expect(readInputs('review', store, { ...SCAN, blog: { state: { status: 'missing', maps: [] }, map: null } }).mapHits).toEqual({ why: 'Brak map z bloga' });
-    expect(readInputs('review', store, { ...SCAN, blog: { state: { status: 'ready', maps: [map] }, map: { ...map, kind: 'inne' } } }).mapHits).toMatchObject({
+    // Mapa bez okna sesji opublikowana w NY należy do karty NY (sessionMaps)
+    const weekly = { ...map, id: 'tydzien', kind: 'inne' as const, publishedAt: at(2026, 11, 3, 15) };
+    expect(readInputs('review', store, { ...SCAN, blog: { state: { status: 'ready', maps: [weekly] }, map: weekly } }).mapHits).toMatchObject({
       why: expect.stringContaining('bez rozliczenia'),
+    });
+    expect(readInputs('review', store, { ...SCAN, blog: { state: { status: 'ready', maps: [] }, map: null } }).mapHits).toEqual({
+      why: 'Brak mapy z bloga dla sesji NY 03.11 (plik ma mapy z ostatnich 3 dni)',
     });
     // Świece 1m nie sięgają wpisu: starsze w drodze — czekamy (undefined); historia wyczerpana — powód; nieudane doczytanie —
     // powód z ponowną próbą (brak ✓ nigdy nie znaczy „nie dotknięto”)
@@ -203,6 +208,47 @@ describe('wejścia nagłówka z magazynu rynku', () => {
     expect(readInputs('review', late({}), blog).mapHits).toBeUndefined();
     expect(readInputs('review', late({ exhausted: true }), blog).mapHits).toMatchObject({ why: expect.stringContaining('nie sięgają wpisu') });
     expect(readInputs('review', late({ olderFailed: true }), blog).mapHits).toEqual({ why: 'Nie udało się pobrać starszych świec 1m — kolejna próba za ≤ 30 s' });
+  });
+
+  describe('Rozliczenie w sesji azjatyckiej: typ dnia, migracja VA i mapa opisują tę samą sesję (wczorajszy NY)', () => {
+    const mapOf = (id: string, kind: BlogMap['kind'], publishedAt: number, levels: BlogMap['levels']): BlogMap => ({ id, title: id, kind, publishedAt, price: 100_000, levels, url: `blog/${id}/` });
+    const pub3 = at(2026, 11, 3, 7, 5) + 20_000;
+    const pub4 = at(2026, 11, 4, 7, 5) + 20_000;
+    // Mapa dnia 3.11: A dotknięty o 15:00 (w NY), B nie; Mapa przed NY 3.11: C dotknięty; Mapa dnia 4.11: D (dotknięty w Azji 4.11)
+    const day3 = mapOf('2026-11-03-mapa-dnia', 'dzien', pub3, [
+      { label: 'A', price: 100_050 },
+      { label: 'B', price: 99_000 },
+    ]);
+    const preNy3 = mapOf('2026-11-03-przed-ny', 'ny', at(2026, 11, 3, 13), [{ label: 'C', price: 100_050 }]);
+    const day4 = mapOf('2026-11-04-mapa-dnia', 'dzien', pub4, [{ label: 'D', price: 100_200 }]);
+    const ones: Candle[] = [];
+    for (let t = at(2026, 11, 2, 14, 30); t <= at(2026, 11, 4, 7, 30); t += MIN) {
+      const h = t === at(2026, 11, 3, 15) ? 100_060 : t === at(2026, 11, 4, 7, 20) ? 100_210 : 100_010;
+      ones.push({ t, o: 100_000, h, l: 99_990, c: 100_000, v: 1, n: 1 });
+    }
+    const maps = [day3, preNy3, day4];
+    const read = (now: number, picked: BlogMap | null) =>
+      readInputs('review', fakeStore({ now, series: { '1m': { list: ones.filter((c) => c.t < now) } } }), { ...SCAN, blog: { state: { status: 'ready', maps }, map: picked } });
+
+    it('przed dzisiejszą Mapą dnia i po niej: mapa wczorajszej sesji NY, rozliczona do końca tej sesji', () => {
+      for (const [now, picked] of [
+        [at(2026, 11, 4, 2), null],
+        [at(2026, 11, 4, 7, 30), day4],
+      ] as const) {
+        const x = read(now, picked);
+        expect(x.review, String(now)).toMatchObject({ s: NY, inProgress: false });
+        expect(x.mapHits, String(now)).toEqual({ s: NY, kind: 'dzien', publishedAt: pub3, touched: 1, total: 2, complete: true, from: pub3, to: NY.end });
+        const n = layoutNumbers('review', x);
+        expect(n[0].short, String(now)).toBe('Typ · NY');
+        expect(n[2], String(now)).toMatchObject({ value: '1/2', badge: 'LIVE' });
+        expect(n[2].hint, String(now)).toContain('sesja NY 03.11');
+      }
+    });
+
+    it('mapa wybrana w ustawieniach zostaje, gdy należy do tej sesji; inna — mapa sesji', () => {
+      expect(read(at(2026, 11, 4, 2), preNy3).mapHits).toMatchObject({ s: NY, kind: 'ny', touched: 1, total: 1 });
+      expect(read(at(2026, 11, 4, 7, 30), day4).mapHits).toMatchObject({ kind: 'dzien', publishedAt: pub3 });
+    });
   });
 
   it('koszt 100k: migawka arkusza starsza niż 30 s — „—” z powodem; świeża — ask i bid w pb', () => {

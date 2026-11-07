@@ -2,7 +2,7 @@ import type { Candle, Side } from '../hl/parse';
 import type { Branching } from '../core/hawkes';
 import { type LiqLevel, vwapSeries } from '../core/indicators';
 import { utcDayStart } from '../core/sessions';
-import { fmtDayTime, fmtHm, fmtHms } from '../core/time';
+import { fmtDayTime, fmtDm, fmtHm, fmtHms } from '../core/time';
 import { scannerAge } from './layerSources';
 import { WAIT_TEXT } from '../../../utils/sessionText';
 import { fmtPx } from './layout';
@@ -71,8 +71,12 @@ export interface SessionNow {
 /** Sesja do rozliczenia w nagłówku (w toku albo ostatnia zamknięta): fakty ze świec 1m, te same co na karcie Rozliczenia. */
 export type ReviewFacts = SessionFacts & { inProgress: boolean };
 
-/** Rozliczenie mapy z bloga wybranej na wykresie (ta sama reguła co ✓ warstwy): dotknięte poziomy w oknie [from, to). */
+/**
+ * Rozliczenie mapy z bloga sesji `s` (ta sama sesja co typ dnia i migracja VA; ta sama reguła co ✓ warstwy): dotknięte
+ * poziomy od wpisu do końca sesji, [from, to).
+ */
 export interface MapHits {
+  s: TradeSession;
   kind: MapKind;
   publishedAt: number;
   touched: number;
@@ -454,6 +458,7 @@ function mapHitsNum(x: LayoutInputs): LayoutNumber {
   const t = mapHitsText(h.touched, h.total, h.complete);
   const k = t.value;
   const name = `${blogMapName(h.kind)} ${fmtDayTime(h.publishedAt, x.now)}`;
+  const sn = `${sessionName(h.s)} ${fmtDm(h.s.start)}`;
   const until = x.now < h.to ? tr('teraz', 'now') : fmtDayTime(h.to, x.now);
   const gap = t.gap ? `; ${t.gap}` : '';
   return {
@@ -462,8 +467,8 @@ function mapHitsNum(x: LayoutInputs): LayoutNumber {
     value: k,
     badge: 'LIVE',
     hint: tr(
-      `Poziomy dotknięte ${k}: ${name}, od wpisu do ${until}${gap}. Dotknięcie = świeca 1m Hyperliquid z low ≤ poziom ≤ high, jak ✓ na wykresie. Poziomy z tekstu wpisu autora, nie model HyperQuant.`,
-      `Levels touched ${k}: ${name}, from the post until ${until}${gap}. A touch is a Hyperliquid 1m candle with low ≤ level ≤ high, like the ✓ on the chart. Levels from the author's post (PL blog), not a HyperQuant model.`
+      `Poziomy dotknięte ${k}: ${name}, sesja ${sn}, od wpisu do ${until}${gap}. Dotknięcie = świeca 1m Hyperliquid z low ≤ poziom ≤ high, jak ✓ na wykresie. Poziomy z tekstu wpisu autora, nie model HyperQuant.`,
+      `Levels touched ${k}: ${name}, the ${sn} session, from the post until ${until}${gap}. A touch is a Hyperliquid 1m candle with low ≤ level ≤ high, like the ✓ on the chart. Levels from the author's post (PL blog), not a HyperQuant model.`
     ),
     ...(t.note ? { note: t.note } : {}),
   };

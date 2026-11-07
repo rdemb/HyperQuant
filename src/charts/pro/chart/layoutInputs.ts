@@ -6,9 +6,12 @@ import type { VolModel } from '../../../utils/volatility';
 import type { WhaleLayer } from '../../../utils/whaleLayer';
 import { type TradeSession, currentTradeSession, expectedRange, previousSameSession } from '../../../utils/sessionDay';
 import { reviewSession, sessionFacts } from '../../../utils/sessionFacts';
+import { nyMap } from '../../../utils/fourNumbers';
+import { TRADE_SESSION_NAME } from '../../../utils/sessionNames';
+import { sessionMaps } from '../../../utils/sessionReview';
 import type { BookFrame } from '../core/book';
 import { liqLevels } from '../core/indicators';
-import { fmtHm } from '../core/time';
+import { fmtDm, fmtHm } from '../core/time';
 import type { Candle, Side } from '../hl/parse';
 import { marketCostBp } from '../indicators/registry';
 import { blogMapScan, liqScan, whalesScan } from './layerSources';
@@ -168,22 +171,34 @@ export function sessionExpectedOf(store: InputStore, vol: VolInput, s: TradeSess
 }
 
 /**
- * Poziomy mapy z bloga wybranej na wykresie dotknięte w jej oknie — ta sama reguła co ✓ warstwy (`settleRange` na świecach 1m
- * od wpisu, doczytywanych jak na wykresie). Powody braku jak w legendzie warstwy.
+ * Poziomy mapy z bloga rozliczanej sesji `s` dotknięte od wpisu do końca tej sesji — ta sama reguła co ✓ warstwy i karta
+ * Rozliczenia (`settleRange` na świecach 1m od wpisu, doczytywanych jak na wykresie). Mapa tej samej sesji co typ dnia
+ * i migracja VA (w Azji — wczorajszego NY, nie dzisiejsza Mapa dnia): wybrana na wykresie, gdy należy do tej sesji, inaczej
+ * mapa sesji (`nyMap`, jak Czwórka). Powody braku pliku jak w legendzie warstwy.
  */
-function mapHitsOf(store: InputStore, blog: InputScan['blog'], now: number): LayoutInputs['mapHits'] {
-  const scan = blogMapScan(blog.state, blog.map);
-  if ('why' in scan) return scan;
-  const map = blog.map;
-  if (!map) return undefined;
-  const w = mapWindow(map.kind, map.publishedAt);
-  if (!w) return { why: tr('Mapa tygodnia albo weekendu — bez rozliczenia', 'A weekly or weekend map — not settled') };
+function mapHitsOf(store: InputStore, blog: InputScan['blog'], s: TradeSession, now: number): LayoutInputs['mapHits'] {
+  const st = blog.state;
+  if (st.status !== 'ready') {
+    const scan = blogMapScan(st, null);
+    return 'why' in scan ? scan : undefined;
+  }
+  const list = sessionMaps(st.maps, s, now);
+  const picked = blog.map && list.find((m) => m.id === blog.map!.id && mapWindow(m.kind, m.publishedAt));
+  const map = picked ?? nyMap(st.maps, s, now);
+  const sn = `${TRADE_SESSION_NAME[s.id]} ${fmtDm(s.start)}`;
+  if (!map) {
+    return list.length > 0
+      ? { why: tr(`Mapa tygodnia albo weekendu — bez rozliczenia (sesja ${sn})`, `A weekly or weekend map — not settled (the ${sn} session)`) }
+      : { why: tr(`Brak mapy z bloga dla sesji ${sn} (plik ma mapy z ostatnich 3 dni)`, `No blog map for the ${sn} session (the file holds maps from the last 3 days)`) };
+  }
+  const w = mapWindow(map.kind, map.publishedAt)!;
+  const to = Math.min(w.to, s.end);
   const c1 = candlesFrom(store, '1m', w.from, now);
   if (c1 === undefined || isAbsent(c1)) return c1;
-  const r = settleRange(map.levels, toVBars(c1), w.from, w.to, now);
+  const r = settleRange(map.levels, toVBars(c1), w.from, to, now);
   // Lista sięga wpisu albo historia API się skończyła — tu tylko ten drugi przypadek
   if (!r) return { why: tr(`Świece 1m nie sięgają wpisu (${fmtHm(w.from)}): limit historii API`, `The 1m candles do not reach the post (${fmtHm(w.from)}): API history limit`) };
-  return { kind: map.kind, publishedAt: map.publishedAt, touched: r.levels.filter((l) => l.touchedAt !== null).length, total: r.levels.length, complete: r.complete, from: w.from, to: w.to };
+  return { s, kind: map.kind, publishedAt: map.publishedAt, touched: r.levels.filter((l) => l.touchedAt !== null).length, total: r.levels.length, complete: r.complete, from: w.from, to };
 }
 
 /** Wejścia liczb układu `id`; `hawkes` liczy nagłówek w tle (Web Worker) i podaje gotowy. */
@@ -253,7 +268,7 @@ export function readInputs(id: StationId, store: InputStore, scan: InputScan, ha
       x.review = isAbsent(f) ? f : { ...f, inProgress };
     }
     // Mapy z bloga opisują BTC (inny rynek: liczba mówi „tylko BTC”)
-    if (store.coin === 'BTC') x.mapHits = mapHitsOf(store, scan.blog, now);
+    if (store.coin === 'BTC') x.mapHits = mapHitsOf(store, scan.blog, s, now);
   }
   return x;
 }

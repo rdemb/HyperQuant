@@ -193,7 +193,7 @@ describe('nagłówek układu: trzy liczby', () => {
       prevVa: { vah: 100_200, val: 99_800 },
     };
     const pub = at(2026, 11, 3, 7, 5);
-    const mapHits = { kind: 'dzien' as const, publishedAt: pub, touched: 3, total: 9, complete: true, from: pub, to: NY.end };
+    const mapHits = { s: NY, kind: 'dzien' as const, publishedAt: pub, touched: 3, total: 9, complete: true, from: pub, to: NY.end };
     const n = layoutNumbers('review', { coin: 'BTC', now: NOW, review, mapHits });
     expect(n.map((x) => [x.label, x.value, x.badge, x.note ?? null])).toEqual([
       ['Typ dnia · NY w toku', 'trendowy', 'MODEL', null],
@@ -201,7 +201,7 @@ describe('nagłówek układu: trzy liczby', () => {
       ['Mapa: dotknięte', '3/9', 'LIVE', null],
     ]);
     expect(n[0].hint).toMatch(/^MODEL · Dalton/);
-    expect(n[2].hint).toMatch(/^Poziomy dotknięte 3\/9: Mapa dnia /);
+    expect(n[2].hint).toMatch(/^Poziomy dotknięte 3\/9: Mapa dnia .*, sesja NY 03\.11, od wpisu do teraz/);
     // Telefon: krótsze podpisy, „w toku” zostaje
     expect(n.map((x) => x.short)).toEqual(['NY w toku', 'VA', 'Mapa']);
     expect(layoutNumbers('review', { coin: 'BTC', now: NOW, review: { ...review, inProgress: false, prevVa: null } })[1].value).toBe('—');
