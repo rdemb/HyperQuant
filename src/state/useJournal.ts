@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useSyncExternalStore } from 'react';
 import { loadCandlesV } from '../utils/marketDataFeed';
 import { dayStart } from '../utils/auction';
+import { currentTradeSession } from '../utils/sessionDay';
 import { computeAuctionContext } from './useAuctionContext';
 import { createJournalStore, JOURNAL_KEY, type StorageLike } from './journalStore';
 import { excursions, parseJournal, serializeJournal, type Setup, type Trade, type TradeCtx } from '../utils/tradeJournal';
@@ -12,8 +13,9 @@ const DAY = 24 * 60 * MIN;
 const MINUTE_HISTORY = 3.4 * DAY;
 
 /**
- * MAE/MFE i kontekst aukcji przy wejściu ze świec 1m (zagrania z ostatnich ~3,5 doby); inaczej null. Kontekst tylko gdy
- * świece obejmują całą sesję do wejścia (VWAP z części sesji byłby fałszywy) — wyłącznie z danych sprzed minuty wejścia.
+ * MAE/MFE i kontekst aukcji przy wejściu ze świec 1m (zagrania z ostatnich ~3,5 doby); inaczej null. Kontekst tylko dla
+ * wejścia w sesji Londynu albo NY (w Azji brak bieżącej sesji) i gdy świece obejmują całą sesję do wejścia (VWAP z części
+ * sesji byłby fałszywy) — wyłącznie z danych sprzed minuty wejścia.
  */
 export async function enrichTrade(t: Trade, now = Date.now()): Promise<Pick<Trade, 'mae' | 'mfe' | 'ctx'>> {
   if (now - t.entryT > MINUTE_HISTORY) return { mae: null, mfe: null, ctx: null };
@@ -23,7 +25,8 @@ export async function enrichTrade(t: Trade, now = Date.now()): Promise<Pick<Trad
   let ctx: TradeCtx | null = null;
   const entryMin = Math.floor(t.entryT / MIN) * MIN;
   const before = minute.filter((b) => b.time < entryMin);
-  if (minute.length && minute[0].time <= dayStart(t.entryT) && before.length) {
+  const session = currentTradeSession(t.entryT);
+  if (session && minute.length && minute[0].time <= session.start && before.length) {
     const c = computeAuctionContext(before, hourly, t.entryT);
     const ib = !c.ib ? null : !c.ib.done ? 'open' : c.today ? (c.today.ibBreak.up && c.today.ibBreak.down ? 'both' : c.today.ibBreak.up ? 'up' : c.today.ibBreak.down ? 'down' : 'inside') : null;
     ctx = {

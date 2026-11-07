@@ -40,15 +40,22 @@ export const DeskRail: React.FC = () => {
     return c === null ? null : `${tr('skal.', 'cal.')} ${Math.round(c * 100)}%`;
   };
 
-  // Kontekst aukcji sesji UTC (ten sam stan co panel „Kontekst aukcji” Przed sesją — jedno pobieranie)
+  // Kontekst aukcji sesji Londynu albo NY (ten sam stan co panel „Kontekst aukcji” Przed sesją — jedno pobieranie)
   const auction = useAuctionContext();
   const auctionStale = auction.asOf !== null && Date.now() - auction.asOf > 3 * 60_000;
+  const ses = auction.session;
+  const sesName = ses ? (ses.id === 'london' ? tr('Londyn', 'London') : 'NY') : null;
+  const auctionLabel = !ses
+    ? tr('Aukcja · sesja', 'Auction · session')
+    : ses.closed
+    ? tr(`Aukcja · sesja ${sesName} (zamknięta)`, `Auction · ${sesName} session (closed)`)
+    : tr(`Aukcja · sesja ${sesName}`, `Auction · ${sesName} session`);
   const vw = auction.vwap;
   const vwapZ = vw && vw.sd > 0 && px > 0 ? (px - vw.vwap) / vw.sd : null;
   const ibText = !auction.ib
     ? DASH
     : !auction.ib.done
-    ? tr('IB w trakcie (00–01 UTC)', 'IB forming (00–01 UTC)')
+    ? tr('IB w trakcie (1. godzina sesji)', 'IB forming (first session hour)')
     : auction.today
     ? `IB ${auction.today.ibBreak.up ? tr('↑ wybity', '↑ broken') : '↑ —'} · ${auction.today.ibBreak.down ? tr('↓ wybity', '↓ broken') : '↓ —'}`
     : tr('IB zamknięty', 'IB closed');
@@ -151,7 +158,7 @@ export const DeskRail: React.FC = () => {
 
       <div className="bg-surface-1 border border-line rounded-xl p-3.5">
         <Stat
-          label={tr('Aukcja · sesja UTC', 'Auction · UTC session')}
+          label={auctionLabel}
           source={
             auctionStale
               ? { tone: 'stale', label: 'STALE', title: tr('Świece nie odświeżyły się od ponad 3 min', 'Candles have not refreshed for over 3 min') }
@@ -159,8 +166,8 @@ export const DeskRail: React.FC = () => {
                   tone: 'live',
                   label: 'LIVE',
                   title: tr(
-                    'VWAP sesji UTC ze świec 1m (cena typowa ważona wolumenem) i Initial Balance 00:00–01:00 UTC; szczegóły w panelu „Kontekst aukcji” niżej',
-                    'UTC session VWAP from 1m candles (volume-weighted typical price) and Initial Balance 00:00–01:00 UTC; details in the “Auction context” panel below'
+                    'VWAP sesji Londynu albo NY ze świec 1m (cena typowa ważona wolumenem) i Initial Balance z pierwszej godziny sesji; w Azji ostatnia zamknięta sesja NY; szczegóły w panelu „Kontekst aukcji” niżej',
+                    'London or NY session VWAP from 1m candles (volume-weighted typical price) and Initial Balance from the first session hour; during Asia the last closed NY session; details in the “Auction context” panel below'
                   ),
                 }
           }
