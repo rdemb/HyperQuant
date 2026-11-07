@@ -4,6 +4,33 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Etap 1b: nowe elementy dnia tradera (2026-11-07)
+
+#### Dodane
+- **Sesje Londynu i NY jako dzień tradera** (`src/utils/sessionDay.ts`): Londyn od 08:00 czasu londyńskiego do otwarcia NY, NY od 09:30 czasu nowojorskiego do 00:00 UTC (granice z czasem letnim), IB to pierwsza godzina sesji; doba UTC zostaje tylko podsumowaniem. Kontekst aukcji Przed sesją liczony dla bieżącej sesji. **Budżet zakresu** (MODEL): ile oczekiwanego zakresu high–low sesja już zużyła (z modelem HAR, bez niego σ Parkinsona ze świec 5m).
+- **Nagłówek układu** (`src/charts/pro/chart/LayoutHeader.tsx`, `layoutNumbers.ts`): nad pierwszym wykresem karty pytanie układu i trzy liczby z plakietką LIVE albo MODEL (MODEL z nazwą metody w podpowiedzi): Kokpit — odległość od VWAP w σ, budżet zakresu, RVOL; Aukcja i otwarcie — IB, budżet, VWAP sesji; Wielkie ręce — udział TWAP, Hawkes n, saldo wielorybów; Mapa dnia — VAH i VAL wczoraj, nagi POC; Paliwo i godziny — RVOL, klaster likwidacji, koszt zlecenia 100 tys. USD; Rozliczenie doby — typ dnia, migracja VA, dotknięte poziomy mapy. Brak danych to „—” z powodem, bez plakietki źródła; dotknięcie liczby rozwija jej źródło.
+- **RVOL wg godzin** (`src/utils/rvol.ts`): wskaźnik we własnym panelu i liczba nagłówka — wolumen wobec mediany tej samej godziny UTC z 20 dni (próba co najmniej 10 dni). Przy krótszej historii wykresu (1m, 5m) legenda panelu mówi „za mało historii (min. 10 dni)”. W układzie Paliwo i godziny zamiast panelu wolumenu.
+- **Typ dnia i migracja value area** (Dalton, `src/utils/dayType.ts`): normalny, wariant normalny, trendowy, neutralny; VA sesji wyżej, niżej, częściowo wyżej/niżej, wewnątrz albo szersza wobec poprzedniej sesji tego samego typu.
+- **Mapy z bloga na wykresie** (`blog/maps.json`, `src/state/useBlogMaps.ts`, `blogMapLayer.ts`): poziomy z mapy autora z podpisem i godziną wpisu (tekst wpisu, nie model), w układzie Rozliczenie doby dotknięty poziom z ✓ i godziną; tylko BTC, w wersji angielskiej z dopiskiem „(PL blog)”.
+- **Rozliczenie sesji** (Po sesji, `#rozliczenie`, `src/views/after/SessionReview.tsx`): karty ostatniej zamkniętej sesji Londynu i NY oraz sesji w toku (w Azji godzina następnego otwarcia): typ dnia, migracja VA, wynik IB, zakres wobec oczekiwanego (zamknięta sesja oceniana ex ante: Parkinson sprzed otwarcia), mapy z bloga (dotknięte i chybione), likwidacje w sesji; pod kartami stożek prognoz z 30 dni i kohorty z 24 h; przy wierszach link powtórki minuty.
+- **Czwórka** (Przed sesją, `src/views/before/FourCard.tsx`): cztery liczby przed sesją — czytelność wczoraj (typ dnia ostatniej sesji NY i trafienia mapy), paliwo likwidacji ±1% od ceny, typowa szerokość najbliższej godziny sesji, odległość od VWAP.
+- **Klatka** (`src/charts/pro/chart/frame.ts`, `FrameDialog.tsx`): obraz wykresu albo Czwórki 16:9 albo 1:1 z tytułem z liczbami, godziną, źródłem i paskiem jakości danych (udział taśmy i mapy), z tekstem alternatywnym do skopiowania; tytuł bez rad kupna i sprzedaży. Pasek jakości jest też na zwykłym zrzucie wykresu.
+- **Pierwszy kontakt** (W sesji, `src/views/session/FirstContact.tsx`): przy pierwszej wizycie karta z trzema punktami (footprint, mapa ciepła, LIVE/MODEL/SIM) i przez 7 dni przycisk „Powtórka ostatnich 15 min”.
+
+#### Zmienione
+- **Kolory wskaźników**: różne kolory serii w każdym wskaźniku (Szerokość agresji miała kupujących i sprzedających w tym samym pomarańczu), sześć nowych kolorów instancji, linie i słupki stron w kolorach Głębi, IB we własnym kolorze, legenda bez koloru znaku przy „—”. Zapisane kolory użytkowników bez zmian.
+- **Nazwy miejsc w tekstach**: odwołania do dawnych zakładek Desk i Wykresy prowadzą do Przed sesją, W sesji, Po sesji i Badań („desk” jako opis produktu zostaje).
+- **Pasek ceny**: nazwa sesji z sesji dnia tradera (zimą o 07:41 UTC to jeszcze Azja, nie Londyn z okien wskaźnika Shaakuni).
+
+#### Naprawione
+- Liczba bez danych nie ma plakietki LIVE ani MODEL (nagłówek układu, Czwórka, Rozliczenie).
+- Nieudana starsza strona świec 1m wygasza w Rozliczeniu tylko karty, którym brakuje minut; ponowna próba po 30 s z zegara, bez „kolejna próba” w trakcie próby.
+- `#flow` na otwartym W sesji pokazuje kolumnę DOM i taśmy schowaną wcześniej klawiszem `d`.
+- Szuflada DOM i pasek narzędzi rysowania nie zachodzą na przypięty nagłówek przy przewiniętej stronie.
+- Przełączenie zestawu paneli (Aukcja, Absorpcja) nie usuwa własnego wskaźnika z tym samym identyfikatorem instancji (nowy klucz `panelSetIids` w zapisie ustawień wykresu; inne pola zapisu bez zmian).
+- Telefon: przewijany w bok pasek narzędzi wykresu i rząd liczb nagłówka wygaszają krawędź, za którą jest dalsza treść.
+- Dostępność: fokus wraca na przycisk „Więcej” po Klatce otwartej z menu na telefonie i przechodzi dalej po zamknięciu karty pierwszego kontaktu; przełącznik zestawu paneli przenosi fokus za zaznaczeniem, a strzałki nie przebudowują wykresów przy każdym naciśnięciu; `aria-controls` tylko przy otwartym menu; na stronach bloga `aria-current` tylko na linku do bieżącej strony.
+
 ### Wydajność na komputerze (2026-11-07)
 
 #### Poprawione
@@ -15,7 +42,7 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 - **Trzy fazy dnia zamiast zakładek narzędzi**: **Przed sesją** (`#before`: wykres z układami Mapa dnia i Paliwo i godziny, pas kontekstu, kalendarz makro, funding między giełdami, kontekst aukcji, mapa likwidacji z kaskadą, płynność wg godzin, kafle makro i wiadomości), **W sesji** (`#charts`: wykres z układami Kokpit, Aukcja i otwarcie oraz Wielkie ręce i reszta rynku; od 1280 px prawa kolumna DOM i taśmy chowana klawiszem `d`, od 640 do 1279 px ta sama kolumna jako szuflada nad wykresem, na telefonie pasek Pulse; pod wykresem przepływ kohort i taśma likwidacji BTC) i **Po sesji** (`#after`: układ Rozliczenie doby, dziennik prognoz z weryfikacją i dziennik transakcji). Panele skanera (Kto przyjmuje, TWAP-y, kohorty, likwidacje) pokazują „—, tylko BTC” dla innych rynków. Alt+1…6 przełącza układy i przenosi do ekranu ich fazy.
 - **Badania** (`#research`, w menu „Więcej”): model kontra rynek HIP-4, proxy makro, mapa rynku, mechanika arkusza, laboratorium mikrostruktury, metryki reżimu, kalkulator wielkości pozycji i taśma przepływu zleceń.
 - **Laboratorium folkloru w Lekcjach**: wyniki reguł folkloru obok ćwiczeń, których dotyczą.
-- **Eksport danych dawnego Analizatora planu w Źródłach** (`src/views/sources/LegacyPlanDataCard.tsx`): karta (tylko gdy w przeglądarce są zapisane plany) pobiera plany i kapitał jako plik JSON (`key`, `exportedAt`, `entries`, `equity`). Dane w `localStorage` zostają nietknięte.
+- **Eksport danych dawnego Analizatora planu w Źródłach** (`src/views/sources/LegacyPlanDataCard.tsx`): karta (gdy w przeglądarce są zapisane plany albo ich zapisu nie da się odczytać; wtedy z przyciskiem „Pobierz surowe dane”) pobiera plany i kapitał jako plik JSON (`key`, `exportedAt`, `entries`, `equity`). Dane w `localStorage` zostają nietknięte.
 - **Przekierowania starych adresów**: `#desk`, `#plan`, `#market`, `#lab`, `#micro`, `#flow` i stare linki powtórki (`#charts?replay=…&station=scalp`) prowadzą do odpowiedniego ekranu.
 - **Pasek „Przywróć moje poprzednie ustawienia”**: odtwarza dawną kartę Start; kopia dawnej listy kart jest zapisana osobno.
 
