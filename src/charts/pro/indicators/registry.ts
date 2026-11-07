@@ -430,15 +430,22 @@ export function accountScopeKey(id: string): string | null {
   return scope.startsWith('d') ? `d:${scope.slice(1)}` : `h:${scope}`;
 }
 
-/** Czy konta zleceń (bez zleceń bez konta) leżą w jednym zakresie numeracji: wszystkie na żywo albo z jednej godziny lub doby. */
+/**
+ * Czy konta zleceń (bez zleceń bez konta) leżą w jednym zakresie numeracji: wszystkie na żywo albo z jednej godziny lub
+ * doby — to samo co równy `accountScopeKey`, ale bez alokacji na zlecenie (pętla po wszystkich zleceniach okna i świecy):
+ * przedrostek `~<zakres>:` pierwszego konta z historii (klucze z `toFills` zawsze mają dwukropek, więc `~1:` ≠ `~10:`).
+ */
 function oneAccountScope(lists: readonly (readonly { taker: string }[])[]): boolean {
-  let first: string | null | undefined;
+  // undefined — jeszcze bez konta; '' — konta na żywo (bez `~`); inaczej przedrostek zakresu z dwukropkiem
+  let prefix: string | undefined;
   for (const list of lists) {
     for (const o of list) {
-      if (o.taker === '') continue;
-      const k = accountScopeKey(o.taker);
-      if (first === undefined) first = k;
-      else if (k !== first) return false;
+      const id = o.taker;
+      if (id === '') continue;
+      if (prefix === undefined) {
+        const end = id.indexOf(':');
+        prefix = !id.startsWith('~') ? '' : end < 0 ? id : id.slice(0, end + 1);
+      } else if (prefix === '' ? id.startsWith('~') : !id.startsWith(prefix)) return false;
     }
   }
   return true;
@@ -1666,8 +1673,8 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
       'TradingView has no such indicator: it is computed from the recorded Hyperliquid tape, which gives the taker account with every trade. Fills are joined into orders as in the order size indicator. An account’s share is its entry value on a side within the candle, and the effective number is (Σ w)² / Σ w², the inverse of the Herfindahl index: 1 when everything came from one account, n with n equal accounts, fewer than the account count when a few of them dominate. The race is the largest number of different takers whose orders on the same side entered within the same block. Only numbers are shown, never accounts.'
     ),
     memoryNote: tr(
-      'Świeca zależy tylko od swoich zleceń. Historia serwera numeruje konta w obrębie godziny UTC, więc wskaźnik działa na interwałach do 1 h. W godzinie otwarcia strony to samo konto przed otwarciem i po nim liczy się jako dwa. Świece bez taśmy z kontami w całości (zapis z przeglądarki ich nie ma) nie mają wartości.',
-      'A candle depends only on its own orders. Server history numbers accounts within a UTC hour, so the indicator works on intervals up to 1 h. In the hour the page was opened, the same account before and after opening counts as two. Candles without the tape with accounts throughout (the browser recording has none) have no value.'
+      'Świeca zależy tylko od swoich zleceń: liczba dotyczy kont w tej świecy, a wskaźnik działa na interwałach do 1 h. W historii serwera konto jest rozpoznawane w obrębie doby UTC w plikach z numeracją dobową (nowy skaner), a w starszych plikach — w obrębie godziny. W godzinie otwarcia strony to samo konto przed otwarciem i po nim liczy się jako dwa. Świece bez taśmy z kontami w całości (zapis z przeglądarki ich nie ma) nie mają wartości.',
+      'A candle depends only on its own orders: the number refers to the accounts within that candle, and the indicator works on intervals up to 1 h. In server history an account is recognised within a UTC day in files with daily numbering (new scanner) and within an hour in older files. In the hour the page was opened, the same account before and after opening counts as two. Candles without the tape with accounts throughout (the browser recording has none) have no value.'
     ),
     pane: 'own',
     params: [],
@@ -1756,8 +1763,8 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
       'TradingView has no such indicator: it is computed from the recorded Hyperliquid tape, which gives the taker account with every trade. Fills are joined into orders as in the order size indicator. The window is “Window (min)” minutes before the candle starts; an account that entered on the same side within it is returning, one that entered only on the opposite side is switching. Shares come from the value entered within the candle and add up to 1 together with the new ones (in the legend). Only shares are shown, never accounts.'
     ),
     memoryNote: tr(
-      'Świeca zależy od swoich zleceń i od zleceń z okna przed nią; obie części muszą mieć taśmę z kontami w całości (zapis z przeglądarki ich nie ma). Historia serwera numeruje konta w obrębie doby UTC (starsze pliki — w obrębie godziny), więc w niej świeca ma wartość tylko wtedy, gdy okno i świeca leżą w jednej dobie (w starszych plikach — w jednej godzinie); na żywo okno może przekraczać pełną godzinę. Świeca, której okno albo ona sama obejmuje zlecenia sprzed otwarcia strony i po nim, nie ma wartości: numer z historii nie łączy się z kontem na żywo.',
-      'A candle depends on its own orders and on the orders in the window before it; both need the tape with accounts throughout (the browser recording has none). Server history numbers accounts within a UTC day (older files within an hour), so there a candle has a value only when the window and the candle lie in one day (in older files, in one hour); live, the window can cross the full hour. A candle whose window or the candle itself spans orders from before and after the page was opened has no value: a number from history does not link to a live account.'
+      'Świeca zależy od swoich zleceń i od zleceń z okna przed nią; obie części muszą mieć taśmę z kontami w całości (zapis z przeglądarki ich nie ma). W historii serwera konto jest rozpoznawane w obrębie doby UTC w plikach z numeracją dobową (nowy skaner), a w starszych plikach — w obrębie godziny, więc świeca ma tam wartość tylko wtedy, gdy okno i świeca leżą w jednym takim zakresie; na żywo okno może przekraczać pełną godzinę. Świeca, której okno albo ona sama obejmuje zlecenia sprzed otwarcia strony i po nim, nie ma wartości: numer z historii nie łączy się z kontem na żywo.',
+      'A candle depends on its own orders and on the orders in the window before it; both need the tape with accounts throughout (the browser recording has none). In server history an account is recognised within a UTC day in files with daily numbering (new scanner) and within an hour in older files, so there a candle has a value only when the window and the candle lie within one such range; live, the window can cross the full hour. A candle whose window or the candle itself spans orders from before and after the page was opened has no value: a number from history does not link to a live account.'
     ),
     pane: 'own',
     params: [{ key: 'window', label: tr('Okno (min)', 'Window (min)'), min: 5, max: 60, step: 1, def: 15 }],
@@ -1814,8 +1821,8 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
       'TradingView has no such indicator: it is computed from the recorded Hyperliquid tape, which gives the maker account with every trade. An account is a market maker in a UTC hour when it provided liquidity in at least half of the hour’s minutes with tape and on both sides (the weaker side at least 20% of its value); in the current hour the minutes that have passed count, so its candles may change until the hour ends. Delta is the sum of sizes signed by the aggressor side; the two parts add up to the candle delta. The 50% and 20% thresholds are a convention. Only totals are shown, never accounts.'
     ),
     memoryNote: tr(
-      'Świeca zależy od swoich wypełnień i od klas kont z jej godziny UTC (historia serwera numeruje konta w obrębie godziny), więc wskaźnik działa na interwałach do 1 h. W godzinie otwarcia strony konto sprzed otwarcia i po nim liczy się jako dwa, więc animatorów może wyjść mniej. Świece bez taśmy z kontami w całości (zapis z przeglądarki ich nie ma) nie mają wartości.',
-      'A candle depends on its fills and on the account classes of its UTC hour (server history numbers accounts within an hour), so the indicator works on intervals up to 1 h. In the hour the page was opened, an account before and after opening counts as two, so fewer market makers may come out. Candles without the tape with accounts throughout (the browser recording has none) have no value.'
+      'Świeca zależy od swoich wypełnień i od klas kont z jej godziny UTC, więc wskaźnik działa na interwałach do 1 h. W historii serwera konto jest rozpoznawane w obrębie doby UTC w plikach z numeracją dobową (nowy skaner), a w starszych plikach — w obrębie godziny; klasa animatora i tak jest liczona dla każdej godziny osobno. W godzinie otwarcia strony konto sprzed otwarcia i po nim liczy się jako dwa, więc animatorów może wyjść mniej. Świece bez taśmy z kontami w całości (zapis z przeglądarki ich nie ma) nie mają wartości.',
+      'A candle depends on its fills and on the account classes of its UTC hour, so the indicator works on intervals up to 1 h. In server history an account is recognised within a UTC day in files with daily numbering (new scanner) and within an hour in older files; the market maker class is still computed for each hour separately. In the hour the page was opened, an account before and after opening counts as two, so fewer market makers may come out. Candles without the tape with accounts throughout (the browser recording has none) have no value.'
     ),
     pane: 'own',
     params: [],
@@ -1985,8 +1992,8 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
       'TradingView has no such indicator: it is computed from the recorded Hyperliquid tape, where TWAP suborders carry a zero hash (no transaction id). In a measurement on the BTC tape of 30–31 Oct 2026 (17.7 h, 38k zero-hash fills), 99.97% of them belonged to known TWAPs and the rest were the first suborders of new ones; none of about 1k liquidation fills had a zero hash, and zero-hash fills covered the execution of every finished TWAP. There was no ADL in that window, so it is unverified for ADL. The share is the value (USD) of zero-hash fills on the buying (bar above zero) and selling (below zero) aggressor side divided by the value of all trades in the candle. TWAPs in the legend are suborders of one account on one side whose times lie on a common 30 s grid (2 s tolerance); two TWAPs of one account in the same phase count as one. Only the number is shown, never the accounts.'
     ),
     memoryNote: tr(
-      'Świeca zależy tylko od swoich transakcji, na interwałach do 1 h (historia serwera numeruje konta w obrębie godziny). Hash zerowy jest oznaczony w strumieniu na żywo i w plikach historii serwera nagranych od wprowadzenia tego oznaczenia; świece bez niego w całości nie mają wartości.',
-      'A candle depends only on its own trades, on intervals up to 1 h (server history numbers accounts within an hour). The zero hash is marked in the live stream and in server history files recorded since that mark was introduced; candles without it throughout have no value.'
+      'Świeca zależy tylko od swoich transakcji, na interwałach do 1 h; liczba TWAP-ów łączy podzlecenia jednego konta w tej świecy (w historii serwera konto jest rozpoznawane w obrębie doby UTC w plikach z numeracją dobową, nowy skaner, a w starszych plikach — w obrębie godziny). Hash zerowy jest oznaczony w strumieniu na żywo i w plikach historii serwera nagranych od wprowadzenia tego oznaczenia; świece bez niego w całości nie mają wartości.',
+      'A candle depends only on its own trades, on intervals up to 1 h; the TWAP count joins one account’s suborders within that candle (in server history an account is recognised within a UTC day in files with daily numbering, new scanner, and within an hour in older files). The zero hash is marked in the live stream and in server history files recorded since that mark was introduced; candles without it throughout have no value.'
     ),
     pane: 'own',
     params: [],
