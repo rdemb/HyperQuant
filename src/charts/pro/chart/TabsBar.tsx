@@ -3,7 +3,7 @@ import { Copy, type LucideIcon, Pencil, Plus, RotateCcw, X } from 'lucide-react'
 import { type PanelSet, type PhaseId, STATIONS, StationId, stationPanel } from './stations';
 import { ChartTab, MAX_TABS, TabsState, canClose, canRestore, presetName, presetQuestion, presetStation, tabName, tabShortcut, tabsFull } from './tabs';
 import { intervalById } from '../core/time';
-import { deferred, radioStep } from '../../../ui/deferred';
+import { debouncedRadio } from '../../../ui/deferred';
 import { tr } from '../../../i18n';
 
 /** Sposób utworzenia nowej karty: pusta (karta własna z ustawieniami startowymi), kopia aktywnej albo z wzorca układu. */
@@ -308,35 +308,26 @@ export const TabsBar: React.FC<{ st: TabsState; tf: (t: ChartTab) => string; a: 
  */
 export const PanelSetSwitch: React.FC<{ sets: readonly PanelSet[]; value: string; onChange: (id: string) => void }> = ({ sets, value, onChange }) => {
   // Strzałki jak w natywnej grupie radio: zaznaczenie i fokus od razu, zatwierdzenie (przebudowa wykresów) po przerwie
-  // w naciskaniu; kliknięcie zatwierdza od razu
+  // w naciskaniu; kliknięcie zatwierdza od razu (debouncedRadio)
   const [pending, setPending] = useState<string | null>(null);
   const shown = pending ?? value;
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
-  const [commit] = useState(() =>
-    deferred<string>(PANEL_SET_DELAY_MS, (id) => {
-      setPending(null);
-      onChangeRef.current(id);
+  const btns = useRef(new Map<string, HTMLButtonElement>());
+  const [radio] = useState(() =>
+    debouncedRadio(PANEL_SET_DELAY_MS, {
+      focus: (id) => btns.current.get(id)?.focus(),
+      change: (id) => onChangeRef.current(id),
+      setPending,
     })
   );
-  useEffect(() => commit.cancel, [commit]);
-  const btns = useRef(new Map<string, HTMLButtonElement>());
+  useEffect(() => radio.cancel, [radio]);
   return (
     <div
       role="radiogroup"
       aria-label={tr('Zestaw paneli pod wykresem', 'Panel set below the chart')}
       onKeyDown={(e) => {
-        const next = radioStep(
-          sets.map((s) => s.id),
-          shown,
-          e.key
-        );
-        if (next === null) return;
-        e.preventDefault();
-        setPending(next === value ? null : next);
-        btns.current.get(next)?.focus();
-        if (next === value) commit.cancel();
-        else commit.push(next);
+        if (radio.key(e.key, sets.map((s) => s.id), value)) e.preventDefault();
       }}
       className="shrink-0 inline-flex items-center gap-0.5 bg-page border border-line rounded-lg p-0.5"
     >
@@ -354,11 +345,7 @@ export const PanelSetSwitch: React.FC<{ sets: readonly PanelSet[]; value: string
             aria-checked={on}
             tabIndex={on ? 0 : -1}
             title={tr(`Panele pod wykresem: ${s.name}`, `Panels below the chart: ${s.name}`)}
-            onClick={() => {
-              commit.cancel();
-              setPending(null);
-              if (s.id !== value) onChange(s.id);
-            }}
+            onClick={() => radio.click(s.id, value)}
             className={`min-h-11 sm:min-h-0 sm:h-7 px-3 sm:px-2.5 rounded-md text-xs font-medium whitespace-nowrap transition-colors duration-150 ${
               on ? 'bg-surface-3 text-ink-1 shadow-[inset_0_0_0_1px_var(--color-line-strong)]' : 'text-ink-3 hover:text-ink-1'
             }`}
