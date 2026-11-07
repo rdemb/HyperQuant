@@ -6,16 +6,22 @@
  * Oczekiwany zakres sesji (MODEL) i budżet zakresu: ile oczekiwanego zakresu high-low sesja już zużyła.
  */
 import { sessionOpens, utcDayStart } from '../charts/pro/core/sessions';
-import { horizonStepSigmas, type VolModel } from './volatility';
-import { parkinsonSigma } from './marketDataFeed';
+import { forecastHourlyVariances, isValidBar, parkinsonVar, stepSigmas, VOL_STEP_MIN, type VolModel } from './volatility';
 import type { VBar } from './auction';
+import { tr } from '../i18n';
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
 const DAY = 24 * HOUR;
 const FIVE_MIN = 5 * MIN;
+/** Zapas Parkinsona: najmniej 12 zamkniętych świec 5m (1 h) z ostatniej doby, z najwyżej 60 ostatnich (5 h) */
+const PARKINSON_MIN_BARS = 12;
+const PARKINSON_LOOKBACK = 60;
 
 export type TradeSessionId = 'london' | 'ny';
+
+/** Nazwa sesji w podpisach („sesja Londyn”, „sesja NY”) — wspólna dla panelu aukcji i pasa desku. */
+export const TRADE_SESSION_NAME: Record<TradeSessionId, string> = { london: tr('Londyn', 'London'), ny: 'NY' };
 
 export type TradeSession = {
   id: TradeSessionId;
@@ -81,10 +87,43 @@ export function hourlyWindow(s: TradeSession): { start: number; end: number } {
 /** E[high − low] ruchu Browna = sqrt(8/π) · σ (Feller 1951). */
 const RANGE_K = Math.sqrt(8 / Math.PI);
 
+const utcHour = (t: number) => new Date(t).getUTCHours();
+
 /**
- * Oczekiwany zakres high-low sesji w USD (MODEL): sqrt(8/π) · σ_sesji · cena. Z modelem σ_sesji² = Σ σ² kroków
- * `horizonStepSigmas` od początku sesji przez całą jej długość; bez modelu σ Parkinsona z ostatnich zamkniętych świec 5m
- * przeskalowane do długości sesji. Brak danych, zerowa zmienność albo cena niepoprawna → null (nigdy liczba zastępcza).
+ * Wariancje kolejnych godzin zegarowych sesji od pełnej godziny ≤ start: godziny od pierwszej godziny prognozy h0
+ * (`nextHourStartMs`) z prognozy HAR, godziny wcześniejsze (już minione, także cała sesja zamknięta przed h0) z poziomu
+ * pierwszej godziny prognozy przeniesionego profilem sezonowym: hourVars[0] · f[godzina] / f[godzina h0]. Bez tego minione
+ * godziny dostawałyby wariancję godziny h0 (obcięcie indeksu w `stepSigmas`), a wynik skakałby co godzinę.
+ */
+function sessionHourVars(m: VolModel, s: TradeSession): { first: number; vars: number[] } {
+  const h0 = m.nextHourStartMs;
+  const first = Math.floor(s.start / HOUR) * HOUR;
+  const hours = Math.ceil((s.end - first) / HOUR);
+  const fwd = forecastHourlyVariances(m.har, m.profile, h0, Math.max(1, Math.ceil((s.end - h0) / HOUR)));
+  const f = m.profile.factors;
+  const level = fwd[0] / f[utcHour(h0)];
+  const vars: number[] = [];
+  for (let k = 0; k < hours; k++) {
+    const t = first + k * HOUR;
+    vars.push(t < h0 ? level * f[utcHour(t)] : fwd[Math.round((t - h0) / HOUR)]);
+  }
+  return { first, vars };
+}
+
+/** σ Parkinsona sesji ze świec 5m: zamknięte przed `now`, z ostatniej doby, ≥ 12 (inaczej null), najwyżej 60 ostatnich. */
+function parkinsonSessionSigma(bars5m: VBar[], now: number, durMin: number): number | null {
+  const ok = bars5m.filter((b) => isValidBar(b) && b.time + FIVE_MIN <= now && b.time >= now - DAY).sort((a, b) => a.time - b.time);
+  if (ok.length < PARKINSON_MIN_BARS) return null;
+  const last = ok.slice(-PARKINSON_LOOKBACK);
+  const varBar = last.reduce((a, b) => a + parkinsonVar(b), 0) / last.length;
+  return Math.sqrt(varBar * (durMin / 5));
+}
+
+/**
+ * Oczekiwany zakres high-low sesji w USD (MODEL): sqrt(8/π) · σ_sesji · cena. Z modelem σ_sesji² = Σ σ² kroków 5 min
+ * od początku do końca sesji, z wariancji godzin `sessionHourVars` (prognoza HAR, minione godziny z profilem sezonowym);
+ * bez modelu σ Parkinsona z ostatnich zamkniętych świec 5m (≥ 12 z ostatniej doby) przeskalowane do długości sesji.
+ * Brak danych, zerowa zmienność albo cena niepoprawna → null (nigdy liczba zastępcza).
  */
 export function expectedRange(
   model: VolModel | null,
@@ -96,17 +135,17 @@ export function expectedRange(
   if (!(Number.isFinite(price) && price > 0)) return null;
   const durMin = (s.end - s.start) / MIN;
   if (!(durMin > 0)) return null;
-  let sigma: number;
+  let sigma: number | null;
   let method: 'har' | 'parkinson';
   if (model) {
-    sigma = Math.sqrt(horizonStepSigmas(model, s.start, durMin).reduce((a, x) => a + x * x, 0));
+    const { first, vars } = sessionHourVars(model, s);
+    sigma = Math.sqrt(stepSigmas(vars, first, s.start, durMin, VOL_STEP_MIN).reduce((a, x) => a + x * x, 0));
     method = 'har';
   } else {
-    // Tylko świece zamknięte przed `now` — trwająca zaniżałaby albo zawyżała zakres
-    const closed = bars5m.filter((b) => b.time + FIVE_MIN <= now);
-    sigma = parkinsonSigma(closed, durMin * 60, FIVE_MIN / 1000);
+    sigma = parkinsonSessionSigma(bars5m, now, durMin);
     method = 'parkinson';
   }
+  if (sigma === null) return null;
   const usd = RANGE_K * sigma * price;
   return Number.isFinite(usd) && usd > 0 ? { usd, method } : null;
 }

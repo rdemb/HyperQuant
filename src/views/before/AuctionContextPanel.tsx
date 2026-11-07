@@ -3,12 +3,11 @@ import { useDesk } from '../../state/DeskContext';
 import { useAuctionContext, type AuctionContext } from '../../state/useAuctionContext';
 import { Badge, EmptyState, Panel, DASH, fmtPrice, fmtFixed } from '../../ui';
 import type { OpenLoc, Rate } from '../../utils/auction';
-import type { TradeSessionId } from '../../utils/sessionDay';
+import { TRADE_SESSION_NAME as SES_NAME } from '../../utils/sessionDay';
 import { locale, tr } from '../../i18n';
 
 const dayFmt = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', timeZone: 'UTC' });
 const hmFmt = new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'UTC' });
-const SES_NAME: Record<TradeSessionId, string> = { london: tr('Londyn', 'London'), ny: 'NY' };
 
 /** Podpis sesji: „Sesja Londyn” / „Sesja NY”, zamknięta z dopiskiem; przed pierwszymi danymi ogólnie. */
 function sessionCaption(s: AuctionContext['session']): string {

@@ -109,6 +109,23 @@ describe('computeAuctionContext — sesja NY i sesja azjatycka', () => {
     expect(ctx.stats!.n).toBe(38); // NY wczoraj (sesja pokazywana) nie wchodzi do historii
   });
 
+  it('przez otwarcie NY: 13:29 UTC jeszcze Londyn, 13:31 NY z IB w trakcie, VWAP i częstości tylko z NY', () => {
+    const minute = [...flat(TODAY - D, 1440, MIN, 100_000), ...flat(TODAY, 420, MIN, 100_100), ...flat(TODAY + LON, 390, MIN, 100_300), ...flat(TODAY + NY, 2, MIN, 100_500)];
+    const hourly = [...history, ...flat(TODAY, 13, H, 100_200)];
+    const before = computeAuctionContext(minute, hourly, TODAY + NY - MIN);
+    expect(before.session).toMatchObject({ id: 'london', start: TODAY + LON, closed: false });
+    expect(before.vwap!.vwap).toBeCloseTo(100_300, 6);
+    expect(before.ib!.done).toBe(true);
+    expect(before.stats!.n).toBe(39);
+    const after = computeAuctionContext(minute, hourly, TODAY + NY + MIN);
+    expect(after.session).toMatchObject({ id: 'ny', start: TODAY + NY, ibEnd: TODAY + NY + H, closed: false });
+    expect(after.vwap!.vwap).toBeCloseTo(100_500, 6); // tylko świeca 13:30 (13:31 jeszcze trwa)
+    expect(after.ib).toEqual({ hi: 100_505, lo: 100_495, done: false });
+    expect(after.today).toMatchObject({ start: TODAY + NY, ibDone: false, openLoc: 'above' });
+    expect(after.prev!.high).toBe(100_005); // NY wczoraj
+    expect(after.stats!.n).toBe(39); // 40 sesji NY w historii
+  });
+
   it('świece 1m pobierane od początku poprzedniej sesji tego samego typu', () => {
     expect(minuteFrom(TODAY + LON + 3 * H)).toBe(TODAY - D + LON);
     expect(minuteFrom(TODAY + NY + H)).toBe(TODAY - D + NY);
