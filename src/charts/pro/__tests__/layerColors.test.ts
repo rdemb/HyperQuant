@@ -25,10 +25,22 @@ describe('kolory warstw wykresu (paleta Głębia)', () => {
     const found: string[] = [];
     for (const f of canvasFiles()) {
       if (ALLOWED.has(f)) continue;
-      const src = readFileSync(join(ROOT, f), 'utf8');
-      for (const m of src.matchAll(/['"`](#[0-9a-fA-F]{3,8})['"`]/g)) found.push(`${f}: ${m[1]}`);
+      // Bez komentarzy (w nich wolno napisać, jaki kolor był wcześniej); w napisach także kolor wewnątrz dłuższego tekstu
+      const src = readFileSync(join(ROOT, f), 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/^\s*\/\/.*$/gm, '')
+        .replace(/\s\/\/ .*$/gm, '');
+      for (const m of src.matchAll(/(['"`])((?:\\.|(?!\1)[^\\])*?)\1/g))
+        for (const c of m[2].match(/#[0-9a-fA-F]{3,8}\b|rgba?\(\s*\d[^)]*\)/g) ?? []) found.push(`${f}: ${c}`);
     }
     expect(found).toEqual([]);
+  });
+
+  it('kolory kategorii (turkus, złoto, fiolet, szary) i POC zdefiniowane w theme.ts tylko raz', () => {
+    const theme = readFileSync(join(ROOT, 'chart', 'theme.ts'), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/\/\/.*$/gm, '');
+    for (const c of ['#059583', '#B18E15', '#A878DB', '#7A889C', '#F1C45E']) expect(theme.match(new RegExp(c, 'gi'))?.length, c).toBe(1);
   });
 
   it('IB ma własny kolor, z dala od kolorów stron, VWAP, POC, poziomów i mapy z bloga', () => {

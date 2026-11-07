@@ -228,7 +228,7 @@ const LEVEL_COLOR = rgba(PRO.ink3, 0.45);
 /** Krycie słupków wskaźnika (przy kryciu instancji 100%): słupek sprzedaży ma jeszcze kontrast ≥ 3:1 z tłem wykresu. */
 const HIST_ALPHA = 0.9;
 /** Odcinek bez koloru: przerwa między poziomami kolejnych okresów. */
-const CLEAR = 'rgba(0, 0, 0, 0)';
+const CLEAR = rgba(PRO.bg, 0);
 
 const sameOhlc = (a: Ohlc | null, b: Ohlc | null) =>
   a === b || (a !== null && b !== null && a.open === b.open && a.high === b.high && a.low === b.low && a.close === b.close);

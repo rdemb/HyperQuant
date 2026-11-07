@@ -76,7 +76,7 @@ const ramp = (hex: string, a0: number, a1: number) => Array.from({ length: LEVEL
 const DPOS_BAR = ramp(PRO.deltaPosBar, 0.55, 1);
 const DNEG_BAR = ramp(PRO.deltaNegBar, 0.55, 1);
 const VOL_BAR = rgba(PRO.volBar, 0.62);
-const TILE_EDGE = 'rgba(255,255,255,0.12)';
+const TILE_EDGE = rgba(PRO.white, 0.12);
 const lvl = (x: number) => (x >= 1 ? LEVELS : x > 0 ? Math.round(x * LEVELS) : 0);
 /** Liczby w komórkach: bezszeryfowe, węższe od czcionki o stałej szerokości. */
 const CELL_FONT = '"Plus Jakarta Sans", -apple-system, "Segoe UI", sans-serif';
