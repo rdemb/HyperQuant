@@ -1,5 +1,6 @@
 import type { Side } from '../hl/parse';
 import { IMB_BUY, IMB_SELL, detectImbalances, valueArea } from '../../orderflow/footprint';
+import { fmtPrice } from '../../../ui/format';
 
 /**
  * Footprint świecy z taśmy: wolumen agresywnego kupna i sprzedaży na każdym ticku ceny, delta z jej
@@ -54,6 +55,12 @@ export function hlTick(px: number, szDecimals?: number): number {
 export function baseTick(px: number): number {
   return hlTick(px * 0.95);
 }
+
+/** Liczba miejsc po przecinku ceny wg ticku Hyperliquid (BTC przy 80 tys.: 0, ETH: 1, SOL: 2, HYPE: 3). */
+export const priceDigits = (p: number) => Math.max(0, -Math.floor(Math.log10(hlTick(Math.abs(p)))));
+
+/** Cena z dokładnością ticku rynku (wykres, nagłówek układu i Czwórka). */
+export const fmtPx = (p: number) => fmtPrice(p, priceDigits(p));
 
 /** Indeks wiersza ceny na siatce `step` (zaokrąglenie chroni przed błędem zmiennoprzecinkowym). */
 export function rowIndex(px: number, step: number): number {

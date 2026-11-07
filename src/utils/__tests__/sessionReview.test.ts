@@ -338,8 +338,8 @@ describe('reviewRows: likwidacje i oczekiwany zakres — pozostałe gałęzie', 
 });
 
 describe('czystość modułów Rozliczenia', () => {
-  it('sessionReview, sessionFacts i sessionText nie importują modułów UI wykresu ani powtórki', () => {
-    for (const f of ['../sessionReview.ts', '../sessionFacts.ts', '../sessionText.ts']) {
+  it('sessionReview, sessionFacts, sessionText i fourNumbers (Czwórka) nie importują modułów UI wykresu ani powtórki', () => {
+    for (const f of ['../sessionReview.ts', '../sessionFacts.ts', '../sessionText.ts', '../fourNumbers.ts']) {
       const src = readFileSync(new URL(f, import.meta.url), 'utf8');
       expect(src, f).not.toMatch(/from\s+['"][^'"]*charts\/pro\/(chart|replay)\//);
     }
