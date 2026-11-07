@@ -4,6 +4,29 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Etap 1a: dzień tradera w trzech fazach (2026-11-07)
+
+#### Dodane
+- **Trzy fazy dnia zamiast zakładek narzędzi**: **Przed sesją** (`#before`: wykres z układami Mapa dnia i Paliwo i godziny, pas kontekstu, kalendarz makro, funding między giełdami, kontekst aukcji, mapa likwidacji z kaskadą, płynność wg godzin, kafle makro i wiadomości), **W sesji** (`#charts`: wykres z układami Kokpit, Aukcja i otwarcie oraz Wielkie ręce i reszta rynku; od 1280 px prawa kolumna DOM i taśmy chowana klawiszem `d`, na telefonie pasek Pulse; pod wykresem przepływ kohort i taśma likwidacji) i **Po sesji** (`#after`: układ Rozliczenie doby, dziennik prognoz z weryfikacją i dziennik transakcji). Panele skanera pokazują „—, tylko BTC” dla innych rynków. Alt+1…6 przełącza układy i przenosi do ekranu ich fazy.
+- **Badania** (`#research`, w menu „Więcej”): model kontra rynek HIP-4, proxy makro, mapa rynku, mechanika arkusza, laboratorium mikrostruktury, metryki reżimu, kalkulator wielkości pozycji i taśma przepływu zleceń.
+- **Laboratorium folkloru w Lekcjach**: wyniki reguł folkloru obok ćwiczeń, których dotyczą.
+- **Eksport danych dawnego Analizatora planu w Źródłach** (`src/views/sources/LegacyPlanDataCard.tsx`): karta (tylko gdy w przeglądarce są zapisane plany) pobiera plany i kapitał jako plik JSON. Dane w `localStorage` zostają nietknięte.
+- **Przekierowania starych adresów**: `#desk`, `#plan`, `#market`, `#lab`, `#micro`, `#flow` i stare linki powtórki (`#charts?replay=…&station=scalp`) prowadzą do odpowiedniego ekranu.
+- **Pasek „Przywróć moje poprzednie ustawienia”**: odtwarza dawną kartę Start; kopia dawnej listy kart jest zapisana osobno.
+
+#### Zmienione
+- **Paleta Głębia wszędzie**: jedna paleta na wykresach, w interfejsie, w lekcjach i na statycznych stronach bloga (zgodna z odróżnianiem barw przy daltonizmie).
+- **Sześć układów w fazach zamiast sześciu stacji roboczych** (`src/charts/pro/chart/stations.ts`): Mapa dnia, Paliwo i godziny, Kokpit, Aukcja i otwarcie, Wielkie ręce i reszta rynku, Rozliczenie doby. Dawne stacje (Start, Skalper, Płynność, Aukcja, Giełdy, Dwa interwały) prowadzą do nowych układów.
+- **Migracja kart**: własne karty użytkownika zostają bez zmian, dawna karta Start jest do przywrócenia z paska, a surowa stara lista kart trafia raz do klucza `hq.charts.tabs.v1.pre-v2`. Dziennik transakcji, dziennik prognoz, szablony, rysunki i alarmy nie są ruszane.
+- **Nowe menu wskaźników**: grupy jak w TradingView, osobna sekcja „Tylko w HyperQuant”.
+- **Teksty**: przyciski w Lekcjach, statyczne strony Wykresów (PL i EN), szablon zgłoszenia błędu i README używają nazw układów i faz zamiast starych zakładek.
+
+#### Usunięte
+- **Wskaźniki OBV, CMF, MFI i Net Volume** (nie wnoszą nic ponad deltę, CVD i wolumen z taśmy).
+- **Lab 3D** (sceny Three.js) wraz z zależnością `three`.
+- **Analizator planu** (interfejs: Monte Carlo planu, dziennik dokładności, Plan na jutro); dane zapisane wcześniej w przeglądarce można pobrać w Źródłach.
+- Osobne zakładki Desk, Rynek, Mikrostruktura i DOM i taśma (ich panele są w fazach dnia i w Badaniach).
+
 ### Zmienione
 - **Adres strony: hyperquant.tech** (`package.json`, `index.html`, `public/robots.txt`): adres kanoniczny, karty OG, JSON-LD, sitemap, kanał RSS, IndexNow, podpis zrzutu wykresu i stopka kart bloga wskazują https://hyperquant.tech/. Stary adres rdemb.github.io/HyperQuant/ przekierowuje (301) na tę samą ścieżkę w nowej domenie. Strona jest teraz w głównym katalogu domeny, więc ma własny `robots.txt` z adresem mapy strony. Kontakt VAPID serwera powiadomień 24/7 to nowy adres.
 - **Profil doby zamiast liter TPO** (`src/charts/pro/core/tpo.ts`, `src/charts/pro/chart/tpoLayer.ts`): warstwa „Profil doby: wolumen, agresja, czas (TPO)” (szablon Market Profile 30m) rysuje każdą dobę UTC jako profil wolumenu pod świecami zamiast liter okresów. Kolor wiersza to strona agresywna z taśmy (zieleń kupno, fiolet sprzedaż, cztery odcienie od 55 do 77,5% wolumenu jednej strony, progi z rozkładu na taśmie BTC z 7 dób; szary bez przewagi albo bez taśmy), a cienki obrys to czas TPO w tym samym polu co wolumen doby, więc widać ceny z szybkim obrotem i ceny, na których rynek stał przy małym obrocie. Wolumen z taśmy na cenach transakcji, reszta wolumenu świec (świece sprzed nagrania, luki) równo na zakres H–L. POC i value area z wolumenu (także w karcie uczciwości szablonu), pod profilem delta doby z udziałem taśmy, a pod krzyżem zakres ceny, wolumen, udział stron i liczba okresów wiersza.
