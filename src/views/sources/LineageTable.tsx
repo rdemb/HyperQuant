@@ -614,8 +614,8 @@ const GROUPS: { title: string; rows: Row[] }[] = [
           'every 2 min with the map; confirmations up to 3 requests/min (only at full API rate)'
         ),
         caveat: tr(
-          'Hyperliquid nie publikuje likwidacji wszystkich kont — tylko zmierzona część open interest; bez adresów, czas do minuty, rozmiar zaokrąglony, opóźnienie do kilku minut.',
-          'Hyperliquid does not publish liquidations for all accounts — only the measured part of open interest; no addresses, time to the minute, rounded size, a delay of up to a few minutes.'
+          'Hyperliquid nie publikuje likwidacji wszystkich kont — tylko zmierzona część open interest; bez adresów, czas do minuty, rozmiar zaokrąglony. Zdarzenie dochodzi po ponownym odczycie pozycji: małe pozycje nawet po kilku godzinach, z czasem samej likwidacji.',
+          'Hyperliquid does not publish liquidations for all accounts — only the measured part of open interest; no addresses, time to the minute, rounded size. An event arrives after the position is read again: for small positions up to several hours later, with the time of the liquidation itself.'
         ),
       },
       {
