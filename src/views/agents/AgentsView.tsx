@@ -13,8 +13,8 @@ import {
   REPO_STEPS,
   claudeDesktopJson,
   cursorLink,
+  type McpStatus,
   openbotConfig,
-  serverConfig,
   vscodeLink,
 } from './installLinks';
 import { profileText } from './profiles';
@@ -24,8 +24,28 @@ const quote = (s: string) => (lang === 'en' ? `"${s}"` : `„${s}”`);
 
 const BTN_PRIMARY =
   'inline-flex items-center justify-center gap-1.5 min-h-11 sm:min-h-9 px-4 rounded-lg bg-accent text-page text-sm font-semibold hover:brightness-110 transition-[filter] duration-150';
-const CODE_BLOCK = 'font-mono text-xs leading-relaxed text-ink-1 bg-page border border-line rounded-lg px-3 py-2.5 overflow-x-auto whitespace-pre';
+// Bloki kodu zawijają się (bez przewijania w bok); ścieżki łamią się tylko po „/” (`Path`)
+const CODE_BLOCK = 'font-mono text-xs leading-relaxed text-ink-1 bg-page border border-line rounded-lg px-3 py-2.5 whitespace-pre-wrap break-words';
 const TOOL_CHIP = 'font-mono text-[11px] text-ink-2 border border-line rounded px-1.5 py-0.5';
+
+/**
+ * Tekst ze ścieżką: wiersz łamie się tylko po „/” (`<wbr>`) albo na odstępie, nigdy w środku nazwy pliku (także nie po
+ * „-”); odstępy i końce wierszy zostają zwykłym tekstem (formatowanie JSON-a w `pre`). Zaznaczony tekst kopiuje się bez zmian.
+ */
+const Path: React.FC<{ text: string }> = ({ text }) => (
+  <>
+    {text.split('/').map((part, i, all) => (
+      <React.Fragment key={i}>
+        {part.split(/(\s+)/).map((tok, j) => (tok === '' || /^\s+$/.test(tok) ? tok : <span key={j} className="whitespace-nowrap">{tok}</span>))}
+        {i < all.length - 1 && (
+          <>
+            /<wbr />
+          </>
+        )}
+      </React.Fragment>
+    ))}
+  </>
+);
 
 /** Link zewnętrzny (nowa karta) z ikoną i opisem dla czytnika ekranu. */
 const A: React.FC<{ href: string; children: React.ReactNode }> = ({ href, children }) => (
@@ -60,8 +80,8 @@ const Intro: React.FC = () => (
       <h1 className="font-display text-2xl sm:text-3xl font-semibold tracking-tight text-ink-1">{tr('Agenci AI', 'AI agents')}</h1>
       <p className="text-[15px] text-ink-1 leading-relaxed">
         {tr(
-          'Podłącz HyperQuant do swojego asystenta AI: OpenBota, Claude, Cursora, VS Code albo innego klienta MCP. Serwer hyperquant-mcp daje mu 10 narzędzi z kontekstem rynku BTC na Hyperliquid, tymi samymi funkcjami co ta strona.',
-          'Connect HyperQuant to your AI assistant: OpenBot, Claude, Cursor, VS Code or another MCP client. The hyperquant-mcp server gives it 10 tools with BTC market context on Hyperliquid, computed with the same functions as this site.'
+          'Podłącz HyperQuant do swojego asystenta AI: OpenBota, Claude, Cursora, VS Code albo innego klienta MCP. Serwer hyperquant-mcp daje mu 10 narzędzi z kontekstem rynku BTC na Hyperliquid, liczonym tymi samymi funkcjami co ta strona. Cena to ostatnie zamknięcie świecy 1m, więc liczby mogą się nieco różnić od strony w tej samej chwili.',
+          'Connect HyperQuant to your AI assistant: OpenBot, Claude, Cursor, VS Code or another MCP client. The hyperquant-mcp server gives it 10 tools with BTC market context on Hyperliquid, computed with the same functions as this site. The price is the latest 1-minute close, so values can differ slightly from the site at the same moment.'
         )}
       </p>
       <p className="text-sm text-ink-2 leading-relaxed">
@@ -185,7 +205,9 @@ const ServerCard: React.FC = () =>
           'Other clients run the server on your computer over STDIO. Until the npm package is published, build it from the repository (Node.js 20 or later):'
         )}
       </p>
-      <pre className={CODE_BLOCK}>{REPO_STEPS.join('\n')}</pre>
+      <pre className={CODE_BLOCK}>
+        <Path text={REPO_STEPS.join('\n')} />
+      </pre>
       <CopyButton
         text={REPO_STEPS.join('\n')}
         label={tr('Kopiuj polecenia', 'Copy commands')}
@@ -193,36 +215,57 @@ const ServerCard: React.FC = () =>
       />
       <p className="text-xs text-ink-3 leading-relaxed">
         {tr('W ustawieniach klienta polecenie to node, a argument to pełna ścieżka pliku ', 'In the client settings the command is node and the argument is the full path of ')}
-        <code className="font-mono text-ink-2 break-all">{BUNDLE_PATH}</code>
+        <code className="font-mono text-ink-2">
+          <Path text={BUNDLE_PATH} />
+        </code>
         {tr(' w Twojej kopii. W przykładach niżej zamień ', ' in your copy. In the examples below, replace ')}
-        <code className="font-mono text-ink-2 break-all">{REPO_DIR}</code>
+        <code className="font-mono text-ink-2">
+          <Path text={REPO_DIR} />
+        </code>
         {tr(' na jej katalog.', ' with its folder.')}
       </p>
     </Panel>
   );
 
-const OpenBotCard: React.FC = () => {
-  const cfg = openbotConfig(MCP_STATUS);
+/** Pole ustawień OpenBota: nazwa, wartość jak w formularzu i przycisk, który kopiuje dokładnie tę wartość. */
+const OpenBotField: React.FC<{ field: string; label: string; value: string; copyLabel: string }> = ({ field, label, value, copyLabel }) => (
+  <div data-field={field} className="flex flex-col gap-1.5">
+    <dt className="text-xs text-ink-3">{label}</dt>
+    <dd className="flex flex-wrap items-start gap-x-3 gap-y-1.5 min-w-0">
+      <code data-value="" className="font-mono text-xs text-ink-1 bg-page border border-line rounded-lg px-2.5 py-2 min-w-0 max-w-full">
+        <Path text={value} />
+      </code>
+      <CopyButton
+        text={value}
+        label={copyLabel}
+        fallback={tr('Schowek niedostępny: zaznacz wartość obok i skopiuj ją ręcznie.', 'Clipboard unavailable: select the value and copy it by hand.')}
+      />
+    </dd>
+  </div>
+);
+
+export const OpenBotCard: React.FC<{ status?: McpStatus }> = ({ status = MCP_STATUS }) => {
+  const cfg = openbotConfig(status);
   return (
     <Panel title="OpenBot" bodyClassName="px-4 py-3 flex flex-col gap-3">
       <ol className="flex flex-col gap-1.5 text-sm text-ink-1 leading-snug list-decimal pl-5 marker:text-ink-3">
         <li>{tr('Otwórz Marketplace → Aplikacje.', 'Open Marketplace → Apps.')}</li>
         <li>{tr('Wybierz „Dodaj własną” i transport STDIO.', 'Choose "Add your own" and the STDIO transport.')}</li>
-        <li>{tr('Wklej polecenie i argumenty z ustawień poniżej.', 'Paste the command and arguments from the settings below.')}</li>
+        <li>
+          {tr(
+            'Skopiuj polecenie i argumenty przyciskami poniżej i wklej każde w jego pole formularza.',
+            'Copy the command and the arguments with the buttons below and paste each into its field of the form.'
+          )}
+        </li>
       </ol>
-      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
-        <dt className="text-ink-3">{tr('Transport', 'Transport')}</dt>
-        <dd className="font-mono text-ink-1">{cfg.transport}</dd>
-        <dt className="text-ink-3">{tr('Polecenie', 'Command')}</dt>
-        <dd className="font-mono text-ink-1">{cfg.command}</dd>
-        <dt className="text-ink-3">{tr('Argumenty', 'Arguments')}</dt>
-        <dd className="font-mono text-ink-1 break-all">{cfg.args.join(' ')}</dd>
+      <dl className="flex flex-col gap-2.5">
+        <div className="flex items-baseline gap-2 text-xs">
+          <dt className="text-ink-3">{tr('Transport', 'Transport')}</dt>
+          <dd className="font-mono text-ink-1">{cfg.transport}</dd>
+        </div>
+        <OpenBotField field="command" label={tr('Polecenie', 'Command')} value={cfg.command} copyLabel={tr('Kopiuj polecenie', 'Copy command')} />
+        <OpenBotField field="args" label={tr('Argumenty', 'Arguments')} value={cfg.args.join(' ')} copyLabel={tr('Kopiuj argumenty', 'Copy arguments')} />
       </dl>
-      <CopyButton
-        text={JSON.stringify(cfg, null, 2)}
-        label={tr('Kopiuj ustawienia', 'Copy settings')}
-        fallback={tr('Schowek niedostępny: zaznacz polecenie i argumenty wyżej.', 'Clipboard unavailable: select the command and arguments above.')}
-      />
       <p className="text-xs text-ink-3 leading-relaxed">
         {tr(
           'Przycisk instalacji w OpenBocie pojawi się tutaj, gdy OpenBot go udostępni. Wpis HyperQuant w Marketplace OpenBota jest w przygotowaniu.',
@@ -235,21 +278,24 @@ const OpenBotCard: React.FC = () => {
 
 const NPM_PENDING_ID = 'agents-npm-pending';
 
-/** Przycisk linku instalacji: aktywny link albo wyłączony przycisk opisany powodem (przed publikacją paczki w npm). */
+/**
+ * Przycisk linku instalacji: aktywny link albo przycisk niedostępny przed publikacją paczki w npm. Niedostępny ma
+ * `aria-disabled` zamiast `disabled`: zostaje osiągalny klawiaturą, a czytnik ekranu czyta przy nim powód z podpisu.
+ */
 const InstallLink: React.FC<{ href: string | null; label: string }> = ({ href, label }) =>
   href ? (
     <a href={href} className={BTN_SECONDARY}>
       {label}
     </a>
   ) : (
-    <button type="button" disabled className={BTN_SECONDARY} aria-describedby={NPM_PENDING_ID}>
+    <button type="button" aria-disabled="true" aria-describedby={NPM_PENDING_ID} onClick={() => undefined} className={BTN_SECONDARY}>
       {label}
     </button>
   );
 
-const EditorsCard: React.FC = () => {
-  const cursor = cursorLink(MCP_STATUS);
-  const vscode = vscodeLink(MCP_STATUS);
+export const EditorsCard: React.FC<{ status?: McpStatus }> = ({ status = MCP_STATUS }) => {
+  const cursor = cursorLink(status);
+  const vscode = vscodeLink(status);
   return (
     <Panel title={tr('Cursor i VS Code', 'Cursor and VS Code')} bodyClassName="px-4 py-3 flex flex-col gap-3">
       <div className="flex flex-wrap gap-2">
@@ -260,7 +306,7 @@ const EditorsCard: React.FC = () => {
         <p id={NPM_PENDING_ID} className="text-xs text-ink-3 leading-relaxed">
           {tr(
             'Aktywne po publikacji paczki npm: link instalacji podaje edytorowi gotowe polecenie, a ścieżka repozytorium jest inna u każdego. Do tego czasu dodaj serwer ręcznie w ustawieniach MCP edytora: polecenie node i ścieżka bundla jak wyżej.',
-            'Active after the npm package is published: an install link hands the editor a ready command, and the repository path differs for everyone. Until then, add the server by hand in the editor\'s MCP settings: the command node and the bundle path as above.'
+            "Active after the npm package is published: an install link hands the editor a ready command, and the repository path differs for everyone. Until then, add the server by hand in the editor's MCP settings: the command node and the bundle path as above."
           )}
         </p>
       ) : (
@@ -282,12 +328,20 @@ const OtherClientsCard: React.FC = () => {
           'Any client that launches STDIO servers. JSON in the mcpServers format, as in claude_desktop_config.json:'
         )}
       </p>
-      <pre className={CODE_BLOCK}>{json}</pre>
+      <pre className={CODE_BLOCK}>
+        <Path text={json} />
+      </pre>
       <CopyButton
         text={json}
         label={tr('Kopiuj JSON', 'Copy JSON')}
         fallback={tr('Schowek niedostępny: zaznacz JSON i skopiuj go ręcznie.', 'Clipboard unavailable: select the JSON and copy it by hand.')}
       />
+      <p className="text-xs text-ink-3 leading-relaxed">
+        {tr(
+          'Na Windows zapisz ścieżkę w JSON-ie ukośnikami zwykłymi (C:/path/to/HyperQuant/…) albo podwójnymi odwrotnymi (C:\\\\path\\\\to\\\\HyperQuant\\\\…).',
+          'On Windows, write the path in JSON with forward slashes (C:/path/to/HyperQuant/…) or doubled backslashes (C:\\\\path\\\\to\\\\HyperQuant\\\\…).'
+        )}
+      </p>
       <p className="text-xs text-ink-3 leading-relaxed">
         {tr('Teksty odpowiedzi po polsku: dodaj ', 'Tool texts in Polish: add ')}
         <code className="font-mono text-ink-2">{'"env": { "HQ_LANG": "pl" }'}</code>
@@ -310,10 +364,13 @@ const Install: React.FC = () => (
       <ClaudeCard />
       <ServerCard />
     </div>
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
+    {/* Szersza kolumna na JSON (mieści się bez zawijania od 1280 px); na 1024–1279 px JSON pod spodem na całą szerokość */}
+    <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-[1fr_1fr_1.45fr] gap-4 items-start">
       <OpenBotCard />
       <EditorsCard />
-      <OtherClientsCard />
+      <div className="lg:col-span-2 xl:col-span-1 min-w-0">
+        <OtherClientsCard />
+      </div>
     </div>
   </section>
 );

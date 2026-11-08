@@ -27,14 +27,17 @@ const README = read('mcp/README.md');
 
 const NPX = { command: 'npx', args: ['-y', 'hyperquant-mcp'] };
 const CURSOR = 'cursor://anysphere.cursor-deeplink/mcp/install?name=hyperquant&config=';
+const VSCODE_REDIRECT = 'https://vscode.dev/redirect?url=';
 const VSCODE = 'vscode:mcp/install?';
 
 /** Parametr `config` linku Cursora tak, jak stoi w adresie (przed dekodowaniem). */
 const rawConfig = (link: string) => link.slice(link.indexOf('&config=') + '&config='.length);
 /** Konfiguracja z linku Cursora: adres dekoduje parametr, potem base64 → JSON. */
 const cursorConfig = (link: string): unknown => JSON.parse(atob(new URL(link).searchParams.get('config') ?? ''));
+/** Link `vscode:` z opakowania vscode.dev (parametr `url`). */
+const vscodeInner = (link: string): string => new URL(link).searchParams.get('url') ?? '';
 /** Konfiguracja z linku VS Code: JSON zakodowany w URL po „?”. */
-const vscodeConfig = (link: string): unknown => JSON.parse(decodeURIComponent(link.slice(VSCODE.length)));
+const vscodeConfig = (inner: string): unknown => JSON.parse(decodeURIComponent(inner.slice(VSCODE.length)));
 
 describe('instalacja po publikacji w npm', () => {
   it('serwer to npx -y hyperquant-mcp', () => {
@@ -48,11 +51,15 @@ describe('instalacja po publikacji w npm', () => {
     expect(cursorConfig(link ?? '')).toEqual(NPX);
   });
 
-  it('VS Code: vscode:mcp/install?<JSON w URL> z nazwą, transportem stdio i tą samą komendą', () => {
-    const link = vscodeLink('npm');
-    expect(link?.startsWith(VSCODE)).toBe(true);
-    expect(vscodeConfig(link ?? '')).toEqual({ name: 'hyperquant', type: 'stdio', ...NPX });
-    expect(decodeURIComponent(link ?? '')).toContain('"command":"npx","args":["-y","hyperquant-mcp"]');
+  it('VS Code: opakowanie https://vscode.dev/redirect?url= (zalecane dla stron) z linkiem vscode:mcp/install?<JSON w URL>', () => {
+    const link = vscodeLink('npm') ?? '';
+    expect(link.startsWith(VSCODE_REDIRECT)).toBe(true);
+    // Cały link vscode: zakodowany jako jeden parametr (bez surowych „:”, „?”, „{”)
+    expect(link.slice(VSCODE_REDIRECT.length)).toMatch(/^[A-Za-z0-9%._~-]+$/);
+    const inner = vscodeInner(link);
+    expect(inner.startsWith(VSCODE)).toBe(true);
+    expect(vscodeConfig(inner)).toEqual({ name: 'hyperquant', type: 'stdio', ...NPX });
+    expect(decodeURIComponent(inner)).toContain('"command":"npx","args":["-y","hyperquant-mcp"]');
   });
 
   it('base64 w linku Cursora jest zakodowany w URL: „+”, „/” i „=” nie psują parametru', () => {

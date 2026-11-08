@@ -182,3 +182,17 @@ describe('stan map z bloga', () => {
     expect(moved.maps[0].levels[0].price).toBe(76_100);
   });
 });
+
+describe('podział: czyste funkcje map w src/utils/blogMaps.ts, hook z Reactem osobno', () => {
+  it('hook re-eksportuje te same funkcje i adres pliku; moduł utils nie importuje Reacta (bundle serwera MCP z niego korzysta)', async () => {
+    const utils = await import('../../utils/blogMaps');
+    expect(parseBlogMaps).toBe(utils.parseBlogMaps);
+    expect(pickMap).toBe(utils.pickMap);
+    expect(nextBlogMaps).toBe(utils.nextBlogMaps);
+    expect(BLOG_MAPS_URL).toBe(utils.BLOG_MAPS_URL);
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync(new URL('../../utils/blogMaps.ts', import.meta.url), 'utf8');
+    expect(src).not.toMatch(/from ['"]react/);
+    expect(src).not.toMatch(/from ['"][./]*state\//);
+  });
+});

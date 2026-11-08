@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { type InputSeries, type InputStore, sessionExpectedOf } from '../../src/charts/pro/chart/layoutInputs';
 import { dayVwapOf, layoutNumbers, rvolOf, sessionNowOf } from '../../src/charts/pro/chart/layoutNumbers';
 import { vwapSigma } from '../../src/charts/pro/chart/marketState';
-import { parseBlogMaps } from '../../src/state/useBlogMaps';
+import { parseBlogMaps } from '../../src/utils/blogMaps';
 import type { CohortFlowState } from '../../src/state/useCohortFlow';
 import type { DeskLedgerState } from '../../src/state/useDeskLedger';
 import type { LiqTapeState } from '../../src/state/useLiqTape';

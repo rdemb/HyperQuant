@@ -6,7 +6,8 @@
  * - Cursor (cursor.com/docs/context/mcp/install-links): `cursor://anysphere.cursor-deeplink/mcp/install?name=<nazwa>&config=<base64>`,
  *   gdzie base64 to JSON `{command, args}`; base64 kodujemy jeszcze w URL („+”, „/” i „=” psułyby parametr).
  * - VS Code (code.visualstudio.com/api/extension-guides/ai/mcp, „Create an MCP installation or lookup URL”):
- *   `vscode:mcp/install?<encodeURIComponent(JSON)>`, JSON z nazwą i konfiguracją serwera w formacie VS Code (`type: 'stdio'`).
+ *   `vscode:mcp/install?<encodeURIComponent(JSON)>`, JSON z nazwą i konfiguracją serwera w formacie VS Code (`type: 'stdio'`);
+ *   na stronie w opakowaniu `https://vscode.dev/redirect?url=<link vscode: w URL>` (zalecanym tam dla stron i dokumentacji).
  */
 
 /** Skąd użytkownik bierze serwer: z repozytorium (dziś) albo z paczki npm (po publikacji). */
@@ -55,10 +56,11 @@ export function cursorLink(status: McpStatus): string | null {
   return status === 'npm' ? cursorInstallLink(SERVER_NAME, serverConfig(status)) : null;
 }
 
-/** Link VS Code; przed publikacją w npm brak. */
+/** Link VS Code przez vscode.dev (strona przekierowuje do edytora); przed publikacją w npm brak. */
 export function vscodeLink(status: McpStatus): string | null {
   if (status !== 'npm') return null;
-  return `vscode:mcp/install?${encodeURIComponent(JSON.stringify({ name: SERVER_NAME, type: 'stdio', ...serverConfig(status) }))}`;
+  const install = `vscode:mcp/install?${encodeURIComponent(JSON.stringify({ name: SERVER_NAME, type: 'stdio', ...serverConfig(status) }))}`;
+  return `https://vscode.dev/redirect?url=${encodeURIComponent(install)}`;
 }
 
 /** Ustawienia własnej aplikacji w OpenBocie (transport STDIO, polecenie i argumenty). */

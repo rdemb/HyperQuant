@@ -8,7 +8,7 @@ import { promisify } from 'node:util';
 import { gunzip } from 'node:zlib';
 import { type Candle, parseCandles } from '../../src/charts/pro/hl/parse';
 import { tr } from '../../src/i18n';
-import { type BlogMapsState, parseBlogMaps } from '../../src/state/useBlogMaps';
+import { type BlogMapsState, parseBlogMaps } from '../../src/utils/blogMaps';
 import { toVBars } from '../../src/utils/auction';
 import { historyBaseOf } from '../../src/utils/tapeHistory';
 import { type VolModel, buildVolModel } from '../../src/utils/volatility';

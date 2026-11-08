@@ -20,12 +20,15 @@ const sameFile = (a: string, b: string): boolean => {
  * Alias `src/i18n.ts` → `mcp/src/i18nNode.ts` po rozwiązanej ścieżce pliku: moduły `src/` importują i18n względnie
  * (`../i18n`, `../../../i18n`), więc zwykły alias po tekście importu by ich nie złapał. Gdyby mimo to `src/i18n.ts`
  * trafił do bundla (np. nowy sposób importu), `load` przerywa build — zamiast po cichu wydać serwer po polsku.
+ * Strażnik Reacta: import `react` albo `react-dom` (np. przez moduł strony z hookiem) też przerywa build.
  */
 function i18nNode(): Plugin {
   return {
     name: 'hq-i18n-node',
     enforce: 'pre',
     async resolveId(source, importer, options) {
+      // Serwer nie potrzebuje Reacta: moduł strony z hookiem w bundlu to błąd (czyste funkcje leżą w src/utils)
+      if (/^react(?:-dom)?(?:\/|$)/.test(source)) this.error(`React w bundlu MCP: ${source} (import z ${importer ?? '?'}); przenieś czysty kod do src/utils`);
       if (!/(?:^|\/)i18n(?:\.ts)?$/.test(source)) return null;
       const r = await this.resolve(source, importer, { ...options, skipSelf: true });
       return r && sameFile(r.id, I18N) ? I18N_NODE : null;
@@ -46,8 +49,6 @@ export default defineConfig({
   resolve: {
     alias: { '@': root },
   },
-  // React z `src/state/useBlogMaps.ts` (tylko import, hooki się nie wykonują) w wersji produkcyjnej
-  define: { 'process.env.NODE_ENV': JSON.stringify('production') },
   ssr: {
     noExternal: true,
     external: ['@modelcontextprotocol/server', '@modelcontextprotocol/server/stdio', 'zod'],

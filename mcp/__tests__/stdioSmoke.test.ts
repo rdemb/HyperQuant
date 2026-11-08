@@ -92,12 +92,30 @@ describe('test dymny stdio', () => {
 
   it('bundle bez kodu wykresów, map źródeł i ścieżek lokalnych (katalog domowy, dysk Windows)', () => {
     const text = readFileSync(BUNDLE, 'utf8');
-    for (const banned of ['lightweight-charts', 'createChart', 'new Worker', 'sourceMappingURL']) expect(text, banned).not.toContain(banned);
+    // Bez Reacta (moduły strony z hookami nie trafiają do serwera; strażnik w mcp/vite.config.ts)
+    for (const banned of ['lightweight-charts', 'createChart', 'new Worker', 'sourceMappingURL', 'node_modules/react', 'react.production']) {
+      expect(text, banned).not.toContain(banned);
+    }
     expect(text).not.toMatch(LOCAL_PATH);
     // Ścieżki modułów w komentarzach bundla tylko względem repo (np. „src/utils/…”)
     for (const region of text.match(/^\/\/#region .*$/gm) ?? []) expect(region).not.toMatch(/^\/\/#region (?:[A-Za-z]:|\/)/);
     expect(text.startsWith('#!/usr/bin/env node\n')).toBe(true);
   });
+
+  it('import Reacta w kodzie serwera przerywa build bundla (strażnik w konfiguracji Vite), z nazwą modułu w błędzie', () => {
+    for (const mod of ['react', 'react/jsx-runtime', 'react-dom']) {
+      const dir = mkdtempSync(path.join(tmp, 'react-'));
+      const entry = path.join(dir, 'entry.ts');
+      writeFileSync(entry, `import * as m from '${mod}';\nconsole.error(Object.keys(m).length);\n`);
+      const r = spawnSync(process.execPath, [path.join(ROOT, 'node_modules', 'vite', 'bin', 'vite.js'), 'build', '--config', 'mcp/vite.config.ts', '--ssr', entry, '--outDir', path.join(dir, 'out')], {
+        cwd: ROOT,
+        encoding: 'utf8',
+        timeout: 60_000,
+      });
+      expect(r.status, mod).not.toBe(0);
+      expect(`${r.stdout}\n${r.stderr}`, mod).toContain(`React w bundlu MCP: ${mod}`);
+    }
+  }, 120_000);
 
   it('paczka npm: dokładnie bundle, README, LICENSE i package.json', () => {
     const r = spawnSync('npm pack --dry-run --json -w mcp', { cwd: ROOT, encoding: 'utf8', shell: true, timeout: 60_000 });

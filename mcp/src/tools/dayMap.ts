@@ -5,7 +5,7 @@
  */
 import { utcDayStart } from '../../../src/charts/pro/core/sessions';
 import { tr } from '../../../src/i18n';
-import { pickMap } from '../../../src/state/useBlogMaps';
+import { pickMap } from '../../../src/utils/blogMaps';
 import { type VBar, toVBars } from '../../../src/utils/auction';
 import { type MapKind, mapWindow, minutesCovered, settleRange } from '../../../src/utils/mapSettlement';
 import { type Envelope, type Num, type SourceRef, envelope, guardedLabel, iso, num } from '../envelope';

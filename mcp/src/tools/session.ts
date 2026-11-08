@@ -8,7 +8,7 @@ import * as z from 'zod';
 import { utcDayStart } from '../../../src/charts/pro/core/sessions';
 import type { Candle } from '../../../src/charts/pro/hl/parse';
 import { tr } from '../../../src/i18n';
-import type { BlogMapsState } from '../../../src/state/useBlogMaps';
+import type { BlogMapsState } from '../../../src/utils/blogMaps';
 import type { CohortFlowState } from '../../../src/state/useCohortFlow';
 import type { DeskLedgerState } from '../../../src/state/useDeskLedger';
 import type { LiqTapeState } from '../../../src/state/useLiqTape';

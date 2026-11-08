@@ -3,7 +3,7 @@
  * i mapa likwidacji wokół ceny ok. 101 000; teraz 7.11.2026 06:30 UTC (sesja azjatycka). Wczorajsza Mapa dnia i przebieg
  * sesji NY 6.11 — wspólne z testami Czwórki strony (`src/utils/__tests__/fixtures/fourNumbers`).
  */
-import { type BlogMap, type BlogMapsState, parseBlogMaps } from '../../src/state/useBlogMaps';
+import { type BlogMap, type BlogMapsState, parseBlogMaps } from '../../src/utils/blogMaps';
 import type { VBar } from '../../src/utils/auction';
 import type { FourInputs } from '../../src/utils/fourNumbers';
 import type { LiqMap } from '../../src/utils/liqMap';
