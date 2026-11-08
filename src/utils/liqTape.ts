@@ -44,7 +44,7 @@ export interface LiqTapeBucket extends LiqSums {
 export interface LiqTapeChecks {
   /** Kandydaci (zmniejszona pozycja przy cenie likwidacji) w ostatnich 24 h */
   candidates: number;
-  /** Potwierdzone fillami z polem `liquidation` */
+  /** Potwierdzone fillami z polem `liquidation` — zdarzenia na taśmie (czas likwidacji w oknie 24 h, nie czas potwierdzenia) */
   confirmed: number;
   /** Bez fillu likwidacyjnego (zamknięcie przez właściciela) */
   rejected: number;
@@ -120,8 +120,11 @@ function publicEvent(e: LiqEvent): LiqEvent {
   };
 }
 
+/** Okno taśmy: czas likwidacji z ostatnich 24 h. Wspólne dla zdarzeń, sum i licznika potwierdzonych (skaner). */
+export const inTapeDay = (t: number, asOf: number): boolean => t > asOf - DAY && t <= asOf;
+
 export function buildLiqTape(events: LiqEvent[], o: { coin: string; asOf: number; since: number; checks: LiqTapeChecks }): LiqTape {
-  const day = events.filter((e) => e.t > o.asOf - DAY && e.t <= o.asOf).sort((a, b) => b.t - a.t);
+  const day = events.filter((e) => inTapeDay(e.t, o.asOf)).sort((a, b) => b.t - a.t);
   const h1 = emptySums();
   const h24 = emptySums();
   const byBucket = new Map<number, LiqTapeBucket>();

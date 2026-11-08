@@ -8,6 +8,7 @@ import { HlRest, HlStream } from '../hl.ts';
 import { WeightLimiter } from '../rateLimiter.ts';
 import { AddressBook } from '../addressBook.ts';
 import { Scanner } from '../scanner.ts';
+import { LiqConfirmer } from '../liqDetect.ts';
 import { isLiqMap } from '../../../src/utils/liqMap.ts';
 import { isLiqTape } from '../../../src/utils/liqTape.ts';
 import { isCohortFlow } from '../../../src/utils/cohorts.ts';
@@ -243,6 +244,51 @@ describe('Scanner — cykl skanu i publikacji', () => {
     const after = JSON.parse(readFileSync(join(out, 'liq-tape', 'BTC.json'), 'utf8'));
     expect(after.since).toBe(now);
     expect(after.events).toEqual([]);
+    // Licznik potwierdzonych nie udaje likwidacji, której taśma już nie pokazuje
+    expect(after.checks.confirmed).toBe(after.totals.h24.n);
+  });
+
+  it('likwidacja wykryta po godzinach (stary odczyt pozycji): po wyjściu zdarzenia z okna 24 h checks.confirmed zgodne z taśmą i liq24h (objaw z 8.11.2026)', async () => {
+    const T0 = 120_000;
+    const H = 3_600_000;
+    let now = T0;
+    const { scanner, out, states, fills } = setup(false, () => now);
+    await scanner.scanDue(10); // odczyt obu pozycji w T0
+    scanner.recordTrade(74_990, T0 + 9 * 60_000); // cena dotyka ceny likwidacji longa 0xaaa (75 000)
+    // Ponowny odczyt dopiero po 5 h (przy ~29 tys. pozycji i ~120 odczytach/min mediana wieku odczytu to ~4 h)
+    now = T0 + 5 * H;
+    states['0xaaa'] = { assetPositions: [] };
+    fills['0xaaa'] = [{ coin: 'BTC', px: '74980', sz: '10', side: 'A', time: T0 + 10 * 60_000, tid: 42, liquidation: { markPx: '74995', method: 'market' } }];
+    await scanner.scanDue(10);
+    expect(await scanner.confirmLiquidations()).toBe(1);
+    // 24 h i 30 min po likwidacji: zdarzenie poza oknem, potwierdzenie (T0 + 5 h) w oknie
+    now = T0 + 24 * H + 30 * 60_000;
+    scanner.setCtx({ markPx: 75_000, oiBtc: 20, dayNtlVlm: 2e9 });
+    expect(await scanner.publish()).toBe(true);
+    const tape = JSON.parse(readFileSync(join(out, 'liq-tape', 'BTC.json'), 'utf8'));
+    const status = JSON.parse(readFileSync(join(out, 'status.json'), 'utf8'));
+    expect(tape.events).toEqual([]);
+    expect(status.liq24h).toBe(0);
+    expect(tape.checks.confirmed).toBe(tape.totals.h24.n);
+  });
+
+  it('restart po przerwie ≥ 2 min (stan z dysku, nowy okres obserwacji): zdarzenia sprzed niego wypadają razem z licznikiem potwierdzonych', async () => {
+    const old = new LiqConfirmer({ coin: 'BTC', maxPerMin: 3 });
+    old.enqueue({ addr: '0xaaa', prev: { szi: 10, entryPx: 83_000, liqPx: 75_000, scannedAt: 60_000 }, from: 60_000, to: 120_000 });
+    const liqFill = { coin: 'BTC', px: '74980', sz: '10', side: 'A', time: 90_000, tid: 42, liquidation: { markPx: '74995', method: 'market' } };
+    await old.process({ info: async () => [liqFill] }, 130_000);
+    expect(old.checks(130_000).confirmed).toBe(1);
+    // main.ts: odczyt stanu, przerwa ≥ MAX_GAP_MS → tapeSince = teraz
+    const now = 10 * 60_000;
+    const confirmer = LiqConfirmer.fromJSON(JSON.parse(JSON.stringify(old.toJSON())), { coin: 'BTC', maxPerMin: 3 });
+    const out = mkdtempSync(join(tmpdir(), 'hq-'));
+    const rest = new HlRest(new WeightLimiter(240), (async () => new Response('null')) as unknown as typeof fetch, () => 0, async () => {});
+    const scanner = new Scanner({ coin: 'BTC', book: new AddressBook(), rest, outDir: out, r2: null, now: () => now, confirmer, tapeSince: now });
+    scanner.setCtx({ markPx: 75_000, oiBtc: 20, dayNtlVlm: 2e9 });
+    expect(await scanner.publish()).toBe(true);
+    const tape = JSON.parse(readFileSync(join(out, 'liq-tape', 'BTC.json'), 'utf8'));
+    expect(tape.events).toEqual([]);
+    expect(tape.checks.confirmed).toBe(tape.totals.h24.n);
   });
 });
 
