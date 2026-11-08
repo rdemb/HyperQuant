@@ -15,6 +15,7 @@
   },
   "homepage": "https://hyperquant.tech/",
   "documentation": "https://github.com/rdemb/HyperQuant/blob/main/mcp/README.md",
+  "icon": "icon.png",
   "license": "MIT",
   "keywords": ["bitcoin", "btc", "hyperliquid", "market data", "liquidations", "read-only"],
   "server": {

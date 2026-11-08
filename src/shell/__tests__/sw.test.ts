@@ -60,6 +60,29 @@ describe('kliknięcie powiadomienia alarmu', () => {
   });
 });
 
+describe('pliki do pobrania z agents/ (OpenBot, .mcpb): zawsze z sieci, bez zapisu w cache', () => {
+  /** Odpowiedź workera na żądanie przy podanej odpowiedzi sieci i starej kopii pliku w cache. */
+  async function request(url: string, mode: string, net: () => Promise<unknown>) {
+    const puts: string[] = [];
+    const stale = { stale: true };
+    const cache = { match: async () => stale, put: (k: string) => void puts.push(String(k)) };
+    const w = loadWorker([], { caches: { open: async () => cache }, fetch: net });
+    let res: unknown = 'bez przechwycenia';
+    w.on.fetch({ request: { method: 'GET', url, mode }, respondWith: (p: unknown) => (res = p) });
+    return { res: await res, puts };
+  }
+  const FILES = ['agents/openbot/desk.md', 'agents/openbot/desk/AGENTS.md', 'agents/openbot/hyperquant/SKILL.md', 'agents/openbot/hyperquant/assets/icon.png', 'agents/hyperquant.mcpb'];
+
+  it('po wdrożeniu nowa wersja z sieci, nie stara kopia z cache; nic nie trafia do cache', async () => {
+    for (const f of FILES) {
+      const net = { type: 'basic', ok: true, body: `nowy ${f}`, clone: () => net };
+      for (const mode of ['cors', 'no-cors', 'same-origin']) expect(await request(`https://x.test/HyperQuant/${f}`, mode, async () => net), `${f} ${mode}`).toEqual({ res: net, puts: [] });
+      // Pobranie przez link z atrybutem download jako nawigacja: worker go nie przechwytuje
+      expect(await request(`https://x.test/HyperQuant/${f}`, 'navigate', async () => net), f).toEqual({ res: 'bez przechwycenia', puts: [] });
+    }
+  });
+});
+
 describe('nawigacja do powłoki aplikacji', () => {
   const shell = { cached: 'index.html' };
   /** Odpowiedź workera na wejście w ./ przy podanej odpowiedzi sieci. */

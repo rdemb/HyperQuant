@@ -2,10 +2,10 @@
 /**
  * Paczka MCPB `hyperquant.mcpb` dla Claude Desktop (instalacja dwuklikiem). Format: archiwum ZIP z `manifest.json`
  * (specyfikacja MANIFEST.md repo modelcontextprotocol/mcpb, wersja manifestu 0.3), licencją paczki (`LICENSE` z mcp/),
- * bundlem serwera jako `server/…` i `node_modules` z zależnościami wykonania paczki `hyperquant-mcp` (`dependencies`
- * z mcp/package.json, przechodnio: SDK serwera MCP z jego rdzeniem i zod), bez map źródeł, deklaracji typów
- * i dokumentacji. Obok archiwum plik `<archiwum>.sha256` z jego sumą SHA-256 w formacie `sha256sum` (strona pokazuje ją
- * przy przycisku pobrania).
+ * ikoną `icon.png` (ikona PWA strony 512×512), bundlem serwera jako `server/…` i `node_modules` z zależnościami wykonania
+ * paczki `hyperquant-mcp` (`dependencies` z mcp/package.json, przechodnio: SDK serwera MCP z jego rdzeniem i zod), bez
+ * map źródeł, deklaracji typów i dokumentacji. Obok archiwum plik `<archiwum>.sha256` z jego sumą SHA-256 w formacie
+ * `sha256sum` (strona pokazuje ją przy przycisku pobrania).
  *
  * Własny zapis ZIP (deflate z node:zlib), bez nowych zależności: oficjalne CLI `@anthropic-ai/mcpb` ciągnie dziewięć
  * paczek (m.in. podpisy i interaktywne pytania), a tu wystarczy spakować gotowe pliki. Archiwum jak z oficjalnego
@@ -27,6 +27,14 @@ export const DEFAULT_OUT = 'dist/agents/hyperquant.mcpb';
 const MANIFEST = 'mcp/mcpb/manifest.json';
 const MCP_PKG = 'mcp/package.json';
 const MCP_LICENSE = 'mcp/LICENSE';
+/**
+ * Ikona paczki: ikona PWA strony (PNG 512×512, rozmiar zalecany przez specyfikację) jako `icon.png` w katalogu głównym
+ * archiwum, wskazana polem `icon` manifestu (ścieżka względna w paczce). Bez kopii pliku w repozytorium.
+ */
+const ICON_SOURCE = 'public/icons/icon-512.png';
+const ICON = 'icon.png';
+/** Sygnatura pliku PNG (specyfikacja sprawdza ją przy ikonie lokalnej). */
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 /** Pliki zależności zbędne w czasie wykonania: mapy źródeł, deklaracje typów i źródła TypeScript, dokumentacja. */
 const SKIP_FILE = /\.(?:map|[cm]?ts|md|markdown)$/i;
@@ -187,12 +195,21 @@ function readManifest() {
   const entry = m.server.entry_point;
   if (typeof entry !== 'string' || !/^server\/[\w.-]+\.mjs$/.test(entry)) fail(`entry_point ${entry}: oczekiwane server/<plik>.mjs`);
   if (m.server.mcp_config?.command !== 'node' || m.server.mcp_config.args?.[0] !== `\${__dirname}/${entry}`) fail('mcp_config: node ${__dirname}/<entry_point>');
+  if (m.icon !== ICON) fail(`icon ${m.icon}: oczekiwane ${ICON} (ikona z ${ICON_SOURCE})`);
   return { text, entry };
 }
 
+/** Ikona z repo po sprawdzeniu, że to PNG. */
+function readIcon() {
+  const data = readFileSync(path.join(ROOT, ICON_SOURCE));
+  if (!data.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)) throw new Error(`${ICON_SOURCE}: to nie jest plik PNG`);
+  return data;
+}
+
 /**
- * Wpisy archiwum: manifest, licencja paczki (końce linii `\n`, jak manifest: to samo archiwum na każdym systemie), bundle
- * jako `entry_point`, pliki zależności wykonania w `node_modules/<nazwa>/…`.
+ * Wpisy archiwum: manifest, licencja paczki (końce linii `\n`, jak manifest: to samo archiwum na każdym systemie), ikona,
+ * bundle jako `entry_point`, pliki zależności wykonania w `node_modules/<nazwa>/…`. Małe pliki opisu paczki na początku,
+ * jak manifest; kolejność stała.
  * @param {{ bundle: string }} opts
  */
 export function mcpbEntries({ bundle }) {
@@ -203,6 +220,7 @@ export function mcpbEntries({ bundle }) {
   const entries = [
     { name: 'manifest.json', data: Buffer.from(text, 'utf8') },
     { name: 'LICENSE', data: Buffer.from(license, 'utf8') },
+    { name: ICON, data: readIcon() },
     { name: entry, data: readFileSync(bundle) },
   ];
   for (const { name, dir } of packages) {
