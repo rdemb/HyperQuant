@@ -1,12 +1,13 @@
 /**
  * Kopiowanie do schowka: region `role="status"` ogłasza i sukces („Skopiowano do schowka”), i porażkę (komunikat
- * awaryjny); kolor ostrzeżenia tylko przy porażce. Do schowka trafia dokładnie podany tekst.
+ * awaryjny); kolor ostrzeżenia tylko przy porażce. Do schowka trafia dokładnie podany tekst. Wariant główny ma styl
+ * przycisku głównego i opcjonalny opis (`aria-describedby`).
  */
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { type MiniElement, miniDom } from '../../../ui/__tests__/miniDom';
-import { CopyButton } from '../CopyButton';
+import { BTN_PRIMARY, BTN_SECONDARY, CopyButton } from '../CopyButton';
 
 let dom: ReturnType<typeof miniDom>;
 
@@ -62,6 +63,22 @@ describe('przycisk kopiowania', () => {
     expect(status().textContent).toBe('Zaznacz i skopiuj ręcznie.');
     expect(status().getAttribute('class')).toContain('text-warn');
     act(() => root.unmount());
+  });
+
+  it('wariant główny: styl przycisku głównego (BTN_PRIMARY), opis przez aria-describedby; domyślnie drugorzędny bez opisu', async () => {
+    const writeText = vi.fn(async () => undefined);
+    vi.stubGlobal('navigator', { clipboard: { writeText } });
+    const root = mount(<CopyButton primary describedBy="opis" text="wiadomość" label="Kopiuj wiadomość" fallback="Zaznacz i skopiuj ręcznie." />);
+    expect(button().getAttribute('class')).toBe(BTN_PRIMARY);
+    expect(button().getAttribute('aria-describedby')).toBe('opis');
+    await click();
+    expect(writeText).toHaveBeenCalledWith('wiadomość');
+    expect(button().textContent).toBe('Skopiowano');
+    act(() => root.unmount());
+    const plain = mount(<CopyButton text="x" label="Kopiuj" fallback="Zaznacz i skopiuj ręcznie." />);
+    expect(button().getAttribute('class')).toBe(BTN_SECONDARY);
+    expect(button().hasAttribute('aria-describedby')).toBe(false);
+    act(() => plain.unmount());
   });
 
   it('bez API schowka (stara przeglądarka, brak HTTPS): od razu komunikat awaryjny', async () => {
