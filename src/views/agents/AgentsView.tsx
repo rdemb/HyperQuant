@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Download, ExternalLink } from 'lucide-react';
+import { ChevronRight, Download, ExternalLink } from 'lucide-react';
 import { AGENT_TEMPLATES, type AgentTemplate } from '../../../integrations/agents/index';
 import { Badge, DASH, Panel } from '../../ui';
 import { lang, tr } from '../../i18n';
@@ -10,6 +10,7 @@ import {
   MCPB_SHA256_URL,
   MCPB_URL,
   MCP_STATUS,
+  NPM_SPEC,
   NPX_COMMAND,
   REPO_DIR,
   REPO_STEPS,
@@ -94,28 +95,39 @@ const Intro: React.FC = () => (
         )}
       </p>
     </div>
-    <dl className="lg:col-span-5 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2.5 text-sm bg-surface-1 border border-line rounded-xl px-4 py-3.5">
-      <dt className="text-ink-3">{tr('Dziś', 'Today')}</dt>
-      <dd className="text-ink-1">
-        {MCP_STATUS === 'npm'
-          ? tr('paczka npm hyperquant-mcp (STDIO); Claude Desktop: plik .mcpb', 'npm package hyperquant-mcp (STDIO); Claude Desktop: the .mcpb file')
-          : tr('serwer STDIO uruchamiany z repozytorium; Claude Desktop: plik .mcpb', 'STDIO server run from the repository; Claude Desktop: the .mcpb file')}
-      </dd>
-      <dt className="text-ink-3">{tr('Wkrótce', 'Coming')}</dt>
-      <dd className="text-ink-2">
-        {MCP_STATUS === 'npm'
-          ? tr('wpis w Marketplace OpenBota', 'a listing in the OpenBot Marketplace')
-          : tr(
-              'paczka w npm (z nią instalacja jednym kliknięciem w Cursorze i VS Code) i wpis w Marketplace OpenBota',
-              'the npm package (with it, one-click install in Cursor and VS Code) and a listing in the OpenBot Marketplace'
-            )}
-      </dd>
-      <dt className="text-ink-3">{tr('W planach', 'Planned')}</dt>
-      <dd className="text-ink-2">
-        {tr('tryb HTTP: połączenie przez adres URL, bez uruchamiania serwera u siebie', 'HTTP mode: connect by URL, without running the server yourself')}
-      </dd>
-    </dl>
+    <StatusBox className="lg:col-span-5" />
   </section>
+);
+
+/** Ramka stanu integracji: co działa dziś, co wkrótce, co w planach (według stanu paczki w npm). */
+export const StatusBox: React.FC<{ status?: McpStatus; className?: string }> = ({ status = MCP_STATUS, className = '' }) => (
+  <dl className={`grid grid-cols-[auto_1fr] gap-x-4 gap-y-2.5 text-sm bg-surface-1 border border-line rounded-xl px-4 py-3.5 ${className}`}>
+    <dt className="text-ink-3">{tr('Dziś', 'Today')}</dt>
+    <dd className="text-ink-1">
+      {status === 'npm' ? (
+        <>
+          {tr('paczka w npm: ', 'the package on npm: ')}
+          <code className="font-mono text-[13px]">{NPM_SPEC}</code>
+          {tr(' (STDIO, npx); Claude Desktop: plik .mcpb', ' (STDIO, npx); Claude Desktop: the .mcpb file')}
+        </>
+      ) : (
+        tr('serwer STDIO uruchamiany z repozytorium; Claude Desktop: plik .mcpb', 'STDIO server run from the repository; Claude Desktop: the .mcpb file')
+      )}
+    </dd>
+    <dt className="text-ink-3">{tr('Wkrótce', 'Soon')}</dt>
+    <dd className="text-ink-2">
+      {status === 'npm'
+        ? tr('wpis w Marketplace OpenBota', 'a listing in the OpenBot Marketplace')
+        : tr(
+            'paczka w npm (z nią instalacja jednym kliknięciem w Cursorze i VS Code) i wpis w Marketplace OpenBota',
+            'the npm package (with it, one-click install in Cursor and VS Code) and a listing in the OpenBot Marketplace'
+          )}
+    </dd>
+    <dt className="text-ink-3">{tr('W planach', 'Planned')}</dt>
+    <dd className="text-ink-2">
+      {tr('tryb HTTP: połączenie przez adres URL, bez uruchamiania serwera u siebie', 'HTTP mode: connect by URL, without running the server yourself')}
+    </dd>
+  </dl>
 );
 
 const TemplateCard: React.FC<{ t: AgentTemplate }> = ({ t }) => {
@@ -221,14 +233,69 @@ export const ClaudeCard: React.FC = () => {
   );
 };
 
+/**
+ * Droga poboczna „Z kodu źródłowego” (zwinięta): budowa serwera z repozytorium, gdy ktoś nie chce paczki z npm.
+ * Natywne `<details>`: działa klawiaturą i czytnikiem ekranu bez skryptu.
+ */
+const FromSource: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <details className="group border-t border-line pt-2">
+    <summary className="flex items-center gap-1.5 min-h-11 sm:min-h-8 cursor-pointer select-none text-xs font-medium text-ink-2 hover:text-ink-1 list-none [&::-webkit-details-marker]:hidden">
+      <ChevronRight className="w-3.5 h-3.5 shrink-0 transition-transform duration-150 group-open:rotate-90" aria-hidden="true" />
+      {tr('Z kodu źródłowego', 'From source')}
+    </summary>
+    <div className="flex flex-col gap-3 pt-1.5 pb-1">{children}</div>
+  </details>
+);
+
+/** Budowa z repozytorium: kroki do skopiowania i co wpisać w kliencie (polecenie node, ścieżka bundla). */
+const RepoSteps: React.FC = () => (
+  <>
+    <pre className={CODE_BLOCK}>
+      <Path text={REPO_STEPS.join('\n')} />
+    </pre>
+    <CopyButton
+      text={REPO_STEPS.join('\n')}
+      label={tr('Kopiuj polecenia', 'Copy commands')}
+      fallback={tr('Schowek niedostępny: zaznacz polecenia i skopiuj je ręcznie.', 'Clipboard unavailable: select the commands and copy them by hand.')}
+    />
+    <p className="text-xs text-ink-3 leading-relaxed">
+      {tr('W ustawieniach klienta polecenie to node, a argument to pełna ścieżka pliku ', 'In the client settings the command is node and the argument is the full path of ')}
+      <code className="font-mono text-ink-2">
+        <Path text={BUNDLE_PATH} />
+      </code>
+      {tr(' w Twojej kopii. W przykładach zamień ', ' in your copy. In the examples, replace ')}
+      <code className="font-mono text-ink-2">
+        <Path text={REPO_DIR} />
+      </code>
+      {tr(' na jej katalog.', ' with its folder.')}
+    </p>
+  </>
+);
+
 export const ServerCard: React.FC<{ status?: McpStatus }> = ({ status = MCP_STATUS }) =>
   status === 'npm' ? (
     <Panel title={tr('Serwer z npm', 'Server from npm')} bodyClassName="px-4 py-3 flex flex-col gap-3">
       <p className="text-sm text-ink-2 leading-relaxed">
-        {tr('Pozostałe klienty uruchamiają serwer same poleceniem ', 'Other clients start the server themselves with ')}
-        <code className="font-mono text-ink-1">{NPX_COMMAND}</code>
-        {tr(' (wersja przypięta). Wymaga Node.js 20 albo nowszego.', ' (a pinned version). Requires Node.js 20 or later.')}
+        {tr(
+          'Pozostałe klienty uruchamiają serwer same, przez STDIO, tym poleceniem (Node.js 20 albo nowszy):',
+          'Other clients start the server themselves over STDIO with this command (Node.js 20 or later):'
+        )}
       </p>
+      <pre className={CODE_BLOCK}>{NPX_COMMAND}</pre>
+      <CopyButton
+        text={NPX_COMMAND}
+        label={tr('Kopiuj polecenie', 'Copy command')}
+        fallback={tr('Schowek niedostępny: zaznacz polecenie i skopiuj je ręcznie.', 'Clipboard unavailable: select the command and copy it by hand.')}
+      />
+      <p className="text-xs text-ink-3 leading-relaxed">
+        {tr('Wersja jest przypięta: npx uruchamia dokładnie to wydanie, nie najnowsze z npm.', 'The version is pinned: npx runs exactly this release, not the newest one on npm.')}
+      </p>
+      <FromSource>
+        <p className="text-xs text-ink-3 leading-relaxed">
+          {tr('Bez paczki z npm zbuduj serwer z repozytorium:', 'To skip the npm package, build the server from the repository:')}
+        </p>
+        <RepoSteps />
+      </FromSource>
     </Panel>
   ) : (
     <Panel title={tr('Serwer z repozytorium', 'Server from the repository')} bodyClassName="px-4 py-3 flex flex-col gap-3">
@@ -238,25 +305,7 @@ export const ServerCard: React.FC<{ status?: McpStatus }> = ({ status = MCP_STAT
           'Other clients run the server on your computer over STDIO. Until the npm package is published, build it from the repository (Node.js 20 or later):'
         )}
       </p>
-      <pre className={CODE_BLOCK}>
-        <Path text={REPO_STEPS.join('\n')} />
-      </pre>
-      <CopyButton
-        text={REPO_STEPS.join('\n')}
-        label={tr('Kopiuj polecenia', 'Copy commands')}
-        fallback={tr('Schowek niedostępny: zaznacz polecenia i skopiuj je ręcznie.', 'Clipboard unavailable: select the commands and copy them by hand.')}
-      />
-      <p className="text-xs text-ink-3 leading-relaxed">
-        {tr('W ustawieniach klienta polecenie to node, a argument to pełna ścieżka pliku ', 'In the client settings the command is node and the argument is the full path of ')}
-        <code className="font-mono text-ink-2">
-          <Path text={BUNDLE_PATH} />
-        </code>
-        {tr(' w Twojej kopii. W przykładach niżej zamień ', ' in your copy. In the examples below, replace ')}
-        <code className="font-mono text-ink-2">
-          <Path text={REPO_DIR} />
-        </code>
-        {tr(' na jej katalog.', ' with its folder.')}
-      </p>
+      <RepoSteps />
     </Panel>
   );
 
@@ -299,6 +348,17 @@ export const OpenBotCard: React.FC<{ status?: McpStatus }> = ({ status = MCP_STA
         <OpenBotField field="command" label={tr('Polecenie', 'Command')} value={cfg.command} copyLabel={tr('Kopiuj polecenie', 'Copy command')} />
         <OpenBotField field="args" label={tr('Argumenty', 'Arguments')} value={cfg.args.join(' ')} copyLabel={tr('Kopiuj argumenty', 'Copy arguments')} />
       </dl>
+      {status === 'npm' && (
+        <p data-from-source="" className="text-xs text-ink-3 leading-relaxed">
+          {tr('Z kodu źródłowego: polecenie ', 'From source: the command ')}
+          <code className="font-mono text-ink-2">node</code>
+          {tr(', argument ', ', the argument ')}
+          <code className="font-mono text-ink-2">
+            <Path text={`${REPO_DIR}/${BUNDLE_PATH}`} />
+          </code>
+          {tr(' (budowa w karcie „Serwer z npm”).', ' (build steps in "Server from npm").')}
+        </p>
+      )}
       <p className="text-xs text-ink-3 leading-relaxed">
         {tr(
           'Przycisk instalacji w OpenBocie pojawi się tutaj, gdy OpenBot go udostępni. Wpis HyperQuant w Marketplace OpenBota jest w przygotowaniu.',
@@ -344,15 +404,41 @@ export const EditorsCard: React.FC<{ status?: McpStatus }> = ({ status = MCP_STA
         </p>
       ) : (
         <p className="text-xs text-ink-3 leading-relaxed">
-          {tr('Link otwiera edytor z gotową konfiguracją serwera do zatwierdzenia.', 'The link opens the editor with the server configuration ready to confirm.')}
+          {tr('Link otwiera edytor z gotową konfiguracją serwera do zatwierdzenia: polecenie ', 'The link opens the editor with the server configuration ready to confirm: the command ')}
+          <code className="font-mono text-ink-2">{NPX_COMMAND}</code>
+          {tr(' (Node.js 20 albo nowszy).', ' (Node.js 20 or later).')}
         </p>
       )}
     </Panel>
   );
 };
 
-const OtherClientsCard: React.FC = () => {
-  const json = claudeDesktopJson(MCP_STATUS);
+/** JSON `mcpServers` do skopiowania (blok kodu i przycisk). */
+const JsonBlock: React.FC<{ json: string }> = ({ json }) => (
+  <>
+    <pre className={CODE_BLOCK}>
+      <Path text={json} />
+    </pre>
+    <CopyButton
+      text={json}
+      label={tr('Kopiuj JSON', 'Copy JSON')}
+      fallback={tr('Schowek niedostępny: zaznacz JSON i skopiuj go ręcznie.', 'Clipboard unavailable: select the JSON and copy it by hand.')}
+    />
+  </>
+);
+
+/** Ścieżka bundla w JSON-ie na Windows (tylko droga z kodu źródłowego). */
+const WindowsPathNote: React.FC = () => (
+  <p className="text-xs text-ink-3 leading-relaxed">
+    {tr(
+      'Na Windows zapisz ścieżkę w JSON-ie ukośnikami zwykłymi (C:/path/to/HyperQuant/…) albo podwójnymi odwrotnymi (C:\\\\path\\\\to\\\\HyperQuant\\\\…).',
+      'On Windows, write the path in JSON with forward slashes (C:/path/to/HyperQuant/…) or doubled backslashes (C:\\\\path\\\\to\\\\HyperQuant\\\\…).'
+    )}
+  </p>
+);
+
+export const OtherClientsCard: React.FC<{ status?: McpStatus }> = ({ status = MCP_STATUS }) => {
+  const json = claudeDesktopJson(status);
   return (
     <Panel title={tr('Inne klienty MCP', 'Other MCP clients')} bodyClassName="px-4 py-3 flex flex-col gap-3">
       <p className="text-sm text-ink-2 leading-relaxed">
@@ -361,20 +447,15 @@ const OtherClientsCard: React.FC = () => {
           'Any client that launches STDIO servers. JSON in the mcpServers format, as in claude_desktop_config.json:'
         )}
       </p>
-      <pre className={CODE_BLOCK}>
-        <Path text={json} />
-      </pre>
-      <CopyButton
-        text={json}
-        label={tr('Kopiuj JSON', 'Copy JSON')}
-        fallback={tr('Schowek niedostępny: zaznacz JSON i skopiuj go ręcznie.', 'Clipboard unavailable: select the JSON and copy it by hand.')}
-      />
-      <p className="text-xs text-ink-3 leading-relaxed">
-        {tr(
-          'Na Windows zapisz ścieżkę w JSON-ie ukośnikami zwykłymi (C:/path/to/HyperQuant/…) albo podwójnymi odwrotnymi (C:\\\\path\\\\to\\\\HyperQuant\\\\…).',
-          'On Windows, write the path in JSON with forward slashes (C:/path/to/HyperQuant/…) or doubled backslashes (C:\\\\path\\\\to\\\\HyperQuant\\\\…).'
-        )}
-      </p>
+      <JsonBlock json={json} />
+      {status === 'npm' ? (
+        <FromSource>
+          <JsonBlock json={claudeDesktopJson('repo')} />
+          <WindowsPathNote />
+        </FromSource>
+      ) : (
+        <WindowsPathNote />
+      )}
       <p className="text-xs text-ink-3 leading-relaxed">
         {tr('Teksty odpowiedzi po polsku: dodaj ', 'Tool texts in Polish: add ')}
         <code className="font-mono text-ink-2">{'"env": { "HQ_LANG": "pl" }'}</code>

@@ -12,11 +12,11 @@
  */
 import { version as MCP_VERSION } from '../../../mcp/package.json';
 
-/** Skąd użytkownik bierze serwer: z repozytorium (dziś) albo z paczki npm (po publikacji). */
+/** Skąd użytkownik bierze serwer: z paczki npm (główna droga) albo z repozytorium (gdyby paczki w npm zabrakło). */
 export type McpStatus = 'repo' | 'npm';
 
-/** Paczki nie ma jeszcze w npm: na `'npm'` dopiero po pierwszej publikacji (razem z README paczki). */
-export const MCP_STATUS: McpStatus = 'repo';
+/** Paczka `hyperquant-mcp` jest w npm: główna droga to `npx` z wersją przypiętą (README paczki mówi to samo, pilnuje test). */
+export const MCP_STATUS: McpStatus = 'npm';
 
 /** Nazwa serwera w konfiguracji klientów. */
 export const SERVER_NAME = 'hyperquant';

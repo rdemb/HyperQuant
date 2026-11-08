@@ -109,9 +109,14 @@ describe('instalacja z repozytorium (przed publikacją w npm)', () => {
     expect(`mcp/${pkg.bin['hyperquant-mcp']}`).toBe(BUNDLE_PATH);
   });
 
-  it('stan dziś: paczki nie ma w npm (README), więc strona prowadzi przez repo', () => {
-    expect(README).toMatch(/not published on npm yet/);
-    expect(MCP_STATUS).toBe('repo');
+  it('stan dziś: paczka jest w npm (README mówi to samo), więc strona prowadzi przez npx z wersją przypiętą', () => {
+    // Stan strony i README zmieniają się razem: README bez zdania sprzed publikacji, z poleceniem npx tej wersji
+    expect(README).toMatch(/published on npm/);
+    expect(README).not.toMatch(/not (?:yet )?published/);
+    expect(README).toContain(`npx -y ${PINNED}`);
+    expect(MCP_STATUS).toBe('npm');
+    expect(cursorLink(MCP_STATUS)).not.toBeNull();
+    expect(vscodeLink(MCP_STATUS)).not.toBeNull();
   });
 });
 
