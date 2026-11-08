@@ -1,6 +1,7 @@
 import React, { Suspense, lazy, useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import {
+  Bot,
   ChartCandlestick,
   Database,
   FlaskConical,
@@ -34,10 +35,11 @@ const AfterView = lazy(() => import('../views/AfterView'));
 const ResearchView = lazy(() => import('../views/ResearchView'));
 const LessonsView = lazy(() => import('../views/LessonsView'));
 const SourcesView = lazy(() => import('../views/SourcesView'));
+const AgentsView = lazy(() => import('../views/agents/AgentsView'));
 
 type NavItem = { id: ViewId; label: string; icon: React.ReactNode };
 
-/** Pasek główny: trzy fazy dnia tradera (obok Blog jako osobne strony i menu „Więcej”). */
+/** Pasek główny: trzy fazy dnia tradera (obok Blog jako osobne strony, Agenci AI i menu „Więcej”). */
 const PHASES: NavItem[] = [
   { id: 'before', label: tr('Przed sesją', 'Pre-session'), icon: <Sunrise className="w-4 h-4" /> },
   { id: 'charts', label: tr('W sesji', 'In session'), icon: <ChartCandlestick className="w-4 h-4" /> },
@@ -51,7 +53,13 @@ const MORE: NavItem[] = [
   { id: 'sources', label: tr('Źródła', 'Sources'), icon: <Database className="w-4 h-4" /> },
 ];
 
-/** Stopka: Lekcje i Źródła (Blog obok jako osobne strony). */
+/**
+ * Agenci AI: na desktopie piąta pozycja paska (po Blogu), na telefonie w menu „Więcej” (dolny pasek zostaje: trzy fazy
+ * i „Więcej”).
+ */
+const AGENTS: NavItem = { id: 'agents', label: tr('Agenci AI', 'AI agents'), icon: <Bot className="w-4 h-4" /> };
+
+/** Stopka: Lekcje i Źródła (Blog i Agenci AI za nimi). */
 const FOOTER = MORE.filter((n) => n.id !== 'research');
 
 const STATUS_TONE: Record<string, BadgeTone> = { LIVE: 'live', STALE: 'stale', SYNTH: 'stale', PAUSED: 'neutral' };
@@ -130,8 +138,8 @@ const Item: React.FC<{ label: string; value: string }> = ({ label, value }) => (
 
 const ViewFallback = () => <EmptyState title={tr('Ładowanie widoku…', 'Loading view…')} />;
 
-// Widoki z własnymi interwałami (wykresy faz dnia, Lekcje): bez globalnego przełącznika interwału
-const OWN_INTERVALS: ViewId[] = ['before', 'charts', 'after', 'lessons'];
+// Bez globalnego przełącznika interwału: widoki z własnymi interwałami (wykresy faz dnia, Lekcje) i bez wykresów (Agenci AI)
+const OWN_INTERVALS: ViewId[] = ['before', 'charts', 'after', 'lessons', 'agents'];
 
 /** Zmienna CSS z wysokością przypiętego nagłówka aplikacji (px); widoki używają jej w klasie `top-[var(--hq-header-h,0px)]`. */
 const HEADER_H_VAR = '--hq-header-h';
@@ -198,8 +206,10 @@ const MENU_MOTION = {
   exit: { opacity: 0, transition: { duration: 0.1 } },
 };
 
+// Węższe pozycje poniżej 1440 px: z Agentami AI pasek mieści się także po angielsku, z widokiem z menu i najszerszym
+// stanem danych (PAUSED); od 1440 px odstępy jak wcześniej
 const navLink = (active: boolean) =>
-  `relative px-2.5 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors duration-150 ${active ? 'text-ink-1' : 'text-ink-3 hover:text-ink-1'}`;
+  `relative px-1.5 xl:px-2 min-[1440px]:px-2.5 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors duration-150 ${active ? 'text-ink-1' : 'text-ink-3 hover:text-ink-1'}`;
 
 /** Tło aktywnej pozycji paska (przesuwa się między pozycjami). */
 const ActivePill = () => (
@@ -265,7 +275,7 @@ export const AppShell: React.FC = () => {
             <span className="hidden sm:inline lg:hidden 2xl:inline text-[11px] text-ink-3">BTC · Hyperliquid</span>
           </ViewLink>
 
-          <nav aria-label={tr('Główna', 'Main')} className="hidden lg:flex items-center gap-1">
+          <nav aria-label={tr('Główna', 'Main')} className="hidden lg:flex items-center gap-0.5 xl:gap-1">
             {PHASES.map((n) => (
               <ViewLink key={n.id} id={n.id} go={go} current={view === n.id} className={navLink(view === n.id)}>
                 {view === n.id && <ActivePill />}
@@ -276,6 +286,10 @@ export const AppShell: React.FC = () => {
             <a href="./blog/" className={navLink(false)}>
               {BLOG_LABEL}
             </a>
+            <ViewLink id={AGENTS.id} go={go} current={view === AGENTS.id} className={navLink(view === AGENTS.id)}>
+              {view === AGENTS.id && <ActivePill />}
+              <span className="relative">{AGENTS.label}</span>
+            </ViewLink>
             <div ref={topMoreRef} className="relative">
               <button
                 ref={topMoreBtn}
@@ -287,8 +301,17 @@ export const AppShell: React.FC = () => {
                 className={`${navLink(!!moreView)} inline-flex items-center gap-1.5`}
               >
                 {moreView && <ActivePill />}
-                {/* Widok z menu na ekranie: jego nazwa przy „Więcej” */}
-                <span className="relative">{moreView ? `${tr('Więcej', 'More')} · ${moreView.label}` : tr('Więcej', 'More')}</span>
+                {/* Widok z menu na ekranie: jego nazwa przy „Więcej”; poniżej 1440 px sama nazwa (miejsce na Agentów AI), „Więcej ·” dla czytnika ekranu */}
+                <span className="relative">
+                  {moreView ? (
+                    <>
+                      <span className="sr-only min-[1440px]:not-sr-only">{tr('Więcej', 'More')} · </span>
+                      {moreView.label}
+                    </>
+                  ) : (
+                    tr('Więcej', 'More')
+                  )}
+                </span>
                 <MoreHorizontal className="relative w-4 h-4" aria-hidden="true" />
               </button>
               <AnimatePresence>
@@ -351,6 +374,7 @@ export const AppShell: React.FC = () => {
                   {view === 'research' && <ResearchView />}
                   {view === 'lessons' && <LessonsView />}
                   {view === 'sources' && <SourcesView />}
+                  {view === 'agents' && <AgentsView />}
                 </>
               )}
             </Suspense>
@@ -358,7 +382,7 @@ export const AppShell: React.FC = () => {
         </AnimatePresence>
       </main>
 
-      {/* Stopka: Lekcje, Źródła i Blog; na telefonie nad dolnym paskiem */}
+      {/* Stopka: Lekcje, Źródła, Blog i Agenci AI; na telefonie nad dolnym paskiem */}
       <footer className="w-full max-w-[1920px] mx-auto px-4 lg:px-6 pb-28 lg:pb-6">
         <nav aria-label={tr('Stopka', 'Footer')} className="flex flex-wrap items-center gap-x-5 pt-2 border-t border-line text-xs text-ink-3">
           {FOOTER.map((n) => (
@@ -369,6 +393,9 @@ export const AppShell: React.FC = () => {
           <a href="./blog/" className="inline-flex items-center min-h-11 hover:text-ink-1 transition-colors duration-150">
             {BLOG_LABEL}
           </a>
+          <ViewLink id={AGENTS.id} go={go} current={view === AGENTS.id} className="inline-flex items-center min-h-11 hover:text-ink-1 transition-colors duration-150">
+            {AGENTS.label}
+          </ViewLink>
         </nav>
       </footer>
 
@@ -381,7 +408,8 @@ export const AppShell: React.FC = () => {
             ))}
             <TabBtn
               btnRef={phoneMoreBtn}
-              active={!!moreView}
+              // Na telefonie Agenci AI są w menu „Więcej”
+              active={!!moreView || view === AGENTS.id}
               label={tr('Więcej', 'More')}
               icon={<MoreHorizontal className="w-4 h-4" />}
               onClick={() => setPhoneMore((o) => !o)}
@@ -402,6 +430,10 @@ export const AppShell: React.FC = () => {
                   <Newspaper className="w-4 h-4" />
                   {BLOG_LABEL}
                 </a>
+                <ViewLink id={AGENTS.id} go={go} current={view === AGENTS.id} more className={MENU_ITEM}>
+                  {AGENTS.icon}
+                  {AGENTS.label}
+                </ViewLink>
               </motion.div>
             )}
           </AnimatePresence>

@@ -90,6 +90,12 @@ jobs:
           # Publiczny adres danych skanera (repo rdemb/hyperquant-data) — zmienna repozytorium, pusta = panel mapy likwidacji czeka
           VITE_DATA_BASE_URL: ${{ vars.DATA_BASE_URL }}
 
+      # Paczka MCPB dla Claude Desktop (instalacja dwuklikiem, zakładka Agenci AI) z bundla zbudowanego i sprawdzonego
+      # wyżej → dist/agents/hyperquant.mcpb; po buildzie strony, bo vite czyści dist
+      - name: Pack MCPB Bundle
+        if: steps.gate.outputs.deploy == 'true'
+        run: npm run mcp:mcpb
+
       # Nowe i zmienione wpisy bloga z tego pusha (diff względem poprzedniej głowy main; lista plików w commitach zdarzenia
       # push jest pusta) albo ręcznie cała mapa strony → zgłoszenie IndexNow po wdrożeniu (pusto = nic do zgłoszenia)
       - name: List New Blog Posts For IndexNow
