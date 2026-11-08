@@ -4,7 +4,10 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
-### Paczka MCP: publikacja do npm bez tokenu (2026-11-08)
+### Paczka MCP 0.1.2: publikacja do npm bez tokenu (2026-11-08)
+
+#### Zmienione
+- **`hyperquant-mcp` 0.1.2**: ikona w paczce `.mcpb`, opis opóźnienia taśmy likwidacji w `liquidation_tape` zgodny z pomiarem, polecenia instalacji ze strony, README i szablonów z wersją `npx -y hyperquant-mcp@0.1.2`. Pierwsza wersja publikowana z GitHub Actions (zaufany wydawca npm, atestacja pochodzenia).
 
 #### Dodane
 - **Workflow `npm-publish.yml`**: ręcznie uruchamiana publikacja `hyperquant-mcp` z GitHub Actions jako zaufany wydawca npm (OIDC, bez tokenu w sekretach) z automatyczną atestacją pochodzenia. Przed publikacją: typy, testy MCP, bundle i test stdio; wersja, która jest już w npm, zatrzymuje publikację.
