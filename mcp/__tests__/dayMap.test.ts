@@ -16,7 +16,7 @@ interface DayMapData {
     kind: string;
     publishedAt: string;
     postUrl: string;
-    levels: { label: string; price: Num; touched: boolean | null; touchedAt: string | null }[];
+    levels: { label: string | null; labelWhy: string | null; price: Num; touched: boolean | null; touchedAt: string | null }[];
   } | null;
   why: string | null;
   coverage: Num;
@@ -202,11 +202,26 @@ describe('day_map', () => {
     expect(env?.data.coverage.value).toBeNull();
   });
 
-  it('etykieta poziomu z adresem: isError z blokadą treści, adres nie wychodzi', async () => {
-    const { res } = await run({ [MAPS_URL]: mapsFile([`opór ${ADDR}`, 'wsparcie']), [HL_INFO]: hlRoute(BARS) });
-    expect(res.isError).toBe(true);
+  it('etykieta poziomu z radą: label null z powodem, cena i reszta mapy w odpowiedzi bez isError', async () => {
+    // „Sell now” przechodzi bezpieczniki bloga (tylko polski tryb rozkazujący), a nie przechodzi bezpieczników odpowiedzi
+    const { res, env } = await run({ [MAPS_URL]: mapsFile(['Sell now', 'wsparcie']), [HL_INFO]: hlRoute(BARS) });
+    expect(res.isError).toBeFalsy();
+    const [held, kept] = env!.data.map!.levels;
+    expect(held).toMatchObject({ label: null, touched: true, touchedAt: '2026-11-04T10:30:00.000Z' });
+    expect(held.labelWhy).toMatch(/^etykieta wstrzymana przez strażnika treści/);
+    expect(held.price).toMatchObject({ value: 80_500, unit: 'price', badge: 'LIVE' });
+    expect(kept).toMatchObject({ label: 'wsparcie', labelWhy: null, touched: false });
+    expect(env?.data.coverage.value).toBe(100);
+    expect(JSON.stringify(res)).not.toMatch(/sell now/i);
+  });
+
+  it('etykieta poziomu z adresem: label null z powodem, adresu nie ma w żadnym tekście odpowiedzi', async () => {
+    const { res, env } = await run({ [MAPS_URL]: mapsFile([`opór ${ADDR}`, 'wsparcie']), [HL_INFO]: hlRoute(BARS) });
+    expect(res.isError).toBeFalsy();
+    expect(env?.data.map?.levels.map((l) => l.label)).toEqual([null, 'wsparcie']);
+    expect(env?.data.map?.levels[0].labelWhy).toContain('etykieta wstrzymana przez strażnika treści');
     expect(JSON.stringify(res)).not.toContain(ADDR);
-    expect(JSON.stringify(res.content)).toContain('blokada treści');
+    expect(JSON.stringify(res)).not.toMatch(/[0-9a-fA-F]{20,}/);
   });
 
   it('wyjątek w narzędziu — isError z „błąd narzędzia”, serwer działa dalej', async () => {

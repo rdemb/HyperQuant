@@ -99,6 +99,19 @@ export function blockReasons(x: unknown): string[] {
   return [...out];
 }
 
+/** Powód wstrzymania etykiety poziomu (stały tekst, bez treści etykiety). */
+export const LABEL_WITHHELD = tr('etykieta wstrzymana przez strażnika treści', 'label withheld by the content guards');
+
+/**
+ * Etykieta poziomu z zewnątrz (mapa z bloga): trafienie bezpieczników odpowiedzi (`blockReasons`) — `label: null` i stały
+ * powód z rodzajem trafienia, bez tekstu etykiety; czysta — bez zmian. Poziom (cena, dotknięcie) zostaje w odpowiedzi,
+ * a cała reszta i tak przechodzi `toToolResult` (trafienie poza etykietą zamyka odpowiedź).
+ */
+export function guardedLabel(label: string): { label: string | null; labelWhy: string | null } {
+  const hits = blockReasons(label);
+  return hits.length === 0 ? { label, labelWhy: null } : { label: null, labelWhy: `${LABEL_WITHHELD}: ${hits.join('; ')}` };
+}
+
 /**
  * Tekst z zewnątrz (komunikat błędu) przycięty do `max` znaków. Bezpieczniki najpierw na całości (adres przecięty na
  * granicy przeszedłby jako krótszy ciąg hex), potem na wyniku (ucięte słowo może dać wzorzec rady, np. „kupony” → „kup”).

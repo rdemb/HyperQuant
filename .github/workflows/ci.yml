@@ -37,5 +37,12 @@ jobs:
       - name: Testy (vitest)
         run: npm test
 
+      # Bundle paczki MCP i test dymny przez prawdziwe stdio (initialize + tools/list, bez sieci): czysty stdout i 10 narzędzi
+      - name: Bundle MCP
+        run: npm run mcp:build
+
+      - name: Test dymny MCP (stdio)
+        run: node mcp/scripts/stdio-smoke.mjs mcp/dist/hyperquant-mcp.mjs
+
       - name: Build
         run: npm run build

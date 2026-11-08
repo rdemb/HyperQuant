@@ -3,8 +3,6 @@ import { afterFirstSync, loadCandlesV, loadHourlyShared, parseHlCandlesV } from 
 import {
   auctionStats,
   dayStart,
-  extremeTouches,
-  profile,
   sessionVwap,
   sessionsFromHourly,
   todayState,
@@ -13,12 +11,12 @@ import {
   type VBar,
 } from '../utils/auction';
 import { currentTradeSession, lastClosedSessions, nextTradeSession, previousSameSession, type TradeSession } from '../utils/sessionDay';
+import { prevSessionProfile } from '../utils/sessionFacts';
+import { isAbsent } from '../utils/sessionText';
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
 const DAY = 24 * HOUR;
-/** Profil poprzedniej sesji z 1m tylko przy ≥ 95% minut sesji — inaczej profil z dziurą */
-const PREV_COVERAGE = 0.95;
 
 export interface AuctionContext {
   status: 'loading' | 'ready' | 'error';
@@ -80,17 +78,14 @@ export function mergeMinute(cache: VBar[], fresh: VBar[], from: number): VBar[] 
  */
 export function computeAuctionContext(minute: VBar[], hourly: VBar[], now: number): AuctionContext {
   const { session: s, closed } = contextSession(now);
-  const p0 = previousSameSession(s);
   const day = dayStart(s.start);
   const sesBars = minute.filter((b) => b.time >= s.start && b.time < Math.min(now, s.end));
-  const prevBars = minute.filter((b) => b.time >= p0.start && b.time < p0.end);
   const vwap = sessionVwap(sesBars);
   const ibBars = sesBars.filter((b) => b.time < s.ibEnd);
   const ib = ibBars.length ? { hi: Math.max(...ibBars.map((b) => b.high)), lo: Math.min(...ibBars.map((b) => b.low)), done: now >= s.ibEnd } : null;
-  const fullPrev = prevBars.length >= PREV_COVERAGE * ((p0.end - p0.start) / MIN);
-  const p = fullPrev ? profile(prevBars) : null;
-  const t = fullPrev ? extremeTouches(prevBars, 30 * MIN) : null;
-  const prev = p && t ? { ...p, high: t.high, low: t.low, poorHigh: t.hiTouches >= 2, poorLow: t.loTouches >= 2 } : null;
+  // Profil poprzedniej sesji tego samego typu (≥ 95% minut, inaczej brak) — wspólny z serwerem MCP
+  const pp = prevSessionProfile(minute, s);
+  const prev = isAbsent(pp) ? null : pp;
   // Historia tylko sprzed pokazanej sesji i tylko ten sam typ sesji
   const sessions = sessionsFromHourly(hourly.filter((b) => b.time < s.start), s.id);
   const last = sessions[sessions.length - 1];

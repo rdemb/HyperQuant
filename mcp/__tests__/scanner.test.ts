@@ -158,11 +158,11 @@ describe('narzędzia danych skanera: wspólne', () => {
     expect(isHistoryIndex(index(TW_NOW, [], []))).toBe(true);
   });
 
-  it('tools/list: wszystkie 9 narzędzi z opisem, narzędzia skanera bez argumentów', async () => {
+  it('tools/list: wszystkie 10 narzędzi z opisem, narzędzia skanera bez argumentów', async () => {
     const c = await connect(testSources({}, NOW).src);
     close = c.close;
     const { tools } = await c.client.listTools();
-    expect(tools.map((t) => t.name).sort()).toEqual(['cohort_flow', 'day_map', 'forecast_ledger', 'liquidation_map', 'liquidation_tape', 'session_context', 'session_review', 'twaps', 'whales']);
+    expect(tools.map((t) => t.name).sort()).toEqual(['cohort_flow', 'day_map', 'forecast_ledger', 'liquidation_map', 'liquidation_tape', 'market_brief', 'session_context', 'session_review', 'twaps', 'whales']);
     for (const name of SCANNER_TOOLS) {
       const t = tools.find((x) => x.name === name);
       expect(t?.description, name).toBeTruthy();

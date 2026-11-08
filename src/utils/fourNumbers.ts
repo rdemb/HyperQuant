@@ -5,20 +5,23 @@
  * (2) paliwo 1% pod i nad ceną: USD likwidacji z kubełków mapy skanera (pozycje on-chain, tylko BTC);
  * (3) typowa szerokość najbliższej godziny sesji: mediana high − low tej samej godziny sesji z 20 dni świec 1h;
  * (4) odległość ceny od VWAP doby w σ.
- * Tu czysta logika bez modułów wykresu (te same reguły co Rozliczenie: `sessionFacts`, `settleRange`, `mapHitsText`);
- * liczby (2) i (4) oraz wejścia z magazynu rynku składa `views/before/fourInputs` z pomocników wykresu. Opis, nie sygnał.
+ * Tu cała logika czterech liczb bez modułów wykresu (te same reguły co Rozliczenie: `sessionFacts`, `settleRange`,
+ * `mapHitsText`; stan skanera z `scanState`, VWAP z `dayVwap`), wspólna dla karty Czwórki i serwera MCP; wejścia z magazynu
+ * rynku wykresu składa `views/before/fourInputs`. Opis, nie sygnał.
  */
 import { tr } from '../i18n';
-import { DASH, fmtFixed } from '../ui/format';
+import { DASH, fmtCompact, fmtFixed } from '../ui/format';
 import { fmtPx } from '../charts/pro/core/footprintBar';
 import { utcDayStart } from '../charts/pro/core/sessions';
 import { fmtDayTime, fmtDm, fmtHm } from '../charts/pro/core/time';
 import type { BlogMap, BlogMapsState } from '../state/useBlogMaps';
 import type { VBar } from './auction';
+import { vwapNum } from './dayVwap';
 import { classifyDay } from './dayType';
 import type { LiqMap } from './liqMap';
 import { mapWindow, settleRange } from './mapSettlement';
 import { RVOL_MIN_DAYS, median } from './rvol';
+import { liqScan, scannerAge } from './scanState';
 import { type TradeSession, currentTradeSession, nextTradeSession, tradeSessionOn } from './sessionDay';
 import { sessionFacts } from './sessionFacts';
 import { TRADE_SESSION_NAME } from './sessionNames';
@@ -196,6 +199,31 @@ export function liqFuel(map: Pick<LiqMap, 'longs' | 'shorts' | 'stepUsd'>, price
   return { below, above };
 }
 
+/** (2) Paliwo 1% pod i nad ceną z mapy likwidacji skanera: LIVE, po 2 min wiek migawki; poza BTC „—, tylko BTC”. */
+export function fuelNum(x: FourInputs): FourNumber {
+  const base = { id: 'fuel', title: tr('Paliwo ±1%', 'Fuel ±1%'), badge: 'LIVE' } as const;
+  if (x.coin !== 'BTC') return { ...base, value: DASH, note: tr('tylko BTC', 'BTC only'), hint: tr('Tylko BTC: skaner mapuje pozycje na BTC', 'BTC only: the scanner maps BTC positions') };
+  const ls = liqScan(x.liq);
+  const map = x.liq.map;
+  if ('why' in ls || !map) return { ...base, value: DASH, hint: 'why' in ls ? ls.why : WAIT_TEXT };
+  const p = gotValue(x.price);
+  if (p === null || !(p > 0)) return { ...base, value: DASH, hint: gotWhy(x.price) };
+  const { below, above } = liqFuel(map, p);
+  const delayed = x.liq.status === 'delayed';
+  const note = scannerAge(map.asOf, x.now) ?? (delayed ? tr('opóźnione', 'delayed') : null);
+  const late = delayed ? tr(' Połowa nominału z odczytów pozycji starszych niż 15 min — klastry mogły się przesunąć.', ' Half of the notional comes from position reads older than 15 min, so clusters may have moved.') : '';
+  const share = `${fmtFixed(map.coverage.share * 100, 0)}%`;
+  return {
+    ...base,
+    value: `${tr('pod', 'below')} ${fmtCompact(below)} · ${tr('nad', 'above')} ${fmtCompact(above)}`,
+    hint: tr(
+      `Mapa likwidacji skanera z pozycji on-chain Hyperliquid, stan z ${fmtHm(map.asOf)}: w 1% pod ceną ${fmtPx(p)} (do ${fmtPx(p * (1 - FUEL_BAND))}) ${fmtCompact(below)} USD likwidacji, w 1% nad nią (do ${fmtPx(p * (1 + FUEL_BAND))}) ${fmtCompact(above)} USD. Longi i shorty razem, po cenie kubełka; tylko pozycje śledzone przez skaner (${share} open interest).${late}`,
+      `The scanner's liquidation map from Hyperliquid on-chain positions, as of ${fmtHm(map.asOf)}: within 1% below the price ${fmtPx(p)} (to ${fmtPx(p * (1 - FUEL_BAND))}) ${fmtCompact(below)} USD of liquidations, within 1% above it (to ${fmtPx(p * (1 + FUEL_BAND))}) ${fmtCompact(above)} USD. Longs and shorts together, by bucket price; only positions tracked by the scanner (${share} of open interest).${late}`
+    ),
+    ...(note ? { note } : {}),
+  };
+}
+
 // ───────────────────────── (3) typowa szerokość godziny ─────────────────────────
 
 /** Godzina sesji: świeca 1h od `hour`, jej sesja, czy sesja się w niej otwiera, `k` — pełne godziny od godziny otwarcia. */
@@ -299,6 +327,19 @@ export function hourWidthNum(x: FourInputs): FourNumber {
       `MODEL · ${m}: the typical high − low range of the 1h candle ${fmtHm(hour)}–${fmtHm(hour + HOUR)} (${which}) over the last ${w.n} ${name} sessions${share}. The same session hour every day, also across clock changes. The hour's volatility, not the direction of the move.`
     ),
   };
+}
+
+// ───────────────────────── (4) od VWAP ─────────────────────────
+
+/** (4) Cena wobec VWAP doby UTC w σ — liczba z nagłówka Kokpitu (`vwapNum`), z tytułem Czwórki. */
+export function vwapFour(x: FourInputs): FourNumber {
+  const n = vwapNum({ coin: x.coin, now: x.now, price: x.price, dayVwap: x.dayVwap });
+  return { id: 'vwap', title: tr('Od VWAP', 'From VWAP'), value: n.value, badge: n.badge, hint: n.hint };
+}
+
+/** Cztery liczby Czwórki (zawsze cztery, brak danych — „—” z powodem). */
+export function fourNumbers(x: FourInputs): FourNumbers {
+  return { coin: x.coin, now: x.now, items: [clarityNum(x), fuelNum(x), hourWidthNum(x), vwapFour(x)] };
 }
 
 // ───────────────────────── tekst ─────────────────────────

@@ -74,6 +74,15 @@ jobs:
         if: steps.gate.outputs.deploy == 'true'
         run: npm test
 
+      # Bundle paczki MCP i test dymny przez prawdziwe stdio (initialize + tools/list, bez sieci): czysty stdout i 10 narzędzi
+      - name: Build MCP Bundle
+        if: steps.gate.outputs.deploy == 'true'
+        run: npm run mcp:build
+
+      - name: MCP Stdio Smoke Test
+        if: steps.gate.outputs.deploy == 'true'
+        run: node mcp/scripts/stdio-smoke.mjs mcp/dist/hyperquant-mcp.mjs
+
       - name: Build Production Assets
         if: steps.gate.outputs.deploy == 'true'
         run: npm run build

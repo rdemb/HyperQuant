@@ -14,9 +14,11 @@ import {
   rvolOf,
   sessionNowOf,
   twapShareOf,
+  vwapNum,
   whaleBalanceOf,
 } from '../chart/layoutNumbers';
 import { profile } from '../../../utils/auction';
+import { vwapNum as vwapNumUtil } from '../../../utils/dayVwap';
 import { currentTradeSession, previousSameSession } from '../../../utils/sessionDay';
 import { twapShareOf as twapShareUtil } from '../../../utils/twapShare';
 import { whaleBalanceOf as whaleBalanceUtil } from '../../../utils/whaleLayer';
@@ -330,5 +332,9 @@ describe('liczby nagłówka ze świec i migawek', () => {
   it('jedna implementacja: twapShareOf (utils/twapShare) i whaleBalanceOf (utils/whaleLayer), tu re-eksport (też serwer MCP)', () => {
     expect(twapShareOf).toBe(twapShareUtil);
     expect(whaleBalanceOf).toBe(whaleBalanceUtil);
+  });
+
+  it('jedna implementacja: vwapNum (utils/dayVwap, Kokpit i Czwórka), tu re-eksport (też serwer MCP)', () => {
+    expect(vwapNum).toBe(vwapNumUtil);
   });
 });
