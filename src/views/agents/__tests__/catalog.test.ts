@@ -53,7 +53,8 @@ describe('narzędzia na stronie: metadane bez SDK', () => {
     for (const f of files) {
       const text = read(`src/views/agents/${f}`);
       expect(text, f).not.toMatch(/from ['"](?:@modelcontextprotocol|zod)/);
-      expect(text, f).not.toMatch(/from ['"][./]*mcp\//);
+      // Z paczki tylko jej package.json (wersja do polecenia instalacji), nigdy kod serwera
+      expect(text, f).not.toMatch(/from ['"][./]*mcp\/(?!package\.json['"])/);
     }
   });
 });

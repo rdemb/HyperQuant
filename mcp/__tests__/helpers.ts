@@ -13,6 +13,8 @@ export const DATA_BASE = 'https://raw.githubusercontent.com/rdemb/hyperquant-dat
 /** Gałąź `history` tego samego repo (jak `HISTORY_BASE` strony). */
 export const HISTORY_BASE = 'https://raw.githubusercontent.com/rdemb/hyperquant-data/history';
 export const MAPS_URL = 'https://hyperquant.tech/blog/maps.json';
+/** Prawdziwe etykiety poziomów z publicznego `blog/maps.json` hyperquant.tech (dane publiczne, bez adresów). */
+export const REAL_LABELS = ['PDH', 'VAH wczoraj', 'Dołek Azji', 'Otwarcie Londynu', 'Likwidacje shortów'] as const;
 
 export interface FakeRequest {
   url: string;

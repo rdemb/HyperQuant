@@ -1,12 +1,13 @@
 /**
  * Pliki do publikacji (cała paczka MCP bez bundla, integracje, zakładka Agenci AI na stronie, skrypt paczki `.mcpb`) bez
- * ścieżek domowych, sekretów, identyfikatorów i słów wewnętrznego procesu pracy. Wzorce w `publishPatterns.ts`.
+ * ścieżek domowych, sekretów, kluczy, adresów i e-maili (ogólne wzorce w `publishPatterns.ts`), z poleceniami instalacji
+ * z przypiętą wersją paczki.
  */
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ROOT, readRepo } from './markdown';
-import { publishHits as hitsIn } from './publishPatterns';
+import { PATTERN_WHYS, publishHits as hitsIn } from './publishPatterns';
 
 /** Katalogi czytane w całości (jeśli są), bez zbudowanego bundla i zależności. */
 const DIRS = ['mcp', 'integrations', 'src/views/agents', 'scripts/mcp'];
@@ -50,8 +51,34 @@ describe('pliki do publikacji', () => {
     expect(PUBLISHED.filter((f) => /(?:^|\/)(?:dist|node_modules)\//.test(f))).toEqual([]);
   });
 
-  it('bez ścieżek domowych, sekretów, adresów, e-maili i słów procesu pracy', () => {
+  it('bez ścieżek domowych, sekretów, adresów i e-maili', () => {
     expect(PUBLISHED.flatMap((f) => hitsIn(readRepo(f)).map((h) => `${f}: ${h}`))).toEqual([]);
+  });
+
+  it('wzorce w publicznym pliku tylko ogólne: ścieżki domowe, sekrety i klucze, adresy (oraz IP i e-mail osobno)', () => {
+    expect(PATTERN_WHYS).toEqual([
+      'ścieżka domowa (Windows)',
+      'ścieżka domowa (macOS, Linux)',
+      'adres portfela',
+      'hash albo klucz (64 hex)',
+      'sekret przypisany wprost',
+      'adres portfela lub hash transakcji',
+      'token lub klucz dostępu',
+    ]);
+  });
+
+  it('polecenia instalacji z npm tylko z wersją przypiętą: hyperquant-mcp@<wersja z mcp/package.json>', () => {
+    const version = (JSON.parse(readRepo('mcp/package.json')) as { version: string }).version;
+    // Nazwa składana z części: wzorzec w tym pliku (też czytanym) nie trafia sam w siebie
+    const name = ['hyperquant', 'mcp'].join('-');
+    const unpinned = new RegExp(`npx -y ${name}(?!@)|"-y",\\s*"${name}(?!@)`, 'g');
+    const bad = PUBLISHED.flatMap((f) => {
+      const text = readRepo(f);
+      const loose = [...text.matchAll(unpinned)].map((m) => m[0]);
+      const other = [...text.matchAll(/hyperquant-mcp@(\d+\.\d+\.\d+(?:-[\w.]+)?)/g)].filter((m) => m[1] !== version).map((m) => m[0]);
+      return [...loose, ...other].map((m) => `${f}: ${m}`);
+    });
+    expect(bad).toEqual([]);
   });
 
   it('ścieżka domowa jest trafieniem także w zapisie z ucieczką; przykłady „/path/to” i adresy URL przechodzą', () => {

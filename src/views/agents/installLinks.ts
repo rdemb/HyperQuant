@@ -1,6 +1,7 @@
 /**
  * Instalacja serwera `hyperquant-mcp` ze strony: polecenie dla klientów MCP (STDIO), linki instalacji Cursora i VS Code,
- * ustawienia OpenBota, JSON `mcpServers` i adres paczki `.mcpb` dla Claude Desktop. Czyste funkcje bez importów.
+ * ustawienia OpenBota, JSON `mcpServers` i adres paczki `.mcpb` (z sumą SHA-256) dla Claude Desktop. Czyste funkcje;
+ * jedyny import to wersja paczki z `mcp/package.json` (polecenie npx z wersją przypiętą, bez kodu serwera).
  *
  * Formaty linków (sprawdzone w dokumentacji edytorów):
  * - Cursor (cursor.com/docs/context/mcp/install-links): `cursor://anysphere.cursor-deeplink/mcp/install?name=<nazwa>&config=<base64>`,
@@ -9,6 +10,7 @@
  *   `vscode:mcp/install?<encodeURIComponent(JSON)>`, JSON z nazwą i konfiguracją serwera w formacie VS Code (`type: 'stdio'`);
  *   na stronie w opakowaniu `https://vscode.dev/redirect?url=<link vscode: w URL>` (zalecanym tam dla stron i dokumentacji).
  */
+import { version as MCP_VERSION } from '../../../mcp/package.json';
 
 /** Skąd użytkownik bierze serwer: z repozytorium (dziś) albo z paczki npm (po publikacji). */
 export type McpStatus = 'repo' | 'npm';
@@ -19,6 +21,13 @@ export const MCP_STATUS: McpStatus = 'repo';
 /** Nazwa serwera w konfiguracji klientów. */
 export const SERVER_NAME = 'hyperquant';
 export const NPM_PACKAGE = 'hyperquant-mcp';
+/**
+ * Paczka npm z wersją przypiętą (`hyperquant-mcp@<wersja z mcp/package.json>`): polecenie instalacji uruchamia dokładnie
+ * tę wersję, którą opisuje strona, a nie najnowszą z rejestru.
+ */
+export const NPM_SPEC = `${NPM_PACKAGE}@${MCP_VERSION}`;
+/** Polecenie uruchomienia z npm, jak w README paczki. */
+export const NPX_COMMAND = `npx -y ${NPM_SPEC}`;
 export const REPO_URL = 'https://github.com/rdemb/HyperQuant';
 /** Katalog repozytorium w przykładach: użytkownik wstawia pełną ścieżkę swojej kopii. */
 export const REPO_DIR = '/path/to/HyperQuant';
@@ -28,6 +37,14 @@ export const BUNDLE_PATH = 'mcp/dist/hyperquant-mcp.mjs';
 export const REPO_STEPS: readonly string[] = [`git clone ${REPO_URL}.git`, 'cd HyperQuant', 'npm ci --legacy-peer-deps', 'npm run mcp:build'];
 /** Paczka MCPB dla Claude Desktop, budowana przy wdrożeniu strony (`npm run mcp:mcpb`). */
 export const MCPB_URL = './agents/hyperquant.mcpb';
+/** Suma SHA-256 paczki w formacie `sha256sum`, zapisywana przez `npm run mcp:mcpb` obok archiwum. */
+export const MCPB_SHA256_URL = `${MCPB_URL}.sha256`;
+
+/** Suma z pliku `sha256sum` („<64 znaki hex>  <nazwa>”): pierwsze pole małymi literami; inny format — null. */
+export function parseSha256(text: string): string | null {
+  const m = /^([0-9a-fA-F]{64})(?:\s|$)/.exec(text);
+  return m ? m[1].toLowerCase() : null;
+}
 
 export interface ServerConfig {
   command: string;
@@ -36,7 +53,7 @@ export interface ServerConfig {
 
 /** Polecenie uruchamiające serwer przez STDIO. */
 export function serverConfig(status: McpStatus): ServerConfig {
-  return status === 'npm' ? { command: 'npx', args: ['-y', NPM_PACKAGE] } : { command: 'node', args: [`${REPO_DIR}/${BUNDLE_PATH}`] };
+  return status === 'npm' ? { command: 'npx', args: ['-y', NPM_SPEC] } : { command: 'node', args: [`${REPO_DIR}/${BUNDLE_PATH}`] };
 }
 
 /** Base64 tekstu UTF-8 (btoa przyjmuje tylko znaki jednobajtowe). */

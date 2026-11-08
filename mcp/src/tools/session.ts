@@ -29,12 +29,13 @@ import {
   previousSameSession,
   rangeBudget,
 } from '../../../src/utils/sessionDay';
-import { type SessionNow, asianSessionWhy, dayTypeOf, expectedFrom, sessionFacts, sessionNowOf } from '../../../src/utils/sessionFacts';
-import { type ReviewRow, reviewRows, sessionCloseOf } from '../../../src/utils/sessionReview';
+import { type SessionNow, asianSessionWhy, dayTypeOf, expectedBasis, expectedFrom, sessionFacts, sessionNowOf } from '../../../src/utils/sessionFacts';
+import { type ReviewRow, reviewRows, sessionCloseOf, sessionMaps } from '../../../src/utils/sessionReview';
 import { type Expected, type Got, amt, isAbsent } from '../../../src/utils/sessionText';
 import type { VolModel } from '../../../src/utils/volatility';
-import { type Badge, type Envelope, type Num, type SourceRef, blockReasons, envelope, guardedLabel, iso, num } from '../envelope';
-import type { Fetched, Sources } from '../sources';
+import { type Badge, type Envelope, type Num, type SourceRef, envelope, iso, num } from '../envelope';
+import { guardedTitle, labelHeld, levelsCutNote } from '../external';
+import type { BlogMapsCut, Fetched, Sources } from '../sources';
 import type { ToolDef } from './index';
 import { candleSource, candlesGot, closeNum, fileSource } from './shared';
 
@@ -60,15 +61,18 @@ function volSource(v: Fetched<VolModel | null>): SourceRef {
 const snapAt = (c: Fetched<Candle[]>, now: number) => (c.ok ? Math.min(now, c.at) : now);
 
 /**
- * Oczekiwany zakres sesji w toku (MODEL) jak na stronie (`sessionExpectedOf`): z modelem HAR od razu; bez niego σ Parkinsona
- * ze świec 5m na chwilę ich migawki. Liczba i powód braku z `expectedFrom`; tu tylko powód nieudanego pobrania świec.
+ * Oczekiwany zakres sesji (MODEL) jak na stronie (`sessionExpectedOf`), z tą samą regułą metody (`expectedBasis`): w toku —
+ * model HAR od razu, bez niego σ Parkinsona ze świec 5m na chwilę ich migawki; zamknięta — zawsze ex ante, Parkinson ze
+ * świec 5m z doby przed otwarciem. Liczba i powód braku z `expectedFrom`; tu tylko powód nieudanego pobrania świec.
  */
-function liveExpected(model: VolModel | null, f5: Fetched<Candle[]>, s: TradeSession, now: number, price: number): Got<Expected> {
-  if (model) return expectedFrom(model, [], s, now, now, price);
+function sessionExpected(s: TradeSession, inProgress: boolean, model: VolModel | null, f5: Fetched<Candle[]>, now: number, price: number): Got<Expected> {
+  const b = expectedBasis(s, inProgress, model, now);
+  if (b.model) return expectedFrom(b.model, [], s, now, b.asOf, price);
   const c5 = candlesGot(f5, '5m');
   if (isAbsent(c5)) return c5;
+  // Parkinson na chwilę migawki świec 5m (z pamięci do 60 s starszej niż `now`); zamknięta sesja — i tak na chwilę otwarcia
   const at = snapAt(f5, now);
-  return expectedFrom(null, toVBars(c5), s, at, at, price);
+  return expectedFrom(null, toVBars(c5), s, at, expectedBasis(s, inProgress, null, at).asOf, price);
 }
 
 // ───────────────────────── session_context ─────────────────────────
@@ -166,7 +170,7 @@ async function sessionPart(src: Sources, s: TradeSession, p1: Promise<Fetched<Ca
   if (isAbsent(sn)) return { ib: ib(sn), dayTypeSoFar, expectedRange: num(null, 'usd', 'MODEL', { why: sn.why }), rangeBudget: num(null, 'ratio', 'MODEL', { why: sn.why }), sources, note };
 
   const model = fv.ok ? fv.value : null;
-  const e = liveExpected(model, f5, s, now, c1[c1.length - 1].c);
+  const e = sessionExpected(s, true, model, f5, now, c1[c1.length - 1].c);
   if (isAbsent(e)) return { ib: ib(sn), dayTypeSoFar, expectedRange: num(null, 'usd', 'MODEL', { why: e.why }), rangeBudget: num(null, 'ratio', 'MODEL', { why: e.why }), sources, note };
   const harWhy = !fv.ok ? fv.why : fv.value === null ? tr('za mało świec 1h albo 5m', 'too few 1h or 5m candles') : null;
   const expectedRange = num(e.usd, 'usd', 'MODEL', {
@@ -305,33 +309,50 @@ const LABEL_HELD = tr('[etykieta wstrzymana]', '[label withheld]');
 const TITLE_HELD = tr('[tytuł wstrzymany]', '[title withheld]');
 
 /**
- * Mapy z bloga do wierszy Rozliczenia: etykieta poziomu z trafieniem strażnika treści (`guardedLabel`, jak `day_map`)
- * i tytuł wpisu z trafieniem — znacznik w miejscu tekstu, a poziom i wiersz mapy zostają. Trafienie poza nimi (np.
- * w identyfikatorze wpisu) dalej zamyka całą odpowiedź w `toToolResult`.
+ * Mapy z bloga do wierszy Rozliczenia: etykieta poziomu (`labelHeld`, jak `day_map`) i tytuł wpisu (`guardedTitle`) spoza
+ * formatu albo z trafieniem strażnika treści — znacznik w miejscu tekstu, a poziom i wiersz mapy zostają; `held` — powody
+ * wstrzymania każdej mapy (bez treści). Trafienie poza nimi (np. w identyfikatorze wpisu) dalej zamyka całą odpowiedź
+ * w `toToolResult`.
  */
-function guardedMaps(st: BlogMapsState): BlogMapsState {
-  return {
-    ...st,
-    maps: st.maps.map((m) => ({
-      ...m,
-      title: blockReasons(m.title).length > 0 ? TITLE_HELD : m.title,
-      levels: m.levels.map((l) => (guardedLabel(l.label).label === null ? { ...l, label: LABEL_HELD } : l)),
-    })),
-  };
+function guardedMaps(st: BlogMapsState): { state: BlogMapsState; held: Map<string, string[]> } {
+  const held = new Map<string, string[]>();
+  const maps = st.maps.map((m) => {
+    const why: string[] = [];
+    const t = guardedTitle(m.title);
+    if (t.why !== null) why.push(t.why);
+    const levels = m.levels.map((l) => {
+      const w = labelHeld(l.label);
+      if (w === null) return l;
+      why.push(w);
+      return { ...l, label: LABEL_HELD };
+    });
+    if (why.length > 0) held.set(m.id, why);
+    return { ...m, title: t.title ?? TITLE_HELD, levels };
+  });
+  return { state: { ...st, maps }, held };
+}
+
+/**
+ * Uwagi o mapach w wierszach karty sesji `s` (`sessionMaps`, jak karta): teksty wstrzymane (powody bez treści) i mapy
+ * z poziomami ponad limit.
+ */
+function mapNotes(fm: BlogMapsCut, held: Map<string, string[]>, s: TradeSession, now: number): string[] {
+  const shown = sessionMaps(fm.maps, s, now);
+  const why = [...new Set(shown.flatMap((m) => held.get(m.id) ?? []))];
+  const out = shown.flatMap((m) => (fm.levelsCut[m.id] === undefined ? [] : [levelsCutNote(m.id, fm.levelsCut[m.id])]));
+  if (why.length > 0) {
+    out.unshift(
+      tr(
+        `Teksty z bloga w wierszach map wstrzymane („${LABEL_HELD}”, „${TITLE_HELD}”): ${why.join('; ')}.`,
+        `Blog texts withheld in the map rows ("${LABEL_HELD}", "${TITLE_HELD}"): ${why.join('; ')}.`
+      )
+    );
+  }
+  return out;
 }
 
 function published<T extends { asOf: number }, S>(f: Fetched<T>, now: number, freshness: (v: T, now: number) => S): { status: S | 'error'; value: T | null } {
   return f.ok ? { status: freshness(f.value, now), value: f.value } : { status: 'error', value: null };
-}
-
-/**
- * Oczekiwany zakres karty jak na stronie (`sessionExpectedOf`): sesja w toku — jak na żywo; zamknięta — zawsze ex ante,
- * Parkinson ze świec 5m z doby przed jej otwarciem (`asOf = s.start`). Liczba i powód braku z `expectedFrom`.
- */
-function cardExpected(s: TradeSession, inProgress: boolean, model: VolModel | null, f5: Fetched<Candle[]>, now: number, price: number): Got<Expected> {
-  if (inProgress) return liveExpected(model, f5, s, now, price);
-  const c5 = candlesGot(f5, '5m');
-  return isAbsent(c5) ? c5 : expectedFrom(null, toVBars(c5), s, now, s.start, price);
 }
 
 async function reviewRun(src: Sources, args: unknown): Promise<Envelope<SessionReviewData>> {
@@ -363,9 +384,10 @@ async function reviewRun(src: Sources, args: unknown): Promise<Envelope<SessionR
   const c1 = candlesGot(f1, '1m');
   const bars1m = isAbsent(c1) ? c1 : toVBars(c1);
   // Cena do oczekiwanego zakresu: zamknięcie sesji, bez świec sesji — ostatnia świeca 1m (strona: ostatnia cena rynku)
-  const expected = isAbsent(c1) ? c1 : cardExpected(s, inProgress, fv?.ok ? fv.value : null, f5, now, sessionCloseOf(bars1m, s, now, c1[c1.length - 1].c));
+  const expected = isAbsent(c1) ? c1 : sessionExpected(s, inProgress, fv?.ok ? fv.value : null, f5, now, sessionCloseOf(bars1m, s, now, c1[c1.length - 1].c));
 
-  const maps: BlogMapsState = fm.ok ? guardedMaps(fm.value) : { status: 'missing', maps: [] };
+  const gm = fm.ok ? guardedMaps(fm.value) : null;
+  const maps: BlogMapsState = gm ? gm.state : { status: 'missing', maps: [] };
   const lt = published(fl, now, liqTapeFreshness);
   const co = published(fc, now, cohortFreshness);
   const lg = published(fs, now, ledgerFreshness);
@@ -391,6 +413,7 @@ async function reviewRun(src: Sources, args: unknown): Promise<Envelope<SessionR
       'Wiersze z tej samej funkcji co karta Rozliczenia sesji (Po sesji) w HyperQuant, w tej samej kolejności. Wiersze z scope „window” opisują okno danych inne niż sesja (stożek: 30 dni dziennika, kohorty: ostatnie 24 h).',
       'Rows from the same function as the Session review card (After the session) on HyperQuant, in the same order. Rows with scope “window” describe a data window other than the session (cone: 30 days of the ledger, cohorts: the last 24 h).'
     ),
+    ...(fm.ok && gm ? mapNotes(fm.value, gm.held, s, now) : []),
   ];
   return envelope(NAME_REVIEW, { session: { id: s.id, opensAt: iso(s.start), closesAt: iso(s.end), inProgress }, rows }, sources, now, notes);
 }

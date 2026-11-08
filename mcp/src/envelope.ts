@@ -99,27 +99,21 @@ export function blockReasons(x: unknown): string[] {
   return [...out];
 }
 
-/** Powód wstrzymania etykiety poziomu (stały tekst, bez treści etykiety). */
-export const LABEL_WITHHELD = tr('etykieta wstrzymana przez strażnika treści', 'label withheld by the content guards');
-
 /**
- * Etykieta poziomu z zewnątrz (mapa z bloga): trafienie bezpieczników odpowiedzi (`blockReasons`) — `label: null` i stały
- * powód z rodzajem trafienia, bez tekstu etykiety; czysta — bez zmian. Poziom (cena, dotknięcie) zostaje w odpowiedzi,
- * a cała reszta i tak przechodzi `toToolResult` (trafienie poza etykietą zamyka odpowiedź).
+ * Zapas za granicą przycięcia, w którym `guardedCut` też szuka trafień: dłuższy niż najdłuższe stałe trafienie przecięte
+ * na granicy (adres 42 znaki, token 46) z kontekstem.
  */
-export function guardedLabel(label: string): { label: string | null; labelWhy: string | null } {
-  const hits = blockReasons(label);
-  return hits.length === 0 ? { label, labelWhy: null } : { label: null, labelWhy: `${LABEL_WITHHELD}: ${hits.join('; ')}` };
-}
+export const GUARD_MARGIN = 64;
 
 /**
- * Tekst z zewnątrz (komunikat błędu) przycięty do `max` znaków. Bezpieczniki najpierw na całości (adres przecięty na
- * granicy przeszedłby jako krótszy ciąg hex), potem na wyniku (ucięte słowo może dać wzorzec rady, np. „kupony” → „kup”).
- * Trafienie — sam znacznik blokady, bez treści.
+ * Tekst z zewnątrz (komunikat błędu) przycięty do `max` znaków. Bezpieczniki najpierw na przycięciu z zapasem
+ * `GUARD_MARGIN` (adres przecięty na granicy przeszedłby jako krótszy ciąg hex), potem na wyniku (ucięte słowo może dać
+ * wzorzec rady, np. „kupony” → „kup”). Dalszej części tekstu wynik nie zawiera, więc i jej nie sprawdzamy: praca
+ * bezpieczników zależy od `max`, nie od długości tekstu. Trafienie — sam znacznik blokady, bez treści.
  */
 export function guardedCut(text: string, max: number): string {
   const cut = text.slice(0, max);
-  return blockReasons(text).length === 0 && blockReasons(cut).length === 0 ? cut : BLOCK_MARK;
+  return blockReasons(text.slice(0, max + GUARD_MARGIN)).length === 0 && blockReasons(cut).length === 0 ? cut : BLOCK_MARK;
 }
 
 /**
