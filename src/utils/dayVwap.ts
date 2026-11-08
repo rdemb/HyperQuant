@@ -9,7 +9,7 @@ import { fmtPx } from '../charts/pro/core/footprintBar';
 import { sdUsable, vwapSeries } from '../charts/pro/core/indicators';
 import { utcDayStart } from '../charts/pro/core/sessions';
 import type { Candle } from '../charts/pro/hl/parse';
-import { type Got, WAIT_TEXT, amt, isAbsent } from './sessionText';
+import { type Got, amt, isAbsent, missingWhy } from './sessionText';
 
 const round = (v: number, d: number) => Math.round(v * 10 ** d) / 10 ** d;
 
@@ -49,15 +49,6 @@ export interface VwapNumber {
   value: string;
   badge: 'LIVE';
   hint: string;
-}
-
-/** Powód pierwszego brakującego wejścia; w drodze — „czekam na dane”. */
-function missingWhy(...vs: (Got<unknown> | undefined)[]): string {
-  for (const v of vs) {
-    if (v === undefined) return WAIT_TEXT;
-    if (isAbsent(v)) return v.why;
-  }
-  return WAIT_TEXT;
 }
 
 /** Odległość ceny od VWAP doby UTC w σ (Kokpit; ta sama liczba w Czwórce Przed sesją i w serwerze MCP). */

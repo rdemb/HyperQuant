@@ -2,7 +2,7 @@
 /**
  * Test dymny serwera MCP przez prawdziwe stdio: uruchamia `node <bundle>`, wysyła `initialize` (protokół 2025-11-25)
  * i `tools/list`, bez wywołania żadnego narzędzia (bez sieci). Kod 0 tylko wtedy, gdy w ciągu 10 s:
- * - każda linia stdout serwera to wiadomość JSON-RPC 2.0 (jedno `console.log` w imporcie psuje klienta MCP);
+ * - każda linia stdout serwera, także pusta, to wiadomość JSON-RPC 2.0 (jedno `console.log` w imporcie psuje klienta MCP);
  * - serwer odsyła wersję protokołu (tę samą albo wynegocjowaną);
  * - lista narzędzi to dokładnie 10 nazw poniżej.
  * Użycie: node mcp/scripts/stdio-smoke.mjs mcp/dist/hyperquant-mcp.mjs
@@ -58,8 +58,8 @@ const isRpc = (m) =>
   m.jsonrpc === '2.0' &&
   (typeof m.method === 'string' || ('id' in m && ('result' in m || 'error' in m)));
 
+/** Każda linia stdout, także pusta, musi być wiadomością JSON-RPC 2.0. */
 function onLine(line) {
-  if (line.trim() === '') return;
   let m;
   try {
     m = JSON.parse(line);
@@ -120,7 +120,7 @@ function listTools(cursor) {
     }
     // Spóźniony wypis na stdout po odpowiedzi też łamie protokół: chwila na jego wychwycenie
     setTimeout(() => {
-      if (buffer.trim() !== '') finish(1, `stdout line is not JSON-RPC 2.0: ${JSON.stringify(buffer.slice(0, 120))}`);
+      if (buffer !== '') finish(1, `stdout line is not JSON-RPC 2.0: ${JSON.stringify(buffer.slice(0, 120))}`);
       else finish(0, `ok: protocol ${protocol}, ${got.length} tools (${TOOLS.join(', ')}), every stdout line is JSON-RPC 2.0`);
     }, SETTLE_MS);
   });

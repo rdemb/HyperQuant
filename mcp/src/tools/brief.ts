@@ -52,7 +52,7 @@ export interface BriefItem {
   note: string | null;
   /** Liczba rozliczona tylko częściowo (luka w świecach 1m). */
   flag: string | null;
-  /** Paliwo: USD likwidacji w 1% pod ceną i nad nią. */
+  /** Paliwo: USD likwidacji w 1% pod ceną i nad nią (pełne dolary). */
   parts?: { below: Num; above: Num };
 }
 
@@ -97,7 +97,10 @@ const item = (n: FourNumber, value: Num | null, parts?: { below: Num; above: Num
   ...(parts && { parts }),
 });
 
-/** Paliwo jako dwie liczby (`liqFuel`, jak karta); karta bez liczby — null z jej powodem albo z powodem nieudanego pobrania mapy. */
+/**
+ * Paliwo jako dwie liczby (`liqFuel`, jak karta) w pełnych dolarach; karta bez liczby — null z jej powodem albo z powodem
+ * nieudanego pobrania mapy.
+ */
 function fuelParts(n: FourNumber, x: FourInputs, fl: Fetched<LiqMap>, now: number): { below: Num; above: Num } {
   const map = x.liq.map;
   const p = gotValue(x.price);
@@ -108,7 +111,7 @@ function fuelParts(n: FourNumber, x: FourInputs, fl: Fetched<LiqMap>, now: numbe
   const r = liqFuel(map, p);
   const note = ageNote(map.asOf, now) ?? (x.liq.status === 'delayed' ? tr('opóźnione', 'delayed') : undefined);
   const extra = note === undefined ? {} : { note };
-  return { below: num(r.below, 'usd', 'LIVE', extra), above: num(r.above, 'usd', 'LIVE', extra) };
+  return { below: num(Math.round(r.below), 'usd', 'LIVE', extra), above: num(Math.round(r.above), 'usd', 'LIVE', extra) };
 }
 
 /** Typowa szerokość godziny w USD (`hourWidth`, jak karta); karta bez liczby — null z jej podpowiedzią jako powodem. */

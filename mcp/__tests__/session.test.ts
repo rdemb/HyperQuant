@@ -57,7 +57,7 @@ const hl = (o: { m1?: readonly Bar[]; m5?: readonly Bar[]; h1?: readonly Bar[]; 
 // ───────── syntetyczne pliki publiczne (przechodzą strażniki strony; bez adresów i hashy) ─────────
 
 const PUB = Date.UTC(2026, 10, 4, 7, 0);
-const mapsJson = (title = 'Mapa dnia') => ({
+const mapsJson = (title = 'Mapa dnia', labels: readonly [string, string] = ['opór', 'wsparcie']) => ({
   v: 1,
   asOf: PUB + MIN,
   maps: [
@@ -68,8 +68,8 @@ const mapsJson = (title = 'Mapa dnia') => ({
       publishedAt: PUB,
       price: 99_800,
       levels: [
-        { label: 'opór', price: 100_100 },
-        { label: 'wsparcie', price: 98_000 },
+        { label: labels[0], price: 100_100 },
+        { label: labels[1], price: 98_000 },
       ],
       url: 'blog/2026-11-04-mapa-dnia/',
     },
@@ -523,10 +523,36 @@ describe('session_review', () => {
     for (const id of ['liq', 'cone', 'cohorts']) expect(env.data.rows.find((x) => x.id === id)?.value, id).not.toBe(DASH);
   });
 
-  it('tytuł wpisu z adresem w wierszu mapy: isError z blokadą treści, adres nie wychodzi', async () => {
-    const { res } = await call<ReviewData>('session_review', allRoutes({ [MAPS_URL]: { json: mapsJson(`Mapa ${ADDR}`) } }), { args: { session: 'london' } });
+  it('etykieta poziomu z radą w wierszu mapy: „[etykieta wstrzymana]”, wiersz zostaje, bez isError', async () => {
+    // „Sell now” przechodzi bezpieczniki bloga (tylko polski tryb rozkazujący), a nie przechodzi bezpieczników odpowiedzi
+    const { res, env } = await call<ReviewData>('session_review', allRoutes({ [MAPS_URL]: { json: mapsJson('Mapa dnia', ['Sell now', 'wsparcie']) } }), { args: { session: 'london' } });
+    expect(res.isError).toBeFalsy();
+    const row = env.data.rows.find((r) => r.key === 'map:2026-11-04-mapa-dnia');
+    expect(row?.value).not.toBe(DASH);
+    expect(row?.detail).toContain('[etykieta wstrzymana]');
+    expect(row?.detail).toContain('wsparcie');
+    expect(JSON.stringify(res)).not.toMatch(/sell now/i);
+  });
+
+  it('tytuł wpisu z radą albo adresem w wierszu mapy: „[tytuł wstrzymany]”, wiersz zostaje, bez isError', async () => {
+    for (const title of ['Sell now', `Mapa ${ADDR}`]) {
+      const { res, env } = await call<ReviewData>('session_review', allRoutes({ [MAPS_URL]: { json: mapsJson(title) } }), { args: { session: 'london' } });
+      expect(res.isError, title).toBeFalsy();
+      const row = env.data.rows.find((r) => r.key === 'map:2026-11-04-mapa-dnia');
+      expect(row?.hint, title).toContain('[tytuł wstrzymany]');
+      expect(JSON.stringify(res)).not.toMatch(/sell now/i);
+      expect(JSON.stringify(res)).not.toContain(ADDR);
+      await close?.();
+      close = null;
+    }
+  });
+
+  it('trafienie strażnika poza etykietą i tytułem (identyfikator wpisu z wezwaniem): cała odpowiedź zablokowana', async () => {
+    const bad = mapsJson();
+    bad.maps[0] = { ...bad.maps[0], id: '2026-11-04-kup-teraz', url: 'blog/2026-11-04-kup-teraz/' };
+    const { res } = await call<ReviewData>('session_review', allRoutes({ [MAPS_URL]: { json: bad } }), { args: { session: 'london' } });
     expect(res.isError).toBe(true);
-    expect(JSON.stringify(res)).not.toContain(ADDR);
     expect(JSON.stringify(res.content)).toContain(BLOCK_MARK);
+    expect(JSON.stringify(res)).not.toContain('kup-teraz');
   });
 });

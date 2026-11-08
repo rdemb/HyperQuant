@@ -1,6 +1,6 @@
 # hyperquant-mcp
 
-An MCP server that gives an AI assistant read-only BTC market context from public data: the HyperQuant blog day maps, Hyperliquid candles and the public files of the HyperQuant scanner. The numbers come from the same functions that compute them on [hyperquant.tech](https://hyperquant.tech/), so the assistant and the site report the same values.
+An MCP server that gives an AI assistant read-only BTC market context from public data: the HyperQuant blog day maps, Hyperliquid candles and the public files of the HyperQuant scanner. The numbers come from the same functions and method as on [hyperquant.tech](https://hyperquant.tech/), but the price is the last 1-minute close (candles up to 60 s old), so values can differ slightly from the site at the same moment.
 
 Market description, not investment advice. No keys, no accounts, no trading, no orders.
 
@@ -90,7 +90,7 @@ All tools are read-only and take no arguments, except `session_review` (optional
 - **Scanner snapshot age:** a snapshot older than 2 minutes keeps `badge: "LIVE"` and gets a `note` with its age; it never poses as fresh.
 - **RVOL is MODEL:** `session_context.rvolHour` is the current hour's volume against the 20-day median of the same hour, as on the site.
 - **`twaps.share60` is null** when the last 60 minutes of the tape recording have a gap (the same rule as the site); the reason states how many minutes are covered.
-- **Privacy:** aggregates and day pseudonyms only, never wallet addresses or transaction hashes. Every response passes the site's content guards (privacy and trade-call patterns) and an address pattern; a hit returns `isError` with the reason and no content. A blog level whose label trips the guards keeps its price, with `label: null` and the reason in `labelWhy`.
+- **Privacy:** aggregates and day pseudonyms only, never wallet addresses or transaction hashes. Every response passes the site's content guards (privacy and trade-call patterns) and an address pattern; a hit returns `isError` with the reason and no content. A blog level whose label trips the guards keeps its price: in `day_map` and `market_brief` it has `label: null` with the reason in `labelWhy`, and in `session_review` the label reads `[label withheld]` (a post title that trips the guards reads `[title withheld]`). A hit anywhere else blocks the whole response.
 - **BTC only:** the scanner records BTC, so the tools take no market argument.
 - **Network:** a 10 s timeout per request; an in-process cache (scanner files and candles 60 s, blog maps 5 min, volatility model 15 min, a failed request 30 s, HTTP 429 60 s); the header `User-Agent: hyperquant-mcp/0.1.0` and nothing about the user.
 
@@ -128,5 +128,5 @@ Serwer MCP HyperQuant: kontekst rynku BTC z danych publicznych (mapy z bloga Hyp
 
 - Stan: paczki nie ma jeszcze w npm. Dziś uruchomisz ją z repozytorium: `npm ci --legacy-peer-deps`, `npm run mcp:build`, potem `node mcp/dist/hyperquant-mcp.mjs`. Tryb HTTP jest w planach.
 - Teksty po polsku: `HQ_LANG=pl`. Strefa czasu godzin w tekstach: `HQ_TZ` (domyślnie UTC).
-- Każda liczba ma oznaczenie LIVE, MODEL albo SIM, czas i źródło; brak danych to `null` z powodem.
+- Każda liczba ma oznaczenie LIVE, MODEL albo SIM, czas i źródło; brak danych to `null` z powodem. Te same funkcje i metoda co strona, ale cena to ostatnie zamknięcie świecy 1m, więc liczby mogą się nieco różnić od strony w tej samej chwili.
 - Narzędzia, konfiguracja klientów i zasady danych: jak w części angielskiej wyżej.

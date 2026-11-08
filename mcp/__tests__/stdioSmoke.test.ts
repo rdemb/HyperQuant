@@ -38,7 +38,8 @@ const node = (args: string[]) => spawnSync(process.execPath, args, { cwd: ROOT, 
 let tmp = '';
 beforeAll(() => {
   if (!existsSync(BUNDLE) || statSync(BUNDLE).mtimeMs < newestSource()) {
-    const r = spawnSync('npm', ['run', 'mcp:build'], { cwd: ROOT, encoding: 'utf8', shell: true, timeout: 170_000 });
+    // Jedno polecenie jako tekst: powłoka potrzebna do „npm” na Windows (npm.cmd), bez tablicy argumentów obok `shell`
+    const r = spawnSync('npm run mcp:build', { cwd: ROOT, encoding: 'utf8', shell: true, timeout: 170_000 });
     if (r.status !== 0) throw new Error(`npm run mcp:build: ${r.status}\n${r.stdout}\n${r.stderr}`);
   }
   tmp = mkdtempSync(path.join(tmpdir(), 'hq-smoke-'));
@@ -49,7 +50,7 @@ afterAll(() => {
 
 /**
  * Fałszywy serwer MCP do sprawdzenia samego skryptu: odpowiada na `initialize` i `tools/list` listą `tools`; `noise` —
- * linia wypisana na stdout przed odpowiedziami (jak `console.log` w imporcie).
+ * linia wypisana na stdout przed odpowiedziami (jak `console.log` w imporcie; pusty tekst — pusta linia).
  */
 function fakeServer(name: string, tools: readonly string[], noise?: string): string {
   const file = path.join(tmp, `${name}.mjs`);
@@ -76,11 +77,14 @@ describe('test dymny stdio', () => {
     expect(r.stdout).toContain('10');
   });
 
-  it('skrypt przechodzi z poprawnym serwerem, a odrzuca linię spoza protokołu na stdout i złą listę narzędzi', () => {
+  it('skrypt przechodzi z poprawnym serwerem, a odrzuca linię spoza protokołu na stdout (także pustą) i złą listę narzędzi', () => {
     expect(node([SMOKE, fakeServer('ok', TOOLS)]).status).toBe(0);
     const noisy = node([SMOKE, fakeServer('noisy', TOOLS, 'debug: start')]);
     expect(noisy.status).not.toBe(0);
     expect(noisy.stderr).toContain('JSON-RPC');
+    const blank = node([SMOKE, fakeServer('blank', TOOLS, '')]);
+    expect(blank.status).not.toBe(0);
+    expect(blank.stderr).toContain('JSON-RPC');
     expect(node([SMOKE, fakeServer('short', TOOLS.slice(1))]).status).not.toBe(0);
     expect(node([SMOKE, fakeServer('extra', [...TOOLS, 'place_order'])]).status).not.toBe(0);
     expect(node([SMOKE]).status).not.toBe(0);
@@ -96,7 +100,7 @@ describe('test dymny stdio', () => {
   });
 
   it('paczka npm: dokładnie bundle, README, LICENSE i package.json', () => {
-    const r = spawnSync('npm', ['pack', '--dry-run', '--json', '-w', 'mcp'], { cwd: ROOT, encoding: 'utf8', shell: true, timeout: 60_000 });
+    const r = spawnSync('npm pack --dry-run --json -w mcp', { cwd: ROOT, encoding: 'utf8', shell: true, timeout: 60_000 });
     expect(r.status, r.stderr).toBe(0);
     const [pack] = JSON.parse(r.stdout) as { files: { path: string }[] }[];
     expect(pack.files.map((f) => f.path).sort()).toEqual(['LICENSE', 'README.md', 'dist/hyperquant-mcp.mjs', 'package.json']);

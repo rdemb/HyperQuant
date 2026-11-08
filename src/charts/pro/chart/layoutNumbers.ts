@@ -30,6 +30,7 @@ import {
   blogMapName,
   isAbsent,
   mapHitsText,
+  missingWhy as whyOf,
   pctOf,
 } from '../../../utils/sessionText';
 import { DASH, fmtFixed, fmtPct, fmtSigned } from '../../../ui/format';
@@ -117,16 +118,7 @@ export const FLOW_WINDOW_MS = 15 * MIN;
 /** Kwota zlecenia do kosztu wejścia. */
 export const COST_USD = 100_000;
 
-const WAIT = WAIT_TEXT;
 const val = <T>(v: Got<T> | undefined): T | null => (v === undefined || isAbsent(v) ? null : v);
-/** Powód pierwszego brakującego wejścia. */
-const whyOf = (...vs: (Got<unknown> | undefined)[]): string => {
-  for (const v of vs) {
-    if (v === undefined) return WAIT;
-    if (isAbsent(v)) return v.why;
-  }
-  return WAIT;
-};
 const dash = (label: string, badge: LayoutNumber['badge'], hint: string, note?: string): LayoutNumber => ({ label, value: DASH, badge, hint, ...(note ? { note } : {}) });
 
 /** Kwota w USD w kilku znakach: 4,2M, 42M, 1,2B. */

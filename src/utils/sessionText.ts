@@ -18,6 +18,15 @@ export interface Absent {
 export type Got<T> = T | Absent;
 export const isAbsent = (v: unknown): v is Absent => typeof v === 'object' && v !== null && 'why' in v;
 
+/** Powód pierwszego brakującego wejścia liczby: w drodze (`undefined`) — „czekam na dane”, brak — jego powód. */
+export function missingWhy(...vs: (Got<unknown> | undefined)[]): string {
+  for (const v of vs) {
+    if (v === undefined) return WAIT_TEXT;
+    if (isAbsent(v)) return v.why;
+  }
+  return WAIT_TEXT;
+}
+
 /** Oczekiwany zakres sesji (MODEL) i metoda. */
 export type Expected = { usd: number; method: 'har' | 'parkinson' };
 

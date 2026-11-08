@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { Candle } from '../../../charts/pro/hl/parse';
-import type { InputSeries, InputStore } from '../../../charts/pro/chart/layoutInputs';
 import { dayVwapOf, vwapNum } from '../../../charts/pro/chart/layoutNumbers';
 import type { VBar } from '../../../utils/auction';
 import { ALL, LIQ_MAP, MIN, NOW, NY, PUB, READY, at, bars, inputs } from '../../../utils/__tests__/fixtures/fourNumbers';
 import * as four from '../../../utils/fourNumbers';
 import { fourNumbers, fuelNum, readFourInputs, vwapFour } from '../fourInputs';
+import { fakeStore } from './fixtures/inputStore';
 
 describe('jedna implementacja Czwórki', () => {
   it('fuelNum, vwapFour i fourNumbers z utils/fourNumbers (też serwer MCP), tu re-eksport', () => {
@@ -70,35 +70,7 @@ describe('fourNumbers', () => {
 });
 
 describe('readFourInputs: świece z magazynu rynku jak nagłówek układu', () => {
-  type Spec = { state?: InputSeries['loadState']; list?: Candle[] };
   const toCandles = (bs: VBar[]): Candle[] => bs.map((b) => ({ t: b.time, o: b.open, h: b.high, l: b.low, c: b.close, v: b.volume, n: 1 }));
-  function fakeStore(coin: string, series: Record<string, Spec>) {
-    const older: Record<string, number[]> = {};
-    const made = new Map<string, InputSeries>();
-    const st: InputStore & { older: Record<string, number[]> } = {
-      older,
-      coin,
-      serverNow: () => NOW,
-      lastPrice: () => 100_950,
-      series(id: string): InputSeries {
-        let s = made.get(id);
-        if (!s) {
-          const spec = series[id] ?? { state: 'loading' };
-          s = { loadState: spec.state ?? 'ready', load: async () => {}, candlesNow: () => spec.list ?? [], historyExhausted: false, olderFailed: false };
-          made.set(id, s);
-        }
-        return s;
-      },
-      indicatorCandles(id: string, from: number) {
-        (older[id] ??= []).push(from);
-        return st.series(id).candlesNow();
-      },
-      exactBook: () => null,
-      zeroKnown: { covers: () => false },
-      orders: { range: () => [] },
-    };
-    return st;
-  }
 
   it('1m od wpisu Mapy dnia (wcześniej niż otwarcie NY), 1h od 20 dni przed sesją najbliższej godziny', () => {
     const store = fakeStore('BTC', { '1m': { list: toCandles(ALL) }, '1h': { list: [] } });
