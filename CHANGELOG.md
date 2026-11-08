@@ -4,6 +4,27 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Etap 1d-1: HyperQuant dla asystentów AI (2026-11-08)
+
+#### Dodane
+- **Serwer MCP `hyperquant-mcp`** (`mcp/`, STDIO, tylko odczyt danych publicznych): 10 narzędzi:
+  - `market_brief` (Czwórka przed sesją i poziomy; opcjonalny `level`: odległość poziomu od ceny i od VWAP w σ, paliwo likwidacji do poziomu);
+  - `session_context`, `session_review` (sesje Londynu i NY);
+  - `day_map` (mapa dnia z bloga i dotknięcia);
+  - `liquidation_map`, `liquidation_tape`, `cohort_flow`, `whales`, `twaps`, `forecast_ledger`.
+
+  Liczby powstają tymi samymi funkcjami co strona; przenieśliśmy je z modułów wykresów do `src/utils`, bez zmiany zachowania. Każda liczba ma plakietkę LIVE, MODEL albo SIM, czas i źródło; brak danych to `null` z powodem. Odpowiedzi przechodzą strażnika treści: bez adresów portfeli i bez rad kupna i sprzedaży. Etykieta poziomu z bloga, która go nie przejdzie, jest wstrzymywana, a reszta odpowiedzi zostaje. Pamięć podręczna z czasem życia, także dla błędów; limity rozmiaru plików historii. README i licencja w paczce. Paczka nie jest jeszcze w npm.
+- **Skill „hyperquant”** (`integrations/skills/hyperquant/SKILL.md`): pięć przepisów (przygotowanie do sesji, co się dzieje teraz, rozliczenie sesji, sprawdzenie poziomu, krótki opis rynku) i zasady danych.
+- **Trzy szablony agentów** (`integrations/agents/`): HyperQuant Desk, HyperQuant Big Hands, HyperQuant Session Review. Po angielsku, tylko dane publiczne, bez danych konta.
+- **Zakładka „Agenci AI”** (`#agents`, główne menu; na telefonie w „Więcej”):
+  - szablony z kopiowaniem profilu;
+  - instalacja MCP: Claude Desktop przez plik `.mcpb` (budowany w CI do `/agents/hyperquant.mcpb`), OpenBot z ustawieniami STDIO do skopiowania; Cursor i VS Code czekają na publikację paczki npm;
+  - przepisy skilla, lista narzędzi i zasady danych.
+- **CI:** budowa bundla MCP i test dymny stdio (każda linia stdout to JSON-RPC) przy każdym PR i wdrożeniu.
+
+#### Zmienione
+- Nagłówek poniżej 1440 px: węższe odstępy pozycji menu, a przycisk „Więcej” pokazuje tylko nazwę aktywnego widoku, żeby zmieściła się nowa pozycja.
+
 ### Etap 1c: numery kont dobowe w historii taśmy (2026-11-07)
 
 #### Zmienione
