@@ -7,8 +7,9 @@ import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { type MiniElement, miniDom } from '../../../ui/__tests__/miniDom';
-import { EditorsCard, OpenBotCard } from '../AgentsView';
-import { type McpStatus, cursorLink, serverConfig, vscodeLink } from '../installLinks';
+import { DASH } from '../../../ui';
+import { ClaudeCard, EditorsCard, OpenBotCard, ServerCard } from '../AgentsView';
+import { MCPB_SHA256_URL, type McpStatus, NPX_COMMAND, cursorLink, parseSha256, serverConfig, vscodeLink } from '../installLinks';
 
 let dom: ReturnType<typeof miniDom>;
 let writeText: ReturnType<typeof vi.fn>;
@@ -69,6 +70,62 @@ describe('OpenBot: polecenie i argumenty, każde z własnym przyciskiem', () => 
     expect(steps).toHaveLength(3);
     expect(steps[2].textContent).toMatch(/Skopiuj polecenie i argumenty/);
     act(() => root.unmount());
+  });
+});
+
+describe('Claude Desktop: SHA-256 pliku .mcpb przy przycisku pobrania', () => {
+  // Syntetyczna suma składana w teście (64 znaki hex nie występują w źródle jako literał)
+  const HASH = 'ab'.repeat(32);
+  /** Montaż i dokończenie pobrania sumy (fetch → tekst → stan). */
+  async function mountLoaded(ui: React.ReactNode) {
+    const root = createRoot(dom.container as unknown as HTMLElement);
+    await act(async () => {
+      root.render(ui);
+    });
+    for (let i = 0; i < 5; i++) {
+      await act(async () => {
+        await Promise.resolve();
+      });
+    }
+    return root;
+  }
+  const shown = () => find((e) => e.hasAttribute('data-sha256'))[0]?.textContent;
+
+  it('plik .sha256 obok paczki (format sha256sum): suma pokazana przy przycisku, pobrana z adresu pliku w czasie działania', async () => {
+    const fetchMock = vi.fn(async (_url: string) => new Response(`${HASH}  hyperquant.mcpb\n`));
+    vi.stubGlobal('fetch', fetchMock);
+    const root = await mountLoaded(<ClaudeCard />);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(MCPB_SHA256_URL);
+    expect(shown()).toBe(HASH);
+    expect(dom.container.textContent).toContain('SHA-256');
+    act(() => root.unmount());
+  });
+
+  it('brak pliku (404), błąd sieci albo treść spoza formatu: „—”', async () => {
+    for (const reply of [async () => new Response('not found', { status: 404 }), async () => Promise.reject(new Error('offline')), async () => new Response('<html>nie suma</html>')]) {
+      vi.stubGlobal('fetch', vi.fn(reply));
+      const root = await mountLoaded(<ClaudeCard />);
+      expect(shown()).toBe(DASH);
+      act(() => root.unmount());
+    }
+  });
+
+  it('parseSha256: pierwsze pole pliku sha256sum, 64 znaki hex (małe litery); inaczej null', () => {
+    expect(parseSha256(`${HASH}  hyperquant.mcpb\n`)).toBe(HASH);
+    expect(parseSha256(`${HASH.toUpperCase()}\n`)).toBe(HASH);
+    for (const bad of ['', 'abc', `${HASH}0  x`, `x${HASH}`, '<html>']) expect(parseSha256(bad), bad).toBeNull();
+  });
+});
+
+describe('serwer z npm (po publikacji): polecenie z wersją przypiętą', () => {
+  it('npm: karta podaje npx -y hyperquant-mcp@<wersja>; repo: kroki budowy z repozytorium', () => {
+    const npm = mount(<ServerCard status="npm" />);
+    expect(dom.container.textContent).toContain(NPX_COMMAND);
+    act(() => npm.unmount());
+    const repo = mount(<ServerCard status="repo" />);
+    expect(dom.container.textContent).toContain('npm run mcp:build');
+    expect(dom.container.textContent).not.toContain('npx');
+    act(() => repo.unmount());
   });
 });
 

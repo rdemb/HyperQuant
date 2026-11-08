@@ -1,6 +1,6 @@
 /**
- * Wspólne pomocniki narzędzi: świece jako `Got`, cena z ostatniej świecy 1m, opisy źródeł w kopercie, uwaga o wieku migawki
- * skanera i opis poziomu z bloga.
+ * Wspólne pomocniki narzędzi: świece jako `Got`, cena z ostatniej świecy 1m, opisy źródeł w kopercie, uwaga o wieku danych
+ * i opis poziomu z bloga.
  */
 import type { Candle } from '../../../src/charts/pro/hl/parse';
 import { tr } from '../../../src/i18n';
@@ -28,10 +28,17 @@ export function closeNum(c1: Got<Candle[]>): Num {
   return num(last.c, 'price', 'LIVE', { note: tr(`zamknięcie świecy 1m z ${iso(last.t)}`, `close of the 1m candle from ${iso(last.t)}`) });
 }
 
-/** Uwaga o wieku migawki skanera starszej niż 2 min (`scannerAge`, jak plakietka warstwy na wykresie); świeża — brak uwagi. */
-export function ageNote(asOf: number, now: number): string | undefined {
+/**
+ * Uwaga o wieku danych starszych niż 2 min (`scannerAge`, jak plakietka warstwy na wykresie); świeże — brak uwagi.
+ * `scanner` — migawka skanera (mapa, taśma, kohorty, wieloryby); `data` — inny plik publiczny (podsumowanie dziennika
+ * prognoz), bez nazywania go migawką skanera.
+ */
+export function ageNote(asOf: number, now: number, what: 'scanner' | 'data' = 'scanner'): string | undefined {
   const age = scannerAge(asOf, now);
-  return age === null ? undefined : tr(`migawka skanera sprzed ${age} (stan z ${iso(asOf)})`, `scanner snapshot from ${age} ago (as of ${iso(asOf)})`);
+  if (age === null) return undefined;
+  return what === 'scanner'
+    ? tr(`migawka skanera sprzed ${age} (stan z ${iso(asOf)})`, `scanner snapshot from ${age} ago (as of ${iso(asOf)})`)
+    : tr(`dane sprzed ${age} (stan z ${iso(asOf)})`, `data from ${age} ago (as of ${iso(asOf)})`);
 }
 
 /** Opis ceny poziomu z mapy z bloga (`day_map`, `market_brief`). */

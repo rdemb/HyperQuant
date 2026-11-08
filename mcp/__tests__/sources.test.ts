@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { BLOCK_MARK } from '../src/envelope';
-import { configFromEnv } from '../src/sources';
+import { ByteBudget, MAX_BYTES, MAX_UNZIP_BYTES, configFromEnv } from '../src/sources';
 import { toVBars } from '../../src/utils/auction';
 import { historyBaseOf } from '../../src/utils/tapeHistory';
 import { buildVolModel } from '../../src/utils/volatility';
@@ -214,13 +214,91 @@ describe('Sources.history', () => {
     expect(chunks).toBeLessThan(10);
   });
 
-  it('po rozpakowaniu ponad limit (domyślnie 64 MB) — {ok:false} z powodem o rozmiarze', async () => {
+  it('po rozpakowaniu ponad limit — {ok:false} z powodem o rozmiarze', async () => {
     const big = gzipSync(JSON.stringify({ v: 1, pad: 'x'.repeat(10_000) }));
     const { src } = testSources({ [GZ]: { bytes: big } }, NOW, { maxUnzipBytes: 4096 });
     const r = await src.history('BTC/2026-11-04/14.trades.json.gz', decode);
     expect(r.ok).toBe(false);
     expect(!r.ok && r.why).toContain('4 KB');
     expect(!r.ok && r.why).toContain('po rozpakowaniu');
+  });
+
+  it('domyślny limit pliku historii: 16 MB po rozpakowaniu (plik 17 MB odrzucony, 15 MB przechodzi)', async () => {
+    expect(MAX_UNZIP_BYTES).toBe(16 << 20);
+    const gz = (mb: number) => gzipSync(JSON.stringify({ v: 1, pad: 'x'.repeat(mb << 20) }));
+    const over = await testSources({ [GZ]: { bytes: gz(17) } }, NOW).src.history('BTC/2026-11-04/14.trades.json.gz', decode);
+    expect(over.ok).toBe(false);
+    expect(!over.ok && over.why).toContain('16 MB');
+    expect(!over.ok && over.why).toContain('po rozpakowaniu');
+    expect((await testSources({ [GZ]: { bytes: gz(15) } }, NOW).src.history('BTC/2026-11-04/14.trades.json.gz', decode)).ok).toBe(true);
+  });
+});
+
+describe('limity rozmiaru odpowiedzi', () => {
+  /** JSON `{ v: 1, pad }` o długości dokładnie `bytes` (ASCII, więc znaki = bajty). */
+  const sized = (bytes: number) => {
+    const head = '{"v":1,"pad":"';
+    return `${head}${'x'.repeat(bytes - head.length - 2)}"}`;
+  };
+
+  it('plik skanera: najwyżej 4 MB (bez Content-Length czytanie przerwane; 4 MB przechodzi, bajt więcej — {ok:false} z powodem)', async () => {
+    expect(MAX_BYTES.published).toBe(4 << 20);
+    const ok = await testSources({ [FILE]: { text: sized(4 << 20) } }, NOW).src.published('BTC/test.json', isV);
+    expect(ok.ok).toBe(true);
+    const over = await testSources({ [FILE]: { text: sized((4 << 20) + 1) } }, NOW).src.published('BTC/test.json', isV);
+    expect(over.ok).toBe(false);
+    expect(!over.ok && over.why).toContain('4 MB');
+  });
+
+  it('plik skanera z Content-Length ponad 4 MB — {ok:false} bez czytania treści, strumień anulowany', async () => {
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>({
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const f: typeof fetch = async () => new Response(body, { headers: { 'content-length': String((4 << 20) + 1) } });
+    const r = await testSources({}, NOW, { fetch: f }).src.published('BTC/test.json', isV);
+    expect(r.ok).toBe(false);
+    expect(!r.ok && r.why).toContain('4 MB');
+    expect(cancelled).toBe(true);
+  });
+
+  it('maps.json: najwyżej 4 MB', async () => {
+    const r = await testSources({ [MAPS_URL]: { text: sized((4 << 20) + 1) } }, NOW).src.blogMaps();
+    expect(r.ok).toBe(false);
+    expect(!r.ok && r.why).toContain('4 MB');
+  });
+
+  it('świece Hyperliquid: najwyżej 2 MB na żądanie (5000 świec mieści się z zapasem)', async () => {
+    expect(MAX_BYTES.candles).toBe(2 << 20);
+    const over = await testSources({ [HL_INFO]: { text: `[${'0,'.repeat(1 << 20)}0]` } }, NOW).src.candles('1m', NOW - 60 * MIN);
+    expect(over.ok).toBe(false);
+    expect(!over.ok && over.why).toContain('2 MB');
+    const from = NOW - 5000 * MIN;
+    const full = await testSources({ [HL_INFO]: hlRoute(flatBars(from, NOW, 79_900, 80_100)) }, NOW).src.candles('1m', from);
+    expect(full.ok && full.value.length).toBe(5000);
+  });
+
+  it('łączny limit kilku plików historii jednego wywołania (ByteBudget): treść po rozpakowaniu liczona razem, także z pamięci', async () => {
+    const GZ = (h: number) => `BTC/2026-11-04/${h}.trades.json.gz`;
+    const routes = Object.fromEntries([10, 11, 12].map((h) => [`${HISTORY_BASE}/${GZ(h)}`, { bytes: gzipSync(sized(1000)) }]));
+    const decode = (raw: unknown) => (isV(raw) ? raw : null);
+    const { src, calls } = testSources(routes, NOW);
+    const all = (b: ByteBudget) => Promise.all([10, 11, 12].map((h) => src.history(GZ(h), decode, undefined, b)));
+    // 3 × 1000 bajtów: limit 3000 wystarcza
+    const fit = new ByteBudget(3000);
+    expect((await all(fit)).every((r) => r.ok)).toBe(true);
+    expect(fit.over).toBe(false);
+    // Te same pliki z pamięci (bez żądań) i limit o bajt mniejszy: przekroczony, z powodem o łącznym limicie
+    const tight = new ByteBudget(2999);
+    const r = await all(tight);
+    expect(calls).toHaveLength(3);
+    expect(tight.over).toBe(true);
+    const failed = r.filter((x) => !x.ok);
+    expect(failed.length).toBeGreaterThan(0);
+    expect(!failed[0].ok && failed[0].why).toBe(tight.why);
+    expect(tight.why).toContain('łącznie');
   });
 });
 

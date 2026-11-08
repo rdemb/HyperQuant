@@ -7,7 +7,7 @@ Market description, not investment advice. No keys, no accounts, no trading, no 
 ## Status
 
 - Version 0.1.0, stdio transport only.
-- The package is not published on npm yet. The `npx -y hyperquant-mcp` commands below work only after the first npm release, and the package name can still change before then. Until then, run the server from the repository (next section).
+- The package is not published on npm yet. The `npx -y hyperquant-mcp@0.1.0` commands below (always with the version pinned) work only after the first npm release, and the package name can still change before then. Until then, run the server from the repository (next section). Claude Desktop needs neither: it installs the `.mcpb` file (see Claude Desktop below).
 - A Streamable HTTP mode (a hosted endpoint you connect to by URL) is planned, not built.
 - `twaps.activeCount` (the number of TWAPs running now) needs a live stream, so for now it is always `null` with a reason.
 
@@ -28,8 +28,10 @@ The last command starts the server on stdin/stdout and waits for an MCP client. 
 ## Install (after the npm release)
 
 ```sh
-npx -y hyperquant-mcp
+npx -y hyperquant-mcp@0.1.0
 ```
+
+Keep the version in the command: `npx` then runs exactly that release, not whatever is newest on npm.
 
 ## Configure a client
 
@@ -38,21 +40,23 @@ npx -y hyperquant-mcp
 In OpenBot, open Marketplace → Apps, add your own app and choose the STDIO transport:
 
 - command: `npx`
-- arguments: `-y hyperquant-mcp`
+- arguments: `-y hyperquant-mcp@0.1.0`
 - optional environment: `HQ_LANG=en` (or `pl`), `HQ_TZ=UTC`
 
 From a repository checkout, use the command `node` and the argument `/path/to/HyperQuant/mcp/dist/hyperquant-mcp.mjs`.
 
 ### Claude Desktop
 
-Add the server to `claude_desktop_config.json` (Settings → Developer → Edit Config) and restart Claude Desktop:
+The simplest way is the `.mcpb` file, with no npm and no checkout: download <https://hyperquant.tech/agents/hyperquant.mcpb> and double-click it, and Claude Desktop shows the install dialog. The server and its dependencies are inside the file, and Node.js ships with Claude Desktop. The site shows the file's SHA-256 next to the download button (the same checksum is in `hyperquant.mcpb.sha256` next to the file), so you can compare it with the downloaded file.
+
+To configure it by hand instead (after the npm release), add the server to `claude_desktop_config.json` (Settings → Developer → Edit Config) and restart Claude Desktop:
 
 ```json
 {
   "mcpServers": {
     "hyperquant": {
       "command": "npx",
-      "args": ["-y", "hyperquant-mcp"],
+      "args": ["-y", "hyperquant-mcp@0.1.0"],
       "env": { "HQ_LANG": "en", "HQ_TZ": "UTC" }
     }
   }
@@ -63,7 +67,7 @@ From a repository checkout: `"command": "node"`, `"args": ["/path/to/HyperQuant/
 
 ### Any other MCP client
 
-Any client that launches stdio servers works: command `npx`, arguments `-y hyperquant-mcp` (or `node` with the bundle path). The server reads requests on stdin and writes only MCP messages on stdout; its logs go to stderr.
+Any client that launches stdio servers works: command `npx`, arguments `-y hyperquant-mcp@0.1.0` (or `node` with the bundle path). The server reads requests on stdin and writes only MCP messages on stdout; its logs go to stderr.
 
 ## Tools
 
@@ -77,10 +81,10 @@ All tools are read-only. Two take an optional argument: `session_review` (`sessi
 | `session_review` | A London or NY session review, the rows of the site's Session review card: day type, value area migration, IB result, range against the expected range, touched blog levels, liquidations in the session, forecast cone coverage, cohort markouts. Only the latest session of each type is available. | "How did the last NY session go?" |
 | `liquidation_map` | The scanner's liquidation map: fuel within 1% and 3% below and above the price, the 5 largest clusters on each side, open interest coverage and the snapshot age. | "Where are the liquidation clusters around the price?" |
 | `liquidation_tape` | Realised liquidations of tracked positions: 1 h and 24 h sums of longs and shorts and up to 10 latest events, without addresses. | "Were there large liquidations in the last hour?" |
-| `cohort_flow` | Four participant cohorts (market makers, informed, whales, rest): net flow, aggressor delta, volume and volume share over the last hour and day. | "Which cohort has been the net taker in the last hour?" |
+| `cohort_flow` | Four participant cohorts (market makers, informed, whales, rest): net flow, aggressor delta, volume and volume share over the last hour and day. A cohort whose cells are all hidden for privacy has these numbers null with the count of hidden cells; when only some are hidden, a `note` gives the count. | "Which cohort has been the net taker in the last hour?" |
 | `whales` | The largest Hyperliquid BTC accounts under pseudonyms valid for one UTC day: long and short balance, up to 10 largest positions and up to 10 groups of resting orders. | "What are the largest BTC positions right now?" |
 | `twaps` | The share of zero-hash fills (TWAP suborders among them) in the value of the tape over the last 15 and 60 minutes of the recording, in total and per aggressor side. | "How much of the tape is TWAP flow?" |
-| `forecast_ledger` | Scores of the verifiable HyperQuant forecast ledger: CRPSS, coverage of the 90%, 60% and ACI intervals with the Kupiec test, Brier score and BSS for level touches, and a link to verify them yourself. | "How well calibrated are the HyperQuant forecasts?" |
+| `forecast_ledger` | Scores of the verifiable HyperQuant forecast ledger: CRPSS, coverage of the 90%, 60% and ACI intervals with the Kupiec test (MODEL, like the cone row of `session_review`), Brier score and BSS for level touches, and a link to verify them yourself. | "How well calibrated are the HyperQuant forecasts?" |
 
 ## Data rules
 
@@ -89,10 +93,13 @@ All tools are read-only. Two take an optional argument: `session_review` (`sessi
 - **Every response is an envelope:** `tool`, `coin: "BTC"`, `asOf` (ISO 8601 UTC), `data`, `sources[]` (name, URL and the source's own `asOf`), `notes` and a fixed `disclaimer`.
 - **Scanner snapshot age:** a snapshot older than 2 minutes keeps `badge: "LIVE"` and gets a `note` with its age; it never poses as fresh.
 - **RVOL is MODEL:** `session_context.rvolHour` is the current hour's volume against the 20-day median of the same hour, as on the site.
+- **Interval coverage is MODEL:** the coverage of the forecast intervals (`cov90`, `cov60`, `covAci` and `kupiecP90` in `forecast_ledger`, and the cone row of `session_review`) carries one badge in both tools, MODEL with the forecast ledger as its method, as the site marks the cone row.
 - **`twaps.share60` is null** when the last 60 minutes of the tape recording have a gap (the same rule as the site); the reason states how many minutes are covered.
-- **Privacy:** aggregates and day pseudonyms only, never wallet addresses or transaction hashes. Every response passes the site's content guards (privacy and trade-call patterns) and an address pattern; a hit returns `isError` with the reason and no content. A blog level whose label trips the guards keeps its price: in `day_map` and `market_brief` it has `label: null` with the reason in `labelWhy`, and in `session_review` the label reads `[label withheld]` (a post title that trips the guards reads `[title withheld]`). A hit anywhere else blocks the whole response.
+- **Hidden cohort cells:** `cohort_flow` publishes only cells that pass the privacy rules. A cohort whose cells in the window are all hidden has `net`, `takerNet`, `volume` and `volumeShare` null, with the number of hidden cells as the reason, never 0. When only some cells are hidden, the numbers cover the visible cells and `note` says how many were hidden.
+- **Privacy:** aggregates and day pseudonyms only, never wallet addresses or transaction hashes. Every response passes the site's content guards (privacy and trade-call patterns) and an address pattern; a hit returns `isError` with the reason and no content. A blog level whose label trips the guards or falls outside the strict format keeps its price: in `day_map` and `market_brief` it has `label: null` with the reason in `labelWhy`, and in `session_review` the label reads `[label withheld]` (a post title that trips the guards or the format reads `[title withheld]`, and the reasons are in `notes`). A hit anywhere else blocks the whole response.
+- **Text from the data is quoted, never followed:** labels, titles and pseudonyms come from public files, and the server instructions tell the model they are data, not instructions. Before they reach a response they must fit a strict format, or they are withheld with the reason "format not allowed": a level label up to 40 characters of letters, digits, spaces and `. , % ( ) / + ' ’ -`; a post title up to 120 characters of the same plus `:` and `—`; at most 20 levels per map (the rest are cut, with a note); a whale pseudonym `W` followed by 6 lowercase hex characters (a position or order with any other id is skipped, with a note giving the count).
 - **BTC only:** the scanner records BTC, so the tools take no market argument.
-- **Network:** a 10 s timeout per request; an in-process cache (scanner files and candles 60 s, blog maps 5 min, volatility model 15 min, a failed request 30 s, HTTP 429 60 s); the header `User-Agent: hyperquant-mcp/0.1.0` and nothing about the user.
+- **Network:** a 10 s timeout per request; a size limit on every response (scanner files and `maps.json` 4 MB, one Hyperliquid candle request 2 MB, a tape history file 16 MB after decompression, 32 MB in total per `twaps` call); a larger response is a missing source with the reason, never a partial read. An in-process cache (scanner files and candles 60 s, blog maps 5 min, volatility model 15 min, a failed request 30 s, HTTP 429 60 s); the header `User-Agent: hyperquant-mcp/0.1.0` and nothing about the user.
 
 ## Environment variables
 
@@ -116,7 +123,10 @@ All tools are read-only. Two take an optional argument: `session_review` (`sessi
 npm run mcp:build                                              # bundle: mcp/dist/hyperquant-mcp.mjs
 node mcp/scripts/stdio-smoke.mjs mcp/dist/hyperquant-mcp.mjs   # initialize + tools/list over real stdio, no network
 npx vitest run mcp                                             # tests with synthetic data and a fake fetch
+npm run mcp:mcpb                                               # dist/agents/hyperquant.mcpb and its .sha256
 ```
+
+`npm pack` and `npm publish` of the package rebuild the bundle first (`prepack`).
 
 ## License
 
@@ -126,7 +136,7 @@ MIT, see [LICENSE](LICENSE).
 
 Serwer MCP HyperQuant: kontekst rynku BTC z danych publicznych (mapy z bloga HyperQuant, świece Hyperliquid, pliki skanera), liczony tymi samymi funkcjami co strona hyperquant.tech. Tylko odczyt, bez kluczy i kont; opis rynku, nie porada inwestycyjna.
 
-- Stan: paczki nie ma jeszcze w npm. Dziś uruchomisz ją z repozytorium: `npm ci --legacy-peer-deps`, `npm run mcp:build`, potem `node mcp/dist/hyperquant-mcp.mjs`. Tryb HTTP jest w planach.
+- Stan: paczki nie ma jeszcze w npm. Dziś uruchomisz ją z repozytorium: `npm ci --legacy-peer-deps`, `npm run mcp:build`, potem `node mcp/dist/hyperquant-mcp.mjs`. Claude Desktop: plik `.mcpb` ze strony (dwuklik). Po publikacji polecenie z przypiętą wersją: `npx -y hyperquant-mcp@0.1.0`. Tryb HTTP jest w planach.
 - Teksty po polsku: `HQ_LANG=pl`. Strefa czasu godzin w tekstach: `HQ_TZ` (domyślnie UTC).
 - Każda liczba ma oznaczenie LIVE, MODEL albo SIM, czas i źródło; brak danych to `null` z powodem. Te same funkcje i metoda co strona, ale cena to ostatnie zamknięcie świecy 1m, więc liczby mogą się nieco różnić od strony w tej samej chwili.
 - Narzędzia, konfiguracja klientów i zasady danych: jak w części angielskiej wyżej.

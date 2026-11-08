@@ -5,7 +5,7 @@ import { mapWindow, settleRange } from '../../../utils/mapSettlement';
 import type { VolModel } from '../../../utils/volatility';
 import type { WhaleLayer } from '../../../utils/whaleLayer';
 import { type TradeSession, currentTradeSession, previousSameSession } from '../../../utils/sessionDay';
-import { expectedFrom, reviewSession, sessionFacts } from '../../../utils/sessionFacts';
+import { expectedBasis, expectedFrom, reviewSession, sessionFacts } from '../../../utils/sessionFacts';
 import { nyMap } from '../../../utils/fourNumbers';
 import { TRADE_SESSION_NAME } from '../../../utils/sessionNames';
 import { sessionMaps } from '../../../utils/sessionReview';
@@ -147,16 +147,16 @@ function expectedOf(store: InputStore, model: VolModel | null, s: TradeSession, 
 export const volLoadingFor = (coin: string, vol: VolInput): boolean => coin === 'BTC' && !vol.model && vol.status === 'loading';
 
 /**
- * Oczekiwany zakres sesji do rozliczenia (MODEL): sesja w toku — ta sama metoda co budżet zakresu na żywo (HAR, bez modelu
- * Parkinson), oczekiwanie na teraz; zamknięta — zawsze ex ante: Parkinson ze świec 5m z doby przed jej otwarciem (model HAR
- * zna tylko dzisiejszy poziom zmienności, nie prognozę sprzed tamtej sesji). Świece 5m albo model HAR sesji w toku (BTC)
- * w drodze — undefined (nigdy Parkinson na chwilę przed HAR).
+ * Oczekiwany zakres sesji do rozliczenia (MODEL) według reguły `expectedBasis` (wspólnej z serwerem MCP): sesja w toku —
+ * ta sama metoda co budżet zakresu na żywo (HAR, bez modelu Parkinson), oczekiwanie na teraz; zamknięta — zawsze ex ante,
+ * Parkinson ze świec 5m z doby przed jej otwarciem. Świece 5m albo model HAR sesji w toku (BTC) w drodze — undefined
+ * (nigdy Parkinson na chwilę przed HAR).
  */
 export function sessionExpectedOf(store: InputStore, vol: VolInput, s: TradeSession, inProgress: boolean, price: number): Got<Expected> | undefined {
   const now = store.serverNow();
-  if (!inProgress) return expectedOf(store, null, s, now, s.start, price);
-  if (volLoadingFor(store.coin, vol)) return undefined;
-  return expectedOf(store, store.coin === 'BTC' ? vol.model : null, s, now, now, price);
+  if (inProgress && volLoadingFor(store.coin, vol)) return undefined;
+  const b = expectedBasis(s, inProgress, store.coin === 'BTC' ? vol.model : null, now);
+  return expectedOf(store, b.model, s, now, b.asOf, price);
 }
 
 /**

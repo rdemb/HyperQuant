@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 /**
  * Paczka MCPB `hyperquant.mcpb` dla Claude Desktop (instalacja dwuklikiem). Format: archiwum ZIP z `manifest.json`
- * (specyfikacja MANIFEST.md repo modelcontextprotocol/mcpb, wersja manifestu 0.3), bundlem serwera jako `server/…`
- * i `node_modules` z zależnościami wykonania paczki `hyperquant-mcp` (`dependencies` z mcp/package.json, przechodnio:
- * SDK serwera MCP z jego rdzeniem i zod), bez map źródeł, deklaracji typów i dokumentacji.
+ * (specyfikacja MANIFEST.md repo modelcontextprotocol/mcpb, wersja manifestu 0.3), licencją paczki (`LICENSE` z mcp/),
+ * bundlem serwera jako `server/…` i `node_modules` z zależnościami wykonania paczki `hyperquant-mcp` (`dependencies`
+ * z mcp/package.json, przechodnio: SDK serwera MCP z jego rdzeniem i zod), bez map źródeł, deklaracji typów
+ * i dokumentacji. Obok archiwum plik `<archiwum>.sha256` z jego sumą SHA-256 w formacie `sha256sum` (strona pokazuje ją
+ * przy przycisku pobrania).
  *
  * Własny zapis ZIP (deflate z node:zlib), bez nowych zależności: oficjalne CLI `@anthropic-ai/mcpb` ciągnie dziewięć
  * paczek (m.in. podpisy i interaktywne pytania), a tu wystarczy spakować gotowe pliki. Archiwum jak z oficjalnego
@@ -13,6 +15,7 @@
  * Użycie (po `npm run mcp:build`): npm run mcp:mcpb
  *   node scripts/mcp/bundle-mcpb.mjs [--bundle mcp/dist/hyperquant-mcp.mjs] [--out dist/agents/hyperquant.mcpb]
  */
+import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -23,6 +26,7 @@ export const DEFAULT_BUNDLE = 'mcp/dist/hyperquant-mcp.mjs';
 export const DEFAULT_OUT = 'dist/agents/hyperquant.mcpb';
 const MANIFEST = 'mcp/mcpb/manifest.json';
 const MCP_PKG = 'mcp/package.json';
+const MCP_LICENSE = 'mcp/LICENSE';
 
 /** Pliki zależności zbędne w czasie wykonania: mapy źródeł, deklaracje typów i źródła TypeScript, dokumentacja. */
 const SKIP_FILE = /\.(?:map|[cm]?ts|md|markdown)$/i;
@@ -187,15 +191,18 @@ function readManifest() {
 }
 
 /**
- * Wpisy archiwum: manifest, bundle jako `entry_point`, pliki zależności wykonania w `node_modules/<nazwa>/…`.
+ * Wpisy archiwum: manifest, licencja paczki (końce linii `\n`, jak manifest: to samo archiwum na każdym systemie), bundle
+ * jako `entry_point`, pliki zależności wykonania w `node_modules/<nazwa>/…`.
  * @param {{ bundle: string }} opts
  */
 export function mcpbEntries({ bundle }) {
   if (!existsSync(bundle)) throw new Error(`brak bundla ${bundle}: najpierw npm run mcp:build`);
   const { text, entry } = readManifest();
   const packages = runtimePackages();
+  const license = readFileSync(path.join(ROOT, MCP_LICENSE), 'utf8').replace(/\r\n/g, '\n');
   const entries = [
     { name: 'manifest.json', data: Buffer.from(text, 'utf8') },
+    { name: 'LICENSE', data: Buffer.from(license, 'utf8') },
     { name: entry, data: readFileSync(bundle) },
   ];
   for (const { name, dir } of packages) {
@@ -204,13 +211,18 @@ export function mcpbEntries({ bundle }) {
   return { entries, packages: packages.map((p) => p.name) };
 }
 
-/** Buduje archiwum i zapisuje je w `out`; zwraca liczbę plików, rozmiar i dołączone paczki. */
+/**
+ * Buduje archiwum i zapisuje je w `out`, a obok `<out>.sha256` („<hex>  <nazwa pliku>”, jak `sha256sum`); zwraca liczbę
+ * plików, rozmiar, sumę i dołączone paczki.
+ */
 export function packMcpb({ bundle = path.join(ROOT, DEFAULT_BUNDLE), out = path.join(ROOT, DEFAULT_OUT) } = {}) {
   const { entries, packages } = mcpbEntries({ bundle });
   const buf = zip(entries);
+  const sha256 = createHash('sha256').update(buf).digest('hex');
   mkdirSync(path.dirname(out), { recursive: true });
   writeFileSync(out, buf);
-  return { files: entries.length, bytes: buf.length, packages };
+  writeFileSync(`${out}.sha256`, `${sha256}  ${path.basename(out)}\n`);
+  return { files: entries.length, bytes: buf.length, sha256, packages };
 }
 
 /** Argumenty `--bundle` i `--out` (ścieżki względem bieżącego katalogu). */
@@ -231,6 +243,7 @@ if (isMain) {
     const out = opts.out ?? path.join(ROOT, DEFAULT_OUT);
     const r = packMcpb({ ...opts, out });
     console.log(`mcpb: ${path.relative(process.cwd(), out) || out}, ${r.files} plików, ${(r.bytes / 1024).toFixed(0)} KiB (node_modules: ${r.packages.join(', ')})`);
+    console.log(`sha256: ${r.sha256}  ${path.basename(out)} → ${path.relative(process.cwd(), `${out}.sha256`) || `${out}.sha256`}`);
   } catch (e) {
     console.error(`mcpb: ${e instanceof Error ? e.message : String(e)}`);
     process.exit(1);

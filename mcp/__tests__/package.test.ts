@@ -24,7 +24,29 @@ describe('paczka hyperquant-mcp', () => {
   it('README opisuje każde narzędzie serwera, uruchomienie i zmienne środowiska', () => {
     expect(TOOLS).toHaveLength(10);
     for (const t of TOOLS) expect(README, t.name).toContain(`\`${t.name}\``);
-    for (const s of ['npx -y hyperquant-mcp', 'npm run mcp:build', 'node mcp/dist/hyperquant-mcp.mjs', 'HQ_LANG', 'HQ_TZ', 'OpenBot', 'Claude Desktop', 'STDIO']) expect(README, s).toContain(s);
+    for (const s of [`npx -y hyperquant-mcp@${VERSION}`, 'npm run mcp:build', 'node mcp/dist/hyperquant-mcp.mjs', 'HQ_LANG', 'HQ_TZ', 'OpenBot', 'Claude Desktop', 'STDIO']) expect(README, s).toContain(s);
+  });
+
+  it('README: każde polecenie i argument npx z wersją przypiętą (hyperquant-mcp@<wersja paczki>), także w JSON-ie konfiguracji', () => {
+    const pinned = `hyperquant-mcp@${VERSION}`;
+    // Nazwa paczki po „-y” (polecenie, argumenty, JSON) zawsze z wersją
+    const loose = [...README.matchAll(/-y"?,?\s*"?(hyperquant-mcp(?:@[\w.-]+)?)/g)].map((m) => m[1]);
+    expect(loose.length).toBeGreaterThanOrEqual(4);
+    expect(loose.filter((x) => x !== pinned)).toEqual([]);
+    expect(README).toContain(`"args": ["-y", "${pinned}"]`);
+  });
+
+  it('README: Claude Desktop najpierw przez plik .mcpb (pobranie ze strony, dwuklik), dopiero potem wariant npx', () => {
+    const claude = README.slice(README.indexOf('### Claude Desktop'));
+    const mcpb = claude.indexOf('https://hyperquant.tech/agents/hyperquant.mcpb');
+    expect(mcpb).toBeGreaterThan(-1);
+    expect(claude).toMatch(/double-click/i);
+    expect(mcpb).toBeLessThan(claude.indexOf('npx'));
+  });
+
+  it('package.json paczki: prepack buduje bundle (npm pack i publish zawsze z aktualnym dist)', () => {
+    const pkg = JSON.parse(read('mcp/package.json')) as { scripts?: Record<string, string> };
+    expect(pkg.scripts?.prepack).toBe('cd .. && npm run mcp:build');
   });
 
   it('README: argumenty narzędzi (session_review: session, market_brief: level) w zdaniu o argumentach i w tabeli', () => {

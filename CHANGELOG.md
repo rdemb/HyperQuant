@@ -13,17 +13,18 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
   - `day_map` (mapa dnia z bloga i dotknięcia);
   - `liquidation_map`, `liquidation_tape`, `cohort_flow`, `whales`, `twaps`, `forecast_ledger`.
 
-  Liczby powstają tymi samymi funkcjami co strona; przenieśliśmy je z modułów wykresów do `src/utils`, bez zmiany zachowania. Każda liczba ma plakietkę LIVE, MODEL albo SIM, czas i źródło; brak danych to `null` z powodem. Odpowiedzi przechodzą strażnika treści: bez adresów portfeli i bez rad kupna i sprzedaży. Etykieta poziomu z bloga, która go nie przejdzie, jest wstrzymywana, a reszta odpowiedzi zostaje. Pamięć podręczna z czasem życia, także dla błędów; limity rozmiaru plików historii. README i licencja w paczce. Paczka nie jest jeszcze w npm.
+  Liczby powstają tymi samymi funkcjami co strona; przenieśliśmy je z modułów wykresów do `src/utils`, bez zmiany zachowania. Każda liczba ma plakietkę LIVE, MODEL albo SIM, czas i źródło; brak danych to `null` z powodem. Odpowiedzi przechodzą strażnika treści: bez adresów portfeli i bez rad kupna i sprzedaży. Tekst z danych (etykieta poziomu, tytuł wpisu, pseudonim wieloryba) musi mieć ścisły format, inaczej jest wstrzymany z powodem, a reszta odpowiedzi zostaje; instrukcje serwera mówią modelowi, że to cytowane dane, nie polecenia. Kohorta z samymi ukrytymi komórkami to `null` z liczbą ukrytych komórek, nie zero. Limit rozmiaru każdej odpowiedzi (pliki skanera i mapy 4 MB, świece 2 MB, plik historii 16 MB po rozpakowaniu, 32 MB na jedno wywołanie `twaps`); pamięć podręczna z czasem życia, także dla błędów. README i licencja w paczce, `prepack` buduje bundle. Polecenia instalacji z wersją przypiętą (`npx -y hyperquant-mcp@0.1.0`). Paczka nie jest jeszcze w npm.
 - **Skill „hyperquant”** (`integrations/skills/hyperquant/SKILL.md`): pięć przepisów (przygotowanie do sesji, co się dzieje teraz, rozliczenie sesji, sprawdzenie poziomu, krótki opis rynku) i zasady danych.
 - **Trzy szablony agentów** (`integrations/agents/`): HyperQuant Desk, HyperQuant Big Hands, HyperQuant Session Review. Po angielsku, tylko dane publiczne, bez danych konta.
 - **Zakładka „Agenci AI”** (`#agents`, główne menu; na telefonie w „Więcej”):
   - szablony z kopiowaniem profilu;
-  - instalacja MCP: Claude Desktop przez plik `.mcpb` (budowany w CI do `/agents/hyperquant.mcpb`), OpenBot z ustawieniami STDIO do skopiowania; Cursor i VS Code czekają na publikację paczki npm;
+  - instalacja MCP: Claude Desktop przez plik `.mcpb` (budowany w CI do `/agents/hyperquant.mcpb`, z licencją w środku i sumą SHA-256 obok, pokazaną przy przycisku pobrania), OpenBot z ustawieniami STDIO do skopiowania; Cursor i VS Code czekają na publikację paczki npm;
   - przepisy skilla, lista narzędzi i zasady danych.
 - **CI:** budowa bundla MCP i test dymny stdio (każda linia stdout to JSON-RPC) przy każdym PR i wdrożeniu.
 
 #### Zmienione
 - Nagłówek poniżej 1440 px: węższe odstępy pozycji menu, a przycisk „Więcej” pokazuje tylko nazwę aktywnego widoku, żeby zmieściła się nowa pozycja.
+- Bezpieczniki treści (blog, tytuł Klatki, serwer MCP): wzorce e-mail, TP/SL i long/short przy cenie dopasowują się w czasie liniowym (wcześniej długi ciąg znaków bez trafienia sprawdzał się kwadratowo). Trafiają dokładnie to samo co wcześniej.
 
 ### Etap 1c: numery kont dobowe w historii taśmy (2026-11-07)
 

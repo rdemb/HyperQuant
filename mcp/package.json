@@ -13,6 +13,9 @@
   "bin": {
     "hyperquant-mcp": "dist/hyperquant-mcp.mjs"
   },
+  "scripts": {
+    "prepack": "cd .. && npm run mcp:build"
+  },
   "files": [
     "dist/hyperquant-mcp.mjs",
     "README.md",

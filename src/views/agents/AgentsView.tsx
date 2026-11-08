@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Download, ExternalLink } from 'lucide-react';
 import { AGENT_TEMPLATES, type AgentTemplate } from '../../../integrations/agents/index';
 import { Badge, DASH, Panel } from '../../ui';
@@ -7,14 +7,17 @@ import { BTN_SECONDARY, CopyButton } from './CopyButton';
 import { MCP_README_FILE, SKILL_FILE, SKILL_RECIPES, TOOL_META, githubUrl } from './catalog';
 import {
   BUNDLE_PATH,
+  MCPB_SHA256_URL,
   MCPB_URL,
   MCP_STATUS,
+  NPX_COMMAND,
   REPO_DIR,
   REPO_STEPS,
   claudeDesktopJson,
   cursorLink,
   type McpStatus,
   openbotConfig,
+  parseSha256,
   vscodeLink,
 } from './installLinks';
 import { profileText } from './profiles';
@@ -162,39 +165,69 @@ const Templates: React.FC = () => (
   </section>
 );
 
-const ClaudeCard: React.FC = () => (
-  <Panel title="Claude Desktop" actions={<Badge tone="neutral">{tr('Jedno kliknięcie', 'One click')}</Badge>} hero bodyClassName="px-4 py-3 flex flex-col gap-3">
-    <p className="text-sm text-ink-2 leading-relaxed">
-      {tr(
-        'Pobierz plik i otwórz go dwuklikiem: Claude Desktop pokaże okno instalacji. Serwer i jego zależności są w pliku, a Node.js jest wbudowany w Claude Desktop. macOS i Windows.',
-        'Download the file and double-click it: Claude Desktop shows the install dialog. The server and its dependencies are inside the file, and Node.js ships with Claude Desktop. macOS and Windows.'
-      )}
-    </p>
-    <div>
-      <a href={MCPB_URL} download="hyperquant.mcpb" className={BTN_PRIMARY}>
-        <Download className="w-4 h-4" aria-hidden="true" />
-        {tr('Pobierz .mcpb', 'Download .mcpb')}
-      </a>
-    </div>
-    {MCP_STATUS === 'repo' && (
-      <p className="text-xs text-ink-3 leading-relaxed">
-        {tr(
-          'To jedyna instalacja jednym kliknięciem dostępna przed publikacją paczki w npm.',
-          'This is the only one-click install available before the npm package is published.'
-        )}
-      </p>
-    )}
-  </Panel>
-);
+/**
+ * Suma SHA-256 paczki `.mcpb` z pliku obok niej (zapisuje go `npm run mcp:mcpb` przy wdrożeniu), pobrana w czasie działania;
+ * brak pliku (np. `npm run dev`), błąd sieci albo inny format — null.
+ */
+function useMcpbSha256(): string | null {
+  const [sha, setSha] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    fetch(MCPB_SHA256_URL, { cache: 'no-cache' })
+      .then((r) => (r.ok ? r.text() : ''))
+      .then((t) => {
+        if (live) setSha(parseSha256(t));
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
+  return sha;
+}
 
-const ServerCard: React.FC = () =>
-  MCP_STATUS === 'npm' ? (
-    <Panel title={tr('Serwer z npm', 'Server from npm')} bodyClassName="px-4 py-3 flex flex-col gap-3">
+export const ClaudeCard: React.FC = () => {
+  const sha = useMcpbSha256();
+  return (
+    <Panel title="Claude Desktop" actions={<Badge tone="neutral">{tr('Jedno kliknięcie', 'One click')}</Badge>} hero bodyClassName="px-4 py-3 flex flex-col gap-3">
       <p className="text-sm text-ink-2 leading-relaxed">
         {tr(
-          'Pozostałe klienty uruchamiają serwer same poleceniem npx -y hyperquant-mcp. Wymaga Node.js 20 albo nowszego.',
-          'Other clients start the server themselves with npx -y hyperquant-mcp. Requires Node.js 20 or later.'
+          'Pobierz plik i otwórz go dwuklikiem: Claude Desktop pokaże okno instalacji. Serwer i jego zależności są w pliku, a Node.js jest wbudowany w Claude Desktop. macOS i Windows.',
+          'Download the file and double-click it: Claude Desktop shows the install dialog. The server and its dependencies are inside the file, and Node.js ships with Claude Desktop. macOS and Windows.'
         )}
+      </p>
+      <div>
+        <a href={MCPB_URL} download="hyperquant.mcpb" className={BTN_PRIMARY}>
+          <Download className="w-4 h-4" aria-hidden="true" />
+          {tr('Pobierz .mcpb', 'Download .mcpb')}
+        </a>
+      </div>
+      <p className="text-xs text-ink-3 leading-relaxed">
+        SHA-256:{' '}
+        <code data-sha256="" className="font-mono text-ink-2 break-all">
+          {sha ?? DASH}
+        </code>
+        {tr(' (porównaj z sumą pobranego pliku)', ' (compare it with the checksum of the downloaded file)')}
+      </p>
+      {MCP_STATUS === 'repo' && (
+        <p className="text-xs text-ink-3 leading-relaxed">
+          {tr(
+            'To jedyna instalacja jednym kliknięciem dostępna przed publikacją paczki w npm.',
+            'This is the only one-click install available before the npm package is published.'
+          )}
+        </p>
+      )}
+    </Panel>
+  );
+};
+
+export const ServerCard: React.FC<{ status?: McpStatus }> = ({ status = MCP_STATUS }) =>
+  status === 'npm' ? (
+    <Panel title={tr('Serwer z npm', 'Server from npm')} bodyClassName="px-4 py-3 flex flex-col gap-3">
+      <p className="text-sm text-ink-2 leading-relaxed">
+        {tr('Pozostałe klienty uruchamiają serwer same poleceniem ', 'Other clients start the server themselves with ')}
+        <code className="font-mono text-ink-1">{NPX_COMMAND}</code>
+        {tr(' (wersja przypięta). Wymaga Node.js 20 albo nowszego.', ' (a pinned version). Requires Node.js 20 or later.')}
       </p>
     </Panel>
   ) : (

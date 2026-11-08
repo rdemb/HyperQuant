@@ -1,7 +1,7 @@
 /**
- * Wzorce plików do publikacji: ścieżki domowe, sekrety, adresy, e-maile i słowa wewnętrznego procesu pracy. Wspólne dla
- * testu plików repo (`publishable.test.ts`) i testu archiwum `.mcpb` (`mcp/__tests__/mcpb.test.ts`). Wzorce są ogólne:
- * ten plik też jest publiczny i też jest czytany.
+ * Ogólne wzorce plików do publikacji: ścieżki domowe, sekrety i klucze, adresy portfeli, IP i e-maile. Wspólne dla
+ * testu plików repo (`publishable.test.ts`) i testu archiwum `.mcpb` (`mcp/__tests__/mcpb.test.ts`). Ten plik też jest
+ * publiczny i też jest czytany, więc trzyma tylko wzorce niezależne od tego, kto i jak pracuje nad repozytorium.
  */
 import { GUARDS } from '../../src/utils/safeguards.mjs';
 
@@ -13,18 +13,17 @@ export const HOME_PATTERNS: { why: string; re: RegExp }[] = [
   { why: 'ścieżka domowa (macOS, Linux)', re: /(?<![\w.-])\/(?:Users|home)\/[^/\s"'`]+/ },
 ];
 
-// Klasy znaków w nawiasach w słowach procesu: wzorzec nie trafia we własny zapis w tym pliku (on też jest czytany)
 const PATTERNS: { why: string; re: RegExp }[] = [
   ...HOME_PATTERNS,
   { why: 'adres portfela', re: /0x[0-9a-fA-F]{40}/ },
   { why: 'hash albo klucz (64 hex)', re: /[0-9a-fA-F]{64}/ },
   { why: 'sekret przypisany wprost', re: /(api[_-]?key|secret|token)\s*[:=]\s*\S{8,}/i },
-  { why: 'słowo procesu pracy', re: /\b(Review[ ]Focus|sub[a]gent|ledger[ ]file|task[ ]brief)\b/i },
-  { why: 'katalog notatek procesu', re: /\.super[p]owers/i },
-  { why: 'katalog notatek procesu', re: /docs\/super[p]owers/i },
   // Bezpieczniki prywatności bloga i strony (m.in. tokeny i klucze dostępu w znanych formatach); IP i e-mail osobno niżej
   ...GUARDS.filter((g) => g.kind === 'privacy' && g.en !== 'an IP address' && g.en !== 'an e-mail address').map((g) => ({ why: g.why, re: g.re })),
 ];
+
+/** Powody wzorców (bez IP i e-maila, sprawdzanych osobno z wyjątkami dla przykładów). */
+export const PATTERN_WHYS: readonly string[] = PATTERNS.map((p) => p.why);
 
 const IP = /(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?![\d.])/g;
 /** Dozwolone w przykładach: pętla zwrotna, 0.0.0.0 i zakresy do dokumentacji (RFC 5737). */

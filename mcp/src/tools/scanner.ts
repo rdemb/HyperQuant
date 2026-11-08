@@ -14,7 +14,8 @@ import { type LiqBucket, type LiqMap, isLiqMap } from '../../../src/utils/liqMap
 import { liqMapFreshness } from '../../../src/utils/liqMapView';
 import { isLiqTape, liqTapeFreshness } from '../../../src/utils/liqTape';
 import { liqScan, scannerAge, whalesScan } from '../../../src/utils/scanState';
-import { fmtFixed } from '../../../src/ui/format';
+import { fmtFixed, plForm } from '../../../src/ui/format';
+import { CONE_METHOD } from '../../../src/utils/sessionReview';
 import { isAbsent } from '../../../src/utils/sessionText';
 import {
   HIST_HOUR_MS,
@@ -30,7 +31,8 @@ import {
 import { twapShareOf } from '../../../src/utils/twapShare';
 import { WHALES_STALE_MS, type WhaleOrderGroup, type WhalePosition, groupWhaleOrders, isWhaleLayer, whaleBalanceOf } from '../../../src/utils/whaleLayer';
 import { type Envelope, type Num, type SourceRef, type Unit, envelope, iso, num } from '../envelope';
-import { type Sources, TIMEOUT_MS, TTL } from '../sources';
+import { whaleIdOk } from '../external';
+import { ByteBudget, type Sources, TIMEOUT_MS, TTL, TWAPS_MAX_BYTES } from '../sources';
 import type { ToolDef } from './index';
 import { ageNote, candleSource, candlesGot, closeNum, fileSource } from './shared';
 
@@ -119,7 +121,8 @@ async function liqMapRun(src: Sources): Promise<Envelope<LiqMapData>> {
   const fuel = (band: number) => {
     if (p === null || !(p > 0)) return pair(price.why ?? tr('brak ceny', 'no price'));
     const r = liqFuel(map, p, band);
-    return { below: live(r.below, 'usd', note), above: live(r.above, 'usd', note) };
+    // Pełne dolary, jak paliwo w market_brief (liqFuel liczy po środku kubełka, z ułamkami dolara)
+    return { below: live(Math.round(r.below), 'usd', note), above: live(Math.round(r.above), 'usd', note) };
   };
   const top = (buckets: readonly LiqBucket[], side: 'below' | 'above') =>
     [...buckets]
@@ -255,24 +258,38 @@ const COHORT_NOTE = tr(
   `Hyperliquid BTC participant cohorts (market makers, informed, whales, rest) from the public tape: the addresses of both sides and the aggressor side stay on the server, only aggregates rounded to USD 10k are published. Cells hidden for privacy are not included. net = buys − sells over all the cohort's fills (inventory change), takerNet = buys − sells of the cohort as liquidity taker, volume = buys + sells; ${VOLUME_SHARE_DEF}. “Informed” is a statistical result from the past. A description of flow, not a signal.`
 );
 
+/** „N komórek ukrytych dla prywatności” (komórka: kohorta w jednym kubełku 15 min). */
+const hiddenCells = (n: number) =>
+  tr(`${n} ${plForm(n, 'komórka ukryta', 'komórki ukryte', 'komórek ukrytych')} dla prywatności`, `${n} ${n === 1 ? 'cell' : 'cells'} hidden for privacy`);
+/** „N warstw agresora ukrytych” (warstwa biorcy w widocznej komórce). */
+const hiddenTaker = (n: number) => tr(`${n} ${plForm(n, 'warstwa agresora ukryta', 'warstwy agresora ukryte', 'warstw agresora ukrytych')}`, `${n} aggressor ${n === 1 ? 'layer' : 'layers'} hidden`);
+/** Uwagi liczby: wiek migawki i (gdy są) ukryte komórki — razem w jednym polu `note`. */
+const joinNotes = (...n: (string | undefined)[]) => n.filter((x) => x !== undefined).join('; ') || undefined;
+
+/**
+ * Wiersze kohort okna. Kohorta bez transakcji i ukrytych komórek — „—” jak na panelu, nie zero. Widoczny obrót 0 przy
+ * ukrytych komórkach — saldo, agresor, obrót i udział nieznane: null z powodem (liczba ukrytych), nie 0. Część komórek
+ * ukryta — liczby z widocznych komórek z uwagą, ile ukryto.
+ */
 function cohortRows(totals: Record<CohortId, CohortTotal>, note: string | undefined): CohortRow[] {
   const all = COHORTS.reduce((s, id) => s + cohortVolume(totals[id]), 0);
   return COHORTS.map((id) => {
     const t = totals[id];
-    // Jak panel: kohorta bez transakcji i ukrytych kubełków to „—”, nie zero
-    const seen = cohortSeen(t);
-    const usd = (v: number) => (seen ? live(v, 'usd', note) : nil('usd', NO_TRADES));
-    const share = !seen ? nil('ratio', NO_TRADES) : all > 0 ? live(cohortVolume(t) / all, 'ratio', note) : nil('ratio', tr('brak widocznego obrotu w oknie', 'no visible volume in the window'));
-    return {
-      id,
-      label: COHORT_LABEL[id],
-      net: usd(cohortNet(t)),
-      takerNet: usd(cohortTakerNet(t)),
-      volume: usd(cohortVolume(t)),
-      volumeShare: share,
-      hiddenBuckets: live(t.hidden, 'count', note),
-      hiddenTakerBuckets: live(t.takerHidden, 'count', note),
-    };
+    const vol = cohortVolume(t);
+    const hid = t.hidden > 0 ? hiddenCells(t.hidden) : undefined;
+    const hidTaker = t.takerHidden > 0 ? hiddenTaker(t.takerHidden) : undefined;
+    const counts = { hiddenBuckets: live(t.hidden, 'count', note), hiddenTakerBuckets: live(t.takerHidden, 'count', note) };
+    const row = (net: Num, takerNet: Num, volume: Num, volumeShare: Num): CohortRow => ({ id, label: COHORT_LABEL[id], net, takerNet, volume, volumeShare, ...counts });
+    if (!cohortSeen(t)) return row(nil('usd', NO_TRADES), nil('usd', NO_TRADES), nil('usd', NO_TRADES), nil('ratio', NO_TRADES));
+    if (vol === 0) {
+      // Całe komórki ukryte (wraz z ich warstwą agresora); bez nich — same ukryte warstwy agresora
+      const why = hid ?? hidTaker ?? NO_TRADES;
+      return row(nil('usd', why), nil('usd', why), nil('usd', why), nil('ratio', why));
+    }
+    const part = hid === undefined ? undefined : tr(`${hid} (${plForm(t.hidden, 'niewliczona', 'niewliczone', 'niewliczonych')})`, `${hid} (not included)`);
+    const n = joinNotes(note, part);
+    const share = all > 0 ? live(vol / all, 'ratio', n) : nil('ratio', tr('brak widocznego obrotu w oknie', 'no visible volume in the window'));
+    return row(live(cohortNet(t), 'usd', n), live(cohortTakerNet(t), 'usd', joinNotes(note, part, hidTaker)), live(vol, 'usd', n), share);
   });
 }
 
@@ -407,9 +424,22 @@ async function whalesRun(src: Sources): Promise<Envelope<WhalesData>> {
   const bal = whaleBalanceOf(m.positions, w.asOf);
   const none = tr(`Skaner nie widzi pozycji od progu publikacji (stan z ${iso(w.asOf)})`, `The scanner sees no positions above the publication threshold (as of ${iso(w.asOf)})`);
   const noThreshold = tr('brak progu w pliku', 'no threshold in the file');
-  const positions = [...m.positions].sort((a, b) => b.usd - a.usd).slice(0, WHALE_TOP);
-  const groups = groupWhaleOrders(m.orders);
+  // Pseudonim spoza formatu (W + 6 znaków hex): pozycja albo zlecenie pominięte, z uwagą o liczbie (saldo to agregat bez pseudonimów)
+  const valid = m.positions.filter((p) => whaleIdOk(p.id));
+  const validOrders = m.orders.filter((o) => whaleIdOk(o.id));
+  const positions = [...valid].sort((a, b) => b.usd - a.usd).slice(0, WHALE_TOP);
+  const groups = groupWhaleOrders(validOrders);
   notes.push(tr(`Pokazane: ${positions.length} z ${m.positions.length} pozycji i ${Math.min(WHALE_TOP, groups.length)} z ${groups.length} grup zleceń (największe).`, `Shown: ${positions.length} of ${m.positions.length} positions and ${Math.min(WHALE_TOP, groups.length)} of ${groups.length} order groups (the largest).`));
+  const badP = m.positions.length - valid.length;
+  const badO = m.orders.length - validOrders.length;
+  if (badP > 0 || badO > 0) {
+    notes.push(
+      tr(
+        `Pominięte z pseudonimem spoza formatu: ${badP} ${plForm(badP, 'pozycja', 'pozycje', 'pozycji')} i ${badO} ${plForm(badO, 'zlecenie', 'zlecenia', 'zleceń')}.`,
+        `Skipped with a pseudonym outside the format: ${badP} ${badP === 1 ? 'position' : 'positions'} and ${badO} ${badO === 1 ? 'order' : 'orders'}.`
+      )
+    );
+  }
   const data: WhalesData = {
     why: null,
     accounts: live(w.accounts, 'count', note),
@@ -544,7 +574,9 @@ async function twapsRun(src: Sources): Promise<Envelope<TwapsData>> {
   const t0 = performance.now();
   // Całość w 1,2 limitu żądania (12 s): spis i pliki to dwa kolejne etapy
   const budget = 1.2 * (src.cfg.timeoutMs ?? TIMEOUT_MS);
-  const fi = await src.history('index.json', (raw) => (isHistoryIndex(raw) ? raw : null));
+  // Łączny limit bajtów wywołania: spis i pliki nagrań po rozpakowaniu (każdy plik ma też własny limit)
+  const bytes = new ByteBudget(src.cfg.twapsMaxBytes ?? TWAPS_MAX_BYTES);
+  const fi = await src.history('index.json', (raw) => (isHistoryIndex(raw) ? raw : null), TTL.published, bytes);
   const sources: SourceRef[] = [fileSource(tr('Spis nagrań taśmy', 'Tape recording index'), fi)];
   const notes = [TWAP_NOTE];
   const activeCount = nil('count', ACTIVE_WHY);
@@ -563,8 +595,10 @@ async function twapsRun(src: Sources): Promise<Envelope<TwapsData>> {
 
   // Opublikowany plik zamkniętej godziny albo części już się nie zmienia: w pamięci 15 min zamiast 60 s
   const ttl = (u: HistUnit) => (u.end + HIST_PUBLISH_LAG_MS <= now ? TTL.historyClosed : TTL.published);
-  const files = await within(Promise.all(units.map((u) => src.history(historyPath('BTC', u.start, 'trades', u.part), btcTrades, ttl(u)))), budget - (performance.now() - t0));
+  const files = await within(Promise.all(units.map((u) => src.history(historyPath('BTC', u.start, 'trades', u.part), btcTrades, ttl(u), bytes))), budget - (performance.now() - t0));
   if (!files) return none(tr(`pliki nagrań taśmy bez odpowiedzi w ${budget / 1000} s`, `tape recording files did not respond within ${budget / 1000} s`));
+  // Ponad łączny limit: bez liczb z części plików (udział z niepełnego okna udawałby lukę w nagraniu)
+  if (bytes.over) return none(tr(`pliki nagrań taśmy: ${bytes.why}`, `tape recording files: ${bytes.why}`));
   units.forEach((u, i) => {
     const f = files[i];
     const name = u.part ? tr(`Nagranie taśmy BTC, część od ${iso(u.start)}`, `BTC tape recording, part from ${iso(u.start)}`) : tr(`Nagranie taśmy BTC, godzina od ${iso(u.start)}`, `BTC tape recording, hour from ${iso(u.start)}`);
@@ -635,7 +669,7 @@ export interface LedgerReturns {
   settled: Num;
   /** Umiejętność CRPS wobec rozkładu normalnego z 30 dni (> 0 — lepiej). */
   crpss: Num;
-  /** Odsetek realizacji w przedziałach 90%, 60% i ACI (nominał 0,9, 0,6 i 0,9). */
+  /** Odsetek realizacji w przedziałach 90%, 60% i ACI (nominał 0,9, 0,6 i 0,9); MODEL z metodą jak wiersz stożka karty Rozliczenia. */
   cov90: Num;
   cov60: Num;
   covAci: Num;
@@ -683,26 +717,37 @@ async function ledgerRun(src: Sources): Promise<Envelope<ForecastLedgerData>> {
     return envelope(NAME_LEDGER, data, sources, now, notes);
   }
   const s = f.value;
-  const note = ageNote(s.asOf, now);
+  // Podsumowanie dziennika to nie migawka skanera: neutralna uwaga o wieku danych
+  const note = ageNote(s.asOf, now, 'data');
   // Jak panel dziennika: liczby zostają, z informacją o ostatniej aktualizacji
   if (ledgerFreshness(s, now) !== 'ready') notes.push(tr(`Dziennik nie był aktualizowany od ponad 35 min (ostatnia aktualizacja ${iso(s.asOf)}).`, `The ledger has not been updated for over 35 min (last update ${iso(s.asOf)}).`));
   const fromN = (n: number) => tr(`wyniki od ${LEDGER_MIN_N} rozstrzygnięć (jest ${n})`, `scores from ${LEDGER_MIN_N} settlements (now ${n})`);
   const noScore = tr('brak wyniku w podsumowaniu', 'no score in the summary');
   const score = (n: number) => (v: number | null | undefined) => (n >= LEDGER_MIN_N ? live(v, 'ratio', note, noScore) : nil('ratio', fromN(n)));
+  /**
+   * Pokrycie przedziałów (i test Kupca pokrycia 90%): MODEL z metodą wiersza stożka karty Rozliczenia (`CONE_METHOD`) —
+   * strona oznacza pokrycie tylko tam, i tak samo robi `session_review`; jedna plakietka w obu narzędziach.
+   */
+  const cover = (n: number) => (v: number | null | undefined) => {
+    if (n < LEDGER_MIN_N) return nil('ratio', fromN(n));
+    const ok = typeof v === 'number' && Number.isFinite(v);
+    return num(v, 'ratio', 'MODEL', { why: noScore, method: CONE_METHOD, ...(ok && note !== undefined && { note }) });
+  };
   const returns = Object.entries(s.scores.ret)
     .map(([k, sc]) => ({ h: Number(k), sc }))
     .filter((x) => Number.isFinite(x.h) && x.h > 0)
     .sort((a, b) => a.h - b.h)
     .map(({ h, sc }): LedgerReturns => {
       const at = score(sc.n);
+      const cov = cover(sc.n);
       return {
         horizon: `${h} min`,
         settled: live(sc.n, 'count', note),
         crpss: at(sc.crpss),
-        cov90: at(sc.cov90?.rate),
-        cov60: at(sc.cov60?.rate),
-        covAci: at(sc.covAci?.rate),
-        kupiecP90: at(sc.cov90?.kupiecP),
+        cov90: cov(sc.cov90?.rate),
+        cov60: cov(sc.cov60?.rate),
+        covAci: cov(sc.covAci?.rate),
+        kupiecP90: cov(sc.cov90?.kupiecP),
       };
     });
   const t = s.scores.touch;

@@ -118,7 +118,9 @@ describe('test dymny stdio', () => {
   }, 120_000);
 
   it('paczka npm: dokładnie bundle, README, LICENSE i package.json', () => {
-    const r = spawnSync('npm pack --dry-run --json -w mcp', { cwd: ROOT, encoding: 'utf8', shell: true, timeout: 60_000 });
+    // Bez skryptów paczki: `prepack` przebudowałby mcp/dist w trakcie testów, które czytają bundle (zbudowany w beforeAll);
+    // to, że `prepack` buduje bundle, sprawdza package.test.ts
+    const r = spawnSync('npm pack --dry-run --json --ignore-scripts -w mcp', { cwd: ROOT, encoding: 'utf8', shell: true, timeout: 60_000 });
     expect(r.status, r.stderr).toBe(0);
     const [pack] = JSON.parse(r.stdout) as { files: { path: string }[] }[];
     expect(pack.files.map((f) => f.path).sort()).toEqual(['LICENSE', 'README.md', 'dist/hyperquant-mcp.mjs', 'package.json']);

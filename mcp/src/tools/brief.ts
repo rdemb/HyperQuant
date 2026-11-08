@@ -10,7 +10,7 @@ import * as z from 'zod';
 import { utcDayStart } from '../../../src/charts/pro/core/sessions';
 import type { Candle } from '../../../src/charts/pro/hl/parse';
 import { tr } from '../../../src/i18n';
-import { type BlogMapsState, pickMap } from '../../../src/utils/blogMaps';
+import { pickMap } from '../../../src/utils/blogMaps';
 import { DASH, fmtPrice } from '../../../src/ui/format';
 import { PROFILE_STEP, VA_PCT, toVBars } from '../../../src/utils/auction';
 import { dayVwapOf, vwapSigma } from '../../../src/utils/dayVwap';
@@ -34,8 +34,9 @@ import { type TradeSession, type TradeSessionId, currentTradeSession, nextTradeS
 import { prevSessionProfile, reviewSession } from '../../../src/utils/sessionFacts';
 import { TRADE_SESSION_NAME } from '../../../src/utils/sessionNames';
 import { type Got, blogMapName, isAbsent } from '../../../src/utils/sessionText';
-import { type Envelope, type Num, type SourceRef, envelope, guardedLabel, iso, num } from '../envelope';
-import type { Fetched, Sources } from '../sources';
+import { type Envelope, type Num, type SourceRef, envelope, iso, num } from '../envelope';
+import { guardedLabel, levelsCutNote } from '../external';
+import type { BlogMapsCut, Fetched, Sources } from '../sources';
 import type { ToolDef } from './index';
 import { BLOG_LEVEL_NOTE, ageNote, candleSource, candlesGot, fileSource } from './shared';
 
@@ -213,8 +214,11 @@ function vwapValue(n: FourNumber, x: FourInputs): Num {
   return num(z, 'sigma', 'LIVE', { why: n.hint });
 }
 
-/** Poziomy dzisiejszej Mapy dnia (`pickMap`, jak `day_map`); etykieta z radą albo adresem — wstrzymana, poziom zostaje. */
-function blogLevels(fm: Fetched<BlogMapsState>, now: number, siteBase: string, notes: string[]): BriefLevel[] {
+/**
+ * Poziomy dzisiejszej Mapy dnia (`pickMap`, jak `day_map`, najwyżej `LEVELS_MAX`); etykieta spoza formatu, z radą albo
+ * adresem — wstrzymana, poziom zostaje.
+ */
+function blogLevels(fm: Fetched<BlogMapsCut>, now: number, siteBase: string, notes: string[]): BriefLevel[] {
   if (!fm.ok) {
     notes.push(tr(`Bez poziomów z bloga: plik map z bloga niedostępny (${fm.why}).`, `No blog levels: the blog maps file is unavailable (${fm.why}).`));
     return [];
@@ -231,6 +235,8 @@ function blogLevels(fm: Fetched<BlogMapsState>, now: number, siteBase: string, n
       `Blog levels: ${blogMapName(m.kind)} from ${iso(m.publishedAt)}, ${siteBase}/blog/${m.id}/ (author text, not a model; touches since the post: day_map).`
     )
   );
+  const cut = fm.value.levelsCut[m.id];
+  if (cut !== undefined) notes.push(levelsCutNote(m.id, cut));
   return m.levels.map((l) => ({ ...guardedLabel(l.label), price: num(l.price, 'price', 'LIVE', { note: BLOG_LEVEL_NOTE }), from: 'blog' as const }));
 }
 

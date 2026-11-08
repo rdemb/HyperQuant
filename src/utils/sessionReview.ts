@@ -375,9 +375,15 @@ function liqRow(x: ReviewInputs): ReviewRow {
   };
 }
 
+/**
+ * Metoda pokrycia przedziałów prognoz (plakietka MODEL): wiersz stożka karty Rozliczenia i pokrycie w `forecast_ledger`
+ * serwera MCP — jedna plakietka i jedna metoda w obu miejscach.
+ */
+export const CONE_METHOD = tr('dziennik prognoz (HAR + FHS)', 'forecast ledger (HAR + FHS)');
+
 function coneRow(x: ReviewInputs): ReviewRow {
   const label = tr('Pokrycie stożka 1 h · 30 dni', 'Cone coverage 1 h · 30 days');
-  const m = tr('MODEL · dziennik prognoz (HAR + FHS)', 'MODEL · forecast ledger (HAR + FHS)');
+  const m = `MODEL · ${CONE_METHOD}`;
   const no = (why: string) => absent('cone', label, 'MODEL', why, { hint: `${m}: ${why}`, scope: 'window' });
   const st = x.ledger;
   if (st.status === 'unconfigured') return no(tr('Dziennik prognoz niedostępny w tej wersji strony', 'The forecast ledger is unavailable in this version of the site'));

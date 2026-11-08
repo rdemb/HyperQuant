@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { VBar } from '../auction';
 import { currentTradeSession, expectedRange, previousSameSession } from '../sessionDay';
 import { classifyDay } from '../dayType';
-import { dayTypeOf, expectedFrom, reviewSession, sessionFacts, sessionNowOf } from '../sessionFacts';
+import { dayTypeOf, expectedBasis, expectedFrom, reviewSession, sessionFacts, sessionNowOf } from '../sessionFacts';
 import type { VolModel } from '../volatility';
 import { fmtHm } from '../../charts/pro/core/time';
 import * as layoutNumbers from '../../charts/pro/chart/layoutNumbers';
@@ -19,6 +19,20 @@ const minutes = (from: number, to: number, px: (t: number) => number): VBar[] =>
   for (let t = from; t < to; t += MIN) out.push({ time: t, open: px(t), high: px(t) + 20, low: px(t) - 20, close: px(t), volume: 1 });
   return out;
 };
+
+describe('expectedBasis: reguła metody oczekiwanego zakresu sesji do rozliczenia (karta strony i session_review serwera MCP)', () => {
+  const har = {} as VolModel;
+  it('zamknięta sesja: zawsze ex ante — Parkinson (bez modelu) na chwilę jej otwarcia, także z wczytanym modelem HAR', () => {
+    const later = NOW + 10 * H;
+    expect(expectedBasis(NY, false, har, later)).toEqual({ model: null, asOf: NY.start });
+    expect(expectedBasis(NY, false, null, later)).toEqual({ model: null, asOf: NY.start });
+  });
+
+  it('sesja w toku: model HAR, gdy jest, inaczej Parkinson — oba na teraz', () => {
+    expect(expectedBasis(NY, true, har, NOW)).toEqual({ model: har, asOf: NOW });
+    expect(expectedBasis(NY, true, null, NOW)).toEqual({ model: null, asOf: NOW });
+  });
+});
 
 describe('sessionFacts: jedno źródło faktów sesji (nagłówek Rozliczenia i karty)', () => {
   // Od NY poprzedniego dnia (14:30 2.11) do teraz, cena 100 000; w bieżącej sesji NY po IB wyżej

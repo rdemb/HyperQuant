@@ -72,6 +72,19 @@ describe('narzędzia danych skanera po angielsku', () => {
     }
   });
 
+  it('po angielsku: wiek danych dziennika prognoz („data from N min ago”) i kohorta w pełni ukryta („N cells hidden for privacy”)', async () => {
+    const MIN = 60_000;
+    const flow = cohortFlow();
+    flow.totals.h1.rest = { buy: 0, sell: 0, takerBuy: 0, takerSell: 0, hidden: 3, takerHidden: 0 };
+    const c = await connect(testSources(allRoutes({ [LEDGER_URL]: { json: ledger(50 * MIN) }, [COHORTS_URL]: { json: flow } }), NOW).src);
+    close = c.close;
+    const led = (await c.client.callTool({ name: 'forecast_ledger', arguments: {} })).structuredContent as { data: { returns: { crpss: { note?: string } }[] } };
+    expect(led.data.returns[0].crpss.note).toBe(`data from 50 min ago (as of ${new Date(NOW - 50 * MIN).toISOString()})`);
+    const co = (await c.client.callTool({ name: 'cohort_flow', arguments: {} })).structuredContent as { data: { h1: { cohorts: { net: { why: string | null }; volume: { note?: string } }[] } } };
+    expect(co.data.h1.cohorts[3].net.why).toBe('3 cells hidden for privacy');
+    expect(co.data.h1.cohorts[2].volume.note).toBe('1 cell hidden for privacy (not included)');
+  });
+
   it('tools/list: opisy narzędzi po angielsku', async () => {
     const c = await connect(testSources({}, NOW).src);
     close = c.close;

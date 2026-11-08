@@ -195,10 +195,26 @@ export function sessionNowOf(c1m: readonly Candle[], now: number): Got<SessionNo
   };
 }
 
+/** Podstawa oczekiwanego zakresu sesji do rozliczenia: model HAR (null — σ Parkinsona ze świec 5m) i chwila oceny. */
+export interface ExpectedBasis {
+  model: VolModel | null;
+  asOf: number;
+}
+
+/**
+ * Reguła wyboru metody oczekiwanego zakresu sesji do rozliczenia — jedna dla karty Rozliczenia strony (`sessionExpectedOf`)
+ * i `session_review` serwera MCP: sesja w toku — model HAR, gdy jest (inaczej Parkinson), ocena na teraz; zamknięta —
+ * zawsze ex ante: Parkinson ze świec 5m na chwilę jej otwarcia (model HAR zna tylko dzisiejszy poziom zmienności, nie
+ * prognozę sprzed tamtej sesji). Świece 5m i model rozwiązuje wywołujący, liczbę daje `expectedFrom`.
+ */
+export function expectedBasis(s: TradeSession, inProgress: boolean, model: VolModel | null, now: number): ExpectedBasis {
+  return inProgress ? { model, asOf: now } : { model: null, asOf: s.start };
+}
+
 /**
  * Oczekiwany zakres sesji albo powód braku — jedno źródło dla nagłówka układu, karty Rozliczenia i serwera MCP (świece 5m
  * i model rozwiązuje wywołujący). Z modelem HAR liczba z modelu; bez niego σ Parkinsona ze świec 5m do chwili `asOf`.
- * `asOf < now` — sesja zamknięta, ocena ex ante (Parkinson sprzed otwarcia).
+ * `asOf < now` — sesja zamknięta, ocena ex ante (Parkinson sprzed otwarcia, `expectedBasis`).
  */
 export function expectedFrom(model: VolModel | null, bars5m: VBar[], s: TradeSession, now: number, asOf: number, price: number): Got<Expected> {
   const e = expectedRange(model, bars5m, s, asOf, price);

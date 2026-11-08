@@ -8,7 +8,8 @@ import { tr } from '../../../src/i18n';
 import { pickMap } from '../../../src/utils/blogMaps';
 import { type VBar, toVBars } from '../../../src/utils/auction';
 import { type MapKind, mapWindow, minutesCovered, settleRange } from '../../../src/utils/mapSettlement';
-import { type Envelope, type Num, type SourceRef, envelope, guardedLabel, iso, num } from '../envelope';
+import { type Envelope, type Num, type SourceRef, envelope, iso, num } from '../envelope';
+import { guardedLabel, levelsCutNote } from '../external';
 import type { Sources } from '../sources';
 import type { ToolDef } from './index';
 import { BLOG_LEVEL_NOTE } from './shared';
@@ -67,17 +68,20 @@ async function run(src: Sources): Promise<Envelope<DayMapData>> {
 
   const m = pickMap(got.value.maps, now);
   if (!m) return none(tr('Brak Mapy dnia opublikowanej dziś (doba UTC).', 'No Day map published today (UTC day).'));
+  // Mapa z poziomami ponad limit: w odpowiedzi (i w rozliczeniu) pierwsze LEVELS_MAX, z uwagą
+  const cut = got.value.levelsCut[m.id];
+  const mapNotes = cut === undefined ? [] : [levelsCutNote(m.id, cut)];
 
   const levels = (touch: (i: number) => { touched: boolean | null; touchedAt: number | null }): DayMapLevel[] =>
     m.levels.map((l, i) => {
       const t = touch(i);
-      // Etykieta z radą albo adresem: sama etykieta wstrzymana (label null z powodem), poziom zostaje
+      // Etykieta spoza formatu, z radą albo adresem: sama etykieta wstrzymana (label null z powodem), poziom zostaje
       return { ...guardedLabel(l.label), price: num(l.price, 'price', 'LIVE', { note: BLOG_LEVEL_NOTE }), touched: t.touched, touchedAt: t.touchedAt === null ? null : iso(t.touchedAt) };
     });
   // Adres wpisu z identyfikatora (sprawdzonego wzorcem `isMapId`), nie z pola `url` pliku
   const head = { id: m.id, kind: m.kind, publishedAt: iso(m.publishedAt), postUrl: `${src.cfg.siteBase}/blog/${m.id}/` };
   const unsettled = (why: string, coverage = num(null, 'pct', 'LIVE', { why }), notes: string[] = []) =>
-    envelope(NAME, { map: { ...head, levels: levels(() => ({ touched: null, touchedAt: null })) }, why, coverage }, sources, now, notes);
+    envelope(NAME, { map: { ...head, levels: levels(() => ({ touched: null, touchedAt: null })) }, why, coverage }, sources, now, [...mapNotes, ...notes]);
 
   const w = mapWindow(m.kind, m.publishedAt);
   // `pickMap` bez wybranego id zwraca tylko Mapę dnia (`dzien`), a ona zawsze ma okno: null tu to błąd programu (zwężenie typu)
@@ -113,7 +117,7 @@ async function run(src: Sources): Promise<Envelope<DayMapData>> {
     why: settled ? null : last < start ? NO_MINUTE : tr('luka w świecach 1m: poziomy bez dotknięcia są nierozliczone', 'gap in the 1m candles: levels without a touch are unsettled'),
     coverage,
   };
-  return envelope(NAME, data, sources, now, [window]);
+  return envelope(NAME, data, sources, now, [...mapNotes, window]);
 }
 
 export const dayMap: ToolDef = {

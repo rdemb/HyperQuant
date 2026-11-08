@@ -6,6 +6,7 @@
  * w obcym katalogu startuje przez prawdziwe stdio na samych dołączonych zależnościach.
  */
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -131,11 +132,14 @@ describe('archiwum .mcpb', () => {
     for (const banned of ['node_modules/react', 'react.production', 'useSyncExternalStore']) expect(text, banned).not.toContain(banned);
   });
 
-  it('pliki: tylko manifest, bundle i node_modules zależności wykonania (bez map, typów i źródeł TS), ścieżki względne', () => {
+  it('pliki: tylko manifest, licencja paczki, bundle i node_modules zależności wykonania (bez map, typów i źródeł TS), ścieżki względne', () => {
     const names = entries.map((e) => e.name);
     expect(new Set(names).size).toBe(names.length);
     const pkgOf = (n: string) => RUNTIME.find((p) => n.startsWith(`node_modules/${p}/`));
-    expect(names.filter((n) => n !== 'manifest.json' && n !== ENTRY && !pkgOf(n))).toEqual([]);
+    expect(names.filter((n) => n !== 'manifest.json' && n !== 'LICENSE' && n !== ENTRY && !pkgOf(n))).toEqual([]);
+    // Licencja MIT paczki w katalogu głównym archiwum (ta sama co mcp/LICENSE), zaraz po manifeście
+    expect(names.slice(0, 3)).toEqual(['manifest.json', 'LICENSE', ENTRY]);
+    expect(entry('LICENSE')?.data.toString('utf8').replace(/\r\n/g, '\n')).toBe(read('mcp/LICENSE'));
     expect([...new Set(names.map(pkgOf).filter(Boolean))].sort()).toEqual(RUNTIME);
     expect(names.filter((n) => /^[/\\]|^[A-Za-z]:|\\|(?:^|\/)\.\.(?:\/|$)/.test(n))).toEqual([]);
     expect(names.filter((n) => /\.(?:map|[cm]?ts)$/.test(n))).toEqual([]);
@@ -174,11 +178,18 @@ describe('archiwum .mcpb', () => {
     expect(r.stdout).toContain('10 tools');
   });
 
+  it('obok archiwum plik <archiwum>.sha256 z sumą SHA-256 w formacie sha256sum („<hex>  hyperquant.mcpb”)', () => {
+    const sum = readFileSync(`${archive}.sha256`, 'utf8');
+    expect(sum).toBe(`${createHash('sha256').update(readFileSync(archive)).digest('hex')}  hyperquant.mcpb\n`);
+  });
+
   it('ten sam wynik przy każdym uruchomieniu (stałe daty i kolejność plików); rozmiar do pobrania z rozsądnym zapasem', () => {
     const again = path.join(tmp, 'again.mcpb');
     const r = node([SCRIPT, '--bundle', bundle, '--out', again]);
     expect(r.status, r.stderr).toBe(0);
     expect(readFileSync(again).equals(readFileSync(archive))).toBe(true);
+    // Ta sama suma, z nazwą swojego pliku
+    expect(readFileSync(`${again}.sha256`, 'utf8')).toBe(readFileSync(`${archive}.sha256`, 'utf8').replace('hyperquant.mcpb', 'again.mcpb'));
     expect(readFileSync(archive).length).toBeLessThan(4 * 1024 * 1024);
   });
 

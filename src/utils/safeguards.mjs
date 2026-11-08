@@ -3,7 +3,9 @@
  * Bezpieczniki treści wspólne dla walidatora bloga (scripts/blog/posts.mjs, docs/BLOG.md „Safeguards”) i strony (tytuł
  * Klatki). Każdy wzorzec ma rodzaj, powód po polsku (komunikat walidatora bloga) i po angielsku (interfejs EN).
  * Czysty JavaScript bez importów (typy w JSDoc): blog sprawdza się i buduje także poza CI, na Node bez obsługi TS.
- * Granice słów przez \p{L}, bo \b w JS nie zna polskich liter.
+ * Granice słów przez \p{L}, bo \b w JS nie zna polskich liter. Każdy wzorzec dopasowuje się w czasie liniowym w długości
+ * tekstu: bez dwóch sąsiednich kwantyfikatorów nad tymi samymi znakami (np. `\s*[:=]?\s*`) i z początkiem ciągu znaków
+ * przez lookbehind tam, gdzie wzorzec zaczyna się od długiego ciągu (e-mail).
  */
 
 /** @typedef {'privacy' | 'advice' | 'style'} GuardKind */
@@ -36,7 +38,8 @@ export const GUARDS = [
   // Prywatność: nic, co identyfikuje portfel, transakcję, serwer albo dostęp
   { re: /0x[0-9a-f]{40,}/i, why: 'adres portfela lub hash transakcji', en: 'a wallet address or transaction hash', kind: 'privacy' },
   { re: /(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?![\d.])/, why: 'adres IP', en: 'an IP address', kind: 'privacy' },
-  { re: /[\w.+-]+@[\w-]+\.[a-z]{2,}/i, why: 'adres e-mail', en: 'an e-mail address', kind: 'privacy' },
+  // Tylko od początku ciągu znaków lokalnej części: te same trafienia (dopasowanie najbardziej z lewej i tak zaczyna się tam)
+  { re: /(?<![\w.+-])[\w.+-]+@[\w-]+\.[a-z]{2,}/i, why: 'adres e-mail', en: 'an e-mail address', kind: 'privacy' },
   {
     re: /\d{8,10}:[A-Za-z0-9_-]{35}|gh[pousr]_[A-Za-z0-9]{30,}|sk-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}/,
     why: 'token lub klucz dostępu',
@@ -50,7 +53,8 @@ export const GUARDS = [
     ...CALL,
   },
   { re: /(?<![\p{L}])(?:long|short)\s+(?:od|z|przy|po)\s+\d/iu, why: 'gotowe wejście (long/short od ceny)', en: 'a ready-made entry (long/short from a price)', kind: 'advice' },
-  { re: /(?<![\p{L}])(?:TP|SL|take[ -]profit|stop[ -]loss)\s*[:=]?\s*\d/iu, why: 'poziom TP/SL', en: 'a TP/SL level', kind: 'advice' },
+  // „\s*(?:[:=]\s*)?” to ten sam język co „\s*[:=]?\s*”, bez dwóch \s* do podziału jednego ciągu spacji
+  { re: /(?<![\p{L}])(?:TP|SL|take[ -]profit|stop[ -]loss)\s*(?:[:=]\s*)?\d/iu, why: 'poziom TP/SL', en: 'a TP/SL level', kind: 'advice' },
   // Styl: bez myślników i strzałek
   { re: /—|\s–\s/, why: 'myślnik', en: 'a dash', kind: 'style' },
   { re: /[→←⇒⇐➜➔↑↓]/, why: 'strzałka', en: 'an arrow', kind: 'style' },
@@ -73,7 +77,8 @@ export const TITLE_GUARDS = [
   { re: word('(?:enter|open|take|close)\\s+(?:an?\\s+|the\\s+|your\\s+)?(?:long|short|position)s?'), ...CALL },
   { re: word('(?:long|short)\\s+(?:here|now|tu|tutaj|teraz)'), ...CALL },
   {
-    re: /(?<![\p{L}])(?:long|short)\s*(?:@|from|at|above|below|near)?\s*\d/iu,
+    // Jak TP/SL: przyimek z własnymi spacjami za nim, bez dwóch \s* nad tym samym ciągiem
+    re: /(?<![\p{L}])(?:long|short)\s*(?:(?:@|from|at|above|below|near)\s*)?\d/iu,
     why: 'gotowe wejście (long/short przy cenie)',
     en: 'a ready-made entry (long/short at a price)',
     kind: 'advice',

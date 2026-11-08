@@ -53,9 +53,10 @@ Every tool returns one JSON envelope:
 ### Model numbers and known gaps
 
 - RVOL is MODEL: `session_context.rvolHour` is the current hour's volume against the 20-day median of the same hour, scaled to the elapsed part of the hour; 1 is the typical volume for that hour.
-- Also MODEL: the day type (Dalton), the expected range and the range budget (HAR volatility model, or Parkinson σ from 5m candles when the model is unavailable; `method` says which) and the typical hour width (20-day median).
+- Also MODEL: the day type (Dalton), the expected range and the range budget (HAR volatility model, or Parkinson σ from 5m candles when the model is unavailable; `method` says which), the typical hour width (20-day median) and the interval coverage of the forecast ledger (`cov90`, `cov60`, `covAci` and `kupiecP90` in `forecast_ledger`, and the cone row of `session_review`).
 - `twaps.share60`: when the last 60 minutes of the recording are not fully covered, its `total`, `buy` and `sell` values are null, with a reason (a recording gap or a missing zero-hash mark); `why` says how many minutes are covered. `share15` follows the same rule over 15 minutes.
 - `twaps.activeCount` (the number of TWAPs running now) is always null for now: it needs a live stream that is not built yet.
+- `cohort_flow`: when every cell of a cohort in the window is hidden for privacy, its `net`, `takerNet`, `volume` and `volumeShare` are null and `why` gives the number of hidden cells; never read them as zero. When only some cells are hidden, the numbers cover the visible cells and `note` says how many were hidden.
 - A scanner snapshot older than 2 minutes keeps `badge: "LIVE"` and gets a `note` with its age. Quote the age.
 - `day_map`: with a gap in the 1m candles, levels without a touch have `touched: null` (unsettled), not false, and `coverage` is below 100.
 - A blog level whose label trips the server's content guards keeps its price: `label` is null with the reason in `labelWhy` (in `session_review` the label reads "[label withheld]", or "[etykieta wstrzymana]" when the server runs in Polish). Report the price and say the label was withheld.

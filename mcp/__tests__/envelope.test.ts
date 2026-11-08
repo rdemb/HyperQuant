@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { WAIT_TEXT } from '../../src/utils/sessionText';
-import { DISCLAIMER, blocked, envelope, fromGot, num, toToolResult } from '../src/envelope';
+import { BLOCK_MARK, DISCLAIMER, GUARD_MARGIN, blocked, envelope, fromGot, guardedCut, num, toToolResult } from '../src/envelope';
 
 const NOW = Date.UTC(2026, 10, 4, 15, 0);
 // Syntetyczny adres składany w teście (nigdy prawdziwy, nie występuje w źródle jako literał)
@@ -74,6 +74,16 @@ describe('toToolResult', () => {
     expect(sc.asOf).toBe('2026-11-04T15:00:00.000Z');
     expect(sc.coin).toBe('BTC');
     expect(JSON.parse(textOf(r))).toEqual(sc);
+  });
+
+  it('guardedCut: bezpieczniki tylko na początku tekstu (przycięcie + zapas), więc długi tekst z zewnątrz nie przechodzi w całości przez wzorce', () => {
+    const filler = 'awaria '.repeat(20);
+    // Adres przecięty na granicy 140 znaków: zapas za granicą łapie go w całości
+    expect(guardedCut(`${filler}${ADDR}`, 140)).toBe(BLOCK_MARK);
+    // Adres daleko za przycięciem nie trafia do wyniku, więc nie blokuje (tekst 1 MB, sprawdzany tylko początek)
+    const long = `${filler}${'x '.repeat(500_000)}${ADDR}`;
+    expect(guardedCut(long, 140)).toBe(long.slice(0, 140));
+    expect(GUARD_MARGIN).toBeGreaterThanOrEqual(42);
   });
 
   it('blocked: isError z nazwą narzędzia i powodem', () => {

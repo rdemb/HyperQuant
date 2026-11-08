@@ -5,6 +5,7 @@ import type { BlogMap } from '../../../state/useBlogMaps';
 import { type InputScan, type InputSeries, type InputStore, RETRY_MS, readInputs, sessionExpectedOf } from '../chart/layoutInputs';
 import { isAbsent, layoutNumbers, toVBars } from '../chart/layoutNumbers';
 import { currentTradeSession, expectedRange, previousSameSession } from '../../../utils/sessionDay';
+import { expectedBasis, expectedFrom } from '../../../utils/sessionFacts';
 import { reviewRows } from '../../../utils/sessionReview';
 import { defaultFrameTitle } from '../chart/frame';
 import type { VolModel } from '../../../utils/volatility';
@@ -128,6 +129,23 @@ describe('wejścia nagłówka z magazynu rynku', () => {
     // Sesja w toku bez modelu — tu „Bez modelu HAR” jest prawdą
     const live = sessionExpectedOf(fakeStore({ now: IN_NY, series: { '5m': { list: [] } } }), NO_MODEL, NY, true, 100_000);
     expect(live).toEqual({ why: 'Bez modelu HAR, a za mało zamkniętych świec 5m z ostatniej doby (min. 12)' });
+  });
+
+  it('zgodność: sessionExpectedOf strony to expectedFrom na podstawie z expectedBasis — tej samej reguły co session_review serwera MCP', () => {
+    const range = (t: number) => (t >= NY.start && t < NY.end ? 200 : 10);
+    const asia = at(2026, 11, 4, 2);
+    const all = bars5m(at(2026, 11, 2, 14, 30), asia, range);
+    const live = bars5m(at(2026, 11, 2, 14, 30), IN_NY, range);
+    const cases = [
+      { now: asia, list: all, inProgress: false, vol: NO_MODEL },
+      { now: asia, list: all, inProgress: false, vol: { status: 'ready' as const, model: {} as VolModel } },
+      { now: IN_NY, list: live, inProgress: true, vol: NO_MODEL },
+    ];
+    for (const c of cases) {
+      const b = expectedBasis(NY, c.inProgress, c.vol.model, c.now);
+      const site = sessionExpectedOf(fakeStore({ now: c.now, series: { '5m': { list: c.list } } }), c.vol, NY, c.inProgress, 100_000);
+      expect(site, JSON.stringify({ inProgress: c.inProgress, model: !!c.vol.model })).toEqual(expectedFrom(b.model, toVBars(c.list), NY, c.now, b.asOf, 100_000));
+    }
   });
 
   it('sesja w toku do rozliczenia: model HAR w drodze — czekamy (undefined), bez Parkinsona w zastępstwie; błąd modelu — Parkinson', () => {

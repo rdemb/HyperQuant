@@ -111,6 +111,17 @@ describe('skill hyperquant: SKILL.md', () => {
     for (const s of ['`total`', '`buy`', '`sell`', 'null', 'gap', 'zero-hash']) expect(share, s).toContain(s);
   });
 
+  it('cohort_flow: kohorta w pełni ukryta to null z liczbą ukrytych komórek (nie zero), przy części ukrytej uwaga w note', () => {
+    const gaps = section(SKILL, 'Rules') ?? '';
+    const line = gaps.split('\n').find((l) => l.startsWith('- `cohort_flow`')) ?? '';
+    for (const s of ['hidden for privacy', '`net`', '`takerNet`', '`volume`', '`volumeShare`', 'null', '`why`', 'zero', '`note`']) expect(line, s).toContain(s);
+  });
+
+  it('pokrycie przedziałów dziennika prognoz jako MODEL, tak jak wiersz stożka w session_review', () => {
+    const line = LINES.find((l) => l.startsWith('- Also MODEL:')) ?? '';
+    for (const s of ['`forecast_ledger`', 'coverage', 'cone']) expect(line, s).toContain(s);
+  });
+
   it('czytelność i paliwo: value null z założenia; w szkielecie plakietka czytelności z odpowiedzi, nie stała MODEL', () => {
     expect(SKILL).toMatch(/clarity[^\n]*fuel[^\n]*null by design|fuel[^\n]*null by design/i);
     const clarity = LINES.find((l) => l.startsWith('Clarity yesterday')) ?? '';
