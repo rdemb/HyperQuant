@@ -44,5 +44,5 @@ describe('Przepływ kohort: brak danych to „—”, nie zero', () => {
     const whale = body.split('<tr').find((r) => r.includes('Wieloryby'))!;
     expect(whale.split('>$0<').length - 1).toBe(2);
     expect(whale).toContain('$20');
-  });
+  }, 20_000); // dynamiczny import panelu (cały moduł widoku) bywa wolniejszy niż 5 s przy pełnym obciążeniu CI
 });
