@@ -17,8 +17,8 @@ export const LEVELS_MAX = 20;
 
 /** Litery, cyfry, spacja i . , % ( ) / + ' ’ - (bez dwukropka, cudzysłowów, nawiasów kątowych i końców linii). */
 const LABEL_CHARS = /^[\p{L}\p{N} .,%()\/+'’-]+$/u;
-/** Jak etykieta, a do tego dwukropek i pauza (tytuły wpisów bloga). */
-const TITLE_CHARS = /^[\p{L}\p{N} .,%()\/+'’:—-]+$/u;
+/** Jak etykieta, a do tego dwukropek, pauza, ? ! i polskie cudzysłowy „ ” (tytuły wpisów bloga); bez " ` { } < >. */
+const TITLE_CHARS = /^[\p{L}\p{N} .,%()\/+'’:—?!„”-]+$/u;
 /** Pseudonim konta ważny jedną dobę UTC: W i 6 małych znaków hex. */
 const WHALE_ID = /^W[0-9a-f]{6}$/;
 

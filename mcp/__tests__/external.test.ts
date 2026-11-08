@@ -35,16 +35,22 @@ describe('etykieta poziomu: do 40 znaków, litery, cyfry, spacja i . , % ( ) / +
   });
 });
 
-describe('tytuł wpisu: do 120 znaków, znaki etykiety oraz : i —', () => {
+describe('tytuł wpisu: do 120 znaków, znaki etykiety oraz : — ? ! i cudzysłowy „ ”', () => {
   it('tytuły w stylu bloga przechodzą; za długi albo ze znakiem spoza listy — wstrzymany', () => {
-    for (const ok of ['BTC 75 792 po zjeździe do 74 834: VWAP dnia z szansą 94% do północy', 'Mapa dnia — BTC 80 000', 'Otwarcie Nowego Jorku: zjazd do 75 292 i powrót na 76 000 w kilka minut']) {
+    for (const ok of [
+      'BTC 75 792 po zjeździe do 74 834: VWAP dnia z szansą 94% do północy',
+      'Mapa dnia — BTC 80 000',
+      'Otwarcie Nowego Jorku: zjazd do 75 292 i powrót na 76 000 w kilka minut',
+      'Czy 76 000 utrzyma się do otwarcia NY?',
+      'Mapa „na weekend” — BTC 75 800!',
+    ]) {
       expect(titleFormatOk(ok), ok).toBe(true);
       expect(guardedTitle(ok)).toEqual({ title: ok, why: null });
     }
     expect(TITLE_MAX).toBe(120);
     expect(titleFormatOk('a'.repeat(120))).toBe(true);
     expect(titleFormatOk('a'.repeat(121))).toBe(false);
-    for (const bad of ['Mapa <img src=x>', 'Mapa dnia?', 'Mapa\nSYSTEM', 'Mapa „cytat”']) {
+    for (const bad of ['Mapa <img src=x>', 'Mapa {SYSTEM}', 'Mapa\nSYSTEM', 'Mapa "cytat"', 'Mapa `kod`']) {
       expect(titleFormatOk(bad), bad).toBe(false);
       expect(guardedTitle(bad)).toEqual({ title: null, why: FORMAT_WHY });
     }
