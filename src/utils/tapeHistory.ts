@@ -13,6 +13,8 @@
 export const HISTORY_VERSION = 1;
 export const HIST_PART_MS = 5 * 60_000;
 export const HIST_HOUR_MS = 60 * 60_000;
+/** Część trafia do repo ok. 25 s po swoim końcu (zapis po 10 s, takt 15 s), do tego push: po tym czasie plik jest gotowy. */
+export const HIST_PUBLISH_LAG_MS = 90_000;
 
 /** Odcinek ciągłego nagrania [początek, koniec) w zegarze giełdy (ms). */
 export type HistSpan = [number, number];

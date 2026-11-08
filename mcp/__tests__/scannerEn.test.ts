@@ -27,6 +27,13 @@ describe('narzędzia danych skanera po angielsku', () => {
       // Teksty naprawdę po angielsku (uwagi koperty)
       const notes = (res.structuredContent as { notes: string[] }).notes.join(' ');
       expect(notes, name).not.toMatch(/[ąęłńśźż]/);
+      if (name === 'cohort_flow') {
+        expect(notes).toContain("volumeShare = cohort buy+sell ÷ the four cohorts' visible buy+sell in the window (each trade counted on both sides; hidden cells excluded)");
+      }
+      if (name === 'twaps') {
+        expect(JSON.stringify(res)).toContain('requires the live stream (planned)');
+        expect(JSON.stringify(res)).not.toMatch(/1d-2|stage/);
+      }
       await close();
       close = null;
     }

@@ -1,5 +1,5 @@
 import { DATA_BASE } from '../../../state/usePublished';
-import { HIST_HOUR_MS, HIST_PART_MS, type HistFrame, type HistoryIndex, type IdScope, decodeBook, decodeTrades, historyBaseOf, historyPath, isHistoryIndex } from '../../../utils/tapeHistory';
+import { HIST_HOUR_MS, HIST_PART_MS, HIST_PUBLISH_LAG_MS, type HistFrame, type HistoryIndex, type IdScope, decodeBook, decodeTrades, historyBaseOf, historyPath, isHistoryIndex } from '../../../utils/tapeHistory';
 import type { BookFrame } from '../core/book';
 import { DAY } from '../core/time';
 import type { Fill } from '../hl/parse';
@@ -14,8 +14,8 @@ import { type HistoryBatch, type ProStore, RETENTION_MS } from './proStore';
  */
 
 export const HISTORY_BASE = DATA_BASE ? historyBaseOf(DATA_BASE) : '';
-/** Część trafia do repo ok. 25 s po swoim końcu (zapis po 10 s, takt 15 s), do tego push. */
-const PUBLISH_LAG_MS = 90_000;
+/** Opóźnienie publikacji części (utils/tapeHistory, też serwer MCP). */
+const PUBLISH_LAG_MS = HIST_PUBLISH_LAG_MS;
 const INDEX_TTL_MS = 60_000;
 const ROUND_MS = 120_000;
 /** Arkusz (najcięższe pliki) tylko z ostatnich godzin; taśma z całej doby. */

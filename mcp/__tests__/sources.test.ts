@@ -186,7 +186,31 @@ describe('Sources.history', () => {
     const r = await src.history('BTC/2026-11-04/14.trades.json.gz', decode);
     expect(r.ok).toBe(false);
     expect(!r.ok && r.why).toContain('4 KB');
+    // Odrzucenie przed rozpakowaniem: bez „po rozpakowaniu” w powodzie
+    expect(!r.ok && r.why).not.toContain('rozpakowaniu');
     expect(cancelled).toBe(true);
+  });
+
+  it('bez Content-Length: czytanie treści przerwane po limicie bajtów (strumień bez końca), {ok:false}, strumień anulowany', async () => {
+    let cancelled = false;
+    let chunks = 0;
+    const body = new ReadableStream<Uint8Array>({
+      pull(ctrl) {
+        chunks++;
+        ctrl.enqueue(new Uint8Array(1024).fill(0x7b));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const f: typeof fetch = async () => new Response(body);
+    const { src } = testSources({}, NOW, { fetch: f, maxUnzipBytes: 4096 });
+    const r = await src.history('BTC/2026-11-04/14.trades.json.gz', decode);
+    expect(r.ok).toBe(false);
+    expect(!r.ok && r.why).toContain('4 KB');
+    expect(!r.ok && r.why).not.toContain('rozpakowaniu');
+    expect(cancelled).toBe(true);
+    expect(chunks).toBeLessThan(10);
   });
 
   it('po rozpakowaniu ponad limit (domyślnie 64 MB) — {ok:false} z powodem o rozmiarze', async () => {
@@ -195,6 +219,7 @@ describe('Sources.history', () => {
     const r = await src.history('BTC/2026-11-04/14.trades.json.gz', decode);
     expect(r.ok).toBe(false);
     expect(!r.ok && r.why).toContain('4 KB');
+    expect(!r.ok && r.why).toContain('po rozpakowaniu');
   });
 });
 

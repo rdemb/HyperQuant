@@ -29,7 +29,7 @@ export const TIMEOUT_MS = 10_000;
  * Pamięć podręczna: pliki skanera, mapy z bloga, świece, model zmienności; nieudane żądanie (błąd sieci, limit czasu, kod
  * HTTP, zły JSON) przez `failed`, odpowiedź 429 przez `rateLimited` — kolejne wywołania nie ponawiają go od razu.
  */
-export const TTL = { published: 60_000, maps: 5 * 60_000, candles: 60_000, volModel: 15 * 60_000, failed: 30_000, rateLimited: 60_000 } as const;
+export const TTL = { published: 60_000, maps: 5 * 60_000, candles: 60_000, volModel: 15 * 60_000, historyClosed: 15 * 60_000, failed: 30_000, rateLimited: 60_000 } as const;
 /** Hyperliquid oddaje najwyżej tyle świec na jedno żądanie `candleSnapshot`. */
 export const MAX_CANDLES = 5000;
 /** Najwięcej części jednego okna świec (20 000 świec; HL i tak przechowuje ~5000 ostatnich na interwał). */
@@ -101,6 +101,38 @@ type Text = { ok: true; text: string } | { ok: false; why: string };
 /** Rozmiar w MB albo KB (powód odrzucenia za dużego pliku). */
 const sizeOf = (bytes: number) => (bytes >= 1 << 20 ? `${Math.round(bytes / (1 << 20))} MB` : `${Math.round(bytes / 1024)} KB`);
 
+/**
+ * Treść odpowiedzi, najwyżej `max` bajtów: zadeklarowany większy rozmiar (Content-Length) — bez czytania, a bez nagłówka
+ * czytanie przerwane po przekroczeniu limitu; w obu przypadkach null i anulowany strumień.
+ */
+async function readCapped(res: Response, max: number): Promise<Uint8Array | null> {
+  if (Number(res.headers.get('content-length')) > max) {
+    void res.body?.cancel().catch(() => undefined);
+    return null;
+  }
+  if (!res.body) return new Uint8Array(0);
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let n = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    n += value.byteLength;
+    if (n > max) {
+      void reader.cancel().catch(() => undefined);
+      return null;
+    }
+    chunks.push(value);
+  }
+  const out = new Uint8Array(n);
+  let at = 0;
+  for (const c of chunks) {
+    out.set(c, at);
+    at += c.byteLength;
+  }
+  return out;
+}
+
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
 /** Czas danych według pliku (`asOf` w ms albo ISO), gdy plik go podaje. */
@@ -137,15 +169,16 @@ export class Sources {
   }
 
   /**
-   * Plik z gałęzi `history` repo danych (`historyBase/<path>`): JSON w gzip (rozpakowany najwyżej do 64 MB) albo zwykły JSON
-   * (spis `index.json`, plik już rozpakowany przez serwer z Content-Encoding: gzip), odczytany przez `decode`; TTL 60 s.
+   * Plik z gałęzi `history` repo danych (`historyBase/<path>`): JSON w gzip (najwyżej 64 MB przed i po rozpakowaniu) albo
+   * zwykły JSON (spis `index.json`, plik już rozpakowany przez serwer z Content-Encoding: gzip), odczytany przez `decode`.
+   * TTL domyślnie 60 s; zamknięte, już opublikowane pliki nagrań się nie zmieniają (`TTL.historyClosed`).
    */
-  history<T>(path: string, decode: (raw: unknown) => T | null): Promise<Fetched<T>> {
+  history<T>(path: string, decode: (raw: unknown) => T | null, ttl: number = TTL.published): Promise<Fetched<T>> {
     const url = `${this.cfg.historyBase}/${path.replace(/^\/+/, '')}`;
     return this.get(
       url,
       null,
-      TTL.published,
+      ttl,
       (raw) => {
         const v = decode(raw);
         return v === null ? null : { value: v };
@@ -274,24 +307,19 @@ export class Sources {
   }
 
   /**
-   * Treść pliku z gałęzi `history`: gzip (nagłówek 1f 8b) rozpakowany z limitem `maxUnzipBytes` — także przed rozpakowaniem,
-   * bo plik bez kompresji idzie wprost do `JSON.parse`; bez nagłówka gzip — tekst UTF-8 bez zmian.
+   * Treść pliku z gałęzi `history`: najwyżej `maxUnzipBytes` bajtów odpowiedzi (plik bez kompresji idzie wprost do
+   * `JSON.parse`), gzip (nagłówek 1f 8b) rozpakowany z tym samym limitem; bez nagłówka gzip — tekst UTF-8 bez zmian.
    */
   private async unzip(res: Response): Promise<Text> {
     const max = this.cfg.maxUnzipBytes ?? MAX_UNZIP_BYTES;
-    const tooBig: Text = { ok: false, why: tr(`plik większy niż ${sizeOf(max)} po rozpakowaniu`, `file larger than ${sizeOf(max)} after decompression`) };
-    // Zadeklarowany rozmiar ponad limit — bez czytania treści
-    if (Number(res.headers.get('content-length')) > max) {
-      void res.body?.cancel().catch(() => undefined);
-      return tooBig;
-    }
-    const buf = new Uint8Array(await res.arrayBuffer());
-    if (buf.byteLength > max) return tooBig;
+    const buf = await readCapped(res, max);
+    if (!buf) return { ok: false, why: tr(`plik większy niż ${sizeOf(max)}`, `file larger than ${sizeOf(max)}`) };
     if (buf[0] !== 0x1f || buf[1] !== 0x8b) return { ok: true, text: new TextDecoder().decode(buf) };
     try {
       return { ok: true, text: (await gunzipAsync(buf, { maxOutputLength: max })).toString('utf8') };
     } catch (e) {
-      return isObj(e) && e.code === 'ERR_BUFFER_TOO_LARGE' ? tooBig : { ok: false, why: tr('uszkodzony plik gzip', 'corrupt gzip file') };
+      if (isObj(e) && e.code === 'ERR_BUFFER_TOO_LARGE') return { ok: false, why: tr(`plik większy niż ${sizeOf(max)} po rozpakowaniu`, `file larger than ${sizeOf(max)} after decompression`) };
+      return { ok: false, why: tr('uszkodzony plik gzip', 'corrupt gzip file') };
     }
   }
 }
