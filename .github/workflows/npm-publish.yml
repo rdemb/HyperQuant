@@ -1,0 +1,60 @@
+name: Publish hyperquant-mcp to npm
+
+# Publikacja paczki MCP do npm bez tokenu: zaufany wydawca npm (OIDC z GitHub Actions) i automatyczna atestacja
+# pochodzenia (provenance) dla publicznego repozytorium. Tylko ręczne uruchomienie: nowa wersja wychodzi wtedy, gdy
+# właściciel ją wyda, a nie przy każdym pushu. Wersja z mcp/package.json nie może już być w rejestrze.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: npm-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Test and publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+
+      # Zaufany wydawca npm wymaga Node 22.14+ i npm CLI 11.5.1+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: Update npm CLI
+        run: npm install -g npm@11
+
+      - name: Install Dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Type Check
+        run: npm run lint
+
+      - name: Run MCP Tests
+        run: npx vitest run mcp integrations
+
+      - name: Build MCP Bundle
+        run: npm run mcp:build
+
+      - name: MCP Stdio Smoke Test
+        run: node mcp/scripts/stdio-smoke.mjs mcp/dist/hyperquant-mcp.mjs
+
+      - name: Check Version Is New
+        run: |
+          v=$(node -p "require('./mcp/package.json').version")
+          if npm view "hyperquant-mcp@$v" version >/dev/null 2>&1; then
+            echo "hyperquant-mcp@$v is already on npm: raise the version in mcp/package.json first." >&2
+            exit 1
+          fi
+          echo "Publishing hyperquant-mcp@$v"
+
+      - name: Publish
+        run: npm publish -w mcp --access public

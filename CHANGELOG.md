@@ -4,6 +4,11 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Paczka MCP: publikacja do npm bez tokenu (2026-11-08)
+
+#### Dodane
+- **Workflow `npm-publish.yml`**: ręcznie uruchamiana publikacja `hyperquant-mcp` z GitHub Actions jako zaufany wydawca npm (OIDC, bez tokenu w sekretach) z automatyczną atestacją pochodzenia. Przed publikacją: typy, testy MCP, bundle i test stdio; wersja, która jest już w npm, zatrzymuje publikację.
+
 ### Taśma likwidacji: licznik potwierdzonych zgodny ze zdarzeniami (2026-11-08)
 
 #### Naprawione
