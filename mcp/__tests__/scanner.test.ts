@@ -6,6 +6,7 @@ import { liqFuel } from '../../src/utils/fourNumbers';
 import { isLiqMap } from '../../src/utils/liqMap';
 import { isLiqTape } from '../../src/utils/liqTape';
 import { liqScan } from '../../src/utils/scanState';
+import { WAIT_TEXT } from '../../src/utils/sessionText';
 import { encodeTrades, isHistoryIndex } from '../../src/utils/tapeHistory';
 import { twapShareOf } from '../../src/utils/twapShare';
 import { isWhaleLayer } from '../../src/utils/whaleLayer';
@@ -182,6 +183,8 @@ describe('narzędzia danych skanera: wspólne', () => {
       // Żadna wartość wyliczeniowa nie jest poleceniem („buy”/„sell”; jako nazwa pola — dozwolone)
       expect(stringsOf(env.data, false).filter((s) => /^(buy|sell)$/i.test(s)), name).toEqual([]);
       for (const n of numsOf(env.data)) if (n.value !== null) expect(n.badge, name).toBe('LIVE');
+      // Brak liczby zawsze z własnym powodem, nigdy zastępczym „czekam na dane”
+      expect(numsOf(env.data).filter((n) => n.why === WAIT_TEXT), name).toEqual([]);
       await close?.();
       close = null;
     }
@@ -208,6 +211,7 @@ describe('narzędzia danych skanera: wspólne', () => {
         expect(n.value, name).toBeNull();
         expect(n.badge, name).toBeNull();
         expect(n.why, name).toBeTruthy();
+        expect(n.why, name).not.toBe(WAIT_TEXT);
       }
       expect(env.sources.find((s) => s.url === url)?.asOf, name).toBeNull();
       await close?.();
@@ -287,6 +291,15 @@ describe('liquidation_map', () => {
     expect(env.notes.join(' ')).toContain('25 min');
   });
 
+  it('mapa bez open interest z API (OI ≤ 0, pokrycie 0 w pliku): oiCoverage null z powodem, nie LIVE 0; paliwo zostaje', async () => {
+    const m = liqMap();
+    const noOi = { ...m, coverage: { ...m.coverage, oiBtc: 0, share: 0 } };
+    const { env } = await call<LiqMapData>('liquidation_map', allRoutes({ [LIQ_URL]: { json: noOi } }));
+    expect(env.data.oiCoverage).toMatchObject({ value: null, badge: null, unit: 'ratio' });
+    expect(env.data.oiCoverage.why).toContain('open interest');
+    expect(env.data.fuel1pct.below.value).toBe(liqFuel(noOi, PRICE).below);
+  });
+
   it('Hyperliquid odrzuca żądania: cena i paliwo null z powodem, klastry i pokrycie z mapy zostają', async () => {
     const { res, env } = await call<LiqMapData>('liquidation_map', allRoutes({ [HL_INFO]: new Error('ECONNREFUSED') }));
     expect(res.isError).toBeFalsy();
@@ -358,6 +371,17 @@ describe('cohort_flow', () => {
     }
     const shares = d.h24.cohorts.map((c) => c.volumeShare.value ?? 0);
     expect(shares.reduce((a, b) => a + b, 0)).toBeCloseTo(1, 12);
+  });
+
+  it('definicja volumeShare w uwagach odpowiedzi i w opisie narzędzia (agent widzi, jak liczony jest udział)', async () => {
+    const { env } = await call<CohortData>('cohort_flow', allRoutes());
+    const def = 'volumeShare = kupno + sprzedaż kohorty ÷ widoczne kupno + sprzedaż czterech kohort w oknie (każda transakcja liczona po obu stronach; ukryte komórki pominięte)';
+    expect(env.notes.join(' ')).toContain(def);
+    await close?.();
+    const c = await connect(testSources({}, NOW).src);
+    close = c.close;
+    const { tools } = await c.client.listTools();
+    expect(tools.find((t) => t.name === 'cohort_flow')?.description).toContain(def);
   });
 
   it('migawka sprzed 7 min: LIVE z uwagą o wieku', async () => {
@@ -442,8 +466,14 @@ describe('twaps', () => {
     expect('why' in site).toBe(false);
     if (!('why' in site)) expect(d.share60.buy.value).toBe(site.buy);
     expect(d.activeCount).toMatchObject({ value: null, badge: null });
-    expect(d.activeCount.why).toContain('1d-2');
+    expect(d.activeCount.why).toContain('wymaga strumienia na żywo (w planach)');
+    expect(JSON.stringify(env)).not.toContain('1d-2');
     expect(env.sources.map((s) => s.url)).toEqual(expect.arrayContaining([INDEX_URL, hourUrl(H14), partUrl(H15), partUrl(H15 + PART)]));
+    // Czas danych pliku nagrania: koniec jego godziny albo części (`to` pliku), nie chwila pobrania
+    const asOf = (url: string) => env.sources.find((s) => s.url === url)?.asOf;
+    expect(asOf(hourUrl(H14))).toBe(new Date(H15).toISOString());
+    expect(asOf(partUrl(H15))).toBe(new Date(H15 + PART).toISOString());
+    expect(asOf(partUrl(H15 + PART))).toBe(new Date(H15 + 2 * PART).toISOString());
   });
 
   it('brak spisu historii (404): udziały null z powodem, bez isError', async () => {
@@ -460,6 +490,8 @@ describe('twaps', () => {
     const { env } = await call<TwapsData>('twaps', twRoutes({ zeroKnownHour: false }), { now: TW_NOW });
     expect(env.data.share60.buy).toMatchObject({ value: null, badge: null });
     expect(env.data.share60.buy.why).toContain('60 min');
+    // Ile okna ma znaczniki: części 15:00–15:10
+    expect(env.data.share60.buy.why).toContain('10,0 min z 60');
     // Okno 15 min (14:55–15:10) też sięga godziny bez znaczników
     expect(env.data.share15.buy.value).toBeNull();
   });
@@ -473,7 +505,56 @@ describe('twaps', () => {
     expect(env.data.recordedTo).toBe(new Date(H15 + 25 * MIN).toISOString());
     expect(env.data.share15.buy.value).toBeCloseTo(0.3, 12);
     expect(env.data.share60.buy.value).toBeNull();
-    expect(env.data.share60.buy.why).toBeTruthy();
+    // Brak całej godziny: nagranie obejmuje 25 min okna 14:25–15:25
+    expect(env.data.share60.buy.why).toContain('25,0 min z 60');
+  });
+
+  it('luka 1 s w nagraniu godziny: udział 60 min null (jak na stronie), powód mówi, ile okna jest nagrane', async () => {
+    const holed = gzipSync(JSON.stringify(encodeTrades('BTC', H14, H15, [[H14, H14 + 30 * MIN], [H14 + 30 * MIN + 1000, H15]], tape(H14, H15), [])));
+    const { env } = await call<TwapsData>('twaps', { ...twRoutes(), [hourUrl(H14)]: { bytes: holed } }, { now: TW_NOW });
+    expect(env.data.share60.buy.value).toBeNull();
+    expect(env.data.share60.buy.why).toContain('59,9 min z 60');
+    // Okno 15 min poza luką
+    expect(env.data.share15.buy.value).toBeCloseTo(0.3, 12);
+  });
+
+  it('wpisy spisu niewyrównane do części albo godziny (np. +30 s): pominięte, ten sam wynik i te same źródła co przy czystym spisie', async () => {
+    const clean = await call<TwapsData>('twaps', twRoutes(), { now: TW_NOW });
+    await close?.();
+    close = null;
+    const misaligned = index(TW_NOW, [H14 - HOUR, H14, H14 + 30_000], [H15, H15 + PART, H15 + PART + 30_000]);
+    const dirty = await call<TwapsData>('twaps', { ...twRoutes(), [INDEX_URL]: { json: misaligned } }, { now: TW_NOW });
+    expect(dirty.env.data.share15.buy.value).toBeCloseTo(0.3, 12);
+    expect(dirty.env.data.share15).toEqual(clean.env.data.share15);
+    expect(dirty.env.data.share60).toEqual(clean.env.data.share60);
+    expect(dirty.env.sources).toEqual(clean.env.sources);
+  });
+
+  it('pliki zamkniętych części i godzin w pamięci 15 min, spis 60 s', async () => {
+    const ts = testSources(twRoutes(), TW_NOW);
+    const c = await connect(ts.src);
+    close = c.close;
+    await c.client.callTool({ name: 'twaps', arguments: {} });
+    const first = ts.calls.length;
+    expect(first).toBe(4);
+    ts.clock.now = TW_NOW + 5 * MIN;
+    await c.client.callTool({ name: 'twaps', arguments: {} });
+    expect(ts.calls.slice(first).map((r) => r.url)).toEqual([INDEX_URL]);
+    ts.clock.now = TW_NOW + 16 * MIN;
+    await c.client.callTool({ name: 'twaps', arguments: {} });
+    expect(ts.calls.length).toBe(first + 1 + 4);
+  });
+
+  it('część jeszcze w czasie publikacji (koniec + 90 s po chwili odpowiedzi): zwykły TTL 60 s', async () => {
+    const at = H15 + 2 * PART + 30_000;
+    const ts = testSources(twRoutes(), at);
+    const c = await connect(ts.src);
+    close = c.close;
+    await c.client.callTool({ name: 'twaps', arguments: {} });
+    const first = ts.calls.length;
+    ts.clock.now = at + 61_000;
+    await c.client.callTool({ name: 'twaps', arguments: {} });
+    expect(ts.calls.slice(first).map((r) => r.url).sort()).toEqual([INDEX_URL, partUrl(H15 + PART)].sort());
   });
 
   it('spis z czasem spoza zakresu (np. 1e20, uszkodzony plik): wpis pominięty, odpowiedź z prawdziwych nagrań bez zawieszenia', async () => {

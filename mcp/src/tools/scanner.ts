@@ -14,12 +14,23 @@ import { type LiqBucket, type LiqMap, isLiqMap } from '../../../src/utils/liqMap
 import { liqMapFreshness } from '../../../src/utils/liqMapView';
 import { isLiqTape, liqTapeFreshness } from '../../../src/utils/liqTape';
 import { liqScan, scannerAge, whalesScan } from '../../../src/utils/scanState';
+import { fmtFixed } from '../../../src/ui/format';
 import { isAbsent } from '../../../src/utils/sessionText';
-import { HIST_HOUR_MS, HIST_PART_MS, type HistTrade, type HistoryIndex, clipSpans, decodeTrades, historyPath, isHistoryIndex } from '../../../src/utils/tapeHistory';
+import {
+  HIST_HOUR_MS,
+  HIST_PART_MS,
+  HIST_PUBLISH_LAG_MS,
+  type HistTrade,
+  type HistoryIndex,
+  clipSpans,
+  decodeTrades,
+  historyPath,
+  isHistoryIndex,
+} from '../../../src/utils/tapeHistory';
 import { twapShareOf } from '../../../src/utils/twapShare';
 import { WHALES_STALE_MS, type WhaleOrderGroup, type WhalePosition, groupWhaleOrders, isWhaleLayer, whaleBalanceOf } from '../../../src/utils/whaleLayer';
 import { type Envelope, type Num, type SourceRef, type Unit, envelope, iso, num } from '../envelope';
-import { type Sources, TIMEOUT_MS } from '../sources';
+import { type Sources, TIMEOUT_MS, TTL } from '../sources';
 import type { ToolDef } from './index';
 import { candleSource, candlesGot, closeNum, fileSource } from './shared';
 
@@ -35,10 +46,15 @@ function ageNote(asOf: number, now: number): string | undefined {
   return age === null ? undefined : tr(`migawka skanera sprzed ${age} (stan z ${iso(asOf)})`, `scanner snapshot from ${age} ago (as of ${iso(asOf)})`);
 }
 
-/** Liczba ze skanera: LIVE z uwagą o wieku migawki; brak liczby — null z powodem `why` (bez uwagi). */
-function live(value: number | null | undefined, unit: Unit, note: string | undefined, why?: string): Num {
+const NO_NUMBER = tr('brak liczby w pliku skanera', 'no number in the scanner file');
+
+/**
+ * Liczba ze skanera: LIVE z uwagą o wieku migawki; brak liczby — null z powodem `why` (bez uwagi), domyślnie „brak liczby
+ * w pliku skanera” — nigdy zastępcze „czekam na dane”.
+ */
+function live(value: number | null | undefined, unit: Unit, note: string | undefined, why: string = NO_NUMBER): Num {
   const ok = typeof value === 'number' && Number.isFinite(value);
-  return num(value, unit, 'LIVE', { ...(why !== undefined && { why }), ...(ok && note !== undefined && { note }) });
+  return num(value, unit, 'LIVE', { why, ...(ok && note !== undefined && { note }) });
 }
 
 /** Brak liczby z powodem. */
@@ -123,7 +139,11 @@ async function liqMapRun(src: Sources): Promise<Envelope<LiqMapData>> {
     fuel1pct: fuel(FUEL_BAND),
     fuel3pct: fuel(FUEL_WIDE),
     clusters: [...top(map.longs, 'below'), ...top(map.shorts, 'above')],
-    oiCoverage: live(map.coverage.share, 'ratio', note),
+    // Bez open interest z API pokrycie w pliku to 0 z braku mianownika, nie pomiar
+    oiCoverage:
+      map.coverage.oiBtc > 0
+        ? live(map.coverage.share, 'ratio', note)
+        : nil('ratio', tr('mapa bez open interest z API (OI ≤ 0): pokrycie nieznane', 'the map has no open interest from the API (OI ≤ 0): coverage unknown')),
     ageMin: ageMinNum(map.asOf, now),
   };
   return envelope(NAME_LIQ_MAP, data, sources, now, notes);
@@ -231,9 +251,14 @@ export interface CohortFlowData {
 
 const NAME_COHORTS = 'cohort_flow';
 const NO_TRADES = tr('brak transakcji kohorty w oknie', 'no cohort trades in the window');
+/** Definicja udziału w obrocie — w uwagach odpowiedzi i w opisie narzędzia. */
+const VOLUME_SHARE_DEF = tr(
+  'volumeShare = kupno + sprzedaż kohorty ÷ widoczne kupno + sprzedaż czterech kohort w oknie (każda transakcja liczona po obu stronach; ukryte komórki pominięte)',
+  "volumeShare = cohort buy+sell ÷ the four cohorts' visible buy+sell in the window (each trade counted on both sides; hidden cells excluded)"
+);
 const COHORT_NOTE = tr(
-  'Kohorty uczestników Hyperliquid na BTC (market makerzy, poinformowani, wieloryby, reszta) z publicznej taśmy: adresy obu stron i strona agresora zostają na serwerze, publikowane są tylko agregaty zaokrąglone do 10 tys. USD. Komórki ukryte dla prywatności nie są wliczone. „Poinformowani” to wynik statystyczny z przeszłości. Opis przepływu, nie sygnał.',
-  'Hyperliquid BTC participant cohorts (market makers, informed, whales, rest) from the public tape: the addresses of both sides and the aggressor side stay on the server, only aggregates rounded to USD 10k are published. Cells hidden for privacy are not included. “Informed” is a statistical result from the past. A description of flow, not a signal.'
+  `Kohorty uczestników Hyperliquid na BTC (market makerzy, poinformowani, wieloryby, reszta) z publicznej taśmy: adresy obu stron i strona agresora zostają na serwerze, publikowane są tylko agregaty zaokrąglone do 10 tys. USD. Komórki ukryte dla prywatności nie są wliczone. net = kupno − sprzedaż wszystkich wypełnień kohorty (zmiana zapasów), takerNet = kupno − sprzedaż kohorty jako biorcy płynności, volume = kupno + sprzedaż; ${VOLUME_SHARE_DEF}. „Poinformowani” to wynik statystyczny z przeszłości. Opis przepływu, nie sygnał.`,
+  `Hyperliquid BTC participant cohorts (market makers, informed, whales, rest) from the public tape: the addresses of both sides and the aggressor side stay on the server, only aggregates rounded to USD 10k are published. Cells hidden for privacy are not included. net = buys − sells over all the cohort's fills (inventory change), takerNet = buys − sells of the cohort as liquidity taker, volume = buys + sells; ${VOLUME_SHARE_DEF}. “Informed” is a statistical result from the past. A description of flow, not a signal.`
 );
 
 function cohortRows(totals: Record<CohortId, CohortTotal>, note: string | undefined): CohortRow[] {
@@ -300,8 +325,8 @@ export const cohortFlow: ToolDef = {
   name: NAME_COHORTS,
   title: tr('Przepływ kohort BTC', 'BTC cohort flow'),
   description: tr(
-    `Kto kupuje, kto sprzedaje na BTC w Hyperliquid: cztery kohorty uczestników ze skanera HyperQuant (market makerzy, poinformowani, wieloryby, reszta) z saldem (zmiana zapasów), deltą agresora, obrotem i udziałem w obrocie, w oknie ostatniej godziny i doby, z granicami okien. Tylko agregaty, bez adresów. ${NO_DESC}`,
-    `Who buys and who sells BTC on Hyperliquid: four participant cohorts from the HyperQuant scanner (market makers, informed, whales, rest) with the net flow (inventory change), aggressor delta, volume and volume share over the last hour and day, with the window bounds. Aggregates only, no addresses. ${NO_DESC}`
+    `Kto kupuje, kto sprzedaje na BTC w Hyperliquid: cztery kohorty uczestników ze skanera HyperQuant (market makerzy, poinformowani, wieloryby, reszta) z saldem (zmiana zapasów), deltą agresora, obrotem i udziałem w obrocie, w oknie ostatniej godziny i doby, z granicami okien; ${VOLUME_SHARE_DEF}. Tylko agregaty, bez adresów. ${NO_DESC}`,
+    `Who buys and who sells BTC on Hyperliquid: four participant cohorts from the HyperQuant scanner (market makers, informed, whales, rest) with the net flow (inventory change), aggressor delta, volume and volume share over the last hour and day, with the window bounds; ${VOLUME_SHARE_DEF}. Aggregates only, no addresses. ${NO_DESC}`
   ),
   run: (src) => cohortsRun(src),
 };
@@ -453,43 +478,53 @@ export interface TwapsData {
 }
 
 const NAME_TWAPS = 'twaps';
-const ACTIVE_WHY = tr('liczba aktywnych TWAP-ów wymaga strumienia na żywo (etap 1d-2, jeszcze niezbudowany)', 'the number of active TWAPs needs the live stream (stage 1d-2, not built yet)');
+const ACTIVE_WHY = tr('liczba aktywnych TWAP-ów wymaga strumienia na żywo (w planach)', 'the number of active TWAPs requires the live stream (planned)');
 const TWAP_NOTE = tr(
   'Udział wypełnień z hashem zerowym (m.in. podzlecenia TWAP, algorytm Hyperliquid dzielący zlecenie na części co 30 s) w wartości wszystkich transakcji okna, łącznie i po stronie agresora kupna i sprzedaży, jako ułamek 0–1. Ta sama formuła co liczba „TWAP 15 min” i wskaźnik „Udział TWAP w taśmie” na wykresie HyperQuant, z nagrań taśmy serwera (gałąź history repo danych: części 5 min bieżącej godziny i pliki godzinowe). Okna liczone od końca nagrania (recordedTo).',
   'The share of zero-hash fills (among others TWAP suborders, the Hyperliquid algorithm that splits an order into parts every 30 s) in the value of all trades in the window, in total and on the buying and the selling aggressor side, as a fraction 0–1. The same formula as the “TWAP 15 min” number and the “TWAP share of the tape” indicator on the HyperQuant chart, from the server tape recordings (the history branch of the data repo: 5-min parts of the current hour and hour files). Windows count back from the end of the recording (recordedTo).'
 );
 
-/** Plik nagrania taśmy: godzina albo część 5-minutowa. */
+/** Plik nagrania taśmy: godzina albo część 5-minutowa, [start, end). */
 interface HistUnit {
   start: number;
+  end: number;
   part: boolean;
 }
 
 /**
  * Pliki taśmy BTC z ostatnich 60 min nagrania według spisu (plus zapas jednej części, gdy ostatnia część jest nagrana
- * tylko w części): godzina z plikiem godzinowym — ten plik, inaczej jej części. Wpisy spoza zakresu czasu (uszkodzony
- * spis: ujemne, niecałkowite, z przyszłości) są pomijane — inaczej zła data przerwałaby odpowiedź.
+ * tylko w części): godzina z plikiem godzinowym — ten plik, inaczej jej części. Wpisy spoza siatki (część nie na pełnych
+ * 5 min, godzina nie na pełnej godzinie — ścieżka pliku zgubiłaby resztę i ten sam plik weszłby dwa razy) i spoza zakresu
+ * czasu (uszkodzony spis: ujemne, z przyszłości) są pomijane; każdy plik najwyżej raz.
  */
 function unitsOf(m: HistoryIndex['markets'][string], now: number): HistUnit[] {
-  const sane = (t: number) => Number.isSafeInteger(t) && t >= 0 && t <= now + HOUR;
-  const hours = new Set(m.hours.filter(sane));
-  const parts = [...new Set(m.parts.filter(sane))].sort((a, b) => a - b);
+  const sane = (step: number) => (t: number) => Number.isSafeInteger(t) && t >= 0 && t <= now + HOUR && t % step === 0;
+  const hours = new Set(m.hours.filter(sane(HIST_HOUR_MS)));
+  const parts = [...new Set(m.parts.filter(sane(HIST_PART_MS)))].sort((a, b) => a - b);
   let end = Number.NEGATIVE_INFINITY;
   for (const p of parts) end = Math.max(end, p + HIST_PART_MS);
   for (const h of hours) end = Math.max(end, h + HIST_HOUR_MS);
   if (!Number.isFinite(end)) return [];
   const from = end - HOUR - HIST_PART_MS;
   const first = Math.floor(from / HIST_HOUR_MS) * HIST_HOUR_MS;
-  const out: HistUnit[] = [];
+  // Klucz: ścieżka pliku (ten sam plik najwyżej raz)
+  const out = new Map<string, HistUnit>();
+  const add = (start: number, part: boolean) => {
+    const path = historyPath('BTC', start, 'trades', part);
+    if (!out.has(path)) out.set(path, { start, end: start + (part ? HIST_PART_MS : HIST_HOUR_MS), part });
+  };
   // Okno 65 min sięga najwyżej trzech godzin zegarowych
   for (let k = 0; k < 3; k++) {
     const h = first + k * HIST_HOUR_MS;
     if (h >= end) break;
-    if (hours.has(h)) out.push({ start: h, part: false });
-    else for (const p of parts) if (p >= h && p < h + HIST_HOUR_MS && p + HIST_PART_MS > from) out.push({ start: p, part: true });
+    if (hours.has(h)) add(h, false);
+    else for (const p of parts) if (p >= h && p < h + HIST_HOUR_MS && p + HIST_PART_MS > from) add(p, true);
   }
-  return out;
+  return [...out.values()];
 }
+
+/** Ile minut z [from, to) obejmuje pokrycie, z jedną cyfrą po przecinku, w dół (59,98 min to „59,9”, nie pełne „60,0”). */
+const coveredMin = (c: Coverage, from: number, to: number) => fmtFixed(Math.floor((c.coveredMs(from, to) / MIN) * 10) / 10, 1);
 
 /** Wynik obietnicy albo null po `ms` — limit całego narzędzia przy dwóch kolejnych etapach żądań (spis, potem pliki). */
 async function within<T>(p: Promise<T>, ms: number): Promise<T | null> {
@@ -532,9 +567,16 @@ async function twapsRun(src: Sources): Promise<Envelope<TwapsData>> {
   const units = m ? unitsOf(m, now) : [];
   if (units.length === 0) return none(tr('spis nie ma nagrań taśmy BTC', 'the index has no BTC tape recordings'));
 
-  const files = await within(Promise.all(units.map((u) => src.history(historyPath('BTC', u.start, 'trades', u.part), btcTrades))), budget - (performance.now() - t0));
+  // Opublikowany plik zamkniętej godziny albo części już się nie zmienia: w pamięci 15 min zamiast 60 s
+  const ttl = (u: HistUnit) => (u.end + HIST_PUBLISH_LAG_MS <= now ? TTL.historyClosed : TTL.published);
+  const files = await within(Promise.all(units.map((u) => src.history(historyPath('BTC', u.start, 'trades', u.part), btcTrades, ttl(u)))), budget - (performance.now() - t0));
   if (!files) return none(tr(`pliki nagrań taśmy bez odpowiedzi w ${budget / 1000} s`, `tape recording files did not respond within ${budget / 1000} s`));
-  units.forEach((u, i) => sources.push(fileSource(u.part ? tr(`Nagranie taśmy BTC, część od ${iso(u.start)}`, `BTC tape recording, part from ${iso(u.start)}`) : tr(`Nagranie taśmy BTC, godzina od ${iso(u.start)}`, `BTC tape recording, hour from ${iso(u.start)}`), files[i])));
+  units.forEach((u, i) => {
+    const f = files[i];
+    const name = u.part ? tr(`Nagranie taśmy BTC, część od ${iso(u.start)}`, `BTC tape recording, part from ${iso(u.start)}`) : tr(`Nagranie taśmy BTC, godzina od ${iso(u.start)}`, `BTC tape recording, hour from ${iso(u.start)}`);
+    // Czas danych: koniec nagrania pliku (`to`), w granicach jego godziny albo części
+    sources.push({ name, url: f.url, asOf: f.ok ? iso(Math.min(u.end, Math.max(u.start, f.value.to))) : null });
+  });
 
   // Pokrycie nagraniem i znacznikami hasha zerowego (plik bez kolumny `z` — bez znaczników), jak `zeroKnown` magazynu strony;
   // odcinki i transakcje pliku tylko z jego godziny albo części (uszkodzony plik nie udaje nagrania spoza niej)
@@ -543,8 +585,7 @@ async function twapsRun(src: Sources): Promise<Envelope<TwapsData>> {
   const trades: HistTrade[] = [];
   files.forEach((f, i) => {
     if (!f.ok) return;
-    const lo = units[i].start;
-    const hi = lo + (units[i].part ? HIST_PART_MS : HIST_HOUR_MS);
+    const { start: lo, end: hi } = units[i];
     for (const [a, b] of clipSpans(f.value.spans, lo, hi)) {
       recorded.addSpan(a, b);
       if (f.value.zeroKnown) zero.addSpan(a, b);
@@ -560,10 +601,17 @@ async function twapsRun(src: Sources): Promise<Envelope<TwapsData>> {
 
   const share = (minutes: number): TwapShare => {
     const from = end - minutes * MIN;
+    // Jak na stronie: udział tylko z okna pokrytego w całości; powód mówi, ile okna jest pokryte (sekunda luki ≠ brak godziny)
     if (!zero.covers(from, end)) {
       const why = recorded.covers(from, end)
-        ? tr(`Taśma bez znaczników TWAP (hash zerowy) w całych ostatnich ${minutes} min nagrania`, `The tape lacks TWAP marks (zero hash) over the whole last ${minutes} min of the recording`)
-        : tr(`luka w nagraniu taśmy w ostatnich ${minutes} min (przerwa nagrania albo plik niedostępny)`, `a gap in the tape recording over the last ${minutes} min (a recording break or a file unavailable)`);
+        ? tr(
+            `Taśma bez znaczników TWAP (hash zerowy) w całych ostatnich ${minutes} min nagrania: znaczniki obejmują ${coveredMin(zero, from, end)} min z ${minutes}`,
+            `The tape lacks TWAP marks (zero hash) over the whole last ${minutes} min of the recording: marks cover ${coveredMin(zero, from, end)} min of ${minutes}`
+          )
+        : tr(
+            `luka w nagraniu taśmy w ostatnich ${minutes} min: nagranie obejmuje ${coveredMin(recorded, from, end)} min z ${minutes} (przerwa nagrania albo plik niedostępny)`,
+            `a gap in the tape recording over the last ${minutes} min: the recording covers ${coveredMin(recorded, from, end)} min of ${minutes} (a recording break or a file unavailable)`
+          );
       return empty(why, from, end);
     }
     const fills = trades.filter((t) => t.t >= from && t.t < end).map((t) => ({ notional: t.px * t.sz, side: t.side === 'B' ? (1 as const) : (-1 as const), ...(t.z && { zero: true as const }) }));
