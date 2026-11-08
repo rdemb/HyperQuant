@@ -1,5 +1,5 @@
 import type { ScannedPosition } from '../../src/utils/liqMap.ts';
-import { type LiqEvent, type LiqTapeChecks, isLiqEvent } from '../../src/utils/liqTape.ts';
+import { type LiqEvent, type LiqTapeChecks, inTapeDay, isLiqEvent } from '../../src/utils/liqTape.ts';
 
 /**
  * Wykrywanie likwidacji śledzonych pozycji (Hyperliquid nie publikuje strumienia likwidacji wszystkich kont).
@@ -168,8 +168,13 @@ interface Queued extends LiqCandidate {
   attempts: number;
 }
 
-type Outcome = 'confirmed' | 'rejected' | 'failed';
-const OUTCOMES: readonly string[] = ['confirmed', 'rejected', 'failed'];
+/**
+ * Wyniki bez zdarzenia, wg czasu sprawdzenia. Potwierdzenia nie mają wpisu: liczone są ze zdarzeń wg czasu likwidacji,
+ * bo wykrycie przy starym odczycie pozycji bywa godziny po likwidacji i licznik rozjechałby się z taśmą.
+ * Wpisy „confirmed” ze starego stanu są przy odczycie pomijane.
+ */
+type Outcome = 'rejected' | 'failed';
+const OUTCOMES: readonly string[] = ['rejected', 'failed'];
 
 export interface InfoClient {
   info(body: unknown, weight: number): Promise<unknown | null>;
@@ -244,7 +249,6 @@ export class LiqConfirmer {
       if (ev) {
         for (const t of ev.tids) this.seenTids.add(t);
         this.evs.push(ev);
-        this.log.push(['confirmed', now]);
       } else if (!parseLiquidationFills(fills, this.coin, c.addr, c.prev)) {
         this.log.push(['rejected', now]);
       }
@@ -268,10 +272,15 @@ export class LiqConfirmer {
     return this.evs;
   }
 
-  /** Liczniki z 24 h; kandydaci = rozstrzygnięci (potwierdzeni + zamknięcia + nieudani). */
+  /**
+   * Liczniki z 24 h; kandydaci = rozstrzygnięci (potwierdzeni + zamknięcia + nieudani). Potwierdzeni = zdarzenia w oknie
+   * taśmy (to samo kryterium co zdarzenia i sumy), więc zdarzenie usunięte z okna, przez `dropBefore` albo przy odczycie
+   * stanu znika też z licznika.
+   */
   checks(now: number): LiqTapeChecks {
     const out: LiqTapeChecks = { candidates: 0, confirmed: 0, rejected: 0, failed: 0 };
     for (const [k, t] of this.log) if (t > now - DAY) out[k]++;
+    out.confirmed = this.evs.filter((e) => inTapeDay(e.t, now)).length;
     out.candidates = out.confirmed + out.rejected + out.failed;
     return out;
   }

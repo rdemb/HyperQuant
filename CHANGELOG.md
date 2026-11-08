@@ -4,6 +4,11 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Taśma likwidacji: licznik potwierdzonych zgodny ze zdarzeniami (2026-11-08)
+
+#### Naprawione
+- **`checks.confirmed` liczy zdarzenia z okna taśmy według czasu likwidacji, a nie potwierdzenia** (`backend/scanner/liqDetect.ts`, `src/utils/liqTape.ts`). Przy ok. 29 tys. pozycji mediana wieku odczytu to ok. 4 h, więc likwidacja małej pozycji bywa potwierdzana kilka godzin po fakcie. Zdarzenie wypadało z okna 24 h przed swoim potwierdzeniem: taśma pokazywała „potwierdzone 4” przy pustej liście, zerowych sumach i `liq24h: 0`. Tak samo było po usunięciu zdarzeń przez nowy okres obserwacji (przerwa w danych, restart po dłuższej przerwie). Wpisy „confirmed” ze stanu zapisanego przed poprawką są przy odczycie pomijane.
+
 ### Etap 1d-1: HyperQuant dla asystentów AI (2026-11-08)
 
 #### Dodane

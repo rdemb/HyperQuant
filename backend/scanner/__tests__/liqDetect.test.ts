@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { FILLS_WEIGHT, LiqConfirmer, PriceRange, isLiqCandidate, parseLiquidationFills } from '../liqDetect.ts';
 import type { ScannedPosition } from '../../../src/utils/liqMap.ts';
+import { buildLiqTape } from '../../../src/utils/liqTape.ts';
 
 const MIN = 60_000;
 const T0 = Date.UTC(2026, 9, 22, 12, 0, 0);
@@ -261,5 +262,88 @@ describe('LiqConfirmer', () => {
     back.prune(T0 + 25 * 60 * MIN);
     expect(back.events()).toHaveLength(0);
     expect(back.checks(T0 + 25 * 60 * MIN).candidates).toBe(0);
+  });
+});
+
+describe('LiqConfirmer — licznik potwierdzonych zgodny z taśmą (diagnoza 8.11.2026)', () => {
+  const H = 60 * MIN;
+  const DAY = 24 * H;
+  /** Fill likwidacyjny w kształcie odpowiedzi `userFillsByTime` (liczby jako tekst, czas i tid jako liczby) */
+  const apiFill = (o: Record<string, unknown> = {}) => ({
+    coin: 'BTC',
+    px: '74980.5',
+    sz: '0.01234',
+    side: 'A',
+    time: T0 + 10 * MIN,
+    startPosition: '0.01234',
+    dir: 'Close Long',
+    closedPnl: '-12.3',
+    hash: '0x' + 'ab'.repeat(32),
+    oid: 123_456_789_012,
+    crossed: true,
+    fee: '0.4',
+    tid: 987_654_321_098_765,
+    feeToken: 'USDC',
+    twapId: null,
+    liquidation: { liquidatedUser: ADDR, markPx: '74990.1', method: 'market' },
+    ...o,
+  });
+  const restOf = (...responses: unknown[]) => ({ info: async () => responses.shift() ?? null });
+  const tapeAt = (c: LiqConfirmer, asOf: number) => {
+    c.prune(asOf);
+    return buildLiqTape(c.events(), { coin: 'BTC', asOf, since: T0 - DAY, checks: c.checks(asOf) });
+  };
+
+  it('H1: zdarzenie z fillów w kształcie API przetrwa zapis i odczyt stanu (także mapAgeMin NaN → null w JSON)', async () => {
+    for (const scannedAt of [T0, Number.NaN]) {
+      const c = new LiqConfirmer({ coin: 'BTC', maxPerMin: 10 });
+      c.enqueue({ addr: ADDR, prev: pos(0.01234, 75_000, scannedAt), from: T0, to: T0 + 15 * MIN });
+      await c.process(restOf([apiFill()]), T0 + 16 * MIN);
+      const back = LiqConfirmer.fromJSON(JSON.parse(JSON.stringify(c.toJSON())), { coin: 'BTC', maxPerMin: 10 });
+      expect(back.events()).toHaveLength(1);
+      expect(back.events()[0].tids).toEqual([987_654_321_098_765]);
+    }
+  });
+
+  it('H2: zdarzenie usunięte przez dropBefore (przerwa w danych, restart po długiej przerwie) znika też z licznika potwierdzonych', async () => {
+    const c = new LiqConfirmer({ coin: 'BTC', maxPerMin: 10 });
+    c.enqueue({ addr: ADDR, prev: pos(0.01234, 75_000), from: T0, to: T0 + 15 * MIN });
+    await c.process(restOf([apiFill()]), T0 + 16 * MIN);
+    c.dropBefore(T0 + 20 * MIN);
+    expect(c.events()).toEqual([]);
+    expect(c.checks(T0 + 20 * MIN)).toEqual({ candidates: 0, confirmed: 0, rejected: 0, failed: 0 });
+  });
+
+  it('H3: likwidacja wykryta po 5 h (stary odczyt pozycji) — po wyjściu zdarzenia z okna 24 h licznik też go nie liczy', async () => {
+    const c = new LiqConfirmer({ coin: 'BTC', maxPerMin: 10 });
+    // Odczyt w T0, likwidacja w T0 + 10 min, ponowny odczyt dopiero po 5 h (mediana wieku odczytu z mapy 8.11: 251 min)
+    c.enqueue({ addr: ADDR, prev: pos(0.01234, 75_000, T0), from: T0 + 8 * MIN, to: T0 + 5 * H });
+    await c.process(restOf([apiFill()]), T0 + 5 * H + MIN);
+    const inside = tapeAt(c, T0 + 20 * H);
+    expect([inside.checks.confirmed, inside.totals.h24.n]).toEqual([1, 1]);
+    // Zdarzenie (T0 + 10 min) poza oknem, potwierdzenie (T0 + 5 h) wciąż w oknie
+    const after = tapeAt(c, T0 + DAY + 30 * MIN);
+    expect(after.events).toEqual([]);
+    expect(after.checks.confirmed).toBe(after.totals.h24.n);
+  });
+
+  it('stan zapisany przed poprawką: wpisy „confirmed” w logu nie są liczone — licznik idzie ze zdarzeń', () => {
+    const ev = { t: T0, side: 'short', sz: 1, px: 95_000, usd: 95_000, method: 'market', markPx: 95_000, mapLiqPx: 95_100, mapAgeMin: 240, tids: [5] };
+    const legacy = { v: 1, events: [ev], log: [['confirmed', T0 + 4 * H], ['confirmed', T0 + 5 * H], ['rejected', T0 + 5 * H]] };
+    const back = LiqConfirmer.fromJSON(legacy, { coin: 'BTC', maxPerMin: 10 });
+    expect(back.checks(T0 + 6 * H)).toEqual({ candidates: 2, confirmed: 1, rejected: 1, failed: 0 });
+    // Jak 8.11: zdarzenie już poza oknem 24 h, wpisy potwierdzeń jeszcze w oknie
+    expect(tapeAt(back, T0 + DAY + MIN).checks).toEqual({ candidates: 1, confirmed: 0, rejected: 1, failed: 0 });
+  });
+
+  it('H4: deduplikacja po tid i filtr rynku/ofiary nie gubią zdarzeń — ta sama likwidacja w dwóch oknach to jedno zdarzenie i jedno potwierdzenie', async () => {
+    const c = new LiqConfirmer({ coin: 'BTC', maxPerMin: 10 });
+    c.enqueue({ addr: ADDR, prev: pos(0.02, 75_000, T0), from: T0, to: T0 + 15 * MIN });
+    c.enqueue({ addr: ADDR, prev: pos(0.02, 75_000, T0), from: T0, to: T0 + 16 * MIN });
+    const second = [apiFill(), apiFill({ coin: 'ETH', tid: 1 }), apiFill({ tid: 2, liquidation: { liquidatedUser: OTHER, markPx: '1', method: 'backstop' } })];
+    await c.process(restOf([apiFill()], second), T0 + 17 * MIN);
+    const tape = tapeAt(c, T0 + 20 * MIN);
+    expect(tape.totals.h24.n).toBe(1);
+    expect(tape.checks).toEqual({ candidates: 1, confirmed: 1, rejected: 0, failed: 0 });
   });
 });
