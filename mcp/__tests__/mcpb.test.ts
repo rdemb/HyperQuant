@@ -1,7 +1,7 @@
 /**
  * Paczka `.mcpb` dla Claude Desktop (MANIFEST.md, wersja manifestu 0.3, repo modelcontextprotocol/mcpb): skrypt
  * `npm run mcp:mcpb` na świeżym bundlu zbudowanym w katalogu tymczasowym (bez wyścigu z innymi testami o `mcp/dist`).
- * Archiwum ma manifest z polami wymaganymi przez specyfikację, bundle jako punkt wejścia i `node_modules` tylko
+ * Archiwum ma manifest z polami wymaganymi przez specyfikację, ikonę (ikona PWA strony), bundle jako punkt wejścia i `node_modules` tylko
  * z zależnościami wykonania paczki (SDK serwera MCP z jego rdzeniem i zod), bez trafień wzorców publikacji. Rozpakowane
  * w obcym katalogu startuje przez prawdziwe stdio na samych dołączonych zależnościach.
  */
@@ -25,6 +25,8 @@ const read = (p: string) => readFileSync(path.join(ROOT, p), 'utf8').replace(/\r
 const PKG = JSON.parse(read('mcp/package.json')) as { version: string; engines: { node: string }; dependencies: Record<string, string> };
 
 const ENTRY = 'server/hyperquant-mcp.mjs';
+/** Ikona paczki w katalogu głównym archiwum (pole `icon` manifestu). */
+const ICON = 'icon.png';
 /** Zależności wykonania paczki: dwie bezpośrednie z mcp/package.json i rdzeń SDK (zależność `@modelcontextprotocol/server`). */
 const RUNTIME = ['@modelcontextprotocol/core', '@modelcontextprotocol/server', 'zod'];
 /** Pola najwyższego poziomu dozwolone przez schemat manifestu 0.3 (`additionalProperties: false`). */
@@ -132,13 +134,23 @@ describe('archiwum .mcpb', () => {
     for (const banned of ['node_modules/react', 'react.production', 'useSyncExternalStore']) expect(text, banned).not.toContain(banned);
   });
 
-  it('pliki: tylko manifest, licencja paczki, bundle i node_modules zależności wykonania (bez map, typów i źródeł TS), ścieżki względne', () => {
+  it('ikona: pole icon = "icon.png" (ścieżka względna w paczce, PNG; zalecane 512×512), w archiwum bajt w bajt ikona PWA strony', () => {
+    expect(manifest().icon).toBe(ICON);
+    const icon = entry(ICON);
+    expect(icon, ICON).toBeDefined();
+    expect(icon?.data.equals(readFileSync(path.join(ROOT, 'public', 'icons', 'icon-512.png')))).toBe(true);
+    // Sygnatura PNG, potem nagłówek IHDR: szerokość i wysokość
+    expect(icon?.data.subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a');
+    expect([icon?.data.readUInt32BE(16), icon?.data.readUInt32BE(20)]).toEqual([512, 512]);
+  });
+
+  it('pliki: tylko manifest, licencja paczki, ikona, bundle i node_modules zależności wykonania (bez map, typów i źródeł TS), ścieżki względne', () => {
     const names = entries.map((e) => e.name);
     expect(new Set(names).size).toBe(names.length);
     const pkgOf = (n: string) => RUNTIME.find((p) => n.startsWith(`node_modules/${p}/`));
-    expect(names.filter((n) => n !== 'manifest.json' && n !== 'LICENSE' && n !== ENTRY && !pkgOf(n))).toEqual([]);
-    // Licencja MIT paczki w katalogu głównym archiwum (ta sama co mcp/LICENSE), zaraz po manifeście
-    expect(names.slice(0, 3)).toEqual(['manifest.json', 'LICENSE', ENTRY]);
+    expect(names.filter((n) => n !== 'manifest.json' && n !== 'LICENSE' && n !== ICON && n !== ENTRY && !pkgOf(n))).toEqual([]);
+    // Licencja MIT paczki w katalogu głównym archiwum (ta sama co mcp/LICENSE) i ikona zaraz po manifeście, potem bundle
+    expect(names.slice(0, 4)).toEqual(['manifest.json', 'LICENSE', ICON, ENTRY]);
     expect(entry('LICENSE')?.data.toString('utf8').replace(/\r\n/g, '\n')).toBe(read('mcp/LICENSE'));
     expect([...new Set(names.map(pkgOf).filter(Boolean))].sort()).toEqual(RUNTIME);
     expect(names.filter((n) => /^[/\\]|^[A-Za-z]:|\\|(?:^|\/)\.\.(?:\/|$)/.test(n))).toEqual([]);

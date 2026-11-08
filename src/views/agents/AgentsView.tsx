@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { ChevronRight, Download, ExternalLink } from 'lucide-react';
 import { AGENT_TEMPLATES, type AgentTemplate } from '../../../integrations/agents/index';
+import { OPENBOT_PATHS } from '../../../integrations/agents/openbot';
 import { Badge, DASH, Panel } from '../../ui';
 import { lang, tr } from '../../i18n';
-import { BTN_SECONDARY, CopyButton } from './CopyButton';
+import { BTN_PRIMARY, BTN_SECONDARY, CopyButton } from './CopyButton';
 import { MCP_README_FILE, SKILL_FILE, SKILL_RECIPES, TOOL_META, githubUrl } from './catalog';
 import {
   BUNDLE_PATH,
@@ -21,13 +22,12 @@ import {
   parseSha256,
   vscodeLink,
 } from './installLinks';
+import { openbotHref, openbotSetupMessage } from './openbotSetup';
 import { profileText } from './profiles';
 
 /** Cytat w języku strony: „…” po polsku, "…" po angielsku. */
 const quote = (s: string) => (lang === 'en' ? `"${s}"` : `„${s}”`);
 
-const BTN_PRIMARY =
-  'inline-flex items-center justify-center gap-1.5 min-h-11 sm:min-h-9 px-4 rounded-lg bg-accent text-page text-sm font-semibold hover:brightness-110 transition-[filter] duration-150';
 // Bloki kodu zawijają się (bez przewijania w bok); ścieżki łamią się tylko po „/” (`Path`)
 const CODE_BLOCK = 'font-mono text-xs leading-relaxed text-ink-1 bg-page border border-line rounded-lg px-3 py-2.5 whitespace-pre-wrap break-words';
 const TOOL_CHIP = 'font-mono text-[11px] text-ink-2 border border-line rounded px-1.5 py-0.5';
@@ -58,6 +58,16 @@ const A: React.FC<{ href: string; children: React.ReactNode }> = ({ href, childr
     <ExternalLink className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
     <span className="sr-only">{tr('(otwiera się w nowej karcie)', '(opens in a new tab)')}</span>
   </a>
+);
+
+/** Link pobrania pliku ze strony (`download`, w tej samej karcie), w stylu linku z wysokością dotykową na telefonie. */
+const DownloadLink: React.FC<{ href: string; children: React.ReactNode }> = ({ href, children }) => (
+  <span className="inline-flex items-center min-h-11 sm:min-h-9">
+    <a href={href} download className="inline-flex items-center gap-1 text-accent underline-offset-2 hover:underline">
+      <Download className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+      {children}
+    </a>
+  </span>
 );
 
 /** Nagłówek sekcji strony: tytuł i jedno zdanie, po co ta sekcja jest. */
@@ -130,9 +140,15 @@ export const StatusBox: React.FC<{ status?: McpStatus; className?: string }> = (
   </dl>
 );
 
-const TemplateCard: React.FC<{ t: AgentTemplate }> = ({ t }) => {
+/**
+ * Karta szablonu: rola, narzędzia i przykładowe polecenia. Główny przycisk kopiuje wiadomość instalacyjną dla OpenBota
+ * (agent z tym profilem, serwerem i skillem), drugorzędny pełny profil do innych klientów; plik profilu do pobrania
+ * i na GitHubie.
+ */
+export const TemplateCard: React.FC<{ t: AgentTemplate }> = ({ t }) => {
   const profile = profileText(t.file);
   const prompts = tr(t.prompts.pl, t.prompts.en);
+  const hintId = `agents-openbot-hint-${t.id}`;
   return (
     <Panel title={tr(t.name.pl, t.name.en)} bodyClassName="px-4 py-3 flex flex-col gap-3.5 h-full">
       <p className="text-sm text-ink-2 leading-relaxed">{tr(t.role.pl, t.role.en)}</p>
@@ -145,28 +161,49 @@ const TemplateCard: React.FC<{ t: AgentTemplate }> = ({ t }) => {
           ))}
         </ul>
       </div>
-      <div className="mt-auto flex flex-wrap items-start gap-x-4 gap-y-2 pt-1">
-        {profile && (
+      <div className="mt-auto flex flex-col gap-2 pt-1">
+        <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
           <CopyButton
-            text={profile}
-            label={tr('Kopiuj profil', 'Copy profile')}
-            fallback={tr('Schowek niedostępny: skopiuj profil z pliku na GitHubie.', 'Clipboard unavailable: copy the profile from the file on GitHub.')}
+            primary
+            describedBy={hintId}
+            text={openbotSetupMessage(t)}
+            label={tr('Dodaj do OpenBota', 'Add to OpenBot')}
+            fallback={tr(
+              'Schowek niedostępny: dodaj agenta ręcznie z profilu w pliku .md.',
+              'Clipboard unavailable: add the agent by hand from the profile in the .md file.'
+            )}
           />
-        )}
-        <span className="inline-flex items-center min-h-11 sm:min-h-9 text-sm">
-          <A href={githubUrl(t.file)}>{tr('Plik na GitHubie', 'File on GitHub')}</A>
-        </span>
+          {profile && (
+            <CopyButton
+              text={profile}
+              label={tr('Kopiuj profil', 'Copy profile')}
+              fallback={tr('Schowek niedostępny: skopiuj profil z pliku na GitHubie.', 'Clipboard unavailable: copy the profile from the file on GitHub.')}
+            />
+          )}
+        </div>
+        <p id={hintId} className="text-xs text-ink-3 leading-relaxed">
+          {tr(
+            '„Dodaj do OpenBota” kopiuje wiadomość: wklej ją dowolnemu agentowi w OpenBocie, a doda tego agenta razem z serwerem i skillem, jeśli ich brak.',
+            '"Add to OpenBot" copies a message: paste it to any agent in OpenBot and it adds this agent, with the server and the skill if they are missing.'
+          )}
+        </p>
+        <div className="flex flex-wrap items-center gap-x-4 text-sm">
+          <DownloadLink href={openbotHref(OPENBOT_PATHS.profile(t.id))}>{tr('Pobierz .md', 'Download .md')}</DownloadLink>
+          <span className="inline-flex items-center min-h-11 sm:min-h-9">
+            <A href={githubUrl(t.file)}>{tr('Plik na GitHubie', 'File on GitHub')}</A>
+          </span>
+        </div>
       </div>
     </Panel>
   );
 };
 
-const Templates: React.FC = () => (
+export const Templates: React.FC = () => (
   <section className="flex flex-col gap-3">
     <SectionHead title={tr('Szablony agentów', 'Agent templates')}>
       {tr(
-        'Gotowe profile do wklejenia w kliencie z profilami agentów albo własnymi instrukcjami. Profile są po angielsku; ze skillem hyperquant agent odpowiada w języku pytania. Każdy wymaga serwera hyperquant-mcp i skilla hyperquant.',
-        'Ready profiles to paste into a client with agent profiles or custom instructions. Each needs the hyperquant-mcp server and the hyperquant skill.'
+        'Gotowe profile agentów. W OpenBocie agent instaluje się jedną wiadomością (przycisk „Dodaj do OpenBota”), a w innych klientach wklej profil w ustawieniach agenta albo we własnych instrukcjach. Profile są po angielsku; ze skillem hyperquant agent odpowiada w języku pytania. Każdy wymaga serwera hyperquant-mcp i skilla hyperquant.',
+        'Ready agent profiles. In OpenBot an agent installs with one message (the "Add to OpenBot" button); in other clients, paste the profile into the agent settings or custom instructions. Each needs the hyperquant-mcp server and the hyperquant skill.'
       )}
     </SectionHead>
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-stretch">
@@ -233,19 +270,19 @@ export const ClaudeCard: React.FC = () => {
   );
 };
 
-/**
- * Droga poboczna „Z kodu źródłowego” (zwinięta): budowa serwera z repozytorium, gdy ktoś nie chce paczki z npm.
- * Natywne `<details>`: działa klawiaturą i czytnikiem ekranu bez skryptu.
- */
-const FromSource: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+/** Sekcja zwinięta karty (natywne `<details>`: działa klawiaturą i czytnikiem ekranu bez skryptu). */
+const Collapsible: React.FC<{ summary: string; children: React.ReactNode }> = ({ summary, children }) => (
   <details className="group border-t border-line pt-2">
     <summary className="flex items-center gap-1.5 min-h-11 sm:min-h-8 cursor-pointer select-none text-xs font-medium text-ink-2 hover:text-ink-1 list-none [&::-webkit-details-marker]:hidden">
       <ChevronRight className="w-3.5 h-3.5 shrink-0 transition-transform duration-150 group-open:rotate-90" aria-hidden="true" />
-      {tr('Z kodu źródłowego', 'From source')}
+      {summary}
     </summary>
     <div className="flex flex-col gap-3 pt-1.5 pb-1">{children}</div>
   </details>
 );
+
+/** Droga poboczna „Z kodu źródłowego” (zwinięta): budowa serwera z repozytorium, gdy ktoś nie chce paczki z npm. */
+const FromSource: React.FC<{ children: React.ReactNode }> = ({ children }) => <Collapsible summary={tr('Z kodu źródłowego', 'From source')}>{children}</Collapsible>;
 
 /** Budowa z repozytorium: kroki do skopiowania i co wpisać w kliencie (polecenie node, ścieżka bundla). */
 const RepoSteps: React.FC = () => (
@@ -326,10 +363,16 @@ const OpenBotField: React.FC<{ field: string; label: string; value: string; copy
   </div>
 );
 
+/**
+ * OpenBot: główna droga to jedna wiadomość do wklejenia dowolnemu agentowi (doda serwer i skill narzędziami OpenBota),
+ * z pełnym tekstem do przeczytania przed wklejeniem; ustawienia własnej aplikacji STDIO w zwiniętym „Ręcznie”. Przed
+ * publikacją w npm tylko kroki ręczne (wiadomość instaluje paczkę z npm).
+ */
 export const OpenBotCard: React.FC<{ status?: McpStatus }> = ({ status = MCP_STATUS }) => {
   const cfg = openbotConfig(status);
-  return (
-    <Panel title="OpenBot" bodyClassName="px-4 py-3 flex flex-col gap-3">
+  const message = status === 'npm' ? openbotSetupMessage() : null;
+  const manual = (
+    <>
       <ol className="flex flex-col gap-1.5 text-sm text-ink-1 leading-snug list-decimal pl-5 marker:text-ink-3">
         <li>{tr('Otwórz Marketplace → Aplikacje.', 'Open Marketplace → Apps.')}</li>
         <li>{tr('Wybierz „Dodaj własną” i transport STDIO.', 'Choose "Add your own" and the STDIO transport.')}</li>
@@ -359,11 +402,44 @@ export const OpenBotCard: React.FC<{ status?: McpStatus }> = ({ status = MCP_STA
           {tr(' (budowa w karcie „Serwer z npm”).', ' (build steps in "Server from npm").')}
         </p>
       )}
+    </>
+  );
+  return (
+    <Panel title="OpenBot" actions={message && <Badge tone="neutral">{tr('Jedną wiadomością', 'One message')}</Badge>} bodyClassName="px-4 py-3 flex flex-col gap-3">
+      {message ? (
+        <>
+          <p className="text-sm text-ink-2 leading-relaxed">
+            {tr('Skopiuj wiadomość i wklej ją dowolnemu agentowi w OpenBocie.', 'Copy the message and paste it to any agent in OpenBot.')}
+          </p>
+          <p className="text-xs text-ink-3 leading-relaxed">
+            {tr(
+              'Agent doda serwer hyperquant-mcp i skill hyperquant, a pominie to, co już jest. OpenBot może poprosić o zgodę na dodanie serwera.',
+              'The agent adds the hyperquant-mcp server and the hyperquant skill and skips what is already there. OpenBot may ask you to approve the new server.'
+            )}
+          </p>
+          <div>
+            <CopyButton
+              primary
+              text={message}
+              label={tr('Kopiuj wiadomość', 'Copy message')}
+              fallback={tr(
+                'Schowek niedostępny: rozwiń „Pokaż wiadomość”, zaznacz tekst i skopiuj go ręcznie.',
+                'Clipboard unavailable: open "Show message", select the text and copy it by hand.'
+              )}
+            />
+          </div>
+          <Collapsible summary={tr('Pokaż wiadomość', 'Show message')}>
+            <pre className={CODE_BLOCK}>
+              <Path text={message} />
+            </pre>
+          </Collapsible>
+          <Collapsible summary={tr('Ręcznie', 'Manually')}>{manual}</Collapsible>
+        </>
+      ) : (
+        manual
+      )}
       <p className="text-xs text-ink-3 leading-relaxed">
-        {tr(
-          'Przycisk instalacji w OpenBocie pojawi się tutaj, gdy OpenBot go udostępni. Wpis HyperQuant w Marketplace OpenBota jest w przygotowaniu.',
-          'A one-click install button for OpenBot will appear here once OpenBot offers one. A HyperQuant listing in the OpenBot Marketplace is in preparation.'
-        )}
+        {tr('Wpis HyperQuant w Marketplace OpenBota jest w przygotowaniu.', 'A HyperQuant listing in the OpenBot Marketplace is in preparation.')}
       </p>
     </Panel>
   );
@@ -489,7 +565,7 @@ const Install: React.FC = () => (
   </section>
 );
 
-const Skill: React.FC = () => (
+export const Skill: React.FC = () => (
   <Panel title={tr('Skill hyperquant', 'The hyperquant skill')} bodyClassName="px-4 py-3 flex flex-col gap-3">
     <p className="text-sm text-ink-2 leading-relaxed max-w-prose">
       {tr(
@@ -506,8 +582,11 @@ const Skill: React.FC = () => (
         </li>
       ))}
     </ul>
-    <div className="text-sm">
-      <A href={githubUrl(SKILL_FILE)}>{tr('SKILL.md na GitHubie', 'SKILL.md on GitHub')}</A>
+    <div className="flex flex-wrap items-center gap-x-4 text-sm">
+      <DownloadLink href={openbotHref(OPENBOT_PATHS.skill)}>{tr('Pobierz SKILL.md', 'Download SKILL.md')}</DownloadLink>
+      <span className="inline-flex items-center min-h-11 sm:min-h-9">
+        <A href={githubUrl(SKILL_FILE)}>{tr('SKILL.md na GitHubie', 'SKILL.md on GitHub')}</A>
+      </span>
     </div>
   </Panel>
 );
@@ -576,7 +655,7 @@ const Rules: React.FC = () => (
 );
 
 /**
- * Zakładka „Agenci AI”: szablony agentów, instalacja serwera MCP (Claude Desktop jednym plikiem, OpenBot, Cursor i VS Code,
+ * Zakładka „Agenci AI”: szablony agentów, instalacja serwera MCP (Claude Desktop jednym plikiem, OpenBot jedną wiadomością, Cursor i VS Code,
  * inne klienty), skill i 10 narzędzi z zasadami danych. Statyczna treść bez danych rynkowych; stan paczki z `MCP_STATUS`.
  */
 const AgentsView: React.FC = () => (
