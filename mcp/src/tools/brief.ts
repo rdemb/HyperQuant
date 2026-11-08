@@ -3,13 +3,15 @@
  * typowa szerokość najbliższej godziny sesji, odległość od VWAP doby) z tej samej funkcji co karta Czwórki (`fourNumbers`
  * z `src/utils`), poziomy dzisiejszej Mapy dnia z bloga (`pickMap`, jak `day_map`) oraz VAH, POC i VAL poprzedniej sesji
  * (`prevSessionProfile`, jak Kontekst aukcji), sesja w toku i najbliższe otwarcie. Tu tylko pobranie wejść (pliki publiczne,
- * świece Hyperliquid) w miejsce magazynu strony i te same liczby jako `Num`.
+ * świece Hyperliquid) w miejsce magazynu strony i te same liczby jako `Num`. Z argumentem `level` także poziom wobec ceny,
+ * VWAP i mapy likwidacji, z tych samych wejść (bez dodatkowego pobierania).
  */
+import * as z from 'zod';
 import { utcDayStart } from '../../../src/charts/pro/core/sessions';
 import type { Candle } from '../../../src/charts/pro/hl/parse';
 import { tr } from '../../../src/i18n';
 import { type BlogMapsState, pickMap } from '../../../src/state/useBlogMaps';
-import { DASH } from '../../../src/ui/format';
+import { DASH, fmtPrice } from '../../../src/ui/format';
 import { PROFILE_STEP, VA_PCT, toVBars } from '../../../src/utils/auction';
 import { dayVwapOf, vwapSigma } from '../../../src/utils/dayVwap';
 import {
@@ -19,13 +21,14 @@ import {
   type SessionHour,
   fourNumbers,
   gotValue,
+  gotWhy,
   hourWidth,
   lastClosedNy,
   liqFuel,
   nextSessionHour,
   sessionHourSamples,
 } from '../../../src/utils/fourNumbers';
-import { type LiqMap, isLiqMap } from '../../../src/utils/liqMap';
+import { LIQ_MAP_RANGE, type LiqMap, isLiqMap } from '../../../src/utils/liqMap';
 import { liqMapFreshness } from '../../../src/utils/liqMapView';
 import { type TradeSession, type TradeSessionId, currentTradeSession, nextTradeSession, previousSameSession } from '../../../src/utils/sessionDay';
 import { prevSessionProfile, reviewSession } from '../../../src/utils/sessionFacts';
@@ -64,6 +67,21 @@ export interface BriefLevel {
   from: 'blog' | 'vah' | 'val' | 'poc';
 }
 
+/** Poziom z argumentu `level` wobec ceny, VWAP doby UTC i mapy likwidacji. */
+export interface BriefLevelCheck {
+  /** Poziom z argumentu (wejście użytkownika, nie pomiar). */
+  price: number;
+  /** Poziom − cena (USD, do centa) i poziom / cena − 1 (procent, do 0,01). */
+  fromPrice: { usd: Num; pct: Num };
+  /** (Poziom − VWAP) / σ (`vwapSigma`, jak odległość ceny w Czwórce). */
+  vwapDistance: Num;
+  /**
+   * USD likwidacji z mapy skanera między ceną a poziomem, po stronie poziomu (`liqFuel` w paśmie |poziom / cena − 1|,
+   * pełne dolary); dalej niż 20% od ceny albo poza zakresem mapy — null z powodem, nigdy 0.
+   */
+  fuelToLevel: Num;
+}
+
 export interface BriefData {
   /** Cztery pozycje w kolejności karty: clarity, fuel, hourWidth, vwap. */
   four: BriefItem[];
@@ -71,7 +89,25 @@ export interface BriefData {
   levels: BriefLevel[];
   /** Sesja Londynu albo NY w toku (w Azji null) i najbliższe otwarcie sesji po chwili odpowiedzi. */
   session: { current: TradeSessionId | null; next: TradeSessionId; nextOpensAt: string };
+  /** Tylko z argumentem `level`. */
+  level?: BriefLevelCheck;
 }
+
+const briefInput = z.object({
+  level: z
+    .number()
+    .positive()
+    .optional()
+    .describe(
+      tr(
+        'Cena poziomu do sprawdzenia w USD (np. poziom z Mapy dnia); dodaje pole level: odległość od ceny, od VWAP w σ i paliwo likwidacji do poziomu',
+        'A price level to check, in USD (for example a Day map level); adds the level field: distance from the price, from the VWAP in σ and the liquidation fuel up to the level'
+      )
+    ),
+});
+
+/** Najdalszy poziom od ceny, dla którego liczymy paliwo do poziomu (ułamek ceny). */
+const LEVEL_MAX = 0.2;
 
 const WIDTH_METHOD = tr('mediana 20 dni', '20-day median');
 const VA_LABEL = { vah: tr('VAH poprz. sesji', 'Prev. session VAH'), poc: tr('POC poprz. sesji', 'Prev. session POC'), val: tr('VAL poprz. sesji', 'Prev. session VAL') } as const;
@@ -98,20 +134,68 @@ const item = (n: FourNumber, value: Num | null, parts?: { below: Num; above: Num
 });
 
 /**
- * Paliwo jako dwie liczby (`liqFuel`, jak karta) w pełnych dolarach; karta bez liczby — null z jej powodem albo z powodem
- * nieudanego pobrania mapy.
+ * Wejścia paliwa (karta „Paliwo ±1%” i paliwo do poziomu): mapa, cena i uwaga o wieku migawki jak przy innych liczbach
+ * skanera; karta bez liczby — powód karty albo powód nieudanego pobrania mapy.
  */
-function fuelParts(n: FourNumber, x: FourInputs, fl: Fetched<LiqMap>, now: number): { below: Num; above: Num } {
+function fuelInputs(n: FourNumber, x: FourInputs, fl: Fetched<LiqMap>, now: number): { why: string } | { map: LiqMap; p: number; extra: { note?: string } } {
   const map = x.liq.map;
   const p = gotValue(x.price);
-  if (n.value === DASH || !map || p === null) {
-    const why = fl.ok ? n.hint : tr(`mapa likwidacji niedostępna (${fl.why})`, `liquidation map unavailable (${fl.why})`);
-    return { below: num(null, 'usd', 'LIVE', { why }), above: num(null, 'usd', 'LIVE', { why }) };
-  }
-  const r = liqFuel(map, p);
+  if (n.value === DASH || !map || p === null || !(p > 0)) return { why: fl.ok ? n.hint : tr(`mapa likwidacji niedostępna (${fl.why})`, `liquidation map unavailable (${fl.why})`) };
   const note = ageNote(map.asOf, now) ?? (x.liq.status === 'delayed' ? tr('opóźnione', 'delayed') : undefined);
-  const extra = note === undefined ? {} : { note };
-  return { below: num(Math.round(r.below), 'usd', 'LIVE', extra), above: num(Math.round(r.above), 'usd', 'LIVE', extra) };
+  return { map, p, extra: note === undefined ? {} : { note } };
+}
+
+/** Paliwo jako dwie liczby (`liqFuel`, jak karta) w pełnych dolarach; karta bez liczby — null z powodem z `fuelInputs`. */
+function fuelParts(n: FourNumber, x: FourInputs, fl: Fetched<LiqMap>, now: number): { below: Num; above: Num } {
+  const f = fuelInputs(n, x, fl, now);
+  if ('why' in f) return { below: num(null, 'usd', 'LIVE', { why: f.why }), above: num(null, 'usd', 'LIVE', { why: f.why }) };
+  const r = liqFuel(f.map, f.p);
+  return { below: num(Math.round(r.below), 'usd', 'LIVE', f.extra), above: num(Math.round(r.above), 'usd', 'LIVE', f.extra) };
+}
+
+const pct = (v: number) => `${Math.round(v * 100)}%`;
+const LEVEL_NOTE = tr(
+  `Poziom z argumentu level: fromPrice = poziom − cena (USD) i poziom / cena − 1 (%), cena to zamknięcie ostatniej świecy 1m; vwapDistance = (poziom − VWAP doby UTC) / σ, jak odległość ceny w Czwórce; fuelToLevel = USD likwidacji z mapy skanera między ceną a poziomem po stronie poziomu, po środku kubełka (jak paliwo ±1%), tylko do ${pct(LEVEL_MAX)} od ceny i w zakresie mapy (±${pct(LIQ_MAP_RANGE)} od jej ceny mark).`,
+  `Level from the level argument: fromPrice = level − price (USD) and level / price − 1 (%), the price being the latest 1m close; vwapDistance = (level − UTC-day VWAP) / σ, like the price distance in the four numbers; fuelToLevel = USD of liquidations from the scanner map between the price and the level on the level's side, by bucket mid (like fuel ±1%), only up to ${pct(LEVEL_MAX)} from the price and within the map range (±${pct(LIQ_MAP_RANGE)} around its mark price).`
+);
+
+/**
+ * Paliwo do poziomu: `liqFuel` w paśmie |poziom / cena − 1| po stronie poziomu. Poziom równy cenie (brak pasma), dalej
+ * niż `LEVEL_MAX` od ceny albo poza zakresem mapy (`LIQ_MAP_RANGE` od ceny mark) — null z powodem: brak kubełków tam
+ * to brak danych, nie zero.
+ */
+function fuelToLevel(level: number, n: FourNumber, x: FourInputs, fl: Fetched<LiqMap>, now: number): Num {
+  const f = fuelInputs(n, x, fl, now);
+  const nil = (why: string) => num(null, 'usd', 'LIVE', { why });
+  if ('why' in f) return nil(f.why);
+  const band = Math.abs(level / f.p - 1);
+  if (band === 0) return nil(tr('poziom równy cenie: między ceną a poziomem nie ma pasma', 'the level equals the price: there is no band between them'));
+  if (band > LEVEL_MAX) return nil(tr(`poziom dalej niż ${pct(LEVEL_MAX)} od ceny`, `the level is more than ${pct(LEVEL_MAX)} from the price`));
+  const lo = f.map.markPx * (1 - LIQ_MAP_RANGE);
+  const hi = f.map.markPx * (1 + LIQ_MAP_RANGE);
+  if (level < lo || level > hi) {
+    const range = `±${pct(LIQ_MAP_RANGE)}`;
+    return nil(
+      tr(
+        `poziom poza zakresem mapy likwidacji (${range} od ceny mark mapy: ${fmtPrice(lo, 0)} do ${fmtPrice(hi, 0)})`,
+        `the level is outside the liquidation map range (${range} around the map's mark price: ${fmtPrice(lo, 0)} to ${fmtPrice(hi, 0)})`
+      )
+    );
+  }
+  const r = liqFuel(f.map, f.p, band);
+  return num(Math.round(level > f.p ? r.above : r.below), 'usd', 'LIVE', f.extra);
+}
+
+/** Poziom wobec ceny, VWAP doby UTC (`vwapSigma`, jak karta „Od VWAP”) i mapy likwidacji; brak wejścia — null z powodem. */
+function levelCheck(level: number, fuel: FourNumber, vwap: FourNumber, x: FourInputs, fl: Fetched<LiqMap>, now: number): BriefLevelCheck {
+  const p = gotValue(x.price);
+  const fromPrice =
+    p === null || !(p > 0)
+      ? { usd: num(null, 'usd', 'LIVE', { why: gotWhy(x.price) }), pct: num(null, 'pct', 'LIVE', { why: gotWhy(x.price) }) }
+      : { usd: num(Math.round((level - p) * 100) / 100, 'usd', 'LIVE'), pct: num(Math.round((level / p - 1) * 10_000) / 100, 'pct', 'LIVE') };
+  const v = gotValue(x.dayVwap);
+  const z = vwap.value === DASH || v === null ? null : vwapSigma(level, v.vwap, v.sd);
+  return { price: level, fromPrice, vwapDistance: num(z, 'sigma', 'LIVE', { why: vwap.hint }), fuelToLevel: fuelToLevel(level, fuel, x, fl, now) };
 }
 
 /** Typowa szerokość godziny w USD (`hourWidth`, jak karta); karta bez liczby — null z jej podpowiedzią jako powodem. */
@@ -176,7 +260,8 @@ function byPrice(a: BriefLevel, b: BriefLevel): number {
   return y === null ? -1 : y - x;
 }
 
-async function run(src: Sources): Promise<Envelope<BriefData>> {
+async function run(src: Sources, args: unknown): Promise<Envelope<BriefData>> {
+  const { level } = briefInput.parse(args ?? {});
   const now = src.now();
   const ny = lastClosedNy(now);
   // Sesja Kontekstu aukcji: w toku albo (w Azji) ostatnia zamknięta; value area z poprzedniej sesji tego samego typu
@@ -219,6 +304,10 @@ async function run(src: Sources): Promise<Envelope<BriefData>> {
     levels,
     session: { current: currentTradeSession(now)?.id ?? null, next: next.id, nextOpensAt: iso(next.start) },
   };
+  if (level !== undefined) {
+    data.level = levelCheck(level, fuel, vwap, x, fl, now);
+    notes.push(LEVEL_NOTE);
+  }
   return envelope(NAME, data, sources, now, notes);
 }
 
@@ -226,8 +315,9 @@ export const marketBrief: ToolDef = {
   name: NAME,
   title: tr('Skrót przed sesją BTC', 'BTC pre-session brief'),
   description: tr(
-    'Skrót BTC przed sesją, jak ekran Przed sesją HyperQuant: Czwórka (czytelność wczoraj: typ dnia ostatniej sesji NY i trafienia jej mapy z bloga, MODEL; paliwo ±1%: USD likwidacji w 1% pod ceną i nad nią z mapy skanera, LIVE; typowa szerokość najbliższej godziny sesji, MODEL: mediana 20 dni; odległość ceny od VWAP doby UTC w σ, LIVE), poziomy dzisiejszej Mapy dnia z bloga oraz VAH, POC i VAL poprzedniej sesji, sesja w toku i najbliższe otwarcie. Każda pozycja Czwórki z tekstem i podpowiedzią jak na stronie oraz z liczbą jako Num. Bez argumentów. Dane publiczne, tylko odczyt; opis rynku, nie porada inwestycyjna.',
-    "A BTC pre-session brief, like the HyperQuant Pre-session screen: the four numbers (yesterday's clarity: the day type of the last NY session and the hits of its blog map, MODEL; fuel ±1%: USD of liquidations within 1% below and above the price from the scanner map, LIVE; the typical width of the next session hour, MODEL: 20-day median; the price distance from the UTC-day VWAP in σ, LIVE), the levels of today's blog Day map and the previous session's VAH, POC and VAL, the session in progress and the next open. Each of the four comes with the site's text and hint and with the number as Num. No arguments. Public read-only data; market description, not investment advice."
+    'Skrót BTC przed sesją, jak ekran Przed sesją HyperQuant: Czwórka (czytelność wczoraj: typ dnia ostatniej sesji NY i trafienia jej mapy z bloga, MODEL; paliwo ±1%: USD likwidacji w 1% pod ceną i nad nią z mapy skanera, LIVE; typowa szerokość najbliższej godziny sesji, MODEL: mediana 20 dni; odległość ceny od VWAP doby UTC w σ, LIVE), poziomy dzisiejszej Mapy dnia z bloga oraz VAH, POC i VAL poprzedniej sesji, sesja w toku i najbliższe otwarcie. Każda pozycja Czwórki z tekstem i podpowiedzią jak na stronie oraz z liczbą jako Num. Opcjonalny argument level (cena poziomu w USD) dodaje pole level: odległość poziomu od ceny (USD i %), od VWAP doby UTC w σ i paliwo likwidacji między ceną a poziomem (LIVE; do 20% od ceny i w zakresie mapy, dalej null z powodem). Dane publiczne, tylko odczyt; opis rynku, nie porada inwestycyjna.',
+    "A BTC pre-session brief, like the HyperQuant Pre-session screen: the four numbers (yesterday's clarity: the day type of the last NY session and the hits of its blog map, MODEL; fuel ±1%: USD of liquidations within 1% below and above the price from the scanner map, LIVE; the typical width of the next session hour, MODEL: 20-day median; the price distance from the UTC-day VWAP in σ, LIVE), the levels of today's blog Day map and the previous session's VAH, POC and VAL, the session in progress and the next open. Each of the four comes with the site's text and hint and with the number as Num. The optional argument level (a price level in USD) adds a level field: the level's distance from the price (USD and %), from the UTC-day VWAP in σ, and the liquidation fuel between the price and the level (LIVE; up to 20% from the price and within the map range, otherwise null with a reason). Public read-only data; market description, not investment advice."
   ),
-  run: (src) => run(src),
+  input: briefInput,
+  run: (src, args) => run(src, args),
 };

@@ -31,21 +31,21 @@ export const AGENT_TEMPLATES: AgentTemplate[] = [
         'Zrób skrót przed sesją nowojorską.',
         'Co się dzieje teraz w sesji NY?',
         'Jak poszła sesja londyńska?',
-        'Które poziomy z dzisiejszej mapy dnia zostały już dotknięte?',
+        'Których poziomów z dzisiejszej Mapy dnia cena już dotknęła?',
       ],
       en: [
         'Prepare me for the London open.',
         'Brief me before the New York session.',
         'What is happening in the NY session right now?',
         'How did the London session go?',
-        "Which levels of today's day map have been hit?",
+        "Which levels of today's Day map has price touched?",
       ],
     },
     file: 'integrations/agents/hyperquant-desk.md',
   },
   {
     id: 'big-hands',
-    name: { pl: 'Duże ręce', en: 'Big Hands' },
+    name: { pl: 'HyperQuant Duże ręce', en: 'HyperQuant Big Hands' },
     role: {
       pl: 'Gdzie stoją duże i wymuszone przepływy na BTC: wieloryby, likwidacje, TWAP-y',
       en: 'Where large and forced flows sit in BTC: whales, liquidations, TWAPs',
@@ -71,7 +71,7 @@ export const AGENT_TEMPLATES: AgentTemplate[] = [
   },
   {
     id: 'session-review',
-    name: { pl: 'Rozliczenie sesji', en: 'Session Review' },
+    name: { pl: 'HyperQuant Rozliczenie sesji', en: 'HyperQuant Session Review' },
     role: {
       pl: 'Rozliczenie sesji Londynu i Nowego Jorku po zamknięciu',
       en: 'London and New York session reviews after the close',
@@ -80,13 +80,13 @@ export const AGENT_TEMPLATES: AgentTemplate[] = [
     prompts: {
       pl: [
         'Rozlicz sesję londyńską.',
-        'Jak poszła wczorajsza sesja NY?',
+        'Jak poszła ostatnia sesja NY?',
         'Których poziomów z bloga dotknęła sesja nowojorska?',
         'Jak dobrze skalibrowane są prognozy HyperQuant?',
       ],
       en: [
         'Review the London session.',
-        "How did yesterday's NY session go?",
+        'How did the last NY session go?',
         'Which blog levels did the New York session touch?',
         'How well calibrated are the HyperQuant forecasts?',
       ],

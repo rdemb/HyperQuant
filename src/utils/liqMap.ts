@@ -80,6 +80,12 @@ function toBuckets(map: Map<number, LiqBucket>): LiqBucket[] {
 }
 
 /**
+ * Domyślny zakres mapy: ceny likwidacji w ±15% od ceny mark (skaner nie podaje innego), więc poza tym zakresem mapa
+ * nic nie mówi — brak kubełka to tam brak danych, nie zero.
+ */
+export const LIQ_MAP_RANGE = 0.15;
+
+/**
  * Kubełki stałego kroku USD (~0.1% ceny), osobno longi i shorty, w zakresie ±rangePct od ceny mark; kubełek z mniej
  * niż `LIQ_MIN_N` pozycjami ma zaokrąglony nominał. Pokrycie: Σ|szi| / (2·OI) — OI z Hyperliquid liczy jedną stronę
  * rynku, a skan widzi obie.
@@ -88,7 +94,7 @@ export function buildLiqMap(
   positions: ScannedPosition[],
   o: { coin: string; markPx: number; oiBtc: number; asOf: number; addresses: number; rangePct?: number; ctxAt?: number }
 ): LiqMap {
-  const rangePct = o.rangePct ?? 0.15;
+  const rangePct = o.rangePct ?? LIQ_MAP_RANGE;
   const step = niceStep(o.markPx * 0.001);
   const longs = new Map<number, LiqBucket>();
   const shorts = new Map<number, LiqBucket>();

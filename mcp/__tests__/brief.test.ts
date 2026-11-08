@@ -3,6 +3,7 @@ import { computeAuctionContext } from '../../src/state/useAuctionContext';
 import { toVBars } from '../../src/utils/auction';
 import { dayVwapOf, vwapSigma } from '../../src/utils/dayVwap';
 import { type FourNumber, clarityNum, gotValue, hourWidth, hourWidthNum, liqFuel, nextSessionHour } from '../../src/utils/fourNumbers';
+import { LIQ_MAP_RANGE } from '../../src/utils/liqMap';
 import { isAbsent } from '../../src/utils/sessionText';
 import { fourNumbers } from '../../src/views/before/fourInputs';
 import { BLOCK_MARK, DISCLAIMER, type Envelope, type Num } from '../src/envelope';
@@ -27,10 +28,17 @@ interface BriefLevel {
   price: Num;
   from: 'blog' | 'vah' | 'val' | 'poc';
 }
+interface BriefLevelCheck {
+  price: number;
+  fromPrice: { usd: Num; pct: Num };
+  vwapDistance: Num;
+  fuelToLevel: Num;
+}
 interface BriefData {
   four: BriefItem[];
   levels: BriefLevel[];
   session: { current: string | null; next: string | null; nextOpensAt: string | null };
+  level?: BriefLevelCheck;
 }
 
 let close: (() => Promise<void>) | null = null;
@@ -39,28 +47,37 @@ afterEach(async () => {
   close = null;
 });
 
-async function call(src: Sources) {
+async function call(src: Sources, args: Record<string, unknown> = {}) {
   const c = await connect(src);
   close = c.close;
-  const res = await c.client.callTool({ name: 'market_brief', arguments: {} });
+  const res = await c.client.callTool({ name: 'market_brief', arguments: args });
   return { res, env: res.structuredContent as unknown as Envelope<BriefData> };
 }
 
 const run = (r: Record<string, Route>, now = NOW, extra: Parameters<typeof testSources>[2] = {}) => call(testSources(r, now, extra).src);
+/** Wywołanie z argumentem `level` (i innymi), z dostępem do żądań fałszywego `fetch`. */
+async function runLevel(args: Record<string, unknown>, r: Record<string, Route> = routes()) {
+  const s = testSources(r, NOW);
+  return { ...(await call(s.src, args)), calls: s.calls };
+}
 
 /** Pozycja Czwórki strony w kształcie odpowiedzi (wartość strony to `text`). */
 const fromSite = (n: FourNumber) => ({ id: n.id, title: n.title, text: n.value, badge: n.badge, hint: n.hint, note: n.note ?? null, flag: n.flag ?? null });
 const shown = (i: BriefItem) => ({ id: i.id, title: i.title, text: i.text, badge: i.badge, hint: i.hint, note: i.note, flag: i.flag });
 
 describe('market_brief', () => {
-  it('tools/list: market_brief bez argumentów, z tytułem i opisem', async () => {
+  it('tools/list: market_brief z opcjonalnym argumentem level (liczba dodatnia), z tytułem i opisem', async () => {
     const c = await connect(testSources({}, NOW).src);
     close = c.close;
     const { tools } = await c.client.listTools();
     const t = tools.find((x) => x.name === 'market_brief');
     expect(t?.title).toBeTruthy();
     expect(t?.description).toContain('nie porada inwestycyjna');
-    expect(Object.keys(t?.inputSchema.properties ?? {})).toEqual([]);
+    expect(t?.description).toContain('level');
+    expect(t?.description).not.toMatch(/bez argumentów/i);
+    expect(Object.keys(t?.inputSchema.properties ?? {})).toEqual(['level']);
+    expect(t?.inputSchema.properties?.level).toMatchObject({ type: 'number', exclusiveMinimum: 0 });
+    expect(t?.inputSchema.required ?? []).toEqual([]);
   });
 
   it('Czwórka w kolejności strony: tytuł, tekst, plakietka i podpowiedź jak fourNumbers strony na tych samych świecach i plikach', async () => {
@@ -254,5 +271,132 @@ describe('market_brief', () => {
     expect(env.data.levels.filter((l) => l.from === 'blog').map((l) => l.label)).toEqual([null, 'Wsparcie']);
     expect(JSON.stringify(res)).not.toContain(ADDR);
     expect(JSON.stringify(res)).not.toMatch(/[0-9a-fA-F]{20,}/);
+  });
+});
+
+// ───────── market_brief z poziomem (level) ─────────
+
+/** VWAP doby UTC ze świec fikstury (jak `dayVwapOf` w narzędziu). */
+function fixtureVwap() {
+  const dv = dayVwapOf(asCandles(M1), NOW);
+  if (isAbsent(dv)) throw new Error(dv.why);
+  return dv;
+}
+
+/** Żądania fałszywego `fetch` jako zbiór „URL + treść” (świece rozróżnia treść żądania). */
+const requests = (calls: { url: string; body: string | null }[]) => calls.map((c) => `${c.url} ${c.body ?? ''}`).sort();
+
+describe('market_brief z poziomem (level)', () => {
+  it('poziom nad ceną: odległość od ceny, od VWAP w σ (vwapSigma) i paliwo do poziomu (liqFuel po stronie poziomu)', async () => {
+    const level = CLOSE + 1_000;
+    const { res, env } = await runLevel({ level });
+    expect(res.isError).toBeFalsy();
+    const l = env.data.level;
+    expect(l?.price).toBe(level);
+    expect(l?.fromPrice.usd).toMatchObject({ value: Math.round((level - CLOSE) * 100) / 100, unit: 'usd', badge: 'LIVE', why: null });
+    expect(l?.fromPrice.pct).toMatchObject({ value: Math.round((level / CLOSE - 1) * 10_000) / 100, unit: 'pct', badge: 'LIVE', why: null });
+    const dv = fixtureVwap();
+    const z = vwapSigma(level, dv.vwap, dv.sd);
+    expect(z).not.toBeNull();
+    expect(l?.vwapDistance).toMatchObject({ value: z, unit: 'sigma', badge: 'LIVE', why: null });
+    const f = liqFuel(LIQ, CLOSE, Math.abs(level / CLOSE - 1));
+    expect(f.above).toBeGreaterThan(0);
+    expect(l?.fuelToLevel).toMatchObject({ value: Math.round(f.above), unit: 'usd', badge: 'LIVE', why: null });
+    expect(env.notes.join(' ')).toContain('fuelToLevel');
+  });
+
+  it('poziom pod ceną: paliwo z dolnej strony (liqFuel.below), odległości ujemne', async () => {
+    const level = CLOSE - 1_500;
+    const { env } = await runLevel({ level });
+    const l = env.data.level;
+    const f = liqFuel(LIQ, CLOSE, Math.abs(level / CLOSE - 1));
+    expect(f.below).toBeGreaterThan(0);
+    expect(f.below).not.toBe(f.above);
+    expect(l?.fuelToLevel).toMatchObject({ value: Math.round(f.below), unit: 'usd', badge: 'LIVE', why: null });
+    expect(l?.fromPrice.usd.value).toBeLessThan(0);
+    expect(l?.fromPrice.pct.value).toBeLessThan(0);
+    const dv = fixtureVwap();
+    expect(l?.vwapDistance.value).toBe(vwapSigma(level, dv.vwap, dv.sd));
+  });
+
+  it('poziom nie zmienia reszty odpowiedzi i nie dodaje żadnego żądania sieci; bez poziomu brak pola level', async () => {
+    const plain = await runLevel({});
+    const withLevel = await runLevel({ level: CLOSE + 1_000 });
+    expect(plain.env.data).not.toHaveProperty('level');
+    expect(withLevel.env.data.four).toEqual(plain.env.data.four);
+    expect(withLevel.env.data.levels).toEqual(plain.env.data.levels);
+    expect(withLevel.env.data.session).toEqual(plain.env.data.session);
+    expect(withLevel.env.sources).toEqual(plain.env.sources);
+    expect(requests(withLevel.calls)).toEqual(requests(plain.calls));
+  });
+
+  it('poziom dalej niż 20% od ceny: paliwo null z powodem (nigdy 0), odległości zostają', async () => {
+    const level = CLOSE * 1.25;
+    const { res, env } = await runLevel({ level });
+    expect(res.isError).toBeFalsy();
+    const l = env.data.level;
+    expect(l?.fuelToLevel).toMatchObject({ value: null, badge: null, unit: 'usd' });
+    expect(l?.fuelToLevel.why).toContain('20%');
+    expect(l?.fromPrice.usd.value).not.toBeNull();
+    expect(l?.vwapDistance.value).not.toBeNull();
+  });
+
+  it('poziom w 20% od ceny, ale poza zakresem mapy likwidacji: paliwo null z powodem (nigdy 0)', async () => {
+    const level = LIQ.markPx * (1 + LIQ_MAP_RANGE) + 1_000;
+    expect(Math.abs(level / CLOSE - 1)).toBeLessThan(0.2);
+    const { env } = await runLevel({ level });
+    const fuel = env.data.level?.fuelToLevel;
+    expect(fuel).toMatchObject({ value: null, badge: null });
+    expect(fuel?.why).toContain('zakres');
+    // Ten sam poziom pod ceną, poza dolną granicą mapy
+    const low = LIQ.markPx * (1 - LIQ_MAP_RANGE) - 1_000;
+    const below = (await runLevel({ level: low })).env.data.level?.fuelToLevel;
+    expect(below).toMatchObject({ value: null, badge: null });
+  });
+
+  it('poziom równy cenie: paliwo null z powodem (brak pasma między ceną a poziomem)', async () => {
+    const { env } = await runLevel({ level: CLOSE });
+    expect(env.data.level?.fuelToLevel).toMatchObject({ value: null, badge: null });
+    expect(env.data.level?.fuelToLevel.why).toBeTruthy();
+    expect(env.data.level?.fromPrice.usd).toMatchObject({ value: 0, badge: 'LIVE' });
+  });
+
+  it('migawka skanera sprzed 5 min: paliwo do poziomu LIVE z wiekiem w note; mapa opóźniona — „opóźnione”', async () => {
+    const old = { ...LIQ, asOf: NOW - 5 * MIN, ctxAt: NOW - 5 * MIN };
+    const a = await runLevel({ level: CLOSE + 1_000 }, routes({ liq: { json: old } }));
+    expect(a.env.data.level?.fuelToLevel).toMatchObject({ badge: 'LIVE' });
+    expect(a.env.data.level?.fuelToLevel.note).toContain('5 min');
+    const delayed = { ...LIQ, ageMin: { ...LIQ.ageMin, ntlP50: 20 } };
+    const d = await runLevel({ level: CLOSE + 1_000 }, routes({ liq: { json: delayed } }));
+    expect(d.env.data.level?.fuelToLevel.note).toBe('opóźnione');
+  });
+
+  it('brak mapy likwidacji (404): paliwo do poziomu null z kodem HTTP; odległości zostają', async () => {
+    const { env } = await runLevel({ level: CLOSE + 1_000 }, routes({ liq: { status: 404, json: {} } }));
+    expect(env.data.level?.fuelToLevel).toMatchObject({ value: null, why: expect.stringContaining('HTTP 404') });
+    expect(env.data.level?.vwapDistance.value).not.toBeNull();
+  });
+
+  it('Hyperliquid nie odpowiada: wszystkie liczby poziomu null z powodem, bez isError', async () => {
+    const { res, env } = await runLevel({ level: 101_500 }, routes({ hl: new Error('ECONNRESET') }));
+    expect(res.isError).toBeFalsy();
+    const l = env.data.level;
+    expect(l?.price).toBe(101_500);
+    for (const n of [l?.fromPrice.usd, l?.fromPrice.pct, l?.vwapDistance, l?.fuelToLevel]) {
+      expect(n?.value).toBeNull();
+      expect(n?.why).toContain('Hyperliquid');
+    }
+  });
+
+  it('walidacja argumentu: zero, liczba ujemna i tekst odrzucone przed pobraniem danych', async () => {
+    for (const level of [0, -100, 'abc']) {
+      const { res, env, calls } = await runLevel({ level });
+      expect(res.isError, String(level)).toBe(true);
+      expect(JSON.stringify(res.content), String(level)).toContain('Input validation error');
+      expect(env).toBeUndefined();
+      expect(calls, String(level)).toEqual([]);
+      await close?.();
+      close = null;
+    }
   });
 });
