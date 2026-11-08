@@ -1,6 +1,6 @@
 {
   "name": "hyperquant-mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "MCP server for HyperQuant: read-only BTC market context from public data (blog day map, Hyperliquid candles, scanner files). Market description, not investment advice.",
   "license": "MIT",
   "homepage": "https://hyperquant.tech/",

@@ -6,14 +6,60 @@ Market description, not investment advice. No keys, no accounts, no trading, no 
 
 ## Status
 
-- Version 0.1.0, stdio transport only.
-- The package is not published on npm yet. The `npx -y hyperquant-mcp@0.1.0` commands below (always with the version pinned) work only after the first npm release, and the package name can still change before then. Until then, run the server from the repository (next section). Claude Desktop needs neither: it installs the `.mcpb` file (see Claude Desktop below).
+- Version 0.1.1, stdio transport only.
+- The package is published on npm as `hyperquant-mcp`: install and run it with `npx -y hyperquant-mcp@0.1.1` (next section). Claude Desktop can also install the `.mcpb` file (see Claude Desktop below), and the server can be built from source (see From source).
 - A Streamable HTTP mode (a hosted endpoint you connect to by URL) is planned, not built.
 - `twaps.activeCount` (the number of TWAPs running now) needs a live stream, so for now it is always `null` with a reason.
 
-## Run from the repository
+## Install
 
 Requires Node.js 20 or later.
+
+```sh
+npx -y hyperquant-mcp@0.1.1
+```
+
+The command downloads the package, starts the server on stdin/stdout and waits for an MCP client. Keep the version in the command: `npx` then runs exactly that release, not whatever is newest on npm. In a client, use the command `npx` with the arguments `-y hyperquant-mcp@0.1.1`.
+
+## Configure a client
+
+### OpenBot
+
+In OpenBot, open Marketplace → Apps, add your own app and choose the STDIO transport:
+
+- command: `npx`
+- arguments: `-y hyperquant-mcp@0.1.1`
+- optional environment: `HQ_LANG=en` (or `pl`), `HQ_TZ=UTC`
+
+From source (see below), use the command `node` and the argument `/path/to/HyperQuant/mcp/dist/hyperquant-mcp.mjs`.
+
+### Claude Desktop
+
+The simplest way is the `.mcpb` file, with no terminal: download <https://hyperquant.tech/agents/hyperquant.mcpb> and double-click it, and Claude Desktop shows the install dialog. The server and its dependencies are inside the file, and Node.js ships with Claude Desktop. The site shows the file's SHA-256 next to the download button (the same checksum is in `hyperquant.mcpb.sha256` next to the file), so you can compare it with the downloaded file.
+
+To configure it by hand instead, add the server to `claude_desktop_config.json` (Settings → Developer → Edit Config) and restart Claude Desktop:
+
+```json
+{
+  "mcpServers": {
+    "hyperquant": {
+      "command": "npx",
+      "args": ["-y", "hyperquant-mcp@0.1.1"],
+      "env": { "HQ_LANG": "en", "HQ_TZ": "UTC" }
+    }
+  }
+}
+```
+
+From source: `"command": "node"`, `"args": ["/path/to/HyperQuant/mcp/dist/hyperquant-mcp.mjs"]`.
+
+### Any other MCP client
+
+Any client that launches stdio servers works: command `npx`, arguments `-y hyperquant-mcp@0.1.1` (or `node` with the bundle path, see From source). The server reads requests on stdin and writes only MCP messages on stdout; its logs go to stderr.
+
+## From source
+
+To run the server without the npm package, build it from the repository. Requires Node.js 20 or later.
 
 ```sh
 git clone https://github.com/rdemb/HyperQuant.git
@@ -23,51 +69,7 @@ npm run mcp:build
 node mcp/dist/hyperquant-mcp.mjs
 ```
 
-The last command starts the server on stdin/stdout and waits for an MCP client. In a client, use the command `node` with the absolute path of `mcp/dist/hyperquant-mcp.mjs` as its argument.
-
-## Install (after the npm release)
-
-```sh
-npx -y hyperquant-mcp@0.1.0
-```
-
-Keep the version in the command: `npx` then runs exactly that release, not whatever is newest on npm.
-
-## Configure a client
-
-### OpenBot
-
-In OpenBot, open Marketplace → Apps, add your own app and choose the STDIO transport:
-
-- command: `npx`
-- arguments: `-y hyperquant-mcp@0.1.0`
-- optional environment: `HQ_LANG=en` (or `pl`), `HQ_TZ=UTC`
-
-From a repository checkout, use the command `node` and the argument `/path/to/HyperQuant/mcp/dist/hyperquant-mcp.mjs`.
-
-### Claude Desktop
-
-The simplest way is the `.mcpb` file, with no npm and no checkout: download <https://hyperquant.tech/agents/hyperquant.mcpb> and double-click it, and Claude Desktop shows the install dialog. The server and its dependencies are inside the file, and Node.js ships with Claude Desktop. The site shows the file's SHA-256 next to the download button (the same checksum is in `hyperquant.mcpb.sha256` next to the file), so you can compare it with the downloaded file.
-
-To configure it by hand instead (after the npm release), add the server to `claude_desktop_config.json` (Settings → Developer → Edit Config) and restart Claude Desktop:
-
-```json
-{
-  "mcpServers": {
-    "hyperquant": {
-      "command": "npx",
-      "args": ["-y", "hyperquant-mcp@0.1.0"],
-      "env": { "HQ_LANG": "en", "HQ_TZ": "UTC" }
-    }
-  }
-}
-```
-
-From a repository checkout: `"command": "node"`, `"args": ["/path/to/HyperQuant/mcp/dist/hyperquant-mcp.mjs"]`.
-
-### Any other MCP client
-
-Any client that launches stdio servers works: command `npx`, arguments `-y hyperquant-mcp@0.1.0` (or `node` with the bundle path). The server reads requests on stdin and writes only MCP messages on stdout; its logs go to stderr.
+The last command starts the server on stdin/stdout and waits for an MCP client. In a client, use the command `node` with the absolute path of `mcp/dist/hyperquant-mcp.mjs` as its argument. On Windows, write that path in JSON with forward slashes (`C:/path/to/HyperQuant/…`) or doubled backslashes.
 
 ## Tools
 
@@ -99,7 +101,7 @@ All tools are read-only. Two take an optional argument: `session_review` (`sessi
 - **Privacy:** aggregates and day pseudonyms only, never wallet addresses or transaction hashes. Every response passes the site's content guards (privacy and trade-call patterns) and an address pattern; a hit returns `isError` with the reason and no content. A blog level whose label trips the guards or falls outside the strict format keeps its price: in `day_map` and `market_brief` it has `label: null` with the reason in `labelWhy`, and in `session_review` the label reads `[label withheld]` (a post title that trips the guards or the format reads `[title withheld]`, and the reasons are in `notes`). A hit anywhere else blocks the whole response.
 - **Text from the data is quoted, never followed:** labels, titles and pseudonyms come from public files, and the server instructions tell the model they are data, not instructions. Before they reach a response they must fit a strict format, or they are withheld with the reason "format not allowed": a level label up to 40 characters of letters, digits, spaces and `. , % ( ) / + ' ’ -`; a post title up to 120 characters of the same plus `:` and `—`; at most 20 levels per map (the rest are cut, with a note); a whale pseudonym `W` followed by 6 lowercase hex characters (a position or order with any other id is skipped, with a note giving the count).
 - **BTC only:** the scanner records BTC, so the tools take no market argument.
-- **Network:** a 10 s timeout per request; a size limit on every response (scanner files and `maps.json` 4 MB, one Hyperliquid candle request 2 MB, a tape history file 16 MB after decompression, 32 MB in total per `twaps` call); a larger response is a missing source with the reason, never a partial read. An in-process cache (scanner files and candles 60 s, blog maps 5 min, volatility model 15 min, a failed request 30 s, HTTP 429 60 s); the header `User-Agent: hyperquant-mcp/0.1.0` and nothing about the user.
+- **Network:** a 10 s timeout per request; a size limit on every response (scanner files and `maps.json` 4 MB, one Hyperliquid candle request 2 MB, a tape history file 16 MB after decompression, 32 MB in total per `twaps` call); a larger response is a missing source with the reason, never a partial read. An in-process cache (scanner files and candles 60 s, blog maps 5 min, volatility model 15 min, a failed request 30 s, HTTP 429 60 s); the header `User-Agent: hyperquant-mcp/0.1.1` and nothing about the user.
 
 ## Environment variables
 
@@ -136,7 +138,7 @@ MIT, see [LICENSE](LICENSE).
 
 Serwer MCP HyperQuant: kontekst rynku BTC z danych publicznych (mapy z bloga HyperQuant, świece Hyperliquid, pliki skanera), liczony tymi samymi funkcjami co strona hyperquant.tech. Tylko odczyt, bez kluczy i kont; opis rynku, nie porada inwestycyjna.
 
-- Stan: paczki nie ma jeszcze w npm. Dziś uruchomisz ją z repozytorium: `npm ci --legacy-peer-deps`, `npm run mcp:build`, potem `node mcp/dist/hyperquant-mcp.mjs`. Claude Desktop: plik `.mcpb` ze strony (dwuklik). Po publikacji polecenie z przypiętą wersją: `npx -y hyperquant-mcp@0.1.0`. Tryb HTTP jest w planach.
+- Stan: paczka jest w npm. Instalacja i uruchomienie: `npx -y hyperquant-mcp@0.1.1` (wersja przypięta, Node.js 20 albo nowszy). Claude Desktop: plik `.mcpb` ze strony (dwuklik). Z kodu źródłowego: `npm ci --legacy-peer-deps`, `npm run mcp:build`, potem `node mcp/dist/hyperquant-mcp.mjs`. Tryb HTTP jest w planach.
 - Teksty po polsku: `HQ_LANG=pl`. Strefa czasu godzin w tekstach: `HQ_TZ` (domyślnie UTC).
 - Każda liczba ma oznaczenie LIVE, MODEL albo SIM, czas i źródło; brak danych to `null` z powodem. Te same funkcje i metoda co strona, ale cena to ostatnie zamknięcie świecy 1m, więc liczby mogą się nieco różnić od strony w tej samej chwili.
 - Narzędzia, konfiguracja klientów i zasady danych: jak w części angielskiej wyżej.

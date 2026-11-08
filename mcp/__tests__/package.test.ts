@@ -56,9 +56,25 @@ describe('paczka hyperquant-mcp', () => {
     for (const s of ['`level`', 'fromPrice', 'vwapDistance', 'fuelToLevel']) expect(row, s).toContain(s);
   });
 
-  it('README uczciwie: paczki nie ma jeszcze w npm, tryb HTTP w planach, RVOL jako MODEL, share60 null przy przerwie w nagraniu', () => {
+  it('README: paczka w npm, instalacja npx z wersją przypiętą na początku, potem budowa z kodu źródłowego', () => {
+    const status = README.slice(README.indexOf('## Status'), README.indexOf('\n## ', README.indexOf('## Status') + 1));
+    expect(status).toContain(`Version ${VERSION}`);
+    expect(status).toMatch(/published on npm/);
+    expect(status).toContain(`npx -y hyperquant-mcp@${VERSION}`);
+    const install = README.indexOf('## Install');
+    const fromSource = README.indexOf('## From source');
+    expect(install).toBeGreaterThan(-1);
+    expect(fromSource).toBeGreaterThan(install);
+    expect(README.slice(install, fromSource)).toContain(`npx -y hyperquant-mcp@${VERSION}`);
+    expect(README.slice(fromSource)).toContain('npm run mcp:build');
+    // Bez zdań sprzed publikacji (po angielsku i po polsku)
+    expect(README).not.toMatch(/not (?:yet )?(?:published|on npm)|after the npm release|first npm release/i);
+    expect(README).not.toMatch(/nie ma jeszcze w npm|po publikacji/i);
+    expect(README.slice(README.indexOf('## Polski'))).toContain(`npx -y hyperquant-mcp@${VERSION}`);
+  });
+
+  it('README uczciwie: tryb HTTP w planach, RVOL jako MODEL, share60 null przy przerwie w nagraniu', () => {
     expect(README).toMatch(/## Status/);
-    expect(README).toMatch(/not (?:yet )?(?:published|on npm)/i);
     expect(README).toMatch(/HTTP[^\n]*planned/i);
     expect(README).toMatch(/RVOL[^\n]*MODEL/);
     expect(README).toMatch(/share60[^\n]*null/);

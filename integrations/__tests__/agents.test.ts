@@ -45,11 +45,14 @@ describe('szablony agentów: AGENT_TEMPLATES i pliki profili', () => {
     for (const { t, md } of files) expect(sorted(new Set(toolLikeNames(md, TOOL_NAMES))), t.id).toEqual(sorted(t.tools));
   });
 
-  it('plik wymaga serwera MCP hyperquant-mcp i skilla hyperquant', () => {
+  it('plik wymaga serwera MCP hyperquant-mcp i skilla hyperquant; serwer z npm z wersją przypiętą (paczka opublikowana)', () => {
+    const version = (JSON.parse(readRepo('mcp/package.json')) as { version: string }).version;
     for (const { t, md } of files) {
       const req = section(md, 'Requires') ?? '';
       expect(req, t.id).toContain('`hyperquant-mcp`');
       expect(req, t.id).toContain('`hyperquant`');
+      expect(req, t.id).toContain(`\`npx -y hyperquant-mcp@${version}\``);
+      expect(md, t.id).not.toMatch(/not (?:yet )?published|checkout of the repository/i);
     }
   });
 

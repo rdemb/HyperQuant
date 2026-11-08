@@ -8,8 +8,21 @@ import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { type MiniElement, miniDom } from '../../../ui/__tests__/miniDom';
 import { DASH } from '../../../ui';
-import { ClaudeCard, EditorsCard, OpenBotCard, ServerCard } from '../AgentsView';
-import { MCPB_SHA256_URL, type McpStatus, NPX_COMMAND, cursorLink, parseSha256, serverConfig, vscodeLink } from '../installLinks';
+import { ClaudeCard, EditorsCard, OpenBotCard, OtherClientsCard, ServerCard, StatusBox } from '../AgentsView';
+import {
+  BUNDLE_PATH,
+  MCPB_SHA256_URL,
+  type McpStatus,
+  NPM_SPEC,
+  NPX_COMMAND,
+  REPO_DIR,
+  REPO_STEPS,
+  claudeDesktopJson,
+  cursorLink,
+  parseSha256,
+  serverConfig,
+  vscodeLink,
+} from '../installLinks';
 
 let dom: ReturnType<typeof miniDom>;
 let writeText: ReturnType<typeof vi.fn>;
@@ -151,6 +164,76 @@ describe('Cursor i VS Code', () => {
     const hrefs = find((e) => e.tagName === 'a').map((a) => a.getAttribute('href'));
     expect(hrefs).toEqual([cursorLink('npm'), vscodeLink('npm')]);
     expect(find((e) => e.getAttribute('aria-disabled') === 'true')).toEqual([]);
+    act(() => root.unmount());
+  });
+});
+
+describe('stan dziś: paczka w npm (karty bez podanego stanu)', () => {
+  const details = () => find((e) => e.tagName === 'details');
+  const summary = (d: MiniElement) => find((e) => e.tagName === 'summary', d)[0]?.textContent;
+
+  it('ramka stanu: Dziś paczka w npm, Wkrótce wpis w Marketplace OpenBota, W planach tryb HTTP', () => {
+    const root = mount(<StatusBox />);
+    expect(find((e) => e.tagName === 'dt').map((e) => e.textContent)).toEqual(['Dziś', 'Wkrótce', 'W planach']);
+    const dd = find((e) => e.tagName === 'dd').map((e) => e.textContent);
+    expect(dd[0]).toContain('npm');
+    expect(dd[0]).toContain(NPM_SPEC);
+    expect(dd[0]).not.toMatch(/repozytori/);
+    expect(dd[1]).toMatch(/Marketplace OpenBota/);
+    expect(dd[1]).not.toMatch(/npm/);
+    expect(dd[2]).toMatch(/HTTP/);
+    act(() => root.unmount());
+  });
+
+  it('Cursor i VS Code: aktywne linki, bez aria-disabled i bez podpisu „po publikacji”; podpis podaje polecenie npx', () => {
+    const root = mount(<EditorsCard />);
+    expect(find((e) => e.tagName === 'a').map((a) => a.getAttribute('href'))).toEqual([cursorLink('npm'), vscodeLink('npm')]);
+    expect(find((e) => e.tagName === 'button')).toEqual([]);
+    expect(find((e) => e.hasAttribute('aria-disabled'))).toEqual([]);
+    expect(dom.container.textContent).not.toContain('po publikacji');
+    expect(dom.container.textContent).toContain(NPX_COMMAND);
+    act(() => root.unmount());
+  });
+
+  it('serwer: główna droga npx z wersją przypiętą i przyciskiem kopiowania; budowa z kodu źródłowego zwinięta', async () => {
+    const root = mount(<ServerCard />);
+    expect(find((e) => e.tagName === 'pre')[0]?.textContent).toBe(NPX_COMMAND);
+    const [copy] = find((e) => e.tagName === 'button' && e.textContent.includes('Kopiuj polecenie'));
+    await click(copy);
+    expect(writeText).toHaveBeenCalledWith(NPX_COMMAND);
+    const [d] = details();
+    expect(d.hasAttribute('open')).toBe(false);
+    expect(summary(d)).toBe('Z kodu źródłowego');
+    for (const s of REPO_STEPS) expect(d.textContent, s).toContain(s);
+    expect(d.textContent).toContain(BUNDLE_PATH);
+    act(() => root.unmount());
+  });
+
+  it('OpenBot: npx i argumenty z wersją; z kodu źródłowego jedną mniejszą linią: polecenie node i ścieżka bundla', () => {
+    const root = mount(<OpenBotCard />);
+    const value = (f: string) => find((e) => e.hasAttribute('data-value'), find((e) => e.getAttribute('data-field') === f)[0])[0].textContent;
+    expect(value('command')).toBe('npx');
+    expect(value('args')).toBe(`-y ${NPM_SPEC}`);
+    const [src] = find((e) => e.hasAttribute('data-from-source'));
+    expect(src.textContent).toContain('node');
+    expect(src.textContent).toContain(`${REPO_DIR}/${BUNDLE_PATH}`);
+    expect(src.getAttribute('class')).toContain('text-xs');
+    act(() => root.unmount());
+  });
+
+  it('inne klienty: JSON z npx; JSON z kodu źródłowego i zdanie o ścieżkach Windows w zwiniętym „Z kodu źródłowego”', async () => {
+    const root = mount(<OtherClientsCard />);
+    const pres = find((e) => e.tagName === 'pre');
+    expect(pres[0].textContent).toBe(claudeDesktopJson('npm'));
+    const [d] = details();
+    expect(d.hasAttribute('open')).toBe(false);
+    expect(summary(d)).toBe('Z kodu źródłowego');
+    expect(d.textContent).toContain(claudeDesktopJson('repo'));
+    expect(d.textContent).toContain('C:/');
+    // Główny przycisk kopiuje JSON z npx
+    const [copy] = find((e) => e.tagName === 'button' && e.textContent.includes('Kopiuj JSON'));
+    await click(copy);
+    expect(writeText).toHaveBeenCalledWith(claudeDesktopJson('npm'));
     act(() => root.unmount());
   });
 });
