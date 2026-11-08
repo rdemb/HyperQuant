@@ -47,13 +47,18 @@ export function openbotSetupMessage(t?: AgentTemplate): string {
   const server = serverConfig('npm');
   const args = `[${server.args.map(q).join(', ')}]`;
   const tools = TOOL_META.length;
+  // Narzędzia, po których agent rozpozna serwer HyperQuant pod inną nazwą (pierwsze trzy z listy strony)
+  const known = TOOL_META.slice(0, 3).map((m) => m.name).join(', ');
+  const first = TOOL_META[0].name;
   const skillMd = openbotUrl(OPENBOT_PATHS.skill);
   const icon = openbotUrl(OPENBOT_PATHS.icon);
 
+  // OpenBot nie pokazuje argumentów serwerów (list_mcp_servers podaje polecenie i liczbę argumentów), więc istniejący
+  // serwer rozpoznaje się po nazwie albo po narzędziach; save_mcp_server z zajętą nazwą zmieniłby istniejący serwer
   const steps = [
     tr(
-      `Serwer MCP. Wywołaj ${OB.listServers}. Jeśli żaden serwer nie uruchamia ${NPM_PACKAGE}, wywołaj ${OB.saveServer} z name ${q(SERVER_NAME)}, transport ${q('stdio')}, command ${q(server.command)} i args ${args}. Potem wywołaj ${OB.testServer} z name ${q(SERVER_NAME)} i sprawdź, czy pokazuje ${tools} narzędzi.`,
-      `MCP server. Call ${OB.listServers}. If no server runs ${NPM_PACKAGE}, call ${OB.saveServer} with name ${q(SERVER_NAME)}, transport ${q('stdio')}, command ${q(server.command)} and args ${args}. Then call ${OB.testServer} with name ${q(SERVER_NAME)} and check that it lists ${tools} tools.`
+      `Serwer MCP. Wywołaj ${OB.listServers}. Jeśli jest serwer o nazwie ${q(SERVER_NAME)} albo masz już narzędzia ${NPM_PACKAGE} (${known}), nie dodawaj ani nie zmieniaj serwera. W przeciwnym razie wywołaj ${OB.saveServer} z name ${q(SERVER_NAME)}, transport ${q('stdio')}, command ${q(server.command)} i args ${args}. Potem wywołaj ${OB.testServer} z nazwą serwera HyperQuant i sprawdź, czy pokazuje ${tools} narzędzi, w tym ${first}.`,
+      `MCP server. Call ${OB.listServers}. If a server named ${q(SERVER_NAME)} is listed, or you already have the ${NPM_PACKAGE} tools (${known}), do not add or change a server. Otherwise call ${OB.saveServer} with name ${q(SERVER_NAME)}, transport ${q('stdio')}, command ${q(server.command)} and args ${args}. Then call ${OB.testServer} with the name of the HyperQuant server and check that it lists ${tools} tools, ${first} among them.`
     ),
     tr(
       `Skill. Wywołaj ${OB.listSkills}. Jeśli nie ma skilla o nazwie ${q(SKILL_NAME)}, pobierz bez zmian te dwa pliki do nowego folderu ${SKILL_DIR} w swoim katalogu roboczym (workspace): ${skillMd} jako ${OPENBOT_PATHS.skill} i ${icon} jako ${OPENBOT_PATHS.icon}. Potem wywołaj ${OB.createSkill} z sourcePath ustawionym na ten folder ${SKILL_DIR}.`,

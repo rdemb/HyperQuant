@@ -4,6 +4,11 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Agenci AI: krok serwera w wiadomości dla OpenBota (2026-11-08)
+
+#### Naprawione
+- **Wiadomość „Dodaj do OpenBota” nie zmienia istniejącego serwera** (`src/views/agents/openbotSetup.ts`). OpenBot nie pokazuje argumentów serwerów, więc warunek „żaden serwer nie uruchamia hyperquant-mcp” był niesprawdzalny, a agent czytający go dosłownie mógł wywołać `save_mcp_server` z zajętą nazwą „hyperquant” i nadpisać działający serwer. Teraz serwer jest rozpoznawany po nazwie „hyperquant” albo po narzędziach (`market_brief`, `session_context`, `day_map`), a test sprawdza go w obu przypadkach.
+
 ### Paczka MCP 0.1.2: publikacja do npm bez tokenu (2026-11-08)
 
 #### Zmienione
