@@ -44,7 +44,7 @@ Never call a cluster or a liquidation price a target or a magnet. **Style:** sho
 
 ## Requires
 
-- MCP server `hyperquant-mcp` (stdio, read-only). Setup for OpenBot, Claude Desktop and other clients: <https://github.com/rdemb/HyperQuant/blob/main/mcp/README.md>. The server installs with `npx -y hyperquant-mcp@0.1.1` (Node.js 20 or later).
+- MCP server `hyperquant-mcp` (stdio, read-only). Setup for OpenBot, Claude Desktop and other clients: <https://github.com/rdemb/HyperQuant/blob/main/mcp/README.md>. The server installs with `npx -y hyperquant-mcp@0.1.2` (Node.js 20 or later).
 - Skill `hyperquant`: <https://github.com/rdemb/HyperQuant/blob/main/integrations/skills/hyperquant/SKILL.md>. Add it to the agent's skills.
 
 ## Tools
