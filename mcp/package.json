@@ -14,8 +14,9 @@
     "hyperquant-mcp": "dist/hyperquant-mcp.mjs"
   },
   "files": [
-    "dist",
-    "README.md"
+    "dist/hyperquant-mcp.mjs",
+    "README.md",
+    "LICENSE"
   ],
   "engines": {
     "node": ">=20"

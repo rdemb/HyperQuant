@@ -4,7 +4,16 @@ import type { InputSeries, InputStore } from '../../../charts/pro/chart/layoutIn
 import { dayVwapOf, vwapNum } from '../../../charts/pro/chart/layoutNumbers';
 import type { VBar } from '../../../utils/auction';
 import { ALL, LIQ_MAP, MIN, NOW, NY, PUB, READY, at, bars, inputs } from '../../../utils/__tests__/fixtures/fourNumbers';
+import * as four from '../../../utils/fourNumbers';
 import { fourNumbers, fuelNum, readFourInputs, vwapFour } from '../fourInputs';
+
+describe('jedna implementacja Czwórki', () => {
+  it('fuelNum, vwapFour i fourNumbers z utils/fourNumbers (też serwer MCP), tu re-eksport', () => {
+    expect(fuelNum).toBe(four.fuelNum);
+    expect(vwapFour).toBe(four.vwapFour);
+    expect(fourNumbers).toBe(four.fourNumbers);
+  });
+});
 
 describe('fuelNum (2): paliwo 1% pod i nad ceną z mapy likwidacji skanera', () => {
   it('LIVE z mapą świeżą; po 2 min wiek migawki zamiast LIVE; opóźniona mapa z uwagą', () => {

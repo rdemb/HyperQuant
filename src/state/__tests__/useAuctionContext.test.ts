@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { completeHourly, computeAuctionContext, hourlyStale, mergeMinute, minuteFrom } from '../useAuctionContext';
+import { prevSessionProfile } from '../../utils/sessionFacts';
+import { isAbsent } from '../../utils/sessionText';
 import type { VBar } from '../../utils/auction';
 
 const MIN = 60_000;
@@ -130,5 +132,40 @@ describe('computeAuctionContext — sesja NY i sesja azjatycka', () => {
     expect(minuteFrom(TODAY + LON + 3 * H)).toBe(TODAY - D + LON);
     expect(minuteFrom(TODAY + NY + H)).toBe(TODAY - D + NY);
     expect(minuteFrom(TODAY + 2 * H)).toBe(TODAY - 2 * D + NY); // w Azji: NY sprzed zamkniętej NY
+  });
+});
+
+describe('prevSessionProfile: profil poprzedniej sesji (Kontekst aukcji Przed sesją i serwer MCP)', () => {
+  const lonNow = TODAY + LON + 3 * H + 30 * MIN;
+  const asiaNow = TODAY + 2 * H;
+  // Wczoraj Londyn płasko po 100 200, NY wczoraj po 100 400, NY przedwczoraj po 100 000
+  const minute = [
+    ...flat(TODAY - 2 * D, 1440, MIN, 100_000),
+    ...flat(TODAY - D, 420, MIN, 100_000),
+    ...flat(TODAY - D + LON, 390, MIN, 100_200),
+    ...flat(TODAY - D + NY, 630, MIN, 100_400),
+    ...flat(TODAY, 420, MIN, 100_100),
+    ...flat(TODAY + LON, 210, MIN, 100_300),
+  ];
+
+  it('ten sam wynik co poziomy „poprz. sesji” Kontekstu aukcji (Londyn w toku i Azja)', () => {
+    for (const now of [lonNow, asiaNow]) {
+      const bars = minute.filter((b) => b.time < now);
+      const ctx = computeAuctionContext(bars, [], now);
+      const s = ctx.session!;
+      const p = prevSessionProfile(bars, s);
+      if (isAbsent(p)) throw new Error(p.why);
+      expect(p).toEqual(ctx.prev);
+    }
+    const p = prevSessionProfile(minute, computeAuctionContext(minute, [], lonNow).session!);
+    expect(p).toMatchObject({ high: 100_205, low: 100_195 });
+  });
+
+  it('mniej niż 95% minut poprzedniej sesji — powód z nazwą i datą sesji; świece bez wolumenu — powód', () => {
+    const s = computeAuctionContext(minute, [], lonNow).session!;
+    const holes = minute.filter((b, i) => b.time < TODAY - D + LON || b.time >= TODAY - D + NY || i % 10 !== 0);
+    expect(prevSessionProfile(holes, s)).toEqual({ why: expect.stringContaining('nie obejmują poprzedniej sesji Londyn') });
+    const silent = minute.map((b) => ({ ...b, volume: 0 }));
+    expect(prevSessionProfile(silent, s)).toEqual({ why: expect.stringContaining('wolumen') });
   });
 });

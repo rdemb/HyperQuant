@@ -9,7 +9,7 @@ import { fmtPx } from './layout';
 import type { StationId } from './stations';
 import { profile, profileStep, toVBars } from '../../../utils/auction';
 import { vaMigration } from '../../../utils/dayType';
-import { dayVwapOf, vwapSigma } from '../../../utils/dayVwap';
+import { dayVwapOf, vwapNum, vwapSigma } from '../../../utils/dayVwap';
 import type { MapKind } from '../../../utils/mapSettlement';
 import { rvolOf } from '../../../utils/rvolOf';
 import { type TradeSession, rangeBudget } from '../../../utils/sessionDay';
@@ -61,6 +61,8 @@ export { type Absent, type Expected, type Got, isAbsent, profileStep, toVBars };
 export { type SessionNow, dayVwapOf, rvolOf, sessionNowOf };
 // Udział TWAP i saldo wielorybów bez modułów wykresu (utils/twapShare, utils/whaleLayer; też serwer MCP) — dawne miejsce eksportu
 export { twapShareOf, whaleBalanceOf };
+// Liczba VWAP Kokpitu i Czwórki bez modułów wykresu (utils/dayVwap; też serwer MCP) — dawne miejsce eksportu
+export { vwapNum };
 
 /** Sesja do rozliczenia w nagłówku (w toku albo ostatnia zamknięta): fakty ze świec 1m, te same co na karcie Rozliczenia. */
 export type ReviewFacts = SessionFacts & { inProgress: boolean };
@@ -144,26 +146,6 @@ const utcDm = (t: number) => {
 const sessionName = (s: TradeSession) => TRADE_SESSION_NAME[s.id];
 
 // ───────────────────────── liczby ─────────────────────────
-
-/** Odległość ceny od VWAP doby UTC w σ (Kokpit; ta sama liczba w Czwórce Przed sesją). */
-export function vwapNum(x: LayoutInputs): LayoutNumber {
-  const label = 'VWAP';
-  const v = val(x.dayVwap);
-  const p = val(x.price);
-  if (!v || p === null) return dash(label, 'LIVE', whyOf(x.dayVwap, x.price));
-  const z = vwapSigma(p, v.vwap, v.sd);
-  if (z === null) return dash(label, 'LIVE', tr('Odchylenie od VWAP jeszcze bez znaczenia: za mało świec od 00:00 UTC', 'The VWAP deviation is not meaningful yet: too few candles since 00:00 UTC'));
-  const sz = fmtSigned(z, 1, 'σ');
-  return {
-    label,
-    value: sz,
-    badge: 'LIVE',
-    hint: tr(
-      `Cena ${fmtPx(p)} wobec VWAP doby UTC ${fmtPx(v.vwap)} (σ ${amt(v.sd)}): ${sz}. VWAP ze świec 1m od 00:00 UTC, jak linia VWAP na wykresie.`,
-      `Price ${fmtPx(p)} against the UTC-day VWAP ${fmtPx(v.vwap)} (σ ${amt(v.sd)}): ${sz}. VWAP from 1m candles since 00:00 UTC, like the VWAP line on the chart.`
-    ),
-  };
-}
 
 /**
  * Budżet zakresu sesji. HAR to metoda domyślna (BTC z modelem); liczba z Parkinsona (model nie wczytał się, inny rynek)

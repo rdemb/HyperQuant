@@ -8,7 +8,7 @@
 import { tr } from '../i18n';
 import { fmtDayTime, fmtDm, fmtHm } from '../charts/pro/core/time';
 import type { Candle } from '../charts/pro/hl/parse';
-import { type VBar, profile, profileStep, sessionVwap, toVBars } from './auction';
+import { type VBar, extremeTouches, profile, profileStep, sessionVwap, toVBars } from './auction';
 import { type DayType, classifyDay } from './dayType';
 import { type TradeSession, currentTradeSession, expectedRange, lastClosedSessions, nextTradeSession, previousSameSession } from './sessionDay';
 import { TRADE_SESSION_NAME } from './sessionNames';
@@ -18,6 +18,8 @@ import type { VolModel } from './volatility';
 const MIN = 60_000;
 /** Fakty tylko przy ≥ 95% minut okresu w świecach 1m. */
 const COVERAGE = 0.95;
+/** Okno słabości ekstremum poprzedniej sesji (dwa różne okna z ekstremum — szczyt albo dno słabe). */
+const POOR_WINDOW_MS = 30 * MIN;
 
 export interface SessionFacts {
   s: TradeSession;
@@ -111,6 +113,35 @@ export function dayTypeOf(f: SessionFacts): Got<Exclude<DayType, 'unknown'>> {
   if (!f.ibDone) return { why: tr(`IB w budowie do ${fmtHm(f.s.ibEnd)}`, `IB forming until ${fmtHm(f.s.ibEnd)}`) };
   const t = classifyDay(f);
   return t === 'unknown' ? { why: tr('zakres IB zerowy albo brak liczb', 'zero IB range or missing numbers') } : t;
+}
+
+/** Poprzednia sesja tego samego typu: profil wolumenu (POC i value area 70%, koszyki `PROFILE_STEP`), ekstrema i ich słabość. */
+export interface PrevSessionProfile {
+  poc: number;
+  vah: number;
+  val: number;
+  high: number;
+  low: number;
+  poorHigh: boolean;
+  poorLow: boolean;
+}
+
+/**
+ * Profil poprzedniej sesji tego samego typu co `s` ze świec 1m (rosnąco) — poziomy „poprz. sesji” Kontekstu aukcji Przed
+ * sesją i serwera MCP: tylko przy ≥ 95% minut tamtej sesji (inaczej profil z dziurą), słabość ekstremów w oknach 30 min.
+ * Za mało świec albo świece bez wolumenu — powód.
+ */
+export function prevSessionProfile(bars1m: readonly VBar[], s: TradeSession): Got<PrevSessionProfile> {
+  const p0 = previousSameSession(s);
+  const bars = bars1m.filter((b) => b.time >= p0.start && b.time < p0.end);
+  if (bars.length < COVERAGE * ((p0.end - p0.start) / MIN)) {
+    const pn = `${TRADE_SESSION_NAME[p0.id]} ${fmtDm(p0.start)}`;
+    return { why: tr(`Świece 1m nie obejmują poprzedniej sesji ${pn} (min. 95% minut)`, `The 1m candles do not cover the previous session ${pn} (min. 95% of minutes)`) };
+  }
+  const p = profile(bars);
+  const t = extremeTouches(bars, POOR_WINDOW_MS);
+  if (!p || !t) return { why: tr('Brak wolumenu w świecach poprzedniej sesji', 'No volume in the candles of the previous session') };
+  return { ...p, high: t.high, low: t.low, poorHigh: t.hiTouches >= 2, poorLow: t.loTouches >= 2 };
 }
 
 /** Powód braku migracji VA (ten sam w nagłówku i na karcie); null — obie value area są. */

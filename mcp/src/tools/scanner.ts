@@ -32,19 +32,13 @@ import { WHALES_STALE_MS, type WhaleOrderGroup, type WhalePosition, groupWhaleOr
 import { type Envelope, type Num, type SourceRef, type Unit, envelope, iso, num } from '../envelope';
 import { type Sources, TIMEOUT_MS, TTL } from '../sources';
 import type { ToolDef } from './index';
-import { candleSource, candlesGot, closeNum, fileSource } from './shared';
+import { ageNote, candleSource, candlesGot, closeNum, fileSource } from './shared';
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
 const DAY = 24 * HOUR;
 
 // ───────────────────────── wspólne ─────────────────────────
-
-/** Uwaga o wieku migawki skanera starszej niż 2 min (`scannerAge`, jak plakietka warstwy na wykresie); świeża — brak uwagi. */
-function ageNote(asOf: number, now: number): string | undefined {
-  const age = scannerAge(asOf, now);
-  return age === null ? undefined : tr(`migawka skanera sprzed ${age} (stan z ${iso(asOf)})`, `scanner snapshot from ${age} ago (as of ${iso(asOf)})`);
-}
 
 const NO_NUMBER = tr('brak liczby w pliku skanera', 'no number in the scanner file');
 

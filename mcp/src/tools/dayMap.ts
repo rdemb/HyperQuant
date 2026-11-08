@@ -8,15 +8,18 @@ import { tr } from '../../../src/i18n';
 import { pickMap } from '../../../src/state/useBlogMaps';
 import { type VBar, toVBars } from '../../../src/utils/auction';
 import { type MapKind, mapWindow, minutesCovered, settleRange } from '../../../src/utils/mapSettlement';
-import { type Envelope, type Num, type SourceRef, envelope, iso, num } from '../envelope';
+import { type Envelope, type Num, type SourceRef, envelope, guardedLabel, iso, num } from '../envelope';
 import type { Sources } from '../sources';
 import type { ToolDef } from './index';
+import { BLOG_LEVEL_NOTE } from './shared';
 
 const NAME = 'day_map';
 const MIN = 60_000;
 
 export interface DayMapLevel {
-  label: string;
+  /** Etykieta z wpisu; null — wstrzymana przez strażnika treści (powód w `labelWhy`), cena i dotknięcie zostają. */
+  label: string | null;
+  labelWhy: string | null;
   /** Poziom z tekstu wpisu (nie z modelu). */
   price: Num;
   /** true — dotknięty (low ≤ poziom ≤ high świecy 1m); false — bez dotknięcia do chwili świec przy pełnych świecach; null — nierozliczony. */
@@ -31,8 +34,6 @@ export interface DayMapData {
   /** Procent pełnych minut okna mapy (od wpisu do chwili świec) ze świecą 1m; 100 — rozliczenie pełne. */
   coverage: Num;
 }
-
-const LEVEL_NOTE = tr('poziom z wpisu na blogu (tekst autora, nie model)', 'level from the blog post (author text, not a model)');
 
 const NO_MINUTE = tr('od wpisu nie minęła jeszcze pełna minuta', 'not a full minute since the post yet');
 
@@ -70,7 +71,8 @@ async function run(src: Sources): Promise<Envelope<DayMapData>> {
   const levels = (touch: (i: number) => { touched: boolean | null; touchedAt: number | null }): DayMapLevel[] =>
     m.levels.map((l, i) => {
       const t = touch(i);
-      return { label: l.label, price: num(l.price, 'price', 'LIVE', { note: LEVEL_NOTE }), touched: t.touched, touchedAt: t.touchedAt === null ? null : iso(t.touchedAt) };
+      // Etykieta z radą albo adresem: sama etykieta wstrzymana (label null z powodem), poziom zostaje
+      return { ...guardedLabel(l.label), price: num(l.price, 'price', 'LIVE', { note: BLOG_LEVEL_NOTE }), touched: t.touched, touchedAt: t.touchedAt === null ? null : iso(t.touchedAt) };
     });
   // Adres wpisu z identyfikatora (sprawdzonego wzorcem `isMapId`), nie z pola `url` pliku
   const head = { id: m.id, kind: m.kind, publishedAt: iso(m.publishedAt), postUrl: `${src.cfg.siteBase}/blog/${m.id}/` };
