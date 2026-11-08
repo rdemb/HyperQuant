@@ -653,7 +653,7 @@ describe('twaps', () => {
       expect(n.value).toBeNull();
       expect(n.why).toBeTruthy();
     }
-  });
+  }, 60_000); // dziesiątki MB do spakowania i rozpakowania: przy pełnym obciążeniu CI ponad domyślne 5 s
 
   it('spis odpowiada, pliki nie: udziały null z powodem, bez isError i bez wyjątku', async () => {
     const hang: Route = (req) => new Promise((_, reject) => req.signal?.addEventListener('abort', () => reject(req.signal?.reason), { once: true }));

@@ -231,7 +231,7 @@ describe('Sources.history', () => {
     expect(!over.ok && over.why).toContain('16 MB');
     expect(!over.ok && over.why).toContain('po rozpakowaniu');
     expect((await testSources({ [GZ]: { bytes: gz(15) } }, NOW).src.history('BTC/2026-11-04/14.trades.json.gz', decode)).ok).toBe(true);
-  });
+  }, 60_000); // dziesiątki MB do spakowania i rozpakowania: przy pełnym obciążeniu CI ponad domyślne 5 s
 });
 
 describe('limity rozmiaru odpowiedzi', () => {
