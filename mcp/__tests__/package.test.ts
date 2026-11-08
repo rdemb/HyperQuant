@@ -27,6 +27,13 @@ describe('paczka hyperquant-mcp', () => {
     for (const s of ['npx -y hyperquant-mcp', 'npm run mcp:build', 'node mcp/dist/hyperquant-mcp.mjs', 'HQ_LANG', 'HQ_TZ', 'OpenBot', 'Claude Desktop', 'STDIO']) expect(README, s).toContain(s);
   });
 
+  it('README: argumenty narzędzi (session_review: session, market_brief: level) w zdaniu o argumentach i w tabeli', () => {
+    const args = README.split('\n').find((l) => l.startsWith('All tools are read-only')) ?? '';
+    for (const s of ['`session_review`', '`session`', '`market_brief`', '`level`']) expect(args, s).toContain(s);
+    const row = README.split('\n').find((l) => l.startsWith('| `market_brief`')) ?? '';
+    for (const s of ['`level`', 'fromPrice', 'vwapDistance', 'fuelToLevel']) expect(row, s).toContain(s);
+  });
+
   it('README uczciwie: paczki nie ma jeszcze w npm, tryb HTTP w planach, RVOL jako MODEL, share60 null przy przerwie w nagraniu', () => {
     expect(README).toMatch(/## Status/);
     expect(README).toMatch(/not (?:yet )?(?:published|on npm)/i);

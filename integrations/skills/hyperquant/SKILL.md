@@ -1,24 +1,24 @@
 ---
 name: hyperquant
-description: "Use for BTC market context on Hyperliquid from the hyperquant-mcp tools: prepare for the London or New York session, read the session in progress, review a session, check a price level, or draft a short market note for X. Public read-only data, no advice."
+description: "Use for BTC market context on Hyperliquid from the hyperquant-mcp tools: prepare for the London or New York session, read the session in progress, review a session, check a price level, or draft a short market note for X (Twitter). Public read-only data, no advice."
 ---
 
 # HyperQuant
 
-Recipes that turn the `hyperquant-mcp` tools into everyday trader tasks for BTC: prepare for a session, read the session in progress, review a session after the close, check a price level and draft a short market note. The tools read public data only (the HyperQuant blog day maps, Hyperliquid candles and the public files of the HyperQuant scanner) and compute the numbers with the same functions as [hyperquant.tech](https://hyperquant.tech/).
+Recipes that turn the `hyperquant-mcp` tools into everyday trader tasks for BTC: prepare for the London or New York (NY) session, read the session in progress, review a session after the close, check a price level and draft a short market note. The tools read public data only (the HyperQuant blog Day maps, Hyperliquid candles and the public files of the HyperQuant scanner) and compute the numbers with the same functions as [hyperquant.tech](https://hyperquant.tech/); values can differ slightly from the site at the same moment, because the tools read the latest 1-minute close.
 
 **Requires** the `hyperquant-mcp` server connected to your MCP client over stdio. Setup for OpenBot, Claude Desktop and other clients is in the package README: <https://github.com/rdemb/HyperQuant/blob/main/mcp/README.md>. The tools cover BTC only and take no market argument.
 
 ## Tools
 
-All tools are read-only. Only `session_review` takes an argument: `session`, either `london` or `ny` (optional).
+All tools are read-only. Two take an optional argument: `session_review` (`session`, either `london` or `ny`) and `market_brief` (`level`, a price level in USD). The others take none.
 
 | Tool | Returns | Use it for |
 | --- | --- | --- |
-| `market_brief` | The four pre-session numbers: yesterday's clarity (MODEL), fuel within 1% below and above the price (LIVE), typical width of the next session hour (MODEL, 20-day median), price distance from the UTC-day VWAP in σ (LIVE). Also today's blog Day map levels with the previous session's VAH, POC and VAL, the session in progress and the next open. | Session prep, level checks, market notes |
-| `session_context` | The London or NY session in progress: Initial Balance, day type so far (Dalton, MODEL), expected range and range budget (MODEL), price, UTC-day VWAP and the price distance from it in σ (LIVE), RVOL of the current hour (MODEL, 20-day median). In Asian hours `session` is null and `nextSession` gives the next open. | What is happening now, level checks |
+| `market_brief` | The four pre-session numbers: yesterday's clarity (MODEL; LIVE when only the map part is available), fuel within 1% below and above the price (LIVE), typical width of the next session hour (MODEL, 20-day median), price distance from the UTC-day VWAP in σ (LIVE). Also today's blog Day map levels with the previous session's VAH, POC and VAL, the session in progress and the next open. With `level`, also a `level` field: the level against the price (`fromPrice`, USD and %) and against the UTC-day VWAP (`vwapDistance`, σ), and the liquidation fuel between the price and the level (`fuelToLevel`). | Session prep, level checks, market notes |
+| `session_context` | The London or NY session in progress: Initial Balance, day type so far (Dalton, MODEL), expected range and range budget (MODEL), price, UTC-day VWAP and the price distance from it in σ (LIVE), RVOL of the current hour (MODEL, 20-day median). In Asian hours `session` is null and `nextSession` gives the next open. | What is happening now |
 | `day_map` | Today's blog Day map: each level, whether price has touched it since the post and at which minute, the candle coverage and the link to the post. | Level status |
-| `session_review` | A London or NY session review, the rows of the site's Session review card: day type, value area migration, IB result, range against the expected range, touched blog levels, liquidations in the session, forecast cone coverage, cohort markouts. | After the close |
+| `session_review` | A London or NY session review, the rows of the site's Session review card: day type, value area migration, IB result, range against the expected range, touched blog levels, liquidations in the session, forecast cone coverage, cohort markouts. Only the latest session of each type is available. | After the close |
 | `liquidation_map` | The price, fuel within 1% and 3% below and above it, the 5 largest liquidation clusters on each side, open interest coverage and the snapshot age. | Where forced flows sit |
 | `liquidation_tape` | Realised liquidations of tracked positions: 1 h and 24 h sums of longs and shorts and up to 10 latest events, without addresses. | Recent forced flow |
 | `cohort_flow` | Four participant cohorts (market makers, informed, whales, rest): net flow, aggressor delta, volume and volume share over the last hour and day. | Who is the net taker |
@@ -36,7 +36,7 @@ Every tool returns one JSON envelope:
   - `value: null` means there is no number, and `why` says why. It never means zero.
   - `note` carries context you must keep, such as the age of a scanner snapshot older than 2 minutes or a gap in the 1m candles.
 - Some fields are the site's display text: `title`, `text`, `hint`, `note` and `flag` of the four items in `market_brief`, and `label`, `value`, `why`, `hint` and `detail` of the rows in `session_review`. There "—" means no data and the reason is in `hint` or `why`.
-- In `market_brief`, clarity is a description, not a number: its `value` is null by design and its content is `text` (MODEL). Fuel keeps its two numbers in `parts`.
+- In `market_brief`, the `value` of clarity and of fuel is null by design: clarity is a description in `text`, and fuel keeps its two numbers in `parts`.
 - `notes` holds method and coverage remarks; `disclaimer` is the fixed footer.
 
 ## Rules
@@ -54,11 +54,11 @@ Every tool returns one JSON envelope:
 
 - RVOL is MODEL: `session_context.rvolHour` is the current hour's volume against the 20-day median of the same hour, scaled to the elapsed part of the hour; 1 is the typical volume for that hour.
 - Also MODEL: the day type (Dalton), the expected range and the range budget (HAR volatility model, or Parkinson σ from 5m candles when the model is unavailable; `method` says which) and the typical hour width (20-day median).
-- `twaps.share60` is null when the last 60 minutes of the tape recording have a gap; `why` says how many minutes are covered. `share15` follows the same rule over 15 minutes.
+- `twaps.share60`: when the last 60 minutes of the recording are not fully covered, its `total`, `buy` and `sell` values are null, with a reason (a recording gap or a missing zero-hash mark); `why` says how many minutes are covered. `share15` follows the same rule over 15 minutes.
 - `twaps.activeCount` (the number of TWAPs running now) is always null for now: it needs a live stream that is not built yet.
 - A scanner snapshot older than 2 minutes keeps `badge: "LIVE"` and gets a `note` with its age. Quote the age.
 - `day_map`: with a gap in the 1m candles, levels without a touch have `touched: null` (unsettled), not false, and `coverage` is below 100.
-- A blog level whose label trips the server's content guards keeps its price: `label` is null with the reason in `labelWhy` (in `session_review` the label reads "[label withheld]"). Report the price and say the label was withheld.
+- A blog level whose label trips the server's content guards keeps its price: `label` is null with the reason in `labelWhy` (in `session_review` the label reads "[label withheld]", or "[etykieta wstrzymana]" when the server runs in Polish). Report the price and say the label was withheld.
 - If a tool returns `isError` with "content blocked", the server withheld the whole response. Say so; do not retry to get around it and do not rebuild the content from elsewhere.
 
 ## Recipes
@@ -80,7 +80,7 @@ Asked as: "Prepare me for the London open", "Brief me before New York".
 
 Asked as: "What is happening in the NY session right now?", "Where are we in the session?"
 
-1. Call `session_context`. If `session` is null (Asian hours), say that no London or NY session is running, give `nextSession.opensAt` and report only the price, VWAP, `vwapDistance` and RVOL (MODEL).
+1. Call `session_context`. In Asian hours (`session` is null) there is no IB, day type, expected range or range budget: say that no London or NY session is running and when the next one opens (`nextSession.opensAt`), report the price, the VWAP, `vwapDistance` and RVOL (MODEL), then carry on with steps 2 to 4, since flow continues between sessions.
 2. Call `liquidation_tape` for the 1 h sums of longs and shorts and the latest events.
 3. Call `cohort_flow` and read the `h1` window: `takerNet` shows which cohort is the net aggressor, `net` its inventory change.
 4. Call `twaps` for `share15` and `share60`.
@@ -89,34 +89,34 @@ Asked as: "What is happening in the NY session right now?", "Where are we in the
 
 ### 3. Review the last session
 
-Asked as: "How did the London session go?", "Review yesterday's NY session." This reviews the market session, not the user's trades.
+Asked as: "How did the London session go?", "Review the last NY session." This reviews the market session, not the user's trades.
 
-1. Call `session_review`. Pass `session: "london"` or `session: "ny"` when the user names one; without it the tool reviews the last closed session.
+1. Call `session_review`. Pass `session: "london"` or `session: "ny"` when the user names one; without it the tool reviews the last closed session. Only the latest session of each type is available; compare `session.opensAt` with the session the user named and say so when an older one is asked for.
 2. If `session.inProgress` is true, say that the session is still running and the rows describe it so far.
 3. Report the `rows` in the order given: `label`, `value` and `badge` (for MODEL rows, the method from `hint`), then `detail` when present. A row whose `value` is "—" gets its `why` or `hint`. Rows with `scope: "window"` cover a different data window (the forecast cone: 30 days of the ledger; cohorts: the last 24 h); say so.
-4. If the user asks, add `day_map` for the minute of each touch on today's map and `forecast_ledger` for the scores behind the cone row.
+4. If the user asks, add `day_map` for the minute of each touch on today's Day map and `forecast_ledger` for the scores behind the cone row.
 
 ### 4. Check a price level
 
-Asked as: "What sits around level X?", "Check X for me."
+Asked as: "What sits around 100,000?", "Check this level for me."
 
-1. Call `session_context` for the price, the VWAP (its `note` gives σ in USD) and `vwapDistance` (σ, LIVE).
-2. Call `market_brief` for the fuel within 1% (LIVE), the typical width of the next session hour (MODEL) and the `levels` list.
-3. Call `liquidation_map` for the clusters on each side (price and USD) and the fuel within 3%.
-4. If X matches a level of today's blog map, call `day_map` to see whether price has touched it.
-5. Report:
-   - where X sits: above or below the price and the VWAP, the tool levels just above and just below X, and the clusters between the price and X;
-   - the context numbers from steps 1 to 3, each with its badge;
-   - that the tools give the σ distance for the current price only. Do not compute a σ or USD distance for X.
+1. Call `market_brief` with `level` set to the price the user named, for example `market_brief({ level: 100000 })`.
+2. Read the `level` field:
+   - `fromPrice.usd` and `fromPrice.pct`: the level against the current price (LIVE);
+   - `vwapDistance`: the level against the UTC-day VWAP, in σ (LIVE);
+   - `fuelToLevel`: USD of liquidations between the price and the level, on the level's side (LIVE, with the snapshot age note when there is one). It is null with a reason when the level is more than 20% from the price, outside the liquidation map's range or equal to the price; never report it as 0.
+3. From the same response, take the typical width of the next session hour (the `hourWidth` item, MODEL) and the tool levels just above and just below the level in `levels`.
+4. If the user wants the clusters themselves, call `liquidation_map` for the cluster prices and USD on each side. If the level matches a level of today's Day map, call `day_map` to see whether price has touched it.
+5. Report the level, its distance from the price (USD and %) and from the VWAP (σ), the fuel up to it, the typical width of the next session hour and the nearest tool levels around it, each number with its badge. Do not compute any other distance or ratio.
 
-### 5. Short market note for X
+### 5. Short market note for X (Twitter)
 
 Asked as: "Write a short post about BTC for X."
 
 1. Call `market_brief`; during a session also call `session_context`.
-2. Pick two to four numbers, each marked with its badge, for example "(model)".
+2. Pick two to four numbers, each marked with its badge, for example "(MODEL)".
 3. Facts from the responses only: no direction, no advice, no hype, and no hashtags or emoji unless the user asks.
-4. Keep the whole post within 280 characters, including the footer: "Data: hyperquant.tech, {HH:MM} UTC. Market description, not investment advice." Take the time from `asOf`.
+4. End with the footer in the post's language; in English: "Data: hyperquant.tech, {HH:MM} UTC. Market description, not investment advice." Take the time from `asOf`. Keep the whole post within 280 characters, footer included.
 5. Show the draft to the user. Never post it yourself.
 
 ## Response format
@@ -124,7 +124,7 @@ Asked as: "Write a short post about BTC for X."
 - Answer in the user's language. Tool texts follow the server's `HQ_LANG` (en or pl); translate them faithfully when needed.
 - Start with one line that says what the answer is and the data time, for example "London pre-session, data as of {HH:MM} UTC".
 - One number per line: `{name}: {value} {unit} ({badge}, {method})`, plus `; {note}` when there is one. A missing value: `{name}: — ({reason})`.
-- Units: `usd` and `price` in USD (large amounts may be shortened, such as 3.4M); `btc` in BTC; `sigma` as σ; `ratio` as a fraction where 1 is 100% (you may show it as a percentage); `pct` as a percentage; `count` as a plain count; `min` in minutes.
+- Units: `usd` and `price` in USD (large amounts may be shortened, such as 3.4M); `btc` in BTC; `sigma` as σ; `pct` as a percentage; `count` as a plain count; `min` in minutes; `ratio` is a fraction or a multiple: show leverage and RVOL (MODEL) as multiples (25×, 1.4×), shares (`oiCoverage`, `volumeShare`, `share15` and `share60`, `rangeBudget`) as percentages, and scores and p-values (CRPSS, Brier, BSS, Kupiec) as plain decimals.
 - Times: from `asOf` and the other ISO UTC fields, shortened to HH:MM UTC when the date is clear.
 - Close with a "Sources" line (source names with their `asOf`) and the disclaimer.
 
@@ -133,7 +133,7 @@ Skeleton:
 ```text
 {Session} pre-session, data as of {HH:MM} UTC
 Session: {London|NY} opens {HH:MM} UTC
-Clarity yesterday: {text} (MODEL)
+Clarity yesterday: {text} ({badge})
 Fuel within 1%: {below} USD below, {above} USD above (LIVE)
 Typical width of the {HH:MM} hour: {value} USD (MODEL, 20-day median)
 From VWAP: {value} σ (LIVE)

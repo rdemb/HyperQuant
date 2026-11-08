@@ -29,6 +29,20 @@ describe('market_brief po angielsku', () => {
     expect(env.data.levels.map((l) => l.label)).toContain('Prev. session VAH');
   });
 
+  it('poziom po angielsku: uwaga o poziomie i powody braku paliwa po angielsku, odpowiedź przechodzi strażnika treści', async () => {
+    const c = await connect(testSources(routes(), NOW).src);
+    close = c.close;
+    for (const level of [102_000, 130_000, 116_500]) {
+      const res = await c.client.callTool({ name: 'market_brief', arguments: { level } });
+      expect(res.isError, JSON.stringify(res.content)).toBeFalsy();
+      const env = res.structuredContent as { notes: string[]; data: { level: { fuelToLevel: { value: number | null; why: string | null } } } };
+      const text = [...env.notes, env.data.level.fuelToLevel.why ?? ''].join(' ');
+      expect(text).toContain('fuelToLevel');
+      expect(text).not.toMatch(/[ąćęłńóśźż]/);
+      if (level !== 102_000) expect(env.data.level.fuelToLevel.why).toMatch(/20%|range/);
+    }
+  });
+
   it('etykieta z radą po angielsku: label null z powodem po angielsku, bez isError', async () => {
     const c = await connect(testSources(routes({ maps: { json: mapsJson(todayMap(['Buy the dip', 'Support'])) } }), NOW).src);
     close = c.close;

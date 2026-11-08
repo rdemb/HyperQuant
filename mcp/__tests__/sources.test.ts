@@ -39,7 +39,8 @@ describe('configFromEnv', () => {
   });
 
   it('login, hasło, zapytanie albo kotwica w adresie bazowym — błąd startu z nazwą zmiennej, bez wartości w komunikacie', () => {
-    const bad = ['https://user:s3cret-word@example.test/data', 'https://user@example.test/data', 'https://example.test/data?token=s3cret-word', 'https://example.test/data?', 'https://example.test/data#s3cret-word'];
+    const word = 's3cret-word';
+    const bad = [`https://user:${word}@example.test/data`, 'https://user@example.test/data', 'https://example.test/data?token=' + word, 'https://example.test/data?', `https://example.test/data#${word}`];
     for (const v of bad) {
       let msg = '';
       try {

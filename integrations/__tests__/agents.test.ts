@@ -95,6 +95,42 @@ describe('szablony agentów: AGENT_TEMPLATES i pliki profili', () => {
     expect(files.find((f) => f.t.id === 'desk')?.md).toContain('RVOL');
   });
 
+  it('nazwy z prefiksem HyperQuant; opis każdego profilu wymienia Hyperliquid', () => {
+    for (const { t, md } of files) {
+      expect(t.name.en, t.id).toMatch(/^HyperQuant /);
+      expect(t.name.pl, t.id).toMatch(/^HyperQuant /);
+      expect(section(md, 'Description'), t.id).toContain('Hyperliquid');
+    }
+    expect(AGENT_TEMPLATES.map((t) => t.name.en)).toEqual(['HyperQuant Desk', 'HyperQuant Big Hands', 'HyperQuant Session Review']);
+  });
+
+  it('nazewnictwo: Day map, „touched”, MODEL wielkimi literami, New York (NY) przy pierwszym użyciu; polecenia bez „wczoraj”', () => {
+    for (const { t, md } of files) {
+      expect(md, t.id).not.toMatch(/\bday map\b/);
+      expect(md, t.id).not.toMatch(/\bhits?\b/i);
+      expect(md, t.id).not.toMatch(/\(model\)/);
+      if (md.includes(' NY')) expect(md.indexOf('New York (NY)'), t.id).toBeGreaterThanOrEqual(0);
+      if (md.includes(' NY')) expect(md.indexOf('New York (NY)'), t.id).toBeLessThan(md.indexOf(' NY '));
+      for (const p of [...t.prompts.en, ...t.prompts.pl]) expect(p, t.id).not.toMatch(/yesterday|wczoraj|\bhit\b|trafion/i);
+    }
+  });
+
+  it('Session Review: tylko ostatnia sesja każdego typu; te same wiersze co strona, ale wartości mogą się nieco różnić', () => {
+    const md = files.find((f) => f.t.id === 'session-review')?.md ?? '';
+    expect(md).toContain('Only the latest session of each type is available');
+    expect(md).toContain('`session.opensAt`');
+    const intro = md.split('\n').find((l) => l.includes('Session review card')) ?? '';
+    expect(intro).toContain('can differ slightly from the site at the same moment');
+  });
+
+  it('Desk: inni agenci użytkownika opisani ogólnie (bez listy ról); które zasady wygrywają z przepisami skilla', () => {
+    const md = files.find((f) => f.t.id === 'desk')?.md ?? '';
+    const other = md.split('\n').find((l) => l.startsWith('**Other agents')) ?? '';
+    expect(other).toContain('any market-data or note-taking agents');
+    expect(other).not.toMatch(/calendar|funding|open interest|sentiment|macro|whale|risk|journal/i);
+    expect(section(md, 'Instructions')).toMatch(/skill's rules always apply/);
+  });
+
   it('pliki po angielsku; pliki i teksty strony bez trafień strażnika treści (prywatność, rady)', () => {
     for (const { t, md } of files) {
       expect(md, t.id).not.toMatch(POLISH_LETTERS);
