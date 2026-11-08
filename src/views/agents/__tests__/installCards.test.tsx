@@ -1,6 +1,6 @@
 /**
- * Karty instalacji: OpenBot kopiuje dokładnie pokazane polecenie i argumenty (każde własnym przyciskiem, bez ukrytego
- * JSON-a); przyciski Cursora i VS Code przed publikacją w npm są osiągalne klawiaturą (`aria-disabled`, bez `disabled`)
+ * Karty instalacji: OpenBot jedną wiadomością (przycisk główny kopiuje dokładnie tekst z „Pokaż wiadomość”), a ręcznie
+ * kopiuje dokładnie pokazane polecenie i argumenty (każde własnym przyciskiem, bez ukrytego JSON-a); przyciski Cursora i VS Code przed publikacją w npm są osiągalne klawiaturą (`aria-disabled`, bez `disabled`)
  * i opisane powodem, po publikacji to linki instalacji.
  */
 import React, { act } from 'react';
@@ -9,6 +9,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { type MiniElement, miniDom } from '../../../ui/__tests__/miniDom';
 import { DASH } from '../../../ui';
 import { ClaudeCard, EditorsCard, OpenBotCard, OtherClientsCard, ServerCard, StatusBox } from '../AgentsView';
+import { BTN_PRIMARY } from '../CopyButton';
+import { openbotSetupMessage } from '../openbotSetup';
 import {
   BUNDLE_PATH,
   MCPB_SHA256_URL,
@@ -206,6 +208,54 @@ describe('stan dziś: paczka w npm (karty bez podanego stanu)', () => {
     expect(summary(d)).toBe('Z kodu źródłowego');
     for (const s of REPO_STEPS) expect(d.textContent, s).toContain(s);
     expect(d.textContent).toContain(BUNDLE_PATH);
+    act(() => root.unmount());
+  });
+
+  it('OpenBot: główna droga jedną wiadomością; przycisk główny kopiuje openbotSetupMessage(), „Pokaż wiadomość” ma pełny tekst', async () => {
+    const root = mount(<OpenBotCard />);
+    expect(find((e) => e.tagName === 'header')[0]?.textContent).toContain('Jedną wiadomością');
+    const intro = find((e) => e.tagName === 'p').map((p) => p.textContent);
+    expect(intro[0]).toMatch(/Skopiuj wiadomość i wklej ją dowolnemu agentowi w OpenBocie/);
+    expect(intro[1]).toMatch(/serwer.*skill/);
+    expect(intro[1]).toMatch(/pominie/);
+    expect(intro[1]).toMatch(/zgod/);
+    // Pierwszy przycisk karty: główny, poza zwiniętymi sekcjami
+    const [first] = find((e) => e.tagName === 'button');
+    expect(first.textContent).toBe('Kopiuj wiadomość');
+    expect(first.getAttribute('class')).toBe(BTN_PRIMARY);
+    await click(first);
+    expect(writeText).toHaveBeenCalledWith(openbotSetupMessage());
+    const [message] = details();
+    expect(details()).toHaveLength(2);
+    expect(summary(message)).toBe('Pokaż wiadomość');
+    expect(message.hasAttribute('open')).toBe(false);
+    expect(find((e) => e.tagName === 'pre', message)[0]?.textContent).toBe(openbotSetupMessage());
+    expect(find((e) => e.tagName === 'button', message)).toEqual([]);
+    act(() => root.unmount());
+  });
+
+  it('OpenBot: kroki ręczne (Marketplace, pola polecenia i argumentów, z kodu źródłowego) w zwiniętym „Ręcznie”; Marketplace w przygotowaniu', () => {
+    const root = mount(<OpenBotCard />);
+    const [, manual] = details();
+    expect(summary(manual)).toBe('Ręcznie');
+    expect(manual.hasAttribute('open')).toBe(false);
+    expect(find((e) => e.tagName === 'li', manual).map((l) => l.textContent)[0]).toMatch(/Marketplace → Aplikacje/);
+    for (const f of ['command', 'args']) expect(find((e) => e.getAttribute('data-field') === f, manual), f).toHaveLength(1);
+    expect(find((e) => e.hasAttribute('data-from-source'), manual)).toHaveLength(1);
+    // Kroki ręczne tylko w „Ręcznie”
+    expect(find((e) => e.tagName === 'li').length).toBe(find((e) => e.tagName === 'li', manual).length);
+    const text = dom.container.textContent;
+    expect(text).not.toMatch(/pojawi się|gdy OpenBot go udostępni/);
+    expect(text).toMatch(/Wpis HyperQuant w Marketplace OpenBota jest w przygotowaniu/);
+    act(() => root.unmount());
+  });
+
+  it('OpenBot przed publikacją w npm (repo): bez wiadomości (instaluje paczkę z npm), kroki ręczne od razu widoczne', () => {
+    const root = mount(<OpenBotCard status="repo" />);
+    expect(details()).toEqual([]);
+    expect(dom.container.textContent).not.toContain('Kopiuj wiadomość');
+    expect(dom.container.textContent).not.toContain('Jedną wiadomością');
+    expect(find((e) => e.tagName === 'li')).toHaveLength(3);
     act(() => root.unmount());
   });
 

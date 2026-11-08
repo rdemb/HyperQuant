@@ -20,6 +20,8 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
   - szablony z kopiowaniem profilu;
   - instalacja MCP: Claude Desktop przez plik `.mcpb` (budowany w CI do `/agents/hyperquant.mcpb`, z licencją w środku i sumą SHA-256 obok, pokazaną przy przycisku pobrania), OpenBot z ustawieniami STDIO do skopiowania; Cursor i VS Code czekają na publikację paczki npm;
   - przepisy skilla, lista narzędzi i zasady danych.
+- **OpenBot jedną wiadomością** (zakładka „Agenci AI”): wiadomość do wklejenia dowolnemu agentowi w OpenBocie dodaje serwer `hyperquant-mcp` (npx, wersja przypięta) i skill `hyperquant`, a z karty szablonu („Dodaj do OpenBota”) także agenta z tego szablonu; kroki, które są już zrobione, agent pomija. Pliki pod `/agents/openbot/` (SKILL.md z ikoną, pełne profile do pobrania, opisy i instrukcje `AGENTS.md` szablonów) powstają przy buildzie strony z plików repo. Ustawienia ręczne w zwiniętym „Ręcznie”; linki „Pobierz .md” i „Pobierz SKILL.md”.
+- **Ikona paczki `.mcpb`:** ikona strony (PNG 512×512) jako `icon.png` w archiwum i pole `icon` w manifeście.
 - **CI:** budowa bundla MCP i test dymny stdio (każda linia stdout to JSON-RPC) przy każdym PR i wdrożeniu.
 
 #### Zmienione
