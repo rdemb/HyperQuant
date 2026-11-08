@@ -33,6 +33,7 @@ import {
   blogMapName,
   isAbsent,
   mapHitsText,
+  missingWhy as whyOf,
   pctOf,
 } from './sessionText';
 
@@ -81,7 +82,6 @@ export interface ReviewInputs {
 }
 
 const name = (s: TradeSession) => TRADE_SESSION_NAME[s.id];
-const whyOf = (v: Got<unknown> | undefined): string => (v === undefined ? WAIT_TEXT : isAbsent(v) ? v.why : WAIT_TEXT);
 /** Odsetek bez „−0%”. */
 const pct = (v: number) => `${fmtFixed(Math.round(v * 100) || 0, 0)}%`;
 /** Cena BTC jak na wykresie (tick Hyperliquid przy BTC ≥ 10 000 USD: 1 USD, bez miejsc po przecinku). */

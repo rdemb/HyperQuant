@@ -26,7 +26,7 @@ import { type TradeSession, currentTradeSession, nextTradeSession, tradeSessionO
 import { sessionFacts } from './sessionFacts';
 import { TRADE_SESSION_NAME } from './sessionNames';
 import { sessionMaps } from './sessionReview';
-import { DAY_TYPE_LABEL, type Got, WAIT_TEXT, amt, blogMapName, isAbsent, mapHitsText } from './sessionText';
+import { DAY_TYPE_LABEL, type Got, WAIT_TEXT, amt, blogMapName, isAbsent, mapHitsText, missingWhy } from './sessionText';
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -81,8 +81,8 @@ export interface FourInputs {
 
 /** Wartość wejścia albo null (brak, wczytywanie). */
 export const gotValue = <T>(v: Got<T> | undefined): T | null => (v === undefined || isAbsent(v) ? null : v);
-/** Powód braku wejścia; wczytywane — „Czekam na dane…”. */
-export const gotWhy = (v: Got<unknown> | undefined): string => (v !== undefined && isAbsent(v) ? v.why : WAIT_TEXT);
+/** Powód braku wejścia; wczytywane — „Czekam na dane…” (ten sam pomocnik co nagłówek układu: `missingWhy`). */
+export const gotWhy = missingWhy;
 /** Zdanie z kropką na końcu (bez podwójnej po „…” albo „.”). */
 const dot = (s: string) => (/[.…!?]$/.test(s) ? s : `${s}.`);
 

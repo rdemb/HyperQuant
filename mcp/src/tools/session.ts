@@ -33,7 +33,7 @@ import { type SessionNow, asianSessionWhy, dayTypeOf, expectedFrom, sessionFacts
 import { type ReviewRow, reviewRows, sessionCloseOf } from '../../../src/utils/sessionReview';
 import { type Expected, type Got, amt, isAbsent } from '../../../src/utils/sessionText';
 import type { VolModel } from '../../../src/utils/volatility';
-import { type Badge, type Envelope, type Num, type SourceRef, envelope, iso, num } from '../envelope';
+import { type Badge, type Envelope, type Num, type SourceRef, blockReasons, envelope, guardedLabel, iso, num } from '../envelope';
 import type { Fetched, Sources } from '../sources';
 import type { ToolDef } from './index';
 import { candleSource, candlesGot, closeNum, fileSource } from './shared';
@@ -301,6 +301,25 @@ function reviewSessionOf(now: number, id: TradeSessionId | undefined): { s: Trad
   return { s, inProgress: false };
 }
 
+const LABEL_HELD = tr('[etykieta wstrzymana]', '[label withheld]');
+const TITLE_HELD = tr('[tytuł wstrzymany]', '[title withheld]');
+
+/**
+ * Mapy z bloga do wierszy Rozliczenia: etykieta poziomu z trafieniem strażnika treści (`guardedLabel`, jak `day_map`)
+ * i tytuł wpisu z trafieniem — znacznik w miejscu tekstu, a poziom i wiersz mapy zostają. Trafienie poza nimi (np.
+ * w identyfikatorze wpisu) dalej zamyka całą odpowiedź w `toToolResult`.
+ */
+function guardedMaps(st: BlogMapsState): BlogMapsState {
+  return {
+    ...st,
+    maps: st.maps.map((m) => ({
+      ...m,
+      title: blockReasons(m.title).length > 0 ? TITLE_HELD : m.title,
+      levels: m.levels.map((l) => (guardedLabel(l.label).label === null ? { ...l, label: LABEL_HELD } : l)),
+    })),
+  };
+}
+
 function published<T extends { asOf: number }, S>(f: Fetched<T>, now: number, freshness: (v: T, now: number) => S): { status: S | 'error'; value: T | null } {
   return f.ok ? { status: freshness(f.value, now), value: f.value } : { status: 'error', value: null };
 }
@@ -346,7 +365,7 @@ async function reviewRun(src: Sources, args: unknown): Promise<Envelope<SessionR
   // Cena do oczekiwanego zakresu: zamknięcie sesji, bez świec sesji — ostatnia świeca 1m (strona: ostatnia cena rynku)
   const expected = isAbsent(c1) ? c1 : cardExpected(s, inProgress, fv?.ok ? fv.value : null, f5, now, sessionCloseOf(bars1m, s, now, c1[c1.length - 1].c));
 
-  const maps: BlogMapsState = fm.ok ? fm.value : { status: 'missing', maps: [] };
+  const maps: BlogMapsState = fm.ok ? guardedMaps(fm.value) : { status: 'missing', maps: [] };
   const lt = published(fl, now, liqTapeFreshness);
   const co = published(fc, now, cohortFreshness);
   const lg = published(fs, now, ledgerFreshness);

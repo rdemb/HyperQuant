@@ -4,14 +4,14 @@
  * sesji NY 6.11 — wspólne z testami Czwórki strony (`src/utils/__tests__/fixtures/fourNumbers`).
  */
 import { type BlogMap, type BlogMapsState, parseBlogMaps } from '../../src/state/useBlogMaps';
-import { type VBar, toVBars } from '../../src/utils/auction';
-import { dayVwapOf } from '../../src/utils/dayVwap';
-import { type FourInputs, lastClosedNy, nextSessionHour, nyMap, sessionHourSamples } from '../../src/utils/fourNumbers';
+import type { VBar } from '../../src/utils/auction';
+import type { FourInputs } from '../../src/utils/fourNumbers';
 import type { LiqMap } from '../../src/utils/liqMap';
 import { liqMapFreshness } from '../../src/utils/liqMapView';
-import { mapWindow } from '../../src/utils/mapSettlement';
 import { previousSameSession } from '../../src/utils/sessionDay';
 import { DAY, DAY_MAP, H, LIQ_MAP, NOW, NY, NY_MAP, at, bars, hours, px } from '../../src/utils/__tests__/fixtures/fourNumbers';
+import { readFourInputs } from '../../src/views/before/fourInputs';
+import { fakeStore } from '../../src/views/before/__tests__/fixtures/inputStore';
 import { type Bar, DATA_BASE, HL_INFO, MAPS_URL, MIN, type Route, asCandles, hlCandles } from './helpers';
 
 export { NOW, NY };
@@ -71,25 +71,12 @@ export const routes = (o: { maps?: Route; liq?: Route; hl?: Route; clock?: { now
 });
 
 /**
- * Wejścia Czwórki tak, jak składa je strona (`readFourInputs`) z tych samych świec i plików: 1m od otwarcia ostatniej sesji NY
- * albo od wpisu jej mapy (pełna minuta), 1h od najwcześniejszej próby typowej szerokości godziny, cena — ostatnie zamknięcie 1m.
+ * Wejścia Czwórki ze strony: prawdziwe `readFourInputs` na magazynie rynku z tymi samymi świecami. Magazyn ma historię
+ * doczytaną dokładnie do początku, o który prosi strona (`trim`), więc okna 1m i 1h są węższe niż u serwera MCP; cena
+ * rynku — ostatnie zamknięcie 1m.
  */
 export function siteInputs(now: number, liq: LiqMap = LIQ, maps: BlogMapsState = { status: 'ready', maps: parseBlogMaps(mapsJson()) ?? [] }): FourInputs {
   const live = asCandles(M1.filter((b) => b.t <= now));
-  const ny = lastClosedNy(now);
-  const m = maps.status === 'ready' ? nyMap(maps.maps, ny, now) : null;
-  const w = m && mapWindow(m.kind, m.publishedAt);
-  const from1m = Math.floor((w ? Math.min(ny.start, w.from) : ny.start) / MIN) * MIN;
-  const at1h = nextSessionHour(now);
-  const from1h = Math.min(at1h.hour, ...sessionHourSamples(at1h));
-  return {
-    coin: 'BTC',
-    now,
-    price: live[live.length - 1].c,
-    bars1m: toVBars(live.filter((c) => c.t >= from1m)),
-    maps,
-    liq: { status: liqMapFreshness(liq, now), map: liq },
-    bars1h: toVBars(asCandles(H1.filter((b) => b.t >= from1h && b.t <= now))),
-    dayVwap: dayVwapOf(live, now),
-  };
+  const store = fakeStore('BTC', { '1m': { list: live }, '1h': { list: asCandles(H1.filter((b) => b.t <= now)) } }, { now, lastPrice: live[live.length - 1].c, trim: true });
+  return readFourInputs(store, { status: liqMapFreshness(liq, now), map: liq }, maps);
 }

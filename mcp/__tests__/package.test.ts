@@ -34,6 +34,16 @@ describe('paczka hyperquant-mcp', () => {
     expect(README).toMatch(/RVOL[^\n]*MODEL/);
     expect(README).toMatch(/share60[^\n]*null/);
     expect(README).toContain('## Polski');
+    // Te same funkcje i metoda co strona, ale cena z ostatniego zamknięcia 1m — liczby mogą się nieco różnić
+    expect(README).toMatch(/same functions and method[^\n]*1-minute close[^\n]*differ slightly/);
+    expect(README).not.toMatch(/report the same values/);
+  });
+
+  it('README: wstrzymana etykieta albo tytuł z bloga opisane dla wszystkich trzech narzędzi z poziomami map', () => {
+    const line = README.split('\n').find((l) => l.includes('labelWhy')) ?? '';
+    for (const t of ['`day_map`', '`market_brief`', '`session_review`']) expect(line, t).toContain(t);
+    expect(line).toContain('[label withheld]');
+    expect(line).toContain('[title withheld]');
   });
 
   it('README zgodne z zasadami publikacji: bez ścieżek lokalnych, adresów, kluczy i wezwań do transakcji', () => {

@@ -5,7 +5,7 @@ import { dayVwapOf, vwapSigma } from '../../src/utils/dayVwap';
 import { type FourNumber, clarityNum, gotValue, hourWidth, hourWidthNum, liqFuel, nextSessionHour } from '../../src/utils/fourNumbers';
 import { isAbsent } from '../../src/utils/sessionText';
 import { fourNumbers } from '../../src/views/before/fourInputs';
-import { DISCLAIMER, type Envelope, type Num } from '../src/envelope';
+import { BLOCK_MARK, DISCLAIMER, type Envelope, type Num } from '../src/envelope';
 import type { Sources } from '../src/sources';
 import { ADDR, CLOSE, LIQ, LIQ_URL, M1, NOW, PREV, mapsJson, routes, siteInputs, todayMap } from './briefFixtures';
 import { HL_INFO, MAPS_URL, MIN, type Route, asCandles, connect, testSources } from './helpers';
@@ -227,6 +227,25 @@ describe('market_brief', () => {
     expect(blog[1]).toMatchObject({ label: 'Wsparcie', labelWhy: null });
     expect(env.data.four).toHaveLength(4);
     expect(JSON.stringify(res)).not.toMatch(/sell now/i);
+  });
+
+  it('paliwo w pełnych dolarach: liczby z liqFuel zaokrąglone, tekst karty bez zmian', async () => {
+    const odd = { ...LIQ, shorts: LIQ.shorts.map((b) => ({ ...b, ntlUsd: b.ntlUsd + 0.37 })), longs: LIQ.longs.map((b) => ({ ...b, ntlUsd: b.ntlUsd + 0.41 })) };
+    const { env } = await run(routes({ liq: { json: odd } }));
+    const f = liqFuel(odd, CLOSE);
+    expect(Number.isInteger(f.below) || Number.isInteger(f.above)).toBe(false);
+    const fuel = env.data.four[1];
+    expect(fuel.parts?.below.value).toBe(Math.round(f.below));
+    expect(fuel.parts?.above.value).toBe(Math.round(f.above));
+    expect(fuel.text).toBe(fourNumbers(siteInputs(NOW, odd)).items[1].value);
+  });
+
+  it('trafienie strażnika poza etykietą poziomu (identyfikator wpisu w uwagach): cała odpowiedź zablokowana', async () => {
+    const today = { ...todayMap(), id: '2026-11-07-kup-teraz', url: 'blog/2026-11-07-kup-teraz/' };
+    const { res } = await run(routes({ maps: { json: mapsJson(today) } }));
+    expect(res.isError).toBe(true);
+    expect(JSON.stringify(res.content)).toContain(BLOCK_MARK);
+    expect(JSON.stringify(res)).not.toContain('kup-teraz');
   });
 
   it('etykieta poziomu z adresem: label null z powodem, adresu nie ma w żadnym tekście odpowiedzi', async () => {
