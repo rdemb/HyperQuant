@@ -115,14 +115,20 @@ describe('archiwum .mcpb', () => {
     expect(m.tools.map((t) => t.name).sort()).toEqual(TOOLS.map((t) => t.name).sort());
     for (const t of m.tools) expect(Object.keys(t).sort(), t.name).toEqual(['description', 'name']);
     expect(m.description).toContain('not investment advice');
+    // Te same funkcje co strona, ale cena z ostatniego zamknięcia 1m: liczby mogą się nieco różnić w tej samej chwili
+    expect(m.long_description).toMatch(/same functions as the site[^.]*latest 1-minute close[^.]*differ slightly/);
+    // Serwer nie wysyła danych użytkownika (tylko User-Agent z wersją paczki): bez privacy_policies
+    expect(m.privacy_policies).toBeUndefined();
     // W archiwum ten sam manifest co w repo
     expect(m).toEqual(JSON.parse(read('mcp/mcpb/manifest.json')));
   });
 
-  it('entry_point jest w archiwum i to bajt w bajt zbudowany bundle', () => {
+  it('entry_point jest w archiwum i to bajt w bajt zbudowany bundle, bez Reacta', () => {
     const e = entry(manifest().server.entry_point);
     expect(e).toBeDefined();
     expect(e?.data.equals(readFileSync(bundle))).toBe(true);
+    const text = e?.data.toString('utf8') ?? '';
+    for (const banned of ['node_modules/react', 'react.production', 'useSyncExternalStore']) expect(text, banned).not.toContain(banned);
   });
 
   it('pliki: tylko manifest, bundle i node_modules zależności wykonania (bez map, typów i źródeł TS), ścieżki względne', () => {

@@ -2,13 +2,16 @@ import React, { useEffect, useState } from 'react';
 import { Check, Copy } from 'lucide-react';
 import { tr } from '../../i18n';
 
-/** Przycisk drugorzędny zakładki (kopiowanie, linki instalacji): wysokość dotykowa na telefonie, niższy od `sm`. */
+/**
+ * Przycisk drugorzędny zakładki (kopiowanie, linki instalacji): wysokość dotykowa na telefonie, niższy od `sm`.
+ * Niedostępny przez `aria-disabled` (zostaje osiągalny klawiaturą): przygaszony, bez podświetlenia.
+ */
 export const BTN_SECONDARY =
-  'inline-flex items-center justify-center gap-1.5 min-h-11 sm:min-h-9 px-3 rounded-lg border border-line-strong bg-surface-2 text-ink-1 text-sm font-medium hover:bg-surface-3 transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-surface-2';
+  'inline-flex items-center justify-center gap-1.5 min-h-11 sm:min-h-9 px-3 rounded-lg border border-line-strong bg-surface-2 text-ink-1 text-sm font-medium hover:bg-surface-3 transition-colors duration-150 aria-disabled:cursor-not-allowed aria-disabled:opacity-45 aria-disabled:hover:bg-surface-2';
 
 /**
- * Kopiowanie tekstu do schowka z potwierdzeniem na przycisku (3 s). Bez dostępu do schowka komunikat `fallback` mówi,
- * jak skopiować ręcznie; stan ogłasza region `aria-live`.
+ * Kopiowanie tekstu do schowka z potwierdzeniem na przycisku (3 s). Region `role="status"` ogłasza wynik: sukces
+ * („Skopiowano do schowka”) i porażkę (komunikat `fallback`, jak skopiować ręcznie, w kolorze ostrzeżenia).
  */
 export const CopyButton: React.FC<{ text: string; label: string; fallback: string }> = ({ text, label, fallback }) => {
   const [state, setState] = useState<'idle' | 'done' | 'fail'>('idle');
@@ -33,8 +36,9 @@ export const CopyButton: React.FC<{ text: string; label: string; fallback: strin
         {state === 'done' ? <Check className="w-4 h-4 text-accent" aria-hidden="true" /> : <Copy className="w-4 h-4" aria-hidden="true" />}
         {state === 'done' ? tr('Skopiowano', 'Copied') : label}
       </button>
-      <span role="status" aria-live="polite" className="text-xs text-warn leading-snug">
-        {state === 'fail' ? fallback : ''}
+      {/* Sukces widać na przycisku, więc w regionie tylko dla czytnika ekranu; porażka widoczna, w kolorze ostrzeżenia */}
+      <span role="status" aria-live="polite" className={`text-xs leading-snug ${state === 'fail' ? 'text-warn' : 'text-ink-3'}`}>
+        {state === 'fail' ? fallback : state === 'done' ? <span className="sr-only">{tr('Skopiowano do schowka', 'Copied to clipboard')}</span> : ''}
       </span>
     </span>
   );
