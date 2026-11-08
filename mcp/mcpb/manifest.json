@@ -1,0 +1,76 @@
+{
+  "manifest_version": "0.3",
+  "name": "hyperquant-mcp",
+  "display_name": "HyperQuant",
+  "version": "0.1.0",
+  "description": "Read-only BTC market context on Hyperliquid from public data: session briefs and reviews, blog Day map levels, liquidations, participant cohorts, whales and TWAP share. Market description, not investment advice.",
+  "long_description": "HyperQuant gives your assistant the BTC context of the [hyperquant.tech](https://hyperquant.tech/) desk: the pre-session brief, the London or New York session in progress, session reviews, today's blog Day map levels, the liquidation map and tape, participant cohorts, the largest accounts under day pseudonyms, the TWAP share of the tape and the scores of the verifiable forecast ledger.\n\nThe server reads public data only (the HyperQuant blog Day maps, Hyperliquid candles and the public files of the HyperQuant scanner) and computes the numbers with the same functions as the site. No keys, no accounts, no trading and no orders. Every number carries a LIVE, MODEL or SIM badge, its time and its source; missing data is null with a reason. No wallet addresses or transaction hashes. Texts are in English.\n\nMarket description, not investment advice.",
+  "author": {
+    "name": "HyperQuant",
+    "url": "https://hyperquant.tech/"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rdemb/HyperQuant.git"
+  },
+  "homepage": "https://hyperquant.tech/",
+  "documentation": "https://github.com/rdemb/HyperQuant/blob/main/mcp/README.md",
+  "license": "MIT",
+  "keywords": ["bitcoin", "btc", "hyperliquid", "market data", "liquidations", "read-only"],
+  "server": {
+    "type": "node",
+    "entry_point": "server/hyperquant-mcp.mjs",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/server/hyperquant-mcp.mjs"]
+    }
+  },
+  "tools": [
+    {
+      "name": "market_brief",
+      "description": "Pre-session brief: the four numbers, today's Day map levels, the previous session's VAH, POC and VAL, the session in progress and the next open. Optional level: a price level in USD to check."
+    },
+    {
+      "name": "session_context",
+      "description": "The London or NY session in progress: Initial Balance, day type so far, expected range and range budget (MODEL), UTC-day VWAP and RVOL of the current hour (MODEL)."
+    },
+    {
+      "name": "day_map",
+      "description": "Today's blog Day map levels and whether price has touched each one since the post, with the minute of the touch."
+    },
+    {
+      "name": "session_review",
+      "description": "Review of the latest London or NY session: day type, value area migration, IB result, range against the expected range, touched levels, liquidations."
+    },
+    {
+      "name": "liquidation_map",
+      "description": "Liquidation fuel within 1% and 3% below and above the price, the largest clusters on each side and the scanner snapshot age."
+    },
+    {
+      "name": "liquidation_tape",
+      "description": "Realised liquidations of tracked positions: 1 h and 24 h sums of longs and shorts and the latest events, without addresses."
+    },
+    {
+      "name": "cohort_flow",
+      "description": "Four participant cohorts (market makers, informed, whales, rest): net flow, aggressor delta, volume and volume share over the last hour and day."
+    },
+    {
+      "name": "whales",
+      "description": "The largest BTC accounts under pseudonyms valid for one UTC day: long and short balance, largest positions and groups of resting orders."
+    },
+    {
+      "name": "twaps",
+      "description": "Share of zero-hash fills (TWAP suborders among them) in the value of the tape over the last 15 and 60 minutes."
+    },
+    {
+      "name": "forecast_ledger",
+      "description": "Scores of the verifiable HyperQuant forecast ledger: CRPSS, interval coverage with the Kupiec test, Brier score and BSS."
+    }
+  ],
+  "compatibility": {
+    "platforms": ["darwin", "win32"],
+    "runtimes": {
+      "node": ">=20.0.0"
+    }
+  }
+}

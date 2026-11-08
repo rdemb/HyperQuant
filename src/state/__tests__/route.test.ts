@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DOCK_KEY } from '../../views/flow/flowColumnModel';
-import { LEGACY_VIEW, PHASE_VIEW, followHash, resolveHash, takeFlowAsk } from '../route';
+import { LEGACY_VIEW, PHASE_VIEW, VIEWS, followHash, resolveHash, takeFlowAsk } from '../route';
 
 describe('adres strony → widok', () => {
   it('pusty adres: W sesji, bez przepisania', () => {
@@ -22,7 +22,13 @@ describe('adres strony → widok', () => {
     expect(resolveHash('#charts?replay=history&m=BTC')).toEqual({ view: 'charts', rewrite: null });
     expect(resolveHash('#charts?replay=history&m=BTC&station=scalp')).toEqual({ view: 'charts', rewrite: null });
     expect(resolveHash('#lessons?tab=myths').view).toBe('lessons');
-    for (const v of ['before', 'charts', 'after', 'research', 'lessons', 'sources'] as const) expect(resolveHash(`#${v}`)).toEqual({ view: v, rewrite: null });
+    for (const v of ['before', 'charts', 'after', 'agents', 'research', 'lessons', 'sources'] as const) expect(resolveHash(`#${v}`)).toEqual({ view: v, rewrite: null });
+  });
+
+  it('#agents: zakładka Agenci AI (piąta pozycja menu głównego, po Blogu), w kolejności paska po fazach dnia', () => {
+    expect(resolveHash('#agents')).toEqual({ view: 'agents', rewrite: null });
+    expect(resolveHash('#agents?x=1').view).toBe('agents');
+    expect(VIEWS).toEqual(['before', 'charts', 'after', 'agents', 'research', 'lessons', 'sources']);
   });
 
   it('nieznany adres: W sesji, także nazwy pól obiektu', () => {
