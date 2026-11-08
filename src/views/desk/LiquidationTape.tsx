@@ -119,8 +119,10 @@ const TapeBody: React.FC<{ tape: LiqTape; coverage: number | null }> = ({ tape, 
             likwidacji, i potwierdza to w fillach konta (pole <code>liquidation</code>) — bez potwierdzenia zdarzenia nie ma na taśmie. Obejmuje więc
             tylko zmierzoną część open interest{coverage !== null ? ` (${fmtFixed(coverage * 100, 1)}%)` : ''}. Błąd ceny likwidacji: o ile cena mark
             przy likwidacji różniła się od ceny likwidacji z ostatniego odczytu (dodatni = głębiej niż mapa; ujemny = wcześniej, np. strata konta
-            cross na innym rynku). Wykrywane są likwidacje do 0,5% przed poziomem z mapy; pozycje blisko ceny likwidacji skaner odczytuje co minutę,
-            więc miara opisuje świeże odczyty, nie całą mapę. Bez adresów; czas do minuty, rozmiar zaokrąglony; opóźnienie do kilku minut.
+            cross na innym rynku). Wykrywane są likwidacje do 0,5% przed poziomem z mapy; pozycje od 25 tys. USD blisko ceny likwidacji skaner
+            odczytuje najczęściej, więc miara opisuje świeże odczyty, nie całą mapę. Bez adresów; czas do minuty, rozmiar zaokrąglony. Zdarzenie ma czas
+            samej likwidacji, ale trafia na taśmę dopiero po ponownym odczycie pozycji: małe pozycje skaner odczytuje nawet co kilka godzin, więc ich
+            likwidacje mogą dojść z takim opóźnieniem, a sumy z ostatniej godziny mogą jeszcze wzrosnąć.
           </>,
           <>
             Hyperliquid does not publish a liquidation stream for all accounts. The scanner notices that a tracked position shrank when price touched its
@@ -128,8 +130,10 @@ const TapeBody: React.FC<{ tape: LiqTape; coverage: number | null }> = ({ tape, 
             tape. It therefore covers only the measured part of open interest{coverage !== null ? ` (${fmtFixed(coverage * 100, 1)}%)` : ''}. Liquidation
             price error: how far the mark price at liquidation was from the liquidation price of the last read (positive = deeper than the map; negative
             = earlier, e.g. a cross account losing on another market). Liquidations up to 0.5% before the map level are detected; the scanner reads
-            positions close to their liquidation price every minute, so the measure describes fresh reads, not the whole map. No addresses; time to the
-            minute, size rounded; delay up to a few minutes.
+            positions from USD 25k close to their liquidation price most often, so the measure describes fresh reads, not the whole map. No addresses;
+            time to the minute, size rounded. An event carries the time of the liquidation itself but reaches the tape only after the position is read
+            again: the scanner reads small positions as rarely as every few hours, so their liquidations can arrive that late and the last-hour sums can
+            still grow.
           </>
         )}
       </p>
