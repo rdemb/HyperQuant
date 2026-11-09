@@ -1,6 +1,7 @@
 import type { Candle, Side } from '../hl/parse';
 import type { BookFrame } from '../core/book';
 import type { MakerSplit } from '../core/makers';
+import { DEFAULT_EFFORT_PARAMS } from '../core/effortZones';
 import { type Branching, MIN_EVENTS, fitBranching } from '../core/hawkes';
 import { fitBranchingLater, inBackground } from '../core/hawkesWorker';
 import { ofiEvent } from '../../../utils/microMechanics';
@@ -54,6 +55,7 @@ export type IndicatorId =
   | 'hawkes'
   | 'outcomes'
   | 'pbrange'
+  | 'effort'
   | 'twap';
 
 /**
@@ -232,6 +234,8 @@ export interface IndicatorDef {
   outcomes?: true;
   /** Zakresy P/b ze świec 5m (warstwa na wykresie ceny i opis w legendzie): bez wartości świec i bez plotów. */
   pbRanges?: true;
+  /** Strefy absorpcji i pudełka Effort ze świec wykresu (warstwa na wykresie ceny i opis w legendzie): bez wartości świec i bez plotów. */
+  effortZones?: true;
   /** Tyle świec przed lewą krawędzią widoku potrzeba danych z serwera (okno poprzednich świec: absorpcja, OFI). */
   lookback?(p: Params): number;
   /**
@@ -284,6 +288,10 @@ const rsiOf = (n: number) => {
 
 /** Typowa cena świecy (`hlc3`). */
 const hlc3 = (c: Candle) => (c.h + c.l + c.c) / 3;
+
+/** Progi stref absorpcji i pudełek Effort w opisie wskaźnika: te same liczby, którymi liczy warstwa (bez rozjazdu tekstu i reguł). */
+const EF = DEFAULT_EFFORT_PARAMS;
+const efNum = (x: number) => numLang(String(x));
 
 /** Zwroty, z których liczony jest prior wariancji reżimu (jak w prognozie zakresu: co najmniej 100). */
 export const REGIME_PRIOR = 100;
@@ -1977,6 +1985,31 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
     pbRanges: true,
   },
   {
+    id: 'effort',
+    short: 'Effort',
+    name: tr('Strefy absorpcji i pudełka Effort', 'Absorption zones and effort boxes'),
+    hint: tr(
+      'Strefy na krańcach swingu, w kolorze popytu albo podaży: A, gdzie rynek przyjął agresję (absorpcja), D od krańca swingu do VAL albo VAH jego profilu wolumenu (dyskonto swingu), F po przebiciu, które zmieniło rolę strefy, oraz pudełka Effort, czyli świece z agresją, wybiciem i zamknięciem po właściwej stronie VWAP sesji; w legendzie aktywne strefy, pudełka z ostatniej godziny i udział delty z taśmy',
+      'Zones at swing extremes in the demand or supply colour: A where the market absorbed aggression (absorption), D from the swing extreme to the VAL or VAH of its volume profile (swing discount), F after a break that flipped the zone’s role, and effort boxes, i.e. candles with aggression, a breakout and a close on the right side of the session VWAP; the legend shows the active zones, the boxes of the last hour and the tape delta share'
+    ),
+    group: 'hyperquant',
+    aliases: 'absorpcja absorption effort pudelka boxes strefy zones popyt demand podaz supply dyskonto discount swing vwap valentini fabio intraday flip pivot delta nasdaq',
+    warmup: () => 0,
+    convention: tr(
+      `Tego wskaźnika nie ma w TradingView. To rekonstrukcja HyperQuant stref i pudełek z modelu intraday Fabio Valentiniego pokazanego w jego filmie (youtu.be/HUYBdYnXUNc): jego wskaźnik „Nasdaq Effort” ma zamknięty kod, więc reguły i progi są nasze, nie jego. Liczone ze świec wykresu. Strefa absorpcji: dołek albo szczyt swingu (pivot: ${EF.pivotLen} świec po obu stronach, więc strefa powstaje ${EF.pivotLen} świec po krańcu), przy którym świeca krańca albo sąsiednia miała wolumen ponad ${efNum(EF.absVolMult)} × średnia z ${EF.smaLen} świec albo deltę przeciwną ponad ${efNum(EF.absDeltaMult)} × średnia |delty| i zamknęła się w połowie zakresu dalszej od krańca (albo następna świeca zamknęła się w drugą stronę za jej przeciwnym krańcem); prostokąt od krańca do drugiej strony korpusu tej świecy, wysokość od ${efNum(EF.zoneMinAtr)} do ${efNum(EF.zoneMaxAtr)} ATR (Wilder, ${EF.atrLen} świec). Strefa dyskonta swingu: po swingu co najmniej ${efNum(EF.swingMinAtr)} ATR od jego krańca do VAL (swing wzrostowy, strefa popytu) albo VAH (swing spadkowy, strefa podaży) profilu wolumenu swingu (value area ${Math.round(EF.valueArea * 100)}%, ${EF.profileBins} przedziały), z tym samym ograniczeniem wysokości. Strefa przebita już przed powstaniem nie jest rysowana, a nowa strefa, która nakłada się ponad połowę (niższej z dwóch) na aktywną strefę tej samej strony, nie powstaje. Strefa jest uzbrojona, gdy cena odejdzie od niej o ${efNum(EF.departAtr)} ATR, i żyje ${EF.zoneMaxAgeMs / 3_600_000} h od powstania albo do pierwszego zamknięcia za nią; przebicie z agresją (wolumen albo delta jak przy absorpcji) i zamknięciem po złej stronie VWAP sesji zmienia jej rolę w tym samym miejscu. Znaczniki w rogu: A absorpcja, D dyskonto swingu, F zmiana roli; popyt w kolorze kupna, podaż w kolorze sprzedaży, zakończone strefy przygaszone. Pudełko Effort: świeca kierunkowa z deltą w swoją stronę ponad ${efNum(EF.effortDeltaMult)} × średnia |delty| z ${EF.smaLen} świec, której szczyt (dołek) wybija ${EF.effortBreakout} poprzednie świece, zamknięta po właściwej stronie VWAP sesji (Londyn, NY, w godzinach azjatyckich doba UTC); od dołka do połowy korpusu (kupno) albo od połowy korpusu do szczytu (sprzedaż), rysowane przez ${EF.boxExtend} świec, z grubszym obrysem, gdy poprzednie pudełko było tej samej strony najwyżej 3 świece wcześniej. Delta jest z taśmy dla świec nagranych w całości, inaczej przybliżona ze świecy (wolumen × położenie zamknięcia w zakresie; pudełko wymaga wtedy zamknięcia w skrajnych ${Math.round((1 - EF.effortClv) * 100)}% zakresu i wolumenu ponad ${efNum(EF.effortVolMult)} × średnia), a udział świec z taśmą widać w legendzie. Strefy i pudełka to miejsca do obserwacji, nie sygnały.`,
+      `TradingView has no such indicator. It is HyperQuant’s reconstruction of the zones and boxes of Fabio Valentini’s intraday model shown in his video (youtu.be/HUYBdYnXUNc): his “Nasdaq Effort” indicator is closed source, so the rules and thresholds are ours, not his. Computed from the chart candles. Absorption zone: a swing low or high (pivot: ${EF.pivotLen} candles on each side, so the zone appears ${EF.pivotLen} candles after the extreme) where the extreme candle or a neighbour had volume above ${EF.absVolMult} × the ${EF.smaLen}-candle average or an opposing delta above ${EF.absDeltaMult} × the average |delta| and closed in the half of its range away from the extreme (or the next candle closed the other way beyond its opposite end); the rectangle runs from the extreme to the far side of that candle’s body, ${EF.zoneMinAtr} to ${EF.zoneMaxAtr} ATR high (Wilder, ${EF.atrLen} candles). Swing discount zone: after a swing of at least ${EF.swingMinAtr} ATR, from its extreme to the VAL (up swing, demand zone) or VAH (down swing, supply zone) of the swing’s volume profile (${Math.round(EF.valueArea * 100)}% value area, ${EF.profileBins} bins), with the same height limits. A zone already broken before it appears is not drawn, and a new zone overlapping an active zone of the same side by more than half (of the smaller one) does not appear. A zone is armed once the price has moved ${EF.departAtr} ATR away from it, and it lives ${EF.zoneMaxAgeMs / 3_600_000} h from its creation or until the first close beyond it; a break with aggression (volume or delta as for absorption) and a close on the wrong side of the session VWAP flips its role in the same place. Corner marks: A absorption, D swing discount, F flipped; demand in the buying colour, supply in the selling colour, ended zones dimmed. Effort box: a directional candle with delta its own way above ${EF.effortDeltaMult} × the ${EF.smaLen}-candle average |delta|, whose high (low) breaks the previous ${EF.effortBreakout} candles, closed on the right side of the session VWAP (London, NY, the UTC day during Asian hours); from the low to the middle of the body (buying) or from the middle of the body to the high (selling), drawn for ${EF.boxExtend} candles, with a thicker outline when the previous box was on the same side at most 3 candles earlier. The delta comes from the tape for fully recorded candles, otherwise it is approximated from the candle (volume × the close position within the range; a box then needs a close in the outer ${Math.round((1 - EF.effortClv) * 100)}% of the range and volume above ${EF.effortVolMult} × the average), and the legend shows the share of candles with the tape. Zones and boxes are places to watch, not signals.`
+    ),
+    memoryNote: tr(
+      'Liczone od nowa po każdej zamkniętej świecy wykresu, od początku wczytanej historii; wynik dla świecy zależy tylko od świec do niej, więc historia się nie przerysowuje, a świeca w trakcie nie wchodzi. Na interwałach do 1 h, na każdym rynku, także w powtórce.',
+      'Recomputed after every closed chart candle, from the start of the loaded history; the result for a candle depends only on the candles up to it, so history is not redrawn, and the forming candle is not used. On intervals up to 1 h, on every market, also in replay.'
+    ),
+    pane: 'price',
+    params: [],
+    plots: [],
+    format: 'price',
+    effortZones: true,
+  },
+  {
     id: 'twap',
     short: 'TWAP',
     name: tr('Udział TWAP w taśmie', 'TWAP share of the tape'),
@@ -2039,7 +2072,7 @@ export const REMOVED_INDICATORS: readonly string[] = ['obv', 'cmf', 'mfi', 'netv
 
 /** Wskaźniki „Tylko w HyperQuant” (front) i „Więcej z HyperQuant” (second) w kolejności menu. */
 const FRONT_IDS = ['oiflow', 'absorption', 'breadth', 'repeat', 'makers', 'twap', 'slippage', 'rvol', 'ofi', 'ordersize'] as const satisfies readonly IndicatorId[];
-const SECOND_IDS = ['cone', 'outcomes', 'regime', 'hawkes', 'pbrange'] as const satisfies readonly IndicatorId[];
+const SECOND_IDS = ['cone', 'outcomes', 'regime', 'hawkes', 'pbrange', 'effort'] as const satisfies readonly IndicatorId[];
 /** Identyfikator wskaźnika z warstw menu front i second (plakietki źródeł: każdy musi mieć źródło). */
 export type HqIndicatorId = (typeof FRONT_IDS)[number] | (typeof SECOND_IDS)[number];
 
@@ -2144,13 +2177,14 @@ export function shortHistoryNote(def: IndicatorDef, spanMs: number): string | nu
 
 /**
  * Znacznik instancji na liście i w oknie ustawień (wartość CSS `background`): kolor pierwszej rysowanej linii, a przy
- * samych słupkach w kolorach znaku (Zmiana OI, Absorpcja, OFI, Udział TWAP) pół na pół kupno i sprzedaż.
+ * samych słupkach w kolorach znaku (Zmiana OI, Absorpcja, OFI, Udział TWAP) i przy strefach Effort (stałe kolory stron)
+ * pół na pół kupno i sprzedaż.
  */
 export const swatchColor = (x: IndicatorInstance): string => {
   const def = indicatorDef(x.id);
   const p = def.plots.find((q) => !q.hidden && !q.hist);
   if (p) return plotColor(x, p);
-  return def.plots.some((q) => q.hist && !q.hidden) ? `linear-gradient(90deg, ${HIST_UP} 50%, ${HIST_DOWN} 50%)` : x.color;
+  return def.effortZones || def.plots.some((q) => q.hist && !q.hidden) ? `linear-gradient(90deg, ${HIST_UP} 50%, ${HIST_DOWN} 50%)` : x.color;
 };
 
 /** Czy kolor instancji coś zmienia na wykresie (inaczej okno stylu go nie pokazuje). */
@@ -2168,7 +2202,7 @@ export function indicatorLabel(x: IndicatorInstance): string {
  * wskaźnik przesunięty o świece wykresu (Ichimoku) i wskaźnik z danych spoza świec (taśma, otwarte pozycje).
  */
 export const tfAllowed = (def: IndicatorDef): boolean =>
-  !def.period && !def.fit && !def.flow && !def.series && !def.sample && !def.forecast && !def.outcomes && !def.pbRanges && !def.plots.some((p) => p.shift);
+  !def.period && !def.fit && !def.flow && !def.series && !def.sample && !def.forecast && !def.outcomes && !def.pbRanges && !def.effortZones && !def.plots.some((p) => p.shift);
 
 /** Interwał wskaźnika: znany identyfikator interwału, a wskaźnik bez parametru „Interwał” go nie ma. */
 const tfOk = (def: IndicatorDef, tf: unknown): tf is string => tfAllowed(def) && INTERVALS.some((iv) => iv.id === tf && iv.ms !== MONTH);
