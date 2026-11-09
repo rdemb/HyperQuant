@@ -187,7 +187,8 @@ describe('kolory serii wskaźników', () => {
   });
 
   it('znacznik na liście: to, co rysowane — przy samych słupkach kolory kupna i sprzedaży, nie nieużywany kolor instancji', () => {
-    for (const id of ['twap', 'oiflow', 'ofi', 'absorption'] as const) {
+    // Strefy Effort bez plotów, ale w stałych kolorach stron
+    for (const id of ['twap', 'oiflow', 'ofi', 'absorption', 'effort'] as const) {
       const sw = swatchColor(inst(id, INDICATOR_COLORS[0]));
       expect(sw, id).toContain(PRO.buy);
       expect(sw, id).toContain(PRO.sell);
@@ -202,7 +203,7 @@ describe('kolory serii wskaźników', () => {
     expect(usesInstanceColor(indicatorDef('cone'))).toBe(true);
     expect(usesInstanceColor(indicatorDef('hawkes'))).toBe(true);
     // Wszystkie linie w stałych kolorach albo same słupki w kolorach znaku
-    for (const id of ['breadth', 'makers', 'supertrend', 'twap', 'oiflow'] as const) expect(usesInstanceColor(indicatorDef(id)), id).toBe(false);
+    for (const id of ['breadth', 'makers', 'supertrend', 'twap', 'oiflow', 'effort'] as const) expect(usesInstanceColor(indicatorDef(id)), id).toBe(false);
   });
 
   it('podpis wartości w legendzie bez powtórzenia nazwy wskaźnika („RVOL RVOL —”)', () => {

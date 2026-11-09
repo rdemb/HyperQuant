@@ -48,6 +48,7 @@ import { CloudFill, CloudSource } from './cloudFill';
 import { ConeForecast, ConeLayer, ConeSource } from './coneLayer';
 import { Hip4Layer, Hip4Source, outcomeLevels } from './hip4Layer';
 import { PbRangeLayer, PbStyle, PbZone } from './pbRangeLayer';
+import { EffortLayer, type EffortStyle } from './effortLayer';
 import { BlogMapLayer, blogMapMarks, blogMapModel, levelsInsteadOfMap } from './blogMapLayer';
 import type { Hip4State } from '../../../state/useHip4';
 import { type BlogMap, type BlogMapsState, pickMap } from '../../../state/useBlogMaps';
@@ -337,6 +338,8 @@ export class ProChartController {
   private outcomes: Hip4State | null = null;
   /** Zakresy P/b ze świec 5m (wskaźnik „Zakresy P/b”). */
   private readonly pb = new PbRangeLayer(() => this.pbStyle());
+  /** Strefy absorpcji i pudełka Effort ze świec wykresu (wskaźnik „Strefy absorpcji i pudełka Effort”). */
+  private readonly effort = new EffortLayer(() => this.effortStyle());
   /**
    * Mapa z bloga (warstwa „Mapa z bloga”, tylko BTC): mapy z pliku bloga, rozliczenie poziomów (układ Rozliczenie),
    * mapa na wykresie i chwila ostatniego przeliczenia znaczników (najwyżej raz na minutę).
@@ -436,6 +439,7 @@ export class ProChartController {
     this.main.attachPrimitive(this.hip4);
     this.main.attachPrimitive(this.blog);
     this.main.attachPrimitive(this.pb);
+    this.main.attachPrimitive(this.effort);
     this.main.attachPrimitive(this.countdown);
     this.main.attachPrimitive(this.strip);
     // Rysunki dołączone ostatnie — nad wskaźnikami i świecami
@@ -605,6 +609,7 @@ export class ProChartController {
     this.tpo.setRightInset(px);
     for (const p of this.plugins) p.setRightInset?.(px);
     this.pb.setRightInset(px);
+    this.effort.setRightInset(px);
     this.blog.setRightInset(px);
     this.chart.timeScale().applyOptions({ rightOffsetPixels: this.rightGap() });
   }
@@ -1004,6 +1009,12 @@ export class ProChartController {
     return x ? { color: x.color, alpha: x.alpha, width: x.width } : null;
   }
 
+  /** Styl pierwszego widocznego wskaźnika stref Effort: krycie i grubość (kolory stron stałe; null — żaden). */
+  private effortStyle(): EffortStyle | null {
+    const x = this.indShown.find((y) => indicatorDef(y.id).effortZones);
+    return x ? { alpha: x.alpha, width: x.width } : null;
+  }
+
   /** Aktywna strefa P/b do alarmów z menu wykresu (null — wskaźnik ukryty albo brak ważnej strefy). */
   pbZone(): PbZone | null {
     return this.pbStyle() ? this.pb.zone() : null;
@@ -1285,6 +1296,7 @@ export class ProChartController {
     this.tpo.setData(next, ms, st);
     for (const p of this.plugins) p.setData(next, ms, now, st);
     this.pb.setData(next, ms, now, st, this.phone);
+    this.effort.setData(next, ms, now);
     this.syncBlog(now);
     if (full || now - this.stripAt >= STRIP_EVERY_MS) {
       this.stripAt = now;
@@ -1634,18 +1646,20 @@ export class ProChartController {
           ? this.hip4Legend()
           : def.pbRanges
             ? this.pb.legend(x.color)
-            : short
-              ? [{ text: `—, ${short}`, color: PRO.ink3 }]
-              : vs.flatMap((v, p) => {
-                  const plot = def.plots[p];
-                  if (def.band?.includes(p)) return [];
-                  // Podpis poziomu (pivoty: P, R1, S1…) także w legendzie; przedział w nawiasie za wartością
-                  const fmt = this.indFormat(plot.format ?? def.format);
-                  const text = Number.isNaN(v) ? '—' : fmt(v);
-                  const band = def.band && p === 0 && !Number.isNaN(v) ? ` (${fmt(vs[def.band[0]])}–${fmt(vs[def.band[1]])})` : '';
-                  const title = legendTitle(def, plot);
-                  return [{ text: title ? `${title} ${text}${band}` : `${text}${band}`, color: legendColor(x, plot, vs[plot.signOf ?? p]) }];
-                });
+            : def.effortZones
+              ? this.effort.legend()
+              : short
+                ? [{ text: `—, ${short}`, color: PRO.ink3 }]
+                : vs.flatMap((v, p) => {
+                    const plot = def.plots[p];
+                    if (def.band?.includes(p)) return [];
+                    // Podpis poziomu (pivoty: P, R1, S1…) także w legendzie; przedział w nawiasie za wartością
+                    const fmt = this.indFormat(plot.format ?? def.format);
+                    const text = Number.isNaN(v) ? '—' : fmt(v);
+                    const band = def.band && p === 0 && !Number.isNaN(v) ? ` (${fmt(vs[def.band[0]])}–${fmt(vs[def.band[1]])})` : '';
+                    const title = legendTitle(def, plot);
+                    return [{ text: title ? `${title} ${text}${band}` : `${text}${band}`, color: legendColor(x, plot, vs[plot.signOf ?? p]) }];
+                  });
       const legend = this.indLegends[k];
       // Pierwsza wartość przy nazwie, dalsze (OFI: Δp, R², oczekiwana) mogą przejść do następnego wiersza na wąskim panelu
       if (legend) legend.set([{ text: indicatorLabel(x), color: PRO.ink3 }, ...values.map((v, p) => ({ ...v, glue: p === 0 }))]);

@@ -4,6 +4,18 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Wskaźnik: strefy absorpcji i pudełka Effort (2026-11-09)
+
+#### Dodane
+- **„Strefy absorpcji i pudełka Effort” w sekcji „Więcej z HyperQuant”** (`src/charts/pro/core/effortZones.ts`, `src/charts/pro/chart/effortLayer.ts`, `src/charts/pro/indicators/registry.ts`): na wykresie ceny (interwały do 1 h, na żywo i w powtórce, każdy rynek) rekonstrukcja HyperQuant stref i pudełek z modelu intraday Fabio Valentiniego. Jego wskaźnik „Nasdaq Effort” ma zamknięty kod, więc reguły i progi są nasze:
+  - **strefa absorpcji (A):** dołek albo szczyt swingu (pivot 5 świec po obu stronach) z wolumenem ponad 1,5 × średnia z 20 świec albo deltą przeciwną ponad 1,5 × średnia |delty| i odrzuceniem; od krańca do korpusu, wysokość od 0,15 do 1 ATR (Wilder, 14 świec);
+  - **strefa dyskonta swingu (D):** po swingu co najmniej 2 ATR od jego krańca do VAL albo VAH profilu wolumenu swingu (value area 70%);
+  - nowa strefa, która nakłada się ponad połowę na aktywną strefę tej samej strony, nie powstaje; strefa jest uzbrojona po odejściu ceny o 1 ATR i żyje 12 h albo do zamknięcia za nią; przebicie z agresją po złej stronie VWAP sesji zmienia jej rolę w tym samym miejscu (F);
+  - **pudełko Effort:** świeca kierunkowa z deltą ponad 1,2 × średnia |delty|, wybiciem 3 poprzednich świec i zamknięciem po właściwej stronie VWAP sesji (Londyn, NY, w godzinach azjatyckich doba UTC), rysowane przez 12 świec; nałożone pudełka mają grubszy obrys.
+
+  Delta jest z taśmy dla świec nagranych w całości, inaczej przybliżona ze świecy. Legenda podaje aktywne strefy po stronach, pudełka z ostatniej godziny i udział delty z taśmy; plakietka MODEL. Liczone tylko na zamkniętych świecach, więc historia się nie przerysowuje. Popyt w kolorze kupna, podaż w kolorze sprzedaży; styl zmienia krycie i grubość, a znacznik na liście wskaźników pokazuje oba kolory stron. Strefy i pudełka to miejsca do obserwacji, nie sygnały.
+- Moduł `effortZones.ts` udostępnia wtyczkom wykresu (`src/plugins`) serie pośrednie (delta, średnie wolumenu i |delty|, ATR), funkcje `aggressionAt` i `absorbsAt` oraz chwilę uzbrojenia strefy (`armedAt`).
+
 ### Agenci AI: krok serwera w wiadomości dla OpenBota (2026-11-08)
 
 #### Naprawione

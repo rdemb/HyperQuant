@@ -77,6 +77,8 @@ const SOURCES = {
   hawkes: 'MODEL',
   // Wejścia metody Nilla i ich wynik na historii
   pbrange: 'SIM',
+  // Strefy i pudełka z reguł modelu na świecach i delcie taśmy (opis rynku, nie sygnały)
+  effort: 'MODEL',
 } as const satisfies Record<SourceKey, LayerSource>;
 
 /** Źródło każdej warstwy `show*` (na wykresie ceny i panele pod nim) i każdego wskaźnika z warstw menu front i second. */
@@ -109,6 +111,10 @@ const METHOD_HINT: Record<ModelKey, string> = {
   pbrange: tr(
     'SIM · metoda Nilla: strefy P/b i miejsca, w których metoda by weszła (👀), z wynikiem na historii; to nie transakcje',
     "SIM · Nill's method: P/b zones and places where the method would enter (👀), with their result on history; not trades"
+  ),
+  effort: tr(
+    'MODEL · reguły modelu intraday Valentiniego: strefy absorpcji i dyskonta swingu oraz pudełka Effort z delty taśmy (bez taśmy przybliżonej ze świecy); to nie sygnały',
+    "MODEL · Valentini's intraday model rules: absorption and swing discount zones and effort boxes from the tape delta (approximated from the candle without the tape); not signals"
   ),
 };
 

@@ -25,20 +25,21 @@ describe('źródła warstw (LIVE, MODEL, SIM)', () => {
   });
 
   it('modele i symulacja oznaczone jako MODEL i SIM, dane z taśmy i arkusza jako LIVE', () => {
-    for (const id of ['rvol', 'regime', 'hawkes', 'cone', 'outcomes', 'absorption', 'showTpoOi']) expect(LAYER_SOURCE[id], id).toBe('MODEL');
+    for (const id of ['rvol', 'regime', 'hawkes', 'cone', 'outcomes', 'absorption', 'effort', 'showTpoOi']) expect(LAYER_SOURCE[id], id).toBe('MODEL');
     expect(LAYER_SOURCE.pbrange).toBe('SIM');
     for (const id of ['showHeatmap', 'showBubbles', 'showVwap', 'showLiq', 'showWhales', 'twap', 'slippage', 'oiflow']) expect(LAYER_SOURCE[id], id).toBe('LIVE');
   });
 
   it('podpowiedź plakietki MODEL i SIM nazywa metodę każdego klucza', () => {
     const model = Object.entries(LAYER_SOURCE).filter(([, v]) => v !== 'LIVE');
-    expect(model.length).toBe(8);
+    expect(model.length).toBe(9);
     for (const [key, src] of model) expect(layerBadge(key, { coin: 'BTC', now: NOW }).hint, key).toMatch(new RegExp(`^${src} · [^:]+: `));
     expect(layerBadge('rvol', { coin: 'BTC', now: NOW }).hint).toMatch(/^MODEL · mediana 20 dni: /);
     expect(layerBadge('cone', { coin: 'BTC', now: NOW }).hint).toMatch(/^MODEL · HAR: /);
     expect(layerBadge('regime', { coin: 'BTC', now: NOW }).hint).toMatch(/^MODEL · BOCPD: /);
     expect(layerBadge('hawkes', { coin: 'BTC', now: NOW }).hint).toMatch(/^MODEL · Hawkes: /);
     expect(layerBadge('pbrange', { coin: 'BTC', now: NOW }).hint).toMatch(/^SIM · metoda Nilla: /);
+    expect(layerBadge('effort', { coin: 'ETH', now: NOW })).toMatchObject({ tone: 'model', text: 'MODEL', hint: expect.stringMatching(/^MODEL · reguły modelu intraday Valentiniego: .*to nie sygnały$/) });
   });
 });
 
