@@ -21,6 +21,7 @@ import {
 } from '../../utils/schrodi';
 import { type HourModel, type HourPoint, hourPath } from '../../utils/schrodiHour';
 import { type CatTrust, type HourTrust, type OodFeature, TRUST_DESIGN, TRUST_HEADS, type TrustHeadKey, driftAlarms, oodKeys, proofState } from '../../utils/schrodiTrust';
+import { DIR_BAR, DIR_TONE, upBand, upOdds } from './direction';
 import { type Mood, SchrodiCat } from './SchrodiCat';
 import { HIST_MIN, type HourLive, useHourModel, useTouchModel } from './useSchrodi';
 
@@ -62,13 +63,7 @@ export function catLine(f: Forecast, mood: Mood, now: number): string {
         : f.pBig <= 0.25
           ? tr(`Spokojnie, drzemię. Duży ruch tylko z szansą ${pct(f.pBig)}.`, `Quiet, I'm napping. A big move only has ${pct(f.pBig)} odds.`)
           : tr(`Zwykła godzina, duży ruch z szansą ${pct(f.pBig)}.`, `An ordinary hour, a big move with ${pct(f.pBig)} odds.`);
-  const dir =
-    f.stance === 'long'
-      ? tr(`Kierunek lekko w górę: Long ${pct(f.pUp)}.`, `Direction slightly up: Long ${pct(f.pUp)}.`)
-      : f.stance === 'short'
-        ? tr(`Kierunek lekko w dół: Short ${pct(1 - f.pUp)}.`, `Direction slightly down: Short ${pct(1 - f.pUp)}.`)
-        : tr('Kierunku nie wiem.', "I don't know the direction.");
-  return `${move} ${dir}`;
+  return `${move} ${tr('Kierunek', 'Direction')}: ${upOdds(f.pUp)}.`;
 }
 
 const LEVEL_NAMES: Record<keyof Levels, () => string> = {
@@ -130,7 +125,7 @@ const Section: React.FC<{ title: string; children: React.ReactNode }> = ({ title
   );
 };
 
-/** Pasek szansy: od 0 do 100%, znacznik w punkcie p */
+/** Pasek szansy: od 0 do 100%, znacznik w punkcie p; kierunek od środka (50%) w neutralnym kolorze */
 const ProbBar: React.FC<{ p: number; tone: 'move' | 'dir' }> = ({ p, tone }) => (
   <div className="relative h-1.5 rounded-full bg-surface-3 overflow-hidden" aria-hidden="true">
     {tone === 'move' ? (
@@ -139,7 +134,7 @@ const ProbBar: React.FC<{ p: number; tone: 'move' | 'dir' }> = ({ p, tone }) => 
       <>
         <div className="absolute inset-y-0 left-1/2 w-px bg-line-strong" />
         <div
-          className={`absolute inset-y-0 ${p >= 0.5 ? 'left-1/2 bg-buy-ink' : 'right-1/2 bg-sell-ink'}`}
+          className={`absolute inset-y-0 ${p >= 0.5 ? 'left-1/2' : 'right-1/2'} ${DIR_BAR}`}
           style={{ width: `${Math.abs(p - 0.5) * 100}%` }}
         />
       </>
@@ -222,8 +217,8 @@ const LiveRecord: React.FC<{ live: Live }> = ({ live }) => {
             `since ${since}: every forecast is written to the ledger with a hash every 15 minutes, before the outcome is known. First results after an hour.`
           )
         : tr(
-            `(30 dni, od ${since}): ${s.n} rozliczonych prognoz, ${s.nEff} rozłącznych godzin. Duży ruch: AUC ${s.big.auc === null ? '—' : s.big.auc.toFixed(2).replace('.', ',')}, trafność ${pctOr(s.big.hit)}. Kierunek: Long trafiał w ${pctOr(s.dir.long.hit)} z ${s.dir.long.n}, Short w ${pctOr(s.dir.short.hit)} z ${s.dir.short.n}.${s.nEff < 50 ? ' To jeszcze za mało, żeby oceniać.' : ''}`,
-            `(30 days, since ${since}): ${s.n} resolved forecasts, ${s.nEff} non-overlapping hours. Big move: AUC ${s.big.auc === null ? '—' : s.big.auc.toFixed(2)}, accuracy ${pctOr(s.big.hit)}. Direction: Long right ${pctOr(s.dir.long.hit)} of ${s.dir.long.n}, Short ${pctOr(s.dir.short.hit)} of ${s.dir.short.n}.${s.nEff < 50 ? ' Too little data to judge yet.' : ''}`
+            `(30 dni, od ${since}): ${s.n} rozliczonych prognoz, ${s.nEff} rozłącznych godzin. Duży ruch: AUC ${s.big.auc === null ? '—' : s.big.auc.toFixed(2).replace('.', ',')}, trafność ${pctOr(s.big.hit)}. Kierunek: przy ${upBand('long')} trafiałem w ${pctOr(s.dir.long.hit)} z ${s.dir.long.n}, przy ${upBand('short')} w ${pctOr(s.dir.short.hit)} z ${s.dir.short.n}.${s.nEff < 50 ? ' To jeszcze za mało, żeby oceniać.' : ''}`,
+            `(30 days, since ${since}): ${s.n} resolved forecasts, ${s.nEff} non-overlapping hours. Big move: AUC ${s.big.auc === null ? '—' : s.big.auc.toFixed(2)}, accuracy ${pctOr(s.big.hit)}. Direction: at ${upBand('long')} right ${pctOr(s.dir.long.hit)} of ${s.dir.long.n}, at ${upBand('short')} ${pctOr(s.dir.short.hit)} of ${s.dir.short.n}.${s.nEff < 50 ? ' Too little data to judge yet.' : ''}`
           )}
       {t && t.hours > 0 && cone50 && (
         <>
@@ -380,7 +375,7 @@ const HourBlock: React.FC<{ hm: HourModel; hour: HourLive; end: number }> = ({ h
         <span className="text-ink-2">
           🎯 {tr('Zamknie wyżej niż o', 'Closes above')} {hhmm(hs)} <span className="font-mono text-ink-3">({fmtPrice(c0, 0)})</span>
         </span>
-        <span className={`font-mono text-sm font-semibold ${last.pUp >= 0.5 ? 'text-buy-ink' : 'text-sell-ink'}`}>{pct(last.pUp)}</span>
+        <span className={`font-mono text-sm font-semibold ${DIR_TONE}`}>{pct(last.pUp)}</span>
       </div>
       <HourChart pts={pts} hs={hs} />
       <p className="text-[11px] leading-snug text-ink-3">
@@ -442,9 +437,6 @@ export const SchrodiPanel: React.FC<{
     return { at, cone: touchCone(tm, f.x, f.med1h) };
   }, [tm, f, px]);
   const tcard = tm ? (tm.card as unknown as TouchCard).B : null;
-  const dirTitle =
-    f.stance === 'long' ? `LONG ${pct(f.pUp)}` : f.stance === 'short' ? `SHORT ${pct(1 - f.pUp)}` : tr('NIE WIEM', "DON'T KNOW");
-  const dirTone = f.stance === 'long' ? 'text-buy-ink' : f.stance === 'short' ? 'text-sell-ink' : 'text-ink-2';
   const time = new Date(at).toLocaleTimeString(tr('pl-PL', 'en-GB'), { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   return (
     <div role="dialog" aria-label="Schrödi" className="rounded-xl border border-line-strong bg-surface-2/95 backdrop-blur shadow-2xl text-ink-1 overflow-hidden">
@@ -508,13 +500,13 @@ export const SchrodiPanel: React.FC<{
         <div>
           <div className="flex items-baseline justify-between text-xs">
             <span className="text-ink-2">🎯 {tr('Kierunek', 'Direction')}</span>
-            <span className={`font-mono text-sm font-semibold ${dirTone}`}>{dirTitle}</span>
+            <span className={`font-mono text-sm font-semibold ${DIR_TONE}`}>{upOdds(f.pUp)}</span>
           </div>
           <ProbBar p={f.pUp} tone="dir" />
           <p className="mt-1 text-[11px] text-ink-3">
             {tr(
-              `Szansa wzrostu ${pct(f.pUp)}. Kierunek przewiduję tylko trochę lepiej niż rzut monetą.`,
-              `Odds of a rise ${pct(f.pUp)}. I predict direction only slightly better than a coin flip.`
+              `Szansa, że za godzinę cena będzie wyższa niż teraz: ${pct(f.pUp)}. Kierunek przewiduję tylko trochę lepiej niż rzut monetą.`,
+              `Odds that the price is higher in an hour than now: ${pct(f.pUp)}. I predict direction only slightly better than a coin flip.`
             )}
           </p>
         </div>
@@ -609,7 +601,7 @@ export const SchrodiPanel: React.FC<{
             <React.Fragment key={g}>
               <span>{GROUP_NAMES[g]()}</span>
               <span className={`font-mono text-right ${Math.abs(f.whyBig[g]) > 0.05 ? 'text-accent' : 'text-ink-3'}`}>{fmtSigned(f.whyBig[g], 1, ' pp')}</span>
-              <span className={`font-mono text-right ${f.why[g] > 0.05 ? 'text-buy-ink' : f.why[g] < -0.05 ? 'text-sell-ink' : 'text-ink-3'}`}>
+              <span className={`font-mono text-right ${Math.abs(f.why[g]) > 0.05 ? DIR_TONE : 'text-ink-3'}`}>
                 {fmtSigned(f.why[g], 1, ' pp')}
               </span>
             </React.Fragment>
@@ -626,8 +618,8 @@ export const SchrodiPanel: React.FC<{
         </p>
         <p className="mt-2">
           {tr(
-            `Kierunek: Long trafiał w ${pct(card.kierunek['2023_2025'].long[1])} i ${pct(card.kierunek['2026'].long[1])}, Short w ${pct(card.kierunek['2023_2025'].short[1])} i ${pct(card.kierunek['2026'].short[1])}. Wygrane są małe, więc po kosztach sam kierunek nie wystarcza na zysk.`,
-            `Direction: Long was right ${pct(card.kierunek['2023_2025'].long[1])} and ${pct(card.kierunek['2026'].long[1])} of the time, Short ${pct(card.kierunek['2023_2025'].short[1])} and ${pct(card.kierunek['2026'].short[1])}. Wins are small, so direction alone does not pay after costs.`
+            `Kierunek: przy ${upBand('long')} trafiałem w ${pct(card.kierunek['2023_2025'].long[1])} i ${pct(card.kierunek['2026'].long[1])}, przy ${upBand('short')} w ${pct(card.kierunek['2023_2025'].short[1])} i ${pct(card.kierunek['2026'].short[1])}. To niewiele lepiej niż rzut monetą, więc kierunek to tylko opis szansy.`,
+            `Direction: at ${upBand('long')} I was right ${pct(card.kierunek['2023_2025'].long[1])} and ${pct(card.kierunek['2026'].long[1])} of the time, at ${upBand('short')} ${pct(card.kierunek['2023_2025'].short[1])} and ${pct(card.kierunek['2026'].short[1])}. That is only slightly better than a coin flip, so direction is just a description of the odds.`
           )}
         </p>
         {tcard && (
@@ -646,8 +638,8 @@ export const SchrodiPanel: React.FC<{
       <Section title={tr('O mnie', 'About me')}>
         <p>
           {tr(
-            'Jestem kotem Schrödingera: dopóki rynek nie zdecyduje, jestem trochę Long i trochę Short. Im bardziej się rozmywam, tym mniej wiem. Liczę 22 cechy ze świec Hyperliquid (ruch, zmienność, aukcja, zegar sesji, kalendarz makro) i łączę regresję logistyczną z 300 drzewami decyzyjnymi.',
-            "I'm Schrödinger's cat: until the market decides, I'm a bit Long and a bit Short. The blurrier I am, the less I know. I compute 22 features from Hyperliquid candles (move, volatility, auction, session clock, macro calendar) and combine a logistic regression with 300 decision trees."
+            'Jestem kotem Schrödingera: dopóki rynek nie zdecyduje, jestem trochę w górę i trochę w dół. Im bardziej się rozmywam, tym mniej wiem. Liczę 22 cechy ze świec Hyperliquid (ruch, zmienność, aukcja, zegar sesji, kalendarz makro) i łączę regresję logistyczną z 300 drzewami decyzyjnymi.',
+            "I'm Schrödinger's cat: until the market decides, I'm a bit up and a bit down. The blurrier I am, the less I know. I compute 22 features from Hyperliquid candles (move, volatility, auction, session clock, macro calendar) and combine a logistic regression with 300 decision trees."
           )}{' '}
           {tr(
             'Liczę się na żywo, na świecach kończących się w tej chwili: w testach 2023 do 2026 świeża prognoza przy nagłym ruchu trafiała duże ruchy do 52% lepiej (Brier) niż prognoza sprzed kilku minut.',
