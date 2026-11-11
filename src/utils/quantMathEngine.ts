@@ -782,7 +782,7 @@ export function computeOrderFlowImbalanceHeatmap(
     topExhaustionTick?.exhaustionState === 'ASK_WALL_ABSORPTION' ||
     topExhaustionTick?.exhaustionState === 'BUY_EXHAUSTION'
   ) {
-    exhaustionBias = 'BULLISH_EXHAUSTION_TOP_RISK';
+    exhaustionBias = 'BUY_FLOW_ABSORBED';
     exhaustionNote = tr(
       `Wyczerpanie impetu kupujących na $${fmtPrice(topExhaustionTick.price, 1)} (${fmtNum(topExhaustionTick.buySellRatio)}x B/S) — pasywna ściana ASK absorbuje zlecenia rynkowe.`,
       `Buyer momentum exhausted at $${fmtPrice(topExhaustionTick.price, 1)} (${fmtNum(topExhaustionTick.buySellRatio)}x B/S): a passive ASK wall is absorbing market orders.`
@@ -791,19 +791,19 @@ export function computeOrderFlowImbalanceHeatmap(
     topExhaustionTick?.exhaustionState === 'BID_WALL_ABSORPTION' ||
     topExhaustionTick?.exhaustionState === 'SELL_EXHAUSTION'
   ) {
-    exhaustionBias = 'BEARISH_EXHAUSTION_BOTTOM_REVERSAL';
+    exhaustionBias = 'SELL_FLOW_ABSORBED';
     exhaustionNote = tr(
       `Wyczerpanie impetu sprzedających na $${fmtPrice(topExhaustionTick.price, 1)} (${fmtNum(topExhaustionTick.buySellRatio)}x B/S) — pasywna ściana BID absorbuje podaż rynkową.`,
       `Seller momentum exhausted at $${fmtPrice(topExhaustionTick.price, 1)} (${fmtNum(topExhaustionTick.buySellRatio)}x B/S): a passive BID wall is absorbing market selling.`
     );
   } else if (overallBuySellRatio >= 1.25) {
-    exhaustionBias = 'AGGRESSIVE_BUY_CONTINUATION';
+    exhaustionBias = 'AGGRESSIVE_BUY_DOMINANT';
     exhaustionNote = tr(
       `Dominacja agresywnych zleceń Market Buy (${fmtNum(overallBuySellRatio)}x B/S, OFI +${fmtNum(overallOfiPct)}%) bez oporu pasywnego.`,
       `Aggressive market buys dominate (${fmtNum(overallBuySellRatio)}x B/S, OFI +${fmtNum(overallOfiPct)}%) with no passive resistance.`
     );
   } else if (overallBuySellRatio <= 0.8) {
-    exhaustionBias = 'AGGRESSIVE_SELL_CONTINUATION';
+    exhaustionBias = 'AGGRESSIVE_SELL_DOMINANT';
     exhaustionNote = tr(
       `Dominacja agresywnych zleceń Market Sell (${fmtNum(overallBuySellRatio)}x B/S, OFI ${fmtNum(overallOfiPct)}%) wywierająca presję na arkusz BID.`,
       `Aggressive market sells dominate (${fmtNum(overallBuySellRatio)}x B/S, OFI ${fmtNum(overallOfiPct)}%), pressing on the BID side of the book.`
