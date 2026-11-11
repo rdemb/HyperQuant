@@ -423,8 +423,12 @@ export function runPublisher({ base, state, remote, now = Date.now(), env = { PA
   }
 
   const lastRejected = [...rejectedNow, ...(Array.isArray(prev.lastRejected) ? prev.lastRejected : [])].slice(0, KEEP_REJECTED);
-  const alarm = pushError ? 'push' : quarantined ? 'kwarantanna' : rejectedNow.length ? 'odrzucone' : null;
-  writeAtomic(statusFile, `${JSON.stringify({ v: 1, at, ok: alarm === null, alarm, published, rejected: rejectedNow.length, quarantined, pending: readdirSync(dir('queue')).filter((n) => PACKAGE.test(n)).length, pushError, lastRejected }, null, 2)}\n`, 0o644);
+  // Kwarantanna z dysku (nie tylko z tego przebiegu): alarm trwa, dopóki ktoś nie posprząta
+  const hidden = (d) => readdirSync(d).filter((n) => /^\.\d{4}-\d{2}-\d{2}-[a-z0-9-]+\.kwarantanna-/.test(n)).length;
+  const qDir = path.join(dir('rejected'), '_kwarantanna');
+  const onDisk = (existsSync(qDir) ? readdirSync(qDir).length : 0) + hidden(dir('queue')) + hidden(dir('work'));
+  const alarm = pushError ? 'push' : onDisk ? 'kwarantanna' : rejectedNow.length ? 'odrzucone' : null;
+  writeAtomic(statusFile, `${JSON.stringify({ v: 1, at, ok: alarm === null, alarm, published, rejected: rejectedNow.length, quarantined, quarantine: onDisk, pending: readdirSync(dir('queue')).filter((n) => PACKAGE.test(n)).length, pushError, lastRejected }, null, 2)}\n`, 0o644);
   return { published, rejected: rejectedNow.length, quarantined, pushError, attempts };
 }
 
