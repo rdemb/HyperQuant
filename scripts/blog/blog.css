@@ -199,6 +199,12 @@ h1 {
   color: var(--ink-3);
   font-size: 13px;
 }
+/* Wpis poprawiony po publikacji (z historii gałęzi wpisów): widoczne pod tytułem */
+.edited {
+  margin: -8px 0 16px;
+  color: var(--ink-2);
+  font-size: 13px;
+}
 .lead {
   margin: 0 0 24px;
   color: var(--ink-2);

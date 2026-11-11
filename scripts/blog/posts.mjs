@@ -5,6 +5,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import { GUARDS, guardViolations } from '../../src/utils/safeguards.mjs';
+import { IMAGE_FILE, LIMITS } from './intake.mjs';
 
 export const TIME_ZONE = 'Europe/Warsaw';
 export const TYPES = ['article', 'note'];
@@ -46,11 +47,11 @@ const extraKeys = (o, known) => (o && typeof o === 'object' ? Object.keys(o).fil
  */
 export { GUARDS, guardViolations };
 
-/** Rozdzielenie frontmattera YAML (między liniami ---) i treści. */
+/** Rozdzielenie frontmattera YAML (między liniami ---) i treści. Aliasy YAML (&kotwica, *alias) są błędem wpisu. */
 export function splitFrontmatter(src) {
   const m = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(src);
   if (!m) return null;
-  return { data: parseYaml(m[1]) ?? {}, body: m[2] };
+  return { data: parseYaml(m[1], { maxAliasCount: 0 }) ?? {}, body: m[2] };
 }
 
 /** Data w czasie polskim (RRRR-MM-DD) — porównywana z prefiksem nazwy pliku. */
@@ -339,6 +340,7 @@ export function validateCharts(c) {
 /** Odczyt i walidacja pliku wpisu; media wpisu (katalog o tej samej nazwie) i dane wykresów dołączane do wyniku. */
 export function loadPostFile(file) {
   const id = path.basename(file, '.md');
+  if (statSync(file).size > LIMITS.md) return { id, post: null, errors: [`plik ponad ${LIMITS.md / 1024} KB`] };
   let split;
   try {
     split = splitFrontmatter(readFileSync(file, 'utf8'));
@@ -350,7 +352,9 @@ export function loadPostFile(file) {
   const mediaDir = existsSync(dir) && statSync(dir).isDirectory() ? dir : null;
   const errors = [];
   let charts = null;
-  if (mediaDir && existsSync(path.join(mediaDir, CHARTS_FILE))) {
+  const chartsFile = mediaDir ? path.join(mediaDir, CHARTS_FILE) : null;
+  if (chartsFile && existsSync(chartsFile) && statSync(chartsFile).size > LIMITS.json) errors.push(`${CHARTS_FILE}: plik ponad ${LIMITS.json / 1024 / 1024} MB`);
+  else if (chartsFile && existsSync(chartsFile)) {
     try {
       charts = JSON.parse(readFileSync(path.join(mediaDir, CHARTS_FILE), 'utf8'));
       const bad = validateCharts(charts);
@@ -367,12 +371,11 @@ export function loadPostFile(file) {
   const post = r.post;
   if (post) {
     post.mediaDir = mediaDir;
-    // Obrazy w treści: tylko pliki z katalogu mediów wpisu albo adresy https
+    // Obrazy w treści: tylko pliki z katalogu mediów wpisu (obcy adres render.mjs i tak pokazuje jako tekst)
     for (const m of post.body.matchAll(/!\[[^\]]*\]\(([^)\s]+)[^)]*\)/g)) {
       const src = m[1];
-      if (/^https:\/\//.test(src)) continue;
-      if (src.includes('..') || src.startsWith('/') || !post.mediaDir || !existsSync(path.join(post.mediaDir, src)))
-        errors.push(`obraz „${src}”: brak pliku w content/blog/${id}/`);
+      if (!IMAGE_FILE.test(src)) errors.push(`obraz „${src}”: tylko plik z folderu wpisu (małe litery, cyfry, myślniki; .png, .jpg albo .webp)`);
+      else if (!post.mediaDir || !existsSync(path.join(post.mediaDir, src))) errors.push(`obraz „${src}”: brak pliku w content/blog/${id}/`);
     }
   }
   return { id, post: errors.length ? null : post, errors };
