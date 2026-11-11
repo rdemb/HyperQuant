@@ -158,6 +158,20 @@ export function gitEnv(work, key, now) {
   };
 }
 
+/**
+ * Klucz wdrożeniowy: kopia od systemd (LoadCredential, czytelna tylko dla użytkownika strażnika), inaczej ścieżka
+ * z pliku skanera (uruchomienie ręczne). Plik klucza należy do usługi skanera, więc strażnik nie czyta go wprost.
+ * `exists` — do testów; null = brak klucza.
+ */
+export function deployKey(env, exists = existsSync) {
+  const dir = env.CREDENTIALS_DIRECTORY;
+  if (dir) {
+    const cred = path.posix.join(dir, 'deploy_key');
+    if (exists(cred)) return cred;
+  }
+  return (env.HQ_GIT_SSH_KEY ?? '').trim() || null;
+}
+
 function serviceState(unit = SERVICE) {
   try {
     return execFileSync('systemctl', ['is-active', unit], { encoding: 'utf8' }).trim();
@@ -241,9 +255,10 @@ function pushAlert(remote, key, work, a, report, now) {
   }
 }
 
+/** Restart bez uprawnień root: polkit (backend/deploy/hyperquant-watchdog.rules) pozwala tylko na te dwie usługi. */
 function restart(unit, d) {
   try {
-    execFileSync('systemctl', ['restart', unit], { timeout: 120_000 });
+    execFileSync('systemctl', ['--no-ask-password', 'restart', unit], { timeout: 120_000 });
   } catch (e) {
     d.reason = `${d.reason} — restart nieudany (${e instanceof Error ? e.message.split('\n')[0] : String(e)})`;
   }
@@ -253,7 +268,7 @@ async function main() {
   const now = Date.now();
   const env = process.env;
   const outDir = env.HQ_OUT_DIR || '/var/lib/hyperquant/out';
-  // Katalog strażnika należy do root i leży poza katalogiem usługi skanera (StateDirectory w jednostce systemd)
+  // Katalog strażnika należy do jego użytkownika i leży poza katalogiem usługi skanera (StateDirectory w jednostce systemd)
   const work = env.HQ_WATCHDOG_DIR || '/var/lib/hyperquant-watchdog';
   mkdirSync(work, { recursive: true, mode: 0o700 });
   const stateFile = path.join(work, 'state.json');
@@ -302,7 +317,7 @@ async function main() {
   if (a.ok) st.restarts = st.alertsRestarts = 0; // koniec epizodu
   console.log(`[strażnik] ${a.ok ? 'ok' : `problem: ${a.problems.join('; ')}`}`);
   const urgent = a.problems.some((p) => p.startsWith('PRYWATNOŚĆ'));
-  const key = env.HQ_GIT_SSH_KEY;
+  const key = deployKey(env);
   if (remote && key && shouldPush({ prevKey: st.prevKey, seenKey: st.seenKey, key: a.key, lastPushAt: st.lastPushAt, ok: a.ok, urgent, now })) {
     if (pushAlert(remote, key, work, a, renderReport({ ok: a.ok, problems: a.problems, facts: health.facts }, now), now)) {
       st.prevKey = a.key;

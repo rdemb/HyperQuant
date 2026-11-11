@@ -7,6 +7,7 @@ import { WeightLimiter } from '../scanner/rateLimiter.ts';
 import { DeviceBook, type DeviceEvent, type DeviceStart, readState } from './book.ts';
 import { loadKeys } from './keys.ts';
 import { Mailbox } from './mailbox.ts';
+import { writePulse } from './pulse.ts';
 import { quantile, retryDelay, sendPush } from './push.ts';
 
 /**
@@ -269,7 +270,7 @@ async function reportTick(): Promise<void> {
 
 /** Puls dla strażnika (scripts/watchdog.mjs): czas zapisu, ostatnia synchronizacja, najstarszy ostatni komunikat HL. */
 function savePulse(): void {
-  writeJsonAtomic(pulsePath, { v: 1, at: Date.now(), syncAt: mailbox ? syncOkAt : null, wsAt: heard.size > 0 ? Math.min(...heard.values()) : null });
+  writePulse(pulsePath, { v: 1, at: Date.now(), syncAt: mailbox ? syncOkAt : null, wsAt: heard.size > 0 ? Math.min(...heard.values()) : null });
 }
 
 let saved = '';
