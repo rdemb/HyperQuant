@@ -432,6 +432,10 @@ export class ProChartController {
     // Mapa ciepła pod profilem i pasmami (kolejność dołączenia = kolejność rysowania w tej samej warstwie)
     this.liquidity = new LiquidityLayer(liqToggles(settings));
     this.main.attachPrimitive(this.liquidity);
+    // Liczba ścian i serii wybranych na ekran (pomiar układu czyta ją z atrybutu, nie z pikseli)
+    this.liquidity.onClashes = (n) => {
+      container.dataset.clashObjects = String(n);
+    };
     this.overlay = new IndicatorOverlay(toggles(settings, series.interval.ms));
     // Podpisy mapy z bloga przy prawej krawędzi rozsuwa nakładka razem ze swoimi etykietami (VWAP, IB, poziomy dnia)
     this.overlay.setEdgeTags(() => this.blog.edgeTags());
@@ -1409,7 +1413,7 @@ export class ProChartController {
     }
     this.liqSource.near = st.book('near');
     this.liqSource.far = st.book('far');
-    this.liquidity.setData(next, ms, this.liqSource, now, this.bigTradeUsd);
+    this.liquidity.setData(next, ms, this.liqSource, now, this.bigTradeUsd, this.settings.bigTradeUsd);
     this.zones.setData(next, ms, now);
     this.tpo.setData(next, ms, st);
     for (const p of this.plugins) p.setData(next, ms, now, st);

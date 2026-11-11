@@ -15,6 +15,7 @@ import { buildHeatLut } from '../../orderflow/heatColor';
 import { fmtCompact } from '../../../ui/format';
 import { type BookFrame, type BookHistory, type LargeLot, largeLots, lotThreshold } from '../core/book';
 import { Burst, DEFAULT_THRESHOLD_USD, OrderClass, Wall, bursts, classify } from '../core/clashes';
+import { type ClashSelection, selectClashes, thresholdAt } from './clashSelect';
 import type { AggressorOrder } from '../core/orders';
 import type { ProBar } from '../store/proStore';
 import { logicalOfTime } from './overlay';
@@ -208,6 +209,10 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
   private src: LiquiditySource = { near: null, far: null, orders: () => [], walls: () => [] };
   private now = 0;
   private threshold = DEFAULT_THRESHOLD_USD;
+  /** Próg ręczny z ustawień (0 — automatyczny z chwili zdarzenia). */
+  private manual = 0;
+  /** Po każdej nowej scenie: liczba ścian i serii na ekranie (pomiar układu czyta ją z wykresu). */
+  onClashes: ((n: number) => void) | null = null;
   private highlight = '';
   private selected: LiquidityPick | null = null;
   private geo: Geometry | null = null;
@@ -340,12 +345,17 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
     this.requestUpdate?.();
   }
 
-  setData(bars: readonly ProBar[], intervalMs: number, src: LiquiditySource, now: number, threshold: number): void {
+  /**
+   * `threshold` — próg bieżący (bąble, duże zlecenia); `manual` — próg ręczny z ustawień (0 — automatyczny): ściany
+   * i serie mierzone są progiem z chwili zdarzenia (`thresholdAt`).
+   */
+  setData(bars: readonly ProBar[], intervalMs: number, src: LiquiditySource, now: number, threshold: number, manual = 0): void {
     this.bars = bars;
     this.ms = intervalMs;
     this.src = src;
     this.now = now;
     this.threshold = threshold;
+    this.manual = manual;
     this.dataVersion++;
     this.requestUpdate?.();
   }
@@ -378,8 +388,13 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
     const key = g ? this.sceneInputs(g) : null;
     if (key && this.sceneKey && sameInputs(key, this.sceneKey)) return;
     this.sceneKey = key;
-    this.bubbles = this.toggles.showBubbles && g ? this.sceneBubbles(g) : [];
-    this.walls = this.toggles.showBubbles && this.toggles.showClashes && g ? this.sceneWalls(g) : [];
+    // Serie i ściany: próg z chwili zdarzenia i wybór na ekran (najwyżej 5 + 3 ściany i 5 serii)
+    // Zlecenia widocznego czasu pobierane raz na scenę (bąble i serie)
+    const all = this.toggles.showBubbles && g ? this.src.orders(g.tFrom, g.tTo) : [];
+    const clashes = this.toggles.showBubbles && this.toggles.showClashes && g ? this.sceneClashes(g, all) : { walls: [], bursts: [] };
+    this.bubbles = this.toggles.showBubbles && g ? this.sceneBubbles(g, all, clashes.bursts) : [];
+    this.walls = clashes.walls.length > 0 && g ? this.sceneWalls(g, clashes.walls) : [];
+    this.onClashes?.(clashes.walls.length + clashes.bursts.length);
     this.lots = this.toggles.showLots && g ? this.sceneLots(g) : [];
     this.dom = this.toggles.showHeatmap && this.domOn && g ? this.sceneDom(g) : [];
   }
@@ -407,6 +422,7 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
       t.showClashes,
       t.showLots,
       this.threshold,
+      this.manual,
       this.highlight,
       this.selected,
       this.domOn,
@@ -524,9 +540,13 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
 
   // ───────────────────────── bąble ─────────────────────────
 
-  private sceneBubbles(g: Geometry): Bubble[] {
+  private sceneClashes(g: Geometry, all: readonly AggressorOrder[]): ClashSelection {
+    const thrAt = thresholdAt(this.src.orders, this.manual);
+    return selectClashes(this.src.walls(g.tFrom, g.tTo, 0), bursts(all, thrAt), this.now, thrAt);
+  }
+
+  private sceneBubbles(g: Geometry, all: readonly AggressorOrder[], series: readonly Burst[]): Bubble[] {
     const t = this.threshold;
-    const all = this.src.orders(g.tFrom, g.tTo);
     let list = all.filter((o) => o.notional >= t);
     const bars = (g.tTo - g.tFrom) / this.ms;
     const cap = Math.round(Math.min(BUBBLE_MAX_COUNT, Math.max(BUBBLE_MIN_COUNT, bars * BUBBLE_PER_BAR)));
@@ -536,7 +556,6 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
       const shown = new Set(list);
       for (const o of all) if (o.taker === hl && !shown.has(o)) list.push(o);
     }
-    const series = this.toggles.showClashes ? bursts(all, t) : [];
     if (list.length === 0 && series.length === 0) return [];
     let max = 0;
     for (const o of list) if (o.notional > max) max = o.notional;
@@ -585,9 +604,9 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
     return out.sort((p, q) => q.r - p.r);
   }
 
-  private sceneWalls(g: Geometry): WallMark[] {
+  private sceneWalls(g: Geometry, walls: readonly Wall[]): WallMark[] {
     const sel = this.selected;
-    return this.src.walls(g.tFrom, g.tTo, this.threshold).map((w) => {
+    return walls.map((w) => {
       const x0 = this.x(w.from, g);
       return {
         x0,
