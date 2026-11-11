@@ -7,7 +7,24 @@
 import { Coverage } from '../../../src/charts/pro/core/coverage';
 import { utcDayStart } from '../../../src/charts/pro/core/sessions';
 import { tr } from '../../../src/i18n';
-import { COHORTS, COHORT_LABEL, type CohortId, type CohortTotal, cohortFreshness, cohortNet, cohortSeen, cohortTakerNet, cohortVolume, cohortWindowEnd, isCohortFlow } from '../../../src/utils/cohorts';
+import {
+  COHORTS,
+  COHORT_LABEL,
+  HIDDEN_TOGETHER_LABEL,
+  type CohortFlow,
+  type CohortId,
+  cohortFreshness,
+  cohortNet,
+  cohortSeen,
+  cohortTakerNet,
+  cohortVolume,
+  cohortWindowEnd,
+  hiddenTogether,
+  informedNoneText,
+  informedState,
+  isCohortFlow,
+  shareDenominator,
+} from '../../../src/utils/cohorts';
 import { LEDGER_MIN_N, isDeskLedgerSummary, ledgerFreshness } from '../../../src/utils/deskLedger';
 import { FUEL_BAND, liqFuel } from '../../../src/utils/fourNumbers';
 import { type LiqBucket, type LiqMap, isLiqMap } from '../../../src/utils/liqMap';
@@ -224,17 +241,27 @@ export interface CohortRow {
   takerNet: Num;
   /** Kupno + sprzedaż kohorty. */
   volume: Num;
-  /** Udział kohorty w sumie obrotu kohort w oknie (każda transakcja liczy się po obu stronach). */
+  /** Udział kohorty w obrocie okna: kupno + sprzedaż ÷ 2 × wolumen taśmy. */
   volumeShare: Num;
   /** Kubełki z komórką kohorty ukrytą dla prywatności (k-anonimowość) i z ukrytą warstwą biorcy. */
   hiddenBuckets: Num;
   hiddenTakerBuckets: Num;
 }
 
+/** Komórki ukryte dla prywatności razem (bez rozbicia na kohorty). */
+export interface CohortOthers {
+  label: string;
+  net: Num;
+  takerNet: Num;
+  volume: Num;
+  volumeShare: Num;
+}
+
 export interface CohortWindow {
   from: string | null;
   to: string | null;
   cohorts: CohortRow[];
+  othersCombined: CohortOthers;
 }
 
 export interface CohortFlowData {
@@ -248,14 +275,16 @@ export interface CohortFlowData {
 
 const NAME_COHORTS = 'cohort_flow';
 const NO_TRADES = tr('brak transakcji kohorty w oknie', 'no cohort trades in the window');
+const NO_TAPE = tr('plik nie podaje wolumenu taśmy', 'the file does not give the tape volume');
+const SHARE_UNKNOWN = tr('udział nieznany: część komórek ukryta, a plik nie podaje wolumenu taśmy', 'share unknown: some cells are hidden and the file does not give the tape volume');
 /** Definicja udziału w obrocie — w uwagach odpowiedzi i w opisie narzędzia. */
 const VOLUME_SHARE_DEF = tr(
-  'volumeShare = kupno + sprzedaż kohorty ÷ widoczne kupno + sprzedaż czterech kohort w oknie (każda transakcja liczona po obu stronach; ukryte komórki pominięte)',
-  "volumeShare = cohort buy+sell ÷ the four cohorts' visible buy+sell in the window (each trade counted on both sides; hidden cells excluded)"
+  'volumeShare = kupno + sprzedaż kohorty ÷ 2 × wolumen taśmy w oknie (każda transakcja ma kupującego i sprzedającego); komórki ukryte dla prywatności są razem w othersCombined, więc udziały kohort i othersCombined sumują się do 1',
+  'volumeShare = cohort buy+sell ÷ 2 × tape volume in the window (every trade has a buyer and a seller); cells hidden for privacy are combined in othersCombined, so the cohort shares and othersCombined add up to 1'
 );
 const COHORT_NOTE = tr(
-  `Kohorty uczestników Hyperliquid na BTC (market makerzy, poinformowani, wieloryby, reszta) z publicznej taśmy: adresy obu stron i strona agresora zostają na serwerze, publikowane są tylko agregaty zaokrąglone do 10 tys. USD. Komórki ukryte dla prywatności nie są wliczone. net = kupno − sprzedaż wszystkich wypełnień kohorty (zmiana zapasów), takerNet = kupno − sprzedaż kohorty jako biorcy płynności, volume = kupno + sprzedaż; ${VOLUME_SHARE_DEF}. „Poinformowani” to wynik statystyczny z przeszłości. Opis przepływu, nie sygnał.`,
-  `Hyperliquid BTC participant cohorts (market makers, informed, whales, rest) from the public tape: the addresses of both sides and the aggressor side stay on the server, only aggregates rounded to USD 10k are published. Cells hidden for privacy are not included. net = buys − sells over all the cohort's fills (inventory change), takerNet = buys − sells of the cohort as liquidity taker, volume = buys + sells; ${VOLUME_SHARE_DEF}. “Informed” is a statistical result from the past. A description of flow, not a signal.`
+  `Kohorty uczestników Hyperliquid na BTC (market makerzy, poinformowani, wieloryby, reszta) z publicznej taśmy: adresy obu stron i strona agresora zostają na serwerze, publikowane są tylko agregaty zaokrąglone do 10 tys. USD. Komórki ukryte dla prywatności nie są wliczone do kohort; ich suma jest w othersCombined (bez rozbicia na kohorty). net = kupno − sprzedaż wszystkich wypełnień kohorty (zmiana zapasów), takerNet = kupno − sprzedaż kohorty jako biorcy płynności, volume = kupno + sprzedaż; ${VOLUME_SHARE_DEF}. „Poinformowani” to wynik statystyczny z przeszłości; poniżej 10 kont albo bez rozrzutu umiejętności kohorta jest pusta. Opis przepływu, nie sygnał.`,
+  `Hyperliquid BTC participant cohorts (market makers, informed, whales, rest) from the public tape: the addresses of both sides and the aggressor side stay on the server, only aggregates rounded to USD 10k are published. Cells hidden for privacy are not included in the cohorts; their sum is in othersCombined (not split by cohort). net = buys − sells over all the cohort's fills (inventory change), takerNet = buys − sells of the cohort as liquidity taker, volume = buys + sells; ${VOLUME_SHARE_DEF}. “Informed” is a statistical result from the past; below 10 accounts or with no skill dispersion the cohort is empty. A description of flow, not a signal.`
 );
 
 /** „N komórek ukrytych dla prywatności” (komórka: kohorta w jednym kubełku 15 min). */
@@ -269,10 +298,13 @@ const joinNotes = (...n: (string | undefined)[]) => n.filter((x) => x !== undefi
 /**
  * Wiersze kohort okna. Kohorta bez transakcji i ukrytych komórek — „—” jak na panelu, nie zero. Widoczny obrót 0 przy
  * ukrytych komórkach — saldo, agresor, obrót i udział nieznane: null z powodem (liczba ukrytych), nie 0. Część komórek
- * ukryta — liczby z widocznych komórek z uwagą, ile ukryto.
+ * ukryta — liczby z widocznych komórek z uwagą, ile ukryto. Pusta kohorta „poinformowanych” — „nie wykryto” z liczbą
+ * sprawdzonych kont. Udział wobec 2 × wolumenu taśmy (nie 1 tylko dlatego, że pozostałe kohorty są ukryte).
  */
-function cohortRows(totals: Record<CohortId, CohortTotal>, note: string | undefined): CohortRow[] {
-  const all = COHORTS.reduce((s, id) => s + cohortVolume(totals[id]), 0);
+function cohortRows(flow: CohortFlow, w: 'h1' | 'h24', note: string | undefined): CohortRow[] {
+  const totals = flow.totals[w];
+  const denom = shareDenominator(totals, flow.tape?.[w]);
+  const none = informedState(flow) === 'none' ? informedNoneText(flow) : null;
   return COHORTS.map((id) => {
     const t = totals[id];
     const vol = cohortVolume(t);
@@ -280,17 +312,34 @@ function cohortRows(totals: Record<CohortId, CohortTotal>, note: string | undefi
     const hidTaker = t.takerHidden > 0 ? hiddenTaker(t.takerHidden) : undefined;
     const counts = { hiddenBuckets: live(t.hidden, 'count', note), hiddenTakerBuckets: live(t.takerHidden, 'count', note) };
     const row = (net: Num, takerNet: Num, volume: Num, volumeShare: Num): CohortRow => ({ id, label: COHORT_LABEL[id], net, takerNet, volume, volumeShare, ...counts });
-    if (!cohortSeen(t)) return row(nil('usd', NO_TRADES), nil('usd', NO_TRADES), nil('usd', NO_TRADES), nil('ratio', NO_TRADES));
-    if (vol === 0) {
-      // Całe komórki ukryte (wraz z ich warstwą agresora); bez nich — same ukryte warstwy agresora
-      const why = hid ?? hidTaker ?? NO_TRADES;
-      return row(nil('usd', why), nil('usd', why), nil('usd', why), nil('ratio', why));
-    }
+    const absent = (why: string) => row(nil('usd', why), nil('usd', why), nil('usd', why), nil('ratio', why));
+    if (!cohortSeen(t)) return absent(id === 'informed' && none !== null ? none : NO_TRADES);
+    // Całe komórki ukryte (wraz z ich warstwą agresora); bez nich — same ukryte warstwy agresora
+    if (vol === 0) return absent(hid ?? hidTaker ?? NO_TRADES);
     const part = hid === undefined ? undefined : tr(`${hid} (${plForm(t.hidden, 'niewliczona', 'niewliczone', 'niewliczonych')})`, `${hid} (not included)`);
     const n = joinNotes(note, part);
-    const share = all > 0 ? live(vol / all, 'ratio', n) : nil('ratio', tr('brak widocznego obrotu w oknie', 'no visible volume in the window'));
-    return row(live(cohortNet(t), 'usd', n), live(cohortTakerNet(t), 'usd', joinNotes(note, part, hidTaker)), live(vol, 'usd', n), share);
+    return row(live(cohortNet(t), 'usd', n), live(cohortTakerNet(t), 'usd', joinNotes(note, part, hidTaker)), live(vol, 'usd', n), shareNum(vol, denom, n));
   });
+}
+
+/** Udział z mianownika okna; mianownik nieznany — null z powodem. */
+function shareNum(vol: number, denom: number | null, note: string | undefined): Num {
+  if (denom === null) return nil('ratio', SHARE_UNKNOWN);
+  return denom > 0 ? live(vol / denom, 'ratio', note) : nil('ratio', tr('brak obrotu w oknie', 'no volume in the window'));
+}
+
+/** Wiersz „pozostali razem”: suma komórek ukrytych w oknie z pliku, udział wobec 2 × wolumenu taśmy. */
+function othersRow(flow: CohortFlow, w: 'h1' | 'h24', note: string | undefined): CohortOthers {
+  const t = hiddenTogether(flow.tape?.[w]);
+  if (!t) return { label: HIDDEN_TOGETHER_LABEL, net: nil('usd', NO_TAPE), takerNet: nil('usd', NO_TAPE), volume: nil('usd', NO_TAPE), volumeShare: nil('ratio', NO_TAPE) };
+  const vol = cohortVolume(t);
+  return {
+    label: HIDDEN_TOGETHER_LABEL,
+    net: live(cohortNet(t), 'usd', note),
+    takerNet: live(cohortTakerNet(t), 'usd', note),
+    volume: live(vol, 'usd', note),
+    volumeShare: shareNum(vol, shareDenominator(flow.totals[w], flow.tape?.[w]), note),
+  };
 }
 
 async function cohortsRun(src: Sources): Promise<Envelope<CohortFlowData>> {
@@ -311,6 +360,7 @@ async function cohortsRun(src: Sources): Promise<Envelope<CohortFlowData>> {
       hiddenBuckets: nil('count', why),
       hiddenTakerBuckets: nil('count', why),
     })),
+    othersCombined: { label: HIDDEN_TOGETHER_LABEL, net: nil('usd', why), takerNet: nil('usd', why), volume: nil('usd', why), volumeShare: nil('ratio', why) },
   });
   const hidden = (why: string) => envelope(NAME_COHORTS, { why, observedSince: null, h1: empty(why), h24: empty(why) }, sources, now, notes);
   if (!f.ok) return hidden(tr(`przepływ kohort niedostępny (${f.why})`, `cohort flow unavailable (${f.why})`));
@@ -326,8 +376,8 @@ async function cohortsRun(src: Sources): Promise<Envelope<CohortFlowData>> {
   const data: CohortFlowData = {
     why: null,
     observedSince: iso(flow.since),
-    h1: { from: end === null ? null : iso(end - HOUR), to: end === null ? null : iso(end), cohorts: cohortRows(flow.totals.h1, note) },
-    h24: { from: first === null ? null : iso(first), to: end === null ? null : iso(end), cohorts: cohortRows(flow.totals.h24, note) },
+    h1: { from: end === null ? null : iso(end - HOUR), to: end === null ? null : iso(end), cohorts: cohortRows(flow, 'h1', note), othersCombined: othersRow(flow, 'h1', note) },
+    h24: { from: first === null ? null : iso(first), to: end === null ? null : iso(end), cohorts: cohortRows(flow, 'h24', note), othersCombined: othersRow(flow, 'h24', note) },
   };
   return envelope(NAME_COHORTS, data, sources, now, notes);
 }
@@ -682,8 +732,11 @@ export interface ForecastLedgerData {
   /** Gdzie sprawdzić dziennik samodzielnie. */
   verifyUrl: string;
   returns: LedgerReturns[];
-  /** Szanse dotknięcia PDH, D-EQ i PDL w 2 h: Brier modelu, Brier klimatologii i umiejętność (BSS). */
-  touch: { settled: Num; brier: Num; brierBase: Num; bss: Num };
+  /**
+   * Szanse dotknięcia PDH, D-EQ i PDL w 2 h: Brier modelu i BSS w parze — wobec bazy odległości (`brierDist`, `bssDist`:
+   * wzór odbicia ze stałą σ godzinowych log-zwrotów z 30 dni) i wobec częstości bazowej poziomu (`brierBase`, `bss`).
+   */
+  touch: { settled: Num; brier: Num; brierBase: Num; bss: Num; brierDist: Num; bssDist: Num };
   pending: Num;
   voided: Num;
   slotsIssued: Num;
@@ -692,8 +745,8 @@ export interface ForecastLedgerData {
 
 const NAME_LEDGER = 'forecast_ledger';
 const LEDGER_NOTE = tr(
-  'Weryfikowalny dziennik prognoz HyperQuant: co 15 min prognozy zapisane przed faktem (rozkład zwrotu BTC na 1 h i 4 h, szanse dotknięcia PDH, D-EQ i PDL w 2 h), łańcuch hashy i kotwica w Bitcoinie (OpenTimestamps); rozstrzygnięcia ze świec 1m Hyperliquid. Prognozy nakładają się horyzontami, więc ich wyniki są skorelowane; test Kupca liczony na podpróbie rozłącznej. Wyniki od 20 rozstrzygnięć. Każdy może przeliczyć wyniki sam (verifyUrl).',
-  'The verifiable HyperQuant forecast ledger: every 15 min forecasts recorded before the fact (the BTC return distribution over 1 h and 4 h, the chances of touching PDH, D-EQ and PDL within 2 h), a hash chain and a Bitcoin anchor (OpenTimestamps); settlements from Hyperliquid 1m candles. Forecast horizons overlap, so their outcomes are correlated; the Kupiec test runs on a disjoint subsample. Scores from 20 settlements. Anyone can recompute the scores (verifyUrl).'
+  'Weryfikowalny dziennik prognoz HyperQuant: co 15 min prognozy zapisane przed faktem (rozkład zwrotu BTC na 1 h i 4 h, szanse dotknięcia PDH, D-EQ i PDL w 2 h), łańcuch hashy i kotwica w Bitcoinie (OpenTimestamps); rozstrzygnięcia ze świec 1m Hyperliquid. Prognozy nakładają się horyzontami, więc ich wyniki są skorelowane; test Kupca liczony na podpróbie rozłącznej. Wyniki od 20 rozstrzygnięć. BSS dotknięć podawaj zawsze w parze: `bss` wobec częstości bazowej poziomu i `bssDist` wobec bazy odległości (P = 2(1 − Φ(|d| / (σ√T))), d = log-odległość poziomu od ceny, σ = stała σ godzinowych log-zwrotów z 30 dni, jak w benchmarku CRPS); częstość nie zna odległości, więc sama zawyża umiejętność. Każdy może przeliczyć wyniki sam (verifyUrl).',
+  'The verifiable HyperQuant forecast ledger: every 15 min forecasts recorded before the fact (the BTC return distribution over 1 h and 4 h, the chances of touching PDH, D-EQ and PDL within 2 h), a hash chain and a Bitcoin anchor (OpenTimestamps); settlements from Hyperliquid 1m candles. Forecast horizons overlap, so their outcomes are correlated; the Kupiec test runs on a disjoint subsample. Scores from 20 settlements. Always give the touch BSS as a pair: `bss` against the level base rate and `bssDist` against the distance baseline (P = 2(1 − Φ(|d| / (σ√T))), d = log distance of the level from price, σ = constant σ of 30-day hourly log returns, as in the CRPS benchmark); the base rate ignores distance, so on its own it overstates skill. Anyone can recompute the scores (verifyUrl).'
 );
 
 async function ledgerRun(src: Sources): Promise<Envelope<ForecastLedgerData>> {
@@ -708,7 +761,7 @@ async function ledgerRun(src: Sources): Promise<Envelope<ForecastLedgerData>> {
       why,
       verifyUrl,
       returns: [],
-      touch: { settled: nil('count', why), brier: nil('ratio', why), brierBase: nil('ratio', why), bss: nil('ratio', why) },
+      touch: { settled: nil('count', why), brier: nil('ratio', why), brierBase: nil('ratio', why), bss: nil('ratio', why), brierDist: nil('ratio', why), bssDist: nil('ratio', why) },
       pending: nil('count', why),
       voided: nil('count', why),
       slotsIssued: nil('count', why),
@@ -723,6 +776,7 @@ async function ledgerRun(src: Sources): Promise<Envelope<ForecastLedgerData>> {
   if (ledgerFreshness(s, now) !== 'ready') notes.push(tr(`Dziennik nie był aktualizowany od ponad 35 min (ostatnia aktualizacja ${iso(s.asOf)}).`, `The ledger has not been updated for over 35 min (last update ${iso(s.asOf)}).`));
   const fromN = (n: number) => tr(`wyniki od ${LEDGER_MIN_N} rozstrzygnięć (jest ${n})`, `scores from ${LEDGER_MIN_N} settlements (now ${n})`);
   const noScore = tr('brak wyniku w podsumowaniu', 'no score in the summary');
+  const noDist = tr('brak BSS wobec bazy odległości w podsumowaniu; BSS podawany tylko w parze', 'no BSS against the distance baseline in the summary; BSS is given only as a pair');
   const score = (n: number) => (v: number | null | undefined) => (n >= LEDGER_MIN_N ? live(v, 'ratio', note, noScore) : nil('ratio', fromN(n)));
   /**
    * Pokrycie przedziałów (i test Kupca pokrycia 90%): MODEL z metodą wiersza stożka karty Rozliczenia (`CONE_METHOD`) —
@@ -752,11 +806,20 @@ async function ledgerRun(src: Sources): Promise<Envelope<ForecastLedgerData>> {
     });
   const t = s.scores.touch;
   const tt = score(t.n);
+  const noPair = t.n >= LEDGER_MIN_N && !(typeof t.bssDist === 'number' && Number.isFinite(t.bssDist));
   const data: ForecastLedgerData = {
     why: null,
     verifyUrl,
     returns,
-    touch: { settled: live(t.n, 'count', note), brier: tt(t.brier), brierBase: tt(t.brierBase), bss: tt(t.bss) },
+    touch: {
+      settled: live(t.n, 'count', note),
+      brier: tt(t.brier),
+      brierBase: tt(t.brierBase),
+      // BSS wobec samej częstości tylko w parze z BSS wobec odległości (jak na stronie)
+      bss: noPair ? nil('ratio', noDist) : tt(t.bss),
+      brierDist: tt(t.brierDist),
+      bssDist: noPair ? nil('ratio', noDist) : tt(t.bssDist),
+    },
     pending: live(s.pending, 'count', note),
     voided: live(s.voided, 'count', note),
     slotsIssued: live(s.participation.issued, 'count', note),
@@ -769,8 +832,8 @@ export const forecastLedger: ToolDef = {
   name: NAME_LEDGER,
   title: tr('Dziennik prognoz HyperQuant', 'HyperQuant forecast ledger'),
   description: tr(
-    `Trafność i kalibracja weryfikowalnego dziennika prognoz HyperQuant (prognozy BTC zapisywane co 15 min przed faktem, łańcuch hashy, kotwica w Bitcoinie): dla horyzontów zwrotu umiejętność CRPSS, pokrycie przedziałów 90%, 60% i ACI z testem Kupca; dla szans dotknięcia poziomów Brier i BSS; liczby rozstrzygnięć i pominiętych slotów; link do samodzielnej weryfikacji. Wyniki od 20 rozstrzygnięć. ${NO_DESC}`,
-    `Accuracy and calibration of the verifiable HyperQuant forecast ledger (BTC forecasts recorded every 15 min before the fact, a hash chain, a Bitcoin anchor): for the return horizons the CRPSS skill and the coverage of the 90%, 60% and ACI intervals with the Kupiec test; for the level touch chances the Brier score and BSS; counts of settlements and skipped slots; a link to verify it yourself. Scores from 20 settlements. ${NO_DESC}`
+    `Trafność i kalibracja weryfikowalnego dziennika prognoz HyperQuant (prognozy BTC zapisywane co 15 min przed faktem, łańcuch hashy, kotwica w Bitcoinie): dla horyzontów zwrotu umiejętność CRPSS, pokrycie przedziałów 90%, 60% i ACI z testem Kupca; dla szans dotknięcia poziomów Brier i BSS w parze: wobec częstości bazowej poziomu i wobec bazy odległości (wzór odbicia ze stałą σ godzinowych log-zwrotów z 30 dni); liczby rozstrzygnięć i pominiętych slotów; link do samodzielnej weryfikacji. Wyniki od 20 rozstrzygnięć. ${NO_DESC}`,
+    `Accuracy and calibration of the verifiable HyperQuant forecast ledger (BTC forecasts recorded every 15 min before the fact, a hash chain, a Bitcoin anchor): for the return horizons the CRPSS skill and the coverage of the 90%, 60% and ACI intervals with the Kupiec test; for the level touch chances the Brier score and BSS as a pair: against the level base rate and against the distance baseline (the reflection formula with a constant σ of 30-day hourly log returns); counts of settlements and skipped slots; a link to verify it yourself. Scores from 20 settlements. ${NO_DESC}`
   ),
   run: (src) => ledgerRun(src),
 };
