@@ -153,6 +153,7 @@ export const IndicatorsDialog: React.FC<{
 
   const row = (e: Entry, i: number) => {
     const fav = favs.includes(e.key);
+    const hintId = `${uid}-${e.key}`;
     const add = e.on === undefined;
     return (
       <li key={e.key} role="option" aria-selected={i === at} className={`flex items-start gap-1 rounded-lg ${i === at && q ? 'bg-surface-3' : ''} ${e.off ? 'opacity-55' : ''}`}>
@@ -191,7 +192,7 @@ export const IndicatorsDialog: React.FC<{
               {e.label}
               {q && <span className="ml-auto pl-2 text-[10px] text-ink-3 whitespace-nowrap">{SECTION_NAME[e.section]}</span>}
             </span>
-            <span id={`${uid}-${e.key}`} title={open.has(e.key) ? undefined : e.hint} className={`text-[11px] leading-snug text-ink-3 ${open.has(e.key) ? '' : 'truncate'}`}>
+            <span id={hintId} title={open.has(e.key) ? undefined : e.hint} className={`text-[11px] leading-snug text-ink-3 ${open.has(e.key) ? '' : 'truncate'}`}>
               {e.hint}
             </span>
           </span>
@@ -201,7 +202,7 @@ export const IndicatorsDialog: React.FC<{
         <button
           type="button"
           aria-expanded={open.has(e.key)}
-          aria-controls={`${uid}-${e.key}`}
+          aria-controls={hintId}
           aria-label={open.has(e.key) ? tr(`Zwiń opis: ${e.label}`, `Collapse description: ${e.label}`) : tr(`Pokaż cały opis: ${e.label}`, `Show the full description: ${e.label}`)}
           onClick={() =>
             setOpen((o) => {
