@@ -148,12 +148,25 @@ export const PROBE = `(() => {
     }
     return out;
   }
+  /** Nachodzące etykiety w każdym panelu wykresu (cena i panele pod nią): pole panelu i jego oś, osobno. */
   function labels() {
     const c = chart();
     if (!c) return null;
-    const pane = cellTexts(c.pane);
-    const axis = cellTexts(c.axis);
-    return { paneLabels: pane.length, axisLabels: axis.length, pane: overlapPairs(pane), axis: overlapPairs(axis) };
+    const rows = [...c.root.querySelectorAll('tr')].filter((tr) => tr.children.length >= 3 && vis(tr));
+    const sum = { paneLabels: 0, axisLabels: 0, pane: { n: 0, pairs: [] }, axis: { n: 0, pairs: [] }, panes: rows.length };
+    rows.forEach((tr, i) => {
+      const cells = [...tr.children];
+      const pane = cellTexts(cells[1]);
+      const axis = cellTexts(cells[2]);
+      sum.paneLabels += pane.length;
+      sum.axisLabels += axis.length;
+      for (const [k, list] of [['pane', pane], ['axis', axis]]) {
+        const o = overlapPairs(list);
+        sum[k].n += o.n;
+        sum[k].pairs.push(...o.pairs.map((p) => 'panel ' + (i + 1) + ': ' + p));
+      }
+    });
+    return sum;
   }
   /** Nazwa dostępna elementu sterującego. */
   const nameOf = (el) => ((el.getAttribute('aria-label') || '') + ' | ' + (el.getAttribute('title') || '') + ' | ' + (el.innerText || el.textContent || '')).replace(/\\s+/g, ' ');
