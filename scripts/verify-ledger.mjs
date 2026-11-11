@@ -4,12 +4,14 @@
  *   node scripts/verify-ledger.mjs --dir ./ledger [--bitcoin] [--market]   # pełna kontrola (zalecane):
  *       git clone -b ledger https://github.com/rdemb/hyperquant-data ledger
  *       --bitcoin: czas z bloków Bitcoina (poświadczenia OTS + nagłówki bloków); --market: ceny vs świece 1m HL
+ *       --since-commit <hash>: historię git sprawdza tylko po tym commicie (punkt kontrolny poprzedniej weryfikacji)
  *   node scripts/verify-ledger.mjs [RRRR-MM-DD]     # szybka kontrola ostatnich dni pobranych z GitHuba
  *
  * Sprawdza:
  *  1. łańcuch hashy: każda linia w postaci kanonicznej, hash = SHA-256 kanonicznego JSON z polem prev, prev = hash
  *     poprzedniej linii (także między dniami); w trybie --dir od GENESIS;
- *  2. wyniki: CRPS, PIT i pokrycia przeliczone z zapisanych kwantyli i zwrotu (nie przepisane z zapisu);
+ *  2. wyniki: CRPS, PIT i pokrycia przeliczone z zapisanych kwantyli i zwrotu (nie przepisane z zapisu); Brier dotknięć
+ *     i jego baza odległości (wzór odbicia ze stałą σ godzinową benchmarku z `bq` prognozy 1 h tego slotu, bssDist);
  *  3. historię git (--dir): każdy commit tylko dopisuje do plików dziennika;
  *     kot (Schrödi): p przeliczone z zapisanych cech i publicznego modelu public/schrodi/model-v1.json (hash modelu
  *     = `mh` rekordu), wzrost i duży ruch z cen i max/min okna; szanse dotknięcia poziomów i stożek zasięgu
@@ -22,7 +24,7 @@
  *     `ots upgrade <plik>.ots` i `ots verify -f <plik danych> <plik>.ots` (dla slotu: skrót podaj przez `-d <hash>`).
  * Implementacja celowo niezależna od kodu skanera (ten sam format, inny kod).
  */
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { AB_DESIGN, abBlocks } from '../src/utils/abTest.ts';
 import { fitEnsemble } from '../src/utils/ensemble.ts';
@@ -80,6 +82,25 @@ function quantileAt(taus, qs, tau) {
   let i = 1;
   while (taus[i] < tau) i++;
   return qs[i - 1] + ((tau - taus[i - 1]) / (taus[i] - taus[i - 1])) * (qs[i] - qs[i - 1]);
+}
+
+/** Φ(x) przez erf z rozwinięcia Abramowitza i Steguna 7.1.26 (błąd < 1,5e-7) — inna metoda niż w skanerze */
+function normCdf(x) {
+  const z = Math.abs(x) / Math.SQRT2;
+  const t = 1 / (1 + 0.3275911 * z);
+  const erf = 1 - ((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-z * z);
+  return x >= 0 ? 0.5 * (1 + erf) : 0.5 * (1 - erf);
+}
+const Z975 = 1.959963984540054;
+/**
+ * Baza odległości dla dotknięć: σ godzinowa benchmarku z kwantyli `bq` prognozy 1 h slotu (σ_h = (q₀,₉₇₅ − q₀,₀₂₅) / 2z),
+ * P = 2(1 − Φ(|ln(poziom/cena)| / (σ·√(h/60)))); brak prognozy 1 h albo σ ≤ 0 → null.
+ */
+function distTouchProb(fc, l, ret60) {
+  if (!ret60 || !Array.isArray(ret60.bq)) return null;
+  const s = (quantileAt(ret60.taus, ret60.bq, 0.975) - quantileAt(ret60.taus, ret60.bq, 0.025)) / (2 * Z975);
+  if (!(s > 0)) return null;
+  return Math.min(1, 2 * (1 - normCdf(Math.abs(Math.log(fc.lv[l] / fc.px0)) / (s * Math.sqrt(fc.h / 60)))));
 }
 
 const r6 = (x) => Math.round(x * 1e6) / 1e6;
@@ -798,6 +819,8 @@ export function recompute(records, { since } = {}) {
   for (const o of records) if (typeof o.t === 'number' && o.t > lastT) lastT = o.t;
   let touchN = 0;
   let brierSum = 0;
+  /** Dotknięcia z σ bazy odległości: Brier modelu i bazy na tych samych parach */
+  const dist = { n: 0, model: 0, base: 0 };
   const cat = { n: 0, brierDir: 0, brierBig: 0, hitDir: 0, hitBig: 0 };
   const market = { n: 0, brierModel: 0, brierMarket: 0, nEns: 0, brierEns: 0 };
   const marketTight = { n: 0, brierModel: 0, brierMarket: 0, nEns: 0, brierEns: 0 };
@@ -843,12 +866,24 @@ export function recompute(records, { since } = {}) {
         if (fc.p[l] === null) continue; // poziom już przekroczony przy wydaniu — nieoceniany
         brierSum += (fc.p[l] - res.yv[l]) ** 2;
         touchN++;
+        const ret60 = f.get(`${fc.slot}-ret60`);
+        const pd = distTouchProb(fc, l, ret60 && !ret60.variant ? ret60 : null);
+        if (pd === null) continue;
+        dist.n++;
+        dist.model += (fc.p[l] - res.yv[l]) ** 2;
+        dist.base += (pd - res.yv[l]) ** 2;
       }
     }
   }
   return {
     ret: Object.fromEntries(Object.entries(ret).map(([h, s]) => [h, { n: s.n, crps: s.crps / s.n, crpss: 1 - s.crps / s.crpsB, cov90: s.in90 / s.n }])),
-    touch: { levels: touchN, brier: touchN ? brierSum / touchN : null },
+    touch: {
+      levels: touchN,
+      brier: touchN ? brierSum / touchN : null,
+      levelsDist: dist.n,
+      brierDist: dist.n ? dist.base / dist.n : null,
+      bssDist: dist.n && dist.base > 0 ? 1 - dist.model / dist.base : null,
+    },
     cat: cat.n
       ? { n: cat.n, brierDir: cat.brierDir / cat.n, brierBig: cat.brierBig / cat.n, hitDir: cat.hitDir / cat.n, hitBig: cat.hitBig / cat.n }
       : { n: 0 },
@@ -888,26 +923,155 @@ const days = (from, to) => {
   return out;
 };
 
-/** Historia git (--dir): każdy kolejny commit tylko dopisuje do istniejących plików dziennika. */
-function checkGitAppendOnly(dir) {
-  const git = (...a) => execFileSync('git', ['-C', dir, ...a], { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
-  const commits = git('log', '--format=%H', '--reverse').split('\n').filter(Boolean);
-  const problems = [];
-  for (let i = 1; i < commits.length; i++) {
-    const files = git('ls-tree', '-r', '--name-only', commits[i - 1]).split('\n').filter((f) => f.endsWith('.jsonl'));
-    for (const f of files) {
-      const before = git('show', `${commits[i - 1]}:${f}`);
-      let after;
+/**
+ * Czytnik obiektów git — jeden proces `git cat-file --batch` na cały przebieg, pytania po jednym obiekcie.
+ * `pair(przed, po, fn)` czyta obie wersje pliku i oddaje je `fn` tylko na czas wywołania; następne pytanie idzie
+ * dopiero po nim, więc naraz w pamięci jest najwyżej jedna para (stała pamięć względem długości historii).
+ * `stats()` — szczyt bajtów trzymanych naraz (bufor wyjścia git + wypożyczona para), bajty łącznie, liczba par.
+ */
+export function catFileReader(dir) {
+  const proc = spawn('git', ['-C', dir, 'cat-file', '--batch'], { stdio: ['pipe', 'pipe', 'ignore'] });
+  /** Nieprzeczytane wyjście git (fragmenty) i ich łączna długość */
+  const chunks = [];
+  let queued = 0;
+  let lentBytes = 0;
+  let peakBytes = 0;
+  let totalBytes = 0;
+  let pairs = 0;
+  let failure = null;
+  let wake = null;
+  const notify = () => {
+    const w = wake;
+    wake = null;
+    w?.();
+  };
+  proc.stdout.on('data', (d) => {
+    chunks.push(d);
+    queued += d.length;
+    peakBytes = Math.max(peakBytes, queued + lentBytes);
+    notify();
+  });
+  proc.stdout.on('end', () => {
+    failure ??= new Error('git cat-file: koniec wyjścia');
+    notify();
+  });
+  const fail = (e) => {
+    failure = e;
+    notify();
+  };
+  proc.on('error', fail);
+  proc.stdin.on('error', fail); // git zakończony (EPIPE) — błąd przebiegu, nie nieobsłużony wyjątek
+  const exited = new Promise((resolve) => proc.on('close', resolve));
+  const waitFor = async (ready) => {
+    while (!ready()) {
+      if (failure) throw failure;
+      await new Promise((r) => (wake = r));
+    }
+  };
+  const take = (n) => {
+    const out = Buffer.allocUnsafe(n);
+    for (let off = 0; off < n; ) {
+      const c = chunks[0];
+      const k = Math.min(c.length, n - off);
+      c.copy(out, off, 0, k);
+      off += k;
+      if (k === c.length) chunks.shift();
+      else chunks[0] = c.subarray(k);
+    }
+    queued -= n;
+    return out;
+  };
+  const newline = () => {
+    let pos = 0;
+    for (const c of chunks) {
+      const i = c.indexOf(10);
+      if (i >= 0) return pos + i;
+      pos += c.length;
+    }
+    return -1;
+  };
+  /** Treść obiektu albo null („missing” — brak obiektu) */
+  const read = async (oid) => {
+    proc.stdin.write(`${oid}\n`);
+    await waitFor(() => newline() >= 0);
+    const header = take(newline() + 1).toString('utf8').trim();
+    const [, type, size] = header.split(' ');
+    if (type !== 'blob') return null;
+    const n = Number(size);
+    await waitFor(() => queued >= n + 1);
+    const body = take(n);
+    take(1); // znak nowej linii po treści
+    lentBytes += n;
+    totalBytes += n;
+    return body;
+  };
+  return {
+    async pair(before, after, fn) {
+      const a = await read(before);
+      const b = await read(after);
+      pairs++;
+      peakBytes = Math.max(peakBytes, queued + lentBytes);
       try {
-        after = git('show', `${commits[i]}:${f}`);
-      } catch {
-        problems.push(`${commits[i].slice(0, 10)}: usunięto ${f}`);
-        continue;
+        return fn(a, b);
+      } finally {
+        lentBytes = 0; // para oddana — następna czytana dopiero teraz
       }
-      if (!after.startsWith(before)) problems.push(`${commits[i].slice(0, 10)}: zmieniono zapisane linie w ${f}`);
+    },
+    async close() {
+      if (!proc.stdin.writableEnded) proc.stdin.end();
+      await exited;
+    },
+    stats: () => ({ peakBytes, totalBytes, pairs }),
+  };
+}
+
+/**
+ * Historia git (--dir): każdy kolejny commit tylko dopisuje do plików dziennika (`.jsonl`) poprzedniego commita —
+ * zmieniony plik zaczyna się bajt w bajt od poprzedniej treści, żaden nie znika. Sprawdzane tylko pliki zmienione
+ * w danym commicie (jeden `git diff-tree --stdin` dla wszystkich par), więc koszt rośnie z liczbą zmian, nie z liczbą
+ * commitów × plików. `since` — commit punktu kontrolnego (ostatnia udana weryfikacja): sprawdzane tylko commity po nim;
+ * musi należeć do historii gałęzi (inaczej historia została przepisana). Zmiany sprzed punktu kontrolnego wykrywa
+ * okresowy pełny przebieg (bez `since`). Wersje plików porównywane parami przez `reader` (domyślnie `catFileReader`) —
+ * pamięć nie rośnie z długością historii.
+ */
+export async function checkGitAppendOnly(dir, { since = null, reader = null } = {}) {
+  const git = (args, input) => execFileSync('git', ['-C', dir, ...args], { input, maxBuffer: 1024 * 1024 * 1024 });
+  const commits = git(['log', '--format=%H', '--reverse']).toString('utf8').split('\n').filter(Boolean);
+  let start = 0;
+  if (since) {
+    start = commits.indexOf(since);
+    if (start < 0) return { commits: commits.length, checked: 0, since, problems: [`punkt kontrolny ${since.slice(0, 8)}: brak w historii gałęzi (historia przepisana?)`] };
+  }
+  const pairs = [];
+  for (let i = start + 1; i < commits.length; i++) pairs.push(`${commits[i]} ${commits[i - 1]}`);
+  /** Zmiany plików dziennika: [commit, status, blob przed, blob po, ścieżka] */
+  const changes = [];
+  if (pairs.length) {
+    let cur = null;
+    for (const l of git(['diff-tree', '--stdin', '-r', '--no-renames', '--no-abbrev'], `${pairs.join('\n')}\n`).toString('utf8').split('\n')) {
+      if (/^[0-9a-f]{40}$/.test(l)) cur = l;
+      else if (l.startsWith(':')) {
+        const [meta, file] = l.split('\t');
+        const [, , before, after, status] = meta.split(' ');
+        if (file.endsWith('.jsonl') && status !== 'A') changes.push([cur, status, before, after, file]);
+      }
     }
   }
-  return { commits: commits.length, problems };
+  const problems = [];
+  const blobs = reader ?? catFileReader(dir);
+  try {
+    for (const [commit, status, before, after, file] of changes) {
+      if (status === 'D') {
+        problems.push(`${commit.slice(0, 10)}: usunięto ${file}`);
+        continue;
+      }
+      const appended = await blobs.pair(before, after, (a, b) => !!a && !!b && b.length >= a.length && b.subarray(0, a.length).equals(a));
+      if (!appended) problems.push(`${commit.slice(0, 10)}: zmieniono zapisane linie w ${file}`);
+    }
+  } finally {
+    if (!reader) await blobs.close(); // czytnik z zewnątrz zamyka wywołujący
+  }
+  return { commits: commits.length, checked: pairs.length, since, problems };
 }
 
 async function main() {
@@ -1049,9 +1213,17 @@ async function main() {
 
   if (local) {
     if (existsSync(path.join(local, '.git'))) {
-      const g = checkGitAppendOnly(local);
-      console.log(g.problems.length ? `✗ historia git: ${g.problems.slice(0, 5).join('; ')}` : `✓ historia git: ${plural(g.commits, 'commit', 'commity', 'commitów')}, tylko dopisywanie`);
-      if (g.problems.length) ok = false;
+      const sinceIdx = args.indexOf('--since-commit');
+      const since = sinceIdx >= 0 ? args[sinceIdx + 1] : null;
+      if (since !== null && !/^[0-9a-f]{40}$/.test(since ?? '')) {
+        console.log('✗ historia git: --since-commit wymaga pełnego hasha commita (40 znaków hex)');
+        ok = false;
+      } else {
+        const g = await checkGitAppendOnly(local, { since });
+        const scope = g.since ? ` (od punktu kontrolnego ${g.since.slice(0, 10)}: ${plural(g.checked, 'nowy commit', 'nowe commity', 'nowych commitów')}; pełna historia — przebieg bez --since-commit)` : '';
+        console.log(g.problems.length ? `✗ historia git: ${g.problems.slice(0, 5).join('; ')}` : `✓ historia git: ${plural(g.commits, 'commit', 'commity', 'commitów')}, tylko dopisywanie${scope}`);
+        if (g.problems.length) ok = false;
+      }
     }
     const otsDir = path.join(local, 'BTC', 'ots');
     let daily = 0;

@@ -1,4 +1,4 @@
-import { mkdirSync, renameSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { buildLiqMap } from '../../src/utils/liqMap.ts';
 import { buildLiqTape } from '../../src/utils/liqTape.ts';
@@ -10,11 +10,15 @@ import { LiqConfirmer, PriceRange, isLiqCandidate } from './liqDetect.ts';
 import { parseCoinPosition } from './positions.ts';
 import { putObject } from './r2.ts';
 
-/** Zapis atomowy: plik tymczasowy + rename (czytelnik nigdy nie widzi połowy JSON-a). */
+/**
+ * Zapis atomowy: plik tymczasowy + rename (czytelnik nigdy nie widzi połowy JSON-a). Pliki publikacji (dane publiczne)
+ * mają 0640 mimo UMask=0077 usługi: strażnik działa jako osobny użytkownik w grupie usługi i czyta status.json.
+ */
 function writeAtomic(path: string, body: string): void {
   mkdirSync(dirname(path), { recursive: true });
   const tmp = `${path}.tmp`;
   writeFileSync(tmp, body);
+  chmodSync(tmp, 0o640);
   renameSync(tmp, path);
 }
 

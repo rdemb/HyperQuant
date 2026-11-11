@@ -103,8 +103,8 @@ export const TOOL_META: ToolMeta[] = [
     name: 'forecast_ledger',
     title: { pl: 'Dziennik prognoz HyperQuant', en: 'HyperQuant forecast ledger' },
     about: {
-      pl: 'Wyniki weryfikowalnego dziennika prognoz: CRPSS, pokrycie przedziałów z testem Kupca, Brier i BSS dla dotknięć poziomów oraz link do samodzielnej weryfikacji.',
-      en: 'Scores of the verifiable forecast ledger: CRPSS, interval coverage with the Kupiec test, Brier score and BSS for level touches, and a link to verify them yourself.',
+      pl: 'Wyniki weryfikowalnego dziennika prognoz: CRPSS, pokrycie przedziałów z testem Kupca, Brier i BSS dotknięć poziomów wobec odległości i wobec częstości oraz link do samodzielnej weryfikacji.',
+      en: 'Scores of the verifiable forecast ledger: CRPSS, interval coverage with the Kupiec test, Brier score and BSS for level touches against distance and against the base rate, and a link to verify them yourself.',
     },
     ask: { pl: 'Jak dobrze skalibrowane są prognozy HyperQuant?', en: 'How well calibrated are the HyperQuant forecasts?' },
   },

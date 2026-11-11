@@ -7,14 +7,15 @@
  *  2. alarm — stan zdrowia (ta sama ocena co scripts/check-data-health.mjs) trafia do gałęzi `health` repo danych przez
  *     klucz wdrożeniowy skanera; push uruchamia tam workflow, który otwiera / komentuje / zamyka zgłoszenie
  *     „alert-danych”. Problem wysyłany po potwierdzeniu w dwóch przebiegach (prywatność — od razu), przypomnienie co 6 h;
- *     przy „ok” puls raz na dobę — uruchamia tam niezależną weryfikację dziennika i znaczek „zweryfikowano”.
+ *     przy „ok” puls co 12 h — uruchamia tam niezależną weryfikację dziennika i znaczek „zweryfikowano”. Opóźnione
+ *     odczyty pozycji z histerezą (koniec alarmu po 2 przebiegach poniżej 25 min), bo mediana oscyluje wokół progu.
  * Raport jest publiczny — bez adresów, ścieżek i danych serwera.
  */
 import { execFileSync } from 'node:child_process';
 import { closeSync, constants, existsSync, fstatSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { assessHealth, fetchInput, renderReport } from './check-data-health.mjs';
+import { LIMITS, assessHealth, fetchInput, ntlLag, renderReport } from './check-data-health.mjs';
 
 const MIN = 60_000;
 /** Skaner publikuje lokalnie co 30–60 s — 10 min ciszy to zawieszenie */
@@ -28,8 +29,11 @@ const RESTART_COOLDOWN = 60 * MIN;
 /** Restartów w jednym epizodzie problemu — potem tylko alarm (restart nie pomaga, np. przerwany łańcuch dziennika) */
 const MAX_RESTARTS = 3;
 const REMIND = 6 * 60 * MIN;
-/** Puls przy „ok” — uruchamia codzienną niezależną weryfikację dziennika (workflow gałęzi health) */
-const HEARTBEAT = 24 * 60 * MIN;
+/**
+ * Puls przy „ok” — uruchamia niezależną weryfikację dziennika (workflow gałęzi health; repo danych nie ma harmonogramu,
+ * bo domyślna gałąź `main` jest publikacją nadpisywaną co 2 min). Co 12 h, żeby wynik był zawsze młodszy niż doba.
+ */
+const HEARTBEAT = 12 * 60 * MIN;
 const SERVICE = 'hyperquant-scanner';
 const ALERTS_SERVICE = 'hyperquant-alerts';
 /** Serwer powiadomień zapisuje puls co 30 s; synchronizacja ze skrzynką co 3 s, kontekst rynku z WebSocket co ~1 s */
@@ -101,6 +105,26 @@ export function decideAlerts({ now, pulse, serviceState, activeForMs, lastRestar
   return { restart: true, reason, category };
 }
 
+/**
+ * Licznik restartów usługi w epizodzie po przebiegu: zero, gdy strażnik nie ma powodu do restartu tej usługi, a ona działa
+ * dłużej niż godzinę (także od ostatniego restartu). Według stanu tej usługi, nie całej oceny — alarm o danych (np.
+ * opóźnione odczyty pozycji) może trwać dniami i nie może blokować restartów po kolejnych, niezależnych zawieszeniach.
+ * Tuż po restarcie licznik zostaje (limit prób w epizodzie). `d` — wynik `decide` / `decideAlerts` dla tej usługi.
+ */
+export function episodeRestarts({ now, d, serviceState, activeForMs, lastRestart, restarts }) {
+  const settled = d.reason === null && serviceState === 'active' && (activeForMs ?? Infinity) >= RESTART_COOLDOWN && (lastRestart === null || now - lastRestart >= RESTART_COOLDOWN);
+  return settled ? 0 : restarts;
+}
+
+/**
+ * Ocena jednego przebiegu z histerezą opóźnienia odczytów pozycji. `input` — wynik `fetchInput` (null = bez repo
+ * danych), `prevNtl` — stan histerezy z pliku strażnika (brak = start bez alarmu). Zwraca ocenę i nowy stan do zapisu.
+ */
+export function assessRun(input, prevNtl, now) {
+  const ntl = ntlLag(prevNtl, input?.status?.ageNtlP50Min);
+  return { health: input ? assessHealth(input, now, LIMITS, ntl.lag) : { ok: true, problems: [], facts: [] }, ntl };
+}
+
 /** Problem bez zmiennych szczegółów: liczby → #, treść błędu pobrania pominięta. */
 const normalize = (p) => p.replace(/: nie udało się pobrać \(.*\)$/, ': nie udało się pobrać').replace(/\d+([.,]\d+)?/g, '#');
 
@@ -123,7 +147,7 @@ export function alertState(health, d, da = none) {
 /**
  * Wysyłka: powrót do „ok” od razu; problem — gdy ten sam stan był już w poprzednim przebiegu (`seenKey`; pojedyncze
  * błędy sieci nie otwierają zgłoszenia), prywatność (`urgent`) od razu; ten sam problem — przypomnienie co 6 h;
- * „ok” — puls raz na dobę (codzienna weryfikacja dziennika w GitHub Actions).
+ * „ok” — puls co 12 h (niezależna weryfikacja dziennika w GitHub Actions).
  */
 export function shouldPush({ prevKey, seenKey, key, lastPushAt, ok, urgent, now }) {
   if (ok) return prevKey !== 'ok' || lastPushAt === null || now - lastPushAt >= HEARTBEAT;
@@ -156,6 +180,20 @@ export function gitEnv(work, key, now) {
     GIT_COMMITTER_DATE: date,
     GIT_SSH_COMMAND: `ssh -i ${key} -o IdentitiesOnly=yes -o UserKnownHostsFile=${path.join(work, 'known_hosts')} -o StrictHostKeyChecking=accept-new -o BatchMode=yes`,
   };
+}
+
+/**
+ * Klucz wdrożeniowy: kopia od systemd (LoadCredential, czytelna tylko dla użytkownika strażnika), inaczej ścieżka
+ * z pliku skanera (uruchomienie ręczne). Plik klucza należy do usługi skanera, więc strażnik nie czyta go wprost.
+ * `exists` — do testów; null = brak klucza.
+ */
+export function deployKey(env, exists = existsSync) {
+  const dir = env.CREDENTIALS_DIRECTORY;
+  if (dir) {
+    const cred = path.posix.join(dir, 'deploy_key');
+    if (exists(cred)) return cred;
+  }
+  return (env.HQ_GIT_SSH_KEY ?? '').trim() || null;
 }
 
 function serviceState(unit = SERVICE) {
@@ -241,9 +279,10 @@ function pushAlert(remote, key, work, a, report, now) {
   }
 }
 
+/** Restart bez uprawnień root: polkit (backend/deploy/hyperquant-watchdog.rules) pozwala tylko na te dwie usługi. */
 function restart(unit, d) {
   try {
-    execFileSync('systemctl', ['restart', unit], { timeout: 120_000 });
+    execFileSync('systemctl', ['--no-ask-password', 'restart', unit], { timeout: 120_000 });
   } catch (e) {
     d.reason = `${d.reason} — restart nieudany (${e instanceof Error ? e.message.split('\n')[0] : String(e)})`;
   }
@@ -253,11 +292,12 @@ async function main() {
   const now = Date.now();
   const env = process.env;
   const outDir = env.HQ_OUT_DIR || '/var/lib/hyperquant/out';
-  // Katalog strażnika należy do root i leży poza katalogiem usługi skanera (StateDirectory w jednostce systemd)
+  // Katalog strażnika należy do jego użytkownika i leży poza katalogiem usługi skanera (StateDirectory w jednostce systemd)
   const work = env.HQ_WATCHDOG_DIR || '/var/lib/hyperquant-watchdog';
   mkdirSync(work, { recursive: true, mode: 0o700 });
   const stateFile = path.join(work, 'state.json');
-  let st = { lastRestart: null, restarts: 0, alertsRestart: null, alertsRestarts: 0, prevKey: null, seenKey: null, lastPushAt: null };
+  // `ntl` — stan histerezy opóźnienia odczytów pozycji; plik stanu bez pola (sprzed histerezy) = start bez alarmu
+  let st = { lastRestart: null, restarts: 0, alertsRestart: null, alertsRestarts: 0, prevKey: null, seenKey: null, lastPushAt: null, ntl: null };
   try {
     st = { ...st, ...JSON.parse(readFileSync(stateFile, 'utf8')) };
   } catch {
@@ -265,13 +305,16 @@ async function main() {
   }
   const remote = (env.HQ_GIT_REMOTE ?? '').trim();
   const base = dataBaseFromRemote(remote);
-  const health = base ? assessHealth(await fetchInput(base), now) : { ok: true, problems: [], facts: [] };
+  const run = assessRun(base ? await fetchInput(base) : null, st.ntl, now);
+  const health = run.health;
+  st.ntl = run.ntl;
   const state = serviceState();
+  const up = state === 'active' ? activeForMs() : null;
   const d = decide({
     now,
     localAsOf: readLocalAsOf(path.join(outDir, 'status.json')),
     serviceState: state,
-    activeForMs: state === 'active' ? activeForMs() : null,
+    activeForMs: up,
     lastRestart: st.lastRestart,
     restarts: st.restarts,
     publicCheck: base !== null,
@@ -283,12 +326,15 @@ async function main() {
     saveState(stateFile, st); // przed restartem — utrata zapisu nie może skasować przerwy między restartami
     restart(SERVICE, d);
   }
+  // Koniec epizodu osobno dla każdej usługi (po restarcie licznik zostaje — `d.reason` niepuste)
+  st.restarts = episodeRestarts({ now, d, serviceState: state, activeForMs: up, lastRestart: st.lastRestart, restarts: st.restarts });
   const alertsState = serviceState(ALERTS_SERVICE);
+  const alertsUp = alertsState === 'active' ? activeForMs(ALERTS_SERVICE) : null;
   const da = decideAlerts({
     now,
     pulse: parsePulse(readServiceJson(path.join(env.HQ_STATE_DIR || '/var/lib/hyperquant/state', 'alerts-pulse.json'))),
     serviceState: alertsState,
-    activeForMs: alertsState === 'active' ? activeForMs(ALERTS_SERVICE) : null,
+    activeForMs: alertsUp,
     lastRestart: st.alertsRestart,
     restarts: st.alertsRestarts,
   });
@@ -298,11 +344,11 @@ async function main() {
     saveState(stateFile, st);
     restart(ALERTS_SERVICE, da);
   }
+  st.alertsRestarts = episodeRestarts({ now, d: da, serviceState: alertsState, activeForMs: alertsUp, lastRestart: st.alertsRestart, restarts: st.alertsRestarts });
   const a = alertState(health, d, da);
-  if (a.ok) st.restarts = st.alertsRestarts = 0; // koniec epizodu
   console.log(`[strażnik] ${a.ok ? 'ok' : `problem: ${a.problems.join('; ')}`}`);
   const urgent = a.problems.some((p) => p.startsWith('PRYWATNOŚĆ'));
-  const key = env.HQ_GIT_SSH_KEY;
+  const key = deployKey(env);
   if (remote && key && shouldPush({ prevKey: st.prevKey, seenKey: st.seenKey, key: a.key, lastPushAt: st.lastPushAt, ok: a.ok, urgent, now })) {
     if (pushAlert(remote, key, work, a, renderReport({ ok: a.ok, problems: a.problems, facts: health.facts }, now), now)) {
       st.prevKey = a.key;

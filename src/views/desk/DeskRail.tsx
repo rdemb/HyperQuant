@@ -122,8 +122,8 @@ export const DeskRail: React.FC = () => {
         <Stat
           label={<>VPIN · <span className="normal-case">λ</span></>}
           source={{ tone: 'model', label: 'MODEL', title: tr('VPIN na kubełkach wolumenowych; λ z OLS na realnym przepływie WS', 'VPIN on volume buckets; λ from OLS on real WS flow') }}
-          value={<span className="text-base">{fmtPct(quant.vpinToxicity * 100, 1, false)}</span>}
-          hint={`λ = ${quant.kyleLambdaPer1M !== null ? `$${fmtFixed(quant.kyleLambdaPer1M, 2)} / $1M` : tr('b/d', 'n/a')}`}
+          value={quant.vpinToxicity === null ? DASH : <span className="text-base">{fmtPct(quant.vpinToxicity * 100, 1, false)}</span>}
+          hint={`${quant.vpinToxicity === null ? `${tr('VPIN: brak wolumenu w świecach', 'VPIN: no candle volume')} · ` : ''}λ = ${quant.kyleLambdaPer1M !== null ? `$${fmtFixed(quant.kyleLambdaPer1M, 2)} / $1M` : tr('b/d', 'n/a')}`}
         />
       </div>
 
