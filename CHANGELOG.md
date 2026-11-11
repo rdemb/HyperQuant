@@ -4,6 +4,16 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Badania: nazwy bez kierunku, bez martwego sygnału i bez dźwigni 100× (2026-11-12)
+
+#### Zmienione
+- **Stan wyczerpania przepływu opisuje przeszłość** (`src/types/trading.ts`, `src/utils/quantMathEngine.ts`): `BULLISH_EXHAUSTION_TOP_RISK` → `BUY_FLOW_ABSORBED`, `BEARISH_EXHAUSTION_BOTTOM_REVERSAL` → `SELL_FLOW_ABSORBED`, `AGGRESSIVE_BUY/SELL_CONTINUATION` → `AGGRESSIVE_BUY/SELL_DOMINANT` (bez stron rynku, szczytu, dołka i kontynuacji, jak nazwy reżimów).
+- **Mapa likwidacji z wykresu bez dźwigni 100×** (`src/utils/shaakuniEngine.ts`, `computeAggrLiquidationHeatmap`): Hyperliquid daje na BTC najwyżej 40× (`BTC_MAX_LEVERAGE` w `src/utils/planAnalyzer.ts`), więc poziomy dla 100× opisywały pozycje, których na tej giełdzie nie ma; zostają 5× i 20×.
+
+#### Usunięte
+- Nieużywany sygnał dźwiękowy kierunku `soundEngine.playSignalAlert('LONG' | 'SHORT')` (`src/utils/soundEngine.ts`).
+- Testy: `src/utils/__tests__/researchHonesty.test.tsx` (nazwy w src, brak sygnału w silniku dźwięku, dźwignie mapy ≤ 40×).
+
 ### Kto handluje: okno klasy kont pełne tylko w jednym zakresie numeracji (2026-11-11)
 
 #### Naprawione
