@@ -16,7 +16,7 @@ import { fmtCompact } from '../../../ui/format';
 import { type BookFrame, type BookHistory, type LargeLot, largeLots, lotThreshold } from '../core/book';
 import { Burst, DEFAULT_THRESHOLD_USD, OrderClass, Wall, bursts, classify } from '../core/clashes';
 import { RANK_WINDOW_MS, type ClashSelection, selectClashes, thresholdAt } from './clashSelect';
-import { bubbleThresholdAt, selectBubbles } from './bubbleSelect';
+import { BUBBLES_BARS, selectBubbles } from './bubbleSelect';
 import type { AggressorOrder } from '../core/orders';
 import type { ProBar } from '../store/proStore';
 import { logicalOfTime } from './overlay';
@@ -58,7 +58,7 @@ export type LiquidityPick =
   | { kind: 'wall'; wall: Wall };
 
 /**
- * Bąble: wybór w `bubbleSelect.ts` (próg interwału z chwili zdarzenia, najwyżej 40 na ekran); zlecenia podświetlonego
+ * Bąble: wybór w `bubbleSelect.ts` (2 największe z 20 świec w chwili wykonania, najwyżej 40 na ekran); zlecenia podświetlonego
  * adresu są zawsze widoczne, także poniżej progu.
  */
 const BUBBLE_R_MIN = 3;
@@ -216,12 +216,13 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
   /** Po każdej nowej scenie: liczba bąbli zleceń na ekranie, bez serii (pomiar układu). */
   onBubbles: ((n: number) => void) | null = null;
   /**
-   * Progi zamkniętych godzin wspólne dla kolejnych scen: serii i ścian (początek godziny → próg) i bąbli osobno dla
-   * każdego interwału. Ważne dla jednego źródła i wersji historii (`memoOf`).
+   * Progi zamkniętych godzin serii i ścian (początek godziny → próg) wspólne dla kolejnych scen. Ważne dla jednego
+   * źródła i wersji historii (`memoOf`).
    */
   private hourThr = new Map<number, number>();
-  private bubbleThr = new Map<number, Map<number, number>>();
   private memoOf: readonly unknown[] = [];
+  /** Telefon: bąbel tylko dla największego zlecenia z 20 świec (K = 1). */
+  private phone = false;
   private highlight = '';
   private selected: LiquidityPick | null = null;
   private geo: Geometry | null = null;
@@ -354,6 +355,12 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
     this.requestUpdate?.();
   }
 
+  /** Telefon (wąski ekran): bąble tylko dla największego zlecenia z 20 świec. */
+  setPhone(on: boolean): void {
+    this.phone = on;
+    this.requestUpdate?.();
+  }
+
   /**
    * `threshold` — próg bieżący (bąble, duże zlecenia); `manual` — próg ręczny z ustawień (0 — automatyczny): ściany
    * i serie mierzone są progiem z chwili zdarzenia (`thresholdAt`).
@@ -401,15 +408,15 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
     if (!sameInputs(memo, this.memoOf)) {
       this.memoOf = memo;
       this.hourThr = new Map();
-      this.bubbleThr = new Map();
     }
-    // Zlecenia pobierane raz na scenę: widoczny czas, a z seriami i ścianami także godzina przed nim (reguła przyczynowa)
+    // Zlecenia pobierane raz na scenę: widoczny czas i czas przed nim do porównania reguły przyczynowej — 20 świec
+    // (bąble), a z seriami i ścianami co najmniej godzina
     const clashesOn = this.toggles.showBubbles && this.toggles.showClashes;
-    const span = this.toggles.showBubbles && g ? this.src.orders(clashesOn ? g.tFrom - RANK_WINDOW_MS : g.tFrom, g.tTo) : [];
-    const all = clashesOn && g ? span.filter((o) => o.time >= g.tFrom) : span;
+    const back = Math.max(BUBBLES_BARS * this.ms, clashesOn ? RANK_WINDOW_MS : 0);
+    const span = this.toggles.showBubbles && g ? this.src.orders(g.tFrom - back, g.tTo) : [];
     const thrAt = thresholdAt(this.src.orders, this.manual, this.hourThr);
     const clashes = clashesOn && g ? this.sceneClashes(g, span, thrAt) : { walls: [], bursts: [] };
-    const bubbles = this.toggles.showBubbles && g ? this.sceneBubbles(g, all, clashes.bursts, thrAt) : { list: [], orders: 0 };
+    const bubbles = this.toggles.showBubbles && g ? this.sceneBubbles(g, span, clashes.bursts, thrAt) : { list: [], orders: 0 };
     this.bubbles = bubbles.list;
     this.walls = clashes.walls.length > 0 && g ? this.sceneWalls(g, clashes.walls) : [];
     this.onClashes?.(clashes.walls.length + clashes.bursts.length);
@@ -446,6 +453,7 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
       this.highlight,
       this.selected,
       this.domOn,
+      this.phone,
       this.now,
     ];
   }
@@ -565,22 +573,22 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
     return selectClashes(this.src.walls(g.tFrom - RANK_WINDOW_MS, g.tTo, 0), bursts(span, thrAt), this.now, thrAt, g.tFrom);
   }
 
-  /** Bąble: próg interwału z chwili zdarzenia (`selectBubbles`), do tego zlecenia podświetlonego adresu i serie. */
+  /**
+   * Bąble: reguła przyczynowa albo próg ręczny (`selectBubbles`; `span` — zlecenia od 20 świec przed widokiem), do tego
+   * zlecenia podświetlonego adresu i serie. Klasa zlecenia (bitwa) — progiem z chwili zdarzenia.
+   */
   private sceneBubbles(
     g: Geometry,
-    all: readonly AggressorOrder[],
+    span: readonly AggressorOrder[],
     series: readonly Burst[],
     thrAt: (t: number) => number
   ): { list: Bubble[]; orders: number } {
-    let memo = this.bubbleThr.get(this.ms);
-    if (!memo) this.bubbleThr.set(this.ms, (memo = new Map()));
-    const bubbleAt = bubbleThresholdAt(this.src.orders, this.ms, this.manual, thrAt, memo);
-    const list = selectBubbles(all, bubbleAt);
+    const list = selectBubbles(span, { from: g.tFrom, intervalMs: this.ms, phone: this.phone, manual: this.manual });
     const orders = list.length;
     const hl = this.highlight;
     if (hl) {
       const shown = new Set(list);
-      for (const o of all) if (o.taker === hl && !shown.has(o)) list.push(o);
+      for (const o of span) if (o.time >= g.tFrom && o.taker === hl && !shown.has(o)) list.push(o);
     }
     if (list.length === 0 && series.length === 0) return { list: [], orders };
     let max = 0;
@@ -592,7 +600,7 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
     const out: Bubble[] = [];
     for (const o of list) {
       const r = radius(o.notional);
-      const cls = classify(o, bubbleAt(o.time));
+      const cls = classify(o, thrAt(o.time));
       const mark = hl !== '' && o.taker === hl;
       out.push({
         x: this.x(o.time, g),

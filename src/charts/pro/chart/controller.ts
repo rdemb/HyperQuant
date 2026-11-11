@@ -626,6 +626,7 @@ export class ProChartController {
     if (on === this.phone) return;
     this.phone = on;
     this.liquidity.setDom(!on);
+    this.liquidity.setPhone(on);
     this.effort.setPhone(on);
     this.liquidity.setLabelLimit(densityLimit(this.settings.labelDensity, on));
     this.overlay.setCompact(on);

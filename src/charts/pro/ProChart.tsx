@@ -41,7 +41,7 @@ import { IndicatorsDialog, type IndicatorsSection, type ToggleItem } from './cha
 import { IndicatorSettings } from './chart/IndicatorSettings';
 import { indicatorLabel, indicatorsLink } from './indicators/registry';
 import { BURSTS_MAX, CLASHES_EVIDENCE, RANK_WINDOW_MS, WALLS_DONE_MAX, WALLS_K, WALLS_LIVE_MAX, WALL_MIN_MS } from './chart/clashSelect';
-import { BUBBLES_EVIDENCE, BUBBLES_MAX, BUBBLES_PER_BAR } from './chart/bubbleSelect';
+import { BUBBLES_BARS, BUBBLES_EVIDENCE, BUBBLES_K, BUBBLES_MAX } from './chart/bubbleSelect';
 import { AUCTIONS_PER_SIDE, ZONES_EVIDENCE, ZONES_PER_SIDE } from './chart/zonesSelect';
 import { MarketStateBar } from './chart/MarketStateBar';
 import { LayoutHeader } from './chart/LayoutHeader';
@@ -1704,14 +1704,13 @@ function whaleHint(w: WhaleLayer | null, coin: string): string {
 /** Warstwy orderflow na wykresie ceny (sekcja „Orderflow” okna wskaźników): opis z progami i powód, gdy nie działają. */
 function flowLayers(s: ChartSettings, intervalMs: number, liq: LiqMapState, whales: WhaleLayer | null, bigUsd: number): ToggleItem[] {
   const big = `${compact(bigUsd)} USD${s.bigTradeUsd === 0 ? tr(' (próg automatyczny)', ' (automatic threshold)') : ''}`;
-  // Próg bąbli: ręczny z ustawień albo zależny od interwału, z chwili zdarzenia (bąbel średnio co ~7 świec)
-  const perBar = String(BUBBLES_PER_BAR).replace('.', ',');
+  // Bąble: próg ręczny z ustawień albo reguła przyczynowa (wśród największych z poprzednich 20 świec w chwili wykonania)
   const bubbleFrom =
     s.bigTradeUsd > 0
       ? { pl: `od ${big}`, en: `from ${big}` }
       : {
-          pl: `od progu interwału z chwili zdarzenia: powyżej niego w poprzedniej dobie było średnio ${perBar} zlecenia na świecę (bąbel co ok. 7 świec), liczonego raz na godzinę, więc bąble z przeszłości się nie zmieniają`,
-          en: `above the interval threshold in force at the time: in the previous day on average ${BUBBLES_PER_BAR} orders per candle were above it (a bubble every ~7 candles), computed once per hour, so past bubbles do not change`,
+          pl: `gdy w chwili wykonania zlecenie było wśród ${BUBBLES_K} największych z poprzednich ${BUBBLES_BARS} świec (na telefonie największe); raz narysowany bąbel zostaje, niezależnie od przewinięcia i późniejszych zleceń`,
+          en: `when at execution the order was among the ${BUBBLES_K} largest of the previous ${BUBBLES_BARS} candles (on a phone the largest); once drawn a bubble stays, whatever the scroll or later orders`,
         };
   const scope = indicatorScope(intervalMs);
   const vwapOff = fromDaily(intervalMs) ? tr('Na interwałach do 1D', 'On timeframes up to 1D') : undefined;
