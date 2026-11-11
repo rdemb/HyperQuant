@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, readFileSync, existsSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -146,6 +146,14 @@ describe('Scanner — cykl skanu i publikacji', () => {
     const statusTxt = readFileSync(join(out, 'status.json'), 'utf8');
     expect(statusTxt).not.toMatch(/0x/);
     expect(JSON.parse(statusTxt)).toMatchObject({ coin: 'BTC', addresses: 2, positions: 2, seeded: 0 });
+  });
+
+  // Prawa plików nie mają znaczenia na Windows (chmod zmienia tam tylko „tylko do odczytu”)
+  it.skipIf(process.platform === 'win32')('pliki publikacji 0640: strażnik (osobny użytkownik w grupie usługi) czyta status.json', async () => {
+    const { scanner, out } = setup();
+    await scanner.scanDue(10);
+    expect(await scanner.publish()).toBe(true);
+    expect(statSync(join(out, 'status.json')).mode & 0o777).toBe(0o640);
   });
 
   it('kontekst rynku starszy niż 5 min: brak publikacji (stara cena nie udaje aktualnej)', async () => {
