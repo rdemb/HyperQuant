@@ -110,7 +110,15 @@ main() {
   # Kopie poza katalogiem aktualizowanym co 15 min (root, tylko odczyt dla usług): skrypt aktualizacji i strażnik.
   # Push do repo ich nie zmienia — tylko ponowny install.sh.
   install -o root -g root -m 0755 "$PREFIX/app/backend/deploy/hyperquant-update.sh" "$PREFIX/bin/hyperquant-update"
-  install -o root -g root -m 0644 "$PREFIX/app/scripts/watchdog.mjs" "$PREFIX/app/scripts/check-data-health.mjs" "$PREFIX/watchdog/"
+  # Strażnik z lokalnymi importami w układzie repo (scripts/, src/utils/) i package.json (typ modułu); nowa kopia
+  # obok i podmiana katalogu, więc przerwana instalacja nie zostawia połowy plików
+  local f WATCHDOG_FILES="package.json scripts/watchdog.mjs scripts/check-data-health.mjs scripts/verify-status.mjs src/utils/verifyFreshness.ts"
+  rm -rf "$PREFIX/watchdog.new"
+  install -d -o root -g root -m 0755 "$PREFIX/watchdog.new"
+  for f in $WATCHDOG_FILES; do
+    install -D -o root -g root -m 0644 "$PREFIX/app/$f" "$PREFIX/watchdog.new/$f"
+  done
+  rm -rf "$PREFIX/watchdog" && mv "$PREFIX/watchdog.new" "$PREFIX/watchdog"
 
   # Konfiguracja z szablonu tylko przy pierwszej instalacji; sekrety R2 wpisuje właściciel.
   # systemd czyta EnvironmentFile jako root — plik należy do root i ma 0600 przy każdym uruchomieniu.

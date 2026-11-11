@@ -20,7 +20,7 @@ EnvironmentFile=/etc/hyperquant/watchdog.env
 StateDirectory=hyperquant-watchdog
 StateDirectoryMode=0700
 Environment=HQ_WATCHDOG_DIR=/var/lib/hyperquant-watchdog
-ExecStart=/opt/hyperquant/node/bin/node /opt/hyperquant/watchdog/watchdog.mjs
+ExecStart=/opt/hyperquant/node/bin/node /opt/hyperquant/watchdog/scripts/watchdog.mjs
 TimeoutStartSec=5min
 Nice=10
 
