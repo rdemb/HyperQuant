@@ -41,6 +41,8 @@ export interface ChartSettings {
    * „Stan”. Pole tylko dopisywane: zapis bez niego czyta się bez zmian.
    */
   stateOpen?: boolean;
+  /** Strefy nierównowagi i aukcje w trybie „Historia” (wszystkie obrysami); brak — wyłączony. Pole tylko dopisywane. */
+  zonesHistory?: true;
   /** Gęstość etykiet liczbowych na wykresie (0, 3, 5, wszystkie); brak — 5 na komputerze, 3 na telefonie. */
   labelDensity?: LabelDensity;
   /** Wskaźniki na wykresie ceny. */
@@ -267,6 +269,7 @@ export function parseSettings(raw: unknown, d: ChartSettings = DEFAULT_SETTINGS)
     ...(panelSetIids ? { panelSetIids } : {}),
     ...(blogMapId !== undefined ? { blogMapId } : {}),
     ...(parseDensity(r.labelDensity) !== undefined ? { labelDensity: parseDensity(r.labelDensity) } : d.labelDensity !== undefined ? { labelDensity: d.labelDensity } : {}),
+    ...(r.zonesHistory === true ? { zonesHistory: true as const } : {}),
     ...(typeof r.stateOpen === 'boolean' ? { stateOpen: r.stateOpen } : d.stateOpen !== undefined ? { stateOpen: d.stateOpen } : {}),
   };
 }

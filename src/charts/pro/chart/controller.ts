@@ -438,7 +438,12 @@ export class ProChartController {
     this.main.attachPrimitive(this.overlay);
     // Podpisy bąbli, ścian i dużych zleceń omijają etykiety poziomów nakładki (rysowane wcześniej w tej samej klatce)
     this.liquidity.setBlocked(() => this.overlay.occupied());
-    this.zones = new ZonesLayer({ showZones: settings.showZones, showAuctions: settings.showAuctions });
+    this.zones = new ZonesLayer({ showZones: settings.showZones, showAuctions: settings.showAuctions, history: settings.zonesHistory === true });
+    // Liczba pasm stref i linii aukcji wybranych przez warstwę (pomiar układu czyta ją z atrybutów, nie z pikseli)
+    this.zones.onSelect = (z, a) => {
+      container.dataset.zoneRects = String(z);
+      container.dataset.auctionLines = String(a);
+    };
     this.main.attachPrimitive(this.zones);
     this.tpo = new TpoLayer(settings.showTpo, settings.showTpoOi);
     this.main.attachPrimitive(this.tpo);
@@ -547,7 +552,7 @@ export class ProChartController {
     this.stripAt = 0;
     this.liquidity.setToggles(liqToggles(s));
     this.liquidity.setLabelLimit(densityLimit(s.labelDensity, this.phone));
-    this.zones.setToggles({ showZones: s.showZones, showAuctions: s.showAuctions });
+    this.zones.setToggles({ showZones: s.showZones, showAuctions: s.showAuctions, history: s.zonesHistory === true });
     this.zones.setParams(this.zoneParams(s));
     if (prev.bigTradeUsd !== s.bigTradeUsd) this.schedule();
     if (force || prev.showHeatmap !== s.showHeatmap) this.applyDomInset();
