@@ -32,6 +32,15 @@ Powtórzenie dla bąbli kodem warstwy (`selectBubbles` z pokryciem taśmy jak w 
 - **`ui:check`: scenariusz bąbli** (Kokpit 1m na powtórce 24.10 19:30, 1440 i 390): liczba z atrybutu `data-bubbles` (bez serii); w `--strict` na 1440 od 5 do 40, na 390 najwyżej 15. Limit ścian i serii w scenariuszu ścian 13 → 25. `scripts/ui/baseline.json` (win32): nowe `bubbles.count1440` 14 i `bubbles.count390` 0; zmienione `clashes.objects1440` 10 → 4, `objects.replay1440.bubbles` 161 → 12, `objects.replay1440.rects` 388 → 385, `objects.replay390.bubbles` 39 → 6, `objects.replay390.labels` 7 → 5, `objects.replay390.rects` 195 → 188.
 - Testy: `bubbleSelect.test.ts` (zlecenie z dwoma większymi w poprzednich 20 świecach bez bąbla, pierwsze po pustych 20 świecach z bąblem, okno 20 świec dla 1m i 5m, po zamknięciu świecy wybór bez zmian po późniejszych większych zleceniach, telefon K = 1, równe wartości i zlecenia z tej samej chwili, zestaw minionej godziny ten sam po przewinięciu, zbliżeniu i upływie czasu, liczba na 140 i 33 świecach, taśma od S bez bąbli w pierwszych 20 świecach i zestaw od S + 20 świec bez zmian po dołożeniu wcześniejszej taśmy, luka w pokryciu jak początek, 7 rosnących zleceń w świecy → 2 największe, mniejszy ustępuje większemu w trwającej świecy, próg ręczny, limit 40, zdanie w opisie PL i EN); `clashSelect.test.ts` (reguła przyczynowa ścian i serii, ściana raz narysowana zostaje, pamięć progów, limit nie przycina 11 ścian i 9 serii, pokrycie 60 min: początek i luka); `liquidityScene.test.ts` (druga scena nie liczy progu zamkniętej godziny od nowa, doczytanie historii czyści pamięć, liczba bąbli dla pomiaru, K = 2 i na telefonie K = 1, zlecenia sprzed widoku liczą się do porównania, pokrycie ze źródła, przerwa 1 s tolerowana a luka 5 min nie, okno historii); `serverHistory.test.ts` (wersja historii).
 
+### Angielski pierwszym językiem powłoki (E1) (2026-11-12)
+
+#### Zmienione
+- **`index.html` po angielsku** (to, co widzi wyszukiwarka i podgląd linku, zanim aplikacja wykryje język): `lang="en"`, tytuł, opis, słowa kluczowe, Open Graph (`og:locale` `en_GB`, alternatywa `pl_PL`), Twitter, opis JSON-LD (`inLanguage` `["en", "pl"]`) i blok `noscript` (polskie strony jako drugie, z `lang="pl"`). Kanał RSS zostaje polski, z tytułem „HyperQuant · BTC analysis (in Polish)”. Po starcie aplikacja dalej ustawia język czytelnika (`src/main.tsx`).
+- **`public/manifest.webmanifest` po angielsku**: `lang: "en"`, opis i skróty (Pre-session, In session, Post-session), te same adresy.
+- **Strona 404 po angielsku najpierw** (`scripts/blog/pages.mjs`), polskie zdanie z polskimi stronami drugie; blog oznaczony „(in Polish)”.
+- Adresy bez zmian; blog, wpisy i RSS zostają po polsku.
+- Testy: `src/shell/__tests__/englishShell.test.ts` (index.html i manifest bez polskich znaków, `lang` `en`), `scripts/blog/blog.test.mjs` (404).
+
 ### Badania: nazwy bez kierunku, bez martwego sygnału i bez dźwigni 100× (2026-11-12)
 
 #### Zmienione

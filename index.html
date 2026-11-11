@@ -1,12 +1,12 @@
 <!doctype html>
-<html lang="pl" class="dark" translate="no">
+<html lang="en" class="dark" translate="no">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="google" content="notranslate" />
-    <title>HyperQuant: wykresy orderflow BTC i desk dla Hyperliquid</title>
+    <title>HyperQuant: BTC order-flow charts and desk for Hyperliquid</title>
 
-    <!-- Ikony i PWA -->
+    <!-- Icons and PWA -->
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="apple-touch-icon" sizes="180x180" href="./icons/apple-touch-icon.png" />
@@ -16,54 +16,54 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="HyperQuant" />
 
-    <!-- Wyszukiwarki i metadane -->
-    <meta name="description" content="Darmowy desk do day tradingu BTC na Hyperliquid: wykresy orderflow na żywo (footprint, delta, CVD, mapa ciepła), lekcje na prawdziwych danych i analizy BTC." />
-    <meta name="keywords" content="Hyperliquid, BTC, orderflow, footprint, delta, CVD, mapa ciepła arkusza, day trading, lekcje tradingu, analizy BTC" />
+    <!-- Search engines and metadata -->
+    <meta name="description" content="Free BTC day-trading desk for Hyperliquid: live order-flow charts (footprint, delta, CVD, heatmap), lessons on real data and BTC analyses." />
+    <meta name="keywords" content="Hyperliquid, BTC, order flow, footprint, delta, CVD, order book heatmap, day trading, trading lessons, BTC analysis" />
     <meta name="author" content="HyperQuant (open source)" />
     <link rel="canonical" href="https://hyperquant.tech/" />
-    <link rel="alternate" type="application/rss+xml" title="HyperQuant · Analizy BTC" href="./blog/feed.xml" />
+    <link rel="alternate" type="application/rss+xml" title="HyperQuant · BTC analysis (in Polish)" href="./blog/feed.xml" />
 
     <!-- Open Graph (Facebook, Discord, LinkedIn, Slack) -->
     <meta property="og:type" content="website" />
-    <meta property="og:locale" content="pl_PL" />
-    <meta property="og:locale:alternate" content="en_GB" />
+    <meta property="og:locale" content="en_GB" />
+    <meta property="og:locale:alternate" content="pl_PL" />
     <meta property="og:url" content="https://hyperquant.tech/" />
-    <meta property="og:title" content="HyperQuant: wykresy orderflow BTC i desk dla Hyperliquid" />
-    <meta property="og:description" content="Darmowe wykresy orderflow BTC z Hyperliquid (footprint, delta, CVD, mapa ciepła arkusza, powtórka nagranej doby), lekcje na prawdziwych dniach i analizy pisane przed faktem. Bez sygnałów." />
+    <meta property="og:title" content="HyperQuant: BTC order-flow charts and desk for Hyperliquid" />
+    <meta property="og:description" content="Free BTC order-flow charts from Hyperliquid (footprint, delta, CVD, order book heatmap, replay of a recorded day), lessons on real days and analyses written before the fact. No signals." />
     <meta property="og:image" content="https://hyperquant.tech/og.png" />
     <meta property="og:image:secure_url" content="https://hyperquant.tech/og.png" />
     <meta property="og:image:type" content="image/png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="HyperQuant: darmowy desk do day tradingu BTC na Hyperliquid, footprint na Wykresach" />
+    <meta property="og:image:alt" content="HyperQuant: free BTC day-trading desk for Hyperliquid, footprint on Charts" />
     <meta property="og:site_name" content="HyperQuant" />
 
     <!-- Twitter / X Cards -->
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:url" content="https://hyperquant.tech/" />
-    <meta name="twitter:title" content="HyperQuant: wykresy orderflow BTC i desk dla Hyperliquid" />
-    <meta name="twitter:description" content="Darmowe wykresy orderflow BTC z Hyperliquid, lekcje na prawdziwych dniach i analizy pisane przed faktem. Bez sygnałów." />
+    <meta name="twitter:title" content="HyperQuant: BTC order-flow charts and desk for Hyperliquid" />
+    <meta name="twitter:description" content="Free BTC order-flow charts from Hyperliquid, lessons on real days and analyses written before the fact. No signals." />
     <meta name="twitter:image" content="https://hyperquant.tech/og.png" />
-    <meta name="twitter:image:alt" content="HyperQuant: darmowy desk do day tradingu BTC na Hyperliquid, footprint na Wykresach" />
+    <meta name="twitter:image:alt" content="HyperQuant: free BTC day-trading desk for Hyperliquid, footprint on Charts" />
 
-    <!-- Fonty -->
+    <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&family=Outfit:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 
-    <!-- Dane strukturalne Schema.org -->
+    <!-- Schema.org structured data -->
     <script type="application/ld+json">
     {
       "@context": "https://schema.org",
       "@type": "WebApplication",
       "name": "HyperQuant — BTC Day Trading Desk",
       "url": "https://hyperquant.tech/",
-      "inLanguage": ["pl", "en"],
-      "description": "Darmowy, otwarty desk do day tradingu BTC na Hyperliquid: wykresy orderflow na żywo (footprint, delta, CVD, mapa ciepła arkusza, powtórka nagranej doby), lekcje na prawdziwych danych, analizy BTC i weryfikowalny dziennik prognoz. Przygotowanie, sesja i rozliczenie dnia. Nie generuje sygnałów.",
+      "inLanguage": ["en", "pl"],
+      "description": "Free, open BTC day-trading desk for Hyperliquid: live order-flow charts (footprint, delta, CVD, order book heatmap, replay of a recorded day), lessons on real data, BTC analyses and a verifiable forecast ledger. Preparation, session and review of the day. It does not generate signals.",
       "applicationCategory": "FinanceApplication",
       "isAccessibleForFree": true,
       "image": "https://hyperquant.tech/og.png",
-      "operatingSystem": "Dowolny (nowoczesna przeglądarka)",
+      "operatingSystem": "Any (modern browser)",
       "offers": {
         "@type": "Offer",
         "price": "0",
@@ -77,15 +77,12 @@
       <div style="padding: 2rem 1rem; font-family: system-ui, sans-serif; color: #A9B4C4; background: #070A11; min-height: 100vh;">
         <h1 style="color: #EEF2F7; font-size: 1.5rem; margin: 0 0 0.5rem;">HyperQuant — BTC Day Trading Desk</h1>
         <p style="font-size: 1rem; line-height: 1.6; max-width: 640px;">
-          Darmowy desk do day tradingu BTC na Hyperliquid: wykresy orderflow na żywo (footprint, delta, CVD, mapa ciepła arkusza), lekcje na prawdziwych danych, analizy BTC pisane przed faktem i weryfikowalny dziennik prognoz: przygotowanie, sesja i rozliczenie dnia. Bez sygnałów kupna ani sprzedaży.
+          Free BTC day-trading desk for Hyperliquid: live order-flow charts (footprint, delta, CVD, order book heatmap), lessons on real data, BTC analyses written before the fact and a verifiable forecast ledger: preparation, session and review of the day. No buy or sell signals.
         </p>
         <p style="line-height: 1.6; max-width: 640px;">
-          <a href="./wykresy/" style="color: #3FC6DD;">Wykresy</a> · <a href="./lekcje/" style="color: #3FC6DD;">Lekcje</a> · <a href="./blog/" style="color: #3FC6DD;">Blog</a> · <a href="./en/charts/" lang="en" style="color: #3FC6DD;">Charts (EN)</a> · <a href="./en/lessons/" lang="en" style="color: #3FC6DD;">Lessons (EN)</a>
+          <a href="./en/charts/" style="color: #3FC6DD;">Charts</a> · <a href="./en/lessons/" style="color: #3FC6DD;">Lessons</a> · <a href="./blog/" lang="pl" style="color: #3FC6DD;">Blog (in Polish)</a> · <a href="./wykresy/" lang="pl" style="color: #3FC6DD;">Wykresy (PL)</a> · <a href="./lekcje/" lang="pl" style="color: #3FC6DD;">Lekcje (PL)</a>
         </p>
         <p style="margin-top: 1.5rem; color: #FAB219;">
-          Włącz JavaScript, aby uruchomić aplikację.
-        </p>
-        <p lang="en" style="color: #FAB219;">
           Enable JavaScript to run the app.
         </p>
       </div>
