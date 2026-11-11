@@ -6,8 +6,8 @@ Market description, not investment advice. No keys, no accounts, no trading, no 
 
 ## Status
 
-- Version 0.1.2, stdio transport only.
-- The package is published on npm as `hyperquant-mcp`: install and run it with `npx -y hyperquant-mcp@0.1.2` (next section). Claude Desktop can also install the `.mcpb` file (see Claude Desktop below), and the server can be built from source (see From source).
+- Version 0.1.3, stdio transport only.
+- The package is published on npm as `hyperquant-mcp`: install and run it with `npx -y hyperquant-mcp@0.1.3` (next section). Claude Desktop can also install the `.mcpb` file (see Claude Desktop below), and the server can be built from source (see From source).
 - A Streamable HTTP mode (a hosted endpoint you connect to by URL) is planned, not built.
 - `twaps.activeCount` (the number of TWAPs running now) needs a live stream, so for now it is always `null` with a reason.
 
@@ -16,10 +16,10 @@ Market description, not investment advice. No keys, no accounts, no trading, no 
 Requires Node.js 20 or later.
 
 ```sh
-npx -y hyperquant-mcp@0.1.2
+npx -y hyperquant-mcp@0.1.3
 ```
 
-The command downloads the package, starts the server on stdin/stdout and waits for an MCP client. Keep the version in the command: `npx` then runs exactly that release, not whatever is newest on npm. In a client, use the command `npx` with the arguments `-y hyperquant-mcp@0.1.2`.
+The command downloads the package, starts the server on stdin/stdout and waits for an MCP client. Keep the version in the command: `npx` then runs exactly that release, not whatever is newest on npm. In a client, use the command `npx` with the arguments `-y hyperquant-mcp@0.1.3`.
 
 ## Configure a client
 
@@ -28,7 +28,7 @@ The command downloads the package, starts the server on stdin/stdout and waits f
 In OpenBot, open Marketplace → Apps, add your own app and choose the STDIO transport:
 
 - command: `npx`
-- arguments: `-y hyperquant-mcp@0.1.2`
+- arguments: `-y hyperquant-mcp@0.1.3`
 - optional environment: `HQ_LANG=en` (or `pl`), `HQ_TZ=UTC`
 
 From source (see below), use the command `node` and the argument `/path/to/HyperQuant/mcp/dist/hyperquant-mcp.mjs`.
@@ -44,7 +44,7 @@ To configure it by hand instead, add the server to `claude_desktop_config.json` 
   "mcpServers": {
     "hyperquant": {
       "command": "npx",
-      "args": ["-y", "hyperquant-mcp@0.1.2"],
+      "args": ["-y", "hyperquant-mcp@0.1.3"],
       "env": { "HQ_LANG": "en", "HQ_TZ": "UTC" }
     }
   }
@@ -55,7 +55,7 @@ From source: `"command": "node"`, `"args": ["/path/to/HyperQuant/mcp/dist/hyperq
 
 ### Any other MCP client
 
-Any client that launches stdio servers works: command `npx`, arguments `-y hyperquant-mcp@0.1.2` (or `node` with the bundle path, see From source). The server reads requests on stdin and writes only MCP messages on stdout; its logs go to stderr.
+Any client that launches stdio servers works: command `npx`, arguments `-y hyperquant-mcp@0.1.3` (or `node` with the bundle path, see From source). The server reads requests on stdin and writes only MCP messages on stdout; its logs go to stderr.
 
 ## From source
 
@@ -101,7 +101,7 @@ All tools are read-only. Two take an optional argument: `session_review` (`sessi
 - **Privacy:** aggregates and day pseudonyms only, never wallet addresses or transaction hashes. Every response passes the site's content guards (privacy and trade-call patterns) and an address pattern; a hit returns `isError` with the reason and no content. A blog level whose label trips the guards or falls outside the strict format keeps its price: in `day_map` and `market_brief` it has `label: null` with the reason in `labelWhy`, and in `session_review` the label reads `[label withheld]` (a post title that trips the guards or the format reads `[title withheld]`, and the reasons are in `notes`). A hit anywhere else blocks the whole response.
 - **Text from the data is quoted, never followed:** labels, titles and pseudonyms come from public files, and the server instructions tell the model they are data, not instructions. Before they reach a response they must fit a strict format, or they are withheld with the reason "format not allowed": a level label up to 40 characters of letters, digits, spaces and `. , % ( ) / + ' ’ -`; a post title up to 120 characters of the same plus `:` and `—`; at most 20 levels per map (the rest are cut, with a note); a whale pseudonym `W` followed by 6 lowercase hex characters (a position or order with any other id is skipped, with a note giving the count).
 - **BTC only:** the scanner records BTC, so the tools take no market argument.
-- **Network:** a 10 s timeout per request; a size limit on every response (scanner files and `maps.json` 4 MB, one Hyperliquid candle request 2 MB, a tape history file 16 MB after decompression, 32 MB in total per `twaps` call); a larger response is a missing source with the reason, never a partial read. An in-process cache (scanner files and candles 60 s, blog maps 5 min, volatility model 15 min, a failed request 30 s, HTTP 429 60 s); the header `User-Agent: hyperquant-mcp/0.1.2` and nothing about the user.
+- **Network:** a 10 s timeout per request; a size limit on every response (scanner files and `maps.json` 4 MB, one Hyperliquid candle request 2 MB, a tape history file 16 MB after decompression, 32 MB in total per `twaps` call); a larger response is a missing source with the reason, never a partial read. An in-process cache (scanner files and candles 60 s, blog maps 5 min, volatility model 15 min, a failed request 30 s, HTTP 429 60 s); the header `User-Agent: hyperquant-mcp/0.1.3` and nothing about the user.
 
 ## Environment variables
 
@@ -138,7 +138,7 @@ MIT, see [LICENSE](LICENSE).
 
 Serwer MCP HyperQuant: kontekst rynku BTC z danych publicznych (mapy z bloga HyperQuant, świece Hyperliquid, pliki skanera), liczony tymi samymi funkcjami co strona hyperquant.tech. Tylko odczyt, bez kluczy i kont; opis rynku, nie porada inwestycyjna.
 
-- Stan: paczka jest w npm. Instalacja i uruchomienie: `npx -y hyperquant-mcp@0.1.2` (wersja przypięta, Node.js 20 albo nowszy). Claude Desktop: plik `.mcpb` ze strony (dwuklik). Z kodu źródłowego: `npm ci --legacy-peer-deps`, `npm run mcp:build`, potem `node mcp/dist/hyperquant-mcp.mjs`. Tryb HTTP jest w planach.
+- Stan: paczka jest w npm. Instalacja i uruchomienie: `npx -y hyperquant-mcp@0.1.3` (wersja przypięta, Node.js 20 albo nowszy). Claude Desktop: plik `.mcpb` ze strony (dwuklik). Z kodu źródłowego: `npm ci --legacy-peer-deps`, `npm run mcp:build`, potem `node mcp/dist/hyperquant-mcp.mjs`. Tryb HTTP jest w planach.
 - Teksty po polsku: `HQ_LANG=pl`. Strefa czasu godzin w tekstach: `HQ_TZ` (domyślnie UTC).
 - Każda liczba ma oznaczenie LIVE, MODEL albo SIM, czas i źródło; brak danych to `null` z powodem. Te same funkcje i metoda co strona, ale cena to ostatnie zamknięcie świecy 1m, więc liczby mogą się nieco różnić od strony w tej samej chwili.
 - Narzędzia, konfiguracja klientów i zasady danych: jak w części angielskiej wyżej.
