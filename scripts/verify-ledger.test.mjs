@@ -488,16 +488,16 @@ import path from 'node:path';
 
 /**
  * Klon gałęzi ledger w miniaturze: kroki → commity (stały autor i czas — wynik nie zależy od zegara ani konfiguracji).
- * Zwraca katalog i hashe commitów w kolejności.
+ * Zwraca katalog i hashe commitów w kolejności. `into` — dopisz commity do istniejącego repo (bez `git init`).
  */
-function ledgerRepo(steps) {
-  const dir = mkdtempSync(path.join(tmpdir(), 'hq-ledger-git-'));
+function ledgerRepo(steps, into = null) {
+  const dir = into ?? mkdtempSync(path.join(tmpdir(), 'hq-ledger-git-'));
   const git = (...a) =>
     execFileSync('git', ['-C', dir, '-c', 'user.name=t', '-c', 'user.email=t@example.invalid', '-c', 'commit.gpgsign=false', '-c', 'core.autocrlf=false', ...a], {
       encoding: 'utf8',
       env: { ...process.env, GIT_AUTHOR_DATE: '2026-10-22T00:00:00Z', GIT_COMMITTER_DATE: '2026-10-22T00:00:00Z' },
     }).trim();
-  git('init', '-q');
+  if (!into) git('init', '-q');
   mkdirSync(path.join(dir, 'BTC', 'ots'), { recursive: true });
   const commits = [];
   steps.forEach((step, i) => {
@@ -523,7 +523,7 @@ const appendOnly = [
 ];
 
 // Prawdziwe repo git w katalogu tymczasowym — dziesiątki procesów git (na Windows ~60 ms każdy), stąd dłuższy limit
-describe('historia git (--dir): tylko dopisywanie, przyrostowo od punktu kontrolnego', { timeout: 60_000 }, () => {
+describe('historia git (--dir): tylko dopisywanie, cała historia, kotwica ostatniej weryfikacji', { timeout: 60_000 }, () => {
   const dirs = [];
   const repo = (steps) => {
     const r = ledgerRepo(steps);
@@ -534,38 +534,36 @@ describe('historia git (--dir): tylko dopisywanie, przyrostowo od punktu kontrol
     for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
   });
 
-  it('historia tylko dopisująca: pełny przebieg i przebieg od punktu kontrolnego dają ten sam wynik', async () => {
+  it('historia tylko dopisująca: zawsze cała historia; kotwica z historii gałęzi → zielono', async () => {
     const { dir, commits } = repo(appendOnly);
-    const full = await checkGitAppendOnly(dir);
-    expect(full).toMatchObject({ commits: 5, checked: 4, since: null, problems: [] });
-    for (const cp of commits) {
-      const inc = await checkGitAppendOnly(dir, { since: cp });
-      expect(inc.problems).toEqual(full.problems);
-      expect(inc.commits).toBe(full.commits);
-      expect(inc.checked).toBe(commits.length - 1 - commits.indexOf(cp));
-    }
+    const plain = await checkGitAppendOnly(dir);
+    expect(plain).toMatchObject({ commits: 5, checked: 4, anchor: null, problems: [] });
+    for (const anchor of commits) expect(await checkGitAppendOnly(dir, { anchor })).toEqual({ ...plain, anchor });
   });
 
-  it('zmiana zapisanej linii i usunięcie pliku po punkcie kontrolnym: te same problemy co w pełnym przebiegu', async () => {
+  it('zmiana zapisanej linii i usunięcie pliku: problemy z całej historii, także przed kotwicą', async () => {
     const { dir, commits } = repo([
       ...appendOnly,
       (d) => writeFileSync(day1(d), '{"n":1}\n{"n":20}\n{"n":3}\n'),
       (d) => rmSync(day2(d)),
       (d) => writeFileSync(day1(d), '{"n":1}\n{"n":20}\n{"n":3}\n{"n":7}\n'),
     ]);
-    const full = await checkGitAppendOnly(dir);
-    expect(full.problems).toEqual([`${commits[5].slice(0, 10)}: zmieniono zapisane linie w BTC/2026-10-22.jsonl`, `${commits[6].slice(0, 10)}: usunięto BTC/2026-10-23.jsonl`]);
-    // Wznowienie z dowolnego punktu sprzed naruszeń — wynik identyczny z pełnym przebiegiem
-    for (const cp of commits.slice(0, 5)) expect((await checkGitAppendOnly(dir, { since: cp })).problems).toEqual(full.problems);
-    // Punkt kontrolny po naruszeniu go nie widzi — dlatego co tydzień pełny przebieg (scripts/verify-status.mjs)
-    expect((await checkGitAppendOnly(dir, { since: commits[7] })).problems).toEqual([]);
+    const want = [`${commits[5].slice(0, 10)}: zmieniono zapisane linie w BTC/2026-10-22.jsonl`, `${commits[6].slice(0, 10)}: usunięto BTC/2026-10-23.jsonl`];
+    expect((await checkGitAppendOnly(dir)).problems).toEqual(want);
+    // kotwica po naruszeniach nie skraca kontroli
+    expect((await checkGitAppendOnly(dir, { anchor: commits[7] })).problems).toEqual(want);
   });
 
-  it('punkt kontrolny spoza historii gałęzi (historia przepisana) → problem, bez cichego pełnego przebiegu', async () => {
-    const { dir } = repo(appendOnly);
-    const r = await checkGitAppendOnly(dir, { since: 'ab'.repeat(20) });
-    expect(r.problems).toEqual([`punkt kontrolny abababab: brak w historii gałęzi (historia przepisana?)`]);
-    expect(r.checked).toBe(0);
+  it('przepisana historia (sama w sobie tylko dopisująca): kotwica spoza historii → problem mimo pełnej kontroli', async () => {
+    const { dir, commits } = repo(appendOnly);
+    const anchor = commits[4]; // ostatnio zweryfikowany commit
+    execFileSync('git', ['-C', dir, '-c', 'core.autocrlf=false', 'reset', '-q', '--hard', commits[1]]);
+    ledgerRepo([(d) => appendFileSync(day1(d), '{"n":30}\n'), (d) => writeFileSync(day2(d), '{"n":40}\n')], dir);
+    const plain = await checkGitAppendOnly(dir);
+    expect(plain.problems).toEqual([]); // nowa historia jest spójna — bez kotwicy podmiana niewidoczna
+    const r = await checkGitAppendOnly(dir, { anchor });
+    expect(r.checked).toBe(plain.checked); // cała historia sprawdzona
+    expect(r.problems).toEqual([`kotwica ${anchor.slice(0, 10)} (ostatnio zweryfikowany commit): brak w historii gałęzi — historia przepisana`]);
   });
 
   it('plik dopisany bez końcowego znaku nowej linii: dopisanie dalej jest dopisaniem (porównanie bajtów)', async () => {

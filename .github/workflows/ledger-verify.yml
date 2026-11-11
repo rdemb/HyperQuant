@@ -1,0 +1,115 @@
+name: Niezależna weryfikacja dziennika
+
+# Co 6 h niezależna weryfikacja dziennika prognoz na infrastrukturze GitHuba (nie na serwerze desku): klon gałęzi
+# `ledger` repo danych z pełną historią, weryfikator z gałęzi main tego repo (łańcuch hashy, historia git, kolejność,
+# pokwitowania, wyniki, ceny ze świec 1m), zawsze cała historia git. Wynik — `verify/latest.json` (strona, nadzór
+# danych), `verify/anchor.json` (kotwica: commit z ostatniej udanej weryfikacji, który w każdym przebiegu musi nadal być
+# w historii gałęzi ledger) i `badge/ledger.json` (znaczek shields.io, zielony tylko przy zgodnym wyniku nie starszym
+# niż 36 h) — w gałęzi wyników (env.BRANCH, stała VERIFY_BRANCH w src/utils/verifyFreshness.ts). Pierwszy przebieg
+# tworzy ją jako gałąź sierocą tylko z `badge/` i `verify/`. Bez sekretów: wbudowany token; jego push nie uruchamia
+# innych workflow (static.yml reaguje tylko na main). Akcje przypięte do hashy commitów (workflow ma zapis do repo).
+on:
+  schedule:
+    - cron: '23 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# Trwający przebieg nie jest przerywany; czeka najwyżej jeden następny
+concurrency:
+  group: ledger-verify
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Niezależna weryfikacja dziennika
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      BRANCH: weryfikacja-dziennika
+    steps:
+      - name: Weryfikator (to repo, main)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: main
+          path: hq
+          persist-credentials: false
+
+      - name: Gałąź ledger repo danych (pełna historia)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: rdemb/hyperquant-data
+          ref: ledger
+          path: ledger
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Node.js 24
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24
+
+      # Bez actions/checkout: gałęzi może jeszcze nie być. Token tylko w nagłówku HTTP tego klonu (zamaskowany w logach).
+      - name: Gałąź wyników
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git init -q results
+          cd results
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
+          echo "::add-mask::$auth"
+          git config http.https://github.com/.extraheader "AUTHORIZATION: basic $auth"
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          if git ls-remote --exit-code --heads origin "$BRANCH" > /dev/null; then
+            git fetch -q --depth 1 origin "$BRANCH"
+            git checkout -q -B "$BRANCH" FETCH_HEAD
+          else
+            # Pierwszy przebieg: gałąź sieroca bez historii main
+            git symbolic-ref HEAD "refs/heads/$BRANCH"
+          fi
+
+      - name: Kotwica
+        id: cp
+        run: |
+          echo "anchor=$(node hq/scripts/verify-status.mjs anchor results)" >> "$GITHUB_OUTPUT"
+          echo "head=$(git -C ledger rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Weryfikacja
+        id: v
+        timeout-minutes: 20
+        env:
+          ANCHOR: ${{ steps.cp.outputs.anchor }}
+        run: |
+          set +e
+          node hq/scripts/verify-ledger.mjs --dir ledger --market ${ANCHOR:+--anchor "$ANCHOR"} > report.txt 2>&1
+          code=$?
+          cat report.txt
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+
+      # Także po przekroczeniu limitu kroku: bez kodu podsumowanie zostaje, a znaczek gaśnie, gdy wynik ma ponad 36 h
+      - name: Znaczek, podsumowanie i kotwica
+        if: ${{ always() && steps.cp.outcome == 'success' }}
+        env:
+          CODE: ${{ steps.v.outputs.code }}
+          HEAD_SHA: ${{ steps.cp.outputs.head }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          msg=$(node hq/scripts/verify-status.mjs publish results --code "$CODE" --report report.txt --head "$HEAD_SHA" --run "$RUN_URL")
+          cd results
+          git add badge verify
+          git diff --cached --quiet && exit 0
+          git commit -q -m "weryfikacja dziennika: $msg"
+          for i in 1 2 3; do git push -q origin "HEAD:refs/heads/$BRANCH" && exit 0; git pull -q --rebase origin "$BRANCH"; done
+          exit 1
+
+      # Niezgodność albo przebieg niedokończony — czerwony przebieg w Actions (widoczny w historii przebiegów)
+      - name: Wynik
+        if: ${{ always() }}
+        env:
+          CODE: ${{ steps.v.outputs.code }}
+        run: test "$CODE" = "0"

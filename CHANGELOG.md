@@ -4,6 +4,14 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Niezależna weryfikacja dziennika w repo HyperQuant: harmonogram co 6 h, cała historia z kotwicą (2026-11-11)
+
+#### Zmienione
+- **Weryfikacja przeniesiona do tego repo** (`.github/workflows/ledger-verify.yml`): harmonogram co 6 h (`23 */6 * * *`) i uruchomienie ręczne. W repo danych harmonogramu nie było, bo jego gałąź domyślna to publikacja nadpisywana co 2 min, więc weryfikację uruchamiały tylko zapisy strażnika. Weryfikator pochodzi z `main` tego repo, a klon gałęzi `ledger` repo danych jest bez zapisanych poświadczeń. Uprawnienia tylko `contents: write` z wbudowanym tokenem, bez sekretów. Akcje są przypięte do hashy commitów (checkout i setup-node v7). Limit kroku weryfikacji to 20 min, joba 30 min, znaczek powstaje także po limicie, a przebieg z problemem jest czerwony.
+- **Wyniki w gałęzi `weryfikacja-dziennika`** (sierocej, tylko `badge/` i `verify/`; tworzy ją pierwszy przebieg). Adresy są w jednym miejscu, `src/utils/verifyFreshness.ts` (`VERIFY_BRANCH`, `VERIFY_LATEST_URL`, `VERIFY_BADGE_URL`). Korzystają z nich panel dziennika na stronie (`LedgerVerifyCard.tsx`), nadzór danych i strażnik (`check-data-health.mjs`) oraz znaczek w README. Stare `badge/` i `verify/` w gałęzi `health` repo danych nie są już aktualizowane.
+- **Zawsze cała historia git, kotwica zamiast punktu kontrolnego** (`scripts/verify-ledger.mjs`, `scripts/verify-status.mjs`): po zmianie na porównywanie parami pełna historia trwa sekundy, więc tryb przyrostowy (`--since-commit`, `verify/checkpoint.json`, pełny przebieg co 7 dni, ochrona przed datą z przyszłości w punkcie) jest usunięty. `verify/anchor.json` to commit `ledger` z ostatniej udanej weryfikacji. Każdy przebieg sprawdza (`--anchor`), czy ten commit nadal jest w historii gałęzi. Jego brak oznacza przepisaną historię i daje czerwony wynik, nawet gdy nowa historia jest sama w sobie spójna. Wynik z czasem z przyszłości jest nadal nieważny.
+- Wzorzec `backend/deploy/ledger-verify.yml` dla repo danych usunięty. Wzorzec `health-alert.yml` i `backend/README.md` opisują nowe miejsce weryfikacji oraz opcjonalną regułę gałęzi (ruleset), z którą gałąź wyników zmienia tylko GitHub Actions.
+
 ### Niezależna weryfikacja dziennika: przyrostowo, osobny workflow, znaczek gaśnie po 36 h (2026-11-11)
 
 #### Naprawione
