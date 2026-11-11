@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CohortEngine, SecondPrices, benjaminiHochberg, ebPrior, normalSf, selectInformed, suppress } from '../cohortEngine.ts';
+import { CohortEngine, SecondPrices, benjaminiHochberg, ebPrior, informedPublishable, normalSf, selectInformed, suppress } from '../cohortEngine.ts';
 import { COHORTS, isCohortFlow, netOf } from '../../../src/utils/cohorts.ts';
 
 const MIN = 60_000;
@@ -233,6 +233,14 @@ describe('CohortEngine — markouty i klasyfikacja', () => {
     expect(e.statsSize).toBeLessThanOrEqual(50);
   });
 
+  it('kohorta „poinformowanych” poniżej 10 kont albo bez rozrzutu umiejętności (τ = 0) nie jest publikowana', () => {
+    expect(informedPublishable(3, 0)).toBe(false);
+    expect(informedPublishable(9, 4)).toBe(false);
+    expect(informedPublishable(12, 0)).toBe(false);
+    expect(informedPublishable(12, null)).toBe(false);
+    expect(informedPublishable(10, 0.5)).toBe(true);
+  });
+
   it('dokument bez adresów; stan przetrwa zapis i odczyt; uszkodzony stan nie wywraca odczytu', () => {
     const e = new CohortEngine({ coin: 'BTC', isWhale: () => false });
     for (let i = 0; i < 6; i++) e.onTrade(trade(A('R', i), A('S', i), 'A', 100_000, 1, T0 + i * 1000));
@@ -247,5 +255,101 @@ describe('CohortEngine — markouty i klasyfikacja', () => {
     broken.buckets.push([T0 + HOUR, { mm: { parts: [null] } }]);
     expect(() => CohortEngine.fromJSON(broken, { coin: 'BTC', isWhale: () => false })).not.toThrow();
     expect(isCohortFlow(CohortEngine.fromJSON(broken, { coin: 'BTC', isWhale: () => false }).build(AFTER_CLOSE, T0))).toBe(true);
+  });
+});
+
+describe('małe kohorty i wolumen taśmy (stan jak w publikacji z 11.11.2026: 0 z ok. 2640 kandydatów, τ = 0)', () => {
+  const BUCKET = 15 * MIN;
+  const N_BUCKETS = 95;
+  const NOISE = 2637;
+  const MMS = Array.from({ length: 6 }, (_, i) => A('M', i));
+  const WHALES = Array.from({ length: 6 }, (_, i) => A('W', i));
+  const LUCKY = Array.from({ length: 3 }, (_, i) => A('L', i));
+  const isWhale = (a: string) => WHALES.includes(a);
+
+  /**
+   * Silnik ze statystykami jak na serwerze: market makerzy (sam nominał maker) i ok. 2640 kandydatów testu z 40 blokami,
+   * których średnie mają rozrzut mniejszy od błędu (τ = 0); trzy konta z dużą średnią przechodzą BH (szczęście, nie przewaga).
+   * Statystyki wstrzyknięte przez stan serwera, bo odtworzenie 2640 kont z taśmy w teście trwałoby minuty.
+   */
+  function engine() {
+    const stats: [string, Record<string, number>][] = [];
+    const lastActive: [string, number][] = [];
+    const add = (a: string, st: { mk: number; tk: number; n: number; mean: number; variance: number }) => {
+      stats.push([a, { mk: st.mk, tk: st.tk, n: st.n, s: st.mean * st.n, ss: (st.variance + st.mean ** 2) * st.n, at: T0 }]);
+      lastActive.push([a, T0]);
+    };
+    for (const a of MMS) add(a, { mk: 5e7, tk: 0, n: 0, mean: 0, variance: 0 });
+    for (let i = 0; i < NOISE; i++) add(A('N', i), { mk: 0, tk: 1e5, n: 40, mean: 0.2 + 1.5 * ((i % 21) / 10 - 1), variance: 100 });
+    for (const a of LUCKY) add(a, { mk: 0, tk: 1e5, n: 40, mean: 15, variance: 100 });
+    const e = CohortEngine.fromJSON({ v: 2, stats, lastActive }, { coin: 'BTC', isWhale });
+    e.classify(T0);
+    return e;
+  }
+
+  /** Kubełek: biorcy (3 „szczęśliwe” konta, 6 wielorybów, 20 kont reszty) kupują od 6 market makerów po równo. */
+  function fill(e: CohortEngine, k: number, o: { whaleShares?: number[] } = {}) {
+    const t = T0 + k * BUCKET;
+    let j = 0;
+    const buy = (taker: string, usd: number) => {
+      const i = j++;
+      e.onTrade(trade(taker, MMS[i % MMS.length], 'B', 100_000, usd / 100_000, t + i * 1000));
+    };
+    for (const a of LUCKY) buy(a, 200_000);
+    (o.whaleShares ?? [1, 1, 1, 1, 1, 1]).forEach((s, i) => buy(WHALES[i], 300_000 * s));
+    for (let i = 0; i < 20; i++) buy(A('R', i), 100_000);
+  }
+
+  it('test akceptacyjny: „reszta” widoczna w ponad 90% kubełków, „poinformowani” bez wybranych nie są ukrywani', () => {
+    const e = engine();
+    for (let k = 0; k < N_BUCKETS; k++) fill(e, k);
+    const now = T0 + N_BUCKETS * BUCKET + MIN;
+    e.housekeep(now);
+    const f = e.build(now, T0);
+    expect(f.buckets).toHaveLength(N_BUCKETS);
+    expect(f.informed).toMatchObject({ selected: 0, tauBp: 0 });
+    expect(f.informed.candidates).toBeGreaterThanOrEqual(2630);
+    const restVisible = f.buckets.filter((b) => b.cells.rest !== null).length;
+    expect(restVisible / N_BUCKETS).toBeGreaterThan(0.9);
+    // Pusta kohorta: komórki zerowe (nic nie ujawniają), nie ukryte
+    expect(f.buckets.every((b) => b.cells.informed !== null && b.cells.informed.buy + b.cells.informed.sell === 0)).toBe(true);
+    expect(f.members.informed).toBe(0);
+  });
+
+  it('wolumen taśmy i komórki ukryte razem: mianownik udziału = 2 × wolumen, suma widocznych + ukrytych = wolumen', () => {
+    const e = engine();
+    fill(e, 0);
+    fill(e, 1, { whaleShares: [10, 1, 1, 1, 1, 1] }); // jeden wieloryb > 50% obrotu wielorybów → ukryty z partnerem
+    const now = T0 + 2 * BUCKET + MIN;
+    e.housekeep(now);
+    const f = e.build(now, T0);
+    const vol0 = 3 * 200_000 + 6 * 300_000 + 20 * 100_000;
+    const vol1 = 3 * 200_000 + 15 * 300_000 + 20 * 100_000;
+    expect(f.tape?.h24?.volume).toBe(vol0 + vol1);
+    const b1 = f.buckets[1].cells;
+    expect(b1.whale).toBeNull();
+    const hiddenIds = COHORTS.filter((c) => b1[c] === null);
+    expect(hiddenIds.length).toBeGreaterThanOrEqual(2); // nigdy jedna ukryta komórka (dałoby się ją odjąć od sumy)
+    const visBuy = COHORTS.reduce((s, c) => s + f.totals.h24[c].buy, 0);
+    const visSell = COHORTS.reduce((s, c) => s + f.totals.h24[c].sell, 0);
+    expect(visBuy + f.tape!.h24!.hidden.buy).toBe(vol0 + vol1);
+    expect(visSell + f.tape!.h24!.hidden.sell).toBe(vol0 + vol1);
+    expect(isCohortFlow(f)).toBe(true);
+    // Stan z wolumenem przetrwa zapis i odczyt
+    const back = CohortEngine.fromJSON(JSON.parse(JSON.stringify(e.toJSON())), { coin: 'BTC', isWhale });
+    expect(back.build(now, T0)).toEqual(f);
+  });
+
+  it('kubełek ze stanu sprzed wolumenu taśmy: okno bez wolumenu (null), a nie wolumen zaniżony', () => {
+    const e = engine();
+    fill(e, 0);
+    const now = T0 + BUCKET + MIN;
+    e.housekeep(now);
+    const state = JSON.parse(JSON.stringify(e.toJSON()));
+    for (const row of state.buckets) delete row[1].tape;
+    const f = CohortEngine.fromJSON(state, { coin: 'BTC', isWhale }).build(now, T0);
+    expect(f.buckets).toHaveLength(1);
+    expect(f.tape).toEqual({ h1: null, h24: null });
+    expect(isCohortFlow(f)).toBe(true);
   });
 });

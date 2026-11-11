@@ -109,6 +109,7 @@ interface CohortWindow {
   from: string | null;
   to: string | null;
   cohorts: CohortRow[];
+  othersCombined: { label: string; net: Num; takerNet: Num; volume: Num; volumeShare: Num };
 }
 interface CohortData {
   why: string | null;
@@ -382,9 +383,17 @@ describe('cohort_flow', () => {
     expect(mm.net).toMatchObject({ value: 1e6, unit: 'usd', badge: 'LIVE' });
     expect(mm.takerNet).toMatchObject({ value: 5e5, unit: 'usd' });
     expect(mm.volume).toMatchObject({ value: 7e6, unit: 'usd' });
-    // Obrót widoczny okna 1 h: 7 + 3 + 3 = 13 mln (reszta bez transakcji)
-    expect(mm.volumeShare.value).toBeCloseTo(7 / 13, 12);
+    // Mianownik: 2 × wolumen taśmy okna 1 h (8 mln) = 16 mln, także obrót komórek ukrytych
+    expect(mm.volumeShare.value).toBeCloseTo(7 / 16, 12);
     expect(mm.volumeShare.unit).toBe('ratio');
+    // Ukryte komórki razem: kupno 1 mln, sprzedaż 2 mln, agresor 1,2 − 2 mln
+    expect(d.h1.othersCombined).toMatchObject({
+      label: 'Pozostali razem (ukryte)',
+      net: { value: -1e6, unit: 'usd', badge: 'LIVE' },
+      takerNet: { value: -8e5, unit: 'usd' },
+      volume: { value: 3e6, unit: 'usd' },
+    });
+    expect(d.h1.othersCombined.volumeShare.value).toBeCloseTo(3 / 16, 12);
     expect(d.h1.cohorts[1].net.value).toBe(-1e6);
     expect(d.h1.cohorts[2]).toMatchObject({ hiddenBuckets: { value: 1, unit: 'count' }, hiddenTakerBuckets: { value: 0, unit: 'count' } });
     // Kohorta bez transakcji i ukrytych kubełków: „—” na stronie, tu null z powodem (nie zero)
@@ -393,13 +402,50 @@ describe('cohort_flow', () => {
       expect(n.value).toBeNull();
       expect(n.why).toBeTruthy();
     }
-    const shares = d.h24.cohorts.map((c) => c.volumeShare.value ?? 0);
+    // Udziały kohort i ukrytych razem sumują się do 1
+    const shares = [...d.h24.cohorts, d.h24.othersCombined].map((c) => c.volumeShare.value ?? 0);
     expect(shares.reduce((a, b) => a + b, 0)).toBeCloseTo(1, 12);
+  });
+
+  it('test akceptacyjny: udział żadnej kohorty nie równa się 1, gdy pozostałe są ukryte', async () => {
+    const flow = cohortFlow();
+    const hid = (n: number) => ({ buy: 0, sell: 0, takerBuy: 0, takerSell: 0, hidden: n, takerHidden: 0 });
+    flow.totals.h1 = { mm: { buy: 5e6, sell: 5e6, takerBuy: 1e6, takerSell: 1e6, hidden: 0, takerHidden: 0 }, informed: hid(0), whale: hid(4), rest: hid(4) };
+    flow.tape!.h1 = { volume: 7e6, hidden: { buy: 2e6, sell: 2e6, takerBuy: 3e6, takerSell: 2e6 } };
+    const { env } = await call<CohortData>('cohort_flow', allRoutes({ [COHORTS_URL]: { json: flow } }));
+    const shares = env.data.h1.cohorts.map((c) => c.volumeShare.value);
+    expect(shares.every((s) => s === null || s < 1)).toBe(true);
+    expect(env.data.h1.cohorts[0].volumeShare.value).toBeCloseTo(10 / 14, 12);
+    expect(env.data.h1.othersCombined.volumeShare.value).toBeCloseTo(4 / 14, 12);
+
+    // Plik sprzed wolumenu taśmy: przy ukrytych komórkach udział nieznany (null z powodem), nie 1
+    const old = { ...flow, tape: undefined };
+    delete old.tape;
+    const r2 = await call<CohortData>('cohort_flow', allRoutes({ [COHORTS_URL]: { json: old } }));
+    const mm = r2.env.data.h1.cohorts[0];
+    expect(mm.volume.value).toBe(1e7);
+    expect(mm.volumeShare).toMatchObject({ value: null, why: 'udział nieznany: część komórek ukryta, a plik nie podaje wolumenu taśmy' });
+    expect(r2.env.data.h1.othersCombined.volume).toMatchObject({ value: null, why: 'plik nie podaje wolumenu taśmy' });
+  });
+
+  it('„poinformowani” bez wybranych kont: stan „nie wykryto” z liczbą sprawdzonych kont z pliku, nie „brak transakcji”', async () => {
+    const flow = cohortFlow();
+    flow.informed = { ...flow.informed, candidates: 2640, selected: 0, tauBp: 0 };
+    flow.totals.h1.informed = { buy: 0, sell: 0, takerBuy: 0, takerSell: 0, hidden: 0, takerHidden: 0 };
+    flow.totals.h24.informed = { buy: 0, sell: 0, takerBuy: 0, takerSell: 0, hidden: 0, takerHidden: 0 };
+    const { env } = await call<CohortData>('cohort_flow', allRoutes({ [COHORTS_URL]: { json: flow } }));
+    for (const w of [env.data.h1, env.data.h24]) {
+      const inf = w.cohorts[1];
+      for (const n of [inf.net, inf.takerNet, inf.volume, inf.volumeShare]) {
+        expect(n).toMatchObject({ value: null, why: 'nie wykryto kont z trwałą przewagą (≈ 2640 sprawdzonych)' });
+      }
+    }
   });
 
   it('definicja volumeShare w uwagach odpowiedzi i w opisie narzędzia (agent widzi, jak liczony jest udział)', async () => {
     const { env } = await call<CohortData>('cohort_flow', allRoutes());
-    const def = 'volumeShare = kupno + sprzedaż kohorty ÷ widoczne kupno + sprzedaż czterech kohort w oknie (każda transakcja liczona po obu stronach; ukryte komórki pominięte)';
+    const def =
+      'volumeShare = kupno + sprzedaż kohorty ÷ 2 × wolumen taśmy w oknie (każda transakcja ma kupującego i sprzedającego); komórki ukryte dla prywatności są razem w othersCombined, więc udziały kohort i othersCombined sumują się do 1';
     expect(env.notes.join(' ')).toContain(def);
     await close?.();
     const c = await connect(testSources({}, NOW).src);
@@ -421,8 +467,8 @@ describe('cohort_flow', () => {
     expect(rest.hiddenBuckets).toMatchObject({ value: 3, badge: 'LIVE' });
     const informed = env.data.h24.cohorts[1];
     for (const n of [informed.net, informed.takerNet, informed.volume, informed.volumeShare]) expect(n).toMatchObject({ value: null, why: '1 komórka ukryta dla prywatności' });
-    // Udział pozostałych kohort z widocznego obrotu: bez zmian
-    expect(env.data.h1.cohorts[0].volumeShare.value).toBeCloseTo(7 / 13, 12);
+    // Udział pozostałych kohort wobec 2 × wolumenu taśmy: bez zmian
+    expect(env.data.h1.cohorts[0].volumeShare.value).toBeCloseTo(7 / 16, 12);
   });
 
   it('kohorta z częścią komórek ukrytą: liczby zostają, uwaga mówi, ile komórek ukryto', async () => {
