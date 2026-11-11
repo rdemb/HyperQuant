@@ -52,8 +52,19 @@ export interface TouchScores {
   brier: number | null;
   /** Brier klimatologii poziomu (częstość bazowa osobno dla PDH, PDL, D-EQ z tego samego okna) */
   brierBase: number | null;
-  /** Brier Skill Score względem klimatologii poziomów */
+  /** Brier Skill Score względem klimatologii poziomów (pokazywany tylko razem z `bssDist`) */
   bss: number | null;
+  /** To samo co `bss`, z jawną nazwą bazy (częstość poziomu); brak w podsumowaniach sprzed 11.11.2026 */
+  bssClim?: number | null;
+  /**
+   * Brier bazy odległości: P = 2(1 − Φ(|ln(poziom/cena)| / (σ·√(h/60)))), σ = stała σ godzinowych log-zwrotów z 30 dni
+   * (ta sama co w benchmarku CRPS, odtworzona z `bq` prognozy zwrotu 1 h z tego samego slotu)
+   */
+  brierDist?: number | null;
+  /** BSS względem bazy odległości, na parach z σ bazy (`pairsDist`) */
+  bssDist?: number | null;
+  /** Pary z σ bazy odległości (zwykle = `pairs`) */
+  pairsDist?: number;
   reliability: ReliabilityBin[];
   /** Mapa kalibracji izotonicznej (PAV): punkty [p surowe, częstość] — funkcja schodkowa niemalejąca */
   calibration: [number, number][];
@@ -263,6 +274,11 @@ export function isDeskLedgerSummary(x: unknown): x is DeskLedgerSummary {
     finOrNull(t.brier) &&
     finOrNull(t.brierBase) &&
     finOrNull(t.bss) &&
+    // Baza odległości: pola opcjonalne (starsze podsumowania ich nie mają), ale jeśli są — liczby albo null
+    (t.bssClim === undefined || finOrNull(t.bssClim)) &&
+    (t.brierDist === undefined || finOrNull(t.brierDist)) &&
+    (t.bssDist === undefined || finOrNull(t.bssDist)) &&
+    (t.pairsDist === undefined || fin(t.pairsDist)) &&
     Array.isArray(t.reliability) &&
     Array.isArray(t.calibration) &&
     Array.isArray(s.ots) &&

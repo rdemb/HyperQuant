@@ -104,6 +104,11 @@ export const cohortFlow = (age = 2 * MIN): CohortFlow => ({
     h1: { mm: tot(4e6, 3e6, 1e6, 5e5), informed: tot(1e6, 2e6, 8e5, 1.5e6), whale: tot(2e6, 1e6, 1e6, 0, 1), rest: zero },
     h24: { mm: tot(9e7, 8e7, 2e7, 1e7), informed: tot(2e7, 3e7, 1e7, 2e7), whale: tot(3e7, 2e7, 1e7, 5e6, 2, 1), rest: tot(1e7, 2e7, 5e6, 1e7) },
   },
+  // Wolumen taśmy = widoczne kupno + ukryte kupno = widoczna sprzedaż + ukryta sprzedaż (1 h: 7 + 1 = 6 + 2 = 8 mln)
+  tape: {
+    h1: { volume: 8e6, hidden: { buy: 1e6, sell: 2e6, takerBuy: 1.2e6, takerSell: 2e6 } },
+    h24: { volume: 1.6e8, hidden: { buy: 1e7, sell: 1e7, takerBuy: 4e7, takerSell: 3e7 } },
+  },
   members: { mm: 10, informed: 20, whale: 30, rest: 900 },
   informed: { candidates: 50, selected: 12, fdrQ: 0.1, minN: 30, mu0Bp: 0.5, tauBp: 2.1, classifiedAt: NOW - HOUR },
   oos: {
@@ -160,7 +165,7 @@ export const ledger = (age = 5 * MIN): DeskLedgerSummary => ({
   latest: { ret: [], touch: null },
   scores: {
     ret: { '240': ret(12, 0.02), '60': ret(400, 0.052) },
-    touch: { n: 300, pairs: 800, brier: 0.181, brierBase: 0.205, bss: 0.117, reliability: [], calibration: [] },
+    touch: { n: 300, pairs: 800, brier: 0.181, brierBase: 0.205, bss: 0.117, bssClim: 0.117, brierDist: 0.19, bssDist: 0.047, pairsDist: 800, reliability: [], calibration: [] },
   },
   ots: [],
   slotStamps: 90,
