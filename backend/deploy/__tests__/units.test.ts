@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -255,6 +255,149 @@ describe('install.sh', () => {
     for (const f of ['install.sh', 'hyperquant-update.sh']) {
       const r = spawnSync('bash', ['-n'], { input: read(f), encoding: 'utf8' });
       expect(r.status, `${f}: ${r.stderr}`).toBe(0);
+    }
+  });
+});
+
+describe('wydawca bloga (hyperquant-blog-publisher): autor bez klucza, kolejka na serwerze', () => {
+  const svc = () => service('hyperquant-blog-publisher.service');
+  const sh = read('install.sh');
+  const COPY = '/opt/hyperquant/blog-publisher';
+  const DIRS = ['/var/lib/hyperquant-blog/kolejka', '/var/lib/hyperquant-blog/zrobione', '/var/lib/hyperquant-blog/odrzucone', '/var/lib/hyperquant-blog/stan', '/var/lib/hyperquant-blog/praca'];
+
+  it('osobny użytkownik (nie skaner, nie autor), grupa kolejki, kod z kopii poza katalogiem aktualizowanym', () => {
+    expect(one(svc(), 'User')).toBe('hyperquant-blog');
+    expect(one(svc(), 'Group')).toBe('hyperquant-blog');
+    expect(one(svc(), 'SupplementaryGroups')).toBe('hqblog');
+    expect(one(svc(), 'Type')).toBe('oneshot');
+    expect(one(svc(), 'ExecStart')).toBe(`/opt/hyperquant/node/bin/node ${COPY}/scripts/blog/publisher.mjs`);
+    expect(one(svc(), 'WorkingDirectory')).toBe(COPY);
+    // z katalogu aktualizowanego tylko wpisy main (dane, nie kod), do sprawdzenia identyfikatorów
+    expect(read('hyperquant-blog-publisher.service').match(new RegExp(APP.replaceAll('/', '\\/'), 'g'))).toHaveLength(1);
+    expect(svc().Environment).toEqual([
+      'HQ_BLOG_DIR=/var/lib/hyperquant-blog',
+      'HQ_BLOG_STATE=/var/lib/hyperquant-blog-publisher',
+      `HQ_BLOG_MAIN_CONTENT=${APP}/content/blog`,
+      `HQ_GIT_KNOWN_HOSTS=${COPY}/known_hosts`,
+    ]);
+  });
+
+  it('tylko własny plik środowiska (bez sekretów skanera); klucz repo danych przez LoadCredential', () => {
+    expect(svc().EnvironmentFile).toEqual(['/etc/hyperquant/blog-publisher.env']);
+    expect(read('hyperquant-blog-publisher.service')).not.toContain('scanner.env');
+    expect(sh).toMatch(/dropin=\/etc\/systemd\/system\/hyperquant-blog-publisher\.service\.d[\s\S]*LoadCredential=deploy_key:%s/);
+  });
+
+  it('blog-publisher.env z install.sh ma dokładnie zmienne, które czyta wydawca (poza jednostką i kluczem)', () => {
+    const src = readFileSync(join(ROOT, 'scripts', 'blog', 'publisher.mjs'), 'utf8');
+    const used = new Set([...src.matchAll(/(?:env\.|need\(')(HQ_\w+)/g)].map((m) => m[1]));
+    const inUnit = new Set((svc().Environment ?? []).map((e) => e.split('=')[0]));
+    const needed = [...used].filter((v) => !inUnit.has(v) && v !== 'HQ_GIT_SSH_KEY').sort();
+    expect(needed).toEqual(['HQ_GIT_REMOTE']);
+    expect(sh).toMatch(/printf 'HQ_GIT_REMOTE=%s\\n' "\$\(env_value HQ_GIT_REMOTE \/etc\/hyperquant\/scanner\.env\)" >\/etc\/hyperquant\/blog-publisher\.env\.tmp/);
+  });
+
+  it('izolacja jak strażnik; zapis tylko do katalogu stanu i katalogów kolejki', () => {
+    const expected: Record<string, string> = {
+      UMask: '0027',
+      NoNewPrivileges: 'true',
+      ProtectSystem: 'strict',
+      ProtectHome: 'true',
+      PrivateTmp: 'true',
+      PrivateDevices: 'true',
+      ProtectClock: 'true',
+      ProtectHostname: 'true',
+      ProtectKernelTunables: 'true',
+      ProtectKernelModules: 'true',
+      ProtectKernelLogs: 'true',
+      ProtectControlGroups: 'true',
+      ProtectProc: 'invisible',
+      RestrictNamespaces: 'true',
+      RestrictSUIDSGID: 'true',
+      RestrictRealtime: 'true',
+      LockPersonality: 'true',
+      CapabilityBoundingSet: '',
+      SystemCallArchitectures: 'native',
+      SystemCallFilter: '@system-service',
+      StateDirectory: 'hyperquant-blog-publisher',
+      StateDirectoryMode: '0700',
+    };
+    for (const [k, v] of Object.entries(expected)) expect(one(svc(), k), k).toBe(v);
+    // jedna ścieżka (jedno montowanie): rename kolejka → praca między dwoma montowaniami ReadWritePaths dałby EXDEV;
+    // w samym katalogu wspólnym (root, 0755) wydawca i tak nie może pisać, tylko w podkatalogach z prawami z install.sh
+    expect(svc().ReadWritePaths).toEqual(['/var/lib/hyperquant-blog']);
+    for (const d of DIRS) expect(sh).toContain(d);
+  });
+
+  it('klucze hosta GitHuba w repo (api.github.com/meta), kopiowane przez install.sh; bez akceptowania nowych kluczy', () => {
+    const lines = read('github_known_hosts')
+      .split('\n')
+      .filter((l) => l && !l.startsWith('#'));
+    expect(lines.map((l) => l.split(' ').slice(0, 2).join(' '))).toEqual(['github.com ssh-ed25519', 'github.com ecdsa-sha2-nistp256', 'github.com ssh-rsa']);
+    for (const l of lines) expect(l).toMatch(/^github\.com (ssh-ed25519|ecdsa-sha2-nistp256|ssh-rsa) [A-Za-z0-9+/]+=*$/);
+    expect(sh).toContain('install -o root -g root -m 0644 "$PREFIX/app/backend/deploy/github_known_hosts" "$PREFIX/blog-publisher.new/known_hosts"');
+    expect(readFileSync(join(ROOT, 'scripts', 'blog', 'publisher.mjs'), 'utf8')).not.toContain('accept-new');
+  });
+
+  it('timer co minutę', () => {
+    const t = parseUnit(read('hyperquant-blog-publisher.timer'));
+    expect(t.Timer.OnCalendar).toEqual(['*-*-* *:*:00']);
+    expect(t.Install.WantedBy).toEqual(['timers.target']);
+  });
+
+  it('install.sh: grupa kolejki, użytkownik wydawcy, autor dopisany do grupy tylko z HQ_BLOG_AUTHOR, katalogi z prawami kontraktu', () => {
+    expect(sh).toMatch(/getent group hqblog >\/dev\/null \|\| groupadd --system hqblog/);
+    expect(sh).toMatch(/id hyperquant-blog >\/dev\/null 2>&1 \|\| useradd --system --user-group --home-dir \/var\/lib\/hyperquant-blog-publisher --shell \/usr\/sbin\/nologin hyperquant-blog/);
+    expect(sh).toContain('usermod -a -G hqblog hyperquant-blog');
+    expect(sh).toMatch(/if \[ -n "\$\{HQ_BLOG_AUTHOR:-\}" \]; then[\s\S]{0,200}usermod -a -G hqblog "\$HQ_BLOG_AUTHOR"/);
+    expect(sh).toContain('install -d -o root -g hqblog -m 0755 /var/lib/hyperquant-blog');
+    expect(sh).toContain('install -d -o hyperquant-blog -g hqblog -m 3770 /var/lib/hyperquant-blog/kolejka');
+    expect(sh).toContain('install -d -o hyperquant-blog -g hqblog -m 2750 /var/lib/hyperquant-blog/zrobione /var/lib/hyperquant-blog/odrzucone');
+    expect(sh).toContain('install -d -o hyperquant-blog -g hqblog -m 0755 /var/lib/hyperquant-blog/stan');
+    // katalog roboczy (paczki przejęte z kolejki): tylko wydawca, ten sam system plików co kolejka (rename)
+    expect(sh).toContain('install -d -o hyperquant-blog -g hyperquant-blog -m 0700 /var/lib/hyperquant-blog/praca');
+    expect(sh).toContain('systemctl enable --now --quiet hyperquant-blog-publisher.timer');
+  });
+
+  it('install.sh: pakiet yaml z adresu i sumy z package-lock.json (podpisany tag), bez npm na serwerze', () => {
+    expect(sh).toMatch(/packages\["node_modules\/yaml"\]/);
+    expect(sh).toMatch(/openssl dgst -sha512 -binary "\$TMP_DIR\/yaml\.tgz" \| base64 -w0/);
+    expect(sh).toMatch(/tar --no-same-owner -xzf "\$TMP_DIR\/yaml\.tgz" -C "\$PREFIX\/blog-publisher\.new\/node_modules\/yaml" --strip-components=1/);
+    expect(sh).not.toMatch(/\bnpm (ci|install)\b/);
+  });
+
+  const copied = (): string[] => {
+    const m = /PUBLISHER_FILES="([^"]+)"/.exec(sh);
+    return m ? m[1].trim().split(/\s+/) : [];
+  };
+  const localImports = (rel: string, seen = new Set<string>()): Set<string> => {
+    if (seen.has(rel)) return seen;
+    seen.add(rel);
+    const src = readFileSync(join(ROOT, rel), 'utf8');
+    for (const m of src.matchAll(/(?:from|import)\s*\(?\s*'(\.{1,2}\/[^']+)'/g)) localImports(join(rel, '..', m[1]).replace(/\\/g, '/'), seen);
+    return seen;
+  };
+
+  it('kopia wydawcy obejmuje wszystkie lokalne importy scripts/blog/publisher.mjs i package.json', () => {
+    const files = copied();
+    for (const f of localImports('scripts/blog/publisher.mjs')) expect(files, f).toContain(f);
+    expect(files).toContain('package.json');
+  });
+
+  it('kopia wydawcy (z pakietem yaml) wczytuje się bez reszty repo', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hq-publisher-copy-'));
+    try {
+      for (const f of copied()) {
+        mkdirSync(join(dir, f, '..'), { recursive: true });
+        copyFileSync(join(ROOT, f), join(dir, f));
+      }
+      cpSync(join(ROOT, 'node_modules', 'yaml'), join(dir, 'node_modules', 'yaml'), { recursive: true });
+      const url = pathToFileURL(join(dir, 'scripts', 'blog', 'publisher.mjs')).href;
+      const r = spawnSync(process.execPath, ['--input-type=module', '-e', `const m = await import(${JSON.stringify(url)}); if (typeof m.runPublisher !== 'function') process.exit(3)`], { encoding: 'utf8' });
+      expect(r.stderr).toBe('');
+      expect(r.status).toBe(0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 });

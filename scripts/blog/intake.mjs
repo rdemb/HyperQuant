@@ -51,7 +51,7 @@ export function imageType(b) {
 }
 
 /** Pole `date` z frontmattera (bez parsera YAML: tylko klucz najwyższego poziomu, z cudzysłowem albo bez). */
-function frontmatterDate(text) {
+export function frontmatterDate(text) {
   const fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text ?? '');
   const m = fm && /^date:[ \t]*["']?([^"'\s#]+)["']?[ \t]*(?:#.*)?$/m.exec(fm[1]);
   return m ? Date.parse(m[1]) : null;
