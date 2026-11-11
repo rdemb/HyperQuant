@@ -65,6 +65,25 @@ main() {
   install -d -o root -g root -m 0755 "$PREFIX" "$PREFIX/bin" "$PREFIX/watchdog"
   install -d -o hyperquant -g hyperquant -m 0750 "$STATE" "$STATE/state" "$STATE/out"
   install -d -o root -g root -m 0700 /etc/hyperquant
+  # Wydawca bloga: osobny użytkownik i grupa kolejki wspólna z autorem wpisów (kontrakt kolejki: docs/BLOG.md). Kolejka 3770:
+  # grupa dodaje paczki, bit lepki (autor nie usunie cudzych wpisów), setgid (paczki w grupie hqblog). Wyniki 2750: autor
+  # tylko czyta. Status 0755: czyta każdy (strażnik). Autor dopisywany do grupy tylko jawnie: HQ_BLOG_AUTHOR=<użytkownik>.
+  getent group hqblog >/dev/null || groupadd --system hqblog
+  id hyperquant-blog >/dev/null 2>&1 || useradd --system --user-group --home-dir /var/lib/hyperquant-blog-publisher --shell /usr/sbin/nologin hyperquant-blog
+  usermod -a -G hqblog hyperquant-blog
+  if [ -n "${HQ_BLOG_AUTHOR:-}" ]; then
+    id "$HQ_BLOG_AUTHOR" >/dev/null 2>&1 || {
+      echo "HQ_BLOG_AUTHOR=$HQ_BLOG_AUTHOR: nie ma takiego użytkownika" >&2
+      exit 1
+    }
+    usermod -a -G hqblog "$HQ_BLOG_AUTHOR"
+  fi
+  install -d -o root -g hqblog -m 0755 /var/lib/hyperquant-blog
+  install -d -o hyperquant-blog -g hqblog -m 3770 /var/lib/hyperquant-blog/kolejka
+  install -d -o hyperquant-blog -g hqblog -m 2750 /var/lib/hyperquant-blog/zrobione /var/lib/hyperquant-blog/odrzucone
+  install -d -o hyperquant-blog -g hqblog -m 0755 /var/lib/hyperquant-blog/stan
+  # Katalog roboczy: paczki przejęte z kolejki (rename, ten sam system plików), autor nie ma do nich dostępu
+  install -d -o hyperquant-blog -g hyperquant-blog -m 0700 /var/lib/hyperquant-blog/praca
 
   # Node z nodejs.org, sprawdzony sumą z SHASUMS256.txt; rozpakowany jako root:root (archiwum ma obcego właściciela)
   if [ ! -x "$PREFIX/node/bin/node" ] || [ "$("$PREFIX/node/bin/node" -v)" != "$NODE_VERSION" ]; then
@@ -120,6 +139,34 @@ main() {
   done
   rm -rf "$PREFIX/watchdog" && mv "$PREFIX/watchdog.new" "$PREFIX/watchdog"
 
+  # Wydawca bloga: kopia jak strażnik i pakiet yaml (jedyna zależność walidatora wpisów) z adresu i sumy SHA-512 zapisanych
+  # w package-lock.json zainstalowanego kodu (podpisany tag); bez npm na serwerze
+  local PUBLISHER_FILES="package.json scripts/blog/publisher.mjs scripts/blog/intake.mjs scripts/blog/posts.mjs src/utils/safeguards.mjs"
+  rm -rf "$PREFIX/blog-publisher.new"
+  install -d -o root -g root -m 0755 "$PREFIX/blog-publisher.new" "$PREFIX/blog-publisher.new/node_modules/yaml"
+  for f in $PUBLISHER_FILES; do
+    install -D -o root -g root -m 0644 "$PREFIX/app/$f" "$PREFIX/blog-publisher.new/$f"
+  done
+  local yurl="" yint=""
+  read -r yurl yint < <("$PREFIX/node/bin/node" -e 'const p = require(process.argv[1]).packages["node_modules/yaml"]; console.log(p.resolved, p.integrity)' "$PREFIX/app/package-lock.json")
+  case "$yurl" in
+    https://registry.npmjs.org/yaml/-/yaml-*.tgz) ;;
+    *)
+      echo "package-lock.json: nieoczekiwany adres pakietu yaml: $yurl" >&2
+      exit 1
+      ;;
+  esac
+  [ -n "$TMP_DIR" ] || TMP_DIR="$(mktemp -d)"
+  curl -fsSL -o "$TMP_DIR/yaml.tgz" "$yurl"
+  if [ "sha512-$(openssl dgst -sha512 -binary "$TMP_DIR/yaml.tgz" | base64 -w0)" != "$yint" ]; then
+    echo "yaml: suma SHA-512 inna niż w package-lock.json — instalacja przerwana" >&2
+    exit 1
+  fi
+  tar --no-same-owner -xzf "$TMP_DIR/yaml.tgz" -C "$PREFIX/blog-publisher.new/node_modules/yaml" --strip-components=1
+  chown -R root:root "$PREFIX/blog-publisher.new"
+  chmod -R go-w "$PREFIX/blog-publisher.new"
+  rm -rf "$PREFIX/blog-publisher" && mv "$PREFIX/blog-publisher.new" "$PREFIX/blog-publisher"
+
   # Konfiguracja z szablonu tylko przy pierwszej instalacji; sekrety R2 wpisuje właściciel.
   # systemd czyta EnvironmentFile jako root — plik należy do root i ma 0600 przy każdym uruchomieniu.
   if [ ! -f /etc/hyperquant/scanner.env ]; then
@@ -160,6 +207,20 @@ main() {
   else
     rm -f "$dropin/deploy-key.conf"
   fi
+  # Wydawca bloga: tylko adres repo danych i ten sam klucz przez LoadCredential (plik klucza zostaje własnością skanera)
+  printf 'HQ_GIT_REMOTE=%s\n' "$(env_value HQ_GIT_REMOTE /etc/hyperquant/scanner.env)" >/etc/hyperquant/blog-publisher.env.tmp
+  install -o root -g root -m 0600 /etc/hyperquant/blog-publisher.env.tmp /etc/hyperquant/blog-publisher.env
+  rm -f /etc/hyperquant/blog-publisher.env.tmp
+  dropin=/etc/systemd/system/hyperquant-blog-publisher.service.d
+  if [ -n "$key" ] && [ -f "$key" ]; then
+    install -d -o root -g root -m 0755 "$dropin"
+    printf '[Service]\nLoadCredential=deploy_key:%s\n' "$key" >"$dropin/deploy-key.conf"
+    chmod 0644 "$dropin/deploy-key.conf"
+  else
+    rm -f "$dropin/deploy-key.conf"
+  fi
+  install -o root -g root -m 0644 "$PREFIX/app/backend/deploy/hyperquant-blog-publisher.service" /etc/systemd/system/hyperquant-blog-publisher.service
+  install -o root -g root -m 0644 "$PREFIX/app/backend/deploy/hyperquant-blog-publisher.timer" /etc/systemd/system/hyperquant-blog-publisher.timer
   # Restart dwóch usług bez root: reguła polkit (tylko restart skanera i serwera powiadomień)
   # (katalog pakietu polkit zostaje z jego prawami; bez polkit reguła czeka na jego instalację)
   [ -d /etc/polkit-1/rules.d ] || install -d -o root -g root -m 0755 /etc/polkit-1/rules.d
@@ -180,6 +241,7 @@ main() {
   systemctl restart hyperquant-alerts
   systemctl enable --now --quiet hyperquant-watchdog.timer
   systemctl enable --now --quiet hyperquant-update.timer
+  systemctl enable --now --quiet hyperquant-blog-publisher.timer
   systemctl --no-pager --lines=5 status hyperquant-scanner || true
   systemctl --no-pager --lines=5 status hyperquant-alerts || true
 }
