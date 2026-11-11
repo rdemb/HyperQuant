@@ -118,6 +118,7 @@ Every post gets a „Zobacz na wykresie” (See it on the chart) block between t
 ## Body
 
 Markdown (GFM): sections from `##`, paragraphs, tables, lists, links, images. Raw HTML is shown as text.
+Links may use `https:`, `http:`, `mailto:` or a relative path (`../2026-10-26-mapa-dnia/`, `../../#after`, `#section`); any other scheme (`javascript:`, `data:`, `vbscript:`, `file:` …) and an HTML character reference in the address render the link text only. An image `src` must be a file name from the post's folder (`[a-z0-9-]`, `.png`, `.jpg` or `.webp`); anything else, including images from other sites, is a post error and renders as the alt text. The front matter may not use YAML anchors and aliases (`&a`, `*a`), and a post file is at most 64 KB, `wykresy.json` at most 1 MB. Only `wykresy.json` and those image files are copied from the post's folder to the site.
 Numbers in Polish format with a space between digit groups (`80 777`, `3,8 bp`); the generator adds non-breaking spaces so that a number does not break across lines.
 
 ## Safeguards
@@ -127,7 +128,7 @@ The same validator runs before publication (`npm run blog:check`) and on every b
 - **Privacy:** wallet addresses and transaction hashes (`0x…`), IP addresses, e-mails, tokens and access keys.
 - **Analysis, not signals:** the imperative mood („kup”, „sprzedaj”, „wejdź w longa”: buy, sell, go long), ready-made entries („long od 80 500”: long from 80,500), TP/SL levels.
 - **Style:** no dashes (— and – with spaces) and no arrows. Number ranges with an en dash and no spaces (`80 100–80 200`) are fine.
-- **Schema:** the fields and lengths from the table above, the day in the file name matching `date`, no `#` heading in the body, existing image files.
+- **Schema:** the fields and lengths from the table above, the day in the file name matching `date`, no `#` heading in the body, existing image files from the post's folder, no YAML aliases, file size limits.
 
 The privacy, advice and style patterns live in `src/utils/safeguards.mjs` (plain JavaScript, so the blog check runs on any Node), shared with the desk: the title of a chart frame (*Klatka*) passes the privacy and advice patterns plus English imperatives („buy the dip”, „go long”) and shorthand entries („long 80 500”), but not the style rules, because there „—” marks a missing number.
 
@@ -145,6 +146,21 @@ After each push that adds or changes a published post, the deploy workflow sends
 Local preview (including drafts): `npm run build && node scripts/blog/build.mjs --drafts && npm run preview`, then `http://localhost:4173/blog/`.
 
 Every post is in the repository's public history from the moment of publication; the post page links to the file's change history.
+
+Today posts are written by an automated author process on a server, from its own clone of this repository, and pushed to `main` over SSH with a deploy key that has write access; the commits are attributed to the repository owner. The next step moves only where that process pushes to (the `blog` branch below); how it writes and checks posts stays the same.
+
+### Posts from the `blog` branch of the data repository
+
+The deploy workflow (`.github/workflows/static.yml`) also reads posts from the `blog` branch of the public data repository `rdemb/hyperquant-data`, with the same layout as here (`<id>.md`, `<id>/wykresy.json`, `<id>/*.png`). Until the branch exists the build is the same as before: only `content/blog/` from `main`.
+
+- **Detection:** every run (the schedule is every 5 minutes) reads the branch head with `git ls-remote` (no credentials) and compares it with `sha` in the published `https://hyperquant.tech/blog/source.json`. A different head deploys the site; the same head and unchanged data do not. When the branch is missing or GitHub does not answer, nothing is deployed for that reason; when the site does not answer, the comparison is skipped.
+- **Untrusted content:** the branch is cloned with full history into the runner's temporary folder, outside the repository and without credentials, and `scripts/blog/intake.mjs` (no npm dependencies, runs before `npm ci`) copies to `content/blog/` only posts that pass all rules: regular files only (no symbolic links, submodules or executable files, by the mode in git and by `lstat`); a file name `YYYY-MM-DD-slug.md` (lower-case letters, digits, hyphens, up to 60 characters) and a folder of the same name with only `wykresy.json` and `*.png`, `*.jpg`, `*.webp` named `[a-z0-9-]`; images recognised by their first bytes (PNG, JPEG, WebP; SVG is never accepted); at most 64 KB per `.md`, 1 MB per `wykresy.json`, 2 MB per image, 8 MB per post and 40 new posts per calendar day (in order of the first commit); `date` and the day in the name no later than the build time + 10 minutes and no earlier than the file's first commit − 24 hours. An id that already exists in `content/blog/` on `main` wins.
+- **A bad post is skipped, not fatal:** a post that fails the rules above or the post validator is left out with its reason, and the rest of the site is built. A broken post on `main` still stops the build.
+- **`blog/source.json`:** `{ sha, at, posts, rewritten, skipped }`: the branch commit the site was built from (the previous one when the branch could not be read), the build time, the number of published posts from the branch, whether the branch history was rewritten since the last published `sha`, and the skipped posts and files with reasons.
+- **History:** the page of a post from the branch links to the file's history in the data repository; when the file has more than one commit, a line „Zmieniony po publikacji: <date of the last change>” appears under the title and `dateModified` in the structured data is that date.
+- **IndexNow:** new and changed posts come from `git diff` in the branch clone since the published `sha` (the whole branch the first time; nothing when the history was rewritten).
+
+Every page from the blog template carries a Content Security Policy: scripts only from the site's files (`blog/blog.js`: share buttons and the 7-day replay switch; the structured data block is not executed), styles from the site and Google Fonts, fonts from Google Fonts, images from the site and `data:`, no `<base>` and no forms. Inline `style` attributes are allowed (`style-src-attr`), because the generator positions the level ladder and sizes the bars of the liquidation, flow and scenario diagrams with them; post text cannot set attributes.
 
 ## Site pages
 

@@ -1,16 +1,16 @@
-import { mkdtempSync, mkdirSync, readFileSync, existsSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, existsSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { guardViolations, splitFrontmatter, validatePost } from './posts.mjs';
+import { guardViolations, loadPostFile, splitFrontmatter, validatePost } from './posts.mjs';
 import { REPLAY_LINK_VERSION, parseReplayLink } from '../../src/charts/pro/replay/link';
-import { absolutize, esc, feedXml, flowsHtml, ladderLayout, layout, liquidationsHtml, postBody, postPage, renderMarkdown, replayLink, setupsHtml, sitemapXml } from './render.mjs';
+import { CSP, absolutize, esc, feedXml, flowsHtml, ladderLayout, layout, liquidationsHtml, postBody, postPage, renderMarkdown, replayLink, setupsHtml, sitemapXml } from './render.mjs';
 import { buildBlog, checkPosts, mapKind } from './build.mjs';
 import { ogSvg, wrapTitle } from './og.mjs';
 import { PATHS, clip, sitePages, sitemapEntries } from './pages.mjs';
 import { INDEXNOW_KEY, changedPostUrls, indexNowBody, sitemapUrls } from './indexnow.mjs';
 
-const SITE = { url: 'https://example.org/HQ/', repo: 'https://github.com/x/HQ', cssVersion: 'abc' };
+const SITE = { url: 'https://example.org/HQ/', repo: 'https://github.com/x/HQ', cssVersion: 'abc', jsVersion: 'def' };
 const BODY_ARTICLE = `## Kontekst\n\n${'Cena stoi nad dołkiem piątku i pod VWAP tygodnia, a płynność w weekend jest cienka. '.repeat(12)}`;
 const BASE = {
   title: 'Sobota tuż nad dołkiem tygodnia',
@@ -135,7 +135,8 @@ describe('blog: szablony', () => {
     expect(html).toContain('<meta name="twitter:card" content="summary_large_image">');
     const ld = /<script type="application\/ld\+json">(.*?)<\/script>/s.exec(html)[1];
     expect(JSON.parse(ld)).toMatchObject({ '@type': 'BlogPosting', datePublished: BASE.date });
-    expect(html.match(/<script/g).length).toBe(3);
+    // dane strukturalne i plik skryptu bloga; żadnego skryptu w treści dokumentu
+    expect(html.match(/<script/g).length).toBe(2);
     expect(html).toContain('href="https://github.com/x/HQ/commits/main/content/blog/2026-10-24-mapa-dnia.md"');
     expect(html).toContain('Analiza przygotowana automatycznie');
   });
@@ -602,4 +603,129 @@ describe('blog: maps.json', () => {
     expect(mapKind('Aktualizacja 4h', 'x')).toBe('aktualizacja');
     expect(mapKind('Rozliczenie Londynu', 'x')).toBe('inne');
   });
+});
+
+describe('blog: treść z zewnątrz (linki, obrazy, front matter, CSP)', () => {
+  const XSS = ['<script>alert(1)</script>', '<img src=x onerror=alert(1)>'];
+
+  it.each([
+    '[x](javascript:alert(1))',
+    '[x](JaVaScRiPt:alert(1))',
+    '[x]( javascript:alert(1))',
+    '[x](<javascript:alert(1)>)',
+    '[x](jav&#x61;script:alert(1))',
+    '[x](&#106;avascript:alert(1))',
+    '[x](javascript&colon;alert(1))',
+    '[x](vbscript:msgbox(1))',
+    '[x](data:text/html,<script>alert(1)</script>)',
+    '[x](data:text/html;base64,PHNjcmlwdD4=)',
+    '<javascript:alert(1)>',
+    '[x][r]\n\n[r]: javascript:alert(2)',
+    '[x](file:///etc/passwd)',
+  ])('link %s: sam tekst, bez atrybutu href', (md) => {
+    const html = renderMarkdown(md);
+    expect(html).not.toMatch(/<a\b/);
+    expect(html).not.toMatch(/href=/);
+  });
+
+  it('dozwolone linki bez zmian: https, http, mailto, względne w obrębie strony i kotwice', () => {
+    const md = '[a](https://hyperquant.tech/#charts?replay=lessons&m=BTC) [b](http://example.org/x) [c](mailto:kontakt@example.org) [d](../2026-10-26-mapa-dnia/) [e](../../#after) [f](#scenariusze) <https://github.com/rdemb/HyperQuant>';
+    const html = renderMarkdown(md);
+    for (const href of ['https://hyperquant.tech/#charts?replay=lessons&amp;m=BTC', 'http://example.org/x', 'mailto:kontakt@example.org', '../2026-10-26-mapa-dnia/', '../../#after', '#scenariusze', 'https://github.com/rdemb/HyperQuant'])
+      expect(html).toContain(`href="${href}"`);
+  });
+
+  it('obrazy tylko z folderu wpisu: obcy adres, data:, ścieżka i SVG to sam tekst alternatywny', () => {
+    for (const md of ['![x](https://obcy.example/a.png)', '![x](data:image/svg+xml,<svg onload=alert(1)>)', '![x](../../src/a.png)', '![x](a.svg)', '![x](/a.png)', '![x](A.png)']) {
+      const html = renderMarkdown(md);
+      expect(html, md).not.toMatch(/<img\b/);
+      expect(html, md).toContain('x');
+    }
+    expect(renderMarkdown('![Wykres](wykres-1.png)')).toContain('<img loading="lazy" decoding="async" src="wykres-1.png" alt="Wykres">');
+  });
+
+  it('obraz z obcego adresu to błąd wpisu (walidator)', () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'hq-blog-'));
+    writePost(dir, ID, BASE, `${BODY_ARTICLE}\n\n![x](https://obcy.example/a.png)`);
+    expect(loadPostFile(path.join(dir, `${ID}.md`)).errors.join('\n')).toMatch(/obraz „https:\/\/obcy\.example\/a\.png”: tylko plik z folderu wpisu/);
+  });
+
+  it('<script> i <img onerror> w treści i w każdym polu front matter: bez znacznika script i bez atrybutów on*', () => {
+    const base = validatePost(ID, BASE, BODY_ARTICLE).post;
+    for (const x of XSS) {
+      const t = (s) => `${s} ${x}`;
+      const post = {
+        ...base,
+        title: t('Tytuł'),
+        description: t('Opis'),
+        section: t('Mapa'),
+        body: `${t('Akapit')}\n\n## ${t('Sekcja')}\n\n- ${t('punkt')}\n\n| ${t('a')} | b |\n|---|---|\n| 1 | 2 |\n\n[[poziomy]]\n`,
+        summary: [t('a'), t('b')],
+        metrics: [{ label: t('m'), value: t('v'), note: t('n'), bias: 'up' }],
+        levels: [{ label: t('PDH'), price: 82088, note: t('n') }],
+        liquidations: { step: 250, coverage: 40, longs: [[80000, 1]], shorts: [[80750, 2]], note: t('n') },
+        flows: { title: t('f'), unit: t('u'), rows: [{ label: t('r'), value: 1, note: t('n') }] },
+        scenarios: [{ label: t('s'), probability: 50, note: t('n') }],
+        setups: [{ name: t('n'), bias: 'up', zone: [80000, 80500], window: t('w'), triggers: [t('t')], invalidation: t('i'), reactions: [{ label: t('r'), price: 81000 }], evidence: t('e') }],
+      };
+      const page = postPage(SITE, post, {});
+      expect(page.match(/<script\b[^>]*>/g)).toEqual(['<script src="../../blog/blog.js?v=def" defer>', '<script type="application/ld+json">']);
+      const feed = feedXml(SITE, [post]);
+      expect(feed).not.toMatch(/<script/);
+      for (const html of [page, feed.replace(/<!\[CDATA\[|\]\]>/g, '')]) {
+        // nazwy atrybutów wszystkich znaczników (wartości w cudzysłowach, więc tekst „onerror=” w wartości się nie liczy)
+        const attrs = [...html.matchAll(/<[a-z][a-z0-9-]*((?:\s+[^\s=>"'/]+(?:="[^"]*"|='[^']*'|=[^\s>"']+)?)*)\s*\/?>/gi)].flatMap((m) =>
+          [...m[1].replace(/"[^"]*"|'[^']*'/g, '""').matchAll(/\s([^\s=>"'/]+)/g)].map((a) => a[1].toLowerCase())
+        );
+        expect(attrs.length).toBeGreaterThan(10);
+        expect(attrs.filter((a) => a.startsWith('on'))).toEqual([]);
+        expect(html).not.toMatch(/<img src=x/);
+      }
+    }
+  });
+
+  it('alias YAML to błąd wpisu (maxAliasCount: 0); .md ponad 64 KB i wykresy.json ponad 1 MB też', () => {
+    expect(() => splitFrontmatter('---\na: &x [1, 2]\nb: *x\n---\n')).toThrow(/Alias/);
+    const dir = mkdtempSync(path.join(tmpdir(), 'hq-blog-'));
+    writeFileSync(path.join(dir, `${ID}.md`), `---\ntitle: &t "Sobota tuż nad dołkiem tygodnia"\nsection: *t\n---\n${BODY_ARTICLE}`);
+    expect(loadPostFile(path.join(dir, `${ID}.md`)).errors.join('\n')).toMatch(/frontmatter: błąd YAML \(.*Alias/);
+    writePost(dir, ID, BASE, `${BODY_ARTICLE}\n\n${'x'.repeat(64 * 1024)}`);
+    expect(loadPostFile(path.join(dir, `${ID}.md`)).errors).toEqual(['plik ponad 64 KB']);
+    writePost(dir, ID, BASE, BODY_ARTICLE);
+    mkdirSync(path.join(dir, ID));
+    writeFileSync(path.join(dir, ID, 'wykresy.json'), `{"v":1,"pad":"${'x'.repeat(1024 * 1024)}"}`);
+    expect(loadPostFile(path.join(dir, `${ID}.md`)).errors).toEqual(['wykresy.json: plik ponad 1 MB']);
+  });
+
+  it('CSP w nagłówku każdej strony z szablonu; strona wpisu bez skryptu w treści dokumentu', () => {
+    expect(CSP).toBe(
+      "default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; style-src-attr 'unsafe-inline'; font-src https://fonts.gstatic.com; img-src 'self' data:; base-uri 'none'; form-action 'none'"
+    );
+    const html = postPage(SITE, validatePost(ID, BASE, BODY_ARTICLE).post, {});
+    expect(html).toContain(`<meta charset="utf-8">\n<meta http-equiv="Content-Security-Policy" content="${CSP}">`);
+    for (const tag of html.match(/<script\b[^>]*>[\s\S]*?<\/script>/g)) expect(tag).toMatch(/^<script (type="application\/ld\+json">|src="[^"]+" defer><\/script>$)/);
+    const index = layout(SITE, { title: 't', description: 'd', url: SITE.url, root: '../', image: 'i', imageAlt: 'a', jsonLd: {}, main: '' });
+    expect(index).toContain(`content="${CSP}"`);
+    expect(index).not.toMatch(/<script src/);
+  });
+
+  it('build: blog.js z udostępnianiem i powtórką; media wpisu tylko z listy; source.json bez gałęzi blog', async () => {
+    const content = mkdtempSync(path.join(tmpdir(), 'hq-blog-'));
+    const out = mkdtempSync(path.join(tmpdir(), 'hq-dist-'));
+    writePost(content, ID, BASE, BODY_ARTICLE);
+    mkdirSync(path.join(content, ID));
+    for (const f of ['wykres.png', 'wykresy.json', 'x.svg', 'notatki.txt', 'strona.html']) writeFileSync(path.join(content, ID, f), f === 'wykresy.json' ? '{"v":1}' : 'x');
+    await buildBlog({ contentDir: content, outDir: out, site: SITE, pages: false, now: Date.parse('2026-10-25T12:00:00Z') });
+    const blog = path.join(out, 'blog');
+    expect(readdirSync(path.join(blog, ID)).sort()).toEqual(['index.html', 'og.png', 'wykres.png', 'wykresy.json']);
+    const js = readFileSync(path.join(blog, 'blog.js'), 'utf8');
+    expect(js).toContain("document.querySelectorAll('.share')");
+    expect(js).toContain('.replay[data-until]');
+    expect(js).not.toMatch(/<\/?script/);
+    const page = readFileSync(path.join(blog, ID, 'index.html'), 'utf8');
+    expect(page).toMatch(/<script src="\.\.\/\.\.\/blog\/blog\.js\?v=[0-9a-f]{10}" defer><\/script>/);
+    expect(page).toContain('href="https://github.com/x/HQ/commits/main/content/blog/2026-10-24-mapa-dnia.md"');
+    expect(page).not.toMatch(/class="edited"/);
+    expect(JSON.parse(readFileSync(path.join(blog, 'source.json'), 'utf8'))).toEqual({ sha: null, at: '2026-10-25T12:00:00.000Z', posts: 0, rewritten: false, skipped: [] });
+  }, 20_000);
 });

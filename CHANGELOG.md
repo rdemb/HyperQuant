@@ -4,6 +4,25 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Blog: wpisy z gałęzi blog repo danych jako niezaufana treść (2026-11-11)
+
+Publikacja się nie zmienia, dopóki gałąź `blog` w repo danych nie istnieje: pełny build na 119 wpisach z `main` daje te same 169 adresów w `sitemap.xml` (plik identyczny), ten sam `blog/feed.xml` (51 linków, plik identyczny) i 171 stron HTML identycznych po pominięciu nagłówka CSP, znacznika skryptu i wersji arkusza; nowe pliki to tylko `blog/blog.js` i `blog/source.json`.
+
+#### Dodane
+- **Filtr treści gałęzi `blog`** (`scripts/blog/intake.mjs`, bez zależności npm, przed `npm ci`): tylko zwykłe pliki (bez dowiązań, podmodułów i plików wykonywalnych: tryb z git i `lstat`), nazwy `RRRR-MM-DD-opis.md` i folder wpisu tylko z `wykresy.json` oraz `*.png`, `*.jpg`, `*.webp`, obrazy rozpoznawane po pierwszych bajtach (SVG nigdy), limity 64 KB na `.md`, 1 MB na `wykresy.json`, 2 MB na obraz, 8 MB na wpis i 40 nowych wpisów na dobę, data najwyżej 10 min po buildzie i najwyżej 24 h przed pierwszym commitem pliku, pierwszeństwo wpisów z `main`. Zły wpis z gałęzi jest pomijany z powodem (filtr albo walidator), reszta strony się buduje.
+- **`blog/source.json`**: `{ sha, at, posts, rewritten, skipped }` (sha gałęzi, z którego zbudowano stronę, pominięte wpisy z powodami).
+- **Wpis z gałęzi `blog`**: link „historia zmian” do pliku w repo danych; przy więcej niż jednym commicie pod tytułem „Zmieniony po publikacji: <data>” i ta data w `dateModified`.
+- Testy: `scripts/blog/intake.test.mjs` (29 testów, w tym prawdziwe repo git: 3 dobre i 2 złe wpisy dają 3 strony i 2 pozycje w `skipped`), `scripts/static-workflow.test.mjs` (workflow i bramka wdrożenia uruchamiana w bash), nowe przypadki w `scripts/blog/blog.test.mjs`.
+
+#### Zmienione
+- **Wdrożenie strony** (`.github/workflows/static.yml`): harmonogram co 5 min zamiast co 30 min; głowa gałęzi `blog` z `git ls-remote` bez uwierzytelnienia porównywana z `sha` opublikowanego `blog/source.json` (inny sha = wdrożenie); pełny klon gałęzi do katalogu tymczasowego runnera (poza repo, bez poświadczeń) i filtr przed generatorem; uprawnienia tylko na poziomie jobów (build `contents: read`, `pages: write` i `id-token: write` tylko w deploy); akcje przypięte do pełnych hashy commitów (te same wersje: checkout v7, setup-node v7, upload-pages-artifact v5, deploy-pages v5); checkout bez zapisanych poświadczeń; IndexNow z `git diff` w klonie gałęzi od opublikowanego sha.
+- **Strony z szablonu bloga mają Content Security Policy** (`scripts/blog/render.mjs`): skrypty tylko z plików strony, style z plików i Google Fonts, `base-uri 'none'`, `form-action 'none'`; atrybuty `style` dozwolone (`style-src-attr`), bo diagramy (drabinka poziomów, słupki likwidacji, przepływów i scenariuszy) mają w nich pozycje i szerokości (sprawdzone w przeglądarce: bez tego drabinka ma wysokość 1,6 px). Skrypty udostępniania i powtórki przeniesione z treści strony do `blog/blog.js`.
+- Media wpisu kopiowane tylko z listy (`wykresy.json` i obrazy), nie cały folder (`scripts/blog/build.mjs`).
+
+#### Naprawione
+- **Linki i obrazy w treści wpisu** (`scripts/blog/render.mjs`): `[x](javascript:…)`, `data:`, `vbscript:`, `file:`, adres z odwołaniem znakowym HTML (`jav&#x61;script:`) i autolinki z takim schematem były przepuszczane jako `href`; teraz zostaje sam tekst. Obraz tylko z pliku w folderze wpisu; obcy adres jest błędem wpisu (`scripts/blog/posts.mjs`) i tekstem alternatywnym na stronie.
+- Front matter bez aliasów YAML (`maxAliasCount: 0`); `.md` ponad 64 KB i `wykresy.json` ponad 1 MB to błąd wpisu (`scripts/blog/posts.mjs`). Żaden z 119 wpisów nie używa aliasów.
+
 ### Kot: częstość dużego ruchu przy bieżącym poziomie (2026-11-11)
 
 #### Dodane
