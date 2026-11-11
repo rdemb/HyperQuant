@@ -1,6 +1,6 @@
 // Testy nadzoru publicznych danych skanera (świeżość, pokrycie, strażnik prywatności).
 import { describe, expect, it } from 'vitest';
-import { FILES, LIMITS, OPTIONAL, assessHealth, findLeaks, renderReport } from './check-data-health.mjs';
+import { FILES, LIMITS, OPTIONAL, VERIFY_FILE, assessHealth, findLeaks, renderReport } from './check-data-health.mjs';
 
 const NOW = Date.UTC(2026, 9, 22, 12, 0, 0);
 const MIN = 60_000;
@@ -184,5 +184,34 @@ describe('warstwa wielorybów (plik opcjonalny)', () => {
   it('strażnik pobiera whales.json', () => {
     expect(FILES).toContain('whales.json');
     expect(OPTIONAL.has('whales.json')).toBe(true);
+  });
+});
+
+describe('niezależna weryfikacja dziennika (gałąź health, verify/latest.json)', () => {
+  const H = 60 * MIN;
+  const verify = (over = {}) => ({ v: 1, ok: true, at: NOW - 5 * H, run: 'https://github.com/rdemb/hyperquant-data/actions/runs/1', lines: [], ...over });
+
+  it('verify.at starsze niż 36 h → nadzór danych zgłasza problem (stan z 9.11: weryfikacja stoi, znaczek zielony)', () => {
+    const r = assessHealth(input({ verify: verify({ at: NOW - 49 * H }) }), NOW);
+    expect(r.ok).toBe(false);
+    expect(r.problems).toContain('niezależna weryfikacja dziennika: ostatnia 49 h temu (próg 36 h) — przebieg nie kończy się albo nie startuje');
+  });
+
+  it('świeża i zgodna → ok z faktem w raporcie; wykryty problem → alarm', () => {
+    const fresh = assessHealth(input({ verify: verify() }), NOW);
+    expect(fresh.ok).toBe(true);
+    expect(fresh.facts).toContainEqual({ label: 'Wiek niezależnej weryfikacji dziennika', value: '5 h' });
+    expect(assessHealth(input({ verify: verify({ ok: false }) }), NOW).problems.join(' ')).toMatch(/weryfikacja dziennika wykryła problem/);
+  });
+
+  it('brak pliku (repo bez gałęzi health) nie jest alarmem; problem nie restartuje skanera (inna treść niż stojący dziennik)', () => {
+    expect(assessHealth(input({ errors: { [VERIFY_FILE]: 'HTTP 404' } }), NOW).ok).toBe(true);
+    const p = assessHealth(input({ verify: verify({ at: NOW - 49 * H }) }), NOW).problems[0];
+    expect(p).not.toMatch(/dziennik prognoz: ostatnia aktualizacja/);
+  });
+
+  it('strażnik pobiera wynik weryfikacji z gałęzi health', () => {
+    expect(VERIFY_FILE).toBe('verify/latest.json (gałąź health)');
+    expect(OPTIONAL.has(VERIFY_FILE)).toBe(true);
   });
 });

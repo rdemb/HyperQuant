@@ -4,6 +4,7 @@
  *   node scripts/verify-ledger.mjs --dir ./ledger [--bitcoin] [--market]   # pełna kontrola (zalecane):
  *       git clone -b ledger https://github.com/rdemb/hyperquant-data ledger
  *       --bitcoin: czas z bloków Bitcoina (poświadczenia OTS + nagłówki bloków); --market: ceny vs świece 1m HL
+ *       --since-commit <hash>: historię git sprawdza tylko po tym commicie (punkt kontrolny poprzedniej weryfikacji)
  *   node scripts/verify-ledger.mjs [RRRR-MM-DD]     # szybka kontrola ostatnich dni pobranych z GitHuba
  *
  * Sprawdza:
@@ -888,26 +889,79 @@ const days = (from, to) => {
   return out;
 };
 
-/** Historia git (--dir): każdy kolejny commit tylko dopisuje do istniejących plików dziennika. */
-function checkGitAppendOnly(dir) {
-  const git = (...a) => execFileSync('git', ['-C', dir, ...a], { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
-  const commits = git('log', '--format=%H', '--reverse').split('\n').filter(Boolean);
-  const problems = [];
-  for (let i = 1; i < commits.length; i++) {
-    const files = git('ls-tree', '-r', '--name-only', commits[i - 1]).split('\n').filter((f) => f.endsWith('.jsonl'));
-    for (const f of files) {
-      const before = git('show', `${commits[i - 1]}:${f}`);
-      let after;
-      try {
-        after = git('show', `${commits[i]}:${f}`);
-      } catch {
-        problems.push(`${commits[i].slice(0, 10)}: usunięto ${f}`);
-        continue;
-      }
-      if (!after.startsWith(before)) problems.push(`${commits[i].slice(0, 10)}: zmieniono zapisane linie w ${f}`);
+/** Zawartość obiektów git (`git cat-file --batch`) partiami do ~64 MB — jeden proces na partię zamiast jednego na plik. */
+function readBlobs(git, oids) {
+  const sizes = new Map();
+  for (const l of git(['cat-file', '--batch-check'], `${oids.join('\n')}\n`).toString('utf8').split('\n')) {
+    const [oid, type, size] = l.split(' ');
+    if (type === 'blob') sizes.set(oid, Number(size));
+  }
+  const out = new Map();
+  const LIMIT = 64 * 1024 * 1024;
+  for (let i = 0; i < oids.length; ) {
+    const part = [];
+    let total = 0;
+    while (i < oids.length && (part.length === 0 || total + (sizes.get(oids[i]) ?? 0) <= LIMIT)) {
+      total += sizes.get(oids[i]) ?? 0;
+      part.push(oids[i++]);
+    }
+    const buf = git(['cat-file', '--batch'], `${part.join('\n')}\n`);
+    let p = 0;
+    for (const oid of part) {
+      const nl = buf.indexOf(10, p);
+      const [, type, size] = buf.subarray(p, nl).toString('utf8').split(' ');
+      p = nl + 1;
+      if (type !== 'blob') continue; // „missing” — brak obiektu, porównanie zgłosi zmianę
+      out.set(oid, buf.subarray(p, p + Number(size)));
+      p += Number(size) + 1;
     }
   }
-  return { commits: commits.length, problems };
+  return out;
+}
+
+/**
+ * Historia git (--dir): każdy kolejny commit tylko dopisuje do plików dziennika (`.jsonl`) poprzedniego commita —
+ * zmieniony plik zaczyna się bajt w bajt od poprzedniej treści, żaden nie znika. Sprawdzane tylko pliki zmienione
+ * w danym commicie (jeden `git diff-tree --stdin` dla wszystkich par), więc koszt rośnie z liczbą zmian, nie z liczbą
+ * commitów × plików. `since` — commit punktu kontrolnego (ostatnia udana weryfikacja): sprawdzane tylko commity po nim;
+ * musi należeć do historii gałęzi (inaczej historia została przepisana). Zmiany sprzed punktu kontrolnego wykrywa
+ * okresowy pełny przebieg (bez `since`).
+ */
+export function checkGitAppendOnly(dir, { since = null } = {}) {
+  const git = (args, input) => execFileSync('git', ['-C', dir, ...args], { input, maxBuffer: 1024 * 1024 * 1024 });
+  const commits = git(['log', '--format=%H', '--reverse']).toString('utf8').split('\n').filter(Boolean);
+  let start = 0;
+  if (since) {
+    start = commits.indexOf(since);
+    if (start < 0) return { commits: commits.length, checked: 0, since, problems: [`punkt kontrolny ${since.slice(0, 8)}: brak w historii gałęzi (historia przepisana?)`] };
+  }
+  const pairs = [];
+  for (let i = start + 1; i < commits.length; i++) pairs.push(`${commits[i]} ${commits[i - 1]}`);
+  /** Zmiany plików dziennika: [commit, status, blob przed, blob po, ścieżka] */
+  const changes = [];
+  if (pairs.length) {
+    let cur = null;
+    for (const l of git(['diff-tree', '--stdin', '-r', '--no-renames', '--no-abbrev'], `${pairs.join('\n')}\n`).toString('utf8').split('\n')) {
+      if (/^[0-9a-f]{40}$/.test(l)) cur = l;
+      else if (l.startsWith(':')) {
+        const [meta, file] = l.split('\t');
+        const [, , before, after, status] = meta.split(' ');
+        if (file.endsWith('.jsonl') && status !== 'A') changes.push([cur, status, before, after, file]);
+      }
+    }
+  }
+  const blobs = readBlobs(git, [...new Set(changes.filter((c) => c[1] !== 'D').flatMap((c) => [c[2], c[3]]))]);
+  const problems = [];
+  for (const [commit, status, before, after, file] of changes) {
+    if (status === 'D') {
+      problems.push(`${commit.slice(0, 10)}: usunięto ${file}`);
+      continue;
+    }
+    const a = blobs.get(before);
+    const b = blobs.get(after);
+    if (!a || !b || b.length < a.length || !b.subarray(0, a.length).equals(a)) problems.push(`${commit.slice(0, 10)}: zmieniono zapisane linie w ${file}`);
+  }
+  return { commits: commits.length, checked: pairs.length, since, problems };
 }
 
 async function main() {
@@ -1049,9 +1103,17 @@ async function main() {
 
   if (local) {
     if (existsSync(path.join(local, '.git'))) {
-      const g = checkGitAppendOnly(local);
-      console.log(g.problems.length ? `✗ historia git: ${g.problems.slice(0, 5).join('; ')}` : `✓ historia git: ${plural(g.commits, 'commit', 'commity', 'commitów')}, tylko dopisywanie`);
-      if (g.problems.length) ok = false;
+      const sinceIdx = args.indexOf('--since-commit');
+      const since = sinceIdx >= 0 ? args[sinceIdx + 1] : null;
+      if (since !== null && !/^[0-9a-f]{40}$/.test(since ?? '')) {
+        console.log('✗ historia git: --since-commit wymaga pełnego hasha commita (40 znaków hex)');
+        ok = false;
+      } else {
+        const g = checkGitAppendOnly(local, { since });
+        const scope = g.since ? ` (od punktu kontrolnego ${g.since.slice(0, 10)}: ${plural(g.checked, 'nowy commit', 'nowe commity', 'nowych commitów')}; pełna historia — przebieg bez --since-commit)` : '';
+        console.log(g.problems.length ? `✗ historia git: ${g.problems.slice(0, 5).join('; ')}` : `✓ historia git: ${plural(g.commits, 'commit', 'commity', 'commitów')}, tylko dopisywanie${scope}`);
+        if (g.problems.length) ok = false;
+      }
     }
     const otsDir = path.join(local, 'BTC', 'ots');
     let daily = 0;
