@@ -140,7 +140,8 @@ Harmonogram GitHuba jest jednak „best-effort” i w praktyce bywa pomijany, dl
 działa jako root z własnym katalogiem stanu poza katalogiem usługi skanera):
 - restartuje skaner, gdy usługa jest w stanie `failed`, lokalny `status.json` jest starszy niż 10 min albo — przy świeżych danych
   lokalnych i po 30 min działania — stoi publikacja, dziennik prognoz lub rejestrator płynności. Działającą usługę restartuje
-  dopiero po godzinie jej działania, najwyżej 3 razy w epizodzie (potem tylko alarm „potrzebna interwencja”). Błędy sieci/GitHuba
+  dopiero po godzinie jej działania, najwyżej 3 razy w epizodzie (potem tylko alarm „potrzebna interwencja”; epizod kończy godzina spokojnej pracy tej
+  usługi, niezależnie od innych alarmów). Błędy sieci/GitHuba
   i problemy jakości (pokrycie open interest) restartu nie wywołują; ręcznie zatrzymanej usługi (`systemctl stop`) nie uruchamia;
 - restartuje serwer powiadomień (`hyperquant-alerts`) na tych samych zasadach, gdy jest w stanie `failed` albo jego puls
   ma ponad 5 min, synchronizacja ze skrzynką ponad 10 min lub ostatni komunikat Hyperliquid (przy alarmach) ponad 5 min;
