@@ -553,8 +553,13 @@ describe('IndexNow: nowe wpisy z pusha', () => {
 
   it('zgłasza wpisy z listy zmienionych plików, które są w zbudowanej stronie, razem ze stroną bloga', () => {
     const urls = changedPostUrls(files, SITE, (id) => id !== '2026-10-25-szkic');
-    expect(urls).toEqual(['https://example.org/HQ/blog/', 'https://example.org/HQ/blog/2026-10-24-aktualizacja-14/', 'https://example.org/HQ/blog/2026-10-25-mapa-dnia/']);
+    // notka „aktualizacja” ma noindex i nie ma jej w mapie witryny — bez zgłoszenia, ale zmienia stronę bloga
+    expect(urls).toEqual(['https://example.org/HQ/blog/', 'https://example.org/HQ/blog/2026-10-25-mapa-dnia/']);
     expect(indexNowBody(urls, SITE)).toEqual({ host: 'example.org', key: INDEXNOW_KEY, keyLocation: `https://example.org/HQ/${INDEXNOW_KEY}.txt`, urlList: urls });
+  });
+
+  it('push z samą notką „aktualizacja”: w zgłoszeniu tylko strona bloga', () => {
+    expect(changedPostUrls(['content/blog/2026-10-24-aktualizacja-14.md'], SITE, () => true)).toEqual(['https://example.org/HQ/blog/']);
   });
 
   it('nic do zgłoszenia: zmiany bez wpisów albo same szkice', () => {
