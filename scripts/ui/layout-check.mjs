@@ -102,6 +102,17 @@ const CLASH_MAX = 25;
 const BUBBLE_REPLAY = '#charts?replay=lessons&m=BTC&i=1m&v=candles&t=2026-10-24T19:30:00Z&station=cockpit&layers=bubbles';
 const BUBBLES = { min: 5, max: 40, phoneMax: 15 };
 const bubbleCount = `(() => { const c = window.__hq.chart(); const host = c && c.root.closest('[data-bubbles]'); return host ? Number(host.dataset.bubbles) : null; })()`;
+/**
+ * Zakres początkowy sesji (initial balance): „Aukcja i otwarcie” (5m) i „Rozliczenie doby” (30m) na danych stałych
+ * (zegar 24.10 21:29 UTC, sesja nowojorska), 1440 i 390. Liczba z wyboru warstwy (`selectIbs`, atrybut
+ * `data-ib-objects`), limit 7 (bieżąca sesja z rozszerzeniami po jednej stronie i linie poprzedniej).
+ */
+const IB_VIEWS = [
+  ['auction', '#charts', { 'hq.charts.phaseActive.v1': JSON.stringify({ before: 'day-map', session: 'auction-open', after: 'review' }), 'hq.charts.tabs.v1': JSON.stringify({ v: 2, tabs: [], active: 'auction-open' }) }],
+  ['review', '#after', {}],
+];
+const IB_MAX = 7;
+const ibCount = `(() => { const c = window.__hq.chart(); const host = c && c.root.closest('[data-ib-objects]'); return host ? Number(host.dataset.ibObjects) : null; })()`;
 const clashCount = `(() => { const c = window.__hq.chart(); const host = c && c.root.closest('[data-clash-objects]'); return host ? Number(host.dataset.clashObjects) : null; })()`;
 /**
  * Strefy nierównowagi i niedokończone aukcje: układ „Aukcja i otwarcie” na powtórce 24.10 o 19:30, 5m footprint, warstwy
@@ -566,6 +577,24 @@ async function main() {
     await shot(page, '390-strefy');
     await page.viewport(1440, 900, false);
 
+    // Szlif 5: zakres początkowy sesji w „Aukcja i otwarcie” i „Rozliczenie doby” (1440, potem 390)
+    report.ib = {};
+    for (const [name, hash, store] of IB_VIEWS) {
+      report.ib[name] = {};
+      await page.viewport(1440, 900, false);
+      await open(page, hash, store);
+      await page.mouseAway();
+      await sleep(400);
+      report.ib[name].desktop = await probe(page, ibCount);
+      await shot(page, `1440-zakres-${name}`);
+      await page.viewport(390, 844, true);
+      await open(page, hash, store);
+      await sleep(400);
+      report.ib[name].phone = await probe(page, ibCount);
+      await shot(page, `390-zakres-${name}`);
+    }
+    await page.viewport(1440, 900, false);
+
     // 4. Ustawienia użytkownika
     await page.viewport(1440, 900, false);
     report.storage = await persistence(page);
@@ -609,7 +638,8 @@ async function main() {
     r.bubbles.desktop >= BUBBLES.min &&
     r.bubbles.desktop <= BUBBLES.max &&
     r.bubbles.phone <= BUBBLES.phoneMax;
-  r.summary = { t1, t2, t3, t4, t5, t6, s1, s2, s3, s4 };
+  const s5 = IB_VIEWS.every(([name]) => [r.ib?.[name]?.desktop, r.ib?.[name]?.phone].every((n) => typeof n === 'number' && n <= IB_MAX));
+  r.summary = { t1, t2, t3, t4, t5, t6, s1, s2, s3, s4, s5 };
   const lines = [
     `Pomiar „${LABEL}” (${BASE})`,
     `1. Panel ceny 1440×900: ${pct(r.desktop)} (próg 62%, zapas ${margin(r.desktop?.share ?? 0, LIMITS.desktop)}), z kolumną DOM: ${pct(r.desktopDom)} (próg 60%, zapas ${margin(r.desktopDom?.share ?? 0, LIMITS.desktopDom)}) — ${ok(t1)}`,
@@ -630,6 +660,7 @@ async function main() {
     `Szlif 2. Strefy nierównowagi / linie aukcji („Aukcja i otwarcie”, powtórka 24.10 19:30, 5m): 1440 ${r.zones?.desktop ? `${r.zones.desktop.rects} / ${r.zones.desktop.lines}` : '—'}, 390 ${r.zones?.phone ? `${r.zones.phone.rects} / ${r.zones.phone.lines}` : '—'} (limit ${ZONES_MAX.rects} / ${ZONES_MAX.lines}) — ${ok(s2)}`,
     `Szlif 3. Ściany i serie (Kokpit 1m, powtórka 24.10 19:30): 1440 ${r.clashes?.desktop ?? '—'} (limit ${CLASH_MAX}) — ${ok(s3)}`,
     `Szlif 4. Bąble zleceń (Kokpit 1m, powtórka 24.10 19:30): 1440 ${r.bubbles?.desktop ?? '—'}, 390 ${r.bubbles?.phone ?? '—'} (1440: ${BUBBLES.min}–${BUBBLES.max}, 390: do ${BUBBLES.phoneMax}) — ${ok(s4)}`,
+    `Szlif 5. Zakres początkowy sesji (dane stałe): „Aukcja i otwarcie” 5m 1440 ${r.ib?.auction?.desktop ?? '—'}, 390 ${r.ib?.auction?.phone ?? '—'}; „Rozliczenie doby” 30m 1440 ${r.ib?.review?.desktop ?? '—'}, 390 ${r.ib?.review?.phone ?? '—'} (limit ${IB_MAX}) — ${ok(s5)}`,
     `Szlif 1. Prostokąty wskaźnika Effort (powtórka 24.10 19:30, BTC 5m): 1440 ${r.effort?.desktop ?? '—'} (limit ${EFFORT_MAX.desktop}), 390 ${r.effort?.phone ?? '—'} (limit ${EFFORT_MAX.phone}) — ${ok(s1)}`
   );
   const metrics = metricsOf(r);

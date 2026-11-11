@@ -102,3 +102,29 @@ describe('Badania: brak danych to „—”, nie wartość zastępcza', () => {
     expect(Number.isNaN(s.atr14)).toBe(true);
   });
 });
+
+describe('Badania: bez nazw kierunku, martwego sygnału i dźwigni spoza giełdy', () => {
+  it('stan wyczerpania przepływu opisuje przeszłość: bez „bullish/bearish”, szczytu, dołka, odwrócenia ani kontynuacji', () => {
+    // Wzorzec z części, żeby sam test go nie zawierał (rg po src ma być pusty)
+    const NAMES = new RegExp(['BULL' + 'ISH_', 'BEAR' + 'ISH_', '_TOP' + '_RISK', '_BOTTOM' + '_REVERSAL', '_CONTIN' + 'UATION'].join('|'));
+    expect(sources('src').filter((p) => NAMES.test(readFileSync(p, 'utf8')))).toEqual([]);
+  });
+
+  it('silnik dźwięku nie ma sygnału kierunku (LONG/SHORT) — martwy kod usunięty', async () => {
+    const { soundEngine } = await import('../soundEngine');
+    expect('playSignalAlert' in soundEngine).toBe(false);
+    expect(sources('src').filter((p) => readFileSync(p, 'utf8').includes('playSignal' + 'Alert'))).toEqual([]);
+  });
+
+  it('mapa likwidacji z wykresu: dźwignie najwyżej do maksimum BTC na Hyperliquid (bez 100×)', async () => {
+    const { computeAggrLiquidationHeatmap } = await import('../shaakuniEngine');
+    const { buildHyperliquidBar, recalculateIndicatorSeries } = await import('../marketDataFeed');
+    const { BTC_MAX_LEVERAGE } = await import('../planAnalyzer');
+    const bars = recalculateIndicatorSeries(
+      Array.from({ length: 80 }, (_, i) => buildHyperliquidBar(100_000, 100_100, 99_900, 100_000 + (i % 3) * 10, 30 + (i % 5) * 20, 300, i * 300_000, 50))
+    );
+    const cells = computeAggrLiquidationHeatmap(bars);
+    expect(cells.length).toBeGreaterThan(0);
+    for (const c of cells) expect(c.leverage).toBeLessThanOrEqual(BTC_MAX_LEVERAGE);
+  });
+});

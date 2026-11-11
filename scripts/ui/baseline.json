@@ -38,7 +38,11 @@
       "zones.rects1440": 3,
       "zones.lines1440": 2,
       "zones.rects390": 3,
-      "zones.lines390": 2
+      "zones.lines390": 2,
+      "ib.auction1440": 5,
+      "ib.auction390": 5,
+      "ib.review1440": 7,
+      "ib.review390": 7
     },
     "linux": {
       "share.desktop": 0.626,
@@ -77,7 +81,11 @@
       "zones.rects1440": 3,
       "zones.lines1440": 2,
       "zones.rects390": 3,
-      "zones.lines390": 2
+      "zones.lines390": 2,
+      "ib.auction1440": 5,
+      "ib.auction390": 5,
+      "ib.review1440": 7,
+      "ib.review390": 7
     }
   }
 }

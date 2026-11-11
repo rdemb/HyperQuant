@@ -49,6 +49,19 @@ describe('Kto handluje i makerzy: najstarsza świeca na krawędzi retencji', () 
     expect({ players: s.players.split(t, M, now), makers: s.makerSplit(t, t + M) }).toEqual(before);
   });
 
+  it('historia sprzed granicy sprzątania nie oznacza okna jako pełnego (zleceń sprzed granicy już się nie składa)', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(now);
+    const s = store();
+    // granica sprzątania (T0 + 16 min) ustalona przed wczytaniem pliku [T0, T0 + 2 h)
+    prune(s);
+    load(s, history());
+    // świeca 1m 12:10: okno 11:11–12:11 sięga przed granicę 11:16
+    expect(s.players.split(T0 + 70 * M, M, now)!.complete).toBe(false);
+    // świeca 1m 12:20: okno 11:21–12:21 w całości po granicy
+    expect(s.players.split(T0 + 80 * M, M, now)!.complete).toBe(true);
+  });
+
   it('ponownie dostarczony plik historii sprzed granicy nie dubluje zleceń ani wypełnień po sprzątaniu', () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(now);
