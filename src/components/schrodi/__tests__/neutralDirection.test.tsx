@@ -1,5 +1,5 @@
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { DeskLedgerSummary } from '../../../utils/deskLedger';
 import type { FeatureVec, Forecast, SchrodiModel } from '../../../utils/schrodi';
 
@@ -26,6 +26,14 @@ vi.mock('react', async (importOriginal) => {
 });
 
 const T = Date.UTC(2026, 10, 11, 12, 0);
+// Stały zegar: prognoza z fikstury jest „świeża” niezależnie od dnia uruchomienia testu (bez tego test psuł się po T)
+beforeAll(() => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(T + 60_000);
+});
+afterAll(() => {
+  vi.useRealTimers();
+});
 const PLAN = { id: 'p', hash: 'h', at: T - 86_400_000 };
 const PROOF = T - 3_600_000;
 const head = {
