@@ -117,7 +117,7 @@ export interface LiquidationHeatmapCell {
   bottom: number;
   strength: number;
   count: number;
-  leverage: 5 | 20 | 100;
+  leverage: 5 | 20;
   isResistance: boolean; // true = short liquidations above price, false = long liquidations below price
   intensityRatio: number; // 0..1 normalized
   color: string;
@@ -188,12 +188,11 @@ export interface OFIMomentumSummary {
   overallBuySellRatio: number;
   overallOfiPct: number; // -100% to +100%
   exhaustionIndex: number; // 0..100% momentum exhaustion index
-  exhaustionBias:
-    | 'BULLISH_EXHAUSTION_TOP_RISK'
-    | 'BEARISH_EXHAUSTION_BOTTOM_REVERSAL'
-    | 'AGGRESSIVE_BUY_CONTINUATION'
-    | 'AGGRESSIVE_SELL_CONTINUATION'
-    | 'BALANCED_EQUILIBRIUM';
+  /**
+   * Co się stało z przepływem (opis przeszłości, bez kierunku rynku): zlecenia kupna albo sprzedaży wchłonięte przez ścianę,
+   * przewaga agresywnego kupna albo sprzedaży, równowaga.
+   */
+  exhaustionBias: 'BUY_FLOW_ABSORBED' | 'SELL_FLOW_ABSORBED' | 'AGGRESSIVE_BUY_DOMINANT' | 'AGGRESSIVE_SELL_DOMINANT' | 'BALANCED_EQUILIBRIUM';
   dominantExhaustionTick: number | null;
   exhaustionNote: string;
 }
