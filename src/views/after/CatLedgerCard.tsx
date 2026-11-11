@@ -3,6 +3,7 @@ import { DASH, Stat, fmtFixed, fmtPrice } from '../../ui';
 import type { CatHeadScores, DeskLedgerSummary } from '../../utils/deskLedger';
 import { locale, tr } from '../../i18n';
 import { dirHiddenNote, dirProven, upBand, upLabel } from '../../components/schrodi/direction';
+import { MOVE_PCT_PROMOTED, moveLevelWord, moveView } from '../../components/schrodi/moveLevel';
 import { CatTrustBlock } from './CatTrustBlock';
 
 const timeFmt = new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit' });
@@ -10,6 +11,13 @@ const dateFmt = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short'
 /** Procent bez „−0%” (zero ze znakiem minus z zaokrąglenia) */
 const pct = (v: number | null | undefined) => (v === null || v === undefined || !Number.isFinite(v) ? DASH : `${fmtFixed(Math.round(v * 100) || 0, 0)}%`);
 const num = (v: number | null, d: number) => (v === null ? DASH : fmtFixed(v, d));
+/** Bieżąca szansa dużego ruchu: przed awansem kalibracji poziom wobec typowej godziny (bez procentu), brak danych → „—” */
+function latestMove(cat: NonNullable<DeskLedgerSummary['cat']>, pBig: number): string {
+  if (MOVE_PCT_PROMOTED) return pct(pBig);
+  const v = moveView(pBig, cat);
+  return v.kind === 'level' ? moveLevelWord(v.level) : `${DASH} (${v.reason})`;
+}
+
 /** Wyniki od 20 rozłącznych godzin — mniejsza próba to szum */
 const MIN_EFF = 20;
 
@@ -43,7 +51,7 @@ export const CatLedgerCard: React.FC<{ cat: NonNullable<DeskLedgerSummary['cat']
         <div className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium">{tr('Schrödi: duży ruch, kierunek i dotknięcia w 1 h', 'Schrödi: big move, direction and touches within 1 h')}</div>
         {cat.latest && (
           <span className="text-[11px] text-ink-3">
-            {tr('wydano', 'issued')} {timeFmt.format(cat.latest.t)} · {tr('cena', 'price')} {fmtPrice(cat.latest.px0, 0)} · {tr('ruch', 'move')} {pct(cat.latest.pBig)}
+            {tr('wydano', 'issued')} {timeFmt.format(cat.latest.t)} · {tr('cena', 'price')} {fmtPrice(cat.latest.px0, 0)} · {tr('ruch', 'move')} {latestMove(cat, cat.latest.pBig)}
             {showDir && (
               <>
                 {' · '}

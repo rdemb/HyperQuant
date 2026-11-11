@@ -194,6 +194,17 @@ more, against 10 minutes earlier, with the two feature groups whose contribution
 means that something really changed. The "Why?" section lists the contribution of each feature group to both
 probabilities.
 
+**Big move as a level until the calibration is promoted.** The ranking of `pBig` is good (AUC 0.878 in the ledger
+summary of 11.11.2026), but its level is too low: over 1,328 resolved forecasts the mean `pBig` was 0.497 against a
+frequency of 0.585. Until the calibration `cat-cal-v1` passes its block in the ledger and is promoted, the bar, the
+popup and the ledger card show no percentage for the big move. They show a level against a typical hour: calm, typical
+or elevated, by the tercile of `pBig` among resolved forecasts in the ledger summary (the 10-bin histogram of the
+30-day window, tercile edges interpolated inside a bin), next to the AUC from the ledger and the sentence "percentages
+under calibration, results in the ledger". With fewer than 96 resolved forecasts the level is "—" with the reason. The
+cat's mood follows the level. The change of mind and the "Why?" section describe the big move without numbers, and the
+live-hour percentages and the big-move lines on the small charts are hidden. One flag, `MOVE_PCT_PROMOTED` in
+`src/components/schrodi/moveLevel.ts`, switches the percentages back after promotion.
+
 **Direction is hidden until it is proven live.** The ledger runs an e-process for the direction head: every hour the
 cat places a virtual bet that its direction forecast beats a simple rule, starting from capital 1, under a plan
 registered in the ledger before scoring. Without an edge, capital reaches 20 at most 5% of the time. Until that happens
