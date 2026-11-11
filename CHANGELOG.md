@@ -16,6 +16,58 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 #### Zmienione
 - **Weryfikacja w osobnym workflow** (`backend/deploy/ledger-verify.yml`; z `backend/deploy/health-alert.yml` usunięty job weryfikacji): nie jest anulowana przez kolejne zapisy strażnika, limit 20 min ma sam krok weryfikacji, a znaczek i podsumowanie powstają także po przekroczeniu limitu. Przebieg z niezgodnością albo niedokończony jest w Actions czerwony.
 - **Puls strażnika co 12 h zamiast raz na dobę** (`scripts/watchdog.mjs`): repo danych nie może mieć harmonogramu (GitHub uruchamia `schedule` tylko z gałęzi domyślnej, a `main` jest publikacją nadpisywaną co 2 min), więc weryfikację uruchamia zapis strażnika. Dzięki temu wynik ma zawsze mniej niż dobę.
+- **Kopia strażnika w układzie repo** (`backend/deploy/install.sh`, `hyperquant-watchdog.service`): nadzór danych czyta teraz `scripts/verify-status.mjs` i `src/utils/verifyFreshness.ts`, więc `install.sh` kopiuje strażnika z wszystkimi lokalnymi importami i `package.json` do `/opt/hyperquant/watchdog/` (te same ścieżki co w repo, nowa kopia obok i podmiana katalogu), a jednostka uruchamia `/opt/hyperquant/watchdog/scripts/watchdog.mjs`. Test w `backend/deploy/__tests__/units.test.ts` sprawdza, że lista kopiowanych plików obejmuje wszystkie lokalne importy strażnika i że kopia wczytuje się w osobnym katalogu.
+
+### Serwer skanera: strażnik bez root, aktualizacja z podpisanych tagów (2026-11-11)
+
+#### Bezpieczeństwo
+- **Strażnik nie działa już jako root** (`backend/deploy/hyperquant-watchdog.service`, `backend/deploy/install.sh`). Dotąd jednostka nie miała `User=` i uruchamiała `scripts/watchdog.mjs` z katalogu, który usługa aktualizacji co 15 min równa do gałęzi `main`. Push do `main` dawał więc w ciągu 15 min kod wykonywany jako root na serwerze. Teraz:
+  - strażnik działa jako osobny użytkownik systemowy `hyperquant-watchdog` z grupą dodatkową `hyperquant`, z izolacją jak skaner (`NoNewPrivileges`, `ProtectSystem=strict`, puste `CapabilityBoundingSet`, `SystemCallFilter=@system-service`, zapis tylko do własnego `StateDirectory`) i bez sekretów R2 w środowisku;
+  - restart skanera i serwera powiadomień przez regułę polkit `backend/deploy/hyperquant-watchdog.rules`: tylko czynność `restart` i tylko te 2 usługi;
+  - kod strażnika (`watchdog.mjs`, `check-data-health.mjs`) to kopia w `/opt/hyperquant/watchdog`, którą kładzie `install.sh`; push do repo jej nie zmienia;
+  - klucz wdrożeniowy repo danych strażnik dostaje przez `LoadCredential` (drop-in z `install.sh`), a plik klucza zostaje własnością skanera (`deployKey` w `scripts/watchdog.mjs`);
+  - strażnik nie czyta `scanner.env`: `install.sh` tworzy `/etc/hyperquant/watchdog.env` (0600) tylko z 3 zmiennymi, których używa (`HQ_GIT_REMOTE`, `HQ_OUT_DIR`, `HQ_STATE_DIR`), zamiast pliku skanera z `UnsetEnvironment`;
+  - bez polkit albo z wersją starszą niż 0.106 (Ubuntu 22.04 ma 0.105) `install.sh` zatrzymuje się z błędem, zanim cokolwiek zmieni (`check_polkit`). Instalacja bez restartów, w której strażnik tylko alarmuje, wymaga jawnego `HQ_WATCHDOG_NO_POLKIT=1`. Wariant dla 0.105 z jednostką `.path` roota jest opisany w `STRAZNIK.md` do decyzji, bez implementacji.
+- **Aktualizacja z podpisanych tagów** (`backend/deploy/hyperquant-update.sh`, `backend/deploy/hyperquant-update.service`). Polecenia aktualizacji przeszły z jednostki do skryptu, który `install.sh` kopiuje do `/opt/hyperquant/bin` (poza katalog aktualizowany). Plik `/etc/hyperquant/allowed_signers` włącza tryb tagów: kod idzie tylko do najnowszego tagu `v*` z ważnym podpisem ssh zaufanego klucza (`git verify-tag`) i tylko do przodu. Pomijane są tagi bez podpisu, tagi lekkie, podpisy spoza listy i podpisany tag pod inną nazwą. W tym trybie `install.sh` wymaga `TAG=` i sprawdza jego podpis. Bez tego pliku (albo z pustym plikiem) działa jak dotąd, czyli idzie za gałęzią `main`. Każdy taki przebieg, także bez zmian, zapisuje w dzienniku „tryb gałęzi, bez sprawdzania podpisów”, więc usunięty plik kluczy nie wyłącza ochrony po cichu. Jednostka aktualizacji dostała dodatkowe zabezpieczenia (`PrivateDevices`, `RestrictNamespaces`, `RestrictSUIDSGID`, `ProtectKernelLogs` i inne).
+
+#### Zmienione
+- `status.json` skanera (`backend/scanner/scanner.ts`, pliki publikacji) i puls serwera powiadomień (`backend/alerts/pulse.ts`) mają prawa `0640`, żeby strażnik w grupie usługi mógł je czytać. Reszta stanu zostaje `0600`.
+- Instrukcja wdrożenia, sprawdzenia i wycofania: `backend/deploy/STRAZNIK.md`; opis w `backend/README.md`.
+
+#### Testy
+- `backend/deploy/__tests__/units.test.ts` (15 testów):
+  - żadna usługa root nie uruchamia kodu z katalogu aktualizowanego;
+  - użytkownik i izolacja strażnika;
+  - strażnik nie czyta `scanner.env`; zmienne `watchdog.env` są dokładnie tymi, które czyta `watchdog.mjs`;
+  - `check_polkit` z atrapą `pkaction`: brak polkit i 0.105 zatrzymują instalację, a zgoda albo 0.106 i nowszy ją przepuszczają;
+  - reguła polkit wykonana na atrapie, czyli tylko 2 dozwolone przypadki;
+  - asercje `install.sh` i `bash -n`;
+  - kopia strażnika ładuje się poza repo.
+- `backend/deploy/__tests__/update.test.ts` (9 testów na prawdziwym git z jednorazowymi kluczami ssh w katalogu tymczasowym):
+  - tryb gałęzi bez zmian, z linią trybu w dzienniku przy każdym przebiegu (także przy pustym pliku kluczy);
+  - push bez podpisu, obcy klucz, przeniesiona referencja i starszy tag nie zmieniają kodu;
+  - podpisany tag zmienia kod.
+- Testy `deployKey` i praw `0640`: te drugie tylko poza Windows.
+
+### Kot bez stron rynku, Badania bez liczb zastępczych (2026-11-11)
+
+#### Zmienione
+- **Kierunek Schrödiego jako szansa, nie strona rynku** (`src/components/schrodi/direction.ts`, `SchrodiPanel.tsx`, `SchrodiLauncher.tsx`, `src/views/after/CatLedgerCard.tsx`). Zamiast „LONG 54%” / „SHORT 53%” / „NIE WIEM” kot pokazuje „P(wzrost 1 h) 54%” (EN „P(up 1 h) 54%”) w neutralnym kolorze tuszu, w pasku pod wykresem, w dymku i w zdaniu kota. Bez kolorów kupna i sprzedaży są też: pasek szansy kierunku, „Zamknie wyżej niż…” w bieżącej godzinie i kolumna „wzrost” w „Dlaczego?”. Wyniki kierunku (dymek, karta w dzienniku) opisują przedziały „P(wzrost 1 h) > 53%” i „< 47%” zamiast „Long” i „Short”. Tekst etykiety jest w jednym module, więc jej formę zmienia się w jednym miejscu. Kontrakt danych dziennika (`dir.long`, `dir.short`) bez zmian.
+- **Kierunek kota ukryty do dowodu w e-procesie** (`src/components/schrodi/direction.ts`, `SchrodiPanel.tsx`, `SchrodiLauncher.tsx`, `SchrodiCat.tsx`, `src/views/after/CatLedgerCard.tsx`, `docs/SCHRODI.md`). Dopóki dziennik nie ma dowodu przewagi kierunku (`trust.dir.proofAt` = `null`; dziś `null`), kot pokazuje tylko duży ruch i dotknięcia: bez etykiety „P(wzrost 1 h)”, paska, zdania i zmiany zdania o kierunku, bez linii wzrostu na wykresach zdania i godziny, bez „Zamknie wyżej niż…” i bez kolumny „wzrost” w „Dlaczego?”. Rysunek kota ma wtedy jeden neutralny kontur zamiast zielonego i pomarańczowego. Wyniki kierunku (karta modelu, wynik na żywo, karta w dzienniku) zostają jako pomiar z dopiskiem, że kierunek jest ukryty do dowodu. Z dowodem wraca neutralna etykieta, a rysunek kota ma własne kolory superpozycji (`--color-cat-up` lawendowy, `--color-cat-down` piaskowy), nie kolory kupna i sprzedaży; alarm dryfu kierunku znów ukrywa kierunek, aż zgaśnie. W panelu kota bez kolorów kupna i sprzedaży także odległości poziomów, stożek zasięgu, znacznik „na żywo” i „przewaga dowiedziona”.
+- **Taśma w Badaniach: likwidacja jako wymuszona strona transakcji** (`src/components/AggrOrderFlowTape.tsx`): zamiast „LIQ SHORT” / „LIQ LONG” wiersz pokazuje „wymusz. kupno” / „wymusz. sprzedaż” (EN „forced buy” / „forced sell”), bez zamiany na wielkie litery; podpowiedź mówi, czyja pozycja została zlikwidowana. Usunięta nieużywana zmienna `exhaustionDir` z etykietami LONG/SHORT. Opis kota w `docs/SCHRODI.md` używa etykiety „P(up 1 h)” i przedziałów 53% / 47% zamiast „Long/Short”; liczby z testów bez zmian. Test: `src/components/__tests__/tapeLiqLabel.test.tsx`.
+- **Reżimy w Badaniach opisują przeszłość** (`src/utils/quantMathEngine.ts`, `src/components/QuantSignalDesk.tsx`, `src/types/trading.ts`): „Absorpcja spot (wzrostowa)” i „Wyczerpanie perp (spadkowa)” (EN „bullish/bearish”) to teraz „CVD spot wyprzedzał perp” i „CVD perp wyprzedzał spot”, z opisem reguły z 16 ostatnich świec. Usunięty nieużywany reżim „Kaskada likwidacji”.
+
+#### Usunięte
+- **„Paliwo likwidacyjne” ze stałych w USD w Badaniach** (`src/utils/quantMathEngine.ts`, `src/components/LiquidityMicrostructureLab.tsx`). Pule liczone jako siła komórki × 420 000 USD i stałe 3 800 000 USD przy PDH, PDL, PWH i PWL nie były pomiarem. Pola `liquidationPoolUsd`, `shortSqueezeFuelUsd` i `longCascadeFuelUsd` usunięte; pole „Paliwo” pokazuje „—” z powodem (w tym widoku nie ma pozycji kont; mapa likwidacji z pozycji kont jest w „Przed sesją”). U(p) i magnes liczone z wolumenu i świeżych stref OB, wzór w „Metodach” poprawiony.
+
+#### Naprawione
+- **Brak danych to „—”, nie wartość zastępcza:**
+  - VPIN bez wolumenu (żaden pełny kubełek) to `null` i „—” z powodem, nie 0% (`quantMathEngine.ts`, kafle Badań, `src/views/desk/DeskRail.tsx`);
+  - wykładnik Hursta z mniej niż 8 zwrotów albo z płaskiej serii to `null` i „—” z powodem, nie 0,5;
+  - ATR bez świec to NaN, nie 0 (`src/utils/shaakuniEngine.ts`);
+  - obrót 24 h nieobecny w odpowiedzi API to NaN („—”), nie 0 (`src/utils/marketDataFeed.ts`);
+  - transakcja z WebSocket bez czasu giełdy jest odrzucana, zamiast dostawać czas z zegara przeglądarki.
+- Testy: `src/components/schrodi/__tests__/neutralDirection.test.tsx` (dymek z rozwiniętymi sekcjami, pasek i karta dziennika po polsku i po angielsku, trzy stany kierunku: brak „long/short” w tekście, etykieta bez kolorów stron), `src/utils/__tests__/researchHonesty.test.tsx` (brak stałych paliwa w kodzie `src`, brak pól paliwa, nazwy reżimów, VPIN, Hurst, ATR), dwa nowe przypadki w `marketDataFeed.test.ts`.
 
 ### Strażnik serwera: histereza alarmu opóźnionych odczytów pozycji (2026-11-11)
 
