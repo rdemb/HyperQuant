@@ -727,12 +727,17 @@ describe('blog: treść z zewnątrz (linki, obrazy, front matter, CSP)', () => {
     expect(page).toMatch(/<script src="\.\.\/\.\.\/blog\/blog\.js\?v=[0-9a-f]{10}" defer><\/script>/);
     expect(page).toContain('href="https://github.com/x/HQ/commits/main/content/blog/2026-10-24-mapa-dnia.md"');
     expect(page).not.toMatch(/class="edited"/);
-    // bez filtra (wyłącznik albo build lokalny): rejestr od zera, wpisy z main bez „changed”, więc bez dopisku
-    const hash = createHash('sha256').update(readFileSync(path.join(content, `${ID}.md`))).digest('hex');
+    // bez filtra (wyłącznik albo build lokalny): rejestr od zera (opublikowany nie jest czytany), wpisy z main bez „changed”,
+    // więc bez dopisku także po zmianie formuły hasha; hash = .md i media z listy (w kolejności nazw)
+    const sha = (b) => createHash('sha256').update(b).digest('hex');
+    const file = (f) => sha(readFileSync(path.join(content, ID, f)));
+    const hash = sha([`${sha(readFileSync(path.join(content, `${ID}.md`)))}  ${ID}.md`, `${file('wykres.png')}  wykres.png`, `${file('wykresy.json')}  wykresy.json`].join('\n'));
     expect(JSON.parse(readFileSync(path.join(blog, 'source.json'), 'utf8'))).toEqual({
       sha: null,
       main: 'f'.repeat(40),
       at: '2026-10-25T12:00:00.000Z',
+      hashFormat: 2,
+      reseededAt: null,
       posts: { [ID]: { hash, seen: '2026-10-25T12:00:00.000Z', changed: null } },
       rewritten: false,
       skipped: [],

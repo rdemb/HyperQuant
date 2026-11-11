@@ -70,10 +70,18 @@ describe('static.yml: gałąź blog repo danych', () => {
     const s = step('Blog Intake');
     expect(s.run).toMatch(/GIT_TERMINAL_PROMPT=0 timeout 120 git clone -q --no-tags --single-branch --branch blog "\$BLOG_REPO" "\$RUNNER_TEMP\/blog"/);
     expect(s.run).not.toMatch(/--depth/);
-    expect(s.run).toMatch(/node scripts\/blog\/intake\.mjs filter --src "\$src" --dest content\/blog --published "\$RUNNER_TEMP\/published\.json" --out "\$RUNNER_TEMP\/blog-intake\.json"/);
+    expect(s.run).toMatch(/node scripts\/blog\/intake\.mjs filter \$reseed --src "\$src" --dest content\/blog --published "\$RUNNER_TEMP\/published\.json" --out "\$RUNNER_TEMP\/blog-intake\.json"/);
     expect(s.run).toMatch(/BLOG_INTAKE=\$RUNNER_TEMP\/blog-intake\.json" >> "\$GITHUB_ENV"/);
     expect(index('Blog Intake')).toBeLessThan(index('Install Dependencies'));
     expect(index('Blog Intake')).toBeGreaterThan(index('Decide Deploy'));
+  });
+
+  it('odtworzenie rejestru: wejście blog_reseed, tylko gdy uruchomił (i ewentualnie ponowił) właściciel repo', () => {
+    expect(wf.on.workflow_dispatch.inputs.blog_reseed).toMatchObject({ type: 'boolean', default: false });
+    expect(build.env.BLOG_RESEED).toBe(
+      "${{ github.event_name == 'workflow_dispatch' && inputs.blog_reseed && github.actor == github.repository_owner && github.triggering_actor == github.repository_owner }}"
+    );
+    expect(step('Blog Intake').run).toMatch(/reseed=\n {0,}if \[ "\$BLOG_RESEED" = true \]; then reseed=--reseed; fi/);
   });
 
   it('job build ma limit 20 min (grupa pages nie przerywa trwających przebiegów)', () => {
@@ -145,6 +153,11 @@ describe.skipIf(!hasBash)('static.yml: bramka wdrożenia (krok Decide Deploy uru
       expect(gate({ ...ON, EVENT, KNOWN: 'false', CHANGED: 'true' }), EVENT).toBe('');
       expect(gate({ ...ON, EVENT, KNOWN: '' }), EVENT).toBe('');
     }
+  });
+
+  it('odtworzenie rejestru przez właściciela: wdrożenie mimo nieczytelnego source.json; bez odtworzenia nie', () => {
+    expect(gate({ ...ON, EVENT: 'workflow_dispatch', KNOWN: 'false', BLOG_RESEED: 'true' })).toBe('deploy=true');
+    expect(gate({ ...ON, EVENT: 'workflow_dispatch', KNOWN: 'false', BLOG_RESEED: 'false' })).toBe('');
   });
 
   it('gałęzi nie ma albo GitHub nie odpowiada: bez wdrożenia z tego powodu; push i nowe dane jak dotąd', () => {
