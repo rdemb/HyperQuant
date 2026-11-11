@@ -4,6 +4,14 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Blog: wydawca wpisów z kolejki na serwerze, autor bez klucza (2026-11-11)
+
+#### Dodane
+- **Wydawca wpisów** (`scripts/blog/publisher.mjs`, `backend/deploy/hyperquant-blog-publisher.service` i `.timer`, co minutę): bierze z kolejki `/var/lib/hyperquant-blog/kolejka/` tylko kompletne paczki (katalog `<id>` po atomowym `rename` z `<id>.tmp-…`), czyta każdy plik raz do pamięci bez podążania za dowiązaniami, przejmuje ją do prywatnego katalogu roboczego (`praca/`, rename), sprawdza tym samym filtrem (`intake.mjs`) i walidatorem wpisów (`loadPostFile`) co build strony, commituje jako `HyperQuant blog <hyperquant-blog@users.noreply.github.com>` na gałąź `blog` repo danych (gdy jej nie ma: sieroca) i wypycha z ponowieniem po `rebase` (3 próby). Wynik dla autora w `zrobione/<id>.json` (sha commita) albo `odrzucone/<id>.json` (powód), oba z `md` = sha256 przysłanego pliku; ta sama treść drugi raz daje wynik bez nowego commita. Przy błędzie pusha paczki zostają w kolejce. Status z alarmem (`odrzucone`, `push`) w `stan/status.json`.
+- **Instalacja** (`backend/deploy/install.sh`): grupa `hqblog`, osobny użytkownik `hyperquant-blog`, autor dopisywany do grupy tylko jawnie (`HQ_BLOG_AUTHOR=<użytkownik>`), katalogi kolejki (3770), wyników (2750) i statusu, kopia kodu wydawcy poza katalogiem aktualizowanym (jak strażnik), pakiet `yaml` z adresu i sumy SHA-512 z `package-lock.json` (bez npm na serwerze), klucz repo danych przez `LoadCredential`, plik `/etc/hyperquant/blog-publisher.env` tylko z adresem repo danych.
+- Testy: `scripts/blog/publisher.test.mjs` (kontrakt kolejki na lokalnym repo git: niepełna paczka, dowiązania, zły wpis, dobry wpis, idempotencja, wyścig pusha z rebase, 3 nieudane pushe, powrót paczki z katalogu roboczego), `backend/deploy/__tests__/units.test.ts` (jednostki, izolacja, `install.sh`, kopia wydawcy wczytuje się bez reszty repo).
+- `docs/BLOG.md`: kontrakt kolejki dla autora, plik statusu, kolejność wdrożenia etapu B2 i cofnięcie.
+
 ### Blog: rejestr wpisów przed włączeniem gałęzi blog (2026-11-11)
 
 Publikacja bez zmian (zmienna `BLOG_INTAKE` nadal wyłączona): build na 120 wpisach z `main` daje te same 170 adresów w `sitemap.xml` (plik identyczny), ten sam `blog/feed.xml` (51 linków) i 172 identyczne strony HTML; zmienia się tylko `blog/source.json`.

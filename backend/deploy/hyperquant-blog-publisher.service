@@ -1,0 +1,55 @@
+[Unit]
+Description=HyperQuant — wydawca wpisów bloga (kolejka na serwerze → gałąź blog repo danych)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Własny użytkownik systemowy: nie skaner (wydawca przetwarza obcą treść, więc nie dostaje stanu ani konfiguracji skanera)
+# i nie autor wpisów (autor tylko dodaje paczki do kolejki, bez żadnego klucza). Grupa hqblog: kolejka i wyniki wspólne
+# z autorem. Kod z kopii, którą install.sh kładzie poza katalogiem aktualizowanym (jak strażnik); klucz repo danych
+# z LoadCredential (drop-in tworzony przez install.sh), więc plik klucza zostaje własnością skanera.
+User=hyperquant-blog
+Group=hyperquant-blog
+SupplementaryGroups=hqblog
+WorkingDirectory=/opt/hyperquant/blog-publisher
+# Tylko adres repo danych; plik tworzy install.sh z konfiguracji skanera (bez sekretów R2 i reszty konfiguracji)
+EnvironmentFile=/etc/hyperquant/blog-publisher.env
+StateDirectory=hyperquant-blog-publisher
+StateDirectoryMode=0700
+Environment=HQ_BLOG_DIR=/var/lib/hyperquant-blog
+Environment=HQ_BLOG_STATE=/var/lib/hyperquant-blog-publisher
+# Wpisy z main (tylko odczyt identyfikatorów: gałąź blog nie może przejąć istniejącego wpisu)
+Environment=HQ_BLOG_MAIN_CONTENT=/opt/hyperquant/app/content/blog
+ExecStart=/opt/hyperquant/node/bin/node /opt/hyperquant/blog-publisher/scripts/blog/publisher.mjs
+TimeoutStartSec=5min
+Nice=10
+
+# Izolacja jak strażnik: bez uprawnień, zapis tylko do własnego katalogu stanu (klon gałęzi blog) i katalogów kolejki;
+# wyniki dla autora i status 0640 / 0644 (UMask 0027, katalogi z install.sh); praca: paczki przejęte z kolejki. Bez
+# systemctl, więc także ProtectProc.
+UMask=0027
+# Jedno montowanie całego katalogu wspólnego: przejęcie paczki to rename kolejka → praca, a rename między dwoma osobnymi
+# ścieżkami ReadWritePaths (osobne montowania) kończy się EXDEV. W samym katalogu wspólnym (root, 0755) wydawca nie pisze.
+ReadWritePaths=/var/lib/hyperquant-blog
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectClock=true
+ProtectHostname=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectProc=invisible
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=true
+CapabilityBoundingSet=
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
