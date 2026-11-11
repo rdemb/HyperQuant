@@ -58,6 +58,7 @@ import { DrawList } from './draw/DrawList';
 import { TOOLS } from './draw/model';
 import { type DrawingTools, isTyping } from './draw/tools';
 import { chartKeyAction } from './chart/shortcuts';
+import { FocusExit, type PhoneTab, focusExitKey, focusOn } from './chart/focusMode';
 import { CandleSeries, MARKETS, Market, ProStore, storeFor } from './store/proStore';
 import { startRecording } from './store/recording';
 import { useStoreVersion } from './store/useStoreVersion';
@@ -133,7 +134,6 @@ const PANE_ITEMS: ToggleItem[] = [
 ];
 
 /** Karty na telefonie: jedna naraz, więc wykres ma cały ekran. */
-type PhoneTab = 'chart' | 'tape' | 'dom' | 'numbers';
 const noticePending = (): boolean => {
   try {
     return localStorage.getItem(DROPPED_NOTICE_KEY) === 'pending';
@@ -260,7 +260,18 @@ export const ProChart: React.FC<{
   // przywraca) i telefon poziomo (sam wykres na cały ekran)
   const [focus, setFocus] = useState(false);
   const landscape = useSyncExternalStore(subscribeLandscape, isLandscapePhone);
-  const chartOnly = narrow && (focus || landscape);
+  // Wykres na cały ekran poziomo, dopóki użytkownik go nie zamknie (do następnego obrotu)
+  const [landscapeOff, setLandscapeOff] = useState(false);
+  const chartOnly = narrow && (focus || (landscape && !landscapeOff));
+  /** Wejście w skupienie zawsze na karcie „Wykres” (Liczby, DOM i Taśma leżą na polu wykresu, a paska z kartami nie ma). */
+  const enterFocus = useCallback(() => {
+    setTab((t) => focusOn(t).tab);
+    setFocus(true);
+  }, []);
+  const exitFocus = useCallback(() => {
+    setFocus(false);
+    if (isLandscapePhone()) setLandscapeOff(true);
+  }, []);
   // Źródła trzech liczb układu na telefonie (z menu „⋯”)
   const [numbersOpen, setNumbersOpen] = useState(false);
   const [tools, setTools] = useState<DrawingTools | null>(null);
@@ -322,8 +333,8 @@ export const ProChart: React.FC<{
     setMenu(null);
     setIndEdit(iid);
   }, []);
-  const live = useRef({ replay, settings });
-  live.current = { replay, settings };
+  const live = useRef({ replay, settings, chartOnly });
+  live.current = { replay, settings, chartOnly };
   const onSavedRef = useRef(onSaved);
   onSavedRef.current = onSaved;
   const setCoin = useCallback((coin: Market) => {
@@ -368,7 +379,9 @@ export const ProChart: React.FC<{
     ctrl.setPhone(isNarrow());
     ctrl.onEditIndicator = editIndicator;
     ctrl.onEmptyTap = () => {
-      if (isNarrow()) setFocus((f) => !f);
+      if (!isNarrow()) return;
+      if (live.current.chartOnly) exitFocus();
+      else enterFocus();
     };
     ctrlRef.current = ctrl;
     setTools(ctrl.draw);
@@ -406,6 +419,20 @@ export const ProChart: React.FC<{
   useEffect(() => {
     if (!narrow) setFocus(false);
   }, [narrow]);
+  useEffect(() => {
+    if (!landscape) setLandscapeOff(false);
+  }, [landscape]);
+  // Escape kończy skupienie (wyjście z klawiatury; przycisk w rogu dla dotyku i czytnika ekranu)
+  useEffect(() => {
+    if (!chartOnly) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!focusExitKey(e.key, true)) return;
+      e.preventDefault();
+      exitFocus();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [chartOnly, exitFocus]);
   // Karta wykresu „fixed” nad stroną: przekształcenie widoku (animacja przejścia) nie może być jej blokiem odniesienia
   useEffect(() => {
     if (!chartOnly) return;
@@ -807,7 +834,7 @@ export const ProChart: React.FC<{
     { key: 'settings', label: tr('Ustawienia wykresu', 'Chart settings'), icon: SlidersHorizontal, on: () => setMenu('settings') },
     ...(layoutHeader && !inReplay ? [{ key: 'numbers', label: tr('Liczby układu: skąd?', 'Layout numbers: sources'), icon: Info, on: () => setNumbersOpen(true) }] : []),
     { key: 'draw', section: tr('Narzędzia', 'Tools'), label: tr('Narzędzia rysowania', 'Drawing tools'), icon: PenTool, kind: 'check', checked: drawOpen, on: () => setDrawOpen((o) => !o) },
-    { key: 'focus', label: tr('Tryb skupienia (dotknięcie wykresu)', 'Focus mode (tap the chart)'), icon: Maximize2, kind: 'check', checked: focus, on: () => setFocus((f) => !f) },
+    { key: 'focus', label: tr('Tryb skupienia (dotknięcie wykresu)', 'Focus mode (tap the chart)'), icon: Maximize2, kind: 'check', checked: focus, on: () => (focus ? exitFocus() : enterFocus()) },
     ...moreEntries.filter((e) => ['now', 'scale', 'replay', 'link', 'shot', 'frame'].includes(e.key)).map((e) => ({ ...e, section: undefined, hint: undefined })),
     { key: 'fs', label: fullscreen ? tr('Zamknij pełny ekran', 'Exit full screen') : tr('Pełny ekran', 'Full screen'), icon: fullscreen ? Minimize2 : Maximize2, on: toggleFullscreen },
     ...(phoneTabs?.onRestore ? [{ key: 'restore', label: tr(`Przywróć wzorzec karty: ${station.name}`, `Restore the tab preset: ${station.name}`), icon: RotateCcw, on: phoneTabs.onRestore }] : []),
@@ -1028,6 +1055,7 @@ export const ProChart: React.FC<{
           {/* Własny kontekst warstw: uchwyt zmiany wysokości paneli wykresu (z-index 50) nie przykrywa pasków i okien rysunków */}
           <div ref={hostRef} className="absolute inset-0 isolate" />
           <AutoScaleBtn scale={scale} onToggle={() => ctrlRef.current?.setAutoScale(!scale.auto)} />
+          {chartOnly && <FocusExit onExit={exitFocus} />}
           <Legend
             signal={signal}
             intervalMs={iv.ms}

@@ -37,6 +37,7 @@ Pomiar `npm run ui:check` (Chrome bez okna na zbudowanej stronie, 1440 × 900 i 
 
 #### Naprawione
 - **Odznaczenie rysunku nie przełącza trybu skupienia** (`src/charts/pro/draw/tools.ts`, `controller.ts`): dotknięcie wykresu, które tylko odznaczyło rysunek albo stawiało punkt, było liczone jako puste dotknięcie. Teraz decyduje stan z chwili wciśnięcia (`pressBusy`); test `drawTap.test.ts`.
+- **Tryb skupienia ma wyjście** (`src/charts/pro/chart/focusMode.tsx`, `ProChart.tsx`): wejście w skupienie (z „⋯” albo dotknięciem) przełącza na kartę „Wykres” — karty Liczby i DOM nie zostają na wykresie bez paska do ich zamknięcia. W skupieniu i w widoku poziomym w rogu stoi przycisk „Zamknij tryb skupienia” (44 px, `aria-label`), działa też Escape; zamknięcie widoku poziomego obowiązuje do następnego obrotu telefonu. Test `focusMode.test.tsx`.
 
 
 ### Niezależna weryfikacja dziennika: przyrostowo, osobny workflow, znaczek gaśnie po 36 h (2026-11-11)
