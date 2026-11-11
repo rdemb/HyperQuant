@@ -470,6 +470,8 @@ const ChartsView: React.FC<ChartsViewProps> = ({ phase, onPhase, onMarket }) => 
               barLead={i === 0 && !narrow ? barLead : undefined}
               barTrail={i === 0 && !narrow ? barTrail : undefined}
               onRestore={i === 0 && canRestore(tab) ? () => actions.onRestore(tab.id) : undefined}
+              // Telefon W sesji: pięć liczb przepływu (Arkusz, Taśma, Kto, Ściany, TWAP) w karcie „Liczby”, nie nad wykresem
+              phoneNumbersTop={narrow && i === 0 && shown === 'session' ? <FlowColumn coin={first.coin} narrow variant="pulse" /> : undefined}
               phoneTabs={
                 narrow && i === 0
                   ? {

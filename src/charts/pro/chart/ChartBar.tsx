@@ -122,14 +122,14 @@ export interface MoreEntry {
   title?: string;
 }
 
-export const MoreMenu: React.FC<{ entries: readonly MoreEntry[]; btnRef?: React.RefObject<HTMLButtonElement | null>; badge?: boolean }> = ({ entries, btnRef, badge = false }) => (
+export const MoreMenu: React.FC<{ entries: readonly MoreEntry[]; btnRef?: React.RefObject<HTMLButtonElement | null>; badge?: boolean; ariaLabel?: string }> = ({ entries, btnRef, badge = false, ariaLabel }) => (
   <Dropdown
     icon
     caret={false}
     align="right"
     width="w-72"
     btnRef={btnRef}
-    ariaLabel={tr('Więcej: rysowanie, taśma, alarmy, ustawienia, układ, zrzut, link, pełny ekran', 'More: drawing, tape, alerts, settings, layout, screenshot, link, full screen')}
+    ariaLabel={ariaLabel ?? tr('Więcej: rysowanie, taśma, alarmy, ustawienia, układ, zrzut, link, pełny ekran', 'More: drawing, tape, alerts, settings, layout, screenshot, link, full screen')}
     menuLabel={tr('Więcej', 'More')}
     label={
       <span className="relative inline-flex">
