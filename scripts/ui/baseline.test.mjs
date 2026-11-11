@@ -10,6 +10,7 @@ const report = {
   replayDesktop: { objects: { labels: 12, bubbles: 40, rects: 1500, axisLabels: 18 } },
   domColumn: { ladderRows: 20, tapeRowsFit: 12 },
   phoneIndicators: 9,
+  effort: { desktop: 5, phone: 2 },
 };
 
 describe('punkt odniesienia pomiaru układu', () => {
@@ -21,6 +22,7 @@ describe('punkt odniesienia pomiaru układu', () => {
     expect(m['objects.live1440.labels']).toBe(30);
     expect(m['dom.ladderRows']).toBe(20);
     expect(m['phone.indicatorRows']).toBe(9);
+    expect([m['effort.rects1440'], m['effort.rects390']]).toEqual([5, 2]);
     expect(Object.keys(m).some((k) => k.includes('undefined'))).toBe(false);
   });
 

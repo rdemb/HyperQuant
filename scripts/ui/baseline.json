@@ -29,7 +29,9 @@
       "objects.replay390.axisLabels": 15,
       "dom.ladderRows": 20,
       "dom.tapeRowsFit": 10,
-      "phone.indicatorRows": 9
+      "phone.indicatorRows": 9,
+      "effort.rects1440": 6,
+      "effort.rects390": 3
     },
     "linux": {
       "share.desktop": 0.626,
@@ -59,7 +61,9 @@
       "objects.replay390.axisLabels": 15,
       "dom.ladderRows": 20,
       "dom.tapeRowsFit": 10,
-      "phone.indicatorRows": 9
+      "phone.indicatorRows": 9,
+      "effort.rects1440": 6,
+      "effort.rects390": 3
     }
   }
 }

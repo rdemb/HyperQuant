@@ -4,7 +4,9 @@ import { IndicatorSettings } from '../chart/IndicatorSettings';
 import { closedBars, effortLegend } from '../chart/effortLayer';
 import { type EffortBox, type EffortZone, effortZones } from '../core/effortZones';
 import { IndicatorEngine } from '../indicators/engine';
-import { indicatorDef, indicatorsFromLink, tfAllowed, usesInstanceColor } from '../indicators/registry';
+import { indicatorDef, indicatorsFromLink, parseIndicators, tfAllowed, usesInstanceColor } from '../indicators/registry';
+import type { EffortSelection } from '../chart/effortSelect';
+import { guardHits } from '../../../utils/safeguards.mjs';
 
 /** Wskaźnik „Strefy absorpcji i pudełka Effort”: świece do modelu, legenda z wyniku, wpis w rejestrze i okno ustawień. */
 
@@ -39,28 +41,38 @@ describe('świece do modelu', () => {
 });
 
 describe('legenda', () => {
-  const now = T0 + 24 * MS;
-  const zone = (side: 1 | -1, to: number | null): EffortZone => ({ id: 1, side, kind: 'absorption', from: T0, createdAt: T0 + 5 * MS, lo: 99, hi: 100, to, end: to === null ? null : 'broken', armedAt: null });
-  const box = (t: number): EffortBox => ({ side: 1, t, lo: 99, hi: 100, stacked: false });
-  const result = {
-    ...effortZones([], MS),
-    zones: [zone(1, null), zone(-1, null), zone(1, T0 + 9 * MS), zone(1, null)],
-    // Zamknięte w ostatniej godzinie: świece od now − 1 h (koniec now − 55 min) do now − 5 min; wcześniejsza nie
-    boxes: [box(now - HOUR - MS), box(now - HOUR), box(now - 30 * 60_000), box(now - MS)],
-    proxyShare: 0.08,
+  const asOf = T0 + 24 * MS;
+  const band = (side: 1 | -1) => ({ side, lo: 99, hi: 100, start: T0, end: null, mark: 'A', kinds: ['absorption' as const], extremes: [] });
+  const sel: EffortSelection = {
+    bands: [band(1), band(1), band(-1)],
+    broken: null,
+    boxes: [{ side: 1, from: asOf - 6 * MS, last: asOf - 4 * MS, lo: 99, hi: 100, cells: [asOf - 6 * MS, asOf - 4 * MS] }],
+    far: { demand: 2, supply: 1 },
+    tapeRecent: 32,
+    history: false,
   };
+  const text = (x: EffortSelection | null, ms = MS) =>
+    effortLegend(x, ms, asOf)
+      .map((p) => p.text)
+      .join(' ');
 
-  it('aktywne strefy po stronach, pudełka z ostatniej godziny i udział delty z taśmy', () => {
-    expect(
-      effortLegend(result, MS, now)
-        .map((p) => p.text)
-        .join(' ')
-    ).toBe('strefy: 2 popytu · 1 podaży · pudełka z ostatniej godziny: 3 · delta z taśmy 92%');
+  it('pasma po stronach z liczbą dalszych, ostatnia seria pudełek i świece z taśmą', () => {
+    expect(text(sel)).toBe('strefy: 2 popytu · 1 podaży (dalej 3) · pudełko: kupno, 4 świece temu · taśma 32 z 32');
+  });
+
+  it('bez pudełka „—”; bez taśmy „pudełka: —, brak taśmy”; tryb Historia', () => {
+    expect(text({ ...sel, boxes: [], far: { demand: 0, supply: 0 } })).toBe('strefy: 2 popytu · 1 podaży · pudełko: — · taśma 32 z 32');
+    expect(text({ ...sel, boxes: [], tapeRecent: 0 })).toBe('strefy: 2 popytu · 1 podaży (dalej 3) · pudełka: —, brak taśmy');
+    expect(text({ ...sel, history: true })).toBe('historia: 3 strefy · 1 seria pudełek · taśma 32 z 32');
   });
 
   it('powyżej 1 h bez rysowania, z powodem; bez zamkniętych świec — czekanie', () => {
-    expect(effortLegend(result, 4 * HOUR, now).map((p) => p.text)).toEqual(['—, interwał do 1 h']);
-    expect(effortLegend(null, MS, now).map((p) => p.text)).toEqual(['czekam na świece…']);
+    expect(text(sel, 4 * HOUR)).toBe('—, interwał do 1 h');
+    expect(text(null)).toBe('czekam na świece…');
+  });
+
+  it('bez słów rady i kierunku (zabezpieczenia bloga)', () => {
+    expect(guardHits(text(sel))).toEqual([]);
   });
 });
 
@@ -91,11 +103,17 @@ describe('wpis w rejestrze', () => {
       'ponad połowę',
       '1,2 × średnia |delty|',
       '3 poprzednie świece',
-      'przez 12 świec',
-      'udział świec z taśmą widać w legendzie',
+      'jego świeca i 19 świec przed nią mają deltę z taśmy',
+      'z ostatnich 32 świec ma taśmę',
+      'najbliższe ostatniemu zamknięciu',
+      'od świecy, na której zamknięciu strefa powstała',
+      'w 52% przypadków, tak samo jak losowy poziom',
+      'nie przewidują odbicia',
       'miejsca do obserwacji, nie sygnały',
     ])
       expect(def.convention, s).toContain(s);
+    expect(indicatorDef('effort').convention).not.toContain('przybliżona ze świecy (wolumen');
+    for (const lang of [def.convention, def.hint]) expect(guardHits(lang ?? '')).toEqual([]);
     expect(def.memoryNote).toMatch(/świeca w trakcie nie wchodzi.*do 1 h.*także w powtórce/);
   });
 
@@ -108,11 +126,23 @@ describe('wpis w rejestrze', () => {
     expect(e.runs[0].out).toEqual([]);
   });
 
-  it('okno ustawień: zakładka parametrów bez pól i bez interwału, z opisem reguł', () => {
+  it('okno ustawień: zakładka parametrów bez pól liczbowych i bez interwału, z przełącznikiem „Historia” (domyślnie wyłączony)', () => {
     const x = indicatorsFromLink('effort()')[0];
     const html = renderToStaticMarkup(<IndicatorSettings x={x} loaded={100} chart="5m" onChange={() => {}} onClose={() => {}} />);
-    expect(html).toContain('Bez parametrów: reguły jak w opisie.');
+    // Przełącznik „Historia” wyłączony (bez atrybutu checked) tuż przed swoim podpisem
+    expect(html).toMatch(/<input type="checkbox"(?![^>]*checked)[^>]*\/>Historia/);
     expect(html).not.toContain('Interwał wskaźnika');
     expect(html).not.toContain('type="number"');
+  });
+});
+
+describe('zapis wskaźnika: tryb Historia', () => {
+  it('stary zapis bez pola ładuje się bez zmian (bez trybu Historia); włączony tryb zostaje', () => {
+    const old = { iid: 'effort', id: 'effort', params: {}, color: '#E9548D', alpha: 1, width: 1, labels: true, visible: true };
+    const [a] = parseIndicators([old]).list;
+    expect('history' in a).toBe(false);
+    expect(JSON.parse(JSON.stringify(a))).toEqual(old);
+    expect(parseIndicators([{ ...old, history: true }]).list[0].history).toBe(true);
+    expect('history' in parseIndicators([{ ...old, history: 'tak' }]).list[0]).toBe(false);
   });
 });

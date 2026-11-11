@@ -452,6 +452,10 @@ export class ProChartController {
     this.main.attachPrimitive(this.blog);
     this.main.attachPrimitive(this.pb);
     this.main.attachPrimitive(this.effort);
+    // Liczba prostokątów wybranych przez warstwę Effort na wykresie (pomiar układu czyta ją z atrybutu, nie z pikseli)
+    this.effort.onSelect = (n) => {
+      container.dataset.effortRects = String(n);
+    };
     this.main.attachPrimitive(this.countdown);
     this.main.attachPrimitive(this.strip);
     // Rysunki dołączone ostatnie — nad wskaźnikami i świecami
@@ -609,6 +613,7 @@ export class ProChartController {
     if (on === this.phone) return;
     this.phone = on;
     this.liquidity.setDom(!on);
+    this.effort.setPhone(on);
     this.liquidity.setLabelLimit(densityLimit(this.settings.labelDensity, on));
     this.overlay.setCompact(on);
     this.applyDomInset();
@@ -1039,7 +1044,7 @@ export class ProChartController {
   /** Styl pierwszego widocznego wskaźnika stref Effort: krycie i grubość (kolory stron stałe; null — żaden). */
   private effortStyle(): EffortStyle | null {
     const x = this.indShown.find((y) => indicatorDef(y.id).effortZones);
-    return x ? { alpha: x.alpha, width: x.width } : null;
+    return x ? { alpha: x.alpha, width: x.width, history: x.history === true } : null;
   }
 
   /** Aktywna strefa P/b do alarmów z menu wykresu (null — wskaźnik ukryty albo brak ważnej strefy). */
