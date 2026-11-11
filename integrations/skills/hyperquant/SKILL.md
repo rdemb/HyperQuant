@@ -24,7 +24,7 @@ All tools are read-only. Two take an optional argument: `session_review` (`sessi
 | `cohort_flow` | Four participant cohorts (market makers, informed, whales, rest): net flow, aggressor delta, volume and volume share over the last hour and day. | Who is the net taker |
 | `whales` | The largest BTC accounts under pseudonyms valid for one UTC day: the balance of longs and shorts, up to 10 largest positions and up to 10 groups of resting orders. | Large positions and orders |
 | `twaps` | The share of zero-hash fills (TWAP suborders among them) in the value of the tape over the last 15 and 60 minutes of the recording, in total and per aggressor side. | TWAP flow |
-| `forecast_ledger` | Scores of the verifiable HyperQuant forecast ledger: CRPSS, coverage of the 90%, 60% and ACI intervals with the Kupiec test, Brier score and BSS for level touches, and a link to verify them yourself. | Forecast calibration |
+| `forecast_ledger` | Scores of the verifiable HyperQuant forecast ledger: CRPSS, coverage of the 90%, 60% and ACI intervals with the Kupiec test, Brier score and BSS for level touches against the distance baseline (`bssDist`) and against the level base rate (`bss`), and a link to verify them yourself. | Forecast calibration |
 
 ## How to read a response
 
@@ -125,7 +125,7 @@ Asked as: "Write a short post about BTC for X."
 - Answer in the user's language. Tool texts follow the server's `HQ_LANG` (en or pl); translate them faithfully when needed.
 - Start with one line that says what the answer is and the data time, for example "London pre-session, data as of {HH:MM} UTC".
 - One number per line: `{name}: {value} {unit} ({badge}, {method})`, plus `; {note}` when there is one. A missing value: `{name}: — ({reason})`.
-- Units: `usd` and `price` in USD (large amounts may be shortened, such as 3.4M); `btc` in BTC; `sigma` as σ; `pct` as a percentage; `count` as a plain count; `min` in minutes; `ratio` is a fraction or a multiple: show leverage and RVOL (MODEL) as multiples (25×, 1.4×), shares (`oiCoverage`, `volumeShare`, `share15` and `share60`, `rangeBudget`) as percentages, and scores and p-values (CRPSS, Brier, BSS, Kupiec) as plain decimals.
+- Units: `usd` and `price` in USD (large amounts may be shortened, such as 3.4M); `btc` in BTC; `sigma` as σ; `pct` as a percentage; `count` as a plain count; `min` in minutes; `ratio` is a fraction or a multiple: show leverage and RVOL (MODEL) as multiples (25×, 1.4×), shares (`oiCoverage`, `volumeShare`, `share15` and `share60`, `rangeBudget`) as percentages, and scores and p-values (CRPSS, Brier, BSS, Kupiec) as plain decimals. Give the touch BSS of `forecast_ledger` only as a pair, distance baseline first: `bssDist` (reflection formula with a constant σ of 30-day hourly returns) and `bss` (level base rate); the base rate ignores how far the level is, so on its own it overstates skill. If `bssDist` is null, give neither.
 - Times: from `asOf` and the other ISO UTC fields, shortened to HH:MM UTC when the date is clear.
 - Close with a "Sources" line (source names with their `asOf`) and the disclaimer.
 

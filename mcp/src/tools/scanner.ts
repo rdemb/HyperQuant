@@ -732,8 +732,11 @@ export interface ForecastLedgerData {
   /** Gdzie sprawdzić dziennik samodzielnie. */
   verifyUrl: string;
   returns: LedgerReturns[];
-  /** Szanse dotknięcia PDH, D-EQ i PDL w 2 h: Brier modelu, Brier klimatologii i umiejętność (BSS). */
-  touch: { settled: Num; brier: Num; brierBase: Num; bss: Num };
+  /**
+   * Szanse dotknięcia PDH, D-EQ i PDL w 2 h: Brier modelu i BSS w parze — wobec bazy odległości (`brierDist`, `bssDist`:
+   * wzór odbicia ze stałą σ godzinowych log-zwrotów z 30 dni) i wobec częstości bazowej poziomu (`brierBase`, `bss`).
+   */
+  touch: { settled: Num; brier: Num; brierBase: Num; bss: Num; brierDist: Num; bssDist: Num };
   pending: Num;
   voided: Num;
   slotsIssued: Num;
@@ -742,8 +745,8 @@ export interface ForecastLedgerData {
 
 const NAME_LEDGER = 'forecast_ledger';
 const LEDGER_NOTE = tr(
-  'Weryfikowalny dziennik prognoz HyperQuant: co 15 min prognozy zapisane przed faktem (rozkład zwrotu BTC na 1 h i 4 h, szanse dotknięcia PDH, D-EQ i PDL w 2 h), łańcuch hashy i kotwica w Bitcoinie (OpenTimestamps); rozstrzygnięcia ze świec 1m Hyperliquid. Prognozy nakładają się horyzontami, więc ich wyniki są skorelowane; test Kupca liczony na podpróbie rozłącznej. Wyniki od 20 rozstrzygnięć. Każdy może przeliczyć wyniki sam (verifyUrl).',
-  'The verifiable HyperQuant forecast ledger: every 15 min forecasts recorded before the fact (the BTC return distribution over 1 h and 4 h, the chances of touching PDH, D-EQ and PDL within 2 h), a hash chain and a Bitcoin anchor (OpenTimestamps); settlements from Hyperliquid 1m candles. Forecast horizons overlap, so their outcomes are correlated; the Kupiec test runs on a disjoint subsample. Scores from 20 settlements. Anyone can recompute the scores (verifyUrl).'
+  'Weryfikowalny dziennik prognoz HyperQuant: co 15 min prognozy zapisane przed faktem (rozkład zwrotu BTC na 1 h i 4 h, szanse dotknięcia PDH, D-EQ i PDL w 2 h), łańcuch hashy i kotwica w Bitcoinie (OpenTimestamps); rozstrzygnięcia ze świec 1m Hyperliquid. Prognozy nakładają się horyzontami, więc ich wyniki są skorelowane; test Kupca liczony na podpróbie rozłącznej. Wyniki od 20 rozstrzygnięć. BSS dotknięć podawaj zawsze w parze: `bss` wobec częstości bazowej poziomu i `bssDist` wobec bazy odległości (P = 2(1 − Φ(|d| / (σ√T))), d = log-odległość poziomu od ceny, σ = stała σ godzinowych log-zwrotów z 30 dni, jak w benchmarku CRPS); częstość nie zna odległości, więc sama zawyża umiejętność. Każdy może przeliczyć wyniki sam (verifyUrl).',
+  'The verifiable HyperQuant forecast ledger: every 15 min forecasts recorded before the fact (the BTC return distribution over 1 h and 4 h, the chances of touching PDH, D-EQ and PDL within 2 h), a hash chain and a Bitcoin anchor (OpenTimestamps); settlements from Hyperliquid 1m candles. Forecast horizons overlap, so their outcomes are correlated; the Kupiec test runs on a disjoint subsample. Scores from 20 settlements. Always give the touch BSS as a pair: `bss` against the level base rate and `bssDist` against the distance baseline (P = 2(1 − Φ(|d| / (σ√T))), d = log distance of the level from price, σ = constant σ of 30-day hourly log returns, as in the CRPS benchmark); the base rate ignores distance, so on its own it overstates skill. Anyone can recompute the scores (verifyUrl).'
 );
 
 async function ledgerRun(src: Sources): Promise<Envelope<ForecastLedgerData>> {
@@ -758,7 +761,7 @@ async function ledgerRun(src: Sources): Promise<Envelope<ForecastLedgerData>> {
       why,
       verifyUrl,
       returns: [],
-      touch: { settled: nil('count', why), brier: nil('ratio', why), brierBase: nil('ratio', why), bss: nil('ratio', why) },
+      touch: { settled: nil('count', why), brier: nil('ratio', why), brierBase: nil('ratio', why), bss: nil('ratio', why), brierDist: nil('ratio', why), bssDist: nil('ratio', why) },
       pending: nil('count', why),
       voided: nil('count', why),
       slotsIssued: nil('count', why),
@@ -773,6 +776,7 @@ async function ledgerRun(src: Sources): Promise<Envelope<ForecastLedgerData>> {
   if (ledgerFreshness(s, now) !== 'ready') notes.push(tr(`Dziennik nie był aktualizowany od ponad 35 min (ostatnia aktualizacja ${iso(s.asOf)}).`, `The ledger has not been updated for over 35 min (last update ${iso(s.asOf)}).`));
   const fromN = (n: number) => tr(`wyniki od ${LEDGER_MIN_N} rozstrzygnięć (jest ${n})`, `scores from ${LEDGER_MIN_N} settlements (now ${n})`);
   const noScore = tr('brak wyniku w podsumowaniu', 'no score in the summary');
+  const noDist = tr('brak BSS wobec bazy odległości w podsumowaniu; BSS podawany tylko w parze', 'no BSS against the distance baseline in the summary; BSS is given only as a pair');
   const score = (n: number) => (v: number | null | undefined) => (n >= LEDGER_MIN_N ? live(v, 'ratio', note, noScore) : nil('ratio', fromN(n)));
   /**
    * Pokrycie przedziałów (i test Kupca pokrycia 90%): MODEL z metodą wiersza stożka karty Rozliczenia (`CONE_METHOD`) —
@@ -802,11 +806,20 @@ async function ledgerRun(src: Sources): Promise<Envelope<ForecastLedgerData>> {
     });
   const t = s.scores.touch;
   const tt = score(t.n);
+  const noPair = t.n >= LEDGER_MIN_N && !(typeof t.bssDist === 'number' && Number.isFinite(t.bssDist));
   const data: ForecastLedgerData = {
     why: null,
     verifyUrl,
     returns,
-    touch: { settled: live(t.n, 'count', note), brier: tt(t.brier), brierBase: tt(t.brierBase), bss: tt(t.bss) },
+    touch: {
+      settled: live(t.n, 'count', note),
+      brier: tt(t.brier),
+      brierBase: tt(t.brierBase),
+      // BSS wobec samej częstości tylko w parze z BSS wobec odległości (jak na stronie)
+      bss: noPair ? nil('ratio', noDist) : tt(t.bss),
+      brierDist: tt(t.brierDist),
+      bssDist: noPair ? nil('ratio', noDist) : tt(t.bssDist),
+    },
     pending: live(s.pending, 'count', note),
     voided: live(s.voided, 'count', note),
     slotsIssued: live(s.participation.issued, 'count', note),
@@ -819,8 +832,8 @@ export const forecastLedger: ToolDef = {
   name: NAME_LEDGER,
   title: tr('Dziennik prognoz HyperQuant', 'HyperQuant forecast ledger'),
   description: tr(
-    `Trafność i kalibracja weryfikowalnego dziennika prognoz HyperQuant (prognozy BTC zapisywane co 15 min przed faktem, łańcuch hashy, kotwica w Bitcoinie): dla horyzontów zwrotu umiejętność CRPSS, pokrycie przedziałów 90%, 60% i ACI z testem Kupca; dla szans dotknięcia poziomów Brier i BSS; liczby rozstrzygnięć i pominiętych slotów; link do samodzielnej weryfikacji. Wyniki od 20 rozstrzygnięć. ${NO_DESC}`,
-    `Accuracy and calibration of the verifiable HyperQuant forecast ledger (BTC forecasts recorded every 15 min before the fact, a hash chain, a Bitcoin anchor): for the return horizons the CRPSS skill and the coverage of the 90%, 60% and ACI intervals with the Kupiec test; for the level touch chances the Brier score and BSS; counts of settlements and skipped slots; a link to verify it yourself. Scores from 20 settlements. ${NO_DESC}`
+    `Trafność i kalibracja weryfikowalnego dziennika prognoz HyperQuant (prognozy BTC zapisywane co 15 min przed faktem, łańcuch hashy, kotwica w Bitcoinie): dla horyzontów zwrotu umiejętność CRPSS, pokrycie przedziałów 90%, 60% i ACI z testem Kupca; dla szans dotknięcia poziomów Brier i BSS w parze: wobec częstości bazowej poziomu i wobec bazy odległości (wzór odbicia ze stałą σ godzinowych log-zwrotów z 30 dni); liczby rozstrzygnięć i pominiętych slotów; link do samodzielnej weryfikacji. Wyniki od 20 rozstrzygnięć. ${NO_DESC}`,
+    `Accuracy and calibration of the verifiable HyperQuant forecast ledger (BTC forecasts recorded every 15 min before the fact, a hash chain, a Bitcoin anchor): for the return horizons the CRPSS skill and the coverage of the 90%, 60% and ACI intervals with the Kupiec test; for the level touch chances the Brier score and BSS as a pair: against the level base rate and against the distance baseline (the reflection formula with a constant σ of 30-day hourly log returns); counts of settlements and skipped slots; a link to verify it yourself. Scores from 20 settlements. ${NO_DESC}`
   ),
   run: (src) => ledgerRun(src),
 };

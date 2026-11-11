@@ -21,12 +21,12 @@ const GROUP_TITLES: Record<StatGroup, string> = {
   hl: tr('Wolumen, delta, ΔOI i funding na 8 h z Hyperliquid', 'Volume, delta, ΔOI and 8 h funding from Hyperliquid'),
   tape: tr('Delta %, maksymalna i minimalna delta w świecy, liczba transakcji i tempo taśmy', 'Delta %, maximum and minimum delta in the candle, trade count and tape speed'),
   who: tr(
-    `Delta dużych graczy (kont, które w godzinie UTC weszły na rynek za co najmniej ${Object.entries(BIG_PLAYER_USD)
+    `Delta dużych graczy (kont, które w 60 min do zamknięcia świecy weszły na rynek za co najmniej ${Object.entries(BIG_PLAYER_USD)
       .map(([c, v]) => `${compact(v)} USD na ${c}`)
       .join(', ')}) i reszty rynku oraz udział dużych w wartości wejść`,
     `Delta of large players (accounts that entered the market for at least ${Object.entries(BIG_PLAYER_USD)
       .map(([c, v]) => `${compact(v)} USD on ${c}`)
-      .join(', ')} in a UTC hour) and the rest of the market, plus the large players' share of entry value`
+      .join(', ')} in the 60 min up to the candle close) and the rest of the market, plus the large players' share of entry value`
   ),
   binance: tr('Delta perp i spot, ΔOI i funding na 8 h z Binance', 'Perp and spot delta, ΔOI and 8 h funding from Binance'),
   bybit: tr('Delta (z transakcji od otwarcia strony) i ΔOI z Bybit', 'Delta (from trades since the page opened) and ΔOI from Bybit'),
@@ -174,8 +174,8 @@ export const NumbersCard: React.FC<{
             )}
           {groups.includes('who') &&
             tr(
-              ` Duży gracz: konto, które w godzinie UTC weszło na rynek za co najmniej ${compact(store.players.thresholdUsd)} USD.`,
-              ` Large player: an account that entered the market for at least ${compact(store.players.thresholdUsd)} USD in a UTC hour.`
+              ` Duży gracz: konto, które w 60 min do zamknięcia świecy weszło na rynek za co najmniej ${compact(store.players.thresholdUsd)} USD (świeca dłuższa niż godzina — w każdej jej godzinie UTC).`,
+              ` Large player: an account that entered the market for at least ${compact(store.players.thresholdUsd)} USD in the 60 min up to the candle close (a candle longer than an hour — in each of its UTC hours).`
             )}
           {groups.includes('bybit') && tr(' Delta Bybit liczy się od otwarcia strony.', ' Bybit delta counts from the page opening.')}
         </p>

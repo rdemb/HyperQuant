@@ -16,6 +16,31 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 - **Wiersz „Pozostali razem (ukryte)”** w tabeli 24 h panelu „Przepływ kohort” i pole `othersCombined` w narzędziu MCP `cohort_flow`: udziały kohort i `othersCombined` sumują się do 1.
 - **Uczciwy stan pustej kohorty:** panel i `cohort_flow` piszą „nie wykryto kont z trwałą przewagą (≈ N sprawdzonych)” z liczbą kandydatów z pliku zamiast „brak transakcji”. Opis w panelu, w README skanera, w README serwera MCP i w skillu `hyperquant`.
 
+### Paczka MCP 0.1.3 (2026-11-11)
+
+#### Zmienione
+- **`hyperquant-mcp` 0.1.3**: `forecast_ledger` podaje BSS dotknięć w parze (wobec bazy odległości `bssDist` i wobec częstości bazowej). Polecenia instalacji ze strony, README i szablonów z wersją `npx -y hyperquant-mcp@0.1.3`.
+
+### Kto handluje i makerzy: okno 60 minut do zamknięcia świecy (2026-11-11)
+
+#### Naprawione
+- **Duzi gracze i animatorzy rynku nie są już klasyfikowani z minut po zamknięciu świecy** (`src/charts/pro/core/players.ts`, `src/charts/pro/core/makers.ts`, `src/charts/pro/store/proStore.ts`). Dotąd konto było dużym graczem albo animatorem w całej godzinie UTC, więc zlecenia z dalszej części godziny zmieniały już zamknięte świece 1m–30m (np. konto z 600 tys. USD wejść o 11:05, które o 11:40 dokłada kolejne 600 tys., przenosiło świecę 11:05 z reszty do dużych graczy). Teraz klasa konta jest liczona z 60 minut kończących się na zamknięciu świecy: duży gracz to konto z wejściami od progu (1 mln USD BTC, 500 tys. ETH, 250 tys. SOL i HYPE) w tym oknie, animator to konto z płynnością w co najmniej połowie minut okna z taśmą z kontami i po obu stronach. W bieżącej świecy liczą się dane do teraz, a po zamknięciu jej wartość się nie zmienia.
+- **Najstarsza świeca na krawędzi retencji (24 h) też się nie zmienia** (`src/charts/pro/store/proStore.ts`). Sprzątanie co minutę ucinało zlecenia agresora, wypełnienia makerów i taśmę z kontami na granicy doby, choć okno najstarszych świec sięga do godziny wcześniej, więc ich duzi gracze i animatorzy przeliczali się z uciętego okna. Te dane zostają teraz o godzinę dłużej (25 h zamiast 24 h, ok. 4% więcej pamięci na nie; świece, taśma i arkusz bez zmian), a ponownie dostarczony plik historii sprzed granicy sprzątania nie dubluje już zleceń.
+
+#### Zmienione
+- **Widoczna zmiana na interwałach poniżej 1 h**: okno sięga przez pełną godzinę wstecz, więc konto aktywne o 10:50 i 11:05 może być dużym graczem albo animatorem w świecy 11:05, a konto, które przekracza próg dopiero później w godzinie, w świecach przed tą chwilą jest resztą. Świece 1 h nie zmieniają się (okno to ta sama godzina UTC), świece dłuższe liczą każdą swoją godzinę UTC osobno jak dotąd. Okno przez przełom doby UTC (w starszych plikach historii z numeracją godzinową — przez pełną godzinę) albo przez chwilę otwarcia strony liczy jedno konto jako dwa, więc dużych graczy i animatorów może wyjść mniej.
+- Opisy w Tablicy liczb, zdaniu stanu rynku, wskaźniku „Makerzy”, tabeli źródeł i README mówią o oknie 60 minut zamiast godziny UTC.
+- Wydajność: zamknięte świece są pamiętane do nowych zleceń w ich oknie, a kolejne świece przesuwają sumy okna zamiast liczyć je od nowa (sumy w centach, więc przesunięte okno daje dokładnie to samo co liczone od nowa). Pomiar na 24 h syntetycznej taśmy (480 tys. zleceń, 720 tys. wypełnień, 1440 świec 1m): pierwsze liczenie 388 ms (duzi gracze) i 170 ms (makerzy), kolejne bez zmian 5 ms i 3 ms, po nowym zleceniu 12 ms i 5 ms (wcześniej odpowiednio 342 i 137 ms, 1 i 43 ms, 20 i 45 ms).
+
+### Dziennik prognoz: BSS dotknięć także wobec bazy odległości (2026-11-11)
+
+#### Zmienione
+- **Umiejętność prognoz dotknięć PDH, PDL i D-EQ w 2 h liczona wobec dwóch baz** (`backend/scanner/forecaster.ts`, `src/utils/forecastScore.ts`, `src/utils/deskLedger.ts`): dotąd BSS był liczony tylko wobec częstości bazowej każdego poziomu. Częstość nie wie, jak daleko poziom jest od ceny, więc sama daje modelowi dużą pozorną umiejętność. Nowa baza odległości to wzór odbicia dla ruchu Browna bez dryfu, P = 2(1 − Φ(|d| / (σ√T))), gdzie d = ln(poziom / cena), a T = 2 h. **σ pochodzi z godzinowych log-zwrotów z 30 dni.** To ta sama stała σ, której używa benchmark CRPS (`sigma1hFromHourly`). Jest odtwarzana z kwantyli `bq` prognozy zwrotu 1 h z tego samego slotu, więc baza korzysta tylko z danych zapisanych przed rozstrzygnięciem. Podsumowanie `ledger/BTC/summary.json` ma nowe pola `bssDist`, `brierDist`, `pairsDist` oraz `bssClim`, czyli dotychczasowe `bss` pod jawną nazwą. Stare pola `bss` i `brierBase` zostają, a strona i MCP czytają też starsze podsumowania bez nowych pól. Na publicznym dzienniku (5180 par z 1892 prognoz, od 22.10 do 11.11.2026) wynik to Brier modelu 0,0734, Brier bazy odległości 0,0822 i częstości 0,1226. **BSS wobec odległości wynosi 0,106, a wobec częstości 0,401.**
+- **Karta „Dotknięcie poziomu w 2 h”** w panelu dziennika desku (`src/views/after/DeskLedgerPanel.tsx`) pokazuje BSS wobec odległości i BSS wobec częstości obok siebie oraz Brier obu baz. Gdy podsumowanie nie ma bazy odległości, oba BSS mają „—” z powodem.
+- **Narzędzie MCP `forecast_ledger`** (`mcp/src/tools/scanner.ts`) zwraca `touch.brierDist` i `touch.bssDist`. W starszym podsumowaniu bez bazy odległości `bssDist` i `bss` mają wartość null z powodem, tak samo jak na stronie. Opis narzędzia i uwaga w odpowiedzi każą podawać BSS dotknięć tylko w parze. W tej samej sprawie zmienione są opisy w skillu (`integrations/skills/hyperquant/SKILL.md`), w szablonie agenta rozliczenia sesji, w README serwera i w manifeście `.mcpb`, a także w katalogu agentów, w tabeli źródeł i w README.
+- **Niezależna weryfikacja** (`scripts/verify-ledger.mjs`) przelicza bazę odległości z rekordów własnym kodem (Φ z rozwinięcia Abramowitza i Steguna). W wynikach przeliczonych są `touch.levelsDist`, `touch.brierDist` i `touch.bssDist`. Na publicznym dzienniku daje to te same 0,106.
+- Test `integrations/__tests__/bssPair.test.ts` pilnuje, żeby każdy tekst, który wspomina BSS dziennika, w tym samym zdaniu podawał bazę odległości.
+
 ### Wskaźnik: strefy absorpcji i pudełka Effort (2026-11-09)
 
 #### Dodane
