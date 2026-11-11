@@ -122,7 +122,7 @@ describe('strażnik: stan alarmu i wysyłka', () => {
     expect(shouldPush({ prevKey: 'x', seenKey: 'x', key: 'x', lastPushAt: NOW - 7 * 60 * MIN, ok: false, urgent: false, now: NOW })).toBe(true);
     expect(shouldPush({ prevKey: 'x', seenKey: 'x', key: 'ok', lastPushAt: NOW - MIN, ok: true, urgent: false, now: NOW })).toBe(true);
     expect(shouldPush({ prevKey: 'ok', seenKey: 'ok', key: 'ok', lastPushAt: NOW - 11 * 60 * MIN, ok: true, urgent: false, now: NOW })).toBe(false);
-    // Puls co 12 h także przy „ok” — uruchamia niezależną weryfikację dziennika w GitHub Actions (wynik młodszy niż doba)
+    // Puls co 12 h także przy „ok” — dowód, że strażnik działa
     expect(shouldPush({ prevKey: 'ok', seenKey: 'ok', key: 'ok', lastPushAt: NOW - 12 * 60 * MIN, ok: true, urgent: false, now: NOW })).toBe(true);
     expect(shouldPush({ prevKey: null, seenKey: null, key: 'ok', lastPushAt: null, ok: true, urgent: false, now: NOW })).toBe(true);
   });

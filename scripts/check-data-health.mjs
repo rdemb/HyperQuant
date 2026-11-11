@@ -1,6 +1,6 @@
 /**
  * Nadzór publicznych danych skanera (repo rdemb/hyperquant-data): świeżość, pokrycie open interest, strażnik prywatności
- * i świeżość niezależnej weryfikacji dziennika (gałąź `health`, próg 36 h).
+ * i świeżość niezależnej weryfikacji dziennika (gałąź wyników w repo HyperQuant, próg 36 h).
  * Uruchamiany przez .github/workflows/data-health.yml (harmonogram GitHuba — best-effort) oraz przez strażnika na serwerze
  * skanera (scripts/watchdog.mjs, co 15 min, niezależnie od GitHuba); wynik trafia do zgłoszenia z etykietą „alert-danych”.
  * Czyta wyłącznie publiczne pliki — nie potrzebuje żadnych kluczy ani dostępu do serwera.
@@ -11,12 +11,13 @@ import { appendFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { verifyProblem } from './verify-status.mjs';
+import { VERIFY_BRANCH, VERIFY_LATEST_URL } from '../src/utils/verifyFreshness.ts';
 
 export const DATA_BASE = 'https://raw.githubusercontent.com/rdemb/hyperquant-data/main';
 export const FILES = ['status.json', 'liq-map/BTC.json', 'liq-tape/BTC.json', 'cohorts/BTC.json', 'ledger/BTC/summary.json', 'liquidity/BTC.json', 'lab/BTC.json', 'whales.json', 'README.md'];
 /** Pliki, których brak nie jest alarmem (nowsze niż część wdrożeń skanera) — gdy są, przechodzą strażnika prywatności */
-/** Wynik niezależnej weryfikacji dziennika (GitHub Actions w repo danych) — gałąź `health`, nie `main` */
-export const VERIFY_FILE = 'verify/latest.json (gałąź health)';
+/** Wynik niezależnej weryfikacji dziennika (GitHub Actions w repo HyperQuant) — adres `VERIFY_LATEST_URL` */
+export const VERIFY_FILE = `verify/latest.json (gałąź ${VERIFY_BRANCH} repo HyperQuant)`;
 export const OPTIONAL = new Set(['liq-tape/BTC.json', 'cohorts/BTC.json', 'ledger/BTC/summary.json', 'liquidity/BTC.json', 'lab/BTC.json', 'whales.json', VERIFY_FILE]);
 /** Profil płynności arkusza (publikowany co 10 min) */
 export const LIQUIDITY_MAX_AGE_MIN = 30;
@@ -209,7 +210,7 @@ export async function fetchInput(base = DATA_BASE) {
   const errors = {};
   const json = {};
   await Promise.all(
-    [...FILES.map((f) => [f, `${base}/${f}`]), [VERIFY_FILE, `${base.replace(/\/main$/, '/health')}/verify/latest.json`]].map(async ([file, url]) => {
+    [...FILES.map((f) => [f, `${base}/${f}`]), [VERIFY_FILE, VERIFY_LATEST_URL]].map(async ([file, url]) => {
       try {
         const text = await fetchText(url);
         // Wynik weryfikacji to nie publikacja skanera — poza strażnikiem prywatności (linie raportu weryfikatora)
