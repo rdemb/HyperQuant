@@ -11,6 +11,7 @@ const report = {
   domColumn: { ladderRows: 20, tapeRowsFit: 12 },
   phoneIndicators: 9,
   effort: { desktop: 5, phone: 2 },
+  clashes: { desktop: 9 },
 };
 
 describe('punkt odniesienia pomiaru układu', () => {
@@ -23,6 +24,7 @@ describe('punkt odniesienia pomiaru układu', () => {
     expect(m['dom.ladderRows']).toBe(20);
     expect(m['phone.indicatorRows']).toBe(9);
     expect([m['effort.rects1440'], m['effort.rects390']]).toEqual([5, 2]);
+    expect(m['clashes.objects1440']).toBe(9);
     expect(Object.keys(m).some((k) => k.includes('undefined'))).toBe(false);
   });
 
