@@ -163,6 +163,8 @@ main() {
     exit 1
   fi
   tar --no-same-owner -xzf "$TMP_DIR/yaml.tgz" -C "$PREFIX/blog-publisher.new/node_modules/yaml" --strip-components=1
+  # Klucze hosta github.com (z repo, odciski jak w dokumentacji GitHuba): wydawca łączy się tylko ze znanym hostem
+  install -o root -g root -m 0644 "$PREFIX/app/backend/deploy/github_known_hosts" "$PREFIX/blog-publisher.new/known_hosts"
   chown -R root:root "$PREFIX/blog-publisher.new"
   chmod -R go-w "$PREFIX/blog-publisher.new"
   rm -rf "$PREFIX/blog-publisher" && mv "$PREFIX/blog-publisher.new" "$PREFIX/blog-publisher"

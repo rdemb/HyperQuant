@@ -1,11 +1,11 @@
 // Wydawca wpisów (scripts/blog/publisher.mjs): kolejka na serwerze → filtr i walidator → commit i push na gałąź blog repo danych.
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { QUEUE, runPublisher } from './publisher.mjs';
+import { QUEUE, cleanReason, readPackage, runPublisher, sshCommand } from './publisher.mjs';
 
 const NOW = Date.parse('2026-11-11T12:00:00Z');
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13]);
@@ -161,10 +161,10 @@ describe('wydawca: kontrakt kolejki', { timeout: 30_000 }, () => {
     expect(s.run({ now: NOW + 60_000 })).toMatchObject({ published: 1, rejected: 0 });
     expect(s.head()).toBe(first);
     expect(s.result(QUEUE.done, ID)).toMatchObject({ commit: first, committed: false, at: new Date(NOW + 60_000).toISOString() });
-    // poprawka: tekst zmieniony, wykresy.json usunięte z paczki → zniknie z gałęzi; data wpisu sprzed doby (wpis już jest)
+    // poprawka (wpis młodszy niż doba, to samo date): tekst zmieniony, wykresy.json usunięte z paczki → zniknie z gałęzi
     const edited = GOOD.replace('Kontekst', 'Kontekst po poprawce');
     s.pkg(ID, { [`${ID}.md`]: edited });
-    expect(s.run({ now: NOW + 48 * 3_600_000 })).toMatchObject({ published: 1 });
+    expect(s.run({ now: NOW + 3_600_000 })).toMatchObject({ published: 1 });
     expect(s.head()).not.toBe(first);
     expect(s.remoteGit('log', '-1', '--format=%s', 'blog')).toBe(`blog: zmiana ${ID}`);
     expect(s.remoteGit('ls-tree', '-r', '--name-only', 'blog')).toBe(`${ID}.md`);
@@ -228,5 +228,88 @@ describe('wydawca: kontrakt kolejki', { timeout: 30_000 }, () => {
     s.pkg(ID, { [`${ID}.md`]: GOOD });
     expect(s.run({ mainContent: main })).toMatchObject({ rejected: 1 });
     expect(s.result(QUEUE.rejected, ID).reason).toMatch(/istnieje w main/);
+  });
+});
+
+describe('wydawca: poprawki, kwarantanna, powody, połączenie z repo danych', { timeout: 30_000 }, () => {
+  const HOUR = 3_600_000;
+  const FRESH = '2026-11-11-swiezy';
+  const fresh = postText(FRESH, '2026-11-11T13:00:00+01:00'); // date = NOW
+  const publishFresh = (s) => {
+    s.pkg(FRESH, { [`${FRESH}.md`]: fresh });
+    expect(s.run()).toMatchObject({ published: 1 });
+    return s.head();
+  };
+
+  it('poprawka wpisu z gałęzi 2 h po jego date (to samo date) przechodzi', () => {
+    const s = setup();
+    publishFresh(s);
+    s.pkg(FRESH, { [`${FRESH}.md`]: fresh.replace('Kontekst', 'Kontekst po poprawce') });
+    expect(s.run({ now: NOW + 2 * HOUR })).toMatchObject({ published: 1, rejected: 0 });
+    expect(s.remoteGit('log', '-1', '--format=%s', 'blog')).toBe(`blog: zmiana ${FRESH}`);
+  });
+
+  it('poprawka 30 h po date wpisu: odrzucona (starszy wpis zmienia tylko właściciel); ta sama treść nadal idempotentnie przyjęta', () => {
+    const s = setup();
+    const head = publishFresh(s);
+    s.pkg(FRESH, { [`${FRESH}.md`]: fresh.replace('Kontekst', 'Kontekst po poprawce') });
+    expect(s.run({ now: NOW + 30 * HOUR })).toMatchObject({ published: 0, rejected: 1 });
+    expect(s.result(QUEUE.rejected, FRESH).reason).toBe('wpis starszy niż 24 h zmienia tylko właściciel');
+    expect(s.head()).toBe(head);
+    s.pkg(FRESH, { [`${FRESH}.md`]: fresh });
+    expect(s.run({ now: NOW + 31 * HOUR })).toMatchObject({ published: 1 });
+    expect(s.result(QUEUE.done, FRESH)).toMatchObject({ committed: false, commit: head });
+  });
+
+  it('poprawka ze zmienionym date: odrzucona', () => {
+    const s = setup();
+    publishFresh(s);
+    s.pkg(FRESH, { [`${FRESH}.md`]: postText(FRESH, '2026-11-11T13:30:00+01:00') });
+    expect(s.run({ now: NOW + 2 * HOUR })).toMatchObject({ rejected: 1 });
+    expect(s.result(QUEUE.rejected, FRESH).reason).toMatch(/zmiana pola date/);
+  });
+
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
+    'paczka, której nie da się usunąć (podkatalog chmod 500), idzie do kwarantanny; dobra paczka z tego samego przebiegu jest opublikowana',
+    () => {
+      const s = setup();
+      const BAD = '2026-11-11-zablokowany';
+      const tmp = s.pkg(BAD, { [`${BAD}.md`]: postText(BAD, '2026-11-11T08:00:00+01:00', { title: 'Kupujcie teraz' }), [`${BAD}/wykresy.json`]: '{"v":1}' }, { finish: false });
+      chmodSync(path.join(tmp, BAD), 0o500);
+      renameSync(tmp, path.join(s.base, QUEUE.queue, BAD));
+      s.pkg(ID, { [`${ID}.md`]: GOOD });
+      expect(s.run()).toMatchObject({ published: 1, rejected: 1, quarantined: 1, pushError: null });
+      expect(s.result(QUEUE.done, ID)).toMatchObject({ status: 'published' });
+      expect(s.result(QUEUE.rejected, BAD)).toMatchObject({ status: 'rejected', reason: expect.stringMatching(/wezwanie/) });
+      const q = readdirSync(path.join(s.base, QUEUE.rejected, '_kwarantanna'));
+      expect(q).toEqual([expect.stringMatching(new RegExp(`^${BAD}-`))]);
+      expect(readdirSync(path.join(s.base, QUEUE.queue))).toEqual([]);
+      expect(readdirSync(path.join(s.base, QUEUE.work))).toEqual([]);
+      expect(s.status()).toMatchObject({ ok: false, alarm: 'kwarantanna' });
+      chmodSync(path.join(s.base, QUEUE.rejected, '_kwarantanna', q[0], BAD), 0o700);
+    }
+  );
+
+  it('powód odrzucenia: tylko tekst, bez ścieżek serwera, najwyżej 500 znaków', () => {
+    const r = cleanReason(`EACCES: permission denied, rename '/var/lib/hyperquant-blog/kolejka/x' -> '/var/lib/hyperquant-blog/praca/x.w'; ${'a'.repeat(900)}`, ['/var/lib/hyperquant-blog']);
+    expect(r).not.toMatch(/\/var\/lib/);
+    expect(r.length).toBeLessThanOrEqual(500);
+    expect(r).toMatch(/^EACCES: permission denied, rename '…\/kolejka\/x'/);
+    expect(cleanReason('obraz „x.png”: brak pliku w content/blog/2026-11-11-a/', [])).toBe('obraz „x.png”: brak pliku w content/blog/2026-11-11-a/');
+  });
+
+  it.skipIf(!canSymlink || process.platform !== 'linux')('paczka czytana przez deskryptor katalogu (O_DIRECTORY | O_NOFOLLOW): katalog jako dowiązanie jest odrzucany', () => {
+    const d = mkdtempSync(path.join(tmpdir(), 'hq-pkg-'));
+    mkdirSync(path.join(d, 'prawdziwy', ID), { recursive: true });
+    writeFileSync(path.join(d, 'prawdziwy', `${ID}.md`), GOOD);
+    symlinkSync(path.join(d, 'prawdziwy'), path.join(d, 'link'));
+    expect(() => readPackage(path.join(d, 'link'))).toThrow(/nie jest katalogiem/);
+    expect(readPackage(path.join(d, 'prawdziwy')).entries.map((e) => e.path)).toEqual([`${ID}.md`]);
+  });
+
+  it('SSH do repo danych tylko ze znanymi kluczami hosta (StrictHostKeyChecking=yes, plik z install.sh)', () => {
+    const cmd = sshCommand('/run/credentials/x/deploy_key', '/opt/hyperquant/blog-publisher/known_hosts');
+    expect(cmd).toBe('ssh -i /run/credentials/x/deploy_key -o IdentitiesOnly=yes -o UserKnownHostsFile=/opt/hyperquant/blog-publisher/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes');
+    expect(cmd).not.toMatch(/accept-new/);
   });
 });
