@@ -24,7 +24,8 @@ export function levelStatusLabel(s: LevelStatus): string {
  *    - Order Blocks (OB / POI) from Swing Break (hOff >= 3) + ATR(14) Impulse Candle (x impMult)
  *    - Fresh vs Mitigated state evaluation
  * 2) AggrBTCv5 Liquidation Heatmap (_v3v0gehk38z99r7y)
- *    - Leverages 5x | 20x | 100x, leverageBuffer = 0.5%, originMode = highLow
+ *    - Leverages 5x | 20x (100x z oryginału usunięte: Hyperliquid daje na BTC najwyżej 40x, BTC_MAX_LEVERAGE
+ *      w planAnalyzer.ts), leverageBuffer = 0.5%, originMode = highLow
  *    - ATR * 0.19 auto-scaled grid cells, buyRatio/sellRatio accumulation & sweep clearing
  */
 
@@ -407,13 +408,11 @@ export function computeAggrLiquidationHeatmap(bars: OHLCVBar[]): LiquidationHeat
     bars.slice(-50).reduce((acc, b) => acc + b.atr, 0) / Math.min(50, bars.length);
   const steps = Math.max(10, Math.round(avgAtr * 0.19));
   const leverageBuffer = 0.5 / 100;
-  const resolvedLeverages: { lev: 5 | 20 | 100; isRes: boolean }[] = [
+  const resolvedLeverages: { lev: 5 | 20; isRes: boolean }[] = [
     { lev: 5, isRes: true },
     { lev: 20, isRes: true },
-    { lev: 100, isRes: true },
     { lev: 5, isRes: false },
     { lev: 20, isRes: false },
-    { lev: 100, isRes: false },
   ];
 
   const heatmapColors = [
@@ -431,7 +430,7 @@ export function computeAggrLiquidationHeatmap(bars: OHLCVBar[]): LiquidationHeat
       bottom: number;
       strength: number;
       count: number;
-      leverage: 5 | 20 | 100;
+      leverage: 5 | 20;
       isResistance: boolean;
       createdBarIndex: number;
     }
@@ -450,7 +449,7 @@ export function computeAggrLiquidationHeatmap(bars: OHLCVBar[]): LiquidationHeat
     for (const item of resolvedLeverages) {
       const levAbs = item.lev;
       const isResistance = item.isRes;
-      const weightFactor = levAbs === 100 ? 1.35 : levAbs === 20 ? 1.0 : 0.45;
+      const weightFactor = levAbs === 20 ? 1.0 : 0.45;
       const src = isResistance ? b.high : b.low;
       const levDistance = 1 / (levAbs * 2.2);
       const mm = leverageBuffer * 0.18 + 0.004 / levAbs;
