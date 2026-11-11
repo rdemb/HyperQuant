@@ -40,3 +40,13 @@ describe('nagłówek układu: „—” bez plakietki źródła', () => {
     expect(html).not.toMatch(/>(LIVE|MODEL)</);
   });
 });
+
+describe('liczby układu w linii legendy (telefon): całe albo wcale', () => {
+  it('mieści się tyle liczb, ile wchodzi w całości (z odstępami); reszta znika cała, nie ucięta w pół słowa', async () => {
+    const { chipsThatFit } = await import('../chart/LayoutHeader');
+    expect(chipsThatFit([80, 70, 60], 400, 6)).toBe(3);
+    expect(chipsThatFit([80, 70, 60], 160, 6)).toBe(2);
+    expect(chipsThatFit([80, 70, 60], 155, 6)).toBe(1);
+    expect(chipsThatFit([80, 70, 60], 79, 6)).toBe(0);
+  });
+});

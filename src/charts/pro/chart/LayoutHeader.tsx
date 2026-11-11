@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { CircleHelp } from 'lucide-react';
 import { Badge, DASH, sourceTag } from '../../../ui';
 import { scrollFadeRef } from '../../../ui/scrollFade';
@@ -26,6 +26,16 @@ import { tr } from '../../../i18n';
  */
 
 const EVERY_MS = 5_000;
+
+/** Ile liczb (od pierwszej) mieści się w całości w `avail` px przy odstępie `gap` — reszta znika cała. */
+export function chipsThatFit(widths: readonly number[], avail: number, gap: number): number {
+  let used = 0;
+  for (let i = 0; i < widths.length; i++) {
+    used += (i > 0 ? gap : 0) + widths[i];
+    if (used > avail) return i;
+  }
+  return widths.length;
+}
 /** Przez pierwsze sekundy (dane dopiero dochodzą) — co sekundę. */
 const WAIT_MS = 1_000;
 const WARMUP_MS = 15_000;
@@ -65,6 +75,8 @@ export const LayoutHeader: React.FC<{
 }> = ({ id, question, store, model, volStatus, liq, whales, whalesConfigured, blogMaps, blogMap, narrow, onNumbers, variant = 'row', detailsOpen, onDetails }) => {
   const [nums, setNums] = useState<LayoutNumber[]>(() => layoutNumbers(id, { coin: store.coin, now: Date.now() }));
   const [ownOpen, setOwnOpen] = useState(false);
+  // Wariant `chips`: liczby, które mieszczą się w linii legendy w całości (pozostałe niewidoczne, bez ucinania w pół słowa)
+  const [fitN, setFitN] = useState(Number.POSITIVE_INFINITY);
   const open = detailsOpen ?? ownOpen;
   const setOpen = (v: boolean | ((o: boolean) => boolean)) => {
     const next = typeof v === 'function' ? v(open) : v;
@@ -77,6 +89,20 @@ export const LayoutHeader: React.FC<{
   const scan = useRef<InputScan>({ model, volStatus, liq, whales, whalesConfigured, blog: { state: blogMaps, map: blogMap } });
   scan.current = { model, volStatus, liq, whales, whalesConfigured, blog: { state: blogMaps, map: blogMap } };
   const runRef = useRef<() => void>(() => {});
+  useLayoutEffect(() => {
+    if (variant !== 'chips') return;
+    const el = ref.current;
+    const line = el?.parentElement;
+    if (!el || !line) return;
+    const measure = () => {
+      const widths = [...el.querySelectorAll<HTMLElement>('[data-chip]')].map((k) => k.getBoundingClientRect().width);
+      setFitN(chipsThatFit(widths, line.getBoundingClientRect().right - el.getBoundingClientRect().left, 6));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(line);
+    return () => ro.disconnect();
+  }, [variant, nums]);
   // Hawkes liczony w tle (Web Worker) raz na minutę okna; do nowego wyniku zostaje poprzedni tego rynku
   const hk = useRef<{ coin: string; key: string; r: Got<Branching> } | null>(null);
   const busy = useRef(false);
@@ -237,8 +263,8 @@ export const LayoutHeader: React.FC<{
   if (variant === 'chips')
     return (
       <span ref={ref as unknown as React.RefObject<HTMLSpanElement>} className="relative inline-flex items-baseline gap-x-1.5 whitespace-nowrap">
-        {nums.map((n) => (
-          <span key={n.label} title={n.hint} className="inline-flex items-baseline gap-1 rounded px-1 bg-surface-2/80 font-sans">
+        {nums.map((n, i) => (
+          <span key={n.label} data-chip title={n.hint} aria-hidden={i >= fitN || undefined} className={`inline-flex items-baseline gap-1 rounded px-1 bg-surface-2/80 font-sans ${i >= fitN ? 'invisible' : ''}`}>
             <span className="text-[9px] font-semibold uppercase tracking-[0.06em] text-ink-3">{n.short ?? n.label}</span>
             <span className={`font-mono tabular-nums text-[10.5px] ${n.value === DASH ? 'text-ink-3' : 'text-ink-1'}`}>{n.value}</span>
           </span>
