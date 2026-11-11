@@ -21,6 +21,11 @@ export function metricsOf(r) {
   // Prostokąty wskaźnika Effort (wybór warstwy, nie piksele) w powtórce 24.10, BTC 5m
   if (typeof r.effort?.desktop === 'number') m['effort.rects1440'] = r.effort.desktop;
   if (typeof r.effort?.phone === 'number') m['effort.rects390'] = r.effort.phone;
+  // Strefy nierównowagi i niedokończone aukcje (wybór warstwy) w układzie „Aukcja i otwarcie”, powtórka 24.10, 5m
+  for (const [k, v] of [['1440', r.zones?.desktop], ['390', r.zones?.phone]]) {
+    if (typeof v?.rects === 'number') m[`zones.rects${k}`] = v.rects;
+    if (typeof v?.lines === 'number') m[`zones.lines${k}`] = v.lines;
+  }
   return m;
 }
 

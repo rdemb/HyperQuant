@@ -4,6 +4,23 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Strefy nierównowagi i niedokończone aukcje: tylko bieżące, tylko ze świec zamkniętych (2026-11-11)
+
+Na nagranej dobie 24.10.2026 (powtórka 19:30, układ „Aukcja i otwarcie”, 5m footprint, warstwy stref i aukcji) wykres rysował 22 strefy i 64 linie aukcji na 1440 × 900 oraz 19 i 57 na 390 × 844; po zmianie 3 strefy i 2 linie na obu (`npm run ui:check`, wybór warstwy, nie piksele). Liczby „przed” zmierzone na stronie z `main` z tymczasowym licznikiem w warstwie (bez commita); liczą obiekty w widocznym zakresie czasu, także poza widoczną skalą ceny.
+
+#### Naprawione
+- **Strefy tylko ze świec zamkniętych i w całości nagranych** (`src/charts/pro/core/zones.ts`, `src/charts/pro/chart/zonesLayer.ts`): świeca w trakcie nie tworzy ani nie zamyka strefy (dotąd strefy liczyły się z niej co sekundę i w 47% świec znikały po zamknięciu); przeliczenie tylko po zmianie zamkniętych świec.
+- **Krok siatki stały przez dobę UTC** (`dayZoneStep`): o 00:00 UTC z mediany zakresu świec poprzedniej doby, zamiast z ostatnich 60 świec (zmieniał się ok. 4 razy na dobę i przeliczał strefy z historii). Doba bez pełnej poprzedniej doby w historii nie ma stref. Krok ręczny bez zmian.
+
+#### Zmienione
+- **Wybór do rysowania w czystym module** `src/charts/pro/chart/zonesSelect.ts` (`selectZones`): tylko strefy otwarte na ostatniej zamkniętej świecy, najwyżej 2 na stronę najbliższe ostatniemu zamknięciu; zamknięta znika. Niedokończone aukcje: tylko otwarte, najwyżej 1 na stronę najbliższa cenie.
+- **Opis warstw** (okno wskaźników, PL i EN): nowe reguły i wynik sprawdzianu: „Po pierwszym wejściu ceny strefa dała reakcję w 14% przypadków, tak samo jak losowe miejsce (n 1 495, listopad 2026).”
+
+#### Dodane
+- **Tryb „Historia”** stref i aukcji (Ustawienia wykresu → Nad wykresem, domyślnie wyłączony): wszystkie strefy i aukcje obrysami. Pole `zonesHistory` jest tylko dopisywane.
+- **`ui:check`: scenariusz stref** („Aukcja i otwarcie” na powtórce 24.10 19:30, 5m): liczby z atrybutów `data-zone-rects` i `data-auction-lines`, limit 4 strefy i 2 linie w `--strict`. `scripts/ui/baseline.json` (win32): `zones.rects1440` 3, `zones.lines1440` 2, `zones.rects390` 3, `zones.lines390` 2 (nowe).
+- Testy: `zonesSelect.test.ts` (świeca niepełna bez strefy, świeca w trakcie poza modelem, krok stały w dobie i 0 bez poprzedniej doby, wybór 2 najbliższych, aukcje 1 na stronę, tryb „Historia”, zdanie w opisie PL i EN, stałość po dopisaniu świec i przy historii od poprzedniej doby).
+
 ### Wskaźnik „Strefy absorpcji i pudełka Effort”: mniej prostokątów, rysunek od chwili powstania (2026-11-11)
 
 Na nagranej dobie 24.10.2026 (powtórka 19:30, BTC 5m) wskaźnik rysował 33 prostokąty w oknie 140 świec komputera i 10 w oknie 33 świec telefonu (wyliczenie modelem na świecach 5m z kopii przy lekcjach, nie pomiar strony; pomiar na żywej stronie 11.11: 30 prostokątów na 107 świecach); po zmianie 6 na 1440 × 900 i 3 na 390 × 844 (`npm run ui:check`, wybór warstwy, nie piksele). Model stref (`src/charts/pro/core/effortZones.ts`) bez zmian.

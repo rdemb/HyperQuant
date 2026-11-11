@@ -85,6 +85,13 @@ const EFFORT_STORE = {
     indicators: [{ iid: 'effort', id: 'effort', params: {}, color: '#E9548D', alpha: 1, width: 1, labels: true, visible: true }],
   }),
 };
+/**
+ * Strefy nierównowagi i niedokończone aukcje: układ „Aukcja i otwarcie” na powtórce 24.10 o 19:30, 5m footprint, warstwy
+ * stref i aukcji włączone. Liczby z wyboru warstwy (`selectZones`, atrybuty `data-zone-rects` i `data-auction-lines`).
+ */
+const ZONES_REPLAY = '#charts?replay=lessons&m=BTC&i=5m&v=footprint&t=2026-10-24T19:30:00Z&station=auction-open&layers=zones,auctions';
+const ZONES_MAX = { rects: 4, lines: 2 };
+const zoneCounts = `(() => { const c = window.__hq.chart(); const host = c && c.root.closest('[data-zone-rects]'); return host ? { rects: Number(host.dataset.zoneRects), lines: Number(host.dataset.auctionLines) } : null; })()`;
 /** Limity z projektu szlifu: komputer najwyżej 7 prostokątów, telefon najwyżej 3. */
 const EFFORT_MAX = { desktop: 7, phone: 3 };
 const effortRects = `(() => { const c = window.__hq.chart(); const host = c && c.root.closest('[data-effort-rects]'); return host ? Number(host.dataset.effortRects) : null; })()`;
@@ -504,6 +511,21 @@ async function main() {
     report.effort.desktop = await probe(page, effortRects);
     await shot(page, '1440-effort');
 
+    // Szlif 2: strefy nierównowagi i aukcje w „Aukcja i otwarcie” (1440, potem 390)
+    report.zones = {};
+    await open(page, ZONES_REPLAY);
+    await sleep(4000);
+    await page.mouseAway();
+    await sleep(400);
+    report.zones.desktop = await probe(page, zoneCounts);
+    await shot(page, '1440-strefy');
+    await page.viewport(390, 844, true);
+    await open(page, ZONES_REPLAY);
+    await sleep(4000);
+    report.zones.phone = await probe(page, zoneCounts);
+    await shot(page, '390-strefy');
+    await page.viewport(1440, 900, false);
+
     // 4. Ustawienia użytkownika
     await page.viewport(1440, 900, false);
     report.storage = await persistence(page);
@@ -538,7 +560,9 @@ async function main() {
   const t6 = r.storage?.ok;
   // Szlif 1 (Effort): limit prostokątów wskaźnika; bez atrybutu (wersja sprzed wyboru warstwy) — brak liczby
   const s1 = typeof r.effort?.desktop === 'number' && typeof r.effort?.phone === 'number' && r.effort.desktop <= EFFORT_MAX.desktop && r.effort.phone <= EFFORT_MAX.phone;
-  r.summary = { t1, t2, t3, t4, t5, t6, s1 };
+  const zoneOk = (x) => !!x && x.rects <= ZONES_MAX.rects && x.lines <= ZONES_MAX.lines;
+  const s2 = zoneOk(r.zones?.desktop) && zoneOk(r.zones?.phone);
+  r.summary = { t1, t2, t3, t4, t5, t6, s1, s2 };
   const lines = [
     `Pomiar „${LABEL}” (${BASE})`,
     `1. Panel ceny 1440×900: ${pct(r.desktop)} (próg 62%, zapas ${margin(r.desktop?.share ?? 0, LIMITS.desktop)}), z kolumną DOM: ${pct(r.desktopDom)} (próg 60%, zapas ${margin(r.desktopDom?.share ?? 0, LIMITS.desktopDom)}) — ${ok(t1)}`,
@@ -556,6 +580,7 @@ async function main() {
   lines.push(
     `   Obiekty na płótnie panelu ceny — na żywo 1440: ${obj(r.desktop)}; z DOM: ${obj(r.desktopDom)}; 390: ${obj(r.phone)}`,
     `   Obiekty — powtórka 24.10 1440: ${obj(r.replayDesktop)}; powtórka 390: ${obj(r.replayPhone)}`,
+    `Szlif 2. Strefy nierównowagi / linie aukcji („Aukcja i otwarcie”, powtórka 24.10 19:30, 5m): 1440 ${r.zones?.desktop ? `${r.zones.desktop.rects} / ${r.zones.desktop.lines}` : '—'}, 390 ${r.zones?.phone ? `${r.zones.phone.rects} / ${r.zones.phone.lines}` : '—'} (limit ${ZONES_MAX.rects} / ${ZONES_MAX.lines}) — ${ok(s2)}`,
     `Szlif 1. Prostokąty wskaźnika Effort (powtórka 24.10 19:30, BTC 5m): 1440 ${r.effort?.desktop ?? '—'} (limit ${EFFORT_MAX.desktop}), 390 ${r.effort?.phone ?? '—'} (limit ${EFFORT_MAX.phone}) — ${ok(s1)}`
   );
   const metrics = metricsOf(r);
