@@ -30,6 +30,36 @@
       "dom.ladderRows": 20,
       "dom.tapeRowsFit": 10,
       "phone.indicatorRows": 9
+    },
+    "linux": {
+      "share.desktop": 0.626,
+      "share.desktopDom": 0.626,
+      "share.phone": 0.612,
+      "share.focus": 0.835,
+      "share.landscape": 0.859,
+      "objects.live1440.labels": 1,
+      "objects.live1440.bubbles": 0,
+      "objects.live1440.rects": 278,
+      "objects.live1440.axisLabels": 37,
+      "objects.live1440dom.labels": 1,
+      "objects.live1440dom.bubbles": 0,
+      "objects.live1440dom.rects": 186,
+      "objects.live1440dom.axisLabels": 43,
+      "objects.live390.labels": 0,
+      "objects.live390.bubbles": 0,
+      "objects.live390.rects": 86,
+      "objects.live390.axisLabels": 14,
+      "objects.replay1440.labels": 10,
+      "objects.replay1440.bubbles": 185,
+      "objects.replay1440.rects": 511,
+      "objects.replay1440.axisLabels": 18,
+      "objects.replay390.labels": 7,
+      "objects.replay390.bubbles": 47,
+      "objects.replay390.rects": 260,
+      "objects.replay390.axisLabels": 15,
+      "dom.ladderRows": 20,
+      "dom.tapeRowsFit": 10,
+      "phone.indicatorRows": 9
     }
   }
 }
