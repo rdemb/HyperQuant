@@ -282,8 +282,8 @@ describe('Częstość dużego ruchu przy bieżącym poziomie (z rozliczeń rejes
     const html = await panelHtml(0.95);
     expect(html).toContain(
       lang === 'en'
-        ? 'In the record, at this level a big move happened in 9 of 10 hours (n 448).'
-        : 'W rejestrze przy tym poziomie duży ruch był w 9 na 10 godzin (n 448).'
+        ? 'In the ledger, at this level a big move happened in 9 of 10 cases (448 forecasts from the ledger).'
+        : 'W rejestrze przy tym poziomie duży ruch był w 9 na 10 przypadków (448 prognoz z rejestru).'
     );
     const bar = barOf(await launcherHtml(0.95)).replace(/<[^>]*>/g, '');
     expect(bar).not.toMatch(/\d+ (na|of) 10/);
@@ -296,5 +296,17 @@ describe('Częstość dużego ruchu przy bieżącym poziomie (z rozliczeń rejes
     expect(await panelHtml(0.37)).not.toContain('W rejestrze przy tym poziomie');
     S.cat = null;
     expect(await panelHtml(0.37)).not.toContain('W rejestrze przy tym poziomie');
+  });
+});
+
+describe('Liczba „na 10” przy częstości blisko połowy między dziesiątkami: zakres zamiast skakania', () => {
+  it('0,645 → „6–7”, 0,19 → „2”, 0,922 → „9”, 0,25 → „2–3”', async () => {
+    const { tenthsText } = await import('../moveLevel');
+    expect(tenthsText(0.645)).toBe('6–7');
+    expect(tenthsText(0.19)).toBe('2');
+    expect(tenthsText(0.922)).toBe('9');
+    expect(tenthsText(0.25)).toBe('2–3');
+    expect(tenthsText(1)).toBe('10');
+    expect(tenthsText(0)).toBe('0');
   });
 });

@@ -202,7 +202,7 @@ or elevated, by the tercile of `pBig` among resolved forecasts in the ledger sum
 30-day window, tercile edges interpolated inside a bin), next to the AUC from the ledger and the sentence "percentages
 under calibration, results in the ledger". With fewer than 96 resolved forecasts the level is "—" with the reason. Under the level the popup gives the frequency of a big move at that level in the ledger's settled
 forecasts, from the same histogram: a bin partly inside the tercile contributes the overlapping share of its forecasts,
-and its frequency is weighted by that share (for example "a big move happened in 9 of 10 hours (n 448)"). The
+and its frequency is weighted by that share (for example "a big move happened in 9 of 10 cases (448 forecasts from the ledger)"; with a fractional part of 0.3–0.7 the sentence shows a range such as "6–7 of 10"). The
 cat's mood follows the level. The change of mind and the "Why?" section describe the big move without numbers, and the
 live-hour percentages and the big-move lines on the small charts are hidden. One flag, `MOVE_PCT_PROMOTED` in
 `src/components/schrodi/moveLevel.ts`, switches the percentages back after promotion.
