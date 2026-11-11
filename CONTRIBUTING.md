@@ -17,6 +17,7 @@ npm run dev      # http://localhost:3000
 | `npm test` | Vitest tests |
 | `npm run build` | production build to `dist/` |
 | `npm run data` | fetches public data into `public/data/feeds` |
+| `npm run ui:check` | builds and measures the In session screen in headless Chrome without network (fixed Hyperliquid data and a frozen clock on 24 Oct 2026, `scripts/ui/fixtures.mjs`): the six layout acceptance tests and the reference numbers in `scripts/ui/baseline.json`; `-- --update-baseline` records an intended change, `npm run ui:check:live` measures on live data |
 
 ## Content rules
 
