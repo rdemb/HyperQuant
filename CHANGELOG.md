@@ -4,6 +4,11 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Paczka MCP 0.1.4 (2026-11-11)
+
+#### Zmienione
+- **`hyperquant-mcp` 0.1.4**: `cohort_flow` liczy udział w obrocie wobec 2 × wolumenu taśmy (pole `tape` w `cohorts/BTC.json`), podaje `othersCombined` dla ukrytych komórek i opisuje pustą kohortę „poinformowanych” jako brak wykrytych kont z trwałą przewagą zamiast braku transakcji. Polecenia instalacji ze strony, README i szablonów z wersją `npx -y hyperquant-mcp@0.1.4`.
+
 ### Niezależna weryfikacja dziennika: przyrostowo, osobny workflow, znaczek gaśnie po 36 h (2026-11-11)
 
 #### Naprawione
