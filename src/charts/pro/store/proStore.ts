@@ -482,10 +482,10 @@ export class ProStore {
     return this.makers.top(from, to, k);
   }
 
-  /** Delta agresorów w [from, to) (w jednej godzinie UTC) przyjęta przez animatorów rynku i resztę makerów. */
+  /** Delta agresorów w świecy [from, to) (do godziny) przyjęta przez animatorów rynku i resztę makerów; klasa z 60 min do `to`. */
   makerSplit(from: number, to: number): MakerSplit | null {
-    const h = Math.floor(from / HOUR_MS) * HOUR_MS;
-    const minutes = Math.round(this.addressed.coveredMs(h, Math.min(h + HOUR_MS, this.serverNow())) / 60_000);
+    const w1 = Math.ceil(to / 60_000) * 60_000;
+    const minutes = Math.round(this.addressed.coveredMs(w1 - HOUR_MS, Math.min(w1, this.serverNow())) / 60_000);
     return this.makers.split(from, to, minutes);
   }
 
