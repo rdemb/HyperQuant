@@ -108,7 +108,9 @@ export const HonestyCard: React.FC<{
 export const HonestyButton: React.FC<{
   store: ProStore;
   templateId: string;
-}> = ({ store, templateId }) => {
+  /** Sam znak tarczy (pasek wykresu); nazwa w podpowiedzi i dla czytnika ekranu. */
+  compact?: boolean;
+}> = ({ store, templateId, compact = false }) => {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -129,15 +131,16 @@ export const HonestyButton: React.FC<{
       <button
         type="button"
         aria-expanded={open}
+        aria-label={compact ? tr('Karta uczciwości', 'Honesty card') : undefined}
         onClick={() => setOpen((v) => !v)}
         title={tr(
           'Jak często ten układ wystąpił i czym się skończył na historii świec, z liczbą przypadków',
           'How often this setup occurred and how it ended on the candle history, with the number of cases'
         )}
-        className={`inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg border text-xs font-medium transition-colors duration-150 ${open ? 'border-line-strong bg-surface-2 text-ink-1' : 'border-line text-ink-2 hover:text-ink-1 hover:bg-surface-2'}`}
+        className={`inline-flex items-center justify-center gap-1.5 ${compact ? 'w-9 h-9' : 'h-8 px-2.5'} rounded-lg border text-xs font-medium transition-colors duration-150 ${open ? 'border-line-strong bg-surface-2 text-ink-1' : 'border-line text-ink-2 hover:text-ink-1 hover:bg-surface-2'}`}
       >
         <ShieldCheck className="w-4 h-4" aria-hidden="true" />
-        {tr('Karta uczciwości', 'Honesty card')}
+        {!compact && tr('Karta uczciwości', 'Honesty card')}
       </button>
       {open && (
         <div className="absolute z-40 right-0 top-full mt-1 w-[26rem] max-w-[calc(100vw-32px)] rounded-lg shadow-2xl">

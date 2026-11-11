@@ -6,6 +6,7 @@ import { isMapId } from '../../../utils/mapSettlement';
 import { IndicatorInstance, indicatorDef, indicatorsFromLink, indicatorsLink, parseIndicators, REMOVED_INDICATORS } from '../indicators/registry';
 import type { ChartView } from './footprintSeries';
 import type { FootprintStyle } from './layout';
+import { type LabelDensity, parseDensity } from './labelPlacement';
 
 /** Ustawienia wykresu Pro zapamiętywane w przeglądarce (tylko wygoda użytkownika — brak danych osobowych). */
 export interface ChartSettings {
@@ -35,6 +36,13 @@ export interface ChartSettings {
   statGroups: StatGroup[];
   /** Pasek „Stan rynku” nad wykresem: zdanie z faktów i „skąd?”. */
   showState: boolean;
+  /**
+   * Zdanie „Stan rynku” rozwinięte w linii pod paskiem; brak (także w zapisie sprzed tego pola) — zwinięte do przycisku
+   * „Stan”. Pole tylko dopisywane: zapis bez niego czyta się bez zmian.
+   */
+  stateOpen?: boolean;
+  /** Gęstość etykiet liczbowych na wykresie (0, 3, 5, wszystkie); brak — 5 na komputerze, 3 na telefonie. */
+  labelDensity?: LabelDensity;
   /** Wskaźniki na wykresie ceny. */
   showVwap: boolean;
   showVwapBands: boolean;
@@ -258,6 +266,8 @@ export function parseSettings(raw: unknown, d: ChartSettings = DEFAULT_SETTINGS)
     ...(panelSet !== undefined ? { panelSet } : {}),
     ...(panelSetIids ? { panelSetIids } : {}),
     ...(blogMapId !== undefined ? { blogMapId } : {}),
+    ...(parseDensity(r.labelDensity) !== undefined ? { labelDensity: parseDensity(r.labelDensity) } : d.labelDensity !== undefined ? { labelDensity: d.labelDensity } : {}),
+    ...(typeof r.stateOpen === 'boolean' ? { stateOpen: r.stateOpen } : d.stateOpen !== undefined ? { stateOpen: d.stateOpen } : {}),
   };
 }
 
@@ -277,8 +287,8 @@ function readIndicators(raw: unknown[]): IndicatorInstance[] {
   return list;
 }
 
-/** Telefon: ekran do 639 px. */
-export const NARROW_QUERY = '(max-width: 639px)';
+/** Telefon: ekran do 639 px, także obrócony poziomo (niski ekran dotykowy). */
+export const NARROW_QUERY = '(max-width: 639px), (orientation: landscape) and (max-height: 500px) and (pointer: coarse)';
 export const isNarrow = (): boolean => typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia(NARROW_QUERY).matches;
 
 /** Ustawienia startowe dla tego ekranu (na telefonie z `NARROW_PATCH`). */

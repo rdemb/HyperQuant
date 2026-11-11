@@ -1,0 +1,485 @@
+#!/usr/bin/env node
+// Pomiar układu ekranu W sesji w Chrome bez okna (CDP), na zbudowanej stronie (`vite preview`):
+//  1. udział panelu ceny w wysokości okna (1440 × 900 bez i z kolumną DOM, 390 × 844, tryb skupienia, telefon poziomo),
+//  2. elementy DOM nad polem świec (poza legendą w jednej linii i krzyżem),
+//  3. pary nachodzących na siebie etykiet na wykresie i osi ceny (powtórka nagranej doby z kopii przy lekcjach),
+//  4. dostępność funkcji paska w najwyżej dwóch kliknięciach i działanie skrótów klawiszowych,
+//  5. zachowanie ustawień użytkownika w localStorage (klucze hq.*),
+//  6. widoczne pozycje listy wskaźników na telefonie.
+// Użycie: npm run ui:check  (albo: node scripts/ui/layout-check.mjs --port 4408 [--serve] [--shots katalog] [--label po] [--strict])
+import { spawn } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
+import { launch, sleep } from './cdp.mjs';
+import { INIT, PROBE } from './probe.mjs';
+
+const args = process.argv.slice(2);
+const opt = (name, def) => {
+  const i = args.indexOf(`--${name}`);
+  return i >= 0 ? args[i + 1] : def;
+};
+const flag = (name) => args.includes(`--${name}`);
+const PORT = Number(opt('port', '4408'));
+const BASE = `http://127.0.0.1:${PORT}/`;
+const LABEL = opt('label', 'run');
+const OUT = path.resolve(opt('out', 'ui-check'));
+const SHOTS = opt('shots', null);
+const STRICT = flag('strict');
+
+/** Progi testów akceptacyjnych. */
+const LIMITS = { desktop: 0.62, desktopDom: 0.6, phone: 0.6, focus: 0.8 };
+
+/** Stały użytkownik: dymki pierwszej wizyty zamknięte (karta pierwszego kontaktu nie zmienia pomiaru). */
+const RETURNING = { 'hq.onboarding.v1': JSON.stringify({ firstAt: Date.now() - 8 * 86_400_000, done: true }) };
+
+/** Powtórka nagranej doby z kopii przy lekcjach (pliki w public/lessons/replay): stałe dane do testu etykiet. */
+const REPLAY = '#charts?replay=lessons&m=BTC&i=5m&v=candles&t=2026-10-24T19:30:00Z&layers=vwap,heatmap,bubbles,clashes,lots,profile,levels,sessions';
+
+// ───────────────────────── funkcje paska (dzisiejsze ikony i przełączniki) ─────────────────────────
+const DESKTOP_FUNCS = {
+  indicators: 'Wskaźniki',
+  drawing: 'Narzędzia rysowania|rysowania',
+  tape: 'Taśma zleceń|taśmę zleceń',
+  alerts: 'Alarmy cenowe',
+  settings: 'Ustawienia wykresu',
+  layout1: 'Jeden wykres',
+  layout2: 'Dwa wykresy',
+  layout4: 'Cztery wykresy',
+  scrollNow: 'Przewiń do bieżącej',
+  resetScale: 'Przywróć skalę',
+  replay: 'Powtórka nagranej',
+  link: 'Kopiuj link',
+  screenshot: 'Zrzut ekranu',
+  frame: 'Klatka',
+  keys: 'Skróty klawiszowe',
+  fullscreen: 'Pełny ekran',
+  marketEth: '\\bETH\\b',
+  interval15m: '(^|[^0-9])15m\\b',
+  interval1D: '\\b1D\\b',
+  footprint: 'Footprint',
+  fpDelta: 'Delta wiersza',
+  newTab: 'Nowa karta|Pusta karta',
+  restorePreset: 'Przywróć wzorzec',
+  dock: 'Kolumna DOM',
+  tabAuction: 'Aukcja i otwarcie',
+  stateWhy: 'skąd\\?',
+  lang: '\\bEN\\b|English',
+  pause: 'Wstrzymaj strumień',
+  sync: 'Synchronizuj',
+  sound: 'dźwięk taśmy',
+  lessons: 'Lekcje',
+  research: 'Badania',
+  sources: 'Źródła',
+};
+/** Funkcje, których build bez VITE_DATA_BASE_URL nie ma (przed zmianą też nie). */
+const OPTIONAL = ['replay'];
+const PHONE_FUNCS = {
+  indicators: 'Wskaźniki',
+  alerts: 'Alarmy cenowe',
+  settings: 'Ustawienia wykresu',
+  drawing: 'Narzędzia rysowania|rysowania',
+  scrollNow: 'Przewiń do bieżącej',
+  resetScale: 'Przywróć skalę',
+  screenshot: 'Zrzut ekranu',
+  frame: 'Klatka',
+  link: 'Kopiuj link',
+  fullscreen: 'Pełny ekran',
+  tabTape: '^\\s*\\|\\s*\\|\\s*Taśma\\s*$',
+  tabDom: '^\\s*\\|\\s*\\|\\s*DOM\\s*$',
+  tabNumbers: 'Liczby',
+  marketEth: '\\bETH\\b',
+  interval15m: '(^|[^0-9])15m\\b',
+  // Footprint jako pozycja listy rodzaju wykresu („Bid × Ask”, „FP Delta”…)
+  footprint: 'Footprint|Bid × Ask',
+  tabAuction: 'Aukcja i otwarcie',
+  lang: '\\bEN\\b|English',
+  pause: 'Wstrzymaj strumień',
+  lessons: 'Lekcje',
+  sources: 'Źródła',
+};
+
+// ───────────────────────── serwer ─────────────────────────
+async function up() {
+  try {
+    return (await fetch(BASE)).ok;
+  } catch {
+    return false;
+  }
+}
+let server = null;
+async function ensureServer() {
+  if (await up()) return;
+  if (!flag('serve')) throw new Error(`Brak serwera na ${BASE} — uruchom „npx vite preview --port ${PORT} --strictPort” albo dodaj --serve`);
+  server = spawn(process.execPath, [path.resolve('node_modules/vite/bin/vite.js'), 'preview', '--host', '127.0.0.1', '--port', String(PORT), '--strictPort'], { stdio: 'ignore' });
+  for (let i = 0; i < 60 && !(await up()); i++) await sleep(500);
+  if (!(await up())) throw new Error('vite preview nie wystartował');
+}
+function stopServer() {
+  if (!server) return;
+  server.kill();
+  server = null;
+}
+
+// ───────────────────────── pomocnicze ─────────────────────────
+/** Otwiera stronę z danym localStorage (zapis na tym samym pochodzeniu przed wczytaniem aplikacji). */
+async function open(page, hash, store = {}) {
+  await page.go(`${BASE}robots.txt`, 300);
+  await page.ev(`(() => { localStorage.clear(); const s = ${JSON.stringify({ ...RETURNING, ...store })}; for (const k in s) localStorage.setItem(k, s[k]); return true; })()`);
+  await page.go(`${BASE}${hash}`, 500);
+  await page.waitFor(`!!document.querySelector('.tv-lightweight-charts canvas')`, 30000);
+  // Świece i warstwy dochodzą przez kilka sekund (API, nagranie serwera)
+  await sleep(6000);
+  // Chwilowy błąd API świec (limit zapytań): ponowienie, zanim cokolwiek zmierzymy
+  for (let i = 0; i < 3; i++) {
+    const retried = await page.ev(`(() => { const b = [...document.querySelectorAll('button')].find((x) => x.textContent === 'Spróbuj ponownie'); if (!b) return false; b.click(); return true; })()`);
+    if (!retried) break;
+    await sleep(5000);
+  }
+  await page.ev(PROBE);
+  await page.mouseAway();
+  await sleep(400);
+}
+const probe = async (page, expr) => {
+  await page.ev(`window.__hq || ${PROBE}`);
+  return page.ev(expr);
+};
+const shot = async (page, name) => {
+  if (!SHOTS) return;
+  await page.shot(path.join(SHOTS, `${LABEL}-${name}.png`));
+};
+
+/** Funkcje dostępne w ≤ 2 kliknięciach: widoczne od razu (1) albo w menu otwartym jednym kliknięciem (2). */
+async function reach(page, funcs) {
+  const res = {};
+  const direct = await probe(page, `__hq.findAll(${JSON.stringify(funcs)})`);
+  for (const k of Object.keys(funcs)) {
+    if (direct[k] === 'direct') res[k] = 1;
+    else if (direct[k] === 'select') res[k] = 2;
+  }
+  let missing = Object.fromEntries(Object.entries(funcs).filter(([k]) => res[k] === undefined));
+  const list = await probe(page, `__hq.togglers()`);
+  for (const t of list) {
+    if (Object.keys(missing).length === 0) break;
+    const fresh = await probe(page, `__hq.togglers()`);
+    const same = fresh.filter((x) => x.name === t.name);
+    const nth = list.filter((x) => x.name === t.name).indexOf(t);
+    const target = same[nth] ?? same[0];
+    if (!target) continue;
+    await probe(page, `__hq.clickProbe(${target.i})`);
+    await sleep(350);
+    const found = await probe(page, `__hq.findAll(${JSON.stringify(missing)})`);
+    for (const [k, how] of Object.entries(found)) {
+      res[k] = how === 'direct' ? `2 (${t.name.split('|').map((s) => s.trim()).find(Boolean)})` : 3;
+      if (how === 'direct') delete missing[k];
+    }
+    await page.key('Escape');
+    await sleep(150);
+    await page.mouseAway();
+    await page.click(2, 2);
+    await sleep(200);
+  }
+  // Funkcje zależne od konfiguracji buildu (powtórka doby wymaga adresu danych skanera): brak w ogóle — „n/a”, nie błąd
+  for (const k of Object.keys(missing)) if (res[k] === undefined) res[k] = OPTIONAL.includes(k) ? 'n/a' : '>2';
+  const bad = Object.entries(res).filter(([, v]) => !(v === 1 || v === 2 || v === 'n/a' || (typeof v === 'string' && v.startsWith('2 ('))));
+  return { ok: bad.length === 0, missing: bad.map(([k, v]) => `${k}:${v}`), map: res };
+}
+
+/** Skróty klawiszowe: skutek każdego skrótu z listy „?”. */
+async function shortcuts(page) {
+  const box = await probe(page, `(() => { const c = __hq.chart(); const r = c.pane.getBoundingClientRect(); return [r.left + r.width * 0.4, r.top + r.height * 0.5]; })()`);
+  await page.click(box[0], box[1]);
+  await sleep(300);
+  const hash = () => page.ev('location.hash');
+  const cockpit = () => page.ev(`JSON.parse(localStorage.getItem('hq.charts.v1.cockpit') || '{}')`);
+  const out = {};
+  const check = async (name, fn) => {
+    try {
+      out[name] = !!(await fn());
+    } catch (e) {
+      out[name] = false;
+    }
+  };
+  await check('digit→interval', async () => {
+    await page.key('4');
+    await sleep(500);
+    const ok = /i=15m/.test(await hash());
+    await page.key('1');
+    await sleep(500);
+    return ok && /i=1m/.test(await hash());
+  });
+  await check('c→view', async () => {
+    const before = (await hash()).match(/v=(\w+)/)?.[1];
+    await page.key('c');
+    await sleep(400);
+    const after = (await hash()).match(/v=(\w+)/)?.[1];
+    await page.key('c');
+    await sleep(400);
+    return before && after && before !== after;
+  });
+  await check('m→market', async () => {
+    await page.key('m');
+    await sleep(500);
+    const ok = /m=ETH/.test(await hash());
+    for (let i = 0; i < 3; i++) await page.key('m');
+    await sleep(500);
+    return ok && /m=BTC/.test(await hash());
+  });
+  await check('t→tape', async () => {
+    const a = (await cockpit()).showTape;
+    await page.key('t');
+    await sleep(400);
+    const b = (await cockpit()).showTape;
+    await page.key('t');
+    await sleep(300);
+    return a !== b;
+  });
+  await check('a→autoscale', async () => {
+    const q = `document.querySelector('[aria-label="Autoskala ceny"]')?.getAttribute('aria-pressed')`;
+    const a = await page.ev(q);
+    await page.key('a');
+    await sleep(400);
+    const b = await page.ev(q);
+    await page.key('a');
+    await sleep(300);
+    return a !== null && a !== b;
+  });
+  await check('?→keys', async () => {
+    await page.key('?', { code: 'Slash', shift: true });
+    await sleep(400);
+    const ok = await page.ev(`[...document.querySelectorAll('kbd')].some((k) => k.textContent === 'Alt+1 … 6')`);
+    await page.key('Escape');
+    await sleep(300);
+    return ok;
+  });
+  await check('/→indicators', async () => {
+    await page.key('/', { code: 'Slash' });
+    await sleep(500);
+    const ok = await page.ev(`!!document.querySelector('[role=dialog] input[aria-label="Szukaj wskaźnika"]')`);
+    await page.key('Escape');
+    await sleep(300);
+    return ok;
+  });
+  await check('d→dock', async () => {
+    const q = `!!document.querySelector('aside[aria-label="DOM i taśma"]')`;
+    const a = await page.ev(q);
+    await page.key('d');
+    await sleep(500);
+    const b = await page.ev(q);
+    await page.key('d');
+    await sleep(500);
+    return a !== b;
+  });
+  await check('Alt+digit→layout', async () => {
+    await page.key('4', { alt: true });
+    await sleep(1500);
+    const a = await page.ev(`JSON.parse(localStorage.getItem('hq.charts.tabs.v1') || '{}').active`);
+    await page.key('3', { alt: true });
+    await sleep(1500);
+    const b = await page.ev(`JSON.parse(localStorage.getItem('hq.charts.tabs.v1') || '{}').active`);
+    return a === 'auction-open' && b === 'cockpit';
+  });
+  return { ok: Object.values(out).every(Boolean), map: out };
+}
+
+/** Ustawienia użytkownika: zapisane klucze zostają, a ich pola mają te same wartości (wolno tylko dopisać nowe). */
+const SEED = {
+  'hq.lang': 'pl',
+  'hq.charts.legend.v1': JSON.stringify({ single: false, multi: true }),
+  'hq.charts.dock.v1': '0',
+  'hq.charts.v1.cockpit': JSON.stringify({ coin: 'BTC', interval: '5m', view: 'candles', showVwapBands: true, showHeatmap: true, showBubbles: true, showState: true, bigTradeUsd: 250000, layersV: 2 }),
+  'hq.charts.indicators.fav.v1': JSON.stringify(['ema']),
+  'hq.flow.v1': JSON.stringify({ step: 'auto', minUsd: 25000, sound: false }),
+};
+function sameOrSuperset(a, b) {
+  if (a === b) return true;
+  if (a && b && typeof a === 'object' && typeof b === 'object') return Object.keys(a).every((k) => sameOrSuperset(a[k], b[k]));
+  return false;
+}
+async function persistence(page) {
+  await open(page, '#charts', SEED);
+  // Kilka zwykłych czynności: menu, zmiana interwału i z powrotem
+  await page.click(2, 2);
+  await sleep(300);
+  const after = await probe(page, `__hq.storage()`);
+  const lost = [];
+  for (const [k, v] of Object.entries(SEED)) {
+    if (!(k in after)) {
+      lost.push(`${k}: brak`);
+      continue;
+    }
+    let a;
+    let b;
+    try {
+      a = JSON.parse(v);
+      b = JSON.parse(after[k]);
+    } catch {
+      a = v;
+      b = after[k];
+    }
+    if (!sameOrSuperset(a, b)) lost.push(`${k}: zmieniony`);
+  }
+  const added = Object.keys(after).filter((k) => !(k in SEED) && !(k in RETURNING));
+  return { ok: lost.length === 0, lost, added };
+}
+
+// ───────────────────────── scenariusze ─────────────────────────
+async function main() {
+  await ensureServer();
+  fs.mkdirSync(OUT, { recursive: true });
+  const page = await launch({ port: Number(opt('cdp', '9338')), init: INIT });
+  const report = { label: LABEL, at: new Date().toISOString(), base: BASE };
+  try {
+    // 1. Komputer 1440 × 900 bez kolumny DOM
+    await page.viewport(1440, 900, false);
+    await open(page, '#charts', { 'hq.charts.dock.v1': '0' });
+    report.desktop = { ...(await probe(page, '__hq.paneShare()')), over: await probe(page, '__hq.overCandles()'), labels: await probe(page, '__hq.labels()') };
+    await shot(page, '1440');
+    report.desktopReach = await reach(page, DESKTOP_FUNCS);
+    report.desktopKeys = await shortcuts(page);
+
+    // 1b. Z kolumną DOM (domyślnie włączona od 1280 px)
+    await open(page, '#charts', { 'hq.charts.dock.v1': '1' });
+    report.desktopDom = { ...(await probe(page, '__hq.paneShare()')), over: await probe(page, '__hq.overCandles()') };
+    // Kolumna DOM: widoczne poziomy drabiny (drabina rysuje tyle, ile się mieści) i pojemność listy taśmy w wierszach
+    // (taśma na żywo w świeżej przeglądarce bywa jeszcze krótka, więc liczymy miejsce, nie zlecenia)
+    report.domColumn = await page.ev(`(() => {
+      const a = document.querySelector('aside[aria-label="DOM i taśma"]');
+      if (!a) return null;
+      const box = a.getBoundingClientRect();
+      const ladder = [...a.querySelectorAll('section[aria-label="Drabina arkusza zleceń"] div.relative.grid.font-mono.items-center')].filter((e) => { const r = e.getBoundingClientRect(); return r.height > 0 && r.top >= box.top && r.bottom <= box.bottom + 1; }).length;
+      const tape = a.querySelector('section[aria-label="Taśma z pamięcią"] .overflow-y-auto');
+      const rowH = tape?.querySelector('button')?.getBoundingClientRect().height || 24;
+      return { ladderRows: ladder, tapeRowsFit: tape ? Math.floor(tape.clientHeight / rowH) : null, tapeRowH: Math.round(rowH) };
+    })()`);
+    await shot(page, '1440-dom');
+
+    // 2. Telefon 390 × 844
+    await page.viewport(390, 844, true);
+    await open(page, '#charts');
+    report.phone = { ...(await probe(page, '__hq.paneShare()')), over: await probe(page, '__hq.overCandles()'), labels: await probe(page, '__hq.labels()') };
+    report.phoneTargets = await probe(page, `__hq.smallTargets('[data-chart-bar]', 44)`);
+    await shot(page, '390');
+    // Listy paska: rogi panelu widoczne (nie ucięte przez kartę ani okno); zrzut z otwartą listą „Warstwy”
+    report.phoneMenus = await probe(page, '__hq.menuCorners()');
+    await page.ev(`[...document.querySelectorAll('[data-chart-bar] button[aria-haspopup]')].find((b) => /^Warstwy/.test(b.getAttribute('aria-label') || ''))?.click()`);
+    await sleep(400);
+    await shot(page, '390-warstwy');
+    await page.key('Escape');
+    await sleep(200);
+    // Tryb skupienia: dotknięcie wykresu
+    const c = await probe(page, `(() => { const r = __hq.chart().pane.getBoundingClientRect(); return [r.left + r.width * 0.45, r.top + r.height * 0.55]; })()`);
+    await page.tap(c[0], c[1]);
+    await sleep(900);
+    report.phoneFocus = { ...(await probe(page, '__hq.paneShare()')), over: await probe(page, '__hq.overCandles()') };
+    await shot(page, '390-focus');
+    report.phoneReach = await (async () => {
+      await page.tap(c[0], c[1]);
+      await sleep(700);
+      return reach(page, PHONE_FUNCS);
+    })();
+    // Tryb skupienia włączony z karty „Liczby” (menu „⋯”): widać wykres i przycisk wyjścia, Escape kończy skupienie
+    await open(page, '#charts');
+    report.focusFromNumbers = await (async () => {
+      const tab = await page.ev(`(() => { const t = [...document.querySelectorAll('[role=tab]')].find((x) => x.textContent === 'Liczby'); if (!t) return false; t.click(); return true; })()`);
+      await sleep(400);
+      await page.ev(`[...document.querySelectorAll('[data-chart-bar] button[aria-haspopup]')].find((b) => /^Więcej/.test(b.getAttribute('aria-label') || ''))?.click()`);
+      await sleep(400);
+      const item = await page.ev(`(() => { const m = [...document.querySelectorAll('[role=menu] [role^=menuitem]')].find((b) => /Tryb skupienia/.test(b.textContent || '')); if (!m) return false; m.click(); return true; })()`);
+      await sleep(900);
+      const exit = await page.ev(`(() => { const b = document.querySelector('button[aria-label^="Zamknij tryb skupienia"]'); if (!b) return false; const r = b.getBoundingClientRect(); const el = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return !!el && b.contains(el); })()`);
+      const share = await probe(page, '__hq.paneShare()');
+      const chartShown = await page.ev(`(() => { const r = __hq.chart().pane.getBoundingClientRect(); const el = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return !!el && el.tagName === 'CANVAS'; })()`);
+      await shot(page, '390-skupienie-z-liczb');
+      await page.key('Escape');
+      await sleep(600);
+      const back = await page.ev(`!document.querySelector('button[aria-label^="Zamknij tryb skupienia"]') && !!document.querySelector('[data-chart-bar]')`);
+      return { tab, item, exit, chartShown, share: share?.share ?? null, escape: back, ok: !!(tab && item && exit && chartShown && back) };
+    })();
+    // Lista wskaźników: ile pozycji widać na ekranie
+    await open(page, '#charts');
+    // Wskaźniki: przed zmianą ikona w pasku, po zmianie pozycja menu „⋯”
+    const direct = await page.ev(`(() => { const b = [...document.querySelectorAll('button')].find((b) => /^Wskaźniki/.test(b.getAttribute('aria-label') || '')); if (b) { b.click(); return true; } return false; })()`);
+    if (!direct) {
+      await page.ev(`[...document.querySelectorAll('[data-chart-bar] button[aria-haspopup]')].find((b) => /^Więcej/.test(b.getAttribute('aria-label') || ''))?.click()`);
+      await sleep(400);
+      await page.ev(`[...document.querySelectorAll('[role=menu] [role^=menuitem]')].find((b) => /^Wskaźniki/.test(b.textContent || ''))?.click()`);
+    }
+    await sleep(800);
+    report.phoneIndicators = await page.ev(
+      `(() => { const nav = [...document.querySelectorAll('nav')].find((n) => getComputedStyle(n).position === 'fixed'); const lim = nav ? nav.getBoundingClientRect().top : innerHeight; return [...document.querySelectorAll('[role=dialog] [role=option]')].filter((e) => { const r = e.getBoundingClientRect(); return r.height > 0 && r.top >= 0 && r.bottom <= lim; }).length; })()`
+    );
+    await shot(page, '390-wskazniki');
+    // Telefon poziomo
+    await page.viewport(844, 390, true);
+    await open(page, '#charts');
+    report.phoneLandscape = await probe(page, '__hq.paneShare()');
+    await shot(page, '844-poziomo');
+
+    // 3. Etykiety na nagranej dobie (powtórka z kopii przy lekcjach)
+    await page.viewport(1440, 900, false);
+    await open(page, REPLAY);
+    await sleep(4000);
+    await page.mouseAway();
+    await sleep(600);
+    report.replayDesktop = { labels: await probe(page, '__hq.labels()'), over: await probe(page, '__hq.overCandles()') };
+    await shot(page, '1440-powtorka');
+    await page.viewport(390, 844, true);
+    await open(page, REPLAY);
+    await sleep(4000);
+    report.replayPhone = { labels: await probe(page, '__hq.labels()') };
+    await shot(page, '390-powtorka');
+
+    // 4. Ustawienia użytkownika
+    await page.viewport(1440, 900, false);
+    report.storage = await persistence(page);
+
+    // Inne ekrany ze wspólnymi komponentami: Przed sesją, Po sesji, Aukcja i otwarcie, Wielkie ręce
+    for (const [name, hash, store] of [
+      ['przed', '#before', {}],
+      ['po', '#after', {}],
+      ['aukcja', '#charts', { 'hq.charts.phaseActive.v1': JSON.stringify({ before: 'day-map', session: 'auction-open', after: 'review' }), 'hq.charts.tabs.v1': JSON.stringify({ v: 2, tabs: [], active: 'auction-open' }) }],
+      ['wielkie-rece', '#charts', { 'hq.charts.phaseActive.v1': JSON.stringify({ before: 'day-map', session: 'big-hands', after: 'review' }), 'hq.charts.tabs.v1': JSON.stringify({ v: 2, tabs: [], active: 'big-hands' }) }],
+    ]) {
+      await open(page, hash, store);
+      report[`view-${name}`] = { ...(await probe(page, '__hq.paneShare()')), over: await probe(page, '__hq.overCandles()'), errors: page.errors.splice(0) };
+      await shot(page, `1440-${name}`);
+    }
+  } finally {
+    page.close();
+    stopServer();
+  }
+
+  // ───────────────────────── wynik ─────────────────────────
+  const r = report;
+  const pct = (x) => (x ? `${(x.share * 100).toFixed(1)}%` : '—');
+  const ok = (b) => (b ? 'OK' : 'NIE');
+  const t1 = r.desktop?.share >= LIMITS.desktop && r.desktopDom?.share >= LIMITS.desktopDom;
+  const t2 = r.phone?.share >= LIMITS.phone && r.phoneFocus?.share >= LIMITS.focus && !!r.focusFromNumbers?.ok;
+  const t3 = [r.desktop, r.desktopDom, r.phone].every((x) => x?.over?.count === 0);
+  const lab = (x) => (x?.labels ? x.labels.pane.n + x.labels.axis.n : Number.NaN);
+  const t4 = [r.replayDesktop, r.replayPhone, r.desktop, r.phone].every((x) => lab(x) === 0);
+  const t5 = r.desktopReach?.ok && r.phoneReach?.ok && r.desktopKeys?.ok && r.phoneMenus?.cut?.length === 0;
+  const t6 = r.storage?.ok;
+  r.summary = { t1, t2, t3, t4, t5, t6 };
+  const lines = [
+    `Pomiar „${LABEL}” (${BASE})`,
+    `1. Panel ceny 1440×900: ${pct(r.desktop)} (próg 62%), z kolumną DOM: ${pct(r.desktopDom)} (próg 60%) — ${ok(t1)}`,
+    `2. Panel ceny 390×844: ${pct(r.phone)} (próg 60%), tryb skupienia: ${pct(r.phoneFocus)} (próg 80%), poziomo 844×390: ${pct(r.phoneLandscape)} — ${ok(t2)}`,
+    `3. Elementy DOM nad świecami: 1440 ${r.desktop?.over?.count}, z DOM ${r.desktopDom?.over?.count}, 390 ${r.phone?.over?.count} — ${ok(t3)}`,
+    `4. Nachodzące etykiety (wykres + oś): powtórka 1440 ${lab(r.replayDesktop)}, powtórka 390 ${lab(r.replayPhone)}, na żywo 1440 ${lab(r.desktop)}, 390 ${lab(r.phone)} — ${ok(t4)}`,
+    `5. Funkcje w ≤ 2 kliknięciach: komputer ${r.desktopReach?.ok ? 'wszystkie' : r.desktopReach?.missing.join(', ')}, telefon ${r.phoneReach?.ok ? 'wszystkie' : r.phoneReach?.missing.join(', ')}; skróty ${r.desktopKeys?.ok ? 'działają' : JSON.stringify(r.desktopKeys?.map)} — ${ok(t5)}`,
+    `   Listy paska 390×844: sprawdzone ${r.phoneMenus?.checked ?? '—'}, z uciętym panelem: ${r.phoneMenus ? r.phoneMenus.cut.length || 'brak' : '—'}${r.phoneMenus?.cut?.length ? ` (${r.phoneMenus.cut.join(', ')})` : ''}; skupienie z karty Liczby: ${r.focusFromNumbers ? (r.focusFromNumbers.ok ? `wykres i wyjście widoczne, Escape kończy (panel ceny ${(r.focusFromNumbers.share * 100).toFixed(1)}%)` : JSON.stringify(r.focusFromNumbers)) : '—'}`,
+    `6. Ustawienia w localStorage: ${r.storage?.ok ? 'zachowane' : r.storage?.lost.join(', ')} — ${ok(t6)}`,
+    `   Lista wskaźników na telefonie: ${r.phoneIndicators} pozycji na ekranie; cele dotyku < 44 px w pasku: ${r.phoneTargets?.length ?? '—'}`,
+    `   Kolumna DOM 1440×900: poziomy drabiny ${r.domColumn?.ladderRows ?? '—'}, wiersze taśmy (miejsce) ${r.domColumn?.tapeRowsFit ?? '—'}`,
+  ];
+  console.log(lines.join('\n'));
+  fs.writeFileSync(path.join(OUT, `${LABEL}.json`), JSON.stringify(r, null, 2));
+  if (STRICT && !Object.values(r.summary).every(Boolean)) process.exitCode = 1;
+}
+
+main().catch((e) => {
+  console.error(e);
+  stopServer();
+  process.exitCode = 2;
+});

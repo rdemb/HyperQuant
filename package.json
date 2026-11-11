@@ -24,7 +24,8 @@
     "test": "vitest run",
     "data": "node scripts/fetch-public-data.mjs",
     "mcp:build": "vite build --config mcp/vite.config.ts",
-    "mcp:mcpb": "node scripts/mcp/bundle-mcpb.mjs"
+    "mcp:mcpb": "node scripts/mcp/bundle-mcpb.mjs",
+    "ui:check": "vite build && node scripts/ui/layout-check.mjs --serve --strict"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",

@@ -2,11 +2,10 @@ import React, { useEffect, useRef, useSyncExternalStore } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { fmtVol } from '../../orderflow/footprint';
 import { fmtSignedVol } from '../../orderflow/renderer';
-import { Badge, DASH, fmtFixed, numLang } from '../../../ui';
+import { numLang } from '../../../ui';
 import { sdUsable } from '../core/indicators';
 import { fmtBarTime, fmtSince, fromDaily } from '../core/time';
 import type { Hover, IndicatorReadout } from './controller';
-import { type LayerChip, chipsFor } from './layerSources';
 import { fmtPx } from './layout';
 import { tr } from '../../../i18n';
 
@@ -31,8 +30,9 @@ export class HoverSignal {
 }
 
 /**
- * Zwinięta legenda (tylko symbol i OHLC w jednej linii), osobno dla jednego wykresu i dla układu kilku wykresów —
- * w układzie kilku domyślnie zwinięta, bo pełna zasłania mały wykres. Wspólna dla paneli układu, zapis w przeglądarce.
+ * Zwinięta legenda (symbol, OHLC i VWAP w jednej linii), osobno dla jednego wykresu i dla układu kilku wykresów —
+ * domyślnie zwinięta w obu (pełna zasłaniała świece). Wspólna dla paneli układu, zapis w przeglądarce: wybór zapisany
+ * wcześniej przez użytkownika zostaje.
  */
 const FOLD_KEY = 'hq.charts.legend.v1';
 type Fold = { single: boolean; multi: boolean };
@@ -43,7 +43,7 @@ let fold: Fold = (() => {
   } catch {
     // Prywatne okno albo zablokowana pamięć — domyślne
   }
-  return { single: false, multi: true };
+  return { single: true, multi: true };
 })();
 const foldListeners = new Set<() => void>();
 const subscribeFold = (fn: () => void) => {
@@ -94,23 +94,6 @@ const IndicatorFields: React.FC<{ list: IndicatorReadout[]; onEdit?: (iid: strin
   </>
 );
 
-/**
- * Plakietki źródeł włączonych warstw i wskaźników (LIVE, MODEL, SIM, wiek migawki skanera, „—, tylko BTC”) w jednym
- * wierszu; podpowiedź mówi, skąd są dane.
- */
-const Chips: React.FC<{ list: readonly LayerChip[]; small?: boolean }> = ({ list, small = false }) => (
-  <div className={`flex flex-wrap items-center gap-x-2 gap-y-0.5 font-sans ${small ? 'text-[10px]' : 'text-[10.5px]'}`}>
-    {list.map((c) => (
-      <span key={c.key} className="pointer-events-auto inline-flex items-center gap-1" title={c.hint}>
-        <span className="text-ink-3">{c.label}</span>
-        <Badge tone={c.tone} size={small ? 'sm' : undefined}>
-          {c.text}
-        </Badge>
-      </span>
-    ))}
-  </div>
-);
-
 const Field: React.FC<{ label: string; children: React.ReactNode; className?: string; title?: string; secondary?: boolean }> = ({
   label,
   children,
@@ -132,8 +115,9 @@ const Field: React.FC<{ label: string; children: React.ReactNode; className?: st
  * `compact` (telefon): jedna linia — zamknięcie, zmiana, wolumen i VWAP; czas świecy tylko pod palcem, rynek i interwał są w pasku.
  * `multi` — wykres w układzie kilku wykresów (osobny stan zwinięcia legendy).
  * `onEditIndicator` — kliknięty podpis wskaźnika na wykresie ceny (okno jego ustawień).
- * `chips` — plakietki źródeł włączonych warstw i wskaźników: wiersz pod liczbami; zwinięta legenda pokazuje tylko nie-LIVE
- * (MODEL, SIM, wiek migawki, „—, tylko BTC”), telefon — nie-LIVE najpierw, z zawijaniem (nic nie jest ucięte).
+ * Plakietki źródeł warstw są w liście „Warstwy” paska, a liczby taśmy świecy (delta, jej skrajności, transakcje, udział
+ * taśmy) w opisie panelu delty albo CVD — na polu świec zostaje jedna linia. `extra` — dopisek na końcu linii (telefon:
+ * trzy liczby układu).
  */
 export const Legend: React.FC<{
   signal: HoverSignal;
@@ -145,8 +129,8 @@ export const Legend: React.FC<{
   compact?: boolean;
   multi?: boolean;
   onEditIndicator?: (iid: string) => void;
-  chips?: readonly LayerChip[];
-}> = ({ signal, intervalMs, intervalLabel, tapeSince, coin, onBottom, compact = false, multi = false, onEditIndicator, chips = [] }) => {
+  extra?: React.ReactNode;
+}> = ({ signal, intervalMs, intervalLabel, tapeSince, coin, onBottom, compact = false, multi = false, onEditIndicator, extra }) => {
   const h = useSyncExternalStore(signal.subscribe, signal.get);
   const folded = useSyncExternalStore(subscribeFold, () => (multi ? fold.multi : fold.single));
   const ref = useRef<HTMLDivElement>(null);
@@ -171,6 +155,7 @@ export const Legend: React.FC<{
     return (
       <div
         ref={ref}
+        data-chart-legend
         className="absolute left-1.5 top-1 z-10 pointer-events-none max-w-[calc(100%-4.5rem)] rounded px-1.5 bg-surface-1/75 font-mono tabular-nums text-[10.5px] leading-[1.6] text-ink-2"
       >
         {c ? (
@@ -179,13 +164,15 @@ export const Legend: React.FC<{
             <span className={c.c >= c.o ? 'text-of-buy-ink' : 'text-of-sell-ink'}>
               {fmtPx(c.c)} {fmtChange(change)}
             </span>
-            <Field label={tr('Wol.', 'Vol.')}>{fmtVol(c.v)}</Field>
-            {h.ind?.vwap && (
+            {/* Z liczbami układu (VWAP w σ, budżet, RVOL) w tej linii bez wolumenu i VWAP — linia mieści się na 390 px */}
+            {!extra && <Field label={tr('Wol.', 'Vol.')}>{fmtVol(c.v)}</Field>}
+            {!extra && h.ind?.vwap && (
               <Field label={h.ind.anchor === 'week' ? tr('VWAP T', 'VWAP W') : 'VWAP'} className="text-of-vwap">
                 {fmtPx(h.ind.vwap.vwap)}
               </Field>
             )}
             <IndicatorFields list={h.indicators} onEdit={onEditIndicator} />
+            {extra}
           </div>
         ) : h.live ? (
           <div className="text-ink-3">{tr('Wczytywanie świec…', 'Loading candles…')}</div>
@@ -209,7 +196,6 @@ export const Legend: React.FC<{
             </Field>
           </div>
         )}
-        {chips.length > 0 && <Chips list={chipsFor(chips, 'compact')} small />}
       </div>
     );
   }
@@ -246,25 +232,33 @@ export const Legend: React.FC<{
     </button>
   );
 
-  // Zwinięta: jedna linia bez tła — symbol, interwał, czas świecy spoza bieżącej i OHLC; pod nią tylko plakietki nie-LIVE
+  // Zwinięta: jedna linia — symbol, interwał, czas świecy spoza bieżącej, OHLC, zmiana i (z warstwą VWAP) VWAP z odchyleniem
   if (folded) {
-    const foldedChips = chipsFor(chips, 'folded');
     return (
-      <div ref={ref} className="absolute left-2 top-2 z-10 pointer-events-none max-w-[calc(100%-5rem)] rounded-md bg-surface-1/60 px-2 py-0.5 font-mono tabular-nums text-[11px] leading-[1.55] text-ink-2">
+      <div
+        ref={ref}
+        data-chart-legend
+        className="absolute left-2 top-2 z-10 pointer-events-none max-w-[calc(100%-5rem)] rounded-md bg-surface-1/60 px-2 py-0.5 font-mono tabular-nums text-[11px] leading-[1.55] text-ink-2"
+      >
         <div className="flex items-baseline gap-x-2 whitespace-nowrap overflow-hidden">
           {toggle}
           <span className="text-ink-1 font-semibold font-sans">{coin}-PERP</span>
           <span className="text-ink-3">{intervalLabel}</span>
           {!h.live && bar && <span className="text-ink-2">{fmtBarTime(bar.t, intervalMs)}</span>}
           {ohlc}
+          {c && h.ind?.vwap && (
+            <Field label={h.ind.anchor === 'week' ? tr('VWAP T', 'VWAP W') : 'VWAP'} className="text-of-vwap" title={tr('VWAP od początku okresu (cena typowa ważona wolumenem)', 'VWAP since the start of the period (typical price weighted by volume)')}>
+              {fmtPx(h.ind.vwap.vwap)}
+              {sdUsable(h.ind.vwap) && <span className={`ml-1 ${tone(c.c - h.ind.vwap.vwap)}`}>{fmtSigma((c.c - h.ind.vwap.vwap) / h.ind.vwap.sd)}</span>}
+            </Field>
+          )}
         </div>
-        {foldedChips.length > 0 && <Chips list={foldedChips} small />}
       </div>
     );
   }
 
   return (
-    <div ref={ref} className="absolute left-2 top-2 z-10 pointer-events-none max-w-[calc(100%-5rem)] rounded-md bg-surface-1/95 sm:bg-surface-1/80 px-2 py-1 font-mono tabular-nums text-[11px] leading-[1.55] text-ink-2">
+    <div ref={ref} data-chart-legend className="absolute left-2 top-2 z-10 pointer-events-none max-w-[calc(100%-5rem)] rounded-md bg-surface-1/95 sm:bg-surface-1/80 px-2 py-1 font-mono tabular-nums text-[11px] leading-[1.55] text-ink-2">
       {/* Symbol i OHLC w jednej linii, gdy wykres jest szeroki (zawija się na węższym) */}
       <div className="flex flex-wrap items-baseline gap-x-2.5">
         {toggle}
@@ -310,47 +304,9 @@ export const Legend: React.FC<{
           <IndicatorFields list={h.indicators} onEdit={onEditIndicator} />
         </div>
       )}
-      {/* Źródła warstw stałym wierszem nad liczbami taśmy (wiersz pod krzyżem dochodzi niżej, bez przesuwania plakietek) */}
-      {chips.length > 0 && (
-        <div className="py-0.5">
-          <Chips list={chips} />
-        </div>
-      )}
-      {/* Szczegóły taśmy tylko na szerszym ekranie — na telefonie deltę i CVD pokazują opisy paneli */}
-      {fp && bar ? (
-        <div className="hidden sm:flex flex-wrap items-baseline gap-x-2.5">
-          <Field label="Δ" className={tone(fp.delta)} title={tr(`Delta: kupno agresywne − sprzedaż agresywna (${coin})`, `Delta: aggressive buying − aggressive selling (${coin})`)}>
-            {fmtSignedVol(fp.delta)}
-            {fpVol > 0 && <span className="text-ink-3"> ({fmtFixed((fp.delta / fpVol) * 100, 0)}%)</span>}
-          </Field>
-          <Field label="max" className={tone(fp.maxDelta)} title={tr('Najwyższa delta w trakcie świecy', 'Highest delta during the candle')} secondary>
-            {fmtSignedVol(fp.maxDelta)}
-          </Field>
-          <Field label="min" className={tone(fp.minDelta)} title={tr('Najniższa delta w trakcie świecy', 'Lowest delta during the candle')} secondary>
-            {fmtSignedVol(fp.minDelta)}
-          </Field>
-          <Field label={tr('Transakcje', 'Trades')} secondary>
-            {numLang(fp.trades.toLocaleString('en-US'))}
-          </Field>
-          <Field
-            label={tr('Taśma', 'Tape')}
-            className={bar.complete ? 'text-ink-1' : 'text-warn'}
-            title={tr(
-              'Część wolumenu świecy zarejestrowana na taśmie na żywo. Świeca częściowa — nagrywanie zaczęło się lub przerwało w jej trakcie.',
-              'The share of candle volume recorded on the live tape. Partial candle — recording started or broke off during it.'
-            )}
-          >
-            {Number.isFinite(bar.share) ? `${Math.min(100, bar.share * 100).toFixed(0)}%` : DASH}
-            {!bar.complete && tr(' · częściowa', ' · partial')}
-          </Field>
-          {h.cvd && (
-            <Field label="CVD" className={tone(h.cvd.close)} secondary>
-              {fmtSignedVol(h.cvd.close)}
-            </Field>
-          )}
-        </div>
-      ) : (
-        bar &&
+      {/* Liczby taśmy świecy są w opisie panelu delty albo CVD; tu tylko powód pustego footprintu */}
+      {bar &&
+        !fp &&
         (fromDaily(intervalMs) ? (
           <div className="hidden sm:block text-ink-3">{tr('Footprint: na interwałach do 1D', 'Footprint: on timeframes up to 1D')}</div>
         ) : (
@@ -360,8 +316,7 @@ export const Legend: React.FC<{
               ? tr(` — nagrywanie od ${fmtSince(tapeSince, Date.now())}`, ` — recording since ${fmtSince(tapeSince, Date.now())}`)
               : tr(' — czekam na pierwsze transakcje', ' — waiting for the first trades')}
           </div>
-        ))
-      )}
+        ))}
       {h.row && (
         <div className="flex flex-wrap items-baseline gap-x-2.5">
           <Field label={tr('Wiersz', 'Row')}>
