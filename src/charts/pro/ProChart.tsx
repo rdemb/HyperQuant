@@ -41,6 +41,7 @@ import { IndicatorsDialog, type IndicatorsSection, type ToggleItem } from './cha
 import { IndicatorSettings } from './chart/IndicatorSettings';
 import { indicatorLabel, indicatorsLink } from './indicators/registry';
 import { BURSTS_MAX, CLASHES_EVIDENCE, WALLS_DONE_MAX, WALLS_LIVE_MAX, WALL_MIN_MS } from './chart/clashSelect';
+import { AUCTIONS_PER_SIDE, ZONES_EVIDENCE, ZONES_PER_SIDE } from './chart/zonesSelect';
 import { MarketStateBar } from './chart/MarketStateBar';
 import { LayoutHeader } from './chart/LayoutHeader';
 import { type ChartKind, FAVOURITE_INTERVALS, INTERVAL_MENU, KIND_OPTIONS, LayersMenu, type MoreEntry, MoreMenu as BarMore, kindOf, kindPatch } from './chart/ChartBar';
@@ -1618,6 +1619,13 @@ const SettingsMenu: React.FC<{
     </Group>
     <Group title={tr('Nad wykresem', 'Above the chart')}>
       <Check label={tr('Stan rynku (zdanie z faktów)', 'Market state (a sentence of facts)')} checked={s.showState} onChange={(v) => onChange({ showState: v })} />
+      {(s.showZones || s.showAuctions) && (
+        <Check
+          label={tr('Strefy i aukcje: Historia (wszystkie obrysami)', 'Zones and auctions: History (all as outlines)')}
+          checked={s.zonesHistory === true}
+          onChange={(v) => onChange({ zonesHistory: v ? true : undefined })}
+        />
+      )}
     </Group>
     {s.showBlogMap && <BlogMapPicker s={s} maps={blogMaps} now={now} onChange={onChange} />}
     <Group title={tr('Duże zlecenia', 'Large orders')}>
@@ -1860,8 +1868,8 @@ function flowLayers(s: ChartSettings, intervalMs: number, liq: LiqMapState, whal
       key: 'showZones',
       label: tr('Strefy nierównowagi', 'Imbalance zones'),
       hint: tr(
-        `Seria co najmniej ${s.stackedMin || 3} wierszy z nierównowagą po jednej stronie, ciągnięta w prawo, aż cena przejdzie przez strefę — ze świec z taśmą`,
-        `A run of at least ${s.stackedMin || 3} rows with an imbalance on one side, extended right until price trades through the zone — from candles with a tape`
+        `Seria co najmniej ${s.stackedMin || 3} wierszy z nierównowagą po jednej stronie, ze świec zamkniętych i w całości nagranych, na siatce stałej przez dobę UTC (krok z poprzedniej doby). Na wykresie strefy otwarte, najwyżej ${ZONES_PER_SIDE} na stronę najbliższe ostatniemu zamknięciu; zamknięta znika (tryb „Historia” w ustawieniach: wszystkie obrysami). ${ZONES_EVIDENCE.pl}`,
+        `A run of at least ${s.stackedMin || 3} rows with an imbalance on one side, from closed, fully recorded candles, on a grid fixed for the UTC day (step from the previous day). The chart shows open zones, at most ${ZONES_PER_SIDE} per side nearest the last close; a closed zone disappears (“History” mode in the settings: all as outlines). ${ZONES_EVIDENCE.en}`
       ),
       swatch: 'bg-gradient-to-r from-of-imb-buy to-of-imb-sell',
       off: s.stackedMin > 1 ? undefined : tr('Włącz strefy stacked w ustawieniach footprintu', 'Turn on stacked zones in the footprint settings'),
@@ -1870,8 +1878,8 @@ function flowLayers(s: ChartSettings, intervalMs: number, liq: LiqMapState, whal
       key: 'showAuctions',
       label: tr('Niedokończone aukcje', 'Unfinished auctions'),
       hint: tr(
-        'Szczyt albo dołek świecy z kupnem i sprzedażą agresorów (UA), do powrotu ceny — ze świec w całości nagranych',
-        'A candle high or low with both aggressor buying and selling (UA), until price returns — from fully recorded candles'
+        `Szczyt albo dołek świecy z kupnem i sprzedażą agresorów (UA), do powrotu ceny — ze świec zamkniętych i w całości nagranych; na wykresie otwarte, najwyżej ${AUCTIONS_PER_SIDE} na stronę najbliższa cenie`,
+        `A candle high or low with both aggressor buying and selling (UA), until price returns — from closed, fully recorded candles; the chart shows open ones, at most ${AUCTIONS_PER_SIDE} per side nearest the price`
       ),
       swatch: 'bg-warn',
     },
