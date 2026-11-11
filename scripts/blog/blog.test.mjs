@@ -507,6 +507,16 @@ describe('strony serwisu: Wykresy, Lekcje, atlas, 404', () => {
     for (const [, href] of html.matchAll(/(?:href|src)="([^"]+)"/g)) expect(href, href).toMatch(/^(https:|#)/);
   });
 
+  it('404 po angielsku najpierw, polskie zdanie drugie (powłoka po angielsku)', () => {
+    const html = byPath.get('404.html').html;
+    expect(html).toMatch(/<html lang="en">/);
+    expect(html).toContain('<title>Page not found · HyperQuant</title>');
+    const main = html.slice(html.indexOf('<article class="page page--404">'), html.indexOf('</article>'));
+    expect(main).toMatch(/^<article class="page page--404">\n<h1>Page not found<\/h1>/);
+    expect(main.indexOf('<p lang="pl">')).toBeGreaterThan(main.indexOf('<ul class="more">'));
+    expect(main).toContain('Blog (in Polish)');
+  });
+
   it('mapa strony: strony z wersjami językowymi, bez 404', () => {
     const map = sitemapXml(SITE, [], sitemapEntries(SITE, pages));
     expect(map).toContain('xmlns:xhtml="http://www.w3.org/1999/xhtml"');
