@@ -4,6 +4,14 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Kot: częstość dużego ruchu przy bieżącym poziomie (2026-11-11)
+
+#### Dodane
+- **Zdanie z rozliczeń rejestru pod poziomem ruchu w dymku kota** (`src/components/schrodi/moveLevel.ts`, `SchrodiPanel.tsx`, `docs/SCHRODI.md`): „W rejestrze przy tym poziomie duży ruch był w 9 na 10 przypadków (448 prognoz z rejestru).” (EN „In the ledger, at this level a big move happened in 9 of 10 cases (448 forecasts from the ledger).”); przy części ułamkowej od 0,3 do 0,7 zakres, np. „6–7 na 10”. Liczone z tego samego histogramu `cat.scores.big.reliability` co tercyle: koszyk częściowo w tercylu wnosi część prognoz proporcjonalną do nakładającej się szerokości, a jego częstość waży się tą samą częścią. Na podsumowaniu z 11.11 (1343 prognozy): spokojny 2, zwykły 6–7, podwyższony 9 na 10. Pasek bez liczby; za mało danych albo brak podsumowania: zdania nie ma.
+
+#### Naprawione
+- Testy paska kota nie zależą od pory uruchomienia: zegar testu stoi w chwili prognozy (`moveLevel.test.tsx`, `neutralDirection.test.tsx`); wcześniej po 12:03 UTC 11.11 pasek uznawał dane testowe za nieświeże.
+
 ### Wykres W sesji: lżejszy pasek, więcej miejsca na świece (2026-11-11)
 
 Pomiar `npm run ui:check` (Chrome bez okna na zbudowanej stronie, 1440 × 900 i 390 × 844; `scripts/ui/layout-check.mjs`). Przed zmianą panel ceny zajmował 40,9% wysokości okna 1440 × 900 (37,6% z kolumną DOM) i 40,5% na telefonie 390 × 844.

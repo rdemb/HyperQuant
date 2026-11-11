@@ -22,7 +22,7 @@ import {
 import { type HourModel, type HourPoint, hourPath } from '../../utils/schrodiHour';
 import { type CatTrust, type HourTrust, type OodFeature, TRUST_DESIGN, TRUST_HEADS, type TrustHeadKey, driftAlarms, oodKeys, proofState } from '../../utils/schrodiTrust';
 import { DIR_BAR, DIR_TONE, dirHiddenNote, dirProven, upBand, upOdds } from './direction';
-import { MOVE_PCT_PROMOTED, type MoveLevel, moodLevel, moveAuc, moveCalNote, moveLevelWord, moveView } from './moveLevel';
+import { MOVE_PCT_PROMOTED, type MoveLevel, moodLevel, moveAuc, moveCalNote, levelFreqLine, moveLevelWord, moveView } from './moveLevel';
 import { type Mood, SchrodiCat } from './SchrodiCat';
 import { HIST_MIN, type HourLive, useHourModel, useTouchModel } from './useSchrodi';
 
@@ -558,6 +558,7 @@ export const SchrodiPanel: React.FC<{
               <span className="text-ink-2">🌊 {tr('Ruch w najbliższej godzinie', 'Move in the next hour')}</span>
               <span className="font-mono text-sm font-semibold text-accent">{move.kind === 'level' ? moveLevelWord(move.level) : '—'}</span>
             </div>
+            {move.kind === 'level' && move.freq && <p className="mt-1 text-xs text-ink-2">{levelFreqLine(move.freq)}</p>}
             <p className="mt-1 text-[11px] text-ink-3">
               {move.kind === 'level'
                 ? tr(
