@@ -48,7 +48,7 @@ describe('legenda', () => {
     broken: null,
     boxes: [{ side: 1, from: asOf - 6 * MS, last: asOf - 4 * MS, lo: 99, hi: 100, cells: [asOf - 6 * MS, asOf - 4 * MS] }],
     far: { demand: 2, supply: 1 },
-    tapeLast12: 12,
+    tapeRecent: 32,
     history: false,
   };
   const text = (x: EffortSelection | null, ms = MS) =>
@@ -57,13 +57,13 @@ describe('legenda', () => {
       .join(' ');
 
   it('pasma po stronach z liczbą dalszych, ostatnia seria pudełek i świece z taśmą', () => {
-    expect(text(sel)).toBe('strefy: 2 popytu · 1 podaży (dalej 3) · pudełko: kupno, 4 świece temu · taśma 12 z 12');
+    expect(text(sel)).toBe('strefy: 2 popytu · 1 podaży (dalej 3) · pudełko: kupno, 4 świece temu · taśma 32 z 32');
   });
 
   it('bez pudełka „—”; bez taśmy „pudełka: —, brak taśmy”; tryb Historia', () => {
-    expect(text({ ...sel, boxes: [], far: { demand: 0, supply: 0 } })).toBe('strefy: 2 popytu · 1 podaży · pudełko: — · taśma 12 z 12');
-    expect(text({ ...sel, boxes: [], tapeLast12: 0 })).toBe('strefy: 2 popytu · 1 podaży (dalej 3) · pudełka: —, brak taśmy');
-    expect(text({ ...sel, history: true })).toBe('historia: 3 strefy · 1 seria pudełek · taśma 12 z 12');
+    expect(text({ ...sel, boxes: [], far: { demand: 0, supply: 0 } })).toBe('strefy: 2 popytu · 1 podaży · pudełko: — · taśma 32 z 32');
+    expect(text({ ...sel, boxes: [], tapeRecent: 0 })).toBe('strefy: 2 popytu · 1 podaży (dalej 3) · pudełka: —, brak taśmy');
+    expect(text({ ...sel, history: true })).toBe('historia: 3 strefy · 1 seria pudełek · taśma 32 z 32');
   });
 
   it('powyżej 1 h bez rysowania, z powodem; bez zamkniętych świec — czekanie', () => {
@@ -103,7 +103,8 @@ describe('wpis w rejestrze', () => {
       'ponad połowę',
       '1,2 × średnia |delty|',
       '3 poprzednie świece',
-      'tylko na świecy z deltą z taśmy',
+      'jego świeca i 19 świec przed nią mają deltę z taśmy',
+      'z ostatnich 32 świec ma taśmę',
       'najbliższe ostatniemu zamknięciu',
       'od świecy, na której zamknięciu strefa powstała',
       'w 52% przypadków, tak samo jak losowy poziom',

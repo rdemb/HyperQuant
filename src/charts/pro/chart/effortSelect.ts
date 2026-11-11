@@ -1,4 +1,4 @@
-import type { EffortResult, EffortZone, Side, VBar, ZoneKind } from '../core/effortZones';
+import { DEFAULT_EFFORT_PARAMS, type EffortResult, type EffortZone, type Side, type VBar, type ZoneKind } from '../core/effortZones';
 
 /**
  * Co rysuje warstwa „Strefy absorpcji i pudełka Effort” w chwili `asOf` (ostatnia zamknięta świeca, w powtórce świeca
@@ -9,9 +9,12 @@ import type { EffortResult, EffortZone, Side, VBar, ZoneKind } from '../core/eff
  *   niż 0,25 ATR, to jedno pasmo (najwyżej 1,5 ATR wysokości), ze znacznikiem łączonym („A·D”).
  * - Na każdą stronę najwyżej 2 pasma najbliższe ostatniemu zamknięciu (telefon: 1); równa odległość — młodsze.
  * - Pasmo zaczyna się na świecy, na której zamknięciu strefa stała się znana (`createdAt`), kraniec swingu to znacznik.
- * - Przebita: sam obrys przez 6 świec od przebicia, najnowsza, tylko na komputerze, bez niej w miejscu strefy po zmianie roli.
+ * - Przebita: sam obrys przez 6 świec od przebicia, najnowsza, tylko na komputerze, tylko strefa uzbrojona przed
+ *   przebiciem (inna nigdy nie była pasmem), bez niej w miejscu strefy po zmianie roli.
  * - Pudełka: kolejne pudełka strony (najwyżej 3 świece odstępu) to jedna seria; rysowana ostatnia seria strony, gdy jej
- *   ostatnia świeca ma najwyżej 12 świec (telefon: nowsza z dwóch). Pudełko tylko na świecy z deltą z taśmy.
+ *   ostatnia świeca ma najwyżej 12 świec (telefon: nowsza z dwóch). Pudełko tylko wtedy, gdy jego świeca i 19 świec
+ *   przed nią mają deltę z taśmy: próg agresji to średnia |delty| z 20 świec, a przybliżona delta w tym oknie zmieniałaby
+ *   zestaw pudełek po doczytaniu taśmy.
  * - Tryb „Historia”: wszystkie strefy znane w chwili `asOf` i wszystkie serie pudełek, samymi obrysami.
  *
  * Wybór zależy tylko od świec do `asOf`: ta sama chwila daje ten sam rysunek niezależnie od głębokości historii
@@ -23,6 +26,10 @@ import type { EffortResult, EffortZone, Side, VBar, ZoneKind } from '../core/eff
 export const BROKEN_BARS = 6;
 /** Pudełko starsze niż tyle świec nie jest rysowane; w prawo od serii krawędzie do tylu świec. */
 export const BOX_RECENT = 12;
+/** Okno średniej |delty| modelu (próg agresji pudełka): tyle świec z taśmą do i z świecą pudełka. */
+const TAPE_WINDOW = DEFAULT_EFFORT_PARAMS.smaLen;
+/** Odcinek taśmy w legendzie: 12 świec pudełek i okno średniej przed nimi. */
+export const TAPE_SPAN = BOX_RECENT + TAPE_WINDOW;
 const MERGE_GAP_ATR = 0.25;
 const MERGE_MAX_ATR = 1.5;
 const SERIES_GAP = 3;
@@ -59,8 +66,8 @@ export interface EffortSelection {
   boxes: EffortBoxSeries[];
   /** Pasma aktywne pominięte jako dalsze od ceny. */
   far: { demand: number; supply: number };
-  /** Ile z ostatnich 12 zamkniętych świec ma deltę z taśmy. */
-  tapeLast12: number;
+  /** Ile z ostatnich `TAPE_SPAN` (32) zamkniętych świec ma deltę z taśmy. */
+  tapeRecent: number;
   history: boolean;
 }
 
@@ -125,8 +132,14 @@ const distance = (b: EffortBand, close: number) => (close >= b.lo && close <= b.
 
 /** Serie pudełek z taśmą do chwili `asOf`, rosnąco po czasie, osobno dla stron. */
 function boxSeries(r: EffortResult, bars: readonly VBar[], ms: number, asOf: number): EffortBoxSeries[] {
+  // Świece, które same i 19 świec przed nimi mają deltę z taśmy (cała średnia |delty| progu z taśmy)
   const tape = new Set<number>();
-  for (const b of bars) if (b.t <= asOf && b.delta !== null) tape.add(b.t);
+  let run = 0;
+  for (const b of bars) {
+    if (b.t > asOf) break;
+    run = b.delta !== null ? run + 1 : 0;
+    if (run >= TAPE_WINDOW) tape.add(b.t);
+  }
   const out: EffortBoxSeries[] = [];
   const open = new Map<Side, EffortBoxSeries>();
   for (const b of [...r.boxes].sort((a, c) => a.t - c.t)) {
@@ -148,15 +161,15 @@ function boxSeries(r: EffortResult, bars: readonly VBar[], ms: number, asOf: num
 
 export function selectEffort(r: EffortResult, bars: readonly VBar[], ms: number, asOf: number, o: EffortSelectOptions): EffortSelection {
   const i = indexAt(bars, asOf);
-  const empty: EffortSelection = { bands: [], broken: null, boxes: [], far: { demand: 0, supply: 0 }, tapeLast12: 0, history: o.history };
+  const empty: EffortSelection = { bands: [], broken: null, boxes: [], far: { demand: 0, supply: 0 }, tapeRecent: 0, history: o.history };
   if (i < 0) return empty;
-  let tapeLast12 = 0;
-  for (let k = Math.max(0, i - BOX_RECENT + 1); k <= i; k++) if (bars[k].delta !== null) tapeLast12++;
+  let tapeRecent = 0;
+  for (let k = Math.max(0, i - TAPE_SPAN + 1); k <= i; k++) if (bars[k].delta !== null) tapeRecent++;
   const known = r.zones.filter((z) => z.createdAt <= asOf);
   const series = boxSeries(r, bars, ms, asOf);
 
   if (o.history) {
-    return { ...empty, tapeLast12, bands: known.map((z) => bandOf([z], z.to !== null && z.to <= asOf ? z.to : null)), boxes: series };
+    return { ...empty, tapeRecent, bands: known.map((z) => bandOf([z], z.to !== null && z.to <= asOf ? z.to : null)), boxes: series };
   }
 
   const close = bars[i].c;
@@ -178,7 +191,7 @@ export function selectEffort(r: EffortResult, bars: readonly VBar[], ms: number,
   let broken: EffortBand | null = null;
   if (!o.phone) {
     const recent = known
-      .filter((z) => z.end === 'broken' && z.to !== null && z.to <= asOf && asOf - z.to < BROKEN_BARS * ms)
+      .filter((z) => z.end === 'broken' && z.to !== null && z.to <= asOf && asOf - z.to < BROKEN_BARS * ms && z.armedAt !== null && z.armedAt <= z.to)
       .sort((a, b) => (b.to as number) - (a.to as number) || b.id - a.id)[0];
     const flipHere = recent && bands.some((b) => b.kinds.includes('flip') && b.lo < recent.hi && b.hi > recent.lo);
     if (recent && !flipHere) broken = bandOf([recent], recent.to);
@@ -189,5 +202,5 @@ export function selectEffort(r: EffortResult, bars: readonly VBar[], ms: number,
     .filter((s): s is EffortBoxSeries => !!s && asOf - s.last <= BOX_RECENT * ms);
   const boxes = o.phone && recentBoxes.length > 1 ? [recentBoxes.reduce((a, b) => (b.last > a.last ? b : a))] : recentBoxes;
 
-  return { bands, broken, boxes, far, tapeLast12, history: false };
+  return { bands, broken, boxes, far, tapeRecent, history: false };
 }
