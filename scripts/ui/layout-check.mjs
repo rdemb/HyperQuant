@@ -92,6 +92,14 @@ const EFFORT_STORE = {
  */
 const CLASH_REPLAY = '#charts?replay=lessons&m=BTC&i=1m&v=candles&t=2026-10-24T19:30:00Z&station=cockpit&layers=bubbles,clashes';
 const CLASH_MAX = 13;
+/**
+ * Bąble zleceń: Kokpit 1m na powtórce 24.10 o 19:30, tylko warstwa bąbli. Mierzone na powtórce, bo na stałych danych
+ * na żywo taśmy nie ma (atrapa strumienia nie wysyła transakcji) i bąbli by nie było. Liczba z wyboru warstwy
+ * (`selectBubbles`, atrybut `data-bubbles`, bez serii), limit 40 na ekran (projekt: mediana doby 15–25 i 3–7).
+ */
+const BUBBLE_REPLAY = '#charts?replay=lessons&m=BTC&i=1m&v=candles&t=2026-10-24T19:30:00Z&station=cockpit&layers=bubbles';
+const BUBBLES_MAX = 40;
+const bubbleCount = `(() => { const c = window.__hq.chart(); const host = c && c.root.closest('[data-bubbles]'); return host ? Number(host.dataset.bubbles) : null; })()`;
 const clashCount = `(() => { const c = window.__hq.chart(); const host = c && c.root.closest('[data-clash-objects]'); return host ? Number(host.dataset.clashObjects) : null; })()`;
 /**
  * Strefy nierównowagi i niedokończone aukcje: układ „Aukcja i otwarcie” na powtórce 24.10 o 19:30, 5m footprint, warstwy
@@ -527,6 +535,20 @@ async function main() {
     await sleep(400);
     report.clashes.desktop = await probe(page, clashCount);
     await shot(page, '1440-sciany');
+    // Szlif 4: bąble zleceń w Kokpicie 1m na powtórce (1440, potem 390)
+    report.bubbles = {};
+    await open(page, BUBBLE_REPLAY);
+    await sleep(4000);
+    await page.mouseAway();
+    await sleep(400);
+    report.bubbles.desktop = await probe(page, bubbleCount);
+    await shot(page, '1440-bable');
+    await page.viewport(390, 844, true);
+    await open(page, BUBBLE_REPLAY);
+    await sleep(4000);
+    report.bubbles.phone = await probe(page, bubbleCount);
+    await shot(page, '390-bable');
+    await page.viewport(1440, 900, false);
     // Szlif 2: strefy nierównowagi i aukcje w „Aukcja i otwarcie” (1440, potem 390)
     report.zones = {};
     await open(page, ZONES_REPLAY);
@@ -579,7 +601,8 @@ async function main() {
   const s3 = typeof r.clashes?.desktop === 'number' && r.clashes.desktop <= CLASH_MAX;
   const zoneOk = (x) => !!x && x.rects <= ZONES_MAX.rects && x.lines <= ZONES_MAX.lines;
   const s2 = zoneOk(r.zones?.desktop) && zoneOk(r.zones?.phone);
-  r.summary = { t1, t2, t3, t4, t5, t6, s1, s2, s3 };
+  const s4 = [r.bubbles?.desktop, r.bubbles?.phone].every((n) => typeof n === 'number' && n <= BUBBLES_MAX);
+  r.summary = { t1, t2, t3, t4, t5, t6, s1, s2, s3, s4 };
   const lines = [
     `Pomiar „${LABEL}” (${BASE})`,
     `1. Panel ceny 1440×900: ${pct(r.desktop)} (próg 62%, zapas ${margin(r.desktop?.share ?? 0, LIMITS.desktop)}), z kolumną DOM: ${pct(r.desktopDom)} (próg 60%, zapas ${margin(r.desktopDom?.share ?? 0, LIMITS.desktopDom)}) — ${ok(t1)}`,
@@ -599,6 +622,7 @@ async function main() {
     `   Obiekty — powtórka 24.10 1440: ${obj(r.replayDesktop)}; powtórka 390: ${obj(r.replayPhone)}`,
     `Szlif 2. Strefy nierównowagi / linie aukcji („Aukcja i otwarcie”, powtórka 24.10 19:30, 5m): 1440 ${r.zones?.desktop ? `${r.zones.desktop.rects} / ${r.zones.desktop.lines}` : '—'}, 390 ${r.zones?.phone ? `${r.zones.phone.rects} / ${r.zones.phone.lines}` : '—'} (limit ${ZONES_MAX.rects} / ${ZONES_MAX.lines}) — ${ok(s2)}`,
     `Szlif 3. Ściany i serie (Kokpit 1m, powtórka 24.10 19:30): 1440 ${r.clashes?.desktop ?? '—'} (limit ${CLASH_MAX}) — ${ok(s3)}`,
+    `Szlif 4. Bąble zleceń (Kokpit 1m, powtórka 24.10 19:30): 1440 ${r.bubbles?.desktop ?? '—'}, 390 ${r.bubbles?.phone ?? '—'} (limit ${BUBBLES_MAX}) — ${ok(s4)}`,
     `Szlif 1. Prostokąty wskaźnika Effort (powtórka 24.10 19:30, BTC 5m): 1440 ${r.effort?.desktop ?? '—'} (limit ${EFFORT_MAX.desktop}), 390 ${r.effort?.phone ?? '—'} (limit ${EFFORT_MAX.phone}) — ${ok(s1)}`
   );
   const metrics = metricsOf(r);
