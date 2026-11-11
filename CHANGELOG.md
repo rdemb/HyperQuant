@@ -4,6 +4,14 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Kto handluje: okno klasy kont pełne tylko w jednym zakresie numeracji (2026-11-11)
+
+#### Naprawione
+- **Okno 60 min klasy kont (Kto handluje) przez granice numeracji kont** (`src/charts/pro/core/players.ts`, `src/charts/pro/core/accountScope.ts`): w historii serwera konto ma numer ważny w dobie UTC (starsze pliki: w godzinie), a na żywo adres, więc okno przez przełom doby, przez granicę godziny starego pliku albo przez chwilę otwarcia strony liczy jedno konto jako dwa. Takie okno ma teraz `complete: false` (wcześniej „pełne” znaczyło tylko taśmę z kontami przez samą świecę); pełne okno musi też w całości leżeć w taśmie z kontami. Sprawdzenie zakresu (`oneAccountScope`) przeniesione z `indicators/registry.ts` do wspólnego modułu.
+- **Historia sprzed granicy sprzątania nie oznacza okna jako pełnego** (`src/charts/pro/store/proStore.ts`, `restoreHistory`): pokrycie taśmą z kontami z pliku historii liczy się od granicy sprzątania (`keptFrom`), bo starszych zleceń z tego pliku już się nie składa.
+- Opis „Duzi gracze” (PL i EN) podaje też przyczynę z przełomem doby (`src/charts/pro/chart/marketState.ts`).
+- Testy: `src/charts/pro/__tests__/players.test.ts` (przełom doby, granica godziny starego pliku, historia i konta na żywo w jednym oknie, okno poza taśmą), `src/charts/pro/__tests__/whoRetention.test.ts` (plik historii wczytany po sprzątaniu).
+
 ### Ściany i serie: próg z chwili zdarzenia, tylko istotne ściany, limit na ekranie (2026-11-11)
 
 Na nagranej dobie 24.10.2026 (powtórka 19:30, Kokpit 1m, warstwy bąbli oraz serii i ścian, 1440 × 900) wykres rysował 82 ściany i serie; po zmianie 10 (`npm run ui:check`, wybór warstwy, nie piksele). Liczba „przed” zmierzona na stronie z `main` z tymczasowym licznikiem w warstwie (bez commita). Na stałych danych na żywo taśmy nie ma (atrapa strumienia nie wysyła transakcji), więc pomiar jest na powtórce.

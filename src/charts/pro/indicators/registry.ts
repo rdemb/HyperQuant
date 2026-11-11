@@ -8,6 +8,7 @@ import { ofiEvent } from '../../../utils/microMechanics';
 import { RVOL_MIN_DAYS, rvolSeries } from '../../../utils/rvol';
 import { Extreme, OlsWindow, RegimeDetector, RobustLine, Window, Wma, ema, rma } from './primitives';
 import { DAY, INTERVALS, MONTH, intervalById } from '../core/time';
+import { oneAccountScope } from '../core/accountScope';
 import { numLang } from '../../../ui/format';
 import { PRO } from '../chart/theme';
 import { tr } from '../../../i18n';
@@ -436,27 +437,6 @@ export function accountScopeKey(id: string): string | null {
   const end = id.indexOf(':');
   const scope = id.slice(1, end < 0 ? id.length : end);
   return scope.startsWith('d') ? `d:${scope.slice(1)}` : `h:${scope}`;
-}
-
-/**
- * Czy konta zleceń (bez zleceń bez konta) leżą w jednym zakresie numeracji: wszystkie na żywo albo z jednej godziny lub
- * doby — to samo co równy `accountScopeKey`, ale bez alokacji na zlecenie (pętla po wszystkich zleceniach okna i świecy):
- * przedrostek `~<zakres>:` pierwszego konta z historii (klucze z `toFills` zawsze mają dwukropek, więc `~1:` ≠ `~10:`).
- */
-function oneAccountScope(lists: readonly (readonly { taker: string }[])[]): boolean {
-  // undefined — jeszcze bez konta; '' — konta na żywo (bez `~`); inaczej przedrostek zakresu z dwukropkiem
-  let prefix: string | undefined;
-  for (const list of lists) {
-    for (const o of list) {
-      const id = o.taker;
-      if (id === '') continue;
-      if (prefix === undefined) {
-        const end = id.indexOf(':');
-        prefix = !id.startsWith('~') ? '' : end < 0 ? id : id.slice(0, end + 1);
-      } else if (prefix === '' ? id.startsWith('~') : !id.startsWith(prefix)) return false;
-    }
-  }
-  return true;
 }
 
 /** Siatka podzleceń TWAP Hyperliquid i tolerancja fazy w niej przy łączeniu podzleceń jednego TWAP-u. */
