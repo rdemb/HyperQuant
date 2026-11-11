@@ -29,10 +29,13 @@ jobs:
   build:
     name: Build Vite App
     runs-on: ubuntu-latest
+    # Grupa pages nie przerywa trwających przebiegów: zawieszony krok blokowałby wszystkie następne wdrożenia
+    timeout-minutes: 20
     permissions:
       contents: read
     env:
-      # Wpisy bloga: gałąź blog publicznego repo danych, czytana bez uwierzytelnienia jako niezaufana treść
+      # Wpisy bloga: gałąź blog publicznego repo danych, czytana bez uwierzytelnienia jako niezaufana treść. Kroki gałęzi
+      # działają tylko przy zmiennej repozytorium BLOG_INTAKE = on (wyłącznik; bez niej workflow jak przed ich dodaniem)
       BLOG_REPO: https://github.com/rdemb/hyperquant-data.git
     outputs:
       indexnow: ${{ steps.indexnow.outputs.body }}
@@ -42,6 +45,18 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+
+      # Głowa gałęzi blog (pusto: gałęzi nie ma albo GitHub nie odpowiada) i opublikowany blog/source.json: sha gałęzi, sha
+      # main i rejestr wpisów (known=false: pliku nie da się odczytać, wtedy bramka nie wdraża niczego). Przed setup-node
+      # (Node runnera, skrypt bez zależności), żeby sprawdzenie trwało sekundy
+      - name: Blog Branch Head
+        id: blog
+        if: vars.BLOG_INTAKE == 'on'
+        continue-on-error: true
+        run: |
+          sha=$(GIT_TERMINAL_PROMPT=0 timeout 30 git ls-remote --heads "$BLOG_REPO" refs/heads/blog | cut -f1)
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          node scripts/blog/intake.mjs published --save "$RUNNER_TEMP/published.json" >> "$GITHUB_OUTPUT"
 
       - name: Setup Node.js 24
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
@@ -56,55 +71,55 @@ jobs:
         run: node scripts/fetch-public-data.mjs
         continue-on-error: true
 
-      # Głowa gałęzi blog (pusto: gałęzi nie ma albo GitHub nie odpowiada) i sha z opublikowanego blog/source.json
-      # (known=false: strona nie odpowiedziała, więc o wdrożeniu z powodu bloga nie da się rozstrzygnąć)
-      - name: Blog Branch Head
-        id: blog
-        continue-on-error: true
-        run: |
-          sha=$(GIT_TERMINAL_PROMPT=0 timeout 30 git ls-remote --heads "$BLOG_REPO" refs/heads/blog | cut -f1)
-          echo "sha=$sha" >> "$GITHUB_OUTPUT"
-          node scripts/blog/intake.mjs published >> "$GITHUB_OUTPUT"
-
-      # Przebieg z harmonogramu wdraża tylko nowe dane albo nowy stan gałęzi blog: bez zmian względem Pages kończy się tutaj
+      # Przebieg z harmonogramu wdraża tylko nowe dane; przy włączonej gałęzi blog także nowy stan gałęzi albo main inny niż
+      # w opublikowanym source.json (pominięte wdrożenie po pushu powtarza się samo). Przy włączonej gałęzi i nieczytelnym
+      # source.json nic nie jest wdrażane: bez rejestru stare wpisy z gałęzi wyglądałyby na nowe
       - name: Decide Deploy
         id: gate
         run: |
-          if [ "$EVENT" != schedule ] || [ "$CHANGED" = true ]; then
+          if [ "$INTAKE" = on ] && [ "$KNOWN" != true ]; then
+            echo "Gałąź blog włączona, a blog/source.json strony nieczytelny: bez wdrożenia"
+          elif [ "$EVENT" != schedule ] || [ "$CHANGED" = true ]; then
             echo "deploy=true" >> "$GITHUB_OUTPUT"
-          elif [ -n "$BLOG_SHA" ] && [ "$KNOWN" = true ] && [ "$BLOG_SHA" != "$PUBLISHED" ]; then
+          elif [ "$INTAKE" = on ] && [ -n "$BLOG_SHA" ] && [ "$BLOG_SHA" != "$PUBLISHED" ]; then
             echo "Gałąź blog: ${PUBLISHED:-brak} → $BLOG_SHA"
             echo "deploy=true" >> "$GITHUB_OUTPUT"
+          elif [ "$INTAKE" = on ] && [ "$MAIN_SHA" != "$PUBLISHED_MAIN" ]; then
+            echo "Main: ${PUBLISHED_MAIN:-brak} na stronie, głowa $MAIN_SHA"
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
           else
-            echo "Dane i gałąź blog bez zmian albo pobranie nie powiodło się: bez wdrożenia"
+            echo "Dane bez zmian albo pobranie nie powiodło się: bez wdrożenia"
           fi
         env:
+          INTAKE: ${{ vars.BLOG_INTAKE }}
           EVENT: ${{ github.event_name }}
           CHANGED: ${{ steps.feeds.outputs.changed }}
+          MAIN_SHA: ${{ github.sha }}
           BLOG_SHA: ${{ steps.blog.outputs.sha }}
           PUBLISHED: ${{ steps.blog.outputs.published }}
+          PUBLISHED_MAIN: ${{ steps.blog.outputs.main }}
           KNOWN: ${{ steps.blog.outputs.known }}
 
-      # Filtr treści przed npm ci i bez zależności: pełny klon gałęzi blog do katalogu tymczasowego runnera (poza repo, więc
-      # testy i kompilator go nie widzą; bez poświadczeń), do content/blog trafiają tylko pliki wpisów, które przeszły filtr;
-      # wpis z main ma pierwszeństwo. Gałęzi nie ma albo klon się nie udał: build z samego main, w source.json poprzedni sha.
-      # Błąd filtra też nie zatrzymuje strony: content/blog wraca do stanu z main
+      # Filtr treści przed npm ci i bez zależności: pełny klon gałęzi blog (limit 120 s) do katalogu tymczasowego runnera
+      # (poza repo, więc testy i kompilator go nie widzą; bez poświadczeń), do content/blog trafiają tylko pliki wpisów, które
+      # przeszły filtr (nowy wpis: date w oknie chwili buildu wg rejestru z source.json); wpis z main ma pierwszeństwo.
+      # Gałęzi nie ma albo klon się nie udał: build z samego main, w source.json poprzedni sha. Błąd filtra też nie zatrzymuje
+      # strony: content/blog wraca do stanu z main
       - name: Blog Intake
-        if: steps.gate.outputs.deploy == 'true'
+        if: vars.BLOG_INTAKE == 'on' && steps.gate.outputs.deploy == 'true'
         run: |
           src=
-          if [ -n "$BLOG_SHA" ] && GIT_TERMINAL_PROMPT=0 git clone -q --no-tags --single-branch --branch blog "$BLOG_REPO" "$RUNNER_TEMP/blog"; then
+          if [ -n "$BLOG_SHA" ] && GIT_TERMINAL_PROMPT=0 timeout 120 git clone -q --no-tags --single-branch --branch blog "$BLOG_REPO" "$RUNNER_TEMP/blog"; then
             src="$RUNNER_TEMP/blog"
           fi
-          if ! node scripts/blog/intake.mjs filter --src "$src" --dest content/blog --prev "$PUBLISHED" --out "$RUNNER_TEMP/blog-intake.json"; then
+          if ! node scripts/blog/intake.mjs filter --src "$src" --dest content/blog --published "$RUNNER_TEMP/published.json" --out "$RUNNER_TEMP/blog-intake.json"; then
             echo "::warning::Filtr gałęzi blog zawiódł: build tylko z wpisów main"
             git checkout -- content/blog && git clean -fdq -- content/blog
-            node scripts/blog/intake.mjs filter --src "" --dest content/blog --prev "$PUBLISHED" --out "$RUNNER_TEMP/blog-intake.json"
+            node scripts/blog/intake.mjs filter --src "" --dest content/blog --published "$RUNNER_TEMP/published.json" --out "$RUNNER_TEMP/blog-intake.json"
           fi
           echo "BLOG_INTAKE=$RUNNER_TEMP/blog-intake.json" >> "$GITHUB_ENV"
         env:
           BLOG_SHA: ${{ steps.blog.outputs.sha }}
-          PUBLISHED: ${{ steps.blog.outputs.published }}
 
       - name: Install Dependencies
         if: steps.gate.outputs.deploy == 'true'

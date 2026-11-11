@@ -1,5 +1,6 @@
 // Filtr treści gałęzi `blog` repo danych: wpisy z zewnątrz jako niezaufane dane (scripts/blog/intake.mjs).
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -16,21 +17,17 @@ const HTML = new TextEncoder().encode('<html><script>alert(1)</script>');
 
 const md = (id, date = '2026-11-11T12:00:00+01:00') => ({ path: `${id}.md`, mode: '100644', size: 400, kind: 'file', text: `---\ntitle: "x"\ndate: "${date}"\n---\nTreść` });
 const file = (p, head, size = 1000, mode = '100644', kind = 'file') => ({ path: p, mode, size, kind, head });
-const run = (entries, { mainIds = [], history = {} } = {}) => {
-  const h = { ...history };
-  for (const e of entries) if (e.path.endsWith('.md') && !h[e.path]) h[e.path] = { firstMs: NOW - HOUR, lastMs: NOW - HOUR, commits: 1 };
-  return intake({ entries, history: h, mainIds: new Set(mainIds), now: NOW });
-};
+const run = (entries, { mainIds = [], registry = {} } = {}) => intake({ entries, registry, mainIds: new Set(mainIds), now: NOW });
+const sha256 = (text) => createHash('sha256').update(text).digest('hex');
+const entry = (seen, text = 'x', changed = null) => ({ hash: sha256(text), seen, changed });
 const reasonOf = (r, key) => r.skipped.find((s) => s.id === key || s.path === key)?.reason;
 
 describe('intake: dobre wpisy przechodzą', () => {
-  it('wpis z wykresy.json i obrazami PNG, JPEG, WebP: lista plików do skopiowania i historia', () => {
+  it('wpis z wykresy.json i obrazami PNG, JPEG, WebP: lista plików do skopiowania', () => {
     const id = '2026-11-11-mapa-dnia';
-    const r = run([md(id), file(`${id}/wykresy.json`), file(`${id}/a.png`, PNG), file(`${id}/b-1.jpg`, JPG), file(`${id}/c.webp`, WEBP)], {
-      history: { [`${id}.md`]: { firstMs: NOW - 2 * HOUR, lastMs: NOW - HOUR, commits: 2 } },
-    });
+    const r = run([md(id), file(`${id}/wykresy.json`), file(`${id}/a.png`, PNG), file(`${id}/b-1.jpg`, JPG), file(`${id}/c.webp`, WEBP)]);
     expect(r.skipped).toEqual([]);
-    expect(r.posts).toEqual([{ id, files: [`${id}.md`, `${id}/a.png`, `${id}/b-1.jpg`, `${id}/c.webp`, `${id}/wykresy.json`], firstMs: NOW - 2 * HOUR, lastMs: NOW - HOUR, commits: 2 }]);
+    expect(r.posts).toEqual([{ id, files: [`${id}.md`, `${id}/a.png`, `${id}/b-1.jpg`, `${id}/c.webp`, `${id}/wykresy.json`] }]);
   });
 
   it('typ obrazu po pierwszych bajtach', () => {
@@ -106,18 +103,26 @@ describe('intake: każdy odrzucony przypadek z nazwanym powodem', () => {
     expect(reasonOf(r, '2026-11-11-d')).toMatch(/wpis ponad 8 MB/);
   });
 
-  it('41. wpis doby kalendarzowej (kolejność pierwszego commita) jest pomijany; inny dzień liczony osobno', () => {
+  it('41. wpis doby kalendarzowej (kolejność pola date) jest pomijany; inny dzień liczony osobno', () => {
     const ids = Array.from({ length: 41 }, (_, i) => `2026-11-11-n${String(i).padStart(2, '0')}`);
-    const history = Object.fromEntries(ids.map((id, i) => [`${id}.md`, { firstMs: NOW - HOUR + (i === 0 ? 1 : i === 40 ? 0 : i) * 1000, lastMs: NOW - HOUR, commits: 1 }]));
-    const r = run([...ids.map((id) => md(id)), md('2026-11-10-wczoraj', '2026-11-10T20:00:00+01:00')], { history });
+    // n40 ma najwcześniejszą datę, więc jest w limicie; ostatni wg daty to n39
+    const date = (i) => (i === 40 ? '2026-11-11T10:59:00Z' : `2026-11-11T11:${String(i).padStart(2, '0')}:00Z`);
+    const r = run([...ids.map((id, i) => md(id, date(i))), md('2026-11-10-wczoraj', '2026-11-10T20:00:00+01:00')]);
     expect(r.posts).toHaveLength(41);
-    // n40 ma najwcześniejszy commit, więc jest w limicie; ostatni commit doby to n39
     expect(r.skipped).toEqual([{ id: '2026-11-11-n39', reason: 'limit 40 nowych wpisów na dobę kalendarzową (2026-11-11)' }]);
+  });
+
+  it('wpisy z rejestru liczą się do limitu doby, ale nigdy nie wypadają; pomijany jest nowy', () => {
+    const ids = Array.from({ length: 40 }, (_, i) => `2026-11-11-r${String(i).padStart(2, '0')}`);
+    const registry = Object.fromEntries(ids.map((id) => [id, entry('2026-11-11T06:00:00.000Z')]));
+    const r = run([md('2026-11-11-nowy', '2026-11-11T09:00:00Z'), ...ids.map((id) => md(id, '2026-11-11T11:30:00Z'))], { registry });
+    expect(r.posts.map((p) => p.id)).toEqual(ids);
+    expect(r.skipped).toEqual([{ id: '2026-11-11-nowy', reason: 'limit 40 nowych wpisów na dobę kalendarzową (2026-11-11)' }]);
   });
 
   it('identyfikator istniejący w main (pierwszeństwo main)', () => {
     const id = '2026-10-26-mapa-dnia';
-    const r = run([md(id, '2026-10-26T08:00:00+01:00'), file(`${id}/x.png`, PNG)], { mainIds: [id], history: { [`${id}.md`]: { firstMs: Date.parse('2026-10-26T07:00:00Z'), lastMs: 0, commits: 1 } } });
+    const r = run([md(id, '2026-10-26T08:00:00+01:00'), file(`${id}/x.png`, PNG)], { mainIds: [id], registry: { [id]: entry('2026-10-26T07:05:00.000Z') } });
     expect(r.posts).toEqual([]);
     expect(reasonOf(r, id)).toMatch(/istnieje w main/);
   });
@@ -135,26 +140,37 @@ describe('intake: każdy odrzucony przypadek z nazwanym powodem', () => {
     expect(reasonOf(r, '2026-11-11-bez-daty')).toMatch(/brak pola date/);
   });
 
-  it('data ponad 24 h przed pierwszym commitem pliku (wpis „z przeszłości”)', () => {
+  it('nowy wpis (spoza rejestru) z date ponad 24 h przed buildem jest odrzucony; ten sam wpis z rejestru zostaje', () => {
     const id = '2026-11-09-mapa';
-    const r = run([md(id, '2026-11-09T10:00:00+01:00')], { history: { [`${id}.md`]: { firstMs: Date.parse('2026-11-10T09:01:00Z'), lastMs: 0, commits: 1 } } });
-    expect(r.posts).toEqual([]);
-    expect(reasonOf(r, id)).toMatch(/wcześniejsza niż pierwszy commit/);
+    const old = [md(id, '2026-11-10T11:59:00Z'), md('2026-11-10-tuz', '2026-11-10T12:01:00Z')];
+    const r = run(old);
+    expect(r.posts.map((p) => p.id)).toEqual(['2026-11-10-tuz']);
+    expect(reasonOf(r, id)).toBe('data wcześniejsza niż chwila buildu − 24 h, a wpisu nie ma w rejestrze opublikowanych (nowy wpis „z przeszłości”)');
+    expect(run(old, { registry: { [id]: entry('2026-11-09T09:05:00.000Z') } }).posts.map((p) => p.id)).toEqual(['2026-11-09-mapa', '2026-11-10-tuz']);
   });
 });
 
 describe('intake: źródło opublikowane na stronie (blog/source.json)', () => {
   const SHA = 'a'.repeat(40);
-  it('200 z sha, 200 bez sha (gałęzi jeszcze nie było), 404 przed pierwszym wdrożeniem', () => {
-    expect(publishedSource(200, JSON.stringify({ sha: SHA, at: 'x', posts: 1, skipped: [] }))).toEqual({ known: true, sha: SHA });
-    expect(publishedSource(200, JSON.stringify({ sha: null }))).toEqual({ known: true, sha: '' });
-    expect(publishedSource(404, 'Not found')).toEqual({ known: true, sha: '' });
+  const MAIN = 'b'.repeat(40);
+  const UNKNOWN = { known: false, sha: '', main: '', registry: {} };
+  it('200: sha gałęzi, sha main i rejestr opublikowanych wpisów', () => {
+    const registry = { '2026-11-11-a': entry('2026-11-11T07:00:00.000Z'), '2026-11-10-b': entry('2026-11-10T07:00:00.000Z', 'y', '2026-11-11T08:00:00.000Z') };
+    expect(publishedSource(200, JSON.stringify({ sha: SHA, main: MAIN, at: 'x', posts: registry, skipped: [] }))).toEqual({ known: true, sha: SHA, main: MAIN, registry });
+    expect(publishedSource(200, JSON.stringify({ sha: null, main: MAIN, posts: {} }))).toEqual({ known: true, sha: '', main: MAIN, registry: {} });
   });
-  it('błąd sieci, 5xx albo zepsuty plik: stan nieznany', () => {
-    expect(publishedSource(0, '')).toEqual({ known: false, sha: '' });
-    expect(publishedSource(503, '')).toEqual({ known: false, sha: '' });
-    expect(publishedSource(200, '<html>')).toEqual({ known: false, sha: '' });
-    expect(publishedSource(200, JSON.stringify({ sha: 'zły; rm -rf' }))).toEqual({ known: false, sha: '' });
+  it('plik bez rejestru (starszy format): rejestr pusty, wpisy z main i tak wchodzą do niego przy buildzie', () => {
+    expect(publishedSource(200, JSON.stringify({ sha: null, at: 'x', posts: 0, skipped: [] }))).toEqual({ known: true, sha: '', main: '', registry: {} });
+  });
+  it('nie da się odczytać: 404, błąd sieci, 5xx, zepsuty plik albo rejestr: stan nieznany', () => {
+    expect(publishedSource(404, 'Not found')).toEqual(UNKNOWN);
+    expect(publishedSource(0, '')).toEqual(UNKNOWN);
+    expect(publishedSource(503, '')).toEqual(UNKNOWN);
+    expect(publishedSource(200, '<html>')).toEqual(UNKNOWN);
+    expect(publishedSource(200, JSON.stringify({ sha: 'zły; rm -rf' }))).toEqual(UNKNOWN);
+    expect(publishedSource(200, JSON.stringify({ sha: SHA, main: 'x' }))).toEqual(UNKNOWN);
+    expect(publishedSource(200, JSON.stringify({ sha: SHA, posts: { '2026-11-11-a': { hash: 'x', seen: 'wczoraj', changed: null } } }))).toEqual(UNKNOWN);
+    expect(publishedSource(200, JSON.stringify({ sha: SHA, posts: { '../x': entry('2026-11-11T07:00:00.000Z') } }))).toEqual(UNKNOWN);
   });
 });
 
@@ -197,51 +213,110 @@ function gitRepo() {
 }
 
 describe.skipIf(!hasGit)('intake: gałąź blog w prawdziwym repozytorium', () => {
-  it('3 dobre i 2 złe wpisy: 3 strony, source.json ze sha i 2 pominiętymi z powodami; wpis zmieniony po publikacji', async () => {
+  const REPO = { repo: 'https://github.com/x/data', branch: 'blog' };
+  const SITE = { url: 'https://example.org/HQ/', repo: 'https://github.com/x/HQ' };
+  const MAIN = 'e'.repeat(40);
+  const published = (registry = {}, sha = '') => ({ known: true, sha, main: MAIN, registry });
+  const iso = (ms) => new Date(ms).toISOString();
+  const tempDest = () => {
+    const dest = path.join(mkdtempSync(path.join(tmpdir(), 'hq-site-')), 'content', 'blog');
+    mkdirSync(dest, { recursive: true });
+    return dest;
+  };
+  const build = async (dest, report, now = NOW) => {
+    const out = mkdtempSync(path.join(tmpdir(), 'hq-dist-'));
+    const n = await buildBlog({ contentDir: dest, outDir: out, site: SITE, pages: false, now, intake: report, main: MAIN });
+    const blog = path.join(out, 'blog');
+    return { n, blog, source: JSON.parse(readFileSync(path.join(blog, 'source.json'), 'utf8')), page: (id) => readFileSync(path.join(blog, id, 'index.html'), 'utf8') };
+  };
+
+  it('3 dobre i 2 złe wpisy: 3 strony, source.json z sha, main, rejestrem i 2 pominiętymi; inna treść wpisu z rejestru: changed = build i dopisek', async () => {
     const repo = gitRepo();
     const good = ['2026-11-11-mapa-dnia', '2026-11-11-otwarcie-londynu', '2026-11-11-podsumowanie'];
-    repo.put(`${good[0]}.md`, postText(good[0], '2026-11-11T08:00:00+01:00'));
-    repo.put(`${good[1]}.md`, postText(good[1], '2026-11-11T09:00:00+01:00') + '\n\n![Wykres](wykres.png)');
+    const text = [postText(good[0], '2026-11-11T08:00:00+01:00'), postText(good[1], '2026-11-11T09:00:00+01:00') + '\n\n![Wykres](wykres.png)', postText(good[2], '2026-11-11T10:00:00+01:00')];
+    good.forEach((id, i) => repo.put(`${id}.md`, text[i]));
     repo.put(`${good[1]}/wykres.png`, Buffer.from(PNG));
-    repo.put(`${good[2]}.md`, postText(good[2], '2026-11-11T10:00:00+01:00'));
     // zły wpis 1: plik SVG w folderze (filtr); zły wpis 2: wezwanie do transakcji (walidator wpisów)
     repo.put('2026-11-11-svg.md', postText('2026-11-11-svg', '2026-11-11T10:30:00+01:00'));
     repo.put('2026-11-11-svg/x.svg', '<svg onload="alert(1)"/>');
     repo.put('2026-11-11-wezwanie.md', postText('2026-11-11-wezwanie', '2026-11-11T11:00:00+01:00', { title: 'Kupujcie teraz' }));
     const first = repo.commit('wpisy', '2026-11-11T10:05:00Z');
-    repo.put(`${good[0]}.md`, postText(good[0], '2026-11-11T08:00:00+01:00').replace('Kontekst', 'Kontekst po poprawce'));
-    const sha = repo.commit('poprawka', '2026-11-11T11:30:00Z');
+    const edited = text[0].replace('Kontekst', 'Kontekst po poprawce');
+    repo.put(`${good[0]}.md`, edited);
+    // data commita poprawki ustawiona przez wysyłającego (tu w przeszłości) nie ma znaczenia: liczy się chwila buildu
+    const sha = repo.commit('poprawka', '2026-11-11T07:30:00Z');
 
-    const site = mkdtempSync(path.join(tmpdir(), 'hq-site-'));
-    const dest = path.join(site, 'content', 'blog');
-    mkdirSync(dest, { recursive: true });
-    const report = filterBranch({ src: repo.dir, dest, now: NOW, prev: first, repo: 'https://github.com/x/data', branch: 'blog' });
-    expect(report).toMatchObject({ sha, repo: 'https://github.com/x/data', branch: 'blog', rewritten: false });
+    const dest = tempDest();
+    const registry = { [good[0]]: entry('2026-11-11T07:05:00.000Z', text[0]), [good[2]]: entry('2026-11-11T09:05:00.000Z', text[2]) };
+    const report = filterBranch({ src: repo.dir, dest, now: NOW, published: published(registry, first), ...REPO });
+    expect(report).toMatchObject({ sha, ...REPO, rewritten: false, registry });
     expect(report.posts.map((p) => p.id)).toEqual([...good, '2026-11-11-wezwanie'].sort());
-    expect(report.posts.find((p) => p.id === good[0])).toMatchObject({ commits: 2, lastMs: Date.parse('2026-11-11T11:30:00Z'), firstMs: Date.parse('2026-11-11T10:05:00Z') });
     expect(readdirSync(dest).sort()).toEqual([`${good[0]}.md`, good[1], `${good[1]}.md`, `${good[2]}.md`, '2026-11-11-wezwanie.md']);
     expect(readdirSync(path.join(dest, good[1]))).toEqual(['wykres.png']);
     expect(report.skipped.map((s) => s.id)).toEqual(['2026-11-11-svg']);
 
-    const out = mkdtempSync(path.join(tmpdir(), 'hq-dist-'));
-    const n = await buildBlog({ contentDir: dest, outDir: out, site: { url: 'https://example.org/HQ/', repo: 'https://github.com/x/HQ' }, pages: false, now: NOW, intake: report });
+    const { n, blog, source, page } = await build(dest, report);
     expect(n).toBe(3);
-    const blog = path.join(out, 'blog');
     for (const id of good) expect(existsSync(path.join(blog, id, 'index.html')), id).toBe(true);
     expect(existsSync(path.join(blog, '2026-11-11-wezwanie'))).toBe(false);
-    const source = JSON.parse(readFileSync(path.join(blog, 'source.json'), 'utf8'));
-    expect(source).toMatchObject({ sha, at: new Date(NOW).toISOString(), posts: 3, rewritten: false });
+    expect(source).toMatchObject({ sha, main: MAIN, at: iso(NOW), rewritten: false });
+    expect(source.posts).toEqual({
+      [good[0]]: { hash: sha256(edited), seen: '2026-11-11T07:05:00.000Z', changed: iso(NOW) },
+      [good[1]]: { hash: sha256(text[1]), seen: iso(NOW), changed: null },
+      [good[2]]: registry[good[2]],
+    });
     expect(source.skipped.map((s) => [s.id, s.reason])).toEqual([
       ['2026-11-11-svg', expect.stringMatching(/x\.svg/)],
       ['2026-11-11-wezwanie', expect.stringMatching(/wezwanie/)],
     ]);
-    // historia wpisu z gałęzi blog; poprawka po publikacji widoczna pod tytułem
-    const edited = readFileSync(path.join(blog, good[0], 'index.html'), 'utf8');
-    expect(edited).toContain(`href="https://github.com/x/data/commits/blog/${good[0]}.md"`);
-    expect(edited).toMatch(/<p class="edited">Zmieniony po publikacji: <time datetime="2026-11-11T11:30:00Z">środa, 11 listopada 2026, 12:30<\/time><\/p>/);
-    const once = readFileSync(path.join(blog, good[2], 'index.html'), 'utf8');
-    expect(once).not.toMatch(/class="edited"/);
-    expect(once).toContain(`href="https://github.com/x/data/commits/blog/${good[2]}.md"`);
+    // historia wpisu z gałęzi blog; poprawka po publikacji widoczna pod tytułem z chwilą buildu, który ją zobaczył
+    expect(page(good[0])).toContain(`href="https://github.com/x/data/commits/blog/${good[0]}.md"`);
+    expect(page(good[0])).toMatch(/<p class="edited">Zmieniony po publikacji: <time datetime="2026-11-11T12:00:00Z">środa, 11 listopada 2026, 13:00<\/time><\/p>/);
+    expect(page(good[2])).not.toMatch(/class="edited"/);
+    expect(page(good[2])).toContain(`href="https://github.com/x/data/commits/blog/${good[2]}.md"`);
+  }, 30_000);
+
+  it('wpis z date i datą commita sprzed tygodnia (spoza rejestru) jest odrzucony', () => {
+    const repo = gitRepo();
+    repo.put('2026-11-04-mapa-dnia.md', postText('2026-11-04-mapa-dnia', '2026-11-04T08:00:00+01:00'));
+    repo.put('2026-11-11-mapa-dnia.md', postText('2026-11-11-mapa-dnia', '2026-11-11T08:00:00+01:00'));
+    repo.commit('wpisy', '2026-11-04T07:10:00Z');
+    const dest = tempDest();
+    const report = filterBranch({ src: repo.dir, dest, now: NOW, published: published(), ...REPO });
+    expect(report.posts.map((p) => p.id)).toEqual(['2026-11-11-mapa-dnia']);
+    expect(report.skipped).toEqual([{ id: '2026-11-04-mapa-dnia', reason: expect.stringMatching(/wcześniejsza niż chwila buildu − 24 h/) }]);
+    expect(readdirSync(dest)).toEqual(['2026-11-11-mapa-dnia.md']);
+  });
+
+  it('pierwszy przebieg po włączeniu (pusty rejestr, wpisy z main istnieją): main bez zmian i w rejestrze; stary wpis z gałęzi odrzucony; potem zmiana wpisu z main daje dopisek', async () => {
+    const repo = gitRepo();
+    repo.put('2026-11-11-nowy.md', postText('2026-11-11-nowy', '2026-11-11T10:00:00+01:00'));
+    repo.put('2026-11-08-stary.md', postText('2026-11-08-stary', '2026-11-08T10:00:00+01:00'));
+    repo.commit('wpisy', '2026-11-11T09:30:00Z');
+    const dest = tempDest();
+    const mainId = '2026-10-24-mapa-dnia';
+    const mainText = postText(mainId, '2026-10-24T09:30:00+02:00');
+    writeFileSync(path.join(dest, `${mainId}.md`), mainText);
+
+    const report = filterBranch({ src: repo.dir, dest, now: NOW, published: published({}), ...REPO });
+    expect(report.skipped).toEqual([{ id: '2026-11-08-stary', reason: expect.stringMatching(/wcześniejsza niż chwila buildu − 24 h/) }]);
+    const first = await build(dest, report);
+    expect(first.n).toBe(2);
+    expect(first.source.posts).toEqual({ [mainId]: { hash: sha256(mainText), seen: iso(NOW), changed: null }, '2026-11-11-nowy': expect.objectContaining({ seen: iso(NOW), changed: null }) });
+    expect(first.page(mainId)).not.toMatch(/class="edited"/);
+    expect(first.page(mainId)).toContain(`href="https://github.com/x/HQ/commits/main/content/blog/${mainId}.md"`);
+
+    // następny build: rejestr z opublikowanego source.json; wpis z main poprawiony (PR) → widoczny dopisek
+    const later = NOW + 3_600_000;
+    // świeży checkout main (content/blog bez wpisów z gałęzi) z poprawionym wpisem
+    const dest2 = tempDest();
+    writeFileSync(path.join(dest2, `${mainId}.md`), mainText.replace('Kontekst', 'Kontekst po poprawce'));
+    const report2 = filterBranch({ src: repo.dir, dest: dest2, now: later, published: publishedSource(200, JSON.stringify(first.source)), ...REPO });
+    expect(report2.posts.map((p) => p.id)).toEqual(['2026-11-11-nowy']);
+    const second = await build(dest2, report2, later);
+    expect(second.source.posts[mainId]).toEqual({ hash: sha256(mainText.replace('Kontekst', 'Kontekst po poprawce')), seen: iso(NOW), changed: iso(later) });
+    expect(second.source.posts['2026-11-11-nowy']).toEqual(first.source.posts['2026-11-11-nowy']);
+    expect(second.page(mainId)).toMatch(/<p class="edited">Zmieniony po publikacji: <time datetime="2026-11-11T13:00:00Z">/);
   }, 30_000);
 
   it('dowiązania (do /etc/passwd i ../../src) i plik wykonywalny z trybu w git; nic z nich nie trafia do content/blog', () => {
@@ -253,8 +328,8 @@ describe.skipIf(!hasGit)('intake: gałąź blog w prawdziwym repozytorium', () =
     repo.put('2026-11-11-exe/x.png', Buffer.from(PNG));
     repo.git(['update-index', '--chmod=+x', '2026-11-11-exe/x.png']);
     repo.commit('wpisy', '2026-11-11T10:05:00Z');
-    const dest = mkdtempSync(path.join(tmpdir(), 'hq-dest-'));
-    const report = filterBranch({ src: repo.dir, dest, now: NOW, prev: '', repo: 'https://github.com/x/data', branch: 'blog' });
+    const dest = tempDest();
+    const report = filterBranch({ src: repo.dir, dest, now: NOW, published: published(), ...REPO });
     expect(report.posts).toEqual([]);
     expect(report.skipped).toEqual([
       { id: '2026-11-11-exe', reason: expect.stringMatching(/x\.png: plik wykonywalny/) },
@@ -277,10 +352,11 @@ describe.skipIf(!hasGit)('intake: gałąź blog w prawdziwym repozytorium', () =
     expect(changedPosts(repo.dir, 'b'.repeat(40))).toEqual({ rewritten: true, files: [] });
   });
 
-  it('gałęzi nie ma: raport z poprzednim sha, nic nie kopiuje', () => {
-    const dest = mkdtempSync(path.join(tmpdir(), 'hq-dest-'));
+  it('gałęzi nie ma: raport z poprzednim sha i rejestrem, nic nie kopiuje', () => {
+    const dest = tempDest();
     const SHA = 'c'.repeat(40);
-    expect(filterBranch({ src: null, dest, now: NOW, prev: SHA, repo: 'https://github.com/x/data', branch: 'blog' })).toEqual({ sha: SHA, repo: 'https://github.com/x/data', branch: 'blog', rewritten: false, posts: [], skipped: [] });
+    const registry = { '2026-11-11-a': entry('2026-11-11T07:00:00.000Z') };
+    expect(filterBranch({ src: null, dest, now: NOW, published: published(registry, SHA), ...REPO })).toEqual({ sha: SHA, ...REPO, rewritten: false, registry, posts: [], skipped: [] });
     expect(readdirSync(dest)).toEqual([]);
   });
 });
