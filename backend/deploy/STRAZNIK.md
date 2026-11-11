@@ -28,7 +28,10 @@ Po zmianie:
 5. **Dostęp do plików.** Strażnik czyta klucz wdrożeniowy repo danych przez `LoadCredential` systemd: plik klucza
    zostaje własnością skanera, a strażnik dostaje kopię widoczną tylko dla siebie. `status.json` skanera i puls serwera
    powiadomień mają teraz prawa `0640`, więc strażnik czyta je jako członek grupy `hyperquant`. Reszta stanu usług
-   zostaje `0600`. Sekrety R2 nie trafiają do środowiska strażnika.
+   zostaje `0600`. Strażnik nie czyta pliku skanera `scanner.env` (sekrety R2 i reszta konfiguracji). `install.sh`
+   tworzy dla niego `/etc/hyperquant/watchdog.env` tylko z tym, czego używa: `HQ_GIT_REMOTE`, `HQ_OUT_DIR` i
+   `HQ_STATE_DIR`. Wartości bierze z `scanner.env` przy każdej instalacji, więc po zmianie w `scanner.env` uruchom
+   `install.sh` ponownie.
 
 ### Kompromis między trybami
 
@@ -46,15 +49,35 @@ Tryb domyślny jest bezpieczny dla roota bez żadnej konfiguracji. Tryb tagów z
 ## Wymagania
 
 - polkit z regułami JavaScript (wersja 0.106 lub nowsza). Ubuntu 23.04 i nowsze oraz Debian 12 mają go w pakiecie
-  `polkitd`. Ubuntu 22.04 ma polkit 0.105 bez reguł JS: tam strażnik nie zrestartuje usług, tylko zgłosi alarm.
-  `install.sh` wypisuje wtedy ostrzeżenie.
+  `polkitd`. **Ubuntu 22.04 ma polkit 0.105 bez reguł JS.**
 - systemd 247 lub nowszy (`LoadCredential`), git 2.34 lub nowszy (podpisy ssh).
 
+**Przed instalacją sprawdź wersję polkit:**
+
 ```bash
-pkaction --version      # oczekiwane: 0.106 lub więcej
+pkaction --version      # oczekiwane: 0.106 lub więcej (np. „pkaction version 124”)
 systemctl --version | head -1
 git --version
 ```
+
+Bez polkit albo z wersją starszą niż 0.106 `install.sh` zatrzymuje się z błędem, zanim cokolwiek zmieni. Na takim
+serwerze strażnik nie mógłby restartować usług. Instalacja bez restartów (strażnik tylko alarmuje) wymaga jawnej
+zgody: `HQ_WATCHDOG_NO_POLKIT=1 bash install.sh`.
+
+### Wariant dla polkit 0.105 (do decyzji, niezaimplementowany)
+
+Jeśli serwer zostaje na Ubuntu 22.04, restart bez polkit da się zrobić tak:
+
+- strażnik zapisuje plik-prośbę `restart-scanner` albo `restart-alerts` w swoim katalogu stanu
+  (`/var/lib/hyperquant-watchdog/requests/`);
+- jednostka `hyperquant-watchdog-restart.path` roota (`PathExistsGlob=`) uruchamia na ten plik
+  `hyperquant-watchdog-restart.service`;
+- ta usługa (root, `Type=oneshot`) ma na stałe wpisane polecenie restartu jednej z dwóch usług. Nazwę wybiera tylko
+  z tych dwóch nazw plików i nie czyta treści pliku, a potem usuwa prośbę.
+
+Zalety: działa bez polkit, a root nie wykonuje niczego z treści przygotowanej przez strażnika. Wady: dwie dodatkowe
+jednostki, limit restartów trzeba pilnować także po stronie roota, wynik restartu wraca do strażnika dopiero
+w następnym przebiegu. Prostsza droga to aktualizacja systemu do wersji z polkit 0.106 lub nowszym.
 
 ## Część A. Strażnik bez root (tryb domyślny)
 
@@ -66,10 +89,11 @@ git --version
    git -C /opt/hyperquant/app rev-parse HEAD > /root/hq-przed/commit.txt
    ```
 
-2. **Zainstaluj polkit**, jeśli go nie ma:
+2. **Zainstaluj polkit**, jeśli go nie ma, i sprawdź wersję (0.106 lub nowsza, patrz „Wymagania”):
 
    ```bash
    command -v pkaction || apt-get install -y polkitd
+   pkaction --version
    ```
 
 3. **Zatrzymaj timery na czas zmiany**, żeby strażnik nie zgłosił restartu jako awarii:
@@ -86,10 +110,15 @@ git --version
    bash /root/install.sh
    ```
 
-   Skrypt tworzy użytkownika `hyperquant-watchdog`, kopiuje strażnika i skrypt aktualizacji, instaluje regułę polkit
-   i drop-in z kluczem (`/etc/systemd/system/hyperquant-watchdog.service.d/deploy-key.conf`, gdy w
-   `/etc/hyperquant/scanner.env` jest `HQ_GIT_SSH_KEY`). Na koniec restartuje skaner i serwer powiadomień oraz włącza
-   timery.
+   Najpierw sprawdza polkit; przy wersji starszej niż 0.106 kończy się błędem i niczego nie zmienia. Potem:
+   - tworzy użytkownika `hyperquant-watchdog`;
+   - kopiuje strażnika i skrypt aktualizacji;
+   - instaluje regułę polkit;
+   - tworzy `/etc/hyperquant/watchdog.env`;
+   - tworzy drop-in z kluczem (`/etc/systemd/system/hyperquant-watchdog.service.d/deploy-key.conf`), gdy w
+     `/etc/hyperquant/scanner.env` jest `HQ_GIT_SSH_KEY`.
+
+   Na koniec restartuje skaner i serwer powiadomień oraz włącza timery.
 
 5. **Sprawdź** (wynik obok polecenia):
 
@@ -98,6 +127,8 @@ git --version
    #   User=hyperquant-watchdog (nie root), SupplementaryGroups=hyperquant,
    #   ExecStart z /opt/hyperquant/watchdog/watchdog.mjs (nie z /opt/hyperquant/app)
    systemctl show -p LoadCredential hyperquant-watchdog      # deploy_key:<ścieżka klucza>, gdy jest repo danych
+   systemctl show -p EnvironmentFiles hyperquant-watchdog    # tylko /etc/hyperquant/watchdog.env, bez scanner.env
+   cat /etc/hyperquant/watchdog.env                          # HQ_GIT_REMOTE, HQ_OUT_DIR, HQ_STATE_DIR i nic więcej
    sleep 90; stat -c '%a %U:%G %n' /var/lib/hyperquant/out/status.json /var/lib/hyperquant/state/alerts-pulse.json
    #   640 hyperquant:hyperquant (pliki zapisane już przez nowy kod)
    systemctl start hyperquant-watchdog; journalctl -u hyperquant-watchdog -n 5 --no-pager
@@ -175,6 +206,14 @@ echo "main:       $(git -C /opt/hyperquant/app rev-parse origin/main)"   # inny 
 journalctl -u hyperquant-update -n 5 --no-pager                 # tagi bez podpisu: „pominięty”
 ```
 
+W trybie gałęzi każdy przebieg zapisuje w dzienniku linię „tryb gałęzi, bez sprawdzania podpisów”, także gdy nic się
+nie zmienia. Taka linia przy włączonym trybie tagów oznacza, że plik zaufanych kluczy zniknął albo jest pusty.
+Ochrona jest wtedy wyłączona:
+
+```bash
+journalctl -u hyperquant-update --since -1h --no-pager | grep 'tryb gałęzi'    # w trybie tagów: pusto
+```
+
 ### B5. Codzienna praca
 
 Wdrożenie to nowy podpisany tag wypchnięty do repo. Timer przenosi kod w ciągu 15 min i restartuje usługi tylko
@@ -220,7 +259,7 @@ systemctl show -p User hyperquant-watchdog     # pusto = root, jak dawniej
 Dawne jednostki działają z nowym kodem repo: strażnik jako root czyta klucz i pliki tak jak dawniej. Dawna usługa
 aktualizacji nie zna trybu tagów i znowu idzie za `main`. Jeśli kod ma zostać na tagu, wyłącz jej timer. Użytkownik
 `hyperquant-watchdog` i reguła polkit mogą zostać. Pełne sprzątanie:
-`rm /etc/polkit-1/rules.d/50-hyperquant-watchdog.rules /opt/hyperquant/bin/hyperquant-update; rm -r /opt/hyperquant/watchdog; userdel hyperquant-watchdog`.
+`rm /etc/polkit-1/rules.d/50-hyperquant-watchdog.rules /etc/hyperquant/watchdog.env /opt/hyperquant/bin/hyperquant-update; rm -r /opt/hyperquant/watchdog; userdel hyperquant-watchdog`.
 Po wycofaniu nie uruchamiaj ponownie nowego `install.sh`, bo zainstaluje nowe jednostki.
 
 ## Co zostaje

@@ -81,6 +81,14 @@ git clone -q --branch main origin.git app`);
       expect(appHead()).toBe(devRev('main'));
       expect(calls()).toEqual([]);
     }, 60_000);
+
+    it('każdy przebieg (także bez zmian) zapisuje w dzienniku tryb bez sprawdzania podpisów; pusty plik kluczy też', () => {
+      const MODE = 'tryb gałęzi, bez sprawdzania podpisów';
+      expect(sh('update none 2>&1')).toContain(MODE);
+      sh(': > empty-signers');
+      expect(sh('update empty-signers 2>&1')).toContain(MODE);
+      expect(calls()).toEqual([]);
+    }, 60_000);
   });
 
   describe('tryb podpisanych tagów (jest plik zaufanych kluczy)', () => {
@@ -92,6 +100,7 @@ git clone -q --branch main origin.git app`);
       expect(appHead()).toBe(before);
       expect(calls()).toEqual([]);
       expect(out).toContain('v1.2.0');
+      expect(out).not.toContain('tryb gałęzi');
     }, 60_000);
 
     it('tag podpisany kluczem spoza listy zaufanych nie zmienia kodu', () => {
