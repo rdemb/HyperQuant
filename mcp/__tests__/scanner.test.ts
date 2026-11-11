@@ -13,6 +13,7 @@ import { twapShareOf } from '../../src/utils/twapShare';
 import { isWhaleLayer } from '../../src/utils/whaleLayer';
 import { DISCLAIMER, type Envelope, type Num } from '../src/envelope';
 import { TWAPS_MAX_BYTES } from '../src/sources';
+import { forecastLedger } from '../src/tools/scanner';
 import { HL_INFO, HOUR, MIN, type Route, connect, testSources } from './helpers';
 import {
   ADDR,
@@ -142,7 +143,7 @@ interface LedgerData {
   why: string | null;
   verifyUrl: string;
   returns: { horizon: string; settled: Num; crpss: Num; cov90: Num; cov60: Num; covAci: Num; kupiecP90: Num }[];
-  touch: { settled: Num; brier: Num; brierBase: Num; bss: Num };
+  touch: { settled: Num; brier: Num; brierBase: Num; bss: Num; brierDist: Num; bssDist: Num };
   pending: Num;
   voided: Num;
   slotsIssued: Num;
@@ -690,6 +691,8 @@ describe('forecast_ledger', () => {
       brier: { value: 0.181, unit: 'ratio' },
       brierBase: { value: 0.205, unit: 'ratio' },
       bss: { value: 0.117, unit: 'ratio' },
+      brierDist: { value: 0.19, unit: 'ratio' },
+      bssDist: { value: 0.047, unit: 'ratio' },
     });
     expect(d.pending).toMatchObject({ value: 4, unit: 'count' });
     expect(d.voided).toMatchObject({ value: 1, unit: 'count' });
@@ -697,6 +700,28 @@ describe('forecast_ledger', () => {
     expect(d.slotsSkipped).toMatchObject({ value: 6, unit: 'count' });
     // Bez hashy w odpowiedzi (głowa łańcucha zostaje w pliku i na stronie)
     expect(JSON.stringify(env)).not.toContain('synthetic-head');
+  });
+
+  it('BSS dotknięć zawsze w parze: wobec częstości poziomu (bss) i wobec odległości (bssDist); opis i uwaga mówią o obu', async () => {
+    const { env } = await call<LedgerData>('forecast_ledger', allRoutes());
+    expect(env.data.touch.bssDist.badge).toBe('LIVE');
+    const notes = env.notes.join(' ');
+    expect(notes).toContain('bssDist');
+    expect(notes).toMatch(/odległoś/);
+    expect(notes).toMatch(/godzinowych/);
+    const desc = forecastLedger.description;
+    expect(desc).toMatch(/BSS[^.]*(odległoś|distance)/);
+    await close?.();
+    close = null;
+    // Starsze podsumowanie bez bazy odległości: bssDist i bss null z powodem (BSS tylko w parze, jak na stronie)
+    const old = ledger();
+    const { bssClim: _c, brierDist: _b, bssDist: _d, pairsDist: _p, ...touch } = old.scores.touch;
+    const r = await call<LedgerData>('forecast_ledger', allRoutes({ [LEDGER_URL]: { json: { ...old, scores: { ...old.scores, touch } } } }));
+    expect(r.env.data.touch.brierBase.value).toBe(0.205);
+    for (const n of [r.env.data.touch.bss, r.env.data.touch.bssDist]) {
+      expect(n.value).toBeNull();
+      expect(n.why).toContain('w parze');
+    }
   });
 
   it('pokrycie przedziałów (cov90, cov60, covAci i test Kupca) z plakietką MODEL i metodą wiersza stożka karty Rozliczenia; CRPSS i liczby LIVE', async () => {
