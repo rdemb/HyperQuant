@@ -1,8 +1,8 @@
 {
   "name": "HyperQuant — BTC Day Trading Desk",
   "short_name": "HyperQuant",
-  "description": "Darmowy desk do day tradingu BTC-PERP na Hyperliquid: przygotowanie, sesja i rozliczenie dnia na danych rynkowych — nie generuje sygnałów.",
-  "lang": "pl",
+  "description": "Free BTC-PERP day-trading desk for Hyperliquid: preparation, session and review of the day on market data. It does not generate signals.",
+  "lang": "en",
   "dir": "ltr",
   "start_url": "./#charts",
   "scope": "./",
@@ -18,23 +18,23 @@
   ],
   "shortcuts": [
     {
-      "name": "Przed sesją",
-      "short_name": "Przed sesją",
-      "description": "Przygotowanie: mapa dnia, paliwo i godziny, kalendarz makro, funding i mapa likwidacji",
+      "name": "Pre-session",
+      "short_name": "Pre-session",
+      "description": "Preparation: day map, fuel and hours, macro calendar, funding and liquidation map",
       "url": "./#before",
       "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
     },
     {
-      "name": "W sesji",
-      "short_name": "W sesji",
-      "description": "Kokpit: footprint na żywo, kolumna DOM i taśmy, kohorty i likwidacje",
+      "name": "In session",
+      "short_name": "In session",
+      "description": "Cockpit: live footprint, DOM column and tapes, cohorts and liquidations",
       "url": "./#charts",
       "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
     },
     {
-      "name": "Po sesji",
-      "short_name": "Po sesji",
-      "description": "Rozliczenie: przegląd dnia, dziennik prognoz i dziennik transakcji",
+      "name": "Post-session",
+      "short_name": "Post-session",
+      "description": "Review: day review, forecast ledger and trade journal",
       "url": "./#after",
       "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
     }
