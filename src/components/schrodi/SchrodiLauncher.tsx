@@ -4,6 +4,7 @@ import { useDeskLedger } from '../../state/useDeskLedger';
 import { isCat } from '../../utils/deskLedger';
 import { mindChange } from '../../utils/schrodi';
 import { driftAlarms } from '../../utils/schrodiTrust';
+import { DIR_TONE, upOdds } from './direction';
 import { SchrodiCat } from './SchrodiCat';
 import { SchrodiPanel, moodOf } from './SchrodiPanel';
 import { useSchrodi } from './useSchrodi';
@@ -34,7 +35,6 @@ export const SchrodiLauncher: React.FC<{ className?: string }> = ({ className })
   const mind = st.status === 'ready' && st.hist.length ? mindChange(st.hist, st.hist[st.hist.length - 1]) : null;
   const { summary } = useDeskLedger();
   const grey = driftAlarms(summary && isCat(summary.cat) ? summary.cat.trust : null).length > 0;
-  const dir = f ? (f.stance === 'long' ? `LONG ${pct(f.pUp)}%` : f.stance === 'short' ? `SHORT ${pct(1 - f.pUp)}%` : tr('kierunek ?', 'direction ?')) : '';
   return (
     <div className={`relative ${className ?? ''}`}>
       {open && st.status === 'ready' && (
@@ -68,7 +68,7 @@ export const SchrodiLauncher: React.FC<{ className?: string }> = ({ className })
               {tr('ruch', 'move')} {pct(f.pBig)}%
             </span>
             <span className="text-ink-3"> · </span>
-            <span className={f.stance === 'long' ? 'text-buy-ink' : f.stance === 'short' ? 'text-sell-ink' : 'text-ink-3'}>{dir}</span>
+            <span className={DIR_TONE}>{upOdds(f.pUp)}</span>
             {mind && (
               <span
                 className="inline-block ml-1 w-1.5 h-1.5 rounded-full bg-accent animate-pulse align-middle"

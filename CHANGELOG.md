@@ -4,6 +4,24 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Kot bez stron rynku, Badania bez liczb zastępczych (2026-11-11)
+
+#### Zmienione
+- **Kierunek Schrödiego jako szansa, nie strona rynku** (`src/components/schrodi/direction.ts`, `SchrodiPanel.tsx`, `SchrodiLauncher.tsx`, `src/views/after/CatLedgerCard.tsx`). Zamiast „LONG 54%” / „SHORT 53%” / „NIE WIEM” kot pokazuje „P(wzrost 1 h) 54%” (EN „P(up 1 h) 54%”) w neutralnym kolorze tuszu, w pasku pod wykresem, w dymku i w zdaniu kota. Bez kolorów kupna i sprzedaży są też: pasek szansy kierunku, „Zamknie wyżej niż…” w bieżącej godzinie i kolumna „wzrost” w „Dlaczego?”. Wyniki kierunku (dymek, karta w dzienniku) opisują przedziały „P(wzrost 1 h) > 53%” i „< 47%” zamiast „Long” i „Short”. Tekst etykiety jest w jednym module, więc jej formę zmienia się w jednym miejscu. Kontrakt danych dziennika (`dir.long`, `dir.short`) bez zmian.
+- **Reżimy w Badaniach opisują przeszłość** (`src/utils/quantMathEngine.ts`, `src/components/QuantSignalDesk.tsx`, `src/types/trading.ts`): „Absorpcja spot (wzrostowa)” i „Wyczerpanie perp (spadkowa)” (EN „bullish/bearish”) to teraz „CVD spot wyprzedzał perp” i „CVD perp wyprzedzał spot”, z opisem reguły z 16 ostatnich świec. Usunięty nieużywany reżim „Kaskada likwidacji”.
+
+#### Usunięte
+- **„Paliwo likwidacyjne” ze stałych w USD w Badaniach** (`src/utils/quantMathEngine.ts`, `src/components/LiquidityMicrostructureLab.tsx`). Pule liczone jako siła komórki × 420 000 USD i stałe 3 800 000 USD przy PDH, PDL, PWH i PWL nie były pomiarem. Pola `liquidationPoolUsd`, `shortSqueezeFuelUsd` i `longCascadeFuelUsd` usunięte; pole „Paliwo” pokazuje „—” z powodem (w tym widoku nie ma pozycji kont; mapa likwidacji z pozycji kont jest w „Przed sesją”). U(p) i magnes liczone z wolumenu i świeżych stref OB, wzór w „Metodach” poprawiony.
+
+#### Naprawione
+- **Brak danych to „—”, nie wartość zastępcza:**
+  - VPIN bez wolumenu (żaden pełny kubełek) to `null` i „—” z powodem, nie 0% (`quantMathEngine.ts`, kafle Badań, `src/views/desk/DeskRail.tsx`);
+  - wykładnik Hursta z mniej niż 8 zwrotów albo z płaskiej serii to `null` i „—” z powodem, nie 0,5;
+  - ATR bez świec to NaN, nie 0 (`src/utils/shaakuniEngine.ts`);
+  - obrót 24 h nieobecny w odpowiedzi API to NaN („—”), nie 0 (`src/utils/marketDataFeed.ts`);
+  - transakcja z WebSocket bez czasu giełdy jest odrzucana, zamiast dostawać czas z zegara przeglądarki.
+- Testy: `src/components/schrodi/__tests__/neutralDirection.test.tsx` (dymek z rozwiniętymi sekcjami, pasek i karta dziennika po polsku i po angielsku, trzy stany kierunku: brak „long/short” w tekście, etykieta bez kolorów stron), `src/utils/__tests__/researchHonesty.test.tsx` (brak stałych paliwa w kodzie `src`, brak pól paliwa, nazwy reżimów, VPIN, Hurst, ATR), dwa nowe przypadki w `marketDataFeed.test.ts`.
+
 ### Wskaźnik: strefy absorpcji i pudełka Effort (2026-11-09)
 
 #### Dodane

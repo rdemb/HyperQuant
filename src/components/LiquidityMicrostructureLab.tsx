@@ -43,7 +43,10 @@ function layoutFor(width: number, height: number, rows: number): ProfileLayout {
   };
 }
 
-/** Bohater laboratorium mikrostruktury w Badaniach: profil wolumenu (LIVE) + szacowane paliwo likwidacyjne i krzywa U(p) (MODEL). */
+/**
+ * Bohater laboratorium mikrostruktury w Badaniach: profil wolumenu (LIVE) i krzywa U(p) (MODEL). Paliwa likwidacyjnego
+ * tu nie ma: bez pozycji kont byłoby liczbą ze stałych, więc pole pokazuje „—” z powodem (mapa z pozycji jest w „Przed sesją”).
+ */
 export const LiquidityMicrostructureLab: React.FC<{
   quant: QuantMathMetrics;
   shaakuni: ShaakuniState;
@@ -59,7 +62,6 @@ export const LiquidityMicrostructureLab: React.FC<{
 
   // Profil od najwyższej ceny (góra) do najniższej (dół)
   const profile = useMemo(() => [...quant.liquidityProfile].sort((a, b) => b.price - a.price), [quant.liquidityProfile]);
-  const maxFuel = useMemo(() => Math.max(0, ...profile.map((p) => p.liquidationPoolUsd)), [profile]);
 
   // Rozmiar płótna śledzony ResizeObserverem (obrót telefonu, zmiana kolumn siatki)
   useEffect(() => {
@@ -88,7 +90,7 @@ export const LiquidityMicrostructureLab: React.FC<{
     const L = layoutFor(size.w, size.h, profile.length);
     const { width, height, axisW, splitX, rowH } = L;
     const volColW = splitX - axisW - 44;
-    const fuelColW = width - splitX - 16;
+    const fieldColW = width - splitX - 16;
     const maxVol = Math.max(1, ...profile.map((p) => p.totalVolumeUsd));
     const barH = Math.max(3, Math.min(16, rowH - 4));
     const midY = (i: number) => TOP_PAD + i * rowH + rowH / 2;
@@ -103,7 +105,7 @@ export const LiquidityMicrostructureLab: React.FC<{
     ctx.textAlign = 'left';
     ctx.fillText(tr('CENA', 'PRICE'), 6, 12);
     ctx.fillText(tr('WOLUMEN K/S', 'VOLUME B/S'), axisW + 6, 12);
-    ctx.fillText(width < 420 ? tr('PALIWO · U(p)', 'FUEL · U(p)') : tr('PALIWO (SZACUNEK) · U(p)', 'FUEL (ESTIMATE) · U(p)'), splitX + 8, 12);
+    ctx.fillText(tr('PRZYCIĄGANIE U(p)', 'ATTRACTION U(p)'), splitX + 8, 12);
 
     // Hairline: separator nagłówka i kolumn (ciągłe)
     ctx.strokeStyle = C.line;
@@ -159,18 +161,7 @@ export const LiquidityMicrostructureLab: React.FC<{
         ctx.fillText(tag, x0 + totW + 5, y);
       }
 
-      // Słupek szacowanego paliwa likwidacyjnego (strefa modelu)
-      const isMagnet = b.price === quant.primaryMagnetPrice;
-      const fuelW = maxFuel > 0 ? (b.liquidationPoolUsd / maxFuel) * fuelColW * 0.8 : 0;
-      if (fuelW > 0.5) {
-        ctx.globalAlpha = isMagnet ? 0.95 : 0.45;
-        ctx.fillStyle = C.zone;
-        ctx.beginPath();
-        ctx.roundRect(splitX + 8, y - barH / 2, fuelW, barH, [0, 3, 3, 0]);
-        ctx.fill();
-        ctx.globalAlpha = 1;
-      }
-      gravityPts.push({ x: splitX + 8 + b.gravityPotential * fuelColW * 0.9, y });
+      gravityPts.push({ x: splitX + 8 + b.gravityPotential * fieldColW * 0.9, y });
     });
 
     // Krzywa przyciągania U(p): linia 2 px w kolorze akcentu
@@ -225,7 +216,7 @@ export const LiquidityMicrostructureLab: React.FC<{
     hline(shaakuni.pdh, C.level, 'PDH', 0.6);
     hline(shaakuni.pdl, C.level, 'PDL', 0.6);
     hline(currentPrice > 0 ? currentPrice : null, C.ink1, `${tr('cena', 'price')} ${fmtPrice(currentPrice, 0)}`, 0.7);
-  }, [profile, size, hoverIdx, maxFuel, quant.vahPrice, quant.valPrice, quant.primaryMagnetPrice, shaakuni.pdh, shaakuni.pdl, currentPrice]);
+  }, [profile, size, hoverIdx, quant.vahPrice, quant.valPrice, quant.primaryMagnetPrice, shaakuni.pdh, shaakuni.pdl, currentPrice]);
 
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -238,8 +229,6 @@ export const LiquidityMicrostructureLab: React.FC<{
   const hovered: LiquidityProfileBucket | null = hoverIdx !== null ? profile[hoverIdx] ?? null : null;
   const L = layoutFor(size.w, size.h, profile.length);
   const magnetDistPct = currentPrice > 0 ? ((quant.primaryMagnetPrice - currentPrice) / currentPrice) * 100 : null;
-  const fuelTotal = quant.shortSqueezeFuelUsd + quant.longCascadeFuelUsd;
-  const fuelAboveShare = fuelTotal > 0 ? quant.shortSqueezeFuelUsd / fuelTotal : null;
   // Głębokość z migawki arkusza: bez niej brak liczby (nie $0); pusta strona przy migawce to prawdziwe 0
   const depth = bookDepth(book.bids, book.asks);
   const bidShare = depth?.bidShare ?? null;
@@ -255,7 +244,7 @@ export const LiquidityMicrostructureLab: React.FC<{
           <Badge tone="live" title={tr('Wolumen świec Hyperliquid; podział kupno/sprzedaż z WebSocket tam, gdzie dostępny', 'Hyperliquid candle volume; buy/sell split from the WebSocket where available')}>
             LIVE
           </Badge>
-          <Badge tone="model" title={tr('Paliwo likwidacyjne i U(p) to heurystyczny szacunek', 'Liquidation fuel and U(p) are a heuristic estimate')}>
+          <Badge tone="model" title={tr('U(p) i magnes to heurystyka z wolumenu i stref OB', 'U(p) and the magnet are a heuristic from volume and OB zones')}>
             MODEL
           </Badge>
         </>
@@ -265,7 +254,7 @@ export const LiquidityMicrostructureLab: React.FC<{
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-4 gap-y-4">
         <Stat
           label={tr('Magnes', 'Magnet')}
-          source={{ tone: 'model', label: 'MODEL', title: tr('Heurystyka: paliwo + masa OB + wolumen, ważone odległością od ceny', 'Heuristic: fuel + OB mass + volume, weighted by distance from price') }}
+          source={{ tone: 'model', label: 'MODEL', title: tr('Heurystyka: masa OB + wolumen, ważone odległością od ceny', 'Heuristic: OB mass + volume, weighted by distance from price') }}
           value={fmtPrice(quant.primaryMagnetPrice, 0)}
           hint={
             magnetDistPct !== null ? (
@@ -286,25 +275,11 @@ export const LiquidityMicrostructureLab: React.FC<{
         />
         <Stat
           label={tr('Paliwo', 'Fuel')}
-          source={{
-            tone: 'model',
-            label: tr('SZAC.', 'EST.'),
-            title: tr(
-              'Szacunek z wolumenu przy założonych dźwigniach 5/20/100× i pul przy PDH/PDL/PWH/PWL — nie realne pozycje',
-              'Estimate from volume at assumed 5/20/100× leverage and pools at PDH/PDL/PWH/PWL; not real positions'
-            ),
-          }}
-          value={
-            fuelAboveShare !== null ? (
-              <span className="text-base">
-                <span aria-hidden="true">▲</span> {fmtFixed(fuelAboveShare * 100, 0)}% <span className="text-ink-3">/</span>{' '}
-                <span aria-hidden="true">▼</span> {fmtFixed((1 - fuelAboveShare) * 100, 0)}%
-              </span>
-            ) : (
-              DASH
-            )
-          }
-          hint={tr('likwidacje (szac.) nad / pod ceną', 'liquidations (est.) above / below price')}
+          value={DASH}
+          hint={tr(
+            'brak pozycji kont w tym widoku; zmierzona mapa likwidacji jest w „Przed sesją”',
+            'no account positions in this view; the measured liquidation map is in “Pre-session”'
+          )}
         />
         <Stat
           label={tr('Arkusz L2', 'L2 book')}
@@ -382,8 +357,6 @@ export const LiquidityMicrostructureLab: React.FC<{
               </dd>
               <dt className="text-ink-3 font-sans">Delta</dt>
               <dd className="text-right text-ink-1">{fmtCompact(hovered.deltaUsd, '$')}</dd>
-              <dt className="text-ink-3 font-sans">{tr('Paliwo (szac.)', 'Fuel (est.)')}</dt>
-              <dd className="text-right text-ink-1">{maxFuel > 0 ? `${fmtFixed((hovered.liquidationPoolUsd / maxFuel) * 100, 0)}% ${tr('maks.', 'of max')}` : DASH}</dd>
               <dt className="text-ink-3 font-sans">U(p)</dt>
               <dd className="text-right text-ink-1">{fmtFixed(hovered.gravityPotential * 100, 0)}%</dd>
             </dl>
@@ -394,7 +367,6 @@ export const LiquidityMicrostructureLab: React.FC<{
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-ink-2">
         <LegendSwatch className="bg-buy" label={tr('Wolumen kupna', 'Buy volume')} />
         <LegendSwatch className="bg-sell" label={tr('Wolumen sprzedaży', 'Sell volume')} />
-        <LegendSwatch className="bg-zone/60" label={tr('Paliwo likwidacyjne (szacunek)', 'Liquidation fuel (estimate)')} />
         <span className="inline-flex items-center gap-1.5">
           <span className="w-4 h-0.5 rounded-full bg-accent" aria-hidden="true" /> {tr('Krzywa U(p)', 'U(p) curve')}
         </span>
@@ -405,8 +377,8 @@ export const LiquidityMicrostructureLab: React.FC<{
       </div>
       <p className="text-[11px] text-ink-3 leading-relaxed max-w-prose">
         {tr(
-          'Paliwo likwidacyjne to szacunek z wolumenu świec przy założonych dźwigniach (5/20/100×) oraz pul przy PDH/PDL/PWH/PWL — Hyperliquid nie publikuje mapy likwidacji, więc to nie są realne pozycje. U(p) porządkuje poziomy wg heurystycznej „siły przyciągania”; nie mówi, czy i kiedy cena tam dotrze.',
-          'Liquidation fuel is an estimate from candle volume at assumed leverage (5/20/100×) and pools at PDH/PDL/PWH/PWL. Hyperliquid does not publish a liquidation map, so these are not real positions. U(p) ranks levels by a heuristic "attraction strength"; it does not say whether or when price will get there.'
+          'U(p) porządkuje poziomy wg heurystycznej „siły przyciągania” z wolumenu i świeżych stref OB; nie mówi, czy i kiedy cena tam dotrze. Paliwa likwidacyjnego tu nie liczymy: bez pozycji kont byłaby to liczba ze stałych. Mapa likwidacji z pozycji kont Hyperliquid jest w „Przed sesją”.',
+          'U(p) ranks levels by a heuristic "attraction strength" from volume and fresh OB zones; it does not say whether or when price will get there. Liquidation fuel is not computed here: without account positions it would be a number made of constants. The liquidation map from Hyperliquid account positions is in “Pre-session”.'
         )}
       </p>
     </Panel>
@@ -447,11 +419,11 @@ export const MicrostructureMethods: React.FC<{
     {
       id: 'gravity',
       title: tr('Pole przyciągania U(p)', 'Attraction field U(p)'),
-      subtitle: tr('Szacowane pule likwidacji, strefy OB i wolumen ważone odległością od ceny', 'Estimated liquidation pools, OB zones and volume weighted by distance from price'),
-      formula: tr('U(p) = Σ (1,4·Paliwoᵢ + Masa_OBᵢ + 0,18·Wolᵢ) / |p − pᵢ|^0,55', 'U(p) = Σ (1.4·Fuelᵢ + OB_massᵢ + 0.18·Volᵢ) / |p − pᵢ|^0.55'),
+      subtitle: tr('Strefy OB i wolumen ważone odległością od ceny', 'OB zones and volume weighted by distance from price'),
+      formula: tr('U(p) = (Masa_OB + 0,18·Wol) / |p − p₀|^0,55', 'U(p) = (OB_mass + 0.18·Vol) / |p − p₀|^0.55'),
       idea: tr(
-        'Hipoteza: cena szybciej przechodzi przez obszary niskiego wolumenu (LVN) w stronę skupisk zleceń stop i likwidacji. Model jedynie porządkuje takie obszary według heurystycznej wagi — nie przewiduje, czy i kiedy cena do nich dotrze. Skuteczność nie została zmierzona.',
-        'Hypothesis: price moves faster through low-volume areas (LVN) towards clusters of stop orders and liquidations. The model only ranks such areas by a heuristic weight; it does not predict whether or when price will reach them. Its effectiveness has not been measured.'
+        'Hipoteza: cena szybciej przechodzi przez obszary niskiego wolumenu (LVN) w stronę skupisk wolumenu i świeżych stref OB. Model jedynie porządkuje takie obszary według heurystycznej wagi — nie przewiduje, czy i kiedy cena do nich dotrze. Skuteczność nie została zmierzona.',
+        'Hypothesis: price moves faster through low-volume areas (LVN) towards clusters of volume and fresh OB zones. The model only ranks such areas by a heuristic weight; it does not predict whether or when price will reach them. Its effectiveness has not been measured.'
       ),
       check: tr(
         'Zapisuj poziom najsilniejszego U(p) i sprawdzaj, jak często cena dotyka go w ciągu N świec — w porównaniu z losowym poziomem w tej samej odległości.',
@@ -474,7 +446,7 @@ export const MicrostructureMethods: React.FC<{
         'Compare the current VPIN with its distribution over recent sessions; a high percentile means unusually one-sided flow.'
       ),
       metricLabel: tr('VPIN · dywergencja spot/perp', 'VPIN · spot/perp divergence'),
-      metricValue: `${fmtFixed(quant.vpinToxicity * 100, 1)}% · ${quant.cvdDivergenceScore !== 0 ? fmtSigned(quant.cvdDivergenceScore * 100, 1, '%') : tr('b/d (bez CEX)', 'n/a (no CEX)')}`,
+      metricValue: `${quant.vpinToxicity === null ? `${DASH} (${tr('brak wolumenu', 'no volume')})` : `${fmtFixed(quant.vpinToxicity * 100, 1)}%`} · ${quant.cvdDivergenceScore !== 0 ? fmtSigned(quant.cvdDivergenceScore * 100, 1, '%') : tr('b/d (bez CEX)', 'n/a (no CEX)')}`,
     },
     {
       id: 'kyle',

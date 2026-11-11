@@ -2,6 +2,7 @@ import React from 'react';
 import { DASH, Stat, fmtFixed, fmtPrice } from '../../ui';
 import type { CatHeadScores, DeskLedgerSummary } from '../../utils/deskLedger';
 import { locale, tr } from '../../i18n';
+import { upBand, upLabel } from '../../components/schrodi/direction';
 import { CatTrustBlock } from './CatTrustBlock';
 
 const timeFmt = new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit' });
@@ -41,7 +42,7 @@ export const CatLedgerCard: React.FC<{ cat: NonNullable<DeskLedgerSummary['cat']
         {cat.latest && (
           <span className="text-[11px] text-ink-3">
             {tr('wydano', 'issued')} {timeFmt.format(cat.latest.t)} · {tr('cena', 'price')} {fmtPrice(cat.latest.px0, 0)} · {tr('ruch', 'move')} {pct(cat.latest.pBig)} ·{' '}
-            {tr('wzrost', 'rise')} {pct(cat.latest.pUp)}
+            {upLabel()} {pct(cat.latest.pUp)}
           </span>
         )}
       </div>
@@ -64,7 +65,7 @@ export const CatLedgerCard: React.FC<{ cat: NonNullable<DeskLedgerSummary['cat']
         s.dir,
         tr('Kierunek (wzrost)', 'Direction (rise)'),
         <div className="text-[11px] text-ink-2">
-          Long ({tr('od 53%', 'from 53%')}): <span className="font-mono text-ink-1">{pct(s.dir.long.hit)}</span> {tr('z', 'of')} {s.dir.long.n} · Short ({tr('do 47%', 'to 47%')}):{' '}
+          {upBand('long')}: <span className="font-mono text-ink-1">{pct(s.dir.long.hit)}</span> {tr('z', 'of')} {s.dir.long.n} · {upBand('short')}:{' '}
           <span className="font-mono text-ink-1">{pct(s.dir.short.hit)}</span> {tr('z', 'of')} {s.dir.short.n} · {tr('nie wiem', "don't know")} {s.dir.unsure}
         </div>
       )}
