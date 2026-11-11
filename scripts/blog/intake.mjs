@@ -289,6 +289,8 @@ async function main([cmd, ...argv]) {
     const file = arg('published');
     const published = file && existsSync(file) ? publishedSource(200, readFileSync(file, 'utf8')) : publishedSource(0, '');
     if (!published.known && !reseed) throw new Error(`brak albo nieczytelny zapisany blog/source.json strony (--published ${file})`);
+    // Odtworzenie bez klonu gałęzi opublikowałoby rejestr z samych wpisów main, a archiwum z gałęzi przepadłoby: błąd, bez wdrożenia
+    if (reseed && !arg('src')) throw new Error('odtworzenie rejestru wymaga klonu gałęzi blog (brak --src: klon nieudany albo gałęzi nie ma)');
     const report = filterBranch({ src: arg('src') || null, dest: arg('dest'), now: Date.now(), published, repo: BLOG_REPO, branch: 'blog', reseed });
     if (reseed) console.error('Odtworzenie rejestru: wpisy z gałęzi przyjmowane bez dolnej granicy daty');
     writeFileSync(arg('out'), JSON.stringify(report));

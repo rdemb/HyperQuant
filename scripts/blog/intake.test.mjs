@@ -1,7 +1,7 @@
 // Filtr treści gałęzi `blog` repo danych: wpisy z zewnątrz jako niezaufane dane (scripts/blog/intake.mjs).
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -475,5 +475,27 @@ describe.skipIf(!hasGit)('intake: gałąź blog w prawdziwym repozytorium', () =
     const registry = { '2026-11-11-a': entry('2026-11-11T07:00:00.000Z') };
     expect(filterBranch({ src: null, dest, now: NOW, published: published(registry, SHA), ...REPO })).toEqual({ sha: SHA, ...REPO, rewritten: false, reseed: false, hashFormat: 2, reseededAt: null, registry, posts: [], skipped: [] });
     expect(readdirSync(dest)).toEqual([]);
+  });
+});
+
+describe('odtworzenie rejestru wymaga gałęzi', () => {
+  it('filter --reseed bez --src (nieudany klon) kończy się błędem, nie publikuje rejestru z samego main', () => {
+    const tmp = mkdtempSync(path.join(tmpdir(), 'hq-reseed-'));
+    try {
+      const out = path.join(tmp, 'raport.json');
+      let failed = false;
+      let msg = '';
+      try {
+        execFileSync(process.execPath, ['scripts/blog/intake.mjs', 'filter', '--reseed', '--src', '', '--dest', path.join(tmp, 'dest'), '--published', path.join(tmp, 'brak.json'), '--out', out], { encoding: 'utf8', stdio: 'pipe' });
+      } catch (e) {
+        failed = true;
+        msg = String(e.stderr);
+      }
+      expect(failed).toBe(true);
+      expect(msg).toMatch(/odtworzeni\w* rejestru/i);
+      expect(existsSync(out)).toBe(false);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
   });
 });

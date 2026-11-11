@@ -1,7 +1,7 @@
 // Wdrożenie strony (.github/workflows/static.yml): wpisy z gałęzi blog repo danych jako niezaufana treść, uprawnienia
 // tylko na poziomie jobów, akcje przypięte do hashy, bramka wdrożenia po sha gałęzi blog.
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -164,5 +164,18 @@ describe.skipIf(!hasBash)('static.yml: bramka wdrożenia (krok Decide Deploy uru
     expect(gate({ ...ON, BLOG_SHA: '' })).toBe('');
     expect(gate({ ...ON, CHANGED: 'true' })).toBe('deploy=true');
     expect(gate({ ...ON, EVENT: 'push' })).toBe('deploy=true');
+  });
+});
+
+describe.skipIf(!hasBash)('static.yml: odtworzenie rejestru bez klonu gałęzi (krok Blog Intake w bash)', () => {
+  it('BLOG_RESEED=true i brak gałęzi albo nieudany klon: krok kończy się błędem przed filtrem, bez wdrożenia', () => {
+    const tmp = mkdtempSync(path.join(tmpdir(), 'hq-intake-step-'));
+    const r = spawnSync('bash', ['-e', '-c', step('Blog Intake').run], {
+      env: { ...process.env, BLOG_RESEED: 'true', BLOG_SHA: '', BLOG_REPO: 'https://invalid.example/none.git', RUNNER_TEMP: tmp, GITHUB_ENV: path.join(tmp, 'env') },
+      encoding: 'utf8',
+    });
+    expect(r.status).not.toBe(0);
+    expect(r.stdout + r.stderr).toMatch(/Odtworzenie rejestru wymaga klonu gałęzi blog/);
+    expect(existsSync(path.join(tmp, 'blog-intake.json'))).toBe(false);
   });
 });

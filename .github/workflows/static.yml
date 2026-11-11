@@ -123,6 +123,10 @@ jobs:
           if [ -n "$BLOG_SHA" ] && GIT_TERMINAL_PROMPT=0 timeout 120 git clone -q --no-tags --single-branch --branch blog "$BLOG_REPO" "$RUNNER_TEMP/blog"; then
             src="$RUNNER_TEMP/blog"
           fi
+          if [ -n "$reseed" ] && [ -z "$src" ]; then
+            echo "::error::Odtworzenie rejestru wymaga klonu gałęzi blog; klon się nie udał albo gałęzi nie ma. Bez wdrożenia."
+            exit 1
+          fi
           if ! node scripts/blog/intake.mjs filter $reseed --src "$src" --dest content/blog --published "$RUNNER_TEMP/published.json" --out "$RUNNER_TEMP/blog-intake.json"; then
             echo "::warning::Filtr gałęzi blog zawiódł: build tylko z wpisów main"
             git checkout -- content/blog && git clean -fdq -- content/blog
