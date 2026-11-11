@@ -76,4 +76,12 @@ describe('zapis ustawień wykresu po zmianie paska', () => {
     expect(parseSettings({ ...SAVED, stateOpen: false }).stateOpen).toBe(false);
     expect('stateOpen' in parseSettings({ ...SAVED, stateOpen: 'tak' })).toBe(false);
   });
+
+  it('gęstość etykiet: tylko 0, 3, 5 albo „all”; bez zapisu albo z błędną wartością pole nie powstaje', () => {
+    expect(parseSettings({ ...SAVED, labelDensity: 3 }).labelDensity).toBe(3);
+    expect(parseSettings({ ...SAVED, labelDensity: 'all' }).labelDensity).toBe('all');
+    expect(parseSettings({ ...SAVED, labelDensity: 0 }).labelDensity).toBe(0);
+    expect('labelDensity' in parseSettings({ ...SAVED, labelDensity: 4 })).toBe(false);
+    expect('labelDensity' in parseSettings(SAVED)).toBe(false);
+  });
 });
