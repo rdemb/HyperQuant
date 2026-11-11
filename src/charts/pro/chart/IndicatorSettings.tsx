@@ -214,7 +214,16 @@ export const IndicatorSettings: React.FC<{ x: IndicatorInstance; loaded: number;
         {tab === 'params' && def.pbRanges && (
           <p className="py-2 text-ink-2 leading-snug">{tr('Bez parametrów: reguły jak w opisie, zawsze ze świec 5m.', 'No inputs: the rules are as in the description, always from 5m candles.')}</p>
         )}
-        {tab === 'params' && def.effortZones && <p className="py-2 text-ink-2 leading-snug">{tr('Bez parametrów: reguły jak w opisie.', 'No inputs: the rules are as in the description.')}</p>}
+        {tab === 'params' && def.effortZones && (
+          <div className="flex flex-col gap-1.5 py-2">
+            <p className="text-ink-2 leading-snug">{tr('Bez parametrów liczbowych: reguły jak w opisie.', 'No numeric inputs: the rules are as in the description.')}</p>
+            {/* Tryb „Historia”: wszystkie strefy i serie pudełek samymi obrysami (do przeglądu po sesji i powtórki) */}
+            <label className="flex items-center gap-2 min-h-9 cursor-pointer text-ink-1">
+              <input type="checkbox" checked={x.history === true} onChange={(e) => set({ history: e.target.checked ? true : undefined })} className="w-4 h-4 shrink-0 accent-accent" />
+              {tr('Historia: wszystkie strefy i serie pudełek obrysami', 'History: all zones and box series as outlines')}
+            </label>
+          </div>
+        )}
         {tab === 'style' && (
           <div className="flex flex-col gap-1">
             {(bars || !tinted) && (
