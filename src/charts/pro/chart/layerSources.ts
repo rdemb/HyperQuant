@@ -221,6 +221,9 @@ const LAYER_LABEL: Record<keyof typeof LAYERS_OFF, string> = {
   showLots: tr('Duże zlecenia', 'Large orders'),
 };
 
+/** Nazwa warstwy wykresu ceny w liście „Warstwy”. */
+export const layerLabel = (key: keyof typeof LAYERS_OFF): string => LAYER_LABEL[key];
+
 /** Czy włączona warstwa jest rysowana na tym interwale (te same warunki co opisy „off” w oknie wskaźników). */
 function drawn(s: Pick<ChartSettings, 'showTpo' | 'showBubbles' | 'stackedMin'>, key: keyof typeof LAYERS_OFF, ms: number): boolean {
   const scope = indicatorScope(ms);

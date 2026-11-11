@@ -1,5 +1,8 @@
 import type { IPrimitivePaneRenderer, IPrimitivePaneView, ISeriesPrimitive, PrimitiveHoveredItem, SeriesAttachedParameter, Time } from 'lightweight-charts';
 import { MONO, PRO } from './theme';
+import { fmtSignedVol } from '../../orderflow/renderer';
+import { numLang } from '../../../ui/format';
+import { tr } from '../../../i18n';
 
 /** Przycisk ukrycia panelu (px CSS panelu): prostokąt trafienia. */
 export interface CloseBox {
@@ -25,14 +28,6 @@ export const inBox = (b: CloseBox | null, x: number, y: number): boolean => !!b 
 
 /** Wynik trafienia krzyżyka: identyfikator `pane:<ustawienie>` trafia do kliknięcia wykresu. */
 export const closeHit = (id: string): PrimitiveHoveredItem => ({ externalId: `pane:${id}`, zOrder: 'top', cursorStyle: 'pointer', hitTestPriority: 2 });
-
-/**
- * Logo TradingView (wymagane licencją) w lewym dolnym rogu najniższego panelu: 35 × 19 px, 10 px od lewej i od dołu
- * (pomiar 24.10, układ 2×2). W niskim panelu opis przesuwa się za logo.
- */
-const LOGO_W = 35;
-const LOGO_H = 19;
-const LOGO_MARGIN = 10;
 
 /** Fragment opisu panelu: tekst i kolor; `glue` — nie oddziela się od poprzedniego przy zawijaniu, `br` — nowy wiersz. */
 export interface LegendPart {
@@ -91,8 +86,6 @@ export class PaneLegend implements ISeriesPrimitive<Time> {
   private close: CloseBox | null = null;
   /** Pierwszy wiersz opisu (px CSS panelu). */
   private line: { x: number; w: number } | null = null;
-  /** Panel jest najniższy (pod nim tylko oś czasu) — dzieli róg z logo. */
-  private bottom = false;
 
   constructor(
     private readonly closeId?: string,
@@ -108,12 +101,8 @@ export class PaneLegend implements ISeriesPrimitive<Time> {
           // Wąski panel (telefon): opis zawija się w kolejne wiersze zamiast znikać za osią ceny
           const measure = (t: string) => ctx.measureText(t).width;
           const wrap = (l: number) => wrapLegend(this.parts, measure, Math.max(120, mediaSize.width - l - 14 - closeW));
-          let l = 4;
-          let lines = wrap(l);
-          if (this.bottom && mediaSize.height < 4 + lines.length * 20 - 2 + LOGO_H + LOGO_MARGIN) {
-            l = LOGO_MARGIN + LOGO_W + 4;
-            lines = wrap(l);
-          }
+          const l = 4;
+          const lines = wrap(l);
           lines.forEach((ln, k) => {
             const top = 4 + k * 20;
             ctx.fillStyle = PRO.bg;
@@ -154,12 +143,6 @@ export class PaneLegend implements ISeriesPrimitive<Time> {
     return null;
   }
 
-  setBottom(on: boolean): void {
-    if (on === this.bottom) return;
-    this.bottom = on;
-    this.requestUpdate?.();
-  }
-
   set(parts: LegendPart[]): void {
     const same =
       parts.length === this.parts.length &&
@@ -168,4 +151,36 @@ export class PaneLegend implements ISeriesPrimitive<Time> {
     this.parts = parts;
     this.requestUpdate?.();
   }
+}
+
+/**
+ * Liczby taśmy świecy pod krzyżem (dawniej trzecia linia legendy nad świecami): udział delty w wolumenie taśmy, jej
+ * maksimum i minimum w trakcie świecy, liczba transakcji i udział taśmy w wolumenie świecy. Bez taśmy — nic.
+ */
+export function deltaStatsParts(bar: {
+  fp: { delta: number; buyVol: number; sellVol: number; maxDelta: number; minDelta: number; trades: number } | null;
+  share: number;
+  complete: boolean;
+}): LegendPart[] {
+  const fp = bar.fp;
+  if (!fp) return [];
+  const vol = fp.buyVol + fp.sellVol;
+  const ink = (v: number) => (v > 0 ? PRO.buyInk : v < 0 ? PRO.sellInk : PRO.ink2);
+  const parts: LegendPart[] = [];
+  if (vol > 0) parts.push({ text: `(${numLang(((fp.delta / vol) * 100).toFixed(0))}%)`, color: PRO.ink3, glue: true });
+  parts.push(
+    { text: 'max', color: PRO.ink3 },
+    { text: fmtSignedVol(fp.maxDelta), color: ink(fp.maxDelta), glue: true },
+    { text: 'min', color: PRO.ink3 },
+    { text: fmtSignedVol(fp.minDelta), color: ink(fp.minDelta), glue: true },
+    { text: tr('Transakcje', 'Trades'), color: PRO.ink3 },
+    { text: numLang(fp.trades.toLocaleString('en-US')), color: PRO.ink1, glue: true },
+    { text: tr('Taśma', 'Tape'), color: PRO.ink3 },
+    {
+      text: `${Number.isFinite(bar.share) ? `${Math.min(100, bar.share * 100).toFixed(0)}%` : '—'}${bar.complete ? '' : tr(' · częściowa', ' · partial')}`,
+      color: bar.complete ? PRO.ink1 : PRO.warn,
+      glue: true,
+    }
+  );
+  return parts;
 }

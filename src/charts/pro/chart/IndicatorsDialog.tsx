@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react';
-import { Copy, Eye, EyeOff, Plus, Search, Settings, Star, Trash2, X } from 'lucide-react';
+import React, { useId, useMemo, useState } from 'react';
+import { ChevronDown, Copy, Eye, EyeOff, Plus, Search, Settings, Star, Trash2, X } from 'lucide-react';
 import type { ChartSettings } from './settings';
 import { INDICATORS, IndicatorInstance, IndicatorTier, MAX_INDICATORS, addIndicator, copyIndicator, indicatorDef, indicatorLabel, menuEntries, swatchColor } from '../indicators/registry';
 import { tr } from '../../../i18n';
@@ -99,6 +99,9 @@ export const IndicatorsDialog: React.FC<{
 }> = ({ s, layers, panes, panesTab, section, onSection, narrow, onChange, onEdit, onClose }) => {
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
+  // Opisy rozwinięte dotknięciem (domyślnie jedna linia: na telefonie mieści się więcej pozycji)
+  const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
+  const uid = useId();
   const [favs, setFavs] = useState(loadFavs);
   // „Klasyczne” zaczynają zwinięte
   const [classicOpen, setClassicOpen] = useState(false);
@@ -150,6 +153,7 @@ export const IndicatorsDialog: React.FC<{
 
   const row = (e: Entry, i: number) => {
     const fav = favs.includes(e.key);
+    const hintId = `${uid}-${e.key}`;
     const add = e.on === undefined;
     return (
       <li key={e.key} role="option" aria-selected={i === at} className={`flex items-start gap-1 rounded-lg ${i === at && q ? 'bg-surface-3' : ''} ${e.off ? 'opacity-55' : ''}`}>
@@ -188,9 +192,29 @@ export const IndicatorsDialog: React.FC<{
               {e.label}
               {q && <span className="ml-auto pl-2 text-[10px] text-ink-3 whitespace-nowrap">{SECTION_NAME[e.section]}</span>}
             </span>
-            <span className="text-[11px] leading-snug text-ink-3">{e.hint}</span>
+            <span id={hintId} title={open.has(e.key) ? undefined : e.hint} className={`text-[11px] leading-snug text-ink-3 ${open.has(e.key) ? '' : 'truncate'}`}>
+              {e.hint}
+            </span>
           </span>
           {add && <Plus className="mt-0.5 w-4 h-4 shrink-0 text-ink-3" aria-hidden="true" />}
+        </button>
+        {/* Cały opis po dotknięciu (osobny przycisk: dotknięcie wiersza dodaje albo włącza wskaźnik) */}
+        <button
+          type="button"
+          aria-expanded={open.has(e.key)}
+          aria-controls={hintId}
+          aria-label={open.has(e.key) ? tr(`Zwiń opis: ${e.label}`, `Collapse description: ${e.label}`) : tr(`Pokaż cały opis: ${e.label}`, `Show the full description: ${e.label}`)}
+          onClick={() =>
+            setOpen((o) => {
+              const next = new Set(o);
+              if (next.has(e.key)) next.delete(e.key);
+              else next.add(e.key);
+              return next;
+            })
+          }
+          className={`${narrow ? ICON_BTN.replace('w-8 h-8', 'w-11 h-11') : ICON_BTN} mt-0.5`}
+        >
+          <ChevronDown className={`w-4 h-4 transition-transform duration-150 ${open.has(e.key) ? 'rotate-180' : ''}`} aria-hidden="true" />
         </button>
       </li>
     );

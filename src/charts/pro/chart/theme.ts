@@ -241,8 +241,9 @@ export function chartOptions(): DeepPartial<ChartOptions> {
       textColor: PRO.axisText,
       fontSize: 11,
       fontFamily: MONO,
-      // Logo TradingView zostaje — wymaga go licencja biblioteki (link do tradingview.com)
-      attributionLogo: true,
+      // Bez logo na wykresie (zasłaniało panel CVD): licencja wymaga noty z pliku NOTICE i linku do tradingview.com na
+      // stronie — są w „Źródłach” (Attributions) i w stopce strony
+      attributionLogo: false,
       panes: { separatorColor: C.divider, separatorHoverColor: rgba(C.ink3, 0.18), enableResize: true },
     },
     // Bez siatki: poziomy wyznaczają komórki footprintu i wskaźniki

@@ -185,14 +185,15 @@ export const FlowColumn: React.FC<{ coin: string; narrow: boolean; variant: 'col
       walls: <WallFatesPanel fates={f.walls.fates} minUsd={f.walls.minUsd} step={f.chosen?.step ?? Number.NaN} since={f.walls.since} narrow={narrow} className={frame} head={lowerHead} />,
     };
     return (
-      <div className="relative h-full flex flex-col gap-2 min-h-0">
+      <div className="relative h-full flex flex-col gap-1.5 min-h-0">
         <Pulse tiles={pulseTiles(f, s, true)} active={max} narrow={false} dense onPick={(id) => setMax((m) => (m === id ? null : id))} />
         {max !== null ? (
           <div className="flex-1 min-h-0">{panels[max]}</div>
         ) : (
           <>
-            <div className="flex-[3] min-h-0">{panels.dom}</div>
-            <div className="flex-[2] min-h-0">{panels[lower]}</div>
+            {/* Drabina wyższa niż taśma: przy 900 px wysokości ok. 20 poziomów drabiny i 12 wierszy taśmy */}
+            <div className="flex-[11] min-h-0">{panels.dom}</div>
+            <div className="flex-[8] min-h-0">{panels[lower]}</div>
           </>
         )}
         {pick && (

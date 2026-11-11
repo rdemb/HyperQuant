@@ -70,12 +70,14 @@ function readState(store: ProStore, series: CandleSeries, venueOn: boolean): Sta
 
 const toneColor = (t: number) => (t > 0 ? PRO.buyInk : t < 0 ? PRO.sellInk : PRO.ink3);
 
-export const MarketStateBar: React.FC<{ store: ProStore; series: CandleSeries; venueOn: boolean; narrow: boolean; onClose: () => void }> = ({
+/** `collapse` — krzyżyk zwija zdanie do przycisku „Stan” w pasku (zamiast ukrywać Stan rynku). */
+export const MarketStateBar: React.FC<{ store: ProStore; series: CandleSeries; venueOn: boolean; narrow: boolean; onClose: () => void; collapse?: boolean }> = ({
   store,
   series,
   venueOn,
   narrow,
   onClose,
+  collapse = false,
 }) => {
   const [facts, setFacts] = useState<StateFact[]>([]);
   const [open, setOpen] = useState(false);
@@ -130,8 +132,12 @@ export const MarketStateBar: React.FC<{ store: ProStore; series: CandleSeries; v
         )}
         <button
           type="button"
-          aria-label={tr('Ukryj Stan rynku', 'Hide Market state')}
-          title={tr('Ukryj Stan rynku — włączysz go w Ustawieniach wykresu → Nad wykresem', 'Hide Market state — turn it back on in Chart settings → Above the chart')}
+          aria-label={collapse ? tr('Zwiń Stan rynku', 'Collapse Market state') : tr('Ukryj Stan rynku', 'Hide Market state')}
+          title={
+            collapse
+              ? tr('Zwiń Stan rynku do przycisku „Stan” w pasku wykresu', 'Collapse Market state to the “State” button in the chart bar')
+              : tr('Ukryj Stan rynku — włączysz go w Ustawieniach wykresu → Nad wykresem', 'Hide Market state — turn it back on in Chart settings → Above the chart')
+          }
           onClick={onClose}
           className="shrink-0 inline-flex items-center justify-center w-7 h-7 rounded-md text-ink-3 hover:text-ink-1 hover:bg-surface-2 transition-colors duration-150"
         >
