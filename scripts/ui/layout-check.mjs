@@ -92,6 +92,28 @@ const EFFORT_STORE = {
  */
 const CLASH_REPLAY = '#charts?replay=lessons&m=BTC&i=1m&v=candles&t=2026-10-24T19:30:00Z&station=cockpit&layers=bubbles,clashes';
 const CLASH_MAX = 13;
+/**
+ * Profile dób na danych stałych: „Mapa dnia” (komputer: 4h z profilami dób i 30m z TPO; telefon: 30m z TPO) i „Rozliczenie
+ * doby” (30m z TPO), 1440 i 390. Liczby z warstw (atrybuty `data-tpo-objects`, `data-tpo-area`, `data-period-objects`,
+ * `data-period-area`): obiekty i udział pola pod słupkami w %. Limity z projektu: TPO najwyżej 20 obiektów na komputerze,
+ * pole pod słupkami najwyżej 12% na komputerze i 20% na telefonie; profile dób — limit pola (starsza doba to zawsze POC
+ * i pasek value area, więc ich liczba rośnie z liczbą dób w widoku; pilnuje jej punkt odniesienia).
+ */
+const PROFILE_VIEWS = [
+  ['dayMap', '#before', { 'hq.charts.phaseActive.v1': JSON.stringify({ before: 'day-map', session: 'cockpit', after: 'review' }) }],
+  ['review', '#after', {}],
+];
+const PROFILE_MAX = { objects: 20, area1440: 12, area390: 20 };
+const profileCounts = `(() => {
+  const vis = (e) => e.getBoundingClientRect().width > 0 && e.getBoundingClientRect().height > 0;
+  // Wykres z włączoną warstwą: pierwszy widoczny z niezerową liczbą (pozostałe wykresy układu mają warstwę wyłączoną)
+  const pick = (key, areaKey) => {
+    const hosts = [...document.querySelectorAll('.tv-lightweight-charts')].filter(vis).map((r) => r.closest('[data-' + key + ']')).filter(Boolean);
+    const h = hosts.find((x) => Number(x.dataset[areaKey.c]) > 0 || Number(x.dataset[areaKey.a]) > 0);
+    return h ? { objects: Number(h.dataset[areaKey.c]), area: Number(h.dataset[areaKey.a]) } : null;
+  };
+  return { tpo: pick('tpo-objects', { c: 'tpoObjects', a: 'tpoArea' }), periods: pick('period-objects', { c: 'periodObjects', a: 'periodArea' }) };
+})()`;
 const clashCount = `(() => { const c = window.__hq.chart(); const host = c && c.root.closest('[data-clash-objects]'); return host ? Number(host.dataset.clashObjects) : null; })()`;
 /**
  * Strefy nierównowagi i niedokończone aukcje: układ „Aukcja i otwarcie” na powtórce 24.10 o 19:30, 5m footprint, warstwy
@@ -542,6 +564,24 @@ async function main() {
     await shot(page, '390-strefy');
     await page.viewport(1440, 900, false);
 
+    // Szlif 6: profile dób w „Mapie dnia” i „Rozliczeniu doby” (1440, potem 390)
+    report.profiles = {};
+    for (const [name, hash, store] of PROFILE_VIEWS) {
+      report.profiles[name] = {};
+      await page.viewport(1440, 900, false);
+      await open(page, hash, store);
+      await page.mouseAway();
+      await sleep(400);
+      report.profiles[name].desktop = await probe(page, profileCounts);
+      await shot(page, `1440-profile-${name}`);
+      await page.viewport(390, 844, true);
+      await open(page, hash, store);
+      await sleep(400);
+      report.profiles[name].phone = await probe(page, profileCounts);
+      await shot(page, `390-profile-${name}`);
+    }
+    await page.viewport(1440, 900, false);
+
     // 4. Ustawienia użytkownika
     await page.viewport(1440, 900, false);
     report.storage = await persistence(page);
@@ -579,7 +619,11 @@ async function main() {
   const s3 = typeof r.clashes?.desktop === 'number' && r.clashes.desktop <= CLASH_MAX;
   const zoneOk = (x) => !!x && x.rects <= ZONES_MAX.rects && x.lines <= ZONES_MAX.lines;
   const s2 = zoneOk(r.zones?.desktop) && zoneOk(r.zones?.phone);
-  r.summary = { t1, t2, t3, t4, t5, t6, s1, s2, s3 };
+  // Szlif 6: każda warstwa profili, która jest na ekranie, w limitach; TPO musi być w obu układach
+  const tpoOk = (v) => !!v?.desktop?.tpo && !!v?.phone?.tpo && v.desktop.tpo.objects <= PROFILE_MAX.objects && v.desktop.tpo.area <= PROFILE_MAX.area1440 && v.phone.tpo.area <= PROFILE_MAX.area390;
+  const periodsOk = (v) => (!v?.desktop?.periods || v.desktop.periods.area <= PROFILE_MAX.area1440) && (!v?.phone?.periods || v.phone.periods.area <= PROFILE_MAX.area390);
+  const s6 = PROFILE_VIEWS.every(([name]) => tpoOk(r.profiles?.[name]) && periodsOk(r.profiles?.[name]));
+  r.summary = { t1, t2, t3, t4, t5, t6, s1, s2, s3, s6 };
   const lines = [
     `Pomiar „${LABEL}” (${BASE})`,
     `1. Panel ceny 1440×900: ${pct(r.desktop)} (próg 62%, zapas ${margin(r.desktop?.share ?? 0, LIMITS.desktop)}), z kolumną DOM: ${pct(r.desktopDom)} (próg 60%, zapas ${margin(r.desktopDom?.share ?? 0, LIMITS.desktopDom)}) — ${ok(t1)}`,
@@ -599,6 +643,11 @@ async function main() {
     `   Obiekty — powtórka 24.10 1440: ${obj(r.replayDesktop)}; powtórka 390: ${obj(r.replayPhone)}`,
     `Szlif 2. Strefy nierównowagi / linie aukcji („Aukcja i otwarcie”, powtórka 24.10 19:30, 5m): 1440 ${r.zones?.desktop ? `${r.zones.desktop.rects} / ${r.zones.desktop.lines}` : '—'}, 390 ${r.zones?.phone ? `${r.zones.phone.rects} / ${r.zones.phone.lines}` : '—'} (limit ${ZONES_MAX.rects} / ${ZONES_MAX.lines}) — ${ok(s2)}`,
     `Szlif 3. Ściany i serie (Kokpit 1m, powtórka 24.10 19:30): 1440 ${r.clashes?.desktop ?? '—'} (limit ${CLASH_MAX}) — ${ok(s3)}`,
+    `Szlif 6. Profile dób (dane stałe; obiekty / pole %): ${PROFILE_VIEWS.map(([name]) => {
+      const v = r.profiles?.[name];
+      const f = (c) => (c ? `${c.objects} / ${c.area}%` : '—');
+      return `${name}: TPO 1440 ${f(v?.desktop?.tpo)}, 390 ${f(v?.phone?.tpo)}; profile okresów 1440 ${f(v?.desktop?.periods)}`;
+    }).join('; ')} (limit TPO ${PROFILE_MAX.objects} obiektów; pole ${PROFILE_MAX.area1440}% / ${PROFILE_MAX.area390}%) — ${ok(s6)}`,
     `Szlif 1. Prostokąty wskaźnika Effort (powtórka 24.10 19:30, BTC 5m): 1440 ${r.effort?.desktop ?? '—'} (limit ${EFFORT_MAX.desktop}), 390 ${r.effort?.phone ?? '—'} (limit ${EFFORT_MAX.phone}) — ${ok(s1)}`
   );
   const metrics = metricsOf(r);

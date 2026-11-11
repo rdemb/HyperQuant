@@ -23,6 +23,16 @@ export function metricsOf(r) {
   if (typeof r.effort?.phone === 'number') m['effort.rects390'] = r.effort.phone;
   // Ściany i serie (wybór warstwy) w Kokpicie 1m na powtórce 24.10
   if (typeof r.clashes?.desktop === 'number') m['clashes.objects1440'] = r.clashes.desktop;
+  // Profile dób (TPO i profile okresów, wybór warstwy): obiekty i pole pod słupkami (%) w „Mapie dnia” i „Rozliczeniu doby”
+  for (const [view, v] of Object.entries(r.profiles ?? {})) {
+    for (const [w, d] of [['1440', v?.desktop], ['390', v?.phone]]) {
+      for (const layer of ['tpo', 'periods']) {
+        const c = d?.[layer];
+        if (typeof c?.objects === 'number') m[`${layer}.${view}.objects${w}`] = c.objects;
+        if (typeof c?.area === 'number') m[`${layer}.${view}.area${w}`] = c.area;
+      }
+    }
+  }
   // Strefy nierównowagi i niedokończone aukcje (wybór warstwy) w układzie „Aukcja i otwarcie”, powtórka 24.10, 5m
   for (const [k, v] of [['1440', r.zones?.desktop], ['390', r.zones?.phone]]) {
     if (typeof v?.rects === 'number') m[`zones.rects${k}`] = v.rects;
