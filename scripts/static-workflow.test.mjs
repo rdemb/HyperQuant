@@ -1,7 +1,7 @@
 // Wdrożenie strony (.github/workflows/static.yml): wpisy z gałęzi blog repo danych jako niezaufana treść, uprawnienia
 // tylko na poziomie jobów, akcje przypięte do hashy, bramka wdrożenia po sha gałęzi blog.
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -70,10 +70,18 @@ describe('static.yml: gałąź blog repo danych', () => {
     const s = step('Blog Intake');
     expect(s.run).toMatch(/GIT_TERMINAL_PROMPT=0 timeout 120 git clone -q --no-tags --single-branch --branch blog "\$BLOG_REPO" "\$RUNNER_TEMP\/blog"/);
     expect(s.run).not.toMatch(/--depth/);
-    expect(s.run).toMatch(/node scripts\/blog\/intake\.mjs filter --src "\$src" --dest content\/blog --published "\$RUNNER_TEMP\/published\.json" --out "\$RUNNER_TEMP\/blog-intake\.json"/);
+    expect(s.run).toMatch(/node scripts\/blog\/intake\.mjs filter \$reseed --src "\$src" --dest content\/blog --published "\$RUNNER_TEMP\/published\.json" --out "\$RUNNER_TEMP\/blog-intake\.json"/);
     expect(s.run).toMatch(/BLOG_INTAKE=\$RUNNER_TEMP\/blog-intake\.json" >> "\$GITHUB_ENV"/);
     expect(index('Blog Intake')).toBeLessThan(index('Install Dependencies'));
     expect(index('Blog Intake')).toBeGreaterThan(index('Decide Deploy'));
+  });
+
+  it('odtworzenie rejestru: wejście blog_reseed, tylko gdy uruchomił (i ewentualnie ponowił) właściciel repo', () => {
+    expect(wf.on.workflow_dispatch.inputs.blog_reseed).toMatchObject({ type: 'boolean', default: false });
+    expect(build.env.BLOG_RESEED).toBe(
+      "${{ github.event_name == 'workflow_dispatch' && inputs.blog_reseed && github.actor == github.repository_owner && github.triggering_actor == github.repository_owner }}"
+    );
+    expect(step('Blog Intake').run).toMatch(/reseed=\n {0,}if \[ "\$BLOG_RESEED" = true \]; then reseed=--reseed; fi/);
   });
 
   it('job build ma limit 20 min (grupa pages nie przerywa trwających przebiegów)', () => {
@@ -147,9 +155,27 @@ describe.skipIf(!hasBash)('static.yml: bramka wdrożenia (krok Decide Deploy uru
     }
   });
 
+  it('odtworzenie rejestru przez właściciela: wdrożenie mimo nieczytelnego source.json; bez odtworzenia nie', () => {
+    expect(gate({ ...ON, EVENT: 'workflow_dispatch', KNOWN: 'false', BLOG_RESEED: 'true' })).toBe('deploy=true');
+    expect(gate({ ...ON, EVENT: 'workflow_dispatch', KNOWN: 'false', BLOG_RESEED: 'false' })).toBe('');
+  });
+
   it('gałęzi nie ma albo GitHub nie odpowiada: bez wdrożenia z tego powodu; push i nowe dane jak dotąd', () => {
     expect(gate({ ...ON, BLOG_SHA: '' })).toBe('');
     expect(gate({ ...ON, CHANGED: 'true' })).toBe('deploy=true');
     expect(gate({ ...ON, EVENT: 'push' })).toBe('deploy=true');
+  });
+});
+
+describe.skipIf(!hasBash)('static.yml: odtworzenie rejestru bez klonu gałęzi (krok Blog Intake w bash)', () => {
+  it('BLOG_RESEED=true i brak gałęzi albo nieudany klon: krok kończy się błędem przed filtrem, bez wdrożenia', () => {
+    const tmp = mkdtempSync(path.join(tmpdir(), 'hq-intake-step-'));
+    const r = spawnSync('bash', ['-e', '-c', step('Blog Intake').run], {
+      env: { ...process.env, BLOG_RESEED: 'true', BLOG_SHA: '', BLOG_REPO: 'https://invalid.example/none.git', RUNNER_TEMP: tmp, GITHUB_ENV: path.join(tmp, 'env') },
+      encoding: 'utf8',
+    });
+    expect(r.status).not.toBe(0);
+    expect(r.stdout + r.stderr).toMatch(/Odtworzenie rejestru wymaga klonu gałęzi blog/);
+    expect(existsSync(path.join(tmp, 'blog-intake.json'))).toBe(false);
   });
 });

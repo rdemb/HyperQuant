@@ -7,6 +7,7 @@
 //   node scripts/blog/build.mjs --check [plik.md …]   → walidacja wszystkich albo wskazanych wpisów, bez zapisu; kod 1 przy błędach
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { copyFile, lstat, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -100,17 +101,36 @@ export function mapsJson(posts, now) {
 
 const version = (buf) => createHash('sha256').update(buf).digest('hex').slice(0, 10);
 
+/** Format hasha w rejestrze: 2 = .md i media wpisu (format 1, sam .md, był w pierwszej wersji rejestru). */
+export const HASH_FORMAT = 2;
+const sha256 = (buf) => createHash('sha256').update(buf).digest('hex');
+
+/**
+ * Hash wpisu do rejestru (format 2): sha256 z linii „<sha256 pliku>  <nazwa>” dla `<id>.md` i każdego pliku mediów z listy
+ * (te same pliki trafiają na stronę), media w kolejności nazw. Podmiana wykresu albo obrazu bez zmiany tekstu też zmienia hash.
+ */
+export async function postHash(contentDir, id) {
+  const lines = [`${sha256(await readFile(path.join(contentDir, `${id}.md`)))}  ${id}.md`];
+  const dir = path.join(contentDir, id);
+  if (existsSync(dir) && (await lstat(dir)).isDirectory())
+    for (const f of (await readdir(dir)).filter((f) => MEDIA_FILE.test(f)).sort())
+      if ((await lstat(path.join(dir, f))).isFile()) lines.push(`${sha256(await readFile(path.join(dir, f)))}  ${f}`);
+  return sha256(lines.join('\n'));
+}
+
 /**
  * Rejestr opublikowanych wpisów po tym buildzie (czas zaufany = chwile buildów): wpis spoza `previous` dostaje `seen` = teraz,
  * wpis z inną treścią niż w `previous` dostaje `changed` = teraz; wpisy, których w tym buildzie nie ma, zostają (powrót
- * starego identyfikatora nie robi z niego nowego wpisu). `hashes`: id → sha256 pliku .md.
+ * starego identyfikatora nie robi z niego nowego wpisu). `hashes`: id → postHash. `migrate`: `previous` ma hashe w innym
+ * formacie, więc nie da się ich porównać; hash jest przepisywany bez `changed` (jednorazowo, przy zmianie formatu).
  */
-export function nextRegistry(previous, hashes, now) {
+export function nextRegistry(previous, hashes, now, { migrate = false } = {}) {
   const at = new Date(now).toISOString();
   const next = { ...previous };
   for (const [id, hash] of hashes) {
     const prev = previous[id];
     if (!prev) next[id] = { hash, seen: at, changed: null };
+    else if (migrate) next[id] = { ...prev, hash };
     else if (prev.hash !== hash) next[id] = { hash, seen: prev.seen, changed: at };
   }
   return Object.fromEntries(Object.entries(next).sort(([a], [b]) => (a < b ? -1 : 1)));
@@ -132,8 +152,8 @@ export async function buildBlog({ contentDir = CONTENT_DIR, outDir, site, drafts
   const skipped = [...(intake?.skipped ?? []), ...problems.filter((p) => isBranch(p.file)).map((p) => ({ id: p.file.replace(/\.md$/, ''), reason: p.errors.join('; ') }))];
   const visible = posts.filter((p) => drafts || !p.draft);
   const hashes = new Map();
-  for (const p of visible) hashes.set(p.id, createHash('sha256').update(await readFile(path.join(contentDir, `${p.id}.md`))).digest('hex'));
-  const registry = nextRegistry(intake?.registry ?? {}, hashes, now);
+  for (const p of visible) hashes.set(p.id, await postHash(contentDir, p.id));
+  const registry = nextRegistry(intake?.registry ?? {}, hashes, now, { migrate: Boolean(intake) && intake.hashFormat !== HASH_FORMAT });
   for (const post of visible) {
     const changed = registry[post.id].changed;
     post.origin = { history: fromBranch.has(post.id) ? `${intake.repo}/commits/${intake.branch}/${post.id}.md` : null, changedMs: changed ? Date.parse(changed) : null };
@@ -179,7 +199,17 @@ export async function buildBlog({ contentDir = CONTENT_DIR, outDir, site, drafts
   await writeFile(path.join(blogDir, 'maps.json'), JSON.stringify(mapsJson(visible, now)));
   await writeFile(
     path.join(blogDir, 'source.json'),
-    JSON.stringify({ sha: intake?.sha ?? null, main, at: new Date(now).toISOString(), posts: registry, rewritten: intake?.rewritten ?? false, skipped })
+    JSON.stringify({
+      sha: intake?.sha ?? null,
+      main,
+      at: new Date(now).toISOString(),
+      hashFormat: HASH_FORMAT,
+      // Chwila ostatniego odtworzenia rejestru (ręcznego, przez właściciela repo); przenoszona, żeby zostawał ślad
+      reseededAt: intake?.reseed ? new Date(now).toISOString() : (intake?.reseededAt ?? null),
+      posts: registry,
+      rewritten: intake?.rewritten ?? false,
+      skipped,
+    })
   );
   await writeFile(path.join(outDir, 'sitemap.xml'), sitemapXml(s, visible, pages ? await buildPages({ outDir, site: s }) : []));
   await writeFile(

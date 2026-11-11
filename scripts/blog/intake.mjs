@@ -8,8 +8,9 @@
 // Użycie w GitHub Actions:
 //   node scripts/blog/intake.mjs published --save <plik>      → `published=<sha>`, `main=<sha>`, `known=true|false`
 //                                                               (blog/source.json strony, zapisany do pliku, gdy czytelny)
-//   node scripts/blog/intake.mjs filter --src <klon> --dest content/blog --published <plik> --out <raport.json>
-//                                                               (bez --src: gałęzi nie ma, raport z poprzednim sha)
+//   node scripts/blog/intake.mjs filter [--reseed] --src <klon> --dest content/blog --published <plik> --out <raport.json>
+//                                                               (bez --src: gałęzi nie ma, raport z poprzednim sha;
+//                                                               --reseed: jednorazowe odtworzenie rejestru, bez dolnej granicy daty)
 //   node scripts/blog/intake.mjs changed --src <klon> --prev <sha>   → zmienione pliki jako content/blog/… (IndexNow)
 import { execFileSync } from 'node:child_process';
 import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, writeFileSync } from 'node:fs';
@@ -25,7 +26,10 @@ export const IMAGE_FILE = /^[a-z0-9-]+\.(?:png|jpg|webp)$/;
 /** Pliki w folderze wpisu (ta sama lista kopiuje media wpisów z main w build.mjs). */
 export const MEDIA_FILE = /^(?:wykresy\.json|[a-z0-9-]+\.(?:png|jpg|webp))$/;
 export const LIMITS = { md: 64 * 1024, json: 1024 * 1024, image: 2 * 1024 * 1024, post: 8 * 1024 * 1024, perDay: 40 };
-/** Data nowego wpisu (spoza rejestru) w oknie [chwila buildu − 24 h, chwila buildu + 10 min]. */
+/**
+ * Data nowego wpisu (spoza rejestru) w oknie [wcześniejsza z chwil: ten build, poprzedni opublikowany build − 24 h,
+ * ten build + 10 min]; przerwa we wdrożeniach dłuższa niż doba nie odrzuca wpisów z czasu przerwy.
+ */
 const FUTURE_MS = 10 * 60_000;
 const PAST_MS = 24 * 3_600_000;
 const MODES = { '100644': null, '100755': 'plik wykonywalny', '120000': 'dowiązanie symboliczne', '160000': 'podmoduł' };
@@ -61,7 +65,7 @@ function fileProblem(e) {
 }
 
 /** Problemy jednego wpisu (pierwszy wystarcza, kolejność: pochodzenie, pliki, rozmiar, data). */
-function postProblem({ id, day, md, media, own }, { mainIds, registry, now }) {
+function postProblem({ id, day, md, media, own }, { mainIds, registry, now, lastBuild, reseed }) {
   if (mainIds.has(id)) return 'identyfikator istnieje w main (pierwszeństwo main)';
   for (const e of own) {
     const p = fileProblem(e);
@@ -92,7 +96,9 @@ function postProblem({ id, day, md, media, own }, { mainIds, registry, now }) {
   if (!Number.isFinite(date)) return 'date: niepoprawna data';
   if (day > warsawDay(now + FUTURE_MS) || date > now + FUTURE_MS) return 'data w przyszłości (więcej niż 10 min po chwili buildu); wpis poczeka do następnego buildu';
   // Wpis z rejestru był już opublikowany: jego data została sprawdzona wtedy. Nowy musi być świeży wobec chwili buildu
-  if (!Object.hasOwn(registry, id) && (day < warsawDay(now - PAST_MS) || date < now - PAST_MS))
+  // (albo poprzedniego buildu, gdy był wcześniej); odtworzenie rejestru (ręczne, właściciel repo) przyjmuje jednorazowo wszystkie
+  const since = Math.min(now, lastBuild ?? now) - PAST_MS;
+  if (!reseed && !Object.hasOwn(registry, id) && (day < warsawDay(since) || date < since))
     return 'data wcześniejsza niż chwila buildu − 24 h, a wpisu nie ma w rejestrze opublikowanych (nowy wpis „z przeszłości”)';
   return null;
 }
@@ -100,10 +106,11 @@ function postProblem({ id, day, md, media, own }, { mainIds, registry, now }) {
 /**
  * Filtr treści (czysta funkcja). `entries`: pliki gałęzi { path, mode (git ls-tree), size, kind ('file' | 'symlink' | 'dir' |
  * 'missing' z lstat), head (pierwsze bajty obrazu), text (treść .md) }; `registry`: rejestr opublikowanych wpisów z
- * blog/source.json strony (id → { hash, seen, changed }); `mainIds`: identyfikatory wpisów z main; `now`: chwila buildu.
- * Zwraca wpisy do skopiowania ({ id, files }) i pominięte z powodem: { id, reason } dla wpisu, { path, reason } dla pliku.
+ * blog/source.json strony (id → { hash, seen, changed }); `mainIds`: identyfikatory wpisów z main; `now`: chwila buildu;
+ * `lastBuild`: chwila poprzedniego opublikowanego buildu (`at`) albo null; `reseed`: odtworzenie rejestru (bez dolnej granicy
+ * daty). Zwraca wpisy do skopiowania ({ id, files }) i pominięte z powodem: { id, reason } dla wpisu, { path, reason } dla pliku.
  */
-export function intake({ entries, registry = {}, mainIds = new Set(), now }) {
+export function intake({ entries, registry = {}, mainIds = new Set(), now, lastBuild = null, reseed = false }) {
   const posts = new Map();
   const skipped = [];
   for (const e of entries) {
@@ -121,7 +128,7 @@ export function intake({ entries, registry = {}, mainIds = new Set(), now }) {
   }
   const ok = [];
   for (const post of posts.values()) {
-    const reason = postProblem(post, { mainIds, registry, now });
+    const reason = postProblem(post, { mainIds, registry, now, lastBuild, reseed });
     if (reason) skipped.push({ id: post.id, reason });
     else ok.push({ ...post, known: Object.hasOwn(registry, post.id), date: frontmatterDate(post.md.text) });
   }
@@ -143,12 +150,13 @@ const validEntry = (id, e) =>
   POST_ID.test(id) && e !== null && typeof e === 'object' && HASH_RE.test(e.hash) && ISO_RE.test(e.seen) && (e.changed === null || ISO_RE.test(e.changed));
 
 /**
- * Stan blog/source.json opublikowanej strony: sha gałęzi blog, sha main i rejestr opublikowanych wpisów. `known` tylko przy
- * 200 z poprawnym plikiem; 404, błąd sieci, inny kod albo zepsuty plik to stan nieznany (wtedy nic nie jest wdrażane, bo bez
- * rejestru stare wpisy z gałęzi wyglądałyby na nowe). Plik bez rejestru (starszy format) daje rejestr pusty.
+ * Stan blog/source.json opublikowanej strony: sha gałęzi blog, sha main, chwila buildu (`at`), format hasha rejestru,
+ * chwila ostatniego odtworzenia rejestru i sam rejestr. `known` tylko przy 200 z poprawnym plikiem; 404, błąd sieci, inny
+ * kod albo zepsuty plik to stan nieznany (wtedy nic nie jest wdrażane, bo bez rejestru stare wpisy z gałęzi wyglądałyby na
+ * nowe). Plik bez rejestru (starszy format) daje rejestr pusty; bez `hashFormat` = format 1 (hash samego .md).
  */
 export function publishedSource(status, text) {
-  const unknown = { known: false, sha: '', main: '', registry: {} };
+  const unknown = { known: false, sha: '', main: '', at: '', hashFormat: 0, reseededAt: null, registry: {} };
   if (status !== 200) return unknown;
   let j;
   try {
@@ -162,7 +170,10 @@ export function publishedSource(status, text) {
   if (!(sha === '' || SHA_RE.test(sha)) || !(main === '' || SHA_RE.test(main))) return unknown;
   const registry = j.posts !== null && typeof j.posts === 'object' && !Array.isArray(j.posts) ? j.posts : {};
   for (const [id, e] of Object.entries(registry)) if (!validEntry(id, e)) return unknown;
-  return { known: true, sha, main, registry };
+  const at = ISO_RE.test(j.at) ? j.at : '';
+  const hashFormat = Number.isInteger(j.hashFormat) ? j.hashFormat : 1;
+  const reseededAt = ISO_RE.test(j.reseededAt) ? j.reseededAt : null;
+  return { known: true, sha, main, at, hashFormat, reseededAt, registry };
 }
 
 // ───────────────────────── Powłoka: git i pliki ─────────────────────────
@@ -213,17 +224,19 @@ function readBranch(src) {
 }
 
 /**
- * Filtr gałęzi `blog` (klon `src`) do `dest` (content/blog z main). `published` = publishedSource strony (sha i rejestr).
- * Kopiuje tylko pliki wpisów, które przeszły filtr. Zwraca raport dla generatora: { sha, repo, branch, rewritten, registry
- * (opublikowany, generator liczy z niego nowy), posts, skipped }. Bez `src` (gałęzi nie ma albo GitHub nie odpowiada)
- * raport ma poprzedni sha i nic nie jest kopiowane.
+ * Filtr gałęzi `blog` (klon `src`) do `dest` (content/blog z main). `published` = publishedSource strony (sha, at, rejestr);
+ * `reseed` = odtworzenie rejestru. Kopiuje tylko pliki wpisów, które przeszły filtr. Zwraca raport dla generatora: { sha,
+ * repo, branch, rewritten, reseed, hashFormat i reseededAt opublikowanego rejestru, registry (opublikowany, generator liczy
+ * z niego nowy), posts, skipped }. Bez `src` (gałęzi nie ma albo GitHub nie odpowiada) raport ma poprzedni sha i nic nie
+ * jest kopiowane.
  */
-export function filterBranch({ src, dest, now, published, repo, branch }) {
-  const { sha: prev, registry } = published;
-  if (!src) return { sha: prev || null, repo, branch, rewritten: false, registry, posts: [], skipped: [] };
+export function filterBranch({ src, dest, now, published, repo, branch, reseed = false }) {
+  const { sha: prev, registry, hashFormat, reseededAt } = published;
+  const base = { repo, branch, rewritten: false, reseed, hashFormat, reseededAt, registry };
+  if (!src) return { sha: prev || null, ...base, posts: [], skipped: [] };
   const { sha, entries } = readBranch(src);
   const mainIds = new Set(readdirSync(dest).filter((f) => f.endsWith('.md')).map((f) => f.slice(0, -3)));
-  const r = intake({ entries, registry, mainIds, now });
+  const r = intake({ entries, registry, mainIds, now, lastBuild: published.at ? Date.parse(published.at) : null, reseed });
   for (const post of r.posts)
     for (const f of post.files) {
       // Jeszcze raz lstat tuż przed kopiowaniem: tylko zwykły plik, nigdy cel dowiązania
@@ -231,7 +244,7 @@ export function filterBranch({ src, dest, now, published, repo, branch }) {
       mkdirSync(path.dirname(path.join(dest, f)), { recursive: true });
       writeFileSync(path.join(dest, f), readFileSync(path.join(src, f)));
     }
-  return { sha, repo, branch, rewritten: Boolean(prev) && !inHistory(src, prev), registry, posts: r.posts, skipped: r.skipped };
+  return { sha, ...base, rewritten: Boolean(prev) && !inHistory(src, prev), posts: r.posts, skipped: r.skipped };
 }
 
 /** Pliki dodane albo zmienione od opublikowanego `prev` (bez niego cała gałąź), jako ścieżki content/blog/… dla IndexNow. */
@@ -270,12 +283,16 @@ async function main([cmd, ...argv]) {
     if (r.known && arg('save')) writeFileSync(arg('save'), text);
     console.log(`published=${r.sha}\nmain=${r.main}\nknown=${r.known}`);
   } else if (cmd === 'filter') {
-    // Bramka wdraża tylko przy czytelnym source.json; brak pliku tutaj = błąd przebiegu, nie pusty rejestr
+    // Bramka wdraża tylko przy czytelnym source.json; brak pliku tutaj = błąd przebiegu, nie pusty rejestr. Wyjątek:
+    // odtworzenie rejestru (ręczne, tylko właściciel repo) zaczyna od pustego rejestru, gdy opublikowanego nie da się odczytać
+    const reseed = argv.includes('--reseed');
     const file = arg('published');
-    if (!file || !existsSync(file)) throw new Error(`brak zapisanego blog/source.json strony (--published ${file})`);
-    const published = publishedSource(200, readFileSync(file, 'utf8'));
-    if (!published.known) throw new Error(`${file}: nieczytelny blog/source.json`);
-    const report = filterBranch({ src: arg('src') || null, dest: arg('dest'), now: Date.now(), published, repo: BLOG_REPO, branch: 'blog' });
+    const published = file && existsSync(file) ? publishedSource(200, readFileSync(file, 'utf8')) : publishedSource(0, '');
+    if (!published.known && !reseed) throw new Error(`brak albo nieczytelny zapisany blog/source.json strony (--published ${file})`);
+    // Odtworzenie bez klonu gałęzi opublikowałoby rejestr z samych wpisów main, a archiwum z gałęzi przepadłoby: błąd, bez wdrożenia
+    if (reseed && !arg('src')) throw new Error('odtworzenie rejestru wymaga klonu gałęzi blog (brak --src: klon nieudany albo gałęzi nie ma)');
+    const report = filterBranch({ src: arg('src') || null, dest: arg('dest'), now: Date.now(), published, repo: BLOG_REPO, branch: 'blog', reseed });
+    if (reseed) console.error('Odtworzenie rejestru: wpisy z gałęzi przyjmowane bez dolnej granicy daty');
     writeFileSync(arg('out'), JSON.stringify(report));
     console.error(`Gałąź blog: ${report.sha ?? 'brak'}, wpisów po filtrze ${report.posts.length}, pominiętych ${report.skipped.length}${report.rewritten ? ', historia przepisana' : ''}`);
     for (const s of report.skipped) console.error(`  pominięty ${s.id ?? s.path}: ${s.reason}`);

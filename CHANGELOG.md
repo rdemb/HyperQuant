@@ -4,6 +4,17 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Blog: rejestr wpisów przed włączeniem gałęzi blog (2026-11-11)
+
+Publikacja bez zmian (zmienna `BLOG_INTAKE` nadal wyłączona): build na 120 wpisach z `main` daje te same 170 adresów w `sitemap.xml` (plik identyczny), ten sam `blog/feed.xml` (51 linków) i 172 identyczne strony HTML; zmienia się tylko `blog/source.json`.
+
+#### Dodane
+- **Odtworzenie rejestru wpisów** (`.github/workflows/static.yml`, wejście `blog_reseed` ręcznego uruchomienia, `scripts/blog/intake.mjs --reseed`): tylko gdy uruchomił je właściciel repo (`github.actor` i `github.triggering_actor` równe `github.repository_owner`); jednorazowo przyjmuje wszystkie wpisy z gałęzi `blog` bez dolnej granicy daty, wdraża także przy nieczytelnym `source.json`, a `source.json` dostaje `reseededAt` (przenoszone w następnych buildach). Gdy klon gałęzi się nie uda albo gałęzi nie ma, odtworzenie kończy się błędem bez wdrożenia (zamiast rejestru z samych wpisów z `main`, który odciąłby archiwum gałęzi). Opis kolejności włączenia i drogi odtworzenia w `docs/BLOG.md`.
+
+#### Zmienione
+- **Hash w rejestrze obejmuje media wpisu** (`scripts/blog/build.mjs`, `postHash`): sha256 z linii „sha256 pliku, nazwa” dla `.md` i każdego pliku mediów z listy w kolejności nazw; podmiana `wykresy.json` albo obrazu bez zmiany tekstu daje „Zmieniony po publikacji”. `source.json` ma `hashFormat: 2`; rejestr w starszym formacie (sam `.md`) jest przepisywany bez oznaczania wpisów jako zmienionych.
+- **Okno daty nowego wpisu** (`scripts/blog/intake.mjs`): dolna granica to wcześniejsza z chwil „ten build” i `at` poprzedniego opublikowanego buildu, minus 24 h; przerwa we wdrożeniach dłuższa niż doba nie odrzuca wpisów z czasu przerwy.
+
 ### Pomiar interfejsu w CI: dane stałe, stały zegar, punkt odniesienia (2026-11-11)
 
 #### Dodane
