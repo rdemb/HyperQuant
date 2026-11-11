@@ -21,6 +21,8 @@ export function metricsOf(r) {
   // Prostokąty wskaźnika Effort (wybór warstwy, nie piksele) w powtórce 24.10, BTC 5m
   if (typeof r.effort?.desktop === 'number') m['effort.rects1440'] = r.effort.desktop;
   if (typeof r.effort?.phone === 'number') m['effort.rects390'] = r.effort.phone;
+  // Ściany i serie (wybór warstwy) w Kokpicie 1m na powtórce 24.10
+  if (typeof r.clashes?.desktop === 'number') m['clashes.objects1440'] = r.clashes.desktop;
   return m;
 }
 
