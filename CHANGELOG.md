@@ -4,6 +4,11 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Kot: poziom ruchu zamiast procentu do awansu kalibracji (2026-11-11)
+
+#### Zmienione
+- **Szansa dużego ruchu kota bez procentu do awansu `cat-cal-v1`** (`src/components/schrodi/moveLevel.ts`, `SchrodiLauncher.tsx`, `SchrodiPanel.tsx`, `src/views/after/CatLedgerCard.tsx`, `docs/SCHRODI.md`). Ranking `pBig` jest dobry (AUC 0,878 w podsumowaniu rejestru), ale procenty są zaniżone: na 1328 rozstrzygniętych prognozach średnie `pBig` 0,497 wobec częstości 0,585. Pasek pod wykresem pokazuje „ruch spokojny / zwykły / podwyższony” (EN „move calm / typical / elevated”) zamiast „ruch NN%”, a dymek poziom wobec typowej godziny z AUC z rejestru i zdaniem „Procenty w trakcie kalibracji, wynik w rejestrze”. Poziom to tercyl `pBig` w rozstrzygniętych prognozach z histogramu `cat.scores.big.reliability` w publicznym podsumowaniu rejestru (okno 30 dni, granice interpolowane w koszykach); poniżej 96 rozstrzygnięć „—” z powodem. Bez procentu są też zdanie kota, zmiana zdania, „Dlaczego?” (podnosi / obniża / bez wpływu), procenty modelu bieżącej godziny i linie szansy ruchu na małych wykresach; nastrój kota idzie za poziomem. Karta w dzienniku zamiast bieżącego procentu pokazuje poziom; miary (Brier, AUC, trafność) zostają. Po awansie procenty przywraca jedna flaga `MOVE_PCT_PROMOTED`. Testy: `src/components/schrodi/__tests__/moveLevel.test.tsx`.
+
 ### Paczka MCP 0.1.4 (2026-11-11)
 
 #### Zmienione

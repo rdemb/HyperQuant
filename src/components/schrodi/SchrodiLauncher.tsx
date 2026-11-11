@@ -5,13 +5,15 @@ import { isCat } from '../../utils/deskLedger';
 import { mindChange } from '../../utils/schrodi';
 import { driftAlarms } from '../../utils/schrodiTrust';
 import { DIR_TONE, dirProven, upOdds } from './direction';
+import { MOVE_PCT_PROMOTED, moodLevel, moveCalNote, moveLevelWord, moveView } from './moveLevel';
 import { SchrodiCat } from './SchrodiCat';
 import { SchrodiPanel, moodOf } from './SchrodiPanel';
 import { useSchrodi } from './useSchrodi';
 
 /**
- * Kot w pasku stanu pod wykresem (nie zasłania świec ani wskaźników): mały Schrödi z szansą dużego ruchu (i kierunku
- * dopiero po dowodzie przewagi w e-procesie dziennika); kliknięcie otwiera dymek nad paskiem. Prognoza dotyczy zawsze BTC na najbliższą godzinę, niezależnie od
+ * Kot w pasku stanu pod wykresem (nie zasłania świec ani wskaźników): mały Schrödi z poziomem dużego ruchu wobec typowej
+ * godziny (procent dopiero po awansie kalibracji, moveLevel.ts) i kierunkiem dopiero po dowodzie przewagi w e-procesie
+ * dziennika; kliknięcie otwiera dymek nad paskiem. Prognoza dotyczy zawsze BTC na najbliższą godzinę, niezależnie od
  * rynku na wykresie. Liczby zmieniają się na żywo; kropka przy liczbach = zmiana zdania w ostatnich 10 min.
  * Alarm dryfu z dziennika (kot ostatnio gorszy od prostej reguły) → kot szary.
  */
@@ -31,10 +33,12 @@ export const SchrodiLauncher: React.FC<{ className?: string }> = ({ className })
   }, []);
   const f = st.status === 'ready' ? st.f : null;
   const stale = st.status !== 'ready' || now - st.at > STALE_MS;
-  const mood = moodOf(f, now, stale);
   const mindAny = st.status === 'ready' && st.hist.length ? mindChange(st.hist, st.hist[st.hist.length - 1]) : null;
   const { summary } = useDeskLedger();
+  const cat = summary && isCat(summary.cat) && summary.cat.since !== null ? summary.cat : null;
   const trust = summary && isCat(summary.cat) ? summary.cat.trust : null;
+  const move = f ? moveView(f.pBig, cat) : null;
+  const mood = moodOf(f, now, stale, f ? moodLevel(f.pBig, cat) : null);
   const grey = driftAlarms(trust).length > 0;
   // Kierunek tylko z dowodem przewagi w e-procesie; bez niego pasek pokazuje sam duży ruch
   const showDir = dirProven(trust);
@@ -72,9 +76,22 @@ export const SchrodiLauncher: React.FC<{ className?: string }> = ({ className })
         <SchrodiCat pUp={showDir ? (f?.pUp ?? null) : null} mood={mood} size={26} beat={f?.t} className={grey ? 'grayscale opacity-70' : undefined} />
         {f && !stale ? (
           <span className="whitespace-nowrap">
-            <span className="font-semibold text-accent">
-              {tr('ruch', 'move')} {pct(f.pBig)}%
-            </span>
+            {MOVE_PCT_PROMOTED ? (
+              <span className="font-semibold text-accent">
+                {tr('ruch', 'move')} {pct(f.pBig)}%
+              </span>
+            ) : (
+              <span
+                className="font-semibold text-accent"
+                title={
+                  move?.kind === 'level'
+                    ? `${tr('Szansa dużego ruchu wobec typowej godziny (tercyl z rejestru).', 'Odds of a big move against a typical hour (tercile from the ledger).')} ${moveCalNote()}`
+                    : move?.reason
+                }
+              >
+                {tr('ruch', 'move')} {move?.kind === 'level' ? moveLevelWord(move.level) : '—'}
+              </span>
+            )}
             {showDir && (
               <>
                 <span className="text-ink-3"> · </span>

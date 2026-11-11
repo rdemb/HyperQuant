@@ -139,7 +139,7 @@ describe.each(['pl', 'en'] as const)('Kot: kierunek ukryty do dowodu w e-procesi
       expect(html).toContain(lang === 'en' ? 'Schrödinger&#x27;s cat' : 'kotem Schrödingera');
       expect(html).toContain(lang === 'en' ? 'non-overlapping hours' : 'rozłącznych godzin');
       // Duży ruch i poziomy dalej są
-      expect(html).toContain(lang === 'en' ? 'Big move within the hour' : 'Duży ruch w ciągu godziny');
+      expect(html).toContain(lang === 'en' ? 'Move in the next hour' : 'Ruch w najbliższej godzinie');
       expect(html).toContain(lang === 'en' ? 'Daily VWAP' : 'VWAP dnia');
       // Pomiar kierunku zostaje z dopiskiem, że kierunek jest ukryty do dowodu
       expect(html).toContain(lang === 'en' ? 'hidden until' : 'ukryty do');
@@ -174,7 +174,7 @@ describe.each(['pl', 'en'] as const)('Kot: kierunek ukryty do dowodu w e-procesi
       const launcher = await launcherHtml(forecast(pUp, stance));
       expect(launcher, stance).not.toMatch(LABEL);
       expect(launcher, stance).not.toMatch(SIDE_COLOR);
-      expect(barOf(launcher)).toMatch(lang === 'en' ? /move \d+%/ : /ruch \d+%/);
+      expect(barOf(launcher)).toMatch(lang === 'en' ? /move (calm|typical|elevated|—)/ : /ruch (spokojny|zwykły|podwyższony|—)/);
     }
     const { CatLedgerCard } = await import('../../../views/after/CatLedgerCard');
     const card = renderToStaticMarkup(<CatLedgerCard cat={catWith(PROOF, true)} />);
@@ -190,7 +190,7 @@ describe.each(['pl', 'en'] as const)('Kot: kierunek ukryty do dowodu w e-procesi
       expect(html, stance).not.toMatch(SIDE);
       expect(html, stance).not.toMatch(LABEL);
       expect(html, stance).not.toMatch(SIDE_COLOR);
-      expect(barOf(html)).toMatch(lang === 'en' ? /move \d+%/ : /ruch \d+%/);
+      expect(barOf(html)).toMatch(lang === 'en' ? /move (calm|typical|elevated|—)/ : /ruch (spokojny|zwykły|podwyższony|—)/);
 
       S.cat = catWith(PROOF);
       const bar = barOf(await launcherHtml(forecast(pUp, stance)));
