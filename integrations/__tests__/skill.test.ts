@@ -114,7 +114,8 @@ describe('skill hyperquant: SKILL.md', () => {
   it('cohort_flow: kohorta w pełni ukryta to null z liczbą ukrytych komórek (nie zero), przy części ukrytej uwaga w note', () => {
     const gaps = section(SKILL, 'Rules') ?? '';
     const line = gaps.split('\n').find((l) => l.startsWith('- `cohort_flow`')) ?? '';
-    for (const s of ['hidden for privacy', '`net`', '`takerNet`', '`volume`', '`volumeShare`', 'null', '`why`', 'zero', '`note`']) expect(line, s).toContain(s);
+    for (const s of ['hidden for privacy', '`net`', '`takerNet`', '`volume`', '`volumeShare`', 'null', '`why`', 'zero', '`note`', '`othersCombined`', 'tape volume', 'no accounts with a persistent edge'])
+      expect(line, s).toContain(s);
   });
 
   it('pokrycie przedziałów dziennika prognoz jako MODEL, tak jak wiersz stożka w session_review', () => {

@@ -71,6 +71,18 @@ export interface CohortMarkout {
   m60: number | null;
 }
 
+/**
+ * Wolumen taśmy okna sum i komórki ukryte razem („pozostali razem”). Obie liczby wynikają z publicznej taśmy (suma kohort
+ * w kubełku to jej wolumen), więc niczego nie ujawniają; rozbicia ukrytej sumy na kohorty nie da się odtworzyć, bo
+ * ukrywanie wtórne zostawia w kubełku co najmniej dwie ukryte komórki, których suma sama spełnia k i dominację.
+ */
+export interface CohortTape {
+  /** Wolumen taśmy w oknie (każda transakcja raz), USD; mianownik udziału kohorty = 2 × wolumen */
+  volume: number;
+  /** Ukryte komórki razem: kupno/sprzedaż ukrytych komórek, warstwa biorcy ukrytych komórek i ukrytych warstw biorcy */
+  hidden: { buy: number; sell: number; takerBuy: number; takerSell: number };
+}
+
 export interface CohortFlow {
   v: 1;
   coin: string;
@@ -82,9 +94,14 @@ export interface CohortFlow {
   buckets: CohortBucket[];
   /** Sumy z komórek widocznych (ostatnia godzina = 4 ostatnie zamknięte kubełki) */
   totals: { h1: Record<CohortId, CohortTotal>; h24: Record<CohortId, CohortTotal> };
+  /** Wolumen taśmy i ukryte razem w oknach sum; null = okno zawiera kubełki bez zapisanego wolumenu; brak pola = plik sprzed 11.11.2026 */
+  tape?: { h1: CohortTape | null; h24: CohortTape | null };
   /** Adresy aktywne w 24 h przypisane do kohorty — w dół do dziesiątek (0 = mniej niż 10), z chwili klasyfikacji */
   members: Record<CohortId, number>;
-  /** Klasyfikacja „poinformowanych”: test jednostronny markoutu 5 min, kontrola FDR (Benjamini–Hochberg), empiryczny Bayes */
+  /**
+   * Klasyfikacja „poinformowanych”: test jednostronny markoutu 5 min, kontrola FDR (Benjamini–Hochberg), empiryczny Bayes.
+   * Wybór poniżej 10 kont albo przy τ = 0 nie jest publikowany (selected = 0, konta zostają w swoich kohortach).
+   */
   informed: { candidates: number; selected: number; fdrQ: number; minN: number; mu0Bp: number | null; tauBp: number | null; classifiedAt: number | null };
   /** Markouty transakcji biorców wg kohorty w chwili transakcji (klasyfikacja z danych wcześniejszych) — 24 h */
   oos: Record<CohortId, CohortMarkout>;
@@ -107,6 +124,37 @@ export const cohortTakerNet = (t: CohortTotal) => t.takerBuy - t.takerSell;
 export const cohortVolume = (t: CohortTotal) => t.buy + t.sell;
 /** Kohorta ma dane w oknie: widoczne transakcje albo ukryte kubełki; bez nich liczby to „—”, nie zero. */
 export const cohortSeen = (t: CohortTotal) => cohortVolume(t) > 0 || t.hidden > 0 || t.takerHidden > 0;
+
+/**
+ * Mianownik udziału w obrocie okna: 2 × wolumen taśmy (każda transakcja ma kupującego i sprzedającego). Plik bez wolumenu
+ * taśmy: suma widocznych komórek tylko wtedy, gdy w oknie nic nie ukryto (inaczej udział kohorty przy ukrytych pozostałych
+ * wychodziłby 1); null = nieznany.
+ */
+export function shareDenominator(totals: Record<CohortId, CohortTotal>, tape: CohortTape | null | undefined): number | null {
+  if (tape) return 2 * tape.volume;
+  if (COHORTS.some((c) => totals[c].hidden > 0)) return null;
+  return COHORTS.reduce((s, c) => s + cohortVolume(totals[c]), 0);
+}
+
+export const HIDDEN_TOGETHER_LABEL = tr('Pozostali razem (ukryte)', 'Others combined (hidden)');
+
+/** Ukryte komórki okna razem jako suma kohorty („pozostali razem”); null = plik bez wolumenu taśmy. */
+export function hiddenTogether(tape: CohortTape | null | undefined): CohortTotal | null {
+  return tape ? { ...tape.hidden, hidden: 0, takerHidden: 0 } : null;
+}
+
+/** Stan kohorty „poinformowanych”: przed pierwszą klasyfikacją, nikogo nie wykryto (pusta, niepublikowana), wykryta. */
+export function informedState(flow: Pick<CohortFlow, 'informed'>): 'pending' | 'none' | 'detected' {
+  if (flow.informed.classifiedAt === null) return 'pending';
+  return flow.informed.selected > 0 ? 'detected' : 'none';
+}
+
+/** „Nie wykryto kont z trwałą przewagą (≈ 2630 sprawdzonych)” — liczba kandydatów z pliku (w dół do dziesiątek). */
+export function informedNoneText(flow: Pick<CohortFlow, 'informed'>): string {
+  const n = flow.informed.candidates;
+  const checked = n < 10 ? '< 10' : `≈ ${n}`;
+  return tr(`nie wykryto kont z trwałą przewagą (${checked} sprawdzonych)`, `no accounts with a persistent edge detected (${checked} checked)`);
+}
 
 /** Koniec okna sum `totals`: koniec ostatniego kubełka w pliku (etykieta „do …” panelu); bez kubełków — null. */
 export function cohortWindowEnd(flow: Pick<CohortFlow, 'buckets' | 'bucketMin'>): number | null {
@@ -145,7 +193,12 @@ const isTotal = (c: unknown) => {
   const t = c as Partial<CohortTotal> | null;
   return !!t && fin(t.buy) && fin(t.sell) && fin(t.takerBuy) && fin(t.takerSell) && fin(t.hidden) && fin(t.takerHidden);
 };
-const isRecordOf = (r: unknown, f: (x: unknown) => boolean) => !!r && typeof r === 'object' && COHORTS.every((k) => f((r as Record<string, unknown>)[k]));
+const isTapeOrNull = (t: unknown) => {
+  if (t === null) return true;
+  const x = t as Partial<CohortTape> | undefined;
+  return !!x && fin(x.volume) && !!x.hidden && fin(x.hidden.buy) && fin(x.hidden.sell) && fin(x.hidden.takerBuy) && fin(x.hidden.takerSell);
+};
+const isRecordOf =(r: unknown, f: (x: unknown) => boolean) => !!r && typeof r === 'object' && COHORTS.every((k) => f((r as Record<string, unknown>)[k]));
 const isMarkout = (m: unknown) => {
   const o = m as Partial<CohortMarkout> | null;
   return !!o && fin(o.hours) && fin(o.hiddenHours) && finOrNull(o.m1) && finOrNull(o.m5) && finOrNull(o.m60);
@@ -165,6 +218,7 @@ export function isCohortFlow(x: unknown): x is CohortFlow {
     !!f.totals &&
     isRecordOf(f.totals.h1, isTotal) &&
     isRecordOf(f.totals.h24, isTotal) &&
+    (f.tape === undefined || (!!f.tape && isTapeOrNull(f.tape.h1) && isTapeOrNull(f.tape.h24))) &&
     isRecordOf(f.members, fin) &&
     !!f.informed &&
     fin(f.informed.candidates) &&
