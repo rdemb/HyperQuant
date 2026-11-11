@@ -12,6 +12,19 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 - Opis „Duzi gracze” (PL i EN) podaje też przyczynę z przełomem doby (`src/charts/pro/chart/marketState.ts`).
 - Testy: `src/charts/pro/__tests__/players.test.ts` (przełom doby, granica godziny starego pliku, historia i konta na żywo w jednym oknie, okno poza taśmą), `src/charts/pro/__tests__/whoRetention.test.ts` (plik historii wczytany po sprzątaniu).
 
+### Zakres początkowy sesji: pełny rysunek tylko bieżącej sesji, rozszerzenia po wybiciu (2026-11-12)
+
+Na danych stałych `ui:check` (zegar 24.10.2026 21:29 UTC, sesja nowojorska) warstwa rysowała 7 obiektów w „Aukcja i otwarcie” 5m na 1440 × 900 i 7 na 390 × 844 oraz 63 i 14 w „Rozliczeniu doby” 30m; po zmianie 5 i 5 oraz 7 i 7 (wybór warstwy, nie piksele; obiekt to prostokąt albo linia, bez linii otwarć sesji). Liczby „przed” zmierzone na stronie z `main` z tymczasowym licznikiem w nakładce (bez commita).
+
+#### Zmienione
+- **Pełny rysunek tylko dla bieżącej sesji** (`src/charts/pro/chart/ibSelect.ts`, `selectIbs`; `src/charts/pro/chart/overlay.ts`): prostokąt pierwszej godziny, szczyt i dołek z etykietami. Z poprzedniej sesji same linie szczytu i dołka, starsze sesje bez rysunku. Dotąd każda sesja w widoku miała prostokąt, dwie linie i cztery rozszerzenia. Sesja bieżąca i poprzednia wynikają z ostatniej świecy, nie z przewinięcia.
+- **Rozszerzenia 1,5× i 2× dopiero po pierwszym zamknięciu półgodziny poza zakresem i tylko po tej stronie**, od chwili tego zamknięcia; świeca w trakcie się nie liczy (nakładka dostaje chwilę danych). Liczą się tylko świece kończące kubełek 30 min, więc wynik nie zależy od interwału wykresu: dotąd liczony na świecach interwału dawał na 5m i 30m rozszerzenia po przeciwnych stronach w 9,2% sesji (924 sesje BTC 5m z 2026); teraz 5m, 15m i 30m zgodne w 924 z 924, na 5m rozszerzenia pojawiają się medianowo 20 min później, a cena zamyka się potem po przeciwnej stronie zakresu w 24% sesji zamiast 35%. Na ekranie najwyżej 7 obiektów.
+- **Opis warstwy** (okno wskaźników, PL i EN): nowe reguły i wynik sprawdzianu: „Szczyt i dołek pierwszej godziny pękają częściej niż losowy poziom obok (odrzucenie 40% wobec 47%, n 1 239).”
+
+#### Dodane
+- **`ui:check`: scenariusz zakresu początkowego** („Aukcja i otwarcie” 5m i „Rozliczenie doby” 30m na danych stałych, 1440 i 390): liczba z atrybutu `data-ib-objects`, limit 7 w `--strict`. `scripts/ui/baseline.json` (win32): nowe `ib.auction1440` 5, `ib.auction390` 5, `ib.review1440` 7, `ib.review390` 7.
+- Testy: `ibSelect.test.ts` (bieżąca sesja pełna, poprzednia same linie, starsze nic; bez rozszerzeń, dopóki cena zamyka się w zakresie; rozszerzenia po pierwszym zamknięciu poza zakresem i tylko po tej stronie; świeca w trakcie nie wybija; najwyżej 7 obiektów; wybicie bez zmian po dojściu świec i przy głębszej historii; zdanie w opisie PL i EN).
+
 ### Ściany i serie: próg z chwili zdarzenia, tylko istotne ściany, limit na ekranie (2026-11-11)
 
 Na nagranej dobie 24.10.2026 (powtórka 19:30, Kokpit 1m, warstwy bąbli oraz serii i ścian, 1440 × 900) wykres rysował 82 ściany i serie; po zmianie 10 (`npm run ui:check`, wybór warstwy, nie piksele). Liczba „przed” zmierzona na stronie z `main` z tymczasowym licznikiem w warstwie (bez commita). Na stałych danych na żywo taśmy nie ma (atrapa strumienia nie wysyła transakcji), więc pomiar jest na powtórce.
