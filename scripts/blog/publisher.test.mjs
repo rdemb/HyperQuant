@@ -1,7 +1,7 @@
 // Wydawca wpisów (scripts/blog/publisher.mjs): kolejka na serwerze → filtr i walidator → commit i push na gałąź blog repo danych.
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -289,6 +289,21 @@ describe('wydawca: poprawki, kwarantanna, powody, połączenie z repo danych', {
       chmodSync(path.join(s.base, QUEUE.rejected, '_kwarantanna', q[0], BAD), 0o700);
     }
   );
+
+  it('kwarantanna liczona z dysku: alarm trwa, dopóki są pozycje (odrzucone/_kwarantanna/ i ukryte nazwy w kolejce i katalogu roboczym)', () => {
+    const s = setup();
+    mkdirSync(path.join(s.base, QUEUE.rejected, '_kwarantanna', '2026-11-11-a-2026-11-11T12-00-00-000Z'), { recursive: true });
+    mkdirSync(path.join(s.base, QUEUE.queue, '.2026-11-11-b.kwarantanna-2026-11-11T12-00-00-000Z'));
+    mkdirSync(path.join(s.base, QUEUE.work, '.2026-11-11-c.kwarantanna-2026-11-11T12-00-00-000Z'));
+    s.run();
+    expect(s.status()).toMatchObject({ ok: false, alarm: 'kwarantanna', quarantine: 3, quarantined: 0 });
+    s.run({ now: NOW + 60_000 });
+    expect(s.status()).toMatchObject({ alarm: 'kwarantanna', quarantine: 3 });
+    for (const [d, n] of [[path.join(s.base, QUEUE.rejected, '_kwarantanna'), '2026-11-11-a-2026-11-11T12-00-00-000Z'], [path.join(s.base, QUEUE.queue), '.2026-11-11-b.kwarantanna-2026-11-11T12-00-00-000Z'], [path.join(s.base, QUEUE.work), '.2026-11-11-c.kwarantanna-2026-11-11T12-00-00-000Z']])
+      rmSync(path.join(d, n), { recursive: true });
+    s.run({ now: NOW + 120_000 });
+    expect(s.status()).toMatchObject({ ok: true, alarm: null, quarantine: 0 });
+  });
 
   it('powód odrzucenia: tylko tekst, bez ścieżek serwera, najwyżej 500 znaków', () => {
     const r = cleanReason(`EACCES: permission denied, rename '/var/lib/hyperquant-blog/kolejka/x' -> '/var/lib/hyperquant-blog/praca/x.w'; ${'a'.repeat(900)}`, ['/var/lib/hyperquant-blog']);
