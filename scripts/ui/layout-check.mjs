@@ -70,6 +70,25 @@ function fixtureIntercept(fx) {
 /** Powtórka nagranej doby z kopii przy lekcjach (pliki w public/lessons/replay): stałe dane do testu etykiet. */
 const REPLAY = '#charts?replay=lessons&m=BTC&i=5m&v=candles&t=2026-10-24T19:30:00Z&layers=vwap,heatmap,bubbles,clashes,lots,profile,levels,sessions';
 
+/**
+ * Wskaźnik „Strefy absorpcji i pudełka Effort” na nagranej dobie: powtórka 24.10 o 19:30, BTC 5m, Kokpit z zapisem, w którym
+ * wskaźnik jest włączony (bez innych warstw). Liczba prostokątów z wyboru warstwy (`effortSelect`, atrybut wykresu
+ * `data-effort-rects`), nie z pikseli.
+ */
+const EFFORT_REPLAY = '#charts?replay=lessons&m=BTC&i=5m&v=candles&t=2026-10-24T19:30:00Z&layers=vwap';
+const EFFORT_STORE = {
+  'hq.charts.v1.cockpit': JSON.stringify({
+    coin: 'BTC',
+    interval: '5m',
+    view: 'candles',
+    layersV: 2,
+    indicators: [{ iid: 'effort', id: 'effort', params: {}, color: '#E9548D', alpha: 1, width: 1, labels: true, visible: true }],
+  }),
+};
+/** Limity z projektu szlifu: komputer najwyżej 7 prostokątów, telefon najwyżej 3. */
+const EFFORT_MAX = { desktop: 7, phone: 3 };
+const effortRects = `(() => { const c = window.__hq.chart(); const host = c && c.root.closest('[data-effort-rects]'); return host ? Number(host.dataset.effortRects) : null; })()`;
+
 // ───────────────────────── funkcje paska (dzisiejsze ikony i przełączniki) ─────────────────────────
 const DESKTOP_FUNCS = {
   indicators: 'Wskaźniki',
@@ -471,6 +490,20 @@ async function main() {
     report.replayPhone = { labels: await probe(page, '__hq.labels()'), objects: await probe(page, '__hq.objects()') };
     await shot(page, '390-powtorka');
 
+    // Szlif 1: wskaźnik Effort na powtórce 24.10 (390, potem 1440)
+    report.effort = {};
+    await open(page, EFFORT_REPLAY, EFFORT_STORE);
+    await sleep(4000);
+    report.effort.phone = await probe(page, effortRects);
+    await shot(page, '390-effort');
+    await page.viewport(1440, 900, false);
+    await open(page, EFFORT_REPLAY, EFFORT_STORE);
+    await sleep(4000);
+    await page.mouseAway();
+    await sleep(400);
+    report.effort.desktop = await probe(page, effortRects);
+    await shot(page, '1440-effort');
+
     // 4. Ustawienia użytkownika
     await page.viewport(1440, 900, false);
     report.storage = await persistence(page);
@@ -503,7 +536,9 @@ async function main() {
   const t4 = [r.replayDesktop, r.replayPhone, r.desktop, r.phone].every((x) => lab(x) === 0);
   const t5 = r.desktopReach?.ok && r.phoneReach?.ok && r.desktopKeys?.ok && r.phoneMenus?.cut?.length === 0;
   const t6 = r.storage?.ok;
-  r.summary = { t1, t2, t3, t4, t5, t6 };
+  // Szlif 1 (Effort): limit prostokątów wskaźnika; bez atrybutu (wersja sprzed wyboru warstwy) — brak liczby
+  const s1 = typeof r.effort?.desktop === 'number' && typeof r.effort?.phone === 'number' && r.effort.desktop <= EFFORT_MAX.desktop && r.effort.phone <= EFFORT_MAX.phone;
+  r.summary = { t1, t2, t3, t4, t5, t6, s1 };
   const lines = [
     `Pomiar „${LABEL}” (${BASE})`,
     `1. Panel ceny 1440×900: ${pct(r.desktop)} (próg 62%, zapas ${margin(r.desktop?.share ?? 0, LIMITS.desktop)}), z kolumną DOM: ${pct(r.desktopDom)} (próg 60%, zapas ${margin(r.desktopDom?.share ?? 0, LIMITS.desktopDom)}) — ${ok(t1)}`,
@@ -520,7 +555,8 @@ async function main() {
   const obj = (x) => (x?.objects ? `podpisy ${x.objects.labels}, bąble ${x.objects.bubbles}, prostokąty ${x.objects.rects}, podpisy osi ${x.objects.axisLabels}` : '—');
   lines.push(
     `   Obiekty na płótnie panelu ceny — na żywo 1440: ${obj(r.desktop)}; z DOM: ${obj(r.desktopDom)}; 390: ${obj(r.phone)}`,
-    `   Obiekty — powtórka 24.10 1440: ${obj(r.replayDesktop)}; powtórka 390: ${obj(r.replayPhone)}`
+    `   Obiekty — powtórka 24.10 1440: ${obj(r.replayDesktop)}; powtórka 390: ${obj(r.replayPhone)}`,
+    `Szlif 1. Prostokąty wskaźnika Effort (powtórka 24.10 19:30, BTC 5m): 1440 ${r.effort?.desktop ?? '—'} (limit ${EFFORT_MAX.desktop}), 390 ${r.effort?.phone ?? '—'} (limit ${EFFORT_MAX.phone}) — ${ok(s1)}`
   );
   const metrics = metricsOf(r);
   let baseDiff = [];

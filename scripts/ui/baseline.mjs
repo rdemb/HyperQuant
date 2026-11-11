@@ -18,6 +18,9 @@ export function metricsOf(r) {
     if (typeof r.domColumn.tapeRowsFit === 'number') m['dom.tapeRowsFit'] = r.domColumn.tapeRowsFit;
   }
   if (typeof r.phoneIndicators === 'number') m['phone.indicatorRows'] = r.phoneIndicators;
+  // Prostokąty wskaźnika Effort (wybór warstwy, nie piksele) w powtórce 24.10, BTC 5m
+  if (typeof r.effort?.desktop === 'number') m['effort.rects1440'] = r.effort.desktop;
+  if (typeof r.effort?.phone === 'number') m['effort.rects390'] = r.effort.phone;
   return m;
 }
 
