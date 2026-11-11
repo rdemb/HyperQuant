@@ -4,6 +4,14 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Kot: częstość dużego ruchu przy bieżącym poziomie (2026-11-11)
+
+#### Dodane
+- **Zdanie z rozliczeń rejestru pod poziomem ruchu w dymku kota** (`src/components/schrodi/moveLevel.ts`, `SchrodiPanel.tsx`, `docs/SCHRODI.md`): „W rejestrze przy tym poziomie duży ruch był w 9 na 10 godzin (n 448).” (EN „In the record, at this level a big move happened in 9 of 10 hours (n 448).”). Liczone z tego samego histogramu `cat.scores.big.reliability` co tercyle: koszyk częściowo w tercylu wnosi część prognoz proporcjonalną do nakładającej się szerokości, a jego częstość waży się tą samą częścią. Na podsumowaniu z 11.11 (1343 prognozy): spokojny 2, zwykły 6, podwyższony 9 na 10. Pasek bez liczby; za mało danych albo brak podsumowania: zdania nie ma.
+
+#### Naprawione
+- Testy paska kota nie zależą od pory uruchomienia: zegar testu stoi w chwili prognozy (`moveLevel.test.tsx`, `neutralDirection.test.tsx`); wcześniej po 12:03 UTC 11.11 pasek uznawał dane testowe za nieświeże.
+
 ### Kot: poziom ruchu zamiast procentu do awansu kalibracji (2026-11-11)
 
 #### Zmienione
