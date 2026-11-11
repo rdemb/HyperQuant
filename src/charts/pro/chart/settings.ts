@@ -35,6 +35,11 @@ export interface ChartSettings {
   statGroups: StatGroup[];
   /** Pasek „Stan rynku” nad wykresem: zdanie z faktów i „skąd?”. */
   showState: boolean;
+  /**
+   * Zdanie „Stan rynku” rozwinięte w linii pod paskiem; brak (także w zapisie sprzed tego pola) — zwinięte do przycisku
+   * „Stan”. Pole tylko dopisywane: zapis bez niego czyta się bez zmian.
+   */
+  stateOpen?: boolean;
   /** Wskaźniki na wykresie ceny. */
   showVwap: boolean;
   showVwapBands: boolean;
@@ -258,6 +263,7 @@ export function parseSettings(raw: unknown, d: ChartSettings = DEFAULT_SETTINGS)
     ...(panelSet !== undefined ? { panelSet } : {}),
     ...(panelSetIids ? { panelSetIids } : {}),
     ...(blogMapId !== undefined ? { blogMapId } : {}),
+    ...(typeof r.stateOpen === 'boolean' ? { stateOpen: r.stateOpen } : d.stateOpen !== undefined ? { stateOpen: d.stateOpen } : {}),
   };
 }
 

@@ -86,38 +86,130 @@ const TIMEFRAMES = [
   { value: 14400, label: '4h' },
 ];
 
-/** Pasek ceny i kontekstu (desktop i telefon). */
-const TickerStrip: React.FC = () => {
+/** Liczby rynku z nagłówka: wartości i ich etykiety (pełne w podpowiedzi ceny, część w samym nagłówku). */
+function useTicker() {
   const { feed, shaakuni } = useDesk();
   const t = feed.backendTelemetry;
   const first = feed.bars[0]?.open;
   const changePct = first && Number.isFinite(feed.currentPrice) ? ((feed.currentPrice - first) / first) * 100 : null;
   const windowH = (feed.bars.length * feed.timeframeSec) / 3600;
   const windowLabel = windowH > 48 ? `${Math.round(windowH / 24)}d` : `${Math.round(windowH)}h`;
-  // Wartości z ostatniej telemetrii przy nieświeżych danych są przygaszone (nie udają bieżących)
-  const fresh = feed.dataStatus === 'LIVE';
+  return {
+    price: feed.currentPrice,
+    changePct,
+    windowLabel,
+    // Wartości z ostatniej telemetrii przy nieświeżych danych są przygaszone (nie udają bieżących)
+    fresh: feed.dataStatus === 'LIVE',
+    funding: t ? `${t.fundingAnnualizedPct >= 0 ? '+' : ''}${fmtNum(t.fundingAnnualizedPct)}% APR` : DASH,
+    oi: t ? fmtCompact(t.openInterestUsd, '$') : DASH,
+    basis: t ? `${fmtNum(t.basisBps)} bps` : DASH,
+    pdh: shaakuni.pdh ? fmtPrice(shaakuni.pdh, 0) : DASH,
+    pdhStatus: shaakuni.pdh ? levelStatusLabel(shaakuni.pdhStatus) : '',
+    pdl: shaakuni.pdl ? fmtPrice(shaakuni.pdl, 0) : DASH,
+    pdlStatus: shaakuni.pdl ? levelStatusLabel(shaakuni.pdlStatus) : '',
+    // Sesja dnia tradera (§7.11), te same granice co nagłówki W sesji i Po sesji; godzina NY bez zmian
+    session: `${sessionNameAt(feed.nowTick)} · ${shaakuni.nyTimeFormatted}`,
+  };
+}
 
+const STALE_TITLE = tr('Ostatnia znana wartość — dane nieświeże', 'Last known value, data is stale');
+
+const Change: React.FC<{ pct: number | null; span: string }> = ({ pct, span }) =>
+  pct === null ? null : (
+    <span className={`whitespace-nowrap ${pct >= 0 ? 'text-buy-ink' : 'text-sell-ink'}`}>
+      <span aria-hidden="true">{pct >= 0 ? '▲' : '▼'}</span> {numLang(Math.abs(pct).toFixed(2))}% <span className="text-ink-3">{span}</span>
+    </span>
+  );
+
+/**
+ * Cena z rozwinięciem: kliknięcie (dotknięcie) pokazuje wszystkie liczby rynku — także te, które na węższym ekranie nie
+ * mieszczą się w nagłówku (basis, PDH, PDL z ich stanem, sesja).
+ */
+const PriceButton: React.FC<{ small?: boolean }> = ({ small = false }) => {
+  const k = useTicker();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const btn = useRef<HTMLButtonElement>(null);
+  const id = useId();
+  useMenuDismiss(open, setOpen, ref, btn);
+  const rows: [string, string][] = [
+    ['Funding HL', k.funding],
+    ['OI', k.oi],
+    ['Basis', k.basis],
+    ['PDH', `${k.pdh}${k.pdhStatus ? ` · ${k.pdhStatus}` : ''}`],
+    ['PDL', `${k.pdl}${k.pdlStatus ? ` · ${k.pdlStatus}` : ''}`],
+    [tr('Sesja', 'Session'), k.session],
+  ];
+  return (
+    <div ref={ref} className="relative min-w-0 shrink-0">
+      <button
+        ref={btn}
+        type="button"
+        aria-expanded={open}
+        aria-controls={open ? id : undefined}
+        title={tr('BTC-PERP: liczby rynku (funding, OI, basis, PDH, PDL, sesja)', 'BTC-PERP: market numbers (funding, OI, basis, PDH, PDL, session)')}
+        onClick={() => setOpen((o) => !o)}
+        className={`flex items-baseline gap-2 min-w-0 rounded-lg px-1.5 -mx-1.5 ${small ? 'min-h-11 items-center' : 'py-1'} hover:bg-surface-2 transition-colors duration-150 text-xs`}
+      >
+        <span className={`text-ink-2 font-medium ${small ? 'hidden min-[400px]:inline' : ''}`}>BTC-PERP</span>
+        <AnimatedNumber value={k.price} format={(v) => fmtPrice(v)} className={`${small ? 'text-base' : 'text-lg'} font-semibold text-ink-1`} />
+        <Change pct={k.changePct} span={k.windowLabel} />
+      </button>
+      {open && (
+        <div id={id} data-more-item="" tabIndex={-1} className="absolute left-0 top-full mt-2 z-40 w-72 max-w-[calc(100vw-24px)] bg-surface-2 border border-line-strong rounded-xl p-3 shadow-2xl text-xs outline-none">
+          <dl className={`grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 ${k.fresh ? '' : 'opacity-60'}`}>
+            {rows.map(([label, value]) => (
+              <React.Fragment key={label}>
+                <dt className="text-ink-3">{label}</dt>
+                <dd className="font-mono tabular-nums text-ink-1">{value}</dd>
+              </React.Fragment>
+            ))}
+          </dl>
+          {!k.fresh && <p className="mt-2 text-[11px] text-ink-3">{STALE_TITLE}</p>}
+          <p className="mt-2 text-[10.5px] leading-snug text-ink-3">
+            {tr('Hyperliquid (REST + WebSocket); PDH i PDL z poprzedniego dnia UTC.', 'Hyperliquid (REST + WebSocket); PDH and PDL from the previous UTC day.')}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+};
+
+/**
+ * Liczby rynku w rzędzie nagłówka (komputer, od 1024 px): menu z lewej, liczby z prawej. Węższy ekran chowa najpierw
+ * sesję i basis, potem PDH i PDL (wszystkie zostają w rozwinięciu ceny; stan PDH i PDL jest w podpowiedzi).
+ */
+const TickerInline: React.FC = () => {
+  const k = useTicker();
+  return (
+    <div className="flex items-center gap-x-4 min-w-0 overflow-hidden whitespace-nowrap text-xs">
+      <PriceButton />
+      <span className={`flex items-baseline gap-x-4 ${k.fresh ? '' : 'opacity-50'}`} title={k.fresh ? undefined : STALE_TITLE}>
+        <Item label="Funding" value={k.funding} title="Funding HL" />
+        <Item label="OI" value={k.oi} />
+        <Item label="Basis" value={k.basis} className="hidden min-[1680px]:flex" />
+      </span>
+      <Item label="PDH" value={k.pdh} title={k.pdhStatus} className="hidden min-[1400px]:flex" />
+      <Item label="PDL" value={k.pdl} title={k.pdlStatus} className="hidden min-[1400px]:flex" />
+      <Item label={tr('Sesja', 'Session')} value={k.session} className="hidden min-[1560px]:flex" />
+    </div>
+  );
+};
+
+/** Pasek ceny i kontekstu w osobnym rzędzie (tablet, 640–1023 px). */
+const TickerStrip: React.FC = () => {
+  const k = useTicker();
   return (
     <div className="flex items-center gap-x-5 gap-y-1 overflow-x-auto hq-scroll-cue [--cue-bg:color-mix(in_oklab,var(--color-surface-1)_60%,var(--color-page))] whitespace-nowrap px-4 lg:px-6 py-2 border-b border-line bg-surface-1/60 text-xs">
-      <div className="flex items-baseline gap-2">
-        <span className="text-ink-2 font-medium">BTC-PERP</span>
-        <AnimatedNumber value={feed.currentPrice} format={(v) => fmtPrice(v)} className="text-lg font-semibold text-ink-1 px-1" />
-        {changePct !== null && (
-          <span className={changePct >= 0 ? 'text-buy-ink' : 'text-sell-ink'}>
-            <span aria-hidden="true">{changePct >= 0 ? '▲' : '▼'}</span> {numLang(Math.abs(changePct).toFixed(2))}%{' '}
-            <span className="text-ink-3">{windowLabel}</span>
-          </span>
-        )}
-      </div>
-      <span className={`flex items-baseline gap-x-5 ${fresh ? '' : 'opacity-50'}`} title={fresh ? undefined : tr('Ostatnia znana wartość — dane nieświeże', 'Last known value, data is stale')}>
-        <Item label="Funding HL" value={t ? `${t.fundingAnnualizedPct >= 0 ? '+' : ''}${fmtNum(t.fundingAnnualizedPct)}% APR` : DASH} />
-        <Item label="OI" value={t ? fmtCompact(t.openInterestUsd, '$') : DASH} />
-        <Item label="Basis" value={t ? `${fmtNum(t.basisBps)} bps` : DASH} />
+      <PriceButton />
+      <span className={`flex items-baseline gap-x-5 ${k.fresh ? '' : 'opacity-50'}`} title={k.fresh ? undefined : STALE_TITLE}>
+        <Item label="Funding HL" value={k.funding} />
+        <Item label="OI" value={k.oi} />
+        <Item label="Basis" value={k.basis} />
       </span>
-      <Item label="PDH" value={shaakuni.pdh ? `${fmtPrice(shaakuni.pdh, 0)} · ${levelStatusLabel(shaakuni.pdhStatus)}` : DASH} />
-      <Item label="PDL" value={shaakuni.pdl ? `${fmtPrice(shaakuni.pdl, 0)} · ${levelStatusLabel(shaakuni.pdlStatus)}` : DASH} />
-      {/* Sesja dnia tradera (§7.11), te same granice co nagłówki W sesji i Po sesji; godzina NY bez zmian */}
-      <Item label={tr('Sesja', 'Session')} value={`${sessionNameAt(feed.nowTick)} · ${shaakuni.nyTimeFormatted}`} />
+      <Item label="PDH" value={`${k.pdh}${k.pdhStatus ? ` · ${k.pdhStatus}` : ''}`} />
+      <Item label="PDL" value={`${k.pdl}${k.pdlStatus ? ` · ${k.pdlStatus}` : ''}`} />
+      <Item label={tr('Sesja', 'Session')} value={k.session} />
     </div>
   );
 };
@@ -129,8 +221,8 @@ const inReplay = () => {
   return src === 'history' || src === 'lessons';
 };
 
-const Item: React.FC<{ label: string; value: string }> = ({ label, value }) => (
-  <span className="flex items-baseline gap-1.5">
+const Item: React.FC<{ label: string; value: string; title?: string; className?: string }> = ({ label, value, title, className = 'flex' }) => (
+  <span className={`${className} items-baseline gap-1.5`} title={title || undefined}>
     <span className="text-ink-3">{label}</span>
     <span className="font-mono tabular-nums text-ink-1">{value}</span>
   </span>
@@ -323,14 +415,26 @@ export const AppShell: React.FC = () => {
                         {n.label}
                       </ViewLink>
                     ))}
+                    {/* Rzadko używane przełączniki nagłówka: język, synchronizacja, dźwięk taśmy (nagłówek ma miejsce na liczby rynku) */}
+                    <div role="separator" className="my-1 border-t border-line" />
+                    <ShellToggles audioEnabled={audioEnabled} setAudioEnabled={setAudioEnabled} onSync={feed.syncNow} onDone={() => setTopMore(false)} />
                   </motion.div>
                 )}
               </AnimatePresence>
             </div>
           </nav>
 
+          {/* Liczby rynku w tym samym rzędzie co menu (komputer); w powtórce bez ceny na żywo */}
+          {!(replay && view === 'charts') && (
+            <div className="hidden lg:flex flex-1 min-w-0 justify-end">
+              <TickerInline />
+            </div>
+          )}
+
           <div className="flex items-center gap-2 shrink-0">
-            <Segmented<Lang> ariaLabel={tr('Język', 'Language')} size="xs" value={lang} onChange={setLang} options={LANGS} />
+            <div className="lg:hidden">
+              <Segmented<Lang> ariaLabel={tr('Język', 'Language')} size="xs" value={lang} onChange={setLang} options={LANGS} />
+            </div>
             <Badge tone={STATUS_TONE[feed.dataStatus]} title={STATUS_TITLE[feed.dataStatus]} testId="data-status">
               {feed.dataStatus}
             </Badge>
@@ -343,16 +447,20 @@ export const AppShell: React.FC = () => {
             <IconBtn label={feed.isStreaming ? tr('Wstrzymaj strumień', 'Pause stream') : tr('Wznów strumień', 'Resume stream')} onClick={() => feed.setIsStreaming(!feed.isStreaming)}>
               {feed.isStreaming ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
             </IconBtn>
-            <IconBtn label={tr('Synchronizuj teraz', 'Sync now')} onClick={feed.syncNow} className="hidden sm:inline-flex">
+            <IconBtn label={tr('Synchronizuj teraz', 'Sync now')} onClick={feed.syncNow} className="hidden sm:inline-flex lg:hidden">
               <RefreshCw className="w-4 h-4" />
             </IconBtn>
-            <IconBtn label={audioEnabled ? tr('Wycisz dźwięk taśmy', 'Mute tape sound') : tr('Włącz dźwięk taśmy', 'Unmute tape sound')} onClick={() => setAudioEnabled(!audioEnabled)} className="hidden sm:inline-flex">
+            <IconBtn label={audioEnabled ? tr('Wycisz dźwięk taśmy', 'Mute tape sound') : tr('Włącz dźwięk taśmy', 'Unmute tape sound')} onClick={() => setAudioEnabled(!audioEnabled)} className="hidden sm:inline-flex lg:hidden">
               {audioEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
             </IconBtn>
             <InstallButton compact />
           </div>
         </div>
-        {!(replay && view === 'charts') && <TickerStrip />}
+        {!(replay && view === 'charts') && (
+          <div className="lg:hidden">
+            <TickerStrip />
+          </div>
+        )}
         {!OWN_INTERVALS.includes(view) && (
           <div className="md:hidden lg:block xl:hidden px-4 py-2 border-b border-line overflow-x-auto">
             <Segmented<number> ariaLabel={tr('Interwał', 'Timeframe')} value={feed.timeframeSec} onChange={feed.setTimeframeSec} options={TIMEFRAMES} />
@@ -442,6 +550,46 @@ export const AppShell: React.FC = () => {
     </div>
   );
 };
+
+/** Pozycje menu „Więcej”: język (PL / EN), synchronizacja teraz i dźwięk taśmy. */
+const ShellToggles: React.FC<{ audioEnabled: boolean; setAudioEnabled: (v: boolean) => void; onSync: () => void; onDone: () => void }> = ({
+  audioEnabled,
+  setAudioEnabled,
+  onSync,
+  onDone,
+}) => (
+  <>
+    <div role="group" aria-label={tr('Język', 'Language')} className="flex gap-1 px-1.5 py-1">
+      {LANGS.map((l) => (
+        <button
+          key={l.value}
+          type="button"
+          aria-pressed={lang === l.value}
+          title={l.title}
+          onClick={() => setLang(l.value)}
+          className={`flex-1 min-h-11 rounded-lg text-sm font-medium ${lang === l.value ? 'bg-surface-3 text-ink-1 shadow-[inset_0_0_0_1px_var(--color-line-strong)]' : 'text-ink-3 hover:text-ink-1 hover:bg-surface-3'}`}
+        >
+          {l.value === 'pl' ? 'PL · Polski' : 'EN · English'}
+        </button>
+      ))}
+    </div>
+    <button
+      type="button"
+      onClick={() => {
+        onSync();
+        onDone();
+      }}
+      className={MENU_ITEM}
+    >
+      <RefreshCw className="w-4 h-4" />
+      {tr('Synchronizuj teraz', 'Sync now')}
+    </button>
+    <button type="button" aria-pressed={audioEnabled} onClick={() => setAudioEnabled(!audioEnabled)} className={MENU_ITEM}>
+      {audioEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+      {audioEnabled ? tr('Wycisz dźwięk taśmy', 'Mute tape sound') : tr('Włącz dźwięk taśmy', 'Unmute tape sound')}
+    </button>
+  </>
+);
 
 // `className` niesie też sposób wyświetlania (domyślnie inline-flex): stałe inline-flex w klasie bazowej wygrywało z „hidden sm:inline-flex”,
 // więc na telefonie przyciski miały być ukryte, a były widoczne i z przyciskiem instalacji nagłówek wychodził poza ekran

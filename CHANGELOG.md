@@ -4,6 +4,20 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Wykres W sesji: lżejszy pasek, więcej miejsca na świece (2026-11-11)
+
+Pomiar `npm run ui:check` (Chrome bez okna na zbudowanej stronie, 1440 × 900 i 390 × 844; `scripts/ui/layout-check.mjs`). Przed zmianą panel ceny zajmował 40,9% wysokości okna 1440 × 900 (37,6% z kolumną DOM) i 40,5% na telefonie 390 × 844.
+
+#### Zmienione
+- **Jeden pasek sterowania na komputerze zamiast czterech rzędów** (`src/charts/pro/ProChart.tsx`, `src/charts/pro/chart/ChartBar.tsx`, `src/charts/pro/chart/TabsBar.tsx`, `src/views/ChartsView.tsx`, `src/ui/Dropdown.tsx`): „Układ ▾” (karty fazy z Alt+N, zamknięcie, nazwa, kopia, wzorzec, nowa karta), „BTC ▾”, „5m ▾” (cztery ulubione interwały jako przyciski od 1600 px), rodzaj wykresu jednym wyborem (świece albo footprint Bid × Ask, Delta, Wolumen), „Warstwy ▾” (oko, plakietka LIVE / MODEL i wiek danych każdej warstwy; plakietka spoza LIVE widoczna na samym przycisku), „Wskaźniki”, z prawej trzy liczby układu, „Stan”, zestaw paneli i karta uczciwości (w Aukcji), kolumna DOM, alarmy i „⋯” z rysowaniem, taśmą, ustawieniami, układem 1/2/4, skalą, powtórką, linkiem, zrzutem, Klatką, skrótami i pełnym ekranem. Listy obsługują klawiaturę (strzałki, Home, End, Escape oddaje fokus przyciskowi) i mają `aria-haspopup`, `aria-expanded`, `aria-controls`. Pytanie układu jest podpowiedzią jego nazwy. Obok kolumny DOM pasek zostaje w jednym rzędzie (krótsze podpisy, liczby układu przewijane w bok).
+- **„Stan rynku” zwinięty do przycisku „Stan”**; rozwinięty to jedna linia pod paskiem, krzyżyk zwija ją z powrotem (`src/charts/pro/chart/MarketStateBar.tsx`). Nowe pole ustawień `stateOpen` jest tylko dopisywane; zapisane ustawienia czyta się bez zmian.
+- **Liczby rynku w jednym rzędzie z menu strony** (komputer, `src/shell/AppShell.tsx`): cena, zmiana, funding i OI zawsze, PDH i PDL od 1400 px, sesja od 1560 px, basis od 1680 px; kliknięcie ceny rozwija wszystkie liczby (także stan PDH i PDL). Język, synchronizacja i dźwięk taśmy są w menu „Więcej”.
+- Panele pod wykresem ceny są niższe (wolumen 0,10, delta i CVD 0,16, panele giełd 0,24 wysokości panelu ceny), a karta wykresu sięga do dołu okna: panel ceny ma 62,6% wysokości okna 1440 × 900, z kolumną DOM też 62,6%.
+
+#### Dodane
+- **`npm run ui:check`** (`scripts/ui/layout-check.mjs`, `scripts/ui/cdp.mjs`, `scripts/ui/probe.mjs`): pomiar sześciu warunków układu na `vite preview` przez Chrome DevTools Protocol, bez nowych zależności — udział panelu ceny, elementy DOM nad świecami, nachodzące etykiety (na powtórce nagranej doby z kopii przy lekcjach), funkcje paska w najwyżej dwóch kliknięciach, skróty klawiszowe i zachowanie ustawień w localStorage; wynik w `ui-check/<etykieta>.json`.
+- Mapa skrótów klawiszowych jako czyste funkcje z testem, że się nie zmieniła (`src/charts/pro/chart/shortcuts.ts`), test zachowania zapisanych ustawień wykresu (`settingsKeep.test.ts`) i klawiatury list (`menuKeys.test.ts`).
+
 ### Wskaźnik: strefy absorpcji i pudełka Effort (2026-11-09)
 
 #### Dodane

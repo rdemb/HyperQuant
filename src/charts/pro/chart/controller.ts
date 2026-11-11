@@ -700,9 +700,10 @@ export class ProChartController {
     panes[0]?.setStretchFactor(1);
     const statsPane = this.statsSeries?.getPane();
     const venuePanes = new Set([this.venueCvd?.hl?.getPane(), this.venueOi?.hl?.getPane()]);
-    // Panele giełd mają opis w dwóch wierszach (na telefonie także), więc są wyższe niż CVD
+    // Panele giełd mają opis w dwóch wierszach (na telefonie także), więc są wyższe niż CVD. Panel ceny ma co najmniej
+    // ~80% wysokości paneli przy wolumenie i jednym panelu przepływu (pole świec ≥ 62% okna 1440 × 900)
     for (let i = 1; i < panes.length; i++)
-      if (panes[i] !== statsPane) panes[i].setStretchFactor(panes[i] === this.volume?.getPane() ? 0.14 : venuePanes.has(panes[i]) ? 0.3 : 0.22);
+      if (panes[i] !== statsPane) panes[i].setStretchFactor(panes[i] === this.volume?.getPane() ? 0.1 : venuePanes.has(panes[i]) ? 0.24 : 0.16);
     // Tabela ma stałą wysokość wiersza: wysokość panelu ustawiamy po ułożeniu pozostałych
     // (panele mogły zostać przebudowane przed następną klatką — wtedy ten panel już nie istnieje)
     this.fitStatsPane();

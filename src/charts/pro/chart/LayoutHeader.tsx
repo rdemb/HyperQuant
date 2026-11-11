@@ -21,6 +21,8 @@ import { tr } from '../../../i18n';
  * Liczby z danych, które wykres już ma — świece magazynu rynku (1m, 5m, 1h; seria wczytuje się przy pierwszym użyciu),
  * taśma i arkusz magazynu, migawki skanera, model zmienności HAR i mapy z bloga. Przeliczane co 5 s (na starcie częściej),
  * dotknięcie liczby rozwija ich źródła. Na telefonie jedna linia z przewijaniem w bok: najpierw liczby, potem pytanie.
+ * `variant`: `row` — własny wiersz z pytaniem; `inline` — same trzy liczby w pasku wykresu (pytanie jest podpowiedzią przy
+ * nazwie układu); `chips` — trzy małe liczby bez przycisków w linii legendy (telefon; źródła rozwija `detailsOpen`).
  */
 
 const EVERY_MS = 5_000;
@@ -56,9 +58,19 @@ export const LayoutHeader: React.FC<{
   narrow: boolean;
   /** Po każdym przeliczeniu: trzy liczby nagłówka (domyślny tytuł Klatki). */
   onNumbers?: (nums: LayoutNumber[]) => void;
-}> = ({ id, question, store, model, volStatus, liq, whales, whalesConfigured, blogMaps, blogMap, narrow, onNumbers }) => {
+  variant?: 'row' | 'inline' | 'chips';
+  /** Rozwinięcie źródeł sterowane z zewnątrz (wariant `chips`: z menu „⋯”). */
+  detailsOpen?: boolean;
+  onDetails?: (open: boolean) => void;
+}> = ({ id, question, store, model, volStatus, liq, whales, whalesConfigured, blogMaps, blogMap, narrow, onNumbers, variant = 'row', detailsOpen, onDetails }) => {
   const [nums, setNums] = useState<LayoutNumber[]>(() => layoutNumbers(id, { coin: store.coin, now: Date.now() }));
-  const [open, setOpen] = useState(false);
+  const [ownOpen, setOwnOpen] = useState(false);
+  const open = detailsOpen ?? ownOpen;
+  const setOpen = (v: boolean | ((o: boolean) => boolean)) => {
+    const next = typeof v === 'function' ? v(open) : v;
+    setOwnOpen(next);
+    onDetails?.(next);
+  };
   const ref = useRef<HTMLDivElement>(null);
   const onNumbersRef = useRef(onNumbers);
   onNumbersRef.current = onNumbers;
@@ -159,6 +171,82 @@ export const LayoutHeader: React.FC<{
     };
   }, [open]);
 
+  const details = (pos: string) =>
+    open && (
+      <div className={`absolute ${pos} top-full mt-1 z-40 max-h-[calc(100dvh-22rem)] sm:max-h-[60vh] overflow-y-auto rounded-xl border border-line-strong bg-surface-2 p-3 shadow-2xl text-xs pointer-events-auto`}>
+        <p className="text-ink-1 leading-snug">{question}</p>
+        <dl className="mt-2.5 flex flex-col gap-2">
+          {nums.map((n) => (
+            <div key={n.label}>
+              <dt className="flex items-center gap-1.5 font-medium text-ink-1">
+                {n.label}: <span className="font-mono tabular-nums font-normal">{n.value}</span>
+                <Tag n={n} />
+              </dt>
+              <dd className="mt-0.5 leading-snug text-ink-3">{n.hint}</dd>
+            </div>
+          ))}
+        </dl>
+        <p className="mt-2.5 text-[10.5px] leading-snug text-ink-3">
+          {tr(
+            `Liczby z danych tego wykresu (${store.coin}), odświeżane co 5 s. LIVE — dane Hyperliquid albo skanera, MODEL — wynik modelu z nazwą metody, wiek — migawka skanera starsza niż 2 min. To opis, nie sygnał ani rekomendacja.`,
+            `Numbers from this chart's data (${store.coin}), refreshed every 5 s. LIVE is Hyperliquid or scanner data, MODEL a model output with the method name, an age a scanner snapshot older than 2 min. A description, not a signal or a recommendation.`
+          )}
+        </p>
+      </div>
+    );
+  const numberButtons = (
+    <div role="group" aria-label={tr('Liczby układu', 'Layout numbers')} className={`flex items-center shrink-0 ${narrow ? 'gap-x-2' : 'gap-x-3'}`}>
+      {nums.map((n) => (
+        <button
+          key={n.label}
+          type="button"
+          aria-expanded={open}
+          onClick={() => setOpen((o) => !o)}
+          title={n.hint}
+          className={`shrink-0 rounded-md px-1 -mx-1 hover:bg-surface-2 transition-colors duration-150 ${narrow ? 'h-11 flex flex-col items-start justify-center gap-1' : variant === 'inline' ? 'h-9 flex items-center gap-1.5' : 'flex items-center gap-1.5'}`}
+        >
+          {variant === 'inline' ? (
+            // W pasku wykresu: pełna nazwa na szerokim pasku, pierwsze słowo na węższym (np. obok kolumny DOM)
+            <span className="text-[10px] font-semibold uppercase tracking-[0.08em] leading-none text-ink-3">
+              <span className="hidden @min-[1250px]:inline">{n.label}</span>
+              <span className="@min-[1250px]:hidden">{n.short ?? n.label.split(' ')[0]}</span>
+            </span>
+          ) : (
+            <span className="text-[10px] font-semibold uppercase tracking-[0.08em] leading-none text-ink-3">{narrow ? (n.short ?? n.label) : n.label}</span>
+          )}
+          <span className="flex items-center gap-1 leading-none">
+            {/* Liczby krojem o stałej szerokości, opisy (typ dnia, migracja) zwykłym — węższe na telefonie */}
+            <span className={`${/\d/.test(n.value) ? 'font-mono tabular-nums text-[12px]' : 'text-[11px]'} ${n.value === DASH ? 'text-ink-3' : 'text-ink-1'}`}>{n.value}</span>
+            <Tag n={n} size={narrow ? 'sm' : undefined} />
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+
+  if (variant === 'inline')
+    return (
+      <div ref={ref} className="relative min-w-0 flex items-center">
+        <div ref={scrollFadeRef} className="hq-fade-x min-w-0 overflow-x-auto [scrollbar-width:none] px-1">
+          {numberButtons}
+        </div>
+        {details('right-0 w-[min(36rem,calc(100vw-32px))]')}
+      </div>
+    );
+
+  if (variant === 'chips')
+    return (
+      <span ref={ref as unknown as React.RefObject<HTMLSpanElement>} className="relative inline-flex items-baseline gap-x-1.5 whitespace-nowrap">
+        {nums.map((n) => (
+          <span key={n.label} title={n.hint} className="inline-flex items-baseline gap-1 rounded px-1 bg-surface-2/80 font-sans">
+            <span className="text-[9px] font-semibold uppercase tracking-[0.06em] text-ink-3">{n.short ?? n.label}</span>
+            <span className={`font-mono tabular-nums text-[10.5px] ${n.value === DASH ? 'text-ink-3' : 'text-ink-1'}`}>{n.value}</span>
+          </span>
+        ))}
+        {details('left-0 w-[min(22rem,calc(100vw-24px))] whitespace-normal font-sans')}
+      </span>
+    );
+
   return (
     <div ref={ref} className="relative shrink-0 border-b border-line">
       <div ref={scrollFadeRef} className={`hq-fade-x flex items-center min-w-0 overflow-x-auto [scrollbar-width:none] whitespace-nowrap ${narrow ? 'h-11 gap-x-2 px-1.5' : 'h-8 gap-x-3 px-2 sm:px-3'}`}>
@@ -167,48 +255,9 @@ export const LayoutHeader: React.FC<{
           <CircleHelp className="w-3.5 h-3.5 shrink-0 text-ink-3" aria-label={tr('Pytanie układu', 'Layout question')} />
           <span className={narrow ? '' : 'truncate'}>{question}</span>
         </p>
-        <div role="group" aria-label={tr('Liczby układu', 'Layout numbers')} className={`flex items-center shrink-0 ${narrow ? 'gap-x-2' : 'gap-x-3'}`}>
-          {nums.map((n) => (
-            <button
-              key={n.label}
-              type="button"
-              aria-expanded={open}
-              onClick={() => setOpen((o) => !o)}
-              title={n.hint}
-              className={`shrink-0 rounded-md px-1 -mx-1 hover:bg-surface-2 transition-colors duration-150 ${narrow ? 'h-11 flex flex-col items-start justify-center gap-1' : 'flex items-center gap-1.5'}`}
-            >
-              <span className="text-[10px] font-semibold uppercase tracking-[0.08em] leading-none text-ink-3">{narrow ? (n.short ?? n.label) : n.label}</span>
-              <span className="flex items-center gap-1 leading-none">
-                {/* Liczby krojem o stałej szerokości, opisy (typ dnia, migracja) zwykłym — węższe na telefonie */}
-                <span className={`${/\d/.test(n.value) ? 'font-mono tabular-nums text-[12px]' : 'text-[11px]'} ${n.value === DASH ? 'text-ink-3' : 'text-ink-1'}`}>{n.value}</span>
-                <Tag n={n} size={narrow ? 'sm' : undefined} />
-              </span>
-            </button>
-          ))}
-        </div>
+        {numberButtons}
       </div>
-      {open && (
-        <div className="absolute left-2 right-2 sm:right-auto sm:w-[36rem] top-full mt-1 z-40 max-h-[calc(100dvh-22rem)] sm:max-h-[60vh] overflow-y-auto rounded-xl border border-line-strong bg-surface-2 p-3 shadow-2xl text-xs">
-          <p className="text-ink-1 leading-snug">{question}</p>
-          <dl className="mt-2.5 flex flex-col gap-2">
-            {nums.map((n) => (
-              <div key={n.label}>
-                <dt className="flex items-center gap-1.5 font-medium text-ink-1">
-                  {n.label}: <span className="font-mono tabular-nums font-normal">{n.value}</span>
-                  <Tag n={n} />
-                </dt>
-                <dd className="mt-0.5 leading-snug text-ink-3">{n.hint}</dd>
-              </div>
-            ))}
-          </dl>
-          <p className="mt-2.5 text-[10.5px] leading-snug text-ink-3">
-            {tr(
-              `Liczby z danych tego wykresu (${store.coin}), odświeżane co 5 s. LIVE — dane Hyperliquid albo skanera, MODEL — wynik modelu z nazwą metody, wiek — migawka skanera starsza niż 2 min. To opis, nie sygnał ani rekomendacja.`,
-              `Numbers from this chart's data (${store.coin}), refreshed every 5 s. LIVE is Hyperliquid or scanner data, MODEL a model output with the method name, an age a scanner snapshot older than 2 min. A description, not a signal or a recommendation.`
-            )}
-          </p>
-        </div>
-      )}
+      {details('left-2 right-2 sm:right-auto sm:w-[36rem]')}
     </div>
   );
 };
