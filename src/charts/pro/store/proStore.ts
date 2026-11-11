@@ -132,6 +132,8 @@ export class ProStore {
   private liveFrom = Number.POSITIVE_INFINITY;
   /** Czas, dla którego zlecenia i ściany zostały już złożone z historii serwera (bez dublowania przy ponownym pliku). */
   private readonly derived = new Coverage();
+  /** Granica ostatniego sprzątania taśmy: starsze wypełnienia z historii nie tworzą już zleceń ani wpisów makerów. */
+  private keptFrom = Number.NEGATIVE_INFINITY;
   /** Cena ostatniej transakcji z taśmy na żywo (0 przed pierwszą). */
   private lastTradePx = 0;
   private lastTradeT = 0;
@@ -535,7 +537,8 @@ export class ProStore {
       for (const [a, z] of tr.zeroSpans ?? []) this.zeroKnown.addSpan(a, z);
       const { accepted } = this.tape.insert(tr.fills);
       const fresh = new Set(accepted);
-      const used = tr.fills.filter((f) => fresh.has(f) || (f.time < this.liveFrom && !this.derived.covers(f.time, f.time + 1)));
+      // Sprzed granicy sprzątania taśma nie odrzuci duplikatu, a zlecenia i wypełnienia makerów stamtąd już są (okno kont)
+      const used = tr.fills.filter((f) => f.time >= this.keptFrom && (fresh.has(f) || (f.time < this.liveFrom && !this.derived.covers(f.time, f.time + 1))));
       this.derived.addSpan(tr.from, Math.min(tr.to, this.liveFrom));
       if (used.length > 0) {
         const agg = new OrderAggregator();
@@ -585,18 +588,22 @@ export class ProStore {
 
   private prune(): void {
     const cut = this.serverNow() - RETENTION_MS;
+    // Okno klasy kont (Kto handluje, makerzy) sięga 60 min przed zamknięcie świecy: najstarsza świeca ma swoje okno
+    // w całości, więc zlecenia, wypełnienia makerów i taśma z kontami zostają o godzinę dłużej
+    const windowCut = cut - HOUR_MS;
+    this.keptFrom = Math.max(this.keptFrom, cut);
     this.tape.prune(cut);
     this.coverage.prune(cut);
     this.derived.prune(cut);
-    this.orders.prune(cut);
-    this.addressed.prune(cut);
+    this.orders.prune(windowCut);
+    this.addressed.prune(windowCut);
     this.zeroKnown.prune(cut);
-    this.players.prune(cut);
+    this.players.prune(windowCut);
     this.walls.prune(this.serverNow(), cut);
     this.oi.prune(cut);
     this.books.forEach((b) => b.prune(cut));
     this.exact.prune(cut);
-    this.makers.prune(cut);
+    this.makers.prune(windowCut);
     for (const s of this.seriesById.values()) s.prune(cut);
   }
 
