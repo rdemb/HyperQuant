@@ -10,7 +10,8 @@
  * Sprawdza:
  *  1. łańcuch hashy: każda linia w postaci kanonicznej, hash = SHA-256 kanonicznego JSON z polem prev, prev = hash
  *     poprzedniej linii (także między dniami); w trybie --dir od GENESIS;
- *  2. wyniki: CRPS, PIT i pokrycia przeliczone z zapisanych kwantyli i zwrotu (nie przepisane z zapisu);
+ *  2. wyniki: CRPS, PIT i pokrycia przeliczone z zapisanych kwantyli i zwrotu (nie przepisane z zapisu); Brier dotknięć
+ *     i jego baza odległości (wzór odbicia ze stałą σ godzinową benchmarku z `bq` prognozy 1 h tego slotu, bssDist);
  *  3. historię git (--dir): każdy commit tylko dopisuje do plików dziennika;
  *     kot (Schrödi): p przeliczone z zapisanych cech i publicznego modelu public/schrodi/model-v1.json (hash modelu
  *     = `mh` rekordu), wzrost i duży ruch z cen i max/min okna; szanse dotknięcia poziomów i stożek zasięgu
@@ -81,6 +82,25 @@ function quantileAt(taus, qs, tau) {
   let i = 1;
   while (taus[i] < tau) i++;
   return qs[i - 1] + ((tau - taus[i - 1]) / (taus[i] - taus[i - 1])) * (qs[i] - qs[i - 1]);
+}
+
+/** Φ(x) przez erf z rozwinięcia Abramowitza i Steguna 7.1.26 (błąd < 1,5e-7) — inna metoda niż w skanerze */
+function normCdf(x) {
+  const z = Math.abs(x) / Math.SQRT2;
+  const t = 1 / (1 + 0.3275911 * z);
+  const erf = 1 - ((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-z * z);
+  return x >= 0 ? 0.5 * (1 + erf) : 0.5 * (1 - erf);
+}
+const Z975 = 1.959963984540054;
+/**
+ * Baza odległości dla dotknięć: σ godzinowa benchmarku z kwantyli `bq` prognozy 1 h slotu (σ_h = (q₀,₉₇₅ − q₀,₀₂₅) / 2z),
+ * P = 2(1 − Φ(|ln(poziom/cena)| / (σ·√(h/60)))); brak prognozy 1 h albo σ ≤ 0 → null.
+ */
+function distTouchProb(fc, l, ret60) {
+  if (!ret60 || !Array.isArray(ret60.bq)) return null;
+  const s = (quantileAt(ret60.taus, ret60.bq, 0.975) - quantileAt(ret60.taus, ret60.bq, 0.025)) / (2 * Z975);
+  if (!(s > 0)) return null;
+  return Math.min(1, 2 * (1 - normCdf(Math.abs(Math.log(fc.lv[l] / fc.px0)) / (s * Math.sqrt(fc.h / 60)))));
 }
 
 const r6 = (x) => Math.round(x * 1e6) / 1e6;
@@ -799,6 +819,8 @@ export function recompute(records, { since } = {}) {
   for (const o of records) if (typeof o.t === 'number' && o.t > lastT) lastT = o.t;
   let touchN = 0;
   let brierSum = 0;
+  /** Dotknięcia z σ bazy odległości: Brier modelu i bazy na tych samych parach */
+  const dist = { n: 0, model: 0, base: 0 };
   const cat = { n: 0, brierDir: 0, brierBig: 0, hitDir: 0, hitBig: 0 };
   const market = { n: 0, brierModel: 0, brierMarket: 0, nEns: 0, brierEns: 0 };
   const marketTight = { n: 0, brierModel: 0, brierMarket: 0, nEns: 0, brierEns: 0 };
@@ -844,12 +866,24 @@ export function recompute(records, { since } = {}) {
         if (fc.p[l] === null) continue; // poziom już przekroczony przy wydaniu — nieoceniany
         brierSum += (fc.p[l] - res.yv[l]) ** 2;
         touchN++;
+        const ret60 = f.get(`${fc.slot}-ret60`);
+        const pd = distTouchProb(fc, l, ret60 && !ret60.variant ? ret60 : null);
+        if (pd === null) continue;
+        dist.n++;
+        dist.model += (fc.p[l] - res.yv[l]) ** 2;
+        dist.base += (pd - res.yv[l]) ** 2;
       }
     }
   }
   return {
     ret: Object.fromEntries(Object.entries(ret).map(([h, s]) => [h, { n: s.n, crps: s.crps / s.n, crpss: 1 - s.crps / s.crpsB, cov90: s.in90 / s.n }])),
-    touch: { levels: touchN, brier: touchN ? brierSum / touchN : null },
+    touch: {
+      levels: touchN,
+      brier: touchN ? brierSum / touchN : null,
+      levelsDist: dist.n,
+      brierDist: dist.n ? dist.base / dist.n : null,
+      bssDist: dist.n && dist.base > 0 ? 1 - dist.model / dist.base : null,
+    },
     cat: cat.n
       ? { n: cat.n, brierDir: cat.brierDir / cat.n, brierBig: cat.brierBig / cat.n, hitDir: cat.hitDir / cat.n, hitBig: cat.hitBig / cat.n }
       : { n: 0 },
