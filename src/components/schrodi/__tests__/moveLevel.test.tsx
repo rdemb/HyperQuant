@@ -239,3 +239,62 @@ describe('Zdanie kota nazywa okno prognozy (najbliższe 60 min), żeby nie myli�
     S.lang = 'pl';
   });
 });
+
+/** Histogram z publicznego podsumowania rejestru (summary.json, 11.11.2026 12:20 UTC): n i częstość dużego ruchu w koszyku */
+const REAL: [number, number][] = [
+  [175, 0.0343],
+  [128, 0.1094],
+  [119, 0.4202],
+  [135, 0.5852],
+  [141, 0.5957],
+  [113, 0.6814],
+  [101, 0.7525],
+  [142, 0.8732],
+  [127, 0.8976],
+  [162, 1],
+];
+const real = (): ReliabilityBin[] => REAL.map(([n, freq], i) => ({ lo: i / 10, hi: (i + 1) / 10, n, meanP: i / 10 + 0.05, freq }));
+
+describe('Częstość dużego ruchu przy bieżącym poziomie (z rozliczeń rejestru)', () => {
+  it('histogram z rejestru: spokojny 2, zwykły 6, podwyższony 9 na 10; n ok. 448 w każdym tercylu', async () => {
+    const { moveTerciles, levelFreq } = await import('../moveLevel');
+    const t = moveTerciles(real())!;
+    const calm = levelFreq(real(), t, 'calm')!;
+    const typical = levelFreq(real(), t, 'typical')!;
+    const elevated = levelFreq(real(), t, 'elevated')!;
+    // Koszyki częściowo w tercylu: n rozdzielone liniowo, częstość ważona tą samą wagą
+    expect(calm.freq).toBeCloseTo(0.18994, 4);
+    expect(typical.freq).toBeCloseTo(0.64431, 4);
+    expect(elevated.freq).toBeCloseTo(0.92151, 4);
+    expect([calm.tenths, typical.tenths, elevated.tenths]).toEqual([2, 6, 9]);
+    expect([calm.n, typical.n, elevated.n]).toEqual([448, 448, 448]);
+  });
+
+  it('za mało rozstrzygnięć → brak częstości', async () => {
+    const { moveView } = await import('../moveLevel');
+    const v = moveView(0.37, catWith(flat(9)));
+    expect(v.kind).toBe('none');
+  });
+
+  it.each(['pl', 'en'] as const)('dymek (%s): zdanie z częstością pod poziomem; pasek bez liczby', async (lang) => {
+    S.lang = lang;
+    S.cat = catWith(real());
+    const html = await panelHtml(0.95);
+    expect(html).toContain(
+      lang === 'en'
+        ? 'In the record, at this level a big move happened in 9 of 10 hours (n 448).'
+        : 'W rejestrze przy tym poziomie duży ruch był w 9 na 10 godzin (n 448).'
+    );
+    const bar = barOf(await launcherHtml(0.95)).replace(/<[^>]*>/g, '');
+    expect(bar).not.toMatch(/\d+ (na|of) 10/);
+    expect(bar).not.toContain('448');
+  });
+
+  it('brak podsumowania albo za mało danych: zdania nie ma', async () => {
+    S.lang = 'pl';
+    S.cat = catWith(flat(9));
+    expect(await panelHtml(0.37)).not.toContain('W rejestrze przy tym poziomie');
+    S.cat = null;
+    expect(await panelHtml(0.37)).not.toContain('W rejestrze przy tym poziomie');
+  });
+});
