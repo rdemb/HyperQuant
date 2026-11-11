@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { alertState, dataBaseFromRemote, decide, decideAlerts, gitEnv, parsePulse, shouldPush } from './watchdog.mjs';
+import { alertState, dataBaseFromRemote, decide, decideAlerts, deployKey, gitEnv, parsePulse, shouldPush } from './watchdog.mjs';
 
 const MIN = 60_000;
 const NOW = Date.UTC(2026, 9, 22, 14, 0);
@@ -140,5 +140,13 @@ describe('strażnik: git i źródło danych', () => {
     expect(dataBaseFromRemote('https://github.com/acme/hq-data')).toBe('https://raw.githubusercontent.com/acme/hq-data/main');
     expect(dataBaseFromRemote('')).toBeNull();
     expect(dataBaseFromRemote('git@gitlab.com:a/b.git')).toBeNull();
+  });
+  it('klucz wdrożeniowy: kopia z LoadCredential systemd przed ścieżką z pliku skanera (plik skanera czyta tylko skaner)', () => {
+    const has = (f) => f === '/run/credentials/hyperquant-watchdog.service/deploy_key';
+    expect(deployKey({ CREDENTIALS_DIRECTORY: '/run/credentials/hyperquant-watchdog.service', HQ_GIT_SSH_KEY: '/var/lib/hyperquant/deploy_key' }, has)).toBe('/run/credentials/hyperquant-watchdog.service/deploy_key');
+    // bez poświadczenia (uruchomienie ręczne, brak klucza przy instalacji) — ścieżka z konfiguracji
+    expect(deployKey({ HQ_GIT_SSH_KEY: '/var/lib/hyperquant/deploy_key' }, has)).toBe('/var/lib/hyperquant/deploy_key');
+    expect(deployKey({ CREDENTIALS_DIRECTORY: '/run/credentials/x', HQ_GIT_SSH_KEY: ' /k ' }, () => false)).toBe('/k');
+    expect(deployKey({}, () => false)).toBeNull();
   });
 });

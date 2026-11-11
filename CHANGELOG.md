@@ -4,6 +4,33 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Serwer skanera: strażnik bez root, aktualizacja z podpisanych tagów (2026-11-11)
+
+#### Bezpieczeństwo
+- **Strażnik nie działa już jako root** (`backend/deploy/hyperquant-watchdog.service`, `backend/deploy/install.sh`). Dotąd jednostka nie miała `User=` i uruchamiała `scripts/watchdog.mjs` z katalogu, który usługa aktualizacji co 15 min równa do gałęzi `main`. Push do `main` dawał więc w ciągu 15 min kod wykonywany jako root na serwerze. Teraz:
+  - strażnik działa jako osobny użytkownik systemowy `hyperquant-watchdog` z grupą dodatkową `hyperquant`, z izolacją jak skaner (`NoNewPrivileges`, `ProtectSystem=strict`, puste `CapabilityBoundingSet`, `SystemCallFilter=@system-service`, zapis tylko do własnego `StateDirectory`) i bez sekretów R2 w środowisku;
+  - restart skanera i serwera powiadomień przez regułę polkit `backend/deploy/hyperquant-watchdog.rules`: tylko czynność `restart` i tylko te 2 usługi;
+  - kod strażnika (`watchdog.mjs`, `check-data-health.mjs`) to kopia w `/opt/hyperquant/watchdog`, którą kładzie `install.sh`; push do repo jej nie zmienia;
+  - klucz wdrożeniowy repo danych strażnik dostaje przez `LoadCredential` (drop-in z `install.sh`), a plik klucza zostaje własnością skanera (`deployKey` w `scripts/watchdog.mjs`).
+- **Aktualizacja z podpisanych tagów** (`backend/deploy/hyperquant-update.sh`, `backend/deploy/hyperquant-update.service`). Polecenia aktualizacji przeszły z jednostki do skryptu, który `install.sh` kopiuje do `/opt/hyperquant/bin` (poza katalog aktualizowany). Plik `/etc/hyperquant/allowed_signers` włącza tryb tagów: kod idzie tylko do najnowszego tagu `v*` z ważnym podpisem ssh zaufanego klucza (`git verify-tag`) i tylko do przodu. Pomijane są tagi bez podpisu, tagi lekkie, podpisy spoza listy i podpisany tag pod inną nazwą. W tym trybie `install.sh` wymaga `TAG=` i sprawdza jego podpis. Bez tego pliku działa jak dotąd (gałąź `main`). Jednostka aktualizacji dostała dodatkowe zabezpieczenia (`PrivateDevices`, `RestrictNamespaces`, `RestrictSUIDSGID`, `ProtectKernelLogs` i inne).
+
+#### Zmienione
+- `status.json` skanera (`backend/scanner/scanner.ts`, pliki publikacji) i puls serwera powiadomień (`backend/alerts/pulse.ts`) mają prawa `0640`, żeby strażnik w grupie usługi mógł je czytać. Reszta stanu zostaje `0600`.
+- Instrukcja wdrożenia, sprawdzenia i wycofania: `backend/deploy/STRAZNIK.md`; opis w `backend/README.md`.
+
+#### Testy
+- `backend/deploy/__tests__/units.test.ts` (12 testów):
+  - żadna usługa root nie uruchamia kodu z katalogu aktualizowanego;
+  - użytkownik i izolacja strażnika;
+  - reguła polkit wykonana na atrapie, czyli tylko 2 dozwolone przypadki;
+  - asercje `install.sh` i `bash -n`;
+  - kopia strażnika ładuje się poza repo.
+- `backend/deploy/__tests__/update.test.ts` (8 testów na prawdziwym git z jednorazowymi kluczami ssh w katalogu tymczasowym):
+  - tryb gałęzi bez zmian;
+  - push bez podpisu, obcy klucz, przeniesiona referencja i starszy tag nie zmieniają kodu;
+  - podpisany tag zmienia kod.
+- Testy `deployKey` i praw `0640`: te drugie tylko poza Windows.
+
 ### Wskaźnik: strefy absorpcji i pudełka Effort (2026-11-09)
 
 #### Dodane
