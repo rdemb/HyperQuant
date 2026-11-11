@@ -1,6 +1,7 @@
 // Szablony bloga: strona wpisu, lista wpisów, archiwum miesięcy, RSS i sitemap. Czyste funkcje (tekst → tekst).
 import { Marked } from 'marked';
 import { footprintHtml, sessionHtml, sessionTitle } from './charts.mjs';
+import { IMAGE_FILE } from './intake.mjs';
 import { BLOCKS, TIME_ZONE, localDate, placedBlocks } from './posts.mjs';
 
 export const INDEX_LIMIT = 40;
@@ -37,8 +38,39 @@ export const fmtMonth = (key) => monthFmt.format(Date.parse(`${key}-15T12:00:00Z
 
 // ───────────────────────── Markdown ─────────────────────────
 
-// Surowy HTML w treści jest wyświetlany jako tekst — wpisy to Markdown, nie HTML
-const marked = new Marked({ gfm: true, renderer: { html: ({ text }) => esc(text) } });
+/** Schematy linków w treści; każdy inny (javascript:, data:, vbscript:, file: …) zostaje samym tekstem linku. */
+const LINK_SCHEMES = new Set(['https:', 'http:', 'mailto:']);
+/** Odwołanie znakowe HTML, które marked zostawia w atrybucie bez zmian, a przeglądarka dekoduje (np. jav&#x61;script:). */
+const CHAR_REF = /&(?:#\d+|#x[0-9a-f]+|\w+);/i;
+
+/**
+ * Czy adres linku jest bezpieczny: po kodowaniu jak w marked (encodeURI) i rozwiązaniu względem strony wpisu ma schemat
+ * z listy. Adres względny zostaje w obrębie domeny strony (`..` nie wychodzi ponad jej korzeń); bezwzględny https do tej
+ * samej domeny i tak jest dozwolony, więc granicą jest schemat, nie ścieżka.
+ */
+export function safeHref(href) {
+  if (CHAR_REF.test(href)) return false;
+  try {
+    return LINK_SCHEMES.has(new URL(encodeURI(href).replace(/%25/g, '%'), 'https://strona.invalid/blog/wpis/').protocol);
+  } catch {
+    return false;
+  }
+}
+
+// Surowy HTML w treści jest wyświetlany jako tekst — wpisy to Markdown, nie HTML. Link z niedozwolonym schematem to sam
+// tekst; obraz tylko z pliku w folderze wpisu, inaczej tekst alternatywny (`false` = domyślny renderer marked)
+const marked = new Marked({
+  gfm: true,
+  renderer: {
+    html: ({ text }) => esc(text),
+    link(token) {
+      return safeHref(token.href) ? false : this.parser.parseInline(token.tokens);
+    },
+    image(token) {
+      return IMAGE_FILE.test(token.href) ? false : esc(token.text);
+    },
+  },
+});
 
 /** Treść wpisu → HTML; szerokie tabele przewijają się w ramce na telefonie. */
 export function renderMarkdown(md) {
@@ -317,12 +349,20 @@ const FOOTER = {
   en: (root, site) =>
     `<a href="${root}">HyperQuant Desk</a> · <a href="${root}en/charts/">Charts</a> · <a href="${site.repo}">Code on GitHub</a> · <a href="${root}blog/feed.xml">Blog RSS (PL)</a>`,
 };
+/**
+ * Polityka treści stron z tego szablonu (druga linia obrony, gdyby treść wpisu coś przemyciła): skrypty tylko z plików
+ * strony (blog/blog.js; dane strukturalne ld+json nie są wykonywane), style z plików i Google Fonts. `style-src-attr`:
+ * diagramy (drabinka poziomów, słupki likwidacji, przepływów i scenariuszy) mają pozycje i szerokości w atrybutach style
+ * generatora; treść wpisu atrybutów nie ustawia (surowy HTML jest tekstem).
+ */
+export const CSP =
+  "default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; style-src-attr 'unsafe-inline'; font-src https://fonts.gstatic.com; img-src 'self' data:; base-uri 'none'; form-action 'none'";
 const BLOG_DISCLAIMER = 'Prawdopodobieństwa i scenariusze, nie porada inwestycyjna ani sygnał do transakcji. Handel kontraktami z dźwignią wiąże się z wysokim ryzykiem utraty środków.';
 
 /**
  * Szkielet strony: metadane (SEO, Open Graph, X), nagłówek z nawigacją, stopka. `root` = względna ścieżka do korzenia desku
  * (na stronie 404 bezwzględny adres, bo GitHub Pages podaje ją pod dowolną ścieżką). `alternates` = wersje językowe strony
- * razem z nią samą ({ lang, url }), `current` = podświetlona pozycja nawigacji.
+ * razem z nią samą ({ lang, url }), `current` = podświetlona pozycja nawigacji, `script` = strona używa blog/blog.js.
  */
 export function layout(
   site,
@@ -343,6 +383,7 @@ export function layout(
     alternates = [],
     robots,
     disclaimer = BLOG_DISCLAIMER,
+    script = false,
   }
 ) {
   const article =
@@ -369,6 +410,7 @@ export function layout(
 <html lang="${lang}">
 <head>
 <meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="${CSP}">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>${esc(title)}</title>
 <meta name="description" content="${esc(description)}">${robots ? `\n<meta name="robots" content="${robots}">` : ''}
@@ -396,7 +438,7 @@ export function layout(
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="${FONTS}">
-<link rel="stylesheet" href="${root}blog/blog.css?v=${site.cssVersion}">
+<link rel="stylesheet" href="${root}blog/blog.css?v=${site.cssVersion}">${script ? `\n<script src="${root}blog/blog.js?v=${site.jsVersion}" defer></script>` : ''}
 <script type="application/ld+json">${JSON.stringify(jsonLd).replace(/</g, '\\u003c')}</script>
 </head>
 <body>
@@ -441,37 +483,6 @@ const ICON_SHARE =
 const ICON_LINK =
   '<svg class="line ico-link" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>';
 const ICON_CHECK = '<svg class="line ico-check" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
-
-// Kopiowanie linku i systemowe „Udostępnij” (telefon) wymagają JS: bez niego przyciski zostają ukryte, linki do serwisów działają zawsze
-const SHARE_SCRIPT = `<script>
-(() => {
-  for (const box of document.querySelectorAll('.share')) {
-    const { url, title } = box.dataset;
-    const native = box.querySelector('[data-share="native"]');
-    const copy = box.querySelector('[data-share="copy"]');
-    const label = copy.querySelector('span');
-    if (navigator.share) {
-      native.hidden = false;
-      native.addEventListener('click', () => navigator.share({ title, url }).catch(() => {}));
-    }
-    copy.hidden = false;
-    copy.addEventListener('click', async () => {
-      try {
-        await navigator.clipboard.writeText(url);
-      } catch {
-        window.prompt('Link do wpisu', url);
-        return;
-      }
-      copy.dataset.done = '';
-      label.textContent = 'Skopiowano';
-      setTimeout(() => {
-        delete copy.dataset.done;
-        label.textContent = 'Kopiuj link';
-      }, 2000);
-    });
-  }
-})();
-</script>`;
 
 /**
  * Udostępnianie wpisu: X, Facebook, LinkedIn, Telegram, WhatsApp, kopiowanie linku i systemowe „Udostępnij”.
@@ -534,17 +545,6 @@ export function replayLink(post) {
   return { back, from, to, hash };
 }
 
-// Po 7 dniach nagrania już nie ma: zamiast powtórki tej chwili W sesji na żywo i powtórka ostatniej doby
-const REPLAY_SCRIPT = `<script>
-(() => {
-  const box = document.querySelector('.replay[data-until]');
-  if (box && Date.now() > Number(box.dataset.until)) {
-    box.querySelector('.replay-on').hidden = true;
-    box.querySelector('.replay-off').hidden = false;
-  }
-})();
-</script>`;
-
 /** Blok „Zobacz na wykresie” pod treścią wpisu. `root` = względna ścieżka do korzenia desku. */
 export function replayHtml(post, root) {
   const r = replayLink(post);
@@ -555,13 +555,19 @@ export function replayHtml(post, root) {
 <h2 id="replay-title">Zobacz na wykresie</h2>
 <div class="replay-on"><p>${esc(text)}</p><p class="cta"><a class="btn btn--primary" href="${esc(root + r.hash)}">Otwórz powtórkę W sesji</a></p><p class="fig-note">Nagranie jest dostępne przez 7 dni od publikacji.</p></div>
 <div class="replay-off" hidden><p>Nagranie z chwili tego wpisu minęło już 7 dni, przez które serwer je przechowuje. Ekran W sesji pokazuje rynek na żywo i powtórkę ostatniej doby.</p><p class="cta"><a class="btn btn--primary" href="${root}#charts">Otwórz W sesji</a><a class="btn" href="${root}#charts?replay=history&amp;m=BTC">Powtórka ostatniej doby</a></p></div>
-</section>
-${REPLAY_SCRIPT}`;
+</section>`;
 }
 
-/** Strona wpisu (artykuł albo notka). `newer` / `older` = sąsiednie wpisy do nawigacji. */
+/**
+ * Strona wpisu (artykuł albo notka). `newer` / `older` = sąsiednie wpisy do nawigacji. `post.origin` (wpis z gałęzi blog
+ * repo danych): { history: adres historii pliku, changedMs: chwila ostatniej zmiany, gdy plik ma w historii więcej niż
+ * jeden commit, inaczej null }; bez niego historia wpisu w content/blog/ na main.
+ */
 export function postPage(site, post, { newer, older }) {
   const url = `${site.url}blog/${post.id}/`;
+  const history = post.origin?.history ?? `${site.repo}/commits/main/content/blog/${post.id}.md`;
+  const changed = post.origin?.changedMs ?? null;
+  const edited = changed !== null ? `\n<p class="edited">Zmieniony po publikacji: <time datetime="${isoTime(changed)}">${fmtDay(changed)}, ${fmtTime(changed)}</time></p>` : '';
   const image = `${url}og.png`;
   const root = '../../';
   const facts =
@@ -576,7 +582,7 @@ export function postPage(site, post, { newer, older }) {
   ].join('');
   const main = `<article class="post post--${post.type}">
 <p class="eyebrow"><a href="../">Blog</a><span>${esc(post.section)}</span></p>
-<h1>${esc(post.title)}</h1>
+<h1>${esc(post.title)}</h1>${edited}
 <div class="byline">
 <p class="meta"><time datetime="${esc(post.date)}">${fmtDay(post.ms)}, ${fmtTime(post.ms)}</time> czasu polskiego</p>
 ${shareHtml(url, post.title, { compact: true })}
@@ -588,9 +594,8 @@ ${prose}
 </div>
 ${replayHtml(post, root)}
 ${shareHtml(url, post.title)}
-<p class="history">${DISCLOSURE} Wpis jest w publicznej historii repozytorium od chwili publikacji: <a href="${site.repo}/commits/main/content/blog/${post.id}.md">historia zmian</a>.</p>
+<p class="history">${DISCLOSURE} Wpis jest w publicznej historii repozytorium od chwili publikacji: <a href="${esc(history)}">historia zmian</a>.</p>
 </article>
-${SHARE_SCRIPT}
 <nav class="pager" aria-label="Sąsiednie wpisy">${pager}</nav>`;
   return layout(site, {
     title: `${post.title} · HyperQuant`,
@@ -608,7 +613,7 @@ ${SHARE_SCRIPT}
       headline: post.title,
       description: post.description,
       datePublished: post.date,
-      dateModified: post.date,
+      dateModified: changed !== null ? isoTime(changed) : post.date,
       inLanguage: 'pl',
       articleSection: post.section,
       url,
@@ -618,6 +623,7 @@ ${SHARE_SCRIPT}
       publisher: PUBLISHER(site),
     },
     main,
+    script: true,
   });
 }
 
