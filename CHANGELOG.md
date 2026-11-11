@@ -4,6 +4,23 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Bąble zleceń: próg interwału z chwili zdarzenia, bez wyboru największych w oknie; ściany i serie z regułą przyczynową (2026-11-11)
+
+Na nagranej dobie 24.10.2026 (powtórka 19:30, Kokpit 1m, tylko warstwa bąbli) wykres rysował 83 bąble zleceń na 1440 × 900 i 17 na 390 × 844; po zmianie 26 i 1 (`npm run ui:check`, wybór warstwy, nie piksele). Ściany i serie w scenariuszu ścian (ta sama chwila, warstwy bąbli oraz serii i ścian): 10 → 4. Liczby „przed” zmierzone na stronie z `main` z tymczasowym licznikiem w warstwie (bez commita). Na stałych danych na żywo taśmy nie ma (atrapa strumienia nie wysyła transakcji), więc pomiar jest na powtórce.
+
+Na taśmie BTC z zapisu serwera 4–10.11.2026 (168 h, 1,32 mln zleceń agresora; 1m, 140 świec, chwila co 5 min, n 1 952): dawny limit (0,6 × liczba świec) był osiągany w 82% chwil, a zestaw bąbli w części wspólnej okien sprzed i po godzinie był inny w 94% chwil; po zmianie limit 40 jest osiągany w 13% chwil, a zestaw jest inny w 15% (tylko gdy działa limit). Bąbli na 140 świec: mediana 12, 95. percentyl 78; na 35 świec: mediana 3. Na nagranej dobie (5,6 h taśmy, krótsza historia progu): mediana 26 i 4.
+
+#### Zmienione
+- **Próg bąbli zależny od interwału, z chwili zdarzenia** (`src/charts/pro/chart/bubbleSelect.ts`, `bubbleThresholdAt`): wartość, powyżej której w poprzedniej dobie było średnio 0,15 zlecenia na świecę interwału (bąbel co ok. 7 świec), liczona raz na godzinę z taśmy przed nią; przy krótszej historii liczba zleceń proporcjonalnie do pokrytego czasu, przy mniej niż 200 zleceniach próg serii i ścian tej godziny. Dotąd bąble filtrował próg bieżący. Próg ręczny z ustawień bez zmian.
+- **Bez wyboru „największe w oknie”** (`selectBubbles`): każde zlecenie od progu ze swojej chwili; bezpiecznik 40 bąbli na ekran (ponad limit — największe względem progu). Podpisy bąbli jak dotąd: 5 na komputerze, 3 na telefonie.
+- **Ściany i serie: reguła przyczynowa** (`src/charts/pro/chart/clashSelect.ts`, `causalTop`): ściana jest rysowana, gdy w chwili zakończenia była wśród 2 największych ścian zakończonych w poprzednich 60 min, seria — gdy była największą serią; raz narysowane zostają, wybór nie zależy od przewinięcia. Limity 5 + 3 + 5 zostają jako bezpiecznik. K z taśmy 4–10.11 (okno 140 min): ściany K = 2 — 52 na dobę, mediana 5, 95. percentyl 9, maksimum 11; serie K = 1 — 26 na dobę, mediana 2, 95. percentyl 6, maksimum 9 (K = 2: 49 na dobę, 95. percentyl 12, maksimum 20, limit 5 przekroczony w 29% chwil zamiast 6%).
+- **Progi zamkniętych godzin pamiętane między scenami** (`src/charts/pro/chart/liquidity.ts`): dotąd liczone od nowa przy każdej scenie; pamięć czyszczona po doczytaniu historii (`ProStore.historyVersion`).
+- **Opis warstw** (okno wskaźników, PL i EN): nowe reguły i wynik sprawdzianu: „Po dużym zleceniu cena nie idzie w jego stronę: −0,2 pb po 5 min (n 33 831).”
+
+#### Dodane
+- **`ui:check`: scenariusz bąbli** (Kokpit 1m na powtórce 24.10 19:30, 1440 i 390): liczba z atrybutu `data-bubbles` (bez serii), limit 40 w `--strict`. `scripts/ui/baseline.json` (win32): nowe `bubbles.count1440` 26 i `bubbles.count390` 1; zmienione `clashes.objects1440` 10 → 4, `objects.replay1440.bubbles` 161 → 85, `objects.replay390.bubbles` 39 → 32, `objects.replay390.labels` 7 → 5, `objects.replay390.rects` 195 → 188.
+- Testy: `bubbleSelect.test.ts` (próg z doby dla 1m i 5m, krótsza historia i próg zastępczy, próg ręczny, próg godziny bez zmian po dojściu taśmy i liczony raz, bez wyboru największych, limit 40, bąble minionej godziny te same po przewinięciu, zbliżeniu i upływie czasu, zdanie w opisie PL i EN); `clashSelect.test.ts` (reguła przyczynowa ścian i serii, ściana raz narysowana zostaje, pamięć progów); `liquidityScene.test.ts` (druga scena nie liczy progu zamkniętej godziny od nowa, doczytanie historii czyści pamięć, liczba bąbli dla pomiaru); `serverHistory.test.ts` (wersja historii).
+
 ### Ściany i serie: próg z chwili zdarzenia, tylko istotne ściany, limit na ekranie (2026-11-11)
 
 Na nagranej dobie 24.10.2026 (powtórka 19:30, Kokpit 1m, warstwy bąbli oraz serii i ścian, 1440 × 900) wykres rysował 82 ściany i serie; po zmianie 10 (`npm run ui:check`, wybór warstwy, nie piksele). Liczba „przed” zmierzona na stronie z `main` z tymczasowym licznikiem w warstwie (bez commita). Na stałych danych na żywo taśmy nie ma (atrapa strumienia nie wysyła transakcji), więc pomiar jest na powtórce.
