@@ -359,6 +359,13 @@ async function main() {
     report.phone = { ...(await probe(page, '__hq.paneShare()')), over: await probe(page, '__hq.overCandles()'), labels: await probe(page, '__hq.labels()') };
     report.phoneTargets = await probe(page, `__hq.smallTargets('[data-chart-bar]', 44)`);
     await shot(page, '390');
+    // Listy paska: rogi panelu widoczne (nie ucięte przez kartę ani okno); zrzut z otwartą listą „Warstwy”
+    report.phoneMenus = await probe(page, '__hq.menuCorners()');
+    await page.ev(`[...document.querySelectorAll('[data-chart-bar] button[aria-haspopup]')].find((b) => /^Warstwy/.test(b.getAttribute('aria-label') || ''))?.click()`);
+    await sleep(400);
+    await shot(page, '390-warstwy');
+    await page.key('Escape');
+    await sleep(200);
     // Tryb skupienia: dotknięcie wykresu
     const c = await probe(page, `(() => { const r = __hq.chart().pane.getBoundingClientRect(); return [r.left + r.width * 0.45, r.top + r.height * 0.55]; })()`);
     await page.tap(c[0], c[1]);
@@ -369,6 +376,24 @@ async function main() {
       await page.tap(c[0], c[1]);
       await sleep(700);
       return reach(page, PHONE_FUNCS);
+    })();
+    // Tryb skupienia włączony z karty „Liczby” (menu „⋯”): widać wykres i przycisk wyjścia, Escape kończy skupienie
+    await open(page, '#charts');
+    report.focusFromNumbers = await (async () => {
+      const tab = await page.ev(`(() => { const t = [...document.querySelectorAll('[role=tab]')].find((x) => x.textContent === 'Liczby'); if (!t) return false; t.click(); return true; })()`);
+      await sleep(400);
+      await page.ev(`[...document.querySelectorAll('[data-chart-bar] button[aria-haspopup]')].find((b) => /^Więcej/.test(b.getAttribute('aria-label') || ''))?.click()`);
+      await sleep(400);
+      const item = await page.ev(`(() => { const m = [...document.querySelectorAll('[role=menu] [role^=menuitem]')].find((b) => /Tryb skupienia/.test(b.textContent || '')); if (!m) return false; m.click(); return true; })()`);
+      await sleep(900);
+      const exit = await page.ev(`(() => { const b = document.querySelector('button[aria-label^="Zamknij tryb skupienia"]'); if (!b) return false; const r = b.getBoundingClientRect(); const el = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return !!el && b.contains(el); })()`);
+      const share = await probe(page, '__hq.paneShare()');
+      const chartShown = await page.ev(`(() => { const r = __hq.chart().pane.getBoundingClientRect(); const el = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return !!el && el.tagName === 'CANVAS'; })()`);
+      await shot(page, '390-skupienie-z-liczb');
+      await page.key('Escape');
+      await sleep(600);
+      const back = await page.ev(`!document.querySelector('button[aria-label^="Zamknij tryb skupienia"]') && !!document.querySelector('[data-chart-bar]')`);
+      return { tab, item, exit, chartShown, share: share?.share ?? null, escape: back, ok: !!(tab && item && exit && chartShown && back) };
     })();
     // Lista wskaźników: ile pozycji widać na ekranie
     await open(page, '#charts');
@@ -429,11 +454,11 @@ async function main() {
   const pct = (x) => (x ? `${(x.share * 100).toFixed(1)}%` : '—');
   const ok = (b) => (b ? 'OK' : 'NIE');
   const t1 = r.desktop?.share >= LIMITS.desktop && r.desktopDom?.share >= LIMITS.desktopDom;
-  const t2 = r.phone?.share >= LIMITS.phone && r.phoneFocus?.share >= LIMITS.focus;
+  const t2 = r.phone?.share >= LIMITS.phone && r.phoneFocus?.share >= LIMITS.focus && !!r.focusFromNumbers?.ok;
   const t3 = [r.desktop, r.desktopDom, r.phone].every((x) => x?.over?.count === 0);
   const lab = (x) => (x?.labels ? x.labels.pane.n + x.labels.axis.n : Number.NaN);
   const t4 = [r.replayDesktop, r.replayPhone, r.desktop, r.phone].every((x) => lab(x) === 0);
-  const t5 = r.desktopReach?.ok && r.phoneReach?.ok && r.desktopKeys?.ok;
+  const t5 = r.desktopReach?.ok && r.phoneReach?.ok && r.desktopKeys?.ok && r.phoneMenus?.cut?.length === 0;
   const t6 = r.storage?.ok;
   r.summary = { t1, t2, t3, t4, t5, t6 };
   const lines = [
@@ -443,6 +468,7 @@ async function main() {
     `3. Elementy DOM nad świecami: 1440 ${r.desktop?.over?.count}, z DOM ${r.desktopDom?.over?.count}, 390 ${r.phone?.over?.count} — ${ok(t3)}`,
     `4. Nachodzące etykiety (wykres + oś): powtórka 1440 ${lab(r.replayDesktop)}, powtórka 390 ${lab(r.replayPhone)}, na żywo 1440 ${lab(r.desktop)}, 390 ${lab(r.phone)} — ${ok(t4)}`,
     `5. Funkcje w ≤ 2 kliknięciach: komputer ${r.desktopReach?.ok ? 'wszystkie' : r.desktopReach?.missing.join(', ')}, telefon ${r.phoneReach?.ok ? 'wszystkie' : r.phoneReach?.missing.join(', ')}; skróty ${r.desktopKeys?.ok ? 'działają' : JSON.stringify(r.desktopKeys?.map)} — ${ok(t5)}`,
+    `   Listy paska 390×844: sprawdzone ${r.phoneMenus?.checked ?? '—'}, z uciętym panelem: ${r.phoneMenus ? r.phoneMenus.cut.length || 'brak' : '—'}${r.phoneMenus?.cut?.length ? ` (${r.phoneMenus.cut.join(', ')})` : ''}; skupienie z karty Liczby: ${r.focusFromNumbers ? (r.focusFromNumbers.ok ? `wykres i wyjście widoczne, Escape kończy (panel ceny ${(r.focusFromNumbers.share * 100).toFixed(1)}%)` : JSON.stringify(r.focusFromNumbers)) : '—'}`,
     `6. Ustawienia w localStorage: ${r.storage?.ok ? 'zachowane' : r.storage?.lost.join(', ')} — ${ok(t6)}`,
     `   Lista wskaźników na telefonie: ${r.phoneIndicators} pozycji na ekranie; cele dotyku < 44 px w pasku: ${r.phoneTargets?.length ?? '—'}`,
     `   Kolumna DOM 1440×900: poziomy drabiny ${r.domColumn?.ladderRows ?? '—'}, wiersze taśmy (miejsce) ${r.domColumn?.tapeRowsFit ?? '—'}`,

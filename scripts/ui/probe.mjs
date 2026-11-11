@@ -204,6 +204,30 @@ export const PROBE = `(() => {
     }
     return o;
   }
-  window.__hq = { chart, paneShare, overCandles, labels, findAll, togglers, clickProbe, smallTargets, storage, vis };
+  /**
+   * Listy rozwijane paska: każda otwarta po kolei; rogi panelu (10 px do środka, za zaokrągleniem) muszą być widoczne — element w tym punkcie
+   * należy do panelu (nie przycina go karta, okno ani dolne menu). Zwraca nazwy list z uciętym rogiem.
+   */
+  async function menuCorners() {
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    const out = { checked: 0, cut: [] };
+    const btns = [...document.querySelectorAll('[data-chart-bar] button[aria-haspopup]')].filter(vis);
+    for (const b of btns) {
+      b.click();
+      await wait(250);
+      const panel = document.getElementById(b.getAttribute('aria-controls') || '');
+      if (panel) {
+        out.checked++;
+        const r = panel.getBoundingClientRect();
+        const pts = [[r.left + 10, r.top + 10], [r.right - 10, r.top + 10], [r.left + 10, r.bottom - 10], [r.right - 10, r.bottom - 10]];
+        const bad = pts.filter(([x, y]) => { const el = document.elementFromPoint(x, y); return !el || !panel.contains(el); });
+        if (bad.length) out.cut.push((b.getAttribute('aria-label') || '').slice(0, 30) + ' (' + bad.length + ' rogi)');
+      }
+      if (b.getAttribute('aria-expanded') === 'true') b.click();
+      await wait(150);
+    }
+    return out;
+  }
+  window.__hq = { menuCorners, chart, paneShare, overCandles, labels, findAll, togglers, clickProbe, smallTargets, storage, vis };
   return true;
 })()`;

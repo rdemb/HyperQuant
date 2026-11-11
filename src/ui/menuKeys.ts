@@ -25,3 +25,26 @@ export function menuKey(key: string, at: number, count: number): MenuKeyResult {
 
 /** Pozycja, na którą trafia fokus po otwarciu listy: zaznaczona (np. bieżący interwał), a bez niej pierwsza. */
 export const openFocusIndex = (checked: readonly boolean[]): number => Math.max(0, checked.indexOf(true));
+
+/** Najwyższy panel listy i najniższy, gdy pod przyciskiem mało miejsca (px). */
+const PANEL_MAX_H = 560;
+const PANEL_MIN_H = 120;
+const EDGE = 8;
+
+/**
+ * Położenie panelu listy w oknie: `dx` — przesunięcie w poziomie, gdy panel (od lewej albo prawej krawędzi przycisku)
+ * wyszedłby za krawędź okna (margines 8 px); `maxH` — wysokość z miejsca od przycisku (+4 px odstępu) do dolnej granicy
+ * (dół okna albo górna krawędź dolnego menu), najwyżej 560 px, najmniej 120 px.
+ */
+export function fitPanel(
+  btn: { left: number; right: number; bottom: number },
+  panel: { w: number },
+  align: 'left' | 'right',
+  view: { w: number; bottom: number }
+): { dx: number; maxH: number } {
+  const left = align === 'left' ? btn.left : btn.right - panel.w;
+  const right = left + panel.w;
+  const dx = right > view.w - EDGE ? Math.max(EDGE - left, view.w - EDGE - right) : left < EDGE ? EDGE - left : 0;
+  const maxH = Math.max(PANEL_MIN_H, Math.min(PANEL_MAX_H, view.bottom - btn.bottom - 4 - EDGE));
+  return { dx, maxH };
+}
