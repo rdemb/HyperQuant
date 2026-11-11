@@ -56,6 +56,8 @@ main() {
     fi
     label="tag $tag"
   else
+    # Przy każdym przebiegu: pusty albo usunięty plik kluczy nie może po cichu wyłączyć sprawdzania podpisów
+    echo "tryb gałęzi, bez sprawdzania podpisów (brak albo pusty $SIGNERS)"
     git fetch --quiet
     target="$(git rev-parse '@{u}')"
     [ "$target" != "$head" ] || return 0

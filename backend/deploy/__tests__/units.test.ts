@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, mkdtempSync, readFileSync, readdirSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -59,8 +59,23 @@ describe('usługi systemd: kod z katalogu aktualizowanego nie działa jako root'
     expect(one(svc, 'ExecStart')).toBe('/opt/hyperquant/node/bin/node /opt/hyperquant/watchdog/watchdog.mjs');
     expect(one(svc, 'WorkingDirectory')).toBe('/opt/hyperquant/watchdog');
     expect(read('hyperquant-watchdog.service')).not.toContain(APP);
-    // sekrety R2 z pliku skanera nie są strażnikowi potrzebne
-    expect((svc.UnsetEnvironment ?? []).join(' ').split(/\s+/)).toEqual(expect.arrayContaining(['R2_ACCOUNT_ID', 'R2_BUCKET', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY']));
+  });
+
+  it('strażnik nie czyta pliku skanera (sekrety R2 i reszta konfiguracji skanera), tylko własny watchdog.env', () => {
+    const svc = service('hyperquant-watchdog.service');
+    expect(svc.EnvironmentFile).toEqual(['/etc/hyperquant/watchdog.env']);
+    expect(read('hyperquant-watchdog.service')).not.toContain('scanner.env');
+  });
+
+  it('watchdog.env z install.sh ma dokładnie zmienne, które czyta strażnik (poza ustawionymi w jednostce i kluczem z LoadCredential)', () => {
+    const src = readFileSync(join(ROOT, 'scripts', 'watchdog.mjs'), 'utf8');
+    const read_ = new Set([...src.matchAll(/env\.(HQ_\w+)/g)].map((m) => m[1]));
+    const inUnit = new Set((service('hyperquant-watchdog.service').Environment ?? []).map((e) => e.split('=')[0]));
+    const needed = [...read_].filter((v) => !inUnit.has(v) && v !== 'HQ_GIT_SSH_KEY').sort();
+    const m = /for var in ([A-Z_ ]+); do\n[^\n]*env_value/.exec(read('install.sh'));
+    expect(m, 'pętla zmiennych watchdog.env w install.sh').not.toBeNull();
+    expect(m![1].trim().split(/\s+/).sort()).toEqual(needed);
+    expect(needed).toEqual(['HQ_GIT_REMOTE', 'HQ_OUT_DIR', 'HQ_STATE_DIR']);
   });
 
   it('strażnik: izolacja jak usługa skanera (bez uprawnień, zapis tylko do własnego katalogu stanu)', () => {
@@ -162,6 +177,41 @@ describe('install.sh', () => {
   it('w trybie podpisanych tagów instaluje tylko wskazany tag z ważnym podpisem', () => {
     expect(sh).toMatch(/verify-tag "refs\/tags\/\$TAG"/);
     expect(sh).toContain('gpg.ssh.allowedSignersFile');
+  });
+
+  /**
+   * check_polkit z install.sh (plik bez końcowego wywołania main) z atrapą pkaction: `version` = wynik
+   * `pkaction --version`, null = brak polecenia (atrapa bez wyniku i z kodem 127).
+   */
+  function checkPolkit(version: string | null, consent = false) {
+    const dir = mkdtempSync(join(tmpdir(), 'hq-polkit-'));
+    const lib = sh.replace(/\nmain "\$@"\s*$/, '\n');
+    expect(lib).not.toBe(sh);
+    writeFileSync(join(dir, 'lib.sh'), lib);
+    mkdirSync(join(dir, 'bin'));
+    writeFileSync(join(dir, 'bin', 'pkaction'), version === null ? '#!/bin/sh\nexit 127\n' : `#!/bin/sh\necho "${version}"\n`);
+    const env = { ...process.env, HQ_WATCHDOG_NO_POLKIT: consent ? '1' : '' };
+    const r = spawnSync('bash', ['-c', 'chmod +x bin/pkaction; export PATH="$PWD/bin:$PATH"; source ./lib.sh; check_polkit'], { cwd: dir, env, encoding: 'utf8' });
+    rmSync(dir, { recursive: true, force: true });
+    return { status: r.status, out: `${r.stdout}${r.stderr}` };
+  }
+
+  it.skipIf(spawnSync('bash', ['-c', 'true']).status !== 0)('polkit < 0.106 albo brak: install.sh zatrzymuje się, chyba że jest jawna zgoda HQ_WATCHDOG_NO_POLKIT=1', () => {
+    for (const v of [null, 'pkaction version 0.105', 'pkaction version 0.105.33']) {
+      const r = checkPolkit(v);
+      expect(r.status, String(v)).not.toBe(0);
+      expect(r.out).toContain('HQ_WATCHDOG_NO_POLKIT=1');
+    }
+    for (const v of [null, 'pkaction version 0.105']) {
+      const r = checkPolkit(v, true);
+      expect(r.status, String(v)).toBe(0);
+      expect(r.out).toContain('tylko alarmuje');
+    }
+    for (const v of ['pkaction version 0.106', 'pkaction version 124', 'pkaction version 126']) {
+      const r = checkPolkit(v);
+      expect(r.status, v).toBe(0);
+      expect(r.out).toBe('');
+    }
   });
 
   it.skipIf(spawnSync('bash', ['-c', 'true']).status !== 0)('składnia bash poprawna (bash -n)', () => {

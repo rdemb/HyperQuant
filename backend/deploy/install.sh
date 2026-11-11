@@ -10,6 +10,28 @@ set -euo pipefail
 TMP_DIR=""
 trap 'if [ -n "$TMP_DIR" ]; then rm -rf "$TMP_DIR"; fi' EXIT
 
+# Strażnik restartuje usługi przez regułę polkit w JavaScript (polkit 0.106 i nowszy). Bez niej tylko alarmuje,
+# więc instalacja zatrzymuje się, chyba że operator zgodzi się na to jawnie (HQ_WATCHDOG_NO_POLKIT=1).
+check_polkit() {
+  local pk
+  pk="$(pkaction --version 2>/dev/null | sed -n 's/^pkaction version //p')" || pk=""
+  if [ -n "$pk" ] && printf '0.106\n%s\n' "$pk" | sort -V -C; then
+    return 0
+  fi
+  if [ "${HQ_WATCHDOG_NO_POLKIT:-}" = "1" ]; then
+    echo "UWAGA: polkit ${pk:-brak} (potrzebny 0.106 lub nowszy) — strażnik tylko alarmuje, bez restartów usług." >&2
+    return 0
+  fi
+  echo "polkit ${pk:-brak}: strażnik potrzebuje 0.106 lub nowszego (apt-get install polkitd), żeby restartować usługi." >&2
+  echo "Instalacja bez restartów (strażnik tylko alarmuje): HQ_WATCHDOG_NO_POLKIT=1 bash install.sh. Szczegóły: STRAZNIK.md." >&2
+  return 1
+}
+
+# Ostatnia wartość zmiennej z pliku środowiska (bez cudzysłowów i spacji); pusto = brak.
+env_value() {
+  sed -n "s/^$1=//p" "$2" | tail -n 1 | tr -d "\"' "
+}
+
 main() {
   local NODE_VERSION="${NODE_VERSION:-v24.22.1}"
   local REPO_URL="${REPO_URL:-https://github.com/rdemb/HyperQuant.git}"
@@ -34,6 +56,8 @@ main() {
       exit 1
       ;;
   esac
+  # Przed jakąkolwiek zmianą na serwerze
+  check_polkit || exit 1
 
   id hyperquant >/dev/null 2>&1 || useradd --system --home-dir "$STATE" --shell /usr/sbin/nologin hyperquant
   # Strażnik: osobny użytkownik (nie root, nie użytkownik skanera); katalog stanu tworzy systemd (StateDirectory)
@@ -101,10 +125,22 @@ main() {
   # skanera i alarm w gałęzi `health`
   install -o root -g root -m 0644 "$PREFIX/app/backend/deploy/hyperquant-watchdog.service" /etc/systemd/system/hyperquant-watchdog.service
   install -o root -g root -m 0644 "$PREFIX/app/backend/deploy/hyperquant-watchdog.timer" /etc/systemd/system/hyperquant-watchdog.timer
+  # Środowisko strażnika: tylko zmienne, które czyta (repo danych, katalogi usług), wyprowadzane z pliku skanera przy
+  # każdej instalacji — bez sekretów R2 i reszty konfiguracji skanera
+  local var val
+  {
+    echo "# Tworzony przez install.sh z /etc/hyperquant/scanner.env — zmiany tam i ponowny install.sh"
+    for var in HQ_GIT_REMOTE HQ_OUT_DIR HQ_STATE_DIR; do
+      val="$(env_value "$var" /etc/hyperquant/scanner.env)"
+      if [ -n "$val" ]; then printf '%s=%s\n' "$var" "$val"; fi
+    done
+  } >/etc/hyperquant/watchdog.env.tmp
+  install -o root -g root -m 0600 /etc/hyperquant/watchdog.env.tmp /etc/hyperquant/watchdog.env
+  rm -f /etc/hyperquant/watchdog.env.tmp
   # Klucz wdrożeniowy repo danych dla strażnika: systemd czyta plik skanera i podaje kopię tylko strażnikowi
   # (LoadCredential); bez klucza drop-in znika (strażnik bez alarmów w repo danych, samonaprawa działa)
   local key dropin=/etc/systemd/system/hyperquant-watchdog.service.d
-  key="$(sed -n 's/^HQ_GIT_SSH_KEY=//p' /etc/hyperquant/scanner.env | tail -n 1 | tr -d "\"' ")"
+  key="$(env_value HQ_GIT_SSH_KEY /etc/hyperquant/scanner.env)"
   if [ -n "$key" ] && [ -f "$key" ]; then
     if ! printf '%s' "$key" | grep -Eq '^/[A-Za-z0-9._/-]+$'; then
       echo "HQ_GIT_SSH_KEY: ścieżka bezwzględna bez spacji i znaków specjalnych, a jest: $key" >&2
@@ -120,11 +156,6 @@ main() {
   # (katalog pakietu polkit zostaje z jego prawami; bez polkit reguła czeka na jego instalację)
   [ -d /etc/polkit-1/rules.d ] || install -d -o root -g root -m 0755 /etc/polkit-1/rules.d
   install -o root -g root -m 0644 "$PREFIX/app/backend/deploy/hyperquant-watchdog.rules" /etc/polkit-1/rules.d/50-hyperquant-watchdog.rules
-  if ! command -v pkaction >/dev/null 2>&1; then
-    echo "UWAGA: brak polkit (apt-get install polkitd) — strażnik nie zrestartuje usług, tylko zgłosi alarm." >&2
-  elif pkaction --version | grep -q ' 0\.105'; then
-    echo "UWAGA: polkit 0.105 nie czyta reguł JavaScript — strażnik nie zrestartuje usług, tylko zgłosi alarm." >&2
-  fi
   # Dawny stan strażnika (gdy działał jako root) przechodzi na jego użytkownika; systemd robi to też sam przy starcie
   if [ -d /var/lib/hyperquant-watchdog ]; then
     chown -R hyperquant-watchdog:hyperquant-watchdog /var/lib/hyperquant-watchdog

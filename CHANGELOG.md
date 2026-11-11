@@ -11,22 +11,26 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
   - strażnik działa jako osobny użytkownik systemowy `hyperquant-watchdog` z grupą dodatkową `hyperquant`, z izolacją jak skaner (`NoNewPrivileges`, `ProtectSystem=strict`, puste `CapabilityBoundingSet`, `SystemCallFilter=@system-service`, zapis tylko do własnego `StateDirectory`) i bez sekretów R2 w środowisku;
   - restart skanera i serwera powiadomień przez regułę polkit `backend/deploy/hyperquant-watchdog.rules`: tylko czynność `restart` i tylko te 2 usługi;
   - kod strażnika (`watchdog.mjs`, `check-data-health.mjs`) to kopia w `/opt/hyperquant/watchdog`, którą kładzie `install.sh`; push do repo jej nie zmienia;
-  - klucz wdrożeniowy repo danych strażnik dostaje przez `LoadCredential` (drop-in z `install.sh`), a plik klucza zostaje własnością skanera (`deployKey` w `scripts/watchdog.mjs`).
-- **Aktualizacja z podpisanych tagów** (`backend/deploy/hyperquant-update.sh`, `backend/deploy/hyperquant-update.service`). Polecenia aktualizacji przeszły z jednostki do skryptu, który `install.sh` kopiuje do `/opt/hyperquant/bin` (poza katalog aktualizowany). Plik `/etc/hyperquant/allowed_signers` włącza tryb tagów: kod idzie tylko do najnowszego tagu `v*` z ważnym podpisem ssh zaufanego klucza (`git verify-tag`) i tylko do przodu. Pomijane są tagi bez podpisu, tagi lekkie, podpisy spoza listy i podpisany tag pod inną nazwą. W tym trybie `install.sh` wymaga `TAG=` i sprawdza jego podpis. Bez tego pliku działa jak dotąd (gałąź `main`). Jednostka aktualizacji dostała dodatkowe zabezpieczenia (`PrivateDevices`, `RestrictNamespaces`, `RestrictSUIDSGID`, `ProtectKernelLogs` i inne).
+  - klucz wdrożeniowy repo danych strażnik dostaje przez `LoadCredential` (drop-in z `install.sh`), a plik klucza zostaje własnością skanera (`deployKey` w `scripts/watchdog.mjs`);
+  - strażnik nie czyta `scanner.env`: `install.sh` tworzy `/etc/hyperquant/watchdog.env` (0600) tylko z 3 zmiennymi, których używa (`HQ_GIT_REMOTE`, `HQ_OUT_DIR`, `HQ_STATE_DIR`), zamiast pliku skanera z `UnsetEnvironment`;
+  - bez polkit albo z wersją starszą niż 0.106 (Ubuntu 22.04 ma 0.105) `install.sh` zatrzymuje się z błędem, zanim cokolwiek zmieni (`check_polkit`). Instalacja bez restartów, w której strażnik tylko alarmuje, wymaga jawnego `HQ_WATCHDOG_NO_POLKIT=1`. Wariant dla 0.105 z jednostką `.path` roota jest opisany w `STRAZNIK.md` do decyzji, bez implementacji.
+- **Aktualizacja z podpisanych tagów** (`backend/deploy/hyperquant-update.sh`, `backend/deploy/hyperquant-update.service`). Polecenia aktualizacji przeszły z jednostki do skryptu, który `install.sh` kopiuje do `/opt/hyperquant/bin` (poza katalog aktualizowany). Plik `/etc/hyperquant/allowed_signers` włącza tryb tagów: kod idzie tylko do najnowszego tagu `v*` z ważnym podpisem ssh zaufanego klucza (`git verify-tag`) i tylko do przodu. Pomijane są tagi bez podpisu, tagi lekkie, podpisy spoza listy i podpisany tag pod inną nazwą. W tym trybie `install.sh` wymaga `TAG=` i sprawdza jego podpis. Bez tego pliku (albo z pustym plikiem) działa jak dotąd, czyli idzie za gałęzią `main`. Każdy taki przebieg, także bez zmian, zapisuje w dzienniku „tryb gałęzi, bez sprawdzania podpisów”, więc usunięty plik kluczy nie wyłącza ochrony po cichu. Jednostka aktualizacji dostała dodatkowe zabezpieczenia (`PrivateDevices`, `RestrictNamespaces`, `RestrictSUIDSGID`, `ProtectKernelLogs` i inne).
 
 #### Zmienione
 - `status.json` skanera (`backend/scanner/scanner.ts`, pliki publikacji) i puls serwera powiadomień (`backend/alerts/pulse.ts`) mają prawa `0640`, żeby strażnik w grupie usługi mógł je czytać. Reszta stanu zostaje `0600`.
 - Instrukcja wdrożenia, sprawdzenia i wycofania: `backend/deploy/STRAZNIK.md`; opis w `backend/README.md`.
 
 #### Testy
-- `backend/deploy/__tests__/units.test.ts` (12 testów):
+- `backend/deploy/__tests__/units.test.ts` (15 testów):
   - żadna usługa root nie uruchamia kodu z katalogu aktualizowanego;
   - użytkownik i izolacja strażnika;
+  - strażnik nie czyta `scanner.env`; zmienne `watchdog.env` są dokładnie tymi, które czyta `watchdog.mjs`;
+  - `check_polkit` z atrapą `pkaction`: brak polkit i 0.105 zatrzymują instalację, a zgoda albo 0.106 i nowszy ją przepuszczają;
   - reguła polkit wykonana na atrapie, czyli tylko 2 dozwolone przypadki;
   - asercje `install.sh` i `bash -n`;
   - kopia strażnika ładuje się poza repo.
-- `backend/deploy/__tests__/update.test.ts` (8 testów na prawdziwym git z jednorazowymi kluczami ssh w katalogu tymczasowym):
-  - tryb gałęzi bez zmian;
+- `backend/deploy/__tests__/update.test.ts` (9 testów na prawdziwym git z jednorazowymi kluczami ssh w katalogu tymczasowym):
+  - tryb gałęzi bez zmian, z linią trybu w dzienniku przy każdym przebiegu (także przy pustym pliku kluczy);
   - push bez podpisu, obcy klucz, przeniesiona referencja i starszy tag nie zmieniają kodu;
   - podpisany tag zmienia kod.
 - Testy `deployKey` i praw `0640`: te drugie tylko poza Windows.

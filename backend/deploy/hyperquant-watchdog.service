@@ -14,9 +14,9 @@ User=hyperquant-watchdog
 Group=hyperquant-watchdog
 SupplementaryGroups=hyperquant
 WorkingDirectory=/opt/hyperquant/watchdog
-EnvironmentFile=/etc/hyperquant/scanner.env
-# Sekrety R2 z pliku skanera nie są strażnikowi potrzebne
-UnsetEnvironment=R2_ACCOUNT_ID R2_BUCKET R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY
+# Tylko zmienne, które strażnik czyta (repo danych, katalogi usług); plik tworzy install.sh z konfiguracji skanera,
+# więc sekrety R2 i reszta konfiguracji skanera nie trafiają do strażnika
+EnvironmentFile=/etc/hyperquant/watchdog.env
 StateDirectory=hyperquant-watchdog
 StateDirectoryMode=0700
 Environment=HQ_WATCHDOG_DIR=/var/lib/hyperquant-watchdog
