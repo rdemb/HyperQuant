@@ -4,6 +4,22 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Ściany i serie: próg z chwili zdarzenia, tylko istotne ściany, limit na ekranie (2026-11-11)
+
+Na nagranej dobie 24.10.2026 (powtórka 19:30, Kokpit 1m, warstwy bąbli oraz serii i ścian, 1440 × 900) wykres rysował 82 ściany i serie; po zmianie 10 (`npm run ui:check`, wybór warstwy, nie piksele). Liczba „przed” zmierzona na stronie z `main` z tymczasowym licznikiem w warstwie (bez commita). Na stałych danych na żywo taśmy nie ma (atrapa strumienia nie wysyła transakcji), więc pomiar jest na powtórce.
+
+#### Naprawione
+- **Próg z chwili zdarzenia** (`src/charts/pro/chart/clashSelect.ts`, `thresholdAt`; `src/charts/pro/core/clashes.ts`, `bursts`): ściana i seria są oceniane progiem godziny, w której powstały, liczonym z zleceń agresora poprzedniej, zamkniętej godziny. Dotąd filtrował je próg bieżący (98,5. percentyl z ostatniej godziny), inny niż godzinę wcześniej w 55% chwil, więc ściany i serie z przeszłości znikały i wracały. Ta sama taśma daje ten sam zestaw. Próg ręczny z ustawień bez zmian. Bąble zostają przy progu bieżącym (osobna zmiana).
+
+#### Zmienione
+- **Ściana na wykresie**, gdy trwała co najmniej 10 s albo wchłonęła co najmniej 3 × próg; krótsze zostają w panelu „Ściany”.
+- **Najwyżej 5 największych ścian zakończonych, 3 trwające i 5 największych serii** w widocznym czasie (`selectClashes`).
+- **Opis warstwy** (okno wskaźników, PL i EN): nowe reguły i wynik sprawdzianu: „Po ścianie cena nie rusza się w stronę obrony: +0,02 pb po 5 min (n 9 834).”
+
+#### Dodane
+- **`ui:check`: scenariusz ścian i serii** (Kokpit 1m na powtórce 24.10 19:30): liczba z atrybutu `data-clash-objects`, limit 13 w `--strict`. `scripts/ui/baseline.json` (win32): nowa liczba `clashes.objects1440` 10; zmienione liczby obiektów powtórki z bąblami i ścianami: `objects.replay1440.bubbles` 185 → 161, `objects.replay1440.rects` 511 → 388, `objects.replay390.bubbles` 47 → 39, `objects.replay390.rects` 260 → 195 (mniej serii i ścian).
+- Testy: `clashSelect.test.ts` (próg z zamkniętej godziny i bez zmian po dojściu kolejnych godzin, próg ręczny, serie z funkcją progu, ściana 2-sekundowa poniżej 3 × progu niewidoczna, limity 5 + 3 + 5, ściana nie znika przy zmianie progu bieżącego, zdanie w opisie PL i EN).
+
 ### Strefy nierównowagi i niedokończone aukcje: tylko bieżące, tylko ze świec zamkniętych (2026-11-11)
 
 Na nagranej dobie 24.10.2026 (powtórka 19:30, układ „Aukcja i otwarcie”, 5m footprint, warstwy stref i aukcji) wykres rysował 22 strefy i 64 linie aukcji na 1440 × 900 oraz 19 i 57 na 390 × 844; po zmianie 3 strefy i 2 linie na obu (`npm run ui:check`, wybór warstwy, nie piksele). Liczby „przed” zmierzone na stronie z `main` z tymczasowym licznikiem w warstwie (bez commita); liczą obiekty w widocznym zakresie czasu, także poza widoczną skalą ceny. Liczby „przed” z powtórki to jedna chwila i obiekty w widocznym zakresie czasu (pomiar tymczasowym licznikiem na poprzedniej wersji); pomiar na 173 ekranach z sesji listopada dał medianę 98 stref i 241 aukcji.
