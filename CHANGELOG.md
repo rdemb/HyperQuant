@@ -4,6 +4,18 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Przepływ kohort: bez kohorty z kilku kont, udział wobec wolumenu taśmy (2026-11-11)
+
+#### Naprawione
+- **Kohorta „poinformowanych” z mniej niż 10 kont albo przy τ = 0 nie jest publikowana** (`backend/scanner/cohortEngine.ts`). Publikacja z 11.11.2026 pokazywała „wybrani 0 z 2630 kandydatów, rozrzut umiejętności 0 bp”, a mimo to komórka „poinformowanych” była ukryta we wszystkich 95 kubełkach: liczności są zaokrąglane w dół do dziesiątek, więc za „0” stało od 1 do 9 wybranych kont, czyli przy τ = 0 szczęście z tysięcy prób, a nie przewaga. Ukrycie tej komórki pociągało ukrycie „reszty” (reguła ukrywania wtórnego), która była ukryta w 68 z 95 kubełków, w tym w 33 przy widocznych market makerach i wielorybach. Teraz taki wybór daje pustą kohortę: konta zostają w swoich kohortach (wieloryby, reszta) i nie wymuszają ukrywania. Próg działa też na stanie zapisanym przed zmianą, od pierwszego odczytu. Reguła prywatności się nie zmienia: przy prawdziwej kohorcie (co najmniej 10 kont i τ > 0) ukryci „poinformowani” dalej parują się najpierw z „resztą”.
+- **Udział w obrocie liczony wobec 2 × wolumenu taśmy** (`src/utils/cohorts.ts`, `mcp/src/tools/scanner.ts`). Mianownikiem był widoczny obrót czterech kohort, więc gdy w oknie 1 h były ukryte wieloryby i reszta, udział market makerów wychodził 1. Plik ze skanera starszego niż ta zmiana (bez wolumenu taśmy) przy ukrytych komórkach daje udział null z powodem, a nie 1.
+- **Kohorta ze wszystkimi komórkami ukrytymi ma w panelu „—”, a nie $0** (`src/views/desk/CohortFlowPanel.tsx`): na karcie 1 h i w tabeli 24 h, tak jak w `cohort_flow` (null z liczbą ukrytych). Liczba ukrytych kubełków zostaje w ostatniej kolumnie.
+
+#### Dodane
+- **Pole `tape` w `cohorts/BTC.json`** dla okien 1 h i 24 h: wolumen taśmy i ukryte komórki razem (kupno, sprzedaż, warstwa agresora). Obie liczby wynikają z publicznej taśmy (suma kohort w kubełku to jej wolumen). Rozbicia sumy ukrytych na kohorty nie da się odtworzyć, bo w kubełku ukryte są co najmniej dwie komórki albo wszystkie. Pole jest opcjonalne, więc dotychczasowi czytelnicy pliku działają bez zmian. Okno z kubełkiem zapisanym przed zmianą ma `null` (wolumen nieznany, a nie zaniżony).
+- **Wiersz „Pozostali razem (ukryte)”** w tabeli 24 h panelu „Przepływ kohort” i pole `othersCombined` w narzędziu MCP `cohort_flow`: udziały kohort i `othersCombined` sumują się do 1.
+- **Uczciwy stan pustej kohorty:** panel i `cohort_flow` piszą „nie wykryto kont z trwałą przewagą (≈ N sprawdzonych)” z liczbą kandydatów z pliku zamiast „brak transakcji”. Opis w panelu, w README skanera, w README serwera MCP i w skillu `hyperquant`.
+
 ### Paczka MCP 0.1.3 (2026-11-11)
 
 #### Zmienione
