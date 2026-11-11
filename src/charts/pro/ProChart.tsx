@@ -685,8 +685,6 @@ export const ProChart: React.FC<{
           showBlogMap: blogMapScan(blogMaps, pickMap(blogMaps.maps, store.serverNow(), settings.blogMapId)),
         },
       });
-  // Plakietki legendy: w powtórce bez nich (nagranie, nie dane na żywo, i bez warstw skanera)
-  const chips = inReplay ? [] : layerChips;
   // Lista „Warstwy”: włączone warstwy i ukryte okiem w tej sesji; w powtórce plakietka „nagranie” zamiast źródła na żywo
   const menuChips: LayerChip[] = [
     ...(inReplay ? layerChips.map((c) => ({ ...c, tone: 'neutral' as const, text: tr('nagranie', 'recording'), hint: tr('Powtórka nagrania serwera', "Replay of the server's recording") })) : layerChips),
@@ -982,7 +980,6 @@ export const ProChart: React.FC<{
             compact={narrow}
             multi={layout > 1}
             onEditIndicator={editIndicator}
-            chips={chips}
           />
           <DrawStyleBar tools={tools} onAlert={drawAlert} />
           <DrawMenu tools={tools} onAlert={drawAlert} />
@@ -1557,6 +1554,24 @@ const SettingsMenu: React.FC<{
         onChange={(v) => onChange({ bigTradeUsd: v })}
       />
       <Check label={tr('Dźwięk dużych zleceń (taśma)', 'Large order sound (tape)')} checked={s.tapeSound} onChange={(v) => onChange({ tapeSound: v })} />
+      <div className="flex flex-col items-start gap-1.5">
+        <span className="text-ink-2" title={tr('Ile największych bąbli, ścian i dużych zleceń w widoku ma podpis z wartością; pozostałe po najechaniu albo dotknięciu', 'How many of the largest bubbles, walls and large orders in view get a value label; the rest on hover or tap')}>
+          {tr('Gęstość etykiet', 'Label density')}
+        </span>
+        <Segmented<string>
+          ariaLabel={tr('Gęstość etykiet', 'Label density')}
+          size="xs"
+          value={s.labelDensity === undefined ? 'auto' : String(s.labelDensity)}
+          onChange={(v) => onChange({ labelDensity: v === 'auto' ? undefined : v === 'all' ? 'all' : (Number(v) as 0 | 3 | 5) })}
+          options={[
+            { value: 'auto', label: 'Auto', title: tr('5 na komputerze, 3 na telefonie', '5 on a computer, 3 on a phone') },
+            { value: '0', label: '0' },
+            { value: '3', label: '3' },
+            { value: '5', label: '5' },
+            { value: 'all', label: tr('Wszystkie', 'All') },
+          ]}
+        />
+      </div>
     </Group>
     <Templates settings={s} onApply={onChange} />
     <button

@@ -19,6 +19,7 @@ import type { AggressorOrder } from '../core/orders';
 import type { ProBar } from '../store/proStore';
 import { logicalOfTime } from './overlay';
 import { DOM_W_PX, LIQ_RAMP, MONO, PRO, rgba } from './theme';
+import { type Box, LAST_CANDLES, type LabelCandidate, lastCandleBoxes, placeLabels } from './labelPlacement';
 
 /**
  * Warstwa płynności pod świecami i nad nimi: mapa ciepła arkusza zleceń w czasie (migawki l2Book,
@@ -136,6 +137,8 @@ interface Bubble {
   r: number;
   buy: boolean;
   label: string;
+  /** Wartość (USD): o podpisie decyduje miejsce wśród największych obiektów w widoku. */
+  usd: number;
   /** Bitwa (podwójny pierścień), seria (przerywany obrys), zlecenie podświetlonego adresu, zaznaczenie. */
   clash: boolean;
   burst: boolean;
@@ -213,9 +216,14 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
   private lots: LotMark[] = [];
   private lotCache: { key: string; lots: LargeLot[] } = { key: '', lots: [] };
   private dom: DomRow[] = [];
-  private domRight = 0;
   /** Drabina DOM przy prawej krawędzi (na telefonie jest osobną kartą). */
   private domOn = true;
+  /** Najwięcej podpisów liczbowych w widoku (gęstość etykiet), obiekt pod kursorem i zajęte miejsca innych warstw. */
+  private labelLimit = 5;
+  private hover: LiquidityPick | null = null;
+  private blocked: () => readonly Box[] = () => [];
+  /** 10 ostatnich świec (px CSS panelu): podpisy na nie nie wchodzą. */
+  private lastBoxes: Box[] = [];
   /** Licznik wywołań setData (nowe świece, źródło, zegar albo próg). */
   private dataVersion = 0;
   /** Wejścia ostatnio złożonej sceny bąbli, ścian, dużych zleceń i drabiny (null — scena do złożenia). */
@@ -232,6 +240,7 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
   /** Historie arkusza z pełnego malowania (nowa historia, np. po przewinięciu powtórki, zaczyna wersje od zera). */
   private texSrc: readonly (BookHistory | null)[] = [];
   private readonly views: readonly IPrimitivePaneView[];
+  private readonly axisViews: readonly IPrimitivePaneView[];
 
   constructor(toggles: LiquidityToggles) {
     this.toggles = toggles;
@@ -251,23 +260,28 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
           drawBubbles(context, this.bubbles, hr, vr);
         }),
     };
-    // Podpisy nad poziomami wskaźników (IB, VWAP…), żeby napisu ICE nie przykrywała etykieta poziomu
+    // Podpisy na wierzchu, po etykietach poziomów wskaźników (IB, VWAP…), które omijają
     const labels: IPrimitivePaneRenderer = {
       draw: (target) =>
         target.useBitmapCoordinateSpace(({ context, bitmapSize, horizontalPixelRatio: hr, verticalPixelRatio: vr }) =>
-          drawValueLabels(context, [...this.walls, ...this.lots], this.bubbles, bitmapSize.width, hr, vr)
+          drawLabels(context, [...this.walls, ...this.lots], this.bubbles, bitmapSize.width, hr, vr, {
+            limit: this.labelLimit,
+            barPx: this.geo?.sp ?? 0,
+            blocked: [...this.lastBoxes, ...this.blocked()],
+            forced: (x) => this.isForced(x),
+          })
         ),
     };
     const dom: IPrimitivePaneRenderer = {
       draw: (target) =>
-        target.useBitmapCoordinateSpace(({ context, horizontalPixelRatio: hr, verticalPixelRatio: vr }) =>
-          drawDom(context, this.dom, this.domRight, hr, vr)
+        target.useBitmapCoordinateSpace(({ context, bitmapSize, horizontalPixelRatio: hr, verticalPixelRatio: vr }) =>
+          drawDom(context, this.dom, bitmapSize.width / hr, hr, vr)
         ),
     };
+    this.axisViews = [{ zOrder: () => 'normal', renderer: () => dom }];
     this.views = [
       { zOrder: () => 'bottom', renderer: () => heat },
       { zOrder: () => 'normal', renderer: () => bubbles },
-      { zOrder: () => 'normal', renderer: () => dom },
       { zOrder: () => 'top', renderer: () => labels },
     ];
   }
@@ -288,9 +302,37 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
     return this.views;
   }
 
+  /** Drabina DOM w marginesie osi ceny (oś jest o nią szersza, applyDomInset w sterowniku). */
+  priceAxisPaneViews(): readonly IPrimitivePaneView[] {
+    return this.axisViews;
+  }
+
   setToggles(t: LiquidityToggles): void {
     this.toggles = t;
     this.requestUpdate?.();
+  }
+
+  /** Gęstość etykiet: najwięcej podpisów w widoku (pozostałe po najechaniu). */
+  setLabelLimit(n: number): void {
+    if (n === this.labelLimit) return;
+    this.labelLimit = n;
+    this.requestUpdate?.();
+  }
+
+  /** Bąbel, seria albo ściana pod kursorem: jej podpis także poza limitem. */
+  setHover(p: LiquidityPick | null): void {
+    if (samePick(p, this.hover)) return;
+    this.hover = p;
+    this.requestUpdate?.();
+  }
+
+  /** Źródło zajętych miejsc (etykiety poziomów nakładki), liczone przy rysowaniu. */
+  setBlocked(src: () => readonly Box[]): void {
+    this.blocked = src;
+  }
+
+  private isForced(x: { pick?: LiquidityPick; selected?: boolean }): boolean {
+    return !!x.selected || (!!x.pick && samePick(x.pick, this.hover));
   }
 
   setDom(on: boolean): void {
@@ -326,6 +368,13 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
   updateAllViews(): void {
     const g = this.geometry();
     this.geo = g;
+    this.lastBoxes = g
+      ? lastCandleBoxes(
+          this.bars.slice(-LAST_CANDLES).map((b) => ({ x: this.x(b.t, g), hi: b.candle.h, lo: b.candle.l })),
+          LAST_CANDLES,
+          (p) => g.a + g.b * p
+        )
+      : [];
     const key = g ? this.sceneInputs(g) : null;
     if (key && this.sceneKey && sameInputs(key, this.sceneKey)) return;
     this.sceneKey = key;
@@ -506,6 +555,7 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
         r,
         buy: o.side === 1,
         label: r >= BUBBLE_LABEL_R ? fmtVol(o.sz) : '',
+        usd: o.notional,
         clash: cls === 'clash',
         burst: false,
         mark,
@@ -522,6 +572,7 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
         r,
         buy: b.side === 1,
         label: r >= BUBBLE_LABEL_R ? fmtVol(b.sz) : '',
+        usd: b.usd,
         clash: false,
         burst: true,
         mark: false,
@@ -595,7 +646,6 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
     const sorted = Array.from(f.sz).sort((p, q) => p - q);
     const norm = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * DOM_Q))];
     if (!(norm > 0)) return [];
-    this.domRight = W;
     const half = f.step / 2;
     const out: DomRow[] = [];
     for (let i = 0; i < f.px.length; i++) {
@@ -683,9 +733,6 @@ function drawBubbles(ctx: CanvasRenderingContext2D, list: readonly Bubble[], hr:
   if (list.length === 0) return;
   const k = Math.min(hr, vr);
   const lw = Math.max(1, Math.round(k));
-  ctx.font = `600 ${Math.round(10 * k)}px ${MONO}`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
   for (const b of list) {
     const x = b.x * hr;
     const y = b.y * vr;
@@ -724,10 +771,6 @@ function drawBubbles(ctx: CanvasRenderingContext2D, list: readonly Bubble[], hr:
       ctx.strokeStyle = b.selected ? K.selected : K.mark;
       ctx.lineWidth = 2 * k;
       ctx.stroke();
-    }
-    if (b.label) {
-      ctx.fillStyle = K.label;
-      ctx.fillText(b.label, x, y);
     }
   }
   ctx.globalAlpha = 1;
@@ -774,56 +817,75 @@ function drawWalls(ctx: CanvasRenderingContext2D, list: readonly WallMark[], hr:
 }
 
 /**
- * Wartość ściany albo dużego zlecenia na tle przed jego początkiem (przy lewej krawędzi, gdy początek jest poza
- * widokiem), a gdy tam zajęte — za końcem belki. Najpierw góry lodowe, potem duże zlecenia, potem ściany, w każdej
- * grupie większe; podpis nigdy nie nachodzi na inny podpis, a na bąbel tylko z pierwszeństwem (`rank`).
+ * Podpisy liczbowe: wartość w bąblu (na środku), a ściany i dużego zlecenia na tle przed jego początkiem (przy lewej
+ * krawędzi, gdy początek jest poza widokiem), a gdy tam zajęte — za końcem belki. Podpis dostaje najwyżej `limit`
+ * największych obiektów w widoku (najpierw góry lodowe, potem duże zlecenia stojące, w każdej grupie większe), obiekt
+ * pod kursorem i zaznaczony zawsze; podpis nie nachodzi na inny podpis, na etykiety poziomów, na 10 ostatnich świec ani
+ * (ściana) na bąbel. Przy świecach węższych niż 4 px podpisów nie ma (labelPlacement.ts).
  */
-function drawValueLabels(ctx: CanvasRenderingContext2D, list: readonly ValueLabel[], bubbles: readonly Bubble[], width: number, hr: number, vr: number): void {
-  if (list.length === 0) return;
+function drawLabels(
+  ctx: CanvasRenderingContext2D,
+  list: readonly (ValueLabel & { pick?: LiquidityPick; selected?: boolean })[],
+  bubbles: readonly Bubble[],
+  width: number,
+  hr: number,
+  vr: number,
+  o: { limit: number; barPx: number; blocked: readonly Box[]; forced: (x: { pick?: LiquidityPick; selected?: boolean }) => boolean }
+): void {
+  if (list.length === 0 && bubbles.length === 0) return;
   ctx.font = `600 ${Math.round(10 * vr)}px ${MONO}`;
-  ctx.textAlign = 'right';
   ctx.textBaseline = 'middle';
   const pad = Math.round(3 * hr);
   const gap = Math.round(4 * hr);
   const th = Math.round(13 * vr);
-  const placed: Rect[] = [];
-  const clear = (q: Rect) => !placed.some((p) => q.l < p.r && q.r > p.l && q.t < p.b && q.b > p.t);
-  const open = (q: Rect) => !bubbles.some((b) => circleHitsRect(b, q));
-  for (const w of [...list].sort((p, q) => q.rank - p.rank || q.usd - p.usd)) {
-    if (!w.label) continue;
+  const cands: LabelCandidate[] = [];
+  const draws = new Map<string, (spot: number) => void>();
+  bubbles.forEach((b, i) => {
+    if (!b.label || b.dim) return;
+    const tw = ctx.measureText(b.label).width / hr;
+    const key = `b${i}`;
+    cands.push({ key, usd: b.usd, rank: 0, overBubbles: true, forced: o.forced(b), spots: [{ l: b.x - tw / 2, r: b.x + tw / 2, t: b.y - 6, b: b.y + 6 }] });
+    draws.set(key, () => {
+      ctx.textAlign = 'center';
+      ctx.fillStyle = K.label;
+      ctx.fillText(b.label, b.x * hr, b.y * vr);
+    });
+  });
+  list.forEach((w, i) => {
+    if (!w.label) return;
     const tw = Math.ceil(ctx.measureText(w.label).width);
     const y = Math.round(w.y * vr);
     // Prawa krawędź tekstu: przed belką albo za nią; prostokąt etykiety w px CSS (bąble też są w px CSS)
     const before = Math.max(tw + 2 * pad, Math.round(w.x0 * hr) - gap);
     const after = Math.round(w.x1 * hr) + gap + pad + tw;
-    const rect = (xr: number): Rect => ({ l: (xr - tw - pad) / hr, r: (xr + pad) / hr, t: (y - th / 2) / vr, b: (y + th / 2) / vr });
-    const spots = after + pad <= width ? [before, after] : [before];
-    const xr =
-      spots.find((x) => clear(rect(x)) && (w.rank === 2 || open(rect(x)))) ?? (w.rank === 1 ? spots.find((x) => clear(rect(x))) : undefined);
-    if (xr === undefined) continue;
-    placed.push(rect(xr));
-    ctx.fillStyle = K.labelBg;
-    ctx.fillRect(xr - tw - pad, y - th / 2, tw + 2 * pad, th);
-    // Znacznik strony od strony belki
-    const edge = Math.max(1, Math.round(hr));
-    ctx.fillStyle = w.bid ? K.domBid : K.domAsk;
-    ctx.fillRect(xr === before ? xr + pad - edge : xr - tw - pad, y - th / 2, edge, th);
-    ctx.fillStyle = w.ink;
-    ctx.fillText(w.label, xr, y);
-  }
+    const rect = (xr: number): Box => ({ l: (xr - tw - pad) / hr, r: (xr + pad) / hr, t: (y - th / 2) / vr, b: (y + th / 2) / vr });
+    const xs = after + pad <= width ? [before, after] : [before];
+    const key = `v${i}`;
+    cands.push({ key, usd: w.usd, rank: w.rank, overBubbles: w.rank >= 1, forced: o.forced(w), spots: xs.map(rect) });
+    draws.set(key, (spot) => {
+      const xr = xs[spot];
+      ctx.textAlign = 'right';
+      ctx.fillStyle = K.labelBg;
+      ctx.fillRect(xr - tw - pad, y - th / 2, tw + 2 * pad, th);
+      // Znacznik strony od strony belki
+      const edge = Math.max(1, Math.round(hr));
+      ctx.fillStyle = w.bid ? K.domBid : K.domAsk;
+      ctx.fillRect(xr === before ? xr + pad - edge : xr - tw - pad, y - th / 2, edge, th);
+      ctx.fillStyle = w.ink;
+      ctx.fillText(w.label, xr, y);
+    });
+  });
+  const placed = placeLabels(cands, { limit: o.limit, barPx: o.barPx, blocked: o.blocked, circles: bubbles });
+  for (const [key, spot] of placed) draws.get(key)?.(spot);
 }
 
-interface Rect {
-  l: number;
-  r: number;
-  t: number;
-  b: number;
-}
-
-function circleHitsRect(c: { x: number; y: number; r: number }, q: Rect): boolean {
-  const dx = Math.max(q.l - c.x, 0, c.x - q.r);
-  const dy = Math.max(q.t - c.y, 0, c.y - q.b);
-  return dx * dx + dy * dy < (c.r + 1) ** 2;
+/** Ten sam obiekt (bąbel, seria albo ściana) w dwóch wyborach. */
+function samePick(a: LiquidityPick | null, b: LiquidityPick | null): boolean {
+  if (!a || !b || a.kind !== b.kind) return a === b;
+  if (a.kind === 'order' && b.kind === 'order') return a.order === b.order;
+  if (a.kind === 'burst' && b.kind === 'burst') return a.burst.from === b.burst.from && a.burst.side === b.burst.side;
+  if (a.kind === 'wall' && b.kind === 'wall') return a.wall.from === b.wall.from && a.wall.px === b.wall.px && a.wall.side === b.wall.side;
+  return false;
 }
 
 function drawDom(ctx: CanvasRenderingContext2D, rows: readonly DomRow[], right: number, hr: number, vr: number): void {

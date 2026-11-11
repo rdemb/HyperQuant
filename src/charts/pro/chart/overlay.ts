@@ -13,6 +13,7 @@ import type {
 } from 'lightweight-charts';
 import { fmtCompact } from '../../../ui/format';
 import { spreadTags } from '../../orderflow/renderer';
+import type { Box } from './labelPlacement';
 import { baseTick } from '../core/footprintBar';
 import {
   DayLevels,
@@ -326,6 +327,8 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
   private whaleHits: { y: number; key: string }[] = [];
   private edge: (() => EdgeTags | null) | null = null;
   private scene: Scene = emptyScene();
+  /** Prostokąty narysowanych podpisów (px CSS panelu) z ostatniej klatki: etykiety liczbowe innych warstw je omijają. */
+  private drawn: Box[] = [];
 
   private readonly axisVwap = new AxisLabel(K.vwap);
   private readonly axisSvwap = new AxisLabel(K.svwap);
@@ -342,13 +345,25 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
     const over: IPrimitivePaneRenderer = {
       draw: (target) =>
         target.useBitmapCoordinateSpace(({ context, horizontalPixelRatio: hr, verticalPixelRatio: vr, bitmapSize }) =>
-          drawOver(context, this.scene, hr, vr, bitmapSize.width, bitmapSize.height)
+          {
+            this.drawn = drawOver(context, this.scene, hr, vr, bitmapSize.width, bitmapSize.height);
+          }
         ),
     };
     this.views = [
       { zOrder: () => 'bottom', renderer: () => under },
       { zOrder: () => 'normal', renderer: () => over },
     ];
+  }
+
+  /** Środki etykiet wskaźników na osi ceny (VWAP, VWAP sesji, POC), które teraz widać. */
+  axisYs(): number[] {
+    return [this.axisVwap, this.axisSvwap, this.axisPoc].filter((a) => a.on).map((a) => a.y);
+  }
+
+  /** Podpisy poziomów i profilu narysowane w tej klatce (px CSS panelu). */
+  occupied(): readonly Box[] {
+    return this.drawn;
   }
 
   attached(p: SeriesAttachedParameter<Time>): void {
@@ -888,7 +903,7 @@ function drawUnder(ctx: CanvasRenderingContext2D, s: Scene, hr: number, vr: numb
   }
 }
 
-function drawOver(ctx: CanvasRenderingContext2D, s: Scene, hr: number, vr: number, bitmapW: number, bitmapH: number): void {
+function drawOver(ctx: CanvasRenderingContext2D, s: Scene, hr: number, vr: number, bitmapW: number, bitmapH: number): Box[] {
   const lw = Math.max(1, Math.floor(hr));
   ctx.lineWidth = lw;
   for (const v of s.vlines) {
@@ -927,33 +942,46 @@ function drawOver(ctx: CanvasRenderingContext2D, s: Scene, hr: number, vr: numbe
   const font = Math.round(10 * vr);
   ctx.font = `${font}px ${MONO}`;
   ctx.textBaseline = 'middle';
+  // Etykiety poziomów przy prawej krawędzi mają pierwszeństwo: ich miejsca liczone najpierw (px urządzenia)
+  const padX = Math.round(4 * hr);
+  const h = Math.round(TAG_H * vr);
+  const tagBoxes = s.tags.map((g, i) => {
+    const y = Math.round(s.tagYs[i] * vr);
+    const w = Math.ceil(ctx.measureText(g.text).width) + 2 * padX;
+    const x = (s.right > 0 ? Math.round(s.right * hr) : bitmapW) - w - Math.round(2 * hr);
+    return { l: x, r: x + w, t: y - h / 2, b: y + h / 2 };
+  });
+  const taken: Box[] = [...tagBoxes];
+  const hit = (q: Box) => taken.some((p) => q.l < p.r && q.r > p.l && q.t < p.b && q.b > p.t);
+  // Podpisy na liniach (POC, VAH, VAL, sesje…): pominięte, gdy nachodzą na etykietę poziomu albo wcześniejszy podpis
   for (const t of s.texts) {
     if (!Number.isFinite(t.y)) continue;
     ctx.textAlign = t.align;
     const x = t.x * hr;
     const y = t.y * vr;
+    const tw = ctx.measureText(t.text).width;
+    const l = t.align === 'right' ? x - tw - 2 * hr : t.align === 'center' ? x - tw / 2 - 2 * hr : x - 2 * hr;
+    const box = { l, r: l + tw + 4 * hr, t: y - font * 0.6, b: y + font * 0.6 };
+    if (hit(box)) continue;
+    taken.push(box);
     if (t.bg) {
-      const w = ctx.measureText(t.text).width + 4 * hr;
       ctx.fillStyle = K.tagBg;
-      ctx.fillRect(t.align === 'right' ? x - w + 2 * hr : x - 2 * hr, y - font * 0.6, w, font * 1.2);
+      ctx.fillRect(box.l, box.t, box.r - box.l, box.b - box.t);
     }
     ctx.fillStyle = t.color;
     ctx.fillText(t.text, x, y);
   }
 
-  // Etykiety poziomów przy prawej krawędzi
   ctx.textAlign = 'right';
-  const padX = Math.round(4 * hr);
-  const h = Math.round(TAG_H * vr);
   s.tags.forEach((g, i) => {
+    const b = tagBoxes[i];
     const y = Math.round(s.tagYs[i] * vr);
-    const w = Math.ceil(ctx.measureText(g.text).width) + 2 * padX;
-    const x = (s.right > 0 ? Math.round(s.right * hr) : bitmapW) - w - Math.round(2 * hr);
     ctx.fillStyle = K.tagBg;
-    ctx.fillRect(x, y - h / 2, w, h);
+    ctx.fillRect(b.l, b.t, b.r - b.l, h);
     ctx.fillStyle = g.color;
-    ctx.fillRect(x, y - h / 2, Math.max(1, Math.round(2 * hr)), h);
+    ctx.fillRect(b.l, b.t, Math.max(1, Math.round(2 * hr)), h);
     if (g.ink) ctx.fillStyle = g.ink;
-    ctx.fillText(g.text, x + w - padX, y + 0.5);
+    ctx.fillText(g.text, b.r - padX, y + 0.5);
   });
+  return taken.map((b) => ({ l: b.l / hr, r: b.r / hr, t: b.t / vr, b: b.b / vr }));
 }

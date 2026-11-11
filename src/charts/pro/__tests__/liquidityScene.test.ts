@@ -100,12 +100,12 @@ function recorder() {
   return { ctx, log };
 }
 
-/** Bąble, ściany, duże zlecenia, drabina DOM i podpisy (bez mapy ciepła). */
+/** Bąble, ściany, duże zlecenia i podpisy (bez mapy ciepła) oraz drabina DOM w marginesie osi ceny. */
 function drawn(l: Layer): string[] {
   const { ctx, log } = recorder();
   const scope = { context: ctx, bitmapSize: { width: W, height: H }, horizontalPixelRatio: 1, verticalPixelRatio: 1 };
   const target = { useBitmapCoordinateSpace: (cb: (s: unknown) => void) => cb(scope) };
-  for (const v of l.paneViews().slice(1)) v.renderer()!.draw(target as never);
+  for (const v of [...l.paneViews().slice(1), ...l.priceAxisPaneViews()]) v.renderer()!.draw(target as never);
   return log;
 }
 

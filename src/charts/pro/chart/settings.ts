@@ -6,6 +6,7 @@ import { isMapId } from '../../../utils/mapSettlement';
 import { IndicatorInstance, indicatorDef, indicatorsFromLink, indicatorsLink, parseIndicators, REMOVED_INDICATORS } from '../indicators/registry';
 import type { ChartView } from './footprintSeries';
 import type { FootprintStyle } from './layout';
+import { type LabelDensity, parseDensity } from './labelPlacement';
 
 /** Ustawienia wykresu Pro zapamiętywane w przeglądarce (tylko wygoda użytkownika — brak danych osobowych). */
 export interface ChartSettings {
@@ -40,6 +41,8 @@ export interface ChartSettings {
    * „Stan”. Pole tylko dopisywane: zapis bez niego czyta się bez zmian.
    */
   stateOpen?: boolean;
+  /** Gęstość etykiet liczbowych na wykresie (0, 3, 5, wszystkie); brak — 5 na komputerze, 3 na telefonie. */
+  labelDensity?: LabelDensity;
   /** Wskaźniki na wykresie ceny. */
   showVwap: boolean;
   showVwapBands: boolean;
@@ -263,6 +266,7 @@ export function parseSettings(raw: unknown, d: ChartSettings = DEFAULT_SETTINGS)
     ...(panelSet !== undefined ? { panelSet } : {}),
     ...(panelSetIids ? { panelSetIids } : {}),
     ...(blogMapId !== undefined ? { blogMapId } : {}),
+    ...(parseDensity(r.labelDensity) !== undefined ? { labelDensity: parseDensity(r.labelDensity) } : d.labelDensity !== undefined ? { labelDensity: d.labelDensity } : {}),
     ...(typeof r.stateOpen === 'boolean' ? { stateOpen: r.stateOpen } : d.stateOpen !== undefined ? { stateOpen: d.stateOpen } : {}),
   };
 }
