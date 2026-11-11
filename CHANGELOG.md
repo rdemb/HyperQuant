@@ -4,6 +4,13 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Pomiar interfejsu w CI: dane stałe, stały zegar, punkt odniesienia (2026-11-11)
+
+#### Dodane
+- **`npm run ui:check` bez sieci i bez zegara ściennego** (`scripts/ui/fixtures.mjs`, `scripts/ui/probe.mjs`, `scripts/ui/cdp.mjs`, `scripts/ui/layout-check.mjs`): Chrome odpowiada na zapytania `/info` Hyperliquid z danych stałych — świece BTC z minut nagranych dób przy lekcjach (`public/lessons/*.json`, 20–24.10.2026), poza nimi i dla ETH, SOL, HYPE świece z funkcji czasu (bez losowości), arkusz, kontekst rynku i finansowanie ze stałych wartości; WebSocket to atrapa strumienia (arkusz, kontekst i kwotowania raz po subskrypcji), reszta sieci jest zablokowana. Zegar strony stoi w chwili 2026-10-24 21:29:20 UTC, `Math.random` ma ziarno, strefa Europe/Warsaw i język pl-PL są stałe, bez service workera. Dwa uruchomienia z rzędu dają ten sam wynik. `npm run ui:check:live` mierzy na prawdziwych danych.
+- **Liczby obiektów na widok i punkt odniesienia** (`scripts/ui/baseline.mjs`, `scripts/ui/baseline.json`): podpisy, koła (bąble), prostokąty i podpisy osi na płótnie panelu ceny dla widoku na żywo 1440 (z kolumną DOM i bez), 390 i powtórki 24.10 (1440 i 390), udziały panelu ceny, kolumna DOM i lista wskaźników — osobno dla systemu (krój zastępczy różni się). `--strict` zgłasza spadek udziału panelu ceny o ponad 0,5 pp i odchylenie liczby obiektów o ponad 15% (i ponad 2); zmianę zamierzoną zapisuje `--update-baseline`. Wynik podaje zapas nad progami (1440: +0,6 pp nad 62%, z DOM +2,6 pp, 390: +1,2 pp nad 60%, skupienie +3,5 pp nad 80%).
+- **Job „Interfejs (ui:check)” w CI** (`.github/workflows/ci.yml`): przy każdym pull requeście, Chrome 157 z `browser-actions/setup-chrome` przypiętej do hasha, limit 10 min, zrzuty i raport JSON jako artefakt przy porażce.
+
 ### Blog: wpisy z gałęzi blog repo danych jako niezaufana treść (2026-11-11)
 
 Publikacja się nie zmienia, dopóki gałąź `blog` w repo danych nie istnieje: pełny build na 119 wpisach z `main` daje te same 169 adresów w `sitemap.xml` (plik identyczny), ten sam `blog/feed.xml` (51 linków, plik identyczny) i 171 stron HTML identycznych po pominięciu nagłówka CSP, znacznika skryptu i wersji arkusza; nowe pliki to tylko `blog/blog.js` i `blog/source.json`.
