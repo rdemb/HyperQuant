@@ -21,6 +21,8 @@ Environment=HQ_BLOG_DIR=/var/lib/hyperquant-blog
 Environment=HQ_BLOG_STATE=/var/lib/hyperquant-blog-publisher
 # Wpisy z main (tylko odczyt identyfikatorów: gałąź blog nie może przejąć istniejącego wpisu)
 Environment=HQ_BLOG_MAIN_CONTENT=/opt/hyperquant/app/content/blog
+# Klucze hosta github.com z repo (backend/deploy/github_known_hosts, kopia z install.sh): SSH bez akceptowania nowych kluczy
+Environment=HQ_GIT_KNOWN_HOSTS=/opt/hyperquant/blog-publisher/known_hosts
 ExecStart=/opt/hyperquant/node/bin/node /opt/hyperquant/blog-publisher/scripts/blog/publisher.mjs
 TimeoutStartSec=5min
 Nice=10

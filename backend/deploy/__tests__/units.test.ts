@@ -274,7 +274,12 @@ describe('wydawca bloga (hyperquant-blog-publisher): autor bez klucza, kolejka n
     expect(one(svc(), 'WorkingDirectory')).toBe(COPY);
     // z katalogu aktualizowanego tylko wpisy main (dane, nie kod), do sprawdzenia identyfikatorów
     expect(read('hyperquant-blog-publisher.service').match(new RegExp(APP.replaceAll('/', '\\/'), 'g'))).toHaveLength(1);
-    expect(svc().Environment).toEqual(['HQ_BLOG_DIR=/var/lib/hyperquant-blog', 'HQ_BLOG_STATE=/var/lib/hyperquant-blog-publisher', `HQ_BLOG_MAIN_CONTENT=${APP}/content/blog`]);
+    expect(svc().Environment).toEqual([
+      'HQ_BLOG_DIR=/var/lib/hyperquant-blog',
+      'HQ_BLOG_STATE=/var/lib/hyperquant-blog-publisher',
+      `HQ_BLOG_MAIN_CONTENT=${APP}/content/blog`,
+      `HQ_GIT_KNOWN_HOSTS=${COPY}/known_hosts`,
+    ]);
   });
 
   it('tylko własny plik środowiska (bez sekretów skanera); klucz repo danych przez LoadCredential', () => {
@@ -322,6 +327,16 @@ describe('wydawca bloga (hyperquant-blog-publisher): autor bez klucza, kolejka n
     // w samym katalogu wspólnym (root, 0755) wydawca i tak nie może pisać, tylko w podkatalogach z prawami z install.sh
     expect(svc().ReadWritePaths).toEqual(['/var/lib/hyperquant-blog']);
     for (const d of DIRS) expect(sh).toContain(d);
+  });
+
+  it('klucze hosta GitHuba w repo (api.github.com/meta), kopiowane przez install.sh; bez akceptowania nowych kluczy', () => {
+    const lines = read('github_known_hosts')
+      .split('\n')
+      .filter((l) => l && !l.startsWith('#'));
+    expect(lines.map((l) => l.split(' ').slice(0, 2).join(' '))).toEqual(['github.com ssh-ed25519', 'github.com ecdsa-sha2-nistp256', 'github.com ssh-rsa']);
+    for (const l of lines) expect(l).toMatch(/^github\.com (ssh-ed25519|ecdsa-sha2-nistp256|ssh-rsa) [A-Za-z0-9+/]+=*$/);
+    expect(sh).toContain('install -o root -g root -m 0644 "$PREFIX/app/backend/deploy/github_known_hosts" "$PREFIX/blog-publisher.new/known_hosts"');
+    expect(readFileSync(join(ROOT, 'scripts', 'blog', 'publisher.mjs'), 'utf8')).not.toContain('accept-new');
   });
 
   it('timer co minutę', () => {
