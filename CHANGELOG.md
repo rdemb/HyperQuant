@@ -4,6 +4,15 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Angielski pierwszym językiem powłoki (E1) (2026-11-12)
+
+#### Zmienione
+- **`index.html` po angielsku** (to, co widzi wyszukiwarka i podgląd linku, zanim aplikacja wykryje język): `lang="en"`, tytuł, opis, słowa kluczowe, Open Graph (`og:locale` `en_GB`, alternatywa `pl_PL`), Twitter, opis JSON-LD (`inLanguage` `["en", "pl"]`) i blok `noscript` (polskie strony jako drugie, z `lang="pl"`). Kanał RSS zostaje polski, z tytułem „HyperQuant · BTC analysis (in Polish)”. Po starcie aplikacja dalej ustawia język czytelnika (`src/main.tsx`).
+- **`public/manifest.webmanifest` po angielsku**: `lang: "en"`, opis i skróty (Pre-session, In session, Post-session), te same adresy.
+- **Strona 404 po angielsku najpierw** (`scripts/blog/pages.mjs`), polskie zdanie z polskimi stronami drugie; blog oznaczony „(in Polish)”.
+- Adresy bez zmian; blog, wpisy i RSS zostają po polsku.
+- Testy: `src/shell/__tests__/englishShell.test.ts` (index.html i manifest bez polskich znaków, `lang` `en`), `scripts/blog/blog.test.mjs` (404).
+
 ### Ściany i serie: próg z chwili zdarzenia, tylko istotne ściany, limit na ekranie (2026-11-11)
 
 Na nagranej dobie 24.10.2026 (powtórka 19:30, Kokpit 1m, warstwy bąbli oraz serii i ścian, 1440 × 900) wykres rysował 82 ściany i serie; po zmianie 10 (`npm run ui:check`, wybór warstwy, nie piksele). Liczba „przed” zmierzona na stronie z `main` z tymczasowym licznikiem w warstwie (bez commita). Na stałych danych na żywo taśmy nie ma (atrapa strumienia nie wysyła transakcji), więc pomiar jest na powtórce.
