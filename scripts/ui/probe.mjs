@@ -1,20 +1,27 @@
 // Kod wstrzykiwany do strony przez scripts/ui/layout-check.mjs. Funkcje działają w przeglądarce (bez importów).
 
-/** Przed skryptami strony: zapis tekstów rysowanych na płótnach (ostatnia klatka każdego płótna). */
+/**
+ * Przed skryptami strony: zapis tekstów rysowanych na płótnach i liczba kół (bąble) i prostokątów (świece, ściany, słupki)
+ * każdego płótna z jego ostatniej klatki.
+ */
 export const INIT = `(() => {
   let frame = 0;
   const tick = () => { frame++; requestAnimationFrame(tick); };
   requestAnimationFrame(tick);
   const texts = new Map();
   window.__hqTexts = texts;
-  const orig = CanvasRenderingContext2D.prototype.fillText;
-  CanvasRenderingContext2D.prototype.fillText = function (text, x, y, maxWidth) {
+  const entry = (c) => {
+    let e = texts.get(c);
+    if (!e || e.frame !== frame) { e = { frame, items: [], arcs: 0, rects: 0 }; texts.set(c, e); }
+    return e;
+  };
+  const P = CanvasRenderingContext2D.prototype;
+  const orig = P.fillText;
+  P.fillText = function (text, x, y, maxWidth) {
     try {
       const s = String(text);
       if (s.trim() !== '') {
-        const c = this.canvas;
-        let e = texts.get(c);
-        if (!e || e.frame !== frame) { e = { frame, items: [] }; texts.set(c, e); }
+        const e = entry(this.canvas);
         const m = this.measureText(s);
         const w = m.width;
         const al = this.textAlign;
@@ -27,7 +34,94 @@ export const INIT = `(() => {
     } catch {}
     return orig.call(this, text, x, y, maxWidth);
   };
+  const arc = P.arc;
+  P.arc = function (...a) {
+    try { entry(this.canvas).arcs++; } catch {}
+    return arc.apply(this, a);
+  };
+  const rect = P.fillRect;
+  P.fillRect = function (...a) {
+    try { entry(this.canvas).rects++; } catch {}
+    return rect.apply(this, a);
+  };
 })();`;
+
+/**
+ * Tryb danych stałych (CI): zegar stoi w chwili `now`, Math.random z ziarnem, bez service workera, a WebSocket to atrapa
+ * strumienia Hyperliquid — po subskrypcji odsyła raz wiadomość kanału z `stream` (arkusz, kontekst, kwotowania), innych
+ * giełd nie łączy (błąd i zamknięcie, jak bez sieci). Wszystko przed skryptami strony.
+ */
+export function fixtureInit(now, stream) {
+  return `(() => {
+  const NOW = ${now};
+  const STREAM = ${JSON.stringify(stream)};
+  const RealDate = Date;
+  class FixedDate extends RealDate {
+    constructor(...a) { if (a.length === 0) super(NOW); else super(...a); }
+    static now() { return NOW; }
+  }
+  FixedDate.UTC = RealDate.UTC;
+  FixedDate.parse = RealDate.parse;
+  window.Date = FixedDate;
+  let seed = 20261024;
+  Math.random = () => {
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  try { delete Navigator.prototype.serviceWorker; } catch {}
+  class FakeSocket extends EventTarget {
+    constructor(url) {
+      super();
+      this.url = String(url);
+      this.readyState = 0;
+      this.binaryType = 'blob';
+      this.onopen = this.onmessage = this.onclose = this.onerror = null;
+      const hl = /hyperliquid\.xyz/.test(this.url);
+      setTimeout(() => {
+        if (!hl) {
+          this.readyState = 3;
+          this.fire('error', new Event('error'));
+          this.fire('close', new CloseEvent('close', { code: 1006 }));
+          return;
+        }
+        this.readyState = 1;
+        this.fire('open', new Event('open'));
+      }, 0);
+    }
+    fire(type, ev) {
+      const h = this['on' + type];
+      if (typeof h === 'function') h.call(this, ev);
+      this.dispatchEvent(ev);
+    }
+    send(raw) {
+      if (this.readyState !== 1) return;
+      let m;
+      try { m = JSON.parse(raw); } catch { return; }
+      const s = m && m.subscription;
+      if (!s || m.method !== 'subscribe') return;
+      const key = s.type === 'l2Book' ? 'l2Book|' + s.coin + '|' + (s.nSigFigs ?? '') : s.type + '|' + s.coin;
+      const data = STREAM[key];
+      setTimeout(() => {
+        if (this.readyState !== 1) return;
+        this.fire('message', new MessageEvent('message', { data: JSON.stringify({ channel: 'subscriptionResponse', data: m }) }));
+        if (data) this.fire('message', new MessageEvent('message', { data: JSON.stringify({ channel: s.type, data }) }));
+      }, 20);
+    }
+    close() {
+      if (this.readyState === 3) return;
+      this.readyState = 3;
+      setTimeout(() => this.fire('close', new CloseEvent('close', { code: 1000 })), 0);
+    }
+  }
+  FakeSocket.CONNECTING = 0;
+  FakeSocket.OPEN = 1;
+  FakeSocket.CLOSING = 2;
+  FakeSocket.CLOSED = 3;
+  window.WebSocket = FakeSocket;
+})();`;
+}
 
 /** Funkcje pomiaru: window.__hq.* (wstrzykiwane po wczytaniu strony). */
 export const PROBE = `(() => {
@@ -241,6 +335,24 @@ export const PROBE = `(() => {
     }
     return out;
   }
-  window.__hq = { menuCorners, chart, paneShare, overCandles, labels, findAll, togglers, clickProbe, smallTargets, storage, vis };
+  /** Obiekty na płótnach panelu ceny (ostatnia klatka): podpisy, koła (bąble), prostokąty (świece, ściany); oś — podpisy. */
+  function objects() {
+    const c = chart();
+    if (!c) return null;
+    const sum = (cell) => {
+      const o = { labels: 0, arcs: 0, rects: 0 };
+      for (const cv of cell.querySelectorAll('canvas')) {
+        const e = window.__hqTexts && window.__hqTexts.get(cv);
+        if (!e) continue;
+        o.labels += e.items.length;
+        o.arcs += e.arcs;
+        o.rects += e.rects;
+      }
+      return o;
+    };
+    const pane = sum(c.pane);
+    return { labels: pane.labels, bubbles: pane.arcs, rects: pane.rects, axisLabels: sum(c.axis).labels };
+  }
+  window.__hq = { objects, menuCorners, chart, paneShare, overCandles, labels, findAll, togglers, clickProbe, smallTargets, storage, vis };
   return true;
 })()`;
