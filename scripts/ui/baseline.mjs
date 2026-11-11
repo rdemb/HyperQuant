@@ -23,6 +23,11 @@ export function metricsOf(r) {
   if (typeof r.effort?.phone === 'number') m['effort.rects390'] = r.effort.phone;
   // Ściany i serie (wybór warstwy) w Kokpicie 1m na powtórce 24.10
   if (typeof r.clashes?.desktop === 'number') m['clashes.objects1440'] = r.clashes.desktop;
+  // Strefy nierównowagi i niedokończone aukcje (wybór warstwy) w układzie „Aukcja i otwarcie”, powtórka 24.10, 5m
+  for (const [k, v] of [['1440', r.zones?.desktop], ['390', r.zones?.phone]]) {
+    if (typeof v?.rects === 'number') m[`zones.rects${k}`] = v.rects;
+    if (typeof v?.lines === 'number') m[`zones.lines${k}`] = v.lines;
+  }
   return m;
 }
 
