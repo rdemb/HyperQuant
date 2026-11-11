@@ -139,6 +139,25 @@ describe('wybór ścian i serii (selectClashes)', () => {
     expect(selectClashes([], [big, small, after], now + H, thr, T0 + 5 * 60_000).bursts.map((b) => b.usd)).toEqual([150_000]);
   });
 
+  it(`pokrycie taśmy: ściana i seria tylko, gdy taśma obejmuje całe ${RANK_WINDOW_MS / 60_000} min przed ich końcem (początek i luka)`, () => {
+    const S = T0 + 2 * H;
+    const M = 60_000;
+    const w1 = wall({ from: S + 29 * M, to: S + 30 * M, usd: 900_000, px: 1 });
+    const w2 = wall({ from: S + 60 * M, to: S + 61 * M, usd: 500_000, px: 2 });
+    const b1 = burst({ from: S + 10 * M - 500, to: S + 10 * M, usd: 900_000 });
+    const b2 = burst({ from: S + 75 * M - 500, to: S + 75 * M, usd: 200_000 });
+    const pick = (covers: (a: number, b: number) => boolean) => {
+      const s = selectClashes([w1, w2], [b1, b2], S + 5 * H, thr, Number.NEGATIVE_INFINITY, covers);
+      return { walls: s.walls.map((w) => w.px), bursts: s.bursts.map((b) => b.usd) };
+    };
+    // Taśma od S: w pierwszej godzinie nic; ściana i seria po godzinie jak zwykle (wcześniejsze liczą się do porównania)
+    expect(pick((a) => a >= S)).toEqual({ walls: [2], bursts: [200_000] });
+    // Wcześniejsza taśma: dochodzą obiekty z pierwszej godziny, zestaw od S + 60 min bez zmian
+    expect(pick((a) => a >= S - 2 * H)).toEqual({ walls: [1, 2], bursts: [900_000, 200_000] });
+    // Luka w pokryciu [S − 30 min, S − 25 min) przy wcześniejszej taśmie działa jak początek
+    expect(pick((a, b) => a >= S - 2 * H && !(a < S - 25 * M && b > S - 30 * M))).toEqual({ walls: [2], bursts: [200_000] });
+  });
+
   it('opis: wynik sprawdzianu, PL i EN', () => {
     expect(CLASHES_EVIDENCE.pl).toContain('Po ścianie cena nie rusza się w stronę obrony: +0,02 pb po 5 min (n 9 834).');
     expect(CLASHES_EVIDENCE.en).toContain('+0.02 bp after 5 min (n 9,834)');

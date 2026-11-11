@@ -45,10 +45,36 @@ export interface LiquiditySource {
   far: BookHistory | null;
   orders: (from: number, to: number) => AggressorOrder[];
   walls: (from: number, to: number, t: number) => Wall[];
+  /**
+   * Czy taśma zleceń z kontami biorców pokrywa [from, to) (`ProStore.addressed`, z tolerancją krótkich przerw —
+   * `tapeCovered`): bąble, ściany i serie są rysowane tylko przy taśmie z całego okna porównania przed nimi.
+   */
+  covers: (from: number, to: number) => boolean;
   /** Wersja danych magazynu (rośnie z każdą zmianą zleceń i ścian); bez niej scenę odświeża tylko setData. */
   version?: () => number;
   /** Wersja historii (rośnie po doczytaniu zleceń z historii): progi zamkniętych godzin liczone są wtedy od nowa. */
   history?: () => number;
+}
+
+/**
+ * Okno porównania reguły przyczynowej przed widokiem (ms): 20 świec dla bąbli, z seriami i ścianami co najmniej
+ * 60 min. O tyle wcześniej warstwa pobiera zlecenia, a wykres prosi o historię z serwera.
+ */
+export function liquidityLookbackMs(intervalMs: number, t: { showBubbles: boolean; showClashes: boolean }): number {
+  if (!t.showBubbles) return 0;
+  return Math.max(BUBBLES_BARS * intervalMs, t.showClashes ? RANK_WINDOW_MS : 0);
+}
+
+/**
+ * Dopuszczalny udział przerw taśmy w oknie porównania. Zapis serwera ma krótkie przerwy przy wznowieniu połączenia
+ * (4–11.11: 87 przerw w 8 dobach, zwykle 1–4 s, najdłuższa 52 s); bez tolerancji każda wyłączałaby bąble na 20 świec
+ * (na 5m 100 min, na 1h prawie zawsze). Początek taśmy i dłuższa luka nadal wyłączają rysowanie.
+ */
+export const TAPE_GAP_SHARE = 0.01;
+
+/** Taśma pokrywa [from, to) poza przerwami łącznie najwyżej `TAPE_GAP_SHARE` okna (`cov` — `ProStore.addressed`). */
+export function tapeCovered(cov: { coveredMs(from: number, to: number): number }, from: number, to: number): boolean {
+  return to > from && cov.coveredMs(from, to) >= (to - from) * (1 - TAPE_GAP_SHARE);
 }
 
 /** Obiekt pod kliknięciem: zlecenie agresora (z klasą), seria albo ściana. */
@@ -206,7 +232,7 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
   private toggles: LiquidityToggles;
   private bars: readonly ProBar[] = [];
   private ms = 60_000;
-  private src: LiquiditySource = { near: null, far: null, orders: () => [], walls: () => [] };
+  private src: LiquiditySource = { near: null, far: null, orders: () => [], walls: () => [], covers: () => false };
   private now = 0;
   private threshold = DEFAULT_THRESHOLD_USD;
   /** Próg ręczny z ustawień (0 — automatyczny z chwili zdarzenia). */
@@ -409,11 +435,9 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
       this.memoOf = memo;
       this.hourThr = new Map();
     }
-    // Zlecenia pobierane raz na scenę: widoczny czas i czas przed nim do porównania reguły przyczynowej — 20 świec
-    // (bąble), a z seriami i ścianami co najmniej godzina
+    // Zlecenia pobierane raz na scenę: widoczny czas i okno porównania reguły przyczynowej przed nim
     const clashesOn = this.toggles.showBubbles && this.toggles.showClashes;
-    const back = Math.max(BUBBLES_BARS * this.ms, clashesOn ? RANK_WINDOW_MS : 0);
-    const span = this.toggles.showBubbles && g ? this.src.orders(g.tFrom - back, g.tTo) : [];
+    const span = this.toggles.showBubbles && g ? this.src.orders(g.tFrom - liquidityLookbackMs(this.ms, this.toggles), g.tTo) : [];
     const thrAt = thresholdAt(this.src.orders, this.manual, this.hourThr);
     const clashes = clashesOn && g ? this.sceneClashes(g, span, thrAt) : { walls: [], bursts: [] };
     const bubbles = this.toggles.showBubbles && g ? this.sceneBubbles(g, span, clashes.bursts, thrAt) : { list: [], orders: 0 };
@@ -570,7 +594,7 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
 
   /** Serie i ściany: próg z chwili zdarzenia, reguła przyczynowa (obiekty z godziny przed widokiem do porównania) i limity. */
   private sceneClashes(g: Geometry, span: readonly AggressorOrder[], thrAt: (t: number) => number): ClashSelection {
-    return selectClashes(this.src.walls(g.tFrom - RANK_WINDOW_MS, g.tTo, 0), bursts(span, thrAt), this.now, thrAt, g.tFrom);
+    return selectClashes(this.src.walls(g.tFrom - RANK_WINDOW_MS, g.tTo, 0), bursts(span, thrAt), this.now, thrAt, g.tFrom, this.src.covers);
   }
 
   /**
@@ -583,7 +607,7 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
     series: readonly Burst[],
     thrAt: (t: number) => number
   ): { list: Bubble[]; orders: number } {
-    const list = selectBubbles(span, { from: g.tFrom, intervalMs: this.ms, phone: this.phone, manual: this.manual });
+    const list = selectBubbles(span, { from: g.tFrom, intervalMs: this.ms, phone: this.phone, manual: this.manual, covers: this.src.covers });
     const orders = list.length;
     const hl = this.highlight;
     if (hl) {

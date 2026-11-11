@@ -23,7 +23,7 @@ const order = (o: Partial<AggressorOrder>): AggressorOrder => ({
   ...o,
 });
 
-const view = (v: Partial<BubbleView> = {}): BubbleView => ({ from: Number.NEGATIVE_INFINITY, intervalMs: M, phone: false, manual: 0, ...v });
+const view = (v: Partial<BubbleView> = {}): BubbleView => ({ from: Number.NEGATIVE_INFINITY, intervalMs: M, phone: false, manual: 0, covers: () => true, ...v });
 const usd = (list: readonly AggressorOrder[]) => list.map((o) => o.notional);
 
 /** Taśma bez zegara: pseudolosowe zlecenia co 2–20 s, wartości o grubym ogonie (od 1 tys. do kilku mln USD). */
@@ -60,7 +60,7 @@ describe(`reguła przyczynowa bąbli: wśród ${BUBBLES_K} największych zleceń
     expect(usd(selectBubbles(list, view({ intervalMs: 5 * M })))).toEqual([900_000, 800_000]);
   });
 
-  it('raz narysowany zostaje: późniejsze większe zlecenia nie zmieniają wyboru z przeszłości', () => {
+  it('po zamknięciu świecy wybór się nie zmienia: późniejsze większe zlecenia nie usuwają bąbli z przeszłości', () => {
     const early = [order({ time: T0, notional: 200_000 }), order({ time: T0 + M, notional: 100_000 })];
     const later = Array.from({ length: 10 }, (_, i) => order({ time: T0 + (2 + i) * M, notional: 3_000_000 + i }));
     expect(usd(selectBubbles(early, view()))).toEqual([200_000, 100_000]);
@@ -113,6 +113,63 @@ describe(`reguła przyczynowa bąbli: wśród ${BUBBLES_K} największych zleceń
     expect(at(140, false)).toBeGreaterThanOrEqual(5);
     expect(at(140, false)).toBeLessThanOrEqual(BUBBLES_MAX);
     expect(at(33, true)).toBeLessThanOrEqual(15);
+  });
+});
+
+describe('pokrycie taśmy: bąbel tylko, gdy taśma zleceń obejmuje całe okno 20 świec przed zleceniem', () => {
+  const S0 = T0 + H;
+  const full = tape(S0 - 2 * H, S0 + 3 * H, 5);
+  const onlyFromS = full.filter((o) => o.time >= S0);
+  const coveredFrom = (a0: number) => (a: number) => a >= a0;
+
+  it('taśma od S: żadnego bąbla w [S, S + 20 świec); po dołożeniu wcześniejszej taśmy zestaw od S + 20 świec bez zmian', () => {
+    const fromS = selectBubbles(onlyFromS, view({ covers: coveredFrom(S0) }));
+    expect(fromS.length).toBeGreaterThan(5);
+    expect(fromS.every((o) => o.time >= S0 + BUBBLES_BARS * M)).toBe(true);
+    const withEarlier = selectBubbles(full, view({ covers: coveredFrom(S0 - 2 * H) }));
+    expect(withEarlier.filter((o) => o.time >= S0 + BUBBLES_BARS * M)).toEqual(fromS);
+    expect(withEarlier.some((o) => o.time >= S0 && o.time < S0 + BUBBLES_BARS * M)).toBe(true);
+    // 5m: okno 100 min
+    const fromS5 = selectBubbles(onlyFromS, view({ intervalMs: 5 * M, covers: coveredFrom(S0) }));
+    expect(fromS5.every((o) => o.time >= S0 + BUBBLES_BARS * 5 * M)).toBe(true);
+  });
+
+  it('luka w pokryciu działa tak samo jak początek taśmy', () => {
+    const G = S0 + H;
+    const gap = full.filter((o) => o.time < G || o.time >= G + 5 * M);
+    const covers = (a: number, b: number) => !(a < G + 5 * M && b > G);
+    const got = selectBubbles(gap, view({ covers }));
+    expect(got.some((o) => o.time >= G && o.time < G + 25 * M)).toBe(false);
+    const all = selectBubbles(gap, view());
+    expect(got).toEqual(all.filter((o) => o.time < G || o.time >= G + 25 * M));
+  });
+
+  it('próg ręczny bez zmian: bez warunku pokrycia', () => {
+    const list = [order({ time: S0, notional: 500_000 })];
+    expect(selectBubbles(list, view({ manual: 200_000, covers: () => false }))).toHaveLength(1);
+  });
+});
+
+describe('kaskada: najwyżej 2 bąble na świecę (telefon 1)', () => {
+  const rising = Array.from({ length: 7 }, (_, i) => order({ time: T0 + 5 * S + i * 5 * S, notional: 100_000 * (i + 1) }));
+
+  it('7 rosnących zleceń w jednej świecy → 2 największe (telefon: największe)', () => {
+    expect(usd(selectBubbles(rising, view()))).toEqual([600_000, 700_000]);
+    expect(usd(selectBubbles(rising, view({ phone: true })))).toEqual([700_000]);
+  });
+
+  it('w trwającej świecy mniejszy ustępuje większemu; zestaw zamkniętej świecy nie zależy od późniejszych zleceń', () => {
+    expect(usd(selectBubbles(rising.slice(0, 2), view()))).toEqual([100_000, 200_000]);
+    expect(usd(selectBubbles(rising.slice(0, 3), view()))).toEqual([200_000, 300_000]);
+    const later = Array.from({ length: 30 }, (_, i) => order({ time: T0 + (1 + i) * M + S, notional: 5_000_000 + i }));
+    const closed = (list: AggressorOrder[]) => usd(selectBubbles(list, view()).filter((o) => o.time < T0 + M));
+    expect(closed([...rising, ...later])).toEqual(closed(rising));
+  });
+
+  it('5m: świeca to 5 minut', () => {
+    const list = Array.from({ length: 5 }, (_, i) => order({ time: T0 + i * M, notional: 100_000 * (i + 1) }));
+    expect(usd(selectBubbles(list, view({ intervalMs: 5 * M })))).toEqual([400_000, 500_000]);
+    expect(usd(selectBubbles(list, view()))).toHaveLength(5);
   });
 });
 
