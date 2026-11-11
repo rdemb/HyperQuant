@@ -1,4 +1,4 @@
-import { CandlestickSeries, HistogramSeries, LineSeries, LineStyle, LineType, PriceScaleMode, createChart } from 'lightweight-charts';
+import { CandlestickSeries, HistogramSeries, LineSeries, LineStyle, LineType, MismatchDirection, PriceScaleMode, createChart } from 'lightweight-charts';
 import type {
   AutoscaleInfo,
   CandlestickData,
@@ -12,6 +12,7 @@ import type {
   MouseEventParams,
   PriceFormat,
   SeriesPartialOptions,
+  SeriesType,
   Time,
   UTCTimestamp,
   WhitespaceData,
@@ -33,7 +34,8 @@ import { FootprintOptions, FootprintPoint, FootprintSeries } from './footprintSe
 import { fmtPx } from './layout';
 import { LiquidityLayer, LiquidityPick, LiquiditySource } from './liquidity';
 import { IndicatorOverlay, IndicatorToggles, IndicatorValues, WhaleView } from './overlay';
-import { LegendPart, PaneLegend } from './paneLegend';
+import { LegendPart, PaneLegend, deltaStatsParts } from './paneLegend';
+import { densityLimit, keepTicks } from './labelPlacement';
 import { STATS_BAR_SPACING, StatsTable, tableHeight } from './statsTable';
 import { ZonesLayer } from './zonesLayer';
 import { CHART_PLUGINS, ChartPluginLayer } from './plugins';
@@ -98,6 +100,10 @@ export interface Hover {
 }
 
 const sec = (t: number) => (t / 1000) as UTCTimestamp;
+
+/** Wysokość etykiety osi ceny (px) i szerokość osi bez drabiny DOM (liczby ceny BTC krojem 11 px). */
+const AXIS_LABEL_PX = 17;
+const AXIS_W_PX = 62;
 
 /** Liczby panelu przepływu: jednostki rynku ze znakiem. */
 const FLOW_FORMAT: PriceFormat = { type: 'custom', minMove: 0.0001, formatter: fmtSignedVol };
@@ -373,6 +379,10 @@ export class ProChartController {
   private horzLine = true;
   /** Po pierwszych danych nowej serii przewiń do bieżącej świecy. */
   private toNow = false;
+  private paneScale = 1;
+  /** Dotknięcie pustego miejsca panelu ceny (bez bąbla, ściany, wieloryba i rysowania): tryb skupienia na telefonie. */
+  onEmptyTap: (() => void) | null = null;
+  private ticksKey = '';
   /** Chwila z poprzedniej karty: po pierwszych danych widok na niej zamiast na bieżącej świecy. */
   private focusT: number | null = null;
   private focusPages = 0;
@@ -414,7 +424,7 @@ export class ProChartController {
     this.chart = createChart(container, chartOptions());
     this.applyTimeFormat();
     this.main = this.chart.addCustomSeries<FootprintPoint, FootprintOptions>(this.fpView, {
-      priceFormat: { type: 'custom', minMove: 1, formatter: fmtPx },
+      priceFormat: this.priceFormat(1),
       priceLineVisible: true,
       priceLineColor: PRO.priceLine,
       lastValueVisible: true,
@@ -426,6 +436,8 @@ export class ProChartController {
     // Podpisy mapy z bloga przy prawej krawędzi rozsuwa nakładka razem ze swoimi etykietami (VWAP, IB, poziomy dnia)
     this.overlay.setEdgeTags(() => this.blog.edgeTags());
     this.main.attachPrimitive(this.overlay);
+    // Podpisy bąbli, ścian i dużych zleceń omijają etykiety poziomów nakładki (rysowane wcześniej w tej samej klatce)
+    this.liquidity.setBlocked(() => this.overlay.occupied());
     this.zones = new ZonesLayer({ showZones: settings.showZones, showAuctions: settings.showAuctions });
     this.main.attachPrimitive(this.zones);
     this.tpo = new TpoLayer(settings.showTpo, settings.showTpoOi);
@@ -530,6 +542,7 @@ export class ProChartController {
     this.needs = needsOf(s);
     this.stripAt = 0;
     this.liquidity.setToggles(liqToggles(s));
+    this.liquidity.setLabelLimit(densityLimit(s.labelDensity, this.phone));
     this.zones.setToggles({ showZones: s.showZones, showAuctions: s.showAuctions });
     this.zones.setParams(this.zoneParams(s));
     if (prev.bigTradeUsd !== s.bigTradeUsd) this.schedule();
@@ -596,14 +609,19 @@ export class ProChartController {
     if (on === this.phone) return;
     this.phone = on;
     this.liquidity.setDom(!on);
+    this.liquidity.setLabelLimit(densityLimit(this.settings.labelDensity, on));
     this.overlay.setCompact(on);
     this.applyDomInset();
     this.rebuildPanes();
   }
 
-  /** Z mapą ciepła przy prawej krawędzi stoi drabina DOM (nie na telefonie): najnowsza świeca i wskaźniki kończą się przed nią. */
+  /**
+   * Z mapą ciepła drabina DOM (nie na telefonie) stoi we własnym marginesie przy osi ceny: oś jest szersza o drabinę i
+   * 8 px, a etykiety osi zostają przy jej lewej krawędzi — drabina nie leży na świecach przy żadnym przewinięciu.
+   */
   private applyDomInset(): void {
-    const px = this.domShown() ? DOM_W_PX : 0;
+    this.chart.priceScale('right').applyOptions({ minimumWidth: this.domShown() ? AXIS_W_PX + DOM_W_PX + 8 : 0 });
+    const px = 0;
     this.overlay.setRightInset(px);
     this.zones.setRightInset(px);
     this.tpo.setRightInset(px);
@@ -636,11 +654,13 @@ export class ProChartController {
     }
     if (s.showDelta) {
       this.delta = this.chart.addSeries(CandlestickSeries, FLOW_CANDLE, pane++);
+      this.lowerTicks(this.delta, fmtSignedVol, FLOW_FORMAT.minMove);
       this.delta.createPriceLine({ price: 0, color: PRO.divider, lineWidth: 1, lineStyle: LineStyle.Solid, axisLabelVisible: false, title: '' });
       this.delta.attachPrimitive(this.deltaLegend);
     }
     if (s.showCvd) {
       this.cvd = this.chart.addSeries(CandlestickSeries, FLOW_CANDLE, pane++);
+      this.lowerTicks(this.cvd, fmtSignedVol, FLOW_FORMAT.minMove);
       this.cvd.attachPrimitive(this.cvdLegend);
     }
     if (s.showVenueCvd) this.venueCvd = this.addVenueLines(CVD_LINES, pane++, this.venueCvdLegend);
@@ -655,6 +675,7 @@ export class ProChartController {
       const def = indicatorDef(x.id);
       const own = def.pane === 'own';
       const lines = this.addIndicatorLines(def, x, own ? pane++ : 0);
+      if (own && lines[0]) this.lowerTicks(lines[0], this.indFormat(def.format), 0.0001);
       const legend = own ? new PaneLegend(`ind:${x.iid}`, `ind:${x.iid}`) : null;
       if (legend) lines[0].attachPrimitive(legend);
       this.indLegends.push(legend);
@@ -684,25 +705,7 @@ export class ProChartController {
       );
       this.statsSeries.attachPrimitive(this.statsTable);
     }
-    // Opis najniższego panelu omija logo TradingView (tabela statystyk ma na nie własne miejsce)
-    const own = this.indLegends.filter((lg) => lg !== null);
-    const paneLegends = [
-      s.showVolume && !this.phone ? this.volumeLegend : null,
-      s.showDelta ? this.deltaLegend : null,
-      s.showCvd ? this.cvdLegend : null,
-      s.showVenueCvd ? this.venueCvdLegend : null,
-      s.showVenueOi ? this.venueOiLegend : null,
-      ...own,
-    ].filter((lg) => lg !== null);
-    const lowest = s.showStats ? null : (paneLegends[paneLegends.length - 1] ?? null);
-    for (const lg of [this.volumeLegend, this.deltaLegend, this.cvdLegend, this.venueCvdLegend, this.venueOiLegend, ...own]) lg.setBottom(lg === lowest);
-    const panes = this.chart.panes();
-    panes[0]?.setStretchFactor(1);
-    const statsPane = this.statsSeries?.getPane();
-    const venuePanes = new Set([this.venueCvd?.hl?.getPane(), this.venueOi?.hl?.getPane()]);
-    // Panele giełd mają opis w dwóch wierszach (na telefonie także), więc są wyższe niż CVD
-    for (let i = 1; i < panes.length; i++)
-      if (panes[i] !== statsPane) panes[i].setStretchFactor(panes[i] === this.volume?.getPane() ? 0.14 : venuePanes.has(panes[i]) ? 0.3 : 0.22);
+    this.applyStretch();
     // Tabela ma stałą wysokość wiersza: wysokość panelu ustawiamy po ułożeniu pozostałych
     // (panele mogły zostać przebudowane przed następną klatką — wtedy ten panel już nie istnieje)
     this.fitStatsPane();
@@ -713,6 +716,29 @@ export class ProChartController {
     this.venueCvdData = {};
     this.venueOiData = {};
     this.schedule();
+  }
+
+  /**
+   * Wysokości paneli: cena 1, pod nią panele giełd (opis w dwóch wierszach) 0,24, wolumen 0,10, reszta 0,16 — panel ceny
+   * ma ~80% wysokości paneli przy wolumenie i jednym panelu przepływu (pole świec ≥ 62% okna 1440 × 900); `paneScale`
+   * zmniejsza panele pod ceną (telefon, tryb skupienia).
+   */
+  private applyStretch(): void {
+    const panes = this.chart.panes();
+    panes[0]?.setStretchFactor(1);
+    const statsPane = this.statsSeries?.getPane();
+    const venuePanes = new Set([this.venueCvd?.hl?.getPane(), this.venueOi?.hl?.getPane()]);
+    const k = this.paneScale;
+    for (let i = 1; i < panes.length; i++)
+      if (panes[i] !== statsPane) panes[i].setStretchFactor(k * (panes[i] === this.volume?.getPane() ? 0.1 : venuePanes.has(panes[i]) ? 0.24 : 0.16));
+  }
+
+  /** Mnożnik wysokości paneli pod ceną (1 — zwykłe). */
+  setPaneScale(k: number): void {
+    if (k === this.paneScale) return;
+    this.paneScale = k;
+    this.applyStretch();
+    this.fitStatsPane();
   }
 
   /**
@@ -758,6 +784,7 @@ export class ProChartController {
       );
     }
     const first = out[ids[0]]!;
+    this.lowerTicks(first, fmtSignedVol, FLOW_FORMAT.minMove);
     first.createPriceLine({ price: 0, color: PRO.divider, lineWidth: 1, lineStyle: LineStyle.Solid, axisLabelVisible: false, title: '' });
     first.attachPrimitive(legend);
     return out;
@@ -897,7 +924,7 @@ export class ProChartController {
 
   /** Odstęp najnowszej świecy od osi ceny (px): stały, a z mapą ciepła powiększony o drabinę DOM. */
   private rightGap(): number {
-    return RIGHT_GAP_PX + (this.domShown() ? DOM_W_PX : 0) + this.coneGap();
+    return RIGHT_GAP_PX + this.coneGap();
   }
 
   /** Miejsce na część stożka za ostatnią świecą przy bieżącym odstępie świec, najwyżej trzecia część szerokości wykresu. */
@@ -1232,7 +1259,93 @@ export class ProChartController {
     this.frame = requestAnimationFrame(() => {
       this.frame = 0;
       this.sync();
+      this.refreshTicks();
     });
+  }
+
+  /**
+   * Format ceny głównej serii: etykieta siatki osi ceny, która koliduje z ważniejszą etykietą (ostatnia cena z odliczaniem
+   * pod nią, VWAP, VWAP sesji, POC), jest pusta — nie jest rysowana (labelPlacement.keepTicks).
+   */
+  private priceFormat(minMove: number): PriceFormat {
+    return { type: 'custom', minMove, formatter: fmtPx, tickmarksFormatter: (prices) => this.tickLabels(prices) };
+  }
+
+  /** Panele pod ceną z pierwszeństwem etykiet: serie, których siatka ustępuje ostatnim wartościom serii panelu. */
+  private lowerOwners = new Set<ISeriesApi<SeriesType>>();
+  private lowerKey = '';
+
+  /**
+   * Siatka osi panelu pod ceną (delta, CVD, giełdy, wskaźniki): etykieta siatki kolidująca z etykietą ostatniej wartości
+   * którejś serii tego panelu nie jest rysowana — jak na osi ceny.
+   */
+  private lowerTicks(owner: ISeriesApi<SeriesType>, base: (v: number) => string, minMove: number): void {
+    this.lowerOwners.add(owner);
+    owner.applyOptions({
+      priceFormat: {
+        type: 'custom',
+        minMove,
+        formatter: base,
+        tickmarksFormatter: (prices: readonly number[]) => {
+          const ys = prices.map((p) => owner.priceToCoordinate(p));
+          const keep = keepTicks(ys, this.lastValueYs(owner).map((y) => ({ y, below: 0 })), AXIS_LABEL_PX);
+          return prices.map((p, i) => (keep[i] ? base(p) : ''));
+        },
+      },
+    });
+  }
+
+  /** Środki etykiet ostatnich wartości serii panelu `owner` (serie z widoczną ostatnią wartością). */
+  private lastValueYs(owner: ISeriesApi<SeriesType>): number[] {
+    const out: number[] = [];
+    let list: ISeriesApi<SeriesType>[];
+    try {
+      list = owner.getPane().getSeries();
+    } catch {
+      return out;
+    }
+    for (const sr of list) {
+      if (!sr.options().lastValueVisible || !sr.options().visible) continue;
+      const d = sr.dataByIndex(Number.MAX_SAFE_INTEGER, MismatchDirection.NearestLeft) as { close?: number; value?: number } | null;
+      const v = d ? (d.close ?? d.value) : undefined;
+      const y = v === undefined ? null : sr.priceToCoordinate(v);
+      if (y !== null) out.push(y);
+    }
+    return out;
+  }
+
+  /** Etykiety ważniejsze od siatki (y środka w px panelu ceny i liczba etykiet pod nią). */
+  private axisReserved(): { y: number; below: number }[] {
+    const out: { y: number; below: number }[] = [];
+    const last = this.bars[this.bars.length - 1]?.candle.c;
+    const y = last ? this.main.priceToCoordinate(last) : null;
+    if (y !== null) out.push({ y, below: 1 });
+    for (const a of this.overlay.axisYs()) out.push({ y: a, below: 0 });
+    return out;
+  }
+
+  private tickLabels(prices: readonly number[]): string[] {
+    const ys = prices.map((p) => this.main?.priceToCoordinate(p) ?? null);
+    const keep = keepTicks(ys, this.main ? this.axisReserved() : [], AXIS_LABEL_PX);
+    return prices.map((p, i) => (keep[i] ? fmtPx(p) : ''));
+  }
+
+  /** Siatka osi liczy etykiety przy zmianie skali; gdy ważniejsze etykiety przesuną się o kilka px, liczy je od nowa. */
+  private refreshTicks(): void {
+    const key = this.axisReserved()
+      .map((r) => Math.round(r.y / 2))
+      .join(',');
+    if (key !== this.ticksKey) {
+      this.ticksKey = key;
+      this.main.applyOptions({ priceFormat: this.priceFormat(this.priceTick || 1) });
+    }
+    // Panele pod ceną: po przesunięciu etykiet ostatnich wartości ich siatka liczy się od nowa
+    const live = [...this.lowerOwners].filter((o) => this.chart.panes().some((p) => p.getSeries().includes(o)));
+    this.lowerOwners = new Set(live);
+    const lowerKey = live.map((o) => this.lastValueYs(o).map((y) => Math.round(y / 2)).join('.')).join('|');
+    if (lowerKey === this.lowerKey) return;
+    this.lowerKey = lowerKey;
+    for (const o of live) o.applyOptions({ priceFormat: { ...o.options().priceFormat } as PriceFormat });
   }
 
   private sync(): void {
@@ -1250,7 +1363,7 @@ export class ProChartController {
       const tick = hlTick(next[next.length - 1]?.candle.c ?? 0);
       if (tick !== this.priceTick) {
         this.priceTick = tick;
-        this.main.applyOptions({ priceFormat: { type: 'custom', minMove: tick, formatter: fmtPx } });
+        this.main.applyOptions({ priceFormat: this.priceFormat(tick) });
       }
       const px = next[next.length - 1]?.candle.c ?? 0;
       if (px > 0 && Math.abs(px / this.refPx - 1) > 0.05) {
@@ -1433,6 +1546,8 @@ export class ProChartController {
   private tickCountdown(): void {
     const last = this.bars[this.bars.length - 1];
     this.countdown.set(last?.candle.c ?? 0, last ? barEnd(last.t, this.series.interval.ms) - this.store.serverNow() : 0);
+    // Zmiana skali bez nowych transakcji (autoskala, przesunięcie VWAP) też odświeża siatkę osi — najpóźniej po sekundzie
+    this.refreshTicks();
   }
 
   /** CVD zależy od wszystkich wcześniejszych świec okresu — liczymy całość i wysyłamy tylko zmienione punkty. */
@@ -1545,15 +1660,19 @@ export class ProChartController {
     }
     const pick = p.point && p.paneIndex === 0 ? this.liquidity.pick(p.point.x, p.point.y) : null;
     // Telefon: dotknięcie przy linii wieloryba pokazuje albo chowa jej podpis
-    if (!pick && p.point && p.paneIndex === 0) this.overlay.pickWhale(p.point.y);
+    const whale = !pick && p.point && p.paneIndex === 0 ? this.overlay.pickWhale(p.point.y) : false;
     this.liquidity.setSelected(pick);
     this.onPick(pick);
+    // Wciśnięcie, które odznaczyło rysunek albo stawiało punkt, należy do rysowania (stan z chwili wciśnięcia)
+    if (!pick && !whale && p.point && p.paneIndex === 0 && !this.draw.pressBusy && !this.draw.busy) this.onEmptyTap?.();
   };
 
   private readonly onCrosshair = (p: MouseEventParams<Time>): void => {
     if (p.sourceEvent) this.setHorzLine(true);
     this.hoverTime = p.time !== undefined && p.point ? (p.time as number) * 1000 : null;
     this.hoverPrice = p.point && p.paneIndex === 0 ? this.main.coordinateToPrice(p.point.y) : null;
+    // Podpis bąbla albo ściany pod kursorem (poza limitem gęstości etykiet)
+    this.liquidity.setHover(p.point && p.paneIndex === 0 ? this.liquidity.pick(p.point.x, p.point.y) : null);
     this.emitHover();
     // Krzyż ustawiony z innego panelu nie jest ruchem użytkownika — nie rozsyłamy go dalej
     if (crossSyncing) return;
@@ -1601,8 +1720,11 @@ export class ProChartController {
     this.volumeLegend.set(
       bar ? [{ text: tr('Wolumen', 'Volume'), color: PRO.ink3 }, { text: fmtVol(bar.candle.v), color: PRO.ink1 }] : [{ text: tr('Wolumen', 'Volume'), color: PRO.ink3 }]
     );
-    this.deltaLegend.set(flowLegend('Delta', bar?.fp ? bar.fp.delta : null));
-    this.cvdLegend.set(flowLegend(`CVD · ${RESET_LABEL[this.settings.cvdReset]}`, cvd ? cvd.close : null));
+    // Liczby taśmy świecy (dawniej linia legendy nad świecami) w opisie panelu delty, a bez niego w opisie CVD; na telefonie bez nich
+    const stats = bar && !this.phone ? deltaStatsParts(bar) : [];
+    this.deltaLegend.set([...flowLegend('Delta', bar?.fp ? bar.fp.delta : null), ...stats]);
+    const cvdStats = this.settings.showDelta || stats.length === 0 ? [] : [...flowLegend('Δ', bar?.fp ? bar.fp.delta : null), ...stats];
+    this.cvdLegend.set([...flowLegend(`CVD · ${RESET_LABEL[this.settings.cvdReset]}`, cvd ? cvd.close : null), ...cvdStats]);
     // Wąski wykres (telefon): bez okresu (ten sam co w opisie CVD) i bez wiersza finansowania — opis mieści się w dwóch wierszach
     const compact = this.chart.timeScale().width() < COMPACT_LEGEND_PX;
     const period = compact ? '' : ` · ${RESET_LABEL[this.settings.cvdReset]}`;

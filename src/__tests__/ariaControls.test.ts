@@ -14,7 +14,7 @@ function sources(dir: string): string[] {
 }
 
 /** Elementy, których cel `aria-controls` jest zawsze w dokumencie (tylko ukryty), więc atrybut może być stały. */
-const ALWAYS_RENDERED = ['SessionReview.tsx:hintId'];
+const ALWAYS_RENDERED = ['SessionReview.tsx:hintId', 'IndicatorsDialog.tsx:hintId'];
 
 describe('aria-controls tylko na istniejący element', () => {
   it('menu i rozwijane bloki: aria-controls tylko, gdy są otwarte (zamknięte nie są w dokumencie)', () => {

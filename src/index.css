@@ -252,3 +252,16 @@
   -webkit-mask-image: linear-gradient(to right, transparent, #000 32px, #000 calc(100% - 32px), transparent);
   mask-image: linear-gradient(to right, transparent, #000 32px, #000 calc(100% - 32px), transparent);
 }
+
+/* Tryb skupienia i telefon poziomo: karta wykresu jest „fixed” względem okna, więc widok nie może mieć przekształcenia
+   (animacja przejścia zostawia transform, który byłby jej blokiem odniesienia) */
+html[data-hq-focus] [data-view-root] {
+  transform: none !important;
+  filter: none !important;
+  will-change: auto !important;
+}
+/* Poza wykresem zostaje tylko dolne menu (w trybie skupienia); poziomo sam wykres */
+html[data-hq-focus] [data-app-header],
+html[data-hq-focus='landscape'] [data-app-nav] {
+  visibility: hidden;
+}
