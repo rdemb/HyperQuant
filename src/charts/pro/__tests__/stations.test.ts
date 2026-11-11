@@ -129,6 +129,9 @@ describe('układy faz dnia', () => {
     const cockpit = stationPanel(stationById('cockpit'), 0, false);
     expect([cockpit.interval, cockpit.view, cockpit.showHeatmap, cockpit.showCvd, cockpit.showDelta]).toEqual(['1m', 'footprint', true, true, false]);
     expect([stationPanel(stationById('cockpit'), 0, true).showClashes, stationPanel(stationById('cockpit'), 0, true).showLots]).toEqual([false, false]);
+    // Telefon: świece, VWAP i mapa ciepła; bąble, ściany i duże zlecenia jednym dotknięciem w „Warstwy”
+    const cockpitPhone = stationPanel(stationById('cockpit'), 0, true);
+    expect([cockpitPhone.view, cockpitPhone.showVwap, cockpitPhone.showHeatmap, cockpitPhone.showBubbles, cockpitPhone.showClashes, cockpitPhone.showLots]).toEqual(['candles', true, true, false, false, false]);
     expect(stationPanel(stationById('fuel'), 0, false).indicators.map((x) => x.id)).toEqual(['slippage', 'regime', 'rvol']);
     expect(stationPanel(stationById('fuel'), 0, false).showVolume).toBe(false);
     expect(stationPanel(stationById('fuel'), 0, true).showWhales).toBe(false);

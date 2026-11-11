@@ -103,6 +103,13 @@ export const PROBE = `(() => {
       if (!vis(el) || !paints(el)) continue;
       const r = el.getBoundingClientRect();
       if (inter(r, area) < 4) continue;
+      // Zasłonięty przez wykres (np. stopka pod kartą „fixed” w trybie skupienia): na środku części wspólnej leży coś innego
+      if (getComputedStyle(el).pointerEvents !== 'none') {
+        const cx = (Math.max(r.left, area.left) + Math.min(r.right, area.right)) / 2;
+        const cy = (Math.max(r.top, area.top) + Math.min(r.bottom, area.bottom)) / 2;
+        const top = document.elementFromPoint(cx, cy);
+        if (top && !el.contains(top) && !top.contains(el)) continue;
+      }
       const lg = el.closest('[data-chart-legend]');
       if (lg) {
         const lr = lg.getBoundingClientRect();

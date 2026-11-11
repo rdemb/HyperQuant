@@ -287,8 +287,8 @@ function readIndicators(raw: unknown[]): IndicatorInstance[] {
   return list;
 }
 
-/** Telefon: ekran do 639 px. */
-export const NARROW_QUERY = '(max-width: 639px)';
+/** Telefon: ekran do 639 px, także obrócony poziomo (niski ekran dotykowy). */
+export const NARROW_QUERY = '(max-width: 639px), (orientation: landscape) and (max-height: 500px) and (pointer: coarse)';
 export const isNarrow = (): boolean => typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia(NARROW_QUERY).matches;
 
 /** Ustawienia startowe dla tego ekranu (na telefonie z `NARROW_PATCH`). */

@@ -164,8 +164,9 @@ export const Legend: React.FC<{
             <span className={c.c >= c.o ? 'text-of-buy-ink' : 'text-of-sell-ink'}>
               {fmtPx(c.c)} {fmtChange(change)}
             </span>
-            <Field label={tr('Wol.', 'Vol.')}>{fmtVol(c.v)}</Field>
-            {h.ind?.vwap && (
+            {/* Z liczbami układu (VWAP w σ, budżet, RVOL) w tej linii bez wolumenu i VWAP — linia mieści się na 390 px */}
+            {!extra && <Field label={tr('Wol.', 'Vol.')}>{fmtVol(c.v)}</Field>}
+            {!extra && h.ind?.vwap && (
               <Field label={h.ind.anchor === 'week' ? tr('VWAP T', 'VWAP W') : 'VWAP'} className="text-of-vwap">
                 {fmtPx(h.ind.vwap.vwap)}
               </Field>

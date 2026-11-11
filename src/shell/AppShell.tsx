@@ -360,12 +360,19 @@ export const AppShell: React.FC = () => {
 
   return (
     <div className="min-h-dvh bg-page text-ink-1 flex flex-col">
-      <header ref={headerRef} className="pt-safe sticky top-0 z-30 bg-page/95 backdrop-blur border-b border-line">
+      <header ref={headerRef} data-app-header className="pt-safe sticky top-0 z-30 bg-page/95 backdrop-blur border-b border-line">
         <div className="flex items-center justify-between gap-3 xl:gap-4 px-4 lg:px-6 h-14">
           <ViewLink id="charts" go={go} className="flex items-baseline gap-2 shrink-0">
             <span className="font-display text-lg font-bold tracking-tight">HyperQuant</span>
             <span className="hidden sm:inline lg:hidden 2xl:inline text-[11px] text-ink-3">BTC · Hyperliquid</span>
           </ViewLink>
+
+          {/* Telefon: jeden rząd — logo, cena i zmiana (pozostałe liczby rynku po dotknięciu ceny) */}
+          {!(replay && view === 'charts') && (
+            <div className="sm:hidden flex-1 min-w-0 flex justify-end">
+              <PriceButton small />
+            </div>
+          )}
 
           <nav aria-label={tr('Główna', 'Main')} className="hidden lg:flex items-center gap-0.5 xl:gap-1">
             {PHASES.map((n) => (
@@ -432,7 +439,7 @@ export const AppShell: React.FC = () => {
           )}
 
           <div className="flex items-center gap-2 shrink-0">
-            <div className="lg:hidden">
+            <div className="hidden sm:block lg:hidden">
               <Segmented<Lang> ariaLabel={tr('Język', 'Language')} size="xs" value={lang} onChange={setLang} options={LANGS} />
             </div>
             <Badge tone={STATUS_TONE[feed.dataStatus]} title={STATUS_TITLE[feed.dataStatus]} testId="data-status">
@@ -444,7 +451,7 @@ export const AppShell: React.FC = () => {
                 <Segmented<number> ariaLabel={tr('Interwał', 'Timeframe')} value={feed.timeframeSec} onChange={feed.setTimeframeSec} options={TIMEFRAMES} />
               </div>
             )}
-            <IconBtn label={feed.isStreaming ? tr('Wstrzymaj strumień', 'Pause stream') : tr('Wznów strumień', 'Resume stream')} onClick={() => feed.setIsStreaming(!feed.isStreaming)}>
+            <IconBtn label={feed.isStreaming ? tr('Wstrzymaj strumień', 'Pause stream') : tr('Wznów strumień', 'Resume stream')} onClick={() => feed.setIsStreaming(!feed.isStreaming)} className="hidden sm:inline-flex">
               {feed.isStreaming ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
             </IconBtn>
             <IconBtn label={tr('Synchronizuj teraz', 'Sync now')} onClick={feed.syncNow} className="hidden sm:inline-flex lg:hidden">
@@ -453,11 +460,13 @@ export const AppShell: React.FC = () => {
             <IconBtn label={audioEnabled ? tr('Wycisz dźwięk taśmy', 'Mute tape sound') : tr('Włącz dźwięk taśmy', 'Unmute tape sound')} onClick={() => setAudioEnabled(!audioEnabled)} className="hidden sm:inline-flex lg:hidden">
               {audioEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
             </IconBtn>
-            <InstallButton compact />
+            <div className="hidden sm:contents">
+              <InstallButton compact />
+            </div>
           </div>
         </div>
         {!(replay && view === 'charts') && (
-          <div className="lg:hidden">
+          <div className="hidden sm:block lg:hidden">
             <TickerStrip />
           </div>
         )}
@@ -470,7 +479,7 @@ export const AppShell: React.FC = () => {
 
       <main className="flex-1 w-full max-w-[1920px] mx-auto px-4 lg:px-6 pt-4 pb-6">
         <AnimatePresence mode="wait" initial={false}>
-          <motion.div key={view} {...transition}>
+          <motion.div key={view} data-view-root {...transition}>
             <Suspense fallback={<ViewFallback />}>
               {awaitingData ? (
                 <ConnectingState onRetry={feed.syncNow} startedAt={startedAt} now={feed.nowTick} />
@@ -508,7 +517,7 @@ export const AppShell: React.FC = () => {
       </footer>
 
       {/* Dolna nawigacja (telefon): trzy fazy dnia i „Więcej” */}
-      <nav aria-label={tr('Główna (telefon)', 'Main (phone)')} className="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-surface-1/95 backdrop-blur border-t border-line pb-safe">
+      <nav data-app-nav aria-label={tr('Główna (telefon)', 'Main (phone)')} className="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-surface-1/95 backdrop-blur border-t border-line pb-safe">
         <div ref={phoneMoreRef}>
           <div className="grid grid-cols-4">
             {PHASES.map((n) => (
@@ -542,6 +551,16 @@ export const AppShell: React.FC = () => {
                   {AGENTS.icon}
                   {AGENTS.label}
                 </ViewLink>
+                {/* Telefon: przełączniki z nagłówka (nagłówek ma jeden rząd: logo, cena, zmiana) */}
+                <div role="separator" className="my-1 border-t border-line" />
+                <button type="button" onClick={() => feed.setIsStreaming(!feed.isStreaming)} className={MENU_ITEM}>
+                  {feed.isStreaming ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+                  {feed.isStreaming ? tr('Wstrzymaj strumień', 'Pause stream') : tr('Wznów strumień', 'Resume stream')}
+                </button>
+                <ShellToggles audioEnabled={audioEnabled} setAudioEnabled={setAudioEnabled} onSync={feed.syncNow} onDone={() => setPhoneMore(false)} />
+                <div className="sm:hidden px-1.5">
+                  <InstallButton />
+                </div>
               </motion.div>
             )}
           </AnimatePresence>

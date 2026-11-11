@@ -69,6 +69,8 @@ export async function launch({ port = 9338, lang = 'pl', init = '' } = {}) {
     async viewport(w, h, mobile) {
       await send('Emulation.setDeviceMetricsOverride', { width: w, height: h, deviceScaleFactor: mobile ? 2 : 1, mobile: !!mobile, screenOrientation: { type: w > h ? 'landscapePrimary' : 'portraitPrimary', angle: w > h ? 90 : 0 } });
       await send('Emulation.setTouchEmulationEnabled', { enabled: !!mobile, maxTouchPoints: mobile ? 5 : 1 });
+      // Ekran dotykowy telefonu (zapytania CSS pointer i hover)
+      await send('Emulation.setEmulatedMedia', { features: mobile ? [{ name: 'pointer', value: 'coarse' }, { name: 'hover', value: 'none' }] : [] });
     },
     async go(url, wait = 0) {
       await send('Page.navigate', { url });

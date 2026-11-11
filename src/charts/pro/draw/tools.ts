@@ -195,6 +195,11 @@ export class DrawingTools {
   }
 
   /** Panel, w którym ostatnio kliknięto — do niego trafiają skróty klawiszowe. */
+  /** Wybrane narzędzie albo zaznaczony rysunek: dotknięcie wykresu należy do rysowania. */
+  get busy(): boolean {
+    return this.tool !== null || this.selectedId !== null;
+  }
+
   get isFocused(): boolean {
     return focused === this;
   }

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { Bell, BellOff, BellPlus, Camera, ChevronDown, ChevronsRight, Columns2, Copy, Eye, EyeOff, Frame as FrameIcon, Grid2x2, History, Keyboard, Layers, Link, ListOrdered, Maximize2, Minimize2, Minus, MoreHorizontal, PenTool, RotateCcw, SlidersHorizontal, Square, X } from 'lucide-react';
+import { Bell, BellOff, BellPlus, Camera, ChevronDown, ChevronsRight, Columns2, Copy, Eye, EyeOff, Frame as FrameIcon, Grid2x2, History, Info, Keyboard, Layers, Link, ListOrdered, Maximize2, Minimize2, Minus, MoreHorizontal, PenTool, RotateCcw, SlidersHorizontal, Square, X } from 'lucide-react';
 import { Badge, BadgeTone, LocalBoundary, Segmented, numLang } from '../../ui';
 import { BAR_BTN, DropdownSelect, barBtnTone } from '../../ui/Dropdown';
 import { scrollFadeRef } from '../../ui/scrollFade';
@@ -42,8 +42,8 @@ import { IndicatorSettings } from './chart/IndicatorSettings';
 import { indicatorLabel, indicatorsLink } from './indicators/registry';
 import { MarketStateBar } from './chart/MarketStateBar';
 import { LayoutHeader } from './chart/LayoutHeader';
-import { FAVOURITE_INTERVALS, INTERVAL_MENU, KIND_OPTIONS, LayersMenu, type MoreEntry, MoreMenu as BarMore, kindOf, kindPatch } from './chart/ChartBar';
-import type { LayerChip } from './chart/layerSources';
+import { type ChartKind, FAVOURITE_INTERVALS, INTERVAL_MENU, KIND_OPTIONS, LayersMenu, type MoreEntry, MoreMenu as BarMore, kindOf, kindPatch } from './chart/ChartBar';
+import { type LayerChip, layerLabel } from './chart/layerSources';
 import type { LayoutNumber } from './chart/layoutNumbers';
 import { blogMapScan, legendChips, liqScan, tapeCoveragePct, whalesScan } from './chart/layerSources';
 import { blogMapName, levelsInsteadOfMap, levelsLegend } from './chart/blogMapLayer';
@@ -67,6 +67,8 @@ import { type ReplaySession, replayBase } from './replay/session';
 import { lang, tr } from '../../i18n';
 
 const MARKET_OPTIONS = MARKETS.map((m) => ({ value: m, label: m, title: `${m}-PERP · Hyperliquid` }));
+/** Warstwy przepływu zawsze na liście „Warstwy” (wyłączone — do włączenia jednym dotknięciem). */
+const QUICK_LAYERS = ['showVwap', 'showHeatmap', 'showBubbles', 'showClashes', 'showLots'] as const;
 const FAV_OPTIONS = FAVOURITE_INTERVALS.map((id) => ({ value: id as string, label: intervalById(id).label }));
 const INTERVAL_OPTIONS = INTERVALS.map((i) => ({ value: i.id, label: i.label }));
 const VIEW_OPTIONS: { value: ChartView; label: string; title: string }[] = [
@@ -177,6 +179,15 @@ export interface ProChartReplay {
   onExit: () => void;
 }
 
+/** Telefon obrócony poziomo (niski ekran dotykowy): wykres na cały ekran. */
+const LANDSCAPE_QUERY = '(orientation: landscape) and (max-height: 500px) and (pointer: coarse)';
+const isLandscapePhone = () => typeof window !== 'undefined' && window.matchMedia(LANDSCAPE_QUERY).matches;
+const subscribeLandscape = (fn: () => void) => {
+  const mq = window.matchMedia(LANDSCAPE_QUERY);
+  mq.addEventListener('change', fn);
+  return () => mq.removeEventListener('change', fn);
+};
+
 export const subscribeNarrow = (fn: () => void) => {
   const mq = window.matchMedia(NARROW_QUERY);
   mq.addEventListener('change', fn);
@@ -226,7 +237,9 @@ export const ProChart: React.FC<{
   barTrail?: React.ReactNode;
   /** Przywrócenie wzorca karty (pozycja menu „⋯”); karta własna nie ma wzorca. */
   onRestore?: () => void;
-}> = ({ panel = 0, layout = 1, onLayout, station = stationById('cockpit'), tabId = station.id, onSaved, coin = null, fromLink = true, phoneTabs, replay, layoutFs, layoutHeader = false, barLead, barTrail, onRestore }) => {
+  /** Telefon: nad tablicą w karcie „Liczby” (pięć liczb przepływu: Arkusz, Taśma, Kto, Ściany, TWAP). */
+  phoneNumbersTop?: React.ReactNode;
+}> = ({ panel = 0, layout = 1, onLayout, station = stationById('cockpit'), tabId = station.id, onSaved, coin = null, fromLink = true, phoneTabs, replay, layoutFs, layoutHeader = false, barLead, barTrail, onRestore, phoneNumbersTop }) => {
   const [settings, setSettings] = useState<ChartSettings>(() => {
     if (!replay) return initialSettings(panel, station, tabId, coin, fromLink);
     // Link z układem (lekcja, blog) — sam wzorzec układu, bez zmian zapisanych przez oglądającego
@@ -236,13 +249,20 @@ export const ProChart: React.FC<{
   const inReplay = replay !== undefined;
   const store = replay ? replay.store : storeFor(settings.coin);
   const series = store.series(settings.interval);
-  const [menu, setMenu] = useState<'settings' | 'indicators' | 'alerts' | 'keys' | 'more' | null>(null);
+  const [menu, setMenu] = useState<'settings' | 'indicators' | 'alerts' | 'keys' | null>(null);
   const [indicatorsSection, setIndicatorsSection] = useState<IndicatorsSection>('hl');
   // Wskaźnik w oknie ustawień (identyfikator instancji)
   const [indEdit, setIndEdit] = useState<string | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
   const narrow = useSyncExternalStore(subscribeNarrow, isNarrow);
   const [tab, setTab] = useState<PhoneTab>('chart');
+  // Telefon: tryb skupienia (dotknięcie pustego miejsca wykresu chowa wszystko poza wykresem i dolnym menu, drugie
+  // przywraca) i telefon poziomo (sam wykres na cały ekran)
+  const [focus, setFocus] = useState(false);
+  const landscape = useSyncExternalStore(subscribeLandscape, isLandscapePhone);
+  const chartOnly = narrow && (focus || landscape);
+  // Źródła trzech liczb układu na telefonie (z menu „⋯”)
+  const [numbersOpen, setNumbersOpen] = useState(false);
   const [tools, setTools] = useState<DrawingTools | null>(null);
   // Kliknięty bąbel, seria albo ściana i podświetlony adres biorcy (tylko w pamięci strony)
   const [pick, setPick] = useState<LiquidityPick | null>(null);
@@ -347,6 +367,9 @@ export const ProChart: React.FC<{
     }, setScale);
     ctrl.setPhone(isNarrow());
     ctrl.onEditIndicator = editIndicator;
+    ctrl.onEmptyTap = () => {
+      if (isNarrow()) setFocus((f) => !f);
+    };
     ctrlRef.current = ctrl;
     setTools(ctrl.draw);
     ctrl.setTopInset(legendBottom.current);
@@ -375,6 +398,23 @@ export const ProChart: React.FC<{
   useEffect(() => {
     ctrlRef.current?.highlight(highlight);
   }, [highlight]);
+
+  // Telefon: panele pod ceną niższe, w trybie skupienia i poziomo — jeszcze niższe (cena ≥ 80% ekranu)
+  useEffect(() => {
+    ctrlRef.current?.setPaneScale(chartOnly ? 0.45 : narrow ? 0.85 : 1);
+  }, [chartOnly, narrow, store]);
+  useEffect(() => {
+    if (!narrow) setFocus(false);
+  }, [narrow]);
+  // Karta wykresu „fixed” nad stroną: przekształcenie widoku (animacja przejścia) nie może być jej blokiem odniesienia
+  useEffect(() => {
+    if (!chartOnly) return;
+    const root = document.documentElement;
+    root.dataset.hqFocus = landscape ? 'landscape' : 'focus';
+    return () => {
+      delete root.dataset.hqFocus;
+    };
+  }, [chartOnly, landscape]);
 
   // Adres strony zawsze prowadzi do bieżącego widoku — bez nowych wpisów w historii przeglądarki
   useEffect(() => {
@@ -690,6 +730,26 @@ export const ProChart: React.FC<{
     ...(inReplay ? layerChips.map((c) => ({ ...c, tone: 'neutral' as const, text: tr('nagranie', 'recording'), hint: tr('Powtórka nagrania serwera', "Replay of the server's recording") })) : layerChips),
     ...[...hiddenLayers.values()].filter((c) => !layerChips.some((x) => x.key === c.key)),
   ];
+  // Warstwy przepływu wyłączone we wzorcu (np. bąble i ściany na telefonie) — na liście do włączenia jednym dotknięciem
+  const offChips: LayerChip[] = QUICK_LAYERS.filter((k) => !settings[k] && !menuChips.some((c) => c.key === k)).map((k) => ({
+    key: k,
+    label: layerLabel(k),
+    tone: 'neutral',
+    text: tr('wył.', 'off'),
+    hint: tr('Warstwa wyłączona — dotknij, żeby ją włączyć', 'Layer off — tap to turn it on'),
+  }));
+  const layersMenu = (compact: boolean) => (
+    <LayersMenu
+      compact={compact}
+      chips={[...menuChips, ...offChips]}
+      hidden={new Set([...hiddenLayers.keys(), ...offChips.map((c) => c.key)])}
+      onToggle={toggleLayer}
+      onAll={() => {
+        setIndicatorsSection('flow');
+        setMenu('indicators');
+      }}
+    />
+  );
   const toggleLayer = (c: LayerChip, show: boolean) => {
     if (c.key.startsWith('show')) update({ [c.key]: show } as Partial<ChartSettings>);
     else setSettings((s) => ({ ...s, indicators: s.indicators.map((x) => (x.id === c.key ? { ...x, visible: show } : x)) }));
@@ -740,6 +800,19 @@ export const ProChart: React.FC<{
     ...(onRestore ? [{ key: 'restore', label: tr(`Przywróć wzorzec karty: ${station.name}`, `Restore the tab preset: ${station.name}`), icon: RotateCcw, on: onRestore }] : []),
   ];
 
+  /** Menu „⋯” na telefonie: wskaźniki, alarmy, ustawienia, źródła liczb układu i narzędzia. */
+  const phoneEntries: MoreEntry[] = [
+    { key: 'indicators', label: tr('Wskaźniki', 'Indicators'), icon: Layers, on: () => setMenu('indicators') },
+    ...(inReplay ? [] : [moreEntries.find((e) => e.key === 'alerts')!]),
+    { key: 'settings', label: tr('Ustawienia wykresu', 'Chart settings'), icon: SlidersHorizontal, on: () => setMenu('settings') },
+    ...(layoutHeader && !inReplay ? [{ key: 'numbers', label: tr('Liczby układu: skąd?', 'Layout numbers: sources'), icon: Info, on: () => setNumbersOpen(true) }] : []),
+    { key: 'draw', section: tr('Narzędzia', 'Tools'), label: tr('Narzędzia rysowania', 'Drawing tools'), icon: PenTool, kind: 'check', checked: drawOpen, on: () => setDrawOpen((o) => !o) },
+    { key: 'focus', label: tr('Tryb skupienia (dotknięcie wykresu)', 'Focus mode (tap the chart)'), icon: Maximize2, kind: 'check', checked: focus, on: () => setFocus((f) => !f) },
+    ...moreEntries.filter((e) => ['now', 'scale', 'replay', 'link', 'shot', 'frame'].includes(e.key)).map((e) => ({ ...e, section: undefined, hint: undefined })),
+    { key: 'fs', label: fullscreen ? tr('Zamknij pełny ekran', 'Exit full screen') : tr('Pełny ekran', 'Full screen'), icon: fullscreen ? Minimize2 : Maximize2, on: toggleFullscreen },
+    ...(phoneTabs?.onRestore ? [{ key: 'restore', label: tr(`Przywróć wzorzec karty: ${station.name}`, `Restore the tab preset: ${station.name}`), icon: RotateCcw, on: phoneTabs.onRestore }] : []),
+  ];
+
   // Skróty wykresu bez modyfikatorów: tylko w panelu, w którym ostatnio kliknięto, i nie w polu tekstowym
   const onKeyRef = useRef<(e: KeyboardEvent) => void>(() => {});
   onKeyRef.current = (e) => {
@@ -770,15 +843,22 @@ export const ProChart: React.FC<{
   return (
     <div
       ref={cardRef}
-      className={`relative flex flex-col bg-surface-1 border border-line-strong overflow-hidden ${
-        fullscreen
+      data-focus={chartOnly ? (landscape ? 'landscape' : 'focus') : undefined}
+      className={`${chartOnly ? '' : 'relative '}flex flex-col bg-surface-1 border border-line-strong overflow-hidden ${
+        chartOnly
+          ? // Nad przypiętym nagłówkiem (z-30); w trybie skupienia pod dolnym menu (z-40), poziomo na cały ekran
+            landscape
+            ? 'fixed inset-0 z-50'
+            : 'fixed inset-x-0 top-0 bottom-[calc(3.5rem+1px+env(safe-area-inset-bottom))] z-[35]'
+          : fullscreen
           ? 'w-full h-full'
           : layoutFs?.active
             ? 'rounded-xl h-full min-h-0'
             : layout === 4
             ? 'rounded-xl h-[calc((100dvh-5.5rem)/2)] min-h-[380px]'
             : // Nad kartą tylko nagłówek strony (na komputerze jeden rząd z liczbami rynku) i odstęp
-              'rounded-xl h-[calc(100dvh-11.75rem)] sm:h-[calc(100dvh-11rem)] lg:h-[calc(100dvh-5rem)] min-h-[440px]'
+              // Telefon: nagłówek w jednym rzędzie nad kartą, dolne menu pod nią
+              'rounded-xl h-[calc(100dvh-8.75rem)] sm:h-[calc(100dvh-11rem)] lg:h-[calc(100dvh-5rem)] min-h-[440px]'
       }`}
     >
       {/* Pasek wykresu (komputer): jeden rząd list rozwijanych — układ, rynek, interwał, rodzaj, warstwy; z prawej liczby
@@ -809,15 +889,7 @@ export const ProChart: React.FC<{
             onChange={(k) => update(kindPatch(k))}
             width="w-56"
           />
-          <LayersMenu
-            chips={menuChips}
-            hidden={new Set(hiddenLayers.keys())}
-            onToggle={toggleLayer}
-            onAll={() => {
-              setIndicatorsSection('flow');
-              setMenu('indicators');
-            }}
-          />
+          {layersMenu(false)}
           <button
             type="button"
             data-menu-toggle
@@ -873,21 +945,25 @@ export const ProChart: React.FC<{
         </div>
       )}
 
-      {/* Telefon: dwa rzędy — karta układu, rynek, interwał i rodzaj wykresu; widoki, wskaźniki, ustawienia i „Więcej” */}
-      {narrow && (
-        <div className="flex flex-col gap-1.5 px-2 py-1.5 border-b border-line shrink-0">
+      {/* Telefon: jeden rząd przewijany w bok — karta układu, rynek, interwał, rodzaj, karty Wykres / Taśma / DOM / Liczby
+          i „Stan”; przypięte z prawej „Warstwy” i „⋯” (wskaźniki, alarmy, ustawienia, liczby układu i reszta narzędzi).
+          W trybie skupienia i poziomo pasek znika (zostaje sam wykres). */}
+      {narrow && !chartOnly && (
+        <div data-chart-bar className="flex items-center gap-1 px-1.5 py-1 border-b border-line shrink-0">
           {/* Przewijany w bok: krawędź, za którą są jeszcze listy, wygasa (scrollFadeRef) */}
-          <div ref={scrollFadeRef} className="hq-fade-x flex items-center gap-1 min-w-0 overflow-x-auto [scrollbar-width:none]">
-            {/* Nazwa karty przycięta (7,5rem): przy 390 px rynek, interwał i rodzaj wykresu („Footprint”) mieszczą się obok */}
+          <div ref={scrollFadeRef} className="hq-fade-x flex flex-1 items-center gap-1 min-w-0 overflow-x-auto [scrollbar-width:none]">
             {phoneTabs && (
               <PhoneSelect<string> ariaLabel={tr('Karta układu', 'Layout tab')} value={phoneTabs.value} options={phoneTabs.options} onChange={phoneTabs.onChange} className="max-w-[7.5rem] truncate" />
             )}
             <PhoneSelect<Market> ariaLabel={tr('Rynek', 'Market')} value={settings.coin} options={MARKET_OPTIONS} onChange={setCoin} />
             <PhoneSelect<string> ariaLabel={tr('Interwał wykresu', 'Chart timeframe')} value={settings.interval} options={INTERVAL_OPTIONS} onChange={(v) => update({ interval: v })} />
-            <PhoneSelect<ChartView> ariaLabel={tr('Rodzaj wykresu', 'Chart type')} value={settings.view} options={VIEW_OPTIONS} onChange={(v) => update({ view: v })} />
-          </div>
-          <div className="flex items-center gap-1">
-            <div role="tablist" aria-label={tr('Widok wykresu', 'Chart view')} className="grid grid-cols-4 gap-0.5 flex-1 min-w-0 p-0.5 rounded-lg border border-line">
+            <PhoneSelect<string>
+              ariaLabel={tr('Rodzaj wykresu', 'Chart type')}
+              value={kindOf(settings.view, settings.fpStyle)}
+              options={KIND_OPTIONS.map((k) => ({ value: k.value, label: k.short }))}
+              onChange={(v) => update(kindPatch(v as ChartKind))}
+            />
+            <div role="tablist" aria-label={tr('Widok wykresu', 'Chart view')} className="shrink-0 flex items-center gap-0.5">
               {PHONE_TABS.map((t) => (
                 <button
                   key={t.id}
@@ -895,77 +971,59 @@ export const ProChart: React.FC<{
                   role="tab"
                   aria-selected={tab === t.id}
                   onClick={() => setTab(t.id)}
-                  className={`h-8 rounded-md text-xs font-medium transition-colors duration-150 ${
-                    tab === t.id ? 'bg-surface-3 text-ink-1 shadow-[inset_0_0_0_1px_var(--color-line-strong)]' : 'text-ink-3 hover:text-ink-1'
+                  className={`h-11 px-2.5 rounded-lg border text-xs font-medium whitespace-nowrap transition-colors duration-150 ${
+                    tab === t.id ? 'bg-surface-3 text-ink-1 border-line-strong' : 'text-ink-3 border-transparent hover:text-ink-1'
                   }`}
                 >
                   {t.label}
                 </button>
               ))}
             </div>
-            <ToolBtn label={tr('Wskaźniki: na wykresie ceny i pod nim', 'Indicators: on the price chart and below it')} onClick={() => setMenu((m) => (m === 'indicators' ? null : 'indicators'))} active={menu === 'indicators'} expanded={menu === 'indicators'}>
-              <Layers className="w-4 h-4" />
-            </ToolBtn>
-            {!inReplay && (
-              <ToolBtn label={linesShown ? tr('Alarmy cenowe', 'Price alerts') : tr('Alarmy cenowe (ukryte na wykresie)', 'Price alerts (hidden on the chart)')} onClick={() => (menu === 'alerts' ? setMenu(null) : openAlerts(null))} active={menu === 'alerts'} expanded={menu === 'alerts'}>
-                <BellBadge count={alerts.length} fresh={freshAlert} hidden={!linesShown} />
-              </ToolBtn>
+            {stateShown && (
+              <button
+                type="button"
+                aria-expanded={!!settings.stateOpen}
+                aria-controls={settings.stateOpen ? stateId : undefined}
+                title={tr('Stan rynku: zdanie z faktów pod paskiem', 'Market state: a sentence of facts below the bar')}
+                onClick={() => update({ stateOpen: !settings.stateOpen })}
+                className={`${BAR_BTN} ${barBtnTone(!!settings.stateOpen)} shrink-0`}
+              >
+                {tr('Stan', 'State')}
+              </button>
             )}
-            <ToolBtn label={tr('Ustawienia wykresu', 'Chart settings')} onClick={() => setMenu((m) => (m === 'settings' ? null : 'settings'))} active={menu === 'settings'} expanded={menu === 'settings'}>
-              <SlidersHorizontal className="w-4 h-4" />
-            </ToolBtn>
-            <ToolBtn btnRef={moreBtnRef} label={tr('Więcej: rysowanie, skala, zrzut, link, pełny ekran', 'More: drawing, scale, screenshot, link, full screen')} onClick={() => setMenu((m) => (m === 'more' ? null : 'more'))} active={menu === 'more'} expanded={menu === 'more'}>
-              <MoreHorizontal className="w-4 h-4" />
-            </ToolBtn>
           </div>
+          {layersMenu(true)}
+          <BarMore
+            entries={phoneEntries}
+            btnRef={moreBtnRef}
+            badge={freshAlert}
+            ariaLabel={tr('Więcej: wskaźniki, alarmy, ustawienia, liczby układu, rysowanie, skala, zrzut, link, pełny ekran', 'More: indicators, alerts, settings, layout numbers, drawing, scale, screenshot, link, full screen')}
+          />
         </div>
       )}
 
-      {/* Telefon: nagłówek układu w osobnym wierszu — pytanie i trzy liczby (na żywo, pierwszy panel karty) */}
-      {narrow && layoutHeader && !inReplay && (
-        <LocalBoundary what={tr('Nagłówek układu', 'Layout header')} inline>
-          <LayoutHeader
-            id={station.id}
-            question={station.question}
-            store={store}
-            model={store.coin === 'BTC' ? feed.vol.model : null}
-            volStatus={feed.vol.status}
-            liq={liq}
-            whales={whales}
-            whalesConfigured={whalePub.configured}
-            blogMaps={blogMaps}
-            blogMap={pickMap(blogMaps.maps, store.serverNow(), settings.blogMapId)}
-            narrow={narrow}
-            onNumbers={onHeaderNumbers}
-          />
-        </LocalBoundary>
-      )}
       {/* Klatka z menu „Więcej” na telefonie: po zamknięciu fokus na przycisk „Więcej” (pozycji menu już nie ma) */}
       {frameSrc && <FrameDialog src={frameSrc} onClose={() => setFrameSrc(null)} returnFocus={() => moreBtnRef.current} />}
 
       {replay && <ReplayBar session={replay.session} narrow={narrow} onExit={replay.onExit} />}
 
       {/* Stan rynku: zdanie z faktów pod paskiem (w układzie 2 × 2 za mało miejsca); na komputerze zwinięte do „Stan” */}
-      {stateShown && (narrow || settings.stateOpen) && (
+      {stateShown && settings.stateOpen && !chartOnly && (
         <div id={stateId}>
         <MarketStateBar
           store={store}
           series={series}
           venueOn={venueOn}
           narrow={narrow}
-          onClose={() => {
-            if (!narrow) return update({ stateOpen: false });
-            update({ showState: false });
-            setToast(tr('Ukryto Stan rynku — włączysz go w Ustawieniach wykresu → Nad wykresem', 'Market state hidden — turn it back on in Chart settings → Above the chart'));
-          }}
-          collapse={!narrow}
+          onClose={() => update({ stateOpen: false })}
+          collapse
         />
         </div>
       )}
 
       {/* Wykres z paskiem rysowania po lewej i taśmą zleceń po prawej (na telefonie taśma, DOM i liczby to karty) */}
       <div className="relative flex flex-1 min-h-0">
-        <DrawToolbar tools={tools} className={drawOpen ? 'flex' : 'hidden'} />
+        <DrawToolbar tools={tools} className={drawOpen && !chartOnly ? 'flex' : 'hidden'} />
         <div className="relative flex-1 min-h-0 min-w-0" onContextMenu={onContextMenu}>
           {/* Własny kontekst warstw: uchwyt zmiany wysokości paneli wykresu (z-index 50) nie przykrywa pasków i okien rysunków */}
           <div ref={hostRef} className="absolute inset-0 isolate" />
@@ -978,6 +1036,29 @@ export const ProChart: React.FC<{
             coin={store.coin}
             onBottom={onLegendBottom}
             compact={narrow}
+            extra={
+              narrow && layoutHeader && !inReplay ? (
+                <LocalBoundary what={tr('Nagłówek układu', 'Layout header')} inline>
+                  <LayoutHeader
+                    variant="chips"
+                    id={station.id}
+                    question={station.question}
+                    store={store}
+                    model={store.coin === 'BTC' ? feed.vol.model : null}
+                    volStatus={feed.vol.status}
+                    liq={liq}
+                    whales={whales}
+                    whalesConfigured={whalePub.configured}
+                    blogMaps={blogMaps}
+                    blogMap={pickMap(blogMaps.maps, store.serverNow(), settings.blogMapId)}
+                    narrow
+                    onNumbers={onHeaderNumbers}
+                    detailsOpen={numbersOpen}
+                    onDetails={setNumbersOpen}
+                  />
+                </LocalBoundary>
+              ) : undefined
+            }
             multi={layout > 1}
             onEditIndicator={editIndicator}
           />
@@ -1012,7 +1093,10 @@ export const ProChart: React.FC<{
           )}
           {narrow && tab === 'dom' && <DomLadder store={store} className="absolute inset-0 z-20" />}
           {narrow && tab === 'numbers' && (
-            <NumbersCard store={store} series={series} groups={settings.statGroups} onGroups={(g) => update({ statGroups: g })} className="absolute inset-0 z-20" />
+            <div className="absolute inset-0 z-20 flex flex-col bg-surface-1">
+              {phoneNumbersTop && <div className="shrink-0 p-1.5 border-b border-line">{phoneNumbersTop}</div>}
+              <NumbersCard store={store} series={series} groups={settings.statGroups} onGroups={(g) => update({ statGroups: g })} className="relative flex-1 min-h-0" />
+            </div>
           )}
           {ctxMenu && (
             <ChartMenu
@@ -1102,21 +1186,6 @@ export const ProChart: React.FC<{
                 <AlertsMenu key={alertDraft ? `${alertDraft.price}-${alertDraft.kind}` : 'new'} coin={store.coin} price={store.lastPrice()} draft={alertDraft} serverNow={() => store.serverNow()} />
               ) : menu === 'keys' ? (
                 <KeysMenu />
-              ) : menu === 'more' ? (
-                <MoreMenu
-                  items={[
-                    { icon: PenTool, label: drawOpen ? tr('Ukryj narzędzia rysowania', 'Hide drawing tools') : tr('Narzędzia rysowania', 'Drawing tools'), on: () => setDrawOpen((o) => !o) },
-                    { icon: ChevronsRight, label: tr('Przewiń do bieżącej świecy', 'Scroll to the current candle'), on: () => ctrlRef.current?.scrollToNow() },
-                    { icon: RotateCcw, label: tr('Przywróć skalę', 'Reset scale'), on: () => ctrlRef.current?.resetScales() },
-                    { icon: Camera, label: tr('Zrzut ekranu (PNG)', 'Screenshot (PNG)'), on: screenshot },
-                    { icon: FrameIcon, label: tr('Klatka (PNG 16:9 albo 1:1)', 'Frame (PNG 16:9 or 1:1)'), on: openFrame },
-                    ...(canReplay ? [{ icon: History, label: tr('Powtórka nagranej doby', 'Replay of the recorded day'), on: openReplay }] : []),
-                    { icon: Link, label: inReplay ? tr('Kopiuj link do tej chwili', 'Copy link to this moment') : tr('Kopiuj link do widoku', 'Copy view link'), on: copyLink },
-                    { icon: fullscreen ? Minimize2 : Maximize2, label: fullscreen ? tr('Zamknij pełny ekran', 'Exit full screen') : tr('Pełny ekran', 'Full screen'), on: toggleFullscreen },
-                    ...(phoneTabs?.onRestore ? [{ icon: RotateCcw, label: tr(`Przywróć wzorzec karty: ${station.name}`, `Restore the tab preset: ${station.name}`), on: phoneTabs.onRestore }] : []),
-                  ]}
-                  onClose={() => setMenu(null)}
-                />
               ) : (
                 <IndicatorsDialog
                   s={settings}
@@ -1149,13 +1218,13 @@ export const ProChart: React.FC<{
       </div>
 
       {/* Schrödi (prognoza BTC na godzinę) w pasku stanu, tylko w pierwszym panelu i poza powtórką */}
-      <StatusBar
+      {!chartOnly && <StatusBar
         store={store}
         series={series}
         needs={needsOf(settings)}
         narrow={narrow}
         cat={panel === 0 && !inReplay ? <SchrodiLauncher className="shrink-0 pl-1 sm:pl-1.5" /> : null}
-      />
+      />}
     </div>
   );
 };
@@ -1277,7 +1346,7 @@ function PhoneSelect<T extends string>({
         aria-label={ariaLabel}
         value={value}
         onChange={(e) => onChange(e.target.value as T)}
-        className={`appearance-none h-8 pl-2 pr-5 rounded-md border border-line bg-surface-2 text-xs font-medium text-ink-1 ${className}`}
+        className={`appearance-none h-11 pl-2.5 pr-6 rounded-lg border border-line bg-surface-2 text-xs font-medium text-ink-1 ${className}`}
       >
         {options.map((o) => (
           <option key={o.value} value={o.value}>
@@ -1289,27 +1358,6 @@ function PhoneSelect<T extends string>({
     </span>
   );
 }
-
-/** Menu „Więcej” na telefonie: rzadziej używane przyciski paska narzędzi. */
-const MoreMenu: React.FC<{ items: { icon: React.ComponentType<{ className?: string }>; label: string; on: () => void }[]; onClose: () => void }> = ({ items, onClose }) => (
-  <div role="menu" aria-label={tr('Więcej', 'More')} className="bg-surface-2 border border-line-strong rounded-xl p-1.5 shadow-2xl flex flex-col text-xs">
-    {items.map(({ icon: Icon, label, on }) => (
-      <button
-        key={label}
-        type="button"
-        role="menuitem"
-        onClick={() => {
-          onClose();
-          on();
-        }}
-        className="flex items-center gap-2.5 min-h-10 px-2.5 rounded-lg text-left text-ink-1 hover:bg-surface-3 transition-colors duration-150"
-      >
-        <Icon className="w-4 h-4 text-ink-3 shrink-0" />
-        {label}
-      </button>
-    ))}
-  </div>
-);
 
 const ToolBtn: React.FC<{
   label: string;

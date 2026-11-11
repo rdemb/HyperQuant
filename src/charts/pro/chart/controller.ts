@@ -378,6 +378,9 @@ export class ProChartController {
   private horzLine = true;
   /** Po pierwszych danych nowej serii przewiń do bieżącej świecy. */
   private toNow = false;
+  private paneScale = 1;
+  /** Dotknięcie pustego miejsca panelu ceny (bez bąbla, ściany, wieloryba i rysowania): tryb skupienia na telefonie. */
+  onEmptyTap: (() => void) | null = null;
   private ticksKey = '';
   /** Chwila z poprzedniej karty: po pierwszych danych widok na niej zamiast na bieżącej świecy. */
   private focusT: number | null = null;
@@ -698,14 +701,7 @@ export class ProChartController {
       );
       this.statsSeries.attachPrimitive(this.statsTable);
     }
-    const panes = this.chart.panes();
-    panes[0]?.setStretchFactor(1);
-    const statsPane = this.statsSeries?.getPane();
-    const venuePanes = new Set([this.venueCvd?.hl?.getPane(), this.venueOi?.hl?.getPane()]);
-    // Panele giełd mają opis w dwóch wierszach (na telefonie także), więc są wyższe niż CVD. Panel ceny ma co najmniej
-    // ~80% wysokości paneli przy wolumenie i jednym panelu przepływu (pole świec ≥ 62% okna 1440 × 900)
-    for (let i = 1; i < panes.length; i++)
-      if (panes[i] !== statsPane) panes[i].setStretchFactor(panes[i] === this.volume?.getPane() ? 0.1 : venuePanes.has(panes[i]) ? 0.24 : 0.16);
+    this.applyStretch();
     // Tabela ma stałą wysokość wiersza: wysokość panelu ustawiamy po ułożeniu pozostałych
     // (panele mogły zostać przebudowane przed następną klatką — wtedy ten panel już nie istnieje)
     this.fitStatsPane();
@@ -716,6 +712,29 @@ export class ProChartController {
     this.venueCvdData = {};
     this.venueOiData = {};
     this.schedule();
+  }
+
+  /**
+   * Wysokości paneli: cena 1, pod nią panele giełd (opis w dwóch wierszach) 0,24, wolumen 0,10, reszta 0,16 — panel ceny
+   * ma ~80% wysokości paneli przy wolumenie i jednym panelu przepływu (pole świec ≥ 62% okna 1440 × 900); `paneScale`
+   * zmniejsza panele pod ceną (telefon, tryb skupienia).
+   */
+  private applyStretch(): void {
+    const panes = this.chart.panes();
+    panes[0]?.setStretchFactor(1);
+    const statsPane = this.statsSeries?.getPane();
+    const venuePanes = new Set([this.venueCvd?.hl?.getPane(), this.venueOi?.hl?.getPane()]);
+    const k = this.paneScale;
+    for (let i = 1; i < panes.length; i++)
+      if (panes[i] !== statsPane) panes[i].setStretchFactor(k * (panes[i] === this.volume?.getPane() ? 0.1 : venuePanes.has(panes[i]) ? 0.24 : 0.16));
+  }
+
+  /** Mnożnik wysokości paneli pod ceną (1 — zwykłe). */
+  setPaneScale(k: number): void {
+    if (k === this.paneScale) return;
+    this.paneScale = k;
+    this.applyStretch();
+    this.fitStatsPane();
   }
 
   /**
@@ -1583,9 +1602,10 @@ export class ProChartController {
     }
     const pick = p.point && p.paneIndex === 0 ? this.liquidity.pick(p.point.x, p.point.y) : null;
     // Telefon: dotknięcie przy linii wieloryba pokazuje albo chowa jej podpis
-    if (!pick && p.point && p.paneIndex === 0) this.overlay.pickWhale(p.point.y);
+    const whale = !pick && p.point && p.paneIndex === 0 ? this.overlay.pickWhale(p.point.y) : false;
     this.liquidity.setSelected(pick);
     this.onPick(pick);
+    if (!pick && !whale && p.point && p.paneIndex === 0 && !this.draw.busy) this.onEmptyTap?.();
   };
 
   private readonly onCrosshair = (p: MouseEventParams<Time>): void => {

@@ -89,7 +89,8 @@ const PHONE_FUNCS = {
   tabNumbers: 'Liczby',
   marketEth: '\\bETH\\b',
   interval15m: '(^|[^0-9])15m\\b',
-  footprint: 'Footprint',
+  // Footprint jako pozycja listy rodzaju wykresu („Bid × Ask”, „FP Delta”…)
+  footprint: 'Footprint|Bid × Ask',
   tabAuction: 'Aukcja i otwarcie',
   lang: '\\bEN\\b|English',
   pause: 'Wstrzymaj strumień',
@@ -128,6 +129,12 @@ async function open(page, hash, store = {}) {
   await page.waitFor(`!!document.querySelector('.tv-lightweight-charts canvas')`, 30000);
   // Świece i warstwy dochodzą przez kilka sekund (API, nagranie serwera)
   await sleep(6000);
+  // Chwilowy błąd API świec (limit zapytań): ponowienie, zanim cokolwiek zmierzymy
+  for (let i = 0; i < 3; i++) {
+    const retried = await page.ev(`(() => { const b = [...document.querySelectorAll('button')].find((x) => x.textContent === 'Spróbuj ponownie'); if (!b) return false; b.click(); return true; })()`);
+    if (!retried) break;
+    await sleep(5000);
+  }
   await page.ev(PROBE);
   await page.mouseAway();
   await sleep(400);
@@ -333,7 +340,17 @@ async function main() {
     // 1b. Z kolumną DOM (domyślnie włączona od 1280 px)
     await open(page, '#charts', { 'hq.charts.dock.v1': '1' });
     report.desktopDom = { ...(await probe(page, '__hq.paneShare()')), over: await probe(page, '__hq.overCandles()') };
-    report.domColumn = await page.ev(`(() => { const a = document.querySelector('aside[aria-label="DOM i taśma"]'); if (!a) return null; const rows = (sel) => [...a.querySelectorAll(sel)].filter((e) => { const r = e.getBoundingClientRect(); return r.height > 0 && r.top >= a.getBoundingClientRect().top && r.bottom <= a.getBoundingClientRect().bottom; }).length; return { ladderRows: rows('[data-ladder-row]'), tapeRows: rows('[data-tape-row]') }; })()`);
+    // Kolumna DOM: widoczne poziomy drabiny (drabina rysuje tyle, ile się mieści) i pojemność listy taśmy w wierszach
+    // (taśma na żywo w świeżej przeglądarce bywa jeszcze krótka, więc liczymy miejsce, nie zlecenia)
+    report.domColumn = await page.ev(`(() => {
+      const a = document.querySelector('aside[aria-label="DOM i taśma"]');
+      if (!a) return null;
+      const box = a.getBoundingClientRect();
+      const ladder = [...a.querySelectorAll('section[aria-label="Drabina arkusza zleceń"] div.relative.grid.font-mono.items-center')].filter((e) => { const r = e.getBoundingClientRect(); return r.height > 0 && r.top >= box.top && r.bottom <= box.bottom + 1; }).length;
+      const tape = a.querySelector('section[aria-label="Taśma z pamięcią"] .overflow-y-auto');
+      const rowH = tape?.querySelector('button')?.getBoundingClientRect().height || 24;
+      return { ladderRows: ladder, tapeRowsFit: tape ? Math.floor(tape.clientHeight / rowH) : null, tapeRowH: Math.round(rowH) };
+    })()`);
     await shot(page, '1440-dom');
 
     // 2. Telefon 390 × 844
@@ -355,7 +372,13 @@ async function main() {
     })();
     // Lista wskaźników: ile pozycji widać na ekranie
     await open(page, '#charts');
-    await page.ev(`[...document.querySelectorAll('button')].find((b) => /^Wskaźniki/.test(b.getAttribute('aria-label') || b.textContent || ''))?.click()`);
+    // Wskaźniki: przed zmianą ikona w pasku, po zmianie pozycja menu „⋯”
+    const direct = await page.ev(`(() => { const b = [...document.querySelectorAll('button')].find((b) => /^Wskaźniki/.test(b.getAttribute('aria-label') || '')); if (b) { b.click(); return true; } return false; })()`);
+    if (!direct) {
+      await page.ev(`[...document.querySelectorAll('[data-chart-bar] button[aria-haspopup]')].find((b) => /^Więcej/.test(b.getAttribute('aria-label') || ''))?.click()`);
+      await sleep(400);
+      await page.ev(`[...document.querySelectorAll('[role=menu] [role^=menuitem]')].find((b) => /^Wskaźniki/.test(b.textContent || ''))?.click()`);
+    }
     await sleep(800);
     report.phoneIndicators = await page.ev(
       `(() => { const nav = [...document.querySelectorAll('nav')].find((n) => getComputedStyle(n).position === 'fixed'); const lim = nav ? nav.getBoundingClientRect().top : innerHeight; return [...document.querySelectorAll('[role=dialog] [role=option]')].filter((e) => { const r = e.getBoundingClientRect(); return r.height > 0 && r.top >= 0 && r.bottom <= lim; }).length; })()`
@@ -422,6 +445,7 @@ async function main() {
     `5. Funkcje w ≤ 2 kliknięciach: komputer ${r.desktopReach?.ok ? 'wszystkie' : r.desktopReach?.missing.join(', ')}, telefon ${r.phoneReach?.ok ? 'wszystkie' : r.phoneReach?.missing.join(', ')}; skróty ${r.desktopKeys?.ok ? 'działają' : JSON.stringify(r.desktopKeys?.map)} — ${ok(t5)}`,
     `6. Ustawienia w localStorage: ${r.storage?.ok ? 'zachowane' : r.storage?.lost.join(', ')} — ${ok(t6)}`,
     `   Lista wskaźników na telefonie: ${r.phoneIndicators} pozycji na ekranie; cele dotyku < 44 px w pasku: ${r.phoneTargets?.length ?? '—'}`,
+    `   Kolumna DOM 1440×900: poziomy drabiny ${r.domColumn?.ladderRows ?? '—'}, wiersze taśmy (miejsce) ${r.domColumn?.tapeRowsFit ?? '—'}`,
   ];
   console.log(lines.join('\n'));
   fs.writeFileSync(path.join(OUT, `${LABEL}.json`), JSON.stringify(r, null, 2));
