@@ -4,6 +4,11 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Paczka MCP 0.1.3 (2026-11-11)
+
+#### Zmienione
+- **`hyperquant-mcp` 0.1.3**: `forecast_ledger` podaje BSS dotknięć w parze (wobec bazy odległości `bssDist` i wobec częstości bazowej). Polecenia instalacji ze strony, README i szablonów z wersją `npx -y hyperquant-mcp@0.1.3`.
+
 ### Kto handluje i makerzy: okno 60 minut do zamknięcia świecy (2026-11-11)
 
 #### Naprawione
