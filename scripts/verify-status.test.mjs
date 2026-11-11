@@ -1,6 +1,6 @@
-// Stan niezależnej weryfikacji dziennika (gałąź health repo danych): znaczek, punkt kontrolny, podsumowanie dla strony.
+// Stan niezależnej weryfikacji dziennika (gałąź wyników repo HyperQuant): znaczek, kotwica, podsumowanie dla strony.
 import { describe, expect, it } from 'vitest';
-import { FULL_EVERY_MS, checkpointProblem, ledgerBadge, publishVerify, sinceCommit, verifyProblem } from './verify-status.mjs';
+import { anchorCommit, ledgerBadge, publishVerify, verifyProblem } from './verify-status.mjs';
 import { CLOCK_SKEW_MS, VERIFY_MAX_AGE_MS, verifyStale } from '../src/utils/verifyFreshness.ts';
 
 const NOW = Date.UTC(2026, 10, 11, 8, 0, 0);
@@ -46,64 +46,52 @@ describe('verifyProblem (nadzór danych)', () => {
   });
 });
 
-describe('punkt kontrolny weryfikacji przyrostowej', () => {
-  it('brak albo uszkodzony → pełny przebieg (null)', () => {
-    expect(sinceCommit(null, NOW)).toBeNull();
-    expect(sinceCommit({ v: 1, commit: 'xyz', fullAt: NOW }, NOW)).toBeNull();
-    expect(sinceCommit({ v: 1, commit: SHA_A }, NOW)).toBeNull();
-  });
-
-  it('pełny przebieg nie starszy niż 7 dni → od zapisanego commita; starszy → znowu pełny', () => {
-    expect(FULL_EVERY_MS).toBe(7 * 24 * H);
-    expect(sinceCommit({ v: 1, commit: SHA_A, at: NOW - H, fullAt: NOW - 6 * 24 * H }, NOW)).toBe(SHA_A);
-    expect(sinceCommit({ v: 1, commit: SHA_A, at: NOW - H, fullAt: NOW - 7 * 24 * H - 1 }, NOW)).toBeNull();
+describe('kotwica: ostatnio zweryfikowany commit gałęzi ledger', () => {
+  it('poprawny hash → kotwica dla weryfikatora; brak albo uszkodzona → brak kotwicy (pierwszy przebieg)', () => {
+    expect(anchorCommit({ v: 1, commit: SHA_A, at: NOW - H })).toBe(SHA_A);
+    expect(anchorCommit(null)).toBeNull();
+    expect(anchorCommit({ v: 1, commit: 'xyz' })).toBeNull();
+    // czas zapisu kotwicy nie wpływa na kontrolę (cała historia zawsze sprawdzana)
+    expect(anchorCommit({ v: 1, commit: SHA_A, at: NOW + 365 * 24 * H })).toBe(SHA_A);
   });
 });
 
-describe('publishVerify — co trafia do gałęzi health', () => {
+describe('publishVerify — co trafia do gałęzi wyników', () => {
   const report = ['✓ 2026-10-22.jsonl: 398 linii', 'Głowa łańcucha: abc', '✓ historia git: 10 commitów, tylko dopisywanie', 'Wyniki przeliczone z rekordów: {', '}'].join('\n');
-  const run = 'https://github.com/rdemb/hyperquant-data/actions/runs/2';
+  const run = 'https://github.com/rdemb/HyperQuant/actions/runs/2';
 
-  it('udany pełny przebieg: nowe podsumowanie, punkt kontrolny z pełnym przebiegiem, zielony znaczek', () => {
-    const r = publishVerify({ code: '0', report, prevLatest: latest({ at: NOW - 40 * H }), prevCheckpoint: null, head: SHA_B, since: null, run, nowMs: NOW });
+  it('udany przebieg: nowe podsumowanie, kotwica przesunięta na sprawdzony commit, zielony znaczek', () => {
+    const r = publishVerify({ code: '0', report, prevLatest: latest({ at: NOW - 40 * H }), prevAnchor: { v: 1, commit: SHA_A, at: NOW - 6 * H }, head: SHA_B, run, nowMs: NOW });
     expect(r.latest).toEqual({ v: 1, ok: true, at: NOW, run, commit: SHA_B, lines: ['✓ 2026-10-22.jsonl: 398 linii', '✓ historia git: 10 commitów, tylko dopisywanie'] });
-    expect(r.checkpoint).toEqual({ v: 1, commit: SHA_B, at: NOW, fullAt: NOW });
+    expect(r.anchor).toEqual({ v: 1, commit: SHA_B, at: NOW });
     expect(r.badge.color).toBe('brightgreen');
   });
 
-  it('udany przebieg przyrostowy: punkt kontrolny przesunięty, data pełnego przebiegu zachowana', () => {
-    const prev = { v: 1, commit: SHA_A, at: NOW - 20 * H, fullAt: NOW - 3 * 24 * H };
-    const r = publishVerify({ code: '0', report, prevLatest: latest(), prevCheckpoint: prev, head: SHA_B, since: SHA_A, run, nowMs: NOW });
-    expect(r.checkpoint).toEqual({ v: 1, commit: SHA_B, at: NOW, fullAt: prev.fullAt });
-  });
-
-  it('weryfikacja wykryła problem: podsumowanie ok=false, punkt kontrolny bez zmian, czerwony znaczek', () => {
-    const prev = { v: 1, commit: SHA_A, at: NOW - 20 * H, fullAt: NOW - 3 * 24 * H };
-    const r = publishVerify({ code: '1', report, prevLatest: latest(), prevCheckpoint: prev, head: SHA_B, since: SHA_A, run, nowMs: NOW });
+  it('weryfikacja wykryła problem (np. kotwica spoza historii): ok=false, kotwica bez zmian, czerwony znaczek', () => {
+    const prev = { v: 1, commit: SHA_A, at: NOW - 6 * H };
+    const r = publishVerify({ code: '1', report, prevLatest: latest(), prevAnchor: prev, head: SHA_B, run, nowMs: NOW });
     expect(r.latest.ok).toBe(false);
-    expect(r.checkpoint).toBe(prev);
+    expect(r.anchor).toBe(prev);
     expect(r.badge).toMatchObject({ color: 'red', message: 'problem 2026-11-11' });
   });
 
   it('przebieg się nie skończył (limit czasu): poprzednie podsumowanie zostaje, znaczek czerwony, gdy starsze niż 36 h', () => {
     const old = latest({ at: NOW - 50 * H });
-    const r = publishVerify({ code: '', report: '', prevLatest: old, prevCheckpoint: null, head: SHA_B, since: null, run, nowMs: NOW });
+    const r = publishVerify({ code: '', report: '', prevLatest: old, prevAnchor: null, head: SHA_B, run, nowMs: NOW });
     expect(r.latest).toBe(old);
-    expect(r.checkpoint).toBeNull();
+    expect(r.anchor).toBeNull();
     expect(r.badge).toMatchObject({ color: 'red', message: 'nieaktualna weryfikacja 2026-11-09' });
-    // świeże poprzednie podsumowanie — znaczek dalej zielony
-    expect(publishVerify({ code: '', report: '', prevLatest: latest(), prevCheckpoint: null, head: SHA_B, since: null, run, nowMs: NOW }).badge.color).toBe('brightgreen');
+    expect(publishVerify({ code: '', report: '', prevLatest: latest(), prevAnchor: null, head: SHA_B, run, nowMs: NOW }).badge.color).toBe('brightgreen');
   });
 
   it('najwyżej 40 linii wyniku (jak dotąd)', () => {
     const many = Array.from({ length: 50 }, (_, i) => `✓ ${i}`).join('\n');
-    expect(publishVerify({ code: '0', report: many, prevLatest: null, prevCheckpoint: null, head: SHA_B, since: null, run, nowMs: NOW }).latest.lines).toHaveLength(40);
+    expect(publishVerify({ code: '0', report: many, prevLatest: null, prevAnchor: null, head: SHA_B, run, nowMs: NOW }).latest.lines).toHaveLength(40);
   });
 });
 
-describe('daty z przyszłości (zapas na zegar 10 min) nie mogą wyłączyć kontroli', () => {
+describe('czas wyniku z przyszłości (zapas na zegar 10 min) jest nieważny', () => {
   const MIN = 60_000;
-  const cp = (over = {}) => ({ v: 1, commit: SHA_A, at: NOW - H, fullAt: NOW - 24 * H, ...over });
 
   it('zapas 10 min; verifyStale: wynik z przyszłości ponad zapas jest nieaktualny, w zapasie — aktualny', () => {
     expect(CLOCK_SKEW_MS).toBe(10 * MIN);
@@ -112,36 +100,10 @@ describe('daty z przyszłości (zapas na zegar 10 min) nie mogą wyłączyć kon
     expect(verifyStale(NOW + 365 * 24 * H, NOW)).toBe(true);
   });
 
-  it('punkt kontrolny z fullAt albo at z przyszłości → nieważny: pełny przebieg i opis problemu', () => {
-    expect(sinceCommit(cp({ fullAt: NOW + 365 * 24 * H }), NOW)).toBeNull();
-    expect(sinceCommit(cp({ at: NOW + 2 * H }), NOW)).toBeNull();
-    expect(sinceCommit(cp({ fullAt: NOW + 10 * MIN }), NOW)).toBe(SHA_A);
-    expect(checkpointProblem(cp({ fullAt: NOW + 365 * 24 * H }), NOW)).toBe(
-      '✗ punkt kontrolny: data z przyszłości (2027-11-11T08:00Z) — nieważny, wykonano pełny przebieg historii git'
-    );
-    expect(checkpointProblem(cp(), NOW)).toBeNull();
-    expect(checkpointProblem(null, NOW)).toBeNull();
-  });
-
-  it('publishVerify: problem punktu kontrolnego w raporcie (ok=false, czerwony), nowy punkt z pełnym przebiegiem', () => {
-    const run = 'https://github.com/rdemb/hyperquant-data/actions/runs/3';
-    const bad = cp({ fullAt: NOW + 365 * 24 * H });
-    const r = publishVerify({ code: '0', report: '✓ historia git: 10 commitów, tylko dopisywanie', prevLatest: latest(), prevCheckpoint: bad, head: SHA_B, since: null, run, nowMs: NOW });
-    expect(r.latest.ok).toBe(false);
-    expect(r.latest.lines[0]).toMatch(/^✗ punkt kontrolny: data z przyszłości/);
-    expect(r.badge.color).toBe('red');
-    expect(r.checkpoint).toEqual({ v: 1, commit: SHA_B, at: NOW, fullAt: NOW });
-    // następny przebieg z nowym punktem — znów przyrostowy i zielony
-    const next = publishVerify({ code: '0', report: '✓ x', prevLatest: r.latest, prevCheckpoint: r.checkpoint, head: SHA_A, since: SHA_B, run, nowMs: NOW + H });
-    expect(next.latest.ok).toBe(true);
-    expect(next.checkpoint.fullAt).toBe(NOW);
-  });
-
   it('latest.json z czasem z przyszłości: znaczek czerwony, nadzór danych zgłasza problem (nie „świeży” na zawsze)', () => {
     const future = latest({ at: NOW + 365 * 24 * H });
     expect(ledgerBadge(future, NOW)).toMatchObject({ color: 'red', message: 'nieważna data weryfikacji' });
     expect(verifyProblem(future, NOW)).toBe('niezależna weryfikacja dziennika: czas wyniku z przyszłości (2027-11-11 08:00 UTC) — wynik nieważny');
-    // przebieg niedokończony z takim poprzednim wynikiem — nadal czerwony
-    expect(publishVerify({ code: '', report: '', prevLatest: future, prevCheckpoint: null, head: SHA_B, since: null, run: '', nowMs: NOW }).badge.color).toBe('red');
+    expect(publishVerify({ code: '', report: '', prevLatest: future, prevAnchor: null, head: SHA_B, run: '', nowMs: NOW }).badge.color).toBe('red');
   });
 });
