@@ -4,6 +4,12 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Strażnik serwera: histereza alarmu opóźnionych odczytów pozycji (2026-11-11)
+
+#### Naprawione
+- **Alarm „odczyty pozycji opóźnione” nie miga** (`scripts/watchdog.mjs`, `scripts/check-data-health.mjs`). Mediana wieku odczytów pozycji ważona nominałem oscyluje wokół progu 30 min (w raportach od 22 do 41 min), a strażnik zamykał alarm przy pierwszym przebiegu poniżej progu. Gałąź `health` repo danych zapisała 40 zmian stanu w 37 h (9.11 17:00 – 11.11 06:00 UTC), do 47 na dobę 6.11. Teraz alarm zaczyna się po 2 przebiegach z rzędu powyżej 30 min, a kończy po 2 przebiegach z rzędu poniżej 25 min; pomiędzy stan się nie zmienia. Stan histerezy (`ntl` w pliku stanu strażnika) przechodzi między przebiegami; plik stanu bez tego pola zaczyna bez alarmu, jak dotąd. Komunikat w trakcie alarmu podaje oba progi. Ocena bez stanu w GitHub Actions (`data-health.yml`) działa jak dotąd.
+- Test na serii odtworzonej z historii wysyłek z 9–11.11 (co 15 min, 203 przebiegi): bez histerezy 32 / 15 / 13 zmian stanu na dobę, jak w historii, z histerezą 4 / 1 / 0 (`scripts/watchdog.test.mjs`). Testy jednostkowe progów: `scripts/check-data-health.test.mjs`.
+
 ### Wskaźnik: strefy absorpcji i pudełka Effort (2026-11-09)
 
 #### Dodane

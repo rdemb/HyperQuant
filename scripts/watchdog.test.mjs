@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { alertState, dataBaseFromRemote, decide, decideAlerts, gitEnv, parsePulse, shouldPush } from './watchdog.mjs';
+import { assessHealth } from './check-data-health.mjs';
+import { alertState, assessRun, dataBaseFromRemote, decide, decideAlerts, gitEnv, parsePulse, shouldPush } from './watchdog.mjs';
 
 const MIN = 60_000;
 const NOW = Date.UTC(2026, 9, 22, 14, 0);
@@ -124,6 +125,80 @@ describe('strażnik: stan alarmu i wysyłka', () => {
     // Puls raz na dobę także przy „ok” — uruchamia niezależną weryfikację dziennika w GitHub Actions
     expect(shouldPush({ prevKey: 'ok', seenKey: 'ok', key: 'ok', lastPushAt: NOW - 24 * 60 * MIN, ok: true, urgent: false, now: NOW })).toBe(true);
     expect(shouldPush({ prevKey: null, seenKey: null, key: 'ok', lastPushAt: null, ok: true, urgent: false, now: NOW })).toBe(true);
+  });
+});
+
+/**
+ * Przebiegi strażnika co 15 min z medianą ważoną wieku odczytów pozycji `ages` (pozostałe pliki świeże), wysyłka jak w
+ * `main`. `hysteresis: false` — ocena bez stanu (dawne zachowanie). Wynik: zmiany stanu wysłanego alarmu (ok ↔ problem)
+ * na dobę UTC.
+ */
+function replay(ages, start, { hysteresis }) {
+  const none = { restart: false, reason: null, category: null };
+  const st = { prevKey: null, seenKey: null, lastPushAt: null };
+  let ntl; // stary plik stanu: brak pola
+  let sent = null;
+  const changes = {};
+  ages.forEach((age, i) => {
+    const now = start + i * 15 * MIN;
+    const fresh = { asOf: now - 2 * MIN };
+    const input = { status: { ...fresh, coverage: 0.3, ageNtlP50Min: age }, liqMap: fresh, raw: {}, errors: {} };
+    let health;
+    if (hysteresis) ({ health, ntl } = assessRun(input, ntl, now));
+    else health = assessHealth(input, now);
+    const a = alertState(health, none);
+    if (shouldPush({ prevKey: st.prevKey, seenKey: st.seenKey, key: a.key, lastPushAt: st.lastPushAt, ok: a.ok, urgent: false, now })) {
+      if (sent !== null && sent !== a.ok) {
+        const day = new Date(now).toISOString().slice(0, 10);
+        changes[day] = (changes[day] ?? 0) + 1;
+      }
+      sent = a.ok;
+      st.prevKey = a.key;
+      st.lastPushAt = now;
+    }
+    st.seenKey = a.key;
+  });
+  return changes;
+}
+
+/**
+ * Seria odtworzona z publicznej historii wysyłek strażnika (gałąź `health` repo danych), 9.11.2026 03:37 – 11.11.2026
+ * 06:07 UTC: pary [mediana ważona w min, liczba przebiegów]. Wartości z raportów wysyłek; przebieg przed wysyłką
+ * problemu ma wartość tego problemu (potwierdzenie w dwóch przebiegach), „30,4” — raport „30 min” powyżej progu.
+ */
+const NOV9_START = Date.UTC(2026, 10, 9, 3, 37);
+const NOV9_11 = [
+  [27, 4], [31, 2], [23, 1], [33, 2], [27, 5], [30.4, 2], [24, 1], [37, 3], [24, 1], [36, 2], [27, 2], [39, 7], [29, 1], [41, 3], [29, 1],
+  [40, 2], [28, 2], [39, 2], [28, 2], [40, 5], [30, 2], [35, 3], [26, 1], [36, 3], [29, 4], [32, 3], [25, 1], [37, 2], [26, 2], [32, 2],
+  [24, 4], [34, 2], [22, 66], [33, 2], [25, 2], [37, 2], [23, 1], [32, 2], [27, 1], [33, 3], [25, 1], [38, 2], [27, 2], [35, 6], [27, 1],
+  [39, 2], [28, 2], [37, 5], [26, 2], [33, 2], [29, 1], [32, 3], [23, 1], [38, 2], [27, 1], [36, 3], [25, 1], [37, 2], [26, 2], [33, 2],
+  [25, 2],
+].flatMap(([age, n]) => Array(n).fill(age));
+
+describe('strażnik: histereza alarmu opóźnionych odczytów pozycji', () => {
+  it('seria z 9–11.11 bez histerezy odtwarza miganie alarmu (32 / 15 / 13 zmian na dobę)', () => {
+    expect(replay(NOV9_11, NOV9_START, { hysteresis: false })).toEqual({ '2026-11-09': 32, '2026-11-10': 15, '2026-11-11': 13 });
+  });
+
+  it('ta sama seria z histerezą: najwyżej 4 zmiany stanu na dobę', () => {
+    const changes = replay(NOV9_11, NOV9_START, { hysteresis: true });
+    for (const n of Object.values(changes)) expect(n).toBeLessThanOrEqual(4);
+  });
+
+  it('wiek oscylujący wokół 30 min (25–40 min) przez dobę: jeden alarm, bez migania', () => {
+    const ages = Array.from({ length: 96 }, (_, i) => [33, 27, 31, 36, 26, 29, 40, 25][i % 8]);
+    expect(Object.values(replay(ages, Date.UTC(2026, 10, 12), { hysteresis: false })).reduce((s, n) => s + n, 0)).toBeGreaterThan(4);
+    expect(replay(ages, Date.UTC(2026, 10, 12), { hysteresis: true })).toEqual({ '2026-11-12': 1 });
+  });
+
+  it('stan histerezy przechodzi przez plik stanu (JSON) i bez repo danych nie powstaje', () => {
+    const fresh = { asOf: NOW - 2 * MIN };
+    const input = (age) => ({ status: { ...fresh, coverage: 0.3, ageNtlP50Min: age }, liqMap: fresh, raw: {}, errors: {} });
+    const first = assessRun(input(33), undefined, NOW);
+    const second = assessRun(input(33), JSON.parse(JSON.stringify(first.ntl)), NOW);
+    expect(second.ntl.lag).toBe(true);
+    expect(assessRun(input(27), JSON.parse(JSON.stringify(second.ntl)), NOW).health.ok).toBe(false);
+    expect(assessRun(null, undefined, NOW)).toEqual({ health: ok, ntl: { lag: false, above: 0, below: 0 } });
   });
 });
 
