@@ -3,7 +3,21 @@ import { Bocpd } from '../../src/utils/bocpd.ts';
 import { ENS_PRIOR, REC_PRIOR, fitEnsemble, poolProb, type EnsPair, type EnsWeights } from '../../src/utils/ensemble.ts';
 import { type RangeBar, type VolModel, buildVolModel, horizonStepSigmas } from '../../src/utils/volatility.ts';
 import { forecastReturnQuantiles, runTouchMonteCarlo } from '../../src/utils/touchMc.ts';
-import { aciStep, brier, crpsQuantiles, isotonic, kupiec, normInv, pitFromQuantiles, quantileAt, quantileAtExt, reliability, vennAbers } from '../../src/utils/forecastScore.ts';
+import {
+  aciStep,
+  brier,
+  crpsQuantiles,
+  isotonic,
+  kupiec,
+  normInv,
+  pitFromQuantiles,
+  quantileAt,
+  quantileAtExt,
+  reflectionTouchProb,
+  reliability,
+  sigmaFromNormalQuantiles,
+  vennAbers,
+} from '../../src/utils/forecastScore.ts';
 import { mulberry32, seedFrom } from '../../src/utils/pathEngine.ts';
 import { outcomeProbabilities } from '../../src/utils/hip4.ts';
 import { horizonSigmas, stepFor } from '../../src/utils/hip4Model.ts';
@@ -861,12 +875,46 @@ const touchPairsOf = (pairs: { f: TouchForecast; r: TouchResolution }[]) =>
   pairs.flatMap((p) => LEVELS.filter((l) => p.f.p[l] !== null && p.f.p[l] !== undefined).map((l) => ({ p: p.f.p[l] as number, y: p.r.yv[l] })));
 
 /**
- * Wyniki prognoz dotknięć + mapa kalibracji izotonicznej. Odniesienie BSS: klimatologia osobno dla każdego poziomu
- * (PDH, PDL i D-EQ mają różne częstości bazowe — wspólna stała dawałaby „umiejętność” modelowi bez wiedzy).
+ * σ benchmarku „bez modelu” w slocie: stała σ godzinowych log-zwrotów z 30 dni, odtworzona z kwantyli benchmarku `bq`
+ * prognozy zwrotu 1 h wersji głównej (te same liczby co w CRPSS, zapisane przed rozstrzygnięciem).
  */
-export function touchScores(pairs: { f: TouchForecast; r: TouchResolution }[]): TouchScores {
+export function benchSigmaBySlot(fs: Iterable<Forecast>): Map<number, number> {
+  const out = new Map<number, number>();
+  for (const f of fs) {
+    if (f.kind !== 'ret' || f.variant || f.h !== 60) continue;
+    const s = sigmaFromNormalQuantiles(f.taus, f.bq);
+    if (s !== null) out.set(f.slot, s);
+  }
+  return out;
+}
+
+/**
+ * Wyniki prognoz dotknięć + mapa kalibracji izotonicznej. Dwie bazy BSS:
+ *  - klimatologia osobno dla każdego poziomu (PDH, PDL i D-EQ mają różne częstości bazowe — wspólna stała dawałaby
+ *    „umiejętność” modelowi bez wiedzy) — `bss` / `bssClim`;
+ *  - odległość: wzór odbicia 2(1 − Φ(|d| / (σ√T))) ze stałą σ benchmarku CRPS (godzinowe log-zwroty z 30 dni) —
+ *    `bssDist`. Częstość nie zna odległości poziomu od ceny, więc sama zawyża umiejętność; liczby podajemy w parze.
+ * `sigma1h`: σ benchmarku według slotu; prognoza bez σ w swoim slocie nie wchodzi do bazy odległości (`pairsDist`).
+ */
+export function touchScores(pairs: { f: TouchForecast; r: TouchResolution }[], sigma1h: Map<number, number> = new Map()): TouchScores {
   const pp = touchPairsOf(pairs);
   const bs = brier(pp);
+  const model: { p: number; y: 0 | 1 }[] = [];
+  const dist: { p: number; y: 0 | 1 }[] = [];
+  for (const { f, r } of pairs) {
+    const s = sigma1h.get(f.slot);
+    if (s === undefined) continue;
+    for (const l of LEVELS) {
+      const p = f.p[l];
+      if (p === null || p === undefined) continue;
+      const pd = reflectionTouchProb(Math.log(f.lv[l] / f.px0), s * Math.sqrt(f.h / 60));
+      if (pd === null) continue;
+      model.push({ p, y: r.yv[l] });
+      dist.push({ p: pd, y: r.yv[l] });
+    }
+  }
+  const bsDist = brier(dist);
+  const bsModelDist = brier(model);
   const levelBase = Object.fromEntries(
     LEVELS.map((l) => {
       const ys = pairs.filter((p) => p.f.p[l] !== null && p.f.p[l] !== undefined).map((p) => p.r.yv[l]);
@@ -896,12 +944,17 @@ export function touchScores(pairs: { f: TouchForecast; r: TouchResolution }[]): 
   // Najwyżej 200 punktów, równomiernie (z zachowaniem ostatniego — wysokie p nie mogą wypaść)
   const stride = Math.ceil(steps.length / 200);
   const map = steps.filter((_, i) => i % stride === 0 || i === steps.length - 1);
+  const bssClim = bs !== null && bsBase !== null && bsBase > 0 ? 1 - bs / bsBase : null;
   return {
     n: pairs.length,
     pairs: pp.length,
     brier: bs,
     brierBase: bsBase,
-    bss: bs !== null && bsBase !== null && bsBase > 0 ? 1 - bs / bsBase : null,
+    bss: bssClim,
+    bssClim,
+    brierDist: bsDist,
+    bssDist: bsModelDist !== null && bsDist !== null && bsDist > 0 ? 1 - bsModelDist / bsDist : null,
+    pairsDist: dist.length,
     reliability: reliability(pp, 10).map((b) => ({ lo: b.lo, hi: b.hi, n: b.n, meanP: b.meanP, freq: b.freq })),
     calibration: map,
   };
@@ -1104,7 +1157,7 @@ export function buildSummary(s: SummaryInput): DeskLedgerSummary {
     },
     scores: {
       ret: Object.fromEntries(RET_HORIZONS.map((h) => [h, retScores(retPairs.get(h) ?? [])])) as Record<string, RetScores>,
-      touch: touchScores(touchPairs),
+      touch: touchScores(touchPairs, benchSigmaBySlot(fs)),
     },
     ots: s.ots,
     slotStamps: s.slotStamps ?? 0,

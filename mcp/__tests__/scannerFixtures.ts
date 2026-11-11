@@ -165,7 +165,7 @@ export const ledger = (age = 5 * MIN): DeskLedgerSummary => ({
   latest: { ret: [], touch: null },
   scores: {
     ret: { '240': ret(12, 0.02), '60': ret(400, 0.052) },
-    touch: { n: 300, pairs: 800, brier: 0.181, brierBase: 0.205, bss: 0.117, reliability: [], calibration: [] },
+    touch: { n: 300, pairs: 800, brier: 0.181, brierBase: 0.205, bss: 0.117, bssClim: 0.117, brierDist: 0.19, bssDist: 0.047, pairsDist: 800, reliability: [], calibration: [] },
   },
   ots: [],
   slotStamps: 90,
