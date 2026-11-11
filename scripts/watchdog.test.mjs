@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { alertState, dataBaseFromRemote, decide, decideAlerts, gitEnv, parsePulse, shouldPush } from './watchdog.mjs';
+import { assessHealth } from './check-data-health.mjs';
+import { alertState, assessRun, dataBaseFromRemote, decide, decideAlerts, deployKey, episodeRestarts, gitEnv, parsePulse, shouldPush } from './watchdog.mjs';
 
 const MIN = 60_000;
 const NOW = Date.UTC(2026, 9, 22, 14, 0);
@@ -116,14 +117,147 @@ describe('strażnik: stan alarmu i wysyłka', () => {
     expect(shouldPush({ prevKey: 'ok', seenKey: 'x', key: 'x', lastPushAt: NOW - MIN, ok: false, urgent: false, now: NOW })).toBe(true);
     expect(shouldPush({ prevKey: 'ok', seenKey: 'ok', key: 'p', lastPushAt: NOW - MIN, ok: false, urgent: true, now: NOW })).toBe(true);
   });
-  it('trwały problem — przypomnienie najwyżej co 6 h; powrót do „ok” od razu; „ok” — puls raz na dobę', () => {
+  it('trwały problem — przypomnienie najwyżej co 6 h; powrót do „ok” od razu; „ok” — puls co 12 h', () => {
     expect(shouldPush({ prevKey: 'x', seenKey: 'x', key: 'x', lastPushAt: NOW - 60 * MIN, ok: false, urgent: false, now: NOW })).toBe(false);
     expect(shouldPush({ prevKey: 'x', seenKey: 'x', key: 'x', lastPushAt: NOW - 7 * 60 * MIN, ok: false, urgent: false, now: NOW })).toBe(true);
     expect(shouldPush({ prevKey: 'x', seenKey: 'x', key: 'ok', lastPushAt: NOW - MIN, ok: true, urgent: false, now: NOW })).toBe(true);
-    expect(shouldPush({ prevKey: 'ok', seenKey: 'ok', key: 'ok', lastPushAt: NOW - 23 * 60 * MIN, ok: true, urgent: false, now: NOW })).toBe(false);
-    // Puls raz na dobę także przy „ok” — uruchamia niezależną weryfikację dziennika w GitHub Actions
-    expect(shouldPush({ prevKey: 'ok', seenKey: 'ok', key: 'ok', lastPushAt: NOW - 24 * 60 * MIN, ok: true, urgent: false, now: NOW })).toBe(true);
+    expect(shouldPush({ prevKey: 'ok', seenKey: 'ok', key: 'ok', lastPushAt: NOW - 11 * 60 * MIN, ok: true, urgent: false, now: NOW })).toBe(false);
+    // Puls co 12 h także przy „ok” — uruchamia niezależną weryfikację dziennika w GitHub Actions (wynik młodszy niż doba)
+    expect(shouldPush({ prevKey: 'ok', seenKey: 'ok', key: 'ok', lastPushAt: NOW - 12 * 60 * MIN, ok: true, urgent: false, now: NOW })).toBe(true);
     expect(shouldPush({ prevKey: null, seenKey: null, key: 'ok', lastPushAt: null, ok: true, urgent: false, now: NOW })).toBe(true);
+  });
+});
+
+/**
+ * Przebiegi strażnika co 15 min z medianą ważoną wieku odczytów pozycji `ages` (pozostałe pliki świeże), wysyłka jak w
+ * `main`. `hysteresis: false` — ocena bez stanu (dawne zachowanie). Wynik: zmiany stanu wysłanego alarmu (ok ↔ problem)
+ * na dobę UTC.
+ */
+function replay(ages, start, { hysteresis }) {
+  const none = { restart: false, reason: null, category: null };
+  const st = { prevKey: null, seenKey: null, lastPushAt: null };
+  let ntl; // stary plik stanu: brak pola
+  let sent = null;
+  const changes = {};
+  ages.forEach((age, i) => {
+    const now = start + i * 15 * MIN;
+    const fresh = { asOf: now - 2 * MIN };
+    const input = { status: { ...fresh, coverage: 0.3, ageNtlP50Min: age }, liqMap: fresh, raw: {}, errors: {} };
+    let health;
+    if (hysteresis) ({ health, ntl } = assessRun(input, ntl, now));
+    else health = assessHealth(input, now);
+    const a = alertState(health, none);
+    if (shouldPush({ prevKey: st.prevKey, seenKey: st.seenKey, key: a.key, lastPushAt: st.lastPushAt, ok: a.ok, urgent: false, now })) {
+      if (sent !== null && sent !== a.ok) {
+        const day = new Date(now).toISOString().slice(0, 10);
+        changes[day] = (changes[day] ?? 0) + 1;
+      }
+      sent = a.ok;
+      st.prevKey = a.key;
+      st.lastPushAt = now;
+    }
+    st.seenKey = a.key;
+  });
+  return changes;
+}
+
+/**
+ * Seria odtworzona z publicznej historii wysyłek strażnika (gałąź `health` repo danych), 9.11.2026 03:37 – 11.11.2026
+ * 06:07 UTC: pary [mediana ważona w min, liczba przebiegów]. Wartości z raportów wysyłek; przebieg przed wysyłką
+ * problemu ma wartość tego problemu (potwierdzenie w dwóch przebiegach), „30,4” — raport „30 min” powyżej progu.
+ */
+const NOV9_START = Date.UTC(2026, 10, 9, 3, 37);
+const NOV9_11 = [
+  [27, 4], [31, 2], [23, 1], [33, 2], [27, 5], [30.4, 2], [24, 1], [37, 3], [24, 1], [36, 2], [27, 2], [39, 7], [29, 1], [41, 3], [29, 1],
+  [40, 2], [28, 2], [39, 2], [28, 2], [40, 5], [30, 2], [35, 3], [26, 1], [36, 3], [29, 4], [32, 3], [25, 1], [37, 2], [26, 2], [32, 2],
+  [24, 4], [34, 2], [22, 66], [33, 2], [25, 2], [37, 2], [23, 1], [32, 2], [27, 1], [33, 3], [25, 1], [38, 2], [27, 2], [35, 6], [27, 1],
+  [39, 2], [28, 2], [37, 5], [26, 2], [33, 2], [29, 1], [32, 3], [23, 1], [38, 2], [27, 1], [36, 3], [25, 1], [37, 2], [26, 2], [33, 2],
+  [25, 2],
+].flatMap(([age, n]) => Array(n).fill(age));
+
+describe('strażnik: histereza alarmu opóźnionych odczytów pozycji', () => {
+  it('seria z 9–11.11 bez histerezy odtwarza miganie alarmu (32 / 15 / 13 zmian na dobę)', () => {
+    expect(replay(NOV9_11, NOV9_START, { hysteresis: false })).toEqual({ '2026-11-09': 32, '2026-11-10': 15, '2026-11-11': 13 });
+  });
+
+  it('ta sama seria z histerezą: najwyżej 4 zmiany stanu na dobę', () => {
+    const changes = replay(NOV9_11, NOV9_START, { hysteresis: true });
+    for (const n of Object.values(changes)) expect(n).toBeLessThanOrEqual(4);
+  });
+
+  it('wiek oscylujący wokół 30 min (25–40 min) przez dobę: jeden alarm, bez migania', () => {
+    const ages = Array.from({ length: 96 }, (_, i) => [33, 27, 31, 36, 26, 29, 40, 25][i % 8]);
+    expect(Object.values(replay(ages, Date.UTC(2026, 10, 12), { hysteresis: false })).reduce((s, n) => s + n, 0)).toBeGreaterThan(4);
+    expect(replay(ages, Date.UTC(2026, 10, 12), { hysteresis: true })).toEqual({ '2026-11-12': 1 });
+  });
+
+  it('stan histerezy przechodzi przez plik stanu (JSON) i bez repo danych nie powstaje', () => {
+    const fresh = { asOf: NOW - 2 * MIN };
+    const input = (age) => ({ status: { ...fresh, coverage: 0.3, ageNtlP50Min: age }, liqMap: fresh, raw: {}, errors: {} });
+    const first = assessRun(input(33), undefined, NOW);
+    const second = assessRun(input(33), JSON.parse(JSON.stringify(first.ntl)), NOW);
+    expect(second.ntl.lag).toBe(true);
+    expect(assessRun(input(27), JSON.parse(JSON.stringify(second.ntl)), NOW).health.ok).toBe(false);
+    expect(assessRun(null, undefined, NOW)).toEqual({ health: ok, ntl: { lag: false, above: 0, below: 0 } });
+  });
+});
+
+describe('strażnik: licznik restartów w epizodzie według stanu usługi', () => {
+  /** Otwarty alarm opóźnienia odczytów pozycji — nie dotyczy procesu skanera, ocena całości nigdy nie jest „ok” */
+  const lagging = { ok: false, problems: ['odczyty pozycji opóźnione: mediana ważona 33 min (alarm powyżej 30 min, koniec po 2 przebiegach poniżej 25 min)'], facts: [] };
+
+  /**
+   * Przebiegi skanera co 15 min jak w `main`: `stalled(t)` — czy w chwili t skaner nie publikuje lokalnie (14 min ciszy).
+   * Usługa działa od 2 h przed startem; restart zeruje czas działania. Zwraca decyzje kolejnych przebiegów.
+   */
+  function scannerRuns(runs, stalled) {
+    let lastRestart = null;
+    let restarts = 0;
+    let upSince = NOW - 120 * MIN;
+    const out = [];
+    for (let i = 0; i < runs; i++) {
+      const now = NOW + i * 15 * MIN;
+      const activeForMs = now - upSince;
+      const d = decide({ ...base, now, localAsOf: stalled(now) ? now - 14 * MIN : now - MIN, activeForMs, lastRestart, restarts, health: lagging });
+      if (d.restart) {
+        lastRestart = now;
+        restarts += 1;
+        upSince = now;
+      }
+      restarts = episodeRestarts({ now, d, serviceState: 'active', activeForMs: now - upSince, lastRestart, restarts });
+      out.push({ now, d, restarts });
+    }
+    return out;
+  }
+
+  it('alarm opóźnienia otwarty przez całą serię: cztery zawieszenia co 6 h z powrotem między nimi → czwarte też kończy się restartem', () => {
+    const stallAt = [0, 6, 12, 18].map((h) => NOW + h * 60 * MIN);
+    const runs = scannerRuns(4 * 24 + 1, (t) => stallAt.includes(t));
+    const atStalls = runs.filter((r) => stallAt.includes(r.now));
+    expect(atStalls.map((r) => r.d.restart)).toEqual([true, true, true, true]);
+    expect(atStalls.map((r) => r.d.category)).not.toContain('giveup');
+  });
+
+  it('trzy restarty w 3 h bez powrotu → strażnik się poddaje (limit prób w epizodzie zostaje)', () => {
+    const runs = scannerRuns(13, () => true);
+    expect(runs.filter((r) => r.d.restart)).toHaveLength(3);
+    expect(runs.at(-1).now - NOW).toBe(180 * MIN);
+    expect(runs.at(-1).d).toMatchObject({ restart: false, category: 'giveup' });
+  });
+
+  it('licznik zostaje tuż po restarcie, w stanie przejściowym i przy problemie usługi; zero po godzinie spokojnej pracy', () => {
+    const none = { restart: false, reason: null, category: null };
+    const calm = { now: NOW, d: none, serviceState: 'active', activeForMs: 61 * MIN, lastRestart: NOW - 61 * MIN, restarts: 2 };
+    expect(episodeRestarts(calm)).toBe(0);
+    expect(episodeRestarts({ ...calm, activeForMs: 20 * MIN, lastRestart: NOW - 20 * MIN })).toBe(2);
+    expect(episodeRestarts({ ...calm, activeForMs: null, lastRestart: NOW - 20 * MIN })).toBe(2);
+    expect(episodeRestarts({ ...calm, serviceState: 'activating', activeForMs: null })).toBe(2);
+    expect(episodeRestarts({ ...calm, d: { restart: false, reason: 'serwer powiadomień nie zapisał pulsu od 7 min (restart wstrzymany)', category: 'stall' } })).toBe(2);
+    // serwer powiadomień: ta sama zasada, niezależnie od skanera
+    const da = decideAlerts({ now: NOW, pulse: { at: NOW - MIN, syncAt: null, wsAt: null }, serviceState: 'active', activeForMs: 90 * MIN, lastRestart: NOW - 90 * MIN, restarts: 2 });
+    expect(episodeRestarts({ now: NOW, d: da, serviceState: 'active', activeForMs: 90 * MIN, lastRestart: NOW - 90 * MIN, restarts: 2 })).toBe(0);
+    // stary plik stanu bez restartów strażnika
+    expect(episodeRestarts({ ...calm, lastRestart: null, activeForMs: null, restarts: 0 })).toBe(0);
   });
 });
 
@@ -140,5 +274,13 @@ describe('strażnik: git i źródło danych', () => {
     expect(dataBaseFromRemote('https://github.com/acme/hq-data')).toBe('https://raw.githubusercontent.com/acme/hq-data/main');
     expect(dataBaseFromRemote('')).toBeNull();
     expect(dataBaseFromRemote('git@gitlab.com:a/b.git')).toBeNull();
+  });
+  it('klucz wdrożeniowy: kopia z LoadCredential systemd przed ścieżką z pliku skanera (plik skanera czyta tylko skaner)', () => {
+    const has = (f) => f === '/run/credentials/hyperquant-watchdog.service/deploy_key';
+    expect(deployKey({ CREDENTIALS_DIRECTORY: '/run/credentials/hyperquant-watchdog.service', HQ_GIT_SSH_KEY: '/var/lib/hyperquant/deploy_key' }, has)).toBe('/run/credentials/hyperquant-watchdog.service/deploy_key');
+    // bez poświadczenia (uruchomienie ręczne, brak klucza przy instalacji) — ścieżka z konfiguracji
+    expect(deployKey({ HQ_GIT_SSH_KEY: '/var/lib/hyperquant/deploy_key' }, has)).toBe('/var/lib/hyperquant/deploy_key');
+    expect(deployKey({ CREDENTIALS_DIRECTORY: '/run/credentials/x', HQ_GIT_SSH_KEY: ' /k ' }, () => false)).toBe('/k');
+    expect(deployKey({}, () => false)).toBeNull();
   });
 });

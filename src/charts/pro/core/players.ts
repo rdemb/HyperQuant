@@ -3,16 +3,18 @@ import type { AggressorOrder } from './orders';
 
 /**
  * Kto handluje: wejścia biorców (zlecenia agresora z taśmy) rozdzielone na dużych graczy i resztę rynku. Hyperliquid podaje
- * konto biorcy przy każdej transakcji, więc liczymy wartość wejść każdego konta w godzinie UTC; konto, które w tej godzinie
- * weszło za co najmniej próg rynku, jest w niej dużym graczem — także wtedy, gdy tnie zlecenie na wiele małych. Pokazujemy
- * tylko sumy, bez kont. W historii serwera konto ma numer (ważny dobę UTC w plikach `idScope: 'day'`, godzinę w starszych),
- * a na żywo adres, więc w godzinie otwarcia strony jego wejścia sprzed i po otwarciu liczą się osobno.
+ * konto biorcy przy każdej transakcji, więc liczymy wartość wejść każdego konta w 60 minutach do zamknięcia świecy; konto,
+ * które w tym oknie weszło za co najmniej próg rynku, jest w świecy dużym graczem — także wtedy, gdy tnie zlecenie na wiele
+ * małych. Okno nie sięga za zamknięcie świecy, więc zamknięta świeca się nie zmienia; w bieżącej świecy liczą się wejścia
+ * do teraz. Świeca dłuższa niż godzina to jej godziny UTC, każda z oknem równym tej godzinie. Pokazujemy tylko sumy, bez kont.
+ * W historii serwera konto ma numer (ważny dobę UTC w plikach `idScope: 'day'`, godzinę w starszych), a na żywo adres,
+ * więc okno przez przełom doby (w starszych plikach — godziny) albo przez chwilę otwarcia strony liczy jedno konto jako dwa.
  */
 
 const HOUR = 3_600_000;
 const MIN = 60_000;
 
-/** Próg dużego gracza: wartość wejść konta w godzinie UTC (USD); dobrany tak, że duzi to kilka–kilkanaście kont na godzinę. */
+/** Próg dużego gracza: wartość wejść konta w 60 min (USD); dobrany tak, że duzi to kilka–kilkanaście kont na godzinę. */
 export const BIG_PLAYER_USD: Readonly<Record<string, number>> = { BTC: 1_000_000, ETH: 500_000, SOL: 250_000, HYPE: 250_000 };
 export const bigPlayerUsd = (coin: string): number => BIG_PLAYER_USD[coin] ?? 250_000;
 
@@ -35,16 +37,21 @@ export interface OrderSource {
   count(from: number, to: number): number;
 }
 
-// Na minutę godziny: delta dużych, delta reszty, wartość wejść dużych, wartość wszystkich wejść
-const F = 4;
-
-interface HourFlow {
-  n: number;
-  mins: Float64Array;
+interface Part {
+  big: number;
+  rest: number;
+  bigUsd: number;
+  usd: number;
 }
 
+/** Wartość wejść w centach: suma liczb całkowitych jest dokładna, więc przesunięte okno daje to samo co policzone od nowa. */
+const cents = (o: AggressorOrder): number => Math.round(o.notional * 100);
+
 export class PlayerFlow {
-  private readonly hours = new Map<number, HourFlow>();
+  /** Części zamkniętych świec: klucz `początek okna:początek:koniec`, `n` — liczba zleceń okna przy liczeniu. */
+  private readonly parts = new Map<string, Part & { n: number; to: number }>();
+  /** Sumy wejść kont (centy) w oknie [w0, w1) z `n` zleceniami; świece po kolei przesuwają je zamiast liczyć od nowa. */
+  private win: { w0: number; w1: number; n: number; sums: Map<string, number> } | null = null;
 
   /** `addressed` — czas, dla którego taśma ma konta biorców (strumień na żywo i historia serwera, bez zapisu przeglądarki). */
   constructor(
@@ -57,48 +64,75 @@ export class PlayerFlow {
   split(t: number, ms: number, now: number): PlayerSplit | null {
     const end = Math.min(t + ms, now);
     if (!(end > t) || !(this.addressed.coveredMs(t, end) > 0)) return null;
+    // Zlecenia do końca bieżącej minuty (zegar serwera bywa o włos za taśmą), nigdy po zamknięciu świecy
+    const stop = Math.min(t + ms, Math.ceil(now / MIN) * MIN);
     let big = 0;
     let rest = 0;
     let bigUsd = 0;
     let usd = 0;
-    for (let h = Math.floor(t / HOUR) * HOUR; h < end; h += HOUR) {
-      const m = this.hour(h).mins;
-      const m0 = Math.max(0, Math.floor((t - h) / MIN));
-      const m1 = Math.min(60, Math.ceil((end - h) / MIN));
-      for (let i = m0; i < m1; i++) {
-        big += m[i * F];
-        rest += m[i * F + 1];
-        bigUsd += m[i * F + 2];
-        usd += m[i * F + 3];
-      }
+    for (let a = t; a < stop; ) {
+      // Część w jednej godzinie UTC; okno klasy: 60 min do jej zamknięcia (świeca do godziny — zamknięcia świecy)
+      const close = Math.min(Math.floor(a / HOUR) * HOUR + HOUR, t + ms);
+      const b = Math.min(close, stop);
+      const p = this.part(close - HOUR, a, b, close < now);
+      big += p.big;
+      rest += p.rest;
+      bigUsd += p.bigUsd;
+      usd += p.usd;
+      a = b;
     }
     return { big, rest, bigUsd, usd, bigShare: usd > 0 ? (bigUsd / usd) * 100 : null, complete: this.addressed.covers(t, end) };
   }
 
   prune(before: number): void {
-    for (const h of this.hours.keys()) if (h + HOUR <= before) this.hours.delete(h);
+    for (const [k, p] of this.parts) if (p.to <= before) this.parts.delete(k);
+    if (this.win && this.win.w0 < before) this.win = null;
   }
 
-  /** Godzina policzona od nowa tylko po nowych zleceniach w niej (zamknięte godziny zostają w pamięci). */
-  private hour(h: number): HourFlow {
-    const n = this.orders.count(h, h + HOUR);
-    const hit = this.hours.get(h);
+  /** Wejścia z [a, b) z klasą konta z okna [w0, b); część zamknięta zostaje w pamięci do nowych zleceń w jej oknie. */
+  private part(w0: number, a: number, b: number, closed: boolean): Part {
+    const key = `${w0}:${a}:${b}`;
+    const n = this.orders.count(w0, b);
+    const hit = closed ? this.parts.get(key) : undefined;
     if (hit && hit.n === n) return hit;
-    const list = this.orders.range(h, h + HOUR);
-    const byTaker = new Map<string, number>();
-    for (const o of list) byTaker.set(o.taker, (byTaker.get(o.taker) ?? 0) + o.notional);
-    const mins = new Float64Array(60 * F);
-    for (const o of list) {
-      const i = Math.min(59, Math.floor((o.time - h) / MIN)) * F;
+    const sums = this.sums(w0, b);
+    const limit = this.thresholdUsd * 100;
+    const p: Part = { big: 0, rest: 0, bigUsd: 0, usd: 0 };
+    for (const o of this.orders.range(a, b)) {
       // Zlecenie bez konta (brak pola users) zostaje w reszcie
-      const isBig = o.taker !== '' && (byTaker.get(o.taker) ?? 0) >= this.thresholdUsd;
+      const isBig = o.taker !== '' && (sums.get(o.taker) ?? 0) >= limit;
       const d = o.side * o.sz;
-      mins[i + (isBig ? 0 : 1)] += d;
-      if (isBig) mins[i + 2] += o.notional;
-      mins[i + 3] += o.notional;
+      if (isBig) {
+        p.big += d;
+        p.bigUsd += o.notional;
+      } else p.rest += d;
+      p.usd += o.notional;
     }
-    const f = { n, mins };
-    this.hours.set(h, f);
-    return f;
+    if (closed) this.parts.set(key, { ...p, n, to: b });
+    return p;
+  }
+
+  /** Sumy wejść kont w [w0, w1): przesunięcie poprzedniego okna, gdy w nim nic się nie zmieniło, inaczej od nowa. */
+  private sums(w0: number, w1: number): Map<string, number> {
+    const w = this.win;
+    if (w && w0 >= w.w0 && w1 >= w.w1 && w0 <= w.w1 && this.orders.count(w.w0, w.w1) === w.n) {
+      const add = (o: AggressorOrder, sign: number) => {
+        if (o.taker === '') return;
+        const v = (w.sums.get(o.taker) ?? 0) + sign * cents(o);
+        if (v === 0) w.sums.delete(o.taker);
+        else w.sums.set(o.taker, v);
+      };
+      for (const o of this.orders.range(w.w1, w1)) add(o, 1);
+      for (const o of this.orders.range(w.w0, w0)) add(o, -1);
+      w.w0 = w0;
+      w.w1 = w1;
+      w.n = this.orders.count(w0, w1);
+      return w.sums;
+    }
+    const sums = new Map<string, number>();
+    const list = this.orders.range(w0, w1);
+    for (const o of list) if (o.taker !== '') sums.set(o.taker, (sums.get(o.taker) ?? 0) + cents(o));
+    this.win = { w0, w1, n: list.length, sums };
+    return sums;
   }
 }

@@ -1,6 +1,6 @@
 // Testy nadzoru publicznych danych skanera (świeżość, pokrycie, strażnik prywatności).
 import { describe, expect, it } from 'vitest';
-import { FILES, LIMITS, OPTIONAL, assessHealth, findLeaks, renderReport } from './check-data-health.mjs';
+import { FILES, LIMITS, OPTIONAL, VERIFY_FILE, assessHealth, findLeaks, ntlLag, renderReport } from './check-data-health.mjs';
 
 const NOW = Date.UTC(2026, 9, 22, 12, 0, 0);
 const MIN = 60_000;
@@ -57,6 +57,22 @@ describe('assessHealth', () => {
     const r = assessHealth(input({ status: status({ ageNtlP50Min: 42 }) }), NOW);
     expect(r.ok).toBe(false);
     expect(r.problems.join(' ')).toMatch(/42 min/);
+  });
+
+  it('bez stanu histerezy (nadzór w GitHub Actions) komunikat opóźnienia jak dawniej', () => {
+    const r = assessHealth(input({ status: status({ ageNtlP50Min: 42 }) }), NOW);
+    expect(r.problems).toEqual(['odczyty pozycji opóźnione: mediana ważona 42 min (próg 30 min)']);
+    expect(assessHealth(input({ status: status({ ageNtlP50Min: 27 }) }), NOW).ok).toBe(true);
+  });
+
+  it('z histerezą strażnika: trwający alarm przy 27 min zostaje, ten sam komunikat (bez liczb) co powyżej progu', () => {
+    const held = assessHealth(input({ status: status({ ageNtlP50Min: 27 }) }), NOW, LIMITS, true);
+    const above = assessHealth(input({ status: status({ ageNtlP50Min: 33 }) }), NOW, LIMITS, false);
+    expect(held.ok).toBe(false);
+    expect(held.problems).toEqual(['odczyty pozycji opóźnione: mediana ważona 27 min (alarm powyżej 30 min, koniec po 2 przebiegach poniżej 25 min)']);
+    const bare = (r) => r.problems.map((p) => p.replace(/\d+/g, '#'));
+    expect(bare(held)).toEqual(bare(above));
+    expect(assessHealth(input({ status: status({ ageNtlP50Min: 27 }) }), NOW, LIMITS, false).ok).toBe(true);
   });
 
   it('pokrycie open interest poniżej 5% → problem', () => {
@@ -139,6 +155,43 @@ describe('renderReport', () => {
   });
 });
 
+describe('histereza opóźnienia odczytów pozycji (ntlLag)', () => {
+  /** Kolejne przebiegi strażnika od stanu `start`; zwraca flagę alarmu po każdym */
+  const run = (ages, start) => {
+    let st = start;
+    return ages.map((a) => (st = ntlLag(st, a)).lag);
+  };
+
+  it('alarm dopiero po 2 przebiegach z rzędu powyżej 30 min', () => {
+    expect(run([33, 33])).toEqual([false, true]);
+    expect(run([33, 27, 33, 30, 33])).toEqual([false, false, false, false, false]);
+    expect(run([30, 30, 30])).toEqual([false, false, false]); // dokładnie 30 min nie jest powyżej progu
+  });
+
+  it('koniec alarmu dopiero po 2 przebiegach z rzędu poniżej 25 min', () => {
+    const on = ntlLag(ntlLag(undefined, 40), 40);
+    expect(run([24, 24], on)).toEqual([true, false]);
+    expect(run([24, 33, 24, 26, 24, 24], on)).toEqual([true, true, true, true, true, false]);
+    expect(run([25, 25, 25], on)).toEqual([true, true, true]); // dokładnie 25 min nie jest poniżej progu
+  });
+
+  it('między 25 a 30 min stan się nie zmienia (ani alarm, ani jego brak)', () => {
+    const on = ntlLag(ntlLag(undefined, 40), 40);
+    expect(run([27, 29, 26, 28, 30, 25], on)).toEqual(Array(6).fill(true));
+    expect(run([27, 29, 26, 28, 30, 25])).toEqual(Array(6).fill(false));
+  });
+
+  it('brak odczytu (błąd pobrania) nie zmienia stanu; stary plik stanu bez pola = start bez alarmu', () => {
+    const on = ntlLag(ntlLag(undefined, 40), 40);
+    expect(ntlLag(on, undefined)).toEqual(on);
+    expect(ntlLag(on, null)).toEqual(on);
+    expect(ntlLag(undefined, 27)).toEqual({ lag: false, above: 0, below: 0 });
+    expect(ntlLag(null, 33)).toEqual({ lag: false, above: 1, below: 0 });
+    // uszkodzony stan → jak brak
+    expect(ntlLag({ lag: 'x', above: 'y', below: -3 }, 33)).toEqual({ lag: false, above: 1, below: 0 });
+  });
+});
+
 describe('profil płynności (plik opcjonalny)', () => {
   it('brak pliku nie jest alarmem; świeży — fakt w raporcie; nieaktualny > 30 min — problem', () => {
     expect(assessHealth(input({ errors: { 'liquidity/BTC.json': 'HTTP 404' } }), NOW).ok).toBe(true);
@@ -184,5 +237,40 @@ describe('warstwa wielorybów (plik opcjonalny)', () => {
   it('strażnik pobiera whales.json', () => {
     expect(FILES).toContain('whales.json');
     expect(OPTIONAL.has('whales.json')).toBe(true);
+  });
+});
+
+describe('niezależna weryfikacja dziennika (gałąź health, verify/latest.json)', () => {
+  const H = 60 * MIN;
+  const verify = (over = {}) => ({ v: 1, ok: true, at: NOW - 5 * H, run: 'https://github.com/rdemb/hyperquant-data/actions/runs/1', lines: [], ...over });
+
+  it('verify.at starsze niż 36 h → nadzór danych zgłasza problem (stan z 9.11: weryfikacja stoi, znaczek zielony)', () => {
+    const r = assessHealth(input({ verify: verify({ at: NOW - 49 * H }) }), NOW);
+    expect(r.ok).toBe(false);
+    expect(r.problems).toContain('niezależna weryfikacja dziennika: ostatnia 49 h temu (próg 36 h) — przebieg nie kończy się albo nie startuje');
+  });
+
+  it('świeża i zgodna → ok z faktem w raporcie; wykryty problem → alarm', () => {
+    const fresh = assessHealth(input({ verify: verify() }), NOW);
+    expect(fresh.ok).toBe(true);
+    expect(fresh.facts).toContainEqual({ label: 'Wiek niezależnej weryfikacji dziennika', value: '5 h' });
+    expect(assessHealth(input({ verify: verify({ ok: false }) }), NOW).problems.join(' ')).toMatch(/weryfikacja dziennika wykryła problem/);
+  });
+
+  it('brak pliku (repo bez gałęzi health) nie jest alarmem; problem nie restartuje skanera (inna treść niż stojący dziennik)', () => {
+    expect(assessHealth(input({ errors: { [VERIFY_FILE]: 'HTTP 404' } }), NOW).ok).toBe(true);
+    const p = assessHealth(input({ verify: verify({ at: NOW - 49 * H }) }), NOW).problems[0];
+    expect(p).not.toMatch(/dziennik prognoz: ostatnia aktualizacja/);
+  });
+
+  it('verify.at z przyszłości (ponad 10 min) → problem, nie wieczna świeżość', () => {
+    const r = assessHealth(input({ verify: verify({ at: NOW + 30 * 24 * H }) }), NOW);
+    expect(r.ok).toBe(false);
+    expect(r.problems.join(' ')).toMatch(/czas wyniku z przyszłości/);
+  });
+
+  it('strażnik pobiera wynik weryfikacji z gałęzi health', () => {
+    expect(VERIFY_FILE).toBe('verify/latest.json (gałąź health)');
+    expect(OPTIONAL.has(VERIFY_FILE)).toBe(true);
   });
 });

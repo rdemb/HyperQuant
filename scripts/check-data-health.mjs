@@ -1,5 +1,6 @@
 /**
- * Nadzór publicznych danych skanera (repo rdemb/hyperquant-data): świeżość, pokrycie open interest i strażnik prywatności.
+ * Nadzór publicznych danych skanera (repo rdemb/hyperquant-data): świeżość, pokrycie open interest, strażnik prywatności
+ * i świeżość niezależnej weryfikacji dziennika (gałąź `health`, próg 36 h).
  * Uruchamiany przez .github/workflows/data-health.yml (harmonogram GitHuba — best-effort) oraz przez strażnika na serwerze
  * skanera (scripts/watchdog.mjs, co 15 min, niezależnie od GitHuba); wynik trafia do zgłoszenia z etykietą „alert-danych”.
  * Czyta wyłącznie publiczne pliki — nie potrzebuje żadnych kluczy ani dostępu do serwera.
@@ -9,11 +10,14 @@
 import { appendFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { verifyProblem } from './verify-status.mjs';
 
 export const DATA_BASE = 'https://raw.githubusercontent.com/rdemb/hyperquant-data/main';
 export const FILES = ['status.json', 'liq-map/BTC.json', 'liq-tape/BTC.json', 'cohorts/BTC.json', 'ledger/BTC/summary.json', 'liquidity/BTC.json', 'lab/BTC.json', 'whales.json', 'README.md'];
 /** Pliki, których brak nie jest alarmem (nowsze niż część wdrożeń skanera) — gdy są, przechodzą strażnika prywatności */
-export const OPTIONAL = new Set(['liq-tape/BTC.json', 'cohorts/BTC.json', 'ledger/BTC/summary.json', 'liquidity/BTC.json', 'lab/BTC.json', 'whales.json']);
+/** Wynik niezależnej weryfikacji dziennika (GitHub Actions w repo danych) — gałąź `health`, nie `main` */
+export const VERIFY_FILE = 'verify/latest.json (gałąź health)';
+export const OPTIONAL = new Set(['liq-tape/BTC.json', 'cohorts/BTC.json', 'ledger/BTC/summary.json', 'liquidity/BTC.json', 'lab/BTC.json', 'whales.json', VERIFY_FILE]);
 /** Profil płynności arkusza (publikowany co 10 min) */
 export const LIQUIDITY_MAX_AGE_MIN = 30;
 /** Laboratorium folkloru (przeliczane co godzinę) */
@@ -27,9 +31,14 @@ export const LIMITS = {
   maxAgeMin: 30,
   /** Mediana wieku odczytów pozycji ważona nominałem */
   maxNtlAgeMin: 30,
+  /** Histereza strażnika: alarm opóźnienia kończy się dopiero poniżej tej mediany (między progami stan bez zmian) */
+  ntlClearAgeMin: 25,
   /** Udział open interest widziany przez skaner (typowo 25–35%) */
   minCoverage: 0.05,
 };
+
+/** Przebiegi strażnika z rzędu po tej samej stronie progu, po których alarm opóźnienia zaczyna się albo kończy */
+export const NTL_RUNS = 2;
 
 const MIN = 60_000;
 const LEAKS = [
@@ -51,11 +60,29 @@ function ageOf(file, json, nowMs) {
   return { ok: true, ageMin: (nowMs - asOf) / MIN };
 }
 
+const runs = (v) => (Number.isInteger(v) && v >= 0 ? v : 0);
+
+/**
+ * Histereza opóźnienia odczytów pozycji dla strażnika (mediana ważona oscyluje wokół 30 min — bez niej alarm migał
+ * kilkadziesiąt razy na dobę): alarm po 2 przebiegach z rzędu powyżej `maxNtlAgeMin`, koniec po 2 przebiegach z rzędu
+ * poniżej `ntlClearAgeMin`, pomiędzy stan bez zmian. `prev` — stan z pliku strażnika; brak albo uszkodzony = start bez
+ * alarmu. Brak odczytu (`ageMin` nie jest liczbą) nie zmienia stanu.
+ * @returns {{lag: boolean, above: number, below: number}}
+ */
+export function ntlLag(prev, ageMin, limits = LIMITS) {
+  const p = { lag: prev?.lag === true, above: runs(prev?.above), below: runs(prev?.below) };
+  if (typeof ageMin !== 'number' || !Number.isFinite(ageMin)) return p;
+  const above = ageMin > limits.maxNtlAgeMin ? p.above + 1 : 0;
+  const below = ageMin < limits.ntlClearAgeMin ? p.below + 1 : 0;
+  return { lag: p.lag ? below < NTL_RUNS : above >= NTL_RUNS, above, below };
+}
+
 /**
  * @param {{status: object|null, liqMap: object|null, raw: Record<string,string>, errors: Record<string,string>}} input
+ * @param {boolean} [ntlLagOn] stan histerezy strażnika (`ntlLag(...).lag`); brak = ocena bez stanu (GitHub Actions)
  * @returns {{ok: boolean, problems: string[], facts: {label: string, value: string}[]}}
  */
-export function assessHealth(input, nowMs, limits = LIMITS) {
+export function assessHealth(input, nowMs, limits = LIMITS, ntlLagOn) {
   const problems = [];
   const facts = [];
   for (const [file, err] of Object.entries(input.errors ?? {})) {
@@ -116,6 +143,13 @@ export function assessHealth(input, nowMs, limits = LIMITS) {
     }
   }
 
+  if (input.verify && typeof input.verify === 'object') {
+    // Weryfikacja stoi (limit czasu, brak przebiegów) albo wykryła niezgodność — znaczek wtedy też jest czerwony
+    if (typeof input.verify.at === 'number') facts.push({ label: 'Wiek niezależnej weryfikacji dziennika', value: `${Math.round((nowMs - input.verify.at) / (60 * MIN))} h` });
+    const p = verifyProblem(input.verify, nowMs);
+    if (p) problems.push(p);
+  }
+
   const s = input.status;
   if (s && typeof s === 'object') {
     if (typeof s.coverage === 'number') {
@@ -124,7 +158,14 @@ export function assessHealth(input, nowMs, limits = LIMITS) {
     }
     if (typeof s.ageNtlP50Min === 'number') {
       facts.push({ label: 'Mediana wieku pozycji (ważona)', value: fmtMin(s.ageNtlP50Min) });
-      if (s.ageNtlP50Min > limits.maxNtlAgeMin) problems.push(`odczyty pozycji opóźnione: mediana ważona ${fmtMin(s.ageNtlP50Min)} (próg ${limits.maxNtlAgeMin} min)`);
+      const late = `odczyty pozycji opóźnione: mediana ważona ${fmtMin(s.ageNtlP50Min)}`;
+      if (ntlLagOn === undefined) {
+        if (s.ageNtlP50Min > limits.maxNtlAgeMin) problems.push(`${late} (próg ${limits.maxNtlAgeMin} min)`);
+      } else if (ntlLagOn || s.ageNtlP50Min > limits.maxNtlAgeMin) {
+        // Strażnik: problem widoczny od pierwszego przebiegu powyżej progu (wysyłka i tak czeka na drugi) i przez cały
+        // alarm; jeden komunikat w obu przypadkach — ten sam klucz stanu, bez dodatkowych wysyłek
+        problems.push(`${late} (alarm powyżej ${limits.maxNtlAgeMin} min, koniec po ${NTL_RUNS} przebiegach poniżej ${limits.ntlClearAgeMin} min)`);
+      }
     }
     if (typeof s.positions === 'number') facts.push({ label: 'Pozycje / adresy', value: `${s.positions} / ${s.addresses ?? '—'}` });
     if (typeof s.apiErrors === 'number') facts.push({ label: 'Błędy API (od startu procesu)', value: String(s.apiErrors) });
@@ -168,10 +209,12 @@ export async function fetchInput(base = DATA_BASE) {
   const errors = {};
   const json = {};
   await Promise.all(
-    FILES.map((f) => [f, `${base}/${f}`]).map(async ([file, url]) => {
+    [...FILES.map((f) => [f, `${base}/${f}`]), [VERIFY_FILE, `${base.replace(/\/main$/, '/health')}/verify/latest.json`]].map(async ([file, url]) => {
       try {
-        raw[file] = await fetchText(url);
-        if (file.endsWith('.json')) json[file] = JSON.parse(raw[file]);
+        const text = await fetchText(url);
+        // Wynik weryfikacji to nie publikacja skanera — poza strażnikiem prywatności (linie raportu weryfikatora)
+        if (file !== VERIFY_FILE) raw[file] = text;
+        if (file.endsWith('.json') || file === VERIFY_FILE) json[file] = JSON.parse(text);
       } catch (e) {
         errors[file] = e instanceof Error ? e.message : String(e);
       }
@@ -184,6 +227,7 @@ export async function fetchInput(base = DATA_BASE) {
     liquidity: json['liquidity/BTC.json'] ?? null,
     lab: json['lab/BTC.json'] ?? null,
     whales: json['whales.json'] ?? null,
+    verify: json[VERIFY_FILE] ?? null,
     raw,
     errors,
   };
