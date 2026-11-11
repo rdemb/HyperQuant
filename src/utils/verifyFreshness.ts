@@ -5,5 +5,14 @@
  */
 export const VERIFY_MAX_AGE_MS = 36 * 3_600_000;
 
-/** Czy wynik z chwili `at` jest nieaktualny w chwili `nowMs` (dokładnie 36 h — jeszcze aktualny). */
-export const verifyStale = (at: number, nowMs: number): boolean => !(nowMs - at <= VERIFY_MAX_AGE_MS);
+/** Zapas na różnicę zegarów: czas późniejszy niż „teraz” o więcej to błąd albo podróbka, nie świeży wynik */
+export const CLOCK_SKEW_MS = 10 * 60_000;
+
+/** Czy czas `t` jest z przyszłości względem `nowMs` (ponad zapas na zegar). */
+export const fromFuture = (t: number, nowMs: number): boolean => t > nowMs + CLOCK_SKEW_MS;
+
+/**
+ * Czy wynik z chwili `at` jest nieaktualny w chwili `nowMs` (dokładnie 36 h — jeszcze aktualny). Czas z przyszłości
+ * też jest nieaktualny — inaczej taki wynik byłby „świeży” na zawsze.
+ */
+export const verifyStale = (at: number, nowMs: number): boolean => fromFuture(at, nowMs) || !(nowMs - at <= VERIFY_MAX_AGE_MS);
