@@ -4,6 +4,18 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Blog: wydawca wpisów z kolejki na serwerze, autor bez klucza (2026-11-11)
+
+#### Dodane
+- **Wydawca wpisów** (`scripts/blog/publisher.mjs`, `backend/deploy/hyperquant-blog-publisher.service` i `.timer`, co minutę): bierze z kolejki `/var/lib/hyperquant-blog/kolejka/` tylko kompletne paczki (katalog `<id>` po atomowym `rename` z `<id>.tmp-…`), przejmuje każdą do prywatnego katalogu roboczego (`praca/`, rename), czyta pliki raz do pamięci bez podążania za dowiązaniami, sprawdza tym samym filtrem (`intake.mjs`) i walidatorem wpisów (`loadPostFile`) co build strony, commituje jako `HyperQuant blog <hyperquant-blog@users.noreply.github.com>` na gałąź `blog` repo danych (gdy jej nie ma: sieroca) i wypycha z ponowieniem po `rebase` (3 próby). Wynik dla autora w `zrobione/<id>.json` (sha commita) albo `odrzucone/<id>.json` (powód), oba z `md` = sha256 przysłanego pliku; ta sama treść drugi raz daje wynik bez nowego commita. Przy błędzie pusha paczki zostają w kolejce. Status z alarmem (`odrzucone`, `push`) w `stan/status.json`.
+- **Instalacja** (`backend/deploy/install.sh`): grupa `hqblog`, osobny użytkownik `hyperquant-blog`, autor dopisywany do grupy tylko jawnie (`HQ_BLOG_AUTHOR=<użytkownik>`), katalogi kolejki (3770), wyników (2750) i statusu, kopia kodu wydawcy poza katalogiem aktualizowanym (jak strażnik), pakiet `yaml` z adresu i sumy SHA-512 z `package-lock.json` (bez npm na serwerze), klucz repo danych przez `LoadCredential`, plik `/etc/hyperquant/blog-publisher.env` tylko z adresem repo danych.
+- Testy: `scripts/blog/publisher.test.mjs` (kontrakt kolejki na lokalnym repo git: niepełna paczka, dowiązania, zły wpis, dobry wpis, idempotencja, wyścig pusha z rebase, 3 nieudane pushe, powrót paczki z katalogu roboczego), `backend/deploy/__tests__/units.test.ts` (jednostki, izolacja, `install.sh`, kopia wydawcy wczytuje się bez reszty repo).
+- `docs/BLOG.md`: kontrakt kolejki dla autora, plik statusu, kolejność wdrożenia etapu B2 i cofnięcie.
+- **Jedna zła paczka nie zatrzymuje kolejki**: paczka, której nie da się przejąć albo usunąć (np. katalog bez prawa zapisu grupy), idzie do `odrzucone/_kwarantanna/<id>-<czas>` (albo ukrytej nazwy w miejscu), dostaje wynik odrzucenia, a przebieg idzie dalej; `alarm: "kwarantanna"` w statusie, dopóki pozycje kwarantanny leżą na dysku (`quarantine` liczone z `odrzucone/_kwarantanna/` i ukrytych nazw); sprząta root (opis w `docs/BLOG.md`).
+- **Poprawki przez kolejkę z ograniczeniem**: inna treść wpisu z gałęzi przyjmowana tylko do 24 h od jego `date` i bez zmiany `date`; starszy wpis zmienia tylko właściciel („wpis starszy niż 24 h zmienia tylko właściciel”).
+- Powód odrzucenia: sam tekst reguły albo walidatora, bez ścieżek serwera, do 500 znaków. Katalogi paczki otwierane `O_DIRECTORY | O_NOFOLLOW` i czytane przez `/proc/self/fd` (Linux). SSH do repo danych tylko z kluczami hosta GitHuba z repo (`backend/deploy/github_known_hosts`, kopiowane przez `install.sh`; `StrictHostKeyChecking=yes` zamiast `accept-new`).
+- `docs/BLOG.md`: autor zgłasza błąd po 5 min bez wyniku; cofnięcie zaczyna się od PR z wpisami gałęzi do `content/blog/`, dopiero potem zdjęcie `BLOG_INTAKE`.
+
 ### Blog: rejestr wpisów przed włączeniem gałęzi blog (2026-11-11)
 
 Publikacja bez zmian (zmienna `BLOG_INTAKE` nadal wyłączona): build na 120 wpisach z `main` daje te same 170 adresów w `sitemap.xml` (plik identyczny), ten sam `blog/feed.xml` (51 linków) i 172 identyczne strony HTML; zmienia się tylko `blog/source.json`.
