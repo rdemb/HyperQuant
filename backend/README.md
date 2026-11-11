@@ -149,11 +149,16 @@ działa jako root z własnym katalogiem stanu poza katalogiem usługi skanera):
   Push uruchamia tam workflow (wzorzec: [`deploy/health-alert.yml`](deploy/health-alert.yml)), który otwiera, komentuje
   albo zamyka zgłoszenie `alert-danych` w repo danych. Commity mają czas UTC i autora noreply, jak publikacja skanera.
 
-Raz na dobę (także przy „ok”) strażnik wysyła puls — workflow gałęzi `health` uruchamia wtedy w GitHub Actions niezależną
-weryfikację dziennika (`verify-ledger.mjs --dir ledger --market` na klonie gałęzi `ledger`) i zapisuje `badge/ledger.json`
-(znaczek shields.io) oraz `verify/latest.json` (podsumowanie dla strony).
+Co 12 h (także przy „ok”) strażnik wysyła puls. Każdy zapis do gałęzi `health` uruchamia tam osobny workflow
+(wzorzec: [`deploy/ledger-verify.yml`](deploy/ledger-verify.yml)) z niezależną weryfikacją dziennika w GitHub Actions
+(`verify-ledger.mjs --dir ledger --market` na klonie gałęzi `ledger`). Historia git jest sprawdzana od punktu kontrolnego
+`verify/checkpoint.json` (ostatni commit z udaną weryfikacją, `--since-commit`), cała co najmniej raz na 7 dni. Workflow
+zapisuje `verify/latest.json` (podsumowanie dla strony) i `badge/ledger.json` (znaczek shields.io, zielony tylko przy zgodnym
+wyniku nie starszym niż 36 h; logika w `scripts/verify-status.mjs`). Harmonogramu w repo danych nie ma: GitHub uruchamia
+`schedule` tylko z gałęzi domyślnej, a `main` jest publikacją nadpisywaną co 2 min. Wynik starszy niż 36 h zgłasza nadzór
+danych (`check-data-health.mjs`, także w `data-health.yml` z harmonogramem w tym repo).
 
-Jednorazowo: gałąź `health` w repo danych z plikiem `.github/workflows/health-alert.yml` (kopia wzorca). Podgląd na serwerze:
+Jednorazowo: gałąź `health` w repo danych z plikami `.github/workflows/health-alert.yml` i `ledger-verify.yml` (kopie wzorców). Podgląd na serwerze:
 `systemctl list-timers hyperquant-watchdog.timer`, `journalctl -u hyperquant-watchdog`. Dłuższa przerwa serwisowa:
 `systemctl stop hyperquant-watchdog.timer` (inaczej strażnik zgłosi zatrzymaną usługę).
 

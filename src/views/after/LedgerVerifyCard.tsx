@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { DATA_BASE, LEDGER_BASE } from '../../state/usePublished';
 import { verifyLedgerRemote, type RemoteVerification } from '../../utils/ledgerVerify';
 import { locale, tr } from '../../i18n';
+import { verifyStale } from '../../utils/verifyFreshness';
 
 const STORE_KEY = 'hq.ledgerVerify.v1';
 const DAY = 86_400_000;
@@ -123,13 +124,13 @@ export const LedgerVerifyCard: React.FC<{ summaryHead: string }> = ({ summaryHea
         </button>
       </div>
       {daily && (
-        <div className={daily.ok && Date.now() - daily.at < 2 * DAY ? 'text-ink-2' : 'text-warn'}>
+        <div className={daily.ok && !verifyStale(daily.at, Date.now()) ? 'text-ink-2' : 'text-warn'}>
           {tr('Niezależna weryfikacja w GitHub Actions (codziennie, infrastruktura GitHuba — nie serwer desku):', 'Independent verification in GitHub Actions (daily, on GitHub infrastructure, not the desk server):')}{' '}
           <span className="text-ink-1">{daily.ok ? tr('zgodna', 'consistent') : tr('wykryła problem', 'found a problem')}</span> · {dateTimeFmt.format(daily.at)} ·{' '}
           <a className="text-accent hover:underline" href={daily.run} target="_blank" rel="noopener noreferrer">
             {tr('przebieg i pełny raport', 'run and full report')}
           </a>
-          {Date.now() - daily.at >= 2 * DAY && tr(' (starsza niż 2 dni)', ' (older than 2 days)')}
+          {verifyStale(daily.at, Date.now()) && tr(' (starsza niż 36 h — weryfikacja nie jest aktualna)', ' (older than 36 h: the verification is not current)')}
         </div>
       )}
       {running && progress && <div className="text-ink-3">{progress}</div>}

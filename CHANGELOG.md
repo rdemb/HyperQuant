@@ -4,6 +4,19 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Niezależna weryfikacja dziennika: przyrostowo, osobny workflow, znaczek gaśnie po 36 h (2026-11-11)
+
+#### Naprawione
+- **Weryfikacja dziennika w GitHub Actions stała od 9.11 08:26 UTC, a znaczek dalej był zielony.** Od tamtej pory żaden z ponad 50 przebiegów w repo danych się nie skończył: krok weryfikacji przekraczał limit 20 min (przebieg z 9.11 trwał 18 min, a dziennik rośnie) albo był anulowany przez kolejne zapisy strażnika. Znaczek `badge/ledger.json` zmieniał tylko udany przebieg, więc został zielony z datą 9.11.
+- **Historia git sprawdzana po zmienionych plikach** (`scripts/verify-ledger.mjs`, `checkGitAppendOnly`). Dotąd weryfikator uruchamiał `git show` dla każdego pliku dziennika w każdym commicie, czyli kilkaset tysięcy procesów przy 7340 commitach. Teraz robi jeden `git diff-tree --stdin` dla wszystkich par commitów i porównuje bajty tylko zmienionych plików `.jsonl` (`git cat-file --batch`). Cały dziennik (7340 commitów, 21 dni) sprawdza się w 17 s zamiast ok. 20 min, z tym samym wynikiem.
+- **Weryfikacja przyrostowa od punktu kontrolnego**: `verify-ledger.mjs --since-commit <hash>` sprawdza historię git tylko po commicie z ostatniej udanej weryfikacji. Commit spoza historii gałęzi (historia przepisana) jest błędem. Łańcuch hashy, wyniki i pokwitowania są nadal sprawdzane od GENESIS, a cała historia git co najmniej raz na 7 dni.
+- **Znaczek i strona przy nieaktualnej weryfikacji** (`scripts/verify-status.mjs`, `src/utils/verifyFreshness.ts`, `src/views/after/LedgerVerifyCard.tsx`): znaczek jest zielony tylko przy zgodnym wyniku nie starszym niż 36 h. Starszy daje czerwony „nieaktualna weryfikacja <data>”, także gdy przebieg przekroczy limit czasu. Panel dziennika ostrzega po 36 h zamiast po 2 dniach.
+- **Nadzór danych zgłasza nieaktualną weryfikację** (`scripts/check-data-health.mjs`): czyta `verify/latest.json` z gałęzi `health`. Wynik starszy niż 36 h albo z wykrytym problemem to problem w zgłoszeniu `alert-danych` (strażnik i `data-health.yml`), bez restartu skanera.
+
+#### Zmienione
+- **Weryfikacja w osobnym workflow** (`backend/deploy/ledger-verify.yml`; z `backend/deploy/health-alert.yml` usunięty job weryfikacji): nie jest anulowana przez kolejne zapisy strażnika, limit 20 min ma sam krok weryfikacji, a znaczek i podsumowanie powstają także po przekroczeniu limitu. Przebieg z niezgodnością albo niedokończony jest w Actions czerwony.
+- **Puls strażnika co 12 h zamiast raz na dobę** (`scripts/watchdog.mjs`): repo danych nie może mieć harmonogramu (GitHub uruchamia `schedule` tylko z gałęzi domyślnej, a `main` jest publikacją nadpisywaną co 2 min), więc weryfikację uruchamia zapis strażnika. Dzięki temu wynik ma zawsze mniej niż dobę.
+
 ### Wskaźnik: strefy absorpcji i pudełka Effort (2026-11-09)
 
 #### Dodane
