@@ -263,6 +263,12 @@ describe('niezależna weryfikacja dziennika (gałąź health, verify/latest.json
     expect(p).not.toMatch(/dziennik prognoz: ostatnia aktualizacja/);
   });
 
+  it('verify.at z przyszłości (ponad 10 min) → problem, nie wieczna świeżość', () => {
+    const r = assessHealth(input({ verify: verify({ at: NOW + 30 * 24 * H }) }), NOW);
+    expect(r.ok).toBe(false);
+    expect(r.problems.join(' ')).toMatch(/czas wyniku z przyszłości/);
+  });
+
   it('strażnik pobiera wynik weryfikacji z gałęzi health', () => {
     expect(VERIFY_FILE).toBe('verify/latest.json (gałąź health)');
     expect(OPTIONAL.has(VERIFY_FILE)).toBe(true);
