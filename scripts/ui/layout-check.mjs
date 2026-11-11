@@ -5,13 +5,19 @@
 //  3. pary nachodzących na siebie etykiet na wykresie i osi ceny (powtórka nagranej doby z kopii przy lekcjach),
 //  4. dostępność funkcji paska w najwyżej dwóch kliknięciach i działanie skrótów klawiszowych,
 //  5. zachowanie ustawień użytkownika w localStorage (klucze hq.*),
-//  6. widoczne pozycje listy wskaźników na telefonie.
-// Użycie: npm run ui:check  (albo: node scripts/ui/layout-check.mjs --port 4408 [--serve] [--shots katalog] [--label po] [--strict])
+//  6. widoczne pozycje listy wskaźników na telefonie,
+// oraz liczby obiektów na płótnach (podpisy, bąble, prostokąty) na widok jako punkt odniesienia (scripts/ui/baseline.json).
+// Domyślnie bez sieci: API Hyperliquid z danych stałych (scripts/ui/fixtures.mjs), zegar strony stoi w nagranej dobie
+// 24.10.2026, strefa Europe/Warsaw — wynik nie zależy od pory dnia ani od rynku. `--live` — prawdziwa sieć i zegar.
+// Użycie: npm run ui:check  (albo: node scripts/ui/layout-check.mjs --port 4408 [--serve] [--shots katalog] [--label po]
+//         [--strict] [--live] [--update-baseline])
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { launch, sleep } from './cdp.mjs';
-import { INIT, PROBE } from './probe.mjs';
+import { INIT, PROBE, fixtureInit } from './probe.mjs';
+import { FIXED_NOW, createFixtures } from './fixtures.mjs';
+import { compareBaseline, margin, metricsOf } from './baseline.mjs';
 
 const args = process.argv.slice(2);
 const opt = (name, def) => {
@@ -25,12 +31,41 @@ const LABEL = opt('label', 'run');
 const OUT = path.resolve(opt('out', 'ui-check'));
 const SHOTS = opt('shots', null);
 const STRICT = flag('strict');
+const LIVE = flag('live');
+const UPDATE = flag('update-baseline');
+const BASELINE = path.resolve('scripts/ui/baseline.json');
+/** Chwila strony: w trybie danych stałych zegar stoi (FIXED_NOW). */
+const PAGE_NOW = LIVE ? Date.now() : FIXED_NOW;
 
 /** Progi testów akceptacyjnych. */
 const LIMITS = { desktop: 0.62, desktopDom: 0.6, phone: 0.6, focus: 0.8 };
 
 /** Stały użytkownik: dymki pierwszej wizyty zamknięte (karta pierwszego kontaktu nie zmienia pomiaru). */
-const RETURNING = { 'hq.onboarding.v1': JSON.stringify({ firstAt: Date.now() - 8 * 86_400_000, done: true }) };
+const RETURNING = { 'hq.onboarding.v1': JSON.stringify({ firstAt: PAGE_NOW - 8 * 86_400_000, done: true }) };
+
+/**
+ * Żądania strony w trybie danych stałych: pliki strony z serwera podglądu (bez danych publicznych z public/data/feeds,
+ * których w repozytorium nie ma), API Hyperliquid z danych stałych, cała reszta sieci — błąd jak bez połączenia.
+ */
+function fixtureIntercept(fx) {
+  const origin = new URL(BASE).origin;
+  return (req) => {
+    if (/^(data|blob):/.test(req.url)) return 'continue';
+    const u = new URL(req.url);
+    if (u.origin === origin) return u.pathname.includes('/data/feeds/') ? { status: 404, body: '', type: 'text/plain' } : 'continue';
+    if (u.hostname === 'api.hyperliquid.xyz' && u.pathname === '/info') {
+      if (req.method === 'OPTIONS') return { status: 204, body: '' };
+      let body = {};
+      try {
+        body = JSON.parse(req.postData ?? '{}');
+      } catch {
+        // pusta albo nieczytelna treść — pusta odpowiedź
+      }
+      return { body: JSON.stringify(fx.respond(body)) };
+    }
+    return 'fail';
+  };
+}
 
 /** Powtórka nagranej doby z kopii przy lekcjach (pliki w public/lessons/replay): stałe dane do testu etykiet. */
 const REPLAY = '#charts?replay=lessons&m=BTC&i=5m&v=candles&t=2026-10-24T19:30:00Z&layers=vwap,heatmap,bubbles,clashes,lots,profile,levels,sessions';
@@ -326,20 +361,27 @@ async function persistence(page) {
 async function main() {
   await ensureServer();
   fs.mkdirSync(OUT, { recursive: true });
-  const page = await launch({ port: Number(opt('cdp', '9338')), init: INIT });
+  const fx = LIVE ? null : createFixtures(process.cwd());
+  const page = await launch({
+    port: Number(opt('cdp', '9338')),
+    init: fx ? [INIT, fixtureInit(FIXED_NOW, fx.stream())] : [INIT],
+    intercept: fx ? fixtureIntercept(fx) : null,
+    timezone: fx ? 'Europe/Warsaw' : null,
+    locale: fx ? 'pl-PL' : null,
+  });
   const report = { label: LABEL, at: new Date().toISOString(), base: BASE };
   try {
     // 1. Komputer 1440 × 900 bez kolumny DOM
     await page.viewport(1440, 900, false);
     await open(page, '#charts', { 'hq.charts.dock.v1': '0' });
-    report.desktop = { ...(await probe(page, '__hq.paneShare()')), over: await probe(page, '__hq.overCandles()'), labels: await probe(page, '__hq.labels()') };
+    report.desktop = { ...(await probe(page, '__hq.paneShare()')), over: await probe(page, '__hq.overCandles()'), labels: await probe(page, '__hq.labels()'), objects: await probe(page, '__hq.objects()') };
     await shot(page, '1440');
     report.desktopReach = await reach(page, DESKTOP_FUNCS);
     report.desktopKeys = await shortcuts(page);
 
     // 1b. Z kolumną DOM (domyślnie włączona od 1280 px)
     await open(page, '#charts', { 'hq.charts.dock.v1': '1' });
-    report.desktopDom = { ...(await probe(page, '__hq.paneShare()')), over: await probe(page, '__hq.overCandles()') };
+    report.desktopDom = { ...(await probe(page, '__hq.paneShare()')), over: await probe(page, '__hq.overCandles()'), objects: await probe(page, '__hq.objects()') };
     // Kolumna DOM: widoczne poziomy drabiny (drabina rysuje tyle, ile się mieści) i pojemność listy taśmy w wierszach
     // (taśma na żywo w świeżej przeglądarce bywa jeszcze krótka, więc liczymy miejsce, nie zlecenia)
     report.domColumn = await page.ev(`(() => {
@@ -356,7 +398,7 @@ async function main() {
     // 2. Telefon 390 × 844
     await page.viewport(390, 844, true);
     await open(page, '#charts');
-    report.phone = { ...(await probe(page, '__hq.paneShare()')), over: await probe(page, '__hq.overCandles()'), labels: await probe(page, '__hq.labels()') };
+    report.phone = { ...(await probe(page, '__hq.paneShare()')), over: await probe(page, '__hq.overCandles()'), labels: await probe(page, '__hq.labels()'), objects: await probe(page, '__hq.objects()') };
     report.phoneTargets = await probe(page, `__hq.smallTargets('[data-chart-bar]', 44)`);
     await shot(page, '390');
     // Listy paska: rogi panelu widoczne (nie ucięte przez kartę ani okno); zrzut z otwartą listą „Warstwy”
@@ -421,12 +463,12 @@ async function main() {
     await sleep(4000);
     await page.mouseAway();
     await sleep(600);
-    report.replayDesktop = { labels: await probe(page, '__hq.labels()'), over: await probe(page, '__hq.overCandles()') };
+    report.replayDesktop = { labels: await probe(page, '__hq.labels()'), over: await probe(page, '__hq.overCandles()'), objects: await probe(page, '__hq.objects()') };
     await shot(page, '1440-powtorka');
     await page.viewport(390, 844, true);
     await open(page, REPLAY);
     await sleep(4000);
-    report.replayPhone = { labels: await probe(page, '__hq.labels()') };
+    report.replayPhone = { labels: await probe(page, '__hq.labels()'), objects: await probe(page, '__hq.objects()') };
     await shot(page, '390-powtorka');
 
     // 4. Ustawienia użytkownika
@@ -441,9 +483,10 @@ async function main() {
       ['wielkie-rece', '#charts', { 'hq.charts.phaseActive.v1': JSON.stringify({ before: 'day-map', session: 'big-hands', after: 'review' }), 'hq.charts.tabs.v1': JSON.stringify({ v: 2, tabs: [], active: 'big-hands' }) }],
     ]) {
       await open(page, hash, store);
-      report[`view-${name}`] = { ...(await probe(page, '__hq.paneShare()')), over: await probe(page, '__hq.overCandles()'), errors: page.errors.splice(0) };
+      report[`view-${name}`] = { ...(await probe(page, '__hq.paneShare()')), over: await probe(page, '__hq.overCandles()'), objects: await probe(page, '__hq.objects()'), errors: page.errors.splice(0) };
       await shot(page, `1440-${name}`);
     }
+    report.network = { mode: LIVE ? 'live' : 'fixtures', served: page.intercepted.served, blocked: page.intercepted.failed.length, blockedSample: [...new Set(page.intercepted.failed.map((u) => new URL(u).hostname))].sort() };
   } finally {
     page.close();
     stopServer();
@@ -463,8 +506,8 @@ async function main() {
   r.summary = { t1, t2, t3, t4, t5, t6 };
   const lines = [
     `Pomiar „${LABEL}” (${BASE})`,
-    `1. Panel ceny 1440×900: ${pct(r.desktop)} (próg 62%), z kolumną DOM: ${pct(r.desktopDom)} (próg 60%) — ${ok(t1)}`,
-    `2. Panel ceny 390×844: ${pct(r.phone)} (próg 60%), tryb skupienia: ${pct(r.phoneFocus)} (próg 80%), poziomo 844×390: ${pct(r.phoneLandscape)} — ${ok(t2)}`,
+    `1. Panel ceny 1440×900: ${pct(r.desktop)} (próg 62%, zapas ${margin(r.desktop?.share ?? 0, LIMITS.desktop)}), z kolumną DOM: ${pct(r.desktopDom)} (próg 60%, zapas ${margin(r.desktopDom?.share ?? 0, LIMITS.desktopDom)}) — ${ok(t1)}`,
+    `2. Panel ceny 390×844: ${pct(r.phone)} (próg 60%, zapas ${margin(r.phone?.share ?? 0, LIMITS.phone)}), tryb skupienia: ${pct(r.phoneFocus)} (próg 80%, zapas ${margin(r.phoneFocus?.share ?? 0, LIMITS.focus)}), poziomo 844×390: ${pct(r.phoneLandscape)} — ${ok(t2)}`,
     `3. Elementy DOM nad świecami: 1440 ${r.desktop?.over?.count}, z DOM ${r.desktopDom?.over?.count}, 390 ${r.phone?.over?.count} — ${ok(t3)}`,
     `4. Nachodzące etykiety (wykres + oś): powtórka 1440 ${lab(r.replayDesktop)}, powtórka 390 ${lab(r.replayPhone)}, na żywo 1440 ${lab(r.desktop)}, 390 ${lab(r.phone)} — ${ok(t4)}`,
     `5. Funkcje w ≤ 2 kliknięciach: komputer ${r.desktopReach?.ok ? 'wszystkie' : r.desktopReach?.missing.join(', ')}, telefon ${r.phoneReach?.ok ? 'wszystkie' : r.phoneReach?.missing.join(', ')}; skróty ${r.desktopKeys?.ok ? 'działają' : JSON.stringify(r.desktopKeys?.map)} — ${ok(t5)}`,
@@ -473,9 +516,31 @@ async function main() {
     `   Lista wskaźników na telefonie: ${r.phoneIndicators} pozycji na ekranie; cele dotyku < 44 px w pasku: ${r.phoneTargets?.length ?? '—'}`,
     `   Kolumna DOM 1440×900: poziomy drabiny ${r.domColumn?.ladderRows ?? '—'}, wiersze taśmy (miejsce) ${r.domColumn?.tapeRowsFit ?? '—'}`,
   ];
+  // Obiekty na płótnach panelu ceny na widok (punkt odniesienia szlifów) i porównanie z baseline.json dla tego systemu
+  const obj = (x) => (x?.objects ? `podpisy ${x.objects.labels}, bąble ${x.objects.bubbles}, prostokąty ${x.objects.rects}, podpisy osi ${x.objects.axisLabels}` : '—');
+  lines.push(
+    `   Obiekty na płótnie panelu ceny — na żywo 1440: ${obj(r.desktop)}; z DOM: ${obj(r.desktopDom)}; 390: ${obj(r.phone)}`,
+    `   Obiekty — powtórka 24.10 1440: ${obj(r.replayDesktop)}; powtórka 390: ${obj(r.replayPhone)}`
+  );
+  const metrics = metricsOf(r);
+  let baseDiff = [];
+  if (!LIVE) {
+    const file = fs.existsSync(BASELINE) ? JSON.parse(fs.readFileSync(BASELINE, 'utf8')) : { platforms: {} };
+    if (UPDATE) {
+      file.platforms[process.platform] = metrics;
+      fs.writeFileSync(BASELINE, `${JSON.stringify(file, null, 2)}\n`);
+      lines.push(`   Punkt odniesienia zapisany dla ${process.platform} (${Object.keys(metrics).length} liczb) w scripts/ui/baseline.json`);
+    } else if (file.platforms[process.platform]) {
+      baseDiff = compareBaseline(metrics, file.platforms[process.platform]);
+      lines.push(`   Punkt odniesienia (${process.platform}): ${baseDiff.length === 0 ? 'zgodny' : `różnice: ${baseDiff.join('; ')}`}`);
+    } else lines.push(`   Punkt odniesienia: brak zapisu dla ${process.platform} — porównanie pominięte (zapis: --update-baseline)`);
+  }
+  lines.push(`   Sieć: ${r.network?.mode === 'live' ? 'prawdziwa' : `dane stałe (zegar ${new Date(FIXED_NOW).toISOString()}, API Hyperliquid z scripts/ui/fixtures.mjs), zablokowane hosty: ${r.network?.blockedSample?.join(', ') || 'brak'}`}`);
+  r.metrics = metrics;
+  r.baselineDiff = baseDiff;
   console.log(lines.join('\n'));
   fs.writeFileSync(path.join(OUT, `${LABEL}.json`), JSON.stringify(r, null, 2));
-  if (STRICT && !Object.values(r.summary).every(Boolean)) process.exitCode = 1;
+  if (STRICT && (!Object.values(r.summary).every(Boolean) || baseDiff.length > 0)) process.exitCode = 1;
 }
 
 main().catch((e) => {

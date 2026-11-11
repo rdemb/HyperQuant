@@ -22,10 +22,16 @@ export function chromePath() {
   return p;
 }
 
-/** Przeglądarka z jedną kartą; `init` — skrypt wykonywany w każdym nowym dokumencie przed skryptami strony. */
-export async function launch({ port = 9338, lang = 'pl', init = '' } = {}) {
+/**
+ * Przeglądarka z jedną kartą; `init` — skrypty wykonywane w każdym nowym dokumencie przed skryptami strony. `intercept` —
+ * każde żądanie strony przechodzi przez tę funkcję: `{ status, body, type }` — odpowiedź bez sieci, `'continue'` — zwykłe
+ * żądanie, `'fail'` — błąd sieci. `timezone` i `locale` — stała strefa i język strony.
+ */
+export async function launch({ port = 9338, lang = 'pl', init = [], intercept = null, timezone = null, locale = null } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hq-ui-'));
-  const proc = spawn(chromePath(), ['--headless=new', `--remote-debugging-port=${port}`, `--user-data-dir=${dir}`, `--lang=${lang}`, `--accept-lang=${lang}`, '--no-first-run', '--hide-scrollbars', 'about:blank'], {
+  // Linux w CI (kontener bez przestrzeni nazw użytkownika): bez piaskownicy i bez małego /dev/shm
+  const ci = process.platform === 'linux' ? ['--no-sandbox', '--disable-dev-shm-usage'] : [];
+  const proc = spawn(chromePath(), ['--headless=new', ...ci, `--remote-debugging-port=${port}`, `--user-data-dir=${dir}`, `--lang=${lang}`, `--accept-lang=${lang}`, '--no-first-run', '--hide-scrollbars', '--font-render-hinting=none', 'about:blank'], {
     stdio: 'ignore',
   });
   let targets = [];
@@ -51,7 +57,8 @@ export async function launch({ port = 9338, lang = 'pl', init = '' } = {}) {
     if (d.id && pending.has(d.id)) {
       pending.get(d.id)(d);
       pending.delete(d.id);
-    } else if (d.method === 'Runtime.exceptionThrown') errors.push(d.params.exceptionDetails.exception?.description ?? d.params.exceptionDetails.text);
+    } else if (d.method === 'Fetch.requestPaused') void onPaused(d.params);
+    else if (d.method === 'Runtime.exceptionThrown') errors.push(d.params.exceptionDetails.exception?.description ?? d.params.exceptionDetails.text);
   };
   const send = (method, params = {}) =>
     new Promise((r) => {
@@ -59,12 +66,41 @@ export async function launch({ port = 9338, lang = 'pl', init = '' } = {}) {
       pending.set(i, r);
       ws.send(JSON.stringify({ id: i, method, params }));
     });
+  const intercepted = { served: 0, failed: [], passed: 0 };
+  async function onPaused(p) {
+    let r;
+    try {
+      r = intercept(p.request);
+    } catch (e) {
+      r = 'fail';
+    }
+    if (r === 'continue') {
+      intercepted.passed++;
+      return send('Fetch.continueRequest', { requestId: p.requestId });
+    }
+    if (r === 'fail' || !r) {
+      intercepted.failed.push(p.request.url.slice(0, 80));
+      return send('Fetch.failRequest', { requestId: p.requestId, errorReason: 'InternetDisconnected' });
+    }
+    intercepted.served++;
+    const headers = [
+      { name: 'Content-Type', value: r.type ?? 'application/json' },
+      { name: 'Access-Control-Allow-Origin', value: '*' },
+      { name: 'Access-Control-Allow-Headers', value: '*' },
+      { name: 'Access-Control-Allow-Methods', value: 'GET, POST, OPTIONS' },
+    ];
+    return send('Fetch.fulfillRequest', { requestId: p.requestId, responseCode: r.status ?? 200, responseHeaders: headers, body: Buffer.from(r.body ?? '').toString('base64') });
+  }
   await send('Runtime.enable');
   await send('Page.enable');
-  if (init) await send('Page.addScriptToEvaluateOnNewDocument', { source: init });
+  for (const src of [init].flat().filter(Boolean)) await send('Page.addScriptToEvaluateOnNewDocument', { source: src });
+  if (timezone) await send('Emulation.setTimezoneOverride', { timezoneId: timezone });
+  if (locale) await send('Emulation.setLocaleOverride', { locale });
+  if (intercept) await send('Fetch.enable', { patterns: [{ urlPattern: '*', requestStage: 'Request' }] });
 
   const page = {
     errors,
+    intercepted,
     send,
     async viewport(w, h, mobile) {
       await send('Emulation.setDeviceMetricsOverride', { width: w, height: h, deviceScaleFactor: mobile ? 2 : 1, mobile: !!mobile, screenOrientation: { type: w > h ? 'landscapePrimary' : 'portraitPrimary', angle: w > h ? 90 : 0 } });
