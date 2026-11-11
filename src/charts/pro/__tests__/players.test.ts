@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Coverage } from '../core/coverage';
 import { AggressorOrder, OrderLog } from '../core/orders';
-import { PlayerFlow, bigPlayerUsd } from '../core/players';
+import { PlayerFlow, type PlayerSplit, bigPlayerUsd } from '../core/players';
 
 const M1 = 60_000;
 const H = 60 * M1;
@@ -30,7 +30,7 @@ const flow = (orders: AggressorOrder[], spans: [number, number][] = [[H0, H0 + 3
 };
 
 describe('Kto handluje', () => {
-  it('konto z sumą wejść w godzinie UTC od progu jest dużym graczem także przy zleceniach pociętych na małe', () => {
+  it('konto z sumą wejść w 60 min do zamknięcia świecy od progu jest dużym graczem także przy zleceniach pociętych na małe', () => {
     // a: 4 × 300 = 1200 (≥ 1000, duży), b: 900 (reszta), c: sprzedaż 500 (reszta)
     const { players } = flow([
       order(H0 + 1000, 'a', 1, 300),
@@ -44,9 +44,23 @@ describe('Kto handluje', () => {
     expect(s.big).toBeCloseTo(12);
     expect(s.rest).toBeCloseTo(9 - 5);
     expect(s.bigShare).toBeCloseTo((1200 / 2600) * 100);
-    // Świeca 1m: tylko zlecenia z tej minuty, klasyfikacja z całej godziny
+    // Świeca 1m: tylko zlecenia z tej minuty, klasyfikacja z 60 min do jej zamknięcia (a: 300 + 300 < 1000 — reszta)
     const m = players.split(H0 + 5 * M1, M1, H0 + 3 * H)!;
-    expect([m.big, m.rest, m.bigUsd, m.usd, m.bigShare]).toEqual([3, 0, 300, 300, 100]);
+    expect([m.big, m.rest, m.bigUsd, m.usd, m.bigShare]).toEqual([0, 3, 0, 300, 0]);
+    // Świeca 1m o 0:50: w oknie wszystkie cztery wejścia a (1200) — duży
+    const late = players.split(H0 + 50 * M1, M1, H0 + 3 * H)!;
+    expect([late.big, late.rest, late.bigUsd, late.usd]).toEqual([3, 0, 300, 300]);
+  });
+
+  it('okno 60 min do zamknięcia świecy sięga przez pełną godzinę wstecz; świeca 1 h i dłuższa — jej godziny UTC', () => {
+    // a: 600 o 0:50 i 600 o 1:05 (razem 1200 w 60 min do 1:06)
+    const { players } = flow([order(H0 + 50 * M1, 'a', 1, 600), order(H0 + H + 5 * M1, 'a', 1, 600)]);
+    const now = H0 + 3 * H;
+    expect(players.split(H0 + H + 5 * M1, M1, now)!.big).toBeCloseTo(6);
+    expect(players.split(H0 + 50 * M1, M1, now)!.big).toBe(0);
+    // Świeca 1 h 1:00–2:00: okno to ta godzina, a ma w niej 600 — reszta; świeca 2 h: każda godzina osobno
+    expect(players.split(H0 + H, H, now)!.big).toBe(0);
+    expect(players.split(H0, 2 * H, now)!.big).toBe(0);
   });
 
   it('godziny liczone osobno: to samo konto w kolejnej godzinie poniżej progu jest resztą', () => {
@@ -91,5 +105,54 @@ describe('Kto handluje', () => {
     expect(players.split(H0 + H, H, H0 + 3 * H)!.big).toBeCloseTo(12);
     expect(bigPlayerUsd('BTC')).toBe(1_000_000);
     expect(bigPlayerUsd('XYZ')).toBe(250_000);
+  });
+});
+
+describe('Kto handluje: zamknięta świeca się nie zmienia', () => {
+  it('wartość świecy policzona w chwili t równa się wartości godzinę później, po nowych zleceniach po jej zamknięciu', () => {
+    // a: 600 w minucie 5 (reszta), b: sprzedaż 1200 w minucie 5 (duży), c: 400 w minucie 12
+    const { log, players } = flow([order(H0 + 5 * M1 + 1000, 'a', 1, 600), order(H0 + 5 * M1 + 2000, 'b', -1, 1200), order(H0 + 12 * M1, 'c', 1, 400)]);
+    const t = H0 + 15 * M1;
+    // Świece zamknięte w chwili t: 1m 0:05, 5m 0:05, 15m 0:00
+    const candles: [number, number][] = [
+      [H0 + 5 * M1, M1],
+      [H0 + 5 * M1, 5 * M1],
+      [H0, 15 * M1],
+    ];
+    const at = (now: number) => candles.map(([c, ms]) => players.split(c, ms, now));
+    const before = at(t);
+    expect(before[0]!.big).toBeCloseTo(-12);
+    expect(before[0]!.rest).toBeCloseTo(6);
+    // Po zamknięciu: a i c dobijają do progu w tej samej godzinie UTC, b handluje dalej, nowe konto w kolejnej godzinie
+    log.add([order(H0 + 20 * M1, 'a', 1, 600), order(H0 + 30 * M1, 'c', 1, 700), order(H0 + 40 * M1, 'b', 1, 50), order(H0 + H + 5 * M1, 'd', 1, 5000)]);
+    expect(at(t + H)).toEqual(before);
+  });
+
+  it('świece po kolei (okno przesuwane) i w odwrotnej kolejności (okno od nowa) dają te same liczby', () => {
+    // Pseudolosowe zlecenia przez 3 h, 200 kont (kilka bardzo aktywnych), wartości z groszami
+    let seed = 7;
+    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    const list: AggressorOrder[] = [];
+    for (let i = 0; i < 3000; i++) list.push(order(H0 + Math.floor(rnd() * 3 * H), `k${Math.floor(rnd() ** 3 * 200)}`, rnd() < 0.5 ? 1 : -1, Math.round(rnd() * 10_000) / 100));
+    list.sort((a, b) => a.time - b.time);
+    const now = H0 + 3 * H - 30_000;
+    const run = (ks: number[]) => {
+      const { players } = flow(list);
+      const out = new Map<number, PlayerSplit | null>();
+      for (const k of ks) out.set(k, players.split(H0 + k * M1, M1, now));
+      return [...out.entries()].sort((a, b) => a[0] - b[0]);
+    };
+    const ks = Array.from({ length: 180 }, (_, k) => k);
+    const asc = run(ks);
+    expect(asc.some(([, s]) => s !== null && s.big !== 0 && s.rest !== 0)).toBe(true);
+    expect(run([...ks].reverse())).toEqual(asc);
+  });
+
+  it('świeca 1 h: wartość po zamknięciu godziny równa się wartości godzinę później', () => {
+    const { log, players } = flow([order(H0 + 10 * M1, 'a', 1, 600), order(H0 + 50 * M1, 'a', 1, 600)]);
+    const before = players.split(H0, H, H0 + H + M1);
+    expect(before!.big).toBeCloseTo(12);
+    log.add([order(H0 + H + 2 * M1, 'a', -1, 900), order(H0 + H + 30 * M1, 'b', 1, 2000)]);
+    expect(players.split(H0, H, H0 + 2 * H + M1)).toEqual(before);
   });
 });

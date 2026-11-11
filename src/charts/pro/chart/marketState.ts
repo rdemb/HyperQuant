@@ -251,11 +251,11 @@ function playersFact(x: StateInput, price: number): StateFact | null {
     label: tr('Duzi gracze', 'Large players'),
     text,
     why: tr(
-      `Duzi gracze (konta od ${usd(x.bigPlayerUsd)} wejść w godzinie UTC): delta ${fmtSignedVol(p.big)} ${x.unit}, ` +
+      `Duzi gracze (konta od ${usd(x.bigPlayerUsd)} wejść w 60 min): delta ${fmtSignedVol(p.big)} ${x.unit}, ` +
         `${dec(p.bigShare ?? 0, 0)}% wartości wejść, przewaga ${signed(bigImb * 100, 0, '%')}. Reszta: delta ${fmtSignedVol(p.rest)} ${x.unit}, ` +
         `przewaga ${signed(restImb * 100, 0, '%')}. Przewaga = delta × cena / wartość wejść grupy; poniżej 10% — bez przewagi.` +
         (p.complete ? '' : ' Konta biorców tylko z części okna: nagrywanie zaczęło się albo przerwało w jego trakcie.'),
-      `Large players (accounts with ${usd(x.bigPlayerUsd)} of entries in a UTC hour): delta ${fmtSignedVol(p.big)} ${x.unit}, ` +
+      `Large players (accounts with ${usd(x.bigPlayerUsd)} of entries in 60 min): delta ${fmtSignedVol(p.big)} ${x.unit}, ` +
         `${dec(p.bigShare ?? 0, 0)}% of entry value, edge ${signed(bigImb * 100, 0, '%')}. The rest: delta ${fmtSignedVol(p.rest)} ${x.unit}, ` +
         `edge ${signed(restImb * 100, 0, '%')}. Edge = delta × price / the group's entry value; below 10% — no edge.` +
         (p.complete ? '' : ' Taker accounts cover only part of the window: recording started or broke off during it.')

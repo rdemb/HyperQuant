@@ -2,7 +2,23 @@ import React, { useMemo, useRef, useState } from 'react';
 import { scaleLinear } from 'd3';
 import { useCohortFlow } from '../../state/useCohortFlow';
 import { Badge, EmptyState, Panel, Segmented, Stat, DASH, fmtCompact, fmtSigned, fmtFixed } from '../../ui';
-import { COHORTS, COHORT_LABEL, CohortFlow, CohortId, cohortNet, cohortSeen, cohortTakerNet, cohortVolume, cohortWindowEnd, cumulativeNet } from '../../utils/cohorts';
+import {
+  COHORTS,
+  COHORT_LABEL,
+  CohortFlow,
+  CohortId,
+  CohortTotal,
+  HIDDEN_TOGETHER_LABEL,
+  cohortNet,
+  cohortSeen,
+  cohortTakerNet,
+  cohortVolume,
+  cohortWindowEnd,
+  cumulativeNet,
+  hiddenTogether,
+  informedNoneText,
+  informedState,
+} from '../../utils/cohorts';
 import { useElementWidth } from '../market/MarketMap';
 import { BTC_ONLY, scannerScope } from '../flow/flowColumnModel';
 import { locale, tr } from '../../i18n';
@@ -90,6 +106,7 @@ export const CohortFlowPanel: React.FC<{ coin: string }> = ({ coin }) => {
 const FlowBody: React.FC<{ flow: CohortFlow; mode: Mode; setMode: (m: Mode) => void }> = ({ flow, mode, setMode }) => {
   const partial = flow.since > flow.asOf - 24 * 3600_000;
   const inf = flow.informed;
+  const none = informedState(flow) === 'none' ? informedNoneText(flow) : null;
   const end = cohortWindowEnd(flow);
   return (
     <div className="flex flex-col gap-4 p-4">
@@ -130,10 +147,14 @@ const FlowBody: React.FC<{ flow: CohortFlow; mode: Mode; setMode: (m: Mode) => v
                   {COHORT_LABEL[c]}
                 </span>
               }
-              value={<span className="font-mono tabular-nums">{active || hid ? usd(v) : DASH}</span>}
-              hint={`${mode === 'net' ? tr('agresor', 'aggressor') : tr('netto', 'net')} ${active ? usd(other) : DASH} · ${tr('adresy 24 h', 'addresses 24 h')} ${approx(flow.members[c])}${
-                hid ? ` · ${tr('ukryte kubełki', 'hidden buckets')} ${hid}` : ''
-              }`}
+              value={<span className="font-mono tabular-nums">{active ? usd(v) : DASH}</span>}
+              hint={
+                c === 'informed' && none !== null && !active && !hid
+                  ? none
+                  : `${mode === 'net' ? tr('agresor', 'aggressor') : tr('netto', 'net')} ${active ? usd(other) : DASH} · ${tr('adresy 24 h', 'addresses 24 h')} ${approx(flow.members[c])}${
+                      hid ? ` · ${tr('ukryte kubełki', 'hidden buckets')} ${hid}` : ''
+                    }`
+              }
             />
           );
         })}
@@ -158,9 +179,10 @@ const FlowBody: React.FC<{ flow: CohortFlow; mode: Mode; setMode: (m: Mode) => v
         <OosTable flow={flow} />
         <p className="text-[11px] text-ink-3 leading-relaxed">
           {tr(
-            `„Poinformowani”: adresy, których markout biorcy po 5 min jest istotnie dodatni. Obserwacją jest blok 5 min adresu, więc jedno zlecenie zamiatające wielu makerów liczy się raz. Test jednostronny obejmuje adresy z co najmniej ${inf.minN} blokami, z kontrolą odsetka fałszywych odkryć (Benjamini–Hochberg, q = ${Math.round(inf.fdrQ * 100)}%) i dodatnią średnią a posteriori w empirycznym Bayesie. Kandydaci ${approx(inf.candidates)}, wybrani ${approx(inf.selected)}`,
-            `"Informed": addresses whose 5-min taker markout is significantly positive. The unit of observation is an address's 5-min block, so one order sweeping many makers counts once. The one-sided test covers addresses with at least ${inf.minN} blocks, with false discovery rate control (Benjamini–Hochberg, q = ${Math.round(inf.fdrQ * 100)}%) and a positive posterior mean under empirical Bayes. Candidates ${approx(inf.candidates)}, selected ${approx(inf.selected)}`
+            `„Poinformowani”: adresy, których markout biorcy po 5 min jest istotnie dodatni. Obserwacją jest blok 5 min adresu, więc jedno zlecenie zamiatające wielu makerów liczy się raz. Test jednostronny obejmuje adresy z co najmniej ${inf.minN} blokami, z kontrolą odsetka fałszywych odkryć (Benjamini–Hochberg, q = ${Math.round(inf.fdrQ * 100)}%) i dodatnią średnią a posteriori w empirycznym Bayesie. Kohorta powstaje od 10 kont i tylko przy dodatnim rozrzucie umiejętności; inaczej konta zostają w swoich kohortach. `,
+            `"Informed": addresses whose 5-min taker markout is significantly positive. The unit of observation is an address's 5-min block, so one order sweeping many makers counts once. The one-sided test covers addresses with at least ${inf.minN} blocks, with false discovery rate control (Benjamini–Hochberg, q = ${Math.round(inf.fdrQ * 100)}%) and a positive posterior mean under empirical Bayes. The cohort exists from 10 accounts and only with positive skill dispersion; otherwise the accounts stay in their own cohorts. `
           )}
+          {none !== null ? `${none[0].toUpperCase()}${none.slice(1)}` : tr(`Kandydaci ${approx(inf.candidates)}, wybrani ${approx(inf.selected)}`, `Candidates ${approx(inf.candidates)}, selected ${approx(inf.selected)}`)}
           {inf.mu0Bp !== null
             ? ` · ${tr('średnia populacji', 'population mean')} ${bp(inf.mu0Bp)}, ${tr('rozrzut umiejętności', 'skill dispersion')} ${inf.tauBp === null ? DASH : `${fmtFixed(inf.tauBp, 1)} bp`}`
             : ''}
@@ -192,8 +214,8 @@ const FlowBody: React.FC<{ flow: CohortFlow; mode: Mode; setMode: (m: Mode) => v
           </li>
           <li>
             {tr(
-              `Prywatność: adresy i przynależność zostają na serwerze. Publikowane są tylko zamknięte kubełki. Komórka z mniej niż ${flow.kMin} uczestnikami albo z jednym powyżej 50% obrotu jest ukrywana. Wtedy ukrywana jest też kolejna, bo suma kohort to publiczny wolumen i jedną ukrytą dałoby się odtworzyć odejmowaniem. Warstwa agresora ma osobne ukrywanie. Kwoty są zaokrąglone do 10 tys. USD, liczności do dziesiątek. Markouty pochodzą tylko z w pełni rozliczonych godzin (ta sama reguła ukrywania) i są publikowane bez liczności i nominału.`,
-              `Privacy: addresses and membership stay on the server. Only closed buckets are published. A cell with fewer than ${flow.kMin} participants, or with one above 50% of volume, is hidden. A second cell is then hidden too, because the cohort sum is public volume and a single hidden cell could be recovered by subtraction. The aggressor layer has its own suppression. Amounts are rounded to USD 10k, counts to tens. Markouts come only from fully settled hours (same suppression rule) and are published without counts or notional.`
+              `Prywatność: adresy i przynależność zostają na serwerze. Publikowane są tylko zamknięte kubełki. Komórka z mniej niż ${flow.kMin} uczestnikami albo z jednym powyżej 50% obrotu jest ukrywana. Wtedy ukrywana jest też kolejna, bo suma kohort to publiczny wolumen i jedną ukrytą dałoby się odtworzyć odejmowaniem. Warstwa agresora ma osobne ukrywanie. Ukryte komórki tabela pokazuje razem jako „Pozostali razem”: ta suma wynika z publicznego wolumenu taśmy, a w kubełku ukryte są co najmniej dwie komórki, więc nie da się jej rozbić na kohorty. Kwoty są zaokrąglone do 10 tys. USD, liczności do dziesiątek. Markouty pochodzą tylko z w pełni rozliczonych godzin (ta sama reguła ukrywania) i są publikowane bez liczności i nominału.`,
+              `Privacy: addresses and membership stay on the server. Only closed buckets are published. A cell with fewer than ${flow.kMin} participants, or with one above 50% of volume, is hidden. A second cell is then hidden too, because the cohort sum is public volume and a single hidden cell could be recovered by subtraction. The aggressor layer has its own suppression. The table shows hidden cells together as "Others combined": that sum follows from the public tape volume, and at least two cells are hidden in a bucket, so it cannot be split into cohorts. Amounts are rounded to USD 10k, counts to tens. Markouts come only from fully settled hours (same suppression rule) and are published without counts or notional.`
             )}
           </li>
           <li>
@@ -340,42 +362,71 @@ const CumulativeChart: React.FC<{ flow: CohortFlow; mode: Mode }> = ({ flow, mod
   );
 };
 
-/** Sumy 24 h per kohorta — liczby bez wykresu (także na telefonie i dla czytników ekranu). */
-const TotalsTable: React.FC<{ flow: CohortFlow }> = ({ flow }) => (
-  <div className="overflow-x-auto">
-    <table className="w-full text-left font-mono tabular-nums text-[11px]">
-      <caption className="sr-only">{tr('Przepływ kohort w 24 godzinach', 'Cohort flow over 24 hours')}</caption>
-      <thead className="text-ink-3">
-        <tr>
-          <th className="py-1 pr-3 font-medium font-sans">{tr('Kohorta · 24 h', 'Cohort · 24 h')}</th>
-          <th className="py-1 pr-3 font-medium">{tr('Netto', 'Net')}</th>
-          <th className="py-1 pr-3 font-medium">{tr('Agresor', 'Aggressor')}</th>
-          <th className="py-1 pr-3 font-medium">{tr('Obrót', 'Volume')}</th>
-          <th className="py-1 font-medium">{tr('Ukryte', 'Hidden')}</th>
-        </tr>
-      </thead>
-      <tbody>
-        {COHORTS.map((c) => {
-          const t = flow.totals.h24[c];
-          const on = cohortSeen(t);
-          return (
-            <tr key={c} className="border-t border-line">
-              <td className="py-1 pr-3 font-sans">
-                <span className="inline-flex items-center gap-1.5">
-                  <span className="inline-block w-2 h-2 rounded-sm" style={{ background: COLOR[c] }} aria-hidden="true" />
-                  {COHORT_LABEL[c]}
-                </span>
-              </td>
-              <td className="py-1 pr-3">{on ? usd(cohortNet(t)) : DASH}</td>
-              <td className="py-1 pr-3">{on ? usd(cohortTakerNet(t)) : DASH}</td>
-              <td className="py-1 pr-3">{on ? fmtCompact(cohortVolume(t), '$') : DASH}</td>
-              <td className="py-1">{t.hidden || t.takerHidden ? `${t.hidden} / ${t.takerHidden} ${tr('agr.', 'aggr.')}` : DASH}</td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
-  </div>
+/**
+ * Sumy 24 h per kohorta — liczby bez wykresu (także na telefonie i dla czytników ekranu). Ukryte komórki: jeden wiersz
+ * „Pozostali razem” z pliku (bez rozbicia na kohorty); plik bez wolumenu taśmy albo bez ukrytych — bez tego wiersza.
+ */
+const TotalsTable: React.FC<{ flow: CohortFlow }> = ({ flow }) => {
+  const others = hiddenTogether(flow.tape?.h24);
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-left font-mono tabular-nums text-[11px]">
+        <caption className="sr-only">{tr('Przepływ kohort w 24 godzinach', 'Cohort flow over 24 hours')}</caption>
+        <thead className="text-ink-3">
+          <tr>
+            <th className="py-1 pr-3 font-medium font-sans">{tr('Kohorta · 24 h', 'Cohort · 24 h')}</th>
+            <th className="py-1 pr-3 font-medium">{tr('Netto', 'Net')}</th>
+            <th className="py-1 pr-3 font-medium">{tr('Agresor', 'Aggressor')}</th>
+            <th className="py-1 pr-3 font-medium">{tr('Obrót', 'Volume')}</th>
+            <th className="py-1 font-medium">{tr('Ukryte', 'Hidden')}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {COHORTS.map((c) => {
+            const t = flow.totals.h24[c];
+            // Wszystkie komórki ukryte (widoczny obrót 0): liczby nieznane — „—”, a liczba ukrytych w ostatniej kolumnie
+            const on = cohortVolume(t) > 0;
+            return (
+              <tr key={c} className="border-t border-line">
+                <td className="py-1 pr-3 font-sans">
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="inline-block w-2 h-2 rounded-sm" style={{ background: COLOR[c] }} aria-hidden="true" />
+                    {COHORT_LABEL[c]}
+                  </span>
+                </td>
+                <td className="py-1 pr-3">{on ? usd(cohortNet(t)) : DASH}</td>
+                <td className="py-1 pr-3">{on ? usd(cohortTakerNet(t)) : DASH}</td>
+                <td className="py-1 pr-3">{on ? fmtCompact(cohortVolume(t), '$') : DASH}</td>
+                <td className="py-1">{t.hidden || t.takerHidden ? `${t.hidden} / ${t.takerHidden} ${tr('agr.', 'aggr.')}` : DASH}</td>
+              </tr>
+            );
+          })}
+          {others && others.buy + others.sell + others.takerBuy + others.takerSell > 0 && <OthersRow t={others} />}
+        </tbody>
+      </table>
+    </div>
+  );
+};
+
+const OthersRow: React.FC<{ t: CohortTotal }> = ({ t }) => (
+  <tr
+    className="border-t border-line text-ink-2"
+    title={tr(
+      'Suma komórek ukrytych dla prywatności, bez rozbicia na kohorty (wynika z publicznego wolumenu taśmy)',
+      'Sum of the cells hidden for privacy, not split by cohort (follows from the public tape volume)'
+    )}
+  >
+    <td className="py-1 pr-3 font-sans">
+      <span className="inline-flex items-center gap-1.5">
+        <span className="inline-block w-2 h-2 rounded-sm border border-ink-3" aria-hidden="true" />
+        {HIDDEN_TOGETHER_LABEL}
+      </span>
+    </td>
+    <td className="py-1 pr-3">{usd(cohortNet(t))}</td>
+    <td className="py-1 pr-3">{usd(cohortTakerNet(t))}</td>
+    <td className="py-1 pr-3">{fmtCompact(cohortVolume(t), '$')}</td>
+    <td className="py-1">{DASH}</td>
+  </tr>
 );
 
 /** Znaczniki osi czasu w pełnych godzinach lokalnych (co 6/2/1 h wg rozpiętości), najwyżej 6. */
