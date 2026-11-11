@@ -5,24 +5,45 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-# root: restart usługi skanera (systemctl) i odczyt klucza wdrożeniowego; kod tylko z /opt/hyperquant/app.
-# Stan strażnika w osobnym katalogu root (poza katalogiem usługi skanera, której strażnik nie ufa).
-WorkingDirectory=/opt/hyperquant/app
-EnvironmentFile=/etc/hyperquant/scanner.env
+# Własny użytkownik systemowy (nie root, nie użytkownik skanera, któremu strażnik nie ufa). Restart tylko skanera
+# i serwera powiadomień przez regułę polkit (hyperquant-watchdog.rules). Grupa usług: odczyt status.json skanera
+# i pulsu serwera powiadomień (pliki 0640). Kod z kopii, którą install.sh kładzie poza katalogiem aktualizowanym
+# co 15 min — push do repo nie zmienia strażnika, tylko ponowny install.sh. Klucz wdrożeniowy repo danych dostaje
+# z LoadCredential (drop-in tworzony przez install.sh), więc plik klucza zostaje własnością skanera.
+User=hyperquant-watchdog
+Group=hyperquant-watchdog
+SupplementaryGroups=hyperquant
+WorkingDirectory=/opt/hyperquant/watchdog
+# Tylko zmienne, które strażnik czyta (repo danych, katalogi usług); plik tworzy install.sh z konfiguracji skanera,
+# więc sekrety R2 i reszta konfiguracji skanera nie trafiają do strażnika
+EnvironmentFile=/etc/hyperquant/watchdog.env
 StateDirectory=hyperquant-watchdog
 StateDirectoryMode=0700
 Environment=HQ_WATCHDOG_DIR=/var/lib/hyperquant-watchdog
-ExecStart=/opt/hyperquant/node/bin/node scripts/watchdog.mjs
+ExecStart=/opt/hyperquant/node/bin/node /opt/hyperquant/watchdog/scripts/watchdog.mjs
 TimeoutStartSec=5min
 Nice=10
 
+# Izolacja jak skaner: bez uprawnień, zapis tylko do własnego katalogu stanu (StateDirectory). Bez ProtectProc —
+# systemctl sprawdza /proc/1, a strażnik pyta systemd o stan usług.
 UMask=0077
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
+PrivateDevices=true
+ProtectClock=true
+ProtectHostname=true
 ProtectKernelTunables=true
 ProtectKernelModules=true
+ProtectKernelLogs=true
 ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 LockPersonality=true
+CapabilityBoundingSet=
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM

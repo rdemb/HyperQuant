@@ -141,7 +141,8 @@ export function computeShaakuniIndicator(
       pdlStatus: 'Active',
       nySession: session,
       nyTimeFormatted: formattedTime,
-      atr14: n > 0 ? bars[n - 1].atr : 0,
+      // Bez świec ATR nieznany (NaN → „—”), nie 0
+      atr14: n > 0 ? bars[n - 1].atr : Number.NaN,
       orderBlocks: [],
     };
   }
