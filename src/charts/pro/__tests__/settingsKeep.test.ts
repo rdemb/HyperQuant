@@ -85,3 +85,11 @@ describe('zapis ustawień wykresu po zmianie paska', () => {
     expect('labelDensity' in parseSettings(SAVED)).toBe(false);
   });
 });
+
+describe('tryb „Historia” stref nierównowagi w zapisie', () => {
+  it('tylko wartość true; bez zapisu albo z błędną wartością pole nie powstaje', () => {
+    expect(parseSettings({ ...SAVED, zonesHistory: true }).zonesHistory).toBe(true);
+    expect('zonesHistory' in parseSettings({ ...SAVED, zonesHistory: 'tak' })).toBe(false);
+    expect('zonesHistory' in parseSettings(SAVED)).toBe(false);
+  });
+});
