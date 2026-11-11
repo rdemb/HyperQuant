@@ -559,6 +559,12 @@ export function replayHtml(post, root) {
 }
 
 /**
+ * Notki „aktualizacja” (`RRRR-MM-DD-aktualizacja-GG`, jeden szablon kilka razy dziennie): `noindex,follow` i poza mapą
+ * witryny; zostają na liście wpisów, w archiwum i w RSS. Pozostałe wpisy (mapy, rozliczenia, podsumowania) indeksowane.
+ */
+export const isUnindexed = (id) => /-aktualizacja-\d{2}$/.test(id);
+
+/**
  * Strona wpisu (artykuł albo notka). `newer` / `older` = sąsiednie wpisy do nawigacji. `post.origin` (wpis z gałęzi blog
  * repo danych): { history: adres historii pliku, changedMs: chwila ostatniej zmiany, gdy plik ma w historii więcej niż
  * jeden commit, inaczej null }; bez niego historia wpisu w content/blog/ na main.
@@ -624,6 +630,7 @@ ${shareHtml(url, post.title)}
     },
     main,
     script: true,
+    robots: isUnindexed(post.id) ? 'noindex,follow' : undefined,
   });
 }
 
@@ -744,7 +751,7 @@ export function sitemapXml(site, posts, pages = []) {
   const urls = [{ loc: site.url }, ...pages];
   if (posts.length) {
     urls.push({ loc: `${site.url}blog/`, lastmod: day(posts[0].ms) });
-    for (const p of posts) urls.push({ loc: `${site.url}blog/${p.id}/`, lastmod: day(p.ms) });
+    for (const p of posts) if (!isUnindexed(p.id)) urls.push({ loc: `${site.url}blog/${p.id}/`, lastmod: day(p.ms) });
     const months = new Map();
     for (const p of posts) if (!months.has(monthKey(p.ms))) months.set(monthKey(p.ms), p.ms);
     for (const [k, ms] of months) urls.push({ loc: `${site.url}blog/archiwum/${k}/`, lastmod: day(ms) });
