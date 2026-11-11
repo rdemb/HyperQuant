@@ -83,11 +83,27 @@ describe('workflow .github/workflows/ledger-verify.yml', () => {
     const prep = step('Gałąź wyników').run;
     expect(prep).toMatch(/ls-remote --exit-code --heads origin "\$BRANCH"/);
     expect(prep).toMatch(/symbolic-ref HEAD "refs\/heads\/\$BRANCH"/);
-    expect(prep).toMatch(/::add-mask::/);
     const pub = step('Znaczek, podsumowanie i kotwica').run;
     expect(pub).toMatch(/verify-status\.mjs publish results/);
     expect(pub).toMatch(/git add badge verify/);
     expect(pub).toMatch(/for i in 1 2 3; do git push -q origin "HEAD:refs\/heads\/\$BRANCH" && exit 0; git pull -q --rebase origin "\$BRANCH"; done/);
+  });
+
+  it('token z prawem zapisu dopiero w kroku publikacji: wcześniej żaden krok nie dostaje tokenu ani nagłówka', () => {
+    const TOKEN = /github\.token|GITHUB_TOKEN|GH_TOKEN|extraheader|x-access-token|AUTHORIZATION/i;
+    const pubIdx = steps.findIndex((s) => s.name === 'Znaczek, podsumowanie i kotwica');
+    expect(pubIdx).toBeGreaterThan(0);
+    expect(JSON.stringify(wf.jobs.verify.env ?? {})).not.toMatch(TOKEN);
+    for (const s of steps.slice(0, pubIdx)) {
+      expect(JSON.stringify(s), s.name).not.toMatch(TOKEN);
+      if (s.with && 'persist-credentials' in s.with) expect(s.with['persist-credentials']).toBe(false);
+    }
+    const pub = steps[pubIdx];
+    expect(pub.env.GH_TOKEN).toBe('${{ github.token }}');
+    expect(pub.run).toMatch(/::add-mask::/);
+    // nagłówek ustawiany po przetworzeniu danych (publish), przed pierwszym push
+    expect(pub.run.indexOf('extraheader')).toBeGreaterThan(pub.run.indexOf('verify-status.mjs publish'));
+    expect(pub.run.indexOf('extraheader')).toBeLessThan(pub.run.indexOf('git push'));
   });
 
   it('jedna prawda: wzorzec dla repo danych usunięty', () => {
