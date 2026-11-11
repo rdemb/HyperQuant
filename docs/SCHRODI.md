@@ -7,8 +7,8 @@ auction levels with the chance of touching each within the hour, the hour's reac
 odds), the next high-impact macro release and, for the current clock hour, odds that follow the price path minute by
 minute ([Live hour](#live-hour)).
 
-The cat is drawn as Schrödinger's cat: a green (Long) and an orange (Short) outline in superposition, each as bright as
-its probability. The closer the forecast is to 50%, the more the two outlines drift apart and blur. Above about 60% on
+The cat is drawn as Schrödinger's cat: a green (price higher in an hour) and an orange (price lower) outline in
+superposition, each as bright as its probability. The closer the forecast is to 50%, the more the two outlines drift apart and blur. Above about 60% on
 one side the cat collapses into a single colour.
 
 Everything runs in the visitor's browser from public Hyperliquid candles. There is no server-side signal and no account.
@@ -97,7 +97,7 @@ Calibration (mean forecast vs observed frequency, deciles, 2023 to 2026):
 
 ### Direction
 
-| Period | AUC | Accuracy | Long (p ≥ 53%): share, hit rate | Short (p ≤ 47%): share, hit rate |
+| Period | AUC | Accuracy | P(up 1 h) ≥ 53%: share, hit rate | P(up 1 h) ≤ 47%: share, hit rate |
 | --- | --- | --- | --- | --- |
 | 2023 to 2025 | 0.544 | 53.0% | 29%, 55.1% | 28%, 54.0% |
 | 2026 (to October) | 0.535 | 52.3% | 27%, 53.8% | 20%, 54.5% |
@@ -193,10 +193,11 @@ more, against 10 minutes earlier, with the two feature groups whose contribution
 means that something really changed. The "Why?" section lists the contribution of each feature group to both
 probabilities.
 
-Live numbers move every second, so the direction label has a small hysteresis: once the cat says Long (above 53%) or
-Short (below 47%), the label stays until the probability is 0.5 pp inside the "don't know" band. Without it a
-probability hovering at 53% made the label flip several times a minute. The shown percentage still rounds to at least
-53%, and the ledger records probabilities, not labels, so scores are unaffected.
+The direction label is neutral: "P(up 1 h) 54%" (Polish: "P(wzrost 1 h) 54%"), the probability that the price is higher
+in an hour, in a neutral ink colour without buy or sell colours. It is a description of the odds, not a trade side.
+Between 47% and 53% is the "don't know" band; scores split forecasts into P(up 1 h) above 53%, below 47% and that band.
+The label shows the probability itself, so it does not flip between states when the probability hovers near 53%, and
+the ledger records probabilities, not labels, so scores are unaffected.
 
 ## Live record
 
@@ -227,8 +228,8 @@ for bit: `node scripts/verify-ledger.mjs --dir <clone of the ledger branch>` che
 probability, and `--market` also checks the resolution prices against Hyperliquid 1m candles.
 
 Scores in the ledger summary (last 30 days): Brier score against the climatology of the same window, Brier skill score,
-AUC and hit rate for both heads, plus the hit rate of Long (from 53%) and Short (to 47%) and the number of "don't know"
-forecasts. For the touches: Brier score against Brownian motion (σ from the recorded `rv_1d`), reliability, and the
+AUC and hit rate for both heads, plus the hit rate of forecasts with P(up 1 h) above 53% and below 47% and the number of
+"don't know" forecasts. For the touches: Brier score against Brownian motion (σ from the recorded `rv_1d`), reliability, and the
 share of hours in which each cone edge was touched, which should match 80%, 50% and 20%. Four forecasts per hour overlap, so the effective sample is the number of forecasts made on the full hour, and
 the **Plan** tab shows scores only from 20 such hours. The cat's panel shows the same live numbers under "My track
 record", next to the backtest.
