@@ -1,5 +1,5 @@
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { DeskLedgerSummary } from '../../../utils/deskLedger';
 import type { FeatureVec, Forecast, SchrodiModel } from '../../../utils/schrodi';
 
@@ -26,6 +26,14 @@ vi.mock('react', async (importOriginal) => {
 });
 
 const T = Date.UTC(2026, 10, 11, 12, 0);
+// Stały zegar: prognoza z fikstury jest „świeża” niezależnie od dnia uruchomienia testu (bez tego test psuł się po T)
+beforeAll(() => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(T + 60_000);
+});
+afterAll(() => {
+  vi.useRealTimers();
+});
 const PLAN = { id: 'p', hash: 'h', at: T - 86_400_000 };
 const PROOF = T - 3_600_000;
 const head = {
@@ -139,7 +147,7 @@ describe.each(['pl', 'en'] as const)('Kot: kierunek ukryty do dowodu w e-procesi
       expect(html).toContain(lang === 'en' ? 'Schrödinger&#x27;s cat' : 'kotem Schrödingera');
       expect(html).toContain(lang === 'en' ? 'non-overlapping hours' : 'rozłącznych godzin');
       // Duży ruch i poziomy dalej są
-      expect(html).toContain(lang === 'en' ? 'Big move within the hour' : 'Duży ruch w ciągu godziny');
+      expect(html).toContain(lang === 'en' ? 'Move in the next hour' : 'Ruch w najbliższej godzinie');
       expect(html).toContain(lang === 'en' ? 'Daily VWAP' : 'VWAP dnia');
       // Pomiar kierunku zostaje z dopiskiem, że kierunek jest ukryty do dowodu
       expect(html).toContain(lang === 'en' ? 'hidden until' : 'ukryty do');
@@ -174,7 +182,7 @@ describe.each(['pl', 'en'] as const)('Kot: kierunek ukryty do dowodu w e-procesi
       const launcher = await launcherHtml(forecast(pUp, stance));
       expect(launcher, stance).not.toMatch(LABEL);
       expect(launcher, stance).not.toMatch(SIDE_COLOR);
-      expect(barOf(launcher)).toMatch(lang === 'en' ? /move \d+%/ : /ruch \d+%/);
+      expect(barOf(launcher)).toMatch(lang === 'en' ? /move (calm|typical|elevated|—)/ : /ruch (spokojny|zwykły|podwyższony|—)/);
     }
     const { CatLedgerCard } = await import('../../../views/after/CatLedgerCard');
     const card = renderToStaticMarkup(<CatLedgerCard cat={catWith(PROOF, true)} />);
@@ -190,7 +198,7 @@ describe.each(['pl', 'en'] as const)('Kot: kierunek ukryty do dowodu w e-procesi
       expect(html, stance).not.toMatch(SIDE);
       expect(html, stance).not.toMatch(LABEL);
       expect(html, stance).not.toMatch(SIDE_COLOR);
-      expect(barOf(html)).toMatch(lang === 'en' ? /move \d+%/ : /ruch \d+%/);
+      expect(barOf(html)).toMatch(lang === 'en' ? /move (calm|typical|elevated|—)/ : /ruch (spokojny|zwykły|podwyższony|—)/);
 
       S.cat = catWith(PROOF);
       const bar = barOf(await launcherHtml(forecast(pUp, stance)));

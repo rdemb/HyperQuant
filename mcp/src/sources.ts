@@ -19,7 +19,7 @@ import { cutLevels } from './external';
 const gunzipAsync = promisify(gunzip);
 
 /** Wersja paczki (test pilnuje zgodności z `mcp/package.json`). */
-export const VERSION = '0.1.3';
+export const VERSION = '0.1.4';
 
 const DATA_BASE = 'https://raw.githubusercontent.com/rdemb/hyperquant-data/main';
 const SITE_BASE = 'https://hyperquant.tech';

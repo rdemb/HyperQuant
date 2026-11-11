@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { DATA_BASE, LEDGER_BASE } from '../../state/usePublished';
 import { verifyLedgerRemote, type RemoteVerification } from '../../utils/ledgerVerify';
 import { locale, tr } from '../../i18n';
-import { verifyStale } from '../../utils/verifyFreshness';
+import { VERIFY_LATEST_URL, verifyStale } from '../../utils/verifyFreshness';
 
 const STORE_KEY = 'hq.ledgerVerify.v1';
 const DAY = 86_400_000;
@@ -12,7 +12,7 @@ interface Saved extends RemoteVerification {
   at: number;
 }
 
-/** Codzienna niezależna weryfikacja w GitHub Actions (gałąź health repo danych) */
+/** Niezależna weryfikacja w GitHub Actions co 6 h (gałąź wyników repo HyperQuant, `VERIFY_LATEST_URL`) */
 interface Daily {
   ok: boolean;
   at: number;
@@ -29,10 +29,8 @@ const isDaily = (x: unknown): x is Daily => {
 function useDaily(): Daily | null {
   const [d, setD] = useState<Daily | null>(null);
   useEffect(() => {
-    const base = DATA_BASE.replace(/\/main$/, '/health');
-    if (!/^https:\/\//.test(base)) return;
     let live = true;
-    fetch(`${base}/verify/latest.json`, { cache: 'no-cache' })
+    fetch(VERIFY_LATEST_URL, { cache: 'no-cache' })
       .then((r) => (r.ok ? r.json() : null))
       .then((x) => live && isDaily(x) && setD(x))
       .catch(() => undefined);
@@ -125,7 +123,7 @@ export const LedgerVerifyCard: React.FC<{ summaryHead: string }> = ({ summaryHea
       </div>
       {daily && (
         <div className={daily.ok && !verifyStale(daily.at, Date.now()) ? 'text-ink-2' : 'text-warn'}>
-          {tr('Niezależna weryfikacja w GitHub Actions (codziennie, infrastruktura GitHuba — nie serwer desku):', 'Independent verification in GitHub Actions (daily, on GitHub infrastructure, not the desk server):')}{' '}
+          {tr('Niezależna weryfikacja w GitHub Actions (co 6 h, infrastruktura GitHuba — nie serwer desku):', 'Independent verification in GitHub Actions (every 6 h, on GitHub infrastructure, not the desk server):')}{' '}
           <span className="text-ink-1">{daily.ok ? tr('zgodna', 'consistent') : tr('wykryła problem', 'found a problem')}</span> · {dateTimeFmt.format(daily.at)} ·{' '}
           <a className="text-accent hover:underline" href={daily.run} target="_blank" rel="noopener noreferrer">
             {tr('przebieg i pełny raport', 'run and full report')}
