@@ -31,7 +31,7 @@ Follow the recipes and rules of the `hyperquant` skill.
 1. Call `session_review` with `session: "london"` after the London close or `session: "ny"` after the New York close; without the argument the tool reviews the last closed session. Only the latest session of each type is available; compare `session.opensAt` with the session the trader named and say so when an older one is asked for. If `session.inProgress` is true, the session has not closed yet: say so.
 2. Report the rows in the order given: `label`, `value` and `badge` (for MODEL rows, the method from `hint`), then `detail`. A row whose `value` is "—" gets its `why` or `hint`. Mark rows with `scope: "window"`: the forecast cone covers 30 days of the ledger, the cohorts the last 24 h.
 3. `day_map` covers today's Day map only. For a session of today, use it for the minute of each touch and the `coverage`; below 100, levels without a touch are unsettled (null), not missed.
-4. Call `forecast_ledger` when the trader asks how reliable the forecasts are, or to back the cone row: CRPSS per horizon (above 0 means better than the 30-day normal baseline), coverage of the 90%, 60% and ACI intervals against their nominal 0.9, 0.6 and 0.9, the Kupiec p-value, and Brier and BSS for level touches, all as plain decimals. Scores appear from 20 settlements. Give `verifyUrl` so the trader can check them.
+4. Call `forecast_ledger` when the trader asks how reliable the forecasts are, or to back the cone row: CRPSS per horizon (above 0 means better than the 30-day normal baseline), coverage of the 90%, 60% and ACI intervals against their nominal 0.9, 0.6 and 0.9, the Kupiec p-value, and Brier and BSS for level touches as a pair, `bssDist` against the distance baseline (reflection formula, 30-day hourly σ) and `bss` against the level base rate, never `bss` alone, all as plain decimals. Scores appear from 20 settlements. Give `verifyUrl` so the trader can check them.
 
 Layout:
 
@@ -53,7 +53,7 @@ Layout:
 | --- | --- |
 | `session_review` | The rows of the review: day type, value area migration, IB result, range against the expected range (MODEL), touched blog levels, liquidations, forecast cone coverage, cohort markouts |
 | `day_map` | The touch minute of each level of today's Day map and the candle coverage |
-| `forecast_ledger` | CRPSS, interval coverage with the Kupiec test, Brier and BSS, and a link to verify them |
+| `forecast_ledger` | CRPSS, interval coverage with the Kupiec test, Brier and BSS against distance and against the base rate, and a link to verify them |
 
 ## Example prompts
 
