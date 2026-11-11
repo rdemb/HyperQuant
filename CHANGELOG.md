@@ -4,6 +4,21 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Wskaźnik „Strefy absorpcji i pudełka Effort”: mniej prostokątów, rysunek od chwili powstania (2026-11-11)
+
+Na nagranej dobie 24.10.2026 (powtórka 19:30, BTC 5m) wskaźnik rysował 33 prostokąty w oknie 140 świec komputera i 10 w oknie 33 świec telefonu (model na świecach 5m z kopii przy lekcjach); po zmianie 6 na 1440 × 900 i 3 na 390 × 844 (`npm run ui:check`, wybór warstwy, nie piksele). Model stref (`src/charts/pro/core/effortZones.ts`) bez zmian.
+
+#### Zmienione
+- **Wybór do rysowania w czystym module** `src/charts/pro/chart/effortSelect.ts` (`selectEffort`), na ostatniej zamkniętej świecy: tylko strefy aktywne i uzbrojone; strefy jednej strony, które się nakładają albo dzieli je mniej niż 0,25 ATR, to jedno pasmo (najwyżej 1,5 ATR, znacznik łączony „A·D”); na każdą stronę najwyżej 2 pasma najbliższe ostatniemu zamknięciu (telefon 1, dalsze w legendzie). Pasmo zaczyna się na świecy, na której zamknięciu strefa powstała (`createdAt`), a kraniec swingu oznacza krótka kreska — wcześniej prostokąt zaczynał się na krańcu, jakby strefa stała tam przed odbiciem. Strefa przebita zostaje samym obrysem przez 6 świec (najnowsza, nie na telefonie, bez niej w miejscu strefy po zmianie roli), wygasła znika. Pudełka: kolejne pudełka jednej strony to jedna seria wypełniona tylko na swoich świecach, w prawo dwie linie krawędzi do 12 świec; rysowana ostatnia seria strony z ostatnich 12 świec (telefon: nowsza z dwóch). Limit: komputer 7 prostokątów, telefon 3.
+- **Pudełko tylko na świecy z deltą z taśmy**: ta sama zamknięta świeca nie zyskuje ani nie traci pudełka po doczytaniu taśmy; strefy liczą się jak dotąd.
+- **Legenda** (`effortLayer.ts`): „strefy: 2 popytu · 1 podaży (dalej 3) · pudełko: kupno, 4 świece temu · taśma 12 z 12”; bez taśmy „pudełka: —, brak taśmy”.
+- **Opis wskaźnika** (`registry.ts`, PL i EN): nowe reguły rysowania i wynik sprawdzianu: w 2026 r. strefa była broniona po pierwszym dotknięciu w 52% przypadków, tak samo jak losowy poziom w tej samej odległości (BTC 5m, n 9 281); strefy nie przewidują odbicia.
+
+#### Dodane
+- **Tryb „Historia”** (przełącznik w ustawieniach wskaźnika, domyślnie wyłączony): wszystkie strefy i serie pudełek samymi obrysami, z początkiem na świecy powstania. Pole `history` instancji jest tylko dopisywane; stare zapisy ładują się bez zmian.
+- **`ui:check`: scenariusz wskaźnika Effort** (`scripts/ui/layout-check.mjs`): powtórka 24.10 19:30, BTC 5m, Kokpit z włączonym wskaźnikiem; liczba prostokątów z wyboru warstwy (atrybut `data-effort-rects` wykresu), limit 7 / 3 w `--strict`. `scripts/ui/baseline.json` (win32): nowe liczby `effort.rects1440` 6 i `effort.rects390` 3 (wcześniej brak); pozostałe 28 bez zmian.
+- Testy: `effortSelect.test.ts` (wybór 2 najbliższych, łączenie 0,2 / 0,3 ATR i limit 1,5 ATR, strefy nieuzbrojone i zakończone, przebita przez 6 świec, seria pudełek, pudełko bez taśmy, limit 7 / 3 w 1000 losowych chwilach nagranych dób, stałość wobec głębokości historii, dopisanych świec, kolejności taśmy i świecy w trakcie, tryb „Historia”), legenda, opis bez słów rady, zapis bez pola `history`.
+
 ### Blog: rejestr wpisów przed włączeniem gałęzi blog (2026-11-11)
 
 Publikacja bez zmian (zmienna `BLOG_INTAKE` nadal wyłączona): build na 120 wpisach z `main` daje te same 170 adresów w `sitemap.xml` (plik identyczny), ten sam `blog/feed.xml` (51 linków) i 172 identyczne strony HTML; zmienia się tylko `blog/source.json`.
