@@ -54,13 +54,14 @@ function setup() {
   const near = new BookHistory(1);
   for (let t = NOW - 10 * 60_000; t <= NOW - 2_000; t += 5_000) near.add(frame(t));
   const orders = makeOrders();
-  const store = { version: 0 };
+  const store = { version: 0, history: 0 };
   const src = {
     near,
     far: null,
     orders: vi.fn((from: number, to: number) => orders.filter((o) => o.time >= from && o.time < to)),
     walls: vi.fn(() => WALLS),
     version: () => store.version,
+    history: () => store.history,
   };
   const l = new LiquidityLayer({ ...ALL });
   const chart = {
@@ -167,5 +168,38 @@ describe('warstwa płynności: scena składana tylko po zmianie danych, widoku a
     // Ta sama synchronizacja bez nowych danych rysuje to samo, każda inna zmiana zmienia obraz
     if (name === changes[0][0]) expect(after).toEqual(before);
     else expect(after).not.toEqual(before);
+  });
+});
+
+describe('progi godzin między scenami (próg z chwili zdarzenia)', () => {
+  const HOUR = 3_600_000;
+  /** Zapytania o próg zamkniętej godziny: zlecenia godziny (serie i ściany) albo doby (bąble) przed jej początkiem. */
+  const thresholdCalls = (s: Setup) => s.src.orders.mock.calls.filter(([from, to]) => to % HOUR === 0 && (to - from === HOUR || to - from === 24 * HOUR)).length;
+
+  it('druga scena nie liczy progu zamkniętej godziny od nowa; doczytanie historii czyści pamięć', () => {
+    const s = setup();
+    s.l.setData(bars as never, MS, s.src, NOW, THRESHOLD, 0);
+    s.l.updateAllViews();
+    const first = thresholdCalls(s);
+    expect(first).toBeGreaterThan(0);
+    s.view.x0 = -35;
+    s.l.updateAllViews();
+    s.l.setData(bars as never, MS, s.src, NOW + 4_000, THRESHOLD, 0);
+    s.l.updateAllViews();
+    expect(s.src.orders.mock.calls.length).toBeGreaterThan(first + 1);
+    expect(thresholdCalls(s)).toBe(first);
+    s.store.history++;
+    s.store.version++;
+    s.l.updateAllViews();
+    expect(thresholdCalls(s)).toBe(2 * first);
+  });
+
+  it('liczba bąbli zleceń na ekranie dla pomiaru układu (bez serii)', () => {
+    const s = setup();
+    const counts: number[] = [];
+    s.l.onBubbles = (n) => counts.push(n);
+    s.l.updateAllViews();
+    // Próg ręczny 100 tys.: zlecenia 450 tys., 900 tys. i 150 tys.
+    expect(counts).toEqual([3]);
   });
 });
