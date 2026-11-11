@@ -7,14 +7,15 @@
  *  2. alarm — stan zdrowia (ta sama ocena co scripts/check-data-health.mjs) trafia do gałęzi `health` repo danych przez
  *     klucz wdrożeniowy skanera; push uruchamia tam workflow, który otwiera / komentuje / zamyka zgłoszenie
  *     „alert-danych”. Problem wysyłany po potwierdzeniu w dwóch przebiegach (prywatność — od razu), przypomnienie co 6 h;
- *     przy „ok” puls raz na dobę — uruchamia tam niezależną weryfikację dziennika i znaczek „zweryfikowano”.
+ *     przy „ok” puls raz na dobę — uruchamia tam niezależną weryfikację dziennika i znaczek „zweryfikowano”. Opóźnione
+ *     odczyty pozycji z histerezą (koniec alarmu po 2 przebiegach poniżej 25 min), bo mediana oscyluje wokół progu.
  * Raport jest publiczny — bez adresów, ścieżek i danych serwera.
  */
 import { execFileSync } from 'node:child_process';
 import { closeSync, constants, existsSync, fstatSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { assessHealth, fetchInput, renderReport } from './check-data-health.mjs';
+import { LIMITS, assessHealth, fetchInput, ntlLag, renderReport } from './check-data-health.mjs';
 
 const MIN = 60_000;
 /** Skaner publikuje lokalnie co 30–60 s — 10 min ciszy to zawieszenie */
@@ -99,6 +100,15 @@ export function decideAlerts({ now, pulse, serviceState, activeForMs, lastRestar
   if (restarts >= MAX_RESTARTS) return { restart: false, reason: `${reason}; ${MAX_RESTARTS} restarty nie pomogły — potrzebna interwencja`, category: 'giveup' };
   if (lastRestart !== null && now - lastRestart <= RESTART_COOLDOWN) return { restart: false, reason: `${reason} (restart wstrzymany — poprzedni mniej niż godzinę temu)`, category };
   return { restart: true, reason, category };
+}
+
+/**
+ * Ocena jednego przebiegu z histerezą opóźnienia odczytów pozycji. `input` — wynik `fetchInput` (null = bez repo
+ * danych), `prevNtl` — stan histerezy z pliku strażnika (brak = start bez alarmu). Zwraca ocenę i nowy stan do zapisu.
+ */
+export function assessRun(input, prevNtl, now) {
+  const ntl = ntlLag(prevNtl, input?.status?.ageNtlP50Min);
+  return { health: input ? assessHealth(input, now, LIMITS, ntl.lag) : { ok: true, problems: [], facts: [] }, ntl };
 }
 
 /** Problem bez zmiennych szczegółów: liczby → #, treść błędu pobrania pominięta. */
@@ -257,7 +267,8 @@ async function main() {
   const work = env.HQ_WATCHDOG_DIR || '/var/lib/hyperquant-watchdog';
   mkdirSync(work, { recursive: true, mode: 0o700 });
   const stateFile = path.join(work, 'state.json');
-  let st = { lastRestart: null, restarts: 0, alertsRestart: null, alertsRestarts: 0, prevKey: null, seenKey: null, lastPushAt: null };
+  // `ntl` — stan histerezy opóźnienia odczytów pozycji; plik stanu bez pola (sprzed histerezy) = start bez alarmu
+  let st = { lastRestart: null, restarts: 0, alertsRestart: null, alertsRestarts: 0, prevKey: null, seenKey: null, lastPushAt: null, ntl: null };
   try {
     st = { ...st, ...JSON.parse(readFileSync(stateFile, 'utf8')) };
   } catch {
@@ -265,7 +276,9 @@ async function main() {
   }
   const remote = (env.HQ_GIT_REMOTE ?? '').trim();
   const base = dataBaseFromRemote(remote);
-  const health = base ? assessHealth(await fetchInput(base), now) : { ok: true, problems: [], facts: [] };
+  const run = assessRun(base ? await fetchInput(base) : null, st.ntl, now);
+  const health = run.health;
+  st.ntl = run.ntl;
   const state = serviceState();
   const d = decide({
     now,
