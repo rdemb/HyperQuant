@@ -130,7 +130,6 @@ export interface LiquidityProfileBucket {
   buyVolumeUsd: number;
   sellVolumeUsd: number;
   deltaUsd: number;
-  liquidationPoolUsd: number; // Estimated resting leveraged liquidation fuel at this bucket
   gravityPotential: number; // Normalized 0..1 gravitational magnet pull
   isPOC: boolean;
   isValueArea: boolean;
@@ -215,6 +214,7 @@ export interface BackendQuantTelemetry {
   midPrice: number;
   openInterestBtc: number;
   openInterestUsd: number;
+  /** Obrót 24 h z API; NaN = brak w odpowiedzi API („—”) */
   dayVolumeUsd: number;
   funding1hPct: number;
   fundingAnnualizedPct: number;
@@ -254,20 +254,20 @@ export interface QuantMathMetrics {
 
   // Combinatorics & Information Theory
   shannonEntropyBits: number; // Orderbook + trade directional entropy (0..1+)
-  hurstExponent: number; // <0.45 mean-reverting, 0.5 random walk, >0.55 trending
+  // < 0,45 powroty, 0,5 błądzenie losowe, > 0,6 trend; null = za mało zwrotów (< 8) albo seria płaska
+  hurstExponent: number | null;
   combinatorialPathProbPDH: number; // Binomial/Catalan barrier hitting probability for PDH before PDL
   combinatorialPathProbPDL: number;
   l2MicroPrice: number; // Volume-weighted micro-price from top L2 levels
   l2OrderbookImbalance: number; // -1 (heavy ask wall) to +1 (heavy bid wall)
 
-  // Pioneering Liquidity Microstructure Telemetry (VPIN, Kyle's Lambda, Liquidation Fuel)
-  vpinToxicity: number; // 0..1 Volume-Synchronized Probability of Informed Trading
+  // Mikrostruktura płynności (VPIN, λ Kyle'a, profil wolumenu)
+  // 0..1 Volume-Synchronized Probability of Informed Trading; null = brak wolumenu (żaden pełny kubełek)
+  vpinToxicity: number | null;
   bookDepthAskUsd: number; // Suma płynności po stronie ASK (12 poziomów L2), USD
   bookDepthBidUsd: number; // Suma płynności po stronie BID (12 poziomów L2), USD
   // Lambda Kyle'a: regresja OLS ΔP na netto przepływie agresora ($ ruchu na $1M netto); null gdy < 10 świec z realnym przepływem
   kyleLambdaPer1M: number | null;
-  shortSqueezeFuelUsd: number; // Total resting short liquidation fuel within +1.5%
-  longCascadeFuelUsd: number; // Total resting long liquidation fuel within -1.5%
   pocPrice: number; // Volume Profile Point of Control
   vahPrice: number; // Value Area High (70%)
   valPrice: number; // Value Area Low (70%)
@@ -277,11 +277,11 @@ export interface QuantMathMetrics {
   // Spot vs Perp Orderflow Regime
   cvdDivergenceScore: number; // Spot vs Perp Z-score spread
   regimeClassification:
-    | 'Spot Absorption Bullish'
-    | 'Perp Exhaustion Bearish'
+    // Opis ostatnich świec, nie kierunek na przyszłość
+    | 'Spot CVD Lead'
+    | 'Perp CVD Lead'
     | 'Momentum Breakout'
-    | 'Mean-Reversion Equilibrium'
-    | 'Liquidation Cascade Squeeze';
+    | 'Mean-Reversion Equilibrium';
 
   // Neural Time-Series Prediction (Multi-Horizon Attention Model)
   neuralConfidence: number; // 0..100 — siła heurystyki (|bias|), NIE skalibrowane prawdopodobieństwo
