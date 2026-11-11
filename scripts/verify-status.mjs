@@ -48,26 +48,39 @@ export function anchorCommit(anchor) {
 }
 
 /**
+ * Kotwicy brak albo jest uszkodzona, a poprzedni wynik był zgodny (wtedy kotwica musiała powstać) — usunięcie kotwicy
+ * nie może udawać pierwszego przebiegu i ukryć przepisanej historii. Brak obu plików = prawdziwy pierwszy przebieg.
+ */
+export function anchorProblem(anchor, prevLatest) {
+  if (anchorCommit(anchor) || !prevLatest || typeof prevLatest !== 'object' || prevLatest.ok !== true) return null;
+  return '✗ kotwica usunięta albo uszkodzona (verify/anchor.json), choć poprzedni wynik był zgodny — ciągłości historii git nie da się sprawdzić';
+}
+
+/**
  * Nowy stan gałęzi wyników po przebiegu. `code` — kod wyjścia weryfikatora jako tekst ('' = nie skończył się).
  * Kotwicę przesuwa tylko przebieg z kodem 0 — po wykryciu przepisanej historii zostaje, więc alarm trwa do wyjaśnienia.
+ * Usunięta albo uszkodzona kotwica (`anchorProblem`) to problem tego przebiegu i nowa kotwica z niego nie powstaje.
  */
 export function publishVerify({ code, report, prevLatest, prevAnchor, head, run, nowMs }) {
   const finished = /^\d+$/.test(String(code ?? ''));
   const passed = finished && Number(code) === 0;
+  const lost = anchorProblem(prevAnchor, prevLatest);
   const latest = finished
     ? {
         v: 1,
-        ok: passed,
+        ok: passed && !lost,
         at: nowMs,
         run,
         commit: head,
-        lines: String(report)
-          .split('\n')
-          .filter((l) => /^(✓|✗|ℹ)/.test(l))
-          .slice(0, 40),
+        lines: [
+          ...(lost ? [lost] : []),
+          ...String(report)
+            .split('\n')
+            .filter((l) => /^(✓|✗|ℹ)/.test(l)),
+        ].slice(0, 40),
       }
     : prevLatest;
-  const anchor = passed && SHA.test(String(head)) ? { v: 1, commit: head, at: nowMs } : prevAnchor;
+  const anchor = passed && !lost && SHA.test(String(head)) ? { v: 1, commit: head, at: nowMs } : prevAnchor;
   return { latest, anchor, badge: ledgerBadge(latest, nowMs) };
 }
 
@@ -87,7 +100,10 @@ function main() {
   };
   const file = (...p) => path.join(dir, ...p);
   if (cmd === 'anchor' && dir) {
-    console.log(anchorCommit(readJson(file('verify', 'anchor.json'))) ?? '');
+    const anchor = readJson(file('verify', 'anchor.json'));
+    const lost = anchorProblem(anchor, readJson(file('verify', 'latest.json')));
+    if (lost) console.error(lost); // dziennik przebiegu; do raportu (latest.json) trafia przy publish
+    console.log(anchorCommit(anchor) ?? '');
     return;
   }
   if (cmd === 'publish' && dir) {

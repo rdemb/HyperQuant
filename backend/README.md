@@ -169,14 +169,16 @@ i ręcznie: weryfikator z `main` (`verify-ledger.mjs --dir ledger --market`) na 
 na infrastrukturze GitHuba, nie na serwerze desku. Zawsze cała historia git (sprawdzane tylko zmienione pliki, pamięć
 stała). Kotwica `verify/anchor.json` to commit `ledger` z ostatniej udanej weryfikacji: w każdym przebiegu musi nadal być
 w historii gałęzi (`--anchor`), inaczej historia została przepisana i wynik jest czerwony do wyjaśnienia (kotwicę zmienia
-tylko przebieg zgodny). Wynik trafia do gałęzi `weryfikacja-dziennika` tego repo (sierocej, tylko `badge/` i `verify/`;
+tylko przebieg zgodny; kotwica usunięta albo uszkodzona po zgodnym wyniku też daje czerwony wynik, a brak obu plików
+`verify/` to prawdziwy pierwszy przebieg). Wynik trafia do gałęzi `weryfikacja-dziennika` tego repo (sierocej, tylko `badge/` i `verify/`;
 pierwszy przebieg ją tworzy): `verify/latest.json` (strona, nadzór danych) i `badge/ledger.json` (znaczek shields.io
 w README, zielony tylko przy zgodnym wyniku nie starszym niż 36 h; logika w `scripts/verify-status.mjs`). Adresy w jednym
 miejscu: `src/utils/verifyFreshness.ts` (`VERIFY_BRANCH`, `VERIFY_LATEST_URL`, `VERIFY_BADGE_URL`). Wynik starszy niż 36 h
 albo z problemem zgłasza nadzór danych (`check-data-health.mjs`: `data-health.yml` i strażnik).
 
 Uprawnienia: tylko `contents: write` z wbudowanym tokenem (bez sekretów), akcje przypięte do hashy commitów, klon repo
-danych bez zapisanych poświadczeń. Push wbudowanym tokenem nie uruchamia innych workflow, a `static.yml` i
+danych bez zapisanych poświadczeń. Gałąź wyników jest pobierana bez tokenu; token trafia do jej klonu dopiero w kroku
+publikacji, po przetworzeniu danych z repo danych. Push wbudowanym tokenem nie uruchamia innych workflow, a `static.yml` i
 `alerts-worker.yml` reagują tylko na `main` (test `scripts/verify-workflow.test.mjs`).
 
 Opcja (ustawienie GitHuba, robi właściciel repo): do gałęzi wyników mogą dziś pisać także klucze wdrożeniowe z zapisem do

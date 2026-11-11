@@ -50,19 +50,15 @@ jobs:
         with:
           node-version: 24
 
-      # Bez actions/checkout: gałęzi może jeszcze nie być. Token tylko w nagłówku HTTP tego klonu (zamaskowany w logach).
+      # Bez actions/checkout (gałęzi może jeszcze nie być) i bez tokenu: repo jest publiczne, a token z prawem zapisu
+      # trafia do klonu wyników dopiero w kroku publikacji — po przetworzeniu danych z repo danych.
       - name: Gałąź wyników
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           git init -q results
           cd results
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
-          echo "::add-mask::$auth"
-          git config http.https://github.com/.extraheader "AUTHORIZATION: basic $auth"
           git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
           if git ls-remote --exit-code --heads origin "$BRANCH" > /dev/null; then
             git fetch -q --depth 1 origin "$BRANCH"
@@ -97,6 +93,7 @@ jobs:
           CODE: ${{ steps.v.outputs.code }}
           HEAD_SHA: ${{ steps.cp.outputs.head }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           msg=$(node hq/scripts/verify-status.mjs publish results --code "$CODE" --report report.txt --head "$HEAD_SHA" --run "$RUN_URL")
@@ -104,6 +101,10 @@ jobs:
           git add badge verify
           git diff --cached --quiet && exit 0
           git commit -q -m "weryfikacja dziennika: $msg"
+          # Token tylko w nagłówku HTTP tego klonu (zamaskowany w logach), ustawiony tuż przed wysłaniem
+          auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
+          echo "::add-mask::$auth"
+          git config http.https://github.com/.extraheader "AUTHORIZATION: basic $auth"
           for i in 1 2 3; do git push -q origin "HEAD:refs/heads/$BRANCH" && exit 0; git pull -q --rebase origin "$BRANCH"; done
           exit 1
 

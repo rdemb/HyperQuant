@@ -1,6 +1,6 @@
 // Stan niezależnej weryfikacji dziennika (gałąź wyników repo HyperQuant): znaczek, kotwica, podsumowanie dla strony.
 import { describe, expect, it } from 'vitest';
-import { anchorCommit, ledgerBadge, publishVerify, verifyProblem } from './verify-status.mjs';
+import { anchorCommit, anchorProblem, ledgerBadge, publishVerify, verifyProblem } from './verify-status.mjs';
 import { CLOCK_SKEW_MS, VERIFY_MAX_AGE_MS, verifyStale } from '../src/utils/verifyFreshness.ts';
 
 const NOW = Date.UTC(2026, 10, 11, 8, 0, 0);
@@ -53,6 +53,30 @@ describe('kotwica: ostatnio zweryfikowany commit gałęzi ledger', () => {
     expect(anchorCommit({ v: 1, commit: 'xyz' })).toBeNull();
     // czas zapisu kotwicy nie wpływa na kontrolę (cała historia zawsze sprawdzana)
     expect(anchorCommit({ v: 1, commit: SHA_A, at: NOW + 365 * 24 * H })).toBe(SHA_A);
+  });
+
+  const LOST = '✗ kotwica usunięta albo uszkodzona (verify/anchor.json), choć poprzedni wynik był zgodny — ciągłości historii git nie da się sprawdzić';
+
+  it('kotwica usunięta albo uszkodzona przy zgodnym poprzednim wyniku → problem; brak obu plików → prawdziwy pierwszy przebieg', () => {
+    expect(anchorProblem(null, latest())).toBe(LOST);
+    expect(anchorProblem({ v: 1, commit: 'xyz' }, latest())).toBe(LOST);
+    expect(anchorProblem(null, null)).toBeNull();
+    expect(anchorProblem({ v: 1, commit: SHA_A, at: NOW - H }, latest())).toBeNull();
+    // poprzedni przebieg niezgodny (np. pierwszy przebieg się nie powiódł) — kotwicy mogło jeszcze nie być
+    expect(anchorProblem(null, latest({ ok: false }))).toBeNull();
+  });
+
+  it('publishVerify: kotwica zniknęła po zgodnym wyniku → czerwono, problem na początku raportu, kotwica nie powstaje z tego przebiegu', () => {
+    const run = 'https://github.com/rdemb/HyperQuant/actions/runs/4';
+    const r = publishVerify({ code: '0', report: '✓ historia git: 10 commitów, tylko dopisywanie', prevLatest: latest(), prevAnchor: null, head: SHA_B, run, nowMs: NOW });
+    expect(r.latest.ok).toBe(false);
+    expect(r.latest.lines).toEqual([LOST, '✓ historia git: 10 commitów, tylko dopisywanie']);
+    expect(r.anchor).toBeNull();
+    expect(r.badge).toMatchObject({ color: 'red', message: 'problem 2026-11-11' });
+    // prawdziwy pierwszy przebieg (brak obu plików) — zielono i nowa kotwica
+    const first = publishVerify({ code: '0', report: '✓ x', prevLatest: null, prevAnchor: null, head: SHA_B, run, nowMs: NOW });
+    expect(first.latest.ok).toBe(true);
+    expect(first.anchor).toEqual({ v: 1, commit: SHA_B, at: NOW });
   });
 });
 
