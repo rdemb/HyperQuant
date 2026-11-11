@@ -42,8 +42,11 @@ const head = {
   rel: [],
   drift: { lg: 0, alarm: false, episodes: 0, since: null },
 };
-/** Sekcja kota w dzienniku; `proofAt` — chwila dowodu kierunku w e-procesie (null = brak dowodu) */
-const catWith = (proofAt: number | null) =>
+/**
+ * Sekcja kota w dzienniku; `proofAt` — chwila dowodu kierunku w e-procesie (null = brak dowodu), `alarm` — alarm dryfu
+ * kierunku (kot ostatnio gorszy od prostej reguły)
+ */
+const catWith = (proofAt: number | null, alarm = false) =>
   ({
     model: 'schrodi-v1',
     since: T - 7 * 86_400_000,
@@ -56,7 +59,7 @@ const catWith = (proofAt: number | null) =>
       dir: { brier: 0.249, brierBase: 0.25, bss: 0.004, auc: 0.52, hit: 0.51, long: { n: 90, hit: 0.53 }, short: { n: 40, hit: 0.5 }, unsure: 20 },
       big: { brier: 0.2, brierBase: 0.25, bss: 0.2, auc: 0.8, hit: 0.74, reliability: [] },
     },
-    trust: { plan: PLAN, big: head, dir: { ...head, proofAt, lg: proofAt === null ? 0.2 : 1.5, lgMax: proofAt === null ? 0.3 : 1.5 }, touch: head, ood: { n: 0, bssBig: null, bssDir: null } },
+    trust: { plan: PLAN, big: head, dir: { ...head, proofAt, lg: proofAt === null ? 0.2 : 1.5, lgMax: proofAt === null ? 0.3 : 1.5, drift: { ...head.drift, alarm } }, touch: head, ood: { n: 0, bssBig: null, bssDir: null } },
     hour: { plan: PLAN, big: head, dir: { n: 30, brier: 0.25, hit: 0.5 } },
   }) satisfies NonNullable<DeskLedgerSummary['cat']>;
 
@@ -152,7 +155,31 @@ describe.each(['pl', 'en'] as const)('Kot: kierunek ukryty do dowodu w e-procesi
       expect(html).toContain(lang === 'en' ? `P(up 1 h) ${Math.round(pUp * 100)}%` : `P(wzrost 1 h) ${Math.round(pUp * 100)}%`);
       const label = html.match(/<span class="([^"]*)">P\((?:wzrost|up) 1 h\) \d/);
       expect(label?.[1]).not.toMatch(/buy|sell/);
+      // Rysunek kota po dowodzie ma własne kolory, nie kolory kupna i sprzedaży
+      expect(html, stance).toMatch(/--color-cat-(up|down)/);
+      expect(html, stance).not.toMatch(SIDE_COLOR);
     }
+  });
+
+  it('dowód z alarmem dryfu kierunku wygląda jak brak dowodu (dymek, pasek, kot, karta dziennika)', async () => {
+    S.lang = lang;
+    S.cat = catWith(PROOF, true);
+    for (const [pUp, stance] of CASES) {
+      const panel = await panelHtml(forecast(pUp, stance));
+      expect(panel, stance).not.toMatch(LABEL);
+      expect(panel, stance).not.toMatch(SIDE_COLOR);
+      expect(panel, stance).not.toMatch(/--color-cat-(up|down)/);
+      expect(panel, stance).not.toContain('🎯');
+      expect(panel).toContain(lang === 'en' ? 'hidden until' : 'ukryty do');
+      const launcher = await launcherHtml(forecast(pUp, stance));
+      expect(launcher, stance).not.toMatch(LABEL);
+      expect(launcher, stance).not.toMatch(SIDE_COLOR);
+      expect(barOf(launcher)).toMatch(lang === 'en' ? /move \d+%/ : /ruch \d+%/);
+    }
+    const { CatLedgerCard } = await import('../../../views/after/CatLedgerCard');
+    const card = renderToStaticMarkup(<CatLedgerCard cat={catWith(PROOF, true)} />);
+    expect(card).not.toMatch(LABEL);
+    expect(card).toContain(lang === 'en' ? 'hidden until' : 'ukryty do');
   });
 
   it('pasek pod wykresem: bez dowodu bez kierunku i kolorów stron (także w rysunku), z dowodem etykieta', async () => {
@@ -168,7 +195,7 @@ describe.each(['pl', 'en'] as const)('Kot: kierunek ukryty do dowodu w e-procesi
       S.cat = catWith(PROOF);
       const bar = barOf(await launcherHtml(forecast(pUp, stance)));
       expect(bar).toMatch(LABEL);
-      expect(bar).not.toMatch(/text-(buy|sell)-ink/);
+      expect(bar).not.toMatch(SIDE_COLOR);
     }
   });
 

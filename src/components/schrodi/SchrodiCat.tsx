@@ -1,8 +1,8 @@
 import React, { useId } from 'react';
 
 /**
- * Schrödi: kot Schrödingera w superpozycji. Ciemny kot z dwoma konturami — zielonym (cena wyżej za godzinę)
- * i pomarańczowym (niżej) — o jasności równej szansie wzrostu i spadku. Im mniejsza pewność, tym bardziej kontury się
+ * Schrödi: kot Schrödingera w superpozycji. Ciemny kot z dwoma konturami — lawendowym (cena wyżej za godzinę)
+ * i piaskowym (niżej), nie w kolorach kupna i sprzedaży — o jasności równej szansie wzrostu i spadku. Im mniejsza pewność, tym bardziej kontury się
  * rozjeżdżają, rozmywają i drgają; przy wyraźnej przewadze (od ok. 60%) kot „zapada się” w jeden kolor.
  * `pUp = null` przy danych: kierunek ukryty (bez dowodu w e-procesie) — jeden ostry, neutralny kontur bez kolorów stron.
  * Bez danych (`hiding`) kot jest szary i rozmyty.
@@ -11,6 +11,10 @@ import React, { useId } from 'react';
  */
 
 export type Mood = 'calm' | 'alert' | 'sleep' | 'nervous' | 'hiding';
+
+/** Kolory superpozycji kota (po dowodzie kierunku): własne, nie kolory kupna i sprzedaży */
+const UP = 'var(--color-cat-up)';
+const DOWN = 'var(--color-cat-down)';
 
 /** Pyszczek bez uszu (viewBox 64 × 64); uszy osobno, żeby mogły się ruszać */
 const FACE = 'M13 27 Q32 11 51 27 Q57 36 52 46 Q46 57 32 57 Q18 57 12 46 Q7 36 13 27 Z';
@@ -37,10 +41,10 @@ export const SchrodiCat: React.FC<{ pUp: number | null; mood: Mood; size?: numbe
   const shift = hidden || neutral ? 0 : 3 * (1 - conf);
   const grey = pUp === null || hidden;
   const plain = hidden ? 'var(--color-ink-3)' : 'var(--color-ink-2)';
-  const lead = p >= 0.5 ? 'var(--color-buy-ink)' : 'var(--color-sell-ink)';
+  const lead = p >= 0.5 ? UP : DOWN;
   // Kontur strony przegrywającej gaśnie wraz z pewnością
-  const opBuy = (0.2 + 0.8 * p) * (p >= 0.5 ? 1 : 1 - conf);
-  const opSell = (0.2 + 0.8 * (1 - p)) * (p < 0.5 ? 1 : 1 - conf);
+  const opUp = (0.2 + 0.8 * p) * (p >= 0.5 ? 1 : 1 - conf);
+  const opDown = (0.2 + 0.8 * (1 - p)) * (p < 0.5 ? 1 : 1 - conf);
   const eyesOpen = mood !== 'sleep';
   const eyeRy = mood === 'alert' ? 5 : 4.2;
   // Drganie konturów w superpozycji: amplituda maleje do zera wraz z pewnością
@@ -55,10 +59,10 @@ export const SchrodiCat: React.FC<{ pUp: number | null; mood: Mood; size?: numbe
         ) : (
           <>
             <g className="hq-cat-q" style={jitter}>
-              <path d={d} stroke="var(--color-buy-ink)" opacity={opBuy} transform={`translate(${-shift} 0)`} />
+              <path d={d} stroke={UP} opacity={opUp} transform={`translate(${-shift} 0)`} />
             </g>
             <g className="hq-cat-q hq-cat-q-rev" style={jitter}>
-              <path d={d} stroke="var(--color-sell-ink)" opacity={opSell} transform={`translate(${shift} 0)`} />
+              <path d={d} stroke={DOWN} opacity={opDown} transform={`translate(${shift} 0)`} />
             </g>
           </>
         )}
@@ -85,15 +89,15 @@ export const SchrodiCat: React.FC<{ pUp: number | null; mood: Mood; size?: numbe
       </defs>
       {/* Nowa prognoza = nowy klucz, więc podskok odtwarza się raz */}
       <g key={beat} className={beat === undefined ? undefined : 'hq-cat-hop'}>
-        {/* Ogon za pyszczkiem: obwódka w kolorach stron (albo neutralna), środek w kolorze ciała */}
+        {/* Ogon za pyszczkiem: obwódka w kolorach superpozycji (albo neutralna), środek w kolorze ciała */}
         <g className={mood === 'sleep' ? 'hq-cat-tail hq-cat-slow' : 'hq-cat-tail'}>
           <g filter={blur > 0.05 ? `url(#b${id})` : undefined}>
             {grey ? (
               tailStroke(plain, 7.2)
             ) : (
               <>
-                {tailStroke('var(--color-buy-ink)', 7.2, opBuy, -shift)}
-                {tailStroke('var(--color-sell-ink)', 7.2, opSell, shift)}
+                {tailStroke(UP, 7.2, opUp, -shift)}
+                {tailStroke(DOWN, 7.2, opDown, shift)}
               </>
             )}
           </g>
