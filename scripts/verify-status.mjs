@@ -1,13 +1,14 @@
 /**
- * Stan niezależnej weryfikacji dziennika w gałęzi `health` repo danych (workflow backend/deploy/ledger-verify.yml):
+ * Stan niezależnej weryfikacji dziennika w gałęzi wyników repo HyperQuant (workflow .github/workflows/ledger-verify.yml,
+ * adresy w src/utils/verifyFreshness.ts):
  *  - `verify/latest.json` — podsumowanie ostatniego zakończonego przebiegu (strona, nadzór danych);
- *  - `verify/checkpoint.json` — punkt kontrolny: ostatni commit gałęzi `ledger` z udaną weryfikacją; następny przebieg
- *    sprawdza historię git tylko po nim (`verify-ledger.mjs --since-commit`), pełny przebieg co najmniej raz na 7 dni;
+ *  - `verify/anchor.json` — kotwica: commit gałęzi `ledger` z ostatniej udanej weryfikacji; każdy przebieg sprawdza całą
+ *    historię git i to, że kotwica nadal w niej jest (`verify-ledger.mjs --anchor`) — inaczej historia przepisana;
  *  - `badge/ledger.json` — znaczek shields.io: zielony tylko przy zgodnym wyniku nie starszym niż 36 h.
  *
- *   node scripts/verify-status.mjs since <katalog health>      # commit punktu kontrolnego albo pusto (pełny przebieg)
- *   node scripts/verify-status.mjs publish <katalog health> --code <kod|""> --report <plik> --head <commit> --run <url> [--since <commit>]
- *       pusty --code = weryfikacja się nie skończyła (limit czasu): podsumowanie zostaje, znaczek liczony od nowa
+ *   node scripts/verify-status.mjs anchor <katalog wyników>     # commit kotwicy albo pusto (pierwszy przebieg)
+ *   node scripts/verify-status.mjs publish <katalog wyników> --code <kod|""> --report <plik> --head <commit> --run <url>
+ *       pusty --code = weryfikacja się nie skończyła (limit czasu): podsumowanie i kotwica zostają, znaczek liczony od nowa
  */
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -15,8 +16,6 @@ import { pathToFileURL } from 'node:url';
 import { VERIFY_MAX_AGE_MS, fromFuture, verifyStale } from '../src/utils/verifyFreshness.ts';
 
 const H = 3_600_000;
-/** Pełny przebieg (cała historia git) co najmniej raz na tydzień — wykrywa zmiany sprzed punktu kontrolnego */
-export const FULL_EVERY_MS = 7 * 24 * H;
 const SHA = /^[0-9a-f]{40}$/;
 
 const day = (ms) => new Date(ms).toISOString().slice(0, 10);
@@ -43,51 +42,46 @@ export function ledgerBadge(latest, nowMs) {
   return badge(`zweryfikowany ${day(latest.at)}`, 'brightgreen');
 }
 
-/**
- * Punkt kontrolny z datą z przyszłości (`at` albo `fullAt` ponad zapas na zegar) jest nieważny — inaczej „pełny co 7 dni”
- * liczony od takiej daty wyłączyłby pełny przebieg na zawsze. Linia raportu albo null.
- */
-export function checkpointProblem(checkpoint, nowMs) {
-  if (!checkpoint || typeof checkpoint !== 'object') return null;
-  const bad = [checkpoint.at, checkpoint.fullAt].find((t) => typeof t === 'number' && fromFuture(t, nowMs));
-  return bad === undefined ? null : `✗ punkt kontrolny: data z przyszłości (${utcMin(bad)}Z) — nieważny, wykonano pełny przebieg historii git`;
-}
-
-/** Commit, od którego sprawdzać historię git; null = pełny przebieg (brak punktu, nieważny albo pełny starszy niż 7 dni). */
-export function sinceCommit(checkpoint, nowMs) {
-  if (!checkpoint || typeof checkpoint !== 'object' || !SHA.test(String(checkpoint.commit))) return null;
-  if (checkpointProblem(checkpoint, nowMs)) return null;
-  if (typeof checkpoint.fullAt !== 'number' || !(nowMs - checkpoint.fullAt <= FULL_EVERY_MS)) return null;
-  return checkpoint.commit;
+/** Commit kotwicy dla weryfikatora; null = brak albo uszkodzona (pierwszy przebieg — bez kontroli kotwicy). */
+export function anchorCommit(anchor) {
+  return anchor && typeof anchor === 'object' && SHA.test(String(anchor.commit)) ? anchor.commit : null;
 }
 
 /**
- * Nowy stan gałęzi health po przebiegu. `code` — kod wyjścia weryfikatora jako tekst ('' = nie skończył się);
- * `since` — punkt kontrolny użyty w przebiegu (null = pełny). Punkt kontrolny przesuwa tylko przebieg z kodem 0.
- * Nieważny poprzedni punkt (data z przyszłości) to problem w raporcie tego przebiegu (ok = false); nowy punkt powstaje
- * z pełnego przebiegu, więc następny jest znów przyrostowy.
+ * Kotwicy brak albo jest uszkodzona, a poprzedni wynik był zgodny (wtedy kotwica musiała powstać) — usunięcie kotwicy
+ * nie może udawać pierwszego przebiegu i ukryć przepisanej historii. Brak obu plików = prawdziwy pierwszy przebieg.
  */
-export function publishVerify({ code, report, prevLatest, prevCheckpoint, head, since, run, nowMs }) {
+export function anchorProblem(anchor, prevLatest) {
+  if (anchorCommit(anchor) || !prevLatest || typeof prevLatest !== 'object' || prevLatest.ok !== true) return null;
+  return '✗ kotwica usunięta albo uszkodzona (verify/anchor.json), choć poprzedni wynik był zgodny — ciągłości historii git nie da się sprawdzić';
+}
+
+/**
+ * Nowy stan gałęzi wyników po przebiegu. `code` — kod wyjścia weryfikatora jako tekst ('' = nie skończył się).
+ * Kotwicę przesuwa tylko przebieg z kodem 0 — po wykryciu przepisanej historii zostaje, więc alarm trwa do wyjaśnienia.
+ * Usunięta albo uszkodzona kotwica (`anchorProblem`) to problem tego przebiegu i nowa kotwica z niego nie powstaje.
+ */
+export function publishVerify({ code, report, prevLatest, prevAnchor, head, run, nowMs }) {
   const finished = /^\d+$/.test(String(code ?? ''));
   const passed = finished && Number(code) === 0;
-  const cpProblem = checkpointProblem(prevCheckpoint, nowMs);
+  const lost = anchorProblem(prevAnchor, prevLatest);
   const latest = finished
     ? {
         v: 1,
-        ok: passed && !cpProblem,
+        ok: passed && !lost,
         at: nowMs,
         run,
         commit: head,
         lines: [
-          ...(cpProblem ? [cpProblem] : []),
+          ...(lost ? [lost] : []),
           ...String(report)
             .split('\n')
             .filter((l) => /^(✓|✗|ℹ)/.test(l)),
         ].slice(0, 40),
       }
     : prevLatest;
-  const checkpoint = passed && SHA.test(String(head)) ? { v: 1, commit: head, at: nowMs, fullAt: since ? prevCheckpoint?.fullAt ?? null : nowMs } : prevCheckpoint;
-  return { latest, checkpoint, badge: ledgerBadge(latest, nowMs) };
+  const anchor = passed && !lost && SHA.test(String(head)) ? { v: 1, commit: head, at: nowMs } : prevAnchor;
+  return { latest, anchor, badge: ledgerBadge(latest, nowMs) };
 }
 
 function readJson(file) {
@@ -104,13 +98,12 @@ function main() {
     const i = rest.indexOf(`--${name}`);
     return i >= 0 ? (rest[i + 1] ?? '') : null;
   };
-  const now = Date.now();
   const file = (...p) => path.join(dir, ...p);
-  if (cmd === 'since' && dir) {
-    const cp = readJson(file('verify', 'checkpoint.json'));
-    const problem = checkpointProblem(cp, now);
-    if (problem) console.error(problem); // dziennik przebiegu; do raportu (latest.json) trafia przy publish
-    console.log(sinceCommit(cp, now) ?? '');
+  if (cmd === 'anchor' && dir) {
+    const anchor = readJson(file('verify', 'anchor.json'));
+    const lost = anchorProblem(anchor, readJson(file('verify', 'latest.json')));
+    if (lost) console.error(lost); // dziennik przebiegu; do raportu (latest.json) trafia przy publish
+    console.log(anchorCommit(anchor) ?? '');
     return;
   }
   if (cmd === 'publish' && dir) {
@@ -121,26 +114,24 @@ function main() {
     } catch {
       // brak raportu — przebieg przerwany przed zapisem
     }
-    const since = opt('since');
     const r = publishVerify({
       code: opt('code') ?? '',
       report,
       prevLatest: readJson(file('verify', 'latest.json')),
-      prevCheckpoint: readJson(file('verify', 'checkpoint.json')),
+      prevAnchor: readJson(file('verify', 'anchor.json')),
       head: opt('head') ?? '',
-      since: since && SHA.test(since) ? since : null,
       run: opt('run') ?? '',
-      nowMs: now,
+      nowMs: Date.now(),
     });
     mkdirSync(file('verify'), { recursive: true });
     mkdirSync(file('badge'), { recursive: true });
     if (r.latest) writeFileSync(file('verify', 'latest.json'), `${JSON.stringify(r.latest, null, 2)}\n`, 'utf8');
-    if (r.checkpoint) writeFileSync(file('verify', 'checkpoint.json'), `${JSON.stringify(r.checkpoint, null, 2)}\n`, 'utf8');
+    if (r.anchor) writeFileSync(file('verify', 'anchor.json'), `${JSON.stringify(r.anchor, null, 2)}\n`, 'utf8');
     writeFileSync(file('badge', 'ledger.json'), `${JSON.stringify(r.badge)}\n`, 'utf8');
     console.log(`${r.badge.message}`);
     return;
   }
-  console.error('użycie: verify-status.mjs since <katalog> | publish <katalog> --code <kod> --report <plik> --head <commit> --run <url> [--since <commit>]');
+  console.error('użycie: verify-status.mjs anchor <katalog> | publish <katalog> --code <kod> --report <plik> --head <commit> --run <url>');
   process.exitCode = 2;
 }
 
