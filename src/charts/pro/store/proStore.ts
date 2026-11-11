@@ -532,7 +532,8 @@ export class ProStore {
     if (tr) {
       for (const [a, z] of tr.spans) {
         this.coverage.addSpan(a, z);
-        this.addressed.addSpan(a, z);
+        // Sprzed granicy sprzątania zleceń z historii już się nie składa (niżej), więc konta stamtąd nie liczą się do okna
+        this.addressed.addSpan(Math.max(a, this.keptFrom), z);
       }
       for (const [a, z] of tr.zeroSpans ?? []) this.zeroKnown.addSpan(a, z);
       const { accepted } = this.tape.insert(tr.fills);
