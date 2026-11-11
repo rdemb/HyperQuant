@@ -4,6 +4,16 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Kto handluje i makerzy: okno 60 minut do zamknięcia świecy (2026-11-11)
+
+#### Naprawione
+- **Duzi gracze i animatorzy rynku nie są już klasyfikowani z minut po zamknięciu świecy** (`src/charts/pro/core/players.ts`, `src/charts/pro/core/makers.ts`, `src/charts/pro/store/proStore.ts`). Dotąd konto było dużym graczem albo animatorem w całej godzinie UTC, więc zlecenia z dalszej części godziny zmieniały już zamknięte świece 1m–30m (np. konto z 600 tys. USD wejść o 11:05, które o 11:40 dokłada kolejne 600 tys., przenosiło świecę 11:05 z reszty do dużych graczy). Teraz klasa konta jest liczona z 60 minut kończących się na zamknięciu świecy: duży gracz to konto z wejściami od progu (1 mln USD BTC, 500 tys. ETH, 250 tys. SOL i HYPE) w tym oknie, animator to konto z płynnością w co najmniej połowie minut okna z taśmą z kontami i po obu stronach. W bieżącej świecy liczą się dane do teraz, a po zamknięciu jej wartość się nie zmienia.
+
+#### Zmienione
+- **Widoczna zmiana na interwałach poniżej 1 h**: okno sięga przez pełną godzinę wstecz, więc konto aktywne o 10:50 i 11:05 może być dużym graczem albo animatorem w świecy 11:05, a konto, które przekracza próg dopiero później w godzinie, w świecach przed tą chwilą jest resztą. Świece 1 h nie zmieniają się (okno to ta sama godzina UTC), świece dłuższe liczą każdą swoją godzinę UTC osobno jak dotąd. Okno przez przełom doby UTC (w starszych plikach historii z numeracją godzinową — przez pełną godzinę) albo przez chwilę otwarcia strony liczy jedno konto jako dwa, więc dużych graczy i animatorów może wyjść mniej.
+- Opisy w Tablicy liczb, zdaniu stanu rynku, wskaźniku „Makerzy”, tabeli źródeł i README mówią o oknie 60 minut zamiast godziny UTC.
+- Wydajność: zamknięte świece są pamiętane do nowych zleceń w ich oknie, a kolejne świece przesuwają sumy okna zamiast liczyć je od nowa (sumy w centach, więc przesunięte okno daje dokładnie to samo co liczone od nowa). Pomiar na 24 h syntetycznej taśmy (480 tys. zleceń, 720 tys. wypełnień, 1440 świec 1m): pierwsze liczenie 388 ms (duzi gracze) i 170 ms (makerzy), kolejne bez zmian 5 ms i 3 ms, po nowym zleceniu 12 ms i 5 ms (wcześniej odpowiednio 342 i 137 ms, 1 i 43 ms, 20 i 45 ms).
+
 ### Wskaźnik: strefy absorpcji i pudełka Effort (2026-11-09)
 
 #### Dodane
