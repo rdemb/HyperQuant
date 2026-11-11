@@ -5,10 +5,11 @@ import type { CatTrust } from '../../utils/schrodiTrust';
 /**
  * Kierunek kota w jednym miejscu. Kierunek jest ukryty w interfejsie, dopóki e-proces w dzienniku (zakład kota wobec
  * prostej reguły, zarejestrowany plan) nie da dowodu przewagi: bez dowodu kot pokazuje tylko duży ruch i dotknięcia,
- * a rysunek nie koduje kierunku. Z dowodem kierunek to neutralna szansa wzrostu ceny w najbliższej godzinie, bez stron
+ * a rysunek nie koduje kierunku. Alarm dryfu kierunku (kot ostatnio gorszy od prostej reguły) znów ukrywa kierunek,
+ * choć dowód z przeszłości zostaje w dzienniku. Z dowodem kierunek to neutralna szansa wzrostu ceny w najbliższej godzinie, bez stron
  * rynku (long/short) i bez kolorów kupna i sprzedaży. Zmiana reguły albo formy etykiety to zmiana tylko tutaj.
  */
-export const dirProven = (trust: CatTrust | null | undefined): boolean => !!trust?.plan && trust.dir.proofAt !== null;
+export const dirProven = (trust: CatTrust | null | undefined): boolean => !!trust?.plan && trust.dir.proofAt !== null && !trust.dir.drift.alarm;
 
 export const upLabel = (): string => tr('P(wzrost 1 h)', 'P(up 1 h)');
 

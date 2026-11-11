@@ -7,8 +7,8 @@ auction levels with the chance of touching each within the hour, the hour's reac
 odds), the next high-impact macro release and, for the current clock hour, odds that follow the price path minute by
 minute ([Live hour](#live-hour)).
 
-The cat is drawn as Schrödinger's cat: a green (price higher in an hour) and an orange (price lower) outline in
-superposition, each as bright as its probability. The closer the forecast is to 50%, the more the two outlines drift apart and blur. Above about 60% on
+The cat is drawn as Schrödinger's cat: a lavender (price higher in an hour) and a sand (price lower) outline in
+superposition, in its own colours rather than the buy and sell colours, each as bright as its probability. The closer the forecast is to 50%, the more the two outlines drift apart and blur. Above about 60% on
 one side the cat collapses into a single colour. While direction is hidden (see [Live updates](#live-updates)), the cat has a
 single sharp neutral outline and does not encode direction.
 
@@ -200,7 +200,8 @@ registered in the ledger before scoring. Without an edge, capital reaches 20 at 
 (`trust.dir.proofAt` in the ledger summary is `null`), the interface shows no direction at all: no label, no bar, no
 sentence, no buy or sell colours, and the cat drawing is neutral. The cat shows the big move and the touch
 probabilities. The direction scores (the [Direction](#direction) table and the ledger) stay visible as a measurement, with a note that direction
-is hidden until proof. Once `proofAt` is set, the label below appears.
+is hidden until proof. Once `proofAt` is set, the label below appears; a drift alarm on the direction head
+(`trust.dir.drift.alarm`, the cat lately worse than the simple rule) hides direction again until the alarm clears.
 
 The direction label is neutral: "P(up 1 h) 54%" (Polish: "P(wzrost 1 h) 54%"), the probability that the price is higher
 in an hour, in a neutral ink colour without buy or sell colours. It is a description of the odds, not a trade side.
