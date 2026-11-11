@@ -103,6 +103,17 @@ export function decideAlerts({ now, pulse, serviceState, activeForMs, lastRestar
 }
 
 /**
+ * Licznik restartów usługi w epizodzie po przebiegu: zero, gdy strażnik nie ma powodu do restartu tej usługi, a ona działa
+ * dłużej niż godzinę (także od ostatniego restartu). Według stanu tej usługi, nie całej oceny — alarm o danych (np.
+ * opóźnione odczyty pozycji) może trwać dniami i nie może blokować restartów po kolejnych, niezależnych zawieszeniach.
+ * Tuż po restarcie licznik zostaje (limit prób w epizodzie). `d` — wynik `decide` / `decideAlerts` dla tej usługi.
+ */
+export function episodeRestarts({ now, d, serviceState, activeForMs, lastRestart, restarts }) {
+  const settled = d.reason === null && serviceState === 'active' && (activeForMs ?? Infinity) >= RESTART_COOLDOWN && (lastRestart === null || now - lastRestart >= RESTART_COOLDOWN);
+  return settled ? 0 : restarts;
+}
+
+/**
  * Ocena jednego przebiegu z histerezą opóźnienia odczytów pozycji. `input` — wynik `fetchInput` (null = bez repo
  * danych), `prevNtl` — stan histerezy z pliku strażnika (brak = start bez alarmu). Zwraca ocenę i nowy stan do zapisu.
  */
@@ -280,11 +291,12 @@ async function main() {
   const health = run.health;
   st.ntl = run.ntl;
   const state = serviceState();
+  const up = state === 'active' ? activeForMs() : null;
   const d = decide({
     now,
     localAsOf: readLocalAsOf(path.join(outDir, 'status.json')),
     serviceState: state,
-    activeForMs: state === 'active' ? activeForMs() : null,
+    activeForMs: up,
     lastRestart: st.lastRestart,
     restarts: st.restarts,
     publicCheck: base !== null,
@@ -296,12 +308,15 @@ async function main() {
     saveState(stateFile, st); // przed restartem — utrata zapisu nie może skasować przerwy między restartami
     restart(SERVICE, d);
   }
+  // Koniec epizodu osobno dla każdej usługi (po restarcie licznik zostaje — `d.reason` niepuste)
+  st.restarts = episodeRestarts({ now, d, serviceState: state, activeForMs: up, lastRestart: st.lastRestart, restarts: st.restarts });
   const alertsState = serviceState(ALERTS_SERVICE);
+  const alertsUp = alertsState === 'active' ? activeForMs(ALERTS_SERVICE) : null;
   const da = decideAlerts({
     now,
     pulse: parsePulse(readServiceJson(path.join(env.HQ_STATE_DIR || '/var/lib/hyperquant/state', 'alerts-pulse.json'))),
     serviceState: alertsState,
-    activeForMs: alertsState === 'active' ? activeForMs(ALERTS_SERVICE) : null,
+    activeForMs: alertsUp,
     lastRestart: st.alertsRestart,
     restarts: st.alertsRestarts,
   });
@@ -311,8 +326,8 @@ async function main() {
     saveState(stateFile, st);
     restart(ALERTS_SERVICE, da);
   }
+  st.alertsRestarts = episodeRestarts({ now, d: da, serviceState: alertsState, activeForMs: alertsUp, lastRestart: st.alertsRestart, restarts: st.alertsRestarts });
   const a = alertState(health, d, da);
-  if (a.ok) st.restarts = st.alertsRestarts = 0; // koniec epizodu
   console.log(`[strażnik] ${a.ok ? 'ok' : `problem: ${a.problems.join('; ')}`}`);
   const urgent = a.problems.some((p) => p.startsWith('PRYWATNOŚĆ'));
   const key = env.HQ_GIT_SSH_KEY;

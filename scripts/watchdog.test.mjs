@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { assessHealth } from './check-data-health.mjs';
-import { alertState, assessRun, dataBaseFromRemote, decide, decideAlerts, gitEnv, parsePulse, shouldPush } from './watchdog.mjs';
+import { alertState, assessRun, dataBaseFromRemote, decide, decideAlerts, episodeRestarts, gitEnv, parsePulse, shouldPush } from './watchdog.mjs';
 
 const MIN = 60_000;
 const NOW = Date.UTC(2026, 9, 22, 14, 0);
@@ -199,6 +199,65 @@ describe('strażnik: histereza alarmu opóźnionych odczytów pozycji', () => {
     expect(second.ntl.lag).toBe(true);
     expect(assessRun(input(27), JSON.parse(JSON.stringify(second.ntl)), NOW).health.ok).toBe(false);
     expect(assessRun(null, undefined, NOW)).toEqual({ health: ok, ntl: { lag: false, above: 0, below: 0 } });
+  });
+});
+
+describe('strażnik: licznik restartów w epizodzie według stanu usługi', () => {
+  /** Otwarty alarm opóźnienia odczytów pozycji — nie dotyczy procesu skanera, ocena całości nigdy nie jest „ok” */
+  const lagging = { ok: false, problems: ['odczyty pozycji opóźnione: mediana ważona 33 min (alarm powyżej 30 min, koniec po 2 przebiegach poniżej 25 min)'], facts: [] };
+
+  /**
+   * Przebiegi skanera co 15 min jak w `main`: `stalled(t)` — czy w chwili t skaner nie publikuje lokalnie (14 min ciszy).
+   * Usługa działa od 2 h przed startem; restart zeruje czas działania. Zwraca decyzje kolejnych przebiegów.
+   */
+  function scannerRuns(runs, stalled) {
+    let lastRestart = null;
+    let restarts = 0;
+    let upSince = NOW - 120 * MIN;
+    const out = [];
+    for (let i = 0; i < runs; i++) {
+      const now = NOW + i * 15 * MIN;
+      const activeForMs = now - upSince;
+      const d = decide({ ...base, now, localAsOf: stalled(now) ? now - 14 * MIN : now - MIN, activeForMs, lastRestart, restarts, health: lagging });
+      if (d.restart) {
+        lastRestart = now;
+        restarts += 1;
+        upSince = now;
+      }
+      restarts = episodeRestarts({ now, d, serviceState: 'active', activeForMs: now - upSince, lastRestart, restarts });
+      out.push({ now, d, restarts });
+    }
+    return out;
+  }
+
+  it('alarm opóźnienia otwarty przez całą serię: cztery zawieszenia co 6 h z powrotem między nimi → czwarte też kończy się restartem', () => {
+    const stallAt = [0, 6, 12, 18].map((h) => NOW + h * 60 * MIN);
+    const runs = scannerRuns(4 * 24 + 1, (t) => stallAt.includes(t));
+    const atStalls = runs.filter((r) => stallAt.includes(r.now));
+    expect(atStalls.map((r) => r.d.restart)).toEqual([true, true, true, true]);
+    expect(atStalls.map((r) => r.d.category)).not.toContain('giveup');
+  });
+
+  it('trzy restarty w 3 h bez powrotu → strażnik się poddaje (limit prób w epizodzie zostaje)', () => {
+    const runs = scannerRuns(13, () => true);
+    expect(runs.filter((r) => r.d.restart)).toHaveLength(3);
+    expect(runs.at(-1).now - NOW).toBe(180 * MIN);
+    expect(runs.at(-1).d).toMatchObject({ restart: false, category: 'giveup' });
+  });
+
+  it('licznik zostaje tuż po restarcie, w stanie przejściowym i przy problemie usługi; zero po godzinie spokojnej pracy', () => {
+    const none = { restart: false, reason: null, category: null };
+    const calm = { now: NOW, d: none, serviceState: 'active', activeForMs: 61 * MIN, lastRestart: NOW - 61 * MIN, restarts: 2 };
+    expect(episodeRestarts(calm)).toBe(0);
+    expect(episodeRestarts({ ...calm, activeForMs: 20 * MIN, lastRestart: NOW - 20 * MIN })).toBe(2);
+    expect(episodeRestarts({ ...calm, activeForMs: null, lastRestart: NOW - 20 * MIN })).toBe(2);
+    expect(episodeRestarts({ ...calm, serviceState: 'activating', activeForMs: null })).toBe(2);
+    expect(episodeRestarts({ ...calm, d: { restart: false, reason: 'serwer powiadomień nie zapisał pulsu od 7 min (restart wstrzymany)', category: 'stall' } })).toBe(2);
+    // serwer powiadomień: ta sama zasada, niezależnie od skanera
+    const da = decideAlerts({ now: NOW, pulse: { at: NOW - MIN, syncAt: null, wsAt: null }, serviceState: 'active', activeForMs: 90 * MIN, lastRestart: NOW - 90 * MIN, restarts: 2 });
+    expect(episodeRestarts({ now: NOW, d: da, serviceState: 'active', activeForMs: 90 * MIN, lastRestart: NOW - 90 * MIN, restarts: 2 })).toBe(0);
+    // stary plik stanu bez restartów strażnika
+    expect(episodeRestarts({ ...calm, lastRestart: null, activeForMs: null, restarts: 0 })).toBe(0);
   });
 });
 
