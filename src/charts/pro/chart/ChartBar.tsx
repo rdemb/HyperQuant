@@ -57,6 +57,8 @@ export const LayersMenu: React.FC<{
       ariaLabel={tr(`Warstwy na wykresie: ${shown}`, `Layers on the chart: ${shown}`)}
       title={tr('Warstwy na wykresie ceny: źródło danych, wiek, ukrycie', 'Layers on the price chart: data source, age, hide')}
       width="w-72"
+      // Telefon: przycisk przypięty przy prawej krawędzi — panel od jego prawej krawędzi
+      align={compact ? 'right' : 'left'}
       label={
         <>
           <Layers aria-hidden="true" className="w-4 h-4 shrink-0" />

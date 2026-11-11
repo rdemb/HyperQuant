@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { Check, ChevronDown } from 'lucide-react';
-import { menuKey, openFocusIndex } from './menuKeys';
+import { fitPanel, menuKey, openFocusIndex } from './menuKeys';
 
 /**
  * Lista rozwijana paska wykresu (wzorzec WAI-ARIA „menu button”): przycisk z `aria-haspopup`, `aria-expanded` i
@@ -46,6 +46,20 @@ export const Dropdown: React.FC<DropdownProps> = ({ label, ariaLabel, title, men
   const ownBtn = useRef<HTMLButtonElement>(null);
   const btn = btnRef ?? ownBtn;
   const panelRef = useRef<HTMLDivElement>(null);
+  // Panel w oknie: przesunięcie w bok i wysokość z miejsca pod przyciskiem (nad dolnym menu telefonu)
+  const [fit, setFit] = useState<{ dx: number; maxH: number } | null>(null);
+  useLayoutEffect(() => {
+    if (!open) {
+      setFit(null);
+      return;
+    }
+    const b = btn.current?.getBoundingClientRect();
+    const p = panelRef.current;
+    if (!b || !p) return;
+    const nav = document.querySelector<HTMLElement>('[data-app-nav]');
+    const navTop = nav && getComputedStyle(nav).display !== 'none' ? nav.getBoundingClientRect().top : Number.POSITIVE_INFINITY;
+    setFit(fitPanel(b, { w: p.offsetWidth }, align, { w: window.innerWidth, bottom: Math.min(window.innerHeight, navTop) }));
+  }, [open, align, btn]);
   const close = useCallback(
     (refocus = true) => {
       setOpen(false);
@@ -117,7 +131,8 @@ export const Dropdown: React.FC<DropdownProps> = ({ label, ariaLabel, title, men
           role="menu"
           aria-label={menuLabel ?? ariaLabel}
           onKeyDown={onPanelKey}
-          className={`absolute top-full mt-1 z-40 ${align === 'right' ? 'right-0' : 'left-0'} ${width} max-w-[calc(100vw-16px)] max-h-[min(70vh,560px)] overflow-y-auto bg-surface-2 border border-line-strong rounded-xl p-1.5 shadow-2xl flex flex-col text-xs`}
+          style={fit ? { transform: `translateX(${fit.dx}px)`, maxHeight: fit.maxH } : { maxHeight: 560 }}
+          className={`absolute top-full mt-1 z-40 ${align === 'right' ? 'right-0' : 'left-0'} ${width} max-w-[calc(100vw-16px)] overflow-y-auto bg-surface-2 border border-line-strong rounded-xl p-1.5 shadow-2xl flex flex-col text-xs`}
         >
           {children(() => close(true))}
         </div>

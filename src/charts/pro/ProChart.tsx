@@ -871,7 +871,9 @@ export const ProChart: React.FC<{
     <div
       ref={cardRef}
       data-focus={chartOnly ? (landscape ? 'landscape' : 'focus') : undefined}
-      className={`${chartOnly ? '' : 'relative '}flex flex-col bg-surface-1 border border-line-strong overflow-hidden ${
+      // Bez overflow-hidden na karcie: listy paska wychodzą poza kartę (niski wykres w układzie 2 i 4, telefon); przycina
+      // samo pole wykresu
+      className={`${chartOnly ? '' : 'relative '}flex flex-col bg-surface-1 border border-line-strong ${
         chartOnly
           ? // Nad przypiętym nagłówkiem (z-30); w trybie skupienia pod dolnym menu (z-40), poziomo na cały ekran
             landscape
@@ -1049,7 +1051,7 @@ export const ProChart: React.FC<{
       )}
 
       {/* Wykres z paskiem rysowania po lewej i taśmą zleceń po prawej (na telefonie taśma, DOM i liczby to karty) */}
-      <div className="relative flex flex-1 min-h-0">
+      <div className="relative flex flex-1 min-h-0 overflow-hidden">
         <DrawToolbar tools={tools} className={drawOpen && !chartOnly ? 'flex' : 'hidden'} />
         <div className="relative flex-1 min-h-0 min-w-0" onContextMenu={onContextMenu}>
           {/* Własny kontekst warstw: uchwyt zmiany wysokości paneli wykresu (z-index 50) nie przykrywa pasków i okien rysunków */}
