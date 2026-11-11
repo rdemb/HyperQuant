@@ -24,7 +24,7 @@
  *     `ots upgrade <plik>.ots` i `ots verify -f <plik danych> <plik>.ots` (dla slotu: skrót podaj przez `-d <hash>`).
  * Implementacja celowo niezależna od kodu skanera (ten sam format, inny kod).
  */
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { AB_DESIGN, abBlocks } from '../src/utils/abTest.ts';
 import { fitEnsemble } from '../src/utils/ensemble.ts';
@@ -923,34 +923,106 @@ const days = (from, to) => {
   return out;
 };
 
-/** Zawartość obiektów git (`git cat-file --batch`) partiami do ~64 MB — jeden proces na partię zamiast jednego na plik. */
-function readBlobs(git, oids) {
-  const sizes = new Map();
-  for (const l of git(['cat-file', '--batch-check'], `${oids.join('\n')}\n`).toString('utf8').split('\n')) {
-    const [oid, type, size] = l.split(' ');
-    if (type === 'blob') sizes.set(oid, Number(size));
-  }
-  const out = new Map();
-  const LIMIT = 64 * 1024 * 1024;
-  for (let i = 0; i < oids.length; ) {
-    const part = [];
-    let total = 0;
-    while (i < oids.length && (part.length === 0 || total + (sizes.get(oids[i]) ?? 0) <= LIMIT)) {
-      total += sizes.get(oids[i]) ?? 0;
-      part.push(oids[i++]);
+/**
+ * Czytnik obiektów git — jeden proces `git cat-file --batch` na cały przebieg, pytania po jednym obiekcie.
+ * `pair(przed, po, fn)` czyta obie wersje pliku i oddaje je `fn` tylko na czas wywołania; następne pytanie idzie
+ * dopiero po nim, więc naraz w pamięci jest najwyżej jedna para (stała pamięć względem długości historii).
+ * `stats()` — szczyt bajtów trzymanych naraz (bufor wyjścia git + wypożyczona para), bajty łącznie, liczba par.
+ */
+export function catFileReader(dir) {
+  const proc = spawn('git', ['-C', dir, 'cat-file', '--batch'], { stdio: ['pipe', 'pipe', 'ignore'] });
+  /** Nieprzeczytane wyjście git (fragmenty) i ich łączna długość */
+  const chunks = [];
+  let queued = 0;
+  let lentBytes = 0;
+  let peakBytes = 0;
+  let totalBytes = 0;
+  let pairs = 0;
+  let failure = null;
+  let wake = null;
+  const notify = () => {
+    const w = wake;
+    wake = null;
+    w?.();
+  };
+  proc.stdout.on('data', (d) => {
+    chunks.push(d);
+    queued += d.length;
+    peakBytes = Math.max(peakBytes, queued + lentBytes);
+    notify();
+  });
+  proc.stdout.on('end', () => {
+    failure ??= new Error('git cat-file: koniec wyjścia');
+    notify();
+  });
+  const fail = (e) => {
+    failure = e;
+    notify();
+  };
+  proc.on('error', fail);
+  proc.stdin.on('error', fail); // git zakończony (EPIPE) — błąd przebiegu, nie nieobsłużony wyjątek
+  const exited = new Promise((resolve) => proc.on('close', resolve));
+  const waitFor = async (ready) => {
+    while (!ready()) {
+      if (failure) throw failure;
+      await new Promise((r) => (wake = r));
     }
-    const buf = git(['cat-file', '--batch'], `${part.join('\n')}\n`);
-    let p = 0;
-    for (const oid of part) {
-      const nl = buf.indexOf(10, p);
-      const [, type, size] = buf.subarray(p, nl).toString('utf8').split(' ');
-      p = nl + 1;
-      if (type !== 'blob') continue; // „missing” — brak obiektu, porównanie zgłosi zmianę
-      out.set(oid, buf.subarray(p, p + Number(size)));
-      p += Number(size) + 1;
+  };
+  const take = (n) => {
+    const out = Buffer.allocUnsafe(n);
+    for (let off = 0; off < n; ) {
+      const c = chunks[0];
+      const k = Math.min(c.length, n - off);
+      c.copy(out, off, 0, k);
+      off += k;
+      if (k === c.length) chunks.shift();
+      else chunks[0] = c.subarray(k);
     }
-  }
-  return out;
+    queued -= n;
+    return out;
+  };
+  const newline = () => {
+    let pos = 0;
+    for (const c of chunks) {
+      const i = c.indexOf(10);
+      if (i >= 0) return pos + i;
+      pos += c.length;
+    }
+    return -1;
+  };
+  /** Treść obiektu albo null („missing” — brak obiektu) */
+  const read = async (oid) => {
+    proc.stdin.write(`${oid}\n`);
+    await waitFor(() => newline() >= 0);
+    const header = take(newline() + 1).toString('utf8').trim();
+    const [, type, size] = header.split(' ');
+    if (type !== 'blob') return null;
+    const n = Number(size);
+    await waitFor(() => queued >= n + 1);
+    const body = take(n);
+    take(1); // znak nowej linii po treści
+    lentBytes += n;
+    totalBytes += n;
+    return body;
+  };
+  return {
+    async pair(before, after, fn) {
+      const a = await read(before);
+      const b = await read(after);
+      pairs++;
+      peakBytes = Math.max(peakBytes, queued + lentBytes);
+      try {
+        return fn(a, b);
+      } finally {
+        lentBytes = 0; // para oddana — następna czytana dopiero teraz
+      }
+    },
+    async close() {
+      if (!proc.stdin.writableEnded) proc.stdin.end();
+      await exited;
+    },
+    stats: () => ({ peakBytes, totalBytes, pairs }),
+  };
 }
 
 /**
@@ -959,9 +1031,10 @@ function readBlobs(git, oids) {
  * w danym commicie (jeden `git diff-tree --stdin` dla wszystkich par), więc koszt rośnie z liczbą zmian, nie z liczbą
  * commitów × plików. `since` — commit punktu kontrolnego (ostatnia udana weryfikacja): sprawdzane tylko commity po nim;
  * musi należeć do historii gałęzi (inaczej historia została przepisana). Zmiany sprzed punktu kontrolnego wykrywa
- * okresowy pełny przebieg (bez `since`).
+ * okresowy pełny przebieg (bez `since`). Wersje plików porównywane parami przez `reader` (domyślnie `catFileReader`) —
+ * pamięć nie rośnie z długością historii.
  */
-export function checkGitAppendOnly(dir, { since = null } = {}) {
+export async function checkGitAppendOnly(dir, { since = null, reader = null } = {}) {
   const git = (args, input) => execFileSync('git', ['-C', dir, ...args], { input, maxBuffer: 1024 * 1024 * 1024 });
   const commits = git(['log', '--format=%H', '--reverse']).toString('utf8').split('\n').filter(Boolean);
   let start = 0;
@@ -984,16 +1057,19 @@ export function checkGitAppendOnly(dir, { since = null } = {}) {
       }
     }
   }
-  const blobs = readBlobs(git, [...new Set(changes.filter((c) => c[1] !== 'D').flatMap((c) => [c[2], c[3]]))]);
   const problems = [];
-  for (const [commit, status, before, after, file] of changes) {
-    if (status === 'D') {
-      problems.push(`${commit.slice(0, 10)}: usunięto ${file}`);
-      continue;
+  const blobs = reader ?? catFileReader(dir);
+  try {
+    for (const [commit, status, before, after, file] of changes) {
+      if (status === 'D') {
+        problems.push(`${commit.slice(0, 10)}: usunięto ${file}`);
+        continue;
+      }
+      const appended = await blobs.pair(before, after, (a, b) => !!a && !!b && b.length >= a.length && b.subarray(0, a.length).equals(a));
+      if (!appended) problems.push(`${commit.slice(0, 10)}: zmieniono zapisane linie w ${file}`);
     }
-    const a = blobs.get(before);
-    const b = blobs.get(after);
-    if (!a || !b || b.length < a.length || !b.subarray(0, a.length).equals(a)) problems.push(`${commit.slice(0, 10)}: zmieniono zapisane linie w ${file}`);
+  } finally {
+    if (!reader) await blobs.close(); // czytnik z zewnątrz zamyka wywołujący
   }
   return { commits: commits.length, checked: pairs.length, since, problems };
 }
@@ -1143,7 +1219,7 @@ async function main() {
         console.log('✗ historia git: --since-commit wymaga pełnego hasha commita (40 znaków hex)');
         ok = false;
       } else {
-        const g = checkGitAppendOnly(local, { since });
+        const g = await checkGitAppendOnly(local, { since });
         const scope = g.since ? ` (od punktu kontrolnego ${g.since.slice(0, 10)}: ${plural(g.checked, 'nowy commit', 'nowe commity', 'nowych commitów')}; pełna historia — przebieg bez --since-commit)` : '';
         console.log(g.problems.length ? `✗ historia git: ${g.problems.slice(0, 5).join('; ')}` : `✓ historia git: ${plural(g.commits, 'commit', 'commity', 'commitów')}, tylko dopisywanie${scope}`);
         if (g.problems.length) ok = false;
