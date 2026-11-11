@@ -4,14 +4,14 @@ import { useDeskLedger } from '../../state/useDeskLedger';
 import { isCat } from '../../utils/deskLedger';
 import { mindChange } from '../../utils/schrodi';
 import { driftAlarms } from '../../utils/schrodiTrust';
-import { DIR_TONE, upOdds } from './direction';
+import { DIR_TONE, dirProven, upOdds } from './direction';
 import { SchrodiCat } from './SchrodiCat';
 import { SchrodiPanel, moodOf } from './SchrodiPanel';
 import { useSchrodi } from './useSchrodi';
 
 /**
- * Kot w pasku stanu pod wykresem (nie zasłania świec ani wskaźników): mały Schrödi z dwiema liczbami (duży ruch,
- * kierunek); kliknięcie otwiera dymek nad paskiem. Prognoza dotyczy zawsze BTC na najbliższą godzinę, niezależnie od
+ * Kot w pasku stanu pod wykresem (nie zasłania świec ani wskaźników): mały Schrödi z szansą dużego ruchu (i kierunku
+ * dopiero po dowodzie przewagi w e-procesie dziennika); kliknięcie otwiera dymek nad paskiem. Prognoza dotyczy zawsze BTC na najbliższą godzinę, niezależnie od
  * rynku na wykresie. Liczby zmieniają się na żywo; kropka przy liczbach = zmiana zdania w ostatnich 10 min.
  * Alarm dryfu z dziennika (kot ostatnio gorszy od prostej reguły) → kot szary.
  */
@@ -32,9 +32,13 @@ export const SchrodiLauncher: React.FC<{ className?: string }> = ({ className })
   const f = st.status === 'ready' ? st.f : null;
   const stale = st.status !== 'ready' || now - st.at > STALE_MS;
   const mood = moodOf(f, now, stale);
-  const mind = st.status === 'ready' && st.hist.length ? mindChange(st.hist, st.hist[st.hist.length - 1]) : null;
+  const mindAny = st.status === 'ready' && st.hist.length ? mindChange(st.hist, st.hist[st.hist.length - 1]) : null;
   const { summary } = useDeskLedger();
-  const grey = driftAlarms(summary && isCat(summary.cat) ? summary.cat.trust : null).length > 0;
+  const trust = summary && isCat(summary.cat) ? summary.cat.trust : null;
+  const grey = driftAlarms(trust).length > 0;
+  // Kierunek tylko z dowodem przewagi w e-procesie; bez niego pasek pokazuje sam duży ruch
+  const showDir = dirProven(trust);
+  const mind = mindAny && (showDir || mindAny.head === 'big') ? mindAny : null;
   return (
     <div className={`relative ${className ?? ''}`}>
       {open && st.status === 'ready' && (
@@ -47,7 +51,11 @@ export const SchrodiLauncher: React.FC<{ className?: string }> = ({ className })
         onClick={() => setOpen((o) => !o)}
         disabled={st.status !== 'ready'}
         aria-expanded={open}
-        aria-label={tr('Schrödi: prognoza ruchu i kierunku BTC na godzinę', 'Schrödi: BTC move and direction forecast for the hour')}
+        aria-label={
+          showDir
+            ? tr('Schrödi: prognoza ruchu i kierunku BTC na godzinę', 'Schrödi: BTC move and direction forecast for the hour')
+            : tr('Schrödi: prognoza ruchu BTC na godzinę', 'Schrödi: BTC move forecast for the hour')
+        }
         title={
           st.status === 'loading'
             ? tr('Schrödi liczy…', 'Schrödi is thinking…')
@@ -61,14 +69,18 @@ export const SchrodiLauncher: React.FC<{ className?: string }> = ({ className })
           open ? 'bg-surface-2' : ''
         }`}
       >
-        <SchrodiCat pUp={f?.pUp ?? null} mood={mood} size={26} beat={f?.t} className={grey ? 'grayscale opacity-70' : undefined} />
+        <SchrodiCat pUp={showDir ? (f?.pUp ?? null) : null} mood={mood} size={26} beat={f?.t} className={grey ? 'grayscale opacity-70' : undefined} />
         {f && !stale ? (
           <span className="whitespace-nowrap">
             <span className="font-semibold text-accent">
               {tr('ruch', 'move')} {pct(f.pBig)}%
             </span>
-            <span className="text-ink-3"> · </span>
-            <span className={DIR_TONE}>{upOdds(f.pUp)}</span>
+            {showDir && (
+              <>
+                <span className="text-ink-3"> · </span>
+                <span className={DIR_TONE}>{upOdds(f.pUp)}</span>
+              </>
+            )}
             {mind && (
               <span
                 className="inline-block ml-1 w-1.5 h-1.5 rounded-full bg-accent animate-pulse align-middle"

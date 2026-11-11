@@ -2,7 +2,7 @@ import React from 'react';
 import { DASH, Stat, fmtFixed, fmtPrice } from '../../ui';
 import type { CatHeadScores, DeskLedgerSummary } from '../../utils/deskLedger';
 import { locale, tr } from '../../i18n';
-import { upBand, upLabel } from '../../components/schrodi/direction';
+import { dirHiddenNote, dirProven, upBand, upLabel } from '../../components/schrodi/direction';
 import { CatTrustBlock } from './CatTrustBlock';
 
 const timeFmt = new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit' });
@@ -19,6 +19,8 @@ export const CatLedgerCard: React.FC<{ cat: NonNullable<DeskLedgerSummary['cat']
   const enough = s.nEff >= MIN_EFF;
   const t = s.touch;
   const tEnough = !!t && t.hours >= MIN_EFF;
+  // Bieżąca szansa wzrostu tylko z dowodem przewagi w e-procesie; wyniki kierunku zostają jako pomiar
+  const showDir = dirProven(cat.trust);
   const head = (h: CatHeadScores, label: string, extra?: React.ReactNode) => (
     <div className="flex flex-col gap-2">
       <div className="text-[11px] text-ink-2">{label}</div>
@@ -41,8 +43,13 @@ export const CatLedgerCard: React.FC<{ cat: NonNullable<DeskLedgerSummary['cat']
         <div className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium">{tr('Schrödi: duży ruch, kierunek i dotknięcia w 1 h', 'Schrödi: big move, direction and touches within 1 h')}</div>
         {cat.latest && (
           <span className="text-[11px] text-ink-3">
-            {tr('wydano', 'issued')} {timeFmt.format(cat.latest.t)} · {tr('cena', 'price')} {fmtPrice(cat.latest.px0, 0)} · {tr('ruch', 'move')} {pct(cat.latest.pBig)} ·{' '}
-            {upLabel()} {pct(cat.latest.pUp)}
+            {tr('wydano', 'issued')} {timeFmt.format(cat.latest.t)} · {tr('cena', 'price')} {fmtPrice(cat.latest.px0, 0)} · {tr('ruch', 'move')} {pct(cat.latest.pBig)}
+            {showDir && (
+              <>
+                {' · '}
+                {upLabel()} {pct(cat.latest.pUp)}
+              </>
+            )}
           </span>
         )}
       </div>
@@ -63,10 +70,11 @@ export const CatLedgerCard: React.FC<{ cat: NonNullable<DeskLedgerSummary['cat']
       {head(s.big, tr('Duży ruch', 'Big move'))}
       {head(
         s.dir,
-        tr('Kierunek (wzrost)', 'Direction (rise)'),
+        tr('Kierunek (wzrost), pomiar', 'Direction (rise), measurement'),
         <div className="text-[11px] text-ink-2">
           {upBand('long')}: <span className="font-mono text-ink-1">{pct(s.dir.long.hit)}</span> {tr('z', 'of')} {s.dir.long.n} · {upBand('short')}:{' '}
           <span className="font-mono text-ink-1">{pct(s.dir.short.hit)}</span> {tr('z', 'of')} {s.dir.short.n} · {tr('nie wiem', "don't know")} {s.dir.unsure}
+          {!showDir && <div className="mt-1 text-ink-3">{dirHiddenNote()}</div>}
         </div>
       )}
       {t && (

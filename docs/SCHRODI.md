@@ -9,7 +9,8 @@ minute ([Live hour](#live-hour)).
 
 The cat is drawn as Schrödinger's cat: a green (price higher in an hour) and an orange (price lower) outline in
 superposition, each as bright as its probability. The closer the forecast is to 50%, the more the two outlines drift apart and blur. Above about 60% on
-one side the cat collapses into a single colour.
+one side the cat collapses into a single colour. While direction is hidden (see [Live updates](#live-updates)), the cat has a
+single sharp neutral outline and does not encode direction.
 
 Everything runs in the visitor's browser from public Hyperliquid candles. There is no server-side signal and no account.
 
@@ -192,6 +193,14 @@ more, against 10 minutes earlier, with the two feature groups whose contribution
 25 to 28.10.2026 each threshold is crossed in about 5% of minutes, so the dot next to the numbers under the chart
 means that something really changed. The "Why?" section lists the contribution of each feature group to both
 probabilities.
+
+**Direction is hidden until it is proven live.** The ledger runs an e-process for the direction head: every hour the
+cat places a virtual bet that its direction forecast beats a simple rule, starting from capital 1, under a plan
+registered in the ledger before scoring. Without an edge, capital reaches 20 at most 5% of the time. Until that happens
+(`trust.dir.proofAt` in the ledger summary is `null`), the interface shows no direction at all: no label, no bar, no
+sentence, no buy or sell colours, and the cat drawing is neutral. The cat shows the big move and the touch
+probabilities. The direction scores (the [Direction](#direction) table and the ledger) stay visible as a measurement, with a note that direction
+is hidden until proof. Once `proofAt` is set, the label below appears.
 
 The direction label is neutral: "P(up 1 h) 54%" (Polish: "P(wzrost 1 h) 54%"), the probability that the price is higher
 in an hour, in a neutral ink colour without buy or sell colours. It is a description of the odds, not a trade side.
