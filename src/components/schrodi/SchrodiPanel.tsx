@@ -21,7 +21,7 @@ import {
 } from '../../utils/schrodi';
 import { type HourModel, type HourPoint, hourPath } from '../../utils/schrodiHour';
 import { type CatTrust, type HourTrust, type OodFeature, TRUST_DESIGN, TRUST_HEADS, type TrustHeadKey, driftAlarms, oodKeys, proofState } from '../../utils/schrodiTrust';
-import { DIR_BAR, DIR_TONE, upBand, upOdds } from './direction';
+import { DIR_BAR, DIR_TONE, dirHiddenNote, dirProven, upBand, upOdds } from './direction';
 import { type Mood, SchrodiCat } from './SchrodiCat';
 import { HIST_MIN, type HourLive, useHourModel, useTouchModel } from './useSchrodi';
 
@@ -52,8 +52,8 @@ export function moodOf(f: Forecast | null, now: number, stale: boolean): Mood {
   return 'calm';
 }
 
-/** Jedno zdanie kota: ruch, potem kierunek. */
-export function catLine(f: Forecast, mood: Mood, now: number): string {
+/** Jedno zdanie kota: ruch, potem kierunek (tylko gdy kierunek ma dowód w e-procesie). */
+export function catLine(f: Forecast, mood: Mood, now: number, showDir: boolean): string {
   const ev = nextMacro(now);
   const move =
     mood === 'nervous' && ev
@@ -63,7 +63,7 @@ export function catLine(f: Forecast, mood: Mood, now: number): string {
         : f.pBig <= 0.25
           ? tr(`Spokojnie, drzemię. Duży ruch tylko z szansą ${pct(f.pBig)}.`, `Quiet, I'm napping. A big move only has ${pct(f.pBig)} odds.`)
           : tr(`Zwykła godzina, duży ruch z szansą ${pct(f.pBig)}.`, `An ordinary hour, a big move with ${pct(f.pBig)} odds.`);
-  return `${move} ${tr('Kierunek', 'Direction')}: ${upOdds(f.pUp)}.`;
+  return showDir ? `${move} ${tr('Kierunek', 'Direction')}: ${upOdds(f.pUp)}.` : move;
 }
 
 const LEVEL_NAMES: Record<keyof Levels, () => string> = {
@@ -170,7 +170,7 @@ const LiveProof: React.FC<{ t: CatTrust }> = ({ t }) => {
         `(since ${new Date(t.plan.at).toLocaleDateString(locale, { day: 'numeric', month: 'short' })}): every hour I place a virtual bet that I beat a simple rule. Start 1, proof at ${TRUST_DESIGN.proof.threshold}, because without an edge that happens at most 5% of the time. After ${t.big.n} h: big move ${fmtE(t.big.lg)}, direction ${fmtE(t.dir.lg)}, touches ${fmtE(t.touch.lg)}.`
       )}
       {proven.length > 0 && (
-        <span className="text-buy-ink">
+        <span className="text-accent">
           {' '}
           {tr(`Przewaga dowiedziona: ${proven.map((k) => HEAD_NAMES[k]()).join(', ')}.`, `Edge proven: ${proven.map((k) => HEAD_NAMES[k]()).join(', ')}.`)}
         </span>
@@ -253,7 +253,7 @@ const MindLine: React.FC<{ m: MindChange }> = ({ m }) => {
 };
 
 /** Zdanie kota w ostatniej godzinie: szansa dużego ruchu i szansa wzrostu na koniec każdej minuty. */
-const MindChart: React.FC<{ hist: Snap[] }> = ({ hist }) => {
+const MindChart: React.FC<{ hist: Snap[]; showDir: boolean }> = ({ hist, showDir }) => {
   const end = hist[hist.length - 1]?.s ?? 0;
   const pts = hist.filter((h) => h.s >= end - HIST_MIN * MIN);
   if (pts.length < 2) return null;
@@ -268,7 +268,13 @@ const MindChart: React.FC<{ hist: Snap[] }> = ({ hist }) => {
       <div className="flex items-baseline justify-between text-ink-2 mb-1">
         <span>📈 {tr('Moje zdanie w ostatniej godzinie', 'My view over the last hour')}</span>
         <span className="text-[10px] text-ink-3">
-          <span className="text-accent">━</span> {tr('ruch', 'move')} <span className="text-ink-2">━</span> {tr('wzrost', 'rise')}
+          <span className="text-accent">━</span> {tr('ruch', 'move')}
+          {showDir && (
+            <>
+              {' '}
+              <span className="text-ink-2">━</span> {tr('wzrost', 'rise')}
+            </>
+          )}
         </span>
       </div>
       <svg
@@ -276,13 +282,17 @@ const MindChart: React.FC<{ hist: Snap[] }> = ({ hist }) => {
         preserveAspectRatio="none"
         className="w-full h-12 rounded bg-surface-3/40"
         role="img"
-        aria-label={tr(
-          `Duży ruch od ${pct(a.pBig)} do ${pct(b.pBig)}, szansa wzrostu od ${pct(a.pUp)} do ${pct(b.pUp)}`,
-          `Big move from ${pct(a.pBig)} to ${pct(b.pBig)}, odds of a rise from ${pct(a.pUp)} to ${pct(b.pUp)}`
-        )}
+        aria-label={
+          showDir
+            ? tr(
+                `Duży ruch od ${pct(a.pBig)} do ${pct(b.pBig)}, szansa wzrostu od ${pct(a.pUp)} do ${pct(b.pUp)}`,
+                `Big move from ${pct(a.pBig)} to ${pct(b.pBig)}, odds of a rise from ${pct(a.pUp)} to ${pct(b.pUp)}`
+              )
+            : tr(`Duży ruch od ${pct(a.pBig)} do ${pct(b.pBig)}`, `Big move from ${pct(a.pBig)} to ${pct(b.pBig)}`)
+        }
       >
         <line x1={0} x2={W} y1={H / 2} y2={H / 2} className="stroke-line-strong" strokeDasharray="3 3" strokeWidth={1} vectorEffect="non-scaling-stroke" />
-        <path d={path('pUp')} fill="none" className="stroke-ink-2" strokeWidth={1.25} vectorEffect="non-scaling-stroke" />
+        {showDir && <path d={path('pUp')} fill="none" className="stroke-ink-2" strokeWidth={1.25} vectorEffect="non-scaling-stroke" />}
         <path d={path('pBig')} fill="none" className="stroke-accent" strokeWidth={1.75} vectorEffect="non-scaling-stroke" />
       </svg>
       <div className="flex justify-between text-[10px] text-ink-3">
@@ -298,7 +308,7 @@ const MindChart: React.FC<{ hist: Snap[] }> = ({ hist }) => {
 const hhmm = (t: number) => new Date(t).toLocaleTimeString(tr('pl-PL', 'en-GB'), { hour: '2-digit', minute: '2-digit' });
 
 /** Wykres szans w tej godzinie: minuty 0 do 60, znaczniki chwil zapisu do dziennika (15 i 30 min). */
-const HourChart: React.FC<{ pts: HourPoint[]; hs: number }> = ({ pts, hs }) => {
+const HourChart: React.FC<{ pts: HourPoint[]; hs: number; showDir: boolean }> = ({ pts, hs, showDir }) => {
   const W = 300;
   const H = 40;
   const x = (m: number) => (m / 60) * W;
@@ -306,14 +316,20 @@ const HourChart: React.FC<{ pts: HourPoint[]; hs: number }> = ({ pts, hs }) => {
   return (
     <div>
       <div className="text-right text-[10px] text-ink-3 mb-0.5">
-        <span className="text-accent">━</span> {tr('ruch', 'move')} <span className="text-ink-2">━</span> {tr('wzrost', 'rise')}
+        <span className="text-accent">━</span> {tr('ruch', 'move')}
+        {showDir && (
+          <>
+            {' '}
+            <span className="text-ink-2">━</span> {tr('wzrost', 'rise')}
+          </>
+        )}
       </div>
       <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="w-full h-10 rounded bg-surface-3/40" aria-hidden="true">
         <line x1={0} x2={W} y1={H / 2} y2={H / 2} className="stroke-line-strong" strokeDasharray="3 3" strokeWidth={1} vectorEffect="non-scaling-stroke" />
         {[15, 30].map((m) => (
           <line key={m} x1={x(m)} x2={x(m)} y1={0} y2={H} className="stroke-line" strokeWidth={1} vectorEffect="non-scaling-stroke" />
         ))}
-        {pts.length > 1 && <path d={path('pUp')} fill="none" className="stroke-ink-2" strokeWidth={1.25} vectorEffect="non-scaling-stroke" />}
+        {showDir && pts.length > 1 && <path d={path('pUp')} fill="none" className="stroke-ink-2" strokeWidth={1.25} vectorEffect="non-scaling-stroke" />}
         {pts.length > 1 && <path d={path('pBig')} fill="none" className="stroke-accent" strokeWidth={1.75} vectorEffect="non-scaling-stroke" />}
       </svg>
       <div className="relative h-3.5 text-[10px] text-ink-3">
@@ -334,7 +350,7 @@ const HourChart: React.FC<{ pts: HourPoint[]; hs: number }> = ({ pts, hs }) => {
  * Ta godzina: szansa dużego ruchu i wzrostu w bieżącej pełnej godzinie, po każdej minucie z drogi ceny od jej początku
  * i prognozy kota z tej chwili. Kierunek tylko z drogi ceny (prognoza z początku godziny nic tu nie dodaje).
  */
-const HourBlock: React.FC<{ hm: HourModel; hour: HourLive; end: number }> = ({ hm, hour, end }) => {
+const HourBlock: React.FC<{ hm: HourModel; hour: HourLive; end: number; showDir: boolean }> = ({ hm, hour, end, showDir }) => {
   const pts = useMemo(() => hourPath(hm, hour.m1, hour.start, end), [hm, hour, end]);
   if (!pts) return null;
   const { hs, c0, thr } = hour.start;
@@ -371,19 +387,21 @@ const HourBlock: React.FC<{ hm: HourModel; hour: HourLive; end: number }> = ({ h
           {tr(`z samej drogi ceny ${pct(last.pBigRule)}`, `from the price path alone ${pct(last.pBigRule)}`)}
         </p>
       )}
-      <div className="flex items-baseline justify-between">
-        <span className="text-ink-2">
-          🎯 {tr('Zamknie wyżej niż o', 'Closes above')} {hhmm(hs)} <span className="font-mono text-ink-3">({fmtPrice(c0, 0)})</span>
-        </span>
-        <span className={`font-mono text-sm font-semibold ${DIR_TONE}`}>{pct(last.pUp)}</span>
-      </div>
-      <HourChart pts={pts} hs={hs} />
+      {showDir && (
+        <div className="flex items-baseline justify-between">
+          <span className="text-ink-2">
+            🎯 {tr('Zamknie wyżej niż o', 'Closes above')} {hhmm(hs)} <span className="font-mono text-ink-3">({fmtPrice(c0, 0)})</span>
+          </span>
+          <span className={`font-mono text-sm font-semibold ${DIR_TONE}`}>{pct(last.pUp)}</span>
+        </div>
+      )}
+      <HourChart pts={pts} hs={hs} showDir={showDir} />
       <p className="text-[11px] leading-snug text-ink-3">
         {done
           ? tr('Duży ruch w tej godzinie już jest: zakres przekroczył próg.', 'The big move this hour has happened: the range crossed the threshold.')
           : tr(
-              `Liczę po każdej minucie z drogi ceny od ${hhmm(hs)} i mojej prognozy z tej chwili. W testach 2024 do 2026 duży ruch trafiałem tak o 6% lepiej (Brier) niż z samej drogi ceny, najwięcej na początku godziny. Kierunek tylko z drogi ceny. Do dziennika trafia o :15 i :30.`,
-              `I update after every minute from the price path since ${hhmm(hs)} and my forecast from that moment. In 2024 to 2026 tests that way I called big moves 6% better (Brier) than from the price path alone, most at the start of the hour. Direction from the price path only. Recorded in the ledger at :15 and :30.`
+              `Liczę po każdej minucie z drogi ceny od ${hhmm(hs)} i mojej prognozy z tej chwili. W testach 2024 do 2026 duży ruch trafiałem tak o 6% lepiej (Brier) niż z samej drogi ceny, najwięcej na początku godziny.${showDir ? ' Kierunek tylko z drogi ceny.' : ''} Do dziennika trafia o :15 i :30.`,
+              `I update after every minute from the price path since ${hhmm(hs)} and my forecast from that moment. In 2024 to 2026 tests that way I called big moves 6% better (Brier) than from the price path alone, most at the start of the hour.${showDir ? ' Direction from the price path only.' : ''} Recorded in the ledger at :15 and :30.`
             )}
       </p>
     </div>
@@ -411,10 +429,13 @@ export const SchrodiPanel: React.FC<{
         .sort((a, b) => b.px - a.px)
     : [];
   const px = f.price;
-  const mind = hist.length ? mindChange(hist, hist[hist.length - 1]) : null;
+  const mindAny = hist.length ? mindChange(hist, hist[hist.length - 1]) : null;
   const { summary } = useDeskLedger();
   const live = summary && isCat(summary.cat) && summary.cat.since !== null ? summary.cat : null;
   const trust = live?.trust ?? null;
+  // Kierunek tylko z dowodem przewagi w e-procesie; bez niego także zmiana zdania o kierunku jest ukryta
+  const showDir = dirProven(trust);
+  const mind = mindAny && (showDir || mindAny.head === 'big') ? mindAny : null;
   const alarms = driftAlarms(trust);
   const ood = oodKeys((k) => f.x[k]);
   const above = levels.filter((l) => l.px > px).slice(-2);
@@ -441,20 +462,20 @@ export const SchrodiPanel: React.FC<{
   return (
     <div role="dialog" aria-label="Schrödi" className="rounded-xl border border-line-strong bg-surface-2/95 backdrop-blur shadow-2xl text-ink-1 overflow-hidden">
       <div className="flex items-start gap-3 px-3 pt-3 pb-2">
-        <SchrodiCat pUp={f.pUp} mood={mood} size={56} className={`shrink-0 ${alarms.length ? 'grayscale opacity-70' : ''}`} />
+        <SchrodiCat pUp={showDir ? f.pUp : null} mood={mood} size={56} className={`shrink-0 ${alarms.length ? 'grayscale opacity-70' : ''}`} />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
             <span className="text-sm font-semibold">Schrödi</span>
             <span className="text-[10px] uppercase tracking-wide text-ink-3 whitespace-nowrap">BTC · {tr('najbliższa godzina', 'next hour')}</span>
             {!stale && (
-              <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wide text-buy-ink whitespace-nowrap">
-                <span className="w-1.5 h-1.5 rounded-full bg-buy animate-pulse" aria-hidden="true" />
+              <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wide text-accent whitespace-nowrap">
+                <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" aria-hidden="true" />
                 {tr('na żywo', 'live')}
               </span>
             )}
           </div>
           <p className="mt-1 text-xs leading-snug text-ink-2">
-            {stale ? tr('Nie mam świeżych danych z Hyperliquid, chowam się pod stołem.', 'No fresh Hyperliquid data, hiding under the table.') : catLine(f, mood, now)}
+            {stale ? tr('Nie mam świeżych danych z Hyperliquid, chowam się pod stołem.', 'No fresh Hyperliquid data, hiding under the table.') : catLine(f, mood, now, showDir)}
           </p>
         </div>
         <button type="button" onClick={onClose} aria-label={tr('Zamknij', 'Close')} className="shrink-0 grid place-items-center w-7 h-7 rounded-md text-ink-3 hover:text-ink-1 hover:bg-surface-3">
@@ -497,6 +518,7 @@ export const SchrodiPanel: React.FC<{
           </p>
         </div>
 
+        {showDir && (
         <div>
           <div className="flex items-baseline justify-between text-xs">
             <span className="text-ink-2">🎯 {tr('Kierunek', 'Direction')}</span>
@@ -510,8 +532,9 @@ export const SchrodiPanel: React.FC<{
             )}
           </p>
         </div>
+        )}
 
-        {hm && hour && !stale && <HourBlock hm={hm} hour={hour} end={f.t + 5 * MIN} />}
+        {hm && hour && !stale && <HourBlock hm={hm} hour={hour} end={f.t + 5 * MIN} showDir={showDir} />}
 
         {levels.length > 0 && (
           <div className="text-xs">
@@ -527,7 +550,7 @@ export const SchrodiPanel: React.FC<{
                   <React.Fragment key={l.k}>
                     <span className="font-sans text-ink-2">{LEVEL_NAMES[l.k]()}</span>
                     <span className="text-right">{fmtPrice(l.px, 0)}</span>
-                    <span className={`text-right ${l.px > px ? 'text-buy-ink' : 'text-sell-ink'}`}>{usd(l.px - px)}</span>
+                    <span className="text-right text-ink-2">{usd(l.px - px)}</span>
                     {touch && <span className="text-right font-semibold text-ink-1">{touch.at(l.px)}</span>}
                   </React.Fragment>
                 );
@@ -558,10 +581,10 @@ export const SchrodiPanel: React.FC<{
                   <React.Fragment key={s.q}>
                     <span className="font-semibold">{pct(s.q)}</span>
                     <span className="text-right">
-                      {dn === null ? '—' : fmtPrice(dn, 0)} <span className="text-sell-ink">{dn === null ? '' : usd(dn - px)}</span>
+                      {dn === null ? '—' : fmtPrice(dn, 0)} <span className="text-ink-3">{dn === null ? '' : usd(dn - px)}</span>
                     </span>
                     <span className="text-right">
-                      {up === null ? '—' : fmtPrice(up, 0)} <span className="text-buy-ink">{up === null ? '' : usd(up - px)}</span>
+                      {up === null ? '—' : fmtPrice(up, 0)} <span className="text-ink-3">{up === null ? '' : usd(up - px)}</span>
                     </span>
                   </React.Fragment>
                 );
@@ -576,7 +599,7 @@ export const SchrodiPanel: React.FC<{
           </div>
         )}
 
-        {!stale && <MindChart hist={hist} />}
+        {!stale && <MindChart hist={hist} showDir={showDir} />}
 
         {ev && (
           <div className="text-xs text-ink-2">
@@ -588,22 +611,24 @@ export const SchrodiPanel: React.FC<{
 
       <Section title={tr('Dlaczego?', 'Why?')}>
         <p className="mb-2">
-          {tr(
-            'Wkład grup cech w szansę dużego ruchu i w szansę wzrostu, w punktach procentowych (w przybliżeniu):',
-            'Contribution of feature groups to the odds of a big move and of a rise, in percentage points (approximate):'
-          )}
+          {showDir
+            ? tr(
+                'Wkład grup cech w szansę dużego ruchu i w szansę wzrostu, w punktach procentowych (w przybliżeniu):',
+                'Contribution of feature groups to the odds of a big move and of a rise, in percentage points (approximate):'
+              )
+            : tr('Wkład grup cech w szansę dużego ruchu, w punktach procentowych (w przybliżeniu):', 'Contribution of feature groups to the odds of a big move, in percentage points (approximate):')}
         </p>
-        <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 gap-y-1">
+        <div className={`grid ${showDir ? 'grid-cols-[1fr_auto_auto]' : 'grid-cols-[1fr_auto]'} gap-x-3 gap-y-1`}>
           <span />
           <span className="text-[10px] text-ink-3 text-right">{tr('ruch', 'move')}</span>
-          <span className="text-[10px] text-ink-3 text-right">{tr('wzrost', 'rise')}</span>
+          {showDir && <span className="text-[10px] text-ink-3 text-right">{tr('wzrost', 'rise')}</span>}
           {(Object.keys(GROUP_NAMES) as Group[]).map((g) => (
             <React.Fragment key={g}>
               <span>{GROUP_NAMES[g]()}</span>
               <span className={`font-mono text-right ${Math.abs(f.whyBig[g]) > 0.05 ? 'text-accent' : 'text-ink-3'}`}>{fmtSigned(f.whyBig[g], 1, ' pp')}</span>
-              <span className={`font-mono text-right ${Math.abs(f.why[g]) > 0.05 ? DIR_TONE : 'text-ink-3'}`}>
-                {fmtSigned(f.why[g], 1, ' pp')}
-              </span>
+              {showDir && (
+                <span className={`font-mono text-right ${Math.abs(f.why[g]) > 0.05 ? DIR_TONE : 'text-ink-3'}`}>{fmtSigned(f.why[g], 1, ' pp')}</span>
+              )}
             </React.Fragment>
           ))}
         </div>
@@ -618,9 +643,10 @@ export const SchrodiPanel: React.FC<{
         </p>
         <p className="mt-2">
           {tr(
-            `Kierunek: przy ${upBand('long')} trafiałem w ${pct(card.kierunek['2023_2025'].long[1])} i ${pct(card.kierunek['2026'].long[1])}, przy ${upBand('short')} w ${pct(card.kierunek['2023_2025'].short[1])} i ${pct(card.kierunek['2026'].short[1])}. To niewiele lepiej niż rzut monetą, więc kierunek to tylko opis szansy.`,
-            `Direction: at ${upBand('long')} I was right ${pct(card.kierunek['2023_2025'].long[1])} and ${pct(card.kierunek['2026'].long[1])} of the time, at ${upBand('short')} ${pct(card.kierunek['2023_2025'].short[1])} and ${pct(card.kierunek['2026'].short[1])}. That is only slightly better than a coin flip, so direction is just a description of the odds.`
+            `Kierunek: przy ${upBand('long')} trafiałem w ${pct(card.kierunek['2023_2025'].long[1])} i ${pct(card.kierunek['2026'].long[1])}, przy ${upBand('short')} w ${pct(card.kierunek['2023_2025'].short[1])} i ${pct(card.kierunek['2026'].short[1])}. To niewiele lepiej niż rzut monetą.`,
+            `Direction: at ${upBand('long')} I was right ${pct(card.kierunek['2023_2025'].long[1])} and ${pct(card.kierunek['2026'].long[1])} of the time, at ${upBand('short')} ${pct(card.kierunek['2023_2025'].short[1])} and ${pct(card.kierunek['2026'].short[1])}. That is only slightly better than a coin flip.`
           )}
+          {!showDir && ` ${dirHiddenNote()}`}
         </p>
         {tcard && (
           <p className="mt-2">
