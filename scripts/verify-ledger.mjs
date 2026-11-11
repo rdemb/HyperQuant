@@ -4,7 +4,7 @@
  *   node scripts/verify-ledger.mjs --dir ./ledger [--bitcoin] [--market]   # pełna kontrola (zalecane):
  *       git clone -b ledger https://github.com/rdemb/hyperquant-data ledger
  *       --bitcoin: czas z bloków Bitcoina (poświadczenia OTS + nagłówki bloków); --market: ceny vs świece 1m HL
- *       --since-commit <hash>: historię git sprawdza tylko po tym commicie (punkt kontrolny poprzedniej weryfikacji)
+ *       --anchor <hash>: kotwica — commit ostatniej udanej weryfikacji musi nadal należeć do historii gałęzi
  *   node scripts/verify-ledger.mjs [RRRR-MM-DD]     # szybka kontrola ostatnich dni pobranych z GitHuba
  *
  * Sprawdza:
@@ -1029,21 +1029,18 @@ export function catFileReader(dir) {
  * Historia git (--dir): każdy kolejny commit tylko dopisuje do plików dziennika (`.jsonl`) poprzedniego commita —
  * zmieniony plik zaczyna się bajt w bajt od poprzedniej treści, żaden nie znika. Sprawdzane tylko pliki zmienione
  * w danym commicie (jeden `git diff-tree --stdin` dla wszystkich par), więc koszt rośnie z liczbą zmian, nie z liczbą
- * commitów × plików. `since` — commit punktu kontrolnego (ostatnia udana weryfikacja): sprawdzane tylko commity po nim;
- * musi należeć do historii gałęzi (inaczej historia została przepisana). Zmiany sprzed punktu kontrolnego wykrywa
- * okresowy pełny przebieg (bez `since`). Wersje plików porównywane parami przez `reader` (domyślnie `catFileReader`) —
- * pamięć nie rośnie z długością historii.
+ * commitów × plików; zawsze cała historia. `anchor` — kotwica: commit ostatniej udanej weryfikacji, który musi nadal
+ * należeć do historii gałęzi — inaczej historia została przepisana (nowa, sama w sobie spójna historia nie zdradza
+ * podmiany). Wersje plików porównywane parami przez `reader` (domyślnie `catFileReader`) — pamięć nie rośnie z długością
+ * historii.
  */
-export async function checkGitAppendOnly(dir, { since = null, reader = null } = {}) {
+export async function checkGitAppendOnly(dir, { anchor = null, reader = null } = {}) {
   const git = (args, input) => execFileSync('git', ['-C', dir, ...args], { input, maxBuffer: 1024 * 1024 * 1024 });
   const commits = git(['log', '--format=%H', '--reverse']).toString('utf8').split('\n').filter(Boolean);
-  let start = 0;
-  if (since) {
-    start = commits.indexOf(since);
-    if (start < 0) return { commits: commits.length, checked: 0, since, problems: [`punkt kontrolny ${since.slice(0, 8)}: brak w historii gałęzi (historia przepisana?)`] };
-  }
+  const problems = [];
+  if (anchor && !commits.includes(anchor)) problems.push(`kotwica ${anchor.slice(0, 10)} (ostatnio zweryfikowany commit): brak w historii gałęzi — historia przepisana`);
   const pairs = [];
-  for (let i = start + 1; i < commits.length; i++) pairs.push(`${commits[i]} ${commits[i - 1]}`);
+  for (let i = 1; i < commits.length; i++) pairs.push(`${commits[i]} ${commits[i - 1]}`);
   /** Zmiany plików dziennika: [commit, status, blob przed, blob po, ścieżka] */
   const changes = [];
   if (pairs.length) {
@@ -1057,7 +1054,6 @@ export async function checkGitAppendOnly(dir, { since = null, reader = null } = 
       }
     }
   }
-  const problems = [];
   const blobs = reader ?? catFileReader(dir);
   try {
     for (const [commit, status, before, after, file] of changes) {
@@ -1071,7 +1067,7 @@ export async function checkGitAppendOnly(dir, { since = null, reader = null } = 
   } finally {
     if (!reader) await blobs.close(); // czytnik z zewnątrz zamyka wywołujący
   }
-  return { commits: commits.length, checked: pairs.length, since, problems };
+  return { commits: commits.length, checked: pairs.length, anchor, problems };
 }
 
 async function main() {
@@ -1213,15 +1209,15 @@ async function main() {
 
   if (local) {
     if (existsSync(path.join(local, '.git'))) {
-      const sinceIdx = args.indexOf('--since-commit');
-      const since = sinceIdx >= 0 ? args[sinceIdx + 1] : null;
-      if (since !== null && !/^[0-9a-f]{40}$/.test(since ?? '')) {
-        console.log('✗ historia git: --since-commit wymaga pełnego hasha commita (40 znaków hex)');
+      const anchorIdx = args.indexOf('--anchor');
+      const anchor = anchorIdx >= 0 ? args[anchorIdx + 1] : null;
+      if (anchor !== null && !/^[0-9a-f]{40}$/.test(anchor ?? '')) {
+        console.log('✗ historia git: --anchor wymaga pełnego hasha commita (40 znaków hex)');
         ok = false;
       } else {
-        const g = await checkGitAppendOnly(local, { since });
-        const scope = g.since ? ` (od punktu kontrolnego ${g.since.slice(0, 10)}: ${plural(g.checked, 'nowy commit', 'nowe commity', 'nowych commitów')}; pełna historia — przebieg bez --since-commit)` : '';
-        console.log(g.problems.length ? `✗ historia git: ${g.problems.slice(0, 5).join('; ')}` : `✓ historia git: ${plural(g.commits, 'commit', 'commity', 'commitów')}, tylko dopisywanie${scope}`);
+        const g = await checkGitAppendOnly(local, { anchor });
+        const kept = g.anchor ? `; kotwica ${g.anchor.slice(0, 10)} (ostatnia weryfikacja) w historii` : '';
+        console.log(g.problems.length ? `✗ historia git: ${g.problems.slice(0, 5).join('; ')}` : `✓ historia git: ${plural(g.commits, 'commit', 'commity', 'commitów')}, tylko dopisywanie${kept}`);
         if (g.problems.length) ok = false;
       }
     }
