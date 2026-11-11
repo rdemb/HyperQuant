@@ -1,0 +1,14 @@
+// Reguła polkit strażnika HyperQuant (install.sh → /etc/polkit-1/rules.d/50-hyperquant-watchdog.rules).
+// Użytkownik hyperquant-watchdog może tylko zrestartować skaner i serwer powiadomień; nic poza tym
+// (start, stop, inne usługi, pliki jednostek). Wymaga polkit z regułami JavaScript (wersja 0.106 i nowsze).
+polkit.addRule(function (action, subject) {
+  if (action.id !== "org.freedesktop.systemd1.manage-units" || subject.user !== "hyperquant-watchdog") {
+    return polkit.Result.NOT_HANDLED;
+  }
+  var unit = action.lookup("unit");
+  var verb = action.lookup("verb");
+  if (verb === "restart" && (unit === "hyperquant-scanner.service" || unit === "hyperquant-alerts.service")) {
+    return polkit.Result.YES;
+  }
+  return polkit.Result.NOT_HANDLED;
+});

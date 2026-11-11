@@ -56,9 +56,14 @@ Podgląd: `journalctl -u hyperquant-scanner -f`, wynik: `/var/lib/hyperquant/out
 (po migawce rynku HIP-4), `git fetch` i porównanie z gałęzią zdalną; po zmianie `reset --hard`, a restart skanera tylko wtedy, gdy
 zmiana dotyka jego kodu (`backend`, `src`, `public/schrodi`, `package.json`, `package-lock.json`), więc wpis bloga nie przerywa nagrania. Przy
 zatrzymaniu skaner zapisuje bieżącą 5-minutową część taśmy, a po starcie dopisuje do niej dalsze nagranie. Polecenia
-są wpisane w pliku usługi, więc kod z repo nie wykonuje się jako root. Zmiany plików usług systemd (`backend/deploy/*.service`,
-`*.timer`) i wersji Node wymagają ponownego `install.sh`. Wstrzymanie: `systemctl disable --now hyperquant-update.timer`,
+są w skrypcie [`deploy/hyperquant-update.sh`](deploy/hyperquant-update.sh), który `install.sh` kopiuje do `/opt/hyperquant/bin`
+(poza katalog aktualizowany), więc kod z repo nie wykonuje się jako root. Zmiany plików usług systemd (`backend/deploy/*.service`,
+`*.timer`), tego skryptu, strażnika i wersji Node wymagają ponownego `install.sh`. Wstrzymanie: `systemctl disable --now hyperquant-update.timer`,
 dziennik: `journalctl -u hyperquant-update`.
+
+**Tryb podpisanych tagów** (zalecany): gdy na serwerze jest `/etc/hyperquant/allowed_signers` (zaufane klucze ssh), aktualizacja
+idzie tylko do najnowszego tagu `v*` z ważnym podpisem (`git verify-tag`) i tylko do przodu; push bez podpisu nie zmienia kodu
+na serwerze. Włączenie, sprawdzenie i wycofanie: [`deploy/STRAZNIK.md`](deploy/STRAZNIK.md).
 
 ## Serwer powiadomień o alarmach (24/7)
 
@@ -137,7 +142,8 @@ pokrycie open interest, opóźnienie odczytów pozycji oraz to, czy publikacja n
 Harmonogram GitHuba jest jednak „best-effort” i w praktyce bywa pomijany, dlatego ta sama ocena działa też na serwerze:
 
 **Strażnik skanera** ([scripts/watchdog.mjs](../scripts/watchdog.mjs), `hyperquant-watchdog.timer`, co 15 min, instalowany przez `install.sh`;
-działa jako root z własnym katalogiem stanu poza katalogiem usługi skanera):
+działa jako osobny użytkownik `hyperquant-watchdog`, nie root, z kopii kodu w `/opt/hyperquant/watchdog`, której push do repo
+nie zmienia; restart tylko dwóch usług przez regułę polkit; szczegóły i wdrożenie: [`deploy/STRAZNIK.md`](deploy/STRAZNIK.md)):
 - restartuje skaner, gdy usługa jest w stanie `failed`, lokalny `status.json` jest starszy niż 10 min albo — przy świeżych danych
   lokalnych i po 30 min działania — stoi publikacja, dziennik prognoz lub rejestrator płynności. Działającą usługę restartuje
   dopiero po godzinie jej działania, najwyżej 3 razy w epizodzie (potem tylko alarm „potrzebna interwencja”; epizod kończy godzina spokojnej pracy tej
