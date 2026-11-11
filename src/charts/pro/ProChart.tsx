@@ -40,6 +40,7 @@ import { NumbersCard, StatGroupPicker } from './chart/NumbersCard';
 import { IndicatorsDialog, type IndicatorsSection, type ToggleItem } from './chart/IndicatorsDialog';
 import { IndicatorSettings } from './chart/IndicatorSettings';
 import { indicatorLabel, indicatorsLink } from './indicators/registry';
+import { IB_EVIDENCE } from './chart/ibSelect';
 import { BURSTS_MAX, CLASHES_EVIDENCE, WALLS_DONE_MAX, WALLS_LIVE_MAX, WALL_MIN_MS } from './chart/clashSelect';
 import { AUCTIONS_PER_SIDE, ZONES_EVIDENCE, ZONES_PER_SIDE } from './chart/zonesSelect';
 import { MarketStateBar } from './chart/MarketStateBar';
@@ -1844,7 +1845,10 @@ function flowLayers(s: ChartSettings, intervalMs: number, liq: LiqMapState, whal
     {
       key: 'showIb',
       label: 'Initial balance',
-      hint: tr('Zakres pierwszej godziny każdej sesji i rozszerzenia 1,5× i 2×', 'The range of the first hour of each session and its 1.5× and 2× extensions'),
+      hint: tr(
+        `Zakres pierwszej godziny bieżącej sesji (prostokąt, szczyt i dołek), z poprzedniej sesji same linie szczytu i dołka. Rozszerzenia 1,5× i 2× dopiero po pierwszym zamknięciu świecy poza zakresem i tylko po tej stronie. ${IB_EVIDENCE.pl}`,
+        `The first-hour range of the current session (box, high and low); from the previous session only the high and low lines. The 1.5× and 2× extensions appear only after the first candle closes outside the range, and only on that side. ${IB_EVIDENCE.en}`
+      ),
       swatch: 'bg-of-ib',
       off: scope.ib ? undefined : tr('Na interwałach do 30m', 'On timeframes up to 30m'),
     },
