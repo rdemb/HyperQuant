@@ -10,6 +10,7 @@ import { fmtHms } from '../../charts/pro/core/time';
 import type { ProStore } from '../../charts/pro/store/proStore';
 import { numLang } from '../../ui/format';
 import { tr } from '../../i18n';
+import { HelpButton } from '../../ui/HelpButton';
 import { fmtSize } from './Ladder';
 
 /**
@@ -149,7 +150,8 @@ export const FlowTape: React.FC<{
         key={`${r.kind}|${o.time}|${o.taker}|${o.vwap}|${i}`}
         type="button"
         onClick={() => onPick(o)}
-        className={`relative grid w-full ${grid} gap-x-1.5 px-2 h-6 items-center font-mono text-[11px] text-left hover:bg-surface-2 ${active ? 'outline outline-1 -outline-offset-1 outline-warn/70' : ''}`}
+        data-tape-row
+        className={`relative grid w-full ${grid} gap-x-1.5 px-2 h-5 items-center font-mono text-[11px] text-left hover:bg-surface-2 ${active ? 'outline outline-1 -outline-offset-1 outline-warn/70' : ''}`}
       >
         <span aria-hidden="true" className={`absolute inset-y-0 right-0 ${buy ? 'bg-of-buy/15' : 'bg-of-sell/25'}`} style={{ width: `${Math.min(1, Math.sqrt(usd / (BAR_FULL * bigUsd))) * 100}%` }} />
         <span className="relative text-ink-3">{fmtHms(r.kind === 'twap' ? r.last : o.time)}</span>
@@ -163,7 +165,7 @@ export const FlowTape: React.FC<{
 
   return (
     <section aria-label={tr('Taśma z pamięcią', 'Tape with memory')} className={`flex flex-col min-h-0 bg-surface-1 ${className}`}>
-      <div className="flex items-center gap-1 px-2 h-10 border-b border-line shrink-0">
+      <div className="relative flex items-center gap-1 px-2 h-9 border-b border-line shrink-0">
         {head !== undefined ? (
           <span className="mr-auto min-w-0">{head}</span>
         ) : (
@@ -191,11 +193,17 @@ export const FlowTape: React.FC<{
         >
           {sound ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
         </button>
+        <HelpButton label={tr('Jak czytać taśmę', 'How to read the tape')}>
+          <p>
+            {tr('Zlecenia agresora złożone z wypełnień · pogrubione od', 'Aggressor orders assembled from fills · bold from')} {compact(bigUsd)} USD ·{' '}
+            {tr('TWAP: plasterki jednego konta sklejone, filtr liczy ich sumę', 'TWAP: one account’s slices glued, the filter counts their total')}
+          </p>
+        </HelpButton>
         {tools}
       </div>
       {/* Tempo: ostatnia minuta wobec mediany minut z godziny i udział kupujących */}
       <div
-        className="flex items-center gap-3 px-2 h-8 border-b border-line font-mono text-[11px] shrink-0"
+        className="flex items-center gap-3 px-2 h-6 border-b border-line font-mono text-[11px] shrink-0"
         title={tr(
           `Wartość transakcji z ostatniej minuty wobec mediany pełnych minut z ostatniej godziny (${pace.minutes} min z nagraniem)`,
           `Trade value in the last minute against the median full minute of the last hour (${pace.minutes} recorded min)`
@@ -214,7 +222,7 @@ export const FlowTape: React.FC<{
           <span className={Number.isFinite(pace.buyShare) ? 'text-of-buy-ink' : 'text-ink-3'}>{Number.isFinite(pace.buyShare) ? `${Math.round(pace.buyShare * 100)}%` : '—'}</span>
         </span>
       </div>
-      <div className={`grid ${grid} gap-x-1.5 px-2 py-1 border-b border-line font-mono text-[10px] text-ink-3 shrink-0`}>
+      <div className={`grid ${grid} gap-x-1.5 px-2 py-0.5 border-b border-line font-mono text-[10px] text-ink-3 shrink-0`}>
         <span>{tr('Czas', 'Time')}</span>
         <span className="text-right">{tr('Cena', 'Price')}</span>
         {!narrow && <span className="text-right">{store.coin}</span>}
@@ -239,10 +247,6 @@ export const FlowTape: React.FC<{
           );
         })}
       </div>
-      <p className="px-2 py-1.5 border-t border-line text-[10px] leading-snug text-ink-3 shrink-0">
-        {tr('Zlecenia agresora złożone z wypełnień · pogrubione od', 'Aggressor orders assembled from fills · bold from')} {compact(bigUsd)} USD ·{' '}
-        {tr('TWAP: plasterki jednego konta sklejone, filtr liczy ich sumę', 'TWAP: one account’s slices glued, the filter counts their total')}
-      </p>
     </section>
   );
 };
