@@ -180,12 +180,13 @@ export function mapHyperliquidTrade(tr: {
 }): AggrTradeTick | null {
   const px = parseFloat(tr.px);
   const sz = parseFloat(tr.sz);
-  if (!Number.isFinite(px) || !Number.isFinite(sz) || px <= 0 || sz <= 0) return null;
+  // Bez czasu z giełdy transakcja jest odrzucana — czas z zegara przeglądarki byłby zmyślony
+  if (!Number.isFinite(px) || !Number.isFinite(sz) || px <= 0 || sz <= 0 || !Number.isFinite(tr.time) || tr.time <= 0) return null;
   const sizeUsd = Math.round(px * sz);
   return {
     // tid z API pozwala odrzucić duplikaty (np. powtórzenie po ponownym połączeniu)
     id: tr.tid !== undefined ? `hl-${tr.time}-${tr.tid}` : `hl-${tr.time}-${Math.random().toString(36).slice(2, 7)}`,
-    timestamp: tr.time || Date.now(),
+    timestamp: tr.time,
     exchange: 'HYPERLIQUID',
     market: 'BTC-USD-PERP',
     isPerp: true,
@@ -761,7 +762,8 @@ export async function fetchRealHyperliquidMarketData(
         midPrice,
         openInterestBtc: Number(openInterestBtc.toFixed(2)),
         openInterestUsd: Math.round(openInterestBtc * markPrice),
-        dayVolumeUsd: Number.isFinite(dayVolumeUsd) ? Math.round(dayVolumeUsd) : 0,
+        // Brak obrotu w API → NaN („—”), nie 0
+        dayVolumeUsd: Number.isFinite(dayVolumeUsd) ? Math.round(dayVolumeUsd) : Number.NaN,
         funding1hPct: Number((funding1h * 100).toFixed(5)),
         fundingAnnualizedPct: Number((funding1h * 24 * 365 * 100).toFixed(2)),
         basisBps,

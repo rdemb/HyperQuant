@@ -7,15 +7,21 @@ import { tr } from '../i18n';
 // Panel metryk mikrostruktury — bez sygnałów transakcyjnych (desk ocenia plan tradera, nie podsuwa wejść).
 
 
-// Polskie nazwy reżimów z regułowej klasyfikacji silnika
-const REGIME_PL: Record<QuantMathMetrics['regimeClassification'], { label: string; detail: string }> = {
-  'Spot Absorption Bullish': {
-    label: tr('Absorpcja spot (wzrostowa)', 'Spot absorption (bullish)'),
-    detail: tr('Spot CVD rośnie mimo słabości perp przy świeżym OB popytowym. Wymaga danych spot (CEX opt-in).', 'Spot CVD rises despite perp weakness at a fresh demand OB. Needs spot data (CEX opt-in).'),
+// Nazwy reżimów z regułowej klasyfikacji silnika: opis ostatnich świec, nie kierunek ani rada
+export const REGIME_TEXT: Record<QuantMathMetrics['regimeClassification'], { label: string; detail: string }> = {
+  'Spot CVD Lead': {
+    label: tr('CVD spot wyprzedzał perp', 'Spot CVD led perp'),
+    detail: tr(
+      'W ostatnich 16 świecach zmiana CVD spot była wyraźnie większa niż zmiana CVD perp, bez przewagi świeżych OB podaży w pobliżu. Opis przeszłości, nie kierunek. Wymaga danych spot (CEX opt-in).',
+      'Over the last 16 candles the spot CVD change was clearly larger than the perp CVD change, with no fresh supply OBs dominating nearby. A description of the past, not a direction. Needs spot data (CEX opt-in).'
+    ),
   },
-  'Perp Exhaustion Bearish': {
-    label: tr('Wyczerpanie perp (spadkowa)', 'Perp exhaustion (bearish)'),
-    detail: tr('Perp CVD wyprzedza spot przy świeżym OB podażowym. Wymaga danych spot (CEX opt-in).', 'Perp CVD leads spot at a fresh supply OB. Needs spot data (CEX opt-in).'),
+  'Perp CVD Lead': {
+    label: tr('CVD perp wyprzedzał spot', 'Perp CVD led spot'),
+    detail: tr(
+      'W ostatnich 16 świecach zmiana CVD perp była wyraźnie większa niż zmiana CVD spot, bez przewagi świeżych OB popytu w pobliżu. Opis przeszłości, nie kierunek. Wymaga danych spot (CEX opt-in).',
+      'Over the last 16 candles the perp CVD change was clearly larger than the spot CVD change, with no fresh demand OBs dominating nearby. A description of the past, not a direction. Needs spot data (CEX opt-in).'
+    ),
   },
   'Momentum Breakout': {
     label: 'Trend / momentum',
@@ -24,10 +30,6 @@ const REGIME_PL: Record<QuantMathMetrics['regimeClassification'], { label: strin
   'Mean-Reversion Equilibrium': {
     label: tr('Równowaga', 'Equilibrium'),
     detail: tr('Żadna reguła trendu ani absorpcji nie jest spełniona — stan domyślny.', 'No trend or absorption rule is met; the default state.'),
-  },
-  'Liquidation Cascade Squeeze': {
-    label: tr('Kaskada likwidacji', 'Liquidation cascade'),
-    detail: tr('Szybki ruch napędzany szacowanym paliwem likwidacyjnym.', 'A fast move driven by estimated liquidation fuel.'),
   },
 };
 
@@ -48,7 +50,7 @@ export const QuantRegimePanel: React.FC<{
   currentPrice: number;
   timeframeSec: number;
 }> = ({ quant, currentPrice, timeframeSec }) => {
-  const regime = REGIME_PL[quant.regimeClassification];
+  const regime = REGIME_TEXT[quant.regimeClassification];
   const weights = quant.neuralAttentionWeights;
 
   return (
@@ -134,7 +136,13 @@ export const QuantMetricTiles: React.FC<{ quant: QuantMathMetrics; className?: s
 }) => {
   const h = quant.hurstExponent;
   const hurstRead =
-    h < 0.45 ? tr('antypersystencja (powroty)', 'anti-persistence (reversals)') : h > 0.6 ? tr('persystencja (trend)', 'persistence (trend)') : tr('blisko błądzenia losowego', 'close to a random walk');
+    h === null
+      ? null
+      : h < 0.45
+        ? tr('antypersystencja (powroty)', 'anti-persistence (reversals)')
+        : h > 0.6
+          ? tr('persystencja (trend)', 'persistence (trend)')
+          : tr('blisko błądzenia losowego', 'close to a random walk');
   const tiles: { key: string; node: React.ReactNode }[] = [
     {
       key: 'ou',
@@ -179,11 +187,15 @@ export const QuantMetricTiles: React.FC<{ quant: QuantMathMetrics; className?: s
         <Stat
           label="Hurst"
           source={{ tone: 'model', label: 'MODEL', title: tr('R/S z korektą Anis-Lloyd na 45 log-zwrotach', 'R/S with the Anis-Lloyd correction on 45 log returns') }}
-          value={<span>H {fmtFixed(h, 3)}</span>}
+          value={h === null ? DASH : <span>H {fmtFixed(h, 3)}</span>}
           hint={
-            <>
-              {hurstRead}. {tr('R/S z korektą Anis-Lloyd; Lo (1991) — test może mylić krótką pamięć z długą.', 'R/S with the Anis-Lloyd correction; Lo (1991): the test can mistake short memory for long.')}
-            </>
+            h === null ? (
+              tr('za mało zwrotów (min. 8) albo cena bez zmian', 'too few returns (min. 8) or a flat price')
+            ) : (
+              <>
+                {hurstRead}. {tr('R/S z korektą Anis-Lloyd; Lo (1991) — test może mylić krótką pamięć z długą.', 'R/S with the Anis-Lloyd correction; Lo (1991): the test can mistake short memory for long.')}
+              </>
+            )
           }
         />
       ),
@@ -212,8 +224,12 @@ export const QuantMetricTiles: React.FC<{ quant: QuantMathMetrics; className?: s
         <Stat
           label="VPIN"
           source={{ tone: 'model', label: 'MODEL', title: tr('Bulk volume classification, 50 kubełków wolumenowych', 'Bulk volume classification, 50 volume buckets') }}
-          value={<span>{fmtFixed(quant.vpinToxicity * 100, 1)}%</span>}
-          hint={tr('Kontrowersyjny — Andersen & Bondarenko 2014; czytaj względem własnej historii.', 'Controversial (Andersen & Bondarenko 2014); read it against its own history.')}
+          value={quant.vpinToxicity === null ? DASH : <span>{fmtFixed(quant.vpinToxicity * 100, 1)}%</span>}
+          hint={
+            quant.vpinToxicity === null
+              ? tr('brak wolumenu w świecach (żaden pełny kubełek)', 'no candle volume (no full bucket)')
+              : tr('Kontrowersyjny — Andersen & Bondarenko 2014; czytaj względem własnej historii.', 'Controversial (Andersen & Bondarenko 2014); read it against its own history.')
+          }
         />
       ),
     },
