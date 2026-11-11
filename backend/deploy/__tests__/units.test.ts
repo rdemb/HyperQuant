@@ -56,7 +56,7 @@ describe('usługi systemd: kod z katalogu aktualizowanego nie działa jako root'
     expect(one(svc, 'Group')).toBe('hyperquant-watchdog');
     // grupa usług: odczyt status.json skanera i pulsu serwera powiadomień (pliki 0640)
     expect(one(svc, 'SupplementaryGroups')).toBe('hyperquant');
-    expect(one(svc, 'ExecStart')).toBe('/opt/hyperquant/node/bin/node /opt/hyperquant/watchdog/watchdog.mjs');
+    expect(one(svc, 'ExecStart')).toBe('/opt/hyperquant/node/bin/node /opt/hyperquant/watchdog/scripts/watchdog.mjs');
     expect(one(svc, 'WorkingDirectory')).toBe('/opt/hyperquant/watchdog');
     expect(read('hyperquant-watchdog.service')).not.toContain(APP);
   });
@@ -166,8 +166,45 @@ describe('install.sh', () => {
   });
 
   it('kopiuje strażnika i skrypt aktualizacji poza katalog aktualizowany (root, bez prawa zapisu dla usług)', () => {
-    expect(sh).toMatch(/install -o root -g root -m 0644 "\$PREFIX\/app\/scripts\/watchdog\.mjs" "\$PREFIX\/app\/scripts\/check-data-health\.mjs" "\$PREFIX\/watchdog\/"/);
+    expect(sh).toMatch(/install -D -o root -g root -m 0644 "\$PREFIX\/app\/\$f" "\$PREFIX\/watchdog\.new\/\$f"/);
     expect(sh).toMatch(/install -o root -g root -m 0755 "\$PREFIX\/app\/backend\/deploy\/hyperquant-update\.sh" "\$PREFIX\/bin\/hyperquant-update"/);
+  });
+
+  // Kopia strażnika zachowuje układ repo; brak choćby jednego lokalnego importu = strażnik nie startuje po install.sh
+  const copied = (): string[] => {
+    const m = /WATCHDOG_FILES="([^"]+)"/.exec(sh);
+    return m ? m[1].trim().split(/\s+/) : [];
+  };
+  const localImports = (rel: string, seen = new Set<string>()): Set<string> => {
+    if (seen.has(rel)) return seen;
+    seen.add(rel);
+    const src = readFileSync(join(ROOT, rel), 'utf8');
+    for (const m of src.matchAll(/(?:from|import)\s*\(?\s*'(\.{1,2}\/[^']+)'/g)) {
+      localImports(join(rel, '..', m[1]).replace(/\\/g, '/'), seen);
+    }
+    return seen;
+  };
+
+  it('kopia strażnika obejmuje wszystkie lokalne importy scripts/watchdog.mjs (i package.json z typem modułu)', () => {
+    const files = copied();
+    for (const f of localImports('scripts/watchdog.mjs')) expect(files, f).toContain(f);
+    expect(files).toContain('package.json');
+  });
+
+  it('kopia strażnika w osobnym katalogu wczytuje się bez reszty repo', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hq-watchdog-copy-'));
+    try {
+      for (const f of copied()) {
+        mkdirSync(join(dir, f, '..'), { recursive: true });
+        copyFileSync(join(ROOT, f), join(dir, f));
+      }
+      const url = pathToFileURL(join(dir, 'scripts', 'watchdog.mjs')).href;
+      const r = spawnSync(process.execPath, ['--input-type=module', '-e', `await import(${JSON.stringify(url)})`], { encoding: 'utf8' });
+      expect(r.stderr).toBe('');
+      expect(r.status).toBe(0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('klucz wdrożeniowy dla strażnika przez LoadCredential (plik zostaje własnością skanera)', () => {
@@ -219,20 +256,5 @@ describe('install.sh', () => {
       const r = spawnSync('bash', ['-n'], { input: read(f), encoding: 'utf8' });
       expect(r.status, `${f}: ${r.stderr}`).toBe(0);
     }
-  });
-});
-
-describe('kopia strażnika działa poza repo', () => {
-  it('watchdog.mjs i check-data-health.mjs ładują się z osobnego katalogu (tylko moduły node: i siebie nawzajem)', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'hq-watchdog-copy-'));
-    for (const f of ['watchdog.mjs', 'check-data-health.mjs']) copyFileSync(join(ROOT, 'scripts', f), join(dir, f));
-    for (const f of ['watchdog.mjs', 'check-data-health.mjs']) {
-      const src = readFileSync(join(dir, f), 'utf8');
-      const specs = [...src.matchAll(/^import [^;]*? from '([^']+)'/gm)].map((m) => m[1]);
-      for (const s of specs) expect(s.startsWith('node:') || s === './check-data-health.mjs', `${f}: ${s}`).toBe(true);
-    }
-    const mod = await import(pathToFileURL(join(dir, 'watchdog.mjs')).href);
-    expect(typeof mod.decide).toBe('function');
-    expect(typeof mod.deployKey).toBe('function');
   });
 });

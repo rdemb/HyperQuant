@@ -4,6 +4,20 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Niezależna weryfikacja dziennika: przyrostowo, osobny workflow, znaczek gaśnie po 36 h (2026-11-11)
+
+#### Naprawione
+- **Weryfikacja dziennika w GitHub Actions stała od 9.11 08:26 UTC, a znaczek dalej był zielony.** Od tamtej pory żaden z ponad 50 przebiegów w repo danych się nie skończył: krok weryfikacji przekraczał limit 20 min (przebieg z 9.11 trwał 18 min, a dziennik rośnie) albo był anulowany przez kolejne zapisy strażnika. Znaczek `badge/ledger.json` zmieniał tylko udany przebieg, więc został zielony z datą 9.11.
+- **Historia git sprawdzana po zmienionych plikach** (`scripts/verify-ledger.mjs`, `checkGitAppendOnly`). Dotąd weryfikator uruchamiał `git show` dla każdego pliku dziennika w każdym commicie, czyli kilkaset tysięcy procesów przy 7340 commitach. Teraz robi jeden `git diff-tree --stdin` dla wszystkich par commitów i porównuje bajty tylko zmienionych plików `.jsonl`. Wersje czyta jeden proces `git cat-file --batch` (`catFileReader`) po jednej parze (stara i nowa wersja pliku), zwalnianej przed następną, więc pamięć nie rośnie z historią. Cały dziennik (7357 commitów, 3,5 GB wersji plików) sprawdza się w ok. 23 s zamiast ok. 20 min, ze szczytem pamięci ok. 250 MB zamiast ok. 2 GB, z tym samym wynikiem.
+- **Weryfikacja przyrostowa od punktu kontrolnego**: `verify-ledger.mjs --since-commit <hash>` sprawdza historię git tylko po commicie z ostatniej udanej weryfikacji. Commit spoza historii gałęzi (historia przepisana) jest błędem. Łańcuch hashy, wyniki i pokwitowania są nadal sprawdzane od GENESIS, a cała historia git co najmniej raz na 7 dni.
+- **Znaczek i strona przy nieaktualnej weryfikacji** (`scripts/verify-status.mjs`, `src/utils/verifyFreshness.ts`, `src/views/after/LedgerVerifyCard.tsx`): znaczek jest zielony tylko przy zgodnym wyniku nie starszym niż 36 h. Starszy daje czerwony „nieaktualna weryfikacja <data>”, także gdy przebieg przekroczy limit czasu. Panel dziennika ostrzega po 36 h zamiast po 2 dniach. Czas z przyszłości (ponad 10 min zapasu na zegar) nie jest „świeży”: wynik z takim czasem daje czerwony znaczek „nieważna data weryfikacji” i problem w nadzorze danych, a punkt kontrolny z taką datą jest nieważny (pełny przebieg i problem w raporcie), więc nie wyłącza tygodniowego pełnego przebiegu.
+- **Nadzór danych zgłasza nieaktualną weryfikację** (`scripts/check-data-health.mjs`): czyta `verify/latest.json` z gałęzi `health`. Wynik starszy niż 36 h albo z wykrytym problemem to problem w zgłoszeniu `alert-danych` (strażnik i `data-health.yml`), bez restartu skanera.
+
+#### Zmienione
+- **Weryfikacja w osobnym workflow** (`backend/deploy/ledger-verify.yml`; z `backend/deploy/health-alert.yml` usunięty job weryfikacji): nie jest anulowana przez kolejne zapisy strażnika, limit 20 min ma sam krok weryfikacji, a znaczek i podsumowanie powstają także po przekroczeniu limitu. Przebieg z niezgodnością albo niedokończony jest w Actions czerwony.
+- **Puls strażnika co 12 h zamiast raz na dobę** (`scripts/watchdog.mjs`): repo danych nie może mieć harmonogramu (GitHub uruchamia `schedule` tylko z gałęzi domyślnej, a `main` jest publikacją nadpisywaną co 2 min), więc weryfikację uruchamia zapis strażnika. Dzięki temu wynik ma zawsze mniej niż dobę.
+- **Kopia strażnika w układzie repo** (`backend/deploy/install.sh`, `hyperquant-watchdog.service`): nadzór danych czyta teraz `scripts/verify-status.mjs` i `src/utils/verifyFreshness.ts`, więc `install.sh` kopiuje strażnika z wszystkimi lokalnymi importami i `package.json` do `/opt/hyperquant/watchdog/` (te same ścieżki co w repo, nowa kopia obok i podmiana katalogu), a jednostka uruchamia `/opt/hyperquant/watchdog/scripts/watchdog.mjs`. Test w `backend/deploy/__tests__/units.test.ts` sprawdza, że lista kopiowanych plików obejmuje wszystkie lokalne importy strażnika i że kopia wczytuje się w osobnym katalogu.
+
 ### Serwer skanera: strażnik bez root, aktualizacja z podpisanych tagów (2026-11-11)
 
 #### Bezpieczeństwo

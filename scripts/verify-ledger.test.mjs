@@ -480,6 +480,147 @@ describe('verify-ledger — Schrödi (kot)', () => {
   });
 });
 
+import { catFileReader, checkGitAppendOnly } from './verify-ledger.mjs';
+import { execFileSync } from 'node:child_process';
+import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+
+/**
+ * Klon gałęzi ledger w miniaturze: kroki → commity (stały autor i czas — wynik nie zależy od zegara ani konfiguracji).
+ * Zwraca katalog i hashe commitów w kolejności.
+ */
+function ledgerRepo(steps) {
+  const dir = mkdtempSync(path.join(tmpdir(), 'hq-ledger-git-'));
+  const git = (...a) =>
+    execFileSync('git', ['-C', dir, '-c', 'user.name=t', '-c', 'user.email=t@example.invalid', '-c', 'commit.gpgsign=false', '-c', 'core.autocrlf=false', ...a], {
+      encoding: 'utf8',
+      env: { ...process.env, GIT_AUTHOR_DATE: '2026-10-22T00:00:00Z', GIT_COMMITTER_DATE: '2026-10-22T00:00:00Z' },
+    }).trim();
+  git('init', '-q');
+  mkdirSync(path.join(dir, 'BTC', 'ots'), { recursive: true });
+  const commits = [];
+  steps.forEach((step, i) => {
+    step(path.join(dir, 'BTC'));
+    git('add', '-A');
+    git('commit', '-q', '--allow-empty', '-m', `dziennik ${i}`);
+    commits.push(git('rev-parse', 'HEAD'));
+  });
+  return { dir, commits };
+}
+
+const day1 = (d) => path.join(d, '2026-10-22.jsonl');
+const day2 = (d) => path.join(d, '2026-10-23.jsonl');
+const appendOnly = [
+  (d) => writeFileSync(day1(d), '{"n":1}\n'),
+  (d) => appendFileSync(day1(d), '{"n":2}\n'),
+  (d) => {
+    appendFileSync(day1(d), '{"n":3}\n');
+    writeFileSync(path.join(d, 'ots', '2026-10-22.jsonl.ots'), 'x');
+  },
+  (d) => writeFileSync(day2(d), '{"n":4}\n'),
+  (d) => appendFileSync(day2(d), '{"n":5}\n{"n":6}\n'),
+];
+
+// Prawdziwe repo git w katalogu tymczasowym — dziesiątki procesów git (na Windows ~60 ms każdy), stąd dłuższy limit
+describe('historia git (--dir): tylko dopisywanie, przyrostowo od punktu kontrolnego', { timeout: 60_000 }, () => {
+  const dirs = [];
+  const repo = (steps) => {
+    const r = ledgerRepo(steps);
+    dirs.push(r.dir);
+    return r;
+  };
+  afterEach(() => {
+    for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
+  });
+
+  it('historia tylko dopisująca: pełny przebieg i przebieg od punktu kontrolnego dają ten sam wynik', async () => {
+    const { dir, commits } = repo(appendOnly);
+    const full = await checkGitAppendOnly(dir);
+    expect(full).toMatchObject({ commits: 5, checked: 4, since: null, problems: [] });
+    for (const cp of commits) {
+      const inc = await checkGitAppendOnly(dir, { since: cp });
+      expect(inc.problems).toEqual(full.problems);
+      expect(inc.commits).toBe(full.commits);
+      expect(inc.checked).toBe(commits.length - 1 - commits.indexOf(cp));
+    }
+  });
+
+  it('zmiana zapisanej linii i usunięcie pliku po punkcie kontrolnym: te same problemy co w pełnym przebiegu', async () => {
+    const { dir, commits } = repo([
+      ...appendOnly,
+      (d) => writeFileSync(day1(d), '{"n":1}\n{"n":20}\n{"n":3}\n'),
+      (d) => rmSync(day2(d)),
+      (d) => writeFileSync(day1(d), '{"n":1}\n{"n":20}\n{"n":3}\n{"n":7}\n'),
+    ]);
+    const full = await checkGitAppendOnly(dir);
+    expect(full.problems).toEqual([`${commits[5].slice(0, 10)}: zmieniono zapisane linie w BTC/2026-10-22.jsonl`, `${commits[6].slice(0, 10)}: usunięto BTC/2026-10-23.jsonl`]);
+    // Wznowienie z dowolnego punktu sprzed naruszeń — wynik identyczny z pełnym przebiegiem
+    for (const cp of commits.slice(0, 5)) expect((await checkGitAppendOnly(dir, { since: cp })).problems).toEqual(full.problems);
+    // Punkt kontrolny po naruszeniu go nie widzi — dlatego co tydzień pełny przebieg (scripts/verify-status.mjs)
+    expect((await checkGitAppendOnly(dir, { since: commits[7] })).problems).toEqual([]);
+  });
+
+  it('punkt kontrolny spoza historii gałęzi (historia przepisana) → problem, bez cichego pełnego przebiegu', async () => {
+    const { dir } = repo(appendOnly);
+    const r = await checkGitAppendOnly(dir, { since: 'ab'.repeat(20) });
+    expect(r.problems).toEqual([`punkt kontrolny abababab: brak w historii gałęzi (historia przepisana?)`]);
+    expect(r.checked).toBe(0);
+  });
+
+  it('plik dopisany bez końcowego znaku nowej linii: dopisanie dalej jest dopisaniem (porównanie bajtów)', async () => {
+    const { dir } = repo([(d) => writeFileSync(day1(d), '{"n":1}'), (d) => appendFileSync(day1(d), '\n{"n":2}\n')]);
+    expect((await checkGitAppendOnly(dir)).problems).toEqual([]);
+  });
+
+  // Stała pamięć względem długości historii: bloby porównywane parami (stara, nowa wersja pliku) i od razu zwalniane
+  const LINE = `{"x":"${'a'.repeat(2000)}"}\n`;
+  const growing = (n) => Array.from({ length: n }, (_, i) => (d) => (i === 0 ? writeFileSync(day1(d), LINE) : appendFileSync(day1(d), LINE)));
+
+  it('pełny przebieg: czytnik git cat-file trzyma naraz najwyżej bloby jednej pary, nie wszystkie wersje', async () => {
+    const N = 40;
+    const { dir } = repo(growing(N));
+    const reader = catFileReader(dir);
+    const r = await checkGitAppendOnly(dir, { reader });
+    await reader.close();
+    expect(r.problems).toEqual([]);
+    const st = reader.stats();
+    expect(st.pairs).toBe(N - 1);
+    const L = Buffer.byteLength(LINE);
+    const largestPair = (N - 1) * L + N * L;
+    expect(st.peakBytes).toBeGreaterThanOrEqual(largestPair);
+    expect(st.peakBytes).toBeLessThanOrEqual(largestPair + 256); // + nagłówki odpowiedzi git
+    expect(st.totalBytes).toBe((N - 1) * (N + 1) * L); // przeczytane łącznie ~20 × więcej niż szczyt
+  });
+
+  it('pary porównywane po kolei: wstrzyknięty czytnik nigdy nie ma więcej niż jednej wypożyczonej pary', async () => {
+    const { dir } = repo(growing(12));
+    const real = catFileReader(dir);
+    let live = 0;
+    let maxLive = 0;
+    let lent = 0;
+    const reader = {
+      pair: (a, b, fn) => {
+        maxLive = Math.max(maxLive, ++live);
+        return real.pair(a, b, (x, y) => {
+          lent++;
+          try {
+            return fn(x, y);
+          } finally {
+            live--;
+          }
+        });
+      },
+      close: () => real.close(),
+    };
+    const r = await checkGitAppendOnly(dir, { reader });
+    await real.close();
+    expect(r.problems).toEqual([]);
+    expect(lent).toBe(11);
+    expect(maxLive).toBe(1);
+  });
+});
+
 import { TAUS, benchQuantiles, buildSummary } from '../backend/scanner/forecaster.ts';
 
 describe('verify-ledger — BSS dotknięć wobec bazy odległości przeliczony niezależnie', () => {
@@ -502,4 +643,5 @@ describe('verify-ledger — BSS dotknięć wobec bazy odległości przeliczony n
     expect(t.brierDist).toBeCloseTo(s.brierDist, 6);
     expect(t.bssDist).toBeCloseTo(s.bssDist, 6);
   });
+
 });

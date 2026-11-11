@@ -125,7 +125,7 @@ w następnym przebiegu. Prostsza droga to aktualizacja systemu do wersji z polki
    ```bash
    systemctl show -p User -p SupplementaryGroups -p ExecStart hyperquant-watchdog
    #   User=hyperquant-watchdog (nie root), SupplementaryGroups=hyperquant,
-   #   ExecStart z /opt/hyperquant/watchdog/watchdog.mjs (nie z /opt/hyperquant/app)
+   #   ExecStart z /opt/hyperquant/watchdog/scripts/watchdog.mjs (nie z /opt/hyperquant/app)
    systemctl show -p LoadCredential hyperquant-watchdog      # deploy_key:<ścieżka klucza>, gdy jest repo danych
    systemctl show -p EnvironmentFiles hyperquant-watchdog    # tylko /etc/hyperquant/watchdog.env, bez scanner.env
    cat /etc/hyperquant/watchdog.env                          # HQ_GIT_REMOTE, HQ_OUT_DIR, HQ_STATE_DIR i nic więcej
