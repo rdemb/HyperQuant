@@ -1,0 +1,112 @@
+import { describe, expect, it } from 'vitest';
+import type { Candle } from '../hl/parse';
+import { type IndicatorBar, IB_EXTENSIONS, initialBalances } from '../core/indicators';
+import { IB_EVIDENCE, IB_OBJECTS_MAX, ibObjects, selectIbs } from '../chart/ibSelect';
+
+const M5 = 300_000;
+const utc = (s: string) => Date.parse(s);
+// 23.10.2026: Azja 00:00 UTC, Londyn 07:00 UTC (BST), Nowy Jork 13:30 UTC (EDT)
+const ASIA = utc('2026-10-23T00:00:00Z');
+const LONDON = utc('2026-10-23T07:00:00Z');
+const NY = utc('2026-10-23T13:30:00Z');
+
+const bar = (t: number, o: number, h: number, l: number, c: number): IndicatorBar => ({ t, candle: { t, o, h, l, c, v: 1, n: 1 } as Candle });
+
+/** Świece 5m od `from` do `to` (bez `to`): w pierwszej godzinie sesji zakres 95–105, potem zamknięcia `close(t)`. */
+function bars(from: number, to: number, close: (t: number) => number = () => 100): IndicatorBar[] {
+  const out: IndicatorBar[] = [];
+  for (let t = from; t < to; t += M5) {
+    const c = close(t);
+    out.push(bar(t, 100, Math.max(c, 105), Math.min(c, 95), c));
+  }
+  return out;
+}
+
+const pick = (b: IndicatorBar[], now = Number.POSITIVE_INFINITY) => selectIbs(initialBalances(b, M5), b, M5, now);
+
+describe('zakres początkowy sesji: co rysujemy (selectIbs)', () => {
+  it('pełny rysunek tylko dla bieżącej sesji, z poprzedniej same linie szczytu i dołka, starsze — nic', () => {
+    const b = bars(ASIA, NY + 3 * 3_600_000);
+    expect(initialBalances(b, M5)).toHaveLength(3);
+    const s = pick(b);
+    expect(s.map((d) => [d.ib.session.id, d.current])).toEqual([
+      ['london', false],
+      ['ny', true],
+    ]);
+    expect(s.map(ibObjects)).toEqual([2, 3]);
+  });
+
+  it('bez rozszerzeń, dopóki cena zamyka się w zakresie (knoty poza zakresem się nie liczą)', () => {
+    const b = bars(NY, NY + 3 * 3_600_000).map((x) => (x.t >= NY + 3_600_000 ? bar(x.t, 100, 140, 60, 104) : x));
+    expect(pick(b).at(-1)!.breakout).toBeNull();
+  });
+
+  it('rozszerzenia po pierwszym zamknięciu półgodziny poza zakresem i tylko po tej stronie', () => {
+    // świeca 5m kończąca półgodzinę 15:00 UTC (początek 14:55)
+    const up = NY + 3_600_000 + 25 * 60_000;
+    const down = up + 30 * 60_000;
+    const b = bars(NY, NY + 3 * 3_600_000, (t) => (t === up ? 107 : t === down ? 90 : 100));
+    const cur = pick(b).at(-1)!;
+    // Wybicie znane na zamknięciu półgodziny (koniec świecy); późniejsze zamknięcie pod dołkiem nie dokłada strony
+    expect(cur.breakout).toEqual({ side: 1, t: up + M5 });
+    expect(ibObjects(cur)).toBe(3 + IB_EXTENSIONS.length);
+  });
+
+  it('świeca w trakcie nie wybija zakresu; po jej zamknięciu — tak', () => {
+    // ostatnia świeca kończy półgodzinę 15:30 UTC
+    const last = NY + 2 * 3_600_000 - M5;
+    const b = bars(NY, last + M5, (t) => (t === last ? 80 : 100));
+    expect(pick(b, last + 60_000).at(-1)!.breakout).toBeNull();
+    expect(pick(b, last + M5).at(-1)!.breakout).toEqual({ side: -1, t: last + M5 });
+  });
+
+  it(`najwyżej ${IB_OBJECTS_MAX} obiektów: bieżąca sesja z wybiciem i linie poprzedniej`, () => {
+    const b = bars(LONDON, NY + 4 * 3_600_000, (t) => (t >= NY + 2 * 3_600_000 ? 120 : t >= LONDON + 2 * 3_600_000 && t < NY ? 80 : 100));
+    const s = pick(b);
+    expect(s.reduce((n, d) => n + ibObjects(d), 0)).toBe(IB_OBJECTS_MAX);
+  });
+
+  it('wybicie z przeszłości nie zmienia się po dojściu kolejnych świec i od głębokości historii', () => {
+    const up = NY + 3_600_000 + 25 * 60_000;
+    const close = (t: number) => (t === up ? 110 : t > up + 3_600_000 ? 50 : 100);
+    expect(pick(bars(NY, up + 30 * 60_000, close)).at(-1)!.breakout).toEqual({ side: 1, t: up + M5 });
+    const early = pick(bars(NY, up + 30 * 60_000, close)).at(-1)!.breakout;
+    expect(pick(bars(NY, NY + 6 * 3_600_000, close)).at(-1)!.breakout).toEqual(early);
+    expect(pick(bars(ASIA, NY + 6 * 3_600_000, close)).at(-1)!.breakout).toEqual(early);
+  });
+
+  it('opis: wynik sprawdzianu, PL i EN', () => {
+    expect(IB_EVIDENCE.pl).toBe('Szczyt i dołek pierwszej godziny pękają częściej niż losowy poziom obok (odrzucenie 40% wobec 47%, n 1 239).');
+    expect(IB_EVIDENCE.en).toContain('40% vs 47%, n 1,239');
+  });
+});
+
+describe('wybicie liczone zamknięciami półgodzin, niezależnie od interwału wykresu', () => {
+  const M30 = 1_800_000;
+  /** Świece 30m z 5m (OHLC kubełków 30 min). */
+  const to30 = (b5: IndicatorBar[]): IndicatorBar[] => {
+    const out: IndicatorBar[] = [];
+    for (let i = 0; i < b5.length; i += 6) {
+      const g = b5.slice(i, i + 6);
+      out.push(bar(g[0].t, g[0].candle.o, Math.max(...g.map((x) => x.candle.h)), Math.min(...g.map((x) => x.candle.l)), g[g.length - 1].candle.c));
+    }
+    return out;
+  };
+
+  it('zamknięcie 5m poza zakresem w środku półgodziny, po którym półgodzina zamyka się w zakresie, nie daje rozszerzeń', () => {
+    const mid = NY + 3_600_000 + 10 * 60_000;
+    const b = bars(NY, NY + 3 * 3_600_000, (t) => (t === mid ? 112 : 100));
+    expect(pick(b).at(-1)!.breakout).toBeNull();
+  });
+
+  it('te same świece jako 5m i jako 30m dają tę samą stronę i chwilę wybicia', () => {
+    const mid = NY + 3_600_000 + 10 * 60_000;
+    const halfUp = NY + 3_600_000 + 55 * 60_000; // ostatnia 5m półgodziny 15:30 UTC
+    const b5 = bars(NY, NY + 3 * 3_600_000, (t) => (t === mid ? 112 : t >= halfUp ? 108 : 100));
+    const b30 = to30(b5);
+    const s5 = selectIbs(initialBalances(b5, M5), b5, M5, Number.POSITIVE_INFINITY).at(-1)!.breakout;
+    const s30 = selectIbs(initialBalances(b30, M30), b30, M30, Number.POSITIVE_INFINITY).at(-1)!.breakout;
+    expect(s5).toEqual({ side: 1, t: halfUp + M5 });
+    expect(s30).toEqual(s5);
+  });
+});

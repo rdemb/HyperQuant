@@ -443,6 +443,10 @@ export class ProChartController {
       container.dataset.bubbles = String(n);
     };
     this.overlay = new IndicatorOverlay(toggles(settings, series.interval.ms));
+    // Liczba obiektów zakresu początkowego sesji na ekranie (pomiar układu czyta ją z atrybutu)
+    this.overlay.onIb = (n) => {
+      container.dataset.ibObjects = String(n);
+    };
     // Podpisy mapy z bloga przy prawej krawędzi rozsuwa nakładka razem ze swoimi etykietami (VWAP, IB, poziomy dnia)
     this.overlay.setEdgeTags(() => this.blog.edgeTags());
     this.main.attachPrimitive(this.overlay);
@@ -1416,7 +1420,7 @@ export class ProChartController {
       if (deltaReset) this.delta?.setData(next.map(toDelta));
     }
     const ms = this.series.interval.ms;
-    this.overlay.setBars(next, ms, this.store.vwapCandles(this.series.interval));
+    this.overlay.setBars(next, ms, this.store.vwapCandles(this.series.interval), this.store.serverNow());
     this.overlay.setDaily(this.store.daily);
     this.drawLayer.setBars(next, ms);
     const st = this.store;

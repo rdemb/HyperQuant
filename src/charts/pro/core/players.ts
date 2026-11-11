@@ -1,3 +1,4 @@
+import { oneAccountScope } from './accountScope';
 import type { Coverage } from './coverage';
 import type { AggressorOrder } from './orders';
 
@@ -8,7 +9,8 @@ import type { AggressorOrder } from './orders';
  * małych. Okno nie sięga za zamknięcie świecy, więc zamknięta świeca się nie zmienia; w bieżącej świecy liczą się wejścia
  * do teraz. Świeca dłuższa niż godzina to jej godziny UTC, każda z oknem równym tej godzinie. Pokazujemy tylko sumy, bez kont.
  * W historii serwera konto ma numer (ważny dobę UTC w plikach `idScope: 'day'`, godzinę w starszych), a na żywo adres,
- * więc okno przez przełom doby (w starszych plikach — godziny) albo przez chwilę otwarcia strony liczy jedno konto jako dwa.
+ * więc okno przez przełom doby (w starszych plikach — godziny) albo przez chwilę otwarcia strony liczy jedno konto jako dwa:
+ * takie okno nie jest pełne (`complete: false`), tak jak okno, którego taśma z kontami nie obejmuje w całości.
  */
 
 const HOUR = 3_600_000;
@@ -27,7 +29,11 @@ export interface PlayerSplit {
   usd: number;
   /** Udział dużych graczy w wartości wejść (%); null bez wejść. */
   bigShare: number | null;
-  /** Taśma z kontami przez całą świecę; false — nagrywanie zaczęło się albo przerwało w jej trakcie. */
+  /**
+   * Okna klasy kont (60 min do zamknięcia świecy, dla świecy dłuższej niż godzina — jej godziny) w całości z taśmą z kontami
+   * i w jednym zakresie numeracji kont; false — nagrywanie zaczęło się albo przerwało w oknie, albo okno przechodzi przez
+   * przełom doby UTC (starsze pliki: godziny) albo chwilę otwarcia strony, gdzie jedno konto może mieć dwa identyfikatory.
+   */
   complete: boolean;
 }
 
@@ -42,6 +48,8 @@ interface Part {
   rest: number;
   bigUsd: number;
   usd: number;
+  /** Konta okna w jednym zakresie numeracji. */
+  oneScope: boolean;
 }
 
 /** Wartość wejść w centach: suma liczb całkowitych jest dokładna, więc przesunięte okno daje to samo co policzone od nowa. */
@@ -70,6 +78,7 @@ export class PlayerFlow {
     let rest = 0;
     let bigUsd = 0;
     let usd = 0;
+    let complete = true;
     for (let a = t; a < stop; ) {
       // Część w jednej godzinie UTC; okno klasy: 60 min do jej zamknięcia (świeca do godziny — zamknięcia świecy)
       const close = Math.min(Math.floor(a / HOUR) * HOUR + HOUR, t + ms);
@@ -79,9 +88,10 @@ export class PlayerFlow {
       rest += p.rest;
       bigUsd += p.bigUsd;
       usd += p.usd;
+      complete &&= p.oneScope && this.addressed.covers(close - HOUR, Math.min(b, end));
       a = b;
     }
-    return { big, rest, bigUsd, usd, bigShare: usd > 0 ? (bigUsd / usd) * 100 : null, complete: this.addressed.covers(t, end) };
+    return { big, rest, bigUsd, usd, bigShare: usd > 0 ? (bigUsd / usd) * 100 : null, complete };
   }
 
   prune(before: number): void {
@@ -97,7 +107,7 @@ export class PlayerFlow {
     if (hit && hit.n === n) return hit;
     const sums = this.sums(w0, b);
     const limit = this.thresholdUsd * 100;
-    const p: Part = { big: 0, rest: 0, bigUsd: 0, usd: 0 };
+    const p: Part = { big: 0, rest: 0, bigUsd: 0, usd: 0, oneScope: oneAccountScope([this.orders.range(w0, b)]) };
     for (const o of this.orders.range(a, b)) {
       // Zlecenie bez konta (brak pola users) zostaje w reszcie
       const isBig = o.taker !== '' && (sums.get(o.taker) ?? 0) >= limit;

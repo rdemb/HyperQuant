@@ -26,6 +26,11 @@ export function metricsOf(r) {
   // Bąble zleceń (wybór warstwy, bez serii) w Kokpicie 1m na powtórce 24.10
   if (typeof r.bubbles?.desktop === 'number') m['bubbles.count1440'] = r.bubbles.desktop;
   if (typeof r.bubbles?.phone === 'number') m['bubbles.count390'] = r.bubbles.phone;
+  // Zakres początkowy sesji (wybór warstwy) na danych stałych: „Aukcja i otwarcie” 5m i „Rozliczenie doby” 30m
+  for (const [view, v] of [['auction', r.ib?.auction], ['review', r.ib?.review]]) {
+    if (typeof v?.desktop === 'number') m[`ib.${view}1440`] = v.desktop;
+    if (typeof v?.phone === 'number') m[`ib.${view}390`] = v.phone;
+  }
   // Strefy nierównowagi i niedokończone aukcje (wybór warstwy) w układzie „Aukcja i otwarcie”, powtórka 24.10, 5m
   for (const [k, v] of [['1440', r.zones?.desktop], ['390', r.zones?.phone]]) {
     if (typeof v?.rects === 'number') m[`zones.rects${k}`] = v.rects;
