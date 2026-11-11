@@ -479,3 +479,27 @@ describe('verify-ledger — Schrödi (kot)', () => {
     expect(r.cat.brierBig).toBeCloseTo(0.09, 12);
   });
 });
+
+import { TAUS, benchQuantiles, buildSummary } from '../backend/scanner/forecaster.ts';
+
+describe('verify-ledger — BSS dotknięć wobec bazy odległości przeliczony niezależnie', () => {
+  it('Brier bazy odległości (wzór odbicia, σ godzinowa z bq prognozy 1 h tego slotu) i bssDist zgodne z podsumowaniem skanera', () => {
+    const T = Date.UTC(2026, 10, 2);
+    const recs = [];
+    for (let i = 0; i < 40; i++) {
+      const slot = T + i * 15 * 60_000;
+      const s1h = 0.003 + 0.0001 * i;
+      recs.push({ k: 'f', id: `${slot}-ret60`, slot, ti: slot, t: slot, kind: 'ret', h: 60, px0: 100_000, taus: TAUS, q: benchQuantiles(s1h, 60), bq: benchQuantiles(s1h, 60).map((x) => Math.round(x * 1e6) / 1e6), aci: 0.1, model: 'x' });
+      const p = { pdh: 0.3, pdl: i % 3 === 0 ? null : 0.2, deq: 0.6 };
+      recs.push({ k: 'f', id: `${slot}-touch120`, slot, ti: slot, t: slot, kind: 'touch', h: 120, px0: 100_000, lv: { pdh: 100_800 + 10 * i, pdl: 99_000, deq: 99_900 }, p, model: 'x' });
+      recs.push({ k: 'r', id: `${slot}-touch120`, t: slot + 7_200_000, hi: 0, lo: 0, yv: { pdh: i % 4 === 0 ? 1 : 0, pdl: 0, deq: i % 2 } });
+    }
+    const t = recompute(recs).touch;
+    const fs = new Map(recs.filter((o) => o.k === 'f').map((o) => [o.id, o]));
+    const rs = new Map(recs.filter((o) => o.k === 'r').map((o) => [o.id, o]));
+    const s = buildSummary({ coin: 'BTC', now: T + 20 * 3_600_000, head: { hash: 'h', lines: 1 }, forecasts: fs, resolutions: rs, aci: {}, ots: [] }).scores.touch;
+    expect(t.levelsDist).toBe(s.pairsDist);
+    expect(t.brierDist).toBeCloseTo(s.brierDist, 6);
+    expect(t.bssDist).toBeCloseTo(s.bssDist, 6);
+  });
+});

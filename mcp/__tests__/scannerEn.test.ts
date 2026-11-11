@@ -28,7 +28,10 @@ describe('narzędzia danych skanera po angielsku', () => {
       const notes = (res.structuredContent as { notes: string[] }).notes.join(' ');
       expect(notes, name).not.toMatch(/[ąęłńśźż]/);
       if (name === 'cohort_flow') {
-        expect(notes).toContain("volumeShare = cohort buy+sell ÷ the four cohorts' visible buy+sell in the window (each trade counted on both sides; hidden cells excluded)");
+        expect(notes).toContain(
+          'volumeShare = cohort buy+sell ÷ 2 × tape volume in the window (every trade has a buyer and a seller); cells hidden for privacy are combined in othersCombined, so the cohort shares and othersCombined add up to 1'
+        );
+        expect(JSON.stringify(res)).toContain('Others combined (hidden)');
       }
       if (name === 'twaps') {
         expect(JSON.stringify(res)).toContain('requires the live stream (planned)');
