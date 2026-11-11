@@ -1,4 +1,4 @@
-import { COHORTS, type CohortCell, type CohortFlow, type CohortId, type CohortMarkout, type CohortTotal, ROUND_USD } from '../../src/utils/cohorts.ts';
+import { COHORTS, type CohortCell, type CohortFlow, type CohortId, type CohortMarkout, type CohortTape, type CohortTotal, ROUND_USD } from '../../src/utils/cohorts.ts';
 
 /**
  * Przepływ kohort z publicznej taśmy BTC Hyperliquid (pole `users` + strona agresora) — tylko strumień WebSocket, zero zapytań REST.
@@ -8,7 +8,8 @@ import { COHORTS, type CohortCell, type CohortFlow, type CohortId, type CohortMa
  *  2. poinformowani — markout biorcy po 5 min istotnie dodatni. Obserwacja testu = blok 5 min adresu (średnia ważona
  *     nominałem jego transakcji biorcy w bloku), więc jedno zlecenie zamiatające wielu makerów to jedna obserwacja, nie
  *     dziesiątki prawie identycznych. Test jednostronny na adresach z ≥ 30 blokami, kontrola FDR Benjaminiego–Hochberga
- *     (q = 0.10) i dodatnia średnia a posteriori w empirycznym Bayesie (normalny–normalny);
+ *     (q = 0.10) i dodatnia średnia a posteriori w empirycznym Bayesie (normalny–normalny); kohorta istnieje dopiero
+ *     od 10 wybranych kont i przy τ > 0 (inaczej jest pusta, a konta zostają w kolejnych kohortach);
  *  3. wieloryby — wg książki adresów (pozycja ≥ 1 mln USD albo konto z rankingu ≥ 10 mln USD);
  *  4. reszta.
  * Klasyfikacja pochodzi wyłącznie z markoutów już rozliczonych, a kohorta transakcji jest ustalana w chwili transakcji —
@@ -18,7 +19,9 @@ import { COHORTS, type CohortCell, type CohortFlow, type CohortId, type CohortMa
  *  - publikowane są tylko kubełki zamknięte; widoczność ustalana raz, przy zamknięciu (bez różnicowania kolejnych publikacji);
  *  - k-anonimowość z regułą dominacji + ukrywanie wtórne (`suppress`) osobno dla wszystkich fillów i dla warstwy biorcy;
  *  - kwoty zaokrąglone do 10 tys. USD; liczności do dziesiątek; markouty tylko z w pełni rozliczonych godzin,
- *    każda godzina z bramką k-anonimowości biorców.
+ *    każda godzina z bramką k-anonimowości biorców;
+ *  - wolumen taśmy i suma ukrytych komórek tylko na poziomie okna (1 h, 24 h): obie wynikają z publicznej taśmy,
+ *    a rozbicia sumy ukrytych na kohorty nie da się odtworzyć (w kubełku ukryte są co najmniej dwie komórki albo wszystkie).
  * Adresy, statystyki per adres i przynależność zostają na serwerze.
  */
 
@@ -38,6 +41,8 @@ const MM_MAKER_SHARE = 0.8;
 const MM_MIN_USD = 1e6;
 export const INFORMED_MIN_N = 30;
 export const FDR_Q = 0.1;
+/** Najmniejsza publikowana kohorta „poinformowanych” (mniejsza jest ukryta w każdym kubełku i pociąga za sobą „resztę”) */
+export const INFORMED_MIN_MEMBERS = 10;
 const MAX_STATS = 100_000;
 
 // ——— statystyka ———
@@ -116,6 +121,15 @@ export function selectInformed(
     if (bh[i] && post > 0) selected.add(r.addr);
   });
   return { selected, candidates: cand.length, mu0, tau2 };
+}
+
+/**
+ * Czy wybór „poinformowanych” tworzy kohortę: co najmniej 10 kont i dodatni rozrzut umiejętności (τ² > 0). Przy τ = 0
+ * empiryczny Bayes mówi, że różnice średnich mieszczą się w szumie, a kilka wybranych kont to szczęście z tysięcy prób.
+ * Gdy nie — kohorta jest pusta: konta zostają w swoich kohortach (wieloryby, reszta), na stronie „nie wykryto”.
+ */
+export function informedPublishable(selected: number, tau2: number | null): boolean {
+  return selected >= INFORMED_MIN_MEMBERS && tau2 !== null && tau2 > 0;
 }
 
 // ——— prywatność ———
@@ -213,6 +227,8 @@ interface Bucket {
   open: Record<CohortId, OpenCell> | null;
   /** Wartości dokładne komórek widocznych po finalizacji (null = ukryta) */
   pub: Record<CohortId, CohortCell | null> | null;
+  /** Po finalizacji: wolumen taśmy kubełka i ukryte komórki razem (dokładnie); null = kubełek ze stanu bez tych pól */
+  tape: CohortTape | null;
 }
 
 interface Pending {
@@ -335,7 +351,7 @@ export class CohortEngine {
     const bt = Math.floor(tr.time / BUCKET) * BUCKET;
     let b = this.buckets.get(bt);
     if (!b) {
-      b = { open: newOpen(), pub: null };
+      b = { open: newOpen(), pub: null, tape: null };
       this.buckets.set(bt, b);
     }
     // Transakcja spóźniona do kubełka już sfinalizowanego nie zmienia opublikowanych wartości
@@ -439,6 +455,20 @@ export class CohortEngine {
               : null,
           ])
         ) as Record<CohortId, CohortCell | null>;
+        // Wolumen taśmy (każda transakcja ma jednego kupującego) i ukryte razem; warstwa biorcy także z ukrytych warstw biorcy
+        const tape: CohortTape = { volume: 0, hidden: { buy: 0, sell: 0, takerBuy: 0, takerSell: 0 } };
+        for (const c of COHORTS) {
+          tape.volume += o[c].buy;
+          if (!visAll[c]) {
+            tape.hidden.buy += o[c].buy;
+            tape.hidden.sell += o[c].sell;
+          }
+          if (!visAll[c] || !visTaker[c]) {
+            tape.hidden.takerBuy += o[c].takerBuy;
+            tape.hidden.takerSell += o[c].takerSell;
+          }
+        }
+        b.tape = tape;
         b.open = null;
       }
     }
@@ -493,8 +523,8 @@ export class CohortEngine {
       { minN: INFORMED_MIN_N, q: FDR_Q }
     );
     this.mm = mm;
-    this.informed = inf.selected;
-    this.meta = { candidates: inf.candidates, selected: inf.selected.size, mu0: inf.mu0, tau2: inf.tau2, at: now };
+    this.informed = informedPublishable(inf.selected.size, inf.tau2) ? inf.selected : new Set();
+    this.meta = { candidates: inf.candidates, selected: this.informed.size, mu0: inf.mu0, tau2: inf.tau2, at: now };
     const members = zeroCounts();
     for (const [a, t] of this.lastActive) if (t > now - DAY) members[this.cohortOf(a)]++;
     this.members = members;
@@ -515,10 +545,25 @@ export class CohortEngine {
         takerBuy: c.takerBuy === null ? null : roundUsd(c.takerBuy),
         takerSell: c.takerSell === null ? null : roundUsd(c.takerSell),
       };
+    const newTape = (): CohortTape | null => ({ volume: 0, hidden: { buy: 0, sell: 0, takerBuy: 0, takerSell: 0 } });
+    const tape = { h1: newTape(), h24: newTape() };
     const buckets = [...this.buckets.entries()]
       .filter(([t, b]) => b.pub !== null && t >= sinceB && t > now - DAY)
       .sort((a, b) => a[0] - b[0])
       .map(([t, b]) => {
+        for (const w of t >= h1From ? (['h24', 'h1'] as const) : (['h24'] as const)) {
+          const acc = tape[w];
+          if (!acc || !b.tape) {
+            // Kubełek bez zapisanego wolumenu (stan sprzed tej wersji): wolumen okna nieznany, a nie zaniżony
+            tape[w] = null;
+            continue;
+          }
+          acc.volume += b.tape.volume;
+          acc.hidden.buy += b.tape.hidden.buy;
+          acc.hidden.sell += b.tape.hidden.sell;
+          acc.hidden.takerBuy += b.tape.hidden.takerBuy;
+          acc.hidden.takerSell += b.tape.hidden.takerSell;
+        }
         for (const c of COHORTS) {
           const v = b.pub![c];
           for (const tot of t >= h1From ? [h24, h1] : [h24]) {
@@ -546,6 +591,11 @@ export class CohortEngine {
       }
       return r;
     };
+    const roundTape = (x: CohortTape | null): CohortTape | null =>
+      x && {
+        volume: roundUsd(x.volume),
+        hidden: { buy: roundUsd(x.hidden.buy), sell: roundUsd(x.hidden.sell), takerBuy: roundUsd(x.hidden.takerBuy), takerSell: roundUsd(x.hidden.takerSell) },
+      };
 
     // Okno: 24 ostatnie sfinalizowane godziny — nowa wchodzi w tym samym kroku, w którym najstarsza wypada
     const finalized = [...this.oos.keys()]
@@ -588,6 +638,7 @@ export class CohortEngine {
       bucketMin: BUCKET / MIN,
       buckets,
       totals: { h1: roundTotals(h1), h24: roundTotals(h24) },
+      tape: { h1: roundTape(tape.h1), h24: roundTape(tape.h24) },
       members: Object.fromEntries(COHORTS.map((c) => [c, floorTens(this.members[c])])) as Record<CohortId, number>,
       informed: {
         candidates: floorTens(this.meta.candidates),
@@ -616,7 +667,7 @@ export class CohortEngine {
       meta: this.meta,
       members: this.members,
       observedFrom: this.observedFrom,
-      buckets: [...this.buckets].map(([t, b]) => [t, { open: b.open ? Object.fromEntries(COHORTS.map((c) => [c, cellJson(b.open![c])])) : null, pub: b.pub }]),
+      buckets: [...this.buckets].map(([t, b]) => [t, { open: b.open ? Object.fromEntries(COHORTS.map((c) => [c, cellJson(b.open![c])])) : null, pub: b.pub, tape: b.tape }]),
       oos: [...this.oos].map(([h, acc]) => [h, Object.fromEntries(COHORTS.map((c) => [c, { ...acc[c], takers: acc[c].takers ? [...acc[c].takers!] : null }]))]),
     };
   }
@@ -641,18 +692,27 @@ export class CohortEngine {
     if (Array.isArray(x.informed)) e.informed = new Set(x.informed.filter((a): a is string => typeof a === 'string'));
     const meta = x.meta as Partial<Meta> | undefined;
     if (meta && fin(meta.candidates) && fin(meta.selected) && finOrNull(meta.mu0) && finOrNull(meta.tau2) && finOrNull(meta.at)) e.meta = meta as Meta;
+    // Stan zapisany przed progiem kohorty (np. 3 konta przy τ = 0): bez czekania na kolejną klasyfikację
+    if (!informedPublishable(e.informed.size, e.meta.tau2)) {
+      e.informed = new Set();
+      e.meta = { ...e.meta, selected: 0 };
+    }
     if (fin(x.observedFrom)) e.observedFrom = x.observedFrom;
     const members = x.members as Record<string, unknown> | undefined;
     if (members && COHORTS.every((c) => fin(members[c]))) e.members = members as Record<CohortId, number>;
 
+    const isTape = (t: unknown): t is CohortTape => {
+      const x = t as Partial<CohortTape> | null | undefined;
+      return !!x && fin(x.volume) && !!x.hidden && fin(x.hidden.buy) && fin(x.hidden.sell) && fin(x.hidden.takerBuy) && fin(x.hidden.takerSell);
+    };
     const isPubCell = (c: unknown) =>
       c === null || (!!c && fin((c as CohortCell).buy) && fin((c as CohortCell).sell) && finOrNull((c as CohortCell).takerBuy) && finOrNull((c as CohortCell).takerSell));
     if (Array.isArray(x.buckets)) {
       for (const row of x.buckets) {
         if (!Array.isArray(row) || !fin(row[0]) || !row[1] || typeof row[1] !== 'object') continue;
-        const raw = row[1] as { open?: Record<string, Record<string, unknown>> | null; pub?: Record<string, unknown> | null };
+        const raw = row[1] as { open?: Record<string, Record<string, unknown>> | null; pub?: Record<string, unknown> | null; tape?: unknown };
         if (raw.pub && COHORTS.every((c) => isPubCell(raw.pub![c]))) {
-          e.buckets.set(row[0], { open: null, pub: raw.pub as Record<CohortId, CohortCell | null> });
+          e.buckets.set(row[0], { open: null, pub: raw.pub as Record<CohortId, CohortCell | null>, tape: isTape(raw.tape) ? raw.tape : null });
           continue;
         }
         if (!raw.open) continue;
@@ -668,7 +728,7 @@ export class CohortEngine {
           }
           open[c] = { buy: v.buy, sell: v.sell, takerBuy: v.takerBuy, takerSell: v.takerSell, all: new Map(all), taker: new Map(taker) };
         }
-        if (ok) e.buckets.set(row[0], { open, pub: null });
+        if (ok) e.buckets.set(row[0], { open, pub: null, tape: null });
       }
     }
     if (Array.isArray(x.oos)) {
