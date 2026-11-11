@@ -69,7 +69,8 @@ function setup() {
   };
   const series = { priceToCoordinate: (p: number) => H / 2 - (p - 80_000) * view.scale };
   l.attached({ chart, series, requestUpdate: () => undefined } as never);
-  l.setData(bars as never, MS, src, NOW, THRESHOLD);
+  // Próg ręczny = próg bieżący: ściany i serie mierzone tym samym progiem co bąble (bez szeregu godzinowego z taśmy)
+  l.setData(bars as never, MS, src, NOW, THRESHOLD, THRESHOLD);
   return { l, src, near, view, orders, store };
 }
 type Setup = ReturnType<typeof setup>;
@@ -129,9 +130,9 @@ describe('warstwa płynności: scena składana tylko po zmianie danych, widoku a
   });
 
   const changes: [string, (s: Setup) => void][] = [
-    ['setData z tymi samymi danymi (nowa synchronizacja)', (s) => s.l.setData(bars as never, MS, s.src, NOW, THRESHOLD)],
-    ['upływ czasu', (s) => s.l.setData(bars as never, MS, s.src, NOW + 4_000, THRESHOLD)],
-    ['inny próg dużego zlecenia', (s) => s.l.setData(bars as never, MS, s.src, NOW, 40_000)],
+    ['setData z tymi samymi danymi (nowa synchronizacja)', (s) => s.l.setData(bars as never, MS, s.src, NOW, THRESHOLD, THRESHOLD)],
+    ['upływ czasu', (s) => s.l.setData(bars as never, MS, s.src, NOW + 4_000, THRESHOLD, THRESHOLD)],
+    ['inny próg dużego zlecenia', (s) => s.l.setData(bars as never, MS, s.src, NOW, 40_000, 40_000)],
     ['przewinięcie wykresu', (s) => (s.view.x0 = -35)],
     ['zbliżenie (odstęp świec)', (s) => (s.view.sp = 13)],
     ['skala ceny', (s) => (s.view.scale = 0.8)],
