@@ -3,7 +3,7 @@ import { tr } from '../../../i18n';
 import { numLang } from '../../../ui/format';
 import { DEFAULT_EFFORT_PARAMS, type EffortResult, type Side, type VBar, effortZones } from '../core/effortZones';
 import type { Candle } from '../hl/parse';
-import { type EffortSelection, effortRects, selectEffort } from './effortSelect';
+import { type EffortSelection, TAPE_SPAN, effortRects, selectEffort } from './effortSelect';
 import { logicalOfTime } from './overlay';
 import { MONO, PRO, rgba } from './theme';
 
@@ -97,7 +97,8 @@ function pl(n: number, one: string, few: string, many: string): string {
 export function effortLegend(sel: EffortSelection | null, ms: number, asOf: number): { text: string; color: string }[] {
   if (ms > MAX_TF) return [{ text: tr('—, interwał do 1 h', '—, intervals up to 1 h'), color: PRO.ink3 }];
   if (!sel) return [{ text: tr('czekam na świece…', 'waiting for candles…'), color: PRO.ink3 }];
-  const tape = { text: tr(`· taśma ${numLang(String(sel.tapeLast12))} z 12`, `· tape ${sel.tapeLast12} of 12`), color: PRO.ink2 };
+  // Taśma na ostatnich 32 świecach: pudełko wymaga taśmy na swojej świecy i 19 przed nią
+  const tape = { text: tr(`· taśma ${numLang(String(sel.tapeRecent))} z ${TAPE_SPAN}`, `· tape ${sel.tapeRecent} of ${TAPE_SPAN}`), color: PRO.ink2 };
   if (sel.history) {
     const z = sel.bands.length;
     const b = sel.boxes.length;
@@ -114,7 +115,7 @@ export function effortLegend(sel: EffortSelection | null, ms: number, asOf: numb
     text: tr(`strefy: ${demand} popytu · ${supply} podaży${far > 0 ? ` (dalej ${far})` : ''}`, `zones: ${demand} demand · ${supply} supply${far > 0 ? ` (${far} farther)` : ''}`),
     color: demand + supply > 0 ? PRO.ink1 : PRO.ink2,
   };
-  if (sel.tapeLast12 === 0) return [zones, { text: tr('· pudełka: —, brak taśmy', '· boxes: —, no tape'), color: PRO.ink3 }];
+  if (sel.tapeRecent === 0) return [zones, { text: tr('· pudełka: —, brak taśmy', '· boxes: —, no tape'), color: PRO.ink3 }];
   const last = sel.boxes.reduce<EffortSelection['boxes'][number] | null>((a, b) => (!a || b.last > a.last ? b : a), null);
   let box = tr('· pudełko: —', '· box: —');
   if (last) {

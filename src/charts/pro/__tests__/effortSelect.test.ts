@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { type EffortBox, type EffortResult, type EffortZone, type Side, type VBar, effortZones } from '../core/effortZones';
-import { BROKEN_BARS, effortRects, selectEffort } from '../chart/effortSelect';
+import { BROKEN_BARS, TAPE_SPAN, effortRects, selectEffort } from '../chart/effortSelect';
 
 const MS = 5 * 60_000;
 const T0 = Date.UTC(2026, 9, 24, 12, 0);
@@ -61,6 +61,11 @@ describe('wybór stref i pudełek do rysowania (effortSelect)', () => {
     for (let i = 30; i < 30 + BROKEN_BARS; i++) expect(sel(i)?.lo, `świeca ${i}`).toBe(980);
     expect(sel(30 + BROKEN_BARS)).toBeNull();
     expect(sel(31, true)).toBeNull();
+    // Strefa przebita, zanim się uzbroiła (nikt jej nie widział jako pasma) — bez obrysu
+    const unseen = zone(1, 980, 985, { to: at(30), end: 'broken', armedAt: null });
+    expect(selectEffort(result([unseen], [], 60), b, MS, at(31), { phone: false, history: false }).broken).toBeNull();
+    const late = zone(1, 980, 985, { to: at(30), end: 'broken', armedAt: at(31) });
+    expect(selectEffort(result([late], [], 60), b, MS, at(31), { phone: false, history: false }).broken).toBeNull();
     // W tym samym miejscu rysowana strefa po zmianie roli — bez obrysu przebitej
     const flip = zone(-1, 980, 985, { kind: 'flip', createdAt: at(30), armedAt: at(30) });
     expect(selectEffort(result([z, flip], [], 60), b, MS, at(32), { phone: false, history: false }).broken).toBeNull();
@@ -86,8 +91,10 @@ describe('wybór stref i pudełek do rysowania (effortSelect)', () => {
       [-1, at(46)],
     ]);
     expect(selectEffort(result([], list, 60), b, MS, at(50), { phone: true, history: false }).boxes.map((x) => x.side)).toEqual([-1]);
-    expect(selectEffort(result([], [], 60), b, MS, at(50), { phone: false, history: false }).tapeLast12).toBe(12);
-    expect(selectEffort(result([], [], 60), bars(60, 1000, false), MS, at(50), { phone: false, history: false }).tapeLast12).toBe(0);
+    // Taśma liczona na ostatnich 32 świecach: 12 świec pudełek i 20 świec średniej |delty| przed nimi
+    expect(TAPE_SPAN).toBe(32);
+    expect(selectEffort(result([], [], 60), b, MS, at(50), { phone: false, history: false }).tapeRecent).toBe(32);
+    expect(selectEffort(result([], [], 60), bars(60, 1000, false), MS, at(50), { phone: false, history: false }).tapeRecent).toBe(0);
   });
 
   it('początek pasma na świecy powstania (najstarszej strefy pasma), kraniec swingu jako znacznik', () => {
@@ -113,7 +120,7 @@ describe('wybór stref i pudełek do rysowania (effortSelect)', () => {
     const b = bars(60);
     const zs = [zone(1, 980, 985), zone(1, 986, 989), zone(-1, 1010, 1015, { to: at(20), end: 'broken' }), zone(1, 900, 905, { armedAt: null })];
     const bx = (i: number): EffortBox => ({ side: 1, t: at(i), lo: 990, hi: 995, stacked: false });
-    const s = selectEffort(result(zs, [bx(10), bx(11), bx(30)], 60), b, MS, at(50), { phone: false, history: true });
+    const s = selectEffort(result(zs, [bx(30), bx(31), bx(45)], 60), b, MS, at(50), { phone: false, history: true });
     expect(s.history).toBe(true);
     expect(s.bands).toHaveLength(4);
     expect(s.boxes).toHaveLength(2);
@@ -173,6 +180,21 @@ describe('effortSelect na nagranych dobach', () => {
     // Pierwsze przeliczenie bez taśmy, drugie po jej doczytaniu — wynik tylko z ostatnich danych
     selectEffort(effortZones(noTape, MS), noTape, MS, X, { phone: false, history: false });
     expect(selectEffort(effortZones(all, MS), all, MS, X, { phone: false, history: false })).toEqual(selectEffort(full, all, MS, X, { phone: false, history: false }));
+  });
+
+  it('pudełko tylko z taśmą na swojej świecy i 19 przed nią: taśma w ostatnich 12 świecach — 0 pudełek, w ostatnich 32 — jak pełna', () => {
+    const tapeOnly = (n: number, end: number) => all.slice(0, end + 1).map((b, k) => (k > end - n ? b : { ...b, delta: null }));
+    // Chwile, w których przy pełnej taśmie jest choć jedna seria pudełek
+    const xs = all.map((_, k) => k).filter((k) => k > 100 && selectEffort(full, all, MS, all[k].t, { phone: false, history: false }).boxes.length > 0).filter((_, j) => j % 2 === 0).slice(0, 15);
+    expect(xs.length).toBeGreaterThanOrEqual(10);
+    for (const x of xs) {
+      const X = all[x].t;
+      const ref = selectEffort(full, all, MS, X, { phone: false, history: false }).boxes;
+      const t12 = tapeOnly(12, x);
+      expect(selectEffort(effortZones(t12, MS), t12, MS, X, { phone: false, history: false }).boxes, `X=${x}, taśma 12`).toEqual([]);
+      const t32 = tapeOnly(32, x);
+      expect(selectEffort(effortZones(t32, MS), t32, MS, X, { phone: false, history: false }).boxes, `X=${x}, taśma 32`).toEqual(ref);
+    }
   });
 
   it('stałość: świeca w trakcie (po X) nie zmienia wyboru dla X', () => {
