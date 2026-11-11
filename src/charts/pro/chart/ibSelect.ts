@@ -6,12 +6,15 @@ import { sessionAt } from '../core/sessions';
  * układu (`ui:check`):
  * - pełny rysunek (prostokąt pierwszej godziny, szczyt i dołek, etykiety) tylko dla bieżącej sesji; z poprzedniej same
  *   linie szczytu i dołka; starsze sesje — nic (dotąd każda sesja w widoku: prostokąt, dwie linie i cztery rozszerzenia),
- * - rozszerzenia 1,5× i 2× dopiero po pierwszym zamknięciu świecy poza zakresem i tylko po tej stronie, od chwili tego
- *   zamknięcia; świeca w trakcie się nie liczy,
+ * - rozszerzenia 1,5× i 2× dopiero po pierwszym zamknięciu półgodziny poza zakresem i tylko po tej stronie, od chwili
+ *   tego zamknięcia; liczą się tylko świece kończące kubełek 30 min (zakres to dwie półgodziny, sesje zaczynają się
+ *   o pełnej godzinie albo o :30), więc wynik nie zależy od interwału wykresu; świeca w trakcie się nie liczy,
  * - sesja bieżąca i poprzednia od chwili ostatniej świecy, nie od przewinięcia; najwyżej 7 obiektów.
  */
 
 export const IB_OBJECTS_MAX = 7;
+
+const HALF_HOUR = 1_800_000;
 
 /** Wynik sprawdzianu do opisu warstwy (PL i EN). */
 export const IB_EVIDENCE = {
@@ -47,6 +50,8 @@ function firstBreak(ib: InitialBalance, bars: readonly IndicatorBar[], ms: numbe
   for (const b of bars) {
     if (b.t < ib.end || b.t >= ib.session.end) continue;
     if (b.t + ms > now) break;
+    // Tylko zamknięcia półgodzin: ten sam wynik na 5m, 15m i 30m
+    if ((b.t + ms) % HALF_HOUR !== 0) continue;
     if (b.candle.c > ib.hi) return { side: 1, t: b.t + ms };
     if (b.candle.c < ib.lo) return { side: -1, t: b.t + ms };
   }

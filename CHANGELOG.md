@@ -10,7 +10,7 @@ Na danych stałych `ui:check` (zegar 24.10.2026 21:29 UTC, sesja nowojorska) war
 
 #### Zmienione
 - **Pełny rysunek tylko dla bieżącej sesji** (`src/charts/pro/chart/ibSelect.ts`, `selectIbs`; `src/charts/pro/chart/overlay.ts`): prostokąt pierwszej godziny, szczyt i dołek z etykietami. Z poprzedniej sesji same linie szczytu i dołka, starsze sesje bez rysunku. Dotąd każda sesja w widoku miała prostokąt, dwie linie i cztery rozszerzenia. Sesja bieżąca i poprzednia wynikają z ostatniej świecy, nie z przewinięcia.
-- **Rozszerzenia 1,5× i 2× dopiero po pierwszym zamknięciu świecy poza zakresem i tylko po tej stronie**, od chwili tego zamknięcia; świeca w trakcie się nie liczy (nakładka dostaje chwilę danych). Na ekranie najwyżej 7 obiektów.
+- **Rozszerzenia 1,5× i 2× dopiero po pierwszym zamknięciu półgodziny poza zakresem i tylko po tej stronie**, od chwili tego zamknięcia; świeca w trakcie się nie liczy (nakładka dostaje chwilę danych). Liczą się tylko świece kończące kubełek 30 min, więc wynik nie zależy od interwału wykresu: dotąd liczony na świecach interwału dawał na 5m i 30m rozszerzenia po przeciwnych stronach w 9,2% sesji (924 sesje BTC 5m z 2026); teraz 5m, 15m i 30m zgodne w 924 z 924, na 5m rozszerzenia pojawiają się medianowo 20 min później, a cena zamyka się potem po przeciwnej stronie zakresu w 24% sesji zamiast 35%. Na ekranie najwyżej 7 obiektów.
 - **Opis warstwy** (okno wskaźników, PL i EN): nowe reguły i wynik sprawdzianu: „Szczyt i dołek pierwszej godziny pękają częściej niż losowy poziom obok (odrzucenie 40% wobec 47%, n 1 239).”
 
 #### Dodane

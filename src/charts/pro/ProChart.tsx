@@ -1846,8 +1846,8 @@ function flowLayers(s: ChartSettings, intervalMs: number, liq: LiqMapState, whal
       key: 'showIb',
       label: 'Initial balance',
       hint: tr(
-        `Zakres pierwszej godziny bieżącej sesji (prostokąt, szczyt i dołek), z poprzedniej sesji same linie szczytu i dołka. Rozszerzenia 1,5× i 2× dopiero po pierwszym zamknięciu świecy poza zakresem i tylko po tej stronie. ${IB_EVIDENCE.pl}`,
-        `The first-hour range of the current session (box, high and low); from the previous session only the high and low lines. The 1.5× and 2× extensions appear only after the first candle closes outside the range, and only on that side. ${IB_EVIDENCE.en}`
+        `Zakres pierwszej godziny bieżącej sesji (prostokąt, szczyt i dołek), z poprzedniej sesji same linie szczytu i dołka. Rozszerzenia 1,5× i 2× dopiero po pierwszym zamknięciu półgodziny poza zakresem i tylko po tej stronie (ten sam wynik na każdym interwale). ${IB_EVIDENCE.pl}`,
+        `The first-hour range of the current session (box, high and low); from the previous session only the high and low lines. The 1.5× and 2× extensions appear only after the first half-hour close outside the range, and only on that side (the same on every timeframe). ${IB_EVIDENCE.en}`
       ),
       swatch: 'bg-of-ib',
       off: scope.ib ? undefined : tr('Na interwałach do 30m', 'On timeframes up to 30m'),
