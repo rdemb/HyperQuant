@@ -49,11 +49,11 @@ const WALLS: Wall[] = [
   { from: T0 + 20 * MS, to: T0 + 30 * MS, px: 80_015, side: -1, usd: 200_000, sz: 2.5, hits: 4, shown: 0, iceberg: false },
 ];
 
-function setup() {
-  const view = { x0: 0, sp: W / N_BARS, scale: 0.5, width: W };
+function setup(extra: AggressorOrder[] = []) {
+  const view = { x0: 0, sp: W / N_BARS, scale: 0.5, width: W, from: 0 };
   const near = new BookHistory(1);
   for (let t = NOW - 10 * 60_000; t <= NOW - 2_000; t += 5_000) near.add(frame(t));
-  const orders = makeOrders();
+  const orders = [...makeOrders(), ...extra].sort((p, q) => p.time - q.time);
   const store = { version: 0, history: 0 };
   const src = {
     near,
@@ -65,7 +65,7 @@ function setup() {
   };
   const l = new LiquidityLayer({ ...ALL });
   const chart = {
-    timeScale: () => ({ getVisibleLogicalRange: () => ({ from: 0, to: N_BARS }), logicalToCoordinate: (x: number) => view.x0 + x * view.sp }),
+    timeScale: () => ({ getVisibleLogicalRange: () => ({ from: view.from, to: N_BARS }), logicalToCoordinate: (x: number) => view.x0 + x * view.sp }),
     paneSize: () => ({ width: view.width, height: H }),
   };
   const series = { priceToCoordinate: (p: number) => H / 2 - (p - 80_000) * view.scale };
@@ -173,7 +173,7 @@ describe('warstwa płynności: scena składana tylko po zmianie danych, widoku a
 
 describe('progi godzin między scenami (próg z chwili zdarzenia)', () => {
   const HOUR = 3_600_000;
-  /** Zapytania o próg zamkniętej godziny: zlecenia godziny (serie i ściany) albo doby (bąble) przed jej początkiem. */
+  /** Zapytania o próg zamkniętej godziny: zlecenia godziny (serie i ściany) przed jej początkiem (serie, ściany i klasa bąbla). */
   const thresholdCalls = (s: Setup) => s.src.orders.mock.calls.filter(([from, to]) => to % HOUR === 0 && (to - from === HOUR || to - from === 24 * HOUR)).length;
 
   it('druga scena nie liczy progu zamkniętej godziny od nowa; doczytanie historii czyści pamięć', () => {
@@ -201,5 +201,32 @@ describe('progi godzin między scenami (próg z chwili zdarzenia)', () => {
     s.l.updateAllViews();
     // Próg ręczny 100 tys.: zlecenia 450 tys., 900 tys. i 150 tys.
     expect(counts).toEqual([3]);
+  });
+});
+
+describe('bąble w warstwie: reguła przyczynowa (2 największe z 20 świec, telefon 1)', () => {
+  const count = (s: Setup) => {
+    const counts: number[] = [];
+    s.l.onBubbles = (n) => counts.push(n);
+    s.l.updateAllViews();
+    return counts.at(-1);
+  };
+
+  it('bez progu ręcznego: komputer K = 2, telefon K = 1', () => {
+    const s = setup();
+    s.l.setData(bars as never, MS, s.src, NOW, THRESHOLD, 0);
+    // 450 tys., 900 tys., dwie pierwsze z serii 22 tys. (równe — wcześniejsza wyżej), 150 tys., 50 tys.
+    expect(count(s)).toBe(6);
+    s.l.setPhone(true);
+    expect(count(s)).toBe(5);
+  });
+
+  it('zlecenia sprzed widoku (20 świec) liczą się do porównania: przewinięcie nie dodaje bąbli na lewej krawędzi', () => {
+    const s = setup([order(T0 + 45 * MS, 1, 2_000_000, '0xd'), order(T0 + 50 * MS, 1, 1_500_000, '0xe')]);
+    s.l.setToggles({ ...ALL, showClashes: false });
+    s.l.setData(bars as never, MS, s.src, NOW, THRESHOLD, 0);
+    s.view.from = 55;
+    // Od 55. minuty: seria z 60. minuty ma przed sobą 2 mln i 1,5 mln — bez bąbla; zostają 150 tys. i 50 tys.
+    expect(count(s)).toBe(2);
   });
 });

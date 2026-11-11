@@ -82,14 +82,23 @@ describe('wybór ścian i serii (selectClashes)', () => {
 
   it(`najwyżej ${WALLS_DONE_MAX} największych ścian zakończonych, ${WALLS_LIVE_MAX} trwających i ${BURSTS_MAX} największych serii`, () => {
     // Każda kolejna ściana i seria większa od poprzednich — reguła przyczynowa przepuszcza wszystkie, decyduje limit
-    const done = Array.from({ length: 9 }, (_, i) => wall({ from: T0 + i * 60_000, to: T0 + i * 60_000 + 20_000, usd: 200_000 + i * 1000 }));
+    const done = Array.from({ length: 15 }, (_, i) => wall({ from: T0 + i * 60_000, to: T0 + i * 60_000 + 20_000, usd: 200_000 + i * 1000 }));
     const live = Array.from({ length: 5 }, (_, i) => wall({ from: now - 40_000, to: now - 5_000 + i, usd: 400_000 + i, px: 100_000 + i }));
-    const bs = Array.from({ length: 8 }, (_, i) => burst({ from: T0 + i * 1000, to: T0 + i * 1000 + 500, usd: 150_000 + i }));
+    const bs = Array.from({ length: 12 }, (_, i) => burst({ from: T0 + i * 1000, to: T0 + i * 1000 + 500, usd: 150_000 + i }));
     const s = selectClashes(done.concat(live), bs, now, thr);
-    expect(s.walls.filter((w) => now - w.to >= 30_000).map((w) => w.usd)).toEqual([208_000, 207_000, 206_000, 205_000, 204_000]);
+    expect(s.walls.filter((w) => now - w.to >= 30_000).map((w) => w.usd)).toEqual(Array.from({ length: WALLS_DONE_MAX }, (_, i) => 214_000 - i * 1000));
     expect(s.walls.filter((w) => now - w.to < 30_000)).toHaveLength(3);
-    expect(s.bursts.map((b) => b.usd)).toEqual([150_007, 150_006, 150_005, 150_004, 150_003]);
-    expect(s.walls.length + s.bursts.length).toBeLessThanOrEqual(13);
+    expect(s.bursts.map((b) => b.usd)).toEqual(Array.from({ length: BURSTS_MAX }, (_, i) => 150_011 - i));
+    expect(s.walls.length + s.bursts.length).toBeLessThanOrEqual(25);
+  });
+
+  it('limit bezpieczeństwa nie przycina zmierzonego maksimum: 11 ścian zakończonych i 9 serii zostaje w całości', () => {
+    expect([WALLS_DONE_MAX, WALLS_LIVE_MAX, BURSTS_MAX]).toEqual([12, 3, 10]);
+    const done = Array.from({ length: 11 }, (_, i) => wall({ from: T0 + i * 60_000, to: T0 + i * 60_000 + 20_000, usd: 200_000 + i * 1000, px: 100_000 + i }));
+    const bs = Array.from({ length: 9 }, (_, i) => burst({ from: T0 + i * 1000, to: T0 + i * 1000 + 500, usd: 150_000 + i }));
+    const s = selectClashes(done, bs, now, thr);
+    expect(s.walls).toHaveLength(11);
+    expect(s.bursts).toHaveLength(9);
   });
 
   it('ściana oceniana progiem z chwili powstania: bez zmiany progu bieżącego nie znika ani nie wraca', () => {

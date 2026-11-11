@@ -9,16 +9,17 @@ import type { AggressorOrder } from '../core/orders';
  * - reguła przyczynowa zamiast „największe w oknie”: ściana jest rysowana, gdy w chwili zakończenia była wśród 2
  *   największych ścian zakończonych w poprzednich 60 min (seria — największą serią), więc wybór nie zależy od
  *   przewinięcia, a raz narysowany obiekt zostaje,
- * - bezpiecznik: najwyżej 5 największych ścian zakończonych, 3 trwające i 5 największych serii.
+ * - bezpiecznik ponad zmierzone maksima (11 ścian i 9 serii na 140 świecach): najwyżej 12 największych ścian
+ *   zakończonych, 3 trwające i 10 największych serii.
  */
 
 const HOUR = 3_600_000;
 /** Ściana krótsza niż tyle ms i mniejsza niż `WALL_BIG` × próg nie jest rysowana. */
 export const WALL_MIN_MS = 10_000;
 const WALL_BIG = 3;
-export const WALLS_DONE_MAX = 5;
+export const WALLS_DONE_MAX = 12;
 export const WALLS_LIVE_MAX = 3;
-export const BURSTS_MAX = 5;
+export const BURSTS_MAX = 10;
 /** Okno porównania reguły przyczynowej i liczba miejsc: ściany 2, serie 1 (K z taśmy 4–10.11, opis w CHANGELOG). */
 export const RANK_WINDOW_MS = HOUR;
 export const WALLS_K = 2;
