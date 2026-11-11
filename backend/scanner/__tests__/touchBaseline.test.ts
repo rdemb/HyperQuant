@@ -13,9 +13,11 @@ const r6 = (x: number) => Math.round(x * 1e6) / 1e6;
  * Dziennik syntetyczny, w którym prawdziwym procesem jest wzór odbicia: σ godziny zmienia się między slotami, poziomy
  * leżą w różnych odległościach, a wynik dotknięcia jest losowany z P = 2(1 − Φ(|d| / (σ√2))). „Model” podaje dokładnie
  * to P, więc nie wie nic ponad odległość i σ benchmarku z prognozy zwrotu 1 h tego samego slotu.
+ * `trueScale(i)`: prawdziwa σ godziny slotu i = mnożnik × σ benchmarku zapisanej w `bq`; wynik i „model” liczone
+ * z prawdziwej σ, baza odległości — jak w produkcji — ze stałej σ odtworzonej z `bq`.
  */
-function reflectionLedger(n: number) {
-  const u = mulberry32(42);
+function reflectionLedger(n: number, trueScale: (i: number) => number = () => 1, seed = 42) {
+  const u = mulberry32(seed);
   const fs = new Map<string, Forecast>();
   const rs = new Map<string, Resolution>();
   const px0 = 100_000;
@@ -39,7 +41,7 @@ function reflectionLedger(n: number) {
     };
     const d = { pdh: 0.001 + 0.03 * u(), pdl: 0.001 + 0.03 * u(), deq: 0.0005 + 0.02 * u() };
     const lv = { pdh: px0 * Math.exp(d.pdh), pdl: px0 * Math.exp(-d.pdl), deq: px0 * Math.exp(u() < 0.5 ? d.deq : -d.deq) };
-    const sH = sigma1h * Math.sqrt(120 / 60);
+    const sH = sigma1h * trueScale(i) * Math.sqrt(120 / 60);
     const p = { pdh: r4(2 * normalSf(d.pdh / sH)), pdl: r4(2 * normalSf(d.pdl / sH)), deq: r4(2 * normalSf(d.deq / sH)) };
     const touch: TouchForecast = { k: 'f', id: `${slot}-touch120`, slot, ti: slot, t: slot + MIN, kind: 'touch', h: 120, px0, lv, p, model: 'test' };
     fs.set(ret.id, ret);
@@ -64,6 +66,17 @@ describe('BSS dotknięć wobec dwóch baz: częstości poziomu i odległości (w
     expect(t.brierDist).toBeGreaterThan(0);
     expect(t.brierDist).toBeLessThan(t.brierBase!);
     expect(isDeskLedgerSummary(s)).toBe(true);
+  });
+
+  it('lepszy model: prawdziwa σ godziny 1,5× albo 0,6× σ benchmarku, model zna prawdziwą σ → bssDist wyraźnie > 0', () => {
+    // Połowa slotów spokojniejsza (0,6×), połowa bardziej zmienna (1,5×) niż stała σ z 30 dni zapisana w `bq`
+    const { fs, rs, now } = reflectionLedger(2500, (i) => (i % 2 ? 1.5 : 0.6));
+    const t = buildSummary({ coin: 'BTC', now, head: { hash: 'h', lines: 1 }, forecasts: fs, resolutions: rs, aci: {}, ots: [] }).scores.touch;
+    expect(t.pairsDist).toBe(7500);
+    // 7500 par: ziarno 42 daje bssDist 0,153; na ziarnach 1–20 średnio 0,148 (odchylenie 0,011, minimum 0,125), a przy
+    // prawdziwej σ = σ benchmarku 0,000 — próg 0,1 leży ok. 4,5 odchylenia pod średnią i daleko od zera
+    expect(t.bssDist!).toBeGreaterThan(0.1);
+    expect(t.bssDist!).toBeLessThan(t.bssClim!);
   });
 
   it('prognoza dotknięć bez prognozy zwrotu 1 h w tym slocie: brak σ bazy, para poza bazą odległości (bssDist z pozostałych)', () => {
