@@ -15,6 +15,12 @@ on:
         description: 'Zgłoś do IndexNow wszystkie adresy z sitemap.xml'
         type: boolean
         default: false
+      # Tylko właściciel repo (BLOG_RESEED niżej); przy BLOG_INTAKE = on. Jednorazowo przyjmuje wszystkie wpisy z gałęzi blog
+      # bez dolnej granicy daty (seen = chwila buildu), także gdy opublikowany source.json jest nieczytelny albo utracony
+      blog_reseed:
+        description: 'Odtwórz rejestr wpisów bloga (wszystkie wpisy z gałęzi blog, tylko właściciel repo)'
+        type: boolean
+        default: false
 
 # Uprawnienia tylko na poziomie jobów: build (który przetwarza wpisy z repo danych) tylko czyta, zapis do Pages ma deploy.
 # Akcje przypięte do hashy commitów.
@@ -37,6 +43,9 @@ jobs:
       # Wpisy bloga: gałąź blog publicznego repo danych, czytana bez uwierzytelnienia jako niezaufana treść. Kroki gałęzi
       # działają tylko przy zmiennej repozytorium BLOG_INTAKE = on (wyłącznik; bez niej workflow jak przed ich dodaniem)
       BLOG_REPO: https://github.com/rdemb/hyperquant-data.git
+      # Odtworzenie rejestru: ręczne uruchomienie z blog_reseed przez właściciela repo; actor i triggering_actor, bo przy
+      # ponownym uruchomieniu przebiegu actor zostaje z pierwszego uruchomienia
+      BLOG_RESEED: ${{ github.event_name == 'workflow_dispatch' && inputs.blog_reseed && github.actor == github.repository_owner && github.triggering_actor == github.repository_owner }}
     outputs:
       indexnow: ${{ steps.indexnow.outputs.body }}
       deploy: ${{ steps.gate.outputs.deploy }}
@@ -73,11 +82,11 @@ jobs:
 
       # Przebieg z harmonogramu wdraża tylko nowe dane; przy włączonej gałęzi blog także nowy stan gałęzi albo main inny niż
       # w opublikowanym source.json (pominięte wdrożenie po pushu powtarza się samo). Przy włączonej gałęzi i nieczytelnym
-      # source.json nic nie jest wdrażane: bez rejestru stare wpisy z gałęzi wyglądałyby na nowe
+      # source.json nic nie jest wdrażane: bez rejestru stare wpisy z gałęzi wyglądałyby na nowe (wyjątek: odtworzenie rejestru)
       - name: Decide Deploy
         id: gate
         run: |
-          if [ "$INTAKE" = on ] && [ "$KNOWN" != true ]; then
+          if [ "$INTAKE" = on ] && [ "$KNOWN" != true ] && [ "$BLOG_RESEED" != true ]; then
             echo "Gałąź blog włączona, a blog/source.json strony nieczytelny: bez wdrożenia"
           elif [ "$EVENT" != schedule ] || [ "$CHANGED" = true ]; then
             echo "deploy=true" >> "$GITHUB_OUTPUT"
@@ -109,13 +118,15 @@ jobs:
         if: vars.BLOG_INTAKE == 'on' && steps.gate.outputs.deploy == 'true'
         run: |
           src=
+          reseed=
+          if [ "$BLOG_RESEED" = true ]; then reseed=--reseed; fi
           if [ -n "$BLOG_SHA" ] && GIT_TERMINAL_PROMPT=0 timeout 120 git clone -q --no-tags --single-branch --branch blog "$BLOG_REPO" "$RUNNER_TEMP/blog"; then
             src="$RUNNER_TEMP/blog"
           fi
-          if ! node scripts/blog/intake.mjs filter --src "$src" --dest content/blog --published "$RUNNER_TEMP/published.json" --out "$RUNNER_TEMP/blog-intake.json"; then
+          if ! node scripts/blog/intake.mjs filter $reseed --src "$src" --dest content/blog --published "$RUNNER_TEMP/published.json" --out "$RUNNER_TEMP/blog-intake.json"; then
             echo "::warning::Filtr gałęzi blog zawiódł: build tylko z wpisów main"
             git checkout -- content/blog && git clean -fdq -- content/blog
-            node scripts/blog/intake.mjs filter --src "" --dest content/blog --published "$RUNNER_TEMP/published.json" --out "$RUNNER_TEMP/blog-intake.json"
+            node scripts/blog/intake.mjs filter $reseed --src "" --dest content/blog --published "$RUNNER_TEMP/published.json" --out "$RUNNER_TEMP/blog-intake.json"
           fi
           echo "BLOG_INTAKE=$RUNNER_TEMP/blog-intake.json" >> "$GITHUB_ENV"
         env:
