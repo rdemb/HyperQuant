@@ -8,7 +8,7 @@ import type { AggressorOrder } from '../core/orders';
  * - ściana na wykresie, gdy trwała co najmniej 10 s albo wchłonęła co najmniej 3 × próg (krótsze zostają w panelu Ściany),
  * - reguła przyczynowa zamiast „największe w oknie”: ściana jest rysowana, gdy w chwili zakończenia była wśród 2
  *   największych ścian zakończonych w poprzednich 60 min (seria — największą serią), więc wybór nie zależy od
- *   przewinięcia, a raz narysowany obiekt zostaje,
+ *   przewinięcia, a raz narysowany obiekt zostaje; rysowane tylko, gdy taśma zleceń obejmuje całe 60 min przed końcem,
  * - bezpiecznik ponad zmierzone maksima (11 ścian i 9 serii na 140 świecach): najwyżej 12 największych ścian
  *   zakończonych, 3 trwające i 10 największych serii.
  */
@@ -92,23 +92,27 @@ export function causalTop<T extends Ranked>(list: readonly T[], k: number): Set<
 /**
  * Wybór na ekran; `now` — chwila danych (ściana bez wypełnień od 30 s jest zakończona), `from` — początek widoku.
  * Ściany i serie podaje się od `from − RANK_WINDOW_MS` (do porównania reguły przyczynowej), na ekran trafiają
- * zakończone od `from`.
+ * zakończone od `from`. `covers` — czy taśma zleceń pokrywa w całości [od, do): ściana i seria są rysowane tylko przy
+ * taśmie z całego okna porównania przed ich końcem (na początku taśmy i po luce porównanie byłoby niepełne); do
+ * porównania liczą się wszystkie. Domyślnie pokrycie pełne.
  */
 export function selectClashes(
   walls: readonly Wall[],
   list: readonly Burst[],
   now: number,
   thrAt: (t: number) => number,
-  from = Number.NEGATIVE_INFINITY
+  from = Number.NEGATIVE_INFINITY,
+  covers: (from: number, to: number) => boolean = () => true
 ): ClashSelection {
+  const full = (x: Ranked) => x.to >= from && covers(x.to - RANK_WINDOW_MS, x.to);
   const eligible = walls.filter((w) => wallShown(w, thrAt(w.from)));
   const ranked = causalTop(eligible, WALLS_K);
-  const shown = eligible.filter((w) => w.to >= from && ranked.has(w));
+  const shown = eligible.filter((w) => ranked.has(w) && full(w));
   const byUsd = <T extends { usd: number; from: number }>(a: T, b: T) => b.usd - a.usd || b.from - a.from;
   const live = shown.filter((w) => now - w.to < WALL_GAP_MS).sort(byUsd).slice(0, WALLS_LIVE_MAX);
   const done = shown.filter((w) => now - w.to >= WALL_GAP_MS).sort(byUsd).slice(0, WALLS_DONE_MAX);
   const strong = list.filter((b) => b.usd >= thrAt(b.from));
   const top = causalTop(strong, BURSTS_K);
-  const series = strong.filter((b) => b.to >= from && top.has(b)).sort(byUsd).slice(0, BURSTS_MAX);
+  const series = strong.filter((b) => top.has(b) && full(b)).sort(byUsd).slice(0, BURSTS_MAX);
   return { walls: [...done, ...live], bursts: series };
 }

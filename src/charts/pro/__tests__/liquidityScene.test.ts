@@ -2,10 +2,11 @@ import { afterAll, describe, expect, it, vi } from 'vitest';
 import { BookHistory, type BookFrame } from '../core/book';
 import type { AggressorOrder } from '../core/orders';
 import type { Wall } from '../core/clashes';
+import { Coverage } from '../core/coverage';
 
 vi.stubGlobal('document', { documentElement: { dataset: {} }, createElement: () => ({ width: 0, height: 0, getContext: () => null }) });
 afterAll(() => vi.unstubAllGlobals());
-const { LiquidityLayer } = await import('../chart/liquidity');
+const { LiquidityLayer, liquidityLookbackMs, tapeCovered } = await import('../chart/liquidity');
 type Layer = InstanceType<typeof LiquidityLayer>;
 
 const MS = 60_000;
@@ -54,7 +55,7 @@ function setup(extra: AggressorOrder[] = []) {
   const near = new BookHistory(1);
   for (let t = NOW - 10 * 60_000; t <= NOW - 2_000; t += 5_000) near.add(frame(t));
   const orders = [...makeOrders(), ...extra].sort((p, q) => p.time - q.time);
-  const store = { version: 0, history: 0 };
+  const store = { version: 0, history: 0, coverFrom: Number.NEGATIVE_INFINITY };
   const src = {
     near,
     far: null,
@@ -62,6 +63,7 @@ function setup(extra: AggressorOrder[] = []) {
     walls: vi.fn(() => WALLS),
     version: () => store.version,
     history: () => store.history,
+    covers: (from: number) => from >= store.coverFrom,
   };
   const l = new LiquidityLayer({ ...ALL });
   const chart = {
@@ -228,5 +230,34 @@ describe('bąble w warstwie: reguła przyczynowa (2 największe z 20 świec, tel
     s.view.from = 55;
     // Od 55. minuty: seria z 60. minuty ma przed sobą 2 mln i 1,5 mln — bez bąbla; zostają 150 tys. i 50 tys.
     expect(count(s)).toBe(2);
+  });
+
+  it('bąbel tylko przy taśmie zleceń z całego okna 20 świec przed nim (pokrycie ze źródła)', () => {
+    const s = setup();
+    s.l.setData(bars as never, MS, s.src, NOW, THRESHOLD, 0);
+    s.store.coverFrom = T0 + 30 * MS;
+    s.store.version++;
+    // 450 tys. (10. min) i 900 tys. (40. min) bez pełnego okna; zostają dwie z serii, 150 tys. i 50 tys.
+    expect(count(s)).toBe(4);
+  });
+
+  it('pokrycie taśmy: krótka przerwa połączenia (1 s) nie wyłącza okna, początek taśmy i luka 5 min tak', () => {
+    const cov = new Coverage([
+      [T0, T0 + 30 * MS],
+      [T0 + 30 * MS + 1000, T0 + 60 * MS],
+      [T0 + 65 * MS, T0 + 120 * MS],
+    ]);
+    expect(tapeCovered(cov, T0 + 20 * MS, T0 + 40 * MS)).toBe(true);
+    expect(tapeCovered(cov, T0 - 60_000, T0 + 19 * MS)).toBe(false);
+    expect(tapeCovered(cov, T0 + 50 * MS, T0 + 70 * MS)).toBe(false);
+    expect(tapeCovered(cov, T0 + 70 * MS, T0 + 90 * MS)).toBe(true);
+  });
+
+  it('historia z serwera od lewej krawędzi minus okno porównania: 20 świec (bąble), co najmniej 60 min (serie i ściany)', () => {
+    const on = { showBubbles: true, showClashes: true };
+    expect(liquidityLookbackMs(MS, on)).toBe(60 * MS);
+    expect(liquidityLookbackMs(5 * MS, on)).toBe(100 * MS);
+    expect(liquidityLookbackMs(MS, { ...on, showClashes: false })).toBe(20 * MS);
+    expect(liquidityLookbackMs(MS, { showBubbles: false, showClashes: true })).toBe(0);
   });
 });
