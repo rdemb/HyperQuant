@@ -44,24 +44,41 @@ describe('static.yml: wyzwalacze i uprawnienia', () => {
 });
 
 describe('static.yml: gałąź blog repo danych', () => {
-  it('głowa gałęzi bez uwierzytelnienia (git ls-remote) i sha opublikowany na stronie, przed bramką', () => {
+  const SWITCH = "vars.BLOG_INTAKE == 'on'";
+
+  it('wyłącznik: kroki gałęzi blog tylko przy zmiennej repozytorium BLOG_INTAKE = on (domyślnie brak, workflow jak wcześniej)', () => {
+    expect(step('Blog Branch Head').if).toBe(SWITCH);
+    expect(step('Blog Intake').if).toBe(`${SWITCH} && steps.gate.outputs.deploy == 'true'`);
+    // poza tymi krokami gałąź blog i jej wyniki pojawiają się tylko w bramce (z wyłącznikiem) i w IndexNow (puste wyniki = jak dotąd)
+    const others = build.steps.filter((s) => !['Blog Branch Head', 'Blog Intake', 'Decide Deploy', 'List New Blog Posts For IndexNow'].includes(s.name));
+    for (const s of others) expect(JSON.stringify(s), s.name).not.toMatch(/BLOG_|steps\.blog|intake\.mjs/);
+    expect(step('Decide Deploy').env.INTAKE).toBe('${{ vars.BLOG_INTAKE }}');
+  });
+
+  it('głowa gałęzi bez uwierzytelnienia (git ls-remote) i opublikowany source.json przed setup-node i przed bramką', () => {
     const s = step('Blog Branch Head');
     expect(s['continue-on-error']).toBe(true);
     expect(s.run).toMatch(/GIT_TERMINAL_PROMPT=0 timeout 30 git ls-remote --heads "\$BLOG_REPO" refs\/heads\/blog/);
-    expect(s.run).toMatch(/node scripts\/blog\/intake\.mjs published >> "\$GITHUB_OUTPUT"/);
+    expect(s.run).toMatch(/node scripts\/blog\/intake\.mjs published --save "\$RUNNER_TEMP\/published\.json" >> "\$GITHUB_OUTPUT"/);
     expect(build.env.BLOG_REPO).toBe('https://github.com/rdemb/hyperquant-data.git');
+    expect(index('Blog Branch Head')).toBe(index('Checkout Repository') + 1);
+    expect(index('Blog Branch Head')).toBeLessThan(index('Setup Node.js 24'));
     expect(index('Blog Branch Head')).toBeLessThan(index('Decide Deploy'));
   });
 
-  it('klon pełnej historii poza repo (katalog tymczasowy runnera), bez poświadczeń; filtr przed npm ci i przed buildem', () => {
+  it('klon pełnej historii poza repo (katalog tymczasowy runnera), bez poświadczeń, limit 120 s; filtr z rejestrem przed npm ci', () => {
     const s = step('Blog Intake');
-    expect(s.if).toBe("steps.gate.outputs.deploy == 'true'");
-    expect(s.run).toMatch(/GIT_TERMINAL_PROMPT=0 git clone -q --no-tags --single-branch --branch blog "\$BLOG_REPO" "\$RUNNER_TEMP\/blog"/);
+    expect(s.run).toMatch(/GIT_TERMINAL_PROMPT=0 timeout 120 git clone -q --no-tags --single-branch --branch blog "\$BLOG_REPO" "\$RUNNER_TEMP\/blog"/);
     expect(s.run).not.toMatch(/--depth/);
-    expect(s.run).toMatch(/node scripts\/blog\/intake\.mjs filter --src "\$src" --dest content\/blog --prev "\$PUBLISHED" --out "\$RUNNER_TEMP\/blog-intake\.json"/);
+    expect(s.run).toMatch(/node scripts\/blog\/intake\.mjs filter --src "\$src" --dest content\/blog --published "\$RUNNER_TEMP\/published\.json" --out "\$RUNNER_TEMP\/blog-intake\.json"/);
     expect(s.run).toMatch(/BLOG_INTAKE=\$RUNNER_TEMP\/blog-intake\.json" >> "\$GITHUB_ENV"/);
     expect(index('Blog Intake')).toBeLessThan(index('Install Dependencies'));
     expect(index('Blog Intake')).toBeGreaterThan(index('Decide Deploy'));
+  });
+
+  it('job build ma limit 20 min (grupa pages nie przerywa trwających przebiegów)', () => {
+    expect(build['timeout-minutes']).toBe(20);
+    expect(wf.concurrency['cancel-in-progress']).toBe(false);
   });
 
   it('IndexNow: diff w klonie gałęzi blog od opublikowanego sha, push na main jak dotąd', () => {
@@ -77,40 +94,62 @@ const hasBash = spawnSync('bash', ['-c', 'exit 0']).status === 0;
 
 describe.skipIf(!hasBash)('static.yml: bramka wdrożenia (krok Decide Deploy uruchomiony w bash)', () => {
   const SHA = 'a'.repeat(40);
+  const MAIN = 'c'.repeat(40);
+  // Wyniki kroków przy wyłączniku: krok blog pominięty, więc puste
+  const OFF = { INTAKE: '', BLOG_SHA: '', PUBLISHED: '', PUBLISHED_MAIN: '', KNOWN: '' };
+  const ON = { INTAKE: 'on', BLOG_SHA: SHA, PUBLISHED: SHA, PUBLISHED_MAIN: MAIN, KNOWN: 'true' };
   const gate = (env) => {
     const out = path.join(mkdtempSync(path.join(tmpdir(), 'hq-gate-')), 'out');
-    const r = spawnSync('bash', ['-e', '-c', `: > "$GITHUB_OUTPUT"\n${step('Decide Deploy').run}`], { env: { ...process.env, EVENT: 'schedule', CHANGED: 'false', BLOG_SHA: '', PUBLISHED: '', KNOWN: 'true', ...env, GITHUB_OUTPUT: out }, encoding: 'utf8' });
+    const r = spawnSync('bash', ['-e', '-c', `: > "$GITHUB_OUTPUT"\n${step('Decide Deploy').run}`], { env: { ...process.env, EVENT: 'schedule', CHANGED: 'false', MAIN_SHA: MAIN, ...env, GITHUB_OUTPUT: out }, encoding: 'utf8' });
     expect(r.status, r.stderr).toBe(0);
     return readFileSync(out, 'utf8').trim();
   };
 
-  it('zmienne kroku z wyjść kroków blog i feeds', () => {
+  it('zmienne kroku: wyłącznik, wyniki kroków blog i feeds, głowa main', () => {
     expect(step('Decide Deploy').env).toEqual({
+      INTAKE: '${{ vars.BLOG_INTAKE }}',
       EVENT: '${{ github.event_name }}',
       CHANGED: '${{ steps.feeds.outputs.changed }}',
+      MAIN_SHA: '${{ github.sha }}',
       BLOG_SHA: '${{ steps.blog.outputs.sha }}',
       PUBLISHED: '${{ steps.blog.outputs.published }}',
+      PUBLISHED_MAIN: '${{ steps.blog.outputs.main }}',
       KNOWN: '${{ steps.blog.outputs.known }}',
     });
   });
 
-  it('harmonogram: ten sam sha co opublikowany i dane bez zmian: bez wdrożenia', () => {
-    expect(gate({ BLOG_SHA: SHA, PUBLISHED: SHA })).toBe('');
+  it('wyłącznik (brak zmiennej): dokładnie jak dotąd', () => {
+    expect(gate({ ...OFF })).toBe('');
+    expect(gate({ ...OFF, CHANGED: 'true' })).toBe('deploy=true');
+    expect(gate({ ...OFF, EVENT: 'push' })).toBe('deploy=true');
+    expect(gate({ ...OFF, EVENT: 'workflow_dispatch' })).toBe('deploy=true');
+    expect(gate({ ...OFF, INTAKE: 'off', BLOG_SHA: SHA, PUBLISHED: 'b'.repeat(40), KNOWN: 'false' })).toBe('');
   });
 
-  it('harmonogram: inny sha gałęzi blog: wdrożenie; pierwszy sha (na stronie jeszcze brak): wdrożenie', () => {
-    expect(gate({ BLOG_SHA: SHA, PUBLISHED: 'b'.repeat(40) })).toBe('deploy=true');
-    expect(gate({ BLOG_SHA: SHA, PUBLISHED: '' })).toBe('deploy=true');
+  it('harmonogram: ten sam sha gałęzi i main co w opublikowanym source.json, dane bez zmian: bez wdrożenia', () => {
+    expect(gate({ ...ON })).toBe('');
   });
 
-  it('gałęzi nie ma albo GitHub nie odpowiada, albo stan strony nieznany: bez wdrożenia z tego powodu', () => {
-    expect(gate({ BLOG_SHA: '', PUBLISHED: SHA })).toBe('');
-    expect(gate({ BLOG_SHA: SHA, PUBLISHED: '', KNOWN: 'false' })).toBe('');
+  it('harmonogram: inny sha gałęzi blog albo pierwszy sha: wdrożenie', () => {
+    expect(gate({ ...ON, PUBLISHED: 'b'.repeat(40) })).toBe('deploy=true');
+    expect(gate({ ...ON, PUBLISHED: '' })).toBe('deploy=true');
   });
 
-  it('jak dotąd: nowe dane albo push i ręczne uruchomienie zawsze wdrażają', () => {
-    expect(gate({ CHANGED: 'true' })).toBe('deploy=true');
-    expect(gate({ EVENT: 'push' })).toBe('deploy=true');
-    expect(gate({ EVENT: 'workflow_dispatch', BLOG_SHA: SHA, PUBLISHED: SHA })).toBe('deploy=true');
+  it('harmonogram: inna głowa main niż w source.json (pominięte wdrożenie po pushu): wdrożenie', () => {
+    expect(gate({ ...ON, PUBLISHED_MAIN: 'd'.repeat(40) })).toBe('deploy=true');
+    expect(gate({ ...ON, BLOG_SHA: '', PUBLISHED_MAIN: '' })).toBe('deploy=true');
+  });
+
+  it('nieczytelny source.json (KNOWN różne od true): bez wdrożenia przy każdym zdarzeniu, także push i nowe dane', () => {
+    for (const EVENT of ['schedule', 'push', 'workflow_dispatch']) {
+      expect(gate({ ...ON, EVENT, KNOWN: 'false', CHANGED: 'true' }), EVENT).toBe('');
+      expect(gate({ ...ON, EVENT, KNOWN: '' }), EVENT).toBe('');
+    }
+  });
+
+  it('gałęzi nie ma albo GitHub nie odpowiada: bez wdrożenia z tego powodu; push i nowe dane jak dotąd', () => {
+    expect(gate({ ...ON, BLOG_SHA: '' })).toBe('');
+    expect(gate({ ...ON, CHANGED: 'true' })).toBe('deploy=true');
+    expect(gate({ ...ON, EVENT: 'push' })).toBe('deploy=true');
   });
 });

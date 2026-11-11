@@ -1,4 +1,5 @@
 import { mkdtempSync, mkdirSync, readFileSync, readdirSync, existsSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -715,7 +716,7 @@ describe('blog: treść z zewnątrz (linki, obrazy, front matter, CSP)', () => {
     writePost(content, ID, BASE, BODY_ARTICLE);
     mkdirSync(path.join(content, ID));
     for (const f of ['wykres.png', 'wykresy.json', 'x.svg', 'notatki.txt', 'strona.html']) writeFileSync(path.join(content, ID, f), f === 'wykresy.json' ? '{"v":1}' : 'x');
-    await buildBlog({ contentDir: content, outDir: out, site: SITE, pages: false, now: Date.parse('2026-10-25T12:00:00Z') });
+    await buildBlog({ contentDir: content, outDir: out, site: SITE, pages: false, now: Date.parse('2026-10-25T12:00:00Z'), main: 'f'.repeat(40) });
     const blog = path.join(out, 'blog');
     expect(readdirSync(path.join(blog, ID)).sort()).toEqual(['index.html', 'og.png', 'wykres.png', 'wykresy.json']);
     const js = readFileSync(path.join(blog, 'blog.js'), 'utf8');
@@ -726,6 +727,15 @@ describe('blog: treść z zewnątrz (linki, obrazy, front matter, CSP)', () => {
     expect(page).toMatch(/<script src="\.\.\/\.\.\/blog\/blog\.js\?v=[0-9a-f]{10}" defer><\/script>/);
     expect(page).toContain('href="https://github.com/x/HQ/commits/main/content/blog/2026-10-24-mapa-dnia.md"');
     expect(page).not.toMatch(/class="edited"/);
-    expect(JSON.parse(readFileSync(path.join(blog, 'source.json'), 'utf8'))).toEqual({ sha: null, at: '2026-10-25T12:00:00.000Z', posts: 0, rewritten: false, skipped: [] });
+    // bez filtra (wyłącznik albo build lokalny): rejestr od zera, wpisy z main bez „changed”, więc bez dopisku
+    const hash = createHash('sha256').update(readFileSync(path.join(content, `${ID}.md`))).digest('hex');
+    expect(JSON.parse(readFileSync(path.join(blog, 'source.json'), 'utf8'))).toEqual({
+      sha: null,
+      main: 'f'.repeat(40),
+      at: '2026-10-25T12:00:00.000Z',
+      posts: { [ID]: { hash, seen: '2026-10-25T12:00:00.000Z', changed: null } },
+      rewritten: false,
+      skipped: [],
+    });
   }, 20_000);
 });

@@ -5,6 +5,7 @@
 //   node scripts/blog/build.mjs --drafts              → to samo razem z wpisami `draft: true` (podgląd lokalny)
 //   BLOG_INTAKE=<raport.json> node scripts/blog/build.mjs → wpisy z gałęzi blog repo danych już w content/blog (intake.mjs)
 //   node scripts/blog/build.mjs --check [plik.md …]   → walidacja wszystkich albo wskazanych wpisów, bez zapisu; kod 1 przy błędach
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { copyFile, lstat, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -100,23 +101,43 @@ export function mapsJson(posts, now) {
 const version = (buf) => createHash('sha256').update(buf).digest('hex').slice(0, 10);
 
 /**
+ * Rejestr opublikowanych wpisów po tym buildzie (czas zaufany = chwile buildów): wpis spoza `previous` dostaje `seen` = teraz,
+ * wpis z inną treścią niż w `previous` dostaje `changed` = teraz; wpisy, których w tym buildzie nie ma, zostają (powrót
+ * starego identyfikatora nie robi z niego nowego wpisu). `hashes`: id → sha256 pliku .md.
+ */
+export function nextRegistry(previous, hashes, now) {
+  const at = new Date(now).toISOString();
+  const next = { ...previous };
+  for (const [id, hash] of hashes) {
+    const prev = previous[id];
+    if (!prev) next[id] = { hash, seen: at, changed: null };
+    else if (prev.hash !== hash) next[id] = { hash, seen: prev.seen, changed: at };
+  }
+  return Object.fromEntries(Object.entries(next).sort(([a], [b]) => (a < b ? -1 : 1)));
+}
+
+/**
  * Buduje blog do `outDir/blog`, strony serwisu (bez `pages: false`) i `outDir/sitemap.xml`. Błędny wpis z main zatrzymuje
  * build (nic nie trafia na stronę po cichu). `intake` = raport filtra gałęzi blog repo danych (intake.mjs): wpis z niej,
- * który nie przechodzi walidatora, jest pomijany z powodem, a strona buduje się dalej. `blog/source.json` = { sha gałęzi,
- * chwila buildu, liczba opublikowanych wpisów z gałęzi, rewritten, pominięte }. Zwraca liczbę opublikowanych wpisów.
+ * który nie przechodzi walidatora, jest pomijany z powodem, a strona buduje się dalej; rejestr opublikowanych wpisów
+ * (nextRegistry) liczony od rejestru z raportu, bez raportu od zera. `blog/source.json` = { sha gałęzi, sha main, chwila
+ * buildu, rejestr (posts), rewritten, pominięte }. Zwraca liczbę opublikowanych wpisów.
  */
-export async function buildBlog({ contentDir = CONTENT_DIR, outDir, site, drafts = false, pages = true, now = Date.now(), intake = null }) {
+export async function buildBlog({ contentDir = CONTENT_DIR, outDir, site, drafts = false, pages = true, now = Date.now(), intake = null, main = null }) {
   const { posts, problems } = loadPosts(contentDir);
-  const origin = new Map((intake?.posts ?? []).map((p) => [p.id, p]));
-  const isBranch = (file) => origin.has(file.replace(/\.md$/, ''));
+  const fromBranch = new Set((intake?.posts ?? []).map((p) => p.id));
+  const isBranch = (file) => fromBranch.has(file.replace(/\.md$/, ''));
   const own = problems.filter((p) => !isBranch(p.file));
   if (own.length) throw new Error(`Błędne wpisy bloga:\n${formatProblems(own)}`);
   const skipped = [...(intake?.skipped ?? []), ...problems.filter((p) => isBranch(p.file)).map((p) => ({ id: p.file.replace(/\.md$/, ''), reason: p.errors.join('; ') }))];
-  for (const post of posts) {
-    const o = origin.get(post.id);
-    if (o) post.origin = { history: `${intake.repo}/commits/${intake.branch}/${post.id}.md`, changedMs: o.commits > 1 ? o.lastMs : null };
-  }
   const visible = posts.filter((p) => drafts || !p.draft);
+  const hashes = new Map();
+  for (const p of visible) hashes.set(p.id, createHash('sha256').update(await readFile(path.join(contentDir, `${p.id}.md`))).digest('hex'));
+  const registry = nextRegistry(intake?.registry ?? {}, hashes, now);
+  for (const post of visible) {
+    const changed = registry[post.id].changed;
+    post.origin = { history: fromBranch.has(post.id) ? `${intake.repo}/commits/${intake.branch}/${post.id}.md` : null, changedMs: changed ? Date.parse(changed) : null };
+  }
 
   const blogDir = path.join(outDir, 'blog');
   await rm(blogDir, { recursive: true, force: true });
@@ -158,7 +179,7 @@ export async function buildBlog({ contentDir = CONTENT_DIR, outDir, site, drafts
   await writeFile(path.join(blogDir, 'maps.json'), JSON.stringify(mapsJson(visible, now)));
   await writeFile(
     path.join(blogDir, 'source.json'),
-    JSON.stringify({ sha: intake?.sha ?? null, at: new Date(now).toISOString(), posts: visible.filter((p) => origin.has(p.id)).length, rewritten: intake?.rewritten ?? false, skipped })
+    JSON.stringify({ sha: intake?.sha ?? null, main, at: new Date(now).toISOString(), posts: registry, rewritten: intake?.rewritten ?? false, skipped })
   );
   await writeFile(path.join(outDir, 'sitemap.xml'), sitemapXml(s, visible, pages ? await buildPages({ outDir, site: s }) : []));
   await writeFile(
@@ -174,6 +195,17 @@ export function checkPosts(files, contentDir = CONTENT_DIR) {
   return files.map((f) => ({ file: f, ...loadPostFile(path.resolve(f)) })).filter((r) => r.errors.length);
 }
 
+/** Commit main, z którego jest build (GitHub Actions: GITHUB_SHA; lokalnie HEAD), albo null. */
+function mainHead() {
+  if (/^[0-9a-f]{40}$/.test(process.env.GITHUB_SHA ?? '')) return process.env.GITHUB_SHA;
+  try {
+    const sha = execFileSync('git', ['-C', ROOT, 'rev-parse', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    return /^[0-9a-f]{40}$/.test(sha) ? sha : null;
+  } catch {
+    return null;
+  }
+}
+
 async function main(argv) {
   if (argv.includes('--check')) {
     const files = argv.filter((a) => !a.startsWith('--'));
@@ -187,7 +219,7 @@ async function main(argv) {
   }
   // BLOG_INTAKE: raport filtra gałęzi blog (static.yml, krok Blog Intake); bez niego tylko wpisy z content/blog
   const intake = process.env.BLOG_INTAKE ? JSON.parse(await readFile(process.env.BLOG_INTAKE, 'utf8')) : null;
-  const n = await buildBlog({ outDir: path.join(ROOT, 'dist'), site: await siteFromPackage(), drafts: argv.includes('--drafts'), intake });
+  const n = await buildBlog({ outDir: path.join(ROOT, 'dist'), site: await siteFromPackage(), drafts: argv.includes('--drafts'), intake, main: mainHead() });
   console.log(`Blog: ${n} wpisów → dist/blog`);
 }
 
