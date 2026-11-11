@@ -81,25 +81,34 @@ describe('wybór stref i aukcji do rysowania (selectZones)', () => {
 
   it('tylko strefy otwarte w chwili X, najwyżej 2 na stronę najbliższe ostatniemu zamknięciu; zamknięta znika', () => {
     const zs = [z(1, 90, 91), z(1, 95, 96), z(1, 97, 98), z(1, 80, 81), z(-1, 103, 104), z(-1, 110, 111), z(-1, 101, 102, 0, 5 * M5), z(1, 99, 99.5, 20 * M5)];
-    const s = selectZones(zs, [], 100, 10 * M5, { history: false });
+    const s = selectZones(zs, [], 100, 10 * M5, { history: false, ms: M5 });
     expect(ZONES_PER_SIDE).toBe(2);
     expect(s.zones.map((x) => x.lo)).toEqual([97, 95, 103, 110]);
   });
 
   it('niedokończone aukcje: tylko otwarte, najwyżej 1 na stronę najbliższa cenie', () => {
     const us = [u(1, 105), u(1, 102), u(-1, 95), u(-1, 97), u(-1, 99, 0, 3 * M5)];
-    const s = selectZones([], us, 100, 10 * M5, { history: false });
+    const s = selectZones([], us, 100, 10 * M5, { history: false, ms: M5 });
     expect(AUCTIONS_PER_SIDE).toBe(1);
     expect(s.auctions.map((x) => x.px)).toEqual([102, 97]);
   });
 
+  it('strefa wchodzi na ekran dopiero po jednej zamkniętej świecy po swojej: ze świecy X nie ma jej na X, jest na X + 1', () => {
+    const X = 10 * M5;
+    const born = z(1, 98, 99, X);
+    expect(selectZones([born], [], 100, X, { history: false, ms: M5 }).zones).toEqual([]);
+    expect(selectZones([born], [], 100, X + M5, { history: false, ms: M5 }).zones).toEqual([born]);
+    // aukcje bez warunku wieku
+    expect(selectZones([], [u(1, 101, X)], 100, X, { history: false, ms: M5 }).auctions.map((a) => a.px)).toEqual([101]);
+  });
+
   it('równa odległość — młodsza; cena w strefie — odległość 0', () => {
-    const s = selectZones([z(1, 95, 96, M5), z(1, 104, 105, 2 * M5), z(1, 99, 101, 0)], [], 100, 10 * M5, { history: false });
+    const s = selectZones([z(1, 95, 96, M5), z(1, 104, 105, 2 * M5), z(1, 99, 101, 0)], [], 100, 10 * M5, { history: false, ms: M5 });
     expect(s.zones.map((x) => x.lo)).toEqual([99, 104]);
   });
 
   it('tryb „Historia”: wszystkie strefy i aukcje znane w chwili X (obrysy)', () => {
-    const s = selectZones([z(1, 90, 91), z(1, 95, 96, 0, 2 * M5), z(-1, 103, 104, 20 * M5)], [u(1, 105), u(-1, 95, 0, M5)], 100, 10 * M5, { history: true });
+    const s = selectZones([z(1, 90, 91), z(1, 95, 96, 0, 2 * M5), z(-1, 103, 104, 20 * M5)], [u(1, 105), u(-1, 95, 0, M5)], 100, 10 * M5, { history: true, ms: M5 });
     expect([s.zones.length, s.auctions.length, s.history]).toEqual([2, 2, true]);
   });
 
@@ -129,7 +138,7 @@ describe('stałość wyboru stref', () => {
     const upto = list.filter((b) => b.t <= X);
     const step = dayZoneStep(upto, 0);
     const last = upto[upto.length - 1];
-    return selectZones(imbalanceZones(upto, step, IMB, 3), unfinishedAuctions(upto, step), (last.high + last.low) / 2, X, { history: false });
+    return selectZones(imbalanceZones(upto, step, IMB, 3), unfinishedAuctions(upto, step), (last.high + last.low) / 2, X, { history: false, ms: M5 });
   };
 
   /** Rysunek wyboru: położenie i strona (koniec i liczba testów z późniejszych świec nie są rysowane w chwili X). */
@@ -148,7 +157,7 @@ describe('stałość wyboru stref', () => {
         unfinishedAuctions(bars, dayZoneStep(bars, 0)),
         (bars[k].high + bars[k].low) / 2,
         X,
-        { history: false }
+        { history: false, ms: M5 }
       );
       expect(drawn(withMore), `X=${k}, dopisane świece`).toEqual(drawn(ref));
       const prevDay = Math.floor(X / DAY) * DAY - DAY;
