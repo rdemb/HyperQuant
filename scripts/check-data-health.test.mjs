@@ -1,6 +1,7 @@
 // Testy nadzoru publicznych danych skanera (świeżość, pokrycie, strażnik prywatności).
-import { describe, expect, it } from 'vitest';
-import { FILES, LIMITS, OPTIONAL, VERIFY_FILE, assessHealth, findLeaks, ntlLag, renderReport } from './check-data-health.mjs';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { FILES, LIMITS, OPTIONAL, VERIFY_FILE, assessHealth, fetchInput, findLeaks, ntlLag, renderReport } from './check-data-health.mjs';
+import { VERIFY_LATEST_URL } from '../src/utils/verifyFreshness.ts';
 
 const NOW = Date.UTC(2026, 9, 22, 12, 0, 0);
 const MIN = 60_000;
@@ -240,7 +241,7 @@ describe('warstwa wielorybów (plik opcjonalny)', () => {
   });
 });
 
-describe('niezależna weryfikacja dziennika (gałąź health, verify/latest.json)', () => {
+describe('niezależna weryfikacja dziennika (gałąź wyników w repo HyperQuant, verify/latest.json)', () => {
   const H = 60 * MIN;
   const verify = (over = {}) => ({ v: 1, ok: true, at: NOW - 5 * H, run: 'https://github.com/rdemb/hyperquant-data/actions/runs/1', lines: [], ...over });
 
@@ -257,7 +258,7 @@ describe('niezależna weryfikacja dziennika (gałąź health, verify/latest.json
     expect(assessHealth(input({ verify: verify({ ok: false }) }), NOW).problems.join(' ')).toMatch(/weryfikacja dziennika wykryła problem/);
   });
 
-  it('brak pliku (repo bez gałęzi health) nie jest alarmem; problem nie restartuje skanera (inna treść niż stojący dziennik)', () => {
+  it('brak pliku (gałąź wyników jeszcze nieutworzona) nie jest alarmem; problem nie restartuje skanera (inna treść niż stojący dziennik)', () => {
     expect(assessHealth(input({ errors: { [VERIFY_FILE]: 'HTTP 404' } }), NOW).ok).toBe(true);
     const p = assessHealth(input({ verify: verify({ at: NOW - 49 * H }) }), NOW).problems[0];
     expect(p).not.toMatch(/dziennik prognoz: ostatnia aktualizacja/);
@@ -269,8 +270,19 @@ describe('niezależna weryfikacja dziennika (gałąź health, verify/latest.json
     expect(r.problems.join(' ')).toMatch(/czas wyniku z przyszłości/);
   });
 
-  it('strażnik pobiera wynik weryfikacji z gałęzi health', () => {
-    expect(VERIFY_FILE).toBe('verify/latest.json (gałąź health)');
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('strażnik i nadzór pobierają wynik weryfikacji z jednego adresu (stała), nie z gałęzi health repo danych', async () => {
+    expect(VERIFY_FILE).toBe('verify/latest.json (gałąź weryfikacja-dziennika repo HyperQuant)');
     expect(OPTIONAL.has(VERIFY_FILE)).toBe(true);
+    const urls = [];
+    vi.stubGlobal('fetch', async (url) => {
+      urls.push(String(url));
+      return new Response(String(url) === VERIFY_LATEST_URL ? JSON.stringify(verify()) : '{}', { status: 200 });
+    });
+    const inp = await fetchInput('https://raw.githubusercontent.com/rdemb/hyperquant-data/main');
+    expect(urls).toContain(VERIFY_LATEST_URL);
+    expect(urls.filter((u) => /\/health\//.test(u))).toEqual([]);
+    expect(inp.verify).toEqual(verify());
   });
 });

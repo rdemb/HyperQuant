@@ -156,18 +156,35 @@ nie zmienia; restart tylko dwóch usług przez regułę polkit; szczegóły i wd
   Push uruchamia tam workflow (wzorzec: [`deploy/health-alert.yml`](deploy/health-alert.yml)), który otwiera, komentuje
   albo zamyka zgłoszenie `alert-danych` w repo danych. Commity mają czas UTC i autora noreply, jak publikacja skanera.
 
-Co 12 h (także przy „ok”) strażnik wysyła puls. Każdy zapis do gałęzi `health` uruchamia tam osobny workflow
-(wzorzec: [`deploy/ledger-verify.yml`](deploy/ledger-verify.yml)) z niezależną weryfikacją dziennika w GitHub Actions
-(`verify-ledger.mjs --dir ledger --market` na klonie gałęzi `ledger`). Historia git jest sprawdzana od punktu kontrolnego
-`verify/checkpoint.json` (ostatni commit z udaną weryfikacją, `--since-commit`), cała co najmniej raz na 7 dni. Workflow
-zapisuje `verify/latest.json` (podsumowanie dla strony) i `badge/ledger.json` (znaczek shields.io, zielony tylko przy zgodnym
-wyniku nie starszym niż 36 h; logika w `scripts/verify-status.mjs`). Harmonogramu w repo danych nie ma: GitHub uruchamia
-`schedule` tylko z gałęzi domyślnej, a `main` jest publikacją nadpisywaną co 2 min. Wynik starszy niż 36 h zgłasza nadzór
-danych (`check-data-health.mjs`, także w `data-health.yml` z harmonogramem w tym repo).
+Co 12 h (także przy „ok”) strażnik wysyła puls — zapis w gałęzi `health` potwierdza, że działa.
 
-Jednorazowo: gałąź `health` w repo danych z plikami `.github/workflows/health-alert.yml` i `ledger-verify.yml` (kopie wzorców). Podgląd na serwerze:
+Jednorazowo: gałąź `health` w repo danych z plikiem `.github/workflows/health-alert.yml` (kopia wzorca). Podgląd na serwerze:
 `systemctl list-timers hyperquant-watchdog.timer`, `journalctl -u hyperquant-watchdog`. Dłuższa przerwa serwisowa:
 `systemctl stop hyperquant-watchdog.timer` (inaczej strażnik zgłosi zatrzymaną usługę).
+
+### Niezależna weryfikacja dziennika
+
+Workflow [`.github/workflows/ledger-verify.yml`](../.github/workflows/ledger-verify.yml) w tym repo, co 6 h (`cron: '23 */6 * * *'`)
+i ręcznie: weryfikator z `main` (`verify-ledger.mjs --dir ledger --market`) na pełnym klonie gałęzi `ledger` repo danych,
+na infrastrukturze GitHuba, nie na serwerze desku. Zawsze cała historia git (sprawdzane tylko zmienione pliki, pamięć
+stała). Kotwica `verify/anchor.json` to commit `ledger` z ostatniej udanej weryfikacji: w każdym przebiegu musi nadal być
+w historii gałęzi (`--anchor`), inaczej historia została przepisana i wynik jest czerwony do wyjaśnienia (kotwicę zmienia
+tylko przebieg zgodny; kotwica usunięta albo uszkodzona po zgodnym wyniku też daje czerwony wynik, a brak obu plików
+`verify/` to prawdziwy pierwszy przebieg). Wynik trafia do gałęzi `weryfikacja-dziennika` tego repo (sierocej, tylko `badge/` i `verify/`;
+pierwszy przebieg ją tworzy): `verify/latest.json` (strona, nadzór danych) i `badge/ledger.json` (znaczek shields.io
+w README, zielony tylko przy zgodnym wyniku nie starszym niż 36 h; logika w `scripts/verify-status.mjs`). Adresy w jednym
+miejscu: `src/utils/verifyFreshness.ts` (`VERIFY_BRANCH`, `VERIFY_LATEST_URL`, `VERIFY_BADGE_URL`). Wynik starszy niż 36 h
+albo z problemem zgłasza nadzór danych (`check-data-health.mjs`: `data-health.yml` i strażnik).
+
+Uprawnienia: tylko `contents: write` z wbudowanym tokenem (bez sekretów), akcje przypięte do hashy commitów, klon repo
+danych bez zapisanych poświadczeń. Gałąź wyników jest pobierana bez tokenu; token trafia do jej klonu dopiero w kroku
+publikacji, po przetworzeniu danych z repo danych. Push wbudowanym tokenem nie uruchamia innych workflow, a `static.yml` i
+`alerts-worker.yml` reagują tylko na `main` (test `scripts/verify-workflow.test.mjs`).
+
+Opcja (ustawienie GitHuba, robi właściciel repo): do gałęzi wyników mogą dziś pisać także klucze wdrożeniowe z zapisem do
+całego repo (np. klucz, którym serwer publikuje wpisy bloga). Reguła (*Settings → Rules → Rulesets → New branch ruleset*): cel
+`weryfikacja-dziennika`, reguły *Restrict updates*, *Restrict deletions* i *Block force pushes*, na liście pomijających
+(*Bypass list*) tylko aplikacja **GitHub Actions** — wtedy gałąź zmienia wyłącznie ten workflow.
 
 ## Publikacja do Cloudflare R2 (opcjonalnie)
 
