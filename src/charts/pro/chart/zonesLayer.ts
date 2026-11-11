@@ -269,7 +269,7 @@ export class ZonesLayer implements ISeriesPrimitive<Time> {
     if (selKey.every((v, i) => Object.is(v, this.selKey[i]))) return;
     this.selKey = selKey;
     this.asOf = last ? last.t : 0;
-    this.sel = last ? selectZones(this.zones, this.auctions, last.candle.c, last.t, { history }) : null;
+    this.sel = last ? selectZones(this.zones, this.auctions, last.candle.c, last.t, { history, ms: this.ms }) : null;
     this.onSelect?.(this.toggles.showZones ? (this.sel?.zones.length ?? 0) : 0, this.toggles.showAuctions ? (this.sel?.auctions.length ?? 0) : 0);
   }
 }
