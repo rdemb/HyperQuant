@@ -276,14 +276,6 @@ export const AggrOrderFlowTape: React.FC<AggrOrderFlowTapeProps> = ({
     };
   });
 
-  // Kierunek wynika wyłącznie z biasu wyczerpania; kontynuacja/równowaga nie daje sygnału odwrócenia
-  const exhaustionDir: 'LONG' | 'SHORT' | null =
-    ofiSummary.exhaustionBias === 'BULLISH_EXHAUSTION_TOP_RISK'
-      ? 'SHORT'
-      : ofiSummary.exhaustionBias === 'BEARISH_EXHAUSTION_BOTTOM_REVERSAL'
-      ? 'LONG'
-      : null;
-
   return (
     <div className="flex flex-col h-full bg-surface-1 border border-line rounded-xl overflow-hidden">
       {/* Nagłówek: tytuł + podsumowanie OFI, pod spodem zakładki na całą szerokość (cel ≥ 44 px na telefonie) */}
@@ -525,9 +517,17 @@ export const AggrOrderFlowTape: React.FC<AggrOrderFlowTapeProps> = ({
                         SIM
                       </Badge>
                     )}
+                    {/* Likwidacja jako wymuszona strona transakcji (fakt o zleceniu), nie etykieta kierunku */}
                     {t.isLiquidation && (
-                      <span className="text-[10px] font-semibold uppercase tracking-wider">
-                        LIQ {t.side === 'buy' ? 'SHORT' : 'LONG'}
+                      <span
+                        className="text-[10px] font-semibold"
+                        title={
+                          t.side === 'buy'
+                            ? tr('Likwidacja pozycji krótkiej: giełda kupiła na rynku', 'Short position liquidated: the exchange bought at market')
+                            : tr('Likwidacja pozycji długiej: giełda sprzedała na rynku', 'Long position liquidated: the exchange sold at market')
+                        }
+                      >
+                        {t.side === 'buy' ? tr('wymusz. kupno', 'forced buy') : tr('wymusz. sprzedaż', 'forced sell')}
                       </span>
                     )}
                     <span className="font-semibold">
