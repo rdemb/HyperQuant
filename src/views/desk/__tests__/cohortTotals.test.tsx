@@ -17,6 +17,8 @@ const FLOW: CohortFlow = {
     h1: { mm: T(2e6, 1e6), informed: T(0, 0), whale: T(5e5, 1e5), rest: T(1e6, 2e6) },
     h24: { mm: T(4e7, 3e7), informed: T(0, 0), whale: T(1e7, 1e7), rest: T(3e7, 5e7) },
   },
+  // Widoczne kupno 80 mln + ukryte 13 mln = widoczna sprzedaż 90 mln + ukryte 3 mln = wolumen taśmy 93 mln
+  tape: { h1: null, h24: { volume: 9.3e7, hidden: { buy: 1.3e7, sell: 3e6, takerBuy: 6e6, takerSell: 2e6 } } },
   members: { mm: 210, informed: 0, whale: 100, rest: 18_380 },
   informed: { candidates: 2470, selected: 0, fdrQ: 0.1, minN: 30, mu0Bp: null, tauBp: null, classifiedAt: NOW - 3_600_000 },
   oos: { mm: markout, informed: markout, whale: markout, rest: markout },
@@ -45,4 +47,36 @@ describe('Przepływ kohort: brak danych to „—”, nie zero', () => {
     expect(whale.split('>$0<').length - 1).toBe(2);
     expect(whale).toContain('$20');
   }, 20_000); // dynamiczny import panelu (cały moduł widoku) bywa wolniejszy niż 5 s przy pełnym obciążeniu CI
+
+  it('kohorta ze wszystkimi komórkami ukrytymi: „—” zamiast $0 w tabeli i na karcie, liczba ukrytych zostaje', async () => {
+    const { CohortFlowPanel } = await import('../CohortFlowPanel');
+    const keep = { h1: FLOW.totals.h1.whale, h24: FLOW.totals.h24.whale };
+    FLOW.totals.h1.whale = T(0, 0, 4);
+    FLOW.totals.h24.whale = T(0, 0, 62);
+    try {
+      const html = renderToStaticMarkup(<CohortFlowPanel coin="BTC" />);
+      const body = html.slice(html.indexOf('<tbody'), html.indexOf('</tbody>'));
+      const whale = body.split('<tr').find((r) => r.includes('Wieloryby'))!;
+      expect(whale).not.toContain('$0');
+      expect((whale.match(/>—</g) ?? []).length).toBe(3);
+      expect(whale).toContain('62 / 0');
+      expect(html.slice(0, html.indexOf('<tbody'))).not.toMatch(/Wieloryby.{0,400}>\$0</);
+    } finally {
+      FLOW.totals.h1.whale = keep.h1;
+      FLOW.totals.h24.whale = keep.h24;
+    }
+  }, 20_000);
+
+  it('ukryte komórki jako jeden wiersz „Pozostali razem”; pusta kohorta „poinformowanych” — „nie wykryto” z liczbą sprawdzonych', async () => {
+    const { CohortFlowPanel } = await import('../CohortFlowPanel');
+    const html = renderToStaticMarkup(<CohortFlowPanel coin="BTC" />);
+    const body = html.slice(html.indexOf('<tbody'), html.indexOf('</tbody>'));
+    const others = body.split('<tr').find((r) => r.includes('Pozostali razem'));
+    expect(others).toBeDefined();
+    // Netto +10 mln, agresor +4 mln, obrót 16 mln
+    expect(others).toContain('+$10');
+    expect(others).toContain('+$4');
+    expect(others).toContain('$16');
+    expect(html).toContain('nie wykryto kont z trwałą przewagą (≈ 2470 sprawdzonych)');
+  }, 20_000);
 });
