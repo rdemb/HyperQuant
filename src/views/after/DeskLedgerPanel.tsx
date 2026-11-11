@@ -555,11 +555,15 @@ const MarketCard: React.FC<{ m: NonNullable<DeskLedgerSummary['market']> }> = ({
   );
 };
 
-/** Szanse dotknięcia poziomów 2h: surowe z modelu i skalibrowane (Venn–Abers), wyniki Briera, niezawodność. */
-const TouchCard: React.FC<{ s: DeskLedgerSummary }> = ({ s }) => {
+/**
+ * Szanse dotknięcia poziomów 2h: surowe z modelu i skalibrowane (Venn–Abers), wyniki Briera, niezawodność. BSS zawsze
+ * w parze: wobec odległości (wzór odbicia) i wobec częstości poziomu; bez bazy odległości (starsze podsumowanie) oba „—”.
+ */
+export const TouchCard: React.FC<{ s: DeskLedgerSummary }> = ({ s }) => {
   const t = s.latest.touch;
   const sc = s.scores.touch;
   const enough = sc.n >= MIN_N;
+  const hasDist = typeof sc.bssDist === 'number' && Number.isFinite(sc.bssDist);
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-line p-3">
       <div className="flex items-baseline justify-between gap-2">
@@ -609,12 +613,31 @@ const TouchCard: React.FC<{ s: DeskLedgerSummary }> = ({ s }) => {
         <Stat
           label="Brier"
           value={<span className="font-mono tabular-nums text-base">{enough && sc.brier !== null ? fmtFixed(sc.brier, 3) : DASH}</span>}
-          hint={enough ? `n ${sc.n} · ${tr('klimatologia', 'climatology')} ${sc.brierBase != null ? fmtFixed(sc.brierBase, 3) : DASH}` : fromN(sc.n)}
+          hint={
+            enough
+              ? `n ${sc.n} · ${tr('odległość', 'distance')} ${sc.brierDist != null ? fmtFixed(sc.brierDist, 3) : DASH} · ${tr('częstość', 'base rate')} ${sc.brierBase != null ? fmtFixed(sc.brierBase, 3) : DASH}`
+              : fromN(sc.n)
+          }
         />
         <Stat
-          label={tr('Umiejętność (BSS)', 'Skill (BSS)')}
-          value={<span className="font-mono tabular-nums text-base">{enough ? pct(sc.bss, 1) : DASH}</span>}
-          hint={tr('> 0 = lepiej niż częstość bazowa każdego poziomu', '> 0 = better than the base rate of each level')}
+          label={tr('BSS wobec odległości', 'BSS vs distance')}
+          value={<span className="font-mono tabular-nums text-base">{enough && hasDist ? pct(sc.bssDist, 1) : DASH}</span>}
+          hint={
+            !enough
+              ? fromN(sc.n)
+              : hasDist
+                ? tr('baza: wzór odbicia ze stałą σ godzinową z 30 dni; > 0 = lepiej niż baza', 'baseline: reflection formula with a constant 30-day hourly σ; > 0 = better than the baseline')
+                : tr('brak bazy odległości w podsumowaniu', 'no distance baseline in the summary')
+          }
+        />
+        <Stat
+          label={tr('BSS wobec częstości', 'BSS vs base rate')}
+          value={<span className="font-mono tabular-nums text-base">{enough && hasDist ? pct(sc.bssClim ?? sc.bss, 1) : DASH}</span>}
+          hint={
+            hasDist
+              ? tr('baza: częstość każdego poziomu; nie zna odległości, więc zawyża umiejętność', 'baseline: base rate of each level; it ignores distance, so it overstates skill')
+              : tr('tylko razem z bazą odległości', 'only together with the distance baseline')
+          }
         />
         {enough && <ReliabilityMini bins={sc.reliability} />}
       </div>

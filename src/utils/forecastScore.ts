@@ -197,6 +197,26 @@ export function brier(pairs: ProbPair[]): number | null {
   return pairs.reduce((a, c) => a + (c.p - c.y) ** 2, 0) / pairs.length;
 }
 
+/**
+ * Baza odległości dla dotknięć: szansa, że ruch Browna bez dryfu dotknie poziomu w horyzoncie (zasada odbicia),
+ * P = 2(1 − Φ(|d| / σ_h)), d = ln(poziom / cena), σ_h = odchylenie log-zwrotu na całym horyzoncie. σ_h ≤ 0 → null.
+ */
+export function reflectionTouchProb(d: number, sigmaH: number): number | null {
+  if (!Number.isFinite(d) || !(sigmaH > 0) || !Number.isFinite(sigmaH)) return null;
+  return Math.min(1, 2 * normalSf(Math.abs(d) / sigmaH));
+}
+
+/**
+ * σ rozkładu normalnego zapisanego kwantylami −½σ² + σ·z_τ (benchmark CRPS dziennika): (q_K − q_1) / (z_K − z_1)
+ * ze skrajnych poziomów siatki. Mniej niż dwa poziomy albo zerowa rozpiętość → null.
+ */
+export function sigmaFromNormalQuantiles(taus: number[], qs: number[]): number | null {
+  const k = taus.length - 1;
+  if (k < 1 || qs.length !== taus.length) return null;
+  const s = (qs[k] - qs[0]) / (normInv(taus[k]) - normInv(taus[0]));
+  return s > 0 && Number.isFinite(s) ? s : null;
+}
+
 /** Diagram niezawodności: koszyki równej szerokości po p; częstość null w pustym koszyku. */
 export function reliability(pairs: ProbPair[], bins = 10): { lo: number; hi: number; n: number; meanP: number | null; freq: number | null }[] {
   const out = Array.from({ length: bins }, (_, i) => ({ lo: i / bins, hi: (i + 1) / bins, n: 0, sumP: 0, sumY: 0 }));

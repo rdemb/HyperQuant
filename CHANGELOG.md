@@ -4,6 +4,15 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Dziennik prognoz: BSS dotknięć także wobec bazy odległości (2026-11-11)
+
+#### Zmienione
+- **Umiejętność prognoz dotknięć PDH, PDL i D-EQ w 2 h liczona wobec dwóch baz** (`backend/scanner/forecaster.ts`, `src/utils/forecastScore.ts`, `src/utils/deskLedger.ts`): dotąd BSS był liczony tylko wobec częstości bazowej każdego poziomu. Częstość nie wie, jak daleko poziom jest od ceny, więc sama daje modelowi dużą pozorną umiejętność. Nowa baza odległości to wzór odbicia dla ruchu Browna bez dryfu, P = 2(1 − Φ(|d| / (σ√T))), gdzie d = ln(poziom / cena), a T = 2 h. **σ pochodzi z godzinowych log-zwrotów z 30 dni.** To ta sama stała σ, której używa benchmark CRPS (`sigma1hFromHourly`). Jest odtwarzana z kwantyli `bq` prognozy zwrotu 1 h z tego samego slotu, więc baza korzysta tylko z danych zapisanych przed rozstrzygnięciem. Podsumowanie `ledger/BTC/summary.json` ma nowe pola `bssDist`, `brierDist`, `pairsDist` oraz `bssClim`, czyli dotychczasowe `bss` pod jawną nazwą. Stare pola `bss` i `brierBase` zostają, a strona i MCP czytają też starsze podsumowania bez nowych pól. Na publicznym dzienniku (5180 par z 1892 prognoz, od 22.10 do 11.11.2026) wynik to Brier modelu 0,0734, Brier bazy odległości 0,0822 i częstości 0,1226. **BSS wobec odległości wynosi 0,106, a wobec częstości 0,401.**
+- **Karta „Dotknięcie poziomu w 2 h”** w panelu dziennika desku (`src/views/after/DeskLedgerPanel.tsx`) pokazuje BSS wobec odległości i BSS wobec częstości obok siebie oraz Brier obu baz. Gdy podsumowanie nie ma bazy odległości, oba BSS mają „—” z powodem.
+- **Narzędzie MCP `forecast_ledger`** (`mcp/src/tools/scanner.ts`) zwraca `touch.brierDist` i `touch.bssDist`. W starszym podsumowaniu bez bazy odległości `bssDist` i `bss` mają wartość null z powodem, tak samo jak na stronie. Opis narzędzia i uwaga w odpowiedzi każą podawać BSS dotknięć tylko w parze. W tej samej sprawie zmienione są opisy w skillu (`integrations/skills/hyperquant/SKILL.md`), w szablonie agenta rozliczenia sesji, w README serwera i w manifeście `.mcpb`, a także w katalogu agentów, w tabeli źródeł i w README.
+- **Niezależna weryfikacja** (`scripts/verify-ledger.mjs`) przelicza bazę odległości z rekordów własnym kodem (Φ z rozwinięcia Abramowitza i Steguna). W wynikach przeliczonych są `touch.levelsDist`, `touch.brierDist` i `touch.bssDist`. Na publicznym dzienniku daje to te same 0,106.
+- Test `integrations/__tests__/bssPair.test.ts` pilnuje, żeby każdy tekst, który wspomina BSS dziennika, w tym samym zdaniu podawał bazę odległości.
+
 ### Wskaźnik: strefy absorpcji i pudełka Effort (2026-11-09)
 
 #### Dodane
