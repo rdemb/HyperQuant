@@ -65,7 +65,7 @@
     },
     {
       "name": "forecast_ledger",
-      "description": "Scores of the verifiable HyperQuant forecast ledger: CRPSS, interval coverage with the Kupiec test, Brier score and BSS."
+      "description": "Scores of the verifiable HyperQuant forecast ledger: CRPSS, interval coverage with the Kupiec test, Brier score and BSS against the distance baseline and the level base rate."
     }
   ],
   "compatibility": {

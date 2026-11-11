@@ -11,7 +11,9 @@ import {
   pinball,
   pitFromQuantiles,
   quantileAt,
+  reflectionTouchProb,
   reliability,
+  sigmaFromNormalQuantiles,
   vennAbers,
 } from '../forecastScore';
 
@@ -127,5 +129,23 @@ describe('quantileAtExt — kwantyle poza siatką (ogony gaussowskie)', () => {
     expect(quantileAtExt(taus, qs, 0)).toBe(Number.NEGATIVE_INFINITY);
     expect(quantileAtExt(taus, qs, -0.1)).toBe(Number.NEGATIVE_INFINITY);
     expect(quantileAtExt(taus, qs, 1)).toBe(Number.POSITIVE_INFINITY);
+  });
+});
+
+describe('baza odległości dla dotknięć', () => {
+  it('reflectionTouchProb: 2(1 − Φ(|d| / σ_h)); poziom w cenie → 1; σ ≤ 0 albo nie-liczba → null', () => {
+    expect(reflectionTouchProb(0, 0.01)).toBe(1);
+    expect(reflectionTouchProb(0.01 * 1.959964, 0.01)).toBeCloseTo(0.05, 5);
+    expect(reflectionTouchProb(-0.01 * 1.959964, 0.01)).toBeCloseTo(0.05, 5);
+    expect(reflectionTouchProb(0.01, 0)).toBeNull();
+    expect(reflectionTouchProb(Number.NaN, 0.01)).toBeNull();
+  });
+  it('sigmaFromNormalQuantiles: σ odtworzona z kwantyli −½σ² + σ·z_τ; bez rozpiętości → null', () => {
+    const taus = [0.025, 0.05, 0.5, 0.95, 0.975];
+    const s = 0.0042;
+    const q = taus.map((t) => -0.5 * s * s + s * normInv(t));
+    expect(sigmaFromNormalQuantiles(taus, q)).toBeCloseTo(s, 10);
+    expect(sigmaFromNormalQuantiles(taus, taus.map(() => 0))).toBeNull();
+    expect(sigmaFromNormalQuantiles([0.5], [0])).toBeNull();
   });
 });
