@@ -35,6 +35,10 @@ Pomiar `npm run ui:check` (Chrome bez okna na zbudowanej stronie, 1440 × 900 i 
 - **`npm run ui:check`** (`scripts/ui/layout-check.mjs`, `scripts/ui/cdp.mjs`, `scripts/ui/probe.mjs`): pomiar sześciu warunków układu na `vite preview` przez Chrome DevTools Protocol, bez nowych zależności — udział panelu ceny, elementy DOM nad świecami, nachodzące etykiety (na powtórce nagranej doby z kopii przy lekcjach), funkcje paska w najwyżej dwóch kliknięciach, skróty klawiszowe i zachowanie ustawień w localStorage; wynik w `ui-check/<etykieta>.json`.
 - Mapa skrótów klawiszowych jako czyste funkcje z testem, że się nie zmieniła (`src/charts/pro/chart/shortcuts.ts`), test zachowania zapisanych ustawień wykresu (`settingsKeep.test.ts`) i klawiatury list (`menuKeys.test.ts`).
 
+#### Naprawione
+- **Odznaczenie rysunku nie przełącza trybu skupienia** (`src/charts/pro/draw/tools.ts`, `controller.ts`): dotknięcie wykresu, które tylko odznaczyło rysunek albo stawiało punkt, było liczone jako puste dotknięcie. Teraz decyduje stan z chwili wciśnięcia (`pressBusy`); test `drawTap.test.ts`.
+
+
 ### Niezależna weryfikacja dziennika: przyrostowo, osobny workflow, znaczek gaśnie po 36 h (2026-11-11)
 
 #### Naprawione

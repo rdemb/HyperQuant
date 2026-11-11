@@ -1605,7 +1605,8 @@ export class ProChartController {
     const whale = !pick && p.point && p.paneIndex === 0 ? this.overlay.pickWhale(p.point.y) : false;
     this.liquidity.setSelected(pick);
     this.onPick(pick);
-    if (!pick && !whale && p.point && p.paneIndex === 0 && !this.draw.busy) this.onEmptyTap?.();
+    // Wciśnięcie, które odznaczyło rysunek albo stawiało punkt, należy do rysowania (stan z chwili wciśnięcia)
+    if (!pick && !whale && p.point && p.paneIndex === 0 && !this.draw.pressBusy && !this.draw.busy) this.onEmptyTap?.();
   };
 
   private readonly onCrosshair = (p: MouseEventParams<Time>): void => {

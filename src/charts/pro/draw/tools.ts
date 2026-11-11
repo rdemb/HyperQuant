@@ -164,6 +164,7 @@ export class DrawingTools {
   private clipboard: Drawing | null = null;
   /** Wciśnięcie należy do rysowania — kolejne zdarzenia myszy i dotyku nie trafiają do wykresu. */
   private swallow = false;
+  private pressedBusy = false;
   private lastStyle = new Map<ToolKind, DrawStyle>();
   /** Ostatni styl narzędzia sprzed otwarcia okna ustawień („Anuluj” go przywraca). */
   private lastBefore: DrawStyle | undefined;
@@ -198,6 +199,14 @@ export class DrawingTools {
   /** Wybrane narzędzie albo zaznaczony rysunek: dotknięcie wykresu należy do rysowania. */
   get busy(): boolean {
     return this.tool !== null || this.selectedId !== null;
+  }
+
+  /**
+   * Ostatnie wciśnięcie na wykresie zastało narzędzie, zaznaczony rysunek albo rysunek w trakcie stawiania — należało do
+   * rysowania, także gdy tylko odznaczyło rysunek (kliknięcie wykresu po nim nie widzi już zaznaczenia).
+   */
+  get pressBusy(): boolean {
+    return this.pressedBusy;
   }
 
   get isFocused(): boolean {
@@ -710,6 +719,7 @@ export class DrawingTools {
   };
 
   private readonly onDown = (e: PointerEvent): void => {
+    this.pressedBusy = this.busy || this.pending !== null;
     this.focus();
     if (e.button !== 0) return;
     const { x, y, inPane } = this.local(e);
