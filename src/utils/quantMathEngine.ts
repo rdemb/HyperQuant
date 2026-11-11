@@ -39,10 +39,11 @@ function expectedRescaledRange(n: number): number {
 /**
  * Wykładnik Hursta z R/S skorygowany o obciążenie małej próby:
  * H = 0.5 + (ln(R/S) − ln E[R/S]_n) / ln(n). Pod szumem iid średnio ≈ 0.5.
+ * Mniej niż 8 zwrotów albo seria płaska (σ = 0): H nieokreślone → null, nie 0,5.
  */
-export function hurstAnisLloyd(returns: number[]): number {
+export function hurstAnisLloyd(returns: number[]): number | null {
   const n = returns.length;
-  if (n < 8) return 0.5;
+  if (n < 8) return null;
   const mean = returns.reduce((a, b) => a + b, 0) / n;
   let cum = 0;
   let maxDev = -Infinity;
@@ -56,7 +57,7 @@ export function hurstAnisLloyd(returns: number[]): number {
     varSum += d * d;
   }
   const std = Math.sqrt(varSum / n);
-  if (!(std > 0)) return 0.5;
+  if (!(std > 0)) return null;
   const rs = (maxDev - minDev) / std;
   const h = 0.5 + (Math.log(rs) - Math.log(expectedRescaledRange(n))) / Math.log(n);
   return Math.max(0, Math.min(1, h));
@@ -66,10 +67,11 @@ export function hurstAnisLloyd(returns: number[]): number {
  * VPIN na kubełkach o równym wolumenie (Easley, López de Prado, O'Hara 2012).
  * Podział kupno/sprzedaż w świecach: realny z WS albo BVC. Wolumen świecy jest rozlewany
  * proporcjonalnie do kolejnych kubełków; VPIN = średnia |V_B − V_S| / V z pełnych kubełków.
+ * Bez wolumenu albo bez pełnego kubełka VPIN nieokreślony → null, nie 0.
  */
-export function computeVpinBvc(bars: OHLCVBar[], bucketCount: number = 50): number {
+export function computeVpinBvc(bars: OHLCVBar[], bucketCount: number = 50): number | null {
   const totalVol = bars.reduce((acc, b) => acc + b.vbuy + b.vsell, 0);
-  if (!(totalVol > 0)) return 0;
+  if (!(totalVol > 0)) return null;
   const bucketVol = totalVol / bucketCount;
   let fill = 0;
   let buy = 0;
@@ -95,7 +97,7 @@ export function computeVpinBvc(bars: OHLCVBar[], bucketCount: number = 50): numb
       }
     }
   }
-  return full > 0 ? sumImb / full : 0;
+  return full > 0 ? sumImb / full : null;
 }
 
 /**
@@ -123,7 +125,7 @@ export function kyleLambdaOls(bars: OHLCVBar[], minBars: number = 10): number | 
   return varQ > 0 ? cov / varQ : null;
 }
 
-/** Neutralny zestaw metryk dla braku danych (wartości liczbowe NaN, listy puste). */
+/** Zestaw metryk dla braku danych (ceny NaN, VPIN, Hurst i λ null, listy puste). */
 export function emptyQuantMetrics(): QuantMathMetrics {
   return {
     ouTheta: 0,
@@ -135,17 +137,15 @@ export function emptyQuantMetrics(): QuantMathMetrics {
     hawkesBranchingRatio: null,
     hawkesNetDominance: 0,
     shannonEntropyBits: 0,
-    hurstExponent: 0.5,
+    hurstExponent: null,
     combinatorialPathProbPDH: Number.NaN,
     combinatorialPathProbPDL: Number.NaN,
     l2MicroPrice: Number.NaN,
     l2OrderbookImbalance: 0,
-    vpinToxicity: 0,
+    vpinToxicity: null,
     bookDepthAskUsd: 0,
     bookDepthBidUsd: 0,
     kyleLambdaPer1M: null,
-    shortSqueezeFuelUsd: 0,
-    longCascadeFuelUsd: 0,
     pocPrice: Number.NaN,
     vahPrice: Number.NaN,
     valPrice: Number.NaN,
@@ -290,7 +290,9 @@ export function computeQuantMathAndNeuralForecast(
   const bookDepthBidUsd = Math.round(sumBidUsd);
   const kyleLambdaPer1M = kyleLambdaOls(bars);
 
-  // 6. High-Resolution Volume Profile (TPO / POC / VAH / VAL / LVN) & Gravitational Liquidity Field
+  // 6. Profil wolumenu (POC / VAH / VAL / LVN) i pole przyciągania U(p) z wolumenu i masy OB.
+  // Bez „paliwa likwidacyjnego”: Badania nie mają pozycji kont, a liczby w USD ze stałych byłyby zmyślone
+  // (zmierzona mapa likwidacji z pozycji kont jest w widoku „Przed sesją”).
   const profileBucketsCount = 24;
   const visibleSlice = bars.slice(-80);
   let minP = Math.min(...visibleSlice.map((b) => b.low));
@@ -305,7 +307,6 @@ export function computeQuantMathAndNeuralForecast(
     price: number;
     buyVol: number;
     sellVol: number;
-    liqFuel: number;
     gravity: number;
   }[] = [];
 
@@ -328,24 +329,7 @@ export function computeQuantMathAndNeuralForecast(
       }
     }
 
-    // Add Liquidation Heatmap fuel falling near this bucket
-    let liqFuel = 0;
-    for (const cell of heatmap) {
-      const dist = Math.abs(cell.priceLevel - pCenter);
-      if (dist <= bucketStep * 1.4) {
-        liqFuel += cell.strength * cell.count * 420000 * Math.exp(-dist / bucketStep);
-      }
-    }
-
-    // Boost liquidation fuel around Shaakuni PDH, PDL, PWH, PWL stop-loss pools
-    const keyStops = [shaakuni.pdh, shaakuni.pdl, shaakuni.pwh, shaakuni.pwl];
-    for (const stopLvl of keyStops) {
-      if (stopLvl && Math.abs(stopLvl - pCenter) <= bucketStep * 1.1) {
-        liqFuel += 3800000;
-      }
-    }
-
-    // Gravitational Liquidity Pull U(p) combining resting liquidation fuel + Order Block mass
+    // Pole przyciągania U(p): masa świeżych OB i wolumen, ważone odległością od ceny (heurystyka)
     let obMass = 0;
     for (const ob of shaakuni.orderBlocks) {
       if (ob.state === 'fresh' && pCenter >= ob.bottom - bucketStep && pCenter <= ob.top + bucketStep) {
@@ -354,13 +338,12 @@ export function computeQuantMathAndNeuralForecast(
     }
 
     const distFromCurrent = Math.max(bucketStep * 0.6, Math.abs(pCenter - currentPrice));
-    const gravity = (liqFuel * 1.4 + obMass + (buyVol + sellVol) * 0.18) / Math.pow(distFromCurrent, 0.55);
+    const gravity = (obMass + (buyVol + sellVol) * 0.18) / Math.pow(distFromCurrent, 0.55);
 
     rawBuckets.push({
       price: pCenter,
       buyVol: Math.round(buyVol),
       sellVol: Math.round(sellVol),
-      liqFuel: Math.round(liqFuel),
       gravity,
     });
   }
@@ -418,12 +401,8 @@ export function computeQuantMathAndNeuralForecast(
   const valPrice = rawBuckets[lowIdx]?.price ?? currentPrice - atr;
   const vahPrice = rawBuckets[highIdx]?.price ?? currentPrice + atr;
 
-  let shortSqueezeFuelUsd = 0;
-  let longCascadeFuelUsd = 0;
   const liquidityProfile: LiquidityProfileBucket[] = rawBuckets.map((rb, idx) => {
     const totalVolumeUsd = rb.buyVol + rb.sellVol;
-    if (rb.price > currentPrice) shortSqueezeFuelUsd += rb.liqFuel;
-    else longCascadeFuelUsd += rb.liqFuel;
 
     return {
       price: rb.price,
@@ -431,7 +410,6 @@ export function computeQuantMathAndNeuralForecast(
       buyVolumeUsd: rb.buyVol,
       sellVolumeUsd: rb.sellVol,
       deltaUsd: rb.buyVol - rb.sellVol,
-      liquidationPoolUsd: rb.liqFuel,
       gravityPotential: Number(Math.min(1, rb.gravity / Math.max(1, maxGravity)).toFixed(3)),
       isPOC: idx === pocIdx,
       isValueArea: idx >= lowIdx && idx <= highIdx,
@@ -521,10 +499,10 @@ export function computeQuantMathAndNeuralForecast(
   let regimeClassification: QuantMathMetrics['regimeClassification'] =
     'Mean-Reversion Equilibrium';
   if (cvdDivergenceScore > 0.22 && obBias >= 0) {
-    regimeClassification = 'Spot Absorption Bullish';
+    regimeClassification = 'Spot CVD Lead';
   } else if (cvdDivergenceScore < -0.22 && obBias <= 0) {
-    regimeClassification = 'Perp Exhaustion Bearish';
-  } else if (hurstExponent > HURST_TREND_THRESHOLD) {
+    regimeClassification = 'Perp CVD Lead';
+  } else if (hurstExponent !== null && hurstExponent > HURST_TREND_THRESHOLD) {
     regimeClassification = 'Momentum Breakout';
   }
 
@@ -567,17 +545,15 @@ export function computeQuantMathAndNeuralForecast(
     hawkesBranchingRatio,
     hawkesNetDominance: Number(hawkesNetDominance.toFixed(3)),
     shannonEntropyBits: Number(shannonEntropyBits.toFixed(3)),
-    hurstExponent: Number(hurstExponent.toFixed(3)),
+    hurstExponent: hurstExponent === null ? null : Number(hurstExponent.toFixed(3)),
     combinatorialPathProbPDH: Number(combinatorialPathProbPDH.toFixed(3)),
     combinatorialPathProbPDL,
     l2MicroPrice: Number(l2MicroPrice.toFixed(1)),
     l2OrderbookImbalance: Number(l2OrderbookImbalance.toFixed(3)),
-    vpinToxicity: Number(vpinToxicity.toFixed(3)),
+    vpinToxicity: vpinToxicity === null ? null : Number(vpinToxicity.toFixed(3)),
     bookDepthAskUsd,
     bookDepthBidUsd,
     kyleLambdaPer1M,
-    shortSqueezeFuelUsd: Math.round(shortSqueezeFuelUsd),
-    longCascadeFuelUsd: Math.round(longCascadeFuelUsd),
     pocPrice,
     vahPrice,
     valPrice,

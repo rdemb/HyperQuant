@@ -63,7 +63,7 @@ describe('Hurst R/S z korektą Anis-Lloyd', () => {
     const T = 2000;
     for (let t = 0; t < T; t++) {
       const r = Array.from({ length: 45 }, () => rng.n());
-      if (hurstAnisLloyd(r) > HURST_TREND_THRESHOLD) hits++;
+      if (hurstAnisLloyd(r)! > HURST_TREND_THRESHOLD) hits++;
     }
     expect(hits / T).toBeLessThan(0.08);
   });
@@ -78,7 +78,7 @@ describe('Hurst R/S z korektą Anis-Lloyd', () => {
 describe('VPIN (BVC, kubełki wolumenowe)', () => {
   it('na błądzeniu losowym mediana < 0.4 (stary kod: 0.79)', () => {
     const vals: number[] = [];
-    for (let s = 1; s <= 60; s++) vals.push(computeVpinBvc(randomWalkBars(145, s)));
+    for (let s = 1; s <= 60; s++) vals.push(computeVpinBvc(randomWalkBars(145, s))!);
     vals.sort((a, b) => a - b);
     expect(vals[30]).toBeLessThan(0.4);
   });
