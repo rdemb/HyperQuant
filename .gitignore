@@ -57,3 +57,6 @@ docs/superpowers/
 # Lokalny stan skanera (adresy portfeli) i prawdziwa konfiguracja — nigdy do repozytorium
 .scanner/
 backend/deploy/scanner.env
+
+# Wyniki pomiaru układu (npm run ui:check)
+ui-check/

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { PanelRightClose, PanelRightOpen, RotateCcw, X } from 'lucide-react';
+import { PanelRightClose, PanelRightOpen, X } from 'lucide-react';
 import { ProChart, subscribeNarrow } from '../charts/pro/ProChart';
 import { ChartLayout, isNarrow, loadSettings, saveSettings } from '../charts/pro/chart/settings';
 import { PHASE_LAYOUTS, type PhaseId, activePanelSet, clearStation, saveStationLayout, stationKey, stationPanel, switchPanelSet } from '../charts/pro/chart/stations';
@@ -24,7 +24,6 @@ import {
   newTabId,
   openCoin,
   phaseTabs,
-  presetName,
   renameTab,
   restoreLegacyStart,
   restoreTab,
@@ -39,8 +38,9 @@ import {
   tabStation,
   tabsFull,
 } from '../charts/pro/chart/tabs';
-import { NewTab, PanelSetSwitch, TabActions, TabsBar, TabsSheet, tfLabel } from '../charts/pro/chart/TabsBar';
+import { LayoutMenu, NewTab, PanelSetSwitch, TabActions, TabsSheet, tfLabel } from '../charts/pro/chart/TabsBar';
 import { isTyping } from '../charts/pro/draw/tools';
+import { workspaceKeyAction } from '../charts/pro/chart/shortcuts';
 import { type Market, storeFor } from '../charts/pro/store/proStore';
 import { HonestyButton, HonestyCard, honestyTemplate } from '../charts/pro/chart/HonestyCard';
 import { parseReplayLink, replayHash } from '../charts/pro/replay/link';
@@ -360,19 +360,17 @@ const ChartsView: React.FC<ChartsViewProps> = ({ phase, onPhase, onMarket }) => 
   // Alt+↑/↓: karta fazy z wyższym / niższym interwałem głównego wykresu; D: kolumna DOM i taśmy (w sesji, od 640 px)
   const keyRef = useRef<(e: KeyboardEvent) => void>(() => {});
   keyRef.current = (e) => {
-    if (e.ctrlKey || e.metaKey || isTyping(e.target) || replay) return;
-    if (!e.altKey) {
-      if (e.key.toLowerCase() !== 'd' || !dockable) return;
+    if (isTyping(e.target) || replay) return;
+    const act = workspaceKeyAction(e);
+    if (!act) return;
+    if (act.kind === 'dock') {
+      if (!dockable) return;
       e.preventDefault();
       toggleDock();
       return;
     }
-    const digit = /^Digit([1-9])$/.exec(e.code);
-    let id: string | null = null;
     // Alt+1…6 — układy faz (shortcutTab), Alt+7…9 — karty własne
-    if (digit) id = shortcutTab(tabs, Number(digit[1]));
-    else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') id = ladderTab({ tabs: visible, active: tab.id }, (t) => tabIntervals(t, 1, narrow)[0], e.key === 'ArrowUp' ? 1 : -1);
-    else return;
+    const id = act.kind === 'tab' ? shortcutTab(tabs, act.digit) : ladderTab({ tabs: visible, active: tab.id }, (t) => tabIntervals(t, 1, narrow)[0], act.dir);
     e.preventDefault();
     if (id) select(id);
   };
@@ -381,6 +379,30 @@ const ChartsView: React.FC<ChartsViewProps> = ({ phase, onPhase, onMarket }) => 
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
+
+  // Pasek pierwszego wykresu (komputer): lista „Układ ▾” na początku; zestaw paneli, karta uczciwości i kolumna DOM na końcu
+  const barLead = <LayoutMenu st={tabs} tf={tf} a={actions} tabs={visible} presets={PHASE_LAYOUTS[shown]} phase={shown} question={station.question} />;
+  const barTrail = (
+    <>
+      {/* Zestaw paneli pod wykresem (np. Aukcja | Absorpcja): należy do aktywnej karty */}
+      {panelSet && <PanelSetSwitch sets={station.panelSets ?? []} value={panelSet.id} onChange={pickPanelSet} menu />}
+      {honestyId && <HonestyButton key={`${tab.id}.${first.coin}`} store={storeFor(first.coin)} templateId={honestyId} compact />}
+      {dockable && (
+        <button
+          ref={dockBtnRef}
+          type="button"
+          onClick={toggleDock}
+          aria-pressed={columnOn}
+          aria-label={tr('Kolumna DOM i taśmy (D)', 'DOM & tape column (D)')}
+          title={tr('Kolumna DOM i taśmy (D)', 'DOM & tape column (D)')}
+          className={`inline-flex items-center gap-1.5 h-9 px-2.5 rounded-lg border text-xs font-medium transition-colors duration-150 ${columnOn ? 'bg-surface-3 border-line-strong text-ink-1' : 'border-line text-ink-2 hover:text-ink-1 hover:bg-surface-2'}`}
+        >
+          {columnOn ? <PanelRightClose className="w-4 h-4" /> : <PanelRightOpen className="w-4 h-4" />}
+          <span className="hidden @min-[1180px]:inline">DOM</span>
+        </button>
+      )}
+    </>
+  );
 
   if (replay) return <ReplayView key={replayHash(replay)} link={replay} />;
   return (
@@ -417,45 +439,6 @@ const ChartsView: React.FC<ChartsViewProps> = ({ phase, onPhase, onMarket }) => 
           </button>
         </div>
       )}
-      {!narrow && (
-        <div className={`flex items-center gap-2 min-w-0 ${fs ? '' : 'mb-2'}`}>
-          <TabsBar st={tabs} tf={tf} a={actions} tabs={visible} presets={PHASE_LAYOUTS[shown]} phase={shown} />
-          {/* Zestaw paneli pod wykresem (np. Aukcja | Absorpcja): należy do aktywnej karty */}
-          {panelSet && <PanelSetSwitch sets={station.panelSets ?? []} value={panelSet.id} onChange={pickPanelSet} />}
-          {honestyId && <HonestyButton key={`${tab.id}.${first.coin}`} store={storeFor(first.coin)} templateId={honestyId} />}
-          <div className="ml-auto shrink-0 flex items-center gap-2">
-            {dockable && (
-              <button
-                ref={dockBtnRef}
-                type="button"
-                onClick={toggleDock}
-                aria-pressed={columnOn}
-                aria-label={tr('Kolumna DOM i taśmy (D)', 'DOM & tape column (D)')}
-                title={tr('Kolumna DOM i taśmy (D)', 'DOM & tape column (D)')}
-                className={`grid place-items-center w-8 h-8 rounded-lg border transition-colors duration-150 ${columnOn ? 'bg-surface-3 border-line-strong text-ink-1' : 'border-line text-ink-2 hover:text-ink-1 hover:bg-surface-2'}`}
-              >
-                {columnOn ? <PanelRightClose className="w-4 h-4" /> : <PanelRightOpen className="w-4 h-4" />}
-              </button>
-            )}
-            {/* Karta własna nie ma wzorca do przywrócenia */}
-            {canRestore(tab) && (
-              <button
-                type="button"
-                onClick={() => actions.onRestore(tab.id)}
-                aria-label={tr(`Przywróć wzorzec karty ${tabName(tab)}`, `Restore the ${tabName(tab)} tab preset`)}
-                title={tr(
-                  `Przywróć wzorzec „${presetName(tab.preset)}” w karcie ${tabName(tab)}: Twoje zmiany w tej karcie (ustawienia wykresów i układ) zostaną zastąpione`,
-                  `Restore the “${presetName(tab.preset)}” preset in the ${tabName(tab)} tab: your changes in this tab (chart settings and layout) will be replaced`
-                )}
-                className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-line text-xs font-medium text-ink-2 hover:text-ink-1 hover:bg-surface-2 transition-colors duration-150"
-              >
-                <RotateCcw className="w-4 h-4" />
-                <span className="hidden sm:inline">{tr('Przywróć', 'Restore')}</span>
-              </button>
-            )}
-          </div>
-        </div>
-      )}
       {/* Telefon: zestaw paneli nad wykresem (pasek kart jest listą w pasku wykresu) */}
       {narrow && panelSet && (
         <div className="mb-2 flex">
@@ -484,6 +467,9 @@ const ChartsView: React.FC<ChartsViewProps> = ({ phase, onPhase, onMarket }) => 
               layoutFs={narrow ? undefined : { active: fs, toggle: toggleFs }}
               // Pytanie karty i trzy liczby układu: nagłówek w pierwszym wykresie (na każdej szerokości)
               layoutHeader={i === 0}
+              barLead={i === 0 && !narrow ? barLead : undefined}
+              barTrail={i === 0 && !narrow ? barTrail : undefined}
+              onRestore={i === 0 && canRestore(tab) ? () => actions.onRestore(tab.id) : undefined}
               phoneTabs={
                 narrow && i === 0
                   ? {

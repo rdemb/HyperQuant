@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Copy, type LucideIcon, Pencil, Plus, RotateCcw, X } from 'lucide-react';
+import { Copy, Pencil, Plus, RotateCcw, X } from 'lucide-react';
 import { type PanelSet, type PhaseId, STATIONS, StationId, stationPanel } from './stations';
 import { ChartTab, MAX_TABS, TabsState, canClose, canRestore, presetName, presetQuestion, presetStation, tabName, tabShortcut, tabsFull } from './tabs';
 import { intervalById } from '../core/time';
 import { debouncedRadio } from '../../../ui/deferred';
+import { Dropdown, DropdownSelect, MenuItem, MenuSection, MenuSeparator } from '../../../ui/Dropdown';
 import { tr } from '../../../i18n';
 
 /** Sposób utworzenia nowej karty: pusta (karta własna z ustawieniami startowymi), kopia aktywnej albo z wzorca układu. */
@@ -124,181 +125,166 @@ export const NewTabList: React.FC<{ st: TabsState; onNew: (how: NewTab) => void;
 };
 
 /**
- * Pasek kart układów nad wykresami (komputer i tablet): kliknięcie przełącza, dwuklik zmienia nazwę, prawy przycisk
- * otwiera menu karty, środkowy zamyka, przeciągnięcie zmienia kolejność. Podpis karty to interwały jej wykresów.
- * `tabs` — karty na pasku (pod-karty fazy dnia na ekranie), domyślnie wszystkie; `presets` — układy w menu „+”;
- * `phase` — faza na ekranie (podpis pustej karty).
+ * Lista „Układ ▾” w pasku wykresu (komputer i tablet) zamiast rzędu kart: karty fazy na ekranie (wybór, Alt+1…9 w
+ * podpowiedzi, zamknięcie krzyżykiem, przeciągnięcie zmienia kolejność), czynności aktywnej karty (nazwa, kopia, wzorzec)
+ * i nowa karta (pusta, kopia, układ fazy). Pytanie układu jest podpowiedzią przycisku.
  */
-export const TabsBar: React.FC<{ st: TabsState; tf: (t: ChartTab) => string; a: TabActions; tabs?: readonly ChartTab[]; presets?: readonly StationId[]; phase?: PhaseId }> = ({
-  st,
-  tf,
-  a,
-  tabs = st.tabs,
-  presets,
-  phase,
-}) => {
+export const LayoutMenu: React.FC<{
+  st: TabsState;
+  tf: (t: ChartTab) => string;
+  a: TabActions;
+  tabs?: readonly ChartTab[];
+  presets?: readonly StationId[];
+  phase?: PhaseId;
+  question: string;
+}> = ({ st, tf, a, tabs = st.tabs, presets, phase, question }) => {
   const [editing, setEditing] = useState<string | null>(null);
-  const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
-  const [adding, setAdding] = useState(false);
-  const [drag, setDrag] = useState<{ id: string; over: number } | null>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const addRef = useRef<HTMLDivElement>(null);
-  const activeRef = useRef<HTMLDivElement>(null);
-  useDismiss(menuRef, menu !== null, () => setMenu(null));
-  useDismiss(addRef, adding, () => setAdding(false));
+  const [drag, setDrag] = useState<string | null>(null);
+  const active = st.tabs.find((t) => t.id === st.active) ?? st.tabs[0];
   const full = tabsFull(st);
-  // Aktywna karta zawsze widoczna na przewijanym pasku (np. po Alt+9)
-  useEffect(() => {
-    activeRef.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-  }, [st.active]);
-  const menuTab = menu ? st.tabs.find((t) => t.id === menu.id) : undefined;
-
+  const layouts = presets ? STATIONS.filter((x) => presets.includes(x.id)) : STATIONS;
+  const name = tabName(active);
+  const key = tabShortcut(st, active.id);
   return (
-    <div className="flex items-center gap-1 min-w-0">
-      <div
-        role="tablist"
-        aria-label={tr('Karty układów', 'Layout tabs')}
-        // Kółko myszy przewija pasek kart w poziomie (pasek bez widocznego suwaka)
-        onWheel={(e) => {
-          if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) e.currentTarget.scrollLeft += e.deltaY;
-        }}
-        className="flex items-center gap-1 min-w-0 overflow-x-auto [scrollbar-width:none]"
-      >
-        {tabs.map((t, i) => {
-          const on = t.id === st.active;
-          const name = tabName(t);
-          const key = tabShortcut(st, t.id);
-          return (
-            <div
-              key={t.id}
-              ref={on ? activeRef : undefined}
-              draggable={editing !== t.id}
-              onDragStart={(e) => {
-                e.dataTransfer.effectAllowed = 'move';
-                e.dataTransfer.setData('text/plain', t.id);
-                setDrag({ id: t.id, over: i });
-              }}
-              onDragOver={(e) => {
-                if (!drag) return;
-                e.preventDefault();
-                if (drag.over !== i) setDrag({ ...drag, over: i });
-              }}
-              onDrop={(e) => {
-                e.preventDefault();
-                // Miejsce na całym pasku (na ekranie są tylko karty fazy)
-                if (drag && drag.id !== t.id) a.onMove(drag.id, st.tabs.findIndex((x) => x.id === t.id));
-                setDrag(null);
-              }}
-              onDragEnd={() => setDrag(null)}
-              onContextMenu={(e) => {
-                e.preventDefault();
-                setMenu({ id: t.id, x: e.clientX, y: e.clientY });
-              }}
-              onAuxClick={(e) => e.button === 1 && canClose(st, t) && a.onClose(t.id)}
-              className={`group shrink-0 flex items-center h-8 rounded-lg border transition-colors duration-150 ${
-                on ? 'bg-surface-3 border-line-strong text-ink-1' : 'border-line text-ink-3 hover:text-ink-1 hover:bg-surface-2'
-              } ${drag && drag.over === i && drag.id !== t.id ? 'ring-1 ring-accent' : ''} ${drag?.id === t.id ? 'opacity-50' : ''}`}
-            >
-              {editing === t.id ? (
+    <Dropdown
+      width="w-80"
+      ariaLabel={tr(`Układ: ${name} (${tf(active)}). ${question}`, `Layout: ${name} (${tf(active)}). ${question}`)}
+      title={`${question}${key !== null ? ` (Alt+${key})` : ''}`}
+      menuLabel={tr('Karty układów', 'Layout tabs')}
+      label={
+        <span className="flex items-baseline gap-1.5 min-w-0">
+          <span className="truncate max-w-[7rem] @min-[1180px]:max-w-[10rem] text-ink-1">{name}</span>
+          <span className="font-mono text-[10px] text-accent">{tf(active)}</span>
+        </span>
+      }
+    >
+      {(close) => (
+        <>
+          <MenuSection title={tr('Karty układów', 'Layout tabs')} />
+          {tabs.map((t) => {
+            const on = t.id === st.active;
+            const k = tabShortcut(st, t.id);
+            if (editing === t.id)
+              return (
                 <NameInput
-                  value={name}
-                  className="w-36 ml-1"
+                  key={t.id}
+                  value={tabName(t)}
+                  className="mx-1 my-1 h-9"
                   onDone={(v) => {
                     setEditing(null);
                     if (v !== null) a.onRename(t.id, v);
                   }}
                 />
-              ) : (
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={on}
-                  title={`${name} · ${tf(t)}${key !== null ? ` (Alt+${key})` : ''} — ${tr('dwuklik: nazwa, prawy przycisk: menu', 'double-click: rename, right-click: menu')}`}
-                  onClick={() => !on && a.onSelect(t.id)}
-                  onDoubleClick={() => setEditing(t.id)}
-                  className="flex items-baseline gap-1.5 h-full pl-2.5 pr-1 min-w-0"
+              );
+            return (
+              <div
+                key={t.id}
+                role="none"
+                draggable
+                onDragStart={(e) => {
+                  e.dataTransfer.effectAllowed = 'move';
+                  e.dataTransfer.setData('text/plain', t.id);
+                  setDrag(t.id);
+                }}
+                onDragOver={(e) => drag && e.preventDefault()}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  if (drag && drag !== t.id) a.onMove(drag, st.tabs.findIndex((x) => x.id === t.id));
+                  setDrag(null);
+                }}
+                onDragEnd={() => setDrag(null)}
+                className={`flex items-center gap-0.5 ${drag === t.id ? 'opacity-50' : ''}`}
+              >
+                <MenuItem
+                  kind="radio"
+                  checked={on}
+                  title={presetQuestion(t.preset)}
+                  hint={`${tf(t)}${k !== null ? ` · Alt+${k}` : ''}`}
+                  onSelect={() => {
+                    close();
+                    if (!on) a.onSelect(t.id);
+                  }}
                 >
-                  <span className="text-xs font-medium truncate max-w-[10rem]">{name}</span>
-                  <span className={`font-mono text-[10px] whitespace-nowrap ${on ? 'text-accent' : 'text-ink-3'}`}>{tf(t)}</span>
-                </button>
+                  {tabName(t)}
+                </MenuItem>
+                {canClose(st, t) && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    tabIndex={-1}
+                    aria-label={tr(`Zamknij kartę ${tabName(t)}`, `Close the ${tabName(t)} tab`)}
+                    title={tr('Zamknij kartę', 'Close tab')}
+                    onClick={() => a.onClose(t.id)}
+                    className="shrink-0 grid place-items-center w-11 h-11 sm:w-8 sm:h-8 rounded-lg text-ink-3 hover:text-ink-1 hover:bg-surface-3 focus:bg-surface-3 focus:outline-none"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            );
+          })}
+          <MenuSeparator />
+          <MenuSection title={tr(`Aktywna karta: ${name}`, `Active tab: ${name}`)} />
+          <MenuItem icon={<Pencil className="w-4 h-4" />} onSelect={() => setEditing(active.id)}>
+            {tr('Zmień nazwę', 'Rename')}
+          </MenuItem>
+          <MenuItem
+            icon={<Copy className="w-4 h-4" />}
+            disabled={full}
+            onSelect={() => {
+              close();
+              a.onCopy(active.id);
+            }}
+          >
+            {tr('Kopia karty', 'Copy tab')}
+          </MenuItem>
+          {canRestore(active) && (
+            <MenuItem
+              icon={<RotateCcw className="w-4 h-4" />}
+              title={tr(
+                `Przywróć wzorzec „${presetName(active.preset)}”: Twoje zmiany w tej karcie (ustawienia wykresów i układ) zostaną zastąpione`,
+                `Restore the “${presetName(active.preset)}” preset: your changes in this tab (chart settings and layout) will be replaced`
               )}
-              {canClose(st, t) && editing !== t.id && (
-                <button
-                  type="button"
-                  aria-label={tr(`Zamknij kartę ${name}`, `Close the ${name} tab`)}
-                  title={tr('Zamknij kartę', 'Close tab')}
-                  onClick={() => a.onClose(t.id)}
-                  className={`mr-1 grid place-items-center w-5 h-5 rounded text-ink-3 hover:text-ink-1 hover:bg-surface-1 ${on ? '' : 'opacity-0 group-hover:opacity-100 focus:opacity-100'}`}
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
-          );
-        })}
-      </div>
-      <div ref={addRef} className="relative shrink-0">
-        <button
-          type="button"
-          aria-label={tr('Nowa karta', 'New tab')}
-          title={tr('Nowa karta: pusta, kopia albo z wzorca', 'New tab: blank, copy or from a preset')}
-          aria-expanded={adding}
-          onClick={() => setAdding((o) => !o)}
-          className={`grid place-items-center w-8 h-8 rounded-lg border transition-colors duration-150 ${adding ? 'bg-surface-3 border-line-strong text-ink-1' : 'border-line text-ink-2 hover:text-ink-1 hover:bg-surface-2'}`}
-        >
-          <Plus className="w-4 h-4" />
-        </button>
-        {adding && (
-          <div className="absolute left-0 top-9 z-40 w-[min(360px,calc(100vw-32px))] max-h-[min(560px,calc(100dvh-160px))] overflow-y-auto bg-surface-2 border border-line-strong rounded-xl p-1.5 shadow-2xl">
-            <NewTabList
-              st={st}
-              presets={presets}
-              phase={phase}
-              onNew={(how) => {
-                setAdding(false);
-                a.onNew(how);
+              onSelect={() => {
+                close();
+                a.onRestore(active.id);
               }}
-            />
-          </div>
-        )}
-      </div>
-      {menu && menuTab && (
-        <div
-          ref={menuRef}
-          role="menu"
-          aria-label={tr('Menu karty', 'Tab menu')}
-          style={{ left: Math.min(menu.x, window.innerWidth - 240), top: menu.y + 4 }}
-          className="fixed z-50 w-56 bg-surface-2 border border-line-strong rounded-xl p-1.5 shadow-2xl flex flex-col text-xs"
-        >
-          {(
-            [
-              [Pencil, tr('Zmień nazwę', 'Rename'), () => setEditing(menuTab.id), false],
-              [Copy, tr('Kopia karty', 'Copy tab'), () => a.onCopy(menuTab.id), full],
-              // Karta własna nie ma wzorca do przywrócenia
-              ...(canRestore(menuTab)
-                ? [[RotateCcw, tr(`Przywróć wzorzec: ${presetName(menuTab.preset)}`, `Restore preset: ${presetName(menuTab.preset)}`), () => a.onRestore(menuTab.id), false] as const]
-                : []),
-              [X, tr('Zamknij kartę', 'Close tab'), () => a.onClose(menuTab.id), !canClose(st, menuTab)],
-            ] satisfies (readonly [LucideIcon, string, () => void, boolean])[]
-          ).map(([Icon, label, on, off]) => (
-            <button
-              key={label}
-              type="button"
-              role="menuitem"
-              disabled={off}
-              onClick={() => {
-                setMenu(null);
-                on();
-              }}
-              className="flex items-center gap-2 min-h-8 px-2 rounded-lg text-left text-ink-2 hover:text-ink-1 hover:bg-surface-3 disabled:opacity-40 disabled:hover:bg-transparent"
             >
-              <Icon className="w-4 h-4 shrink-0" />
-              <span className="truncate">{label}</span>
-            </button>
+              {tr(`Przywróć wzorzec: ${presetName(active.preset)}`, `Restore preset: ${presetName(active.preset)}`)}
+            </MenuItem>
+          )}
+          <MenuSeparator />
+          <MenuSection title={tr('Nowa karta', 'New tab')} />
+          {full && <p className="px-2.5 pb-1 text-[11px] leading-snug text-warn">{tr(`Masz już ${MAX_TABS} kart własnych — zamknij jedną, żeby dodać nową.`, `You already have ${MAX_TABS} tabs of your own — close one to add a new one.`)}</p>}
+          <MenuItem
+            icon={<Plus className="w-4 h-4" />}
+            disabled={full}
+            title={tr('Ustawienia startowe: footprint 5m z VWAP, profilem i poziomami dnia', 'Start settings: 5m footprint with VWAP, profile and daily levels')}
+            onSelect={() => {
+              close();
+              a.onNew('blank');
+            }}
+          >
+            {blankTabLabel(phase)}
+          </MenuItem>
+          {layouts.map((x) => (
+            <MenuItem
+              key={x.id}
+              icon={<Plus className="w-4 h-4" />}
+              disabled={full}
+              title={x.question}
+              hint={presetTf(x.id)}
+              onSelect={() => {
+                close();
+                a.onNew(x.id);
+              }}
+            >
+              {tr(`Z wzorca: ${x.name}`, `From preset: ${x.name}`)}
+            </MenuItem>
           ))}
-        </div>
+        </>
       )}
-    </div>
+    </Dropdown>
   );
 };
 
@@ -306,7 +292,22 @@ export const TabsBar: React.FC<{ st: TabsState; tf: (t: ChartTab) => string; a: 
  * Przełącznik zestawu paneli układu (np. Aukcja | Absorpcja w układzie Aukcja i otwarcie): w wierszu paska kart na
  * komputerze, nad wykresem na telefonie (cel dotyku 44 px). Podpisy to nazwy zestawów.
  */
-export const PanelSetSwitch: React.FC<{ sets: readonly PanelSet[]; value: string; onChange: (id: string) => void }> = ({ sets, value, onChange }) => {
+export const PanelSetSwitch: React.FC<{ sets: readonly PanelSet[]; value: string; onChange: (id: string) => void; menu?: boolean }> = ({ sets, value, onChange, menu = false }) =>
+  menu ? (
+    // W pasku wykresu: lista rozwijana (mniej miejsca niż przełącznik)
+    <DropdownSelect<string>
+      ariaLabel={tr(`Zestaw paneli pod wykresem: ${sets.find((x) => x.id === value)?.name ?? ''}`, `Panel set below the chart: ${sets.find((x) => x.id === value)?.name ?? ''}`)}
+      label={sets.find((x) => x.id === value)?.name ?? ''}
+      value={value}
+      options={sets.map((x) => ({ value: x.id, label: x.name, title: tr(`Panele pod wykresem: ${x.name}`, `Panels below the chart: ${x.name}`) }))}
+      onChange={onChange}
+      width="w-44"
+    />
+  ) : (
+    <PanelSetRadio sets={sets} value={value} onChange={onChange} />
+  );
+
+const PanelSetRadio: React.FC<{ sets: readonly PanelSet[]; value: string; onChange: (id: string) => void }> = ({ sets, value, onChange }) => {
   // Strzałki jak w natywnej grupie radio: zaznaczenie i fokus od razu, zatwierdzenie (przebudowa wykresów) po przerwie
   // w naciskaniu; kliknięcie zatwierdza od razu (debouncedRadio)
   const [pending, setPending] = useState<string | null>(null);
