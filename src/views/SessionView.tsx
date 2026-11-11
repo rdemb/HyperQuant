@@ -9,7 +9,6 @@ import { useLiqMap } from '../state/useLiqMap';
 import ChartsView from './ChartsView';
 import { CohortFlowPanel } from './desk/CohortFlowPanel';
 import { LiquidationTape } from './desk/LiquidationTape';
-import { FlowColumn } from './flow/FlowColumn';
 import { FirstContact } from './session/FirstContact';
 
 /** Link powtórki w adresie (#charts?replay=…): wykres pokazuje przeszłość. */
@@ -18,8 +17,8 @@ const inReplay = () => parseReplayLink(window.location.hash) !== null;
 /**
  * Ekran „W sesji”: wykres z układami sesji (Kokpit domyślnie, od 1280 px z prawą kolumną DOM i taśmy, od 640 px
  * z tą kolumną jako szufladą nad wykresem), pod nim przepływ kohort i zrealizowane likwidacje BTC (na każdej
- * szerokości; na wykresie innego rynku „—, tylko BTC”). Na telefonie zamiast kolumny pasek Pulse rynku
- * wykresu, przypięty pod nagłówkiem aplikacji także przy przewijaniu (karty Wykres, DOM, Taśma są w pasku wykresu).
+ * szerokości; na wykresie innego rynku „—, tylko BTC”). Na telefonie pięć liczb przepływu (Pulse) jest w karcie
+ * „Liczby” paska wykresu, nie nad wykresem (karty Wykres, Taśma, DOM, Liczby są w pasku wykresu).
  * Nad wykresem pierwszy kontakt (dymki i przycisk powtórki 15 min, FirstContact).
  * W powtórce (link #charts?replay=…) sama powtórka: panele na żywo nie mieszają się z przeszłością.
  * `onPhase` — karta układu innej fazy (Alt+1…6, nowa karta) przenosi do ekranu tej fazy.
@@ -31,12 +30,6 @@ const SessionView: React.FC<{ onPhase?: (phase: PhaseId) => void }> = ({ onPhase
   const [coin, setCoin] = useState<Market>(COIN);
   return (
     <div className="flex flex-col gap-4">
-      {narrow && !replay && (
-        // Pod przypiętym nagłówkiem (z-30, wysokość w --hq-header-h z AppShell), pod menu i arkuszami (z-40, z-50)
-        <div className="sticky top-[var(--hq-header-h,0px)] z-20 -mx-4 px-4 py-1.5 bg-page/95 backdrop-blur border-b border-line">
-          <FlowColumn coin={coin} narrow variant="pulse" />
-        </div>
-      )}
       {!replay && <FirstContact coin={coin} />}
       <ChartsView phase="session" onPhase={onPhase} onMarket={setCoin} />
       {!replay && (

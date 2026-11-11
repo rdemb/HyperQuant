@@ -13,6 +13,7 @@ import type { ProStore } from '../../charts/pro/store/proStore';
 import type { WhaleOrder } from '../../utils/whaleLayer';
 import { numLang } from '../../ui/format';
 import { tr } from '../../i18n';
+import { HelpButton } from '../../ui/HelpButton';
 import { VERDICT, fateTitle } from './verdicts';
 
 /**
@@ -23,10 +24,10 @@ import { VERDICT, fateTitle } from './verdicts';
  */
 
 export const HEAT_MS = 15 * 60_000;
-const ROW_H = 20;
-const MID_H = 30;
+const ROW_H = 15;
+const MID_H = 22;
 /** Wiersz czoła kolejki nad i pod środkiem. */
-const HEAD_H = 18;
+const HEAD_H = 14;
 /** Bilans czoła z tylu ostatnich ms. */
 export const HEAD_FLOW_MS = 5 * 60_000;
 /** Najwięcej wierszy na stronę (dalej i tak tylko poza zasięgiem migawki). */
@@ -184,6 +185,13 @@ export const Ladder: React.FC<LadderProps> = ({ store, hist, steps, stepId, onSt
   const near = nearPrice(bins);
   const nearMoved = bins.filter((b) => b.from <= NEAR_LEVELS).reduce((a, b) => a + b.moved, 0);
   const nearPulled = bins.filter((b) => b.from <= NEAR_LEVELS).reduce((a, b) => a + b.pulled, 0);
+  const outsideText = [
+    tr('Wieloryby poza drabiną:', 'Whales beyond the ladder:'),
+    outside.below.n > 0 ? tr(`pod ceną ${compact(outside.below.usd)} USD (najbliżej ${fmtPx(outside.below.near)})`, `below ${compact(outside.below.usd)} USD (nearest ${fmtPx(outside.below.near)})`) : '',
+    outside.above.n > 0 ? tr(`nad ceną ${compact(outside.above.usd)} USD (najbliżej ${fmtPx(outside.above.near)})`, `above ${compact(outside.above.usd)} USD (nearest ${fmtPx(outside.above.near)})`) : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
   const legend = tr('(los ściany: na mapie w chwili jej końca, w wierszu ceny przez 2 min)', '(wall fate: on the map at the moment it ended, in the price row for 2 min)');
   const note =
     tr(
@@ -312,7 +320,7 @@ export const Ladder: React.FC<LadderProps> = ({ store, hist, steps, stepId, onSt
       return parts;
     })();
     return (
-      <div key={k} className={`relative grid ${grid} gap-x-2 pr-2 items-center h-5 font-mono text-[11px] ${far ? 'opacity-40' : ''}`}>
+      <div key={k} data-ladder-row className={`relative grid ${grid} gap-x-2 pr-2 items-center h-[15px] font-mono text-[11px] leading-[15px] ${far ? 'opacity-40' : ''}`}>
         <span className={`relative ${ink}`}>{fmtPx(r.px)}</span>
         <span className="relative text-right" title={compactW && avg > 0 ? tr(`Średnie zlecenie ${compact(avg)} USD`, `Average order ${compact(avg)} USD`) : undefined}>
           {r.sz > 0 && (
@@ -429,8 +437,22 @@ export const Ladder: React.FC<LadderProps> = ({ store, hist, steps, stepId, onSt
 
   return (
     <section aria-label={tr('Drabina arkusza zleceń', 'Order book ladder')} className={`flex flex-col min-h-0 bg-surface-1 ${className}`}>
-      <div className="flex items-center gap-2 px-3 h-10 border-b border-line shrink-0">
+      <div className="relative flex items-center gap-2 px-3 h-9 border-b border-line shrink-0">
         <span className="min-w-0 truncate text-[11px] uppercase tracking-[0.08em] text-ink-2 font-medium mr-auto">{tr('Kto stoi w kolejce', 'Who is in the queue')}</span>
+        {/* Objaśnienia drabiny (migawka, żółte poziomy, mapa, losy ścian, wieloryby poza drabiną) pod „?” — wiersze zostają dla poziomów */}
+        <HelpButton label={tr('Jak czytać drabinę', 'How to read the ladder')}>
+          <p>{note}</p>
+          <p>
+            {(['eaten', 'moved', 'pulled'] as const).map((k, i) => (
+              <span key={k} className={VERDICT[k].cls}>
+                {i > 0 && <span className="text-ink-3"> · </span>}
+                {VERDICT[k].icon} {VERDICT[k].short()}
+              </span>
+            ))}
+            <span className="text-ink-3"> {legend}</span>
+          </p>
+          {ready && whales && (outside.below.n > 0 || outside.above.n > 0) && <p>{outsideText}</p>}
+        </HelpButton>
         {!tightW && <span className="text-[10px] text-ink-3 hidden sm:inline">{tr('poziomy co', 'levels every')}</span>}
         <div role="radiogroup" aria-label={tr('Krok poziomów', 'Level step')} className="inline-flex items-center gap-0.5 bg-page border border-line rounded-lg p-0.5">
           {steps.map((s) => (
@@ -484,44 +506,26 @@ export const Ladder: React.FC<LadderProps> = ({ store, hist, steps, stepId, onSt
           </>
         )}
       </div>
-      <div className="px-3 py-1.5 border-t border-line text-[10px] leading-snug text-ink-3 shrink-0 space-y-0.5">
-        {ready && whales && (outside.below.n > 0 || outside.above.n > 0) && (
-          <p>
-            {tr('Wieloryby poza drabiną:', 'Whales beyond the ladder:')}{' '}
-            {outside.below.n > 0 && (
-              <span>
-                {tr('pod ceną', 'below')} {compact(outside.below.usd)} USD ({tr('najbliżej', 'nearest')} {fmtPx(outside.below.near)})
-              </span>
-            )}
-            {outside.below.n > 0 && outside.above.n > 0 && ' · '}
-            {outside.above.n > 0 && (
-              <span>
-                {tr('nad ceną', 'above')} {compact(outside.above.usd)} USD ({tr('najbliżej', 'nearest')} {fmtPx(outside.above.near)})
-              </span>
-            )}
-          </p>
-        )}
-        {stale ? (
-          <p className="text-warn">{tr(`Arkusz nieaktualny — ostatnia migawka ${fmtHms(f!.t)}.`, `Book out of date — last snapshot ${fmtHms(f!.t)}.`)}</p>
+      {/* Jedna linia stanu: wiek migawki i zasięg (objaśnienia pod „?” w nagłówku) */}
+      <p className={`px-3 h-5 flex items-center gap-1.5 border-t border-line font-mono text-[10px] text-ink-3 shrink-0 whitespace-nowrap overflow-hidden ${stale ? 'text-warn' : ''}`}>
+        {!ready || !f ? (
+          '—'
+        ) : stale ? (
+          tr(`Arkusz nieaktualny — ostatnia migawka ${fmtHms(f.t)}`, `Book out of date — last snapshot ${fmtHms(f.t)}`)
         ) : (
-          // W wąskiej kolumnie obok wykresu dwie linie, całość w podpowiedzi (drabina dostaje więcej wierszy)
-          <p className={tightW ? 'line-clamp-2' : undefined} title={tightW ? note : undefined}>
-            {note}
-          </p>
-        )}
-        {(narrow || compactW) && (
-          // W wąskiej kolumnie jedna linia, objaśnienie w podpowiedzi
-          <p className={tightW ? 'truncate' : undefined} title={tightW ? legend : undefined}>
-            {(['eaten', 'moved', 'pulled'] as const).map((k, i) => (
-              <span key={k} className={VERDICT[k].cls}>
-                {i > 0 && <span className="text-ink-3"> · </span>}
-                {VERDICT[k].icon} {VERDICT[k].short()}
+          <>
+            <span>
+              {tr('migawka', 'snapshot')} {fmtHms(f.t)}
+            </span>
+            <span>· {tr('20 poz. na stronę', '20 levels per side')}</span>
+            {whales && outside.below.n + outside.above.n > 0 && (
+              <span className="truncate" title={outsideText}>
+                · {tr('wieloryby poza drabiną', 'whales beyond the ladder')}: {outside.below.n + outside.above.n}
               </span>
-            ))}
-            <span className="text-ink-3"> {legend}</span>
-          </p>
+            )}
+          </>
         )}
-      </div>
+      </p>
     </section>
   );
 };

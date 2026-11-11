@@ -143,8 +143,9 @@ export const STATIONS: readonly Station[] = [
         showDelta: false,
       },
     ],
-    // Na telefonie bez ścian i dużych zleceń w arkuszu — ich podpisy zasłaniają wąski wykres
-    phone: { ...NARROW_PATCH, showClashes: false, showLots: false },
+    // Na telefonie świece, VWAP i mapa ciepła: bąble, ściany i duże zlecenia zasłaniały wąski wykres (są jednym dotknięciem
+    // w „Warstwy”); zapisane ustawienia telefonu zostają
+    phone: { ...NARROW_PATCH, view: 'candles', showBubbles: false, showClashes: false, showLots: false },
   },
   {
     id: 'auction-open',
