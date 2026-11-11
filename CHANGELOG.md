@@ -7,7 +7,7 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 ### Blog: notki „aktualizacja” poza indeksem, rozliczenie tygodnia z BSS w parze (2026-11-12)
 
 #### Zmienione
-- **Notki „aktualizacja” z `noindex,follow` i poza mapą witryny** (`scripts/blog/render.mjs`, `isUnindexed`, `postPage`, `sitemapXml`): wpisy `RRRR-MM-DD-aktualizacja-GG` (jeden szablon kilka razy dziennie) zostają na liście wpisów, w archiwum i w RSS. Na 122 wpisach: 36 notek z `noindex,follow`, `sitemap.xml` 136 adresów zamiast 172; pozostałe wpisy, w tym notki rozliczeń, indeksowane. CSP i rejestr `source.json` bez zmian.
+- **Notki „aktualizacja” z `noindex,follow` i poza mapą witryny** (`scripts/blog/render.mjs`, `isUnindexed`, `postPage`, `sitemapXml`): wpisy `RRRR-MM-DD-aktualizacja-GG` (jeden szablon kilka razy dziennie) zostają na liście wpisów, w archiwum i w RSS. Na 122 wpisach: 36 notek z `noindex,follow`, `sitemap.xml` 136 adresów zamiast 172; pozostałe wpisy, w tym notki rozliczeń, indeksowane. CSP i rejestr `source.json` bez zmian. Notki z `noindex` nie są zgłaszane do IndexNow (`scripts/blog/indexnow.mjs`); przy ich zmianie zgłaszana jest tylko strona bloga.
 - **Rozliczenie tygodnia od 8.11.2026** (`scripts/blog/posts.mjs`): BSS dotknięć tylko wobec obu baz (odległości i częstości bazowej), bez zdania o „realnej informacji” map; walidator odrzuca jedno i drugie. Starszy wpis z 7.11 bez zmian.
 - `docs/BLOG.md`: obie reguły. Testy w `scripts/blog/blog.test.mjs`.
 
