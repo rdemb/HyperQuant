@@ -80,11 +80,25 @@ export function levelFreq(bins: readonly ReliabilityBin[] | null | undefined, t:
   return { freq, tenths: Math.round(freq * 10), n: Math.round(w) };
 }
 
-/** Zdanie pod poziomem w dymku: częstość dużego ruchu przy tym poziomie w rozliczeniach rejestru */
+/**
+ * „X na 10” z częstości: przy części ułamkowej `freq × 10` od 0,3 do 0,7 zakres („6–7”), żeby liczba nie skakała
+ * między sąsiednimi dziesiątkami przy każdej aktualizacji podsumowania; poza tym zaokrąglenie.
+ */
+export function tenthsText(freq: number): string {
+  const x = Math.min(10, Math.max(0, freq * 10));
+  const lo = Math.floor(x);
+  const frac = x - lo;
+  return lo < 10 && frac >= 0.3 && frac <= 0.7 ? `${lo}–${lo + 1}` : String(Math.round(x));
+}
+
+/**
+ * Zdanie pod poziomem w dymku: częstość dużego ruchu przy tym poziomie w rozliczeniach rejestru. Jednostką są prognozy
+ * (co 15 min, okna 60 min się nakładają), nie rozłączne godziny, więc „przypadków” i liczba prognoz.
+ */
 export const levelFreqLine = (f: LevelFreq): string =>
   tr(
-    `W rejestrze przy tym poziomie duży ruch był w ${f.tenths} na 10 godzin (n ${f.n}).`,
-    `In the record, at this level a big move happened in ${f.tenths} of 10 hours (n ${f.n}).`
+    `W rejestrze przy tym poziomie duży ruch był w ${tenthsText(f.freq)} na 10 przypadków (${f.n} prognoz z rejestru).`,
+    `In the ledger, at this level a big move happened in ${tenthsText(f.freq)} of 10 cases (${f.n} forecasts from the ledger).`
   );
 
 /** Słowo poziomu przy „ruch” (pasek: „ruch zwykły”, EN „move typical”) */
