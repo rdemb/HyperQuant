@@ -132,6 +132,11 @@ const T = {
     figureNote: 'The figure from a real market slice, the exercises and the button that opens the chart layout are in the Lessons tab.',
     prev: 'Previous entry',
     next: 'Next entry',
+    notFound: {
+      title: 'Page not found · HyperQuant',
+      h1: 'Page not found',
+      text: 'The address may have changed or contain a typo. Here is everything we have:',
+    },
     desk: {
       section: 'Desk',
       title: 'Free BTC day-trading desk for Hyperliquid',
@@ -422,20 +427,23 @@ ${entry.figure ? `<p class="fig-note">${esc(t.figureNote)}</p>` : ''}
   };
 }
 
-/** Strona 404: GitHub Pages podaje ją pod brakującym adresem, więc wszystkie linki są bezwzględne. */
+/**
+ * Strona 404: GitHub Pages podaje ją pod brakującym adresem, więc wszystkie linki są bezwzględne. Angielski pierwszy
+ * (nie znamy języka czytelnika), polskie zdanie z polskimi stronami drugie; blog po polsku i tak oznaczony.
+ */
 function notFoundPage(site) {
-  const t = T.pl;
+  const t = T.en;
   const u = site.url;
   const link = (href, label, lang) => `<li><a href="${u}${href}"${lang ? ` lang="${lang}" hreflang="${lang}"` : ''}>${esc(label)}</a></li>`;
   const main = `<article class="page page--404">
 <h1>${esc(t.notFound.h1)}</h1>
 <p class="lead">${esc(t.notFound.text)}</p>
-<ul class="more">${link('', 'W sesji')}${link(PATHS.charts.pl, T.pl.charts)}${link(PATHS.lessons.pl, T.pl.lessons)}${link('blog/', 'Blog')}</ul>
-<p lang="en">This page does not exist. In English: <a href="${u}${PATHS.charts.en}">Charts</a> · <a href="${u}${PATHS.lessons.en}">Lessons</a></p>
+<ul class="more">${link('', 'In session')}${link(PATHS.charts.en, T.en.charts)}${link(PATHS.lessons.en, T.en.lessons)}${link('blog/', 'Blog (in Polish)', 'pl')}</ul>
+<p lang="pl">${esc(T.pl.notFound.h1)}. Po polsku: <a href="${u}${PATHS.charts.pl}">${esc(T.pl.charts)}</a> · <a href="${u}${PATHS.lessons.pl}">${esc(T.pl.lessons)}</a> · <a href="${u}blog/">Blog</a></p>
 </article>`;
   return {
     path: '404.html',
-    lang: 'pl',
+    lang: 'en',
     html: layout(site, {
       title: t.notFound.title,
       description: t.notFound.text,
@@ -443,8 +451,9 @@ function notFoundPage(site) {
       root: u,
       image: `${u}og.png`,
       imageAlt: `HyperQuant: ${t.desk.title}`,
-      jsonLd: { '@context': 'https://schema.org', '@type': 'WebPage', name: t.notFound.title, inLanguage: 'pl' },
+      jsonLd: { '@context': 'https://schema.org', '@type': 'WebPage', name: t.notFound.title, inLanguage: 'en' },
       main,
+      lang: 'en',
       current: null,
       robots: 'noindex',
       disclaimer: t.footSite,
