@@ -30,6 +30,11 @@
   --color-series-7: #9085e9;
   --color-series-8: #e66767;
 
+  /* Kot Schrödi po dowodzie kierunku: własne kolory superpozycji (lawenda = wyżej, piasek = niżej), celowo inne niż
+     kupno (niebieskie) i sprzedaż (pomarańczowo-czerwona), żeby rysunek nie wyglądał jak strona rynku */
+  --color-cat-up: #b8a9f0;
+  --color-cat-down: #d9c08a;
+
   /* Kohorty uczestników (tożsamość, nie kierunek): kolejność stała, kolor idzie za bytem */
   --color-cohort-mm: #059583;
   --color-cohort-informed: #b18e15;

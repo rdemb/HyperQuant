@@ -35,6 +35,26 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
   - podpisany tag zmienia kod.
 - Testy `deployKey` i praw `0640`: te drugie tylko poza Windows.
 
+### Kot bez stron rynku, Badania bez liczb zastępczych (2026-11-11)
+
+#### Zmienione
+- **Kierunek Schrödiego jako szansa, nie strona rynku** (`src/components/schrodi/direction.ts`, `SchrodiPanel.tsx`, `SchrodiLauncher.tsx`, `src/views/after/CatLedgerCard.tsx`). Zamiast „LONG 54%” / „SHORT 53%” / „NIE WIEM” kot pokazuje „P(wzrost 1 h) 54%” (EN „P(up 1 h) 54%”) w neutralnym kolorze tuszu, w pasku pod wykresem, w dymku i w zdaniu kota. Bez kolorów kupna i sprzedaży są też: pasek szansy kierunku, „Zamknie wyżej niż…” w bieżącej godzinie i kolumna „wzrost” w „Dlaczego?”. Wyniki kierunku (dymek, karta w dzienniku) opisują przedziały „P(wzrost 1 h) > 53%” i „< 47%” zamiast „Long” i „Short”. Tekst etykiety jest w jednym module, więc jej formę zmienia się w jednym miejscu. Kontrakt danych dziennika (`dir.long`, `dir.short`) bez zmian.
+- **Kierunek kota ukryty do dowodu w e-procesie** (`src/components/schrodi/direction.ts`, `SchrodiPanel.tsx`, `SchrodiLauncher.tsx`, `SchrodiCat.tsx`, `src/views/after/CatLedgerCard.tsx`, `docs/SCHRODI.md`). Dopóki dziennik nie ma dowodu przewagi kierunku (`trust.dir.proofAt` = `null`; dziś `null`), kot pokazuje tylko duży ruch i dotknięcia: bez etykiety „P(wzrost 1 h)”, paska, zdania i zmiany zdania o kierunku, bez linii wzrostu na wykresach zdania i godziny, bez „Zamknie wyżej niż…” i bez kolumny „wzrost” w „Dlaczego?”. Rysunek kota ma wtedy jeden neutralny kontur zamiast zielonego i pomarańczowego. Wyniki kierunku (karta modelu, wynik na żywo, karta w dzienniku) zostają jako pomiar z dopiskiem, że kierunek jest ukryty do dowodu. Z dowodem wraca neutralna etykieta, a rysunek kota ma własne kolory superpozycji (`--color-cat-up` lawendowy, `--color-cat-down` piaskowy), nie kolory kupna i sprzedaży; alarm dryfu kierunku znów ukrywa kierunek, aż zgaśnie. W panelu kota bez kolorów kupna i sprzedaży także odległości poziomów, stożek zasięgu, znacznik „na żywo” i „przewaga dowiedziona”.
+- **Taśma w Badaniach: likwidacja jako wymuszona strona transakcji** (`src/components/AggrOrderFlowTape.tsx`): zamiast „LIQ SHORT” / „LIQ LONG” wiersz pokazuje „wymusz. kupno” / „wymusz. sprzedaż” (EN „forced buy” / „forced sell”), bez zamiany na wielkie litery; podpowiedź mówi, czyja pozycja została zlikwidowana. Usunięta nieużywana zmienna `exhaustionDir` z etykietami LONG/SHORT. Opis kota w `docs/SCHRODI.md` używa etykiety „P(up 1 h)” i przedziałów 53% / 47% zamiast „Long/Short”; liczby z testów bez zmian. Test: `src/components/__tests__/tapeLiqLabel.test.tsx`.
+- **Reżimy w Badaniach opisują przeszłość** (`src/utils/quantMathEngine.ts`, `src/components/QuantSignalDesk.tsx`, `src/types/trading.ts`): „Absorpcja spot (wzrostowa)” i „Wyczerpanie perp (spadkowa)” (EN „bullish/bearish”) to teraz „CVD spot wyprzedzał perp” i „CVD perp wyprzedzał spot”, z opisem reguły z 16 ostatnich świec. Usunięty nieużywany reżim „Kaskada likwidacji”.
+
+#### Usunięte
+- **„Paliwo likwidacyjne” ze stałych w USD w Badaniach** (`src/utils/quantMathEngine.ts`, `src/components/LiquidityMicrostructureLab.tsx`). Pule liczone jako siła komórki × 420 000 USD i stałe 3 800 000 USD przy PDH, PDL, PWH i PWL nie były pomiarem. Pola `liquidationPoolUsd`, `shortSqueezeFuelUsd` i `longCascadeFuelUsd` usunięte; pole „Paliwo” pokazuje „—” z powodem (w tym widoku nie ma pozycji kont; mapa likwidacji z pozycji kont jest w „Przed sesją”). U(p) i magnes liczone z wolumenu i świeżych stref OB, wzór w „Metodach” poprawiony.
+
+#### Naprawione
+- **Brak danych to „—”, nie wartość zastępcza:**
+  - VPIN bez wolumenu (żaden pełny kubełek) to `null` i „—” z powodem, nie 0% (`quantMathEngine.ts`, kafle Badań, `src/views/desk/DeskRail.tsx`);
+  - wykładnik Hursta z mniej niż 8 zwrotów albo z płaskiej serii to `null` i „—” z powodem, nie 0,5;
+  - ATR bez świec to NaN, nie 0 (`src/utils/shaakuniEngine.ts`);
+  - obrót 24 h nieobecny w odpowiedzi API to NaN („—”), nie 0 (`src/utils/marketDataFeed.ts`);
+  - transakcja z WebSocket bez czasu giełdy jest odrzucana, zamiast dostawać czas z zegara przeglądarki.
+- Testy: `src/components/schrodi/__tests__/neutralDirection.test.tsx` (dymek z rozwiniętymi sekcjami, pasek i karta dziennika po polsku i po angielsku, trzy stany kierunku: brak „long/short” w tekście, etykieta bez kolorów stron), `src/utils/__tests__/researchHonesty.test.tsx` (brak stałych paliwa w kodzie `src`, brak pól paliwa, nazwy reżimów, VPIN, Hurst, ATR), dwa nowe przypadki w `marketDataFeed.test.ts`.
+
 ### Strażnik serwera: histereza alarmu opóźnionych odczytów pozycji (2026-11-11)
 
 #### Naprawione

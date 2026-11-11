@@ -98,6 +98,10 @@ describe('mapHyperliquidTrade — bez podłogi $2 500', () => {
     expect(mapHyperliquidTrade({ px: '1', sz: '1', side: 'A', time: 1 })?.side).toBe('sell');
     expect(mapHyperliquidTrade({ px: 'x', sz: '1', side: 'B', time: 1 })).toBeNull();
   });
+  it('bez czasu z giełdy = null, nie czas z zegara przeglądarki', () => {
+    expect(mapHyperliquidTrade({ px: '100000', sz: '1', side: 'B', time: 0 })).toBeNull();
+    expect(mapHyperliquidTrade({ px: '100000', sz: '1', side: 'B', time: Number.NaN })).toBeNull();
+  });
 });
 
 describe('applyLiveTradesToBars — rollover świecy', () => {
@@ -406,6 +410,15 @@ describe('fetchRealHyperliquidMarketData (zamockowane API)', () => {
     const res = await fetchRealHyperliquidMarketData(300);
     expect(res.liveTelemetry?.fundingAnnualizedPct).toBe(0);
     expect(res.l2Book?.bids[0].sizeUsd).toBe(100000);
+  });
+
+  it('brak obrotu 24 h w API → NaN („—”), nie 0', async () => {
+    const m = meta('0.0') as [unknown, Record<string, unknown>[]];
+    delete m[1][0].dayNtlVlm;
+    stubApi(m);
+    const res = await fetchRealHyperliquidMarketData(300);
+    expect(res.liveTelemetry).not.toBeNull();
+    expect(Number.isNaN(res.liveTelemetry!.dayVolumeUsd)).toBe(true);
   });
 
   it('brak metaAndAssetCtxs → telemetria null zamiast zakodowanych stałych', async () => {
