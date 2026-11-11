@@ -6,7 +6,10 @@ import type { AggressorOrder } from '../core/orders';
  * - próg z chwili zdarzenia: ściana, seria i zlecenie są oceniane progiem godziny, w której powstały, liczonym z taśmy
  *   poprzedniej, zamkniętej godziny (próg bieżący skakał co godzinę, a obiekty z przeszłości znikały i wracały),
  * - ściana na wykresie, gdy trwała co najmniej 10 s albo wchłonęła co najmniej 3 × próg (krótsze zostają w panelu Ściany),
- * - najwyżej 5 największych ścian zakończonych, 3 trwające i 5 największych serii.
+ * - reguła przyczynowa zamiast „największe w oknie”: ściana jest rysowana, gdy w chwili zakończenia była wśród 2
+ *   największych ścian zakończonych w poprzednich 60 min (seria — największą serią), więc wybór nie zależy od
+ *   przewinięcia, a raz narysowany obiekt zostaje,
+ * - bezpiecznik: najwyżej 5 największych ścian zakończonych, 3 trwające i 5 największych serii.
  */
 
 const HOUR = 3_600_000;
@@ -16,6 +19,10 @@ const WALL_BIG = 3;
 export const WALLS_DONE_MAX = 5;
 export const WALLS_LIVE_MAX = 3;
 export const BURSTS_MAX = 5;
+/** Okno porównania reguły przyczynowej i liczba miejsc: ściany 2, serie 1 (K z taśmy 4–10.11, opis w CHANGELOG). */
+export const RANK_WINDOW_MS = HOUR;
+export const WALLS_K = 2;
+export const BURSTS_K = 1;
 
 /** Wynik sprawdzianu do opisu warstwy (PL i EN). */
 export const CLASHES_EVIDENCE = {
@@ -26,10 +33,14 @@ export const CLASHES_EVIDENCE = {
 /**
  * Próg (USD) obowiązujący w chwili `t`: ręczny z ustawień albo automatyczny z zleceń agresora poprzedniej, zamkniętej
  * godziny (`autoThreshold`), pamiętany na godzinę. Zależy tylko od taśmy tej godziny, więc nie zmienia się wstecz.
+ * `memo` — progi godzin (początek godziny → próg) wspólne dla kolejnych scen; właściciel czyści je po doczytaniu historii.
  */
-export function thresholdAt(orders: (from: number, to: number) => readonly AggressorOrder[], manual: number): (t: number) => number {
+export function thresholdAt(
+  orders: (from: number, to: number) => readonly AggressorOrder[],
+  manual: number,
+  memo: Map<number, number> = new Map()
+): (t: number) => number {
   if (manual > 0) return () => manual;
-  const memo = new Map<number, number>();
   return (t) => {
     const h = Math.floor(t / HOUR) * HOUR;
     let v = memo.get(h);
@@ -49,12 +60,54 @@ export interface ClashSelection {
   bursts: Burst[];
 }
 
-/** Wybór na ekran z obiektów w widocznym czasie; `now` — chwila danych (ściana bez wypełnień od 30 s jest zakończona). */
-export function selectClashes(walls: readonly Wall[], list: readonly Burst[], now: number, thrAt: (t: number) => number): ClashSelection {
-  const shown = walls.filter((w) => wallShown(w, thrAt(w.from)));
+interface Ranked {
+  from: number;
+  to: number;
+  usd: number;
+}
+
+/** `a` wyżej niż `b`: większa wartość, przy równej wcześniejszy koniec, potem wcześniejszy początek. */
+const above = (a: Ranked, b: Ranked) => a.usd > b.usd || (a.usd === b.usd && (a.to < b.to || (a.to === b.to && a.from < b.from)));
+
+/**
+ * Reguła przyczynowa: obiekty, które w chwili zakończenia (`to`; trwająca ściana — ostatnie wypełnienie) były wśród `k`
+ * najwyższych zakończonych w poprzednich `RANK_WINDOW_MS`. Wynik obiektu zależy tylko od obiektów zakończonych przed
+ * nim, więc nie zmienia się z przewinięciem ani upływem czasu.
+ */
+export function causalTop<T extends Ranked>(list: readonly T[], k: number): Set<T> {
+  const byEnd = [...list].sort((a, b) => a.to - b.to);
+  const out = new Set<T>();
+  let lo = 0;
+  for (let i = 0; i < byEnd.length; i++) {
+    const x = byEnd[i];
+    while (byEnd[lo].to <= x.to - RANK_WINDOW_MS) lo++;
+    let higher = 0;
+    for (let j = lo; j < byEnd.length && byEnd[j].to <= x.to && higher < k; j++) if (byEnd[j] !== x && above(byEnd[j], x)) higher++;
+    if (higher < k) out.add(x);
+  }
+  return out;
+}
+
+/**
+ * Wybór na ekran; `now` — chwila danych (ściana bez wypełnień od 30 s jest zakończona), `from` — początek widoku.
+ * Ściany i serie podaje się od `from − RANK_WINDOW_MS` (do porównania reguły przyczynowej), na ekran trafiają
+ * zakończone od `from`.
+ */
+export function selectClashes(
+  walls: readonly Wall[],
+  list: readonly Burst[],
+  now: number,
+  thrAt: (t: number) => number,
+  from = Number.NEGATIVE_INFINITY
+): ClashSelection {
+  const eligible = walls.filter((w) => wallShown(w, thrAt(w.from)));
+  const ranked = causalTop(eligible, WALLS_K);
+  const shown = eligible.filter((w) => w.to >= from && ranked.has(w));
   const byUsd = <T extends { usd: number; from: number }>(a: T, b: T) => b.usd - a.usd || b.from - a.from;
   const live = shown.filter((w) => now - w.to < WALL_GAP_MS).sort(byUsd).slice(0, WALLS_LIVE_MAX);
   const done = shown.filter((w) => now - w.to >= WALL_GAP_MS).sort(byUsd).slice(0, WALLS_DONE_MAX);
-  const series = list.filter((b) => b.usd >= thrAt(b.from)).sort(byUsd).slice(0, BURSTS_MAX);
+  const strong = list.filter((b) => b.usd >= thrAt(b.from));
+  const top = causalTop(strong, BURSTS_K);
+  const series = strong.filter((b) => b.to >= from && top.has(b)).sort(byUsd).slice(0, BURSTS_MAX);
   return { walls: [...done, ...live], bursts: series };
 }

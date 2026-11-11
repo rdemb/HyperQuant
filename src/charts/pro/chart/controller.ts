@@ -420,6 +420,7 @@ export class ProChartController {
       orders: (from, to) => store.orders.range(from, to),
       walls: (from, to, t) => store.walls.walls(from, to, t),
       version: () => store.version,
+      history: () => store.historyVersion,
     };
     this.chart = createChart(container, chartOptions());
     this.applyTimeFormat();
@@ -432,9 +433,12 @@ export class ProChartController {
     // Mapa ciepła pod profilem i pasmami (kolejność dołączenia = kolejność rysowania w tej samej warstwie)
     this.liquidity = new LiquidityLayer(liqToggles(settings));
     this.main.attachPrimitive(this.liquidity);
-    // Liczba ścian i serii wybranych na ekran (pomiar układu czyta ją z atrybutu, nie z pikseli)
+    // Liczby ścian i serii oraz bąbli wybranych na ekran (pomiar układu czyta je z atrybutów, nie z pikseli)
     this.liquidity.onClashes = (n) => {
       container.dataset.clashObjects = String(n);
+    };
+    this.liquidity.onBubbles = (n) => {
+      container.dataset.bubbles = String(n);
     };
     this.overlay = new IndicatorOverlay(toggles(settings, series.interval.ms));
     // Podpisy mapy z bloga przy prawej krawędzi rozsuwa nakładka razem ze swoimi etykietami (VWAP, IB, poziomy dnia)

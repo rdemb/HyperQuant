@@ -143,6 +143,8 @@ export class ProStore {
   ctx: AssetCtx | null = null;
   status: StreamStatus = 'idle';
   version = 0;
+  /** Rośnie po doczytaniu zleceń z historii: progi zamkniętych godzin (próg z chwili zdarzenia) liczone są od nowa. */
+  historyVersion = 0;
 
   private started = false;
   private readonly listeners = new Set<() => void>();
@@ -545,6 +547,7 @@ export class ProStore {
         this.orders.add([...agg.push(used, Number.NEGATIVE_INFINITY), ...agg.flush(0, true)]);
         this.walls.pushHistory(used);
         this.makers.add(used);
+        this.historyVersion++;
       }
       if (accepted.length > 0) for (const s of this.seriesById.values()) s.rebuildLive();
       this.oi.restore(tr.oi);

@@ -15,7 +15,8 @@ import { buildHeatLut } from '../../orderflow/heatColor';
 import { fmtCompact } from '../../../ui/format';
 import { type BookFrame, type BookHistory, type LargeLot, largeLots, lotThreshold } from '../core/book';
 import { Burst, DEFAULT_THRESHOLD_USD, OrderClass, Wall, bursts, classify } from '../core/clashes';
-import { type ClashSelection, selectClashes, thresholdAt } from './clashSelect';
+import { RANK_WINDOW_MS, type ClashSelection, selectClashes, thresholdAt } from './clashSelect';
+import { bubbleThresholdAt, selectBubbles } from './bubbleSelect';
 import type { AggressorOrder } from '../core/orders';
 import type { ProBar } from '../store/proStore';
 import { logicalOfTime } from './overlay';
@@ -46,6 +47,8 @@ export interface LiquiditySource {
   walls: (from: number, to: number, t: number) => Wall[];
   /** Wersja danych magazynu (rośnie z każdą zmianą zleceń i ścian); bez niej scenę odświeża tylko setData. */
   version?: () => number;
+  /** Wersja historii (rośnie po doczytaniu zleceń z historii): progi zamkniętych godzin liczone są wtedy od nowa. */
+  history?: () => number;
 }
 
 /** Obiekt pod kliknięciem: zlecenie agresora (z klasą), seria albo ściana. */
@@ -55,12 +58,9 @@ export type LiquidityPick =
   | { kind: 'wall'; wall: Wall };
 
 /**
- * Bąble: w widoku zostaje najwyżej ~0,6 bąbla na świecę (największe), żeby przy zbliżeniu nie zasłaniały
- * liczb footprintu; zlecenia podświetlonego adresu są zawsze widoczne, także poniżej progu.
+ * Bąble: wybór w `bubbleSelect.ts` (próg interwału z chwili zdarzenia, najwyżej 40 na ekran); zlecenia podświetlonego
+ * adresu są zawsze widoczne, także poniżej progu.
  */
-const BUBBLE_PER_BAR = 0.6;
-const BUBBLE_MIN_COUNT = 8;
-const BUBBLE_MAX_COUNT = 400;
 const BUBBLE_R_MIN = 3;
 const BUBBLE_R_MAX = 22;
 /** Podpis (wielkość w jednostkach rynku) od tego promienia (px). */
@@ -213,6 +213,15 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
   private manual = 0;
   /** Po każdej nowej scenie: liczba ścian i serii na ekranie (pomiar układu czyta ją z wykresu). */
   onClashes: ((n: number) => void) | null = null;
+  /** Po każdej nowej scenie: liczba bąbli zleceń na ekranie, bez serii (pomiar układu). */
+  onBubbles: ((n: number) => void) | null = null;
+  /**
+   * Progi zamkniętych godzin wspólne dla kolejnych scen: serii i ścian (początek godziny → próg) i bąbli osobno dla
+   * każdego interwału. Ważne dla jednego źródła i wersji historii (`memoOf`).
+   */
+  private hourThr = new Map<number, number>();
+  private bubbleThr = new Map<number, Map<number, number>>();
+  private memoOf: readonly unknown[] = [];
   private highlight = '';
   private selected: LiquidityPick | null = null;
   private geo: Geometry | null = null;
@@ -388,13 +397,23 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
     const key = g ? this.sceneInputs(g) : null;
     if (key && this.sceneKey && sameInputs(key, this.sceneKey)) return;
     this.sceneKey = key;
-    // Serie i ściany: próg z chwili zdarzenia i wybór na ekran (najwyżej 5 + 3 ściany i 5 serii)
-    // Zlecenia widocznego czasu pobierane raz na scenę (bąble i serie)
-    const all = this.toggles.showBubbles && g ? this.src.orders(g.tFrom, g.tTo) : [];
-    const clashes = this.toggles.showBubbles && this.toggles.showClashes && g ? this.sceneClashes(g, all) : { walls: [], bursts: [] };
-    this.bubbles = this.toggles.showBubbles && g ? this.sceneBubbles(g, all, clashes.bursts) : [];
+    const memo = [this.src, this.src.history?.()];
+    if (!sameInputs(memo, this.memoOf)) {
+      this.memoOf = memo;
+      this.hourThr = new Map();
+      this.bubbleThr = new Map();
+    }
+    // Zlecenia pobierane raz na scenę: widoczny czas, a z seriami i ścianami także godzina przed nim (reguła przyczynowa)
+    const clashesOn = this.toggles.showBubbles && this.toggles.showClashes;
+    const span = this.toggles.showBubbles && g ? this.src.orders(clashesOn ? g.tFrom - RANK_WINDOW_MS : g.tFrom, g.tTo) : [];
+    const all = clashesOn && g ? span.filter((o) => o.time >= g.tFrom) : span;
+    const thrAt = thresholdAt(this.src.orders, this.manual, this.hourThr);
+    const clashes = clashesOn && g ? this.sceneClashes(g, span, thrAt) : { walls: [], bursts: [] };
+    const bubbles = this.toggles.showBubbles && g ? this.sceneBubbles(g, all, clashes.bursts, thrAt) : { list: [], orders: 0 };
+    this.bubbles = bubbles.list;
     this.walls = clashes.walls.length > 0 && g ? this.sceneWalls(g, clashes.walls) : [];
     this.onClashes?.(clashes.walls.length + clashes.bursts.length);
+    this.onBubbles?.(bubbles.orders);
     this.lots = this.toggles.showLots && g ? this.sceneLots(g) : [];
     this.dom = this.toggles.showHeatmap && this.domOn && g ? this.sceneDom(g) : [];
   }
@@ -415,6 +434,7 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
       width,
       this.dataVersion,
       this.src.version?.(),
+      this.src.history?.(),
       near,
       near?.version,
       t.showHeatmap,
@@ -540,23 +560,29 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
 
   // ───────────────────────── bąble ─────────────────────────
 
-  private sceneClashes(g: Geometry, all: readonly AggressorOrder[]): ClashSelection {
-    const thrAt = thresholdAt(this.src.orders, this.manual);
-    return selectClashes(this.src.walls(g.tFrom, g.tTo, 0), bursts(all, thrAt), this.now, thrAt);
+  /** Serie i ściany: próg z chwili zdarzenia, reguła przyczynowa (obiekty z godziny przed widokiem do porównania) i limity. */
+  private sceneClashes(g: Geometry, span: readonly AggressorOrder[], thrAt: (t: number) => number): ClashSelection {
+    return selectClashes(this.src.walls(g.tFrom - RANK_WINDOW_MS, g.tTo, 0), bursts(span, thrAt), this.now, thrAt, g.tFrom);
   }
 
-  private sceneBubbles(g: Geometry, all: readonly AggressorOrder[], series: readonly Burst[]): Bubble[] {
-    const t = this.threshold;
-    let list = all.filter((o) => o.notional >= t);
-    const bars = (g.tTo - g.tFrom) / this.ms;
-    const cap = Math.round(Math.min(BUBBLE_MAX_COUNT, Math.max(BUBBLE_MIN_COUNT, bars * BUBBLE_PER_BAR)));
-    if (list.length > cap) list = list.sort((p, q) => q.notional - p.notional).slice(0, cap);
+  /** Bąble: próg interwału z chwili zdarzenia (`selectBubbles`), do tego zlecenia podświetlonego adresu i serie. */
+  private sceneBubbles(
+    g: Geometry,
+    all: readonly AggressorOrder[],
+    series: readonly Burst[],
+    thrAt: (t: number) => number
+  ): { list: Bubble[]; orders: number } {
+    let memo = this.bubbleThr.get(this.ms);
+    if (!memo) this.bubbleThr.set(this.ms, (memo = new Map()));
+    const bubbleAt = bubbleThresholdAt(this.src.orders, this.ms, this.manual, thrAt, memo);
+    const list = selectBubbles(all, bubbleAt);
+    const orders = list.length;
     const hl = this.highlight;
     if (hl) {
       const shown = new Set(list);
       for (const o of all) if (o.taker === hl && !shown.has(o)) list.push(o);
     }
-    if (list.length === 0 && series.length === 0) return [];
+    if (list.length === 0 && series.length === 0) return { list: [], orders };
     let max = 0;
     for (const o of list) if (o.notional > max) max = o.notional;
     for (const b of series) if (b.usd > max) max = b.usd;
@@ -566,7 +592,7 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
     const out: Bubble[] = [];
     for (const o of list) {
       const r = radius(o.notional);
-      const cls = classify(o, t);
+      const cls = classify(o, bubbleAt(o.time));
       const mark = hl !== '' && o.taker === hl;
       out.push({
         x: this.x(o.time, g),
@@ -601,7 +627,7 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
       });
     }
     // Mniejsze na wierzchu — nie giną pod dużymi
-    return out.sort((p, q) => q.r - p.r);
+    return { list: out.sort((p, q) => q.r - p.r), orders };
   }
 
   private sceneWalls(g: Geometry, walls: readonly Wall[]): WallMark[] {
