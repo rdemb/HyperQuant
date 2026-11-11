@@ -66,8 +66,11 @@ const BURST_SMALL = 0.25;
 /**
  * Serie: kolejne zlecenia jednej strony mniejsze niż ćwierć progu, każde najwyżej `BURST_WINDOW_MS` od pierwszego
  * zlecenia serii; seria liczy się od `BURST_MIN_TAKERS` różnych biorców i łącznej wartości od progu. Zlecenia rosnąco po czasie.
+ * `t` — próg stały albo próg z chwili zdarzenia (funkcja czasu): zlecenie mierzone progiem swojej chwili, seria — progiem
+ * chwili pierwszego zlecenia.
  */
-export function bursts(orders: readonly AggressorOrder[], t: number): Burst[] {
+export function bursts(orders: readonly AggressorOrder[], t: number | ((time: number) => number)): Burst[] {
+  const thr = typeof t === 'number' ? () => t : t;
   const out: Burst[] = [];
   for (const side of [1, -1] as const) {
     let cur: AggressorOrder[] = [];
@@ -75,14 +78,14 @@ export function bursts(orders: readonly AggressorOrder[], t: number): Burst[] {
       if (cur.length === 0) return;
       const takers = new Set(cur.map((o) => o.taker || `#${o.time}`)).size;
       const usd = cur.reduce((s, o) => s + o.notional, 0);
-      if (takers >= BURST_MIN_TAKERS && usd >= t) {
+      if (takers >= BURST_MIN_TAKERS && usd >= thr(cur[0].time)) {
         const sz = cur.reduce((s, o) => s + o.sz, 0);
         out.push({ from: cur[0].time, to: cur[cur.length - 1].time, side, usd, sz, vwap: usd / sz, orders: cur.length, takers });
       }
       cur = [];
     };
     for (const o of orders) {
-      if (o.side !== side || o.notional >= t * BURST_SMALL) continue;
+      if (o.side !== side || o.notional >= thr(o.time) * BURST_SMALL) continue;
       if (cur.length > 0 && o.time - cur[0].time > BURST_WINDOW_MS) close();
       cur.push(o);
     }

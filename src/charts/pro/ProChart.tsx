@@ -40,6 +40,7 @@ import { NumbersCard, StatGroupPicker } from './chart/NumbersCard';
 import { IndicatorsDialog, type IndicatorsSection, type ToggleItem } from './chart/IndicatorsDialog';
 import { IndicatorSettings } from './chart/IndicatorSettings';
 import { indicatorLabel, indicatorsLink } from './indicators/registry';
+import { BURSTS_MAX, CLASHES_EVIDENCE, WALLS_DONE_MAX, WALLS_LIVE_MAX, WALL_MIN_MS } from './chart/clashSelect';
 import { AUCTIONS_PER_SIDE, ZONES_EVIDENCE, ZONES_PER_SIDE } from './chart/zonesSelect';
 import { MarketStateBar } from './chart/MarketStateBar';
 import { LayoutHeader } from './chart/LayoutHeader';
@@ -1727,8 +1728,8 @@ function flowLayers(s: ChartSettings, intervalMs: number, liq: LiqMapState, whal
       key: 'showClashes',
       label: tr('Serie i ściany', 'Bursts and walls'),
       hint: tr(
-        'Seria (przerywany pierścień): drobne zlecenia co najmniej 4 adresów po jednej stronie w 2 s, razem od progu. Ściana (belka): jeden maker na jednej cenie przyjął od progu z co najmniej 3 zleceń — od otwarcia strony, a z zapisem serwera z ostatniej doby',
-        "Burst (dashed ring): small orders from at least 4 addresses on one side within 2 s, together above the threshold. Wall (bar): one maker at one price absorbed above the threshold from at least 3 orders — since the page opened, plus the server's recording of the last day"
+        `Seria (przerywany pierścień): drobne zlecenia co najmniej 4 adresów po jednej stronie w 2 s, razem od progu. Ściana (belka): jeden maker na jednej cenie przyjął od progu z co najmniej 3 zleceń; na wykresie, gdy trwała co najmniej ${WALL_MIN_MS / 1000} s albo wchłonęła co najmniej 3 × próg (krótsze w panelu Ściany). Próg z chwili zdarzenia: z taśmy poprzedniej pełnej godziny, więc ściany i serie z przeszłości nie znikają przy zmianie progu. Na ekranie najwyżej ${WALLS_DONE_MAX} największych ścian zakończonych, ${WALLS_LIVE_MAX} trwające i ${BURSTS_MAX} serii — od otwarcia strony, a z zapisem serwera z ostatniej doby. ${CLASHES_EVIDENCE.pl}`,
+        `Burst (dashed ring): small orders from at least 4 addresses on one side within 2 s, together above the threshold. Wall (bar): one maker at one price absorbed above the threshold from at least 3 orders; on the chart when it lasted at least ${WALL_MIN_MS / 1000} s or absorbed at least 3 × the threshold (shorter ones in the Walls panel). The threshold is the one in force when the event happened, from the tape of the previous full hour, so past walls and bursts do not vanish when the threshold changes. On screen at most ${WALLS_DONE_MAX} largest finished walls, ${WALLS_LIVE_MAX} ongoing and ${BURSTS_MAX} bursts — since the page opened, plus the server's recording of the last day. ${CLASHES_EVIDENCE.en}`
       ),
       swatch: 'bg-of-buy',
       off: s.showBubbles ? undefined : tr('Razem z bąblami zleceń agresora', 'Together with aggressor order bubbles'),
