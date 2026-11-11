@@ -25,7 +25,8 @@
     "data": "node scripts/fetch-public-data.mjs",
     "mcp:build": "vite build --config mcp/vite.config.ts",
     "mcp:mcpb": "node scripts/mcp/bundle-mcpb.mjs",
-    "ui:check": "vite build && node scripts/ui/layout-check.mjs --serve --strict"
+    "ui:check": "vite build && node scripts/ui/layout-check.mjs --serve --strict",
+    "ui:check:live": "vite build && node scripts/ui/layout-check.mjs --serve --live"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",
