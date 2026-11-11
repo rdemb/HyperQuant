@@ -29,6 +29,8 @@ Pomiar `npm run ui:check` (Chrome bez okna na zbudowanej stronie, 1440 × 900 i 
 
 - **Lista wskaźników: opis w jednej linii** (`src/charts/pro/chart/IndicatorsDialog.tsx`): opis każdej pozycji zwinięty do jednej linii (cały w podpowiedzi), pełny po dotknięciu strzałki obok (`aria-expanded`, `aria-controls`; dotknięcie wiersza dalej dodaje albo włącza wskaźnik). Na ekranie telefonu 390 × 844 mieści się 9 pozycji (przed: 2).
 
+- **Stopka wykresu odchudzona** (`src/charts/pro/ProChart.tsx`, `src/shell/AppShell.tsx`): pod wykresem zostają kot (jedna liczba), pokrycie taśmy, LIVE i liczba luk. Początek taśmy, liczba transakcji, stan historii, strefa czasu i źródła są w podpowiedzi liczby luk (także z klawiatury), a „Dane: Hyperliquid · Wykresy: TradingView Lightweight Charts™” z linkiem do tradingview.com i strefa czasu — w stopce strony.
+
 #### Dodane
 - **`npm run ui:check`** (`scripts/ui/layout-check.mjs`, `scripts/ui/cdp.mjs`, `scripts/ui/probe.mjs`): pomiar sześciu warunków układu na `vite preview` przez Chrome DevTools Protocol, bez nowych zależności — udział panelu ceny, elementy DOM nad świecami, nachodzące etykiety (na powtórce nagranej doby z kopii przy lekcjach), funkcje paska w najwyżej dwóch kliknięciach, skróty klawiszowe i zachowanie ustawień w localStorage; wynik w `ui-check/<etykieta>.json`.
 - Mapa skrótów klawiszowych jako czyste funkcje z testem, że się nie zmieniła (`src/charts/pro/chart/shortcuts.ts`), test zachowania zapisanych ustawień wykresu (`settingsKeep.test.ts`) i klawiatury list (`menuKeys.test.ts`).

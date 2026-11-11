@@ -513,6 +513,14 @@ export const AppShell: React.FC = () => {
           <ViewLink id={AGENTS.id} go={go} current={view === AGENTS.id} className="inline-flex items-center min-h-11 hover:text-ink-1 transition-colors duration-150">
             {AGENTS.label}
           </ViewLink>
+          {/* Źródło danych, silnik wykresów (link wymagany licencją Lightweight Charts™) i strefa czasu wykresów */}
+          <span className="inline-flex flex-wrap items-center gap-x-1.5 min-h-11 sm:ml-auto">
+            {tr('Dane', 'Data')}: Hyperliquid · {tr('Wykresy', 'Charts')}:{' '}
+            <a href="https://www.tradingview.com/" target="_blank" rel="noopener noreferrer" className="underline decoration-line-strong hover:text-ink-1">
+              TradingView Lightweight Charts™
+            </a>
+            <span>· {tr('czas lokalny', 'local time')} {Intl.DateTimeFormat().resolvedOptions().timeZone}</span>
+          </span>
         </nav>
       </footer>
 
