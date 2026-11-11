@@ -12,6 +12,11 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 - **Zawsze cała historia git, kotwica zamiast punktu kontrolnego** (`scripts/verify-ledger.mjs`, `scripts/verify-status.mjs`): po zmianie na porównywanie parami pełna historia trwa sekundy, więc tryb przyrostowy (`--since-commit`, `verify/checkpoint.json`, pełny przebieg co 7 dni, ochrona przed datą z przyszłości w punkcie) jest usunięty. `verify/anchor.json` to commit `ledger` z ostatniej udanej weryfikacji. Każdy przebieg sprawdza (`--anchor`), czy ten commit nadal jest w historii gałęzi. Jego brak oznacza przepisaną historię i daje czerwony wynik, nawet gdy nowa historia jest sama w sobie spójna. Wynik z czasem z przyszłości jest nadal nieważny.
 - Wzorzec `backend/deploy/ledger-verify.yml` dla repo danych usunięty. Wzorzec `health-alert.yml` i `backend/README.md` opisują nowe miejsce weryfikacji oraz opcjonalną regułę gałęzi (ruleset), z którą gałąź wyników zmienia tylko GitHub Actions.
 
+### Paczka MCP 0.1.4 (2026-11-11)
+
+#### Zmienione
+- **`hyperquant-mcp` 0.1.4**: `cohort_flow` liczy udział w obrocie wobec 2 × wolumenu taśmy (pole `tape` w `cohorts/BTC.json`), podaje `othersCombined` dla ukrytych komórek i opisuje pustą kohortę „poinformowanych” jako brak wykrytych kont z trwałą przewagą zamiast braku transakcji. Polecenia instalacji ze strony, README i szablonów z wersją `npx -y hyperquant-mcp@0.1.4`.
+
 ### Niezależna weryfikacja dziennika: przyrostowo, osobny workflow, znaczek gaśnie po 36 h (2026-11-11)
 
 #### Naprawione
