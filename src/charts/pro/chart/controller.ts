@@ -1,4 +1,4 @@
-import { CandlestickSeries, HistogramSeries, LineSeries, LineStyle, LineType, PriceScaleMode, createChart } from 'lightweight-charts';
+import { CandlestickSeries, HistogramSeries, LineSeries, LineStyle, LineType, MismatchDirection, PriceScaleMode, createChart } from 'lightweight-charts';
 import type {
   AutoscaleInfo,
   CandlestickData,
@@ -12,6 +12,7 @@ import type {
   MouseEventParams,
   PriceFormat,
   SeriesPartialOptions,
+  SeriesType,
   Time,
   UTCTimestamp,
   WhitespaceData,
@@ -653,11 +654,13 @@ export class ProChartController {
     }
     if (s.showDelta) {
       this.delta = this.chart.addSeries(CandlestickSeries, FLOW_CANDLE, pane++);
+      this.lowerTicks(this.delta, fmtSignedVol, FLOW_FORMAT.minMove);
       this.delta.createPriceLine({ price: 0, color: PRO.divider, lineWidth: 1, lineStyle: LineStyle.Solid, axisLabelVisible: false, title: '' });
       this.delta.attachPrimitive(this.deltaLegend);
     }
     if (s.showCvd) {
       this.cvd = this.chart.addSeries(CandlestickSeries, FLOW_CANDLE, pane++);
+      this.lowerTicks(this.cvd, fmtSignedVol, FLOW_FORMAT.minMove);
       this.cvd.attachPrimitive(this.cvdLegend);
     }
     if (s.showVenueCvd) this.venueCvd = this.addVenueLines(CVD_LINES, pane++, this.venueCvdLegend);
@@ -672,6 +675,7 @@ export class ProChartController {
       const def = indicatorDef(x.id);
       const own = def.pane === 'own';
       const lines = this.addIndicatorLines(def, x, own ? pane++ : 0);
+      if (own && lines[0]) this.lowerTicks(lines[0], this.indFormat(def.format), 0.0001);
       const legend = own ? new PaneLegend(`ind:${x.iid}`, `ind:${x.iid}`) : null;
       if (legend) lines[0].attachPrimitive(legend);
       this.indLegends.push(legend);
@@ -780,6 +784,7 @@ export class ProChartController {
       );
     }
     const first = out[ids[0]]!;
+    this.lowerTicks(first, fmtSignedVol, FLOW_FORMAT.minMove);
     first.createPriceLine({ price: 0, color: PRO.divider, lineWidth: 1, lineStyle: LineStyle.Solid, axisLabelVisible: false, title: '' });
     first.attachPrimitive(legend);
     return out;
@@ -1266,6 +1271,49 @@ export class ProChartController {
     return { type: 'custom', minMove, formatter: fmtPx, tickmarksFormatter: (prices) => this.tickLabels(prices) };
   }
 
+  /** Panele pod ceną z pierwszeństwem etykiet: serie, których siatka ustępuje ostatnim wartościom serii panelu. */
+  private lowerOwners = new Set<ISeriesApi<SeriesType>>();
+  private lowerKey = '';
+
+  /**
+   * Siatka osi panelu pod ceną (delta, CVD, giełdy, wskaźniki): etykieta siatki kolidująca z etykietą ostatniej wartości
+   * którejś serii tego panelu nie jest rysowana — jak na osi ceny.
+   */
+  private lowerTicks(owner: ISeriesApi<SeriesType>, base: (v: number) => string, minMove: number): void {
+    this.lowerOwners.add(owner);
+    owner.applyOptions({
+      priceFormat: {
+        type: 'custom',
+        minMove,
+        formatter: base,
+        tickmarksFormatter: (prices: readonly number[]) => {
+          const ys = prices.map((p) => owner.priceToCoordinate(p));
+          const keep = keepTicks(ys, this.lastValueYs(owner).map((y) => ({ y, below: 0 })), AXIS_LABEL_PX);
+          return prices.map((p, i) => (keep[i] ? base(p) : ''));
+        },
+      },
+    });
+  }
+
+  /** Środki etykiet ostatnich wartości serii panelu `owner` (serie z widoczną ostatnią wartością). */
+  private lastValueYs(owner: ISeriesApi<SeriesType>): number[] {
+    const out: number[] = [];
+    let list: ISeriesApi<SeriesType>[];
+    try {
+      list = owner.getPane().getSeries();
+    } catch {
+      return out;
+    }
+    for (const sr of list) {
+      if (!sr.options().lastValueVisible || !sr.options().visible) continue;
+      const d = sr.dataByIndex(Number.MAX_SAFE_INTEGER, MismatchDirection.NearestLeft) as { close?: number; value?: number } | null;
+      const v = d ? (d.close ?? d.value) : undefined;
+      const y = v === undefined ? null : sr.priceToCoordinate(v);
+      if (y !== null) out.push(y);
+    }
+    return out;
+  }
+
   /** Etykiety ważniejsze od siatki (y środka w px panelu ceny i liczba etykiet pod nią). */
   private axisReserved(): { y: number; below: number }[] {
     const out: { y: number; below: number }[] = [];
@@ -1287,9 +1335,17 @@ export class ProChartController {
     const key = this.axisReserved()
       .map((r) => Math.round(r.y / 4))
       .join(',');
-    if (key === this.ticksKey) return;
-    this.ticksKey = key;
-    this.main.applyOptions({ priceFormat: this.priceFormat(this.priceTick || 1) });
+    if (key !== this.ticksKey) {
+      this.ticksKey = key;
+      this.main.applyOptions({ priceFormat: this.priceFormat(this.priceTick || 1) });
+    }
+    // Panele pod ceną: po przesunięciu etykiet ostatnich wartości ich siatka liczy się od nowa
+    const live = [...this.lowerOwners].filter((o) => this.chart.panes().some((p) => p.getSeries().includes(o)));
+    this.lowerOwners = new Set(live);
+    const lowerKey = live.map((o) => this.lastValueYs(o).map((y) => Math.round(y / 4)).join('.')).join('|');
+    if (lowerKey === this.lowerKey) return;
+    this.lowerKey = lowerKey;
+    for (const o of live) o.applyOptions({ priceFormat: { ...o.options().priceFormat } as PriceFormat });
   }
 
   private sync(): void {
