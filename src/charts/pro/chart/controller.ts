@@ -1333,7 +1333,7 @@ export class ProChartController {
   /** Siatka osi liczy etykiety przy zmianie skali; gdy ważniejsze etykiety przesuną się o kilka px, liczy je od nowa. */
   private refreshTicks(): void {
     const key = this.axisReserved()
-      .map((r) => Math.round(r.y / 4))
+      .map((r) => Math.round(r.y / 2))
       .join(',');
     if (key !== this.ticksKey) {
       this.ticksKey = key;
@@ -1342,7 +1342,7 @@ export class ProChartController {
     // Panele pod ceną: po przesunięciu etykiet ostatnich wartości ich siatka liczy się od nowa
     const live = [...this.lowerOwners].filter((o) => this.chart.panes().some((p) => p.getSeries().includes(o)));
     this.lowerOwners = new Set(live);
-    const lowerKey = live.map((o) => this.lastValueYs(o).map((y) => Math.round(y / 4)).join('.')).join('|');
+    const lowerKey = live.map((o) => this.lastValueYs(o).map((y) => Math.round(y / 2)).join('.')).join('|');
     if (lowerKey === this.lowerKey) return;
     this.lowerKey = lowerKey;
     for (const o of live) o.applyOptions({ priceFormat: { ...o.options().priceFormat } as PriceFormat });
@@ -1546,6 +1546,8 @@ export class ProChartController {
   private tickCountdown(): void {
     const last = this.bars[this.bars.length - 1];
     this.countdown.set(last?.candle.c ?? 0, last ? barEnd(last.t, this.series.interval.ms) - this.store.serverNow() : 0);
+    // Zmiana skali bez nowych transakcji (autoskala, przesunięcie VWAP) też odświeża siatkę osi — najpóźniej po sekundzie
+    this.refreshTicks();
   }
 
   /** CVD zależy od wszystkich wcześniejszych świec okresu — liczymy całość i wysyłamy tylko zmienione punkty. */
