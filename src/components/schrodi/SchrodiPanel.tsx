@@ -22,6 +22,7 @@ import {
 import { type HourModel, type HourPoint, hourPath } from '../../utils/schrodiHour';
 import { type CatTrust, type HourTrust, type OodFeature, TRUST_DESIGN, TRUST_HEADS, type TrustHeadKey, driftAlarms, oodKeys, proofState } from '../../utils/schrodiTrust';
 import { DIR_BAR, DIR_TONE, dirHiddenNote, dirProven, upBand, upOdds } from './direction';
+import { MOVE_PCT_PROMOTED, type MoveLevel, moodLevel, moveAuc, moveCalNote, moveLevelWord, moveView } from './moveLevel';
 import { type Mood, SchrodiCat } from './SchrodiCat';
 import { HIST_MIN, type HourLive, useHourModel, useTouchModel } from './useSchrodi';
 
@@ -43,26 +44,39 @@ export function nextMacro(now: number): MacroEvent | null {
   return MACRO_EVENTS.find((e) => e.importance === 'high' && e.timeUtcMs > now - 15 * MIN && e.timeUtcMs - now <= 24 * 60 * MIN) ?? null;
 }
 
-export function moodOf(f: Forecast | null, now: number, stale: boolean): Mood {
+/** Nastrój kota: chowa się bez danych, nerwowy przed makro, czujny przy podwyższonym ruchu, drzemie przy spokojnym. */
+export function moodOf(f: Forecast | null, now: number, stale: boolean, level: MoveLevel | null): Mood {
   if (!f || stale) return 'hiding';
   const ev = nextMacro(now);
   if (ev && Math.abs(ev.timeUtcMs - now) <= 60 * MIN) return 'nervous';
-  if (f.pBig >= 0.7) return 'alert';
-  if (f.pBig <= 0.25) return 'sleep';
+  if (level === 'elevated') return 'alert';
+  if (level === 'calm') return 'sleep';
   return 'calm';
 }
 
-/** Jedno zdanie kota: ruch, potem kierunek (tylko gdy kierunek ma dowód w e-procesie). */
-export function catLine(f: Forecast, mood: Mood, now: number, showDir: boolean): string {
+/**
+ * Jedno zdanie kota: ruch, potem kierunek (tylko gdy kierunek ma dowód w e-procesie). Przed awansem kalibracji ruch
+ * opisuje poziom wobec typowej godziny, bez procentu; bez poziomu (za mało rozstrzygnięć) kot nic o ruchu nie twierdzi.
+ */
+export function catLine(f: Forecast, mood: Mood, now: number, showDir: boolean, level: MoveLevel | null): string {
   const ev = nextMacro(now);
   const move =
     mood === 'nervous' && ev
       ? tr(`${KIND_LABEL[ev.kind]} ${fmtCountdown(ev.timeUtcMs, now)}. Gryzę pazury, ruch może być gwałtowny.`, `${KIND_LABEL[ev.kind]} ${fmtCountdown(ev.timeUtcMs, now)}. Biting my claws, the move can be sharp.`)
-      : f.pBig >= 0.7
-        ? tr(`Szykuje się ruch: duży z szansą ${pct(f.pBig)}.`, `A move is coming: a big one with ${pct(f.pBig)} odds.`)
-        : f.pBig <= 0.25
-          ? tr(`Spokojnie, drzemię. Duży ruch tylko z szansą ${pct(f.pBig)}.`, `Quiet, I'm napping. A big move only has ${pct(f.pBig)} odds.`)
-          : tr(`Zwykła godzina, duży ruch z szansą ${pct(f.pBig)}.`, `An ordinary hour, a big move with ${pct(f.pBig)} odds.`);
+      : MOVE_PCT_PROMOTED
+        ? level === 'elevated'
+          ? tr(`Szykuje się ruch: duży z szansą ${pct(f.pBig)}.`, `A move is coming: a big one with ${pct(f.pBig)} odds.`)
+          : level === 'calm'
+            ? tr(`Spokojnie, drzemię. Duży ruch tylko z szansą ${pct(f.pBig)}.`, `Quiet, I'm napping. A big move only has ${pct(f.pBig)} odds.`)
+            : tr(`Zwykła godzina, duży ruch z szansą ${pct(f.pBig)}.`, `An ordinary hour, a big move with ${pct(f.pBig)} odds.`)
+        : // Okno nazwane wprost: najbliższe 60 min od prognozy, nie bieżąca godzina zegarowa (ta ma osobną ramkę)
+          level === 'elevated'
+          ? tr('Najbliższe 60 min: szansa dużego ruchu wyższa niż w typowej godzinie.', 'Next 60 min: the odds of a big move are above a typical hour.')
+          : level === 'calm'
+            ? tr('Spokojnie, drzemię. Najbliższe 60 min: szansa dużego ruchu niższa niż w typowej godzinie.', "Quiet, I'm napping. Next 60 min: the odds of a big move are below a typical hour.")
+            : level === 'typical'
+              ? tr('Najbliższe 60 min: szansa dużego ruchu jak w typowej godzinie.', 'Next 60 min: the odds of a big move are like a typical hour.')
+              : tr('Poziomu ruchu jeszcze nie oceniam.', "I don't rate the move level yet.");
   return showDir ? `${move} ${tr('Kierunek', 'Direction')}: ${upOdds(f.pUp)}.` : move;
 }
 
@@ -239,14 +253,21 @@ const LiveRecord: React.FC<{ live: Live }> = ({ live }) => {
 /** Zmiana zdania w ostatnich 10 min i grupy cech, które ją niosą (wkład w przybliżeniu). */
 const MindLine: React.FC<{ m: MindChange }> = ({ m }) => {
   const what = m.head === 'big' ? tr('duży ruch', 'big move') : tr('szansa wzrostu', 'odds of a rise');
-  const by = m.drivers.map((d) => `${GROUP_NAMES[d.g]().toLowerCase()} ${fmtSigned(d.pp, 0, ' pp')}`).join(', ');
+  // Przed awansem kalibracji szansa dużego ruchu bez liczb: tylko „bardziej / mniej prawdopodobny”
+  const words = m.head === 'big' && !MOVE_PCT_PROMOTED;
+  const by = m.drivers.map((d) => (words ? GROUP_NAMES[d.g]().toLowerCase() : `${GROUP_NAMES[d.g]().toLowerCase()} ${fmtSigned(d.pp, 0, ' pp')}`)).join(', ');
   return (
     <div role="status" className="rounded-md border border-accent/40 bg-accent/10 px-2 py-1.5 text-[11px] leading-snug text-ink-1">
       🔄{' '}
-      {tr(
-        `Zmiana zdania w ostatnich ${MIND_MIN} min: ${what} z ${pct(m.from)} na ${pct(m.to)}.`,
-        `Change of mind in the last ${MIND_MIN} min: ${what} from ${pct(m.from)} to ${pct(m.to)}.`
-      )}
+      {words
+        ? tr(
+            `Zmiana zdania w ostatnich ${MIND_MIN} min: duży ruch ${m.to > m.from ? 'bardziej' : 'mniej'} prawdopodobny niż ${MIND_MIN} min temu.`,
+            `Change of mind in the last ${MIND_MIN} min: a big move is ${m.to > m.from ? 'more' : 'less'} likely than ${MIND_MIN} min ago.`
+          )
+        : tr(
+            `Zmiana zdania w ostatnich ${MIND_MIN} min: ${what} z ${pct(m.from)} na ${pct(m.to)}.`,
+            `Change of mind in the last ${MIND_MIN} min: ${what} from ${pct(m.from)} to ${pct(m.to)}.`
+          )}
       {by && ` ${tr(`Najwięcej zmieniły (w przybliżeniu): ${by}.`, `Moved most by (approximately): ${by}.`)}`}
     </div>
   );
@@ -254,9 +275,10 @@ const MindLine: React.FC<{ m: MindChange }> = ({ m }) => {
 
 /** Zdanie kota w ostatniej godzinie: szansa dużego ruchu i szansa wzrostu na koniec każdej minuty. */
 const MindChart: React.FC<{ hist: Snap[]; showDir: boolean }> = ({ hist, showDir }) => {
+  const showBig = MOVE_PCT_PROMOTED;
   const end = hist[hist.length - 1]?.s ?? 0;
   const pts = hist.filter((h) => h.s >= end - HIST_MIN * MIN);
-  if (pts.length < 2) return null;
+  if (pts.length < 2 || (!showBig && !showDir)) return null;
   const W = 300;
   const H = 48;
   const x = (t: number) => ((t - (end - HIST_MIN * MIN)) / (HIST_MIN * MIN)) * W;
@@ -268,10 +290,13 @@ const MindChart: React.FC<{ hist: Snap[]; showDir: boolean }> = ({ hist, showDir
       <div className="flex items-baseline justify-between text-ink-2 mb-1">
         <span>📈 {tr('Moje zdanie w ostatniej godzinie', 'My view over the last hour')}</span>
         <span className="text-[10px] text-ink-3">
-          <span className="text-accent">━</span> {tr('ruch', 'move')}
+          {showBig && (
+            <>
+              <span className="text-accent">━</span> {tr('ruch', 'move')}{' '}
+            </>
+          )}
           {showDir && (
             <>
-              {' '}
               <span className="text-ink-2">━</span> {tr('wzrost', 'rise')}
             </>
           )}
@@ -282,18 +307,16 @@ const MindChart: React.FC<{ hist: Snap[]; showDir: boolean }> = ({ hist, showDir
         preserveAspectRatio="none"
         className="w-full h-12 rounded bg-surface-3/40"
         role="img"
-        aria-label={
-          showDir
-            ? tr(
-                `Duży ruch od ${pct(a.pBig)} do ${pct(b.pBig)}, szansa wzrostu od ${pct(a.pUp)} do ${pct(b.pUp)}`,
-                `Big move from ${pct(a.pBig)} to ${pct(b.pBig)}, odds of a rise from ${pct(a.pUp)} to ${pct(b.pUp)}`
-              )
-            : tr(`Duży ruch od ${pct(a.pBig)} do ${pct(b.pBig)}`, `Big move from ${pct(a.pBig)} to ${pct(b.pBig)}`)
-        }
+        aria-label={[
+          showBig ? tr(`Duży ruch od ${pct(a.pBig)} do ${pct(b.pBig)}`, `Big move from ${pct(a.pBig)} to ${pct(b.pBig)}`) : null,
+          showDir ? tr(`szansa wzrostu od ${pct(a.pUp)} do ${pct(b.pUp)}`, `odds of a rise from ${pct(a.pUp)} to ${pct(b.pUp)}`) : null,
+        ]
+          .filter(Boolean)
+          .join(', ')}
       >
         <line x1={0} x2={W} y1={H / 2} y2={H / 2} className="stroke-line-strong" strokeDasharray="3 3" strokeWidth={1} vectorEffect="non-scaling-stroke" />
         {showDir && <path d={path('pUp')} fill="none" className="stroke-ink-2" strokeWidth={1.25} vectorEffect="non-scaling-stroke" />}
-        <path d={path('pBig')} fill="none" className="stroke-accent" strokeWidth={1.75} vectorEffect="non-scaling-stroke" />
+        {showBig && <path d={path('pBig')} fill="none" className="stroke-accent" strokeWidth={1.75} vectorEffect="non-scaling-stroke" />}
       </svg>
       <div className="flex justify-between text-[10px] text-ink-3">
         <span>−{HIST_MIN} min</span>
@@ -309,6 +332,8 @@ const hhmm = (t: number) => new Date(t).toLocaleTimeString(tr('pl-PL', 'en-GB'),
 
 /** Wykres szans w tej godzinie: minuty 0 do 60, znaczniki chwil zapisu do dziennika (15 i 30 min). */
 const HourChart: React.FC<{ pts: HourPoint[]; hs: number; showDir: boolean }> = ({ pts, hs, showDir }) => {
+  const showBig = MOVE_PCT_PROMOTED;
+  if (!showBig && !showDir) return null;
   const W = 300;
   const H = 40;
   const x = (m: number) => (m / 60) * W;
@@ -316,10 +341,13 @@ const HourChart: React.FC<{ pts: HourPoint[]; hs: number; showDir: boolean }> = 
   return (
     <div>
       <div className="text-right text-[10px] text-ink-3 mb-0.5">
-        <span className="text-accent">━</span> {tr('ruch', 'move')}
+        {showBig && (
+          <>
+            <span className="text-accent">━</span> {tr('ruch', 'move')}{' '}
+          </>
+        )}
         {showDir && (
           <>
-            {' '}
             <span className="text-ink-2">━</span> {tr('wzrost', 'rise')}
           </>
         )}
@@ -330,7 +358,7 @@ const HourChart: React.FC<{ pts: HourPoint[]; hs: number; showDir: boolean }> = 
           <line key={m} x1={x(m)} x2={x(m)} y1={0} y2={H} className="stroke-line" strokeWidth={1} vectorEffect="non-scaling-stroke" />
         ))}
         {showDir && pts.length > 1 && <path d={path('pUp')} fill="none" className="stroke-ink-2" strokeWidth={1.25} vectorEffect="non-scaling-stroke" />}
-        {pts.length > 1 && <path d={path('pBig')} fill="none" className="stroke-accent" strokeWidth={1.75} vectorEffect="non-scaling-stroke" />}
+        {showBig && pts.length > 1 && <path d={path('pBig')} fill="none" className="stroke-accent" strokeWidth={1.75} vectorEffect="non-scaling-stroke" />}
       </svg>
       <div className="relative h-3.5 text-[10px] text-ink-3">
         <span className="absolute left-0">{hhmm(hs)}</span>
@@ -378,11 +406,13 @@ const HourBlock: React.FC<{ hm: HourModel; hour: HourLive; end: number; showDir:
         </div>
         <ProbBar p={Math.min(1, range / thrUsd)} tone="move" />
       </div>
-      <div className="flex items-baseline justify-between">
-        <span className="text-ink-2">🌊 {tr('Duży ruch w tej godzinie', 'Big move this hour')}</span>
-        <span className="font-mono text-sm font-semibold text-accent">{pct(last.pBig)}</span>
-      </div>
-      {last.m > 0 && !done && (
+      {MOVE_PCT_PROMOTED && (
+        <div className="flex items-baseline justify-between">
+          <span className="text-ink-2">🌊 {tr('Duży ruch w tej godzinie', 'Big move this hour')}</span>
+          <span className="font-mono text-sm font-semibold text-accent">{pct(last.pBig)}</span>
+        </div>
+      )}
+      {MOVE_PCT_PROMOTED && last.m > 0 && !done && (
         <p className="-mt-1 text-[10px] text-ink-3 text-right">
           {tr(`z samej drogi ceny ${pct(last.pBigRule)}`, `from the price path alone ${pct(last.pBigRule)}`)}
         </p>
@@ -420,7 +450,6 @@ export const SchrodiPanel: React.FC<{
   hour: HourLive | null;
   onClose: () => void;
 }> = ({ f, model, at, now, stale, hist, hour, onClose }) => {
-  const mood = moodOf(f, now, stale);
   const ev = nextMacro(now);
   const levels = f.levels
     ? (Object.keys(LEVEL_NAMES) as (keyof Levels)[])
@@ -432,6 +461,11 @@ export const SchrodiPanel: React.FC<{
   const mindAny = hist.length ? mindChange(hist, hist[hist.length - 1]) : null;
   const { summary } = useDeskLedger();
   const live = summary && isCat(summary.cat) && summary.cat.since !== null ? summary.cat : null;
+  // Szansa dużego ruchu: przed awansem kalibracji poziom wobec typowej godziny (tercyle z rejestru), bez procentu
+  const move = moveView(f.pBig, live);
+  const level = moodLevel(f.pBig, live);
+  const auc = moveAuc(live);
+  const mood = moodOf(f, now, stale, level);
   const trust = live?.trust ?? null;
   // Kierunek tylko z dowodem przewagi w e-procesie; bez niego także zmiana zdania o kierunku jest ukryta
   const showDir = dirProven(trust);
@@ -475,7 +509,7 @@ export const SchrodiPanel: React.FC<{
             )}
           </div>
           <p className="mt-1 text-xs leading-snug text-ink-2">
-            {stale ? tr('Nie mam świeżych danych z Hyperliquid, chowam się pod stołem.', 'No fresh Hyperliquid data, hiding under the table.') : catLine(f, mood, now, showDir)}
+            {stale ? tr('Nie mam świeżych danych z Hyperliquid, chowam się pod stołem.', 'No fresh Hyperliquid data, hiding under the table.') : catLine(f, mood, now, showDir, level)}
           </p>
         </div>
         <button type="button" onClick={onClose} aria-label={tr('Zamknij', 'Close')} className="shrink-0 grid place-items-center w-7 h-7 rounded-md text-ink-3 hover:text-ink-1 hover:bg-surface-3">
@@ -503,20 +537,43 @@ export const SchrodiPanel: React.FC<{
             )}
           </div>
         )}
-        <div>
-          <div className="flex items-baseline justify-between text-xs">
-            <span className="text-ink-2">🌊 {tr('Duży ruch w ciągu godziny', 'Big move within the hour')}</span>
-            <span className="font-mono text-sm font-semibold text-accent">{pct(f.pBig)}</span>
+        {MOVE_PCT_PROMOTED ? (
+          <div>
+            <div className="flex items-baseline justify-between text-xs">
+              <span className="text-ink-2">🌊 {tr('Duży ruch w ciągu godziny', 'Big move within the hour')}</span>
+              <span className="font-mono text-sm font-semibold text-accent">{pct(f.pBig)}</span>
+            </div>
+            <ProbBar p={f.pBig} tone="move" />
+            <p className="mt-1 text-[11px] text-ink-3">
+              {tr(
+                `Duży, czyli zakres godziny ponad ${fmtPrice(f.bigUsd, 0)} $ (mediana z 30 dni).`,
+                `Big means an hourly range above $${fmtPrice(f.bigUsd, 0)} (30-day median).`
+              )}{' '}
+              {inTen(f.pBig)}
+            </p>
           </div>
-          <ProbBar p={f.pBig} tone="move" />
-          <p className="mt-1 text-[11px] text-ink-3">
-            {tr(
-              `Duży, czyli zakres godziny ponad ${fmtPrice(f.bigUsd, 0)} $ (mediana z 30 dni).`,
-              `Big means an hourly range above $${fmtPrice(f.bigUsd, 0)} (30-day median).`
-            )}{' '}
-            {inTen(f.pBig)}
-          </p>
-        </div>
+        ) : (
+          <div>
+            <div className="flex items-baseline justify-between text-xs">
+              <span className="text-ink-2">🌊 {tr('Ruch w najbliższej godzinie', 'Move in the next hour')}</span>
+              <span className="font-mono text-sm font-semibold text-accent">{move.kind === 'level' ? moveLevelWord(move.level) : '—'}</span>
+            </div>
+            <p className="mt-1 text-[11px] text-ink-3">
+              {move.kind === 'level'
+                ? tr(
+                    `Szansa dużego ruchu wobec typowej godziny: tercyl z ${move.terciles.n} rozstrzygniętych prognoz z rejestru (30 dni).`,
+                    `Odds of a big move against a typical hour: tercile among ${move.terciles.n} resolved forecasts in the ledger (30 days).`
+                  )
+                : `${tr('Poziomu brak', 'No level')}: ${move.reason}.`}{' '}
+              {auc !== null && tr(`Kolejność szans sprawdzona: AUC ${auc.toFixed(2).replace('.', ',')} w rejestrze.`, `Ranking checked: AUC ${auc.toFixed(2)} in the ledger.`)}{' '}
+              {moveCalNote()}{' '}
+              {tr(
+                `Duży, czyli zakres godziny ponad ${fmtPrice(f.bigUsd, 0)} $ (mediana z 30 dni).`,
+                `Big means an hourly range above $${fmtPrice(f.bigUsd, 0)} (30-day median).`
+              )}
+            </p>
+          </div>
+        )}
 
         {showDir && (
         <div>
@@ -611,7 +668,17 @@ export const SchrodiPanel: React.FC<{
 
       <Section title={tr('Dlaczego?', 'Why?')}>
         <p className="mb-2">
-          {showDir
+          {!MOVE_PCT_PROMOTED
+            ? showDir
+              ? tr(
+                  'Jak grupy cech zmieniają szansę dużego ruchu (bez liczb, dopóki procenty są w kalibracji) i szansę wzrostu w punktach procentowych (w przybliżeniu):',
+                  'How feature groups move the odds of a big move (no numbers while percentages are under calibration) and the odds of a rise in percentage points (approximate):'
+                )
+              : tr(
+                  'Jak grupy cech zmieniają szansę dużego ruchu (bez liczb, dopóki procenty są w kalibracji):',
+                  'How feature groups move the odds of a big move (no numbers while percentages are under calibration):'
+                )
+            : showDir
             ? tr(
                 'Wkład grup cech w szansę dużego ruchu i w szansę wzrostu, w punktach procentowych (w przybliżeniu):',
                 'Contribution of feature groups to the odds of a big move and of a rise, in percentage points (approximate):'
@@ -625,7 +692,15 @@ export const SchrodiPanel: React.FC<{
           {(Object.keys(GROUP_NAMES) as Group[]).map((g) => (
             <React.Fragment key={g}>
               <span>{GROUP_NAMES[g]()}</span>
-              <span className={`font-mono text-right ${Math.abs(f.whyBig[g]) > 0.05 ? 'text-accent' : 'text-ink-3'}`}>{fmtSigned(f.whyBig[g], 1, ' pp')}</span>
+              <span className={`${MOVE_PCT_PROMOTED ? 'font-mono ' : ''}text-right ${Math.abs(f.whyBig[g]) > 0.05 ? 'text-accent' : 'text-ink-3'}`}>
+                {MOVE_PCT_PROMOTED
+                  ? fmtSigned(f.whyBig[g], 1, ' pp')
+                  : f.whyBig[g] > 0.05
+                    ? tr('podnosi', 'raises')
+                    : f.whyBig[g] < -0.05
+                      ? tr('obniża', 'lowers')
+                      : tr('bez wpływu', 'no effect')}
+              </span>
               {showDir && (
                 <span className={`font-mono text-right ${Math.abs(f.why[g]) > 0.05 ? DIR_TONE : 'text-ink-3'}`}>{fmtSigned(f.why[g], 1, ' pp')}</span>
               )}

@@ -62,7 +62,7 @@ describe('Sources.published', () => {
     const { src, calls, clock } = testSources({ [FILE]: { json: { v: 1 } } }, NOW);
     const a = await src.published('BTC/test.json', isV);
     expect(a).toMatchObject({ ok: true, value: { v: 1 }, url: FILE, at: NOW });
-    expect(calls[0].headers.get('user-agent')).toBe('hyperquant-mcp/0.1.3');
+    expect(calls[0].headers.get('user-agent')).toBe('hyperquant-mcp/0.1.4');
     clock.now = NOW + 59_000;
     await src.published('BTC/test.json', isV);
     expect(calls).toHaveLength(1);
@@ -158,7 +158,7 @@ describe('Sources.history', () => {
     expect(r).toMatchObject({ ok: true, value: { v: 1, n: 3 }, url: GZ });
     await src.history('BTC/2026-11-04/14.trades.json.gz', decode);
     expect(calls).toHaveLength(1);
-    expect(calls[0].headers.get('user-agent')).toBe('hyperquant-mcp/0.1.3');
+    expect(calls[0].headers.get('user-agent')).toBe('hyperquant-mcp/0.1.4');
   });
 
   it('treść już rozpakowana (serwer z Content-Encoding: gzip) — zwykły JSON też przechodzi', async () => {

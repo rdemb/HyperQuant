@@ -1,7 +1,18 @@
 /**
- * Świeżość niezależnej weryfikacji dziennika (GitHub Actions w repo danych, `health/verify/latest.json`). Przebieg
- * idzie co najmniej raz na dobę; wynik starszy niż 36 h znaczy, że weryfikacja nie kończy się albo nie startuje —
- * wtedy nadzór danych zgłasza problem, znaczek jest czerwony, a strona pokazuje ostrzeżenie. Jeden próg dla wszystkich.
+ * Niezależna weryfikacja dziennika: workflow `.github/workflows/ledger-verify.yml` w repo HyperQuant (harmonogram co
+ * 6 h, infrastruktura GitHuba) zapisuje wynik w gałęzi `VERIFY_BRANCH` tego repo. Jeden adres dla strony, nadzoru danych,
+ * strażnika i znaczka w README.
+ */
+export const VERIFY_BRANCH = 'weryfikacja-dziennika';
+export const VERIFY_BASE = `https://raw.githubusercontent.com/rdemb/HyperQuant/${VERIFY_BRANCH}/`;
+/** Podsumowanie ostatniego zakończonego przebiegu (`ok`, `at`, `run`, `commit`, `lines`) */
+export const VERIFY_LATEST_URL = `${VERIFY_BASE}verify/latest.json`;
+/** Znaczek shields.io (endpoint) z `badge/ledger.json` */
+export const VERIFY_BADGE_URL = `https://img.shields.io/endpoint?url=${VERIFY_BASE}badge/ledger.json`;
+
+/**
+ * Świeżość wyniku: przebieg idzie co 6 h; wynik starszy niż 36 h znaczy, że weryfikacja nie kończy się albo nie
+ * startuje — wtedy nadzór danych zgłasza problem, znaczek jest czerwony, a strona pokazuje ostrzeżenie. Jeden próg.
  */
 export const VERIFY_MAX_AGE_MS = 36 * 3_600_000;
 

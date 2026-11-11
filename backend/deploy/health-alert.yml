@@ -3,7 +3,7 @@
 # trwałym problemie; ten workflow zamienia to w jedno długowieczne zgłoszenie „alert-danych” w repo danych
 # (otwierane / komentowane / zamykane samo po powrocie danych). Push kluczem wdrożeniowym uruchamia workflow
 # niezależnie od harmonogramu GitHuba. Bez kosztów i bez sekretów (wbudowany token z uprawnieniem do zgłoszeń).
-# Niezależna weryfikacja dziennika to osobny workflow (ledger-verify.yml) — długi przebieg nie wstrzymuje zgłoszeń.
+# Niezależna weryfikacja dziennika działa w repo HyperQuant (.github/workflows/ledger-verify.yml, harmonogram co 6 h).
 name: Alarm strażnika
 
 on:

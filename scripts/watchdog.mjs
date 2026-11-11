@@ -7,7 +7,8 @@
  *  2. alarm — stan zdrowia (ta sama ocena co scripts/check-data-health.mjs) trafia do gałęzi `health` repo danych przez
  *     klucz wdrożeniowy skanera; push uruchamia tam workflow, który otwiera / komentuje / zamyka zgłoszenie
  *     „alert-danych”. Problem wysyłany po potwierdzeniu w dwóch przebiegach (prywatność — od razu), przypomnienie co 6 h;
- *     przy „ok” puls co 12 h — uruchamia tam niezależną weryfikację dziennika i znaczek „zweryfikowano”. Opóźnione
+ *     przy „ok” puls co 12 h (dowód, że strażnik działa). Niezależna weryfikacja dziennika ma własny harmonogram
+ *     w repo HyperQuant (.github/workflows/ledger-verify.yml); strażnik zgłasza jej wynik starszy niż 36 h. Opóźnione
  *     odczyty pozycji z histerezą (koniec alarmu po 2 przebiegach poniżej 25 min), bo mediana oscyluje wokół progu.
  * Raport jest publiczny — bez adresów, ścieżek i danych serwera.
  */
@@ -29,10 +30,7 @@ const RESTART_COOLDOWN = 60 * MIN;
 /** Restartów w jednym epizodzie problemu — potem tylko alarm (restart nie pomaga, np. przerwany łańcuch dziennika) */
 const MAX_RESTARTS = 3;
 const REMIND = 6 * 60 * MIN;
-/**
- * Puls przy „ok” — uruchamia niezależną weryfikację dziennika (workflow gałęzi health; repo danych nie ma harmonogramu,
- * bo domyślna gałąź `main` jest publikacją nadpisywaną co 2 min). Co 12 h, żeby wynik był zawsze młodszy niż doba.
- */
+/** Puls przy „ok” — zapis w gałęzi `health` potwierdza, że strażnik działa */
 const HEARTBEAT = 12 * 60 * MIN;
 const SERVICE = 'hyperquant-scanner';
 const ALERTS_SERVICE = 'hyperquant-alerts';
@@ -147,7 +145,7 @@ export function alertState(health, d, da = none) {
 /**
  * Wysyłka: powrót do „ok” od razu; problem — gdy ten sam stan był już w poprzednim przebiegu (`seenKey`; pojedyncze
  * błędy sieci nie otwierają zgłoszenia), prywatność (`urgent`) od razu; ten sam problem — przypomnienie co 6 h;
- * „ok” — puls co 12 h (niezależna weryfikacja dziennika w GitHub Actions).
+ * „ok” — puls co 12 h.
  */
 export function shouldPush({ prevKey, seenKey, key, lastPushAt, ok, urgent, now }) {
   if (ok) return prevKey !== 'ok' || lastPushAt === null || now - lastPushAt >= HEARTBEAT;
