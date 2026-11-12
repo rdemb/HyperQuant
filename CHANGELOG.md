@@ -4,6 +4,18 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Szlif 9: rynki wynikowe HIP-4 i wspólna zasada warstw (2026-11-12)
+
+#### Zmienione
+- **Progi HIP-4 na wykresie** (`src/charts/pro/chart/hip4Select.ts`, `hip4Layer.ts`): na komputerze najwyżej 3 progi najbliższe ceny nad nią i 3 pod nią, na telefonie tylko najbliższy; podpis skrócony („> 74 000 · rynek 41% · model 38%”, termin jest w panelu); dalsze płynne progi legenda podaje jako liczbę. Dotąd linia z długim podpisem dla każdego płynnego rynku w widoku.
+- **Profil TPO:** wspólna skala słupków liczona z obu pełnych dób niezależnie od przewinięcia (dotąd z dób widocznych, więc długość słupków bieżącej doby zmieniała się przy przewijaniu).
+- **Lekcje:** zakres początkowy sesji rysowany jak na wykresie — szczyt i dołek od końca pierwszej godziny, rozszerzenia dopiero po pierwszym zamknięciu poza zakresem i tylko po tej stronie.
+- **Nazwy reguł laboratorium z jednego miejsca** (`LAB_NAMES` w `src/utils/folkloreLab.ts`): aplikacja i strona wyników używają tych samych neutralnych nazw.
+
+#### Dodane
+- **`ui:check`, szlif 9** — liczba progów HIP-4 w Kokpicie 5m na stałych danych z 14 płynnymi rynkami (limit 6 na komputerze, 1 na telefonie).
+- **CONTRIBUTING:** wspólna zasada sześciu punktów dla warstw rysujących obiekty na polu świec.
+
 ### Strona wyników prognoz: `wyniki/` i `en/results/` (2026-11-12)
 
 #### Dodane
