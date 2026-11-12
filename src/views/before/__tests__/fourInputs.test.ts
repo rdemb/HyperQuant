@@ -72,15 +72,15 @@ describe('fourNumbers', () => {
 describe('readFourInputs: świece z magazynu rynku jak nagłówek układu', () => {
   const toCandles = (bs: VBar[]): Candle[] => bs.map((b) => ({ t: b.time, o: b.open, h: b.high, l: b.low, c: b.close, v: b.volume, n: 1 }));
 
-  it('1m od wpisu Mapy dnia (wcześniej niż otwarcie NY), 1h od 20 dni przed sesją najbliższej godziny', () => {
+  it('1m od wpisu Mapy dnia (wcześniej niż otwarcie NY), 1h od 20 sesji tego samego typu dnia przed najbliższą godziną', () => {
     const store = fakeStore('BTC', { '1m': { list: toCandles(ALL) }, '1h': { list: [] } });
     const x = readFourInputs(store, { status: 'ready', map: LIQ_MAP }, READY);
     expect(store.older['1m']).toContain(PUB);
-    // Otwarcie Londynu 7.11 o 08:00 UTC; 20 sesji wstecz od 18.10 (wtedy otwarcie o 07:00 UTC, czas letni)
-    expect(store.older['1h']).toContain(at(2026, 10, 18, 7));
+    // Otwarcie Londynu w sobotę 7.11 o 08:00 UTC; 20 dni weekendu wstecz to od soboty 29.08 (otwarcie o 07:00 UTC, czas letni)
+    expect(store.older['1h']).toContain(at(2026, 8, 29, 7));
     expect(x).toMatchObject({ coin: 'BTC', now: NOW, price: 100_950 });
     expect(Array.isArray(x.bars1m)).toBe(true);
-    // 1h nie sięga 20 dni wstecz, a historia trwa — czekamy
+    // 1h nie sięga tak daleko, a historia trwa — czekamy
     expect(x.bars1h).toBeUndefined();
     expect(fourNumbers(x).items[0].value).toBe('trendowy · mapa 2/4');
   });
