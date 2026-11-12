@@ -52,7 +52,13 @@
       "ib.auction1440": 5,
       "ib.auction390": 5,
       "ib.review1440": 7,
-      "ib.review390": 7
+      "ib.review390": 7,
+      "pb.boxes1440": 0,
+      "pb.lines1440": 4,
+      "pb.marks1440": 0,
+      "pb.boxes390": 0,
+      "pb.lines390": 4,
+      "pb.marks390": 0
     },
     "linux": {
       "share.desktop": 0.626,
