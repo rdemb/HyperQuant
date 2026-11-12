@@ -529,19 +529,24 @@ export class LedgerRunner {
   }
 
   /**
-   * Rozstrzygnięcia `hrel-v1` po zamknięciu godziny hs + 3 h: komplet świec → wynik; brak części po 6 h → null w tych
-   * godzinach; brak wszystkich po 6 h → jawne unieważnienie.
+   * Rozstrzygnięcia `hrel-v1` po zamknięciu godziny hs + 3 h: komplet świec → wynik. Brak świecy godziny u jest
+   * stwierdzony dopiero wtedy, gdy źródło zwróciło świecę późniejszą niż u (działało po tej godzinie i jej nie dało);
+   * przerwa źródła (sieć, API) nie jest brakiem — rozstrzygnięcie czeka. Stwierdzony brak części po 6 h → null w tych
+   * godzinach; brak wszystkich → jawne unieważnienie.
    */
   private resolveHrel(now: number): Record<string, unknown>[] {
     const bars = this.d.data.hourBars;
     const out: Record<string, unknown>[] = [];
+    let newest = Number.NEGATIVE_INFINITY;
+    for (const t of bars?.keys() ?? []) newest = Math.max(newest, t);
     for (const f of this.hrel.values()) {
       const end = f.t + 4 * HOUR;
       if (this.hrelRes.has(f.id) || end > now) continue;
       const o = bars ? hrelOutcome(bars, f.t, f.thr) : { rng: [null, null, null, null], y: [null, null, null, null] };
-      const missing = o.y.filter((v) => v === null).length;
-      if (missing === 0) out.push({ k: 'r', id: f.id, t: now, ...o });
-      else if (now - end > VOID_AFTER) out.push(missing === o.y.length ? { k: 'r', id: f.id, t: now, void: 'no-data' } : { k: 'r', id: f.id, t: now, ...o });
+      const missing = o.y.map((v, j) => (v === null ? j : -1)).filter((j) => j >= 0);
+      if (missing.length === 0) out.push({ k: 'r', id: f.id, t: now, ...o });
+      else if (now - end > VOID_AFTER && missing.every((j) => newest > f.t + j * HOUR))
+        out.push(missing.length === o.y.length ? { k: 'r', id: f.id, t: now, void: 'no-data' } : { k: 'r', id: f.id, t: now, ...o });
     }
     return out;
   }

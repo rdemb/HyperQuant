@@ -55,7 +55,7 @@ export const HREL_DESIGN = {
   record: '{ k: f, kind: hrel, id: <hs>-hrel, slot, ti, t: hs, x: [r1, r3, r24], thr: [thr(hs + j h)], p: [p0..p3], model, plan }',
   issue: 'raz na godzinę, w pierwszym slocie dziennika po hs, razem z prognozami głównymi slotu; rekord zapisany później niż hs + 15 min nie powstaje; bez uzupełniania wstecz',
   maxLateMin: 15,
-  resolution: 'po zamknięciu godziny hs + 3 h, ze świec 1h: { k: r, id, t, rng: [4], y: [4] }; brak świecy godziny → null w rng i y tej godziny; brak wszystkich przez 6 h → void',
+  resolution: 'po zamknięciu godziny hs + 3 h, ze świec 1h: { k: r, id, t, rng: [4], y: [4] }; brak świecy godziny u → null w rng i y tej godziny, a brak wszystkich czterech → void, oba tylko 6 h po hs + 4 h i tylko wtedy, gdy źródło zwróciło świecę późniejszą niż u (przerwa źródła nie jest brakiem — rozstrzygnięcie czeka na świece)',
   metric: 'δ = (p_j − y)² − (0,5 − y)² na każdej rozstrzygniętej godzinie',
   stat: 't = średnia δ / błąd Neweya–Westa (jądro Bartletta, 24 opóźnienia godzinowe)',
   hacLag: 24,
