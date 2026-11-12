@@ -18,6 +18,13 @@ export function metricsOf(r) {
     if (typeof r.domColumn.tapeRowsFit === 'number') m['dom.tapeRowsFit'] = r.domColumn.tapeRowsFit;
   }
   if (typeof r.phoneIndicators === 'number') m['phone.indicatorRows'] = r.phoneIndicators;
+  // Inne rynki (M1, rejestr rynków na danych stałych): udział panelu ceny i obiekty na widok `<rynek>-1440` i `<rynek>-390`
+  for (const [coin, v] of Object.entries(r.markets ?? {})) {
+    for (const [w, d] of [['1440', v?.desktop], ['390', v?.phone]]) {
+      if (typeof d?.share === 'number') m[`share.${coin}-${w}`] = Number(d.share.toFixed(3));
+      if (d?.objects) for (const [f, n] of Object.entries(d.objects)) if (typeof n === 'number') m[`objects.${coin}-${w}.${f}`] = n;
+    }
+  }
   // Prostokąty wskaźnika Effort (wybór warstwy, nie piksele) w powtórce 24.10, BTC 5m
   if (typeof r.effort?.desktop === 'number') m['effort.rects1440'] = r.effort.desktop;
   if (typeof r.effort?.phone === 'number') m['effort.rects390'] = r.effort.phone;

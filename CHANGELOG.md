@@ -4,6 +4,15 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Pomiar układu na HYPE i xyz:NVDA, test akceptacyjny M1 (2026-11-12)
+
+#### Dodane
+- **`npm run ui:check` mierzy też HYPE i xyz:NVDA** (`scripts/ui/layout-check.mjs`, przebieg „M1”): wykres `#charts?m=<rynek>` na komputerze (1440, bez kolumny DOM) i telefonie (390). Te same limity obiektów co na BTC (zero elementów DOM nad świecami, zero nachodzących etykiet), brak wyjątków i `console.error` strony, brak „NaN” w tekście, właściwy rynek w legendzie (na telefonie w polu wyboru rynku). Szlify zależne od skanera i od powtórki BTC są na tych rynkach pominięte, bo warstwy skanera pokazują tam „—”.
+- **Dane stałe dla innych rynków** (`scripts/ui/fixtures.mjs`): HYPE i xyz:NVDA dostają minuty nagranej doby BTC przeskalowane do swojej ceny (40 i 180 USD, wolumen o tym samym obrocie w USD; czysta funkcja `scaleMinutes` z testem). Rynek HIP-3 odpowiada na `metaAndAssetCtxs` z `dex: "xyz"`, ma arkusz i strumień. `szDecimals` jak w rejestrze (HYPE 2, xyz:NVDA 3). Do tego rejestr `markets.json` z xyz:NVDA w formacie `isMarketRegistry`.
+- **Build pomiaru z adresem danych na hoście bez sieci** (`scripts/ui/build.mjs`, zamiast samego `vite build` w `ui:check`): strona pyta o rejestr rynków, a pomiar podaje go tylko w przebiegu rynków. Wcześniej strona ma 4 rynki domyślne jak dotąd, a pozostałe pliki danych kończą się błędem jak bez połączenia. Zmienna środowiska ma pierwszeństwo przed lokalnym `.env.local`, więc pomiar na komputerze i w CI ma ten sam build.
+- **Punkt odniesienia** (`scripts/ui/baseline.json`, `win32`): nowe klucze `share.<rynek>-1440|390` i `objects.<rynek>-1440|390.*`. Liczby BTC bez zmian; klucze `linux` dopisze przebieg CI.
+- `scripts/ui/cdp.mjs` zbiera też `console.error` strony (`page.consoleErrors`).
+
 ### Rynki z rejestru: progi i formaty pod BTC, etap M1.4 (2026-11-12)
 
 #### Zmienione
