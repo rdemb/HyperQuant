@@ -36,6 +36,11 @@ jobs:
           path: hq
           persist-credentials: false
 
+      # Podsumowanie przed klonem dziennika: jego głowa jest wtedy zwykle już w pobranej gałęzi ledger. Gdy jednak
+      # podsumowanie wyprzedza dziennik, weryfikator pomija porównanie miar bez błędu. Brak pliku: weryfikacja bez miar.
+      - name: Podsumowanie dziennika (przed dziennikiem)
+        run: curl -fsS --retry 3 -o summary.json https://raw.githubusercontent.com/rdemb/hyperquant-data/main/ledger/BTC/summary.json || rm -f summary.json
+
       - name: Gałąź ledger repo danych (pełna historia)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -81,7 +86,8 @@ jobs:
           ANCHOR: ${{ steps.cp.outputs.anchor }}
         run: |
           set +e
-          node hq/scripts/verify-ledger.mjs --dir ledger --market ${ANCHOR:+--anchor "$ANCHOR"} > report.txt 2>&1
+          sum=(); [ -s summary.json ] && sum=(--summary summary.json)
+          node hq/scripts/verify-ledger.mjs --dir ledger --market ${ANCHOR:+--anchor "$ANCHOR"} "${sum[@]}" > report.txt 2>&1
           code=$?
           cat report.txt
           echo "code=$code" >> "$GITHUB_OUTPUT"

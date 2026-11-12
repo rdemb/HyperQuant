@@ -386,7 +386,12 @@ const APPROX = 1e-4 + 1e-9;
  */
 export function checkMeasures(summary, records) {
   const idx = records.findIndex((o) => o.hash === summary?.head?.hash);
-  if (idx < 0) return { checked: 0, problems: ['głowa podsumowania nie występuje w rekordach'] };
+  if (idx < 0) {
+    // Podsumowanie nowsze niż pobrany dziennik (wyścig publikacji: jego głowa ma więcej linii niż pobrane rekordy) — bez
+    // porównania. Błąd, gdy dziennik ma już tyle linii co głowa podsumowania albo więcej, a tej głowy w nim nie ma.
+    const ahead = Number.isInteger(summary?.head?.lines) && summary.head.lines > records.length;
+    return !ahead ? { checked: 0, problems: ['głowa podsumowania nie występuje w rekordach'] } : { checked: 0, problems: [], ahead: true };
+  }
   const m = measures(records.slice(0, idx + 1), summary.asOf);
   const problems = [];
   let checked = 0;
@@ -1902,7 +1907,8 @@ async function main() {
   console.log(`Głowa łańcucha: ${prev}`);
   const reportMeasures = (s) => {
     const mm = checkMeasures(s, records);
-    if (!mm.checked && !mm.problems.length) console.log('ℹ podsumowanie bez miar z przedziałami (starsza wersja) — nic do porównania');
+    if (mm.ahead) console.log('ℹ podsumowanie nowsze niż pobrany dziennik (głowa podsumowania jeszcze nie w gałęzi ledger) — miary nie porównane, sprawdzi następny przebieg');
+    else if (!mm.checked && !mm.problems.length) console.log('ℹ podsumowanie bez miar z przedziałami (starsza wersja) — nic do porównania');
     else
       console.log(
         mm.problems.length
