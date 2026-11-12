@@ -35,7 +35,7 @@ import {
 import { DASH, fmtFixed, fmtPct, fmtSigned } from '../../../ui/format';
 import { tr } from '../../../i18n';
 import { BTC_ONLY_NOTE, BLOG_ONLY_WHY, NO_SCANNER_NOTE } from '../../../utils/marketCaps';
-import { capsOf, noScannerWhyOf, usdScaleOf } from '../../../state/markets';
+import { capsOf, marketOf, noScannerWhyOf, usdScaleOf } from '../../../state/markets';
 
 /**
  * Nagłówek układu (spec §7.3): trzy liczby właściwe dla pytania układu, każda z plakietką LIVE albo MODEL (MODEL z nazwą
@@ -145,6 +145,8 @@ const utcDm = (t: number) => {
   return `${String(d.getUTCDate()).padStart(2, '0')}.${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
 };
 const sessionName = (s: TradeSession) => TRADE_SESSION_NAME[s.id];
+/** Cena w tekście z dokładnością osi rynku (`szDecimals` z rejestru; kPEPE przy 0,0045 — 6 miejsc, BTC bez zmian). */
+const pxOf = (coin: string) => (p: number) => fmtPx(p, marketOf(coin)?.szDecimals);
 
 // ───────────────────────── liczby ─────────────────────────
 
@@ -153,6 +155,7 @@ const sessionName = (s: TradeSession) => TRADE_SESSION_NAME[s.id];
  * otwarcie sesji, więc nie zmienia się w jej trakcie).
  */
 function budgetNum(x: LayoutInputs): LayoutNumber {
+  const px = pxOf(x.coin);
   const sn = val(x.session);
   const e = val(x.expected);
   const label = sn ? tr(`Budżet · ${sessionName(sn.s)}`, `Budget · ${sessionName(sn.s)}`) : tr('Budżet zakresu', 'Range budget');
@@ -167,8 +170,8 @@ function budgetNum(x: LayoutInputs): LayoutNumber {
     value: pctOf(b),
     badge: 'MODEL',
     hint: tr(
-      `MODEL · ${m}: sesja ${sessionName(sn.s)} od ${fmtHm(sn.s.start)} zużyła ${pctOf(b)} oczekiwanego zakresu: ${amt(sn.hi - sn.lo)} USD (${fmtPx(sn.lo)}–${fmtPx(sn.hi)}) z oczekiwanych ${amt(e.usd)} USD (typowy dzień ok. ${amt(e.typical)} USD). ${METHOD_NOTE[e.method]}`,
-      `MODEL · ${m}: the ${sessionName(sn.s)} session since ${fmtHm(sn.s.start)} has used ${pctOf(b)} of its expected range: ${amt(sn.hi - sn.lo)} USD (${fmtPx(sn.lo)}–${fmtPx(sn.hi)}) of an expected ${amt(e.usd)} USD (typical day about ${amt(e.typical)} USD). ${METHOD_NOTE[e.method]}`
+      `MODEL · ${m}: sesja ${sessionName(sn.s)} od ${fmtHm(sn.s.start)} zużyła ${pctOf(b)} oczekiwanego zakresu: ${amt(sn.hi - sn.lo)} USD (${px(sn.lo)}–${px(sn.hi)}) z oczekiwanych ${amt(e.usd)} USD (typowy dzień ok. ${amt(e.typical)} USD). ${METHOD_NOTE[e.method]}`,
+      `MODEL · ${m}: the ${sessionName(sn.s)} session since ${fmtHm(sn.s.start)} has used ${pctOf(b)} of its expected range: ${amt(sn.hi - sn.lo)} USD (${px(sn.lo)}–${px(sn.hi)}) of an expected ${amt(e.usd)} USD (typical day about ${amt(e.typical)} USD). ${METHOD_NOTE[e.method]}`
     ),
   };
 }
@@ -195,6 +198,7 @@ const distPct = (level: number, price: number) => (level / price - 1) * 100;
 const side = (d: number) => (d >= 0 ? tr('nad ceną', 'above the price') : tr('pod ceną', 'below the price'));
 
 function vaEdgeNum(x: LayoutInputs, edge: 'vah' | 'val'): LayoutNumber {
+  const px = pxOf(x.coin);
   const name = edge === 'vah' ? 'VAH' : 'VAL';
   const label = tr(`${name} wczoraj`, `${name} yesterday`);
   const d = val(x.prevDay);
@@ -207,13 +211,14 @@ function vaEdgeNum(x: LayoutInputs, edge: 'vah' | 'val'): LayoutNumber {
     value: fmtPct(dist, 2),
     badge: 'LIVE',
     hint: tr(
-      `${name} doby UTC ${utcDm(d.day)}: ${fmtPx(lv)}, ${fmtPct(Math.abs(dist), 2, false)} ${side(dist)} ${fmtPx(p)}. Value area 70% ze świec 1h (wolumen świecy rozłożony na jej zakres).`,
-      `${name} of the UTC day ${utcDm(d.day)}: ${fmtPx(lv)}, ${fmtPct(Math.abs(dist), 2, false)} ${side(dist)} ${fmtPx(p)}. 70% value area from 1h candles (candle volume spread across its range).`
+      `${name} doby UTC ${utcDm(d.day)}: ${px(lv)}, ${fmtPct(Math.abs(dist), 2, false)} ${side(dist)} ${px(p)}. Value area 70% ze świec 1h (wolumen świecy rozłożony na jej zakres).`,
+      `${name} of the UTC day ${utcDm(d.day)}: ${px(lv)}, ${fmtPct(Math.abs(dist), 2, false)} ${side(dist)} ${px(p)}. 70% value area from 1h candles (candle volume spread across its range).`
     ),
   };
 }
 
 function nakedPocNum(x: LayoutInputs): LayoutNumber {
+  const px = pxOf(x.coin);
   const label = tr('Nagi POC', 'Naked POC');
   const n = val(x.nakedPoc);
   const p = val(x.price);
@@ -224,13 +229,14 @@ function nakedPocNum(x: LayoutInputs): LayoutNumber {
     value: fmtPct(dist, 2),
     badge: 'LIVE',
     hint: tr(
-      `Najbliższy cenie POC zamkniętej doby UTC, którego cena potem nie dotknęła: ${fmtPx(n.px)} z doby ${utcDm(n.day)}, ${fmtPct(Math.abs(dist), 2, false)} ${side(dist)}. Profile dób ze świec 1h.`,
-      `The POC of a closed UTC day nearest to the price that price has not touched since: ${fmtPx(n.px)} from ${utcDm(n.day)}, ${fmtPct(Math.abs(dist), 2, false)} ${side(dist)}. Day profiles from 1h candles.`
+      `Najbliższy cenie POC zamkniętej doby UTC, którego cena potem nie dotknęła: ${px(n.px)} z doby ${utcDm(n.day)}, ${fmtPct(Math.abs(dist), 2, false)} ${side(dist)}. Profile dób ze świec 1h.`,
+      `The POC of a closed UTC day nearest to the price that price has not touched since: ${px(n.px)} from ${utcDm(n.day)}, ${fmtPct(Math.abs(dist), 2, false)} ${side(dist)}. Day profiles from 1h candles.`
     ),
   };
 }
 
 function liqNum(x: LayoutInputs): LayoutNumber {
+  const px = pxOf(x.coin);
   const label = tr('Klaster likw.', 'Liq. cluster');
   const short = tr('Klaster', 'Cluster');
   if (!capsOf(x.coin).scanner) return { ...dash(label, 'LIVE', noScannerWhyOf(x.coin), NO_SCANNER_NOTE), short };
@@ -245,8 +251,8 @@ function liqNum(x: LayoutInputs): LayoutNumber {
     value: `${fmtPct(dist, 2)} · ${usdShort(l.ntlUsd)}`,
     badge: 'LIVE',
     hint: tr(
-      `Najbliższy z klastrów na wykresie: ${usdShort(l.ntlUsd)} USD likwidacji ${l.side === 'long' ? 'longów' : 'shortów'} przy ${fmtPx(l.px)}, ${fmtPct(Math.abs(dist), 2, false)} ${side(dist)}. Mapa skanera z pozycji on-chain, stan z ${fmtHm(l.asOf)}.`,
-      `The nearest of the clusters on the chart: ${usdShort(l.ntlUsd)} USD of ${l.side === 'long' ? 'long' : 'short'} liquidations at ${fmtPx(l.px)}, ${fmtPct(Math.abs(dist), 2, false)} ${side(dist)}. Scanner map from on-chain positions, as of ${fmtHm(l.asOf)}.`
+      `Najbliższy z klastrów na wykresie: ${usdShort(l.ntlUsd)} USD likwidacji ${l.side === 'long' ? 'longów' : 'shortów'} przy ${px(l.px)}, ${fmtPct(Math.abs(dist), 2, false)} ${side(dist)}. Mapa skanera z pozycji on-chain, stan z ${fmtHm(l.asOf)}.`,
+      `The nearest of the clusters on the chart: ${usdShort(l.ntlUsd)} USD of ${l.side === 'long' ? 'long' : 'short'} liquidations at ${px(l.px)}, ${fmtPct(Math.abs(dist), 2, false)} ${side(dist)}. Scanner map from on-chain positions, as of ${fmtHm(l.asOf)}.`
     ),
     ...(age ? { note: age } : {}),
   };
@@ -273,12 +279,12 @@ function ibNum(x: LayoutInputs): LayoutNumber {
   const sn = val(x.session);
   const label = sn ? `IB · ${sessionName(sn.s)}` : 'IB';
   if (!sn) return dash(label, 'LIVE', whyOf(x.session));
-  return { ...ibBody(sn, label), short: 'IB' };
+  return { ...ibBody(sn, label, pxOf(x.coin)), short: 'IB' };
 }
 
-function ibBody(sn: SessionNow, label: string): LayoutNumber {
+function ibBody(sn: SessionNow, label: string, px: (p: number) => string): LayoutNumber {
   const ibr = sn.ibHi - sn.ibLo;
-  const range = `${fmtPx(sn.ibLo)}–${fmtPx(sn.ibHi)}`;
+  const range = `${px(sn.ibLo)}–${px(sn.ibHi)}`;
   if (!sn.ibDone) {
     return {
       label,
@@ -297,13 +303,14 @@ function ibBody(sn: SessionNow, label: string): LayoutNumber {
     value,
     badge: 'LIVE',
     hint: tr(
-      `IB sesji ${sessionName(sn.s)} (pierwsza godzina, ${fmtHm(sn.s.start)}–${fmtHm(sn.s.ibEnd)}): ${range}. Zakres sesji ${fmtPx(sn.lo)}–${fmtPx(sn.hi)} to ${k} IB; wybicie to wyjście ceny poza IB po pierwszej godzinie. Opis aukcji, nie sygnał.`,
-      `The ${sessionName(sn.s)} session IB (first hour, ${fmtHm(sn.s.start)}–${fmtHm(sn.s.ibEnd)}): ${range}. The session range ${fmtPx(sn.lo)}–${fmtPx(sn.hi)} is ${k} the IB; a breakout is price leaving the IB after the first hour. A description of the auction, not a signal.`
+      `IB sesji ${sessionName(sn.s)} (pierwsza godzina, ${fmtHm(sn.s.start)}–${fmtHm(sn.s.ibEnd)}): ${range}. Zakres sesji ${px(sn.lo)}–${px(sn.hi)} to ${k} IB; wybicie to wyjście ceny poza IB po pierwszej godzinie. Opis aukcji, nie sygnał.`,
+      `The ${sessionName(sn.s)} session IB (first hour, ${fmtHm(sn.s.start)}–${fmtHm(sn.s.ibEnd)}): ${range}. The session range ${px(sn.lo)}–${px(sn.hi)} is ${k} the IB; a breakout is price leaving the IB after the first hour. A description of the auction, not a signal.`
     ),
   };
 }
 
 function sessionVwapNum(x: LayoutInputs): LayoutNumber {
+  const px = pxOf(x.coin);
   const label = tr('VWAP sesji', 'Session VWAP');
   const sn = val(x.session);
   const p = val(x.price);
@@ -316,8 +323,8 @@ function sessionVwapNum(x: LayoutInputs): LayoutNumber {
     value: sz,
     badge: 'LIVE',
     hint: tr(
-      `Cena ${fmtPx(p)} wobec VWAP sesji ${sessionName(sn.s)} ${fmtPx(sn.vwap.vwap)} (σ ${amt(sn.vwap.sd)}) od ${fmtHm(sn.s.start)}: ${sz}. Ze świec 1m sesji.`,
-      `Price ${fmtPx(p)} against the ${sessionName(sn.s)} session VWAP ${fmtPx(sn.vwap.vwap)} (σ ${amt(sn.vwap.sd)}) since ${fmtHm(sn.s.start)}: ${sz}. From the session's 1m candles.`
+      `Cena ${px(p)} wobec VWAP sesji ${sessionName(sn.s)} ${px(sn.vwap.vwap)} (σ ${amt(sn.vwap.sd)}) od ${fmtHm(sn.s.start)}: ${sz}. Ze świec 1m sesji.`,
+      `Price ${px(p)} against the ${sessionName(sn.s)} session VWAP ${px(sn.vwap.vwap)} (σ ${amt(sn.vwap.sd)}) since ${fmtHm(sn.s.start)}: ${sz}. From the session's 1m candles.`
     ),
   };
 }
@@ -381,6 +388,7 @@ function reviewLabel(base: string, r: ReviewFacts | null): string {
 }
 
 function dayTypeNum(x: LayoutInputs): LayoutNumber {
+  const px = pxOf(x.coin);
   const r = val(x.review);
   const label = reviewLabel(tr('Typ dnia', 'Day type'), r);
   if (!r) return dash(label, 'MODEL', `MODEL · Dalton: ${whyOf(x.review)}`);
@@ -393,13 +401,14 @@ function dayTypeNum(x: LayoutInputs): LayoutNumber {
     value: DAY_TYPE_LABEL[t],
     badge: 'MODEL',
     hint: tr(
-      `MODEL · Dalton: IB ${fmtPx(r.ibLo)}–${fmtPx(r.ibHi)}, zakres sesji ${fmtPx(r.lo)}–${fmtPx(r.hi)} (${k}× IB), zamknięcie ${fmtPx(r.close)}${r.inProgress ? ' (sesja w toku, typ może się zmienić)' : ''}. Do 1,15× IB normalny, od 2× z zamknięciem w skrajnych 20% po stronie wybicia trendowy, wybicie w obie strony neutralny, reszta wariant normalny. Opis, nie sygnał.`,
-      `MODEL · Dalton: IB ${fmtPx(r.ibLo)}–${fmtPx(r.ibHi)}, session range ${fmtPx(r.lo)}–${fmtPx(r.hi)} (${k}× IB), close ${fmtPx(r.close)}${r.inProgress ? ' (session in progress, the type may change)' : ''}. Up to 1.15× IB normal, from 2× with a close in the outer 20% on the breakout side trend, a breakout on both sides neutral, otherwise normal variation. A description, not a signal.`
+      `MODEL · Dalton: IB ${px(r.ibLo)}–${px(r.ibHi)}, zakres sesji ${px(r.lo)}–${px(r.hi)} (${k}× IB), zamknięcie ${px(r.close)}${r.inProgress ? ' (sesja w toku, typ może się zmienić)' : ''}. Do 1,15× IB normalny, od 2× z zamknięciem w skrajnych 20% po stronie wybicia trendowy, wybicie w obie strony neutralny, reszta wariant normalny. Opis, nie sygnał.`,
+      `MODEL · Dalton: IB ${px(r.ibLo)}–${px(r.ibHi)}, session range ${px(r.lo)}–${px(r.hi)} (${k}× IB), close ${px(r.close)}${r.inProgress ? ' (session in progress, the type may change)' : ''}. Up to 1.15× IB normal, from 2× with a close in the outer 20% on the breakout side trend, a breakout on both sides neutral, otherwise normal variation. A description, not a signal.`
     ),
   };
 }
 
 function migrationNum(x: LayoutInputs): LayoutNumber {
+  const px = pxOf(x.coin);
   const label = tr('Migracja VA', 'VA migration');
   const r = val(x.review);
   if (!r) return dash(label, 'LIVE', whyOf(x.review));
@@ -412,8 +421,8 @@ function migrationNum(x: LayoutInputs): LayoutNumber {
     value: VA_MIGRATION_LABEL[m],
     badge: 'LIVE',
     hint: tr(
-      `Value area 70% sesji ${sessionName(r.s)} ${fmtPx(r.va.val)}–${fmtPx(r.va.vah)} wobec poprzedniej sesji ${sessionName(r.s)} ${fmtPx(r.prevVa.val)}–${fmtPx(r.prevVa.vah)}; profile ze świec 1m (te same co na karcie Rozliczenia sesji).`,
-      `The ${sessionName(r.s)} session 70% value area ${fmtPx(r.va.val)}–${fmtPx(r.va.vah)} against the previous ${sessionName(r.s)} session ${fmtPx(r.prevVa.val)}–${fmtPx(r.prevVa.vah)}; profiles from 1m candles (the same as on the Session review card).`
+      `Value area 70% sesji ${sessionName(r.s)} ${px(r.va.val)}–${px(r.va.vah)} wobec poprzedniej sesji ${sessionName(r.s)} ${px(r.prevVa.val)}–${px(r.prevVa.vah)}; profile ze świec 1m (te same co na karcie Rozliczenia sesji).`,
+      `The ${sessionName(r.s)} session 70% value area ${px(r.va.val)}–${px(r.va.vah)} against the previous ${sessionName(r.s)} session ${px(r.prevVa.val)}–${px(r.prevVa.vah)}; profiles from 1m candles (the same as on the Session review card).`
     ),
   };
 }

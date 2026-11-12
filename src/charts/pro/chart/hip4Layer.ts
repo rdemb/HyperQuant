@@ -3,6 +3,7 @@ import type { Hip4Row } from '../../../utils/hip4';
 import { numLang } from '../../../ui/format';
 import { tr } from '../../../i18n';
 import { fmtPx } from './layout';
+import { fmtDayTime } from '../core/time';
 import { selectOutcomes } from './hip4Select';
 import { MONO, PRO, rgba } from './theme';
 
@@ -30,22 +31,33 @@ const pct = (p: number) => `${numLang((p * 100).toFixed(p < 0.05 || p > 0.95 ? 1
 
 /**
  * Poziomy rynków wynikowych BTC z płynnym arkuszem (przy rzadkim cena rynku nic nie mówi, jak w panelu „Model vs rynek”):
- * „> K” — cena powyżej progu w terminie, „dotknie K” — dotknięcie do terminu; podpis skrócony (próg, rynek, model —
- * termin jest w panelu). Na wykres trafiają progi z `selectOutcomes` (komputer 3 nad ceną i 3 pod, telefon najbliższy),
- * `rest` — liczba pozostałych płynnych rynków do legendy.
+ * „> K” — cena powyżej progu w terminie, „dotknie K” — dotknięcie do terminu; podpis skrócony (próg, rynek, model).
+ * Kilka rynków na tym samym progu (różne terminy) daje jedną linię: rynek z najbliższym terminem. Termin (krótko, czas
+ * lokalny) jest w podpisie tylko wtedy, gdy wybrane rynki mają różne terminy; inaczej jest w panelu. Na wykres trafiają
+ * progi z `selectOutcomes` (komputer 3 nad ceną i 3 pod, telefon najbliższy), `rest` — liczba pozostałych płynnych progów
+ * do legendy.
  */
-export function outcomeLevels(rows: readonly Hip4Row[], price: number, phone: boolean): { levels: OutcomeLevel[]; rest: number } {
-  const all = rows.flatMap((r) => {
+export function outcomeLevels(rows: readonly Hip4Row[], price: number, phone: boolean, now: number): { levels: OutcomeLevel[]; rest: number } {
+  const byK = new Map<number, { r: Hip4Row; mid: number }>();
+  for (const r of rows) {
     const mid = r.quote?.liquid ? r.quote.mid : null;
-    if (mid === null) return [];
+    if (mid === null) continue;
+    const prev = byK.get(r.q.K);
+    if (!prev || r.q.expiry < prev.r.q.expiry) byK.set(r.q.K, { r, mid });
+  }
+  const all = [...byK.values()];
+  const { shown, rest } = selectOutcomes(all.map((x) => ({ px: x.r.q.K })), price, phone);
+  const picked = shown.map((i) => all[i]);
+  const mixed = new Set(picked.map((x) => x.r.q.expiry)).size > 1;
+  const levels = picked.map(({ r, mid }) => {
     const q = r.q;
     const head = q.kind === 'above' ? `> ${fmtPx(q.K)}` : `${tr('dotknie', 'touches')} ${fmtPx(q.K)}`;
+    const term = mixed ? ` ${tr('do', 'by')} ${fmtDayTime(q.expiry, now)}` : '';
     const model = r.model === null ? '—' : pct(r.model);
-    const text = `${head} · ${tr('rynek', 'market')} ${pct(mid)} · model ${model}`;
-    return [{ px: q.K, text, strength: r.model === null ? 0 : Math.min(1, Math.abs(r.model - mid) / FULL_DIFF) }];
+    const text = `${head}${term} · ${tr('rynek', 'market')} ${pct(mid)} · model ${model}`;
+    return { px: q.K, text, strength: r.model === null ? 0 : Math.min(1, Math.abs(r.model - mid) / FULL_DIFF) };
   });
-  const { shown, rest } = selectOutcomes(all, price, phone);
-  return { levels: shown.map((i) => all[i]), rest };
+  return { levels, rest };
 }
 
 interface Drawn {

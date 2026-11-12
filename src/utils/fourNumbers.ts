@@ -109,6 +109,12 @@ export function nyMap(maps: readonly BlogMap[], ny: TradeSession, now: number): 
   return best;
 }
 
+/** Cena w tekście z dokładnością osi rynku (`szDecimals` z rejestru; kPEPE przy 0,0045 — 6 miejsc, BTC bez zmian). */
+const pxOf = (x: Pick<FourInputs, 'coin' | 'markets'>) => {
+  const sz = (x.markets ?? DEFAULT_MARKETS).find((m) => m.coin === x.coin)?.szDecimals;
+  return (p: number) => fmtPx(p, sz);
+};
+
 // ───────────────────────── (1) czytelność wczoraj ─────────────────────────
 
 /** Typ dnia sesji NY ze świec 1m (fakty z `sessionFacts`, jak nagłówek Rozliczenia i karta sesji). */
@@ -120,11 +126,12 @@ function dayTypeOf(x: FourInputs, ny: TradeSession): Got<{ label: string; hint: 
   const t = classifyDay(f);
   if (t === 'unknown') return { why: tr('zakres IB zerowy albo brak liczb', 'zero IB range or missing numbers') };
   const k = fmtFixed((f.hi - f.lo) / (f.ibHi - f.ibLo), 1);
+  const px = pxOf(x);
   return {
     label: DAY_TYPE_LABEL[t],
     hint: tr(
-      `sesja NY ${fmtDm(ny.start)}, IB ${fmtPx(f.ibLo)}–${fmtPx(f.ibHi)}, zakres ${fmtPx(f.lo)}–${fmtPx(f.hi)} (${k}× IB), zamknięcie ${fmtPx(f.close)} — ${DAY_TYPE_LABEL[t]}`,
-      `the NY session ${fmtDm(ny.start)}, IB ${fmtPx(f.ibLo)}–${fmtPx(f.ibHi)}, range ${fmtPx(f.lo)}–${fmtPx(f.hi)} (${k}× IB), close ${fmtPx(f.close)} — ${DAY_TYPE_LABEL[t]}`
+      `sesja NY ${fmtDm(ny.start)}, IB ${px(f.ibLo)}–${px(f.ibHi)}, zakres ${px(f.lo)}–${px(f.hi)} (${k}× IB), zamknięcie ${px(f.close)} — ${DAY_TYPE_LABEL[t]}`,
+      `the NY session ${fmtDm(ny.start)}, IB ${px(f.ibLo)}–${px(f.ibHi)}, range ${px(f.lo)}–${px(f.hi)} (${k}× IB), close ${px(f.close)} — ${DAY_TYPE_LABEL[t]}`
     ),
   };
 }
@@ -214,6 +221,7 @@ export function fuelNum(x: FourInputs): FourNumber {
   const p = gotValue(x.price);
   if (p === null || !(p > 0)) return { ...base, value: DASH, hint: gotWhy(x.price) };
   const { below, above } = liqFuel(map, p);
+  const px = pxOf(x);
   const delayed = x.liq.status === 'delayed';
   const note = scannerAge(map.asOf, x.now) ?? (delayed ? tr('opóźnione', 'delayed') : null);
   const late = delayed ? tr(' Połowa nominału z odczytów pozycji starszych niż 15 min — klastry mogły się przesunąć.', ' Half of the notional comes from position reads older than 15 min, so clusters may have moved.') : '';
@@ -222,8 +230,8 @@ export function fuelNum(x: FourInputs): FourNumber {
     ...base,
     value: `${tr('pod', 'below')} ${fmtCompact(below)} · ${tr('nad', 'above')} ${fmtCompact(above)}`,
     hint: tr(
-      `Mapa likwidacji skanera z pozycji on-chain Hyperliquid, stan z ${fmtHm(map.asOf)}: w 1% pod ceną ${fmtPx(p)} (do ${fmtPx(p * (1 - FUEL_BAND))}) ${fmtCompact(below)} USD likwidacji, w 1% nad nią (do ${fmtPx(p * (1 + FUEL_BAND))}) ${fmtCompact(above)} USD. Longi i shorty razem, po cenie kubełka; tylko pozycje śledzone przez skaner (${share} open interest).${late}`,
-      `The scanner's liquidation map from Hyperliquid on-chain positions, as of ${fmtHm(map.asOf)}: within 1% below the price ${fmtPx(p)} (to ${fmtPx(p * (1 - FUEL_BAND))}) ${fmtCompact(below)} USD of liquidations, within 1% above it (to ${fmtPx(p * (1 + FUEL_BAND))}) ${fmtCompact(above)} USD. Longs and shorts together, by bucket price; only positions tracked by the scanner (${share} of open interest).${late}`
+      `Mapa likwidacji skanera z pozycji on-chain Hyperliquid, stan z ${fmtHm(map.asOf)}: w 1% pod ceną ${px(p)} (do ${px(p * (1 - FUEL_BAND))}) ${fmtCompact(below)} USD likwidacji, w 1% nad nią (do ${px(p * (1 + FUEL_BAND))}) ${fmtCompact(above)} USD. Longi i shorty razem, po cenie kubełka; tylko pozycje śledzone przez skaner (${share} open interest).${late}`,
+      `The scanner's liquidation map from Hyperliquid on-chain positions, as of ${fmtHm(map.asOf)}: within 1% below the price ${px(p)} (to ${px(p * (1 - FUEL_BAND))}) ${fmtCompact(below)} USD of liquidations, within 1% above it (to ${px(p * (1 + FUEL_BAND))}) ${fmtCompact(above)} USD. Longs and shorts together, by bucket price; only positions tracked by the scanner (${share} of open interest).${late}`
     ),
     ...(note ? { note } : {}),
   };

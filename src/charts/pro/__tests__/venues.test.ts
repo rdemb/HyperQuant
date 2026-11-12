@@ -16,6 +16,9 @@ import {
   per8h,
 } from '../venues/parse';
 import { MinuteFlow, VenueStore, acquireVenues } from '../venues/venueStore';
+import { capsOf, resetMarketsForTest } from '../../../state/markets';
+import { noCexWhy } from '../../../utils/marketCaps';
+import { layerBadge } from '../chart/layerSources';
 
 const M1 = 60_000;
 
@@ -291,5 +294,76 @@ describe('rynek bez odpowiednika na Binance i Bybit', () => {
     expect(fetched.every((u) => u.includes('BTCUSDT'))).toBe(true);
     release.forEach((r) => r());
     await vi.advanceTimersByTimeAsync(5000);
+  });
+});
+
+describe('giełda odpowiada „nie ma symbolu”', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+    resetMarketsForTest();
+  });
+
+  /** Atrapa odpowiedzi jak na żywo (11.2026): Binance 400 z kodem -1121 (historia OI i finansowania: pusta lista 200), Bybit 200 z retCode 10001. */
+  function stubExchanges(has: { binance: boolean; bybit: boolean }, fetched: string[]): void {
+    class FakeSocket {
+      static OPEN = 1;
+      readyState = 0;
+      onopen: (() => void) | null = null;
+      onmessage: (() => void) | null = null;
+      onclose: (() => void) | null = null;
+      send(): void {}
+      close(): void {}
+    }
+    vi.stubGlobal('WebSocket', FakeSocket);
+    vi.stubGlobal('fetch', async (url: string) => {
+      fetched.push(url);
+      if (url.includes('bybit'))
+        return has.bybit
+          ? { ok: true, json: async () => ({ retCode: 0, result: { list: [] } }) }
+          : { ok: true, json: async () => ({ retCode: 10001, retMsg: 'params error: Symbol Is Invalid', result: { list: [] } }) };
+      if (has.binance || url.includes('openInterestHist') || url.includes('fundingRate')) return { ok: true, json: async () => [] };
+      return { ok: false, json: async () => ({ code: -1121, msg: 'Invalid symbol.' }) };
+    });
+  }
+
+  it('Binance i Bybit bez symbolu: panele „—” z powodem jak HIP-3 i bez ponownych zapytań w tej sesji', async () => {
+    vi.useFakeTimers();
+    const fetched: string[] = [];
+    stubExchanges({ binance: false, bybit: false }, fetched);
+    const iv = intervalById('1h');
+    expect(capsOf('NOSYM').cex).toBe(true);
+    const release = acquireVenues('NOSYM', iv);
+    new VenueStore('NOSYM').ensure(iv, Date.now() - 10 * HOUR_MS);
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(fetched.length).toBeGreaterThan(0);
+    expect(capsOf('NOSYM').cex).toBe(false);
+    expect(layerBadge('showVenueCvd', { coin: 'NOSYM', now: Date.now() }).hint).toBe(noCexWhy('NOSYM'));
+    const n = fetched.length;
+    // Kolejne przewinięcie, nowy wykres i odczyty bieżące co 30 s: żadnego zapytania
+    new VenueStore('NOSYM').ensure(iv, Date.now() - 20 * HOUR_MS);
+    const again = acquireVenues('NOSYM', iv);
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(fetched.length).toBe(n);
+    release();
+    again();
+    await vi.advanceTimersByTimeAsync(5000);
+  });
+
+  it('tylko Bybit bez symbolu: Bybit bez ponowień, Binance pyta dalej i panele zostają', async () => {
+    vi.useFakeTimers();
+    const fetched: string[] = [];
+    stubExchanges({ binance: true, bybit: false }, fetched);
+    const iv = intervalById('1h');
+    const s = new VenueStore('HALF');
+    s.ensure(iv, Date.now() - 10 * HOUR_MS);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetched.filter((u) => u.includes('bybit'))).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(60_000);
+    new VenueStore('HALF').ensure(iv, Date.now() - 400 * HOUR_MS);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetched.filter((u) => u.includes('bybit'))).toHaveLength(1);
+    expect(fetched.filter((u) => u.includes('fapi.binance')).length).toBeGreaterThan(1);
+    expect(capsOf('HALF').cex).toBe(true);
   });
 });

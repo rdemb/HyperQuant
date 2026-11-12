@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { publishMarkets, resetMarketsForTest } from '../../../state/markets';
+import { fmtPx, priceDigits } from '../core/footprintBar';
 import type { Candle } from '../hl/parse';
 import { STATIONS } from '../chart/stations';
 import { vwapSigma } from '../chart/marketState';
@@ -187,6 +189,32 @@ describe('nagłówek układu: trzy liczby', () => {
       ['VAL wczoraj', '−0,80%', 'LIVE'],
       ['Nagi POC', '+4,76%', 'LIVE'],
     ]);
+  });
+
+  it('ceny w podpowiedziach z dokładnością osi rynku (szDecimals): BTC bez zmian, kPEPE przy 0,0045 — 6 miejsc jak na osi', () => {
+    const d = at(2026, 11, 2, 0);
+    const btcHint = () => layoutNumbers('day-map', { coin: 'BTC', now: NOW, price: 105_000, prevDay: { day: d, vah: 105_420, val: 104_160 } })[0].hint;
+    const before = btcHint();
+    expect(before).toContain(`${fmtPx(105_420)}, 0,40% nad ceną ${fmtPx(105_000)}`);
+    publishMarkets({
+      asOf: 1,
+      rule: 'reg-v1',
+      markets: [
+        { coin: 'BTC', dex: '', oiUsd7d: 3e9, rank: 1, szDecimals: 5, maxLeverage: 40, since: '2026-11-01', scanner: 'full' },
+        { coin: 'kPEPE', dex: '', oiUsd7d: 2e7, rank: 2, szDecimals: 0, maxLeverage: 10, since: '2026-11-01', scanner: 'none' },
+      ],
+    });
+    try {
+      expect(btcHint()).toBe(before);
+      const pepe = layoutNumbers('day-map', { coin: 'kPEPE', now: NOW, price: 0.0045, prevDay: { day: d, vah: 0.004512, val: 0.00448 } })[0].hint;
+      // Oś kPEPE: 6 miejsc (krok ceny 1e-6), nie 7 z samej reguły 5 cyfr znaczących
+      expect(priceDigits(0.004512, 0)).toBe(6);
+      expect(pepe).toContain(`${fmtPx(0.004512, 0)}, `);
+      expect(pepe).toContain(`nad ceną ${fmtPx(0.0045, 0)}.`);
+      expect(pepe).not.toContain(fmtPx(0.004512));
+    } finally {
+      resetMarketsForTest();
+    }
   });
 
   it('Rozliczenie: typ dnia (MODEL · Dalton), migracja VA, poziomy mapy dotknięte (LIVE), z oznaczeniem „w toku”', () => {
