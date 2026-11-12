@@ -9,6 +9,7 @@ import {
   marketsOrDefault,
   parseDexMarkets,
   parsePerpDexs,
+  pickDexes,
   recordSnapshot,
   type MarketRegistry,
   type MarketSample,
@@ -50,6 +51,30 @@ function simulate(days: number, extra: (d: number) => MarketSample[], start: Reg
 }
 const coins = (r: MarketRegistry) => r.markets.map((m) => m.coin);
 const entry = (r: MarketRegistry, coin: string) => r.markets.find((m) => m.coin === coin);
+
+/**
+ * Symulacja godzinna: próbka o hh:30 UTC dla dni 0..days-1. `drop(d, h)` usuwa rynki z odpowiedzi pobranych giełd,
+ * `dexes(d, h)` zawęża zbiór pobranych giełd (giełda niedostępna albo pominięta w rotacji).
+ */
+function hourly(
+  days: number,
+  opts: { extra?: (d: number) => MarketSample[]; drop?: (d: number, h: number) => string[]; dexes?: (d: number, h: number) => string[] | undefined } = {}
+) {
+  const H0 = Date.UTC(2026, 10, 1, 0, 30);
+  let state = emptyRegistryState();
+  const files: { d: number; h: number; file: MarketRegistry }[] = [];
+  for (let d = 0; d < days; d++)
+    for (let h = 0; h < 24; h++) {
+      const byCoin = new Map(base().map((s) => [s.coin, s]));
+      for (const s of opts.extra?.(d) ?? []) byCoin.set(s.coin, s);
+      const dexes = opts.dexes?.(d, h) ?? [...new Set([...byCoin.values()].map((s) => s.dex))];
+      const dropped = new Set(opts.drop?.(d, h) ?? []);
+      const samples = [...byCoin.values()].filter((s) => dexes.includes(s.dex) && !dropped.has(s.coin));
+      state = recordSnapshot(state, { at: H0 + d * DAY + h * 3_600_000, dexes, samples });
+      files.push({ d, h, file: buildRegistry(state, ['BTC']) });
+    }
+  return { state, files };
+}
 
 describe('reg-v1: stała reguły', () => {
   it('parametry zgodne z planem', () => {
@@ -170,6 +195,77 @@ describe('recordSnapshot + buildRegistry', () => {
     const { state } = simulate(3, () => []);
     const back = recordSnapshot(state, { at: T0, dexes: [''], samples: [sample('BTC', 1e12)] });
     expect(back).toBe(state);
+  });
+});
+
+describe('brak rynku w jednej godzinnej odpowiedzi nie zmienia członków', () => {
+  it('rynek z miejsca 20: zostaje w pliku z tym samym since', () => {
+    // Pierwsza 20 = 4 stałe + F01–F16 (F16 na miejscu 20); wejście dnia 3; dnia 5 o 10:30 brak F16 w odpowiedzi
+    const { files } = hourly(7, { drop: (d, h) => (d === 5 && h === 10 ? ['F16'] : []) });
+    for (const { d, h, file } of files.filter((f) => f.d >= 3)) {
+      expect(entry(file, 'F16')?.since, `dzień ${d} ${h}:30`).toBe(dayStr(3));
+      expect(entry(file, 'F16')!.rank).toBe(20);
+    }
+  });
+
+  it('członek ze strefy 21–30: zostaje, także w następnych dniach', () => {
+    // X: ogromne OI do dnia 9 (wejście dnia 3), potem 79.5 (miejsce 26); dnia 20 o 5:30 brak X w odpowiedzi
+    const { files } = hourly(25, { extra: (d) => [sample('X', d < 10 ? 1e5 : 79.5)], drop: (d, h) => (d === 20 && h === 5 ? ['X'] : []) });
+    for (const { d, h, file } of files.filter((f) => f.d >= 3)) expect(entry(file, 'X')?.since, `dzień ${d} ${h}:30`).toBe(dayStr(3));
+    expect(entry(files[files.length - 1].file, 'X')!.rank).toBe(26);
+  });
+
+  it('BTC: zostaje z pierwszym since (także w godzinie bez wiersza)', () => {
+    const { files } = hourly(4, { drop: (d, h) => (d === 2 && h === 7 ? ['BTC'] : []) });
+    for (const { d, h, file } of files) expect(entry(file, 'BTC')?.since, `dzień ${d} ${h}:30`).toBe(dayStr(0));
+  });
+
+  it('członek nieobecny w żadnej próbce zamkniętego dnia (giełda pobrana) wypada przy ocenie tego dnia', () => {
+    const { files } = hourly(7, { drop: (d) => (d === 5 ? ['F16'] : []) });
+    const at = (d: number, h: number) => files.find((f) => f.d === d && f.h === h)!.file;
+    expect(entry(at(5, 23), 'F16')?.since).toBe(dayStr(3));
+    expect(coins(at(6, 0))).not.toContain('F16');
+  });
+
+  it('giełda niepobrana przez cały dzień (niedostępna albo poza rotacją) nie usuwa swoich rynków', () => {
+    const { files } = hourly(7, { extra: () => [sample('xyz:NVDA', 2000)], dexes: (d) => (d === 5 ? [''] : undefined) });
+    const last = files[files.length - 1].file;
+    expect(entry(last, 'xyz:NVDA')).toMatchObject({ dex: 'xyz', since: dayStr(3) });
+  });
+
+  it('wycofany (isDelisted) wypada od razu, także w środku dnia', () => {
+    const { files } = hourly(6, { extra: (d) => [sample('X', 1e5, { delisted: d === 5 })] });
+    const at = (d: number, h: number) => files.find((f) => f.d === d && f.h === h)!.file;
+    expect(coins(at(4, 23))).toContain('X');
+    expect(coins(at(5, 0))).not.toContain('X');
+  });
+});
+
+describe('pickDexes', () => {
+  /** Stan z rynkami giełd o zadanym OI (jedna próbka) */
+  function withDexes(oi: Record<string, number>): RegistryState {
+    const samples = Object.entries(oi).map(([dex, v]) => sample(dex === '' ? 'BTC' : `${dex}:AAA`, v));
+    return recordSnapshot(emptyRegistryState(), { at: T0, dexes: Object.keys(oi), samples });
+  }
+
+  it('giełda główna pierwsza, potem malejąco według ostatniego OI, nowe giełdy na końcu', () => {
+    const s = withDexes({ '': 100, io: 5, xyz: 50, km: 1 });
+    expect(pickDexes(s, ['', 'km', 'io', 'nowa', 'xyz'], 19)).toEqual({ dexes: ['', 'xyz', 'io', 'km', 'nowa'], skipped: [] });
+    // giełda główna nawet wtedy, gdy nie ma jej na liście
+    expect(pickDexes(s, ['xyz'], 19).dexes).toEqual(['', 'xyz']);
+  });
+
+  it('limit zapytań: najwyżej `max` giełd (z główną); reszta pominięta i pierwsza w następnym przebiegu', () => {
+    const listed = ['', ...Array.from({ length: 24 }, (_, i) => `d${String(i).padStart(2, '0')}`)];
+    const first = pickDexes(emptyRegistryState(), listed, 19);
+    expect(first.dexes).toHaveLength(19);
+    expect(first.dexes[0]).toBe('');
+    expect(first.skipped).toHaveLength(6);
+    // Przebieg pobrał wybrane giełdy → następny bierze najpierw pominięte
+    const after = recordSnapshot(emptyRegistryState(), { at: T0, dexes: first.dexes, samples: [sample('BTC', 1)] });
+    const second = pickDexes(after, listed, 19);
+    for (const d of first.skipped) expect(second.dexes).toContain(d);
+    expect(new Set([...first.dexes, ...second.dexes])).toEqual(new Set(listed));
   });
 });
 

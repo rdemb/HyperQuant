@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { isMarketRegistry, type MarketRegistry } from '../../../src/utils/marketRegistry.ts';
 import type { InfoClient } from '../liqDetect.ts';
-import { MARKET_REGISTRY_EVERY_MS, MarketRegistryRunner, REGISTRY_START_WINDOW } from '../marketRegistryRunner.ts';
+import { MARKET_REGISTRY_EVERY_MS, MAX_DEX_QUERIES, MarketRegistryRunner, REGISTRY_START_WINDOW } from '../marketRegistryRunner.ts';
 
 const H = 3_600_000;
 const DAY = 24 * H;
@@ -128,6 +128,76 @@ describe('MarketRegistryRunner', () => {
     expect(await b.runner.tick(T0 + 2 * DAY + 30 * 60_000)).toEqual({ ran: false });
     await b.runner.tick(T0 + 3 * DAY);
     expect(b.file().markets.map((m) => m.coin)).toContain('ZEC');
+  });
+
+  it('zwraca wejścia i wyjścia rejestru (do logu)', async () => {
+    const main = structuredClone(MAIN);
+    const { runner } = setup({ main });
+    let last = await runner.tick(T0);
+    expect(last).toMatchObject({ entered: ['BTC', 'ETH', 'SOL', 'HYPE'], left: [] });
+    for (let t = T0 + H; t <= T0 + 3 * DAY; t += H) last = await runner.tick(t);
+    expect(last).toMatchObject({ entered: ['xyz:NVDA', 'ZEC'], left: [] });
+    (main[0] as { universe: { name: string; isDelisted?: boolean }[] }).universe[4].isDelisted = true;
+    expect(await runner.tick(T0 + 3 * DAY + H)).toMatchObject({ ran: true, entered: [], left: ['ZEC'] });
+  });
+
+  describe('limit zapytań na przebieg (25 giełd)', () => {
+    const NAMES = Array.from({ length: 24 }, (_, i) => `d${String(i).padStart(2, '0')}`);
+    function many() {
+      const calls: Call[] = [];
+      const rest: InfoClient = {
+        async info(body: unknown, weight: number) {
+          const b = body as Call['body'];
+          calls.push({ body: b, weight });
+          if (b.type === 'perpDexs') return [null, ...NAMES.map((name) => ({ name }))];
+          if (b.dex === undefined) return MAIN;
+          const i = NAMES.indexOf(b.dex);
+          return [{ universe: [{ name: `${b.dex}:AAA`, szDecimals: 2, maxLeverage: 5 }] }, [{ openInterest: String(1000 + i), markPx: '10' }]];
+        },
+      };
+      return { rest, calls };
+    }
+
+    it('najwyżej 19 zapytań metaAndAssetCtxs (+1 perpDexs); start w 8. minucie kończy się przed następnym slotem', async () => {
+      expect(MAX_DEX_QUERIES).toBe(19);
+      const { rest, calls } = many();
+      const dir = mkdtempSync(join(tmpdir(), 'hq-markets-'));
+      const waits: number[] = [];
+      // Domyślne okno startu i domyślny odstęp 20 s; ostatnia chwila okna to tuż przed 8. minutą slotu
+      const runner = new MarketRegistryRunner({ rest, statePath: join(dir, 's.json'), outPath: join(dir, 'm.json'), scannerCoins: ['BTC'], wait: async (ms) => void waits.push(ms) });
+      const slot = Date.UTC(2026, 10, 1, 10, 15);
+      const r = await runner.tick(slot + 8 * 60_000 - 1);
+      expect(r.ran).toBe(true);
+      expect(r.skipped).toHaveLength(6);
+      const meta = calls.filter((c) => c.body.type === 'metaAndAssetCtxs');
+      expect(meta).toHaveLength(19);
+      expect(calls).toHaveLength(20);
+      expect(meta[0].body.dex).toBeUndefined();
+      const end = slot + 8 * 60_000 + waits.reduce((a, b) => a + b, 0);
+      expect(waits.every((w) => w === 20_000)).toBe(true);
+      expect(end).toBeLessThan(slot + 15 * 60_000);
+    });
+
+    it('rotacja: kolejne godziny obejmują wszystkie giełdy; kolejność zapytań malejąco według OI', async () => {
+      const { rest, calls } = many();
+      const dir = mkdtempSync(join(tmpdir(), 'hq-markets-'));
+      const runner = new MarketRegistryRunner({ rest, statePath: join(dir, 's.json'), outPath: join(dir, 'm.json'), scannerCoins: ['BTC'], startWindow: [0, 15 * 60_000], wait: async () => {} });
+      const seen = new Set<string>();
+      const runs: string[][] = [];
+      for (let k = 0; k < 2; k++) {
+        const from = calls.length;
+        expect((await runner.tick(T0 + k * H)).ran).toBe(true);
+        const dexes = calls.slice(from).filter((c) => c.body.type === 'metaAndAssetCtxs').map((c) => c.body.dex ?? '');
+        runs.push(dexes);
+        for (const d of dexes) seen.add(d);
+      }
+      expect(seen).toEqual(new Set(['', ...NAMES]));
+      // Pierwszy przebieg bez danych: d00–d17. Drugi: najpierw pominięte d18–d23, do limitu 12 największych ze znanych;
+      // kolejność zapytań: główna, znane malejąco według OI (OI rośnie z numerem), giełdy bez danych na końcu
+      const name = (i: number) => `d${String(i).padStart(2, '0')}`;
+      expect(runs[0]).toEqual(['', ...Array.from({ length: 18 }, (_, i) => name(i))]);
+      expect(runs[1]).toEqual(['', ...Array.from({ length: 12 }, (_, i) => name(17 - i)), ...Array.from({ length: 6 }, (_, i) => name(18 + i))]);
+    });
   });
 
   it('uszkodzony plik stanu → stan od nowa, bez wyjątku', async () => {

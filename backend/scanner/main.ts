@@ -25,7 +25,7 @@ import { publishToGit } from './gitPublish.ts';
 import { HISTORY_README, MarketRecorder, historyIndex, pruneHistory } from './history.ts';
 import { prepareHistoryRepo, publishHistory, startWhenReady } from './historyGit.ts';
 import { WHALE_MARKETS, WhaleWatcher } from './whales.ts';
-import { MarketRegistryRunner } from './marketRegistryRunner.ts';
+import { MAX_DEX_QUERIES, MarketRegistryRunner } from './marketRegistryRunner.ts';
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 const log = (msg: string) => console.log(`[skaner] ${msg}`);
@@ -249,9 +249,10 @@ const whales = whaleCfg
   : null;
 
 /**
- * Rejestr rynków `markets.json` (reguła `reg-v1`): raz na godzinę `perpDexs` i `metaAndAssetCtxs` każdej giełdy
- * (20 × (1 + liczba giełd) wag, przy 11 giełdach 240 na godzinę) z budżetu prognoz, z odstępem 20 s między giełdami;
- * dzienne próbki OI w `HQ_STATE_DIR` przetrwają restart. Pełne warstwy skanera (`scanner: "full"`) ma rynek `HQ_COIN`.
+ * Rejestr rynków `markets.json` (reguła `reg-v1`): raz na godzinę, start od 3. do 8. minuty slotu dziennika, `perpDexs`
+ * i `metaAndAssetCtxs` najwyżej 19 giełd (reszta w kolejnych godzinach), po 20 wag, z budżetu prognoz, z odstępem 20 s
+ * między giełdami (przy 11 giełdach 240 wag na godzinę); dzienne próbki OI w `HQ_STATE_DIR` przetrwają restart.
+ * Pełne warstwy skanera (`scanner: "full"`) ma rynek `HQ_COIN`.
  */
 const marketRegistry = new MarketRegistryRunner({
   rest: forecastRest,
@@ -263,7 +264,11 @@ const marketRegistry = new MarketRegistryRunner({
 async function marketRegistryTick(): Promise<void> {
   const r = await marketRegistry.tick(Date.now());
   if (r.error) console.error(`[skaner] rejestr rynków: ${r.error}`);
-  if (r.ran) log(`rejestr rynków: ${r.markets} rynków z ${r.dexes} giełd`);
+  if (!r.ran) return;
+  log(`rejestr rynków: ${r.markets} rynków z ${r.dexes} giełd`);
+  if (r.entered?.length) log(`rejestr rynków: weszły ${r.entered.join(', ')}`);
+  if (r.left?.length) log(`rejestr rynków: wyszły ${r.left.join(', ')}`);
+  if (r.skipped?.length) log(`rejestr rynków: giełdy pominięte w tej godzinie (limit ${MAX_DEX_QUERIES} zapytań): ${r.skipped.join(', ')}`);
 }
 
 /** Zasiew największymi kontami z publicznego rankingu (adresy zostają na serwerze). */
@@ -288,7 +293,7 @@ const DATA_README = [
   '- `liquidity/BTC.json` — profil płynności arkusza: mediana głębokości obu stron w ±10 / ±20 bp wg godziny UTC (do 30 dni), bieżąca płynność względem normy godziny, odporność po gwałtownych ruchach.',
   '- `lab/BTC.json` — laboratorium folkloru: reguły day tradingu (okrągłe poziomy, zebranie PDH/PDL, IB, VWAP, luka CME, finansowanie, 10:00 NY, momentum) — test historyczny z FDR i prerejestrowany test do przodu (e-wartości, e-BH) ze wszystkimi zdarzeniami do przeliczenia.',
   '- `whales.json` — warstwa wielorybów (BTC, ETH, SOL, HYPE): pozycje (wartość, wejście, likwidacja, dźwignia) i zlecenia oczekujące z wyzwalanymi (limit, stop, TP) największych kont z publicznego rankingu i dużych pozycji BTC; konto jako pseudonim ważny jedną dobę UTC, bez adresów; kwoty i ceny zaokrąglone.',
-  '- `markets.json` — rejestr rynków (reguła `reg-v1`, co godzinę): 20 największych rynków wszystkich giełd perp Hyperliquid, także HIP-3 (`xyz:NVDA`), według średniej otwartych pozycji z 7 dni; wejście po 3 dniach w pierwszej 20, wyjście po 7 dniach poza 30. miejscem; BTC, ETH, SOL i HYPE zawsze.',
+  '- `markets.json` — rejestr rynków (reguła `reg-v1`, co godzinę): największe rynki wszystkich giełd perp Hyperliquid, także HIP-3 (`xyz:NVDA`), według średniej otwartych pozycji z 7 dni; wejście po 3 dniach w pierwszej 20, wyjście po 7 dniach poza 30. miejscem; BTC, ETH, SOL i HYPE zawsze. Przez histerezę (rynek między 21. a 30. miejscem zostaje) i 4 stałe rynki plik może mieć więcej niż 20 rynków.',
   '- `status.json` — stan skanera (liczby adresów i pozycji, błędy API).',
   '- `alerts/keys.json` — klucze publiczne serwera powiadomień o alarmach: VAPID (subskrypcje push przeglądarek) i Ed25519 (podpis zapytań do skrzynki alarmów).',
   '',

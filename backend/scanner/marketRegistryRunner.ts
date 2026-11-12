@@ -6,6 +6,7 @@ import {
   isRegistryState,
   parseDexMarkets,
   parsePerpDexs,
+  pickDexes,
   recordSnapshot,
   type MarketSample,
   type RegistryState,
@@ -18,10 +19,17 @@ export const MARKET_REGISTRY_EVERY_MS = 3_600_000;
 const INFO_WEIGHT = 20;
 /** Odstęp między zapytaniami kolejnych giełd: wspólny budżet nie oddaje naraz całego wiadra jednemu zadaniu */
 const DEFAULT_GAP_MS = 20_000;
+/**
+ * Najwyżej tyle zapytań `metaAndAssetCtxs` na przebieg (z giełdą główną): start najpóźniej w 8. minucie slotu, 18 odstępów
+ * po 20 s = 6 min, więc przebieg kończy się przed następnym slotem niezależnie od liczby giełd na liście. Pozostałe
+ * giełdy idą w kolejnych godzinach (rotacja, `pickDexes`).
+ */
+export const MAX_DEX_QUERIES = 19;
 
 /**
- * Okno startu w 15-minutowym slocie dziennika: od 3. do 8. minuty. Przebieg (do ~4 min przy 11 giełdach) kończy się przed
- * następnym slotem, więc nie zabiera budżetu prognoz w chwili ich wydania; takt co 5 min trafia w okno raz na slot.
+ * Okno startu w 15-minutowym slocie dziennika: od 3. do 8. minuty. Przebieg (najwyżej `MAX_DEX_QUERIES` giełd, 6 min)
+ * kończy się przed następnym slotem, więc nie zabiera budżetu prognoz w chwili ich wydania; takt co 5 min trafia w okno
+ * raz na slot.
  */
 export const REGISTRY_START_WINDOW: readonly [number, number] = [3 * 60_000, 8 * 60_000];
 const SLOT_MS = 15 * 60_000;
@@ -47,6 +55,11 @@ export interface MarketRegistryTick {
   /** Pobrane giełdy */
   dexes?: number;
   markets?: number;
+  /** Rynki, które weszły do rejestru i z niego wyszły w tym przebiegu */
+  entered?: string[];
+  left?: string[];
+  /** Giełdy z listy pominięte w tym przebiegu (limit zapytań; pójdą w następnych godzinach) */
+  skipped?: string[];
   error?: string;
 }
 
@@ -89,8 +102,10 @@ export class MarketRegistryRunner {
     if (rest.healthy && !rest.healthy()) return { ran: false };
     this.running = true;
     try {
-      const dexes = parsePerpDexs(await rest.info({ type: 'perpDexs' }, INFO_WEIGHT));
-      if (!dexes) return { ran: false, error: 'brak listy giełd (perpDexs)' };
+      const listed = parsePerpDexs(await rest.info({ type: 'perpDexs' }, INFO_WEIGHT));
+      if (!listed) return { ran: false, error: 'brak listy giełd (perpDexs)' };
+      // Giełda główna i najwyżej MAX_DEX_QUERIES − 1 pozostałych; pominięte zostają jak giełda niedostępna
+      const { dexes, skipped } = pickDexes(this.state, listed, MAX_DEX_QUERIES);
       const wait = this.d.wait ?? sleep;
       const fetched: string[] = [];
       const failed: string[] = [];
@@ -110,8 +125,18 @@ export class MarketRegistryRunner {
       const file = buildRegistry(next, this.d.scannerCoins);
       writeJsonAtomic(this.d.statePath, next);
       writeJsonAtomic(this.d.outPath, file);
+      const entered = Object.keys(next.members).filter((c) => !this.state.members[c]);
+      const left = Object.keys(this.state.members).filter((c) => !next.members[c]);
       this.state = next;
-      return { ran: true, dexes: fetched.length, markets: file.markets.length, ...(failed.length ? { error: `giełdy bez odpowiedzi: ${failed.join(', ')}` } : {}) };
+      return {
+        ran: true,
+        dexes: fetched.length,
+        markets: file.markets.length,
+        entered,
+        left,
+        skipped,
+        ...(failed.length ? { error: `giełdy bez odpowiedzi: ${failed.join(', ')}` } : {}),
+      };
     } finally {
       this.running = false;
     }
