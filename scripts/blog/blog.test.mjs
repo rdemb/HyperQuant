@@ -5,7 +5,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { guardViolations, loadPostFile, splitFrontmatter, validatePost } from './posts.mjs';
 import { REPLAY_LINK_VERSION, parseReplayLink } from '../../src/charts/pro/replay/link';
-import { CSP, absolutize, esc, feedXml, flowsHtml, ladderLayout, layout, liquidationsHtml, postBody, postPage, renderMarkdown, replayLink, setupsHtml, sitemapXml } from './render.mjs';
+import { CSP, absolutize, esc, feedXml, isUnindexed, flowsHtml, ladderLayout, layout, liquidationsHtml, postBody, postPage, renderMarkdown, replayLink, setupsHtml, sitemapXml } from './render.mjs';
 import { buildBlog, checkPosts, mapKind } from './build.mjs';
 import { ogSvg, wrapTitle } from './og.mjs';
 import { PATHS, clip, sitePages, sitemapEntries } from './pages.mjs';
@@ -350,7 +350,9 @@ describe('blog: budowanie', () => {
     expect(readFileSync(path.join(blog, '2026-10-24-aktualizacja-14', 'index.html'), 'utf8')).toContain(`class="pager-older" href="../${ID}/"`);
     expect(existsSync(path.join(blog, 'archiwum', '2026-10', 'index.html'))).toBe(true);
     expect(readFileSync(path.join(blog, 'feed.xml'), 'utf8').match(/<item>/g).length).toBe(2);
-    expect(readFileSync(path.join(out, 'sitemap.xml'), 'utf8')).toContain('/blog/2026-10-24-aktualizacja-14/');
+    // notka „aktualizacja” poza mapą witryny (noindex), artykuł w niej
+    expect(readFileSync(path.join(out, 'sitemap.xml'), 'utf8')).not.toContain('/blog/2026-10-24-aktualizacja-14/');
+    expect(readFileSync(path.join(out, 'sitemap.xml'), 'utf8')).toContain(`/blog/${ID}/`);
     expect(existsSync(path.join(blog, 'og.png'))).toBe(true);
     // strony serwisu, zrzuty i karty podglądu obok bloga
     for (const f of ['wykresy/index.html', 'en/charts/og.png', 'lekcje/atlas/cvd/index.html', '404.html', 'og.png', 'site/charts-pl.jpg']) expect(existsSync(path.join(out, f)), f).toBe(true);
@@ -507,6 +509,16 @@ describe('strony serwisu: Wykresy, Lekcje, atlas, 404', () => {
     for (const [, href] of html.matchAll(/(?:href|src)="([^"]+)"/g)) expect(href, href).toMatch(/^(https:|#)/);
   });
 
+  it('404 po angielsku najpierw, polskie zdanie drugie (powłoka po angielsku)', () => {
+    const html = byPath.get('404.html').html;
+    expect(html).toMatch(/<html lang="en">/);
+    expect(html).toContain('<title>Page not found · HyperQuant</title>');
+    const main = html.slice(html.indexOf('<article class="page page--404">'), html.indexOf('</article>'));
+    expect(main).toMatch(/^<article class="page page--404">\n<h1>Page not found<\/h1>/);
+    expect(main.indexOf('<p lang="pl">')).toBeGreaterThan(main.indexOf('<ul class="more">'));
+    expect(main).toContain('Blog (in Polish)');
+  });
+
   it('mapa strony: strony z wersjami językowymi, bez 404', () => {
     const map = sitemapXml(SITE, [], sitemapEntries(SITE, pages));
     expect(map).toContain('xmlns:xhtml="http://www.w3.org/1999/xhtml"');
@@ -551,8 +563,13 @@ describe('IndexNow: nowe wpisy z pusha', () => {
 
   it('zgłasza wpisy z listy zmienionych plików, które są w zbudowanej stronie, razem ze stroną bloga', () => {
     const urls = changedPostUrls(files, SITE, (id) => id !== '2026-10-25-szkic');
-    expect(urls).toEqual(['https://example.org/HQ/blog/', 'https://example.org/HQ/blog/2026-10-24-aktualizacja-14/', 'https://example.org/HQ/blog/2026-10-25-mapa-dnia/']);
+    // notka „aktualizacja” ma noindex i nie ma jej w mapie witryny — bez zgłoszenia, ale zmienia stronę bloga
+    expect(urls).toEqual(['https://example.org/HQ/blog/', 'https://example.org/HQ/blog/2026-10-25-mapa-dnia/']);
     expect(indexNowBody(urls, SITE)).toEqual({ host: 'example.org', key: INDEXNOW_KEY, keyLocation: `https://example.org/HQ/${INDEXNOW_KEY}.txt`, urlList: urls });
+  });
+
+  it('push z samą notką „aktualizacja”: w zgłoszeniu tylko strona bloga', () => {
+    expect(changedPostUrls(['content/blog/2026-10-24-aktualizacja-14.md'], SITE, () => true)).toEqual(['https://example.org/HQ/blog/']);
   });
 
   it('nic do zgłoszenia: zmiany bez wpisów albo same szkice', () => {
@@ -743,4 +760,52 @@ describe('blog: treść z zewnątrz (linki, obrazy, front matter, CSP)', () => {
       skipped: [],
     });
   }, 20_000);
+});
+
+describe('blog: notki „aktualizacja” poza indeksem wyszukiwarek', () => {
+  const NOTE = { ...BASE, type: 'note', levels: [], scenarios: [] };
+  const BODY_NOTE = 'Cena bez zmian od rana, zakres z mapy dnia się utrzymuje, a na mapie płynności nie pojawiło się nic nowego od 9:30.';
+  const post = (id, data, body) => validatePost(id, data, body).post;
+  const upd = post('2026-10-24-aktualizacja-14', { ...NOTE, section: 'Aktualizacja 4h', date: '2026-10-24T14:00:00+02:00' }, BODY_NOTE);
+  const settle = post('2026-10-24-rozliczenie-londynu', { ...NOTE, section: 'Rozliczenie Londynu', date: '2026-10-24T13:30:00+02:00' }, BODY_NOTE);
+  const art = post(ID, BASE, BODY_ARTICLE);
+
+  it('notka „aktualizacja” ma noindex,follow; rozliczenie Londynu (też notka) i artykuł nie; CSP zostaje', () => {
+    expect([upd, settle, art].every(Boolean)).toBe(true);
+    const page = (p) => postPage(SITE, p, {});
+    expect(page(upd)).toContain('<meta name="robots" content="noindex,follow">');
+    expect(page(settle)).not.toContain('name="robots"');
+    expect(page(art)).not.toContain('name="robots"');
+    for (const p of [upd, settle, art]) expect(page(p)).toContain(`<meta http-equiv="Content-Security-Policy" content="${CSP}">`);
+    expect([upd, settle, art].map((p) => isUnindexed(p.id))).toEqual([true, false, false]);
+    expect(isUnindexed('2026-10-24-aktualizacja-14-druga')).toBe(false);
+  });
+
+  it('mapa witryny bez notek „aktualizacja”; lista wpisów, archiwum i RSS dalej z nimi', () => {
+    const posts = [upd, settle, art].sort((a, b) => b.ms - a.ms);
+    const map = sitemapXml(SITE, posts, []);
+    expect(map).not.toContain('/blog/2026-10-24-aktualizacja-14/');
+    expect(map).toContain('<loc>https://example.org/HQ/blog/2026-10-24-rozliczenie-londynu/</loc>');
+    expect(map).toContain(`<loc>https://example.org/HQ/blog/${ID}/</loc>`);
+    expect(map).toContain('<loc>https://example.org/HQ/blog/archiwum/2026-10/</loc>');
+    expect(feedXml(SITE, posts)).toContain('<link>https://example.org/HQ/blog/2026-10-24-aktualizacja-14/</link>');
+  });
+});
+
+describe('blog: rozliczenie tygodnia — BSS zawsze w parze, bez „realnej informacji” map', () => {
+  const WEEK = { ...BASE, section: 'Rozliczenie tygodnia', date: '2026-11-14T18:00:00+01:00', levels: [], scenarios: [] };
+  const WID = '2026-11-14-rozliczenie-tygodnia';
+  const body = (s) => `${BODY_ARTICLE}\n\n${s}`;
+
+  it('BSS tylko z obiema bazami (odległości i częstości bazowej)', () => {
+    expect(validatePost(WID, WEEK, body('BSS 0,42 wobec częstości bazowej.')).errors.join('\n')).toMatch(/BSS: podaj oba/);
+    expect(validatePost(WID, WEEK, body('BSS 0,10 wobec bazy odległości i 0,42 wobec częstości bazowej.')).errors).toEqual([]);
+  });
+
+  it('zdanie o „realnej informacji” map jest odrzucane; stare wpisy (do 7.11) i inne rubryki bez zmian', () => {
+    expect(validatePost(WID, WEEK, body('BSS 0,10 wobec bazy odległości i 0,42 wobec częstości bazowej, więc mapy niosły realną informację.')).errors.join('\n')).toMatch(/realnej informacji/);
+    const old = { ...WEEK, date: '2026-11-07T18:00:00+01:00' };
+    expect(validatePost('2026-11-07-rozliczenie-tygodnia', old, body('BSS 0,42, więc mapy niosły realną informację.')).errors).toEqual([]);
+    expect(validatePost('2026-11-14-mapa-dnia', { ...WEEK, section: 'Mapa dnia' }, body('BSS 0,42.')).errors).toEqual([]);
+  });
 });

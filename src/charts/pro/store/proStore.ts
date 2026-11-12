@@ -143,6 +143,8 @@ export class ProStore {
   ctx: AssetCtx | null = null;
   status: StreamStatus = 'idle';
   version = 0;
+  /** Rośnie po doczytaniu zleceń z historii: progi zamkniętych godzin (próg z chwili zdarzenia) liczone są od nowa. */
+  historyVersion = 0;
 
   private started = false;
   private readonly listeners = new Set<() => void>();
@@ -532,7 +534,8 @@ export class ProStore {
     if (tr) {
       for (const [a, z] of tr.spans) {
         this.coverage.addSpan(a, z);
-        this.addressed.addSpan(a, z);
+        // Sprzed granicy sprzątania zleceń z historii już się nie składa (niżej), więc konta stamtąd nie liczą się do okna
+        this.addressed.addSpan(Math.max(a, this.keptFrom), z);
       }
       for (const [a, z] of tr.zeroSpans ?? []) this.zeroKnown.addSpan(a, z);
       const { accepted } = this.tape.insert(tr.fills);
@@ -545,6 +548,7 @@ export class ProStore {
         this.orders.add([...agg.push(used, Number.NEGATIVE_INFINITY), ...agg.flush(0, true)]);
         this.walls.pushHistory(used);
         this.makers.add(used);
+        this.historyVersion++;
       }
       if (accepted.length > 0) for (const s of this.seriesById.values()) s.rebuildLive();
       this.oi.restore(tr.oi);
