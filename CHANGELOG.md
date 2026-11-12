@@ -12,6 +12,27 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 - **MCP `liquidation_tape`** (`mcp/src/tools/scanner.ts`): pole `unconfirmedShare` (%, LIVE; plik bez pola — brak liczby z powodem) i uwaga „Suma z ostatniej godziny niepełna: N kandydatów czeka na potwierdzenie”.
 - Testy: `backend/scanner/__tests__/liqBacklog.test.ts`, `mcp/__tests__/scanner.test.ts`; test 30-minutowego terminu w `liqDetect.test.ts` przestawiony na 24 h.
 
+### RVOL według godziny w Nowym Jorku, dni robocze i weekend osobno (2026-11-12)
+
+#### Zmienione
+- **RVOL: koszyk to godzina zegarowa w Nowym Jorku, nie UTC** (`src/utils/rvol.ts`: `rvolSeries`, `rvolHour`; wskaźnik RVOL na wykresie, liczba RVOL w nagłówku układu, MCP `session_context.rvolHour`). Wolumen przesuwa się razem z czasem w USA, więc godzina otwarcia NY ma tę samą bazę przed zmianą czasu i po niej (wcześniej przez kilka tygodni po zmianie baza mieszała godzinę otwarcia z godziną sąsiednią). Baza to mediana tej samej godziny z 20 ostatnich dni tego samego typu: dni handlu i weekend osobno, przy czym weekend trwa od piątku 17:00 do niedzieli 18:00 czasu nowojorskiego (jak przerwa CME; na 208 dniach świec 1h niedziela wieczorem NY ma wolumen 1,55 razy większy niż wtorek–czwartek o tej godzinie, a piątek wieczorem 0,55, więc granica według daty dawała RVOL ok. 1,7 w niedzielę wieczorem i 0,5–0,6 w piątek i sobotę wieczorem), szukane do 80 dni wstecz; mniej niż 10 dni → „—” z powodem. Godzina w toku nadal bez wartości na wykresie, a w nagłówku skalowana do upływu godziny. Nagłówek i MCP pobierają do tego 81 dni świec 1h (wcześniej 20). Wskaźnik na wykresie ładuje co najmniej 14 dni historii (10 dni roboczych); świeca weekendowa ma wartość dopiero przy ok. 5 tygodniach historii.
+- **Typowa szerokość godziny w Czwórce** (`src/utils/fourNumbers.ts`: `sessionHourSamples`, `hourWidth`, nowe `hourWidthSample`): próba z 20 ostatnich dni tego samego typu (robocze albo weekend od piątku 17:00 do niedzieli 18:00 czasu NY, do 80 dni wstecz) zamiast 20 kolejnych dni z weekendami; w podpowiedzi „z dni roboczych” albo „z weekendów”.
+- **MCP:** liczby z mediany dni mają pole `sample`: `n`, mediana i przedział 80% mediany z bootstrapu po dniach (1000 losowań, mulberry32 z `src/utils/pathEngine.ts`, ziarno 20261111; `bootstrapMedian80` w `src/utils/rvol.ts`). Dotyczy `session_context.rvolHour` (mediana wolumenu tej godziny, BTC) i typowej szerokości godziny w `market_brief`. Opisy w `mcp/README.md` i skillu `hyperquant`.
+- Testy: `src/utils/__tests__/rvolNy.test.ts` (zmiana czasu 1.11.2026 i 8.03.2026, weekend osobno, mniej niż 10 dni, typowa szerokość godziny, bootstrap), nowe asercje `sample` w testach MCP `market_brief` i `session_context`; fikstury dłuższe o dni tego samego typu.
+
+### Poziomy dnia i linie sesji: tylko bieżący i poprzedni dzień (2026-11-12)
+
+Na danych stałych `ui:check` (zegar 24.10.2026 21:29 UTC): „Mapa dnia” 1440 × 900, wykres 4h — 30 linii poziomów dnia → 3; „Rozliczenie doby” 30m, 1440 — 9 linii poziomów i 8 linii otwarć sesji → 6 i 6 (wybór warstwy, nie piksele). Telefon 390 × 844 bez zmian: 3 linie poziomów, linii sesji brak (układy telefonu ich nie włączają). Liczby „przed” zmierzone na stronie z `main` z tymczasowym licznikiem w nakładce (bez commita).
+
+#### Zmienione
+- **Poziomy dnia (PDH, PDL, otwarcie dnia) tylko dla bieżącego i poprzedniego dnia UTC, na interwałach od 4h tylko dla bieżącego** (`src/charts/pro/chart/levelsSelect.ts`, `selectDays`; `src/charts/pro/chart/overlay.ts`). Etykiety jak dotąd tylko bieżącego dnia. Dotąd linie dostawał każdy dzień w widoku.
+- **Linie otwarć sesji tylko dla bieżącej i poprzedniej doby UTC, nazwa przy trzech ostatnich** (`selectSessions`); sesja, która jeszcze się nie zaczęła, nie ma linii. Dni i sesje wynikają z ostatniej świecy, nie z przewinięcia.
+- **Opis warstw** (okno wskaźników, PL i EN): nowe reguły; przy poziomach dnia wynik sprawdzianu: „Po dotknięciu PDH albo PDL cena częściej idzie dalej, niż zawraca (odrzucenie 27–33% wobec 45% dla losowego poziomu, 2026 r.).”
+
+#### Dodane
+- **`ui:check`: scenariusz poziomów dnia i linii sesji** („Mapa dnia” i „Rozliczenie doby”, dane stałe, 1440 i 390): liczby z atrybutów `data-level-lines`, `data-session-lines` i `data-interval-ms`. Limity w `--strict`: na wykresie 4h najwyżej 3 linie poziomów, wszędzie najwyżej 6 linii poziomów i 6 linii sesji. `scripts/ui/baseline.json` (win32): 9 nowych liczb `levels.*` i `sessions.*`.
+- Testy: `levelsSelect.test.ts` (bieżący i poprzedni dzień poniżej 4h, od 4h tylko bieżący, brak dni z przyszłości, niezależność od głębokości historii, najwyżej 6 linii sesji z nazwą przy trzech ostatnich, sesja przyszła bez linii, zdanie w opisie PL i EN).
+
 ### Skaner: budżet odczytów pozycji (2026-11-12)
 
 #### Zmienione
@@ -47,6 +68,7 @@ Na prawdziwym dzienniku (gałąź `ledger`, głowa podsumowania z 12.11.2026 03:
   W teście na sesjach 2024–2026 (stałe dopasowane na 2020–2023) zrealizowany do oczekiwanego to średnio 0,96 w Londynie i 1,03 w NY. E liczone raz na otwarcie: ta sama liczba w trakcie sesji i po jej zamknięciu (zamknięta sesja od własnej ceny sprzed otwarcia, nie od bieżącej). Każdy rynek liczy z własnych świec 1h, bez osobnej ścieżki dla BTC; model HAR i awaryjny Parkinson ze świec 5m nie liczą już zakresu sesji, więc budżet nie czeka na model zmienności. Plakietka MODEL z metodą „profil × poziom”; w podpowiedzi „typowy dzień” (ok. 0,87 × E, w połowie dni zakres jest poniżej). Mniej niż 20 dni tego samego typu: „—” z powodem.
 - **MCP `session_context`:** nowe pole `typical` (0,87 × `expectedRange`), `method: "profile"`; serwer pobiera świece 1h do oczekiwanego zakresu zamiast świec 5m i modelu HAR. Opisy w `mcp/README.md` i skillu `hyperquant`.
 - Testy: `src/utils/__tests__/sessionExpected.test.ts` (przypadki policzone ręcznie, waga NY 0,5, weekend, mnożnik 2^0,30, przycięcie ±1,5, brak wglądu w przyszłość, sesja zamknięta, mniej niż 20 dni); testy nagłówka układu, karty Rozliczenia i narzędzi MCP przepisane na nową metodę.
+
 
 ### Profil TPO i profile dób: krótsze słupki, pełny profil dwóch ostatnich dób, 3 nagie POC (2026-11-12)
 

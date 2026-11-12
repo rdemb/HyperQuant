@@ -23,11 +23,13 @@ import {
   gotValue,
   gotWhy,
   hourWidth,
+  hourWidthSample,
   lastClosedNy,
   liqFuel,
   nextSessionHour,
   sessionHourSamples,
 } from '../../../src/utils/fourNumbers';
+import { bootstrapMedian80 } from '../../../src/utils/rvol';
 import { LIQ_MAP_RANGE, type LiqMap, isLiqMap } from '../../../src/utils/liqMap';
 import { liqMapFreshness } from '../../../src/utils/liqMapView';
 import { type TradeSession, type TradeSessionId, currentTradeSession, nextTradeSession, previousSameSession } from '../../../src/utils/sessionDay';
@@ -202,8 +204,11 @@ function levelCheck(level: number, fuel: FourNumber, vwap: FourNumber, x: FourIn
 /** Typowa szerokość godziny w USD (`hourWidth`, jak karta); karta bez liczby — null z jej podpowiedzią jako powodem. */
 function widthNum(n: FourNumber, x: FourInputs, at: SessionHour, now: number): Num {
   const bars = gotValue(x.bars1h);
-  const w = n.value === DASH || bars === null ? null : hourWidth(bars, at, now).median;
-  return num(w, 'usd', 'MODEL', { why: n.hint, method: WIDTH_METHOD });
+  if (n.value === DASH || bars === null) return num(null, 'usd', 'MODEL', { why: n.hint, method: WIDTH_METHOD });
+  // Próba dni (ta sama co karta) z przedziałem 80% mediany z bootstrapu po dniach
+  const xs = hourWidthSample(bars, at, now);
+  const w = hourWidth(bars, at, now).median;
+  return num(w, 'usd', 'MODEL', { why: n.hint, method: WIDTH_METHOD, sample: w === null ? undefined : { n: xs.length, median: w, interval80: bootstrapMedian80(xs) } });
 }
 
 /** Odległość od VWAP w σ (`vwapSigma`, jak karta); karta bez liczby — null z jej podpowiedzią jako powodem. */
