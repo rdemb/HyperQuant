@@ -118,21 +118,6 @@ class AggrSoundEngine {
       }
     }
   }
-
-  public playSignalAlert(direction: 'LONG' | 'SHORT') {
-    if (!this.enabled) return;
-    if (direction === 'LONG') {
-      this.playTone(523.25, 0.25, 0.18, 0, 'sine'); // C5
-      this.playTone(659.25, 0.25, 0.18, 0.1, 'sine'); // E5
-      this.playTone(783.99, 0.28, 0.22, 0.2, 'sine'); // G5
-      this.playTone(1046.5, 0.32, 0.35, 0.3, 'sine'); // C6
-    } else {
-      this.playTone(880.0, 0.25, 0.18, 0, 'sine'); // A5
-      this.playTone(698.46, 0.25, 0.18, 0.1, 'sine'); // F5
-      this.playTone(587.33, 0.28, 0.22, 0.2, 'sine'); // D5
-      this.playTone(440.0, 0.32, 0.35, 0.3, 'sine'); // A4
-    }
-  }
 }
 
 export const soundEngine = new AggrSoundEngine();

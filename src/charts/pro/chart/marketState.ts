@@ -254,11 +254,11 @@ function playersFact(x: StateInput, price: number): StateFact | null {
       `Duzi gracze (konta od ${usd(x.bigPlayerUsd)} wejść w 60 min): delta ${fmtSignedVol(p.big)} ${x.unit}, ` +
         `${dec(p.bigShare ?? 0, 0)}% wartości wejść, przewaga ${signed(bigImb * 100, 0, '%')}. Reszta: delta ${fmtSignedVol(p.rest)} ${x.unit}, ` +
         `przewaga ${signed(restImb * 100, 0, '%')}. Przewaga = delta × cena / wartość wejść grupy; poniżej 10% — bez przewagi.` +
-        (p.complete ? '' : ' Konta biorców tylko z części okna: nagrywanie zaczęło się albo przerwało w jego trakcie.'),
+        (p.complete ? '' : ' Konta biorców tylko z części okna: nagrywanie zaczęło się albo przerwało w jego trakcie albo okno przechodzi przez przełom doby UTC (w starszej historii — godziny), gdzie zmieniają się numery kont.'),
       `Large players (accounts with ${usd(x.bigPlayerUsd)} of entries in 60 min): delta ${fmtSignedVol(p.big)} ${x.unit}, ` +
         `${dec(p.bigShare ?? 0, 0)}% of entry value, edge ${signed(bigImb * 100, 0, '%')}. The rest: delta ${fmtSignedVol(p.rest)} ${x.unit}, ` +
         `edge ${signed(restImb * 100, 0, '%')}. Edge = delta × price / the group's entry value; below 10% — no edge.` +
-        (p.complete ? '' : ' Taker accounts cover only part of the window: recording started or broke off during it.')
+        (p.complete ? '' : ' Taker accounts cover only part of the window: recording started or broke off during it, or the window crosses a UTC day boundary (in older history — an hour), where account numbers change.')
     ),
     tone: b,
   };

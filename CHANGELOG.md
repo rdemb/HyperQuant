@@ -11,6 +11,33 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 - **Kolejność odczytów według wartości** (`backend/scanner/addressBook.ts`, `due`): konta, które handlowały od ostatniego odczytu (także z pozycją), w osobnej kolejce według nominału pozycji (bez pozycji: obrotu); pozycje po terminie według (wiek / termin) × √nominał; niewykorzystany budżet (`fill`) odświeża pozycje przed terminem według wiek × √nominał. Wcześniej mała, mocno spóźniona pozycja wyprzedzała dużą, której właściciel właśnie handlował, a wolny budżet nie był używany.
 - **Model obciążenia** (`backend/scanner/readBudgetSim.ts`, test `backend/scanner/__tests__/readBudget.test.ts`): 6 tys. pozycji (skala 1/5), nominały Pareto α 1,1 skalibrowane tak, że dawny harmonogram przy ~45 odczytach/min daje medianę ważoną ~27 min (na serwerze zmierzono 28–34 min); nowy przy 120 odczytach/min: `ageNtlP50Min` poniżej 10 min w każdej minucie 24 h (także przy dwa razy większej liczbie kont handlujących). Wynik modelu zależy od rozkładu nominałów (przy α 1,2 ~15–20 min); rozstrzyga pomiar na serwerze.
 
+### Angielski pierwszym językiem powłoki (E1) (2026-11-12)
+
+#### Zmienione
+- **`index.html` po angielsku** (to, co widzi wyszukiwarka i podgląd linku, zanim aplikacja wykryje język): `lang="en"`, tytuł, opis, słowa kluczowe, Open Graph (`og:locale` `en_GB`, alternatywa `pl_PL`), Twitter, opis JSON-LD (`inLanguage` `["en", "pl"]`) i blok `noscript` (polskie strony jako drugie, z `lang="pl"`). Kanał RSS zostaje polski, z tytułem „HyperQuant · BTC analysis (in Polish)”. Po starcie aplikacja dalej ustawia język czytelnika (`src/main.tsx`).
+- **`public/manifest.webmanifest` po angielsku**: `lang: "en"`, opis i skróty (Pre-session, In session, Post-session), te same adresy.
+- **Strona 404 po angielsku najpierw** (`scripts/blog/pages.mjs`), polskie zdanie z polskimi stronami drugie; blog oznaczony „(in Polish)”.
+- Adresy bez zmian; blog, wpisy i RSS zostają po polsku.
+- Testy: `src/shell/__tests__/englishShell.test.ts` (index.html i manifest bez polskich znaków, `lang` `en`), `scripts/blog/blog.test.mjs` (404).
+
+### Badania: nazwy bez kierunku, bez martwego sygnału i bez dźwigni 100× (2026-11-12)
+
+#### Zmienione
+- **Stan wyczerpania przepływu opisuje przeszłość** (`src/types/trading.ts`, `src/utils/quantMathEngine.ts`): `BULLISH_EXHAUSTION_TOP_RISK` → `BUY_FLOW_ABSORBED`, `BEARISH_EXHAUSTION_BOTTOM_REVERSAL` → `SELL_FLOW_ABSORBED`, `AGGRESSIVE_BUY/SELL_CONTINUATION` → `AGGRESSIVE_BUY/SELL_DOMINANT` (bez stron rynku, szczytu, dołka i kontynuacji, jak nazwy reżimów).
+- **Mapa likwidacji z wykresu bez dźwigni 100×** (`src/utils/shaakuniEngine.ts`, `computeAggrLiquidationHeatmap`): Hyperliquid daje na BTC najwyżej 40× (`BTC_MAX_LEVERAGE` w `src/utils/planAnalyzer.ts`), więc poziomy dla 100× opisywały pozycje, których na tej giełdzie nie ma; zostają 5× i 20×.
+
+#### Usunięte
+- Nieużywany sygnał dźwiękowy kierunku `soundEngine.playSignalAlert('LONG' | 'SHORT')` (`src/utils/soundEngine.ts`).
+- Testy: `src/utils/__tests__/researchHonesty.test.tsx` (nazwy w src, brak sygnału w silniku dźwięku, dźwignie mapy ≤ 40×).
+
+### Kto handluje: okno klasy kont pełne tylko w jednym zakresie numeracji (2026-11-11)
+
+#### Naprawione
+- **Okno 60 min klasy kont (Kto handluje) przez granice numeracji kont** (`src/charts/pro/core/players.ts`, `src/charts/pro/core/accountScope.ts`): w historii serwera konto ma numer ważny w dobie UTC (starsze pliki: w godzinie), a na żywo adres, więc okno przez przełom doby, przez granicę godziny starego pliku albo przez chwilę otwarcia strony liczy jedno konto jako dwa. Takie okno ma teraz `complete: false` (wcześniej „pełne” znaczyło tylko taśmę z kontami przez samą świecę); pełne okno musi też w całości leżeć w taśmie z kontami. Sprawdzenie zakresu (`oneAccountScope`) przeniesione z `indicators/registry.ts` do wspólnego modułu.
+- **Historia sprzed granicy sprzątania nie oznacza okna jako pełnego** (`src/charts/pro/store/proStore.ts`, `restoreHistory`): pokrycie taśmą z kontami z pliku historii liczy się od granicy sprzątania (`keptFrom`), bo starszych zleceń z tego pliku już się nie składa.
+- Opis „Duzi gracze” (PL i EN) podaje też przyczynę z przełomem doby (`src/charts/pro/chart/marketState.ts`).
+- Testy: `src/charts/pro/__tests__/players.test.ts` (przełom doby, granica godziny starego pliku, historia i konta na żywo w jednym oknie, okno poza taśmą), `src/charts/pro/__tests__/whoRetention.test.ts` (plik historii wczytany po sprzątaniu).
+
 ### Zakres początkowy sesji: pełny rysunek tylko bieżącej sesji, rozszerzenia po wybiciu (2026-11-12)
 
 Na danych stałych `ui:check` (zegar 24.10.2026 21:29 UTC, sesja nowojorska) warstwa rysowała 7 obiektów w „Aukcja i otwarcie” 5m na 1440 × 900 i 7 na 390 × 844 oraz 63 i 14 w „Rozliczeniu doby” 30m; po zmianie 5 i 5 oraz 7 i 7 (wybór warstwy, nie piksele; obiekt to prostokąt albo linia, bez linii otwarć sesji). Liczby „przed” zmierzone na stronie z `main` z tymczasowym licznikiem w nakładce (bez commita).
