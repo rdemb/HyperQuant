@@ -202,3 +202,18 @@ describe('LiqConfirmer: taśma tylko od since (restart z przerwą, przerwa WebSo
     expect(LiqConfirmer.fromJSON(j, { coin: 'BTC', maxPerMin: 3 }).pending).toBe(1);
   });
 });
+
+describe('LiqConfirmer: przy odczycie najpierw granica okresu (since), potem TTL', () => {
+  it('kandydat sprzed 25 h: restart z przerwą (nowe since) → pending 0 i failed 0; restart bez przerwy (since ciągłe) → failed 1', () => {
+    const c = new LiqConfirmer({ coin: 'BTC', maxPerMin: 3 });
+    c.enqueue({ addr: addr(1), prev: pos(2), from: T0, to: T0 + 2 * MIN });
+    const j = JSON.parse(JSON.stringify(c.toJSON()));
+    const now = T0 + 25 * HOUR;
+    const gap = LiqConfirmer.fromJSON(j, { coin: 'BTC', maxPerMin: 3, now, since: now });
+    expect(gap.pending).toBe(0);
+    expect(gap.checks(now).failed).toBe(0);
+    const cont = LiqConfirmer.fromJSON(j, { coin: 'BTC', maxPerMin: 3, now, since: T0 - HOUR });
+    expect(cont.pending).toBe(0);
+    expect(cont.checks(now).failed).toBe(1);
+  });
+});
