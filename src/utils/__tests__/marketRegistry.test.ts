@@ -4,6 +4,7 @@ import {
   REG_V1,
   buildRegistry,
   emptyRegistryState,
+  isCoinName,
   isMarketRegistry,
   isRegistryState,
   marketsOrDefault,
@@ -379,5 +380,14 @@ describe('marketsOrDefault', () => {
     const list = marketsOrDefault(r);
     expect(list.map((m) => m.coin)).toEqual(['BTC', 'xyz:NVDA', 'ETH', 'SOL', 'HYPE']);
     expect(list[1]).toEqual({ coin: 'xyz:NVDA', dex: 'xyz', szDecimals: 3, maxLeverage: 20, scanner: 'none' });
+  });
+});
+
+describe('isCoinName', () => {
+  it('rynek główny i HIP-3 z przedrostkiem giełdy', () => {
+    for (const x of ['BTC', 'kPEPE', 'xyz:NVDA', 'io:ANTH']) expect(isCoinName(x)).toBe(true);
+  });
+  it('odrzuca puste, z ukośnikiem, dwoma dwukropkami, spacją i nie-tekst', () => {
+    for (const x of ['', ':NVDA', 'xyz:', 'a:b:c', 'BTC/USD', 'BT C', '../x', 'x'.repeat(21), 1, null, undefined]) expect(isCoinName(x)).toBe(false);
   });
 });

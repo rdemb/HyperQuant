@@ -345,6 +345,8 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
   private readonly axisPoc = new AxisLabel(rgba(PRO.ink2, 0.9));
   private readonly axisViews: readonly ISeriesPrimitiveAxisView[] = [this.axisPoc, this.axisSvwap, this.axisVwap];
   private readonly views: readonly IPrimitivePaneView[];
+  /** Format ceny podpisów (VWAP, poziomy, IB, POC): tick rynku wykresu z szDecimals (ustawia kontroler). */
+  fmtPx: (p: number) => string = fmtPx;
 
   constructor(toggles: IndicatorToggles) {
     this.toggles = toggles;
@@ -565,7 +567,7 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
       if (last) {
         this.axisSvwap.on = true;
         this.axisSvwap.y = Y(last.vwap);
-        this.axisSvwap.label = fmtPx(last.vwap);
+        this.axisSvwap.label = this.fmtPx(last.vwap);
         s.tags.push({ y: Y(last.vwap), text: 'VWAP S', color: K.svwap });
       }
     }
@@ -574,7 +576,7 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
       if (last) {
         this.axisVwap.on = true;
         this.axisVwap.y = Y(last.vwap);
-        this.axisVwap.label = fmtPx(last.vwap);
+        this.axisVwap.label = this.fmtPx(last.vwap);
         s.tags.push({ y: Y(last.vwap), text: sc.vwapAnchor === 'week' ? tr('VWAP T', 'VWAP W') : 'VWAP', color: K.vwap });
       }
     }
@@ -610,7 +612,7 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
           if (!Number.isFinite(y)) continue;
           levelLines++;
           s.hlines.push({ x0, x1, y, color, dash });
-          if (current) s.tags.push({ y, text: `${name} ${fmtPx(px)}`, color: color === K.dayOpen ? PRO.ink2 : K.level });
+          if (current) s.tags.push({ y, text: `${name} ${this.fmtPx(px)}`, color: color === K.dayOpen ? PRO.ink2 : K.level });
         }
       }
     }
@@ -634,7 +636,7 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
         if (!current) continue;
         const xi = edge(Math.min(ib.end, lastT + ms));
         s.fills.push({ pts: [x0, yh, xi, yh, xi, yl, x0, yl], color: K.ibFill });
-        s.tags.push({ y: yh, text: `IBH ${fmtPx(ib.hi)}`, color: K.ib }, { y: yl, text: `IBL ${fmtPx(ib.lo)}`, color: K.ib });
+        s.tags.push({ y: yh, text: `IBH ${this.fmtPx(ib.hi)}`, color: K.ib }, { y: yl, text: `IBL ${this.fmtPx(ib.lo)}`, color: K.ib });
         if (!d.breakout) continue;
         const xb = edge(d.breakout.t);
         const r = ib.hi - ib.lo;
@@ -643,7 +645,7 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
           const px = d.breakout.side === 1 ? ib.hi + m * r : ib.lo - m * r;
           const y = Y(px);
           s.hlines.push({ x0: xb, x1, y, color: K.ibExt, dash: DASH.ext });
-          s.tags.push({ y, text: `${label} ${fmtPx(px)}`, color: K.ib });
+          s.tags.push({ y, text: `${label} ${this.fmtPx(px)}`, color: K.ib });
         }
       }
     }
@@ -906,7 +908,7 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
     s.hlines.push({ x0: 0, x1: W, y: yPoc, color: K.pocLine, dash: DASH.level });
     this.axisPoc.on = true;
     this.axisPoc.y = yPoc;
-    this.axisPoc.label = fmtPx(pocPx);
+    this.axisPoc.label = this.fmtPx(pocPx);
     const vah = Y((p.lo + p.vaHi + 1) * p.step);
     const val = Y((p.lo + p.vaLo) * p.step);
     s.hlines.push({ x0: W - pw, x1: W, y: vah, color: K.vaLine, dash: DASH.dot }, { x0: W - pw, x1: W, y: val, color: K.vaLine, dash: DASH.dot });

@@ -90,7 +90,8 @@ describe('link do chwili w powtórce', () => {
     expect(replayHash(l)).toBe(hash.replace('zone=75200-75000', 'zone=75000-75200'));
     expect(parseReplayLink('#charts?m=BTC')).toBeNull();
     expect(parseReplayLink('#desk?replay=history')).toBeNull();
-    expect(parseReplayLink('#charts?replay=history&m=XRP&i=2m&v=x&t=wczoraj&station=nie&zone=1')).toMatchObject({ coin: 'BTC', interval: null, view: null, t: null, station: null, zone: null, layers: null });
+    expect(parseReplayLink('#charts?replay=history&m=xyz:NVDA')!.coin).toBe('xyz:NVDA');
+    expect(parseReplayLink('#charts?replay=history&m=X/Y&i=2m&v=x&t=wczoraj&station=nie&zone=1')).toMatchObject({ coin: 'BTC', interval: null, view: null, t: null, station: null, zone: null, layers: null });
   });
 
   it('stacja z linku: układ faz, a stary identyfikator (blog, lekcje) prowadzi do nowego układu', () => {

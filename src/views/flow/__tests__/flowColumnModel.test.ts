@@ -3,10 +3,10 @@ import { followHash } from '../../../state/route';
 import { DEFAULT_FLOW_PREFS, DOCK_KEY, DOCK_MIN_W, DRAWER_MIN_W, columnAfterHash, dockMode, parseDock, parseFlowPrefs, scannerScope } from '../flowColumnModel';
 
 describe('kolumna DOM i taśmy: czyste pomocniki', () => {
-  it('panele skanera (kto przyjmuje, TWAP-y) tylko dla BTC', () => {
+  it('panele skanera (kto przyjmuje, TWAP-y) dla rynków z pełnym skanerem w rejestrze (dziś BTC)', () => {
     expect(scannerScope('BTC')).toBe('full');
-    expect(scannerScope('ETH')).toBe('btc-only');
-    expect([scannerScope('SOL'), scannerScope('HYPE'), scannerScope('btc'), scannerScope('')]).toEqual(['btc-only', 'btc-only', 'btc-only', 'btc-only']);
+    expect(scannerScope('ETH')).toBe('none');
+    expect([scannerScope('SOL'), scannerScope('HYPE'), scannerScope('xyz:NVDA'), scannerScope('btc'), scannerScope('')]).toEqual(['none', 'none', 'none', 'none', 'none']);
   });
 
   it('kolumna przypięta od 1280 px, szuflada od 640 do 1279 px, na telefonie bez kolumny', () => {

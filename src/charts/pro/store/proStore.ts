@@ -3,7 +3,7 @@ import { fetchAssetCtx, fetchCandles, fetchCandlesOrNull, fetchFunding } from '.
 import { HlStream, StreamStatus, Subscription } from '../hl/stream';
 import { BookFrame, BookHistory, bookSigFigs, bookStep, toFrame } from '../core/book';
 import { Coverage, Span } from '../core/coverage';
-import { FootprintBar, FootprintBuilder, baseTick, hlTick } from '../core/footprintBar';
+import { FootprintBar, FootprintBuilder, baseTick, fmtPx, hlTick } from '../core/footprintBar';
 import { WallTracker } from '../core/clashes';
 import { MakerFlow, MakerSplit, MakerTop } from '../core/makers';
 import { OrderAggregator, OrderLog } from '../core/orders';
@@ -14,6 +14,8 @@ import { Tape, TradeRow } from '../core/tape';
 import { periodStart, utcDayStart } from '../core/sessions';
 import { indicatorScope, vwapSourceId } from '../core/indicators';
 import { DAY, Interval, aggregateCandles, barEnd, barStart, fromDaily, intervalById } from '../core/time';
+import { HOME_MARKET } from '../../../utils/marketCaps';
+import { marketOf } from '../../../state/markets';
 
 /**
  * Magazyn wykresu Pro (bez Reacta, jeden na rynek): taśma transakcji od otwarcia widoku z pokryciem
@@ -22,10 +24,12 @@ import { DAY, Interval, aggregateCandles, barEnd, barStart, fromDaily, intervalB
  * powiadomienie o zmianie i sami czytają stan (`series(id).bars()`, `ctx`, `orders`).
  */
 
-/** Rynki perp Hyperliquid w widoku Wykresy. */
-export const MARKETS = ['BTC', 'ETH', 'SOL', 'HYPE'] as const;
-export type Market = (typeof MARKETS)[number];
-export const COIN: Market = 'BTC';
+/**
+ * Rynek perp Hyperliquid w widoku Wykresy: nazwa z rejestru rynków (`BTC`, `kPEPE`, `xyz:NVDA`), lista w `state/markets`.
+ * Link i zapis sprawdzają tylko format nazwy (`isCoinName`); rynek spoza rejestru zamienia na BTC wykres.
+ */
+export type Market = string;
+export const COIN: Market = HOME_MARKET;
 /** Tyle świec pobieramy na start i przy każdym doczytaniu historii. */
 export const PAGE_BARS = 1500;
 /** Po nieudanym pobraniu starszej strony świec kolejna próba najwcześniej po tylu ms (błąd to nie koniec historii). */
@@ -243,6 +247,21 @@ export class ProStore {
     this.started = false;
   }
 
+  /** Miejsca wielkości zlecenia rynku z rejestru (krok ceny: najwyżej 6 − szDecimals miejsc); rynek spoza listy — brak. */
+  get szDecimals(): number | undefined {
+    return marketOf(this.coin)?.szDecimals;
+  }
+
+  /** Cena z dokładnością ticku tego rynku. */
+  fmtPx(p: number): string {
+    return fmtPx(p, this.szDecimals);
+  }
+
+  /** Tick ceny tego rynku (5 cyfr znaczących i limit z szDecimals). */
+  tick(p: number): number {
+    return hlTick(p, this.szDecimals);
+  }
+
   serverNow(): number {
     return this.replay ? this.replay.now() : this.clock.toServer(Date.now());
   }
@@ -451,7 +470,7 @@ export class ProStore {
     // Historia arkusza w tych samych krokach zostaje (także wczytana z serwera przed pierwszą ceną)
     for (const step of [...this.books.keys()]) if (step !== steps[0] && step !== steps[1]) this.books.delete(step);
     this.bookSubs = [near, far].map((n): Subscription => ({ type: 'l2Book', coin: this.coin, nSigFigs: n }));
-    this.exactSub = steps[0] > hlTick(price) * 1.5;
+    this.exactSub = steps[0] > this.tick(price) * 1.5;
     if (this.exactSub) this.bookSubs.push({ type: 'l2Book', coin: this.coin });
     for (const sub of this.bookSubs) this.stream.add(sub);
   }
@@ -931,6 +950,15 @@ const stores = new Map<Market, ProStore>();
 export function storeFor(coin: Market): ProStore {
   let s = stores.get(coin);
   if (!s) stores.set(coin, (s = new ProStore(undefined, coin)));
+  return s;
+}
+
+/** Zamyka magazyn rynku spoza rejestru (strumień i liczniki) i zapomina go; null — magazyn nie był otwarty. */
+export function dropStore(coin: Market): ProStore | null {
+  const s = stores.get(coin);
+  if (!s) return null;
+  s.stop();
+  stores.delete(coin);
   return s;
 }
 

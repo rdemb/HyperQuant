@@ -216,7 +216,9 @@ export function pickAssetCtx(raw: unknown, coin: string): AssetCtx | null {
   if (!Array.isArray(raw) || raw.length < 2 || !isRecord(raw[0]) || !Array.isArray(raw[1])) return null;
   const universe = raw[0].universe;
   if (!Array.isArray(universe)) return null;
-  const i = universe.findIndex((u) => isRecord(u) && u.name === coin);
+  // Giełda HIP-3 podaje nazwę z przedrostkiem (`xyz:NVDA`) albo bez niego
+  const bare = coin.slice(coin.indexOf(':') + 1);
+  const i = universe.findIndex((u) => isRecord(u) && (u.name === coin || u.name === bare));
   return i >= 0 ? parseAssetCtx(raw[1][i]) : null;
 }
 

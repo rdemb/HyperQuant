@@ -2,6 +2,7 @@
 import type { BlogMap, BlogMapsState } from '../../../state/useBlogMaps';
 import type { VBar } from '../../auction';
 import type { FourInputs } from '../../fourNumbers';
+import { DEFAULT_MARKETS } from '../../marketRegistry';
 import type { LiqMap } from '../../liqMap';
 import { tradeSessionOn } from '../../sessionDay';
 
@@ -79,6 +80,7 @@ export const LIQ_MAP: LiqMap = {
 
 export const inputs = (patch: Partial<FourInputs> = {}): FourInputs => ({
   coin: 'BTC',
+  markets: DEFAULT_MARKETS,
   now: NOW,
   price: 100_000,
   bars1m: ALL,

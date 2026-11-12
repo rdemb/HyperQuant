@@ -33,9 +33,11 @@ describe('parseSettings', () => {
     expect(parseSettings({ interval: '2m' }).interval).toBe(DEFAULT_SETTINGS.interval);
   });
 
-  it('rynek tylko z listy, domyślnie BTC', () => {
+  it('rynek: nazwa w formacie Hyperliquid (także HIP-3 z dwukropkiem), inaczej BTC; rejestr sprawdza wykres', () => {
     expect(parseSettings({ coin: 'ETH' }).coin).toBe('ETH');
-    expect(parseSettings({ coin: 'DOGE' }).coin).toBe('BTC');
+    expect(parseSettings({ coin: 'xyz:NVDA' }).coin).toBe('xyz:NVDA');
+    expect(parseSettings({ coin: 'kPEPE' }).coin).toBe('kPEPE');
+    for (const coin of ['BTC/USD', '', 'xyz:', 7]) expect(parseSettings({ coin }).coin).toBe('BTC');
   });
 
   it('zestaw paneli układu: tylko znany identyfikator, nieprawidłowy → undefined (pierwszy zestaw układu)', () => {
@@ -75,8 +77,15 @@ describe('link do widoku', () => {
     const s = { ...DEFAULT_SETTINGS, coin: 'SOL' as const, interval: '5m', view: 'candles' as const };
     expect(hashFor(s)).toBe('#charts?m=SOL&i=5m&v=candles');
     expect(settingsFromHash(hashFor(s))).toEqual({ coin: 'SOL', interval: '5m', view: 'candles' });
-    expect(settingsFromHash('#charts?m=DOGE&i=7m&v=x')).toEqual({});
+    expect(settingsFromHash('#charts?m=BTC/USD&i=7m&v=x')).toEqual({});
     expect(settingsFromHash('#charts')).toEqual({});
+  });
+
+  it('rynek HIP-3 w adresie z dwukropkiem: #charts?m=xyz:NVDA', () => {
+    const s = { ...DEFAULT_SETTINGS, coin: 'xyz:NVDA', interval: '5m', view: 'candles' as const };
+    expect(hashFor(s)).toBe('#charts?m=xyz:NVDA&i=5m&v=candles');
+    expect(settingsFromHash('#charts?m=xyz:NVDA')).toEqual({ coin: 'xyz:NVDA' });
+    expect(settingsFromHash('#charts?m=xyz%3ANVDA')).toEqual({ coin: 'xyz:NVDA' });
   });
 
   it('widoczne wskaźniki w linku (&ind=…); bez widocznych link bez wskaźników', () => {

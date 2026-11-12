@@ -6,6 +6,7 @@ import { replayBase } from '../../charts/pro/replay/session';
 import type { Market } from '../../charts/pro/store/proStore';
 import { tr } from '../../i18n';
 import { dismissOnEscape, markSeen, quickReplay, quickReplayVisible, startOnboarding, tipsPending } from '../../utils/onboarding';
+import { capsOf } from '../../state/markets';
 
 /** Pamięć przeglądarki; null, gdy zablokowana (wtedy nic się nie pokazuje). */
 function storage(): Storage | null {
@@ -83,13 +84,16 @@ export const FirstContact: React.FC<{ coin: Market }> = ({ coin }) => {
     }
     const base = replayBase('history');
     const index = base ? await fetchIndex(base, (u) => fetch(u, { signal: AbortSignal.timeout(20_000) })) : null;
-    const r = quickReplay(coin, Date.now(), index);
+    const r = quickReplay(coin, capsOf(coin), Date.now(), index);
     setBusy(false);
     if (r.ok) window.location.hash = r.hash;
     else
       setWhy(
         r.reason === 'market'
-          ? tr('Powtórka ostatnich 15 min jest tylko dla BTC — zmień rynek wykresu na BTC.', 'The last-15-minutes replay is BTC only — switch the chart market to BTC.')
+          ? tr(
+              'Powtórka ostatnich 15 min jest dla rynków z pełnym skanerem (nagranie serwera) — zmień rynek wykresu, np. na BTC.',
+              'The last-15-minutes replay exists for markets with the full scanner (the server recording) — switch the chart market, e.g. to BTC.'
+            )
           : tr('Serwer nie ma teraz nagrania z ostatnich 15 min — spróbuj za chwilę.', 'The server has no recording of the last 15 minutes right now — try again shortly.')
       );
   };

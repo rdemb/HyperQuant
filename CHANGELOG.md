@@ -4,6 +4,25 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Wykresy dla rejestru rynków, etap M1 (2026-11-12)
+
+#### Dodane
+- **Rynki wykresów z rejestru `markets.json`** (`src/state/markets.ts`): lista pobierana tym samym mechanizmem co inne pliki repo danych (`usePublished`), wspólna dla wykresów, magazynów rynków i alarmów. Przed odpowiedzią i bez pliku (dziś 404, skaner nie jest jeszcze wdrożony) — 4 rynki domyślne: BTC, ETH, SOL, HYPE.
+- **Wybór rynku z wyszukiwaniem i dwiema grupami** (`src/charts/pro/chart/MarketPicker.tsx`, `marketMenu.ts`): krypto oraz akcje, indeksy i surowce (giełdy HIP-3), w każdej grupie kolejność rejestru, czyli według średnich otwartych pozycji z 7 dni. Enter wybiera pierwszy pasujący rynek, klawisz M przechodzi do następnego rynku listy. Na telefonie systemowa lista z tymi samymi grupami.
+- **Moduł zdolności rynku** (`src/utils/marketCaps.ts`): jedno miejsce odpowiada, czy rynek ma warstwy skanera (mapa i taśma likwidacji, kohorty, konta makerów, TWAP-y, szybka powtórka), prognozy (stożek), mapy z bloga i rynki HIP-4. Skaner i prognozy z pola `scanner` rejestru (dziś `full` ma tylko BTC), mapy z bloga i HIP-4 zostają przy BTC.
+- Testy: `marketCaps.test.ts`, `markets.test.ts`, `marketMenu.test.ts`, test statyczny `btcCompare.test.ts` (porównanie nazwy rynku z BTC tylko w module zdolności i w widokach, które zostają przy BTC, każdy wyjątek z powodem) oraz test akceptacyjny `registryMarkets.test.ts`: każdy wskaźnik z rejestru wskaźników, strefy Effort i zakresy P/b na wzorcu 500 świec dla HYPE, kPEPE (cena poniżej 0,01 USD) i xyz:NVDA, bez wyjątku, bez NaN po rozbiegu i bez nieskończoności.
+
+#### Zmienione
+- **`Market` to nazwa z rejestru, nie stała lista.** Link do widoku obsługuje rynki HIP-3: `#charts?m=xyz:NVDA`. Link, zapis ustawień, link powtórki i link z alarmami sprawdzają format nazwy (`isCoinName`), a rynek spoza rozstrzygniętej listy (wygasły link albo zapis) otwiera BTC z jednym zdaniem wyjaśnienia.
+- **Cena i krok ceny z `szDecimals` rynku**: 5 cyfr znaczących, najwyżej 6 − szDecimals miejsc po przecinku, cena całkowita zawsze dozwolona (kPEPE przy 0,0045 USD: 6 miejsc zamiast 7; BTC powyżej 100 000: krok 1). Oś ceny i jej krok, legenda, podpisy VWAP, poziomów, IB i POC, menu wykresu i alarmy.
+- **Rynek bez skanera pokazuje „—” z powodem** zamiast „tylko BTC”: „—, bez skanera” przy mapie likwidacji, kohortach, taśmie likwidacji, Kto przyjmuje, TWAP-ach i paliwie ±1%, „—, bez prognoz” przy stożku; powód wymienia rynki z pełnym skanerem. Mapy z bloga i rynki HIP-4 nadal „tylko BTC”. Szybka powtórka ostatnich 15 min — dla rynków z pełnym skanerem.
+- Baza taśmy w przeglądarce bez dwukropka: `hq-pro-tape-xyz-NVDA` (nazwy BTC, ETH, SOL i HYPE bez zmian, zapisana taśma zostaje).
+- Kontekst rynku HIP-3 (`metaAndAssetCtxs`) z odpowiedzi jego giełdy (`dex`).
+
+#### Poprawione
+- **Alarm na rynku spoza serwera powiadomień nie udaje alarmu 24/7.** Serwer pilnuje dziś tylko `ALERT_MARKETS` (BTC, ETH, SOL, HYPE; jedna stała w `src/utils/alertRules.ts` dla serwera, skrzynki i strony, `serverWatches`). Alarm na innym rynku (np. `xyz:NVDA`) nie wchodzi do `pushWatched` i nie zajmuje miejsca w limicie `PUSH_MAX`; na liście ma oznaczenie z powodem „serwer powiadomień pilnuje dziś BTC, ETH, SOL i HYPE; ten alarm dzwoni tylko przy otwartej stronie”, a opis powiadomień w menu alarmów na takim rynku nie obiecuje alarmu przy zamkniętej stronie. Ostrzeżenie o limicie liczy tylko alarmy na rynkach serwera.
+- Link z nazwą rynku w dobrym formacie, ale spoza rejestru: po przełączeniu na BTC magazyn tej nazwy jest zamykany, a jej baza taśmy w przeglądarce usuwana (chyba że rynek ma alarm).
+
 ### Automatyczna weryfikacja dziennika z podsumowaniem (2026-11-12)
 
 #### Zmienione

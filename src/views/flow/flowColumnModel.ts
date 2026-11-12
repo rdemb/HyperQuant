@@ -1,6 +1,8 @@
 import type { PhaseId } from '../../charts/pro/chart/stations';
 import { tr } from '../../i18n';
 import { takeFlowAsk } from '../../state/route';
+import { capsOf, chartMarkets } from '../../state/markets';
+import { NO_SCANNER_BADGE } from '../../utils/marketCaps';
 
 /**
  * Pomocniki prawej kolumny DOM i taśmy (W sesji): zakres paneli skanera, szerokość, od której kolumna jest przypięta obok
@@ -9,19 +11,25 @@ import { takeFlowAsk } from '../../state/route';
  */
 
 /**
- * Panele ze skanera kont (Kto przyjmuje uderzenia, TWAP-y w drodze) są tylko dla BTC; drabina i taśma działają na
- * rynku wykresu.
+ * Panele ze skanera kont (Kto przyjmuje uderzenia, TWAP-y w drodze, kohorty, taśma likwidacji) są dla rynków z pełnym
+ * skanerem w rejestrze (`marketCaps`); drabina i taśma działają na rynku wykresu.
  */
-export function scannerScope(coin: string): 'full' | 'btc-only' {
-  return coin === 'BTC' ? 'full' : 'btc-only';
+export function scannerScope(coin: string): 'full' | 'none' {
+  return capsOf(coin).scanner ? 'full' : 'none';
 }
 
-/** Komunikat paneli skanera na innym rynku niż BTC i jego wyjaśnienie (podpowiedź). */
-export const BTC_ONLY = tr('—, tylko BTC', '—, BTC only');
-export const BTC_ONLY_TITLE = tr(
-  'Konta makerów i plany TWAP z publicznego dziennika Hyperliquid liczymy tylko dla BTC. Drabina i taśma pokazują rynek wykresu.',
-  'Maker accounts and TWAP plans from the public Hyperliquid log are computed for BTC only. The ladder and the tape show the chart’s market.'
-);
+/** Komunikat paneli skanera na rynku bez skanera i jego wyjaśnienie (podpowiedź). */
+export const NO_SCANNER = NO_SCANNER_BADGE;
+export function noScannerTitle(): string {
+  const list = chartMarkets()
+    .filter((m) => m.scanner === 'full')
+    .map((m) => m.coin)
+    .join(', ');
+  return tr(
+    `Konta makerów, plany TWAP, kohorty i likwidacje z publicznego dziennika Hyperliquid liczymy dla rynków z pełnym skanerem (dziś ${list || '—'}). Drabina i taśma pokazują rynek wykresu.`,
+    `Maker accounts, TWAP plans, cohorts and liquidations from the public Hyperliquid log are computed for markets with the full scanner (today ${list || '—'}). The ladder and the tape show the chart’s market.`
+  );
+}
 
 /** Szerokość kolumny obok wykresu (px). */
 export const DOCK_W = 400;

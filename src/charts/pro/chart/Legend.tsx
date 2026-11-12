@@ -6,7 +6,8 @@ import { numLang } from '../../../ui';
 import { sdUsable } from '../core/indicators';
 import { fmtBarTime, fmtSince, fromDaily } from '../core/time';
 import type { Hover, IndicatorReadout } from './controller';
-import { fmtPx } from './layout';
+import { fmtPx as fmtPxOf } from './layout';
+import { marketOf } from '../../../state/markets';
 import { tr } from '../../../i18n';
 
 /** Najnowszy stan krzyża (ustawiany przez sterownik wykresu najwyżej raz na klatkę). */
@@ -132,6 +133,8 @@ export const Legend: React.FC<{
   extra?: React.ReactNode;
 }> = ({ signal, intervalMs, intervalLabel, tapeSince, coin, onBottom, compact = false, multi = false, onEditIndicator, extra }) => {
   const h = useSyncExternalStore(signal.subscribe, signal.get);
+  // Cena z dokładnością ticku rynku legendy (szDecimals z rejestru)
+  const fmtPx = (p: number) => fmtPxOf(p, marketOf(coin)?.szDecimals);
   const folded = useSyncExternalStore(subscribeFold, () => (multi ? fold.multi : fold.single));
   const ref = useRef<HTMLDivElement>(null);
   const live = useRef(h.live);

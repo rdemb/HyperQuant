@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { MAX_ALERTS, alertLines, hasLine, lineLabel, newAlert, notifyEvent, parseAlerts, parseLog, parsePriceInput, windowOf } from '../chart/alerts';
-import { PUSH_MAX, pushWatched, serverList } from '../chart/pushAlerts';
+import { PUSH_MAX, PUSH_OFF_MARKET, pushOutside, pushWatched, serverList } from '../chart/pushAlerts';
 import { type AlertEvent, type AlertRule, DEFAULT_TTL_MS } from '../../../utils/alertRules';
 
 describe('alarmy cenowe w przeglądarce', () => {
@@ -123,6 +123,27 @@ describe('powiadomienia i lista z serwera 24/7', () => {
     expect(w.has('r0')).toBe(false);
     expect(w.has(`r${PUSH_MAX + 2}`)).toBe(true);
     expect([rule('t'), rule('s', { kind: 'squeeze' }), rule('n', { kind: 'time' })].map(hasLine)).toEqual([true, false, false]);
+  });
+
+  it('alarm na rynku spoza serwera powiadomień (xyz:NVDA): poza pilnowanymi, nie zajmuje limitu, oznaczony z powodem', () => {
+    const four = ['BTC', 'ETH', 'SOL', 'HYPE'].map((coin, i) => rule(`m${i}`, { coin }));
+    const full = Array.from({ length: PUSH_MAX - 4 }, (_, i) => rule(`r${i}`));
+    const nvda = rule('nvda', { coin: 'xyz:NVDA' });
+    // Najnowszy alarm na xyz:NVDA nie wypycha najstarszego alarmu BTC poza limit
+    const list = [...four, ...full, nvda];
+    const w = pushWatched(list);
+    expect(w.size).toBe(PUSH_MAX);
+    expect(w.has('nvda')).toBe(false);
+    expect(['m0', 'm1', 'm2', 'm3'].every((id) => w.has(id))).toBe(true);
+    expect(pushOutside(list, w).get('nvda')).toBe(PUSH_OFF_MARKET);
+    expect(PUSH_OFF_MARKET).toBe('Serwer powiadomień pilnuje dziś BTC, ETH, SOL i HYPE; ten alarm dzwoni tylko przy otwartej stronie');
+    expect(pushOutside(list, w).size).toBe(1);
+    // Alarmy na 4 rynkach bez zmian: ponad limit oznaczone limitem
+    const over = [rule('old'), ...four, ...full];
+    const o = pushOutside(over, pushWatched(over));
+    expect([...o.keys()]).toEqual(['old']);
+    expect(o.get('old')).toBe('Poza limitem serwera 24/7: tylko przy otwartej stronie');
+    expect(pushOutside(four, pushWatched(four)).size).toBe(0);
   });
 });
 

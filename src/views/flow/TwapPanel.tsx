@@ -8,7 +8,7 @@ import type { ProStore } from '../../charts/pro/store/proStore';
 import { twapPlansFor, type PlanEntry } from '../../charts/pro/store/twapCache';
 import { numLang, plForm } from '../../ui/format';
 import { tr } from '../../i18n';
-import { BTC_ONLY, BTC_ONLY_TITLE } from './flowColumnModel';
+import { NO_SCANNER, noScannerTitle } from './flowColumnModel';
 
 /**
  * TWAP-y w drodze: ciągi plasterków z taśmy na żywo połączone z planem konta z publicznego dziennika Hyperliquid.
@@ -155,8 +155,8 @@ export const TwapPanel: React.FC<{
     return (
       <section aria-label={tr('TWAP-y w drodze', 'TWAPs en route')} className={`@container flex flex-col min-h-0 bg-surface-1 ${className}`}>
         {header}
-        <p className="px-3 py-4 font-mono text-[11px] text-ink-3" title={BTC_ONLY_TITLE}>
-          {BTC_ONLY}
+        <p className="px-3 py-4 font-mono text-[11px] text-ink-3" title={noScannerTitle()}>
+          {NO_SCANNER}
         </p>
       </section>
     );

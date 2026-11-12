@@ -28,6 +28,8 @@ export interface TapeKv {
   deleteBefore(minute: number): Promise<void>;
   getSpans(): Promise<Span[]>;
   putSpans(spans: Span[]): Promise<void>;
+  /** Zamknięcie połączenia z bazą (przed jej usunięciem). */
+  close?(): void;
 }
 
 /** Zapas na transakcje jeszcze w drodze: pokrycie zapisujemy do chwili sprzed kilku sekund. */
@@ -165,8 +167,11 @@ export function mergeSpans(spans: readonly Span[]): Span[] {
 
 // ───────────────────────── IndexedDB ─────────────────────────
 
-/** Osobna baza na rynek (nazwa BTC sprzed wyboru rynków bez zmian, więc zapisana taśma zostaje). */
-const dbName = (coin: string) => `hq-pro-tape-${coin.toLowerCase()}`;
+/**
+ * Osobna baza na rynek. Nazwy z samych wielkich liter i cyfr małymi literami jak przed rejestrem rynków (zapisana taśma BTC,
+ * ETH, SOL i HYPE zostaje); inne z zachowaną wielkością liter (`kPEPE`), a giełda HIP-3 bez dwukropka (`xyz-NVDA`).
+ */
+export const tapeDbName = (coin: string): string => `hq-pro-tape-${/^[A-Z0-9]+$/.test(coin) ? coin.toLowerCase() : coin.replace(':', '-')}`;
 const MINUTES = 'minutes';
 const META = 'meta';
 
@@ -190,7 +195,7 @@ export async function openTapeDb(coin = 'BTC'): Promise<TapeKv | null> {
   if (typeof indexedDB === 'undefined') return null;
   let db: IDBDatabase;
   try {
-    const open = indexedDB.open(dbName(coin), 1);
+    const open = indexedDB.open(tapeDbName(coin), 1);
     open.onupgradeneeded = () => {
       open.result.createObjectStore(MINUTES, { keyPath: 'minute' });
       open.result.createObjectStore(META);
@@ -230,5 +235,21 @@ export async function openTapeDb(coin = 'BTC'): Promise<TapeKv | null> {
       tx.objectStore(META).put(spans, 'coverage');
       await done(tx);
     },
+    close() {
+      db.close();
+    },
   };
+}
+
+/** Usuwa bazę taśmy rynku (rynek spoza rejestru otwarty z linku); błąd i blokada — bez zmian. */
+export function deleteTapeDb(coin: string): Promise<void> {
+  if (typeof indexedDB === 'undefined') return Promise.resolve();
+  return new Promise((resolve) => {
+    try {
+      const r = indexedDB.deleteDatabase(tapeDbName(coin));
+      r.onsuccess = r.onerror = r.onblocked = () => resolve();
+    } catch {
+      resolve();
+    }
+  });
 }

@@ -1,8 +1,8 @@
 import { useSyncExternalStore } from 'react';
-import { lang } from '../../../i18n';
+import { lang, tr } from '../../../i18n';
 import { DATA_BASE } from '../../../state/usePublished';
 import { ALERTS_URL } from '../../../utils/alertsServer';
-import { type AlertEvent, type AlertRule, endsAlert } from '../../../utils/alertRules';
+import { ALERT_MARKETS, type AlertEvent, type AlertRule, endsAlert, serverWatches } from '../../../utils/alertRules';
 import { LOG_MAX, alertBook, alertLog, parseLog } from './alerts';
 
 /**
@@ -15,7 +15,33 @@ import { LOG_MAX, alertBook, alertLog, parseLog } from './alerts';
 const KEY = 'hq.charts.push.v1';
 /** Tyle alarmów urządzenia pilnuje serwer: najnowsze (skrzynka bierze koniec listy). */
 export const PUSH_MAX = 30;
-export const pushWatched = (list: readonly AlertRule[]): Set<string> => new Set(list.slice(-PUSH_MAX).map((r) => r.id));
+/**
+ * Alarmy pilnowane przez serwer: najnowsze `PUSH_MAX` na rynkach serwera powiadomień (`ALERT_MARKETS`). Alarm na innym
+ * rynku nie zajmuje miejsca w limicie (skrzynka i tak go odrzuca) i dzwoni tylko przy otwartej stronie.
+ */
+export const pushWatched = (list: readonly AlertRule[]): Set<string> =>
+  new Set(
+    list
+      .filter((r) => serverWatches(r.coin))
+      .slice(-PUSH_MAX)
+      .map((r) => r.id)
+  );
+
+const marketList = (and: string) => `${ALERT_MARKETS.slice(0, -1).join(', ')} ${and} ${ALERT_MARKETS[ALERT_MARKETS.length - 1]}`;
+/** Powód przy alarmie na rynku spoza serwera powiadomień. */
+export const PUSH_OFF_MARKET = tr(
+  `Serwer powiadomień pilnuje dziś ${marketList('i')}; ten alarm dzwoni tylko przy otwartej stronie`,
+  `The notification server watches only ${marketList('and')} today; this alert rings only while the page is open`
+);
+/** Powód przy alarmie poza limitem `PUSH_MAX`. */
+export const PUSH_OVER_LIMIT = tr('Poza limitem serwera 24/7: tylko przy otwartej stronie', 'Over the 24/7 server limit: only while the page is open');
+
+/** Alarmy, których serwer nie pilnuje (`watched` z `pushWatched`), z powodem: rynek spoza serwera albo limit. */
+export function pushOutside(list: readonly AlertRule[], watched: ReadonlySet<string>): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const r of list) if (!watched.has(r.id)) out.set(r.id, serverWatches(r.coin) ? PUSH_OVER_LIMIT : PUSH_OFF_MARKET);
+  return out;
+}
 
 interface Stored {
   id: string;

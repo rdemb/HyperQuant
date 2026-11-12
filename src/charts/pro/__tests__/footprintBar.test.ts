@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { IMB_BUY, IMB_SELL } from '../../orderflow/footprint';
 import { bookSigFigs } from '../core/book';
-import { FootprintBuilder, aggregateRows, baseTick, hlTick, rowAt, rowIndex, stackedRuns } from '../core/footprintBar';
+import { FootprintBuilder, aggregateRows, baseTick, fmtPx, hlTick, priceDigits, rowAt, rowIndex, stackedRuns } from '../core/footprintBar';
 import { autoRowStep } from '../chart/layout';
 
 function build(trades: [number, number, number, 1 | -1][]) {
@@ -19,6 +19,25 @@ describe('hlTick', () => {
     expect(hlTick(123456, 5)).toBe(1);
     expect(hlTick(9876.5)).toBe(0.1);
     expect(hlTick(2.5, 5)).toBe(0.1); // ograniczenie 10^−(6 − szDecimals)
+  });
+
+  it('cena i krok ceny z szDecimals rynku: 5 cyfr znaczących, najwyżej 6 − szDecimals miejsc, całkowita zawsze dozwolona', () => {
+    // Powyżej 100 000 (BTC, szDecimals 5): krok 1, cena całkowita
+    expect(hlTick(123_456.7, 5)).toBe(1);
+    expect(priceDigits(123_456.7, 5)).toBe(0);
+    const sp = (s: string) => s.replace(/\s/g, ' ');
+    expect(sp(fmtPx(123_456.7, 5))).toBe('123 457');
+    expect(sp(fmtPx(1_234_567.8, 5))).toBe('1 234 568');
+    // Poniżej 0,01 (kPEPE, szDecimals 0): 5 cyfr znaczących wymagałoby 7 miejsc — giełda pozwala na 6
+    expect(hlTick(0.004_567_89, 0)).toBeCloseTo(1e-6, 15);
+    expect(priceDigits(0.004_567_89, 0)).toBe(6);
+    expect(fmtPx(0.004_567_89, 0)).toBe('0,004568');
+    // Bez szDecimals sama reguła cyfr znaczących (7 miejsc)
+    expect(fmtPx(0.004_567_89)).toBe('0,0045679');
+    // Rynek z większym szDecimals: mniej miejsc ceny (0,5 przy szDecimals 3 → 3 miejsca, nie 5)
+    expect(fmtPx(0.512_345, 3)).toBe('0,512');
+    // xyz:NVDA (szDecimals 3) przy ~190: 5 cyfr znaczących = 2 miejsca
+    expect(fmtPx(190.456, 3)).toBe('190,46');
   });
 
   it('tick i agregacje arkusza ETH, SOL i HYPE proporcjonalne do ceny', () => {

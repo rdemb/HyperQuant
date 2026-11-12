@@ -6,6 +6,7 @@
 import { type InputStore, candlesFrom, seriesCandles } from '../../charts/pro/chart/layoutInputs';
 import type { Candle } from '../../charts/pro/hl/parse';
 import type { BlogMapsState } from '../../state/useBlogMaps';
+import { capsOf, chartMarkets } from '../../state/markets';
 import { type VBar, toVBars } from '../../utils/auction';
 import { dayVwapOf } from '../../utils/dayVwap';
 import { type FourInputs, lastClosedNy, nextSessionHour, nyMap, sessionHourSamples } from '../../utils/fourNumbers';
@@ -25,12 +26,13 @@ export function readFourInputs(store: InputStore, liq: FourInputs['liq'], maps: 
   const now = store.serverNow();
   const lp = store.lastPrice();
   const ny = lastClosedNy(now);
-  const m = store.coin === 'BTC' && maps.status === 'ready' ? nyMap(maps.maps, ny, now) : null;
+  const m = capsOf(store.coin).blog && maps.status === 'ready' ? nyMap(maps.maps, ny, now) : null;
   const w = m && mapWindow(m.kind, m.publishedAt);
   const at = nextSessionHour(now);
   const live = seriesCandles(store, '1m', now);
   return {
     coin: store.coin,
+    markets: chartMarkets(),
     now,
     price: lp > 0 ? lp : undefined,
     bars1m: vbars(candlesFrom(store, '1m', w ? Math.min(ny.start, w.from) : ny.start, now)),
