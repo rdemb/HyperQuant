@@ -50,10 +50,11 @@ export function hlTick(px: number, szDecimals?: number): number {
 
 /**
  * Tick bazowy footprintu, profili i TPO: z ceny o 5% niższej (świeca tuż nad granicą rzędu, np. 100 tys., nie traci ticku
- * 1 USD po spadku pod nią). Jedna kotwica dla wszystkich warstw wierszy, żeby leżały na tej samej siatce.
+ * 1 USD po spadku pod nią). Jedna kotwica dla wszystkich warstw wierszy, żeby leżały na tej samej siatce. `szDecimals` —
+ * rynek z rejestru: siatka nie gęstsza niż krok ceny 10^−(6 − szDecimals) (kPEPE przy 0,0045: 1e-6, nie 1e-7).
  */
-export function baseTick(px: number): number {
-  return hlTick(px * 0.95);
+export function baseTick(px: number, szDecimals?: number): number {
+  return hlTick(px * 0.95, szDecimals);
 }
 
 /**
@@ -89,15 +90,16 @@ export class FootprintBuilder {
   firstTime = Number.NaN;
   lastTime = Number.NaN;
 
-  /** @param tick tick bazowy (USD); domyślnie z ceny pierwszej transakcji. */
+  /** @param tick tick bazowy (USD); domyślnie z ceny pierwszej transakcji i `szDecimals` rynku. */
   constructor(
     readonly t: number,
-    private tick = Number.NaN
+    private tick = Number.NaN,
+    private readonly szDecimals?: number
   ) {}
 
   /** Dokłada transakcję; wymaga kolejności czasu (delta w trakcie świecy zależy od kolejności). */
   add(time: number, px: number, sz: number, side: Side): void {
-    if (Number.isNaN(this.tick)) this.tick = baseTick(px);
+    if (Number.isNaN(this.tick)) this.tick = baseTick(px, this.szDecimals);
     const idx = rowIndex(px, this.tick);
     let r = this.rows.get(idx);
     if (!r) {

@@ -326,6 +326,9 @@ export class DrawingLayer implements ISeriesPrimitive<Time> {
   }
 
   /** Jednostka wolumenu w opisach (moneta rynku). */
+  /** Tick bazowy wierszy profilu zakresu: z szDecimals rynku wykresu (ustawia kontroler). */
+  tickOf: (px: number) => number = baseTick;
+
   setUnit(unit: string): void {
     this.unit = unit;
   }
@@ -838,7 +841,7 @@ export class DrawingLayer implements ISeriesPrimitive<Time> {
     const s = d.style;
     const ref = bars[Math.max(0, ib)].candle.c;
     const ppu = this.pxPerUsd(ref);
-    const step = ppu > 0 ? autoRowStep(ppu, baseTick(ref), RANGE_PROFILE_ROW_PX) : 0;
+    const step = ppu > 0 ? autoRowStep(ppu, this.tickOf(ref), RANGE_PROFILE_ROW_PX) : 0;
     const prof = ib >= ia && step > 0 ? this.rangeProfile(d.id, ia, ib, step) : null;
     const ym = (v.Y(d.pts[0].p) + v.Y(d.pts[1].p)) / 2;
     it.handles = d.pts.map((q) => ({ x: q.t === ta ? xL : xR, y: ym }));

@@ -425,7 +425,7 @@ export class TpoLayer implements ISeriesPrimitive<Time> {
     const sig = `${store.tape.signature(day, day + DAY)}|${times.length}:${times[times.length - 1] ?? 0}`;
     const hit = this.flows.get(day);
     if (hit && (hit.sig === sig || (day + DAY > now && now - hit.at < FLOW_EVERY_MS))) return hit.p;
-    const p = tapeDayProfile(store.tape, store.oi, store.coin, day, profileTick(px));
+    const p = tapeDayProfile(store.tape, store.oi, store.coin, day, profileTick(px, store.szDecimals));
     this.flows.set(day, { sig, at: now, p });
     return p;
   }
@@ -494,7 +494,7 @@ export class TpoLayer implements ISeriesPrimitive<Time> {
     const yb = y(ref + 100);
     if (ya === null || yb === null) return;
     const pxPerUsd = Math.abs(ya - yb) / 100;
-    const step = pxPerUsd > 0 ? autoRowStep(pxPerUsd, baseTick(ref), ROW_PX) : 0;
+    const step = pxPerUsd > 0 ? autoRowStep(pxPerUsd, this.store?.baseTick(ref) ?? baseTick(ref), ROW_PX) : 0;
     if (!(step > 0)) return;
     const list = this.profiles(bars, step);
     const gap = step * pxPerUsd >= 3 ? 1 : 0;

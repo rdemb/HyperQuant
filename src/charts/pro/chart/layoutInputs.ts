@@ -16,7 +16,8 @@ import { marketCostBp } from '../indicators/registry';
 import { blogMapScan, liqScan, whalesScan } from './layerSources';
 import {
   type Absent,
-  COST_USD,
+  costAmount,
+  costUsd,
   type Expected,
   FLOW_WINDOW_MS,
   type Got,
@@ -209,9 +210,13 @@ export function readInputs(id: StationId, store: InputStore, scan: InputScan, ha
     if (!f) x.cost = undefined;
     else if (now - f.t > BOOK_STALE_MS) x.cost = { why: tr(`Migawka arkusza z ${fmtHm(f.t)} nieaktualna (połączenie?)`, `Book snapshot from ${fmtHm(f.t)} is stale (connection?)`) };
     else {
-      const ask = marketCostBp(f, COST_USD, true);
-      const bid = marketCostBp(f, COST_USD, false);
-      x.cost = Number.isFinite(ask) || Number.isFinite(bid) ? { ask, bid, at: f.t } : { why: tr('20 poziomów arkusza nie mieści 100 000 USD po żadnej stronie', '20 book levels cannot hold 100,000 USD on either side') };
+      const usd = costUsd(store.coin);
+      const ask = marketCostBp(f, usd, true);
+      const bid = marketCostBp(f, usd, false);
+      x.cost =
+        Number.isFinite(ask) || Number.isFinite(bid)
+          ? { ask, bid, at: f.t }
+          : { why: tr(`20 poziomów arkusza nie mieści ${costAmount(usd)} USD po żadnej stronie`, `20 book levels cannot hold ${costAmount(usd)} USD on either side`) };
     }
   }
   if (id === 'big-hands') {
