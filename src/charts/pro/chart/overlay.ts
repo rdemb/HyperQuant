@@ -347,6 +347,8 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
   private readonly views: readonly IPrimitivePaneView[];
   /** Format ceny podpisów (VWAP, poziomy, IB, POC): tick rynku wykresu z szDecimals (ustawia kontroler). */
   fmtPx: (p: number) => string = fmtPx;
+  /** Tick bazowy wierszy profili: z szDecimals rynku wykresu (ustawia kontroler). */
+  tickOf: (px: number) => number = baseTick;
 
   constructor(toggles: IndicatorToggles) {
     this.toggles = toggles;
@@ -764,7 +766,7 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
   private rowStep(bars: readonly ProBar[], vt: number, Y: (p: number) => number): number {
     const ref = bars[vt].candle.c;
     const pxPerUsd = Math.abs(Y(ref) - Y(ref + 100)) / 100;
-    return pxPerUsd > 0 ? autoRowStep(pxPerUsd, baseTick(ref), PROFILE_ROW_PX) : 0;
+    return pxPerUsd > 0 ? autoRowStep(pxPerUsd, this.tickOf(ref), PROFILE_ROW_PX) : 0;
   }
 
   /**

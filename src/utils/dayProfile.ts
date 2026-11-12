@@ -64,9 +64,14 @@ export function dayProfilePath(coin: string, day: number): string {
   return `${coin}/${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}/profile.json.gz`;
 }
 
-/** Krok wierszy pliku: ten sam co tick bazowy footprintu strony (hlTick ceny o 5% niższej, najwyżej 1). */
-export function profileTick(px: number): number {
-  return px > 0 ? Math.min(1, 10 ** (Math.floor(Math.log10(px * 0.95)) - 4)) : 1;
+/**
+ * Krok wierszy pliku: ten sam co tick bazowy footprintu strony (hlTick ceny o 5% niższej, najwyżej 1; z `szDecimals` rynku
+ * nie mniej niż 10^−(6 − szDecimals)).
+ */
+export function profileTick(px: number, szDecimals?: number): number {
+  if (!(px > 0)) return 1;
+  const sig = Math.min(1, 10 ** (Math.floor(Math.log10(px * 0.95)) - 4));
+  return szDecimals === undefined ? sig : Math.max(sig, 10 ** -(6 - szDecimals));
 }
 
 const COLS = 6;

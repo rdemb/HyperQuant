@@ -63,6 +63,22 @@ describe('hlTick', () => {
     expect(autoRowStep(2000, baseTick(102), 6)).toBeLessThan(autoRowStep(2000, hlTick(102), 6));
   });
 
+  it('baseTick z szDecimals rynku: kPEPE przy 0,0045 ma siatkę kroku ceny (1e-6), nie 10× gęstszą; BTC, ETH, SOL bez zmian', () => {
+    expect(hlTick(0.0045, 0)).toBeCloseTo(1e-6, 15);
+    expect(baseTick(0.0045)).toBeCloseTo(1e-7, 15);
+    expect(baseTick(0.0045, 0)).toBeCloseTo(1e-6, 15);
+    // kBONK przy 0,000012 (szDecimals 0): też krok 1e-6
+    expect(baseTick(0.000012, 0)).toBeCloseTo(1e-6, 15);
+    for (const [px, sz] of [[80_000, 5], [101_000, 5], [3_000, 4], [102, 2], [37, 2]] as const) expect(baseTick(px, sz)).toBe(baseTick(px));
+    // Budowa świecy na rynku z szDecimals: dwie ceny o krok ceny różne — dwa wiersze, a nie dziesięć wierszy pomiędzy
+    const b = new FootprintBuilder(0, Number.NaN, 0);
+    b.add(0, 0.004501, 1000, 1);
+    b.add(1, 0.004502, 1000, -1);
+    const fp = b.build()!;
+    expect(fp.tick).toBeCloseTo(1e-6, 15);
+    expect(rowIndex(0.004502, fp.tick) - rowIndex(0.004501, fp.tick)).toBe(1);
+  });
+
   it('rowIndex nie gubi wiersza przez błąd zmiennoprzecinkowy', () => {
     expect(rowIndex(0.3, 0.1)).toBe(3);
     expect(rowIndex(81239.99, 10)).toBe(8123);

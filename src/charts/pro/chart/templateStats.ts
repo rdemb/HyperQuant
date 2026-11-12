@@ -29,7 +29,7 @@ const median = (xs: number[]): number => {
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 };
 
-export const statsRowStep = (px: number): number => (px > 0 ? autoRowStep(1, baseTick(px), px * STATS_ROW_PCT) : 0);
+export const statsRowStep = (px: number, szDecimals?: number): number => (px > 0 ? autoRowStep(1, baseTick(px, szDecimals), px * STATS_ROW_PCT) : 0);
 
 export interface VaStats {
   /** Doby oceniane (pełna doba poprzednia i pełna doba bieżąca, kolejne). */
@@ -168,9 +168,9 @@ export const TEMPLATE_HONESTY: Readonly<Record<string, { kind: HonestyKind; inte
 
 export type HonestyStats = { kind: 'va'; s: VaStats } | { kind: 'ib'; s: IbStats };
 
-/** Statystyka karty na świecach z API (ostatnia świeca — bieżąca). */
-export function honestyStats(kind: HonestyKind, bars: readonly Candle[]): HonestyStats {
-  return kind === 'va' ? { kind, s: vaStats(bars) } : { kind, s: ibStats(bars) };
+/** Statystyka karty na świecach z API (ostatnia świeca — bieżąca); `szDecimals` — rynek z rejestru (krok wierszy VA). */
+export function honestyStats(kind: HonestyKind, bars: readonly Candle[], szDecimals?: number): HonestyStats {
+  return kind === 'va' ? { kind, s: vaStats(bars, statsRowStep(bars[bars.length - 1]?.c ?? 0, szDecimals)) } : { kind, s: ibStats(bars) };
 }
 
 export interface HonestyCard {

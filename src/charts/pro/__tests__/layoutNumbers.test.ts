@@ -16,6 +16,7 @@ import {
   twapShareOf,
   vwapNum,
   whaleBalanceOf,
+  costUsd,
 } from '../chart/layoutNumbers';
 import { profile } from '../../../utils/auction';
 import { vwapNum as vwapNumUtil } from '../../../utils/dayVwap';
@@ -148,6 +149,14 @@ describe('nagłówek układu: trzy liczby', () => {
       ['Klaster likw.', '−0,80% · 42M', 'LIVE', '4 min'],
       ['Koszt 100k', '1,2 / 1,5 pb', 'LIVE', null],
     ]);
+    // Kwota kosztu według skali progów rynku: BTC 100k, ETH 50k, rynek bez OI w rejestrze (kPEPE poza listą) 1k
+    expect(costUsd('BTC')).toBe(100_000);
+    expect(costUsd('ETH')).toBe(50_000);
+    expect(costUsd('kPEPE')).toBe(1_000);
+    const pepe = layoutNumbers('fuel', { coin: 'kPEPE', now: NOW, price: 0.0045, cost: { ask: 3, bid: 4, at: NOW } })[2];
+    expect(pepe).toMatchObject({ label: 'Koszt 1k', value: '3,0 / 4,0 pb' });
+    expect(pepe.hint).toContain('Zlecenie rynkowe 1 000 USD');
+    expect(layoutNumbers('fuel', { coin: 'ETH', now: NOW, price: 3_000 })[2].label).toBe('Koszt 50k');
     // Rynek bez skanera (zdolność z rejestru; dziś pełny skaner ma tylko BTC)
     const eth = layoutNumbers('fuel', { coin: 'ETH', now: NOW, price: 3_000, liq: { px: 99_200, ntlUsd: 1e7, side: 'long', asOf: NOW } })[1];
     expect(eth).toMatchObject({ value: '—', note: 'bez skanera' });

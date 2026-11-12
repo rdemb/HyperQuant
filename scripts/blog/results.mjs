@@ -8,6 +8,24 @@ import { LAB_NAMES, isLabReport } from '../../src/utils/folkloreLab.ts';
 import { VERIFY_LATEST_URL, verifyStale } from '../../src/utils/verifyFreshness.ts';
 import { esc, layout } from './render.mjs';
 
+/**
+ * Jednorazowe badanie z progami zapisanymi przed testem (nie z dziennika): czy inne rynki Hyperliquid poprawiają szansę
+ * dużego ruchu BTC w następnej godzinie (zdarzenie hrel-v1) ponad model samego BTC. Świece 1h 18.04–12.11.2026, 13 rynków,
+ * 2818 godzin poza próbą; przyrost BSS z przedziałem 99% (bootstrap blokowy po dobach, poprawka na 5 testów).
+ */
+export const MARKETS_STUDY = {
+  hours: 2818,
+  threshold: 0.01,
+  baseBss: 0.201,
+  rows: [
+    ['risk', -0.001, -0.005, 0.002],
+    ['closed', -0.002, -0.006, 0.001, 2237],
+    ['funding', 0, -0.004, 0.005],
+    ['fx', -0.001, -0.007, 0.005],
+    ['alts', 0.002, -0.004, 0.008],
+  ],
+};
+
 export const RESULTS_PATHS = { pl: 'wyniki/', en: 'en/results/' };
 /** Licencja danych dziennika prognoz (decyzja właściciela 12.11.2026); kod repo ma osobną licencję MIT */
 export const DATA_LICENSE_URL = 'https://creativecommons.org/licenses/by/4.0/';
@@ -184,6 +202,23 @@ const T = {
       },
       ab: (a, b, n) => `Wersja B modelu zwrotu 1 h (ab-v1): w okresie ${a} do ${b} nie była trafniejsza od A (n = ${n} par)`,
       none: 'Na razie żadna reguła ani wersja nie została obalona.',
+      study: {
+        h3: 'Badanie: inne rynki Hyperliquid a ruch BTC w następnej godzinie',
+        lead: (n, thr, base, from, to) =>
+          `Jednorazowy test, nie z dziennika: czy dane innych rynków Hyperliquid poprawiają szansę dużego ruchu BTC w następnej godzinie (zakres godziny powyżej mediany tej godziny z 20 dni tego samego typu: robocze albo weekend) ponad model samego BTC (BSS ${base}). Świece 1h ${from}–${to}, ${n} godzin poza próbą. Próg zapisany przed testem: przyrost BSS co najmniej ${thr}, przedział 99%. Żadna z pięciu hipotez nie przeszła progu:`,
+        rows: {
+          risk: 'akcje i indeksy (SP500, XYZ100, NVDA)',
+          closed: 'te same rynki przy zamkniętej Wall Street',
+          funding: 'funding 20 największych rynków',
+          fx: 'złoto i waluty (GOLD, EUR, JPY)',
+          alts: 'alty (ETH, SOL, HYPE, ZEC)',
+        },
+        row: (name, d, h) => `${name}: przyrost BSS ${d}${h ? `, ${h} godzin` : ''}`,
+        outro:
+          'Rynki ruszają się razem z BTC w tej samej godzinie, ale żaden nie wyprzedza go o godzinę. Górne granice wszystkich przedziałów są poniżej progu, więc to nie brak danych, tylko brak efektu tej wielkości.',
+        from: '18.04',
+        to: '12.11.2026',
+      },
       registered: (id, t) => `Katalog ${id} zapisany w dzienniku ${t}.`,
     },
     footer: 'Wyniki prognoz',
@@ -294,6 +329,23 @@ const T = {
       },
       ab: (a, b, n) => `Version B of the 1 h return model (ab-v1): in the period ${a} to ${b} it was not more accurate than A (n = ${n} pairs)`,
       none: 'No rule or version has been refuted so far.',
+      study: {
+        h3: 'Study: other Hyperliquid markets and BTC moves in the next hour',
+        lead: (n, thr, base, from, to) =>
+          `A one-off test, not from the ledger: does data from other Hyperliquid markets improve the chance of a large BTC move in the next hour (the hour's range above the median of that hour over 20 days of the same type: weekdays or weekend) beyond a BTC-only model (BSS ${base})? 1h candles ${from}–${to}, ${n} out-of-sample hours. Threshold recorded before the test: a BSS gain of at least ${thr}, 99% interval. None of the five hypotheses passed the threshold:`,
+        rows: {
+          risk: 'stocks and indices (SP500, XYZ100, NVDA)',
+          closed: 'the same markets while Wall Street is closed',
+          funding: 'funding of the 20 largest markets',
+          fx: 'gold and currencies (GOLD, EUR, JPY)',
+          alts: 'alts (ETH, SOL, HYPE, ZEC)',
+        },
+        row: (name, d, h) => `${name}: BSS gain ${d}${h ? `, ${h} hours` : ''}`,
+        outro:
+          'Markets move together with BTC within the same hour, but none leads it by an hour. The upper bounds of all intervals are below the threshold, so this is not a lack of data but no effect of that size.',
+        from: '18 Apr',
+        to: '12 Nov 2026',
+      },
       registered: (id, t) => `Catalogue ${id} recorded in the ledger on ${t}.`,
     },
     footer: 'Forecast results',
@@ -522,10 +574,19 @@ ${v ? `<p>${esc(Vt.last(f.time(v.at)))} · ${runLink}${lines.length ? ` · ${esc
     return out;
   })();
   const reg = L.ok && ok(L.value.registeredAt) ? ` ${esc(R.registered(L.value.version, f.date(L.value.registeredAt)))}` : '';
+  // Badanie wielu rynków: stałe liczby z badania (nie z dziennika), znak zawsze jawny
+  const S3 = R.study;
+  const sgn = (x) => `${x > 0 ? '+' : x < 0 ? '−' : '+'}${Math.abs(x).toFixed(3)}`.replace('.', lang === 'pl' ? ',' : '.');
+  const studyRows = MARKETS_STUDY.rows.map(([k, d, lo, hi, h]) => `<li class="study">${esc(S3.row(S3.rows[k], `${sgn(d)} [${sgn(lo)}; ${sgn(hi)}]`, h ? f.int(h) : null))}</li>`);
+  const study = `<h3 id="study-markets">${esc(S3.h3)}</h3>
+<p>${esc(S3.lead(f.int(MARKETS_STUDY.hours), sgn(MARKETS_STUDY.threshold), sgn(MARKETS_STUDY.baseBss), S3.from, S3.to))}</p>
+<ul class="refuted">${studyRows.join('')}</ul>
+<p>${esc(S3.outro)}</p>`;
   const refuted = `<section class="block" id="refuted">
 <h2>${esc(R.h2)}</h2>
 <p>${esc(R.lead)}${reg}</p>
 ${refutedItems === null ? `<p>${na(L.why)}</p>` : refutedItems.length ? `<ul class="refuted">${refutedItems.join('')}</ul>` : `<p>${esc(R.none)}</p>`}
+${study}
 </section>`;
 
   const main = `<article class="page page--results">

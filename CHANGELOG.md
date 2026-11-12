@@ -11,6 +11,20 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 - **Skaner, przepływ minutowy (K2)**: suma kupna i sprzedaży agresywnej na minutę dla każdego rynku rejestru, liczona z tej samej subskrypcji. Wynik trafia do plików dobowych w katalogu stanu serwera, przycinanych do 14 dób (ok. 5 MB), i nie jest publikowany. Posłuży do testu offline po K2.
 - Zmienna `HQ_MARKETS_SHADOW` (domyślnie 1; `0` wyłącza pomiar i dodatkowe połączenie).
 
+### Rynki z rejestru: progi i formaty pod BTC, etap M1.4 (2026-11-12)
+
+#### Zmienione
+- **Progi w USD zależne od rynku** (`src/utils/marketCaps.ts`, `usdScale`): jedna skala progów wobec BTC. BTC, ETH, SOL i HYPE z jawnej tabeli (1; 0,5; 0,25; 0,25, czyli dotychczasowe progi dużego gracza), inny rynek z rejestru: średnia otwartych pozycji z 7 dni (`oiUsd7d`) wobec BTC, zaokrąglona w dół do 2 cyfr znaczących (skala ciągła: zmiana OI o 2% nie przeskakuje progu 2 razy), najmniej 0,01 (także bez pola OI). Skala mnoży próg dużego gracza (1 mln USD na BTC), próg domyślny i granice automatycznego progu dużego zlecenia (100 tys., 25 tys.–5 mln USD na BTC), najmniejszą ścianę po zamknięciu i kwotę kosztu zlecenia rynkowego w układzie „Paliwo” (100k na BTC, etykieta i opis z kwotą rynku do 2 cyfr znaczących, np. 16k, 4,9k). Na BTC wszystkie progi bez zmian (test).
+- **Dźwignia z rejestru** (`planAnalyzer.ts`): `BTC_MAX_LEVERAGE` brana z rekordu BTC rynków domyślnych (40), dla innego rynku `maxLeverageOf` podaje `maxLeverage` z rejestru.
+- **Siatka wierszy z kroku ceny rynku:** tick bazowy footprintu, profili okresów, TPO, profilu doby z taśmy, statystyki karty uczciwości i profilu zakresu na rysunku uwzględnia `szDecimals` (krok nie mniejszy niż 10^−(6 − szDecimals)). Na kPEPE, kSHIB, kBONK i PUMP wiersze nie są już 10× gęstsze niż krok ceny (kPEPE przy 0,0045: 1e-6); BTC, ETH, SOL i HYPE bez zmian.
+- **Panele giełd na rynkach bez odpowiednika na Binance i Bybit:** rynki HIP-3 (`dex:COIN`) i rynki z przedrostkiem `k` (kPEPE) pokazują w opisie paneli CVD i ΔOI giełd oraz na plakietce warstwy „—, brak na Binance i Bybit” z powodem, bez zapytań REST i połączeń WebSocket do tych giełd.
+- **Tytuł grupy w wyborze rynku:** „Rynki tradycyjne (HIP-3)” zamiast „Akcje, indeksy, surowce”, bo giełdy HIP-3 notują też waluty (xyz:JPY, xyz:EUR).
+
+### Wyniki: badanie wielu rynków w „Co się nie potwierdziło” (2026-11-12)
+
+#### Dodane
+- **Strona `wyniki/` i `en/results/`:** podsekcja z jednorazowym badaniem (nie z dziennika), czy inne rynki Hyperliquid poprawiają szansę dużego ruchu BTC w następnej godzinie ponad model samego BTC. Świece 1h 18.04–12.11.2026, 2818 godzin poza próbą, próg zapisany przed testem: przyrost BSS ≥ +0,010 z przedziałem 99%. Pięć hipotez (akcje i indeksy, zamknięta Wall Street, funding 20 rynków, złoto i waluty, alty) poniżej progu; liczby w `MARKETS_STUDY` (`scripts/blog/results.mjs`).
+
 ### Strażnik ciszy kanału transakcji osobno dla każdego rynku, etap M1.5 (2026-11-12)
 
 #### Poprawione
