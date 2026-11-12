@@ -33,6 +33,16 @@ export const profileAnchor = (x0: number): number => Math.max(x0, EDGE_PX);
 /** Indeks pierwszego okresu z pełnym profilem w liście `n` okresów rosnąco po czasie. */
 export const fullFrom = (n: number): number => Math.max(0, n - FULL_PERIODS);
 
+/**
+ * Wspólna skala słupków: największy wiersz z dób z pełnym profilem (bieżącej i poprzedniej), niezależnie od widoku —
+ * przewinięcie nie zmienia długości słupków bieżącej doby.
+ */
+export function fullScaleMax(list: readonly { max: number }[]): number {
+  let m = 0;
+  for (let k = fullFrom(list.length); k < list.length; k++) m = Math.max(m, list[k].max);
+  return m;
+}
+
 /** Indeksy nietkniętych POC do rysowania: najwyżej `NAKED_POC_SHOWN` najbliższych cenie `price`. */
 export function nearestNaked(pocs: readonly { px: number; naked: boolean }[], price: number): Set<number> {
   const idx: number[] = [];

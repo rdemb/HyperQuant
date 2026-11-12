@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { FIXED_NOW, createFixtures } from './fixtures.mjs';
+import { bookQuote, parseBtcOutcomes } from '../../src/utils/hip4';
 
 const fx = createFixtures(process.cwd());
 const MIN = 60_000;
@@ -56,7 +57,15 @@ describe('dane stałe pomiaru układu (bez sieci, stały zegar)', () => {
     expect(f.every((x) => x.time <= FIXED_NOW && typeof x.fundingRate === 'string')).toBe(true);
   });
 
+  it('rynki wynikowe HIP-4: 14 płynnych rynków BTC z progami wokół ceny (7 nad, 7 pod)', () => {
+    const qs = parseBtcOutcomes(fx.respond({ type: 'outcomeMeta' }), FIXED_NOW);
+    expect(qs).toHaveLength(14);
+    const px = fx.minutes('BTC').at(-1)[4];
+    expect(qs.filter((q) => q.K >= px)).toHaveLength(7);
+    expect(qs.every((q) => bookQuote(fx.respond({ type: 'l2Book', coin: q.coin }))?.liquid)).toBe(true);
+  });
+
   it('nieznany rodzaj zapytania: pusta lista (żadne zapytanie nie idzie do sieci)', () => {
-    expect(fx.respond({ type: 'outcomeMeta' })).toEqual([]);
+    expect(fx.respond({ type: 'userFills' })).toEqual([]);
   });
 });

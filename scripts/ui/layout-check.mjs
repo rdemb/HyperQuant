@@ -124,6 +124,22 @@ const LEVEL_VIEWS = [
   ['review', '#after', {}],
 ];
 const LEVELS_MAX = { h4: 3, lines: 6, sessions: 6 };
+/**
+ * Rynki wynikowe HIP-4: Kokpit 5m z zapisem, w którym wskaźnik jest włączony, na danych stałych z 14 płynnymi rynkami BTC
+ * (progi co 250 USD wokół ceny, `fixtures.mjs`), 1440 i 390. Liczba progów wybranych na wykres (`selectOutcomes`, atrybut
+ * `data-hip4-lines`; także poza widoczną skalą ceny). Limity z projektu: komputer 6 (3 nad ceną i 3 pod), telefon 1.
+ */
+const HIP4_STORE = {
+  'hq.charts.v1.cockpit': JSON.stringify({
+    coin: 'BTC',
+    interval: '5m',
+    view: 'candles',
+    layersV: 2,
+    indicators: [{ iid: 'outcomes', id: 'outcomes', params: {}, color: '#F5A524', alpha: 1, width: 1, labels: true, visible: true }],
+  }),
+};
+const HIP4_MAX = { desktop: 6, phone: 1 };
+const hip4Count = `(() => { const c = window.__hq.chart(); const host = c && c.root.closest('[data-hip4-lines]'); return host ? Number(host.dataset.hip4Lines) : null; })()`;
 const levelCounts = `(() => {
   const hosts = [...document.querySelectorAll('.tv-lightweight-charts')].filter((r) => r.getBoundingClientRect().width > 0).map((r) => r.closest('[data-level-lines]')).filter(Boolean);
   if (hosts.length === 0) return null;
@@ -669,6 +685,21 @@ async function main() {
     }
     await page.viewport(1440, 900, false);
 
+    // Szlif 9: progi rynków HIP-4 w Kokpicie 5m (1440, potem 390)
+    report.hip4 = {};
+    await page.viewport(1440, 900, false);
+    await open(page, '#charts', HIP4_STORE);
+    await page.mouseAway();
+    await sleep(400);
+    report.hip4.desktop = await probe(page, hip4Count);
+    await shot(page, '1440-hip4');
+    await page.viewport(390, 844, true);
+    await open(page, '#charts', HIP4_STORE);
+    await sleep(400);
+    report.hip4.phone = await probe(page, hip4Count);
+    await shot(page, '390-hip4');
+    await page.viewport(1440, 900, false);
+
     // Szlif 7: poziomy dnia i linie sesji w „Mapie dnia” i „Rozliczeniu doby” (1440, potem 390)
     report.levels = {};
     for (const [name, hash, store] of LEVEL_VIEWS) {
@@ -755,9 +786,11 @@ async function main() {
     r.levels.dayMap.desktop.levels4h <= LEVELS_MAX.h4 &&
     typeof r.levels?.review?.desktop?.sessions === 'number' &&
     LEVEL_VIEWS.every(([name]) => lvOk(r.levels?.[name]?.desktop) && lvOk(r.levels?.[name]?.phone));
+  // Szlif 9: linie progów HIP-4 w limitach; fikstura ma 14 płynnych rynków, więc na komputerze co najmniej jedna, na telefonie dokładnie jedna
+  const s9 = typeof r.hip4?.desktop === 'number' && typeof r.hip4?.phone === 'number' && r.hip4.desktop >= 1 && r.hip4.desktop <= HIP4_MAX.desktop && r.hip4.phone === HIP4_MAX.phone;
   const pbOk = (c) => !!c && c.boxes <= PB_MAX.boxes && c.lines <= PB_MAX.lines && c.marks <= PB_MAX.marks;
   const s8 = pbOk(r.pb?.desktop) && pbOk(r.pb?.phone);
-  r.summary = { t1, t2, t3, t4, t5, t6, s1, s2, s3, s4, s5, s6, s7, s8 };
+  r.summary = { t1, t2, t3, t4, t5, t6, s1, s2, s3, s4, s5, s6, s7, s8, s9 };
   const lines = [
     `Pomiar „${LABEL}” (${BASE})`,
     `1. Panel ceny 1440×900: ${pct(r.desktop)} (próg 62%, zapas ${margin(r.desktop?.share ?? 0, LIMITS.desktop)}), z kolumną DOM: ${pct(r.desktopDom)} (próg 60%, zapas ${margin(r.desktopDom?.share ?? 0, LIMITS.desktopDom)}) — ${ok(t1)}`,
@@ -785,6 +818,7 @@ async function main() {
       const f = (c) => (c ? `${c.objects} / ${c.area}%` : '—');
       return `${name}: TPO 1440 ${f(v?.desktop?.tpo)}, 390 ${f(v?.phone?.tpo)}; profile okresów 1440 ${f(v?.desktop?.periods)}`;
     }).join('; ')} (limit TPO ${PROFILE_MAX.objects} obiektów; pole ${PROFILE_MAX.area1440}% / ${PROFILE_MAX.area390}%) — ${ok(s6)}`,
+    `Szlif 9. Progi rynków HIP-4 (Kokpit 5m, dane stałe, 14 płynnych rynków): 1440 ${r.hip4?.desktop ?? '—'}, 390 ${r.hip4?.phone ?? '—'} (limit ${HIP4_MAX.desktop} / ${HIP4_MAX.phone}) — ${ok(s9)}`,
     `Szlif 7. Poziomy dnia / linie sesji (dane stałe): „Mapa dnia” 1440: 4h ${r.levels?.dayMap?.desktop?.levels4h ?? '—'}, wszystkie wykresy ${r.levels?.dayMap?.desktop ? `${r.levels.dayMap.desktop.levels} / ${r.levels.dayMap.desktop.sessions}` : '—'}; „Rozliczenie doby” 30m 1440 ${r.levels?.review?.desktop ? `${r.levels.review.desktop.levels} / ${r.levels.review.desktop.sessions}` : '—'}, 390 ${r.levels?.review?.phone ? `${r.levels.review.phone.levels} / ${r.levels.review.phone.sessions}` : '—'} (limit: 4h ${LEVELS_MAX.h4} poziomy, sesje ${LEVELS_MAX.sessions}) — ${ok(s7)}`,
     `Szlif 1. Prostokąty wskaźnika Effort (powtórka 24.10 19:30, BTC 5m): 1440 ${r.effort?.desktop ?? '—'} (limit ${EFFORT_MAX.desktop}), 390 ${r.effort?.phone ?? '—'} (limit ${EFFORT_MAX.phone}) — ${ok(s1)}`
   );
