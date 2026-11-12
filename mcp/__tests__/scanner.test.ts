@@ -173,6 +173,7 @@ interface LedgerData {
   voided: Num;
   slotsIssued: Num;
   slotsSkipped: Num;
+  abTests: { plan: string; variant: string; model: string; pairsCurrent: Num; pairsLast: Num; diffLast: Num; diffLo: Num; diffHi: Num }[];
 }
 
 const SCANNER_TOOLS = ['liquidation_map', 'liquidation_tape', 'cohort_flow', 'whales', 'twaps', 'forecast_ledger'] as const;
@@ -845,6 +846,22 @@ describe('forecast_ledger', () => {
       seasonalN: { value: 2650 },
     });
     expect(env.notes.join(' ')).toMatch(/ACI[^.]*90% z konstrukcji/);
+  });
+
+  it('testy A/B: ab-v1 (B) z wynikiem zakończonego okresu i ab-v2 (C) w toku; stare podsumowanie bez abC — tylko ab-v1', async () => {
+    const { env } = await call<LedgerData>('forecast_ledger', allRoutes());
+    const [b, c] = env.data.abTests;
+    expect(b).toMatchObject({ plan: 'ab-v1', variant: 'B', pairsLast: { value: 1338, unit: 'count' }, diffLast: { value: -0.00001 }, diffLo: { value: -0.000026 }, diffHi: { value: 0.000006 } });
+    expect(c).toMatchObject({ plan: 'ab-v2', variant: 'C', model: 'ledger-har-fhs-rvmix-v1', pairsCurrent: { value: 470, unit: 'count', badge: 'LIVE' } });
+    expect(c.diffLast.value).toBeNull();
+    expect(c.diffLast.why).toContain('okresu');
+    await close?.();
+    close = null;
+    const old = ledger();
+    delete old.abC;
+    const r = await call<LedgerData>('forecast_ledger', allRoutes({ [LEDGER_URL]: { json: old } }));
+    expect(r.res.isError).toBeFalsy();
+    expect(r.env.data.abTests.map((x) => x.plan)).toEqual(['ab-v1']);
   });
 
   it('zegar ruchu: najbliższa godzina jako poziom bez procentu, godziny 2–24 jako baza sezonowa; rozliczenie kalibracji cat-cal-v1', async () => {

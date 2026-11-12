@@ -12,6 +12,45 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 - Strażnik danych (`scripts/check-data-health.mjs`) pobiera `markets.json` (brak pliku nie jest alarmem), sprawdza w nim prywatność i alarmuje, gdy plik ma ponad 3 h.
 - Testy: `src/utils/__tests__/marketRegistry.test.ts` (wejście po 3 dniach, przerwana seria, miejsca 21–30 zostają, wyjście po 7 dniach, stałe rynki, wycofane i zerowe OI, kilka giełd z HIP-3, restart, brak rynku w jednej godzinnej odpowiedzi — miejsce 20, członek ze strefy 21–30, BTC — i przez cały dzień, rotacja giełd, strażnik, rynki domyślne), `backend/scanner/__tests__/marketRegistryRunner.test.ts` (fikstury API, wagi, okno startu, 25 giełd: najwyżej 19 zapytań i koniec przed slotem, rotacja, wejścia i wyjścia, restart, awarie giełd), `scripts/check-data-health.test.mjs` (wiek i prywatność `markets.json`).
 
+### Dziennik prognoz: wariant C prognozy zwrotu 1 h w teście A/B (`ab-v2`) (2026-11-12)
+
+#### Dodane
+- **Wariant C jako przekształcenie kwantyli A** (nowy `src/utils/rvMix.ts`): krok poziomu ze zmienności zrealizowanej 12 zamkniętych świec 5m przed slotem (`rv60`, log-zwroty zamknięcie do zamknięcia, świeca w toku pominięta): `x = clip(½·ln(rv60/σA²), ±1,5)`, `q1 = qA·exp(c + κ·x)`; krok kształtu: mieszanina skali z dziewięciowęzłową kwadraturą Gaussa–Hermite’a (węzły i wagi jako stałe), kwantyle bisekcją. Stałe `κ = 0,5`, `c = −0,05`, `τ = 0,5`. Na trzech zestawach wzorcowych z niezależnej implementacji różnica kwantyli C najwyżej 5·10⁻⁷ (tolerancja 1e-5).
+- **Rekord C** (`backend/scanner/forecaster.ts`, `makeRetForecastC`): pola A plus `id <A>c`, `variant: "C"`, `model: "ledger-har-fhs-rvmix-v1"`, `rv60`, `sigmaA`, `x`, `kappa`, `c`, `tau`; przekształcenie liczone z wartości zapisanych w rekordzie. Brak C przy brakującej świecy, kwantylach A nierosnących albo σA ≤ 0. `variant` uogólnione na `'B' | 'C'` (mapa przyrostków); filtry wersji głównej obejmują oba warianty.
+- **Zaokrąglenia w planie `ab-v2`** (pole `rounding`): x i kwantyle C liczone z wartości zapisanych w rekordzie (rv60 10 cyfr znaczących, sigmaA 8 miejsc, x i kwantyle C 6 miejsc); karta wariantu C bierze stałe z `RVMIX`.
+- **Plan `ab-v2`** (`src/utils/abTest.ts`, `AB_DESIGN_C`): wzór i stałe, kwadratura, miara CRPS na tych samych slotach, okresy 14 dni od tej samej epoki, `hacLag 96`, `minN 672`, kryteria (główne, kalibracja, porażka, awans) i zasada startu: pierwszy oceniany okres od najbliższej granicy okresu po rejestracji (`abFirstBlock`). Dziennik (`backend/scanner/ledgerRunner.ts`) rejestruje plan raz, w pierwszym przebiegu po zmianie, i dopiero potem wystawia C obok A i B w tej samej partii; `rv60` z tego samego pobrania świec 5m co reżim wariantu B (`ForecastData.refreshRegime`). Wariant B i plan `ab-v1` bez zmian.
+- **Podsumowanie** (`abC`, typ i strażnik `isAbC` w `src/utils/deskLedger.ts`): okresy A/C, w zakończonym okresie różnica C − A z przedziałem HAC i kalibracja C na próbie rozłącznej (`cal`: pokrycie 60% i 90%), najnowsze `x` i `rv60`; sekcja dopiero po pierwszym rozliczonym rekordzie C, `ab` bez zmian.
+- **Weryfikator** (`scripts/verify-ledger.mjs`): `checkVariantC` (własna implementacja przekształcenia: Φ⁻¹ algorytmem AS241, pierwiastek metodą Illinois; pola wspólne z A, stałe z planu, σA ±1e-8, x ±1e-6, kwantyle C ±1e-5), `checkAbPlanC` (plan zgodny z kodem, rekord C przed planem, C bez planu w pełnym dzienniku), `checkRv60` z `--market` (rv60 wobec świec 5m Hyperliquid), `recompute` z osobnymi kluczami wariantów i okresami `abC`.
+- **Strona i MCP**: karta A/B wariantu C w Po sesji (`src/views/after/ModelAbCCard.tsx`, tabela okresów wspólna z kartą B), `forecast_ledger` z polem `abTests` (`ab-v1` i, gdy jest, `ab-v2`); stare podsumowanie bez `abC` działa jak dotąd. Opis w `integrations/skills/hyperquant/SKILL.md` i `README.md`.
+- Testy: `src/utils/__tests__/rvMix.test.ts` (wzorce w `fixtures/rvMixReference.json`, τ = 0, symetria, przypadki brzegowe, kalibracja na 20 000 syntetycznych zwrotów: C 0,58–0,62, A ponad 0,66; rv60 bez świecy w toku), `backend/scanner/__tests__/variantC.test.ts`, `ledgerRunner.test.ts` (plan raz i przed pierwszym C), `scripts/verify-ledger.test.mjs` (zmieniony kwantyl, stała, x, plan, C przed planem, rv60), `src/views/after/__tests__/modelAbCCard.test.tsx`, `mcp/__tests__/scanner.test.ts`. Na serwerze działa dopiero po podpisanym tagu.
+
+### Zakresy P/b (Nill): bez zakresu w budowie, wypełnienie od potwierdzenia, 2 + 2 najbliższe poziomy (2026-11-12)
+
+Na danych stałych `ui:check` (Kokpit 5m z włączonym wskaźnikiem, zegar 24.10.2026 21:29 UTC; pudełka / linie poziomów / 👀): 1440 × 900 — 1 / 8 / 0 → 0 / 4 / 0; 390 × 844 — 1 / 8 / 0 → 0 / 4 / 0 (wybór warstwy, nie piksele; linie liczone także poza widoczną skalą ceny). Jedyne pudełko „przed” to zakres w budowie; na tych danych nie ma zakresu potwierdzonego, więc reguły pudełek (wypełnienie od potwierdzenia, aktywny i ostatni zakończony, 3 ostatnie 👀) sprawdzają testy jednostkowe, a `ui:check` pilnuje limitów. Liczby „przed” zmierzone na stronie z `main` z tymczasowym licznikiem w warstwie (bez commita).
+
+#### Zmienione
+- **Zakres w budowie nie jest rysowany** (`src/charts/pro/chart/pbSelect.ts`, `selectRanges`; `src/charts/pro/chart/pbRangeLayer.ts`): zmieniał się albo znikał zawsze. Legenda podaje „P w budowie: 2 dotknięcia z 3 · 1:20 z 4:00”.
+- **Wypełnienie pudełka od świecy potwierdzenia** (`boxSpan`), wcześniejsza część cienkim obrysem kropkowanym; dotąd po potwierdzeniu pojawiał się prostokąt sięgający ok. 4 h wstecz. Stan chwili X zawiera tylko zakresy potwierdzone do X.
+- **Rysowany zakres aktywny i ostatni zakończony** (sam obrys, z dopiskiem „zakończony”); kółka dotknięć tylko przy aktywnym; najwyżej 3 ostatnie 👀 (`selectSpots`).
+- **Poziomy tygodnia i doby: najwyżej 2 najbliższe nad ceną i 2 pod nią** (`nearestLevels`; dotąd wszystkie: VAH, POC, VAL i LVN tygodnia oraz VAH, POC i VAL doby).
+- **Opis wskaźnika** (PL i EN): nowe reguły rysowania i wynik miejsc 👀 z 2026 r. obok wyniku z legendy: A 52% (n 183), B 48% (n 29), C 53% (n 59), czyli bez przewagi.
+
+#### Dodane
+- **`ui:check`: scenariusz zakresów P/b** (Kokpit 5m z wskaźnikiem w zapisie, dane stałe, 1440 i 390): liczby z atrybutów `data-pb-boxes`, `data-pb-lines`, `data-pb-marks`, limity w `--strict`: 2 pudełka, 4 linie, 3 znaczniki 👀. `scripts/ui/baseline.json` (win32): 6 nowych liczb `pb.*`.
+- Testy: `pbSelect.test.ts` (aktywny i ostatni zakończony, bez zakresu w budowie, wypełnienie od świecy potwierdzenia, 3 ostatnie 👀, 2 + 2 najbliższe poziomy, legenda zakresu w budowie, stan chwili X tylko z zakresów potwierdzonych do X na prefiksach świec, zdanie w opisie PL i EN).
+
+### Licencja danych dziennika i zastrzeżenie bloga (2026-11-12)
+
+#### Zmienione
+- **Dane dziennika prognoz na licencji CC BY 4.0:** strona `wyniki/` i `en/results/` podaje licencję w sekcji weryfikacji (link do tekstu licencji, prośba o podanie źródła), dane strukturalne `Dataset` mają pole `license`, README opisuje ją obok licencji MIT kodu.
+- **Zastrzeżenie bloga:** stopka stron, zastrzeżenie pod wpisami i strona wyników mówią „nie porada inwestycyjna ani wezwanie do transakcji” („not investment advice nor a call to trade”) zamiast „sygnał do transakcji”.
+
+### Skaner: pomiar prywatności kohorty wielorybów przy ziarnie 15 min, 1 h i 4 h (2026-11-12)
+
+#### Dodane
+- **`status.json`: opcjonalne pole `whalePrivacy`** (`backend/scanner/cohortEngine.ts`: `whalePrivacy`, `passesPrivacy`; `backend/scanner/scanner.ts`). Z ostatnich 7 dób, osobno dla zamkniętych kubełków 15 min (dzisiejsze ziarno), 1 h i 4 h (wyrównanych do UTC): `obs` — wszystkie okna obserwowane w całości (także bez aktywności wielorybów, pokazane jako zero), `n` — z nich kubełki z aktywnością wielorybów, `ok` — te, w których kohorta wielorybów przechodzi próg prywatności (co najmniej 5 uczestników i nikt powyżej 50% obrotu). Próg sprawdza ta sama funkcja co ukrywanie komórek w `cohorts/BTC.json`. Okno 1 h i 4 h liczone tylko, gdy wszystkie jego kwadranse były obserwowane w całości. Same liczniki: komórki 1 h i 4 h ani adresy nie są publikowane. Stan pomiaru jest częścią zapisu stanu kohort, więc przetrwa restart skanera; stan zapisany przed tą wersją zaczyna liczniki od zera. Bez silnika kohort `status.json` bez zmian. Udział okien, które wolno pokazać: (ok + obs − n) / obs. Pomiar służy decyzji o drabinie ziarnistości po 7 dobach.
+- Testy: `backend/scanner/__tests__/whalePrivacy.test.ts` (trzech uczestników w kwadransie i sześciu w godzinie: `m15.ok = 0`, `h1.ok = 1`; dominacja ponad 50%; okno 4 h; brakujący kwadrans; okno 7 dób; kwadrans obserwowany częściowo; restart i stary stan), asercje `status.json` w `io.test.ts`.
+
 ### Zegar ruchu w „Przed sesją” i w MCP (2026-11-12)
 
 #### Poprawione
