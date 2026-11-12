@@ -19,8 +19,14 @@ export type RuleKind = AlertKind | (string & {});
 export const knownKind = (k: string): k is AlertKind => (ALERT_KINDS as readonly string[]).includes(k);
 
 export const ALERT_INTERVALS = ['1m', '5m', '15m', '30m', '1h', '4h'] as const;
-/** Rynki z alarmami (perpy Hyperliquid z widoku Wykresy). */
+/**
+ * Rynki pilnowane przez serwer powiadomień (`backend/alerts`, skrzynka `workers/alerts`) — jedna lista dla serwera
+ * i przeglądarki. Strona ustawia alarmy na każdym rynku z rejestru, ale alarm na innym rynku dzwoni tylko przy otwartej
+ * stronie (`pushWatched`).
+ */
 export const ALERT_MARKETS = ['BTC', 'ETH', 'SOL', 'HYPE'] as const;
+/** Czy serwer powiadomień pilnuje alarmów na rynku `coin`. */
+export const serverWatches = (coin: string): boolean => (ALERT_MARKETS as readonly string[]).includes(coin);
 const MIN = 60_000;
 const IV_MS: Record<string, number> = { '1m': MIN, '5m': 5 * MIN, '15m': 15 * MIN, '30m': 30 * MIN, '1h': 60 * MIN, '4h': 240 * MIN };
 export const ivMs = (iv: string): number => IV_MS[iv] ?? 15 * MIN;

@@ -1,7 +1,8 @@
 import type { ResetMode } from '../core/sessions';
 import { STAT_GROUPS, type StatGroup } from '../core/stats';
 import { DEFAULT_INTERVAL, INTERVALS } from '../core/time';
-import { COIN, MARKETS, Market } from '../store/proStore';
+import { COIN, Market } from '../store/proStore';
+import { isCoinName } from '../../../utils/marketRegistry';
 import { isMapId } from '../../../utils/mapSettlement';
 import { IndicatorInstance, indicatorDef, indicatorsFromLink, indicatorsLink, parseIndicators, REMOVED_INDICATORS } from '../indicators/registry';
 import type { ChartView } from './footprintSeries';
@@ -222,7 +223,7 @@ export function parseSettings(raw: unknown, d: ChartSettings = DEFAULT_SETTINGS)
   const iids = Array.isArray(r.panelSetIids) ? r.panelSetIids : d.panelSetIids;
   const panelSetIids = iids && [...new Set(iids.filter((x): x is string => typeof x === 'string' && indicators.some((i) => i.iid === x)))];
   return {
-    coin: oneOf(r.coin, MARKETS, d.coin),
+    coin: isCoinName(r.coin) ? r.coin : d.coin,
     interval: oneOf(r.interval, INTERVALS.map((i) => i.id), d.interval),
     view: oneOf(r.view, ['candles', 'footprint'] as const, d.view),
     fpStyle: oneOf(r.fpStyle, ['bidask', 'delta', 'volume'] as const, d.fpStyle),
@@ -347,7 +348,7 @@ export function settingsFromHash(hash: string): Partial<ChartSettings> {
   const m = q.get('m');
   const i = q.get('i');
   const v = q.get('v');
-  if (m && (MARKETS as readonly string[]).includes(m)) out.coin = m as Market;
+  if (isCoinName(m)) out.coin = m;
   if (i && INTERVALS.some((x) => x.id === i)) out.interval = i;
   if (v === 'candles' || v === 'footprint') out.view = v;
   const ind = indicatorsFromLink(q.get('ind') ?? '');

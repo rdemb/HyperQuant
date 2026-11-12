@@ -56,11 +56,14 @@ export function baseTick(px: number): number {
   return hlTick(px * 0.95);
 }
 
-/** Liczba miejsc po przecinku ceny wg ticku Hyperliquid (BTC przy 80 tys.: 0, ETH: 1, SOL: 2, HYPE: 3). */
-export const priceDigits = (p: number) => Math.max(0, -Math.floor(Math.log10(hlTick(Math.abs(p)))));
+/**
+ * Liczba miejsc po przecinku ceny wg ticku Hyperliquid (BTC przy 80 tys.: 0, ETH: 1, SOL: 2, HYPE: 3); z `szDecimals` rynku
+ * (rejestr rynków) także limit 6 − szDecimals (kPEPE przy 0,0045: 6 miejsc, nie 7).
+ */
+export const priceDigits = (p: number, szDecimals?: number) => Math.max(0, -Math.floor(Math.log10(hlTick(Math.abs(p), szDecimals)) + 1e-9));
 
-/** Cena z dokładnością ticku rynku (wykres, nagłówek układu i Czwórka). */
-export const fmtPx = (p: number) => fmtPrice(p, priceDigits(p));
+/** Cena z dokładnością ticku rynku (wykres, nagłówek układu i Czwórka); `szDecimals` — rynek z rejestru. */
+export const fmtPx = (p: number, szDecimals?: number) => fmtPrice(p, priceDigits(p, szDecimals));
 
 /** Indeks wiersza ceny na siatce `step` (zaokrąglenie chroni przed błędem zmiennoprzecinkowym). */
 export function rowIndex(px: number, step: number): number {

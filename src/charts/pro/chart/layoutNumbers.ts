@@ -34,6 +34,8 @@ import {
 } from '../../../utils/sessionText';
 import { DASH, fmtFixed, fmtPct, fmtSigned } from '../../../ui/format';
 import { tr } from '../../../i18n';
+import { BTC_ONLY_NOTE, BLOG_ONLY_WHY, NO_SCANNER_NOTE } from '../../../utils/marketCaps';
+import { capsOf, noScannerWhyOf } from '../../../state/markets';
 
 /**
  * Nagłówek układu (spec §7.3): trzy liczby właściwe dla pytania układu, każda z plakietką LIVE albo MODEL (MODEL z nazwą
@@ -49,7 +51,7 @@ export interface LayoutNumber {
   badge: 'LIVE' | 'MODEL';
   /** Skąd liczba (MODEL: „MODEL · metoda: …”) albo powód braku. */
   hint: string;
-  /** Zamiast plakietki: wiek migawki skanera starszej niż 2 min (np. „4 min”) albo „tylko BTC”. */
+  /** Zamiast plakietki: wiek migawki skanera starszej niż 2 min (np. „4 min”), „bez skanera” albo „tylko BTC”. */
   note?: string;
   /** Krótszy podpis na telefon (trzy liczby mieszczą się w jednej linii 390 px); bez niego — `label`. */
   short?: string;
@@ -221,7 +223,7 @@ function nakedPocNum(x: LayoutInputs): LayoutNumber {
 function liqNum(x: LayoutInputs): LayoutNumber {
   const label = tr('Klaster likw.', 'Liq. cluster');
   const short = tr('Klaster', 'Cluster');
-  if (x.coin !== 'BTC') return { ...dash(label, 'LIVE', tr('Tylko BTC: skaner mapuje pozycje na BTC', 'BTC only: the scanner maps BTC positions'), tr('tylko BTC', 'BTC only')), short };
+  if (!capsOf(x.coin).scanner) return { ...dash(label, 'LIVE', noScannerWhyOf(x.coin), NO_SCANNER_NOTE), short };
   const l = val(x.liq);
   const p = val(x.price);
   if (!l || p === null) return { ...dash(label, 'LIVE', whyOf(x.liq, x.price)), short };
@@ -409,7 +411,7 @@ function migrationNum(x: LayoutInputs): LayoutNumber {
 function mapHitsNum(x: LayoutInputs): LayoutNumber {
   const label = tr('Mapa: dotknięte', 'Map: touched');
   const short = tr('Mapa', 'Map');
-  if (x.coin !== 'BTC') return { ...dash(label, 'LIVE', tr('Tylko BTC: mapy z bloga opisują BTC', 'BTC only: the blog maps describe BTC'), tr('tylko BTC', 'BTC only')), short };
+  if (!capsOf(x.coin).blog) return { ...dash(label, 'LIVE', BLOG_ONLY_WHY, BTC_ONLY_NOTE), short };
   const h = val(x.mapHits);
   if (!h) return { ...dash(label, 'LIVE', whyOf(x.mapHits)), short };
   // „X/Y” i uwaga przy luce — ten sam pomocnik co Czwórka Przed sesją

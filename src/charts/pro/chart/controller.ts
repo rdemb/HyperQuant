@@ -23,7 +23,7 @@ import { DEFAULT_THRESHOLD_USD, autoThreshold } from '../core/clashes';
 import { Ohlc, cvdCandles, cvdLine, flipsEmpty, oiChangeLine } from '../core/flow';
 import { deltaPoint, flowLegend, hlDelta } from './flowPoints';
 import { BarStat, VENUE_GROUPS, barStat } from '../core/stats';
-import { hlTick, rowAt } from '../core/footprintBar';
+import { rowAt } from '../core/footprintBar';
 import type { LiqLevel } from '../core/indicators';
 import type { ResetMode } from '../core/sessions';
 import type { CandleSeries, ProBar, ProStore } from '../store/proStore';
@@ -32,7 +32,6 @@ import { requestHistory } from '../store/serverHistory';
 import { DrawingLayer } from '../draw/layer';
 import { DrawingTools } from '../draw/tools';
 import { FootprintOptions, FootprintPoint, FootprintSeries } from './footprintSeries';
-import { fmtPx } from './layout';
 import { LiquidityLayer, LiquidityPick, LiquiditySource, liquidityLookbackMs, tapeCovered } from './liquidity';
 import { IndicatorOverlay, IndicatorToggles, IndicatorValues, WhaleView } from './overlay';
 import { LegendPart, PaneLegend, deltaStatsParts } from './paneLegend';
@@ -61,6 +60,8 @@ import { FlowVenue, OiVenue, oiMaxAge, per8h } from '../venues/parse';
 import { VenueStore, acquireVenues, venueStoreFor } from '../venues/venueStore';
 import { DOM_W_PX, PRO, RIGHT_GAP_PX, chartOptions, crosshairTimeFormatter, rgba } from './theme';
 import { tr } from '../../../i18n';
+import { BTC_ONLY_NOTE, NO_FORECASTS_NOTE } from '../../../utils/marketCaps';
+import { capsOf } from '../../../state/markets';
 import type { DeskLedgerSummary } from '../../../utils/deskLedger';
 import { fmtCompact, fmtPrice, numLang } from '../../../ui/format';
 
@@ -433,6 +434,7 @@ export class ProChartController {
       container.dataset.bubbles = String(n);
     };
     this.overlay = new IndicatorOverlay(toggles(settings, series.interval.ms));
+    this.overlay.fmtPx = (p) => store.fmtPx(p);
     // Profile okresów i TPO: liczba obiektów i udział pola pod słupkami (pomiar układu czyta je z atrybutów)
     const pct = (x: number) => (x * 100).toFixed(1);
     this.overlay.onPeriods = (c) => {
@@ -891,7 +893,7 @@ export class ProChartController {
 
   /** Liczby wskaźnika: cena (tick rynku), odległość ceny (ATR: o miejsce dokładniej niż tick), dwa lub trzy miejsca (RSI, MACD) albo wolumen (np. delta). */
   private indFormat(format: IndicatorDef['format']): (v: number) => string {
-    if (format === 'price') return fmtPx;
+    if (format === 'price') return (v) => this.store.fmtPx(v);
     if (format === 'fixed1') return (v) => fmtPrice(v, 1);
     if (format === 'fixed2') return (v) => fmtPrice(v, 2);
     if (format === 'fixed3') return (v) => fmtPrice(v, 3);
@@ -1024,7 +1026,7 @@ export class ProChartController {
   private syncBlogMap(now: number): void {
     const s = this.settings;
     // Jak poziomy dnia: interwały poniżej 1D (warunek `indicatorScope().levels` bez budowania obiektu w każdej klatce)
-    const on = s.showBlogMap && this.store.coin === 'BTC' && this.series.interval.ms < DAY;
+    const on = s.showBlogMap && capsOf(this.store.coin).blog && this.series.interval.ms < DAY;
     const map = on ? pickMap(this.blogMaps.maps, now, s.blogMapId) : null;
     // Powtórka może cofnąć czas wykresu — wtedy też przeliczenie
     if (map === this.blogShown && Math.abs(now - this.blogAt) < (this.blogWait ? BLOG_RETRY_MS : BLOG_EVERY_MS)) return;
@@ -1051,7 +1053,7 @@ export class ProChartController {
     const x = this.indShown.find((y) => indicatorDef(y.id).outcomes);
     const o = this.hip4Fresh();
     const last = this.bars[this.bars.length - 1];
-    if (!x || !o || this.store.coin !== 'BTC' || !last) return null;
+    if (!x || !o || !capsOf(this.store.coin).outcomes || !last) return null;
     // Komputer: 3 progi najbliższe nad ceną i 3 pod; telefon: tylko najbliższy
     return { levels: outcomeLevels(o.rows, last.candle.c, this.phone).levels, color: x.color, alpha: x.alpha, width: x.width };
   }
@@ -1059,7 +1061,7 @@ export class ProChartController {
   /** Opis rynków HIP-4 w legendzie: ile płynnych i wynik Briera rynku i modelu z dziennika (rynki 15-minutowe). */
   private hip4Legend(): { text: string; color: string }[] {
     const o = this.outcomes;
-    if (this.store.coin !== 'BTC') return [{ text: tr('tylko BTC', 'BTC only'), color: PRO.ink3 }];
+    if (!capsOf(this.store.coin).outcomes) return [{ text: BTC_ONLY_NOTE, color: PRO.ink3 }];
     if (this.store.replay) return [{ text: tr('w powtórce bez rynków', 'no markets in replay'), color: PRO.ink3 }];
     if (!o || o.status === 'loading') return [{ text: tr('pobieram rynki…', 'loading markets…'), color: PRO.ink3 }];
     if (!this.hip4Fresh()) return [{ text: tr('rynki chwilowo niedostępne', 'markets temporarily unavailable'), color: PRO.ink3 }];
@@ -1175,9 +1177,9 @@ export class ProChartController {
   private coneLegend(color: string): { text: string; color: string }[] {
     const f = this.coneDrawn();
     if (!f)
-      return [{ text: this.store.coin === 'BTC' ? tr('brak prognozy z ostatnich 3 h', 'no forecast from the last 3 h') : tr('tylko BTC', 'BTC only'), color: PRO.ink3 }];
+      return [{ text: capsOf(this.store.coin).forecasts ? tr('brak prognozy z ostatnich 3 h', 'no forecast from the last 3 h') : NO_FORECASTS_NOTE, color: PRO.ink3 }];
     const [lo, hi, level] = this.phone ? [0.2, 0.8, '60%'] : [0.05, 0.95, '90%'];
-    const px = (hz: ConeForecast['horizons'][number], tau: number) => fmtPx(f.px0 * Math.exp(hz.q[hz.taus.indexOf(tau)]));
+    const px = (hz: ConeForecast['horizons'][number], tau: number) => this.store.fmtPx(f.px0 * Math.exp(hz.q[hz.taus.indexOf(tau)]));
     const parts: { text: string; color: string }[] = [{ text: `${tr('od', 'from')} ${fmtHm(f.t)}`, color: PRO.ink3 }];
     // Kropka między horyzontami: spacja tysięcy nie skleja ceny z następnym „4 h”
     f.horizons.forEach((hz, k) => parts.push({ text: `${k ? '· ' : ''}${horizonLabel(hz.h)} ${level} ${px(hz, lo)}–${px(hz, hi)}`, color }));
@@ -1315,7 +1317,7 @@ export class ProChartController {
    * pod nią, VWAP, VWAP sesji, POC), jest pusta — nie jest rysowana (labelPlacement.keepTicks).
    */
   private priceFormat(minMove: number): PriceFormat {
-    return { type: 'custom', minMove, formatter: fmtPx, tickmarksFormatter: (prices) => this.tickLabels(prices) };
+    return { type: 'custom', minMove, formatter: (p: number) => this.store.fmtPx(p), tickmarksFormatter: (prices) => this.tickLabels(prices) };
   }
 
   /** Panele pod ceną z pierwszeństwem etykiet: serie, których siatka ustępuje ostatnim wartościom serii panelu. */
@@ -1374,7 +1376,7 @@ export class ProChartController {
   private tickLabels(prices: readonly number[]): string[] {
     const ys = prices.map((p) => this.main?.priceToCoordinate(p) ?? null);
     const keep = keepTicks(ys, this.main ? this.axisReserved() : [], AXIS_LABEL_PX);
-    return prices.map((p, i) => (keep[i] ? fmtPx(p) : ''));
+    return prices.map((p, i) => (keep[i] ? this.store.fmtPx(p) : ''));
   }
 
   /** Siatka osi liczy etykiety przy zmianie skali; gdy ważniejsze etykiety przesuną się o kilka px, liczy je od nowa. */
@@ -1406,8 +1408,8 @@ export class ProChartController {
       full = changed.length > MAX_POINT_UPDATES;
     }
     if (full) {
-      // Krok osi ceny = tick rynku (BTC 1 USD, HYPE 0,001 USD)
-      const tick = hlTick(next[next.length - 1]?.candle.c ?? 0);
+      // Krok osi ceny = tick rynku (BTC 1 USD, HYPE 0,001 USD; z szDecimals rynku z rejestru)
+      const tick = this.store.tick(next[next.length - 1]?.candle.c ?? 0);
       if (tick !== this.priceTick) {
         this.priceTick = tick;
         this.main.applyOptions({ priceFormat: this.priceFormat(tick) });

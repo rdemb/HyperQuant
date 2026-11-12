@@ -2,7 +2,8 @@ import { INTERVALS } from '../core/time';
 import { type ChartSettings } from '../chart/settings';
 import { stationIdOf, type StationId } from '../chart/stations';
 import { LAYERS_OFF } from '../chart/templates';
-import { MARKETS, type Market } from '../store/proStore';
+import { COIN, type Market } from '../store/proStore';
+import { isCoinName } from '../../../utils/marketRegistry';
 
 /**
  * Link do chwili w powtórce (także z lekcji):
@@ -61,7 +62,7 @@ export function parseReplayLink(hash: string): ReplayLink | null {
   const zone = (q.get('zone') ?? '').split('-').map(Number);
   return {
     source,
-    coin: m && (MARKETS as readonly string[]).includes(m) ? (m as Market) : 'BTC',
+    coin: isCoinName(m) ? m : COIN,
     interval: i && INTERVALS.some((x) => x.id === i) ? i : null,
     view: v === 'candles' || v === 'footprint' ? v : null,
     from: time(q.get('from')),

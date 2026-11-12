@@ -17,7 +17,7 @@ const inReplay = () => parseReplayLink(window.location.hash) !== null;
 /**
  * Ekran „W sesji”: wykres z układami sesji (Kokpit domyślnie, od 1280 px z prawą kolumną DOM i taśmy, od 640 px
  * z tą kolumną jako szufladą nad wykresem), pod nim przepływ kohort i zrealizowane likwidacje BTC (na każdej
- * szerokości; na wykresie innego rynku „—, tylko BTC”). Na telefonie pięć liczb przepływu (Pulse) jest w karcie
+ * szerokości; na wykresie rynku bez skanera „—, bez skanera”). Na telefonie pięć liczb przepływu (Pulse) jest w karcie
  * „Liczby” paska wykresu, nie nad wykresem (karty Wykres, Taśma, DOM, Liczby są w pasku wykresu).
  * Nad wykresem pierwszy kontakt (dymki i przycisk powtórki 15 min, FirstContact).
  * W powtórce (link #charts?replay=…) sama powtórka: panele na żywo nie mieszają się z przeszłością.

@@ -13,7 +13,6 @@ import { type BlogMapsState, pickMap, useBlogMaps } from '../../state/useBlogMap
 import { WHALES_STALE_MS, type WhaleLayer, isWhaleLayer } from '../../utils/whaleLayer';
 import { DAY, INTERVALS, fmtDayTime, fmtHm, fmtSince, fromDaily, intervalById } from './core/time';
 import { DEFAULT_THRESHOLD_USD, classify } from './core/clashes';
-import { hlTick } from './core/footprintBar';
 import { indicatorScope, liqLevels } from './core/indicators';
 import type { AggressorOrder } from './core/orders';
 import type { ResetMode } from './core/sessions';
@@ -31,7 +30,7 @@ import { type LinkAlarm, linkAlerts, parseAlarmLink } from './chart/alarmLink';
 import { AlarmLinkCard, type AlertDraft, AlertsMenu } from './chart/AlertsMenu';
 import { onAlertEvents, startAlertWatch } from './chart/alertWatch';
 import { DEFAULT_TTL_MS, defaultDir, eventText } from '../../utils/alertRules';
-import { fmtPx, priceDigits } from './chart/layout';
+import { fmtPx as fmtPxOf, priceDigits } from './chart/layout';
 import type { PbZone } from './chart/pbRangeLayer';
 import { ChartLayout, ChartSettings, NARROW_QUERY, PHONE_PANES, PhonePane, DROPPED_NOTICE_KEY, hashFor, isNarrow, keepPanelSetIids, loadSettings, phoneSettings, saveSettings, settingsFromHash } from './chart/settings';
 import { Station, activePanelSet, panelSetPanel, priceLayerCount, stationById, stationKey, stationPanel } from './chart/stations';
@@ -65,15 +64,18 @@ import { TOOLS } from './draw/model';
 import { type DrawingTools, isTyping } from './draw/tools';
 import { chartKeyAction } from './chart/shortcuts';
 import { FocusExit, type PhoneTab, focusExitKey, focusOn } from './chart/focusMode';
-import { CandleSeries, MARKETS, Market, ProStore, storeFor } from './store/proStore';
-import { startRecording } from './store/recording';
+import { COIN, CandleSeries, Market, ProStore, dropStore, storeFor } from './store/proStore';
+import { capsOf, chartMarkets, marketOf, noScannerWhyOf, useMarkets } from '../../state/markets';
+import { BLOG_ONLY_WHY, marketCaps } from '../../utils/marketCaps';
+import { MarketPicker, PhoneMarketSelect } from './chart/MarketPicker';
+import { expiredNotice, isListed, nextMarket } from './chart/marketMenu';
+import { discardRecording, startRecording } from './store/recording';
 import { useStoreVersion } from './store/useStoreVersion';
 import { ReplayBar } from './replay/ReplayBar';
 import { type ReplayLink, linkPatch, parseReplayLink, replayHash } from './replay/link';
 import { type ReplaySession, replayBase } from './replay/session';
 import { lang, tr } from '../../i18n';
 
-const MARKET_OPTIONS = MARKETS.map((m) => ({ value: m, label: m, title: `${m}-PERP · Hyperliquid` }));
 /** Warstwy przepływu zawsze na liście „Warstwy” (wyłączone — do włączenia jednym dotknięciem). */
 const QUICK_LAYERS = ['showVwap', 'showHeatmap', 'showBubbles', 'showClashes', 'showLots'] as const;
 const FAV_OPTIONS = FAVOURITE_INTERVALS.map((id) => ({ value: id as string, label: intervalById(id).label }));
@@ -100,8 +102,8 @@ const withPatch = (s: ChartSettings, p: Partial<ChartSettings>): ChartSettings =
     rowStep: p.coin && p.coin !== s.coin ? 0 : s.rowStep,
   });
 
-/** Cena zaokrąglona do ticku rynku. */
-const toTick = (p: number) => Number(p.toFixed(priceDigits(p)));
+/** Cena zaokrąglona do ticku rynku (`szDecimals` z rejestru). */
+const toTick = (p: number, szDecimals?: number) => Number(p.toFixed(priceDigits(p, szDecimals)));
 
 const PANE_NAMES: Record<PaneKey, string> = {
   showVolume: tr('Wolumen', 'Volume'),
@@ -317,10 +319,13 @@ export const ProChart: React.FC<{
   const signal = useMemo(() => new HoverSignal(), []);
   const liq = useLiqMap();
   const { summary: ledger } = useDeskLedger();
+  // Rynki z rejestru i zdolności rynku wykresu (warstwy skanera, prognozy, mapy z bloga, rynki HIP-4)
+  const markets = useMarkets();
+  const caps = marketCaps(store.coin, markets.markets);
   // Rynki HIP-4 (zapytania do Hyperliquid) i model zmienności Desku (w tym widoku liczony tylko dla nich) tylko z widocznym
-  // wskaźnikiem, na BTC i na żywo
+  // wskaźnikiem, na rynku z rynkami HIP-4 (BTC) i na żywo
   const { feed } = useDesk();
-  const hip4On = !inReplay && settings.coin === 'BTC' && settings.indicators.some((x) => x.visible && x.id === 'outcomes');
+  const hip4On = !inReplay && caps.outcomes && settings.indicators.some((x) => x.visible && x.id === 'outcomes');
   const vol = useVolModel(hip4On);
   const hip4 = useHip4(vol.model, feed.currentPrice, hip4On);
   const whalePub = usePublished('whales.json', isWhaleLayer);
@@ -329,7 +334,22 @@ export const ProChart: React.FC<{
   // Mapy z bloga (plik bloga z tej samej domeny) tylko z włączoną warstwą na BTC albo dla liczby „Mapa: dotknięte” w nagłówku
   // Rozliczenia; rozliczenie poziomów w układzie Rozliczenie
   const blogSettle = station.id === 'review';
-  const blogMaps = useBlogMaps((settings.showBlogMap || (layoutHeader && blogSettle && !inReplay)) && settings.coin === 'BTC');
+  // Rynek spoza rozstrzygniętej listy (wygasły link albo zapis) — wykres BTC z jednym zdaniem wyjaśnienia. Magazyn i baza
+  // taśmy otwarte dla tej nazwy przed odpowiedzią rejestru znikają (chyba że rynek ma alarm — ten nagrywa dalej)
+  useEffect(() => {
+    if (inReplay || !markets.ready || isListed(settings.coin, markets.markets)) return;
+    const gone = settings.coin;
+    setToast(expiredNotice(gone));
+    setSettings((s) => withPatch(s, { coin: COIN }));
+    if (alertBook.get().some((a) => a.coin === gone)) return;
+    // Po bieżącym renderze (bez sprzątania przy zmianie rynku: ta zmiana to właśnie przełączenie na BTC); zatrzymany magazyn
+    // starego wykresu do jego zniknięcia tylko nie dostaje danych
+    setTimeout(() => {
+      const old = dropStore(gone);
+      if (old) void discardRecording(old);
+    }, 0);
+  }, [markets, settings.coin, inReplay]);
+  const blogMaps = useBlogMaps((settings.showBlogMap || (layoutHeader && blogSettle && !inReplay)) && caps.blog);
   useStoreVersion(store, 400);
 
   // Usunięty wskaźnik zestawu paneli wypada też z listy instancji zestawu (keepPanelSetIids)
@@ -484,12 +504,12 @@ export const ProChart: React.FC<{
 
   // Rynki z linku z alarmami nagrywają od razu, żeby kierunek dotknięcia wynikał z bieżącej ceny
   useEffect(() => {
-    for (const c of new Set(linkSet?.map((e) => e.c))) storeFor(c as Market).start();
+    for (const c of new Set(linkSet?.map((e) => e.c))) storeFor(c).start();
   }, [linkSet]);
-  const linkPreview = linkSet ? linkAlerts(linkSet, (c) => storeFor(c as Market).lastPrice(), 0, Date.now()) : null;
+  const linkPreview = linkSet ? linkAlerts(linkSet, (c) => storeFor(c).lastPrice(), 0, Date.now()) : null;
   const addLinkSet = (replace: boolean) => {
     if (!linkSet) return;
-    const made = linkAlerts(linkSet, (c) => storeFor(c as Market).lastPrice(), store.serverNow(), Date.now());
+    const made = linkAlerts(linkSet, (c) => storeFor(c).lastPrice(), store.serverNow(), Date.now());
     alertBook.update((l) => [...(replace ? [] : l), ...made].slice(-MAX_ALERTS));
     primeAlertSound();
     void askNotifications();
@@ -550,11 +570,12 @@ export const ProChart: React.FC<{
     ctrlRef.current?.setWhales(whales?.markets[store.coin] ?? null);
   }, [whales, store]);
 
-  // Klastry likwidacji tylko z aktualnej mapy skanera (jak w Przed sesją: nieaktualna mapa nie jest pokazywana); skaner mapuje BTC
+  // Klastry likwidacji tylko z aktualnej mapy skanera (jak w Przed sesją: nieaktualna mapa nie jest pokazywana) i tylko na
+  // rynku ze skanerem (mapa `liq-map` opisuje jeden rynek skanera)
   useEffect(() => {
-    const fresh = liq.map && (liq.status === 'ready' || liq.status === 'delayed') && store.coin === 'BTC' && !store.replay;
+    const fresh = liq.map && (liq.status === 'ready' || liq.status === 'delayed') && caps.scanner && liq.map.coin === store.coin && !store.replay;
     ctrlRef.current?.setLiqLevels(fresh ? liqLevels(liq.map!) : []);
-  }, [liq.map, liq.status, store]);
+  }, [liq.map, liq.status, store, caps.scanner]);
 
   // Stożek prognozy z dziennika Desku tylko na żywo: prognoza „teraz” nie pasuje do odtwarzanej chwili
   useEffect(() => {
@@ -682,7 +703,7 @@ export const ProChart: React.FC<{
     const now = store.serverNow();
     const dir = defaultDir('touch', price, store.lastPrice() || price);
     addAlert({ coin: store.coin, price, kind: 'touch', dir, iv: '15m', closes: 1, delta: false, from: now, until: now + DEFAULT_TTL_MS, pair: '', note: '', after: '' }, now);
-    setToast(tr(`Alarm przy ${fmtPx(price)} (${store.coin}): dotknięcie poziomu`, `Alert at ${fmtPx(price)} (${store.coin}): level touch`));
+    setToast(tr(`Alarm przy ${store.fmtPx(price)} (${store.coin}): dotknięcie poziomu`, `Alert at ${store.fmtPx(price)} (${store.coin}): level touch`));
   };
   // Alarmy aktywnej strefy P/b do końca jej życia: dotknięcie góry i dołu, zamknięcie 5m poza strefą, powrót do strefy
   const addZoneAlerts = (z: PbZone) => {
@@ -705,8 +726,8 @@ export const ProChart: React.FC<{
     void askNotifications();
     setToast(
       tr(
-        `Alarmy strefy ${name} ${fmtPx(z.lo)}–${fmtPx(z.hi)} (${store.coin}): ${made.length}, do ${fmtHm(z.until)}`,
-        `Zone ${name} ${fmtPx(z.lo)}–${fmtPx(z.hi)} alerts (${store.coin}): ${made.length}, until ${fmtHm(z.until)}`
+        `Alarmy strefy ${name} ${store.fmtPx(z.lo)}–${store.fmtPx(z.hi)} (${store.coin}): ${made.length}, do ${fmtHm(z.until)}`,
+        `Zone ${name} ${store.fmtPx(z.lo)}–${store.fmtPx(z.hi)} alerts (${store.coin}): ${made.length}, until ${fmtHm(z.until)}`
       )
     );
   };
@@ -719,7 +740,7 @@ export const ProChart: React.FC<{
     setSeen(now);
   };
   // Alarm na poziomie linii poziomej z paska i menu rysunku (w powtórce bez alarmów)
-  const drawAlert = inReplay ? undefined : (p: number) => openAlerts({ price: toTick(p), kind: 'close' });
+  const drawAlert = inReplay ? undefined : (p: number) => openAlerts({ price: toTick(p, store.szDecimals), kind: 'close' });
 
   const onContextMenu = (e: React.MouseEvent<HTMLDivElement>) => {
     // Tylko na samym wykresie (legenda, karty i menu mają własne zachowanie)
@@ -735,7 +756,7 @@ export const ProChart: React.FC<{
     const y = e.clientY - r.top;
     const raw = ctrlRef.current?.priceAt(y) ?? null;
     // Menu otwiera się w lewo i w górę tylko wtedy, gdy nie mieści się przy prawej lub dolnej krawędzi
-    setCtxMenu({ x, y, price: raw === null ? null : toTick(raw), left: x > r.width - 248, up: y > r.height - 340 });
+    setCtxMenu({ x, y, price: raw === null ? null : toTick(raw, store.szDecimals), left: x > r.width - 248, up: y > r.height - 340 });
   };
 
   const iv = intervalById(settings.interval);
@@ -746,7 +767,7 @@ export const ProChart: React.FC<{
   // Plakietki źródeł warstw w legendzie (w powtórce bez nich: nagranie, nie dane na żywo, i bez warstw skanera); stan
   // migawek skanera i powody ich braku te same co w nagłówku układu. Bez mapy z bloga na wykresie (weekend, rano przed
   // wpisem, inny rynek) panel z mapą zamiast poziomów dnia rysuje PDH i PDL — w legendzie ich plakietka, mapa z „—”
-  const mapShown = store.coin === 'BTC' && iv.ms < DAY ? pickMap(blogMaps.maps, store.serverNow(), settings.blogMapId) : null;
+  const mapShown = caps.blog && iv.ms < DAY ? pickMap(blogMaps.maps, store.serverNow(), settings.blogMapId) : null;
   const levelsInstead = levelsInsteadOfMap(shown, store.coin, blogMaps.status, mapShown);
   const layerChips = legendChips(levelsLegend(shown, levelsInstead), {
         coin: store.coin,
@@ -794,7 +815,7 @@ export const ProChart: React.FC<{
     });
   };
   const bigUsd = ctrlRef.current?.bigTradeUsd ?? DEFAULT_THRESHOLD_USD;
-  const tick = hlTick(store.lastPrice());
+  const tick = store.tick(store.lastPrice());
   const editing = indEdit ? (settings.indicators.find((x) => x.iid === indEdit) ?? null) : null;
 
   // Stan rynku: przycisk „Stan” i linia pod paskiem (w układzie 2 × 2 za mało miejsca)
@@ -861,7 +882,7 @@ export const ProChart: React.FC<{
     else if (act.kind === 'now') ctrlRef.current?.scrollToNow();
     else if (act.kind === 'view') update({ view: settings.view === 'footprint' ? 'candles' : 'footprint' });
     else if (act.kind === 'tape') update({ showTape: !settings.showTape });
-    else if (act.kind === 'market') setCoin(MARKETS[(MARKETS.indexOf(settings.coin) + 1) % MARKETS.length]);
+    else if (act.kind === 'market') setCoin(nextMarket(chartMarkets(), settings.coin));
     else if (act.kind === 'reset') ctrlRef.current?.resetScales();
     else if (act.kind === 'autoscale') ctrlRef.current?.setAutoScale(!scale.auto);
     else (layoutFs?.toggle ?? toggleFullscreen)();
@@ -901,7 +922,7 @@ export const ProChart: React.FC<{
       {!narrow && (
         <div data-chart-bar className="@container flex flex-wrap min-[900px]:flex-nowrap items-center gap-1.5 px-2 py-1 border-b border-line min-h-11">
           {barLead}
-          <DropdownSelect<Market> ariaLabel={tr(`Rynek: ${settings.coin}`, `Market: ${settings.coin}`)} title={tr('Rynek (M — następny)', 'Market (M — next)')} label={settings.coin} value={settings.coin} options={MARKET_OPTIONS} onChange={setCoin} width="w-44" />
+          <MarketPicker value={settings.coin} markets={markets.markets} onChange={setCoin} />
           {/* Ulubione interwały jako przyciski tylko na bardzo szerokim ekranie */}
           <div className="hidden min-[1600px]:inline-flex">
             <Segmented<string> ariaLabel={tr('Ulubione interwały', 'Favourite timeframes')} value={settings.interval} onChange={(v) => update({ interval: v })} options={FAV_OPTIONS} />
@@ -988,7 +1009,7 @@ export const ProChart: React.FC<{
             {phoneTabs && (
               <PhoneSelect<string> ariaLabel={tr('Karta układu', 'Layout tab')} value={phoneTabs.value} options={phoneTabs.options} onChange={phoneTabs.onChange} className="max-w-[7.5rem] truncate" />
             )}
-            <PhoneSelect<Market> ariaLabel={tr('Rynek', 'Market')} value={settings.coin} options={MARKET_OPTIONS} onChange={setCoin} />
+            <PhoneMarketSelect value={settings.coin} markets={markets.markets} onChange={setCoin} />
             <PhoneSelect<string> ariaLabel={tr('Interwał wykresu', 'Chart timeframe')} value={settings.interval} options={INTERVAL_OPTIONS} onChange={(v) => update({ interval: v })} />
             <PhoneSelect<string>
               ariaLabel={tr('Rodzaj wykresu', 'Chart type')}
@@ -1144,11 +1165,11 @@ export const ProChart: React.FC<{
               }}
               onClose={() => setCtxMenu(null)}
               onAlert={addTouch}
-              onAlertMore={(p) => openAlerts({ price: toTick(p), kind: 'close' })}
+              onAlertMore={(p) => openAlerts({ price: toTick(p, store.szDecimals), kind: 'close' })}
               onZoneAlerts={addZoneAlerts}
               onRemoveAlert={(a) => removeAlert(a.id)}
               onLine={() => tools?.addHorizontal(ctxMenu.x, ctxMenu.y)}
-              onCopyPrice={(p) => copy(fmtPx(p).replace(/,/g, ''), tr(`Skopiowano cenę ${fmtPx(p)}`, `Price ${fmtPx(p)} copied`))}
+              onCopyPrice={(p) => copy(store.fmtPx(p).replace(/,/g, ''), tr(`Skopiowano cenę ${store.fmtPx(p)}`, `Price ${store.fmtPx(p)} copied`))}
               onCopyLink={copyLink}
               onNow={() => ctrlRef.current?.scrollToNow()}
               onReset={() => ctrlRef.current?.resetScales()}
@@ -1462,6 +1483,8 @@ const ChartMenu = React.forwardRef<
   }
 >(({ at, coin, nearAlert, pbZone, linesShown, onLines, onClose, onAlert, onAlertMore, onZoneAlerts, onRemoveAlert, onLine, onCopyPrice, onCopyLink, onNow, onReset, onShot }, ref) => {
   const p = at.price;
+  // Cena z dokładnością ticku rynku menu (szDecimals z rejestru)
+  const fmtPx = (v: number) => fmtPxOf(v, marketOf(coin)?.szDecimals);
   const item = (icon: React.ReactNode, label: string, run: () => void) => (
     <button
       type="button"
@@ -1843,7 +1866,7 @@ function flowLayers(s: ChartSettings, intervalMs: number, liq: LiqMapState, whal
       ),
       aliases: 'blog mapa dnia poziomy autora map levels',
       swatch: 'bg-of-blog',
-      off: s.coin !== 'BTC' ? tr('Tylko BTC: blog opisuje BTC', 'BTC only: the blog covers BTC') : scope.levels ? undefined : tr('Na interwałach poniżej 1D', 'On timeframes below 1D'),
+      off: !capsOf(s.coin).blog ? BLOG_ONLY_WHY : scope.levels ? undefined : tr('Na interwałach poniżej 1D', 'On timeframes below 1D'),
     },
     {
       key: 'showSessions',
@@ -1870,7 +1893,7 @@ function flowLayers(s: ChartSettings, intervalMs: number, liq: LiqMapState, whal
       label: tr('Klastry likwidacji', 'Liquidation clusters'),
       hint: liqHint(liq),
       swatch: 'bg-gradient-to-r from-of-sell to-of-buy',
-      off: s.coin === 'BTC' ? undefined : tr('Tylko BTC: skaner mapuje pozycje na BTC', 'BTC only: the scanner maps BTC positions'),
+      off: capsOf(s.coin).scanner ? undefined : noScannerWhyOf(s.coin),
     },
     {
       key: 'showWhales',
@@ -1988,7 +2011,7 @@ const KEY_GROUPS: { title: string; keys: [string, string][] }[] = [
     keys: [
       ['1 … 9, 0', `${tr('Interwał', 'Timeframe')}: ${INTERVALS.map((i) => i.label).join(', ')}`],
       ['C', tr('Świece ↔ footprint', 'Candles ↔ footprint')],
-      ['M', `${tr('Następny rynek', 'Next market')} (${MARKETS.join(', ')})`],
+      ['M', tr('Następny rynek z listy (według otwartych pozycji)', 'Next market on the list (by open interest)')],
       ['T', tr('Taśma zleceń', 'Order tape')],
       ['R', tr('Przywróć skalę', 'Reset scale')],
       ['A', tr('Autoskala ceny: włącz / zamroź zakres', 'Price autoscale: on / freeze the range')],
@@ -2063,7 +2086,7 @@ const BlogMapPicker: React.FC<{ s: ChartSettings; maps: BlogMapsState; now: numb
   const list = maps.maps.filter((m) => m.publishedAt <= now);
   const value = list.some((m) => m.id === s.blogMapId) ? s.blogMapId! : '';
   // Poza BTC i bez pliku map — powód zamiast listy (ten sam co w legendzie)
-  const scan = s.coin !== 'BTC' ? { why: tr('Tylko BTC: blog opisuje BTC', 'BTC only: the blog covers BTC') } : maps.status === 'ready' ? null : blogMapScan(maps, null);
+  const scan = !capsOf(s.coin).blog ? { why: BLOG_ONLY_WHY } : maps.status === 'ready' ? null : blogMapScan(maps, null);
   const why = scan && 'why' in scan ? scan.why : null;
   return (
     <Group title={tr('Mapa z bloga', 'Blog map')}>

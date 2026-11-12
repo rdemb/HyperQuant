@@ -32,9 +32,9 @@ describe('nagłówek układu: „—” bez plakietki źródła', () => {
     }
   });
 
-  it('powód zamiast plakietki zostaje („tylko BTC” przy innym rynku)', () => {
+  it('powód zamiast plakietki zostaje („bez skanera” na rynku bez skanera)', () => {
     const html = header('fuel', 'ETH', false);
-    expect(html).toContain('>tylko BTC<');
+    expect(html).toContain('>bez skanera<');
     expect(html).not.toMatch(/>(LIVE|MODEL)</);
   });
 });

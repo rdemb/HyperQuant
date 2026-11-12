@@ -148,9 +148,10 @@ describe('nagłówek układu: trzy liczby', () => {
       ['Klaster likw.', '−0,80% · 42M', 'LIVE', '4 min'],
       ['Koszt 100k', '1,2 / 1,5 pb', 'LIVE', null],
     ]);
-    // Inny rynek: skaner mapuje tylko BTC
+    // Rynek bez skanera (zdolność z rejestru; dziś pełny skaner ma tylko BTC)
     const eth = layoutNumbers('fuel', { coin: 'ETH', now: NOW, price: 3_000, liq: { px: 99_200, ntlUsd: 1e7, side: 'long', asOf: NOW } })[1];
-    expect(eth).toMatchObject({ value: '—', note: 'tylko BTC' });
+    expect(eth).toMatchObject({ value: '—', note: 'bez skanera' });
+    expect(eth.hint).toContain('ETH');
   });
 
   it('Wielkie ręce: udział TWAP, Hawkes n (MODEL), saldo wielorybów z wiekiem migawki', () => {

@@ -10,6 +10,7 @@ import { fmtPx } from './layout';
 import type { EdgeTags } from './overlay';
 import type { ChartSettings } from './settings';
 import { PRO, rgba } from './theme';
+import { capsOf } from '../../../state/markets';
 
 /**
  * Mapa z bloga na wykresie ceny BTC: poziomy z wpisu autora (przerywana linia i podpis „etykieta cena” przy prawej
@@ -46,7 +47,7 @@ type MapOrLevels = Pick<ChartSettings, 'showLevels' | 'showBlogMap'>;
  * BTC. Plik map w drodze — jeszcze nie (poziomy nie migają przed mapą).
  */
 export function levelsInsteadOfMap(s: MapOrLevels, coin: string, maps: BlogMapsState['status'], shown: BlogMap | null): boolean {
-  return s.showBlogMap && !s.showLevels && !shown && (coin !== 'BTC' || maps !== 'loading');
+  return s.showBlogMap && !s.showLevels && !shown && (!capsOf(coin).blog || maps !== 'loading');
 }
 
 /**
