@@ -20,6 +20,8 @@
  *     (src/utils/schrodiTrust.ts), a dowód przewagi, rozkład trafności i alarm dryfu przeliczone z rekordów;
  *     godzina na żywo (zapisy o :15 i :30): cena, próg i szanse startowe z prognozy kota z początku godziny, p przeliczone
  *     modelem public/schrodi/hour-v1.json (hash = `mh`), wynik z godziny zegara, plan i dowód przewagi przeliczone;
+ *     kalibracja kota `cat-cal-v1` (pole `cal`): plan zgodny z kodem (src/utils/catCal.ts), żadne `cal` przed planem,
+ *     a, d, p, n i nT przeliczone tu, osobną implementacją, z par rozstrzygniętych wcześniej w dzienniku;
  *  3a. miary podsumowania (test Kupca przedziału 60%, jednostajność PIT, przedziały CRPSS, BSS dotknięć i BSS sezonowy
  *     dużego ruchu kota z bootstrapu blokowego po dobach UTC, udział nieskończonych przedziałów ACI) przeliczone z rekordów
  *     do głowy podsumowania (`--summary <plik>` przy --dir; w trybie szybkim podsumowanie ze strony, gdy pobrane dni
@@ -38,6 +40,7 @@ import { FEATURES, TOUCH_MAX_R, scoreHead, touchCone, touchProb } from '../src/u
 import { HOUR_DESIGN, TRUST_DESIGN, catTrust, hourRow, hourTrust, trustHour } from '../src/utils/schrodiTrust.ts';
 import { HOUR_FEATURES, hourProbs, hourX, logit } from '../src/utils/schrodiHour.ts';
 import { addDaySum, daySkillCi } from '../src/utils/ledgerBootstrap.ts';
+import { CAT_CAL_DESIGN } from '../src/utils/catCal.ts';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -677,6 +680,97 @@ export function checkHourTrust(records) {
     if (r && !r.void && typeof r.hi === 'number') rows.push(hourRow(o, r));
   }
   return { problems, plan, trust: hourTrust(rows, plan) };
+}
+
+/**
+ * Kalibracja kota `cat-cal-v1` (pole `cal` rekordów kota): plan zapisany w dzienniku identyczny ze stałymi w kodzie
+ * (src/utils/catCal.ts), jeden hash, żaden rekord z `cal` przed planem; `cal` każdej prognozy przeliczone tutaj,
+ * własną implementacją (nie kodem skanera), z par rozstrzygniętych wcześniej w dzienniku: prognozy kota z tym samym `mh`,
+ * rekord rozstrzygnięcia w kolejności dziennika przed prognozą, bez `void`, t − 14 dni ≤ t_i < t. Zgodność: n i nT
+ * dokładnie, a i d do 1e-5, p do 1e-4. Po planie przy co najmniej 96 parach rekord musi mieć `cal`. `since` (tryb szybki):
+ * prognozy, których okno 14 dni sięga przed pierwszy pobrany dzień, są pomijane (pary sprzed niego nie są znane).
+ */
+export function checkCatCal(records, { since = null } = {}) {
+  const problems = [];
+  const D = CAT_CAL_DESIGN;
+  const plans = records.map((o, i) => [o, i]).filter(([o]) => o.k === 'p' && o.id === D.id);
+  const want = canonical(D);
+  for (const [o] of plans) if (canonical(o.catalog) !== want) problems.push(`${o.id}: plan kalibracji różni się od kodu (src/utils/catCal.ts)`);
+  if (new Set(plans.map(([o]) => o.catalogHash)).size > 1) problems.push(`${D.id}: kilka różnych planów pod jednym identyfikatorem`);
+  const planIdx = plans.length ? plans[0][1] : null;
+  const DAY = 86_400_000;
+  const sig = (x) => 1 / (1 + Math.exp(-x));
+  const lg = (p) => {
+    const q = Math.min(1 - D.logitClip, Math.max(D.logitClip, p));
+    return Math.log(q / (1 - q));
+  };
+  const weekendOf = (t) => [0, 6].includes((((Math.floor(t / DAY) + 4) % 7) + 7) % 7);
+  const newton = (zs, ys, off, v) => {
+    let x = 0;
+    for (let k = 0; k < D.newtonSteps; k++) {
+      let g = -x / v;
+      let h = -1 / v;
+      zs.forEach((z, i) => {
+        const q = sig(z + off + x);
+        g += ys[i] - q;
+        h -= q * (1 - q);
+      });
+      x -= g / h;
+    }
+    return x;
+  };
+  const round = (x, d) => Math.round(x * 10 ** d) / 10 ** d;
+  const cats = new Map();
+  /** Pary w kolejności dziennika: rozstrzygnięcia kota (bez void) z danymi prognozy */
+  const pairs = [];
+  let checked = 0;
+  let skipped = 0;
+  records.forEach((o, i) => {
+    if (o.k === 'r' && cats.has(o.id)) {
+      const f = cats.get(o.id);
+      if (!o.void && (o.yBig === 0 || o.yBig === 1)) pairs.push({ t: f.t, pBig: f.pBig, mh: f.mh, y: o.yBig });
+      return;
+    }
+    if (o.k !== 'f' || o.kind !== 'cat') return;
+    cats.set(o.id, o);
+    const afterPlan = planIdx !== null && i > planIdx;
+    if (o.cal !== undefined && !afterPlan) {
+      problems.push(`${o.id}: cal przed planem ${D.id}`);
+      return;
+    }
+    if (!afterPlan) return;
+    if (since !== null && o.t - D.windowDays * DAY < since) {
+      skipped++;
+      return;
+    }
+    const s = pairs.filter((x) => x.mh === o.mh && x.t >= o.t - D.windowDays * DAY && x.t < o.t);
+    if (s.length < D.minPairs) {
+      if (o.cal !== undefined) problems.push(`${o.id}: cal przy ${s.length} parach (min. ${D.minPairs}) — cal.n ${o.cal.n}`);
+      return;
+    }
+    if (o.cal === undefined) {
+      problems.push(`${o.id}: brak cal przy ${s.length} parach`);
+      return;
+    }
+    const zs = s.map((x) => lg(x.pBig));
+    const ys = s.map((x) => x.y);
+    const a = round(newton(zs, ys, 0, D.priorVar.a), 6);
+    const we = weekendOf(o.t);
+    const sub = s.map((x, k) => [x, k]).filter(([x]) => weekendOf(x.t) === we);
+    const d = sub.length ? round(newton(sub.map(([, k]) => zs[k]), sub.map(([, k]) => ys[k]), a, D.priorVar.d), 6) : 0;
+    const p = round(sig(lg(o.pBig) + Math.max(-D.clip, Math.min(D.clip, a + d))), 4);
+    const c = o.cal;
+    const bad = [];
+    if (c.v !== D.id) bad.push(`cal.v ${c.v}`);
+    if (c.n !== s.length) bad.push(`cal.n ${c.n} ≠ ${s.length}`);
+    if (c.nT !== sub.length) bad.push(`cal.nT ${c.nT} ≠ ${sub.length}`);
+    if (!(Math.abs(c.a - a) <= 1e-5)) bad.push(`cal.a ${c.a} ≠ ${a}`);
+    if (!(Math.abs(c.d - d) <= 1e-5)) bad.push(`cal.d ${c.d} ≠ ${d}`);
+    if (!(Math.abs(c.p - p) <= 1e-4 + 1e-12)) bad.push(`cal.p ${c.p} ≠ ${p}`);
+    if (bad.length) problems.push(`${o.id}: ${bad.join(', ')}`);
+    else checked++;
+  });
+  return since === null ? { problems, checked } : { problems, checked, skipped };
 }
 
 /**
@@ -1403,6 +1497,14 @@ async function main() {
     );
   }
   if (hourPlan.problems.length) ok = false;
+  const cal = checkCatCal(records, local ? {} : { since: Date.parse(`${files[0][0].slice(0, 10)}T00:00:00Z`) });
+  if (cal.checked || cal.problems.length || cal.skipped)
+    console.log(
+      cal.problems.length
+        ? `✗ kalibracja kota ${CAT_CAL_DESIGN.id} (${cal.problems.length}): ${cal.problems.slice(0, 5).join('; ')}`
+        : `✓ kalibracja kota ${CAT_CAL_DESIGN.id}: ${plural(cal.checked, 'prognoza', 'prognozy', 'prognoz')} — a, d i p przeliczone z par rozstrzygniętych wcześniej w dzienniku, plan zgodny z kodem${cal.skipped ? `; pominięte (okno 14 dni sprzed pobranych dni): ${cal.skipped}` : ''}`
+    );
+  if (cal.problems.length) ok = false;
   const pre = checkPreregs(records);
   if (pre.preregs.length || pre.problems.length)
     console.log(
