@@ -145,6 +145,7 @@ export const AB_DESIGN_C = {
   sigmaA: '(qA[12] − qA[0]) / (z(0,975) − z(0,025))',
   level: 'x = clip(½·ln(rv60 / sigmaA²), −1,5, 1,5); q1 = qA · exp(c + kappa · x)',
   shape: 'FC(v) = Σ w_j · Φ(z1(v / exp(η_j / 2))), η_j = tau · n_j − tau² / 2; z1 liniowo przez (q1[k], Φ⁻¹(taus[k])), poza skrajnymi kwantylami z nachyleniem skrajnego odcinka; qC[k]: FC = taus[k], bisekcja 40 kroków od ±6·max|q1|, 6 miejsc',
+  rounding: 'x i kwantyle C liczone z wartości zapisanych w rekordzie: rv60 do 10 cyfr znaczących, sigmaA do 8 miejsc po przecinku, x do 6 miejsc; kwantyle C zapisane do 6 miejsc',
   constants: { kappa: RVMIX.kappa, c: RVMIX.c, tau: RVMIX.tau },
   quadrature: { kind: 'Gauss–Hermite, 9 węzłów, N(0, 1)', nodes: [...GH9_NODES], weights: [...GH9_WEIGHTS] },
   metric: 'CRPS z 13 kwantyli, pary A i C z tego samego slotu, bez unieważnionych',

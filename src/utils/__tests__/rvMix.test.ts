@@ -104,3 +104,13 @@ describe('zmienność zrealizowana 60 min przed slotem (przed faktem)', () => {
     expect(rv60From5m(b, S - M5)).toBeNull();
   });
 });
+
+describe('plan ab-v2: zaokrąglenia zapisane w tekście planu', () => {
+  it('rv60 10 cyfr znaczących, sigmaA 8 miejsc, x 6 miejsc, kwantyle C 6 miejsc — jak w rekordzie C', async () => {
+    const { AB_DESIGN_C } = await import('../abTest');
+    expect(AB_DESIGN_C.rounding).toContain('rv60 do 10 cyfr znaczących');
+    expect(AB_DESIGN_C.rounding).toContain('sigmaA do 8 miejsc');
+    expect(AB_DESIGN_C.rounding).toContain('x do 6 miejsc');
+    expect(AB_DESIGN_C.rounding).toContain('kwantyle C zapisane do 6 miejsc');
+  });
+});
