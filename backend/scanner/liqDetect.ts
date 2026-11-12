@@ -337,7 +337,8 @@ export class LiqConfirmer {
     return { v: 1, events: this.evs, log: this.log, queue: this.queue };
   }
 
-  static fromJSON(j: unknown, o: { coin: string; maxPerMin: number }): LiqConfirmer {
+  /** `now`: chwila odczytu — kandydaci starsi niż CANDIDATE_TTL są wtedy od razu liczeni jako nieudani. */
+  static fromJSON(j: unknown, o: { coin: string; maxPerMin: number; now?: number }): LiqConfirmer {
     const c = new LiqConfirmer(o);
     const x = j as { v?: number; events?: unknown[]; log?: unknown[]; queue?: unknown[] } | null;
     if (x?.v !== 1) return c;
@@ -355,9 +356,14 @@ export class LiqConfirmer {
         (r): r is [Outcome, number] => Array.isArray(r) && OUTCOMES.includes(r[0]) && typeof r[1] === 'number' && Number.isFinite(r[1])
       );
     }
-    // Kolejka kandydatów (pole od wersji z zapisem kolejki; starszy stan bez niej): tylko poprawne wpisy, najwyżej
-    // MAX_QUEUE; przeterminowanych rozlicza process jako nieudanych
-    if (Array.isArray(x.queue)) for (const q of x.queue) if (isQueued(q) && c.queue.length < MAX_QUEUE) c.queue.push(q);
+    // Kolejka kandydatów (pole opcjonalne; starszy stan bez niej = pusta kolejka): tylko poprawne wpisy, najwyżej
+    // MAX_QUEUE; kandydat starszy niż CANDIDATE_TTL w chwili odczytu idzie do licznika nieudanych, nie do kolejki
+    if (Array.isArray(x.queue))
+      for (const q of x.queue) {
+        if (!isQueued(q)) continue;
+        if (o.now !== undefined && o.now - q.to > CANDIDATE_TTL) c.log.push(['failed', o.now]);
+        else if (c.queue.length < MAX_QUEUE) c.queue.push(q);
+      }
     return c;
   }
 }
