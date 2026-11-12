@@ -249,3 +249,121 @@ export class HlStream {
     };
   }
 }
+
+/**
+ * Jedno połączenie WebSocket z samą subskrypcją `trades` dla wielu rynków (pomiar w cieniu M0 i przepływ minutowy K2).
+ * Limit giełdy: 1000 subskrypcji i 10 połączeń na IP — rejestr ma kilkadziesiąt rynków, więc jedno połączenie wystarcza.
+ * Ping, strażnik ciszy (90 s), wycofanie przy ponownym łączeniu i deduplikacja jak w `HlStream` (klucz z rynkiem).
+ * Zmiana listy rynków na otwartym połączeniu: wypisanie zbędnych i zapis nowych (bez ponownego łączenia).
+ */
+export class HlTradesStream {
+  private readonly onTrades: (t: HlTrade[]) => void;
+  private readonly onState: ((up: boolean, at: number) => void) | null;
+  private readonly WS: typeof WebSocket;
+  private coins: string[] = [];
+  private ws: WebSocket | null = null;
+  private timers: ReturnType<typeof setTimeout>[] = [];
+  private backoff = 1000;
+  private lastMsgAt = 0;
+  private stopped = false;
+  private seen = new Set<string>();
+  private seenOrder: string[] = [];
+  connected = false;
+
+  constructor(onTrades: (t: HlTrade[]) => void, onState: ((up: boolean, at: number) => void) | null = null, wsCtor: typeof WebSocket = WebSocket) {
+    this.onTrades = onTrades;
+    this.onState = onState;
+    this.WS = wsCtor;
+  }
+
+  get subscriptions(): number {
+    return this.coins.length;
+  }
+
+  setCoins(list: readonly string[]): void {
+    const next = [...new Set(list)];
+    const prev = this.coins;
+    if (next.length === prev.length && next.every((c) => prev.includes(c))) return;
+    this.coins = next;
+    const ws = this.ws;
+    if (!ws || ws.readyState !== this.WS.OPEN) return;
+    for (const c of prev) if (!next.includes(c)) ws.send(JSON.stringify({ method: 'unsubscribe', subscription: { type: 'trades', coin: c } }));
+    for (const c of next) if (!prev.includes(c)) ws.send(JSON.stringify({ method: 'subscribe', subscription: { type: 'trades', coin: c } }));
+  }
+
+  start(): void {
+    this.stopped = false;
+    this.open();
+  }
+
+  /** Zatrzymanie: koniec odcinka od razu (na ostatniej wiadomości), niezależnie od tego, kiedy gniazdo faktycznie się zamknie. */
+  stop(): void {
+    this.stopped = true;
+    this.clearTimers();
+    if (this.connected) this.onState?.(false, this.lastMsgAt);
+    this.connected = false;
+    this.ws?.close();
+  }
+
+  private clearTimers(): void {
+    for (const t of this.timers) {
+      clearTimeout(t);
+      clearInterval(t);
+    }
+    this.timers = [];
+  }
+
+  private open(): void {
+    const ws = new this.WS(WS_URL);
+    this.ws = ws;
+    ws.onopen = () => {
+      this.connected = true;
+      this.lastMsgAt = Date.now();
+      for (const coin of this.coins) ws.send(JSON.stringify({ method: 'subscribe', subscription: { type: 'trades', coin } }));
+      this.onState?.(true, Date.now());
+      this.timers.push(
+        setInterval(() => ws.readyState === this.WS.OPEN && ws.send('{"method":"ping"}'), 50_000),
+        setInterval(() => {
+          if (Date.now() - this.lastMsgAt > 90_000) ws.close();
+        }, 10_000),
+        setTimeout(() => {
+          this.backoff = 1000;
+        }, 60_000)
+      );
+    };
+    ws.onmessage = (ev) => {
+      this.lastMsgAt = Date.now();
+      let msg: { channel?: string; data?: unknown };
+      try {
+        msg = JSON.parse(String(ev.data));
+      } catch {
+        return;
+      }
+      if (msg.channel !== 'trades' || !Array.isArray(msg.data)) return;
+      const fresh = (msg.data as HlTrade[]).filter((t) => {
+        if (typeof t?.coin !== 'string') return false;
+        if (t.tid === undefined) return true;
+        const key = `${t.coin}:${t.time}:${t.tid}`;
+        if (this.seen.has(key)) return false;
+        this.seen.add(key);
+        this.seenOrder.push(key);
+        if (this.seenOrder.length > 50_000) for (const k of this.seenOrder.splice(0, 10_000)) this.seen.delete(k);
+        return true;
+      });
+      if (fresh.length > 0) this.onTrades(fresh);
+    };
+    ws.onclose = () => {
+      // Spóźnione zamknięcie starego gniazda po stop() i ponownym start() nie zamyka nowego odcinka ani nie łączy drugi raz
+      if (this.ws !== ws) return;
+      if (this.connected) this.onState?.(false, this.lastMsgAt);
+      this.connected = false;
+      this.clearTimers();
+      if (this.stopped) return;
+      this.timers.push(setTimeout(() => this.open(), this.backoff));
+      this.backoff = Math.min(60_000, this.backoff * 2);
+    };
+    ws.onerror = () => {
+      if (ws.readyState === this.WS.OPEN) ws.close();
+    };
+  }
+}
