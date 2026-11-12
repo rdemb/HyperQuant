@@ -613,3 +613,72 @@ describe('LedgerRunner — Schrödi (kot) w partii slotu', () => {
     expect(checkHourTrust(forged).problems[0]).toMatch(/różni się od kodu/);
   });
 });
+
+import { AB_DESIGN_C, abFirstBlock } from '../../../src/utils/abTest.ts';
+
+describe('A/B wariantu C (ab-v2): świeży poziom zmienności i mieszanina skali', () => {
+  type CData = ReturnType<typeof fakeData> & { regime?: unknown; regimeAt?: number; refreshRegime?: (now: number) => Promise<void>; rv60?: { slot: number; at: number; value: number } | null };
+  const withC = (rv60: CData['rv60']) => {
+    const data = fakeData() as CData;
+    data.regime = { sigma5: 0.0015, run: 40, pChange: 0.01 };
+    data.regimeAt = SLOT0;
+    data.refreshRegime = async () => {};
+    data.rv60 = rv60;
+    return data;
+  };
+
+  it('plan ab-v2 rejestrowany raz, przed pierwszym rekordem C; C obok A i B w tej samej partii; B jak dotąd', async () => {
+    const data = withC({ slot: SLOT0, at: SLOT0, value: 2e-5 });
+    const { r, dir, published } = runner({ data });
+    r.init(SLOT0);
+    await r.tick(SLOT0 + MIN);
+    await r.tick(SLOT0 + 16 * MIN);
+    const day = lines(dir, '2026-10-22');
+    const plans = day.filter((l) => l.k === 'p');
+    expect(plans.map((p) => p.id)).toEqual(['ab-v1', 'ab-v2']);
+    const pc = plans[1];
+    expect(pc.catalog).toEqual(JSON.parse(JSON.stringify(AB_DESIGN_C)));
+    expect(pc.catalogHash).toBe(createHash('sha256').update(canonicalJson(AB_DESIGN_C)).digest('hex'));
+    const iPlan = day.indexOf(pc);
+    const iC = day.findIndex((l) => l.id === `${SLOT0}-ret60c`);
+    expect(iC).toBeGreaterThan(iPlan);
+    const a = day.find((l) => l.id === `${SLOT0}-ret60`);
+    const c = day[iC];
+    expect(c).toMatchObject({ variant: 'C', model: 'ledger-har-fhs-rvmix-v1', slot: a.slot, ti: a.ti, t: a.t, h: 60, px0: a.px0, aci: a.aci, kappa: 0.5, c: -0.05, tau: 0.5, rv60: 2e-5 });
+    expect(c.bq).toEqual(a.bq);
+    expect(day.some((l) => l.id === `${SLOT0}-ret60b`)).toBe(true);
+    // Drugi slot: bez drugiego planu; rv60 (jak reżim) z poprzedniego slotu → brak C, A wydane
+    expect(day.some((l) => l.id === `${SLOT0 + 15 * MIN}-ret60c`)).toBe(false);
+    expect(day.some((l) => l.id === `${SLOT0 + 15 * MIN}-ret60`)).toBe(true);
+    // Rozliczenie: rekord r wariantu C i sekcja abC w podsumowaniu
+    await r.tick(SLOT0 + 2 * HOUR);
+    expect(lines(dir, '2026-10-22').some((l) => l.k === 'r' && l.id === `${SLOT0}-ret60c` && typeof l.crps === 'number')).toBe(true);
+    const s = JSON.parse(published.at(-1)!);
+    expect(s.abC).toMatchObject({ plan: 'ab-v2', model: 'ledger-har-fhs-rvmix-v1', registeredAt: pc.t, firstBlock: abFirstBlock(pc.t) });
+    expect(s.abC.latest).toEqual({ t: c.t, x: c.x, rv60: c.rv60 });
+    expect(s.ab.model).toBe('ledger-har-fhs-bocpd-v1');
+    expect(isDeskLedgerSummary(s)).toBe(true);
+    // Restart: plan już w dzienniku
+    const again = new LedgerRunner({ coin: 'BTC', data, store: new LedgerStore({ dir, coin: 'BTC' }), repo: null, markPx: () => 100_000, publish: () => {} });
+    expect(again.init(SLOT0 + 2 * HOUR + MIN).ok).toBe(true);
+    await again.tick(SLOT0 + 2 * HOUR + 16 * MIN);
+    expect(lines(dir, '2026-10-22').filter((l) => l.k === 'p' && l.id === 'ab-v2')).toHaveLength(1);
+  });
+
+  it('bez rv60 w slocie (brak świecy): brak C; bez źródła rv60 także bez planu ab-v2', async () => {
+    const { r, dir } = runner({ data: withC(null) });
+    r.init(SLOT0);
+    await r.tick(SLOT0 + MIN);
+    const day = lines(dir, '2026-10-22');
+    expect(day.some((l) => String(l.id).endsWith('ret60c'))).toBe(false);
+    expect(day.filter((l) => l.k === 'p').map((p) => p.id)).toEqual(['ab-v1', 'ab-v2']);
+    const data = withC(null);
+    delete data.rv60;
+    const other = runner({ data });
+    other.r.init(SLOT0);
+    await other.r.tick(SLOT0 + MIN);
+    const d2 = lines(other.dir, '2026-10-22');
+    expect(d2.filter((l) => l.k === 'p').map((p) => p.id)).toEqual(['ab-v1']);
+    expect(d2.some((l) => String(l.id).endsWith('ret60c'))).toBe(false);
+  });
+});

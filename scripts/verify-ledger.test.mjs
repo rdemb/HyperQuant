@@ -759,3 +759,81 @@ describe('miary podsumowania (Kupiec 60%, PIT, przedziały z bootstrapu po dobac
     expect(checkMeasures({ ...summary, head: { hash: r.hash, lines: later.length } }, later).problems.length).toBeGreaterThan(0);
   });
 });
+
+import { checkAbPlanC, checkRv60, checkVariantC } from './verify-ledger.mjs';
+import { AB_DESIGN_C, abFirstBlock } from '../src/utils/abTest.ts';
+import { makeRetForecastC } from '../backend/scanner/forecaster.ts';
+import { rv60From5m } from '../src/utils/rvMix.ts';
+import rvRef from '../src/utils/__tests__/fixtures/rvMixReference.json';
+
+describe('A/B wariantu C (ab-v2): weryfikator niezależnie przelicza przekształcenie kwantyli i plan', () => {
+  const T = AB_EPOCH + 20 * 86_400_000;
+  const H = 3_600_000;
+  const r6 = (x) => Math.round(x * 1e6) / 1e6;
+  const qA = rvRef.przypadki[2].qA;
+  /** Dziennik: plany ab-v1 i ab-v2, w każdym slocie A, B (skala ze wzoru) i C (ze skanera) */
+  function ledger({ planAt = T - H } = {}) {
+    const recs = [
+      { k: 'p', id: AB_DESIGN.id, t: planAt - 1, catalogHash: createHash('sha256').update(canonical(AB_DESIGN)).digest('hex'), catalog: JSON.parse(JSON.stringify(AB_DESIGN)) },
+      { k: 'p', id: AB_DESIGN_C.id, t: planAt, catalogHash: createHash('sha256').update(canonical(AB_DESIGN_C)).digest('hex'), catalog: JSON.parse(JSON.stringify(AB_DESIGN_C)) },
+    ];
+    for (let i = 0; i < 8; i++) {
+      const slot = T + i * 15 * 60_000;
+      const a = { k: 'f', id: `${slot}-ret60`, slot, ti: slot + 20_000, t: slot + 60_000, kind: 'ret', h: 60, px0: 100_000, taus: TAUS, q: qA, bq: benchQuantiles(0.005, 60).map(r6), aci: 0.1, model: 'ledger-har-fhs-v1' };
+      const sigmaA = 0.0051;
+      const sigma5 = 0.0014;
+      const seas = 1.02;
+      const scale = r6(Math.sqrt(0.5 + (0.5 * sigma5 ** 2 * 12 * seas) / sigmaA ** 2));
+      const b = { ...a, id: `${a.id}b`, q: a.q.map((v) => r6(v * scale)), model: 'ledger-har-fhs-bocpd-v1', variant: 'B', scale, regime: { sigma5, run: 40, pChange: 0.01 }, sigmaA, seas };
+      const c = makeRetForecastC(a, 1e-5 * (1 + i));
+      recs.push(a, b, c);
+    }
+    return recs;
+  }
+
+  it('poprawny dziennik z B i C przechodzi: kwantyle C, stałe, plan ab-v2 zgodny z kodem, B bez zmian', () => {
+    const recs = ledger();
+    expect(checkVariantC(recs)).toEqual({ problems: [], checked: 8 });
+    expect(checkAbPlanC(recs, { full: true })).toEqual({ problems: [], registeredAt: T - H });
+    expect(checkVariants(recs)).toEqual({ problems: [], checked: 8 });
+    expect(checkAbPlan(recs).problems).toEqual([]);
+    expect(recompute(recs).abC).toMatchObject({ firstBlock: abFirstBlock(T - H) });
+  });
+
+  it('wykrywa zmieniony kwantyl C, zmienioną stałą, zmienione x i pola różne od A', () => {
+    const recs = ledger();
+    const cs = recs.filter((o) => o.variant === 'C');
+    cs[0].q = cs[0].q.map((v, i) => (i === 6 ? v + 2e-5 : v));
+    cs[1].kappa = 0.6;
+    cs[2].x = cs[2].x + 1e-4;
+    cs[3].aci = 0.2;
+    const { problems, checked } = checkVariantC(recs);
+    expect(checked).toBe(4);
+    expect(problems.find((p) => p.startsWith(cs[0].id))).toMatch(/kwantyle C ≠ przekształcenie A/);
+    expect(problems.find((p) => p.startsWith(cs[1].id))).toMatch(/stałe ≠ plan ab-v2/);
+    expect(problems.find((p) => p.startsWith(cs[2].id))).toMatch(/x ≠/);
+    expect(problems.find((p) => p.startsWith(cs[3].id))).toMatch(/aci/);
+  });
+
+  it('wykrywa rekord C sprzed planu, plan różny od kodu i C bez planu w pełnym dzienniku', () => {
+    const early = ledger({ planAt: T + 30 * 60_000 });
+    expect(checkAbPlanC(early).problems[0]).toMatch(/wariant C przed prerejestracją planu: 2/);
+    const forged = ledger();
+    forged[1].catalog = { ...forged[1].catalog, constants: { ...forged[1].catalog.constants, tau: 0.6 } };
+    expect(checkAbPlanC(forged).problems[0]).toMatch(/różni się od kodu/);
+    const noPlan = ledger().filter((o) => !(o.k === 'p' && o.id === AB_DESIGN_C.id));
+    expect(checkAbPlanC(noPlan, { full: true }).problems[0]).toMatch(/bez planu ab-v2/);
+    expect(checkAbPlanC(noPlan).problems).toEqual([]);
+  });
+
+  it('--market: rv60 rekordu C zgodne ze świecami 5m (12 log-zwrotów przed slotem); zmienione wykryte; poza zakresem świec pominięte', () => {
+    const slot = T;
+    const candles = Array.from({ length: 20 }, (_, i) => ({ time: slot - 15 * 300_000 + i * 300_000, close: 100_000 * Math.exp(0.002 * Math.sin(i * 1.7)) }));
+    const rv = rv60From5m(candles, slot);
+    const a = ledger().find((o) => o.id === `${slot}-ret60`);
+    const c = makeRetForecastC(a, rv);
+    expect(checkRv60([c], candles)).toEqual({ problems: [], checked: 1, eligible: 1 });
+    expect(checkRv60([{ ...c, rv60: rv * 1.01 }], candles).problems).toHaveLength(1);
+    expect(checkRv60([c], candles.slice(5))).toEqual({ problems: [], checked: 0, eligible: 1 });
+  });
+});
