@@ -21,14 +21,25 @@ export interface Num {
   why: string | null;
   method?: string;
   note?: string;
+  /**
+   * Próba, z której liczba powstała (mediana z dni): `n` dni, mediana i przedział 80% mediany z bootstrapu po dniach
+   * (1000 losowań, mulberry32, ziarno 20261111); `interval80` null przy pustej próbie.
+   */
+  sample?: Sample;
+}
+
+export interface Sample {
+  n: number;
+  median: number;
+  interval80: [number, number] | null;
 }
 
 export const DISCLAIMER = 'Opis rynku, nie porada inwestycyjna. Market description, not investment advice.' as const;
 
 /** Liczba z oznaczeniem; brak albo nieskończona — `value: null`, `badge: null` i powód (domyślnie „czekam na dane”). */
-export function num(value: number | null | undefined, unit: Unit, badge: Badge, extra: { why?: string; method?: string; note?: string } = {}): Num {
-  const { why, method, note } = extra;
-  const tail = { ...(method !== undefined && { method }), ...(note !== undefined && { note }) };
+export function num(value: number | null | undefined, unit: Unit, badge: Badge, extra: { why?: string; method?: string; note?: string; sample?: Sample } = {}): Num {
+  const { why, method, note, sample } = extra;
+  const tail = { ...(method !== undefined && { method }), ...(note !== undefined && { note }), ...(sample !== undefined && { sample }) };
   if (typeof value !== 'number' || !Number.isFinite(value)) return { value: null, unit, badge: null, why: why ?? WAIT_TEXT, ...tail };
   return { value, unit, badge, why: null, ...tail };
 }

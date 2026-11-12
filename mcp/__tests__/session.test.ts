@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { type InputSeries, type InputStore, sessionExpectedOf } from '../../src/charts/pro/chart/layoutInputs';
 import { dayVwapOf, layoutNumbers, rvolOf, sessionNowOf } from '../../src/charts/pro/chart/layoutNumbers';
+import { bootstrapMedian80, median } from '../../src/utils/rvol';
 import { vwapSigma } from '../../src/charts/pro/chart/marketState';
 import { parseBlogMaps } from '../../src/utils/blogMaps';
 import type { CohortFlowState } from '../../src/state/useCohortFlow';
@@ -269,6 +270,9 @@ describe('session_context', () => {
     // RVOL jak w nagłówku układu (tam MODEL · mediana 20 dni)
     const r = got(rvolOf(upTo(H1, NOW), NOW));
     expect(d.rvolHour).toMatchObject({ value: r.value, unit: 'ratio', badge: 'MODEL' });
+    // Baza RVOL: n dni, mediana wolumenu tej godziny i jej przedział 80% z bootstrapu po dniach
+    expect(d.rvolHour.sample).toEqual({ n: r.n, median: median(r.base), interval80: bootstrapMedian80(r.base) });
+    expect(d.rvolHour.sample!.interval80![0]).toBeLessThanOrEqual(d.rvolHour.sample!.median);
 
     expect(env.sources.length).toBeGreaterThanOrEqual(3);
     expect(env.sources.every((s) => s.url === HL_INFO && s.asOf !== null && s.asOf.endsWith('Z'))).toBe(true);
