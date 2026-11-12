@@ -104,6 +104,70 @@ export function kupiec(n: number, x: number, p: number): number | null {
   return Math.min(1, 2 * normalSf(Math.sqrt(lr)));
 }
 
+/** ln Γ(x), x > 0 — przybliżenie Lanczosa (g = 7, 9 współczynników; błąd względny ~1e-15). */
+function lnGamma(x: number): number {
+  const c = [0.99999999999980993, 676.5203681218851, -1259.1392167224028, 771.32342877765313, -176.61502916214059, 12.507343278686905, -0.13857109526572012, 9.9843695780195716e-6, 1.5056327351493116e-7];
+  if (x < 0.5) return Math.log(Math.PI / Math.sin(Math.PI * x)) - lnGamma(1 - x);
+  const z = x - 1;
+  let a = c[0];
+  const t = z + 7.5;
+  for (let i = 1; i < 9; i++) a += c[i] / (z + i);
+  return 0.5 * Math.log(2 * Math.PI) + (z + 0.5) * Math.log(t) - t + Math.log(a);
+}
+
+/**
+ * P(X > x), X ~ χ²(k): regularyzowana górna funkcja gamma Q(k/2, x/2) — szereg dla x/2 < k/2 + 1, inaczej ułamek
+ * łańcuchowy Lentza (Numerical Recipes 6.2); x ≤ 0 → 1.
+ */
+export function chi2Sf(x: number, k: number): number {
+  if (!(x > 0)) return 1;
+  const a = k / 2;
+  const z = x / 2;
+  const lead = -z + a * Math.log(z) - lnGamma(a);
+  if (z < a + 1) {
+    let term = 1 / a;
+    let sum = term;
+    for (let n = 1; n < 500; n++) {
+      term *= z / (a + n);
+      sum += term;
+      if (Math.abs(term) < Math.abs(sum) * 1e-16) break;
+    }
+    return Math.min(1, Math.max(0, 1 - sum * Math.exp(lead)));
+  }
+  const tiny = 1e-300;
+  let b = z + 1 - a;
+  let c = 1 / tiny;
+  let d = 1 / b;
+  let h = d;
+  for (let i = 1; i < 500; i++) {
+    const an = -i * (i - a);
+    b += 2;
+    d = an * d + b;
+    if (Math.abs(d) < tiny) d = tiny;
+    c = b + an / c;
+    if (Math.abs(c) < tiny) c = tiny;
+    d = 1 / d;
+    const del = d * c;
+    h *= del;
+    if (Math.abs(del - 1) < 1e-16) break;
+  }
+  return Math.min(1, Math.max(0, Math.exp(lead) * h));
+}
+
+/**
+ * Test Kupca pokrycia przedziału o nominale `cover` z liczby trafień: π = x/n, LR = −2[x ln(cover/π) + (n − x) ln((1 − cover)/(1 − π))]
+ * (składnik z zerową licznością pominięty), p z χ²(1); n = 0 → null.
+ */
+export function kupiecTest(n: number, x: number, cover: number): { lr: number; p: number } | null {
+  if (n <= 0) return null;
+  const pi = x / n;
+  let s = 0;
+  if (x > 0) s += x * Math.log(cover / pi);
+  if (n - x > 0) s += (n - x) * Math.log((1 - cover) / (1 - pi));
+  const lr = Math.max(0, -2 * s);
+  return { lr, p: chi2Sf(lr, 1) };
+}
+
 /**
  * Krok ACI (Gibbs & Candès 2021): α_{t+1} = α_t + γ(α − err_t), err_t = 1 przy chybieniu przedziału.
  * Chybienie obniża α_t → kolejny przedział szerszy; seria trafień stopniowo go zwęża. α_t ≤ 0 = przedział nieskończony

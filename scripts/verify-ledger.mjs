@@ -5,6 +5,7 @@
  *       git clone -b ledger https://github.com/rdemb/hyperquant-data ledger
  *       --bitcoin: czas z bloków Bitcoina (poświadczenia OTS + nagłówki bloków); --market: ceny vs świece 1m HL
  *       --anchor <hash>: kotwica — commit ostatniej udanej weryfikacji musi nadal należeć do historii gałęzi
+ *       --summary <plik>: miary podsumowania (summary.json z gałęzi main repo danych) przeliczone z rekordów do jego głowy
  *   node scripts/verify-ledger.mjs [RRRR-MM-DD]     # szybka kontrola ostatnich dni pobranych z GitHuba
  *
  * Sprawdza:
@@ -19,6 +20,11 @@
  *     (src/utils/schrodiTrust.ts), a dowód przewagi, rozkład trafności i alarm dryfu przeliczone z rekordów;
  *     godzina na żywo (zapisy o :15 i :30): cena, próg i szanse startowe z prognozy kota z początku godziny, p przeliczone
  *     modelem public/schrodi/hour-v1.json (hash = `mh`), wynik z godziny zegara, plan i dowód przewagi przeliczone;
+ *  3a. miary podsumowania (test Kupca przedziału 60%, jednostajność PIT, przedziały CRPSS, BSS dotknięć i BSS sezonowy
+ *     dużego ruchu kota z bootstrapu blokowego po dobach UTC, udział nieskończonych przedziałów ACI) przeliczone z rekordów
+ *     do głowy podsumowania (`--summary <plik>` przy --dir; w trybie szybkim podsumowanie ze strony, gdy pobrane dni
+ *     sięgają początku dziennika). Sumy dobowe liczone tu, wspólna jest tylko procedura losowania
+ *     (src/utils/ledgerBootstrap.ts: mulberry32, ziarno 20261111, 1000 losowań, 25. i 975. wartość);
  *  4. pokwitowania OpenTimestamps: skrót w `ots/<dzień>.jsonl.ots` = SHA-256 pliku dnia; w `ots/slots/<slot>.ots`
  *     = hash ostatniej prognozy tego slotu (prognozy istniały w chwili znakowania). Sam czas potwierdza klient OTS:
  *     `ots upgrade <plik>.ots` i `ots verify -f <plik danych> <plik>.ots` (dla slotu: skrót podaj przez `-d <hash>`).
@@ -31,6 +37,7 @@ import { fitEnsemble } from '../src/utils/ensemble.ts';
 import { FEATURES, TOUCH_MAX_R, scoreHead, touchCone, touchProb } from '../src/utils/schrodi.ts';
 import { HOUR_DESIGN, TRUST_DESIGN, catTrust, hourRow, hourTrust, trustHour } from '../src/utils/schrodiTrust.ts';
 import { HOUR_FEATURES, hourProbs, hourX, logit } from '../src/utils/schrodiHour.ts';
+import { addDaySum, daySkillCi } from '../src/utils/ledgerBootstrap.ts';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -188,6 +195,15 @@ export function checkResolutions(records) {
     }
     const c = crps(fc.taus, fc.q, r.y);
     if (typeof r.crps === 'number' && Math.abs(c - r.crps) > 2e-6) out.push(`${r.id}: CRPS ${r.crps} ≠ przeliczony ${c.toFixed(6)}`);
+    if (typeof r.crpsB === 'number' && Array.isArray(fc.bq)) {
+      const cb = crps(fc.taus, fc.bq, r.y);
+      if (Math.abs(cb - r.crpsB) > 2e-6) out.push(`${r.id}: CRPS benchmarku ${r.crpsB} ≠ przeliczony ${cb.toFixed(6)}`);
+    }
+    if (typeof r.pit === 'number') {
+      // PIT zapisany z niezaokrąglonego zwrotu ln(c1/c0) (y w rekordzie ma 6 miejsc)
+      const p = pitOf(fc.taus, fc.q, Math.log(r.c1 / r.c0));
+      if (Math.abs(p - r.pit) > 1e-4 + 1e-9) out.push(`${r.id}: PIT ${r.pit} ≠ przeliczony ${p.toFixed(4)}`);
+    }
     for (const [key, lo, hi] of [
       ['in90', 0.05, 0.95],
       ['in60', 0.2, 0.8],
@@ -201,6 +217,196 @@ export function checkResolutions(records) {
 }
 
 const r4 = (x) => Math.round(x * 1e4) / 1e4;
+
+/** PIT z siatki kwantyli: interpolacja liniowa, poza siatką połowa masy ogona (τ₀/2, 1 − (1 − τ_n)/2) */
+function pitOf(taus, qs, y) {
+  const last = qs.length - 1;
+  if (y < qs[0]) return taus[0] / 2;
+  if (y > qs[last]) return 1 - (1 - taus[last]) / 2;
+  for (let i = 1; i <= last; i++) {
+    if (y > qs[i]) continue;
+    const span = qs[i] - qs[i - 1];
+    return span > 0 ? taus[i - 1] + ((y - qs[i - 1]) / span) * (taus[i] - taus[i - 1]) : taus[i];
+  }
+  return taus[last];
+}
+
+/**
+ * P(X > x) dla χ² o nieparzystej liczbie stopni swobody k, wzór zamknięty: 2(1 − Φ(√x)) + 2φ(√x)·Σ_{j=1}^{(k−1)/2}
+ * x^{(2j−1)/2} / (1·3·…·(2j−1)) — inna metoda niż w skanerze (funkcja gamma); x ≤ 0 → 1.
+ */
+function chiSqSfOdd(x, k) {
+  if (!(x > 0)) return 1;
+  const s = Math.sqrt(x);
+  let sum = 0;
+  let term = s;
+  for (let j = 1; j <= (k - 1) / 2; j++) {
+    sum += term;
+    term *= x / (2 * j + 1);
+  }
+  return Math.min(1, Math.max(0, 2 * (1 - normCdf(s)) + 2 * (Math.exp(-x / 2) / Math.sqrt(2 * Math.PI)) * sum));
+}
+
+const DAY_MS = 86_400_000;
+/** Doba UTC o numerze d to weekend (sobota, niedziela); 1970-01-01 to czwartek */
+const weekendDay = (d) => [0, 6].includes((d + 4) % 7);
+
+/**
+ * Baza sezonowa dużego ruchu: częstość yBig pełnych godzin tej samej godziny UTC w 20 poprzednich dobach tego samego
+ * typu (od 8 rozstrzygnięć), inaczej wszystkich pełnych godzin tych dób; brak → null.
+ */
+function seasonBase(slot, hours) {
+  const day = Math.floor(slot / DAY_MS);
+  const hour = Math.floor((slot % DAY_MS) / HOUR_MS);
+  const we = weekendDay(day);
+  const same = [];
+  const all = [];
+  let days = 0;
+  for (let d = day - 1; days < 20 && d > day - 400; d--) {
+    if (weekendDay(d) !== we) continue;
+    days++;
+    for (let h = 0; h < 24; h++) {
+      const y = hours.get(d * DAY_MS + h * HOUR_MS);
+      if (y === undefined) continue;
+      all.push(y);
+      if (h === hour) same.push(y);
+    }
+  }
+  const freq = (xs) => xs.reduce((a, b) => a + b, 0) / xs.length;
+  if (same.length >= 8) return freq(same);
+  return all.length ? freq(all) : null;
+}
+
+/**
+ * Miary podsumowania przeliczone z rekordów w oknie 30 dni przed `asOf` (jak w podsumowaniu): na horyzont — test Kupca
+ * przedziału 60% i jednostajność PIT na próbie rozłącznej (slot wielokrotnością horyzontu), CRPSS z przedziałem z sum
+ * dobowych, udział nieskończonych przedziałów ACI; dotknięcia — BSS wobec częstości poziomu i wobec bazy odległości
+ * z przedziałami; kot — BSS dużego ruchu wobec bazy sezonowej. Trafienia 60% i duży ruch z cen i kwantyli; PIT i CRPS
+ * z zapisu, który `checkResolutions` porównuje z przeliczonym.
+ */
+export function measures(records, asOf) {
+  const from = asOf - 30 * DAY_MS;
+  const f = new Map();
+  const r = new Map();
+  for (const o of records) {
+    if (o.k === 'f') f.set(o.id, o);
+    else if (o.k === 'r') r.set(o.id, o);
+  }
+  const win = [...f.values()].filter((o) => o.t >= from).sort((a, b) => a.t - b.t);
+  const ret = {};
+  for (const h of [60, 240]) {
+    const pairs = win
+      .filter((o) => o.kind === 'ret' && !o.variant && o.h === h)
+      .map((fc) => ({ fc, res: r.get(fc.id) }))
+      .filter(({ res }) => res && !res.void && typeof res.crps === 'number');
+    const disjoint = pairs.filter(({ fc }) => fc.slot % (h * 60_000) === 0);
+    const n = disjoint.length;
+    const x = disjoint.filter(({ fc, res }) => res.y >= quantileAt(fc.taus, fc.q, 0.2) && res.y <= quantileAt(fc.taus, fc.q, 0.8)).length;
+    let kupiec60 = { n, x, cover: null, lr: null, p: null, reason: 'min-n' };
+    if (n > 0) {
+      const pi = x / n;
+      const lr = Math.max(0, -2 * ((x > 0 ? x * Math.log(0.6 / pi) : 0) + (n - x > 0 ? (n - x) * Math.log(0.4 / (1 - pi)) : 0)));
+      kupiec60 = { n, x, cover: r4(pi), lr: r4(lr), p: r4(chiSqSfOdd(lr, 1)) };
+    }
+    const bins = Array(10).fill(0);
+    for (const { res } of disjoint) bins[Math.min(9, Math.max(0, Math.floor(res.pit * 10)))]++;
+    let pit = { n, bins, chi2: null, p: null, reason: 'min-n' };
+    if (n >= 50) {
+      const chi2 = bins.reduce((s, o) => s + (o - n / 10) ** 2 / (n / 10), 0);
+      pit = { n, bins, chi2: r4(chi2), p: r4(chiSqSfOdd(chi2, 9)) };
+    }
+    const days = new Map();
+    for (const { fc, res } of pairs) addDaySum(days, fc.slot, res.crps, res.crpsB);
+    const inf = pairs.filter(({ fc }) => !(fc.aci > 0 && fc.aci < 2)).length;
+    ret[h] = { kupiec60, pit, crpssCi: daySkillCi(days.values()), aciInf: { n: pairs.length, inf, share: pairs.length ? r4(inf / pairs.length) : null } };
+  }
+  const levels = ['pdh', 'pdl', 'deq'];
+  const touch = win.filter((o) => o.kind === 'touch').map((fc) => ({ fc, res: r.get(fc.id) })).filter(({ res }) => res && res.yv);
+  const base = {};
+  for (const l of levels) {
+    const ys = touch.filter(({ fc }) => fc.p[l] !== null && fc.p[l] !== undefined).map(({ res }) => res.yv[l]);
+    base[l] = ys.length ? ys.reduce((a, b) => a + b, 0) / ys.length : null;
+  }
+  const baseDays = new Map();
+  const distDays = new Map();
+  for (const { fc, res } of touch) {
+    const ret60 = f.get(`${fc.slot}-ret60`);
+    for (const l of levels) {
+      const p = fc.p[l];
+      if (p === null || p === undefined) continue;
+      if (base[l] !== null) addDaySum(baseDays, fc.slot, (p - res.yv[l]) ** 2, (base[l] - res.yv[l]) ** 2);
+      const pd = distTouchProb(fc, l, ret60 && !ret60.variant && ret60.t >= from ? ret60 : null);
+      if (pd !== null) addDaySum(distDays, fc.slot, (p - res.yv[l]) ** 2, (pd - res.yv[l]) ** 2);
+    }
+  }
+  // Pełne godziny kota z całego dziennika (do głowy) — baza sezonowa
+  const hours = new Map();
+  for (const fc of f.values()) {
+    if (fc.kind !== 'cat' || fc.slot % HOUR_MS !== 0) continue;
+    const res = r.get(fc.id);
+    if (!res || res.void || typeof res.yBig !== 'number') continue;
+    hours.set(fc.slot, Math.log(res.hi / res.lo) * 1e4 > fc.thr ? 1 : 0);
+  }
+  const seasonDays = new Map();
+  let seasonN = 0;
+  for (const fc of win) {
+    if (fc.kind !== 'cat') continue;
+    const res = r.get(fc.id);
+    if (!res || res.void || typeof res.yBig !== 'number') continue;
+    const b = seasonBase(fc.slot, hours);
+    if (b === null) continue;
+    const y = Math.log(res.hi / res.lo) * 1e4 > fc.thr ? 1 : 0;
+    seasonN++;
+    addDaySum(seasonDays, fc.slot, (fc.pBig - y) ** 2, (b - y) ** 2);
+  }
+  return {
+    asOf,
+    ret,
+    touch: { bssCi: daySkillCi(baseDays.values()), bssDistCi: daySkillCi(distDays.values()) },
+    catBig: { bssSeasonal: { ...daySkillCi(seasonDays.values()), n: seasonN } },
+  };
+}
+
+/** Pola liczone inną metodą numeryczną niż w skanerze (p z χ², baza odległości) — zgodność do 1e-4, reszta dokładnie */
+const APPROX = 1e-4 + 1e-9;
+
+/**
+ * Miary z podsumowania zgodne z przeliczonymi z rekordów do jego głowy (`head.hash`). Pole nieobecne w podsumowaniu
+ * (starsza wersja) pomijane. Zwraca liczbę porównanych pól i listę rozbieżności.
+ */
+export function checkMeasures(summary, records) {
+  const idx = records.findIndex((o) => o.hash === summary?.head?.hash);
+  if (idx < 0) return { checked: 0, problems: ['głowa podsumowania nie występuje w rekordach'] };
+  const m = measures(records.slice(0, idx + 1), summary.asOf);
+  const problems = [];
+  let checked = 0;
+  const cmp = (label, got, want, approx = []) => {
+    if (got === undefined || got === null || typeof got !== 'object') {
+      if (got === null) problems.push(`${label}: brak (null) ≠ przeliczone`);
+      return;
+    }
+    for (const [k, w] of Object.entries(want)) {
+      checked++;
+      const g = got[k];
+      const tol = approx.includes(k) ? APPROX : 0;
+      const same = typeof w === 'number' && typeof g === 'number' ? Math.abs(g - w) <= tol : canonical(g) === canonical(w);
+      if (!same) problems.push(`${label}.${k}: ${canonical(g)} ≠ przeliczone ${canonical(w)}`);
+    }
+  };
+  for (const h of [60, 240]) {
+    const sc = summary.scores?.ret?.[h];
+    if (!sc) continue;
+    const w = m.ret[h];
+    cmp(`ret ${h} kupiec60`, sc.kupiec60, w.kupiec60, ['lr', 'p']);
+    cmp(`ret ${h} pit`, sc.pit, w.pit, ['p']);
+    cmp(`ret ${h} crpssCi`, sc.crpssCi, w.crpssCi);
+    cmp(`ret ${h} aciInf`, sc.aciInf, w.aciInf);
+  }
+  cmp('touch bssCi', summary.scores?.touch?.bssCi, m.touch.bssCi);
+  cmp('touch bssDistCi', summary.scores?.touch?.bssDistCi, m.touch.bssDistCi, ['value', 'lo', 'hi']);
+  cmp('kot big bssSeasonal', summary.cat?.scores?.big?.bssSeasonal, m.catBig.bssSeasonal);
+  return { checked, problems };
+}
 
 /**
  * Kot (Schrödi): hash modelu w rekordzie = SHA-256 kanonicznego JSON publicznego modelu, p przeliczone z zapisanych cech
@@ -1206,6 +1412,26 @@ async function main() {
     );
   if (pre.problems.length) ok = false;
   console.log(`Głowa łańcucha: ${prev}`);
+  const reportMeasures = (s) => {
+    const mm = checkMeasures(s, records);
+    if (!mm.checked && !mm.problems.length) console.log('ℹ podsumowanie bez miar z przedziałami (starsza wersja) — nic do porównania');
+    else
+      console.log(
+        mm.problems.length
+          ? `✗ miary podsumowania niezgodne z przeliczonymi (${mm.problems.length}): ${mm.problems.slice(0, 5).join('; ')}`
+          : `✓ miary podsumowania (Kupiec 60%, PIT, przedziały CRPSS i BSS, BSS sezonowy kota, ACI) zgodne z przeliczonymi z rekordów: ${plural(mm.checked, 'pole', 'pola', 'pól')}`
+      );
+    if (mm.problems.length) ok = false;
+  };
+  const sumIdx = args.indexOf('--summary');
+  if (local && sumIdx >= 0) {
+    try {
+      reportMeasures(JSON.parse(readFileSync(path.resolve(args[sumIdx + 1]), 'utf8')));
+    } catch (e) {
+      console.log(`✗ --summary: nie udało się wczytać podsumowania (${String(e?.message ?? e)})`);
+      ok = false;
+    }
+  }
 
   if (local) {
     if (existsSync(path.join(local, '.git'))) {
@@ -1321,6 +1547,11 @@ async function main() {
         const same = canonical(s.cat.hour) === canonical(hourPlan.trust);
         console.log(same ? '✓ ocena godziny na żywo w podsumowaniu zgodna z przeliczoną z rekordów' : '✗ ocena godziny na żywo w podsumowaniu różni się od przeliczonej z rekordów');
         if (!same) ok = false;
+      }
+      // Miary z oknem 30 dni i bazą sezonową (do ~70 dób wstecz): tylko gdy pobrane dni sięgają początku dziennika
+      if (s?.head?.hash === prev) {
+        if (first.prev === GENESIS || Date.parse(`${files[0][0].slice(0, 10)}T00:00:00Z`) <= s.asOf - 110 * 86_400_000) reportMeasures(s);
+        else console.log('ℹ miary podsumowania nie porównane: potrzebny dziennik od początku (podaj datę pierwszego dnia albo użyj --dir … --summary)');
       }
     } catch {
       // brak podsumowania — nie wpływa na wynik
