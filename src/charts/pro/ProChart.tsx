@@ -42,6 +42,7 @@ import { IndicatorSettings } from './chart/IndicatorSettings';
 import { indicatorLabel, indicatorsLink } from './indicators/registry';
 import { NAKED_POC_SHOWN, PROFILE_EVIDENCE } from './chart/profileSelect';
 import { IB_EVIDENCE } from './chart/ibSelect';
+import { LEVELS_EVIDENCE } from './chart/levelsSelect';
 import { BURSTS_MAX, CLASHES_EVIDENCE, RANK_WINDOW_MS, WALLS_DONE_MAX, WALLS_K, WALLS_LIVE_MAX, WALL_MIN_MS } from './chart/clashSelect';
 import { BUBBLES_BARS, BUBBLES_EVIDENCE, BUBBLES_K, BUBBLES_MAX } from './chart/bubbleSelect';
 import { AUCTIONS_PER_SIDE, ZONES_EVIDENCE, ZONES_PER_SIDE } from './chart/zonesSelect';
@@ -1826,7 +1827,10 @@ function flowLayers(s: ChartSettings, intervalMs: number, liq: LiqMapState, whal
     {
       key: 'showLevels',
       label: tr('Poziomy dnia', 'Daily levels'),
-      hint: tr('PDH i PDL — szczyt i dołek poprzedniego dnia UTC — oraz otwarcie dnia (00:00 UTC)', "PDH and PDL — the previous UTC day's high and low — and the daily open (00:00 UTC)"),
+      hint: tr(
+        `PDH i PDL — szczyt i dołek poprzedniego dnia UTC — oraz otwarcie dnia (00:00 UTC), dla bieżącego i poprzedniego dnia (od 4h tylko bieżącego); etykiety bieżącego dnia. ${LEVELS_EVIDENCE.pl}`,
+        `PDH and PDL — the previous UTC day's high and low — and the daily open (00:00 UTC), for the current and previous day (from 4h only the current one); labels for the current day. ${LEVELS_EVIDENCE.en}`
+      ),
       swatch: 'bg-level',
       off: scope.levels ? undefined : tr('Na interwałach poniżej 1D', 'On timeframes below 1D'),
     },
@@ -1844,7 +1848,10 @@ function flowLayers(s: ChartSettings, intervalMs: number, liq: LiqMapState, whal
     {
       key: 'showSessions',
       label: tr('Otwarcia sesji', 'Session opens'),
-      hint: tr('Azja 00:00 UTC, Londyn 08:00 i Nowy Jork 09:30 czasu lokalnego giełd', 'Asia 00:00 UTC, London 08:00 and New York 09:30 exchange local time'),
+      hint: tr(
+        'Azja 00:00 UTC, Londyn 08:00 i Nowy Jork 09:30 czasu lokalnego giełd; linie bieżącej i poprzedniej doby UTC, nazwa przy trzech ostatnich',
+        'Asia 00:00 UTC, London 08:00 and New York 09:30 exchange local time; lines for the current and previous UTC day, names on the last three'
+      ),
       swatch: 'bg-ink-3/60',
       off: scope.sessions ? undefined : tr('Na interwałach do 1h', 'On timeframes up to 1h'),
     },

@@ -7,9 +7,10 @@ import { expectedFrom, reviewSession, sessionFacts } from '../../../utils/sessio
 import { nyMap } from '../../../utils/fourNumbers';
 import { TRADE_SESSION_NAME } from '../../../utils/sessionNames';
 import { sessionMaps } from '../../../utils/sessionReview';
+import { RVOL_LOOKBACK_DAYS } from '../../../utils/rvol';
 import type { BookFrame } from '../core/book';
 import { liqLevels } from '../core/indicators';
-import { fmtDm, fmtHm } from '../core/time';
+import { DAY, fmtDm, fmtHm } from '../core/time';
 import type { Candle, Side } from '../hl/parse';
 import { marketCostBp } from '../indicators/registry';
 import { blogMapScan, liqScan, whalesScan } from './layerSources';
@@ -186,7 +187,8 @@ export function readInputs(id: StationId, store: InputStore, scan: InputScan, ha
     x.expected = sn === undefined || isAbsent(sn) ? pass(sn) : expectedOf(store, sn.s, now);
   }
   if (id === 'cockpit' || id === 'fuel') {
-    const c1h = seriesCandles(store, '1h', now);
+    // Baza RVOL: 20 dni tego samego typu (weekend do ok. 70 dni wstecz), więc świece 1h z RVOL_LOOKBACK_DAYS dni
+    const c1h = candlesFrom(store, '1h', Math.floor(now / 3_600_000) * 3_600_000 - (RVOL_LOOKBACK_DAYS + 1) * DAY, now);
     x.rvol = c1h === undefined || isAbsent(c1h) ? pass(c1h) : rvolOf(c1h, now);
   }
   if (id === 'day-map') {

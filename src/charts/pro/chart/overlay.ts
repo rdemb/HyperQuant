@@ -14,6 +14,7 @@ import type {
 import { fmtCompact } from '../../../ui/format';
 import { spreadTags } from '../../orderflow/renderer';
 import type { Box } from './labelPlacement';
+import { selectDays, selectSessions } from './levelsSelect';
 import { PROFILE_FIELD_MAX, fullFrom, nearestNaked, rectShare } from './profileSelect';
 import { type IbDraw, ibObjects, selectIbs } from './ibSelect';
 import { baseTick } from '../core/footprintBar';
@@ -319,6 +320,8 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
   private ibDraws: IbDraw[] = [];
   /** Po każdej scenie: liczba obiektów zakresu początkowego na ekranie (pomiar układu czyta ją z wykresu). */
   onIb: ((n: number) => void) | null = null;
+  /** Po każdej scenie: linie poziomów dnia i linie otwarć sesji na ekranie oraz interwał (pomiar układu czyta je z wykresu). */
+  onLevels: ((levels: number, sessions: number, intervalMs: number) => void) | null = null;
   private daily: readonly Candle[] = [];
   private days: DayLevels[] = [];
   private liq: LiqLevel[] = [];
@@ -576,22 +579,24 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
       }
     }
 
-    // Otwarcia sesji: pionowe linie z nazwą przy dolnej krawędzi
+    // Otwarcia sesji (`selectSessions`): pionowe linie bieżącej i poprzedniej doby, nazwa przy trzech ostatnich
+    let sessionLines = 0;
     if (t.showSessions && sc.sessions) {
-      for (const ses of sessionsBetween(visFrom, visTo)) {
-        if (ses.start < visFrom) continue;
+      for (const { session: ses, label } of selectSessions(lastT)) {
+        if (ses.start < visFrom || ses.start >= visTo) continue;
         const x = edge(ses.start);
         if (x < 0 || x > W) continue;
+        sessionLines++;
         s.vlines.push({ x, color: K.session, dash: DASH.session });
-        s.texts.push({ x: x + 4, y: H - 8, text: ses.id === 'ny' ? 'NY' : SESSION_LABEL[ses.id], color: K.sessionText, align: 'left' });
+        if (label) s.texts.push({ x: x + 4, y: H - 8, text: ses.id === 'ny' ? 'NY' : SESSION_LABEL[ses.id], color: K.sessionText, align: 'left' });
       }
     }
 
-    // Poziomy dnia: odcinki w obrębie każdego dnia, bieżący dzień do prawej krawędzi z etykietami
+    // Poziomy dnia (`selectDays`): bieżący dzień do prawej krawędzi z etykietami, poprzedni (poniżej 4h) w swoich granicach
+    let levelLines = 0;
     if (t.showLevels && sc.levels) {
-      for (const d of this.days) {
+      for (const { day: d, current } of selectDays(this.days, lastT, ms)) {
         if (d.t + DAY <= visFrom || d.t >= visTo) continue;
-        const current = d.t + DAY > lastT;
         const x0 = Math.max(0, edge(d.t));
         const x1 = current ? W : Math.min(W, edge(d.t + DAY));
         if (x1 <= x0) continue;
@@ -603,11 +608,13 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
         for (const [px, name, color, dash] of lv) {
           const y = Y(px);
           if (!Number.isFinite(y)) continue;
+          levelLines++;
           s.hlines.push({ x0, x1, y, color, dash });
           if (current) s.tags.push({ y, text: `${name} ${fmtPx(px)}`, color: color === K.dayOpen ? PRO.ink2 : K.level });
         }
       }
     }
+    this.onLevels?.(levelLines, sessionLines, ms);
 
     // Zakres początkowy (initial balance, `selectIbs`): bieżąca sesja — prostokąt pierwszej godziny, szczyt i dołek z
     // etykietami, rozszerzenia po stronie pierwszego zamknięcia poza zakresem; poprzednia — same linie szczytu i dołka
