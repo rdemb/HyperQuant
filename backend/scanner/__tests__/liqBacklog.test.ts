@@ -150,3 +150,55 @@ describe('LiqConfirmer: kolejka kandydatów przetrwa restart (stan na dysku serw
     expect(back.checks(now).failed).toBe(1);
   });
 });
+
+describe('LiqConfirmer: taśma tylko od since (restart z przerwą, przerwa WebSocket)', () => {
+  const since = T0 + HOUR;
+
+  it('restart z przerwą ≥ 2 min: kandydaci sprzed since usunięci bez zapytań, bez zdarzeń i bez zmiany liczników', async () => {
+    const c = new LiqConfirmer({ coin: 'BTC', maxPerMin: 3 });
+    c.enqueue({ addr: addr(1), prev: pos(2), from: T0, to: T0 + 2 * MIN });
+    c.enqueue({ addr: addr(2), prev: pos(2), from: T0, to: T0 + 3 * MIN });
+    const back = LiqConfirmer.fromJSON(JSON.parse(JSON.stringify(c.toJSON())), { coin: 'BTC', maxPerMin: 3, now: since });
+    const before = back.checks(since + MIN);
+    expect(back.dropBefore(since)).toBe(2);
+    const rest = fakeRest(() => [liqFill(9, '2', T0 + MIN)]);
+    expect(await back.process(rest, since + MIN)).toBe(0);
+    expect(rest.calls).toHaveLength(0);
+    expect(back.events()).toHaveLength(0);
+    expect(back.pending).toBe(0);
+    expect(back.checks(since + MIN)).toEqual(before);
+  });
+
+  it('przerwa WebSocket w biegu: to samo dla kolejki w pamięci', async () => {
+    const c = new LiqConfirmer({ coin: 'BTC', maxPerMin: 3 });
+    c.enqueue({ addr: addr(1), prev: pos(2), from: T0, to: T0 + 2 * MIN });
+    expect(c.dropBefore(since)).toBe(1);
+    const rest = fakeRest(() => [liqFill(9, '2', T0 + MIN)]);
+    expect(await c.process(rest, since + MIN)).toBe(0);
+    expect(c.checks(since + MIN)).toEqual({ candidates: 0, confirmed: 0, rejected: 0, failed: 0 });
+  });
+
+  it('kandydat z oknem przez granicę: fill po since daje zdarzenie; fill przed since — bez zdarzenia i bez odrzucenia', async () => {
+    const after = new LiqConfirmer({ coin: 'BTC', maxPerMin: 3 });
+    after.dropBefore(since);
+    after.enqueue({ addr: addr(1), prev: pos(2), from: since - 30 * MIN, to: since + 5 * MIN });
+    await after.process(fakeRest(() => [liqFill(11, '2', since + MIN)]), since + 6 * MIN);
+    expect(after.events()).toHaveLength(1);
+    const beforeCut = new LiqConfirmer({ coin: 'BTC', maxPerMin: 3 });
+    beforeCut.dropBefore(since);
+    beforeCut.enqueue({ addr: addr(1), prev: pos(2), from: since - 30 * MIN, to: since + 5 * MIN });
+    await beforeCut.process(fakeRest(() => [liqFill(12, '2', since - 29 * MIN)]), since + 6 * MIN);
+    expect(beforeCut.events()).toHaveLength(0);
+    expect(beforeCut.checks(since + 6 * MIN)).toEqual({ candidates: 0, confirmed: 0, rejected: 0, failed: 0 });
+  });
+
+  it('isQueued: wpis bez skończonego prev.scannedAt albo z liqPx ≤ 0 odrzucony', () => {
+    const c = new LiqConfirmer({ coin: 'BTC', maxPerMin: 3 });
+    c.enqueue({ addr: addr(1), prev: pos(2), from: T0, to: T0 + 2 * MIN });
+    const j = JSON.parse(JSON.stringify(c.toJSON()));
+    const { scannedAt: _s, ...noScan } = j.queue[0].prev;
+    j.queue.push({ ...j.queue[0], addr: addr(5), prev: noScan });
+    j.queue.push({ ...j.queue[0], addr: addr(6), prev: { ...j.queue[0].prev, liqPx: 0 } });
+    expect(LiqConfirmer.fromJSON(j, { coin: 'BTC', maxPerMin: 3 }).pending).toBe(1);
+  });
+});

@@ -64,7 +64,8 @@ export class Scanner {
     this.prices = d.prices ?? new PriceRange();
     this.confirmer = d.confirmer ?? new LiqConfirmer({ coin: d.coin, maxPerMin: 3 });
     this.since = d.tapeSince ?? this.now();
-    this.confirmer.dropBefore(this.since);
+    const dropped = this.confirmer.dropBefore(this.since);
+    if (dropped) console.log(`[skaner] taśma likwidacji od ${new Date(this.since).toISOString()}: ${dropped} kandydatów sprzed przerwy usuniętych bez sprawdzania`);
   }
 
   /** Od kiedy taśma likwidacji obserwuje bez przerwy. */
@@ -78,7 +79,8 @@ export class Scanner {
    */
   resetObservation(now: number): void {
     this.since = now;
-    this.confirmer.dropBefore(now);
+    const dropped = this.confirmer.dropBefore(now);
+    if (dropped) console.log(`[skaner] przerwa w danych: ${dropped} kandydatów sprzed ${new Date(now).toISOString()} usuniętych bez sprawdzania`);
   }
 
   /** Cena transakcji z taśmy (do sprawdzania, czy cena dotknęła ceny likwidacji między odczytami). */

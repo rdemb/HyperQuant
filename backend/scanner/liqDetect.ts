@@ -208,6 +208,8 @@ export class LiqConfirmer {
   private readonly seenTids = new Set<number>();
   private log: [Outcome, number][] = [];
   private calls: number[] = [];
+  /** Początek bieżącego okresu obserwacji (ostatnie dropBefore): taśma ma tylko zdarzenia od tej chwili */
+  private floor = Number.NEGATIVE_INFINITY;
 
   constructor(o: { coin: string; maxPerMin: number }) {
     this.coin = o.coin;
@@ -272,7 +274,10 @@ export class LiqConfirmer {
         continue;
       }
       const ev = parseLiquidationFills(fills, this.coin, c.addr, c.prev, this.seenTids);
-      if (ev) {
+      if (ev && ev.t < this.floor) {
+        // Kandydat z oknem przez granicę okresu, likwidacja sprzed niej: należy do odrzuconego okresu — bez zdarzenia
+        // i bez odrzucenia
+      } else if (ev) {
         for (const t of ev.tids) this.seenTids.add(t);
         this.evs.push({ ...ev, foundAt: now });
       } else if (!parseLiquidationFills(fills, this.coin, c.addr, c.prev)) {
@@ -317,9 +322,17 @@ export class LiqConfirmer {
     this.keepEvents((e) => e.t > now - DAY && e.t <= now + 5 * MIN);
   }
 
-  /** Usuwa zdarzenia sprzed początku okresu obserwacji (np. po przerwie w danych). */
-  dropBefore(t: number): void {
+  /**
+   * Nowy okres obserwacji od `t` (start, przerwa w danych): usuwa zdarzenia sprzed `t` i kandydatów z odczytem sprzed `t`
+   * (bez zapytań i bez liczników — należą do odrzuconego okresu); później `process` nie dopisuje zdarzeń sprzed `t`.
+   * Zwraca liczbę usuniętych kandydatów (do logu).
+   */
+  dropBefore(t: number): number {
+    this.floor = Math.max(this.floor, t);
     this.keepEvents((e) => e.t >= t);
+    const n = this.queue.length;
+    this.queue = this.queue.filter((c) => c.to >= t);
+    return n - this.queue.length;
   }
 
   private keepEvents(pred: (e: DetectedLiq) => boolean): void {
@@ -375,6 +388,7 @@ function isQueued(q: unknown): q is Queued {
   const o = q as Partial<Queued> | null;
   if (!o || typeof o !== 'object' || typeof o.addr !== 'string' || !/^0x[0-9a-fA-F]{40}$/.test(o.addr)) return false;
   const p = o.prev as Partial<ScannedPosition> | undefined;
-  if (!p || !finite(p.szi) || !finite(p.entryPx) || !(p.liqPx === null || p.liqPx === undefined || finite(p.liqPx))) return false;
+  if (!p || !finite(p.szi) || !finite(p.entryPx) || !finite(p.scannedAt)) return false;
+  if (!(p.liqPx === null || p.liqPx === undefined || (finite(p.liqPx) && p.liqPx > 0))) return false;
   return finite(o.from) && finite(o.to) && o.from <= o.to && Number.isInteger(o.attempts) && (o.attempts as number) >= 0;
 }
