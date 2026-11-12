@@ -40,11 +40,11 @@
       "periods.dayMap.objects1440": 22,
       "periods.dayMap.area1440": 0.8,
       "tpo.dayMap.objects390": 9,
-      "tpo.dayMap.area390": 12,
+      "tpo.dayMap.area390": 6.7,
       "tpo.review.objects1440": 15,
       "tpo.review.area1440": 1.8,
       "tpo.review.objects390": 9,
-      "tpo.review.area390": 12,
+      "tpo.review.area390": 6.7,
       "zones.rects1440": 3,
       "zones.lines1440": 2,
       "zones.rects390": 3,
@@ -61,7 +61,9 @@
       "levels.review.lines1440": 6,
       "sessions.review.lines1440": 6,
       "levels.review.lines390": 3,
-      "sessions.review.lines390": 0
+      "sessions.review.lines390": 0,
+      "hip4.lines1440": 6,
+      "hip4.lines390": 1
     },
     "linux": {
       "share.desktop": 0.626,
@@ -110,11 +112,11 @@
       "periods.dayMap.objects1440": 22,
       "periods.dayMap.area1440": 0.8,
       "tpo.dayMap.objects390": 9,
-      "tpo.dayMap.area390": 12,
+      "tpo.dayMap.area390": 6.7,
       "tpo.review.objects1440": 15,
       "tpo.review.area1440": 1.8,
       "tpo.review.objects390": 9,
-      "tpo.review.area390": 12,
+      "tpo.review.area390": 6.7,
       "levels.dayMap.lines1440": 6,
       "sessions.dayMap.lines1440": 0,
       "levels.dayMap.lines4h1440": 3,
@@ -123,7 +125,9 @@
       "levels.review.lines1440": 6,
       "sessions.review.lines1440": 6,
       "levels.review.lines390": 3,
-      "sessions.review.lines390": 0
+      "sessions.review.lines390": 0,
+      "hip4.lines1440": 6,
+      "hip4.lines390": 1
     }
   }
 }

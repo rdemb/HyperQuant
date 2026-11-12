@@ -35,6 +35,17 @@ npm run dev      # http://localhost:3000
 - Every behaviour change comes with a test that fails first (TDD). Randomness in tests and simulations uses a deterministic seed.
 - Commits follow Conventional Commits: `feat(...)`, `fix(...)`, `docs:`, `ci:`, `chore:`.
 
+## Chart layers that draw objects
+
+A layer that draws objects on the candle pane (zones, walls, bubbles, ranges, levels, outcome-market lines) must have:
+
+1. **A limit per screen**, kept as a constant and checked by `npm run ui:check` on the fixed day (count per layer, desktop and phone).
+2. **A rule for removal**: a finished object does not stay on the chart forever.
+3. **A start at the moment the object became known**, never drawn back into the past.
+4. **Results from closed candles only**, with thresholds taken at the moment of the event, not at the moment of viewing.
+5. **The same state for moment X** whatever the history depth, scroll position or zoom.
+6. **One sentence in its description** with the result of the check against a random level.
+
 ## Pull requests
 
 1. Branch from `main`, one topic per PR.
