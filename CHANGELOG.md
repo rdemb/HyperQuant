@@ -21,6 +21,18 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 #### Poprawione
 - **Przerwa źródła świec nie jest brakiem świecy** (przed rejestracją planu): `null` dla godziny u i `void` dla całego rekordu `hrel` powstają tylko wtedy, gdy źródło zwróciło świecę późniejszą niż u, a świecy u nie dało (nadal dopiero 6 h po hs + 4 h). Przy przerwie sieci albo API, także wielogodzinnej przy żywym procesie, rozstrzygnięcie czeka na świece; inaczej weryfikator z `--market` zgłaszałby „null mimo świecy rynku” przez ok. 100 dni bez oszustwa. Warunek dopisany do zdania `resolution` w planie `hrel-v1` (nowy hash planu przypięty w teście); `checkHrelMarket` zgłasza także `void` przy świecy rynku. Testy: przerwa źródła 8 h bez rekordu `null`, po powrocie świec pełne rozstrzygnięcie; prawdziwy brak świecy przy późniejszej — `null` po 6 h jak dotąd.
 
+### Szlif 9: rynki wynikowe HIP-4 i wspólna zasada warstw (2026-11-12)
+
+#### Zmienione
+- **Progi HIP-4 na wykresie** (`src/charts/pro/chart/hip4Select.ts`, `hip4Layer.ts`): na komputerze najwyżej 3 progi najbliższe ceny nad nią i 3 pod nią, na telefonie tylko najbliższy; podpis skrócony („> 74 000 · rynek 41% · model 38%”, termin jest w panelu); dalsze płynne progi legenda podaje jako liczbę. Dotąd linia z długim podpisem dla każdego płynnego rynku w widoku.
+- **Profil TPO:** wspólna skala słupków liczona z obu pełnych dób niezależnie od przewinięcia (dotąd z dób widocznych, więc długość słupków bieżącej doby zmieniała się przy przewijaniu).
+- **Lekcje:** zakres początkowy sesji rysowany jak na wykresie — szczyt i dołek od końca pierwszej godziny, rozszerzenia dopiero po pierwszym zamknięciu poza zakresem i tylko po tej stronie.
+- **Nazwy reguł laboratorium z jednego miejsca** (`LAB_NAMES` w `src/utils/folkloreLab.ts`): aplikacja i strona wyników używają tych samych neutralnych nazw.
+
+#### Dodane
+- **`ui:check`, szlif 9** — liczba progów HIP-4 w Kokpicie 5m na stałych danych z 14 płynnymi rynkami (limit 6 na komputerze, 1 na telefonie).
+- **CONTRIBUTING:** wspólna zasada sześciu punktów dla warstw rysujących obiekty na polu świec.
+
 ### Dziennik prognoz: wariant C prognozy zwrotu 1 h w teście A/B (`ab-v2`) (2026-11-12)
 
 #### Dodane

@@ -4,7 +4,7 @@
 // laboratorium reguł (`lab/BTC.json` w repo danych). Bez skryptów poza danymi strukturalnymi; brak pliku albo pola
 // daje „—” z powodem, a każda liczba stoi obok swojej liczności.
 import { LEDGER_MIN_N, isDeskLedgerSummary } from '../../src/utils/deskLedger.ts';
-import { isLabReport } from '../../src/utils/folkloreLab.ts';
+import { LAB_NAMES, isLabReport } from '../../src/utils/folkloreLab.ts';
 import { VERIFY_LATEST_URL, verifyStale } from '../../src/utils/verifyFreshness.ts';
 import { esc, layout } from './render.mjs';
 
@@ -43,20 +43,6 @@ export async function fetchResults({ base = DATA_BASE_DEFAULT, fetchImpl = fetch
 const isVerify = (v) => !!v && typeof v === 'object' && typeof v.ok === 'boolean' && Number.isFinite(v.at) && (v.lines === undefined || Array.isArray(v.lines));
 const RUN_URL = /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/actions\/runs\/\d+$/;
 const fin = (x) => typeof x === 'number' && Number.isFinite(x);
-
-/** Reguły laboratorium pod nazwą strony (bez kierunku ceny w nazwie); nieznany identyfikator zostaje identyfikatorem */
-const LAB_NAMES = {
-  'round-res': ['Okrągły poziom jako opór', 'Round level as resistance'],
-  'round-sup': ['Okrągły poziom jako wsparcie', 'Round level as support'],
-  'pdh-sweep': ['Zebranie PDH i powrót do środka zakresu', 'PDH sweep and return to mid-range'],
-  'pdl-sweep': ['Zebranie PDL i powrót do środka zakresu', 'PDL sweep and return to mid-range'],
-  'ib-break': ['Wybicie IB idzie dalej', 'IB breakout follows through'],
-  'vwap-revert': ['Powrót do VWAP z odległości 2σ', 'Reversion to VWAP from 2σ away'],
-  'cme-gap': ['Luka CME się zamyka', 'CME gap gets filled'],
-  'funding-flush': ['Skrajne finansowanie i wyczyszczenie przepełnionej strony', 'Extreme funding and a flush of the crowded side'],
-  'ny-10am': ['Pierwsza godzina po otwarciu giełd w USA (10:00 w Nowym Jorku)', 'The first hour after the US stock open (10:00 New York)'],
-  'intraday-mom': ['Momentum śróddzienne (pierwsza i ostatnia godzina doby)', 'Intraday momentum (first and last hour of the day)'],
-};
 
 const LOCALE = { pl: 'pl-PL', en: 'en-GB' };
 const MONTHS_EN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];

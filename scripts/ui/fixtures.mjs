@@ -145,6 +145,26 @@ export function createFixtures(root) {
     return { coin, time: FIXED_NOW, levels: [side(-1, 11), side(1, 23)] };
   }
 
+  /**
+   * Rynki wynikowe HIP-4: 14 rynków BTC „cena powyżej K o północy UTC” z progami co 250 USD wokół ostatniej ceny (7 nad,
+   * 7 pod) i płynnym arkuszem strony „Tak” (cena udziału z odległości progu od ceny).
+   */
+  const OUTCOME_STEP = 250;
+  const outcomeBase = Math.floor(lastClose / OUTCOME_STEP) * OUTCOME_STEP - 6 * OUTCOME_STEP;
+  const outcomeK = (id) => outcomeBase + (id - 1) * OUTCOME_STEP;
+  function outcomeMeta() {
+    const d = new Date(FIXED_NOW + DAY);
+    const time = `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}${String(d.getUTCDate()).padStart(2, '0')}-0000`;
+    return { outcomes: Array.from({ length: 14 }, (_, i) => ({ outcome: i + 1, name: 'template:binaryPrice', description: `perp:BTC|threshold:${outcomeK(i + 1)}|time:${time}|priceDescription:mark` })) };
+  }
+  function outcomeBook(coin) {
+    const id = Number(coin.slice(1)) / 10;
+    if (!(id >= 1 && id <= 14)) return null;
+    const p = Math.min(0.97, Math.max(0.03, 1 / (1 + Math.exp((outcomeK(id) - lastClose) / 600))));
+    const lv = (px) => [{ px: px.toFixed(2), sz: '5000', n: 3 }];
+    return { coin, time: FIXED_NOW, levels: [lv(p - 0.01), lv(p + 0.01)] };
+  }
+
   function ctx(coin) {
     const p = markPx(coin);
     const s = String(p);
@@ -159,7 +179,10 @@ export function createFixtures(root) {
         if (body.dex) return [{ universe: [] }, []];
         return [{ universe: COINS.map((name) => ({ name, szDecimals: 4 - DIGITS[name], maxLeverage: 40 })) }, COINS.map(ctx)];
       case 'l2Book':
+        if (typeof body.coin === 'string' && body.coin.startsWith('#')) return outcomeBook(body.coin);
         return COINS.includes(body.coin) ? book(body.coin, body.nSigFigs) : null;
+      case 'outcomeMeta':
+        return outcomeMeta();
       case 'fundingHistory': {
         const out = [];
         for (let t = Math.ceil(Math.max(body.startTime ?? 0, FIXED_NOW - 500 * HOUR) / HOUR) * HOUR; t <= FIXED_NOW && out.length < 500; t += HOUR) {

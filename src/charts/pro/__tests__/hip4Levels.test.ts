@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import type { BtcOutcome, Hip4Row } from '../../../utils/hip4';
 import { outcomeLevels } from '../chart/hip4Layer';
 import { fmtPx } from '../chart/layout';
-import { fmtDm, fmtHm } from '../core/time';
 import { IndicatorEngine } from '../indicators/engine';
 import { indicatorDef, indicatorLabel, indicatorsFromLink, tfAllowed } from '../indicators/registry';
 
@@ -23,20 +22,22 @@ describe('rynki HIP-4 na wykresie', () => {
     row('above', 81_000, NOW + 2 * H, null, 0.6),
   ];
 
-  it('tylko płynne arkusze; podpis z progiem, terminem, rynkiem i modelem; nasycenie z różnicy', () => {
-    const lv = outcomeLevels(rows, NOW, 81_500, false);
+  it('tylko płynne arkusze; podpis skrócony: próg, rynek i model; nasycenie z różnicy', () => {
+    const { levels: lv, rest } = outcomeLevels(rows, 81_500, false);
     expect(lv.map((l) => l.px)).toEqual([82_000, 84_500]);
-    expect(lv[0].text).toBe(`> ${fmtPx(82_000)} · do ${fmtHm(NOW + H)} · rynek 41% · model 36%`);
+    expect(rest).toBe(0);
+    expect(lv[0].text).toBe(`> ${fmtPx(82_000)} · rynek 41% · model 36%`);
     expect(lv[0].strength).toBeCloseTo(0.25, 12);
-    // Termin innego dnia z datą; bez modelu (poza horyzontem) — kreska i kolor najsłabszy
-    expect(lv[1].text).toBe(`dotknie ${fmtPx(84_500)} · do ${fmtDm(NOW + 50 * H)} ${fmtHm(NOW + 50 * H)} · rynek 12% · model —`);
+    // Bez modelu (poza horyzontem) — kreska i kolor najsłabszy
+    expect(lv[1].text).toBe(`dotknie ${fmtPx(84_500)} · rynek 12% · model —`);
     expect(lv[1].strength).toBe(0);
   });
 
-  it('telefon: tylko poziom najbliższy ceny', () => {
-    expect(outcomeLevels(rows, NOW, 84_000, true).map((l) => l.px)).toEqual([84_500]);
-    expect(outcomeLevels(rows, NOW, 81_000, true).map((l) => l.px)).toEqual([82_000]);
-    expect(outcomeLevels([], NOW, 81_000, true)).toEqual([]);
+  it('telefon: tylko poziom najbliższy ceny, reszta jako liczba', () => {
+    expect(outcomeLevels(rows, 84_000, true).levels.map((l) => l.px)).toEqual([84_500]);
+    expect(outcomeLevels(rows, 84_000, true).rest).toBe(1);
+    expect(outcomeLevels(rows, 81_000, true).levels.map((l) => l.px)).toEqual([82_000]);
+    expect(outcomeLevels([], 81_000, true)).toEqual({ levels: [], rest: 0 });
   });
 
   it('wskaźnik bez wartości świec, tylko w sekcji HyperQuant', () => {

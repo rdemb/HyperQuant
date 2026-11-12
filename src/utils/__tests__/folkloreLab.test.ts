@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { LAB_CATALOG, LAB_TEXT, evaluateLab, histStats, isLabReport, labGoldenOutput, runCatalog, summarize, type LabData, type LabReport } from '../folkloreLab';
+import { readFileSync } from 'node:fs';
+import { LAB_CATALOG, LAB_NAMES, LAB_TEXT, evaluateLab, histStats, isLabReport, labGoldenOutput, runCatalog, summarize, type LabData, type LabReport } from '../folkloreLab';
 import type { LabBar, LabEvent } from '../labEvents';
 import { mulberry32 } from '../pathEngine';
 
@@ -136,5 +137,11 @@ describe('wektor kontrolny i hash katalogu (prerejestracja wiąże kod, nie tylk
   it('teksty prezentacyjne dla każdej reguły, poza hashowanym katalogiem', () => {
     for (const h of LAB_CATALOG.hypotheses) expect(LAB_TEXT[h.id]?.name).toBeTruthy();
     expect(JSON.stringify(LAB_CATALOG)).not.toContain('Okrągły poziom = opór');
+  });
+  it('nazwy reguł z jednego miejsca (LAB_NAMES) w aplikacji i na stronie wyników', () => {
+    for (const h of LAB_CATALOG.hypotheses) expect(LAB_NAMES[h.id]).toContain(LAB_TEXT[h.id].name);
+    const page = readFileSync(new URL('../../../scripts/blog/results.mjs', import.meta.url), 'utf8');
+    expect(page).toContain("import { LAB_NAMES, isLabReport } from '../../src/utils/folkloreLab.ts'");
+    expect(page).not.toMatch(/const LAB_NAMES/);
   });
 });
