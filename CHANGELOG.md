@@ -4,6 +4,11 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Strażnik ciszy kanału transakcji osobno dla każdego rynku, etap M1.5 (2026-11-12)
+
+#### Poprawione
+- **Wykres Pro, połączenie WebSocket** (`src/charts/pro/hl/stream.ts`): próg ciszy samego kanału transakcji nie jest już stałe 120 s, tylko większa z wartości 120 s i 20 × mediana odstępu między ostatnimi 50 wiadomościami z transakcjami na tym połączeniu (każdy rynek ma własne połączenie, więc i własny próg). Dopóki nie ma 50 odstępów, a także po każdym ponownym połączeniu, obowiązuje 120 s. Rynki z gęstym strumieniem (BTC, ETH, SOL, HYPE) zachowują się jak dotąd; na rynkach z naturalnymi kilkuminutowymi przerwami (np. BNB, XPL, xyz:GOLD) cisza nie powoduje już fałszywego ponownego łączenia i luki w pokryciu. Opcja `tradesStaleMs` jest teraz dolną granicą progu (domyślnie 120 s), a nie stałym progiem.
+
 ### Kolejka potwierdzeń likwidacji przetrwa restart (2026-11-12)
 
 #### Poprawione
