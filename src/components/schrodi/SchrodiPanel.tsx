@@ -562,8 +562,8 @@ export const SchrodiPanel: React.FC<{
             <p className="mt-1 text-[11px] text-ink-3">
               {move.kind === 'level'
                 ? tr(
-                    `Szansa dużego ruchu wobec typowej godziny: tercyl z ${move.terciles.n} rozstrzygniętych prognoz z rejestru (30 dni).`,
-                    `Odds of a big move against a typical hour: tercile among ${move.terciles.n} resolved forecasts in the ledger (30 days).`
+                    `Szansa dużego ruchu wobec typowej godziny: tercyl z ${move.terciles.n} rozstrzygniętych prognoz z rejestru (${move.days} dni).`,
+                    `Odds of a big move against a typical hour: tercile among ${move.terciles.n} resolved forecasts in the ledger (${move.days} days).`
                   )
                 : `${tr('Poziomu brak', 'No level')}: ${move.reason}.`}{' '}
               {auc !== null && tr(`Kolejność szans sprawdzona: AUC ${auc.toFixed(2).replace('.', ',')} w rejestrze.`, `Ranking checked: AUC ${auc.toFixed(2)} in the ledger.`)}{' '}

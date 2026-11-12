@@ -9,6 +9,8 @@ import { VERIFY_LATEST_URL, verifyStale } from '../../src/utils/verifyFreshness.
 import { esc, layout } from './render.mjs';
 
 export const RESULTS_PATHS = { pl: 'wyniki/', en: 'en/results/' };
+/** Licencja danych dziennika prognoz (decyzja właściciela 12.11.2026); kod repo ma osobną licencję MIT */
+export const DATA_LICENSE_URL = 'https://creativecommons.org/licenses/by/4.0/';
 /** Gałąź dziennika (pliki dzienne JSONL z łańcuchem hashy) */
 export const LEDGER_BRANCH_URL = 'https://github.com/rdemb/hyperquant-data/tree/ledger';
 /** Repo danych (gałąź main) — ten sam adres co VITE_DATA_BASE_URL aplikacji */
@@ -167,6 +169,8 @@ const T = {
       checks: (a, b) => `pozycje zgodne: ${a} z ${b}`,
       self: 'Sprawdź sam (Node.js 24):',
       branch: 'Gałąź dziennika',
+      license: 'Licencja danych dziennika',
+      attribution: 'przy ponownym użyciu podaj źródło: HyperQuant (hyperquant.tech). Kod strony i skanera: MIT.',
     },
     refuted: {
       h2: 'Co się nie potwierdziło',
@@ -275,6 +279,8 @@ const T = {
       checks: (a, b) => `checks passed: ${a} of ${b}`,
       self: 'Check it yourself (Node.js 24):',
       branch: 'Ledger branch',
+      license: 'Ledger data license',
+      attribution: 'when you reuse the data, credit HyperQuant (hyperquant.tech). Site and scanner code: MIT.',
     },
     refuted: {
       h2: 'What did not hold up',
@@ -491,6 +497,7 @@ ${v ? `<p>${esc(Vt.last(f.time(v.at)))} · ${runLink}${lines.length ? ` · ${esc
 <p>${esc(Vt.self)}</p>
 <pre class="cmd"><code>${cmd.map(esc).join('\n')}</code></pre>
 <p>${esc(Vt.branch)}: <a href="${LEDGER_BRANCH_URL}">${esc(LEDGER_BRANCH_URL.replace(/^https:\/\//, ''))}</a></p>
+<p>${esc(Vt.license)}: <a href="${DATA_LICENSE_URL}">CC BY 4.0</a>; ${esc(Vt.attribution)}</p>
 </section>`;
 
   // 7. Co się nie potwierdziło
@@ -542,6 +549,7 @@ ${refuted}
     sameAs: LEDGER_BRANCH_URL,
     inLanguage: lang,
     isAccessibleForFree: true,
+    license: DATA_LICENSE_URL,
     creator: org,
     publisher: org,
     keywords: ['BTC', 'Hyperliquid', 'forecast verification', 'CRPS', 'PIT', 'Kupiec test', 'Brier score', 'OpenTimestamps'],
@@ -582,7 +590,7 @@ ${refuted}
       lang,
       current: 'after',
       alternates,
-      disclaimer: lang === 'pl' ? 'Rozliczenie zapisanych prognoz, nie porada inwestycyjna ani sygnał do transakcji. Handel kontraktami z dźwignią wiąże się z wysokim ryzykiem utraty środków.' : 'A scorecard of recorded forecasts, not investment advice or a trading signal. Trading leveraged contracts carries a high risk of losing money.',
+      disclaimer: lang === 'pl' ? 'Rozliczenie zapisanych prognoz, nie porada inwestycyjna ani wezwanie do transakcji. Handel kontraktami z dźwignią wiąże się z wysokim ryzykiem utraty środków.' : 'A scorecard of recorded forecasts, not investment advice nor a call to trade. Trading leveraged contracts carries a high risk of losing money.',
     }),
   };
 }

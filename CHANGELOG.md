@@ -16,6 +16,59 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 - **`ui:check`, szlif 9** — liczba progów HIP-4 w Kokpicie 5m na stałych danych z 14 płynnymi rynkami (limit 6 na komputerze, 1 na telefonie).
 - **CONTRIBUTING:** wspólna zasada sześciu punktów dla warstw rysujących obiekty na polu świec.
 
+### Zakresy P/b (Nill): bez zakresu w budowie, wypełnienie od potwierdzenia, 2 + 2 najbliższe poziomy (2026-11-12)
+
+Na danych stałych `ui:check` (Kokpit 5m z włączonym wskaźnikiem, zegar 24.10.2026 21:29 UTC; pudełka / linie poziomów / 👀): 1440 × 900 — 1 / 8 / 0 → 0 / 4 / 0; 390 × 844 — 1 / 8 / 0 → 0 / 4 / 0 (wybór warstwy, nie piksele; linie liczone także poza widoczną skalą ceny). Jedyne pudełko „przed” to zakres w budowie; na tych danych nie ma zakresu potwierdzonego, więc reguły pudełek (wypełnienie od potwierdzenia, aktywny i ostatni zakończony, 3 ostatnie 👀) sprawdzają testy jednostkowe, a `ui:check` pilnuje limitów. Liczby „przed” zmierzone na stronie z `main` z tymczasowym licznikiem w warstwie (bez commita).
+
+#### Zmienione
+- **Zakres w budowie nie jest rysowany** (`src/charts/pro/chart/pbSelect.ts`, `selectRanges`; `src/charts/pro/chart/pbRangeLayer.ts`): zmieniał się albo znikał zawsze. Legenda podaje „P w budowie: 2 dotknięcia z 3 · 1:20 z 4:00”.
+- **Wypełnienie pudełka od świecy potwierdzenia** (`boxSpan`), wcześniejsza część cienkim obrysem kropkowanym; dotąd po potwierdzeniu pojawiał się prostokąt sięgający ok. 4 h wstecz. Stan chwili X zawiera tylko zakresy potwierdzone do X.
+- **Rysowany zakres aktywny i ostatni zakończony** (sam obrys, z dopiskiem „zakończony”); kółka dotknięć tylko przy aktywnym; najwyżej 3 ostatnie 👀 (`selectSpots`).
+- **Poziomy tygodnia i doby: najwyżej 2 najbliższe nad ceną i 2 pod nią** (`nearestLevels`; dotąd wszystkie: VAH, POC, VAL i LVN tygodnia oraz VAH, POC i VAL doby).
+- **Opis wskaźnika** (PL i EN): nowe reguły rysowania i wynik miejsc 👀 z 2026 r. obok wyniku z legendy: A 52% (n 183), B 48% (n 29), C 53% (n 59), czyli bez przewagi.
+
+#### Dodane
+- **`ui:check`: scenariusz zakresów P/b** (Kokpit 5m z wskaźnikiem w zapisie, dane stałe, 1440 i 390): liczby z atrybutów `data-pb-boxes`, `data-pb-lines`, `data-pb-marks`, limity w `--strict`: 2 pudełka, 4 linie, 3 znaczniki 👀. `scripts/ui/baseline.json` (win32): 6 nowych liczb `pb.*`.
+- Testy: `pbSelect.test.ts` (aktywny i ostatni zakończony, bez zakresu w budowie, wypełnienie od świecy potwierdzenia, 3 ostatnie 👀, 2 + 2 najbliższe poziomy, legenda zakresu w budowie, stan chwili X tylko z zakresów potwierdzonych do X na prefiksach świec, zdanie w opisie PL i EN).
+
+### Licencja danych dziennika i zastrzeżenie bloga (2026-11-12)
+
+#### Zmienione
+- **Dane dziennika prognoz na licencji CC BY 4.0:** strona `wyniki/` i `en/results/` podaje licencję w sekcji weryfikacji (link do tekstu licencji, prośba o podanie źródła), dane strukturalne `Dataset` mają pole `license`, README opisuje ją obok licencji MIT kodu.
+- **Zastrzeżenie bloga:** stopka stron, zastrzeżenie pod wpisami i strona wyników mówią „nie porada inwestycyjna ani wezwanie do transakcji” („not investment advice nor a call to trade”) zamiast „sygnał do transakcji”.
+
+### Skaner: pomiar prywatności kohorty wielorybów przy ziarnie 15 min, 1 h i 4 h (2026-11-12)
+
+#### Dodane
+- **`status.json`: opcjonalne pole `whalePrivacy`** (`backend/scanner/cohortEngine.ts`: `whalePrivacy`, `passesPrivacy`; `backend/scanner/scanner.ts`). Z ostatnich 7 dób, osobno dla zamkniętych kubełków 15 min (dzisiejsze ziarno), 1 h i 4 h (wyrównanych do UTC): `obs` — wszystkie okna obserwowane w całości (także bez aktywności wielorybów, pokazane jako zero), `n` — z nich kubełki z aktywnością wielorybów, `ok` — te, w których kohorta wielorybów przechodzi próg prywatności (co najmniej 5 uczestników i nikt powyżej 50% obrotu). Próg sprawdza ta sama funkcja co ukrywanie komórek w `cohorts/BTC.json`. Okno 1 h i 4 h liczone tylko, gdy wszystkie jego kwadranse były obserwowane w całości. Same liczniki: komórki 1 h i 4 h ani adresy nie są publikowane. Stan pomiaru jest częścią zapisu stanu kohort, więc przetrwa restart skanera; stan zapisany przed tą wersją zaczyna liczniki od zera. Bez silnika kohort `status.json` bez zmian. Udział okien, które wolno pokazać: (ok + obs − n) / obs. Pomiar służy decyzji o drabinie ziarnistości po 7 dobach.
+- Testy: `backend/scanner/__tests__/whalePrivacy.test.ts` (trzech uczestników w kwadransie i sześciu w godzinie: `m15.ok = 0`, `h1.ok = 1`; dominacja ponad 50%; okno 4 h; brakujący kwadrans; okno 7 dób; kwadrans obserwowany częściowo; restart i stary stan), asercje `status.json` w `io.test.ts`.
+
+### Zegar ruchu w „Przed sesją” i w MCP (2026-11-12)
+
+#### Poprawione
+
+- Panel zegara podaje nazwę lokalnej strefy czasowej wyświetlanych godzin (PL i EN).
+- Plan `cat-cal-v1` określa procedurę pasma decyli przed rejestracją: losowanie dób UTC, mulberry32, ziarno 20261111, 1000 losowań i percentyle 2,5 oraz 97,5.
+
+#### Dodane
+- **Panel „Zegar ruchu”** (`src/views/before/MoveClockPanel.tsx`, ekran „Przed sesją”): najbliższa godzina (okno ostatniej prognozy kota z rejestru) jako poziom bez procentu — spokojny, zwykły albo podwyższony według tercyla `pBig` wśród rozstrzygniętych prognoz kota z 14 dni (od 96) — obok AUC z rejestru i zdanie „Procenty w trakcie kalibracji, wynik w rejestrze”; godziny 2–24 jako baza sezonowa: w ilu z 20 ostatnich dni tego samego typu (robocze albo weekend UTC) w tej godzinie był duży ruch kota („k z n dni”, MODEL „baza sezonowa”, bez twierdzenia o przewadze). Brak danych to „—” z powodem (za mało prognoz z 14 dni, ostatnia prognoza starsza niż 45 min, starsze podsumowanie). Procentu jako szansy nie ma nigdzie do awansu kalibracji `cat-cal-v1`.
+- **Podsumowanie `cat.clock`** (`src/utils/moveClock.ts`, `backend/scanner/forecaster.ts`, pole opcjonalne): tercyle `pBig` z 14 dni i baza sezonowa 24 godziny × 2 typy dnia z pełnych godzin kota z całego dziennika.
+- **MCP `forecast_ledger`:** `moveClock` (najbliższa godzina jako poziom, AUC, 23 godziny bazy sezonowej) i `bigMove.calibration` (rozliczenie `cat-cal-v1`); starsze podsumowanie — null z powodem. Opisy w `mcp/README.md` i skillu `hyperquant`.
+
+#### Zmienione
+- **Poziom ruchu kota** (pasek pod wykresem, dymek, karta w dzienniku; `src/components/schrodi/moveLevel.ts`) bierze tercyle z 14 dni z `cat.clock`, gdy podsumowanie je ma — ten sam poziom co zegar; starsze podsumowanie — histogram 30 dni jak dotąd. Dymek podaje okno tercyli (14 albo 30 dni).
+- Testy: `src/utils/__tests__/moveClock.test.ts`, `src/views/before/__tests__/MoveClockPanel.test.tsx` (bez „%” przy najbliższej godzinie, „—” z powodem, strażniki rady i kierunku, PL i EN), `moveLevel.test.tsx`, `ledgerRunner.test.ts` (sekcja `cat.clock`), `mcp/__tests__/scanner.test.ts`.
+
+### Kot: kalibracja szansy dużego ruchu cat-cal-v1 w dzienniku (2026-11-12)
+
+#### Dodane
+- **Kalibracja `cat-cal-v1`** (`src/utils/catCal.ts`, `backend/scanner/ledgerRunner.ts`, `backend/scanner/forecaster.ts`). Ranking `pBig` kota jest dobry, ale procenty są zaniżone (średnie `pBig` ok. 0,50 wobec częstości ok. 0,59). Nowe rekordy kota dostają pole `cal: { v, p, a, d, n, nT }`: przesunięcie logitu `pBig` dopasowane do par kota tego samego modelu (`mh`) rozstrzygniętych w dzienniku przed wydaniem, z 14 dni (a: wariancja a priori 1,0; poprawka typu dnia d, robocze albo weekend UTC: 0,25; Newton 25 kroków; przesunięcie przycięte do ±1,5; od 96 par, inaczej bez pola). `pBig`, model kota, próg i model godziny bez zmian; stare rekordy nie są ruszane.
+- **Plan `cat-cal-v1` prerejestrowany w dzienniku** (rekord `k: "p"`) przed pierwszym rekordem z `cal`: definicja, stałe, miara δ = (cal.p − y)² − (pBig − y)², bloki 14 dni od rejestracji, Newey–West (opóźnienie 96, fixed-b), minimum 672 rekordów, kryteria główne, kalibracji, porażki i awansu. Hash planu przypięty w testach.
+- **Podsumowanie `cat.cal`** (`src/utils/deskLedger.ts`, pole opcjonalne): z 30 dni Brier `cal.p` i surowego `pBig` na tych samych rekordach, średnie p i częstość, osobno dni robocze i weekend, decyle `cal.p`; ostatni zakończony blok 14 dni z różnicą δ i 95% przedziałem (w bloku w toku bez przedziału). Stare podsumowanie bez pola jest poprawne.
+- **Weryfikator** (`scripts/verify-ledger.mjs`, `checkCatCal`): plan zgodny z kodem, żadne `cal` przed planem, `a`, `d` (do 1e-5), `p` (do 1e-4), `n` i `nT` (dokładnie) przeliczone własną implementacją z par rozstrzygniętych wcześniej w dzienniku; po planie przy co najmniej 96 parach brak `cal` to błąd. W trybie szybkim prognozy z oknem sprzed pobranych dni są pomijane.
+- Odtworzenie na publicznym dzienniku (commit b60afcb gałęzi `ledger`, jak gdyby plan istniał od początku): 1226 rozstrzygniętych prognoz z `cal`, Brier 0,1284 wobec 0,1433 dla surowego `pBig`, średnie `cal.p` 0,585 wobec częstości 0,588.
+- Testy: `src/utils/__tests__/catCal.test.ts` (trzy zestawy wzorcowe policzone niezależnie w Pythonie, brzegi, dane syntetyczne 20 dni), `backend/scanner/__tests__/ledgerRunner.test.ts` (plan raz przed pierwszym `cal`, `cal` z par dziennika, brak `cal` poniżej 96 par i przy innym modelu, weryfikator wykrywa zmienione `cal.p`, `a`, `cal` sprzed planu i rozstrzygnięcie zapisane po prognozie, podsumowanie).
+
 ### Strona wyników prognoz: `wyniki/` i `en/results/` (2026-11-12)
 
 #### Dodane

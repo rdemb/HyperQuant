@@ -460,6 +460,12 @@ export class ProChartController {
     this.liquidity.setBlocked(() => this.overlay.occupied());
     this.zones = new ZonesLayer({ showZones: settings.showZones, showAuctions: settings.showAuctions, history: settings.zonesHistory === true });
     // Liczba pasm stref i linii aukcji wybranych przez warstwę (pomiar układu czyta ją z atrybutów, nie z pikseli)
+    // Zakresy P/b: pudełka, linie poziomów i miejsca 👀 na ekranie (pomiar układu czyta je z atrybutów)
+    this.pb.onCounts = (c) => {
+      container.dataset.pbBoxes = String(c.boxes);
+      container.dataset.pbLines = String(c.lines);
+      container.dataset.pbMarks = String(c.marks);
+    };
     this.zones.onSelect = (z, a) => {
       container.dataset.zoneRects = String(z);
       container.dataset.auctionLines = String(a);

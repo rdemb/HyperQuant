@@ -27,6 +27,7 @@ import {
 } from '../../../src/utils/cohorts';
 import { LEDGER_MIN_N, type SkillCi, isDeskLedgerSummary, ledgerFreshness } from '../../../src/utils/deskLedger';
 import { FUEL_BAND, liqFuel } from '../../../src/utils/fourNumbers';
+import { CLOCK_DAYS, CLOCK_MIN_N, CLOCK_SEASON_DAYS, CLOCK_STALE, clockHours, nearestHour } from '../../../src/utils/moveClock';
 import { type LiqBucket, type LiqMap, isLiqMap } from '../../../src/utils/liqMap';
 import { liqMapFreshness } from '../../../src/utils/liqMapView';
 import { isLiqTape, liqTapeFreshness } from '../../../src/utils/liqTape';
@@ -770,6 +771,32 @@ export interface LedgerBigMove {
   seasonalN: Num;
 }
 
+/**
+ * Rozliczenie kalibracji `cat-cal-v1` (pole `cal` prognoz kota): Brier `cal.p` i surowego pBig na tych samych rekordach
+ * z 30 dni, średnie p i częstość, różnica δ ostatniego zakończonego bloku 14 dni z 95% przedziałem Neweya–Westa.
+ */
+export interface LedgerCalibration {
+  settled: Num;
+  brier: Num;
+  brierRaw: Num;
+  meanP: Num;
+  freq: Num;
+  blockDiff: Num;
+  blockLo: Num;
+  blockHi: Num;
+}
+
+/**
+ * Zegar ruchu przed awansem kalibracji: najbliższa godzina (okno ostatniej prognozy kota) jako poziom bez procentu —
+ * tercyl pBig w rozstrzygniętych prognozach z 14 dni; godziny 2–24 jako baza sezonowa (w ilu z 20 dni tego samego typu
+ * w tej godzinie UTC był duży ruch). `auc` — dowód rankingu z 30 dni.
+ */
+export interface LedgerMoveClock {
+  nextHour: { from: string | null; to: string | null; level: 'calm' | 'typical' | 'elevated' | null; why: string | null; forecasts: Num };
+  auc: Num;
+  hours: { hour: string; dayType: 'weekday' | 'weekend'; bigMoveDays: Num; days: Num }[];
+}
+
 export interface ForecastLedgerData {
   why: string | null;
   /** Gdzie sprawdzić dziennik samodzielnie. */
@@ -780,7 +807,8 @@ export interface ForecastLedgerData {
    * wzór odbicia ze stałą σ godzinowych log-zwrotów z 30 dni) i wobec częstości bazowej poziomu (`brierBase`, `bss`).
    */
   touch: { settled: Num; brier: Num; brierBase: Num; bss: Num; brierDist: Num; bssDist: Num; bssLo: Num; bssHi: Num; bssDistLo: Num; bssDistHi: Num; ciDays: Num };
-  bigMove: LedgerBigMove;
+  bigMove: LedgerBigMove & { calibration: LedgerCalibration };
+  moveClock: LedgerMoveClock;
   pending: Num;
   voided: Num;
   slotsIssued: Num;
@@ -822,7 +850,25 @@ async function ledgerRun(src: Sources): Promise<Envelope<ForecastLedgerData>> {
         bssDistHi: nil('ratio', why),
         ciDays: nil('count', why),
       },
-      bigMove: { settled: nil('count', why), bss: nil('ratio', why), bssSeasonal: nil('ratio', why), bssSeasonalLo: nil('ratio', why), bssSeasonalHi: nil('ratio', why), seasonalN: nil('count', why) },
+      bigMove: {
+        settled: nil('count', why),
+        bss: nil('ratio', why),
+        bssSeasonal: nil('ratio', why),
+        bssSeasonalLo: nil('ratio', why),
+        bssSeasonalHi: nil('ratio', why),
+        seasonalN: nil('count', why),
+        calibration: {
+          settled: nil('count', why),
+          brier: nil('ratio', why),
+          brierRaw: nil('ratio', why),
+          meanP: nil('ratio', why),
+          freq: nil('ratio', why),
+          blockDiff: nil('ratio', why),
+          blockLo: nil('ratio', why),
+          blockHi: nil('ratio', why),
+        },
+      },
+      moveClock: { nextHour: { from: null, to: null, level: null, why, forecasts: nil('count', why) }, auc: nil('ratio', why), hours: [] },
       pending: nil('count', why),
       voided: nil('count', why),
       slotsIssued: nil('count', why),
@@ -906,6 +952,55 @@ async function ledgerRun(src: Sources): Promise<Envelope<ForecastLedgerData>> {
   const catN = s.cat?.scores.n;
   const noCat = s.cat ? tr('brak wyniku dużego ruchu w podsumowaniu', 'no big move score in the summary') : older;
   const sCi = ciNums(big?.bssSeasonal);
+  // Kalibracja cat-cal-v1 (pole opcjonalne podsumowania)
+  const cal = s.cat?.cal;
+  const noCal = tr(
+    'brak rozliczenia kalibracji cat-cal-v1 w podsumowaniu (plan jeszcze niezarejestrowany albo starsze podsumowanie)',
+    'no cat-cal-v1 calibration settlement in the summary (plan not registered yet or an older summary)'
+  );
+  const calNum = (v: number | null | undefined, unit: Unit, why = noCal) => num(cal ? v : null, unit, 'LIVE', { method: 'cat-cal-v1', why, ...(note !== undefined && { note }) });
+  const blockWhy = cal
+    ? tr('brak zakończonego bloku 14 dni z co najmniej 672 rekordami (przedział tylko w zakończonym bloku)', 'no closed 14-day block with at least 672 records (the interval only in a closed block)')
+    : noCal;
+  const calibration: LedgerCalibration = {
+    settled: calNum(cal?.n, 'count'),
+    brier: calNum(cal?.brier, 'ratio'),
+    brierRaw: calNum(cal?.brierRaw, 'ratio'),
+    meanP: calNum(cal?.meanP, 'ratio'),
+    freq: calNum(cal?.freq, 'ratio'),
+    blockDiff: calNum(cal?.block?.diff?.mean, 'ratio', blockWhy),
+    blockLo: calNum(cal?.block?.diff?.lo, 'ratio', blockWhy),
+    blockHi: calNum(cal?.block?.diff?.hi, 'ratio', blockWhy),
+  };
+  // Zegar ruchu (pole opcjonalne podsumowania)
+  const clock = s.cat?.clock;
+  const near = clock ? nearestHour(s.cat?.latest ?? null, clock.terciles, now) : null;
+  const nearWhy = !clock
+    ? tr('brak sekcji zegara w podsumowaniu (starsze podsumowanie)', 'no clock section in the summary (an older summary)')
+    : near && 'missing' in near
+      ? near.missing === 'no-forecast'
+        ? tr('brak prognozy kota w podsumowaniu', 'no cat forecast in the summary')
+        : near.missing === 'stale'
+          ? tr(`ostatnia prognoza kota starsza niż ${CLOCK_STALE / MIN} min`, `the latest cat forecast is older than ${CLOCK_STALE / MIN} min`)
+          : tr(`za mało rozstrzygniętych prognoz kota z ${CLOCK_DAYS} dni (min. ${CLOCK_MIN_N})`, `too few resolved cat forecasts from ${CLOCK_DAYS} days (min. ${CLOCK_MIN_N})`)
+      : null;
+  const seasonMethod = tr(`baza sezonowa, ${CLOCK_SEASON_DAYS} dni tego samego typu`, `seasonal base, ${CLOCK_SEASON_DAYS} days of the same type`);
+  const noHours = tr('brak pełnych godzin kota w rejestrze dla tej godziny', 'no full cat hours in the ledger for this hour');
+  const moveClock: LedgerMoveClock = {
+    nextHour:
+      near && 'level' in near
+        ? { from: iso(near.from), to: iso(near.to), level: near.level, why: null, forecasts: live(near.n, 'count', note) }
+        : { from: null, to: null, level: null, why: nearWhy, forecasts: nil('count', nearWhy ?? noCat) },
+    auc: live(big?.auc, 'ratio', note, noCat),
+    hours: clock
+      ? clockHours(clock.season, now).map((h) => ({
+          hour: iso(h.hour),
+          dayType: h.weekend ? ('weekend' as const) : ('weekday' as const),
+          bigMoveDays: num(h.n > 0 ? h.k : null, 'count', 'MODEL', { method: seasonMethod, why: noHours }),
+          days: num(h.n, 'count', 'MODEL', { method: seasonMethod }),
+        }))
+      : [],
+  };
   const data: ForecastLedgerData = {
     why: null,
     verifyUrl,
@@ -931,7 +1026,9 @@ async function ledgerRun(src: Sources): Promise<Envelope<ForecastLedgerData>> {
       bssSeasonalLo: sCi.lo,
       bssSeasonalHi: sCi.hi,
       seasonalN: live(big?.bssSeasonal?.n, 'count', note, older),
+      calibration,
     },
+    moveClock,
     pending: live(s.pending, 'count', note),
     voided: live(s.voided, 'count', note),
     slotsIssued: live(s.participation.issued, 'count', note),
