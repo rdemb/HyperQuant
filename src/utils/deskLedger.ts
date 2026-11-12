@@ -250,6 +250,24 @@ export interface DeskLedgerSummary {
     latest: { t: number; scale: number; regime: { sigma5: number; run: number; pChange: number } } | null;
   };
   /**
+   * A/B wariantu C (plan `ab-v2`): wersja A vs C (świeży poziom zmienności z 12 świec 5m i mieszanina skali) na tych
+   * samych slotach, w tych samych okresach co `ab`, oceniane od pierwszej granicy okresu po rejestracji planu
+   * (`firstBlock`). Pola `crpsB` i `diff` w okresach to C i C − A. W zakończonym okresie `cal` — pokrycie 60% i 90% C na
+   * próbie rozłącznej. Brak przed pierwszym rozliczonym rekordem C i w starszych podsumowaniach.
+   */
+  abC?: {
+    h: number;
+    model: string;
+    plan: string;
+    blockDays: number;
+    registeredAt: number | null;
+    firstBlock: number | null;
+    current: AbBlock | null;
+    closing: AbBlock | null;
+    last: (AbBlock & { cal: { n: number; cov60: number | null; cov90: number | null } | null }) | null;
+    latest: { t: number; x: number; rv60: number } | null;
+  };
+  /**
    * Schrödi (kot pod wykresem): od `since` w każdym slocie z prognozami desku; `slots` — takie sloty, `issued` — prognozy
    * kota (różnica = sloty bez danych kota). Brak w starszych podsumowaniach; sprawdzana osobno (isCat).
    */
@@ -380,6 +398,17 @@ export function isAb(x: unknown): x is NonNullable<DeskLedgerSummary['ab']> {
   if (a.registeredAt !== undefined && a.registeredAt !== null && !fin(a.registeredAt)) return false;
   const l = a.latest;
   return l === null || (!!l && fin(l.t) && fin(l.scale) && !!l.regime && fin(l.regime.sigma5) && fin(l.regime.run) && fin(l.regime.pChange));
+}
+
+/** Sekcja A/B wariantu C (opcjonalna) — jak `isAb`; uszkodzona ukrywa tylko kartę wariantu C */
+export function isAbC(x: unknown): x is NonNullable<DeskLedgerSummary['abC']> {
+  const a = x as Partial<NonNullable<DeskLedgerSummary['abC']>> | null;
+  if (!a || !fin(a.h) || typeof a.model !== 'string' || typeof a.plan !== 'string' || !fin(a.blockDays)) return false;
+  if (!finOrNull(a.registeredAt) || !finOrNull(a.firstBlock) || !isAbBlock(a.current) || !isAbBlock(a.closing) || !isAbBlock(a.last)) return false;
+  const c = a.last?.cal;
+  if (a.last && c !== null && !(c && fin(c.n) && finOrNull(c.cov60) && finOrNull(c.cov90))) return false;
+  const l = a.latest;
+  return l === null || (!!l && fin(l.t) && fin(l.x) && fin(l.rv60));
 }
 
 const isMkt = (m: unknown) => {

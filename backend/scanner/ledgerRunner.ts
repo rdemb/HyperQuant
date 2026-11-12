@@ -1,4 +1,4 @@
-import { AB_DESIGN } from '../../src/utils/abTest.ts';
+import { AB_DESIGN, AB_DESIGN_C } from '../../src/utils/abTest.ts';
 import { CAT_CAL_DESIGN, type CalPair, catCal } from '../../src/utils/catCal.ts';
 import { HREL_DESIGN, HREL_MODEL, type HourIndex, hrelForecast, hrelOutcome } from '../../src/utils/hourRel.ts';
 import { HOUR_DESIGN, type HourRow, TRUST_DESIGN, type TrustHour, hourRow, trustHour } from '../../src/utils/schrodiTrust.ts';
@@ -28,6 +28,7 @@ import {
   makeMktForecast,
   makeRetForecast,
   makeRetForecastB,
+  makeRetForecastC,
   type Regime,
   makeTouchForecast,
   nextAci,
@@ -65,6 +66,8 @@ const RESOLVE_LAG = 90_000;
 const VOID_AFTER = 6 * HOUR;
 /** SHA-256 kanonicznego JSON planu oceny A/B — identyfikator prerejestracji w dzienniku */
 const AB_HASH = createHash('sha256').update(canonicalJson(AB_DESIGN)).digest('hex');
+/** SHA-256 kanonicznego JSON planu oceny wariantu C (`ab-v2`) */
+const AB_C_HASH = createHash('sha256').update(canonicalJson(AB_DESIGN_C)).digest('hex');
 /** SHA-256 kanonicznego JSON planu oceny zaufania kota */
 const TRUST_HASH = createHash('sha256').update(canonicalJson(TRUST_DESIGN)).digest('hex');
 /** SHA-256 kanonicznego JSON planu oceny godziny na żywo */
@@ -97,6 +100,11 @@ export interface LedgerData {
   regime?: Regime | null;
   regimeAt?: number;
   refreshRegime?(now: number): Promise<void>;
+  /**
+   * Zmienność zrealizowana 60 min przed slotem `slot` (12 zamkniętych świec 5m, z tego samego pobrania co reżim) do
+   * wariantu C — opcjonalna; C tylko z wartością policzoną w slocie wydania. Brak pola = wariant C wyłączony.
+   */
+  rv60?: { slot: number; at: number; value: number } | null;
   /** Kot (Schrödi) — opcjonalny; wydawany tylko z danymi pobranymi w slocie wydania */
   cat?: CatModel | null;
   catInput?: { slot: number; inp: SchrodiInput } | null;
@@ -323,6 +331,12 @@ export class LedgerRunner {
       this.add([{ k: 'p', id: AB_DESIGN.id, t: ti, catalogHash: AB_HASH, catalog: AB_DESIGN }], ti);
       appended++;
     }
+    // Plan oceny wariantu C (`ab-v2`) — w łańcuchu przed pierwszym rekordem C (pierwszy przebieg po zmianie: rejestracja,
+    // potem wydanie C); plan `ab-v1` i wariant B bez zmian
+    if (data.refreshRegime && data.rv60 !== undefined && !this.preregs.some((p) => p.catalogHash === AB_C_HASH)) {
+      this.add([{ k: 'p', id: AB_DESIGN_C.id, t: ti, catalogHash: AB_C_HASH, catalog: AB_DESIGN_C }], ti);
+      appended++;
+    }
     // Plan oceny zaufania kota — w łańcuchu przed pierwszą ocenianą godziną (liczą się sloty od chwili rejestracji)
     if (data.refreshCat && !this.preregs.some((p) => p.catalogHash === TRUST_HASH)) {
       this.add([{ k: 'p', id: TRUST_DESIGN.id, t: ti, catalogHash: TRUST_HASH, catalog: TRUST_DESIGN }], ti);
@@ -360,6 +374,13 @@ export class LedgerRunner {
         if (regimeOk && data.regime && data.regimeAt !== undefined && slotOf(data.regimeAt) === slot && data.regimeAt <= ti) {
           const a = issued.find((f) => f.id === `${slot}-ret60`) as unknown as RetForecast | undefined;
           if (a) issued.push({ ...makeRetForecastB(data.model!, a, data.regime) });
+        }
+        // Wariant C (`ab-v2`): przekształcenie kwantyli A ze zmiennością 12 świec 5m sprzed slotu, tylko po rejestracji planu
+        const rv = data.rv60;
+        if (regimeOk && rv && rv.slot === slot && rv.at <= ti && this.preregs.some((p) => p.catalogHash === AB_C_HASH)) {
+          const a = issued.find((f) => f.id === `${slot}-ret60`) as unknown as RetForecast | undefined;
+          const c = a ? makeRetForecastC(a, rv.value) : null;
+          if (c) issued.push({ ...c });
         }
         const today = Math.floor(ti / DAY) * DAY;
         if (data.levels && data.levels.day === today - DAY) issued.push({ ...makeTouchForecast(data.model!, tm, px!, data.levels.pdh, data.levels.pdl) });
@@ -579,6 +600,7 @@ export class LedgerRunner {
       skips: [...this.skips.values()],
       slotStamps: this.slotStamps(now),
       abRegisteredAt: (this.preregs.find((p) => p.catalogHash === AB_HASH)?.t as number | undefined) ?? null,
+      abCRegisteredAt: (this.preregs.find((p) => p.catalogHash === AB_C_HASH)?.t as number | undefined) ?? null,
       catHours: [...this.trustHours.values()],
       trustPlan: ((p) => (p && typeof p.t === 'number' ? { id: TRUST_DESIGN.id, hash: String(p.hash), at: p.t } : null))(
         this.preregs.find((p) => p.catalogHash === TRUST_HASH)

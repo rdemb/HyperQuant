@@ -25,7 +25,7 @@ import {
   isCohortFlow,
   shareDenominator,
 } from '../../../src/utils/cohorts';
-import { LEDGER_MIN_N, type SkillCi, isDeskLedgerSummary, isHrelSummary, ledgerFreshness } from '../../../src/utils/deskLedger';
+import { LEDGER_MIN_N, type AbBlock, type SkillCi, isAb, isAbC, isDeskLedgerSummary, isHrelSummary, ledgerFreshness } from '../../../src/utils/deskLedger';
 import { HREL_DESIGN } from '../../../src/utils/hourRel';
 import { FUEL_BAND, liqFuel } from '../../../src/utils/fourNumbers';
 import { CLOCK_DAYS, CLOCK_MIN_N, CLOCK_SEASON_DAYS, CLOCK_STALE, clockHours, nearestHour } from '../../../src/utils/moveClock';
@@ -829,6 +829,24 @@ export interface ForecastLedgerData {
   voided: Num;
   slotsIssued: Num;
   slotsSkipped: Num;
+  /**
+   * Testy A/B wersji prognozy zwrotu 1 h: `ab-v1` (wariant B, reżim BOCPD) i, gdy jest w podsumowaniu, `ab-v2` (wariant C,
+   * świeży poziom zmienności i mieszanina skali). Różnica CRPS wariantu i A z 95% przedziałem tylko w zakończonym okresie.
+   */
+  abTests: LedgerAbTest[];
+}
+
+export interface LedgerAbTest {
+  plan: string;
+  variant: 'B' | 'C';
+  model: string;
+  /** Pary slotów w okresie w toku i w ostatnim zakończonym */
+  pairsCurrent: Num;
+  pairsLast: Num;
+  /** Wariant − A w ostatnim zakończonym okresie (CRPS log-zwrotu; ujemne = wariant trafniejszy) z 95% przedziałem HAC */
+  diffLast: Num;
+  diffLo: Num;
+  diffHi: Num;
 }
 
 const NAME_LEDGER = 'forecast_ledger';
@@ -890,6 +908,7 @@ async function ledgerRun(src: Sources): Promise<Envelope<ForecastLedgerData>> {
       voided: nil('count', why),
       slotsIssued: nil('count', why),
       slotsSkipped: nil('count', why),
+      abTests: [],
     };
     return envelope(NAME_LEDGER, data, sources, now, notes);
   }
@@ -960,6 +979,18 @@ async function ledgerRun(src: Sources): Promise<Envelope<ForecastLedgerData>> {
         aciInfShare: live(sc.aciInf?.share, 'ratio', note, sc.aciInf ? tr('brak rozstrzygniętych prognoz', 'no settled forecasts') : older),
       };
     });
+  const noBlock = tr('brak okresu oceny', 'no evaluation period');
+  const noCi = tr('przedział dopiero po zakończonym okresie z co najmniej 672 parami', 'interval only after a finished period with at least 672 pairs');
+  const abTest = (plan: string, variant: 'B' | 'C', model: string, cur: AbBlock | null, last: AbBlock | null): LedgerAbTest => ({
+    plan,
+    variant,
+    model,
+    pairsCurrent: cur ? live(cur.n, 'count', note) : nil('count', noBlock),
+    pairsLast: last ? live(last.n, 'count', note) : nil('count', noBlock),
+    diffLast: live(last?.diff?.d, 'ratio', note, last ? noCi : noBlock),
+    diffLo: live(last?.diff?.lo, 'ratio', note, last ? noCi : noBlock),
+    diffHi: live(last?.diff?.hi, 'ratio', note, last ? noCi : noBlock),
+  });
   const t = s.scores.touch;
   const tt = score(t.n);
   const noPair = t.n >= LEDGER_MIN_N && !(typeof t.bssDist === 'number' && Number.isFinite(t.bssDist));
@@ -1094,6 +1125,10 @@ async function ledgerRun(src: Sources): Promise<Envelope<ForecastLedgerData>> {
     voided: live(s.voided, 'count', note),
     slotsIssued: live(s.participation.issued, 'count', note),
     slotsSkipped: live(s.participation.skipped, 'count', note),
+    abTests: [
+      ...(s.ab && isAb(s.ab) ? [abTest('ab-v1', 'B', s.ab.model, s.ab.current, s.ab.last)] : []),
+      ...(s.abC && isAbC(s.abC) ? [abTest(s.abC.plan, 'C', s.abC.model, s.abC.current, s.abC.last)] : []),
+    ],
   };
   return envelope(NAME_LEDGER, data, sources, now, notes);
 }
