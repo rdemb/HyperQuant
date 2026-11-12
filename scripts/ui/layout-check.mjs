@@ -757,8 +757,8 @@ async function main() {
     r.levels.dayMap.desktop.levels4h <= LEVELS_MAX.h4 &&
     typeof r.levels?.review?.desktop?.sessions === 'number' &&
     LEVEL_VIEWS.every(([name]) => lvOk(r.levels?.[name]?.desktop) && lvOk(r.levels?.[name]?.phone));
-  // Szlif 9: linie progów HIP-4 w limitach; na komputerze musi być co najmniej jedna (fikstura ma 14 płynnych rynków)
-  const s9 = typeof r.hip4?.desktop === 'number' && typeof r.hip4?.phone === 'number' && r.hip4.desktop >= 1 && r.hip4.desktop <= HIP4_MAX.desktop && r.hip4.phone <= HIP4_MAX.phone;
+  // Szlif 9: linie progów HIP-4 w limitach; fikstura ma 14 płynnych rynków, więc na komputerze co najmniej jedna, na telefonie dokładnie jedna
+  const s9 = typeof r.hip4?.desktop === 'number' && typeof r.hip4?.phone === 'number' && r.hip4.desktop >= 1 && r.hip4.desktop <= HIP4_MAX.desktop && r.hip4.phone === HIP4_MAX.phone;
   r.summary = { t1, t2, t3, t4, t5, t6, s1, s2, s3, s4, s5, s6, s7, s9 };
   const lines = [
     `Pomiar „${LABEL}” (${BASE})`,
