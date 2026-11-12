@@ -32,7 +32,9 @@
  *     dużego ruchu kota z bootstrapu blokowego po dobach UTC, udział nieskończonych przedziałów ACI) przeliczone z rekordów
  *     do głowy podsumowania (`--summary <plik>` przy --dir; w trybie szybkim podsumowanie ze strony, gdy pobrane dni
  *     sięgają początku dziennika). Sumy dobowe liczone tu, wspólna jest tylko procedura losowania
- *     (src/utils/ledgerBootstrap.ts: mulberry32, ziarno 20261111, 1000 losowań, 25. i 975. wartość);
+ *     (src/utils/ledgerBootstrap.ts: mulberry32, ziarno 20261111, 1000 losowań, 25. i 975. wartość); osobną implementacją
+ *     także kalibracja wariantu C w ostatnim zakończonym okresie `ab-v2` (próba rozłączna, pokrycie 60% i 90% z kwantyli C;
+ *     kryterium awansu) i bloki `hrel-v1` (n, średnie p, częstość, t Neweya–Westa, największe odchylenie kwintyla);
  *  4. pokwitowania OpenTimestamps: skrót w `ots/<dzień>.jsonl.ots` = SHA-256 pliku dnia; w `ots/slots/<slot>.ots`
  *     = hash ostatniej prognozy tego slotu (prognozy istniały w chwili znakowania). Sam czas potwierdza klient OTS:
  *     `ots upgrade <plik>.ots` i `ots verify -f <plik danych> <plik>.ots` (dla slotu: skrót podaj przez `-d <hash>`).
@@ -377,12 +379,132 @@ export function measures(records, asOf) {
   };
 }
 
+/**
+ * Kalibracja wariantu C (plan `ab-v2`) w ostatnim zakończonym okresie, jak pole `abC.last.cal` podsumowania, liczona tu
+ * od nowa: okresy po `blockDays` dni od epoki planu; pierwszy oceniany zaczyna się na granicy okresu nie wcześniejszej
+ * niż rejestracja planu (pierwszy rekord planu w dzienniku); okres jest zakończony, gdy jego koniec + `graceMin` ≤ `asOf`.
+ * Próba rozłączna: sloty o pełnej godzinie w okresie, w których A i C z tego slotu mają rozstrzygnięcie bez unieważnienia;
+ * trafienia 60% i 90% z kwantyli C i zwrotu (nie z zapisanych `in60`/`in90`), pokrycie zaokrąglone do 4 miejsc.
+ * Brak planu w rekordach → null; `last` null, gdy nie ma zakończonego ocenianego okresu.
+ */
+export function abCalC(records, asOf) {
+  const D = AB_DESIGN_C;
+  const plan = records.find((o) => o.k === 'p' && o.id === D.id && typeof o.t === 'number');
+  if (!plan) return null;
+  const len = D.blockDays * DAY_MS;
+  const firstIdx = Math.max(0, Math.ceil((plan.t - D.epoch) / len));
+  const firstBlock = D.epoch + firstIdx * len;
+  // Największy indeks okresu k, dla którego epoka + (k + 1)·len + zapas ≤ asOf
+  const k = Math.floor((asOf - D.graceMin * MIN_MS - D.epoch) / len) - 1;
+  if (k < 0 || k < firstIdx) return { firstBlock, last: null };
+  const start = D.epoch + k * len;
+  const end = start + len;
+  const f = new Map();
+  const r = new Map();
+  for (const o of records) {
+    if (o.k === 'f') f.set(o.id, o);
+    else if (o.k === 'r') r.set(o.id, o);
+  }
+  const settled = (x) => !!x && !x.void && typeof x.y === 'number';
+  let n = 0;
+  let hit60 = 0;
+  let hit90 = 0;
+  for (const c of f.values()) {
+    if (c.kind !== 'ret' || c.variant !== 'C' || c.h !== 60 || c.slot < start || c.slot >= end || c.slot % HOUR_MS !== 0) continue;
+    const a = f.get(String(c.id).slice(0, -1));
+    const rc = r.get(c.id);
+    if (!a || a.variant || !settled(r.get(a.id)) || !settled(rc)) continue;
+    n++;
+    const within = (lo, hi) => rc.y >= quantileAt(c.taus, c.q, lo) && rc.y <= quantileAt(c.taus, c.q, hi);
+    if (within(0.2, 0.8)) hit60++;
+    if (within(0.05, 0.95)) hit90++;
+  }
+  return { firstBlock, last: { start, end, cal: n ? { n, cov60: r4(hit60 / n), cov90: r4(hit90 / n) } : { n: 0, cov60: null, cov90: null } } };
+}
+
+/**
+ * Bloki oceny `hrel-v1` (pola `hrel.blocks` i `hrel.pooled` podsumowania) liczone tu od nowa z rekordów: wyprzedzenie 1 h
+ * (p[1], y[1]); bloki po `blockDays` dni od rejestracji planu (pierwszy rekord planu), godzina w bloku według hs; blok
+ * zakończony, gdy jego koniec + 4 h + 6 h + 15 min ≤ `asOf`; rozstrzygnięcia bez unieważnienia, y[1] = null pominięte.
+ * Na blok: n, średnie p, częstość, średnia δ = (p − y)² − (0,5 − y)², błąd Neweya–Westa (jądro Bartletta, `hacLag`
+ * opóźnień godzinowych, autokowariancje tylko z par istniejących godzin, dzielone przez n; od `minN` godzin, zerowa
+ * wariancja → null), t = średnia / błąd, największe |średnie p − częstość| w kwintylach (sortowanie po p, remisy po hs;
+ * od 5 godzin). Dane łączne bloków 1–2 po zakończeniu bloku 2. Brak planu w rekordach → null.
+ */
+export function hrelBlocks(records, asOf) {
+  const D = HREL_DESIGN;
+  const plan = records.find((o) => o.k === 'p' && o.id === D.id && typeof o.t === 'number');
+  if (!plan) return null;
+  const fcs = new Map();
+  /** Godziny oceny w kolejności dziennika: hs, p i y wyprzedzenia 1 h */
+  const hours = [];
+  for (const o of records) {
+    if (o.k === 'f' && o.kind === 'hrel') fcs.set(o.id, o);
+    else if (o.k === 'r' && fcs.has(o.id) && !o.void && Array.isArray(o.y) && (o.y[1] === 0 || o.y[1] === 1)) {
+      const fc = fcs.get(o.id);
+      hours.push({ t: fc.t, p: fc.p[1], y: o.y[1] });
+    }
+  }
+  const len = D.blockDays * DAY_MS;
+  const grace = 4 * HOUR_MS + VOID_MS + 15 * MIN_MS;
+  const done = Math.max(0, Math.floor((asOf - grace - plan.t) / len));
+  const avg = (xs) => xs.reduce((s, v) => s + v, 0) / xs.length;
+  const one = (start, end) => {
+    const hs = hours.filter((x) => x.t >= start && x.t < end).sort((a, b) => a.t - b.t);
+    const n = hs.length;
+    const d = hs.map((x) => (x.p - x.y) ** 2 - (D.base - x.y) ** 2);
+    const mean = n ? avg(d) : null;
+    let se = null;
+    if (n >= D.minN) {
+      // Wariancja długookresowa: γ0 + 2 Σ (1 − lag/(L+1))·e_i·e_j po parach godzin odległych o lag ≤ L, przez n
+      const e = d.map((v) => v - mean);
+      let lrv = 0;
+      for (let i = 0; i < n; i++) {
+        lrv += e[i] * e[i];
+        for (let j = i + 1; j < n; j++) {
+          const lag = (hs[j].t - hs[i].t) / HOUR_MS;
+          if (lag > D.hacLag) break;
+          lrv += 2 * (1 - lag / (D.hacLag + 1)) * e[i] * e[j];
+        }
+      }
+      lrv /= n;
+      if (lrv > 0) se = Math.sqrt(lrv / n);
+    }
+    const byP = [...hs].sort((a, b) => a.p - b.p || a.t - b.t);
+    let maxQDev = null;
+    if (n >= 5) {
+      maxQDev = 0;
+      for (let q = 0; q < 5; q++) {
+        const g = byP.slice(Math.floor((q * n) / 5), Math.floor(((q + 1) * n) / 5));
+        maxQDev = Math.max(maxQDev, Math.abs(avg(g.map((x) => x.p)) - avg(g.map((x) => x.y))));
+      }
+    }
+    return {
+      start,
+      end,
+      n,
+      meanP: n ? avg(hs.map((x) => x.p)) : null,
+      freq: n ? avg(hs.map((x) => x.y)) : null,
+      mean,
+      se,
+      t: se === null ? null : mean / se,
+      maxQDev,
+    };
+  };
+  return {
+    plan: { at: plan.t, hash: String(plan.hash) },
+    blocks: Array.from({ length: done }, (_, k) => one(plan.t + k * len, plan.t + (k + 1) * len)),
+    pooled: done >= 2 ? one(plan.t, plan.t + 2 * len) : null,
+  };
+}
+
 /** Pola liczone inną metodą numeryczną niż w skanerze (p z χ², baza odległości) — zgodność do 1e-4, reszta dokładnie */
 const APPROX = 1e-4 + 1e-9;
 
 /**
- * Miary z podsumowania zgodne z przeliczonymi z rekordów do jego głowy (`head.hash`). Pole nieobecne w podsumowaniu
- * (starsza wersja) pomijane. Zwraca liczbę porównanych pól i listę rozbieżności.
+ * Miary z podsumowania zgodne z przeliczonymi z rekordów do jego głowy (`head.hash`), także `abC` (kalibracja okresu,
+ * `abCalC`) i `hrel` (bloki, `hrelBlocks`). Pole nieobecne w podsumowaniu (starsza wersja) pomijane. Zwraca liczbę
+ * porównanych pól i listę rozbieżności.
  */
 export function checkMeasures(summary, records) {
   const idx = records.findIndex((o) => o.hash === summary?.head?.hash);
@@ -415,6 +537,51 @@ export function checkMeasures(summary, records) {
   cmp('touch bssCi', summary.scores?.touch?.bssCi, m.touch.bssCi);
   cmp('touch bssDistCi', summary.scores?.touch?.bssDistCi, m.touch.bssDistCi, ['value', 'lo', 'hi']);
   cmp('kot big bssSeasonal', summary.cat?.scores?.big?.bssSeasonal, m.catBig.bssSeasonal);
+  // Plany ocen z rekordów; bez planu porównanie tylko w dzienniku od początku (inaczej plan mógł paść przed pobranymi dniami)
+  const head = records.slice(0, idx + 1);
+  const full = records[0]?.prev === GENESIS;
+  const same = (label, got, want) => {
+    if (got === undefined) return;
+    checked++;
+    if (canonical(got) !== canonical(want)) problems.push(`${label}: ${canonical(got)} ≠ przeliczone ${canonical(want)}`);
+  };
+  // Wariant C (ab-v2): granica startu oceny i kalibracja ostatniego zakończonego okresu (kryterium awansu) — dokładnie
+  const sc = summary.abC;
+  if (sc && typeof sc === 'object') {
+    const c = abCalC(head, summary.asOf);
+    if (c === null && full && (typeof sc.firstBlock === 'number' || sc.last)) problems.push(`wariant C (${AB_DESIGN_C.id}): brak planu w rekordach, a podsumowanie ma ocenę`);
+    else if (c !== null || full) {
+      const w = c ?? { firstBlock: null, last: null };
+      same(`wariant C (${AB_DESIGN_C.id}) firstBlock`, sc.firstBlock, w.firstBlock);
+      if (sc.last !== undefined) {
+        if (!sc.last !== !w.last) problems.push(`wariant C (${AB_DESIGN_C.id}) ostatni zakończony okres: ${sc.last ? 'jest' : 'brak'} ≠ przeliczone ${w.last ? 'jest' : 'brak'}`);
+        else if (sc.last && w.last) {
+          same(`wariant C (${AB_DESIGN_C.id}) okres.start`, sc.last.start, w.last.start);
+          same(`wariant C (${AB_DESIGN_C.id}) okres.end`, sc.last.end, w.last.end);
+          cmp(`wariant C (${AB_DESIGN_C.id}) kalibracja okresu`, sc.last.cal, w.last.cal);
+        }
+      }
+    }
+  }
+  // hrel-v1: bloki i dane łączne bloków 1–2 — n, granice i plan dokładnie, średnie i t do 1e-4 (osobna implementacja)
+  const sh = summary.hrel;
+  if (sh && typeof sh === 'object') {
+    const h = hrelBlocks(head, summary.asOf);
+    if (h === null) {
+      if (full) problems.push(`${HREL_DESIGN.id}: brak planu w rekordach, a podsumowanie ma sekcję`);
+    } else {
+      const floats = ['meanP', 'freq', 'mean', 'se', 't', 'maxQDev'];
+      cmp(`${HREL_DESIGN.id} plan`, sh.plan, h.plan);
+      if (Array.isArray(sh.blocks)) {
+        if (sh.blocks.length !== h.blocks.length) problems.push(`${HREL_DESIGN.id} bloki: ${sh.blocks.length} ≠ przeliczone ${h.blocks.length}`);
+        sh.blocks.forEach((b, i) => h.blocks[i] && cmp(`${HREL_DESIGN.id} blok ${i + 1}`, b, h.blocks[i], floats));
+      }
+      if (sh.pooled !== undefined) {
+        if (!sh.pooled !== !h.pooled) problems.push(`${HREL_DESIGN.id} bloki 1–2: ${sh.pooled ? 'są' : 'brak'} ≠ przeliczone ${h.pooled ? 'są' : 'brak'}`);
+        else if (sh.pooled) cmp(`${HREL_DESIGN.id} bloki 1–2`, sh.pooled, h.pooled, floats);
+      }
+    }
+  }
   return { checked, problems };
 }
 
@@ -1907,7 +2074,7 @@ async function main() {
       console.log(
         mm.problems.length
           ? `✗ miary podsumowania niezgodne z przeliczonymi (${mm.problems.length}): ${mm.problems.slice(0, 5).join('; ')}`
-          : `✓ miary podsumowania (Kupiec 60%, PIT, przedziały CRPSS i BSS, BSS sezonowy kota, ACI) zgodne z przeliczonymi z rekordów: ${plural(mm.checked, 'pole', 'pola', 'pól')}`
+          : `✓ miary podsumowania (Kupiec 60%, PIT, przedziały CRPSS i BSS, BSS sezonowy kota, ACI, kalibracja wariantu C ${AB_DESIGN_C.id}, bloki ${HREL_DESIGN.id}) zgodne z przeliczonymi z rekordów: ${plural(mm.checked, 'pole', 'pola', 'pól')}`
       );
     if (mm.problems.length) ok = false;
   };
