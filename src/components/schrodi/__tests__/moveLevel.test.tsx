@@ -310,3 +310,17 @@ describe('Liczba „na 10” przy częstości blisko połowy między dziesiątka
     expect(tenthsText(0)).toBe('0');
   });
 });
+
+describe("Tercyle z zegara ruchu (14 dni) mają pierwszeństwo przed histogramem 30 dni", () => {
+  it("poziom z cat.clock.terciles, gdy podsumowanie je ma; bez nich — histogram", async () => {
+    const { moveView } = await import("../moveLevel");
+    const base = catWith(flat(30));
+    const season = { weekday: Array.from({ length: 24 }, () => ({ k: 0, n: 0 })), weekend: Array.from({ length: 24 }, () => ({ k: 0, n: 0 })) };
+    // Histogram: 0,37 to poziom zwykły; tercyle z 14 dni (0,1 i 0,2): podwyższony
+    expect(moveView(0.37, base)).toMatchObject({ kind: "level", level: "typical", days: 30 });
+    const withClock = { ...base, clock: { terciles: { q1: 0.1, q2: 0.2, n: 500 }, season } };
+    expect(moveView(0.37, withClock)).toMatchObject({ kind: "level", level: "elevated", days: 14, terciles: { n: 500 } });
+    // Zegar bez tercyli (za mało prognoz z 14 dni) — histogram
+    expect(moveView(0.37, { ...base, clock: { terciles: null, season } })).toMatchObject({ level: "typical", days: 30 });
+  });
+});
