@@ -159,6 +159,120 @@ describe('HlStream', () => {
     s.stop();
   });
 
+  describe('próg ciszy kanału transakcji zależny od rynku', () => {
+    /** `n` wiadomości z transakcjami co `gapMs` (n − 1 odstępów); zwraca czas ostatniej. */
+    const feedTrades = (ws: FakeWs, n: number, gapMs: number): number => {
+      for (let k = 0; k < n; k++) {
+        if (k > 0) {
+          now += gapMs;
+          vi.advanceTimersByTime(gapMs);
+        }
+        ws.msg({ channel: 'trades', data: [{ px: String(k) }] });
+      }
+      return now;
+    };
+    /** Cisza transakcji przez `ms` przy płynącym innym kanale; strażnik sprawdza co 10 s. */
+    const silence = (ws: FakeWs, ms: number) => {
+      for (let t = 0; t < ms; ) {
+        const d = Math.min(10_000, ms - t);
+        now += d;
+        t += d;
+        ws.msg({ channel: 'activeAssetCtx', data: {} });
+        vi.advanceTimersByTime(10_000);
+      }
+    };
+    const openWith = (s: HlStream, onClosed: () => void) => {
+      s.listen({ onClosed });
+      s.add(trades);
+      s.start();
+      const ws = FakeWs.instances[0];
+      ws.open();
+      return ws;
+    };
+
+    it('gęsty strumień (odstępy 1 s): próg 120 s jak dotąd', () => {
+      const s = make();
+      const onClosed = vi.fn();
+      const ws = openWith(s, onClosed);
+      const last = feedTrades(ws, 51, 1000);
+      silence(ws, 120_000);
+      expect(onClosed).not.toHaveBeenCalled();
+      silence(ws, 1000);
+      expect(onClosed).toHaveBeenCalledWith(last);
+      s.stop();
+    });
+
+    it('rzadki strumień (mediana odstępu 15 s): próg 300 s; 180 s ciszy bez ponownego łączenia, 301 s z nim', () => {
+      const s = make();
+      const onClosed = vi.fn();
+      const ws = openWith(s, onClosed);
+      const last = feedTrades(ws, 51, 15_000);
+      silence(ws, 180_000);
+      expect(onClosed).not.toHaveBeenCalled();
+      expect(FakeWs.instances).toHaveLength(1);
+      silence(ws, 120_000);
+      expect(onClosed).not.toHaveBeenCalled();
+      silence(ws, 1000);
+      expect(onClosed).toHaveBeenCalledWith(last);
+      vi.advanceTimersByTime(2000);
+      expect(FakeWs.instances).toHaveLength(2);
+      s.stop();
+    });
+
+    it('mniej niż 50 odstępów: próg 120 s także przy rzadkim strumieniu', () => {
+      const s = make();
+      const onClosed = vi.fn();
+      const ws = openWith(s, onClosed);
+      const last = feedTrades(ws, 50, 15_000);
+      silence(ws, 120_000);
+      expect(onClosed).not.toHaveBeenCalled();
+      silence(ws, 1000);
+      expect(onClosed).toHaveBeenCalledWith(last);
+      s.stop();
+    });
+
+    it('odstępy liczone tylko na bieżącym połączeniu: po ponownym łączeniu znów 120 s', () => {
+      const s = make();
+      const onClosed = vi.fn();
+      const ws = openWith(s, onClosed);
+      feedTrades(ws, 51, 15_000);
+      ws.close();
+      vi.advanceTimersByTime(2000);
+      const ws2 = FakeWs.instances[1];
+      ws2.open();
+      const last = feedTrades(ws2, 10, 15_000);
+      onClosed.mockClear();
+      silence(ws2, 120_000);
+      expect(onClosed).not.toHaveBeenCalled();
+      silence(ws2, 1000);
+      expect(onClosed).toHaveBeenCalledWith(last);
+      s.stop();
+    });
+
+    it('jawne tradesStaleMs to dolna granica progu: zastępuje 120 s, rzadki strumień dalej ją podnosi', () => {
+      const dense = new HlStream({ wsFactory: (u) => new FakeWs(u) as unknown as WebSocket, now: () => now, tradesStaleMs: 200_000 });
+      const onClosed = vi.fn();
+      const ws = openWith(dense, onClosed);
+      const last = feedTrades(ws, 51, 1000);
+      silence(ws, 200_000);
+      expect(onClosed).not.toHaveBeenCalled();
+      silence(ws, 1000);
+      expect(onClosed).toHaveBeenCalledWith(last);
+      dense.stop();
+
+      FakeWs.instances = [];
+      const sparse = new HlStream({ wsFactory: (u) => new FakeWs(u) as unknown as WebSocket, now: () => now, tradesStaleMs: 60_000 });
+      const onClosed2 = vi.fn();
+      const ws2 = openWith(sparse, onClosed2);
+      const last2 = feedTrades(ws2, 51, 15_000);
+      silence(ws2, 300_000);
+      expect(onClosed2).not.toHaveBeenCalled();
+      silence(ws2, 1000);
+      expect(onClosed2).toHaveBeenCalledWith(last2);
+      sparse.stop();
+    });
+  });
+
   it('wypisanie wysyła unsubscribe; stop zamyka bez ponownego łączenia', () => {
     const s = make();
     s.add(trades);
