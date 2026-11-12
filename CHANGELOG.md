@@ -4,6 +4,18 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Oczekiwany zakres sesji: profil godzin × świeży poziom (2026-11-12)
+
+#### Zmienione
+- **Oczekiwany zakres sesji Londynu i NY liczony nową metodą „profil × poziom”** (`src/utils/sessionDay.ts`: `expectedSessionRange`, `src/utils/sessionFacts.ts`: `expectedFrom`, `src/charts/pro/chart/layoutInputs.ts`, `layoutNumbers.ts`, `src/utils/sessionReview.ts`, `src/views/after/SessionReview.tsx`, MCP `session_context` i `session_review`). Dotychczasowy model zaniżał zakres (średni budżet 122% w Londynie i 144% w NY na 60 sesjach). Teraz wszystko ze świec 1h rynku zamkniętych przed godziną otwarcia sesji:
+  - profil: średnia wariancja Parkinsona tej samej godziny UTC z 20 wcześniejszych dni tego samego typu (robocze albo sobota i niedziela UTC), szukane do 80 dni wstecz;
+  - poziom: x = ½ ln(Σ pv / Σ profil) z 24 godzin przed otwarciem, przycięty do ±1,5;
+  - E = 0,97 · √(8/π) · √V · exp(0,60 · x), V = suma profilu po godzinach sesji z wagą części godziny w sesji (pierwsza godzina NY z wagą 0,5); w USD razy cena sprzed otwarcia.
+
+  W teście na sesjach 2024–2026 (stałe dopasowane na 2020–2023) zrealizowany do oczekiwanego to średnio 0,96 w Londynie i 1,03 w NY. E liczone raz na otwarcie: ta sama liczba w trakcie sesji i po jej zamknięciu (zamknięta sesja od własnej ceny sprzed otwarcia, nie od bieżącej). Każdy rynek liczy z własnych świec 1h, bez osobnej ścieżki dla BTC; model HAR i awaryjny Parkinson ze świec 5m nie liczą już zakresu sesji, więc budżet nie czeka na model zmienności. Plakietka MODEL z metodą „profil × poziom”; w podpowiedzi „typowy dzień” (ok. 0,87 × E, w połowie dni zakres jest poniżej). Mniej niż 20 dni tego samego typu: „—” z powodem.
+- **MCP `session_context`:** nowe pole `typical` (0,87 × `expectedRange`), `method: "profile"`; serwer pobiera świece 1h do oczekiwanego zakresu zamiast świec 5m i modelu HAR. Opisy w `mcp/README.md` i skillu `hyperquant`.
+- Testy: `src/utils/__tests__/sessionExpected.test.ts` (przypadki policzone ręcznie, waga NY 0,5, weekend, mnożnik 2^0,30, przycięcie ±1,5, brak wglądu w przyszłość, sesja zamknięta, mniej niż 20 dni); testy nagłówka układu, karty Rozliczenia i narzędzi MCP przepisane na nową metodę.
+
 ### Profil TPO i profile dób: krótsze słupki, pełny profil dwóch ostatnich dób, 3 nagie POC (2026-11-12)
 
 Na danych stałych `ui:check` (zegar 24.10.2026 21:29 UTC) TPO 30m: „Mapa dnia” 1440 × 900 — 14 obiektów, pole pod słupkami 8,8% → 14 i 4,1%; telefon 390 × 844 — 9 i 13,3% → 9 i 12%; „Rozliczenie doby” 1440 — 21 i 6,7% → 15 i 1,8%; telefon — 9 i 13,3% → 9 i 12%. Profile dób 4h („Mapa dnia”, 1440): 22 obiekty i 2,5% → 22 i 0,8%. Liczby „przed” zmierzone na stronie z `main` z tymczasowym licznikiem w warstwach (bez commita). Obiekt: profil doby (słupki z obrysem), linia POC, nagi POC, pasek value area albo pierwszej godziny, odcinek znaczników wydruków albo ogonów, podpis delty.
@@ -29,6 +41,7 @@ Na telefonie dzisiejsza doba zaczyna się przed lewą krawędzią wykresu; przy 
 - **Osobny strażnik kanału transakcji**: 2 min bez transakcji przy płynących innych kanałach (kontekst, świeca) też zamyka i otwiera połączenie od nowa.
 - **Delta i CVD patrzą na `complete`** (`src/charts/pro/core/flow.ts`, nowy `src/charts/pro/chart/flowPoints.ts`, `src/charts/pro/chart/controller.ts`, `src/charts/pro/chart/theme.ts`): świeca niepełna ma w panelu delty kolor świecy niepełnej (`PRO.incomplete`), w CVD (świece i linia Hyperliquid w panelu giełd) przerwę i zerowanie po niej, jak świeca bez taśmy. Ta sama świeca jest niepełna we wszystkich panelach. W opisie panelu delty (i w opisie CVD bez panelu delty) liczba świecy niepełnej ma kolor świecy niepełnej i dopisek „niepełna” / „partial” (`flowLegend`).
 - Testy: `src/charts/pro/__tests__/stream.test.ts` (3: uśpienie 10 min, wiadomość z bufora po przerwie, cisza samego kanału transakcji), `src/charts/pro/__tests__/proStore.test.ts` (test akceptacyjny: zegar zamrożony na 10 min w środku świecy daje `complete=false` i lukę w pokryciu; historia serwera obejmująca lukę daje świecę pełną i CVD bez przerwy, historia z częścią luki — świecę niepełną), `src/charts/pro/__tests__/flow.test.ts` (CVD z przerwą, punkty delty i linii CVD, opis delty świecy niepełnej).
+
 
 
 ### Bąble zleceń, ściany i serie: reguła przyczynowa, bez wyboru największych w oknie (2026-11-11)
@@ -58,6 +71,7 @@ Powtórzenie dla bąbli kodem warstwy (`selectBubbles` z pokryciem taśmy jak w 
 #### Dodane
 - **`ui:check`: scenariusz bąbli** (Kokpit 1m na powtórce 24.10 19:30, 1440 i 390): liczba z atrybutu `data-bubbles` (bez serii); w `--strict` na 1440 od 5 do 40, na 390 najwyżej 15. Limit ścian i serii w scenariuszu ścian 13 → 25. `scripts/ui/baseline.json` (win32): nowe `bubbles.count1440` 14 i `bubbles.count390` 0; zmienione `clashes.objects1440` 10 → 4, `objects.replay1440.bubbles` 161 → 12, `objects.replay1440.rects` 388 → 385, `objects.replay390.bubbles` 39 → 6, `objects.replay390.labels` 7 → 5, `objects.replay390.rects` 195 → 188.
 - Testy: `bubbleSelect.test.ts` (zlecenie z dwoma większymi w poprzednich 20 świecach bez bąbla, pierwsze po pustych 20 świecach z bąblem, okno 20 świec dla 1m i 5m, po zamknięciu świecy wybór bez zmian po późniejszych większych zleceniach, telefon K = 1, równe wartości i zlecenia z tej samej chwili, zestaw minionej godziny ten sam po przewinięciu, zbliżeniu i upływie czasu, liczba na 140 i 33 świecach, taśma od S bez bąbli w pierwszych 20 świecach i zestaw od S + 20 świec bez zmian po dołożeniu wcześniejszej taśmy, luka w pokryciu jak początek, 7 rosnących zleceń w świecy → 2 największe, mniejszy ustępuje większemu w trwającej świecy, próg ręczny, limit 40, zdanie w opisie PL i EN); `clashSelect.test.ts` (reguła przyczynowa ścian i serii, ściana raz narysowana zostaje, pamięć progów, limit nie przycina 11 ścian i 9 serii, pokrycie 60 min: początek i luka); `liquidityScene.test.ts` (druga scena nie liczy progu zamkniętej godziny od nowa, doczytanie historii czyści pamięć, liczba bąbli dla pomiaru, K = 2 i na telefonie K = 1, zlecenia sprzed widoku liczą się do porównania, pokrycie ze źródła, przerwa 1 s tolerowana a luka 5 min nie, okno historii); `serverHistory.test.ts` (wersja historii).
+
 
 ### Blog: notki „aktualizacja” poza indeksem, rozliczenie tygodnia z BSS w parze (2026-11-12)
 

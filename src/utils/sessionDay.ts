@@ -3,19 +3,15 @@
  * czasu nowojorskiego do 00:00 UTC — granice (z czasem letnim) z `charts/pro/core/sessions`. IB = pierwsza godzina sesji.
  * Sesja azjatycka nie jest sesją handlową w tym sensie; doba UTC to tylko podsumowanie.
  *
- * Oczekiwany zakres sesji (MODEL) i budżet zakresu: ile oczekiwanego zakresu high-low sesja już zużyła.
+ * Oczekiwany zakres sesji (MODEL „profil × poziom” ze świec 1h) i budżet zakresu: ile oczekiwanego zakresu high-low
+ * sesja już zużyła.
  */
 import { sessionOpens, utcDayStart } from '../charts/pro/core/sessions';
-import { forecastHourlyVariances, isValidBar, parkinsonVar, stepSigmas, VOL_STEP_MIN, type VolModel } from './volatility';
 import type { VBar } from './auction';
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
 const DAY = 24 * HOUR;
-const FIVE_MIN = 5 * MIN;
-/** Zapas Parkinsona: najmniej 12 zamkniętych świec 5m (1 h) z ostatniej doby, z najwyżej 60 ostatnich (5 h) */
-const PARKINSON_MIN_BARS = 12;
-const PARKINSON_LOOKBACK = 60;
 
 export type TradeSessionId = 'london' | 'ny';
 
@@ -83,67 +79,107 @@ export function hourlyWindow(s: TradeSession): { start: number; end: number } {
 /** E[high − low] ruchu Browna = sqrt(8/π) · σ (Feller 1951). */
 const RANGE_K = Math.sqrt(8 / Math.PI);
 
-const utcHour = (t: number) => new Date(t).getUTCHours();
-
 /**
- * Wariancje kolejnych godzin zegarowych sesji od pełnej godziny ≤ start: godziny od pierwszej godziny prognozy h0
- * (`nextHourStartMs`) z prognozy HAR, godziny wcześniejsze (już minione, także cała sesja zamknięta przed h0) z poziomu
- * pierwszej godziny prognozy przeniesionego profilem sezonowym: hourVars[0] · f[godzina] / f[godzina h0]. Bez tego minione
- * godziny dostawałyby wariancję godziny h0 (obcięcie indeksu w `stepSigmas`), a wynik skakałby co godzinę.
+ * Stałe oczekiwanego zakresu sesji (profil godzin × świeży poziom), dopasowane na sesjach 2020–2023 i sprawdzone na
+ * 2024–2026: skala 0,97 i wykładnik poziomu 0,60 wspólne dla Londynu i NY; mediana zakresu to ok. 0,87 średniego.
  */
-function sessionHourVars(m: VolModel, s: TradeSession): { first: number; vars: number[] } {
-  const h0 = m.nextHourStartMs;
-  const first = Math.floor(s.start / HOUR) * HOUR;
-  const hours = Math.ceil((s.end - first) / HOUR);
-  const fwd = forecastHourlyVariances(m.har, m.profile, h0, Math.max(1, Math.ceil((s.end - h0) / HOUR)));
-  const f = m.profile.factors;
-  const level = fwd[0] / f[utcHour(h0)];
-  const vars: number[] = [];
-  for (let k = 0; k < hours; k++) {
-    const t = first + k * HOUR;
-    vars.push(t < h0 ? level * f[utcHour(t)] : fwd[Math.round((t - h0) / HOUR)]);
-  }
-  return { first, vars };
+export const EXPECTED_SCALE = 0.97;
+export const LEVEL_BETA = 0.6;
+export const TYPICAL_RATIO = 0.87;
+/** Profil: 20 wcześniejszych dni tego samego typu (robocze albo sobota i niedziela UTC), szukane do 80 dni wstecz */
+export const PROFILE_DAYS = 20;
+export const PROFILE_LOOKBACK_DAYS = 80;
+/** Poziom: 24 zamknięte godziny przed godziną startu sesji, x przycięte do ±1,5 */
+export const LEVEL_HOURS = 24;
+export const LEVEL_MIN_HOURS = 20;
+const LEVEL_CLIP = 1.5;
+
+/** Najwcześniejsza świeca 1h potrzebna do oceny sesji `s` (profil godzin poziomu sięga 80 dni przed dobą przed startem). */
+export const expectedCandlesFrom = (s: TradeSession): number => Math.floor(s.start / HOUR) * HOUR - (PROFILE_LOOKBACK_DAYS + 1) * DAY;
+
+/** Brak oczekiwanego zakresu: brak ceny sprzed otwarcia, za mało dni profilu albo godzin poziomu (tekst powodu: `expectedFrom`). */
+export type ExpectationMissing = { missing: 'price' } | { missing: 'profile'; weekend: boolean } | { missing: 'level'; hours: number };
+
+/** Oczekiwany zakres sesji: względny (`rel`), w USD od ceny sprzed otwarcia (`open`), typowy dzień, poziom `x`, wariancja `v`. */
+export type SessionExpectation = { rel: number; usd: number; typical: number; open: number; x: number; v: number; method: 'profile' };
+
+const isWeekend = (t: number) => {
+  const d = new Date(t).getUTCDay();
+  return d === 0 || d === 6;
+};
+
+/** Wariancja Parkinsona świecy: ln(H/L)² / (4 ln 2); świeca bez poprawnych cen → null. */
+function pvOf(b: VBar | undefined): number | null {
+  if (!b || !(b.low > 0) || !(b.high >= b.low)) return null;
+  const r = Math.log(b.high / b.low);
+  return (r * r) / (4 * Math.LN2);
 }
 
-/** σ Parkinsona sesji ze świec 5m: zamknięte przed `now`, z ostatniej doby, ≥ 12 (inaczej null), najwyżej 60 ostatnich. */
-function parkinsonSessionSigma(bars5m: VBar[], now: number, durMin: number): number | null {
-  const ok = bars5m.filter((b) => isValidBar(b) && b.time + FIVE_MIN <= now && b.time >= now - DAY).sort((a, b) => a.time - b.time);
-  if (ok.length < PARKINSON_MIN_BARS) return null;
-  const last = ok.slice(-PARKINSON_LOOKBACK);
-  const varBar = last.reduce((a, b) => a + parkinsonVar(b), 0) / last.length;
-  return Math.sqrt(varBar * (durMin / 5));
-}
-
 /**
- * Oczekiwany zakres high-low sesji w USD (MODEL): sqrt(8/π) · σ_sesji · cena. Z modelem σ_sesji² = Σ σ² kroków 5 min
- * od początku do końca sesji, z wariancji godzin `sessionHourVars` (prognoza HAR, minione godziny z profilem sezonowym);
- * bez modelu σ Parkinsona z ostatnich zamkniętych świec 5m (≥ 12 z ostatniej doby) przeskalowane do długości sesji.
- * Brak danych, zerowa zmienność albo cena niepoprawna → null (nigdy liczba zastępcza).
+ * Oczekiwany zakres high-low sesji (MODEL „profil × poziom”), tylko ze świec 1h zamkniętych przed godziną startu sesji `a`:
+ * 1. pv(u) = ln(H/L)² / (4 ln 2);
+ * 2. profil prof(u) = średnia pv tej samej godziny UTC z 20 ostatnich wcześniejszych dni tego samego typu (sobota
+ *    i niedziela UTC to weekend), szukane do 80 dni wstecz; mniej niż 20 → brak;
+ * 3. poziom x = clip(½ ln(Σ pv / Σ prof), ±1,5) po 24 zamkniętych godzinach przed godziną zawierającą `a`;
+ * 4. V = Σ w(h) · prof(h) po godzinach zegarowych sesji, w(h) — część godziny w sesji (NY: pierwsza z wagą 0,5);
+ * 5. E = 0,97 · √(8/π) · √V · exp(0,60 · x), w USD razy cena sprzed otwarcia (zamknięcie ostatniej świecy przed godziną
+ *    startu; dla NY pół godziny przed otwarciem), typowy dzień 0,87 · E.
+ * Świece od godziny startu dalej są pomijane, więc E sesji nie zmienia się w jej trakcie ani po jej końcu.
  */
-export function expectedRange(
-  model: VolModel | null,
-  bars5m: VBar[],
-  s: TradeSession,
-  now: number,
-  price: number
-): { usd: number; method: 'har' | 'parkinson' } | null {
-  if (!(Number.isFinite(price) && price > 0)) return null;
-  const durMin = (s.end - s.start) / MIN;
-  if (!(durMin > 0)) return null;
-  let sigma: number | null;
-  let method: 'har' | 'parkinson';
-  if (model) {
-    const { first, vars } = sessionHourVars(model, s);
-    sigma = Math.sqrt(stepSigmas(vars, first, s.start, durMin, VOL_STEP_MIN).reduce((a, x) => a + x * x, 0));
-    method = 'har';
-  } else {
-    sigma = parkinsonSessionSigma(bars5m, now, durMin);
-    method = 'parkinson';
+export function expectedSessionRange(candles1h: readonly VBar[], s: TradeSession): SessionExpectation | ExpectationMissing {
+  const a0 = Math.floor(s.start / HOUR) * HOUR;
+  const byHour = new Map<number, VBar>();
+  for (const b of candles1h) if (b.time % HOUR === 0 && b.time + HOUR <= a0) byHour.set(b.time, b);
+  const profCache = new Map<number, number | null>();
+  const prof = (u: number): number | null => {
+    if (profCache.has(u)) return profCache.get(u)!;
+    const we = isWeekend(u);
+    let sum = 0;
+    let n = 0;
+    for (let k = 1; k <= PROFILE_LOOKBACK_DAYS && n < PROFILE_DAYS; k++) {
+      const t = u - k * DAY;
+      if (isWeekend(t) !== we) continue;
+      const v = pvOf(byHour.get(t));
+      if (v === null) continue;
+      sum += v;
+      n++;
+    }
+    const out = n >= PROFILE_DAYS ? sum / n : null;
+    profCache.set(u, out);
+    return out;
+  };
+  const noProfile: ExpectationMissing = { missing: 'profile', weekend: isWeekend(s.start) };
+
+  const last = byHour.get(a0 - HOUR);
+  if (!last || !(last.close > 0)) return { missing: 'price' };
+
+  let v = 0;
+  for (let h = a0; h < s.end; h += HOUR) {
+    const w = (Math.min(h + HOUR, s.end) - Math.max(h, s.start)) / HOUR;
+    if (!(w > 0)) continue;
+    const p = prof(h);
+    if (p === null) return noProfile;
+    v += w * p;
   }
-  if (sigma === null) return null;
-  const usd = RANGE_K * sigma * price;
-  return Number.isFinite(usd) && usd > 0 ? { usd, method } : null;
+
+  let sumPv = 0;
+  let sumProf = 0;
+  let hours = 0;
+  for (let i = 1; i <= LEVEL_HOURS; i++) {
+    const u = a0 - i * HOUR;
+    const pv = pvOf(byHour.get(u));
+    const p = prof(u);
+    if (pv === null || p === null) continue;
+    sumPv += pv;
+    sumProf += p;
+    hours++;
+  }
+  if (hours < LEVEL_MIN_HOURS || !(sumProf > 0)) return { missing: 'level', hours };
+  const x = Math.max(-LEVEL_CLIP, Math.min(LEVEL_CLIP, 0.5 * Math.log(sumPv / sumProf)));
+  const rel = EXPECTED_SCALE * RANGE_K * Math.sqrt(v) * Math.exp(LEVEL_BETA * x);
+  if (!(Number.isFinite(rel) && rel > 0)) return noProfile;
+  const usd = rel * last.close;
+  return { rel, usd, typical: TYPICAL_RATIO * usd, open: last.close, x, v, method: 'profile' };
 }
 
 /** Budżet zakresu: (high − low) / oczekiwany zakres; może przekroczyć 1. Brak oczekiwanego zakresu → NaN (widok: „—”). */
