@@ -336,3 +336,25 @@ describe('strona /wyniki: link w stopce aplikacji', () => {
     expect(PATHS.results).toEqual(RESULTS_PATHS);
   });
 });
+
+describe('strona /wyniki: badanie wielu rynków w „Co się nie potwierdziło”', () => {
+  it('PL i EN: pięć hipotez poniżej progu z przyrostem BSS i przedziałem 99%, próg i okres; bez słów rady i kierunku', () => {
+    for (const lang of ['pl', 'en']) {
+      for (const s of [newSummary(), null]) {
+        const html = resultsPage(SITE, lang, results(s)).html;
+        const sec = html.slice(html.indexOf('id="refuted"'));
+        const t = text(sec);
+        expect(sec).toContain('id="study-markets"');
+        expect((sec.match(/<li class="study">/g) ?? []).length).toBe(5);
+        expect(t).toContain(lang === 'pl' ? '2818' : '2,818');
+        expect(t).toContain(lang === 'pl' ? '+0,010' : '+0.010');
+        expect(t).toContain(lang === 'pl' ? '−0,001 [−0,005; +0,002]' : '−0.001 [−0.005; +0.002]');
+        expect(t).toContain(lang === 'pl' ? '+0,002 [−0,004; +0,008]' : '+0.002 [−0.004; +0.008]');
+        expect(t).toContain(lang === 'pl' ? '[−0,006; +0,001], 2237 godzin' : '[−0.006; +0.001], 2,237 hours');
+        expect(t).toContain(lang === 'pl' ? 'powyżej mediany tej godziny z 20 dni' : 'above the median of that hour over 20 days');
+        expect(t).not.toMatch(/sygna|signal/i);
+        expect(guardHits(t, TITLE_GUARDS).map((h) => h.fragment)).toEqual([]);
+      }
+    }
+  });
+});
