@@ -328,14 +328,18 @@ export class LiqConfirmer {
     for (const e of out) for (const t of e.tids) this.seenTids.delete(t);
   }
 
-  /** Stan na dysk serwera — zdarzenia i liczniki, bez adresów (kolejka kandydatów nie jest zapisywana). */
-  toJSON(): { v: 1; events: DetectedLiq[]; log: [Outcome, number][] } {
-    return { v: 1, events: this.evs, log: this.log };
+  /**
+   * Stan na dysk serwera (nigdy nie jest publikowany): zdarzenia, liczniki i kolejka kandydatów. Kolejka ma adresy kont,
+   * jak księga adresów w tym samym katalogu stanu; bez niej restart gubił kandydatów, których ponowny odczyt pozycji już
+   * nie wykryje (pozycja jest zapisana po zmniejszeniu), a taśma traciła te likwidacje.
+   */
+  toJSON(): { v: 1; events: DetectedLiq[]; log: [Outcome, number][]; queue: Queued[] } {
+    return { v: 1, events: this.evs, log: this.log, queue: this.queue };
   }
 
   static fromJSON(j: unknown, o: { coin: string; maxPerMin: number }): LiqConfirmer {
     const c = new LiqConfirmer(o);
-    const x = j as { v?: number; events?: unknown[]; log?: unknown[] } | null;
+    const x = j as { v?: number; events?: unknown[]; log?: unknown[]; queue?: unknown[] } | null;
     if (x?.v !== 1) return c;
     if (Array.isArray(x.events)) {
       for (const e of x.events) {
@@ -351,6 +355,20 @@ export class LiqConfirmer {
         (r): r is [Outcome, number] => Array.isArray(r) && OUTCOMES.includes(r[0]) && typeof r[1] === 'number' && Number.isFinite(r[1])
       );
     }
+    // Kolejka kandydatów (pole od wersji z zapisem kolejki; starszy stan bez niej): tylko poprawne wpisy, najwyżej
+    // MAX_QUEUE; przeterminowanych rozlicza process jako nieudanych
+    if (Array.isArray(x.queue)) for (const q of x.queue) if (isQueued(q) && c.queue.length < MAX_QUEUE) c.queue.push(q);
     return c;
   }
+}
+
+const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+
+/** Wpis kolejki ze stanu na dysku: adres konta, poprzednia pozycja z rozmiarem i ceną, okno fillów, liczba prób */
+function isQueued(q: unknown): q is Queued {
+  const o = q as Partial<Queued> | null;
+  if (!o || typeof o !== 'object' || typeof o.addr !== 'string' || !/^0x[0-9a-fA-F]{40}$/.test(o.addr)) return false;
+  const p = o.prev as Partial<ScannedPosition> | undefined;
+  if (!p || !finite(p.szi) || !finite(p.entryPx) || !(p.liqPx === null || p.liqPx === undefined || finite(p.liqPx))) return false;
+  return finite(o.from) && finite(o.to) && o.from <= o.to && Number.isInteger(o.attempts) && (o.attempts as number) >= 0;
 }
