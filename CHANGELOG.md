@@ -4,6 +4,12 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Licencja danych dziennika i zastrzeżenie bloga (2026-11-12)
+
+#### Zmienione
+- **Dane dziennika prognoz na licencji CC BY 4.0:** strona `wyniki/` i `en/results/` podaje licencję w sekcji weryfikacji (link do tekstu licencji, prośba o podanie źródła), dane strukturalne `Dataset` mają pole `license`, README opisuje ją obok licencji MIT kodu.
+- **Zastrzeżenie bloga:** stopka stron, zastrzeżenie pod wpisami i strona wyników mówią „nie porada inwestycyjna ani wezwanie do transakcji” („not investment advice nor a call to trade”) zamiast „sygnał do transakcji”.
+
 ### Skaner: pomiar prywatności kohorty wielorybów przy ziarnie 15 min, 1 h i 4 h (2026-11-12)
 
 #### Dodane
