@@ -23,6 +23,7 @@ import type { ProBar, ProStore } from '../store/proStore';
 import { autoRowStep, fmtPx } from './layout';
 import { logicalOfTime } from './overlay';
 import { MONO, PRO, rgba } from './theme';
+import { barSpan, fullFrom, nearestNaked, profileAnchor, rectShare, runs } from './profileSelect';
 import { tr } from '../../../i18n';
 import { numLang } from '../../../ui/format';
 
@@ -34,6 +35,8 @@ import { numLang } from '../../../ui/format';
  * znaczy, że na tej cenie obrót był szybszy niż średnio w dobie, obrys dłuższy niż słupek — cena tam stała przy małym
  * obrocie. POC wolumenu linią przez dobę, nagi POC do prawej krawędzi, z lewej pasek value area i zakresu pierwszej
  * godziny doby, przy wierszu znacznik pojedynczych wydruków i ogonów, pod profilem delta doby, pod krzyżem liczby wiersza.
+ * Pełny profil tylko dla bieżącej i poprzedniej doby, starsze — linia POC i pasek value area; najdłuższy słupek, nietknięte
+ * POC i liczba obiektów z `profileSelect.ts`.
  *
  * Tryb pozycji: kolor wiersza z zmiany OI przypisanej cenie (src/utils/dayProfile.ts) — pełny słupek, gdy OI netto rosło
  * (lazur przy przewadze kupna: nowe longi, żar przy sprzedaży: nowe shorty), obrys, gdy spadało (lazur: zamykanie
@@ -43,9 +46,6 @@ import { numLang } from '../../../ui/format';
 
 /** Docelowa wysokość wiersza profilu (px). */
 const ROW_PX = 5;
-/** Najdłuższy słupek widocznych dób zajmuje taki ułamek szerokości doby. */
-const DAY_FILL = 0.75;
-const NAKED_MAX = 6;
 /**
  * Progi |kupno − sprzedaż| / (kupno + sprzedaż) wiersza dla kolejnych odcieni rampy strony (strona ma 55, 60, 67,5 i 77,5%
  * wolumenu); poniżej pierwszego równowaga. Na taśmie BTC z 7 dób (25.10–1.11.2026, wiersz 25 USD) najsilniejszy odcień
@@ -279,6 +279,8 @@ export class TpoLayer implements ISeriesPrimitive<Time> {
   private lines: Line[] = [];
   private labels: Label[] = [];
   private tip: Tip | null = null;
+  /** Po każdej scenie: liczba obiektów i udział pola pod słupkami (pomiar układu czyta je z wykresu). */
+  onCounts: ((c: { objects: number; area: number }) => void) | null = null;
   private readonly views: readonly IPrimitivePaneView[];
 
   private readonly onMove = (p: MouseEventParams<Time>) => {
@@ -465,6 +467,16 @@ export class TpoLayer implements ISeriesPrimitive<Time> {
     this.lines = [];
     this.labels = [];
     this.tip = null;
+    this.scene();
+    const pane = this.chart?.paneSize(0);
+    this.onCounts?.({ objects: this.objects, area: pane ? rectShare(this.rects, pane.width, pane.height) : 0 });
+  }
+
+  /** Liczba obiektów ostatniej sceny: profile, linie, paski, odcinki znaczników i podpisy. */
+  private objects = 0;
+
+  private scene(): void {
+    this.objects = 0;
     const chart = this.chart;
     const series = this.series;
     const bars = this.bars;
@@ -492,30 +504,54 @@ export class TpoLayer implements ISeriesPrimitive<Time> {
     const vt = bars[Math.min(bars.length - 1, Math.ceil(range.to))]?.t ?? bars[bars.length - 1].t;
     const visible = (p: TpoProfile) => p.day + DAY > vf && p.day <= vt;
 
-    // Wspólna skala wolumenu widocznych dób, żeby profile dało się porównać
+    // Pełny profil: bieżąca i poprzednia doba (z danych, nie z przewinięcia)
+    const full = fullFrom(list.length);
+    // Wspólna skala wolumenu widocznych pełnych dób, żeby profile dało się porównać
     let maxVol = 0;
-    for (const p of list) if (visible(p)) maxVol = Math.max(maxVol, p.max);
-    const kVol = maxVol > 0 ? ((DAY / this.ms) * sp * DAY_FILL) / maxVol : 0;
+    for (let k = full; k < list.length; k++) if (visible(list[k])) maxVol = Math.max(maxVol, list[k].max);
+    const kVol = maxVol > 0 ? barSpan((DAY / this.ms) * sp, right) / maxVol : 0;
     const hv = this.hover;
 
     const naked = nakedPocs(bars, list.map((p) => ({ to: p.to, complete: p.complete, pocPx: tpoPocPx(p) })));
-    let shownNaked = 0;
+    const nearest = nearestNaked(
+      list.map((p, k) => ({ px: tpoPocPx(p), naked: naked[k] && y(tpoPocPx(p)) !== null && Math.min(right, x(p.day + DAY)) < right })),
+      ref
+    );
     for (let k = list.length - 1; k >= 0; k--) {
       const p = list[k];
       const x0 = x(p.day);
       const x1 = Math.min(right, x(p.day + DAY));
       const yPoc = y(tpoPocPx(p));
-      if (naked[k] && shownNaked < NAKED_MAX && yPoc !== null && x1 < right) {
-        shownNaked++;
+      if (nearest.has(k) && yPoc !== null) {
+        this.objects++;
         this.lines.push({ x0: Math.max(0, x1), x1: right, y: yPoc, color: T.nakedPoc, dash: true });
       }
       if (!visible(p) || x0 > right) continue;
-      const w = Math.max(0, x1 - x0);
+      if (k < full) {
+        // Starsza doba: linia POC i pasek value area
+        if (yPoc !== null) {
+          this.objects++;
+          this.lines.push({ x0, x1, y: yPoc, color: T.poc, dash: false });
+        }
+        const yh = y((p.lo + p.vaHi + 1) * p.step);
+        const yl = y((p.lo + p.vaLo) * p.step);
+        if (yh !== null && yl !== null) {
+          this.objects++;
+          this.marks.push({ x: x0 - 3, y0: yh, y1: yl, color: T.va, w: 2 });
+        }
+        continue;
+      }
+      // Bieżąca doba zaczęta przed lewą krawędzią: słupki od krawędzi pola (inaczej na telefonie znikałyby za nią)
+      const xa = k === list.length - 1 ? profileAnchor(x0) : x0;
+      if (xa >= x1) continue;
+      const w = Math.max(0, x1 - xa);
       // Czas w tym samym polu co wolumen doby: px na jeden okres 30 min
       let periods = 0;
       for (const r of p.rows) periods += r.length;
       const kTime = periods > 0 ? (p.total * kVol) / periods : 0;
       const { singles, tails } = tpoSingles(p);
+      const rectsBefore = this.rects.length;
+      const marksBefore = this.marks.length;
       const pts: number[] = [];
       for (let r = 0; r < p.rows.length; r++) {
         const yTop = y((p.lo + r + 1) * p.step);
@@ -525,29 +561,41 @@ export class TpoLayer implements ISeriesPrimitive<Time> {
         const wt = Math.min(w, p.rows[r].length * kTime);
         if (wv > 0) {
           const c = this.positions ? posColor(p, r) : { fill: rowColor(p, r) };
-          this.rects.push({ x: x0, y: yTop, w: Math.max(1, wv), h: Math.max(1, yBot - yTop - gap), color: c.fill, stroke: c.stroke });
+          this.rects.push({ x: xa, y: yTop, w: Math.max(1, wv), h: Math.max(1, yBot - yTop - gap), color: c.fill, stroke: c.stroke });
         }
-        if (pts.length === 0) pts.push(x0, yBot);
-        pts.push(x0 + wt, yBot, x0 + wt, yTop);
-        const end = x0 + Math.max(wv, wt);
+        if (pts.length === 0) pts.push(xa, yBot);
+        pts.push(xa + wt, yBot, xa + wt, yTop);
+        const end = xa + Math.max(wv, wt);
         if (singles[r] || tails[r]) this.marks.push({ x: Math.min(x1, end + 2), y0: yTop, y1: yBot, color: singles[r] ? T.single : T.tail, w: 2 });
-        if (hv && hv.y >= yTop && hv.y < yBot && hv.x >= x0 && hv.x <= Math.min(x1, end + 4)) {
+        if (hv && hv.y >= yTop && hv.y < yBot && hv.x >= xa && hv.x <= Math.min(x1, end + 4)) {
           this.tip = { x: Math.min(x1, end) + 10, y: (yTop + yBot) / 2, right, lines: this.positions ? [...rowTip(p, r), ...posTip(p, r)] : rowTip(p, r) };
         }
       }
       if (pts.length > 0) {
-        pts.push(x0, pts[pts.length - 1]);
+        pts.push(xa, pts[pts.length - 1]);
         this.outlines.push(pts);
       }
-      if (yPoc !== null) this.lines.push({ x0, x1, y: yPoc, color: T.poc, dash: false });
+      // Profil (słupki z obrysem) i odcinki znaczników wydruków i ogonów
+      if (this.rects.length > rectsBefore) this.objects++;
+      if (this.marks.length > marksBefore) this.objects += runs(singles) + runs(tails.map((t, r) => t && !singles[r]));
+      if (yPoc !== null) {
+        this.objects++;
+        this.lines.push({ x0, x1, y: yPoc, color: T.poc, dash: false });
+      }
       // Pasek value area i pierwszej godziny doby z lewej strony profilu
       const yVah = y((p.lo + p.vaHi + 1) * p.step);
       const yVal = y((p.lo + p.vaLo) * p.step);
-      if (yVah !== null && yVal !== null) this.marks.push({ x: x0 - 3, y0: yVah, y1: yVal, color: T.va, w: 2 });
+      if (yVah !== null && yVal !== null) {
+        this.objects++;
+        this.marks.push({ x: xa - 3, y0: yVah, y1: yVal, color: T.va, w: 2 });
+      }
       if (p.ib) {
         const yh = y(p.ib.hi);
         const yl = y(p.ib.lo);
-        if (yh !== null && yl !== null) this.marks.push({ x: x0 - 7, y0: yh, y1: yl, color: T.ib, w: 2 });
+        if (yh !== null && yl !== null) {
+          this.objects++;
+          this.marks.push({ x: xa - 7, y0: yh, y1: yl, color: T.ib, w: 2 });
+        }
       }
       // Delta doby z taśmy pod profilem (z udziałem taśmy w wolumenie, gdy nie objęła całej doby); w trybie pozycji zmiana OI
       let buy = 0;
@@ -562,8 +610,10 @@ export class TpoLayer implements ISeriesPrimitive<Time> {
       const yLow = y(p.lo * p.step);
       if (share >= 0.05 && w >= LABEL_MIN_W && yLow !== null) {
         const tape = share < 0.995 ? tr(` · taśma ${pct0(share)}`, ` · tape ${pct0(share)}`) : '';
-        if (!this.positions) this.labels.push({ x: x0 + 2, y: yLow + 10, text: `Δ ${fmtSignedVol(buy - sell)}${tape}`, color: buy >= sell ? PRO.buyInk : PRO.sellInk });
-        else if (p.oiShare >= TAPE_MIN) this.labels.push({ x: x0 + 2, y: yLow + 10, text: `OI ${fmtSignedVol(oi)}${tape}`, color: PRO.ink1 });
+        const before = this.labels.length;
+        if (!this.positions) this.labels.push({ x: xa + 2, y: yLow + 10, text: `Δ ${fmtSignedVol(buy - sell)}${tape}`, color: buy >= sell ? PRO.buyInk : PRO.sellInk });
+        else if (p.oiShare >= TAPE_MIN) this.labels.push({ x: xa + 2, y: yLow + 10, text: `OI ${fmtSignedVol(oi)}${tape}`, color: PRO.ink1 });
+        this.objects += this.labels.length - before;
       }
     }
   }

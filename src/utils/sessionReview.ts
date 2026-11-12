@@ -21,13 +21,11 @@ import { type SessionFacts, dayTypeOf, sessionFacts, vaMissing } from './session
 import { TRADE_SESSION_NAME } from './sessionNames';
 import {
   DAY_TYPE_LABEL,
-  EX_ANTE_NOTE,
   type Expected,
   type Got,
   METHOD,
   METHOD_NOTE,
   VA_MIGRATION_LABEL,
-  VOL_WAIT_TEXT,
   WAIT_TEXT,
   amt,
   blogMapName,
@@ -72,10 +70,8 @@ export interface ReviewInputs {
   /** Świece 1m BTC rosnąco, od otwarcia poprzedniej sesji tego samego typu (migracja VA). */
   bars1m: Got<readonly VBar[]> | undefined;
   maps: BlogMapsState;
-  /** Oczekiwany zakres sesji (MODEL: HAR albo Parkinson, ta sama metoda co budżet zakresu na żywo). */
+  /** Oczekiwany zakres sesji (MODEL „profil × poziom”, ta sama liczba co budżet zakresu na żywo). */
   expected: Got<Expected> | undefined;
-  /** Sesja w toku: model HAR w drodze — `expected` czeka na niego (powód „czekam na model zmienności”). */
-  volLoading?: boolean;
   liq: LiqTapeState;
   cohorts: CohortFlowState;
   ledger: DeskLedgerState;
@@ -207,24 +203,19 @@ function ibRow(x: ReviewInputs, f: Got<SessionFacts> | undefined): ReviewRow {
 }
 
 /**
- * Zakres sesji wobec oczekiwanego. Metoda na etykiecie (jak budżet w nagłówku, tu zawsze): zamknięta sesja — „ex ante ·
- * Parkinson” (oczekiwanie sprzed jej otwarcia), w toku — nazwa metody (HAR albo Parkinson bez modelu).
+ * Zakres sesji wobec oczekiwanego (MODEL „profil × poziom”, liczony raz na otwarcie sesji ze świec 1h sprzed niego, więc
+ * ten sam w toku i po zamknięciu).
  */
 function rangeRow(x: ReviewInputs, f: Got<SessionFacts> | undefined): ReviewRow {
   const base = tr('Zakres / oczekiwany', 'Range / expected');
-  const no = (why: string, m = tr('HAR albo Parkinson', 'HAR or Parkinson'), label = base) => absent('range', label, 'MODEL', why, { hint: `MODEL · ${m}: ${why}` });
+  const m = METHOD.profile;
+  const label = `${base} · ${m}`;
+  const no = (why: string) => absent('range', label, 'MODEL', why, { hint: `MODEL · ${m}: ${why}` });
   if (!f || isAbsent(f)) return no(whyOf(f));
   const e = x.expected;
-  if (e === undefined && x.inProgress && x.volLoading) return no(VOL_WAIT_TEXT, 'HAR');
   if (e === undefined || isAbsent(e)) return no(whyOf(e));
-  const m = METHOD[e.method];
-  const closed = !x.inProgress;
-  // Zamknięta sesja: oczekiwanie sprzed jej otwarcia (sessionExpectedOf liczy je Parkinsonem ze świec 5m doby przed otwarciem)
-  const exAnte = closed && e.method === 'parkinson';
-  const label = `${base} · ${exAnte ? `ex ante · ${m}` : m}`;
   const b = rangeBudget(f.hi, f.lo, e.usd);
-  if (!Number.isFinite(b)) return no(tr('brak zakresu sesji', 'no session range'), m, label);
-  const note = exAnte ? EX_ANTE_NOTE : METHOD_NOTE[e.method];
+  if (!Number.isFinite(b)) return no(tr('brak zakresu sesji', 'no session range'));
   return {
     id: 'range',
     key: 'range',
@@ -232,8 +223,8 @@ function rangeRow(x: ReviewInputs, f: Got<SessionFacts> | undefined): ReviewRow 
     value: pctOf(b),
     badge: 'MODEL',
     hint: tr(
-      `MODEL · ${m}: zakres sesji ${name(x.s)} ${amt(f.hi - f.lo)} USD (${fmtPx(f.lo)}–${fmtPx(f.hi)}) wobec oczekiwanych ${amt(e.usd)} USD${x.inProgress ? ' (sesja w toku)' : ''}: 100% — dokładnie, ponad 100% — ruch większy niż oczekiwany. ${note}`,
-      `MODEL · ${m}: the ${name(x.s)} session range ${amt(f.hi - f.lo)} USD (${fmtPx(f.lo)}–${fmtPx(f.hi)}) against an expected ${amt(e.usd)} USD${x.inProgress ? ' (session in progress)' : ''}: 100% exactly, over 100% a bigger move than expected. ${note}`
+      `MODEL · ${m}: zakres sesji ${name(x.s)} ${amt(f.hi - f.lo)} USD (${fmtPx(f.lo)}–${fmtPx(f.hi)}) wobec oczekiwanych ${amt(e.usd)} USD (typowy dzień ok. ${amt(e.typical)} USD)${x.inProgress ? ' (sesja w toku)' : ''}: 100% — dokładnie, ponad 100% — ruch większy niż oczekiwany. ${METHOD_NOTE[e.method]}`,
+      `MODEL · ${m}: the ${name(x.s)} session range ${amt(f.hi - f.lo)} USD (${fmtPx(f.lo)}–${fmtPx(f.hi)}) against an expected ${amt(e.usd)} USD (typical day about ${amt(e.typical)} USD)${x.inProgress ? ' (session in progress)' : ''}: 100% exactly, over 100% a bigger move than expected. ${METHOD_NOTE[e.method]}`
     ),
     scope: 'session',
     replayAt: Math.max(f.hiAt, f.loAt),

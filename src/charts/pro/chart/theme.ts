@@ -110,6 +110,8 @@ export const PRO = {
   va: rgba(C.ink2, 0.55),
   warn: '#fab219',
   partial: rgba('#fab219', 0.85),
+  /** Świeca niepełna (luka w taśmie) w panelach delty i CVD: wyszarzona jak niepełny footprint */
+  incomplete: rgba(C.ink2, 0.45),
   // Grupa „Kto handluje” w Tablicy liczb: neutralna jasna (to nie giełda, nie bierze koloru z palety giełd)
   players: '#e4e8ee',
   ...GLEBIA,
