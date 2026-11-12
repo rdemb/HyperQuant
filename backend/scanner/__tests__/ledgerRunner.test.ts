@@ -443,8 +443,8 @@ describe('LedgerRunner — Schrödi (kot) w partii slotu', () => {
     const data = { ...fakeData(), cat, catInput: { slot: SLOT0, inp }, refreshCat: async () => {} };
     const { r, dir, published } = runner({ data });
     r.init(SLOT0);
-    // 3 prognozy desku, kot i plany oceny zaufania i godziny na żywo (prerejestrowane raz, przed prognozami slotu)
-    expect((await r.tick(SLOT0 + 30_000)).appended).toBe(6);
+    // 3 prognozy desku, kot i plany oceny zaufania, godziny na żywo i kalibracji (prerejestrowane raz, przed prognozami slotu)
+    expect((await r.tick(SLOT0 + 30_000)).appended).toBe(7);
     const recs = lines(dir, '2026-10-22');
     const c = recs.find((l) => l.kind === 'cat');
     expect(c).toMatchObject({ id: `${SLOT0}-cat`, slot: SLOT0, ti: SLOT0 + 30_000, t: SLOT0 + MIN, bar: SLOT0 - 5 * MIN });
@@ -504,11 +504,11 @@ describe('LedgerRunner — Schrödi (kot) w partii slotu', () => {
     const data = { ...fakeData(), cat, catInput: { slot: SLOT0 - 15 * MIN, inp }, refreshCat: async () => {} };
     const { r } = runner({ data });
     r.init(SLOT0);
-    expect((await r.tick(SLOT0 + 30_000)).appended).toBe(5); // 3 prognozy + plany zaufania i godziny na żywo
+    expect((await r.tick(SLOT0 + 30_000)).appended).toBe(6); // 3 prognozy + plany zaufania, godziny na żywo i kalibracji
     const failing = { ...fakeData(), cat, refreshCat: async () => Promise.reject(new Error('429')) };
     const { r: r2 } = runner({ data: failing });
     r2.init(SLOT0);
-    expect((await r2.tick(SLOT0 + 30_000)).appended).toBe(5);
+    expect((await r2.tick(SLOT0 + 30_000)).appended).toBe(6);
   });
 
   it('plan zaufania w łańcuchu przed oceną (hash przypięty); ocenia pełne godziny po rejestracji, także po restarcie; weryfikator przelicza', async () => {
@@ -521,7 +521,7 @@ describe('LedgerRunner — Schrödi (kot) w partii slotu', () => {
     r.init(SLOT0);
     await r.tick(SLOT0 + 30_000);
     const p = lines(dir, '2026-10-22').filter((l) => l.k === 'p');
-    expect(p.map((l) => l.id)).toEqual([TRUST_DESIGN.id, HOUR_DESIGN.id]);
+    expect(p.map((l) => l.id)).toEqual([TRUST_DESIGN.id, HOUR_DESIGN.id, 'cat-cal-v1']);
     expect(p[0]).toMatchObject({ id: TRUST_DESIGN.id, t: SLOT0 + 30_000, catalog: JSON.parse(canonicalJson(TRUST_DESIGN)) });
     data.catInput = { slot: SLOT0 + HOUR, inp: inp2 };
     await r.tick(SLOT0 + HOUR + 30_000);
@@ -611,5 +611,114 @@ describe('LedgerRunner — Schrödi (kot) w partii slotu', () => {
     expect(checkMarket([{ ...h0, x: h0.x.map((v: number, i: number) => (i === 1 ? v + 0.01 : v)) }], rb).problems[0]).toMatch(/cechy drogi ceny/);
     const forged = all.map((l) => (l.k === 'p' && l.id === HOUR_DESIGN.id ? { ...l, catalog: { ...l.catalog, checkpoints: [15, 30, 45] } } : l));
     expect(checkHourTrust(forged).problems[0]).toMatch(/różni się od kodu/);
+  });
+});
+
+import { CAT_CAL_DESIGN, type CalPair, catCal } from '../../../src/utils/catCal.ts';
+import { checkCatCal } from '../../../scripts/verify-ledger.mjs';
+
+describe('LedgerRunner — kalibracja cat-cal-v1 (pole cal rekordu kota)', () => {
+  const m1 = synth(7, SLOT0 - 31 * DAY, 31);
+  const inp = { m1, m5: agg(m1, 5 * MIN), h1: agg(m1, HOUR), d1: agg(m1, DAY), events: [] };
+  const cat = loadCatModel()!;
+
+  /**
+   * Dziennik z `n` rozstrzygniętymi prognozami kota z dni przed SLOT0 (co 15 min, ten sam model) — dopisane do magazynu
+   * przed startem, jak historia z dysku. Wyniki: duży ruch częściej niż mówi pBig (kalibracja ma co przesuwać).
+   */
+  function seeded(n: number, mh = cat.mh) {
+    const { r, store, dir, published } = runner({ data: { ...fakeData(), cat, catInput: { slot: SLOT0, inp }, refreshCat: async () => {} } });
+    const bodies: Record<string, unknown>[] = [];
+    for (let i = n; i >= 1; i--) {
+      const slot = SLOT0 - i * 15 * MIN - 2 * HOUR;
+      const pBig = 0.2 + ((i * 37) % 60) / 100;
+      bodies.push({ k: 'f', id: `${slot}-cat`, slot, ti: slot + 30_000, t: slot + MIN, kind: 'cat', h: 60, bar: slot - 5 * MIN, px0: 100_000, x: [], pUp: 0.5, pBig, thr: 40, model: 'schrodi-v1', mh });
+    }
+    for (let i = n; i >= 1; i--) {
+      const slot = SLOT0 - i * 15 * MIN - 2 * HOUR;
+      bodies.push({ k: 'r', id: `${slot}-cat`, t: slot + 63 * MIN, c0: 1, c1: 1, hi: 1, lo: 1, yDir: 0, yBig: i % 4 === 0 ? 0 : 1 });
+    }
+    store.load(SLOT0 - 3 * DAY);
+    store.append(bodies, SLOT0 - 3 * MIN);
+    return { r, store, dir, published, bodies };
+  }
+
+  it('plan prerejestrowany raz przed pierwszym cal; cal = catCal na parach z dziennika (te same rekordy, ta sama kolejność)', async () => {
+    // Zmiana planu = nowy identyfikator; przypięty hash chroni przed cichą zmianą planu już zapisanego w dzienniku
+    expect(createHash('sha256').update(canonicalJson(CAT_CAL_DESIGN)).digest('hex')).toBe('1b773e85221fede5fca3a0c6934094ca32e6b4092957e06e7fd67fe187e75b73');
+    const { r, dir, bodies } = seeded(120);
+    expect(r.init(SLOT0).ok).toBe(true);
+    await r.tick(SLOT0 + 30_000);
+    const recs = lines(dir, '2026-10-22');
+    const plans = recs.filter((l) => l.k === 'p' && l.id === CAT_CAL_DESIGN.id);
+    expect(plans).toHaveLength(1);
+    expect(plans[0]).toMatchObject({ catalogHash: createHash('sha256').update(canonicalJson(CAT_CAL_DESIGN)).digest('hex'), catalog: JSON.parse(canonicalJson(CAT_CAL_DESIGN)) });
+    const c = recs.find((l) => l.k === 'f' && l.kind === 'cat' && l.slot === SLOT0);
+    const planIdx = recs.indexOf(plans[0]);
+    expect(planIdx).toBeLessThan(recs.indexOf(c));
+    const fs = bodies.filter((b) => b.k === 'f') as { id: string; t: number; pBig: number }[];
+    const rs = new Map((bodies.filter((b) => b.k === 'r') as { id: string; t: number; yBig: 0 | 1 }[]).map((x) => [x.id, x]));
+    const pairs: CalPair[] = fs.map((f) => ({ t: f.t, pBig: f.pBig, yBig: rs.get(f.id)!.yBig, rt: rs.get(f.id)!.t }));
+    expect(c.cal).toEqual(catCal(pairs, { t: c.t, ti: c.ti }, c.pBig));
+    expect(c.cal).toMatchObject({ v: 'cat-cal-v1', n: 120 });
+    // Kolejny przebieg nie dopisuje planu drugi raz
+    await r.tick(SLOT0 + 15 * MIN + 30_000);
+    expect([...lines(dir, '2026-10-22'), ...lines(dir, '2026-10-23')].filter((l) => l.k === 'p' && l.id === CAT_CAL_DESIGN.id)).toHaveLength(1);
+  });
+
+  it('mniej niż 96 par albo inny model (mh): rekord kota bez pola cal', async () => {
+    for (const s of [seeded(80), seeded(120, '0'.repeat(64))]) {
+      expect(s.r.init(SLOT0).ok).toBe(true);
+      await s.r.tick(SLOT0 + 30_000);
+      const c = lines(s.dir, '2026-10-22').find((l) => l.k === 'f' && l.kind === 'cat' && l.slot === SLOT0);
+      expect(c).toBeDefined();
+      expect(c).not.toHaveProperty('cal');
+    }
+  });
+
+  it('weryfikator: przechodzi na poprawnym dzienniku; wykrywa zmienione cal.p, zmienione a, cal sprzed planu i S z rozstrzygnięciem zapisanym po prognozie', async () => {
+    const { r, dir } = seeded(120);
+    r.init(SLOT0);
+    await r.tick(SLOT0 + 30_000);
+    const all = lines(dir, '2026-10-22');
+    expect(checkCatCal(all)).toEqual({ problems: [], checked: 1 });
+    const ci = all.findIndex((l) => l.k === 'f' && l.kind === 'cat' && l.slot === SLOT0);
+    const c = all[ci];
+    const swap = (o: Record<string, unknown>) => all.map((l, i) => (i === ci ? o : l));
+    expect(checkCatCal(swap({ ...c, cal: { ...c.cal, p: c.cal.p + 0.01 } })).problems[0]).toMatch(/cal\.p/);
+    expect(checkCatCal(swap({ ...c, cal: { ...c.cal, a: c.cal.a + 0.001 } })).problems[0]).toMatch(/cal\.a/);
+    // cal przed planem: plan przeniesiony za prognozę
+    const pi = all.findIndex((l) => l.k === 'p' && l.id === CAT_CAL_DESIGN.id);
+    const moved = [...all.slice(0, pi), ...all.slice(pi + 1, ci + 1), all[pi], ...all.slice(ci + 1)];
+    expect(checkCatCal(moved).problems.join(' ')).toMatch(/przed planem/);
+    // Rozstrzygnięcie jednej pary przeniesione za prognozę: n się nie zgadza (S tylko z rekordów wcześniejszych)
+    const ri = all.findIndex((l) => l.k === 'r' && String(l.id).endsWith('-cat'));
+    const late = [...all.slice(0, ri), ...all.slice(ri + 1, ci + 1), all[ri], ...all.slice(ci + 1)];
+    expect(checkCatCal(late).problems.join(' ')).toMatch(/cal\.n/);
+    // Plan różny od kodu
+    const forged = all.map((l) => (l.k === 'p' && l.id === CAT_CAL_DESIGN.id ? { ...l, catalog: { ...l.catalog, clip: 3 } } : l));
+    expect(checkCatCal(forged).problems.join(' ')).toMatch(/różni się od kodu/);
+  });
+
+  it('podsumowanie: cat.cal z rekordów z polem cal (Brier wobec surowego, typ dnia, decyle); stare podsumowanie bez pola dalej poprawne', async () => {
+    const { r, published } = seeded(120);
+    r.init(SLOT0);
+    await r.tick(SLOT0 + 30_000);
+    await r.tick(SLOT0 + 63 * MIN + 30_000);
+    const s = JSON.parse(published.at(-1)!);
+    expect(isDeskLedgerSummary(s)).toBe(true);
+    expect(isCat(s.cat)).toBe(true);
+    expect(s.cat.cal).toMatchObject({ n: 1, plan: { at: SLOT0 + 30_000 } });
+    expect(s.cat.cal.byType.weekday.n + s.cat.cal.byType.weekend.n).toBe(1);
+    expect(s.cat.cal.deciles).toHaveLength(10);
+    expect(s.cat.cal.block).toBeNull();
+    // Zegar ruchu: tercyle pBig z rozstrzygniętych prognoz z 14 dni (121 = 120 z historii + 1 nowa) i baza sezonowa 24 × 2
+    expect(s.cat.clock.terciles).toMatchObject({ n: 121 });
+    expect(s.cat.clock.terciles.q1).toBeLessThan(s.cat.clock.terciles.q2);
+    expect(s.cat.clock.season.weekday).toHaveLength(24);
+    expect(s.cat.clock.season.weekend).toHaveLength(24);
+    const { cal: _drop, clock: _c, ...old } = s.cat;
+    expect(isCat(old)).toBe(true);
+    expect(isCat({ ...s.cat, clock: { terciles: { q1: 'x' }, season: s.cat.clock.season } })).toBe(false);
   });
 });
