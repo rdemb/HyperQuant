@@ -36,7 +36,7 @@ export function clip(text, max = 160) {
 
 const T = {
   pl: {
-    footSite: 'Narzędzie edukacyjne i analityczne, nie porada inwestycyjna ani sygnał do transakcji. Handel kontraktami z dźwignią wiąże się z wysokim ryzykiem utraty środków.',
+    footSite: 'Narzędzie edukacyjne i analityczne, nie porada inwestycyjna ani wezwanie do transakcji. Handel kontraktami z dźwignią wiąże się z wysokim ryzykiem utraty środków.',
     cardFoot: 'otwarte dane · bez sygnałów',
     lessons: 'Lekcje',
     charts: 'Wykresy',
@@ -124,7 +124,7 @@ const T = {
     },
   },
   en: {
-    footSite: 'An educational and analytical tool, not investment advice or a trading signal. Trading leveraged contracts carries a high risk of losing money.',
+    footSite: 'An educational and analytical tool, not investment advice nor a call to trade. Trading leveraged contracts carries a high risk of losing money.',
     cardFoot: 'open data · no signals',
     lessons: 'Lessons',
     charts: 'Charts',
