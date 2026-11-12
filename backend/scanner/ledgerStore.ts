@@ -53,6 +53,8 @@ export class LedgerStore {
      * rejestracji planów)
      */
     catHours: { forecasts: Map<string, LedgerRecord>; resolutions: Map<string, LedgerRecord> };
+    /** Prognozy `hrel-v1` (raz na godzinę) i ich rozstrzygnięcia z całego dziennika (ocena w blokach od rejestracji planu) */
+    hrel: { forecasts: Map<string, LedgerRecord>; resolutions: Map<string, LedgerRecord> };
     error?: string;
   } {
     const forecasts = new Map<string, LedgerRecord>();
@@ -60,6 +62,7 @@ export class LedgerStore {
     const skips: LedgerRecord[] = [];
     const preregs: LedgerRecord[] = [];
     const catHours = { forecasts: new Map<string, LedgerRecord>(), resolutions: new Map<string, LedgerRecord>() };
+    const hrel = { forecasts: new Map<string, LedgerRecord>(), resolutions: new Map<string, LedgerRecord>() };
     const cd = this.coinDir();
     const files = existsSync(cd) ? readdirSync(cd).filter((f) => DAY_FILE.test(f)).sort() : [];
     this.repairedTail = files.length > 0 ? repairTail(join(cd, files[files.length - 1])) : null;
@@ -74,7 +77,7 @@ export class LedgerStore {
       const v = verifyLines(lines, prev);
       if (!v.ok) {
         this.broken = true;
-        return { ok: false, forecasts, resolutions, skips, lastSlot: null, preregs, catHours, error: `łańcuch przerwany w ${f}, linia ${(v.badLine ?? 0) + 1}` };
+        return { ok: false, forecasts, resolutions, skips, lastSlot: null, preregs, catHours, hrel, error: `łańcuch przerwany w ${f}, linia ${(v.badLine ?? 0) + 1}` };
       }
       // Ostatni slot: z każdego pliku (tanio — tylko rekordy f/s), żeby ciągłość przetrwała przerwy dłuższe niż 31 dni
       for (const l of lines) {
@@ -87,6 +90,11 @@ export class LedgerStore {
           if (o.k === 'f' && o.kind === 'hour') catHours.forecasts.set(o.id as string, o);
           else if (o.k === 'f' && o.kind === 'cat' && typeof o.slot === 'number' && o.slot % HOUR === 0) catHours.forecasts.set(o.id as string, o);
           else if (o.k === 'r' && typeof o.id === 'string') catHours.resolutions.set(o.id, o);
+        }
+        if (l.includes('-hrel"')) {
+          const o = JSON.parse(l) as LedgerRecord;
+          if (o.k === 'f' && o.kind === 'hrel' && typeof o.id === 'string') hrel.forecasts.set(o.id, o);
+          else if (o.k === 'r' && typeof o.id === 'string') hrel.resolutions.set(o.id, o);
         }
         if (!l.includes('"k":"f"') && !l.includes('"k":"s"')) continue;
         const o = JSON.parse(l) as { slot?: unknown; until?: unknown };
@@ -112,7 +120,7 @@ export class LedgerStore {
     this.broken = false;
     // Naprawa zostaje w łańcuchu: rekord z nazwą pliku i liczbą usuniętych bajtów (weryfikator pomija nieznane rodzaje)
     if (this.repairedTail) this.append([{ k: 'n', t: now, note: 'repair-tail', ...this.repairedTail }], now);
-    return { ok: true, forecasts, resolutions, skips, lastSlot, preregs, catHours };
+    return { ok: true, forecasts, resolutions, skips, lastSlot, preregs, catHours, hrel };
   }
 
   /**
