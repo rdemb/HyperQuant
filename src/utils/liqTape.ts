@@ -66,6 +66,14 @@ export interface LiqTape {
   /** Błąd mapy: o ile bp likwidacja nastąpiła głębiej (+) albo wcześniej (−) niż cena likwidacji z mapy */
   calib: { n: number; medAbsErrBp: number | null; p90AbsErrBp: number | null; medSignedErrBp: number | null; medAgeMin: number | null };
   checks: LiqTapeChecks;
+  /**
+   * Kandydaci bez rozstrzygnięcia przy sumach (pole opcjonalne, od 12.11.2026): czekający w kolejce (liczba i wartość
+   * pozycji przy cenie likwidacji z mapy), nieudani z 24 h, udział (czekający + nieudani) / (kandydaci + czekający);
+   * `h1Complete: false` — suma z ostatniej godziny może jeszcze wzrosnąć, bo kolejka nie jest pusta.
+   */
+  unconfirmed?: { pending: number; pendingUsd: number; failed: number; share: number | null; h1Complete: boolean };
+  /** Opóźnienie potwierdzeń: od czasu likwidacji do potwierdzenia, min, zdarzenia z 24 h (pole opcjonalne). */
+  delay?: { n: number; medMin: number | null; p90Min: number | null };
   method: 'hl-fills-liquidation-v1';
 }
 
@@ -92,6 +100,7 @@ function quantile(sorted: number[], q: number): number | null {
   return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
 }
 
+const round1 = (x: number | null): number | null => (x === null ? null : Math.round(x * 10) / 10);
 const emptySums = (): LiqSums => ({ longUsd: 0, shortUsd: 0, n: 0 });
 function add(s: LiqSums, e: LiqEvent): void {
   if (e.side === 'long') s.longUsd += e.usd;
@@ -123,7 +132,14 @@ function publicEvent(e: LiqEvent): LiqEvent {
 /** Okno taśmy: czas likwidacji z ostatnich 24 h. Wspólne dla zdarzeń, sum i licznika potwierdzonych (skaner). */
 export const inTapeDay = (t: number, asOf: number): boolean => t > asOf - DAY && t <= asOf;
 
-export function buildLiqTape(events: LiqEvent[], o: { coin: string; asOf: number; since: number; checks: LiqTapeChecks }): LiqTape {
+/**
+ * `backlog` — kandydaci czekający w kolejce skanera (bez niego plik nie ma pola `unconfirmed`); zdarzenia mogą nieść
+ * wewnętrzne `foundAt` (chwila potwierdzenia) — do opóźnienia, bez publikacji w zdarzeniach.
+ */
+export function buildLiqTape(
+  events: (LiqEvent & { foundAt?: number })[],
+  o: { coin: string; asOf: number; since: number; checks: LiqTapeChecks; backlog?: { pending: number; pendingUsd: number } }
+): LiqTape {
   const day = events.filter((e) => inTapeDay(e.t, o.asOf)).sort((a, b) => b.t - a.t);
   const h1 = emptySums();
   const h24 = emptySums();
@@ -143,6 +159,20 @@ export function buildLiqTape(events: LiqEvent[], o: { coin: string; asOf: number
     .filter((e) => calibErrorBp(e) !== null && e.mapAgeMin !== null)
     .map((e) => e.mapAgeMin as number)
     .sort((a, b) => a - b);
+  const delays = day
+    .filter((e) => typeof e.foundAt === 'number' && Number.isFinite(e.foundAt))
+    .map((e) => Math.max(0, ((e.foundAt as number) - e.t) / MIN))
+    .sort((a, b) => a - b);
+  const b = o.backlog;
+  const unconfirmed = b
+    ? {
+        pending: b.pending,
+        pendingUsd: Math.round(b.pendingUsd / 100) * 100,
+        failed: o.checks.failed,
+        share: o.checks.candidates + b.pending > 0 ? (b.pending + o.checks.failed) / (o.checks.candidates + b.pending) : null,
+        h1Complete: b.pending === 0,
+      }
+    : undefined;
   return {
     v: 1,
     coin: o.coin,
@@ -153,6 +183,8 @@ export function buildLiqTape(events: LiqEvent[], o: { coin: string; asOf: number
     totals: { h1, h24 },
     calib: { n: errs.length, medAbsErrBp: quantile(abs, 0.5), p90AbsErrBp: quantile(abs, 0.9), medSignedErrBp: quantile(signed, 0.5), medAgeMin: quantile(ages, 0.5) },
     checks: { ...o.checks },
+    ...(unconfirmed ? { unconfirmed } : {}),
+    delay: { n: delays.length, medMin: round1(quantile(delays, 0.5)), p90Min: round1(quantile(delays, 0.9)) },
     method: 'hl-fills-liquidation-v1',
   };
 }
@@ -203,7 +235,16 @@ export function isLiqTape(x: unknown): x is LiqTape {
     fin(m.checks.candidates) &&
     fin(m.checks.confirmed) &&
     fin(m.checks.rejected) &&
-    fin(m.checks.failed)
+    fin(m.checks.failed) &&
+    // Pola dopisane później: opcjonalne, ale jeśli są — w pełnym kształcie
+    (m.unconfirmed === undefined ||
+      (!!m.unconfirmed &&
+        fin(m.unconfirmed.pending) &&
+        fin(m.unconfirmed.pendingUsd) &&
+        fin(m.unconfirmed.failed) &&
+        finOrNull(m.unconfirmed.share) &&
+        typeof m.unconfirmed.h1Complete === 'boolean')) &&
+    (m.delay === undefined || (!!m.delay && fin(m.delay.n) && finOrNull(m.delay.medMin) && finOrNull(m.delay.p90Min)))
   );
 }
 

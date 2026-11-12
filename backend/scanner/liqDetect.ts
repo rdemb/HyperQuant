@@ -15,9 +15,18 @@ const MIN = 60_000;
 const DAY = 24 * 60 * MIN;
 /** Pasmo „wcześniej niż mapa” — szersze pasmo = więcej zapytań o zwykłe zamknięcia blisko ceny likwidacji */
 export const EARLY_TOL = 0.005;
-const CANDIDATE_TTL = 30 * MIN;
+/**
+ * Kandydat czeka na potwierdzenie do 24 h (całe okno taśmy): przy kolejce albo wycofaniu API nie przepada po kilkunastu
+ * minutach jako „nieudany”, tylko trafia na taśmę później, z czasem samej likwidacji.
+ */
+const CANDIDATE_TTL = DAY;
 const MAX_ATTEMPTS = 3;
 const MAX_QUEUE = 500;
+/** Tempo potwierdzeń rośnie z kolejką tak, by przerobić ją w ~10 min, najwyżej do 12 zapytań na minutę */
+const QUEUE_DRAIN_MIN = 10;
+const MAX_PER_MIN_CAP = 12;
+/** Wartość kandydata: nominał pozycji przy cenie likwidacji (kolejność kolejki i suma czekających), USD */
+const candidateUsd = (c: LiqCandidate): number => Math.abs(c.prev.szi) * (c.prev.liqPx ?? c.prev.entryPx);
 /** Rezerwacja wag `userFillsByTime` przed zapytaniem; resztę (20 + 1 na 20 fillów) dopłaca się po odpowiedzi */
 export const FILLS_WEIGHT = 25;
 /** Limit fillów w jednej odpowiedzi API — pełna odpowiedź może być obcięta */
@@ -91,8 +100,11 @@ export function isLiqCandidate(prev: ScannedPosition | null, next: ScannedPositi
   return reduced && inBand(range.lo, range.hi, prev.liqPx, long ? 'long' : 'short');
 }
 
-/** Zdarzenie z danymi wewnętrznymi do deduplikacji (identyfikatory transakcji nie są publikowane). */
-export type DetectedLiq = LiqEvent & { tids: number[] };
+/**
+ * Zdarzenie z danymi wewnętrznymi: identyfikatory transakcji (deduplikacja) i chwila potwierdzenia (opóźnienie taśmy);
+ * żadne z nich nie jest publikowane.
+ */
+export type DetectedLiq = LiqEvent & { tids: number[]; foundAt?: number };
 
 interface RawFill {
   coin?: unknown;
@@ -184,7 +196,10 @@ export interface InfoClient {
   healthy?(): boolean;
 }
 
-/** Kolejka potwierdzeń z własnym limitem zapytań na minutę (budżet wag współdzielony ze skanem pozycji). */
+/**
+ * Kolejka potwierdzeń: najpierw największe pozycje, tempo bazowe `maxPerMin` rosnące z długością kolejki (do 12/min),
+ * kandydat ważny 24 h.
+ */
 export class LiqConfirmer {
   private readonly coin: string;
   private readonly maxPerMin: number;
@@ -203,10 +218,18 @@ export class LiqConfirmer {
     return this.queue.length;
   }
 
+  /** Kandydaci czekający na potwierdzenie i ich wartość (do udziału niepotwierdzonych przy sumach taśmy). */
+  backlog(): { pending: number; pendingUsd: number } {
+    return { pending: this.queue.length, pendingUsd: this.queue.reduce((s, c) => s + candidateUsd(c), 0) };
+  }
+
   enqueue(c: LiqCandidate): void {
     this.queue.push({ ...c, attempts: 0 });
+    // Przepełnienie: odpada najmniejsza pozycja (na taśmie waży najmniej), nie najstarszy kandydat
     while (this.queue.length > MAX_QUEUE) {
-      this.queue.shift();
+      let k = 0;
+      for (let i = 1; i < this.queue.length; i++) if (candidateUsd(this.queue[i]) < candidateUsd(this.queue[k])) k = i;
+      this.queue.splice(k, 1);
       this.log.push(['failed', c.to]);
     }
   }
@@ -220,12 +243,15 @@ export class LiqConfirmer {
     }
     let made = 0;
     const keep: Queued[] = [];
+    const perMin = Math.min(MAX_PER_MIN_CAP, Math.max(this.maxPerMin, Math.ceil(this.queue.length / QUEUE_DRAIN_MIN)));
+    // Najpierw największe pozycje; przy równej wartości starszy kandydat
+    this.queue.sort((a, b) => candidateUsd(b) - candidateUsd(a) || a.to - b.to);
     for (const c of this.queue) {
       if (now - c.to > CANDIDATE_TTL) {
         this.log.push(['failed', now]);
         continue;
       }
-      if (this.calls.length >= this.maxPerMin) {
+      if (this.calls.length >= perMin) {
         keep.push(c);
         continue;
       }
@@ -248,7 +274,7 @@ export class LiqConfirmer {
       const ev = parseLiquidationFills(fills, this.coin, c.addr, c.prev, this.seenTids);
       if (ev) {
         for (const t of ev.tids) this.seenTids.add(t);
-        this.evs.push(ev);
+        this.evs.push({ ...ev, foundAt: now });
       } else if (!parseLiquidationFills(fills, this.coin, c.addr, c.prev)) {
         this.log.push(['rejected', now]);
       }
