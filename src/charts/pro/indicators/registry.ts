@@ -1703,8 +1703,8 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
     short: 'RVOL',
     name: tr('RVOL wg godzin (wolumen wobec normy)', 'Hourly RVOL (volume vs. norm)'),
     hint: tr(
-      'MODEL: wolumen wobec mediany tej samej godziny w Nowym Jorku z 20 dni tego samego typu, robocze i weekend osobno (1 — typowy wolumen o tej porze, 2 — dwa razy większy); bez wartości, gdy historia wykresu ma mniej niż 10 takich dni, i w świecy jeszcze trwającej',
-      'MODEL: volume versus the median of the same New York hour over 20 days of the same type, weekdays and weekends separately (1 is the typical volume at that time, 2 is twice as much); no value when the chart history has fewer than 10 such days, or in a candle still forming'
+      'MODEL: wolumen wobec mediany tej samej godziny w Nowym Jorku z 20 dni tego samego typu, robocze i weekend osobno (weekend: od piątku 17:00 do niedzieli 18:00 czasu nowojorskiego; 1 — typowy wolumen o tej porze, 2 — dwa razy większy); bez wartości, gdy historia wykresu ma mniej niż 10 takich dni, i w świecy jeszcze trwającej',
+      'MODEL: volume versus the median of the same New York hour over 20 days of the same type, weekdays and weekends separately (weekend: Friday 17:00 to Sunday 18:00 New York time; 1 is the typical volume at that time, 2 is twice as much); no value when the chart history has fewer than 10 such days, or in a candle still forming'
     ),
     group: 'hyperquant',
     aliases: 'rvol relative volume wzgledny wolumen godzina hour norma mediana median aktywnosc activity',

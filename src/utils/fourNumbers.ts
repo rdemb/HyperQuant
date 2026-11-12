@@ -268,8 +268,8 @@ export function nextSessionHour(now: number): SessionHour {
 const WIDTH_LOOKBACK_DAYS = 80;
 
 /**
- * Początki świec 1h tej samej godziny sesji z WIDTH_DAYS ostatnich wcześniejszych dni tego samego typu (robocze albo sobota
- * i niedziela według daty w Nowym Jorku), od najnowszej, szukane do 80 dni wstecz: godzina otwarcia albo k-ta pełna
+ * Początki świec 1h tej samej godziny sesji z WIDTH_DAYS ostatnich wcześniejszych dni tego samego typu (dni handlu albo weekend
+ * od piątku 17:00 do niedzieli 18:00 czasu nowojorskiego), od najnowszej, szukane do 80 dni wstecz: godzina otwarcia albo k-ta pełna
  * godzina po niej według granic sesji danego dnia (`sessionDay` z czasem letnim), więc po zmianie czasu próba nadal jest
  * tą samą godziną sesji. Dzień, w którym ta godzina należy do innej sesji albo jest godziną otwarcia innej, odpada.
  */
@@ -309,7 +309,7 @@ export function hourWidth(bars1h: readonly VBar[], at: SessionHour, now: number)
   return { median: xs.length >= RVOL_MIN_DAYS ? median(xs) : null, n: xs.length };
 }
 
-/** Typ dni próby do opisu: dni robocze albo weekend (data w Nowym Jorku) */
+/** Typ dni próby do opisu: dni robocze albo weekend (od piątku 17:00 do niedzieli 18:00 czasu NY) */
 const weekendWord = (t: number) => (nyClock(t).weekend ? tr('z weekendów', 'on weekends') : tr('z dni roboczych', 'on weekdays'));
 
 /** (3) Typowa szerokość najbliższej godziny sesji w USD (MODEL · mediana 20 dni). */
