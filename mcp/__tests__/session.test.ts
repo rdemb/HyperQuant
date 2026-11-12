@@ -12,11 +12,10 @@ import { type CohortFlow, type CohortMarkout, type CohortTotal, cohortFreshness,
 import { classifyDay } from '../../src/utils/dayType';
 import { type DeskLedgerSummary, isDeskLedgerSummary, ledgerFreshness } from '../../src/utils/deskLedger';
 import { type LiqTape, isLiqTape, liqTapeFreshness } from '../../src/utils/liqTape';
-import { type TradeSession, expectedRange, previousSameSession, rangeBudget, tradeSessionOn } from '../../src/utils/sessionDay';
-import { dayTypeOf, sessionFacts } from '../../src/utils/sessionFacts';
-import { CONE_METHOD, type ReviewInputs, type ReviewRow, reviewRows, sessionCloseOf } from '../../src/utils/sessionReview';
+import { type TradeSession, previousSameSession, rangeBudget, tradeSessionOn } from '../../src/utils/sessionDay';
+import { dayTypeOf, expectedFrom, sessionFacts } from '../../src/utils/sessionFacts';
+import { CONE_METHOD, type ReviewInputs, type ReviewRow, reviewRows } from '../../src/utils/sessionReview';
 import { DAY_TYPE_LABEL, type Expected, type Got, isAbsent } from '../../src/utils/sessionText';
-import { buildVolModel } from '../../src/utils/volatility';
 import { BLOCK_MARK, type Envelope, type Num } from '../src/envelope';
 import { type Bar, DATA_BASE, HL_INFO, HOUR, MAPS_URL, MIN, REAL_LABELS, type Route, asCandles, connect, hlCandles, testSources, walkBars } from './helpers';
 
@@ -46,7 +45,7 @@ for (let t = previousSameSession(L).start; t <= NOW; t += MIN) {
   const p = px(t);
   M1.push({ t, o: p, h: p + 15, l: p - 15, c: p, v: 1 + ((t / MIN) % 5) });
 }
-/** 1200 świec 1h (50 dni) i 2000 świec 5m (~7 dni) do bieżącej godziny i pięciominutówki — dość na model HAR i RVOL. */
+/** 1200 świec 1h (50 dni: dość na profil 20 dni roboczych, poziom i RVOL) i 2000 świec 5m (~7 dni) do bieżącej godziny. */
 const H1 = walkBars(1200, HOUR, NOW, 0.004, 3);
 const M5 = walkBars(2000, 5 * MIN, NOW, 0.0015, 7);
 
@@ -152,6 +151,7 @@ interface ContextData {
   ib: { high: Num; low: Num; complete: boolean } | null;
   dayTypeSoFar: string | null;
   expectedRange: Num;
+  typical: Num;
   rangeBudget: Num;
   vwap: Num;
   vwapDistance: Num;
@@ -192,9 +192,9 @@ function got<T>(v: T | { why: string }): T {
   return v;
 }
 
-/** Magazyn rynku strony (atrapa `InputStore`): zegar i seria świec 5m — wejścia `sessionExpectedOf`. */
-function siteStore(bars5m: readonly Bar[]): InputStore {
-  const series: InputSeries = { loadState: 'ready', load: async () => undefined, candlesNow: () => upTo(bars5m, NOW) };
+/** Magazyn rynku strony (atrapa `InputStore`): zegar i seria świec 1h (historia krótsza niż okno — wyczerpana, jak limit API). */
+function siteStore(bars1h: readonly Bar[]): InputStore {
+  const series: InputSeries = { loadState: 'ready', load: async () => undefined, candlesNow: () => upTo(bars1h, NOW), historyExhausted: true };
   return {
     coin: 'BTC',
     serverNow: () => NOW,
@@ -207,16 +207,17 @@ function siteStore(bars5m: readonly Bar[]): InputStore {
   };
 }
 
-/** Oczekiwany zakres tak, jak liczy go strona (`sessionExpectedOf`): model HAR wczytany albo nie (błąd), seria 5m z magazynu. */
-function siteExpected(s: TradeSession, inProgress: boolean, price: number, o: { h1?: readonly Bar[]; m5?: readonly Bar[] } = {}): Got<Expected> | undefined {
-  const m5 = o.m5 ?? M5;
-  const model = buildVolModel(toVBars(upTo(o.h1 ?? H1, NOW)), toVBars(upTo(m5, NOW)), NOW);
-  return sessionExpectedOf(siteStore(m5), model ? { status: 'ready', model } : { status: 'error', model: null }, s, inProgress, price);
+/** Oczekiwany zakres tak, jak liczy go strona (`sessionExpectedOf`): seria 1h z magazynu. */
+function siteExpected(s: TradeSession, o: { h1?: readonly Bar[] } = {}): Got<Expected> | undefined {
+  return sessionExpectedOf(siteStore(o.h1 ?? H1), s);
 }
 
 /** Liczba odpowiedzi z wyniku strony: wartość i metoda albo null z tym samym powodem. */
 const expectedNum = (e: Got<Expected> | undefined) =>
   e === undefined || isAbsent(e) ? { value: null, why: e?.why } : { value: e.usd, method: e.method, why: null };
+
+/** 1h krótsza niż 20 dni roboczych profilu (25 dni) */
+const SHORT_H1 = H1.slice(-600);
 
 // ───────── session_context ─────────
 
@@ -253,12 +254,12 @@ describe('session_context', () => {
     expect(d.dayTypeSoFar).toBe(classifyDay(f));
     expect(d.dayTypeSoFar).not.toBe('unknown');
 
-    const model = buildVolModel(toVBars(upTo(H1, NOW)), toVBars(upTo(M5, NOW)), NOW);
-    expect(model).not.toBeNull();
-    const e = expectedRange(model, [], NY, NOW, price);
-    expect(e?.method).toBe('har');
-    expect(d.expectedRange).toMatchObject({ value: e?.usd, unit: 'usd', badge: 'MODEL', method: 'har' });
-    expect(d.rangeBudget).toMatchObject({ value: rangeBudget(sn.hi, sn.lo, e!.usd), unit: 'ratio', badge: 'MODEL', method: 'har' });
+    // Oczekiwany zakres ze świec 1h sprzed otwarcia NY (profil × poziom)
+    const e = got(expectedFrom(toVBars(upTo(H1, NY.start - 1)), NY));
+    expect(d.expectedRange).toMatchObject({ value: e.usd, unit: 'usd', badge: 'MODEL', method: 'profile' });
+    expect(d.typical).toMatchObject({ value: e.typical, unit: 'usd', badge: 'MODEL', method: 'profile' });
+    expect(d.typical.value).toBeCloseTo(0.87 * e.usd, 6);
+    expect(d.rangeBudget).toMatchObject({ value: rangeBudget(sn.hi, sn.lo, e.usd), unit: 'ratio', badge: 'MODEL', method: 'profile' });
 
     const v = got(dayVwapOf(c1, NOW));
     expect(d.vwap).toMatchObject({ value: v.vwap, unit: 'price', badge: 'LIVE' });
@@ -285,18 +286,11 @@ describe('session_context', () => {
     expect(env.notes.join(' ')).toContain('dayTypeSoFar');
   });
 
-  it('bez modelu HAR (za krótka historia 1h): oczekiwany zakres z Parkinsona ze świec 5m, jak na stronie', async () => {
-    const short = H1.slice(-600);
-    const { env } = await call<ContextData>('session_context', { [HL_INFO]: hl({ h1: short }) });
-    const c1 = upTo(M1, NOW);
-    const price = c1[c1.length - 1].c;
-    expect(buildVolModel(toVBars(upTo(short, NOW)), toVBars(upTo(M5, NOW)), NOW)).toBeNull();
-    const e = expectedRange(null, toVBars(upTo(M5, NOW)), NY, NOW, price);
-    expect(e?.method).toBe('parkinson');
-    expect(env.data.expectedRange).toMatchObject({ value: e?.usd, unit: 'usd', badge: 'MODEL', method: 'parkinson' });
-    expect(env.data.rangeBudget).toMatchObject({ badge: 'MODEL', method: 'parkinson' });
-    expect(env.data.rangeBudget.value).not.toBeNull();
-    // RVOL nie zależy od modelu: 25 dni historii wystarcza
+  it('za krótka historia 1h (25 dni): oczekiwany zakres, typowy dzień i budżet null z powodem, RVOL zostaje', async () => {
+    const { env } = await call<ContextData>('session_context', { [HL_INFO]: hl({ h1: SHORT_H1 }) });
+    const why = 'Mniej niż 20 dni roboczych ze świecami 1h w 80 dniach przed sesją';
+    for (const n of [env.data.expectedRange, env.data.typical, env.data.rangeBudget]) expect(n).toMatchObject({ value: null, why });
+    // RVOL: 25 dni historii wystarcza
     expect(env.data.rvolHour.value).not.toBeNull();
   });
 
@@ -325,7 +319,7 @@ describe('session_context', () => {
     expect(d.ib).toBeNull();
     expect(d.dayTypeSoFar).toBeNull();
     expect(env.notes.join(' ')).toContain('dayTypeSoFar');
-    for (const n of [d.rangeBudget, d.expectedRange]) {
+    for (const n of [d.rangeBudget, d.expectedRange, d.typical]) {
       expect(n.value).toBeNull();
       expect(n.why).toBeTruthy();
     }
@@ -338,7 +332,7 @@ describe('session_context', () => {
     const { res, env } = await call<ContextData>('session_context', { [HL_INFO]: new Error('ECONNREFUSED') });
     expect(res.isError).toBeFalsy();
     const nums = numsOf(env.data);
-    expect(nums).toHaveLength(8);
+    expect(nums).toHaveLength(9);
     for (const n of nums) {
       expect(n.value).toBeNull();
       expect(n.badge).toBeNull();
@@ -372,25 +366,19 @@ describe('session_context', () => {
     const { res, env } = await call<ContextData>('session_context', { [HL_INFO]: hang }, { timeoutMs: 50 });
     expect(res.isError).toBeFalsy();
     expect(numsOf(env.data).every((n) => n.value === null && !!n.why)).toBe(true);
-    // Świece 1m, 1h i 5m oraz 1h i 5m modelu zmienności; przy żądaniach po kolei pierwszy limit czasu zastałby jedno
-    expect(sent).toBe(5);
+    // Świece 1m, 1h do RVOL i 1h do oczekiwanego zakresu; przy żądaniach po kolei pierwszy limit czasu zastałby jedno
+    expect(sent).toBe(3);
     expect(pendingAtFirstAbort).toBe(sent);
   });
 
-  it('oczekiwany zakres i powód braku z funkcji strony (sessionExpectedOf) na tych samych świecach: HAR, Parkinson, brak danych', async () => {
-    const c1 = upTo(M1, NOW);
-    const price = c1[c1.length - 1].c;
-    const short = H1.slice(-600);
-    // Za mało świec 5m z ostatniej doby: tylko z ostatnich 30 min
-    const sparse = M5.filter((b) => b.t > NOW - 30 * MIN);
-    const cases: { name: string; h1?: Bar[]; m5?: Bar[]; method: string | null }[] = [
-      { name: 'HAR', method: 'har' },
-      { name: 'Parkinson', h1: short, method: 'parkinson' },
-      { name: 'brak danych', h1: short, m5: sparse, method: null },
+  it('oczekiwany zakres i powód braku z funkcji strony (sessionExpectedOf) na tych samych świecach: liczba i brak danych', async () => {
+    const cases: { name: string; h1?: Bar[]; method: string | null }[] = [
+      { name: 'profil × poziom', method: 'profile' },
+      { name: 'za krótka historia', h1: SHORT_H1, method: null },
     ];
     for (const k of cases) {
-      const { env } = await call<ContextData>('session_context', { [HL_INFO]: hl({ h1: k.h1, m5: k.m5 }) });
-      const site = siteExpected(NY, true, price, k);
+      const { env } = await call<ContextData>('session_context', { [HL_INFO]: hl({ h1: k.h1 }) });
+      const site = siteExpected(NY, k);
       expect(env.data.expectedRange, k.name).toMatchObject(expectedNum(site));
       expect(env.data.expectedRange.method ?? null, k.name).toBe(k.method);
       if (k.method === null) expect(env.data.rangeBudget.why, k.name).toBe(env.data.expectedRange.why);
@@ -431,10 +419,9 @@ describe('session_context', () => {
 // ───────── session_review ─────────
 
 /** Wejścia karty Rozliczenia tak jak buduje je strona (Po sesji), na tych samych świecach i plikach. */
-function siteRows(s: TradeSession, inProgress: boolean, patch: Partial<ReviewInputs> = {}, o: { h1?: readonly Bar[]; m5?: readonly Bar[] } = {}): ReviewRow[] {
+function siteRows(s: TradeSession, inProgress: boolean, patch: Partial<ReviewInputs> = {}, o: { h1?: readonly Bar[] } = {}): ReviewRow[] {
   const bars1m = toVBars(asCandles(M1.filter((b) => b.t >= previousSameSession(s).start && b.t <= NOW)));
-  const price = sessionCloseOf(bars1m, s, NOW, bars1m[bars1m.length - 1].close);
-  const e = siteExpected(s, inProgress, price, o);
+  const e = siteExpected(s, o);
   const liq: LiqTapeState = { status: liqTapeFreshness(TAPE, NOW), tape: TAPE };
   const cohorts: CohortFlowState = { status: cohortFreshness(FLOW, NOW), flow: FLOW };
   const ledger: DeskLedgerState = { status: ledgerFreshness(SUMMARY, NOW), summary: SUMMARY };
@@ -479,27 +466,23 @@ describe('session_review', () => {
     expect(env.data.rows).toEqual(asTool(siteRows(L, false)));
   });
 
-  it('zamknięta sesja z za małą liczbą świec 5m przed otwarciem: wiersz zakresu z powodem ex ante jak na stronie', async () => {
-    const sparse = M5.filter((b) => b.t >= L.start - 30 * MIN);
-    const { env } = await call<ReviewData>('session_review', allRoutes({ [HL_INFO]: hl({ m5: sparse }) }), { args: { session: 'london' } });
-    expect(env.data.rows).toEqual(asTool(siteRows(L, false, {}, { m5: sparse })));
-    const range = env.data.rows.find((r) => r.id === 'range');
-    expect(range).toMatchObject({ value: DASH, badge: null });
-    expect(range?.why).toContain('ex ante');
+  it('za krótka historia 1h: wiersz zakresu z powodem jak na stronie (zamknięta i w toku)', async () => {
+    for (const [id, inProgress] of [['london', false], ['ny', true]] as const) {
+      const { env } = await call<ReviewData>('session_review', allRoutes({ [HL_INFO]: hl({ h1: SHORT_H1 }) }), { args: { session: id } });
+      expect(env.data.rows, id).toEqual(asTool(siteRows(id === 'london' ? L : NY, inProgress, {}, { h1: SHORT_H1 })));
+      const range = env.data.rows.find((r) => r.id === 'range');
+      expect(range, id).toMatchObject({ value: DASH, badge: null });
+      expect(range?.why, id).toContain('20 dni roboczych');
+      await close?.();
+      close = null;
+    }
   });
 
-  it("session:'ny' bez modelu HAR i bez świec 5m z ostatniej doby: powód braku jak na karcie „w toku”", async () => {
-    const short = H1.slice(-600);
-    const sparse = M5.filter((b) => b.t > NOW - 30 * MIN);
-    const { env } = await call<ReviewData>('session_review', allRoutes({ [HL_INFO]: hl({ h1: short, m5: sparse }) }), { args: { session: 'ny' } });
-    expect(env.data.rows).toEqual(asTool(siteRows(NY, true, {}, { h1: short, m5: sparse })));
-    expect(env.data.rows.find((r) => r.id === 'range')?.why).toContain('Bez modelu HAR');
-  });
-
-  it("session:'ny' podczas sesji NY: sesja w toku, wiersze jak na karcie „w toku” (model HAR)", async () => {
+  it("session:'ny' podczas sesji NY: sesja w toku, wiersze jak na karcie „w toku”; zakres ten sam co w session_context", async () => {
     const { env } = await call<ReviewData>('session_review', allRoutes(), { args: { session: 'ny' } });
     expect(env.data.session).toEqual({ id: 'ny', opensAt: '2026-11-04T14:30:00.000Z', closesAt: '2026-11-05T00:00:00.000Z', inProgress: true });
     expect(env.data.rows).toEqual(asTool(siteRows(NY, true)));
+    expect(env.data.rows.find((r) => r.id === 'range')?.label).toBe('Zakres / oczekiwany · profil × poziom');
   });
 
   it('brak plików skanera i map (404): wiersze „—” bez plakietki z powodem jak na stronie, bez isError', async () => {
