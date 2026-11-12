@@ -87,7 +87,9 @@ describe('AddressBook — adresy z taśmy i harmonogram skanów', () => {
     expect(b.size).toBe(3);
   });
 
-  it('interwał zależy od wielkości pozycji: ≥ 1M co 2 min, ≥ 100k co 10 min, inna co 30 min, bez pozycji co 120 min', () => {
+  // Dawniej terminy wg nominału (≥ 1M co 2 min, ≥ 100k co 10 min, inne co 30 min); od 2026-11-12 bez terminów:
+  // harmonogram zawsze wypełnia limit, pozycje bez transakcji w kolejności wiek × √nominał.
+  it('pozycje w kolejności wiek × √nominał, bez terminów; adres bez pozycji dopiero po transakcji albo po 24 h', () => {
     const b = new AddressBook();
     for (const a of ['0xbig', '0xmid', '0xsmall', '0xnone']) b.recordTrade([a, '0xz'], 1, 0);
     b.updatePosition('0xz', null, 0);
@@ -95,20 +97,21 @@ describe('AddressBook — adresy z taśmy i harmonogram skanów', () => {
     b.updatePosition('0xmid', pos(2), 0); // 200 tys. USD
     b.updatePosition('0xsmall', pos(0.1), 0);
     b.updatePosition('0xnone', null, 0);
-    expect(b.due(2 * MIN, 10)).toEqual(['0xbig']);
-    expect(b.due(10 * MIN, 10)).toEqual(['0xbig', '0xmid']);
-    expect(b.due(30 * MIN, 10)).toEqual(['0xbig', '0xmid', '0xsmall']);
+    expect(b.due(2 * MIN, 1)).toEqual(['0xbig']);
+    expect(b.due(2 * MIN, 10)).toEqual(['0xbig', '0xmid', '0xsmall']);
     // Adres bez pozycji: ponownie dopiero po nowej transakcji albo po 24 h (bezpiecznik)
     expect(b.due(120 * MIN, 10)).toEqual(['0xbig', '0xmid', '0xsmall']);
     expect(b.due(24 * 60 * MIN, 10).sort()).toEqual(['0xbig', '0xmid', '0xnone', '0xsmall', '0xz']);
   });
 
-  it('pył (< 25 tys. USD) blisko ceny likwidacji nie jest promowany do odczytu co minutę', () => {
+  it('pył (< 25 tys. USD) blisko ceny likwidacji bez promocji: większa pozycja daleko od ceny idzie przed nim', () => {
     const b = new AddressBook();
     b.recordTrade(['0xdust', '0xz'], 1, 0);
     b.updatePosition('0xz', null, 0);
-    b.updatePosition('0xdust', { szi: 0.1, entryPx: 100000, liqPx: 99_500, scannedAt: 0 }, 0);
-    expect(b.due(MIN, 10, 100_000)).toEqual([]);
+    b.updatePosition('0xdust', { szi: 0.1, entryPx: 100000, liqPx: 99_500, scannedAt: 0 }, 0); // 10 tys. USD, 0,5%
+    b.updatePosition('0xfar', { szi: 0.4, entryPx: 100000, liqPx: 80_000, scannedAt: 0 }, 0); // 40 tys. USD, 20%
+    // √10 tys. = 100 < √40 tys. = 200 (z promocją ×8 pył miałby 800)
+    expect(b.due(MIN, 10, 100_000)).toEqual(['0xfar', '0xdust']);
   });
 
   it('przepełnienie: konta z rankingu odpadają dopiero, gdy nie ma innych kandydatów', () => {
@@ -120,17 +123,18 @@ describe('AddressBook — adresy z taśmy i harmonogram skanów', () => {
     expect(b.has('0xranked')).toBe(true);
   });
 
-  it('blisko ceny likwidacji odczyt częściej: < 1% od mark co 1 min, < 3% najwyżej co 2 min (także mała pozycja)', () => {
+  // Dawniej terminy 1 min (< 1%) i 2 min (< 3%); od 2026-11-12 mnożnik priorytetu 8 i 4 (od 25 tys. USD)
+  it('blisko ceny likwidacji odczyt częściej: < 1% od mark priorytet × 8, < 3% × 4 (pozycje od 25 tys. USD)', () => {
     const b = new AddressBook();
     const at = (liqPx: number, szi = 0.3) => ({ szi, entryPx: 100000, liqPx, scannedAt: 0 });
-    for (const a of ['0xnear', '0xmid', '0xfar']) b.recordTrade([a, '0xz'], 1, 0);
+    for (const a of ['0xfar', '0xmid', '0xnear']) b.recordTrade([a, '0xz'], 1, 0);
     b.updatePosition('0xz', null, 0);
-    b.updatePosition('0xnear', at(99_500), 0); // 0.5% od mark
+    b.updatePosition('0xfar', at(80_000), 0); // 20%
     b.updatePosition('0xmid', at(97_800), 0); // 2.2%
-    b.updatePosition('0xfar', at(80_000), 0); // 20% — zwykły interwał 30 min
-    expect(b.due(MIN, 10, 100_000)).toEqual(['0xnear']);
-    expect(b.due(2 * MIN, 10, 100_000)).toEqual(['0xnear', '0xmid']);
-    expect(b.due(2 * MIN, 10)).toEqual([]); // bez ceny mark — interwały wg nominału
+    b.updatePosition('0xnear', at(99_500), 0); // 0.5% od mark
+    expect(b.due(MIN, 1, 100_000)).toEqual(['0xnear']);
+    expect(b.due(MIN, 10, 100_000)).toEqual(['0xnear', '0xmid', '0xfar']);
+    expect(b.due(MIN, 10)).toEqual(['0xfar', '0xmid', '0xnear']); // bez ceny mark bez promocji (remis: kolejność dodania)
   });
 
   it('positionOf: ostatnio odczytana pozycja adresu (do porównania przy kolejnym odczycie)', () => {

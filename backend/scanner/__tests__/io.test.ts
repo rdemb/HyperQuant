@@ -148,6 +148,17 @@ describe('Scanner — cykl skanu i publikacji', () => {
     expect(JSON.parse(statusTxt)).toMatchObject({ coin: 'BTC', addresses: 2, positions: 2, seeded: 0 });
   });
 
+  it('status.json: kolejka kont po transakcji bez odczytu (`dirty`: liczba, czekanie p50 i p90 w min)', async () => {
+    let now = 120_000;
+    const { scanner, out, book } = setup(false, () => now);
+    await scanner.scanDue(10);
+    book.recordTrade(['0xaaa', '0xccc'], 5000, 150_000);
+    now = 240_000;
+    expect(await scanner.publish()).toBe(true);
+    const status = JSON.parse(readFileSync(join(out, 'status.json'), 'utf8'));
+    expect(status.dirty).toEqual({ n: 2, waitP50Min: 1.5, waitP90Min: 1.5 });
+  });
+
   // Prawa plików nie mają znaczenia na Windows (chmod zmienia tam tylko „tylko do odczytu”)
   it.skipIf(process.platform === 'win32')('pliki publikacji 0640: strażnik (osobny użytkownik w grupie usługi) czyta status.json', async () => {
     const { scanner, out } = setup();
