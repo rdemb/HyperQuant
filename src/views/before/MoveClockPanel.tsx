@@ -45,6 +45,9 @@ export const MoveClockPanel: React.FC = () => {
       }
       bodyClassName="p-4 flex flex-col gap-3 text-sm"
     >
+      <p className="text-[11px] text-ink-3">
+        {tr(`Godziny w czasie lokalnym (${hmFmt.resolvedOptions().timeZone}).`, `Hours in local time (${hmFmt.resolvedOptions().timeZone}).`)}
+      </p>
       {!clock ? (
         <p className="text-ink-3">
           {DASH}{' '}

@@ -56,6 +56,8 @@ describe.each(['pl', 'en'] as const)('Zegar ruchu (%s)', (lang) => {
     S.lang = lang;
     S.summary = { cat: cat() };
     const t = text(await html());
+    expect(t).toContain(new Intl.DateTimeFormat().resolvedOptions().timeZone);
+    expect(t).toContain(lang === 'en' ? 'Hours in local time' : 'Godziny w czasie lokalnym');
     const nearest = t.slice(0, t.indexOf(lang === 'en' ? 'Hours 2–24' : 'Godziny 2–24'));
     expect(nearest).not.toContain('%');
     expect(nearest).not.toContain('43');

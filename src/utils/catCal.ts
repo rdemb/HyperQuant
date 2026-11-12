@@ -43,7 +43,7 @@ export const CAT_CAL_DESIGN = {
   criteria: {
     main: 'górna granica przedziału Neweya–Westa średniej δ w zakończonym bloku < 0',
     calibration:
-      '(a) |średnie cal.p − częstość| ≤ 0,03 w bloku; (b) ≤ 0,05 osobno dla dni roboczych i weekendu, gdy typ ma ≥ 192 rekordy; (c) w 10 decylach cal.p najwyżej 2 poza pasmem 95% (bootstrap blokowy po dniach) i żadne odchylenie średniego p od częstości > 0,10',
+      '(a) |średnie cal.p − częstość| ≤ 0,03 w bloku; (b) ≤ 0,05 osobno dla dni roboczych i weekendu, gdy typ ma ≥ 192 rekordy; (c) w 10 decylach cal.p najwyżej 2 poza pasmem 95% (pasmo z losowania dób UTC jak w src/utils/ledgerBootstrap.ts: mulberry32, ziarno 20261111, 1000 losowań, 2,5. i 97,5. percentyl częstości w decylu) i żadne odchylenie średniego p od częstości > 0,10',
     failure: 'dolna granica przedziału δ > 0 w jednym bloku albo brak kryterium głównego w dwóch blokach z rzędu: kalibracja zamknięta',
     promotion: 'oba kryteria w jednym bloku i decyzja właściciela: dopiero wtedy strona pokazuje procent jako szansę',
   },
