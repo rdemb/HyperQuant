@@ -345,9 +345,9 @@ function sameDocument(href, url) {
 }
 const FOOTER = {
   pl: (root, site) =>
-    `<a href="${root}">Desk HyperQuant</a> · <a href="${root}wykresy/">Wykresy</a> · <a href="${site.repo}">Kod na GitHubie</a> · <a href="${root}blog/feed.xml">RSS</a>`,
+    `<a href="${root}">Desk HyperQuant</a> · <a href="${root}wykresy/">Wykresy</a> · <a href="${root}wyniki/">Wyniki prognoz</a> · <a href="${site.repo}">Kod na GitHubie</a> · <a href="${root}blog/feed.xml">RSS</a>`,
   en: (root, site) =>
-    `<a href="${root}">HyperQuant Desk</a> · <a href="${root}en/charts/">Charts</a> · <a href="${site.repo}">Code on GitHub</a> · <a href="${root}blog/feed.xml">Blog RSS (PL)</a>`,
+    `<a href="${root}">HyperQuant Desk</a> · <a href="${root}en/charts/">Charts</a> · <a href="${root}en/results/">Forecast results</a> · <a href="${site.repo}">Code on GitHub</a> · <a href="${root}blog/feed.xml">Blog RSS (PL)</a>`,
 };
 /**
  * Polityka treści stron z tego szablonu (druga linia obrony, gdyby treść wpisu coś przemyciła): skrypty tylko z plików
@@ -601,6 +601,7 @@ ${prose}
 ${replayHtml(post, root)}
 ${shareHtml(url, post.title)}
 <p class="history">${DISCLOSURE} Wpis jest w publicznej historii repozytorium od chwili publikacji: <a href="${esc(history)}">historia zmian</a>.</p>
+<p class="results-link">Jak trafiają prognozy desku zapisywane przed faktem: <a href="${root}wyniki/">wyniki prognoz</a>.</p>
 </article>
 <nav class="pager" aria-label="Sąsiednie wpisy">${pager}</nav>`;
   return layout(site, {

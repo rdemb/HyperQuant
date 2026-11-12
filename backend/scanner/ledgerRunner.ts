@@ -1,4 +1,5 @@
 import { AB_DESIGN, AB_DESIGN_C } from '../../src/utils/abTest.ts';
+import { CAT_CAL_DESIGN, type CalPair, catCal } from '../../src/utils/catCal.ts';
 import { HOUR_DESIGN, type HourRow, TRUST_DESIGN, type TrustHour, hourRow, trustHour } from '../../src/utils/schrodiTrust.ts';
 import { fitEnsemble } from '../../src/utils/ensemble.ts';
 import { createHash } from 'node:crypto';
@@ -68,6 +69,8 @@ const AB_C_HASH = createHash('sha256').update(canonicalJson(AB_DESIGN_C)).digest
 const TRUST_HASH = createHash('sha256').update(canonicalJson(TRUST_DESIGN)).digest('hex');
 /** SHA-256 kanonicznego JSON planu oceny godziny na żywo */
 const HOUR_HASH = createHash('sha256').update(canonicalJson(HOUR_DESIGN)).digest('hex');
+/** SHA-256 kanonicznego JSON planu kalibracji kota `cat-cal-v1` */
+const CAL_HASH = createHash('sha256').update(canonicalJson(CAT_CAL_DESIGN)).digest('hex');
 const MODEL_MAX_AGE = 3 * HOUR;
 const KEEP = 31 * DAY;
 /** Okno wydania rekordu „model vs rynek” w slocie (od początku slotu): 5–10 min, czyli 5–10 min przed terminem rynku */
@@ -320,6 +323,12 @@ export class LedgerRunner {
       appended++;
     }
 
+    // Plan kalibracji kota — w łańcuchu przed pierwszym rekordem z polem `cal` (cal tylko po rejestracji)
+    if (data.refreshCat && !this.preregs.some((p) => p.catalogHash === CAL_HASH)) {
+      this.add([{ k: 'p', id: CAT_CAL_DESIGN.id, t: ti, catalogHash: CAL_HASH, catalog: CAT_CAL_DESIGN }], ti);
+      appended++;
+    }
+
     // 1. Wydanie prognoz w bieżącym slocie — tylko w przebiegu zaczętym w tym slocie: reżim i kot są pobierane dla slotu
     // chwili `now`; przebieg sprzed granicy (np. pierwsze pobranie modelu po restarcie) zostawia wydanie następnemu
     const issued: Record<string, unknown>[] = [];
@@ -347,7 +356,8 @@ export class LedgerRunner {
         if (data.levels && data.levels.day === today - DAY) issued.push({ ...makeTouchForecast(data.model!, tm, px!, data.levels.pdh, data.levels.pdl) });
         if (data.cat && data.catInput?.slot === slot) {
           const c = makeCatForecast(data.cat, data.catInput.inp, tm);
-          if (c) issued.push({ ...c });
+          const cal = c ? this.catCalFor(c) : null;
+          if (c) issued.push(cal ? { ...c, cal } : { ...c });
           // Godzina na żywo (:15, :30): tylko z rekordem kota z początku tej godziny
           const cat0 = this.forecasts.get(`${slot - (slot % HOUR)}-cat`);
           const hf = data.cat.hour && cat0?.kind === 'cat' ? makeHourForecast(data.cat.hour, cat0, data.catInput.inp.m1, tm) : null;
@@ -455,6 +465,23 @@ export class LedgerRunner {
     return { appended, commit };
   }
 
+  /**
+   * Kalibracja `cat-cal-v1` nowej prognozy kota: pary z prognoz kota tego samego modelu z rozstrzygnięciem już zapisanym
+   * w dzienniku (bez unieważnionych) — w pamięci są tylko rekordy wcześniejsze od wydania; okno i liczności liczy `catCal`.
+   * Bez planu w dzienniku — brak pola.
+   */
+  private catCalFor(c: CatForecast): ReturnType<typeof catCal> {
+    if (!this.preregs.some((p) => p.catalogHash === CAL_HASH)) return null;
+    const pairs: CalPair[] = [];
+    for (const f of this.forecasts.values()) {
+      if (f.kind !== 'cat' || f.mh !== c.mh) continue;
+      const r = this.resolutions.get(f.id) as (Resolution & { void?: string }) | undefined;
+      if (!r || typeof r.void === 'string' || !('yBig' in r) || (r.yBig !== 0 && r.yBig !== 1)) continue;
+      pairs.push({ t: f.t, pBig: f.pBig, yBig: r.yBig, rt: r.t });
+    }
+    return catCal(pairs, { t: c.t, ti: c.ti }, c.pBig);
+  }
+
   private dayFiles(): string[] {
     const dir = this.d.store.path('');
     return existsSync(dir)
@@ -518,6 +545,7 @@ export class LedgerRunner {
       hourPlan: ((p) => (p && typeof p.t === 'number' ? { id: HOUR_DESIGN.id, hash: String(p.hash), at: p.t } : null))(
         this.preregs.find((p) => p.catalogHash === HOUR_HASH)
       ),
+      calPlan: ((p) => (p && typeof p.t === 'number' ? { at: p.t, hash: String(p.hash) } : null))(this.preregs.find((p) => p.catalogHash === CAL_HASH)),
     });
   }
 }
