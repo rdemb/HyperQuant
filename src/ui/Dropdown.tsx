@@ -69,11 +69,13 @@ export const Dropdown: React.FC<DropdownProps> = ({ label, ariaLabel, title, men
   );
   const items = () => [...(panelRef.current?.querySelectorAll<HTMLElement>(ITEM_SEL) ?? [])];
 
-  // Po otwarciu: fokus na zaznaczonej pozycji (albo pierwszej); kliknięcie obok zamyka bez cofania fokusu
+  // Po otwarciu: fokus na polu wyszukiwania panelu (`data-menu-search`, np. wybór rynku) albo na zaznaczonej pozycji (albo
+  // pierwszej); kliknięcie obok zamyka bez cofania fokusu
   useEffect(() => {
     if (!open) return;
     const list = items();
-    list[openFocusIndex(list.map((el) => el.getAttribute('aria-checked') === 'true'))]?.focus({ preventScroll: true });
+    const search = panelRef.current?.querySelector<HTMLElement>('[data-menu-search]');
+    (search ?? list[openFocusIndex(list.map((el) => el.getAttribute('aria-checked') === 'true'))])?.focus({ preventScroll: true });
     const onDown = (e: PointerEvent) => {
       if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
     };

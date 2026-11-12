@@ -132,6 +132,14 @@ describe('kontekst rynku', () => {
     expect(pickAssetCtx(res, 'SOL')).toBeNull();
     expect(pickAssetCtx({}, 'BTC')).toBeNull();
   });
+
+  it('pickAssetCtx na giełdzie HIP-3: nazwa z przedrostkiem giełdy albo bez niego', () => {
+    const named = [{ universe: [{ name: 'xyz:TSLA' }, { name: 'xyz:NVDA' }] }, [{ ...ctx, markPx: '400' }, { ...ctx, markPx: '190.5' }]];
+    expect(pickAssetCtx(named, 'xyz:NVDA')?.markPx).toBe(190.5);
+    const bare = [{ universe: [{ name: 'TSLA' }, { name: 'NVDA' }] }, [{ ...ctx, markPx: '400' }, { ...ctx, markPx: '190.5' }]];
+    expect(pickAssetCtx(bare, 'xyz:NVDA')?.markPx).toBe(190.5);
+    expect(pickAssetCtx(bare, 'NVDA')?.markPx).toBe(190.5);
+  });
 });
 
 describe('parseFundingHistory', () => {

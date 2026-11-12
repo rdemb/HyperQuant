@@ -65,7 +65,10 @@ import { TOOLS } from './draw/model';
 import { type DrawingTools, isTyping } from './draw/tools';
 import { chartKeyAction } from './chart/shortcuts';
 import { FocusExit, type PhoneTab, focusExitKey, focusOn } from './chart/focusMode';
-import { CandleSeries, MARKETS, Market, ProStore, storeFor } from './store/proStore';
+import { COIN, CandleSeries, Market, ProStore, storeFor } from './store/proStore';
+import { chartMarkets, useMarkets } from '../../state/markets';
+import { MarketPicker, PhoneMarketSelect } from './chart/MarketPicker';
+import { expiredNotice, isListed, nextMarket } from './chart/marketMenu';
 import { startRecording } from './store/recording';
 import { useStoreVersion } from './store/useStoreVersion';
 import { ReplayBar } from './replay/ReplayBar';
@@ -73,7 +76,6 @@ import { type ReplayLink, linkPatch, parseReplayLink, replayHash } from './repla
 import { type ReplaySession, replayBase } from './replay/session';
 import { lang, tr } from '../../i18n';
 
-const MARKET_OPTIONS = MARKETS.map((m) => ({ value: m, label: m, title: `${m}-PERP · Hyperliquid` }));
 /** Warstwy przepływu zawsze na liście „Warstwy” (wyłączone — do włączenia jednym dotknięciem). */
 const QUICK_LAYERS = ['showVwap', 'showHeatmap', 'showBubbles', 'showClashes', 'showLots'] as const;
 const FAV_OPTIONS = FAVOURITE_INTERVALS.map((id) => ({ value: id as string, label: intervalById(id).label }));
@@ -329,6 +331,13 @@ export const ProChart: React.FC<{
   // Mapy z bloga (plik bloga z tej samej domeny) tylko z włączoną warstwą na BTC albo dla liczby „Mapa: dotknięte” w nagłówku
   // Rozliczenia; rozliczenie poziomów w układzie Rozliczenie
   const blogSettle = station.id === 'review';
+  // Rynki z rejestru: rynek spoza rozstrzygniętej listy (wygasły link albo zapis) — wykres BTC z jednym zdaniem wyjaśnienia
+  const markets = useMarkets();
+  useEffect(() => {
+    if (inReplay || !markets.ready || isListed(settings.coin, markets.markets)) return;
+    setToast(expiredNotice(settings.coin));
+    setSettings((s) => withPatch(s, { coin: COIN }));
+  }, [markets, settings.coin, inReplay]);
   const blogMaps = useBlogMaps((settings.showBlogMap || (layoutHeader && blogSettle && !inReplay)) && settings.coin === 'BTC');
   useStoreVersion(store, 400);
 
@@ -861,7 +870,7 @@ export const ProChart: React.FC<{
     else if (act.kind === 'now') ctrlRef.current?.scrollToNow();
     else if (act.kind === 'view') update({ view: settings.view === 'footprint' ? 'candles' : 'footprint' });
     else if (act.kind === 'tape') update({ showTape: !settings.showTape });
-    else if (act.kind === 'market') setCoin(MARKETS[(MARKETS.indexOf(settings.coin) + 1) % MARKETS.length]);
+    else if (act.kind === 'market') setCoin(nextMarket(chartMarkets(), settings.coin));
     else if (act.kind === 'reset') ctrlRef.current?.resetScales();
     else if (act.kind === 'autoscale') ctrlRef.current?.setAutoScale(!scale.auto);
     else (layoutFs?.toggle ?? toggleFullscreen)();
@@ -901,7 +910,7 @@ export const ProChart: React.FC<{
       {!narrow && (
         <div data-chart-bar className="@container flex flex-wrap min-[900px]:flex-nowrap items-center gap-1.5 px-2 py-1 border-b border-line min-h-11">
           {barLead}
-          <DropdownSelect<Market> ariaLabel={tr(`Rynek: ${settings.coin}`, `Market: ${settings.coin}`)} title={tr('Rynek (M — następny)', 'Market (M — next)')} label={settings.coin} value={settings.coin} options={MARKET_OPTIONS} onChange={setCoin} width="w-44" />
+          <MarketPicker value={settings.coin} markets={markets.markets} onChange={setCoin} />
           {/* Ulubione interwały jako przyciski tylko na bardzo szerokim ekranie */}
           <div className="hidden min-[1600px]:inline-flex">
             <Segmented<string> ariaLabel={tr('Ulubione interwały', 'Favourite timeframes')} value={settings.interval} onChange={(v) => update({ interval: v })} options={FAV_OPTIONS} />
@@ -988,7 +997,7 @@ export const ProChart: React.FC<{
             {phoneTabs && (
               <PhoneSelect<string> ariaLabel={tr('Karta układu', 'Layout tab')} value={phoneTabs.value} options={phoneTabs.options} onChange={phoneTabs.onChange} className="max-w-[7.5rem] truncate" />
             )}
-            <PhoneSelect<Market> ariaLabel={tr('Rynek', 'Market')} value={settings.coin} options={MARKET_OPTIONS} onChange={setCoin} />
+            <PhoneMarketSelect value={settings.coin} markets={markets.markets} onChange={setCoin} />
             <PhoneSelect<string> ariaLabel={tr('Interwał wykresu', 'Chart timeframe')} value={settings.interval} options={INTERVAL_OPTIONS} onChange={(v) => update({ interval: v })} />
             <PhoneSelect<string>
               ariaLabel={tr('Rodzaj wykresu', 'Chart type')}
@@ -1988,7 +1997,7 @@ const KEY_GROUPS: { title: string; keys: [string, string][] }[] = [
     keys: [
       ['1 … 9, 0', `${tr('Interwał', 'Timeframe')}: ${INTERVALS.map((i) => i.label).join(', ')}`],
       ['C', tr('Świece ↔ footprint', 'Candles ↔ footprint')],
-      ['M', `${tr('Następny rynek', 'Next market')} (${MARKETS.join(', ')})`],
+      ['M', tr('Następny rynek z listy (według otwartych pozycji)', 'Next market on the list (by open interest)')],
       ['T', tr('Taśma zleceń', 'Order tape')],
       ['R', tr('Przywróć skalę', 'Reset scale')],
       ['A', tr('Autoskala ceny: włącz / zamroź zakres', 'Price autoscale: on / freeze the range')],

@@ -1,5 +1,5 @@
 import { ALERT_INTERVALS, MAX_CLOSES, NOTE_MAX, defaultDir } from '../../../utils/alertRules';
-import { MARKETS } from '../store/proStore';
+import { isCoinName } from '../../../utils/marketRegistry';
 import { type PriceAlert, newAlert, windowOf } from './alerts';
 
 /**
@@ -59,7 +59,7 @@ export function parseAlarmLink(hash: string): LinkAlarm[] | null {
   const out: LinkAlarm[] = [];
   for (const [idx, v] of data.entries()) {
     const e = v as Partial<LinkAlarm> | null;
-    if (!e || !(MARKETS as readonly string[]).includes(e.c ?? '') || !(typeof e.p === 'number' && e.p > 0) || !(e.k === 't' || e.k === 'c' || e.k === 'r' || e.k === 's')) return null;
+    if (!e || !isCoinName(e.c) || !(typeof e.p === 'number' && e.p > 0) || !(e.k === 't' || e.k === 'c' || e.k === 'r' || e.k === 's')) return null;
     if (e.k !== 't' && e.d !== 1 && e.d !== -1) return null;
     if (e.i !== undefined && !(ALERT_INTERVALS as readonly string[]).includes(e.i)) return null;
     if (e.n !== undefined && !(Number.isInteger(e.n) && e.n >= 1 && e.n <= MAX_CLOSES)) return null;

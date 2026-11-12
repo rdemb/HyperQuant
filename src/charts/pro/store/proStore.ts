@@ -14,6 +14,7 @@ import { Tape, TradeRow } from '../core/tape';
 import { periodStart, utcDayStart } from '../core/sessions';
 import { indicatorScope, vwapSourceId } from '../core/indicators';
 import { DAY, Interval, aggregateCandles, barEnd, barStart, fromDaily, intervalById } from '../core/time';
+import { HOME_MARKET } from '../../../utils/marketCaps';
 
 /**
  * Magazyn wykresu Pro (bez Reacta, jeden na rynek): taśma transakcji od otwarcia widoku z pokryciem
@@ -22,10 +23,12 @@ import { DAY, Interval, aggregateCandles, barEnd, barStart, fromDaily, intervalB
  * powiadomienie o zmianie i sami czytają stan (`series(id).bars()`, `ctx`, `orders`).
  */
 
-/** Rynki perp Hyperliquid w widoku Wykresy. */
-export const MARKETS = ['BTC', 'ETH', 'SOL', 'HYPE'] as const;
-export type Market = (typeof MARKETS)[number];
-export const COIN: Market = 'BTC';
+/**
+ * Rynek perp Hyperliquid w widoku Wykresy: nazwa z rejestru rynków (`BTC`, `kPEPE`, `xyz:NVDA`), lista w `state/markets`.
+ * Link i zapis sprawdzają tylko format nazwy (`isCoinName`); rynek spoza rejestru zamienia na BTC wykres.
+ */
+export type Market = string;
+export const COIN: Market = HOME_MARKET;
 /** Tyle świec pobieramy na start i przy każdym doczytaniu historii. */
 export const PAGE_BARS = 1500;
 /** Po nieudanym pobraniu starszej strony świec kolejna próba najwcześniej po tylu ms (błąd to nie koniec historii). */
