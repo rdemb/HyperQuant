@@ -4,6 +4,23 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Profil TPO i profile dób: krótsze słupki, pełny profil dwóch ostatnich dób, 3 nagie POC (2026-11-12)
+
+Na danych stałych `ui:check` (zegar 24.10.2026 21:29 UTC) TPO 30m: „Mapa dnia” 1440 × 900 — 14 obiektów, pole pod słupkami 8,8% → 14 i 4,1%; telefon 390 × 844 — 9 i 13,3% → 9 i 12%; „Rozliczenie doby” 1440 — 21 i 6,7% → 15 i 1,8%; telefon — 9 i 13,3% → 9 i 12%. Profile dób 4h („Mapa dnia”, 1440): 22 obiekty i 2,5% → 22 i 0,8%. Liczby „przed” zmierzone na stronie z `main` z tymczasowym licznikiem w warstwach (bez commita). Obiekt: profil doby (słupki z obrysem), linia POC, nagi POC, pasek value area albo pierwszej godziny, odcinek znaczników wydruków albo ogonów, podpis delty.
+
+Na telefonie dzisiejsza doba zaczyna się przed lewą krawędzią wykresu; przy limicie 30% pola słupki liczone od początku doby nie sięgałyby ekranu, więc słupki bieżącej doby zaczynają się przy lewej krawędzi pola. Przy dawnych proporcjach (75% doby) dałoby to 40% pola, po zmianie 12%.
+
+#### Zmienione
+- **Najdłuższy słupek najwyżej 35% szerokości doby i nigdy ponad 30% szerokości pola wykresu** (`src/charts/pro/chart/profileSelect.ts`, `barSpan`; dotąd 75% doby w TPO). Profile dób w nakładce: dotychczasowe 25% okresu (do 120 px), teraz także najwyżej 30% pola.
+- **Pełny profil tylko dla bieżącej i poprzedniej doby** (albo sesji w profilach sesji), wybranych z danych, nie z przewinięcia (`fullFrom`); starsze — linia POC i pasek value area. Znaczniki pojedynczych wydruków i ogonów, pasek pierwszej godziny i delta doby tylko przy pełnym profilu (`src/charts/pro/chart/tpoLayer.ts`, `src/charts/pro/chart/overlay.ts`).
+- **Nagie POC: najwyżej 3 najbliższe cenie** (`nearestNaked`; dotąd 6 najnowszych w TPO i 8 w profilach okresów).
+- **Bieżąca doba zaczęta przed lewą krawędzią** rysuje słupki TPO od krawędzi pola (`profileAnchor`).
+- **Opis warstw** (okno wskaźników, PL i EN): nowe reguły i wynik sprawdzianu: „POC poprzedniej doby nie przyciąga ceny: dotykany w 71% dób, losowy poziom w tej samej odległości w 73%.”
+
+#### Dodane
+- **`ui:check`: scenariusz profili dób** („Mapa dnia”: 4h z profilami dób i 30m z TPO, na telefonie 30m; „Rozliczenie doby” 30m; dane stałe, 1440 i 390): liczby z atrybutów `data-tpo-objects`, `data-tpo-area`, `data-period-objects`, `data-period-area`. Limity w `--strict`: TPO najwyżej 20 obiektów na komputerze; pole pod słupkami najwyżej 12% na komputerze i 20% na telefonie. Liczba obiektów profili dób rośnie z liczbą dób w widoku (starsza doba to zawsze POC i pasek), więc pilnuje jej punkt odniesienia. `scripts/ui/baseline.json` (win32): 10 nowych liczb `tpo.*` i `periods.*`.
+- Testy: `profileSelect.test.ts` (długość słupka na komputerze i telefonie, pełny profil dwóch ostatnich dób, słupki bieżącej doby od krawędzi, 3 nagie POC najbliższe cenie, znaczniki jako odcinki, pole pod słupkami, zamknięta doba z tym samym profilem po dopisaniu kolejnej, zdanie w opisie PL i EN).
+
 ### Wykres Pro: uśpienie karty nie liczy się jako nagrana taśma, delta i CVD widzą luki (2026-11-12)
 
 #### Naprawione
@@ -12,6 +29,7 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 - **Osobny strażnik kanału transakcji**: 2 min bez transakcji przy płynących innych kanałach (kontekst, świeca) też zamyka i otwiera połączenie od nowa.
 - **Delta i CVD patrzą na `complete`** (`src/charts/pro/core/flow.ts`, nowy `src/charts/pro/chart/flowPoints.ts`, `src/charts/pro/chart/controller.ts`, `src/charts/pro/chart/theme.ts`): świeca niepełna ma w panelu delty kolor świecy niepełnej (`PRO.incomplete`), w CVD (świece i linia Hyperliquid w panelu giełd) przerwę i zerowanie po niej, jak świeca bez taśmy. Ta sama świeca jest niepełna we wszystkich panelach. W opisie panelu delty (i w opisie CVD bez panelu delty) liczba świecy niepełnej ma kolor świecy niepełnej i dopisek „niepełna” / „partial” (`flowLegend`).
 - Testy: `src/charts/pro/__tests__/stream.test.ts` (3: uśpienie 10 min, wiadomość z bufora po przerwie, cisza samego kanału transakcji), `src/charts/pro/__tests__/proStore.test.ts` (test akceptacyjny: zegar zamrożony na 10 min w środku świecy daje `complete=false` i lukę w pokryciu; historia serwera obejmująca lukę daje świecę pełną i CVD bez przerwy, historia z częścią luki — świecę niepełną), `src/charts/pro/__tests__/flow.test.ts` (CVD z przerwą, punkty delty i linii CVD, opis delty świecy niepełnej).
+
 
 ### Bąble zleceń, ściany i serie: reguła przyczynowa, bez wyboru największych w oknie (2026-11-11)
 
