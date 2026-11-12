@@ -129,7 +129,13 @@
       "levels.review.lines1440": 6,
       "sessions.review.lines1440": 6,
       "levels.review.lines390": 3,
-      "sessions.review.lines390": 0
+      "sessions.review.lines390": 0,
+      "pb.boxes1440": 0,
+      "pb.lines1440": 4,
+      "pb.marks1440": 0,
+      "pb.boxes390": 0,
+      "pb.lines390": 4,
+      "pb.marks390": 0
     }
   }
 }
