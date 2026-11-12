@@ -4,6 +4,13 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Pomiar rynków rejestru w cieniu, etap M0, i przepływ minutowy K2 (2026-11-12)
+
+#### Dodane
+- **Skaner, `status.json`**: nowe pola opcjonalne. `markets[rynek] = { coverage, unseenShare }` podaje, dla każdego rynku z rejestru, pokrycie OI odczytanymi pozycjami (ta sama miara co dla BTC; dla rynków HIP-3 `null`) i udział obrotu kont spoza księgi adresów w 7 dniach. `xyz = { accounts, inBook, unseenShare, share }` podaje, ile kont widać na taśmach `xyz`, ile z nich jest w księdze i jaki mają udział w obrocie. `marketsHours` to godziny z danymi w oknie. Publikowane są same liczby, bez adresów. Skaner nie robi nowych zapytań REST: pozycje pochodzą z odczytów, które już robi, a OI z przebiegu rejestru. Doszło jedno połączenie WebSocket z subskrypcją `trades` dla rynków rejestru. Strona się nie zmienia, a starsi czytelnicy statusu działają bez zmian.
+- **Skaner, przepływ minutowy (K2)**: suma kupna i sprzedaży agresywnej na minutę dla każdego rynku rejestru, liczona z tej samej subskrypcji. Wynik trafia do plików dobowych w katalogu stanu serwera, przycinanych do 14 dób (ok. 5 MB), i nie jest publikowany. Posłuży do testu offline po K2.
+- Zmienna `HQ_MARKETS_SHADOW` (domyślnie 1; `0` wyłącza pomiar i dodatkowe połączenie).
+
 ### Strażnik ciszy kanału transakcji osobno dla każdego rynku, etap M1.5 (2026-11-12)
 
 #### Poprawione

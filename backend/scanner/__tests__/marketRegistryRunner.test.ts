@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { isMarketRegistry, type MarketRegistry } from '../../../src/utils/marketRegistry.ts';
 import type { InfoClient } from '../liqDetect.ts';
+import { parseOpenInterest } from '../marketShadow.ts';
 import { MARKET_REGISTRY_EVERY_MS, MAX_DEX_QUERIES, MarketRegistryRunner, REGISTRY_START_WINDOW } from '../marketRegistryRunner.ts';
 
 const H = 3_600_000;
@@ -98,6 +99,23 @@ describe('MarketRegistryRunner', () => {
     expect(f.markets[0]).toMatchObject({ coin: 'BTC', dex: '', oiUsd7d: 3e9, rank: 1, scanner: 'full', since: '2026-11-01' });
     // Publikacja bez adresów (pola giełd z perpDexs nie trafiają do pliku)
     expect(JSON.stringify(f)).not.toMatch(/0x[0-9a-f]{40}/i);
+  });
+
+  it('pomiar M0: odpowiedzi metaAndAssetCtxs przekazane dalej (OI rynków głównych) bez dodatkowych zapytań', async () => {
+    const { rest, calls } = api();
+    const got: [string, number][] = [];
+    const runner = new MarketRegistryRunner({
+      rest,
+      statePath: join(mkdtempSync(join(tmpdir(), 'hq-markets-')), 's.json'),
+      outPath: join(mkdtempSync(join(tmpdir(), 'hq-markets-')), 'markets.json'),
+      scannerCoins: ['BTC'],
+      startWindow: [0, 15 * 60_000],
+      wait: async () => {},
+      onDexCtxs: (dex, raw) => got.push([dex, parseOpenInterest(raw)?.BTC ?? parseOpenInterest(raw)?.['xyz:NVDA'] ?? -1]),
+    });
+    await runner.tick(T0);
+    expect(calls).toHaveLength(3);
+    expect(got).toEqual([['', 30000], ['xyz', 2_000_000]]);
   });
 
   it('raz na godzinę: kolejny takt w ciągu godziny nic nie pobiera', async () => {

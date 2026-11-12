@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { AddressBook } from './addressBook.ts';
 import { CandleArchive } from './candleArchive.ts';
 import { loadConfig } from './config.ts';
-import { HlRest, HlStream } from './hl.ts';
+import { HlRest, HlStream, HlTradesStream } from './hl.ts';
 import { LiqConfirmer, PriceRange } from './liqDetect.ts';
 import { CohortEngine } from './cohortEngine.ts';
 import { ForecastData } from './forecaster.ts';
@@ -26,6 +26,8 @@ import { HISTORY_README, MarketRecorder, historyIndex, pruneHistory } from './hi
 import { prepareHistoryRepo, publishHistory, startWhenReady } from './historyGit.ts';
 import { WHALE_MARKETS, WhaleWatcher } from './whales.ts';
 import { MAX_DEX_QUERIES, MarketRegistryRunner } from './marketRegistryRunner.ts';
+import { FlowFile, FlowMinutes, MarketShadow, parseOpenInterest } from './marketShadow.ts';
+import { marketsOrDefault } from '../../src/utils/marketRegistry.ts';
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 const log = (msg: string) => console.log(`[skaner] ${msg}`);
@@ -86,7 +88,27 @@ function writeJsonAtomic(path: string, value: unknown): void {
   renameSync(tmp, path);
 }
 
+/**
+ * Pomiar w cieniu M0 (HQ_MARKETS_SHADOW, domyślnie włączony): pozycje rynków głównych z odczytów, które skaner i tak robi,
+ * OI z kontekstów pobieranych przez rejestr, transakcje rynków rejestru z jednego dodatkowego połączenia (same `trades`).
+ * W `status.json` same liczby (`markets`, `xyz`, `marketsHours`); stan z adresami tylko w HQ_STATE_DIR.
+ * K2: przepływ minutowy (kupno i sprzedaż agresywna, USD) w `HQ_STATE_DIR/flow-1m/RRRR-MM-DD.jsonl`, 14 dób, niepublikowany.
+ */
+const shadowStatePath = join(cfg.stateDir, 'markets-m0.json');
+let shadow: MarketShadow | null = null;
+if (cfg.marketsShadow) {
+  try {
+    shadow = MarketShadow.fromJSON(JSON.parse(readFileSync(shadowStatePath, 'utf8')), Date.now());
+    log('wczytano stan pomiaru rynków (M0)');
+  } catch {
+    shadow = new MarketShadow();
+  }
+}
+const flow = new FlowMinutes();
+const flowFile = new FlowFile(join(cfg.stateDir, 'flow-1m'));
+
 function saveState(): void {
+  if (shadow) writeJsonAtomic(shadowStatePath, shadow.toJSON());
   writeJsonAtomic(statePath, book.toJSON());
   writeJsonAtomic(liqStatePath, { savedAt: Date.now(), since: scanner.tapeSince, confirmer: scanner.confirmer.toJSON(), prices: scanner.prices.toJSON() });
   writeJsonAtomic(cohortStatePath, cohorts.toJSON());
@@ -101,7 +123,24 @@ function saveState(): void {
 const rest = new HlRest(new WeightLimiter(cfg.weightPerMin));
 const liqRest = new HlRest(new WeightLimiter(cfg.liqWeightPerMin));
 const forecastRest = new HlRest(new WeightLimiter(cfg.forecastWeightPerMin));
-const scanner = new Scanner({ coin: cfg.coin, book, rest, liqRest, outDir: cfg.outDir, r2: cfg.r2, confirmer, tapeSince, prices, cohorts });
+const scanner = new Scanner({
+  coin: cfg.coin,
+  book,
+  rest,
+  liqRest,
+  outDir: cfg.outDir,
+  r2: cfg.r2,
+  confirmer,
+  tapeSince,
+  prices,
+  cohorts,
+  ...(shadow
+    ? {
+        onScan: (addr: string, st: unknown) => shadow.onScan(addr, st),
+        extraStatus: (asOf: number, coverage: number) => shadow.status(asOf, { inBook: (a) => book.has(a), btc: { coin: cfg.coin, coverage } }),
+      }
+    : {}),
+});
 let lastWsCtx = 0;
 /** Ostatnia wiadomość WebSocket (transakcje lub kontekst) — przerwa > 2 min zeruje okres obserwacji taśmy */
 let lastWsMsg = Date.now();
@@ -168,6 +207,35 @@ const stream = new HlStream(
   WebSocket,
   (t, levels) => liquidity.onBook(t, levels)
 );
+
+/** Jedno dodatkowe połączenie: `trades` dla każdego rynku rejestru (z BTC, żeby wszystkie rynki K2 miały ten sam odcinek połączenia). */
+const shadowStream = shadow
+  ? new HlTradesStream(
+      (trades) => {
+        for (const t of trades) {
+          shadow!.onTrade(t, (a) => book.has(a));
+          flow.onTrade(t.coin, t.side, Number(t.px) * Number(t.sz), t.time);
+        }
+      },
+      (up, at) => flow.onState(up, at),
+      WebSocket
+    )
+  : null;
+/** Rynki z `markets.json` (rejestr budowany przez skaner); brak albo zły plik → 4 stałe rynki. */
+function applyShadowMarkets(): void {
+  if (!shadow || !shadowStream) return;
+  let raw: unknown = null;
+  try {
+    raw = JSON.parse(readFileSync(join(cfg.outDir, 'markets.json'), 'utf8'));
+  } catch {
+    // brak rejestru — rynki domyślne
+  }
+  const coins = marketsOrDefault(raw).map((m) => m.coin);
+  shadow.setCoins(coins);
+  flow.setCoins(coins, Date.now());
+  shadowStream.setCoins(coins);
+}
+applyShadowMarkets();
 
 /**
  * Rejestrator historii (gałąź `history` repo danych, rynki z HQ_HISTORY_MARKETS): na rynek osobne połączenie WebSocket
@@ -260,12 +328,17 @@ const marketRegistry = new MarketRegistryRunner({
   statePath: join(cfg.stateDir, 'markets-state.json'),
   outPath: join(cfg.outDir, 'markets.json'),
   scannerCoins: [cfg.coin],
+  onDexCtxs: (dex, raw, at) => {
+    const oi = dex === '' && shadow ? parseOpenInterest(raw) : null;
+    if (oi) shadow!.setOi(oi, at);
+  },
 });
 
 async function marketRegistryTick(): Promise<void> {
   const r = await marketRegistry.tick(Date.now());
   if (r.error) console.error(`[skaner] rejestr rynków: ${r.error}`);
   if (!r.ran) return;
+  applyShadowMarkets();
   log(`rejestr rynków: ${r.markets} rynków z ${r.dexes} giełd`);
   if (r.entered?.length) log(`rejestr rynków: weszły ${r.entered.join(', ')}`);
   if (r.left?.length) log(`rejestr rynków: wyszły ${r.left.join(', ')}`);
@@ -503,6 +576,19 @@ const timers = [
     );
   }), cfg.publishEveryS * 1000),
   setInterval(guarded('czyszczenie', () => book.prune(Date.now())), 10 * 60_000),
+  ...(shadowStream
+    ? [
+        setInterval(guarded('przepływ minutowy', () => flowFile.append(flow.flush(Date.now()))), 60_000),
+        setInterval(
+          guarded('czyszczenie pomiaru rynków', () => {
+            const now = Date.now();
+            shadow?.prune(now, (a) => book.has(a));
+            flowFile.prune(now);
+          }),
+          10 * 60_000
+        ),
+      ]
+    : []),
   setInterval(
     guarded('markouty kohort', () => {
       const now = Date.now();
@@ -553,6 +639,12 @@ function shutdown(): void {
   for (const t of timers) clearInterval(t);
   stream.stop();
   for (const r of recorders) r.stream.stop();
+  shadowStream?.stop();
+  try {
+    if (shadowStream) flowFile.append(flow.flush(Date.now()));
+  } catch (e) {
+    console.error(`[skaner] zapis przepływu minutowego przy zatrzymaniu nieudany: ${String(e)}`);
+  }
   try {
     // Bieżąca część taśmy do chwili zatrzymania (aktualizacja restartuje skaner — bez tego luka do 5 min)
     for (const { rec } of recorders) rec.flush(Date.now(), true);
@@ -583,6 +675,10 @@ log(
 // Agregacja arkusza dobrana do ceny przed pierwszym połączeniem (z ostatniej zapisanej minuty), potem co 10 min
 adjustBookAgg();
 stream.start();
+if (shadowStream) {
+  shadowStream.start();
+  log(`pomiar rynków (M0, K2): jedno połączenie, ${shadowStream.subscriptions} subskrypcji trades`);
+}
 // Rejestratory historii z repo gałęzi dopiero po jego przygotowaniu: na świeżym klonie numeracja doby musi widzieć pliki
 // doby odtworzone z gałęzi (inaczej numery od 0 powtórzyłyby numery innych kont); reszta skanera startuje od razu
 const startRecorders = () => {
