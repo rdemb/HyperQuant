@@ -23,6 +23,9 @@ export function metricsOf(r) {
   if (typeof r.effort?.phone === 'number') m['effort.rects390'] = r.effort.phone;
   // Ściany i serie (wybór warstwy) w Kokpicie 1m na powtórce 24.10
   if (typeof r.clashes?.desktop === 'number') m['clashes.objects1440'] = r.clashes.desktop;
+  // Bąble zleceń (wybór warstwy, bez serii) w Kokpicie 1m na powtórce 24.10
+  if (typeof r.bubbles?.desktop === 'number') m['bubbles.count1440'] = r.bubbles.desktop;
+  if (typeof r.bubbles?.phone === 'number') m['bubbles.count390'] = r.bubbles.phone;
   // Zakres początkowy sesji (wybór warstwy) na danych stałych: „Aukcja i otwarcie” 5m i „Rozliczenie doby” 30m
   for (const [view, v] of [['auction', r.ib?.auction], ['review', r.ib?.review]]) {
     if (typeof v?.desktop === 'number') m[`ib.${view}1440`] = v.desktop;
@@ -34,6 +37,16 @@ export function metricsOf(r) {
       if (typeof d?.levels === 'number') m[`levels.${view}.lines${w}`] = d.levels;
       if (typeof d?.sessions === 'number') m[`sessions.${view}.lines${w}`] = d.sessions;
       if (typeof d?.levels4h === 'number') m[`levels.${view}.lines4h${w}`] = d.levels4h;
+    }
+  }
+  // Profile dób (TPO i profile okresów, wybór warstwy): obiekty i pole pod słupkami (%) w „Mapie dnia” i „Rozliczeniu doby”
+  for (const [view, v] of Object.entries(r.profiles ?? {})) {
+    for (const [w, d] of [['1440', v?.desktop], ['390', v?.phone]]) {
+      for (const layer of ['tpo', 'periods']) {
+        const c = d?.[layer];
+        if (typeof c?.objects === 'number') m[`${layer}.${view}.objects${w}`] = c.objects;
+        if (typeof c?.area === 'number') m[`${layer}.${view}.area${w}`] = c.area;
+      }
     }
   }
   // Strefy nierównowagi i niedokończone aukcje (wybór warstwy) w układzie „Aukcja i otwarcie”, powtórka 24.10, 5m

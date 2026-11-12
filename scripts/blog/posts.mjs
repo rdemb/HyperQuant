@@ -23,6 +23,8 @@ const SETUP_KEYS = new Set(['name', 'bias', 'zone', 'window', 'triggers', 'inval
 export const BIASES = ['up', 'down', 'flat'];
 /** Liczba wierszy mapy likwidacji (przedziały od najniższego do najwyższego, także puste). */
 const LIQ_MAX_ROWS = 60;
+/** Od tego dnia (prefiks nazwy) reguły rozliczenia tygodnia: BSS w parze, bez „realnej informacji” map; starsze wpisy bez zmian. */
+const WEEKLY_RULES_FROM = '2026-11-08';
 /** Bloki danych, które treść może wstawić w wybranym miejscu znacznikiem w osobnej linii (np. `[[likwidacje]]`). */
 export const BLOCKS = {
   dane: 'metrics',
@@ -266,7 +268,15 @@ export function validatePost(id, data, body, charts = null) {
     ...list(scenarios).flatMap((s) => [s?.label, s?.note]),
     ...list(setups).flatMap((s) => [s?.name, s?.window, ...list(s?.triggers), s?.invalidation, s?.evidence, ...list(s?.reactions).map((r) => r?.label)]),
   ];
-  for (const v of guardViolations(texts.filter((t) => typeof t === 'string').join('\n'))) err(v);
+  const allText = texts.filter((t) => typeof t === 'string').join('\n');
+  for (const v of guardViolations(allText)) err(v);
+  // Rozliczenie tygodnia (wpisy od 8.11.2026): BSS dotknięć zawsze wobec obu baz, a trafności map nie streszcza zdanie
+  // o „realnej informacji” (BSS wobec samej częstości bazowej ją zawyża; liczby wobec bazy odległości mówią więcej)
+  if (idMatch && idMatch[1] >= WEEKLY_RULES_FROM && typeof data.section === 'string' && /^rozliczenie tygodnia/i.test(data.section.trim())) {
+    if (/\bBSS\b/.test(allText) && !(/odległoś/i.test(allText) && /częstoś/i.test(allText)))
+      err('BSS: podaj oba, wobec bazy odległości i wobec częstości bazowej (sama częstość zawyża wynik)');
+    if (/realn\p{L}* informacj/iu.test(allText)) err('treść: bez zdania o „realnej informacji” map; trafność map opisz liczbami wobec bazy odległości');
+  }
 
   if (errors.length) return { post: null, errors };
   return {

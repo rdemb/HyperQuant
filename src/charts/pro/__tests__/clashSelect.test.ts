@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { type Burst, type Wall, DEFAULT_THRESHOLD_USD, bursts } from '../core/clashes';
 import type { AggressorOrder } from '../core/orders';
-import { BURSTS_MAX, CLASHES_EVIDENCE, WALLS_DONE_MAX, WALLS_LIVE_MAX, WALL_MIN_MS, selectClashes, thresholdAt, wallShown } from '../chart/clashSelect';
+import { BURSTS_K, BURSTS_MAX, CLASHES_EVIDENCE, RANK_WINDOW_MS, WALLS_DONE_MAX, WALLS_K, WALLS_LIVE_MAX, WALL_MIN_MS, selectClashes, thresholdAt, wallShown } from '../chart/clashSelect';
 
 const H = 3_600_000;
 const T0 = Date.UTC(2026, 9, 24, 16, 0);
@@ -47,6 +47,14 @@ describe('próg z chwili zdarzenia (szereg godzinowy z taśmy)', () => {
     expect(at(T0 + H + 5)).toBe(thresholdAt(range, 0)(T0 + H + 5));
   });
 
+  it('progi zamkniętych godzin z pamięci wspólnej dla kolejnych scen: godzina liczona raz', () => {
+    const src = vi.fn(range);
+    const memo = new Map<number, number>();
+    thresholdAt(src, 0, memo)(T0 + H + 5);
+    expect(thresholdAt(src, 0, memo)(T0 + H + 50_000)).toBe(500_000);
+    expect(src).toHaveBeenCalledTimes(1);
+  });
+
   it('próg ręczny z ustawień — ten sam dla każdej chwili', () => {
     const at = thresholdAt(range, 250_000);
     expect([at(T0), at(T0 + 5 * H)]).toEqual([250_000, 250_000]);
@@ -73,20 +81,81 @@ describe('wybór ścian i serii (selectClashes)', () => {
   const thr = () => 100_000;
 
   it(`najwyżej ${WALLS_DONE_MAX} największych ścian zakończonych, ${WALLS_LIVE_MAX} trwających i ${BURSTS_MAX} największych serii`, () => {
-    const done = Array.from({ length: 9 }, (_, i) => wall({ from: T0 + i * 60_000, to: T0 + i * 60_000 + 20_000, usd: 200_000 + i * 1000 }));
-    const live = Array.from({ length: 5 }, (_, i) => wall({ from: now - 40_000, to: now - 1_000 - i, usd: 400_000 + i, px: 100_000 + i }));
-    const bs = Array.from({ length: 8 }, (_, i) => burst({ from: T0 + i * 1000, usd: 150_000 + i }));
+    // Każda kolejna ściana i seria większa od poprzednich — reguła przyczynowa przepuszcza wszystkie, decyduje limit
+    const done = Array.from({ length: 15 }, (_, i) => wall({ from: T0 + i * 60_000, to: T0 + i * 60_000 + 20_000, usd: 200_000 + i * 1000 }));
+    const live = Array.from({ length: 5 }, (_, i) => wall({ from: now - 40_000, to: now - 5_000 + i, usd: 400_000 + i, px: 100_000 + i }));
+    const bs = Array.from({ length: 12 }, (_, i) => burst({ from: T0 + i * 1000, to: T0 + i * 1000 + 500, usd: 150_000 + i }));
     const s = selectClashes(done.concat(live), bs, now, thr);
-    expect(s.walls.filter((w) => now - w.to >= 30_000).map((w) => w.usd)).toEqual([208_000, 207_000, 206_000, 205_000, 204_000]);
+    expect(s.walls.filter((w) => now - w.to >= 30_000).map((w) => w.usd)).toEqual(Array.from({ length: WALLS_DONE_MAX }, (_, i) => 214_000 - i * 1000));
     expect(s.walls.filter((w) => now - w.to < 30_000)).toHaveLength(3);
-    expect(s.bursts.map((b) => b.usd)).toEqual([150_007, 150_006, 150_005, 150_004, 150_003]);
-    expect(s.walls.length + s.bursts.length).toBeLessThanOrEqual(13);
+    expect(s.bursts.map((b) => b.usd)).toEqual(Array.from({ length: BURSTS_MAX }, (_, i) => 150_011 - i));
+    expect(s.walls.length + s.bursts.length).toBeLessThanOrEqual(25);
+  });
+
+  it('limit bezpieczeństwa nie przycina zmierzonego maksimum: 11 ścian zakończonych i 9 serii zostaje w całości', () => {
+    expect([WALLS_DONE_MAX, WALLS_LIVE_MAX, BURSTS_MAX]).toEqual([12, 3, 10]);
+    const done = Array.from({ length: 11 }, (_, i) => wall({ from: T0 + i * 60_000, to: T0 + i * 60_000 + 20_000, usd: 200_000 + i * 1000, px: 100_000 + i }));
+    const bs = Array.from({ length: 9 }, (_, i) => burst({ from: T0 + i * 1000, to: T0 + i * 1000 + 500, usd: 150_000 + i }));
+    const s = selectClashes(done, bs, now, thr);
+    expect(s.walls).toHaveLength(11);
+    expect(s.bursts).toHaveLength(9);
   });
 
   it('ściana oceniana progiem z chwili powstania: bez zmiany progu bieżącego nie znika ani nie wraca', () => {
     const w = wall({ from: T0 + 10, usd: 250_000 });
     const byHour = (t: number) => (t < T0 + H ? 200_000 : 1_000_000);
     expect(selectClashes([w], [], now + 5 * H, byHour).walls).toHaveLength(1);
+  });
+
+  it(`ściana rysowana, gdy w chwili zakończenia była wśród ${WALLS_K} największych zakończonych w poprzednich ${RANK_WINDOW_MS / 60_000} min`, () => {
+    const a = wall({ from: T0, to: T0 + 60_000, usd: 900_000, px: 1 });
+    const b = wall({ from: T0 + 2 * 60_000, to: T0 + 3 * 60_000, usd: 800_000, px: 2 });
+    const c = wall({ from: T0 + 4 * 60_000, to: T0 + 5 * 60_000, usd: 500_000, px: 3 });
+    // d: większa niż c, ale mniejsza od a i b — trzecia; e: po godzinie od a i b — pierwsza
+    const d = wall({ from: T0 + 6 * 60_000, to: T0 + 7 * 60_000, usd: 600_000, px: 4 });
+    const e = wall({ from: T0 + 64 * 60_000, to: T0 + 65 * 60_000, usd: 300_000, px: 5 });
+    const s = selectClashes([a, b, c, d, e], [], now + H, thr);
+    expect(s.walls.map((w) => w.px).sort()).toEqual([1, 2, 5]);
+  });
+
+  it('raz narysowana ściana zostaje: późniejsze większe ściany i przewinięcie nie zmieniają wyboru z przeszłości', () => {
+    const early = wall({ from: T0, to: T0 + 60_000, usd: 300_000, px: 1 });
+    const later = Array.from({ length: 4 }, (_, i) => wall({ from: T0 + (10 + i) * 60_000, to: T0 + (11 + i) * 60_000, usd: 1_000_000 + i, px: 10 + i }));
+    const at = (list: Wall[], when: number, from: number) => selectClashes(list, [], when, thr, from).walls.map((w) => w.px);
+    expect(at([early], T0 + 5 * 60_000, T0)).toEqual([1]);
+    // Kolejne większe ściany kończą się później; okno od początku albo przewinięte — `early` nadal narysowana
+    expect(at([early, ...later.slice(0, 2)], T0 + 20 * 60_000, T0)).toContain(1);
+    expect(at([early, ...later.slice(0, 2)], T0 + 20 * 60_000, T0 - 30 * 60_000)).toContain(1);
+    // Ściany zakończone w godzinie przed widokiem liczą się do porównania, choć same nie są na ekranie
+    expect(at([...later.slice(0, 2), wall({ from: T0 + 16 * 60_000, to: T0 + 17 * 60_000, usd: 500_000, px: 3 })], T0 + 30 * 60_000, T0 + 16 * 60_000)).toEqual([]);
+  });
+
+  it(`serie: ta sama reguła z K = ${BURSTS_K} (największa zakończona w poprzednich ${RANK_WINDOW_MS / 60_000} min)`, () => {
+    const big = burst({ from: T0, to: T0 + 1000, usd: 900_000 });
+    const small = burst({ from: T0 + 10 * 60_000, to: T0 + 10 * 60_000 + 1000, usd: 200_000 });
+    const after = burst({ from: T0 + 70 * 60_000, to: T0 + 70 * 60_000 + 1000, usd: 150_000 });
+    expect(selectClashes([], [big, small, after], now + H, thr).bursts.map((b) => b.usd)).toEqual([900_000, 150_000]);
+    // Okno od chwili po pierwszej serii: ona zostaje w porównaniu (pobrana z godziny przed widokiem), ale nie na ekranie
+    expect(selectClashes([], [big, small, after], now + H, thr, T0 + 5 * 60_000).bursts.map((b) => b.usd)).toEqual([150_000]);
+  });
+
+  it(`pokrycie taśmy: ściana i seria tylko, gdy taśma obejmuje całe ${RANK_WINDOW_MS / 60_000} min przed ich końcem (początek i luka)`, () => {
+    const S = T0 + 2 * H;
+    const M = 60_000;
+    const w1 = wall({ from: S + 29 * M, to: S + 30 * M, usd: 900_000, px: 1 });
+    const w2 = wall({ from: S + 60 * M, to: S + 61 * M, usd: 500_000, px: 2 });
+    const b1 = burst({ from: S + 10 * M - 500, to: S + 10 * M, usd: 900_000 });
+    const b2 = burst({ from: S + 75 * M - 500, to: S + 75 * M, usd: 200_000 });
+    const pick = (covers: (a: number, b: number) => boolean) => {
+      const s = selectClashes([w1, w2], [b1, b2], S + 5 * H, thr, Number.NEGATIVE_INFINITY, covers);
+      return { walls: s.walls.map((w) => w.px), bursts: s.bursts.map((b) => b.usd) };
+    };
+    // Taśma od S: w pierwszej godzinie nic; ściana i seria po godzinie jak zwykle (wcześniejsze liczą się do porównania)
+    expect(pick((a) => a >= S)).toEqual({ walls: [2], bursts: [200_000] });
+    // Wcześniejsza taśma: dochodzą obiekty z pierwszej godziny, zestaw od S + 60 min bez zmian
+    expect(pick((a) => a >= S - 2 * H)).toEqual({ walls: [1, 2], bursts: [900_000, 200_000] });
+    // Luka w pokryciu [S − 30 min, S − 25 min) przy wcześniejszej taśmie działa jak początek
+    expect(pick((a, b) => a >= S - 2 * H && !(a < S - 25 * M && b > S - 30 * M))).toEqual({ walls: [2], bursts: [200_000] });
   });
 
   it('opis: wynik sprawdzianu, PL i EN', () => {
