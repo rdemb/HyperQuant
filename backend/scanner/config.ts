@@ -24,7 +24,7 @@ export interface ScannerConfig {
   weightPerMin: number;
   /** Osobny budżet wag na potwierdzenia likwidacji (`userFillsByTime`) — nie zabierają odczytów pozycji */
   liqWeightPerMin: number;
-  /** Osobny budżet wag na prognozy dziennika, rynek HIP-4 i archiwum świec (świece, funding) */
+  /** Osobny budżet wag na prognozy dziennika, rynek HIP-4, archiwum świec (świece, funding) i rejestr rynków (co godzinę) */
   forecastWeightPerMin: number;
   stateDir: string;
   outDir: string;

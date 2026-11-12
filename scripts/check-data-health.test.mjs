@@ -246,6 +246,14 @@ describe('warstwa wielorybów (plik opcjonalny)', () => {
     expect(FILES).toContain('whales.json');
     expect(OPTIONAL.has('whales.json')).toBe(true);
   });
+
+  it('rejestr rynków: brak pliku nie jest alarmem, adres w pliku jest', () => {
+    expect(FILES).toContain('markets.json');
+    expect(OPTIONAL.has('markets.json')).toBe(true);
+    const inp = input();
+    inp.raw['markets.json'] = JSON.stringify({ asOf: NOW, rule: 'reg-v1', markets: [{ coin: 'BTC', deployer: '0x' + 'cd'.repeat(20) }] });
+    expect(assessHealth(inp, NOW).problems.join(' ')).toMatch(/PRYWATNOŚĆ: markets\.json/);
+  });
 });
 
 describe('niezależna weryfikacja dziennika (gałąź wyników w repo HyperQuant, verify/latest.json)', () => {

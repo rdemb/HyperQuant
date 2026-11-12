@@ -14,11 +14,11 @@ import { verifyProblem } from './verify-status.mjs';
 import { VERIFY_BRANCH, VERIFY_LATEST_URL } from '../src/utils/verifyFreshness.ts';
 
 export const DATA_BASE = 'https://raw.githubusercontent.com/rdemb/hyperquant-data/main';
-export const FILES = ['status.json', 'liq-map/BTC.json', 'liq-tape/BTC.json', 'cohorts/BTC.json', 'ledger/BTC/summary.json', 'liquidity/BTC.json', 'lab/BTC.json', 'whales.json', 'README.md'];
+export const FILES = ['status.json', 'liq-map/BTC.json', 'liq-tape/BTC.json', 'cohorts/BTC.json', 'ledger/BTC/summary.json', 'liquidity/BTC.json', 'lab/BTC.json', 'whales.json', 'markets.json', 'README.md'];
 /** Pliki, których brak nie jest alarmem (nowsze niż część wdrożeń skanera) — gdy są, przechodzą strażnika prywatności */
 /** Wynik niezależnej weryfikacji dziennika (GitHub Actions w repo HyperQuant) — adres `VERIFY_LATEST_URL` */
 export const VERIFY_FILE = `verify/latest.json (gałąź ${VERIFY_BRANCH} repo HyperQuant)`;
-export const OPTIONAL = new Set(['liq-tape/BTC.json', 'cohorts/BTC.json', 'ledger/BTC/summary.json', 'liquidity/BTC.json', 'lab/BTC.json', 'whales.json', VERIFY_FILE]);
+export const OPTIONAL = new Set(['liq-tape/BTC.json', 'cohorts/BTC.json', 'ledger/BTC/summary.json', 'liquidity/BTC.json', 'lab/BTC.json', 'whales.json', 'markets.json', VERIFY_FILE]);
 /** Profil płynności arkusza (publikowany co 10 min) */
 export const LIQUIDITY_MAX_AGE_MIN = 30;
 /** Laboratorium folkloru (przeliczane co godzinę) */
