@@ -20,7 +20,7 @@ import { vwapNum } from './dayVwap';
 import { classifyDay } from './dayType';
 import type { LiqMap } from './liqMap';
 import { mapWindow, settleRange } from './mapSettlement';
-import { RVOL_MIN_DAYS, median } from './rvol';
+import { RVOL_MIN_DAYS, median, nyClock } from './rvol';
 import { liqScan, scannerAge } from './scanState';
 import { type TradeSession, currentTradeSession, nextTradeSession, tradeSessionOn } from './sessionDay';
 import { sessionFacts } from './sessionFacts';
@@ -264,28 +264,31 @@ export function nextSessionHour(now: number): SessionHour {
   return { hour: openHour(s), s, opens: true, k: 0 };
 }
 
+/** Najdalej wstecz szukamy dni tego samego typu dla typowej szerokości (20 weekendów to ok. 70 dni) */
+const WIDTH_LOOKBACK_DAYS = 80;
+
 /**
- * Początki świec 1h tej samej godziny sesji w WIDTH_DAYS poprzednich dniach, od najnowszej: godzina otwarcia albo k-ta
- * pełna godzina po niej według granic sesji danego dnia (`sessionDay` z czasem letnim), więc po zmianie czasu próba nadal
- * jest tą samą godziną sesji. Dzień, w którym ta godzina należy do innej sesji albo jest godziną otwarcia innej, odpada.
+ * Początki świec 1h tej samej godziny sesji z WIDTH_DAYS ostatnich wcześniejszych dni tego samego typu (robocze albo sobota
+ * i niedziela według daty w Nowym Jorku), od najnowszej, szukane do 80 dni wstecz: godzina otwarcia albo k-ta pełna
+ * godzina po niej według granic sesji danego dnia (`sessionDay` z czasem letnim), więc po zmianie czasu próba nadal jest
+ * tą samą godziną sesji. Dzień, w którym ta godzina należy do innej sesji albo jest godziną otwarcia innej, odpada.
  */
 export function sessionHourSamples(at: SessionHour): number[] {
   const day0 = utcDayStart(at.s.start);
+  const weekend = nyClock(at.hour).weekend;
   const out: number[] = [];
-  for (let i = 1; i <= WIDTH_DAYS; i++) {
+  for (let i = 1; i <= WIDTH_LOOKBACK_DAYS && out.length < WIDTH_DAYS; i++) {
     const s = tradeSessionOn(day0 - i * DAY, at.s.id);
     const t = openHour(s) + at.k * HOUR;
+    if (nyClock(t).weekend !== weekend) continue;
     const c = sessionHourAt(t);
     if (c && c.s.start === s.start && c.s.id === s.id && c.opens === at.opens) out.push(t);
   }
   return out;
 }
 
-/**
- * Typowa szerokość godziny sesji `at` (MODEL): mediana high − low zamkniętych świec 1h tej samej godziny sesji z 20 dni
- * (`sessionHourSamples`; świece bez liczb odpadają). Mniej niż RVOL_MIN_DAYS próbek — `median: null`. `n` — liczba próbek.
- */
-export function hourWidth(bars1h: readonly VBar[], at: SessionHour, now: number): { median: number | null; n: number } {
+/** Zakresy high − low zamkniętych świec 1h z próby `sessionHourSamples` (świece bez liczb odpadają), od najnowszej. */
+export function hourWidthSample(bars1h: readonly VBar[], at: SessionHour, now: number): number[] {
   const want = new Set(sessionHourSamples(at).filter((t) => t + HOUR <= now));
   const xs: number[] = [];
   for (const b of bars1h) {
@@ -294,8 +297,20 @@ export function hourWidth(bars1h: readonly VBar[], at: SessionHour, now: number)
     want.delete(b.time);
     if (Number.isFinite(b.high) && Number.isFinite(b.low) && b.high >= b.low) xs.push(b.high - b.low);
   }
+  return xs;
+}
+
+/**
+ * Typowa szerokość godziny sesji `at` (MODEL): mediana high − low zamkniętych świec 1h tej samej godziny sesji z 20 dni
+ * tego samego typu (`hourWidthSample`). Mniej niż RVOL_MIN_DAYS próbek — `median: null`. `n` — liczba próbek.
+ */
+export function hourWidth(bars1h: readonly VBar[], at: SessionHour, now: number): { median: number | null; n: number } {
+  const xs = hourWidthSample(bars1h, at, now);
   return { median: xs.length >= RVOL_MIN_DAYS ? median(xs) : null, n: xs.length };
 }
+
+/** Typ dni próby do opisu: dni robocze albo weekend (data w Nowym Jorku) */
+const weekendWord = (t: number) => (nyClock(t).weekend ? tr('z weekendów', 'on weekends') : tr('z dni roboczych', 'on weekdays'));
 
 /** (3) Typowa szerokość najbliższej godziny sesji w USD (MODEL · mediana 20 dni). */
 export function hourWidthNum(x: FourInputs): FourNumber {
@@ -323,8 +338,8 @@ export function hourWidthNum(x: FourInputs): FourNumber {
     ...base,
     value: `${amt(w.median)} USD`,
     hint: tr(
-      `MODEL · ${m}: typowy zakres high − low świecy 1h ${fmtHm(hour)}–${fmtHm(hour + HOUR)} (${which}) z ${w.n} ostatnich sesji ${name}${share}. Każdego dnia ta sama godzina sesji, także po zmianie czasu. Zmienność godziny, nie kierunek ruchu.`,
-      `MODEL · ${m}: the typical high − low range of the 1h candle ${fmtHm(hour)}–${fmtHm(hour + HOUR)} (${which}) over the last ${w.n} ${name} sessions${share}. The same session hour every day, also across clock changes. The hour's volatility, not the direction of the move.`
+      `MODEL · ${m}: typowy zakres high − low świecy 1h ${fmtHm(hour)}–${fmtHm(hour + HOUR)} (${which}) z ${w.n} ostatnich sesji ${name} ${weekendWord(hour)}${share}. Każdego dnia ta sama godzina sesji, także po zmianie czasu. Zmienność godziny, nie kierunek ruchu.`,
+      `MODEL · ${m}: the typical high − low range of the 1h candle ${fmtHm(hour)}–${fmtHm(hour + HOUR)} (${which}) over the last ${w.n} ${name} sessions ${weekendWord(hour)}${share}. The same session hour every day, also across clock changes. The hour's volatility, not the direction of the move.`
     ),
   };
 }

@@ -249,20 +249,20 @@ describe('liczby nagłówka ze świec i migawek', () => {
     expect(dayVwapOf([], NOW)).toMatchObject({ why: expect.any(String) });
   });
 
-  it('rvolOf: za krótka historia (poniżej 10 dni) — „za mało historii (min. 10 dni)”', () => {
+  it('rvolOf: za krótka historia (poniżej 10 dni tego samego typu) — powód z liczbą dni', () => {
     const hourly: Candle[] = [];
     for (let t = NOW - 5 * DAY - 16 * H; t <= NOW; t += H) hourly.push(c(Math.floor(t / H) * H, 1, 2, 0.5, 1, 100));
     const r = rvolOf(hourly, NOW);
-    expect(r).toEqual({ why: 'za mało historii (min. 10 dni)' });
+    expect(r).toEqual({ why: expect.stringMatching(/^za mało historii tej godziny w dniach tego samego typu \(\d z min\. 10\)$/) });
     const n = layoutNumbers('cockpit', cockpit({ rvol: r }))[2];
     expect(n).toMatchObject({ value: '—', badge: 'MODEL' });
-    expect(n.hint).toContain('za mało historii (min. 10 dni)');
+    expect(n.hint).toContain('za mało historii tej godziny w dniach tego samego typu');
   });
 
-  it('rvolOf: 20 dni historii — wolumen godziny wobec mediany przeskalowanej do upływu godziny', () => {
+  it('rvolOf: 20 dni tego samego typu — wolumen godziny wobec mediany przeskalowanej do upływu godziny', () => {
     const hourly: Candle[] = [];
     const h0 = Math.floor(NOW / H) * H;
-    for (let t = h0 - 21 * DAY; t < h0; t += H) hourly.push(c(t, 1, 2, 0.5, 1, 120));
+    for (let t = h0 - 81 * DAY; t < h0; t += H) hourly.push(c(t, 1, 2, 0.5, 1, 120));
     // Po 20 min bieżącej godziny 80 wobec mediany 120 · 20/60 = 40 → 2×
     hourly.push(c(h0, 1, 2, 0.5, 1, 80));
     const r = rvolOf(hourly, NOW);

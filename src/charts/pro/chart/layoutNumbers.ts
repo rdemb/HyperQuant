@@ -182,8 +182,8 @@ function rvolNum(x: LayoutInputs): LayoutNumber {
     value: v,
     badge: 'MODEL',
     hint: tr(
-      `MODEL · ${method}: wolumen bieżącej godziny (${hh}:00 UTC) wobec mediany tej godziny z ${r.n} dni, przeskalowanej do upływu godziny: ${v}. 1× — typowy wolumen o tej porze.`,
-      `MODEL · ${method}: the current hour's volume (${hh}:00 UTC) against the median of this hour over ${r.n} days, scaled to the elapsed part of the hour: ${v}. 1× is the typical volume at this time.`
+      `MODEL · ${method}: wolumen bieżącej godziny (${hh}:00 UTC) wobec mediany tej godziny zegarowej w Nowym Jorku z ${r.n} ostatnich dni tego samego typu (robocze albo weekend), przeskalowanej do upływu godziny: ${v}. 1× — typowy wolumen o tej porze; ta sama godzina NY także po zmianie czasu w USA.`,
+      `MODEL · ${method}: the current hour's volume (${hh}:00 UTC) against the median of this New York clock hour over the last ${r.n} days of the same type (weekdays or weekend), scaled to the elapsed part of the hour: ${v}. 1× is the typical volume at this time; the same New York hour also across US clock changes.`
     ),
   };
 }
