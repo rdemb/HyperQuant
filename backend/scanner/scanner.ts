@@ -148,7 +148,7 @@ export class Scanner {
     const positions = this.d.book.positions();
     const map = buildLiqMap(positions, { coin: this.d.coin, markPx: c.markPx, oiBtc: c.oiBtc, asOf, addresses: this.d.book.size, ctxAt: this.ctxAt });
     this.confirmer.prune(asOf);
-    const tape = buildLiqTape(this.confirmer.events(), { coin: this.d.coin, asOf, since: this.since, checks: this.confirmer.checks(asOf) });
+    const tape = buildLiqTape(this.confirmer.events(), { coin: this.d.coin, asOf, since: this.since, checks: this.confirmer.checks(asOf), backlog: this.confirmer.backlog() });
     const status = {
       v: 1,
       coin: this.d.coin,

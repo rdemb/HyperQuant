@@ -510,6 +510,10 @@ export const AppShell: React.FC = () => {
           <a href="./blog/" className="inline-flex items-center min-h-11 hover:text-ink-1 transition-colors duration-150">
             {BLOG_LABEL}
           </a>
+          {/* Statyczna strona rozliczenia dziennika prognoz (scripts/blog/results.mjs) */}
+          <a href={tr('./wyniki/', './en/results/')} className="inline-flex items-center min-h-11 hover:text-ink-1 transition-colors duration-150">
+            {tr('Wyniki prognoz', 'Forecast results')}
+          </a>
           <ViewLink id={AGENTS.id} go={go} current={view === AGENTS.id} className="inline-flex items-center min-h-11 hover:text-ink-1 transition-colors duration-150">
             {AGENTS.label}
           </ViewLink>
