@@ -33,7 +33,7 @@ import { DrawingLayer } from '../draw/layer';
 import { DrawingTools } from '../draw/tools';
 import { FootprintOptions, FootprintPoint, FootprintSeries } from './footprintSeries';
 import { fmtPx } from './layout';
-import { LiquidityLayer, LiquidityPick, LiquiditySource } from './liquidity';
+import { LiquidityLayer, LiquidityPick, LiquiditySource, liquidityLookbackMs, tapeCovered } from './liquidity';
 import { IndicatorOverlay, IndicatorToggles, IndicatorValues, WhaleView } from './overlay';
 import { LegendPart, PaneLegend, deltaStatsParts } from './paneLegend';
 import { densityLimit, keepTicks } from './labelPlacement';
@@ -417,7 +417,10 @@ export class ProChartController {
       far: null,
       orders: (from, to) => store.orders.range(from, to),
       walls: (from, to, t) => store.walls.walls(from, to, t),
+      // Taśma z kontami biorców (strumień na żywo i historia serwera) — z niej są zlecenia agresora
+      covers: (from, to) => tapeCovered(store.addressed, from, to),
       version: () => store.version,
+      history: () => store.historyVersion,
     };
     this.chart = createChart(container, chartOptions());
     this.applyTimeFormat();
@@ -430,9 +433,12 @@ export class ProChartController {
     // Mapa ciepła pod profilem i pasmami (kolejność dołączenia = kolejność rysowania w tej samej warstwie)
     this.liquidity = new LiquidityLayer(liqToggles(settings));
     this.main.attachPrimitive(this.liquidity);
-    // Liczba ścian i serii wybranych na ekran (pomiar układu czyta ją z atrybutu, nie z pikseli)
+    // Liczby ścian i serii oraz bąbli wybranych na ekran (pomiar układu czyta je z atrybutów, nie z pikseli)
     this.liquidity.onClashes = (n) => {
       container.dataset.clashObjects = String(n);
+    };
+    this.liquidity.onBubbles = (n) => {
+      container.dataset.bubbles = String(n);
     };
     this.overlay = new IndicatorOverlay(toggles(settings, series.interval.ms));
     // Liczba obiektów zakresu początkowego sesji na ekranie (pomiar układu czyta ją z atrybutu)
@@ -557,6 +563,8 @@ export class ProChartController {
     this.needs = needsOf(s);
     this.stripAt = 0;
     this.liquidity.setToggles(liqToggles(s));
+    // Włączone bąble, serie albo ściany: historia także z okna porównania przed widokiem
+    if (prev.showBubbles !== s.showBubbles || prev.showClashes !== s.showClashes) this.onRange(this.chart.timeScale().getVisibleLogicalRange());
     this.liquidity.setLabelLimit(densityLimit(s.labelDensity, this.phone));
     this.zones.setToggles({ showZones: s.showZones, showAuctions: s.showAuctions, history: s.zonesHistory === true });
     this.zones.setParams(this.zoneParams(s));
@@ -624,6 +632,7 @@ export class ProChartController {
     if (on === this.phone) return;
     this.phone = on;
     this.liquidity.setDom(!on);
+    this.liquidity.setPhone(on);
     this.effort.setPhone(on);
     this.liquidity.setLabelLimit(densityLimit(this.settings.labelDensity, on));
     this.overlay.setCompact(on);
@@ -1654,10 +1663,12 @@ export class ProChartController {
     if (!range || this.bars.length === 0) return;
     if (range.from < LOAD_OLDER_MARGIN) void this.series.loadOlder();
     // Historia taśmy i arkusza z serwera od lewej krawędzi widoku, a przy wskaźniku z oknem poprzednich świec (absorpcja,
-    // OFI) o to okno wcześniej — inaczej na wąskim ekranie świece z lewej nie miałyby wartości
+    // OFI) o to okno wcześniej — inaczej na wąskim ekranie świece z lewej nie miałyby wartości; z bąblami, seriami
+    // i ścianami także o okno porównania reguły przyczynowej (bez niego pierwsze świece widoku nie miałyby bąbli)
     const left = this.bars[Math.min(this.bars.length - 1, Math.max(0, Math.floor(range.from)))].t;
+    const ms = this.series.interval.ms;
     const span = Math.max(0, ...this.indShown.map((x) => indicatorDef(x.id).lookback?.(x.params) ?? 0));
-    requestHistory(this.store, left - span * this.series.interval.ms);
+    requestHistory(this.store, left - Math.max(span * ms, liquidityLookbackMs(ms, this.settings)));
     // Profile zamkniętych dób z serwera (kolor profilu doby starszych dób)
     if (tpoShown(this.settings, this.series.interval.ms)) requestDayProfiles(this.store, left);
   };
