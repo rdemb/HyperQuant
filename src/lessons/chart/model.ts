@@ -1,5 +1,7 @@
 import { IB_EXTENSIONS, initialBalances, volumeProfile, vwapFrom, type InitialBalance, type VolumeProfile, type VwapPoint } from '../../charts/pro/core/indicators';
 import { sessionsBetween, utcDayStart, type SessionId } from '../../charts/pro/core/sessions';
+import { ibBreakout } from '../../charts/pro/chart/ibSelect';
+import type { IndicatorBar } from '../../charts/pro/core/indicators';
 import { mergeCandles, minuteCandles, toIndicatorBars, type LessonSlice, type SliceCandle } from '../data';
 
 /**
@@ -111,16 +113,22 @@ export function profileLevels(p: VolumeProfile): { poc: number; vah: number; val
   return { poc: (p.lo + p.poc + 0.5) * p.step, vah: (p.lo + p.vaHi + 1) * p.step, val: (p.lo + p.vaLo) * p.step };
 }
 
-/** Poziomy IB z rozszerzeniami (1,5× i 2× zakresu). */
-export function ibLines(ib: InitialBalance): { label: string; px: number }[] {
+/**
+ * Poziomy IB w chwili zatrzymania `now` (jak na wykresie, `ibSelect.ts`): szczyt i dołek od końca pierwszej godziny,
+ * rozszerzenia 1,5× i 2× dopiero po pierwszym zamknięciu świecy poza zakresem, tylko po tej stronie i od chwili tego
+ * zamknięcia (`from`).
+ */
+export function ibLines(ib: InitialBalance, bars: readonly IndicatorBar[], tfMs: number, now: number): { label: string; px: number; from: number }[] {
   const r = ib.hi - ib.lo;
+  const out = [
+    { label: 'IBH', px: ib.hi, from: ib.end },
+    { label: 'IBL', px: ib.lo, from: ib.end },
+  ];
+  const br = ibBreakout(ib, bars, tfMs, now);
+  if (!br) return out;
   return [
-    { label: 'IBH', px: ib.hi },
-    { label: 'IBL', px: ib.lo },
-    ...IB_EXTENSIONS.flatMap((x) => [
-      { label: `IBH +${x * 100}%`, px: ib.hi + x * r },
-      { label: `IBL −${x * 100}%`, px: ib.lo - x * r },
-    ]),
+    ...out,
+    ...IB_EXTENSIONS.map((x) => (br.side > 0 ? { label: `IBH +${x * 100}%`, px: ib.hi + x * r, from: br.t } : { label: `IBL −${x * 100}%`, px: ib.lo - x * r, from: br.t })),
   ];
 }
 

@@ -41,12 +41,13 @@ export function selectIbs(ibs: readonly InitialBalance[], bars: readonly Indicat
   const out: IbDraw[] = [];
   for (const ib of ibs) {
     if (ib.session.start === prev.start) out.push({ ib, current: false, breakout: null });
-    else if (ib.session.start === cur.start) out.push({ ib, current: true, breakout: firstBreak(ib, bars, intervalMs, now) });
+    else if (ib.session.start === cur.start) out.push({ ib, current: true, breakout: ibBreakout(ib, bars, intervalMs, now) });
   }
   return out;
 }
 
-function firstBreak(ib: InitialBalance, bars: readonly IndicatorBar[], ms: number, now: number): IbDraw['breakout'] {
+/** Pierwsze zamknięcie świecy poza zakresem po pierwszej godzinie, do chwili `now` (także rycina lekcji). */
+export function ibBreakout(ib: InitialBalance, bars: readonly IndicatorBar[], ms: number, now: number): IbDraw['breakout'] {
   for (const b of bars) {
     if (b.t < ib.end || b.t >= ib.session.end) continue;
     if (b.t + ms > now) break;

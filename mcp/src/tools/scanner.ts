@@ -25,7 +25,8 @@ import {
   isCohortFlow,
   shareDenominator,
 } from '../../../src/utils/cohorts';
-import { LEDGER_MIN_N, type AbBlock, type SkillCi, isAb, isAbC, isDeskLedgerSummary, ledgerFreshness } from '../../../src/utils/deskLedger';
+import { LEDGER_MIN_N, type AbBlock, type SkillCi, isAb, isAbC, isDeskLedgerSummary, isHrelSummary, ledgerFreshness } from '../../../src/utils/deskLedger';
+import { HREL_DESIGN } from '../../../src/utils/hourRel';
 import { FUEL_BAND, liqFuel } from '../../../src/utils/fourNumbers';
 import { CLOCK_DAYS, CLOCK_MIN_N, CLOCK_SEASON_DAYS, CLOCK_STALE, clockHours, nearestHour } from '../../../src/utils/moveClock';
 import { type LiqBucket, type LiqMap, isLiqMap } from '../../../src/utils/liqMap';
@@ -797,6 +798,20 @@ export interface LedgerMoveClock {
   hours: { hour: string; dayType: 'weekday' | 'weekend'; bigMoveDays: Num; days: Num }[];
 }
 
+/**
+ * Prognoza `hrel-v1` (duży ruch jak na tę godzinę: zakres godziny UTC powyżej mediany tej godziny z 20 dni tego samego
+ * typu, baza 50%) przed awansem: tylko pomiar — dla wyprzedzeń 0–3 h liczba rozstrzygnięć, Brier, umiejętność wobec 50% (`bss`)
+ * z przedziałem, AUC, średnie p i częstość z 30 dni; bloki 14 dni z planu (wyprzedzenie 1 h, statystyka t). Bez szans
+ * ostatniej prognozy.
+ */
+export interface LedgerHourBigMove {
+  why: string | null;
+  planSince: string | null;
+  leads: { leadHours: number; settled: Num; brier: Num; bss: Num; bssLo: Num; bssHi: Num; auc: Num; meanP: Num; freq: Num }[];
+  /** `block`: numer bloku albo „1-2” (dane łączne bloków 1 i 2) */
+  blocks: { block: string; from: string; to: string; settled: Num; t: Num; meanP: Num; freq: Num; maxQuintileGap: Num }[];
+}
+
 export interface ForecastLedgerData {
   why: string | null;
   /** Gdzie sprawdzić dziennik samodzielnie. */
@@ -809,6 +824,7 @@ export interface ForecastLedgerData {
   touch: { settled: Num; brier: Num; brierBase: Num; bss: Num; brierDist: Num; bssDist: Num; bssLo: Num; bssHi: Num; bssDistLo: Num; bssDistHi: Num; ciDays: Num };
   bigMove: LedgerBigMove & { calibration: LedgerCalibration };
   moveClock: LedgerMoveClock;
+  hourBigMove: LedgerHourBigMove;
   pending: Num;
   voided: Num;
   slotsIssued: Num;
@@ -887,6 +903,7 @@ async function ledgerRun(src: Sources): Promise<Envelope<ForecastLedgerData>> {
         },
       },
       moveClock: { nextHour: { from: null, to: null, level: null, why, forecasts: nil('count', why) }, auc: nil('ratio', why), hours: [] },
+      hourBigMove: { why, planSince: null, leads: [], blocks: [] },
       pending: nil('count', why),
       voided: nil('count', why),
       slotsIssued: nil('count', why),
@@ -1032,6 +1049,49 @@ async function ledgerRun(src: Sources): Promise<Envelope<ForecastLedgerData>> {
         }))
       : [],
   };
+  // hrel-v1 (pole opcjonalne podsumowania; uszkodzona sekcja — powód, reszta bez zmian)
+  const hr = s.hrel && isHrelSummary(s.hrel) ? s.hrel : null;
+  const hrNum = (v: number | null | undefined, unit: Unit, why: string) => num(v, unit, 'LIVE', { method: HREL_DESIGN.id, why, ...(note !== undefined && { note }) });
+  const noHr = tr(
+    `brak sekcji ${HREL_DESIGN.id} w podsumowaniu (plan jeszcze niezarejestrowany albo starsze podsumowanie)`,
+    `no ${HREL_DESIGN.id} section in the summary (plan not registered yet or an older summary)`
+  );
+  const hourBigMove: LedgerHourBigMove = hr
+    ? {
+        why: null,
+        planSince: iso(hr.plan.at),
+        leads: hr.leads.map((l) => {
+          const ok = l.n >= LEDGER_MIN_N;
+          const w = ok ? noScore : fromN(l.n);
+          const v = (x: number | null | undefined) => hrNum(ok ? x : null, 'ratio', w);
+          const ciW = ok ? ciWhy(l.bss) : w;
+          return {
+            leadHours: l.j,
+            settled: hrNum(l.n, 'count', noScore),
+            brier: v(l.brier),
+            bss: v(l.bss.value),
+            bssLo: hrNum(ok ? l.bss.lo : null, 'ratio', ciW),
+            bssHi: hrNum(ok ? l.bss.hi : null, 'ratio', ciW),
+            auc: v(l.auc),
+            meanP: v(l.meanP),
+            freq: v(l.freq),
+          };
+        }),
+        blocks: [...hr.blocks.map((b, i) => [String(i + 1), b] as const), ...(hr.pooled ? [['1-2', hr.pooled] as const] : [])].map(([block, b]) => {
+          const tWhy = tr(`statystyka t od ${HREL_DESIGN.minN} rozstrzygniętych godzin w bloku (jest ${b.n})`, `t statistic from ${HREL_DESIGN.minN} settled hours in the block (now ${b.n})`);
+          return {
+            block,
+            from: iso(b.start),
+            to: iso(b.end),
+            settled: hrNum(b.n, 'count', noScore),
+            t: hrNum(b.t, 'ratio', tWhy),
+            meanP: hrNum(b.meanP, 'ratio', noScore),
+            freq: hrNum(b.freq, 'ratio', noScore),
+            maxQuintileGap: hrNum(b.maxQDev, 'ratio', noScore),
+          };
+        }),
+      }
+    : { why: noHr, planSince: null, leads: [], blocks: [] };
   const data: ForecastLedgerData = {
     why: null,
     verifyUrl,
@@ -1060,6 +1120,7 @@ async function ledgerRun(src: Sources): Promise<Envelope<ForecastLedgerData>> {
       calibration,
     },
     moveClock,
+    hourBigMove,
     pending: live(s.pending, 'count', note),
     voided: live(s.voided, 'count', note),
     slotsIssued: live(s.participation.issued, 'count', note),
