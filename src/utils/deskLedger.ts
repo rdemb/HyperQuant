@@ -7,7 +7,10 @@
  * i przeliczyć wyniki (scripts/verify-ledger.mjs) bez zaufania do HyperQuant.
  */
 
+import type { SkillCi } from './ledgerBootstrap.ts';
 import type { CatTrust, HourTrust, TrustHead } from './schrodiTrust.ts';
+
+export type { SkillCi } from './ledgerBootstrap.ts';
 
 export type TouchLevel = 'pdh' | 'pdl' | 'deq';
 
@@ -34,6 +37,40 @@ export interface RetScores {
   cov60: Coverage | null;
   /** Pokrycie przedziałów ACI (nominał 90%) */
   covAci: Coverage | null;
+  /** Test Kupca przedziału 60% na próbie rozłącznej (trafienia `x` z `n`); brak w podsumowaniach sprzed 12.11.2026 */
+  kupiec60?: Kupiec60;
+  /** Jednostajność PIT (χ², 9 st. swobody) na próbie rozłącznej; test od 50 prognoz */
+  pit?: PitTest;
+  /** CRPSS z przedziałem z bootstrapu blokowego po dobach UTC (od 7 dób) */
+  crpssCi?: SkillCi;
+  /** Udział prognoz z nieskończoną granicą przedziału ACI (α ≤ 0 albo α ≥ 2) */
+  aciInf?: AciInf;
+}
+
+/** Test Kupca: `n` prognoz rozłącznych, `x` trafień, `cover` = x/n, LR i p z χ²(1); n = 0 → null z powodem `min-n` */
+export interface Kupiec60 {
+  n: number;
+  x: number;
+  cover: number | null;
+  lr: number | null;
+  p: number | null;
+  reason?: 'min-n';
+}
+
+/** PIT w 10 równych koszykach, χ² = Σ (o − n/10)² / (n/10), p z χ²(9); poniżej 50 prognoz null z powodem `min-n` */
+export interface PitTest {
+  n: number;
+  bins: number[];
+  chi2: number | null;
+  p: number | null;
+  reason?: 'min-n';
+}
+
+/** Prognozy (`n`), z nich z nieskończoną granicą przedziału ACI (`inf`) i udział */
+export interface AciInf {
+  n: number;
+  inf: number;
+  share: number | null;
 }
 
 export interface ReliabilityBin {
@@ -65,6 +102,10 @@ export interface TouchScores {
   bssDist?: number | null;
   /** Pary z σ bazy odległości (zwykle = `pairs`) */
   pairsDist?: number;
+  /** `bss` (częstość poziomu) z przedziałem z bootstrapu blokowego po dobach UTC; brak w podsumowaniach sprzed 12.11.2026 */
+  bssCi?: SkillCi;
+  /** `bssDist` (baza odległości) z przedziałem z tego samego losowania */
+  bssDistCi?: SkillCi;
   reliability: ReliabilityBin[];
   /** Mapa kalibracji izotonicznej (PAV): punkty [p surowe, częstość] — funkcja schodkowa niemalejąca */
   calibration: [number, number][];
@@ -113,7 +154,15 @@ export interface CatScores {
   /** Prognozy rozłączne (sloty o pełnej godzinie) — prognozy co 15 min na 1 h nakładają się czterokrotnie */
   nEff: number;
   dir: CatHeadScores & { long: { n: number; hit: number | null }; short: { n: number; hit: number | null }; unsure: number };
-  big: CatHeadScores & { reliability: ReliabilityBin[] };
+  big: CatHeadScores & {
+    reliability: ReliabilityBin[];
+    /**
+     * BSS wobec bazy sezonowej: częstość dużego ruchu z pełnych godzin tej samej godziny UTC w 20 poprzednich dobach
+     * tego samego typu (dzień roboczy / weekend), od 8 rozstrzygnięć; mniej — częstość wszystkich godzin tych dób.
+     * `n` = prognozy z bazą. Brak w podsumowaniach sprzed 12.11.2026.
+     */
+    bssSeasonal?: SkillCi & { n: number };
+  };
   /** Szanse dotknięcia poziomów i stożek zasięgu; brak w starszych podsumowaniach */
   touch?: CatTouchScores;
 }

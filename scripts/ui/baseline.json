@@ -53,6 +53,15 @@
       "ib.auction390": 5,
       "ib.review1440": 7,
       "ib.review390": 7,
+      "levels.dayMap.lines1440": 6,
+      "sessions.dayMap.lines1440": 0,
+      "levels.dayMap.lines4h1440": 3,
+      "levels.dayMap.lines390": 3,
+      "sessions.dayMap.lines390": 0,
+      "levels.review.lines1440": 6,
+      "sessions.review.lines1440": 6,
+      "levels.review.lines390": 3,
+      "sessions.review.lines390": 0,
       "pb.boxes1440": 0,
       "pb.lines1440": 4,
       "pb.marks1440": 0,
@@ -111,7 +120,16 @@
       "tpo.review.objects1440": 15,
       "tpo.review.area1440": 1.8,
       "tpo.review.objects390": 9,
-      "tpo.review.area390": 12
+      "tpo.review.area390": 12,
+      "levels.dayMap.lines1440": 6,
+      "sessions.dayMap.lines1440": 0,
+      "levels.dayMap.lines4h1440": 3,
+      "levels.dayMap.lines390": 3,
+      "sessions.dayMap.lines390": 0,
+      "levels.review.lines1440": 6,
+      "sessions.review.lines1440": 6,
+      "levels.review.lines390": 3,
+      "sessions.review.lines390": 0
     }
   }
 }

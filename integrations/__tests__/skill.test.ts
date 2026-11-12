@@ -118,6 +118,12 @@ describe('skill hyperquant: SKILL.md', () => {
       expect(line, s).toContain(s);
   });
 
+  it('miary dziennika prognoz z przedziałami: pola forecast_ledger opisane (Kupiec 60%, PIT, przedziały z bootstrapu po dobach, ACI z konstrukcji, BSS sezonowy kota)', () => {
+    const line = LINES.find((l) => l.startsWith('- `forecast_ledger` intervals:')) ?? '';
+    for (const s of ['`kupiecP60`', '`pitP`', '`crpssLo`', '`crpssHi`', '`bssLo`', '`bssDistLo`', '`bssSeasonal`', '`aciInfShare`', 'UTC days', '7 days', '50', 'by construction', 'null', '`why`'])
+      expect(line, s).toContain(s);
+  });
+
   it('pokrycie przedziałów dziennika prognoz jako MODEL, tak jak wiersz stożka w session_review', () => {
     const line = LINES.find((l) => l.startsWith('- Also MODEL:')) ?? '';
     for (const s of ['`forecast_ledger`', 'coverage', 'cone']) expect(line, s).toContain(s);

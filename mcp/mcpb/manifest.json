@@ -65,7 +65,7 @@
     },
     {
       "name": "forecast_ledger",
-      "description": "Scores of the verifiable HyperQuant forecast ledger: CRPSS, interval coverage with the Kupiec test, Brier score and BSS against the distance baseline and the level base rate."
+      "description": "Scores of the verifiable HyperQuant forecast ledger: CRPSS with a day-block bootstrap interval, interval coverage with the Kupiec test, PIT uniformity, Brier score and BSS against the distance baseline and the level base rate, and the big move BSS against a seasonal baseline."
     }
   ],
   "compatibility": {
