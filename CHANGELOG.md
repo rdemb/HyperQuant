@@ -10,6 +10,15 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 - **`ledger-verify.yml`** pobiera `ledger/BTC/summary.json` z `main` repo danych przed klonem dziennika (bez tokenu) i podaje go weryfikatorowi przez `--summary`. Miary podsumowania przeliczane z rekordów biegną teraz także w przebiegu stojącym za znaczkiem na stronie. Brak pliku: weryfikacja bez miar.
 - **Weryfikator:** podsumowanie z głową o większej liczbie linii niż pobrany dziennik (wyścig publikacji) jest pomijane z informacją, bez błędu; głowa spoza rekordów przy dzienniku co najmniej tak długim jak ona to dalej błąd.
 
+### Weryfikator: kalibracja wariantu C i bloki hrel-v1 z podsumowania przeliczone z rekordów (2026-11-12)
+
+#### Dodane
+- **Kalibracja wariantu C (`ab-v2`) w weryfikatorze** (`scripts/verify-ledger.mjs`, `abCalC`): osobna implementacja z rekordów dziennika: okresy 14 dni od epoki planu, pierwszy oceniany od granicy okresu nie wcześniejszej niż rejestracja planu, okres zakończony po końcu + 7 h 15 min; próba rozłączna to sloty o pełnej godzinie z parą A i C, obie rozstrzygnięte bez unieważnienia; trafienia 60% i 90% z kwantyli C i zwrotu, nie z zapisanych `in60`/`in90`. `checkMeasures` porównuje `abC.firstBlock`, granice ostatniego zakończonego okresu i `abC.last.cal` (`n`, `cov60`, `cov90`) dokładnie; od tej kalibracji zależy awans C.
+- **Bloki `hrel-v1` w weryfikatorze** (`hrelBlocks`): osobna implementacja z rekordów (wyprzedzenie 1 h, bloki 14 dni od rejestracji planu, blok zakończony po końcu + 10 h 15 min, unieważnienia i `y[1] = null` pominięte): n, średnie p, częstość, średnia δ, błąd Neweya–Westa (24 opóźnienia, liczony po parach godzin, a nie po przesunięciach jak w kodzie skanera), t i największe odchylenie kwintyla. `checkMeasures` porównuje `hrel.plan`, każdy blok i dane łączne bloków 1–2: n, granice i plan dokładnie, wartości zmiennoprzecinkowe do 1e-4 jak inne pola liczone inną metodą (na danych testowych różnica rzędu 1e-14).
+- Pełny dziennik bez planu przy podsumowaniu z oceną to błąd; w trybie szybkim bez planu w pobranych dniach porównanie jest pomijane. Starsze podsumowanie bez tych pól: nic do porównania, bez błędu.
+- **MCP `forecast_ledger.abTests`, wpis `ab-v2`:** `firstBlock` (ISO UTC; `null` z powodem w `firstBlockWhy`, gdy plan niezarejestrowany albo podsumowanie starsze) i `calLast` (`n`, `cov60`, `cov90` z plakietką LIVE; brak zakończonego okresu, pusta próba rozłączna albo starsze podsumowanie — `null` z powodem). Starsze podsumowanie bez `firstBlock` albo `cal` nie usuwa wpisu C. Opis w `integrations/skills/hyperquant/SKILL.md`. Wersja paczki MCP bez zmian.
+- Testy: `scripts/verify-ledger.test.mjs` (dziennik A/C z unieważnieniami i dziennik `hrel-v1` z remisami p, podsumowania ze skanera: poprawne przechodzą; zmienione `cov60`, `cov90`, `n`, `firstBlock`, ukryty okres, zmienione `t`, średnie p, częstość, odchylenie kwintyla, `n` bloku i brakujący blok wykryte; brak planu w pełnym dzienniku), `mcp/__tests__/scanner.test.ts`.
+
 ### Rejestr rynków markets.json (2026-11-12)
 
 #### Dodane

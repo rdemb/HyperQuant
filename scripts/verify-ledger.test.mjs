@@ -900,3 +900,189 @@ describe('A/B wariantu C (ab-v2): weryfikator niezależnie przelicza przekształ
     expect(checkRv60([c], candles.slice(5))).toEqual({ problems: [], checked: 0, eligible: 1 });
   });
 });
+
+import { hrelProbs } from '../src/utils/hourRel.ts';
+
+describe('podsumowanie: kalibracja wariantu C (ab-v2) i bloki hrel-v1 przeliczone z rekordów (checkMeasures)', () => {
+  const H = 3_600_000;
+  const D = 24 * H;
+  const r6 = (x) => Math.round(x * 1e6) / 1e6;
+  const r4 = (x) => Math.round(x * 1e4) / 1e4;
+  /** Rekordy w łańcuchu od GENESIS (jak pełny klon) */
+  const chain = (bodies) => {
+    let prev = GENESIS;
+    return bodies.map((b) => {
+      const l = makeLine(prev, b);
+      prev = l.hash;
+      return JSON.parse(l.line);
+    });
+  };
+  const plan = (design, t) => ({ k: 'p', id: design.id, t, catalogHash: createHash('sha256').update(canonical(design)).digest('hex'), catalog: JSON.parse(JSON.stringify(design)) });
+
+  /**
+   * Wariant C: plan zarejestrowany w trakcie okresu (oceniany od następnej granicy), A i C co 30 min (pełne godziny
+   * i połówki — próba rozłączna to tylko pełne), od 2 h przed pierwszym ocenianym okresem do końca następnego;
+   * unieważnienie A albo C wyjmuje parę. Podsumowanie skanera z tych samych rekordów.
+   */
+  function abcLedger() {
+    const u = rng(11);
+    const reg = AB_EPOCH + 10 * D;
+    const now = AB_EPOCH + 29 * D;
+    const bodies = [plan(AB_DESIGN_C, reg)];
+    let i = 0;
+    for (let slot = AB_EPOCH + 14 * D - 2 * H; slot < now - 2 * H; slot += 30 * 60_000, i++) {
+      const s1h = 0.004;
+      const a = { k: 'f', id: `${slot}-ret60`, slot, ti: slot + 20_000, t: slot + 60_000, kind: 'ret', h: 60, px0: 100_000, taus: TAUS, q: benchQuantiles(s1h * (0.8 + 0.4 * u()), 60).map(r6), bq: benchQuantiles(s1h, 60).map(r6), aci: 0.1, model: 'ledger-har-fhs-v1' };
+      const c = makeRetForecastC(a, s1h ** 2 * (0.2 + 2 * u()));
+      const y = r6((u() - 0.5) * 3.2 * s1h);
+      const res = (f) => {
+        const inside = (lo, hi) => (y >= qAt(TAUS, f.q, lo) && y <= qAt(TAUS, f.q, hi) ? 1 : 0);
+        const c1 = r6(100_000 * Math.exp(y));
+        // PIT jak w skanerze: z niezaokrąglonego ln(c1/c0)
+        return { k: 'r', id: f.id, t: slot + 2 * H, c0: 100_000, c1, y, crps: r6(crpsQuantiles(TAUS, f.q, y)), crpsB: r6(crpsQuantiles(TAUS, f.bq, y)), pit: r4(pitFromQuantiles(TAUS, f.q, Math.log(c1 / 100_000))), in90: inside(0.05, 0.95), in60: inside(0.2, 0.8), inAci: 1 };
+      };
+      const voidOf = (f) => ({ k: 'r', id: f.id, t: slot + 8 * H, void: 'no-data' });
+      bodies.push(a, c, i % 23 === 0 ? voidOf(a) : res(a), i % 17 === 0 ? voidOf(c) : res(c));
+    }
+    const records = chain(bodies);
+    const fs = new Map(bodies.filter((o) => o.k === 'f').map((o) => [o.id, o]));
+    const rs = new Map(bodies.filter((o) => o.k === 'r').map((o) => [o.id, o]));
+    const summary = buildSummary({ coin: 'BTC', now, head: { hash: records.at(-1).hash, lines: records.length }, forecasts: fs, resolutions: rs, aci: {}, ots: [], abCRegisteredAt: reg });
+    return { records, summary: JSON.parse(JSON.stringify(summary)) };
+  }
+
+  /**
+   * hrel-v1: plan nie o pełnej godzinie (bloki od chwili rejestracji), rekord co godzinę przez dwa bloki i dłużej, szanse
+   * z cech na zgrubnej siatce (remisy p w kwintylach), braki godziny 1 h (null) i unieważnienia.
+   */
+  function hrelLedger() {
+    const u = rng(5);
+    const at = Date.UTC(2026, 10, 1, 0, 7);
+    const now = at + 28 * D + 10 * H + 15 * 60_000 + 3 * H;
+    const bodies = [plan(HREL_DESIGN, at)];
+    let i = 0;
+    for (let hs = Math.ceil(at / H) * H; hs + 4 * H + 30_000 <= now; hs += H, i++) {
+      const x = [0, 1, 2].map(() => Math.round(u() * 6) / 2 - 1.5);
+      const p = hrelProbs(x);
+      const f = { k: 'f', id: `${hs}-hrel`, slot: hs, ti: hs + 30_000, t: hs, kind: 'hrel', x, thr: [100, 100, 100, 100], p, model: 'hrel-logit-v1', plan: 'hrel-v1' };
+      const rg = p.map((pj) => r4(100 * Math.exp(u() - 0.5 + 1.2 * (pj - 0.5))));
+      const yOf = (v) => (v === null ? null : v > 100 ? 1 : 0);
+      const r =
+        i % 31 === 0
+          ? { k: 'r', id: f.id, t: hs + 10 * H + 60_000, void: 'no-data' }
+          : i % 29 === 0
+            ? { k: 'r', id: f.id, t: hs + 10 * H + 60_000, rng: [rg[0], null, rg[2], rg[3]], y: [rg[0], null, rg[2], rg[3]].map(yOf) }
+            : { k: 'r', id: f.id, t: hs + 4 * H + 30_000, rng: rg, y: rg.map(yOf) };
+      bodies.push(f, r);
+    }
+    const records = chain(bodies);
+    const summary = buildSummary({
+      coin: 'BTC',
+      now,
+      head: { hash: records.at(-1).hash, lines: records.length },
+      forecasts: new Map(),
+      resolutions: new Map(),
+      aci: {},
+      ots: [],
+      hrelPlan: { at, hash: records[0].hash },
+      hrel: { forecasts: new Map(bodies.filter((o) => o.k === 'f').map((o) => [o.id, o])), resolutions: new Map(bodies.filter((o) => o.k === 'r').map((o) => [o.id, o])) },
+    });
+    return { records, summary: JSON.parse(JSON.stringify(summary)) };
+  }
+
+  const abc = abcLedger();
+  const hrel = hrelLedger();
+
+  it('wariant C: poprawny dziennik przechodzi; kalibracja ostatniego zakończonego okresu porównana (próba rozłączna, bez unieważnionych)', () => {
+    const last = abc.summary.abC.last;
+    expect(last).toMatchObject({ start: AB_EPOCH + 14 * D, end: AB_EPOCH + 28 * D });
+    // 14 dób pełnych godzin minus pary z unieważnionym A albo C; pokrycia z kwantyli C
+    expect(last.cal.n).toBeGreaterThan(250);
+    expect(last.cal.n).toBeLessThan(14 * 24);
+    expect(last.cal.cov60).toBeGreaterThan(0.3);
+    expect(last.cal.cov60).toBeLessThan(last.cal.cov90);
+    expect(checkResolutions(abc.records)).toEqual([]);
+    const ok = checkMeasures(abc.summary, abc.records);
+    expect(ok.problems).toEqual([]);
+    const base = structuredClone(abc.summary);
+    delete base.abC;
+    // firstBlock, początek i koniec okresu, n, cov60, cov90
+    expect(ok.checked - checkMeasures(base, abc.records).checked).toBe(6);
+  });
+
+  it('wariant C: zmienione cov60, cov90 albo n w podsumowaniu wykryte; inna granica startu i ukryty okres też', () => {
+    for (const [k, v] of [
+      ['cov60', r4(abc.summary.abC.last.cal.cov60 + 0.0001)],
+      ['cov90', r4(abc.summary.abC.last.cal.cov90 - 0.0001)],
+      ['n', abc.summary.abC.last.cal.n + 1],
+    ]) {
+      const bad = structuredClone(abc.summary);
+      bad.abC.last.cal[k] = v;
+      const { problems } = checkMeasures(bad, abc.records);
+      expect(problems, k).toHaveLength(1);
+      expect(problems[0]).toMatch(new RegExp(`^wariant C \\(ab-v2\\) kalibracja okresu\\.${k}:`));
+    }
+    const shifted = structuredClone(abc.summary);
+    shifted.abC.firstBlock += 14 * D;
+    shifted.abC.last = null;
+    expect(checkMeasures(shifted, abc.records).problems).toHaveLength(2);
+  });
+
+  it('wariant C: starsze podsumowanie bez cal i firstBlock — nic do porównania, bez błędu', () => {
+    const old = structuredClone(abc.summary);
+    delete old.abC.firstBlock;
+    delete old.abC.last.cal;
+    const r = checkMeasures(old, abc.records);
+    expect(r.problems).toEqual([]);
+    expect(checkMeasures(abc.summary, abc.records).checked - r.checked).toBe(4);
+  });
+
+  it('hrel-v1: poprawny dziennik przechodzi; bloki i dane łączne bloków 1–2 porównane', () => {
+    const s = hrel.summary.hrel;
+    expect(s.blocks).toHaveLength(2);
+    expect(s.pooled).not.toBeNull();
+    for (const b of [...s.blocks, s.pooled]) {
+      expect(b.n).toBeGreaterThanOrEqual(HREL_DESIGN.minN);
+      expect(b.t).not.toBeNull();
+      expect(b.maxQDev).not.toBeNull();
+    }
+    const ok = checkMeasures(hrel.summary, hrel.records);
+    expect(ok.problems).toEqual([]);
+    const base = structuredClone(hrel.summary);
+    delete base.hrel;
+    // plan (at, hash) i trzy bloki po 9 pól (start, end, n, meanP, freq, mean, se, t, maxQDev)
+    expect(ok.checked - checkMeasures(base, hrel.records).checked).toBe(2 + 3 * 9);
+  });
+
+  it('hrel-v1: zmieniony t, średnie p, częstość, odchylenie kwintyla albo n bloku wykryte; brakujący blok też', () => {
+    for (const [where, k, d] of [
+      ['blok 1', 't', 0.01],
+      ['blok 2', 'meanP', 0.001],
+      ['blok 1', 'freq', -0.001],
+      ['bloki 1–2', 'maxQDev', 0.001],
+      ['blok 2', 'n', 1],
+    ]) {
+      const bad = structuredClone(hrel.summary);
+      const b = where === 'bloki 1–2' ? bad.hrel.pooled : bad.hrel.blocks[Number(where.slice(-1)) - 1];
+      b[k] += d;
+      const { problems } = checkMeasures(bad, hrel.records);
+      expect(problems, `${where} ${k}`).toHaveLength(1);
+      expect(problems[0]).toMatch(new RegExp(`^hrel-v1 ${where}\\.${k}:`));
+    }
+    const fewer = structuredClone(hrel.summary);
+    fewer.hrel.blocks.pop();
+    expect(checkMeasures(fewer, hrel.records).problems.join(' ')).toMatch(/hrel-v1 bloki: 1 ≠ przeliczone 2/);
+    // Starsze podsumowanie bez hrel — nic do porównania
+    const old = structuredClone(hrel.summary);
+    delete old.hrel;
+    expect(checkMeasures(old, hrel.records).problems).toEqual([]);
+  });
+
+  it('pełny dziennik bez planu, a podsumowanie z oceną: błąd; dziennik niepełny (bez GENESIS) — pominięte', () => {
+    const noPlan = chain(hrel.records.slice(1).map(({ prev, hash, ...b }) => b));
+    const s = { ...hrel.summary, head: { hash: noPlan.at(-1).hash, lines: noPlan.length } };
+    expect(checkMeasures(s, noPlan).problems.join(' ')).toMatch(/hrel-v1: brak planu/);
+    const partial = noPlan.map((o, i) => (i === 0 ? { ...o, prev: 'f'.repeat(64) } : o));
+    expect(checkMeasures(s, partial).problems).toEqual([]);
+  });
+});
