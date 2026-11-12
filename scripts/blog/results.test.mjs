@@ -350,6 +350,8 @@ describe('strona /wyniki: badanie wielu rynków w „Co się nie potwierdziło�
         expect(t).toContain(lang === 'pl' ? '+0,010' : '+0.010');
         expect(t).toContain(lang === 'pl' ? '−0,001 [−0,005; +0,002]' : '−0.001 [−0.005; +0.002]');
         expect(t).toContain(lang === 'pl' ? '+0,002 [−0,004; +0,008]' : '+0.002 [−0.004; +0.008]');
+        expect(t).toContain(lang === 'pl' ? '[−0,006; +0,001], 2237 godzin' : '[−0.006; +0.001], 2,237 hours');
+        expect(t).toContain(lang === 'pl' ? 'powyżej mediany tej godziny z 20 dni' : 'above the median of that hour over 20 days');
         expect(t).not.toMatch(/sygna|signal/i);
         expect(guardHits(t, TITLE_GUARDS).map((h) => h.fragment)).toEqual([]);
       }

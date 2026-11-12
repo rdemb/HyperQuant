@@ -19,7 +19,7 @@ export const MARKETS_STUDY = {
   baseBss: 0.201,
   rows: [
     ['risk', -0.001, -0.005, 0.002],
-    ['closed', -0.002, -0.006, 0.001],
+    ['closed', -0.002, -0.006, 0.001, 2237],
     ['funding', 0, -0.004, 0.005],
     ['fx', -0.001, -0.007, 0.005],
     ['alts', 0.002, -0.004, 0.008],
@@ -205,7 +205,7 @@ const T = {
       study: {
         h3: 'Badanie: inne rynki Hyperliquid a ruch BTC w następnej godzinie',
         lead: (n, thr, base, from, to) =>
-          `Jednorazowy test, nie z dziennika: czy dane innych rynków Hyperliquid poprawiają szansę dużego ruchu BTC w następnej godzinie ponad model samego BTC (BSS ${base}). Świece 1h ${from}–${to}, ${n} godzin poza próbą. Próg zapisany przed testem: przyrost BSS co najmniej ${thr}, przedział 99%. Żadna z pięciu hipotez nie przeszła progu:`,
+          `Jednorazowy test, nie z dziennika: czy dane innych rynków Hyperliquid poprawiają szansę dużego ruchu BTC w następnej godzinie (zakres godziny powyżej mediany tej godziny z 20 dni tego samego typu: robocze albo weekend) ponad model samego BTC (BSS ${base}). Świece 1h ${from}–${to}, ${n} godzin poza próbą. Próg zapisany przed testem: przyrost BSS co najmniej ${thr}, przedział 99%. Żadna z pięciu hipotez nie przeszła progu:`,
         rows: {
           risk: 'akcje i indeksy (SP500, XYZ100, NVDA)',
           closed: 'te same rynki przy zamkniętej Wall Street',
@@ -213,7 +213,7 @@ const T = {
           fx: 'złoto i waluty (GOLD, EUR, JPY)',
           alts: 'alty (ETH, SOL, HYPE, ZEC)',
         },
-        row: (name, d) => `${name}: przyrost BSS ${d}`,
+        row: (name, d, h) => `${name}: przyrost BSS ${d}${h ? `, ${h} godzin` : ''}`,
         outro:
           'Rynki ruszają się razem z BTC w tej samej godzinie, ale żaden nie wyprzedza go o godzinę. Górne granice wszystkich przedziałów są poniżej progu, więc to nie brak danych, tylko brak efektu tej wielkości.',
         from: '18.04',
@@ -332,7 +332,7 @@ const T = {
       study: {
         h3: 'Study: other Hyperliquid markets and BTC moves in the next hour',
         lead: (n, thr, base, from, to) =>
-          `A one-off test, not from the ledger: does data from other Hyperliquid markets improve the chance of a large BTC move in the next hour beyond a BTC-only model (BSS ${base})? 1h candles ${from}–${to}, ${n} out-of-sample hours. Threshold recorded before the test: a BSS gain of at least ${thr}, 99% interval. None of the five hypotheses passed the threshold:`,
+          `A one-off test, not from the ledger: does data from other Hyperliquid markets improve the chance of a large BTC move in the next hour (the hour's range above the median of that hour over 20 days of the same type: weekdays or weekend) beyond a BTC-only model (BSS ${base})? 1h candles ${from}–${to}, ${n} out-of-sample hours. Threshold recorded before the test: a BSS gain of at least ${thr}, 99% interval. None of the five hypotheses passed the threshold:`,
         rows: {
           risk: 'stocks and indices (SP500, XYZ100, NVDA)',
           closed: 'the same markets while Wall Street is closed',
@@ -340,7 +340,7 @@ const T = {
           fx: 'gold and currencies (GOLD, EUR, JPY)',
           alts: 'alts (ETH, SOL, HYPE, ZEC)',
         },
-        row: (name, d) => `${name}: BSS gain ${d}`,
+        row: (name, d, h) => `${name}: BSS gain ${d}${h ? `, ${h} hours` : ''}`,
         outro:
           'Markets move together with BTC within the same hour, but none leads it by an hour. The upper bounds of all intervals are below the threshold, so this is not a lack of data but no effect of that size.',
         from: '18 Apr',
@@ -577,7 +577,7 @@ ${v ? `<p>${esc(Vt.last(f.time(v.at)))} · ${runLink}${lines.length ? ` · ${esc
   // Badanie wielu rynków: stałe liczby z badania (nie z dziennika), znak zawsze jawny
   const S3 = R.study;
   const sgn = (x) => `${x > 0 ? '+' : x < 0 ? '−' : '+'}${Math.abs(x).toFixed(3)}`.replace('.', lang === 'pl' ? ',' : '.');
-  const studyRows = MARKETS_STUDY.rows.map(([k, d, lo, hi]) => `<li class="study">${esc(S3.row(S3.rows[k], `${sgn(d)} [${sgn(lo)}; ${sgn(hi)}]`))}</li>`);
+  const studyRows = MARKETS_STUDY.rows.map(([k, d, lo, hi, h]) => `<li class="study">${esc(S3.row(S3.rows[k], `${sgn(d)} [${sgn(lo)}; ${sgn(hi)}]`, h ? f.int(h) : null))}</li>`);
   const study = `<h3 id="study-markets">${esc(S3.h3)}</h3>
 <p>${esc(S3.lead(f.int(MARKETS_STUDY.hours), sgn(MARKETS_STUDY.threshold), sgn(MARKETS_STUDY.baseBss), S3.from, S3.to))}</p>
 <ul class="refuted">${studyRows.join('')}</ul>
