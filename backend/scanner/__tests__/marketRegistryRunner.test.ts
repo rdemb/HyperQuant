@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { isMarketRegistry, type MarketRegistry } from '../../../src/utils/marketRegistry.ts';
 import type { InfoClient } from '../liqDetect.ts';
-import { MARKET_REGISTRY_EVERY_MS, MarketRegistryRunner } from '../marketRegistryRunner.ts';
+import { MARKET_REGISTRY_EVERY_MS, MarketRegistryRunner, REGISTRY_START_WINDOW } from '../marketRegistryRunner.ts';
 
 const H = 3_600_000;
 const DAY = 24 * H;
@@ -72,6 +72,8 @@ function setup(over: Parameters<typeof api>[0] = {}, dir = mkdtempSync(join(tmpd
     statePath: join(dir, 'markets-state.json'),
     outPath: join(dir, 'out', 'markets.json'),
     scannerCoins: ['BTC'],
+    // Okno startu w slocie sprawdza osobny test; tu takt w dowolnej chwili
+    startWindow: [0, 15 * 60_000],
     wait: async (ms) => {
       waits.push(ms);
     },
@@ -163,5 +165,23 @@ describe('MarketRegistryRunner', () => {
     const runner = new MarketRegistryRunner({ rest: { ...rest, healthy: () => false }, statePath: join(dir, 's.json'), outPath: join(dir, 'm.json'), scannerCoins: ['BTC'], wait: async () => {} });
     expect(await runner.tick(T0)).toEqual({ ran: false });
     expect(calls).toHaveLength(0);
+  });
+
+  it('start tylko od 3. do 8. minuty 15-minutowego slotu (bez kolizji z wydaniem prognoz); takt co 5 min trafia w okno', async () => {
+    expect(REGISTRY_START_WINDOW).toEqual([3 * 60_000, 8 * 60_000]);
+    const { rest, calls } = api();
+    const dir = mkdtempSync(join(tmpdir(), 'hq-markets-'));
+    const runner = new MarketRegistryRunner({ rest, statePath: join(dir, 's.json'), outPath: join(dir, 'm.json'), scannerCoins: ['BTC'], wait: async () => {} });
+    const slot = Date.UTC(2026, 10, 1, 10, 15);
+    expect(await runner.tick(slot)).toEqual({ ran: false });
+    expect(await runner.tick(slot + 2 * 60_000 + 59_000)).toEqual({ ran: false });
+    expect(await runner.tick(slot + 8 * 60_000)).toEqual({ ran: false });
+    expect(calls).toHaveLength(0);
+    expect((await runner.tick(slot + 3 * 60_000)).ran).toBe(true);
+    // Każde przesunięcie timera co 5 min ma w slocie dokładnie jeden takt w oknie
+    for (let off = 0; off < 5 * 60_000; off += 30_000) {
+      const inWin = [0, 1, 2].map((k) => (off + k * 5 * 60_000) % (15 * 60_000)).filter((m) => m >= 3 * 60_000 && m < 8 * 60_000);
+      expect(inWin).toHaveLength(1);
+    }
   });
 });

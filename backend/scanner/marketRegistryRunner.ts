@@ -19,6 +19,13 @@ const INFO_WEIGHT = 20;
 /** Odstęp między zapytaniami kolejnych giełd: wspólny budżet nie oddaje naraz całego wiadra jednemu zadaniu */
 const DEFAULT_GAP_MS = 20_000;
 
+/**
+ * Okno startu w 15-minutowym slocie dziennika: od 3. do 8. minuty. Przebieg (do ~4 min przy 11 giełdach) kończy się przed
+ * następnym slotem, więc nie zabiera budżetu prognoz w chwili ich wydania; takt co 5 min trafia w okno raz na slot.
+ */
+export const REGISTRY_START_WINDOW: readonly [number, number] = [3 * 60_000, 8 * 60_000];
+const SLOT_MS = 15 * 60_000;
+
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 export interface MarketRegistryRunnerDeps {
@@ -31,6 +38,8 @@ export interface MarketRegistryRunnerDeps {
   scannerCoins: readonly string[];
   wait?: (ms: number) => Promise<void>;
   gapMs?: number;
+  /** Okno startu w slocie (ms od początku slotu); domyślnie REGISTRY_START_WINDOW */
+  startWindow?: readonly [number, number];
 }
 
 export interface MarketRegistryTick {
@@ -72,6 +81,9 @@ export class MarketRegistryRunner {
 
   async tick(now: number): Promise<MarketRegistryTick> {
     if (this.running || now - this.state.lastAt < MARKET_REGISTRY_EVERY_MS) return { ran: false };
+    const [w0, w1] = this.d.startWindow ?? REGISTRY_START_WINDOW;
+    const inSlot = now % SLOT_MS;
+    if (inSlot < w0 || inSlot >= w1) return { ran: false };
     const { rest } = this.d;
     // Zadanie mniej ważne niż prognozy w tym samym budżecie — czeka, gdy API jest w wycofaniu
     if (rest.healthy && !rest.healthy()) return { ran: false };
