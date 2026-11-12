@@ -15,6 +15,7 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 - Testy: `scripts/blog/whatsnew.test.mjs` (kolejność okresów, wersje z jednego dnia w jednym okresie, grupy, `ukryj`, sekcja bez komentarza, zła grupa, zakazane słowo, EN, brak tagów, brak CHANGELOG, adresy, hreflang, mapa strony, link w stopce każdej strony, brak `<script>` poza ld+json; prawdziwy CHANGELOG: każda sekcja z komentarzem i datą, tytuły przez bezpieczniki słów).
 
 ### Pomiar układu na HYPE i xyz:NVDA, test akceptacyjny M1 (2026-11-12)
+<!-- co-nowego: ukryj -->
 
 #### Dodane
 - **`npm run ui:check` mierzy też HYPE i xyz:NVDA** (`scripts/ui/layout-check.mjs`, przebieg „M1”): wykres `#charts?m=<rynek>` na komputerze (1440, bez kolumny DOM) i telefonie (390). Te same limity obiektów co na BTC (zero elementów DOM nad świecami, zero nachodzących etykiet), brak wyjątków i `console.error` strony, brak „NaN” w tekście, właściwy rynek w legendzie (na telefonie w polu wyboru rynku). Szlify zależne od skanera i od powtórki BTC są na tych rynkach pominięte, bo warstwy skanera pokazują tam „—”.
