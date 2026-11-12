@@ -7,12 +7,14 @@ import type { ProBar, ProStore } from '../store/proStore';
 import { fmtPx } from './layout';
 import { logicalOfTime } from './overlay';
 import { MONO, PRO, rgba } from './theme';
+import { PB_TOUCHES, boxSpan, formingNote, nearestLevels, selectRanges, selectSpots } from './pbSelect';
 
 /**
  * Warstwa wskaźnika „Zakresy P/b (Nill)” na wykresie ceny (interwały do 1 h, na żywo): zakresy P/b ze świec 5m z
  * dotknięciami i impulsem, poziomy profilu poprzedniego tygodnia i doby, miejsca 👀 (A, B, C) bez celów, przy
  * rozstrzygniętych wynik wyścigu do bariery (✓ ✗) oraz opis w legendzie: stan strefy, typowa godzina i wynik 👀 na
- * wczytanej historii świec. Strefa aktywna daje alarmy z menu wykresu.
+ * wczytanej historii świec. Strefa aktywna daje alarmy z menu wykresu. Co rysujemy (zakres aktywny i ostatni
+ * zakończony, 3 ostatnie 👀, 2 + 2 najbliższe poziomy, bez zakresu w budowie) wybiera `pbSelect.ts`.
  */
 
 export interface PbStyle {
@@ -66,7 +68,11 @@ interface View {
 
 interface Box {
   x0: number;
+  /** Początek wypełnienia i ciągłego obrysu: świeca potwierdzenia (wcześniej obrys kropkowany). */
+  xf: number;
   x1: number;
+  /** Wypełnienie tylko zakresu aktywnego; ostatni zakończony — sam obrys. */
+  fill: boolean;
   y0: number;
   y1: number;
   label: string;
@@ -114,6 +120,8 @@ export class PbRangeLayer implements ISeriesPrimitive<Time> {
   private boxes: Box[] = [];
   private marks: DrawnMark[] = [];
   private lines: HLine[] = [];
+  /** Po każdej scenie: pudełka, linie poziomów i miejsca 👀 na ekranie (pomiar układu czyta je z wykresu). */
+  onCounts: ((c: { boxes: number; lines: number; marks: number }) => void) | null = null;
   private readonly views: readonly IPrimitivePaneView[];
 
   /** `styleOf` — styl widocznego wskaźnika (null — ukryty: bez rysowania i bez pobierania świec 5m). */
@@ -124,12 +132,13 @@ export class PbRangeLayer implements ISeriesPrimitive<Time> {
           const st = this.style;
           if (!st) return;
           for (const r of this.boxes) {
+            if (!r.fill || r.x1 <= r.xf) continue;
             const band = (r.y1 - r.y0) * 0.2;
             ctx.fillStyle = rgba(st.color, 0.06 * st.alpha);
-            ctx.fillRect(r.x0, r.y0, r.x1 - r.x0, r.y1 - r.y0);
+            ctx.fillRect(r.xf, r.y0, r.x1 - r.xf, r.y1 - r.y0);
             ctx.fillStyle = rgba(st.color, 0.1 * st.alpha);
-            ctx.fillRect(r.x0, r.y0, r.x1 - r.x0, band);
-            ctx.fillRect(r.x0, r.y1 - band, r.x1 - r.x0, band);
+            ctx.fillRect(r.xf, r.y0, r.x1 - r.xf, band);
+            ctx.fillRect(r.xf, r.y1 - band, r.x1 - r.xf, band);
           }
         }),
     };
@@ -159,10 +168,15 @@ export class PbRangeLayer implements ISeriesPrimitive<Time> {
           for (const r of this.boxes) {
             ctx.strokeStyle = edge;
             ctx.lineWidth = st.width;
-            // Linia nieparzystej grubości na środku piksela (ostra krawędź)
+            // Linia nieparzystej grubości na środku piksela (ostra krawędź); przed potwierdzeniem cienki obrys kropkowany
             const o = st.width % 2 ? 0.5 : 0;
-            ctx.strokeRect(Math.round(r.x0) + o, Math.round(r.y0) + o, Math.round(r.x1 - r.x0), Math.round(r.y1 - r.y0));
+            if (r.x1 > r.xf) ctx.strokeRect(Math.round(r.xf) + o, Math.round(r.y0) + o, Math.round(r.x1 - r.xf), Math.round(r.y1 - r.y0));
             ctx.lineWidth = 1;
+            if (r.xf > r.x0) {
+              ctx.setLineDash([1, 3]);
+              ctx.strokeRect(Math.round(r.x0) + 0.5, Math.round(r.y0) + 0.5, Math.round(r.xf - r.x0), Math.round(r.y1 - r.y0));
+              ctx.setLineDash([]);
+            }
             const [ix0, iy0, ix1, iy1] = r.imp;
             ctx.setLineDash([2, 2]);
             ctx.beginPath();
@@ -330,6 +344,11 @@ export class PbRangeLayer implements ISeriesPrimitive<Time> {
     this.marks = [];
     this.lines = [];
     this.style = this.styleOf();
+    this.scene();
+    this.onCounts?.({ boxes: this.boxes.length, lines: this.lines.length, marks: this.marks.length });
+  }
+
+  private scene(): void {
     const v = this.view;
     const chart = this.chart;
     const series = this.series;
@@ -346,56 +365,76 @@ export class PbRangeLayer implements ISeriesPrimitive<Time> {
     const y = (p: number) => series.priceToCoordinate(p);
     const b = this.b5;
     const last = b.length - 1;
+    // Poziomy tygodnia i doby: najwyżej 2 najbliższe nad ceną i 2 pod nią (z obu profili razem)
+    const levels: { px: number; name: string; from: number; color: string; tag: string }[] = [];
     for (const [lv, from, color, tag] of [
       [v.week, utcWeekStart(this.now), WEEK, tr('tydz.', 'wk')],
       [v.day, utcDayStart(this.now), DAY_INK, tr('doba', 'day')],
     ] as const) {
       if (!lv) continue;
       const items: [number, string][] = [[lv.vah, 'VAH'], [lv.poc, 'POC'], [lv.val, 'VAL'], ...lv.lvn.map((p): [number, string] => [p, 'LVN'])];
-      for (const [p, name] of items) {
-        const yy = y(p);
-        if (yy === null) continue;
-        this.lines.push({
-          x0: Math.max(0, x(from)),
-          x1: right,
-          y: yy,
-          color,
-          text: this.phone ? `${tag} ${name}` : `${tag} ${name} ${fmtPx(p)}`,
-        });
-      }
+      for (const [px, name] of items) levels.push({ px, name, from, color, tag });
     }
-    v.ranges.forEach((r, i) => {
-      const x0 = x(b[r.e + 1].t);
-      const live = r.kv === null || (r.x === null && r.end === last && r.kv + LIFE > last);
-      const x1 = live ? right : x(b[r.end].t + TF_MS);
+    const near = nearestLevels(levels, b[last].c);
+    levels.forEach((l, i) => {
+      const yy = y(l.px);
+      if (!near.has(i) || yy === null) return;
+      this.lines.push({
+        x0: Math.max(0, x(l.from)),
+        x1: right,
+        y: yy,
+        color: l.color,
+        text: this.phone ? `${l.tag} ${l.name}` : `${l.tag} ${l.name} ${fmtPx(l.px)}`,
+      });
+    });
+    // Zakres aktywny i ostatni zakończony; zakres w budowie tylko w legendzie
+    const pick = selectRanges(v.ranges, last);
+    const drawn = [pick.done, pick.active].filter((i): i is number => i !== null);
+    // Najwyżej 3 najnowsze 👀 z rysowanych zakresów
+    const spotList = drawn.flatMap((i) => v.marks[i].map((m) => ({ m, t: m.t })));
+    const spotsShown = selectSpots(spotList);
+    const shownMarks = new Set(spotList.filter((_, k) => spotsShown.has(k)).map((s) => s.m));
+    for (const i of drawn) {
+      const r = v.ranges[i];
+      const active = i === pick.active;
+      const span = boxSpan(r, last, active);
+      const x0 = x(b[span.from].t);
+      const xf = x(b[span.fillFrom].t);
+      const x1 = span.open ? right : x(b[span.to].t + TF_MS);
       const ya = y(r.hi);
       const yb = y(r.lo);
       const yo = y(r.origin);
       const ye = y(r.ext);
-      if (ya === null || yb === null || yo === null || ye === null || x1 < 0 || x0 > right) return;
+      if (ya === null || yb === null || yo === null || ye === null || x1 < 0 || x0 > right) continue;
       const y0 = Math.min(ya, yb);
       const y1 = Math.max(ya, yb);
       const wBp = numLang(String(Math.round(((r.hi - r.lo) / r.lo) * 1e4)));
       const name = r.s > 0 ? 'P' : 'b';
-      const state = r.kv === null ? tr(' · w budowie', ' · forming') : '';
+      const state = active ? '' : tr(' · zakończony', ' · ended');
       const lvTag = v.level[i] && !this.phone ? tr(' · poziom tyg.', ' · weekly level') : '';
       const label = this.phone
         ? `${name} · ${r.touches.length} · ${wBp} bp${state}`
         : `${name} 5m · ${r.touches.length} ${tr('dotkn.', 'touches')} · ${wBp} bp${lvTag}${state}`;
       this.boxes.push({
         x0,
+        xf,
         x1,
+        fill: active,
         y0,
         y1,
         label,
-        touches: r.touches.map((t, n) => ({
-          x: x(b[t.k].t) + sp / 2,
-          y: t.side > 0 ? y0 : y1,
-          n: n + 1,
-        })),
+        // Kółka dotknięć tylko przy zakresie aktywnym
+        touches: active
+          ? r.touches.map((t, n) => ({
+              x: x(b[t.k].t) + sp / 2,
+              y: t.side > 0 ? y0 : y1,
+              n: n + 1,
+            }))
+          : [],
         imp: [x(b[r.e - 15].t), yo, x(b[r.e].t + TF_MS), ye],
       });
       for (const m of v.marks[i]) {
+        if (!shownMarks.has(m)) continue;
         const yy = y(m.spot.px);
         if (yy === null) continue;
         const res = m.res === 'hit' ? ' ✓' : m.res === 'miss' ? ' ✗' : '';
@@ -407,7 +446,7 @@ export class PbRangeLayer implements ISeriesPrimitive<Time> {
         for (let k = 0; k < 3 && this.marks.some((o) => Math.abs(o.x - xx) < LABEL_W * (text.length + o.text.length) * 0.5 && Math.abs(o.ty - ty) < 14); k++) ty += dy;
         this.marks.push({ x: xx, y: yy, ty, side: m.spot.side, text, dim: m.dim });
       }
-    });
+    }
   }
 
   /** Najnowszy ważny zakres przed wybiciem i końcem życia. */
@@ -455,13 +494,16 @@ export class PbRangeLayer implements ISeriesPrimitive<Time> {
         },
       ];
     const a = this.active();
-    const forming = v.ranges.find((r) => r.kv === null);
+    const forming = formingNote(v.ranges);
     let zone = tr('brak ważnej strefy', 'no valid zone');
     if (a) zone = `${a.s > 0 ? 'P' : 'b'} ${fmtPx(a.lo)}–${fmtPx(a.hi)} · ${a.touches.length} ${tr('dotkn.', 'touches')}`;
     else if (forming) {
+      // Zakres w budowie nie jest rysowany: tylko w legendzie, z liczbą dotknięć z 3 potrzebnych i czasem z 4 h
       const min = (this.b5.length - 1 - forming.e) * 5;
       const hm = `${Math.floor(min / 60)}:${String(min % 60).padStart(2, '0')}`;
-      zone = `${forming.s > 0 ? 'P' : 'b'} ${tr('w budowie', 'forming')} · ${forming.touches.length} ${tr('dotkn.', 'touches')} · ${hm} ${tr('z', 'of')} 4:00`;
+      const n = forming.touches;
+      const word = n === 1 ? 'dotknięcie' : n >= 2 && n <= 4 ? 'dotknięcia' : 'dotknięć';
+      zone = `${forming.s > 0 ? 'P' : 'b'} ${tr(`w budowie: ${n} ${word} z ${PB_TOUCHES}`, `forming: ${n} of ${PB_TOUCHES} touches`)} · ${hm} ${tr('z', 'of')} 4:00`;
     }
     const parts = [{ text: zone, color: a ? color : PRO.ink2 }];
     if (v.hourBp !== null)

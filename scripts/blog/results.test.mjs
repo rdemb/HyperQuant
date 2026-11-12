@@ -234,6 +234,27 @@ describe('strona /wyniki: rozliczenie prognoz dziennika', () => {
     expect(ds.description.length).toBeGreaterThanOrEqual(50);
     expect(JSON.stringify(ds)).toContain('https://github.com/rdemb/hyperquant-data/tree/ledger');
     expect(ds.dateModified).toBe(new Date(ASOF).toISOString());
+    expect(ds.license).toBe('https://creativecommons.org/licenses/by/4.0/');
+  });
+
+  it('licencja danych dziennika CC BY 4.0 w sekcji weryfikacji (PL i EN), z linkiem do tekstu licencji', () => {
+    const pl = resultsPage(SITE, 'pl', results(newSummary())).html;
+    const en = resultsPage(SITE, 'en', results(newSummary())).html;
+    expect(text(pl)).toContain('Licencja danych dziennika: CC BY 4.0');
+    expect(text(en)).toContain('Ledger data license: CC BY 4.0');
+    for (const html of [pl, en]) expect(html).toContain('<a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>');
+  });
+
+  it('zastrzeżenie: „wezwanie do transakcji” / „a call to trade” na każdej stronie serwisu, pod wpisem i na /wyniki', () => {
+    const pages = sitePages(SITE, { results: results(newSummary()) }).filter((p) => p.html);
+    const { post } = validatePost('2026-11-12-mapa-dnia', POST, `## Kontekst
+
+${'Cena stoi nad dołkiem piątku i pod VWAP tygodnia. '.repeat(20)}`);
+    for (const html of [...pages.map((p) => p.html), postPage(SITE, post, {})]) {
+      const t = text(html);
+      expect(t).not.toMatch(/sygnał do transakcji|trading signal/);
+      expect(t).toMatch(/nie porada inwestycyjna ani wezwanie do transakcji|not investment advice nor a call to trade/);
+    }
   });
 
   it('(2) dzisiejsze podsumowanie bez pól 2.2: „—” z powodem zamiast przedziałów, testu Kupca 60% i BSS sezonowego', () => {
