@@ -350,8 +350,12 @@ export class LiqConfirmer {
     return { v: 1, events: this.evs, log: this.log, queue: this.queue };
   }
 
-  /** `now`: chwila odczytu — kandydaci starsi niż CANDIDATE_TTL są wtedy od razu liczeni jako nieudani. */
-  static fromJSON(j: unknown, o: { coin: string; maxPerMin: number; now?: number }): LiqConfirmer {
+  /**
+   * `since`: początek okresu obserwacji po odczycie (ciągły albo nowy po przerwie) — kandydaci z odczytem sprzed niego znikają
+   * bez wpisu (należą do odrzuconego okresu); dopiero pozostałych sprawdza TTL: starsi niż CANDIDATE_TTL w chwili `now`
+   * idą do licznika nieudanych.
+   */
+  static fromJSON(j: unknown, o: { coin: string; maxPerMin: number; now?: number; since?: number }): LiqConfirmer {
     const c = new LiqConfirmer(o);
     const x = j as { v?: number; events?: unknown[]; log?: unknown[]; queue?: unknown[] } | null;
     if (x?.v !== 1) return c;
@@ -374,6 +378,7 @@ export class LiqConfirmer {
     if (Array.isArray(x.queue))
       for (const q of x.queue) {
         if (!isQueued(q)) continue;
+        if (o.since !== undefined && q.to < o.since) continue;
         if (o.now !== undefined && o.now - q.to > CANDIDATE_TTL) c.log.push(['failed', o.now]);
         else if (c.queue.length < MAX_QUEUE) c.queue.push(q);
       }
