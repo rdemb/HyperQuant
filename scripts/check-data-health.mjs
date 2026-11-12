@@ -14,11 +14,11 @@ import { verifyProblem } from './verify-status.mjs';
 import { VERIFY_BRANCH, VERIFY_LATEST_URL } from '../src/utils/verifyFreshness.ts';
 
 export const DATA_BASE = 'https://raw.githubusercontent.com/rdemb/hyperquant-data/main';
-export const FILES = ['status.json', 'liq-map/BTC.json', 'liq-tape/BTC.json', 'cohorts/BTC.json', 'ledger/BTC/summary.json', 'liquidity/BTC.json', 'lab/BTC.json', 'whales.json', 'README.md'];
+export const FILES = ['status.json', 'liq-map/BTC.json', 'liq-tape/BTC.json', 'cohorts/BTC.json', 'ledger/BTC/summary.json', 'liquidity/BTC.json', 'lab/BTC.json', 'whales.json', 'markets.json', 'README.md'];
 /** Pliki, których brak nie jest alarmem (nowsze niż część wdrożeń skanera) — gdy są, przechodzą strażnika prywatności */
 /** Wynik niezależnej weryfikacji dziennika (GitHub Actions w repo HyperQuant) — adres `VERIFY_LATEST_URL` */
 export const VERIFY_FILE = `verify/latest.json (gałąź ${VERIFY_BRANCH} repo HyperQuant)`;
-export const OPTIONAL = new Set(['liq-tape/BTC.json', 'cohorts/BTC.json', 'ledger/BTC/summary.json', 'liquidity/BTC.json', 'lab/BTC.json', 'whales.json', VERIFY_FILE]);
+export const OPTIONAL = new Set(['liq-tape/BTC.json', 'cohorts/BTC.json', 'ledger/BTC/summary.json', 'liquidity/BTC.json', 'lab/BTC.json', 'whales.json', 'markets.json', VERIFY_FILE]);
 /** Profil płynności arkusza (publikowany co 10 min) */
 export const LIQUIDITY_MAX_AGE_MIN = 30;
 /** Laboratorium folkloru (przeliczane co godzinę) */
@@ -27,6 +27,8 @@ export const LAB_MAX_AGE_MIN = 180;
 export const LEDGER_MAX_AGE_MIN = 60;
 /** Warstwa wielorybów (publikowana z mapą co 2 min; strona ukrywa plik starszy niż 20 min) */
 export const WHALES_MAX_AGE_MIN = 30;
+/** Rejestr rynków (przeliczany co godzinę) */
+export const MARKETS_MAX_AGE_MIN = 180;
 export const LIMITS = {
   /** Publikacja co 2 min (+ do 5 min pamięci podręcznej CDN) — 30 min to jednoznaczna awaria */
   maxAgeMin: 30,
@@ -144,6 +146,15 @@ export function assessHealth(input, nowMs, limits = LIMITS, ntlLagOn) {
     }
   }
 
+  if (input.markets && typeof input.markets === 'object') {
+    const a = ageOf('rejestr rynków (markets.json)', input.markets, nowMs);
+    if (!a.ok) problems.push(a.problem);
+    else {
+      facts.push({ label: 'Wiek rejestru rynków', value: fmtMin(a.ageMin) });
+      if (a.ageMin > MARKETS_MAX_AGE_MIN) problems.push(`rejestr rynków: ostatnia aktualizacja ${fmtMin(a.ageMin)} temu (próg ${MARKETS_MAX_AGE_MIN} min)`);
+    }
+  }
+
   if (input.verify && typeof input.verify === 'object') {
     // Weryfikacja stoi (limit czasu, brak przebiegów) albo wykryła niezgodność — znaczek wtedy też jest czerwony
     if (typeof input.verify.at === 'number') facts.push({ label: 'Wiek niezależnej weryfikacji dziennika', value: `${Math.round((nowMs - input.verify.at) / (60 * MIN))} h` });
@@ -232,6 +243,7 @@ export async function fetchInput(base = DATA_BASE) {
     liquidity: json['liquidity/BTC.json'] ?? null,
     lab: json['lab/BTC.json'] ?? null,
     whales: json['whales.json'] ?? null,
+    markets: json['markets.json'] ?? null,
     verify: json[VERIFY_FILE] ?? null,
     raw,
     errors,

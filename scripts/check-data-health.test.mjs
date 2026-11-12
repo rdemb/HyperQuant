@@ -1,6 +1,6 @@
 // Testy nadzoru publicznych danych skanera (świeżość, pokrycie, strażnik prywatności).
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { FILES, LIMITS, OPTIONAL, VERIFY_FILE, assessHealth, fetchInput, findLeaks, ntlLag, renderReport } from './check-data-health.mjs';
+import { FILES, LIMITS, MARKETS_MAX_AGE_MIN, OPTIONAL, VERIFY_FILE, assessHealth, fetchInput, findLeaks, ntlLag, renderReport } from './check-data-health.mjs';
 import { VERIFY_LATEST_URL } from '../src/utils/verifyFreshness.ts';
 
 const NOW = Date.UTC(2026, 9, 22, 12, 0, 0);
@@ -245,6 +245,35 @@ describe('warstwa wielorybów (plik opcjonalny)', () => {
   it('strażnik pobiera whales.json', () => {
     expect(FILES).toContain('whales.json');
     expect(OPTIONAL.has('whales.json')).toBe(true);
+  });
+
+  it('rejestr rynków: brak pliku nie jest alarmem, adres w pliku jest', () => {
+    expect(FILES).toContain('markets.json');
+    expect(OPTIONAL.has('markets.json')).toBe(true);
+    const inp = input();
+    inp.raw['markets.json'] = JSON.stringify({ asOf: NOW, rule: 'reg-v1', markets: [{ coin: 'BTC', deployer: '0x' + 'cd'.repeat(20) }] });
+    expect(assessHealth(inp, NOW).problems.join(' ')).toMatch(/PRYWATNOŚĆ: markets\.json/);
+  });
+
+  it('rejestr rynków: alarm, gdy plik ma ponad 3 h (przeliczany co godzinę)', () => {
+    expect(MARKETS_MAX_AGE_MIN).toBe(180);
+    const fresh = assessHealth(input({ markets: { asOf: NOW - 70 * MIN, rule: 'reg-v1', markets: [] } }), NOW);
+    expect(fresh.ok).toBe(true);
+    expect(fresh.facts.map((f) => f.label)).toContain('Wiek rejestru rynków');
+    const stale = assessHealth(input({ markets: { asOf: NOW - 200 * MIN, rule: 'reg-v1', markets: [] } }), NOW);
+    expect(stale.ok).toBe(false);
+    expect(stale.problems).toContain('rejestr rynków: ostatnia aktualizacja 200 min temu (próg 180 min)');
+    expect(assessHealth(input({ markets: { rule: 'reg-v1' } }), NOW).problems.join(' ')).toMatch(/markets\.json.*asOf/);
+  });
+
+  it('fetchInput przekazuje markets.json', async () => {
+    vi.stubGlobal('fetch', async (url) => new Response(String(url).endsWith('/markets.json') ? JSON.stringify({ asOf: NOW, rule: 'reg-v1', markets: [] }) : '{}'));
+    try {
+      const inp = await fetchInput('https://example.test/main');
+      expect(inp.markets).toEqual({ asOf: NOW, rule: 'reg-v1', markets: [] });
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
 
