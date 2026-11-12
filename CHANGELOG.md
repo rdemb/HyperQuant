@@ -4,6 +4,21 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Zakresy P/b (Nill): bez zakresu w budowie, wypełnienie od potwierdzenia, 2 + 2 najbliższe poziomy (2026-11-12)
+
+Na danych stałych `ui:check` (Kokpit 5m z włączonym wskaźnikiem, zegar 24.10.2026 21:29 UTC; pudełka / linie poziomów / 👀): 1440 × 900 — 1 / 8 / 0 → 0 / 4 / 0; 390 × 844 — 1 / 8 / 0 → 0 / 4 / 0 (wybór warstwy, nie piksele; linie liczone także poza widoczną skalą ceny). Jedyne pudełko „przed” to zakres w budowie; na tych danych nie ma zakresu potwierdzonego, więc reguły pudełek (wypełnienie od potwierdzenia, aktywny i ostatni zakończony, 3 ostatnie 👀) sprawdzają testy jednostkowe, a `ui:check` pilnuje limitów. Liczby „przed” zmierzone na stronie z `main` z tymczasowym licznikiem w warstwie (bez commita).
+
+#### Zmienione
+- **Zakres w budowie nie jest rysowany** (`src/charts/pro/chart/pbSelect.ts`, `selectRanges`; `src/charts/pro/chart/pbRangeLayer.ts`): zmieniał się albo znikał zawsze. Legenda podaje „P w budowie: 2 dotknięcia z 3 · 1:20 z 4:00”.
+- **Wypełnienie pudełka od świecy potwierdzenia** (`boxSpan`), wcześniejsza część cienkim obrysem kropkowanym; dotąd po potwierdzeniu pojawiał się prostokąt sięgający ok. 4 h wstecz. Stan chwili X zawiera tylko zakresy potwierdzone do X.
+- **Rysowany zakres aktywny i ostatni zakończony** (sam obrys, z dopiskiem „zakończony”); kółka dotknięć tylko przy aktywnym; najwyżej 3 ostatnie 👀 (`selectSpots`).
+- **Poziomy tygodnia i doby: najwyżej 2 najbliższe nad ceną i 2 pod nią** (`nearestLevels`; dotąd wszystkie: VAH, POC, VAL i LVN tygodnia oraz VAH, POC i VAL doby).
+- **Opis wskaźnika** (PL i EN): nowe reguły rysowania i wynik miejsc 👀 z 2026 r. obok wyniku z legendy: A 52% (n 183), B 48% (n 29), C 53% (n 59), czyli bez przewagi.
+
+#### Dodane
+- **`ui:check`: scenariusz zakresów P/b** (Kokpit 5m z wskaźnikiem w zapisie, dane stałe, 1440 i 390): liczby z atrybutów `data-pb-boxes`, `data-pb-lines`, `data-pb-marks`, limity w `--strict`: 2 pudełka, 4 linie, 3 znaczniki 👀. `scripts/ui/baseline.json` (win32): 6 nowych liczb `pb.*`.
+- Testy: `pbSelect.test.ts` (aktywny i ostatni zakończony, bez zakresu w budowie, wypełnienie od świecy potwierdzenia, 3 ostatnie 👀, 2 + 2 najbliższe poziomy, legenda zakresu w budowie, stan chwili X tylko z zakresów potwierdzonych do X na prefiksach świec, zdanie w opisie PL i EN).
+
 ### Licencja danych dziennika i zastrzeżenie bloga (2026-11-12)
 
 #### Zmienione
