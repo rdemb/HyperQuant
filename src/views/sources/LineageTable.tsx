@@ -590,8 +590,8 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         ),
         kinds: ['LIVE'],
         refresh: tr(
-          'mapa co 2 min (repo danych + cache GitHuba do 5 min); cel odczytu: pozycje ≥ 1 mln USD co 2 min, ≥ 100 tys. co 10 min, cena likwidacji < 1% od mark co 1 min — faktyczny wiek (mediana ważona nominałem) w panelu',
-          'map every 2 min (data repository + GitHub cache up to 5 min); read target: positions ≥ USD 1M every 2 min, ≥ 100k every 10 min, liquidation price < 1% from mark every 1 min — actual age (notional-weighted median) in the panel'
+          'mapa co 2 min (repo danych + cache GitHuba do 5 min); cel odczytu: konta z górną połową nominału najpóźniej co 3 min, konto po transakcji zwykle w kilka minut, pozostałe pozycje częściej przy cenie likwidacji blisko ceny — faktyczny wiek (mediana ważona nominałem) w panelu',
+          'map every 2 min (data repository + GitHub cache up to 5 min); read target: accounts holding the top half of notional at least every 3 min, an account that traded usually within minutes, other positions more often when the liquidation price is near the price — actual age (notional-weighted median) in the panel'
         ),
         caveat: tr(
           'Portfele nieaktywne od startu skanera nie są na mapie; cena likwidacji pozycji cross zmienia się z całym kontem.',
