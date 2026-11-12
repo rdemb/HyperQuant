@@ -31,6 +31,9 @@ export function metricsOf(r) {
     if (typeof v?.desktop === 'number') m[`ib.${view}1440`] = v.desktop;
     if (typeof v?.phone === 'number') m[`ib.${view}390`] = v.phone;
   }
+  // Progi rynków wynikowych HIP-4 (wybór warstwy) na danych stałych: Kokpit 5m ze wskaźnikiem
+  if (typeof r.hip4?.desktop === 'number') m['hip4.lines1440'] = r.hip4.desktop;
+  if (typeof r.hip4?.phone === 'number') m['hip4.lines390'] = r.hip4.phone;
   // Poziomy dnia i linie otwarć sesji (wybór warstwy) na danych stałych: „Mapa dnia” (4h) i „Rozliczenie doby” (30m)
   for (const [view, v] of Object.entries(r.levels ?? {})) {
     for (const [w, d] of [['1440', v?.desktop], ['390', v?.phone]]) {

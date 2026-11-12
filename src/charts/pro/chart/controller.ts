@@ -446,6 +446,10 @@ export class ProChartController {
       container.dataset.sessionLines = String(sessions);
       container.dataset.intervalMs = String(ms);
     };
+    // Linie progów HIP-4 na ekranie (pomiar układu czyta je z atrybutu)
+    this.hip4.onLines = (n) => {
+      container.dataset.hip4Lines = String(n);
+    };
     this.overlay.onIb = (n) => {
       container.dataset.ibObjects = String(n);
     };
@@ -1042,8 +1046,8 @@ export class ProChartController {
     const o = this.hip4Fresh();
     const last = this.bars[this.bars.length - 1];
     if (!x || !o || this.store.coin !== 'BTC' || !last) return null;
-    // Telefon: tylko poziom najbliższy ceny
-    return { levels: outcomeLevels(o.rows, this.store.serverNow(), last.candle.c, this.phone), color: x.color, alpha: x.alpha, width: x.width };
+    // Komputer: 3 progi najbliższe nad ceną i 3 pod; telefon: tylko najbliższy
+    return { levels: outcomeLevels(o.rows, last.candle.c, this.phone).levels, color: x.color, alpha: x.alpha, width: x.width };
   }
 
   /** Opis rynków HIP-4 w legendzie: ile płynnych i wynik Briera rynku i modelu z dziennika (rynki 15-minutowe). */
@@ -1054,7 +1058,11 @@ export class ProChartController {
     if (!o || o.status === 'loading') return [{ text: tr('pobieram rynki…', 'loading markets…'), color: PRO.ink3 }];
     if (!this.hip4Fresh()) return [{ text: tr('rynki chwilowo niedostępne', 'markets temporarily unavailable'), color: PRO.ink3 }];
     const liquid = o.rows.filter((r) => r.quote?.liquid).length;
-    const parts = [{ text: tr(`płynne ${liquid} z ${o.rows.length}`, `liquid ${liquid} of ${o.rows.length}`), color: PRO.ink2 }];
+    const parts: { text: string; color: string }[] = [{ text: tr(`płynne ${liquid} z ${o.rows.length}`, `liquid ${liquid} of ${o.rows.length}`), color: PRO.ink2 }];
+    // Płynne progi poza wykresem (dalej od ceny) tylko jako liczba
+    const last = this.bars[this.bars.length - 1];
+    const rest = last ? outcomeLevels(o.rows, last.candle.c, this.phone).rest : 0;
+    if (rest > 0) parts.push({ text: tr(`dalsze progi: ${rest}`, `farther thresholds: ${rest}`), color: PRO.ink3 });
     const sc = this.ledger?.market?.scores;
     if (!this.phone && sc && sc.brierMarket !== null && sc.brierModel !== null) {
       const b = (v: number) => numLang(v.toFixed(3));
