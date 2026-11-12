@@ -824,7 +824,7 @@ describe('LedgerRunner — prognoza hrel-v1 (duży ruch jak na tę godzinę)', (
 
   it('plan prerejestrowany raz przed pierwszym rekordem; rekord z hs = początek godziny; jeden rekord na godzinę', async () => {
     // Zmiana planu = nowy identyfikator; przypięty hash chroni przed cichą zmianą planu już zapisanego w dzienniku
-    expect(sha(HREL_DESIGN)).toBe('95552ef6d5de60eae20d975409798a58c0b5e6d0f8af06773d87726bd41c4ba0');
+    expect(sha(HREL_DESIGN)).toBe('14139cbe5d86a3d7a5e7796d16fb75036c70b5e7e09111f7ae29deffd1687058');
     const { r, dir } = runner({ data: data() });
     expect(r.init(SLOT0).ok).toBe(true);
     await r.tick(SLOT0 + 30_000);
@@ -896,6 +896,30 @@ describe('LedgerRunner — prognoza hrel-v1 (duży ruch jak na tę godzinę)', (
     await none.r.tick(SLOT0 + 30_000);
     await none.r.tick(SLOT0 + 10 * HOUR + MIN);
     expect(all(none.dir).find((l) => l.k === 'r' && l.id === `${SLOT0}-hrel`)).toMatchObject({ void: 'no-data' });
+  });
+
+  it('przerwa źródła świec (8 h i dłużej przy żywym procesie): bez null i void; po powrocie świec pełne rozstrzygnięcie', async () => {
+    const d = data();
+    const fetch = d.refreshHourBars!;
+    // Źródło niedostępne od SLOT0 + 1 h do SLOT0 + 12 h: zostaje stan sprzed przerwy (świece do SLOT0)
+    d.refreshHourBars = async (now: number) => {
+      if (now >= SLOT0 + HOUR && now < SLOT0 + 12 * HOUR) throw new Error('sieć');
+      await fetch(now);
+    };
+    const { r, dir } = runner({ data: d });
+    r.init(SLOT0);
+    await r.tick(SLOT0 + 30_000);
+    for (const t of [SLOT0 + 4 * HOUR + 30_000, SLOT0 + 10 * HOUR + MIN, SLOT0 + 11 * HOUR + 30 * MIN]) await r.tick(t);
+    expect(all(dir).some((l) => l.k === 'r' && l.id === `${SLOT0}-hrel`)).toBe(false);
+    await r.tick(SLOT0 + 12 * HOUR + 30_000);
+    const recs = all(dir);
+    const f = recs.find((l) => l.id === `${SLOT0}-hrel` && l.k === 'f');
+    const res = recs.filter((l) => l.k === 'r' && l.id === `${SLOT0}-hrel`);
+    expect(res).toHaveLength(1);
+    const { prev: _p, hash: _h, ...body } = res[0];
+    expect(body).toEqual({ k: 'r', id: `${SLOT0}-hrel`, t: SLOT0 + 12 * HOUR + 30_000, ...hrelOutcome(closed(SLOT0 + 12 * HOUR), SLOT0, f.thr) });
+    expect(body.y.every((v: unknown) => v === 0 || v === 1)).toBe(true);
+    expect(checkHrel(recs).problems).toEqual([]);
   });
 
   it('kot, cat-cal-v1 i pozostałe prognozy bajt w bajt bez zmian; podsumowanie różni się tylko polem hrel', async () => {

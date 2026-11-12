@@ -808,6 +808,13 @@ describe('verify-ledger — prognoza hrel-v1 (duży ruch jak na tę godzinę)', 
     expect(checkOrdering([plan, f, { k: 'r', id: f.id, t: hs + 5 * HOUR, void: 'no-data' }]).join(' ')).toMatch(/unieważnienie/);
     expect(checkHrelMarket([plan, f, { ...r, rng: [r.rng[0] + 0.01, ...r.rng.slice(1)] }], market).problems.join(' ')).toMatch(/rng\[0\]/);
     expect(checkHrelMarket([plan, { ...f, x: [f.x[0] + 1e-5, ...f.x.slice(1)] }, r], market).problems.join(' ')).toMatch(/x\[0\]/);
+    // Plan: null i void tylko przy braku świecy w źródle — przy świecy rynku (np. przerwa skanera) to błąd
+    const late = hs + 10 * HOUR + 60_000;
+    expect(checkHrelMarket([plan, f, { ...part, t: late }], market).problems.join(' ')).toMatch(/rng\[1\] null mimo świecy/);
+    expect(checkHrelMarket([plan, f, { k: 'r', id: f.id, t: late, void: 'no-data' }], market).problems.join(' ')).toMatch(/unieważnione mimo świec/);
+    const gap = market.filter((c) => c.time < hs || c.time > hs + 3 * HOUR);
+    expect(checkHrelMarket([plan, f, { k: 'r', id: f.id, t: late, void: 'no-data' }], gap).problems).toEqual([]);
+    expect(checkHrelMarket([plan, f, { ...part, t: late }], market.filter((c) => c.time !== hs + HOUR)).problems).toEqual([]);
   });
 });
 

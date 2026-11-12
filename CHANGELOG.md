@@ -18,6 +18,9 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 #### Zmienione
 - AUC (Mann–Whitney) przeniesione do `src/utils/forecastScore.ts`; `backend/scanner/forecaster.ts` je ponownie eksportuje.
 
+#### Poprawione
+- **Przerwa źródła świec nie jest brakiem świecy** (przed rejestracją planu): `null` dla godziny u i `void` dla całego rekordu `hrel` powstają tylko wtedy, gdy źródło zwróciło świecę późniejszą niż u, a świecy u nie dało (nadal dopiero 6 h po hs + 4 h). Przy przerwie sieci albo API, także wielogodzinnej przy żywym procesie, rozstrzygnięcie czeka na świece; inaczej weryfikator z `--market` zgłaszałby „null mimo świecy rynku” przez ok. 100 dni bez oszustwa. Warunek dopisany do zdania `resolution` w planie `hrel-v1` (nowy hash planu przypięty w teście); `checkHrelMarket` zgłasza także `void` przy świecy rynku. Testy: przerwa źródła 8 h bez rekordu `null`, po powrocie świec pełne rozstrzygnięcie; prawdziwy brak świecy przy późniejszej — `null` po 6 h jak dotąd.
+
 ### Dziennik prognoz: wariant C prognozy zwrotu 1 h w teście A/B (`ab-v2`) (2026-11-12)
 
 #### Dodane

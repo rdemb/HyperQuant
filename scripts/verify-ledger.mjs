@@ -964,7 +964,9 @@ const hrelEnd = (fc) => fc.t + 4 * HOUR_MS;
  * Prognoza `hrel-v1` (rekordy `kind: 'hrel'`): plan zapisany w dzienniku identyczny z kodem (src/utils/hourRel.ts),
  * jeden hash, żaden rekord przed planem; rekord raz na godzinę (hs = pełna godzina, wydany najpóźniej hs + 15 min),
  * p przeliczone tutaj z zapisanych cech i wag planu (do 1e-4); rozstrzygnięcie nie przed hs + 4 h, y = [rng > thr]
- * z wartości zapisanych, null tylko razem (rng i y) i dopiero 6 h po hs + 4 h. Progi i cechy ze świec — `checkHrelMarket`.
+ * z wartości zapisanych, null tylko razem (rng i y) i dopiero 6 h po hs + 4 h. Progi i cechy ze świec — `checkHrelMarket`;
+ * tam też warunek planu dla null i void (świecy godziny brak w źródle, które dało świecę późniejszą — przerwa źródła
+ * nie jest brakiem), bo bez świec rekordy go nie rozstrzygają.
  * `since` (tryb szybki): bez planu w pobranych dniach kolejność wobec planu nie jest sprawdzana.
  */
 export function checkHrel(records, { since = null } = {}) {
@@ -1042,7 +1044,8 @@ export function checkHrel(records, { since = null } = {}) {
  * `hrel-v1` ze świecami 1h Hyperliquid (--market): progi (mediana zakresu tej samej godziny z 20 wcześniejszych dni
  * tego samego typu, do 80 dni wstecz), cechy r1, r3, r24 i zakresy godzin docelowych przeliczone tu ze świec.
  * `candles` — { time, high, low } (początek godziny). Prognozy, których okno (81 dni wstecz) wychodzi przed pobrane
- * świece, są pomijane. Zgodność: x do 1e-6, thr i rng do 1e-4 (zapis 6 i 4 miejsca).
+ * świece, są pomijane. Zgodność: x do 1e-6, thr i rng do 1e-4 (zapis 6 i 4 miejsca). null w godzinie albo `void` przy
+ * świecy tej godziny na rynku → błąd (plan: null tylko przy braku świecy w źródle, które dało późniejsze).
  */
 export function checkHrelMarket(records, candles) {
   const D = HREL_DESIGN;
@@ -1088,7 +1091,14 @@ export function checkHrelMarket(records, candles) {
       x.forEach((v, i) => !(Math.abs(Math.round(v * 1e6) / 1e6 - o.x[i]) <= 1e-6 + 1e-12) && bad.push(`x[${i}] ${o.x[i]} ≠ ${v.toFixed(6)}`));
       thr.forEach((v, j) => !(v !== null && Math.abs(v - o.thr[j]) <= 1e-4 + 1e-12) && bad.push(`thr[${j}] ${o.thr[j]} ≠ ${v === null ? 'brak' : v.toFixed(4)}`));
       if (bad.length) problems.push(`${o.id}: ${bad.join(', ')}`);
-    } else if (o.k === 'r' && fcs.has(o.id) && !o.void && Array.isArray(o.rng)) {
+    } else if (o.k === 'r' && fcs.has(o.id) && o.void) {
+      // Unieważnienie tylko przy stwierdzonym braku wszystkich czterech świec (źródło dało późniejsze, tych nie)
+      const fc = fcs.get(o.id);
+      if (fc.t < first || fc.t + 3 * HOUR_MS > last) continue;
+      resolved++;
+      const present = [0, 1, 2, 3].filter((j) => bars.has(fc.t + j * HOUR_MS));
+      if (present.length) problems.push(`${o.id}: unieważnione mimo świec rynku (godziny ${present.join(', ')})`);
+    } else if (o.k === 'r' && fcs.has(o.id) && Array.isArray(o.rng)) {
       const fc = fcs.get(o.id);
       if (fc.t < first || fc.t + 3 * HOUR_MS > last) continue;
       resolved++;
