@@ -35,6 +35,7 @@ import {
 } from './layoutNumbers';
 import type { StationId } from './stations';
 import { tr } from '../../../i18n';
+import { capsOf } from '../../../state/markets';
 
 /**
  * Wejścia liczb nagłówka układu z magazynu rynku wykresu i migawek skanera (czytane co kilka sekund przez LayoutHeader).
@@ -232,7 +233,7 @@ export function readInputs(id: StationId, store: InputStore, scan: InputScan, ha
       x.review = isAbsent(f) ? f : { ...f, inProgress };
     }
     // Mapy z bloga opisują BTC (inny rynek: liczba mówi „tylko BTC”)
-    if (store.coin === 'BTC') x.mapHits = mapHitsOf(store, scan.blog, s, now);
+    if (capsOf(store.coin).blog) x.mapHits = mapHitsOf(store, scan.blog, s, now);
   }
   return x;
 }

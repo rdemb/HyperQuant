@@ -1,5 +1,6 @@
 import { replayHash } from '../charts/pro/replay/link';
 import type { Market } from '../charts/pro/store/proStore';
+import type { MarketCaps } from './marketCaps';
 import { HIST_HOUR_MS, type HistoryIndex } from './tapeHistory';
 
 /**
@@ -44,12 +45,12 @@ function coveredMs(index: HistoryIndex, coin: string, from: number, to: number):
 }
 
 /**
- * Link powtórki ostatnich 15 min na Kokpicie. Nagranie serwera jest tylko dla BTC w tej wersji ekranu (inny rynek —
- * powód `market`). Gdy pliki ze spisu (godziny i części, każdy ucięty do okna [now − 15 min, now]) pokrywają razem mniej
+ * Link powtórki ostatnich 15 min na Kokpicie. Nagranie serwera jest dla rynków z pełnym skanerem (`caps.scanner` z rejestru;
+ * inny rynek — powód `market`). Gdy pliki ze spisu (godziny i części, każdy ucięty do okna [now − 15 min, now]) pokrywają razem mniej
  * niż 10 min — albo nie ma spisu — wynik to `no-recording`, zamiast niemal pustej powtórki; luki w nagraniu nie liczą się.
  */
-export function quickReplay(coin: Market, now: number, index: HistoryIndex | null): QuickReplay {
-  if (coin !== 'BTC') return { ok: false, reason: 'market' };
+export function quickReplay(coin: Market, caps: Pick<MarketCaps, 'scanner'>, now: number, index: HistoryIndex | null): QuickReplay {
+  if (!caps.scanner) return { ok: false, reason: 'market' };
   const from = now - QUICK_REPLAY_MS;
   if (!index || coveredMs(index, coin, from, now) < QUICK_REPLAY_MIN_COVER_MS) return { ok: false, reason: 'no-recording' };
   return { ok: true, hash: replayHash({ source: 'history', coin, from, to: now, station: 'cockpit' }) };

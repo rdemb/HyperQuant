@@ -61,6 +61,8 @@ import { FlowVenue, OiVenue, oiMaxAge, per8h } from '../venues/parse';
 import { VenueStore, acquireVenues, venueStoreFor } from '../venues/venueStore';
 import { DOM_W_PX, PRO, RIGHT_GAP_PX, chartOptions, crosshairTimeFormatter, rgba } from './theme';
 import { tr } from '../../../i18n';
+import { BTC_ONLY_NOTE, NO_FORECASTS_NOTE } from '../../../utils/marketCaps';
+import { capsOf } from '../../../state/markets';
 import type { DeskLedgerSummary } from '../../../utils/deskLedger';
 import { fmtCompact, fmtPrice, numLang } from '../../../ui/format';
 
@@ -1024,7 +1026,7 @@ export class ProChartController {
   private syncBlogMap(now: number): void {
     const s = this.settings;
     // Jak poziomy dnia: interwały poniżej 1D (warunek `indicatorScope().levels` bez budowania obiektu w każdej klatce)
-    const on = s.showBlogMap && this.store.coin === 'BTC' && this.series.interval.ms < DAY;
+    const on = s.showBlogMap && capsOf(this.store.coin).blog && this.series.interval.ms < DAY;
     const map = on ? pickMap(this.blogMaps.maps, now, s.blogMapId) : null;
     // Powtórka może cofnąć czas wykresu — wtedy też przeliczenie
     if (map === this.blogShown && Math.abs(now - this.blogAt) < (this.blogWait ? BLOG_RETRY_MS : BLOG_EVERY_MS)) return;
@@ -1051,7 +1053,7 @@ export class ProChartController {
     const x = this.indShown.find((y) => indicatorDef(y.id).outcomes);
     const o = this.hip4Fresh();
     const last = this.bars[this.bars.length - 1];
-    if (!x || !o || this.store.coin !== 'BTC' || !last) return null;
+    if (!x || !o || !capsOf(this.store.coin).outcomes || !last) return null;
     // Komputer: 3 progi najbliższe nad ceną i 3 pod; telefon: tylko najbliższy
     return { levels: outcomeLevels(o.rows, last.candle.c, this.phone).levels, color: x.color, alpha: x.alpha, width: x.width };
   }
@@ -1059,7 +1061,7 @@ export class ProChartController {
   /** Opis rynków HIP-4 w legendzie: ile płynnych i wynik Briera rynku i modelu z dziennika (rynki 15-minutowe). */
   private hip4Legend(): { text: string; color: string }[] {
     const o = this.outcomes;
-    if (this.store.coin !== 'BTC') return [{ text: tr('tylko BTC', 'BTC only'), color: PRO.ink3 }];
+    if (!capsOf(this.store.coin).outcomes) return [{ text: BTC_ONLY_NOTE, color: PRO.ink3 }];
     if (this.store.replay) return [{ text: tr('w powtórce bez rynków', 'no markets in replay'), color: PRO.ink3 }];
     if (!o || o.status === 'loading') return [{ text: tr('pobieram rynki…', 'loading markets…'), color: PRO.ink3 }];
     if (!this.hip4Fresh()) return [{ text: tr('rynki chwilowo niedostępne', 'markets temporarily unavailable'), color: PRO.ink3 }];
@@ -1175,7 +1177,7 @@ export class ProChartController {
   private coneLegend(color: string): { text: string; color: string }[] {
     const f = this.coneDrawn();
     if (!f)
-      return [{ text: this.store.coin === 'BTC' ? tr('brak prognozy z ostatnich 3 h', 'no forecast from the last 3 h') : tr('tylko BTC', 'BTC only'), color: PRO.ink3 }];
+      return [{ text: capsOf(this.store.coin).forecasts ? tr('brak prognozy z ostatnich 3 h', 'no forecast from the last 3 h') : NO_FORECASTS_NOTE, color: PRO.ink3 }];
     const [lo, hi, level] = this.phone ? [0.2, 0.8, '60%'] : [0.05, 0.95, '90%'];
     const px = (hz: ConeForecast['horizons'][number], tau: number) => fmtPx(f.px0 * Math.exp(hz.q[hz.taus.indexOf(tau)]));
     const parts: { text: string; color: string }[] = [{ text: `${tr('od', 'from')} ${fmtHm(f.t)}`, color: PRO.ink3 }];

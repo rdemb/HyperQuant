@@ -7,7 +7,8 @@ import type { AggressorOrder } from '../../charts/pro/core/orders';
 import type { ProStore } from '../../charts/pro/store/proStore';
 import { Segmented, numLang } from '../../ui';
 import { tr } from '../../i18n';
-import { BTC_ONLY_TITLE, type StepId, scannerScope } from './flowColumnModel';
+import { noScannerTitle, type StepId, scannerScope } from './flowColumnModel';
+import { NO_SCANNER_NOTE } from '../../utils/marketCaps';
 import { FlowTape } from './FlowTape';
 import { Ladder } from './Ladder';
 import { type PanelId, type PulseTile, Pulse } from './Pulse';
@@ -19,10 +20,10 @@ import { type WhoData, WhoPanel, useWho } from './WhoPanel';
 /**
  * Prawa kolumna DOM i taśmy obok wykresu (W sesji): na górze Pulse, pod nim drabina „kto stoi w kolejce”, a niżej
  * karty Taśma, Kto przyjmuje, TWAP-y i Ściany. Drabina i taśma działają na rynku wykresu; panele ze skanera kont są
- * tylko dla BTC (na innym rynku „—, tylko BTC”). Wariant `pulse` to sam pasek Pulse (telefon, nad wykresem).
+ * dla rynków z pełnym skanerem (na innym rynku „—, bez skanera”). Wariant `pulse` to sam pasek Pulse (telefon, nad wykresem).
  */
 
-/** Dane paneli ze skanera kont (tylko BTC). */
+/** Dane paneli ze skanera kont (rynki z pełnym skanerem). */
 export interface ScannerData {
   who: WhoData;
   twap: TwapData;
@@ -30,7 +31,7 @@ export interface ScannerData {
 
 /**
  * Kafle Pulse: po jednej liczbie na panel. `short` — wąski kafel (telefon, kolumna): krótkie etykiety i para bid / ask
- * bez znaku %. Bez danych skanera kafle Kto i TWAP pokazują „—” z dopiskiem „tylko BTC”.
+ * bez znaku %. Bez danych skanera kafle Kto i TWAP pokazują „—” z dopiskiem „bez skanera”.
  */
 export function pulseTiles(f: FlowColumnData, scanner: ScannerData | null, short: boolean): PulseTile[] {
   const { store, hist, pace, walls } = f;
@@ -51,7 +52,7 @@ export function pulseTiles(f: FlowColumnData, scanner: ScannerData | null, short
       </>
     );
   };
-  const btcOnly = tr('tylko BTC', 'BTC only');
+  const noScanner = NO_SCANNER_NOTE;
   // Bez nagrania ostatnich chwil (zerwane połączenie) tempo i TWAP-y to brak danych z powodem, nie zero
   const noTape = tr('brak taśmy na żywo', 'no live tape');
   const who = scanner?.who ?? null;
@@ -77,8 +78,8 @@ export function pulseTiles(f: FlowColumnData, scanner: ScannerData | null, short
       id: 'who',
       label: short ? tr('Kto', 'Who') : tr('Kto przyjmuje', 'Who absorbs'),
       value: who ? pair(who.bid.share, who.ask.share) : '—',
-      sub: who ? tr('3 największych makerów', 'top 3 makers') : btcOnly,
-      title: who ? whoTitle : `${whoTitle} ${BTC_ONLY_TITLE}`,
+      sub: who ? tr('3 największych makerów', 'top 3 makers') : noScanner,
+      title: who ? whoTitle : `${whoTitle} ${noScannerTitle()}`,
     },
     {
       id: 'walls',
@@ -91,13 +92,13 @@ export function pulseTiles(f: FlowColumnData, scanner: ScannerData | null, short
       id: 'twap',
       label: short ? 'TWAP' : tr('TWAP-y w drodze', 'TWAPs en route'),
       value: twap?.live ? <span className={twap.net >= 0 ? 'text-of-buy-ink' : 'text-of-sell-ink'}>{`${twap.net > 0 ? '+' : ''}${compact(twap.net)}`}</span> : '—',
-      sub: twap ? (twap.live ? tr(`netto 15 min · plany ${twap.known}`, `net 15 min · plans ${twap.known}`) : noTape) : btcOnly,
-      title: twap ? twapTitle : `${twapTitle} ${BTC_ONLY_TITLE}`,
+      sub: twap ? (twap.live ? tr(`netto 15 min · plany ${twap.known}`, `net 15 min · plans ${twap.known}`) : noTape) : noScanner,
+      title: twap ? twapTitle : `${twapTitle} ${noScannerTitle()}`,
     },
   ];
 }
 
-/** Hooki paneli skanera (koncentracja makerów, TWAP-y z planami) — montowane tylko dla BTC. */
+/** Hooki paneli skanera (koncentracja makerów, TWAP-y z planami) — montowane tylko na rynku ze skanerem. */
 const WithScanner: React.FC<{ store: ProStore; narrow: boolean; children: (s: ScannerData) => React.ReactNode }> = ({ store, narrow, children }) => {
   const who = useWho(store);
   const twap = useTwaps(store, narrow);

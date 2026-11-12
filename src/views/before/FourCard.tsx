@@ -4,6 +4,7 @@ import { Badge, DASH, sourceTag } from '../../ui';
 import { FrameDialog, type FrameSource } from '../../charts/pro/chart/FrameDialog';
 import { mapQuality } from '../../charts/pro/chart/frame';
 import { type Market, storeFor } from '../../charts/pro/store/proStore';
+import { capsOf } from '../../state/markets';
 import { startRecording } from '../../charts/pro/store/recording';
 import { useStoreVersion } from '../../charts/pro/store/useStoreVersion';
 import { useBlogMaps } from '../../state/useBlogMaps';
@@ -31,7 +32,7 @@ export const FourCard: React.FC<{ coin: Market }> = ({ coin }) => {
     return () => clearInterval(id);
   }, []);
   const liq = useLiqMap();
-  const maps = useBlogMaps(coin === 'BTC');
+  const maps = useBlogMaps(capsOf(coin).blog);
   const [frame, setFrame] = useState<FrameSource | null>(null);
   const n = fourNumbers(readFourInputs(store, liq, maps));
   const openFrame = () =>
