@@ -1,4 +1,5 @@
 import { AB_BLOCK_DAYS, abBlocks, type AbRow } from '../../src/utils/abTest.ts';
+import { type CalRow, type CatCal, calSummary } from '../../src/utils/catCal.ts';
 import { Bocpd } from '../../src/utils/bocpd.ts';
 import { ENS_PRIOR, REC_PRIOR, fitEnsemble, poolProb, type EnsPair, type EnsWeights } from '../../src/utils/ensemble.ts';
 import { type RangeBar, type VolModel, buildVolModel, horizonStepSigmas } from '../../src/utils/volatility.ts';
@@ -302,6 +303,11 @@ export interface CatForecast {
   cone?: ConeStep[];
   tmodel?: string;
   th?: string;
+  /**
+   * Kalibracja `cat-cal-v1` (src/utils/catCal.ts): pBig przesunięte w logicie o wartość dopasowaną do par rozstrzygniętych
+   * w dzienniku przed wydaniem (14 dni, ten sam model); brak pola — mniej niż 96 par albo rekord sprzed planu.
+   */
+  cal?: CatCal;
 }
 
 /** Rozstrzygnięcie kota: ceny w t i t + h, max/min świec 1m okna; wzrost = c1 > c0, duży ruch = ln(hi/lo) > próg. */
@@ -1191,6 +1197,8 @@ export interface SummaryInput {
   /** Rozstrzygnięte zapisy godziny na żywo z całego dziennika i rejestracja ich planu oceny */
   hourRows?: HourRow[];
   hourPlan?: HourTrust['plan'];
+  /** Rejestracja planu kalibracji `cat-cal-v1` w dzienniku (brak — bez sekcji `cat.cal`) */
+  calPlan?: { at: number; hash: string } | null;
 }
 
 /** Podsumowanie (30 dni) dla strony: najnowsze prognozy, wyniki, kalibracja Venna–Abersa najnowszych prawdopodobieństw. */
@@ -1285,7 +1293,12 @@ export function buildSummary(s: SummaryInput): DeskLedgerSummary {
         : null,
     },
     ab: abSection(fs, s.resolutions, s.now, s.abRegisteredAt ?? null),
-    cat: { ...catSection(fs, catPairs, new Map((s.catHours ?? []).map((h) => [h.slot, h.yBig]))), trust: catTrust(s.catHours ?? [], s.trustPlan ?? null), hour: hourTrust(s.hourRows ?? [], s.hourPlan ?? null) },
+    cat: {
+      ...catSection(fs, catPairs, new Map((s.catHours ?? []).map((h) => [h.slot, h.yBig]))),
+      trust: catTrust(s.catHours ?? [], s.trustPlan ?? null),
+      hour: hourTrust(s.hourRows ?? [], s.hourPlan ?? null),
+      ...(s.calPlan ? { cal: calSummary(calRows(s.forecasts, s.resolutions), s.calPlan, s.now) } : {}),
+    },
     method: 'hq-ledger-v1',
   };
 }
@@ -1314,6 +1327,17 @@ function abSection(fs: Forecast[], res: Map<string, Resolution>, now: number, re
     ...abBlocks(rows, now),
     latest: latest && latest.regime && latest.scale !== undefined ? { t: latest.t, scale: latest.scale, regime: latest.regime } : null,
   };
+}
+
+/** Rekordy oceny kalibracji: prognozy kota z polem `cal` z rozstrzygnięciem (bez unieważnionych), rosnąco po czasie */
+function calRows(fs: ReadonlyMap<string, Forecast>, res: ReadonlyMap<string, Resolution>): CalRow[] {
+  const out: CalRow[] = [];
+  for (const f of fs.values()) {
+    if (f.kind !== 'cat' || !f.cal) continue;
+    const r = res.get(f.id);
+    if (r && 'yBig' in r && (r.yBig === 0 || r.yBig === 1)) out.push({ slot: f.slot, t: f.t, p: f.cal.p, raw: f.pBig, y: r.yBig });
+  }
+  return out.sort((a, b) => a.t - b.t);
 }
 
 /** Kot: najnowsza prognoza, wyniki i udział — sloty z prognozami desku od pierwszej prognozy kota vs prognozy kota. */

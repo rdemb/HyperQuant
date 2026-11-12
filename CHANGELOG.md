@@ -4,6 +4,16 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Kot: kalibracja szansy dużego ruchu cat-cal-v1 w dzienniku (2026-11-12)
+
+#### Dodane
+- **Kalibracja `cat-cal-v1`** (`src/utils/catCal.ts`, `backend/scanner/ledgerRunner.ts`, `backend/scanner/forecaster.ts`). Ranking `pBig` kota jest dobry, ale procenty są zaniżone (średnie `pBig` ok. 0,50 wobec częstości ok. 0,59). Nowe rekordy kota dostają pole `cal: { v, p, a, d, n, nT }`: przesunięcie logitu `pBig` dopasowane do par kota tego samego modelu (`mh`) rozstrzygniętych w dzienniku przed wydaniem, z 14 dni (a: wariancja a priori 1,0; poprawka typu dnia d, robocze albo weekend UTC: 0,25; Newton 25 kroków; przesunięcie przycięte do ±1,5; od 96 par, inaczej bez pola). `pBig`, model kota, próg i model godziny bez zmian; stare rekordy nie są ruszane.
+- **Plan `cat-cal-v1` prerejestrowany w dzienniku** (rekord `k: "p"`) przed pierwszym rekordem z `cal`: definicja, stałe, miara δ = (cal.p − y)² − (pBig − y)², bloki 14 dni od rejestracji, Newey–West (opóźnienie 96, fixed-b), minimum 672 rekordów, kryteria główne, kalibracji, porażki i awansu. Hash planu przypięty w testach.
+- **Podsumowanie `cat.cal`** (`src/utils/deskLedger.ts`, pole opcjonalne): z 30 dni Brier `cal.p` i surowego `pBig` na tych samych rekordach, średnie p i częstość, osobno dni robocze i weekend, decyle `cal.p`; ostatni zakończony blok 14 dni z różnicą δ i 95% przedziałem (w bloku w toku bez przedziału). Stare podsumowanie bez pola jest poprawne.
+- **Weryfikator** (`scripts/verify-ledger.mjs`, `checkCatCal`): plan zgodny z kodem, żadne `cal` przed planem, `a`, `d` (do 1e-5), `p` (do 1e-4), `n` i `nT` (dokładnie) przeliczone własną implementacją z par rozstrzygniętych wcześniej w dzienniku; po planie przy co najmniej 96 parach brak `cal` to błąd. W trybie szybkim prognozy z oknem sprzed pobranych dni są pomijane.
+- Odtworzenie na publicznym dzienniku (commit b60afcb gałęzi `ledger`, jak gdyby plan istniał od początku): 1226 rozstrzygniętych prognoz z `cal`, Brier 0,1284 wobec 0,1433 dla surowego `pBig`, średnie `cal.p` 0,585 wobec częstości 0,588.
+- Testy: `src/utils/__tests__/catCal.test.ts` (trzy zestawy wzorcowe policzone niezależnie w Pythonie, brzegi, dane syntetyczne 20 dni), `backend/scanner/__tests__/ledgerRunner.test.ts` (plan raz przed pierwszym `cal`, `cal` z par dziennika, brak `cal` poniżej 96 par i przy innym modelu, weryfikator wykrywa zmienione `cal.p`, `a`, `cal` sprzed planu i rozstrzygnięcie zapisane po prognozie, podsumowanie).
+
 ### Dziennik prognoz: test Kupca 60%, PIT, przedziały CRPSS i BSS z bootstrapu po dobach, ACI i baza sezonowa kota (2026-11-12)
 
 Na prawdziwym dzienniku (gałąź `ledger`, głowa podsumowania z 12.11.2026 03:35 UTC, 23 940 linii) nowe miary dają: 1 h — Kupiec 60% na 495 prognozach rozłącznych pokrycie 72,3% (p < 0,0001), PIT χ² = 42,5 (p < 0,0001), CRPSS 0,017 w przedziale [0,0018; 0,0349] z 22 dób; 4 h — CRPSS 0,0036 [−0,0181; 0,0249] z 21 dób, nieskończony przedział ACI w 8,3% prognoz; dotknięcia — BSS wobec częstości 0,402 [0,332; 0,471], wobec odległości 0,103 [0,036; 0,174]; kot — BSS dużego ruchu wobec stałej częstości z okna 0,363, wobec bazy sezonowej 0,052 [−0,088; 0,197] (1 259 prognoz, 14 dób). Weryfikator odtworzył wszystkie 45 pól z rekordów bez rozbieżności.
