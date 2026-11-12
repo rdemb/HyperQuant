@@ -63,7 +63,7 @@ try {
   confirmer = LiqConfirmer.fromJSON(j.confirmer, LIQ_OPTS);
   prices = PriceRange.fromJSON(j.prices);
   if (typeof j.savedAt === 'number' && typeof j.since === 'number' && Date.now() - j.savedAt < MAX_GAP_MS) tapeSince = j.since;
-  log(`wczytano taśmę likwidacji: ${confirmer.events().length} zdarzeń`);
+  log(`wczytano taśmę likwidacji: ${confirmer.events().length} zdarzeń, ${confirmer.pending} kandydatów w kolejce potwierdzeń`);
 } catch {
   // brak stanu — nowa taśma
 }

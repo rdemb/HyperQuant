@@ -111,3 +111,31 @@ describe('taśma: udział niepotwierdzonych, opóźnienie potwierdzeń, niepełn
     expect(isLiqTape({ ...tape, unconfirmed: { pending: 'x' } })).toBe(false);
   });
 });
+
+describe('LiqConfirmer: kolejka kandydatów przetrwa restart (stan na dysku serwera)', () => {
+  it('toJSON zapisuje kolejkę, fromJSON ją odtwarza; kandydat po restarcie zostaje potwierdzony, a udział niepotwierdzonych się nie zeruje', async () => {
+    const c = new LiqConfirmer({ coin: 'BTC', maxPerMin: 3 });
+    c.enqueue({ addr: addr(1), prev: pos(2), from: T0, to: T0 + 2 * MIN });
+    c.enqueue({ addr: addr(2), prev: pos(3), from: T0, to: T0 + 2 * MIN });
+    const back = LiqConfirmer.fromJSON(JSON.parse(JSON.stringify(c.toJSON())), { coin: 'BTC', maxPerMin: 3 });
+    expect(back.backlog()).toEqual(c.backlog());
+    expect(back.pending).toBe(2);
+    const rest = fakeRest((b) => (b.user === addr(1) ? [liqFill(7, '2', T0 + MIN)] : []));
+    expect(await back.process(rest, T0 + 10 * MIN)).toBe(2);
+    expect(back.events()).toHaveLength(1);
+    expect(back.pending).toBe(0);
+  });
+
+  it('przy odczycie pomija uszkodzone wpisy kolejki (adres, pozycja, okno fillów); stary stan bez kolejki działa', () => {
+    const c = new LiqConfirmer({ coin: 'BTC', maxPerMin: 3 });
+    c.enqueue({ addr: addr(1), prev: pos(2), from: T0, to: T0 + 2 * MIN });
+    const j = JSON.parse(JSON.stringify(c.toJSON()));
+    j.queue.push({ addr: 'nie-adres', prev: pos(1), from: T0, to: T0 + MIN, attempts: 0 });
+    j.queue.push({ addr: addr(3), prev: { szi: 'x' }, from: T0, to: T0 + MIN, attempts: 0 });
+    j.queue.push({ addr: addr(4), prev: pos(1), from: T0, to: Number.NaN, attempts: 0 });
+    const back = LiqConfirmer.fromJSON(j, { coin: 'BTC', maxPerMin: 3 });
+    expect(back.pending).toBe(1);
+    const { queue: _q, ...old } = j;
+    expect(LiqConfirmer.fromJSON(old, { coin: 'BTC', maxPerMin: 3 }).pending).toBe(0);
+  });
+});
