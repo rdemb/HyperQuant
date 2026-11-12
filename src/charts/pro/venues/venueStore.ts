@@ -24,9 +24,10 @@ import {
   fetchBinanceOi,
   fetchBinanceOiHist,
   fetchBybitOi,
+  NO_SYMBOL,
 } from './rest';
 import { LiveSocket } from './socket';
-import { hasCexPair } from '../../../utils/marketCaps';
+import { capsOf, markNoCex } from '../../../state/markets';
 
 /**
  * Przepływ Binance i Bybit dla rynku Hyperliquid (panele „CVD giełd” i „ΔOI giełd”), pobierany przez przeglądarkę
@@ -56,6 +57,24 @@ interface HistState {
 }
 
 const newHist = (): HistState => ({ oldest: Number.POSITIVE_INFINITY, loading: false, exhausted: false, retryAt: 0 });
+
+/** Źródło zapytań: Binance perp (świece, OI, finansowanie), Binance spot (świece), Bybit perp. */
+type CexVenue = 'binance' | 'binanceSpot' | 'bybit';
+/** `rynek|giełda`, dla których giełda odpowiedziała w tej sesji „nie ma symbolu”: bez kolejnych zapytań i połączeń. */
+const noSymbol = new Set<string>();
+const missing = (coin: string, venue: CexVenue) => noSymbol.has(`${coin}|${venue}`);
+
+/**
+ * Giełda nie ma symbolu rynku: ta giełda bez zapytań do końca sesji. Gdy kontraktu nie ma ani na Binance, ani na Bybit,
+ * rynek traci zdolność `cex` (panele „—” z powodem `noCexWhy`, jak HIP-3).
+ */
+function markNoSymbol(coin: string, venue: CexVenue): void {
+  if (missing(coin, venue)) return;
+  noSymbol.add(`${coin}|${venue}`);
+  if (missing(coin, 'binance') && missing(coin, 'bybit')) markNoCex(coin);
+  queueRefresh();
+  venueStoreFor(coin).bump();
+}
 
 /**
  * Delta Bybit z transakcji na żywo w minutach. Świeca liczy się w całości nagrana; świeca, w której zaczęło się nagrywanie
@@ -159,8 +178,8 @@ export class VenueStore {
 
   /** Historia od `from`: świece Binance perp i spot, OI Binance i Bybit, rozliczenia finansowania Binance — w tle. */
   ensure(iv: Interval, from: number): void {
-    // Rynek bez odpowiednika (HIP-3, kPEPE): bez zapytań, które i tak by się nie udały
-    if (!hasCexPair(this.coin)) return;
+    // Rynek bez odpowiednika (HIP-3, kPEPE, obie giełdy bez symbolu): bez zapytań, które i tak by się nie udały
+    if (!capsOf(this.coin).cex) return;
     void this.loadKlines('binance', iv, from);
     void this.loadKlines('binanceSpot', iv, from);
     void this.loadOi('binance', iv, Math.max(from, Date.now() - BINANCE_OI_MAX_MS + iv.ms));
@@ -175,7 +194,7 @@ export class VenueStore {
   private async loadFunding(from: number): Promise<void> {
     const f = this.binanceFunding;
     const now = Date.now();
-    if (this.fundingLoading || now < this.fundingRetryAt) return;
+    if (this.fundingLoading || now < this.fundingRetryAt || missing(this.coin, 'binance')) return;
     const settled = f.latest + HOUR_MS;
     const older = from < f.from;
     const newer = Number.isFinite(settled) && now >= settled + f.periodMs + MIN;
@@ -202,11 +221,15 @@ export class VenueStore {
   private async loadKlines(venue: 'binance' | 'binanceSpot', iv: Interval, from: number): Promise<void> {
     const b = this.book(venue, iv.id);
     const h = b.hist;
-    if (h.loading || h.exhausted || h.oldest <= from || Date.now() < h.retryAt) return;
+    if (h.loading || h.exhausted || h.oldest <= from || Date.now() < h.retryAt || missing(this.coin, venue)) return;
     h.loading = true;
     for (let page = 0; page < MAX_PAGES && h.oldest > from; page++) {
       const end = Number.isFinite(h.oldest) ? h.oldest - 1 : Date.now() + iv.ms;
       const list = await fetchBinanceKlines(venue, this.coin, iv.id, end);
+      if (list === NO_SYMBOL) {
+        markNoSymbol(this.coin, venue);
+        break;
+      }
       if (list === null) {
         h.retryAt = Date.now() + RETRY_MS;
         break;
@@ -225,7 +248,7 @@ export class VenueStore {
   async refreshRecent(venue: 'binance' | 'binanceSpot', iv: Interval): Promise<void> {
     if (this.book(venue, iv.id).bars.size === 0) return;
     const list = await fetchBinanceKlines(venue, this.coin, iv.id, Date.now() + iv.ms);
-    if (!list || list.length === 0) return;
+    if (!list || list === NO_SYMBOL || list.length === 0) return;
     this.book(venue, iv.id).merge(list);
     this.bump();
   }
@@ -235,11 +258,15 @@ export class VenueStore {
     const key = `${venue}|${period}`;
     let h = this.oiHist.get(key);
     if (!h) this.oiHist.set(key, (h = newHist()));
-    if (h.loading || h.exhausted || h.oldest <= from || Date.now() < h.retryAt) return;
+    if (h.loading || h.exhausted || h.oldest <= from || Date.now() < h.retryAt || missing(this.coin, venue)) return;
     h.loading = true;
     for (let page = 0; page < MAX_PAGES && h.oldest > from; page++) {
       const end = Number.isFinite(h.oldest) ? h.oldest - 1 : Date.now();
       const pts = venue === 'binance' ? await fetchBinanceOiHist(this.coin, iv.id, end) : await fetchBybitOi(this.coin, iv.id, end);
+      if (pts === NO_SYMBOL) {
+        markNoSymbol(this.coin, venue);
+        break;
+      }
       if (pts === null) {
         h.retryAt = Date.now() + RETRY_MS;
         break;
@@ -300,8 +327,10 @@ const bybitSubs = new Set<string>();
 let fundingHours: Map<string, number> | null = null;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 
-const klineStreams = () => [...live.values()].map((x) => `${symbolOf(x.coin).toLowerCase()}@kline_${x.iv.id}`).sort();
-const liveCoins = () => new Set([...live.values()].map((x) => x.coin));
+/** Rynki wykresów z panelem giełd, które giełda `venue` notuje (bez rynków, o których odpowiedziała „nie ma symbolu”). */
+const liveOn = (venue: CexVenue) => [...live.values()].filter((x) => capsOf(x.coin).cex && !missing(x.coin, venue));
+const klineStreams = (venue: 'binance' | 'binanceSpot') => liveOn(venue).map((x) => `${symbolOf(x.coin).toLowerCase()}@kline_${x.iv.id}`).sort();
+const liveCoins = (venue: CexVenue) => new Set(liveOn(venue).map((x) => x.coin));
 
 function binanceSocket(venue: 'binance' | 'binanceSpot'): LiveSocket {
   return new LiveSocket({
@@ -361,7 +390,7 @@ const bybit = new LiveSocket({
 /** Subskrypcje Bybit zgodne z rynkami wykresów: nowe rynki dopisywane, porzucone wypisywane (bez zrywania połączenia). */
 function syncBybit(): void {
   if (!bybit.open) return;
-  const want = liveCoins();
+  const want = liveCoins('bybit');
   for (const coin of want) {
     if (bybitSubs.has(coin)) continue;
     bybitSubs.add(coin);
@@ -377,21 +406,26 @@ function syncBybit(): void {
 
 async function poll(): Promise<void> {
   fundingHours ??= await fetchBinanceFundingInfo();
-  for (const coin of liveCoins()) {
+  for (const coin of liveCoins('binance')) {
     const s = venueStoreFor(coin);
     // Nowe rozliczenie finansowania Binance po końcu okresu (tylko gdy historia jest już wczytana)
     if (Number.isFinite(s.binanceFunding.from)) s.ensureFunding();
     const [oi, rate] = await Promise.all([fetchBinanceOi(coin), fetchBinanceFunding(coin)]);
+    if (oi === NO_SYMBOL || rate === NO_SYMBOL) {
+      markNoSymbol(coin, 'binance');
+      continue;
+    }
     if (oi) s.onOi('binance', oi);
     if (rate !== null) s.setFunding('binance', per8h(rate, fundingHours.get(symbolOf(coin)) ?? 8));
   }
 }
 
 function refreshLive(): void {
-  const streams = klineStreams();
-  binancePerp.setUrl(streams.length ? `wss://fstream.binance.com/market/stream?streams=${streams.join('/')}` : null);
-  binanceSpot.setUrl(streams.length ? `wss://data-stream.binance.vision/stream?streams=${streams.join('/')}` : null);
-  bybit.setUrl(live.size ? 'wss://stream.bybit.com/v5/public/linear' : null);
+  const perp = klineStreams('binance');
+  const spot = klineStreams('binanceSpot');
+  binancePerp.setUrl(perp.length ? `wss://fstream.binance.com/market/stream?streams=${perp.join('/')}` : null);
+  binanceSpot.setUrl(spot.length ? `wss://data-stream.binance.vision/stream?streams=${spot.join('/')}` : null);
+  bybit.setUrl(liveCoins('bybit').size ? 'wss://stream.bybit.com/v5/public/linear' : null);
   syncBybit();
   if (live.size && pollTimer === null) {
     void poll();
@@ -422,7 +456,7 @@ function queueRefresh(): void {
 
 /** Wykres z panelem giełd na (rynek, interwał): połączenia na żywo do zwolnienia zwróconą funkcją. */
 export function acquireVenues(coin: string, iv: Interval): () => void {
-  if (!hasCexPair(coin)) return () => {};
+  if (!capsOf(coin).cex) return () => {};
   const key = `${coin}|${iv.id}`;
   const x = live.get(key);
   if (x) x.n++;

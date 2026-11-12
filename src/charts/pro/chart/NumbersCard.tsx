@@ -8,6 +8,8 @@ import { compact } from './FlowPanels';
 import { STAT_GROUP_INFO, tableLines } from './statsTable';
 import { PRO, rgba } from './theme';
 import { tr } from '../../../i18n';
+import { capsOf } from '../../../state/markets';
+import { NO_CEX_NOTE, noCexWhy } from '../../../utils/marketCaps';
 
 /**
  * Karta „Liczby” na telefonie: Tablica liczb dla ostatnich świec (kolumna na świecę, najnowsza z prawej) w tych samych
@@ -76,6 +78,8 @@ export const NumbersCard: React.FC<{
   const iv = series.interval;
   const venues = VENUE_GROUPS.filter((g) => groups.includes(g));
   const venueOn = venues.length > 0;
+  // Rynek bez odpowiednika na Binance i Bybit (HIP-3, kPEPE, obie giełdy bez symbolu): grupy giełd z „—” i powodem
+  const noCex = venueOn && !capsOf(store.coin).cex;
   useEffect(() => (venueOn ? acquireVenues(store.coin, iv) : undefined), [venueOn, store.coin, iv]);
   const bars = series.bars().slice(-COLS);
   const venue = venueOn ? venueStoreFor(store.coin) : null;
@@ -121,8 +125,15 @@ export const NumbersCard: React.FC<{
                 const g = STAT_GROUP_INFO[group];
                 return (
                   <tr key={group}>
-                    <th colSpan={bars.length + 1} scope="colgroup" className="px-2 pt-2.5 pb-1 text-left text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: g.color }}>
+                    <th
+                      colSpan={bars.length + 1}
+                      scope="colgroup"
+                      title={noCex && VENUE_GROUPS.includes(group) ? noCexWhy(store.coin) : undefined}
+                      className="px-2 pt-2.5 pb-1 text-left text-[10px] font-semibold uppercase tracking-[0.08em]"
+                      style={{ color: g.color }}
+                    >
                       {g.label}
+                      {noCex && VENUE_GROUPS.includes(group) && <span className="ml-1.5 font-normal normal-case tracking-normal text-ink-3">— {NO_CEX_NOTE}</span>}
                     </th>
                   </tr>
                 );
@@ -167,7 +178,9 @@ export const NumbersCard: React.FC<{
               ' Godzina z gwiazdką — świeca częściowa: nagrywanie taśmy zaczęło się albo przerwało w jej trakcie, więc liczby z taśmy są tylko z jej części.',
               ' A time with an asterisk — partial candle: tape recording started or broke off during it, so tape numbers cover only part of it.'
             )}
+          {noCex && ` ${noCexWhy(store.coin)}`}
           {venueOn &&
+            !noCex &&
             tr(
               ` Dane ${venues.map((g) => STAT_GROUP_INFO[g].label).join(' i ')} pobiera Twoja przeglądarka bezpośrednio z publicznego API giełdy.`,
               ` Your browser fetches ${venues.map((g) => STAT_GROUP_INFO[g].label).join(' and ')} data directly from the exchange's public API.`

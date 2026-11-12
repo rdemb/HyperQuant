@@ -1063,7 +1063,7 @@ export class ProChartController {
     const last = this.bars[this.bars.length - 1];
     if (!x || !o || !capsOf(this.store.coin).outcomes || !last) return null;
     // Komputer: 3 progi najbliższe nad ceną i 3 pod; telefon: tylko najbliższy
-    return { levels: outcomeLevels(o.rows, last.candle.c, this.phone).levels, color: x.color, alpha: x.alpha, width: x.width };
+    return { levels: outcomeLevels(o.rows, last.candle.c, this.phone, this.store.serverNow()).levels, color: x.color, alpha: x.alpha, width: x.width };
   }
 
   /** Opis rynków HIP-4 w legendzie: ile płynnych i wynik Briera rynku i modelu z dziennika (rynki 15-minutowe). */
@@ -1077,7 +1077,7 @@ export class ProChartController {
     const parts: { text: string; color: string }[] = [{ text: tr(`płynne ${liquid} z ${o.rows.length}`, `liquid ${liquid} of ${o.rows.length}`), color: PRO.ink2 }];
     // Płynne progi poza wykresem (dalej od ceny) tylko jako liczba
     const last = this.bars[this.bars.length - 1];
-    const rest = last ? outcomeLevels(o.rows, last.candle.c, this.phone).rest : 0;
+    const rest = last ? outcomeLevels(o.rows, last.candle.c, this.phone, this.store.serverNow()).rest : 0;
     if (rest > 0) parts.push({ text: tr(`dalsze progi: ${rest}`, `farther thresholds: ${rest}`), color: PRO.ink3 });
     const sc = this.ledger?.market?.scores;
     if (!this.phone && sc && sc.brierMarket !== null && sc.brierModel !== null) {
