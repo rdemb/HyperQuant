@@ -4,6 +4,20 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Dziennik prognoz: test Kupca 60%, PIT, przedziały CRPSS i BSS z bootstrapu po dobach, ACI i baza sezonowa kota (2026-11-12)
+
+Na prawdziwym dzienniku (gałąź `ledger`, głowa podsumowania z 12.11.2026 03:35 UTC, 23 940 linii) nowe miary dają: 1 h — Kupiec 60% na 495 prognozach rozłącznych pokrycie 72,3% (p < 0,0001), PIT χ² = 42,5 (p < 0,0001), CRPSS 0,017 w przedziale [0,0018; 0,0349] z 22 dób; 4 h — CRPSS 0,0036 [−0,0181; 0,0249] z 21 dób, nieskończony przedział ACI w 8,3% prognoz; dotknięcia — BSS wobec częstości 0,402 [0,332; 0,471], wobec odległości 0,103 [0,036; 0,174]; kot — BSS dużego ruchu wobec stałej częstości z okna 0,363, wobec bazy sezonowej 0,052 [−0,088; 0,197] (1 259 prognoz, 14 dób). Weryfikator odtworzył wszystkie 45 pól z rekordów bez rozbieżności.
+
+#### Dodane
+- **Miary w podsumowaniu** (`backend/scanner/forecaster.ts`, typy w `src/utils/deskLedger.ts`): na horyzont `kupiec60` (test Kupca przedziału 60%: `n`, `x`, `cover`, `lr`, `p` z χ²(1), na próbie rozłącznej), `pit` (10 koszyków, χ², `p` z χ²(9), od 50 prognoz rozłącznych), `crpssCi` (CRPSS z przedziałem), `aciInf` (prognozy z nieskończoną granicą przedziału ACI); dotknięcia `bssCi` i `bssDistCi`; kot `big.bssSeasonal` (baza: częstość dużego ruchu tej samej godziny UTC w 20 poprzednich dobach tego samego typu, od 8 rozstrzygnięć, inaczej częstość wszystkich godzin tych dób). Poniżej minimum przedziały `null` z powodem (`min-n`, `min-days`, `no-base`). Dotychczasowe pola liczbowe (`crpss`, `bss`, `bssDist`) bez zmian, więc stare i nowe podsumowania czytają się tak samo; przedziały mają osobne nazwy z `Ci`.
+- **Jedna procedura losowania** (`src/utils/ledgerBootstrap.ts`): bootstrap blokowy po dobach UTC slotu, mulberry32 z ziarnem 20261111, 1000 losowań, indeks `floor(u × liczbaDób)`, granice 25. i 975. wartość, od 7 dób; wspólna dla skanera i weryfikatora, sumy dobowe każdy liczy sam z rekordów. `chi2Sf` i `kupiecTest` w `src/utils/forecastScore.ts`.
+- **Weryfikator** (`scripts/verify-ledger.mjs`): `measures` i `checkMeasures` przeliczają miary z rekordów do głowy podsumowania (χ² wzorem zamkniętym dla nieparzystych stopni swobody, inną metodą niż skaner); `--summary <plik>` przy `--dir`, w trybie szybkim porównanie z podsumowaniem ze strony, gdy pobrane dni sięgają początku dziennika. Granice z bootstrapu porównywane dokładnie po zaokrągleniu do 4 miejsc, p-wartości i baza odległości (inna metoda numeryczna) z tolerancją 1e-4. `checkResolutions` sprawdza też CRPS benchmarku i PIT (z niezaokrąglonego ln(c1/c0)).
+- **MCP `forecast_ledger`** (`mcp/src/tools/scanner.ts`): `kupiecP60`, `kupiecN60`, `cover60Disjoint` (MODEL jak pozostałe pokrycia), `pitP`, `pitN`, `crpssLo`, `crpssHi`, `crpssDays`, `aciInfShare`, w dotknięciach `bssLo`, `bssHi`, `bssDistLo`, `bssDistHi`, `ciDays`, nowa sekcja `bigMove` (`bss`, `bssSeasonal` z granicami, `seasonalN`); na starym podsumowaniu nowe pola `null` z powodem. Opis pól w `integrations/skills/hyperquant/SKILL.md`, `mcp/README.md`, `mcp/mcpb/manifest.json` i `README.md`.
+
+#### Zmienione
+- **„Po sesji”, karta zwrotu** (`src/views/after/DeskLedgerPanel.tsx`): pokrycie ACI opisane wprost jako 90% z konstrukcji (samokorekta α), nie miara trafności, z udziałem nieskończonych przedziałów, gdy są.
+- Testy: `backend/scanner/__tests__/ledgerMeasures.test.ts` (wartości wzorcowe Kupca i PIT policzone ręcznie, procedura losowania, baza sezonowa), `scripts/verify-ledger.test.mjs` (ten sam dziennik: te same granice w podsumowaniu i weryfikatorze; wykrycie zmienionej granicy; stare podsumowanie), `mcp/__tests__/scanner.test.ts` (nowe pola i stare podsumowanie), `integrations/__tests__/skill.test.ts`, `src/views/after/__tests__/retCard.test.tsx`. Na serwerze zmiana podsumowania działa dopiero po podpisanym tagu.
+
 ### Wykres Pro: uśpienie karty nie liczy się jako nagrana taśma, delta i CVD widzą luki (2026-11-12)
 
 #### Naprawione
