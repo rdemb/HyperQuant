@@ -643,3 +643,119 @@ describe('verify-ledger — BSS dotknięć wobec bazy odległości przeliczony n
   });
 
 });
+
+import { checkMeasures, measures } from './verify-ledger.mjs';
+import { crpsQuantiles, pitFromQuantiles, quantileAt as qAt } from '../src/utils/forecastScore.ts';
+import { trustHour } from '../src/utils/schrodiTrust.ts';
+import { mulberry32 as rng } from '../src/utils/pathEngine.ts';
+
+describe('miary podsumowania (Kupiec 60%, PIT, przedziały z bootstrapu po dobach, ACI, BSS sezonowy): skaner vs weryfikator', () => {
+  const H = 3_600_000;
+  const r6 = (x) => Math.round(x * 1e6) / 1e6;
+  const r4 = (x) => Math.round(x * 1e4) / 1e4;
+  /** 12 dób dziennika: zwroty 1 h i 4 h co 15 min, dotknięcia co godzinę, kot co 15 min (pełne godziny = baza sezonowa) */
+  function ledgerOf() {
+    const u = rng(7);
+    const T = Date.UTC(2026, 9, 20);
+    const bodies = [];
+    for (let slot = T; slot < T + 12 * 24 * H; slot += 15 * 60_000) {
+      const s1h = 0.003 + 0.002 * u();
+      for (const h of [60, 240]) {
+        const q = benchQuantiles(s1h * (0.8 + 0.4 * u()), h).map(r6);
+        const f = { k: 'f', id: `${slot}-ret${h}`, slot, ti: slot, t: slot, kind: 'ret', h, px0: 100_000, taus: TAUS, q, bq: benchQuantiles(s1h, h).map(r6), aci: u() < 0.05 ? -0.01 : r4(0.05 + 0.1 * u()), model: 'x' };
+        const y = r6((u() - 0.5) * 4 * s1h * Math.sqrt(h / 60));
+        const inside = (lo, hi) => (y >= qAt(TAUS, q, lo) && y <= qAt(TAUS, q, hi) ? 1 : 0);
+        bodies.push(f, { k: 'r', id: f.id, t: slot + h * 60_000, c0: 100_000, c1: r6(100_000 * Math.exp(y)), y, crps: r6(crpsQuantiles(TAUS, q, y)), crpsB: r6(crpsQuantiles(TAUS, f.bq, y)), pit: r4(pitFromQuantiles(TAUS, q, y)), in90: inside(0.05, 0.95), in60: inside(0.2, 0.8), inAci: 1 });
+      }
+      if (slot % H === 0) {
+        const p = { pdh: r4(0.1 + 0.5 * u()), pdl: u() < 0.2 ? null : r4(0.1 + 0.5 * u()), deq: r4(0.3 + 0.5 * u()) };
+        const f = { k: 'f', id: `${slot}-touch120`, slot, ti: slot, t: slot, kind: 'touch', h: 120, px0: 100_000, lv: { pdh: 100_400 + Math.round(800 * u()), pdl: 99_600 - Math.round(800 * u()), deq: 100_050 }, p, model: 'x' };
+        const hi = 100_000 + Math.round(1200 * u());
+        const lo = 100_000 - Math.round(1200 * u());
+        bodies.push(f, { k: 'r', id: f.id, t: slot + 2 * H, hi, lo, yv: { pdh: hi >= f.lv.pdh ? 1 : 0, pdl: lo <= f.lv.pdl ? 1 : 0, deq: hi >= f.lv.deq ? 1 : 0 } });
+      }
+      const fc = { k: 'f', id: `${slot}-cat`, slot, ti: slot, t: slot, kind: 'cat', h: 60, bar: slot - 300_000, px0: 100_000, x: [], pUp: r4(u()), pBig: r4(0.2 + 0.5 * u()), thr: 40, model: 'm', mh: 'h' };
+      const hi = r6(100_000 * Math.exp((20 + 50 * u()) / 1e4));
+      bodies.push(fc, { k: 'r', id: fc.id, t: slot + H, c0: 100_000, c1: 100_000, hi, lo: 100_000, yDir: 0, yBig: Math.log(hi / 100_000) * 1e4 > 40 ? 1 : 0 });
+    }
+    let prev = GENESIS;
+    const records = bodies.map((b) => {
+      const l = makeLine(prev, b);
+      prev = l.hash;
+      return JSON.parse(l.line);
+    });
+    const fs = new Map(bodies.filter((o) => o.k === 'f').map((o) => [o.id, o]));
+    const rs = new Map(bodies.filter((o) => o.k === 'r').map((o) => [o.id, o]));
+    const catHours = [...fs.values()].filter((f) => f.kind === 'cat' && f.slot % H === 0).map((f) => trustHour(f, rs.get(f.id)));
+    const summary = buildSummary({ coin: 'BTC', now: T + 12 * 24 * H, head: { hash: prev, lines: records.length }, forecasts: fs, resolutions: rs, aci: {}, ots: [], catHours });
+    return { records, summary: JSON.parse(JSON.stringify(summary)) };
+  }
+  const { records, summary } = ledgerOf();
+
+  it('ten sam dziennik: te same granice przedziałów w podsumowaniu i w weryfikatorze, bit w bit po zaokrągleniu do 4 miejsc', () => {
+    expect(checkResolutions(records)).toEqual([]);
+    const m = measures(records, summary.asOf);
+    for (const h of ['60', '240']) {
+      const sc = summary.scores.ret[h];
+      expect(sc.crpssCi.days).toBe(12);
+      expect(sc.crpssCi.lo).not.toBeNull();
+      expect(m.ret[h].crpssCi).toEqual(sc.crpssCi);
+      expect(m.ret[h].aciInf).toEqual(sc.aciInf);
+      expect(m.ret[h].pit.bins).toEqual(sc.pit.bins);
+      expect(m.ret[h].pit.chi2).toBe(sc.pit.chi2);
+      expect(m.ret[h].pit.p).toBeCloseTo(sc.pit.p, 4);
+      expect(m.ret[h].kupiec60).toMatchObject({ n: sc.kupiec60.n, x: sc.kupiec60.x, cover: sc.kupiec60.cover });
+      expect(m.ret[h].kupiec60.p).toBeCloseTo(sc.kupiec60.p, 4);
+    }
+    expect(summary.scores.ret['60'].pit.n).toBe(288);
+    expect(summary.scores.ret['240'].pit.n).toBe(72);
+    expect(m.touch.bssCi).toEqual(summary.scores.touch.bssCi);
+    expect(m.touch.bssDistCi).toEqual(summary.scores.touch.bssDistCi);
+    expect(summary.scores.touch.bssDistCi.lo).not.toBeNull();
+    expect(m.catBig.bssSeasonal).toEqual(summary.cat.scores.big.bssSeasonal);
+    expect(summary.cat.scores.big.bssSeasonal.n).toBeGreaterThan(0);
+    expect(checkMeasures(summary, records)).toMatchObject({ problems: [] });
+    expect(checkMeasures(summary, records).checked).toBeGreaterThan(40);
+  });
+
+  it('checkResolutions sprawdza też CRPS benchmarku i PIT (z niezaokrąglonego ln(c1/c0)) — wejścia miar', () => {
+    const i = records.findIndex((o) => o.k === 'r' && typeof o.pit === 'number');
+    const bad = records.map((o, j) => (j === i ? { ...o, pit: r4(o.pit + 0.003), crpsB: o.crpsB + 1e-4 } : o));
+    const p = checkResolutions(bad);
+    expect(p).toHaveLength(2);
+    expect(p.join(' ')).toMatch(/PIT/);
+    expect(p.join(' ')).toMatch(/CRPS benchmarku/);
+  });
+
+  it('weryfikator wykrywa zmienioną granicę przedziału (CRPSS, BSS sezonowy) i liczbę prognoz z nieskończonym ACI', () => {
+    const bad = structuredClone(summary);
+    bad.scores.ret['60'].crpssCi.hi = r4(bad.scores.ret['60'].crpssCi.hi + 0.0001);
+    bad.cat.scores.big.bssSeasonal.lo = r4(bad.cat.scores.big.bssSeasonal.lo - 0.0001);
+    bad.scores.ret['240'].aciInf.inf += 1;
+    const { problems } = checkMeasures(bad, records);
+    expect(problems.some((p) => p.startsWith('ret 60 crpssCi.hi'))).toBe(true);
+    expect(problems.some((p) => p.startsWith('kot big bssSeasonal.lo'))).toBe(true);
+    expect(problems.some((p) => p.startsWith('ret 240 aciInf.inf'))).toBe(true);
+    expect(problems).toHaveLength(3);
+  });
+
+  it('starsze podsumowanie bez nowych pól: nic do porównania, bez błędów; głowa spoza rekordów — błąd', () => {
+    const old = structuredClone(summary);
+    for (const h of ['60', '240']) for (const k of ['kupiec60', 'pit', 'crpssCi', 'aciInf']) delete old.scores.ret[h][k];
+    delete old.scores.touch.bssCi;
+    delete old.scores.touch.bssDistCi;
+    delete old.cat.scores.big.bssSeasonal;
+    expect(checkMeasures(old, records)).toEqual({ checked: 0, problems: [] });
+    expect(checkMeasures({ ...summary, head: { hash: 'x', lines: 1 } }, records).problems).toHaveLength(1);
+  });
+
+  it('podsumowanie z późniejszej głowy niż rekordy: przeliczenie tylko do głowy podsumowania', () => {
+    const t = summary.asOf - 3_600_000;
+    const f = makeLine(records.at(-1).hash, { k: 'f', id: 'z-ret60', slot: t, ti: t, t, kind: 'ret', h: 60, px0: 1, taus: TAUS, q: TAUS.map((x) => x - 0.5), bq: TAUS.map((x) => x - 0.5), aci: -1, model: 'x' });
+    const r = makeLine(f.hash, { k: 'r', id: 'z-ret60', t: summary.asOf, c0: 1, c1: 1, y: 0, crps: 0.1, crpsB: 0.1, pit: 0.5, in90: 1, in60: 1, inAci: 1 });
+    const later = [...records, JSON.parse(f.line), JSON.parse(r.line)];
+    expect(checkMeasures(summary, later)).toMatchObject({ problems: [] });
+    // Ta sama głowa przesunięta na koniec: dopisana prognoza zmienia liczności
+    expect(checkMeasures({ ...summary, head: { hash: r.hash, lines: later.length } }, later).problems.length).toBeGreaterThan(0);
+  });
+});

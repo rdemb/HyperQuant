@@ -195,7 +195,7 @@ const LedgerBody: React.FC<{ s: DeskLedgerSummary; stale: boolean; expired: bool
 );
 
 /** Prognoza rozkładu zwrotu: przedziały 90/60% i ACI w cenie, wyniki z rozstrzygnięć. */
-const RetCard: React.FC<{ r: DeskLedgerSummary['latest']['ret'][number]; sc: RetScores | undefined }> = ({ r, sc }) => {
+export const RetCard: React.FC<{ r: DeskLedgerSummary['latest']['ret'][number]; sc: RetScores | undefined }> = ({ r, sc }) => {
   const q = (tau: number) => r.q[r.taus.indexOf(tau)];
   const price = (lr: number) => r.px0 * Math.exp(lr);
   const lo = price(q(0.025));
@@ -222,8 +222,8 @@ const RetCard: React.FC<{ r: DeskLedgerSummary['latest']['ret'][number]; sc: Ret
         <div
           className="absolute top-2 h-5 rounded-sm border border-dashed border-warn"
           title={tr(
-            `Przedział ACI tej prognozy (α = ${fmtFixed(r.aci.alpha, 3)}${r.aci.lo === null ? ', nieskończony' : ''}; bieżące α = ${fmtFixed(r.aci.alphaNow, 3)}) — samokorygujący się przedział 90%`,
-            `ACI interval of this forecast (α = ${fmtFixed(r.aci.alpha, 3)}${r.aci.lo === null ? ', infinite' : ''}; current α = ${fmtFixed(r.aci.alphaNow, 3)}), a self-correcting 90% interval`
+            `Przedział ACI tej prognozy (α = ${fmtFixed(r.aci.alpha, 3)}${r.aci.lo === null ? ', nieskończony' : ''}; bieżące α = ${fmtFixed(r.aci.alphaNow, 3)}) — samokorygujący się przedział o pokryciu 90% z konstrukcji`,
+            `ACI interval of this forecast (α = ${fmtFixed(r.aci.alpha, 3)}${r.aci.lo === null ? ', infinite' : ''}; current α = ${fmtFixed(r.aci.alphaNow, 3)}), a self-correcting interval with 90% coverage by construction`
           )}
           style={{ left: x(aciLo), right: `calc(100% - ${x(aciHi)})` }}
         />
@@ -279,7 +279,11 @@ const RetCard: React.FC<{ r: DeskLedgerSummary['latest']['ret'][number]; sc: Ret
         <Stat
           label={tr('Pokrycie ACI', 'ACI coverage')}
           value={<span className="font-mono tabular-nums text-base">{enough ? pct(sc!.covAci?.rate, 1) : DASH}</span>}
-          hint={tr('cel 90%, korekta online', 'target 90%, online correction')}
+          hint={
+            // Pokrycie ACI wynika z samokorekty α, nie z trafności modelu; nieskończony przedział zawsze „trafia”
+            tr('90% z konstrukcji (samokorekta α), nie miara trafności', '90% by construction (self-correcting α), not a measure of accuracy') +
+            (sc?.aciInf && sc.aciInf.share !== null && sc.aciInf.inf > 0 ? tr(` · nieskończony w ${pct(sc.aciInf.share, 1)}`, ` · infinite in ${pct(sc.aciInf.share, 1)}`) : '')
+          }
         />
       </div>
       {enough && <PitHist hist={sc!.pitHist} />}
