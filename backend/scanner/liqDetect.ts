@@ -208,6 +208,8 @@ export class LiqConfirmer {
   private readonly seenTids = new Set<number>();
   private log: [Outcome, number][] = [];
   private calls: number[] = [];
+  /** Początek bieżącego okresu obserwacji (ostatnie dropBefore): taśma ma tylko zdarzenia od tej chwili */
+  private floor = Number.NEGATIVE_INFINITY;
 
   constructor(o: { coin: string; maxPerMin: number }) {
     this.coin = o.coin;
@@ -272,7 +274,10 @@ export class LiqConfirmer {
         continue;
       }
       const ev = parseLiquidationFills(fills, this.coin, c.addr, c.prev, this.seenTids);
-      if (ev) {
+      if (ev && ev.t < this.floor) {
+        // Kandydat z oknem przez granicę okresu, likwidacja sprzed niej: należy do odrzuconego okresu — bez zdarzenia
+        // i bez odrzucenia
+      } else if (ev) {
         for (const t of ev.tids) this.seenTids.add(t);
         this.evs.push({ ...ev, foundAt: now });
       } else if (!parseLiquidationFills(fills, this.coin, c.addr, c.prev)) {
@@ -317,9 +322,17 @@ export class LiqConfirmer {
     this.keepEvents((e) => e.t > now - DAY && e.t <= now + 5 * MIN);
   }
 
-  /** Usuwa zdarzenia sprzed początku okresu obserwacji (np. po przerwie w danych). */
-  dropBefore(t: number): void {
+  /**
+   * Nowy okres obserwacji od `t` (start, przerwa w danych): usuwa zdarzenia sprzed `t` i kandydatów z odczytem sprzed `t`
+   * (bez zapytań i bez liczników — należą do odrzuconego okresu); później `process` nie dopisuje zdarzeń sprzed `t`.
+   * Zwraca liczbę usuniętych kandydatów (do logu).
+   */
+  dropBefore(t: number): number {
+    this.floor = Math.max(this.floor, t);
     this.keepEvents((e) => e.t >= t);
+    const n = this.queue.length;
+    this.queue = this.queue.filter((c) => c.to >= t);
+    return n - this.queue.length;
   }
 
   private keepEvents(pred: (e: DetectedLiq) => boolean): void {
@@ -328,14 +341,23 @@ export class LiqConfirmer {
     for (const e of out) for (const t of e.tids) this.seenTids.delete(t);
   }
 
-  /** Stan na dysk serwera — zdarzenia i liczniki, bez adresów (kolejka kandydatów nie jest zapisywana). */
-  toJSON(): { v: 1; events: DetectedLiq[]; log: [Outcome, number][] } {
-    return { v: 1, events: this.evs, log: this.log };
+  /**
+   * Stan na dysk serwera (nigdy nie jest publikowany): zdarzenia, liczniki i kolejka kandydatów. Kolejka ma adresy kont,
+   * jak księga adresów w tym samym katalogu stanu; bez niej restart gubił kandydatów, których ponowny odczyt pozycji już
+   * nie wykryje (pozycja jest zapisana po zmniejszeniu), a taśma traciła te likwidacje.
+   */
+  toJSON(): { v: 1; events: DetectedLiq[]; log: [Outcome, number][]; queue: Queued[] } {
+    return { v: 1, events: this.evs, log: this.log, queue: this.queue };
   }
 
-  static fromJSON(j: unknown, o: { coin: string; maxPerMin: number }): LiqConfirmer {
+  /**
+   * `since`: początek okresu obserwacji po odczycie (ciągły albo nowy po przerwie) — kandydaci z odczytem sprzed niego znikają
+   * bez wpisu (należą do odrzuconego okresu); dopiero pozostałych sprawdza TTL: starsi niż CANDIDATE_TTL w chwili `now`
+   * idą do licznika nieudanych.
+   */
+  static fromJSON(j: unknown, o: { coin: string; maxPerMin: number; now?: number; since?: number }): LiqConfirmer {
     const c = new LiqConfirmer(o);
-    const x = j as { v?: number; events?: unknown[]; log?: unknown[] } | null;
+    const x = j as { v?: number; events?: unknown[]; log?: unknown[]; queue?: unknown[] } | null;
     if (x?.v !== 1) return c;
     if (Array.isArray(x.events)) {
       for (const e of x.events) {
@@ -351,6 +373,27 @@ export class LiqConfirmer {
         (r): r is [Outcome, number] => Array.isArray(r) && OUTCOMES.includes(r[0]) && typeof r[1] === 'number' && Number.isFinite(r[1])
       );
     }
+    // Kolejka kandydatów (pole opcjonalne; starszy stan bez niej = pusta kolejka): tylko poprawne wpisy, najwyżej
+    // MAX_QUEUE; kandydat starszy niż CANDIDATE_TTL w chwili odczytu idzie do licznika nieudanych, nie do kolejki
+    if (Array.isArray(x.queue))
+      for (const q of x.queue) {
+        if (!isQueued(q)) continue;
+        if (o.since !== undefined && q.to < o.since) continue;
+        if (o.now !== undefined && o.now - q.to > CANDIDATE_TTL) c.log.push(['failed', o.now]);
+        else if (c.queue.length < MAX_QUEUE) c.queue.push(q);
+      }
     return c;
   }
+}
+
+const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+
+/** Wpis kolejki ze stanu na dysku: adres konta, poprzednia pozycja z rozmiarem i ceną, okno fillów, liczba prób */
+function isQueued(q: unknown): q is Queued {
+  const o = q as Partial<Queued> | null;
+  if (!o || typeof o !== 'object' || typeof o.addr !== 'string' || !/^0x[0-9a-fA-F]{40}$/.test(o.addr)) return false;
+  const p = o.prev as Partial<ScannedPosition> | undefined;
+  if (!p || !finite(p.szi) || !finite(p.entryPx) || !finite(p.scannedAt)) return false;
+  if (!(p.liqPx === null || p.liqPx === undefined || (finite(p.liqPx) && p.liqPx > 0))) return false;
+  return finite(o.from) && finite(o.to) && o.from <= o.to && Number.isInteger(o.attempts) && (o.attempts as number) >= 0;
 }

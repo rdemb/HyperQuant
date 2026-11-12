@@ -60,10 +60,11 @@ let prices = new PriceRange();
 let tapeSince = Date.now();
 try {
   const j = JSON.parse(readFileSync(liqStatePath, 'utf8')) as { savedAt?: number; since?: number; confirmer?: unknown; prices?: unknown };
-  confirmer = LiqConfirmer.fromJSON(j.confirmer, LIQ_OPTS);
-  prices = PriceRange.fromJSON(j.prices);
+  // Najpierw ciągłość taśmy, potem kolejka: po przerwie kandydaci sprzed nowego since znikają bez wpisu, TTL tylko dla reszty
   if (typeof j.savedAt === 'number' && typeof j.since === 'number' && Date.now() - j.savedAt < MAX_GAP_MS) tapeSince = j.since;
-  log(`wczytano taśmę likwidacji: ${confirmer.events().length} zdarzeń`);
+  confirmer = LiqConfirmer.fromJSON(j.confirmer, { ...LIQ_OPTS, now: Date.now(), since: tapeSince });
+  prices = PriceRange.fromJSON(j.prices);
+  log(`wczytano taśmę likwidacji: ${confirmer.events().length} zdarzeń, ${confirmer.pending} kandydatów w kolejce potwierdzeń`);
 } catch {
   // brak stanu — nowa taśma
 }
