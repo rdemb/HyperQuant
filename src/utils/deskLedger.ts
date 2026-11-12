@@ -8,6 +8,8 @@
  */
 
 import type { SkillCi } from './ledgerBootstrap.ts';
+import type { CalSummary } from './catCal.ts';
+import type { CatClock } from './moveClock.ts';
 import type { CatTrust, HourTrust, TrustHead } from './schrodiTrust.ts';
 
 export type { SkillCi } from './ledgerBootstrap.ts';
@@ -261,6 +263,10 @@ export interface DeskLedgerSummary {
     trust?: CatTrust;
     /** Ocena godziny na żywo (zapisy o :15 i :30) od rejestracji jej planu; brak w starszych podsumowaniach */
     hour?: HourTrust;
+    /** Rozliczenie kalibracji `cat-cal-v1` od rejestracji jej planu; brak w starszych podsumowaniach */
+    cal?: CalSummary;
+    /** Zegar ruchu: tercyle pBig z 14 dni i baza sezonowa godzin; brak w starszych podsumowaniach */
+    clock?: CatClock;
   };
   method: 'hq-ledger-v1';
 }
@@ -428,6 +434,29 @@ export function isHourTrust(x: unknown): x is HourTrust {
 }
 
 /** Sekcja kota (opcjonalna) — sprawdzana osobno: uszkodzona sekcja ukrywa tylko wynik kota */
+const isCalGroup = (g: unknown) => {
+  const x = g as { n?: unknown; meanP?: unknown; freq?: unknown } | null;
+  return !!x && fin(x.n) && finOrNull(x.meanP) && finOrNull(x.freq);
+};
+
+const isCells = (v: unknown) => Array.isArray(v) && v.length === 24 && v.every((c) => !!c && fin(c.k) && fin(c.n));
+/** Zegar ruchu (`cat.clock`) */
+export function isClock(x: unknown): x is CatClock {
+  const c = x as Partial<CatClock> | null;
+  const t = c?.terciles;
+  return !!c && (t === null || (!!t && fin(t.q1) && fin(t.q2) && fin(t.n))) && !!c.season && isCells(c.season.weekday) && isCells(c.season.weekend);
+}
+
+/** Rozliczenie kalibracji kota (`cat.cal`) */
+export function isCalSummary(x: unknown): x is CalSummary {
+  const c = x as Partial<CalSummary> | null;
+  if (!c || !c.plan || !fin(c.plan.at) || typeof c.plan.hash !== 'string' || !fin(c.n) || !finOrNull(c.brier) || !finOrNull(c.brierRaw)) return false;
+  if (!finOrNull(c.meanP) || !finOrNull(c.freq) || !c.byType || !isCalGroup(c.byType.weekday) || !isCalGroup(c.byType.weekend)) return false;
+  if (!Array.isArray(c.deciles) || !c.deciles.every((d) => isCalGroup(d) && fin(d.lo) && fin(d.hi))) return false;
+  const b = c.block;
+  return b === null || (!!b && fin(b.start) && fin(b.end) && fin(b.n) && (b.diff === null || (!!b.diff && fin(b.diff.mean) && fin(b.diff.lo) && fin(b.diff.hi))));
+}
+
 export function isCat(x: unknown): x is NonNullable<DeskLedgerSummary['cat']> {
   const c = x as Partial<NonNullable<DeskLedgerSummary['cat']>> | null;
   if (!c || !fin(c.issued) || !fin(c.slots) || !finOrNull(c.since ?? null) || !c.scores) return false;
@@ -437,6 +466,8 @@ export function isCat(x: unknown): x is NonNullable<DeskLedgerSummary['cat']> {
   if (s.touch !== undefined && !isCatTouch(s.touch)) return false;
   if (c.trust !== undefined && !isTrust(c.trust)) return false;
   if (c.hour !== undefined && !isHourTrust(c.hour)) return false;
+  if (c.cal !== undefined && !isCalSummary(c.cal)) return false;
+  if (c.clock !== undefined && !isClock(c.clock)) return false;
   const l = c.latest;
   return l === null || (!!l && fin(l.t) && fin(l.px0) && fin(l.pUp) && fin(l.pBig) && fin(l.thr));
 }
