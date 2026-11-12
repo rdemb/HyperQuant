@@ -4,6 +4,13 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Skaner: budżet odczytów pozycji (2026-11-12)
+
+#### Zmienione
+- **Osobne budżety wag** (`backend/scanner/config.ts`, `main.ts`, `scanner.ts`): potwierdzenia likwidacji (`HQ_LIQ_WEIGHT_PER_MIN`, domyślnie 90) i prognozy dziennika, rynek HIP-4 i archiwum świec (`HQ_FORECAST_WEIGHT_PER_MIN`, 120) mają własne limitery, więc odczyty pozycji dostają cały `HQ_WEIGHT_PER_MIN` (240 wag = 120 odczytów/min); potwierdzenia we własnej pętli. Razem z wielorybami najwyżej 800 wag/min.
+- **Kolejność odczytów według wartości** (`backend/scanner/addressBook.ts`, `due`): konta, które handlowały od ostatniego odczytu (także z pozycją), w osobnej kolejce według nominału pozycji (bez pozycji: obrotu); pozycje po terminie według (wiek / termin) × √nominał; niewykorzystany budżet (`fill`) odświeża pozycje przed terminem według wiek × √nominał. Wcześniej mała, mocno spóźniona pozycja wyprzedzała dużą, której właściciel właśnie handlował, a wolny budżet nie był używany.
+- **Model obciążenia** (`backend/scanner/readBudgetSim.ts`, test `backend/scanner/__tests__/readBudget.test.ts`): 6 tys. pozycji (skala 1/5), nominały Pareto α 1,1 skalibrowane tak, że dawny harmonogram przy ~45 odczytach/min daje medianę ważoną ~27 min (na serwerze zmierzono 28–34 min); nowy przy 120 odczytach/min: `ageNtlP50Min` poniżej 10 min w każdej minucie 24 h (także przy dwa razy większej liczbie kont handlujących). Wynik modelu zależy od rozkładu nominałów (przy α 1,2 ~15–20 min); rozstrzyga pomiar na serwerze.
+
 ### Zakres początkowy sesji: pełny rysunek tylko bieżącej sesji, rozszerzenia po wybiciu (2026-11-12)
 
 Na danych stałych `ui:check` (zegar 24.10.2026 21:29 UTC, sesja nowojorska) warstwa rysowała 7 obiektów w „Aukcja i otwarcie” 5m na 1440 × 900 i 7 na 390 × 844 oraz 63 i 14 w „Rozliczeniu doby” 30m; po zmianie 5 i 5 oraz 7 i 7 (wybór warstwy, nie piksele; obiekt to prostokąt albo linia, bez linii otwarć sesji). Liczby „przed” zmierzone na stronie z `main` z tymczasowym licznikiem w nakładce (bez commita).

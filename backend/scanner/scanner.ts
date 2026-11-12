@@ -29,6 +29,8 @@ export interface ScannerDeps {
   coin: string;
   book: AddressBook;
   rest: HlRest;
+  /** Klient potwierdzeń likwidacji z własnym limiterem wag (domyślnie `rest`) */
+  liqRest?: HlRest;
   outDir: string;
   r2: R2Config | null;
   fetchFn?: typeof fetch;
@@ -84,9 +86,12 @@ export class Scanner {
     this.prices.record(px, t);
   }
 
-  /** Potwierdza kandydatów do likwidacji w ramach limitu zapytań (3/min, tylko przy zdrowym API); zwraca liczbę zapytań. */
+  /**
+   * Potwierdza kandydatów do likwidacji w ramach limitu zapytań (3/min, tylko przy zdrowym API) przez własny klient
+   * z osobnym limiterem wag (`liqRest`), więc potwierdzenia nie zabierają budżetu odczytów pozycji; zwraca liczbę zapytań.
+   */
   confirmLiquidations(): Promise<number> {
-    return this.confirmer.process(this.d.rest, this.now());
+    return this.confirmer.process(this.d.liqRest ?? this.d.rest, this.now());
   }
 
   private now(): number {
@@ -107,7 +112,8 @@ export class Scanner {
   /** Odpytuje do `limit` adresów z minionym terminem; zwraca liczbę udanych odczytów. */
   async scanDue(limit: number): Promise<number> {
     const fresh = this.ctx && this.now() - this.ctxAt <= CTX_MAX_AGE_MS ? this.ctx.markPx : undefined;
-    const due = this.d.book.due(this.now(), limit, fresh);
+    // Z zapasem budżetu (fill): limiter i tak ogranicza tempo, a wolne odczyty odświeżają to, co waży na mapie
+    const due = this.d.book.due(this.now(), limit, fresh, { fill: true });
     let ok = 0;
     for (const addr of due) {
       const st = await this.d.rest.info({ type: 'clearinghouseState', user: addr }, 2);
@@ -155,7 +161,7 @@ export class Scanner {
       ageNtlP50Min: map.ageMin.ntlP50,
       ctxAt: this.ctxAt,
       dayNtlVlm: Number.isFinite(c.dayNtlVlm) ? c.dayNtlVlm : null,
-      apiErrors: this.d.rest.errors,
+      apiErrors: this.d.rest.errors + (this.d.liqRest && this.d.liqRest !== this.d.rest ? this.d.liqRest.errors : 0),
       liq24h: tape.totals.h24.n,
       liqPending: this.confirmer.pending,
     };
