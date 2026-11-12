@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { FIXED_NOW, createFixtures } from './fixtures.mjs';
+import { FIXED_NOW, createFixtures, registry, scaleMinutes } from './fixtures.mjs';
 import { bookQuote, parseBtcOutcomes } from '../../src/utils/hip4';
+import { isMarketRegistry, marketsOrDefault } from '../../src/utils/marketRegistry';
+import { pickAssetCtx } from '../../src/charts/pro/hl/parse';
 
 const fx = createFixtures(process.cwd());
 const MIN = 60_000;
@@ -63,6 +65,63 @@ describe('dane stałe pomiaru układu (bez sieci, stały zegar)', () => {
     const px = fx.minutes('BTC').at(-1)[4];
     expect(qs.filter((q) => q.K >= px)).toHaveLength(7);
     expect(qs.every((q) => bookQuote(fx.respond({ type: 'l2Book', coin: q.coin }))?.liquid)).toBe(true);
+  });
+
+  it('przeskalowanie minut: ostatnie zamknięcie równe celowi, ceny × k z zaokrągleniem, wolumen ÷ k, czas bez zmian', () => {
+    const m1 = [
+      [0, 100, 110, 90, 105, 2],
+      [MIN, 105, 120, 100, 200, 4],
+    ];
+    expect(scaleMinutes(m1, 40, 3, 2)).toEqual([
+      [0, 20, 22, 18, 21, 10],
+      [MIN, 21, 24, 20, 40, 20],
+    ]);
+    expect(scaleMinutes([[0, 3, 3, 3, 3, 1]], 1, 2, 2)).toEqual([[0, 1, 1, 1, 1, 3]]);
+    expect(scaleMinutes([[0, 1, 1, 1, 3, 1]], 1, 2, 2)[0][1]).toBe(0.33);
+  });
+
+  it('HYPE i xyz:NVDA: minuty BTC przeskalowane do ceny rynku (40 i 180), świece poprawne w nagranej dobie i poza nią', () => {
+    const btc = fx.minutes('BTC');
+    for (const [coin, px] of [['HYPE', 40], ['xyz:NVDA', 180]]) {
+      const m = fx.minutes(coin);
+      expect(m.map((x) => x[0])).toEqual(btc.map((x) => x[0]));
+      expect(m.at(-1)[4]).toBe(px);
+      for (const iv of ['1m', '1h']) {
+        const list = fx.respond({ type: 'candleSnapshot', req: { coin, interval: iv, startTime: FIXED_NOW - 3000 * 3_600_000 } });
+        expect(list.length, `${coin} ${iv}`).toBeGreaterThan(100);
+        for (const c of list) {
+          const [o, h, l, cl, v] = [c.o, c.h, c.l, c.c, c.v].map(Number);
+          expect(h).toBeGreaterThanOrEqual(Math.max(o, cl));
+          expect(l).toBeLessThanOrEqual(Math.min(o, cl));
+          expect(v).toBeGreaterThanOrEqual(0);
+          expect(c.s).toBe(coin);
+        }
+      }
+    }
+  });
+
+  it('rynek HIP-3 z odpowiedzi swojej giełdy (dex: "xyz"), arkusz i strumień; główna giełda bez rynków HIP-3', () => {
+    const raw = fx.respond({ type: 'metaAndAssetCtxs', dex: 'xyz' });
+    expect(raw[0].universe).toEqual([{ name: 'xyz:NVDA', szDecimals: 3, maxLeverage: 10 }]);
+    expect(pickAssetCtx(raw, 'xyz:NVDA')?.markPx).toBe(180);
+    expect(fx.respond({ type: 'metaAndAssetCtxs', dex: 'abc' })).toEqual([{ universe: [] }, []]);
+    const main = fx.respond({ type: 'metaAndAssetCtxs' })[0].universe;
+    expect(main.find((u) => u.name === 'HYPE').szDecimals).toBe(2);
+    expect(main.some((u) => u.name.includes(':'))).toBe(false);
+    const book = fx.respond({ type: 'l2Book', coin: 'xyz:NVDA' });
+    expect(Number(book.levels[1][0].px) - Number(book.levels[0][0].px)).toBeCloseTo(0.01, 6);
+    const s = fx.stream();
+    expect(s['activeAssetCtx|xyz:NVDA'].coin).toBe('xyz:NVDA');
+    expect(s['l2Book|HYPE|']).toBeTruthy();
+  });
+
+  it('rejestr rynków: poprawny format markets.json, strona widzi xyz:NVDA (giełda xyz) i cztery stałe rynki', () => {
+    const reg = registry();
+    expect(isMarketRegistry(reg)).toBe(true);
+    const list = marketsOrDefault(reg);
+    expect(list.map((m) => m.coin)).toEqual(['BTC', 'ETH', 'HYPE', 'SOL', 'xyz:NVDA']);
+    expect(list.find((m) => m.coin === 'xyz:NVDA')).toMatchObject({ dex: 'xyz', szDecimals: 3, scanner: 'none' });
+    expect(list.find((m) => m.coin === 'HYPE')?.szDecimals).toBe(2);
   });
 
   it('nieznany rodzaj zapytania: pusta lista (żadne zapytanie nie idzie do sieci)', () => {
