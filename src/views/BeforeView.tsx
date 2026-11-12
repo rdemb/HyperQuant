@@ -9,6 +9,7 @@ import ChartsView from './ChartsView';
 import { AuctionContextPanel } from './before/AuctionContextPanel';
 import { FourCard } from './before/FourCard';
 import { LiquidityByHourPanel } from './before/LiquidityByHourPanel';
+import { MoveClockPanel } from './before/MoveClockPanel';
 import { DeskRail } from './desk/DeskRail';
 import { LiquidationMapPanel } from './desk/LiquidationMapPanel';
 import { FundingVenues } from './market/FundingVenues';
@@ -19,7 +20,7 @@ import { NewsFeed } from './market/NewsFeed';
 /**
  * Ekran „Przed sesją”: na górze Czwórka (cztery liczby przed sesją dla rynku wykresu), pod nią wykres z układami
  * przygotowania (1–2), pas kontekstu (DeskRail z funduszowaniem i najbliższym wydarzeniem), kalendarz makro, funding
- * między giełdami, kontekst aukcji, mapa likwidacji z kaskadą, płynność wg godzin, kafle makro i wiadomości. Na telefonie
+ * między giełdami, zegar ruchu (poziom najbliższej godziny i baza sezonowa godzin z rejestru), kontekst aukcji, mapa likwidacji z kaskadą, płynność wg godzin, kafle makro i wiadomości. Na telefonie
  * jedna kolumna w tej samej kolejności.
  */
 const BeforeView: React.FC<{ onPhase?: (phase: PhaseId) => void }> = ({ onPhase }) => {
@@ -34,6 +35,9 @@ const BeforeView: React.FC<{ onPhase?: (phase: PhaseId) => void }> = ({ onPhase 
       <ChartsView phase="before" onPhase={onPhase} onMarket={setCoin} />
       <ContextRail />
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 [&>*]:min-w-0">
+        <LocalBoundary what={tr('Zegar ruchu', 'Move clock')}>
+          <MoveClockPanel />
+        </LocalBoundary>
         <MacroCalendar />
         <FundingVenues />
         <AuctionContextPanel />

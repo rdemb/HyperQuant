@@ -9,6 +9,7 @@
 
 import type { SkillCi } from './ledgerBootstrap.ts';
 import type { CalSummary } from './catCal.ts';
+import type { CatClock } from './moveClock.ts';
 import type { CatTrust, HourTrust, TrustHead } from './schrodiTrust.ts';
 
 export type { SkillCi } from './ledgerBootstrap.ts';
@@ -264,6 +265,8 @@ export interface DeskLedgerSummary {
     hour?: HourTrust;
     /** Rozliczenie kalibracji `cat-cal-v1` od rejestracji jej planu; brak w starszych podsumowaniach */
     cal?: CalSummary;
+    /** Zegar ruchu: tercyle pBig z 14 dni i baza sezonowa godzin; brak w starszych podsumowaniach */
+    clock?: CatClock;
   };
   method: 'hq-ledger-v1';
 }
@@ -436,6 +439,14 @@ const isCalGroup = (g: unknown) => {
   return !!x && fin(x.n) && finOrNull(x.meanP) && finOrNull(x.freq);
 };
 
+const isCells = (v: unknown) => Array.isArray(v) && v.length === 24 && v.every((c) => !!c && fin(c.k) && fin(c.n));
+/** Zegar ruchu (`cat.clock`) */
+export function isClock(x: unknown): x is CatClock {
+  const c = x as Partial<CatClock> | null;
+  const t = c?.terciles;
+  return !!c && (t === null || (!!t && fin(t.q1) && fin(t.q2) && fin(t.n))) && !!c.season && isCells(c.season.weekday) && isCells(c.season.weekend);
+}
+
 /** Rozliczenie kalibracji kota (`cat.cal`) */
 export function isCalSummary(x: unknown): x is CalSummary {
   const c = x as Partial<CalSummary> | null;
@@ -456,6 +467,7 @@ export function isCat(x: unknown): x is NonNullable<DeskLedgerSummary['cat']> {
   if (c.trust !== undefined && !isTrust(c.trust)) return false;
   if (c.hour !== undefined && !isHourTrust(c.hour)) return false;
   if (c.cal !== undefined && !isCalSummary(c.cal)) return false;
+  if (c.clock !== undefined && !isClock(c.clock)) return false;
   const l = c.latest;
   return l === null || (!!l && fin(l.t) && fin(l.px0) && fin(l.pUp) && fin(l.pBig) && fin(l.thr));
 }

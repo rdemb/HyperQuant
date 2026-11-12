@@ -162,7 +162,12 @@ interface LedgerData {
     aciInfShare: Num;
   }[];
   touch: { settled: Num; brier: Num; brierBase: Num; bss: Num; brierDist: Num; bssDist: Num; bssLo: Num; bssHi: Num; bssDistLo: Num; bssDistHi: Num; ciDays: Num };
-  bigMove: { settled: Num; bss: Num; bssSeasonal: Num; bssSeasonalLo: Num; bssSeasonalHi: Num; seasonalN: Num };
+  bigMove: { settled: Num; bss: Num; bssSeasonal: Num; bssSeasonalLo: Num; bssSeasonalHi: Num; seasonalN: Num; calibration: Record<string, Num> };
+  moveClock: {
+    nextHour: { from: string | null; to: string | null; level: string | null; why: string | null; forecasts: Num };
+    auc: Num;
+    hours: { hour: string; dayType: string; bigMoveDays: Num; days: Num }[];
+  };
   pending: Num;
   voided: Num;
   slotsIssued: Num;
@@ -827,6 +832,42 @@ describe('forecast_ledger', () => {
       seasonalN: { value: 2650 },
     });
     expect(env.notes.join(' ')).toMatch(/ACI[^.]*90% z konstrukcji/);
+  });
+
+  it('zegar ruchu: najbliższa godzina jako poziom bez procentu, godziny 2–24 jako baza sezonowa; rozliczenie kalibracji cat-cal-v1', async () => {
+    const base = ledger();
+    const season = { weekday: Array.from({ length: 24 }, (_, h) => ({ k: h === 9 ? 18 : 6, n: 20 })), weekend: Array.from({ length: 24 }, () => ({ k: 1, n: 20 })) };
+    const cal = {
+      plan: { at: NOW - 3 * 24 * HOUR, hash: 'h' },
+      n: 280,
+      brier: 0.128,
+      brierRaw: 0.143,
+      meanP: 0.585,
+      freq: 0.588,
+      byType: { weekday: { n: 200, meanP: 0.7, freq: 0.71 }, weekend: { n: 80, meanP: 0.2, freq: 0.19 } },
+      deciles: Array.from({ length: 10 }, (_, i) => ({ lo: i / 10, hi: (i + 1) / 10, n: 28, meanP: i / 10 + 0.05, freq: i / 10 + 0.05 })),
+      block: null,
+    };
+    const json = { ...base, cat: { ...base.cat!, latest: { t: NOW - 10 * MIN, px0: 100_000, pUp: 0.5, pBig: 0.4567, thr: 40 }, clock: { terciles: { q1: 0.3, q2: 0.6, n: 400 }, season }, cal } };
+    const { env } = await call<LedgerData>('forecast_ledger', allRoutes({ [LEDGER_URL]: { json } }));
+    const c = env.data.moveClock;
+    expect(c.nextHour).toMatchObject({ from: new Date(NOW - 10 * MIN).toISOString(), to: new Date(NOW + 50 * MIN).toISOString(), level: 'typical', why: null, forecasts: { value: 400, unit: 'count' } });
+    // Bez procentu szansy: surowe pBig nigdzie w odpowiedzi
+    expect(JSON.stringify(env.data)).not.toContain('0.4567');
+    expect(c.auc).toMatchObject({ value: 0.6, unit: 'ratio' });
+    expect(c.hours).toHaveLength(23);
+    // 15:45 UTC w środę: 23 godziny od 17:00 UTC do 15:00 UTC w czwartek; 09:00 UTC w czwartek — 18 z 20 dni
+    expect(c.hours[0]).toMatchObject({ hour: '2026-11-04T17:00:00.000Z', dayType: 'weekday', bigMoveDays: { value: 6, unit: 'count', badge: 'MODEL' }, days: { value: 20 } });
+    expect(c.hours.at(-1)?.hour).toBe('2026-11-05T15:00:00.000Z');
+    expect(c.hours.find((h) => h.hour === '2026-11-05T09:00:00.000Z')?.bigMoveDays.value).toBe(18);
+    expect(env.data.bigMove.calibration).toMatchObject({ settled: { value: 280 }, brier: { value: 0.128 }, brierRaw: { value: 0.143 }, meanP: { value: 0.585 }, freq: { value: 0.588 }, blockDiff: { value: null } });
+    expect(env.data.bigMove.calibration.brier.method).toBe('cat-cal-v1');
+
+    // Starsze podsumowanie bez zegara i bez kalibracji: null z powodem, bez błędu
+    const { env: old } = await call<LedgerData>('forecast_ledger', allRoutes());
+    expect(old.data.moveClock.nextHour).toMatchObject({ level: null, why: expect.stringContaining('zegara') });
+    expect(old.data.moveClock.hours).toEqual([]);
+    expect(old.data.bigMove.calibration.brier).toMatchObject({ value: null, why: expect.stringContaining('cat-cal-v1') });
   });
 
   it('starsze podsumowanie bez nowych miar: narzędzie działa, nowe pola null z powodem, stare liczby bez zmian', async () => {
