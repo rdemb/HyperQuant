@@ -22,6 +22,9 @@
  *     modelem public/schrodi/hour-v1.json (hash = `mh`), wynik z godziny zegara, plan i dowód przewagi przeliczone;
  *     kalibracja kota `cat-cal-v1` (pole `cal`): plan zgodny z kodem (src/utils/catCal.ts), żadne `cal` przed planem,
  *     a, d, p, n i nT przeliczone tu, osobną implementacją, z par rozstrzygniętych wcześniej w dzienniku;
+ *     prognoza `hrel-v1` (duży ruch jak na tę godzinę): plan zgodny z kodem (src/utils/hourRel.ts), żaden rekord przed
+ *     planem, wydanie najpóźniej 15 min po pełnej godzinie, p przeliczone z cech i wag planu, y z zakresów i progów;
+ *     z --market progi, cechy i zakresy przeliczone ze świec 1h Hyperliquid;
  *  3a. miary podsumowania (test Kupca przedziału 60%, jednostajność PIT, przedziały CRPSS, BSS dotknięć i BSS sezonowy
  *     dużego ruchu kota z bootstrapu blokowego po dobach UTC, udział nieskończonych przedziałów ACI) przeliczone z rekordów
  *     do głowy podsumowania (`--summary <plik>` przy --dir; w trybie szybkim podsumowanie ze strony, gdy pobrane dni
@@ -41,6 +44,7 @@ import { HOUR_DESIGN, TRUST_DESIGN, catTrust, hourRow, hourTrust, trustHour } fr
 import { HOUR_FEATURES, hourProbs, hourX, logit } from '../src/utils/schrodiHour.ts';
 import { addDaySum, daySkillCi } from '../src/utils/ledgerBootstrap.ts';
 import { CAT_CAL_DESIGN } from '../src/utils/catCal.ts';
+import { HREL_DESIGN } from '../src/utils/hourRel.ts';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -515,6 +519,9 @@ const VOID_MS = 6 * 60 * MIN_MS;
  */
 const BLOCK_TIME_MARGIN_MS = 2 * 60 * MIN_MS;
 
+/** Koniec horyzontu prognozy: t + h; `hrel-v1` — koniec godziny hs + 3 h */
+const horizonEnd = (fc) => (fc.kind === 'hrel' ? fc.t + 4 * 60 * MIN_MS : fc.t + fc.h * MIN_MS);
+
 /**
  * Kolejność i spójność rekordów w łańcuchu: unikalne prognozy, slot = slot chwili wydania, początek horyzontu = pełna
  * minuta po wydaniu, czasy niemalejące, rozstrzygnięcie nie przed końcem horyzontu, slot z prognozą albo skip — nie oba.
@@ -531,7 +538,10 @@ export function checkOrdering(records, opts = {}) {
       f.set(o.id, o);
       if (typeof o.ti === 'number') {
         if (o.slot !== Math.floor(o.ti / SLOT_MS) * SLOT_MS) out.push(`${o.id}: slot ${o.slot} nie jest slotem chwili wydania`);
-        if (o.t !== Math.floor(o.ti / MIN_MS) * MIN_MS + MIN_MS) out.push(`${o.id}: początek horyzontu nie jest pełną minutą po wydaniu`);
+        // hrel-v1: t = początek godziny (hs) — cechy ze świec zamkniętych do hs, wydanie w slocie po hs (checkHrel)
+        if (o.kind === 'hrel') {
+          if (o.t !== o.slot - (o.slot % (60 * MIN_MS))) out.push(`${o.id}: t nie jest początkiem godziny slotu`);
+        } else if (o.t !== Math.floor(o.ti / MIN_MS) * MIN_MS + MIN_MS) out.push(`${o.id}: początek horyzontu nie jest pełną minutą po wydaniu`);
         if (o.ti < lastTime) out.push(`${o.id}: czas cofnięty względem poprzedniego rekordu`);
         lastTime = Math.max(lastTime, o.ti);
       }
@@ -540,8 +550,8 @@ export function checkOrdering(records, opts = {}) {
       // Tryb szybki (ostatnie dni): prognoza mogła paść przed pierwszym pobranym dniem
       const before = opts.since !== undefined && Number(String(o.id).split('-')[0]) < opts.since;
       if (!fc && !before) out.push(`${o.id}: rozstrzygnięcie bez wcześniejszej prognozy`);
-      else if (fc && typeof o.t === 'number' && o.t < fc.t + fc.h * MIN_MS) out.push(`${o.id}: rozstrzygnięcie przed końcem horyzontu`);
-      else if (fc && o.void && !(o.t >= fc.t + fc.h * MIN_MS + VOID_MS)) out.push(`${o.id}: unieważnienie przed upływem 6 h po horyzoncie`);
+      else if (fc && typeof o.t === 'number' && o.t < horizonEnd(fc)) out.push(`${o.id}: rozstrzygnięcie przed końcem horyzontu`);
+      else if (fc && o.void && !(o.t >= horizonEnd(fc) + VOID_MS)) out.push(`${o.id}: unieważnienie przed upływem 6 h po horyzoncie`);
       if (resolved.has(o.id)) out.push(`${o.id}: powtórzone rozstrzygnięcie`);
       resolved.add(o.id);
       if (typeof o.t === 'number') {
@@ -771,6 +781,156 @@ export function checkCatCal(records, { since = null } = {}) {
     else checked++;
   });
   return since === null ? { problems, checked } : { problems, checked, skipped };
+}
+
+/** Koniec ostatniej godziny docelowej `hrel-v1` (hs + 4 h) */
+const hrelEnd = (fc) => fc.t + 4 * HOUR_MS;
+
+/**
+ * Prognoza `hrel-v1` (rekordy `kind: 'hrel'`): plan zapisany w dzienniku identyczny z kodem (src/utils/hourRel.ts),
+ * jeden hash, żaden rekord przed planem; rekord raz na godzinę (hs = pełna godzina, wydany najpóźniej hs + 15 min),
+ * p przeliczone tutaj z zapisanych cech i wag planu (do 1e-4); rozstrzygnięcie nie przed hs + 4 h, y = [rng > thr]
+ * z wartości zapisanych, null tylko razem (rng i y) i dopiero 6 h po hs + 4 h. Progi i cechy ze świec — `checkHrelMarket`.
+ * `since` (tryb szybki): bez planu w pobranych dniach kolejność wobec planu nie jest sprawdzana.
+ */
+export function checkHrel(records, { since = null } = {}) {
+  const problems = [];
+  const D = HREL_DESIGN;
+  const plans = records.map((o, i) => [o, i]).filter(([o]) => o.k === 'p' && o.id === D.id);
+  const want = canonical(D);
+  for (const [o] of plans) if (canonical(o.catalog) !== want) problems.push(`${o.id}: plan różni się od kodu (src/utils/hourRel.ts)`);
+  if (new Set(plans.map(([o]) => o.catalogHash)).size > 1) problems.push(`${D.id}: kilka różnych planów pod jednym identyfikatorem`);
+  const planIdx = plans.length ? plans[0][1] : null;
+  // Wagi z planu zapisanego w dzienniku (zgodność z kodem sprawdzona wyżej)
+  const w = plans.length && Array.isArray(plans[0][0].catalog?.weights) ? plans[0][0].catalog.weights : D.weights;
+  const prob = (x, wj) => {
+    let s = wj[0];
+    for (let i = 0; i < 3; i++) s += wj[i + 1] * x[i];
+    return Math.round((1 / (1 + Math.exp(-s))) * 1e4) / 1e4;
+  };
+  const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
+  const fcs = new Map();
+  let checked = 0;
+  let resolved = 0;
+  records.forEach((o, i) => {
+    if (o.k === 'f' && o.kind === 'hrel') {
+      fcs.set(o.id, o);
+      if (planIdx === null ? since === null : i < planIdx) {
+        problems.push(`${o.id}: rekord przed planem ${D.id}`);
+        return;
+      }
+      const bad = [];
+      if (!isNum(o.t) || o.t % HOUR_MS !== 0 || o.id !== `${o.t}-hrel`) bad.push('t ≠ pełna godzina z identyfikatora');
+      if (!(o.ti >= o.t && o.ti - o.t <= D.maxLateMin * MIN_MS)) bad.push(`wydanie ${Math.round((o.ti - o.t) / 1000)} s po hs (dozwolone 0–${D.maxLateMin} min)`);
+      if (o.model !== D.model || o.plan !== D.id) bad.push('model / plan');
+      const xOk = Array.isArray(o.x) && o.x.length === 3 && o.x.every((v) => isNum(v) && Math.abs(v) <= D.zClip + 1e-12);
+      if (!xOk) bad.push('x');
+      if (!(Array.isArray(o.thr) && o.thr.length === 4 && o.thr.every((v) => isNum(v) && v >= 0))) bad.push('thr');
+      if (!(Array.isArray(o.p) && o.p.length === 4)) bad.push('p');
+      else if (xOk) for (let j = 0; j < 4; j++) if (!(Math.abs(o.p[j] - prob(o.x, w[j])) <= 1e-4 + 1e-12)) bad.push(`p[${j}] ${o.p[j]} ≠ ${prob(o.x, w[j])}`);
+      if (bad.length) problems.push(`${o.id}: ${bad.join(', ')}`);
+      else checked++;
+      return;
+    }
+    if (o.k !== 'r' || !fcs.has(o.id)) return;
+    const fc = fcs.get(o.id);
+    const end = hrelEnd(fc);
+    if (!(o.t >= end)) {
+      problems.push(`${o.id}: rozstrzygnięcie przed zamknięciem godziny hs + 3 h`);
+      return;
+    }
+    if (o.void) {
+      if (!(o.t >= end + VOID_MS)) problems.push(`${o.id}: unieważnienie przed upływem 6 h`);
+      return;
+    }
+    if (!(Array.isArray(o.rng) && o.rng.length === 4 && Array.isArray(o.y) && o.y.length === 4)) {
+      problems.push(`${o.id}: rng / y`);
+      return;
+    }
+    const bad = [];
+    for (let j = 0; j < 4; j++) {
+      if (o.rng[j] === null || o.y[j] === null) {
+        if (o.rng[j] !== null || o.y[j] !== null) bad.push(`y[${j}] / rng[${j}]: null tylko razem`);
+        else if (!(o.t >= end + VOID_MS)) bad.push(`brak godziny ${j} przed upływem 6 h`);
+        continue;
+      }
+      const y = o.rng[j] > fc.thr[j] ? 1 : 0;
+      if (!(isNum(o.rng[j]) && o.rng[j] >= 0)) bad.push(`rng[${j}]`);
+      else if (o.y[j] !== y) bad.push(`y[${j}] = ${o.y[j]} ≠ [rng > thr] = ${y}`);
+    }
+    if (bad.length) problems.push(`${o.id}: ${bad.join(', ')}`);
+    else resolved++;
+  });
+  return { problems, checked, resolved };
+}
+
+/**
+ * `hrel-v1` ze świecami 1h Hyperliquid (--market): progi (mediana zakresu tej samej godziny z 20 wcześniejszych dni
+ * tego samego typu, do 80 dni wstecz), cechy r1, r3, r24 i zakresy godzin docelowych przeliczone tu ze świec.
+ * `candles` — { time, high, low } (początek godziny). Prognozy, których okno (81 dni wstecz) wychodzi przed pobrane
+ * świece, są pomijane. Zgodność: x do 1e-6, thr i rng do 1e-4 (zapis 6 i 4 miejsca).
+ */
+export function checkHrelMarket(records, candles) {
+  const D = HREL_DESIGN;
+  const bars = new Map(candles.filter((c) => c.time % HOUR_MS === 0).map((c) => [c.time, c]));
+  const first = Math.min(...bars.keys());
+  const last = Math.max(...bars.keys());
+  const weekend = (t) => [0, 6].includes(new Date(t).getUTCDay());
+  const range = (c) => Math.log(c.high / c.low) * 1e4;
+  const thrOf = (u) => {
+    const xs = [];
+    for (let k = 1; k <= D.lookbackDays && xs.length < D.thresholdDays; k++) {
+      const c = weekend(u - k * DAY_MS) === weekend(u) ? bars.get(u - k * DAY_MS) : undefined;
+      if (c) xs.push(range(c));
+    }
+    if (xs.length < D.thresholdDays) return null;
+    xs.sort((a, b) => a - b);
+    return (xs[D.thresholdDays / 2 - 1] + xs[D.thresholdDays / 2]) / 2;
+  };
+  const problems = [];
+  let checked = 0;
+  let resolved = 0;
+  const fcs = new Map();
+  for (const o of records) {
+    if (o.k === 'f' && o.kind === 'hrel') {
+      fcs.set(o.id, o);
+      if (o.t - 25 * HOUR_MS - D.lookbackDays * DAY_MS < first || o.t > last + HOUR_MS) continue;
+      const z = [];
+      for (let k = 1; k <= 24; k++) {
+        const c = bars.get(o.t - k * HOUR_MS);
+        const thr = thrOf(o.t - k * HOUR_MS);
+        if (!c || thr === null) break;
+        const r = range(c);
+        z.push(r > 0 ? Math.max(-D.zClip, Math.min(D.zClip, Math.log(r / thr))) : -D.zClip);
+      }
+      checked++;
+      if (z.length < 24) {
+        problems.push(`${o.id}: ze świec rynku brak cech (brak świecy albo progu) — rekord nie powinien powstać`);
+        continue;
+      }
+      const x = [z[0], (z[0] + z[1] + z[2]) / 3, z.reduce((s, v) => s + v, 0) / 24];
+      const thr = [0, 1, 2, 3].map((j) => thrOf(o.t + j * HOUR_MS));
+      const bad = [];
+      x.forEach((v, i) => !(Math.abs(Math.round(v * 1e6) / 1e6 - o.x[i]) <= 1e-6 + 1e-12) && bad.push(`x[${i}] ${o.x[i]} ≠ ${v.toFixed(6)}`));
+      thr.forEach((v, j) => !(v !== null && Math.abs(v - o.thr[j]) <= 1e-4 + 1e-12) && bad.push(`thr[${j}] ${o.thr[j]} ≠ ${v === null ? 'brak' : v.toFixed(4)}`));
+      if (bad.length) problems.push(`${o.id}: ${bad.join(', ')}`);
+    } else if (o.k === 'r' && fcs.has(o.id) && !o.void && Array.isArray(o.rng)) {
+      const fc = fcs.get(o.id);
+      if (fc.t < first || fc.t + 3 * HOUR_MS > last) continue;
+      resolved++;
+      const bad = [];
+      for (let j = 0; j < 4; j++) {
+        const c = bars.get(fc.t + j * HOUR_MS);
+        if (o.rng[j] === null) {
+          if (c) bad.push(`rng[${j}] null mimo świecy rynku`);
+          continue;
+        }
+        if (!c || !(Math.abs(range(c) - o.rng[j]) <= 1e-4 + 1e-12)) bad.push(`rng[${j}] ${o.rng[j]} ≠ ${c ? range(c).toFixed(4) : 'brak świecy'}`);
+      }
+      if (bad.length) problems.push(`${o.id}: ${bad.join(', ')}`);
+    }
+  }
+  return { problems, checked, resolved };
 }
 
 /**
@@ -1207,8 +1367,8 @@ export function recompute(records, { since } = {}) {
       const cut = (b) => (b && since !== undefined && b.start < since ? { ...b, diff: null, partial: true } : b);
       return { current: cut(ab.current), closing: cut(ab.closing), last: cut(ab.last) };
     })(),
-    // Jak w podsumowaniu: unieważnienia wersji głównej (wariant B ma własną sekcję)
-    voided: [...r.values()].filter((x) => x.void && !f.get(x.id)?.variant).length,
+    // Jak w podsumowaniu: unieważnienia wersji głównej (wariant B i hrel-v1 mają własne sekcje)
+    voided: [...r.values()].filter((x) => x.void && !f.get(x.id)?.variant && f.get(x.id)?.kind !== 'hrel').length,
     skipped: records.filter((o) => o.k === 's').reduce((n, o) => n + (typeof o.until === 'number' ? Math.round((o.until - o.slot) / SLOT_MS) + 1 : 1), 0),
   };
 }
@@ -1505,6 +1665,14 @@ async function main() {
         : `✓ kalibracja kota ${CAT_CAL_DESIGN.id}: ${plural(cal.checked, 'prognoza', 'prognozy', 'prognoz')} — a, d i p przeliczone z par rozstrzygniętych wcześniej w dzienniku, plan zgodny z kodem${cal.skipped ? `; pominięte (okno 14 dni sprzed pobranych dni): ${cal.skipped}` : ''}`
     );
   if (cal.problems.length) ok = false;
+  const hrel = checkHrel(records, local ? {} : { since: Date.parse(`${files[0][0].slice(0, 10)}T00:00:00Z`) });
+  if (hrel.checked || hrel.problems.length)
+    console.log(
+      hrel.problems.length
+        ? `✗ prognoza ${HREL_DESIGN.id} (${hrel.problems.length}): ${hrel.problems.slice(0, 5).join('; ')}`
+        : `✓ prognoza ${HREL_DESIGN.id}: ${plural(hrel.checked, 'rekord', 'rekordy', 'rekordów')} — p przeliczone z cech i wag planu, plan zgodny z kodem; rozstrzygnięcia: ${hrel.resolved}, y z rng i progów (progi i cechy ze świec: --market)`
+    );
+  if (hrel.problems.length) ok = false;
   const pre = checkPreregs(records);
   if (pre.preregs.length || pre.problems.length)
     console.log(
@@ -1588,11 +1756,20 @@ async function main() {
         for (const fc of fs) {
           // Wariant B (A/B) dzieli pokwitowanie z wersją A — liczony raz, jako wersja główna
           if (fc.variant) continue;
-          const key = fc.kind === 'mkt' ? 'rynek HIP-4 (15 min)' : fc.kind === 'cat' ? 'Schrödi (1 h)' : fc.kind === 'hour' ? 'Schrödi, godzina na żywo' : `horyzont ${fc.h} min`;
+          const key =
+            fc.kind === 'mkt'
+              ? 'rynek HIP-4 (15 min)'
+              : fc.kind === 'cat'
+                ? 'Schrödi (1 h)'
+                : fc.kind === 'hour'
+                  ? 'Schrödi, godzina na żywo'
+                  : fc.kind === 'hrel'
+                    ? `${HREL_DESIGN.id} (godziny hs … hs + 3 h)`
+                    : `horyzont ${fc.h} min`;
           const s = (stat[key] ??= { n: 0, proven: 0, late: 0, pending: 0 });
           s.n++;
           if (bt === null) s.pending++;
-          else if (bt + BLOCK_TIME_MARGIN_MS <= fc.t + fc.h * MIN_MS) s.proven++;
+          else if (bt + BLOCK_TIME_MARGIN_MS <= horizonEnd(fc)) s.proven++;
           else s.late++;
         }
       }
@@ -1633,6 +1810,35 @@ async function main() {
         } else if (mk.eligible === 0) console.log('ℹ --market: brak rozstrzygnięć do sprawdzenia');
         else if (mk.checked === 0) console.log(`ℹ --market: żadne z ${mk.eligible} rozstrzygnięć nie mieści się w zakresie świec 1m (~3.4 doby) — nic nie sprawdzono`);
         else console.log(`✓ ceny źródłowe zgodne ze świecami 1m: sprawdzone ${mk.checked}/${mk.eligible} (pozostałe starsze niż ~3.4 doby)${mk.hourFeatures ? `; cechy godziny na żywo ze świec: ${mk.hourFeatures}` : ''}`);
+      }
+      // hrel-v1: progi, cechy i zakresy ze świec 1h (API: do 5000 świec, tu ~104 dni)
+      if (records.some((o) => o.k === 'f' && o.kind === 'hrel')) {
+        let hours = [];
+        let st = 'brak odpowiedzi';
+        try {
+          const res = await fetch('https://api.hyperliquid.xyz/info', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ type: 'candleSnapshot', req: { coin: 'BTC', interval: '1h', startTime: Date.now() - 2500 * HOUR_MS } }),
+            signal: AbortSignal.timeout(NET_TIMEOUT_MS),
+          });
+          st = `HTTP ${res.status}`;
+          const raw = res.ok ? await res.json() : null;
+          // Świeca w toku pominięta (jej zakres jeszcze rośnie)
+          hours = (Array.isArray(raw) ? raw : []).map((c) => ({ time: c.t, high: Number(c.h), low: Number(c.l) })).filter((c) => c.time + HOUR_MS <= Date.now());
+        } catch (e) {
+          st = String(e?.message ?? e);
+        }
+        if (hours.length === 0) {
+          console.log(`✗ --market: nie udało się pobrać świec 1h z Hyperliquid (${st}) — ${HREL_DESIGN.id} nie sprawdzone ze świec`);
+          ok = false;
+        } else {
+          const hm = checkHrelMarket(records, hours);
+          if (hm.problems.length) {
+            console.log(`✗ ${HREL_DESIGN.id} niezgodne ze świecami 1h (${hm.problems.length}): ${hm.problems.slice(0, 5).join('; ')}`);
+            ok = false;
+          } else console.log(`✓ ${HREL_DESIGN.id} ze świec 1h: progi i cechy ${hm.checked}, zakresy godzin ${hm.resolved} (starsze niż ~100 dni pominięte)`);
+        }
       }
     }
   } else {
