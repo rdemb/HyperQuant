@@ -178,6 +178,65 @@ describe('MarketRegistryRunner', () => {
       expect(end).toBeLessThan(slot + 15 * 60_000);
     });
 
+    it('twardy limit czasu: po 14:00 slotu bez nowych zapytań, reszta w skipped i pierwsza w następnej godzinie', async () => {
+      // 19 giełd (główna + d00–d17), każda odpowiedź 10 s, odstęp 20 s; zegar przesuwają odpowiedzi i czekanie
+      const listed = NAMES.slice(0, 18);
+      let clock = 0;
+      const sent: { at: number; dex: string }[] = [];
+      const rest: InfoClient = {
+        async info(body: unknown) {
+          const b = body as Call['body'];
+          if (b.type === 'metaAndAssetCtxs') sent.push({ at: clock, dex: b.dex ?? '' });
+          clock += 10_000;
+          if (b.type === 'perpDexs') return [null, ...listed.map((name) => ({ name }))];
+          if (b.dex === undefined) return MAIN;
+          return [{ universe: [{ name: `${b.dex}:AAA`, szDecimals: 2, maxLeverage: 5 }] }, [{ openInterest: '100', markPx: '10' }]];
+        },
+      };
+      const dir = mkdtempSync(join(tmpdir(), 'hq-markets-'));
+      const runner = new MarketRegistryRunner({
+        rest,
+        statePath: join(dir, 's.json'),
+        outPath: join(dir, 'm.json'),
+        scannerCoins: ['BTC'],
+        now: () => clock,
+        wait: async (ms) => void (clock += ms),
+      });
+      const slot = Date.UTC(2026, 10, 1, 10, 15);
+      const start = slot + 8 * 60_000 - 1;
+      clock = start;
+      const r = await runner.tick(start);
+      expect(r.ran).toBe(true);
+      const last = sent[sent.length - 1].at;
+      expect(last).toBeLessThan(slot + 14 * 60_000);
+      // perpDexs 10 s, potem zapytanie co 30 s: 12 wysłanych (główna + 11), 7 pominiętych
+      expect(sent).toHaveLength(12);
+      expect(sent[0].dex).toBe('');
+      const fetched = sent.map((s) => s.dex);
+      expect(r.skipped).toHaveLength(7);
+      expect(new Set([...fetched, ...r.skipped!])).toEqual(new Set(['', ...listed]));
+      expect(r.dexes).toBe(12);
+      // Następna godzina: najpierw giełdy pominięte przez limit czasu
+      const from = sent.length;
+      const s2 = Date.UTC(2026, 10, 1, 11, 33);
+      clock = s2;
+      expect((await runner.tick(s2)).ran).toBe(true);
+      const next = sent.slice(from).map((s) => s.dex);
+      for (const d of r.skipped!) expect(next).toContain(d);
+    });
+
+    it('szybkie odpowiedzi: limit czasu nic nie pomija (19 zapytań przy starcie tuż przed 8. minutą)', async () => {
+      const { rest, calls } = many();
+      const dir = mkdtempSync(join(tmpdir(), 'hq-markets-'));
+      let clock = 0;
+      const runner = new MarketRegistryRunner({ rest, statePath: join(dir, 's.json'), outPath: join(dir, 'm.json'), scannerCoins: ['BTC'], now: () => clock, wait: async (ms) => void (clock += ms) });
+      const start = Date.UTC(2026, 10, 1, 10, 15) + 8 * 60_000 - 1;
+      clock = start;
+      const r = await runner.tick(start);
+      expect(calls.filter((c) => c.body.type === 'metaAndAssetCtxs')).toHaveLength(19);
+      expect(r.skipped).toHaveLength(6);
+    });
+
     it('rotacja: kolejne godziny obejmują wszystkie giełdy; kolejność zapytań malejąco według OI', async () => {
       const { rest, calls } = many();
       const dir = mkdtempSync(join(tmpdir(), 'hq-markets-'));
