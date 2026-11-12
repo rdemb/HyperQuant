@@ -36,7 +36,7 @@ export function formatProblems(problems) {
  * czyta treść lekcji z plików TypeScript, a samo sprawdzanie wpisów (`--check`) ma działać bez tego.
  * Zwraca wpisy mapy strony.
  */
-export async function buildPages({ outDir, site, results = {} }) {
+export async function buildPages({ outDir, site, results = {}, news = {} }) {
   const { SHOTS, shotFile, sitePages, sitemapEntries } = await import('./pages.mjs');
   const shotDir = path.join(HERE, 'shots');
   await mkdir(path.join(outDir, 'site'), { recursive: true });
@@ -48,7 +48,7 @@ export async function buildPages({ outDir, site, results = {} }) {
       await writeFile(path.join(outDir, 'site', file), buf);
       shots.set(file, `data:image/jpeg;base64,${buf.toString('base64')}`);
     }
-  const pages = sitePages(site, { results });
+  const pages = sitePages(site, { results, news });
   for (const p of pages) {
     const file = path.join(outDir, p.path.endsWith('.html') ? p.path : path.join(p.path, 'index.html'));
     await mkdir(path.dirname(file), { recursive: true });
@@ -143,7 +143,7 @@ export function nextRegistry(previous, hashes, now, { migrate = false } = {}) {
  * (nextRegistry) liczony od rejestru z raportu, bez raportu od zera. `blog/source.json` = { sha gałęzi, sha main, chwila
  * buildu, rejestr (posts), rewritten, pominięte }. Zwraca liczbę opublikowanych wpisów.
  */
-export async function buildBlog({ contentDir = CONTENT_DIR, outDir, site, drafts = false, pages = true, now = Date.now(), intake = null, main = null, results = {} }) {
+export async function buildBlog({ contentDir = CONTENT_DIR, outDir, site, drafts = false, pages = true, now = Date.now(), intake = null, main = null, results = {}, news = {} }) {
   const { posts, problems } = loadPosts(contentDir);
   const fromBranch = new Set((intake?.posts ?? []).map((p) => p.id));
   const isBranch = (file) => fromBranch.has(file.replace(/\.md$/, ''));
@@ -211,7 +211,7 @@ export async function buildBlog({ contentDir = CONTENT_DIR, outDir, site, drafts
       skipped,
     })
   );
-  await writeFile(path.join(outDir, 'sitemap.xml'), sitemapXml(s, visible, pages ? await buildPages({ outDir, site: s, results }) : []));
+  await writeFile(path.join(outDir, 'sitemap.xml'), sitemapXml(s, visible, pages ? await buildPages({ outDir, site: s, results, news }) : []));
   await writeFile(
     path.join(blogDir, 'og.png'),
     renderPng(ogSvg({ section: 'Blog', title: 'Analizy BTC na Hyperliquid', subtitle: 'Mapa dnia, mapa przed Nowym Jorkiem, podsumowanie dnia' }))
@@ -253,9 +253,12 @@ async function main(argv) {
   // w aplikacji, VITE_DATA_BASE_URL); RESULTS_OFFLINE=1 buduje bez sieci (strona z „—” i powodem)
   const { fetchResults } = await import('./results.mjs');
   const results = process.env.RESULTS_OFFLINE === '1' ? {} : await fetchResults({ base: process.env.VITE_DATA_BASE_URL || undefined });
-  const n = await buildBlog({ outDir: path.join(ROOT, 'dist'), site: await siteFromPackage(), drafts: argv.includes('--drafts'), intake, main: mainHead(), results });
+  // Strona „Co nowego”: CHANGELOG.md i tagi wersji z lokalnego gita (bez tagów kamienie milowe z nagłówków wersji CHANGELOG)
+  const { gitTags } = await import('./whatsnew.mjs');
+  const news = { changelog: await readFile(path.join(ROOT, 'CHANGELOG.md'), 'utf8'), tags: gitTags(ROOT) };
+  const n = await buildBlog({ outDir: path.join(ROOT, 'dist'), site: await siteFromPackage(), drafts: argv.includes('--drafts'), intake, main: mainHead(), results, news });
   const got = ['summary', 'verify', 'lab'].filter((k) => results[k]);
-  console.log(`Blog: ${n} wpisów → dist/blog; wyniki prognoz z plików: ${got.join(', ') || 'brak (strona z „—”)'}`);
+  console.log(`Blog: ${n} wpisów → dist/blog; wyniki prognoz z plików: ${got.join(', ') || 'brak (strona z „—”)'}; co nowego: ${news.tags.length} tagów wersji`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {

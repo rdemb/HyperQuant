@@ -50,7 +50,7 @@ A layer that draws objects on the candle pane (zones, walls, bubbles, ranges, le
 
 1. Branch from `main`, one topic per PR.
 2. Run `npm run lint && npm test && npm run build` locally; CI runs the same on every PR.
-3. Update the [CHANGELOG](CHANGELOG.md) (the "Unreleased" section or a new version).
+3. Update the [CHANGELOG](CHANGELOG.md) (the "Unreleased" section or a new version). Right under each `### Title (YYYY-MM-DD)` heading add one line for the public "What's new" page (`co-nowego/`, `en/whats-new/`): `<!-- co-nowego: grupa=wykres | pl=Prosty tytuł | en=Plain title -->`. Groups: `wykres`, `prognozy`, `rynki`, `skaner`, `blog`; use `<!-- co-nowego: ukryj -->` for purely technical changes (CI, dependencies, server internals). Write what a user sees, without jargon, price direction, the word "signal" or names of AI models and bots. Several lines give several entries; a section without a date in its heading needs `data=YYYY-MM-DD`. `npm test` fails when a section has no such line.
 4. UI changes: a screenshot (desktop and phone).
 
 Merging to `main` publishes the site on GitHub Pages.

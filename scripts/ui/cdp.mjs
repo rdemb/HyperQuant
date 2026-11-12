@@ -52,6 +52,8 @@ export async function launch({ port = 9338, lang = 'pl', init = [], intercept = 
   let id = 0;
   const pending = new Map();
   const errors = [];
+  /** `console.error` strony (wyjątki bez obsługi są w `errors`). */
+  const consoleErrors = [];
   ws.onmessage = (m) => {
     const d = JSON.parse(m.data);
     if (d.id && pending.has(d.id)) {
@@ -59,6 +61,7 @@ export async function launch({ port = 9338, lang = 'pl', init = [], intercept = 
       pending.delete(d.id);
     } else if (d.method === 'Fetch.requestPaused') void onPaused(d.params);
     else if (d.method === 'Runtime.exceptionThrown') errors.push(d.params.exceptionDetails.exception?.description ?? d.params.exceptionDetails.text);
+    else if (d.method === 'Runtime.consoleAPICalled' && d.params.type === 'error') consoleErrors.push(d.params.args.map((a) => a.value ?? a.description ?? '').join(' ').slice(0, 300));
   };
   const send = (method, params = {}) =>
     new Promise((r) => {
@@ -100,6 +103,7 @@ export async function launch({ port = 9338, lang = 'pl', init = [], intercept = 
 
   const page = {
     errors,
+    consoleErrors,
     intercepted,
     send,
     async viewport(w, h, mobile) {
