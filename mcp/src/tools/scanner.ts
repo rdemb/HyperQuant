@@ -25,7 +25,7 @@ import {
   isCohortFlow,
   shareDenominator,
 } from '../../../src/utils/cohorts';
-import { LEDGER_MIN_N, isDeskLedgerSummary, ledgerFreshness } from '../../../src/utils/deskLedger';
+import { LEDGER_MIN_N, type SkillCi, isDeskLedgerSummary, ledgerFreshness } from '../../../src/utils/deskLedger';
 import { FUEL_BAND, liqFuel } from '../../../src/utils/fourNumbers';
 import { type LiqBucket, type LiqMap, isLiqMap } from '../../../src/utils/liqMap';
 import { liqMapFreshness } from '../../../src/utils/liqMapView';
@@ -725,6 +725,30 @@ export interface LedgerReturns {
   covAci: Num;
   /** p-wartość testu Kupca pokrycia 90% na podpróbie rozłącznej. */
   kupiecP90: Num;
+  /** Test Kupca przedziału 60% na próbie rozłącznej: p-wartość, liczność i pokrycie tej próby. */
+  kupiecP60: Num;
+  kupiecN60: Num;
+  cover60Disjoint: Num;
+  /** Jednostajność PIT (χ², 9 st. swobody, 10 koszyków) na próbie rozłącznej, od 50 prognoz. */
+  pitP: Num;
+  pitN: Num;
+  /** Przedział CRPSS z bootstrapu blokowego po dobach UTC (25. i 975. z 1000 losowań), od 7 dób. */
+  crpssLo: Num;
+  crpssHi: Num;
+  crpssDays: Num;
+  /** Udział prognoz z nieskończoną granicą przedziału ACI. */
+  aciInfShare: Num;
+}
+
+/** Schrödi: duży ruch w 1 h — Brier Skill Score wobec stałej częstości i wobec bazy sezonowej (ta sama godzina UTC, 20 dób tego samego typu). */
+export interface LedgerBigMove {
+  settled: Num;
+  bss: Num;
+  bssSeasonal: Num;
+  bssSeasonalLo: Num;
+  bssSeasonalHi: Num;
+  /** Prognozy z bazą sezonową */
+  seasonalN: Num;
 }
 
 export interface ForecastLedgerData {
@@ -736,7 +760,8 @@ export interface ForecastLedgerData {
    * Szanse dotknięcia PDH, D-EQ i PDL w 2 h: Brier modelu i BSS w parze — wobec bazy odległości (`brierDist`, `bssDist`:
    * wzór odbicia ze stałą σ godzinowych log-zwrotów z 30 dni) i wobec częstości bazowej poziomu (`brierBase`, `bss`).
    */
-  touch: { settled: Num; brier: Num; brierBase: Num; bss: Num; brierDist: Num; bssDist: Num };
+  touch: { settled: Num; brier: Num; brierBase: Num; bss: Num; brierDist: Num; bssDist: Num; bssLo: Num; bssHi: Num; bssDistLo: Num; bssDistHi: Num; ciDays: Num };
+  bigMove: LedgerBigMove;
   pending: Num;
   voided: Num;
   slotsIssued: Num;
@@ -748,12 +773,16 @@ const LEDGER_NOTE = tr(
   'Weryfikowalny dziennik prognoz HyperQuant: co 15 min prognozy zapisane przed faktem (rozkład zwrotu BTC na 1 h i 4 h, szanse dotknięcia PDH, D-EQ i PDL w 2 h), łańcuch hashy i kotwica w Bitcoinie (OpenTimestamps); rozstrzygnięcia ze świec 1m Hyperliquid. Prognozy nakładają się horyzontami, więc ich wyniki są skorelowane; test Kupca liczony na podpróbie rozłącznej. Wyniki od 20 rozstrzygnięć. BSS dotknięć podawaj zawsze w parze: `bss` wobec częstości bazowej poziomu i `bssDist` wobec bazy odległości (P = 2(1 − Φ(|d| / (σ√T))), d = log-odległość poziomu od ceny, σ = stała σ godzinowych log-zwrotów z 30 dni, jak w benchmarku CRPS); częstość nie zna odległości, więc sama zawyża umiejętność. Każdy może przeliczyć wyniki sam (verifyUrl).',
   'The verifiable HyperQuant forecast ledger: every 15 min forecasts recorded before the fact (the BTC return distribution over 1 h and 4 h, the chances of touching PDH, D-EQ and PDL within 2 h), a hash chain and a Bitcoin anchor (OpenTimestamps); settlements from Hyperliquid 1m candles. Forecast horizons overlap, so their outcomes are correlated; the Kupiec test runs on a disjoint subsample. Scores from 20 settlements. Always give the touch BSS as a pair: `bss` against the level base rate and `bssDist` against the distance baseline (P = 2(1 − Φ(|d| / (σ√T))), d = log distance of the level from price, σ = constant σ of 30-day hourly log returns, as in the CRPS benchmark); the base rate ignores distance, so on its own it overstates skill. Anyone can recompute the scores (verifyUrl).'
 );
+const LEDGER_CI_NOTE = tr(
+  'Przedziały (`crpssLo`/`crpssHi`, `bssLo`/`bssHi`, `bssDistLo`/`bssDistHi`, `bssSeasonalLo`/`bssSeasonalHi`) z bootstrapu blokowego po dobach UTC: 1000 losowań dób ze zwracaniem (mulberry32, ziarno 20261111), granice 25. i 975. wartość, od 7 dób; weryfikator odtwarza je co do 4 miejsc. Test Kupca 60% (`kupiecP60`) i jednostajność PIT (`pitP`, od 50 prognoz) na próbie rozłącznej. Przedział ACI ma pokrycie 90% z konstrukcji (samokorekta α), więc `covAci` nie świadczy o trafności; `aciInfShare` to udział prognoz, w których jego granica jest nieskończona. BSS dużego ruchu kota: `bss` wobec stałej częstości z okna, `bssSeasonal` wobec częstości tej samej godziny UTC w 20 poprzednich dobach tego samego typu (dzień roboczy, weekend).',
+  'Intervals (`crpssLo`/`crpssHi`, `bssLo`/`bssHi`, `bssDistLo`/`bssDistHi`, `bssSeasonalLo`/`bssSeasonalHi`) come from a block bootstrap over UTC days: 1000 draws of days with replacement (mulberry32, seed 20261111), bounds at the 25th and 975th value, from 7 days; the verifier reproduces them to 4 decimals. The 60% Kupiec test (`kupiecP60`) and PIT uniformity (`pitP`, from 50 forecasts) run on the disjoint subsample. The ACI interval has 90% coverage by construction (self-correcting α), so `covAci` says nothing about accuracy; `aciInfShare` is the share of forecasts whose ACI bound is infinite. Big move BSS of the cat: `bss` against the constant rate of the window, `bssSeasonal` against the rate of the same UTC hour on the previous 20 days of the same type (weekday, weekend).'
+);
 
 async function ledgerRun(src: Sources): Promise<Envelope<ForecastLedgerData>> {
   const now = src.now();
   const f = await src.published('ledger/BTC/summary.json', isDeskLedgerSummary);
   const sources = [fileSource(tr('Podsumowanie dziennika prognoz', 'Forecast ledger summary'), f)];
-  const notes = [LEDGER_NOTE];
+  const notes = [LEDGER_NOTE, LEDGER_CI_NOTE];
   const verifyUrl = `${src.cfg.siteBase}/#sources`;
   if (!f.ok) {
     const why = tr(`podsumowanie dziennika prognoz niedostępne (${f.why})`, `forecast ledger summary unavailable (${f.why})`);
@@ -761,7 +790,20 @@ async function ledgerRun(src: Sources): Promise<Envelope<ForecastLedgerData>> {
       why,
       verifyUrl,
       returns: [],
-      touch: { settled: nil('count', why), brier: nil('ratio', why), brierBase: nil('ratio', why), bss: nil('ratio', why), brierDist: nil('ratio', why), bssDist: nil('ratio', why) },
+      touch: {
+        settled: nil('count', why),
+        brier: nil('ratio', why),
+        brierBase: nil('ratio', why),
+        bss: nil('ratio', why),
+        brierDist: nil('ratio', why),
+        bssDist: nil('ratio', why),
+        bssLo: nil('ratio', why),
+        bssHi: nil('ratio', why),
+        bssDistLo: nil('ratio', why),
+        bssDistHi: nil('ratio', why),
+        ciDays: nil('count', why),
+      },
+      bigMove: { settled: nil('count', why), bss: nil('ratio', why), bssSeasonal: nil('ratio', why), bssSeasonalLo: nil('ratio', why), bssSeasonalHi: nil('ratio', why), seasonalN: nil('count', why) },
       pending: nil('count', why),
       voided: nil('count', why),
       slotsIssued: nil('count', why),
@@ -787,6 +829,20 @@ async function ledgerRun(src: Sources): Promise<Envelope<ForecastLedgerData>> {
     const ok = typeof v === 'number' && Number.isFinite(v);
     return num(v, 'ratio', 'MODEL', { why: noScore, method: CONE_METHOD, ...(ok && note !== undefined && { note }) });
   };
+  // Miary dodane 12.11.2026: w starszym podsumowaniu ich nie ma (null z powodem, reszta bez zmian)
+  const older = tr('brak w starszym podsumowaniu (miara dodana 12.11.2026)', 'not in an older summary (measure added on 12 Nov 2026)');
+  const ciWhy = (ci: SkillCi | undefined) =>
+    !ci
+      ? older
+      : ci.reason === 'min-days'
+        ? tr(`przedział od 7 dób z danymi (jest ${ci.days})`, `interval from 7 days with data (now ${ci.days})`)
+        : tr('baza bez błędu (zerowy mianownik) — umiejętność nieokreślona', 'the baseline has no error (zero denominator), so skill is undefined');
+  const ciNums = (ci: SkillCi | undefined) => ({
+    value: live(ci?.value, 'ratio', note, ciWhy(ci)),
+    lo: live(ci?.lo, 'ratio', note, ciWhy(ci)),
+    hi: live(ci?.hi, 'ratio', note, ciWhy(ci)),
+    days: live(ci?.days, 'count', note, older),
+  });
   const returns = Object.entries(s.scores.ret)
     .map(([k, sc]) => ({ h: Number(k), sc }))
     .filter((x) => Number.isFinite(x.h) && x.h > 0)
@@ -794,6 +850,15 @@ async function ledgerRun(src: Sources): Promise<Envelope<ForecastLedgerData>> {
     .map(({ h, sc }): LedgerReturns => {
       const at = score(sc.n);
       const cov = cover(sc.n);
+      const k60 = sc.kupiec60;
+      const k60Why = k60 ? tr('brak prognoz rozłącznych (sloty o pełnym horyzoncie)', 'no disjoint forecasts (slots on a full horizon)') : older;
+      // Na próbie rozłącznej, bez progu 20 rozstrzygnięć (własne minimum testu); pokrycie MODEL jak pozostałe pokrycia
+      const covM = (v: number | null | undefined, why: string) => {
+        const ok = typeof v === 'number' && Number.isFinite(v);
+        return num(v, 'ratio', 'MODEL', { why, method: CONE_METHOD, ...(ok && note !== undefined && { note }) });
+      };
+      const pitWhy = sc.pit ? tr(`test od 50 prognoz rozłącznych (jest ${sc.pit.n})`, `test from 50 disjoint forecasts (now ${sc.pit.n})`) : older;
+      const ci = ciNums(sc.crpssCi);
       return {
         horizon: `${h} min`,
         settled: live(sc.n, 'count', note),
@@ -802,11 +867,26 @@ async function ledgerRun(src: Sources): Promise<Envelope<ForecastLedgerData>> {
         cov60: cov(sc.cov60?.rate),
         covAci: cov(sc.covAci?.rate),
         kupiecP90: cov(sc.cov90?.kupiecP),
+        kupiecP60: covM(k60?.p, k60Why),
+        kupiecN60: live(k60?.n, 'count', note, older),
+        cover60Disjoint: covM(k60?.cover, k60Why),
+        pitP: live(sc.pit?.p, 'ratio', note, pitWhy),
+        pitN: live(sc.pit?.n, 'count', note, older),
+        crpssLo: ci.lo,
+        crpssHi: ci.hi,
+        crpssDays: ci.days,
+        aciInfShare: live(sc.aciInf?.share, 'ratio', note, sc.aciInf ? tr('brak rozstrzygniętych prognoz', 'no settled forecasts') : older),
       };
     });
   const t = s.scores.touch;
   const tt = score(t.n);
   const noPair = t.n >= LEDGER_MIN_N && !(typeof t.bssDist === 'number' && Number.isFinite(t.bssDist));
+  const bCi = ciNums(t.bssCi);
+  const dCi = ciNums(t.bssDistCi);
+  const big = s.cat?.scores.big;
+  const catN = s.cat?.scores.n;
+  const noCat = s.cat ? tr('brak wyniku dużego ruchu w podsumowaniu', 'no big move score in the summary') : older;
+  const sCi = ciNums(big?.bssSeasonal);
   const data: ForecastLedgerData = {
     why: null,
     verifyUrl,
@@ -819,6 +899,19 @@ async function ledgerRun(src: Sources): Promise<Envelope<ForecastLedgerData>> {
       bss: noPair ? nil('ratio', noDist) : tt(t.bss),
       brierDist: tt(t.brierDist),
       bssDist: noPair ? nil('ratio', noDist) : tt(t.bssDist),
+      bssLo: bCi.lo,
+      bssHi: bCi.hi,
+      bssDistLo: dCi.lo,
+      bssDistHi: dCi.hi,
+      ciDays: bCi.days,
+    },
+    bigMove: {
+      settled: live(catN, 'count', note, older),
+      bss: catN !== undefined && catN < LEDGER_MIN_N ? nil('ratio', fromN(catN)) : live(big?.bss, 'ratio', note, noCat),
+      bssSeasonal: sCi.value,
+      bssSeasonalLo: sCi.lo,
+      bssSeasonalHi: sCi.hi,
+      seasonalN: live(big?.bssSeasonal?.n, 'count', note, older),
     },
     pending: live(s.pending, 'count', note),
     voided: live(s.voided, 'count', note),
@@ -832,8 +925,8 @@ export const forecastLedger: ToolDef = {
   name: NAME_LEDGER,
   title: tr('Dziennik prognoz HyperQuant', 'HyperQuant forecast ledger'),
   description: tr(
-    `Trafność i kalibracja weryfikowalnego dziennika prognoz HyperQuant (prognozy BTC zapisywane co 15 min przed faktem, łańcuch hashy, kotwica w Bitcoinie): dla horyzontów zwrotu umiejętność CRPSS, pokrycie przedziałów 90%, 60% i ACI z testem Kupca; dla szans dotknięcia poziomów Brier i BSS w parze: wobec częstości bazowej poziomu i wobec bazy odległości (wzór odbicia ze stałą σ godzinowych log-zwrotów z 30 dni); liczby rozstrzygnięć i pominiętych slotów; link do samodzielnej weryfikacji. Wyniki od 20 rozstrzygnięć. ${NO_DESC}`,
-    `Accuracy and calibration of the verifiable HyperQuant forecast ledger (BTC forecasts recorded every 15 min before the fact, a hash chain, a Bitcoin anchor): for the return horizons the CRPSS skill and the coverage of the 90%, 60% and ACI intervals with the Kupiec test; for the level touch chances the Brier score and BSS as a pair: against the level base rate and against the distance baseline (the reflection formula with a constant σ of 30-day hourly log returns); counts of settlements and skipped slots; a link to verify it yourself. Scores from 20 settlements. ${NO_DESC}`
+    `Trafność i kalibracja weryfikowalnego dziennika prognoz HyperQuant (prognozy BTC zapisywane co 15 min przed faktem, łańcuch hashy, kotwica w Bitcoinie): dla horyzontów zwrotu umiejętność CRPSS z przedziałem z bootstrapu po dobach, pokrycie przedziałów 90%, 60% i ACI z testem Kupca, jednostajność PIT i udział nieskończonych przedziałów ACI; dla szans dotknięcia poziomów Brier i BSS w parze: wobec częstości bazowej poziomu i wobec bazy odległości (wzór odbicia ze stałą σ godzinowych log-zwrotów z 30 dni), z przedziałami; BSS dużego ruchu kota wobec stałej częstości i bazy sezonowej; liczby rozstrzygnięć i pominiętych slotów; link do samodzielnej weryfikacji. Wyniki od 20 rozstrzygnięć. ${NO_DESC}`,
+    `Accuracy and calibration of the verifiable HyperQuant forecast ledger (BTC forecasts recorded every 15 min before the fact, a hash chain, a Bitcoin anchor): for the return horizons the CRPSS skill with a day-block bootstrap interval, the coverage of the 90%, 60% and ACI intervals with the Kupiec test, PIT uniformity and the share of infinite ACI intervals; for the level touch chances the Brier score and BSS as a pair: against the level base rate and against the distance baseline (the reflection formula with a constant σ of 30-day hourly log returns), with intervals; the cat's big move BSS against a constant rate and a seasonal baseline; counts of settlements and skipped slots; a link to verify it yourself. Scores from 20 settlements. ${NO_DESC}`
   ),
   run: (src) => ledgerRun(src),
 };
