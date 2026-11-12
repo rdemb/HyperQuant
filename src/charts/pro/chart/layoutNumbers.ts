@@ -25,7 +25,6 @@ import {
   METHOD,
   METHOD_NOTE,
   VA_MIGRATION_LABEL,
-  VOL_WAIT_TEXT,
   amt,
   blogMapName,
   isAbsent,
@@ -95,8 +94,6 @@ export interface LayoutInputs {
   session?: Got<SessionNow>;
   /** Oczekiwany zakres sesji w toku (MODEL). */
   expected?: Got<Expected>;
-  /** Model HAR (BTC) w drodze: `expected` czeka na niego (powód „czekam na model zmienności”), bez Parkinsona w zastępstwie. */
-  volLoading?: boolean;
   rvol?: Got<{ value: number; n: number; hour: number }>;
   prevDay?: Got<{ day: number; vah: number; val: number }>;
   nakedPoc?: Got<{ day: number; px: number }>;
@@ -140,23 +137,16 @@ const sessionName = (s: TradeSession) => TRADE_SESSION_NAME[s.id];
 // ───────────────────────── liczby ─────────────────────────
 
 /**
- * Budżet zakresu sesji. HAR to metoda domyślna (BTC z modelem); liczba z Parkinsona (model nie wczytał się, inny rynek)
- * ma nazwę metody na etykiecie („Budżet · NY · Parkinson”, na telefonie „Budżet (P)”) — także w tytule Klatki. Model w drodze:
- * „—” z powodem, nigdy Parkinson na chwilę przed HAR.
+ * Budżet zakresu sesji: zakres sesji dotąd wobec oczekiwanego (MODEL „profil × poziom” ze świec 1h, liczony raz na
+ * otwarcie sesji, więc nie zmienia się w jej trakcie).
  */
 function budgetNum(x: LayoutInputs): LayoutNumber {
   const sn = val(x.session);
   const e = val(x.expected);
-  const park = e?.method === 'parkinson';
-  const label = !sn
-    ? tr('Budżet zakresu', 'Range budget')
-    : park
-      ? tr(`Budżet · ${sessionName(sn.s)} · Parkinson`, `Budget · ${sessionName(sn.s)} · Parkinson`)
-      : tr(`Budżet · ${sessionName(sn.s)}`, `Budget · ${sessionName(sn.s)}`);
-  const short = park ? tr('Budżet (P)', 'Budget (P)') : tr('Budżet', 'Budget');
-  if (sn && x.expected === undefined && x.volLoading) return { ...dash(label, 'MODEL', `MODEL · HAR: ${VOL_WAIT_TEXT}`), short };
-  if (!sn || !e) return { ...dash(label, 'MODEL', tr(`MODEL · HAR albo Parkinson: ${whyOf(x.session, x.expected)}`, `MODEL · HAR or Parkinson: ${whyOf(x.session, x.expected)}`)), short };
-  const m = METHOD[e.method];
+  const label = sn ? tr(`Budżet · ${sessionName(sn.s)}`, `Budget · ${sessionName(sn.s)}`) : tr('Budżet zakresu', 'Range budget');
+  const short = tr('Budżet', 'Budget');
+  const m = METHOD.profile;
+  if (!sn || !e) return { ...dash(label, 'MODEL', `MODEL · ${m}: ${whyOf(x.session, x.expected)}`), short };
   const b = rangeBudget(sn.hi, sn.lo, e.usd);
   if (!Number.isFinite(b)) return { ...dash(label, 'MODEL', tr(`MODEL · ${m}: brak zakresu sesji`, `MODEL · ${m}: no session range`)), short };
   return {
@@ -165,8 +155,8 @@ function budgetNum(x: LayoutInputs): LayoutNumber {
     value: pctOf(b),
     badge: 'MODEL',
     hint: tr(
-      `MODEL · ${m}: sesja ${sessionName(sn.s)} od ${fmtHm(sn.s.start)} zużyła ${pctOf(b)} oczekiwanego zakresu: ${amt(sn.hi - sn.lo)} USD (${fmtPx(sn.lo)}–${fmtPx(sn.hi)}) z oczekiwanych ${amt(e.usd)} USD. ${METHOD_NOTE[e.method]}`,
-      `MODEL · ${m}: the ${sessionName(sn.s)} session since ${fmtHm(sn.s.start)} has used ${pctOf(b)} of its expected range: ${amt(sn.hi - sn.lo)} USD (${fmtPx(sn.lo)}–${fmtPx(sn.hi)}) of an expected ${amt(e.usd)} USD. ${METHOD_NOTE[e.method]}`
+      `MODEL · ${m}: sesja ${sessionName(sn.s)} od ${fmtHm(sn.s.start)} zużyła ${pctOf(b)} oczekiwanego zakresu: ${amt(sn.hi - sn.lo)} USD (${fmtPx(sn.lo)}–${fmtPx(sn.hi)}) z oczekiwanych ${amt(e.usd)} USD (typowy dzień ok. ${amt(e.typical)} USD). ${METHOD_NOTE[e.method]}`,
+      `MODEL · ${m}: the ${sessionName(sn.s)} session since ${fmtHm(sn.s.start)} has used ${pctOf(b)} of its expected range: ${amt(sn.hi - sn.lo)} USD (${fmtPx(sn.lo)}–${fmtPx(sn.hi)}) of an expected ${amt(e.usd)} USD (typical day about ${amt(e.typical)} USD). ${METHOD_NOTE[e.method]}`
     ),
   };
 }

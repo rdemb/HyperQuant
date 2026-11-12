@@ -4,7 +4,8 @@ import { ResetMode, periodStart } from './sessions';
 /**
  * Świece delty i CVD z footprintu. Świeca delty: otwarcie 0, maksimum i minimum delty w trakcie świecy,
  * zamknięcie = delta. Świeca CVD: to samo przesunięte o CVD z początku świecy. CVD zeruje się na początku
- * okresu (sesja, doba, tydzień) i po świecy bez taśmy — suma nie przeskakuje luki, której nie widzieliśmy.
+ * okresu (sesja, doba, tydzień) i po świecy bez taśmy albo niepełnej (luka w nagraniu w trakcie świecy) — suma nie
+ * przeskakuje luki, której nie widzieliśmy, a niepełna świeca ma przerwę, jak w pozostałych panelach.
  */
 
 export interface Ohlc {
@@ -17,6 +18,8 @@ export interface Ohlc {
 export interface FlowInput {
   t: number;
   fp: FootprintBar | null;
+  /** Świeca w całości objęta nagraniem (`ProBar.complete`); false — luka w taśmie, brak danych do CVD */
+  complete?: boolean;
 }
 
 export function deltaCandle(fp: FootprintBar): Ohlc {
@@ -35,7 +38,7 @@ export function cvdCandles(bars: readonly FlowInput[], mode: ResetMode): (Ohlc |
       period = p;
       acc = 0;
     }
-    if (!b.fp) {
+    if (!b.fp || b.complete === false) {
       out.push(null);
       broken = true;
       continue;

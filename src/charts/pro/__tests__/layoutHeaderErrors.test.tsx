@@ -48,8 +48,6 @@ const mount = () => {
         id="cockpit"
         question="Kto teraz naciska?"
         store={store}
-        model={null}
-        volStatus="loading"
         liq={{ status: 'loading', map: null } as never}
         whales={null}
         whalesConfigured={false}
