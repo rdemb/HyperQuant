@@ -26,4 +26,14 @@ describe('nawigacja aplikacji: link „Co nowego”', () => {
     expect(phone.indexOf(link)).toBeGreaterThan(blog);
     expect(phone.indexOf(link)).toBeLessThan(phone.indexOf('AGENTS.id'));
   });
+  it('pasek: Wyniki i Co nowego dopiero od xl; menu „Więcej” na komputerze: oba tylko poniżej xl', () => {
+    const start = src.indexOf("<nav aria-label={tr('Główna'");
+    const menu = src.indexOf('{topMore && (');
+    const bar = src.slice(start, menu);
+    const more = src.slice(menu, src.indexOf('</nav>', menu));
+    for (const href of ["href={tr('./wyniki/', './en/results/')}", link]) {
+      expect(bar).toContain(href + ' className={`${navLink(false)} hidden xl:inline`}');
+      expect(more).toContain(href + ' className={`${MENU_ITEM} xl:hidden`}');
+    }
+  });
 });
