@@ -357,7 +357,7 @@ const FOOTER = {
  */
 export const CSP =
   "default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; style-src-attr 'unsafe-inline'; font-src https://fonts.gstatic.com; img-src 'self' data:; base-uri 'none'; form-action 'none'";
-const BLOG_DISCLAIMER = 'Prawdopodobieństwa i scenariusze, nie porada inwestycyjna ani sygnał do transakcji. Handel kontraktami z dźwignią wiąże się z wysokim ryzykiem utraty środków.';
+const BLOG_DISCLAIMER = 'Prawdopodobieństwa i scenariusze, nie porada inwestycyjna ani wezwanie do transakcji. Handel kontraktami z dźwignią wiąże się z wysokim ryzykiem utraty środków.';
 
 /**
  * Szkielet strony: metadane (SEO, Open Graph, X), nagłówek z nawigacją, stopka. `root` = względna ścieżka do korzenia desku
