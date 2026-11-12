@@ -117,6 +117,13 @@ function coinMatchesDex(coin: string, dex: string): boolean {
   return /^[A-Za-z0-9]{1,20}$/.test(dex) && coin.startsWith(`${dex}:`) && /^[A-Za-z0-9]{1,20}$/.test(coin.slice(dex.length + 1));
 }
 
+/** Format nazwy rynku z linku albo zapisu: `COIN` albo `dex:COIN` (bez sprawdzania, czy rynek jest w rejestrze). */
+export function isCoinName(x: unknown): x is string {
+  if (typeof x !== 'string') return false;
+  const i = x.indexOf(':');
+  return coinMatchesDex(x, i < 0 ? '' : x.slice(0, i));
+}
+
 export function emptyRegistryState(): RegistryState {
   return { v: 1, rule: REG_V1.id, lastAt: 0, days: {}, meta: {}, dexDays: {}, dexFetchedAt: {}, members: {}, streaks: {}, evaluatedThrough: null };
 }
