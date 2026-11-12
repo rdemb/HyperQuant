@@ -1,6 +1,7 @@
 import { AB_BLOCK_DAYS, AB_DESIGN_C, abBlocks, abFirstBlock, type AbRow } from '../../src/utils/abTest.ts';
 import { type CalRow, type CatCal, calSummary } from '../../src/utils/catCal.ts';
 import { type CatClock, clockSeason, clockTerciles } from '../../src/utils/moveClock.ts';
+import { type HourBar, type HrelRow, type HrelSummary, hrelSummary } from '../../src/utils/hourRel.ts';
 import { MODEL_C, RVMIX, rv60From5m, rvLevel, rvX, scaleMixQuantiles } from '../../src/utils/rvMix.ts';
 import { Bocpd } from '../../src/utils/bocpd.ts';
 import { ENS_PRIOR, REC_PRIOR, fitEnsemble, poolProb, type EnsPair, type EnsWeights } from '../../src/utils/ensemble.ts';
@@ -8,6 +9,7 @@ import { type RangeBar, type VolModel, buildVolModel, horizonStepSigmas } from '
 import { forecastReturnQuantiles, runTouchMonteCarlo } from '../../src/utils/touchMc.ts';
 import {
   aciStep,
+  auc,
   brier,
   crpsQuantiles,
   chi2Sf,
@@ -390,6 +392,36 @@ export interface HourForecast {
   pUp: number;
   model: string;
   mh: string;
+}
+
+/**
+ * Duży ruch jak na tę godzinę (`hrel-v1`, src/utils/hourRel.ts): raz na godzinę, w slocie o pełnej godzinie `t` = hs,
+ * szanse dla godzin hs + j h (j = 0..3) z cech ze świec 1h zamkniętych do hs. Rekord bez `h` — trzymany osobno od
+ * prognoz co 15 min (własne rozliczenie, nie wchodzi do liczników podsumowania).
+ */
+export interface HrelForecast {
+  k: 'f';
+  id: string;
+  slot: number;
+  ti: number;
+  t: number;
+  kind: 'hrel';
+  /** Cechy [r1, r3, r24] (6 miejsc) */
+  x: number[];
+  /** Progi godzin docelowych (4 miejsca) */
+  thr: number[];
+  p: number[];
+  model: string;
+  plan: string;
+}
+
+/** Rozstrzygnięcie `hrel-v1`: zakresy godzin docelowych ze świec 1h i wyniki; null — brak świecy tej godziny */
+export interface HrelResolution {
+  k: 'r';
+  id: string;
+  t: number;
+  rng: (number | null)[];
+  y: (0 | 1 | null)[];
 }
 
 export type Forecast = RetForecast | TouchForecast | MktForecast | CatForecast | HourForecast;
@@ -1061,21 +1093,8 @@ export function touchScores(pairs: { f: TouchForecast; r: TouchResolution }[], s
   };
 }
 
-/** AUC (Mann–Whitney, remisy ze średnią rangą); brak jednej z klas → null. */
-export function auc(pp: { p: number; y: 0 | 1 }[]): number | null {
-  const pos = pp.filter((x) => x.y === 1).length;
-  const neg = pp.length - pos;
-  if (!pos || !neg) return null;
-  const s = [...pp].sort((a, b) => a.p - b.p);
-  let rankSum = 0;
-  for (let i = 0; i < s.length; ) {
-    let j = i;
-    while (j < s.length && s[j].p === s[i].p) j++;
-    for (let k = i; k < j; k++) if (s[k].y === 1) rankSum += (i + j + 1) / 2;
-    i = j;
-  }
-  return (rankSum - (pos * (pos + 1)) / 2) / (pos * neg);
-}
+/** AUC (Mann–Whitney) — wspólna implementacja w src/utils/forecastScore.ts */
+export { auc };
 
 /** Brier, Brier klimatologii (częstość z tego samego okna), BSS, AUC i trafność progu 50%. */
 function probScores(pp: { p: number; y: 0 | 1 }[]) {
@@ -1243,6 +1262,9 @@ export interface SummaryInput {
   hourPlan?: HourTrust['plan'];
   /** Rejestracja planu kalibracji `cat-cal-v1` w dzienniku (brak — bez sekcji `cat.cal`) */
   calPlan?: { at: number; hash: string } | null;
+  /** Prognozy `hrel-v1` i ich rozstrzygnięcia z całego dziennika oraz rejestracja planu (brak planu — bez pola `hrel`) */
+  hrelPlan?: { at: number; hash: string } | null;
+  hrel?: { forecasts: ReadonlyMap<string, HrelForecast>; resolutions: ReadonlyMap<string, HrelResolution | { k: 'r'; id: string; t: number; void: string }> };
 }
 
 /** Podsumowanie (30 dni) dla strony: najnowsze prognozy, wyniki, kalibracja Venna–Abersa najnowszych prawdopodobieństw. */
@@ -1345,8 +1367,22 @@ export function buildSummary(s: SummaryInput): DeskLedgerSummary {
       ...(s.calPlan ? { cal: calSummary(calRows(s.forecasts, s.resolutions), s.calPlan, s.now) } : {}),
       clock: catClock(s.forecasts, s.resolutions, s.catHours ?? [], s.now),
     },
+    ...(s.hrelPlan ? { hrel: hrelSection(s.hrel ?? { forecasts: new Map(), resolutions: new Map() }, s.hrelPlan, s.now) } : {}),
     method: 'hq-ledger-v1',
   };
+}
+
+/** `hrel-v1`: wiersze oceny z rozstrzygniętych rekordów (bez unieważnionych), ostatnia wydana prognoza */
+function hrelSection(h: NonNullable<SummaryInput['hrel']>, plan: { at: number; hash: string }, now: number): HrelSummary {
+  const rows: HrelRow[] = [];
+  let latest: HrelForecast | null = null;
+  for (const f of h.forecasts.values()) {
+    if (!latest || f.t > latest.t) latest = f;
+    const r = h.resolutions.get(f.id);
+    if (r && 'y' in r && Array.isArray(r.y)) rows.push({ t: f.t, p: f.p, y: r.y });
+  }
+  rows.sort((a, b) => a.t - b.t);
+  return hrelSummary(rows, plan, now, latest ? { t: latest.t, x: latest.x, thr: latest.thr, p: latest.p } : null);
 }
 
 /**
@@ -1480,6 +1516,9 @@ export interface ForecasterDeps {
   rest: InfoClient;
 }
 
+/** Świece 1h trzymane do `hrel-v1` (godziny): próg sięga 80 dni przed najstarszą z 24 godzin cech */
+const HOUR_BARS_KEEP = 2500;
+
 /** Wagi `candleSnapshot`: 20 + 1 na 60 świec (szacunek z zapasem). */
 const candleWeight = (n: number) => 20 + Math.ceil(n / 60);
 
@@ -1520,6 +1559,7 @@ export class ForecastData {
     if (now - this.modelTriedAt < 10 * MIN) return;
     this.modelTriedAt = now;
     const [h, f] = [await this.candles('1h', now - 5000 * HOUR, 5000), await this.candles('5m', now - 5000 * 5 * MIN, 5000)];
+    this.mergeHourBars(h, now);
     const m = buildVolModel(h, f, now);
     if (m) {
       this.model = m;
@@ -1575,6 +1615,35 @@ export class ForecastData {
     const h1 = await bars('1h', now - 725 * HOUR, 725);
     const d1 = await bars('1d', now - 35 * DAY, 35);
     this.catInput = { slot, inp: { m1, m5, h1, d1, events: CAT_EVENTS } };
+  }
+
+  /**
+   * Świece 1h zamknięte w chwili odczytu (`hrel-v1`): z odczytu modelu zmienności (5000 świec co godzinę), po pełnej
+   * godzinie dopełniane krótkim odczytem, gdy brak świecy ostatniej zamkniętej godziny (najwyżej 3 próby na godzinę).
+   * Świeca w toku nie wchodzi; nowszy odczyt tej samej godziny zastępuje starszy. Trzymane ~104 dni (cechy i progi
+   * sięgają 81 dni wstecz).
+   */
+  readonly hourBars = new Map<number, HourBar>();
+  private hourTries = new Map<number, number>();
+
+  private mergeHourBars(bars: readonly RangeBar[], now: number): void {
+    for (const b of bars) if (b.time % HOUR === 0 && b.time + HOUR <= now && b.low > 0 && b.high >= b.low) this.hourBars.set(b.time, { t: b.time, h: b.high, l: b.low });
+    for (const t of this.hourBars.keys()) if (t < now - HOUR_BARS_KEEP * HOUR) this.hourBars.delete(t);
+  }
+
+  async refreshHourBars(now: number): Promise<void> {
+    const last = Math.floor(now / HOUR) * HOUR - HOUR;
+    if (this.hourBars.has(last)) return;
+    const tries = this.hourTries.get(last) ?? 0;
+    if (tries >= 3) return;
+    this.hourTries.clear();
+    this.hourTries.set(last, tries + 1);
+    let newest = Number.NEGATIVE_INFINITY;
+    for (const t of this.hourBars.keys()) newest = Math.max(newest, t);
+    // Dopełnienie od 3 godzin przed najnowszą zapisaną (poprawki świec tuż po zamknięciu); pusty zbiór — pełny zakres
+    const from = newest >= now - HOUR_BARS_KEEP * HOUR ? newest - 3 * HOUR : now - HOUR_BARS_KEEP * HOUR;
+    const n = Math.ceil((now - from) / HOUR) + 1;
+    this.mergeHourBars(await this.candles('1h', from, n), now);
   }
 
   /** Świece 1m od `from` (do rozstrzygania). */

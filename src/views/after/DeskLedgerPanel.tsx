@@ -3,10 +3,11 @@ import { useDeskLedger } from '../../state/useDeskLedger';
 import { LedgerVerifyCard } from './LedgerVerifyCard';
 import { CatLedgerCard } from './CatLedgerCard';
 import { ModelAbCard } from './ModelAbCard';
+import { HrelLedgerCard } from './HrelLedgerCard';
 import { ModelAbCCard } from './ModelAbCCard';
 import { LEDGER_BASE } from '../../state/usePublished';
 import { Badge, EmptyState, Panel, Stat, DASH, fmtPrice, fmtFixed } from '../../ui';
-import { DeskLedgerSummary, LEDGER_MIN_N, MktScores, RetScores, TouchLevel, isAb, isAbC, isCat } from '../../utils/deskLedger';
+import { DeskLedgerSummary, LEDGER_MIN_N, MktScores, RetScores, TouchLevel, isAb, isAbC, isCat, isHrelSummary } from '../../utils/deskLedger';
 import { locale, tr } from '../../i18n';
 
 const timeFmt = new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit' });
@@ -94,6 +95,8 @@ const LedgerBody: React.FC<{ s: DeskLedgerSummary; stale: boolean; expired: bool
     {s.abC && isAbC(s.abC) && <ModelAbCCard ab={s.abC} />}
 
     {s.cat && isCat(s.cat) && s.cat.since !== null && <CatLedgerCard cat={s.cat} />}
+
+    {s.hrel && isHrelSummary(s.hrel) && <HrelLedgerCard h={s.hrel} />}
 
     <div className="flex flex-col gap-2 rounded-md border border-line bg-surface-2/50 px-3 py-2.5 text-xs text-ink-2">
       <div className="flex flex-wrap gap-x-5 gap-y-1">

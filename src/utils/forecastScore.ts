@@ -261,6 +261,22 @@ export function brier(pairs: ProbPair[]): number | null {
   return pairs.reduce((a, c) => a + (c.p - c.y) ** 2, 0) / pairs.length;
 }
 
+/** AUC (Mann–Whitney, remisy ze średnią rangą); brak jednej z klas → null. */
+export function auc(pp: readonly { p: number; y: 0 | 1 }[]): number | null {
+  const pos = pp.filter((x) => x.y === 1).length;
+  const neg = pp.length - pos;
+  if (!pos || !neg) return null;
+  const s = [...pp].sort((a, b) => a.p - b.p);
+  let rankSum = 0;
+  for (let i = 0; i < s.length; ) {
+    let j = i;
+    while (j < s.length && s[j].p === s[i].p) j++;
+    for (let k = i; k < j; k++) if (s[k].y === 1) rankSum += (i + j + 1) / 2;
+    i = j;
+  }
+  return (rankSum - (pos * (pos + 1)) / 2) / (pos * neg);
+}
+
 /**
  * Baza odległości dla dotknięć: szansa, że ruch Browna bez dryfu dotknie poziomu w horyzoncie (zasada odbicia),
  * P = 2(1 − Φ(|d| / σ_h)), d = ln(poziom / cena), σ_h = odchylenie log-zwrotu na całym horyzoncie. σ_h ≤ 0 → null.
