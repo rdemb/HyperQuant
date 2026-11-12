@@ -438,6 +438,12 @@ export class ProChartController {
     };
     this.overlay = new IndicatorOverlay(toggles(settings, series.interval.ms));
     // Liczba obiektów zakresu początkowego sesji na ekranie (pomiar układu czyta ją z atrybutu)
+    // Linie poziomów dnia i otwarć sesji z interwałem wykresu (pomiar układu: na 4h najwyżej 3 linie poziomów)
+    this.overlay.onLevels = (levels, sessions, ms) => {
+      container.dataset.levelLines = String(levels);
+      container.dataset.sessionLines = String(sessions);
+      container.dataset.intervalMs = String(ms);
+    };
     this.overlay.onIb = (n) => {
       container.dataset.ibObjects = String(n);
     };
