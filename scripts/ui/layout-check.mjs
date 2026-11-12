@@ -16,7 +16,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { launch, sleep } from './cdp.mjs';
 import { INIT, PROBE, fixtureInit } from './probe.mjs';
-import { FIXED_NOW, createFixtures } from './fixtures.mjs';
+import { DATA_BASE_URL, FIXED_NOW, createFixtures, registry } from './fixtures.mjs';
 import { compareBaseline, margin, metricsOf } from './baseline.mjs';
 
 const args = process.argv.slice(2);
@@ -43,16 +43,23 @@ const LIMITS = { desktop: 0.62, desktopDom: 0.6, phone: 0.6, focus: 0.8 };
 /** Stały użytkownik: dymki pierwszej wizyty zamknięte (karta pierwszego kontaktu nie zmienia pomiaru). */
 const RETURNING = { 'hq.onboarding.v1': JSON.stringify({ firstAt: PAGE_NOW - 8 * 86_400_000, done: true }) };
 
+/** Rejestr rynków z danych stałych (`markets.json`) podawany stronie — włączany przed przebiegiem rynków. */
+let serveRegistry = false;
+
 /**
  * Żądania strony w trybie danych stałych: pliki strony z serwera podglądu (bez danych publicznych z public/data/feeds,
- * których w repozytorium nie ma), API Hyperliquid z danych stałych, cała reszta sieci — błąd jak bez połączenia.
+ * których w repozytorium nie ma), API Hyperliquid z danych stałych, rejestr rynków z adresu danych buildu pomiaru
+ * (`scripts/ui/build.mjs`), cała reszta sieci — błąd jak bez połączenia.
  */
 function fixtureIntercept(fx) {
   const origin = new URL(BASE).origin;
+  const data = new URL(DATA_BASE_URL);
   return (req) => {
     if (/^(data|blob):/.test(req.url)) return 'continue';
     const u = new URL(req.url);
     if (u.origin === origin) return u.pathname.includes('/data/feeds/') ? { status: 404, body: '', type: 'text/plain' } : 'continue';
+    // Dane skanera: tylko rejestr rynków i tylko w przebiegu rynków (wcześniej strona ma 4 rynki domyślne, jak bez pliku)
+    if (u.origin === data.origin) return serveRegistry && u.pathname === `${data.pathname}/markets.json` ? { body: JSON.stringify(registry()) } : 'fail';
     if (u.hostname === 'api.hyperliquid.xyz' && u.pathname === '/info') {
       if (req.method === 'OPTIONS') return { status: 204, body: '' };
       let body = {};
@@ -197,6 +204,22 @@ const zoneCounts = `(() => { const c = window.__hq.chart(); const host = c && c.
 /** Limity z projektu szlifu: komputer najwyżej 7 prostokątów, telefon najwyżej 3. */
 const EFFORT_MAX = { desktop: 7, phone: 3 };
 const effortRects = `(() => { const c = window.__hq.chart(); const host = c && c.root.closest('[data-effort-rects]'); return host ? Number(host.dataset.effortRects) : null; })()`;
+
+// ───────────────────────── inne rynki (M1: HYPE i rynek HIP-3) ─────────────────────────
+/**
+ * Rynki poza BTC na danych stałych (minuty BTC przeskalowane do ceny rynku, rejestr rynków z xyz:NVDA), 1440 bez kolumny
+ * DOM i 390: te same limity obiektów co na BTC (elementy DOM nad świecami, nachodzące etykiety), bez wyjątków i
+ * `console.error` strony, bez „NaN” w tekście, właściwy rynek w legendzie (na telefonie legenda nie ma symbolu — pole
+ * wyboru rynku w pasku). Warstwy skanera pokazują tam „—”, więc szlify zależne od skanera i powtórki BTC są pominięte.
+ */
+const MARKETS = ['HYPE', 'xyz:NVDA'];
+const marketShown = `(() => {
+  const legend = [...document.querySelectorAll('[data-chart-legend]')].map((e) => ((e.textContent || '').match(/([A-Za-z0-9]+(?::[A-Za-z0-9]+)?)-PERP/) || [])[1]).filter(Boolean);
+  const sel = document.querySelector('select[aria-label="Rynek"]');
+  const btn = document.querySelector('button[aria-label^="Rynek: "]');
+  return { legend, picker: sel ? sel.value : btn ? btn.getAttribute('aria-label').slice(7) : null };
+})()`;
+const nanText = `(() => [...document.body.innerText.matchAll(/.{0,24}\\b(NaN|Infinity)\\b.{0,24}/g)].map((m) => m[0].trim()).slice(0, 5))()`;
 
 // ───────────────────────── funkcje paska (dzisiejsze ikony i przełączniki) ─────────────────────────
 const DESKTOP_FUNCS = {
@@ -731,6 +754,33 @@ async function main() {
     await shot(page, '390-pb');
     await page.viewport(1440, 900, false);
 
+    // M1: HYPE i xyz:NVDA z rejestrem rynków (1440 bez kolumny DOM, potem 390); tylko w trybie danych stałych
+    if (fx) {
+      serveRegistry = true;
+      report.markets = {};
+      for (const coin of MARKETS) {
+        report.markets[coin] = {};
+        for (const [key, w, h, mobile, store] of [['desktop', 1440, 900, false, { 'hq.charts.dock.v1': '0' }], ['phone', 390, 844, true, {}]]) {
+          await page.viewport(w, h, mobile);
+          const [e0, c0] = [page.errors.length, page.consoleErrors.length];
+          await open(page, `#charts?m=${coin}`, store);
+          report.markets[coin][key] = {
+            ...(await probe(page, '__hq.paneShare()')),
+            over: await probe(page, '__hq.overCandles()'),
+            labels: await probe(page, '__hq.labels()'),
+            objects: await probe(page, '__hq.objects()'),
+            shown: await probe(page, marketShown),
+            nan: await probe(page, nanText),
+            errors: page.errors.slice(e0),
+            consoleErrors: page.consoleErrors.slice(c0),
+          };
+          await shot(page, `${w}-rynek-${coin.replace(':', '-')}`);
+        }
+      }
+      serveRegistry = false;
+      await page.viewport(1440, 900, false);
+    }
+
     // 4. Ustawienia użytkownika
     await page.viewport(1440, 900, false);
     report.storage = await persistence(page);
@@ -791,6 +841,12 @@ async function main() {
   const pbOk = (c) => !!c && c.boxes <= PB_MAX.boxes && c.lines <= PB_MAX.lines && c.marks <= PB_MAX.marks;
   const s8 = pbOk(r.pb?.desktop) && pbOk(r.pb?.phone);
   r.summary = { t1, t2, t3, t4, t5, t6, s1, s2, s3, s4, s5, s6, s7, s8, s9 };
+  // M1: na każdym rynku i w obu układach bez elementów nad świecami i nachodzących etykiet, bez błędów strony i NaN, właściwy rynek
+  const marketOk = (coin, key) => {
+    const x = r.markets?.[coin]?.[key];
+    return !!x && x.over?.count === 0 && lab(x) === 0 && x.shown?.picker === coin && (key === 'phone' || x.shown?.legend?.[0] === coin) && x.nan?.length === 0 && x.errors.length === 0 && x.consoleErrors.length === 0;
+  };
+  if (!LIVE) r.summary.m1 = MARKETS.every((coin) => marketOk(coin, 'desktop') && marketOk(coin, 'phone'));
   const lines = [
     `Pomiar „${LABEL}” (${BASE})`,
     `1. Panel ceny 1440×900: ${pct(r.desktop)} (próg 62%, zapas ${margin(r.desktop?.share ?? 0, LIMITS.desktop)}), z kolumną DOM: ${pct(r.desktopDom)} (próg 60%, zapas ${margin(r.desktopDom?.share ?? 0, LIMITS.desktopDom)}) — ${ok(t1)}`,
@@ -822,6 +878,13 @@ async function main() {
     `Szlif 7. Poziomy dnia / linie sesji (dane stałe): „Mapa dnia” 1440: 4h ${r.levels?.dayMap?.desktop?.levels4h ?? '—'}, wszystkie wykresy ${r.levels?.dayMap?.desktop ? `${r.levels.dayMap.desktop.levels} / ${r.levels.dayMap.desktop.sessions}` : '—'}; „Rozliczenie doby” 30m 1440 ${r.levels?.review?.desktop ? `${r.levels.review.desktop.levels} / ${r.levels.review.desktop.sessions}` : '—'}, 390 ${r.levels?.review?.phone ? `${r.levels.review.phone.levels} / ${r.levels.review.phone.sessions}` : '—'} (limit: 4h ${LEVELS_MAX.h4} poziomy, sesje ${LEVELS_MAX.sessions}) — ${ok(s7)}`,
     `Szlif 1. Prostokąty wskaźnika Effort (powtórka 24.10 19:30, BTC 5m): 1440 ${r.effort?.desktop ?? '—'} (limit ${EFFORT_MAX.desktop}), 390 ${r.effort?.phone ?? '—'} (limit ${EFFORT_MAX.phone}) — ${ok(s1)}`
   );
+  if (r.markets) {
+    const one = (x) =>
+      x
+        ? `rynek ${x.shown?.legend?.[0] ?? x.shown?.picker ?? '—'}, panel ceny ${pct(x)}, nad świecami ${x.over?.count}, nachodzące etykiety ${lab(x)}, ${obj(x)}, błędy strony ${x.errors.length + x.consoleErrors.length}${x.errors.length + x.consoleErrors.length ? ` (${[...x.errors, ...x.consoleErrors].map((e) => e.split('\n')[0]).join(' | ')})` : ''}, NaN ${x.nan?.length ?? '—'}${x.nan?.length ? ` (${x.nan.join(' | ')})` : ''}`
+        : '—';
+    for (const coin of MARKETS) lines.push(`M1. ${coin} (dane stałe, rejestr rynków): 1440 ${one(r.markets[coin]?.desktop)}; 390 ${one(r.markets[coin]?.phone)} — ${ok(marketOk(coin, 'desktop') && marketOk(coin, 'phone'))}`);
+  }
   const metrics = metricsOf(r);
   let baseDiff = [];
   if (!LIVE) {

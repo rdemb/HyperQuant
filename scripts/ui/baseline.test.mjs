@@ -47,6 +47,25 @@ describe('punkt odniesienia pomiaru układu', () => {
     expect(Object.keys(m).some((k) => k.includes('undefined'))).toBe(false);
   });
 
+  it('inne rynki (M1): udział panelu i obiekty na widok <rynek>-1440 i <rynek>-390, bez widoku bez pomiaru', () => {
+    const m = metricsOf({
+      markets: {
+        HYPE: { desktop: { share: 0.6264, objects: { labels: 1, rects: 200 } }, phone: { share: 0.61, objects: { labels: 0, rects: 80 } } },
+        'xyz:NVDA': { desktop: { share: 0.62, objects: { labels: 2, rects: null } }, phone: null },
+      },
+    });
+    expect(m).toEqual({
+      'share.HYPE-1440': 0.626,
+      'objects.HYPE-1440.labels': 1,
+      'objects.HYPE-1440.rects': 200,
+      'share.HYPE-390': 0.61,
+      'objects.HYPE-390.labels': 0,
+      'objects.HYPE-390.rects': 80,
+      'share.xyz:NVDA-1440': 0.62,
+      'objects.xyz:NVDA-1440.labels': 2,
+    });
+  });
+
   it('zapas nad progiem w punktach procentowych', () => {
     expect(margin(0.626, 0.62)).toBe('+0,6 pp');
     expect(margin(0.598, 0.6)).toBe('−0,2 pp');
