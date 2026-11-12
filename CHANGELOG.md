@@ -4,6 +4,14 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### RVOL według godziny w Nowym Jorku, dni robocze i weekend osobno (2026-11-12)
+
+#### Zmienione
+- **RVOL: koszyk to godzina zegarowa w Nowym Jorku, nie UTC** (`src/utils/rvol.ts`: `rvolSeries`, `rvolHour`; wskaźnik RVOL na wykresie, liczba RVOL w nagłówku układu, MCP `session_context.rvolHour`). Wolumen przesuwa się razem z czasem w USA, więc godzina otwarcia NY ma tę samą bazę przed zmianą czasu i po niej (wcześniej przez kilka tygodni po zmianie baza mieszała godzinę otwarcia z godziną sąsiednią). Baza to mediana tej samej godziny z 20 ostatnich dni tego samego typu: dni robocze i weekend (sobota i niedziela według daty w Nowym Jorku) osobno, szukane do 80 dni wstecz; mniej niż 10 dni → „—” z powodem. Godzina w toku nadal bez wartości na wykresie, a w nagłówku skalowana do upływu godziny. Nagłówek i MCP pobierają do tego 81 dni świec 1h (wcześniej 20). Wskaźnik na wykresie ładuje co najmniej 14 dni historii (10 dni roboczych); świeca weekendowa ma wartość dopiero przy ok. 5 tygodniach historii.
+- **Typowa szerokość godziny w Czwórce** (`src/utils/fourNumbers.ts`: `sessionHourSamples`, `hourWidth`, nowe `hourWidthSample`): próba z 20 ostatnich dni tego samego typu (robocze albo weekend według daty w Nowym Jorku, do 80 dni wstecz) zamiast 20 kolejnych dni z weekendami; w podpowiedzi „z dni roboczych” albo „z weekendów”.
+- **MCP:** liczby z mediany dni mają pole `sample`: `n`, mediana i przedział 80% mediany z bootstrapu po dniach (1000 losowań, mulberry32 z `src/utils/pathEngine.ts`, ziarno 20261111; `bootstrapMedian80` w `src/utils/rvol.ts`). Dotyczy `session_context.rvolHour` (mediana wolumenu tej godziny, BTC) i typowej szerokości godziny w `market_brief`. Opisy w `mcp/README.md` i skillu `hyperquant`.
+- Testy: `src/utils/__tests__/rvolNy.test.ts` (zmiana czasu 1.11.2026 i 8.03.2026, weekend osobno, mniej niż 10 dni, typowa szerokość godziny, bootstrap), nowe asercje `sample` w testach MCP `market_brief` i `session_context`; fikstury dłuższe o dni tego samego typu.
+
 ### Bąble zleceń, ściany i serie: reguła przyczynowa, bez wyboru największych w oknie (2026-11-11)
 
 Na nagranej dobie 24.10.2026 (powtórka 19:30, Kokpit 1m, tylko warstwa bąbli) wykres rysował 83 bąble zleceń na 1440 × 900 i 17 na 390 × 844; po zmianie 14 i 0 (`npm run ui:check`, wybór warstwy, nie piksele; to sobotni wieczór, spokojna taśma). Ściany i serie w scenariuszu ścian (ta sama chwila, warstwy bąbli oraz serii i ścian): 10 → 4. Liczby „przed” zmierzone na stronie z `main` z tymczasowym licznikiem w warstwie (bez commita). Na stałych danych na żywo taśmy nie ma (atrapa strumienia nie wysyła transakcji), więc pomiar jest na powtórce.
