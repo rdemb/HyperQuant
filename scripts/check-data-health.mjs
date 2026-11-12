@@ -168,6 +168,10 @@ export function assessHealth(input, nowMs, limits = LIMITS, ntlLagOn) {
         problems.push(`${late} (alarm powyżej ${limits.maxNtlAgeMin} min, koniec po ${NTL_RUNS} przebiegach poniżej ${limits.ntlClearAgeMin} min)`);
       }
     }
+    const d = s.dirty;
+    // Pole opcjonalne (od 2026-11-12): sam fakt w raporcie, bez alarmu
+    if (d && typeof d === 'object' && typeof d.n === 'number' && typeof d.waitP50Min === 'number' && typeof d.waitP90Min === 'number')
+      facts.push({ label: 'Konta po transakcji bez odczytu', value: `${d.n}, czekanie p50 ${fmtMin(d.waitP50Min)}, p90 ${fmtMin(d.waitP90Min)}` });
     if (typeof s.positions === 'number') facts.push({ label: 'Pozycje / adresy', value: `${s.positions} / ${s.addresses ?? '—'}` });
     if (typeof s.apiErrors === 'number') facts.push({ label: 'Błędy API (od startu procesu)', value: String(s.apiErrors) });
   }
