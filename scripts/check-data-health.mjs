@@ -27,6 +27,8 @@ export const LAB_MAX_AGE_MIN = 180;
 export const LEDGER_MAX_AGE_MIN = 60;
 /** Warstwa wielorybów (publikowana z mapą co 2 min; strona ukrywa plik starszy niż 20 min) */
 export const WHALES_MAX_AGE_MIN = 30;
+/** Rejestr rynków (przeliczany co godzinę) */
+export const MARKETS_MAX_AGE_MIN = 180;
 export const LIMITS = {
   /** Publikacja co 2 min (+ do 5 min pamięci podręcznej CDN) — 30 min to jednoznaczna awaria */
   maxAgeMin: 30,
@@ -144,6 +146,15 @@ export function assessHealth(input, nowMs, limits = LIMITS, ntlLagOn) {
     }
   }
 
+  if (input.markets && typeof input.markets === 'object') {
+    const a = ageOf('rejestr rynków (markets.json)', input.markets, nowMs);
+    if (!a.ok) problems.push(a.problem);
+    else {
+      facts.push({ label: 'Wiek rejestru rynków', value: fmtMin(a.ageMin) });
+      if (a.ageMin > MARKETS_MAX_AGE_MIN) problems.push(`rejestr rynków: ostatnia aktualizacja ${fmtMin(a.ageMin)} temu (próg ${MARKETS_MAX_AGE_MIN} min)`);
+    }
+  }
+
   if (input.verify && typeof input.verify === 'object') {
     // Weryfikacja stoi (limit czasu, brak przebiegów) albo wykryła niezgodność — znaczek wtedy też jest czerwony
     if (typeof input.verify.at === 'number') facts.push({ label: 'Wiek niezależnej weryfikacji dziennika', value: `${Math.round((nowMs - input.verify.at) / (60 * MIN))} h` });
@@ -232,6 +243,7 @@ export async function fetchInput(base = DATA_BASE) {
     liquidity: json['liquidity/BTC.json'] ?? null,
     lab: json['lab/BTC.json'] ?? null,
     whales: json['whales.json'] ?? null,
+    markets: json['markets.json'] ?? null,
     verify: json[VERIFY_FILE] ?? null,
     raw,
     errors,

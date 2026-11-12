@@ -5,7 +5,8 @@
  * Reguła `reg-v1`: rynki Hyperliquid ze wszystkich giełd perp (główna i HIP-3, nazwa HIP-3 to `dex:COIN`) rangowane
  * średnią otwartych pozycji w USD z 7 dni UTC. Rynek wchodzi, gdy przez 3 kolejne zamknięte dni UTC jest w pierwszej 20,
  * a wychodzi, gdy przez 7 kolejnych zamkniętych dni jest poniżej 30. miejsca. BTC, ETH, SOL i HYPE są zawsze.
- * Rynki wycofane (`isDelisted`) albo z zerowym OI nie wchodzą; członek wycofany albo zniknięty z giełdy wypada od razu.
+ * Rynki wycofane (`isDelisted`) albo z zerowym OI nie wchodzą; członek wycofany wypada od razu, a nieobecny w odpowiedzi
+ * giełdy — dopiero po zamkniętym dniu UTC bez żadnej próbki (jedna zła godzinna odpowiedź nie zmienia członków).
  */
 
 export const REG_V1 = {
@@ -69,6 +70,8 @@ interface MarketMeta {
   delisted: boolean;
   /** OI z ostatniej próbki, USD */
   oiUsd: number;
+  /** Ostatni dzień UTC, w którym rynek był w odpowiedzi swojej giełdy */
+  seen: string;
 }
 
 /** Stan serwera (`HQ_STATE_DIR`): przetrwa restart; próbki z najwyżej `keepDays` dni. */
@@ -79,8 +82,15 @@ export interface RegistryState {
   lastAt: number;
   /** Dzień UTC → rynek → suma i liczba godzinnych próbek OI (USD); zapisywane tylko OI > 0 */
   days: Record<string, Record<string, { s: number; n: number }>>;
-  /** Ostatnio widziane parametry rynków pobranych giełd */
+  /**
+   * Ostatnio widziane parametry rynków. Rynek, którego nie ma w odpowiedzi pobranej giełdy, zostaje do oceny dnia:
+   * znika dopiero, gdy nie było go w żadnej próbce zamkniętego dnia UTC, w którym jego giełda była pobrana.
+   */
   meta: Record<string, MarketMeta>;
+  /** Dzień UTC → giełdy pobrane w tym dniu co najmniej raz */
+  dexDays: Record<string, string[]>;
+  /** Giełda → czas ostatniego udanego pobrania (ms); kolejność rotacji przy limicie zapytań */
+  dexFetchedAt: Record<string, number>;
   /** Członkowie rejestru (także stałe rynki) → dzień wejścia */
   members: Record<string, { since: string }>;
   /** Serie zamkniętych dni: `in` — w pierwszej 20, `out` — poza 30. miejscem (tylko niezerowe) */
@@ -108,20 +118,23 @@ function coinMatchesDex(coin: string, dex: string): boolean {
 }
 
 export function emptyRegistryState(): RegistryState {
-  return { v: 1, rule: REG_V1.id, lastAt: 0, days: {}, meta: {}, members: {}, streaks: {}, evaluatedThrough: null };
+  return { v: 1, rule: REG_V1.id, lastAt: 0, days: {}, meta: {}, dexDays: {}, dexFetchedAt: {}, members: {}, streaks: {}, evaluatedThrough: null };
 }
 
 /** Strażnik stanu odczytanego z dysku (inna reguła albo uszkodzony plik → stan od nowa). */
 export function isRegistryState(x: unknown): x is RegistryState {
   if (!isRecord(x) || x.v !== 1 || x.rule !== REG_V1.id || !fin(x.lastAt)) return false;
   if (!(x.evaluatedThrough === null || (typeof x.evaluatedThrough === 'string' && DAY_RE.test(x.evaluatedThrough)))) return false;
-  if (!isRecord(x.days) || !isRecord(x.meta) || !isRecord(x.members) || !isRecord(x.streaks)) return false;
+  if (!isRecord(x.days) || !isRecord(x.meta) || !isRecord(x.members) || !isRecord(x.streaks) || !isRecord(x.dexDays) || !isRecord(x.dexFetchedAt)) return false;
   for (const [day, byCoin] of Object.entries(x.days)) {
     if (!DAY_RE.test(day) || !isRecord(byCoin)) return false;
     for (const v of Object.values(byCoin)) if (!isRecord(v) || !fin(v.s) || !isInt(v.n, 1, 1e6)) return false;
   }
   for (const m of Object.values(x.meta))
-    if (!isRecord(m) || typeof m.dex !== 'string' || !fin(m.szDecimals) || !fin(m.maxLeverage) || typeof m.delisted !== 'boolean' || !fin(m.oiUsd)) return false;
+    if (!isRecord(m) || typeof m.dex !== 'string' || !fin(m.szDecimals) || !fin(m.maxLeverage) || typeof m.delisted !== 'boolean' || !fin(m.oiUsd) || typeof m.seen !== 'string' || !DAY_RE.test(m.seen))
+      return false;
+  for (const [day, dexes] of Object.entries(x.dexDays)) if (!DAY_RE.test(day) || !Array.isArray(dexes) || !dexes.every((d) => typeof d === 'string')) return false;
+  for (const at of Object.values(x.dexFetchedAt)) if (!fin(at)) return false;
   for (const m of Object.values(x.members)) if (!isRecord(m) || typeof m.since !== 'string' || !DAY_RE.test(m.since)) return false;
   for (const s of Object.values(x.streaks)) if (!isRecord(s) || !isInt(s.in, 0, 1e6) || !isInt(s.out, 0, 1e6)) return false;
   return true;
@@ -205,9 +218,23 @@ function evaluateDay(state: RegistryState, day: string, entryDay: string): void 
 }
 
 /**
- * Godzinna próbka: parametry rynków pobranych giełd (`dexes`), ocena zamkniętych dni sprzed dnia próbki, dopisanie OI
- * do dnia próbki, przycięcie starych dni. Zwraca nowy stan (wejście nie jest zmieniane); próbka z dnia już ocenionego
- * (cofnięty zegar) — stan bez zmian.
+ * Rynki nieobecne w każdej próbce zamkniętego dnia `day`, w którym ich giełda była pobrana: parametry i członkostwo
+ * znikają (także stałych rynków — wracają z nowym `since`, gdy giełda znów je poda). Jedna zła godzinna odpowiedź nic nie
+ * zmienia; giełda niepobrana przez cały dzień (niedostępna albo poza rotacją) też nie.
+ */
+function dropAbsent(state: RegistryState, day: string): void {
+  const fetched = new Set(state.dexDays[day] ?? []);
+  for (const [coin, m] of Object.entries(state.meta)) {
+    if (!fetched.has(m.dex) || m.seen >= day) continue;
+    delete state.meta[coin];
+    delete state.members[coin];
+  }
+}
+
+/**
+ * Godzinna próbka: ocena zamkniętych dni sprzed dnia próbki (na stanie sprzed próbki), parametry rynków pobranych giełd
+ * (`dexes`), dopisanie OI do dnia próbki, przycięcie starych dni. Zwraca nowy stan (wejście nie jest zmieniane); próbka
+ * z dnia już ocenionego (cofnięty zegar) — stan bez zmian.
  */
 export function recordSnapshot(prev: RegistryState, snap: { at: number; dexes: readonly string[]; samples: readonly MarketSample[] }): RegistryState {
   const today = utcDay(snap.at);
@@ -215,24 +242,27 @@ export function recordSnapshot(prev: RegistryState, snap: { at: number; dexes: r
   const state: RegistryState = structuredClone(prev);
   state.lastAt = snap.at;
 
-  // Parametry: pobrane giełdy zastępują swoje wpisy (rynek zniknięty z odpowiedzi = wycofany)
-  const fetched = new Set(snap.dexes);
-  for (const [coin, m] of Object.entries(state.meta)) if (fetched.has(m.dex)) delete state.meta[coin];
-  for (const s of snap.samples) {
-    if (!fetched.has(s.dex)) continue;
-    state.meta[s.coin] = { dex: s.dex, szDecimals: s.szDecimals, maxLeverage: s.maxLeverage, delisted: s.delisted, oiUsd: s.oiUsd };
-  }
-
-  // Zamknięte dni z próbkami, jeszcze nieocenione (po przerwie — po kolei)
+  // Zamknięte dni z próbkami, jeszcze nieocenione (po przerwie — po kolei), przed parametrami z tej próbki
   const pending = Object.keys(state.days)
     .filter((d) => d < today && (state.evaluatedThrough === null || d > state.evaluatedThrough))
     .sort();
   for (const d of pending) {
+    dropAbsent(state, d);
     evaluateDay(state, d, addDays(d, 1));
     state.evaluatedThrough = d;
   }
 
-  // Członek wycofany albo bez parametrów wypada od razu (stałe rynki wracają, gdy znów są notowane)
+  // Parametry rynków z odpowiedzi pobranych giełd; rynku bez wiersza w tej odpowiedzi nie usuwamy (patrz dropAbsent)
+  const fetched = new Set(snap.dexes);
+  for (const s of snap.samples) {
+    if (!fetched.has(s.dex)) continue;
+    state.meta[s.coin] = { dex: s.dex, szDecimals: s.szDecimals, maxLeverage: s.maxLeverage, delisted: s.delisted, oiUsd: s.oiUsd, seen: today };
+  }
+  const dexesToday = new Set([...(state.dexDays[today] ?? []), ...fetched]);
+  state.dexDays[today] = [...dexesToday].sort();
+  for (const dex of fetched) state.dexFetchedAt[dex] = snap.at;
+
+  // Członek wycofany (isDelisted) wypada od razu; stałe rynki wracają, gdy znów są notowane
   for (const coin of Object.keys(state.members)) {
     const m = state.meta[coin];
     if (!m || m.delisted) delete state.members[coin];
@@ -252,7 +282,30 @@ export function recordSnapshot(prev: RegistryState, snap: { at: number; dexes: r
 
   const oldest = addDays(today, -(REG_V1.keepDays - 1));
   for (const d of Object.keys(state.days)) if (d < oldest) delete state.days[d];
+  for (const d of Object.keys(state.dexDays)) if (d < oldest) delete state.dexDays[d];
+  for (const [dex, at] of Object.entries(state.dexFetchedAt)) if (at < snap.at - REG_V1.keepDays * DAY_MS) delete state.dexFetchedAt[dex];
+  // Parametry rynków spoza rejestru niewidzianych od okna stanu (np. giełda zniknęła z listy)
+  for (const [coin, m] of Object.entries(state.meta)) if (m.seen < oldest && !state.members[coin]) delete state.meta[coin];
   return state;
+}
+
+/**
+ * Giełdy do pobrania w przebiegu: najwyżej `max` (z główną, zawsze pierwszą). Wybór: najpierw giełdy pobrane najdawniej
+ * (nigdy = najpierw), przy równym czasie większe OI; dlatego przy liście dłuższej niż limit pominięte giełdy idą
+ * w następnych przebiegach (rotacja), a przy liście w limicie co przebieg pobierane są wszystkie. Kolejność zapytań:
+ * malejąco według ostatniego znanego OI giełdy (suma OI jej rynków), giełdy bez danych na końcu.
+ */
+export function pickDexes(state: RegistryState, listed: readonly string[], max: number): { dexes: string[]; skipped: string[] } {
+  const oi = new Map<string, number>();
+  for (const m of Object.values(state.meta)) if (!m.delisted) oi.set(m.dex, (oi.get(m.dex) ?? 0) + m.oiUsd);
+  const byOi = (a: string, b: string) => (oi.get(b) ?? -1) - (oi.get(a) ?? -1) || (a < b ? -1 : a > b ? 1 : 0);
+  const fetchedAt = (d: string) => state.dexFetchedAt[d] ?? Number.NEGATIVE_INFINITY;
+  const others = [...new Set(listed)].filter((d) => d !== '');
+  const ranked = [...others].sort((a, b) => fetchedAt(a) - fetchedAt(b) || byOi(a, b));
+  const take = Math.max(0, max - 1);
+  const chosen = ranked.slice(0, take).sort(byOi);
+  const skipped = ranked.slice(take).sort(byOi);
+  return { dexes: ['', ...chosen], skipped };
 }
 
 /** Plik `markets.json` ze stanu: członkowie z miejscem z okna kończącego się dniem ostatniej próbki, według miejsca. */
