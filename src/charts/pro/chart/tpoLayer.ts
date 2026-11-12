@@ -23,7 +23,7 @@ import type { ProBar, ProStore } from '../store/proStore';
 import { autoRowStep, fmtPx } from './layout';
 import { logicalOfTime } from './overlay';
 import { MONO, PRO, rgba } from './theme';
-import { barSpan, fullFrom, nearestNaked, profileAnchor, rectShare, runs } from './profileSelect';
+import { barSpan, fullFrom, fullScaleMax, nearestNaked, profileAnchor, rectShare, runs } from './profileSelect';
 import { tr } from '../../../i18n';
 import { numLang } from '../../../ui/format';
 
@@ -506,9 +506,8 @@ export class TpoLayer implements ISeriesPrimitive<Time> {
 
     // Pełny profil: bieżąca i poprzednia doba (z danych, nie z przewinięcia)
     const full = fullFrom(list.length);
-    // Wspólna skala wolumenu widocznych pełnych dób, żeby profile dało się porównać
-    let maxVol = 0;
-    for (let k = full; k < list.length; k++) if (visible(list[k])) maxVol = Math.max(maxVol, list[k].max);
+    // Wspólna skala wolumenu obu pełnych dób (niezależna od przewinięcia), żeby profile dało się porównać
+    const maxVol = fullScaleMax(list);
     const kVol = maxVol > 0 ? barSpan((DAY / this.ms) * sp, right) / maxVol : 0;
     const hv = this.hover;
 
