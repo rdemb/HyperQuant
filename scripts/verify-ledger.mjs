@@ -22,6 +22,9 @@
  *     modelem public/schrodi/hour-v1.json (hash = `mh`), wynik z godziny zegara, plan i dowód przewagi przeliczone;
  *     kalibracja kota `cat-cal-v1` (pole `cal`): plan zgodny z kodem (src/utils/catCal.ts), żadne `cal` przed planem,
  *     a, d, p, n i nT przeliczone tu, osobną implementacją, z par rozstrzygniętych wcześniej w dzienniku;
+ *  3b. A/B: wariant C (plan `ab-v2`) przeliczony niezależnie z kwantyli A i zapisanych rv60, σA (własna implementacja
+ *     przekształcenia: AS241, regula falsi), stałe zgodne z planem, plan zgodny z kodem, żaden rekord C przed planem;
+ *     z --market rv60 wobec świec 5m Hyperliquid;
  *  3a. miary podsumowania (test Kupca przedziału 60%, jednostajność PIT, przedziały CRPSS, BSS dotknięć i BSS sezonowy
  *     dużego ruchu kota z bootstrapu blokowego po dobach UTC, udział nieskończonych przedziałów ACI) przeliczone z rekordów
  *     do głowy podsumowania (`--summary <plik>` przy --dir; w trybie szybkim podsumowanie ze strony, gdy pobrane dni
@@ -34,7 +37,7 @@
  */
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { AB_DESIGN, abBlocks } from '../src/utils/abTest.ts';
+import { AB_DESIGN, AB_DESIGN_C, abBlocks, abFirstBlock } from '../src/utils/abTest.ts';
 import { fitEnsemble } from '../src/utils/ensemble.ts';
 import { FEATURES, TOUCH_MAX_R, scoreHead, touchCone, touchProb } from '../src/utils/schrodi.ts';
 import { HOUR_DESIGN, TRUST_DESIGN, catTrust, hourRow, hourTrust, trustHour } from '../src/utils/schrodiTrust.ts';
@@ -611,6 +614,177 @@ export function checkVariants(records) {
   return { problems, checked };
 }
 
+/** Wersja modelu wariantu C (plan `ab-v2`: świeży poziom zmienności i mieszanina skali) — tylko horyzont 1 h */
+const MODEL_C = 'ledger-har-fhs-rvmix-v1';
+
+/**
+ * Φ⁻¹(p) algorytmem AS241 (Wichura 1988, PPND16, błąd względny ~1e-16) — inna metoda niż w skanerze (Acklam).
+ */
+function ppnd16(p) {
+  const q = p - 0.5;
+  if (Math.abs(q) <= 0.425) {
+    const r = 0.180625 - q * q;
+    return (
+      (q *
+        (((((((2509.0809287301226727 * r + 33430.575583588128105) * r + 67265.770927008700853) * r + 45921.953931549871457) * r + 13731.693765509461125) * r + 1971.5909503065514427) * r + 133.14166789178437745) * r +
+          3.387132872796366608)) /
+      (((((((5226.495278852545925 * r + 28729.085735721942674) * r + 39307.89580009271061) * r + 21213.794301586595867) * r + 5394.1960214247511077) * r + 687.1870074920579083) * r + 42.313330701600911252) * r + 1)
+    );
+  }
+  let r = q < 0 ? p : 1 - p;
+  r = Math.sqrt(-Math.log(r));
+  let v;
+  if (r <= 5) {
+    r -= 1.6;
+    v =
+      (((((((7.7454501427834140764e-4 * r + 0.0227238449892691845833) * r + 0.24178072517745061177) * r + 1.27045825245236838258) * r + 3.64784832476320460504) * r + 5.7694972214606914055) * r + 4.6303378461565452959) * r +
+        1.42343711074968357734) /
+      (((((((1.05075007164441684324e-9 * r + 5.475938084995344946e-4) * r + 0.0151986665636164571966) * r + 0.14810397642748007459) * r + 0.68976733498510000455) * r + 1.6763848301838038494) * r + 2.05319162663775882187) * r + 1);
+  } else {
+    r -= 5;
+    v =
+      (((((((2.01033439929228813265e-7 * r + 2.71155556874348757815e-5) * r + 0.0012426609473880784386) * r + 0.026532189526576123093) * r + 0.29656057182850489123) * r + 1.7848265399172913358) * r + 5.4637849111641143699) * r +
+        6.6579046435011037772) /
+      (((((((2.04426310338993978564e-15 * r + 1.4215117583164458887e-7) * r + 1.8463183175100546818e-5) * r + 7.868691311456132591e-4) * r + 0.0148753612908506148525) * r + 0.13692988092273580531) * r + 0.59983220655588793769) * r + 1);
+  }
+  return q < 0 ? -v : v;
+}
+
+/**
+ * Kwantyle wariantu C z rekordu, niezależnie od src/utils/rvMix.ts: x z zapisanych rv60 i σA (przycięte do ±1,5),
+ * q1 = qA · exp(c + κ·x), dystrybuanta odcinkami liniowa w skali normalnej przez (q1[k], Φ⁻¹(τ[k])) z ekstrapolacją
+ * skrajnych odcinków, mieszanina skali z węzłami i wagami planu, pierwiastek metodą Illinois (regula falsi).
+ */
+export function variantCQuantiles(qA, taus, { rv60, sigmaA, kappa, c, tau }, quad) {
+  const x = Math.max(-1.5, Math.min(1.5, rv60 > 0 ? 0.5 * Math.log(rv60 / sigmaA ** 2) : -Infinity));
+  const g = Math.exp(c + kappa * x);
+  const q1 = qA.map((v) => v * g);
+  const z = taus.map(ppnd16);
+  const n = q1.length;
+  const seg = (v) => {
+    let i = 1;
+    if (v > q1[n - 1]) i = n - 1;
+    else if (v > q1[0]) while (q1[i] < v) i++;
+    return z[i - 1] + ((v - q1[i - 1]) / (q1[i] - q1[i - 1])) * (z[i] - z[i - 1]);
+  };
+  const scales = quad.nodes.map((nj) => Math.exp((tau * nj - tau * tau / 2) / 2));
+  const cdf = (v) => quad.weights.reduce((s, w, j) => s + w * normCdf(seg(v / scales[j])), 0);
+  const span = 6 * Math.max(...q1.map((v) => Math.abs(v)));
+  const q = taus.map((t) => {
+    let a = -span;
+    let b = span;
+    let fa = cdf(a) - t;
+    let fb = cdf(b) - t;
+    let side = 0;
+    let m = (a + b) / 2;
+    for (let k = 0; k < 200 && b - a > 1e-13; k++) {
+      m = (a * fb - b * fa) / (fb - fa);
+      const fm = cdf(m) - t;
+      if (fm === 0) break;
+      if (fm * fb > 0) {
+        b = m;
+        fb = fm;
+        if (side === -1) fa /= 2;
+        side = -1;
+      } else {
+        a = m;
+        fa = fm;
+        if (side === 1) fb /= 2;
+        side = 1;
+      }
+    }
+    return m;
+  });
+  return { x, q };
+}
+
+/**
+ * Wariant C prognozy zwrotu (`variant: 'C'`, id `<A>c`): te same chwila wydania, horyzont, cena, poziomy τ, benchmark
+ * i ACI co A z tego samego slotu; model MODEL_C; stałe κ, c, τ równe stałym planu `ab-v2`; σA z rozpiętości skrajnych
+ * kwantyli A (±1e-8), x z zapisanych rv60 i σA (±1e-6), kwantyle C z przekształcenia (±1e-5) i rosnące.
+ */
+export function checkVariantC(records) {
+  const byId = new Map(records.filter((o) => o.k === 'f').map((o) => [o.id, o]));
+  const k = AB_DESIGN_C.constants;
+  const problems = [];
+  let checked = 0;
+  for (const cf of byId.values()) {
+    if (cf.variant !== 'C') continue;
+    const a = byId.get(String(cf.id).slice(0, -1));
+    if (!a || a.variant || !String(cf.id).endsWith('c')) {
+      problems.push(`${cf.id}: brak wersji A tego slotu`);
+      continue;
+    }
+    const bad = [];
+    for (const f of ['slot', 'ti', 't', 'h', 'px0', 'aci']) if (a[f] !== cf[f]) bad.push(f);
+    if (canonical(a.taus) !== canonical(cf.taus) || canonical(a.bq) !== canonical(cf.bq)) bad.push('taus/bq');
+    if (cf.kind !== 'ret') bad.push('kind');
+    if (cf.h !== 60) bad.push('horyzont ≠ 60');
+    if (cf.model !== MODEL_C) bad.push('model');
+    if (cf.kappa !== k.kappa || cf.c !== k.c || cf.tau !== k.tau) bad.push('stałe ≠ plan ab-v2');
+    const n = Array.isArray(a.q) ? a.q.length : 0;
+    const aOk = n >= 2 && Array.isArray(a.taus) && a.taus.length === n && a.q.every((v, i) => Number.isFinite(v) && (i === 0 || v > a.q[i - 1]));
+    if (!aOk) bad.push('kwantyle A nierosnące');
+    else if (!(cf.rv60 >= 0 && Number.isFinite(cf.rv60))) bad.push('rv60');
+    else {
+      const sigmaA = (a.q[n - 1] - a.q[0]) / (ppnd16(a.taus[n - 1]) - ppnd16(a.taus[0]));
+      if (!(typeof cf.sigmaA === 'number' && Math.abs(cf.sigmaA - sigmaA) <= 1e-8)) bad.push('σA ≠ rozpiętość kwantyli A');
+      else {
+        const want = variantCQuantiles(a.q, a.taus, { rv60: cf.rv60, sigmaA: cf.sigmaA, kappa: k.kappa, c: k.c, tau: k.tau }, AB_DESIGN_C.quadrature);
+        if (!(typeof cf.x === 'number' && Math.abs(cf.x - want.x) <= 1e-6)) bad.push('x ≠ ½·ln(rv60/σA²)');
+        if (!Array.isArray(cf.q) || cf.q.length !== n || cf.q.some((v, i) => !(Math.abs(v - want.q[i]) <= 1e-5))) bad.push('kwantyle C ≠ przekształcenie A');
+        else if (cf.q.some((v, i) => i > 0 && !(v > cf.q[i - 1]))) bad.push('kwantyle C nierosnące');
+      }
+    }
+    if (bad.length) problems.push(`${cf.id}: ${bad.join(', ')}`);
+    else checked++;
+  }
+  return { problems, checked };
+}
+
+/**
+ * Plan oceny wariantu C (`ab-v2`): zapisany plan identyczny z planem w kodzie (src/utils/abTest.ts), jeden hash dla
+ * identyfikatora, każdy rekord C wydany po rejestracji planu (rekord C bez planu w pełnym dzienniku — też błąd).
+ */
+export function checkAbPlanC(records, { full = false } = {}) {
+  const problems = [];
+  const plans = records.filter((o) => o.k === 'p' && o.id === AB_DESIGN_C.id);
+  const want = canonical(AB_DESIGN_C);
+  for (const p of plans) if (canonical(p.catalog) !== want) problems.push(`${p.id}: plan wariantu C różni się od kodu (src/utils/abTest.ts)`);
+  if (new Set(plans.map((p) => p.catalogHash)).size > 1) problems.push(`${AB_DESIGN_C.id}: kilka różnych planów pod jednym identyfikatorem`);
+  const registeredAt = plans.length && typeof plans[0].t === 'number' ? plans[0].t : null;
+  const cs = records.filter((o) => o.k === 'f' && o.variant === 'C');
+  if (registeredAt !== null) {
+    const early = cs.filter((o) => o.ti < registeredAt);
+    if (early.length) problems.push(`wariant C przed prerejestracją planu: ${early.length} (np. ${early[0].id})`);
+  } else if (full && cs.length) problems.push(`wariant C bez planu ${AB_DESIGN_C.id} w dzienniku: ${cs.length} (np. ${cs[0].id})`);
+  return { problems, registeredAt };
+}
+
+/**
+ * rv60 rekordów C wobec świec 5m Hyperliquid (--market): suma kwadratów log-zwrotów zamknięcie do zamknięcia 12 świec
+ * o początkach S − 60 min … S − 5 min (z zamknięciem świecy S − 65 min); sprawdzane tylko rekordy, dla których wszystkie
+ * 13 świec jest w pobranym zakresie. Zgodność względna 1e-6.
+ */
+export function checkRv60(records, candles5m) {
+  const close = new Map(candles5m.map((c) => [c.time, c.close]));
+  const step = 5 * 60_000;
+  const problems = [];
+  let checked = 0;
+  let eligible = 0;
+  for (const o of records) {
+    if (o.k !== 'f' || o.variant !== 'C') continue;
+    eligible++;
+    const ts = Array.from({ length: 13 }, (_, i) => o.slot - (13 - i) * step);
+    if (!ts.every((t) => close.has(t))) continue;
+    let rv = 0;
+    for (let i = 1; i < 13; i++) rv += Math.log(close.get(ts[i]) / close.get(ts[i - 1])) ** 2;
+    checked++;
+    if (!(Math.abs(rv - o.rv60) <= 1e-6 * Math.max(rv, 1e-12))) problems.push(`${o.id}: rv60 ${o.rv60} ≠ ze świec 5m ${rv.toPrecision(10)}`);
+  }
+  return { problems, checked, eligible };
+}
+
 /**
  * Plan oceny A/B (rekord `k: 'p'`, id AB_DESIGN.id): zapisany plan musi być identyczny z planem w kodzie (te same stałe
  * oceny, więc publiczny kod liczy wynik tak, jak zarejestrowano), jeden hash dla identyfikatora, a każdy rekord
@@ -1113,8 +1287,9 @@ export function recompute(records, { since } = {}) {
     else if (o.k === 'r') r.set(o.id, o);
   }
   const ret = {};
-  /** Pary A/B (1 h): CRPS z kwantyli obu wersji na tym samym zwrocie */
+  /** Pary A/B (1 h): CRPS z kwantyli obu wersji na tym samym zwrocie; abRowsC — pary A i C */
   const abRows = [];
+  const abRowsC = [];
   let lastT = 0;
   for (const o of records) if (typeof o.t === 'number' && o.t > lastT) lastT = o.t;
   let touchN = 0;
@@ -1129,7 +1304,7 @@ export function recompute(records, { since } = {}) {
     if (!res || res.void) continue;
     if (fc.kind === 'ret') {
       // Wariant B (A/B) osobno — wyniki wersji głównej bez niego, jak w podsumowaniu
-      const s = (ret[fc.variant === 'B' ? `${fc.h}-B` : fc.h] ??= { n: 0, crps: 0, crpsB: 0, in90: 0 });
+      const s = (ret[fc.variant ? `${fc.h}-${fc.variant}` : fc.h] ??= { n: 0, crps: 0, crpsB: 0, in90: 0 });
       s.n++;
       s.crps += crps(fc.taus, fc.q, res.y);
       s.crpsB += crps(fc.taus, fc.bq, res.y);
@@ -1138,6 +1313,11 @@ export function recompute(records, { since } = {}) {
         const a = f.get(String(id).slice(0, -1));
         const ra = a ? r.get(a.id) : undefined;
         if (a && ra && !ra.void) abRows.push({ slot: fc.slot, crpsA: crps(a.taus, a.q, ra.y), crpsB: crps(fc.taus, fc.q, res.y) });
+      }
+      if (fc.variant === 'C' && fc.h === 60) {
+        const a = f.get(String(id).slice(0, -1));
+        const ra = a ? r.get(a.id) : undefined;
+        if (a && ra && !ra.void) abRowsC.push({ slot: fc.slot, crpsA: crps(a.taus, a.q, ra.y), crpsB: crps(fc.taus, fc.q, res.y) });
       }
     } else if (fc.kind === 'mkt') {
       if (res.near !== 0 || fc.bid === null || fc.ask === null) continue;
@@ -1207,7 +1387,19 @@ export function recompute(records, { since } = {}) {
       const cut = (b) => (b && since !== undefined && b.start < since ? { ...b, diff: null, partial: true } : b);
       return { current: cut(ab.current), closing: cut(ab.closing), last: cut(ab.last) };
     })(),
-    // Jak w podsumowaniu: unieważnienia wersji głównej (wariant B ma własną sekcję)
+    // Wariant C: okresy od pierwszej granicy po rejestracji planu ab-v2 (bez planu w rekordach — bez oceny)
+    abC: (() => {
+      const plan = records.find((o) => o.k === 'p' && o.id === AB_DESIGN_C.id && typeof o.t === 'number');
+      if (!plan) return null;
+      const first = abFirstBlock(plan.t);
+      const ab = abBlocks(
+        abRowsC.filter((x) => x.slot >= first),
+        lastT
+      );
+      const keep = (b) => (b && b.start >= first ? (since !== undefined && b.start < since ? { ...b, diff: null, partial: true } : b) : null);
+      return { firstBlock: first, current: keep(ab.current), closing: keep(ab.closing), last: keep(ab.last) };
+    })(),
+    // Jak w podsumowaniu: unieważnienia wersji głównej (warianty mają własne sekcje)
     voided: [...r.values()].filter((x) => x.void && !f.get(x.id)?.variant).length,
     skipped: records.filter((o) => o.k === 's').reduce((n, o) => n + (typeof o.until === 'number' ? Math.round((o.until - o.slot) / SLOT_MS) + 1 : 1), 0),
   };
@@ -1434,6 +1626,22 @@ async function main() {
         : `✓ plan A/B ${AB_DESIGN.id} prerejestrowany ${new Date(plan.registeredAt).toISOString().slice(0, 16)}Z, zgodny z kodem; wariant B wydawany po rejestracji`
     );
   if (plan.problems.length) ok = false;
+  const vc = checkVariantC(records);
+  if (vc.checked || vc.problems.length)
+    console.log(
+      vc.problems.length
+        ? `✗ wariant C (${vc.problems.length}): ${vc.problems.slice(0, 5).join('; ')}`
+        : `✓ A/B: wariant C = przekształcenie kwantyli A (świeży poziom zmienności, mieszanina skali) przeliczone niezależnie, te same chwile (${plural(vc.checked, 'prognoza', 'prognozy', 'prognoz')})`
+    );
+  if (vc.problems.length) ok = false;
+  const planC = checkAbPlanC(records, { full: !!local });
+  if (planC.registeredAt !== null || planC.problems.length)
+    console.log(
+      planC.problems.length
+        ? `✗ plan wariantu C (${planC.problems.length}): ${planC.problems.slice(0, 5).join('; ')}`
+        : `✓ plan A/B ${AB_DESIGN_C.id} prerejestrowany ${new Date(planC.registeredAt).toISOString().slice(0, 16)}Z, zgodny z kodem; wariant C wydawany po rejestracji`
+    );
+  if (planC.problems.length) ok = false;
   let catModel = null;
   try {
     catModel = JSON.parse(readFileSync(new URL('../public/schrodi/model-v1.json', import.meta.url), 'utf8'));
@@ -1633,6 +1841,34 @@ async function main() {
         } else if (mk.eligible === 0) console.log('ℹ --market: brak rozstrzygnięć do sprawdzenia');
         else if (mk.checked === 0) console.log(`ℹ --market: żadne z ${mk.eligible} rozstrzygnięć nie mieści się w zakresie świec 1m (~3.4 doby) — nic nie sprawdzono`);
         else console.log(`✓ ceny źródłowe zgodne ze świecami 1m: sprawdzone ${mk.checked}/${mk.eligible} (pozostałe starsze niż ~3.4 doby)${mk.hourFeatures ? `; cechy godziny na żywo ze świec: ${mk.hourFeatures}` : ''}`);
+      }
+      // Wariant C: rv60 rekordów wobec świec 5m (API: do 5000 świec, ok. 17 dób)
+      if (records.some((o) => o.k === 'f' && o.variant === 'C')) {
+        let c5 = [];
+        let st5 = 'brak odpowiedzi';
+        try {
+          const res = await fetch('https://api.hyperliquid.xyz/info', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ type: 'candleSnapshot', req: { coin: 'BTC', interval: '5m', startTime: Date.now() - 17 * 86_400_000 } }),
+            signal: AbortSignal.timeout(NET_TIMEOUT_MS),
+          });
+          st5 = `HTTP ${res.status}`;
+          const raw = res.ok ? await res.json() : null;
+          c5 = (Array.isArray(raw) ? raw : []).map((c) => ({ time: c.t, close: Number(c.c) }));
+        } catch (e) {
+          st5 = String(e?.message ?? e);
+        }
+        if (c5.length === 0) {
+          console.log(`✗ --market: nie udało się pobrać świec 5m z Hyperliquid (${st5}) — rv60 wariantu C nie zostało sprawdzone`);
+          ok = false;
+        } else {
+          const rv = checkRv60(records, c5);
+          if (rv.problems.length) {
+            console.log(`✗ rv60 wariantu C niezgodne ze świecami 5m (${rv.problems.length}): ${rv.problems.slice(0, 5).join('; ')}`);
+            ok = false;
+          } else console.log(`✓ rv60 wariantu C zgodne ze świecami 5m: sprawdzone ${rv.checked}/${rv.eligible} (pozostałe poza zakresem świec)`);
+        }
       }
     }
   } else {
