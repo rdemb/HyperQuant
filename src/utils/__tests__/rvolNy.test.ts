@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { VBar } from '../auction';
-import { bootstrapMedian80, rvolHour, rvolSeries } from '../rvol';
+import { bootstrapMedian80, nyClock, rvolHour, rvolSeries } from '../rvol';
 import { hourWidth, hourWidthSample, nextSessionHour } from '../fourNumbers';
 
 /**
@@ -66,6 +66,31 @@ describe('RVOL: weekend osobno', () => {
     const r = rvolSeries(bars, H);
     const i = bars.findIndex((b) => b.time === Date.UTC(2026, 10, 14, 14));
     expect(r[i]).toBe(1);
+  });
+});
+
+describe('RVOL: weekend jak przerwa CME — od piątku 17:00 do niedzieli 18:00 czasu NY', () => {
+  // Listopad 2026 (EST, UTC−5): piątek 13.11, niedziela 15.11
+  it('piątek 16:00 NY dzień handlu, piątek 17:00 weekend', () => {
+    expect(nyClock(Date.UTC(2026, 10, 13, 21)).weekend).toBe(false);
+    expect(nyClock(Date.UTC(2026, 10, 13, 22)).weekend).toBe(true);
+  });
+  it('sobota cała weekend; niedziela 17:00 NY weekend, niedziela 18:00 dzień handlu', () => {
+    expect(nyClock(Date.UTC(2026, 10, 14, 15)).weekend).toBe(true);
+    expect(nyClock(Date.UTC(2026, 10, 15, 22)).weekend).toBe(true);
+    expect(nyClock(Date.UTC(2026, 10, 15, 23)).weekend).toBe(false);
+  });
+  it('świeca dzienna poniedziałku UTC (start w niedzielę wieczorem NY) dzień handlu, soboty UTC (piątek wieczorem NY) weekend', () => {
+    expect(nyClock(Date.UTC(2026, 10, 16)).weekend).toBe(false);
+    expect(nyClock(Date.UTC(2026, 10, 14)).weekend).toBe(true);
+    expect(nyClock(Date.UTC(2026, 10, 15)).weekend).toBe(true);
+  });
+  it('czas letni (EDT, UTC−4): granice o tej samej godzinie lokalnej', () => {
+    // piątek 6.03.2026 przed zmianą (EST) i piątek 13.03.2026 po zmianie (EDT)
+    expect(nyClock(Date.UTC(2026, 2, 6, 22)).weekend).toBe(true);
+    expect(nyClock(Date.UTC(2026, 2, 13, 21)).weekend).toBe(true);
+    expect(nyClock(Date.UTC(2026, 2, 13, 20)).weekend).toBe(false);
+    expect(nyClock(Date.UTC(2026, 2, 15, 22)).weekend).toBe(false);
   });
 });
 

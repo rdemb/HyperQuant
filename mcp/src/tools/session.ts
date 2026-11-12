@@ -209,8 +209,8 @@ function rvolNum(f1h: Fetched<Candle[]>, now: number): Num {
   return num(rv.value, 'ratio', 'MODEL', {
     method: RVOL_METHOD,
     note: tr(
-      `wolumen godziny od ${iso(rv.hour)} wobec mediany tej godziny zegarowej w Nowym Jorku z ${rv.n} ostatnich dni tego samego typu (robocze albo weekend), przeskalowanej do upływu godziny; 1 — typowy wolumen o tej porze; sample: mediana wolumenu tej godziny (BTC) i jej przedział 80% z bootstrapu po dniach`,
-      `volume of the hour from ${iso(rv.hour)} against the median of this New York clock hour over the last ${rv.n} days of the same type (weekdays or weekend), scaled to the elapsed part of the hour; 1 is the typical volume at this time; sample: the median volume of this hour (BTC) and its 80% interval from a bootstrap over days`
+      `wolumen godziny od ${iso(rv.hour)} wobec mediany tej godziny zegarowej w Nowym Jorku z ${rv.n} ostatnich dni tego samego typu (robocze albo weekend od piątku 17:00 do niedzieli 18:00 czasu nowojorskiego), przeskalowanej do upływu godziny; 1 — typowy wolumen o tej porze; sample: mediana wolumenu tej godziny (BTC) i jej przedział 80% z bootstrapu po dniach`,
+      `volume of the hour from ${iso(rv.hour)} against the median of this New York clock hour over the last ${rv.n} days of the same type (weekdays or weekend, Friday 17:00 to Sunday 18:00 New York time), scaled to the elapsed part of the hour; 1 is the typical volume at this time; sample: the median volume of this hour (BTC) and its 80% interval from a bootstrap over days`
     ),
     sample: { n: rv.n, median: median(rv.base), interval80: bootstrapMedian80(rv.base) },
   });

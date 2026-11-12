@@ -4,8 +4,8 @@ import { mulberry32 } from './pathEngine';
 
 /**
  * RVOL wg godzin (MODEL): wolumen świecy wobec mediany wolumenu świec z tej samej godziny zegarowej w Nowym Jorku
- * (America/New_York, z czasem letnim) z 20 ostatnich dni tego samego typu: dni robocze i weekend (sobota i niedziela
- * według daty w tej strefie) osobno. Wolumen przesuwa się razem z czasem w USA, więc baza godziny otwarcia NY jest ta sama
+ * (America/New_York, z czasem letnim) z 20 ostatnich dni tego samego typu: dni handlu i weekend (od piątku 17:00 do
+ * niedzieli 18:00 czasu NY, jak przerwa CME) osobno. Wolumen przesuwa się razem z czasem w USA, więc baza godziny otwarcia NY jest ta sama
  * przed zmianą czasu i po niej.
  */
 
@@ -44,13 +44,24 @@ function nyOffset(t: number): number {
   return o;
 }
 
-/** Czas ścienny w NY: minuta doby (ms od północy NY) i czy to sobota albo niedziela według daty w NY. */
+/** Weekend jak przerwa CME: od piątku 17:00 do niedzieli 18:00 czasu NY (godziny lokalne) */
+const WEEKEND_FROM_FRI_H = 17;
+const WEEKEND_TO_SUN_H = 18;
+
+/**
+ * Czas ścienny w NY: minuta doby (ms od północy NY) i czy to weekend — od piątku 17:00 do niedzieli 18:00 czasu NY.
+ * Granica według daty (sobota, niedziela) myliła wolumen: niedziela wieczorem NY ma wolumen dnia handlu (×1,55 wobec
+ * wtorku–czwartku), piątek wieczorem — weekendu (×0,55).
+ */
 export function nyClock(t: number): { ofDay: number; weekend: boolean } {
   const local = t + nyOffset(t);
   const day = Math.floor(local / DAY);
-  // 1.01.1970 to czwartek: (day + 4) mod 7 — 0 niedziela, 6 sobota
+  // 1.01.1970 to czwartek: (day + 4) mod 7 — 0 niedziela, 5 piątek, 6 sobota
   const dow = (((day + 4) % 7) + 7) % 7;
-  return { ofDay: local - day * DAY, weekend: dow === 0 || dow === 6 };
+  const ofDay = local - day * DAY;
+  const hour = Math.floor(ofDay / HOUR);
+  const weekend = dow === 6 || (dow === 5 && hour >= WEEKEND_FROM_FRI_H) || (dow === 0 && hour < WEEKEND_TO_SUN_H);
+  return { ofDay, weekend };
 }
 
 /**
