@@ -3,9 +3,10 @@ import { useDeskLedger } from '../../state/useDeskLedger';
 import { LedgerVerifyCard } from './LedgerVerifyCard';
 import { CatLedgerCard } from './CatLedgerCard';
 import { ModelAbCard } from './ModelAbCard';
+import { ModelAbCCard } from './ModelAbCCard';
 import { LEDGER_BASE } from '../../state/usePublished';
 import { Badge, EmptyState, Panel, Stat, DASH, fmtPrice, fmtFixed } from '../../ui';
-import { DeskLedgerSummary, LEDGER_MIN_N, MktScores, RetScores, TouchLevel, isAb, isCat } from '../../utils/deskLedger';
+import { DeskLedgerSummary, LEDGER_MIN_N, MktScores, RetScores, TouchLevel, isAb, isAbC, isCat } from '../../utils/deskLedger';
 import { locale, tr } from '../../i18n';
 
 const timeFmt = new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit' });
@@ -90,6 +91,7 @@ const LedgerBody: React.FC<{ s: DeskLedgerSummary; stale: boolean; expired: bool
     {s.market && <MarketCard m={s.market} />}
 
     {s.ab && isAb(s.ab) && <ModelAbCard ab={s.ab} />}
+    {s.abC && isAbC(s.abC) && <ModelAbCCard ab={s.abC} />}
 
     {s.cat && isCat(s.cat) && s.cat.since !== null && <CatLedgerCard cat={s.cat} />}
 

@@ -11,6 +11,8 @@
  * Wspólne dla skanera (podsumowanie) i weryfikatora (przeliczenie z rekordów).
  */
 
+import { GH9_NODES, GH9_WEIGHTS, MODEL_C, RVMIX } from './rvMix.ts';
+
 const MIN = 60_000;
 const HOUR = 60 * MIN;
 const DAY = 24 * HOUR;
@@ -125,4 +127,45 @@ export function abBlocks(rows: readonly AbRow[], now: number): { current: AbBloc
     closing: cur - 1 >= 0 && cur - 1 > done ? block(cur - 1, false) : null,
     last: done >= 0 ? block(done, true) : null,
   };
+}
+
+/**
+ * Plan oceny wariantu C (`ab-v2`) — prerejestrowany w dzienniku przed pierwszym rekordem C, wzorem `ab-v1` (zmiana
+ * stałych = nowy identyfikator i nowa nazwa modelu, nigdy zmiana w biegu). Te same okresy i ta sama miara co `ab-v1`;
+ * oceniane są okresy od najbliższej granicy okresu po rejestracji (`abFirstBlock`). Wariant B i plan `ab-v1` biegną dalej
+ * bez zmian. Wzór przekształcenia w src/utils/rvMix.ts; weryfikator ma własną implementację.
+ */
+export const AB_DESIGN_C = {
+  id: 'ab-v2',
+  question: 'Czy wersja C (świeży poziom zmienności z 12 świec 5m i mieszanina skali) ma niższy CRPS zwrotu 1 h niż wersja A (HAR + FHS)?',
+  modelA: 'ledger-har-fhs-v1',
+  modelC: MODEL_C,
+  h: 60,
+  rv60: 'suma kwadratów log-zwrotów zamknięcie do zamknięcia 12 zamkniętych świec 5m Hyperliquid o początkach S − 60 min … S − 5 min (S = początek slotu; zwrot pierwszej względem świecy S − 65 min); brak którejkolwiek świecy = brak C w slocie',
+  sigmaA: '(qA[12] − qA[0]) / (z(0,975) − z(0,025))',
+  level: 'x = clip(½·ln(rv60 / sigmaA²), −1,5, 1,5); q1 = qA · exp(c + kappa · x)',
+  shape: 'FC(v) = Σ w_j · Φ(z1(v / exp(η_j / 2))), η_j = tau · n_j − tau² / 2; z1 liniowo przez (q1[k], Φ⁻¹(taus[k])), poza skrajnymi kwantylami z nachyleniem skrajnego odcinka; qC[k]: FC = taus[k], bisekcja 40 kroków od ±6·max|q1|, 6 miejsc',
+  constants: { kappa: RVMIX.kappa, c: RVMIX.c, tau: RVMIX.tau },
+  quadrature: { kind: 'Gauss–Hermite, 9 węzłów, N(0, 1)', nodes: [...GH9_NODES], weights: [...GH9_WEIGHTS] },
+  metric: 'CRPS z 13 kwantyli, pary A i C z tego samego slotu, bez unieważnionych',
+  epoch: AB_EPOCH,
+  blockDays: AB_BLOCK_DAYS,
+  hacLag: AB_HAC_LAG,
+  kernel: 'bartlett',
+  ci: 'fixed-b Kiefer-Vogelsang 2005, 95%: 1.96 + 2.9694b + 0.416b^2 - 0.5324b^3, b = (hacLag + 1) / n',
+  minN: AB_MIN_N,
+  graceMin: AB_GRACE_MIN,
+  firstBlock: 'pierwszy oceniany okres zaczyna się na najbliższej granicy okresu (epoch + k · blockDays) nie wcześniejszej niż rejestracja planu',
+  criteria: {
+    main: 'górna granica 95% przedziału HAC różnicy crpsC − crpsA w zakończonym okresie < 0',
+    calibration: 'próba rozłączna (sloty o pełnej godzinie) w tym samym okresie: pokrycie 60% w [0,55; 0,65] i pokrycie 90% ≥ 0,87',
+    failure: 'dolna granica > 0 w jednym okresie albo brak kryterium głównego w dwóch okresach z rzędu: wariant zamknięty, wynik zostaje w dzienniku',
+    promotion: 'oba kryteria w jednym okresie; decyzja właściciela projektu: C wersją główną pod nową nazwą modelu, A wariantem porównawczym przez kolejny okres',
+  },
+} as const;
+
+/** Początek pierwszego ocenianego okresu wariantu C: najbliższa granica okresu nie wcześniejsza niż rejestracja planu */
+export function abFirstBlock(registeredAt: number): number {
+  const len = AB_BLOCK_DAYS * DAY;
+  return AB_EPOCH + Math.max(0, Math.ceil((registeredAt - AB_EPOCH) / len)) * len;
 }
