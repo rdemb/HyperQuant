@@ -105,7 +105,7 @@ const inputs = (patch: Partial<ReviewInputs> = {}): ReviewInputs => ({
   now: NOW,
   bars1m: ALL,
   maps: READY_MAPS,
-  expected: { usd: 875, method: 'har' },
+  expected: { usd: 875, typical: 761.25, method: 'profile' },
   liq: LIQ,
   cohorts: COHORTS,
   ledger: LEDGER,
@@ -121,7 +121,7 @@ describe('reviewRows: rozliczenie zamkniętej sesji Londynu z mapą', () => {
       ['dayType', 'Typ dnia', 'trendowy', 'MODEL'],
       ['vaMigration', 'Migracja VA', 'wyżej', 'LIVE'],
       ['ib', 'Wynik IB', 'w górę · 2,3×', 'LIVE'],
-      ['range', 'Zakres / oczekiwany · HAR', '80%', 'MODEL'],
+      ['range', 'Zakres / oczekiwany · profil × poziom', '80%', 'MODEL'],
       ['map', `Mapa dnia ${fmtDayTime(PUB, NOW)}`, '2/4 dotknięte', 'LIVE'],
       ['liq', 'Likwidacje w sesji', 'longi 1,0M · shorty 6,5M', 'LIVE'],
       ['cone', 'Pokrycie stożka 1 h · 30 dni', '90%: 88% · 60%: 61%', 'MODEL'],
@@ -144,7 +144,7 @@ describe('reviewRows: rozliczenie zamkniętej sesji Londynu z mapą', () => {
 
   it('MODEL zawsze z nazwą metody w podpowiedzi; dane dobowe i 30 dni oznaczone jako okno, nie sesja', () => {
     for (const r of rows) if (r.badge === 'MODEL') expect(r.hint, r.id).toMatch(/^MODEL · \S/);
-    expect(row(rows, 'range').hint).toMatch(/^MODEL · HAR: /);
+    expect(row(rows, 'range').hint).toMatch(/^MODEL · profil × poziom: /);
     expect(row(rows, 'dayType').hint).toMatch(/^MODEL · Dalton/);
     expect(rows.filter((r) => r.scope === 'window').map((r) => r.id)).toEqual(['cone', 'cohorts']);
     expect(row(rows, 'cohorts').hint).toContain('nie wynik tej sesji');
@@ -268,9 +268,10 @@ describe('reviewRows: braki danych dają „—” z powodem', () => {
   });
 
   it('bez oczekiwanego zakresu: „—” z powodem, metoda w podpowiedzi', () => {
-    const r = row(reviewRows(inputs({ expected: { why: 'Model HAR nie daje zmienności dla tej sesji' } })), 'range');
-    expect(r).toMatchObject({ value: '—', badge: 'MODEL' });
-    expect(r.hint).toMatch(/^MODEL · HAR albo Parkinson/);
+    const why = 'Mniej niż 20 dni roboczych ze świecami 1h w 80 dniach przed sesją';
+    const r = row(reviewRows(inputs({ expected: { why } })), 'range');
+    expect(r).toMatchObject({ value: '—', badge: 'MODEL', why });
+    expect(r.hint).toBe(`MODEL · profil × poziom: ${why}`);
   });
 });
 
@@ -332,26 +333,18 @@ describe('reviewRows: likwidacje i oczekiwany zakres — pozostałe gałęzie', 
     expect(row(reviewRows(inputs({ s: NY, inProgress: true, liq: expired })), 'liq')).toMatchObject({ value: '—', why: expect.stringContaining('nieaktualna') });
   });
 
-  it('zamknięta sesja: oczekiwanie Parkinsona sprzed otwarcia opisane w podpowiedzi; bez dopisku o bieżącym modelu HAR', () => {
-    const p = row(reviewRows(inputs({ expected: { usd: 1_400, method: 'parkinson' } })), 'range');
-    expect(p).toMatchObject({ value: '50%', badge: 'MODEL' });
-    expect(p.hint).toMatch(/^MODEL · Parkinson: .*doby przed otwarciem sesji/);
-    expect(row(reviewRows(inputs()), 'range').hint).not.toMatch(/bieżącego modelu/);
+  it('oczekiwany zakres: ta sama etykieta w toku i po zamknięciu, w podpowiedzi typowy dzień i liczenie raz na otwarcie', () => {
+    const e = { usd: 1_400, typical: 1_218, method: 'profile' } as const;
+    const closed = row(reviewRows(inputs({ expected: e })), 'range');
+    expect(closed).toMatchObject({ label: 'Zakres / oczekiwany · profil × poziom', value: '50%', badge: 'MODEL' });
+    expect(closed.hint).toMatch(/^MODEL · profil × poziom: .*typowy dzień ok\. 1[\s\u00a0]?218 USD/);
+    expect(closed.hint).toMatch(/raz na otwarcie sesji/);
+    expect(row(reviewRows(inputs({ s: NY, inProgress: true, expected: e })), 'range').label).toBe('Zakres / oczekiwany · profil × poziom');
   });
 
-  it('metoda oczekiwanego zakresu na etykiecie: zamknięta — „ex ante · Parkinson”, w toku — nazwa metody', () => {
-    const park = { usd: 1_400, method: 'parkinson' } as const;
-    expect(row(reviewRows(inputs({ expected: park })), 'range').label).toBe('Zakres / oczekiwany · ex ante · Parkinson');
-    expect(row(reviewRows(inputs({ s: NY, inProgress: true, expected: park })), 'range').label).toBe('Zakres / oczekiwany · Parkinson');
-    expect(row(reviewRows(inputs({ s: NY, inProgress: true })), 'range').label).toBe('Zakres / oczekiwany · HAR');
-  });
-
-  it('sesja w toku, model HAR w drodze: „—” z powodem „czekam na model zmienności (HAR)”', () => {
-    const r = row(reviewRows(inputs({ s: NY, inProgress: true, expected: undefined, volLoading: true })), 'range');
-    expect(r).toMatchObject({ value: '—', badge: 'MODEL', why: 'Czekam na model zmienności (HAR)…' });
-    expect(r.hint).toBe('MODEL · HAR: Czekam na model zmienności (HAR)…');
-    // Bez modelu w drodze — zwykłe „czekam na dane” (świece 5m)
-    expect(row(reviewRows(inputs({ s: NY, inProgress: true, expected: undefined })), 'range').why).toBe('Czekam na dane…');
+  it('oczekiwany zakres w drodze (świece 1h): zwykłe „czekam na dane”', () => {
+    const r = row(reviewRows(inputs({ s: NY, inProgress: true, expected: undefined })), 'range');
+    expect(r).toMatchObject({ value: '—', badge: 'MODEL', why: 'Czekam na dane…' });
   });
 });
 

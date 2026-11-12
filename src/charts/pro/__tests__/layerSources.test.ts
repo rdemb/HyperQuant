@@ -103,7 +103,7 @@ describe('plakietka warstwy w legendzie', () => {
 
   it('mapa likwidacji wczytywana albo bez adresu danych: plakietka z tym samym powodem co nagłówek układu', () => {
     const header = (liq: { status: string; map: null }) =>
-      layoutNumbers('fuel', readInputs('fuel', fakeStore(), { model: null, volStatus: 'error', liq, whales: null, whalesConfigured: true, blog: { state: { status: 'loading', maps: [] }, map: null } }))[1].hint;
+      layoutNumbers('fuel', readInputs('fuel', fakeStore(), { liq, whales: null, whalesConfigured: true, blog: { state: { status: 'loading', maps: [] }, map: null } }))[1].hint;
     for (const status of ['loading', 'unconfigured', 'error', 'stale']) {
       const liq = { status, map: null };
       const chip = layerBadge('showLiq', { coin: 'BTC', now: NOW, scan: liqScan(liq) });

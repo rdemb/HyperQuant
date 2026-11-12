@@ -4,6 +4,18 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Oczekiwany zakres sesji: profil godzin × świeży poziom (2026-11-12)
+
+#### Zmienione
+- **Oczekiwany zakres sesji Londynu i NY liczony nową metodą „profil × poziom”** (`src/utils/sessionDay.ts`: `expectedSessionRange`, `src/utils/sessionFacts.ts`: `expectedFrom`, `src/charts/pro/chart/layoutInputs.ts`, `layoutNumbers.ts`, `src/utils/sessionReview.ts`, `src/views/after/SessionReview.tsx`, MCP `session_context` i `session_review`). Dotychczasowy model zaniżał zakres (średni budżet 122% w Londynie i 144% w NY na 60 sesjach). Teraz wszystko ze świec 1h rynku zamkniętych przed godziną otwarcia sesji:
+  - profil: średnia wariancja Parkinsona tej samej godziny UTC z 20 wcześniejszych dni tego samego typu (robocze albo sobota i niedziela UTC), szukane do 80 dni wstecz;
+  - poziom: x = ½ ln(Σ pv / Σ profil) z 24 godzin przed otwarciem, przycięty do ±1,5;
+  - E = 0,97 · √(8/π) · √V · exp(0,60 · x), V = suma profilu po godzinach sesji z wagą części godziny w sesji (pierwsza godzina NY z wagą 0,5); w USD razy cena sprzed otwarcia.
+
+  W teście na sesjach 2024–2026 (stałe dopasowane na 2020–2023) zrealizowany do oczekiwanego to średnio 0,96 w Londynie i 1,03 w NY. E liczone raz na otwarcie: ta sama liczba w trakcie sesji i po jej zamknięciu (zamknięta sesja od własnej ceny sprzed otwarcia, nie od bieżącej). Każdy rynek liczy z własnych świec 1h, bez osobnej ścieżki dla BTC; model HAR i awaryjny Parkinson ze świec 5m nie liczą już zakresu sesji, więc budżet nie czeka na model zmienności. Plakietka MODEL z metodą „profil × poziom”; w podpowiedzi „typowy dzień” (ok. 0,87 × E, w połowie dni zakres jest poniżej). Mniej niż 20 dni tego samego typu: „—” z powodem.
+- **MCP `session_context`:** nowe pole `typical` (0,87 × `expectedRange`), `method: "profile"`; serwer pobiera świece 1h do oczekiwanego zakresu zamiast świec 5m i modelu HAR. Opisy w `mcp/README.md` i skillu `hyperquant`.
+- Testy: `src/utils/__tests__/sessionExpected.test.ts` (przypadki policzone ręcznie, waga NY 0,5, weekend, mnożnik 2^0,30, przycięcie ±1,5, brak wglądu w przyszłość, sesja zamknięta, mniej niż 20 dni); testy nagłówka układu, karty Rozliczenia i narzędzi MCP przepisane na nową metodę.
+
 ### Blog: notki „aktualizacja” poza indeksem, rozliczenie tygodnia z BSS w parze (2026-11-12)
 
 #### Zmienione
