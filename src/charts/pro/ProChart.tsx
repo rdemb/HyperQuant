@@ -41,7 +41,8 @@ import { IndicatorsDialog, type IndicatorsSection, type ToggleItem } from './cha
 import { IndicatorSettings } from './chart/IndicatorSettings';
 import { indicatorLabel, indicatorsLink } from './indicators/registry';
 import { IB_EVIDENCE } from './chart/ibSelect';
-import { BURSTS_MAX, CLASHES_EVIDENCE, WALLS_DONE_MAX, WALLS_LIVE_MAX, WALL_MIN_MS } from './chart/clashSelect';
+import { BURSTS_MAX, CLASHES_EVIDENCE, RANK_WINDOW_MS, WALLS_DONE_MAX, WALLS_K, WALLS_LIVE_MAX, WALL_MIN_MS } from './chart/clashSelect';
+import { BUBBLES_BARS, BUBBLES_EVIDENCE, BUBBLES_K, BUBBLES_MAX } from './chart/bubbleSelect';
 import { AUCTIONS_PER_SIDE, ZONES_EVIDENCE, ZONES_PER_SIDE } from './chart/zonesSelect';
 import { MarketStateBar } from './chart/MarketStateBar';
 import { LayoutHeader } from './chart/LayoutHeader';
@@ -1700,6 +1701,14 @@ function whaleHint(w: WhaleLayer | null, coin: string): string {
 /** Warstwy orderflow na wykresie ceny (sekcja „Orderflow” okna wskaźników): opis z progami i powód, gdy nie działają. */
 function flowLayers(s: ChartSettings, intervalMs: number, liq: LiqMapState, whales: WhaleLayer | null, bigUsd: number): ToggleItem[] {
   const big = `${compact(bigUsd)} USD${s.bigTradeUsd === 0 ? tr(' (próg automatyczny)', ' (automatic threshold)') : ''}`;
+  // Bąble: próg ręczny z ustawień albo reguła przyczynowa (wśród największych z poprzednich 20 świec w chwili wykonania)
+  const bubbleFrom =
+    s.bigTradeUsd > 0
+      ? { pl: `od ${big}`, en: `from ${big}` }
+      : {
+          pl: `gdy w chwili wykonania zlecenie było wśród ${BUBBLES_K} największych z poprzednich ${BUBBLES_BARS} świec (na telefonie największe), najwyżej ${BUBBLES_K} na świecę (na telefonie 1); po zamknięciu świecy bąble się nie zmieniają, niezależnie od przewinięcia. Bąble pojawiają się, gdy taśma zleceń obejmuje całe okno porównania (${BUBBLES_BARS} świec przed zleceniem)`,
+          en: `when at execution the order was among the ${BUBBLES_K} largest of the previous ${BUBBLES_BARS} candles (on a phone the largest), at most ${BUBBLES_K} per candle (on a phone 1); once a candle closes its bubbles do not change, whatever the scroll. Bubbles appear when the order tape covers the whole comparison window (${BUBBLES_BARS} candles before the order)`,
+        };
   const scope = indicatorScope(intervalMs);
   const vwapOff = fromDaily(intervalMs) ? tr('Na interwałach do 1D', 'On timeframes up to 1D') : undefined;
   return [
@@ -1716,8 +1725,8 @@ function flowLayers(s: ChartSettings, intervalMs: number, liq: LiqMapState, whal
       key: 'showBubbles',
       label: tr('Bąble zleceń agresora', 'Aggressor order bubbles'),
       hint: tr(
-        `Zlecenia rynkowe od ${big} złożone z wypełnień; pole koła ∝ wartość, podwójny pierścień = bitwa z jednym dużym makerem; kliknij bąbel — od otwarcia strony, a z zapisem serwera z ostatniej doby`,
-        `Market orders from ${big} assembled from fills; circle area ∝ value, double ring = a battle with one large maker; click a bubble — since the page opened, plus the server's recording of the last day`
+        `Zlecenia rynkowe złożone z wypełnień, ${bubbleFrom.pl}. Pole koła ∝ wartość, podwójny pierścień = bitwa z jednym dużym makerem; kliknij bąbel. Na ekranie najwyżej ${BUBBLES_MAX} — od otwarcia strony, a z zapisem serwera z ostatniej doby. ${BUBBLES_EVIDENCE.pl}`,
+        `Market orders assembled from fills, ${bubbleFrom.en}. Circle area ∝ value, double ring = a battle with one large maker; click a bubble. At most ${BUBBLES_MAX} on screen — since the page opened, plus the server's recording of the last day. ${BUBBLES_EVIDENCE.en}`
       ),
       swatch: 'bg-gradient-to-r from-of-imb-buy to-of-imb-sell',
     },
@@ -1725,8 +1734,8 @@ function flowLayers(s: ChartSettings, intervalMs: number, liq: LiqMapState, whal
       key: 'showClashes',
       label: tr('Serie i ściany', 'Bursts and walls'),
       hint: tr(
-        `Seria (przerywany pierścień): drobne zlecenia co najmniej 4 adresów po jednej stronie w 2 s, razem od progu. Ściana (belka): jeden maker na jednej cenie przyjął od progu z co najmniej 3 zleceń; na wykresie, gdy trwała co najmniej ${WALL_MIN_MS / 1000} s albo wchłonęła co najmniej 3 × próg (krótsze w panelu Ściany). Próg z chwili zdarzenia: z taśmy poprzedniej pełnej godziny, więc ściany i serie z przeszłości nie znikają przy zmianie progu. Na ekranie najwyżej ${WALLS_DONE_MAX} największych ścian zakończonych, ${WALLS_LIVE_MAX} trwające i ${BURSTS_MAX} serii — od otwarcia strony, a z zapisem serwera z ostatniej doby. ${CLASHES_EVIDENCE.pl}`,
-        `Burst (dashed ring): small orders from at least 4 addresses on one side within 2 s, together above the threshold. Wall (bar): one maker at one price absorbed above the threshold from at least 3 orders; on the chart when it lasted at least ${WALL_MIN_MS / 1000} s or absorbed at least 3 × the threshold (shorter ones in the Walls panel). The threshold is the one in force when the event happened, from the tape of the previous full hour, so past walls and bursts do not vanish when the threshold changes. On screen at most ${WALLS_DONE_MAX} largest finished walls, ${WALLS_LIVE_MAX} ongoing and ${BURSTS_MAX} bursts — since the page opened, plus the server's recording of the last day. ${CLASHES_EVIDENCE.en}`
+        `Seria (przerywany pierścień): drobne zlecenia co najmniej 4 adresów po jednej stronie w 2 s, razem od progu. Ściana (belka): jeden maker na jednej cenie przyjął od progu z co najmniej 3 zleceń; na wykresie, gdy trwała co najmniej ${WALL_MIN_MS / 1000} s albo wchłonęła co najmniej 3 × próg (krótsze w panelu Ściany). Próg z chwili zdarzenia: z taśmy poprzedniej pełnej godziny. Ściana jest rysowana, gdy w chwili zakończenia była wśród ${WALLS_K} największych zakończonych w poprzednich ${RANK_WINDOW_MS / 60_000} min, seria — gdy była największa; raz narysowane zostają, niezależnie od przewinięcia. Ściany i serie pojawiają się, gdy taśma zleceń obejmuje całe okno porównania (${RANK_WINDOW_MS / 60_000} min przed końcem). Na ekranie najwyżej ${WALLS_DONE_MAX} ścian zakończonych, ${WALLS_LIVE_MAX} trwające i ${BURSTS_MAX} serii — od otwarcia strony, a z zapisem serwera z ostatniej doby. ${CLASHES_EVIDENCE.pl}`,
+        `Burst (dashed ring): small orders from at least 4 addresses on one side within 2 s, together above the threshold. Wall (bar): one maker at one price absorbed above the threshold from at least 3 orders; on the chart when it lasted at least ${WALL_MIN_MS / 1000} s or absorbed at least 3 × the threshold (shorter ones in the Walls panel). The threshold is the one in force when the event happened, from the tape of the previous full hour. A wall is drawn when at its end it was among the ${WALLS_K} largest finished in the previous ${RANK_WINDOW_MS / 60_000} min, a burst when it was the largest; once drawn they stay, whatever the scroll. Walls and bursts appear when the order tape covers the whole comparison window (${RANK_WINDOW_MS / 60_000} min before their end). On screen at most ${WALLS_DONE_MAX} finished walls, ${WALLS_LIVE_MAX} ongoing and ${BURSTS_MAX} bursts — since the page opened, plus the server's recording of the last day. ${CLASHES_EVIDENCE.en}`
       ),
       swatch: 'bg-of-buy',
       off: s.showBubbles ? undefined : tr('Razem z bąblami zleceń agresora', 'Together with aggressor order bubbles'),
