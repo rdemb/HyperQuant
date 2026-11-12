@@ -55,9 +55,9 @@ describe('usdScale — progi w USD zależne od rynku', () => {
     expect(usdScale('HYPE', DEFAULT_MARKETS)).toBe(0.25);
   });
 
-  it('inny rynek: OI 7 dni wobec BTC zaokrąglone w dół do 1, 2 albo 5 × 10^k, najmniej 0,01', () => {
-    expect(usdScale('xyz:NVDA', REG)).toBe(0.1); // 5e8 / 3e9 = 0,167
-    expect(usdScale('kPEPE', REG)).toBe(0.02); // 7e7 / 3e9 = 0,023
+  it('inny rynek: OI 7 dni wobec BTC zaokrąglone w dół do 2 cyfr znaczących, najmniej 0,01', () => {
+    expect(usdScale('xyz:NVDA', REG)).toBe(0.16); // 5e8 / 3e9 = 0,167
+    expect(usdScale('kPEPE', REG)).toBe(0.023); // 7e7 / 3e9 = 0,0233
     expect(usdScale('xyz:JPY', REG)).toBe(0.01); // 0,0003 → najmniej 0,01
   });
 
@@ -65,6 +65,21 @@ describe('usdScale — progi w USD zależne od rynku', () => {
     expect(usdScale('ZEC', REG)).toBe(0.01);
     expect(usdScale('xyz:NVDA', [...DEFAULT_MARKETS, nvda])).toBe(0.01);
     expect(usdScale('DOGE', REG)).toBe(0.01);
+  });
+});
+
+describe('usdScale — skala ciągła: mała zmiana OI nie przeskakuje progu', () => {
+  it('zmiana OI o 2% zmienia skalę o 2% i najwyżej jeden krok drugiej cyfry, nigdy 2 razy (rynki przy dawnych granicach 1-2-5)', () => {
+    const btc = 3e9;
+    for (const r of [0.203, 0.103, 0.102, 0.054, 0.049, 0.048, 0.5, 0.0101]) {
+      for (const k of [0.98, 1.02]) {
+        const at = (ratio: number) => usdScale('X', [...DEFAULT_MARKETS.map((m) => (m.coin === 'BTC' ? { ...m, oiUsd7d: btc } : m)), { ...nvda, coin: 'X', oiUsd7d: ratio * btc }]);
+        const a = at(r);
+        const b = at(r * k);
+        // Zmiana skali rzędu zmiany OI (2%) plus zaokrąglenie drugiej cyfry, nigdy skok 2 razy jak przy krokach 1-2-5
+        expect(Math.max(a, b) / Math.min(a, b)).toBeLessThan(1.12); // 2% i najwyżej jeden krok drugiej cyfry (≤ 10%)
+      }
+    }
   });
 });
 

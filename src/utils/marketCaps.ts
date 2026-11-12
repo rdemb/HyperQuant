@@ -43,16 +43,17 @@ export function marketCaps(coin: string, markets: readonly ChartMarket[]): Marke
 /**
  * Skala progów w USD wobec BTC (duży gracz, próg dużego zlecenia, ściany): progi stoją pod BTC, a rynek mniejszy ma mniejsze
  * zlecenia. BTC, ETH, SOL i HYPE z tabeli (progi dobrane ręcznie, BTC = 1, więc BTC liczy jak dotąd); inny rynek z rejestru:
- * średnia otwartych pozycji z 7 dni (`oiUsd7d`) wobec BTC, zaokrąglona w dół do 1, 2 albo 5 × 10^k, najmniej `MIN_USD_SCALE`
+ * średnia otwartych pozycji z 7 dni (`oiUsd7d`) wobec BTC, zaokrąglona w dół do 2 cyfr znaczących (skala ciągła: mała zmiana OI
+ * nie przeskakuje progu 2 razy, jak przy krokach 1-2-5), najmniej `MIN_USD_SCALE`
  * (także bez pola OI i dla rynku spoza listy).
  */
 export const FIXED_USD_SCALE: Readonly<Record<string, number>> = { BTC: 1, ETH: 0.5, SOL: 0.25, HYPE: 0.25 };
 export const MIN_USD_SCALE = 0.01;
 
-function niceDown(v: number): number {
-  const k = 10 ** Math.floor(Math.log10(v));
-  for (const m of [5, 2, 1]) if (m * k <= v * (1 + 1e-12)) return m * k;
-  return k;
+/** Zaokrąglenie w dół do 2 cyfr znaczących (0,167 → 0,16; 0,0489 → 0,048) */
+function sig2Down(v: number): number {
+  const k = 10 ** (Math.floor(Math.log10(v)) - 1);
+  return Number((Math.floor(v / k + 1e-9) * k).toPrecision(2));
 }
 
 export function usdScale(coin: string, markets: readonly ChartMarket[]): number {
@@ -61,7 +62,7 @@ export function usdScale(coin: string, markets: readonly ChartMarket[]): number 
   const oi = markets.find((m) => m.coin === coin)?.oiUsd7d;
   const btc = markets.find((m) => m.coin === HOME_MARKET)?.oiUsd7d;
   if (!(oi !== undefined && oi > 0 && btc !== undefined && btc > 0)) return MIN_USD_SCALE;
-  return Math.min(1, Math.max(MIN_USD_SCALE, niceDown(oi / btc)));
+  return Math.min(1, Math.max(MIN_USD_SCALE, sig2Down(oi / btc)));
 }
 
 /** Największa dźwignia rynku z rejestru (`maxLeverage`); rynek spoza listy — dźwignia BTC (link spoza rejestru otwiera BTC). */

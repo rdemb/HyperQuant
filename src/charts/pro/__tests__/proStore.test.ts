@@ -396,7 +396,7 @@ describe('rynek z rejestru: progi w USD i siatka wierszy', () => {
     const pepe = new ProStore(ws(), 'kPEPE');
     expect(btc.players.thresholdUsd).toBe(1_000_000);
     expect(btc.baseTick(80_000)).toBe(1);
-    expect(pepe.players.thresholdUsd).toBe(20_000);
+    expect(pepe.players.thresholdUsd).toBe(23_000); // skala 0,023 (OI kPEPE wobec BTC do 2 cyfr znaczących)
     expect(pepe.baseTick(0.0045)).toBeCloseTo(1e-6, 15);
     btc.stop();
     pepe.stop();
