@@ -4,6 +4,19 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Poziomy dnia i linie sesji: tylko bieżący i poprzedni dzień (2026-11-12)
+
+Na danych stałych `ui:check` (zegar 24.10.2026 21:29 UTC): „Mapa dnia” 1440 × 900, wykres 4h — 30 linii poziomów dnia → 3; „Rozliczenie doby” 30m, 1440 — 9 linii poziomów i 8 linii otwarć sesji → 6 i 6 (wybór warstwy, nie piksele). Telefon 390 × 844 bez zmian: 3 linie poziomów, linii sesji brak (układy telefonu ich nie włączają). Liczby „przed” zmierzone na stronie z `main` z tymczasowym licznikiem w nakładce (bez commita).
+
+#### Zmienione
+- **Poziomy dnia (PDH, PDL, otwarcie dnia) tylko dla bieżącego i poprzedniego dnia UTC, na interwałach od 4h tylko dla bieżącego** (`src/charts/pro/chart/levelsSelect.ts`, `selectDays`; `src/charts/pro/chart/overlay.ts`). Etykiety jak dotąd tylko bieżącego dnia. Dotąd linie dostawał każdy dzień w widoku.
+- **Linie otwarć sesji tylko dla bieżącej i poprzedniej doby UTC, nazwa przy trzech ostatnich** (`selectSessions`); sesja, która jeszcze się nie zaczęła, nie ma linii. Dni i sesje wynikają z ostatniej świecy, nie z przewinięcia.
+- **Opis warstw** (okno wskaźników, PL i EN): nowe reguły; przy poziomach dnia wynik sprawdzianu: „Po dotknięciu PDH albo PDL cena częściej idzie dalej, niż zawraca (odrzucenie 27–33% wobec 45% dla losowego poziomu, 2026 r.).”
+
+#### Dodane
+- **`ui:check`: scenariusz poziomów dnia i linii sesji** („Mapa dnia” i „Rozliczenie doby”, dane stałe, 1440 i 390): liczby z atrybutów `data-level-lines`, `data-session-lines` i `data-interval-ms`. Limity w `--strict`: na wykresie 4h najwyżej 3 linie poziomów, wszędzie najwyżej 6 linii poziomów i 6 linii sesji. `scripts/ui/baseline.json` (win32): 9 nowych liczb `levels.*` i `sessions.*`.
+- Testy: `levelsSelect.test.ts` (bieżący i poprzedni dzień poniżej 4h, od 4h tylko bieżący, brak dni z przyszłości, niezależność od głębokości historii, najwyżej 6 linii sesji z nazwą przy trzech ostatnich, sesja przyszła bez linii, zdanie w opisie PL i EN).
+
 ### Angielski pierwszym językiem powłoki (E1) (2026-11-12)
 
 #### Zmienione
