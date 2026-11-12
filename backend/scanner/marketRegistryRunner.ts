@@ -55,6 +55,8 @@ export interface MarketRegistryRunnerDeps {
   now?: () => number;
   /** Okno startu w slocie (ms od początku slotu); domyślnie REGISTRY_START_WINDOW */
   startWindow?: readonly [number, number];
+  /** Pobrana odpowiedź `metaAndAssetCtxs` giełdy (pomiar w cieniu M0 bierze z niej OI rynków głównych, bez nowych zapytań) */
+  onDexCtxs?: (dex: string, raw: unknown, at: number) => void;
 }
 
 export interface MarketRegistryTick {
@@ -129,7 +131,9 @@ export class MarketRegistryRunner {
           skipped.unshift(...dexes.slice(i));
           break;
         }
-        const rows = parseDexMarkets(await rest.info(dex === '' ? { type: 'metaAndAssetCtxs' } : { type: 'metaAndAssetCtxs', dex }, INFO_WEIGHT), dex);
+        const raw = await rest.info(dex === '' ? { type: 'metaAndAssetCtxs' } : { type: 'metaAndAssetCtxs', dex }, INFO_WEIGHT);
+        const rows = parseDexMarkets(raw, dex);
+        if (rows !== null) this.d.onDexCtxs?.(dex, raw, elapsedNow());
         if (rows === null) {
           if (dex === '') return { ran: false, error: 'brak kontekstów giełdy głównej (metaAndAssetCtxs)' };
           failed.push(dex);

@@ -41,6 +41,8 @@ export interface ScannerConfig {
   history: { markets: string[]; keepDays: number } | null;
   /** Warstwa wielorybów: liczba największych kont z rankingu i własny budżet wag; null = wyłączona */
   whales: { top: number; weightPerMin: number } | null;
+  /** Pomiar w cieniu M0 i przepływ minutowy K2 (jedno połączenie `trades` dla rynków rejestru); HQ_MARKETS_SHADOW=0 wyłącza */
+  marketsShadow: boolean;
 }
 
 type Env = Record<string, string | undefined>;
@@ -103,6 +105,8 @@ export function loadConfig(env: Env): { ok: true; config: ScannerConfig } | { ok
   if (weightPerMin + liqWeightPerMin + forecastWeightPerMin + (whales?.weightPerMin ?? 0) > 800)
     errors.push('HQ_WEIGHT_PER_MIN + HQ_LIQ_WEIGHT_PER_MIN + HQ_FORECAST_WEIGHT_PER_MIN + HQ_WHALE_WEIGHT_PER_MIN: razem najwyżej 800 wag/min');
 
+  const marketsShadow = intIn(env, 'HQ_MARKETS_SHADOW', 1, 0, 1, errors) === 1;
+
   if (errors.length > 0) return { ok: false, errors };
-  return { ok: true, config: { coin, weightPerMin, liqWeightPerMin, forecastWeightPerMin, stateDir, outDir, publishEveryS, maxAddresses, seedTop, seedMinUsd, r2, git, history, whales } };
+  return { ok: true, config: { coin, weightPerMin, liqWeightPerMin, forecastWeightPerMin, stateDir, outDir, publishEveryS, maxAddresses, seedTop, seedMinUsd, r2, git, history, whales, marketsShadow } };
 }

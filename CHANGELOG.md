@@ -14,6 +14,15 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 - Wdrożenie (`static.yml`): checkout pobiera tagi (`fetch-tags: true`), historia commitów dalej płytka.
 - Testy: `scripts/blog/whatsnew.test.mjs` (kolejność okresów, wersje z jednego dnia w jednym okresie, grupy, `ukryj`, sekcja bez komentarza, zła grupa, zakazane słowo, EN, brak tagów, brak CHANGELOG, adresy, hreflang, mapa strony, link w stopce każdej strony, brak `<script>` poza ld+json; prawdziwy CHANGELOG: każda sekcja z komentarzem i datą, tytuły przez bezpieczniki słów).
 
+### Pomiar rynków rejestru w cieniu, etap M0, i przepływ minutowy K2 (2026-11-12)
+
+#### Dodane
+- **Skaner, `status.json`**: nowe pola opcjonalne. `markets[rynek] = { coverage, unseenShare }` podaje, dla każdego rynku z rejestru, pokrycie OI odczytanymi pozycjami (ta sama miara co dla BTC; dla rynków HIP-3 `null`) i udział obrotu kont spoza księgi adresów w 7 dniach. `xyz = { accounts, inBook, unseenShare, share }` podaje, ile kont widać na taśmach `xyz`, ile z nich jest w księdze i jaki mają udział w obrocie. `marketsHours` to godziny z danymi w oknie. Publikowane są same liczby, bez adresów. Skaner nie robi nowych zapytań REST: pozycje pochodzą z odczytów, które już robi, a OI z przebiegu rejestru. Doszło jedno połączenie WebSocket z subskrypcją `trades` dla rynków rejestru. Strona się nie zmienia, a starsi czytelnicy statusu działają bez zmian.
+- **Skaner, przepływ minutowy (K2)**: suma kupna i sprzedaży agresywnej na minutę dla każdego rynku rejestru, liczona z tej samej subskrypcji. Wynik trafia do plików dobowych w katalogu stanu serwera, przycinanych do 21 dób (test po K2 potrzebuje 14 pełnych dób; ok. 7,5 MB przy 20 rynkach), i nie jest publikowany. Posłuży do testu offline po K2.
+- Połączenie pomiaru ustępuje głównemu strumieniowi skanera (limit 10 połączeń WebSocket na IP jest wykorzystany w całości): po ponad 30 s rozłączenia głównego jest zamykane i wraca po 60 s jego stabilnego połączenia.
+- `unseenShare` rynku skanera (`HQ_COIN`) ma zawsze `null`, bo zależałby od kolejności obsługi dwóch połączeń.
+- Zmienna `HQ_MARKETS_SHADOW` (domyślnie 1; `0` wyłącza pomiar i dodatkowe połączenie).
+
 ### Rynki z rejestru: progi i formaty pod BTC, etap M1.4 (2026-11-12)
 <!-- co-nowego: grupa=rynki | pl=Inne rynki na wykresie z własnymi progami i krokiem ceny | en=Other markets on the chart with their own thresholds and price step -->
 
