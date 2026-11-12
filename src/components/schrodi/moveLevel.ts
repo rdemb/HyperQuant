@@ -115,15 +115,21 @@ export const moveNoDataReason = (n: number): string =>
 type CatSection = NonNullable<DeskLedgerSummary['cat']>;
 
 /** Stan szansy ruchu do wyświetlenia przed awansem: poziom z tercyli albo brak z powodem */
-export type MoveView = { kind: 'level'; level: MoveLevel; terciles: MoveTerciles; freq: LevelFreq | null } | { kind: 'none'; reason: string };
+export type MoveView = { kind: 'level'; level: MoveLevel; terciles: MoveTerciles; freq: LevelFreq | null; days: number } | { kind: 'none'; reason: string };
 
 export function moveView(pBig: number, cat: CatSection | null | undefined): MoveView {
   if (!cat) return { kind: 'none', reason: tr('brak podsumowania rejestru', 'no ledger summary') };
   const bins = cat.scores.big.reliability;
+  // Tercyle zegara ruchu (dokładne kwantyle z 14 dni, ten sam poziom co zegar w „Przed sesją”); bez nich — histogram 30 dni
+  const clock = cat.clock?.terciles;
+  if (clock) {
+    const level = moveLevel(pBig, clock);
+    return { kind: 'level', level, terciles: clock, freq: levelFreq(bins, clock, level), days: 14 };
+  }
   const t = moveTerciles(bins);
   if (!t) return { kind: 'none', reason: moveNoDataReason((bins ?? []).reduce((s, b) => s + (Number.isFinite(b.n) ? b.n : 0), 0)) };
   const level = moveLevel(pBig, t);
-  return { kind: 'level', level, terciles: t, freq: levelFreq(bins, t, level) };
+  return { kind: 'level', level, terciles: t, freq: levelFreq(bins, t, level), days: 30 };
 }
 
 /**
