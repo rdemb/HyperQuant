@@ -1,10 +1,11 @@
-// Strony serwisu poza aplikacją: wejścia do Wykresów i Lekcji (PL i EN), hasła atlasu wskaźników jako osobne strony
-// i strona 404. Statyczny HTML dla wyszukiwarek i podglądu linków; aplikacja zostaje pod adresem desku (#charts, #lessons).
+// Strony serwisu poza aplikacją: wejścia do Wykresów i Lekcji (PL i EN), hasła atlasu wskaźników jako osobne strony,
+// wyniki prognoz dziennika (results.mjs) i strona 404. Statyczny HTML dla wyszukiwarek i podglądu linków; aplikacja zostaje pod adresem desku (#charts, #lessons).
 // Treść lekcji pochodzi z tych samych plików co zakładka Lekcje (src/lessons/content), więc strony nie rozjeżdżają się z nią.
 import { en } from '../../src/lessons/content/en.ts';
 import { pl } from '../../src/lessons/content/pl.ts';
 import { EXERCISES } from '../../src/lessons/exercises.ts';
 import { esc, layout } from './render.mjs';
+import { RESULTS_PATHS, resultsPage } from './results.mjs';
 
 const LESSONS = { pl, en };
 export const LANGS = ['pl', 'en'];
@@ -13,6 +14,7 @@ export const LANGS = ['pl', 'en'];
 export const PATHS = {
   charts: { pl: 'wykresy/', en: 'en/charts/' },
   lessons: { pl: 'lekcje/', en: 'en/lessons/' },
+  results: RESULTS_PATHS,
 };
 const atlasPath = (lang, id) => `${PATHS.lessons[lang]}atlas/${id}/`;
 /** Względna ścieżka do korzenia desku ze strony pod `path`. */
@@ -438,7 +440,7 @@ function notFoundPage(site) {
   const main = `<article class="page page--404">
 <h1>${esc(t.notFound.h1)}</h1>
 <p class="lead">${esc(t.notFound.text)}</p>
-<ul class="more">${link('', 'In session')}${link(PATHS.charts.en, T.en.charts)}${link(PATHS.lessons.en, T.en.lessons)}${link('blog/', 'Blog (in Polish)', 'pl')}</ul>
+<ul class="more">${link('', 'In session')}${link(PATHS.charts.en, T.en.charts)}${link(PATHS.lessons.en, T.en.lessons)}${link(PATHS.results.en, 'Forecast results')}${link('blog/', 'Blog (in Polish)', 'pl')}</ul>
 <p lang="pl">${esc(T.pl.notFound.h1)}. Po polsku: <a href="${u}${PATHS.charts.pl}">${esc(T.pl.charts)}</a> · <a href="${u}${PATHS.lessons.pl}">${esc(T.pl.lessons)}</a> · <a href="${u}blog/">Blog</a></p>
 </article>`;
   return {
@@ -463,12 +465,13 @@ function notFoundPage(site) {
 
 /**
  * Wszystkie strony serwisu: { path, lang, html, alternates?, card? }. `card` (dane karty podglądu linku) trafia do `<path>og.png`.
- * Karta desku (strona aplikacji, index.html) ma ścieżkę '' i nie ma HTML.
+ * Karta desku (strona aplikacji, index.html) ma ścieżkę '' i nie ma HTML. `results` = pliki strony wyników z chwili
+ * budowania (results.mjs, fetchResults); bez nich strona wyników powstaje z „—” i powodem.
  */
-export function sitePages(site) {
+export function sitePages(site, { results = {} } = {}) {
   const out = [];
   for (const lang of LANGS) {
-    out.push(chartsPage(site, lang), lessonsPage(site, lang));
+    out.push(chartsPage(site, lang), lessonsPage(site, lang), resultsPage(site, lang, results));
     const entries = LESSONS[lang].atlas.entries;
     entries.forEach((e, i) => out.push(atlasPage(site, lang, e, entries[i - 1], entries[i + 1])));
   }
