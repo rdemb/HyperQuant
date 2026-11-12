@@ -8,6 +8,7 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 #### Poprawione
 - **Skaner:** kolejka kandydatów do potwierdzenia likwidacji (`LiqConfirmer`) jest zapisywana w stanie serwera (`liq-<rynek>.json`, obok księgi adresów, nigdy publikowana) i odtwarzana przy starcie. Dotąd restart gubił kandydatów, których ponowny odczyt pozycji już nie wykryje, więc taśma traciła te likwidacje, a udział niepotwierdzonych spadał do zera. Przy odczycie tylko poprawne wpisy (adres, pozycja, okno fillów), najwyżej 500; kandydat starszy niż 24 h w chwili odczytu nie wraca do kolejki i liczy się jako nieudany. Starszy stan bez kolejki daje pustą kolejkę, jak dotąd.
+- **Taśma likwidacji tylko od początku okresu obserwacji (`since`):** nowy okres (start z przerwą ≥ 2 min albo przerwa WebSocket) usuwa też kandydatów z odczytem sprzed jego początku, bez zapytań i bez liczników, z liczbą w logu; zdarzenie sprzed początku okresu (kandydat z oknem przez granicę) nie trafia na taśmę i nie liczy się jako odrzucone. Dotąd kolejka w pamięci przeżywała przerwę WebSocket i mogła dopisać zdarzenie sprzed `since`. Wpis kolejki ze stanu wymaga też skończonego `prev.scannedAt` i `liqPx` > 0 (albo braku).
 
 ### Wykresy dla rejestru rynków, etap M1 (2026-11-12)
 
