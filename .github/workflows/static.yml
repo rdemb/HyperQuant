@@ -54,6 +54,8 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+          # Tagi v* to kamienie milowe strony „Co nowego” (scripts/blog/whatsnew.mjs); historia commitów dalej płytka
+          fetch-tags: true
 
       # Głowa gałęzi blog (pusto: gałęzi nie ma albo GitHub nie odpowiada) i opublikowany blog/source.json: sha gałęzi, sha
       # main i rejestr wpisów (known=false: pliku nie da się odczytać, wtedy bramka nie wdraża niczego). Przed setup-node

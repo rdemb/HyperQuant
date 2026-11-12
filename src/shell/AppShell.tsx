@@ -514,6 +514,10 @@ export const AppShell: React.FC = () => {
           <a href={tr('./wyniki/', './en/results/')} className="inline-flex items-center min-h-11 hover:text-ink-1 transition-colors duration-150">
             {tr('Wyniki prognoz', 'Forecast results')}
           </a>
+          {/* Statyczna strona historii zmian z CHANGELOG.md (scripts/blog/whatsnew.mjs) */}
+          <a href={tr('./co-nowego/', './en/whats-new/')} className="inline-flex items-center min-h-11 hover:text-ink-1 transition-colors duration-150">
+            {tr('Co nowego', "What's new")}
+          </a>
           <ViewLink id={AGENTS.id} go={go} current={view === AGENTS.id} className="inline-flex items-center min-h-11 hover:text-ink-1 transition-colors duration-150">
             {AGENTS.label}
           </ViewLink>
