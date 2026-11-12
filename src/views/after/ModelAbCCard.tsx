@@ -2,15 +2,12 @@ import React from 'react';
 import { DASH, fmtFixed } from '../../ui';
 import type { AbBlock, DeskLedgerSummary } from '../../utils/deskLedger';
 import { locale, tr } from '../../i18n';
+import { RVMIX } from '../../utils/rvMix';
 import { AbPeriods, span } from './ModelAbCard';
 
 const timeFmt = new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit' });
 const stampFmt = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' });
 const dateFmt = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', timeZone: 'UTC' });
-/** Stałe planu ab-v2 (do opisu skali poziomu w karcie) */
-const KAPPA = 0.5;
-const C0 = -0.05;
-
 const pct = (v: number | null) => (v === null ? DASH : `${fmtFixed(v * 100, 1)}%`);
 
 function verdictOf(b: AbBlock): string | null {
@@ -58,7 +55,7 @@ export const ModelAbCCard: React.FC<{ ab: NonNullable<DeskLedgerSummary['abC']> 
             {tr('poziom wobec A', 'level vs A')} x <span className="font-mono tabular-nums text-ink-1">{fmtFixed(l.x, 2)}</span>
           </span>
           <span title={tr('Kwantyle po kroku poziomu = kwantyle A × exp(c + κ·x)', 'Quantiles after the level step = A quantiles × exp(c + κ·x)')}>
-            {tr('skala poziomu', 'level scale')} <span className="font-mono tabular-nums text-ink-1">×{fmtFixed(Math.exp(C0 + KAPPA * l.x), 3)}</span>
+            {tr('skala poziomu', 'level scale')} <span className="font-mono tabular-nums text-ink-1">×{fmtFixed(Math.exp(RVMIX.c + RVMIX.kappa * l.x), 3)}</span>
           </span>
         </div>
       )}
