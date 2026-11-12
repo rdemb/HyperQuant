@@ -6,13 +6,16 @@ import { PB_EVIDENCE } from '../chart/pbSelect';
 import { type Branching, MIN_EVENTS, fitBranching } from '../core/hawkes';
 import { fitBranchingLater, inBackground } from '../core/hawkesWorker';
 import { ofiEvent } from '../../../utils/microMechanics';
-import { RVOL_MIN_DAYS, rvolSeries } from '../../../utils/rvol';
+import { rvolSeries } from '../../../utils/rvol';
 import { Extreme, OlsWindow, RegimeDetector, RobustLine, Window, Wma, ema, rma } from './primitives';
 import { DAY, INTERVALS, MONTH, intervalById } from '../core/time';
 import { oneAccountScope } from '../core/accountScope';
 import { numLang } from '../../../ui/format';
 import { PRO } from '../chart/theme';
 import { tr } from '../../../i18n';
+
+/** Historia wykresu dla RVOL: 10 dni roboczych w oknie ok. 14 dni kalendarzowych */
+const RVOL_MIN_HISTORY_DAYS = 14;
 
 /**
  * Rejestr klasycznych wskaźników: jeden opis na wskaźnik (nazwa, parametry, ploty, panel), z którego korzystają
@@ -1701,22 +1704,22 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
     short: 'RVOL',
     name: tr('RVOL wg godzin (wolumen wobec normy)', 'Hourly RVOL (volume vs. norm)'),
     hint: tr(
-      'MODEL: wolumen wobec mediany tej samej godziny z 20 dni (1 — typowy wolumen o tej porze, 2 — dwa razy większy); bez wartości, gdy historia wykresu ma mniej niż 10 dni, i w świecy jeszcze trwającej',
-      'MODEL: volume versus the median of the same hour over 20 days (1 is the typical volume at that time, 2 is twice as much); no value when the chart history is shorter than 10 days, or in a candle still forming'
+      'MODEL: wolumen wobec mediany tej samej godziny w Nowym Jorku z 20 dni tego samego typu, robocze i weekend osobno (weekend: od piątku 17:00 do niedzieli 18:00 czasu nowojorskiego; 1 — typowy wolumen o tej porze, 2 — dwa razy większy); bez wartości, gdy historia wykresu ma mniej niż 10 takich dni, i w świecy jeszcze trwającej',
+      'MODEL: volume versus the median of the same New York hour over 20 days of the same type, weekdays and weekends separately (weekend: Friday 17:00 to Sunday 18:00 New York time; 1 is the typical volume at that time, 2 is twice as much); no value when the chart history has fewer than 10 such days, or in a candle still forming'
     ),
     group: 'hyperquant',
     aliases: 'rvol relative volume wzgledny wolumen godzina hour norma mediana median aktywnosc activity',
     warmup: () => 0,
     convention: tr(
-      'Tego wskaźnika nie ma w TradingView w tej postaci. Model na świecach wykresu: wolumen świecy dzielony przez medianę wolumenu świec z tej samej godziny i minuty UTC z poprzednich 20 dni; próba musi mieć co najmniej 10 dni, inaczej świeca nie ma wartości. Świeca jeszcze trwająca też jej nie ma (wolumen niepełny). Wolumen tej samej giełdy, bez ruchu w innych miejscach.',
-      'TradingView has no such indicator in this form. A model on the chart candles: the candle volume divided by the median volume of candles at the same UTC hour and minute over the previous 20 days; the sample needs at least 10 days, otherwise the candle has no value. A candle still forming has none either (partial volume). Volume of this exchange only, not other venues.'
+      'Tego wskaźnika nie ma w TradingView w tej postaci. Model na świecach wykresu: wolumen świecy dzielony przez medianę wolumenu świec z tej samej godziny i minuty zegara w Nowym Jorku z 20 ostatnich dni tego samego typu (dni robocze i weekend według daty w Nowym Jorku osobno, do 80 dni wstecz). Wolumen przesuwa się razem z czasem w USA, więc godzina otwarcia NY ma tę samą bazę przed zmianą czasu i po niej. Próba musi mieć co najmniej 10 dni, inaczej świeca nie ma wartości. Świeca jeszcze trwająca też jej nie ma (wolumen niepełny). Wolumen tej samej giełdy, bez ruchu w innych miejscach.',
+      'TradingView has no such indicator in this form. A model on the chart candles: the candle volume divided by the median volume of candles at the same New York clock hour and minute over the last 20 days of the same type (weekdays and weekends by the New York date separately, up to 80 days back). Volume moves with the US clock, so the NY opening hour has the same base before and after a clock change. The sample needs at least 10 days, otherwise the candle has no value. A candle still forming has none either (partial volume). Volume of this exchange only, not other venues.'
     ),
     memoryNote: tr(
-      'Świeca zależy od świec z tej samej pory doby z 20 poprzednich dni, o ile wykres je ma (przy drobnym interwale ładuje się mniej dni).',
-      'A candle depends on candles at the same time of day over the previous 20 days, as far as the chart has them (a small interval loads fewer days).'
+      'Świeca zależy od świec z tej samej pory doby w Nowym Jorku z 20 poprzednich dni tego samego typu, o ile wykres je ma (przy drobnym interwale ładuje się mniej dni; weekend potrzebuje dłuższej historii).',
+      'A candle depends on candles at the same New York time of day over the previous 20 days of the same type, as far as the chart has them (a small interval loads fewer days; weekends need a longer history).'
     ),
-    // 1m i 5m ładują zwykle 1–5 dób świec: bez 10 dni historii panel byłby pusty
-    minHistoryMs: RVOL_MIN_DAYS * DAY,
+    // 1m i 5m ładują zwykle 1–5 dób świec: 10 dni roboczych to ok. 14 dni kalendarzowych (weekend potrzebuje ok. 5 tygodni)
+    minHistoryMs: RVOL_MIN_HISTORY_DAYS * DAY,
     pane: 'own',
     params: [],
     plots: [{ title: 'RVOL' }],

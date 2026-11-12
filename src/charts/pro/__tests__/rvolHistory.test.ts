@@ -9,13 +9,14 @@ describe('RVOL przy krótkiej historii wykresu', () => {
   const rvol = indicatorDef('rvol');
 
   it('1m (ok. 1 doby świec) i 5m (ok. 5 dób): w legendzie panelu powód zamiast pustego panelu', () => {
-    expect(shortHistoryNote(rvol, 1500 * MIN)).toBe('za mało historii (min. 10 dni)');
-    expect(shortHistoryNote(rvol, 1500 * 5 * MIN)).toBe('za mało historii (min. 10 dni)');
-    expect(shortHistoryNote(rvol, 10 * DAY - MIN)).toBe('za mało historii (min. 10 dni)');
+    // 10 dni roboczych próby to ok. 14 dni kalendarzowych
+    expect(shortHistoryNote(rvol, 1500 * MIN)).toBe('za mało historii (min. 14 dni)');
+    expect(shortHistoryNote(rvol, 1500 * 5 * MIN)).toBe('za mało historii (min. 14 dni)');
+    expect(shortHistoryNote(rvol, 14 * DAY - MIN)).toBe('za mało historii (min. 14 dni)');
   });
 
-  it('od 10 dni historii (15m: ok. 15 dób) — bez uwagi, wartości liczy model', () => {
-    expect(shortHistoryNote(rvol, 10 * DAY)).toBeNull();
+  it('od 14 dni historii (15m: ok. 15 dób) — bez uwagi, wartości liczy model', () => {
+    expect(shortHistoryNote(rvol, 14 * DAY)).toBeNull();
     expect(shortHistoryNote(rvol, 1500 * 15 * MIN)).toBeNull();
   });
 
