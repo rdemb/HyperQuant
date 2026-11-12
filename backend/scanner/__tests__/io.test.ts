@@ -218,7 +218,7 @@ describe('Scanner — cykl skanu i publikacji', () => {
     // Pomiar prywatności wielorybów w status.json: same liczniki (tu kubełek bez wielorybów), bez adresów
     const status = readFileSync(join(out, 'status.json'), 'utf8');
     expect(status).not.toMatch(/0x/);
-    expect(JSON.parse(status).whalePrivacy).toEqual({ m15: { ok: 0, n: 0 }, h1: { ok: 0, n: 0 }, h4: { ok: 0, n: 0 } });
+    expect(JSON.parse(status).whalePrivacy).toEqual({ m15: { ok: 0, n: 0, obs: 1 }, h1: { ok: 0, n: 0, obs: 0 }, h4: { ok: 0, n: 0, obs: 0 } });
   });
 
   it('likwidacja śledzonej pozycji: kandydat po zniknięciu pozycji przy cenie likwidacji, potwierdzenie fillem, taśma bez adresów', async () => {

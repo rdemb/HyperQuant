@@ -153,12 +153,13 @@ export const passesPrivacy = (maps: Map<string, number>[]): boolean => !unsafe(l
 
 /**
  * Pomiar przed drabiną ziarnistości: zamknięte kubełki kohorty wielorybów przy ziarnie 15 min (dziś), 1 h i 4 h (okna
- * wyrównane do UTC), z ostatnich 7 dób. `n` — kubełki z aktywnością wielorybów (puste niczego nie ujawniają), `ok` — z nich
- * przechodzące próg prywatności. Okno liczone tylko, gdy wszystkie jego kwadranse były obserwowane w całości.
+ * wyrównane do UTC), z ostatnich 7 dób. `obs` — wszystkie okna obserwowane w całości, `n` — z nich kubełki z aktywnością
+ * wielorybów (puste niczego nie ujawniają i można je pokazać jako zero), `ok` — z `n` przechodzące próg prywatności; udział
+ * okien, które wolno pokazać: (ok + obs − n) / obs. Okno liczone tylko, gdy wszystkie jego kwadranse były obserwowane w całości.
  */
 export const PRIVACY_GRAINS = { m15: BUCKET, h1: HOUR, h4: 4 * HOUR } as const;
 export type PrivacyGrain = keyof typeof PRIVACY_GRAINS;
-export type WhalePrivacy = Record<PrivacyGrain, { ok: number; n: number }>;
+export type WhalePrivacy = Record<PrivacyGrain, { ok: number; n: number; obs: number }>;
 const PRIVACY_WINDOW = 7 * DAY;
 const GRAINS = Object.keys(PRIVACY_GRAINS) as PrivacyGrain[];
 
@@ -315,7 +316,8 @@ export class CohortEngine {
   private observedFrom: number | null = null;
   /** Pomiar prywatności wielorybów: obrót uczestników zamkniętych kwadransów (do domknięcia okna 4 h) i wyniki okien */
   private whaleQ = new Map<number, Map<string, number>>();
-  private privacy: Record<PrivacyGrain, Map<number, boolean>> = { m15: new Map(), h1: new Map(), h4: new Map() };
+  /** Początek okna → wynik progu; null — okno obserwowane w całości bez aktywności wielorybów */
+  private privacy: Record<PrivacyGrain, Map<number, boolean | null>> = { m15: new Map(), h1: new Map(), h4: new Map() };
 
   constructor(o: { coin: string; isWhale: (addr: string) => boolean; maxStats?: number }) {
     this.coin = o.coin;
@@ -525,8 +527,8 @@ export class CohortEngine {
         if (!m) break;
         maps.push(m);
       }
-      if (maps.length !== len / BUCKET || layerStats(maps).gross <= 0) continue;
-      this.privacy[g].set(end - len, passesPrivacy(maps));
+      if (maps.length !== len / BUCKET) continue;
+      this.privacy[g].set(end - len, layerStats(maps).gross > 0 ? passesPrivacy(maps) : null);
     }
   }
 
@@ -536,12 +538,15 @@ export class CohortEngine {
     for (const g of GRAINS) {
       let ok = 0;
       let n = 0;
+      let obs = 0;
       for (const [start, pass] of this.privacy[g]) {
         if (start < now - PRIVACY_WINDOW) continue;
+        obs++;
+        if (pass === null) continue;
         n++;
         if (pass) ok++;
       }
-      out[g] = { ok, n };
+      out[g] = { ok, n, obs };
     }
     return out;
   }
@@ -773,7 +778,7 @@ export class CohortEngine {
       for (const g of GRAINS) {
         const rows = pr[g];
         if (!Array.isArray(rows)) continue;
-        for (const row of rows) if (Array.isArray(row) && fin(row[0]) && typeof row[1] === 'boolean') e.privacy[g].set(row[0], row[1]);
+        for (const row of rows) if (Array.isArray(row) && fin(row[0]) && (typeof row[1] === 'boolean' || row[1] === null)) e.privacy[g].set(row[0], row[1]);
       }
     }
     const members = x.members as Record<string, unknown> | undefined;
