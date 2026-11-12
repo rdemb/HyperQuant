@@ -1,19 +1,18 @@
 import React, { useEffect, useId, useState } from 'react';
 import { History } from 'lucide-react';
 import { Badge, DASH, EmptyState, Panel, sourceTag } from '../../ui';
-import { sessionExpectedOf, volLoadingFor } from '../../charts/pro/chart/layoutInputs';
+import { sessionExpectedOf } from '../../charts/pro/chart/layoutInputs';
 import { fmtDm, fmtHm } from '../../charts/pro/core/time';
 import { storeFor } from '../../charts/pro/store/proStore';
 import { startRecording } from '../../charts/pro/store/recording';
 import { useStoreVersion } from '../../charts/pro/store/useStoreVersion';
-import { useDesk } from '../../state/DeskContext';
 import { useBlogMaps } from '../../state/useBlogMaps';
 import { useCohortFlow } from '../../state/useCohortFlow';
 import { useDeskLedger } from '../../state/useDeskLedger';
 import { useLiqTape } from '../../state/useLiqTape';
 import type { TradeSession } from '../../utils/sessionDay';
 import { TRADE_SESSION_NAME } from '../../utils/sessionNames';
-import { type ReviewCard, type ReviewRow, reviewCards, reviewRows, sessionCloseOf } from '../../utils/sessionReview';
+import { type ReviewCard, type ReviewRow, reviewCards, reviewRows } from '../../utils/sessionReview';
 import { cardBars1m } from './reviewInputs';
 import { reviewReplay } from './reviewReplay';
 import { tr } from '../../i18n';
@@ -35,7 +34,6 @@ export const SessionReview: React.FC = () => {
     const id = window.setInterval(() => setTick((t) => t + 1), TICK_MS);
     return () => clearInterval(id);
   }, []);
-  const { feed } = useDesk();
   const maps = useBlogMaps(true);
   const liq = useLiqTape();
   const cohorts = useCohortFlow();
@@ -43,15 +41,12 @@ export const SessionReview: React.FC = () => {
 
   const now = store.serverNow();
   const { cards, next } = reviewCards(now);
-  const lp = store.lastPrice();
   const all = cards.map((card) => {
     // Świece każdej karty osobno: brak starszych minut wygasza tylko karty, które ich potrzebują
     const bars1m = cardBars1m(store, card.s, now);
-    const price = sessionCloseOf(bars1m, card.s, now, lp);
-    // Zamknięta sesja: oczekiwanie sprzed jej otwarcia (Parkinson), model HAR tylko dla sesji w toku (w drodze — czekamy na niego)
-    const expected = price > 0 ? sessionExpectedOf(store, feed.vol, card.s, card.inProgress, price) : undefined;
-    const volLoading = card.inProgress && volLoadingFor(store.coin, feed.vol);
-    return { card, rows: reviewRows({ s: card.s, inProgress: card.inProgress, now, bars1m, maps, expected, volLoading, liq, cohorts, ledger }) };
+    // Oczekiwany zakres z chwili otwarcia sesji (świece 1h sprzed niego), ten sam w toku i po zamknięciu
+    const expected = sessionExpectedOf(store, card.s);
+    return { card, rows: reviewRows({ s: card.s, inProgress: card.inProgress, now, bars1m, maps, expected, liq, cohorts, ledger }) };
   });
   const windowRows = all[0]?.rows.filter((r) => r.scope === 'window') ?? [];
 
