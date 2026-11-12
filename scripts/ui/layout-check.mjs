@@ -131,6 +131,22 @@ const levelCounts = `(() => {
   const long = hosts.filter((h) => Number(h.dataset.intervalMs) >= 4 * 3600000);
   return { levels: max(hosts, 'levelLines'), sessions: max(hosts, 'sessionLines'), levels4h: max(long, 'levelLines') };
 })()`;
+/**
+ * Zakresy P/b (Nill): Kokpit 5m z zapisem, w którym wskaźnik jest włączony, na danych stałych (wskaźnik działa na żywo,
+ * w powtórce jest wyłączony), 1440 i 390. Liczby z wyboru warstwy (`pbSelect`, atrybuty `data-pb-boxes`, `data-pb-lines`,
+ * `data-pb-marks`). Limity z projektu: najwyżej 2 pudełka, 4 linie poziomów i 3 znaczniki 👀.
+ */
+const PB_STORE = {
+  'hq.charts.v1.cockpit': JSON.stringify({
+    coin: 'BTC',
+    interval: '5m',
+    view: 'candles',
+    layersV: 2,
+    indicators: [{ iid: 'pbrange', id: 'pbrange', params: {}, color: '#7C8CFF', alpha: 1, width: 1, labels: true, visible: true }],
+  }),
+};
+const PB_MAX = { boxes: 2, lines: 4, marks: 3 };
+const pbCounts = `(() => { const c = window.__hq.chart(); const host = c && c.root.closest('[data-pb-boxes]'); return host ? { boxes: Number(host.dataset.pbBoxes), lines: Number(host.dataset.pbLines), marks: Number(host.dataset.pbMarks) } : null; })()`;
 const ibCount = `(() => { const c = window.__hq.chart(); const host = c && c.root.closest('[data-ib-objects]'); return host ? Number(host.dataset.ibObjects) : null; })()`;
 /**
  * Profile dób na danych stałych: „Mapa dnia” (komputer: 4h z profilami dób i 30m z TPO; telefon: 30m z TPO) i „Rozliczenie
@@ -669,6 +685,19 @@ async function main() {
       report.levels[name].phone = await probe(page, levelCounts);
       await shot(page, `390-poziomy-${name}`);
     }
+    // Szlif 8: zakresy P/b w Kokpicie 5m (1440, potem 390)
+    report.pb = {};
+    await page.viewport(1440, 900, false);
+    await open(page, '#charts', PB_STORE);
+    await page.mouseAway();
+    await sleep(400);
+    report.pb.desktop = await probe(page, pbCounts);
+    await shot(page, '1440-pb');
+    await page.viewport(390, 844, true);
+    await open(page, '#charts', PB_STORE);
+    await sleep(400);
+    report.pb.phone = await probe(page, pbCounts);
+    await shot(page, '390-pb');
     await page.viewport(1440, 900, false);
 
     // 4. Ustawienia użytkownika
@@ -726,7 +755,9 @@ async function main() {
     r.levels.dayMap.desktop.levels4h <= LEVELS_MAX.h4 &&
     typeof r.levels?.review?.desktop?.sessions === 'number' &&
     LEVEL_VIEWS.every(([name]) => lvOk(r.levels?.[name]?.desktop) && lvOk(r.levels?.[name]?.phone));
-  r.summary = { t1, t2, t3, t4, t5, t6, s1, s2, s3, s4, s5, s6, s7 };
+  const pbOk = (c) => !!c && c.boxes <= PB_MAX.boxes && c.lines <= PB_MAX.lines && c.marks <= PB_MAX.marks;
+  const s8 = pbOk(r.pb?.desktop) && pbOk(r.pb?.phone);
+  r.summary = { t1, t2, t3, t4, t5, t6, s1, s2, s3, s4, s5, s6, s7, s8 };
   const lines = [
     `Pomiar „${LABEL}” (${BASE})`,
     `1. Panel ceny 1440×900: ${pct(r.desktop)} (próg 62%, zapas ${margin(r.desktop?.share ?? 0, LIMITS.desktop)}), z kolumną DOM: ${pct(r.desktopDom)} (próg 60%, zapas ${margin(r.desktopDom?.share ?? 0, LIMITS.desktopDom)}) — ${ok(t1)}`,
@@ -748,6 +779,7 @@ async function main() {
     `Szlif 3. Ściany i serie (Kokpit 1m, powtórka 24.10 19:30): 1440 ${r.clashes?.desktop ?? '—'} (limit ${CLASH_MAX}) — ${ok(s3)}`,
     `Szlif 4. Bąble zleceń (Kokpit 1m, powtórka 24.10 19:30): 1440 ${r.bubbles?.desktop ?? '—'}, 390 ${r.bubbles?.phone ?? '—'} (1440: ${BUBBLES.min}–${BUBBLES.max}, 390: do ${BUBBLES.phoneMax}) — ${ok(s4)}`,
     `Szlif 5. Zakres początkowy sesji (dane stałe): „Aukcja i otwarcie” 5m 1440 ${r.ib?.auction?.desktop ?? '—'}, 390 ${r.ib?.auction?.phone ?? '—'}; „Rozliczenie doby” 30m 1440 ${r.ib?.review?.desktop ?? '—'}, 390 ${r.ib?.review?.phone ?? '—'} (limit ${IB_MAX}) — ${ok(s5)}`,
+    `Szlif 8. Zakresy P/b (Kokpit 5m, dane stałe; pudełka / linie / 👀): 1440 ${r.pb?.desktop ? `${r.pb.desktop.boxes} / ${r.pb.desktop.lines} / ${r.pb.desktop.marks}` : '—'}, 390 ${r.pb?.phone ? `${r.pb.phone.boxes} / ${r.pb.phone.lines} / ${r.pb.phone.marks}` : '—'} (limit ${PB_MAX.boxes} / ${PB_MAX.lines} / ${PB_MAX.marks}) — ${ok(s8)}`,
     `Szlif 6. Profile dób (dane stałe; obiekty / pole %): ${PROFILE_VIEWS.map(([name]) => {
       const v = r.profiles?.[name];
       const f = (c) => (c ? `${c.objects} / ${c.area}%` : '—');

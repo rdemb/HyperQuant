@@ -1,7 +1,8 @@
-import { AB_BLOCK_DAYS, abBlocks, type AbRow } from '../../src/utils/abTest.ts';
+import { AB_BLOCK_DAYS, AB_DESIGN_C, abBlocks, abFirstBlock, type AbRow } from '../../src/utils/abTest.ts';
 import { type CalRow, type CatCal, calSummary } from '../../src/utils/catCal.ts';
 import { type CatClock, clockSeason, clockTerciles } from '../../src/utils/moveClock.ts';
 import { type HourBar, type HrelRow, type HrelSummary, hrelSummary } from '../../src/utils/hourRel.ts';
+import { MODEL_C, RVMIX, rv60From5m, rvLevel, rvX, scaleMixQuantiles } from '../../src/utils/rvMix.ts';
 import { Bocpd } from '../../src/utils/bocpd.ts';
 import { ENS_PRIOR, REC_PRIOR, fitEnsemble, poolProb, type EnsPair, type EnsWeights } from '../../src/utils/ensemble.ts';
 import { type RangeBar, type VolModel, buildVolModel, horizonStepSigmas } from '../../src/utils/volatility.ts';
@@ -113,14 +114,21 @@ export interface RetForecast {
   model: string;
   /**
    * Wariant B (A/B wersji modelu): kwantyle A × `scale`, σ_B² = ½σ_A² + ½σ²_reżimu,h (BOCPD na odsezonowanych zwrotach
-   * 5m). Brak = wersja główna (A). Wariant B nie zmienia ACI wersji A.
+   * 5m). Wariant C (`ab-v2`): kwantyle A przesunięte świeżą zmiennością z 12 świec 5m i rozszerzone mieszaniną skali
+   * (src/utils/rvMix.ts). Brak = wersja główna (A). Warianty nie zmieniają ACI wersji A.
    */
-  variant?: 'B';
+  variant?: 'B' | 'C';
   /** √(½ + ½·σ²_reżimu,h / σ_A²), σ²_reżimu,h = sigma5² · (h/5) · seas */
   scale?: number;
   regime?: Regime;
-  /** σ_A: odchylenie log-zwrotu na horyzoncie z modelu A (√ sumy wariancji kroków) */
+  /** σ_A: B — odchylenie log-zwrotu na horyzoncie z modelu A (√ sumy wariancji kroków); C — z rozpiętości kwantyli A */
   sigmaA?: number;
+  /** Wariant C: zmienność zrealizowana 60 min przed slotem, poziom x i stałe planu `ab-v2` */
+  rv60?: number;
+  x?: number;
+  kappa?: number;
+  c?: number;
+  tau?: number;
   /** Średni współczynnik sezonowy godzin na krokach 5m horyzontu (profil modelu A) */
   seas?: number;
 }
@@ -178,6 +186,39 @@ export function makeRetForecastB(model: VolModel, a: RetForecast, reg: Regime): 
   const regH2 = reg.sigma5 ** 2 * steps * seas;
   const scale = r6(Math.sqrt(0.5 + (0.5 * regH2) / Math.max(sigmaA ** 2, 1e-18)));
   return { ...a, id: `${a.id}b`, q: a.q.map((v) => r6(v * scale)), model: MODEL_B, variant: 'B', scale, regime: reg, sigmaA, seas };
+}
+
+/** Przyrostek identyfikatora wariantu (`<id A><przyrostek>`) */
+export const VARIANT_SUFFIX = { B: 'b', C: 'c' } as const;
+
+/**
+ * Wariant C prognozy zwrotu 1 h: pola A (te same chwile, benchmark, ACI), kwantyle A przekształcone wzorem planu `ab-v2`
+ * ze zmiennością zrealizowaną `rv60` z 12 zamkniętych świec 5m przed slotem. Kwantyle A nierosnące albo σA ≤ 0 → null.
+ */
+export function makeRetForecastC(a: RetForecast, rv60: number): RetForecast | null {
+  if (a.h !== 60 || a.variant) return null;
+  const lvl = rvLevel(a.q, a.taus, rv60, RVMIX.kappa, RVMIX.c);
+  if (!lvl) return null;
+  // Przekształcenie z wartości zapisanych w rekordzie (σA 8 miejsc, rv60 10 cyfr, x 6 miejsc) — weryfikator liczy z nich
+  const rvRec = Number(rv60.toPrecision(10));
+  const sigmaA = r8(lvl.sigmaA);
+  const x = r6(rvX(rvRec, sigmaA));
+  const g = Math.exp(RVMIX.c + RVMIX.kappa * x);
+  const q = scaleMixQuantiles(a.q.map((v) => v * g), a.taus, RVMIX.tau).map(r6);
+  if (!q.every((v, i) => i === 0 || v > q[i - 1])) return null;
+  return {
+    ...a,
+    id: `${a.id}${VARIANT_SUFFIX.C}`,
+    q,
+    model: MODEL_C,
+    variant: 'C',
+    rv60: rvRec,
+    sigmaA,
+    x,
+    kappa: RVMIX.kappa,
+    c: RVMIX.c,
+    tau: RVMIX.tau,
+  };
 }
 
 export interface TouchForecast {
@@ -1211,6 +1252,8 @@ export interface SummaryInput {
   slotStamps?: number;
   /** Czas prerejestracji planu oceny A/B w dzienniku (null / brak = jeszcze nie) */
   abRegisteredAt?: number | null;
+  /** Czas prerejestracji planu `ab-v2` (wariant C) w dzienniku (null / brak = jeszcze nie) */
+  abCRegisteredAt?: number | null;
   /** Rozstrzygnięte pełne godziny kota z całego dziennika i rejestracja planu oceny zaufania (null / brak = jeszcze nie) */
   catHours?: TrustHour[];
   trustPlan?: CatTrust['plan'];
@@ -1316,6 +1359,7 @@ export function buildSummary(s: SummaryInput): DeskLedgerSummary {
         : null,
     },
     ab: abSection(fs, s.resolutions, s.now, s.abRegisteredAt ?? null),
+    ...((c) => (c ? { abC: c } : {}))(abSectionC(fs, s.resolutions, s.now, s.abCRegisteredAt ?? null)),
     cat: {
       ...catSection(fs, catPairs, new Map((s.catHours ?? []).map((h) => [h.slot, h.yBig]))),
       trust: catTrust(s.catHours ?? [], s.trustPlan ?? null),
@@ -1364,6 +1408,50 @@ function abSection(fs: Forecast[], res: Map<string, Resolution>, now: number, re
     registeredAt,
     ...abBlocks(rows, now),
     latest: latest && latest.regime && latest.scale !== undefined ? { t: latest.t, scale: latest.scale, regime: latest.regime } : null,
+  };
+}
+
+/**
+ * A/B wariantu C (plan `ab-v2`, 1 h): pary A i C z tego samego slotu, oba rozstrzygnięte; oceniane okresy od najbliższej
+ * granicy po rejestracji planu (wcześniejsze okresy pominięte). W zakończonym okresie także kalibracja C na próbie
+ * rozłącznej (sloty o pełnej godzinie): pokrycie 60% i 90%. Sekcja dopiero po pierwszym rozliczonym rekordzie C.
+ */
+function abSectionC(fs: Forecast[], res: Map<string, Resolution>, now: number, registeredAt: number | null): NonNullable<DeskLedgerSummary['abC']> | null {
+  const rows: (AbRow & { in60: 0 | 1; in90: 0 | 1 })[] = [];
+  let latest: RetForecast | null = null;
+  let settled = false;
+  const byId = new Map(fs.map((f) => [f.id, f]));
+  for (const f of fs) {
+    if (f.kind !== 'ret' || f.variant !== 'C' || f.h !== 60) continue;
+    latest = f;
+    const rc = res.get(f.id);
+    if (rc && 'crps' in rc) settled = true;
+    const a = byId.get(f.id.slice(0, -VARIANT_SUFFIX.C.length));
+    const ra = a ? res.get(a.id) : undefined;
+    if (ra && rc && 'crps' in ra && 'crps' in rc) rows.push({ slot: f.slot, crpsA: ra.crps, crpsB: rc.crps, in60: rc.in60, in90: rc.in90 });
+  }
+  if (!settled) return null;
+  const first = registeredAt === null ? null : abFirstBlock(registeredAt);
+  const scored = first === null ? [] : rows.filter((x) => x.slot >= first);
+  const blocks = abBlocks(scored, now);
+  const keep = <T extends { start: number } | null>(b: T) => (b && first !== null && b.start >= first ? b : null);
+  const cal = (b: { start: number; end: number } | null) => {
+    if (!b) return null;
+    const d = scored.filter((x) => x.slot >= b.start && x.slot < b.end && x.slot % HOUR === 0);
+    return d.length ? { n: d.length, cov60: r4(d.reduce((s, x) => s + x.in60, 0) / d.length), cov90: r4(d.reduce((s, x) => s + x.in90, 0) / d.length) } : { n: 0, cov60: null, cov90: null };
+  };
+  const last = keep(blocks.last);
+  return {
+    h: 60,
+    model: MODEL_C,
+    plan: AB_DESIGN_C.id,
+    blockDays: AB_BLOCK_DAYS,
+    registeredAt,
+    firstBlock: first,
+    current: keep(blocks.current),
+    closing: keep(blocks.closing),
+    last: last ? { ...last, cal: cal(last) } : null,
+    latest: latest && latest.x !== undefined && latest.rv60 !== undefined ? { t: latest.t, x: latest.x, rv60: latest.rv60 } : null,
   };
 }
 
@@ -1448,6 +1536,8 @@ export class ForecastData {
   regime: Regime | null = null;
   regimeAt = 0;
   private regimeSlot = Number.NEGATIVE_INFINITY;
+  /** Wariant C: zmienność zrealizowana 60 min przed slotem z tych samych świec 5m (null = brak którejś z 13 świec) */
+  rv60: { slot: number; at: number; value: number } | null = null;
 
   /** Model kota (null = brak pliku — dziennik bez kota) i dane wejściowe policzone w slocie */
   readonly cat: CatModel | null;
@@ -1498,11 +1588,15 @@ export class ForecastData {
     const slot = slotOf(now);
     if (this.regimeSlot === slot || !this.model) return;
     this.regimeSlot = slot;
-    const r = regimeFrom5m(await this.candles('5m', now - 866 * 5 * MIN, 866), this.model.profile.factors, now);
+    const bars = await this.candles('5m', now - 866 * 5 * MIN, 866);
+    const r = regimeFrom5m(bars, this.model.profile.factors, now);
     if (r) {
       this.regime = r;
       this.regimeAt = now;
     }
+    // Te same świece: 12 zamkniętych przed początkiem slotu (świeca w toku pominięta w rv60From5m)
+    const rv = rv60From5m(bars, slot);
+    this.rv60 = rv === null ? null : { slot, at: now, value: rv };
   }
 
   /**

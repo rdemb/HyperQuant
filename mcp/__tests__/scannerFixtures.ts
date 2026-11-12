@@ -219,6 +219,28 @@ export const ledger = (age = 5 * MIN): DeskLedgerSummary => ({
   ots: [],
   slotStamps: 90,
   participation: { issued: 2800, skipped: 6, gaps: [] },
+  ab: {
+    h: 60,
+    model: 'ledger-har-fhs-bocpd-v1',
+    blockDays: 14,
+    registeredAt: NOW - 20 * 24 * HOUR,
+    current: { start: NOW - 5 * 24 * HOUR, end: NOW + 9 * 24 * HOUR, n: 480, crpsA: 0.0019, crpsB: 0.00189, diff: null },
+    closing: null,
+    last: { start: NOW - 19 * 24 * HOUR, end: NOW - 5 * 24 * HOUR, n: 1338, crpsA: 0.00195, crpsB: 0.00194, diff: { d: -0.00001, lo: -0.000026, hi: 0.000006 } },
+    latest: null,
+  },
+  abC: {
+    h: 60,
+    model: 'ledger-har-fhs-rvmix-v1',
+    plan: 'ab-v2',
+    blockDays: 14,
+    registeredAt: NOW - 6 * 24 * HOUR,
+    firstBlock: NOW - 5 * 24 * HOUR,
+    current: { start: NOW - 5 * 24 * HOUR, end: NOW + 9 * 24 * HOUR, n: 470, crpsA: 0.0019, crpsB: 0.00186, diff: null },
+    closing: null,
+    last: null,
+    latest: { t: NOW - 10 * 60_000, x: 0.31, rv60: 2.1e-5 },
+  },
   method: 'hq-ledger-v1',
 });
 
