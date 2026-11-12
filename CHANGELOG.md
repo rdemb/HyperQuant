@@ -25,7 +25,7 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 - Zmienna `HQ_MARKETS_SHADOW` (domyślnie 1; `0` wyłącza pomiar i dodatkowe połączenie).
 
 ### Rynki z rejestru: progi i formaty pod BTC, etap M1.4 (2026-11-12)
-<!-- co-nowego: grupa=rynki | pl=Inne rynki na wykresie z własnymi progami i krokiem ceny | en=Other markets on the chart with their own thresholds and price step -->
+<!-- co-nowego: grupa=rynki | pl=Inne rynki na wykresie z własnymi progami i krokiem ceny (lista rośnie od ok. 15.11) | en=Other markets on the chart with their own thresholds and price step (the list grows from about 15 Nov) -->
 
 #### Zmienione
 - **Progi w USD zależne od rynku** (`src/utils/marketCaps.ts`, `usdScale`): jedna skala progów wobec BTC. BTC, ETH, SOL i HYPE z jawnej tabeli (1; 0,5; 0,25; 0,25, czyli dotychczasowe progi dużego gracza), inny rynek z rejestru: średnia otwartych pozycji z 7 dni (`oiUsd7d`) wobec BTC, zaokrąglona w dół do 2 cyfr znaczących (skala ciągła: zmiana OI o 2% nie przeskakuje progu 2 razy), najmniej 0,01 (także bez pola OI). Skala mnoży próg dużego gracza (1 mln USD na BTC), próg domyślny i granice automatycznego progu dużego zlecenia (100 tys., 25 tys.–5 mln USD na BTC), najmniejszą ścianę po zamknięciu i kwotę kosztu zlecenia rynkowego w układzie „Paliwo” (100k na BTC, etykieta i opis z kwotą rynku do 2 cyfr znaczących, np. 16k, 4,9k). Na BTC wszystkie progi bez zmian (test).
@@ -54,7 +54,7 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 - **Taśma likwidacji tylko od początku okresu obserwacji (`since`):** nowy okres (start z przerwą ≥ 2 min albo przerwa WebSocket) usuwa też kandydatów z odczytem sprzed jego początku, bez zapytań i bez liczników, z liczbą w logu; zdarzenie sprzed początku okresu (kandydat z oknem przez granicę) nie trafia na taśmę i nie liczy się jako odrzucone. Dotąd kolejka w pamięci przeżywała przerwę WebSocket i mogła dopisać zdarzenie sprzed `since`. Wpis kolejki ze stanu wymaga też skończonego `prev.scannedAt` i `liqPx` > 0 (albo braku).
 
 ### Wykresy dla rejestru rynków, etap M1 (2026-11-12)
-<!-- co-nowego: grupa=rynki | pl=Wybór rynku z wyszukiwarką: wykresy także innych rynków Hyperliquid | en=Market picker with search: charts for other Hyperliquid markets too -->
+<!-- co-nowego: grupa=rynki | pl=Wybór rynku z wyszukiwarką: wykresy także innych rynków Hyperliquid (lista rośnie od ok. 15.11) | en=Market picker with search: charts for other Hyperliquid markets too (the list grows from about 15 Nov) -->
 
 #### Dodane
 - **Rynki wykresów z rejestru `markets.json`** (`src/state/markets.ts`): lista pobierana tym samym mechanizmem co inne pliki repo danych (`usePublished`), wspólna dla wykresów, magazynów rynków i alarmów. Przed odpowiedzią i bez pliku (dziś 404, skaner nie jest jeszcze wdrożony) — 4 rynki domyślne: BTC, ETH, SOL, HYPE.
@@ -100,7 +100,7 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 - Testy: `src/utils/__tests__/marketRegistry.test.ts` (wejście po 3 dniach, przerwana seria, miejsca 21–30 zostają, wyjście po 7 dniach, stałe rynki, wycofane i zerowe OI, kilka giełd z HIP-3, restart, brak rynku w jednej godzinnej odpowiedzi — miejsce 20, członek ze strefy 21–30, BTC — i przez cały dzień, rotacja giełd, strażnik, rynki domyślne), `backend/scanner/__tests__/marketRegistryRunner.test.ts` (fikstury API, wagi, okno startu, 25 giełd: najwyżej 19 zapytań i koniec przed slotem, rotacja, wejścia i wyjścia, restart, awarie giełd), `scripts/check-data-health.test.mjs` (wiek i prywatność `markets.json`).
 
 ### Nowa prognoza hrel-v1: duży ruch jak na tę godzinę (2026-11-12)
-<!-- co-nowego: grupa=prognozy | pl=Nowa prognoza: szansa dużego ruchu jak na tę godzinę dnia | en=New forecast: the chance of a large move for this hour of the day -->
+<!-- co-nowego: grupa=prognozy | pl=Nowa prognoza w teście: szansa dużego ruchu jak na tę godzinę dnia (wynik w dzienniku) | en=New forecast under test: the chance of a large move for this hour of the day (result in the ledger) -->
 
 #### Dodane
 - **Prognoza `hrel-v1`** (`src/utils/hourRel.ts`, model `hrel-logit-v1`). Duży ruch = zakres godziny UTC (`ln(high / low) × 10⁴`) powyżej mediany tej samej godziny z 20 ostatnich wcześniejszych dni tego samego typu (robocze albo weekend UTC, szukane do 80 dni wstecz), więc baza to stałe 50%. Cechy ze świec 1h Hyperliquid zamkniętych do początku godziny hs: `z = clip(ln(rng / thr), ±1,5)`, r1 (godzina przed hs), r3 i r24 (średnie z 3 i 24 godzin). Szanse dla godzin hs … hs + 3 h z regresji logistycznej z wagami z uczenia na latach 2020–2023, bez późniejszego strojenia. Kot, `cat-cal-v1`, model godziny i ich rekordy bez zmian.
@@ -245,7 +245,7 @@ Na danych stałych `ui:check` (zegar 24.10.2026 21:29 UTC): „Mapa dnia” 1440
 - Testy: `levelsSelect.test.ts` (bieżący i poprzedni dzień poniżej 4h, od 4h tylko bieżący, brak dni z przyszłości, niezależność od głębokości historii, najwyżej 6 linii sesji z nazwą przy trzech ostatnich, sesja przyszła bez linii, zdanie w opisie PL i EN).
 
 ### Skaner: budżet odczytów pozycji (2026-11-12)
-<!-- co-nowego: grupa=skaner | pl=Skaner odczytuje pozycje równiej, bez pomijania kont | en=The scanner reads positions more evenly, without skipping accounts -->
+<!-- co-nowego: grupa=skaner | pl=Skaner odczytuje pozycje równiej: żadne konto nie czeka bez końca | en=The scanner reads positions more evenly: no account waits forever -->
 
 #### Zmienione
 - **Osobne budżety wag** (`backend/scanner/config.ts`, `main.ts`, `scanner.ts`): potwierdzenia likwidacji (`HQ_LIQ_WEIGHT_PER_MIN`, domyślnie 90) i prognozy dziennika, rynek HIP-4 i archiwum świec (`HQ_FORECAST_WEIGHT_PER_MIN`, 120) mają własne limitery, więc odczyty pozycji dostają cały `HQ_WEIGHT_PER_MIN` (240 wag = 120 odczytów/min); potwierdzenia we własnej pętli. Limitery są niezależne: 429 na jednym nie wstrzymuje pozostałych. Suma budżetów 650–760 wag/min (650 przy wartościach domyślnych) z limitu 1200/min na IP; konfiguracja dopuszcza najwyżej 800.
@@ -844,9 +844,9 @@ Pomiar `npm run ui:check` (Chrome bez okna na zbudowanej stronie, 1440 × 900 i 
 <!-- co-nowego: grupa=wykres | pl=Widok „DOM i taśma”: czoło kolejki, TWAP-y w toku i kto przyjmuje uderzenia | en=DOM and tape view: queue head, running TWAPs and who absorbs the hits | data=2026-11-02 -->
 <!-- co-nowego: grupa=wykres | pl=Profil doby z kolorem pozycji, zakresy P/b i wtyczki wykresu | en=Daily profile colored by open interest, P/b ranges and chart plugins | data=2026-11-01 -->
 <!-- co-nowego: grupa=wykres | pl=Pełny ekran, karty układów, szablony metod analizy i interwały 1W i 1M | en=Full screen, layout cards, analysis templates and 1W and 1M intervals | data=2026-10-31 -->
-<!-- co-nowego: grupa=wykres | pl=Wskaźniki tylko w HyperQuant: udział TWAP, koszt zlecenia rynkowego, stożek zakresu i inne | en=HyperQuant-only indicators: TWAP share, market order cost, range cone and more | data=2026-10-31 -->
+<!-- co-nowego: grupa=wykres | pl=Własne wskaźniki HyperQuant: udział TWAP, koszt zlecenia rynkowego, stożek zakresu i inne | en=HyperQuant’s own indicators: TWAP share, market order cost, range cone and more | data=2026-10-31 -->
 <!-- co-nowego: grupa=skaner | pl=Dokładniejsze nagrywanie arkusza i taśmy BTC | en=More precise recording of the BTC order book and tape | data=2026-10-31 -->
-<!-- co-nowego: grupa=wykres | pl=Klasyczne wskaźniki jak w TradingView: EMA, Bollinger, RSI, ATR, Ichimoku i inne | en=Classic indicators as in TradingView: EMA, Bollinger, RSI, ATR, Ichimoku and more | data=2026-10-30 -->
+<!-- co-nowego: grupa=wykres | pl=Klasyczne wskaźniki: EMA, Bollinger, RSI, ATR, Ichimoku i inne | en=Classic indicators: EMA, Bollinger, RSI, ATR, Ichimoku and more | data=2026-10-30 -->
 <!-- co-nowego: grupa=wykres | pl=Edycja, ustawienia i lista rysunków na wykresie | en=Editing, settings and an object list for chart drawings | data=2026-10-30 -->
 <!-- co-nowego: grupa=wykres | pl=Alarmy z warunkami i powiadomienia 24/7 | en=Conditional alerts and 24/7 notifications | data=2026-10-29 -->
 <!-- co-nowego: grupa=prognozy | pl=Kot Schrödi pod wykresem: szansa dużego ruchu i dotknięcia poziomu, zapisywana w dzienniku | en=Schrödi the cat under the chart: the chance of a large move and of a level touch, recorded in the ledger | data=2026-10-28 -->
@@ -977,10 +977,10 @@ Pomiar `npm run ui:check` (Chrome bez okna na zbudowanej stronie, 1440 × 900 i 
 <!-- co-nowego: grupa=wykres | pl=Poprawki na telefonie: nagłówek i zakładki mieszczą się na ekranie | en=Phone fixes: header and tabs fit on the screen | data=2026-10-31 -->
 <!-- co-nowego: grupa=wykres | pl=Pewniejsze alarmy i powiadomienia 24/7, także po restarcie serwera | en=More reliable alerts and 24/7 notifications, also after server restarts | data=2026-10-30 -->
 <!-- co-nowego: grupa=skaner | pl=Większa prywatność danych o dużych kontach | en=More privacy in large-account data | data=2026-10-30 -->
-<!-- co-nowego: grupa=skaner | pl=Nagranie taśmy bez luk po aktualizacji skanera | en=Tape recording without gaps after scanner updates | data=2026-10-29 -->
+<!-- co-nowego: grupa=skaner | pl=Aktualizacja skanera nie przerywa nagrania taśmy | en=Scanner updates no longer interrupt the tape recording | data=2026-10-29 -->
 <!-- co-nowego: grupa=prognozy | pl=Dziennik prognoz nie traci prognozy zaraz po restarcie skanera | en=The forecast ledger no longer loses the forecast right after a scanner restart | data=2026-10-28 -->
 <!-- co-nowego: grupa=blog | pl=Czytelniejsze mapy sesji i wykresy we wpisach bloga | en=Clearer session maps and charts in blog posts | data=2026-10-28 -->
-<!-- co-nowego: grupa=wykres | pl=Powtórka nagranej doby oraz panele Delta i CVD bez przerw | en=Day replay and the Delta and CVD panels without gaps | data=2026-10-25 -->
+<!-- co-nowego: grupa=wykres | pl=Powtórka nagranej doby oraz panele Delta i CVD bez przerw przy doczytaniu danych | en=Day replay and the Delta and CVD panels without gaps when data is loaded | data=2026-10-25 -->
 <!-- co-nowego: grupa=blog | pl=Jeden polski zapis liczb w całej aplikacji | en=One consistent Polish number format across the app | data=2026-10-25 -->
 - **Pokrycie taśmy kończy się na ostatniej wiadomości przed zerwaniem** (`backend/scanner/hl.ts`): odcinek nagrania kończył się w chwili wykrycia zamknięcia połączenia, więc cisza przed wykryciem (do 90 s, gdy działa strażnik ciszy) liczyła się jako pokrycie bez danych. 31.10.2026 transakcje i arkusz BTC ustały o 09:32:29 UTC, a odcinek kończył się o 09:32:57. Teraz koniec odcinka to chwila ostatniej wiadomości z Hyperliquid, więc taka cisza jest jawną luką.
 - **Nagłówek na telefonie bez wystawania poza ekran** (`src/shell/AppShell.tsx`): przyciski „Synchronizuj teraz” i dźwięku taśmy miały być ukryte poniżej 640 px, ale stała klasa `inline-flex` przycisku wygrywała z `hidden`, więc były widoczne. Gdy dochodził przycisk instalacji aplikacji (iPhone w Safari, Android z możliwością instalacji), nagłówek miał ok. 420 px i strona przewijała się w bok o ok. 29 px na ekranie 390 px. Dźwięk taśmy na telefonie włącza się w Źródłach.

@@ -261,3 +261,17 @@ describe('prawdziwy CHANGELOG.md', () => {
     }
   });
 });
+
+describe('„Co nowego”: daty przybliżone z historii repozytorium', () => {
+  it('pozycja z data= w komentarzu daje zdanie o przybliżonych datach (PL i EN); bez takich pozycji zdania nie ma', async () => {
+    const { whatsNewPage } = await import('./whatsnew.mjs');
+    const SITE = { url: 'https://example.org/', title: 'HQ', repo: 'https://github.com/x/y' };
+    const md = `# Changelog\n\n## [Unreleased]\n\n### Coś nowego (2026-11-12)\n<!-- co-nowego: grupa=wykres | pl=Nowy wykres | en=New chart -->\n\n### Dodane\n<!-- co-nowego: grupa=blog | pl=Stary wpis | en=Old entry | data=2026-11-03 -->\n`;
+    const pl = whatsNewPage(SITE, 'pl', { changelog: md, tags: [] }).html;
+    const en = whatsNewPage(SITE, 'en', { changelog: md, tags: [] }).html;
+    expect(pl).toContain('Daty pozycji do 3 listopada 2026 są przybliżone');
+    expect(en).toContain('Dates of entries up to 3 November 2026 are approximate');
+    const noApprox = whatsNewPage(SITE, 'pl', { changelog: md.split('### Dodane')[0], tags: [] }).html;
+    expect(noApprox).not.toContain('przybliżone');
+  });
+});
