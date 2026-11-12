@@ -91,8 +91,15 @@ function saveState(): void {
   if (whales) writeJsonAtomic(whaleStatePath, whales.secret);
 }
 
+/**
+ * Trzy osobne budżety wag (każdy z własnym wiadrem i wycofaniem po błędach): odczyty pozycji (mapa likwidacji), potwierdzenia
+ * likwidacji (`userFillsByTime`) oraz prognozy dziennika, rynek HIP-4 i archiwum świec. Potwierdzenia i prognozy nie
+ * zabierają już odczytów pozycji.
+ */
 const rest = new HlRest(new WeightLimiter(cfg.weightPerMin));
-const scanner = new Scanner({ coin: cfg.coin, book, rest, outDir: cfg.outDir, r2: cfg.r2, confirmer, tapeSince, prices, cohorts });
+const liqRest = new HlRest(new WeightLimiter(cfg.liqWeightPerMin));
+const forecastRest = new HlRest(new WeightLimiter(cfg.forecastWeightPerMin));
+const scanner = new Scanner({ coin: cfg.coin, book, rest, liqRest, outDir: cfg.outDir, r2: cfg.r2, confirmer, tapeSince, prices, cohorts });
 let lastWsCtx = 0;
 /** Ostatnia wiadomość WebSocket (transakcje lub kontekst) — przerwa > 2 min zeruje okres obserwacji taśmy */
 let lastWsMsg = Date.now();
@@ -323,12 +330,12 @@ async function initLedger(): Promise<void> {
   const store = new LedgerStore({ dir, coin: cfg.coin });
   const runner = new LedgerRunner({
     coin: cfg.coin,
-    data: new ForecastData({ coin: cfg.coin, rest }),
+    data: new ForecastData({ coin: cfg.coin, rest: forecastRest }),
     store,
     repo,
     markPx: () => scanner.freshMarkPx(),
     // Model vs rynek (HIP-4): aktywny 15-minutowy rynek binarny BTC — outcomeMeta + arkusz strony „Tak”
-    markets: (expiry, at) => marketSnapshot(rest, expiry, at),
+    markets: (expiry, at) => marketSnapshot(forecastRest, expiry, at),
     stamp: (d) => stampDigest(d),
     clock: Date.now,
     publish: (json) => {
@@ -367,7 +374,7 @@ const archiveDir = cfg.git ? join(cfg.stateDir, 'git', 'archive') : join(cfg.sta
 const ledgerStoreForLookup = () => new LedgerStore({ dir: cfg.git ? join(cfg.stateDir, 'git', 'ledger') : join(cfg.stateDir, 'ledger'), coin: cfg.coin });
 const lab = new LabRunner({
   coin: cfg.coin,
-  archive: new CandleArchive({ dir: archiveDir, coin: cfg.coin, rest }),
+  archive: new CandleArchive({ dir: archiveDir, coin: cfg.coin, rest: forecastRest }),
   repo: cfg.git ? { remote: cfg.git.remote, dir: archiveDir, sshKey: cfg.git.sshKey, branch: 'archive' } : null,
   // Dziennik gotowy → rejestracja (albo istniejący rekord); jeszcze się ładuje → rekord odczytany wprost z plików
   register: () => ledger?.register(LAB_PREREG, Date.now()) ?? ledgerStoreForLookup().findPrereg(LAB_PREREG.catalogHash),
@@ -413,11 +420,22 @@ async function scanLoop(): Promise<void> {
   while (!stopping) {
     try {
       const n = await scanner.scanDue(20);
-      const q = await scanner.confirmLiquidations();
-      if (n === 0 && q === 0) await sleep(1000);
+      if (n === 0) await sleep(1000);
     } catch (e) {
       // Nieoczekiwany błąd nie może zatrzymać skanera — odczekaj i próbuj dalej
       console.error(`[skaner] błąd pętli skanu: ${String(e)}`);
+      await sleep(5000);
+    }
+  }
+}
+
+/** Potwierdzenia likwidacji we własnej pętli (własny budżet wag): czekanie na ich żetony nie wstrzymuje skanu pozycji. */
+async function liqLoop(): Promise<void> {
+  while (!stopping) {
+    try {
+      if ((await scanner.confirmLiquidations()) === 0) await sleep(2000);
+    } catch (e) {
+      console.error(`[skaner] błąd potwierdzeń likwidacji: ${String(e)}`);
       await sleep(5000);
     }
   }
@@ -454,7 +472,7 @@ const timers = [
     if (whales) writeJsonAtomic(join(cfg.outDir, 'whales.json'), whales.build(Date.now()));
     const s = book.positions().length;
     log(
-      `adresy=${book.size} pozycje=${s} zapytania=${rest.requests} błędy=${rest.errors} ws=${stream.connected ? 'ok' : 'brak'} ` +
+      `adresy=${book.size} pozycje=${s} zapytania=${rest.requests}/${liqRest.requests}/${forecastRest.requests} błędy=${rest.errors + liqRest.errors + forecastRest.errors} ws=${stream.connected ? 'ok' : 'brak'} ` +
         `publikacja=${ok ? 'ok' : 'brak/niepełna'}${cfg.r2 ? ' (R2)' : ' (lokalnie)'}`
     );
   }), cfg.publishEveryS * 1000),
@@ -528,7 +546,7 @@ const runMinutes = Number(process.env.HQ_RUN_MINUTES ?? '');
 if (runMinutes > 0) setTimeout(shutdown, runMinutes * 60_000);
 
 log(
-  `start: rynek ${cfg.coin}, budżet ${cfg.weightPerMin} wag/min, publikacja co ${cfg.publishEveryS} s ${cfg.r2 ? 'do R2' : 'lokalnie'}` +
+  `start: rynek ${cfg.coin}, budżety wag/min: pozycje ${cfg.weightPerMin}, likwidacje ${cfg.liqWeightPerMin}, prognozy ${cfg.forecastWeightPerMin}, publikacja co ${cfg.publishEveryS} s ${cfg.r2 ? 'do R2' : 'lokalnie'}` +
     (cfg.git ? `, repo danych co ${cfg.git.everyS} s` : '') +
     (cfg.history ? `, historia ${cfg.history.markets.join('/')} (${cfg.history.keepDays} dni${historyRepo ? '' : ', lokalnie'})` : '') +
     (whales ? `, wieloryby: ${whaleCfg?.top} kont, ${whaleCfg?.weightPerMin} wag/min` : '')
@@ -554,4 +572,5 @@ if (historyRepo)
 else startRecorders();
 setTimeout(guarded('agregacja arkusza', adjustBookAgg), 60_000);
 void scanLoop();
+void liqLoop();
 void whaleLoop();
