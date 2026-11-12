@@ -31,6 +31,16 @@ export function metricsOf(r) {
     if (typeof v?.desktop === 'number') m[`ib.${view}1440`] = v.desktop;
     if (typeof v?.phone === 'number') m[`ib.${view}390`] = v.phone;
   }
+  // Profile dób (TPO i profile okresów, wybór warstwy): obiekty i pole pod słupkami (%) w „Mapie dnia” i „Rozliczeniu doby”
+  for (const [view, v] of Object.entries(r.profiles ?? {})) {
+    for (const [w, d] of [['1440', v?.desktop], ['390', v?.phone]]) {
+      for (const layer of ['tpo', 'periods']) {
+        const c = d?.[layer];
+        if (typeof c?.objects === 'number') m[`${layer}.${view}.objects${w}`] = c.objects;
+        if (typeof c?.area === 'number') m[`${layer}.${view}.area${w}`] = c.area;
+      }
+    }
+  }
   // Strefy nierównowagi i niedokończone aukcje (wybór warstwy) w układzie „Aukcja i otwarcie”, powtórka 24.10, 5m
   for (const [k, v] of [['1440', r.zones?.desktop], ['390', r.zones?.phone]]) {
     if (typeof v?.rects === 'number') m[`zones.rects${k}`] = v.rects;
