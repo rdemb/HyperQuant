@@ -251,3 +251,45 @@ describe('połączenia giełd', () => {
     expect(bybit()[0].closed).toBe(true);
   });
 });
+
+describe('rynek bez odpowiednika na Binance i Bybit', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it('kPEPE i xyz:NVDA: bez zapytań REST i bez połączeń WebSocket; BTC pyta jak dotąd', async () => {
+    vi.useFakeTimers();
+    const urls: string[] = [];
+    class FakeSocket {
+      static OPEN = 1;
+      readyState = 0;
+      onopen: (() => void) | null = null;
+      onmessage: (() => void) | null = null;
+      onclose: (() => void) | null = null;
+      constructor(url: string) {
+        urls.push(url);
+      }
+      send(): void {}
+      close(): void {}
+    }
+    vi.stubGlobal('WebSocket', FakeSocket);
+    const fetched: string[] = [];
+    vi.stubGlobal('fetch', async (url: string) => {
+      fetched.push(url);
+      return { ok: true, json: async () => [] };
+    });
+    const iv = intervalById('1h');
+    const release = ['kPEPE', 'xyz:NVDA'].map((coin) => acquireVenues(coin, iv));
+    for (const coin of ['kPEPE', 'xyz:NVDA']) new VenueStore(coin).ensure(iv, Date.now() - 10 * HOUR_MS);
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(fetched).toEqual([]);
+    expect(urls).toEqual([]);
+    new VenueStore('BTC').ensure(iv, Date.now() - 10 * HOUR_MS);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetched.length).toBeGreaterThan(0);
+    expect(fetched.every((u) => u.includes('BTCUSDT'))).toBe(true);
+    release.forEach((r) => r());
+    await vi.advanceTimersByTimeAsync(5000);
+  });
+});

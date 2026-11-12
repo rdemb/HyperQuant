@@ -39,14 +39,15 @@ export const CLASHES_EVIDENCE = {
 export function thresholdAt(
   orders: (from: number, to: number) => readonly AggressorOrder[],
   manual: number,
-  memo: Map<number, number> = new Map()
+  memo: Map<number, number> = new Map(),
+  scale = 1
 ): (t: number) => number {
   if (manual > 0) return () => manual;
   return (t) => {
     const h = Math.floor(t / HOUR) * HOUR;
     let v = memo.get(h);
     if (v === undefined) {
-      v = autoThreshold(orders(h - HOUR, h));
+      v = autoThreshold(orders(h - HOUR, h), scale);
       memo.set(h, v);
     }
     return v;

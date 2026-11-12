@@ -16,10 +16,12 @@ import { tr } from '../../../i18n';
 
 export type OrderClass = 'big' | 'clash';
 
-/** Próg bez wystarczającej próbki (USD) i jego granice. */
+/** Próg bez wystarczającej próbki (USD) i jego granice na BTC; inny rynek razy skala progów rynku (`usdScale`). */
 export const DEFAULT_THRESHOLD_USD = 100_000;
 const MIN_THRESHOLD_USD = 25_000;
 const MAX_THRESHOLD_USD = 5_000_000;
+/** Najmniejsza ściana zachowana po zamknięciu (USD): dolna granica progu rynku. */
+export const minWallUsd = (scale = 1): number => MIN_THRESHOLD_USD * scale;
 /** Kwantyl wartości zleceń i najmniejsza próbka do progu automatycznego. */
 const AUTO_Q = 0.985;
 const AUTO_MIN_SAMPLES = 200;
@@ -32,12 +34,15 @@ export function niceUp(v: number): number {
   return 10 * k;
 }
 
-/** Próg dużego zlecenia (USD) z wartości zleceń agresora; za mała próbka = próg domyślny. */
-export function autoThreshold(orders: readonly AggressorOrder[]): number {
-  if (orders.length < AUTO_MIN_SAMPLES) return DEFAULT_THRESHOLD_USD;
+/**
+ * Próg dużego zlecenia (USD) z wartości zleceń agresora; za mała próbka = próg domyślny. `scale` — skala progów rynku
+ * wobec BTC (`usdScale`, BTC = 1): próg domyślny i granice razy skala.
+ */
+export function autoThreshold(orders: readonly AggressorOrder[], scale = 1): number {
+  if (orders.length < AUTO_MIN_SAMPLES) return DEFAULT_THRESHOLD_USD * scale;
   const v = orders.map((o) => o.notional).sort((a, b) => a - b);
   const q = v[Math.min(v.length - 1, Math.floor(v.length * AUTO_Q))];
-  return Math.min(MAX_THRESHOLD_USD, Math.max(MIN_THRESHOLD_USD, niceUp(q)));
+  return Math.min(MAX_THRESHOLD_USD * scale, Math.max(MIN_THRESHOLD_USD * scale, niceUp(q)));
 }
 
 /** Klasa zlecenia od progu `t` (USD); null = poniżej progu. */
@@ -138,6 +143,9 @@ const WALL_MIN_HITS = 3;
  * Adres makera zostaje w pamięci (klucz), wynik go nie zawiera.
  */
 export class WallTracker {
+  /** @param minUsd najmniejsza ściana zachowana po zamknięciu (`minWallUsd` skali rynku). */
+  constructor(private readonly minUsd = MIN_THRESHOLD_USD) {}
+
   private readonly open = new Map<string, Absorb>();
   private closed: Absorb[] = [];
   /** Ostatni dokładny arkusz: wielkość na każdej cenie, osobno bidy i aski. */
@@ -215,7 +223,7 @@ export class WallTracker {
       }
     });
     // Zostają tylko ściany (małe wchłanianie nie jest potrzebne po zamknięciu)
-    this.closed = this.closed.filter((a) => a.to >= before && a.hits >= WALL_MIN_HITS && a.usd >= MIN_THRESHOLD_USD);
+    this.closed = this.closed.filter((a) => a.to >= before && a.hits >= WALL_MIN_HITS && a.usd >= this.minUsd);
   }
 }
 

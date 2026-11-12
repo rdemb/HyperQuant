@@ -4,7 +4,7 @@ import { HlStream, StreamStatus, Subscription } from '../hl/stream';
 import { BookFrame, BookHistory, bookSigFigs, bookStep, toFrame } from '../core/book';
 import { Coverage, Span } from '../core/coverage';
 import { FootprintBar, FootprintBuilder, baseTick, fmtPx, hlTick } from '../core/footprintBar';
-import { WallTracker } from '../core/clashes';
+import { WallTracker, minWallUsd } from '../core/clashes';
 import { MakerFlow, MakerSplit, MakerTop } from '../core/makers';
 import { OrderAggregator, OrderLog } from '../core/orders';
 import { PlayerFlow, bigPlayerUsd } from '../core/players';
@@ -15,7 +15,7 @@ import { periodStart, utcDayStart } from '../core/sessions';
 import { indicatorScope, vwapSourceId } from '../core/indicators';
 import { DAY, Interval, aggregateCandles, barEnd, barStart, fromDaily, intervalById } from '../core/time';
 import { HOME_MARKET } from '../../../utils/marketCaps';
-import { marketOf } from '../../../state/markets';
+import { marketOf, usdScaleOf } from '../../../state/markets';
 
 /**
  * Magazyn wykresu Pro (bez Reacta, jeden na rynek): taśma transakcji od otwarcia widoku z pokryciem
@@ -115,7 +115,7 @@ export class ProStore {
   /** Kto handluje: wejścia dużych graczy i reszty z kont biorców. */
   readonly players: PlayerFlow;
   /** Wchłanianie zleceń agresora przez makerów (ściany), z taśmy na żywo. */
-  readonly walls = new WallTracker();
+  readonly walls: WallTracker;
   /** Kto przyjmuje agresję: animatorzy rynku i reszta makerów, z kont makerów. */
   private readonly makers = new MakerFlow();
   /** Czoło kolejki z kanału `bbo` (tylko gdy jakiś widok go obserwuje, np. kolumna DOM i taśmy). */
@@ -174,7 +174,8 @@ export class ProStore {
     readonly replay: ReplayClock | null = null
   ) {
     this.coin = coin;
-    this.players = new PlayerFlow(this.orders, this.addressed, bigPlayerUsd(coin));
+    this.players = new PlayerFlow(this.orders, this.addressed, bigPlayerUsd(usdScaleOf(coin)));
+    this.walls = new WallTracker(minWallUsd(usdScaleOf(coin)));
     this.stream = stream ?? new HlStream();
     this.stream.listen({
       onMessage: (ch, data, recvAt) => this.onMessage(ch, data, recvAt),
@@ -255,6 +256,11 @@ export class ProStore {
   /** Cena z dokładnością ticku tego rynku. */
   fmtPx(p: number): string {
     return fmtPx(p, this.szDecimals);
+  }
+
+  /** Tick bazowy siatki wierszy (footprint, profile, TPO, rysunek zakresu) na tym rynku: nie gęstszy niż krok ceny. */
+  baseTick(p: number): number {
+    return baseTick(p, this.szDecimals);
   }
 
   /** Tick ceny tego rynku (5 cyfr znaczących i limit z szDecimals). */
@@ -846,10 +852,10 @@ export class CandleSeries {
     const ms = this.interval.ms;
     let b: FootprintBuilder | null = null;
     this.m.tape.forEach(t, t + ms, (time, px, sz, side) => {
-      b ??= new FootprintBuilder(t, baseTick(px));
+      b ??= new FootprintBuilder(t, baseTick(px, this.m.szDecimals));
       b.add(time, px, sz, side);
     });
-    return b ?? new FootprintBuilder(t);
+    return b ?? new FootprintBuilder(t, Number.NaN, this.m.szDecimals);
   }
 
   private footprintFor(t: number): FootprintBar | null {

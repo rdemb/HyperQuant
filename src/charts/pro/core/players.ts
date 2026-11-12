@@ -1,6 +1,7 @@
 import { oneAccountScope } from './accountScope';
 import type { Coverage } from './coverage';
 import type { AggressorOrder } from './orders';
+import { FIXED_USD_SCALE } from '../../../utils/marketCaps';
 
 /**
  * Kto handluje: wejścia biorców (zlecenia agresora z taśmy) rozdzielone na dużych graczy i resztę rynku. Hyperliquid podaje
@@ -16,9 +17,14 @@ import type { AggressorOrder } from './orders';
 const HOUR = 3_600_000;
 const MIN = 60_000;
 
-/** Próg dużego gracza: wartość wejść konta w 60 min (USD); dobrany tak, że duzi to kilka–kilkanaście kont na godzinę. */
-export const BIG_PLAYER_USD: Readonly<Record<string, number>> = { BTC: 1_000_000, ETH: 500_000, SOL: 250_000, HYPE: 250_000 };
-export const bigPlayerUsd = (coin: string): number => BIG_PLAYER_USD[coin] ?? 250_000;
+/** Próg dużego gracza na BTC: wartość wejść konta w 60 min (USD); dobrany tak, że duzi to kilka–kilkanaście kont na godzinę. */
+const BIG_PLAYER_BTC_USD = 1_000_000;
+/** Próg rynku: próg BTC razy skala progów rynku (`usdScale`; ETH 500 tys., SOL i HYPE 250 tys., inne według OI). */
+export const bigPlayerUsd = (scale: number): number => BIG_PLAYER_BTC_USD * scale;
+/** Progi rynków stałych (opis grupy „Kto handluje” w Tablicy liczb). */
+export const BIG_PLAYER_USD: Readonly<Record<string, number>> = Object.fromEntries(
+  Object.entries(FIXED_USD_SCALE).map(([c, k]) => [c, bigPlayerUsd(k)])
+);
 
 export interface PlayerSplit {
   /** Delta wejść dużych graczy i reszty (jednostki rynku). */

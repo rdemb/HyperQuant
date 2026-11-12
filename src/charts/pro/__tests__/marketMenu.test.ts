@@ -13,13 +13,21 @@ const m = (coin: string, scanner: 'full' | 'none' = 'none'): ChartMarket => ({
 const LIST = [m('BTC', 'full'), m('ETH'), m('HYPE'), m('xyz:SP500'), m('xyz:NVDA'), m('ZEC'), m('SOL'), m('io:ANTH'), m('kPEPE')];
 
 describe('wybór rynku', () => {
-  it('dwie grupy: krypto i giełdy HIP-3 (akcje, indeksy, surowce), w każdej kolejność rejestru', () => {
+  it('dwie grupy: krypto i giełdy HIP-3 (rynki tradycyjne), w każdej kolejność rejestru', () => {
     const g = marketGroups(LIST, '');
     expect(g.map((x) => x.id)).toEqual(['crypto', 'hip3']);
     expect(g[0].title).toBe('Krypto');
-    expect(g[1].title).toBe('Akcje, indeksy, surowce');
+    expect(g[1].title).toBe('Rynki tradycyjne (HIP-3)');
     expect(g[0].markets.map((x) => x.coin)).toEqual(['BTC', 'ETH', 'HYPE', 'ZEC', 'SOL', 'kPEPE']);
     expect(g[1].markets.map((x) => x.coin)).toEqual(['xyz:SP500', 'xyz:NVDA', 'io:ANTH']);
+  });
+
+  it('waluty HIP-3 (xyz:JPY, xyz:EUR) w grupie rynków tradycyjnych: tytuł nie wymienia samych akcji, indeksów i surowców', () => {
+    const g = marketGroups([...LIST, m('xyz:JPY'), m('xyz:EUR')], 'xyz:');
+    expect(g.map((x) => x.id)).toEqual(['hip3']);
+    expect(g[0].markets.map((x) => x.coin)).toEqual(['xyz:SP500', 'xyz:NVDA', 'xyz:JPY', 'xyz:EUR']);
+    expect(g[0].title).not.toMatch(/surowce$/);
+    expect(g[0].title).toContain('HIP-3');
   });
 
   it('wyszukiwanie bez wielkości liter, po nazwie i po giełdzie; pusta grupa znika', () => {

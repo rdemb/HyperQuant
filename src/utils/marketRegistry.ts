@@ -361,8 +361,11 @@ export function isMarketRegistry(x: unknown): x is MarketRegistry {
   return new Set(x.markets.map((m) => (m as MarketEntry).coin)).size === x.markets.length;
 }
 
-/** Rynek do wyboru na stronie (pola, których strona potrzebuje niezależnie od tego, czy rejestr jest dostępny). */
-export type ChartMarket = Pick<MarketEntry, 'coin' | 'dex' | 'szDecimals' | 'maxLeverage' | 'scanner'>;
+/**
+ * Rynek do wyboru na stronie (pola, których strona potrzebuje niezależnie od tego, czy rejestr jest dostępny); `oiUsd7d`
+ * tylko z pliku rejestru (skala progów w USD, `marketCaps.usdScale`).
+ */
+export type ChartMarket = Pick<MarketEntry, 'coin' | 'dex' | 'szDecimals' | 'maxLeverage' | 'scanner'> & { oiUsd7d?: number };
 
 /** Dzisiejsze 4 rynki strony (parametry z API Hyperliquid, 11.2026) — gdy rejestru nie ma albo ma zły format. */
 export const DEFAULT_MARKETS: readonly ChartMarket[] = [
@@ -375,7 +378,14 @@ export const DEFAULT_MARKETS: readonly ChartMarket[] = [
 /** Rejestr albo 4 rynki domyślne: poprawny plik → jego rynki według miejsca, brakujący stały rynek dopisany na końcu. */
 export function marketsOrDefault(x: unknown): readonly ChartMarket[] {
   if (!isMarketRegistry(x)) return DEFAULT_MARKETS;
-  const list: ChartMarket[] = x.markets.map(({ coin, dex, szDecimals, maxLeverage, scanner }) => ({ coin, dex, szDecimals, maxLeverage, scanner }));
+  const list: ChartMarket[] = x.markets.map(({ coin, dex, szDecimals, maxLeverage, scanner, oiUsd7d }) => ({
+    coin,
+    dex,
+    szDecimals,
+    maxLeverage,
+    scanner,
+    oiUsd7d,
+  }));
   for (const d of DEFAULT_MARKETS) if (!list.some((m) => m.coin === d.coin)) list.push(d);
   return list;
 }

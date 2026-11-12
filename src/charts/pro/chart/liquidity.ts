@@ -54,6 +54,8 @@ export interface LiquiditySource {
   version?: () => number;
   /** Wersja historii (rośnie po doczytaniu zleceń z historii): progi zamkniętych godzin liczone są wtedy od nowa. */
   history?: () => number;
+  /** Skala progów w USD rynku wobec BTC (`usdScale`); brak = 1 (BTC). */
+  usdScale?: () => number;
 }
 
 /**
@@ -438,7 +440,7 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
     // Zlecenia pobierane raz na scenę: widoczny czas i okno porównania reguły przyczynowej przed nim
     const clashesOn = this.toggles.showBubbles && this.toggles.showClashes;
     const span = this.toggles.showBubbles && g ? this.src.orders(g.tFrom - liquidityLookbackMs(this.ms, this.toggles), g.tTo) : [];
-    const thrAt = thresholdAt(this.src.orders, this.manual, this.hourThr);
+    const thrAt = thresholdAt(this.src.orders, this.manual, this.hourThr, this.src.usdScale?.() ?? 1);
     const clashes = clashesOn && g ? this.sceneClashes(g, span, thrAt) : { walls: [], bursts: [] };
     const bubbles = this.toggles.showBubbles && g ? this.sceneBubbles(g, span, clashes.bursts, thrAt) : { list: [], orders: 0 };
     this.bubbles = bubbles.list;
