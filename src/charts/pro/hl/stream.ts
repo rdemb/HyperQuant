@@ -6,7 +6,8 @@
  * Koniec połączenia (`onClosed`) ma czas ostatniej wiadomości z transakcjami, nie chwilę wykrycia: po uśpieniu karty
  * albo komputera strażnik budzi się po kilku minutach i czas snu nie może liczyć się jako nagrany. Wybudzenie (przerwa
  * w wiadomościach dłuższa niż `staleMs`, także gdy pierwszą rzeczą po wybudzeniu jest wiadomość z bufora) zamyka
- * połączenie i łączy od nowa; osobno cisza samego kanału transakcji (`tradesStaleMs`) przy płynących innych kanałach.
+ * połączenie i łączy od nowa; osobno cisza samego kanału transakcji przy płynących innych kanałach (próg zależny od rynku: co najmniej
+ * `tradesStaleMs`, dłuższy przy rzadkim strumieniu transakcji).
  */
 
 export const HL_WS_URL = 'wss://api.hyperliquid.xyz/ws';
@@ -37,12 +38,29 @@ export interface StreamOptions {
   pingMs?: number;
   /** Brak jakiejkolwiek wiadomości przez tyle ms przy otwartym połączeniu = połączenie martwe (albo karta spała). */
   staleMs?: number;
-  /** Brak wiadomości z transakcjami przez tyle ms przy subskrypcji transakcji = kanał transakcji martwy. */
+  /**
+   * Dolna granica progu ciszy kanału transakcji (domyślnie 120 s). Próg = większa z tej wartości i
+   * `TRADES_STALE_GAP_MULT` × mediana odstępu między ostatnimi `TRADES_GAP_WINDOW` wiadomościami z transakcjami
+   * na bieżącym połączeniu (rynki z rzadkim strumieniem mają dłuższe naturalne przerwy); przed zebraniem tylu
+   * odstępów sama ta wartość.
+   */
   tradesStaleMs?: number;
   maxBackoffMs?: number;
 }
 
 const OPEN = 1;
+
+/** Liczba ostatnich odstępów między wiadomościami z transakcjami, z których liczona jest mediana. */
+export const TRADES_GAP_WINDOW = 50;
+/** Krotność mediany odstępu, po której cisza kanału transakcji uznawana jest za martwy kanał. */
+export const TRADES_STALE_GAP_MULT = 20;
+
+/** Mediana niepustej listy. */
+function median(xs: readonly number[]): number {
+  const s = [...xs].sort((a, b) => a - b);
+  const m = s.length >> 1;
+  return s.length % 2 === 1 ? s[m] : (s[m - 1] + s[m]) / 2;
+}
 
 /** Klucz subskrypcji niezależny od kolejności pól. */
 export function subKey(s: Subscription): string {
@@ -91,6 +109,8 @@ export class HlStream {
   private lastPingAt = 0;
   /** Ostatnia wiadomość z transakcjami (zegar klienta); 0 = żadnej. Koniec nagrania przy zamknięciu połączenia. */
   private lastTradesAt = 0;
+  /** Ostatnie odstępy (ms) między wiadomościami z transakcjami na bieżącym połączeniu, najstarszy pierwszy. */
+  private tradeGaps: number[] = [];
   private openedAt = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
@@ -214,6 +234,7 @@ export class HlStream {
       this.lastPingAt = this.lastMsgAt;
       this.openedAt = this.lastMsgAt;
       this.lastTradesAt = 0; // koniec nagrania liczony tylko z wiadomości tego połączenia
+      this.tradeGaps = [];
       this.setStatus('open');
       this.subs.forEach((s) => this.send('subscribe', s));
       if (this.pingTimer !== null) clearInterval(this.pingTimer);
@@ -242,7 +263,7 @@ export class HlStream {
     const now = this.now();
     // Cisza na całym połączeniu (także po uśpieniu karty) albo samego kanału transakcji przy płynących innych
     const tradesSince = Math.max(this.lastTradesAt, this.openedAt);
-    if (now - this.lastMsgAt > this.staleMs || (this.hasTrades() && now - tradesSince > this.tradesStaleMs)) {
+    if (now - this.lastMsgAt > this.staleMs || (this.hasTrades() && now - tradesSince > this.tradesStaleLimit())) {
       this.abandon(sock);
       return;
     }
@@ -263,6 +284,12 @@ export class HlStream {
       this.reconnectTimer = null;
       this.connect();
     }, delay);
+  }
+
+  /** Próg ciszy kanału transakcji na tym połączeniu (patrz `StreamOptions.tradesStaleMs`). */
+  private tradesStaleLimit(): number {
+    if (this.tradeGaps.length < TRADES_GAP_WINDOW) return this.tradesStaleMs;
+    return Math.max(this.tradesStaleMs, TRADES_STALE_GAP_MULT * median(this.tradeGaps));
   }
 
   private hasTrades(): boolean {
@@ -286,7 +313,13 @@ export class HlStream {
     }
     const channel = typeof msg.channel === 'string' ? msg.channel : '';
     if (channel === '' || channel === 'pong') return;
-    if (channel === 'trades') this.lastTradesAt = recvAt;
+    if (channel === 'trades') {
+      if (this.lastTradesAt > 0) {
+        this.tradeGaps.push(recvAt - this.lastTradesAt);
+        if (this.tradeGaps.length > TRADES_GAP_WINDOW) this.tradeGaps.shift();
+      }
+      this.lastTradesAt = recvAt;
+    }
     if (channel === 'subscriptionResponse') {
       const d = msg.data as { method?: unknown; subscription?: unknown } | undefined;
       if (d?.method !== 'subscribe') return;
