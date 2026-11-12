@@ -4,6 +4,14 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### RVOL według godziny w Nowym Jorku, dni robocze i weekend osobno (2026-11-12)
+
+#### Zmienione
+- **RVOL: koszyk to godzina zegarowa w Nowym Jorku, nie UTC** (`src/utils/rvol.ts`: `rvolSeries`, `rvolHour`; wskaźnik RVOL na wykresie, liczba RVOL w nagłówku układu, MCP `session_context.rvolHour`). Wolumen przesuwa się razem z czasem w USA, więc godzina otwarcia NY ma tę samą bazę przed zmianą czasu i po niej (wcześniej przez kilka tygodni po zmianie baza mieszała godzinę otwarcia z godziną sąsiednią). Baza to mediana tej samej godziny z 20 ostatnich dni tego samego typu: dni handlu i weekend osobno, przy czym weekend trwa od piątku 17:00 do niedzieli 18:00 czasu nowojorskiego (jak przerwa CME; na 208 dniach świec 1h niedziela wieczorem NY ma wolumen 1,55 razy większy niż wtorek–czwartek o tej godzinie, a piątek wieczorem 0,55, więc granica według daty dawała RVOL ok. 1,7 w niedzielę wieczorem i 0,5–0,6 w piątek i sobotę wieczorem), szukane do 80 dni wstecz; mniej niż 10 dni → „—” z powodem. Godzina w toku nadal bez wartości na wykresie, a w nagłówku skalowana do upływu godziny. Nagłówek i MCP pobierają do tego 81 dni świec 1h (wcześniej 20). Wskaźnik na wykresie ładuje co najmniej 14 dni historii (10 dni roboczych); świeca weekendowa ma wartość dopiero przy ok. 5 tygodniach historii.
+- **Typowa szerokość godziny w Czwórce** (`src/utils/fourNumbers.ts`: `sessionHourSamples`, `hourWidth`, nowe `hourWidthSample`): próba z 20 ostatnich dni tego samego typu (robocze albo weekend od piątku 17:00 do niedzieli 18:00 czasu NY, do 80 dni wstecz) zamiast 20 kolejnych dni z weekendami; w podpowiedzi „z dni roboczych” albo „z weekendów”.
+- **MCP:** liczby z mediany dni mają pole `sample`: `n`, mediana i przedział 80% mediany z bootstrapu po dniach (1000 losowań, mulberry32 z `src/utils/pathEngine.ts`, ziarno 20261111; `bootstrapMedian80` w `src/utils/rvol.ts`). Dotyczy `session_context.rvolHour` (mediana wolumenu tej godziny, BTC) i typowej szerokości godziny w `market_brief`. Opisy w `mcp/README.md` i skillu `hyperquant`.
+- Testy: `src/utils/__tests__/rvolNy.test.ts` (zmiana czasu 1.11.2026 i 8.03.2026, weekend osobno, mniej niż 10 dni, typowa szerokość godziny, bootstrap), nowe asercje `sample` w testach MCP `market_brief` i `session_context`; fikstury dłuższe o dni tego samego typu.
+
 ### Poziomy dnia i linie sesji: tylko bieżący i poprzedni dzień (2026-11-12)
 
 Na danych stałych `ui:check` (zegar 24.10.2026 21:29 UTC): „Mapa dnia” 1440 × 900, wykres 4h — 30 linii poziomów dnia → 3; „Rozliczenie doby” 30m, 1440 — 9 linii poziomów i 8 linii otwarć sesji → 6 i 6 (wybór warstwy, nie piksele). Telefon 390 × 844 bez zmian: 3 linie poziomów, linii sesji brak (układy telefonu ich nie włączają). Liczby „przed” zmierzone na stronie z `main` z tymczasowym licznikiem w nakładce (bez commita).
