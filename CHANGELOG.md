@@ -20,6 +20,17 @@ Na telefonie dzisiejsza doba zaczyna się przed lewą krawędzią wykresu; przy 
 #### Dodane
 - **`ui:check`: scenariusz profili dób** („Mapa dnia”: 4h z profilami dób i 30m z TPO, na telefonie 30m; „Rozliczenie doby” 30m; dane stałe, 1440 i 390): liczby z atrybutów `data-tpo-objects`, `data-tpo-area`, `data-period-objects`, `data-period-area`. Limity w `--strict`: TPO najwyżej 20 obiektów na komputerze; pole pod słupkami najwyżej 12% na komputerze i 20% na telefonie. Liczba obiektów profili dób rośnie z liczbą dób w widoku (starsza doba to zawsze POC i pasek), więc pilnuje jej punkt odniesienia. `scripts/ui/baseline.json` (win32): 10 nowych liczb `tpo.*` i `periods.*`.
 - Testy: `profileSelect.test.ts` (długość słupka na komputerze i telefonie, pełny profil dwóch ostatnich dób, słupki bieżącej doby od krawędzi, 3 nagie POC najbliższe cenie, znaczniki jako odcinki, pole pod słupkami, zamknięta doba z tym samym profilem po dopisaniu kolejnej, zdanie w opisie PL i EN).
+
+### Wykres Pro: uśpienie karty nie liczy się jako nagrana taśma, delta i CVD widzą luki (2026-11-12)
+
+#### Naprawione
+- **Pokrycie taśmy kończy się na ostatniej wiadomości z transakcjami, nie w chwili wykrycia zerwania** (`src/charts/pro/hl/stream.ts`): po uśpieniu karty albo komputera strażnik połączenia budził się po kilku minutach i zamykał nagranie z czasem wybudzenia, więc cały sen liczył się jako nagrany: świeca z luką była pełna (`complete`), a historia z serwera nie dociągała luki. Teraz `onClosed` dostaje czas ostatniej wiadomości z transakcjami tego połączenia (bez niej: ostatniej wiadomości).
+- **Wybudzenie łączy od nowa**: wiadomość po przerwie dłuższej niż strażnik (75 s, np. z bufora po wybudzeniu) nie trafia do wykresu; połączenie jest porzucane i otwierane od nowa po ok. 1 s. Po ponownym połączeniu migawka transakcji otwiera pokrycie od najstarszej transakcji migawki, więc luka zostaje luką i dociąga ją historia serwera.
+- **Osobny strażnik kanału transakcji**: 2 min bez transakcji przy płynących innych kanałach (kontekst, świeca) też zamyka i otwiera połączenie od nowa.
+- **Delta i CVD patrzą na `complete`** (`src/charts/pro/core/flow.ts`, nowy `src/charts/pro/chart/flowPoints.ts`, `src/charts/pro/chart/controller.ts`, `src/charts/pro/chart/theme.ts`): świeca niepełna ma w panelu delty kolor świecy niepełnej (`PRO.incomplete`), w CVD (świece i linia Hyperliquid w panelu giełd) przerwę i zerowanie po niej, jak świeca bez taśmy. Ta sama świeca jest niepełna we wszystkich panelach. W opisie panelu delty (i w opisie CVD bez panelu delty) liczba świecy niepełnej ma kolor świecy niepełnej i dopisek „niepełna” / „partial” (`flowLegend`).
+- Testy: `src/charts/pro/__tests__/stream.test.ts` (3: uśpienie 10 min, wiadomość z bufora po przerwie, cisza samego kanału transakcji), `src/charts/pro/__tests__/proStore.test.ts` (test akceptacyjny: zegar zamrożony na 10 min w środku świecy daje `complete=false` i lukę w pokryciu; historia serwera obejmująca lukę daje świecę pełną i CVD bez przerwy, historia z częścią luki — świecę niepełną), `src/charts/pro/__tests__/flow.test.ts` (CVD z przerwą, punkty delty i linii CVD, opis delty świecy niepełnej).
+
+
 ### Bąble zleceń, ściany i serie: reguła przyczynowa, bez wyboru największych w oknie (2026-11-11)
 
 Na nagranej dobie 24.10.2026 (powtórka 19:30, Kokpit 1m, tylko warstwa bąbli) wykres rysował 83 bąble zleceń na 1440 × 900 i 17 na 390 × 844; po zmianie 14 i 0 (`npm run ui:check`, wybór warstwy, nie piksele; to sobotni wieczór, spokojna taśma). Ściany i serie w scenariuszu ścian (ta sama chwila, warstwy bąbli oraz serii i ścian): 10 → 4. Liczby „przed” zmierzone na stronie z `main` z tymczasowym licznikiem w warstwie (bez commita). Na stałych danych na żywo taśmy nie ma (atrapa strumienia nie wysyła transakcji), więc pomiar jest na powtórce.
@@ -54,6 +65,7 @@ Powtórzenie dla bąbli kodem warstwy (`selectBubbles` z pokryciem taśmy jak w 
 - **Notki „aktualizacja” z `noindex,follow` i poza mapą witryny** (`scripts/blog/render.mjs`, `isUnindexed`, `postPage`, `sitemapXml`): wpisy `RRRR-MM-DD-aktualizacja-GG` (jeden szablon kilka razy dziennie) zostają na liście wpisów, w archiwum i w RSS. Na 122 wpisach: 36 notek z `noindex,follow`, `sitemap.xml` 136 adresów zamiast 172; pozostałe wpisy, w tym notki rozliczeń, indeksowane. CSP i rejestr `source.json` bez zmian. Notki z `noindex` nie są zgłaszane do IndexNow (`scripts/blog/indexnow.mjs`); przy ich zmianie zgłaszana jest tylko strona bloga.
 - **Rozliczenie tygodnia od 8.11.2026** (`scripts/blog/posts.mjs`): BSS dotknięć tylko wobec obu baz (odległości i częstości bazowej), bez zdania o „realnej informacji” map; walidator odrzuca jedno i drugie. Starszy wpis z 7.11 bez zmian.
 - `docs/BLOG.md`: obie reguły. Testy w `scripts/blog/blog.test.mjs`.
+
 
 
 ### Angielski pierwszym językiem powłoki (E1) (2026-11-12)
