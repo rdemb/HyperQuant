@@ -4,6 +4,15 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Szlif 10: rynki bez pary CEX, ceny z dokładnością rynku, progi HIP-4 (2026-11-12)
+<!-- co-nowego: grupa=wykres | pl=Panele giełd na rynkach bez kontraktu na Binance i Bybit pokazują powód, ceny w opisach mają dokładność osi, a progi HIP-4 nie dublują się. | en=Exchange panels on markets without a Binance or Bybit contract show the reason, prices in descriptions match the axis precision, and HIP-4 thresholds no longer repeat. -->
+
+#### Zmienione
+- **Panele giełd**: gdy Binance (kod -1121) albo Bybit (`retCode` 10001, „Symbol Is Invalid”) odpowie, że symbolu nie ma, strona nie pyta już tej giełdy do końca sesji. Gdy kontraktu nie ma na żadnej z nich, panele CVD i ΔOI giełd pokazują „—” z tym samym powodem co na rynkach HIP-3, bez dalszych zapytań i połączeń.
+- **Karta „Liczby”**: grupy Binance i Bybit na rynku bez pary CEX mają dopisek „brak na Binance i Bybit” i powód pod tabelą zamiast samych kresek.
+- **Ceny w tekstach**: liczby nagłówka układu i Czwórka formatują ceny jak oś rynku (z `szDecimals` z rejestru). BTC bez zmian, kPEPE przy 0,0045 ma 6 miejsc jak na osi.
+- **Progi HIP-4**: kilka rynków na tym samym progu daje jedną linię (rynek z najbliższym terminem). Gdy wybrane rynki mają różne terminy, podpis podaje termin (krótko, czas lokalny). Limity bez zmian: 3 nad ceną i 3 pod, na telefonie 1.
+
 ### Pomiar rynków rejestru w cieniu, etap M0, i przepływ minutowy K2 (2026-11-12)
 
 #### Dodane

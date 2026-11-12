@@ -33,11 +33,12 @@ export interface MarketCaps {
 /** Rynek z symbolem `${coin}USDT` na Binance i Bybit: nie HIP-3 (dwukropek) i bez przedrostka `k` przed wielką literą. */
 export const hasCexPair = (coin: string): boolean => !coin.includes(':') && !/^k[A-Z]/.test(coin);
 
-export function marketCaps(coin: string, markets: readonly ChartMarket[]): MarketCaps {
+/** `noCex` — rynki, dla których Binance i Bybit odpowiedziały w tej sesji, że kontraktu nie ma (`markNoCex` w `state/markets`). */
+export function marketCaps(coin: string, markets: readonly ChartMarket[], noCex: ReadonlySet<string> = new Set()): MarketCaps {
   const full = markets.some((m) => m.coin === coin && m.scanner === 'full');
   // Blog i rynki HIP-4 opisują BTC niezależnie od rejestru
   const home = coin === 'BTC';
-  return { scanner: full, forecasts: full, blog: home, outcomes: home, cex: hasCexPair(coin) };
+  return { scanner: full, forecasts: full, blog: home, outcomes: home, cex: hasCexPair(coin) && !noCex.has(coin) };
 }
 
 /**
@@ -100,7 +101,7 @@ export const OUTCOMES_ONLY_WHY = tr('Tylko BTC: rynki HIP-4 są notowane na ceni
 /** Dopisek „—” przy panelach giełd na rynku bez odpowiednika na Binance i Bybit. */
 export const NO_CEX_NOTE = tr('brak na Binance i Bybit', 'not on Binance or Bybit');
 export const NO_CEX_BADGE = tr('—, brak na Binance i Bybit', '—, not on Binance or Bybit');
-/** Powód „—” paneli giełd na rynku `coin` (bez zapytań do Binance i Bybit). */
+/** Powód „—” paneli giełd na rynku `coin` (bez zapytań do Binance i Bybit, także gdy obie giełdy odpowiedziały, że symbolu nie ma). */
 export function noCexWhy(coin: string): string {
   return tr(
     `Rynek ${coin} nie ma odpowiednika na Binance i Bybit (panele giełd szukają kontraktu USDT o tej samej nazwie): bez CVD, ΔOI i fundingu giełd, wykres i dane Hyperliquid działają.`,
