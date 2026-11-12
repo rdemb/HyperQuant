@@ -23,6 +23,9 @@ export function metricsOf(r) {
   if (typeof r.effort?.phone === 'number') m['effort.rects390'] = r.effort.phone;
   // Ściany i serie (wybór warstwy) w Kokpicie 1m na powtórce 24.10
   if (typeof r.clashes?.desktop === 'number') m['clashes.objects1440'] = r.clashes.desktop;
+  // Bąble zleceń (wybór warstwy, bez serii) w Kokpicie 1m na powtórce 24.10
+  if (typeof r.bubbles?.desktop === 'number') m['bubbles.count1440'] = r.bubbles.desktop;
+  if (typeof r.bubbles?.phone === 'number') m['bubbles.count390'] = r.bubbles.phone;
   // Zakres początkowy sesji (wybór warstwy) na danych stałych: „Aukcja i otwarcie” 5m i „Rozliczenie doby” 30m
   for (const [view, v] of [['auction', r.ib?.auction], ['review', r.ib?.review]]) {
     if (typeof v?.desktop === 'number') m[`ib.${view}1440`] = v.desktop;

@@ -2,10 +2,11 @@ import { afterAll, describe, expect, it, vi } from 'vitest';
 import { BookHistory, type BookFrame } from '../core/book';
 import type { AggressorOrder } from '../core/orders';
 import type { Wall } from '../core/clashes';
+import { Coverage } from '../core/coverage';
 
 vi.stubGlobal('document', { documentElement: { dataset: {} }, createElement: () => ({ width: 0, height: 0, getContext: () => null }) });
 afterAll(() => vi.unstubAllGlobals());
-const { LiquidityLayer } = await import('../chart/liquidity');
+const { LiquidityLayer, liquidityLookbackMs, tapeCovered } = await import('../chart/liquidity');
 type Layer = InstanceType<typeof LiquidityLayer>;
 
 const MS = 60_000;
@@ -49,22 +50,24 @@ const WALLS: Wall[] = [
   { from: T0 + 20 * MS, to: T0 + 30 * MS, px: 80_015, side: -1, usd: 200_000, sz: 2.5, hits: 4, shown: 0, iceberg: false },
 ];
 
-function setup() {
-  const view = { x0: 0, sp: W / N_BARS, scale: 0.5, width: W };
+function setup(extra: AggressorOrder[] = []) {
+  const view = { x0: 0, sp: W / N_BARS, scale: 0.5, width: W, from: 0 };
   const near = new BookHistory(1);
   for (let t = NOW - 10 * 60_000; t <= NOW - 2_000; t += 5_000) near.add(frame(t));
-  const orders = makeOrders();
-  const store = { version: 0 };
+  const orders = [...makeOrders(), ...extra].sort((p, q) => p.time - q.time);
+  const store = { version: 0, history: 0, coverFrom: Number.NEGATIVE_INFINITY };
   const src = {
     near,
     far: null,
     orders: vi.fn((from: number, to: number) => orders.filter((o) => o.time >= from && o.time < to)),
     walls: vi.fn(() => WALLS),
     version: () => store.version,
+    history: () => store.history,
+    covers: (from: number) => from >= store.coverFrom,
   };
   const l = new LiquidityLayer({ ...ALL });
   const chart = {
-    timeScale: () => ({ getVisibleLogicalRange: () => ({ from: 0, to: N_BARS }), logicalToCoordinate: (x: number) => view.x0 + x * view.sp }),
+    timeScale: () => ({ getVisibleLogicalRange: () => ({ from: view.from, to: N_BARS }), logicalToCoordinate: (x: number) => view.x0 + x * view.sp }),
     paneSize: () => ({ width: view.width, height: H }),
   };
   const series = { priceToCoordinate: (p: number) => H / 2 - (p - 80_000) * view.scale };
@@ -167,5 +170,94 @@ describe('warstwa płynności: scena składana tylko po zmianie danych, widoku a
     // Ta sama synchronizacja bez nowych danych rysuje to samo, każda inna zmiana zmienia obraz
     if (name === changes[0][0]) expect(after).toEqual(before);
     else expect(after).not.toEqual(before);
+  });
+});
+
+describe('progi godzin między scenami (próg z chwili zdarzenia)', () => {
+  const HOUR = 3_600_000;
+  /** Zapytania o próg zamkniętej godziny: zlecenia godziny (serie i ściany) przed jej początkiem (serie, ściany i klasa bąbla). */
+  const thresholdCalls = (s: Setup) => s.src.orders.mock.calls.filter(([from, to]) => to % HOUR === 0 && (to - from === HOUR || to - from === 24 * HOUR)).length;
+
+  it('druga scena nie liczy progu zamkniętej godziny od nowa; doczytanie historii czyści pamięć', () => {
+    const s = setup();
+    s.l.setData(bars as never, MS, s.src, NOW, THRESHOLD, 0);
+    s.l.updateAllViews();
+    const first = thresholdCalls(s);
+    expect(first).toBeGreaterThan(0);
+    s.view.x0 = -35;
+    s.l.updateAllViews();
+    s.l.setData(bars as never, MS, s.src, NOW + 4_000, THRESHOLD, 0);
+    s.l.updateAllViews();
+    expect(s.src.orders.mock.calls.length).toBeGreaterThan(first + 1);
+    expect(thresholdCalls(s)).toBe(first);
+    s.store.history++;
+    s.store.version++;
+    s.l.updateAllViews();
+    expect(thresholdCalls(s)).toBe(2 * first);
+  });
+
+  it('liczba bąbli zleceń na ekranie dla pomiaru układu (bez serii)', () => {
+    const s = setup();
+    const counts: number[] = [];
+    s.l.onBubbles = (n) => counts.push(n);
+    s.l.updateAllViews();
+    // Próg ręczny 100 tys.: zlecenia 450 tys., 900 tys. i 150 tys.
+    expect(counts).toEqual([3]);
+  });
+});
+
+describe('bąble w warstwie: reguła przyczynowa (2 największe z 20 świec, telefon 1)', () => {
+  const count = (s: Setup) => {
+    const counts: number[] = [];
+    s.l.onBubbles = (n) => counts.push(n);
+    s.l.updateAllViews();
+    return counts.at(-1);
+  };
+
+  it('bez progu ręcznego: komputer K = 2, telefon K = 1', () => {
+    const s = setup();
+    s.l.setData(bars as never, MS, s.src, NOW, THRESHOLD, 0);
+    // 450 tys., 900 tys., dwie pierwsze z serii 22 tys. (równe — wcześniejsza wyżej), 150 tys., 50 tys.
+    expect(count(s)).toBe(6);
+    s.l.setPhone(true);
+    expect(count(s)).toBe(5);
+  });
+
+  it('zlecenia sprzed widoku (20 świec) liczą się do porównania: przewinięcie nie dodaje bąbli na lewej krawędzi', () => {
+    const s = setup([order(T0 + 45 * MS, 1, 2_000_000, '0xd'), order(T0 + 50 * MS, 1, 1_500_000, '0xe')]);
+    s.l.setToggles({ ...ALL, showClashes: false });
+    s.l.setData(bars as never, MS, s.src, NOW, THRESHOLD, 0);
+    s.view.from = 55;
+    // Od 55. minuty: seria z 60. minuty ma przed sobą 2 mln i 1,5 mln — bez bąbla; zostają 150 tys. i 50 tys.
+    expect(count(s)).toBe(2);
+  });
+
+  it('bąbel tylko przy taśmie zleceń z całego okna 20 świec przed nim (pokrycie ze źródła)', () => {
+    const s = setup();
+    s.l.setData(bars as never, MS, s.src, NOW, THRESHOLD, 0);
+    s.store.coverFrom = T0 + 30 * MS;
+    s.store.version++;
+    // 450 tys. (10. min) i 900 tys. (40. min) bez pełnego okna; zostają dwie z serii, 150 tys. i 50 tys.
+    expect(count(s)).toBe(4);
+  });
+
+  it('pokrycie taśmy: krótka przerwa połączenia (1 s) nie wyłącza okna, początek taśmy i luka 5 min tak', () => {
+    const cov = new Coverage([
+      [T0, T0 + 30 * MS],
+      [T0 + 30 * MS + 1000, T0 + 60 * MS],
+      [T0 + 65 * MS, T0 + 120 * MS],
+    ]);
+    expect(tapeCovered(cov, T0 + 20 * MS, T0 + 40 * MS)).toBe(true);
+    expect(tapeCovered(cov, T0 - 60_000, T0 + 19 * MS)).toBe(false);
+    expect(tapeCovered(cov, T0 + 50 * MS, T0 + 70 * MS)).toBe(false);
+    expect(tapeCovered(cov, T0 + 70 * MS, T0 + 90 * MS)).toBe(true);
+  });
+
+  it('historia z serwera od lewej krawędzi minus okno porównania: 20 świec (bąble), co najmniej 60 min (serie i ściany)', () => {
+    const on = { showBubbles: true, showClashes: true };
+    expect(liquidityLookbackMs(MS, on)).toBe(60 * MS);
+    expect(liquidityLookbackMs(5 * MS, on)).toBe(100 * MS);
+    expect(liquidityLookbackMs(MS, { ...on, showClashes: false })).toBe(20 * MS);
+    expect(liquidityLookbackMs(MS, { showBubbles: false, showClashes: true })).toBe(0);
   });
 });
