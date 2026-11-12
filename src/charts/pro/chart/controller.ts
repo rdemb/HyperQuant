@@ -21,7 +21,7 @@ import { fmtVol } from '../../orderflow/footprint';
 import { fmtSignedVol } from '../../orderflow/renderer';
 import { DEFAULT_THRESHOLD_USD, autoThreshold } from '../core/clashes';
 import { Ohlc, cvdCandles, cvdLine, flipsEmpty, oiChangeLine } from '../core/flow';
-import { deltaPoint, hlDelta } from './flowPoints';
+import { deltaPoint, flowLegend, hlDelta } from './flowPoints';
 import { BarStat, VENUE_GROUPS, barStat } from '../core/stats';
 import { hlTick, rowAt } from '../core/footprintBar';
 import type { LiqLevel } from '../core/indicators';
@@ -220,14 +220,6 @@ const CONE_LEVELS = [
 type VenueLines = Partial<Record<VenueLineId, (number | null)[]>>;
 
 const fmtFunding = (r: number | null) => (r === null ? '—' : `${r >= 0 ? '+' : ''}${numLang((r * 100).toFixed(4))}%`);
-
-function flowLegend(label: string, value: number | null): LegendPart[] {
-  if (value === null) return [{ text: label, color: PRO.ink3 }];
-  return [
-    { text: label, color: PRO.ink3 },
-    { text: fmtSignedVol(value), color: value >= 0 ? PRO.buyInk : PRO.sellInk },
-  ];
-}
 
 /** Linie poziomów w panelu wskaźnika (RSI 70, 50, 30): widoczne, ale ciszej niż linia wskaźnika. */
 const LEVEL_COLOR = rgba(PRO.ink3, 0.45);
@@ -1749,8 +1741,9 @@ export class ProChartController {
     );
     // Liczby taśmy świecy (dawniej linia legendy nad świecami) w opisie panelu delty, a bez niego w opisie CVD; na telefonie bez nich
     const stats = bar && !this.phone ? deltaStatsParts(bar) : [];
-    this.deltaLegend.set([...flowLegend('Delta', bar?.fp ? bar.fp.delta : null), ...stats]);
-    const cvdStats = this.settings.showDelta || stats.length === 0 ? [] : [...flowLegend('Δ', bar?.fp ? bar.fp.delta : null), ...stats];
+    const partial = bar?.complete === false;
+    this.deltaLegend.set([...flowLegend('Delta', bar?.fp ? bar.fp.delta : null, partial), ...stats]);
+    const cvdStats = this.settings.showDelta || stats.length === 0 ? [] : [...flowLegend('Δ', bar?.fp ? bar.fp.delta : null, partial), ...stats];
     this.cvdLegend.set([...flowLegend(`CVD · ${RESET_LABEL[this.settings.cvdReset]}`, cvd ? cvd.close : null), ...cvdStats]);
     // Wąski wykres (telefon): bez okresu (ten sam co w opisie CVD) i bez wiersza finansowania — opis mieści się w dwóch wierszach
     const compact = this.chart.timeScale().width() < COMPACT_LEGEND_PX;

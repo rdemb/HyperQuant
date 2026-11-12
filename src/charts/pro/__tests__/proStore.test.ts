@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HlStream } from '../hl/stream';
 import { CandleSeries, ProStore } from '../store/proStore';
+import { cvdCandles } from '../core/flow';
 
 class FakeWs {
   static last: FakeWs | null = null;
@@ -206,6 +207,41 @@ describe('ProStore', () => {
     expect(store.coverage.covers(lastTrade, now - 3000)).toBe(false);
     expect(store.coverage.covers(now - 2999, now)).toBe(true);
     expect(series.bars().find((b) => b.t === T0 + 2 * M5)!.complete).toBe(false);
+  });
+
+  /** Uśpienie karty jak wyżej; zwraca czas ostatniej transakcji przed snem i chwilę po ponownym połączeniu. */
+  async function sleepTab() {
+    const ws = await boot();
+    ws.msg({ channel: 'trades', data: [trade(now - 2000, 81025, 0.1, 'B', 1), trade(now - 1000, 81026, 0.1, 'B', 2)] });
+    const lastTrade = now - 1000;
+    now += 10 * 60_000;
+    vi.setSystemTime(now);
+    vi.advanceTimersByTime(12_000);
+    now += 12_000;
+    const ws2 = FakeWs.last!;
+    ws2.open();
+    ws2.msg({ channel: 'subscriptionResponse', data: { method: 'subscribe', subscription: { type: 'trades', coin: 'BTC' } } });
+    ws2.msg({ channel: 'trades', data: [trade(now - 3000, 81100, 0.2, 'A', 50), trade(now - 1000, 81101, 0.2, 'B', 51)] });
+    return { lastTrade, woke: now - 3000 };
+  }
+  const restore = (from: number, to: number) =>
+    store.restoreHistory({ trades: { from, to, spans: [[from, to]], zeroSpans: [], fills: [], oi: [] }, frames: [] });
+  const sleptBar = () => series.bars().findIndex((b) => b.t === T0 + 2 * M5);
+
+  it('dociągnięcie luki po uśpieniu: historia serwera obejmująca lukę daje świecę pełną i CVD bez przerwy', async () => {
+    const { woke } = await sleepTab();
+    const i = sleptBar();
+    expect(series.bars()[i].complete).toBe(false);
+    expect(cvdCandles(series.bars(), 'day')[i]).toBeNull();
+    restore(T0, woke);
+    expect(series.bars()[i].complete).toBe(true);
+    expect(cvdCandles(series.bars(), 'day')[i]).not.toBeNull();
+  });
+
+  it('historia obejmująca tylko część luki: świeca zostaje niepełna', async () => {
+    const { lastTrade } = await sleepTab();
+    restore(T0, lastTrade + 60_000);
+    expect(series.bars()[sleptBar()].complete).toBe(false);
   });
 
   it('początek nagrania z migawki po subskrypcji, w zegarze giełdy (zegar przeglądarki spóźniony o 2 min)', async () => {
