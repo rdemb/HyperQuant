@@ -2,7 +2,7 @@
  * Fakty sesji Londynu albo NY ze świec 1m — jedno źródło dla nagłówka układu Rozliczenie i kart Rozliczenia sesji Po sesji:
  * zakres z minutami ekstremów, IB (pierwsza godzina) i pierwsze wyjście z niego, zamknięcie, value area 70% (`profile`)
  * tej i poprzedniej sesji tego samego typu. Oraz sesja w toku na żywo (`sessionNowOf`: nagłówek Kokpitu i Otwarcia
- * aukcji, serwer MCP), typ dnia z faktów (`dayTypeOf`) i oczekiwany zakres z powodem braku (`expectedFrom`). Bez modułów
+ * aukcji, serwer MCP), typ dnia z faktów (`dayTypeOf`) i oczekiwany zakres ze świec 1h z powodem braku (`expectedFrom`). Bez modułów
  * wykresu (i18n tutaj, nie w `sessionDay`).
  */
 import { tr } from '../i18n';
@@ -10,10 +10,20 @@ import { fmtDayTime, fmtDm, fmtHm } from '../charts/pro/core/time';
 import type { Candle } from '../charts/pro/hl/parse';
 import { type VBar, extremeTouches, profile, profileStep, sessionVwap, toVBars } from './auction';
 import { type DayType, classifyDay } from './dayType';
-import { type TradeSession, currentTradeSession, expectedRange, lastClosedSessions, nextTradeSession, previousSameSession } from './sessionDay';
+import {
+  type TradeSession,
+  LEVEL_HOURS,
+  LEVEL_MIN_HOURS,
+  PROFILE_DAYS,
+  PROFILE_LOOKBACK_DAYS,
+  currentTradeSession,
+  expectedSessionRange,
+  lastClosedSessions,
+  nextTradeSession,
+  previousSameSession,
+} from './sessionDay';
 import { TRADE_SESSION_NAME } from './sessionNames';
 import type { Expected, Got } from './sessionText';
-import type { VolModel } from './volatility';
 
 const MIN = 60_000;
 /** Fakty tylko przy ≥ 95% minut okresu w świecach 1m. */
@@ -195,39 +205,28 @@ export function sessionNowOf(c1m: readonly Candle[], now: number): Got<SessionNo
   };
 }
 
-/** Podstawa oczekiwanego zakresu sesji do rozliczenia: model HAR (null — σ Parkinsona ze świec 5m) i chwila oceny. */
-export interface ExpectedBasis {
-  model: VolModel | null;
-  asOf: number;
-}
-
 /**
- * Reguła wyboru metody oczekiwanego zakresu sesji do rozliczenia — jedna dla karty Rozliczenia strony (`sessionExpectedOf`)
- * i `session_review` serwera MCP: sesja w toku — model HAR, gdy jest (inaczej Parkinson), ocena na teraz; zamknięta —
- * zawsze ex ante: Parkinson ze świec 5m na chwilę jej otwarcia (model HAR zna tylko dzisiejszy poziom zmienności, nie
- * prognozę sprzed tamtej sesji). Świece 5m i model rozwiązuje wywołujący, liczbę daje `expectedFrom`.
+ * Oczekiwany zakres sesji albo powód braku — jedno źródło dla nagłówka układu, karty Rozliczenia i serwera MCP (świece 1h
+ * rozwiązuje wywołujący, od `expectedCandlesFrom`). Liczony ze świec zamkniętych przed godziną otwarcia, więc ten sam
+ * w trakcie sesji i po jej końcu (sesja zamknięta — od własnej ceny sprzed otwarcia, nie od bieżącej).
  */
-export function expectedBasis(s: TradeSession, inProgress: boolean, model: VolModel | null, now: number): ExpectedBasis {
-  return inProgress ? { model, asOf: now } : { model: null, asOf: s.start };
-}
-
-/**
- * Oczekiwany zakres sesji albo powód braku — jedno źródło dla nagłówka układu, karty Rozliczenia i serwera MCP (świece 5m
- * i model rozwiązuje wywołujący). Z modelem HAR liczba z modelu; bez niego σ Parkinsona ze świec 5m do chwili `asOf`.
- * `asOf < now` — sesja zamknięta, ocena ex ante (Parkinson sprzed otwarcia, `expectedBasis`).
- */
-export function expectedFrom(model: VolModel | null, bars5m: VBar[], s: TradeSession, now: number, asOf: number, price: number): Got<Expected> {
-  const e = expectedRange(model, bars5m, s, asOf, price);
-  if (e) return e;
+export function expectedFrom(bars1h: readonly VBar[], s: TradeSession): Got<Expected> {
+  const e = expectedSessionRange(bars1h, s);
+  if (!('missing' in e)) return { usd: e.usd, typical: e.typical, method: e.method };
+  if (e.missing === 'price') return { why: tr('Brak świecy 1h sprzed otwarcia sesji', 'No 1h candle from before the session open') };
+  if (e.missing === 'level') {
+    return {
+      why: tr(
+        `Za mało świec 1h z doby przed sesją (${e.hours} z ${LEVEL_HOURS}, min. ${LEVEL_MIN_HOURS})`,
+        `Too few 1h candles from the day before the session (${e.hours} of ${LEVEL_HOURS}, min. ${LEVEL_MIN_HOURS})`
+      ),
+    };
+  }
+  const days = e.weekend ? tr('dni weekendowych', 'weekend days') : tr('dni roboczych', 'weekdays');
   return {
-    why: model
-      ? tr('Model HAR nie daje zmienności dla tej sesji', 'The HAR model gives no volatility for this session')
-      : asOf < now
-        ? // Zamknięta sesja: zawsze Parkinson sprzed otwarcia, także przy wczytanym modelu HAR (sessionExpectedOf)
-          tr(
-            'Ocena ex ante (Parkinson sprzed otwarcia): za mało zamkniętych świec 5m z doby przed sesją (min. 12)',
-            'Ex ante estimate (Parkinson before the open): too few closed 5m candles from the day before the session (min. 12)'
-          )
-        : tr('Bez modelu HAR, a za mało zamkniętych świec 5m z ostatniej doby (min. 12)', 'No HAR model and too few closed 5m candles from the last day (min. 12)'),
+    why: tr(
+      `Mniej niż ${PROFILE_DAYS} ${days} ze świecami 1h w ${PROFILE_LOOKBACK_DAYS} dniach przed sesją`,
+      `Fewer than ${PROFILE_DAYS} ${days} with 1h candles in the ${PROFILE_LOOKBACK_DAYS} days before the session`
+    ),
   };
 }
