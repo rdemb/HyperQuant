@@ -4,7 +4,7 @@ import type { LiquidityPick } from '../../charts/pro/chart/liquidity';
 import { classify } from '../../charts/pro/core/clashes';
 import { bidShare } from '../../charts/pro/core/ladder';
 import type { AggressorOrder } from '../../charts/pro/core/orders';
-import { COIN, MARKETS, type Market, type ProStore } from '../../charts/pro/store/proStore';
+import type { ProStore } from '../../charts/pro/store/proStore';
 import { Segmented, numLang } from '../../ui';
 import { tr } from '../../i18n';
 import { BTC_ONLY_TITLE, type StepId, scannerScope } from './flowColumnModel';
@@ -106,11 +106,8 @@ const WithScanner: React.FC<{ store: ProStore; narrow: boolean; children: (s: Sc
 
 type LowerTab = 'tape' | 'who' | 'twap' | 'walls';
 
-const toMarket = (coin: string): Market => ((MARKETS as readonly string[]).includes(coin) ? (coin as Market) : COIN);
-
 export const FlowColumn: React.FC<{ coin: string; narrow: boolean; variant: 'column' | 'pulse' }> = ({ coin, narrow, variant }) => {
-  const market = toMarket(coin);
-  const f = useFlowColumn(market);
+  const f = useFlowColumn(coin);
   // Karta pod drabiną, panel powiększony kaflem Pulse (drugie kliknięcie wraca), kliknięte zlecenie i podświetlone konto
   const [lower, setLower] = useState<LowerTab>('tape');
   const [max, setMax] = useState<PanelId | null>(null);
@@ -123,7 +120,7 @@ export const FlowColumn: React.FC<{ coin: string; narrow: boolean; variant: 'col
     setHighlight('');
   }, []);
   // Inny rynek: zlecenie i konto z poprzedniego nie dotyczą nowego
-  useEffect(closePick, [market, closePick]);
+  useEffect(closePick, [coin, closePick]);
 
   const render = (s: ScannerData | null): React.ReactNode => {
     if (variant === 'pulse') return <Pulse tiles={pulseTiles(f, s, true)} active={null} narrow={narrow} />;
@@ -205,7 +202,7 @@ export const FlowColumn: React.FC<{ coin: string; narrow: boolean; variant: 'col
     );
   };
 
-  return scannerScope(market) === 'full' ? (
+  return scannerScope(coin) === 'full' ? (
     <WithScanner store={f.store} narrow={narrow}>
       {render}
     </WithScanner>

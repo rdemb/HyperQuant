@@ -3,7 +3,7 @@ import type { Span } from '../core/coverage';
 import type { Fill } from '../hl/parse';
 import { HlStream } from '../hl/stream';
 import { ProStore, RETENTION_MS } from '../store/proStore';
-import { StoredMinute, TapeKv, TapePersistence, mergeMinute, mergeSpans } from '../store/tapeDb';
+import { StoredMinute, TapeKv, TapePersistence, mergeMinute, mergeSpans, tapeDbName } from '../store/tapeDb';
 
 /** Magazyn w pamięci o semantyce IndexedDB z tapeDb. */
 class MemKv implements TapeKv {
@@ -149,5 +149,17 @@ describe('mergeMinute / mergeSpans', () => {
       [1, 4],
       [5, 9],
     ]);
+  });
+});
+
+describe('tapeDbName', () => {
+  it('BTC bez zmian (zapisana taśma zostaje), HIP-3 bez dwukropka w nazwie bazy', () => {
+    expect(tapeDbName('BTC')).toBe('hq-pro-tape-btc');
+    expect(tapeDbName('xyz:NVDA')).toBe('hq-pro-tape-xyz-NVDA');
+    expect(tapeDbName('xyz:NVDA')).not.toContain(':');
+  });
+  it('wielkość liter odróżniona tam, gdzie zmienia rynek (kPEPE i KPEPE to dwie bazy)', () => {
+    expect(tapeDbName('kPEPE')).not.toBe(tapeDbName('KPEPE'));
+    expect(tapeDbName('ETH')).toBe('hq-pro-tape-eth');
   });
 });

@@ -2,7 +2,8 @@ import { lang, tr } from '../../../i18n';
 import { type AlertEvent, AlertEngine, eventText, ivMs, tradeKey } from '../../../utils/alertRules';
 import { parseAssetCtx, parseFills } from '../hl/parse';
 import { fetchCandles } from '../hl/rest';
-import { MARKETS, storeFor } from '../store/proStore';
+import { storeFor } from '../store/proStore';
+import { isCoinName } from '../../../utils/marketRegistry';
 import { LOG_MAX, alertBook, alertLog, notifyAlert, notifyEvent, primeAlertSound } from './alerts';
 import { startPushSync } from './pushAlerts';
 
@@ -63,8 +64,9 @@ function seed(coin: string, iv: string): void {
 /** Rynki z alarmami dostają strumień (raz otwarty nagrywa dalej) i słuchacza transakcji oraz kontekstu. */
 function watch(): void {
   const list = alertBook.get();
-  for (const m of MARKETS) {
-    if (!list.some((a) => a.coin === m)) continue;
+  // Każdy rynek z alarmem (także spoza bieżącego rejestru: alarm ustawiony wcześniej pilnuje dalej swojego rynku)
+  for (const m of new Set(list.map((a) => a.coin))) {
+    if (!isCoinName(m)) continue;
     for (const iv of engine.intervals(list, m)) if (iv !== '1m') seed(m, iv);
     if (watched.has(m)) continue;
     watched.add(m);

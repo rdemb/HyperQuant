@@ -111,7 +111,8 @@ export interface ChartsViewProps {
 }
 
 /**
- * Wykresy: świece i footprint perpów (BTC, ETH, SOL, HYPE) na silniku TradingView Lightweight Charts z danymi Hyperliquid
+ * Wykresy: świece i footprint perpów z rejestru rynków (`state/markets`: 20 największych z HIP-3, bez pliku BTC, ETH, SOL
+ * i HYPE) na silniku TradingView Lightweight Charts z danymi Hyperliquid
  * na żywo. Nad wykresami karty układów fazy dnia (na telefonie lista w pasku wykresu): każda karta ma własny układ 1, 2
  * albo 4 wykresów, a każdy wykres własny interwał, wskaźniki i warstwy. Przełączenie karty przenosi rynek i chwilę widoku
  * (wykres przewinięty w historię otwiera się w nowej karcie w tym samym miejscu). Alt+1…6 otwiera układ (także innej

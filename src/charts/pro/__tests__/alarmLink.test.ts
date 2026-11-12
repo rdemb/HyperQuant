@@ -19,8 +19,13 @@ describe('link z alarmami', () => {
     expect(parseAlarmLink(`#desk?alarm=${alarmParam(PLAN)}`)).toBeNull();
   });
 
+  it('alarm na rynku HIP-3 (xyz:NVDA) przechodzi przez link', () => {
+    const nvda: LinkAlarm[] = [{ c: 'xyz:NVDA', p: 190.5, k: 't' }];
+    expect(parseAlarmLink(`#charts?alarm=${alarmParam(nvda)}`)).toEqual(nvda);
+  });
+
   it('jeden błędny wpis odrzuca cały link', () => {
-    for (const bad of [{ ...PLAN[1], d: undefined }, { ...PLAN[5], d: undefined }, { ...PLAN[0], c: 'DOGE' }, { ...PLAN[1], i: '2h' }, { ...PLAN[1], f: '9:05' }, { ...PLAN[4], a: 4 }, { ...PLAN[1], n: 4 }])
+    for (const bad of [{ ...PLAN[1], d: undefined }, { ...PLAN[5], d: undefined }, { ...PLAN[0], c: 'BTC/USD' }, { ...PLAN[1], i: '2h' }, { ...PLAN[1], f: '9:05' }, { ...PLAN[4], a: 4 }, { ...PLAN[1], n: 4 }])
       expect(parseAlarmLink(`#charts?alarm=${alarmParam([PLAN[0], bad as LinkAlarm])}`)).toBeNull();
     expect(parseAlarmLink('#charts?alarm=1.@@@')).toBeNull();
   });

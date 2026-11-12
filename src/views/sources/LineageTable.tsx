@@ -273,18 +273,18 @@ const GROUPS: { title: string; rows: Row[] }[] = [
       {
         metric: tr('Rynki, alerty cenowe i link do widoku (W sesji)', 'Markets, price alerts and view link (In session)'),
         source: tr(
-          'Hyperliquid WS i API dla BTC, ETH, SOL i HYPE (każdy rynek osobnym połączeniem); alerty w pamięci przeglądarki',
-          'Hyperliquid WS and API for BTC, ETH, SOL and HYPE (a separate connection per market); alerts in browser storage'
+          'Hyperliquid WS i API dla rynków z rejestru markets.json skanera (reguła reg-v1: 20 największych według średnich otwartych pozycji z 7 dni, razem z HIP-3; bez pliku BTC, ETH, SOL i HYPE; każdy rynek osobnym połączeniem); alerty w pamięci przeglądarki',
+          'Hyperliquid WS and API for the markets in the scanner’s markets.json registry (rule reg-v1: the 20 largest by 7-day average open interest, HIP-3 included; without the file BTC, ETH, SOL and HYPE; a separate connection per market); alerts in browser storage'
         ),
         method: tr(
-          'Tick ceny = 5 cyfr znaczących ceny, najwyżej 1 (cena całkowita zawsze dozwolona); arkusz bliski w kroku najbliższym 2 pb ceny, daleki w 10 × większym; alert = jednorazowy poziom z kierunkiem wg położenia względem ceny przy ustawianiu, sprawdzany co sekundę na cenie bieżącej świecy rynku; link = rynek, interwał i rodzaj wykresu w adresie strony',
-          'Price tick = 5 significant digits of the price, at most 1 (an integer price is always allowed); near book in the step closest to 2 bp of the price, far book in a 10 × larger one; alert = a one-off level with a direction from its position relative to the price when set, checked every second against the price of the market’s current candle; link = market, timeframe and chart type in the page address'
+          'Tick ceny = 5 cyfr znaczących ceny, najwyżej 1 (cena całkowita zawsze dozwolona); arkusz bliski w kroku najbliższym 2 pb ceny, daleki w 10 × większym; alert = jednorazowy poziom z kierunkiem wg położenia względem ceny przy ustawianiu, sprawdzany co sekundę na cenie bieżącej świecy rynku; link = rynek, interwał i rodzaj wykresu w adresie strony (rynek HIP-3 z giełdą: m=xyz:NVDA; rynek spoza rejestru otwiera BTC)',
+          'Price tick = 5 significant digits of the price, at most 1 (an integer price is always allowed); near book in the step closest to 2 bp of the price, far book in a 10 × larger one; alert = a one-off level with a direction from its position relative to the price when set, checked every second against the price of the market’s current candle; link = market, timeframe and chart type in the page address (a HIP-3 market with its exchange: m=xyz:NVDA; a market outside the registry opens BTC)'
         ),
         kinds: ['LIVE'],
         refresh: tr('na żywo · alerty co 1 s', 'live · alerts every 1 s'),
         caveat: tr(
-          'Alerty działają tylko przy otwartej stronie i zapisują się tylko w tej przeglądarce. Klastry likwidacji tylko dla BTC (skaner mapuje pozycje BTC). Taśma każdego rynku nagrywana od otwarcia strony.',
-          'Alerts work only while the page is open and are saved only in this browser. Liquidation clusters for BTC only (the scanner maps BTC positions). Each market’s tape is recorded since the page opened.'
+          'Alerty działają tylko przy otwartej stronie i zapisują się tylko w tej przeglądarce. Klastry likwidacji tylko na rynkach z pełnym skanerem w rejestrze (dziś BTC). Taśma każdego rynku nagrywana od otwarcia strony.',
+          'Alerts work only while the page is open and are saved only in this browser. Liquidation clusters only on markets with the full scanner in the registry (today BTC). Each market’s tape is recorded since the page opened.'
         ),
       },
       {

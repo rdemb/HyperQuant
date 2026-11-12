@@ -30,8 +30,10 @@ export async function fetchCandlesOrNull(coin: string, interval: string, startTi
   return raw === null ? null : parseCandles(raw);
 }
 
+/** Kontekst rynku; rynek HIP-3 (`xyz:NVDA`) z odpowiedzi swojej giełdy (`dex`). */
 export async function fetchAssetCtx(coin: string): Promise<AssetCtx | null> {
-  return pickAssetCtx(await postInfo({ type: 'metaAndAssetCtxs' }), coin);
+  const i = coin.indexOf(':');
+  return pickAssetCtx(await postInfo(i < 0 ? { type: 'metaAndAssetCtxs' } : { type: 'metaAndAssetCtxs', dex: coin.slice(0, i) }), coin);
 }
 
 export async function fetchBook(coin: string, nSigFigs?: number): Promise<BookSnapshot | null> {
