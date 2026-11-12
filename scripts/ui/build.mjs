@@ -3,6 +3,8 @@
 // (`DATA_BASE_URL` z fixtures.mjs). Strona pyta wtedy o rejestr rynków (`markets.json`), który `layout-check.mjs` podaje
 // z danych stałych w przebiegu rynków (xyz:NVDA); pozostałe pliki danych — błąd jak bez połączenia. Zmienna środowiska
 // ma pierwszeństwo przed plikami .env, więc lokalny adres danych nie zmienia pomiaru.
+// Po lokalnym `npm run ui:check` katalog `dist` ma ten sztuczny adres danych; nie wdrażaj go ręcznie (strona idzie
+// wyłącznie przez GitHub Actions, które budują ją od nowa z prawdziwym adresem).
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { DATA_BASE_URL } from './fixtures.mjs';
