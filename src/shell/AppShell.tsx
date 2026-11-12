@@ -6,6 +6,8 @@ import {
   Database,
   FlaskConical,
   GraduationCap,
+  History,
+  ListChecks,
   MoreHorizontal,
   Newspaper,
   Pause,
@@ -77,6 +79,10 @@ const LANGS: { value: Lang; label: string; title: string }[] = [
 
 // Blog jest tylko po polsku — w wersji angielskiej mówimy o tym w etykiecie
 const BLOG_LABEL = tr('Blog', 'Blog (PL)');
+// „Co nowego”: statyczna strona historii zmian w obu językach (co-nowego/, en/whats-new/)
+const NEWS_LABEL = tr('Co nowego', 'What’s new');
+// „Wyniki”: statyczna strona rozliczenia dziennika prognoz (wyniki/, en/results/)
+const RESULTS_LABEL = tr('Wyniki', 'Results');
 
 const TIMEFRAMES = [
   { value: 60, label: '1m' },
@@ -385,6 +391,13 @@ export const AppShell: React.FC = () => {
             <a href="./blog/" className={navLink(false)}>
               {BLOG_LABEL}
             </a>
+            {/* Wyniki i Co nowego w pasku od xl (1280 px); węższy ekran: menu „Więcej”, żeby nie ucinać ceny w nagłówku */}
+            <a href={tr('./wyniki/', './en/results/')} className={`${navLink(false)} hidden xl:inline`}>
+              {RESULTS_LABEL}
+            </a>
+            <a href={tr('./co-nowego/', './en/whats-new/')} className={`${navLink(false)} hidden xl:inline`}>
+              {NEWS_LABEL}
+            </a>
             <ViewLink id={AGENTS.id} go={go} current={view === AGENTS.id} className={navLink(view === AGENTS.id)}>
               {view === AGENTS.id && <ActivePill />}
               <span className="relative">{AGENTS.label}</span>
@@ -422,6 +435,15 @@ export const AppShell: React.FC = () => {
                         {n.label}
                       </ViewLink>
                     ))}
+                    {/* Poniżej xl Wyniki i Co nowego są tutaj zamiast w pasku */}
+                    <a href={tr('./wyniki/', './en/results/')} className={`${MENU_ITEM} xl:hidden`}>
+                      <ListChecks className="w-4 h-4" />
+                      {RESULTS_LABEL}
+                    </a>
+                    <a href={tr('./co-nowego/', './en/whats-new/')} className={`${MENU_ITEM} xl:hidden`}>
+                      <History className="w-4 h-4" />
+                      {NEWS_LABEL}
+                    </a>
                     {/* Rzadko używane przełączniki nagłówka: język, synchronizacja, dźwięk taśmy (nagłówek ma miejsce na liczby rynku) */}
                     <div role="separator" className="my-1 border-t border-line" />
                     <ShellToggles audioEnabled={audioEnabled} setAudioEnabled={setAudioEnabled} onSync={feed.syncNow} onDone={() => setTopMore(false)} />
@@ -562,6 +584,14 @@ export const AppShell: React.FC = () => {
                 <a href="./blog/" className={MENU_ITEM}>
                   <Newspaper className="w-4 h-4" />
                   {BLOG_LABEL}
+                </a>
+                <a href={tr('./wyniki/', './en/results/')} className={MENU_ITEM}>
+                  <ListChecks className="w-4 h-4" />
+                  {RESULTS_LABEL}
+                </a>
+                <a href={tr('./co-nowego/', './en/whats-new/')} className={MENU_ITEM}>
+                  <History className="w-4 h-4" />
+                  {NEWS_LABEL}
                 </a>
                 <ViewLink id={AGENTS.id} go={go} current={view === AGENTS.id} more className={MENU_ITEM}>
                   {AGENTS.icon}
