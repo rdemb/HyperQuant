@@ -156,3 +156,43 @@ describe('Kto handluje: zamknięta świeca się nie zmienia', () => {
     expect(players.split(H0, H, H0 + 2 * H + M1)).toEqual(before);
   });
 });
+
+describe('Kto handluje: okno pełne tylko w jednym zakresie numeracji kont', () => {
+  // Doba UTC: północ D1 = H0 rounded; klucze z historii serwera jak w toFills: `~d<doba>:<n>` (pliki idScope 'day'),
+  // `~<godzina>:<n>` (starsze pliki godzinowe); konto na żywo — adres
+  const DAY = 24 * H;
+  const D1 = Math.ceil(H0 / DAY) * DAY;
+  const D0 = D1 - DAY;
+  const spans: [number, number][] = [[D1 - 3 * H, D1 + 3 * H]];
+
+  it('okno przez przełom doby UTC (pliki dobowe) nie jest pełne; okno w jednej dobie jest', () => {
+    const { players } = flow([order(D1 - 20 * M1, `~d${D0}:1`, 1, 600), order(D1 + 5 * M1, `~d${D1}:1`, 1, 600)], spans);
+    const now = D1 + 2 * H;
+    // świeca 1m 0:10: okno 23:11–0:11 ma numery z dwóch dób — to samo konto mogło dostać dwa numery
+    expect(players.split(D1 + 10 * M1, M1, now)!.complete).toBe(false);
+    // świeca 1m 0:59: okno 0:00–1:00 w jednej dobie
+    expect(players.split(D1 + 59 * M1, M1, now)!.complete).toBe(true);
+    // świeca 1h 0:00: okno = jej godzina
+    expect(players.split(D1, H, now)!.complete).toBe(true);
+  });
+
+  it('okno przez granicę godziny w starych plikach godzinowych nie jest pełne', () => {
+    const h1 = D1 + H;
+    const { players } = flow([order(h1 - 30 * M1, `~${D1}:1`, 1, 600), order(h1 + 5 * M1, `~${h1}:1`, 1, 600)], spans);
+    const now = D1 + 3 * H;
+    expect(players.split(h1 + 10 * M1, M1, now)!.complete).toBe(false);
+    expect(players.split(h1, H, now)!.complete).toBe(true);
+  });
+
+  it('okno z kontami z historii i na żywo (chwila otwarcia strony) nie jest pełne', () => {
+    const { players } = flow([order(D1 + 20 * M1, `~d${D1}:1`, 1, 600), order(D1 + 40 * M1, '0xabc', 1, 600)], spans);
+    expect(players.split(D1 + 45 * M1, M1, D1 + 2 * H)!.complete).toBe(false);
+  });
+
+  it('okno 60 min musi być w całości objęte taśmą z kontami, nie tylko świeca', () => {
+    const { players } = flow([order(D1 + 5 * M1, 'a', 1, 600)], [[D1, D1 + 3 * H]]);
+    // świeca 1m 0:05 w nagraniu, ale jej okno zaczyna się 23:06 — przed nagraniem
+    expect(players.split(D1 + 5 * M1, M1, D1 + 2 * H)!.complete).toBe(false);
+    expect(players.split(D1 + 60 * M1, M1, D1 + 2 * H)!.complete).toBe(true);
+  });
+});
