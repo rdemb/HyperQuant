@@ -43,6 +43,10 @@ export interface ScannerDeps {
   prices?: PriceRange;
   /** Przepływ kohort (opcjonalny) — publikowany z tym samym okresem obserwacji co taśma */
   cohorts?: CohortEngine;
+  /** Udany odczyt `clearinghouseState` konta (pomiar w cieniu M0: pozycje innych rynków z tego samego odczytu) */
+  onScan?: (addr: string, state: unknown) => void;
+  /** Dodatkowe pola opcjonalne `status.json` (M0: `markets`, `xyz`); `coverage` = pokrycie mapy tego rynku */
+  extraStatus?: (asOf: number, coverage: number) => object;
 }
 
 /**
@@ -124,6 +128,7 @@ export class Scanner {
         continue;
       }
       const t = this.now();
+      this.d.onScan?.(addr, st);
       const prev = this.d.book.positionOf(addr);
       const next = parseCoinPosition(st, this.d.coin, t);
       if (prev && isLiqCandidate(prev, next, this.prices.range(prev.scannedAt, t))) {
@@ -169,6 +174,14 @@ export class Scanner {
       // Konta po transakcji jeszcze bez odczytu: liczba i czekanie (p50, p90, min); pole opcjonalne dla czytelników
       dirty: this.d.book.dirtyStats(asOf),
     };
+    if (this.d.extraStatus) {
+      // Błąd pomiaru w cieniu nie może wstrzymać publikacji mapy i taśmy
+      try {
+        Object.assign(status, this.d.extraStatus(asOf, status.coverage));
+      } catch (e) {
+        console.error(`[skaner] błąd pomiaru rynków: ${String(e)}`);
+      }
+    }
     let cohortsJson: string | null = null;
     if (this.d.cohorts) {
       // Błąd kohort nie może wstrzymać publikacji mapy i taśmy
