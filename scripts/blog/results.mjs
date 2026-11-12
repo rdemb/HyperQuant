@@ -123,7 +123,6 @@ const T = {
       notApplicable: 'nie dotyczy',
       noCat: 'brak wyników kota w podsumowaniu',
       noPlan: 'jeszcze nie w dzienniku',
-      planLater: 'ogłaszane razem z rejestracją planu',
       noRun: 'brak linku do przebiegu',
       noValue: 'brak wartości w podsumowaniu',
     },
@@ -157,7 +156,7 @@ const T = {
       seasonN: (n) => `n = ${n}`,
       note: 'Stała częstość to odsetek wyników w oknie 30 dni; baza sezonowa to częstość tej samej godziny UTC w 20 poprzednich dobach tego samego typu (dzień roboczy albo weekend).',
       calibration:
-        'Kalibracja procentów kota jest w toku: ranking (AUC) jest już mierzony, a średnie p obok częstości pokazuje, o ile procenty odbiegają od wyników. Poprawioną kalibrację oceni plan cat-cal-v1, gdy trafi do dziennika.',
+        'Kalibracja procentów kota jest w toku: ranking (AUC) jest już mierzony, a średnie p obok częstości pokazuje, o ile procenty odbiegają od wyników. Poprawioną kalibrację oceni osobny plan zapisany w dzienniku przed pierwszym ocenianym okresem.',
     },
     plans: {
       h2: 'Testy A/B i plany ocen',
@@ -166,7 +165,6 @@ const T = {
       abCrit: 'Wersja B ma niższy CRPS zwrotu 1 h niż wersja A; wniosek po zakończeniu 14-dniowego okresu, z 95% przedziałem HAC, od 672 par.',
       trustCrit: 'Brier kota niższy niż prostej reguły; dowód przy e-wartości co najmniej 20, osobno dla dużego ruchu, znaku zwrotu i dotknięć poziomów.',
       hourCrit: 'Godzina na żywo kota trafia duży ruch w tej godzinie lepiej (Brier) niż ta sama metoda z samej drogi ceny; dowód przy e-wartości co najmniej 20.',
-      announced: 'zapowiedziany',
       abVerdict: (d) => (d.hi < 0 ? 'B trafniejsza' : d.lo > 0 ? 'A trafniejsza' : 'różnica nieudowodniona'),
       abBlock: (v, a, b, diff, n) => `${v} (okres ${a} do ${b}, B − A = ${diff}, n = ${n} par)`,
       abNoCi: (a, b, n) => `okres ${a} do ${b} zakończony bez przedziału (n = ${n} par)`,
@@ -185,13 +183,13 @@ const T = {
       branch: 'Gałąź dziennika',
     },
     refuted: {
-      h2: 'Co obaliliśmy',
-      lead: 'Reguły z prerejestrowanego katalogu laboratorium i wersje modeli, które nie przeszły testu zapisanego w dzienniku. Lista mówi, czego nie widać w danych, nie dokąd pójdzie cena.',
+      h2: 'Co się nie potwierdziło',
+      lead: 'Reguły z prerejestrowanego katalogu laboratorium i wersje modeli, które nie przeszły testu zapisanego w dzienniku albo jeszcze go nie przeszły. Lista mówi, czego nie widać w danych, nie dokąd pójdzie cena.',
       hist: { none: (n, q) => `test historyczny bez efektu (n = ${n}${q})`, against: (n, q) => `test historyczny przeciw regule (n = ${n}${q})` },
       fwd: {
         collecting: (n) => `test do przodu zbiera dane (n = ${n})`,
         against: (n) => `test do przodu przeciw regule (n = ${n})`,
-        excluded: (n) => `test do przodu wyklucza efekt (n = ${n})`,
+        excluded: (n) => `efekt wykluczony w teście do przodu (n = ${n})`,
         confirmed: (n) => `test do przodu potwierdza (n = ${n})`,
       },
       ab: (a, b, n) => `Wersja B modelu zwrotu 1 h (ab-v1): w okresie ${a} do ${b} nie była trafniejsza od A (n = ${n} par)`,
@@ -233,7 +231,6 @@ const T = {
       notApplicable: 'not applicable',
       noCat: 'no cat scores in the summary',
       noPlan: 'not in the ledger yet',
-      planLater: 'published when the plan is registered',
       noRun: 'no link to the run',
       noValue: 'no value in the summary',
     },
@@ -267,7 +264,7 @@ const T = {
       seasonN: (n) => `n = ${n}`,
       note: 'The constant rate is the share of outcomes in the 30-day window; the seasonal baseline is the rate of the same UTC hour on the previous 20 days of the same type (weekday or weekend).',
       calibration:
-        'Calibration of the cat’s percentages is in progress: the ranking (AUC) is already measured, and the mean p next to the rate shows how far the percentages are from the outcomes. The plan cat-cal-v1 will score the improved calibration once it is in the ledger.',
+        'Calibration of the cat’s percentages is in progress: the ranking (AUC) is already measured, and the mean p next to the rate shows how far the percentages are from the outcomes. A separate plan, written to the ledger before its first scored period, will score the improved calibration.',
     },
     plans: {
       h2: 'A/B tests and evaluation plans',
@@ -276,7 +273,6 @@ const T = {
       abCrit: 'Version B has a lower CRPS of the 1 h return than version A; the conclusion comes after each 14-day period, with a 95% HAC interval, from 672 pairs.',
       trustCrit: 'The cat’s Brier score is lower than a simple rule’s; proof at an e-value of at least 20, separately for the big move, the sign of the return and level touches.',
       hourCrit: 'The cat’s live hour scores the big move in that hour better (Brier) than the same method from the price path alone; proof at an e-value of at least 20.',
-      announced: 'announced',
       abVerdict: (d) => (d.hi < 0 ? 'B more accurate' : d.lo > 0 ? 'A more accurate' : 'difference not proven'),
       abBlock: (v, a, b, diff, n) => `${v} (period ${a} to ${b}, B − A = ${diff}, n = ${n} pairs)`,
       abNoCi: (a, b, n) => `period ${a} to ${b} closed without an interval (n = ${n} pairs)`,
@@ -295,13 +291,13 @@ const T = {
       branch: 'Ledger branch',
     },
     refuted: {
-      h2: 'What we refuted',
-      lead: 'Rules from the pre-registered lab catalogue and model versions that failed the test recorded in the ledger. The list says what the data does not show, not where the price will go.',
+      h2: 'What did not hold up',
+      lead: 'Rules from the pre-registered lab catalogue and model versions that failed the test recorded in the ledger or have not passed it yet. The list says what the data does not show, not where the price will go.',
       hist: { none: (n, q) => `historical test shows no effect (n = ${n}${q})`, against: (n, q) => `historical test against the rule (n = ${n}${q})` },
       fwd: {
         collecting: (n) => `forward test collecting data (n = ${n})`,
         against: (n) => `forward test against the rule (n = ${n})`,
-        excluded: (n) => `forward test rules out the effect (n = ${n})`,
+        excluded: (n) => `effect ruled out in the forward test (n = ${n})`,
         confirmed: (n) => `forward test confirms (n = ${n})`,
       },
       ab: (a, b, n) => `Version B of the 1 h return model (ab-v1): in the period ${a} to ${b} it was not more accurate than A (n = ${n} pairs)`,
@@ -459,7 +455,8 @@ ${table(t.cat.head, catRows)}
       if (span(ab.current)) parts.push(esc(P.abCurrent(f.date(ab.current.end), f.int(ab.current.n))));
       return parts.length ? parts.join('; ') : na(w.noValue);
     })();
-    rows.push(['ab-v1', s && ab && ok(ab.registeredAt) ? f.date(ab.registeredAt) : na(s ? w.noPlan : S.why), esc(P.abCrit), abState]);
+    // Plan na stronie tylko z rekordem w dzienniku (pojawia się w dniu rejestracji)
+    if (ab && ok(ab.registeredAt)) rows.push(['ab-v1', f.date(ab.registeredAt), esc(P.abCrit), abState]);
     const trustState = (tr, heads) => {
       if (!s) return na(S.why);
       if (!tr || !tr.plan) return na(w.noPlan);
@@ -472,9 +469,9 @@ ${table(t.cat.head, catRows)}
       return out.length ? out.join('; ') : na(w.noValue);
     };
     const trust = s?.cat?.trust;
-    rows.push([
-      esc(trust?.plan?.id ?? 'schrodi-trust-v1'),
-      trust?.plan && ok(trust.plan.at) ? f.date(trust.plan.at) : na(s ? w.noPlan : S.why),
+    if (trust?.plan && ok(trust.plan.at)) rows.push([
+      esc(trust.plan.id ?? 'schrodi-trust-v1'),
+      f.date(trust.plan.at),
       esc(P.trustCrit),
       trustState(trust, [
         ['big', P.heads.big],
@@ -483,14 +480,13 @@ ${table(t.cat.head, catRows)}
       ]),
     ]);
     const hour = s?.cat?.hour;
-    rows.push([esc(hour?.plan?.id ?? 'schrodi-hour-v1'), hour?.plan && ok(hour.plan.at) ? f.date(hour.plan.at) : na(s ? w.noPlan : S.why), esc(P.hourCrit), trustState(hour, [['big', P.heads.hourBig]])]);
-    for (const id of ['ab-v2', 'cat-cal-v1', 'hrel-v1']) rows.push([id, na(w.noPlan), na(w.planLater), esc(P.announced)]);
+    if (hour?.plan && ok(hour.plan.at)) rows.push([esc(hour.plan.id ?? 'schrodi-hour-v1'), f.date(hour.plan.at), esc(P.hourCrit), trustState(hour, [['big', P.heads.hourBig]])]);
     return rows;
   })();
   const plans = `<section class="block" id="plans">
 <h2>${esc(P.h2)}</h2>
 <p>${esc(P.lead)}</p>
-${table(P.head, planRows)}
+${planRows.length ? table(P.head, planRows) : `<p>${na(s ? w.noPlan : S.why)}</p>`}
 </section>`;
 
   // 6. Weryfikacja
@@ -511,7 +507,7 @@ ${v ? `<p>${esc(Vt.last(f.time(v.at)))} · ${runLink}${lines.length ? ` · ${esc
 <p>${esc(Vt.branch)}: <a href="${LEDGER_BRANCH_URL}">${esc(LEDGER_BRANCH_URL.replace(/^https:\/\//, ''))}</a></p>
 </section>`;
 
-  // 7. Co obaliliśmy
+  // 7. Co się nie potwierdziło
   const R = t.refuted;
   const refutedItems = (() => {
     if (!L.ok) return null;

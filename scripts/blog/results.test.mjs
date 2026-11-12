@@ -175,7 +175,10 @@ describe('strona /wyniki: rozliczenie prognoz dziennika', () => {
     expect(t).toContain('47,6%'); // częstość = (700·0,15 + 704·0,8) / 1404
     expect(t).toMatch(/kalibracj\p{L}* [^.]*w toku/iu);
     // 5. plany: nazwa, start, kryterium, stan
-    for (const id of ['ab-v1', 'schrodi-trust-v1', 'schrodi-hour-v1', 'ab-v2', 'cat-cal-v1', 'hrel-v1']) expect(t).toContain(id);
+    for (const id of ['ab-v1', 'schrodi-trust-v1', 'schrodi-hour-v1']) expect(t).toContain(id);
+    // Plan bez rekordu w dzienniku nie występuje (pojawia się w dniu rejestracji)
+    for (const id of ['ab-v2', 'cat-cal-v1', 'hrel-v1']) expect(t).not.toContain(id);
+    expect(t).not.toMatch(/zapowiedzian/);
     expect(t).toContain('22.10.2026');
     expect(t).toMatch(/różnica nieudowodniona/);
     expect(t).toMatch(/E = 448/);
@@ -184,7 +187,10 @@ describe('strona /wyniki: rozliczenie prognoz dziennika', () => {
     expect(t).toContain('11.11.2026, 21:35 UTC');
     expect(pl.html).toContain('href="https://github.com/rdemb/HyperQuant/actions/runs/1"');
     expect(t).toContain('node scripts/verify-ledger.mjs --dir ../ledger');
-    // 7. obalone reguły z laboratorium (bez kontroli i bez reguł z za małą próbą)
+    // 7. reguły, które się nie potwierdziły (bez kontroli i bez reguł z za małą próbą); brak potwierdzenia to nie obalenie
+    expect(t).toContain('Co się nie potwierdziło');
+    expect(t).not.toMatch(/obaliliśmy/);
+    expect(t).toMatch(/które nie przeszły testu zapisanego w dzienniku albo jeszcze go nie przeszły/);
     expect(t).toContain('Okrągły poziom jako opór');
     expect(t).toMatch(/n = 344/);
     expect(t).not.toContain('placebo');
@@ -194,7 +200,26 @@ describe('strona /wyniki: rozliczenie prognoz dziennika', () => {
     expect(te).toContain('As of 12 Nov 2026, 03:35 UTC');
     expect(te).toContain('0.0170 [0.0018; 0.0349], 22 days');
     expect(te).toContain('Round level as resistance');
+    expect(te).toContain('What did not hold up');
+    expect(te).not.toMatch(/refuted/i);
     expect(te).not.toMatch(/[ąęłńśźż]/);
+  });
+
+  it('(5) plany tylko z rekordem w dzienniku: plan bez rekordu nie ma wiersza, z rekordem ma', () => {
+    const none = todaySummary();
+    delete none.cat.hour;
+    const t0 = text(resultsPage(SITE, 'pl', results(none)).html);
+    expect(t0).not.toContain('schrodi-hour-v1');
+    expect(t0).toContain('schrodi-trust-v1');
+    expect(text(resultsPage(SITE, 'pl', results(todaySummary())).html)).toContain('schrodi-hour-v1');
+    const t2 = text(resultsPage(SITE, 'pl', { summary: null, verify: null, lab: null, now: ASOF }).html);
+    expect(t2).not.toContain('schrodi-trust-v1');
+  });
+
+  it('(7) reguła wykluczona w teście do przodu: „efekt wykluczony w teście do przodu”', () => {
+    const lab = { ...LAB, hypotheses: [{ id: 'round-res', family: 'folklore', hist: stats(344, 'none'), fwd: fwd(60, 'excluded') }] };
+    expect(text(resultsPage(SITE, 'pl', results(newSummary(), { lab })).html)).toContain('efekt wykluczony w teście do przodu (n = 60)');
+    expect(text(resultsPage(SITE, 'en', results(newSummary(), { lab })).html)).toContain('effect ruled out in the forward test (n = 60)');
   });
 
   it('(1) adresy z hreflang (PL, EN, x-default) i dane strukturalne Dataset z linkiem do gałęzi ledger', () => {
