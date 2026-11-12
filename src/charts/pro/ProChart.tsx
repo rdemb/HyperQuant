@@ -31,7 +31,7 @@ import { type LinkAlarm, linkAlerts, parseAlarmLink } from './chart/alarmLink';
 import { AlarmLinkCard, type AlertDraft, AlertsMenu } from './chart/AlertsMenu';
 import { onAlertEvents, startAlertWatch } from './chart/alertWatch';
 import { DEFAULT_TTL_MS, defaultDir, eventText } from '../../utils/alertRules';
-import { fmtPx, priceDigits } from './chart/layout';
+import { fmtPx as fmtPxOf, priceDigits } from './chart/layout';
 import type { PbZone } from './chart/pbRangeLayer';
 import { ChartLayout, ChartSettings, NARROW_QUERY, PHONE_PANES, PhonePane, DROPPED_NOTICE_KEY, hashFor, isNarrow, keepPanelSetIids, loadSettings, phoneSettings, saveSettings, settingsFromHash } from './chart/settings';
 import { Station, activePanelSet, panelSetPanel, priceLayerCount, stationById, stationKey, stationPanel } from './chart/stations';
@@ -66,7 +66,7 @@ import { type DrawingTools, isTyping } from './draw/tools';
 import { chartKeyAction } from './chart/shortcuts';
 import { FocusExit, type PhoneTab, focusExitKey, focusOn } from './chart/focusMode';
 import { COIN, CandleSeries, Market, ProStore, storeFor } from './store/proStore';
-import { capsOf, chartMarkets, noScannerWhyOf, useMarkets } from '../../state/markets';
+import { capsOf, chartMarkets, marketOf, noScannerWhyOf, useMarkets } from '../../state/markets';
 import { BLOG_ONLY_WHY, marketCaps } from '../../utils/marketCaps';
 import { MarketPicker, PhoneMarketSelect } from './chart/MarketPicker';
 import { expiredNotice, isListed, nextMarket } from './chart/marketMenu';
@@ -103,8 +103,8 @@ const withPatch = (s: ChartSettings, p: Partial<ChartSettings>): ChartSettings =
     rowStep: p.coin && p.coin !== s.coin ? 0 : s.rowStep,
   });
 
-/** Cena zaokrąglona do ticku rynku. */
-const toTick = (p: number) => Number(p.toFixed(priceDigits(p)));
+/** Cena zaokrąglona do ticku rynku (`szDecimals` z rejestru). */
+const toTick = (p: number, szDecimals?: number) => Number(p.toFixed(priceDigits(p, szDecimals)));
 
 const PANE_NAMES: Record<PaneKey, string> = {
   showVolume: tr('Wolumen', 'Volume'),
@@ -695,7 +695,7 @@ export const ProChart: React.FC<{
     const now = store.serverNow();
     const dir = defaultDir('touch', price, store.lastPrice() || price);
     addAlert({ coin: store.coin, price, kind: 'touch', dir, iv: '15m', closes: 1, delta: false, from: now, until: now + DEFAULT_TTL_MS, pair: '', note: '', after: '' }, now);
-    setToast(tr(`Alarm przy ${fmtPx(price)} (${store.coin}): dotknięcie poziomu`, `Alert at ${fmtPx(price)} (${store.coin}): level touch`));
+    setToast(tr(`Alarm przy ${store.fmtPx(price)} (${store.coin}): dotknięcie poziomu`, `Alert at ${store.fmtPx(price)} (${store.coin}): level touch`));
   };
   // Alarmy aktywnej strefy P/b do końca jej życia: dotknięcie góry i dołu, zamknięcie 5m poza strefą, powrót do strefy
   const addZoneAlerts = (z: PbZone) => {
@@ -718,8 +718,8 @@ export const ProChart: React.FC<{
     void askNotifications();
     setToast(
       tr(
-        `Alarmy strefy ${name} ${fmtPx(z.lo)}–${fmtPx(z.hi)} (${store.coin}): ${made.length}, do ${fmtHm(z.until)}`,
-        `Zone ${name} ${fmtPx(z.lo)}–${fmtPx(z.hi)} alerts (${store.coin}): ${made.length}, until ${fmtHm(z.until)}`
+        `Alarmy strefy ${name} ${store.fmtPx(z.lo)}–${store.fmtPx(z.hi)} (${store.coin}): ${made.length}, do ${fmtHm(z.until)}`,
+        `Zone ${name} ${store.fmtPx(z.lo)}–${store.fmtPx(z.hi)} alerts (${store.coin}): ${made.length}, until ${fmtHm(z.until)}`
       )
     );
   };
@@ -732,7 +732,7 @@ export const ProChart: React.FC<{
     setSeen(now);
   };
   // Alarm na poziomie linii poziomej z paska i menu rysunku (w powtórce bez alarmów)
-  const drawAlert = inReplay ? undefined : (p: number) => openAlerts({ price: toTick(p), kind: 'close' });
+  const drawAlert = inReplay ? undefined : (p: number) => openAlerts({ price: toTick(p, store.szDecimals), kind: 'close' });
 
   const onContextMenu = (e: React.MouseEvent<HTMLDivElement>) => {
     // Tylko na samym wykresie (legenda, karty i menu mają własne zachowanie)
@@ -748,7 +748,7 @@ export const ProChart: React.FC<{
     const y = e.clientY - r.top;
     const raw = ctrlRef.current?.priceAt(y) ?? null;
     // Menu otwiera się w lewo i w górę tylko wtedy, gdy nie mieści się przy prawej lub dolnej krawędzi
-    setCtxMenu({ x, y, price: raw === null ? null : toTick(raw), left: x > r.width - 248, up: y > r.height - 340 });
+    setCtxMenu({ x, y, price: raw === null ? null : toTick(raw, store.szDecimals), left: x > r.width - 248, up: y > r.height - 340 });
   };
 
   const iv = intervalById(settings.interval);
@@ -807,7 +807,7 @@ export const ProChart: React.FC<{
     });
   };
   const bigUsd = ctrlRef.current?.bigTradeUsd ?? DEFAULT_THRESHOLD_USD;
-  const tick = hlTick(store.lastPrice());
+  const tick = store.tick(store.lastPrice());
   const editing = indEdit ? (settings.indicators.find((x) => x.iid === indEdit) ?? null) : null;
 
   // Stan rynku: przycisk „Stan” i linia pod paskiem (w układzie 2 × 2 za mało miejsca)
@@ -1157,11 +1157,11 @@ export const ProChart: React.FC<{
               }}
               onClose={() => setCtxMenu(null)}
               onAlert={addTouch}
-              onAlertMore={(p) => openAlerts({ price: toTick(p), kind: 'close' })}
+              onAlertMore={(p) => openAlerts({ price: toTick(p, store.szDecimals), kind: 'close' })}
               onZoneAlerts={addZoneAlerts}
               onRemoveAlert={(a) => removeAlert(a.id)}
               onLine={() => tools?.addHorizontal(ctxMenu.x, ctxMenu.y)}
-              onCopyPrice={(p) => copy(fmtPx(p).replace(/,/g, ''), tr(`Skopiowano cenę ${fmtPx(p)}`, `Price ${fmtPx(p)} copied`))}
+              onCopyPrice={(p) => copy(store.fmtPx(p).replace(/,/g, ''), tr(`Skopiowano cenę ${store.fmtPx(p)}`, `Price ${store.fmtPx(p)} copied`))}
               onCopyLink={copyLink}
               onNow={() => ctrlRef.current?.scrollToNow()}
               onReset={() => ctrlRef.current?.resetScales()}
@@ -1475,6 +1475,8 @@ const ChartMenu = React.forwardRef<
   }
 >(({ at, coin, nearAlert, pbZone, linesShown, onLines, onClose, onAlert, onAlertMore, onZoneAlerts, onRemoveAlert, onLine, onCopyPrice, onCopyLink, onNow, onReset, onShot }, ref) => {
   const p = at.price;
+  // Cena z dokładnością ticku rynku menu (szDecimals z rejestru)
+  const fmtPx = (v: number) => fmtPxOf(v, marketOf(coin)?.szDecimals);
   const item = (icon: React.ReactNode, label: string, run: () => void) => (
     <button
       type="button"
