@@ -4,10 +4,11 @@ import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { loadConfig } from '../config.ts';
 import { putObject } from '../r2.ts';
-import { HlRest, HlStream } from '../hl.ts';
+import { HlRest, HlStream, HlTradesStream } from '../hl.ts';
 import { WeightLimiter } from '../rateLimiter.ts';
 import { AddressBook } from '../addressBook.ts';
-import { Scanner } from '../scanner.ts';
+import { Scanner, type ScannerDeps } from '../scanner.ts';
+import { MarketShadow } from '../marketShadow.ts';
 import { LiqConfirmer } from '../liqDetect.ts';
 import { isLiqMap } from '../../../src/utils/liqMap.ts';
 import { isLiqTape } from '../../../src/utils/liqTape.ts';
@@ -98,7 +99,7 @@ describe('HlRest — zapytania info z budżetem', () => {
 });
 
 describe('Scanner — cykl skanu i publikacji', () => {
-  function setup(r2 = false, nowFn: () => number = () => 120_000, fail = false) {
+  function setup(r2 = false, nowFn: () => number = () => 120_000, fail = false, extra: Partial<ScannerDeps> = {}) {
     const failing = { calls: 0 };
     const out = mkdtempSync(join(tmpdir(), 'hq-'));
     const book = new AddressBook();
@@ -130,6 +131,7 @@ describe('Scanner — cykl skanu i publikacji', () => {
       r2: r2 ? { accountId: 'a', bucket: 'b', accessKeyId: 'k', secretAccessKey: 's' } : null,
       fetchFn: fetchFn as unknown as typeof fetch,
       now: nowFn,
+      ...extra,
     });
     scanner.setCtx({ markPx: 83000, oiBtc: 20, dayNtlVlm: 2e9 });
     return { scanner, out, calls, failing, states, fills, book, bodies };
@@ -148,6 +150,38 @@ describe('Scanner — cykl skanu i publikacji', () => {
     expect(JSON.parse(statusTxt)).toMatchObject({ coin: 'BTC', addresses: 2, positions: 2, seeded: 0 });
     // Bez silnika kohort status bez pola pomiaru (stary kształt)
     expect(JSON.parse(statusTxt)).not.toHaveProperty('whalePrivacy');
+  });
+
+  it('status.json: pomiar M0 (`markets`, `xyz`) z tych samych odczytów pozycji, stare pola bez zmian, bez adresów', async () => {
+    const shadow = new MarketShadow();
+    shadow.setCoins(['BTC', 'ETH', 'xyz:NVDA']);
+    shadow.setOi({ ETH: 100 }, 120_000);
+    const { scanner, out, states, book, calls } = setup(false, () => 120_000, false, {
+      onScan: (a, st) => shadow.onScan(a, st),
+      extraStatus: (asOf, coverage) => shadow.status(asOf, { inBook: (a) => book.has(a), btc: { coin: 'BTC', coverage } }),
+    });
+    states['0xaaa'] = {
+      assetPositions: [
+        { position: { coin: 'BTC', szi: '10', entryPx: '83000', liquidationPx: '75000' } },
+        { position: { coin: 'ETH', szi: '-20', entryPx: '3000', liquidationPx: '3500' } },
+      ],
+    };
+    shadow.onTrade({ coin: 'xyz:NVDA', side: 'B', px: '10', sz: '1', time: 100_000, users: ['0xaaa', '0xddd'] }, (a) => book.has(a));
+    expect(await scanner.scanDue(10)).toBe(2);
+    const reads = calls.length;
+    expect(await scanner.publish()).toBe(true);
+    expect(calls.length).toBe(reads); // publikacja bez zapytań
+    const txt = readFileSync(join(out, 'status.json'), 'utf8');
+    expect(txt).not.toMatch(/0x/);
+    const status = JSON.parse(txt);
+    expect(status).toMatchObject({ coin: 'BTC', addresses: 2, positions: 2 });
+    expect(status.coverage).toBeCloseTo(14 / 40, 12);
+    expect(status.markets).toEqual({
+      BTC: { coverage: 0.35, unseenShare: null },
+      ETH: { coverage: 0.1, unseenShare: null },
+      'xyz:NVDA': { coverage: null, unseenShare: 0.5 },
+    });
+    expect(status.xyz).toEqual({ accounts: 2, inBook: 1, unseenShare: 0.5, share: 1 });
   });
 
   it('status.json: kolejka kont po transakcji bez odczytu (`dirty`: liczba, czekanie p50 i p90 w min)', async () => {
@@ -381,6 +415,57 @@ describe('HlStream — odporność połączenia', () => {
     ws.onmessage?.(msg([2, 3])); // np. migawka po ponownej subskrypcji
     s.stop();
     expect(got).toEqual([1, 2, 3]);
+  });
+
+  it('HlTradesStream: jedno połączenie, trades dla każdego rynku, zmiana listy bez ponownego łączenia, deduplikacja z rynkiem', () => {
+    FakeWs.instances = [];
+    const got: string[] = [];
+    const states: boolean[] = [];
+    const s = new HlTradesStream((ts) => got.push(...ts.map((t) => `${t.coin}:${t.tid}`)), (up) => states.push(up), FakeWs as unknown as typeof WebSocket);
+    s.setCoins(['BTC', 'ETH', 'xyz:NVDA']);
+    s.start();
+    const ws = FakeWs.instances[0];
+    ws.open();
+    expect(ws.sent.map((x) => JSON.parse(x))).toEqual(['BTC', 'ETH', 'xyz:NVDA'].map((coin) => ({ method: 'subscribe', subscription: { type: 'trades', coin } })));
+    ws.sent = [];
+    s.setCoins(['BTC', 'xyz:NVDA', 'SOL']);
+    expect(ws.sent.map((x) => JSON.parse(x))).toEqual([
+      { method: 'unsubscribe', subscription: { type: 'trades', coin: 'ETH' } },
+      { method: 'subscribe', subscription: { type: 'trades', coin: 'SOL' } },
+    ]);
+    expect(s.subscriptions).toBe(3);
+    const msg = (coin: string, tids: number[]) => ({ data: JSON.stringify({ channel: 'trades', data: tids.map((tid) => ({ coin, side: 'B', px: '1', sz: '1', time: 1000, tid })) }) });
+    ws.onmessage?.(msg('BTC', [1, 2]));
+    ws.onmessage?.(msg('SOL', [1]));
+    ws.onmessage?.(msg('BTC', [2]));
+    s.stop();
+    expect(got).toEqual(['BTC:1', 'BTC:2', 'SOL:1']);
+    expect(FakeWs.instances.length).toBe(1);
+    expect(states).toEqual([true, false]);
+  });
+
+  it('HlTradesStream: stop() kończy odcinek od razu; ponowny start() otwiera jedno nowe połączenie, spóźnione zamknięcie starego nic nie psuje', () => {
+    vi.useFakeTimers();
+    FakeWs.instances = [];
+    const states: boolean[] = [];
+    const s = new HlTradesStream(() => {}, (up) => states.push(up), FakeWs as unknown as typeof WebSocket);
+    s.setCoins(['BTC']);
+    s.start();
+    const old = FakeWs.instances[0];
+    old.open();
+    const close = old.close.bind(old);
+    old.close = () => {}; // gniazdo zamyka się z opóźnieniem
+    s.stop();
+    expect(states).toEqual([true, false]);
+    s.start();
+    FakeWs.instances[1].open();
+    close(); // spóźnione zamknięcie starego gniazda
+    vi.advanceTimersByTime(5_000); // dłużej niż wycofanie (1 s): bez drugiego połączenia
+    expect(FakeWs.instances.length).toBe(2);
+    expect(states).toEqual([true, false, true]);
+    expect(s.connected).toBe(true);
+    s.stop();
+    vi.useRealTimers();
   });
 
   it('opcjonalny arkusz: subskrypcja l2Book zagregowanego do 4 cyfr znaczących i przekazanie migawek (czas, poziomy)', () => {
