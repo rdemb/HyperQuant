@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { FootprintBuilder } from '../core/footprintBar';
 import { cvdCandles, deltaCandle, deltaFromExtremes, flipsEmpty } from '../core/flow';
-import { deltaPoint, hlDelta } from '../chart/flowPoints';
+import { deltaPoint, flowLegend, hlDelta } from '../chart/flowPoints';
 import { PRO } from '../chart/theme';
 
 const DAY = 86_400_000;
@@ -31,6 +31,16 @@ describe('świeca niepełna (luka w taśmie) tak samo we wszystkich panelach', (
     expect(deltaPoint({ t: 60_000, fp: null, complete: false })).toEqual({ time: 60 });
     expect(hlDelta({ t: 0, fp: fp(0, [3]), complete: true })).toBe(3);
     expect(hlDelta({ t: 0, fp: fp(0, [3]), complete: false })).toBeNull();
+  });
+
+  it('legenda delty: liczba świecy niepełnej w kolorze niepełnej z dopiskiem, pełnej bez dopisku', () => {
+    const part = flowLegend('Delta', 3, true);
+    expect(part.at(-1)!.color).toBe(PRO.incomplete);
+    expect(part.at(-1)!.text).toMatch(/niepełna|partial/);
+    const full = flowLegend('Delta', 3, false);
+    expect(full.map((p) => p.text).join(' ')).not.toMatch(/niepełna|partial/);
+    expect(full.at(-1)!.color).toBe(PRO.buyInk);
+    expect(flowLegend('Delta', null, true)).toEqual([{ text: 'Delta', color: PRO.ink3 }]);
   });
 });
 
