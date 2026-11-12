@@ -13,7 +13,6 @@ import { type BlogMapsState, pickMap, useBlogMaps } from '../../state/useBlogMap
 import { WHALES_STALE_MS, type WhaleLayer, isWhaleLayer } from '../../utils/whaleLayer';
 import { DAY, INTERVALS, fmtDayTime, fmtHm, fmtSince, fromDaily, intervalById } from './core/time';
 import { DEFAULT_THRESHOLD_USD, classify } from './core/clashes';
-import { hlTick } from './core/footprintBar';
 import { indicatorScope, liqLevels } from './core/indicators';
 import type { AggressorOrder } from './core/orders';
 import type { ResetMode } from './core/sessions';
@@ -496,12 +495,12 @@ export const ProChart: React.FC<{
 
   // Rynki z linku z alarmami nagrywają od razu, żeby kierunek dotknięcia wynikał z bieżącej ceny
   useEffect(() => {
-    for (const c of new Set(linkSet?.map((e) => e.c))) storeFor(c as Market).start();
+    for (const c of new Set(linkSet?.map((e) => e.c))) storeFor(c).start();
   }, [linkSet]);
-  const linkPreview = linkSet ? linkAlerts(linkSet, (c) => storeFor(c as Market).lastPrice(), 0, Date.now()) : null;
+  const linkPreview = linkSet ? linkAlerts(linkSet, (c) => storeFor(c).lastPrice(), 0, Date.now()) : null;
   const addLinkSet = (replace: boolean) => {
     if (!linkSet) return;
-    const made = linkAlerts(linkSet, (c) => storeFor(c as Market).lastPrice(), store.serverNow(), Date.now());
+    const made = linkAlerts(linkSet, (c) => storeFor(c).lastPrice(), store.serverNow(), Date.now());
     alertBook.update((l) => [...(replace ? [] : l), ...made].slice(-MAX_ALERTS));
     primeAlertSound();
     void askNotifications();
