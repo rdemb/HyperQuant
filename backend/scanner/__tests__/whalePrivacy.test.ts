@@ -42,11 +42,19 @@ describe('whalePrivacy: liczniki kubełków wielorybów nad progiem prywatności
     const now = T0 + HOUR + MIN;
     e.housekeep(now);
     const p = e.whalePrivacy(now);
-    // Kwadranse bez aktywności wielorybów nie są liczone (nic nie ujawniają)
-    expect(p.m15).toEqual({ ok: 0, n: 2 });
-    expect(p.h1).toEqual({ ok: 1, n: 1 });
+    // Kwadranse bez aktywności wielorybów nie wchodzą do n (nic nie ujawniają), ale do obs (pokazane jako zero)
+    expect(p.m15).toEqual({ ok: 0, n: 2, obs: 4 });
+    expect(p.h1).toEqual({ ok: 1, n: 1, obs: 1 });
     // Okno 4 h (12:00–16:00) jeszcze się nie zamknęło
-    expect(p.h4).toEqual({ ok: 0, n: 0 });
+    expect(p.h4).toEqual({ ok: 0, n: 0, obs: 0 });
+  });
+
+  it('udział jawnych okien z obs: (ok + obs − n) / obs', () => {
+    const e = engine();
+    hourOfThreeAndThree(e, T0);
+    e.housekeep(T0 + HOUR + MIN);
+    const { ok, n, obs } = e.whalePrivacy(T0 + HOUR + MIN).m15;
+    expect((ok + obs - n) / obs).toBe(0.5);
   });
 
   it('pięciu uczestników, ale jeden ponad 50% obrotu: kubełek nie przechodzi progu', () => {
@@ -55,7 +63,7 @@ describe('whalePrivacy: liczniki kubełków wielorybów nad progiem prywatności
     for (const w of [1, 2, 3, 4]) whaleTrade(e, w, T0 + 2 * MIN + w * 1000, 100_000);
     for (const w of [5, 6, 7, 8, 9]) whaleTrade(e, w, T0 + 16 * MIN + w * 1000, 100_000);
     e.housekeep(T0 + 31 * MIN);
-    expect(e.whalePrivacy(T0 + 31 * MIN).m15).toEqual({ ok: 1, n: 2 });
+    expect(e.whalePrivacy(T0 + 31 * MIN).m15).toEqual({ ok: 1, n: 2, obs: 2 });
   });
 
   it('okno 4 h: 16 kwadransów, w każdym inny wieloryb — h4 przechodzi, każda godzina i kwadrans nie', () => {
@@ -64,9 +72,9 @@ describe('whalePrivacy: liczniki kubełków wielorybów nad progiem prywatności
     const now = T0 + 4 * HOUR + MIN;
     e.housekeep(now);
     const p = e.whalePrivacy(now);
-    expect(p.m15).toEqual({ ok: 0, n: 16 });
-    expect(p.h1).toEqual({ ok: 0, n: 4 });
-    expect(p.h4).toEqual({ ok: 1, n: 1 });
+    expect(p.m15).toEqual({ ok: 0, n: 16, obs: 16 });
+    expect(p.h1).toEqual({ ok: 0, n: 4, obs: 4 });
+    expect(p.h4).toEqual({ ok: 1, n: 1, obs: 1 });
   });
 
   it('godzina z brakującym kwadransem (przerwa w danych) nie jest liczona', () => {
@@ -75,7 +83,7 @@ describe('whalePrivacy: liczniki kubełków wielorybów nad progiem prywatności
     for (const w of [3, 4, 5]) whaleTrade(e, w, T0 + 16 * MIN + w * 1000);
     restTrade(e, T0 + 46 * MIN); // kwadrans 12:30 bez żadnej transakcji
     e.housekeep(T0 + HOUR + MIN);
-    expect(e.whalePrivacy(T0 + HOUR + MIN).h1).toEqual({ ok: 0, n: 0 });
+    expect(e.whalePrivacy(T0 + HOUR + MIN).h1).toEqual({ ok: 0, n: 0, obs: 0 });
   });
 
   it('okno 7 dób: starsze kubełki wypadają', () => {
@@ -84,14 +92,14 @@ describe('whalePrivacy: liczniki kubełków wielorybów nad progiem prywatności
     e.housekeep(T0 + HOUR + MIN);
     const later = T0 + 7 * DAY + 2 * HOUR;
     e.housekeep(later);
-    expect(e.whalePrivacy(later)).toEqual({ m15: { ok: 0, n: 0 }, h1: { ok: 0, n: 0 }, h4: { ok: 0, n: 0 } });
+    expect(e.whalePrivacy(later)).toEqual({ m15: { ok: 0, n: 0, obs: 0 }, h1: { ok: 0, n: 0, obs: 0 }, h4: { ok: 0, n: 0, obs: 0 } });
   });
 
   it('kwadrans obserwowany częściowo (start silnika w jego trakcie) nie jest liczony, jak w publikacji', () => {
     const e = new CohortEngine(opts);
     for (const w of [0, 1, 2, 3, 4]) whaleTrade(e, w, T0 + MIN + w * 1000);
     e.housekeep(T0 + 16 * MIN);
-    expect(e.whalePrivacy(T0 + 16 * MIN).m15).toEqual({ ok: 0, n: 0 });
+    expect(e.whalePrivacy(T0 + 16 * MIN).m15).toEqual({ ok: 0, n: 0, obs: 0 });
   });
 
   it('bez adresów i komórek: same liczby', () => {
@@ -110,14 +118,14 @@ describe('whalePrivacy: liczniki kubełków wielorybów nad progiem prywatności
     for (const w of [3, 4, 5]) whaleTrade(e, w, T0 + 16 * MIN + w * 1000);
     e.housekeep(T0 + 31 * MIN);
     const back = CohortEngine.fromJSON(JSON.parse(JSON.stringify(e.toJSON())), opts);
-    expect(back.whalePrivacy(T0 + 31 * MIN).m15).toEqual({ ok: 0, n: 2 });
+    expect(back.whalePrivacy(T0 + 31 * MIN).m15).toEqual({ ok: 0, n: 2, obs: 2 });
     restTrade(back, T0 + 31 * MIN);
     restTrade(back, T0 + 46 * MIN);
     back.housekeep(T0 + HOUR + MIN);
-    expect(back.whalePrivacy(T0 + HOUR + MIN).h1).toEqual({ ok: 1, n: 1 });
+    expect(back.whalePrivacy(T0 + HOUR + MIN).h1).toEqual({ ok: 1, n: 1, obs: 1 });
 
     const old = e.toJSON() as Record<string, unknown>;
     delete old.privacy;
-    expect(CohortEngine.fromJSON(old, opts).whalePrivacy(T0 + 31 * MIN)).toEqual({ m15: { ok: 0, n: 0 }, h1: { ok: 0, n: 0 }, h4: { ok: 0, n: 0 } });
+    expect(CohortEngine.fromJSON(old, opts).whalePrivacy(T0 + 31 * MIN)).toEqual({ m15: { ok: 0, n: 0, obs: 0 }, h1: { ok: 0, n: 0, obs: 0 }, h4: { ok: 0, n: 0, obs: 0 } });
   });
 });
