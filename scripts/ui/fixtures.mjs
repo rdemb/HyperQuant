@@ -1,6 +1,7 @@
 // Dane stałe pomiaru układu (`npm run ui:check`): odpowiedzi API Hyperliquid bez sieci, ze stałym zegarem.
-// Świece BTC z minut nagranych dób w kopii przy lekcjach (public/lessons/*.json, 20–24.10.2026); poza nimi i dla innych
-// rynków — świece syntetyczne z funkcji czasu (bez losowości). Arkusz, kontekst rynku i finansowanie — stałe wartości
+// Świece BTC z minut nagranych dób w kopii przy lekcjach (public/lessons/*.json, 20–24.10.2026), HYPE i xyz:NVDA (HIP-3)
+// z tych samych minut przeskalowanych do swojej ceny; poza nimi i dla ETH i SOL — świece syntetyczne z funkcji czasu (bez
+// losowości). Rejestr rynków `markets.json` z rynkiem HIP-3. Arkusz, kontekst rynku i finansowanie — stałe wartości
 // wokół ostatniej ceny. Te same zapytania dają zawsze te same odpowiedzi, niezależnie od pory uruchomienia.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -13,11 +14,52 @@ const HOUR = 60 * MIN;
 const DAY = 24 * HOUR;
 const MAX_CANDLES = 5000;
 const STEP_MS = { '1m': MIN, '3m': 3 * MIN, '5m': 5 * MIN, '15m': 15 * MIN, '30m': 30 * MIN, '1h': HOUR, '2h': 2 * HOUR, '4h': 4 * HOUR, '8h': 8 * HOUR, '12h': 12 * HOUR, '1d': DAY, '3d': 3 * DAY, '1w': 7 * DAY };
+/** Rynki głównej giełdy perp. */
 export const COINS = ['BTC', 'ETH', 'SOL', 'HYPE'];
-/** Ceny odniesienia rynków bez nagrania (rząd wielkości z października 2026). */
-const BASE = { ETH: 3900, SOL: 190, HYPE: 40 };
+/** Rynki giełd HIP-3 (nazwa z przedrostkiem giełdy, jak w API i w rejestrze). */
+export const HIP3 = { xyz: ['xyz:NVDA'] };
+const ALL = [...COINS, ...Object.values(HIP3).flat()];
+/** Ceny odniesienia rynków bez nagrania BTC (rząd wielkości z października 2026). */
+const BASE = { ETH: 3900, SOL: 190, HYPE: 40, 'xyz:NVDA': 180 };
+/** Rynki z kształtem nagranej doby BTC przeskalowanym do swojej ceny (`scaleMinutes`); pozostałe — fala syntetyczna. */
+const SCALED = ['HYPE', 'xyz:NVDA'];
 /** Liczba miejsc po przecinku ceny (jak tick Hyperliquid przy tych cenach). */
-const DIGITS = { BTC: 0, ETH: 1, SOL: 2, HYPE: 3 };
+const DIGITS = { BTC: 0, ETH: 1, SOL: 2, HYPE: 3, 'xyz:NVDA': 2 };
+/** Liczba miejsc po przecinku wielkości (`szDecimals`; HYPE i xyz:NVDA jak w rejestrze rynków). */
+const SZ = { BTC: 4, ETH: 3, SOL: 2, HYPE: 2, 'xyz:NVDA': 3 };
+/** Największa dźwignia (jak w rejestrze rynków dla HIP-3; główna giełda — jak dotąd w danych stałych). */
+const LEVERAGE = { 'xyz:NVDA': 10 };
+
+/**
+ * Adres danych skanera w buildzie pomiaru (`scripts/ui/build.mjs`): host bez sieci, z którego `layout-check.mjs` podaje
+ * tylko rejestr rynków (`markets.json`) w przebiegu rynków; wszystkie inne pliki — błąd jak bez połączenia.
+ */
+export const DATA_BASE_URL = 'https://dane.ui-check.invalid/main';
+
+/**
+ * Minuty [t, o, h, l, c, v] przeskalowane tak, że ostatnie zamknięcie to `target`: ceny × k zaokrąglone do `digits`
+ * miejsc, wolumen ÷ k zaokrąglony do `szDigits` (ten sam obrót w USD). Czas i kolejność bez zmian.
+ */
+export function scaleMinutes(m1, target, digits, szDigits) {
+  const k = target / m1[m1.length - 1][4];
+  return m1.map(([t, o, h, l, c, v]) => [t, round(o * k, digits), round(h * k, digits), round(l * k, digits), round(c * k, digits), round(v / k, szDigits)]);
+}
+
+/**
+ * Rejestr rynków (`markets.json`, format `src/utils/marketRegistry.ts`) z czterema stałymi rynkami (parametry jak
+ * `DEFAULT_MARKETS`) i rynkami HIP-3 fikstury, według średnich otwartych pozycji z 7 dni.
+ */
+export function registry() {
+  const row = (coin, dex, oiUsd7d, szDecimals, maxLeverage, scanner) => ({ coin, dex, oiUsd7d, szDecimals, maxLeverage, scanner, since: '2026-10-01' });
+  const markets = [
+    row('BTC', '', 2.9e9, 5, 40, 'full'),
+    row('ETH', '', 1.6e9, 4, 25, 'none'),
+    row('HYPE', '', 1.1e9, 2, 10, 'none'),
+    row('SOL', '', 5.2e8, 2, 20, 'none'),
+    row('xyz:NVDA', 'xyz', 1.4e8, SZ['xyz:NVDA'], LEVERAGE['xyz:NVDA'], 'none'),
+  ];
+  return { asOf: FIXED_NOW - 20 * MIN, rule: 'reg-v1', markets: markets.map((m, i) => ({ ...m, rank: i + 1 })) };
+}
 
 /** Liczba z [0, 1) z liczby całkowitej (stały skrót, bez Math.random). */
 function hash01(n) {
@@ -60,6 +102,9 @@ export function createFixtures(root) {
   const m1 = [...byT.values()].sort((a, b) => a[0] - b[0]);
   const times = m1.map((m) => m[0]);
   const lastClose = m1[m1.length - 1][4];
+  /** Minuty rynku: BTC z nagrania, rynki z `SCALED` — przeskalowane minuty BTC, pozostałe — brak (fala). */
+  const series = { BTC: m1 };
+  for (const c of SCALED) series[c] = scaleMinutes(m1, BASE[c], DIGITS[c], SZ[c]);
 
   /** Indeks pierwszej minuty o czasie ≥ t. */
   const lower = (t) => {
@@ -73,12 +118,13 @@ export function createFixtures(root) {
     return lo;
   };
 
-  /** Cena w chwili t: BTC między nagranymi minutami — liniowo, przed nimi — fala zaczepiona o pierwszą; inne rynki — fala. */
+  /** Cena w chwili t: między minutami rynku — liniowo, przed nimi — fala zaczepiona o pierwszą; rynki bez minut — fala. */
   function price(coin, t) {
-    if (coin !== 'BTC') return BASE[coin] * (1 + wave(t));
+    const m1 = series[coin];
+    if (!m1) return BASE[coin] * (1 + wave(t));
     const i = lower(t);
     if (i === 0) return m1[0][1] * (1 + wave(t) - wave(m1[0][0]));
-    if (i >= m1.length) return lastClose;
+    if (i >= m1.length) return m1[m1.length - 1][4];
     const a = m1[i - 1];
     const b = m1[i];
     const k = (t - (a[0] + MIN)) / Math.max(1, b[0] - (a[0] + MIN));
@@ -99,7 +145,8 @@ export function createFixtures(root) {
   function candle(coin, iv, b) {
     const e = bucketEnd(b, iv);
     let body = null;
-    if (coin === 'BTC') {
+    const m1 = series[coin];
+    if (m1) {
       const rows = [];
       for (let i = lower(b); i < m1.length && m1[i][0] < e; i++) rows.push(m1[i]);
       if (rows.length > 0)
@@ -117,7 +164,7 @@ export function createFixtures(root) {
   }
 
   function candles({ coin = 'BTC', interval = '5m', startTime = 0, endTime }) {
-    if (!COINS.includes(coin) || !(interval in STEP_MS || interval === '1M')) return [];
+    if (!ALL.includes(coin) || !(interval in STEP_MS || interval === '1M')) return [];
     const end = Math.min(endTime ?? FIXED_NOW, FIXED_NOW);
     const out = [];
     // Od świecy z chwilą `end` wstecz, dopóki świeca kończy się po `startTime` (najwyżej 5000, jak API)
@@ -127,7 +174,7 @@ export function createFixtures(root) {
     return out.reverse();
   }
 
-  const markPx = (coin) => (coin === 'BTC' ? lastClose : round(price(coin, FIXED_NOW), DIGITS[coin]));
+  const markPx = (coin) => (series[coin] ? series[coin].at(-1)[4] : round(price(coin, FIXED_NOW), DIGITS[coin]));
 
   /** Arkusz: 20 poziomów na stronę co krok z liczby cyfr znaczących (bez niej — tick rynku), stałe wielkości. */
   function book(coin, nSigFigs) {
@@ -175,12 +222,13 @@ export function createFixtures(root) {
     switch (body?.type) {
       case 'candleSnapshot':
         return candles(body.req ?? {});
-      case 'metaAndAssetCtxs':
-        if (body.dex) return [{ universe: [] }, []];
-        return [{ universe: COINS.map((name) => ({ name, szDecimals: 4 - DIGITS[name], maxLeverage: 40 })) }, COINS.map(ctx)];
+      case 'metaAndAssetCtxs': {
+        const list = body.dex ? (HIP3[body.dex] ?? []) : COINS;
+        return [{ universe: list.map((name) => ({ name, szDecimals: SZ[name], maxLeverage: LEVERAGE[name] ?? 40 })) }, list.map(ctx)];
+      }
       case 'l2Book':
         if (typeof body.coin === 'string' && body.coin.startsWith('#')) return outcomeBook(body.coin);
-        return COINS.includes(body.coin) ? book(body.coin, body.nSigFigs) : null;
+        return ALL.includes(body.coin) ? book(body.coin, body.nSigFigs) : null;
       case 'outcomeMeta':
         return outcomeMeta();
       case 'fundingHistory': {
@@ -197,11 +245,11 @@ export function createFixtures(root) {
 
   return {
     respond,
-    minutes: (coin) => (coin === 'BTC' ? m1 : []),
+    minutes: (coin) => series[coin] ?? [],
     /** Wiadomości kanałów WebSocket na subskrypcję (atrapa strumienia w stronie): arkusz, kontekst i najlepsze kwotowania. */
     stream: () => {
       const out = {};
-      for (const c of COINS) {
+      for (const c of ALL) {
         out[`activeAssetCtx|${c}`] = { coin: c, ctx: ctx(c) };
         for (const n of ['', 2, 3, 4, 5]) out[`l2Book|${c}|${n}`] = book(c, n || undefined);
         const b = book(c);
