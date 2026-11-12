@@ -146,6 +146,8 @@ describe('Scanner — cykl skanu i publikacji', () => {
     const statusTxt = readFileSync(join(out, 'status.json'), 'utf8');
     expect(statusTxt).not.toMatch(/0x/);
     expect(JSON.parse(statusTxt)).toMatchObject({ coin: 'BTC', addresses: 2, positions: 2, seeded: 0 });
+    // Bez silnika kohort status bez pola pomiaru (stary kształt)
+    expect(JSON.parse(statusTxt)).not.toHaveProperty('whalePrivacy');
   });
 
   // Prawa plików nie mają znaczenia na Windows (chmod zmienia tam tylko „tylko do odczytu”)
@@ -213,6 +215,10 @@ describe('Scanner — cykl skanu i publikacji', () => {
     expect(isCohortFlow(flow)).toBe(true);
     expect(flow.since).toBe(0);
     expect(flow.totals.h24.rest.buy).toBe(500_000); // 6 × 83 000 zaokrąglone do 10 tys.
+    // Pomiar prywatności wielorybów w status.json: same liczniki (tu kubełek bez wielorybów), bez adresów
+    const status = readFileSync(join(out, 'status.json'), 'utf8');
+    expect(status).not.toMatch(/0x/);
+    expect(JSON.parse(status).whalePrivacy).toEqual({ m15: { ok: 0, n: 0 }, h1: { ok: 0, n: 0 }, h4: { ok: 0, n: 0 } });
   });
 
   it('likwidacja śledzonej pozycji: kandydat po zniknięciu pozycji przy cenie likwidacji, potwierdzenie fillem, taśma bez adresów', async () => {

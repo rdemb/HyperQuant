@@ -165,6 +165,8 @@ export class Scanner {
       try {
         this.d.cohorts.housekeep(asOf);
         cohortsJson = JSON.stringify(this.d.cohorts.build(asOf, this.since));
+        // Pomiar prywatności wielorybów (pole opcjonalne status.json): same liczniki z 7 dób, bez komórek i adresów
+        Object.assign(status, { whalePrivacy: this.d.cohorts.whalePrivacy(asOf) });
       } catch (e) {
         console.error(`[skaner] błąd budowy przepływu kohort: ${String(e)}`);
       }

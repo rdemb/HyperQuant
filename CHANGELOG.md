@@ -4,6 +4,12 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Skaner: pomiar prywatności kohorty wielorybów przy ziarnie 15 min, 1 h i 4 h (2026-11-12)
+
+#### Dodane
+- **`status.json`: opcjonalne pole `whalePrivacy`** (`backend/scanner/cohortEngine.ts`: `whalePrivacy`, `passesPrivacy`; `backend/scanner/scanner.ts`). Z ostatnich 7 dób, osobno dla zamkniętych kubełków 15 min (dzisiejsze ziarno), 1 h i 4 h (wyrównanych do UTC): `n` — kubełki z aktywnością wielorybów, `ok` — te, w których kohorta wielorybów przechodzi próg prywatności (co najmniej 5 uczestników i nikt powyżej 50% obrotu). Próg sprawdza ta sama funkcja co ukrywanie komórek w `cohorts/BTC.json`. Okno 1 h i 4 h liczone tylko, gdy wszystkie jego kwadranse były obserwowane w całości. Same liczniki: komórki 1 h i 4 h ani adresy nie są publikowane. Stan pomiaru jest częścią zapisu stanu kohort, więc przetrwa restart skanera; stan zapisany przed tą wersją zaczyna liczniki od zera. Bez silnika kohort `status.json` bez zmian. Pomiar służy decyzji o drabinie ziarnistości po 7 dobach.
+- Testy: `backend/scanner/__tests__/whalePrivacy.test.ts` (trzech uczestników w kwadransie i sześciu w godzinie: `m15.ok = 0`, `h1.ok = 1`; dominacja ponad 50%; okno 4 h; brakujący kwadrans; okno 7 dób; kwadrans obserwowany częściowo; restart i stary stan), asercje `status.json` w `io.test.ts`.
+
 ### Oczekiwany zakres sesji: profil godzin × świeży poziom (2026-11-12)
 
 #### Zmienione

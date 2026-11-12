@@ -148,6 +148,20 @@ function layerStats(maps: Map<string, number>[]): { k: number; maxShare: number;
 
 const unsafe = (s: { k: number; maxShare: number }) => s.k < K_MIN || s.maxShare > DOMINANCE;
 
+/** Czy warstwa (suma map uczestnik → obrót) przechodzi próg prywatności: ten sam warunek co ukrywanie pierwotne. */
+export const passesPrivacy = (maps: Map<string, number>[]): boolean => !unsafe(layerStats(maps));
+
+/**
+ * Pomiar przed drabiną ziarnistości: zamknięte kubełki kohorty wielorybów przy ziarnie 15 min (dziś), 1 h i 4 h (okna
+ * wyrównane do UTC), z ostatnich 7 dób. `n` — kubełki z aktywnością wielorybów (puste niczego nie ujawniają), `ok` — z nich
+ * przechodzące próg prywatności. Okno liczone tylko, gdy wszystkie jego kwadranse były obserwowane w całości.
+ */
+export const PRIVACY_GRAINS = { m15: BUCKET, h1: HOUR, h4: 4 * HOUR } as const;
+export type PrivacyGrain = keyof typeof PRIVACY_GRAINS;
+export type WhalePrivacy = Record<PrivacyGrain, { ok: number; n: number }>;
+const PRIVACY_WINDOW = 7 * DAY;
+const GRAINS = Object.keys(PRIVACY_GRAINS) as PrivacyGrain[];
+
 /**
  * Widoczność komórek jednej warstwy (true = widoczna). Ukrywanie pierwotne: k < 5 albo uczestnik > 50% obrotu.
  * Ukrywanie wtórne: suma komórek w kubełku jest publiczna, więc przy jednej ukrytej (albo gdy suma ukrytych wciąż łamie
@@ -299,6 +313,9 @@ export class CohortEngine {
   private blocks = new Map<string, { blk: number; w: number; wm: number }>();
   /** Czas pierwszej transakcji widzianej przez silnik (kubełki wcześniejsze lub obserwowane częściowo nie są publikowane) */
   private observedFrom: number | null = null;
+  /** Pomiar prywatności wielorybów: obrót uczestników zamkniętych kwadransów (do domknięcia okna 4 h) i wyniki okien */
+  private whaleQ = new Map<number, Map<string, number>>();
+  private privacy: Record<PrivacyGrain, Map<number, boolean>> = { m15: new Map(), h1: new Map(), h4: new Map() };
 
   constructor(o: { coin: string; isWhale: (addr: string) => boolean; maxStats?: number }) {
     this.coin = o.coin;
@@ -470,8 +487,11 @@ export class CohortEngine {
         }
         b.tape = tape;
         b.open = null;
+        this.recordPrivacy(t, o.whale.all);
       }
     }
+    for (const q of this.whaleQ.keys()) if (q < now - PRIVACY_GRAINS.h4 - HOUR) this.whaleQ.delete(q);
+    for (const g of GRAINS) for (const start of this.privacy[g].keys()) if (start < now - PRIVACY_WINDOW) this.privacy[g].delete(start);
     for (const [h, acc] of this.oos) {
       // 27 h zapasu: okno publikacji to 24 ostatnie sfinalizowane godziny
       if (h * HOUR < now - 27 * HOUR) {
@@ -486,6 +506,44 @@ export class CohortEngine {
         acc[c].takers = null;
       }
     }
+  }
+
+  /**
+   * Zamknięty kwadrans `t` z obrotem wielorybów `whale`: wynik kwadransu i okien 1 h i 4 h, które się nim kończą (gdy wszystkie
+   * ich kwadranse są zapisane). Kwadrans obserwowany częściowo (przed pierwszym pełnym od startu silnika) nie wchodzi.
+   */
+  private recordPrivacy(t: number, whale: Map<string, number>): void {
+    if (this.observedFrom === null || t < Math.ceil(this.observedFrom / BUCKET) * BUCKET) return;
+    this.whaleQ.set(t, new Map(whale));
+    const end = t + BUCKET;
+    for (const g of GRAINS) {
+      const len = PRIVACY_GRAINS[g];
+      if (end % len !== 0) continue;
+      const maps: Map<string, number>[] = [];
+      for (let q = end - len; q < end; q += BUCKET) {
+        const m = this.whaleQ.get(q);
+        if (!m) break;
+        maps.push(m);
+      }
+      if (maps.length !== len / BUCKET || layerStats(maps).gross <= 0) continue;
+      this.privacy[g].set(end - len, passesPrivacy(maps));
+    }
+  }
+
+  /** Liczniki pomiaru prywatności wielorybów z ostatnich 7 dób (same liczby, bez komórek i adresów). */
+  whalePrivacy(now: number): WhalePrivacy {
+    const out = {} as WhalePrivacy;
+    for (const g of GRAINS) {
+      let ok = 0;
+      let n = 0;
+      for (const [start, pass] of this.privacy[g]) {
+        if (start < now - PRIVACY_WINDOW) continue;
+        n++;
+        if (pass) ok++;
+      }
+      out[g] = { ok, n };
+    }
+    return out;
   }
 
   /** Klasyfikacja kohort z danych dotychczasowych (co kilka minut), liczności kohort, czyszczenie i limit statystyk. */
@@ -669,6 +727,10 @@ export class CohortEngine {
       observedFrom: this.observedFrom,
       buckets: [...this.buckets].map(([t, b]) => [t, { open: b.open ? Object.fromEntries(COHORTS.map((c) => [c, cellJson(b.open![c])])) : null, pub: b.pub, tape: b.tape }]),
       oos: [...this.oos].map(([h, acc]) => [h, Object.fromEntries(COHORTS.map((c) => [c, { ...acc[c], takers: acc[c].takers ? [...acc[c].takers!] : null }]))]),
+      privacy: {
+        whaleQ: [...this.whaleQ].map(([t, m]) => [t, [...m]]),
+        ...Object.fromEntries(GRAINS.map((g) => [g, [...this.privacy[g]]])),
+      },
     };
   }
 
@@ -698,6 +760,22 @@ export class CohortEngine {
       e.meta = { ...e.meta, selected: 0 };
     }
     if (fin(x.observedFrom)) e.observedFrom = x.observedFrom;
+    // Pomiar prywatności wielorybów (pole opcjonalne: stan sprzed niego — liczniki od zera)
+    const pr = x.privacy as Record<string, unknown> | undefined;
+    if (pr && typeof pr === 'object') {
+      if (Array.isArray(pr.whaleQ)) {
+        for (const row of pr.whaleQ) {
+          if (!Array.isArray(row) || !fin(row[0])) continue;
+          const m = pairs(row[1]);
+          if (m) e.whaleQ.set(row[0], new Map(m));
+        }
+      }
+      for (const g of GRAINS) {
+        const rows = pr[g];
+        if (!Array.isArray(rows)) continue;
+        for (const row of rows) if (Array.isArray(row) && fin(row[0]) && typeof row[1] === 'boolean') e.privacy[g].set(row[0], row[1]);
+      }
+    }
     const members = x.members as Record<string, unknown> | undefined;
     if (members && COHORTS.every((c) => fin(members[c]))) e.members = members as Record<CohortId, number>;
 
