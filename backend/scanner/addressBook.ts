@@ -4,15 +4,19 @@ import type { ScannedPosition } from '../../src/utils/liqMap.ts';
  * Adresy widziane na taśmie BTC (pole `users` transakcji Hyperliquid) i harmonogram odpytywania ich pozycji.
  * Stan zostaje wyłącznie na serwerze (nigdy nie jest publikowany).
  *
- * Każde wywołanie `due` dzieli limit między trzy kolejki (niewykorzystany udział przechodzi dalej):
- *  1. pozycje (50%): termin z interwału wg nominału — ≥ 1 mln USD co 2 min, ≥ 100 tys. co 10 min, inne co 30 min,
- *     a przy cenie likwidacji < 1% od ceny mark co 1 min (< 3%: najwyżej co 2 min);
- *     kolejność wg (wiek / interwał) × √nominał, więc przy przeciążeniu najdłużej czekają małe pozycje, nie duże;
- *  2. konta po transakcji (40%): handlowały od ostatniego odczytu (także nowe i te z pozycją) — w kolejności wartości:
- *     nominał pozycji, a bez pozycji obrót; pozycja dużego konta, które właśnie handlowało, nie czeka za małymi;
+ * Każde wywołanie `due` wypełnia cały limit (limiter wag i tak ogranicza tempo), bez terminów i bez kolejki, która
+ * mogłaby kogoś zagłodzić — priorytet każdej kolejki rośnie z czasem czekania:
+ *  0. gwarancja: konta, które razem trzymają górną połowę skanowanego nominału (dziś ok. 50), najpóźniej co 3 min,
+ *     przed udziałami (ok. 17 odczytów/min) — mediana wieku ważona nominałem (`ageNtlP50Min`) zostaje kilka minut;
+ *  1. konta po transakcji (60% reszty): handlowały od ostatniego odczytu (także nowe i te z pozycją) — priorytet
+ *     (czas od ostatniego odczytu) × √wartość (nominał pozycji albo obrót); nowy adres: czas od pierwszej transakcji
+ *     + 1 min; konto czekające od pierwszej transakcji 15 min i dłużej idzie na początek tej kolejki (najdłużej
+ *     czekające pierwsze). Małe konto czeka dłużej niż duże, ale nie bez końca (ważne dla taśmy likwidacji:
+ *     zlikwidowane małe konto to konto po transakcji);
+ *  2. pozycje bez transakcji (30%): wiek × √nominał × bliskość ceny likwidacji (8× przy < 1% od ceny mark, 4× przy
+ *     < 3%; tylko pozycje od 25 tys. USD);
  *  3. bezpiecznik (10%): adres bez pozycji, który nie handlował, raz na 24 h.
- * Z `fill` reszta limitu idzie na pozycje przed terminem w kolejności wiek × √nominał (zapas budżetu odświeża najpierw
- * to, co najbardziej postarza medianę wieku ważoną nominałem — `ageNtlP50Min` w status.json).
+ * Niewykorzystany udział przechodzi do kolejnych kolejek w tej kolejności.
  * Pozycja w BTC zmienia się tylko przez transakcję BTC (także likwidację), więc adresu bez pozycji nie trzeba
  * odpytywać, dopóki nie pojawi się znów na taśmie.
  */
@@ -31,6 +35,8 @@ interface Rec {
   lastScanAt: number | null;
   /** Handlował od ostatniego odczytu (albo nigdy nie był odczytany) */
   dirty: boolean;
+  /** Pierwsza transakcja od ostatniego odczytu (brak: nie handlował, np. konto tylko z zasiewu) */
+  dirtyAt?: number;
   /** Po nieudanym odczycie: nie wcześniej niż */
   retryAt?: number;
   /** Ostatnio widziany w publicznym rankingu kont (zasiew) */
@@ -43,20 +49,65 @@ const posNtl = (r: Rec) => (r.pos ? Math.abs(r.pos.szi) * r.pos.entryPx : 0);
 
 /** Promocja przy cenie likwidacji tylko dla pozycji, które ważą na mapie (pył nie zużywa budżetu). */
 const PROXIMITY_MIN_NTL = 25_000;
+/** Konta z górnej połowy nominału: odczyt najpóźniej po tym czasie, przed udziałami kolejek */
+const TOP_HALF_MAX_AGE = 3 * MIN;
+/** Konto po transakcji czekające dłużej: na początek kolejki „po transakcji”, najdłużej czekające pierwsze */
+const TRADED_MAX_WAIT = 15 * MIN;
+const SHARE_TRADED = 0.6;
+const SHARE_POSITIONS = 0.3;
 
 /**
- * Interwał odczytu pozycji: wg nominału, a blisko ceny likwidacji częściej — tam mapa musi być najświeższa
- * i tam powstają likwidacje do potwierdzenia (< 1% od ceny mark co 1 min, < 3% najwyżej co 2 min; od 25 tys. USD).
+ * Mnożnik priorytetu blisko ceny likwidacji — tam mapa musi być najświeższa i tam powstają likwidacje do potwierdzenia:
+ * 8 przy < 1% od ceny mark, 4 przy < 3%; tylko pozycje od 25 tys. USD i przy znanej cenie mark.
  */
-function posInterval(r: Rec, markPx?: number): number {
-  const ntl = posNtl(r);
-  const base = ntl >= 1e6 ? 2 * MIN : ntl >= 1e5 ? 10 * MIN : 30 * MIN;
+function proximity(r: Rec, markPx?: number): number {
   const liq = r.pos?.liqPx;
-  if (!markPx || !(markPx > 0) || !liq || ntl < PROXIMITY_MIN_NTL) return base;
+  if (!markPx || !(markPx > 0) || !liq || posNtl(r) < PROXIMITY_MIN_NTL) return 1;
   const dist = Math.abs(markPx - liq) / markPx;
-  if (dist < 0.01) return MIN;
-  if (dist < 0.03) return Math.min(base, 2 * MIN);
-  return base;
+  return dist < 0.01 ? 8 : dist < 0.03 ? 4 : 1;
+}
+
+/**
+ * Adresy `k` najwyższych wyników, malejąco (przy remisie wcześniejszy pierwszy), bez sortowania całej listy —
+ * `due` wybiera kilkanaście adresów z kilkudziesięciu tysięcy przy każdej porcji odczytów.
+ */
+function bestOf(items: readonly [string, number][], k: number): [string, number][] {
+  const top: [string, number][] = [];
+  if (k <= 0) return top;
+  for (const it of items) {
+    if (top.length === k && it[1] <= top[k - 1][1]) continue;
+    let i = Math.min(top.length, k - 1);
+    if (top.length === k) top.pop();
+    while (i > 0 && top[i - 1][1] < it[1]) i--;
+    top.splice(i, 0, it);
+  }
+  return top;
+}
+
+const best = (items: readonly [string, number][], k: number): string[] => bestOf(items, k).map(([a]) => a);
+
+/** Adresy największych pozycji, które razem trzymają co najmniej połowę nominału `total` (malejąco). */
+function topHalf(held: readonly [string, number][], total: number): string[] {
+  for (let k = 64; ; k *= 4) {
+    const big = bestOf(held, k);
+    const out: string[] = [];
+    let cum = 0;
+    for (const [a, ntl] of big) {
+      if (cum >= total / 2) break;
+      cum += ntl;
+      out.push(a);
+    }
+    if (cum >= total / 2 || big.length < k) return out;
+  }
+}
+
+/** Kwantyl z interpolacją (jak `ageMin` mapy). */
+function quantile(sorted: readonly number[], q: number): number {
+  if (sorted.length === 0) return 0;
+  const pos = (sorted.length - 1) * q;
+  const lo = Math.floor(pos);
+  const hi = Math.min(sorted.length - 1, lo + 1);
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
 }
 
 export class AddressBook {
@@ -88,9 +139,12 @@ export class AddressBook {
       if (r) {
         r.tradedUsd = r.tradedUsd * Math.pow(0.5, Math.max(0, t - r.lastTradeAt) / TRADED_HALF_LIFE) + ntlUsd;
         r.lastTradeAt = Math.max(r.lastTradeAt, t);
-        if (r.lastScanAt === null || t >= r.lastScanAt) r.dirty = true;
+        if (r.lastScanAt === null || t >= r.lastScanAt) {
+          r.dirty = true;
+          r.dirtyAt = Math.min(r.dirtyAt ?? t, t);
+        }
       } else {
-        this.recs.set(a, { lastTradeAt: t, tradedUsd: ntlUsd, pos: null, lastScanAt: null, dirty: true });
+        this.recs.set(a, { lastTradeAt: t, tradedUsd: ntlUsd, pos: null, lastScanAt: null, dirty: true, dirtyAt: t });
         if (this.recs.size > this.capacity) this.evictOne(a);
       }
     }
@@ -117,6 +171,7 @@ export class AddressBook {
     r.pos = pos;
     r.lastScanAt = t;
     r.dirty = false;
+    delete r.dirtyAt;
     delete r.retryAt;
     this.recs.set(addr, r);
   }
@@ -155,46 +210,73 @@ export class AddressBook {
     return this.recs.get(addr)?.pos ?? null;
   }
 
-  due(now: number, limit: number, markPx?: number, opts: { fill?: boolean } = {}): string[] {
-    const positions: [string, number, number][] = []; // adres, priorytet (wiek / interwał × √nominał), nominał
-    const traded: [string, number][] = []; // adres, wartość (nominał pozycji albo obrót)
-    const safety: [string, number][] = [];
-    const spare: [string, number][] = []; // adres, wiek × √nominał (tylko z `fill`)
+  /** Do `limit` adresów do odczytu teraz (kolejność i udziały w opisie klasy). */
+  due(now: number, limit: number, markPx?: number): string[] {
+    if (limit <= 0) return [];
+    const held: [string, number][] = []; // adres, nominał (do gwarancji górnej połowy)
+    let total = 0;
+    const overdue: [string, number][] = []; // adres, czekanie od pierwszej transakcji (≥ 15 min)
+    const traded: [string, number][] = []; // adres, (czas od odczytu) × √wartość
+    const positions: [string, number][] = []; // adres, wiek × √nominał × bliskość ceny likwidacji
+    const safety: [string, number][] = []; // adres, czas od odczytu
     for (const [a, r] of this.recs) {
+      const ntl = posNtl(r);
+      if (r.pos && r.lastScanAt !== null) {
+        held.push([a, ntl]);
+        total += ntl;
+      }
       if (r.retryAt !== undefined && r.retryAt > now) continue;
       if (r.dirty || r.lastScanAt === null) {
-        traded.push([a, r.pos ? posNtl(r) : r.tradedUsd]);
+        const since = now - (r.dirtyAt ?? r.lastTradeAt);
+        if (since >= TRADED_MAX_WAIT) {
+          overdue.push([a, since]);
+          continue;
+        }
+        const wait = r.lastScanAt === null ? since + MIN : now - r.lastScanAt;
+        traded.push([a, Math.max(0, wait) * Math.sqrt(Math.max(ntl, r.tradedUsd, 1))]);
       } else if (r.pos) {
-        const iv = posInterval(r, markPx);
-        const late = (now - (r.lastScanAt + iv)) / iv;
-        // Należne: (wiek / interwał) × √nominał — przy przeciążeniu najpierw to, co najbardziej postarza mapę ważoną nominałem
-        if (late >= 0) positions.push([a, (late + 1) * Math.sqrt(posNtl(r)), posNtl(r)]);
-        else if (opts.fill) spare.push([a, (now - r.lastScanAt) * Math.sqrt(posNtl(r))]);
+        positions.push([a, (now - r.lastScanAt) * Math.sqrt(ntl) * proximity(r, markPx)]);
       } else if (now - r.lastScanAt >= SAFETY_RESCAN) {
-        safety.push([a, r.lastScanAt]);
+        safety.push([a, now - r.lastScanAt]);
       }
     }
-    positions.sort((x, y) => y[1] - x[1] || y[2] - x[2]);
-    traded.sort((x, y) => y[1] - x[1]);
-    safety.sort((x, y) => x[1] - y[1]);
-    spare.sort((x, y) => y[1] - x[1]);
-
-    const queues = [positions.map((p) => p[0]), traded.map((p) => p[0]), safety.map((p) => p[0])];
-    const shares = [Math.ceil(limit * 0.5), Math.ceil(limit * 0.4), limit];
+    // 0. Gwarancja: konta z górnej połowy nominału czytane dawniej niż 3 min temu, najdawniej czytane pierwsze
+    const late: [string, number][] = []; // adres, wiek
+    for (const a of topHalf(held, total)) {
+      const r = this.recs.get(a)!;
+      const age = now - (r.lastScanAt ?? now);
+      if (age >= TOP_HALF_MAX_AGE && !(r.retryAt !== undefined && r.retryAt > now)) late.push([a, age]);
+    }
+    const top = best(late, limit);
+    const rest = limit - top.length;
+    if (rest === 0) return top;
+    // Kolejki bez kont już wybranych przez gwarancję (wybór z zapasem o ich liczbę)
+    const inTop = new Set(top);
+    const pick = (items: [string, number][], k: number) => best(items, k + top.length).filter((a) => !inTop.has(a)).slice(0, k);
+    const lead = pick(overdue, rest);
+    const queues = [[...lead, ...pick(traded, rest - lead.length)], pick(positions, rest), pick(safety, rest)];
+    const shares = [Math.ceil(rest * SHARE_TRADED), Math.ceil(rest * SHARE_POSITIONS), rest];
     const out: string[] = [];
     const taken = [0, 0, 0];
     for (let q = 0; q < 3; q++) {
-      const n = Math.min(queues[q].length, shares[q], limit - out.length);
+      const n = Math.min(queues[q].length, shares[q], rest - out.length);
       out.push(...queues[q].slice(0, n));
       taken[q] = n;
     }
-    // Niewykorzystany udział: dopełnienie z kolejek w kolejności ważności, na końcu zapas budżetu
-    for (let q = 0; q < 3 && out.length < limit; q++) {
-      const extra = queues[q].slice(taken[q], taken[q] + (limit - out.length));
-      out.push(...extra);
-    }
-    if (out.length < limit) out.push(...spare.slice(0, limit - out.length).map((s) => s[0]));
-    return out;
+    // Niewykorzystany udział: dopełnienie z kolejek w kolejności ważności
+    for (let q = 0; q < 3 && out.length < rest; q++) out.push(...queues[q].slice(taken[q], taken[q] + (rest - out.length)));
+    return [...top, ...out];
+  }
+
+  /**
+   * Konta po transakcji jeszcze bez odczytu (`dirty` w status.json): liczba i czas od pierwszej transakcji po ostatnim
+   * odczycie (p50, p90, min). Konta tylko z zasiewu (bez transakcji) się nie liczą.
+   */
+  dirtyStats(now: number): { n: number; waitP50Min: number; waitP90Min: number } {
+    const waits: number[] = [];
+    for (const r of this.recs.values()) if (r.dirty && r.dirtyAt !== undefined) waits.push((now - r.dirtyAt) / MIN);
+    waits.sort((a, b) => a - b);
+    return { n: waits.length, waitP50Min: quantile(waits, 0.5), waitP90Min: quantile(waits, 0.9) };
   }
 
   positions(): ScannedPosition[] {
@@ -251,12 +333,15 @@ export class AddressBook {
     if ((o?.v === 1 || o?.v === 2) && Array.isArray(o.recs)) {
       for (const [a, r] of o.recs) {
         if (typeof a !== 'string' || !r) continue;
+        const dirty = r.dirty ?? r.lastScanAt == null;
         b.recs.set(a, {
           lastTradeAt: r.lastTradeAt ?? 0,
           tradedUsd: r.tradedUsd ?? 0,
           pos: r.pos ?? null,
           lastScanAt: r.lastScanAt ?? null,
-          dirty: r.dirty ?? r.lastScanAt == null,
+          dirty,
+          // Stan sprzed pola `dirtyAt`: czekanie od ostatniej transakcji (przybliżenie do pierwszego odczytu)
+          ...(typeof r.dirtyAt === 'number' ? { dirtyAt: r.dirtyAt } : dirty && r.seededAt === undefined ? { dirtyAt: r.lastTradeAt ?? 0 } : {}),
           ...(typeof r.seededAt === 'number' ? { seededAt: r.seededAt } : {}),
           ...(typeof r.acct === 'number' ? { acct: r.acct } : {}),
         });
