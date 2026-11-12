@@ -296,9 +296,12 @@ export class HlTradesStream {
     this.open();
   }
 
+  /** Zatrzymanie: koniec odcinka od razu (na ostatniej wiadomości), niezależnie od tego, kiedy gniazdo faktycznie się zamknie. */
   stop(): void {
     this.stopped = true;
     this.clearTimers();
+    if (this.connected) this.onState?.(false, this.lastMsgAt);
+    this.connected = false;
     this.ws?.close();
   }
 
@@ -350,6 +353,8 @@ export class HlTradesStream {
       if (fresh.length > 0) this.onTrades(fresh);
     };
     ws.onclose = () => {
+      // Spóźnione zamknięcie starego gniazda po stop() i ponownym start() nie zamyka nowego odcinka ani nie łączy drugi raz
+      if (this.ws !== ws) return;
       if (this.connected) this.onState?.(false, this.lastMsgAt);
       this.connected = false;
       this.clearTimers();

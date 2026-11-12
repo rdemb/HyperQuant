@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { buildLiqMap } from '../../../src/utils/liqMap.ts';
 import { parseCoinPosition } from '../positions.ts';
-import { FLOW_SETTLE_MS, FlowFile, FlowMinutes, M0_WINDOW_MS, MarketShadow, OI_MAX_AGE_MS, parseOpenInterest, readFlowDay } from '../marketShadow.ts';
+import { FLOW_SETTLE_MS, FlowFile, FlowMinutes, K2_KEEP_DAYS, M0_WINDOW_MS, MarketShadow, OI_MAX_AGE_MS, ShadowGate, parseOpenInterest, readFlowDay } from '../marketShadow.ts';
 
 const MIN = 60_000;
 const HOUR = 3_600_000;
@@ -43,6 +43,17 @@ describe('MarketShadow — pokrycie rynków głównych', () => {
       'xyz:NVDA': { coverage: null, unseenShare: null },
     });
     expect(s.status(T0 + OI_MAX_AGE_MS + 1, { inBook: () => true }).markets.ETH.coverage).toBeNull();
+  });
+
+  it('unseenShare rynku skanera zawsze null (zależy od kolejności obsługi dwóch połączeń); pozostałe rynki liczone', () => {
+    const s = new MarketShadow();
+    s.setCoins(['BTC', 'ETH']);
+    const inBook = (a: string) => a === 'k';
+    s.onTrade(trade('BTC', ['k', 'u'], 100, 1, T0), inBook);
+    s.onTrade(trade('ETH', ['k', 'u'], 10, 1, T0), inBook);
+    const st = s.status(T0 + MIN, { inBook, btc: { coin: 'BTC', coverage: 0.5 } });
+    expect(st.markets.BTC).toEqual({ coverage: 0.5, unseenShare: null });
+    expect(st.markets.ETH.unseenShare).toBe(0.5);
   });
 
   it('odczyt bez pozycji kasuje stare pozycje konta, nieudany (zły kształt) nie', () => {
@@ -182,18 +193,47 @@ describe('FlowFile — pliki K2 w stanie serwera', () => {
     expect(readFlowDay(readFileSync(join(dir, '2026-11-13.jsonl'), 'utf8'))).toEqual([{ t: T0 + 14 * HOUR, m: { BTC: [1, 1], ETH: [1, 1] } }]);
   });
 
-  it('przycinanie do 14 dób: usuwa doby całe starsze, zostawia resztę i obce pliki', () => {
+  it('przycinanie do 21 dób (test po K2 potrzebuje 14 pełnych): usuwa doby całe starsze, zostawia resztę i obce pliki', () => {
+    expect(K2_KEEP_DAYS).toBe(21);
     const dir = mkdtempSync(join(tmpdir(), 'hq-flow-'));
     const f = new FlowFile(dir);
     const day0 = Date.UTC(2026, 10, 1);
-    for (let d = 0; d < 16; d++) f.append([row(day0 + d * DAY, ['BTC'], [1, 1])]);
+    for (let d = 0; d < 23; d++) f.append([row(day0 + d * DAY, ['BTC'], [1, 1])]);
     writeFileSync(join(dir, 'notatka.txt'), 'x');
-    const now = day0 + 15 * DAY + 12 * HOUR;
+    const now = day0 + 22 * DAY + 12 * HOUR;
     expect(f.prune(now)).toBe(1);
     expect(f.prune(now)).toBe(0);
     const left = readdirSync(dir).sort();
     expect(left[0]).toBe('2026-11-02.jsonl');
     expect(left).toContain('notatka.txt');
-    expect(left.length).toBe(16);
+    expect(left.length).toBe(23);
+  });
+});
+
+describe('ShadowGate — pomiar ustępuje głównemu strumieniowi (sztuczny zegar)', () => {
+  it('start po 60 s stabilnego głównego; główny w dół 31 s → stop; po powrocie 60 s → start; krótsze przerwy bez zmian', () => {
+    const g = new ShadowGate();
+    const run = (from: number, to: number, up: boolean) => {
+      const acts: [number, string][] = [];
+      for (let t = from; t <= to; t += 1_000) {
+        const a = g.update(up, t);
+        if (a) acts.push([t - T0, a]);
+      }
+      return acts;
+    };
+    expect(run(T0, T0 + 59_000, true)).toEqual([]);
+    expect(run(T0 + 60_000, T0 + 120_000, true)).toEqual([[60_000, 'start']]);
+    // krótka przerwa (30 s) nic nie zmienia
+    expect(run(T0 + 121_000, T0 + 151_000, false)).toEqual([]);
+    expect(g.active).toBe(true);
+    expect(run(T0 + 152_000, T0 + 160_000, true)).toEqual([]);
+    // przerwa 31 s → stop
+    expect(run(T0 + 161_000, T0 + 192_000, false)).toEqual([[T0 + 192_000 - T0, 'stop']]);
+    expect(g.active).toBe(false);
+    // powrót na 59 s, potem znów w dół: bez startu
+    expect(run(T0 + 193_000, T0 + 251_000, true)).toEqual([]);
+    expect(run(T0 + 252_000, T0 + 255_000, false)).toEqual([]);
+    // 60 s stabilnego połączenia → start
+    expect(run(T0 + 256_000, T0 + 316_000, true)).toEqual([[316_000, 'start']]);
   });
 });
