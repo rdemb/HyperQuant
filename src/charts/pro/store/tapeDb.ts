@@ -28,6 +28,8 @@ export interface TapeKv {
   deleteBefore(minute: number): Promise<void>;
   getSpans(): Promise<Span[]>;
   putSpans(spans: Span[]): Promise<void>;
+  /** Zamknięcie połączenia z bazą (przed jej usunięciem). */
+  close?(): void;
 }
 
 /** Zapas na transakcje jeszcze w drodze: pokrycie zapisujemy do chwili sprzed kilku sekund. */
@@ -233,5 +235,21 @@ export async function openTapeDb(coin = 'BTC'): Promise<TapeKv | null> {
       tx.objectStore(META).put(spans, 'coverage');
       await done(tx);
     },
+    close() {
+      db.close();
+    },
   };
+}
+
+/** Usuwa bazę taśmy rynku (rynek spoza rejestru otwarty z linku); błąd i blokada — bez zmian. */
+export function deleteTapeDb(coin: string): Promise<void> {
+  if (typeof indexedDB === 'undefined') return Promise.resolve();
+  return new Promise((resolve) => {
+    try {
+      const r = indexedDB.deleteDatabase(tapeDbName(coin));
+      r.onsuccess = r.onerror = r.onblocked = () => resolve();
+    } catch {
+      resolve();
+    }
+  });
 }

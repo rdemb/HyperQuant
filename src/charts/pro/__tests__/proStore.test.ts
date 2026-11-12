@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HlStream } from '../hl/stream';
-import { CandleSeries, ProStore } from '../store/proStore';
+import { CandleSeries, ProStore, dropStore, openStores, storeFor } from '../store/proStore';
+import { discardRecording } from '../store/recording';
 import { cvdCandles } from '../core/flow';
 
 class FakeWs {
@@ -340,5 +341,35 @@ describe('ProStore', () => {
     answer({ ok: false, json: async () => null });
     await retry;
     expect([series.loadingOlder, series.olderFailed]).toEqual([false, true]);
+  });
+});
+
+describe('rynek spoza rejestru z linku', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('przełączenie na BTC zamyka magazyn tej nazwy i usuwa jej bazę taśmy (bez pustych baz w przeglądarce)', async () => {
+    const deleted: string[] = [];
+    vi.stubGlobal('indexedDB', {
+      open: () => {
+        throw new Error('bez zapisu w teście');
+      },
+      deleteDatabase: (name: string) => {
+        deleted.push(name);
+        const r: { onsuccess?: () => void } = {};
+        setTimeout(() => r.onsuccess?.(), 0);
+        return r;
+      },
+    });
+    const s = storeFor('xyz:OLD');
+    const stop = vi.spyOn(s, 'stop');
+    expect(openStores()).toContain(s);
+    expect(dropStore('xyz:OLD')).toBe(s);
+    expect(stop).toHaveBeenCalled();
+    expect(openStores()).not.toContain(s);
+    expect(storeFor('xyz:OLD')).not.toBe(s);
+    dropStore('xyz:OLD');
+    await discardRecording(s);
+    expect(deleted).toEqual(['hq-pro-tape-xyz-OLD']);
+    expect(dropStore('xyz:NONE')).toBeNull();
   });
 });
