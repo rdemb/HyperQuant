@@ -33,6 +33,11 @@ export const MAX_DEX_QUERIES = 19;
  */
 export const REGISTRY_START_WINDOW: readonly [number, number] = [3 * 60_000, 8 * 60_000];
 const SLOT_MS = 15 * 60_000;
+/**
+ * Twardy limit czasu przebiegu: od tej chwili slotu startu (60 s przed następnym slotem) żadnych nowych zapytań
+ * `metaAndAssetCtxs` — przy wolnych odpowiedziach reszta giełd idzie do `skipped` (rotacja da im pierwszeństwo).
+ */
+export const REGISTRY_DEADLINE_IN_SLOT = 14 * 60_000;
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -46,6 +51,8 @@ export interface MarketRegistryRunnerDeps {
   scannerCoins: readonly string[];
   wait?: (ms: number) => Promise<void>;
   gapMs?: number;
+  /** Zegar do limitu czasu przebiegu (mierzy upływ od startu taktu); domyślnie Date.now */
+  now?: () => number;
   /** Okno startu w slocie (ms od początku slotu); domyślnie REGISTRY_START_WINDOW */
   startWindow?: readonly [number, number];
 }
@@ -101,17 +108,27 @@ export class MarketRegistryRunner {
     // Zadanie mniej ważne niż prognozy w tym samym budżecie — czeka, gdy API jest w wycofaniu
     if (rest.healthy && !rest.healthy()) return { ran: false };
     this.running = true;
+    // Czas przebiegu = `now` taktu + upływ według zegara od startu taktu (także czas odpowiedzi perpDexs)
+    const clock = this.d.now ?? Date.now;
+    const clock0 = clock();
+    const elapsedNow = () => now + (clock() - clock0);
     try {
       const listed = parsePerpDexs(await rest.info({ type: 'perpDexs' }, INFO_WEIGHT));
       if (!listed) return { ran: false, error: 'brak listy giełd (perpDexs)' };
       // Giełda główna i najwyżej MAX_DEX_QUERIES − 1 pozostałych; pominięte zostają jak giełda niedostępna
       const { dexes, skipped } = pickDexes(this.state, listed, MAX_DEX_QUERIES);
       const wait = this.d.wait ?? sleep;
+      const deadline = Math.floor(now / SLOT_MS) * SLOT_MS + REGISTRY_DEADLINE_IN_SLOT;
       const fetched: string[] = [];
       const failed: string[] = [];
       const samples: MarketSample[] = [];
       for (const [i, dex] of dexes.entries()) {
         if (i > 0) await wait(this.d.gapMs ?? DEFAULT_GAP_MS);
+        // Giełda główna (pierwsza) zawsze; dalej żadnych nowych zapytań po limicie czasu — reszta jak pominięte
+        if (i > 0 && elapsedNow() >= deadline) {
+          skipped.unshift(...dexes.slice(i));
+          break;
+        }
         const rows = parseDexMarkets(await rest.info(dex === '' ? { type: 'metaAndAssetCtxs' } : { type: 'metaAndAssetCtxs', dex }, INFO_WEIGHT), dex);
         if (rows === null) {
           if (dex === '') return { ran: false, error: 'brak kontekstów giełdy głównej (metaAndAssetCtxs)' };
