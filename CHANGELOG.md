@@ -4,6 +4,12 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Automatyczna weryfikacja dziennika z podsumowaniem (2026-11-12)
+
+#### Zmienione
+- **`ledger-verify.yml`** pobiera `ledger/BTC/summary.json` z `main` repo danych przed klonem dziennika (bez tokenu) i podaje go weryfikatorowi przez `--summary`. Miary podsumowania przeliczane z rekordów biegną teraz także w przebiegu stojącym za znaczkiem na stronie. Brak pliku: weryfikacja bez miar.
+- **Weryfikator:** podsumowanie z głową o większej liczbie linii niż pobrany dziennik (wyścig publikacji) jest pomijane z informacją, bez błędu; głowa spoza rekordów przy dzienniku co najmniej tak długim jak ona to dalej błąd.
+
 ### Weryfikator: kalibracja wariantu C i bloki hrel-v1 z podsumowania przeliczone z rekordów (2026-11-12)
 
 #### Dodane

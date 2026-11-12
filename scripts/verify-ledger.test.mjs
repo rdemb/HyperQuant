@@ -746,7 +746,12 @@ describe('miary podsumowania (Kupiec 60%, PIT, przedziały z bootstrapu po dobac
     delete old.scores.touch.bssDistCi;
     delete old.cat.scores.big.bssSeasonal;
     expect(checkMeasures(old, records)).toEqual({ checked: 0, problems: [] });
-    expect(checkMeasures({ ...summary, head: { hash: 'x', lines: 1 } }, records).problems).toHaveLength(1);
+    // Głowa podsumowania ma więcej linii niż pobrane rekordy: podsumowanie nowsze niż dziennik (wyścig publikacji) — bez
+    // porównania i bez błędu
+    expect(checkMeasures({ ...summary, head: { hash: 'x', lines: records.length + 3 } }, records)).toEqual({ checked: 0, problems: [], ahead: true });
+    // Dziennik ma tyle linii co głowa albo więcej, a jej hasha w nim nie ma — błąd
+    expect(checkMeasures({ ...summary, head: { hash: 'x', lines: 1 } }, records).problems).toEqual(['głowa podsumowania nie występuje w rekordach']);
+    expect(checkMeasures({ ...summary, head: { hash: 'x', lines: records.length } }, records).problems).toHaveLength(1);
   });
 
   it('podsumowanie z późniejszej głowy niż rekordy: przeliczenie tylko do głowy podsumowania', () => {
