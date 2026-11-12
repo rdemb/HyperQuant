@@ -40,6 +40,7 @@ import { NumbersCard, StatGroupPicker } from './chart/NumbersCard';
 import { IndicatorsDialog, type IndicatorsSection, type ToggleItem } from './chart/IndicatorsDialog';
 import { IndicatorSettings } from './chart/IndicatorSettings';
 import { indicatorLabel, indicatorsLink } from './indicators/registry';
+import { NAKED_POC_SHOWN, PROFILE_EVIDENCE } from './chart/profileSelect';
 import { IB_EVIDENCE } from './chart/ibSelect';
 import { BURSTS_MAX, CLASHES_EVIDENCE, RANK_WINDOW_MS, WALLS_DONE_MAX, WALLS_K, WALLS_LIVE_MAX, WALL_MIN_MS } from './chart/clashSelect';
 import { BUBBLES_BARS, BUBBLES_EVIDENCE, BUBBLES_K, BUBBLES_MAX } from './chart/bubbleSelect';
@@ -1790,8 +1791,8 @@ function flowLayers(s: ChartSettings, intervalMs: number, liq: LiqMapState, whal
       key: 'showPeriodProfiles',
       label: scope.periodProfile === 'day' ? tr('Profile dób i nagie POC', 'Day profiles and naked POCs') : tr('Profile sesji i nagie POC', 'Session profiles and naked POCs'),
       hint: tr(
-        `Profil każdej ${scope.periodProfile === 'day' ? 'doby UTC' : 'sesji'} od jej początku; POC, którego cena potem nie dotknęła, ciągnie się do prawej krawędzi`,
-        `A profile of every ${scope.periodProfile === 'day' ? 'UTC day' : 'session'} from its start; a POC that price has not touched since extends to the right edge`
+        `Pełny profil ${scope.periodProfile === 'day' ? 'bieżącej i poprzedniej doby UTC' : 'bieżącej i poprzedniej sesji'} od jej początku, starsze — POC i pasek value area; POC, którego cena potem nie dotknęła, ciągnie się do prawej krawędzi (najwyżej ${NAKED_POC_SHOWN} najbliższe cenie). ${PROFILE_EVIDENCE.pl}`,
+        `A full profile of the ${scope.periodProfile === 'day' ? 'current and previous UTC day' : 'current and previous session'} from its start, older ones only the POC and the value area bar; a POC that price has not touched since extends to the right edge (at most ${NAKED_POC_SHOWN} nearest to price). ${PROFILE_EVIDENCE.en}`
       ),
       swatch: 'bg-of-vol',
       off: scope.periodProfile ? undefined : tr('Na interwałach do 4h', 'On timeframes up to 4h'),
@@ -1810,8 +1811,8 @@ function flowLayers(s: ChartSettings, intervalMs: number, liq: LiqMapState, whal
       key: 'showTpo',
       label: tr('Profil doby: wolumen, agresja, czas (TPO)', 'Day profile: volume, aggression, time (TPO)'),
       hint: tr(
-        'Profil wolumenu każdej doby UTC; kolor wiersza to strona agresywna z taśmy (niebieski kupno, czerwony sprzedaż, szary bez przewagi albo bez taśmy; starsze doby z nagrania serwera, 7 dób), cienki obrys to czas (ile okresów 30 min dotknęło ceny). POC i value area z wolumenu, zakres pierwszej godziny doby UTC (pasek liliowy; to nie initial balance sesji), pojedyncze wydruki i ogony, delta doby pod profilem; liczby wiersza pod krzyżem; zastępuje profile sesji',
-        'A volume profile of every UTC day; the row colour is the aggressive side from the tape (blue buy, red sell, grey no edge or no tape; older days from the server recording, 7 days), the thin outline is time (how many 30-minute periods touched the price). POC and value area from volume, the range of the first hour of the UTC day (lilac bar; not the session initial balance), single prints and tails, the day delta under the profile; row numbers under the crosshair; replaces session profiles'
+        `Profil wolumenu każdej doby UTC; kolor wiersza to strona agresywna z taśmy (niebieski kupno, czerwony sprzedaż, szary bez przewagi albo bez taśmy; starsze doby z nagrania serwera, 7 dób), cienki obrys to czas (ile okresów 30 min dotknęło ceny). POC i value area z wolumenu, zakres pierwszej godziny doby UTC (pasek liliowy; to nie initial balance sesji), pojedyncze wydruki i ogony, delta doby pod profilem; liczby wiersza pod krzyżem; zastępuje profile sesji. Pełny profil dla bieżącej i poprzedniej doby, starsze — POC i pasek value area; najdłuższy słupek do 35% doby i 30% wykresu; nagie POC: ${NAKED_POC_SHOWN} najbliższe cenie. ${PROFILE_EVIDENCE.pl}`,
+        `A volume profile of every UTC day; the row colour is the aggressive side from the tape (blue buy, red sell, grey no edge or no tape; older days from the server recording, 7 days), the thin outline is time (how many 30-minute periods touched the price). POC and value area from volume, the range of the first hour of the UTC day (lilac bar; not the session initial balance), single prints and tails, the day delta under the profile; row numbers under the crosshair; replaces session profiles. A full profile for the current and previous day, older ones only the POC and the value area bar; the longest bar up to 35% of the day and 30% of the chart; naked POCs: the ${NAKED_POC_SHOWN} nearest to price. ${PROFILE_EVIDENCE.en}`
       ),
       swatch: 'bg-of-svwap',
       off: tpoInterval(intervalMs) ? undefined : tr('Na interwałach do 30m', 'On timeframes up to 30m'),
