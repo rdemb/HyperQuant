@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { fmtDm, fmtHm } from '../../charts/pro/core/time';
+import { fmtPx, priceDigits } from '../../charts/pro/core/footprintBar';
+import { DEFAULT_MARKETS } from '../marketRegistry';
 import {
   type FourNumbers,
   clarityNum,
   fourNumbersText,
+  fuelNum,
   hourWidth,
   hourWidthNum,
   lastClosedNy,
@@ -168,5 +171,18 @@ describe('fourNumbersText', () => {
     expect(text).toContain('Paliwo ±1%: pod 3,5M · nad 3,4M (LIVE, 5 min)');
     expect(text).toContain('Szerokość · Londyn 09:00: — (brak danych)');
     expect(text).toContain('Od VWAP: — (tylko BTC)');
+  });
+});
+
+describe('ceny w podpowiedziach Czwórki z dokładnością osi rynku (szDecimals)', () => {
+  it('BTC bez zmian; kPEPE przy 0,0045 — 6 miejsc jak na osi', () => {
+    const btc = fuelNum(inputs()).hint;
+    expect(btc).toContain(`pod ceną ${fmtPx(100_000)} (do ${fmtPx(99_000)})`);
+    const markets = [...DEFAULT_MARKETS, { coin: 'kPEPE', dex: '', szDecimals: 0, maxLeverage: 10, scanner: 'full' as const }];
+    const map = { ...LIQ_MAP, coin: 'kPEPE', markPx: 0.0045, stepUsd: 0.00001, longs: [], shorts: [] };
+    const pepe = fuelNum(inputs({ coin: 'kPEPE', markets, price: 0.0045, liq: { status: 'ready', map } })).hint;
+    expect(priceDigits(0.0045, 0)).toBe(6);
+    expect(pepe).toContain(`pod ceną ${fmtPx(0.0045, 0)} (do ${fmtPx(0.0045 * 0.99, 0)})`);
+    expect(pepe).not.toContain(fmtPx(0.0045));
   });
 });

@@ -34,8 +34,19 @@ export function publishMarkets(raw: unknown): void {
 export const marketsState = (): MarketsState => state;
 export const chartMarkets = (): readonly ChartMarket[] => state.markets;
 export const marketOf = (coin: string): ChartMarket | undefined => state.markets.find((m) => m.coin === coin);
+/** Rynki, dla których Binance i Bybit odpowiedziały w tej sesji „nie ma symbolu” (panele giełd „—”, bez zapytań). */
+const noCex = new Set<string>();
+
+/** Obie giełdy nie mają kontraktu rynku `coin`: zdolność `cex` gaśnie do końca sesji (subskrybenci listy dostają zmianę). */
+export function markNoCex(coin: string): void {
+  if (noCex.has(coin)) return;
+  noCex.add(coin);
+  state = { ...state };
+  listeners.forEach((fn) => fn());
+}
+
 /** Zdolności rynku według bieżącej listy (`utils/marketCaps`). */
-export const capsOf = (coin: string): MarketCaps => marketCaps(coin, state.markets);
+export const capsOf = (coin: string): MarketCaps => marketCaps(coin, state.markets, noCex);
 /** Skala progów w USD rynku wobec BTC (`utils/marketCaps.usdScale`; BTC = 1). */
 export const usdScaleOf = (coin: string): number => usdScale(coin, state.markets);
 /** Powód „—” warstwy skanera albo prognoz na rynku `coin` (rynki z pełnym skanerem z bieżącej listy). */
@@ -51,6 +62,7 @@ export function subscribeMarkets(fn: () => void): () => void {
 /** Tylko dla testów: lista jak przed pierwszą odpowiedzią. */
 export function resetMarketsForTest(): void {
   state = INITIAL;
+  noCex.clear();
 }
 
 /** Rynki strony: pobiera rejestr (wspólny mechanizm danych publicznych) i zwraca bieżącą listę. */
