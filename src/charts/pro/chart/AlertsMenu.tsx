@@ -2,12 +2,12 @@ import React, { useState, useSyncExternalStore } from 'react';
 import { Bell, Pencil, Trash2, Volume2, X } from 'lucide-react';
 import { Segmented } from '../../../ui';
 import { lang, tr } from '../../../i18n';
-import { ALERT_INTERVALS, type AlertKind, DEFAULT_TTL_MS, NOTE_MAX, defaultDir, eventBody, knownKind, ruleText } from '../../../utils/alertRules';
+import { ALERT_INTERVALS, type AlertKind, DEFAULT_TTL_MS, NOTE_MAX, defaultDir, eventBody, knownKind, ruleText, serverWatches } from '../../../utils/alertRules';
 import { fmtHm, fmtSince } from '../core/time';
 import { fmtPx } from './layout';
 import { type AlertSpec, MAX_ALERTS, type PriceAlert, alertBook, alertLines, alertLog, askNotifications, hasLine, newAlert, parsePriceInput, primeAlertSound, removeAlert, windowOf } from './alerts';
 import { testAlert } from './alertWatch';
-import { PUSH_MAX, disablePush, enablePush, pushNeedsHomeScreen, pushWatched, usePushStatus } from './pushAlerts';
+import { PUSH_MAX, PUSH_OFF_MARKET, disablePush, enablePush, pushNeedsHomeScreen, pushOutside, pushWatched, usePushStatus } from './pushAlerts';
 
 /** Cena z wykresu, od której zaczyna formularz (menu pod prawym przyciskiem albo zaznaczona linia pozioma). */
 export interface AlertDraft {
@@ -57,8 +57,9 @@ export const AlertsMenu: React.FC<{ coin: string; price: number; draft: AlertDra
   const [editing, setEditing] = useState<string | null>(null);
   const [perm, setPerm] = useState<NotificationPermission | 'none'>(() => ('Notification' in window ? Notification.permission : 'none'));
   const push = usePushStatus();
-  // Ponad limit serwera: starsze alarmy pilnuje tylko otwarta strona
-  const served = push === 'on' && alerts.length > PUSH_MAX ? pushWatched(alerts) : null;
+  // Alarmy, których serwer nie pilnuje (rynek spoza serwera powiadomień albo ponad limit): tylko otwarta strona
+  const outside = push === 'on' ? pushOutside(alerts, pushWatched(alerts)) : null;
+  const onServer = alerts.filter((a) => serverWatches(a.coin)).length;
 
   const squeeze = kind === 'squeeze';
   const candle = kind === 'close' || kind === 'reclaim';
@@ -298,9 +299,7 @@ export const AlertsMenu: React.FC<{ coin: string; price: number; draft: AlertDra
                     <span className="font-mono text-ink-3">{a.coin}</span> {ruleText(a, lang)}
                   </div>
                   <div className="text-[11px] text-ink-3 leading-snug">{statusText(a, alerts)}</div>
-                  {served && !served.has(a.id) && (
-                    <div className="text-[11px] text-warn leading-snug">{tr('Poza limitem serwera 24/7: tylko przy otwartej stronie', 'Over the 24/7 server limit: only while the page is open')}</div>
-                  )}
+                  {outside?.has(a.id) && <div className="text-[11px] text-warn leading-snug">{outside.get(a.id)}</div>}
                 </div>
                 {knownKind(a.kind) && (
                   <IconBtn label={tr('Zmień alarm', 'Edit alert')} onClick={() => edit(a)}>
@@ -379,16 +378,18 @@ export const AlertsMenu: React.FC<{ coin: string; price: number; draft: AlertDra
             <p className="text-[11px] leading-snug text-ink-2">
               {push === 'error'
                 ? tr('Nie udało się włączyć. Zezwól stronie na powiadomienia i spróbuj jeszcze raz.', 'Could not turn on. Allow notifications for this site and try again.')
-                : tr(
-                    `Alarm przyjdzie także przy zamkniętej stronie i zablokowanym telefonie: pilnuje go serwer HyperQuant (do ${PUSH_MAX} alarmów tego urządzenia).`,
-                    `The alert arrives even with the page closed and the phone locked: the HyperQuant server watches it (up to ${PUSH_MAX} alerts on this device).`
-                  )}
+                : serverWatches(coin)
+                  ? tr(
+                      `Alarm przyjdzie także przy zamkniętej stronie i zablokowanym telefonie: pilnuje go serwer HyperQuant (do ${PUSH_MAX} alarmów tego urządzenia).`,
+                      `The alert arrives even with the page closed and the phone locked: the HyperQuant server watches it (up to ${PUSH_MAX} alerts on this device).`
+                    )
+                  : `${coin}: ${PUSH_OFF_MARKET}.`}
             </p>
-            {served && (
+            {push === 'on' && onServer > PUSH_MAX && (
               <p className="text-[11px] leading-snug text-warn">
                 {tr(
-                  `Serwer pilnuje ${PUSH_MAX} najnowszych z ${alerts.length} alarmów. Starsze (oznaczone na liście) dzwonią tylko przy otwartej stronie: usuń zbędne albo zostaw kartę otwartą.`,
-                  `The server watches the ${PUSH_MAX} newest of ${alerts.length} alerts. Older ones (marked in the list) ring only while the page is open: remove the ones you don't need or keep the tab open.`
+                  `Serwer pilnuje ${PUSH_MAX} najnowszych z ${onServer} alarmów. Starsze (oznaczone na liście) dzwonią tylko przy otwartej stronie: usuń zbędne albo zostaw kartę otwartą.`,
+                  `The server watches the ${PUSH_MAX} newest of ${onServer} alerts. Older ones (marked in the list) ring only while the page is open: remove the ones you don't need or keep the tab open.`
                 )}
               </p>
             )}

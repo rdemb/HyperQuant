@@ -64,12 +64,12 @@ import { TOOLS } from './draw/model';
 import { type DrawingTools, isTyping } from './draw/tools';
 import { chartKeyAction } from './chart/shortcuts';
 import { FocusExit, type PhoneTab, focusExitKey, focusOn } from './chart/focusMode';
-import { COIN, CandleSeries, Market, ProStore, storeFor } from './store/proStore';
+import { COIN, CandleSeries, Market, ProStore, dropStore, storeFor } from './store/proStore';
 import { capsOf, chartMarkets, marketOf, noScannerWhyOf, useMarkets } from '../../state/markets';
 import { BLOG_ONLY_WHY, marketCaps } from '../../utils/marketCaps';
 import { MarketPicker, PhoneMarketSelect } from './chart/MarketPicker';
 import { expiredNotice, isListed, nextMarket } from './chart/marketMenu';
-import { startRecording } from './store/recording';
+import { discardRecording, startRecording } from './store/recording';
 import { useStoreVersion } from './store/useStoreVersion';
 import { ReplayBar } from './replay/ReplayBar';
 import { type ReplayLink, linkPatch, parseReplayLink, replayHash } from './replay/link';
@@ -334,11 +334,20 @@ export const ProChart: React.FC<{
   // Mapy z bloga (plik bloga z tej samej domeny) tylko z włączoną warstwą na BTC albo dla liczby „Mapa: dotknięte” w nagłówku
   // Rozliczenia; rozliczenie poziomów w układzie Rozliczenie
   const blogSettle = station.id === 'review';
-  // Rynek spoza rozstrzygniętej listy (wygasły link albo zapis) — wykres BTC z jednym zdaniem wyjaśnienia
+  // Rynek spoza rozstrzygniętej listy (wygasły link albo zapis) — wykres BTC z jednym zdaniem wyjaśnienia. Magazyn i baza
+  // taśmy otwarte dla tej nazwy przed odpowiedzią rejestru znikają (chyba że rynek ma alarm — ten nagrywa dalej)
   useEffect(() => {
     if (inReplay || !markets.ready || isListed(settings.coin, markets.markets)) return;
-    setToast(expiredNotice(settings.coin));
+    const gone = settings.coin;
+    setToast(expiredNotice(gone));
     setSettings((s) => withPatch(s, { coin: COIN }));
+    if (alertBook.get().some((a) => a.coin === gone)) return;
+    // Po bieżącym renderze (bez sprzątania przy zmianie rynku: ta zmiana to właśnie przełączenie na BTC); zatrzymany magazyn
+    // starego wykresu do jego zniknięcia tylko nie dostaje danych
+    setTimeout(() => {
+      const old = dropStore(gone);
+      if (old) void discardRecording(old);
+    }, 0);
   }, [markets, settings.coin, inReplay]);
   const blogMaps = useBlogMaps((settings.showBlogMap || (layoutHeader && blogSettle && !inReplay)) && caps.blog);
   useStoreVersion(store, 400);

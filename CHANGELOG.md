@@ -19,6 +19,10 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 - Baza taśmy w przeglądarce bez dwukropka: `hq-pro-tape-xyz-NVDA` (nazwy BTC, ETH, SOL i HYPE bez zmian, zapisana taśma zostaje).
 - Kontekst rynku HIP-3 (`metaAndAssetCtxs`) z odpowiedzi jego giełdy (`dex`).
 
+#### Poprawione
+- **Alarm na rynku spoza serwera powiadomień nie udaje alarmu 24/7.** Serwer pilnuje dziś tylko `ALERT_MARKETS` (BTC, ETH, SOL, HYPE; jedna stała w `src/utils/alertRules.ts` dla serwera, skrzynki i strony, `serverWatches`). Alarm na innym rynku (np. `xyz:NVDA`) nie wchodzi do `pushWatched` i nie zajmuje miejsca w limicie `PUSH_MAX`; na liście ma oznaczenie z powodem „serwer powiadomień pilnuje dziś BTC, ETH, SOL i HYPE; ten alarm dzwoni tylko przy otwartej stronie”, a opis powiadomień w menu alarmów na takim rynku nie obiecuje alarmu przy zamkniętej stronie. Ostrzeżenie o limicie liczy tylko alarmy na rynkach serwera.
+- Link z nazwą rynku w dobrym formacie, ale spoza rejestru: po przełączeniu na BTC magazyn tej nazwy jest zamykany, a jej baza taśmy w przeglądarce usuwana (chyba że rynek ma alarm).
+
 ### Automatyczna weryfikacja dziennika z podsumowaniem (2026-11-12)
 
 #### Zmienione

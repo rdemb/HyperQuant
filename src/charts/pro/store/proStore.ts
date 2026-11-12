@@ -953,6 +953,15 @@ export function storeFor(coin: Market): ProStore {
   return s;
 }
 
+/** Zamyka magazyn rynku spoza rejestru (strumień i liczniki) i zapomina go; null — magazyn nie był otwarty. */
+export function dropStore(coin: Market): ProStore | null {
+  const s = stores.get(coin);
+  if (!s) return null;
+  s.stop();
+  stores.delete(coin);
+  return s;
+}
+
 /** Magazyny rynków otwartych na tej stronie (alerty cenowe sprawdzamy na każdym z nich). */
 export function openStores(): ProStore[] {
   return [...stores.values()];
