@@ -433,6 +433,12 @@ export class ProChartController {
       container.dataset.bubbles = String(n);
     };
     this.overlay = new IndicatorOverlay(toggles(settings, series.interval.ms));
+    // Profile okresów i TPO: liczba obiektów i udział pola pod słupkami (pomiar układu czyta je z atrybutów)
+    const pct = (x: number) => (x * 100).toFixed(1);
+    this.overlay.onPeriods = (c) => {
+      container.dataset.periodObjects = String(c.objects);
+      container.dataset.periodArea = pct(c.area);
+    };
     // Liczba obiektów zakresu początkowego sesji na ekranie (pomiar układu czyta ją z atrybutu)
     this.overlay.onIb = (n) => {
       container.dataset.ibObjects = String(n);
@@ -450,6 +456,10 @@ export class ProChartController {
     };
     this.main.attachPrimitive(this.zones);
     this.tpo = new TpoLayer(settings.showTpo, settings.showTpoOi);
+    this.tpo.onCounts = (c) => {
+      container.dataset.tpoObjects = String(c.objects);
+      container.dataset.tpoArea = pct(c.area);
+    };
     this.main.attachPrimitive(this.tpo);
     for (const p of CHART_PLUGINS) {
       const layer = p.create();
