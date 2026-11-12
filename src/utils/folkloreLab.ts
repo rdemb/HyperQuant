@@ -156,54 +156,74 @@ export const LAB_CATALOG: {
   ],
 };
 
+/**
+ * Neutralne nazwy reguł (PL, EN) — jedno źródło dla aplikacji i strony wyników (`scripts/blog/results.mjs`): opis
+ * hipotezy bez kierunku i bez żargonu.
+ */
+export const LAB_NAMES: Record<string, readonly [pl: string, en: string]> = {
+  'round-res': ['Okrągły poziom jako opór', 'Round level as resistance'],
+  'round-sup': ['Okrągły poziom jako wsparcie', 'Round level as support'],
+  'pdh-sweep': ['Zebranie PDH i powrót do środka zakresu', 'PDH sweep and return to mid-range'],
+  'pdl-sweep': ['Zebranie PDL i powrót do środka zakresu', 'PDL sweep and return to mid-range'],
+  'ib-break': ['Wybicie IB idzie dalej', 'IB breakout follows through'],
+  'vwap-revert': ['Powrót do VWAP z odległości 2σ', 'Reversion to VWAP from 2σ away'],
+  'cme-gap': ['Luka CME się zamyka', 'CME gap gets filled'],
+  'funding-flush': ['Skrajne finansowanie i wyczyszczenie przepełnionej strony', 'Extreme funding and a flush of the crowded side'],
+  'ny-10am': ['Pierwsza godzina po otwarciu giełd w USA (10:00 w Nowym Jorku)', 'The first hour after the US stock open (10:00 New York)'],
+  'intraday-mom': ['Momentum śróddzienne (pierwsza i ostatnia godzina doby)', 'Intraday momentum (first and last hour of the day)'],
+  'ctrl-weekend': ['Kontrola +: weekend spokojniejszy', 'Control +: quieter weekend'],
+  'ctrl-placebo': ['Kontrola −: placebo', 'Control −: placebo'],
+};
+const labName = (id: string): string => tr(LAB_NAMES[id][0], LAB_NAMES[id][1]);
+
 /** Teksty prezentacyjne (poza hashowanym katalogiem). */
 export const LAB_TEXT: Record<string, { name: string; claim: string; source?: string }> = {
   'round-res': {
-    name: tr('Okrągły poziom = opór', 'Round level = resistance'),
+    name: labName('round-res'),
     claim: tr('Pełne tysiące dolarów zatrzymują wzrosty.', 'Whole thousands of dollars stop rallies.'),
     source: 'Osler (2000), Federal Reserve Bank of New York Economic Policy Review',
   },
   'round-sup': {
-    name: tr('Okrągły poziom = wsparcie', 'Round level = support'),
+    name: labName('round-sup'),
     claim: tr('Pełne tysiące dolarów zatrzymują spadki.', 'Whole thousands of dollars stop declines.'),
     source: 'Osler (2000)',
   },
   'pdh-sweep': {
-    name: tr('Zebranie PDH → powrót', 'PDH sweep → reversion'),
+    name: labName('pdh-sweep'),
     claim: tr('Po zebraniu płynności nad wczorajszym maksimum cena wraca do środka zakresu.', "After sweeping liquidity above yesterday's high, price returns to mid-range."),
   },
   'pdl-sweep': {
-    name: tr('Zebranie PDL → powrót', 'PDL sweep → reversion'),
+    name: labName('pdl-sweep'),
     claim: tr('Po zebraniu płynności pod wczorajszym minimum cena wraca do środka zakresu.', "After sweeping liquidity below yesterday's low, price returns to mid-range."),
   },
   'ib-break': {
-    name: tr('Wybicie IB jedzie dalej', 'IB breakout follows through'),
+    name: labName('ib-break'),
     claim: tr('Wyjście poza Initial Balance rozszerza zakres w stronę wybicia.', 'A break of the Initial Balance extends the range in the breakout direction.'),
   },
   'vwap-revert': {
-    name: tr('Z 2σ od VWAP cena wraca', 'Price reverts from 2σ off VWAP'),
+    name: labName('vwap-revert'),
     claim: tr('Po odejściu o 2σ od VWAP sesji cena wraca do VWAP.', 'After moving 2σ away from the session VWAP, price returns to VWAP.'),
   },
-  'cme-gap': { name: tr('Luka CME przyciąga cenę', 'CME gap attracts price'), claim: tr('Weekendowe luki na kontraktach CME się zamykają.', 'Weekend gaps on CME futures get filled.') },
+  'cme-gap': { name: labName('cme-gap'), claim: tr('Weekendowe luki na kontraktach CME się zamykają.', 'Weekend gaps on CME futures get filled.') },
   'funding-flush': {
-    name: tr('Skrajne finansowanie → flush', 'Extreme funding → flush'),
+    name: labName('funding-flush'),
     claim: tr('Przepełniona strona (skrajne finansowanie) zostaje wyczyszczona.', 'The crowded side (extreme funding) gets flushed.'),
   },
   'ny-10am': {
-    name: tr('Dump o 10:00 w Nowym Jorku', 'The 10:00 New York dump'),
+    name: labName('ny-10am'),
     claim: tr('BTC spada w pierwszej godzinie po otwarciu rynku akcji w USA.', 'BTC falls in the first hour after the US stock market opens.'),
   },
   'intraday-mom': {
-    name: tr('Momentum śróddzienne', 'Intraday momentum'),
+    name: labName('intraday-mom'),
     claim: tr('Kierunek pierwszej godziny dnia powtarza się w ostatniej.', 'The direction of the first hour of the day repeats in the last hour.'),
     source: 'Gao, Han, Li, Zhou (2018), Market intraday momentum, Journal of Financial Economics',
   },
   'ctrl-weekend': {
-    name: tr('Kontrola +: weekend spokojniejszy', 'Control +: quieter weekend'),
+    name: labName('ctrl-weekend'),
     claim: tr('Kontrola pozytywna — znany efekt, który metoda musi wykryć.', 'Positive control: a known effect the method must detect.'),
   },
   'ctrl-placebo': {
-    name: tr('Kontrola −: placebo', 'Control −: placebo'),
+    name: labName('ctrl-placebo'),
     claim: tr('Kontrola negatywna — poziomy bez znaczenia; efekt nie powinien wyjść.', 'Negative control: meaningless levels; no effect should show up.'),
   },
 };

@@ -192,14 +192,15 @@ export const LessonChart: React.FC<Props> = ({ slice, layers, cursor, marks = []
     );
   }
 
-  // Initial balance: prostokąt pierwszej godziny i poziomy z rozszerzeniami po jej końcu
+  // Initial balance: prostokąt pierwszej godziny, szczyt i dołek po jej końcu, rozszerzenia po pierwszym zamknięciu poza
+  // zakresem i tylko po tej stronie (jak na wykresie)
   const ib = model.ib && model.ib.end <= cursor ? model.ib : null;
   if (ib) {
     out.push(<rect key="ib" x={xOf(ib.session.start)} y={y(ib.hi)} width={xOf(ib.end) - xOf(ib.session.start)} height={y(ib.lo) - y(ib.hi)} fill={C.zone} fillOpacity={0.12} stroke={C.zone} strokeOpacity={0.5} />);
-    for (const l of ibLines(ib)) {
+    for (const l of ibLines(ib, model.dayBars, model.tfMs, cursor)) {
       if (!inRange(l.px)) continue;
       const main = l.label === 'IBH' || l.label === 'IBL';
-      out.push(<line key={`ib${l.label}`} x1={xOf(ib.end)} x2={plotW} y1={y(l.px)} y2={y(l.px)} stroke={C.zone} strokeOpacity={main ? 0.8 : 0.45} strokeDasharray={main ? undefined : '2 3'} />);
+      out.push(<line key={`ib${l.label}`} x1={xOf(l.from)} x2={plotW} y1={y(l.px)} y2={y(l.px)} stroke={C.zone} strokeOpacity={main ? 0.8 : 0.45} strokeDasharray={main ? undefined : '2 3'} />);
       axisLabels.push({ y: y(l.px), text: `${l.label} ${fmtPx(l.px)}`, color: C.zone });
     }
   }
