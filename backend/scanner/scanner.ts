@@ -109,11 +109,11 @@ export class Scanner {
     this.ctxAt = this.now();
   }
 
-  /** Odpytuje do `limit` adresów z minionym terminem; zwraca liczbę udanych odczytów. */
+  /** Odpytuje do `limit` adresów w kolejności harmonogramu (`AddressBook.due`); zwraca liczbę udanych odczytów. */
   async scanDue(limit: number): Promise<number> {
     const fresh = this.ctx && this.now() - this.ctxAt <= CTX_MAX_AGE_MS ? this.ctx.markPx : undefined;
-    // Z zapasem budżetu (fill): limiter i tak ogranicza tempo, a wolne odczyty odświeżają to, co waży na mapie
-    const due = this.d.book.due(this.now(), limit, fresh, { fill: true });
+    // Harmonogram zawsze wypełnia limit; tempo ogranicza limiter wag
+    const due = this.d.book.due(this.now(), limit, fresh);
     let ok = 0;
     for (const addr of due) {
       const st = await this.d.rest.info({ type: 'clearinghouseState', user: addr }, 2);
@@ -164,6 +164,8 @@ export class Scanner {
       apiErrors: this.d.rest.errors + (this.d.liqRest && this.d.liqRest !== this.d.rest ? this.d.liqRest.errors : 0),
       liq24h: tape.totals.h24.n,
       liqPending: this.confirmer.pending,
+      // Konta po transakcji jeszcze bez odczytu: liczba i czekanie (p50, p90, min); pole opcjonalne dla czytelników
+      dirty: this.d.book.dirtyStats(asOf),
     };
     let cohortsJson: string | null = null;
     if (this.d.cohorts) {
