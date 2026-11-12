@@ -6,6 +6,7 @@ import { pl } from '../../src/lessons/content/pl.ts';
 import { EXERCISES } from '../../src/lessons/exercises.ts';
 import { esc, layout } from './render.mjs';
 import { RESULTS_PATHS, resultsPage } from './results.mjs';
+import { NEWS_PATHS, whatsNewPage } from './whatsnew.mjs';
 
 const LESSONS = { pl, en };
 export const LANGS = ['pl', 'en'];
@@ -15,6 +16,7 @@ export const PATHS = {
   charts: { pl: 'wykresy/', en: 'en/charts/' },
   lessons: { pl: 'lekcje/', en: 'en/lessons/' },
   results: RESULTS_PATHS,
+  news: NEWS_PATHS,
 };
 const atlasPath = (lang, id) => `${PATHS.lessons[lang]}atlas/${id}/`;
 /** Względna ścieżka do korzenia desku ze strony pod `path`. */
@@ -466,12 +468,13 @@ function notFoundPage(site) {
 /**
  * Wszystkie strony serwisu: { path, lang, html, alternates?, card? }. `card` (dane karty podglądu linku) trafia do `<path>og.png`.
  * Karta desku (strona aplikacji, index.html) ma ścieżkę '' i nie ma HTML. `results` = pliki strony wyników z chwili
- * budowania (results.mjs, fetchResults); bez nich strona wyników powstaje z „—” i powodem.
+ * budowania (results.mjs, fetchResults); bez nich strona wyników powstaje z „—” i powodem. `news` = { changelog, tags }
+ * strony „Co nowego” (whatsnew.mjs); bez treści CHANGELOG strona też powstaje, z „—” i powodem.
  */
-export function sitePages(site, { results = {} } = {}) {
+export function sitePages(site, { results = {}, news = {} } = {}) {
   const out = [];
   for (const lang of LANGS) {
-    out.push(chartsPage(site, lang), lessonsPage(site, lang), resultsPage(site, lang, results));
+    out.push(chartsPage(site, lang), lessonsPage(site, lang), resultsPage(site, lang, results), whatsNewPage(site, lang, news, T[lang].footSite));
     const entries = LESSONS[lang].atlas.entries;
     entries.forEach((e, i) => out.push(atlasPage(site, lang, e, entries[i - 1], entries[i + 1])));
   }

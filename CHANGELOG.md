@@ -4,7 +4,18 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Strona „Co nowego”: `co-nowego/` i `en/whats-new/` (2026-11-12)
+<!-- co-nowego: grupa=blog | pl=Nowa strona „Co nowego”: historia HyperQuant prostym językiem | en=New What's new page: the history of HyperQuant in plain words -->
+
+#### Dodane
+- **Statyczna strona historii zmian** (`scripts/blog/whatsnew.mjs`, PL `co-nowego/`, EN `en/whats-new/`): oś czasu od pierwszej wersji, najnowsze na górze. Okresy według kamieni milowych (tagi `v*` z gita razem z nagłówkami wersji CHANGELOG; bez tagów w checkoutcie same nagłówki), każdy okres zwijany elementem `<details>` (najnowszy rozwinięty), w nim grupy Wykres; Prognozy i /wyniki; Rynki; Skaner i dane; Blog i strona z liczbą pozycji. Treść generowana przy buildzie z tego pliku, bez ręcznie wpisanych liczb; na dole link do repo i do pełnego CHANGELOG. hreflang PL/EN z `x-default` na EN, wpis w mapie strony, dane strukturalne `WebPage` i okruszki, CSP bez zmian, bez skryptów poza danymi strukturalnymi.
+- **Komentarz `co-nowego` pod każdą sekcją CHANGELOG** (`<!-- co-nowego: grupa=… | pl=… | en=… -->`, `ukryj` dla zmian czysto technicznych, `data=` dla sekcji bez daty w nagłówku; kilka komentarzy to kilka pozycji). Komentarze dopisane wstecz dla całej historii; starsze, bardzo techniczne bloki złączone w krótkie tytuły. Reguła w `CONTRIBUTING.md`.
+- **Link „Co nowego” / „What's new”** w stopce stron serwisu, pod wpisami bloga i w stopce aplikacji, obok wyników prognoz.
+- Wdrożenie (`static.yml`): checkout pobiera tagi (`fetch-tags: true`), historia commitów dalej płytka.
+- Testy: `scripts/blog/whatsnew.test.mjs` (kolejność okresów, wersje z jednego dnia w jednym okresie, grupy, `ukryj`, sekcja bez komentarza, zła grupa, zakazane słowo, EN, brak tagów, brak CHANGELOG, adresy, hreflang, mapa strony, link w stopce każdej strony, brak `<script>` poza ld+json; prawdziwy CHANGELOG: każda sekcja z komentarzem i datą, tytuły przez bezpieczniki słów).
+
 ### Rynki z rejestru: progi i formaty pod BTC, etap M1.4 (2026-11-12)
+<!-- co-nowego: grupa=rynki | pl=Inne rynki na wykresie z własnymi progami i krokiem ceny | en=Other markets on the chart with their own thresholds and price step -->
 
 #### Zmienione
 - **Progi w USD zależne od rynku** (`src/utils/marketCaps.ts`, `usdScale`): jedna skala progów wobec BTC. BTC, ETH, SOL i HYPE z jawnej tabeli (1; 0,5; 0,25; 0,25, czyli dotychczasowe progi dużego gracza), inny rynek z rejestru: średnia otwartych pozycji z 7 dni (`oiUsd7d`) wobec BTC, zaokrąglona w dół do 2 cyfr znaczących (skala ciągła: zmiana OI o 2% nie przeskakuje progu 2 razy), najmniej 0,01 (także bez pola OI). Skala mnoży próg dużego gracza (1 mln USD na BTC), próg domyślny i granice automatycznego progu dużego zlecenia (100 tys., 25 tys.–5 mln USD na BTC), najmniejszą ścianę po zamknięciu i kwotę kosztu zlecenia rynkowego w układzie „Paliwo” (100k na BTC, etykieta i opis z kwotą rynku do 2 cyfr znaczących, np. 16k, 4,9k). Na BTC wszystkie progi bez zmian (test).
@@ -14,22 +25,26 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 - **Tytuł grupy w wyborze rynku:** „Rynki tradycyjne (HIP-3)” zamiast „Akcje, indeksy, surowce”, bo giełdy HIP-3 notują też waluty (xyz:JPY, xyz:EUR).
 
 ### Wyniki: badanie wielu rynków w „Co się nie potwierdziło” (2026-11-12)
+<!-- co-nowego: grupa=prognozy | pl=Wyniki: badanie, czy inne rynki pomagają ocenić szansę dużego ruchu BTC | en=Results: a study of whether other markets help gauge the chance of a large BTC move -->
 
 #### Dodane
 - **Strona `wyniki/` i `en/results/`:** podsekcja z jednorazowym badaniem (nie z dziennika), czy inne rynki Hyperliquid poprawiają szansę dużego ruchu BTC w następnej godzinie ponad model samego BTC. Świece 1h 18.04–12.11.2026, 2818 godzin poza próbą, próg zapisany przed testem: przyrost BSS ≥ +0,010 z przedziałem 99%. Pięć hipotez (akcje i indeksy, zamknięta Wall Street, funding 20 rynków, złoto i waluty, alty) poniżej progu; liczby w `MARKETS_STUDY` (`scripts/blog/results.mjs`).
 
 ### Strażnik ciszy kanału transakcji osobno dla każdego rynku, etap M1.5 (2026-11-12)
+<!-- co-nowego: grupa=rynki | pl=Wykres wykrywa przerwę w transakcjach osobno na każdym rynku | en=The chart detects gaps in trades separately on each market -->
 
 #### Poprawione
 - **Wykres Pro, połączenie WebSocket** (`src/charts/pro/hl/stream.ts`): próg ciszy samego kanału transakcji nie jest już stałe 120 s, tylko większa z wartości 120 s i 20 × mediana odstępu między ostatnimi 50 wiadomościami z transakcjami na tym połączeniu (każdy rynek ma własne połączenie, więc i własny próg). Dopóki nie ma 50 odstępów, a także po każdym ponownym połączeniu, obowiązuje 120 s. Rynki z gęstym strumieniem (BTC, ETH, SOL, HYPE) zachowują się jak dotąd; na rynkach z naturalnymi kilkuminutowymi przerwami (np. BNB, XPL, xyz:GOLD) cisza nie powoduje już fałszywego ponownego łączenia i luki w pokryciu. Opcja `tradesStaleMs` jest teraz dolną granicą progu (domyślnie 120 s), a nie stałym progiem.
 
 ### Kolejka potwierdzeń likwidacji przetrwa restart (2026-11-12)
+<!-- co-nowego: grupa=skaner | pl=Taśma likwidacji nie gubi potwierdzeń po restarcie serwera | en=The liquidation tape keeps pending confirmations across server restarts -->
 
 #### Poprawione
 - **Skaner:** kolejka kandydatów do potwierdzenia likwidacji (`LiqConfirmer`) jest zapisywana w stanie serwera (`liq-<rynek>.json`, obok księgi adresów, nigdy publikowana) i odtwarzana przy starcie. Dotąd restart gubił kandydatów, których ponowny odczyt pozycji już nie wykryje, więc taśma traciła te likwidacje, a udział niepotwierdzonych spadał do zera. Przy odczycie tylko poprawne wpisy (adres, pozycja, okno fillów), najwyżej 500; kandydat z odczytem sprzed początku okresu obserwacji (restart z przerwą) znika bez wpisu, a dopiero z pozostałych kandydat starszy niż 24 h w chwili odczytu liczy się jako nieudany (bez zawyżania licznika nowego okresu). Starszy stan bez kolejki daje pustą kolejkę, jak dotąd.
 - **Taśma likwidacji tylko od początku okresu obserwacji (`since`):** nowy okres (start z przerwą ≥ 2 min albo przerwa WebSocket) usuwa też kandydatów z odczytem sprzed jego początku, bez zapytań i bez liczników, z liczbą w logu; zdarzenie sprzed początku okresu (kandydat z oknem przez granicę) nie trafia na taśmę i nie liczy się jako odrzucone. Dotąd kolejka w pamięci przeżywała przerwę WebSocket i mogła dopisać zdarzenie sprzed `since`. Wpis kolejki ze stanu wymaga też skończonego `prev.scannedAt` i `liqPx` > 0 (albo braku).
 
 ### Wykresy dla rejestru rynków, etap M1 (2026-11-12)
+<!-- co-nowego: grupa=rynki | pl=Wybór rynku z wyszukiwarką: wykresy także innych rynków Hyperliquid | en=Market picker with search: charts for other Hyperliquid markets too -->
 
 #### Dodane
 - **Rynki wykresów z rejestru `markets.json`** (`src/state/markets.ts`): lista pobierana tym samym mechanizmem co inne pliki repo danych (`usePublished`), wspólna dla wykresów, magazynów rynków i alarmów. Przed odpowiedzią i bez pliku (dziś 404, skaner nie jest jeszcze wdrożony) — 4 rynki domyślne: BTC, ETH, SOL, HYPE.
@@ -49,12 +64,14 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 - Link z nazwą rynku w dobrym formacie, ale spoza rejestru: po przełączeniu na BTC magazyn tej nazwy jest zamykany, a jej baza taśmy w przeglądarce usuwana (chyba że rynek ma alarm).
 
 ### Automatyczna weryfikacja dziennika z podsumowaniem (2026-11-12)
+<!-- co-nowego: ukryj -->
 
 #### Zmienione
 - **`ledger-verify.yml`** pobiera `ledger/BTC/summary.json` z `main` repo danych przed klonem dziennika (bez tokenu) i podaje go weryfikatorowi przez `--summary`. Miary podsumowania przeliczane z rekordów biegną teraz także w przebiegu stojącym za znaczkiem na stronie. Brak pliku: weryfikacja bez miar.
 - **Weryfikator:** podsumowanie z głową o większej liczbie linii niż pobrany dziennik (wyścig publikacji) jest pomijane z informacją, bez błędu; głowa spoza rekordów przy dzienniku co najmniej tak długim jak ona to dalej błąd.
 
 ### Weryfikator: kalibracja wariantu C i bloki hrel-v1 z podsumowania przeliczone z rekordów (2026-11-12)
+<!-- co-nowego: grupa=prognozy | pl=Weryfikator przelicza nowe prognozy z zapisanych rekordów | en=The verifier recomputes the new forecasts from the stored records -->
 
 #### Dodane
 - **Kalibracja wariantu C (`ab-v2`) w weryfikatorze** (`scripts/verify-ledger.mjs`, `abCalC`): osobna implementacja z rekordów dziennika: okresy 14 dni od epoki planu, pierwszy oceniany od granicy okresu nie wcześniejszej niż rejestracja planu, okres zakończony po końcu + 7 h 15 min; próba rozłączna to sloty o pełnej godzinie z parą A i C, obie rozstrzygnięte bez unieważnienia; trafienia 60% i 90% z kwantyli C i zwrotu, nie z zapisanych `in60`/`in90`. `checkMeasures` porównuje `abC.firstBlock`, granice ostatniego zakończonego okresu i `abC.last.cal` (`n`, `cov60`, `cov90`) dokładnie; od tej kalibracji zależy awans C.
@@ -64,6 +81,7 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 - Testy: `scripts/verify-ledger.test.mjs` (dziennik A/C z unieważnieniami i dziennik `hrel-v1` z remisami p, podsumowania ze skanera: poprawne przechodzą; zmienione `cov60`, `cov90`, `n`, `firstBlock`, ukryty okres, zmienione `t`, średnie p, częstość, odchylenie kwintyla, `n` bloku i brakujący blok wykryte; brak planu w pełnym dzienniku), `mcp/__tests__/scanner.test.ts`.
 
 ### Rejestr rynków markets.json (2026-11-12)
+<!-- co-nowego: grupa=rynki | pl=Lista rynków ustalana co dzień z danych według stałej reguły | en=The market list is set daily from data by a fixed rule -->
 
 #### Dodane
 - **Reguła `reg-v1` i format rejestru** (`src/utils/marketRegistry.ts`, bez sieci i bez stanu, wspólny dla skanera i strony): rynki wszystkich giełd perp Hyperliquid, także HIP-3 (`xyz:NVDA`), rangowane średnią otwartych pozycji w USD z 7 dni UTC. Rynek wchodzi po 3 kolejnych zamkniętych dniach w pierwszej 20, wychodzi po 7 kolejnych dniach poza 30. miejscem; BTC, ETH, SOL i HYPE są zawsze; rynki wycofane i z zerowym OI nie wchodzą, członek wycofany (`isDelisted`) wypada od razu. Przez histerezę i 4 stałe rynki plik może mieć więcej niż 20 rynków. Rynek, którego nie ma w jednej godzinnej odpowiedzi giełdy, zostaje z parametrami i `since` (także stałe rynki); wypada dopiero, gdy nie było go w żadnej próbce zamkniętego dnia UTC, w którym jego giełda była pobrana. Rekord `{coin, dex, oiUsd7d, rank, szDecimals, maxLeverage, since, scanner}`, na górze `asOf` i `rule`. Strażnik formatu `isMarketRegistry` i `marketsOrDefault`: bez pliku albo przy złym formacie 4 dotychczasowe rynki (front jeszcze z niego nie korzysta).
@@ -72,6 +90,7 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 - Testy: `src/utils/__tests__/marketRegistry.test.ts` (wejście po 3 dniach, przerwana seria, miejsca 21–30 zostają, wyjście po 7 dniach, stałe rynki, wycofane i zerowe OI, kilka giełd z HIP-3, restart, brak rynku w jednej godzinnej odpowiedzi — miejsce 20, członek ze strefy 21–30, BTC — i przez cały dzień, rotacja giełd, strażnik, rynki domyślne), `backend/scanner/__tests__/marketRegistryRunner.test.ts` (fikstury API, wagi, okno startu, 25 giełd: najwyżej 19 zapytań i koniec przed slotem, rotacja, wejścia i wyjścia, restart, awarie giełd), `scripts/check-data-health.test.mjs` (wiek i prywatność `markets.json`).
 
 ### Nowa prognoza hrel-v1: duży ruch jak na tę godzinę (2026-11-12)
+<!-- co-nowego: grupa=prognozy | pl=Nowa prognoza: szansa dużego ruchu jak na tę godzinę dnia | en=New forecast: the chance of a large move for this hour of the day -->
 
 #### Dodane
 - **Prognoza `hrel-v1`** (`src/utils/hourRel.ts`, model `hrel-logit-v1`). Duży ruch = zakres godziny UTC (`ln(high / low) × 10⁴`) powyżej mediany tej samej godziny z 20 ostatnich wcześniejszych dni tego samego typu (robocze albo weekend UTC, szukane do 80 dni wstecz), więc baza to stałe 50%. Cechy ze świec 1h Hyperliquid zamkniętych do początku godziny hs: `z = clip(ln(rng / thr), ±1,5)`, r1 (godzina przed hs), r3 i r24 (średnie z 3 i 24 godzin). Szanse dla godzin hs … hs + 3 h z regresji logistycznej z wagami z uczenia na latach 2020–2023, bez późniejszego strojenia. Kot, `cat-cal-v1`, model godziny i ich rekordy bez zmian.
@@ -89,6 +108,7 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 - **Przerwa źródła świec nie jest brakiem świecy** (przed rejestracją planu): `null` dla godziny u i `void` dla całego rekordu `hrel` powstają tylko wtedy, gdy źródło zwróciło świecę późniejszą niż u, a świecy u nie dało (nadal dopiero 6 h po hs + 4 h). Przy przerwie sieci albo API, także wielogodzinnej przy żywym procesie, rozstrzygnięcie czeka na świece; inaczej weryfikator z `--market` zgłaszałby „null mimo świecy rynku” przez ok. 100 dni bez oszustwa. Warunek dopisany do zdania `resolution` w planie `hrel-v1` (nowy hash planu przypięty w teście); `checkHrelMarket` zgłasza także `void` przy świecy rynku. Testy: przerwa źródła 8 h bez rekordu `null`, po powrocie świec pełne rozstrzygnięcie; prawdziwy brak świecy przy późniejszej — `null` po 6 h jak dotąd.
 
 ### Szlif 9: rynki wynikowe HIP-4 i wspólna zasada warstw (2026-11-12)
+<!-- co-nowego: grupa=wykres | pl=Spójniejsze warstwy wykresu i progi rynków wynikowych HIP-4 | en=More consistent chart layers and HIP-4 outcome market thresholds -->
 
 #### Zmienione
 - **Progi HIP-4 na wykresie** (`src/charts/pro/chart/hip4Select.ts`, `hip4Layer.ts`): na komputerze najwyżej 3 progi najbliższe ceny nad nią i 3 pod nią, na telefonie tylko najbliższy; podpis skrócony („> 74 000 · rynek 41% · model 38%”, termin jest w panelu); dalsze płynne progi legenda podaje jako liczbę. Dotąd linia z długim podpisem dla każdego płynnego rynku w widoku.
@@ -101,6 +121,7 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 - **CONTRIBUTING:** wspólna zasada sześciu punktów dla warstw rysujących obiekty na polu świec.
 
 ### Dziennik prognoz: wariant C prognozy zwrotu 1 h w teście A/B (`ab-v2`) (2026-11-12)
+<!-- co-nowego: grupa=prognozy | pl=Test A/B nowej wersji prognozy zwrotu na 1 godzinę | en=A/B test of a new version of the 1-hour return forecast -->
 
 #### Dodane
 - **Wariant C jako przekształcenie kwantyli A** (nowy `src/utils/rvMix.ts`): krok poziomu ze zmienności zrealizowanej 12 zamkniętych świec 5m przed slotem (`rv60`, log-zwroty zamknięcie do zamknięcia, świeca w toku pominięta): `x = clip(½·ln(rv60/σA²), ±1,5)`, `q1 = qA·exp(c + κ·x)`; krok kształtu: mieszanina skali z dziewięciowęzłową kwadraturą Gaussa–Hermite’a (węzły i wagi jako stałe), kwantyle bisekcją. Stałe `κ = 0,5`, `c = −0,05`, `τ = 0,5`. Na trzech zestawach wzorcowych z niezależnej implementacji różnica kwantyli C najwyżej 5·10⁻⁷ (tolerancja 1e-5).
@@ -113,6 +134,7 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 - Testy: `src/utils/__tests__/rvMix.test.ts` (wzorce w `fixtures/rvMixReference.json`, τ = 0, symetria, przypadki brzegowe, kalibracja na 20 000 syntetycznych zwrotów: C 0,58–0,62, A ponad 0,66; rv60 bez świecy w toku), `backend/scanner/__tests__/variantC.test.ts`, `ledgerRunner.test.ts` (plan raz i przed pierwszym C), `scripts/verify-ledger.test.mjs` (zmieniony kwantyl, stała, x, plan, C przed planem, rv60), `src/views/after/__tests__/modelAbCCard.test.tsx`, `mcp/__tests__/scanner.test.ts`. Na serwerze działa dopiero po podpisanym tagu.
 
 ### Zakresy P/b (Nill): bez zakresu w budowie, wypełnienie od potwierdzenia, 2 + 2 najbliższe poziomy (2026-11-12)
+<!-- co-nowego: grupa=wykres | pl=Zakresy P/b: tylko gotowe zakresy i dwa najbliższe poziomy z każdej strony | en=P/b ranges: only completed ranges and the two nearest levels on each side -->
 
 Na danych stałych `ui:check` (Kokpit 5m z włączonym wskaźnikiem, zegar 24.10.2026 21:29 UTC; pudełka / linie poziomów / 👀): 1440 × 900 — 1 / 8 / 0 → 0 / 4 / 0; 390 × 844 — 1 / 8 / 0 → 0 / 4 / 0 (wybór warstwy, nie piksele; linie liczone także poza widoczną skalą ceny). Jedyne pudełko „przed” to zakres w budowie; na tych danych nie ma zakresu potwierdzonego, więc reguły pudełek (wypełnienie od potwierdzenia, aktywny i ostatni zakończony, 3 ostatnie 👀) sprawdzają testy jednostkowe, a `ui:check` pilnuje limitów. Liczby „przed” zmierzone na stronie z `main` z tymczasowym licznikiem w warstwie (bez commita).
 
@@ -128,18 +150,21 @@ Na danych stałych `ui:check` (Kokpit 5m z włączonym wskaźnikiem, zegar 24.10
 - Testy: `pbSelect.test.ts` (aktywny i ostatni zakończony, bez zakresu w budowie, wypełnienie od świecy potwierdzenia, 3 ostatnie 👀, 2 + 2 najbliższe poziomy, legenda zakresu w budowie, stan chwili X tylko z zakresów potwierdzonych do X na prefiksach świec, zdanie w opisie PL i EN).
 
 ### Licencja danych dziennika i zastrzeżenie bloga (2026-11-12)
+<!-- co-nowego: grupa=prognozy | pl=Dane dziennika prognoz na otwartej licencji CC BY 4.0 | en=Forecast ledger data under the open CC BY 4.0 license -->
 
 #### Zmienione
 - **Dane dziennika prognoz na licencji CC BY 4.0:** strona `wyniki/` i `en/results/` podaje licencję w sekcji weryfikacji (link do tekstu licencji, prośba o podanie źródła), dane strukturalne `Dataset` mają pole `license`, README opisuje ją obok licencji MIT kodu.
 - **Zastrzeżenie bloga:** stopka stron, zastrzeżenie pod wpisami i strona wyników mówią „nie porada inwestycyjna ani wezwanie do transakcji” („not investment advice nor a call to trade”) zamiast „sygnał do transakcji”.
 
 ### Skaner: pomiar prywatności kohorty wielorybów przy ziarnie 15 min, 1 h i 4 h (2026-11-12)
+<!-- co-nowego: grupa=skaner | pl=Pomiar, czy dane o grupie dużych kont nie zdradzają pojedynczych kont | en=A check that whale cohort data does not reveal single accounts -->
 
 #### Dodane
 - **`status.json`: opcjonalne pole `whalePrivacy`** (`backend/scanner/cohortEngine.ts`: `whalePrivacy`, `passesPrivacy`; `backend/scanner/scanner.ts`). Z ostatnich 7 dób, osobno dla zamkniętych kubełków 15 min (dzisiejsze ziarno), 1 h i 4 h (wyrównanych do UTC): `obs` — wszystkie okna obserwowane w całości (także bez aktywności wielorybów, pokazane jako zero), `n` — z nich kubełki z aktywnością wielorybów, `ok` — te, w których kohorta wielorybów przechodzi próg prywatności (co najmniej 5 uczestników i nikt powyżej 50% obrotu). Próg sprawdza ta sama funkcja co ukrywanie komórek w `cohorts/BTC.json`. Okno 1 h i 4 h liczone tylko, gdy wszystkie jego kwadranse były obserwowane w całości. Same liczniki: komórki 1 h i 4 h ani adresy nie są publikowane. Stan pomiaru jest częścią zapisu stanu kohort, więc przetrwa restart skanera; stan zapisany przed tą wersją zaczyna liczniki od zera. Bez silnika kohort `status.json` bez zmian. Udział okien, które wolno pokazać: (ok + obs − n) / obs. Pomiar służy decyzji o drabinie ziarnistości po 7 dobach.
 - Testy: `backend/scanner/__tests__/whalePrivacy.test.ts` (trzech uczestników w kwadransie i sześciu w godzinie: `m15.ok = 0`, `h1.ok = 1`; dominacja ponad 50%; okno 4 h; brakujący kwadrans; okno 7 dób; kwadrans obserwowany częściowo; restart i stary stan), asercje `status.json` w `io.test.ts`.
 
 ### Zegar ruchu w „Przed sesją” i w MCP (2026-11-12)
+<!-- co-nowego: grupa=prognozy | pl=Zegar ruchu w „Przed sesją”: w których godzinach rynek zwykle rusza się najmocniej | en=Move clock in Pre-session: the hours in which the market usually moves the most -->
 
 #### Poprawione
 
@@ -156,6 +181,7 @@ Na danych stałych `ui:check` (Kokpit 5m z włączonym wskaźnikiem, zegar 24.10
 - Testy: `src/utils/__tests__/moveClock.test.ts`, `src/views/before/__tests__/MoveClockPanel.test.tsx` (bez „%” przy najbliższej godzinie, „—” z powodem, strażniki rady i kierunku, PL i EN), `moveLevel.test.tsx`, `ledgerRunner.test.ts` (sekcja `cat.clock`), `mcp/__tests__/scanner.test.ts`.
 
 ### Kot: kalibracja szansy dużego ruchu cat-cal-v1 w dzienniku (2026-11-12)
+<!-- co-nowego: grupa=prognozy | pl=Kot Schrödi: kalibracja szansy dużego ruchu zapisana w dzienniku | en=Schrödi the cat: large-move chance calibration recorded in the ledger -->
 
 #### Dodane
 - **Kalibracja `cat-cal-v1`** (`src/utils/catCal.ts`, `backend/scanner/ledgerRunner.ts`, `backend/scanner/forecaster.ts`). Ranking `pBig` kota jest dobry, ale procenty są zaniżone (średnie `pBig` ok. 0,50 wobec częstości ok. 0,59). Nowe rekordy kota dostają pole `cal: { v, p, a, d, n, nT }`: przesunięcie logitu `pBig` dopasowane do par kota tego samego modelu (`mh`) rozstrzygniętych w dzienniku przed wydaniem, z 14 dni (a: wariancja a priori 1,0; poprawka typu dnia d, robocze albo weekend UTC: 0,25; Newton 25 kroków; przesunięcie przycięte do ±1,5; od 96 par, inaczej bez pola). `pBig`, model kota, próg i model godziny bez zmian; stare rekordy nie są ruszane.
@@ -166,6 +192,7 @@ Na danych stałych `ui:check` (Kokpit 5m z włączonym wskaźnikiem, zegar 24.10
 - Testy: `src/utils/__tests__/catCal.test.ts` (trzy zestawy wzorcowe policzone niezależnie w Pythonie, brzegi, dane syntetyczne 20 dni), `backend/scanner/__tests__/ledgerRunner.test.ts` (plan raz przed pierwszym `cal`, `cal` z par dziennika, brak `cal` poniżej 96 par i przy innym modelu, weryfikator wykrywa zmienione `cal.p`, `a`, `cal` sprzed planu i rozstrzygnięcie zapisane po prognozie, podsumowanie).
 
 ### Strona wyników prognoz: `wyniki/` i `en/results/` (2026-11-12)
+<!-- co-nowego: grupa=prognozy | pl=Nowa strona „Wyniki prognoz” z rozliczeniem dziennika | en=New Forecast results page with the ledger scorecard -->
 
 #### Dodane
 - **Statyczna strona rozliczenia dziennika prognoz** (`scripts/blog/results.mjs`, wpięta w `scripts/blog/pages.mjs`): PL pod `wyniki/`, EN pod `en/results/`, z `hreflang` (PL, EN, x-default) i w mapie strony. Siedem sekcji w stałej kolejności: wstęp z chwilą podsumowania („stan na …”) i linkiem do Po sesji; prognozy zwrotu 1 h i 4 h (n, CRPSS z przedziałem, pokrycie 60% i 90%, test Kupca 90% i 60% na próbie rozłącznej, udział nieskończonych przedziałów ACI z opisem „90% z konstrukcji”); dotknięcia (Brier, BSS wobec częstości i wobec bazy odległości, oba z przedziałem, tylko w parze); kot (AUC, BSS wobec stałej częstości i bazy sezonowej, średnie p i częstość z koszyków niezawodności, zdanie o kalibracji w toku); plany ocen (`ab-v1`, `schrodi-trust-v1`, `schrodi-hour-v1` ze startem, kryterium i stanem z podsumowania; plan pojawia się dopiero z rekordem w dzienniku, bez zapowiedzi); niezależna weryfikacja (znaczek zgodna / niezgodna / nieaktualna po 36 h, czas i link do przebiegu, komenda `node scripts/verify-ledger.mjs --dir ../ledger`); „Co się nie potwierdziło” (brak potwierdzenia, nie obalenie: reguły katalogu laboratorium bez efektu w teście historycznym albo z efektem wykluczonym w teście do przodu, bez kontroli i bez reguł z za małą próbą, oraz zamknięte okresy A/B, w których B nie była trafniejsza).
@@ -176,6 +203,7 @@ Na danych stałych `ui:check` (Kokpit 5m z włączonym wskaźnikiem, zegar 24.10
 - Testy: `scripts/blog/results.test.mjs` (strona z fikstury z 7 sekcjami, dzisiejsze podsumowanie i brak plików z „—”, mapa strony i stopki, brak `script` poza danymi strukturalnymi, bezpieczniki tytułu Klatki na tekście obu wersji).
 
 ### Taśma likwidacji: kandydat 24 h, kolejność według wartości, udział niepotwierdzonych (2026-11-12)
+<!-- co-nowego: grupa=skaner | pl=Taśma likwidacji: największe na górze i udział jeszcze niepotwierdzonych | en=Liquidation tape: largest first, with the share still unconfirmed -->
 
 #### Zmienione
 - **Kolejka potwierdzeń likwidacji** (`backend/scanner/liqDetect.ts`, `LiqConfirmer`): kandydat ważny 24 h zamiast 30 min (wcześniej 47% kandydatów przepadało jako „nieudani”, gdy kolejka albo wycofanie API trwały dłużej); najpierw największe pozycje (nominał przy cenie likwidacji); tempo 3 zapytania/min rosnące z kolejką tak, by przerobić ją w ~10 min (najwyżej 12/min); przepełniona kolejka (500) odrzuca najmniejszą pozycję, nie najstarszego kandydata.
@@ -184,6 +212,7 @@ Na danych stałych `ui:check` (Kokpit 5m z włączonym wskaźnikiem, zegar 24.10
 - Testy: `backend/scanner/__tests__/liqBacklog.test.ts`, `mcp/__tests__/scanner.test.ts`; test 30-minutowego terminu w `liqDetect.test.ts` przestawiony na 24 h.
 
 ### RVOL według godziny w Nowym Jorku, dni robocze i weekend osobno (2026-11-12)
+<!-- co-nowego: grupa=wykres | pl=Względny wolumen według godziny w Nowym Jorku, weekend osobno | en=Relative volume by New York hour, weekends counted separately -->
 
 #### Zmienione
 - **RVOL: koszyk to godzina zegarowa w Nowym Jorku, nie UTC** (`src/utils/rvol.ts`: `rvolSeries`, `rvolHour`; wskaźnik RVOL na wykresie, liczba RVOL w nagłówku układu, MCP `session_context.rvolHour`). Wolumen przesuwa się razem z czasem w USA, więc godzina otwarcia NY ma tę samą bazę przed zmianą czasu i po niej (wcześniej przez kilka tygodni po zmianie baza mieszała godzinę otwarcia z godziną sąsiednią). Baza to mediana tej samej godziny z 20 ostatnich dni tego samego typu: dni handlu i weekend osobno, przy czym weekend trwa od piątku 17:00 do niedzieli 18:00 czasu nowojorskiego (jak przerwa CME; na 208 dniach świec 1h niedziela wieczorem NY ma wolumen 1,55 razy większy niż wtorek–czwartek o tej godzinie, a piątek wieczorem 0,55, więc granica według daty dawała RVOL ok. 1,7 w niedzielę wieczorem i 0,5–0,6 w piątek i sobotę wieczorem), szukane do 80 dni wstecz; mniej niż 10 dni → „—” z powodem. Godzina w toku nadal bez wartości na wykresie, a w nagłówku skalowana do upływu godziny. Nagłówek i MCP pobierają do tego 81 dni świec 1h (wcześniej 20). Wskaźnik na wykresie ładuje co najmniej 14 dni historii (10 dni roboczych); świeca weekendowa ma wartość dopiero przy ok. 5 tygodniach historii.
@@ -192,6 +221,7 @@ Na danych stałych `ui:check` (Kokpit 5m z włączonym wskaźnikiem, zegar 24.10
 - Testy: `src/utils/__tests__/rvolNy.test.ts` (zmiana czasu 1.11.2026 i 8.03.2026, weekend osobno, mniej niż 10 dni, typowa szerokość godziny, bootstrap), nowe asercje `sample` w testach MCP `market_brief` i `session_context`; fikstury dłuższe o dni tego samego typu.
 
 ### Poziomy dnia i linie sesji: tylko bieżący i poprzedni dzień (2026-11-12)
+<!-- co-nowego: grupa=wykres | pl=Czytelniejsze poziomy dnia i linie sesji: tylko dziś i wczoraj | en=Clearer day levels and session lines: today and yesterday only -->
 
 Na danych stałych `ui:check` (zegar 24.10.2026 21:29 UTC): „Mapa dnia” 1440 × 900, wykres 4h — 30 linii poziomów dnia → 3; „Rozliczenie doby” 30m, 1440 — 9 linii poziomów i 8 linii otwarć sesji → 6 i 6 (wybór warstwy, nie piksele). Telefon 390 × 844 bez zmian: 3 linie poziomów, linii sesji brak (układy telefonu ich nie włączają). Liczby „przed” zmierzone na stronie z `main` z tymczasowym licznikiem w nakładce (bez commita).
 
@@ -205,6 +235,7 @@ Na danych stałych `ui:check` (zegar 24.10.2026 21:29 UTC): „Mapa dnia” 1440
 - Testy: `levelsSelect.test.ts` (bieżący i poprzedni dzień poniżej 4h, od 4h tylko bieżący, brak dni z przyszłości, niezależność od głębokości historii, najwyżej 6 linii sesji z nazwą przy trzech ostatnich, sesja przyszła bez linii, zdanie w opisie PL i EN).
 
 ### Skaner: budżet odczytów pozycji (2026-11-12)
+<!-- co-nowego: grupa=skaner | pl=Skaner odczytuje pozycje równiej, bez pomijania kont | en=The scanner reads positions more evenly, without skipping accounts -->
 
 #### Zmienione
 - **Osobne budżety wag** (`backend/scanner/config.ts`, `main.ts`, `scanner.ts`): potwierdzenia likwidacji (`HQ_LIQ_WEIGHT_PER_MIN`, domyślnie 90) i prognozy dziennika, rynek HIP-4 i archiwum świec (`HQ_FORECAST_WEIGHT_PER_MIN`, 120) mają własne limitery, więc odczyty pozycji dostają cały `HQ_WEIGHT_PER_MIN` (240 wag = 120 odczytów/min); potwierdzenia we własnej pętli. Limitery są niezależne: 429 na jednym nie wstrzymuje pozostałych. Suma budżetów 650–760 wag/min (650 przy wartościach domyślnych) z limitu 1200/min na IP; konfiguracja dopuszcza najwyżej 800.
@@ -214,6 +245,7 @@ Na danych stałych `ui:check` (zegar 24.10.2026 21:29 UTC): „Mapa dnia” 1440
 - Strona: opis częstości odczytu mapy w tabeli źródeł (`src/views/sources/LineageTable.tsx`) bez dawnych terminów.
 
 ### Dziennik prognoz: test Kupca 60%, PIT, przedziały CRPSS i BSS z bootstrapu po dobach, ACI i baza sezonowa kota (2026-11-12)
+<!-- co-nowego: grupa=prognozy | pl=Dziennik prognoz: nowe miary trafności z przedziałami niepewności | en=Forecast ledger: new accuracy measures with uncertainty intervals -->
 
 Na prawdziwym dzienniku (gałąź `ledger`, głowa podsumowania z 12.11.2026 03:35 UTC, 23 940 linii) nowe miary dają: 1 h — Kupiec 60% na 495 prognozach rozłącznych pokrycie 72,3% (p < 0,0001), PIT χ² = 42,5 (p < 0,0001), CRPSS 0,017 w przedziale [0,0018; 0,0349] z 22 dób; 4 h — CRPSS 0,0036 [−0,0181; 0,0249] z 21 dób, nieskończony przedział ACI w 8,3% prognoz; dotknięcia — BSS wobec częstości 0,402 [0,332; 0,471], wobec odległości 0,103 [0,036; 0,174]; kot — BSS dużego ruchu wobec stałej częstości z okna 0,363, wobec bazy sezonowej 0,052 [−0,088; 0,197] (1 259 prognoz, 14 dób). Weryfikator odtworzył wszystkie 45 pól z rekordów bez rozbieżności.
 
@@ -229,6 +261,7 @@ Na prawdziwym dzienniku (gałąź `ledger`, głowa podsumowania z 12.11.2026 03:
 - Testy: `backend/scanner/__tests__/ledgerMeasures.test.ts` (wartości wzorcowe Kupca i PIT policzone ręcznie, procedura losowania, baza sezonowa), `scripts/verify-ledger.test.mjs` (ten sam dziennik: te same granice w podsumowaniu i weryfikatorze; wykrycie zmienionej granicy; stare podsumowanie), `mcp/__tests__/scanner.test.ts` (nowe pola i stare podsumowanie), `integrations/__tests__/skill.test.ts`, `src/views/after/__tests__/retCard.test.tsx`. Na serwerze zmiana podsumowania działa dopiero po podpisanym tagu.
 
 ### Oczekiwany zakres sesji: profil godzin × świeży poziom (2026-11-12)
+<!-- co-nowego: grupa=prognozy | pl=Nowa metoda oczekiwanego zakresu sesji Londynu i Nowego Jorku | en=New method for the expected London and New York session range -->
 
 #### Zmienione
 - **Oczekiwany zakres sesji Londynu i NY liczony nową metodą „profil × poziom”** (`src/utils/sessionDay.ts`: `expectedSessionRange`, `src/utils/sessionFacts.ts`: `expectedFrom`, `src/charts/pro/chart/layoutInputs.ts`, `layoutNumbers.ts`, `src/utils/sessionReview.ts`, `src/views/after/SessionReview.tsx`, MCP `session_context` i `session_review`). Dotychczasowy model zaniżał zakres (średni budżet 122% w Londynie i 144% w NY na 60 sesjach). Teraz wszystko ze świec 1h rynku zamkniętych przed godziną otwarcia sesji:
@@ -242,6 +275,7 @@ Na prawdziwym dzienniku (gałąź `ledger`, głowa podsumowania z 12.11.2026 03:
 
 
 ### Profil TPO i profile dób: krótsze słupki, pełny profil dwóch ostatnich dób, 3 nagie POC (2026-11-12)
+<!-- co-nowego: grupa=wykres | pl=Profile dób: krótsze słupki, pełny profil tylko dwóch ostatnich dób | en=Daily profiles: shorter bars, full profile for the last two days only -->
 
 Na danych stałych `ui:check` (zegar 24.10.2026 21:29 UTC) TPO 30m: „Mapa dnia” 1440 × 900 — 14 obiektów, pole pod słupkami 8,8% → 14 i 4,1%; telefon 390 × 844 — 9 i 13,3% → 9 i 12%; „Rozliczenie doby” 1440 — 21 i 6,7% → 15 i 1,8%; telefon — 9 i 13,3% → 9 i 12%. Profile dób 4h („Mapa dnia”, 1440): 22 obiekty i 2,5% → 22 i 0,8%. Liczby „przed” zmierzone na stronie z `main` z tymczasowym licznikiem w warstwach (bez commita). Obiekt: profil doby (słupki z obrysem), linia POC, nagi POC, pasek value area albo pierwszej godziny, odcinek znaczników wydruków albo ogonów, podpis delty.
 
@@ -260,6 +294,7 @@ Na telefonie dzisiejsza doba zaczyna się przed lewą krawędzią wykresu; przy 
 
 
 ### Wykres Pro: uśpienie karty nie liczy się jako nagrana taśma, delta i CVD widzą luki (2026-11-12)
+<!-- co-nowego: grupa=wykres | pl=Po uśpieniu komputera wykres zaznacza lukę w taśmie, delcie i CVD | en=After the computer sleeps, the chart marks the gap in the tape, delta and CVD -->
 
 #### Naprawione
 - **Pokrycie taśmy kończy się na ostatniej wiadomości z transakcjami, nie w chwili wykrycia zerwania** (`src/charts/pro/hl/stream.ts`): po uśpieniu karty albo komputera strażnik połączenia budził się po kilku minutach i zamykał nagranie z czasem wybudzenia, więc cały sen liczył się jako nagrany: świeca z luką była pełna (`complete`), a historia z serwera nie dociągała luki. Teraz `onClosed` dostaje czas ostatniej wiadomości z transakcjami tego połączenia (bez niej: ostatniej wiadomości).
@@ -271,6 +306,7 @@ Na telefonie dzisiejsza doba zaczyna się przed lewą krawędzią wykresu; przy 
 
 
 ### Bąble zleceń, ściany i serie: reguła przyczynowa, bez wyboru największych w oknie (2026-11-11)
+<!-- co-nowego: grupa=wykres | pl=Bąble zleceń, ściany i serie oceniane tylko z danych dostępnych w danej chwili | en=Order bubbles, walls and runs judged only from data available at the time -->
 
 Na nagranej dobie 24.10.2026 (powtórka 19:30, Kokpit 1m, tylko warstwa bąbli) wykres rysował 83 bąble zleceń na 1440 × 900 i 17 na 390 × 844; po zmianie 14 i 0 (`npm run ui:check`, wybór warstwy, nie piksele; to sobotni wieczór, spokojna taśma). Ściany i serie w scenariuszu ścian (ta sama chwila, warstwy bąbli oraz serii i ścian): 10 → 4. Liczby „przed” zmierzone na stronie z `main` z tymczasowym licznikiem w warstwie (bez commita). Na stałych danych na żywo taśmy nie ma (atrapa strumienia nie wysyła transakcji), więc pomiar jest na powtórce.
 
@@ -300,6 +336,7 @@ Powtórzenie dla bąbli kodem warstwy (`selectBubbles` z pokryciem taśmy jak w 
 
 
 ### Blog: notki „aktualizacja” poza indeksem, rozliczenie tygodnia z BSS w parze (2026-11-12)
+<!-- co-nowego: grupa=blog | pl=Blog: krótkie aktualizacje poza wyszukiwarkami, uczciwsze rozliczenie tygodnia | en=Blog: short updates kept out of search engines, a fairer weekly review -->
 
 #### Zmienione
 - **Notki „aktualizacja” z `noindex,follow` i poza mapą witryny** (`scripts/blog/render.mjs`, `isUnindexed`, `postPage`, `sitemapXml`): wpisy `RRRR-MM-DD-aktualizacja-GG` (jeden szablon kilka razy dziennie) zostają na liście wpisów, w archiwum i w RSS. Na 122 wpisach: 36 notek z `noindex,follow`, `sitemap.xml` 136 adresów zamiast 172; pozostałe wpisy, w tym notki rozliczeń, indeksowane. CSP i rejestr `source.json` bez zmian. Notki z `noindex` nie są zgłaszane do IndexNow (`scripts/blog/indexnow.mjs`); przy ich zmianie zgłaszana jest tylko strona bloga.
@@ -309,6 +346,7 @@ Powtórzenie dla bąbli kodem warstwy (`selectBubbles` z pokryciem taśmy jak w 
 
 
 ### Angielski pierwszym językiem powłoki (E1) (2026-11-12)
+<!-- co-nowego: grupa=blog | pl=Aplikacja najpierw po angielsku; blog dalej po polsku | en=The app opens in English first; the blog stays in Polish -->
 
 #### Zmienione
 - **`index.html` po angielsku** (to, co widzi wyszukiwarka i podgląd linku, zanim aplikacja wykryje język): `lang="en"`, tytuł, opis, słowa kluczowe, Open Graph (`og:locale` `en_GB`, alternatywa `pl_PL`), Twitter, opis JSON-LD (`inLanguage` `["en", "pl"]`) i blok `noscript` (polskie strony jako drugie, z `lang="pl"`). Kanał RSS zostaje polski, z tytułem „HyperQuant · BTC analysis (in Polish)”. Po starcie aplikacja dalej ustawia język czytelnika (`src/main.tsx`).
@@ -318,6 +356,7 @@ Powtórzenie dla bąbli kodem warstwy (`selectBubbles` z pokryciem taśmy jak w 
 - Testy: `src/shell/__tests__/englishShell.test.ts` (index.html i manifest bez polskich znaków, `lang` `en`), `scripts/blog/blog.test.mjs` (404).
 
 ### Badania: nazwy bez kierunku, bez martwego sygnału i bez dźwigni 100× (2026-11-12)
+<!-- co-nowego: grupa=wykres | pl=Badania: opisy przeszłości bez sugestii, co zrobi cena | en=Research: descriptions of the past without hints about what price will do -->
 
 #### Zmienione
 - **Stan wyczerpania przepływu opisuje przeszłość** (`src/types/trading.ts`, `src/utils/quantMathEngine.ts`): `BULLISH_EXHAUSTION_TOP_RISK` → `BUY_FLOW_ABSORBED`, `BEARISH_EXHAUSTION_BOTTOM_REVERSAL` → `SELL_FLOW_ABSORBED`, `AGGRESSIVE_BUY/SELL_CONTINUATION` → `AGGRESSIVE_BUY/SELL_DOMINANT` (bez stron rynku, szczytu, dołka i kontynuacji, jak nazwy reżimów).
@@ -328,6 +367,7 @@ Powtórzenie dla bąbli kodem warstwy (`selectBubbles` z pokryciem taśmy jak w 
 - Testy: `src/utils/__tests__/researchHonesty.test.tsx` (nazwy w src, brak sygnału w silniku dźwięku, dźwignie mapy ≤ 40×).
 
 ### Kto handluje: okno klasy kont pełne tylko w jednym zakresie numeracji (2026-11-11)
+<!-- co-nowego: grupa=wykres | pl=Kto handluje: poprawne okno klasy kont na przełomie doby | en=Who is trading: correct account class window across midnight UTC -->
 
 #### Naprawione
 - **Okno 60 min klasy kont (Kto handluje) przez granice numeracji kont** (`src/charts/pro/core/players.ts`, `src/charts/pro/core/accountScope.ts`): w historii serwera konto ma numer ważny w dobie UTC (starsze pliki: w godzinie), a na żywo adres, więc okno przez przełom doby, przez granicę godziny starego pliku albo przez chwilę otwarcia strony liczy jedno konto jako dwa. Takie okno ma teraz `complete: false` (wcześniej „pełne” znaczyło tylko taśmę z kontami przez samą świecę); pełne okno musi też w całości leżeć w taśmie z kontami. Sprawdzenie zakresu (`oneAccountScope`) przeniesione z `indicators/registry.ts` do wspólnego modułu.
@@ -336,6 +376,7 @@ Powtórzenie dla bąbli kodem warstwy (`selectBubbles` z pokryciem taśmy jak w 
 - Testy: `src/charts/pro/__tests__/players.test.ts` (przełom doby, granica godziny starego pliku, historia i konta na żywo w jednym oknie, okno poza taśmą), `src/charts/pro/__tests__/whoRetention.test.ts` (plik historii wczytany po sprzątaniu).
 
 ### Zakres początkowy sesji: pełny rysunek tylko bieżącej sesji, rozszerzenia po wybiciu (2026-11-12)
+<!-- co-nowego: grupa=wykres | pl=Zakres początkowy sesji: pełny rysunek tylko bieżącej sesji | en=Initial balance: full drawing for the current session only -->
 
 Na danych stałych `ui:check` (zegar 24.10.2026 21:29 UTC, sesja nowojorska) warstwa rysowała 7 obiektów w „Aukcja i otwarcie” 5m na 1440 × 900 i 7 na 390 × 844 oraz 63 i 14 w „Rozliczeniu doby” 30m; po zmianie 5 i 5 oraz 7 i 7 (wybór warstwy, nie piksele; obiekt to prostokąt albo linia, bez linii otwarć sesji). Liczby „przed” zmierzone na stronie z `main` z tymczasowym licznikiem w nakładce (bez commita).
 
@@ -349,6 +390,7 @@ Na danych stałych `ui:check` (zegar 24.10.2026 21:29 UTC, sesja nowojorska) war
 - Testy: `ibSelect.test.ts` (bieżąca sesja pełna, poprzednia same linie, starsze nic; bez rozszerzeń, dopóki cena zamyka się w zakresie; rozszerzenia po pierwszym zamknięciu poza zakresem i tylko po tej stronie; świeca w trakcie nie wybija; najwyżej 7 obiektów; wybicie bez zmian po dojściu świec i przy głębszej historii; zdanie w opisie PL i EN).
 
 ### Ściany i serie: próg z chwili zdarzenia, tylko istotne ściany, limit na ekranie (2026-11-11)
+<!-- co-nowego: grupa=wykres | pl=Ściany i serie: próg z chwili zdarzenia i limit na ekranie | en=Walls and runs: threshold from the moment of the event and an on-screen limit -->
 
 Na nagranej dobie 24.10.2026 (powtórka 19:30, Kokpit 1m, warstwy bąbli oraz serii i ścian, 1440 × 900) wykres rysował 82 ściany i serie; po zmianie 10 (`npm run ui:check`, wybór warstwy, nie piksele). Liczba „przed” zmierzona na stronie z `main` z tymczasowym licznikiem w warstwie (bez commita). Na stałych danych na żywo taśmy nie ma (atrapa strumienia nie wysyła transakcji), więc pomiar jest na powtórce.
 
@@ -365,6 +407,7 @@ Na nagranej dobie 24.10.2026 (powtórka 19:30, Kokpit 1m, warstwy bąbli oraz se
 - Testy: `clashSelect.test.ts` (próg z zamkniętej godziny i bez zmian po dojściu kolejnych godzin, próg ręczny, serie z funkcją progu, ściana 2-sekundowa poniżej 3 × progu niewidoczna, limity 5 + 3 + 5, ściana nie znika przy zmianie progu bieżącego, zdanie w opisie PL i EN).
 
 ### Strefy nierównowagi i niedokończone aukcje: tylko bieżące, tylko ze świec zamkniętych (2026-11-11)
+<!-- co-nowego: grupa=wykres | pl=Strefy nierównowagi i niedokończone aukcje tylko ze świec zamkniętych | en=Imbalance zones and unfinished auctions only from closed candles -->
 
 Na nagranej dobie 24.10.2026 (powtórka 19:30, układ „Aukcja i otwarcie”, 5m footprint, warstwy stref i aukcji) wykres rysował 22 strefy i 64 linie aukcji na 1440 × 900 oraz 19 i 57 na 390 × 844; po zmianie 3 strefy i 2 linie na obu (`npm run ui:check`, wybór warstwy, nie piksele). Liczby „przed” zmierzone na stronie z `main` z tymczasowym licznikiem w warstwie (bez commita); liczą obiekty w widocznym zakresie czasu, także poza widoczną skalą ceny. Liczby „przed” z powtórki to jedna chwila i obiekty w widocznym zakresie czasu (pomiar tymczasowym licznikiem na poprzedniej wersji); pomiar na 173 ekranach z sesji listopada dał medianę 98 stref i 241 aukcji.
 
@@ -382,6 +425,7 @@ Na nagranej dobie 24.10.2026 (powtórka 19:30, układ „Aukcja i otwarcie”, 5
 - Testy: `zonesSelect.test.ts` (świeca niepełna bez strefy, świeca w trakcie poza modelem, krok stały w dobie i 0 bez poprzedniej doby, wybór 2 najbliższych, aukcje 1 na stronę, tryb „Historia”, zdanie w opisie PL i EN, stałość po dopisaniu świec i przy historii od poprzedniej doby).
 
 ### Wskaźnik „Strefy absorpcji i pudełka Effort”: mniej prostokątów, rysunek od chwili powstania (2026-11-11)
+<!-- co-nowego: grupa=wykres | pl=Strefy absorpcji i pudełka Effort: mniej prostokątów na wykresie | en=Absorption zones and Effort boxes: fewer boxes on the chart -->
 
 Na nagranej dobie 24.10.2026 (powtórka 19:30, BTC 5m) wskaźnik rysował 33 prostokąty w oknie 140 świec komputera i 10 w oknie 33 świec telefonu (wyliczenie modelem na świecach 5m z kopii przy lekcjach, nie pomiar strony; pomiar na żywej stronie 11.11: 30 prostokątów na 107 świecach); po zmianie 6 na 1440 × 900 i 3 na 390 × 844 (`npm run ui:check`, wybór warstwy, nie piksele). Model stref (`src/charts/pro/core/effortZones.ts`) bez zmian.
 
@@ -397,6 +441,7 @@ Na nagranej dobie 24.10.2026 (powtórka 19:30, BTC 5m) wskaźnik rysował 33 pro
 - Testy: `effortSelect.test.ts` (wybór 2 najbliższych, łączenie 0,2 / 0,3 ATR i limit 1,5 ATR, strefy nieuzbrojone i zakończone, przebita przez 6 świec, seria pudełek, pudełko bez taśmy, limit 7 / 3 w 1000 losowych chwilach nagranych dób, stałość wobec głębokości historii, dopisanych świec, kolejności taśmy i świecy w trakcie, tryb „Historia”), legenda, opis bez słów rady, zapis bez pola `history`.
 
 ### Blog: wydawca wpisów z kolejki na serwerze, autor bez klucza (2026-11-11)
+<!-- co-nowego: ukryj -->
 
 #### Dodane
 - **Wydawca wpisów** (`scripts/blog/publisher.mjs`, `backend/deploy/hyperquant-blog-publisher.service` i `.timer`, co minutę): bierze z kolejki `/var/lib/hyperquant-blog/kolejka/` tylko kompletne paczki (katalog `<id>` po atomowym `rename` z `<id>.tmp-…`), przejmuje każdą do prywatnego katalogu roboczego (`praca/`, rename), czyta pliki raz do pamięci bez podążania za dowiązaniami, sprawdza tym samym filtrem (`intake.mjs`) i walidatorem wpisów (`loadPostFile`) co build strony, commituje jako `HyperQuant blog <hyperquant-blog@users.noreply.github.com>` na gałąź `blog` repo danych (gdy jej nie ma: sieroca) i wypycha z ponowieniem po `rebase` (3 próby). Wynik dla autora w `zrobione/<id>.json` (sha commita) albo `odrzucone/<id>.json` (powód), oba z `md` = sha256 przysłanego pliku; ta sama treść drugi raz daje wynik bez nowego commita. Przy błędzie pusha paczki zostają w kolejce. Status z alarmem (`odrzucone`, `push`) w `stan/status.json`.
@@ -409,6 +454,7 @@ Na nagranej dobie 24.10.2026 (powtórka 19:30, BTC 5m) wskaźnik rysował 33 pro
 - `docs/BLOG.md`: autor zgłasza błąd po 5 min bez wyniku; cofnięcie zaczyna się od PR z wpisami gałęzi do `content/blog/`, dopiero potem zdjęcie `BLOG_INTAKE`.
 
 ### Blog: rejestr wpisów przed włączeniem gałęzi blog (2026-11-11)
+<!-- co-nowego: ukryj -->
 
 Publikacja bez zmian (zmienna `BLOG_INTAKE` nadal wyłączona): build na 120 wpisach z `main` daje te same 170 adresów w `sitemap.xml` (plik identyczny), ten sam `blog/feed.xml` (51 linków) i 172 identyczne strony HTML; zmienia się tylko `blog/source.json`.
 
@@ -420,6 +466,7 @@ Publikacja bez zmian (zmienna `BLOG_INTAKE` nadal wyłączona): build na 120 wpi
 - **Okno daty nowego wpisu** (`scripts/blog/intake.mjs`): dolna granica to wcześniejsza z chwil „ten build” i `at` poprzedniego opublikowanego buildu, minus 24 h; przerwa we wdrożeniach dłuższa niż doba nie odrzuca wpisów z czasu przerwy.
 
 ### Pomiar interfejsu w CI: dane stałe, stały zegar, punkt odniesienia (2026-11-11)
+<!-- co-nowego: ukryj -->
 
 #### Dodane
 - **`npm run ui:check` bez sieci i bez zegara ściennego** (`scripts/ui/fixtures.mjs`, `scripts/ui/probe.mjs`, `scripts/ui/cdp.mjs`, `scripts/ui/layout-check.mjs`): Chrome odpowiada na zapytania `/info` Hyperliquid z danych stałych — świece BTC z minut nagranych dób przy lekcjach (`public/lessons/*.json`, 20–24.10.2026), poza nimi i dla ETH, SOL, HYPE świece z funkcji czasu (bez losowości), arkusz, kontekst rynku i finansowanie ze stałych wartości; WebSocket to atrapa strumienia (arkusz, kontekst i kwotowania raz po subskrypcji), reszta sieci jest zablokowana. Zegar strony stoi w chwili 2026-10-24 21:29:20 UTC, `Math.random` ma ziarno, strefa Europe/Warsaw i język pl-PL są stałe, bez service workera. Dwa uruchomienia z rzędu dają ten sam wynik. `npm run ui:check:live` mierzy na prawdziwych danych.
@@ -427,6 +474,7 @@ Publikacja bez zmian (zmienna `BLOG_INTAKE` nadal wyłączona): build na 120 wpi
 - **Job „Interfejs (ui:check)” w CI** (`.github/workflows/ci.yml`): przy każdym pull requeście, Chrome 157 z `browser-actions/setup-chrome` przypiętej do hasha, limit 10 min, zrzuty i raport JSON jako artefakt przy porażce.
 
 ### Blog: wpisy z gałęzi blog repo danych jako niezaufana treść (2026-11-11)
+<!-- co-nowego: ukryj -->
 
 Publikacja się nie zmienia, dopóki gałąź `blog` w repo danych nie istnieje: pełny build na 119 wpisach z `main` daje te same 169 adresów w `sitemap.xml` (plik identyczny), ten sam `blog/feed.xml` (51 linków, plik identyczny) i 171 stron HTML identycznych po pominięciu nagłówka CSP, znacznika skryptu i wersji arkusza; nowe pliki to tylko `blog/blog.js` i `blog/source.json`.
 
@@ -447,6 +495,7 @@ Publikacja się nie zmienia, dopóki gałąź `blog` w repo danych nie istnieje:
 - Front matter bez aliasów YAML (`maxAliasCount: 0`); `.md` ponad 64 KB i `wykresy.json` ponad 1 MB to błąd wpisu (`scripts/blog/posts.mjs`). Żaden z 119 wpisów nie używa aliasów.
 
 ### Kot: częstość dużego ruchu przy bieżącym poziomie (2026-11-11)
+<!-- co-nowego: grupa=prognozy | pl=Kot Schrödi: jak często duży ruch zdarzał się przy bieżącym poziomie | en=Schrödi: how often a large move happened at the current level -->
 
 #### Dodane
 - **Zdanie z rozliczeń rejestru pod poziomem ruchu w dymku kota** (`src/components/schrodi/moveLevel.ts`, `SchrodiPanel.tsx`, `docs/SCHRODI.md`): „W rejestrze przy tym poziomie duży ruch był w 9 na 10 przypadków (448 prognoz z rejestru).” (EN „In the ledger, at this level a big move happened in 9 of 10 cases (448 forecasts from the ledger).”); przy części ułamkowej od 0,3 do 0,7 zakres, np. „6–7 na 10”. Liczone z tego samego histogramu `cat.scores.big.reliability` co tercyle: koszyk częściowo w tercylu wnosi część prognoz proporcjonalną do nakładającej się szerokości, a jego częstość waży się tą samą częścią. Na podsumowaniu z 11.11 (1343 prognozy): spokojny 2, zwykły 6–7, podwyższony 9 na 10. Pasek bez liczby; za mało danych albo brak podsumowania: zdania nie ma.
@@ -455,6 +504,7 @@ Publikacja się nie zmienia, dopóki gałąź `blog` w repo danych nie istnieje:
 - Testy paska kota nie zależą od pory uruchomienia: zegar testu stoi w chwili prognozy (`moveLevel.test.tsx`, `neutralDirection.test.tsx`); wcześniej po 12:03 UTC 11.11 pasek uznawał dane testowe za nieświeże.
 
 ### Wykres W sesji: lżejszy pasek, więcej miejsca na świece (2026-11-11)
+<!-- co-nowego: grupa=wykres | pl=W sesji: lżejszy pasek sterowania i więcej miejsca na świece | en=In session: a lighter toolbar and more room for candles -->
 
 Pomiar `npm run ui:check` (Chrome bez okna na zbudowanej stronie, 1440 × 900 i 390 × 844; `scripts/ui/layout-check.mjs`). Przed zmianą panel ceny zajmował 40,9% wysokości okna 1440 × 900 (37,6% z kolumną DOM) i 40,5% na telefonie 390 × 844.
 
@@ -495,11 +545,13 @@ Pomiar `npm run ui:check` (Chrome bez okna na zbudowanej stronie, 1440 × 900 i 
 
 
 ### Kot: poziom ruchu zamiast procentu do awansu kalibracji (2026-11-11)
+<!-- co-nowego: grupa=prognozy | pl=Kot Schrödi: prostszy opis szansy dużego ruchu | en=Schrödi: a simpler description of the large-move chance -->
 
 #### Zmienione
 - **Szansa dużego ruchu kota bez procentu do awansu `cat-cal-v1`** (`src/components/schrodi/moveLevel.ts`, `SchrodiLauncher.tsx`, `SchrodiPanel.tsx`, `src/views/after/CatLedgerCard.tsx`, `docs/SCHRODI.md`). Ranking `pBig` jest dobry (AUC 0,878 w podsumowaniu rejestru), ale procenty są zaniżone: na 1328 rozstrzygniętych prognozach średnie `pBig` 0,497 wobec częstości 0,585. Pasek pod wykresem pokazuje „ruch spokojny / zwykły / podwyższony” (EN „move calm / typical / elevated”) zamiast „ruch NN%”, a dymek poziom wobec typowej godziny z AUC z rejestru i zdaniem „Procenty w trakcie kalibracji, wynik w rejestrze”. Poziom to tercyl `pBig` w rozstrzygniętych prognozach z histogramu `cat.scores.big.reliability` w publicznym podsumowaniu rejestru (okno 30 dni, granice interpolowane w koszykach); poniżej 96 rozstrzygnięć „—” z powodem. Bez procentu są też zdanie kota, zmiana zdania, „Dlaczego?” (podnosi / obniża / bez wpływu), procenty modelu bieżącej godziny i linie szansy ruchu na małych wykresach; nastrój kota idzie za poziomem. Karta w dzienniku zamiast bieżącego procentu pokazuje poziom; miary (Brier, AUC, trafność) zostają. Po awansie procenty przywraca jedna flaga `MOVE_PCT_PROMOTED`. Testy: `src/components/schrodi/__tests__/moveLevel.test.tsx`.
 
 ### Niezależna weryfikacja dziennika w repo HyperQuant: harmonogram co 6 h, cała historia z kotwicą (2026-11-11)
+<!-- co-nowego: grupa=prognozy | pl=Niezależna weryfikacja dziennika co 6 godzin, zawsze na całej historii | en=Independent ledger verification every 6 hours, always over the full history -->
 
 #### Zmienione
 - **Weryfikacja przeniesiona do tego repo** (`.github/workflows/ledger-verify.yml`): harmonogram co 6 h (`23 */6 * * *`) i uruchomienie ręczne. W repo danych harmonogramu nie było, bo jego gałąź domyślna to publikacja nadpisywana co 2 min, więc weryfikację uruchamiały tylko zapisy strażnika. Weryfikator pochodzi z `main` tego repo, a klon gałęzi `ledger` repo danych jest bez zapisanych poświadczeń. Uprawnienia tylko `contents: write` z wbudowanym tokenem, bez sekretów. Akcje są przypięte do hashy commitów (checkout i setup-node v7). Gałąź wyników jest pobierana bez tokenu, a token z prawem zapisu trafia do jej klonu dopiero w kroku publikacji. Limit kroku weryfikacji to 20 min, joba 30 min, znaczek powstaje także po limicie, a przebieg z problemem jest czerwony.
@@ -508,11 +560,13 @@ Pomiar `npm run ui:check` (Chrome bez okna na zbudowanej stronie, 1440 × 900 i 
 - Wzorzec `backend/deploy/ledger-verify.yml` dla repo danych usunięty. Wzorzec `health-alert.yml` i `backend/README.md` opisują nowe miejsce weryfikacji oraz opcjonalną regułę gałęzi (ruleset), z którą gałąź wyników zmienia tylko GitHub Actions.
 
 ### Paczka MCP 0.1.4 (2026-11-11)
+<!-- co-nowego: ukryj -->
 
 #### Zmienione
 - **`hyperquant-mcp` 0.1.4**: `cohort_flow` liczy udział w obrocie wobec 2 × wolumenu taśmy (pole `tape` w `cohorts/BTC.json`), podaje `othersCombined` dla ukrytych komórek i opisuje pustą kohortę „poinformowanych” jako brak wykrytych kont z trwałą przewagą zamiast braku transakcji. Polecenia instalacji ze strony, README i szablonów z wersją `npx -y hyperquant-mcp@0.1.4`.
 
 ### Niezależna weryfikacja dziennika: przyrostowo, osobny workflow, znaczek gaśnie po 36 h (2026-11-11)
+<!-- co-nowego: grupa=prognozy | pl=Znaczek weryfikacji gaśnie, gdy ostatnie sprawdzenie ma ponad 36 godzin | en=The verification badge goes out when the last check is over 36 hours old -->
 
 #### Naprawione
 - **Weryfikacja dziennika w GitHub Actions stała od 9.11 08:26 UTC, a znaczek dalej był zielony.** Od tamtej pory żaden z ponad 50 przebiegów w repo danych się nie skończył: krok weryfikacji przekraczał limit 20 min (przebieg z 9.11 trwał 18 min, a dziennik rośnie) albo był anulowany przez kolejne zapisy strażnika. Znaczek `badge/ledger.json` zmieniał tylko udany przebieg, więc został zielony z datą 9.11.
@@ -527,6 +581,7 @@ Pomiar `npm run ui:check` (Chrome bez okna na zbudowanej stronie, 1440 × 900 i 
 - **Kopia strażnika w układzie repo** (`backend/deploy/install.sh`, `hyperquant-watchdog.service`): nadzór danych czyta teraz `scripts/verify-status.mjs` i `src/utils/verifyFreshness.ts`, więc `install.sh` kopiuje strażnika z wszystkimi lokalnymi importami i `package.json` do `/opt/hyperquant/watchdog/` (te same ścieżki co w repo, nowa kopia obok i podmiana katalogu), a jednostka uruchamia `/opt/hyperquant/watchdog/scripts/watchdog.mjs`. Test w `backend/deploy/__tests__/units.test.ts` sprawdza, że lista kopiowanych plików obejmuje wszystkie lokalne importy strażnika i że kopia wczytuje się w osobnym katalogu.
 
 ### Serwer skanera: strażnik bez root, aktualizacja z podpisanych tagów (2026-11-11)
+<!-- co-nowego: ukryj -->
 
 #### Bezpieczeństwo
 - **Strażnik nie działa już jako root** (`backend/deploy/hyperquant-watchdog.service`, `backend/deploy/install.sh`). Dotąd jednostka nie miała `User=` i uruchamiała `scripts/watchdog.mjs` z katalogu, który usługa aktualizacji co 15 min równa do gałęzi `main`. Push do `main` dawał więc w ciągu 15 min kod wykonywany jako root na serwerze. Teraz:
@@ -558,6 +613,7 @@ Pomiar `npm run ui:check` (Chrome bez okna na zbudowanej stronie, 1440 × 900 i 
 - Testy `deployKey` i praw `0640`: te drugie tylko poza Windows.
 
 ### Kot bez stron rynku, Badania bez liczb zastępczych (2026-11-11)
+<!-- co-nowego: grupa=prognozy | pl=Kot Schrödi bez wskazywania strony rynku; brak danych to zawsze „—” | en=Schrödi no longer points to a market side; missing data always shows as — -->
 
 #### Zmienione
 - **Kierunek Schrödiego jako szansa, nie strona rynku** (`src/components/schrodi/direction.ts`, `SchrodiPanel.tsx`, `SchrodiLauncher.tsx`, `src/views/after/CatLedgerCard.tsx`). Zamiast „LONG 54%” / „SHORT 53%” / „NIE WIEM” kot pokazuje „P(wzrost 1 h) 54%” (EN „P(up 1 h) 54%”) w neutralnym kolorze tuszu, w pasku pod wykresem, w dymku i w zdaniu kota. Bez kolorów kupna i sprzedaży są też: pasek szansy kierunku, „Zamknie wyżej niż…” w bieżącej godzinie i kolumna „wzrost” w „Dlaczego?”. Wyniki kierunku (dymek, karta w dzienniku) opisują przedziały „P(wzrost 1 h) > 53%” i „< 47%” zamiast „Long” i „Short”. Tekst etykiety jest w jednym module, więc jej formę zmienia się w jednym miejscu. Kontrakt danych dziennika (`dir.long`, `dir.short`) bez zmian.
@@ -578,6 +634,7 @@ Pomiar `npm run ui:check` (Chrome bez okna na zbudowanej stronie, 1440 × 900 i 
 - Testy: `src/components/schrodi/__tests__/neutralDirection.test.tsx` (dymek z rozwiniętymi sekcjami, pasek i karta dziennika po polsku i po angielsku, trzy stany kierunku: brak „long/short” w tekście, etykieta bez kolorów stron), `src/utils/__tests__/researchHonesty.test.tsx` (brak stałych paliwa w kodzie `src`, brak pól paliwa, nazwy reżimów, VPIN, Hurst, ATR), dwa nowe przypadki w `marketDataFeed.test.ts`.
 
 ### Strażnik serwera: histereza alarmu opóźnionych odczytów pozycji (2026-11-11)
+<!-- co-nowego: ukryj -->
 
 #### Naprawione
 - **Alarm „odczyty pozycji opóźnione” nie miga** (`scripts/watchdog.mjs`, `scripts/check-data-health.mjs`). Mediana wieku odczytów pozycji ważona nominałem oscyluje wokół progu 30 min (w raportach od 22 do 41 min), a strażnik zamykał alarm przy pierwszym przebiegu poniżej progu. Gałąź `health` repo danych zapisała 40 zmian stanu w 37 h (9.11 17:00 – 11.11 06:00 UTC), do 47 na dobę 6.11. Teraz alarm zaczyna się po 2 przebiegach z rzędu powyżej 30 min, a kończy po 2 przebiegach z rzędu poniżej 25 min; pomiędzy stan się nie zmienia. Stan histerezy (`ntl` w pliku stanu strażnika) przechodzi między przebiegami; plik stanu bez tego pola zaczyna bez alarmu, jak dotąd. Komunikat w trakcie alarmu podaje oba progi. Ocena bez stanu w GitHub Actions (`data-health.yml`) działa jak dotąd.
@@ -586,6 +643,7 @@ Pomiar `npm run ui:check` (Chrome bez okna na zbudowanej stronie, 1440 × 900 i 
 - Test na serii odtworzonej z historii wysyłek z 9–11.11 (co 15 min, 203 przebiegi): bez histerezy 32 / 15 / 13 zmian stanu na dobę, jak w historii, z histerezą 4 / 1 / 0 (`scripts/watchdog.test.mjs`). Testy jednostkowe progów: `scripts/check-data-health.test.mjs`.
 
 ### Przepływ kohort: bez kohorty z kilku kont, udział wobec wolumenu taśmy (2026-11-11)
+<!-- co-nowego: grupa=skaner | pl=Przepływ kohort: bez grup z kilku kont, udział liczony wobec całej taśmy | en=Cohort flow: no groups of just a few accounts, share measured against the whole tape -->
 
 #### Naprawione
 - **Kohorta „poinformowanych” z mniej niż 10 kont albo przy τ = 0 nie jest publikowana** (`backend/scanner/cohortEngine.ts`). Publikacja z 11.11.2026 pokazywała „wybrani 0 z 2630 kandydatów, rozrzut umiejętności 0 bp”, a mimo to komórka „poinformowanych” była ukryta we wszystkich 95 kubełkach: liczności są zaokrąglane w dół do dziesiątek, więc za „0” stało od 1 do 9 wybranych kont, czyli przy τ = 0 szczęście z tysięcy prób, a nie przewaga. Ukrycie tej komórki pociągało ukrycie „reszty” (reguła ukrywania wtórnego), która była ukryta w 68 z 95 kubełków, w tym w 33 przy widocznych market makerach i wielorybach. Teraz taki wybór daje pustą kohortę: konta zostają w swoich kohortach (wieloryby, reszta) i nie wymuszają ukrywania. Próg działa też na stanie zapisanym przed zmianą, od pierwszego odczytu. Reguła prywatności się nie zmienia: przy prawdziwej kohorcie (co najmniej 10 kont i τ > 0) ukryci „poinformowani” dalej parują się najpierw z „resztą”.
@@ -598,11 +656,13 @@ Pomiar `npm run ui:check` (Chrome bez okna na zbudowanej stronie, 1440 × 900 i 
 - **Uczciwy stan pustej kohorty:** panel i `cohort_flow` piszą „nie wykryto kont z trwałą przewagą (≈ N sprawdzonych)” z liczbą kandydatów z pliku zamiast „brak transakcji”. Opis w panelu, w README skanera, w README serwera MCP i w skillu `hyperquant`.
 
 ### Paczka MCP 0.1.3 (2026-11-11)
+<!-- co-nowego: ukryj -->
 
 #### Zmienione
 - **`hyperquant-mcp` 0.1.3**: `forecast_ledger` podaje BSS dotknięć w parze (wobec bazy odległości `bssDist` i wobec częstości bazowej). Polecenia instalacji ze strony, README i szablonów z wersją `npx -y hyperquant-mcp@0.1.3`.
 
 ### Kto handluje i makerzy: okno 60 minut do zamknięcia świecy (2026-11-11)
+<!-- co-nowego: grupa=wykres | pl=Kto handluje i makerzy: ocena tylko z 60 minut przed zamknięciem świecy | en=Who is trading and makers: judged only from the 60 minutes before the candle closes -->
 
 #### Naprawione
 - **Duzi gracze i animatorzy rynku nie są już klasyfikowani z minut po zamknięciu świecy** (`src/charts/pro/core/players.ts`, `src/charts/pro/core/makers.ts`, `src/charts/pro/store/proStore.ts`). Dotąd konto było dużym graczem albo animatorem w całej godzinie UTC, więc zlecenia z dalszej części godziny zmieniały już zamknięte świece 1m–30m (np. konto z 600 tys. USD wejść o 11:05, które o 11:40 dokłada kolejne 600 tys., przenosiło świecę 11:05 z reszty do dużych graczy). Teraz klasa konta jest liczona z 60 minut kończących się na zamknięciu świecy: duży gracz to konto z wejściami od progu (1 mln USD BTC, 500 tys. ETH, 250 tys. SOL i HYPE) w tym oknie, animator to konto z płynnością w co najmniej połowie minut okna z taśmą z kontami i po obu stronach. W bieżącej świecy liczą się dane do teraz, a po zamknięciu jej wartość się nie zmienia.
@@ -614,6 +674,7 @@ Pomiar `npm run ui:check` (Chrome bez okna na zbudowanej stronie, 1440 × 900 i 
 - Wydajność: zamknięte świece są pamiętane do nowych zleceń w ich oknie, a kolejne świece przesuwają sumy okna zamiast liczyć je od nowa (sumy w centach, więc przesunięte okno daje dokładnie to samo co liczone od nowa). Pomiar na 24 h syntetycznej taśmy (480 tys. zleceń, 720 tys. wypełnień, 1440 świec 1m): pierwsze liczenie 388 ms (duzi gracze) i 170 ms (makerzy), kolejne bez zmian 5 ms i 3 ms, po nowym zleceniu 12 ms i 5 ms (wcześniej odpowiednio 342 i 137 ms, 1 i 43 ms, 20 i 45 ms).
 
 ### Dziennik prognoz: BSS dotknięć także wobec bazy odległości (2026-11-11)
+<!-- co-nowego: grupa=prognozy | pl=Dziennik prognoz: trafność dotknięć poziomu wobec dwóch punktów odniesienia | en=Forecast ledger: level-touch skill measured against two baselines -->
 
 #### Zmienione
 - **Umiejętność prognoz dotknięć PDH, PDL i D-EQ w 2 h liczona wobec dwóch baz** (`backend/scanner/forecaster.ts`, `src/utils/forecastScore.ts`, `src/utils/deskLedger.ts`): dotąd BSS był liczony tylko wobec częstości bazowej każdego poziomu. Częstość nie wie, jak daleko poziom jest od ceny, więc sama daje modelowi dużą pozorną umiejętność. Nowa baza odległości to wzór odbicia dla ruchu Browna bez dryfu, P = 2(1 − Φ(|d| / (σ√T))), gdzie d = ln(poziom / cena), a T = 2 h. **σ pochodzi z godzinowych log-zwrotów z 30 dni.** To ta sama stała σ, której używa benchmark CRPS (`sigma1hFromHourly`). Jest odtwarzana z kwantyli `bq` prognozy zwrotu 1 h z tego samego slotu, więc baza korzysta tylko z danych zapisanych przed rozstrzygnięciem. Podsumowanie `ledger/BTC/summary.json` ma nowe pola `bssDist`, `brierDist`, `pairsDist` oraz `bssClim`, czyli dotychczasowe `bss` pod jawną nazwą. Stare pola `bss` i `brierBase` zostają, a strona i MCP czytają też starsze podsumowania bez nowych pól. Na publicznym dzienniku (5180 par z 1892 prognoz, od 22.10 do 11.11.2026) wynik to Brier modelu 0,0734, Brier bazy odległości 0,0822 i częstości 0,1226. **BSS wobec odległości wynosi 0,106, a wobec częstości 0,401.**
@@ -623,6 +684,7 @@ Pomiar `npm run ui:check` (Chrome bez okna na zbudowanej stronie, 1440 × 900 i 
 - Test `integrations/__tests__/bssPair.test.ts` pilnuje, żeby każdy tekst, który wspomina BSS dziennika, w tym samym zdaniu podawał bazę odległości.
 
 ### Wskaźnik: strefy absorpcji i pudełka Effort (2026-11-09)
+<!-- co-nowego: grupa=wykres | pl=Nowy wskaźnik: strefy absorpcji i pudełka Effort | en=New indicator: absorption zones and Effort boxes -->
 
 #### Dodane
 - **„Strefy absorpcji i pudełka Effort” w sekcji „Więcej z HyperQuant”** (`src/charts/pro/core/effortZones.ts`, `src/charts/pro/chart/effortLayer.ts`, `src/charts/pro/indicators/registry.ts`): na wykresie ceny (interwały do 1 h, na żywo i w powtórce, każdy rynek) rekonstrukcja HyperQuant stref i pudełek z modelu intraday Fabio Valentiniego. Jego wskaźnik „Nasdaq Effort” ma zamknięty kod, więc reguły i progi są nasze:
@@ -635,11 +697,13 @@ Pomiar `npm run ui:check` (Chrome bez okna na zbudowanej stronie, 1440 × 900 i 
 - Moduł `effortZones.ts` udostępnia wtyczkom wykresu (`src/plugins`) serie pośrednie (delta, średnie wolumenu i |delty|, ATR), funkcje `aggressionAt` i `absorbsAt` oraz chwilę uzbrojenia strefy (`armedAt`).
 
 ### Agenci AI: krok serwera w wiadomości dla OpenBota (2026-11-08)
+<!-- co-nowego: ukryj -->
 
 #### Naprawione
 - **Wiadomość „Dodaj do OpenBota” nie zmienia istniejącego serwera** (`src/views/agents/openbotSetup.ts`). OpenBot nie pokazuje argumentów serwerów, więc warunek „żaden serwer nie uruchamia hyperquant-mcp” był niesprawdzalny, a agent czytający go dosłownie mógł wywołać `save_mcp_server` z zajętą nazwą „hyperquant” i nadpisać działający serwer. Teraz serwer jest rozpoznawany po nazwie „hyperquant” albo po narzędziach (`market_brief`, `session_context`, `day_map`), a test sprawdza go w obu przypadkach.
 
 ### Paczka MCP 0.1.2: publikacja do npm bez tokenu (2026-11-08)
+<!-- co-nowego: ukryj -->
 
 #### Zmienione
 - **`hyperquant-mcp` 0.1.2**: ikona w paczce `.mcpb`, opis opóźnienia taśmy likwidacji w `liquidation_tape` zgodny z pomiarem, polecenia instalacji ze strony, README i szablonów z wersją `npx -y hyperquant-mcp@0.1.2`. Pierwsza wersja publikowana z GitHub Actions (zaufany wydawca npm, atestacja pochodzenia).
@@ -648,12 +712,14 @@ Pomiar `npm run ui:check` (Chrome bez okna na zbudowanej stronie, 1440 × 900 i 
 - **Workflow `npm-publish.yml`**: ręcznie uruchamiana publikacja `hyperquant-mcp` z GitHub Actions jako zaufany wydawca npm (OIDC, bez tokenu w sekretach) z automatyczną atestacją pochodzenia. Przed publikacją: typy, testy MCP, bundle i test stdio; wersja, która jest już w npm, zatrzymuje publikację.
 
 ### Taśma likwidacji: licznik potwierdzonych zgodny ze zdarzeniami (2026-11-08)
+<!-- co-nowego: grupa=skaner | pl=Taśma likwidacji: licznik potwierdzonych zgodny z listą zdarzeń | en=Liquidation tape: the confirmed count matches the event list -->
 
 #### Naprawione
 - **`checks.confirmed` liczy zdarzenia z okna taśmy według czasu likwidacji, a nie potwierdzenia** (`backend/scanner/liqDetect.ts`, `src/utils/liqTape.ts`). Przy ok. 29 tys. pozycji mediana wieku odczytu to ok. 4 h, więc likwidacja małej pozycji bywa potwierdzana kilka godzin po fakcie. Zdarzenie wypadało z okna 24 h przed swoim potwierdzeniem: taśma pokazywała „potwierdzone 4” przy pustej liście, zerowych sumach i `liq24h: 0`. Tak samo było po usunięciu zdarzeń przez nowy okres obserwacji (przerwa w danych, restart po dłuższej przerwie). Wpisy „confirmed” ze stanu zapisanego przed poprawką są przy odczycie pomijane.
 - **Opis opóźnienia taśmy zgodny z pomiarem** (panel taśmy, tabela źródeł, narzędzie MCP `liquidation_tape`). Zamiast „opóźnienie do kilku minut”: zdarzenie ma czas samej likwidacji, ale trafia na taśmę po ponownym odczycie pozycji, a małe pozycje skaner odczytuje nawet co kilka godzin, więc sumy z ostatniej godziny mogą jeszcze wzrosnąć.
 
 ### Etap 1d-1: HyperQuant dla asystentów AI (2026-11-08)
+<!-- co-nowego: grupa=skaner | pl=Dane desku dostępne dla asystentów AI przez serwer MCP | en=Desk data available to AI assistants through an MCP server -->
 
 #### Dodane
 - **Serwer MCP `hyperquant-mcp`** (`mcp/`, STDIO, tylko odczyt danych publicznych): 10 narzędzi:
@@ -678,6 +744,7 @@ Pomiar `npm run ui:check` (Chrome bez okna na zbudowanej stronie, 1440 × 900 i 
 - Bezpieczniki treści (blog, tytuł Klatki, serwer MCP): wzorce e-mail, TP/SL i long/short przy cenie dopasowują się w czasie liniowym (wcześniej długi ciąg znaków bez trafienia sprawdzał się kwadratowo). Trafiają dokładnie to samo co wcześniej.
 
 ### Etap 1c: numery kont dobowe w historii taśmy (2026-11-07)
+<!-- co-nowego: ukryj -->
 
 #### Zmienione
 - **Skaner numeruje konta i zlecenia w obrębie doby UTC** (`backend/scanner/history.ts`): numer biorcy, makera i zlecenia jest ważny przez całą dobę UTC, nie przez jedną godzinę. O północy UTC numeracja zaczyna się od 0, a mapy poprzedniej doby znikają z pamięci. Po restarcie w trakcie doby numeracja kontynuuje od maksimum z plików tej doby. Adresów i hashy w plikach nadal nie ma. Pliki mają pole `idScope: 'day'`. Plik scalony z plikiem starego rejestratora, plik bez pola i plik z nieznaną wartością są traktowane jako godzinowe (`'hour'`).
@@ -689,6 +756,7 @@ Pomiar `npm run ui:check` (Chrome bez okna na zbudowanej stronie, 1440 × 900 i 
 - Spóźniona transakcja dla zapisanej już części nie zużywa numeru.
 
 ### Etap 1b: nowe elementy dnia tradera (2026-11-07)
+<!-- co-nowego: grupa=wykres | pl=Dzień tradera: sesje Londynu i Nowego Jorku, typ dnia, względny wolumen i rozliczenie sesji | en=Trader's day: London and New York sessions, day type, relative volume and session review -->
 
 #### Dodane
 - **Sesje Londynu i NY jako dzień tradera** (`src/utils/sessionDay.ts`): Londyn od 08:00 czasu londyńskiego do otwarcia NY, NY od 09:30 czasu nowojorskiego do 00:00 UTC (granice z czasem letnim), IB to pierwsza godzina sesji; doba UTC zostaje tylko podsumowaniem. Kontekst aukcji Przed sesją liczony dla bieżącej sesji. **Budżet zakresu** (MODEL): ile oczekiwanego zakresu high–low sesja już zużyła (z modelem HAR, bez niego σ Parkinsona ze świec 5m).
@@ -725,11 +793,14 @@ Pomiar `npm run ui:check` (Chrome bez okna na zbudowanej stronie, 1440 × 900 i 
 - Tekst alternatywny Klatki Czwórki podaje każdą liczbę raz.
 
 ### Wydajność na komputerze (2026-11-07)
+<!-- co-nowego: grupa=wykres | pl=W sesji zużywa wyraźnie mniej procesora | en=In session uses noticeably less CPU -->
 
 #### Poprawione
 - **W sesji na komputerze o ok. 40% mniej CPU** (`src/ui/format.ts`, `src/charts/pro/chart/liquidity.ts`): przy 1920×1080 strona zajmowała ok. 43% jednego rdzenia (skrypty ok. 26%), teraz ok. 26% (skrypty ok. 9%) (pomiar: Chrome headless bez GPU, W sesji / Kokpit, 1920×1080). Formatowanie liczb (`fmtFixed` i wszystko, co z niej korzysta) budowało formatter Intl przy każdym podpisie; teraz jeden formatter na liczbę miejsc po przecinku, zapis bez zmian. Warstwa płynności składała bąble, serie, ściany, duże zlecenia i drabinę DOM przy każdym odświeżeniu wykresu (kilka razy na klatkę); teraz tylko po zmianie widoku, danych albo przełączników. Rysunek bez zmian.
 
 ### Etap 1a: dzień tradera w trzech fazach (2026-11-07)
+<!-- co-nowego: grupa=wykres | pl=Nowy układ: dzień w trzech fazach, Przed sesją, W sesji i Po sesji | en=New layout: the day in three phases, Pre-session, In session and Post-session -->
+<!-- co-nowego: grupa=wykres | pl=Mniej elementów: bez Lab 3D, Analizatora planu i wskaźników OBV, CMF, MFI | en=Fewer parts: Lab 3D, the plan analyzer and the OBV, CMF and MFI indicators removed -->
 
 #### Dodane
 - **Trzy fazy dnia zamiast zakładek narzędzi**: **Przed sesją** (`#before`: wykres z układami Mapa dnia i Paliwo i godziny, pas kontekstu, kalendarz makro, funding między giełdami, kontekst aukcji, mapa likwidacji z kaskadą, płynność wg godzin, kafle makro i wiadomości), **W sesji** (`#charts`: wykres z układami Kokpit, Aukcja i otwarcie oraz Wielkie ręce i reszta rynku; od 1280 px prawa kolumna DOM i taśmy chowana klawiszem `d`, od 640 do 1279 px ta sama kolumna jako szuflada nad wykresem, na telefonie pasek Pulse; pod wykresem przepływ kohort i taśma likwidacji BTC) i **Po sesji** (`#after`: układ Rozliczenie doby, dziennik prognoz z weryfikacją i dziennik transakcji). Panele skanera (Kto przyjmuje, TWAP-y, kohorty, likwidacje) pokazują „—, tylko BTC” dla innych rynków. Alt+1…6 przełącza układy i przenosi do ekranu ich fazy.
@@ -753,10 +824,28 @@ Pomiar `npm run ui:check` (Chrome bez okna na zbudowanej stronie, 1440 × 900 i 
 - Osobne zakładki Desk, Rynek, Mikrostruktura i DOM i taśma (ich panele są w fazach dnia i w Badaniach).
 
 ### Zmienione
+<!-- co-nowego: grupa=blog | pl=Nowy adres strony: hyperquant.tech | en=New site address: hyperquant.tech | data=2026-11-03 -->
+<!-- co-nowego: grupa=wykres | pl=Profil doby w kolorach strony agresywnej zamiast liter TPO | en=Daily profile colored by the aggressive side instead of TPO letters | data=2026-11-01 -->
 - **Adres strony: hyperquant.tech** (`package.json`, `index.html`, `public/robots.txt`): adres kanoniczny, karty OG, JSON-LD, sitemap, kanał RSS, IndexNow, podpis zrzutu wykresu i stopka kart bloga wskazują https://hyperquant.tech/. Stary adres rdemb.github.io/HyperQuant/ przekierowuje (301) na tę samą ścieżkę w nowej domenie. Strona jest teraz w głównym katalogu domeny, więc ma własny `robots.txt` z adresem mapy strony. Kontakt VAPID serwera powiadomień 24/7 to nowy adres.
 - **Profil doby zamiast liter TPO** (`src/charts/pro/core/tpo.ts`, `src/charts/pro/chart/tpoLayer.ts`): warstwa „Profil doby: wolumen, agresja, czas (TPO)” (szablon Market Profile 30m) rysuje każdą dobę UTC jako profil wolumenu pod świecami zamiast liter okresów. Kolor wiersza to strona agresywna z taśmy (zieleń kupno, fiolet sprzedaż, cztery odcienie od 55 do 77,5% wolumenu jednej strony, progi z rozkładu na taśmie BTC z 7 dób; szary bez przewagi albo bez taśmy), a cienki obrys to czas TPO w tym samym polu co wolumen doby, więc widać ceny z szybkim obrotem i ceny, na których rynek stał przy małym obrocie. Wolumen z taśmy na cenach transakcji, reszta wolumenu świec (świece sprzed nagrania, luki) równo na zakres H–L. POC i value area z wolumenu (także w karcie uczciwości szablonu), pod profilem delta doby z udziałem taśmy, a pod krzyżem zakres ceny, wolumen, udział stron i liczba okresów wiersza.
 
 ### Dodane
+<!-- co-nowego: grupa=blog | pl=Przeprowadzka na nowy adres bez utraty ustawień | en=Move to the new address without losing settings | data=2026-11-03 -->
+<!-- co-nowego: grupa=wykres | pl=Widok „DOM i taśma”: czoło kolejki, TWAP-y w toku i kto przyjmuje uderzenia | en=DOM and tape view: queue head, running TWAPs and who absorbs the hits | data=2026-11-02 -->
+<!-- co-nowego: grupa=wykres | pl=Profil doby z kolorem pozycji, zakresy P/b i wtyczki wykresu | en=Daily profile colored by open interest, P/b ranges and chart plugins | data=2026-11-01 -->
+<!-- co-nowego: grupa=wykres | pl=Pełny ekran, karty układów, szablony metod analizy i interwały 1W i 1M | en=Full screen, layout cards, analysis templates and 1W and 1M intervals | data=2026-10-31 -->
+<!-- co-nowego: grupa=wykres | pl=Wskaźniki tylko w HyperQuant: udział TWAP, koszt zlecenia rynkowego, stożek zakresu i inne | en=HyperQuant-only indicators: TWAP share, market order cost, range cone and more | data=2026-10-31 -->
+<!-- co-nowego: grupa=skaner | pl=Dokładniejsze nagrywanie arkusza i taśmy BTC | en=More precise recording of the BTC order book and tape | data=2026-10-31 -->
+<!-- co-nowego: grupa=wykres | pl=Klasyczne wskaźniki jak w TradingView: EMA, Bollinger, RSI, ATR, Ichimoku i inne | en=Classic indicators as in TradingView: EMA, Bollinger, RSI, ATR, Ichimoku and more | data=2026-10-30 -->
+<!-- co-nowego: grupa=wykres | pl=Edycja, ustawienia i lista rysunków na wykresie | en=Editing, settings and an object list for chart drawings | data=2026-10-30 -->
+<!-- co-nowego: grupa=wykres | pl=Alarmy z warunkami i powiadomienia 24/7 | en=Conditional alerts and 24/7 notifications | data=2026-10-29 -->
+<!-- co-nowego: grupa=prognozy | pl=Kot Schrödi pod wykresem: szansa dużego ruchu i dotknięcia poziomu, zapisywana w dzienniku | en=Schrödi the cat under the chart: the chance of a large move and of a level touch, recorded in the ledger | data=2026-10-28 -->
+<!-- co-nowego: grupa=skaner | pl=Skaner aktualizuje się sam | en=The scanner updates itself | data=2026-10-28 -->
+<!-- co-nowego: grupa=blog | pl=Lekcje: nauka czytania rynku w aplikacji | en=Lessons: learning to read the market inside the app | data=2026-10-26 -->
+<!-- co-nowego: grupa=blog | pl=Wersja angielska interfejsu | en=English version of the interface | data=2026-10-25 -->
+<!-- co-nowego: grupa=blog | pl=Strony Wykresów i Lekcji dla wyszukiwarek, z podglądem linków | en=Charts and Lessons pages for search engines, with link previews | data=2026-10-25 -->
+<!-- co-nowego: grupa=wykres | pl=Widok Wykresy: footprint, taśma, rysowanie, wieloryby, góry lodowe i powtórka doby | en=Charts view: footprint, tape, drawing tools, whales, icebergs and day replay | data=2026-10-24 -->
+<!-- co-nowego: grupa=blog | pl=Blog z analizami BTC, z wykresami we wpisach i udostępnianiem | en=Blog with BTC analyses, charts in posts and sharing | data=2026-10-24 -->
 - **Przeprowadzka na hyperquant.tech bez utraty ustawień** (`src/shell/originMove.ts`, `public/sw.js`): przeglądarka trzyma ustawienia osobno dla każdego adresu, więc po przeniesieniu strony z rdemb.github.io/HyperQuant/ na hyperquant.tech rysunki, karty, szablony, alarmy, dziennik i urządzenie 24/7 przechodzą same. Gdy GitHub przekierowuje stary adres, service worker podaje zapisaną w przeglądarce aplikację, a ona przenosi klucze `hq.*` i bieżący widok w # adresu. Nowy adres przyjmuje pakiet raz, przed startem aplikacji (ze starego adresu bez pytania, z innego źródła po zgodzie); kolejne wejścia starym adresem przenoszą tylko widok. Powiadomienia 24/7 dochodzą dalej przez subskrypcję ze starego adresu, a skrzynka alarmów przyjmuje żądania z hyperquant.tech.
 - **„DOM i taśma” w nowym układzie: pasek „co się dzieje teraz”, powiększanie paneli, pełny ekran, czoło kolejki i „Kto przyjmuje uderzenia”** (`src/views/FlowView.tsx`, `src/views/flow/Pulse.tsx`, `src/views/flow/WhoPanel.tsx`, `src/charts/pro/core/queueHead.ts`, `src/charts/pro/core/makers.ts`): nad panelami pięć kafli z najważniejszą liczbą każdego panelu (arkusz: udział bidów i asków w głębokości i wartość czoła, taśma: tempo wobec zwykłej minuty i udział kupna, kto przyjmuje: udział 3 największych makerów po każdej stronie, ściany: odsetek zniknięć bez transakcji w godzinie, TWAP-y: netto planów na 15 min); kliknięcie kafla powiększa jego panel, a na telefonie kafle są zakładkami. Każdy panel ma przycisk powiększenia (Esc wraca), a cały widok ma pełny ekran (klawisz F). Powiększona drabina pokazuje mapę z ostatniej godziny zamiast 15 min, szeroką na pół ekranu, z podziałką co 15 min. Od 1600 px trzy kolumny bez zakładek: arkusz, taśma z „Kto przyjmuje”, ściany z TWAP-ami; na laptopie dolne pole ma zakładki Ściany, TWAP-y i Kto przyjmuje. **Czoło kolejki**: przy środku drabiny najlepszy bid i ask z kanału `bbo` Hyperliquid (kilka razy na sekundę): cena, wartość, liczba zleceń, jak długo ta cena jest najlepsza i bilans ubytku z 5 min rozłożony na zjedzone transakcjami i anulowane (rozliczenie 2 s po aktualizacji, netto między aktualizacjami). Kanał płynie tylko przy otwartym widoku. **Kto przyjmuje uderzenia**: Hyperliquid podaje konto makera przy każdej transakcji, więc panel pokazuje, ile kont przyjmuje sprzedaż (bidy) i kupno (aski) w ostatnich 15 min i ile z tego biorą 3 największe, obok to samo dla agresorów i „zwykle” z ostatniej godziny; w powiększeniu 20 największych kont z udziałem reszty i przebieg udziału z godziny. Kliknięcie konta podświetla jego zlecenia na taśmie. Pseudonimy jak na taśmie, bez adresów. Pomiar na zapisie z 1.11 (okna 15 min): makerów po każdej stronie zwykle ok. 94, 3 największe biorą zwykle 37–38% (w 10% okien od 56%); z ubytku najlepszego poziomu między migawkami co 5,4 s transakcje to 7%, reszta to anulowania.
 - **TWAP-y w drodze w „DOM i taśma”** (`src/views/flow/TwapPanel.tsx`, `src/charts/pro/core/twapPlans.ts`, `src/charts/pro/store/twapCache.ts`): zakładka obok „Ściany” (na telefonie karta TWAP) z TWAP-ami, które właśnie wykonują się na BTC. Plasterki z hashem zerowym jednego konta i strony w tej samej fazie taktu 30 s tworzą ciąg, a plan konta przychodzi z publicznego dziennika Hyperliquid (`twapHistory`, plan w toku = „activated” bez wpisu końcowego, dopasowany po fazie startu + 1,5 s). Przy każdym planie: postęp z harmonogramu liniowego, ile zostało w BTC i USD, ile wejdzie w ciągu 15 min, koniec i znacznik „zamyka” przy zleceniu tylko zmniejszającym pozycję; nad listą suma kupna i sprzedaży z planów na 15 min i netto. Plan pobiera się sam dla 6 największych kont (telefon 3), po jednym zapytaniu naraz, reszta po kliknięciu; ciągi poniżej 100 USD/min są zwinięte w jeden wiersz. Adres konta służy tylko do zapytania i zostaje w pamięci strony, na ekranie pseudonimy jak na taśmie. Pod listą udział TWAP-ów w wartości całej taśmy z ostatnich 10 min. Plan to zamiar, nie zobowiązanie: konto może przerwać TWAP w każdej chwili.
@@ -841,6 +930,11 @@ Pomiar `npm run ui:check` (Chrome bez okna na zbudowanej stronie, 1440 × 900 i 
 - **Zgłaszanie nowych wpisów do wyszukiwarek** (`scripts/blog/indexnow.mjs`, krok w `.github/workflows/static.yml`): po wdrożeniu pusha z nowym albo zmienionym wpisem jego adres i strona bloga trafiają do IndexNow (Bing, Yandex, Seznam, Naver), a ręczne uruchomienie workflow z opcją „Zgłoś do IndexNow wszystkie adresy” wysyła całą mapę strony; Google czyta `sitemap.xml` przez Search Console, a Bing przez Bing Webmaster Tools (pliki weryfikacyjne w `public/`).
 
 ### Zmienione
+<!-- co-nowego: grupa=wykres | pl=Nowe palety kolorów wykresu i mniej warstw na starcie | en=New chart color palettes and fewer layers at start | data=2026-10-26 -->
+<!-- co-nowego: grupa=wykres | pl=VWAP dnia, sesji i tygodnia z pasmami | en=Day, session and week VWAP with bands | data=2026-10-25 -->
+<!-- co-nowego: grupa=wykres | pl=Szybsza cena przy starcie i mniej pobieranych danych | en=Faster price at start and less data downloaded | data=2026-10-25 -->
+<!-- co-nowego: grupa=wykres | pl=Wykres na telefonie: więcej miejsca na cenę, pasek narzędzi w dwóch wierszach | en=Chart on phones: more room for price, toolbar in two rows | data=2026-10-24 -->
+<!-- co-nowego: grupa=wykres | pl=Skróty klawiszowe, odliczanie do zamknięcia świecy i przycisk automatycznej skali | en=Keyboard shortcuts, a candle close countdown and an auto-scale button | data=2026-10-24 -->
 - Wykresy: Schrödi siedzi w pasku stanu pod wykresem zamiast na nim, więc nie zasłania świec ani paneli (na telefonie był na CVD); dymek otwiera się nad paskiem po kliknięciu, kot jest widoczny także w kartach Taśma, DOM i Liczby. Kot jest animowany: oddech, mruganie, strzyżenie uszami, ogon, rozglądanie się i drgające kontury, gdy kierunek jest niepewny, a przy nowej prognozie krótki podskok; przy systemowym „ogranicz ruch” stoi nieruchomo.
 - Wykresy: wraca paleta „Neon” jako domyślna — neonowa zieleń kupna i fiolet sprzedaży na grafitowym tle, nierównowagi w cyjanie i magencie, żółty POC, mapa ciepła od morskiego przez żółty do czerwieni. Paleta „Desk” (morska zieleń i miedź na granatowym tle) zostaje do wyboru w Ustawieniach wykresu → Kolory; wybór obejmuje wszystkie wykresy, jest zapamiętany w tej przeglądarce, a zmiana przeładowuje stronę (`src/charts/pro/chart/palette.ts`, tokeny `of-*` przełączane atrybutem `data-chart-palette`).
 - Wykresy: panele pod wykresem (Wolumen, Delta, CVD, CVD giełd, ΔOI i funding giełd, Tablica liczb z wyborem grup) wybiera się w menu „Wskaźniki”, w zakładce „Pod wykresem” — obok zakładki „Na wykresie ceny” — zamiast w Ustawieniach wykresu; na telefonie tam samo jest wybór jednego panelu. Stan rynku włącza się w Ustawieniach wykresu → Nad wykresem; komunikat po zamknięciu panelu krzyżykiem wskazuje nowe miejsce.
@@ -870,6 +964,14 @@ Pomiar `npm run ui:check` (Chrome bez okna na zbudowanej stronie, 1440 × 900 i 
 - Wykresy na komputerze: legenda zajmuje mniej miejsca nad danymi. Symbol, czas świecy i OHLC z wolumenem są w jednej linii (na węższym wykresie zawijają się), a strzałka przy symbolu zwija legendę do jednej linii bez delty i VWAP. W układzie kilku wykresów legenda jest domyślnie zwinięta, przy jednym wykresie pełna; wybór zapamiętywany w przeglądarce osobno dla jednego i dla kilku wykresów. W układzie 2 albo 4 wykresów przycisk pełnego ekranu i klawisz F otwierają cały układ na pełnym ekranie, a nie jeden wykres.
 
 ### Poprawione
+<!-- co-nowego: grupa=wykres | pl=Poprawki na telefonie: nagłówek i zakładki mieszczą się na ekranie | en=Phone fixes: header and tabs fit on the screen | data=2026-10-31 -->
+<!-- co-nowego: grupa=wykres | pl=Pewniejsze alarmy i powiadomienia 24/7, także po restarcie serwera | en=More reliable alerts and 24/7 notifications, also after server restarts | data=2026-10-30 -->
+<!-- co-nowego: grupa=skaner | pl=Większa prywatność danych o dużych kontach | en=More privacy in large-account data | data=2026-10-30 -->
+<!-- co-nowego: grupa=skaner | pl=Nagranie taśmy bez luk po aktualizacji skanera | en=Tape recording without gaps after scanner updates | data=2026-10-29 -->
+<!-- co-nowego: grupa=prognozy | pl=Dziennik prognoz nie traci prognozy zaraz po restarcie skanera | en=The forecast ledger no longer loses the forecast right after a scanner restart | data=2026-10-28 -->
+<!-- co-nowego: grupa=blog | pl=Czytelniejsze mapy sesji i wykresy we wpisach bloga | en=Clearer session maps and charts in blog posts | data=2026-10-28 -->
+<!-- co-nowego: grupa=wykres | pl=Powtórka nagranej doby oraz panele Delta i CVD bez przerw | en=Day replay and the Delta and CVD panels without gaps | data=2026-10-25 -->
+<!-- co-nowego: grupa=blog | pl=Jeden polski zapis liczb w całej aplikacji | en=One consistent Polish number format across the app | data=2026-10-25 -->
 - **Pokrycie taśmy kończy się na ostatniej wiadomości przed zerwaniem** (`backend/scanner/hl.ts`): odcinek nagrania kończył się w chwili wykrycia zamknięcia połączenia, więc cisza przed wykryciem (do 90 s, gdy działa strażnik ciszy) liczyła się jako pokrycie bez danych. 31.10.2026 transakcje i arkusz BTC ustały o 09:32:29 UTC, a odcinek kończył się o 09:32:57. Teraz koniec odcinka to chwila ostatniej wiadomości z Hyperliquid, więc taka cisza jest jawną luką.
 - **Nagłówek na telefonie bez wystawania poza ekran** (`src/shell/AppShell.tsx`): przyciski „Synchronizuj teraz” i dźwięku taśmy miały być ukryte poniżej 640 px, ale stała klasa `inline-flex` przycisku wygrywała z `hidden`, więc były widoczne. Gdy dochodził przycisk instalacji aplikacji (iPhone w Safari, Android z możliwością instalacji), nagłówek miał ok. 420 px i strona przewijała się w bok o ok. 29 px na ekranie 390 px. Dźwięk taśmy na telefonie włącza się w Źródłach.
 - **Wolumen od miliona w milionach** (`src/charts/orderflow/footprint.ts`): wolumen świecy 1M i oś wolumenu pokazywały „1025,1K” i „1000,0K”; teraz „1,03M” i „1,00M”.
@@ -915,6 +1017,9 @@ Pomiar `npm run ui:check` (Chrome bez okna na zbudowanej stronie, 1440 × 900 i 
 ## [2.4.0] — 2026-10-22
 
 ### Dodane
+<!-- co-nowego: grupa=prognozy | pl=Weryfikacja dziennika jednym kliknięciem i codzienna niezależna weryfikacja | en=One-click ledger verification and a daily independent check -->
+<!-- co-nowego: grupa=prognozy | pl=Laboratorium folkloru: popularne reguły rynku sprawdzone na danych | en=Folklore lab: popular market rules tested on data -->
+<!-- co-nowego: grupa=skaner | pl=Symulator kaskady likwidacji 2.0 i archiwum świec | en=Liquidation cascade simulator 2.0 and a candle archive -->
 - **Reżim zmienności (BOCPD) i A/B wersji modelu w weryfikowalnym dzienniku** (`src/utils/bocpd.ts`, `src/utils/abTest.ts`, `backend/scanner/forecaster.ts`, karta w panelu dziennika): bayesowskie wykrywanie punktów zmiany online (Adams & MacKay 2007) na zwrotach 5m z 3 dni, oczyszczonych z rytmu doby profilem godzinowym modelu, daje bieżący reżim (σ jako predykcyjna wariancja uśredniona po długości reżimu, długość, P zmiany), liczony raz na slot bez świecy w toku. Obok prognozy zwrotu 1 h (wersja A: HAR + FHS) zapisywana jest przed faktem wersja B z wariancją mieszaną po połowie z wariancją reżimu na horyzoncie (te same chwile, benchmark i partia pokwitowania; kwantyle A × skala; zapisane σ_A i współczynnik sezonowy). Plan oceny prerejestrowany w łańcuchu (`ab-v1`); okresy po 14 dni ustalone z góry od 23.10.2026; wniosek dopiero po zakończeniu okresu, z przedziałem Neweya–Westa (24 h) i wartością krytyczną fixed-b (Kiefer–Vogelsang). Weryfikator sprawdza wersję B (skala ze wzoru, wiarygodność σ_A), zgodność planu z kodem i przelicza okresy.
 - **Codzienna niezależna weryfikacja dziennika i znaczek** (`backend/deploy/health-alert.yml`, strażnik, karta weryfikacji, README): strażnik raz na dobę wysyła puls do gałęzi `health` repo danych, a push uruchamia tam w GitHub Actions — na infrastrukturze GitHuba, nie na serwerze desku — pełny weryfikator (`--market`) na klonie gałęzi `ledger`; wynik to znaczek shields.io w README i podsumowanie w panelu dziennika z linkiem do przebiegu.
 - **Symulator kaskady likwidacji 2.0** (`src/utils/cascadeSim.ts`, sekcja w panelu mapy likwidacji): Monte Carlo (krok 30 s, 60 min) na zmierzonej mapie — szok obejmuje cały rynek, likwidacje wchodzą transzami (20% na krok) i zjadają zmierzoną stronę arkusza Hyperliquid wzdłuż krzywej głębokości z rejestratora (liniowo do ±20 bp, dalej prawo pierwiastka), kolejne wyzwala cena mark z opóźnieniem EMA 150 s (mediana składowych mark HL), a arkusz w tym czasie odbudowuje się w tempie zmierzonej odporności; pozycje spoza mapy jako 1/pokrycie strony z czynnikiem wspólnym ścieżki i kubełka, część likwidacji przejmuje Liquidator Vault; pasma ruchu szczytowego p10–p90, P(wzmocnienie ≥ 2×), zlikwidowany nominał; wzmocnienie lokalne (sieczna, przybliżenie liniowe). `impactBp` — krańcowy wpływ z tej samej krzywej co koszt wykonania.
@@ -927,17 +1032,22 @@ Pomiar `npm run ui:check` (Chrome bez okna na zbudowanej stronie, 1440 × 900 i 
 - **Strażnik skanera na serwerze** (`scripts/watchdog.mjs`, `backend/deploy/hyperquant-watchdog.{service,timer}`): co 15 min ta sama ocena zdrowia danych co nadzór w GitHub Actions (którego harmonogram GitHub pomija), niezależnie od GitHuba. Samonaprawa: restart skanera w stanie `failed`, przy braku lokalnej publikacji > 10 min albo stojącej publikacji, dzienniku prognoz lub rejestratorze płynności — działającej usługi dopiero po godzinie jej działania, najwyżej 3 razy w epizodzie; bez restartu przy błędach sieci, problemach jakości i ręcznym zatrzymaniu. Alarm: stan w gałęzi `health` repo danych po potwierdzeniu w dwóch przebiegach (prywatność — od razu), przypomnienie co 6 h; push uruchamia workflow otwierający / komentujący / zamykający zgłoszenie `alert-danych`. Root z własnym katalogiem stanu (`StateDirectory`, `ProtectSystem=strict`), commity w UTC.
 
 ### Zmienione
+<!-- co-nowego: ukryj -->
 - `scripts/check-data-health.mjs` eksportuje `fetchInput` (wspólne pobieranie dla nadzoru i strażnika); pilnuje świeżości `lab/BTC.json` (3 h), a strażnik restartuje skaner przy stojącym laboratorium.
 - Magazyn gałęzi tylko do dopisywania (`ledgerStore`) obsługuje dowolną gałąź i pliki `.csv`.
 - README repo danych: lista plików w jednym miejscu, opis gałęzi `health`.
 
 ### Poprawione
+<!-- co-nowego: ukryj -->
 - Komunikaty weryfikatora z poprawną odmianą liczebników (1 linia, 2 linie, 5 linii); prerejestracje opisane jako katalog laboratorium i plan A/B.
 - Symulator kaskady: strony arkusza (bidy / aski) z bieżącej minuty rejestratora — profil płynności publikuje je w `now`; wcześniej przy krótkiej historii godziny podział był po cichu przyjmowany po połowie. Gdy podział pochodzi z mediany godziny albo jest założony, sekcja to pokazuje.
 
 ## [2.3.0] — 2026-10-22
 
 ### Dodane
+<!-- co-nowego: grupa=prognozy | pl=Weryfikowalny dziennik prognoz desku | en=A verifiable desk forecast ledger -->
+<!-- co-nowego: grupa=rynki | pl=Model kontra rynek HIP-4 i kontekst aukcji | en=Model versus the HIP-4 market, and auction context -->
+<!-- co-nowego: grupa=skaner | pl=Przepływ kohort, taśma zrealizowanych likwidacji i nadzór danych | en=Cohort flow, a tape of executed liquidations and data monitoring -->
 - **Rejestrator płynności arkusza** (`backend/scanner/liquidity.ts`, subskrypcja `l2Book` w strumieniu skanera z agregacją dobieraną do ceny (20 poziomów pokrywa ±20 bp), panel „Płynność arkusza w ciągu doby” w widoku Mikrostruktura): skaner co ~5 s liczy głębokość obu stron w ±10 i ±20 bp od środka, przechowuje minutowe mediany na serwerze (30 dni) i publikuje wyłącznie agregaty (`liquidity/BTC.json`): mediana głębokości wg godziny UTC, bieżąca płynność względem normy tej godziny, odporność (minuty do powrotu głębokości po ruchu ≥ 15 bp); nadzór danych pilnuje świeżości profilu.
 - **Model vs rynek w weryfikowalnym dzienniku** (`backend/scanner/marketQuotes.ts`, `forecaster.ts`, `ledgerRunner.ts`, weryfikator, karta w panelu dziennika): co 15 min, 5–10 min przed terminem, skaner zapisuje w łańcuchu hashy notowanie rolującego 15-minutowego rynku HIP-4 na BTC („mark ≥ ceny z początku kwadransa”) i p z modelu desku z tej samej chwili; osobne pokwitowanie OpenTimestamps partii; rozstrzygnięcie ze świecy 1m w terminie z oznaczeniem wyników blisko progu (≤ 0,05%); Brier i log score modelu i rynku na tych samych pytaniach na dwóch poziomach (notowania płynne i z wąskim spreadem), różnica z bootstrapem parowanym, werdykt od 100 pytań; weryfikator przelicza wynik z ceny i progu, sprawdza cenę ze świecą (`--market`) i pokwitowania per partia.
 - **Dziennik zagrań i playbook** (`src/utils/tradeJournal.ts`, `src/state/useJournal.ts`, zakładka w widoku Plan): setupy w szablonie kontekst → lokalizacja → wyzwalacz → wykonanie → unieważnienie; zagrania z wynikiem w R od stopu początkowego; MAE/MFE w R i kontekst aukcji przy wejściu (odległość od VWAP w σ, otwarcie względem VA, stan IB) odtwarzane ze świec 1m Hyperliquid dla zagrań z ostatnich ~3,5 doby; statystyki per setup: trafność z przedziałem Wilsona 95%, średnie R z przedziałem bootstrap 90% (stałe ziarno, od 5 zagrań), profit factor, mediany MAE wygranych i MFE przegranych, ostrzeżenie poniżej 20 zagrań; dane wyłącznie w localStorage, eksport/import JSON z walidacją wpisów.
@@ -955,10 +1065,12 @@ Pomiar `npm run ui:check` (Chrome bez okna na zbudowanej stronie, 1440 × 900 i 
 - **Skanowanie adaptacyjne**: pozycje od 25 tys. USD z ceną likwidacji < 1% od ceny mark odczytywane co 1 min (< 3%: najwyżej co 2 min).
 
 ### Zmienione
+<!-- co-nowego: ukryj -->
 - Wdrożenie GitHub Pages na Node 24 (jak CI i skaner).
 - Hook danych skanera wspólny dla mapy i taśmy (`usePublished`): pamięć podręczna, odświeżanie co minutę tylko w widocznej karcie, starsza odpowiedź nie cofa nowszej.
 
 ### Naprawione
+<!-- co-nowego: ukryj -->
 - Taśma agresora: uczciwe nazwy („przepływ agresora”, „heurystyka”) i odesłanie do absorpcji z regresji; mapa wielorybów z WebSocket nie jest już nadpisywana starszymi węzłami z REST.
 - Kohorty: po restarcie pierwszy kubełek był obserwowany tylko częściowo, a publikowany jak pełny — teraz tylko kubełki obserwowane w całości.
 - `status.json` pokazywał `seeded: 0` po każdym restarcie skanera (licznik tylko w pamięci); konta z rankingu bez pozycji BTC wypadały co 3 dni (oraz jako pierwsze przy przepełnieniu książki adresów) i wracały z zasiewem (zbędne ponowne odczyty).
@@ -968,6 +1080,8 @@ Pomiar `npm run ui:check` (Chrome bez okna na zbudowanej stronie, 1440 × 900 i 
 Mapa likwidacji z pozycji on-chain i symulator kaskady ([#8](https://github.com/rdemb/HyperQuant/pull/8), [#12](https://github.com/rdemb/HyperQuant/pull/12)), aktualizacje zależności ([#9](https://github.com/rdemb/HyperQuant/pull/9)).
 
 ### Dodane
+<!-- co-nowego: grupa=skaner | pl=Mapa likwidacji z pozycji on-chain i symulator kaskady | en=Liquidation map from on-chain positions and a cascade simulator -->
+<!-- co-nowego: grupa=skaner | pl=Dane skanera publikowane w otwartym repozytorium | en=Scanner data published in an open repository -->
 - **Mapa likwidacji z pozycji on-chain** zamiast szacunku: skaner na serwerze zbiera adresy portfeli z publicznej taśmy BTC (pole `users`), oraz z publicznego rankingu kont (zasiew 5000 największych co 6 h), odczytuje ich pozycje i ceny likwidacji (`clearinghouseState`) i publikuje wyłącznie agregaty (kubełki, pokrycie open interest, wiek odczytów ważony nominałem).
 - **Symulator kaskady likwidacji**: punkt stały szok → likwidacje → wpływ ceny z prawa pierwiastka kwadratowego (Tóth i in. 2011), krzywa szok → ruch końcowy z pasmem dla Y 0.5–1.5.
 - Panel „Mapa likwidacji i kaskada” na Desku (histogram, najbliższe klastry, tabela) i ostrzeżenie w Analizatorze, gdy stop leży w klastrze likwidacji.
@@ -975,6 +1089,7 @@ Mapa likwidacji z pozycji on-chain i symulator kaskady ([#8](https://github.com/
 - Backend `backend/scanner` bez zależności npm (Node 24): własny budżet wag API, harmonogram skanów wg wielkości pozycji, podpis SigV4 sprawdzony wektorem AWS, usługa systemd z limitami zasobów, instalator.
 
 ### Zmienione
+<!-- co-nowego: ukryj -->
 - Zależności: lucide-react 1.59, motion 14.3 (używane API bez zmian; poprawki AnimatePresence), Express 5.3 (fallback SPA serwera produkcyjnego jako middleware — Express 5 odrzuca ścieżkę '*'), vitest 5.0.5; typy Node przypięte do wersji uruchomieniowej (24); TypeScript 7.0.2; motion 14.3.1.
 
 ## [2.1.0] — 2026-10-22
@@ -982,6 +1097,7 @@ Mapa likwidacji z pozycji on-chain i symulator kaskady ([#8](https://github.com/
 Silnik zmienności i spójność modelu z dziennikiem trafności ([#1](https://github.com/rdemb/HyperQuant/pull/1)).
 
 ### Dodane
+<!-- co-nowego: grupa=prognozy | pl=Model zmienności i szansa wypełnienia zlecenia | en=A volatility model and the chance of an order filling -->
 - **Model zmienności** (`src/utils/volatility.ts`): sezonowy log-HAR (Corsi 2009) na godzinowych wariancjach Garman–Klass z ~5000 świec 1h Hyperliquid, profil godzin UTC, korekta Duana dla każdego horyzontu prognozy; innowacje FHS (Barone-Adesi i in. 1999) ze standaryzowanych zwrotów 5m; udział skoków (wariancja dwupotęgowa, BNS 2004) i test Lee–Mykland (2008); trafność QLIKE (Patton 2011) poza próbą w UI.
 - **P(wypełnienia)** w Analizatorze planu: Monte Carlo startuje od bieżącej ceny, zlecenie z limitem musi najpierw zostać dotknięte; wynik warunkowy na wypełnienie.
 - Karta „Model zmienności” w Analizatorze; Brier P(wypełnienia) w dzienniku; wiersze w Rodowodzie danych.
@@ -989,6 +1105,7 @@ Silnik zmienności i spójność modelu z dziennikiem trafności ([#1](https://g
 - CI dla pull requestów (typy, testy, build).
 
 ### Zmienione
+<!-- co-nowego: ukryj -->
 - Monte Carlo Analizatora: kroki 5 min z σ z modelu zmienności i korektą mostu Browna z lokalnym σ (zapas: stała σ Parkinsona).
 - Pas „Zasięg 2h”: ten sam silnik, 2000 ścieżek, wspólne liczby losowe w obrębie minuty, bez nieestymowanego przyciągania OU; Merton tylko jako oznaczony zapas.
 - Dziennik rozstrzyga plany na świecach 1m z API, niezależnie od interwału wykresu; wejście w granicy 1 bp od rynku = zlecenie rynkowe (ta sama reguła w modelu).
@@ -996,6 +1113,7 @@ Silnik zmienności i spójność modelu z dziennikiem trafności ([#1](https://g
 - Akcje GitHub bez przestarzałego Node 20 (checkout v7, setup-node v7, upload-pages-artifact v5, deploy-pages v5).
 
 ### Naprawione
+<!-- co-nowego: grupa=prognozy | pl=Liczby pasa „Zasięg 2h” nie skaczą już losowo | en=The 2h range figures no longer jump at random -->
 - README twierdziło, że prawdopodobieństwa barier Analizatora zawierają skoki Mertona — nie zawierały.
 - Szybka karta na Desku liczyła bez modelu zmienności mimo etykiety HAR+FHS.
 - Liczby pasa 2h skakały losowo przy każdej synchronizacji (ziarno z ceny i warunkowe losowania mostu).
@@ -1005,6 +1123,10 @@ Silnik zmienności i spójność modelu z dziennikiem trafności ([#1](https://g
 Przebudowa desku i poprawki krytyczne.
 
 ### Dodane
+<!-- co-nowego: grupa=wykres | pl=Wykres order flow: mapa ciepła arkusza, bąble agresora, footprint i CVD | en=Order flow chart: order book heatmap, aggressor bubbles, footprint and CVD -->
+<!-- co-nowego: grupa=rynki | pl=Widok Rynek: funding na trzech giełdach, makro i kalendarz | en=Market view: funding on three exchanges, macro and calendar -->
+<!-- co-nowego: grupa=blog | pl=Aplikacja do zainstalowania na telefonie i komputerze | en=An installable app for phone and desktop -->
+<!-- co-nowego: grupa=blog | pl=Widok Źródła: skąd pochodzi każda liczba | en=Sources view: where every number comes from -->
 - Wykres order flow: heatmapa arkusza L2, bąble agresora, footprint, profil wolumenu, CVD.
 - Analizator planu (P cel przed stopem, poślizg, likwidacja, EV) i dziennik trafności.
 - Widok Rynek: funding HL/Binance/Bybit przez API Hyperliquid, proxy makro z rynków HIP-3, mapa rynku, kalendarz Fed/BLS/BEA, dane publiczne pobierane przez GitHub Actions.
@@ -1012,11 +1134,13 @@ Przebudowa desku i poprawki krytyczne.
 - PWA (manifest, service worker, instalacja), nowa powłoka i tokeny, Lab 3D, Mikrostruktura.
 
 ### Zmienione
+<!-- co-nowego: grupa=wykres | pl=Uczciwe dane: brak danych to brak liczby, bez wartości zastępczych | en=Honest data: missing data shows no number, never a placeholder -->
 - Uczciwe dane: brak świec i liczb zastępczych, BVC zamiast syntetycznego podziału wolumenu, `null` zamiast stałych.
 - Kalman z kowariancją, VPIN na kubełkach wolumenu, λ Kyle'a z OLS, Hurst z korektą Anis-Lloyd.
 - WebSocket: ponowne łączenie, ping, rollover świec, deduplikacja, paczkowanie.
 
 ### Usunięte
+<!-- co-nowego: ukryj -->
 - Automatyczne sygnały i przeliczanie Kelly → dźwignia; nieużywane `.env.example` i zależność `dotenv`.
 
 [2.4.0]: https://github.com/rdemb/HyperQuant/compare/v2.3.0...v2.4.0
