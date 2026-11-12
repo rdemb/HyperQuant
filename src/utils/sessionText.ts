@@ -27,32 +27,17 @@ export function missingWhy(...vs: (Got<unknown> | undefined)[]): string {
   return WAIT_TEXT;
 }
 
-/** Oczekiwany zakres sesji (MODEL) i metoda. */
-export type Expected = { usd: number; method: 'har' | 'parkinson' };
-
-/**
- * Model HAR (BTC) jeszcze się wczytuje: budżet zakresu czeka na niego („—”), zamiast pokazać na chwilę liczbę z Parkinsona
- * i potem bez słowa przeskoczyć na HAR.
- */
-export const VOL_WAIT_TEXT = tr('Czekam na model zmienności (HAR)…', 'Waiting for the volatility model (HAR)…');
+/** Oczekiwany (średni) zakres sesji w USD (MODEL „profil × poziom”), typowy dzień (ok. mediana) i metoda. */
+export type Expected = { usd: number; typical: number; method: 'profile' };
 
 /** Nazwa metody oczekiwanego zakresu w podpowiedzi MODEL. */
-export const METHOD: Record<Expected['method'], string> = { har: 'HAR', parkinson: 'Parkinson' };
+export const METHOD: Record<Expected['method'], string> = { profile: tr('profil × poziom', 'profile × level') };
 export const METHOD_NOTE: Record<Expected['method'], string> = {
-  har: tr(
-    'Oczekiwany zakres E[H−L] = √(8/π)·σ sesji z modelu zmienności HAR (BTC, liczony w przeglądarce, z profilem godzin).',
-    'Expected range E[H−L] = √(8/π)·session σ from the HAR volatility model (BTC, computed in the browser, with the hourly profile).'
-  ),
-  parkinson: tr(
-    'Bez modelu HAR: σ Parkinsona z ostatnich zamkniętych świec 5m tego rynku przeskalowana do długości sesji, E[H−L] = √(8/π)·σ.',
-    'Without the HAR model: Parkinson σ from the latest closed 5m candles of this market scaled to the session length, E[H−L] = √(8/π)·σ.'
+  profile: tr(
+    'Oczekiwany (średni) zakres ze świec 1h: profil godzin sesji z 20 dni tego samego typu razy poziom zmienności z 24 h przed otwarciem, liczony raz na otwarcie sesji; w połowie dni zakres jest poniżej ok. 0,87 tej wartości.',
+    'Expected (mean) range from 1h candles: the hourly profile of the session from 20 days of the same type times the volatility level of the 24 h before the open, computed once at the session open; on half of the days the range is below about 0.87 of this value.'
   ),
 };
-/** Zamknięta sesja: oczekiwanie sprzed jej otwarcia (Parkinson ze świec 5m doby przed otwarciem). */
-export const EX_ANTE_NOTE = tr(
-  'Zamknięta sesja: σ Parkinsona ze świec 5m z doby przed otwarciem sesji (oczekiwanie sprzed sesji), E[H−L] = √(8/π)·σ.',
-  'Closed session: Parkinson σ from 5m candles of the day before the session open (the expectation before the session), E[H−L] = √(8/π)·σ.'
-);
 
 export const DAY_TYPE_LABEL: Record<DayType, string> = {
   normal: tr('normalny', 'normal'),

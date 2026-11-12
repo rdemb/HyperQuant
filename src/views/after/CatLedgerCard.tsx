@@ -20,6 +20,19 @@ function latestMove(cat: NonNullable<DeskLedgerSummary['cat']>, pBig: number): s
 
 /** Wyniki od 20 rozłącznych godzin — mniejsza próba to szum */
 const MIN_EFF = 20;
+/** Przedział z losowania dób od tylu dób (jak `BOOT.minDays` w podsumowaniu) */
+const CI_MIN_DAYS = 7;
+
+/** BSS dużego ruchu wobec bazy sezonowej (ta sama godzina UTC): wartość z przedziałem 95%, brak → „—” z powodem. */
+function seasonalStat(b: Cat['scores']['big']['bssSeasonal']): { value: string; hint: string } {
+  const base = tr('ta sama godzina UTC z 20 dób tego samego typu; przedział 95% z losowania dób', 'same UTC hour over 20 days of the same type; 95% interval from resampling days');
+  if (!b) return { value: DASH, hint: tr('brak w starszym podsumowaniu', 'not in older summaries') };
+  const few = tr(`od ${CI_MIN_DAYS} dób (jest ${b.days})`, `from ${CI_MIN_DAYS} days (now ${b.days})`);
+  if (b.value === null) return { value: DASH, hint: b.reason === 'no-base' ? tr('brak bazy z tych godzin', 'no base for these hours') : few };
+  if (b.lo === null || b.hi === null) return { value: pct(b.value), hint: `${base} · ${tr('przedział', 'interval')} ${few}` };
+  return { value: `${pct(b.value)} [${pct(b.lo)}; ${pct(b.hi)}]`, hint: base };
+}
+type Cat = NonNullable<DeskLedgerSummary['cat']>;
 
 /** Schrödi (kot pod wykresem) w dzienniku: najnowsza prognoza, zaufanie, wyniki obu głów, szanse dotknięcia i udział w slotach. */
 export const CatLedgerCard: React.FC<{ cat: NonNullable<DeskLedgerSummary['cat']> }> = ({ cat }) => {
@@ -29,7 +42,8 @@ export const CatLedgerCard: React.FC<{ cat: NonNullable<DeskLedgerSummary['cat']
   const tEnough = !!t && t.hours >= MIN_EFF;
   // Bieżąca szansa wzrostu tylko z dowodem przewagi w e-procesie; wyniki kierunku zostają jako pomiar
   const showDir = dirProven(cat.trust);
-  const head = (h: CatHeadScores, label: string, extra?: React.ReactNode) => (
+  const seasonal = seasonalStat(s.big.bssSeasonal);
+  const head = (h: CatHeadScores, label: string, extra?: React.ReactNode, big = false) => (
     <div className="flex flex-col gap-2">
       <div className="text-[11px] text-ink-2">{label}</div>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-2">
@@ -38,7 +52,17 @@ export const CatLedgerCard: React.FC<{ cat: NonNullable<DeskLedgerSummary['cat']
           value={<span className="font-mono tabular-nums text-base">{enough ? num(h.brier, 3) : DASH}</span>}
           hint={enough ? `${tr('klimatologia', 'climatology')} ${num(h.brierBase, 3)}` : tr(`od ${MIN_EFF} godzin (jest ${s.nEff})`, `from ${MIN_EFF} hours (now ${s.nEff})`)}
         />
-        <Stat label={tr('Umiejętność (BSS)', 'Skill (BSS)')} value={<span className="font-mono tabular-nums text-base">{enough ? pct(h.bss) : DASH}</span>} />
+        <Stat
+          label={big ? tr('BSS wobec stałej częstości', 'BSS vs constant frequency') : tr('Umiejętność (BSS)', 'Skill (BSS)')}
+          value={<span className="font-mono tabular-nums text-base">{enough ? pct(h.bss) : DASH}</span>}
+        />
+        {big && (
+          <Stat
+            label={tr('BSS wobec godziny dnia', 'BSS vs hour of day')}
+            value={<span className="font-mono tabular-nums text-base">{seasonal.value}</span>}
+            hint={seasonal.hint}
+          />
+        )}
         <Stat label="AUC" value={<span className="font-mono tabular-nums text-base">{enough ? num(h.auc, 2) : DASH}</span>} hint={tr('0,5 = rzut monetą', '0.5 = coin flip')} />
         <Stat label={tr('Trafność', 'Accuracy')} value={<span className="font-mono tabular-nums text-base">{enough ? pct(h.hit) : DASH}</span>} />
       </div>
@@ -75,7 +99,7 @@ export const CatLedgerCard: React.FC<{ cat: NonNullable<DeskLedgerSummary['cat']
       </p>
       {cat.trust && <CatTrustBlock trust={cat.trust} hour={cat.hour} />}
       {cat.trust && <div className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium">{tr('Ostatnie 30 dni', 'Last 30 days')}</div>}
-      {head(s.big, tr('Duży ruch', 'Big move'))}
+      {head(s.big, tr('Duży ruch', 'Big move'), undefined, true)}
       {head(
         s.dir,
         tr('Kierunek (wzrost), pomiar', 'Direction (rise), measurement'),

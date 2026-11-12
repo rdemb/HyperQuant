@@ -144,8 +144,26 @@ interface TwapsData {
 interface LedgerData {
   why: string | null;
   verifyUrl: string;
-  returns: { horizon: string; settled: Num; crpss: Num; cov90: Num; cov60: Num; covAci: Num; kupiecP90: Num }[];
-  touch: { settled: Num; brier: Num; brierBase: Num; bss: Num; brierDist: Num; bssDist: Num };
+  returns: {
+    horizon: string;
+    settled: Num;
+    crpss: Num;
+    cov90: Num;
+    cov60: Num;
+    covAci: Num;
+    kupiecP90: Num;
+    kupiecP60: Num;
+    kupiecN60: Num;
+    cover60Disjoint: Num;
+    pitP: Num;
+    pitN: Num;
+    crpssLo: Num;
+    crpssHi: Num;
+    crpssDays: Num;
+    aciInfShare: Num;
+  }[];
+  touch: { settled: Num; brier: Num; brierBase: Num; bss: Num; brierDist: Num; bssDist: Num; bssLo: Num; bssHi: Num; bssDistLo: Num; bssDistHi: Num; ciDays: Num };
+  bigMove: { settled: Num; bss: Num; bssSeasonal: Num; bssSeasonalLo: Num; bssSeasonalHi: Num; seasonalN: Num };
   pending: Num;
   voided: Num;
   slotsIssued: Num;
@@ -790,6 +808,60 @@ describe('forecast_ledger', () => {
     for (const n of [h1.crpss, h1.settled, env.data.touch.brier, env.data.pending]) expect(n.badge).toBe('LIVE');
     // Wiersz stożka strony (reviewRows → session_review): ta sama plakietka i ta sama metoda
     expect(CONE_METHOD).toBe('dziennik prognoz (HAR + FHS)');
+  });
+
+  it('miary z przedziałami: Kupiec 60% i PIT na próbie rozłącznej, przedziały CRPSS i BSS z bootstrapu po dobach, ACI nieskończone, BSS sezonowy kota', async () => {
+    const { env } = await call<LedgerData>('forecast_ledger', allRoutes());
+    const [h1, h4] = env.data.returns;
+    expect(h1).toMatchObject({
+      kupiecP60: { value: 0.683, unit: 'ratio', badge: 'MODEL', method: CONE_METHOD },
+      kupiecN60: { value: 100, unit: 'count', badge: 'LIVE' },
+      cover60Disjoint: { value: 0.58, unit: 'ratio', badge: 'MODEL' },
+      pitP: { value: 0.9988, unit: 'ratio', badge: 'LIVE' },
+      pitN: { value: 100, unit: 'count' },
+      crpssLo: { value: 0.021, unit: 'ratio', badge: 'LIVE' },
+      crpssHi: { value: 0.08, unit: 'ratio' },
+      crpssDays: { value: 30, unit: 'count' },
+      aciInfShare: { value: 0.015, unit: 'ratio', badge: 'LIVE' },
+    });
+    // Poniżej minimum: null z powodem z podsumowania (50 prognoz rozłącznych, 7 dób)
+    expect(h4.pitP.value).toBeNull();
+    expect(h4.pitP.why).toContain('50');
+    expect(h4.crpssLo.value).toBeNull();
+    expect(h4.crpssLo.why).toContain('7');
+    expect(h4.crpssDays.value).toBe(3);
+    expect(env.data.touch).toMatchObject({ bssLo: { value: 0.05 }, bssHi: { value: 0.18 }, bssDistLo: { value: -0.012 }, bssDistHi: { value: 0.1 }, ciDays: { value: 30 } });
+    expect(env.data.bigMove).toMatchObject({
+      settled: { value: 2700, unit: 'count' },
+      bss: { value: 0.048 },
+      bssSeasonal: { value: 0.031, badge: 'LIVE' },
+      bssSeasonalLo: { value: -0.004 },
+      bssSeasonalHi: { value: 0.066 },
+      seasonalN: { value: 2650 },
+    });
+    expect(env.notes.join(' ')).toMatch(/ACI[^.]*90% z konstrukcji/);
+  });
+
+  it('starsze podsumowanie bez nowych miar: narzędzie działa, nowe pola null z powodem, stare liczby bez zmian', async () => {
+    const old = ledger();
+    for (const sc of Object.values(old.scores.ret)) {
+      delete sc.kupiec60;
+      delete sc.pit;
+      delete sc.crpssCi;
+      delete sc.aciInf;
+    }
+    delete old.scores.touch.bssCi;
+    delete old.scores.touch.bssDistCi;
+    delete old.cat;
+    const { res, env } = await call<LedgerData>('forecast_ledger', allRoutes({ [LEDGER_URL]: { json: old } }));
+    expect(res.isError).toBeFalsy();
+    const [h1] = env.data.returns;
+    expect(h1.crpss.value).toBe(0.052);
+    expect(h1.kupiecP90.value).toBe(0.41);
+    for (const n of [h1.kupiecP60, h1.kupiecN60, h1.pitP, h1.crpssLo, h1.crpssHi, h1.aciInfShare, env.data.touch.bssLo, env.data.touch.bssDistHi, env.data.bigMove.bssSeasonal, env.data.bigMove.settled]) {
+      expect(n.value).toBeNull();
+      expect(n.why).toContain('starsz');
+    }
   });
 
   it('dziennik bez aktualizacji od ponad 35 min: liczby zostają (jak na stronie), uwaga o ostatniej aktualizacji', async () => {
