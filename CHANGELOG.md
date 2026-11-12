@@ -4,6 +4,14 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Rejestr rynków markets.json (2026-11-12)
+
+#### Dodane
+- **Reguła `reg-v1` i format rejestru** (`src/utils/marketRegistry.ts`, bez sieci i bez stanu, wspólny dla skanera i strony): rynki wszystkich giełd perp Hyperliquid, także HIP-3 (`xyz:NVDA`), rangowane średnią otwartych pozycji w USD z 7 dni UTC. Rynek wchodzi po 3 kolejnych zamkniętych dniach w pierwszej 20, wychodzi po 7 kolejnych dniach poza 30. miejscem; BTC, ETH, SOL i HYPE są zawsze; rynki wycofane i z zerowym OI nie wchodzą. Rekord `{coin, dex, oiUsd7d, rank, szDecimals, maxLeverage, since, scanner}`, na górze `asOf` i `rule`. Strażnik formatu `isMarketRegistry` i `marketsOrDefault`: bez pliku albo przy złym formacie 4 dotychczasowe rynki (front jeszcze z niego nie korzysta).
+- **Skaner: `markets.json` na `main` repo danych** (`backend/scanner/marketRegistryRunner.ts`): raz na godzinę `perpDexs` i jedno `metaAndAssetCtxs` na giełdę z budżetu prognoz, z odstępem 20 s między giełdami (przy 11 giełdach 240 wag na godzinę); godzinne próbki OI z 10 dni i serie dni w `HQ_STATE_DIR/markets-state.json`, więc restart odtwarza stan. `scanner: "full"` ma tylko rynek skanera (`HQ_COIN`, dziś BTC).
+- Strażnik danych (`scripts/check-data-health.mjs`) pobiera `markets.json` (brak pliku nie jest alarmem) i sprawdza w nim prywatność.
+- Testy: `src/utils/__tests__/marketRegistry.test.ts` (wejście po 3 dniach, przerwana seria, miejsca 21–30 zostają, wyjście po 7 dniach, stałe rynki, wycofane i zerowe OI, kilka giełd z HIP-3, restart, strażnik, rynki domyślne), `backend/scanner/__tests__/marketRegistryRunner.test.ts` (fikstury API, wagi, restart, awarie giełd).
+
 ### Zegar ruchu w „Przed sesją” i w MCP (2026-11-12)
 
 #### Poprawione
