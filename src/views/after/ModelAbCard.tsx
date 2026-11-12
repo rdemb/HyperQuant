@@ -12,7 +12,7 @@ const RUN_MAX_H = 50;
 const bp = (v: number | null) => (v === null ? DASH : fmtFixed(v * 1e4, 2));
 const sd = (v: number) => `${v >= 0 ? '+' : '−'}${fmtFixed(Math.abs(v * 1e4), 2)}`;
 /** Okres [start, end) — koniec pokazany jako ostatni dzień okresu */
-const span = (b: AbBlock) => `${dateFmt.format(b.start)} – ${dateFmt.format(b.end - 1)}`;
+export const span = (b: AbBlock) => `${dateFmt.format(b.start)} – ${dateFmt.format(b.end - 1)}`;
 
 function runLabel(run: number): string {
   const h = (run * 5) / 60;
@@ -27,6 +27,71 @@ function verdictOf(b: AbBlock): string | null {
   if (b.diff.lo > 0) return tr('wersja A (bez reżimu) trafniejsza', 'version A (without regime) more accurate');
   return tr('różnica nieudowodniona', 'difference not proven');
 }
+
+/** Okresy oceny A/B: CRPS A i wariantu, różnica z przedziałem tylko w zakończonym okresie (wspólne dla B i C) */
+export const AbPeriods: React.FC<{ rows: { label: string; b: AbBlock; final: boolean }[]; letter: 'B' | 'C' }> = ({ rows, letter }) =>
+  rows.length > 0 ? (
+    <div className="overflow-x-auto">
+      <table className="w-full text-left font-mono tabular-nums text-[11px]">
+        <caption className="sr-only">
+          {tr(
+            `CRPS wersji A i ${letter} w okresach oceny; różnica ${letter} − A z 95% przedziałem Neweya–Westa (fixed-b) w punktach bazowych`,
+            `CRPS of versions A and ${letter} per evaluation period; difference ${letter} − A with a 95% Newey–West (fixed-b) interval in basis points`
+          )}
+        </caption>
+        <thead className="text-ink-3">
+          <tr>
+            <th className="py-1 pr-3 font-medium font-sans">{tr('Okres oceny', 'Evaluation period')}</th>
+            <th className="py-1 pr-3 font-medium font-sans">{tr('Par slotów', 'Slot pairs')}</th>
+            <th
+              className="py-1 pr-3 font-medium font-sans"
+              title={tr('Ciągły ranking prawdopodobieństwa — niżej = lepiej; w punktach bazowych log-zwrotu', 'Continuous ranked probability score; lower is better; in basis points of log return')}
+            >
+              CRPS A
+            </th>
+            <th className="py-1 pr-3 font-medium font-sans">CRPS {letter}</th>
+            <th
+              className="py-1 font-medium font-sans"
+              title={tr(
+                `Ujemne = ${letter} trafniejsze; 95% przedział Neweya–Westa (opóźnienie 24 h, wartość krytyczna fixed-b) tylko dla zakończonego okresu`,
+                `Negative = ${letter} more accurate; 95% Newey–West interval (24 h lag, fixed-b critical value) only for a finished period`
+              )}
+            >
+              {letter} − A
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(({ label, b, final }) => (
+            <tr key={label} className="border-t border-line">
+              <td className="py-1.5 pr-3 font-sans">
+                {span(b)} <span className="text-[10px] text-ink-3">({label})</span>
+              </td>
+              <td className="py-1.5 pr-3">{b.n}</td>
+              <td className="py-1.5 pr-3">{bp(b.crpsA)}</td>
+              <td className="py-1.5 pr-3">{bp(b.crpsB)}</td>
+              <td className="py-1.5">
+                {b.diff ? (
+                  <>
+                    {sd(b.diff.d)}{' '}
+                    <span className="text-[10px] text-ink-3">
+                      ({sd(b.diff.lo)} … {sd(b.diff.hi)})
+                    </span>
+                  </>
+                ) : !final && b.crpsA !== null && b.crpsB !== null ? (
+                  <span className="text-ink-3" title={tr('Bez przedziału, dopóki okres trwa — wniosek dopiero po jego końcu', 'No interval while the period runs; the conclusion comes only after it ends')}>
+                    {sd(b.crpsB - b.crpsA)}
+                  </span>
+                ) : (
+                  DASH
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  ) : null;
 
 /**
  * A/B wersji modelu w weryfikowalnym dzienniku: wersja A (HAR + FHS) i wersja B (σ z mieszaniny z reżimem zmienności
@@ -77,68 +142,7 @@ export const ModelAbCard: React.FC<{ ab: NonNullable<DeskLedgerSummary['ab']> }>
           </span>
         </div>
       )}
-      {rows.length > 0 && (
-        <div className="overflow-x-auto">
-          <table className="w-full text-left font-mono tabular-nums text-[11px]">
-            <caption className="sr-only">
-              {tr(
-                'CRPS wersji A i B w okresach oceny; różnica B − A z 95% przedziałem Neweya–Westa (fixed-b) w punktach bazowych',
-                'CRPS of versions A and B per evaluation period; difference B − A with a 95% Newey–West (fixed-b) interval in basis points'
-              )}
-            </caption>
-            <thead className="text-ink-3">
-              <tr>
-                <th className="py-1 pr-3 font-medium font-sans">{tr('Okres oceny', 'Evaluation period')}</th>
-                <th className="py-1 pr-3 font-medium font-sans">{tr('Par slotów', 'Slot pairs')}</th>
-                <th
-                  className="py-1 pr-3 font-medium font-sans"
-                  title={tr('Ciągły ranking prawdopodobieństwa — niżej = lepiej; w punktach bazowych log-zwrotu', 'Continuous ranked probability score; lower is better; in basis points of log return')}
-                >
-                  CRPS A
-                </th>
-                <th className="py-1 pr-3 font-medium font-sans">CRPS B</th>
-                <th
-                  className="py-1 font-medium font-sans"
-                  title={tr(
-                    'Ujemne = B trafniejsze; 95% przedział Neweya–Westa (opóźnienie 24 h, wartość krytyczna fixed-b) tylko dla zakończonego okresu',
-                    'Negative = B more accurate; 95% Newey–West interval (24 h lag, fixed-b critical value) only for a finished period'
-                  )}
-                >
-                  B − A
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map(({ label, b, final }) => (
-                <tr key={label} className="border-t border-line">
-                  <td className="py-1.5 pr-3 font-sans">
-                    {span(b)} <span className="text-[10px] text-ink-3">({label})</span>
-                  </td>
-                  <td className="py-1.5 pr-3">{b.n}</td>
-                  <td className="py-1.5 pr-3">{bp(b.crpsA)}</td>
-                  <td className="py-1.5 pr-3">{bp(b.crpsB)}</td>
-                  <td className="py-1.5">
-                    {b.diff ? (
-                      <>
-                        {sd(b.diff.d)}{' '}
-                        <span className="text-[10px] text-ink-3">
-                          ({sd(b.diff.lo)} … {sd(b.diff.hi)})
-                        </span>
-                      </>
-                    ) : !final && b.crpsA !== null && b.crpsB !== null ? (
-                      <span className="text-ink-3" title={tr('Bez przedziału, dopóki okres trwa — wniosek dopiero po jego końcu', 'No interval while the period runs; the conclusion comes only after it ends')}>
-                        {sd(b.crpsB - b.crpsA)}
-                      </span>
-                    ) : (
-                      DASH
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <AbPeriods rows={rows} letter="B" />
       <div className="text-[11px] text-ink-3">
         {tr('CRPS w punktach bazowych log-zwrotu.', 'CRPS in basis points of log return.')}{' '}
         {ab.registeredAt ? (
