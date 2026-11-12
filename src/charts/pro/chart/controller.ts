@@ -20,7 +20,8 @@ import type {
 import { fmtVol } from '../../orderflow/footprint';
 import { fmtSignedVol } from '../../orderflow/renderer';
 import { DEFAULT_THRESHOLD_USD, autoThreshold } from '../core/clashes';
-import { Ohlc, cvdCandles, cvdLine, deltaCandle, flipsEmpty, oiChangeLine } from '../core/flow';
+import { Ohlc, cvdCandles, cvdLine, flipsEmpty, oiChangeLine } from '../core/flow';
+import { deltaPoint, hlDelta } from './flowPoints';
 import { BarStat, VENUE_GROUPS, barStat } from '../core/stats';
 import { hlTick, rowAt } from '../core/footprintBar';
 import type { LiqLevel } from '../core/indicators';
@@ -171,9 +172,6 @@ function toVolume(b: ProBar): HistogramData<Time> {
   return { time: sec(b.t), value: c.v, color: c.c >= c.o ? PRO.volBuy : PRO.volSell };
 }
 
-function toDelta(b: ProBar): CandlestickData<Time> | WhitespaceData<Time> {
-  return b.fp ? { time: sec(b.t), ...deltaCandle(b.fp) } : { time: sec(b.t) };
-}
 
 function toCvd(t: number, c: Ohlc | null): CandlestickData<Time> | WhitespaceData<Time> {
   return c ? { time: sec(t), ...c } : { time: sec(t) };
@@ -1391,7 +1389,7 @@ export class ProChartController {
       }
       this.main.setData(next.map(toPoint));
       this.volume?.setData(next.map(toVolume));
-      this.delta?.setData(next.map(toDelta));
+      this.delta?.setData(next.map(deltaPoint));
       this.statsSeries?.setData(next.map((b) => ({ time: sec(b.t) })));
       if (this.toNow && next.length > 0) {
         this.toNow = false;
@@ -1405,10 +1403,10 @@ export class ProChartController {
         const b = next[i];
         this.main.update(toPoint(b), historical);
         this.volume?.update(toVolume(b), historical);
-        if (!deltaReset) this.delta?.update(toDelta(b), historical);
+        if (!deltaReset) this.delta?.update(deltaPoint(b), historical);
         if (!historical) this.statsSeries?.update({ time: sec(b.t) });
       }
-      if (deltaReset) this.delta?.setData(next.map(toDelta));
+      if (deltaReset) this.delta?.setData(next.map(deltaPoint));
     }
     const ms = this.series.interval.ms;
     this.overlay.setBars(next, ms, this.store.vwapCandles(this.series.interval), this.store.serverNow());
@@ -1599,7 +1597,7 @@ export class ProChartController {
     const times = bars.map((b) => b.t);
     if (this.venueCvd) {
       const next: VenueLines = {
-        hl: cvdLine(times, (i) => bars[i].fp?.delta ?? null, mode),
+        hl: cvdLine(times, (i) => hlDelta(bars[i]), mode),
         binance: cvdLine(times, (i) => v.delta('binance', iv, times[i], now), mode),
         binanceSpot: cvdLine(times, (i) => v.delta('binanceSpot', iv, times[i], now), mode),
         bybit: cvdLine(times, (i) => v.delta('bybit', iv, times[i], now), mode),

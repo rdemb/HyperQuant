@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { FootprintBuilder } from '../core/footprintBar';
 import { cvdCandles, deltaCandle, deltaFromExtremes, flipsEmpty } from '../core/flow';
+import { deltaPoint, hlDelta } from '../chart/flowPoints';
+import { PRO } from '../chart/theme';
 
 const DAY = 86_400_000;
 
@@ -10,6 +12,27 @@ function fp(t: number, deltas: number[]) {
   for (const d of deltas) b.add(t + ++i, 100, Math.abs(d), d >= 0 ? 1 : -1);
   return b.build()!;
 }
+
+describe('świeca niepełna (luka w taśmie) tak samo we wszystkich panelach', () => {
+  it('CVD: przerwa na świecy niepełnej i suma od zera po niej', () => {
+    const bars = [
+      { t: 0, fp: fp(0, [2]), complete: true },
+      { t: 60_000, fp: fp(60_000, [5]), complete: false },
+      { t: 120_000, fp: fp(120_000, [1]), complete: true },
+    ];
+    expect(cvdCandles(bars, 'day')).toEqual([{ open: 0, high: 2, low: 0, close: 2 }, null, { open: 0, high: 1, low: 0, close: 1 }]);
+  });
+
+  it('delta: świeca niepełna wyszarzona (kolor niepełnej), pełna bez koloru; CVD Hyperliquid bez delty niepełnej świecy', () => {
+    const full = deltaPoint({ t: 60_000, fp: fp(60_000, [3]), complete: true });
+    expect(full).toEqual({ time: 60, open: 0, high: 3, low: 0, close: 3 });
+    const part = deltaPoint({ t: 60_000, fp: fp(60_000, [3]), complete: false });
+    expect(part).toEqual({ time: 60, open: 0, high: 3, low: 0, close: 3, color: PRO.incomplete, borderColor: PRO.incomplete, wickColor: PRO.incomplete });
+    expect(deltaPoint({ t: 60_000, fp: null, complete: false })).toEqual({ time: 60 });
+    expect(hlDelta({ t: 0, fp: fp(0, [3]), complete: true })).toBe(3);
+    expect(hlDelta({ t: 0, fp: fp(0, [3]), complete: false })).toBeNull();
+  });
+});
 
 describe('świece delty i CVD', () => {
   it('świeca delty: otwarcie 0, maksimum i minimum w trakcie', () => {

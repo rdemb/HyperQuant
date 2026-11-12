@@ -101,6 +101,12 @@ describe('ProStore', () => {
     const ws = await boot();
     ws.msg({ channel: 'trades', data: [trade(now - 1000, 81025, 0.1, 'B', 1)] }); // migawka po subskrypcji
     const next = T0 + 3 * M5;
+    // Połączenie żyje bez przerwy (wiadomości co minutę); przerwa dłuższa niż strażnik byłaby wybudzeniem karty
+    while (now < next) {
+      now += 60_000;
+      vi.setSystemTime(now);
+      ws.msg({ channel: 'pong' });
+    }
     now = next + 60_000;
     vi.setSystemTime(now);
     ws.msg({ channel: 'trades', data: [trade(next + 1000, 81030, 1, 'B', 3)] });
@@ -177,6 +183,29 @@ describe('ProStore', () => {
     ws2.msg({ channel: 'candle', data: candle(next, 81030, 81031, 1) });
     expect(store.coverage.covers(next, next + 30_000)).toBe(false);
     expect(series.bars().at(-1)!.complete).toBe(false);
+  });
+
+  it('uśpienie karty na 10 min w środku świecy: pokrycie do ostatniej transakcji, świeca niepełna, po wybudzeniu luka zostaje do dociągnięcia', async () => {
+    const ws = await boot();
+    ws.msg({ channel: 'trades', data: [trade(now - 2000, 81025, 0.1, 'B', 1), trade(now - 1000, 81026, 0.1, 'B', 2)] });
+    const lastTrade = now - 1000;
+    // uśpienie: zegar idzie 10 min, timery stoją; po wybudzeniu strażnik połączenia
+    now += 10 * 60_000;
+    vi.setSystemTime(now);
+    vi.advanceTimersByTime(10_000);
+    now += 10_000;
+    expect(store.coverage.covers(lastTrade, lastTrade + 60_000)).toBe(false);
+    // nowe połączenie: migawka z transakcjami po wybudzeniu, więc luka zostaje (dociągnie ją historia serwera)
+    vi.advanceTimersByTime(2000);
+    now += 2000;
+    const ws2 = FakeWs.last!;
+    expect(ws2).not.toBe(ws);
+    ws2.open();
+    ws2.msg({ channel: 'subscriptionResponse', data: { method: 'subscribe', subscription: { type: 'trades', coin: 'BTC' } } });
+    ws2.msg({ channel: 'trades', data: [trade(now - 3000, 81100, 0.2, 'A', 50), trade(now - 1000, 81101, 0.2, 'B', 51)] });
+    expect(store.coverage.covers(lastTrade, now - 3000)).toBe(false);
+    expect(store.coverage.covers(now - 2999, now)).toBe(true);
+    expect(series.bars().find((b) => b.t === T0 + 2 * M5)!.complete).toBe(false);
   });
 
   it('początek nagrania z migawki po subskrypcji, w zegarze giełdy (zegar przeglądarki spóźniony o 2 min)', async () => {

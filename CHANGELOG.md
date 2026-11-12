@@ -4,6 +4,15 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Wykres Pro: uśpienie karty nie liczy się jako nagrana taśma, delta i CVD widzą luki (2026-11-12)
+
+#### Naprawione
+- **Pokrycie taśmy kończy się na ostatniej wiadomości z transakcjami, nie w chwili wykrycia zerwania** (`src/charts/pro/hl/stream.ts`): po uśpieniu karty albo komputera strażnik połączenia budził się po kilku minutach i zamykał nagranie z czasem wybudzenia, więc cały sen liczył się jako nagrany: świeca z luką była pełna (`complete`), a historia z serwera nie dociągała luki. Teraz `onClosed` dostaje czas ostatniej wiadomości z transakcjami tego połączenia (bez niej: ostatniej wiadomości).
+- **Wybudzenie łączy od nowa**: wiadomość po przerwie dłuższej niż strażnik (75 s, np. z bufora po wybudzeniu) nie trafia do wykresu; połączenie jest porzucane i otwierane od nowa po ok. 1 s. Po ponownym połączeniu migawka transakcji otwiera pokrycie od najstarszej transakcji migawki, więc luka zostaje luką i dociąga ją historia serwera.
+- **Osobny strażnik kanału transakcji**: 2 min bez transakcji przy płynących innych kanałach (kontekst, świeca) też zamyka i otwiera połączenie od nowa.
+- **Delta i CVD patrzą na `complete`** (`src/charts/pro/core/flow.ts`, nowy `src/charts/pro/chart/flowPoints.ts`, `src/charts/pro/chart/controller.ts`, `src/charts/pro/chart/theme.ts`): świeca niepełna ma w panelu delty kolor świecy niepełnej (`PRO.incomplete`), w CVD (świece i linia Hyperliquid w panelu giełd) przerwę i zerowanie po niej, jak świeca bez taśmy. Ta sama świeca jest niepełna we wszystkich panelach.
+- Testy: `src/charts/pro/__tests__/stream.test.ts` (3: uśpienie 10 min, wiadomość z bufora po przerwie, cisza samego kanału transakcji), `src/charts/pro/__tests__/proStore.test.ts` (test akceptacyjny: zegar zamrożony na 10 min w środku świecy daje `complete=false` i lukę w pokryciu), `src/charts/pro/__tests__/flow.test.ts` (CVD z przerwą, punkty delty i linii CVD).
+
 ### Angielski pierwszym językiem powłoki (E1) (2026-11-12)
 
 #### Zmienione

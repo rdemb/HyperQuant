@@ -93,6 +93,72 @@ describe('HlStream', () => {
     s.stop();
   });
 
+  it('uśpienie karty: zamknięcie z czasem ostatniej wiadomości z transakcjami, nie chwilą wykrycia; potem nowe połączenie', () => {
+    const s = make();
+    const onClosed = vi.fn();
+    s.listen({ onClosed });
+    s.add(trades);
+    s.start();
+    const ws = FakeWs.instances[0];
+    ws.open();
+    now += 5000;
+    ws.msg({ channel: 'trades', data: [{ px: '1' }] });
+    const lastTrades = now;
+    now += 3000;
+    ws.msg({ channel: 'activeAssetCtx', data: {} });
+    // karta uśpiona 10 min: zegar idzie, timery stoją; po wybudzeniu pierwszy przebieg strażnika
+    now += 10 * 60_000;
+    vi.advanceTimersByTime(10_000);
+    expect(onClosed).toHaveBeenCalledWith(lastTrades);
+    vi.advanceTimersByTime(2000);
+    expect(FakeWs.instances).toHaveLength(2);
+    s.stop();
+  });
+
+  it('pierwsza wiadomość po długiej przerwie (bufor po wybudzeniu) nie idzie na stare połączenie: zamknięcie i nowe połączenie', () => {
+    const s = make();
+    const onClosed = vi.fn();
+    const onMessage = vi.fn();
+    s.listen({ onClosed, onMessage });
+    s.add(trades);
+    s.start();
+    const ws = FakeWs.instances[0];
+    ws.open();
+    ws.msg({ channel: 'trades', data: [{ px: '1' }] });
+    const lastTrades = now;
+    now += 10 * 60_000;
+    ws.msg({ channel: 'trades', data: [{ px: '2' }] });
+    expect(onMessage).toHaveBeenCalledTimes(1);
+    expect(onClosed).toHaveBeenCalledWith(lastTrades);
+    expect(ws.readyState).toBe(3);
+    vi.advanceTimersByTime(2000);
+    expect(FakeWs.instances).toHaveLength(2);
+    s.stop();
+  });
+
+  it('cisza samego kanału transakcji (inne kanały płyną) ponad 2 min: zamknięcie na ostatniej transakcji i nowe połączenie', () => {
+    const s = make();
+    const onClosed = vi.fn();
+    s.listen({ onClosed });
+    s.add(trades);
+    s.start();
+    const ws = FakeWs.instances[0];
+    ws.open();
+    ws.msg({ channel: 'trades', data: [{ px: '1' }] });
+    const lastTrades = now;
+    for (let k = 0; k < 11; k++) {
+      now += 10_000;
+      ws.msg({ channel: 'activeAssetCtx', data: {} });
+      vi.advanceTimersByTime(10_000);
+    }
+    expect(onClosed).not.toHaveBeenCalled();
+    now += 20_000;
+    ws.msg({ channel: 'activeAssetCtx', data: {} });
+    vi.advanceTimersByTime(10_000);
+    expect(onClosed).toHaveBeenCalledWith(lastTrades);
+    s.stop();
+  });
+
   it('wypisanie wysyła unsubscribe; stop zamyka bez ponownego łączenia', () => {
     const s = make();
     s.add(trades);
