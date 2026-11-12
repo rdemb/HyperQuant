@@ -13,6 +13,11 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 - **Panele giełd na rynkach bez odpowiednika na Binance i Bybit:** rynki HIP-3 (`dex:COIN`) i rynki z przedrostkiem `k` (kPEPE) pokazują w opisie paneli CVD i ΔOI giełd oraz na plakietce warstwy „—, brak na Binance i Bybit” z powodem, bez zapytań REST i połączeń WebSocket do tych giełd.
 - **Tytuł grupy w wyborze rynku:** „Rynki tradycyjne (HIP-3)” zamiast „Akcje, indeksy, surowce”, bo giełdy HIP-3 notują też waluty (xyz:JPY, xyz:EUR).
 
+### Wyniki: badanie wielu rynków w „Co się nie potwierdziło” (2026-11-12)
+
+#### Dodane
+- **Strona `wyniki/` i `en/results/`:** podsekcja z jednorazowym badaniem (nie z dziennika), czy inne rynki Hyperliquid poprawiają szansę dużego ruchu BTC w następnej godzinie ponad model samego BTC. Świece 1h 18.04–12.11.2026, 2818 godzin poza próbą, próg zapisany przed testem: przyrost BSS ≥ +0,010 z przedziałem 99%. Pięć hipotez (akcje i indeksy, zamknięta Wall Street, funding 20 rynków, złoto i waluty, alty) poniżej progu; liczby w `MARKETS_STUDY` (`scripts/blog/results.mjs`).
+
 ### Strażnik ciszy kanału transakcji osobno dla każdego rynku, etap M1.5 (2026-11-12)
 
 #### Poprawione
