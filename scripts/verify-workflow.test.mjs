@@ -131,3 +131,17 @@ describe('gałąź wyników nie uruchamia innych workflow ani wdrożenia', () =>
     }
   });
 });
+
+describe('weryfikacja z podsumowaniem dziennika (miary, kalibracja wariantu C, bloki hrel)', () => {
+  it('podsumowanie pobierane z main repo danych przed klonem dziennika, bez tokenu, i podawane przez --summary, gdy jest', () => {
+    const i = steps.findIndex((s) => s.name === 'Podsumowanie dziennika (przed dziennikiem)');
+    const iLedger = steps.findIndex((s) => s.with?.ref === 'ledger');
+    expect(i).toBeGreaterThanOrEqual(0);
+    expect(i).toBeLessThan(iLedger);
+    const run = String(steps[i].run);
+    expect(run).toContain('https://raw.githubusercontent.com/rdemb/hyperquant-data/main/ledger/BTC/summary.json');
+    expect(run).not.toMatch(/token|GH_TOKEN|secrets/i);
+    expect(steps[i].env).toBeUndefined();
+    expect(String(step('Weryfikacja').run)).toMatch(/--summary summary.json/);
+  });
+});
