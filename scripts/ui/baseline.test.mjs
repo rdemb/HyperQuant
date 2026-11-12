@@ -12,6 +12,7 @@ const report = {
   phoneIndicators: 9,
   effort: { desktop: 5, phone: 2 },
   clashes: { desktop: 9 },
+  hip4: { desktop: 6, phone: 1 },
   levels: { dayMap: { desktop: { levels: 6, sessions: 0, levels4h: 3 }, phone: null }, review: { desktop: { levels: 0, sessions: 6 }, phone: { levels: 0, sessions: 4 } } },
   bubbles: { desktop: 21, phone: 5 },
   ib: { auction: { desktop: 5, phone: 3 }, review: { desktop: 7, phone: 5 } },
@@ -33,6 +34,7 @@ describe('punkt odniesienia pomiaru układu', () => {
     expect(m['phone.indicatorRows']).toBe(9);
     expect([m['effort.rects1440'], m['effort.rects390']]).toEqual([5, 2]);
     expect(m['clashes.objects1440']).toBe(9);
+    expect([m['hip4.lines1440'], m['hip4.lines390']]).toEqual([6, 1]);
     expect([m['levels.dayMap.lines4h1440'], m['levels.dayMap.lines1440'], m['sessions.review.lines1440'], m['sessions.review.lines390']]).toEqual([3, 6, 6, 4]);
     expect(m['levels.dayMap.lines390']).toBeUndefined();
     expect([m['bubbles.count1440'], m['bubbles.count390']]).toEqual([21, 5]);

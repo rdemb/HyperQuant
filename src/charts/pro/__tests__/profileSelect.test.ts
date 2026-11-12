@@ -10,6 +10,7 @@ import {
   PROFILE_EVIDENCE,
   PROFILE_FIELD_MAX,
   barSpan,
+  fullScaleMax,
   fullFrom,
   nearestNaked,
   profileAnchor,
@@ -23,6 +24,14 @@ describe('profile dób: co i jak szeroko rysujemy (profileSelect)', () => {
     expect(barSpan(336, 1300)).toBeCloseTo(117.6, 6);
     // Telefon: doba szersza niż ekran (48 × 9 px), pole 330 px → 30% pola zamiast 75% doby
     expect(barSpan(432, 330)).toBeCloseTo(99, 6);
+  });
+
+  it('wspólna skala słupków: maksimum z obu pełnych dób, niezależnie od tego, które widać', () => {
+    const days = [{ max: 90 }, { max: 40 }, { max: 70 }, { max: 55 }];
+    // Pełne: dwie ostatnie (70 i 55); starsza doba 90 nie zmienia skali
+    expect(fullScaleMax(days)).toBe(70);
+    expect(fullScaleMax(days.slice(-1))).toBe(55);
+    expect(fullScaleMax([])).toBe(0);
   });
 
   it(`pełny profil dla bieżącej i poprzedniej doby (${FULL_PERIODS}), starsze — skrót; od danych, nie od przewinięcia`, () => {
