@@ -102,6 +102,25 @@ const IB_VIEWS = [
   ['review', '#after', {}],
 ];
 const IB_MAX = 7;
+/**
+ * Poziomy dnia i linie otwarć sesji na danych stałych: „Mapa dnia” (komputer: 4h z poziomami dnia i 30m z TPO) i
+ * „Rozliczenie doby” (30m z liniami sesji), 1440 i 390. Liczby z wyboru warstwy (`selectDays`, `selectSessions`; atrybuty
+ * `data-level-lines`, `data-session-lines`, interwał w `data-interval-ms`) — największe z widocznych wykresów układu, osobno
+ * dla wykresów od 4h. Limity z projektu: na 4h najwyżej 3 linie poziomów, linii sesji najwyżej 6; poniżej 4h poziomy dwóch
+ * dni — najwyżej 6.
+ */
+const LEVEL_VIEWS = [
+  ['dayMap', '#before', {}],
+  ['review', '#after', {}],
+];
+const LEVELS_MAX = { h4: 3, lines: 6, sessions: 6 };
+const levelCounts = `(() => {
+  const hosts = [...document.querySelectorAll('.tv-lightweight-charts')].filter((r) => r.getBoundingClientRect().width > 0).map((r) => r.closest('[data-level-lines]')).filter(Boolean);
+  if (hosts.length === 0) return null;
+  const max = (list, k) => (list.length ? Math.max(...list.map((h) => Number(h.dataset[k]))) : null);
+  const long = hosts.filter((h) => Number(h.dataset.intervalMs) >= 4 * 3600000);
+  return { levels: max(hosts, 'levelLines'), sessions: max(hosts, 'sessionLines'), levels4h: max(long, 'levelLines') };
+})()`;
 const ibCount = `(() => { const c = window.__hq.chart(); const host = c && c.root.closest('[data-ib-objects]'); return host ? Number(host.dataset.ibObjects) : null; })()`;
 const clashCount = `(() => { const c = window.__hq.chart(); const host = c && c.root.closest('[data-clash-objects]'); return host ? Number(host.dataset.clashObjects) : null; })()`;
 /**
@@ -571,6 +590,24 @@ async function main() {
     }
     await page.viewport(1440, 900, false);
 
+    // Szlif 7: poziomy dnia i linie sesji w „Mapie dnia” i „Rozliczeniu doby” (1440, potem 390)
+    report.levels = {};
+    for (const [name, hash, store] of LEVEL_VIEWS) {
+      report.levels[name] = {};
+      await page.viewport(1440, 900, false);
+      await open(page, hash, store);
+      await page.mouseAway();
+      await sleep(400);
+      report.levels[name].desktop = await probe(page, levelCounts);
+      await shot(page, `1440-poziomy-${name}`);
+      await page.viewport(390, 844, true);
+      await open(page, hash, store);
+      await sleep(400);
+      report.levels[name].phone = await probe(page, levelCounts);
+      await shot(page, `390-poziomy-${name}`);
+    }
+    await page.viewport(1440, 900, false);
+
     // 4. Ustawienia użytkownika
     await page.viewport(1440, 900, false);
     report.storage = await persistence(page);
@@ -609,7 +646,14 @@ async function main() {
   const zoneOk = (x) => !!x && x.rects <= ZONES_MAX.rects && x.lines <= ZONES_MAX.lines;
   const s2 = zoneOk(r.zones?.desktop) && zoneOk(r.zones?.phone);
   const s5 = IB_VIEWS.every(([name]) => [r.ib?.[name]?.desktop, r.ib?.[name]?.phone].every((n) => typeof n === 'number' && n <= IB_MAX));
-  r.summary = { t1, t2, t3, t4, t5, t6, s1, s2, s3, s5 };
+  // Szlif 7: „Mapa dnia” na komputerze ma wykres 4h z poziomami (najwyżej 3); wszędzie najwyżej 6 linii poziomów i 6 linii sesji
+  const lvOk = (d) => !d || (d.levels <= LEVELS_MAX.lines && d.sessions <= LEVELS_MAX.sessions);
+  const s7 =
+    typeof r.levels?.dayMap?.desktop?.levels4h === 'number' &&
+    r.levels.dayMap.desktop.levels4h <= LEVELS_MAX.h4 &&
+    typeof r.levels?.review?.desktop?.sessions === 'number' &&
+    LEVEL_VIEWS.every(([name]) => lvOk(r.levels?.[name]?.desktop) && lvOk(r.levels?.[name]?.phone));
+  r.summary = { t1, t2, t3, t4, t5, t6, s1, s2, s3, s5, s7 };
   const lines = [
     `Pomiar „${LABEL}” (${BASE})`,
     `1. Panel ceny 1440×900: ${pct(r.desktop)} (próg 62%, zapas ${margin(r.desktop?.share ?? 0, LIMITS.desktop)}), z kolumną DOM: ${pct(r.desktopDom)} (próg 60%, zapas ${margin(r.desktopDom?.share ?? 0, LIMITS.desktopDom)}) — ${ok(t1)}`,
@@ -630,6 +674,7 @@ async function main() {
     `Szlif 2. Strefy nierównowagi / linie aukcji („Aukcja i otwarcie”, powtórka 24.10 19:30, 5m): 1440 ${r.zones?.desktop ? `${r.zones.desktop.rects} / ${r.zones.desktop.lines}` : '—'}, 390 ${r.zones?.phone ? `${r.zones.phone.rects} / ${r.zones.phone.lines}` : '—'} (limit ${ZONES_MAX.rects} / ${ZONES_MAX.lines}) — ${ok(s2)}`,
     `Szlif 3. Ściany i serie (Kokpit 1m, powtórka 24.10 19:30): 1440 ${r.clashes?.desktop ?? '—'} (limit ${CLASH_MAX}) — ${ok(s3)}`,
     `Szlif 5. Zakres początkowy sesji (dane stałe): „Aukcja i otwarcie” 5m 1440 ${r.ib?.auction?.desktop ?? '—'}, 390 ${r.ib?.auction?.phone ?? '—'}; „Rozliczenie doby” 30m 1440 ${r.ib?.review?.desktop ?? '—'}, 390 ${r.ib?.review?.phone ?? '—'} (limit ${IB_MAX}) — ${ok(s5)}`,
+    `Szlif 7. Poziomy dnia / linie sesji (dane stałe): „Mapa dnia” 1440: 4h ${r.levels?.dayMap?.desktop?.levels4h ?? '—'}, wszystkie wykresy ${r.levels?.dayMap?.desktop ? `${r.levels.dayMap.desktop.levels} / ${r.levels.dayMap.desktop.sessions}` : '—'}; „Rozliczenie doby” 30m 1440 ${r.levels?.review?.desktop ? `${r.levels.review.desktop.levels} / ${r.levels.review.desktop.sessions}` : '—'}, 390 ${r.levels?.review?.phone ? `${r.levels.review.phone.levels} / ${r.levels.review.phone.sessions}` : '—'} (limit: 4h ${LEVELS_MAX.h4} poziomy, sesje ${LEVELS_MAX.sessions}) — ${ok(s7)}`,
     `Szlif 1. Prostokąty wskaźnika Effort (powtórka 24.10 19:30, BTC 5m): 1440 ${r.effort?.desktop ?? '—'} (limit ${EFFORT_MAX.desktop}), 390 ${r.effort?.phone ?? '—'} (limit ${EFFORT_MAX.phone}) — ${ok(s1)}`
   );
   const metrics = metricsOf(r);

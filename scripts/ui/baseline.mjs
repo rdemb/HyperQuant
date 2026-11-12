@@ -28,6 +28,14 @@ export function metricsOf(r) {
     if (typeof v?.desktop === 'number') m[`ib.${view}1440`] = v.desktop;
     if (typeof v?.phone === 'number') m[`ib.${view}390`] = v.phone;
   }
+  // Poziomy dnia i linie otwarć sesji (wybór warstwy) na danych stałych: „Mapa dnia” (4h) i „Rozliczenie doby” (30m)
+  for (const [view, v] of Object.entries(r.levels ?? {})) {
+    for (const [w, d] of [['1440', v?.desktop], ['390', v?.phone]]) {
+      if (typeof d?.levels === 'number') m[`levels.${view}.lines${w}`] = d.levels;
+      if (typeof d?.sessions === 'number') m[`sessions.${view}.lines${w}`] = d.sessions;
+      if (typeof d?.levels4h === 'number') m[`levels.${view}.lines4h${w}`] = d.levels4h;
+    }
+  }
   // Strefy nierównowagi i niedokończone aukcje (wybór warstwy) w układzie „Aukcja i otwarcie”, powtórka 24.10, 5m
   for (const [k, v] of [['1440', r.zones?.desktop], ['390', r.zones?.phone]]) {
     if (typeof v?.rects === 'number') m[`zones.rects${k}`] = v.rects;
