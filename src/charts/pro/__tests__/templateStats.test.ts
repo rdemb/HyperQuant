@@ -101,6 +101,14 @@ describe('karta uczciwości: VA doby (reguła Daltona na profilu wolumenu)', () 
   it('wiersz z drabiny ticków wykresu: BTC przy 110 tys. → 50 USD', () => {
     expect(statsRowStep(110_000)).toBe(50);
     expect(statsRowStep(0)).toBe(0);
+    expect(statsRowStep(110_000, 5)).toBe(50);
+  });
+
+  it('wiersz z drabiny ticków rynku: kPEPE (szDecimals 0) przy 0,0045 nie schodzi poniżej kroku ceny', () => {
+    // 0,04% z 0,0045 = 1,8e-6: drabina od ticku 1e-7 daje 2e-6, od kroku ceny 1e-6 też 2e-6, ale nigdy mniej niż 1e-6
+    expect(statsRowStep(0.0045, 0)).toBeGreaterThanOrEqual(1e-6);
+    expect(statsRowStep(0.0011, 0)).toBeCloseTo(1e-6, 15);
+    expect(statsRowStep(0.0011)).toBeLessThan(1e-6);
   });
 });
 

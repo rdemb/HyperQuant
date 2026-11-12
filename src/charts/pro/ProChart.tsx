@@ -762,7 +762,7 @@ export const ProChart: React.FC<{
   const iv = intervalById(settings.interval);
   // Wykres pobiera dane Binance i Bybit (panele giełd albo ich grupa w tablicy) — tylko wtedy Stan rynku je porównuje
   const shown = shownSettings(settings, narrow, layout, inReplay);
-  const venueOn = shown.showVenueCvd || shown.showVenueOi || (shown.showStats && shown.statGroups.some((g) => VENUE_GROUPS.includes(g)));
+  const venueOn = caps.cex && (shown.showVenueCvd || shown.showVenueOi || (shown.showStats && shown.statGroups.some((g) => VENUE_GROUPS.includes(g))));
   const tapeSince = store.coverage.first();
   // Plakietki źródeł warstw w legendzie (w powtórce bez nich: nagranie, nie dane na żywo, i bez warstw skanera); stan
   // migawek skanera i powody ich braku te same co w nagłówku układu. Bez mapy z bloga na wykresie (weekend, rano przed

@@ -105,6 +105,17 @@ describe('plakietka warstwy w legendzie', () => {
     expect(layerBadge('showWhales', { coin: 'ETH', now: NOW, scan: { asOf: NOW - 60_000 } })).toMatchObject({ tone: 'live', text: 'LIVE' });
   });
 
+  it('panele giełd na rynku bez odpowiednika na Binance i Bybit (HIP-3, kPEPE): „—” z powodem; BTC i ETH LIVE', () => {
+    for (const key of ['showVenueCvd', 'showVenueOi']) {
+      for (const coin of ['xyz:NVDA', 'kPEPE']) {
+        const b = layerBadge(key, { coin, now: NOW });
+        expect(b).toMatchObject({ tone: 'neutral', text: '—, brak na Binance i Bybit' });
+        expect(b.hint).toContain(coin);
+      }
+      for (const coin of ['BTC', 'ETH']) expect(layerBadge(key, { coin, now: NOW })).toMatchObject({ tone: 'live', text: 'LIVE' });
+    }
+  });
+
   it('zdolność z rejestru, nie z nazwy: rynek z pełnym skanerem ma warstwę skanera, BTC bez niego — „—, bez skanera”', () => {
     publishMarkets({
       asOf: 1,

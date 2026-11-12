@@ -35,7 +35,7 @@ import {
 import { DASH, fmtFixed, fmtPct, fmtSigned } from '../../../ui/format';
 import { tr } from '../../../i18n';
 import { BTC_ONLY_NOTE, BLOG_ONLY_WHY, NO_SCANNER_NOTE } from '../../../utils/marketCaps';
-import { capsOf, noScannerWhyOf } from '../../../state/markets';
+import { capsOf, noScannerWhyOf, usdScaleOf } from '../../../state/markets';
 
 /**
  * Nagłówek układu (spec §7.3): trzy liczby właściwe dla pytania układu, każda z plakietką LIVE albo MODEL (MODEL z nazwą
@@ -114,8 +114,14 @@ const HOUR = 60 * MIN;
 const DAY = 24 * HOUR;
 /** Okno udziału TWAP i dopasowania Hawkesa (jak domyślne okno wskaźnika Hawkesa). */
 export const FLOW_WINDOW_MS = 15 * MIN;
-/** Kwota zlecenia do kosztu wejścia. */
-export const COST_USD = 100_000;
+/** Kwota zlecenia do kosztu wejścia na BTC. */
+const COST_USD = 100_000;
+/** Kwota zlecenia do kosztu wejścia na rynku: kwota BTC razy skala progów rynku (`usdScale`; BTC 100k, ETH 50k). */
+export const costUsd = (coin: string): number => COST_USD * usdScaleOf(coin);
+/** Kwota kosztu w tekście: „100 000” po polsku, „100,000” po angielsku. */
+export const costAmount = (usd: number): string => String(Math.round(usd)).replace(/\B(?=(\d{3})+(?!\d))/g, tr(' ', ','));
+/** Kwota kosztu w etykiecie: 100k, 50k, 1k. */
+const costShort = (usd: number): string => `${fmtFixed(usd / 1000, Number.isInteger(usd / 1000) ? 0 : 1)}k`;
 
 const val = <T>(v: Got<T> | undefined): T | null => (v === undefined || isAbsent(v) ? null : v);
 const dash = (label: string, badge: LayoutNumber['badge'], hint: string, note?: string): LayoutNumber => ({ label, value: DASH, badge, hint, ...(note ? { note } : {}) });
@@ -243,7 +249,8 @@ function liqNum(x: LayoutInputs): LayoutNumber {
 }
 
 function costNum(x: LayoutInputs): LayoutNumber {
-  const label = tr('Koszt 100k', 'Cost 100k');
+  const usd = costUsd(x.coin);
+  const label = tr(`Koszt ${costShort(usd)}`, `Cost ${costShort(usd)}`);
   const c = val(x.cost);
   if (!c) return dash(label, 'LIVE', whyOf(x.cost));
   const bp = (v: number) => (Number.isFinite(v) ? fmtFixed(v, 1) : DASH);
@@ -252,8 +259,8 @@ function costNum(x: LayoutInputs): LayoutNumber {
     value: `${bp(c.ask)} / ${bp(c.bid)} ${tr('pb', 'bp')}`,
     badge: 'LIVE',
     hint: tr(
-      `Zlecenie rynkowe 100 000 USD po migawce dokładnego arkusza z ${fmtHms(c.at)}: ask (zbieranie asków) ${bp(c.ask)} pb, bid (zbieranie bidów) ${bp(c.bid)} pb od środka arkusza, z połową spreadu, bez opłaty takera. „—” — 20 poziomów strony nie mieści kwoty.`,
-      `A 100,000 USD market order on the exact book snapshot from ${fmtHms(c.at)}: ask (taking the asks) ${bp(c.ask)} bp, bid (taking the bids) ${bp(c.bid)} bp from the book mid, including half the spread, without the taker fee. “—” means 20 levels of the side cannot hold the amount.`
+      `Zlecenie rynkowe ${costAmount(usd)} USD po migawce dokładnego arkusza z ${fmtHms(c.at)}: ask (zbieranie asków) ${bp(c.ask)} pb, bid (zbieranie bidów) ${bp(c.bid)} pb od środka arkusza, z połową spreadu, bez opłaty takera. „—” — 20 poziomów strony nie mieści kwoty.`,
+      `A ${costAmount(usd)} USD market order on the exact book snapshot from ${fmtHms(c.at)}: ask (taking the asks) ${bp(c.ask)} bp, bid (taking the bids) ${bp(c.bid)} bp from the book mid, including half the spread, without the taker fee. “—” means 20 levels of the side cannot hold the amount.`
     ),
   };
 }

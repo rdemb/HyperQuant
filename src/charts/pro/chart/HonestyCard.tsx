@@ -59,7 +59,7 @@ export const HonestyCard: React.FC<{
             bars.length > 1
               ? {
                   kind: 'ready',
-                  card: honestyCard(honestyStats(spec.kind, bars)),
+                  card: honestyCard(honestyStats(spec.kind, bars, store.szDecimals)),
                 }
               : { kind: 'error' }
           )

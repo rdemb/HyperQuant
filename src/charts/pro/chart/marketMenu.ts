@@ -17,7 +17,8 @@ export interface MarketGroup {
 
 const GROUP_TITLE: Record<MarketGroupId, string> = {
   crypto: tr('Krypto', 'Crypto'),
-  hip3: tr('Akcje, indeksy, surowce', 'Stocks, indices, commodities'),
+  // Giełdy HIP-3: akcje, indeksy, surowce i waluty (xyz:JPY, xyz:EUR)
+  hip3: tr('Rynki tradycyjne (HIP-3)', 'Traditional markets (HIP-3)'),
 };
 
 /** Grupy z rynkami pasującymi do `query` (fragment nazwy albo giełdy, bez wielkości liter); puste grupy pominięte. */

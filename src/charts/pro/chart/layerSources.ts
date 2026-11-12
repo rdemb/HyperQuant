@@ -10,7 +10,7 @@ import { LAYERS_OFF } from './templates';
 import { tr } from '../../../i18n';
 import { SCANNER_FRESH_MS, type ScanState, liqScan, scannerAge, whalesScan } from '../../../utils/scanState';
 import { WAIT_TEXT } from '../../../utils/sessionText';
-import { BLOG_ONLY_WHY, BTC_ONLY_BADGE, NO_FORECASTS_BADGE, NO_SCANNER_BADGE, OUTCOMES_ONLY_WHY } from '../../../utils/marketCaps';
+import { BLOG_ONLY_WHY, BTC_ONLY_BADGE, NO_CEX_BADGE, NO_FORECASTS_BADGE, NO_SCANNER_BADGE, OUTCOMES_ONLY_WHY, noCexWhy } from '../../../utils/marketCaps';
 import { capsOf, noScannerWhyOf } from '../../../state/markets';
 
 /**
@@ -152,6 +152,7 @@ function missingOn(key: string, coin: string): LayerBadge | null {
   if (key === 'cone' && !caps.forecasts) return { tone: 'neutral', text: NO_FORECASTS_BADGE, hint: noScannerWhyOf(coin) };
   if (key === 'showBlogMap' && !caps.blog) return { tone: 'neutral', text: BTC_ONLY_BADGE, hint: BLOG_ONLY_WHY };
   if (key === 'outcomes' && !caps.outcomes) return { tone: 'neutral', text: BTC_ONLY_BADGE, hint: OUTCOMES_ONLY_WHY };
+  if ((key === 'showVenueCvd' || key === 'showVenueOi') && !caps.cex) return { tone: 'neutral', text: NO_CEX_BADGE, hint: noCexWhy(coin) };
   return null;
 }
 
