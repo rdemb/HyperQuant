@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HlStream } from '../hl/stream';
 import { CandleSeries, ProStore, dropStore, openStores, storeFor } from '../store/proStore';
 import { discardRecording } from '../store/recording';
+import { publishMarkets, resetMarketsForTest } from '../../../state/markets';
 import { cvdCandles } from '../core/flow';
 
 class FakeWs {
@@ -371,5 +372,33 @@ describe('rynek spoza rejestru z linku', () => {
     await discardRecording(s);
     expect(deleted).toEqual(['hq-pro-tape-xyz-OLD']);
     expect(dropStore('xyz:NONE')).toBeNull();
+  });
+});
+
+describe('rynek z rejestru: progi w USD i siatka wierszy', () => {
+  const entry = (coin: string, rank: number, szDecimals: number, oiUsd7d: number) => ({
+    coin,
+    dex: coin.includes(':') ? coin.split(':')[0] : '',
+    oiUsd7d,
+    rank,
+    szDecimals,
+    maxLeverage: 10,
+    since: '2026-11-10',
+    scanner: coin === 'BTC' ? ('full' as const) : ('none' as const),
+  });
+  const ws = () => new HlStream({ wsFactory: () => new FakeWs() as unknown as WebSocket, now: () => Date.now() });
+
+  afterEach(() => resetMarketsForTest());
+
+  it('BTC: próg dużego gracza 1 mln USD i tick bazowy jak dotąd; kPEPE: próg według OI i siatka z kroku ceny', () => {
+    publishMarkets({ asOf: 1, rule: 'reg-v1', markets: [entry('BTC', 1, 5, 3e9), entry('kPEPE', 2, 0, 7e7)] });
+    const btc = new ProStore(ws(), 'BTC');
+    const pepe = new ProStore(ws(), 'kPEPE');
+    expect(btc.players.thresholdUsd).toBe(1_000_000);
+    expect(btc.baseTick(80_000)).toBe(1);
+    expect(pepe.players.thresholdUsd).toBe(23_000); // skala 0,023 (OI kPEPE wobec BTC do 2 cyfr znaczących)
+    expect(pepe.baseTick(0.0045)).toBeCloseTo(1e-6, 15);
+    btc.stop();
+    pepe.stop();
   });
 });

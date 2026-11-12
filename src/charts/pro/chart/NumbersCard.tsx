@@ -23,10 +23,10 @@ const GROUP_TITLES: Record<StatGroup, string> = {
   who: tr(
     `Delta dużych graczy (kont, które w 60 min do zamknięcia świecy weszły na rynek za co najmniej ${Object.entries(BIG_PLAYER_USD)
       .map(([c, v]) => `${compact(v)} USD na ${c}`)
-      .join(', ')}) i reszty rynku oraz udział dużych w wartości wejść`,
+      .join(', ')}, na innych rynkach mniej według otwartych pozycji wobec BTC) i reszty rynku oraz udział dużych w wartości wejść`,
     `Delta of large players (accounts that entered the market for at least ${Object.entries(BIG_PLAYER_USD)
       .map(([c, v]) => `${compact(v)} USD on ${c}`)
-      .join(', ')} in the 60 min up to the candle close) and the rest of the market, plus the large players' share of entry value`
+      .join(', ')}, less on other markets by open interest relative to BTC, in the 60 min up to the candle close) and the rest of the market, plus the large players' share of entry value`
   ),
   binance: tr('Delta perp i spot, ΔOI i funding na 8 h z Binance', 'Perp and spot delta, ΔOI and 8 h funding from Binance'),
   bybit: tr('Delta (z transakcji od otwarcia strony) i ΔOI z Bybit', 'Delta (from trades since the page opened) and ΔOI from Bybit'),

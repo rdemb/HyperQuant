@@ -93,6 +93,8 @@ interface RowsCacheEntry {
 export class FootprintSeries implements ICustomSeriesPaneView<Time, FootprintPoint, FootprintOptions> {
   private data: PaneRendererCustomData<Time, FootprintPoint> | null = null;
   private opts: FootprintOptions = FootprintSeries.defaults();
+  /** Tick bazowy wierszy bez footprintu w widoku: z szDecimals rynku wykresu (ustawia kontroler). */
+  tickOf: (px: number) => number = baseTick;
   private readonly cache = new WeakMap<FootprintBar, RowsCacheEntry>();
   frame: FootprintFrame = { detail: 'candle', step: 0 };
 
@@ -159,7 +161,7 @@ export class FootprintSeries implements ICustomSeriesPaneView<Time, FootprintPoi
 
     let tick = Number.NaN;
     for (let i = from; i < to && Number.isNaN(tick); i++) tick = data.bars[i].originalData.bar.fp?.tick ?? Number.NaN;
-    if (Number.isNaN(tick)) tick = baseTick(ref);
+    if (Number.isNaN(tick)) tick = this.tickOf(ref);
 
     let detail: Detail = 'candle';
     let step = 0;

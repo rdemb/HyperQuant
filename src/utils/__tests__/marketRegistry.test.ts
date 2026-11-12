@@ -379,7 +379,7 @@ describe('marketsOrDefault', () => {
     };
     const list = marketsOrDefault(r);
     expect(list.map((m) => m.coin)).toEqual(['BTC', 'xyz:NVDA', 'ETH', 'SOL', 'HYPE']);
-    expect(list[1]).toEqual({ coin: 'xyz:NVDA', dex: 'xyz', szDecimals: 3, maxLeverage: 20, scanner: 'none' });
+    expect(list[1]).toEqual({ coin: 'xyz:NVDA', dex: 'xyz', szDecimals: 3, maxLeverage: 20, scanner: 'none', oiUsd7d: 5e8 });
   });
 });
 

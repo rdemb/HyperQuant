@@ -26,6 +26,7 @@ import {
   fetchBybitOi,
 } from './rest';
 import { LiveSocket } from './socket';
+import { hasCexPair } from '../../../utils/marketCaps';
 
 /**
  * Przepływ Binance i Bybit dla rynku Hyperliquid (panele „CVD giełd” i „ΔOI giełd”), pobierany przez przeglądarkę
@@ -158,6 +159,8 @@ export class VenueStore {
 
   /** Historia od `from`: świece Binance perp i spot, OI Binance i Bybit, rozliczenia finansowania Binance — w tle. */
   ensure(iv: Interval, from: number): void {
+    // Rynek bez odpowiednika (HIP-3, kPEPE): bez zapytań, które i tak by się nie udały
+    if (!hasCexPair(this.coin)) return;
     void this.loadKlines('binance', iv, from);
     void this.loadKlines('binanceSpot', iv, from);
     void this.loadOi('binance', iv, Math.max(from, Date.now() - BINANCE_OI_MAX_MS + iv.ms));
@@ -419,6 +422,7 @@ function queueRefresh(): void {
 
 /** Wykres z panelem giełd na (rynek, interwał): połączenia na żywo do zwolnienia zwróconą funkcją. */
 export function acquireVenues(coin: string, iv: Interval): () => void {
+  if (!hasCexPair(coin)) return () => {};
   const key = `${coin}|${iv.id}`;
   const x = live.get(key);
   if (x) x.n++;

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Fill } from '../hl/parse';
 import type { AggressorOrder } from '../core/orders';
 import { OrderAggregator } from '../core/orders';
-import { DEFAULT_THRESHOLD_USD, WALL_GAP_MS, WallTracker, autoThreshold, bursts, classify, niceUp, takerAlias, walletSummary } from '../core/clashes';
+import { DEFAULT_THRESHOLD_USD, WALL_GAP_MS, WallTracker, autoThreshold, minWallUsd, bursts, classify, niceUp, takerAlias, walletSummary } from '../core/clashes';
 
 const order = (o: Partial<AggressorOrder>): AggressorOrder => ({
   time: 0,
@@ -36,6 +36,32 @@ describe('próg dużego zlecenia', () => {
     expect(autoThreshold(list)).toBe(500_000);
     const tiny = Array.from({ length: 300 }, () => order({ notional: 100 }));
     expect(autoThreshold(tiny)).toBe(25_000);
+  });
+
+  it('skala rynku (`usdScale`): próg domyślny i granice razy skala; BTC (skala 1) bez zmian', () => {
+    const tiny = Array.from({ length: 300 }, () => order({ notional: 100 }));
+    expect(autoThreshold([order({})], 1)).toBe(100_000);
+    expect(autoThreshold(tiny, 1)).toBe(25_000);
+    expect(autoThreshold([order({})], 0.02)).toBe(2_000);
+    expect(autoThreshold(tiny, 0.02)).toBe(500);
+    const list = Array.from({ length: 1000 }, (_, i) => order({ notional: (i + 1) * 3 }));
+    // Kwantyl ≈ 2 955 USD → 5 000 (w granicach 500–100 000 przy skali 0,02)
+    expect(autoThreshold(list, 0.02)).toBe(5_000);
+  });
+
+  it('ściana zamknięta zostaje od najmniejszego progu rynku (BTC 25 000 USD, skala 0,02: 500 USD)', () => {
+    expect(minWallUsd(1)).toBe(25_000);
+    expect(minWallUsd(0.02)).toBe(500);
+    // Trzy wchłonięcia po 0,003 przy 100 000 = 900 USD, potem przerwa dłuższa niż WALL_GAP_MS
+    const fills = [1, 2, 3].map((i) => fill({ tid: i, taker: `0x${i}`, hash: `0xa${i}`, time: i * 1000, sz: 0.003 }));
+    const btc = new WallTracker();
+    const small = new WallTracker(minWallUsd(0.02));
+    for (const w of [btc, small]) {
+      w.push(fills);
+      w.prune(10_000 + WALL_GAP_MS, 0);
+    }
+    expect(btc.walls(0, 1e9, 100)).toEqual([]);
+    expect(small.walls(0, 1e9, 100)).toHaveLength(1);
   });
 });
 
