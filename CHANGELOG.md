@@ -4,6 +4,17 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Zegar ruchu w „Przed sesją” i w MCP (2026-11-12)
+
+#### Dodane
+- **Panel „Zegar ruchu”** (`src/views/before/MoveClockPanel.tsx`, ekran „Przed sesją”): najbliższa godzina (okno ostatniej prognozy kota z rejestru) jako poziom bez procentu — spokojny, zwykły albo podwyższony według tercyla `pBig` wśród rozstrzygniętych prognoz kota z 14 dni (od 96) — obok AUC z rejestru i zdanie „Procenty w trakcie kalibracji, wynik w rejestrze”; godziny 2–24 jako baza sezonowa: w ilu z 20 ostatnich dni tego samego typu (robocze albo weekend UTC) w tej godzinie był duży ruch kota („k z n dni”, MODEL „baza sezonowa”, bez twierdzenia o przewadze). Brak danych to „—” z powodem (za mało prognoz z 14 dni, ostatnia prognoza starsza niż 45 min, starsze podsumowanie). Procentu jako szansy nie ma nigdzie do awansu kalibracji `cat-cal-v1`.
+- **Podsumowanie `cat.clock`** (`src/utils/moveClock.ts`, `backend/scanner/forecaster.ts`, pole opcjonalne): tercyle `pBig` z 14 dni i baza sezonowa 24 godziny × 2 typy dnia z pełnych godzin kota z całego dziennika.
+- **MCP `forecast_ledger`:** `moveClock` (najbliższa godzina jako poziom, AUC, 23 godziny bazy sezonowej) i `bigMove.calibration` (rozliczenie `cat-cal-v1`); starsze podsumowanie — null z powodem. Opisy w `mcp/README.md` i skillu `hyperquant`.
+
+#### Zmienione
+- **Poziom ruchu kota** (pasek pod wykresem, dymek, karta w dzienniku; `src/components/schrodi/moveLevel.ts`) bierze tercyle z 14 dni z `cat.clock`, gdy podsumowanie je ma — ten sam poziom co zegar; starsze podsumowanie — histogram 30 dni jak dotąd. Dymek podaje okno tercyli (14 albo 30 dni).
+- Testy: `src/utils/__tests__/moveClock.test.ts`, `src/views/before/__tests__/MoveClockPanel.test.tsx` (bez „%” przy najbliższej godzinie, „—” z powodem, strażniki rady i kierunku, PL i EN), `moveLevel.test.tsx`, `ledgerRunner.test.ts` (sekcja `cat.clock`), `mcp/__tests__/scanner.test.ts`.
+
 ### Kot: kalibracja szansy dużego ruchu cat-cal-v1 w dzienniku (2026-11-12)
 
 #### Dodane

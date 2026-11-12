@@ -712,7 +712,13 @@ describe('LedgerRunner — kalibracja cat-cal-v1 (pole cal rekordu kota)', () =>
     expect(s.cat.cal.byType.weekday.n + s.cat.cal.byType.weekend.n).toBe(1);
     expect(s.cat.cal.deciles).toHaveLength(10);
     expect(s.cat.cal.block).toBeNull();
-    const { cal: _drop, ...old } = s.cat;
+    // Zegar ruchu: tercyle pBig z rozstrzygniętych prognoz z 14 dni (121 = 120 z historii + 1 nowa) i baza sezonowa 24 × 2
+    expect(s.cat.clock.terciles).toMatchObject({ n: 121 });
+    expect(s.cat.clock.terciles.q1).toBeLessThan(s.cat.clock.terciles.q2);
+    expect(s.cat.clock.season.weekday).toHaveLength(24);
+    expect(s.cat.clock.season.weekend).toHaveLength(24);
+    const { cal: _drop, clock: _c, ...old } = s.cat;
     expect(isCat(old)).toBe(true);
+    expect(isCat({ ...s.cat, clock: { terciles: { q1: 'x' }, season: s.cat.clock.season } })).toBe(false);
   });
 });
