@@ -722,3 +722,156 @@ describe('LedgerRunner — kalibracja cat-cal-v1 (pole cal rekordu kota)', () =>
     expect(isCat({ ...s.cat, clock: { terciles: { q1: 'x' }, season: s.cat.clock.season } })).toBe(false);
   });
 });
+
+import { HREL_DESIGN, type HourBar, hourIndex, hrelForecast, hrelOutcome } from '../../../src/utils/hourRel.ts';
+import { isHrelSummary } from '../../../src/utils/deskLedger.ts';
+import { checkHrel } from '../../../scripts/verify-ledger.mjs';
+
+describe('LedgerRunner — prognoza hrel-v1 (duży ruch jak na tę godzinę)', () => {
+  const fx = JSON.parse(readFileSync(new URL('../../../src/utils/__tests__/fixtures/hrel-v1.json', import.meta.url), 'utf8')) as { candles: [number, number, number][] };
+  const hb: HourBar[] = fx.candles.map(([t, h, l]) => ({ t, h, l }));
+  const m1 = synth(7, SLOT0 - 31 * DAY, 31);
+  const inp = { m1, m5: agg(m1, 5 * MIN), h1: agg(m1, HOUR), d1: agg(m1, DAY), events: [] };
+  const cat = loadCatModel()!;
+  const sha = (o: unknown) => createHash('sha256').update(canonicalJson(o)).digest('hex');
+
+  /** Dane z kotem i (opcjonalnie) świecami 1h: widoczne tylko świece zamknięte do chwili odświeżenia, bez `drop` */
+  function data(hrel = true, drop: number[] = []) {
+    const d = { ...fakeData(), cat, catInput: { slot: SLOT0, inp }, refreshCat: async () => {} } as ReturnType<typeof fakeData> & LedgerData;
+    // Model zmienności świeży w każdym przebiegu (wydania także kilka godzin po SLOT0)
+    d.refreshModel = async (now: number) => {
+      d.modelAt = now;
+    };
+    if (hrel) {
+      d.hourBars = new Map();
+      d.refreshHourBars = async (now: number) => {
+        d.hourBars = hourIndex(hb.filter((b) => b.t + HOUR <= now && !drop.includes(b.t)));
+      };
+    }
+    return d;
+  }
+  const closed = (now: number) => hourIndex(hb.filter((b) => b.t + HOUR <= now));
+  const all = (dir: string) => ['2026-10-22', '2026-10-23', '2026-10-24'].flatMap((d) => lines(dir, d));
+
+  it('plan prerejestrowany raz przed pierwszym rekordem; rekord z hs = początek godziny; jeden rekord na godzinę', async () => {
+    // Zmiana planu = nowy identyfikator; przypięty hash chroni przed cichą zmianą planu już zapisanego w dzienniku
+    expect(sha(HREL_DESIGN)).toBe('95552ef6d5de60eae20d975409798a58c0b5e6d0f8af06773d87726bd41c4ba0');
+    const { r, dir } = runner({ data: data() });
+    expect(r.init(SLOT0).ok).toBe(true);
+    await r.tick(SLOT0 + 30_000);
+    const recs = lines(dir, '2026-10-22');
+    const plans = recs.filter((l) => l.k === 'p' && l.id === HREL_DESIGN.id);
+    expect(plans).toHaveLength(1);
+    expect(plans[0]).toMatchObject({ catalogHash: sha(HREL_DESIGN), catalog: JSON.parse(canonicalJson(HREL_DESIGN)) });
+    const f = recs.find((l) => l.kind === 'hrel');
+    const { prev: _p, hash: _h, ...body } = f;
+    expect(body).toEqual({ k: 'f', id: `${SLOT0}-hrel`, slot: SLOT0, ti: SLOT0 + 30_000, t: SLOT0, kind: 'hrel', ...hrelForecast(closed(SLOT0), SLOT0)!, model: 'hrel-logit-v1', plan: 'hrel-v1' });
+    expect(recs.indexOf(plans[0])).toBeLessThan(recs.indexOf(f));
+    // Ta sama partia slotu co prognozy główne: rekord przed pokwitowaniem, ta sama chwila wydania
+    expect(recs.filter((l) => l.k === 'f').every((l) => l.ti === SLOT0 + 30_000)).toBe(true);
+    for (let k = 1; k <= 3; k++) await r.tick(SLOT0 + k * 15 * MIN + 30_000);
+    await r.tick(SLOT0 + HOUR + 30_000);
+    const later = all(dir);
+    expect(later.filter((l) => l.kind === 'hrel').map((l) => l.t)).toEqual([SLOT0, SLOT0 + HOUR]);
+    expect(later.filter((l) => l.k === 'p' && l.id === HREL_DESIGN.id)).toHaveLength(1);
+    // Weryfikator przelicza rekordy dziennika ze skanera osobną implementacją
+    expect(checkHrel(later)).toMatchObject({ problems: [], checked: 2 });
+  });
+
+  it('rekord spóźniony o ponad 15 min nie powstaje; brak świecy wśród 24 h → brak rekordu (bez uzupełniania)', async () => {
+    const late = runner({ data: data() });
+    late.r.init(SLOT0 + 15 * MIN);
+    await late.r.tick(SLOT0 + 15 * MIN + 30_000);
+    const recs = lines(late.dir, '2026-10-22');
+    expect(recs.some((l) => l.id === `${SLOT0 + 15 * MIN}-ret60`)).toBe(true);
+    expect(recs.some((l) => l.kind === 'hrel')).toBe(false);
+    await late.r.tick(SLOT0 + HOUR + 30_000);
+    expect(all(late.dir).filter((l) => l.kind === 'hrel').map((l) => l.t)).toEqual([SLOT0 + HOUR]);
+
+    const gap = runner({ data: data(true, [SLOT0 - 5 * HOUR]) });
+    gap.r.init(SLOT0);
+    await gap.r.tick(SLOT0 + 30_000);
+    const g = lines(gap.dir, '2026-10-22');
+    expect(g.some((l) => l.id === `${SLOT0}-ret60`)).toBe(true);
+    expect(g.some((l) => l.kind === 'hrel')).toBe(false);
+  });
+
+  it('rozstrzygnięcie po zamknięciu hs + 3 h ze świec 1h; brak świecy godziny → null po 6 h; brak wszystkich → void', async () => {
+    const ok = runner({ data: data() });
+    ok.r.init(SLOT0);
+    await ok.r.tick(SLOT0 + 30_000);
+    await ok.r.tick(SLOT0 + 3 * HOUR + 30_000);
+    expect(all(ok.dir).some((l) => l.k === 'r' && l.id === `${SLOT0}-hrel`)).toBe(false);
+    await ok.r.tick(SLOT0 + 4 * HOUR + 30_000);
+    const recs = all(ok.dir);
+    const f = recs.find((l) => l.id === `${SLOT0}-hrel` && l.k === 'f');
+    const res = recs.find((l) => l.id === `${SLOT0}-hrel` && l.k === 'r');
+    const { prev: _p, hash: _h, ...body } = res;
+    expect(body).toEqual({ k: 'r', id: `${SLOT0}-hrel`, t: SLOT0 + 4 * HOUR + 30_000, ...hrelOutcome(closed(SLOT0 + 4 * HOUR), SLOT0, f.thr) });
+    expect(checkHrel(recs)).toMatchObject({ problems: [], resolved: 1 });
+
+    const part = runner({ data: data(true, [SLOT0 + 2 * HOUR]) });
+    part.r.init(SLOT0);
+    await part.r.tick(SLOT0 + 30_000);
+    await part.r.tick(SLOT0 + 4 * HOUR + 30_000);
+    expect(all(part.dir).some((l) => l.k === 'r' && l.id === `${SLOT0}-hrel`)).toBe(false);
+    await part.r.tick(SLOT0 + 10 * HOUR + MIN);
+    const pr = all(part.dir).find((l) => l.k === 'r' && l.id === `${SLOT0}-hrel`);
+    expect(pr.rng[2]).toBeNull();
+    expect(pr.y[2]).toBeNull();
+    expect(pr.y.filter((v: unknown) => v !== null)).toHaveLength(3);
+    expect(checkHrel(all(part.dir)).problems).toEqual([]);
+
+    const none = runner({ data: data(true, [0, 1, 2, 3].map((j) => SLOT0 + j * HOUR)) });
+    none.r.init(SLOT0);
+    await none.r.tick(SLOT0 + 30_000);
+    await none.r.tick(SLOT0 + 10 * HOUR + MIN);
+    expect(all(none.dir).find((l) => l.k === 'r' && l.id === `${SLOT0}-hrel`)).toMatchObject({ void: 'no-data' });
+  });
+
+  it('kot, cat-cal-v1 i pozostałe prognozy bajt w bajt bez zmian; podsumowanie różni się tylko polem hrel', async () => {
+    const strip = (ls: Record<string, unknown>[]) =>
+      ls.filter((l) => l.kind !== 'hrel' && !(l.k === 'r' && String(l.id).endsWith('-hrel')) && !(l.k === 'p' && l.id === HREL_DESIGN.id)).map(({ prev: _p, hash: _h, ...b }) => b);
+    const a = runner({ data: data(false) });
+    const b = runner({ data: data(true) });
+    for (const x of [a, b]) {
+      x.r.init(SLOT0);
+      await x.r.tick(SLOT0 + 30_000);
+      await x.r.tick(SLOT0 + 63 * MIN + 30_000);
+      await x.r.tick(SLOT0 + 4 * HOUR + 30_000);
+    }
+    expect(all(b.dir).some((l) => l.kind === 'hrel')).toBe(true);
+    expect(all(b.dir).some((l) => l.kind === 'cat')).toBe(true);
+    expect(strip(all(b.dir))).toEqual(strip(all(a.dir)));
+    const sa = JSON.parse(a.published.at(-1)!);
+    const sb = JSON.parse(b.published.at(-1)!);
+    expect(sa).not.toHaveProperty('hrel');
+    const { hrel: _x, head: _hb, ...restB } = sb;
+    const { head: _ha, ...restA } = sa;
+    expect(restB).toEqual(restA);
+  });
+
+  it('podsumowanie: hrel z czterema wyprzedzeniami i ostatnią prognozą; po restarcie z całego dziennika; stare podsumowanie bez pola poprawne', async () => {
+    const { r, dir, published } = runner({ data: data() });
+    r.init(SLOT0);
+    await r.tick(SLOT0 + 30_000);
+    await r.tick(SLOT0 + 4 * HOUR + 30_000);
+    const s = JSON.parse(published.at(-1)!);
+    expect(isDeskLedgerSummary(s)).toBe(true);
+    expect(isHrelSummary(s.hrel)).toBe(true);
+    expect(s.hrel.plan).toMatchObject({ at: SLOT0 + 30_000 });
+    expect(s.hrel.leads.map((l: { j: number; n: number }) => [l.j, l.n])).toEqual([[0, 1], [1, 1], [2, 1], [3, 1]]);
+    expect(s.hrel.latest).toMatchObject({ t: SLOT0 + 4 * HOUR });
+    expect(s.hrel.blocks).toEqual([]);
+    const { hrel: _h, ...old } = s;
+    expect(isDeskLedgerSummary(old)).toBe(true);
+    expect(isHrelSummary({ ...s.hrel, leads: [{ j: 0 }] })).toBe(false);
+
+    const again = new LedgerRunner({ coin: 'BTC', data: data(), store: new LedgerStore({ dir, coin: 'BTC' }), repo: null, markPx: () => 100_000, publish: (j) => published.push(j) });
+    expect(again.init(SLOT0 + 4 * HOUR + 40_000).ok).toBe(true);
+    await again.tick(SLOT0 + 4 * HOUR + 40_000);
+    // Ten sam slot: bez drugiego rekordu tej godziny; ocena z rekordów wczytanych z dziennika
+    expect(all(dir).filter((l) => l.kind === 'hrel')).toHaveLength(2);
+    expect(again.summary(SLOT0 + 4 * HOUR + 50_000).hrel?.leads[1].n).toBe(1);
+  });
+});

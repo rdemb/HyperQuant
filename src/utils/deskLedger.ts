@@ -9,6 +9,7 @@
 
 import type { SkillCi } from './ledgerBootstrap.ts';
 import type { CalSummary } from './catCal.ts';
+import type { HrelBlock, HrelLead, HrelSummary } from './hourRel.ts';
 import type { CatClock } from './moveClock.ts';
 import type { CatTrust, HourTrust, TrustHead } from './schrodiTrust.ts';
 
@@ -268,6 +269,11 @@ export interface DeskLedgerSummary {
     /** Zegar ruchu: tercyle pBig z 14 dni i baza sezonowa godzin; brak w starszych podsumowaniach */
     clock?: CatClock;
   };
+  /**
+   * Prognoza `hrel-v1` (duży ruch jak na tę godzinę, cztery wyprzedzenia) od rejestracji jej planu; brak w starszych
+   * podsumowaniach i przed rejestracją. Do awansu tylko w karcie dziennika i w MCP — sprawdzana osobno (isHrelSummary).
+   */
+  hrel?: HrelSummary;
   method: 'hq-ledger-v1';
 }
 
@@ -455,6 +461,30 @@ export function isCalSummary(x: unknown): x is CalSummary {
   if (!Array.isArray(c.deciles) || !c.deciles.every((d) => isCalGroup(d) && fin(d.lo) && fin(d.hi))) return false;
   const b = c.block;
   return b === null || (!!b && fin(b.start) && fin(b.end) && fin(b.n) && (b.diff === null || (!!b.diff && fin(b.diff.mean) && fin(b.diff.lo) && fin(b.diff.hi))));
+}
+
+const isHrelGroup = (g: unknown) => isCalGroup(g);
+const isHrelBlock = (b: unknown) => {
+  const x = b as Partial<HrelBlock> | null;
+  return !!x && isHrelGroup(x) && fin(x.start) && fin(x.end) && finOrNull(x.mean) && finOrNull(x.se) && finOrNull(x.t) && finOrNull(x.maxQDev);
+};
+
+/** Rozliczenie prognozy `hrel-v1` (pole `hrel`): cztery wyprzedzenia, zakończone bloki, dane łączne, ostatnia prognoza */
+export function isHrelSummary(x: unknown): x is HrelSummary {
+  const h = x as Partial<HrelSummary> | null;
+  if (!h || !h.plan || !fin(h.plan.at) || typeof h.plan.hash !== 'string' || !fin(h.days)) return false;
+  const ci = (c: unknown) => {
+    const s = c as Partial<SkillCi> | null;
+    return !!s && finOrNull(s.value) && finOrNull(s.lo) && finOrNull(s.hi) && fin(s.days);
+  };
+  const leadOk = (l: unknown) => {
+    const v = l as Partial<HrelLead> | null;
+    return !!v && fin(v.j) && isHrelGroup(v) && finOrNull(v.brier) && ci(v.bss) && finOrNull(v.auc) && Array.isArray(v.quintiles) && v.quintiles.length === 5 && v.quintiles.every(isHrelGroup);
+  };
+  if (!Array.isArray(h.leads) || h.leads.length !== 4 || !h.leads.every(leadOk)) return false;
+  if (!Array.isArray(h.blocks) || !h.blocks.every(isHrelBlock) || !(h.pooled === null || isHrelBlock(h.pooled))) return false;
+  const l = h.latest;
+  return l === null || (!!l && fin(l.t) && nums(l.x) && nums(l.thr) && nums(l.p) && l.p.length === 4 && l.thr.length === 4);
 }
 
 export function isCat(x: unknown): x is NonNullable<DeskLedgerSummary['cat']> {

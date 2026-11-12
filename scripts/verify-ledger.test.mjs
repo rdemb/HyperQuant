@@ -759,3 +759,54 @@ describe('miary podsumowania (Kupiec 60%, PIT, przedziały z bootstrapu po dobac
     expect(checkMeasures({ ...summary, head: { hash: r.hash, lines: later.length } }, later).problems.length).toBeGreaterThan(0);
   });
 });
+
+import { readFileSync as readFixture } from 'node:fs';
+import { HREL_DESIGN, hourIndex, hrelForecast, hrelOutcome } from '../src/utils/hourRel.ts';
+import { checkHrel, checkHrelMarket } from './verify-ledger.mjs';
+
+describe('verify-ledger — prognoza hrel-v1 (duży ruch jak na tę godzinę)', () => {
+  const HOUR = 3_600_000;
+  const fx = JSON.parse(readFixture(new URL('../src/utils/__tests__/fixtures/hrel-v1.json', import.meta.url), 'utf8'));
+  const bars = hourIndex(fx.candles.map(([t, h, l]) => ({ t, h, l })));
+  const market = fx.candles.map(([time, high, low]) => ({ time, high, low }));
+  const hs = fx.cases[0].hs;
+  const catalog = JSON.parse(canonical(HREL_DESIGN));
+  const plan = { k: 'p', id: HREL_DESIGN.id, t: hs - 60_000, catalogHash: hashOf('sha256').update(canonical(HREL_DESIGN)).digest('hex'), catalog };
+  const f = { k: 'f', id: `${hs}-hrel`, slot: hs, ti: hs + 30_000, t: hs, kind: 'hrel', ...hrelForecast(bars, hs), model: 'hrel-logit-v1', plan: 'hrel-v1' };
+  const r = { k: 'r', id: f.id, t: hs + 4 * HOUR + 30_000, ...hrelOutcome(bars, hs, f.thr) };
+  const good = [plan, f, r];
+
+  it('przechodzi na poprawnym dzienniku (także kolejność i rynek)', () => {
+    expect(checkHrel(good)).toEqual({ problems: [], checked: 1, resolved: 1 });
+    expect(checkOrdering(good)).toEqual([]);
+    expect(checkHrelMarket(good, market)).toEqual({ problems: [], checked: 1, resolved: 1 });
+  });
+
+  it('wykrywa zmienione p, zmienione thr, złe y, rekord sprzed planu, wagi inne niż w planie i spóźnione wydanie', () => {
+    expect(checkHrel([plan, { ...f, p: [f.p[0] + 0.01, ...f.p.slice(1)] }, r]).problems.join(' ')).toMatch(/p\[0\]/);
+    // Próg: ze świecami rynku każda zmiana; bez nich — gdy wynik przestaje wynikać z zapisanych wartości
+    const thr = [f.thr[0] + 0.01, ...f.thr.slice(1)];
+    expect(checkHrelMarket([plan, { ...f, thr }, r], market).problems.join(' ')).toMatch(/thr\[0\]/);
+    const flipped = r.rng[0] > f.thr[0] ? r.rng[0] + 1 : r.rng[0] - 1;
+    expect(checkHrel([plan, { ...f, thr: [flipped, ...f.thr.slice(1)] }, r]).problems.join(' ')).toMatch(/y\[0\]/);
+    expect(checkHrel([plan, f, { ...r, y: [1 - r.y[0], ...r.y.slice(1)] }]).problems.join(' ')).toMatch(/y\[0\]/);
+    expect(checkHrel([f, plan, r]).problems.join(' ')).toMatch(/przed planem/);
+    expect(checkHrel([f, r]).problems.join(' ')).toMatch(/przed planem/);
+    const w = catalog.weights.map((row, j) => (j === 1 ? [row[0] + 0.5, ...row.slice(1)] : row));
+    const forged = checkHrel([{ ...plan, catalog: { ...catalog, weights: w } }, f, r]).problems.join(' ');
+    expect(forged).toMatch(/różni się od kodu/);
+    expect(forged).toMatch(/p\[1\]/);
+    expect(checkHrel([plan, { ...f, slot: hs + 15 * 60_000, ti: hs + 16 * 60_000 }, r]).problems.join(' ')).toMatch(/wydanie/);
+  });
+
+  it('rozstrzygnięcie: nie przed hs + 4 h; null tylko razem i po 6 h; rynek: zmieniony zakres i zmienione cechy wykryte', () => {
+    expect(checkHrel([plan, f, { ...r, t: hs + 3 * HOUR }]).problems.join(' ')).toMatch(/przed zamknięciem/);
+    const part = { ...r, rng: [r.rng[0], null, ...r.rng.slice(2)], y: [r.y[0], null, ...r.y.slice(2)] };
+    expect(checkHrel([plan, f, part]).problems.join(' ')).toMatch(/przed upływem 6 h/);
+    expect(checkHrel([plan, f, { ...part, t: hs + 10 * HOUR + 60_000 }]).problems).toEqual([]);
+    expect(checkHrel([plan, f, { ...part, y: r.y }]).problems.join(' ')).toMatch(/null tylko razem/);
+    expect(checkOrdering([plan, f, { k: 'r', id: f.id, t: hs + 5 * HOUR, void: 'no-data' }]).join(' ')).toMatch(/unieważnienie/);
+    expect(checkHrelMarket([plan, f, { ...r, rng: [r.rng[0] + 0.01, ...r.rng.slice(1)] }], market).problems.join(' ')).toMatch(/rng\[0\]/);
+    expect(checkHrelMarket([plan, { ...f, x: [f.x[0] + 1e-5, ...f.x.slice(1)] }, r], market).problems.join(' ')).toMatch(/x\[0\]/);
+  });
+});

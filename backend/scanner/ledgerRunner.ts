@@ -1,5 +1,6 @@
 import { AB_DESIGN } from '../../src/utils/abTest.ts';
 import { CAT_CAL_DESIGN, type CalPair, catCal } from '../../src/utils/catCal.ts';
+import { HREL_DESIGN, HREL_MODEL, type HourIndex, hrelForecast, hrelOutcome } from '../../src/utils/hourRel.ts';
 import { HOUR_DESIGN, type HourRow, TRUST_DESIGN, type TrustHour, hourRow, trustHour } from '../../src/utils/schrodiTrust.ts';
 import { fitEnsemble } from '../../src/utils/ensemble.ts';
 import { createHash } from 'node:crypto';
@@ -18,6 +19,8 @@ import {
   type CatModel,
   type CatResolution,
   type HourForecast,
+  type HrelForecast,
+  type HrelResolution,
   buildSummary,
   ensPairs,
   makeCatForecast,
@@ -68,6 +71,10 @@ const TRUST_HASH = createHash('sha256').update(canonicalJson(TRUST_DESIGN)).dige
 const HOUR_HASH = createHash('sha256').update(canonicalJson(HOUR_DESIGN)).digest('hex');
 /** SHA-256 kanonicznego JSON planu kalibracji kota `cat-cal-v1` */
 const CAL_HASH = createHash('sha256').update(canonicalJson(CAT_CAL_DESIGN)).digest('hex');
+/** SHA-256 kanonicznego JSON planu prognozy `hrel-v1` */
+const HREL_HASH = createHash('sha256').update(canonicalJson(HREL_DESIGN)).digest('hex');
+/** Rekord `hrel` zapisany później niż hs + 15 min nie powstaje */
+const HREL_LATE = HREL_DESIGN.maxLateMin * MIN;
 const MODEL_MAX_AGE = 3 * HOUR;
 const KEEP = 31 * DAY;
 /** Okno wydania rekordu „model vs rynek” w slocie (od początku slotu): 5–10 min, czyli 5–10 min przed terminem rynku */
@@ -94,6 +101,9 @@ export interface LedgerData {
   cat?: CatModel | null;
   catInput?: { slot: number; inp: SchrodiInput } | null;
   refreshCat?(now: number): Promise<void>;
+  /** Świece 1h zamknięte w chwili odczytu (prognoza `hrel-v1`) — opcjonalne; brak = bez tej prognozy */
+  hourBars?: HourIndex;
+  refreshHourBars?(now: number): Promise<void>;
 }
 
 interface OtsEntry {
@@ -151,6 +161,9 @@ export class LedgerRunner {
   private trustHours = new Map<number, TrustHour>();
   /** Rozstrzygnięte zapisy godziny na żywo z całego dziennika (ocena wobec reguły z samej drogi ceny) */
   private hourRows = new Map<string, HourRow>();
+  /** Prognozy `hrel-v1` i ich rozstrzygnięcia z całego dziennika — osobno od prognoz co 15 min */
+  private hrel = new Map<string, HrelForecast>();
+  private hrelRes = new Map<string, HrelResolution | { k: 'r'; id: string; t: number; void: string }>();
 
   constructor(d: LedgerRunner['d']) {
     this.d = d;
@@ -165,8 +178,10 @@ export class LedgerRunner {
     const st = this.d.store.load(now);
     this.ok = st.ok;
     if (!st.ok) return { ok: false, error: st.error };
-    for (const [id, f] of st.forecasts) this.forecasts.set(id, f as unknown as Forecast);
-    for (const [id, r] of st.resolutions) this.resolutions.set(id, r as unknown as Resolution);
+    for (const [id, f] of st.forecasts) if (f.kind !== 'hrel') this.forecasts.set(id, f as unknown as Forecast);
+    for (const [id, r] of st.resolutions) if (!st.hrel.forecasts.has(id)) this.resolutions.set(id, r as unknown as Resolution);
+    for (const [id, f] of st.hrel.forecasts) this.hrel.set(id, f as unknown as HrelForecast);
+    for (const [id, r] of st.hrel.resolutions) if (this.hrel.has(id)) this.hrelRes.set(id, r as unknown as HrelResolution);
     for (const k of st.skips) this.skips.set(k.slot as number, k as unknown as SkipRecord);
     this.preregs = st.preregs;
     for (const [id, r] of st.catHours.resolutions) this.addTrustHour(st.catHours.forecasts.get(id), r);
@@ -189,10 +204,10 @@ export class LedgerRunner {
     // Zaległe pokwitowania (np. kalendarze niedostępne przed restartem)
     // Partie slotu: prognozy główne ('') i „model vs rynek” ('m', wydawane później w slocie) mają osobne pokwitowania
     const lastHash = new Map<string, { slot: number; hash: string; batch: '' | 'm' }>();
-    for (const f of this.forecasts.values()) {
-      const h = (f as Forecast & { hash?: string }).hash;
+    // Wszystkie prognozy slotu (także `hrel` w tej samej partii) — w kolejności dziennika
+    for (const f of st.forecasts.values()) {
       const batch = f.kind === 'mkt' ? 'm' : '';
-      if (typeof h === 'string') lastHash.set(`${f.slot}${batch}`, { slot: f.slot, hash: h, batch });
+      if (typeof f.hash === 'string' && typeof f.slot === 'number') lastHash.set(`${f.slot}${batch}`, { slot: f.slot, hash: f.hash, batch });
     }
     for (const q of lastHash.values()) if (!this.d.store.exists(this.receiptPath(q.slot, q.batch))) this.stampQueue.push(q);
     try {
@@ -208,7 +223,9 @@ export class LedgerRunner {
     if (bodies.length === 0) return;
     this.d.store.append(bodies, now);
     for (const b of bodies) {
-      if (b.k === 'f') this.forecasts.set(b.id as string, b as unknown as Forecast);
+      if (b.k === 'f' && b.kind === 'hrel') this.hrel.set(b.id as string, b as unknown as HrelForecast);
+      else if (b.k === 'f') this.forecasts.set(b.id as string, b as unknown as Forecast);
+      else if (b.k === 'r' && this.hrel.has(b.id as string)) this.hrelRes.set(b.id as string, b as unknown as HrelResolution);
       else if (b.k === 'r') {
         this.resolutions.set(b.id as string, b as unknown as Resolution);
         this.addTrustHour(this.forecasts.get(b.id as string), b);
@@ -277,6 +294,14 @@ export class LedgerRunner {
         // slot bez kota
       }
     }
+    // Świece 1h (hrel-v1): dopełnienie po pełnej godzinie; błąd pobrania = godzina bez prognozy albo rozstrzygnięcie później
+    if (data.refreshHourBars) {
+      try {
+        await data.refreshHourBars(now);
+      } catch {
+        // bez nowych świec
+      }
+    }
     let appended = 0;
 
     // 0. Rozliczenie poprzednich slotów: brak prognozy = jawny `skip` (z powodem albo „przerwa”)
@@ -314,6 +339,11 @@ export class LedgerRunner {
       this.add([{ k: 'p', id: CAT_CAL_DESIGN.id, t: ti, catalogHash: CAL_HASH, catalog: CAT_CAL_DESIGN }], ti);
       appended++;
     }
+    // Plan prognozy hrel-v1 — w łańcuchu przed pierwszym jej rekordem
+    if (data.refreshHourBars && !this.preregs.some((p) => p.catalogHash === HREL_HASH)) {
+      this.add([{ k: 'p', id: HREL_DESIGN.id, t: ti, catalogHash: HREL_HASH, catalog: HREL_DESIGN }], ti);
+      appended++;
+    }
 
     // 1. Wydanie prognoz w bieżącym slocie — tylko w przebiegu zaczętym w tym slocie: reżim i kot są pobierane dla slotu
     // chwili `now`; przebieg sprzed granicy (np. pierwsze pobranie modelu po restarcie) zostawia wydanie następnemu
@@ -342,6 +372,8 @@ export class LedgerRunner {
           const hf = data.cat.hour && cat0?.kind === 'cat' ? makeHourForecast(data.cat.hour, cat0, data.catInput.inp.m1, tm) : null;
           if (hf) issued.push({ ...hf });
         }
+        const hr = this.hrelFor(slot, ti);
+        if (hr) issued.push({ ...hr });
         this.add(issued, ti);
         appended += issued.length;
         this.accounted = Math.max(this.accounted, slot);
@@ -411,6 +443,7 @@ export class LedgerRunner {
         }
       }
     }
+    resBodies.push(...this.resolveHrel(this.clock(ti)));
     this.add(resBodies, ti);
     appended += resBodies.length;
 
@@ -459,6 +492,37 @@ export class LedgerRunner {
       pairs.push({ t: f.t, pBig: f.pBig, yBig: r.yBig, rt: r.t });
     }
     return catCal(pairs, { t: c.t, ti: c.ti }, c.pBig);
+  }
+
+  /**
+   * Prognoza `hrel-v1` w slocie wydania: raz na godzinę, gdy hs = początek godziny slotu, plan już w dzienniku, rekordu
+   * tej godziny jeszcze nie ma, a chwila wydania nie później niż hs + 15 min; cechy ze świec zamkniętych do hs.
+   */
+  private hrelFor(slot: number, ti: number): HrelForecast | null {
+    const bars = this.d.data.hourBars;
+    const hs = slot - (slot % HOUR);
+    const id = `${hs}-hrel`;
+    if (!bars || this.hrel.has(id) || ti - hs > HREL_LATE || !this.preregs.some((p) => p.catalogHash === HREL_HASH)) return null;
+    const f = hrelForecast(bars, hs);
+    return f ? { k: 'f', id, slot, ti, t: hs, kind: 'hrel', ...f, model: HREL_MODEL, plan: HREL_DESIGN.id } : null;
+  }
+
+  /**
+   * Rozstrzygnięcia `hrel-v1` po zamknięciu godziny hs + 3 h: komplet świec → wynik; brak części po 6 h → null w tych
+   * godzinach; brak wszystkich po 6 h → jawne unieważnienie.
+   */
+  private resolveHrel(now: number): Record<string, unknown>[] {
+    const bars = this.d.data.hourBars;
+    const out: Record<string, unknown>[] = [];
+    for (const f of this.hrel.values()) {
+      const end = f.t + 4 * HOUR;
+      if (this.hrelRes.has(f.id) || end > now) continue;
+      const o = bars ? hrelOutcome(bars, f.t, f.thr) : { rng: [null, null, null, null], y: [null, null, null, null] };
+      const missing = o.y.filter((v) => v === null).length;
+      if (missing === 0) out.push({ k: 'r', id: f.id, t: now, ...o });
+      else if (now - end > VOID_AFTER) out.push(missing === o.y.length ? { k: 'r', id: f.id, t: now, void: 'no-data' } : { k: 'r', id: f.id, t: now, ...o });
+    }
+    return out;
   }
 
   private dayFiles(): string[] {
@@ -524,6 +588,8 @@ export class LedgerRunner {
         this.preregs.find((p) => p.catalogHash === HOUR_HASH)
       ),
       calPlan: ((p) => (p && typeof p.t === 'number' ? { at: p.t, hash: String(p.hash) } : null))(this.preregs.find((p) => p.catalogHash === CAL_HASH)),
+      hrelPlan: ((p) => (p && typeof p.t === 'number' ? { at: p.t, hash: String(p.hash) } : null))(this.preregs.find((p) => p.catalogHash === HREL_HASH)),
+      hrel: { forecasts: this.hrel, resolutions: this.hrelRes },
     });
   }
 }
