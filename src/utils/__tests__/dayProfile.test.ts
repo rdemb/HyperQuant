@@ -49,5 +49,8 @@ describe('profil doby z taśmy: kupno, sprzedaż i zmiana OI na cenach', () => {
 
   it('krok wierszy pliku taki sam jak tick bazowy footprintu strony', () => {
     for (const px of [77_000, 101_000, 2_800, 195, 37, 0.42]) expect(profileTick(px)).toBe(baseTick(px));
+    // Z szDecimals rynku (kPEPE: 0) ten sam krok co tick bazowy strony
+    for (const px of [0.0045, 0.012, 77_000]) expect(profileTick(px, 0)).toBe(baseTick(px, 0));
+    expect(profileTick(0.0045, 0)).toBeCloseTo(1e-6, 15);
   });
 });

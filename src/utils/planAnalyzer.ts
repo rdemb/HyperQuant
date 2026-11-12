@@ -1,6 +1,8 @@
 import { L2OrderbookLevel } from '../types/trading';
 import { makeInnovation, mulberry32 } from './pathEngine';
 import { tr } from '../i18n';
+import { HOME_MARKET, maxLeverageOf } from './marketCaps';
+import { DEFAULT_MARKETS } from './marketRegistry';
 
 /**
  * Analizator planu transakcji (BTC-PERP, Hyperliquid) — czyste funkcje.
@@ -20,8 +22,11 @@ export type PlanDirection = 'LONG' | 'SHORT';
 export const DEFAULT_TAKER_FEE = 0.00045;
 /** Opłata maker HL, tier 0 (perps 0.015%) — ZAŁOŻENIE jak wyżej; tylko w drabinie kosztów (zlecenia z limitem). */
 export const DEFAULT_MAKER_FEE = 0.00015;
-/** Maks. dźwignia BTC na HL (tier 0–150M USDC notional, docs: trading/margin-tiers). */
-export const BTC_MAX_LEVERAGE = 40;
+/**
+ * Maks. dźwignia BTC na HL (40, tier 0–150M USDC notional, docs: trading/margin-tiers) z rekordu BTC rynków domyślnych.
+ * Inny rynek: `maxLeverage` z rejestru (`marketCaps.maxLeverageOf`) jako argument `maxLeverage` funkcji niżej.
+ */
+export const BTC_MAX_LEVERAGE = maxLeverageOf(HOME_MARKET, DEFAULT_MARKETS);
 /**
  * Wejście w granicy 1 bp od ceny rynku = zlecenie rynkowe (wypełnione od razu) — ta sama reguła w Monte Carlo i dzienniku.
  * Szersza odległość = zlecenie z limitem/stop: ścieżka musi najpierw dotknąć wejścia.

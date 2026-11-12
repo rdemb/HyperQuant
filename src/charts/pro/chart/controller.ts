@@ -60,8 +60,8 @@ import { FlowVenue, OiVenue, oiMaxAge, per8h } from '../venues/parse';
 import { VenueStore, acquireVenues, venueStoreFor } from '../venues/venueStore';
 import { DOM_W_PX, PRO, RIGHT_GAP_PX, chartOptions, crosshairTimeFormatter, rgba } from './theme';
 import { tr } from '../../../i18n';
-import { BTC_ONLY_NOTE, NO_FORECASTS_NOTE } from '../../../utils/marketCaps';
-import { capsOf } from '../../../state/markets';
+import { BTC_ONLY_NOTE, NO_CEX_BADGE, NO_FORECASTS_NOTE } from '../../../utils/marketCaps';
+import { capsOf, usdScaleOf } from '../../../state/markets';
 import type { DeskLedgerSummary } from '../../../utils/deskLedger';
 import { fmtCompact, fmtPrice, numLang } from '../../../ui/format';
 
@@ -414,6 +414,7 @@ export class ProChartController {
       covers: (from, to) => tapeCovered(store.addressed, from, to),
       version: () => store.version,
       history: () => store.historyVersion,
+      usdScale: () => usdScaleOf(store.coin),
     };
     this.chart = createChart(container, chartOptions());
     this.applyTimeFormat();
@@ -435,6 +436,10 @@ export class ProChartController {
     };
     this.overlay = new IndicatorOverlay(toggles(settings, series.interval.ms));
     this.overlay.fmtPx = (p) => store.fmtPx(p);
+    // Siatka wierszy (footprint, profile, rysunek zakresu) z kroku ceny rynku: szDecimals z rejestru
+    this.overlay.tickOf = (p) => store.baseTick(p);
+    this.fpView.tickOf = (p) => store.baseTick(p);
+    this.drawLayer.tickOf = (p) => store.baseTick(p);
     // Profile okresów i TPO: liczba obiektów i udział pola pod słupkami (pomiar układu czyta je z atrybutów)
     const pct = (x: number) => (x * 100).toFixed(1);
     this.overlay.onPeriods = (c) => {
@@ -903,11 +908,14 @@ export class ProChartController {
     return (v) => fmtPrice(v, Math.max(0, -Math.floor(Math.log10(this.priceTick))) + 1);
   }
 
-  /** Połączenia Binance i Bybit tylko z włączonym panelem giełd albo grupą giełdy w Tablicy liczb, dla bieżącego interwału. */
+  /**
+   * Połączenia Binance i Bybit tylko z włączonym panelem giełd albo grupą giełdy w Tablicy liczb, dla bieżącego interwału;
+   * rynek bez odpowiednika na tych giełdach (HIP-3, kPEPE) — bez połączeń i zapytań.
+   */
   private syncVenueLive(): void {
     const s = this.settings;
     const statsVenue = s.showStats && s.statGroups.some((g) => VENUE_GROUPS.includes(g));
-    const want = s.showVenueCvd || s.showVenueOi || statsVenue ? this.series.interval.id : null;
+    const want = (s.showVenueCvd || s.showVenueOi || statsVenue) && capsOf(this.store.coin).cex ? this.series.interval.id : null;
     if (want === this.venueInterval) return;
     this.venueInterval = want;
     this.releaseVenue?.();
@@ -1449,7 +1457,7 @@ export class ProChartController {
     const now = st.serverNow();
     if (now - this.autoAt >= AUTO_EVERY_MS) {
       this.autoAt = now;
-      this.autoUsd = autoThreshold(st.orders.range(now - AUTO_WINDOW_MS, now + 1));
+      this.autoUsd = autoThreshold(st.orders.range(now - AUTO_WINDOW_MS, now + 1), usdScaleOf(st.coin));
     }
     this.liqSource.near = st.book('near');
     this.liqSource.far = st.book('far');
@@ -1780,8 +1788,16 @@ export class ProChartController {
     // Wąski wykres (telefon): bez okresu (ten sam co w opisie CVD) i bez wiersza finansowania — opis mieści się w dwóch wierszach
     const compact = this.chart.timeScale().width() < COMPACT_LEGEND_PX;
     const period = compact ? '' : ` · ${RESET_LABEL[this.settings.cvdReset]}`;
-    if (this.venueCvd) this.venueCvdLegend.set(this.venueLegend(`${tr('CVD giełd', 'Exchange CVD')}${period}`, CVD_LINES, this.venueCvdData, i));
-    if (this.venueOi) {
+    // Rynek bez odpowiednika na Binance i Bybit: opis paneli z „—” i powodem zamiast pustych linii
+    const noCex = !capsOf(this.store.coin).cex;
+    const noCexLegend = (label: string): LegendPart[] => [
+      { text: label, color: PRO.ink3 },
+      { text: NO_CEX_BADGE, color: PRO.ink3 },
+    ];
+    if (this.venueCvd && noCex) this.venueCvdLegend.set(noCexLegend(tr('CVD giełd', 'Exchange CVD')));
+    else if (this.venueCvd) this.venueCvdLegend.set(this.venueLegend(`${tr('CVD giełd', 'Exchange CVD')}${period}`, CVD_LINES, this.venueCvdData, i));
+    if (this.venueOi && noCex) this.venueOiLegend.set(noCexLegend(tr('ΔOI giełd', 'Exchange ΔOI')));
+    else if (this.venueOi) {
       const lines = this.venueLegend(`${tr('ΔOI giełd', 'Exchange ΔOI')}${period}`, OI_LINES, this.venueOiData, i);
       // Drugi wiersz: bieżące finansowanie giełd przeliczone na 8 h (Hyperliquid rozlicza co godzinę)
       const hlRate = this.store.ctx ? per8h(this.store.ctx.funding, 1) : null;

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Coverage } from '../core/coverage';
 import { AggressorOrder, OrderLog } from '../core/orders';
-import { PlayerFlow, type PlayerSplit, bigPlayerUsd } from '../core/players';
+import { BIG_PLAYER_USD, PlayerFlow, type PlayerSplit, bigPlayerUsd } from '../core/players';
 
 const M1 = 60_000;
 const H = 60 * M1;
@@ -103,8 +103,10 @@ describe('Kto handluje', () => {
     players.prune(H0 + H);
     log.prune(H0 + H);
     expect(players.split(H0 + H, H, H0 + 3 * H)!.big).toBeCloseTo(12);
-    expect(bigPlayerUsd('BTC')).toBe(1_000_000);
-    expect(bigPlayerUsd('XYZ')).toBe(250_000);
+    // Próg × skala rynku (`usdScale`): BTC jak dotąd, ETH, SOL i HYPE z tabeli, kPEPE przy skali 0,02
+    expect(bigPlayerUsd(1)).toBe(1_000_000);
+    expect(BIG_PLAYER_USD).toEqual({ BTC: 1_000_000, ETH: 500_000, SOL: 250_000, HYPE: 250_000 });
+    expect(bigPlayerUsd(0.02)).toBe(20_000);
   });
 });
 

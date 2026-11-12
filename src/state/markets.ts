@@ -1,5 +1,5 @@
 import { useEffect, useSyncExternalStore } from 'react';
-import { type MarketCaps, marketCaps, noScannerWhy } from '../utils/marketCaps';
+import { type MarketCaps, marketCaps, noScannerWhy, usdScale } from '../utils/marketCaps';
 import { type ChartMarket, DEFAULT_MARKETS, isMarketRegistry, marketsOrDefault } from '../utils/marketRegistry';
 import { usePublished } from './usePublished';
 
@@ -21,7 +21,7 @@ const listeners = new Set<() => void>();
 
 const sameList = (a: readonly ChartMarket[], b: readonly ChartMarket[]) =>
   a.length === b.length &&
-  a.every((m, i) => m.coin === b[i].coin && m.dex === b[i].dex && m.szDecimals === b[i].szDecimals && m.maxLeverage === b[i].maxLeverage && m.scanner === b[i].scanner);
+  a.every((m, i) => m.coin === b[i].coin && m.dex === b[i].dex && m.szDecimals === b[i].szDecimals && m.maxLeverage === b[i].maxLeverage && m.scanner === b[i].scanner && m.oiUsd7d === b[i].oiUsd7d);
 
 /** Odpowiedź rejestru (null = brak pliku albo nieudane pobranie): lista z pliku albo 4 rynki domyślne. */
 export function publishMarkets(raw: unknown): void {
@@ -36,6 +36,8 @@ export const chartMarkets = (): readonly ChartMarket[] => state.markets;
 export const marketOf = (coin: string): ChartMarket | undefined => state.markets.find((m) => m.coin === coin);
 /** Zdolności rynku według bieżącej listy (`utils/marketCaps`). */
 export const capsOf = (coin: string): MarketCaps => marketCaps(coin, state.markets);
+/** Skala progów w USD rynku wobec BTC (`utils/marketCaps.usdScale`; BTC = 1). */
+export const usdScaleOf = (coin: string): number => usdScale(coin, state.markets);
 /** Powód „—” warstwy skanera albo prognoz na rynku `coin` (rynki z pełnym skanerem z bieżącej listy). */
 export const noScannerWhyOf = (coin: string): string => noScannerWhy(coin, state.markets);
 

@@ -13,7 +13,10 @@ import {
   walkBook,
   wilsonLowerBound,
   PlanInput,
+  BTC_MAX_LEVERAGE,
 } from '../planAnalyzer';
+import { DEFAULT_MARKETS, type ChartMarket } from '../marketRegistry';
+import { maxLeverageOf } from '../marketCaps';
 import { L2OrderbookLevel } from '../../types/trading';
 
 // Arkusz pomocniczy: poziomy w kolejności od najlepszej ceny
@@ -394,6 +397,19 @@ describe('validatePlan — czytelne błędy po polsku', () => {
     expect(validatePlan({ ...ok, sigmaHorizon: 0 }).join(' ')).toMatch(/zmienności/);
     expect(validatePlan({ ...ok, leverage: 60 }).join(' ')).toMatch(/Dźwignia/);
     expect(validatePlan({ ...ok, entry: Number.NaN }).join(' ')).toMatch(/dodatnie liczby/);
+  });
+
+  it('dźwignia z rejestru rynków: BTC 40 jak dotąd, xyz:NVDA 20 (pole maxLeverage)', () => {
+    const nvda: ChartMarket = { coin: 'xyz:NVDA', dex: 'xyz', szDecimals: 3, maxLeverage: 20, scanner: 'none' };
+    const list = [...DEFAULT_MARKETS, nvda];
+    expect(BTC_MAX_LEVERAGE).toBe(40);
+    expect(BTC_MAX_LEVERAGE).toBe(DEFAULT_MARKETS.find((m) => m.coin === 'BTC')!.maxLeverage);
+    expect(validatePlan({ ...ok, leverage: 25 }, maxLeverageOf('BTC', list))).toEqual([]);
+    expect(validatePlan({ ...ok, leverage: 25 }, maxLeverageOf('xyz:NVDA', list)).join(' ')).toMatch(/Dźwignia/);
+    // Cena likwidacji z dźwigni utrzymania rynku: przy 10× na rynku z maks. 20× likwidacja bliżej wejścia niż na BTC
+    const btc = isolatedLiquidationPrice('LONG', 100, 10, maxLeverageOf('BTC', list))!;
+    const nv = isolatedLiquidationPrice('LONG', 100, 10, maxLeverageOf('xyz:NVDA', list))!;
+    expect(nv.price).toBeGreaterThan(btc.price);
   });
 });
 
