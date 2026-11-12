@@ -4,6 +4,7 @@ import type { BadgeTone } from '../../../ui/Badge';
 import { DASH } from '../../../ui/format';
 import { TITLE_GUARDS, guardHits } from '../../../utils/safeguards.mjs';
 import { WAIT_TEXT, liqScan } from './layerSources';
+import { capsOf } from '../../../state/markets';
 import type { LayoutNumber } from './layoutNumbers';
 import { type FrameQuality, QUALITY_LEGEND, SANS, coverageText, fileStamp, qualityText, stampText } from './screenshot';
 import { locale, tr } from '../../../i18n';
@@ -270,13 +271,13 @@ export function titleProblems(title: string): string[] {
   );
 }
 
-/** Pokrycie open interest przez mapę likwidacji skanera (BTC, aktualna mapa, poza powtórką); inaczej null z powodem. */
+/** Pokrycie open interest przez mapę likwidacji skanera (rynek ze skanerem, aktualna mapa, poza powtórką); inaczej null z powodem. */
 export function mapQuality(
   liq: { status: string; map: { asOf: number; coverage: { share: number; oiBtc: number } } | null },
   coin: string,
   replay: boolean
 ): Pick<FrameQuality, 'mapPct' | 'mapWhy'> {
-  if (coin !== 'BTC') return { mapPct: null, mapWhy: tr('tylko BTC: skaner mapuje pozycje na BTC', 'BTC only: the scanner maps BTC positions') };
+  if (!capsOf(coin).scanner) return { mapPct: null, mapWhy: tr('bez skanera: skaner nie śledzi kont na tym rynku', 'no scanner: the scanner does not track accounts on this market') };
   if (replay) return { mapPct: null, mapWhy: tr('w powtórce bez mapy: mapa skanera to stan na teraz', 'none in a replay: the scanner map is the current state') };
   const s = liqScan(liq);
   if ('why' in s) return { mapPct: null, mapWhy: s.why };

@@ -20,7 +20,7 @@ import {
   informedState,
 } from '../../utils/cohorts';
 import { useElementWidth } from '../market/MarketMap';
-import { BTC_ONLY, scannerScope } from '../flow/flowColumnModel';
+import { NO_SCANNER, scannerScope } from '../flow/flowColumnModel';
 import { locale, tr } from '../../i18n';
 
 /**
@@ -44,14 +44,14 @@ type Mode = 'net' | 'taker';
 
 /**
  * Kto kupuje, kto sprzedaje: przepływ netto (zmiana zapasów) i agresywna delta per kohorta uczestników Hyperliquid na
- * rynku BTC. `coin` — rynek wykresu obok: na innym niż BTC sama ramka z „—, tylko BTC” (bez liczb BTC pod wykresem ETH).
+ * rynku BTC. `coin` — rynek wykresu obok: na rynku bez skanera sama ramka z „—, bez skanera” (bez liczb BTC pod wykresem ETH).
  */
 export const CohortFlowPanel: React.FC<{ coin: string }> = ({ coin }) => {
   const { status, flow } = useCohortFlow();
   const [mode, setMode] = useState<Mode>('net');
   if (status === 'unconfigured') return null;
   const eyebrow = tr('Kto kupuje, kto sprzedaje · BTC · Hyperliquid', 'Who buys, who sells · BTC · Hyperliquid');
-  if (scannerScope(coin) === 'btc-only')
+  if (scannerScope(coin) === 'none')
     return (
       <Panel eyebrow={eyebrow} title={tr('Przepływ kohort', 'Cohort flow')}>
         <p
@@ -61,7 +61,7 @@ export const CohortFlowPanel: React.FC<{ coin: string }> = ({ coin }) => {
             `Cohorts are computed from the public BTC tape on Hyperliquid; the chart shows ${coin}.`
           )}
         >
-          {BTC_ONLY}
+          {NO_SCANNER}
         </p>
       </Panel>
     );

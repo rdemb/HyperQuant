@@ -26,10 +26,11 @@ describe('fuelNum (2): paliwo 1% pod i nad ceną z mapy likwidacji skanera', () 
     expect(fuelNum(inputs({ liq: { status: 'delayed', map: LIQ_MAP } })).note).toBe('opóźnione');
   });
 
-  it('brak mapy likwidacji: „—, tylko BTC” poza BTC albo „—” z powodem', () => {
+  it('brak mapy likwidacji: „—, bez skanera” na rynku bez skanera albo „—” z powodem', () => {
     const eth = fuelNum(inputs({ coin: 'ETH' }));
-    expect(eth).toMatchObject({ value: '—', note: 'tylko BTC' });
-    expect(eth.hint).toContain('Tylko BTC');
+    expect(eth).toMatchObject({ value: '—', note: 'bez skanera' });
+    expect(eth.hint).toContain('ETH');
+    expect(eth.hint).toContain('BTC');
     expect(fuelNum(inputs({ liq: { status: 'unconfigured', map: null } }))).toMatchObject({ value: '—', hint: 'Mapa likwidacji niedostępna w tej wersji strony' });
     expect(fuelNum(inputs({ liq: { status: 'error', map: null } })).hint).toBe('Nie udało się pobrać mapy likwidacji');
     expect(fuelNum(inputs({ liq: { status: 'loading', map: null } })).hint).toContain('Czekam na dane');

@@ -21,6 +21,8 @@ import { classifyDay } from './dayType';
 import type { LiqMap } from './liqMap';
 import { mapWindow, settleRange } from './mapSettlement';
 import { RVOL_MIN_DAYS, median, nyClock } from './rvol';
+import { NO_SCANNER_NOTE, marketCaps, noScannerWhy } from './marketCaps';
+import { type ChartMarket, DEFAULT_MARKETS } from './marketRegistry';
 import { liqScan, scannerAge } from './scanState';
 import { type TradeSession, currentTradeSession, nextTradeSession, tradeSessionOn } from './sessionDay';
 import { sessionFacts } from './sessionFacts';
@@ -45,7 +47,7 @@ export interface FourNumber {
   /** Liczba albo opis; brak danych — „—”. */
   value: string;
   badge: 'LIVE' | 'MODEL';
-  /** Zamiast tekstu plakietki: wiek migawki skanera starszej niż 2 min, „opóźnione” albo „tylko BTC”. */
+  /** Zamiast tekstu plakietki: wiek migawki skanera starszej niż 2 min, „opóźnione”, „bez skanera” albo „tylko BTC”. */
   note?: string;
   /** Obok plakietki: liczba tylko częściowo rozliczona („luka” w świecach 1m, jak w nagłówku Rozliczenia). */
   flag?: string;
@@ -64,6 +66,8 @@ export interface FourNumbers {
 export interface FourInputs {
   /** Rynek wykresu Przed sesją. */
   coin: string;
+  /** Rynki strony (rejestr albo 4 domyślne): zdolności rynku — skaner i mapy z bloga (`marketCaps`). Bez listy (MCP, BTC) — 4 domyślne. */
+  markets?: readonly ChartMarket[];
   now: number;
   /** Ostatnia cena rynku. */
   price?: Got<number>;
@@ -130,7 +134,7 @@ function dayTypeOf(x: FourInputs, ny: TradeSession): Got<{ label: string; hint: 
  * Rozliczenia. Przy luce w świecach 1m „X/Y” z uwagą „luka” jak w nagłówku Rozliczenia (`mapHitsText`).
  */
 function mapHitsOf(x: FourInputs, ny: TradeSession): Got<{ value: string; hint: string; flag: string | null }> {
-  if (x.coin !== 'BTC') return { why: tr('tylko BTC (mapy z bloga opisują BTC)', 'BTC only (the blog maps describe BTC)') };
+  if (!marketCaps(x.coin, x.markets ?? DEFAULT_MARKETS).blog) return { why: tr('tylko BTC (mapy z bloga opisują BTC)', 'BTC only (the blog maps describe BTC)') };
   const st = x.maps;
   if (st.status === 'loading') return { why: WAIT_TEXT };
   if (st.status === 'missing') return { why: tr('plik map z bloga niedostępny', 'the blog maps file is unavailable') };
@@ -199,10 +203,11 @@ export function liqFuel(map: Pick<LiqMap, 'longs' | 'shorts' | 'stepUsd'>, price
   return { below, above };
 }
 
-/** (2) Paliwo 1% pod i nad ceną z mapy likwidacji skanera: LIVE, po 2 min wiek migawki; poza BTC „—, tylko BTC”. */
+/** (2) Paliwo 1% pod i nad ceną z mapy likwidacji skanera: LIVE, po 2 min wiek migawki; rynek bez skanera „—, bez skanera”. */
 export function fuelNum(x: FourInputs): FourNumber {
   const base = { id: 'fuel', title: tr('Paliwo ±1%', 'Fuel ±1%'), badge: 'LIVE' } as const;
-  if (x.coin !== 'BTC') return { ...base, value: DASH, note: tr('tylko BTC', 'BTC only'), hint: tr('Tylko BTC: skaner mapuje pozycje na BTC', 'BTC only: the scanner maps BTC positions') };
+  const markets = x.markets ?? DEFAULT_MARKETS;
+  if (!marketCaps(x.coin, markets).scanner) return { ...base, value: DASH, note: NO_SCANNER_NOTE, hint: noScannerWhy(x.coin, markets) };
   const ls = liqScan(x.liq);
   const map = x.liq.map;
   if ('why' in ls || !map) return { ...base, value: DASH, hint: 'why' in ls ? ls.why : WAIT_TEXT };

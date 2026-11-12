@@ -66,7 +66,8 @@ import { type DrawingTools, isTyping } from './draw/tools';
 import { chartKeyAction } from './chart/shortcuts';
 import { FocusExit, type PhoneTab, focusExitKey, focusOn } from './chart/focusMode';
 import { COIN, CandleSeries, Market, ProStore, storeFor } from './store/proStore';
-import { chartMarkets, useMarkets } from '../../state/markets';
+import { capsOf, chartMarkets, noScannerWhyOf, useMarkets } from '../../state/markets';
+import { BLOG_ONLY_WHY, marketCaps } from '../../utils/marketCaps';
 import { MarketPicker, PhoneMarketSelect } from './chart/MarketPicker';
 import { expiredNotice, isListed, nextMarket } from './chart/marketMenu';
 import { startRecording } from './store/recording';
@@ -319,10 +320,13 @@ export const ProChart: React.FC<{
   const signal = useMemo(() => new HoverSignal(), []);
   const liq = useLiqMap();
   const { summary: ledger } = useDeskLedger();
+  // Rynki z rejestru i zdolności rynku wykresu (warstwy skanera, prognozy, mapy z bloga, rynki HIP-4)
+  const markets = useMarkets();
+  const caps = marketCaps(store.coin, markets.markets);
   // Rynki HIP-4 (zapytania do Hyperliquid) i model zmienności Desku (w tym widoku liczony tylko dla nich) tylko z widocznym
-  // wskaźnikiem, na BTC i na żywo
+  // wskaźnikiem, na rynku z rynkami HIP-4 (BTC) i na żywo
   const { feed } = useDesk();
-  const hip4On = !inReplay && settings.coin === 'BTC' && settings.indicators.some((x) => x.visible && x.id === 'outcomes');
+  const hip4On = !inReplay && caps.outcomes && settings.indicators.some((x) => x.visible && x.id === 'outcomes');
   const vol = useVolModel(hip4On);
   const hip4 = useHip4(vol.model, feed.currentPrice, hip4On);
   const whalePub = usePublished('whales.json', isWhaleLayer);
@@ -331,14 +335,13 @@ export const ProChart: React.FC<{
   // Mapy z bloga (plik bloga z tej samej domeny) tylko z włączoną warstwą na BTC albo dla liczby „Mapa: dotknięte” w nagłówku
   // Rozliczenia; rozliczenie poziomów w układzie Rozliczenie
   const blogSettle = station.id === 'review';
-  // Rynki z rejestru: rynek spoza rozstrzygniętej listy (wygasły link albo zapis) — wykres BTC z jednym zdaniem wyjaśnienia
-  const markets = useMarkets();
+  // Rynek spoza rozstrzygniętej listy (wygasły link albo zapis) — wykres BTC z jednym zdaniem wyjaśnienia
   useEffect(() => {
     if (inReplay || !markets.ready || isListed(settings.coin, markets.markets)) return;
     setToast(expiredNotice(settings.coin));
     setSettings((s) => withPatch(s, { coin: COIN }));
   }, [markets, settings.coin, inReplay]);
-  const blogMaps = useBlogMaps((settings.showBlogMap || (layoutHeader && blogSettle && !inReplay)) && settings.coin === 'BTC');
+  const blogMaps = useBlogMaps((settings.showBlogMap || (layoutHeader && blogSettle && !inReplay)) && caps.blog);
   useStoreVersion(store, 400);
 
   // Usunięty wskaźnik zestawu paneli wypada też z listy instancji zestawu (keepPanelSetIids)
@@ -559,11 +562,12 @@ export const ProChart: React.FC<{
     ctrlRef.current?.setWhales(whales?.markets[store.coin] ?? null);
   }, [whales, store]);
 
-  // Klastry likwidacji tylko z aktualnej mapy skanera (jak w Przed sesją: nieaktualna mapa nie jest pokazywana); skaner mapuje BTC
+  // Klastry likwidacji tylko z aktualnej mapy skanera (jak w Przed sesją: nieaktualna mapa nie jest pokazywana) i tylko na
+  // rynku ze skanerem (mapa `liq-map` opisuje jeden rynek skanera)
   useEffect(() => {
-    const fresh = liq.map && (liq.status === 'ready' || liq.status === 'delayed') && store.coin === 'BTC' && !store.replay;
+    const fresh = liq.map && (liq.status === 'ready' || liq.status === 'delayed') && caps.scanner && liq.map.coin === store.coin && !store.replay;
     ctrlRef.current?.setLiqLevels(fresh ? liqLevels(liq.map!) : []);
-  }, [liq.map, liq.status, store]);
+  }, [liq.map, liq.status, store, caps.scanner]);
 
   // Stożek prognozy z dziennika Desku tylko na żywo: prognoza „teraz” nie pasuje do odtwarzanej chwili
   useEffect(() => {
@@ -755,7 +759,7 @@ export const ProChart: React.FC<{
   // Plakietki źródeł warstw w legendzie (w powtórce bez nich: nagranie, nie dane na żywo, i bez warstw skanera); stan
   // migawek skanera i powody ich braku te same co w nagłówku układu. Bez mapy z bloga na wykresie (weekend, rano przed
   // wpisem, inny rynek) panel z mapą zamiast poziomów dnia rysuje PDH i PDL — w legendzie ich plakietka, mapa z „—”
-  const mapShown = store.coin === 'BTC' && iv.ms < DAY ? pickMap(blogMaps.maps, store.serverNow(), settings.blogMapId) : null;
+  const mapShown = caps.blog && iv.ms < DAY ? pickMap(blogMaps.maps, store.serverNow(), settings.blogMapId) : null;
   const levelsInstead = levelsInsteadOfMap(shown, store.coin, blogMaps.status, mapShown);
   const layerChips = legendChips(levelsLegend(shown, levelsInstead), {
         coin: store.coin,
@@ -1852,7 +1856,7 @@ function flowLayers(s: ChartSettings, intervalMs: number, liq: LiqMapState, whal
       ),
       aliases: 'blog mapa dnia poziomy autora map levels',
       swatch: 'bg-of-blog',
-      off: s.coin !== 'BTC' ? tr('Tylko BTC: blog opisuje BTC', 'BTC only: the blog covers BTC') : scope.levels ? undefined : tr('Na interwałach poniżej 1D', 'On timeframes below 1D'),
+      off: !capsOf(s.coin).blog ? BLOG_ONLY_WHY : scope.levels ? undefined : tr('Na interwałach poniżej 1D', 'On timeframes below 1D'),
     },
     {
       key: 'showSessions',
@@ -1879,7 +1883,7 @@ function flowLayers(s: ChartSettings, intervalMs: number, liq: LiqMapState, whal
       label: tr('Klastry likwidacji', 'Liquidation clusters'),
       hint: liqHint(liq),
       swatch: 'bg-gradient-to-r from-of-sell to-of-buy',
-      off: s.coin === 'BTC' ? undefined : tr('Tylko BTC: skaner mapuje pozycje na BTC', 'BTC only: the scanner maps BTC positions'),
+      off: capsOf(s.coin).scanner ? undefined : noScannerWhyOf(s.coin),
     },
     {
       key: 'showWhales',
@@ -2072,7 +2076,7 @@ const BlogMapPicker: React.FC<{ s: ChartSettings; maps: BlogMapsState; now: numb
   const list = maps.maps.filter((m) => m.publishedAt <= now);
   const value = list.some((m) => m.id === s.blogMapId) ? s.blogMapId! : '';
   // Poza BTC i bez pliku map — powód zamiast listy (ten sam co w legendzie)
-  const scan = s.coin !== 'BTC' ? { why: tr('Tylko BTC: blog opisuje BTC', 'BTC only: the blog covers BTC') } : maps.status === 'ready' ? null : blogMapScan(maps, null);
+  const scan = !capsOf(s.coin).blog ? { why: BLOG_ONLY_WHY } : maps.status === 'ready' ? null : blogMapScan(maps, null);
   const why = scan && 'why' in scan ? scan.why : null;
   return (
     <Group title={tr('Mapa z bloga', 'Blog map')}>

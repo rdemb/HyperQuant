@@ -242,8 +242,9 @@ describe('Klatka: jakość danych wykresu', () => {
     expect(mapQuality({ status: 'delayed', map: map(0.47) }, 'BTC', false)).toEqual({ mapPct: 0.47 });
   });
 
-  it('mapa — z powodem: inny rynek, powtórka, nieaktualna mapa, brak OI, wczytywanie', () => {
-    expect(mapQuality({ status: 'ready', map: map(0.47) }, 'ETH', false)).toEqual({ mapPct: null, mapWhy: expect.stringMatching(/tylko BTC/) });
+  it('mapa — z powodem: rynek bez skanera, powtórka, nieaktualna mapa, brak OI, wczytywanie', () => {
+    expect(mapQuality({ status: 'ready', map: map(0.47) }, 'ETH', false)).toEqual({ mapPct: null, mapWhy: expect.stringMatching(/bez skanera/) });
+    expect(mapQuality({ status: 'ready', map: map(0.47) }, 'xyz:NVDA', false)).toEqual({ mapPct: null, mapWhy: expect.stringMatching(/bez skanera/) });
     for (const q of [
       mapQuality({ status: 'ready', map: map(0.47) }, 'BTC', true),
       mapQuality({ status: 'stale', map: map(0.47) }, 'BTC', false),

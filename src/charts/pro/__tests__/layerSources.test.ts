@@ -5,6 +5,7 @@ import { DEFAULT_SETTINGS } from '../chart/settings';
 import { LAYERS_OFF, inds } from '../chart/templates';
 import { LAYER_SOURCE, SCANNER_FRESH_MS, WAIT_TEXT, chipsFor, layerBadge, legendChips, liqScan, scannerAge, tapeCoveragePct, whalesScan } from '../chart/layerSources';
 import * as scanState from '../../../utils/scanState';
+import { publishMarkets, resetMarketsForTest } from '../../../state/markets';
 import { readInputs } from '../chart/layoutInputs';
 import { layoutNumbers } from '../chart/layoutNumbers';
 
@@ -94,11 +95,31 @@ describe('plakietka warstwy w legendzie', () => {
     expect(layerBadge('showWhales', { coin: 'BTC', now: NOW, scan: { why: 'powód' } })).toMatchObject({ tone: 'stale', text: '—', hint: 'powód' });
   });
 
-  it('poza BTC warstwy tylko z BTC: „—, tylko BTC”; wieloryby skaner publikuje dla każdego rynku', () => {
-    expect(layerBadge('showLiq', { coin: 'ETH', now: NOW, scan: { asOf: NOW } })).toMatchObject({ tone: 'neutral', text: '—, tylko BTC' });
-    expect(layerBadge('cone', { coin: 'SOL', now: NOW })).toMatchObject({ text: '—, tylko BTC' });
+  it('rynek bez skanera: mapa likwidacji „—, bez skanera”, stożek „—, bez prognoz” z powodem; HIP-4 i mapy bloga „—, tylko BTC”; wieloryby skaner publikuje dla każdego rynku', () => {
+    const liq = layerBadge('showLiq', { coin: 'ETH', now: NOW, scan: { asOf: NOW } });
+    expect(liq).toMatchObject({ tone: 'neutral', text: '—, bez skanera' });
+    expect(liq.hint).toContain('ETH');
+    expect(layerBadge('cone', { coin: 'SOL', now: NOW })).toMatchObject({ text: '—, bez prognoz' });
+    expect(layerBadge('cone', { coin: 'xyz:NVDA', now: NOW })).toMatchObject({ text: '—, bez prognoz' });
     expect(layerBadge('outcomes', { coin: 'HYPE', now: NOW })).toMatchObject({ text: '—, tylko BTC' });
     expect(layerBadge('showWhales', { coin: 'ETH', now: NOW, scan: { asOf: NOW - 60_000 } })).toMatchObject({ tone: 'live', text: 'LIVE' });
+  });
+
+  it('zdolność z rejestru, nie z nazwy: rynek z pełnym skanerem ma warstwę skanera, BTC bez niego — „—, bez skanera”', () => {
+    publishMarkets({
+      asOf: 1,
+      rule: 'reg-v1',
+      markets: [
+        { coin: 'BTC', dex: '', oiUsd7d: 3e9, rank: 1, szDecimals: 5, maxLeverage: 40, since: '2026-11-01', scanner: 'none' },
+        { coin: 'ETH', dex: '', oiUsd7d: 1e9, rank: 2, szDecimals: 4, maxLeverage: 25, since: '2026-11-01', scanner: 'full' },
+      ],
+    });
+    try {
+      expect(layerBadge('showLiq', { coin: 'ETH', now: NOW, scan: { asOf: NOW } })).toMatchObject({ tone: 'live', text: 'LIVE' });
+      expect(layerBadge('showLiq', { coin: 'BTC', now: NOW, scan: { asOf: NOW } })).toMatchObject({ text: '—, bez skanera' });
+    } finally {
+      resetMarketsForTest();
+    }
   });
 
   it('mapa likwidacji wczytywana albo bez adresu danych: plakietka z tym samym powodem co nagłówek układu', () => {
@@ -133,7 +154,7 @@ describe('plakietka warstwy w legendzie', () => {
     const chips = legendChips(s, { coin: 'ETH', now: NOW, intervalMs: M5, scan: { showWhales: { asOf: NOW - 5 * 60_000 } } });
     expect(chips.map((c) => [c.label, c.text])).toEqual([
       ['TPO', 'LIVE'],
-      ['Klastry likw.', '—, tylko BTC'],
+      ['Klastry likw.', '—, bez skanera'],
       ['Wieloryby', '5 min'],
       ['Mapa ciepła', 'LIVE'],
       ['RVOL', 'MODEL'],
@@ -157,9 +178,9 @@ describe('plakietka warstwy w legendzie', () => {
     const live = legendChips({ ...s, showTpoOi: false, indicators: inds(['twap']) }, { coin: 'BTC', now: NOW, intervalMs: M5, scan: {} });
     expect(live.length).toBeGreaterThan(0);
     expect(chipsFor(live, 'folded')).toEqual([]);
-    // Wiek migawki skanera i „—, tylko BTC” też zostają w zwiniętej legendzie
+    // Wiek migawki skanera i „—, bez skanera” też zostają w zwiniętej legendzie
     const scan = legendChips({ ...s, showTpoOi: false, showLiq: true, showWhales: true, indicators: [] }, { coin: 'ETH', now: NOW, intervalMs: M5, scan: { showWhales: { asOf: NOW - 3 * 60_000 } } });
-    expect(chipsFor(scan, 'folded').map((c) => c.text)).toEqual(['—, tylko BTC', '3 min']);
+    expect(chipsFor(scan, 'folded').map((c) => c.text)).toEqual(['—, bez skanera', '3 min']);
   });
 });
 

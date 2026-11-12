@@ -10,11 +10,14 @@ import { LAYERS_OFF } from './templates';
 import { tr } from '../../../i18n';
 import { SCANNER_FRESH_MS, type ScanState, liqScan, scannerAge, whalesScan } from '../../../utils/scanState';
 import { WAIT_TEXT } from '../../../utils/sessionText';
+import { BLOG_ONLY_WHY, BTC_ONLY_BADGE, NO_FORECASTS_BADGE, NO_SCANNER_BADGE, OUTCOMES_ONLY_WHY } from '../../../utils/marketCaps';
+import { capsOf, noScannerWhyOf } from '../../../state/markets';
 
 /**
  * Plakietki danych przy warstwach legendy (spec §7.4): skąd pochodzi warstwa — LIVE (dane Hyperliquid i skanera),
  * MODEL (wynik modelu na tych danych) albo SIM (symulacja, np. wejścia metody na historii). Warstwy ze skanera zamiast
- * LIVE pokazują wiek migawki, gdy jest starsza niż 2 min; warstwy tylko z BTC na innym rynku — „—, tylko BTC”.
+ * LIVE pokazują wiek migawki, gdy jest starsza niż 2 min; warstwa, której rynek nie ma (zdolności rynku z rejestru) —
+ * „—, bez skanera” (mapa likwidacji), „—, bez prognoz” (stożek) albo „—, tylko BTC” (mapy z bloga, rynki HIP-4).
  */
 
 export type LayerSource = 'LIVE' | 'MODEL' | 'SIM';
@@ -142,8 +145,15 @@ export function blogMapScan(st: BlogMapsState, picked: Pick<BlogMap, 'publishedA
 
 /** Warstwy z migawek skanera (plik z `asOf`): po 2 min wiek zamiast LIVE. */
 const SCANNER = new Set(['showLiq', 'showWhales']);
-/** Dane tylko dla BTC: mapa likwidacji skanera, dziennik prognoz desku (stożek), rynki HIP-4 na BTC, mapy bloga o BTC. */
-const BTC_ONLY = new Set(['showLiq', 'cone', 'outcomes', 'showBlogMap']);
+/** Plakietka „—” warstwy, której danych rynek nie ma (`marketCaps`); null — rynek ma te dane. */
+function missingOn(key: string, coin: string): LayerBadge | null {
+  const caps = capsOf(coin);
+  if (key === 'showLiq' && !caps.scanner) return { tone: 'neutral', text: NO_SCANNER_BADGE, hint: noScannerWhyOf(coin) };
+  if (key === 'cone' && !caps.forecasts) return { tone: 'neutral', text: NO_FORECASTS_BADGE, hint: noScannerWhyOf(coin) };
+  if (key === 'showBlogMap' && !caps.blog) return { tone: 'neutral', text: BTC_ONLY_BADGE, hint: BLOG_ONLY_WHY };
+  if (key === 'outcomes' && !caps.outcomes) return { tone: 'neutral', text: BTC_ONLY_BADGE, hint: OUTCOMES_ONLY_WHY };
+  return null;
+}
 
 /** Pokrycie taśmą przedziału [from, to): ułamek 0–1 (pokryty czas / długość); pusty przedział — NaN. */
 export function tapeCoveragePct(cov: Pick<Coverage, 'coveredMs'>, from: number, to: number): number {
@@ -169,9 +179,8 @@ export interface LayerBadge {
  * MODEL i SIM z nazwą metody w podpowiedzi.
  */
 export function layerBadge(key: string, ctx: { coin: string; now: number; scan?: ScanState }): LayerBadge {
-  if (BTC_ONLY.has(key) && ctx.coin !== 'BTC') {
-    return { tone: 'neutral', text: tr('—, tylko BTC', '—, BTC only'), hint: tr('Te dane są tylko dla BTC (skaner, dziennik prognoz i mapy z bloga dotyczą BTC)', 'This data exists for BTC only (the scanner, the forecast ledger and the blog maps cover BTC)') };
-  }
+  const missing = missingOn(key, ctx.coin);
+  if (missing) return missing;
   const src = LAYER_SOURCE[key] ?? 'LIVE';
   if (SCANNER.has(key)) {
     const scan = ctx.scan ?? { why: WAIT_TEXT };
@@ -286,7 +295,7 @@ export function legendChips(
 
 /**
  * Plakietki do pokazania w danej postaci legendy: pełna — wszystkie; telefon — najpierw nie-LIVE (MODEL, SIM, wiek migawki,
- * „—, tylko BTC”), potem LIVE; zwinięta — tylko nie-LIVE (to, co odbiega od danych na żywo, widać zawsze).
+ * „—, bez skanera”, „—, tylko BTC”), potem LIVE; zwinięta — tylko nie-LIVE (to, co odbiega od danych na żywo, widać zawsze).
  */
 export function chipsFor(chips: readonly LayerChip[], mode: 'full' | 'compact' | 'folded'): LayerChip[] {
   const other = chips.filter((c) => c.tone !== 'live');

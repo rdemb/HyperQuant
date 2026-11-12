@@ -5,7 +5,7 @@ import type { MakerTop } from '../../charts/pro/core/makers';
 import type { ProStore } from '../../charts/pro/store/proStore';
 import { numLang } from '../../ui/format';
 import { tr } from '../../i18n';
-import { BTC_ONLY, BTC_ONLY_TITLE } from './flowColumnModel';
+import { NO_SCANNER, noScannerTitle } from './flowColumnModel';
 
 /**
  * Kto przyjmuje uderzenia: Hyperliquid podaje przy każdej transakcji konto makera i biorcy, więc widać, czy płynność
@@ -155,8 +155,8 @@ export const WhoPanel: React.FC<{
     return (
       <section aria-label={tr('Kto przyjmuje uderzenia', 'Who absorbs the hits')} className={`flex flex-col min-h-0 bg-surface-1 ${className}`}>
         {header}
-        <p className="px-3 py-4 font-mono text-[11px] text-ink-3" title={BTC_ONLY_TITLE}>
-          {BTC_ONLY}
+        <p className="px-3 py-4 font-mono text-[11px] text-ink-3" title={noScannerTitle()}>
+          {NO_SCANNER}
         </p>
       </section>
     );

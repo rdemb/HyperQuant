@@ -1,5 +1,5 @@
 import { useEffect, useSyncExternalStore } from 'react';
-import { type MarketCaps, marketCaps } from '../utils/marketCaps';
+import { type MarketCaps, marketCaps, noScannerWhy } from '../utils/marketCaps';
 import { type ChartMarket, DEFAULT_MARKETS, isMarketRegistry, marketsOrDefault } from '../utils/marketRegistry';
 import { usePublished } from './usePublished';
 
@@ -36,6 +36,8 @@ export const chartMarkets = (): readonly ChartMarket[] => state.markets;
 export const marketOf = (coin: string): ChartMarket | undefined => state.markets.find((m) => m.coin === coin);
 /** Zdolności rynku według bieżącej listy (`utils/marketCaps`). */
 export const capsOf = (coin: string): MarketCaps => marketCaps(coin, state.markets);
+/** Powód „—” warstwy skanera albo prognoz na rynku `coin` (rynki z pełnym skanerem z bieżącej listy). */
+export const noScannerWhyOf = (coin: string): string => noScannerWhy(coin, state.markets);
 
 export function subscribeMarkets(fn: () => void): () => void {
   listeners.add(fn);

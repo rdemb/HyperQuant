@@ -27,7 +27,8 @@ export interface MarketCaps {
 
 export function marketCaps(coin: string, markets: readonly ChartMarket[]): MarketCaps {
   const full = markets.some((m) => m.coin === coin && m.scanner === 'full');
-  const home = coin === HOME_MARKET;
+  // Blog i rynki HIP-4 opisują BTC niezależnie od rejestru
+  const home = coin === 'BTC';
   return { scanner: full, forecasts: full, blog: home, outcomes: home };
 }
 
@@ -46,8 +47,13 @@ export function noScannerWhy(coin: string, markets: readonly ChartMarket[]): str
   );
 }
 
-/** Dopisek i powód „—” przy mapach z bloga na innym rynku niż BTC. */
-export const BLOG_ONLY_NOTE = tr('tylko BTC', 'BTC only');
+/** Dopisek „—” przy stożku prognoz na rynku bez prognoz w dzienniku (powód: `noScannerWhy`). */
+export const NO_FORECASTS_NOTE = tr('bez prognoz', 'no forecasts');
+export const NO_FORECASTS_BADGE = tr('—, bez prognoz', '—, no forecasts');
+
+/** Dopisek i plakietka „—” przy mapach z bloga i rynkach HIP-4 na innym rynku niż BTC. */
+export const BTC_ONLY_NOTE = tr('tylko BTC', 'BTC only');
+export const BTC_ONLY_BADGE = tr('—, tylko BTC', '—, BTC only');
 export const BLOG_ONLY_WHY = tr('Tylko BTC: mapy z bloga opisują BTC', 'BTC only: the blog maps describe BTC');
 /** Dopisek i powód „—” przy rynkach HIP-4 na innym rynku niż BTC. */
 export const OUTCOMES_ONLY_WHY = tr('Tylko BTC: rynki HIP-4 są notowane na cenie BTC', 'BTC only: HIP-4 markets are listed on the BTC price');

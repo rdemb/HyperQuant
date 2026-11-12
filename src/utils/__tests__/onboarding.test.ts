@@ -83,13 +83,14 @@ describe('dymki i przycisk powtórki w ciągu 7 dni', () => {
   });
 });
 
-const idx = (hours: number[], parts: number[] = []): HistoryIndex => ({ v: 1, asOf: NOW, keepDays: 7, partMs: 5 * MIN, markets: { BTC: { hours, parts } } });
+const idx = (hours: number[], parts: number[] = [], coin = 'BTC'): HistoryIndex => ({ v: 1, asOf: NOW, keepDays: 7, partMs: 5 * MIN, markets: { [coin]: { hours, parts } } });
 const H = 3_600_000;
+const SCANNED = { scanner: true };
 const hourStart = Math.floor(NOW / H) * H;
 
 describe('quickReplay', () => {
   it('BTC z nagraniem: link od now − 15 min do now na Kokpicie', () => {
-    const r = quickReplay('BTC', NOW, idx([hourStart - H, hourStart]));
+    const r = quickReplay('BTC', SCANNED, NOW, idx([hourStart - H, hourStart]));
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.hash).toContain('replay=history');
@@ -98,35 +99,37 @@ describe('quickReplay', () => {
     expect(r.hash).toContain(`from=${new Date(NOW - QUICK_REPLAY_MS).toISOString().replace('.000Z', 'Z')}`);
     expect(r.hash).toContain('to=2026-11-07T12:00:00Z');
   });
-  it('inny rynek niż BTC: powód „market”', () => {
-    expect(quickReplay('ETH', NOW, idx([hourStart]))).toEqual({ ok: false, reason: 'market' });
+  it('rynek bez skanera (zdolność z rejestru): powód „market”', () => {
+    expect(quickReplay('ETH', { scanner: false }, NOW, idx([hourStart]))).toEqual({ ok: false, reason: 'market' });
+    // Zdolność z rejestru, nie nazwa: rynek z pełnym skanerem i nagraniem dostaje powtórkę
+    expect(quickReplay('ETH', SCANNED, NOW, idx([hourStart - H, hourStart], [], 'ETH')).ok).toBe(true);
   });
   it('brak spisu albo nagrania BTC: powód „no-recording”', () => {
-    expect(quickReplay('BTC', NOW, null)).toEqual({ ok: false, reason: 'no-recording' });
-    expect(quickReplay('BTC', NOW, { ...idx([]), markets: {} })).toEqual({ ok: false, reason: 'no-recording' });
+    expect(quickReplay('BTC', SCANNED, NOW, null)).toEqual({ ok: false, reason: 'no-recording' });
+    expect(quickReplay('BTC', SCANNED, NOW, { ...idx([]), markets: {} })).toEqual({ ok: false, reason: 'no-recording' });
   });
   it('nagranie kończy się przed początkiem okna: „no-recording”', () => {
-    expect(quickReplay('BTC', NOW, idx([hourStart - 5 * H]))).toEqual({ ok: false, reason: 'no-recording' });
+    expect(quickReplay('BTC', SCANNED, NOW, idx([hourStart - 5 * H]))).toEqual({ ok: false, reason: 'no-recording' });
   });
   it('luka w nagraniu: części NOW−15 min i NOW−1 min dają 6 min pokrycia (nie 15), więc „no-recording”', () => {
     const gapped: HistoryIndex = { ...idx([]), markets: { BTC: { hours: [], parts: [NOW - 15 * MIN, NOW - 1 * MIN] } } };
-    expect(quickReplay('BTC', NOW, gapped)).toEqual({ ok: false, reason: 'no-recording' });
+    expect(quickReplay('BTC', SCANNED, NOW, gapped)).toEqual({ ok: false, reason: 'no-recording' });
   });
   it('9 min pokrycia (plik godziny od 12:00, teraz 12:09): „no-recording”', () => {
     const now9 = Date.parse('2026-11-07T12:09:00Z');
-    expect(quickReplay('BTC', now9, idx([hourStart]))).toEqual({ ok: false, reason: 'no-recording' });
+    expect(quickReplay('BTC', SCANNED, now9, idx([hourStart]))).toEqual({ ok: false, reason: 'no-recording' });
   });
   it('10 min pokrycia (plik godziny od 12:00, teraz 12:10): link', () => {
     const now10 = Date.parse('2026-11-07T12:10:00Z');
-    expect(quickReplay('BTC', now10, idx([hourStart])).ok).toBe(true);
+    expect(quickReplay('BTC', SCANNED, now10, idx([hourStart])).ok).toBe(true);
   });
   it('dwie części po 5 min bez luki dają 10 min: link', () => {
     const two: HistoryIndex = { ...idx([]), markets: { BTC: { hours: [], parts: [NOW - 10 * MIN, NOW - 5 * MIN] } } };
-    expect(quickReplay('BTC', NOW, two).ok).toBe(true);
+    expect(quickReplay('BTC', SCANNED, NOW, two).ok).toBe(true);
   });
   it('koniec nagrania po „teraz” nie dolicza pokrycia z przyszłości', () => {
     const future: HistoryIndex = { ...idx([]), markets: { BTC: { hours: [], parts: [NOW - 5 * MIN, NOW + 5 * MIN] } } };
-    expect(quickReplay('BTC', NOW, future)).toEqual({ ok: false, reason: 'no-recording' });
+    expect(quickReplay('BTC', SCANNED, NOW, future)).toEqual({ ok: false, reason: 'no-recording' });
   });
 });
 
