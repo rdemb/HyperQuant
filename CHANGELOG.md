@@ -4,6 +4,24 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Strona wyników prognoz: `wyniki/` i `en/results/` (2026-11-12)
+
+#### Dodane
+- **Statyczna strona rozliczenia dziennika prognoz** (`scripts/blog/results.mjs`, wpięta w `scripts/blog/pages.mjs`): PL pod `wyniki/`, EN pod `en/results/`, z `hreflang` (PL, EN, x-default) i w mapie strony. Siedem sekcji w stałej kolejności: wstęp z chwilą podsumowania („stan na …”) i linkiem do Po sesji; prognozy zwrotu 1 h i 4 h (n, CRPSS z przedziałem, pokrycie 60% i 90%, test Kupca 90% i 60% na próbie rozłącznej, udział nieskończonych przedziałów ACI z opisem „90% z konstrukcji”); dotknięcia (Brier, BSS wobec częstości i wobec bazy odległości, oba z przedziałem, tylko w parze); kot (AUC, BSS wobec stałej częstości i bazy sezonowej, średnie p i częstość z koszyków niezawodności, zdanie o kalibracji w toku); plany ocen (`ab-v1`, `schrodi-trust-v1`, `schrodi-hour-v1` ze startem, kryterium i stanem z podsumowania; plan pojawia się dopiero z rekordem w dzienniku, bez zapowiedzi); niezależna weryfikacja (znaczek zgodna / niezgodna / nieaktualna po 36 h, czas i link do przebiegu, komenda `node scripts/verify-ledger.mjs --dir ../ledger`); „Co się nie potwierdziło” (brak potwierdzenia, nie obalenie: reguły katalogu laboratorium bez efektu w teście historycznym albo z efektem wykluczonym w teście do przodu, bez kontroli i bez reguł z za małą próbą, oraz zamknięte okresy A/B, w których B nie była trafniejsza).
+- **Dane przy każdym wdrożeniu** (`scripts/blog/build.mjs`, `fetchResults`): `ledger/BTC/summary.json` i `lab/BTC.json` z repo danych (adres jak w aplikacji, `VITE_DATA_BASE_URL`, domyślnie gałąź main repo danych) i `verify/latest.json` z gałęzi wyników weryfikacji; każdy plik osobno z limitem 15 s, błąd albo nieznany format daje „—” z powodem, bez zatrzymania wdrożenia (`RESULTS_OFFLINE=1` buduje bez sieci). Strona odświeża się z każdym wdrożeniem, nie co 15 min; „stan na” mówi, z której chwili są liczby.
+- Pola z miar rejestru (`kupiec60`, `pit`, `crpssCi`, `bssCi`, `bssDistCi`, `aciInf`, `big.bssSeasonal`) czytane jako opcjonalne: na dzisiejszym podsumowaniu „—” z powodem („brak w tym podsumowaniu”), z polami liczby.
+- Dane strukturalne `Dataset` (z `DataDownload` podsumowania i linkiem do gałęzi `ledger`), `WebPage` i okruszki; bez skryptów poza danymi strukturalnymi, CSP jak blog; karta podglądu linku `og.png`.
+- **Link do wyników** w stopce każdej strony z szablonu (`scripts/blog/render.mjs`), pod każdym wpisem bloga, na stronie 404 i w stopce aplikacji (`src/shell/AppShell.tsx`, w języku interfejsu). Style w `scripts/blog/blog.css`.
+- Testy: `scripts/blog/results.test.mjs` (strona z fikstury z 7 sekcjami, dzisiejsze podsumowanie i brak plików z „—”, mapa strony i stopki, brak `script` poza danymi strukturalnymi, bezpieczniki tytułu Klatki na tekście obu wersji).
+
+### Taśma likwidacji: kandydat 24 h, kolejność według wartości, udział niepotwierdzonych (2026-11-12)
+
+#### Zmienione
+- **Kolejka potwierdzeń likwidacji** (`backend/scanner/liqDetect.ts`, `LiqConfirmer`): kandydat ważny 24 h zamiast 30 min (wcześniej 47% kandydatów przepadało jako „nieudani”, gdy kolejka albo wycofanie API trwały dłużej); najpierw największe pozycje (nominał przy cenie likwidacji); tempo 3 zapytania/min rosnące z kolejką tak, by przerobić ją w ~10 min (najwyżej 12/min); przepełniona kolejka (500) odrzuca najmniejszą pozycję, nie najstarszego kandydata.
+- **Taśma przy sumach** (`src/utils/liqTape.ts`, `liq-tape/BTC.json`, pola opcjonalne — dotychczasowi czytelnicy działają): `unconfirmed` (czekający w kolejce, ich wartość, nieudani z 24 h, udział niepotwierdzonych, `h1Complete: false` przy niepustej kolejce) i `delay` (mediana i p90 opóźnienia potwierdzenia od czasu likwidacji, min). Czas potwierdzenia zostaje w stanie serwera, nie w publikowanych zdarzeniach.
+- **MCP `liquidation_tape`** (`mcp/src/tools/scanner.ts`): pole `unconfirmedShare` (%, LIVE; plik bez pola — brak liczby z powodem) i uwaga „Suma z ostatniej godziny niepełna: N kandydatów czeka na potwierdzenie”.
+- Testy: `backend/scanner/__tests__/liqBacklog.test.ts`, `mcp/__tests__/scanner.test.ts`; test 30-minutowego terminu w `liqDetect.test.ts` przestawiony na 24 h.
+
 ### RVOL według godziny w Nowym Jorku, dni robocze i weekend osobno (2026-11-12)
 
 #### Zmienione
