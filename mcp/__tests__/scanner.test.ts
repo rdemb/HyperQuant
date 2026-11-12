@@ -179,7 +179,19 @@ interface LedgerData {
   voided: Num;
   slotsIssued: Num;
   slotsSkipped: Num;
-  abTests: { plan: string; variant: string; model: string; pairsCurrent: Num; pairsLast: Num; diffLast: Num; diffLo: Num; diffHi: Num }[];
+  abTests: {
+    plan: string;
+    variant: string;
+    model: string;
+    pairsCurrent: Num;
+    pairsLast: Num;
+    diffLast: Num;
+    diffLo: Num;
+    diffHi: Num;
+    firstBlock: string | null;
+    firstBlockWhy: string | null;
+    calLast: { n: Num; cov60: Num; cov90: Num };
+  }[];
 }
 
 const SCANNER_TOOLS = ['liquidation_map', 'liquidation_tape', 'cohort_flow', 'whales', 'twaps', 'forecast_ledger'] as const;
@@ -868,6 +880,61 @@ describe('forecast_ledger', () => {
     const r = await call<LedgerData>('forecast_ledger', allRoutes({ [LEDGER_URL]: { json: old } }));
     expect(r.res.isError).toBeFalsy();
     expect(r.env.data.abTests.map((x) => x.plan)).toEqual(['ab-v1']);
+  });
+
+  it('ab-v2 (C): początek oceny (firstBlock) i kalibracja ostatniego zakończonego okresu; brak okresu, brak planu i starsze podsumowanie — null z powodem', async () => {
+    /** Wywołanie na podanym podsumowaniu (poprzednie połączenie zamknięte) */
+    const withSummary = async (json?: object) => {
+      await close?.();
+      close = null;
+      return call<LedgerData>('forecast_ledger', json === undefined ? allRoutes() : allRoutes({ [LEDGER_URL]: { json } }));
+    };
+    // Okres w toku, bez zakończonego: firstBlock z czasem, kalibracja null z powodem
+    const { env } = await withSummary();
+    const c0 = env.data.abTests[1];
+    expect(c0).toMatchObject({ firstBlock: new Date(NOW - 5 * 24 * HOUR).toISOString(), firstBlockWhy: null });
+    for (const k of ['n', 'cov60', 'cov90'] as const) {
+      expect(c0.calLast[k]).toMatchObject({ value: null, badge: null });
+      expect(c0.calLast[k].why).toContain('okres');
+    }
+    expect(env.data.abTests[0]).not.toHaveProperty('calLast');
+    expect(env.data.abTests[0]).not.toHaveProperty('firstBlock');
+    // Zakończony okres z kalibracją: liczby z plakietką LIVE
+    const done = ledger();
+    const last = { start: NOW - 19 * 24 * HOUR, end: NOW - 5 * 24 * HOUR, n: 1290, crpsA: 0.0019, crpsB: 0.00187, diff: { d: -0.00003, lo: -0.00005, hi: -0.00001 } };
+    done.abC!.last = { ...last, cal: { n: 322, cov60: 0.6118, cov90: 0.8851 } };
+    const c1 = (await withSummary(done)).env.data.abTests[1];
+    expect(c1.calLast).toMatchObject({
+      n: { value: 322, unit: 'count', badge: 'LIVE' },
+      cov60: { value: 0.6118, unit: 'ratio', badge: 'LIVE' },
+      cov90: { value: 0.8851, unit: 'ratio', badge: 'LIVE' },
+    });
+    expect(c1.diffHi).toMatchObject({ value: -0.00001 });
+    // Próba rozłączna pusta: n = 0, pokrycia null z powodem
+    const empty = ledger();
+    empty.abC!.last = { ...last, cal: { n: 0, cov60: null, cov90: null } };
+    const c2 = (await withSummary(empty)).env.data.abTests[1];
+    expect(c2.calLast.n).toMatchObject({ value: 0, badge: 'LIVE' });
+    expect(c2.calLast.cov60.value).toBeNull();
+    expect(c2.calLast.cov60.why).toContain('pełnej godzinie');
+    // Plan niezarejestrowany: firstBlock null z powodem
+    const noPlan = ledger();
+    noPlan.abC = { ...noPlan.abC!, registeredAt: null, firstBlock: null, current: null };
+    const c3 = (await withSummary(noPlan)).env.data.abTests[1];
+    expect(c3).toMatchObject({ firstBlock: null });
+    expect(c3.firstBlockWhy).toContain('ab-v2');
+    // Starsze podsumowanie bez firstBlock i bez cal: wpis C zostaje, pola null z powodem, bez błędu
+    const old = ledger();
+    const oldC = old.abC as unknown as Record<string, unknown>;
+    delete oldC.firstBlock;
+    oldC.last = last;
+    const r4 = await withSummary(old);
+    expect(r4.res.isError).toBeFalsy();
+    const c4 = r4.env.data.abTests[1];
+    expect(c4).toMatchObject({ plan: 'ab-v2', firstBlock: null, pairsLast: { value: 1290 } });
+    expect(c4.firstBlockWhy).toContain('starsz');
+    expect(c4.calLast.cov60).toMatchObject({ value: null });
+    expect(c4.calLast.cov60.why).toContain('starsz');
   });
 
   it('zegar ruchu: najbliższa godzina jako poziom bez procentu, godziny 2–24 jako baza sezonowa; rozliczenie kalibracji cat-cal-v1', async () => {
