@@ -60,7 +60,7 @@ let prices = new PriceRange();
 let tapeSince = Date.now();
 try {
   const j = JSON.parse(readFileSync(liqStatePath, 'utf8')) as { savedAt?: number; since?: number; confirmer?: unknown; prices?: unknown };
-  confirmer = LiqConfirmer.fromJSON(j.confirmer, LIQ_OPTS);
+  confirmer = LiqConfirmer.fromJSON(j.confirmer, { ...LIQ_OPTS, now: Date.now() });
   prices = PriceRange.fromJSON(j.prices);
   if (typeof j.savedAt === 'number' && typeof j.since === 'number' && Date.now() - j.savedAt < MAX_GAP_MS) tapeSince = j.since;
   log(`wczytano taśmę likwidacji: ${confirmer.events().length} zdarzeń, ${confirmer.pending} kandydatów w kolejce potwierdzeń`);

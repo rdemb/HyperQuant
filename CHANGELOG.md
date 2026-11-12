@@ -7,7 +7,7 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 ### Kolejka potwierdzeń likwidacji przetrwa restart (2026-11-12)
 
 #### Poprawione
-- **Skaner:** kolejka kandydatów do potwierdzenia likwidacji (`LiqConfirmer`) jest zapisywana w stanie serwera (`liq-<rynek>.json`, obok księgi adresów, nigdy publikowana) i odtwarzana przy starcie. Dotąd restart gubił kandydatów, których ponowny odczyt pozycji już nie wykryje, więc taśma traciła te likwidacje, a udział niepotwierdzonych spadał do zera. Przy odczycie tylko poprawne wpisy (adres, pozycja, okno fillów), najwyżej 500; przeterminowanych po 24 h rozlicza kolejka jako nieudanych. Starszy stan bez kolejki działa jak dotąd.
+- **Skaner:** kolejka kandydatów do potwierdzenia likwidacji (`LiqConfirmer`) jest zapisywana w stanie serwera (`liq-<rynek>.json`, obok księgi adresów, nigdy publikowana) i odtwarzana przy starcie. Dotąd restart gubił kandydatów, których ponowny odczyt pozycji już nie wykryje, więc taśma traciła te likwidacje, a udział niepotwierdzonych spadał do zera. Przy odczycie tylko poprawne wpisy (adres, pozycja, okno fillów), najwyżej 500; kandydat starszy niż 24 h w chwili odczytu nie wraca do kolejki i liczy się jako nieudany. Starszy stan bez kolejki daje pustą kolejkę, jak dotąd.
 
 ### Wykresy dla rejestru rynków, etap M1 (2026-11-12)
 

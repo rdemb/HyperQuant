@@ -138,4 +138,15 @@ describe('LiqConfirmer: kolejka kandydatów przetrwa restart (stan na dysku serw
     const { queue: _q, ...old } = j;
     expect(LiqConfirmer.fromJSON(old, { coin: 'BTC', maxPerMin: 3 }).pending).toBe(0);
   });
+
+  it('TTL przy odczycie: kandydat starszy niż 24 h w chwili odczytu nie wraca do kolejki i liczy się jako nieudany', () => {
+    const c = new LiqConfirmer({ coin: 'BTC', maxPerMin: 3 });
+    c.enqueue({ addr: addr(1), prev: pos(2), from: T0, to: T0 + 2 * MIN });
+    c.enqueue({ addr: addr(2), prev: pos(2), from: T0 + 20 * HOUR, to: T0 + 20 * HOUR + 2 * MIN });
+    const now = T0 + 25 * HOUR;
+    const back = LiqConfirmer.fromJSON(JSON.parse(JSON.stringify(c.toJSON())), { coin: 'BTC', maxPerMin: 3, now });
+    expect(back.pending).toBe(1);
+    expect(back.backlog().pendingUsd).toBe(2 * 95_000);
+    expect(back.checks(now).failed).toBe(1);
+  });
 });
