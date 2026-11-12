@@ -208,7 +208,7 @@ describe('LiqConfirmer', () => {
     expect(c.pending).toBe(1);
   });
 
-  it('limit zapytań na minutę: nadmiar czeka w kolejce, przeterminowany (30 min) liczony jako nieudany', async () => {
+  it('limit zapytań na minutę: nadmiar czeka w kolejce, przeterminowany (24 h) liczony jako nieudany', async () => {
     const rest = fakeRest([[fill({})], [fill({})]]);
     const c = new LiqConfirmer({ coin: 'BTC', maxPerMin: 1 });
     c.enqueue({ addr: ADDR, prev: pos(2, 95_000, T0), from: T0, to: T0 + MIN });
@@ -217,9 +217,10 @@ describe('LiqConfirmer', () => {
     expect(rest.calls).toHaveLength(1);
     await c.process(rest, T0 + 2 * MIN + 10_000);
     expect(rest.calls).toHaveLength(1); // ta sama minuta
-    await c.process(rest, T0 + 40 * MIN);
+    const late = T0 + MIN + 24 * 60 * MIN + 1000;
+    await c.process(rest, late);
     expect(rest.calls).toHaveLength(1); // przeterminowany, bez zapytania
-    expect(c.checks(T0 + 40 * MIN)).toEqual({ candidates: 2, confirmed: 0, rejected: 1, failed: 1 });
+    expect(c.checks(late)).toEqual({ candidates: 2, confirmed: 0, rejected: 1, failed: 1 });
   });
 
   it('błąd API → kandydat wraca do kolejki; po 3 próbach nieudany', async () => {
