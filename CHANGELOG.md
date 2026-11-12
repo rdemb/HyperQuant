@@ -4,6 +4,14 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Taśma likwidacji: kandydat 24 h, kolejność według wartości, udział niepotwierdzonych (2026-11-12)
+
+#### Zmienione
+- **Kolejka potwierdzeń likwidacji** (`backend/scanner/liqDetect.ts`, `LiqConfirmer`): kandydat ważny 24 h zamiast 30 min (wcześniej 47% kandydatów przepadało jako „nieudani”, gdy kolejka albo wycofanie API trwały dłużej); najpierw największe pozycje (nominał przy cenie likwidacji); tempo 3 zapytania/min rosnące z kolejką tak, by przerobić ją w ~10 min (najwyżej 12/min); przepełniona kolejka (500) odrzuca najmniejszą pozycję, nie najstarszego kandydata.
+- **Taśma przy sumach** (`src/utils/liqTape.ts`, `liq-tape/BTC.json`, pola opcjonalne — dotychczasowi czytelnicy działają): `unconfirmed` (czekający w kolejce, ich wartość, nieudani z 24 h, udział niepotwierdzonych, `h1Complete: false` przy niepustej kolejce) i `delay` (mediana i p90 opóźnienia potwierdzenia od czasu likwidacji, min). Czas potwierdzenia zostaje w stanie serwera, nie w publikowanych zdarzeniach.
+- **MCP `liquidation_tape`** (`mcp/src/tools/scanner.ts`): pole `unconfirmedShare` (%, LIVE; plik bez pola — brak liczby z powodem) i uwaga „Suma z ostatniej godziny niepełna: N kandydatów czeka na potwierdzenie”.
+- Testy: `backend/scanner/__tests__/liqBacklog.test.ts`, `mcp/__tests__/scanner.test.ts`; test 30-minutowego terminu w `liqDetect.test.ts` przestawiony na 24 h.
+
 ### RVOL według godziny w Nowym Jorku, dni robocze i weekend osobno (2026-11-12)
 
 #### Zmienione
