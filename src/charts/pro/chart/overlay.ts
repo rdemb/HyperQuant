@@ -15,6 +15,7 @@ import { fmtCompact } from '../../../ui/format';
 import { spreadTags } from '../../orderflow/renderer';
 import type { Box } from './labelPlacement';
 import { PROFILE_FIELD_MAX, fullFrom, nearestNaked, rectShare } from './profileSelect';
+import { type IbDraw, ibObjects, selectIbs } from './ibSelect';
 import { baseTick } from '../core/footprintBar';
 import {
   DayLevels,
@@ -314,6 +315,10 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
   private ibs: InitialBalance[] = [];
   /** Po każdej scenie profili okresów: liczba obiektów i udział pola pod słupkami (pomiar układu czyta je z wykresu). */
   onPeriods: ((c: { objects: number; area: number }) => void) | null = null;
+  /** Zakresy początkowe do rysowania (bieżąca i poprzednia sesja, `selectIbs`). */
+  private ibDraws: IbDraw[] = [];
+  /** Po każdej scenie: liczba obiektów zakresu początkowego na ekranie (pomiar układu czyta ją z wykresu). */
+  onIb: ((n: number) => void) | null = null;
   private daily: readonly Candle[] = [];
   private days: DayLevels[] = [];
   private liq: LiqLevel[] = [];
@@ -395,9 +400,9 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
 
   /**
    * Świece wykresu i świece źródła VWAP (`fine`, zob. ProStore.vwapCandles); wskaźniki z historii liczone od nowa tylko
-   * po zmianie którejś świecy z API.
+   * po zmianie którejś świecy z API. `now` — chwila danych: zakres początkowy wybija tylko świeca zamknięta.
    */
-  setBars(bars: readonly ProBar[], intervalMs: number, fine: readonly Candle[] = []): void {
+  setBars(bars: readonly ProBar[], intervalMs: number, fine: readonly Candle[] = [], now = Number.POSITIVE_INFINITY): void {
     this.bars = bars;
     let changed = intervalMs !== this.ms || bars.length !== this.candles.length || fine.length !== this.fineN || fine.at(-1) !== this.fineLast;
     for (let i = bars.length - 1; i >= 0 && !changed; i--) changed = bars[i].candle !== this.candles[i];
@@ -411,6 +416,7 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
       this.svwap = this.scope.sessionVwap ? vwapFrom(bars, fine, intervalMs, 'session') : [];
       this.ibs = this.scope.ib ? initialBalances(bars, intervalMs) : [];
     }
+    this.ibDraws = selectIbs(this.ibs, bars, intervalMs, now);
     this.requestUpdate?.();
   }
 
@@ -603,35 +609,38 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
       }
     }
 
-    // Initial balance: prostokąt pierwszej godziny, jego szczyt i dołek do końca sesji, rozszerzenia po zamknięciu IB
+    // Zakres początkowy (initial balance, `selectIbs`): bieżąca sesja — prostokąt pierwszej godziny, szczyt i dołek z
+    // etykietami, rozszerzenia po stronie pierwszego zamknięcia poza zakresem; poprzednia — same linie szczytu i dołka
+    let ibCount = 0;
     if (t.showIb && sc.ib) {
-      for (const ib of this.ibs) {
+      for (const d of this.ibDraws) {
+        const { ib, current } = d;
         const ses = ib.session;
         if (ses.end <= visFrom || ses.start >= visTo) continue;
-        const current = ses.end > lastT;
         const x0 = edge(ses.start);
-        const xi = edge(Math.min(ib.end, lastT + ms));
         const x1 = current ? W : edge(ses.end);
         const yh = Y(ib.hi);
         const yl = Y(ib.lo);
         if (!Number.isFinite(yh) || !Number.isFinite(yl)) continue;
-        s.fills.push({ pts: [x0, yh, xi, yh, xi, yl, x0, yl], color: K.ibFill });
+        ibCount += ibObjects(d);
         s.hlines.push({ x0, x1, y: yh, color: K.ibLine, dash: DASH.none }, { x0, x1, y: yl, color: K.ibLine, dash: DASH.none });
-        if (current) {
-          s.tags.push({ y: yh, text: `IBH ${fmtPx(ib.hi)}`, color: K.ib }, { y: yl, text: `IBL ${fmtPx(ib.lo)}`, color: K.ib });
-        }
-        if (!ib.complete) continue;
+        if (!current) continue;
+        const xi = edge(Math.min(ib.end, lastT + ms));
+        s.fills.push({ pts: [x0, yh, xi, yh, xi, yl, x0, yl], color: K.ibFill });
+        s.tags.push({ y: yh, text: `IBH ${fmtPx(ib.hi)}`, color: K.ib }, { y: yl, text: `IBL ${fmtPx(ib.lo)}`, color: K.ib });
+        if (!d.breakout) continue;
+        const xb = edge(d.breakout.t);
         const r = ib.hi - ib.lo;
         for (const m of IB_EXTENSIONS) {
           const label = `IB ${lang === 'en' ? String(1 + m) : String(1 + m).replace('.', ',')}×`;
-          for (const px of [ib.hi + m * r, ib.lo - m * r]) {
-            const y = Y(px);
-            s.hlines.push({ x0: xi, x1, y, color: K.ibExt, dash: DASH.ext });
-            if (current) s.tags.push({ y, text: `${label} ${fmtPx(px)}`, color: K.ib });
-          }
+          const px = d.breakout.side === 1 ? ib.hi + m * r : ib.lo - m * r;
+          const y = Y(px);
+          s.hlines.push({ x0: xb, x1, y, color: K.ibExt, dash: DASH.ext });
+          s.tags.push({ y, text: `${label} ${fmtPx(px)}`, color: K.ib });
         }
       }
     }
+    this.onIb?.(ibCount);
 
     // Klastry likwidacji (stan bieżący ze skanera)
     if (t.showLiq) {

@@ -20,6 +20,81 @@ Na telefonie dzisiejsza doba zaczyna się przed lewą krawędzią wykresu; przy 
 #### Dodane
 - **`ui:check`: scenariusz profili dób** („Mapa dnia”: 4h z profilami dób i 30m z TPO, na telefonie 30m; „Rozliczenie doby” 30m; dane stałe, 1440 i 390): liczby z atrybutów `data-tpo-objects`, `data-tpo-area`, `data-period-objects`, `data-period-area`. Limity w `--strict`: TPO najwyżej 20 obiektów na komputerze; pole pod słupkami najwyżej 12% na komputerze i 20% na telefonie. Liczba obiektów profili dób rośnie z liczbą dób w widoku (starsza doba to zawsze POC i pasek), więc pilnuje jej punkt odniesienia. `scripts/ui/baseline.json` (win32): 10 nowych liczb `tpo.*` i `periods.*`.
 - Testy: `profileSelect.test.ts` (długość słupka na komputerze i telefonie, pełny profil dwóch ostatnich dób, słupki bieżącej doby od krawędzi, 3 nagie POC najbliższe cenie, znaczniki jako odcinki, pole pod słupkami, zamknięta doba z tym samym profilem po dopisaniu kolejnej, zdanie w opisie PL i EN).
+### Bąble zleceń, ściany i serie: reguła przyczynowa, bez wyboru największych w oknie (2026-11-11)
+
+Na nagranej dobie 24.10.2026 (powtórka 19:30, Kokpit 1m, tylko warstwa bąbli) wykres rysował 83 bąble zleceń na 1440 × 900 i 17 na 390 × 844; po zmianie 14 i 0 (`npm run ui:check`, wybór warstwy, nie piksele; to sobotni wieczór, spokojna taśma). Ściany i serie w scenariuszu ścian (ta sama chwila, warstwy bąbli oraz serii i ścian): 10 → 4. Liczby „przed” zmierzone na stronie z `main` z tymczasowym licznikiem w warstwie (bez commita). Na stałych danych na żywo taśmy nie ma (atrapa strumienia nie wysyła transakcji), więc pomiar jest na powtórce.
+
+Pomiar reguły na taśmie BTC z zapisu serwera (gałąź `history` repozytorium danych), 4–11.11.2026, dni robocze 07–17 UTC, chwila co 5 min (mediana / 95. percentyl / maksimum obiektów na ekranie):
+
+| Warstwa i reguła | Na dobę | Komputer, 140 świec | Telefon, 33 świece |
+| --- | --- | --- | --- |
+| Bąble 1m, 2 największe z 20 świec, najwyżej 2 na świecę | 160 | 16 / 21 / 25 | (1 na świecę, największe) 2 / 4 / 8 |
+| Bąble 5m, to samo | 30 | 15 / 21 / 26 | (1 na świecę, największe) 2 / 4 / 5 |
+| Ściany, 2 największe z 60 min | 52 | 5 / 10 / 11 | — (warstwa wyłączona) |
+| Serie, największa z 60 min | 26 | 3 / 7 / 9 | — (warstwa wyłączona) |
+
+Powtórzenie dla bąbli kodem warstwy (`selectBubbles` z pokryciem taśmy jak w warstwie, na zleceniach złożonych z plików godzinowych 4–11.11, 1,47 mln zleceń agresora, n 726 chwil): 1m 16 / 21 / 25 i na telefonie 2 / 4 / 6; 5m 15 / 21 / 26 (n 650) i 2 / 3 / 4; na dobę (pełne doby 5–10.11) średnio 160 na 1m i 30 na 5m; limit 40 nieosiągnięty w żadnej chwili. Mediana wartości rysowanego bąbla ok. 1,4 mln USD na 1m i 5,5 mln USD na 5m; mniejsze zlecenia zostają w taśmie zleceń. Bez warunku pokrycia taśma zaczynająca się na lewej krawędzi widoku dawała w pierwszych 20 świecach medianę 8 bąbli (telefon 4) zamiast 2 (1) przy pełnej taśmie; z warunkiem — 0. Ściany i serie: liczby sprzed warunku pokrycia (go nie zwiększa). Dawny limit (0,6 × liczba świec) był osiągany w 82% chwil, a zestaw bąbli w części wspólnej okien sprzed i po godzinie był inny w 94% chwil (taśma 4–10.11, 1m, 140 świec, n 1 952). Pierwsza wersja tej zmiany (próg „0,15 zlecenia na świecę z poprzedniej doby”) dawała medianę 12–15, ale 95. percentyl 78–83 i maksimum 136, bo w ruchliwych godzinach próg z poprzedniej doby był za niski — zastąpiona regułą przyczynową.
+
+#### Zmienione
+- **Bąble: reguła przyczynowa** (`src/charts/pro/chart/bubbleSelect.ts`, `selectBubbles`): bąbel jest rysowany, gdy w chwili wykonania zlecenie było wśród 2 największych zleceń agresora z poprzednich 20 świec interwału wykresu (na telefonie — największe). Kaskada: najwyżej 2 bąble na świecę (na telefonie 1) — w trwającej świecy mniejszy może ustąpić większemu, a po zamknięciu świecy bąble się nie zmieniają, niezależnie od przewinięcia, zbliżenia i późniejszych zleceń. Warstwa pobiera zlecenia od 20 świec przed widokiem (do porównania), rysuje od początku widoku. Przy równej wartości wyżej jest wcześniejsze zlecenie. Bez progu z kwantyla i bez wyboru „największe w oknie”; bezpiecznik 40 bąbli na ekran (ponad limit — największe). Próg ręczny z ustawień bez zmian (każde zlecenie od progu). Podpisy bąbli jak dotąd: 5 na komputerze, 3 na telefonie. Podwójny pierścień (bitwa) — progiem z chwili zdarzenia.
+- **Bąble, ściany i serie tylko przy taśmie z całego okna porównania** (`selectBubbles`, `selectClashes`, `LiquiditySource.covers`, `tapeCovered` w `src/charts/pro/chart/liquidity.ts`): na początku taśmy zleceń i po luce „brak większych w oknie” nie znaczy „brak taśmy”, więc bąbel jest rysowany, gdy taśma z kontami biorców (`ProStore.addressed`) obejmuje 20 świec przed zleceniem, a ściana i seria — 60 min przed końcem. Krótkie przerwy połączenia w zapisie serwera (4–11.11: 87 w 8 dobach, zwykle 1–4 s, najdłuższa 52 s) nie wyłączają okna, gdy łącznie zajmują najwyżej 1% jego długości; bez tej tolerancji każda przerwa wyłączała bąble na 20 świec (na 5m 100 min; bąbli na dobę 11 zamiast 30). Do porównania liczą się wszystkie zlecenia, ściany i serie.
+- **Historia z serwera także z okna porównania** (`src/charts/pro/chart/controller.ts`, `liquidityLookbackMs`): wykres prosi o taśmę od lewej krawędzi widoku minus największe z: okna wskaźników, 20 świec (bąble), 60 min (serie i ściany); także po włączeniu bąbli albo ścian. Dotąd tylko minus okno wskaźników, więc pierwsze świece widoku miały niepełne porównanie.
+- **Ściany i serie: reguła przyczynowa** (`src/charts/pro/chart/clashSelect.ts`, `causalTop`): ściana jest rysowana, gdy w chwili zakończenia była wśród 2 największych ścian zakończonych w poprzednich 60 min, seria — gdy była największą serią; raz narysowane zostają, wybór nie zależy od przewinięcia.
+- **Limity bezpieczeństwa ścian i serii ponad zmierzone maksima**: najwyżej 12 ścian zakończonych (dotąd 5), 3 trwające i 10 serii (dotąd 5); maksima z pomiaru to 11 ścian i 9 serii, więc limit nie przycina reguły.
+- **Progi zamkniętych godzin (serie, ściany, klasa bąbla) pamiętane między scenami** (`src/charts/pro/chart/liquidity.ts`): dotąd liczone od nowa przy każdej scenie; pamięć czyszczona po doczytaniu historii (`ProStore.historyVersion`).
+- **Opis warstw** (okno wskaźników, PL i EN): nowe reguły, zdanie „Bąble pojawiają się, gdy taśma zleceń obejmuje całe okno porównania” (i to samo dla ścian i serii) oraz wynik sprawdzianu: „Po dużym zleceniu cena nie idzie w jego stronę: −0,2 pb po 5 min (n 33 831).”
+
+#### Dodane
+- **`ui:check`: scenariusz bąbli** (Kokpit 1m na powtórce 24.10 19:30, 1440 i 390): liczba z atrybutu `data-bubbles` (bez serii); w `--strict` na 1440 od 5 do 40, na 390 najwyżej 15. Limit ścian i serii w scenariuszu ścian 13 → 25. `scripts/ui/baseline.json` (win32): nowe `bubbles.count1440` 14 i `bubbles.count390` 0; zmienione `clashes.objects1440` 10 → 4, `objects.replay1440.bubbles` 161 → 12, `objects.replay1440.rects` 388 → 385, `objects.replay390.bubbles` 39 → 6, `objects.replay390.labels` 7 → 5, `objects.replay390.rects` 195 → 188.
+- Testy: `bubbleSelect.test.ts` (zlecenie z dwoma większymi w poprzednich 20 świecach bez bąbla, pierwsze po pustych 20 świecach z bąblem, okno 20 świec dla 1m i 5m, po zamknięciu świecy wybór bez zmian po późniejszych większych zleceniach, telefon K = 1, równe wartości i zlecenia z tej samej chwili, zestaw minionej godziny ten sam po przewinięciu, zbliżeniu i upływie czasu, liczba na 140 i 33 świecach, taśma od S bez bąbli w pierwszych 20 świecach i zestaw od S + 20 świec bez zmian po dołożeniu wcześniejszej taśmy, luka w pokryciu jak początek, 7 rosnących zleceń w świecy → 2 największe, mniejszy ustępuje większemu w trwającej świecy, próg ręczny, limit 40, zdanie w opisie PL i EN); `clashSelect.test.ts` (reguła przyczynowa ścian i serii, ściana raz narysowana zostaje, pamięć progów, limit nie przycina 11 ścian i 9 serii, pokrycie 60 min: początek i luka); `liquidityScene.test.ts` (druga scena nie liczy progu zamkniętej godziny od nowa, doczytanie historii czyści pamięć, liczba bąbli dla pomiaru, K = 2 i na telefonie K = 1, zlecenia sprzed widoku liczą się do porównania, pokrycie ze źródła, przerwa 1 s tolerowana a luka 5 min nie, okno historii); `serverHistory.test.ts` (wersja historii).
+
+### Blog: notki „aktualizacja” poza indeksem, rozliczenie tygodnia z BSS w parze (2026-11-12)
+
+#### Zmienione
+- **Notki „aktualizacja” z `noindex,follow` i poza mapą witryny** (`scripts/blog/render.mjs`, `isUnindexed`, `postPage`, `sitemapXml`): wpisy `RRRR-MM-DD-aktualizacja-GG` (jeden szablon kilka razy dziennie) zostają na liście wpisów, w archiwum i w RSS. Na 122 wpisach: 36 notek z `noindex,follow`, `sitemap.xml` 136 adresów zamiast 172; pozostałe wpisy, w tym notki rozliczeń, indeksowane. CSP i rejestr `source.json` bez zmian. Notki z `noindex` nie są zgłaszane do IndexNow (`scripts/blog/indexnow.mjs`); przy ich zmianie zgłaszana jest tylko strona bloga.
+- **Rozliczenie tygodnia od 8.11.2026** (`scripts/blog/posts.mjs`): BSS dotknięć tylko wobec obu baz (odległości i częstości bazowej), bez zdania o „realnej informacji” map; walidator odrzuca jedno i drugie. Starszy wpis z 7.11 bez zmian.
+- `docs/BLOG.md`: obie reguły. Testy w `scripts/blog/blog.test.mjs`.
+
+
+### Angielski pierwszym językiem powłoki (E1) (2026-11-12)
+
+#### Zmienione
+- **`index.html` po angielsku** (to, co widzi wyszukiwarka i podgląd linku, zanim aplikacja wykryje język): `lang="en"`, tytuł, opis, słowa kluczowe, Open Graph (`og:locale` `en_GB`, alternatywa `pl_PL`), Twitter, opis JSON-LD (`inLanguage` `["en", "pl"]`) i blok `noscript` (polskie strony jako drugie, z `lang="pl"`). Kanał RSS zostaje polski, z tytułem „HyperQuant · BTC analysis (in Polish)”. Po starcie aplikacja dalej ustawia język czytelnika (`src/main.tsx`).
+- **`public/manifest.webmanifest` po angielsku**: `lang: "en"`, opis i skróty (Pre-session, In session, Post-session), te same adresy.
+- **Strona 404 po angielsku najpierw** (`scripts/blog/pages.mjs`), polskie zdanie z polskimi stronami drugie; blog oznaczony „(in Polish)”.
+- Adresy bez zmian; blog, wpisy i RSS zostają po polsku.
+- Testy: `src/shell/__tests__/englishShell.test.ts` (index.html i manifest bez polskich znaków, `lang` `en`), `scripts/blog/blog.test.mjs` (404).
+
+### Badania: nazwy bez kierunku, bez martwego sygnału i bez dźwigni 100× (2026-11-12)
+
+#### Zmienione
+- **Stan wyczerpania przepływu opisuje przeszłość** (`src/types/trading.ts`, `src/utils/quantMathEngine.ts`): `BULLISH_EXHAUSTION_TOP_RISK` → `BUY_FLOW_ABSORBED`, `BEARISH_EXHAUSTION_BOTTOM_REVERSAL` → `SELL_FLOW_ABSORBED`, `AGGRESSIVE_BUY/SELL_CONTINUATION` → `AGGRESSIVE_BUY/SELL_DOMINANT` (bez stron rynku, szczytu, dołka i kontynuacji, jak nazwy reżimów).
+- **Mapa likwidacji z wykresu bez dźwigni 100×** (`src/utils/shaakuniEngine.ts`, `computeAggrLiquidationHeatmap`): Hyperliquid daje na BTC najwyżej 40× (`BTC_MAX_LEVERAGE` w `src/utils/planAnalyzer.ts`), więc poziomy dla 100× opisywały pozycje, których na tej giełdzie nie ma; zostają 5× i 20×.
+
+#### Usunięte
+- Nieużywany sygnał dźwiękowy kierunku `soundEngine.playSignalAlert('LONG' | 'SHORT')` (`src/utils/soundEngine.ts`).
+- Testy: `src/utils/__tests__/researchHonesty.test.tsx` (nazwy w src, brak sygnału w silniku dźwięku, dźwignie mapy ≤ 40×).
+
+### Kto handluje: okno klasy kont pełne tylko w jednym zakresie numeracji (2026-11-11)
+
+#### Naprawione
+- **Okno 60 min klasy kont (Kto handluje) przez granice numeracji kont** (`src/charts/pro/core/players.ts`, `src/charts/pro/core/accountScope.ts`): w historii serwera konto ma numer ważny w dobie UTC (starsze pliki: w godzinie), a na żywo adres, więc okno przez przełom doby, przez granicę godziny starego pliku albo przez chwilę otwarcia strony liczy jedno konto jako dwa. Takie okno ma teraz `complete: false` (wcześniej „pełne” znaczyło tylko taśmę z kontami przez samą świecę); pełne okno musi też w całości leżeć w taśmie z kontami. Sprawdzenie zakresu (`oneAccountScope`) przeniesione z `indicators/registry.ts` do wspólnego modułu.
+- **Historia sprzed granicy sprzątania nie oznacza okna jako pełnego** (`src/charts/pro/store/proStore.ts`, `restoreHistory`): pokrycie taśmą z kontami z pliku historii liczy się od granicy sprzątania (`keptFrom`), bo starszych zleceń z tego pliku już się nie składa.
+- Opis „Duzi gracze” (PL i EN) podaje też przyczynę z przełomem doby (`src/charts/pro/chart/marketState.ts`).
+- Testy: `src/charts/pro/__tests__/players.test.ts` (przełom doby, granica godziny starego pliku, historia i konta na żywo w jednym oknie, okno poza taśmą), `src/charts/pro/__tests__/whoRetention.test.ts` (plik historii wczytany po sprzątaniu).
+
+### Zakres początkowy sesji: pełny rysunek tylko bieżącej sesji, rozszerzenia po wybiciu (2026-11-12)
+
+Na danych stałych `ui:check` (zegar 24.10.2026 21:29 UTC, sesja nowojorska) warstwa rysowała 7 obiektów w „Aukcja i otwarcie” 5m na 1440 × 900 i 7 na 390 × 844 oraz 63 i 14 w „Rozliczeniu doby” 30m; po zmianie 5 i 5 oraz 7 i 7 (wybór warstwy, nie piksele; obiekt to prostokąt albo linia, bez linii otwarć sesji). Liczby „przed” zmierzone na stronie z `main` z tymczasowym licznikiem w nakładce (bez commita).
+
+#### Zmienione
+- **Pełny rysunek tylko dla bieżącej sesji** (`src/charts/pro/chart/ibSelect.ts`, `selectIbs`; `src/charts/pro/chart/overlay.ts`): prostokąt pierwszej godziny, szczyt i dołek z etykietami. Z poprzedniej sesji same linie szczytu i dołka, starsze sesje bez rysunku. Dotąd każda sesja w widoku miała prostokąt, dwie linie i cztery rozszerzenia. Sesja bieżąca i poprzednia wynikają z ostatniej świecy, nie z przewinięcia.
+- **Rozszerzenia 1,5× i 2× dopiero po pierwszym zamknięciu półgodziny poza zakresem i tylko po tej stronie**, od chwili tego zamknięcia; świeca w trakcie się nie liczy (nakładka dostaje chwilę danych). Liczą się tylko świece kończące kubełek 30 min, więc wynik nie zależy od interwału wykresu: dotąd liczony na świecach interwału dawał na 5m i 30m rozszerzenia po przeciwnych stronach w 9,2% sesji (924 sesje BTC 5m z 2026); teraz 5m, 15m i 30m zgodne w 924 z 924, na 5m rozszerzenia pojawiają się medianowo 20 min później, a cena zamyka się potem po przeciwnej stronie zakresu w 24% sesji zamiast 35%. Na ekranie najwyżej 7 obiektów.
+- **Opis warstwy** (okno wskaźników, PL i EN): nowe reguły i wynik sprawdzianu: „Szczyt i dołek pierwszej godziny pękają częściej niż losowy poziom obok (odrzucenie 40% wobec 47%, n 1 239).”
+
+#### Dodane
+- **`ui:check`: scenariusz zakresu początkowego** („Aukcja i otwarcie” 5m i „Rozliczenie doby” 30m na danych stałych, 1440 i 390): liczba z atrybutu `data-ib-objects`, limit 7 w `--strict`. `scripts/ui/baseline.json` (win32): nowe `ib.auction1440` 5, `ib.auction390` 5, `ib.review1440` 7, `ib.review390` 7.
+- Testy: `ibSelect.test.ts` (bieżąca sesja pełna, poprzednia same linie, starsze nic; bez rozszerzeń, dopóki cena zamyka się w zakresie; rozszerzenia po pierwszym zamknięciu poza zakresem i tylko po tej stronie; świeca w trakcie nie wybija; najwyżej 7 obiektów; wybicie bez zmian po dojściu świec i przy głębszej historii; zdanie w opisie PL i EN).
 
 ### Ściany i serie: próg z chwili zdarzenia, tylko istotne ściany, limit na ekranie (2026-11-11)
 
