@@ -169,6 +169,12 @@ interface LedgerData {
     auc: Num;
     hours: { hour: string; dayType: string; bigMoveDays: Num; days: Num }[];
   };
+  hourBigMove: {
+    why: string | null;
+    planSince: string | null;
+    leads: { leadHours: number; settled: Num; brier: Num; bss: Num; bssLo: Num; bssHi: Num; auc: Num; meanP: Num; freq: Num }[];
+    blocks: { block: string; from: string; to: string; settled: Num; t: Num; meanP: Num; freq: Num; maxQuintileGap: Num }[];
+  };
   pending: Num;
   voided: Num;
   slotsIssued: Num;
@@ -898,6 +904,44 @@ describe('forecast_ledger', () => {
     expect(old.data.moveClock.nextHour).toMatchObject({ level: null, why: expect.stringContaining('zegara') });
     expect(old.data.moveClock.hours).toEqual([]);
     expect(old.data.bigMove.calibration.brier).toMatchObject({ value: null, why: expect.stringContaining('cat-cal-v1') });
+  });
+
+  it('hrel-v1 (duży ruch jak na tę godzinę): pomiar czterech wyprzedzeń i bloki, bez szans ostatniej prognozy; starsze podsumowanie — powód', async () => {
+    const base = ledger();
+    const lead = (j: number, n: number) => ({
+      j,
+      n,
+      meanP: 0.484,
+      freq: 0.488,
+      brier: 0.2051,
+      bss: { value: 0.1796, lo: 0.1102, hi: 0.2433, days: 12 },
+      auc: 0.7391,
+      quintiles: Array.from({ length: 5 }, (_, k) => ({ n: Math.floor(n / 5), meanP: 0.3 + k * 0.1, freq: 0.3 + k * 0.1 })),
+    });
+    const block = { start: NOW - 20 * 24 * HOUR, end: NOW - 6 * 24 * HOUR, n: 310, meanP: 0.47, freq: 0.5, mean: -0.04, se: 0.01, t: -4.012, maxQDev: 0.061 };
+    const hrel = {
+      plan: { at: NOW - 20 * 24 * HOUR, hash: 'h' },
+      days: 30,
+      leads: [lead(0, 290), lead(1, 289), lead(2, 288), lead(3, 12)],
+      blocks: [block],
+      pooled: null,
+      latest: { t: NOW - 10 * MIN, x: [0.1, 0.2, 0.3], thr: [40, 41, 42, 43], p: [0.6123, 0.5987, 0.5876, 0.5765] },
+    };
+    const { env } = await call<LedgerData>('forecast_ledger', allRoutes({ [LEDGER_URL]: { json: { ...base, hrel } } }));
+    const h = env.data.hourBigMove;
+    expect(h.why).toBeNull();
+    expect(h.planSince).toBe(new Date(NOW - 20 * 24 * HOUR).toISOString());
+    expect(h.leads.map((l) => l.leadHours)).toEqual([0, 1, 2, 3]);
+    expect(h.leads[1]).toMatchObject({ settled: { value: 289 }, brier: { value: 0.2051, method: 'hrel-v1' }, bss: { value: 0.1796 }, bssLo: { value: 0.1102 }, bssHi: { value: 0.2433 }, auc: { value: 0.7391 }, meanP: { value: 0.484 }, freq: { value: 0.488 } });
+    // Mniej niż 20 rozstrzygnięć: null z powodem
+    expect(h.leads[3].brier).toMatchObject({ value: null, why: expect.stringContaining('20') });
+    expect(h.blocks).toHaveLength(1);
+    expect(h.blocks[0]).toMatchObject({ block: '1', settled: { value: 310 }, t: { value: -4.012 }, maxQuintileGap: { value: 0.061 } });
+    // Przed awansem bez szans ostatniej prognozy
+    expect(JSON.stringify(env.data)).not.toContain('0.6123');
+
+    const { env: old } = await call<LedgerData>('forecast_ledger', allRoutes());
+    expect(old.data.hourBigMove).toMatchObject({ why: expect.stringContaining('hrel-v1'), planSince: null, leads: [], blocks: [] });
   });
 
   it('starsze podsumowanie bez nowych miar: narzędzie działa, nowe pola null z powodem, stare liczby bez zmian', async () => {

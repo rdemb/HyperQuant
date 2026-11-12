@@ -2,8 +2,8 @@ import type { IChartApiBase, IPrimitivePaneRenderer, IPrimitivePaneView, ISeries
 import type { Hip4Row } from '../../../utils/hip4';
 import { numLang } from '../../../ui/format';
 import { tr } from '../../../i18n';
-import { fmtDm, fmtHm } from '../core/time';
 import { fmtPx } from './layout';
+import { selectOutcomes } from './hip4Select';
 import { MONO, PRO, rgba } from './theme';
 
 /** Poziom rynku wynikowego: cena progu, podpis i nasycenie koloru (0–1, z różnicy modelu i rynku). */
@@ -28,25 +28,24 @@ const LABEL_H = 12;
 /** Procent jak w panelu „Model vs rynek”: całe punkty, przy skrajach jedno miejsce po przecinku. */
 const pct = (p: number) => `${numLang((p * 100).toFixed(p < 0.05 || p > 0.95 ? 1 : 0))}%`;
 
-/** Termin: godzina, gdy dziś, inaczej z datą (czas lokalny). */
-const when = (t: number, now: number) => (new Date(t).toDateString() === new Date(now).toDateString() ? fmtHm(t) : `${fmtDm(t)} ${fmtHm(t)}`);
-
 /**
  * Poziomy rynków wynikowych BTC z płynnym arkuszem (przy rzadkim cena rynku nic nie mówi, jak w panelu „Model vs rynek”):
- * „> K” — cena powyżej progu w terminie, „dotknie K” — dotknięcie do terminu. `nearest` — tylko poziom najbliższy ceny.
+ * „> K” — cena powyżej progu w terminie, „dotknie K” — dotknięcie do terminu; podpis skrócony (próg, rynek, model —
+ * termin jest w panelu). Na wykres trafiają progi z `selectOutcomes` (komputer 3 nad ceną i 3 pod, telefon najbliższy),
+ * `rest` — liczba pozostałych płynnych rynków do legendy.
  */
-export function outcomeLevels(rows: readonly Hip4Row[], now: number, price: number, nearest: boolean): OutcomeLevel[] {
-  const levels = rows.flatMap((r) => {
+export function outcomeLevels(rows: readonly Hip4Row[], price: number, phone: boolean): { levels: OutcomeLevel[]; rest: number } {
+  const all = rows.flatMap((r) => {
     const mid = r.quote?.liquid ? r.quote.mid : null;
     if (mid === null) return [];
     const q = r.q;
     const head = q.kind === 'above' ? `> ${fmtPx(q.K)}` : `${tr('dotknie', 'touches')} ${fmtPx(q.K)}`;
     const model = r.model === null ? '—' : pct(r.model);
-    const text = `${head} · ${tr('do', 'by')} ${when(q.expiry, now)} · ${tr('rynek', 'market')} ${pct(mid)} · model ${model}`;
+    const text = `${head} · ${tr('rynek', 'market')} ${pct(mid)} · model ${model}`;
     return [{ px: q.K, text, strength: r.model === null ? 0 : Math.min(1, Math.abs(r.model - mid) / FULL_DIFF) }];
   });
-  if (!nearest || levels.length === 0 || !(price > 0)) return levels;
-  return [levels.reduce((a, b) => (Math.abs(b.px - price) < Math.abs(a.px - price) ? b : a))];
+  const { shown, rest } = selectOutcomes(all, price, phone);
+  return { levels: shown.map((i) => all[i]), rest };
 }
 
 interface Drawn {
@@ -66,6 +65,8 @@ export class Hip4Layer implements ISeriesPrimitive<Time> {
   private series: ISeriesApi<SeriesType, Time> | null = null;
   private requestUpdate: (() => void) | null = null;
   private drawn: Drawn | null = null;
+  /** Po każdej scenie: liczba progów wybranych na wykres, także poza widoczną skalą ceny (pomiar układu czyta ją z wykresu). */
+  onLines: ((n: number) => void) | null = null;
   private readonly views: readonly IPrimitivePaneView[];
 
   constructor(private readonly source: () => Hip4Source | null) {
@@ -131,11 +132,15 @@ export class Hip4Layer implements ISeriesPrimitive<Time> {
   }
 
   updateAllViews(): void {
-    this.drawn = null;
     const src = this.source();
+    this.drawn = this.scene(src);
+    this.onLines?.(src?.levels.length ?? 0);
+  }
+
+  private scene(src: Hip4Source | null): Drawn | null {
     const chart = this.chart;
     const series = this.series;
-    if (!src || !chart || !series) return;
+    if (!src || !chart || !series) return null;
     const { width, height } = chart.paneSize(0);
     const placed = src.levels
       .flatMap((l) => {
@@ -151,6 +156,6 @@ export class Hip4Layer implements ISeriesPrimitive<Time> {
       return { x: width - 6, y, text: p.l.text };
     });
     const lines = placed.map((p) => ({ y: p.y, alpha: src.alpha * (0.3 + 0.7 * p.l.strength) }));
-    this.drawn = { lines, texts, color: src.color, width: src.width };
+    return { lines, texts, color: src.color, width: src.width };
   }
 }
