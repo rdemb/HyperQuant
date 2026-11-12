@@ -35,8 +35,11 @@ const toBar = (b: VBar): Bar => ({ t: b.time, o: b.open, h: b.high, l: b.low, c:
 
 /** Świece 1m od 5.11 00:00 do świecy bieżącej minuty (7.11 06:30) włącznie. */
 export const M1: Bar[] = bars(at(2026, 11, 5, 0), NOW + MIN, price).map(toBar);
-/** Świece 1h z 30 dni do bieżącej godziny włącznie; zakres według godziny sesji (godzina otwarcia Londynu: 100 USD). */
-export const H1: Bar[] = hours(Math.floor((NOW - 30 * DAY) / H) * H, NOW).map(toBar);
+/**
+ * Świece 1h z 85 dni do bieżącej godziny włącznie (typowa szerokość godziny bierze 20 dni tego samego typu, weekend do
+ * 80 dni wstecz); zakres według godziny sesji (godzina otwarcia Londynu: 100 USD).
+ */
+export const H1: Bar[] = hours(Math.floor((NOW - 85 * DAY) / H) * H, NOW).map(toBar);
 /** Zamknięcie ostatniej świecy 1m (cena odpowiedzi). */
 export const CLOSE = M1[M1.length - 1].c;
 

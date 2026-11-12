@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { computeAuctionContext } from '../../src/state/useAuctionContext';
 import { toVBars } from '../../src/utils/auction';
 import { dayVwapOf, vwapSigma } from '../../src/utils/dayVwap';
-import { type FourNumber, clarityNum, gotValue, hourWidth, hourWidthNum, liqFuel, nextSessionHour } from '../../src/utils/fourNumbers';
+import { type FourNumber, clarityNum, gotValue, hourWidth, hourWidthNum, hourWidthSample, liqFuel, nextSessionHour } from '../../src/utils/fourNumbers';
+import { bootstrapMedian80 } from '../../src/utils/rvol';
 import { LIQ_MAP_RANGE } from '../../src/utils/liqMap';
 import { isAbsent } from '../../src/utils/sessionText';
 import { fourNumbers } from '../../src/views/before/fourInputs';
@@ -114,6 +115,10 @@ describe('market_brief', () => {
     const x = siteInputs(NOW);
     expect(width.value).toMatchObject({ value: hourWidth(gotValue(x.bars1h) ?? [], nextSessionHour(NOW), NOW).median, unit: 'usd', badge: 'MODEL', method: 'mediana 20 dni' });
     expect(width.value?.value).toBe(100);
+    // Próba typowej godziny: n, mediana i przedział 80% z bootstrapu po dniach (ten sam wynik co funkcja strony)
+    const xs = hourWidthSample(gotValue(x.bars1h) ?? [], nextSessionHour(NOW), NOW);
+    expect(width.value?.sample).toEqual({ n: xs.length, median: 100, interval80: bootstrapMedian80(xs) });
+    expect(width.value?.sample?.n).toBeGreaterThanOrEqual(10);
     const dv = dayVwapOf(asCandles(M1), NOW);
     if (isAbsent(dv)) throw new Error(dv.why);
     const z = vwapSigma(CLOSE, dv.vwap, dv.sd);

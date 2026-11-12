@@ -94,6 +94,7 @@ interface LiqTapeData {
   observedSince: string | null;
   sum1h: { longs: Num; shorts: Num };
   sum24h: { longs: Num; shorts: Num };
+  unconfirmedShare: Num;
   recent: { at: string; side: 'long' | 'short'; usd: Num; price: Num }[];
 }
 interface CohortRow {
@@ -379,6 +380,18 @@ describe('liquidation_tape', () => {
     expect(d.recent.map((e) => e.side)).toEqual(TAPE.events.slice(0, 10).map((e) => e.side));
     expect(d.recent[3]).toMatchObject({ usd: { value: TAPE.events[3].usd, unit: 'usd' }, price: { value: TAPE.events[3].px, unit: 'price' } });
     expect(Object.keys(d.recent[0]).sort()).toEqual(['at', 'price', 'side', 'usd']);
+  });
+
+  it('udział niepotwierdzonych kandydatów przy sumach; suma 1 h oznaczona jako niepełna, gdy kolejka czeka', async () => {
+    const unconfirmed = { pending: 2, pendingUsd: 380_000, failed: 1, share: 0.15, h1Complete: false };
+    const { env } = await call<LiqTapeData>('liquidation_tape', allRoutes({ [TAPE_URL]: { json: { ...TAPE, unconfirmed } } }));
+    expect(env.data.unconfirmedShare).toMatchObject({ value: 15, unit: 'pct', badge: 'LIVE' });
+    expect(env.notes.join(' ')).toContain('Suma z ostatniej godziny niepełna: 2 kandydatów czeka na potwierdzenie');
+    // plik sprzed zmiany (bez pola): brak liczby z powodem, bez uwagi o niepełnej sumie
+    const old = await call<LiqTapeData>('liquidation_tape', allRoutes());
+    expect(old.env.data.unconfirmedShare).toMatchObject({ value: null, badge: null });
+    expect(old.env.data.unconfirmedShare.why).toMatch(/plik nie podaje/);
+    expect(old.env.notes.join(' ')).not.toContain('niepełna');
   });
 
   it('taśma nieaktualna (> 10 min): liczby ukryte z powodem, jak na stronie', async () => {

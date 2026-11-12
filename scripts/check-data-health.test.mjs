@@ -76,6 +76,13 @@ describe('assessHealth', () => {
     expect(assessHealth(input({ status: status({ ageNtlP50Min: 27 }) }), NOW, LIMITS, false).ok).toBe(true);
   });
 
+  it('kolejka kont po transakcji bez odczytu (`dirty`, opcjonalne): fakt w raporcie bez alarmu; status bez pola jak dawniej', () => {
+    const r = assessHealth(input({ status: status({ dirty: { n: 140, waitP50Min: 2.2, waitP90Min: 41 } }) }), NOW);
+    expect(r.ok).toBe(true);
+    expect(r.facts).toContainEqual({ label: 'Konta po transakcji bez odczytu', value: '140, czekanie p50 2 min, p90 41 min' });
+    expect(assessHealth(input(), NOW).facts.map((f) => f.label)).not.toContain('Konta po transakcji bez odczytu');
+  });
+
   it('pokrycie open interest poniżej 5% → problem', () => {
     const r = assessHealth(input({ status: status({ coverage: 0.02 }) }), NOW);
     expect(r.ok).toBe(false);

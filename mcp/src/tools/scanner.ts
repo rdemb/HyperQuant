@@ -182,6 +182,11 @@ export interface LiqTapeData {
   observedSince: string | null;
   sum1h: { longs: Num; shorts: Num };
   sum24h: { longs: Num; shorts: Num };
+  /**
+   * Udział kandydatów bez rozstrzygnięcia (czekający w kolejce + nieudani) wśród wszystkich kandydatów z 24 h, %; null
+   * z powodem, gdy plik tego nie podaje (skaner sprzed 12.11.2026).
+   */
+  unconfirmedShare: Num;
   /** Do 10 ostatnich likwidacji, od najnowszej: czas (do minuty), strona likwidowanej pozycji, wartość, cena. */
   recent: { at: string; side: 'long' | 'short'; usd: Num; price: Num }[];
 }
@@ -199,7 +204,7 @@ async function liqTapeRun(src: Sources): Promise<Envelope<LiqTapeData>> {
   const sources = [fileSource(tr('Taśma likwidacji skanera', 'Scanner liquidation tape'), f)];
   const notes = [LIQ_TAPE_NOTE];
   const sums = (why: string) => ({ longs: nil('usd', why), shorts: nil('usd', why) });
-  const hidden = (why: string) => envelope(NAME_LIQ_TAPE, { why, observedSince: null, sum1h: sums(why), sum24h: sums(why), recent: [] }, sources, now, notes);
+  const hidden = (why: string) => envelope(NAME_LIQ_TAPE, { why, observedSince: null, sum1h: sums(why), sum24h: sums(why), unconfirmedShare: nil('pct', why), recent: [] }, sources, now, notes);
   if (!f.ok) return hidden(tr(`taśma likwidacji niedostępna (${f.why})`, `liquidation tape unavailable (${f.why})`));
   const tape = f.value;
   // Jak karta taśmy na stronie: publikacja starsza niż 10 min — liczby ukryte
@@ -210,11 +215,25 @@ async function liqTapeRun(src: Sources): Promise<Envelope<LiqTapeData>> {
   if (tape.since > tape.asOf - DAY) {
     notes.push(tr(`Obserwacja od ${iso(tape.since)}: sumy 24 h obejmują krótszy czas.`, `Observed since ${iso(tape.since)}: the 24 h sums cover a shorter time.`));
   }
+  const u = tape.unconfirmed;
+  if (u && !u.h1Complete) {
+    notes.push(
+      tr(
+        `Suma z ostatniej godziny niepełna: ${u.pending} kandydatów czeka na potwierdzenie (sumy mogą jeszcze wzrosnąć).`,
+        `The last-hour sum is incomplete: ${u.pending} candidates await confirmation (the sums can still grow).`
+      )
+    );
+  }
   const data: LiqTapeData = {
     why: null,
     observedSince: iso(tape.since),
     sum1h: { longs: live(tape.totals.h1.longUsd, 'usd', note), shorts: live(tape.totals.h1.shortUsd, 'usd', note) },
     sum24h: { longs: live(tape.totals.h24.longUsd, 'usd', note), shorts: live(tape.totals.h24.shortUsd, 'usd', note) },
+    unconfirmedShare: !u
+      ? nil('pct', tr('plik nie podaje udziału niepotwierdzonych (skaner sprzed tej zmiany)', 'the file does not give the unconfirmed share (scanner before this change)'))
+      : u.share === null
+        ? nil('pct', tr('brak kandydatów w ostatnich 24 h', 'no candidates in the last 24 h'))
+        : live(Math.round(u.share * 1000) / 10, 'pct', note),
     // Tylko publiczne pola zdarzenia (plik i tak nie ma adresów ani identyfikatorów transakcji)
     recent: tape.events.slice(0, RECENT).map((e) => ({ at: iso(e.t), side: e.side, usd: live(e.usd, 'usd', note), price: live(e.px, 'price', note) })),
   };
