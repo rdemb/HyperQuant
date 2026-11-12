@@ -121,7 +121,11 @@ export const costUsd = (coin: string): number => COST_USD * usdScaleOf(coin);
 /** Kwota kosztu w tekście: „100 000” po polsku, „100,000” po angielsku. */
 export const costAmount = (usd: number): string => String(Math.round(usd)).replace(/\B(?=(\d{3})+(?!\d))/g, tr(' ', ','));
 /** Kwota kosztu w etykiecie: 100k, 50k, 1k. */
-const costShort = (usd: number): string => `${fmtFixed(usd / 1000, Number.isInteger(usd / 1000) ? 0 : 1)}k`;
+/** Kwota w tysiącach do 2 cyfr znaczących (100k, 16k, 4,9k), bez śladów arytmetyki zmiennoprzecinkowej */
+const costShort = (usd: number): string => {
+  const k = Number((usd / 1000).toPrecision(usd >= 100_000 ? 3 : 2));
+  return `${fmtFixed(k, Number.isInteger(k) ? 0 : 1)}k`;
+};
 
 const val = <T>(v: Got<T> | undefined): T | null => (v === undefined || isAbsent(v) ? null : v);
 const dash = (label: string, badge: LayoutNumber['badge'], hint: string, note?: string): LayoutNumber => ({ label, value: DASH, badge, hint, ...(note ? { note } : {}) });
