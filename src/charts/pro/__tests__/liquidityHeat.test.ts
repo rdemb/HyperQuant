@@ -59,7 +59,7 @@ function layer(near: BookHistory, far: BookHistory, now: number) {
   const series = { priceToCoordinate: (p: number) => H / 2 - (p - 80_000) * 0.5 };
   l.attached({ chart, series, requestUpdate: () => undefined } as never);
   l.setDom(false);
-  l.setData(bars as never, MS, { near, far, orders: () => [], walls: () => [] }, now, 1e9);
+  l.setData(bars as never, MS, { near, far, orders: () => [], walls: () => [], covers: () => true }, now, 1e9);
   return l;
 }
 
@@ -87,7 +87,7 @@ describe('mapa ciepła: upływ czasu domalowuje tylko nowe kolumny', () => {
     const ctx = draw(live);
     // Co 10 s (1,7 px przy 10 px na świecę 1m), także przez wejście dalekiej migawki z przyszłości i limit 60 s migawki
     for (let s = 1; s <= 8; s++) {
-      live.setData(bars as never, MS, { near, far, orders: () => [], walls: () => [] }, last + s * 10_000, 1e9);
+      live.setData(bars as never, MS, { near, far, orders: () => [], walls: () => [], covers: () => true }, last + s * 10_000, 1e9);
       draw(live);
       expect(diff(ctx.screen, draw(layer(near, far, last + s * 10_000)).screen)).toBe(0);
       if (s === 2) expect(ctx.lastW).toBeLessThanOrEqual(3);
@@ -101,11 +101,11 @@ describe('mapa ciepła: upływ czasu domalowuje tylko nowe kolumny', () => {
     const l = layer(near, far, last + 1_000);
     draw(l);
     near.add(frame(last + 5_400, 1));
-    l.setData(bars as never, MS, { near, far, orders: () => [], walls: () => [] }, last + 6_000, 1e9);
+    l.setData(bars as never, MS, { near, far, orders: () => [], walls: () => [], covers: () => true }, last + 6_000, 1e9);
     const ctx = draw(l);
     expect(diff(ctx.screen, draw(layer(near, far, last + 6_000)).screen)).toBe(0);
     const fresh = histories(last);
-    l.setData(bars as never, MS, { near: fresh.near, far: fresh.far, orders: () => [], walls: () => [] }, last + 7_000, 1e9);
+    l.setData(bars as never, MS, { near: fresh.near, far: fresh.far, orders: () => [], walls: () => [], covers: () => true }, last + 7_000, 1e9);
     expect(diff(draw(l).screen, draw(layer(fresh.near, fresh.far, last + 7_000)).screen)).toBe(0);
   });
 
@@ -124,7 +124,7 @@ describe('mapa ciepła: upływ czasu domalowuje tylko nowe kolumny', () => {
     draw(l);
     let tailMs = 0;
     for (let i = 0; i < runs; i++) {
-      l.setData(bars as never, MS, { near, far, orders: () => [], walls: () => [] }, last + 1_000 + (i + 1) * 100, 1e9);
+      l.setData(bars as never, MS, { near, far, orders: () => [], walls: () => [], covers: () => true }, last + 1_000 + (i + 1) * 100, 1e9);
       const a = performance.now();
       draw(l);
       tailMs += performance.now() - a;

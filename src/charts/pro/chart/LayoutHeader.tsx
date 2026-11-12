@@ -4,8 +4,6 @@ import { Badge, DASH, sourceTag } from '../../../ui';
 import { scrollFadeRef } from '../../../ui/scrollFade';
 import type { BlogMap, BlogMapsState } from '../../../state/useBlogMaps';
 import type { LiqMapState } from '../../../state/useLiqMap';
-import type { VolModelState } from '../../../state/useVolModel';
-import type { VolModel } from '../../../utils/volatility';
 import type { WhaleLayer } from '../../../utils/whaleLayer';
 import { type Branching, MIN_EVENTS } from '../core/hawkes';
 import { fitBranchingLater } from '../core/hawkesWorker';
@@ -55,9 +53,6 @@ export const LayoutHeader: React.FC<{
   id: StationId;
   question: string;
   store: ProStore;
-  model: VolModel | null;
-  /** Stan wczytania modelu (`feed.vol.status`): na BTC w drodze budżet zakresu czeka na HAR. */
-  volStatus: VolModelState['status'];
   liq: LiqMapState;
   whales: WhaleLayer | null;
   /** Build ma adres danych skanera (bez niego warstwa wielorybów jest niedostępna, nie „nieaktualna”). */
@@ -72,7 +67,7 @@ export const LayoutHeader: React.FC<{
   /** Rozwinięcie źródeł sterowane z zewnątrz (wariant `chips`: z menu „⋯”). */
   detailsOpen?: boolean;
   onDetails?: (open: boolean) => void;
-}> = ({ id, question, store, model, volStatus, liq, whales, whalesConfigured, blogMaps, blogMap, narrow, onNumbers, variant = 'row', detailsOpen, onDetails }) => {
+}> = ({ id, question, store, liq, whales, whalesConfigured, blogMaps, blogMap, narrow, onNumbers, variant = 'row', detailsOpen, onDetails }) => {
   const [nums, setNums] = useState<LayoutNumber[]>(() => layoutNumbers(id, { coin: store.coin, now: Date.now() }));
   const [ownOpen, setOwnOpen] = useState(false);
   // Wariant `chips`: liczby, które mieszczą się w linii legendy w całości (pozostałe niewidoczne, bez ucinania w pół słowa)
@@ -86,8 +81,8 @@ export const LayoutHeader: React.FC<{
   const ref = useRef<HTMLDivElement>(null);
   const onNumbersRef = useRef(onNumbers);
   onNumbersRef.current = onNumbers;
-  const scan = useRef<InputScan>({ model, volStatus, liq, whales, whalesConfigured, blog: { state: blogMaps, map: blogMap } });
-  scan.current = { model, volStatus, liq, whales, whalesConfigured, blog: { state: blogMaps, map: blogMap } };
+  const scan = useRef<InputScan>({ liq, whales, whalesConfigured, blog: { state: blogMaps, map: blogMap } });
+  scan.current = { liq, whales, whalesConfigured, blog: { state: blogMaps, map: blogMap } };
   const runRef = useRef<() => void>(() => {});
   useLayoutEffect(() => {
     if (variant !== 'chips') return;
@@ -180,7 +175,7 @@ export const LayoutHeader: React.FC<{
   // Nowa migawka skanera, model zmienności albo mapa z bloga — od razu
   useEffect(() => {
     runRef.current();
-  }, [model, volStatus, liq.status, liq.map, whales, whalesConfigured, blogMaps, blogMap]);
+  }, [liq.status, liq.map, whales, whalesConfigured, blogMaps, blogMap]);
 
   // Rozwinięcie zamyka dotknięcie obok i Escape
   useEffect(() => {

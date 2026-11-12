@@ -7,8 +7,10 @@ import {
   aciStep,
   brier,
   crpsQuantiles,
+  chi2Sf,
   isotonic,
   kupiec,
+  kupiecTest,
   normInv,
   pitFromQuantiles,
   quantileAt,
@@ -19,9 +21,10 @@ import {
   vennAbers,
 } from '../../src/utils/forecastScore.ts';
 import { mulberry32, seedFrom } from '../../src/utils/pathEngine.ts';
+import { type DaySum, addDaySum, dayOf, daySkillCi } from '../../src/utils/ledgerBootstrap.ts';
 import { outcomeProbabilities } from '../../src/utils/hip4.ts';
 import { horizonSigmas, stepFor } from '../../src/utils/hip4Model.ts';
-import type { CatScores, CatTouchScores, DeskLedgerSummary, MktScores, RetScores, TouchLevel, TouchScores } from '../../src/utils/deskLedger.ts';
+import type { AciInf, CatScores, CatTouchScores, DeskLedgerSummary, Kupiec60, MktScores, PitTest, RetScores, TouchLevel, TouchScores } from '../../src/utils/deskLedger.ts';
 import {
   type Bar,
   CONE_Q,
@@ -840,10 +843,38 @@ export const nextAci = (alpha: number, miss: boolean) => aciStep(alpha, ACI_ALPH
 
 const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
 
+/** Minimum prognoz rozłącznych dla testu jednostajności PIT */
+export const PIT_MIN_N = 50;
+
+/** Test Kupca przedziału 60% z trafień na próbie rozłącznej. */
+export function kupiec60Of(hits: readonly (0 | 1)[]): Kupiec60 {
+  const n = hits.length;
+  const x = hits.filter((h) => h === 1).length;
+  const k = kupiecTest(n, x, 0.6);
+  return k ? { n, x, cover: r4(x / n), lr: r4(k.lr), p: r4(k.p) } : { n, x, cover: null, lr: null, p: null, reason: 'min-n' };
+}
+
+/** Jednostajność PIT: 10 równych koszyków, χ² i p z χ²(9); od 50 prognoz. */
+export function pitTestOf(pits: readonly number[]): PitTest {
+  const n = pits.length;
+  const bins = Array<number>(10).fill(0);
+  for (const p of pits) bins[Math.min(9, Math.max(0, Math.floor(p * 10)))]++;
+  if (n < PIT_MIN_N) return { n, bins, chi2: null, p: null, reason: 'min-n' };
+  const e = n / 10;
+  let chi2 = 0;
+  for (const o of bins) chi2 += (o - e) ** 2 / e;
+  return { n, bins, chi2: r4(chi2), p: r4(chi2Sf(chi2, 9)) };
+}
+
+/** Granica przedziału ACI nieskończona: α ≤ 0 (cały rozkład) albo α ≥ 2 (granice zamienione) */
+export const aciInfinite = (aci: number) => !(aci > 0 && aci < 2);
+
 /**
  * Wyniki prognoz zwrotu jednego horyzontu. Prognozy co 15 min z horyzontem h nakładają się (h/15-krotnie), więc ich
  * chybienia są skorelowane — odsetek pokrycia liczony jest z całości (opis), a test Kupca na podpróbie rozłącznej
- * (sloty będące wielokrotnością h), z efektywnym n.
+ * (sloty będące wielokrotnością h), z efektywnym n. Na tej samej próbie rozłącznej test Kupca przedziału 60%
+ * (`kupiec60`) i jednostajność PIT (`pit`); CRPSS z przedziałem z bootstrapu blokowego po dobach UTC slotu (`crpssCi`,
+ * wszystkie prognozy — doby obejmują nakładanie się horyzontów); udział nieskończonych przedziałów ACI (`aciInf`).
  */
 export function retScores(pairs: { f: RetForecast; r: RetResolution }[]): RetScores {
   const n = pairs.length;
@@ -858,6 +889,11 @@ export function retScores(pairs: { f: RetForecast; r: RetResolution }[]): RetSco
     const missInd = indep.filter((p) => !hit(p.r)).length;
     return { rate: 1 - missAll / n, n, nEff: indep.length, kupiecP: indep.length ? kupiec(indep.length, missInd, nominalMiss) : null };
   };
+  const disjoint = pairs.filter((p) => p.f.slot % (p.f.h * MIN) === 0);
+  const days = new Map<number, DaySum>();
+  for (const { f, r } of pairs) addDaySum(days, f.slot, r.crps, r.crpsB);
+  const inf = pairs.filter((p) => aciInfinite(p.f.aci)).length;
+  const aciInf: AciInf = { n, inf, share: n ? r4(inf / n) : null };
   return {
     n,
     crps,
@@ -867,6 +903,10 @@ export function retScores(pairs: { f: RetForecast; r: RetResolution }[]): RetSco
     cov90: cov((r) => r.in90, 0.1),
     cov60: cov((r) => r.in60, 0.4),
     covAci: cov((r) => r.inAci, 0.1),
+    kupiec60: kupiec60Of(disjoint.map((p) => p.r.in60)),
+    pit: pitTestOf(disjoint.map((p) => p.r.pit)),
+    crpssCi: daySkillCi(days.values()),
+    aciInf,
   };
 }
 
@@ -901,6 +941,7 @@ export function touchScores(pairs: { f: TouchForecast; r: TouchResolution }[], s
   const bs = brier(pp);
   const model: { p: number; y: 0 | 1 }[] = [];
   const dist: { p: number; y: 0 | 1 }[] = [];
+  const distDays = new Map<number, DaySum>();
   for (const { f, r } of pairs) {
     const s = sigma1h.get(f.slot);
     if (s === undefined) continue;
@@ -911,6 +952,7 @@ export function touchScores(pairs: { f: TouchForecast; r: TouchResolution }[], s
       if (pd === null) continue;
       model.push({ p, y: r.yv[l] });
       dist.push({ p: pd, y: r.yv[l] });
+      addDaySum(distDays, f.slot, (p - r.yv[l]) ** 2, (pd - r.yv[l]) ** 2);
     }
   }
   const bsDist = brier(dist);
@@ -923,6 +965,15 @@ export function touchScores(pairs: { f: TouchForecast; r: TouchResolution }[], s
   ) as Record<TouchLevel, number | null>;
   const basePairs = pairs.flatMap((p) => LEVELS.filter((l) => p.f.p[l] !== null && p.f.p[l] !== undefined && levelBase[l] !== null).map((l) => ({ p: levelBase[l] as number, y: p.r.yv[l] })));
   const bsBase = brier(basePairs);
+  // Przedział BSS wobec częstości poziomu: baza stała z całego okna, losowane doby
+  const baseDays = new Map<number, DaySum>();
+  for (const { f, r } of pairs)
+    for (const l of LEVELS) {
+      const p = f.p[l];
+      const b = levelBase[l];
+      if (p === null || p === undefined || b === null) continue;
+      addDaySum(baseDays, f.slot, (p - r.yv[l]) ** 2, (b - r.yv[l]) ** 2);
+    }
   // Izotonicznie na grupach równych p (wagi = liczności) — ten sam p nie dostaje dwóch wartości
   const groups: { p: number; sum: number; n: number }[] = [];
   for (const x of [...pp].sort((a, b) => a.p - b.p)) {
@@ -955,6 +1006,8 @@ export function touchScores(pairs: { f: TouchForecast; r: TouchResolution }[], s
     brierDist: bsDist,
     bssDist: bsModelDist !== null && bsDist !== null && bsDist > 0 ? 1 - bsModelDist / bsDist : null,
     pairsDist: dist.length,
+    bssCi: daySkillCi(baseDays.values()),
+    bssDistCi: daySkillCi(distDays.values()),
     reliability: reliability(pp, 10).map((b) => ({ lo: b.lo, hi: b.hi, n: b.n, meanP: b.meanP, freq: b.freq })),
     calibration: map,
   };
@@ -990,16 +1043,68 @@ function probScores(pp: { p: number; y: 0 | 1 }[]) {
   };
 }
 
+/** Doby tego samego typu w bazie sezonowej, minimum rozstrzygnięć tej samej godziny */
+export const SEASON_DAYS = 20;
+export const SEASON_MIN = 8;
+/** Weekend = sobota i niedziela UTC (1970-01-01 to czwartek) */
+const isWeekend = (day: number) => {
+  const dow = (day + 4) % 7;
+  return dow === 0 || dow === 6;
+};
+
+/**
+ * Baza sezonowa dużego ruchu dla prognozy ze slotu `slot`: częstość `yBig` pełnych godzin kota tej samej godziny UTC
+ * w 20 poprzednich dobach UTC tego samego typu (dzień roboczy / weekend); od 8 rozstrzygnięć, inaczej częstość
+ * wszystkich pełnych godzin tych dób (stała częstość z przeszłości). Same doby wcześniejsze niż doba prognozy, więc
+ * tylko rekordy rozstrzygnięte przed nią. Brak godzin → null.
+ * `hours`: wynik pełnej godziny według slotu (ms) — z całego dziennika.
+ */
+export function seasonalBigBase(slot: number, hours: ReadonlyMap<number, 0 | 1>): number | null {
+  const day = dayOf(slot);
+  const hourMs = slot - day * DAY - ((slot - day * DAY) % HOUR);
+  const weekend = isWeekend(day);
+  let same = 0;
+  let sameN = 0;
+  let all = 0;
+  let allN = 0;
+  let found = 0;
+  for (let d = day - 1; found < SEASON_DAYS && d > day - 400; d--) {
+    if (isWeekend(d) !== weekend) continue;
+    found++;
+    for (let h = 0; h < 24; h++) {
+      const y = hours.get(d * DAY + h * HOUR);
+      if (y === undefined) continue;
+      all += y;
+      allN++;
+      if (h * HOUR === hourMs) {
+        same += y;
+        sameN++;
+      }
+    }
+  }
+  if (sameN >= SEASON_MIN) return same / sameN;
+  return allN ? all / allN : null;
+}
+
 /**
  * Wyniki kota. Prognozy co 15 min na 1 h nakładają się czterokrotnie, więc ich błędy są skorelowane — `nEff` to liczba
  * prognoz rozłącznych (sloty o pełnej godzinie). Kierunek dodatkowo w trzech stanach panelu (Long, Short, nie wiem).
+ * `hours`: pełne godziny kota z całego dziennika (slot → yBig) do bazy sezonowej dużego ruchu (`big.bssSeasonal`).
  */
-export function catScores(pairs: { f: CatForecast; r: CatResolution }[]): CatScores {
+export function catScores(pairs: { f: CatForecast; r: CatResolution }[], hours: ReadonlyMap<number, 0 | 1> = new Map()): CatScores {
   const side = (s: 'long' | 'short') => {
     const xs = pairs.filter((p) => stanceOf(p.f.pUp) === s);
     return { n: xs.length, hit: xs.length ? xs.filter((p) => p.r.yDir === (s === 'long' ? 1 : 0)).length / xs.length : null };
   };
   const big = pairs.map((p) => ({ p: p.f.pBig, y: p.r.yBig }));
+  const seasonDays = new Map<number, DaySum>();
+  let seasonN = 0;
+  for (const { f, r } of pairs) {
+    const b = seasonalBigBase(f.slot, hours);
+    if (b === null) continue;
+    seasonN++;
+    addDaySum(seasonDays, f.slot, (f.pBig - r.yBig) ** 2, (b - r.yBig) ** 2);
+  }
   return {
     n: pairs.length,
     nEff: pairs.filter((p) => p.f.slot % HOUR === 0).length,
@@ -1009,7 +1114,11 @@ export function catScores(pairs: { f: CatForecast; r: CatResolution }[]): CatSco
       short: side('short'),
       unsure: pairs.filter((p) => stanceOf(p.f.pUp) === 'unsure').length,
     },
-    big: { ...probScores(big), reliability: reliability(big, 10).map((b) => ({ lo: b.lo, hi: b.hi, n: b.n, meanP: b.meanP, freq: b.freq })) },
+    big: {
+      ...probScores(big),
+      reliability: reliability(big, 10).map((b) => ({ lo: b.lo, hi: b.hi, n: b.n, meanP: b.meanP, freq: b.freq })),
+      bssSeasonal: { ...daySkillCi(seasonDays.values()), n: seasonN },
+    },
     touch: catTouchScores(pairs),
   };
 }
@@ -1176,7 +1285,7 @@ export function buildSummary(s: SummaryInput): DeskLedgerSummary {
         : null,
     },
     ab: abSection(fs, s.resolutions, s.now, s.abRegisteredAt ?? null),
-    cat: { ...catSection(fs, catPairs), trust: catTrust(s.catHours ?? [], s.trustPlan ?? null), hour: hourTrust(s.hourRows ?? [], s.hourPlan ?? null) },
+    cat: { ...catSection(fs, catPairs, new Map((s.catHours ?? []).map((h) => [h.slot, h.yBig]))), trust: catTrust(s.catHours ?? [], s.trustPlan ?? null), hour: hourTrust(s.hourRows ?? [], s.hourPlan ?? null) },
     method: 'hq-ledger-v1',
   };
 }
@@ -1208,7 +1317,7 @@ function abSection(fs: Forecast[], res: Map<string, Resolution>, now: number, re
 }
 
 /** Kot: najnowsza prognoza, wyniki i udział — sloty z prognozami desku od pierwszej prognozy kota vs prognozy kota. */
-function catSection(fs: Forecast[], pairs: { f: CatForecast; r: CatResolution }[]): NonNullable<DeskLedgerSummary['cat']> {
+function catSection(fs: Forecast[], pairs: { f: CatForecast; r: CatResolution }[], hours: ReadonlyMap<number, 0 | 1>): NonNullable<DeskLedgerSummary['cat']> {
   const cats = fs.filter((f): f is CatForecast => f.kind === 'cat');
   const since = cats.length ? cats[0].t : null;
   const latest = cats[cats.length - 1];
@@ -1218,7 +1327,7 @@ function catSection(fs: Forecast[], pairs: { f: CatForecast; r: CatResolution }[
     issued: cats.length,
     slots: since === null ? 0 : new Set(fs.filter((f) => f.kind === 'ret' && f.t >= since).map((f) => f.slot)).size,
     latest: latest ? { t: latest.t, px0: latest.px0, pUp: latest.pUp, pBig: latest.pBig, thr: latest.thr } : null,
-    scores: catScores(pairs),
+    scores: catScores(pairs, hours),
   };
 }
 

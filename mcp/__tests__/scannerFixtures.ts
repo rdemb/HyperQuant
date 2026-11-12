@@ -153,7 +153,29 @@ export const whales = (age = 3 * MIN): WhaleLayer =>
 // ───────── ledger ─────────
 
 const cov = (rate: number, kupiecP: number | null = 0.41) => ({ rate, n: 400, nEff: 100, kupiecP });
-const ret = (n: number, crpss: number | null) => ({ n, crps: 0.003, crpsBench: 0.0032, crpss, pitHist: [], cov90: cov(0.884), cov60: cov(0.612), covAci: cov(0.901, null) });
+const ret = (n: number, crpss: number | null) => ({
+  n,
+  crps: 0.003,
+  crpsBench: 0.0032,
+  crpss,
+  pitHist: [],
+  cov90: cov(0.884),
+  cov60: cov(0.612),
+  covAci: cov(0.901, null),
+  ...(n >= 100
+    ? {
+        kupiec60: { n: 100, x: 58, cover: 0.58, lr: 0.1667, p: 0.683 },
+        pit: { n: 100, bins: [12, 9, 10, 11, 8, 10, 9, 11, 10, 10], chi2: 1.2, p: 0.9988 },
+        crpssCi: { value: 0.052, lo: 0.021, hi: 0.08, days: 30 },
+        aciInf: { n, inf: 6, share: 0.015 },
+      }
+    : {
+        kupiec60: { n: 3, x: 2, cover: 0.6667, lr: 0.0566, p: 0.812 },
+        pit: { n: 3, bins: [1, 0, 0, 1, 0, 0, 0, 1, 0, 0], chi2: null, p: null, reason: 'min-n' as const },
+        crpssCi: { value: 0.02, lo: null, hi: null, days: 3, reason: 'min-days' as const },
+        aciInf: { n, inf: 0, share: 0 },
+      }),
+});
 export const ledger = (age = 5 * MIN): DeskLedgerSummary => ({
   v: 1,
   coin: 'BTC',
@@ -165,7 +187,34 @@ export const ledger = (age = 5 * MIN): DeskLedgerSummary => ({
   latest: { ret: [], touch: null },
   scores: {
     ret: { '240': ret(12, 0.02), '60': ret(400, 0.052) },
-    touch: { n: 300, pairs: 800, brier: 0.181, brierBase: 0.205, bss: 0.117, bssClim: 0.117, brierDist: 0.19, bssDist: 0.047, pairsDist: 800, reliability: [], calibration: [] },
+    touch: {
+      n: 300,
+      pairs: 800,
+      brier: 0.181,
+      brierBase: 0.205,
+      bss: 0.117,
+      bssClim: 0.117,
+      brierDist: 0.19,
+      bssDist: 0.047,
+      pairsDist: 800,
+      bssCi: { value: 0.117, lo: 0.05, hi: 0.18, days: 30 },
+      bssDistCi: { value: 0.047, lo: -0.012, hi: 0.1, days: 30 },
+      reliability: [],
+      calibration: [],
+    },
+  },
+  cat: {
+    model: 'm',
+    since: NOW - 30 * 24 * HOUR,
+    issued: 2800,
+    slots: 2800,
+    latest: null,
+    scores: {
+      n: 2700,
+      nEff: 675,
+      dir: { brier: 0.25, brierBase: 0.25, bss: 0, auc: 0.5, hit: 0.5, long: { n: 0, hit: null }, short: { n: 0, hit: null }, unsure: 2700 },
+      big: { brier: 0.2, brierBase: 0.21, bss: 0.048, auc: 0.6, hit: 0.7, reliability: [], bssSeasonal: { value: 0.031, lo: -0.004, hi: 0.066, days: 30, n: 2650 } },
+    },
   },
   ots: [],
   slotStamps: 90,
