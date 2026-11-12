@@ -145,6 +145,10 @@ After each push that adds or changes a published post, the deploy workflow sends
 
 Local preview (including drafts): `npm run build && node scripts/blog/build.mjs --drafts && npm run preview`, then `http://localhost:4173/blog/`.
 
+Search engines: notes „aktualizacja” (`YYYY-MM-DD-aktualizacja-HH`, one template several times a day) get `<meta name="robots" content="noindex,follow">` and are left out of `sitemap.xml`; they stay in the post list, the archive and RSS. All other posts (day maps, maps before New York, settlements, daily summaries, weekly maps and settlements) are indexed.
+
+Weekly settlement (section „Rozliczenie tygodnia”, posts from 2026-11-08): a touch BSS is always given against both baselines (the distance baseline and the base rate), and the post does not claim that the maps carried „real information” (`realną informację`); the validator rejects either. Older posts are unchanged.
+
 Every post is in the repository's public history from the moment of publication; the post page links to the file's change history.
 
 Today posts are written by an automated author process on a server, from its own clone of this repository, and pushed to `main` over SSH with a deploy key that has write access; the commits are attributed to the repository owner. The next step moves only where that process pushes to (the `blog` branch below); how it writes and checks posts stays the same.

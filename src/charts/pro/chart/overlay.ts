@@ -15,6 +15,7 @@ import { fmtCompact } from '../../../ui/format';
 import { spreadTags } from '../../orderflow/renderer';
 import type { Box } from './labelPlacement';
 import { selectDays, selectSessions } from './levelsSelect';
+import { PROFILE_FIELD_MAX, fullFrom, nearestNaked, rectShare } from './profileSelect';
 import { type IbDraw, ibObjects, selectIbs } from './ibSelect';
 import { baseTick } from '../core/footprintBar';
 import {
@@ -132,7 +133,6 @@ const PROFILE_ROW_PX = 4;
 /** Profil sesji: najwyżej taki ułamek szerokości okresu i tyle px (świece obok zostają czytelne); nagie POC — najwyżej tyle ostatnich. */
 const PERIOD_PROFILE_WIDTH = 0.25;
 const PERIOD_PROFILE_MAX_PX = 120;
-const NAKED_POC_MAX = 8;
 /** Od tylu widocznych świec VWAP wchodzi do autoskali. */
 const AUTOSCALE_MIN_BARS = 40;
 /** Wysokość etykiety przy prawej krawędzi (px); etykiety rozsuwane co TAG_H + 1 w granicach [TAG_H / 2, H − TAG_H / 2]. */
@@ -314,6 +314,8 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
   private vwap: (VwapPoint | null)[] = [];
   private svwap: (VwapPoint | null)[] = [];
   private ibs: InitialBalance[] = [];
+  /** Po każdej scenie profili okresów: liczba obiektów i udział pola pod słupkami (pomiar układu czyta je z wykresu). */
+  onPeriods: ((c: { objects: number; area: number }) => void) | null = null;
   /** Zakresy początkowe do rysowania (bieżąca i poprzednia sesja, `selectIbs`). */
   private ibDraws: IbDraw[] = [];
   /** Po każdej scenie: liczba obiektów zakresu początkowego na ekranie (pomiar układu czyta ją z wykresu). */
@@ -546,8 +548,14 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
     const step = this.rowStep(bars, vt, Y);
     const pw = Math.round(Math.min(PROFILE_MAX_PX, Math.max(PROFILE_MIN_PX, W * PROFILE_WIDTH)));
     if (t.showProfile && step > 0) this.sceneProfile(s, bars, vf, vt, W, pw, step, Y);
-    if (t.showPeriodProfiles && sc.periodProfile && step > 0) this.scenePeriods(s, bars, sc.periodProfile, step, visFrom, visTo, W, edge, Y);
-    else this.periodCache.clear();
+    if (t.showPeriodProfiles && sc.periodProfile && step > 0) {
+      const r0 = s.rects.length;
+      const objects = this.scenePeriods(s, bars, sc.periodProfile, step, visFrom, visTo, W, edge, Y);
+      this.onPeriods?.({ objects, area: rectShare(s.rects.slice(r0), W, H) });
+    } else {
+      this.periodCache.clear();
+      this.onPeriods?.({ objects: 0, area: 0 });
+    }
     if (t.showDevPoc && sc.periodProfile && step > 0) this.sceneDeveloping(s, bars, sc.periodProfile, step, visFrom, visTo, X, Y);
     else this.devCache.clear();
 
@@ -758,8 +766,9 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
   }
 
   /**
-   * Profile sesji (albo dób): wiersze od początku okresu w prawo, POC na całą szerokość okresu,
-   * a POC, którego cena później nie dotknęła (nagi), przedłużony cienką linią do prawej krawędzi.
+   * Profile sesji (albo dób): wiersze od początku okresu w prawo, POC na całą szerokość okresu, a POC, którego cena
+   * później nie dotknęła (nagi), przedłużony cienką linią do prawej krawędzi. Pełny profil dla bieżącego i poprzedniego
+   * okresu, starsze — POC i pasek value area; nagie POC — 3 najbliższe cenie (`profileSelect.ts`). Zwraca liczbę obiektów.
    */
   private scenePeriods(
     s: Scene,
@@ -771,7 +780,7 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
     W: number,
     edge: (t: number) => number,
     Y: (p: number) => number
-  ): void {
+  ): number {
     const ms = this.ms;
     const cache = new Map<number, PeriodCache>();
     const items: { from: number; to: number; complete: boolean; pocPx: number; p: VolumeProfile }[] = [];
@@ -786,19 +795,33 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
       if (p && p.max > 0) items.push({ from: r.from, to: r.to, complete: r.complete, pocPx: (p.lo + p.poc + 0.5) * p.step, p });
     }
     this.periodCache = cache;
+    // Pełny profil: bieżący i poprzedni okres (z danych); starsze — linia POC i pasek value area; nagie POC — 3 najbliższe cenie
+    const full = fullFrom(items.length);
     const naked = nakedPocs(bars, items);
-    let shown = 0;
+    const nearest = nearestNaked(
+      items.map((it, k) => ({ px: it.pocPx, naked: naked[k] && edge(bars[it.to].t + ms) < W })),
+      bars[bars.length - 1].candle.c
+    );
+    let objects = 0;
     for (let k = items.length - 1; k >= 0; k--) {
       const { from, to, pocPx, p } = items[k];
       const x0 = edge(bars[from].t);
       const x1 = edge(bars[to].t + ms);
       const yPoc = Y(pocPx);
-      if (naked[k] && shown < NAKED_POC_MAX && x1 < W) {
-        shown++;
+      if (nearest.has(k)) {
+        objects++;
         s.hlines.push({ x0: Math.max(0, x1), x1: W, y: yPoc, color: K.nPocLine, dash: DASH.none });
       }
       if (bars[to].t + ms <= visFrom || bars[from].t >= visTo) continue;
-      const pw = Math.min(PERIOD_PROFILE_MAX_PX, (x1 - x0) * PERIOD_PROFILE_WIDTH);
+      s.hlines.push({ x0, x1, y: yPoc, color: K.spPocLine, dash: DASH.none });
+      objects += 2;
+      if (k < full) {
+        const ya = Y((p.lo + p.vaHi + 1) * p.step);
+        const yb = Y((p.lo + p.vaLo) * p.step);
+        s.rects.push({ x: x0 - 3, y: ya, w: 2, h: Math.max(1, yb - ya), color: K.spVa });
+        continue;
+      }
+      const pw = Math.min(PERIOD_PROFILE_MAX_PX, (x1 - x0) * PERIOD_PROFILE_WIDTH, W * PROFILE_FIELD_MAX);
       const gap = Math.abs(Y(pocPx) - Y(pocPx + step)) >= 3 ? 1 : 0;
       for (let r = 0; r < p.vol.length; r++) {
         const v = p.vol[r];
@@ -808,8 +831,8 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
         const color = r >= p.vaLo && r <= p.vaHi ? K.spVa : K.spOut;
         s.rects.push({ x: x0, y: ya, w: Math.max(1, (v / p.max) * pw), h: Math.max(1, yb - ya - gap), color });
       }
-      s.hlines.push({ x0, x1, y: yPoc, color: K.spPocLine, dash: DASH.none });
     }
+    return objects;
   }
 
   /** Rozwijający się POC (linia schodkowa) i value area (kropkowane) każdej widocznej sesji albo doby, świeca po świecy. */

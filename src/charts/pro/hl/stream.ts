@@ -2,6 +2,11 @@
  * Połączenie WebSocket z publicznym API Hyperliquid dla wykresu Pro: zestaw subskrypcji odtwarzany
  * po każdym ponownym połączeniu, ping co 30 s (serwer zamyka po 60 s ciszy), wykrywanie martwego
  * połączenia i ponowne łączenie z narastającym odstępem.
+ *
+ * Koniec połączenia (`onClosed`) ma czas ostatniej wiadomości z transakcjami, nie chwilę wykrycia: po uśpieniu karty
+ * albo komputera strażnik budzi się po kilku minutach i czas snu nie może liczyć się jako nagrany. Wybudzenie (przerwa
+ * w wiadomościach dłuższa niż `staleMs`, także gdy pierwszą rzeczą po wybudzeniu jest wiadomość z bufora) zamyka
+ * połączenie i łączy od nowa; osobno cisza samego kanału transakcji (`tradesStaleMs`) przy płynących innych kanałach.
  */
 
 export const HL_WS_URL = 'wss://api.hyperliquid.xyz/ws';
@@ -30,8 +35,10 @@ export interface StreamOptions {
   wsFactory?: (url: string) => WebSocket;
   now?: () => number;
   pingMs?: number;
-  /** Brak jakiejkolwiek wiadomości przez tyle ms przy otwartym połączeniu = połączenie martwe. */
+  /** Brak jakiejkolwiek wiadomości przez tyle ms przy otwartym połączeniu = połączenie martwe (albo karta spała). */
   staleMs?: number;
+  /** Brak wiadomości z transakcjami przez tyle ms przy subskrypcji transakcji = kanał transakcji martwy. */
+  tradesStaleMs?: number;
   maxBackoffMs?: number;
 }
 
@@ -75,12 +82,16 @@ export class HlStream {
   private readonly now: () => number;
   private readonly pingMs: number;
   private readonly staleMs: number;
+  private readonly tradesStaleMs: number;
   private readonly maxBackoffMs: number;
   private ws: WebSocket | null = null;
   private running = false;
   private attempt = 0;
   private lastMsgAt = 0;
   private lastPingAt = 0;
+  /** Ostatnia wiadomość z transakcjami (zegar klienta); 0 = żadnej. Koniec nagrania przy zamknięciu połączenia. */
+  private lastTradesAt = 0;
+  private openedAt = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -90,6 +101,7 @@ export class HlStream {
     this.now = o.now ?? (() => Date.now());
     this.pingMs = o.pingMs ?? 30_000;
     this.staleMs = o.staleMs ?? 75_000;
+    this.tradesStaleMs = o.tradesStaleMs ?? 120_000;
     this.maxBackoffMs = o.maxBackoffMs ?? 15_000;
   }
 
@@ -150,9 +162,31 @@ export class HlStream {
     this.handlers.forEach((h) => h.onStatus?.(s));
   }
 
+  /** Zamknięcie: koniec nagrania na ostatniej wiadomości z transakcjami (bez niej — na ostatniej wiadomości). */
   private emitClosed(): void {
-    const at = this.now();
+    const at = this.lastTradesAt > 0 ? this.lastTradesAt : this.lastMsgAt > 0 ? this.lastMsgAt : this.now();
     this.handlers.forEach((h) => h.onClosed?.(at));
+  }
+
+  /**
+   * Porzucenie połączenia (martwe, karta spała, cichy kanał transakcji): od razu odpięte, więc żadna spóźniona wiadomość
+   * z niego nie trafia do odbiorców; zamknięcie i ponowne łączenie od pierwszej próby.
+   */
+  private abandon(sock: WebSocket): void {
+    if (this.ws !== sock) return;
+    this.ws = null;
+    if (this.pingTimer !== null) clearInterval(this.pingTimer);
+    this.pingTimer = null;
+    sock.onclose = null;
+    sock.onmessage = null;
+    try {
+      sock.close();
+    } catch {
+      // już zamknięte
+    }
+    this.emitClosed();
+    this.attempt = 0;
+    this.scheduleReconnect();
   }
 
   private clearTimers(): void {
@@ -178,6 +212,8 @@ export class HlStream {
       this.attempt = 0;
       this.lastMsgAt = this.now();
       this.lastPingAt = this.lastMsgAt;
+      this.openedAt = this.lastMsgAt;
+      this.lastTradesAt = 0; // koniec nagrania liczony tylko z wiadomości tego połączenia
       this.setStatus('open');
       this.subs.forEach((s) => this.send('subscribe', s));
       if (this.pingTimer !== null) clearInterval(this.pingTimer);
@@ -185,7 +221,7 @@ export class HlStream {
     };
     sock.onmessage = (e: MessageEvent) => {
       if (this.ws !== sock) return;
-      this.onRaw(e.data);
+      this.onRaw(e.data, sock);
     };
     sock.onclose = () => {
       if (this.ws !== sock) return;
@@ -204,8 +240,10 @@ export class HlStream {
   private tick(sock: WebSocket): void {
     if (this.ws !== sock || sock.readyState !== OPEN) return;
     const now = this.now();
-    if (now - this.lastMsgAt > this.staleMs) {
-      sock.close();
+    // Cisza na całym połączeniu (także po uśpieniu karty) albo samego kanału transakcji przy płynących innych
+    const tradesSince = Math.max(this.lastTradesAt, this.openedAt);
+    if (now - this.lastMsgAt > this.staleMs || (this.hasTrades() && now - tradesSince > this.tradesStaleMs)) {
+      this.abandon(sock);
       return;
     }
     if (now - this.lastPingAt >= this.pingMs) {
@@ -227,8 +265,18 @@ export class HlStream {
     }, delay);
   }
 
-  private onRaw(raw: unknown): void {
+  private hasTrades(): boolean {
+    for (const s of this.subs.values()) if (s.type === 'trades') return true;
+    return false;
+  }
+
+  private onRaw(raw: unknown, sock: WebSocket): void {
     const recvAt = this.now();
+    // Wiadomość po przerwie dłuższej niż strażnik (bufor po wybudzeniu karty): ciągłości nie da się potwierdzić
+    if (this.lastMsgAt > 0 && recvAt - this.lastMsgAt > this.staleMs) {
+      this.abandon(sock);
+      return;
+    }
     this.lastMsgAt = recvAt;
     let msg: { channel?: unknown; data?: unknown };
     try {
@@ -238,6 +286,7 @@ export class HlStream {
     }
     const channel = typeof msg.channel === 'string' ? msg.channel : '';
     if (channel === '' || channel === 'pong') return;
+    if (channel === 'trades') this.lastTradesAt = recvAt;
     if (channel === 'subscriptionResponse') {
       const d = msg.data as { method?: unknown; subscription?: unknown } | undefined;
       if (d?.method !== 'subscribe') return;

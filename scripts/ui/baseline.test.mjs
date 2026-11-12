@@ -13,7 +13,12 @@ const report = {
   effort: { desktop: 5, phone: 2 },
   clashes: { desktop: 9 },
   levels: { dayMap: { desktop: { levels: 6, sessions: 0, levels4h: 3 }, phone: null }, review: { desktop: { levels: 0, sessions: 6 }, phone: { levels: 0, sessions: 4 } } },
+  bubbles: { desktop: 21, phone: 5 },
   ib: { auction: { desktop: 5, phone: 3 }, review: { desktop: 7, phone: 5 } },
+  profiles: {
+    dayMap: { desktop: { tpo: { objects: 18, area: 9.5 }, periods: { objects: 12, area: 3.1 } }, phone: { tpo: { objects: 9, area: 17.2 }, periods: null } },
+    review: { desktop: { tpo: { objects: 16, area: 8 }, periods: null }, phone: { tpo: { objects: 8, area: 15 }, periods: null } },
+  },
   zones: { desktop: { rects: 4, lines: 2 }, phone: { rects: 3, lines: 1 } },
 };
 
@@ -30,7 +35,10 @@ describe('punkt odniesienia pomiaru układu', () => {
     expect(m['clashes.objects1440']).toBe(9);
     expect([m['levels.dayMap.lines4h1440'], m['levels.dayMap.lines1440'], m['sessions.review.lines1440'], m['sessions.review.lines390']]).toEqual([3, 6, 6, 4]);
     expect(m['levels.dayMap.lines390']).toBeUndefined();
+    expect([m['bubbles.count1440'], m['bubbles.count390']]).toEqual([21, 5]);
     expect([m['ib.auction1440'], m['ib.auction390'], m['ib.review1440'], m['ib.review390']]).toEqual([5, 3, 7, 5]);
+    expect([m['tpo.dayMap.objects1440'], m['tpo.dayMap.area1440'], m['periods.dayMap.objects1440'], m['tpo.dayMap.area390'], m['tpo.review.objects390']]).toEqual([18, 9.5, 12, 17.2, 8]);
+    expect(m['periods.review.objects1440']).toBeUndefined();
     expect([m['zones.rects1440'], m['zones.lines1440'], m['zones.rects390'], m['zones.lines390']]).toEqual([4, 2, 3, 1]);
     expect(Object.keys(m).some((k) => k.includes('undefined'))).toBe(false);
   });
