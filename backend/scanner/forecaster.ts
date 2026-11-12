@@ -1,4 +1,6 @@
 import { AB_BLOCK_DAYS, AB_DESIGN_C, abBlocks, abFirstBlock, type AbRow } from '../../src/utils/abTest.ts';
+import { type CalRow, type CatCal, calSummary } from '../../src/utils/catCal.ts';
+import { type CatClock, clockSeason, clockTerciles } from '../../src/utils/moveClock.ts';
 import { MODEL_C, RVMIX, rv60From5m, rvLevel, rvX, scaleMixQuantiles } from '../../src/utils/rvMix.ts';
 import { Bocpd } from '../../src/utils/bocpd.ts';
 import { ENS_PRIOR, REC_PRIOR, fitEnsemble, poolProb, type EnsPair, type EnsWeights } from '../../src/utils/ensemble.ts';
@@ -343,6 +345,11 @@ export interface CatForecast {
   cone?: ConeStep[];
   tmodel?: string;
   th?: string;
+  /**
+   * Kalibracja `cat-cal-v1` (src/utils/catCal.ts): pBig przesunięte w logicie o wartość dopasowaną do par rozstrzygniętych
+   * w dzienniku przed wydaniem (14 dni, ten sam model); brak pola — mniej niż 96 par albo rekord sprzed planu.
+   */
+  cal?: CatCal;
 }
 
 /** Rozstrzygnięcie kota: ceny w t i t + h, max/min świec 1m okna; wzrost = c1 > c0, duży ruch = ln(hi/lo) > próg. */
@@ -1234,6 +1241,8 @@ export interface SummaryInput {
   /** Rozstrzygnięte zapisy godziny na żywo z całego dziennika i rejestracja ich planu oceny */
   hourRows?: HourRow[];
   hourPlan?: HourTrust['plan'];
+  /** Rejestracja planu kalibracji `cat-cal-v1` w dzienniku (brak — bez sekcji `cat.cal`) */
+  calPlan?: { at: number; hash: string } | null;
 }
 
 /** Podsumowanie (30 dni) dla strony: najnowsze prognozy, wyniki, kalibracja Venna–Abersa najnowszych prawdopodobieństw. */
@@ -1329,7 +1338,13 @@ export function buildSummary(s: SummaryInput): DeskLedgerSummary {
     },
     ab: abSection(fs, s.resolutions, s.now, s.abRegisteredAt ?? null),
     ...((c) => (c ? { abC: c } : {}))(abSectionC(fs, s.resolutions, s.now, s.abCRegisteredAt ?? null)),
-    cat: { ...catSection(fs, catPairs, new Map((s.catHours ?? []).map((h) => [h.slot, h.yBig]))), trust: catTrust(s.catHours ?? [], s.trustPlan ?? null), hour: hourTrust(s.hourRows ?? [], s.hourPlan ?? null) },
+    cat: {
+      ...catSection(fs, catPairs, new Map((s.catHours ?? []).map((h) => [h.slot, h.yBig]))),
+      trust: catTrust(s.catHours ?? [], s.trustPlan ?? null),
+      hour: hourTrust(s.hourRows ?? [], s.hourPlan ?? null),
+      ...(s.calPlan ? { cal: calSummary(calRows(s.forecasts, s.resolutions), s.calPlan, s.now) } : {}),
+      clock: catClock(s.forecasts, s.resolutions, s.catHours ?? [], s.now),
+    },
     method: 'hq-ledger-v1',
   };
 }
@@ -1402,6 +1417,28 @@ function abSectionC(fs: Forecast[], res: Map<string, Resolution>, now: number, r
     last: last ? { ...last, cal: cal(last) } : null,
     latest: latest && latest.x !== undefined && latest.rv60 !== undefined ? { t: latest.t, x: latest.x, rv60: latest.rv60 } : null,
   };
+}
+
+/** Rekordy oceny kalibracji: prognozy kota z polem `cal` z rozstrzygnięciem (bez unieważnionych), rosnąco po czasie */
+function calRows(fs: ReadonlyMap<string, Forecast>, res: ReadonlyMap<string, Resolution>): CalRow[] {
+  const out: CalRow[] = [];
+  for (const f of fs.values()) {
+    if (f.kind !== 'cat' || !f.cal) continue;
+    const r = res.get(f.id);
+    if (r && 'yBig' in r && (r.yBig === 0 || r.yBig === 1)) out.push({ slot: f.slot, t: f.t, p: f.cal.p, raw: f.pBig, y: r.yBig });
+  }
+  return out.sort((a, b) => a.t - b.t);
+}
+
+/**
+ * Zegar ruchu (src/utils/moveClock.ts): tercyle `pBig` rozstrzygniętych prognoz kota z 14 dni (model najnowszej prognozy,
+ * bez unieważnionych) i baza sezonowa z pełnych godzin kota z całego dziennika.
+ */
+function catClock(fs: ReadonlyMap<string, Forecast>, res: ReadonlyMap<string, Resolution>, hours: readonly TrustHour[], now: number): CatClock {
+  const cats = [...fs.values()].filter((f): f is CatForecast => f.kind === 'cat').sort((a, b) => a.t - b.t);
+  const mh = cats.at(-1)?.mh;
+  const rows = cats.filter((f) => f.mh === mh && ((r) => !!r && 'yBig' in r && (r.yBig === 0 || r.yBig === 1))(res.get(f.id))).map((f) => ({ t: f.t, pBig: f.pBig }));
+  return { terciles: clockTerciles(rows, now), season: clockSeason(new Map(hours.map((h) => [h.slot, h.yBig])), now) };
 }
 
 /** Kot: najnowsza prognoza, wyniki i udział — sloty z prognozami desku od pierwszej prognozy kota vs prognozy kota. */

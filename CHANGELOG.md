@@ -15,6 +15,42 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 - **Strona i MCP**: karta A/B wariantu C w Po sesji (`src/views/after/ModelAbCCard.tsx`, tabela okresów wspólna z kartą B), `forecast_ledger` z polem `abTests` (`ab-v1` i, gdy jest, `ab-v2`); stare podsumowanie bez `abC` działa jak dotąd. Opis w `integrations/skills/hyperquant/SKILL.md` i `README.md`.
 - Testy: `src/utils/__tests__/rvMix.test.ts` (wzorce w `fixtures/rvMixReference.json`, τ = 0, symetria, przypadki brzegowe, kalibracja na 20 000 syntetycznych zwrotów: C 0,58–0,62, A ponad 0,66; rv60 bez świecy w toku), `backend/scanner/__tests__/variantC.test.ts`, `ledgerRunner.test.ts` (plan raz i przed pierwszym C), `scripts/verify-ledger.test.mjs` (zmieniony kwantyl, stała, x, plan, C przed planem, rv60), `src/views/after/__tests__/modelAbCCard.test.tsx`, `mcp/__tests__/scanner.test.ts`. Na serwerze działa dopiero po podpisanym tagu.
 
+### Zegar ruchu w „Przed sesją” i w MCP (2026-11-12)
+
+#### Poprawione
+
+- Panel zegara podaje nazwę lokalnej strefy czasowej wyświetlanych godzin (PL i EN).
+- Plan `cat-cal-v1` określa procedurę pasma decyli przed rejestracją: losowanie dób UTC, mulberry32, ziarno 20261111, 1000 losowań i percentyle 2,5 oraz 97,5.
+
+#### Dodane
+- **Panel „Zegar ruchu”** (`src/views/before/MoveClockPanel.tsx`, ekran „Przed sesją”): najbliższa godzina (okno ostatniej prognozy kota z rejestru) jako poziom bez procentu — spokojny, zwykły albo podwyższony według tercyla `pBig` wśród rozstrzygniętych prognoz kota z 14 dni (od 96) — obok AUC z rejestru i zdanie „Procenty w trakcie kalibracji, wynik w rejestrze”; godziny 2–24 jako baza sezonowa: w ilu z 20 ostatnich dni tego samego typu (robocze albo weekend UTC) w tej godzinie był duży ruch kota („k z n dni”, MODEL „baza sezonowa”, bez twierdzenia o przewadze). Brak danych to „—” z powodem (za mało prognoz z 14 dni, ostatnia prognoza starsza niż 45 min, starsze podsumowanie). Procentu jako szansy nie ma nigdzie do awansu kalibracji `cat-cal-v1`.
+- **Podsumowanie `cat.clock`** (`src/utils/moveClock.ts`, `backend/scanner/forecaster.ts`, pole opcjonalne): tercyle `pBig` z 14 dni i baza sezonowa 24 godziny × 2 typy dnia z pełnych godzin kota z całego dziennika.
+- **MCP `forecast_ledger`:** `moveClock` (najbliższa godzina jako poziom, AUC, 23 godziny bazy sezonowej) i `bigMove.calibration` (rozliczenie `cat-cal-v1`); starsze podsumowanie — null z powodem. Opisy w `mcp/README.md` i skillu `hyperquant`.
+
+#### Zmienione
+- **Poziom ruchu kota** (pasek pod wykresem, dymek, karta w dzienniku; `src/components/schrodi/moveLevel.ts`) bierze tercyle z 14 dni z `cat.clock`, gdy podsumowanie je ma — ten sam poziom co zegar; starsze podsumowanie — histogram 30 dni jak dotąd. Dymek podaje okno tercyli (14 albo 30 dni).
+- Testy: `src/utils/__tests__/moveClock.test.ts`, `src/views/before/__tests__/MoveClockPanel.test.tsx` (bez „%” przy najbliższej godzinie, „—” z powodem, strażniki rady i kierunku, PL i EN), `moveLevel.test.tsx`, `ledgerRunner.test.ts` (sekcja `cat.clock`), `mcp/__tests__/scanner.test.ts`.
+
+### Kot: kalibracja szansy dużego ruchu cat-cal-v1 w dzienniku (2026-11-12)
+
+#### Dodane
+- **Kalibracja `cat-cal-v1`** (`src/utils/catCal.ts`, `backend/scanner/ledgerRunner.ts`, `backend/scanner/forecaster.ts`). Ranking `pBig` kota jest dobry, ale procenty są zaniżone (średnie `pBig` ok. 0,50 wobec częstości ok. 0,59). Nowe rekordy kota dostają pole `cal: { v, p, a, d, n, nT }`: przesunięcie logitu `pBig` dopasowane do par kota tego samego modelu (`mh`) rozstrzygniętych w dzienniku przed wydaniem, z 14 dni (a: wariancja a priori 1,0; poprawka typu dnia d, robocze albo weekend UTC: 0,25; Newton 25 kroków; przesunięcie przycięte do ±1,5; od 96 par, inaczej bez pola). `pBig`, model kota, próg i model godziny bez zmian; stare rekordy nie są ruszane.
+- **Plan `cat-cal-v1` prerejestrowany w dzienniku** (rekord `k: "p"`) przed pierwszym rekordem z `cal`: definicja, stałe, miara δ = (cal.p − y)² − (pBig − y)², bloki 14 dni od rejestracji, Newey–West (opóźnienie 96, fixed-b), minimum 672 rekordów, kryteria główne, kalibracji, porażki i awansu. Hash planu przypięty w testach.
+- **Podsumowanie `cat.cal`** (`src/utils/deskLedger.ts`, pole opcjonalne): z 30 dni Brier `cal.p` i surowego `pBig` na tych samych rekordach, średnie p i częstość, osobno dni robocze i weekend, decyle `cal.p`; ostatni zakończony blok 14 dni z różnicą δ i 95% przedziałem (w bloku w toku bez przedziału). Stare podsumowanie bez pola jest poprawne.
+- **Weryfikator** (`scripts/verify-ledger.mjs`, `checkCatCal`): plan zgodny z kodem, żadne `cal` przed planem, `a`, `d` (do 1e-5), `p` (do 1e-4), `n` i `nT` (dokładnie) przeliczone własną implementacją z par rozstrzygniętych wcześniej w dzienniku; po planie przy co najmniej 96 parach brak `cal` to błąd. W trybie szybkim prognozy z oknem sprzed pobranych dni są pomijane.
+- Odtworzenie na publicznym dzienniku (commit b60afcb gałęzi `ledger`, jak gdyby plan istniał od początku): 1226 rozstrzygniętych prognoz z `cal`, Brier 0,1284 wobec 0,1433 dla surowego `pBig`, średnie `cal.p` 0,585 wobec częstości 0,588.
+- Testy: `src/utils/__tests__/catCal.test.ts` (trzy zestawy wzorcowe policzone niezależnie w Pythonie, brzegi, dane syntetyczne 20 dni), `backend/scanner/__tests__/ledgerRunner.test.ts` (plan raz przed pierwszym `cal`, `cal` z par dziennika, brak `cal` poniżej 96 par i przy innym modelu, weryfikator wykrywa zmienione `cal.p`, `a`, `cal` sprzed planu i rozstrzygnięcie zapisane po prognozie, podsumowanie).
+
+### Strona wyników prognoz: `wyniki/` i `en/results/` (2026-11-12)
+
+#### Dodane
+- **Statyczna strona rozliczenia dziennika prognoz** (`scripts/blog/results.mjs`, wpięta w `scripts/blog/pages.mjs`): PL pod `wyniki/`, EN pod `en/results/`, z `hreflang` (PL, EN, x-default) i w mapie strony. Siedem sekcji w stałej kolejności: wstęp z chwilą podsumowania („stan na …”) i linkiem do Po sesji; prognozy zwrotu 1 h i 4 h (n, CRPSS z przedziałem, pokrycie 60% i 90%, test Kupca 90% i 60% na próbie rozłącznej, udział nieskończonych przedziałów ACI z opisem „90% z konstrukcji”); dotknięcia (Brier, BSS wobec częstości i wobec bazy odległości, oba z przedziałem, tylko w parze); kot (AUC, BSS wobec stałej częstości i bazy sezonowej, średnie p i częstość z koszyków niezawodności, zdanie o kalibracji w toku); plany ocen (`ab-v1`, `schrodi-trust-v1`, `schrodi-hour-v1` ze startem, kryterium i stanem z podsumowania; plan pojawia się dopiero z rekordem w dzienniku, bez zapowiedzi); niezależna weryfikacja (znaczek zgodna / niezgodna / nieaktualna po 36 h, czas i link do przebiegu, komenda `node scripts/verify-ledger.mjs --dir ../ledger`); „Co się nie potwierdziło” (brak potwierdzenia, nie obalenie: reguły katalogu laboratorium bez efektu w teście historycznym albo z efektem wykluczonym w teście do przodu, bez kontroli i bez reguł z za małą próbą, oraz zamknięte okresy A/B, w których B nie była trafniejsza).
+- **Dane przy każdym wdrożeniu** (`scripts/blog/build.mjs`, `fetchResults`): `ledger/BTC/summary.json` i `lab/BTC.json` z repo danych (adres jak w aplikacji, `VITE_DATA_BASE_URL`, domyślnie gałąź main repo danych) i `verify/latest.json` z gałęzi wyników weryfikacji; każdy plik osobno z limitem 15 s, błąd albo nieznany format daje „—” z powodem, bez zatrzymania wdrożenia (`RESULTS_OFFLINE=1` buduje bez sieci). Strona odświeża się z każdym wdrożeniem, nie co 15 min; „stan na” mówi, z której chwili są liczby.
+- Pola z miar rejestru (`kupiec60`, `pit`, `crpssCi`, `bssCi`, `bssDistCi`, `aciInf`, `big.bssSeasonal`) czytane jako opcjonalne: na dzisiejszym podsumowaniu „—” z powodem („brak w tym podsumowaniu”), z polami liczby.
+- Dane strukturalne `Dataset` (z `DataDownload` podsumowania i linkiem do gałęzi `ledger`), `WebPage` i okruszki; bez skryptów poza danymi strukturalnymi, CSP jak blog; karta podglądu linku `og.png`.
+- **Link do wyników** w stopce każdej strony z szablonu (`scripts/blog/render.mjs`), pod każdym wpisem bloga, na stronie 404 i w stopce aplikacji (`src/shell/AppShell.tsx`, w języku interfejsu). Style w `scripts/blog/blog.css`.
+- Testy: `scripts/blog/results.test.mjs` (strona z fikstury z 7 sekcjami, dzisiejsze podsumowanie i brak plików z „—”, mapa strony i stopki, brak `script` poza danymi strukturalnymi, bezpieczniki tytułu Klatki na tekście obu wersji).
+
 ### Taśma likwidacji: kandydat 24 h, kolejność według wartości, udział niepotwierdzonych (2026-11-12)
 
 #### Zmienione
