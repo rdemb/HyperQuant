@@ -444,6 +444,30 @@ describe('HlStream — odporność połączenia', () => {
     expect(states).toEqual([true, false]);
   });
 
+  it('HlTradesStream: stop() kończy odcinek od razu; ponowny start() otwiera jedno nowe połączenie, spóźnione zamknięcie starego nic nie psuje', () => {
+    vi.useFakeTimers();
+    FakeWs.instances = [];
+    const states: boolean[] = [];
+    const s = new HlTradesStream(() => {}, (up) => states.push(up), FakeWs as unknown as typeof WebSocket);
+    s.setCoins(['BTC']);
+    s.start();
+    const old = FakeWs.instances[0];
+    old.open();
+    const close = old.close.bind(old);
+    old.close = () => {}; // gniazdo zamyka się z opóźnieniem
+    s.stop();
+    expect(states).toEqual([true, false]);
+    s.start();
+    FakeWs.instances[1].open();
+    close(); // spóźnione zamknięcie starego gniazda
+    vi.advanceTimersByTime(5_000); // dłużej niż wycofanie (1 s): bez drugiego połączenia
+    expect(FakeWs.instances.length).toBe(2);
+    expect(states).toEqual([true, false, true]);
+    expect(s.connected).toBe(true);
+    s.stop();
+    vi.useRealTimers();
+  });
+
   it('opcjonalny arkusz: subskrypcja l2Book zagregowanego do 4 cyfr znaczących i przekazanie migawek (czas, poziomy)', () => {
     FakeWs.instances = [];
     const got: { t: number; levels: unknown }[] = [];

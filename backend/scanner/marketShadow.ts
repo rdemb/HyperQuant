@@ -14,8 +14,12 @@ const HOUR_MS = 3_600_000;
 const DAY_MS = 86_400_000;
 /** Okno pomiaru M0 (udział nieznanych kont, konta `xyz`) */
 export const M0_WINDOW_MS = 7 * DAY_MS;
-/** Ile dób UTC trzymają pliki przepływu minutowego K2 */
-export const K2_KEEP_DAYS = 14;
+/** Ile dób UTC trzymają pliki przepływu minutowego K2 (test po K2 potrzebuje 14 pełnych dób; zapas na luki i analizę) */
+export const K2_KEEP_DAYS = 21;
+/** Główny strumień skanera rozłączony dłużej niż to: pomiar w cieniu zwalnia połączenie (limit 10 połączeń na IP) */
+export const SHADOW_YIELD_MS = 30_000;
+/** Pomiar wraca dopiero po tylu ms stabilnego połączenia głównego strumienia */
+export const SHADOW_RESUME_MS = 60_000;
 /** Minuta zamykana tyle po swoim końcu (transakcje z WebSocket mogą przyjść z opóźnieniem) */
 export const FLOW_SETTLE_MS = 30_000;
 /** OI z rejestru (pobierany co godzinę) starszy niż to nie daje pokrycia */
@@ -200,7 +204,8 @@ export class MarketShadow {
       let coverage: number | null = null;
       if (o.btc && c === o.btc.coin) coverage = round4(o.btc.coverage);
       else if (isMain(c) && oiFresh && oiFresh[c] > 0) coverage = round4(coverageShare(sums.get(c) ?? 0, oiFresh[c]));
-      const f = flow.get(c);
+      // Rynek skanera: księga dopisuje konta z jego taśmy na innym połączeniu, więc wynik zależałby od kolejności obsługi — null
+      const f = o.btc && c === o.btc.coin ? undefined : flow.get(c);
       markets[c] = { coverage, unseenShare: f ? ratio(f[0], f[1]) : null };
     }
     let xu = 0;
@@ -255,6 +260,39 @@ export class MarketShadow {
     }
     s.prune(now);
     return s;
+  }
+}
+
+/**
+ * Ustępowanie pomiaru w cieniu: połączenie pomiaru działa tylko przy zdrowym głównym strumieniu skanera. Główny
+ * rozłączony dłużej niż 30 s → `stop`; ponowny `start` dopiero po 60 s nieprzerwanego połączenia głównego (także po starcie
+ * procesu). Krótsze przerwy niczego nie zmieniają; K2 ma na czas zatrzymania lukę. Czysta logika — czas z argumentu.
+ */
+export class ShadowGate {
+  private running = false;
+  private mainUp: boolean | null = null;
+  private since = 0;
+
+  get active(): boolean {
+    return this.running;
+  }
+
+  /** Stan głównego strumienia w chwili `now`; zwraca akcję dla połączenia pomiaru albo null. */
+  update(mainUp: boolean, now: number): 'start' | 'stop' | null {
+    if (mainUp !== this.mainUp) {
+      this.mainUp = mainUp;
+      this.since = now;
+    }
+    const held = now - this.since;
+    if (this.running && !mainUp && held > SHADOW_YIELD_MS) {
+      this.running = false;
+      return 'stop';
+    }
+    if (!this.running && mainUp && held >= SHADOW_RESUME_MS) {
+      this.running = true;
+      return 'start';
+    }
+    return null;
   }
 }
 
@@ -353,7 +391,7 @@ const FLOW_FILE = /^(\d{4}-\d{2}-\d{2})\.jsonl$/;
 
 /**
  * Pliki przepływu K2 w stanie serwera: jeden plik JSONL na dobę UTC. Wiersz nagłówka `{"v":1,"coins":[…]}` (po starcie,
- * na początku doby i przy zmianie rynków), dalej wiersze `[t, kupno₀, sprzedaż₀, …]`. Pliki starsze niż 14 dób usuwane.
+ * na początku doby i przy zmianie rynków), dalej wiersze `[t, kupno₀, sprzedaż₀, …]`. Pliki starsze niż 21 dób usuwane.
  */
 export class FlowFile {
   private readonly dir: string;

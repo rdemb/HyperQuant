@@ -26,7 +26,7 @@ import { HISTORY_README, MarketRecorder, historyIndex, pruneHistory } from './hi
 import { prepareHistoryRepo, publishHistory, startWhenReady } from './historyGit.ts';
 import { WHALE_MARKETS, WhaleWatcher } from './whales.ts';
 import { MAX_DEX_QUERIES, MarketRegistryRunner } from './marketRegistryRunner.ts';
-import { FlowFile, FlowMinutes, MarketShadow, parseOpenInterest } from './marketShadow.ts';
+import { FlowFile, FlowMinutes, MarketShadow, ShadowGate, parseOpenInterest } from './marketShadow.ts';
 import { marketsOrDefault } from '../../src/utils/marketRegistry.ts';
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -92,7 +92,7 @@ function writeJsonAtomic(path: string, value: unknown): void {
  * Pomiar w cieniu M0 (HQ_MARKETS_SHADOW, domyślnie włączony): pozycje rynków głównych z odczytów, które skaner i tak robi,
  * OI z kontekstów pobieranych przez rejestr, transakcje rynków rejestru z jednego dodatkowego połączenia (same `trades`).
  * W `status.json` same liczby (`markets`, `xyz`, `marketsHours`); stan z adresami tylko w HQ_STATE_DIR.
- * K2: przepływ minutowy (kupno i sprzedaż agresywna, USD) w `HQ_STATE_DIR/flow-1m/RRRR-MM-DD.jsonl`, 14 dób, niepublikowany.
+ * K2: przepływ minutowy (kupno i sprzedaż agresywna, USD) w `HQ_STATE_DIR/flow-1m/RRRR-MM-DD.jsonl`, 21 dób, niepublikowany.
  */
 const shadowStatePath = join(cfg.stateDir, 'markets-m0.json');
 let shadow: MarketShadow | null = null;
@@ -236,6 +236,23 @@ function applyShadowMarkets(): void {
   shadowStream.setCoins(coins);
 }
 applyShadowMarkets();
+
+/**
+ * Budżet połączeń WebSocket na IP (limit 10, serwer alarmów na tej samej maszynie): pomiar w cieniu ustępuje. Główny
+ * strumień rozłączony > 30 s → połączenie pomiaru zamknięte; wraca po 60 s stabilnego głównego (K2 ma wtedy lukę).
+ */
+const shadowGate = new ShadowGate();
+function shadowGateTick(): void {
+  if (!shadowStream) return;
+  const action = shadowGate.update(stream.connected, Date.now());
+  if (action === 'stop') {
+    shadowStream.stop();
+    log('pomiar rynków (M0, K2): główny strumień rozłączony > 30 s — połączenie pomiaru zamknięte');
+  } else if (action === 'start') {
+    shadowStream.start();
+    log(`pomiar rynków (M0, K2): jedno połączenie, ${shadowStream.subscriptions} subskrypcji trades`);
+  }
+}
 
 /**
  * Rejestrator historii (gałąź `history` repo danych, rynki z HQ_HISTORY_MARKETS): na rynek osobne połączenie WebSocket
@@ -579,6 +596,7 @@ const timers = [
   ...(shadowStream
     ? [
         setInterval(guarded('przepływ minutowy', () => flowFile.append(flow.flush(Date.now()))), 60_000),
+        setInterval(guarded('ustępowanie pomiaru rynków', shadowGateTick), 5_000),
         setInterval(
           guarded('czyszczenie pomiaru rynków', () => {
             const now = Date.now();
@@ -675,10 +693,8 @@ log(
 // Agregacja arkusza dobrana do ceny przed pierwszym połączeniem (z ostatniej zapisanej minuty), potem co 10 min
 adjustBookAgg();
 stream.start();
-if (shadowStream) {
-  shadowStream.start();
-  log(`pomiar rynków (M0, K2): jedno połączenie, ${shadowStream.subscriptions} subskrypcji trades`);
-}
+// Połączenie pomiaru startuje dopiero po 60 s stabilnego głównego strumienia (ShadowGate, takt co 5 s)
+shadowGateTick();
 // Rejestratory historii z repo gałęzi dopiero po jego przygotowaniu: na świeżym klonie numeracja doby musi widzieć pliki
 // doby odtworzone z gałęzi (inaczej numery od 0 powtórzyłyby numery innych kont); reszta skanera startuje od razu
 const startRecorders = () => {
