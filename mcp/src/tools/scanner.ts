@@ -25,7 +25,7 @@ import {
   isCohortFlow,
   shareDenominator,
 } from '../../../src/utils/cohorts';
-import { LEDGER_MIN_N, type AbBlock, type SkillCi, isAb, isAbC, isDeskLedgerSummary, isHrelSummary, ledgerFreshness } from '../../../src/utils/deskLedger';
+import { LEDGER_MIN_N, type AbBlock, type DeskLedgerSummary, type SkillCi, isAb, isAbC, isDeskLedgerSummary, isHrelSummary, ledgerFreshness } from '../../../src/utils/deskLedger';
 import { HREL_DESIGN } from '../../../src/utils/hourRel';
 import { FUEL_BAND, liqFuel } from '../../../src/utils/fourNumbers';
 import { CLOCK_DAYS, CLOCK_MIN_N, CLOCK_SEASON_DAYS, CLOCK_STALE, clockHours, nearestHour } from '../../../src/utils/moveClock';
@@ -847,6 +847,17 @@ export interface LedgerAbTest {
   diffLast: Num;
   diffLo: Num;
   diffHi: Num;
+  /**
+   * Tylko `ab-v2` (C): początek pierwszego ocenianego okresu (ISO UTC; granica okresu nie wcześniejsza niż rejestracja
+   * planu) albo null z powodem w `firstBlockWhy`.
+   */
+  firstBlock?: string | null;
+  firstBlockWhy?: string | null;
+  /**
+   * Tylko `ab-v2` (C): kalibracja C w ostatnim zakończonym okresie (kryterium awansu) na próbie rozłącznej — sloty o pełnej
+   * godzinie; `cov60` i `cov90` to pokrycia przedziałów 60% i 90% C, `n` liczba slotów. Brak okresu — null z powodem.
+   */
+  calLast?: { n: Num; cov60: Num; cov90: Num };
 }
 
 const NAME_LEDGER = 'forecast_ledger';
@@ -991,6 +1002,31 @@ async function ledgerRun(src: Sources): Promise<Envelope<ForecastLedgerData>> {
     diffLo: live(last?.diff?.lo, 'ratio', note, last ? noCi : noBlock),
     diffHi: live(last?.diff?.hi, 'ratio', note, last ? noCi : noBlock),
   });
+  // ab-v2 (C): starsze podsumowanie bez `firstBlock` albo bez `cal` w zakończonym okresie — te pola null z powodem, reszta wpisu jak dotąd
+  type AbC = NonNullable<DeskLedgerSummary['abC']>;
+  type AbCCal = NonNullable<AbC['last']>['cal'];
+  const rawC = s.abC as (Omit<AbC, 'firstBlock' | 'last'> & { firstBlock?: number | null; last: (AbBlock & { cal?: AbCCal }) | null }) | undefined;
+  const oldFirst = !!rawC && rawC.firstBlock === undefined;
+  const oldCal = !!rawC?.last && rawC.last.cal === undefined;
+  const abC = rawC && { ...rawC, firstBlock: rawC.firstBlock ?? null, last: rawC.last && { ...rawC.last, cal: rawC.last.cal ?? null } };
+  const abCEntry = (c: AbC): LedgerAbTest => {
+    const plan = c.plan;
+    const firstWhy = oldFirst
+      ? tr('brak w starszym podsumowaniu', 'not in an older summary')
+      : tr(`plan ${plan} jeszcze niezarejestrowany w dzienniku`, `the ${plan} plan is not registered in the ledger yet`);
+    const cal = c.last?.cal ?? null;
+    const calWhy = !c.last
+      ? tr('brak zakończonego okresu oceny', 'no finished evaluation period')
+      : oldCal || !cal
+        ? tr('brak kalibracji w starszym podsumowaniu', 'no calibration in an older summary')
+        : tr('brak slotów o pełnej godzinie z parą A i C w okresie', 'no full-hour slots with an A and C pair in the period');
+    return {
+      ...abTest(plan, 'C', c.model, c.current, c.last),
+      firstBlock: c.firstBlock === null ? null : iso(c.firstBlock),
+      firstBlockWhy: c.firstBlock === null ? firstWhy : null,
+      calLast: { n: live(cal?.n, 'count', note, calWhy), cov60: live(cal?.cov60, 'ratio', note, calWhy), cov90: live(cal?.cov90, 'ratio', note, calWhy) },
+    };
+  };
   const t = s.scores.touch;
   const tt = score(t.n);
   const noPair = t.n >= LEDGER_MIN_N && !(typeof t.bssDist === 'number' && Number.isFinite(t.bssDist));
@@ -1127,7 +1163,7 @@ async function ledgerRun(src: Sources): Promise<Envelope<ForecastLedgerData>> {
     slotsSkipped: live(s.participation.skipped, 'count', note),
     abTests: [
       ...(s.ab && isAb(s.ab) ? [abTest('ab-v1', 'B', s.ab.model, s.ab.current, s.ab.last)] : []),
-      ...(s.abC && isAbC(s.abC) ? [abTest(s.abC.plan, 'C', s.abC.model, s.abC.current, s.abC.last)] : []),
+      ...(abC && isAbC(abC) ? [abCEntry(abC)] : []),
     ],
   };
   return envelope(NAME_LEDGER, data, sources, now, notes);
