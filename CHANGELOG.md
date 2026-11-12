@@ -4,6 +4,12 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### „Wyniki” i „Co nowego” w nawigacji aplikacji (2026-11-12)
+<!-- co-nowego: grupa=blog | pl=Linki „Wyniki” i „Co nowego” w nawigacji aplikacji, także na telefonie | en=Results and What’s new links in the app navigation, on phones too -->
+
+#### Dodane
+- **Nawigacja aplikacji** (`src/shell/AppShell.tsx`): linki „Wyniki” / „Results” i „Co nowego” / „What’s new” zaraz po Blogu w górnym pasku i w menu „Więcej” na telefonie; adresy w języku interfejsu (`wyniki/`, `en/results/`, `co-nowego/`, `en/whats-new/`).
+
 ### Szlif 10: rynki bez pary CEX, ceny z dokładnością rynku, progi HIP-4 (2026-11-12)
 <!-- co-nowego: grupa=wykres | pl=Panele giełd na rynkach bez kontraktu na Binance i Bybit pokazują powód, ceny w opisach mają dokładność osi, a progi HIP-4 nie dublują się. | en=Exchange panels on markets without a Binance or Bybit contract show the reason, prices in descriptions match the axis precision, and HIP-4 thresholds no longer repeat. -->
 
