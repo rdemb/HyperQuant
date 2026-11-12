@@ -95,7 +95,17 @@
       "ib.auction1440": 5,
       "ib.auction390": 5,
       "ib.review1440": 7,
-      "ib.review390": 7
+      "ib.review390": 7,
+      "tpo.dayMap.objects1440": 14,
+      "tpo.dayMap.area1440": 4.1,
+      "periods.dayMap.objects1440": 22,
+      "periods.dayMap.area1440": 0.8,
+      "tpo.dayMap.objects390": 9,
+      "tpo.dayMap.area390": 12,
+      "tpo.review.objects1440": 15,
+      "tpo.review.area1440": 1.8,
+      "tpo.review.objects390": 9,
+      "tpo.review.area390": 12
     }
   }
 }
