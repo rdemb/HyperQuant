@@ -84,7 +84,8 @@ export function parseChangelog(md) {
         if (NEWS_FORBIDDEN.test(t) || guardHits(t, TITLE_GUARDS).length) errs.push(`zakazane słowo w tytule „${t}”`);
       }
       if (errs.length) return problems.push(`${where}: ${errs.join('; ')}`);
-      items.push({ date, group: f.grupa, pl: f.pl, en: f.en, line: i + 1 });
+      // approx: data z komentarza (data=), czyli z historii repozytorium, nie z nagłówka sekcji
+      items.push({ date, group: f.grupa, pl: f.pl, en: f.en, line: i + 1, approx: f.data !== undefined });
     });
   close();
   return { items, versions, problems, hidden };
@@ -185,6 +186,7 @@ const T = {
     missing: 'dziennik zmian niedostępny przy budowaniu strony',
     empty: 'brak pozycji w dzienniku zmian',
     more: 'Szczegóły techniczne każdej zmiany',
+    approx: (d) => `Daty pozycji do ${d} są przybliżone: pochodzą z historii repozytorium i mogą być późniejsze niż sama zmiana.`,
     repo: 'kod HyperQuant na GitHubie',
     changelog: 'pełny CHANGELOG',
     card: { title: 'Co nowego w HyperQuant', subtitle: 'Historia zmian od pierwszej wersji, najnowsze na górze' },
@@ -202,6 +204,7 @@ const T = {
     missing: 'changelog unavailable when the page was built',
     empty: 'no entries in the changelog',
     more: 'Technical details of every change',
+    approx: (d) => `Dates of entries up to ${d} are approximate: they come from the repository history and may be later than the change itself.`,
     repo: 'HyperQuant code on GitHub',
     changelog: 'the full CHANGELOG',
     card: { title: "What's new in HyperQuant", subtitle: 'Release history since the first version, newest first' },
@@ -222,6 +225,8 @@ export function whatsNewPage(site, lang, news = {}, disclaimer) {
   const na = (why) => `<span class="na">— (${esc(why)})</span>`;
   const parsed = typeof news.changelog === 'string' ? parseChangelog(news.changelog) : null;
   const periods = parsed ? newsPeriods(parsed.items, milestones(parsed.versions, news.tags ?? [])) : [];
+  // Ostatnia data przybliżona (z historii repozytorium): zdanie pod osią
+  const approxUntil = parsed ? parsed.items.filter((x) => x.approx).map((x) => x.date).sort().at(-1) ?? null : null;
 
   const period = (p, i) => {
     const label = p.versions.length ? t.version(p.versions) : t.unreleased(p.after);
@@ -248,7 +253,8 @@ ${groups}
 ${timeline}
 </section>
 <section class="block" id="source">
-<p>${esc(t.more)}: <a href="${site.repo}/blob/main/CHANGELOG.md">${esc(t.changelog)}</a> · <a href="${site.repo}">${esc(t.repo)}</a></p>
+${approxUntil ? `<p>${esc(t.approx(day(lang, approxUntil)))}</p>
+` : ''}<p>${esc(t.more)}: <a href="${site.repo}/blob/main/CHANGELOG.md">${esc(t.changelog)}</a> · <a href="${site.repo}">${esc(t.repo)}</a></p>
 </section>
 </article>`;
   const newest = periods[0]?.to;
