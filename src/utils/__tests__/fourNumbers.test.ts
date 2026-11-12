@@ -112,13 +112,14 @@ describe('nextSessionHour i hourWidth (3): typowa szerokość najbliższej godzi
   it('przez zmianę czasu 25.10: godzina otwarcia Londynu to 07:00 UTC, potem 08:00 UTC — próba z tej samej godziny sesji', () => {
     const t = nextSessionHour(at(2026, 11, 1, 6, 30));
     expect(t).toMatchObject({ hour: at(2026, 11, 1, 8), opens: true, k: 0 });
-    // Okno 12.10–31.10: 13 dni przed zmianą (otwarcie 07:00 UTC) i 7 po (08:00 UTC); każda próba to godzina otwarcia (100)
-    const list = hours(at(2026, 10, 1, 0), at(2026, 11, 1, 6));
+    // 1.11 to niedziela: próba z 20 ostatnich dni weekendu (od sierpnia), przed zmianą otwarcie 07:00 UTC, po niej 08:00
+    // UTC; każda próba to godzina otwarcia (100)
+    const list = hours(at(2026, 7, 1, 0), at(2026, 11, 1, 6));
     expect(hourWidth(list, t, at(2026, 11, 1, 6, 30))).toEqual({ median: 100, n: 20 });
     // Trzecia godzina Londynu (k = 2): 09:00 UTC przed zmianą, 10:00 UTC po niej
     const k2 = nextSessionHour(at(2026, 11, 1, 9, 20));
     expect(k2).toMatchObject({ hour: at(2026, 11, 1, 10), opens: false, k: 2 });
-    expect(hourWidth(hours(at(2026, 10, 1, 0), at(2026, 11, 1, 9)), k2, at(2026, 11, 1, 9, 20))).toEqual({ median: 200, n: 20 });
+    expect(hourWidth(hours(at(2026, 7, 1, 0), at(2026, 11, 1, 9)), k2, at(2026, 11, 1, 9, 20))).toEqual({ median: 200, n: 20 });
   });
 
   it('przez zmianę czasu w NY (1.11): godzina otwarcia NY 13:00 UTC, potem 14:00 UTC', () => {
@@ -128,18 +129,19 @@ describe('nextSessionHour i hourWidth (3): typowa szerokość najbliższej godzi
   });
 
   it('mniej niż 10 próbek — null; świeca bez liczb odpada z próby', () => {
+    // 7.11 to sobota: próba z dni weekendu (w 9 dniach przed nią dwa: 31.10 i 1.11)
     const t = nextSessionHour(NOW);
-    expect(hourWidth(hours(t.hour - 9 * DAY, NOW - H), t, NOW)).toEqual({ median: null, n: 9 });
-    const bad = hours(t.hour - 25 * DAY, NOW - H).map((b) => (b.time === at(2026, 11, 6, 8) ? { ...b, high: Number.NaN } : b));
+    expect(hourWidth(hours(t.hour - 9 * DAY, NOW - H), t, NOW)).toEqual({ median: null, n: 2 });
+    const bad = hours(t.hour - 80 * DAY, NOW - H).map((b) => (b.time === at(2026, 10, 31, 8) ? { ...b, high: Number.NaN } : b));
     expect(hourWidth(bad, t, NOW)).toEqual({ median: 100, n: 19 });
   });
 
   it('hourWidthNum: MODEL „mediana 20 dni” z godziną sesji; za mało historii — „—” z powodem', () => {
-    const n = hourWidthNum(inputs({ bars1h: hours(at(2026, 10, 10, 0), NOW - H) }));
+    const n = hourWidthNum(inputs({ bars1h: hours(at(2026, 8, 1, 0), NOW - H) }));
     expect(n).toMatchObject({ id: 'hourWidth', title: `Szerokość · Londyn ${fmtHm(at(2026, 11, 7, 8))}`, value: '100 USD', badge: 'MODEL' });
     expect(n.hint).toMatch(/^MODEL · mediana 20 dni: /);
     expect(n.hint).toContain('godzina otwarcia Londyn');
-    expect(n.hint).toContain('20 ostatnich sesji Londyn');
+    expect(n.hint).toContain('20 ostatnich sesji Londyn z weekendów');
     const few = hourWidthNum(inputs({ bars1h: hours(at(2026, 10, 29, 0), NOW - H) }));
     expect(few).toMatchObject({ value: '—', badge: 'MODEL' });
     expect(few.hint).toContain('min. 10');

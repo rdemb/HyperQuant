@@ -29,6 +29,8 @@ export interface ScannerDeps {
   coin: string;
   book: AddressBook;
   rest: HlRest;
+  /** Klient potwierdzeń likwidacji z własnym limiterem wag (domyślnie `rest`) */
+  liqRest?: HlRest;
   outDir: string;
   r2: R2Config | null;
   fetchFn?: typeof fetch;
@@ -84,9 +86,12 @@ export class Scanner {
     this.prices.record(px, t);
   }
 
-  /** Potwierdza kandydatów do likwidacji w ramach limitu zapytań (3/min, tylko przy zdrowym API); zwraca liczbę zapytań. */
+  /**
+   * Potwierdza kandydatów do likwidacji w ramach limitu zapytań (3/min, tylko przy zdrowym API) przez własny klient
+   * z osobnym limiterem wag (`liqRest`), więc potwierdzenia nie zabierają budżetu odczytów pozycji; zwraca liczbę zapytań.
+   */
   confirmLiquidations(): Promise<number> {
-    return this.confirmer.process(this.d.rest, this.now());
+    return this.confirmer.process(this.d.liqRest ?? this.d.rest, this.now());
   }
 
   private now(): number {
@@ -104,9 +109,10 @@ export class Scanner {
     this.ctxAt = this.now();
   }
 
-  /** Odpytuje do `limit` adresów z minionym terminem; zwraca liczbę udanych odczytów. */
+  /** Odpytuje do `limit` adresów w kolejności harmonogramu (`AddressBook.due`); zwraca liczbę udanych odczytów. */
   async scanDue(limit: number): Promise<number> {
     const fresh = this.ctx && this.now() - this.ctxAt <= CTX_MAX_AGE_MS ? this.ctx.markPx : undefined;
+    // Harmonogram zawsze wypełnia limit; tempo ogranicza limiter wag
     const due = this.d.book.due(this.now(), limit, fresh);
     let ok = 0;
     for (const addr of due) {
@@ -142,7 +148,7 @@ export class Scanner {
     const positions = this.d.book.positions();
     const map = buildLiqMap(positions, { coin: this.d.coin, markPx: c.markPx, oiBtc: c.oiBtc, asOf, addresses: this.d.book.size, ctxAt: this.ctxAt });
     this.confirmer.prune(asOf);
-    const tape = buildLiqTape(this.confirmer.events(), { coin: this.d.coin, asOf, since: this.since, checks: this.confirmer.checks(asOf) });
+    const tape = buildLiqTape(this.confirmer.events(), { coin: this.d.coin, asOf, since: this.since, checks: this.confirmer.checks(asOf), backlog: this.confirmer.backlog() });
     const status = {
       v: 1,
       coin: this.d.coin,
@@ -155,9 +161,11 @@ export class Scanner {
       ageNtlP50Min: map.ageMin.ntlP50,
       ctxAt: this.ctxAt,
       dayNtlVlm: Number.isFinite(c.dayNtlVlm) ? c.dayNtlVlm : null,
-      apiErrors: this.d.rest.errors,
+      apiErrors: this.d.rest.errors + (this.d.liqRest && this.d.liqRest !== this.d.rest ? this.d.liqRest.errors : 0),
       liq24h: tape.totals.h24.n,
       liqPending: this.confirmer.pending,
+      // Konta po transakcji jeszcze bez odczytu: liczba i czekanie (p50, p90, min); pole opcjonalne dla czytelników
+      dirty: this.d.book.dirtyStats(asOf),
     };
     let cohortsJson: string | null = null;
     if (this.d.cohorts) {
