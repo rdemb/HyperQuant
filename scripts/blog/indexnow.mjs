@@ -8,6 +8,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { siteFromPackage } from './build.mjs';
+import { isUnindexed } from './render.mjs';
 
 /** Klucz IndexNow; ten sam tekst leży w public/<klucz>.txt, czyli pod adresem strony (klucz jest jawny z założenia). */
 export const INDEXNOW_KEY = '8365203363394d4aa575b5d1e62bcbc9';
@@ -15,11 +16,12 @@ const POST_FILE = /^content\/blog\/(\d{4}-\d{2}-\d{2}-[a-z0-9-]+)\.md$/;
 
 /**
  * Adresy wpisów z listy zmienionych plików (i strona główna bloga, gdy jest choć jeden).
- * `published(id)` mówi, czy wpis jest w zbudowanej stronie (pomija szkice).
+ * `published(id)` mówi, czy wpis jest w zbudowanej stronie (pomija szkice). Notki z `noindex` (poza mapą witryny) nie są
+ * zgłaszane, ale ich zmiana zmienia stronę bloga, więc ta zostaje w zgłoszeniu.
  */
 export function changedPostUrls(files, site, published) {
   const ids = [...new Set(files.map((f) => POST_FILE.exec(f.trim())?.[1]))].filter((id) => id && published(id)).sort();
-  return ids.length ? [`${site.url}blog/`, ...ids.map((id) => `${site.url}blog/${id}/`)] : [];
+  return ids.length ? [`${site.url}blog/`, ...ids.filter((id) => !isUnindexed(id)).map((id) => `${site.url}blog/${id}/`)] : [];
 }
 
 /** Adresy z mapy strony. */
