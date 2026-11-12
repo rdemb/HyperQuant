@@ -39,7 +39,7 @@ const cockpit = (patch: Partial<LayoutInputs> = {}): LayoutInputs => ({
   price: 100_120,
   dayVwap: { vwap: 100_000, sd: 100 },
   session: { s: NY, hi: 100_500, lo: 99_880, close: 100_120, ibHi: 100_300, ibLo: 99_900, ibDone: true, vwap: { vwap: 100_040, sd: 160 } },
-  expected: { usd: 1_000, method: 'har' },
+  expected: { usd: 1_000, typical: 870, method: 'profile' },
   rvol: { value: 1.84, n: 20, hour: at(2026, 11, 3, 16) },
   ...patch,
 });
@@ -54,19 +54,20 @@ describe('vwapSigma (z faktu VWAP w Stanie rynku)', () => {
 });
 
 describe('nagłówek układu: trzy liczby', () => {
-  it('Kokpit na znanych wejściach: VWAP w σ (LIVE), budżet zakresu sesji (MODEL · HAR), RVOL bieżącej godziny (MODEL)', () => {
+  it('Kokpit na znanych wejściach: VWAP w σ (LIVE), budżet zakresu sesji (MODEL · profil × poziom), RVOL bieżącej godziny (MODEL)', () => {
     const n = layoutNumbers('cockpit', cockpit());
     expect(n.map((x) => [x.label, x.value, x.badge])).toEqual([
       ['VWAP', '+1,2σ', 'LIVE'],
       ['Budżet · NY', '62%', 'MODEL'],
       ['RVOL', '1,8×', 'MODEL'],
     ]);
-    expect(n[1].hint).toMatch(/^MODEL · HAR: /);
+    expect(n[1].hint).toMatch(/^MODEL · profil × poziom: /);
     expect(n[2].hint).toMatch(/^MODEL · /);
     expect(n[2].hint).toContain('20 dni');
-    // Bez modelu HAR budżet z σ Parkinsona — nazwa metody w podpowiedzi
-    expect(layoutNumbers('cockpit', cockpit({ expected: { usd: 2_000, method: 'parkinson' } }))[1]).toMatchObject({ value: '31%', badge: 'MODEL' });
-    expect(layoutNumbers('cockpit', cockpit({ expected: { usd: 2_000, method: 'parkinson' } }))[1].hint).toMatch(/^MODEL · Parkinson: /);
+    // Większy oczekiwany zakres — mniejszy budżet; typowy dzień w podpowiedzi
+    const two = layoutNumbers('cockpit', cockpit({ expected: { usd: 2_000, typical: 1_740, method: 'profile' } }))[1];
+    expect(two).toMatchObject({ value: '31%', badge: 'MODEL' });
+    expect(two.hint).toMatch(/typowy dzień ok\. 1[\s\u00a0]?740 USD/);
   });
 
   it('brak VWAP daje „—” z powodem, nigdy 0 ani NaN', () => {

@@ -25,15 +25,15 @@ import {
   type TradeSession,
   type TradeSessionId,
   currentTradeSession,
+  expectedCandlesFrom,
   lastClosedSessions,
   nextTradeSession,
   previousSameSession,
   rangeBudget,
 } from '../../../src/utils/sessionDay';
-import { type SessionNow, asianSessionWhy, dayTypeOf, expectedBasis, expectedFrom, sessionFacts, sessionNowOf } from '../../../src/utils/sessionFacts';
-import { type ReviewRow, reviewRows, sessionCloseOf, sessionMaps } from '../../../src/utils/sessionReview';
+import { type SessionNow, asianSessionWhy, dayTypeOf, expectedFrom, sessionFacts, sessionNowOf } from '../../../src/utils/sessionFacts';
+import { type ReviewRow, reviewRows, sessionMaps } from '../../../src/utils/sessionReview';
 import { type Expected, type Got, amt, isAbsent } from '../../../src/utils/sessionText';
-import type { VolModel } from '../../../src/utils/volatility';
 import { type Badge, type Envelope, type Num, type SourceRef, envelope, iso, num } from '../envelope';
 import { guardedTitle, labelHeld, levelsCutNote } from '../external';
 import type { BlogMapsCut, Fetched, Sources } from '../sources';
@@ -48,30 +48,23 @@ const DAY = 24 * HOUR;
 
 const px = (v: number) => fmtPrice(v, 0);
 
-function volSource(v: Fetched<VolModel | null>): SourceRef {
-  return {
-    name: tr('Model zmienności HAR (świece 1h i 5m Hyperliquid)', 'HAR volatility model (Hyperliquid 1h and 5m candles)'),
-    url: v.url,
-    asOf: v.ok ? iso(v.value?.builtAt ?? v.at) : null,
-  };
-}
-
 /** Chwila migawki świec (z pamięci do 60 s starsza niż `now`): liczby jak w chwili, w której świece pobrano. */
 const snapAt = (c: Fetched<Candle[]>, now: number) => (c.ok ? Math.min(now, c.at) : now);
 
 /**
- * Oczekiwany zakres sesji (MODEL) jak na stronie (`sessionExpectedOf`), z tą samą regułą metody (`expectedBasis`): w toku —
- * model HAR od razu, bez niego σ Parkinsona ze świec 5m na chwilę ich migawki; zamknięta — zawsze ex ante, Parkinson ze
- * świec 5m z doby przed otwarciem. Liczba i powód braku z `expectedFrom`; tu tylko powód nieudanego pobrania świec.
+ * Świece 1h do oczekiwanego zakresu sesji `s`: od `expectedCandlesFrom` do chwili przed otwarciem (zamknięte przed
+ * godziną startu wystarczą, a stały koniec okna daje stały klucz pamięci w trakcie i po sesji).
  */
-function sessionExpected(s: TradeSession, inProgress: boolean, model: VolModel | null, f5: Fetched<Candle[]>, now: number, price: number): Got<Expected> {
-  const b = expectedBasis(s, inProgress, model, now);
-  if (b.model) return expectedFrom(b.model, [], s, now, b.asOf, price);
-  const c5 = candlesGot(f5, '5m');
-  if (isAbsent(c5)) return c5;
-  // Parkinson na chwilę migawki świec 5m (z pamięci do 60 s starszej niż `now`); zamknięta sesja — i tak na chwilę otwarcia
-  const at = snapAt(f5, now);
-  return expectedFrom(null, toVBars(c5), s, at, expectedBasis(s, inProgress, null, at).asOf, price);
+const expectedCandles = (src: Sources, s: TradeSession) => src.candles('1h', expectedCandlesFrom(s), s.start - 1);
+
+/**
+ * Oczekiwany zakres sesji (MODEL „profil × poziom”) jak na stronie (`sessionExpectedOf`): ze świec 1h sprzed otwarcia,
+ * ten sam w toku i po zamknięciu. Liczba i powód braku z `expectedFrom`; tu tylko powód nieudanego pobrania świec.
+ */
+function sessionExpected(s: TradeSession, f1h: Fetched<Candle[]>): Got<Expected> {
+  const c = candlesGot(f1h, '1h');
+  if (isAbsent(c)) return c;
+  return expectedFrom(toVBars(c), s);
 }
 
 // ───────────────────────── session_context ─────────────────────────
@@ -89,7 +82,10 @@ export interface SessionContextData {
   ib: { high: Num; low: Num; complete: boolean } | null;
   /** Typ dnia wg Daltona (MODEL) sesji w toku po IB: normal, normal-variation, trend albo neutral; brak — null (powód w `notes`). */
   dayTypeSoFar: KnownDayType | null;
+  /** Oczekiwany (średni) zakres sesji, liczony raz na otwarcie sesji. */
   expectedRange: Num;
+  /** Typowy dzień: ok. mediana zakresu sesji (0,87 × oczekiwany); w połowie dni zakres jest poniżej. */
+  typical: Num;
   /** Zakres sesji dotąd / oczekiwany zakres (1 = cały oczekiwany zakres). */
   rangeBudget: Num;
   vwap: Num;
@@ -101,15 +97,12 @@ const NAME_CONTEXT = 'session_context';
 const RVOL_METHOD = tr('mediana 20 dni', '20-day median');
 const DALTON = 'MODEL · Dalton';
 const EXPECTED_NOTE: Record<Expected['method'], string> = {
-  har: tr(
-    'E[H−L] = √(8/π)·σ sesji z modelu zmienności HAR (świece 1h i 5m Hyperliquid, profil godzin)',
-    'E[H−L] = √(8/π)·session σ from the HAR volatility model (Hyperliquid 1h and 5m candles, hourly profile)'
-  ),
-  parkinson: tr(
-    'bez modelu HAR: σ Parkinsona z ostatnich zamkniętych świec 5m (z ostatniej doby) przeskalowana do długości sesji, E[H−L] = √(8/π)·σ',
-    'without the HAR model: Parkinson σ from the latest closed 5m candles (of the last day) scaled to the session length, E[H−L] = √(8/π)·σ'
+  profile: tr(
+    'oczekiwany (średni) zakres ze świec 1h Hyperliquid: profil godzin sesji z 20 dni tego samego typu (robocze albo weekend) razy poziom zmienności z 24 h przed otwarciem, E = 0,97·√(8/π)·√V·exp(0,60·x), liczony raz na otwarcie sesji',
+    'expected (mean) range from Hyperliquid 1h candles: the hourly profile of the session from 20 days of the same type (weekday or weekend) times the volatility level of the 24 h before the open, E = 0.97·√(8/π)·√V·exp(0.60·x), computed once at the session open'
   ),
 };
+const TYPICAL_NOTE = tr('typowy dzień: w połowie dni zakres sesji jest poniżej tej wartości (0,87 × oczekiwany)', 'typical day: on half of the days the session range is below this value (0.87 × expected)');
 const NO_IB = tr('Brak świec 1m z pierwszej godziny sesji (IB)', 'No 1m candles from the first hour of the session (IB)');
 
 /** Część odpowiedzi zależna od sesji w toku (w Azji — same powody). */
@@ -117,10 +110,18 @@ interface SessionPart {
   ib: SessionContextData['ib'];
   dayTypeSoFar: KnownDayType | null;
   expectedRange: Num;
+  typical: Num;
   rangeBudget: Num;
   sources: SourceRef[];
   note: string;
 }
+
+/** Liczby oczekiwanego zakresu bez wartości: ten sam powód w każdej */
+const noExpected = (why: string) => ({
+  expectedRange: num(null, 'usd', 'MODEL', { why }),
+  typical: num(null, 'usd', 'MODEL', { why }),
+  rangeBudget: num(null, 'ratio', 'MODEL', { why }),
+});
 
 function ibNum(sn: Got<SessionNow>, s: TradeSession, now: number, edge: 'ibHi' | 'ibLo'): Num {
   if (isAbsent(sn)) return num(null, 'price', 'LIVE', { why: sn.why });
@@ -138,8 +139,7 @@ function asianPart(now: number): SessionPart {
   return {
     ib: null,
     dayTypeSoFar: null,
-    expectedRange: num(null, 'usd', 'MODEL', { why }),
-    rangeBudget: num(null, 'ratio', 'MODEL', { why }),
+    ...noExpected(why),
     sources: [],
     note: tr('sesja azjatycka, typ dnia liczymy w sesjach Londynu i NY', 'Asian session, the day type is computed in the London and NY sessions'),
   };
@@ -147,16 +147,16 @@ function asianPart(now: number): SessionPart {
 
 /**
  * Sesja w toku: IB i zakres ze świec 1m (`sessionNowOf`, jak Kokpit i Otwarcie aukcji), typ dnia z faktów sesji
- * (`sessionFacts` + `dayTypeOf`, jak nagłówek Rozliczenie), oczekiwany zakres i budżet. Świece 5m i model pobierane od razu,
- * równolegle ze świecami 1m (`p1`, już w drodze).
+ * (`sessionFacts` + `dayTypeOf`, jak nagłówek Rozliczenie), oczekiwany zakres i budżet. Świece 1h do oczekiwanego zakresu
+ * pobierane od razu, równolegle ze świecami 1m (`p1`, już w drodze).
  */
 async function sessionPart(src: Sources, s: TradeSession, p1: Promise<Fetched<Candle[]>>, now: number): Promise<SessionPart> {
-  const [f1, f5, fv] = await Promise.all([p1, src.candles('5m', now - DAY), src.volModel()]);
-  const sources = [candleSource('5m', f5), volSource(fv)];
+  const [f1, fe] = await Promise.all([p1, expectedCandles(src, s)]);
+  const sources = [candleSource('1h', fe)];
   const ib = (sn: Got<SessionNow>) => ({ high: ibNum(sn, s, now, 'ibHi'), low: ibNum(sn, s, now, 'ibLo'), complete: now >= s.ibEnd });
   const c1 = candlesGot(f1, '1m');
   if (isAbsent(c1)) {
-    return { ib: ib(c1), dayTypeSoFar: null, expectedRange: num(null, 'usd', 'MODEL', { why: c1.why }), rangeBudget: num(null, 'ratio', 'MODEL', { why: c1.why }), sources, note: `${DALTON}: ${c1.why}` };
+    return { ib: ib(c1), dayTypeSoFar: null, ...noExpected(c1.why), sources, note: `${DALTON}: ${c1.why}` };
   }
 
   const f = sessionFacts(toVBars(c1), s, now);
@@ -166,16 +166,12 @@ async function sessionPart(src: Sources, s: TradeSession, p1: Promise<Fetched<Ca
   const note = isAbsent(d) ? `${DALTON}: ${d.why}` : tr(`${DALTON}, sesja w toku: typ może się zmienić do jej końca`, `${DALTON}, session in progress: the type may change until it ends`);
 
   const sn = sessionNowOf(c1, now);
-  if (isAbsent(sn)) return { ib: ib(sn), dayTypeSoFar, expectedRange: num(null, 'usd', 'MODEL', { why: sn.why }), rangeBudget: num(null, 'ratio', 'MODEL', { why: sn.why }), sources, note };
+  if (isAbsent(sn)) return { ib: ib(sn), dayTypeSoFar, ...noExpected(sn.why), sources, note };
 
-  const model = fv.ok ? fv.value : null;
-  const e = sessionExpected(s, true, model, f5, now, c1[c1.length - 1].c);
-  if (isAbsent(e)) return { ib: ib(sn), dayTypeSoFar, expectedRange: num(null, 'usd', 'MODEL', { why: e.why }), rangeBudget: num(null, 'ratio', 'MODEL', { why: e.why }), sources, note };
-  const harWhy = !fv.ok ? fv.why : fv.value === null ? tr('za mało świec 1h albo 5m', 'too few 1h or 5m candles') : null;
-  const expectedRange = num(e.usd, 'usd', 'MODEL', {
-    method: e.method,
-    note: e.method === 'parkinson' && harWhy ? `${EXPECTED_NOTE.parkinson} (${tr('model HAR', 'HAR model')}: ${harWhy})` : EXPECTED_NOTE[e.method],
-  });
+  const e = sessionExpected(s, fe);
+  if (isAbsent(e)) return { ib: ib(sn), dayTypeSoFar, ...noExpected(e.why), sources, note };
+  const expectedRange = num(e.usd, 'usd', 'MODEL', { method: e.method, note: EXPECTED_NOTE[e.method] });
+  const typical = num(e.typical, 'usd', 'MODEL', { method: e.method, note: TYPICAL_NOTE });
   const rangeBudgetNum = num(rangeBudget(sn.hi, sn.lo, e.usd), 'ratio', 'MODEL', {
     method: e.method,
     why: tr('brak zakresu sesji', 'no session range'),
@@ -184,7 +180,7 @@ async function sessionPart(src: Sources, s: TradeSession, p1: Promise<Fetched<Ca
       `session range ${amt(sn.hi - sn.lo)} USD (${px(sn.lo)}–${px(sn.hi)}) of an expected ${amt(e.usd)} USD`
     ),
   });
-  return { ib: ib(sn), dayTypeSoFar, expectedRange, rangeBudget: rangeBudgetNum, sources, note };
+  return { ib: ib(sn), dayTypeSoFar, expectedRange, typical, rangeBudget: rangeBudgetNum, sources, note };
 }
 
 /** Cena (zamknięcie ostatniej świecy 1m), VWAP doby UTC i odległość od niego w σ — jak liczba VWAP w nagłówku układu. */
@@ -224,7 +220,7 @@ async function contextRun(src: Sources): Promise<Envelope<SessionContextData>> {
   const now = src.now();
   const s = currentTradeSession(now);
   const hour = Math.floor(now / HOUR) * HOUR;
-  // Wszystkie żądania naraz (jeden limit czasu na całość); w Azji bez świec 5m i modelu — nie ma sesji do oceny
+  // Wszystkie żądania naraz (jeden limit czasu na całość); w Azji bez świec do oczekiwanego zakresu — nie ma sesji do oceny
   const p1 = src.candles('1m', utcDayStart(now));
   // Baza RVOL: 20 dni tego samego typu (weekend do ok. 70 dni wstecz)
   const p1h = src.candles('1h', hour - (RVOL_LOOKBACK_DAYS + 1) * DAY);
@@ -238,6 +234,7 @@ async function contextRun(src: Sources): Promise<Envelope<SessionContextData>> {
     ib: part.ib,
     dayTypeSoFar: part.dayTypeSoFar,
     expectedRange: part.expectedRange,
+    typical: part.typical,
     rangeBudget: part.rangeBudget,
     rvolHour: rvolNum(f1h, now),
   };
@@ -249,8 +246,8 @@ export const sessionContext: ToolDef = {
   name: NAME_CONTEXT,
   title: tr('Sesja Londynu albo NY w toku', 'London or NY session now'),
   description: tr(
-    'Bieżąca sesja BTC (Londyn od 08:00 czasu londyńskiego, NY od 09:30 czasu nowojorskiego; w Azji session null i godzina następnego otwarcia): Initial Balance (pierwsza godzina), typ dnia dotąd (Dalton, po IB), oczekiwany zakres sesji (MODEL: HAR albo Parkinson), budżet zakresu (zakres dotąd / oczekiwany), VWAP doby UTC i odległość ceny od niego w σ, RVOL bieżącej godziny (MODEL: mediana 20 dni). Liczone tymi samymi funkcjami i tą samą metodą co nagłówek układu na wykresie HyperQuant, ze świec Hyperliquid; cena (świece do 60 s) i model zmienności (do 15 min) odświeżają się w innym rytmie niż na stronie, więc liczby mogą się nieco różnić. Bez argumentów. Dane publiczne, tylko odczyt; opis rynku, nie porada inwestycyjna.',
-    'The current BTC session (London from 08:00 London time, NY from 09:30 New York time; in Asian hours session is null with the next open): the Initial Balance (first hour), the day type so far (Dalton, after the IB), the expected session range (MODEL: HAR or Parkinson), the range budget (range so far / expected), the UTC-day VWAP and the price distance from it in σ, and the current hour RVOL (MODEL: 20-day median). Computed with the same functions and method as the layout header on the HyperQuant chart, from Hyperliquid candles; the price (candles up to 60 s old) and the volatility model (up to 15 min) refresh on a different schedule than the site, so the numbers can differ slightly. No arguments. Public read-only data; market description, not investment advice.'
+    'Bieżąca sesja BTC (Londyn od 08:00 czasu londyńskiego, NY od 09:30 czasu nowojorskiego; w Azji session null i godzina następnego otwarcia): Initial Balance (pierwsza godzina), typ dnia dotąd (Dalton, po IB), oczekiwany (średni) zakres sesji i typowy dzień (MODEL: profil godzin × poziom zmienności z 24 h, ze świec 1h, liczony raz na otwarcie sesji), budżet zakresu (zakres dotąd / oczekiwany), VWAP doby UTC i odległość ceny od niego w σ, RVOL bieżącej godziny (MODEL: mediana 20 dni). Liczone tymi samymi funkcjami i tą samą metodą co nagłówek układu na wykresie HyperQuant, ze świec Hyperliquid; cena (świece do 60 s) odświeża się w innym rytmie niż na stronie, więc liczby mogą się nieco różnić. Bez argumentów. Dane publiczne, tylko odczyt; opis rynku, nie porada inwestycyjna.',
+    'The current BTC session (London from 08:00 London time, NY from 09:30 New York time; in Asian hours session is null with the next open): the Initial Balance (first hour), the day type so far (Dalton, after the IB), the expected (mean) session range and a typical day (MODEL: hourly profile × volatility level of the last 24 h, from 1h candles, computed once at the session open), the range budget (range so far / expected), the UTC-day VWAP and the price distance from it in σ, and the current hour RVOL (MODEL: 20-day median). Computed with the same functions and method as the layout header on the HyperQuant chart, from Hyperliquid candles; the price (candles up to 60 s old) refreshes on a different schedule than the site, so the numbers can differ slightly. No arguments. Public read-only data; market description, not investment advice.'
   ),
   run: (src) => contextRun(src),
 };
@@ -362,30 +359,27 @@ async function reviewRun(src: Sources, args: unknown): Promise<Envelope<SessionR
   const { s, inProgress } = reviewSessionOf(now, id);
   const prev = previousSameSession(s);
   // Świece 1m od otwarcia poprzedniej sesji tego typu (migracja VA), jak karta; zamknięta sesja — do jej końca (stały klucz pamięci)
-  const [f1, f5, fm, fl, fc, fs, fv] = await Promise.all([
+  const [f1, fe, fm, fl, fc, fs] = await Promise.all([
     src.candles('1m', prev.start, inProgress ? undefined : s.end - 1),
-    // Zamknięta sesja: ocena ex ante ze świec 5m z doby przed otwarciem; w toku — ostatnia doba (gdy brak modelu HAR)
-    inProgress ? src.candles('5m', now - DAY) : src.candles('5m', s.start - DAY, s.start - 1),
+    // Oczekiwany zakres ze świec 1h sprzed otwarcia — ten sam w toku i po zamknięciu sesji
+    expectedCandles(src, s),
     src.blogMaps(),
     src.published('liq-tape/BTC.json', isLiqTape),
     src.published('cohorts/BTC.json', isCohortFlow),
     src.published('ledger/BTC/summary.json', isDeskLedgerSummary),
-    inProgress ? src.volModel() : null,
   ]);
   const sources: SourceRef[] = [
     candleSource('1m', f1),
-    candleSource('5m', f5),
+    candleSource('1h', fe),
     fileSource(tr('Mapy z bloga HyperQuant', 'HyperQuant blog maps'), fm),
     fileSource(tr('Taśma likwidacji skanera', 'Scanner liquidation tape'), fl),
     fileSource(tr('Przepływ kohort skanera', 'Scanner cohort flow'), fc),
     fileSource(tr('Podsumowanie dziennika prognoz', 'Forecast ledger summary'), fs),
   ];
-  if (fv) sources.push(volSource(fv));
 
   const c1 = candlesGot(f1, '1m');
   const bars1m = isAbsent(c1) ? c1 : toVBars(c1);
-  // Cena do oczekiwanego zakresu: zamknięcie sesji, bez świec sesji — ostatnia świeca 1m (strona: ostatnia cena rynku)
-  const expected = isAbsent(c1) ? c1 : sessionExpected(s, inProgress, fv?.ok ? fv.value : null, f5, now, sessionCloseOf(bars1m, s, now, c1[c1.length - 1].c));
+  const expected = sessionExpected(s, fe);
 
   const gm = fm.ok ? guardedMaps(fm.value) : null;
   const maps: BlogMapsState = gm ? gm.state : { status: 'missing', maps: [] };
@@ -396,7 +390,7 @@ async function reviewRun(src: Sources, args: unknown): Promise<Envelope<SessionR
   const cohorts: CohortFlowState = { status: co.status, flow: co.value };
   const ledger: DeskLedgerState = { status: lg.status, summary: lg.value };
 
-  const rows = reviewRows({ s, inProgress, now, bars1m, maps, expected, volLoading: false, liq, cohorts, ledger }).map(
+  const rows = reviewRows({ s, inProgress, now, bars1m, maps, expected, liq, cohorts, ledger }).map(
     (r): SessionReviewRow => ({
       id: r.id,
       key: r.key,

@@ -20,7 +20,8 @@ import type {
 import { fmtVol } from '../../orderflow/footprint';
 import { fmtSignedVol } from '../../orderflow/renderer';
 import { DEFAULT_THRESHOLD_USD, autoThreshold } from '../core/clashes';
-import { Ohlc, cvdCandles, cvdLine, deltaCandle, flipsEmpty, oiChangeLine } from '../core/flow';
+import { Ohlc, cvdCandles, cvdLine, flipsEmpty, oiChangeLine } from '../core/flow';
+import { deltaPoint, flowLegend, hlDelta } from './flowPoints';
 import { BarStat, VENUE_GROUPS, barStat } from '../core/stats';
 import { hlTick, rowAt } from '../core/footprintBar';
 import type { LiqLevel } from '../core/indicators';
@@ -171,9 +172,6 @@ function toVolume(b: ProBar): HistogramData<Time> {
   return { time: sec(b.t), value: c.v, color: c.c >= c.o ? PRO.volBuy : PRO.volSell };
 }
 
-function toDelta(b: ProBar): CandlestickData<Time> | WhitespaceData<Time> {
-  return b.fp ? { time: sec(b.t), ...deltaCandle(b.fp) } : { time: sec(b.t) };
-}
 
 function toCvd(t: number, c: Ohlc | null): CandlestickData<Time> | WhitespaceData<Time> {
   return c ? { time: sec(t), ...c } : { time: sec(t) };
@@ -222,14 +220,6 @@ const CONE_LEVELS = [
 type VenueLines = Partial<Record<VenueLineId, (number | null)[]>>;
 
 const fmtFunding = (r: number | null) => (r === null ? '—' : `${r >= 0 ? '+' : ''}${numLang((r * 100).toFixed(4))}%`);
-
-function flowLegend(label: string, value: number | null): LegendPart[] {
-  if (value === null) return [{ text: label, color: PRO.ink3 }];
-  return [
-    { text: label, color: PRO.ink3 },
-    { text: fmtSignedVol(value), color: value >= 0 ? PRO.buyInk : PRO.sellInk },
-  ];
-}
 
 /** Linie poziomów w panelu wskaźnika (RSI 70, 50, 30): widoczne, ale ciszej niż linia wskaźnika. */
 const LEVEL_COLOR = rgba(PRO.ink3, 0.45);
@@ -443,6 +433,12 @@ export class ProChartController {
       container.dataset.bubbles = String(n);
     };
     this.overlay = new IndicatorOverlay(toggles(settings, series.interval.ms));
+    // Profile okresów i TPO: liczba obiektów i udział pola pod słupkami (pomiar układu czyta je z atrybutów)
+    const pct = (x: number) => (x * 100).toFixed(1);
+    this.overlay.onPeriods = (c) => {
+      container.dataset.periodObjects = String(c.objects);
+      container.dataset.periodArea = pct(c.area);
+    };
     // Liczba obiektów zakresu początkowego sesji na ekranie (pomiar układu czyta ją z atrybutu)
     this.overlay.onIb = (n) => {
       container.dataset.ibObjects = String(n);
@@ -460,6 +456,10 @@ export class ProChartController {
     };
     this.main.attachPrimitive(this.zones);
     this.tpo = new TpoLayer(settings.showTpo, settings.showTpoOi);
+    this.tpo.onCounts = (c) => {
+      container.dataset.tpoObjects = String(c.objects);
+      container.dataset.tpoArea = pct(c.area);
+    };
     this.main.attachPrimitive(this.tpo);
     for (const p of CHART_PLUGINS) {
       const layer = p.create();
@@ -1400,7 +1400,7 @@ export class ProChartController {
       }
       this.main.setData(next.map(toPoint));
       this.volume?.setData(next.map(toVolume));
-      this.delta?.setData(next.map(toDelta));
+      this.delta?.setData(next.map(deltaPoint));
       this.statsSeries?.setData(next.map((b) => ({ time: sec(b.t) })));
       if (this.toNow && next.length > 0) {
         this.toNow = false;
@@ -1414,10 +1414,10 @@ export class ProChartController {
         const b = next[i];
         this.main.update(toPoint(b), historical);
         this.volume?.update(toVolume(b), historical);
-        if (!deltaReset) this.delta?.update(toDelta(b), historical);
+        if (!deltaReset) this.delta?.update(deltaPoint(b), historical);
         if (!historical) this.statsSeries?.update({ time: sec(b.t) });
       }
-      if (deltaReset) this.delta?.setData(next.map(toDelta));
+      if (deltaReset) this.delta?.setData(next.map(deltaPoint));
     }
     const ms = this.series.interval.ms;
     this.overlay.setBars(next, ms, this.store.vwapCandles(this.series.interval), this.store.serverNow());
@@ -1608,7 +1608,7 @@ export class ProChartController {
     const times = bars.map((b) => b.t);
     if (this.venueCvd) {
       const next: VenueLines = {
-        hl: cvdLine(times, (i) => bars[i].fp?.delta ?? null, mode),
+        hl: cvdLine(times, (i) => hlDelta(bars[i]), mode),
         binance: cvdLine(times, (i) => v.delta('binance', iv, times[i], now), mode),
         binanceSpot: cvdLine(times, (i) => v.delta('binanceSpot', iv, times[i], now), mode),
         bybit: cvdLine(times, (i) => v.delta('bybit', iv, times[i], now), mode),
@@ -1751,8 +1751,9 @@ export class ProChartController {
     );
     // Liczby taśmy świecy (dawniej linia legendy nad świecami) w opisie panelu delty, a bez niego w opisie CVD; na telefonie bez nich
     const stats = bar && !this.phone ? deltaStatsParts(bar) : [];
-    this.deltaLegend.set([...flowLegend('Delta', bar?.fp ? bar.fp.delta : null), ...stats]);
-    const cvdStats = this.settings.showDelta || stats.length === 0 ? [] : [...flowLegend('Δ', bar?.fp ? bar.fp.delta : null), ...stats];
+    const partial = bar?.complete === false;
+    this.deltaLegend.set([...flowLegend('Delta', bar?.fp ? bar.fp.delta : null, partial), ...stats]);
+    const cvdStats = this.settings.showDelta || stats.length === 0 ? [] : [...flowLegend('Δ', bar?.fp ? bar.fp.delta : null, partial), ...stats];
     this.cvdLegend.set([...flowLegend(`CVD · ${RESET_LABEL[this.settings.cvdReset]}`, cvd ? cvd.close : null), ...cvdStats]);
     // Wąski wykres (telefon): bez okresu (ten sam co w opisie CVD) i bez wiersza finansowania — opis mieści się w dwóch wierszach
     const compact = this.chart.timeScale().width() < COMPACT_LEGEND_PX;
