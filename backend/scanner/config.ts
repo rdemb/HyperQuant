@@ -20,8 +20,12 @@ export interface GitConfig {
 
 export interface ScannerConfig {
   coin: string;
-  /** Budżet wag API Hyperliquid na minutę (limit giełdy 1200/min/IP — reszta zostaje dla innych usług) */
+  /** Budżet wag API Hyperliquid na minutę dla odczytów pozycji (limit giełdy 1200/min/IP — reszta dla innych usług) */
   weightPerMin: number;
+  /** Osobny budżet wag na potwierdzenia likwidacji (`userFillsByTime`) — nie zabierają odczytów pozycji */
+  liqWeightPerMin: number;
+  /** Osobny budżet wag na prognozy dziennika, rynek HIP-4 i archiwum świec (świece, funding) */
+  forecastWeightPerMin: number;
   stateDir: string;
   outDir: string;
   publishEveryS: number;
@@ -56,6 +60,8 @@ export function loadConfig(env: Env): { ok: true; config: ScannerConfig } | { ok
   if (!stateDir) errors.push('brak HQ_STATE_DIR (katalog stanu skanera)');
   if (!outDir) errors.push('brak HQ_OUT_DIR (katalog publikowanych plików)');
   const weightPerMin = intIn(env, 'HQ_WEIGHT_PER_MIN', 240, 30, 600, errors);
+  const liqWeightPerMin = intIn(env, 'HQ_LIQ_WEIGHT_PER_MIN', 90, 30, 300, errors);
+  const forecastWeightPerMin = intIn(env, 'HQ_FORECAST_WEIGHT_PER_MIN', 120, 30, 600, errors);
   const publishEveryS = intIn(env, 'HQ_PUBLISH_EVERY_S', 60, 15, 3600, errors);
   const maxAddresses = intIn(env, 'HQ_MAX_ADDRESSES', 50_000, 100, 500_000, errors);
   const seedTop = intIn(env, 'HQ_SEED_TOP', 5000, 0, 20_000, errors);
@@ -94,8 +100,9 @@ export function loadConfig(env: Env): { ok: true; config: ScannerConfig } | { ok
   const whaleWeight = intIn(env, 'HQ_WHALE_WEIGHT_PER_MIN', 200, 30, 600, errors);
   const whales = whaleTop > 0 ? { top: whaleTop, weightPerMin: whaleWeight } : null;
   // Razem najwyżej 2/3 limitu giełdy na IP — reszta dla innych usług na tym serwerze
-  if (weightPerMin + (whales?.weightPerMin ?? 0) > 800) errors.push('HQ_WEIGHT_PER_MIN + HQ_WHALE_WEIGHT_PER_MIN: razem najwyżej 800 wag/min');
+  if (weightPerMin + liqWeightPerMin + forecastWeightPerMin + (whales?.weightPerMin ?? 0) > 800)
+    errors.push('HQ_WEIGHT_PER_MIN + HQ_LIQ_WEIGHT_PER_MIN + HQ_FORECAST_WEIGHT_PER_MIN + HQ_WHALE_WEIGHT_PER_MIN: razem najwyżej 800 wag/min');
 
   if (errors.length > 0) return { ok: false, errors };
-  return { ok: true, config: { coin, weightPerMin, stateDir, outDir, publishEveryS, maxAddresses, seedTop, seedMinUsd, r2, git, history, whales } };
+  return { ok: true, config: { coin, weightPerMin, liqWeightPerMin, forecastWeightPerMin, stateDir, outDir, publishEveryS, maxAddresses, seedTop, seedMinUsd, r2, git, history, whales } };
 }
