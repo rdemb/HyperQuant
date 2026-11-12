@@ -114,6 +114,10 @@ describe('catCal: dane syntetyczne (20 dni, prawdziwa szansa σ(z + 0,6) w dni r
 });
 
 describe('plan cat-cal-v1', () => {
+  it('zapisuje odtwarzalną procedurę pasma decyli przed rejestracją', () => {
+    expect(CAT_CAL_DESIGN.criteria.calibration).toContain('mulberry32, ziarno 20261111, 1000 losowań, 2,5. i 97,5. percentyl częstości w decylu');
+    expect(CAT_CAL_DESIGN.criteria.calibration).toContain('src/utils/ledgerBootstrap.ts');
+  });
   it('stałe planu zgodne z projektem', () => {
     expect(CAT_CAL_DESIGN).toMatchObject({ id: 'cat-cal-v1', windowDays: 14, priorVar: { a: 1, d: 0.25 }, clip: 1.5, minPairs: 96, newtonSteps: 25, blockDays: 14, hacLag: 96, minN: 672 });
   });

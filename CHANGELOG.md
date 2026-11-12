@@ -6,6 +6,11 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ### Zegar ruchu w „Przed sesją” i w MCP (2026-11-12)
 
+#### Poprawione
+
+- Panel zegara podaje nazwę lokalnej strefy czasowej wyświetlanych godzin (PL i EN).
+- Plan `cat-cal-v1` określa procedurę pasma decyli przed rejestracją: losowanie dób UTC, mulberry32, ziarno 20261111, 1000 losowań i percentyle 2,5 oraz 97,5.
+
 #### Dodane
 - **Panel „Zegar ruchu”** (`src/views/before/MoveClockPanel.tsx`, ekran „Przed sesją”): najbliższa godzina (okno ostatniej prognozy kota z rejestru) jako poziom bez procentu — spokojny, zwykły albo podwyższony według tercyla `pBig` wśród rozstrzygniętych prognoz kota z 14 dni (od 96) — obok AUC z rejestru i zdanie „Procenty w trakcie kalibracji, wynik w rejestrze”; godziny 2–24 jako baza sezonowa: w ilu z 20 ostatnich dni tego samego typu (robocze albo weekend UTC) w tej godzinie był duży ruch kota („k z n dni”, MODEL „baza sezonowa”, bez twierdzenia o przewadze). Brak danych to „—” z powodem (za mało prognoz z 14 dni, ostatnia prognoza starsza niż 45 min, starsze podsumowanie). Procentu jako szansy nie ma nigdzie do awansu kalibracji `cat-cal-v1`.
 - **Podsumowanie `cat.clock`** (`src/utils/moveClock.ts`, `backend/scanner/forecaster.ts`, pole opcjonalne): tercyle `pBig` z 14 dni i baza sezonowa 24 godziny × 2 typy dnia z pełnych godzin kota z całego dziennika.

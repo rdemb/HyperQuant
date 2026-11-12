@@ -645,7 +645,7 @@ describe('LedgerRunner — kalibracja cat-cal-v1 (pole cal rekordu kota)', () =>
 
   it('plan prerejestrowany raz przed pierwszym cal; cal = catCal na parach z dziennika (te same rekordy, ta sama kolejność)', async () => {
     // Zmiana planu = nowy identyfikator; przypięty hash chroni przed cichą zmianą planu już zapisanego w dzienniku
-    expect(createHash('sha256').update(canonicalJson(CAT_CAL_DESIGN)).digest('hex')).toBe('7d456476a5ae772806ca5bbd0bc5a9e79a097de8ea11cafd267bba1afbd495cf');
+    expect(createHash('sha256').update(canonicalJson(CAT_CAL_DESIGN)).digest('hex')).toBe('1b773e85221fede5fca3a0c6934094ca32e6b4092957e06e7fd67fe187e75b73');
     const { r, dir, bodies } = seeded(120);
     expect(r.init(SLOT0).ok).toBe(true);
     await r.tick(SLOT0 + 30_000);
