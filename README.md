@@ -135,4 +135,4 @@ Guidelines, conventions and the PR checklist: [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ## License
 
-MIT, see [LICENSE](LICENSE). Charts use TradingView Lightweight Charts™ by [TradingView](https://www.tradingview.com/) (Apache 2.0), see [NOTICE](NOTICE).
+MIT, see [LICENSE](LICENSE). The forecast ledger data (the `ledger` branch of [hyperquant-data](https://github.com/rdemb/hyperquant-data/tree/ledger)) is licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Charts use TradingView Lightweight Charts™ by [TradingView](https://www.tradingview.com/) (Apache 2.0), see [NOTICE](NOTICE).
