@@ -152,6 +152,15 @@ describe('ProStore.restoreHistory — bez dublowania zleceń', () => {
     expect(s.orders.length).toBe(HIST_HOUR_MS / 30_000);
   });
 
+  it('wersja historii rośnie tylko z nowymi zleceniami z historii (progi godzin liczone wtedy od nowa)', () => {
+    const s = store();
+    const fills = toFills(tradesIn(H0, H0 + HIST_PART_MS, 1), H0, 'hour');
+    s.restoreHistory(batch(fills, H0, H0 + HIST_PART_MS));
+    expect(s.historyVersion).toBe(1);
+    s.restoreHistory(batch(fills, H0, H0 + HIST_PART_MS));
+    expect(s.historyVersion).toBe(1);
+  });
+
   it('od początku strumienia na żywo zlecenia tylko z transakcji, których strumień nie widział (luka połączenia)', () => {
     const s = store();
     const live = H0 + 2 * 60_000;

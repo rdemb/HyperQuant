@@ -40,8 +40,10 @@ import { NumbersCard, StatGroupPicker } from './chart/NumbersCard';
 import { IndicatorsDialog, type IndicatorsSection, type ToggleItem } from './chart/IndicatorsDialog';
 import { IndicatorSettings } from './chart/IndicatorSettings';
 import { indicatorLabel, indicatorsLink } from './indicators/registry';
+import { NAKED_POC_SHOWN, PROFILE_EVIDENCE } from './chart/profileSelect';
 import { IB_EVIDENCE } from './chart/ibSelect';
-import { BURSTS_MAX, CLASHES_EVIDENCE, WALLS_DONE_MAX, WALLS_LIVE_MAX, WALL_MIN_MS } from './chart/clashSelect';
+import { BURSTS_MAX, CLASHES_EVIDENCE, RANK_WINDOW_MS, WALLS_DONE_MAX, WALLS_K, WALLS_LIVE_MAX, WALL_MIN_MS } from './chart/clashSelect';
+import { BUBBLES_BARS, BUBBLES_EVIDENCE, BUBBLES_K, BUBBLES_MAX } from './chart/bubbleSelect';
 import { AUCTIONS_PER_SIDE, ZONES_EVIDENCE, ZONES_PER_SIDE } from './chart/zonesSelect';
 import { MarketStateBar } from './chart/MarketStateBar';
 import { LayoutHeader } from './chart/LayoutHeader';
@@ -942,8 +944,6 @@ export const ProChart: React.FC<{
                   id={station.id}
                   question={station.question}
                   store={store}
-                  model={store.coin === 'BTC' ? feed.vol.model : null}
-                  volStatus={feed.vol.status}
                   liq={liq}
                   whales={whales}
                   whalesConfigured={whalePub.configured}
@@ -1077,8 +1077,6 @@ export const ProChart: React.FC<{
                     id={station.id}
                     question={station.question}
                     store={store}
-                    model={store.coin === 'BTC' ? feed.vol.model : null}
-                    volStatus={feed.vol.status}
                     liq={liq}
                     whales={whales}
                     whalesConfigured={whalePub.configured}
@@ -1704,6 +1702,14 @@ function whaleHint(w: WhaleLayer | null, coin: string): string {
 /** Warstwy orderflow na wykresie ceny (sekcja „Orderflow” okna wskaźników): opis z progami i powód, gdy nie działają. */
 function flowLayers(s: ChartSettings, intervalMs: number, liq: LiqMapState, whales: WhaleLayer | null, bigUsd: number): ToggleItem[] {
   const big = `${compact(bigUsd)} USD${s.bigTradeUsd === 0 ? tr(' (próg automatyczny)', ' (automatic threshold)') : ''}`;
+  // Bąble: próg ręczny z ustawień albo reguła przyczynowa (wśród największych z poprzednich 20 świec w chwili wykonania)
+  const bubbleFrom =
+    s.bigTradeUsd > 0
+      ? { pl: `od ${big}`, en: `from ${big}` }
+      : {
+          pl: `gdy w chwili wykonania zlecenie było wśród ${BUBBLES_K} największych z poprzednich ${BUBBLES_BARS} świec (na telefonie największe), najwyżej ${BUBBLES_K} na świecę (na telefonie 1); po zamknięciu świecy bąble się nie zmieniają, niezależnie od przewinięcia. Bąble pojawiają się, gdy taśma zleceń obejmuje całe okno porównania (${BUBBLES_BARS} świec przed zleceniem)`,
+          en: `when at execution the order was among the ${BUBBLES_K} largest of the previous ${BUBBLES_BARS} candles (on a phone the largest), at most ${BUBBLES_K} per candle (on a phone 1); once a candle closes its bubbles do not change, whatever the scroll. Bubbles appear when the order tape covers the whole comparison window (${BUBBLES_BARS} candles before the order)`,
+        };
   const scope = indicatorScope(intervalMs);
   const vwapOff = fromDaily(intervalMs) ? tr('Na interwałach do 1D', 'On timeframes up to 1D') : undefined;
   return [
@@ -1720,8 +1726,8 @@ function flowLayers(s: ChartSettings, intervalMs: number, liq: LiqMapState, whal
       key: 'showBubbles',
       label: tr('Bąble zleceń agresora', 'Aggressor order bubbles'),
       hint: tr(
-        `Zlecenia rynkowe od ${big} złożone z wypełnień; pole koła ∝ wartość, podwójny pierścień = bitwa z jednym dużym makerem; kliknij bąbel — od otwarcia strony, a z zapisem serwera z ostatniej doby`,
-        `Market orders from ${big} assembled from fills; circle area ∝ value, double ring = a battle with one large maker; click a bubble — since the page opened, plus the server's recording of the last day`
+        `Zlecenia rynkowe złożone z wypełnień, ${bubbleFrom.pl}. Pole koła ∝ wartość, podwójny pierścień = bitwa z jednym dużym makerem; kliknij bąbel. Na ekranie najwyżej ${BUBBLES_MAX} — od otwarcia strony, a z zapisem serwera z ostatniej doby. ${BUBBLES_EVIDENCE.pl}`,
+        `Market orders assembled from fills, ${bubbleFrom.en}. Circle area ∝ value, double ring = a battle with one large maker; click a bubble. At most ${BUBBLES_MAX} on screen — since the page opened, plus the server's recording of the last day. ${BUBBLES_EVIDENCE.en}`
       ),
       swatch: 'bg-gradient-to-r from-of-imb-buy to-of-imb-sell',
     },
@@ -1729,8 +1735,8 @@ function flowLayers(s: ChartSettings, intervalMs: number, liq: LiqMapState, whal
       key: 'showClashes',
       label: tr('Serie i ściany', 'Bursts and walls'),
       hint: tr(
-        `Seria (przerywany pierścień): drobne zlecenia co najmniej 4 adresów po jednej stronie w 2 s, razem od progu. Ściana (belka): jeden maker na jednej cenie przyjął od progu z co najmniej 3 zleceń; na wykresie, gdy trwała co najmniej ${WALL_MIN_MS / 1000} s albo wchłonęła co najmniej 3 × próg (krótsze w panelu Ściany). Próg z chwili zdarzenia: z taśmy poprzedniej pełnej godziny, więc ściany i serie z przeszłości nie znikają przy zmianie progu. Na ekranie najwyżej ${WALLS_DONE_MAX} największych ścian zakończonych, ${WALLS_LIVE_MAX} trwające i ${BURSTS_MAX} serii — od otwarcia strony, a z zapisem serwera z ostatniej doby. ${CLASHES_EVIDENCE.pl}`,
-        `Burst (dashed ring): small orders from at least 4 addresses on one side within 2 s, together above the threshold. Wall (bar): one maker at one price absorbed above the threshold from at least 3 orders; on the chart when it lasted at least ${WALL_MIN_MS / 1000} s or absorbed at least 3 × the threshold (shorter ones in the Walls panel). The threshold is the one in force when the event happened, from the tape of the previous full hour, so past walls and bursts do not vanish when the threshold changes. On screen at most ${WALLS_DONE_MAX} largest finished walls, ${WALLS_LIVE_MAX} ongoing and ${BURSTS_MAX} bursts — since the page opened, plus the server's recording of the last day. ${CLASHES_EVIDENCE.en}`
+        `Seria (przerywany pierścień): drobne zlecenia co najmniej 4 adresów po jednej stronie w 2 s, razem od progu. Ściana (belka): jeden maker na jednej cenie przyjął od progu z co najmniej 3 zleceń; na wykresie, gdy trwała co najmniej ${WALL_MIN_MS / 1000} s albo wchłonęła co najmniej 3 × próg (krótsze w panelu Ściany). Próg z chwili zdarzenia: z taśmy poprzedniej pełnej godziny. Ściana jest rysowana, gdy w chwili zakończenia była wśród ${WALLS_K} największych zakończonych w poprzednich ${RANK_WINDOW_MS / 60_000} min, seria — gdy była największa; raz narysowane zostają, niezależnie od przewinięcia. Ściany i serie pojawiają się, gdy taśma zleceń obejmuje całe okno porównania (${RANK_WINDOW_MS / 60_000} min przed końcem). Na ekranie najwyżej ${WALLS_DONE_MAX} ścian zakończonych, ${WALLS_LIVE_MAX} trwające i ${BURSTS_MAX} serii — od otwarcia strony, a z zapisem serwera z ostatniej doby. ${CLASHES_EVIDENCE.pl}`,
+        `Burst (dashed ring): small orders from at least 4 addresses on one side within 2 s, together above the threshold. Wall (bar): one maker at one price absorbed above the threshold from at least 3 orders; on the chart when it lasted at least ${WALL_MIN_MS / 1000} s or absorbed at least 3 × the threshold (shorter ones in the Walls panel). The threshold is the one in force when the event happened, from the tape of the previous full hour. A wall is drawn when at its end it was among the ${WALLS_K} largest finished in the previous ${RANK_WINDOW_MS / 60_000} min, a burst when it was the largest; once drawn they stay, whatever the scroll. Walls and bursts appear when the order tape covers the whole comparison window (${RANK_WINDOW_MS / 60_000} min before their end). On screen at most ${WALLS_DONE_MAX} finished walls, ${WALLS_LIVE_MAX} ongoing and ${BURSTS_MAX} bursts — since the page opened, plus the server's recording of the last day. ${CLASHES_EVIDENCE.en}`
       ),
       swatch: 'bg-of-buy',
       off: s.showBubbles ? undefined : tr('Razem z bąblami zleceń agresora', 'Together with aggressor order bubbles'),
@@ -1781,8 +1787,8 @@ function flowLayers(s: ChartSettings, intervalMs: number, liq: LiqMapState, whal
       key: 'showPeriodProfiles',
       label: scope.periodProfile === 'day' ? tr('Profile dób i nagie POC', 'Day profiles and naked POCs') : tr('Profile sesji i nagie POC', 'Session profiles and naked POCs'),
       hint: tr(
-        `Profil każdej ${scope.periodProfile === 'day' ? 'doby UTC' : 'sesji'} od jej początku; POC, którego cena potem nie dotknęła, ciągnie się do prawej krawędzi`,
-        `A profile of every ${scope.periodProfile === 'day' ? 'UTC day' : 'session'} from its start; a POC that price has not touched since extends to the right edge`
+        `Pełny profil ${scope.periodProfile === 'day' ? 'bieżącej i poprzedniej doby UTC' : 'bieżącej i poprzedniej sesji'} od jej początku, starsze — POC i pasek value area; POC, którego cena potem nie dotknęła, ciągnie się do prawej krawędzi (najwyżej ${NAKED_POC_SHOWN} najbliższe cenie). ${PROFILE_EVIDENCE.pl}`,
+        `A full profile of the ${scope.periodProfile === 'day' ? 'current and previous UTC day' : 'current and previous session'} from its start, older ones only the POC and the value area bar; a POC that price has not touched since extends to the right edge (at most ${NAKED_POC_SHOWN} nearest to price). ${PROFILE_EVIDENCE.en}`
       ),
       swatch: 'bg-of-vol',
       off: scope.periodProfile ? undefined : tr('Na interwałach do 4h', 'On timeframes up to 4h'),
@@ -1801,8 +1807,8 @@ function flowLayers(s: ChartSettings, intervalMs: number, liq: LiqMapState, whal
       key: 'showTpo',
       label: tr('Profil doby: wolumen, agresja, czas (TPO)', 'Day profile: volume, aggression, time (TPO)'),
       hint: tr(
-        'Profil wolumenu każdej doby UTC; kolor wiersza to strona agresywna z taśmy (niebieski kupno, czerwony sprzedaż, szary bez przewagi albo bez taśmy; starsze doby z nagrania serwera, 7 dób), cienki obrys to czas (ile okresów 30 min dotknęło ceny). POC i value area z wolumenu, zakres pierwszej godziny doby UTC (pasek liliowy; to nie initial balance sesji), pojedyncze wydruki i ogony, delta doby pod profilem; liczby wiersza pod krzyżem; zastępuje profile sesji',
-        'A volume profile of every UTC day; the row colour is the aggressive side from the tape (blue buy, red sell, grey no edge or no tape; older days from the server recording, 7 days), the thin outline is time (how many 30-minute periods touched the price). POC and value area from volume, the range of the first hour of the UTC day (lilac bar; not the session initial balance), single prints and tails, the day delta under the profile; row numbers under the crosshair; replaces session profiles'
+        `Profil wolumenu każdej doby UTC; kolor wiersza to strona agresywna z taśmy (niebieski kupno, czerwony sprzedaż, szary bez przewagi albo bez taśmy; starsze doby z nagrania serwera, 7 dób), cienki obrys to czas (ile okresów 30 min dotknęło ceny). POC i value area z wolumenu, zakres pierwszej godziny doby UTC (pasek liliowy; to nie initial balance sesji), pojedyncze wydruki i ogony, delta doby pod profilem; liczby wiersza pod krzyżem; zastępuje profile sesji. Pełny profil dla bieżącej i poprzedniej doby, starsze — POC i pasek value area; najdłuższy słupek do 35% doby i 30% wykresu; nagie POC: ${NAKED_POC_SHOWN} najbliższe cenie. ${PROFILE_EVIDENCE.pl}`,
+        `A volume profile of every UTC day; the row colour is the aggressive side from the tape (blue buy, red sell, grey no edge or no tape; older days from the server recording, 7 days), the thin outline is time (how many 30-minute periods touched the price). POC and value area from volume, the range of the first hour of the UTC day (lilac bar; not the session initial balance), single prints and tails, the day delta under the profile; row numbers under the crosshair; replaces session profiles. A full profile for the current and previous day, older ones only the POC and the value area bar; the longest bar up to 35% of the day and 30% of the chart; naked POCs: the ${NAKED_POC_SHOWN} nearest to price. ${PROFILE_EVIDENCE.en}`
       ),
       swatch: 'bg-of-svwap',
       off: tpoInterval(intervalMs) ? undefined : tr('Na interwałach do 30m', 'On timeframes up to 30m'),
