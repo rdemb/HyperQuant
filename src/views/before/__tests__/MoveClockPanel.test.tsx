@@ -8,12 +8,12 @@ import { guardHits } from '../../../utils/safeguards.mjs';
  * bez słów rady i kierunku (PL i EN).
  */
 
-const S = vi.hoisted(() => ({ lang: 'pl' as 'pl' | 'en', summary: null as unknown }));
+const S = vi.hoisted(() => ({ lang: 'pl' as 'pl' | 'en', summary: null as unknown, status: null as string | null }));
 vi.mock('../../../i18n', async (importOriginal) => {
   const m = await importOriginal<typeof import('../../../i18n')>();
   return { ...m, tr: <T,>(pl: T, en: T): T => (S.lang === 'en' ? en : pl) };
 });
-vi.mock('../../../state/useDeskLedger', () => ({ useDeskLedger: () => ({ status: S.summary ? 'ready' : 'loading', summary: S.summary }) }));
+vi.mock('../../../state/useDeskLedger', () => ({ useDeskLedger: () => ({ status: S.status ?? (S.summary ? 'ready' : 'loading'), summary: S.summary }) }));
 
 const MIN = 60_000;
 const NOW = Date.UTC(2026, 10, 12, 9, 20);
@@ -83,5 +83,11 @@ describe.each(['pl', 'en'] as const)('Zegar ruchu (%s)', (lang) => {
     t = text(await html());
     expect(t).toContain(lang === 'en' ? 'no clock section in the ledger summary' : 'brak sekcji zegara w podsumowaniu rejestru');
     expect(t).not.toMatch(/\d+ z 20 dni|\d+ of 20 days/);
+    // Nieudane pobranie podsumowania to inny powód niż brak sekcji
+    S.summary = null;
+    S.status = 'error';
+    t = text(await html());
+    expect(t).toContain(lang === 'en' ? 'ledger summary unavailable' : 'podsumowanie rejestru niedostępne');
+    S.status = null;
   });
 });

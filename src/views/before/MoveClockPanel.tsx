@@ -47,7 +47,12 @@ export const MoveClockPanel: React.FC = () => {
     >
       {!clock ? (
         <p className="text-ink-3">
-          {DASH} {status === 'loading' ? tr('czekam na podsumowanie rejestru', 'waiting for the ledger summary') : tr('brak sekcji zegara w podsumowaniu rejestru', 'no clock section in the ledger summary')}
+          {DASH}{' '}
+          {status === 'loading'
+            ? tr('czekam na podsumowanie rejestru', 'waiting for the ledger summary')
+            : !summary
+              ? tr('podsumowanie rejestru niedostępne (błąd pobrania), kolejna próba za chwilę', 'ledger summary unavailable (fetch error), retrying shortly')
+              : tr('brak sekcji zegara w podsumowaniu rejestru', 'no clock section in the ledger summary')}
         </p>
       ) : (
         <>
