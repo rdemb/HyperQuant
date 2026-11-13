@@ -98,7 +98,11 @@ export const fundingHourPct = (hourly: number | null): number | null => (hourly 
 export const fundingYearPct = (hourly: number | null): number | null => (hourly === null ? null : hourly * 24 * 365 * 100);
 
 /** Odczyt świeży: nie starszy niż 3 min (odczyt „z przyszłości” przy przestawionym zegarze też liczy się jako świeży). */
-export const isFresh = (at: number | null, now: number): boolean => at !== null && now - at <= MARKETS_STALE_MS;
+/** Dopuszczalny odczyt „z przyszłości” (zegar przeglądarki cofnięty); większy — nie jest świeży */
+export const MARKETS_FUTURE_SKEW_MS = 60_000;
+
+export const isFresh = (at: number | null, now: number): boolean =>
+  at !== null && now - at <= MARKETS_STALE_MS && at - now <= MARKETS_FUTURE_SKEW_MS;
 
 export type RowWhy = 'waiting' | 'no-response' | 'not-listed' | 'stale';
 

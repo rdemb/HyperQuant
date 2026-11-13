@@ -156,6 +156,8 @@ export interface MarketsPage {
   weight: number;
   weightLimit: number;
   refreshSec: number;
+  /** Liczba rynków w rejestrze (do opisu strony) */
+  marketCount: number;
   /** Chwila, według której liczona jest świeżość (ms) */
   now: number;
 }
@@ -191,5 +193,5 @@ export function useMarketsPage(): MarketsPage {
       }),
     [markets, snap, now, sort]
   );
-  return { groups, sort, setSort, weight: poller.meter.lastMinute(now), weightLimit: HL_WEIGHT_LIMIT_PER_MIN, refreshSec: MARKETS_REFRESH_MS / 1000, now };
+  return { groups, sort, setSort, weight: poller.meter.lastMinute(now), weightLimit: HL_WEIGHT_LIMIT_PER_MIN, refreshSec: MARKETS_REFRESH_MS / 1000, marketCount: markets.length, now };
 }
