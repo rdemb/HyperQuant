@@ -2,6 +2,7 @@ import { tr } from '../i18n';
 import { fmtPx } from '../charts/pro/core/footprintBar';
 import { DASH, fmtCompact, fmtPct } from '../ui/format';
 import type { ChartMarket } from './marketRegistry';
+import type { WallStreetCellModel } from './wallStreet';
 
 /**
  * Tabela „Rynki” (`#markets`): przeliczenia liczb z odpowiedzi `metaAndAssetCtxs` każdej giełdy z rejestru, świeżość
@@ -188,6 +189,8 @@ export interface MarketRowModel {
   chartHref: string;
   /** „mapa likwidacji” przy pełnym skanerze; inaczej „—” z powodem */
   scanner: { text: string; why: string | null };
+  /** Etykieta Wall Street giełdy bazowej (`utils/wallStreet.wallStreetCell`) */
+  wallStreet: WallStreetCellModel;
 }
 
 export interface MarketGroupModel {
@@ -196,7 +199,13 @@ export interface MarketGroupModel {
   rows: MarketRowModel[];
 }
 
-export function rowModel(r: MarketRow, fmtTime: (ms: number) => string, scannerWhy: (coin: string) => string): MarketRowModel {
+export interface RowModelDeps {
+  fmtTime: (ms: number) => string;
+  scannerWhy: (coin: string) => string;
+  wallStreet: (m: ChartMarket) => WallStreetCellModel;
+}
+
+export function rowModel(r: MarketRow, { fmtTime, scannerWhy, wallStreet }: RowModelDeps): MarketRowModel {
   const c = r.ctx;
   const m = r.market;
   return {
@@ -213,6 +222,7 @@ export function rowModel(r: MarketRow, fmtTime: (ms: number) => string, scannerW
     why: r.why === null ? null : rowWhyText(r.why, m.dex),
     chartHref: `#charts?m=${m.coin}`,
     scanner: m.scanner === 'full' ? { text: tr('mapa likwidacji', 'liquidation map'), why: null } : { text: DASH, why: scannerWhy(m.coin) },
+    wallStreet: wallStreet(m),
   };
 }
 
@@ -225,10 +235,8 @@ export function marketTableModel(
   dexes: Readonly<Record<string, DexState>>,
   now: number,
   sort: SortKey,
-  deps: {
+  deps: RowModelDeps & {
     groupsOf: (markets: readonly ChartMarket[]) => { id: string; title: string; markets: readonly ChartMarket[] }[];
-    fmtTime: (ms: number) => string;
-    scannerWhy: (coin: string) => string;
   }
 ): MarketGroupModel[] {
   const rows = sortRows(marketRows(markets, dexes, now), sort);
@@ -236,7 +244,7 @@ export function marketTableModel(
   return deps.groupsOf(rows.map((r) => r.market)).map((g) => ({
     id: g.id,
     title: g.title,
-    rows: g.markets.map((m) => rowModel(byCoin.get(m.coin)!, deps.fmtTime, deps.scannerWhy)),
+    rows: g.markets.map((m) => rowModel(byCoin.get(m.coin)!, deps)),
   }));
 }
 

@@ -56,7 +56,8 @@ export function registry() {
     row('ETH', '', 1.6e9, 4, 25, 'none'),
     row('HYPE', '', 1.1e9, 2, 10, 'none'),
     row('SOL', '', 5.2e8, 2, 20, 'none'),
-    row('xyz:NVDA', 'xyz', 1.4e8, SZ['xyz:NVDA'], LEVERAGE['xyz:NVDA'], 'none'),
+    // Klasa rynku (pole etapu 1): akcja — etykieta Wall Street w widoku „Rynki”
+    { ...row('xyz:NVDA', 'xyz', 1.4e8, SZ['xyz:NVDA'], LEVERAGE['xyz:NVDA'], 'none'), class: 'equity' },
   ];
   return { asOf: FIXED_NOW - 20 * MIN, rule: 'reg-v1', markets: markets.map((m, i) => ({ ...m, rank: i + 1 })) };
 }
