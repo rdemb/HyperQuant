@@ -9,7 +9,7 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 #### Dodane
 - **Skaner** (`backend/scanner/liqDetect.ts`): każdy nieudany kandydat ma przyczynę (przepełnienie kolejki, wygaśnięcie po 24 h, błąd API, obcięta odpowiedź) i wartość pozycji przy cenie likwidacji; odrzuceni też mają wartość. Stan sprzed zmiany czyta się dalej (przyczyna `unknown`).
-- **Plik `liq-tape/BTC.json`** (`src/utils/liqTape.ts`): `checks.failedBy`, `checks.failedUsd`, `checks.rejectedUsd` oraz `unconfirmed.failedUsd` i `unconfirmed.shareUsd` — udział niepotwierdzonych według wartości obok udziału w sztukach. Wszystkie pola opcjonalne, `failed` i `share` bez zmian.
+- **Plik `liq-tape/BTC.json`** (`src/utils/liqTape.ts`): `checks.failedBy`, `checks.failedUsd` i `checks.rejectedUsd` (kwoty do 100 USD) oraz `unconfirmed.failedUsd` i `unconfirmed.shareUsd` — górna granica udziału wolumenu likwidacji, którego może brakować na taśmie (USD, bez odrzuconych); `null` z powodem w `shareUsdWhy`, dopóki w oknie są wpisy sprzed zmiany. Wszystkie pola opcjonalne, `failed` i `share` bez zmian.
 - **MCP `liquidation_tape`:** `unconfirmedShareUsd` obok `unconfirmedShare`.
 
 ### „Wyniki” i „Co nowego” w nawigacji aplikacji (2026-11-12)

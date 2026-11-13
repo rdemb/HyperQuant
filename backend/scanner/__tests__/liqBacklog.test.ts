@@ -272,13 +272,14 @@ describe('LiqConfirmer: przyczyny nieudanych i wartość (udział niepotwierdzon
     expect(back.checks(now)).toMatchObject({ failed: 1, failedBy: { ttl: 1 }, failedUsd: usdOf(2) });
   });
 
-  it('taśma: unconfirmed.shareUsd = (czekający + nieudani) / (potwierdzeni + odrzuceni + nieudani + czekający) według USD; share w sztukach bez zmian', () => {
+  it('taśma: unconfirmed.shareUsd = (czekający + nieudani) / (potwierdzeni + czekający + nieudani) według USD, bez odrzuconych; share w sztukach bez zmian', () => {
     const checks = { candidates: 4, confirmed: 2, rejected: 1, failed: 1, failedBy: { overflow: 1, ttl: 0, api: 0, truncated: 0, unknown: 0 }, failedUsd: 10_000, rejectedUsd: 40_000 };
     const ev = (t: number, usd: number) => ({ t, side: 'long' as const, sz: usd / 95_000, px: 95_000, usd, method: 'market' as const, markPx: 95_000, mapLiqPx: null, mapAgeMin: null });
     const tape = buildLiqTape([ev(T0 - 10 * MIN, 30_000), ev(T0 - 5 * MIN, 20_000)], { coin: 'BTC', asOf: T0, since: T0 - 30 * HOUR, checks, backlog: { pending: 1, pendingUsd: 0 } });
     expect(tape.unconfirmed?.share).toBeCloseTo(2 / 5, 10);
     expect(tape.unconfirmed?.failedUsd).toBe(10_000);
-    expect(tape.unconfirmed?.shareUsd).toBeCloseTo(10_000 / (50_000 + 40_000 + 10_000), 10);
+    expect(tape.unconfirmed?.shareUsd).toBeCloseTo(10_000 / (50_000 + 10_000), 10);
+    expect(tape.unconfirmed?.shareUsdWhy).toBeUndefined();
     expect(tape.checks.failedBy).toEqual(checks.failedBy);
     expect(isLiqTape(tape)).toBe(true);
     // Stary kształt (bez nowych pól) dalej przechodzi; zły kształt nowych pól — nie
@@ -286,5 +287,37 @@ describe('LiqConfirmer: przyczyny nieudanych i wartość (udział niepotwierdzon
     const { shareUsd: _d, failedUsd: _e, ...oldU } = tape.unconfirmed!;
     expect(isLiqTape({ ...tape, checks: oldChecks, unconfirmed: oldU })).toBe(true);
     expect(isLiqTape({ ...tape, unconfirmed: { ...tape.unconfirmed!, shareUsd: 'x' } })).toBe(false);
+  });
+
+  it('odrzuceni nie rozmywają miary: duże odrzucone nie obniżają shareUsd', () => {
+    const base = { candidates: 3, confirmed: 1, rejected: 1, failed: 1, failedBy: { overflow: 1, ttl: 0, api: 0, truncated: 0, unknown: 0 }, failedUsd: 30_000 };
+    const ev = { t: T0 - MIN, side: 'long' as const, sz: 1, px: 95_000, usd: 260_000, method: 'market' as const, markPx: 95_000, mapLiqPx: null, mapAgeMin: null };
+    const small = buildLiqTape([ev], { coin: 'BTC', asOf: T0, since: T0 - 30 * HOUR, checks: { ...base, rejectedUsd: 0 }, backlog: { pending: 0, pendingUsd: 0 } });
+    const huge = buildLiqTape([ev], { coin: 'BTC', asOf: T0, since: T0 - 30 * HOUR, checks: { ...base, rejectedUsd: 2_000_000_000 }, backlog: { pending: 0, pendingUsd: 0 } });
+    expect(huge.unconfirmed?.shareUsd).toBeCloseTo(30_000 / 290_000, 10);
+    expect(huge.unconfirmed?.shareUsd).toBe(small.unconfirmed?.shareUsd);
+  });
+
+  it('stan sprzed zmiany w oknie (failedBy.unknown > 0): shareUsd null z powodem; po wyjściu starego wpisu z okna — liczba', () => {
+    const c = LiqConfirmer.fromJSON({ v: 1, events: [], log: [['failed', T0]] }, { coin: 'BTC', maxPerMin: 3 });
+    c.enqueue({ addr: addr(1), prev: pos(0.001), from: T0, to: T0 + MIN });
+    for (let i = 1; i <= 500; i++) c.enqueue({ addr: addr(i + 1), prev: pos(2), from: T0, to: T0 + MIN });
+    const at = (now: number) => buildLiqTape(c.events(), { coin: 'BTC', asOf: now, since: T0 - 30 * HOUR, checks: c.checks(now), backlog: c.backlog() });
+    const early = at(T0 + 2 * MIN);
+    expect(early.unconfirmed?.shareUsd).toBeNull();
+    expect(early.unconfirmed?.shareUsdWhy).toBe('stan sprzed zmiany, pełne po 24 h');
+    expect(isLiqTape(early)).toBe(true);
+    const later = at(T0 + 24 * HOUR + 30_000);
+    expect(later.checks.failedBy?.unknown).toBe(0);
+    expect(typeof later.unconfirmed?.shareUsd).toBe('number');
+  });
+
+  it('kwoty w publicznym pliku do 100 USD: checks.failedUsd i rejectedUsd zaokrąglone, udział z wartości dokładnych', () => {
+    const checks = { candidates: 2, confirmed: 0, rejected: 1, failed: 1, failedBy: { overflow: 0, ttl: 1, api: 0, truncated: 0, unknown: 0 }, failedUsd: 12_345, rejectedUsd: 67_891 };
+    const tape = buildLiqTape([], { coin: 'BTC', asOf: T0, since: T0 - 30 * HOUR, checks, backlog: { pending: 0, pendingUsd: 0 } });
+    expect(tape.checks.failedUsd).toBe(12_300);
+    expect(tape.checks.rejectedUsd).toBe(67_900);
+    expect(tape.unconfirmed?.failedUsd).toBe(12_300);
+    expect(tape.unconfirmed?.shareUsd).toBe(1);
   });
 });
