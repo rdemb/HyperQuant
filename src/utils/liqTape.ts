@@ -50,6 +50,15 @@ export interface LiqTapeChecks {
   rejected: number;
   /** Nieudane zapytanie / brak budżetu */
   failed: number;
+  /**
+   * Przyczyny nieudanych (pole opcjonalne, od 13.11.2026; suma = `failed`): przepełnienie kolejki (odpada najmniejsza
+   * pozycja), wygaśnięcie po 24 h, błąd API po kolejnych próbach, obcięta odpowiedź z fillami, `unknown` — wpisy ze stanu
+   * sprzed tej zmiany.
+   */
+  failedBy?: { overflow: number; ttl: number; api: number; truncated: number; unknown: number };
+  /** Wartość pozycji nieudanych i odrzuconych przy cenie likwidacji z mapy, USD (pola opcjonalne, jak `failedBy`) */
+  failedUsd?: number;
+  rejectedUsd?: number;
 }
 
 export interface LiqTape {
@@ -70,8 +79,11 @@ export interface LiqTape {
    * Kandydaci bez rozstrzygnięcia przy sumach (pole opcjonalne, od 12.11.2026): czekający w kolejce (liczba i wartość
    * pozycji przy cenie likwidacji z mapy), nieudani z 24 h, udział (czekający + nieudani) / (kandydaci + czekający);
    * `h1Complete: false` — suma z ostatniej godziny może jeszcze wzrosnąć, bo kolejka nie jest pusta.
+   * `failedUsd` i `shareUsd` (opcjonalne, od 13.11.2026): udział według wartości — (czekający + nieudani) / (potwierdzeni
+   * + odrzuceni + nieudani + czekający) w USD. Potwierdzeni to wartość z taśmy (zlikwidowana część), pozostali — wartość
+   * całej pozycji przy cenie likwidacji, więc udział według wartości jest raczej zawyżony niż zaniżony.
    */
-  unconfirmed?: { pending: number; pendingUsd: number; failed: number; share: number | null; h1Complete: boolean };
+  unconfirmed?: { pending: number; pendingUsd: number; failed: number; share: number | null; h1Complete: boolean; failedUsd?: number; shareUsd?: number | null };
   /** Opóźnienie potwierdzeń: od czasu likwidacji do potwierdzenia, min, zdarzenia z 24 h (pole opcjonalne). */
   delay?: { n: number; medMin: number | null; p90Min: number | null };
   method: 'hl-fills-liquidation-v1';
@@ -171,6 +183,16 @@ export function buildLiqTape(
         failed: o.checks.failed,
         share: o.checks.candidates + b.pending > 0 ? (b.pending + o.checks.failed) / (o.checks.candidates + b.pending) : null,
         h1Complete: b.pending === 0,
+        ...(o.checks.failedUsd !== undefined && o.checks.rejectedUsd !== undefined
+          ? (() => {
+              const confirmedUsd = h24.longUsd + h24.shortUsd;
+              const den = confirmedUsd + o.checks.rejectedUsd + o.checks.failedUsd + b.pendingUsd;
+              return {
+                failedUsd: Math.round(o.checks.failedUsd / 100) * 100,
+                shareUsd: den > 0 ? (b.pendingUsd + o.checks.failedUsd) / den : null,
+              };
+            })()
+          : {}),
       }
     : undefined;
   return {
@@ -237,6 +259,13 @@ export function isLiqTape(x: unknown): x is LiqTape {
     fin(m.checks.rejected) &&
     fin(m.checks.failed) &&
     // Pola dopisane później: opcjonalne, ale jeśli są — w pełnym kształcie
+    (m.checks.failedBy === undefined ||
+      ((by) => !!by && (['overflow', 'ttl', 'api', 'truncated', 'unknown'] as const).every((k) => fin(by[k])))(m.checks.failedBy)) &&
+    (m.checks.failedUsd === undefined || fin(m.checks.failedUsd)) &&
+    (m.checks.rejectedUsd === undefined || fin(m.checks.rejectedUsd)) &&
+    (m.unconfirmed === undefined ||
+      ((m.unconfirmed?.failedUsd === undefined || fin(m.unconfirmed.failedUsd)) &&
+        (m.unconfirmed?.shareUsd === undefined || finOrNull(m.unconfirmed.shareUsd)))) &&
     (m.unconfirmed === undefined ||
       (!!m.unconfirmed &&
         fin(m.unconfirmed.pending) &&

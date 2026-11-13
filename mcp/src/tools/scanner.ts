@@ -188,6 +188,12 @@ export interface LiqTapeData {
    * z powodem, gdy plik tego nie podaje (skaner sprzed 12.11.2026).
    */
   unconfirmedShare: Num;
+  /**
+   * To samo według wartości (USD): czekający i nieudani wobec wszystkich kandydatów z 24 h; nieudani i czekający liczeni
+   * pełną wartością pozycji, potwierdzeni zlikwidowaną częścią, więc udział jest raczej zawyżony. Null z powodem, gdy plik
+   * tego nie podaje (skaner sprzed 13.11.2026).
+   */
+  unconfirmedShareUsd: Num;
   /** Do 10 ostatnich likwidacji, od najnowszej: czas (do minuty), strona likwidowanej pozycji, wartość, cena. */
   recent: { at: string; side: 'long' | 'short'; usd: Num; price: Num }[];
 }
@@ -205,7 +211,7 @@ async function liqTapeRun(src: Sources): Promise<Envelope<LiqTapeData>> {
   const sources = [fileSource(tr('Taśma likwidacji skanera', 'Scanner liquidation tape'), f)];
   const notes = [LIQ_TAPE_NOTE];
   const sums = (why: string) => ({ longs: nil('usd', why), shorts: nil('usd', why) });
-  const hidden = (why: string) => envelope(NAME_LIQ_TAPE, { why, observedSince: null, sum1h: sums(why), sum24h: sums(why), unconfirmedShare: nil('pct', why), recent: [] }, sources, now, notes);
+  const hidden = (why: string) => envelope(NAME_LIQ_TAPE, { why, observedSince: null, sum1h: sums(why), sum24h: sums(why), unconfirmedShare: nil('pct', why), unconfirmedShareUsd: nil('pct', why), recent: [] }, sources, now, notes);
   if (!f.ok) return hidden(tr(`taśma likwidacji niedostępna (${f.why})`, `liquidation tape unavailable (${f.why})`));
   const tape = f.value;
   // Jak karta taśmy na stronie: publikacja starsza niż 10 min — liczby ukryte
@@ -235,6 +241,12 @@ async function liqTapeRun(src: Sources): Promise<Envelope<LiqTapeData>> {
       : u.share === null
         ? nil('pct', tr('brak kandydatów w ostatnich 24 h', 'no candidates in the last 24 h'))
         : live(Math.round(u.share * 1000) / 10, 'pct', note),
+    unconfirmedShareUsd:
+      !u || u.shareUsd === undefined
+        ? nil('pct', tr('plik nie podaje udziału według wartości (skaner sprzed tej zmiany)', 'the file does not give the share by value (scanner before this change)'))
+        : u.shareUsd === null
+          ? nil('pct', tr('brak kandydatów w ostatnich 24 h', 'no candidates in the last 24 h'))
+          : live(Math.round(u.shareUsd * 1000) / 10, 'pct', note),
     // Tylko publiczne pola zdarzenia (plik i tak nie ma adresów ani identyfikatorów transakcji)
     recent: tape.events.slice(0, RECENT).map((e) => ({ at: iso(e.t), side: e.side, usd: live(e.usd, 'usd', note), price: live(e.px, 'price', note) })),
   };

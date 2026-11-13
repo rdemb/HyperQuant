@@ -175,7 +175,7 @@ describe('LiqConfirmer: taśma tylko od since (restart z przerwą, przerwa WebSo
     expect(c.dropBefore(since)).toBe(1);
     const rest = fakeRest(() => [liqFill(9, '2', T0 + MIN)]);
     expect(await c.process(rest, since + MIN)).toBe(0);
-    expect(c.checks(since + MIN)).toEqual({ candidates: 0, confirmed: 0, rejected: 0, failed: 0 });
+    expect(c.checks(since + MIN)).toMatchObject({ candidates: 0, confirmed: 0, rejected: 0, failed: 0 });
   });
 
   it('kandydat z oknem przez granicę: fill po since daje zdarzenie; fill przed since — bez zdarzenia i bez odrzucenia', async () => {
@@ -189,7 +189,7 @@ describe('LiqConfirmer: taśma tylko od since (restart z przerwą, przerwa WebSo
     beforeCut.enqueue({ addr: addr(1), prev: pos(2), from: since - 30 * MIN, to: since + 5 * MIN });
     await beforeCut.process(fakeRest(() => [liqFill(12, '2', since - 29 * MIN)]), since + 6 * MIN);
     expect(beforeCut.events()).toHaveLength(0);
-    expect(beforeCut.checks(since + 6 * MIN)).toEqual({ candidates: 0, confirmed: 0, rejected: 0, failed: 0 });
+    expect(beforeCut.checks(since + 6 * MIN)).toMatchObject({ candidates: 0, confirmed: 0, rejected: 0, failed: 0 });
   });
 
   it('isQueued: wpis bez skończonego prev.scannedAt albo z liqPx ≤ 0 odrzucony', () => {
@@ -215,5 +215,76 @@ describe('LiqConfirmer: przy odczycie najpierw granica okresu (since), potem TTL
     const cont = LiqConfirmer.fromJSON(j, { coin: 'BTC', maxPerMin: 3, now, since: T0 - HOUR });
     expect(cont.pending).toBe(0);
     expect(cont.checks(now).failed).toBe(1);
+  });
+});
+
+describe('LiqConfirmer: przyczyny nieudanych i wartość (udział niepotwierdzonych według USD)', () => {
+  const usdOf = (szi: number) => Math.abs(szi) * 95_000;
+
+  it('każda przyczyna osobno: przepełnienie, TTL, błąd API, obcięta odpowiedź; failed = suma przyczyn; wartość z pozycji', async () => {
+    const c = new LiqConfirmer({ coin: 'BTC', maxPerMin: 12 });
+    // Przepełnienie: 501 kandydatów, najmniejszy wypada
+    for (let i = 1; i <= 501; i++) c.enqueue({ addr: addr(i), prev: pos(i === 1 ? 0.01 : 2), from: T0, to: T0 + MIN });
+    let k = c.checks(T0 + 2 * MIN);
+    expect(k.failedBy).toMatchObject({ overflow: 1, ttl: 0, api: 0, truncated: 0 });
+    expect(k.failedUsd).toBe(usdOf(0.01));
+    // TTL: reszta kolejki wygasa bez zapytań
+    const ttl = new LiqConfirmer({ coin: 'BTC', maxPerMin: 3 });
+    ttl.enqueue({ addr: addr(1), prev: pos(2), from: T0, to: T0 + MIN });
+    await ttl.process(fakeRest(() => []), T0 + 25 * HOUR);
+    expect(ttl.checks(T0 + 25 * HOUR).failedBy).toMatchObject({ ttl: 1 });
+    // Błąd API po 3 próbach
+    const api = new LiqConfirmer({ coin: 'BTC', maxPerMin: 12 });
+    api.enqueue({ addr: addr(1), prev: pos(2), from: T0, to: T0 + MIN });
+    for (let i = 0; i < 3; i++) await api.process(fakeRest(() => null), T0 + (2 + i) * MIN);
+    expect(api.checks(T0 + 5 * MIN).failedBy).toMatchObject({ api: 1 });
+    // Obcięta odpowiedź (≥ 2000 filli)
+    const cut = new LiqConfirmer({ coin: 'BTC', maxPerMin: 12 });
+    cut.enqueue({ addr: addr(1), prev: pos(3), from: T0, to: T0 + MIN });
+    await cut.process(fakeRest(() => Array.from({ length: 2000 }, (_, i) => ({ coin: 'BTC', px: '95000', sz: '0.001', time: T0, tid: i }))), T0 + 2 * MIN);
+    k = cut.checks(T0 + 2 * MIN);
+    expect(k.failedBy).toMatchObject({ truncated: 1 });
+    expect(k.failedUsd).toBe(usdOf(3));
+    for (const x of [c, ttl, api, cut]) {
+      const q = x.checks(T0 + 25 * HOUR + 1);
+      const by = q.failedBy!;
+      expect(by.overflow + by.ttl + by.api + by.truncated + by.unknown).toBe(q.failed);
+    }
+  });
+
+  it('odrzucenia mają wartość (mianownik udziału według USD); stary stan bez przyczyn: „unknown”, bez wartości', async () => {
+    const c = new LiqConfirmer({ coin: 'BTC', maxPerMin: 12 });
+    c.enqueue({ addr: addr(1), prev: pos(2), from: T0, to: T0 + MIN });
+    await c.process(fakeRest(() => []), T0 + 2 * MIN);
+    expect(c.checks(T0 + 2 * MIN)).toMatchObject({ rejected: 1, rejectedUsd: usdOf(2) });
+    const old = LiqConfirmer.fromJSON({ v: 1, events: [], log: [['failed', T0 + MIN], ['rejected', T0 + MIN]] }, { coin: 'BTC', maxPerMin: 3 });
+    expect(old.checks(T0 + 2 * MIN)).toMatchObject({ failed: 1, rejected: 1, failedBy: { unknown: 1 }, failedUsd: 0, rejectedUsd: 0 });
+    // Zapis i odczyt zachowują przyczynę i wartość
+    const back = LiqConfirmer.fromJSON(JSON.parse(JSON.stringify(c.toJSON())), { coin: 'BTC', maxPerMin: 3 });
+    expect(back.checks(T0 + 2 * MIN)).toMatchObject({ rejected: 1, rejectedUsd: usdOf(2) });
+  });
+
+  it('TTL przy odczycie stanu zapisuje przyczynę ttl z wartością', () => {
+    const c = new LiqConfirmer({ coin: 'BTC', maxPerMin: 3 });
+    c.enqueue({ addr: addr(1), prev: pos(2), from: T0, to: T0 + 2 * MIN });
+    const now = T0 + 25 * HOUR;
+    const back = LiqConfirmer.fromJSON(JSON.parse(JSON.stringify(c.toJSON())), { coin: 'BTC', maxPerMin: 3, now, since: T0 - HOUR });
+    expect(back.checks(now)).toMatchObject({ failed: 1, failedBy: { ttl: 1 }, failedUsd: usdOf(2) });
+  });
+
+  it('taśma: unconfirmed.shareUsd = (czekający + nieudani) / (potwierdzeni + odrzuceni + nieudani + czekający) według USD; share w sztukach bez zmian', () => {
+    const checks = { candidates: 4, confirmed: 2, rejected: 1, failed: 1, failedBy: { overflow: 1, ttl: 0, api: 0, truncated: 0, unknown: 0 }, failedUsd: 10_000, rejectedUsd: 40_000 };
+    const ev = (t: number, usd: number) => ({ t, side: 'long' as const, sz: usd / 95_000, px: 95_000, usd, method: 'market' as const, markPx: 95_000, mapLiqPx: null, mapAgeMin: null });
+    const tape = buildLiqTape([ev(T0 - 10 * MIN, 30_000), ev(T0 - 5 * MIN, 20_000)], { coin: 'BTC', asOf: T0, since: T0 - 30 * HOUR, checks, backlog: { pending: 1, pendingUsd: 0 } });
+    expect(tape.unconfirmed?.share).toBeCloseTo(2 / 5, 10);
+    expect(tape.unconfirmed?.failedUsd).toBe(10_000);
+    expect(tape.unconfirmed?.shareUsd).toBeCloseTo(10_000 / (50_000 + 40_000 + 10_000), 10);
+    expect(tape.checks.failedBy).toEqual(checks.failedBy);
+    expect(isLiqTape(tape)).toBe(true);
+    // Stary kształt (bez nowych pól) dalej przechodzi; zły kształt nowych pól — nie
+    const { failedBy: _a, failedUsd: _b, rejectedUsd: _c, ...oldChecks } = tape.checks;
+    const { shareUsd: _d, failedUsd: _e, ...oldU } = tape.unconfirmed!;
+    expect(isLiqTape({ ...tape, checks: oldChecks, unconfirmed: oldU })).toBe(true);
+    expect(isLiqTape({ ...tape, unconfirmed: { ...tape.unconfirmed!, shareUsd: 'x' } })).toBe(false);
   });
 });
