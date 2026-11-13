@@ -4,6 +4,20 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Strona „Rynki”: tabela rynków z rejestru (2026-11-13)
+<!-- co-nowego: grupa=rynki | pl=Nowa strona „Rynki”: cena, obrót, otwarte pozycje i funding każdego rynku z rejestru, prosto z Hyperliquid | en=New Markets page: price, volume, open interest and funding of every market in the registry, straight from Hyperliquid -->
+
+#### Dodane
+- **Widok „Rynki” / „Markets”** (`#markets`, `src/views/MarketsView.tsx`): tabela rynków z rejestru `markets.json` w grupach jak wybór rynku wykresu (krypto oraz rynki HIP-3), domyślnie według otwartych pozycji, do wyboru według obrotu 24 h. Kolumny: rynek (nazwa bez przedrostka, giełda jako etykieta), cena z dokładnością rynku (`szDecimals`), obrót 24 h, otwarte pozycje w USD (`openInterest × markPx`), funding za godzinę z wartością roczną opisaną jako przeliczona, link do wykresu rynku (`#charts?m=<rynek>`), skaner („mapa likwidacji” tylko przy pełnym skanerze). Bez kolumny zmiany ceny i bez ocen ruchu.
+- **Dane osobno, wygląd osobno**: przeliczenia, świeżość, stany „—” i gotowe teksty wierszy w czystych funkcjach (`src/utils/marketsTable.ts`), pobieranie i zegar w jednym hooku `useMarketsPage` (`src/state/useMarketsTable.ts`); tabela, wiersz i komórka LIVE z godziną (`src/views/markets/`) to proste komponenty, które dostają gotowe teksty przez propsy, więc nowy wygląd aplikacji da się nałożyć bez ruszania danych (test pilnuje, że nie importują logiki).
+- **Dane w przeglądarce**: jedno `metaAndAssetCtxs` na każdą giełdę z rejestru co 60 s i tylko przy widocznej karcie; powrót do karty nie przyspiesza rundy, giełda dopisana do rejestru dostaje jedno zapytanie od razu. Serwer HyperQuant nic nie pobiera. Każdy wiersz ma plakietkę LIVE z godziną odczytu; odczyt starszy niż 3 min, giełda bez odpowiedzi albo rynek, którego nie ma w odpowiedzi giełdy, to „—” z powodem. Pod tabelą licznik wag zapytań strony z ostatniej minuty wobec limitu 1200 na adres IP.
+- **Wagi zapytań** (dokumentacja Hyperliquid „Rate limits and user limits”, odczyt 13.11.2026): `metaAndAssetCtxs` waży 20 z `dex` i bez, limit 1200 wag na minutę na adres IP. Test z atrapą transportu: 10 minut otwartej strony przy 3 giełdach to 600 wag (60 na minutę, 5% limitu), także przy częstym przełączaniu kart.
+- **`ui:check`**: przebieg widoku `#markets` na danych stałych z rejestrem (1440, 1024 i 390): wszystkie rynki z odczytem LIVE w mniej niż 3 s, bez przewijania strony w bok, błędów i „NaN”, nagłówek bez uciętych liczb, „Rynki” w menu telefonu.
+
+#### Zmienione
+- **Pasek aplikacji**: „Rynki” zaraz po trzech fazach dnia na każdym komputerze, na telefonie w menu „Więcej”. Agenci AI są w pasku od 1440 px, na węższym ekranie w menu „Więcej” (jak Wyniki i Co nowego poniżej 1280 px), żeby przy 1024 px cena w nagłówku mieściła się w całości także po angielsku.
+- **Liczby rynku w nagłówku**: liczba, która nie mieści się w całości, znika razem z dalszymi, zamiast być ucięta w pół słowa (wcześniej przy 1024 px z „Funding” zostawało „Fun”).
+
 ### Taśma likwidacji: przyczyny nieudanych i udział według wartości (2026-11-13)
 <!-- co-nowego: grupa=skaner | pl=Taśma likwidacji: przyczyny niepotwierdzonych i udział według wartości | en=Liquidation tape: reasons for unconfirmed candidates and the share by value -->
 
