@@ -120,7 +120,7 @@ describe('dane stałe pomiaru układu (bez sieci, stały zegar)', () => {
     expect(isMarketRegistry(reg)).toBe(true);
     const list = marketsOrDefault(reg);
     expect(list.map((m) => m.coin)).toEqual(['BTC', 'ETH', 'HYPE', 'SOL', 'xyz:NVDA']);
-    expect(list.find((m) => m.coin === 'xyz:NVDA')).toMatchObject({ dex: 'xyz', szDecimals: 3, scanner: 'none' });
+    expect(list.find((m) => m.coin === 'xyz:NVDA')).toMatchObject({ dex: 'xyz', szDecimals: 3, scanner: 'none', class: 'equity' });
     expect(list.find((m) => m.coin === 'HYPE')?.szDecimals).toBe(2);
   });
 

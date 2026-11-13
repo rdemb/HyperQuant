@@ -2,6 +2,7 @@ import React from 'react';
 import { tr } from '../../i18n';
 import type { MarketRowModel } from '../../utils/marketsTable';
 import { LiveCell } from './LiveCell';
+import { WallStreetLabel } from './WallStreetLabel';
 
 /** Klasy komórek tabeli „Rynki” (wspólne dla nagłówka i wierszy). */
 export const CELL = {
@@ -36,6 +37,9 @@ export const MarketRow: React.FC<{ row: MarketRowModel }> = ({ row }) => (
           {tr('rocznie', 'per year')} {row.fundingYear} {tr('(przeliczone)', '(annualised)')}
         </span>
       )}
+    </td>
+    <td className={`${CELL.td} text-ink-2`}>
+      <WallStreetLabel cell={row.wallStreet} />
     </td>
     <td className={CELL.td}>
       <a href={row.chartHref} className={CELL.link}>
