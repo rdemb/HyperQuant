@@ -29,8 +29,8 @@ const MarketsView: React.FC = () => {
       >
         <p className="px-4 pt-3 text-xs leading-relaxed text-ink-2 max-w-prose">
           {tr(
-            'Rynki Hyperliquid z rejestru HyperQuant (pierwsza dwudziestka według otwartych pozycji). Liczby pobiera Twoja przeglądarka prosto z giełdy co minutę, gdy karta jest widoczna.',
-            'Hyperliquid markets from the HyperQuant registry (the top twenty by open interest). Your browser fetches the numbers straight from the exchange every minute while the tab is visible.'
+            `Rynki Hyperliquid z rejestru HyperQuant: do 20 największych według średnich otwartych pozycji z 7 dni, BTC, ETH, SOL i HYPE na stałe (dziś: ${page.marketCount}). Liczby pobiera Twoja przeglądarka prosto z giełdy co minutę, gdy karta jest widoczna.`,
+            `Hyperliquid markets from the HyperQuant registry: up to the 20 largest by 7-day average open interest, with BTC, ETH, SOL and HYPE always included (today: ${page.marketCount}). Your browser fetches the numbers straight from the exchange every minute while the tab is visible.`
           )}{' '}
           <Badge tone="live" title={tr('Realne dane Hyperliquid z godziną odczytu w każdym wierszu', 'Real Hyperliquid data with the reading time in every row')}>
             LIVE
