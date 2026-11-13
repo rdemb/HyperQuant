@@ -61,6 +61,11 @@ describe('przeliczenia tabeli „Rynki”', () => {
     expect(isFresh(null, NOW)).toBe(false);
   });
 
+  it('świeżość: odczyt „z przyszłości” (cofnięty zegar) świeży do 60 s, dalej — nie', () => {
+    expect(isFresh(NOW + 60_000, NOW)).toBe(true);
+    expect(isFresh(NOW + 60_001, NOW)).toBe(false);
+  });
+
   it('nazwa bez przedrostka giełdy i giełdy z listy (główna pierwsza, bez powtórzeń)', () => {
     expect(bareName(nvda)).toBe('NVDA');
     expect(bareName(btc)).toBe('BTC');
