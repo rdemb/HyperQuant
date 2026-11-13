@@ -36,6 +36,11 @@ export async function fetchAssetCtx(coin: string): Promise<AssetCtx | null> {
   return pickAssetCtx(await postInfo(i < 0 ? { type: 'metaAndAssetCtxs' } : { type: 'metaAndAssetCtxs', dex: coin.slice(0, i) }), coin);
 }
 
+/** Surowa odpowiedź `metaAndAssetCtxs` jednej giełdy (`""` = główna, inaczej giełda HIP-3); błąd → null. */
+export function fetchMetaAndCtxs(dex: string): Promise<unknown> {
+  return postInfo(dex === '' ? { type: 'metaAndAssetCtxs' } : { type: 'metaAndAssetCtxs', dex });
+}
+
 export async function fetchBook(coin: string, nSigFigs?: number): Promise<BookSnapshot | null> {
   const body: Record<string, unknown> = { type: 'l2Book', coin };
   if (nSigFigs !== undefined) body.nSigFigs = nSigFigs;

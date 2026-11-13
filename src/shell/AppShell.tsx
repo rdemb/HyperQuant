@@ -15,6 +15,7 @@ import {
   RefreshCw,
   Sunrise,
   Sunset,
+  Table2,
   Volume2,
   VolumeX,
 } from 'lucide-react';
@@ -38,6 +39,7 @@ const ResearchView = lazy(() => import('../views/ResearchView'));
 const LessonsView = lazy(() => import('../views/LessonsView'));
 const SourcesView = lazy(() => import('../views/SourcesView'));
 const AgentsView = lazy(() => import('../views/agents/AgentsView'));
+const MarketsView = lazy(() => import('../views/MarketsView'));
 
 type NavItem = { id: ViewId; label: string; icon: React.ReactNode };
 
@@ -56,10 +58,13 @@ const MORE: NavItem[] = [
 ];
 
 /**
- * Agenci AI: na desktopie piąta pozycja paska (po Blogu), na telefonie w menu „Więcej” (dolny pasek zostaje: trzy fazy
- * i „Więcej”).
+ * Agenci AI: na desktopie od 1440 px w pasku (po Blogu), węższy ekran i telefon — menu „Więcej” (dolny pasek zostaje:
+ * trzy fazy i „Więcej”).
  */
 const AGENTS: NavItem = { id: 'agents', label: tr('Agenci AI', 'AI agents'), icon: <Bot className="w-4 h-4" /> };
+
+/** Rynki (tabela rynków z rejestru): na desktopie w pasku zaraz po fazach dnia, na telefonie w menu „Więcej”. */
+const MARKETS: NavItem = { id: 'markets', label: tr('Rynki', 'Markets'), icon: <Table2 className="w-4 h-4" /> };
 
 /** Stopka: Lekcje i Źródła (Blog i Agenci AI za nimi). */
 const FOOTER = MORE.filter((n) => n.id !== 'research');
@@ -183,12 +188,16 @@ const PriceButton: React.FC<{ small?: boolean }> = ({ small = false }) => {
 
 /**
  * Liczby rynku w rzędzie nagłówka (komputer, od 1024 px): menu z lewej, liczby z prawej. Węższy ekran chowa najpierw
- * sesję i basis, potem PDH i PDL (wszystkie zostają w rozwinięciu ceny; stan PDH i PDL jest w podpowiedzi).
+ * sesję i basis, potem PDH i PDL (wszystkie zostają w rozwinięciu ceny; stan PDH i PDL jest w podpowiedzi). Liczba, która
+ * i tak nie mieści się w całości (wąski ekran, dłuższe etykiety po angielsku), znika cała razem z dalszymi, zamiast być
+ * ucięta w pół słowa (`useWholeItems`).
  */
 const TickerInline: React.FC = () => {
   const k = useTicker();
+  const ref = useRef<HTMLDivElement>(null);
+  useWholeItems(ref);
   return (
-    <div className="flex items-center gap-x-4 min-w-0 overflow-hidden whitespace-nowrap text-xs">
+    <div ref={ref} data-header-ticker className="flex items-center gap-x-4 min-w-0 overflow-hidden whitespace-nowrap text-xs">
       <PriceButton />
       <span className={`flex items-baseline gap-x-4 ${k.fresh ? '' : 'opacity-50'}`} title={k.fresh ? undefined : STALE_TITLE}>
         <Item label="Funding" value={k.funding} title="Funding HL" />
@@ -201,6 +210,32 @@ const TickerInline: React.FC = () => {
     </div>
   );
 };
+
+/**
+ * Pozycje `[data-ticker-item]` kontenera z `overflow-hidden`: pierwsza, która wystaje poza prawą krawędź, i wszystkie
+ * za nią są niewidoczne (`visibility`, bez zmiany układu, więc bez pętli pomiaru). Liczone przy każdej zmianie rozmiaru
+ * kontenera i pozycji (nowa wartość liczby zmienia jej szerokość).
+ */
+function useWholeItems(ref: React.RefObject<HTMLElement | null>) {
+  useEffect(() => {
+    const box = ref.current;
+    if (!box || typeof ResizeObserver === 'undefined') return;
+    const fit = () => {
+      const right = box.getBoundingClientRect().right + 0.5;
+      let cut = false;
+      for (const el of box.querySelectorAll<HTMLElement>('[data-ticker-item]')) {
+        if (el.offsetParent === null) continue;
+        cut ||= el.getBoundingClientRect().right > right;
+        el.style.visibility = cut ? 'hidden' : '';
+      }
+    };
+    const ro = new ResizeObserver(fit);
+    ro.observe(box);
+    box.querySelectorAll('[data-ticker-item]').forEach((el) => ro.observe(el));
+    fit();
+    return () => ro.disconnect();
+  }, [ref]);
+}
 
 /** Pasek ceny i kontekstu w osobnym rzędzie (tablet, 640–1023 px). */
 const TickerStrip: React.FC = () => {
@@ -228,7 +263,7 @@ const inReplay = () => {
 };
 
 const Item: React.FC<{ label: string; value: string; title?: string; className?: string }> = ({ label, value, title, className = 'flex' }) => (
-  <span className={`${className} items-baseline gap-1.5`} title={title || undefined}>
+  <span data-ticker-item className={`${className} items-baseline gap-1.5`} title={title || undefined}>
     <span className="text-ink-3">{label}</span>
     <span className="font-mono tabular-nums text-ink-1">{value}</span>
   </span>
@@ -237,7 +272,7 @@ const Item: React.FC<{ label: string; value: string; title?: string; className?:
 const ViewFallback = () => <EmptyState title={tr('Ładowanie widoku…', 'Loading view…')} />;
 
 // Bez globalnego przełącznika interwału: widoki z własnymi interwałami (wykresy faz dnia, Lekcje) i bez wykresów (Agenci AI)
-const OWN_INTERVALS: ViewId[] = ['before', 'charts', 'after', 'lessons', 'agents'];
+const OWN_INTERVALS: ViewId[] = ['before', 'charts', 'after', 'lessons', 'agents', 'markets'];
 
 /** Zmienna CSS z wysokością przypiętego nagłówka aplikacji (px); widoki używają jej w klasie `top-[var(--hq-header-h,0px)]`. */
 const HEADER_H_VAR = '--hq-header-h';
@@ -304,8 +339,8 @@ const MENU_MOTION = {
   exit: { opacity: 0, transition: { duration: 0.1 } },
 };
 
-// Węższe pozycje poniżej 1440 px: z Agentami AI pasek mieści się także po angielsku, z widokiem z menu i najszerszym
-// stanem danych (PAUSED); od 1440 px odstępy jak wcześniej
+// Węższe pozycje poniżej 1440 px: z Rynkami pasek mieści się także po angielsku, z widokiem z menu i najszerszym
+// stanem danych (PAUSED); od 1440 px odstępy jak wcześniej i Agenci AI w pasku
 const navLink = (active: boolean) =>
   `relative px-1.5 xl:px-2 min-[1440px]:px-2.5 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors duration-150 ${active ? 'text-ink-1' : 'text-ink-3 hover:text-ink-1'}`;
 
@@ -387,6 +422,10 @@ export const AppShell: React.FC = () => {
                 <span className="relative">{n.label}</span>
               </ViewLink>
             ))}
+            <ViewLink id={MARKETS.id} go={go} current={view === MARKETS.id} className={navLink(view === MARKETS.id)}>
+              {view === MARKETS.id && <ActivePill />}
+              <span className="relative">{MARKETS.label}</span>
+            </ViewLink>
             {/* Blog to osobne statyczne strony (SEO, podgląd linków), nie widok aplikacji */}
             <a href="./blog/" className={navLink(false)}>
               {BLOG_LABEL}
@@ -398,7 +437,8 @@ export const AppShell: React.FC = () => {
             <a href={tr('./co-nowego/', './en/whats-new/')} className={`${navLink(false)} hidden xl:inline`}>
               {NEWS_LABEL}
             </a>
-            <ViewLink id={AGENTS.id} go={go} current={view === AGENTS.id} className={navLink(view === AGENTS.id)}>
+            {/* Agenci AI w pasku od 1440 px; węższy ekran: menu „Więcej” (miejsce na Rynki bez ucinania ceny w nagłówku) */}
+            <ViewLink id={AGENTS.id} go={go} current={view === AGENTS.id} className={`${navLink(view === AGENTS.id)} hidden min-[1440px]:inline`}>
               {view === AGENTS.id && <ActivePill />}
               <span className="relative">{AGENTS.label}</span>
             </ViewLink>
@@ -419,6 +459,15 @@ export const AppShell: React.FC = () => {
                     <>
                       <span className="sr-only min-[1440px]:not-sr-only">{tr('Więcej', 'More')} · </span>
                       {moreView.label}
+                    </>
+                  ) : view === AGENTS.id ? (
+                    // Agenci AI poniżej 1440 px są w menu: nazwa widoku przy „Więcej”, od 1440 px sama „Więcej” (Agenci w pasku)
+                    <>
+                      <span className="min-[1440px]:hidden">
+                        <span className="sr-only">{tr('Więcej', 'More')} · </span>
+                        {AGENTS.label}
+                      </span>
+                      <span className="hidden min-[1440px]:inline">{tr('Więcej', 'More')}</span>
                     </>
                   ) : (
                     tr('Więcej', 'More')
@@ -444,6 +493,11 @@ export const AppShell: React.FC = () => {
                       <History className="w-4 h-4" />
                       {NEWS_LABEL}
                     </a>
+                    {/* Poniżej 1440 px Agenci AI są tutaj zamiast w pasku */}
+                    <ViewLink id={AGENTS.id} go={go} current={view === AGENTS.id} more className={`${MENU_ITEM} min-[1440px]:hidden`}>
+                      {AGENTS.icon}
+                      {AGENTS.label}
+                    </ViewLink>
                     {/* Rzadko używane przełączniki nagłówka: język, synchronizacja, dźwięk taśmy (nagłówek ma miejsce na liczby rynku) */}
                     <div role="separator" className="my-1 border-t border-line" />
                     <ShellToggles audioEnabled={audioEnabled} setAudioEnabled={setAudioEnabled} onSync={feed.syncNow} onDone={() => setTopMore(false)} />
@@ -514,6 +568,7 @@ export const AppShell: React.FC = () => {
                   {view === 'lessons' && <LessonsView />}
                   {view === 'sources' && <SourcesView />}
                   {view === 'agents' && <AgentsView />}
+                  {view === 'markets' && <MarketsView />}
                 </>
               )}
             </Suspense>
@@ -563,8 +618,8 @@ export const AppShell: React.FC = () => {
             ))}
             <TabBtn
               btnRef={phoneMoreBtn}
-              // Na telefonie Agenci AI są w menu „Więcej”
-              active={!!moreView || view === AGENTS.id}
+              // Na telefonie Rynki i Agenci AI są w menu „Więcej”
+              active={!!moreView || view === AGENTS.id || view === MARKETS.id}
               label={tr('Więcej', 'More')}
               icon={<MoreHorizontal className="w-4 h-4" />}
               onClick={() => setPhoneMore((o) => !o)}
@@ -575,6 +630,10 @@ export const AppShell: React.FC = () => {
           <AnimatePresence>
             {phoneMore && (
               <motion.div id={phoneMoreId} {...MENU_MOTION} className={`absolute bottom-full right-3 mb-2 ${MENU_PANEL}`}>
+                <ViewLink id={MARKETS.id} go={go} current={view === MARKETS.id} more className={MENU_ITEM}>
+                  {MARKETS.icon}
+                  {MARKETS.label}
+                </ViewLink>
                 {MORE.map((n) => (
                   <ViewLink key={n.id} id={n.id} go={go} current={view === n.id} more className={MENU_ITEM}>
                     {n.icon}
