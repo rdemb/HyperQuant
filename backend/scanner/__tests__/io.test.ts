@@ -289,7 +289,7 @@ describe('Scanner — cykl skanu i publikacji', () => {
     expect(isLiqTape(tape)).toBe(true);
     expect(tape.events).toHaveLength(1);
     expect(tape.events[0]).toMatchObject({ side: 'long', sz: 10, method: 'market', mapLiqPx: 75000 });
-    expect(tape.checks).toEqual({ candidates: 1, confirmed: 1, rejected: 0, failed: 0 });
+    expect(tape.checks).toMatchObject({ candidates: 1, confirmed: 1, rejected: 0, failed: 0 });
     const status = JSON.parse(readFileSync(join(out, 'status.json'), 'utf8'));
     expect(status).toMatchObject({ liq24h: 1, liqPending: 0 });
     // Okno fillów od minuty pierwszego dotknięcia ceny likwidacji (minus minuta), nie wcześniej niż poprzedni odczyt

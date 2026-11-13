@@ -95,6 +95,7 @@ interface LiqTapeData {
   sum1h: { longs: Num; shorts: Num };
   sum24h: { longs: Num; shorts: Num };
   unconfirmedShare: Num;
+  unconfirmedShareUsd: Num;
   recent: { at: string; side: 'long' | 'short'; usd: Num; price: Num }[];
 }
 interface CohortRow {
@@ -411,6 +412,15 @@ describe('liquidation_tape', () => {
     expect(old.env.data.unconfirmedShare).toMatchObject({ value: null, badge: null });
     expect(old.env.data.unconfirmedShare.why).toMatch(/plik nie podaje/);
     expect(old.env.notes.join(' ')).not.toContain('niepełna');
+    expect(env.data.unconfirmedShareUsd).toMatchObject({ value: null, badge: null });
+    expect(env.data.unconfirmedShareUsd.why).toMatch(/według wartości/);
+  });
+
+  it('udział niepotwierdzonych według wartości (USD) obok udziału w sztukach', async () => {
+    const unconfirmed = { pending: 0, pendingUsd: 0, failed: 3, share: 0.3, h1Complete: true, failedUsd: 500_000, shareUsd: 0.0423 };
+    const { env } = await call<LiqTapeData>('liquidation_tape', allRoutes({ [TAPE_URL]: { json: { ...TAPE, unconfirmed } } }));
+    expect(env.data.unconfirmedShare).toMatchObject({ value: 30, unit: 'pct' });
+    expect(env.data.unconfirmedShareUsd).toMatchObject({ value: 4.2, unit: 'pct', badge: 'LIVE' });
   });
 
   it('taśma nieaktualna (> 10 min): liczby ukryte z powodem, jak na stronie', async () => {

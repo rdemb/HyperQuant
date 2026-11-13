@@ -50,6 +50,15 @@ export interface LiqTapeChecks {
   rejected: number;
   /** Nieudane zapytanie / brak budżetu */
   failed: number;
+  /**
+   * Przyczyny nieudanych (pole opcjonalne, od 13.11.2026; suma = `failed`): przepełnienie kolejki (odpada najmniejsza
+   * pozycja), wygaśnięcie po 24 h, błąd API po kolejnych próbach, obcięta odpowiedź z fillami, `unknown` — wpisy ze stanu
+   * sprzed tej zmiany.
+   */
+  failedBy?: { overflow: number; ttl: number; api: number; truncated: number; unknown: number };
+  /** Wartość pozycji nieudanych i odrzuconych przy cenie likwidacji z mapy, USD (pola opcjonalne, jak `failedBy`) */
+  failedUsd?: number;
+  rejectedUsd?: number;
 }
 
 export interface LiqTape {
@@ -70,14 +79,29 @@ export interface LiqTape {
    * Kandydaci bez rozstrzygnięcia przy sumach (pole opcjonalne, od 12.11.2026): czekający w kolejce (liczba i wartość
    * pozycji przy cenie likwidacji z mapy), nieudani z 24 h, udział (czekający + nieudani) / (kandydaci + czekający);
    * `h1Complete: false` — suma z ostatniej godziny może jeszcze wzrosnąć, bo kolejka nie jest pusta.
+   * `failedUsd` i `shareUsd` (opcjonalne, od 13.11.2026): górna granica udziału wolumenu likwidacji, którego może brakować
+   * na taśmie — (czekający + nieudani) / (potwierdzeni + czekający + nieudani) w USD, bez odrzuconych (rozstrzygniętych
+   * jako „nie likwidacja”). Licznik zawyżony: pełna pozycja przy cenie likwidacji i założenie, że każdy nieudany był
+   * likwidacją; potwierdzeni to zlikwidowana część z taśmy. `shareUsd: null` z powodem w `shareUsdWhy`, gdy w oknie są
+   * wpisy bez wartości (stan sprzed zmiany: pełne po 24 h) albo brak kandydatów.
    */
-  unconfirmed?: { pending: number; pendingUsd: number; failed: number; share: number | null; h1Complete: boolean };
+  unconfirmed?: {
+    pending: number;
+    pendingUsd: number;
+    failed: number;
+    share: number | null;
+    h1Complete: boolean;
+    failedUsd?: number;
+    shareUsd?: number | null;
+    shareUsdWhy?: string;
+  };
   /** Opóźnienie potwierdzeń: od czasu likwidacji do potwierdzenia, min, zdarzenia z 24 h (pole opcjonalne). */
   delay?: { n: number; medMin: number | null; p90Min: number | null };
   method: 'hl-fills-liquidation-v1';
 }
 
 const MIN = 60_000;
+const round100 = (x: number): number => Math.round(x / 100) * 100;
 const BUCKET = 5 * MIN;
 const DAY = 24 * 60 * MIN;
 const MAX_EVENTS = 200;
@@ -171,6 +195,19 @@ export function buildLiqTape(
         failed: o.checks.failed,
         share: o.checks.candidates + b.pending > 0 ? (b.pending + o.checks.failed) / (o.checks.candidates + b.pending) : null,
         h1Complete: b.pending === 0,
+        ...(o.checks.failedUsd !== undefined
+          ? (() => {
+              const failedUsd = o.checks.failedUsd;
+              const den = h24.longUsd + h24.shortUsd + b.pendingUsd + failedUsd;
+              // Wpisy bez wartości (stan sprzed zmiany) zaniżyłyby udział: brak liczby, dopóki nie wyjdą z okna 24 h
+              const why = (o.checks.failedBy?.unknown ?? 0) > 0 ? 'stan sprzed zmiany, pełne po 24 h' : den > 0 ? null : 'brak kandydatów w ostatnich 24 h';
+              return {
+                failedUsd: round100(failedUsd),
+                shareUsd: why ? null : (b.pendingUsd + failedUsd) / den,
+                ...(why ? { shareUsdWhy: why } : {}),
+              };
+            })()
+          : {}),
       }
     : undefined;
   return {
@@ -182,7 +219,12 @@ export function buildLiqTape(
     buckets: [...byBucket.values()].sort((a, b) => a.t - b.t),
     totals: { h1, h24 },
     calib: { n: errs.length, medAbsErrBp: quantile(abs, 0.5), p90AbsErrBp: quantile(abs, 0.9), medSignedErrBp: quantile(signed, 0.5), medAgeMin: quantile(ages, 0.5) },
-    checks: { ...o.checks },
+    // Kwoty w publicznym pliku do 100 USD (pojedyncza pozycja nie jest widoczna dokładnie); udziały liczone wyżej z wartości dokładnych
+    checks: {
+      ...o.checks,
+      ...(o.checks.failedUsd !== undefined ? { failedUsd: round100(o.checks.failedUsd) } : {}),
+      ...(o.checks.rejectedUsd !== undefined ? { rejectedUsd: round100(o.checks.rejectedUsd) } : {}),
+    },
     ...(unconfirmed ? { unconfirmed } : {}),
     delay: { n: delays.length, medMin: round1(quantile(delays, 0.5)), p90Min: round1(quantile(delays, 0.9)) },
     method: 'hl-fills-liquidation-v1',
@@ -237,6 +279,14 @@ export function isLiqTape(x: unknown): x is LiqTape {
     fin(m.checks.rejected) &&
     fin(m.checks.failed) &&
     // Pola dopisane później: opcjonalne, ale jeśli są — w pełnym kształcie
+    (m.checks.failedBy === undefined ||
+      ((by) => !!by && (['overflow', 'ttl', 'api', 'truncated', 'unknown'] as const).every((k) => fin(by[k])))(m.checks.failedBy)) &&
+    (m.checks.failedUsd === undefined || fin(m.checks.failedUsd)) &&
+    (m.checks.rejectedUsd === undefined || fin(m.checks.rejectedUsd)) &&
+    (m.unconfirmed === undefined ||
+      ((m.unconfirmed?.failedUsd === undefined || fin(m.unconfirmed.failedUsd)) &&
+        (m.unconfirmed?.shareUsd === undefined || finOrNull(m.unconfirmed.shareUsd)) &&
+        (m.unconfirmed?.shareUsdWhy === undefined || typeof m.unconfirmed.shareUsdWhy === 'string'))) &&
     (m.unconfirmed === undefined ||
       (!!m.unconfirmed &&
         fin(m.unconfirmed.pending) &&
