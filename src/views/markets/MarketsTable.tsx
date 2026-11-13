@@ -10,6 +10,11 @@ const COLUMNS: { key: string; label: string; num?: boolean; sort?: SortKey; titl
   { key: 'volume', label: tr('Obrót 24 h', '24h volume'), num: true, sort: 'volume' },
   { key: 'oi', label: tr('Otwarte pozycje', 'Open interest'), num: true, sort: 'oi' },
   { key: 'funding', label: tr('Funding 1 h', 'Funding 1h'), num: true },
+  {
+    key: 'wallStreet',
+    label: 'Wall Street',
+    title: tr('Sesja regularna NYSE (giełda bazowa); tylko akcje i indeksy', 'NYSE regular session (the underlying exchange); equities and indices only'),
+  },
   { key: 'chart', label: tr('Wykres', 'Chart') },
   { key: 'scanner', label: tr('Skaner', 'Scanner') },
 ];

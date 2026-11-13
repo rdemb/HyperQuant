@@ -365,7 +365,15 @@ export function isMarketRegistry(x: unknown): x is MarketRegistry {
  * Rynek do wyboru na stronie (pola, których strona potrzebuje niezależnie od tego, czy rejestr jest dostępny); `oiUsd7d`
  * tylko z pliku rejestru (skala progów w USD, `marketCaps.usdScale`).
  */
-export type ChartMarket = Pick<MarketEntry, 'coin' | 'dex' | 'szDecimals' | 'maxLeverage' | 'scanner'> & { oiUsd7d?: number };
+export type ChartMarket = Pick<MarketEntry, 'coin' | 'dex' | 'szDecimals' | 'maxLeverage' | 'scanner'> & { oiUsd7d?: number; class?: MarketClass };
+
+/**
+ * Klasa rynku (pole `class` rekordu rejestru od etapu 1 projektu rynków; API giełdy jej nie podaje). Strona czyta ją, gdy
+ * plik ją ma i wartość jest z tej listy; inaczej rynek nie ma klasy (np. etykieta Wall Street pokazuje „—” z powodem).
+ */
+export const MARKET_CLASSES = ['crypto', 'equity', 'index', 'commodity', 'fx', 'other'] as const;
+export type MarketClass = (typeof MARKET_CLASSES)[number];
+const isMarketClass = (x: unknown): x is MarketClass => typeof x === 'string' && (MARKET_CLASSES as readonly string[]).includes(x);
 
 /** Dzisiejsze 4 rynki strony (parametry z API Hyperliquid, 11.2026) — gdy rejestru nie ma albo ma zły format. */
 export const DEFAULT_MARKETS: readonly ChartMarket[] = [
@@ -378,14 +386,11 @@ export const DEFAULT_MARKETS: readonly ChartMarket[] = [
 /** Rejestr albo 4 rynki domyślne: poprawny plik → jego rynki według miejsca, brakujący stały rynek dopisany na końcu. */
 export function marketsOrDefault(x: unknown): readonly ChartMarket[] {
   if (!isMarketRegistry(x)) return DEFAULT_MARKETS;
-  const list: ChartMarket[] = x.markets.map(({ coin, dex, szDecimals, maxLeverage, scanner, oiUsd7d }) => ({
-    coin,
-    dex,
-    szDecimals,
-    maxLeverage,
-    scanner,
-    oiUsd7d,
-  }));
+  const list: ChartMarket[] = x.markets.map((m) => {
+    const { coin, dex, szDecimals, maxLeverage, scanner, oiUsd7d } = m;
+    const cls = (m as { class?: unknown }).class;
+    return { coin, dex, szDecimals, maxLeverage, scanner, oiUsd7d, ...(isMarketClass(cls) ? { class: cls } : {}) };
+  });
   for (const d of DEFAULT_MARKETS) if (!list.some((m) => m.coin === d.coin)) list.push(d);
   return list;
 }

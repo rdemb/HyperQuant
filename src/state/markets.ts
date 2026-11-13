@@ -21,7 +21,7 @@ const listeners = new Set<() => void>();
 
 const sameList = (a: readonly ChartMarket[], b: readonly ChartMarket[]) =>
   a.length === b.length &&
-  a.every((m, i) => m.coin === b[i].coin && m.dex === b[i].dex && m.szDecimals === b[i].szDecimals && m.maxLeverage === b[i].maxLeverage && m.scanner === b[i].scanner && m.oiUsd7d === b[i].oiUsd7d);
+  a.every((m, i) => m.coin === b[i].coin && m.dex === b[i].dex && m.szDecimals === b[i].szDecimals && m.maxLeverage === b[i].maxLeverage && m.scanner === b[i].scanner && m.oiUsd7d === b[i].oiUsd7d && m.class === b[i].class);
 
 /** Odpowiedź rejestru (null = brak pliku albo nieudane pobranie): lista z pliku albo 4 rynki domyślne. */
 export function publishMarkets(raw: unknown): void {

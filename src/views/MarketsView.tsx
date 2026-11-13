@@ -46,6 +46,23 @@ const MarketsView: React.FC = () => {
               `Source: Hyperliquid (metaAndAssetCtxs), one request per exchange every ${page.refreshSec} s from your browser; the HyperQuant server fetches nothing. Open interest = contracts × mark price. Annual funding is annualised from the hourly rate (× 24 × 365). A reading older than 3 min or a market missing from the exchange response: “—” with the reason.`
             )}
           </p>
+          <p data-wall-street-note>
+            {tr(
+              'Etykieta Wall Street opisuje giełdę bazową (sesja regularna NYSE 9:30–16:00 czasu Nowego Jorku w dni robocze), a nie rynek na Hyperliquid, który działa całą dobę.',
+              'The Wall Street label describes the underlying exchange (the NYSE regular session, 9:30–16:00 New York time on weekdays), not the market on Hyperliquid, which trades around the clock.'
+            )}{' '}
+            {page.calendar ? (
+              <>
+                {tr('Święta i sesje skrócone: ', 'Holidays and early closes: ')}
+                <a href={page.calendar.source} target="_blank" rel="noopener noreferrer" className="underline decoration-line-strong underline-offset-2 hover:text-ink-1">
+                  nyse.com
+                </a>
+                {tr(`, odczyt ${page.calendar.readAt}, lata ${page.calendar.years.join(', ')}.`, `, read on ${page.calendar.readAt}, years ${page.calendar.years.join(', ')}.`)}
+              </>
+            ) : (
+              tr('Brak kalendarza NYSE w tej wersji strony: etykieta „—”.', 'No NYSE calendar in this version of the site: the label is “—”.')
+            )}
+          </p>
           <p data-markets-weight={page.weight}>
             {tr(
               `Waga zapytań tej strony w ostatniej minucie: ${page.weight} z ${page.weightLimit} (limit Hyperliquid na adres IP).`,
