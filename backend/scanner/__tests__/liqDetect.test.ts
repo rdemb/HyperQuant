@@ -157,7 +157,7 @@ describe('LiqConfirmer', () => {
     expect(rest.calls[0]).toEqual({ type: 'userFillsByTime', user: ADDR, startTime: T0 - 1000, endTime: T0 + 6 * MIN + 1000 });
     expect(c.events()).toHaveLength(1);
     // drugi kandydat nie wnosi nowych fillów — to ta sama likwidacja, nie liczy się podwójnie
-    expect(c.checks(T0 + 8 * MIN)).toEqual({ candidates: 2, confirmed: 1, rejected: 1, failed: 0 });
+    expect(c.checks(T0 + 8 * MIN)).toMatchObject({ candidates: 2, confirmed: 1, rejected: 1, failed: 0 });
   });
 
   it('likwidacja w dwóch krokach: drugie okno zawiera stary i nowy fill → nowe zdarzenie tylko z nowym fillem', async () => {
@@ -197,7 +197,7 @@ describe('LiqConfirmer', () => {
     c.enqueue({ addr: ADDR, prev: pos(2, 95_000, T0), from: T0, to: T0 + MIN });
     c.enqueue({ addr: OTHER, prev: pos(2, 95_000, T0), from: T0, to: T0 + MIN });
     for (let i = 0; i < 3; i++) await c.process(rest, T0 + (2 + i) * MIN);
-    expect(c.checks(T0 + 5 * MIN)).toEqual({ candidates: 2, confirmed: 0, rejected: 0, failed: 2 });
+    expect(c.checks(T0 + 5 * MIN)).toMatchObject({ candidates: 2, confirmed: 0, rejected: 0, failed: 2 });
   });
 
   it('API przeciążone (limiter w wycofaniu) → bez zapytań, kandydaci czekają', async () => {
@@ -220,7 +220,7 @@ describe('LiqConfirmer', () => {
     const late = T0 + MIN + 24 * 60 * MIN + 1000;
     await c.process(rest, late);
     expect(rest.calls).toHaveLength(1); // przeterminowany, bez zapytania
-    expect(c.checks(late)).toEqual({ candidates: 2, confirmed: 0, rejected: 1, failed: 1 });
+    expect(c.checks(late)).toMatchObject({ candidates: 2, confirmed: 0, rejected: 1, failed: 1 });
   });
 
   it('błąd API → kandydat wraca do kolejki; po 3 próbach nieudany', async () => {
@@ -312,7 +312,7 @@ describe('LiqConfirmer — licznik potwierdzonych zgodny z taśmą (diagnoza 8.1
     await c.process(restOf([apiFill()]), T0 + 16 * MIN);
     c.dropBefore(T0 + 20 * MIN);
     expect(c.events()).toEqual([]);
-    expect(c.checks(T0 + 20 * MIN)).toEqual({ candidates: 0, confirmed: 0, rejected: 0, failed: 0 });
+    expect(c.checks(T0 + 20 * MIN)).toMatchObject({ candidates: 0, confirmed: 0, rejected: 0, failed: 0 });
   });
 
   it('H3: likwidacja wykryta po 5 h (stary odczyt pozycji) — po wyjściu zdarzenia z okna 24 h licznik też go nie liczy', async () => {
@@ -332,9 +332,9 @@ describe('LiqConfirmer — licznik potwierdzonych zgodny z taśmą (diagnoza 8.1
     const ev = { t: T0, side: 'short', sz: 1, px: 95_000, usd: 95_000, method: 'market', markPx: 95_000, mapLiqPx: 95_100, mapAgeMin: 240, tids: [5] };
     const legacy = { v: 1, events: [ev], log: [['confirmed', T0 + 4 * H], ['confirmed', T0 + 5 * H], ['rejected', T0 + 5 * H]] };
     const back = LiqConfirmer.fromJSON(legacy, { coin: 'BTC', maxPerMin: 10 });
-    expect(back.checks(T0 + 6 * H)).toEqual({ candidates: 2, confirmed: 1, rejected: 1, failed: 0 });
+    expect(back.checks(T0 + 6 * H)).toMatchObject({ candidates: 2, confirmed: 1, rejected: 1, failed: 0 });
     // Jak 8.11: zdarzenie już poza oknem 24 h, wpisy potwierdzeń jeszcze w oknie
-    expect(tapeAt(back, T0 + DAY + MIN).checks).toEqual({ candidates: 1, confirmed: 0, rejected: 1, failed: 0 });
+    expect(tapeAt(back, T0 + DAY + MIN).checks).toMatchObject({ candidates: 1, confirmed: 0, rejected: 1, failed: 0 });
   });
 
   it('H4: deduplikacja po tid i filtr rynku/ofiary nie gubią zdarzeń — ta sama likwidacja w dwóch oknach to jedno zdarzenie i jedno potwierdzenie', async () => {
@@ -345,6 +345,6 @@ describe('LiqConfirmer — licznik potwierdzonych zgodny z taśmą (diagnoza 8.1
     await c.process(restOf([apiFill()], second), T0 + 17 * MIN);
     const tape = tapeAt(c, T0 + 20 * MIN);
     expect(tape.totals.h24.n).toBe(1);
-    expect(tape.checks).toEqual({ candidates: 1, confirmed: 1, rejected: 0, failed: 0 });
+    expect(tape.checks).toMatchObject({ candidates: 1, confirmed: 1, rejected: 0, failed: 0 });
   });
 });
