@@ -1,6 +1,6 @@
 import { tr } from '../i18n';
 import { fmtPx } from '../charts/pro/core/footprintBar';
-import { DASH } from '../ui/format';
+import { DASH, fmtCompact, fmtPct } from '../ui/format';
 import type { ChartMarket } from './marketRegistry';
 
 /**
@@ -163,6 +163,81 @@ export function rowWhyText(why: RowWhy, dex: string): string {
     case 'stale':
       return tr('odczyt starszy niż 3 min', 'reading older than 3 min');
   }
+}
+
+/**
+ * Wiersz gotowy do pokazania (komponenty widoku dostają same teksty, bez logiki danych): liczby sformatowane albo „—”,
+ * godzina odczytu LIVE albo powód „—”.
+ */
+export interface MarketRowModel {
+  coin: string;
+  /** Nazwa bez przedrostka giełdy */
+  name: string;
+  /** Etykieta giełdy (`Hyperliquid` albo nazwa giełdy HIP-3) i jej pełny opis */
+  exchange: string;
+  exchangeTitle: string;
+  price: string;
+  volume: string;
+  openInterest: string;
+  fundingHour: string;
+  /** Funding roczny przeliczony (null, gdy brak stawki) */
+  fundingYear: string | null;
+  /** Godzina odczytu LIVE (czas lokalny) — gdy liczby są; inaczej null i powód w `why` */
+  readAt: string | null;
+  why: string | null;
+  chartHref: string;
+  /** „mapa likwidacji” przy pełnym skanerze; inaczej „—” z powodem */
+  scanner: { text: string; why: string | null };
+}
+
+export interface MarketGroupModel {
+  id: string;
+  title: string;
+  rows: MarketRowModel[];
+}
+
+export function rowModel(r: MarketRow, fmtTime: (ms: number) => string, scannerWhy: (coin: string) => string): MarketRowModel {
+  const c = r.ctx;
+  const m = r.market;
+  return {
+    coin: m.coin,
+    name: r.name,
+    exchange: m.dex === '' ? 'Hyperliquid' : m.dex,
+    exchangeTitle: dexLabel(m.dex),
+    price: c ? fmtMarketPrice(c.markPx, m.szDecimals) : DASH,
+    volume: c ? fmtCompact(c.dayNtlVlm, '$') : DASH,
+    openInterest: c ? fmtCompact(r.oiUsd, '$') : DASH,
+    fundingHour: c ? fmtPct(fundingHourPct(c.funding), 4) : DASH,
+    fundingYear: c && c.funding !== null ? fmtPct(fundingYearPct(c.funding), 1) : null,
+    readAt: r.why === null && r.at !== null ? fmtTime(r.at) : null,
+    why: r.why === null ? null : rowWhyText(r.why, m.dex),
+    chartHref: `#charts?m=${m.coin}`,
+    scanner: m.scanner === 'full' ? { text: tr('mapa likwidacji', 'liquidation map'), why: null } : { text: DASH, why: scannerWhy(m.coin) },
+  };
+}
+
+/**
+ * Cała tabela: wiersze każdego rynku z listy, posortowane (`sortRows`) i pogrupowane jak wybór rynku wykresu
+ * (`groupsOf`: krypto oraz rynki HIP-3), każdy jako gotowy model wiersza.
+ */
+export function marketTableModel(
+  markets: readonly ChartMarket[],
+  dexes: Readonly<Record<string, DexState>>,
+  now: number,
+  sort: SortKey,
+  deps: {
+    groupsOf: (markets: readonly ChartMarket[]) => { id: string; title: string; markets: readonly ChartMarket[] }[];
+    fmtTime: (ms: number) => string;
+    scannerWhy: (coin: string) => string;
+  }
+): MarketGroupModel[] {
+  const rows = sortRows(marketRows(markets, dexes, now), sort);
+  const byCoin = new Map(rows.map((r) => [r.market.coin, r]));
+  return deps.groupsOf(rows.map((r) => r.market)).map((g) => ({
+    id: g.id,
+    title: g.title,
+    rows: g.markets.map((m) => rowModel(byCoin.get(m.coin)!, deps.fmtTime, deps.scannerWhy)),
+  }));
 }
 
 /**

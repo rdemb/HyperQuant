@@ -1,7 +1,21 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { marketGroups } from '../charts/pro/chart/marketMenu';
 import { fetchMetaAndCtxs } from '../charts/pro/hl/rest';
-import type { ChartMarket } from '../utils/marketRegistry';
-import { type DexState, MARKETS_REFRESH_MS, META_CTXS_WEIGHT, WeightMeter, parseDexCtxs, registryDexes } from '../utils/marketsTable';
+import { fmtHms } from '../charts/pro/core/time';
+import { noScannerWhy } from '../utils/marketCaps';
+import {
+  type DexState,
+  HL_WEIGHT_LIMIT_PER_MIN,
+  MARKETS_REFRESH_MS,
+  META_CTXS_WEIGHT,
+  type MarketGroupModel,
+  type SortKey,
+  WeightMeter,
+  marketTableModel,
+  parseDexCtxs,
+  registryDexes,
+} from '../utils/marketsTable';
+import { useMarkets } from './markets';
 
 /**
  * Dane tabeli „Rynki”: przeglądarka pyta Hyperliquid bezpośrednio (serwer HyperQuant nic nie pyta), jedno
@@ -133,11 +147,26 @@ const browserDeps = (): PollerDeps => ({
 /** Co ile widok przelicza świeżość i etykiety bez nowej odpowiedzi (odczyt starszy niż 3 min → „—”). */
 const CLOCK_MS = 15_000;
 
+export interface MarketsPage {
+  /** Tabela gotowa do pokazania: grupy i wiersze z tekstami */
+  groups: MarketGroupModel[];
+  sort: SortKey;
+  setSort: (s: SortKey) => void;
+  /** Waga zapytań tej strony z ostatniej minuty i limit Hyperliquid na adres IP */
+  weight: number;
+  weightLimit: number;
+  refreshSec: number;
+  /** Chwila, według której liczona jest świeżość (ms) */
+  now: number;
+}
+
 /**
- * Stan tabeli dla listy rynków: odświeżanie rusza, gdy lista jest rozstrzygnięta (`ready`), żeby pierwsza runda
- * objęła giełdy z rejestru, a nie 4 rynki domyślne.
+ * Jedyny hook strony „Rynki”: lista rynków z rejestru, odświeżanie (rusza, gdy lista jest rozstrzygnięta — `ready` —
+ * żeby pierwsza runda objęła giełdy z rejestru, a nie 4 rynki domyślne), zegar świeżości i model tabeli z czystych
+ * funkcji (`utils/marketsTable`). Komponenty widoku dostają gotowe teksty.
  */
-export function useMarketsTable(markets: readonly ChartMarket[], ready: boolean) {
+export function useMarketsPage(): MarketsPage {
+  const { markets, ready } = useMarkets();
   const poller = useMemo(() => new MarketsPoller(browserDeps()), []);
   const dexKey = registryDexes(markets).join('|');
   useEffect(() => () => poller.stop(), [poller]);
@@ -152,5 +181,15 @@ export function useMarketsTable(markets: readonly ChartMarket[], ready: boolean)
   }, []);
   // Zegar widoku także po każdej odpowiedzi (świeżość liczona od chwili odczytu)
   useEffect(() => setNow(Date.now()), [snap]);
-  return { snap, now, meter: poller.meter };
+  const [sort, setSort] = useState<SortKey>('oi');
+  const groups = useMemo(
+    () =>
+      marketTableModel(markets, snap.dexes, now, sort, {
+        groupsOf: (list) => marketGroups(list, ''),
+        fmtTime: fmtHms,
+        scannerWhy: (coin) => noScannerWhy(coin, markets),
+      }),
+    [markets, snap, now, sort]
+  );
+  return { groups, sort, setSort, weight: poller.meter.lastMinute(now), weightLimit: HL_WEIGHT_LIMIT_PER_MIN, refreshSec: MARKETS_REFRESH_MS / 1000, now };
 }
