@@ -10,6 +10,7 @@ import {
   fundingYearPct,
   isFresh,
   marketRows,
+  marketTableModel,
   openInterestUsd,
   parseDexCtxs,
   registryDexes,
@@ -125,6 +126,56 @@ describe('wiersze tabeli', () => {
     const swapped = marketRows([btc, eth], { '': ok(parseDexCtxs([{ universe: [{ name: 'BTC' }, { name: 'ETH' }] }, [ctx('80000', '1', '5'), ctx('3900', '1', '9')]], '')!) }, NOW);
     expect(sortRows(swapped).map((r) => r.name)).toEqual(['BTC', 'ETH']);
     expect(sortRows(swapped, 'volume').map((r) => r.name)).toEqual(['ETH', 'BTC']);
+  });
+});
+
+describe('model tabeli (gotowe teksty dla widoku)', () => {
+  const main = parseDexCtxs([{ universe: [{ name: 'BTC' }, { name: 'ETH' }] }, [ctx('80000', '31000', '2500000000'), ctx('3900', '500000', '900000000', '-0.0001')]], '')!;
+  const deps = {
+    groupsOf: (list: readonly ChartMarket[]) =>
+      (['crypto', 'hip3'] as const).map((id) => ({ id, title: id, markets: list.filter((m) => (m.dex === '') === (id === 'crypto')) })).filter((g) => g.markets.length > 0),
+    fmtTime: (ms: number) => `t${ms}`,
+    scannerWhy: (coin: string) => `bez skanera ${coin}`,
+  };
+
+  it('wiersz z liczbami: cena, obrót, OI, funding godzinowy i roczny, godzina odczytu, link, skaner', () => {
+    const groups = marketTableModel([eth, btc, nvda], { '': { at: NOW - 1000, ctxs: main, failedAt: null } }, NOW, 'oi', deps);
+    expect(groups.map((g) => [g.id, g.rows.map((r) => r.coin)])).toEqual([
+      ['crypto', ['BTC', 'ETH']],
+      ['hip3', ['xyz:NVDA']],
+    ]);
+    expect(groups[0].rows[0]).toEqual({
+      coin: 'BTC',
+      name: 'BTC',
+      exchange: 'Hyperliquid',
+      exchangeTitle: 'Hyperliquid (główna)',
+      price: '80 000',
+      volume: '$2,50B',
+      openInterest: '$2,48B',
+      fundingHour: '+0,0013%',
+      fundingYear: '+11,0%',
+      readAt: `t${NOW - 1000}`,
+      why: null,
+      chartHref: '#charts?m=BTC',
+      scanner: { text: 'mapa likwidacji', why: null },
+    });
+    expect(groups[0].rows[1]).toMatchObject({ fundingHour: '−0,0100%', fundingYear: '−87,6%', scanner: { text: '—', why: 'bez skanera ETH' } });
+  });
+
+  it('wiersz bez danych: same „—”, bez godziny, z powodem', () => {
+    const [, hip3] = marketTableModel([btc, nvda], { '': { at: NOW - 1000, ctxs: main, failedAt: null } }, NOW, 'oi', deps);
+    expect(hip3.rows[0]).toMatchObject({
+      name: 'NVDA',
+      exchange: 'xyz',
+      price: '—',
+      volume: '—',
+      openInterest: '—',
+      fundingHour: '—',
+      fundingYear: null,
+      readAt: null,
+      why: 'czekam na pierwszą odpowiedź giełdy',
+      chartHref: '#charts?m=xyz:NVDA',
+    });
   });
 });
 
