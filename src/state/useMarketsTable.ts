@@ -157,6 +157,8 @@ export interface MarketsPage {
   weight: number;
   weightLimit: number;
   refreshSec: number;
+  /** Liczba rynków w rejestrze (do opisu strony) */
+  marketCount: number;
   /** Chwila, według której liczona jest świeżość (ms) */
   now: number;
   /** Kalendarz NYSE etykiety Wall Street: źródło, dzień odczytu i lata w pliku (null = brak pliku) */
@@ -201,6 +203,7 @@ export function useMarketsPage(): MarketsPage {
     weight: poller.meter.lastMinute(now),
     weightLimit: HL_WEIGHT_LIMIT_PER_MIN,
     refreshSec: MARKETS_REFRESH_MS / 1000,
+    marketCount: markets.length,
     now,
     calendar: NYSE_CALENDAR ? { source: NYSE_CALENDAR.source, readAt: NYSE_CALENDAR.readAt, years: Object.keys(NYSE_CALENDAR.years) } : null,
   };
