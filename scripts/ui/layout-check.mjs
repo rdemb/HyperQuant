@@ -221,6 +221,28 @@ const marketShown = `(() => {
 })()`;
 const nanText = `(() => [...document.body.innerText.matchAll(/.{0,24}\\b(NaN|Infinity)\\b.{0,24}/g)].map((m) => m[0].trim()).slice(0, 5))()`;
 
+// ───────────────────────── widok „Rynki” (#markets) ─────────────────────────
+/**
+ * Tabela rynków na danych stałych z rejestrem (`registry()`): 1440 × 900, 1024 × 768 i 390 × 844. Wiersz dla każdego rynku
+ * rejestru z odczytem LIVE w mniej niż 3 s od wejścia, bez poziomego przewijania strony (tabela przewija się w swoim
+ * pudełku), bez wyjątków, `console.error` i „NaN”. Nagłówek (komputer): żadna liczba rynku nie jest ucięta przy prawej
+ * krawędzi (pozycja, która się nie mieści, znika cała), cena widoczna w całości. Telefon: „Rynki” w menu „Więcej”.
+ */
+const RYNKI_VIEWPORTS = [
+  ['1440', 1440, 900, false],
+  ['1024', 1024, 768, false],
+  ['390', 390, 844, true],
+];
+const RYNKI_MAX_MS = 3000;
+const rynkiRows = `(() => { const rows = [...document.querySelectorAll('[data-market-row]')]; return rows.length > 0 && rows.every((r) => /LIVE/.test(r.textContent)) ? rows.length : 0; })()`;
+const headerCut = `(() => {
+  const t = document.querySelector('[data-header-ticker]');
+  if (!t || t.getBoundingClientRect().width === 0) return null;
+  const right = t.getBoundingClientRect().right + 0.5;
+  const shown = [...t.querySelectorAll('button, [data-ticker-item]')].filter((e) => { const s = getComputedStyle(e); return s.display !== 'none' && s.visibility !== 'hidden' && e.getBoundingClientRect().width > 0; });
+  return { shown: shown.map((e) => (e.textContent || '').trim().slice(0, 16)), cut: shown.filter((e) => e.getBoundingClientRect().right > right).map((e) => (e.textContent || '').trim().slice(0, 16)) };
+})()`;
+
 // ───────────────────────── funkcje paska (dzisiejsze ikony i przełączniki) ─────────────────────────
 const DESKTOP_FUNCS = {
   indicators: 'Wskaźniki',
@@ -777,6 +799,37 @@ async function main() {
           await shot(page, `${w}-rynek-${coin.replace(':', '-')}`);
         }
       }
+      // Widok „Rynki” z tym samym rejestrem
+      report.rynkiView = {};
+      for (const [key, w, h, mobile] of RYNKI_VIEWPORTS) {
+        await page.viewport(w, h, mobile);
+        const [e0, c0] = [page.errors.length, page.consoleErrors.length];
+        await page.go(`${BASE}robots.txt`, 300);
+        await page.ev(`(() => { localStorage.clear(); const s = ${JSON.stringify(RETURNING)}; for (const k in s) localStorage.setItem(k, s[k]); return true; })()`);
+        const t0 = Date.now();
+        await page.go(`${BASE}#markets`);
+        const rows = await page.waitFor(rynkiRows, 20000, 50);
+        const ms = Date.now() - t0;
+        await sleep(1500);
+        await page.mouseAway();
+        report.rynkiView[key] = {
+          rows: rows ?? 0,
+          want: registry().markets.length,
+          ms,
+          overflowX: await page.ev('document.documentElement.scrollWidth - innerWidth'),
+          header: mobile ? null : await page.ev(headerCut),
+          nan: await probe(page, nanText),
+          errors: page.errors.slice(e0),
+          consoleErrors: page.consoleErrors.slice(c0),
+        };
+        if (mobile) {
+          await page.ev(`document.querySelector('[data-app-nav] button[aria-expanded]')?.click()`);
+          await sleep(400);
+          report.rynkiView[key].phoneMenu = await page.ev(`!!document.querySelector('[data-app-nav] a[href="#markets"]')`);
+          await page.key('Escape');
+        }
+        await shot(page, `${w}-rynki`);
+      }
       serveRegistry = false;
       await page.viewport(1440, 900, false);
     }
@@ -847,6 +900,21 @@ async function main() {
     return !!x && x.over?.count === 0 && lab(x) === 0 && x.shown?.picker === coin && (key === 'phone' || x.shown?.legend?.[0] === coin) && x.nan?.length === 0 && x.errors.length === 0 && x.consoleErrors.length === 0;
   };
   if (!LIVE) r.summary.m1 = MARKETS.every((coin) => marketOk(coin, 'desktop') && marketOk(coin, 'phone'));
+  // Widok „Rynki”: wszystkie rynki rejestru z odczytem LIVE w < 3 s, bez przewijania strony w bok, błędów i NaN, nagłówek bez uciętych liczb
+  const rynkiOk = (key) => {
+    const x = r.rynkiView?.[key];
+    return (
+      !!x &&
+      x.rows === x.want &&
+      x.ms < RYNKI_MAX_MS &&
+      x.overflowX <= 0 &&
+      x.nan?.length === 0 &&
+      x.errors.length === 0 &&
+      x.consoleErrors.length === 0 &&
+      (key === '390' ? x.phoneMenu === true : x.header?.cut?.length === 0 && /PERP/.test(x.header?.shown?.[0] ?? ''))
+    );
+  };
+  if (!LIVE) r.summary.rynki = RYNKI_VIEWPORTS.every(([key]) => rynkiOk(key));
   const lines = [
     `Pomiar „${LABEL}” (${BASE})`,
     `1. Panel ceny 1440×900: ${pct(r.desktop)} (próg 62%, zapas ${margin(r.desktop?.share ?? 0, LIMITS.desktop)}), z kolumną DOM: ${pct(r.desktopDom)} (próg 60%, zapas ${margin(r.desktopDom?.share ?? 0, LIMITS.desktopDom)}) — ${ok(t1)}`,
@@ -884,6 +952,16 @@ async function main() {
         ? `rynek ${x.shown?.legend?.[0] ?? x.shown?.picker ?? '—'}, panel ceny ${pct(x)}, nad świecami ${x.over?.count}, nachodzące etykiety ${lab(x)}, ${obj(x)}, błędy strony ${x.errors.length + x.consoleErrors.length}${x.errors.length + x.consoleErrors.length ? ` (${[...x.errors, ...x.consoleErrors].map((e) => e.split('\n')[0]).join(' | ')})` : ''}, NaN ${x.nan?.length ?? '—'}${x.nan?.length ? ` (${x.nan.join(' | ')})` : ''}`
         : '—';
     for (const coin of MARKETS) lines.push(`M1. ${coin} (dane stałe, rejestr rynków): 1440 ${one(r.markets[coin]?.desktop)}; 390 ${one(r.markets[coin]?.phone)} — ${ok(marketOk(coin, 'desktop') && marketOk(coin, 'phone'))}`);
+  }
+  if (r.rynkiView) {
+    const one = (key) => {
+      const x = r.rynkiView[key];
+      if (!x) return '—';
+      const errs = [...x.errors, ...x.consoleErrors].map((e) => e.split('\n')[0]);
+      const head = key === '390' ? `„Rynki” w menu telefonu: ${x.phoneMenu ? 'tak' : 'nie'}` : `nagłówek: ${x.header ? `widoczne ${x.header.shown.join(' | ')}, ucięte ${x.header.cut.length ? x.header.cut.join(' | ') : 'brak'}` : '—'}`;
+      return `${key}: wiersze ${x.rows}/${x.want} w ${x.ms} ms, przewijanie strony w bok ${x.overflowX} px, ${head}, błędy ${errs.length}${errs.length ? ` (${errs.join(' | ')})` : ''}, NaN ${x.nan?.length ?? '—'} — ${ok(rynkiOk(key))}`;
+    };
+    lines.push(`Rynki (#markets, dane stałe, limit ${RYNKI_MAX_MS} ms): ${RYNKI_VIEWPORTS.map(([key]) => one(key)).join('; ')}`);
   }
   const metrics = metricsOf(r);
   let baseDiff = [];
