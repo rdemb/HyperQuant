@@ -381,6 +381,24 @@ describe('marketsOrDefault', () => {
     expect(list.map((m) => m.coin)).toEqual(['BTC', 'xyz:NVDA', 'ETH', 'SOL', 'HYPE']);
     expect(list[1]).toEqual({ coin: 'xyz:NVDA', dex: 'xyz', szDecimals: 3, maxLeverage: 20, scanner: 'none', oiUsd7d: 5e8 });
   });
+  it('pole `class` (etap 1): znana klasa przechodzi do listy strony, nieznana i brak — rynek bez klasy', () => {
+    const row = (coin: string, rank: number, cls?: unknown) => ({
+      coin,
+      dex: coin.includes(':') ? coin.split(':')[0] : '',
+      oiUsd7d: 1e9 / rank,
+      rank,
+      szDecimals: 2,
+      maxLeverage: 10,
+      since: '2026-11-01',
+      scanner: 'none',
+      ...(cls === undefined ? {} : { class: cls }),
+    });
+    const r = { asOf: T0, rule: 'reg-v1', markets: [row('BTC', 1, 'crypto'), row('xyz:NVDA', 2, 'equity'), row('xyz:SP500', 3, 'index'), row('xyz:GOLD', 4, 'metal'), row('ETH', 5)] };
+    expect(isMarketRegistry(r)).toBe(true);
+    const list = marketsOrDefault(r);
+    expect(list.map((m) => m.class)).toEqual(['crypto', 'equity', 'index', undefined, undefined, undefined, undefined]);
+    expect('class' in list[3]).toBe(false);
+  });
 });
 
 describe('isCoinName', () => {

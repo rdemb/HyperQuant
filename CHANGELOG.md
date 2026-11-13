@@ -4,6 +4,15 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Strona „Rynki”: etykieta Wall Street z kalendarzem NYSE (2026-11-13)
+<!-- co-nowego: grupa=rynki | pl=Na stronie „Rynki” etykieta, czy Wall Street jest otwarta, z kalendarzem świąt NYSE | en=On the Markets page, a label showing whether Wall Street is open, with the NYSE holiday calendar -->
+
+#### Dodane
+- **Kolumna „Wall Street”** w tabeli „Rynki” (logika w `src/utils/wallStreet.ts`, model komórki w `useMarketsPage`, wygląd w komponencie `src/views/markets/WallStreetLabel.tsx`): „otwarta” albo „zamknięta” z dopiskiem (do której, weekend, święto z nazwą, sesja skrócona) dla rynków klasy akcji i indeksów; sesja regularna NYSE 9:30–16:00 czasu Nowego Jorku w dni robocze, strefa z `Intl` (zmiana czasu w USA i w Europie bez wpływu). Inne rynki: „—” z powodem (krypto bez giełdy bazowej, inna klasa, rejestr jeszcze bez klasy). Rok bez kalendarza: „—” z powodem zamiast zgadywania. Pod tabelą zdanie, że etykieta opisuje giełdę bazową, a rynek na Hyperliquid działa całą dobę.
+- **Kalendarz `src/data/nyseCalendar.json`**: święta i sesje skrócone (zamknięcie o 13:00) na lata 2026–2028 przepisane ze strony NYSE „Holidays & Trading Hours” (https://www.nyse.com/markets/hours-calendars), odczyt 13.11.2026; plik ma adres źródła i datę odczytu.
+- **Klasa rynku z rejestru**: lista rynków strony czyta pole `class` rekordu `markets.json`, gdy plik je ma (pole etapu 1: `crypto`, `equity`, `index`, `commodity`, `fx`, `other`); nieznana wartość — rynek bez klasy. Rejestr w danych stałych `ui:check` ma xyz:NVDA jako akcję, a pomiar widoku sprawdza jego etykietę.
+- Testy granic: 9:29 i 9:30, 15:59 i 16:00 czasu Nowego Jorku, tydzień po zmianie czasu w USA (9–13.03.2026) i w Europie (26–30.10.2026), weekend, święto (Thanksgiving), sesja skrócona (27.11.2026), data w Nowym Jorku inna niż w UTC, brak kalendarza na rok.
+
 ### Strona „Rynki”: tabela rynków z rejestru (2026-11-13)
 <!-- co-nowego: grupa=rynki | pl=Nowa strona „Rynki”: cena, obrót, otwarte pozycje i funding każdego rynku z rejestru, prosto z Hyperliquid | en=New Markets page: price, volume, open interest and funding of every market in the registry, straight from Hyperliquid -->
 

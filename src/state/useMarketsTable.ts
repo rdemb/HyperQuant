@@ -15,6 +15,7 @@ import {
   parseDexCtxs,
   registryDexes,
 } from '../utils/marketsTable';
+import { NYSE_CALENDAR, wallStreetAt, wallStreetCell } from '../utils/wallStreet';
 import { useMarkets } from './markets';
 
 /**
@@ -158,6 +159,8 @@ export interface MarketsPage {
   refreshSec: number;
   /** Chwila, według której liczona jest świeżość (ms) */
   now: number;
+  /** Kalendarz NYSE etykiety Wall Street: źródło, dzień odczytu i lata w pliku (null = brak pliku) */
+  calendar: { source: string; readAt: string; years: string[] } | null;
 }
 
 /**
@@ -182,14 +185,23 @@ export function useMarketsPage(): MarketsPage {
   // Zegar widoku także po każdej odpowiedzi (świeżość liczona od chwili odczytu)
   useEffect(() => setNow(Date.now()), [snap]);
   const [sort, setSort] = useState<SortKey>('oi');
-  const groups = useMemo(
-    () =>
-      marketTableModel(markets, snap.dexes, now, sort, {
-        groupsOf: (list) => marketGroups(list, ''),
-        fmtTime: fmtHms,
-        scannerWhy: (coin) => noScannerWhy(coin, markets),
-      }),
-    [markets, snap, now, sort]
-  );
-  return { groups, sort, setSort, weight: poller.meter.lastMinute(now), weightLimit: HL_WEIGHT_LIMIT_PER_MIN, refreshSec: MARKETS_REFRESH_MS / 1000, now };
+  const groups = useMemo(() => {
+    const ws = wallStreetAt(now);
+    return marketTableModel(markets, snap.dexes, now, sort, {
+      groupsOf: (list) => marketGroups(list, ''),
+      fmtTime: fmtHms,
+      scannerWhy: (coin) => noScannerWhy(coin, markets),
+      wallStreet: (m) => wallStreetCell(m, ws),
+    });
+  }, [markets, snap, now, sort]);
+  return {
+    groups,
+    sort,
+    setSort,
+    weight: poller.meter.lastMinute(now),
+    weightLimit: HL_WEIGHT_LIMIT_PER_MIN,
+    refreshSec: MARKETS_REFRESH_MS / 1000,
+    now,
+    calendar: NYSE_CALENDAR ? { source: NYSE_CALENDAR.source, readAt: NYSE_CALENDAR.readAt, years: Object.keys(NYSE_CALENDAR.years) } : null,
+  };
 }

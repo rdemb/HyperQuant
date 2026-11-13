@@ -136,6 +136,7 @@ describe('model tabeli (gotowe teksty dla widoku)', () => {
       (['crypto', 'hip3'] as const).map((id) => ({ id, title: id, markets: list.filter((m) => (m.dex === '') === (id === 'crypto')) })).filter((g) => g.markets.length > 0),
     fmtTime: (ms: number) => `t${ms}`,
     scannerWhy: (coin: string) => `bez skanera ${coin}`,
+    wallStreet: (m: ChartMarket) => ({ label: `ws ${m.coin}`, note: null, why: null }),
   };
 
   it('wiersz z liczbami: cena, obrót, OI, funding godzinowy i roczny, godzina odczytu, link, skaner', () => {
@@ -158,6 +159,7 @@ describe('model tabeli (gotowe teksty dla widoku)', () => {
       why: null,
       chartHref: '#charts?m=BTC',
       scanner: { text: 'mapa likwidacji', why: null },
+      wallStreet: { label: 'ws BTC', note: null, why: null },
     });
     expect(groups[0].rows[1]).toMatchObject({ fundingHour: '−0,0100%', fundingYear: '−87,6%', scanner: { text: '—', why: 'bez skanera ETH' } });
   });

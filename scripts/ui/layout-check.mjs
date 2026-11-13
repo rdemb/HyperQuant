@@ -234,6 +234,8 @@ const RYNKI_VIEWPORTS = [
   ['390', 390, 844, true],
 ];
 const RYNKI_MAX_MS = 3000;
+/** Etykieta Wall Street xyz:NVDA (klasa akcji w rejestrze danych stałych) przy zegarze stałych danych: sobota 24.10.2026. */
+const RYNKI_WALL_STREET = 'zamknięta';
 const rynkiRows = `(() => { const rows = [...document.querySelectorAll('[data-market-row]')]; return rows.length > 0 && rows.every((r) => /LIVE/.test(r.textContent)) ? rows.length : 0; })()`;
 const headerCut = `(() => {
   const t = document.querySelector('[data-header-ticker]');
@@ -818,6 +820,8 @@ async function main() {
           ms,
           overflowX: await page.ev('document.documentElement.scrollWidth - innerWidth'),
           header: mobile ? null : await page.ev(headerCut),
+          // Etykieta Wall Street rynku klasy akcji (xyz:NVDA); zegar stałych danych to sobota 24.10, więc „zamknięta”
+          wallStreet: await page.ev(`document.querySelector('[data-market-row="xyz:NVDA"] [data-wall-street]')?.dataset.wallStreet ?? null`),
           nan: await probe(page, nanText),
           errors: page.errors.slice(e0),
           consoleErrors: page.consoleErrors.slice(c0),
@@ -911,6 +915,7 @@ async function main() {
       x.nan?.length === 0 &&
       x.errors.length === 0 &&
       x.consoleErrors.length === 0 &&
+      x.wallStreet === RYNKI_WALL_STREET &&
       (key === '390' ? x.phoneMenu === true : x.header?.cut?.length === 0 && /PERP/.test(x.header?.shown?.[0] ?? ''))
     );
   };
@@ -959,7 +964,7 @@ async function main() {
       if (!x) return '—';
       const errs = [...x.errors, ...x.consoleErrors].map((e) => e.split('\n')[0]);
       const head = key === '390' ? `„Rynki” w menu telefonu: ${x.phoneMenu ? 'tak' : 'nie'}` : `nagłówek: ${x.header ? `widoczne ${x.header.shown.join(' | ')}, ucięte ${x.header.cut.length ? x.header.cut.join(' | ') : 'brak'}` : '—'}`;
-      return `${key}: wiersze ${x.rows}/${x.want} w ${x.ms} ms, przewijanie strony w bok ${x.overflowX} px, ${head}, błędy ${errs.length}${errs.length ? ` (${errs.join(' | ')})` : ''}, NaN ${x.nan?.length ?? '—'} — ${ok(rynkiOk(key))}`;
+      return `${key}: wiersze ${x.rows}/${x.want} w ${x.ms} ms, przewijanie strony w bok ${x.overflowX} px, ${head}, Wall Street xyz:NVDA „${x.wallStreet ?? '—'}”, błędy ${errs.length}${errs.length ? ` (${errs.join(' | ')})` : ''}, NaN ${x.nan?.length ?? '—'} — ${ok(rynkiOk(key))}`;
     };
     lines.push(`Rynki (#markets, dane stałe, limit ${RYNKI_MAX_MS} ms): ${RYNKI_VIEWPORTS.map(([key]) => one(key)).join('; ')}`);
   }
