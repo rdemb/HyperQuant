@@ -4,6 +4,14 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Taśma likwidacji: przyczyny nieudanych i udział według wartości (2026-11-13)
+<!-- co-nowego: grupa=skaner | pl=Taśma likwidacji: przyczyny niepotwierdzonych i udział według wartości | en=Liquidation tape: reasons for unconfirmed candidates and the share by value -->
+
+#### Dodane
+- **Skaner** (`backend/scanner/liqDetect.ts`): każdy nieudany kandydat ma przyczynę (przepełnienie kolejki, wygaśnięcie po 24 h, błąd API, obcięta odpowiedź) i wartość pozycji przy cenie likwidacji; odrzuceni też mają wartość. Stan sprzed zmiany czyta się dalej (przyczyna `unknown`).
+- **Plik `liq-tape/BTC.json`** (`src/utils/liqTape.ts`): `checks.failedBy`, `checks.failedUsd`, `checks.rejectedUsd` oraz `unconfirmed.failedUsd` i `unconfirmed.shareUsd` — udział niepotwierdzonych według wartości obok udziału w sztukach. Wszystkie pola opcjonalne, `failed` i `share` bez zmian.
+- **MCP `liquidation_tape`:** `unconfirmedShareUsd` obok `unconfirmedShare`.
+
 ### „Wyniki” i „Co nowego” w nawigacji aplikacji (2026-11-12)
 <!-- co-nowego: grupa=blog | pl=Linki „Wyniki” i „Co nowego” w nawigacji aplikacji, także na telefonie | en=Results and What’s new links in the app navigation, on phones too -->
 

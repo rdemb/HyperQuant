@@ -187,6 +187,11 @@ interface Queued extends LiqCandidate {
  */
 type Outcome = 'rejected' | 'failed';
 const OUTCOMES: readonly string[] = ['rejected', 'failed'];
+/** Przyczyna nieudanego sprawdzenia; wpisy ze stanu sprzed 13.11.2026 jej nie mają („unknown” w licznikach). */
+type FailReason = 'overflow' | 'ttl' | 'api' | 'truncated';
+const FAIL_REASONS: readonly string[] = ['overflow', 'ttl', 'api', 'truncated'];
+/** Wpis dziennika wyników: rodzaj, czas, przyczyna (tylko failed, inaczej null), wartość pozycji przy cenie likwidacji (USD) */
+type LogEntry = [Outcome, number] | [Outcome, number, FailReason | null, number];
 
 export interface InfoClient {
   info(body: unknown, weight: number): Promise<unknown | null>;
@@ -206,7 +211,7 @@ export class LiqConfirmer {
   private queue: Queued[] = [];
   private evs: DetectedLiq[] = [];
   private readonly seenTids = new Set<number>();
-  private log: [Outcome, number][] = [];
+  private log: LogEntry[] = [];
   private calls: number[] = [];
   /** Początek bieżącego okresu obserwacji (ostatnie dropBefore): taśma ma tylko zdarzenia od tej chwili */
   private floor = Number.NEGATIVE_INFINITY;
@@ -231,8 +236,8 @@ export class LiqConfirmer {
     while (this.queue.length > MAX_QUEUE) {
       let k = 0;
       for (let i = 1; i < this.queue.length; i++) if (candidateUsd(this.queue[i]) < candidateUsd(this.queue[k])) k = i;
-      this.queue.splice(k, 1);
-      this.log.push(['failed', c.to]);
+      const [gone] = this.queue.splice(k, 1);
+      this.log.push(['failed', c.to, 'overflow', candidateUsd(gone)]);
     }
   }
 
@@ -250,7 +255,7 @@ export class LiqConfirmer {
     this.queue.sort((a, b) => candidateUsd(b) - candidateUsd(a) || a.to - b.to);
     for (const c of this.queue) {
       if (now - c.to > CANDIDATE_TTL) {
-        this.log.push(['failed', now]);
+        this.log.push(['failed', now, 'ttl', candidateUsd(c)]);
         continue;
       }
       if (this.calls.length >= perMin) {
@@ -263,14 +268,14 @@ export class LiqConfirmer {
       if (!Array.isArray(fills)) {
         // Błąd sieci/API albo nieoczekiwany kształt — nie wiadomo, czy była likwidacja
         c.attempts++;
-        if (c.attempts >= MAX_ATTEMPTS) this.log.push(['failed', now]);
+        if (c.attempts >= MAX_ATTEMPTS) this.log.push(['failed', now, 'api', candidateUsd(c)]);
         else keep.push(c);
         continue;
       }
       rest.charge?.(20 + Math.ceil(fills.length / 20) - FILLS_WEIGHT);
       if (fills.length >= FILLS_CAP) {
         // Odpowiedź mogła zostać obcięta — brak fillu likwidacyjnego niczego nie dowodzi
-        this.log.push(['failed', now]);
+        this.log.push(['failed', now, 'truncated', candidateUsd(c)]);
         continue;
       }
       const ev = parseLiquidationFills(fills, this.coin, c.addr, c.prev, this.seenTids);
@@ -281,7 +286,7 @@ export class LiqConfirmer {
         for (const t of ev.tids) this.seenTids.add(t);
         this.evs.push({ ...ev, foundAt: now });
       } else if (!parseLiquidationFills(fills, this.coin, c.addr, c.prev)) {
-        this.log.push(['rejected', now]);
+        this.log.push(['rejected', now, null, candidateUsd(c)]);
       }
       // Same już zaliczone fille: ta sama likwidacja co wcześniej — bez ponownego liczenia
     }
@@ -293,7 +298,7 @@ export class LiqConfirmer {
   private expire(now: number): void {
     const keep: Queued[] = [];
     for (const c of this.queue) {
-      if (now - c.to > CANDIDATE_TTL) this.log.push(['failed', now]);
+      if (now - c.to > CANDIDATE_TTL) this.log.push(['failed', now, 'ttl', candidateUsd(c)]);
       else keep.push(c);
     }
     this.queue = keep;
@@ -310,10 +315,22 @@ export class LiqConfirmer {
    */
   checks(now: number): LiqTapeChecks {
     const out: LiqTapeChecks = { candidates: 0, confirmed: 0, rejected: 0, failed: 0 };
-    for (const [k, t] of this.log) if (t > now - DAY) out[k]++;
+    const by = { overflow: 0, ttl: 0, api: 0, truncated: 0, unknown: 0 };
+    let failedUsd = 0;
+    let rejectedUsd = 0;
+    for (const r of this.log) {
+      const [k, t] = r;
+      if (!(t > now - DAY)) continue;
+      out[k]++;
+      const usd = r.length === 4 ? r[3] : 0;
+      if (k === 'failed') {
+        by[r.length === 4 && r[2] ? r[2] : 'unknown']++;
+        failedUsd += usd;
+      } else rejectedUsd += usd;
+    }
     out.confirmed = this.evs.filter((e) => inTapeDay(e.t, now)).length;
     out.candidates = out.confirmed + out.rejected + out.failed;
-    return out;
+    return { ...out, failedBy: by, failedUsd: Math.round(failedUsd), rejectedUsd: Math.round(rejectedUsd) };
   }
 
   /** Usuwa zdarzenia i liczniki starsze niż 24 h oraz zdarzenia z przyszłości (uszkodzony stan, zły zegar). */
@@ -346,7 +363,7 @@ export class LiqConfirmer {
    * jak księga adresów w tym samym katalogu stanu; bez niej restart gubił kandydatów, których ponowny odczyt pozycji już
    * nie wykryje (pozycja jest zapisana po zmniejszeniu), a taśma traciła te likwidacje.
    */
-  toJSON(): { v: 1; events: DetectedLiq[]; log: [Outcome, number][]; queue: Queued[] } {
+  toJSON(): { v: 1; events: DetectedLiq[]; log: LogEntry[]; queue: Queued[] } {
     return { v: 1, events: this.evs, log: this.log, queue: this.queue };
   }
 
@@ -369,8 +386,13 @@ export class LiqConfirmer {
       }
     }
     if (Array.isArray(x.log)) {
+      // Wpis stary [rodzaj, czas] albo nowy [rodzaj, czas, przyczyna|null, wartość USD]
       c.log = x.log.filter(
-        (r): r is [Outcome, number] => Array.isArray(r) && OUTCOMES.includes(r[0]) && typeof r[1] === 'number' && Number.isFinite(r[1])
+        (r): r is LogEntry =>
+          Array.isArray(r) &&
+          OUTCOMES.includes(r[0]) &&
+          finite(r[1]) &&
+          (r.length === 2 || (r.length === 4 && (r[2] === null || FAIL_REASONS.includes(r[2])) && finite(r[3]) && r[3] >= 0))
       );
     }
     // Kolejka kandydatów (pole opcjonalne; starszy stan bez niej = pusta kolejka): tylko poprawne wpisy, najwyżej
@@ -379,7 +401,7 @@ export class LiqConfirmer {
       for (const q of x.queue) {
         if (!isQueued(q)) continue;
         if (o.since !== undefined && q.to < o.since) continue;
-        if (o.now !== undefined && o.now - q.to > CANDIDATE_TTL) c.log.push(['failed', o.now]);
+        if (o.now !== undefined && o.now - q.to > CANDIDATE_TTL) c.log.push(['failed', o.now, 'ttl', candidateUsd(q)]);
         else if (c.queue.length < MAX_QUEUE) c.queue.push(q);
       }
     return c;
