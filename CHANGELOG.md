@@ -4,6 +4,13 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Nowy wygląd: kontrola pustego stanu wszystkich widoków (2026-11-14)
+<!-- co-nowego: ukryj -->
+
+#### Dodane
+- **`ui:check`, przebieg „Pusty stan”**: każdy widok z rejestru nowego wyglądu (`src/nowy/widoki.ts`) otwierany bez API giełdy i danych skanera; tekst widoku może mieć tylko „—” z powodem i etykiety z liczbami („Obrót 24 h”, „Paliwo ±1%”), bez liczb dziesiętnych, liczb od 100, procentów spoza etykiet, znanych stałych makiety i NaN (`scripts/ui/pustyStan.mjs` z testami).
+- **Granice pakietu**: plik wejściowy nie może zawierać kodu nowej powłoki (znacznik `data-nowa-powloka`), także gdy moduł trafiłby do wejścia bez osobnego wpisu w manifeście.
+
 ### Nowy wygląd za przełącznikiem: powłoka (2026-11-14)
 <!-- co-nowego: ukryj -->
 
