@@ -391,7 +391,8 @@ const PaletaPolecen = lazy(() => import('./PaletaPolecen').then((m) => ({ defaul
 
 /**
  * Szyna boczna (komputer, od 1024 px): marka, dzień tradera ze znakiem „teraz” przy fazie bieżącej sesji, rynki
- * i wiedza, strony serwisu. 1024–1439 px: same ikony (nazwa w podpowiedzi i dla czytnika ekranu), od 1440 px z nazwami.
+ * i wiedza, strony serwisu. 1024–1599 px: same ikony (nazwa w podpowiedzi i dla czytnika ekranu), od 1600 px z nazwami
+ * (wąska szyna oddaje miejsce wykresowi i kolumnie DOM przy 1440 px).
  */
 const Szyna: React.FC<{ go: (v: ViewId) => void }> = ({ go }) => {
   const { view } = useDesk();
@@ -402,7 +403,7 @@ const Szyna: React.FC<{ go: (v: ViewId) => void }> = ({ go }) => {
     }`;
   const grupa = (tytul: string, items: NavItem[]) => (
     <div>
-      <p className="hidden min-[1440px]:block px-3 mb-1.5 font-mono text-[10px] font-semibold tracking-[0.14em] uppercase text-ink-3">{tytul}</p>
+      <p className="hidden min-[1600px]:block px-3 mb-1.5 font-mono text-[10px] font-semibold tracking-[0.14em] uppercase text-ink-3">{tytul}</p>
       <ul className="space-y-0.5">
         {items.map((n) => {
           const aktywna = view === n.id;
@@ -418,9 +419,9 @@ const Szyna: React.FC<{ go: (v: ViewId) => void }> = ({ go }) => {
                   {n.icon}
                   {teraz && <span aria-hidden="true" className="absolute -right-1 -top-1 w-1.5 h-1.5 rounded-full bg-lume shadow-[0_0_6px_var(--color-lume)]" />}
                 </span>
-                <span className="sr-only min-[1440px]:not-sr-only min-[1440px]:relative min-[1440px]:flex-1 truncate">{n.label}</span>
-                {teraz && <span className="relative hidden min-[1440px]:inline font-mono text-[9px] font-semibold uppercase tracking-wider text-ink-3">{tr('teraz', 'now')}</span>}
-                {teraz && <span className="sr-only min-[1440px]:hidden"> · {tr('teraz', 'now')}</span>}
+                <span className="sr-only min-[1600px]:not-sr-only min-[1600px]:relative min-[1600px]:flex-1 truncate">{n.label}</span>
+                {teraz && <span className="relative hidden min-[1600px]:inline font-mono text-[9px] font-semibold uppercase tracking-wider text-ink-3">{tr('teraz', 'now')}</span>}
+                {teraz && <span className="sr-only min-[1600px]:hidden"> · {tr('teraz', 'now')}</span>}
               </ViewLink>
             </li>
           );
@@ -429,10 +430,10 @@ const Szyna: React.FC<{ go: (v: ViewId) => void }> = ({ go }) => {
     </div>
   );
   return (
-    <aside data-szyna aria-label={tr('Nawigacja', 'Navigation')} className="hidden lg:flex sticky top-0 h-dvh w-[72px] min-[1440px]:w-60 shrink-0 flex-col gap-6 border-r border-line bg-surface-1/60 px-3 py-4 overflow-y-auto overflow-x-hidden">
+    <aside data-szyna aria-label={tr('Nawigacja', 'Navigation')} className="hidden lg:flex sticky top-0 h-dvh w-[72px] min-[1600px]:w-60 shrink-0 flex-col gap-6 border-r border-line bg-surface-1/60 px-3 py-4 overflow-y-auto overflow-x-hidden">
       <ViewLink id="start" go={go} current={view === 'start'} className="flex items-center gap-2.5 h-10 px-1.5 rounded-lg hover:bg-surface-2/70 transition-colors duration-150">
         <LogoMark size={28} />
-        <span className="sr-only min-[1440px]:not-sr-only">
+        <span className="sr-only min-[1600px]:not-sr-only">
           <span data-marka className="block font-display text-[17px] font-bold leading-none tracking-tight [font-stretch:85%] text-ink-1">
             HyperQuant
           </span>
@@ -444,7 +445,7 @@ const Szyna: React.FC<{ go: (v: ViewId) => void }> = ({ go }) => {
         {grupa(tr('Rynki i wiedza', 'Markets and knowledge'), NAV_WIEDZA)}
       </nav>
       <div className="mt-auto">
-        <p className="hidden min-[1440px]:block px-3 mb-1.5 font-mono text-[10px] font-semibold tracking-[0.14em] uppercase text-ink-3">{tr('Publikacje', 'Publications')}</p>
+        <p className="hidden min-[1600px]:block px-3 mb-1.5 font-mono text-[10px] font-semibold tracking-[0.14em] uppercase text-ink-3">{tr('Publikacje', 'Publications')}</p>
         <ul className="space-y-0.5">
           {NAV_STRONY.map((l) => (
             <li key={l.href}>
@@ -452,7 +453,7 @@ const Szyna: React.FC<{ go: (v: ViewId) => void }> = ({ go }) => {
                 <span className="shrink-0" title={l.label}>
                   {l.icon}
                 </span>
-                <span className="sr-only min-[1440px]:not-sr-only truncate">{l.label}</span>
+                <span className="sr-only min-[1600px]:not-sr-only truncate">{l.label}</span>
               </a>
             </li>
           ))}

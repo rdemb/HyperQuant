@@ -60,7 +60,7 @@ const subscribeWide = (fn: () => void) => {
 
 const isWide = () => window.matchMedia(WIDE).matches;
 
-// Kolumna DOM i taśmy: przypięta od 1280 px, szuflada od 640 px (granice z `dockMode`)
+// Kolumna DOM i taśmy: przypięta od 1440 px, szuflada od 640 px (granice z `dockMode`)
 const DOCK_QUERIES = [`(min-width: ${DOCK_MIN_W}px)`, `(min-width: ${DRAWER_MIN_W}px)`];
 const subscribeDock = (fn: () => void) => {
   const mqs = DOCK_QUERIES.map((q) => window.matchMedia(q));
@@ -116,7 +116,7 @@ export interface ChartsViewProps {
  * na żywo. Nad wykresami karty układów fazy dnia (na telefonie lista w pasku wykresu): każda karta ma własny układ 1, 2
  * albo 4 wykresów, a każdy wykres własny interwał, wskaźniki i warstwy. Przełączenie karty przenosi rynek i chwilę widoku
  * (wykres przewinięty w historię otwiera się w nowej karcie w tym samym miejscu). Alt+1…6 otwiera układ (także innej
- * fazy), Alt+7…9 karty własne, Alt+↑/↓ kartę fazy z wyższym albo niższym interwałem. W sesji od 1280 px obok wykresu
+ * fazy), Alt+7…9 karty własne, Alt+↑/↓ kartę fazy z wyższym albo niższym interwałem. W sesji od 1440 px obok wykresu
  * stoi kolumna DOM i taśmy, a od 640 px ta sama kolumna jest szufladą nad wykresem (klawisz D chowa i pokazuje, Esc
  * zamyka szufladę). Link powtórki (#charts?replay=…) pokazuje nagranie z serwera.
  */
@@ -202,7 +202,7 @@ const ChartsView: React.FC<ChartsViewProps> = ({ phase, onPhase, onMarket }) => 
   /** Podpis karty: interwały jej wykresów widocznych na tym ekranie (aktywna — bieżący układ). */
   const tf = (t: ChartTab) => tfLabel(tabIntervals(t, wide ? (t.id === tab.id ? layout : tabLayout(t)) : 1, narrow));
 
-  // Prawa kolumna DOM i taśmy w sesji: od 1280 px obok wykresu, dopóki użytkownik jej nie schowa (klawisz D, zapis);
+  // Prawa kolumna DOM i taśmy w sesji: od 1440 px obok wykresu, dopóki użytkownik jej nie schowa (klawisz D, zapis);
   // od 640 px szuflada nad wykresem (przycisk, D, Esc w szufladzie); na telefonie pasek Pulse z SessionView
   const [dock, setDock] = useState(loadDock);
   const mode = useSyncExternalStore(subscribeDock, dockModeNow);
@@ -449,10 +449,11 @@ const ChartsView: React.FC<ChartsViewProps> = ({ phase, onPhase, onMarket }) => 
       {/* Wiersz: wykresy i (w sesji) kolumna DOM i taśmy o wysokości wykresów, obok nich albo w szufladzie nad nimi */}
       <div data-theme="dark" className={`relative flex gap-2 ${fs ? 'flex-1 min-h-0' : ''}`}>
         {/* Ten sam kontener dla każdego układu: pierwszy panel nie tworzy się od nowa przy zmianie układu ani kolumny. Poza
-            pełnym ekranem dwie kolumny od 1280 px: węższa kolumna (szyna nawigacji obok) nie mieści paska narzędzi wykresu */}
+            pełnym ekranem dwie kolumny od 1800 px: pasek narzędzi wykresu potrzebuje ok. 720 px, węższa kolumna (szyna
+            nawigacji obok) go nie mieści */}
         <div
           className={`flex-1 min-w-0 ${
-            fs ? (n === 1 ? 'min-h-0 flex flex-col' : `min-h-0 grid grid-cols-2 ${n === 4 ? 'grid-rows-2' : 'grid-rows-1'} gap-2`) : n === 1 ? '' : 'grid grid-cols-1 xl:grid-cols-2 gap-2'
+            fs ? (n === 1 ? 'min-h-0 flex flex-col' : `min-h-0 grid grid-cols-2 ${n === 4 ? 'grid-rows-2' : 'grid-rows-1'} gap-2`) : n === 1 ? '' : 'grid grid-cols-1 min-[1800px]:grid-cols-2 gap-2'
           }`}
         >
           {Array.from({ length: n }, (_, i) => (
