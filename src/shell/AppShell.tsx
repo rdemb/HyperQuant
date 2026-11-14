@@ -391,14 +391,14 @@ const PaletaPolecen = lazy(() => import('./PaletaPolecen').then((m) => ({ defaul
 
 /**
  * Szyna boczna (komputer, od 1024 px): marka, dzień tradera ze znakiem „teraz” przy fazie bieżącej sesji, rynki
- * i wiedza, strony serwisu. 1024–1599 px: same ikony (nazwa w podpowiedzi i dla czytnika ekranu), od 1600 px z nazwami
+ * i wiedza, strony serwisu. 1024–1599 px: ikona z krótką nazwą pod nią (każda zakładka podpisana), od 1600 px nazwy w rzędzie
  * (wąska szyna oddaje miejsce wykresowi i kolumnie DOM przy 1440 px).
  */
 const Szyna: React.FC<{ go: (v: ViewId) => void }> = ({ go }) => {
   const { view } = useDesk();
   const { phase } = dayPhase(useNow(60_000));
   const pozycja = (aktywna: boolean) =>
-    `group relative flex items-center gap-3 h-10 px-3 rounded-lg text-sm font-medium transition-colors duration-150 ${
+    `group relative flex flex-col items-center justify-center gap-1 min-h-14 px-1 rounded-lg text-[10.5px] leading-tight text-center font-medium transition-colors duration-150 min-[1600px]:flex-row min-[1600px]:justify-start min-[1600px]:gap-3 min-[1600px]:min-h-10 min-[1600px]:px-3 min-[1600px]:text-sm min-[1600px]:text-left ${
       aktywna ? 'text-ink-1' : 'text-ink-3 hover:text-ink-1 hover:bg-surface-2/70'
     }`;
   const grupa = (tytul: string, items: NavItem[]) => (
@@ -419,7 +419,7 @@ const Szyna: React.FC<{ go: (v: ViewId) => void }> = ({ go }) => {
                   {n.icon}
                   {teraz && <span aria-hidden="true" className="absolute -right-1 -top-1 w-1.5 h-1.5 rounded-full bg-lume shadow-[0_0_6px_var(--color-lume)]" />}
                 </span>
-                <span className="sr-only min-[1600px]:not-sr-only min-[1600px]:relative min-[1600px]:flex-1 truncate">{n.label}</span>
+                <span className="relative max-w-full min-[1600px]:flex-1 min-[1600px]:truncate">{n.label}</span>
                 {teraz && <span className="relative hidden min-[1600px]:inline font-mono text-[9px] font-semibold uppercase tracking-wider text-ink-3">{tr('teraz', 'now')}</span>}
                 {teraz && <span className="sr-only min-[1600px]:hidden"> · {tr('teraz', 'now')}</span>}
               </ViewLink>
@@ -430,7 +430,7 @@ const Szyna: React.FC<{ go: (v: ViewId) => void }> = ({ go }) => {
     </div>
   );
   return (
-    <aside data-szyna aria-label={tr('Nawigacja', 'Navigation')} className="hidden lg:flex sticky top-0 h-dvh w-[72px] min-[1600px]:w-60 shrink-0 flex-col gap-6 border-r border-line bg-surface-1/60 px-3 py-4 overflow-y-auto overflow-x-hidden">
+    <aside data-szyna aria-label={tr('Nawigacja', 'Navigation')} className="hidden lg:flex sticky top-0 h-dvh w-[88px] min-[1600px]:w-60 shrink-0 flex-col gap-5 border-r border-line bg-surface-1/60 px-2 min-[1600px]:px-3 py-4 overflow-y-auto overflow-x-hidden">
       <ViewLink id="start" go={go} current={view === 'start'} className="flex items-center gap-2.5 h-10 px-1.5 rounded-lg hover:bg-surface-2/70 transition-colors duration-150">
         <LogoMark size={28} />
         <span className="sr-only min-[1600px]:not-sr-only">
@@ -449,11 +449,11 @@ const Szyna: React.FC<{ go: (v: ViewId) => void }> = ({ go }) => {
         <ul className="space-y-0.5">
           {NAV_STRONY.map((l) => (
             <li key={l.href}>
-              <a href={l.href} className="flex items-center gap-3 h-9 px-3 rounded-lg text-[13px] text-ink-3 hover:text-ink-1 hover:bg-surface-2/70 transition-colors duration-150">
+              <a href={l.href} className="flex flex-col items-center justify-center gap-1 min-h-12 px-1 rounded-lg text-[10.5px] leading-tight text-center text-ink-3 hover:text-ink-1 hover:bg-surface-2/70 transition-colors duration-150 min-[1600px]:flex-row min-[1600px]:justify-start min-[1600px]:gap-3 min-[1600px]:min-h-9 min-[1600px]:px-3 min-[1600px]:text-[13px] min-[1600px]:text-left">
                 <span className="shrink-0" title={l.label}>
                   {l.icon}
                 </span>
-                <span className="sr-only min-[1600px]:not-sr-only truncate">{l.label}</span>
+                <span className="max-w-full min-[1600px]:truncate">{l.label}</span>
               </a>
             </li>
           ))}

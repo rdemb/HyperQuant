@@ -47,7 +47,7 @@
   --color-cohort-rest: #7a889c;
 
   /* Wykres orderflow (zakładka Wykresy), paleta „Głębia” — te same wartości w src/charts/pro/chart/theme.ts */
-  --color-of-bg: #05101e;
+  --color-of-bg: #0f1114;
   --color-of-buy: #3280dd;
   --color-of-sell: #ca3829;
   --color-of-buy-ink: #82bcfc;
@@ -55,7 +55,7 @@
   --color-of-imb-buy: #a2cfff;
   --color-of-imb-sell: #ffa28a;
   --color-of-poc: #f1c45e;
-  --color-of-vol: #46576c;
+  --color-of-vol: #4a4f57;
   --color-of-vwap: #e2e9f0;
   --color-of-svwap: #c1b3f2;
   --color-of-heat-1: #647386;

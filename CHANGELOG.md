@@ -4,6 +4,13 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Wykresy na grafitowym tle, podpisane zakładki (2026-11-14)
+<!-- co-nowego: grupa=wykres | pl=Wykresy na grafitowym tle jak reszta strony; zakładki w bocznym menu podpisane także na węższym ekranie | en=Charts on a graphite background like the rest of the site; side menu tabs labelled on narrower screens too -->
+
+#### Zmienione
+- **Tło płótna wykresów grafitowe** (`PRO.bg` #0F1114, token `of-bg`) zamiast granatu #05101E, jak powłoka strony; neutralne odcienie płótna w tej samej rodzinie (pusta komórka footprintu, linie wierszy, profil wolumenu, słupki wolumenu, panel podniesiony, paleta rysowania przepływu). Kolory danych palety „Głębia” bez zmian (kupno lazur, sprzedaż żar, POC, VWAP, heatmapa).
+- **Szyna nawigacji 1024–1599 px**: pod każdą ikoną krótka nazwa (Przed sesją, W sesji, …, Blog, Wyniki, Co nowego), wcześniej same ikony; od 1600 px nazwy w rzędzie jak dotąd.
+
 ### Przed sesją i Po sesji: czytelniejszy układ (2026-11-14)
 <!-- co-nowego: grupa=blog | pl=Przed sesją i Po sesji: wyraźne nagłówki sekcji, panele w dwóch kolumnach bez pustych miejsc, liczby bez ucinania | en=Pre- and post-session: clear section headings, panels in two columns without gaps, numbers never cut off -->
 
