@@ -5,11 +5,12 @@ import { useDesk } from '../state/DeskContext';
 import type { ViewId } from '../state/types';
 import { useLiqMap } from '../state/useLiqMap';
 import { useDeskLedger } from '../state/useDeskLedger';
-import { SESSION_LABEL, type SessionId, zonedToUtc } from '../charts/pro/core/sessions';
+import { SESSION_LABEL, type SessionId } from '../charts/pro/core/sessions';
 import { Badge, type BadgeTone, DASH, EmptyState, LocalBoundary, fmtFixed } from '../ui';
 import { DUR, EASE_OUT } from '../ui/motion';
 import { lang, tr } from '../i18n';
-import { SessionDial, fmtSpan, sessionClock } from './start/SessionDial';
+import { SessionDial } from './start/SessionDial';
+import { type DayPhase, dayPhase, fmtSpan, sessionClock, useNow } from '../shell/dzien';
 import { FlowReel } from './start/FlowReel';
 
 // Czwórka i teren rysowany canvasem: osobne pakiety, ładowane dopiero pod hero (pierwszy ekran bez modułów wykresu)
@@ -20,35 +21,12 @@ const LiquidityTerrain = lazy(() => import('./start/LiquidityTerrain'));
 const START_COIN = 'BTC';
 const LOCALE = lang === 'pl' ? 'pl-PL' : 'en-GB';
 
-type Phase = 'before' | 'charts' | 'after';
-
-/**
- * Faza dnia tradera: Azja = przed sesją; Londyn i Nowy Jork = w sesji; po zamknięciu Wall Street (16:00 czasu NY) = po sesji.
- * Ten sam podział co widoki faz (Przed sesją, W sesji, Po sesji).
- */
-function dayPhase(now: number): { phase: Phase; session: SessionId } {
-  const { current } = sessionClock(now);
-  if (current.id === 'asia') return { phase: 'before', session: 'asia' };
-  if (current.id === 'ny') {
-    const d = new Date(now);
-    if (now >= zonedToUtc('America/New_York', d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate(), 16, 0)) return { phase: 'after', session: 'ny' };
-  }
-  return { phase: 'charts', session: current.id };
-}
+type Phase = DayPhase;
 
 function cta(phase: Phase, session: SessionId): string {
   if (phase === 'before') return tr('Przygotuj sesję Londynu', 'Prepare for the London session');
   if (phase === 'after') return tr('Rozlicz dzień', 'Review the day');
   return session === 'london' ? tr('Wejdź w sesję Londynu', 'Enter the London session') : tr('Wejdź w sesję Nowego Jorku', 'Enter the New York session');
-}
-
-function useNow(ms: number): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const id = window.setInterval(() => !document.hidden && setNow(Date.now()), ms);
-    return () => clearInterval(id);
-  }, [ms]);
-  return now;
 }
 
 /** Widoczność elementu (raz): leniwe rozdziały ładują się, gdy zbliżają się do ekranu */

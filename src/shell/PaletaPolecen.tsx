@@ -4,7 +4,7 @@ import { CornerDownLeft, Search } from 'lucide-react';
 import { useMarkets } from '../state/markets';
 import { bareName } from '../utils/marketsTable';
 import { lang, tr } from '../i18n';
-import type { NavItem } from '../shell/AppShell';
+import type { NavItem } from './AppShell';
 import { filtruj, type Akcja, type Polecenie } from './polecenia';
 
 /**
@@ -89,7 +89,7 @@ export const PaletaPolecen: React.FC<{
           exit={{ opacity: 0 }}
           transition={{ duration: 0.16 }}
           onClick={onClose}
-          className="fixed inset-0 z-50 flex items-start justify-center pt-[14vh] px-4 bg-hq-obsidian/70 backdrop-blur-sm"
+          className="fixed inset-0 z-50 flex items-start justify-center pt-[14vh] px-4 bg-page/70 backdrop-blur-sm"
         >
           <motion.div
             role="dialog"
@@ -101,10 +101,10 @@ export const PaletaPolecen: React.FC<{
             transition={{ duration: 0.18 }}
             onClick={(e) => e.stopPropagation()}
             onKeyDown={onKey}
-            className="w-full max-w-lg rounded-xl bg-hq-surface border border-hq-line-strong shadow-2xl overflow-hidden"
+            className="w-full max-w-lg rounded-xl bg-surface-1 border border-line-strong shadow-2xl overflow-hidden"
           >
-            <div className="flex items-center gap-3 px-4 py-3 border-b border-hq-line">
-              <Search className="w-4 h-4 text-hq-cyan shrink-0" aria-hidden="true" />
+            <div className="flex items-center gap-3 px-4 py-3 border-b border-line">
+              <Search className="w-4 h-4 text-accent shrink-0" aria-hidden="true" />
               <input
                 type="text"
                 autoFocus
@@ -116,13 +116,13 @@ export const PaletaPolecen: React.FC<{
                 aria-activedescendant={wyniki[aktywny] ? `${listaId}-${aktywny}` : undefined}
                 aria-label={tr('Szukaj widoku, rynku albo strony', 'Search for a view, market or page')}
                 placeholder={tr('Widok, rynek (ETH, HYPE), strona…', 'View, market (ETH, HYPE), page…')}
-                className="w-full bg-transparent text-sm text-hq-ink-1 placeholder:text-hq-ink-3 outline-none"
+                className="w-full bg-transparent text-sm text-ink-1 placeholder:text-ink-3 outline-none"
               />
-              <kbd className="font-hq-mono text-[10px] px-1.5 py-0.5 rounded bg-hq-elevated text-hq-ink-2">Esc</kbd>
+              <kbd className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-surface-2 text-ink-2">Esc</kbd>
             </div>
             <ul id={listaId} role="listbox" className="max-h-80 overflow-y-auto p-2 space-y-0.5">
               {wyniki.length === 0 ? (
-                <li className="py-8 text-center text-xs text-hq-ink-3">{tr('Brak wyników', 'No results')}</li>
+                <li className="py-8 text-center text-xs text-ink-3">{tr('Brak wyników', 'No results')}</li>
               ) : (
                 wyniki.map((p, i) => (
                   <li
@@ -133,14 +133,14 @@ export const PaletaPolecen: React.FC<{
                     onMouseEnter={() => setAktywny(i)}
                     onClick={() => wybierz(p)}
                     className={`flex items-center justify-between gap-3 px-3 min-h-10 rounded-lg text-sm cursor-pointer ${
-                      i === aktywny ? 'bg-hq-cyan/15 text-hq-ink-1' : 'text-hq-ink-2 hover:bg-hq-elevated'
+                      i === aktywny ? 'bg-accent/15 text-ink-1' : 'text-ink-2 hover:bg-surface-2'
                     }`}
                   >
                     <span className="flex items-baseline gap-2 min-w-0">
                       <span className="font-medium truncate">{p.etykieta}</span>
-                      <span className="text-[11px] text-hq-ink-3 truncate">{p.grupa}</span>
+                      <span className="text-[11px] text-ink-3 truncate">{p.grupa}</span>
                     </span>
-                    {i === aktywny && <CornerDownLeft className="w-3.5 h-3.5 shrink-0 text-hq-cyan" aria-hidden="true" />}
+                    {i === aktywny && <CornerDownLeft className="w-3.5 h-3.5 shrink-0 text-accent" aria-hidden="true" />}
                   </li>
                 ))
               )}

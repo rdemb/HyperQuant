@@ -448,10 +448,11 @@ const ChartsView: React.FC<ChartsViewProps> = ({ phase, onPhase, onMarket }) => 
       )}
       {/* Wiersz: wykresy i (w sesji) kolumna DOM i taśmy o wysokości wykresów, obok nich albo w szufladzie nad nimi */}
       <div data-theme="dark" className={`relative flex gap-2 ${fs ? 'flex-1 min-h-0' : ''}`}>
-        {/* Ten sam kontener dla każdego układu: pierwszy panel nie tworzy się od nowa przy zmianie układu ani kolumny */}
+        {/* Ten sam kontener dla każdego układu: pierwszy panel nie tworzy się od nowa przy zmianie układu ani kolumny. Poza
+            pełnym ekranem dwie kolumny od 1280 px: węższa kolumna (szyna nawigacji obok) nie mieści paska narzędzi wykresu */}
         <div
           className={`flex-1 min-w-0 ${
-            fs ? (n === 1 ? 'min-h-0 flex flex-col' : `min-h-0 grid grid-cols-2 ${n === 4 ? 'grid-rows-2' : 'grid-rows-1'} gap-2`) : n === 1 ? '' : 'grid grid-cols-2 gap-2'
+            fs ? (n === 1 ? 'min-h-0 flex flex-col' : `min-h-0 grid grid-cols-2 ${n === 4 ? 'grid-rows-2' : 'grid-rows-1'} gap-2`) : n === 1 ? '' : 'grid grid-cols-1 xl:grid-cols-2 gap-2'
           }`}
         >
           {Array.from({ length: n }, (_, i) => (
