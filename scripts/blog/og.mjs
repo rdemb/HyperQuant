@@ -91,7 +91,7 @@ function shotPanel(shot) {
 }
 
 /** Stopka karty bloga: adres i zastrzeżenie (karty stron serwisu podają własne). */
-const BLOG_FOOT = ['hyperquant.tech/blog', 'prawdopodobieństwa, nie sygnały'];
+const BLOG_FOOT = ['hyperquant.tech/blog', 'opis rynku, nie porada inwestycyjna'];
 
 /** SVG karty. `card` = { section, title, dateLine?, subtitle?, body?, price?, levels?, shot?, foot? }. */
 export function ogSvg(card) {
