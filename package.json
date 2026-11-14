@@ -43,6 +43,9 @@
     "vite": "^8.3.6"
   },
   "devDependencies": {
+    "@fontsource/ibm-plex-mono": "5.3.0",
+    "@fontsource/outfit": "5.3.0",
+    "@fontsource/plus-jakarta-sans": "5.3.0",
     "@resvg/resvg-js": "^2.6.2",
     "@types/express": "^5.0.6",
     "@types/node": "^24.19.2",
