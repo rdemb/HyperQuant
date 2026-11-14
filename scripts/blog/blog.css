@@ -1,16 +1,16 @@
-/* Blog HyperQuant: te same tokeny co desk (src/index.css, docs/STYLEGUIDE.md), układ do czytania. */
+/* Blog HyperQuant: te same tokeny co desk (src/index.css, paleta „Chronograf”: grafit i lume; docs/STYLEGUIDE.md), układ do czytania. */
 :root {
   color-scheme: dark;
-  --page: #070a11;
-  --surface-1: #0b1019;
-  --surface-2: #101826;
-  --surface-3: #16202f;
-  --line: #1b2533;
-  --line-strong: #283447;
-  --ink-1: #eef2f7;
-  --ink-2: #a9b4c4;
-  --ink-3: #7a889c;
-  --accent: #3fc6dd;
+  --page: #0c0d0f;
+  --surface-1: #131518;
+  --surface-2: #1a1d21;
+  --surface-3: #22262b;
+  --line: #24282e;
+  --line-strong: #343a42;
+  --ink-1: #edeef0;
+  --ink-2: #a9aeb6;
+  --ink-3: #8c929a;
+  --accent: #cfea5b;
   --level: #e0a045;
   --buy: #3280dd;
   --sell: #ca3829;
@@ -62,12 +62,13 @@ a {
   position: sticky;
   top: 0;
   z-index: 10;
-  background: rgb(7 10 17 / 0.95);
+  background: rgb(12 13 15 / 0.95);
   backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--line);
   padding-top: env(safe-area-inset-top);
 }
 .site-header .wrap {
+  max-width: 1200px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -75,8 +76,10 @@ a {
   height: 56px;
 }
 .brand {
+  flex-shrink: 0;
+  white-space: nowrap;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
   color: var(--ink-1);
   text-decoration: none;
@@ -87,6 +90,9 @@ a {
   .brand span {
     display: none;
   }
+}
+.brand-mark {
+  flex-shrink: 0;
 }
 .brand span {
   font: 400 11px/1 var(--font-sans);
@@ -101,6 +107,8 @@ a {
   scrollbar-width: none;
 }
 .site-header nav a {
+  flex-shrink: 0;
+  white-space: nowrap;
   min-height: 40px;
   display: inline-flex;
   align-items: center;
@@ -1310,8 +1318,8 @@ h1 {
   color: var(--page);
 }
 .btn--primary:hover {
-  background: #6ad5e7;
-  border-color: #6ad5e7;
+  background: #dcf27a;
+  border-color: #dcf27a;
 }
 
 /* ───── Powtórka pod wpisem ───── */
