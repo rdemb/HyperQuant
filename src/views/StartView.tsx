@@ -245,7 +245,7 @@ const StartView: React.FC = () => {
           </a>
         }
       >
-        <div className="grid gap-10 2xl:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="grid gap-10 2xl:grid-cols-[minmax(0,1fr)_340px] [&>*]:min-w-0">
           <FlowReel />
           <ol className="flex flex-col border-t border-line text-sm text-ink-2">
             {[
