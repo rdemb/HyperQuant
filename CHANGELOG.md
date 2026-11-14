@@ -4,6 +4,13 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Nowa ikona aplikacji, cała tarcza na Starcie (2026-11-14)
+<!-- co-nowego: grupa=blog | pl=Nowa ikona HyperQuant: pierścień doby z sesjami i „H” ze świec; tarcza na Starcie mieści się w całości | en=A new HyperQuant icon: a day ring with the sessions and an "H" made of candles; the Start dial now fits in full -->
+
+#### Zmienione
+- **Ikona aplikacji „Chronograf H”** (favicon, ikony PWA 192 / 512 / maskable, Apple): grafitowa płytka, pierścień doby z sesjami Azji, Londynu i Nowego Jorku, „H” z dwóch świec, znak „teraz” w kolorze lume; generowana skryptem `npm run icons` (`scripts/icons/ikona.mjs`, resvg). Ten sam znak w szynie i nagłówku (`LogoMark`, kolory z tokenów w obu motywach).
+- **Tarcza na Starcie** mieści się w sekcji (wcześniej wysunięta 100 px za prawą krawędź i ucięta): skala rośnie z szerokością treści (0,6 / 0,72 / 0,86 / 1), odstęp od krawędzi.
+
 ### Wykresy na grafitowym tle, podpisane zakładki (2026-11-14)
 <!-- co-nowego: grupa=wykres | pl=Wykresy na grafitowym tle jak reszta strony; zakładki w bocznym menu podpisane także na węższym ekranie | en=Charts on a graphite background like the rest of the site; side menu tabs labelled on narrower screens too -->
 
