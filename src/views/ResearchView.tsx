@@ -1,3 +1,5 @@
+import { SectionHeading } from '../ui';
+import { tr } from '../i18n';
 import React from 'react';
 import { useDesk } from '../state/DeskContext';
 import { AggrOrderFlowTape } from '../components/AggrOrderFlowTape';
@@ -16,6 +18,17 @@ import { ModelVsMarketPanel } from './market/ModelVsMarketPanel';
 const ResearchView: React.FC = () => {
   const { feed, ofi, shaakuni, quant } = useDesk();
   return (
+    <div className="flex flex-col gap-4">
+      <SectionHeading
+        id="badania-tytul"
+        level={1}
+        eyebrow={tr('Model, proxy makro, mikrostruktura', 'Model, macro proxies, microstructure')}
+        title={tr('Badania', 'Research')}
+        lead={tr(
+          'Narzędzia do pogłębionej analizy: model obok rynku predykcyjnego, proxy makro, wielkość pozycji, mechanika arkusza i mikrostruktura płynności. Opis rynku, nie porada.',
+          'Tools for deeper analysis: the model next to the prediction market, macro proxies, position sizing, book mechanics and liquidity microstructure. A market description, not advice.'
+        )}
+      />
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
       <div className="lg:col-span-7 min-w-0 flex flex-col gap-4">
         <ModelVsMarketPanel />
@@ -43,6 +56,7 @@ const ResearchView: React.FC = () => {
       <div className="lg:col-span-12 min-w-0">
         <MicrostructureMethods quant={quant} shaakuni={shaakuni} currentPrice={feed.currentPrice} book={feed} />
       </div>
+    </div>
     </div>
   );
 };
