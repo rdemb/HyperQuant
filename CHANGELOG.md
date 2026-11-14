@@ -4,6 +4,16 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### W sesji: więcej miejsca na wykres (2026-11-14)
+<!-- co-nowego: grupa=wykres | pl=W sesji wykres dostaje więcej miejsca: węższa nawigacja, kolumna DOM od 1440 px, liczby nad wykresem bez ucinania | en=In session the chart gets more room: a slimmer navigation, the DOM column from 1440 px, numbers above the chart never cut off -->
+
+#### Zmienione
+- **Szyna nawigacji z nazwami od 1600 px** (wcześniej od 1440 px); 1024–1599 px same ikony, więc przy 1440 px wykres W sesji obok kolumny DOM ma ok. 910 px zamiast ok. 740 px.
+- **Kolumna DOM i taśmy przypięta od 1440 px** (`DOCK_MIN_W`, wcześniej 1280 px); 1024–1439 px wykres na całą szerokość, kolumna jako szuflada (klawisz D).
+- **Liczby układu w pasku wykresu** (`LayoutHeader`, wariant w pasku): pokazane tylko w całości, reszta pod przyciskiem „+N” (otwiera rozwinięcie ze wszystkimi liczbami) zamiast przewijanego rzędu z uciętą ostatnią liczbą.
+- **Dwa i cztery wykresy obok siebie od 1800 px** (pasek narzędzi wykresu potrzebuje ok. 720 px); ulubione interwały w pasku według szerokości karty wykresu, nie okna.
+- **Stopka obrazków podglądu bloga**: „opis rynku, nie porada inwestycyjna”, jak stopka strony.
+
 ### Jedna nawigacja i pasek dnia (2026-11-14)
 <!-- co-nowego: grupa=blog | pl=Nowa nawigacja: szyna z boku na komputerze, pięć pozycji na dole telefonu i pasek dnia z sesjami Azji, Londynu i Nowego Jorku | en=New navigation: a side rail on desktop, a five-item tab bar on phones and a day strip with the Asia, London and New York sessions -->
 

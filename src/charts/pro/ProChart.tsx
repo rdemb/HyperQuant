@@ -925,8 +925,9 @@ export const ProChart: React.FC<{
         <div data-chart-bar className="@container flex flex-wrap min-[900px]:flex-nowrap items-center gap-1.5 px-2 py-1 border-b border-line min-h-11">
           {barLead}
           <MarketPicker value={settings.coin} markets={markets.markets} onChange={setCoin} />
-          {/* Ulubione interwały jako przyciski tylko na bardzo szerokim ekranie */}
-          <div className="hidden min-[1600px]:inline-flex">
+          {/* Ulubione interwały jako przyciski tylko w bardzo szerokim pasku (szerokość karty wykresu, nie okna: dwa wykresy
+              obok siebie mają węższe paski) */}
+          <div className="hidden @min-[1040px]:inline-flex">
             <Segmented<string> ariaLabel={tr('Ulubione interwały', 'Favourite timeframes')} value={settings.interval} onChange={(v) => update({ interval: v })} options={FAV_OPTIONS} />
           </div>
           <DropdownSelect<string>
