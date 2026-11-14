@@ -447,7 +447,7 @@ const ChartsView: React.FC<ChartsViewProps> = ({ phase, onPhase, onMarket }) => 
         </div>
       )}
       {/* Wiersz: wykresy i (w sesji) kolumna DOM i taśmy o wysokości wykresów, obok nich albo w szufladzie nad nimi */}
-      <div className={`relative flex gap-2 ${fs ? 'flex-1 min-h-0' : ''}`}>
+      <div data-theme="dark" className={`relative flex gap-2 ${fs ? 'flex-1 min-h-0' : ''}`}>
         {/* Ten sam kontener dla każdego układu: pierwszy panel nie tworzy się od nowa przy zmianie układu ani kolumny */}
         <div
           className={`flex-1 min-w-0 ${

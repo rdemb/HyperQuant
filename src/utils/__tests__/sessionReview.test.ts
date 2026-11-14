@@ -123,7 +123,7 @@ describe('reviewRows: rozliczenie zamkniętej sesji Londynu z mapą', () => {
       ['ib', 'Wynik IB', 'w górę · 2,3×', 'LIVE'],
       ['range', 'Zakres / oczekiwany · profil × poziom', '80%', 'MODEL'],
       ['map', `Mapa dnia ${fmtDayTime(PUB, NOW)}`, '2/4 dotknięte', 'LIVE'],
-      ['liq', 'Likwidacje w sesji', 'longi 1,0M · shorty 6,5M', 'LIVE'],
+      ['liq', 'Likwidacje w sesji', 'longi 1,0 mln · shorty 6,5 mln', 'LIVE'],
       ['cone', 'Pokrycie stożka 1 h · 30 dni', '90%: 88% · 60%: 61%', 'MODEL'],
       ['cohorts', 'Kto wygrał · ostatnie 24 h (dane dobowe)', 'Poinformowani +12,3 pb', 'LIVE'],
     ]);
@@ -284,7 +284,7 @@ describe('reviewRows: sesja w toku', () => {
     expect(row(rows, 'ib').value).toBe('brak wybicia (dotąd)');
     // Ta sama sesja po zamknięciu: bez „(dotąd)”
     expect(row(reviewRows(inputs({ s: NY, inProgress: false, now: NY.end + H, bars1m: bars(PREV_L.start, NY.end + H) })), 'ib').value).toBe('brak wybicia');
-    expect(row(rows, 'liq').value).toBe('longi 3,0M · shorty 0');
+    expect(row(rows, 'liq').value).toBe('longi 3,0 mln · shorty 0');
   });
 
   it('przed końcem IB: „w budowie”, typ dnia „—” z godziną końca IB', () => {

@@ -30,7 +30,7 @@ export const C = {
   imbBuy: '#a2cfff',
   imbSell: '#ffa28a',
 };
-const MONO = "'IBM Plex Mono', ui-monospace, monospace";
+const MONO = "'JetBrains Mono', ui-monospace, monospace";
 
 const hm = new Intl.DateTimeFormat('pl-PL', {
   hour: '2-digit',

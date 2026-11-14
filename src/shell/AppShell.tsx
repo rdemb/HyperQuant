@@ -8,11 +8,13 @@ import {
   GraduationCap,
   History,
   ListChecks,
+  Moon,
   MoreHorizontal,
   Newspaper,
   Pause,
   Play,
   RefreshCw,
+  Sun,
   Sunrise,
   Sunset,
   Table2,
@@ -28,10 +30,12 @@ import { AnimatedNumber, Badge, BadgeTone, EmptyState, Segmented, VIEW_TRANSITIO
 import { InstallButton } from './InstallButton';
 import { ConnectingState } from './ConnectingState';
 import { Lang, lang, setLang, tr } from '../i18n';
+import { type Theme, setTheme, useTheme } from '../theme';
 import { levelStatusLabel } from '../utils/shaakuniEngine';
 import { sessionNameAt } from '../utils/sessionNames';
 
 // Widoki ładowane leniwie (mniejszy pierwszy bundle; wykresy faz w osobnym pakiecie)
+const StartView = lazy(() => import('../views/StartView'));
 const BeforeView = lazy(() => import('../views/BeforeView'));
 const SessionView = lazy(() => import('../views/SessionView'));
 const AfterView = lazy(() => import('../views/AfterView'));
@@ -344,6 +348,16 @@ const MENU_MOTION = {
 const navLink = (active: boolean) =>
   `relative px-1.5 xl:px-2 min-[1440px]:px-2.5 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors duration-150 ${active ? 'text-ink-1' : 'text-ink-3 hover:text-ink-1'}`;
 
+/** Znak HyperQuant: tarcza ze wskazówką i kropką „lume” (czas sesji jako oś produktu). */
+const LogoMark = () => (
+  <svg width="24" height="24" viewBox="0 0 30 30" aria-hidden="true" className="shrink-0 text-ink-1">
+    <circle cx="15" cy="15" r="13" fill="none" stroke="currentColor" strokeWidth="2" />
+    <path d="M15 2.5v3M27.5 15h-3M15 27.5v-3M2.5 15h3" stroke="currentColor" strokeWidth="2" />
+    <path d="M15 15l4.5 9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    <circle cx="19.5" cy="24" r="2.6" fill="var(--color-lume)" stroke="currentColor" strokeWidth="1.5" />
+  </svg>
+);
+
 /** Tło aktywnej pozycji paska (przesuwa się między pozycjami). */
 const ActivePill = () => (
   <motion.span layoutId="nav-active" className="absolute inset-0 rounded-lg bg-surface-2 border border-line" transition={{ type: 'spring', stiffness: 260, damping: 26 }} />
@@ -365,6 +379,7 @@ export const ViewOutlet: React.FC<{ startedAt: number }> = ({ startedAt }) => {
         <ConnectingState onRetry={feed.syncNow} startedAt={startedAt} now={feed.nowTick} />
       ) : (
         <>
+          {view === 'start' && <StartView />}
           {view === 'before' && <BeforeView onPhase={onPhase} />}
           {view === 'charts' && <SessionView onPhase={onPhase} />}
           {view === 'after' && <AfterView onPhase={onPhase} />}
@@ -429,8 +444,9 @@ export const AppShell: React.FC = () => {
     <div className="min-h-dvh bg-page text-ink-1 flex flex-col">
       <header ref={headerRef} data-app-header className="pt-safe sticky top-0 z-30 bg-page/95 backdrop-blur border-b border-line">
         <div className="flex items-center justify-between gap-3 xl:gap-4 px-4 lg:px-6 h-14">
-          <ViewLink id="charts" go={go} className="flex items-baseline gap-2 shrink-0">
-            <span className="font-display text-lg font-bold tracking-tight">HyperQuant</span>
+          <ViewLink id="start" go={go} current={view === 'start'} className="flex items-center gap-2 shrink-0">
+            <LogoMark />
+            <span className="font-display text-lg font-bold tracking-tight [font-stretch:85%]">HyperQuant</span>
             <span className="hidden sm:inline lg:hidden 2xl:inline text-[11px] text-ink-3">BTC · Hyperliquid</span>
           </ViewLink>
 
@@ -618,6 +634,8 @@ export const AppShell: React.FC = () => {
             <span>· {tr('czas lokalny', 'local time')} {Intl.DateTimeFormat().resolvedOptions().timeZone}</span>
           </span>
         </nav>
+        {/* Zastrzeżenie na każdym ekranie: desk opisuje rynek, nie doradza */}
+        <p className="pb-2 text-xs text-ink-3">{tr('Opis rynku, nie porada inwestycyjna.', 'Market description, not investment advice.')}</p>
       </footer>
 
       {/* Dolna nawigacja (telefon): trzy fazy dnia i „Więcej” */}
@@ -686,13 +704,20 @@ export const AppShell: React.FC = () => {
   );
 };
 
-/** Pozycje menu „Więcej”: język (PL / EN), synchronizacja teraz i dźwięk taśmy. */
+const THEMES: { value: Theme; label: string; icon: React.ReactNode }[] = [
+  { value: 'dark', label: tr('Ciemny', 'Dark'), icon: <Moon className="w-4 h-4" aria-hidden="true" /> },
+  { value: 'light', label: tr('Jasny', 'Light'), icon: <Sun className="w-4 h-4" aria-hidden="true" /> },
+];
+
+/** Pozycje menu „Więcej”: język (PL / EN), motyw, synchronizacja teraz i dźwięk taśmy. */
 const ShellToggles: React.FC<{ audioEnabled: boolean; setAudioEnabled: (v: boolean) => void; onSync: () => void; onDone: () => void }> = ({
   audioEnabled,
   setAudioEnabled,
   onSync,
   onDone,
-}) => (
+}) => {
+  const theme = useTheme();
+  return (
   <>
     <div role="group" aria-label={tr('Język', 'Language')} className="flex gap-1 px-1.5 py-1">
       {LANGS.map((l) => (
@@ -705,6 +730,20 @@ const ShellToggles: React.FC<{ audioEnabled: boolean; setAudioEnabled: (v: boole
           className={`flex-1 min-h-11 rounded-lg text-sm font-medium ${lang === l.value ? 'bg-surface-3 text-ink-1 shadow-[inset_0_0_0_1px_var(--color-line-strong)]' : 'text-ink-3 hover:text-ink-1 hover:bg-surface-3'}`}
         >
           {l.value === 'pl' ? 'PL · Polski' : 'EN · English'}
+        </button>
+      ))}
+    </div>
+    <div role="group" aria-label={tr('Motyw', 'Theme')} className="flex gap-1 px-1.5 py-1">
+      {THEMES.map((th) => (
+        <button
+          key={th.value}
+          type="button"
+          aria-pressed={theme === th.value}
+          onClick={() => setTheme(th.value)}
+          className={`flex-1 min-h-11 inline-flex items-center justify-center gap-2 rounded-lg text-sm font-medium ${theme === th.value ? 'bg-surface-3 text-ink-1 shadow-[inset_0_0_0_1px_var(--color-line-strong)]' : 'text-ink-3 hover:text-ink-1 hover:bg-surface-3'}`}
+        >
+          {th.icon}
+          {th.label}
         </button>
       ))}
     </div>
@@ -724,7 +763,8 @@ const ShellToggles: React.FC<{ audioEnabled: boolean; setAudioEnabled: (v: boole
       {audioEnabled ? tr('Wycisz dźwięk taśmy', 'Mute tape sound') : tr('Włącz dźwięk taśmy', 'Unmute tape sound')}
     </button>
   </>
-);
+  );
+};
 
 // `className` niesie też sposób wyświetlania (domyślnie inline-flex): stałe inline-flex w klasie bazowej wygrywało z „hidden sm:inline-flex”,
 // więc na telefonie przyciski miały być ukryte, a były widoczne i z przyciskiem instalacji nagłówek wychodził poza ekran

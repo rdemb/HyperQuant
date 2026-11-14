@@ -46,9 +46,10 @@ describe('fmtFixed z formatterem w pamięci', () => {
   it('funkcje oparte na fmtFixed dają te same napisy co dawniej', () => {
     expect(fmtPrice(80_768.45)).toBe(legacyFixed(80_768.45, 1, false));
     expect(fmtPrice(-3.14159, 3)).toBe(legacyFixed(-3.14159, 3, false));
-    expect(fmtCompact(-12_345_678, '$')).toBe(`−$${legacyFixed(12.345678, 1, false)}M`);
-    expect(fmtCompact(4_200_000_000)).toBe(`${legacyFixed(4.2, 2, false)}B`);
-    expect(fmtCompact(12_900)).toBe(`${legacyFixed(12.9, 1, false)}K`);
+    // Po polsku jednostki słowem po spacji niełamiącej: „mln”, „mld”, „tys.” (po angielsku M, B, K)
+    expect(fmtCompact(-12_345_678, '$')).toBe(`−$${legacyFixed(12.345678, 1, false)}\u00a0mln`);
+    expect(fmtCompact(4_200_000_000)).toBe(`${legacyFixed(4.2, 2, false)}\u00a0mld`);
+    expect(fmtCompact(12_900)).toBe(`${legacyFixed(12.9, 1, false)}\u00a0tys.`);
     expect(fmtPct(-0.1234)).toBe(`−${legacyFixed(0.1234, 2, false)}%`);
     expect(fmtSigned(1_234.56, 1, ' USD')).toBe(`+${legacyFixed(1_234.56, 1, false)} USD`);
   });

@@ -10,7 +10,7 @@ import { locale, tr } from '../../i18n';
 
 const ROW_H = 40;
 const BAR_H = 20;
-/** Szacunkowa szerokość znaku etykiety (12 px, IBM Plex Mono) — do decyzji, gdzie zmieści się wartość. */
+/** Szacunkowa szerokość znaku etykiety (12 px, JetBrains Mono) — do decyzji, gdzie zmieści się wartość. */
 const CHAR_W = 7.3;
 
 const timeFmt = new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit' });

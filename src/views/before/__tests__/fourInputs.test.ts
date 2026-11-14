@@ -18,7 +18,7 @@ describe('jedna implementacja Czwórki', () => {
 describe('fuelNum (2): paliwo 1% pod i nad ceną z mapy likwidacji skanera', () => {
   it('LIVE z mapą świeżą; po 2 min wiek migawki zamiast LIVE; opóźniona mapa z uwagą', () => {
     const n = fuelNum(inputs());
-    expect(n).toMatchObject({ id: 'fuel', title: 'Paliwo ±1%', value: 'pod 3,5M · nad 3,4M', badge: 'LIVE' });
+    expect(n).toMatchObject({ id: 'fuel', title: 'Paliwo ±1%', value: 'pod 3,5 mln · nad 3,4 mln', badge: 'LIVE' });
     expect(n.note).toBeUndefined();
     expect(n.hint).toContain('pozycji on-chain');
     const old = fuelNum(inputs({ liq: { status: 'ready', map: { ...LIQ_MAP, asOf: NOW - 5 * MIN } } }));

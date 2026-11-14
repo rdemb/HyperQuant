@@ -257,7 +257,7 @@ const headerCut = `(() => {
 /**
  * Nowa powłoka (przełącznik hq.ui.v1): 1440 × 900, 1024 × 768 i 390 × 844. Atrybut data-ui, dokładnie jedna nawigacja
  * (szyna na komputerze, dolny pasek na telefonie), bez przewijania strony i nagłówka w bok, cena w całości na ekranie,
- * nagłówki fontem nowego wyglądu (nie Outfit), paleta ⌘K otwiera się i zamyka Escape, bez błędów i NaN. Osobno od progów
+ * nagłówki fontem nowego wyglądu (Bricolage Grotesque), paleta ⌘K otwiera się i zamyka Escape, bez błędów i NaN. Osobno od progów
  * starej powłoki (punkt odniesienia bez zmian); udział panelu ceny zapisany do porównań kolejnych etapów.
  */
 const NOWY_VIEWPORTS = [
@@ -1050,7 +1050,7 @@ async function main() {
     );
   };
   if (!LIVE) r.summary.rynki = RYNKI_VIEWPORTS.every(([key]) => rynkiOk(key));
-  // Nowy wygląd: jedna nawigacja właściwa dla ekranu, bez przewijania w bok, cena w całości, font nagłówków nie Outfit
+  // Nowy wygląd: jedna nawigacja właściwa dla ekranu, bez przewijania w bok, cena w całości, font nagłówków Bricolage Grotesque, liczby JetBrains Mono
   const nowyOk = (key) => {
     const x = r.nowy?.[key];
     return (
@@ -1063,8 +1063,8 @@ async function main() {
       x.cena === true &&
       x.cenaOdkryta === true &&
       x.nakladanie?.length === 0 &&
-      x.font === 'Bricolage Grotesque Variable' &&
-      x.fontWidoku === 'IBM Plex Mono' &&
+      x.font === 'Bricolage Grotesque' &&
+      x.fontWidoku === 'JetBrains Mono' &&
       x.paleta === true &&
       x.nan?.length === 0 &&
       x.errors.length === 0 &&

@@ -122,7 +122,7 @@ describe('fonty u nas (fonts/): z cache, także offline', () => {
     const offline = async () => {
       throw new TypeError('offline');
     };
-    for (const f of ['fonts/fonts.css', 'fonts/outfit-latin-500-normal.woff2']) expect(await font(f, hit, offline), f).toEqual({ res: hit, puts: [] });
+    for (const f of ['fonts/fonts.css', 'fonts/jetbrains-mono-latin-500-normal.woff2']) expect(await font(f, hit, offline), f).toEqual({ res: hit, puts: [] });
   });
 
   it('pierwsze pobranie: z sieci i zapis do cache', async () => {

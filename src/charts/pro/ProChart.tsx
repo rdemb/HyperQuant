@@ -897,6 +897,8 @@ export const ProChart: React.FC<{
   return (
     <div
       ref={cardRef}
+      // Karta wykresu jest zawsze ciemna (paleta „Głębia”), także w motywie jasnym strony
+      data-theme="dark"
       data-focus={chartOnly ? (landscape ? 'landscape' : 'focus') : undefined}
       // Bez overflow-hidden na karcie: listy paska wychodzą poza kartę (niski wykres w układzie 2 i 4, telefon); przycina
       // samo pole wykresu

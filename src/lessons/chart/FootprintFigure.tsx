@@ -254,7 +254,7 @@ export const FootprintFigure: React.FC<Props> = ({ slice, cursor, marks = [], zo
   for (let p = hiP, r = 0; p >= loP; p -= step, r++) if (r % every === 0) priceLabels.push(p);
 
   return (
-    <div ref={box} className="w-full select-none">
+    <div ref={box} data-theme="dark" className="w-full select-none">
       <div className="h-5 mb-1 text-[11px] text-ink-3 truncate">{live ? <span className="text-accent">{text.pickHint}</span> : null}</div>
       <div className="flex">
       <div ref={scroller} className="flex-1 min-w-0 overflow-x-auto overscroll-x-contain">
