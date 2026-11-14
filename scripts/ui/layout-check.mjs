@@ -16,7 +16,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { launch, sleep } from './cdp.mjs';
 import { INIT, PROBE, fixtureInit } from './probe.mjs';
-import { DATA_BASE_URL, FIXED_NOW, createFixtures, registry } from './fixtures.mjs';
+import { DATA_BASE_URL, FIXED_NOW, createFixtures, liqMapFixture, registry } from './fixtures.mjs';
 import { MARTWE_GNIAZDO, PLIKI_APLIKACJI, POMIAR_PUSTEGO, cyfryPozaEtykietami, noweWidoki } from './pustyStan.mjs';
 import { compareBaseline, margin, metricsOf } from './baseline.mjs';
 
@@ -46,6 +46,8 @@ const RETURNING = { 'hq.onboarding.v1': JSON.stringify({ firstAt: PAGE_NOW - 8 *
 
 /** Rejestr rynków z danych stałych (`markets.json`) podawany stronie — włączany przed przebiegiem rynków. */
 let serveRegistry = false;
+/** Mapa likwidacji BTC z danych stałych (teren płynności na Starcie) — tylko w przebiegu „Start”. */
+let serveLiq = false;
 
 /**
  * Żądania strony w trybie danych stałych: pliki strony z serwera podglądu (bez danych publicznych z public/data/feeds,
@@ -67,7 +69,11 @@ function fixtureIntercept(fx) {
     if (bezDanych && (u.origin !== origin || !PLIKI_APLIKACJI.test(u.pathname))) return 'fail';
     if (u.origin === origin) return u.pathname.includes('/data/feeds/') ? { status: 404, body: '', type: 'text/plain' } : 'continue';
     // Dane skanera: tylko rejestr rynków i tylko w przebiegu rynków (wcześniej strona ma 4 rynki domyślne, jak bez pliku)
-    if (u.origin === data.origin) return serveRegistry && u.pathname === `${data.pathname}/markets.json` ? { body: JSON.stringify(registry()) } : 'fail';
+    if (u.origin === data.origin) {
+      if (serveRegistry && u.pathname === `${data.pathname}/markets.json`) return { body: JSON.stringify(registry()) };
+      if (serveLiq && u.pathname === `${data.pathname}/liq-map/BTC.json`) return { body: JSON.stringify(liqMapFixture(FIXED_NOW)) };
+      return 'fail';
+    }
     if (u.hostname === 'api.hyperliquid.xyz' && u.pathname === '/info') {
       if (req.method === 'OPTIONS') return { status: 204, body: '' };
       let body = {};
@@ -301,6 +307,37 @@ const NOWY_PROBE = `(() => {
     // Wykresy i widoki bez zmian: font mono w widoku taki sam jak w obecnej powłoce
     fontWidoku: wykres ? getComputedStyle(wykres).fontFamily.split(',')[0].replace(/["']/g, '').trim() : null,
     panel: window.__hq?.paneShare?.()?.share ?? null,
+  };
+})()`;
+
+// ───────────────────────── Start ─────────────────────────
+/**
+ * Start (#start) od 360 do 1440 px z mapą likwidacji z danych stałych: bez przewijania w bok, teren płynności
+ * narysowany, etykiety skupisk i podziałka ceny terenu bez nakładania, ryciny (teren, pokaz przepływu) w ekranie.
+ */
+const START_VIEWPORTS = [
+  ['1440', 1440, 900, false],
+  ['1024', 1024, 768, false],
+  ['390', 390, 844, true],
+  ['360', 360, 780, true],
+];
+const START_PROBE = `(() => {
+  const W = innerWidth;
+  const over = (a, b) => a.width > 0 && b.width > 0 && a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1;
+  const pary = (rs) => { let n = 0; for (let i = 0; i < rs.length; i++) for (let j = i + 1; j < rs.length; j++) if (over(rs[i], rs[j])) n++; return n; };
+  const teren = document.querySelector('[data-view-root] figure canvas[role="img"]');
+  const fig = teren?.closest('figure');
+  const etykiety = teren ? [...teren.parentElement.querySelectorAll(':scope > span')].map((e) => e.getBoundingClientRect()) : [];
+  const podzialka = fig ? [...fig.querySelectorAll(':scope > [aria-hidden="true"] > span')].map((e) => e.getBoundingClientRect()) : [];
+  const ryciny = [...document.querySelectorAll('[data-view-root] figure')];
+  return {
+    overflowX: document.documentElement.scrollWidth - W,
+    teren: !!teren && teren.getBoundingClientRect().width > 0,
+    etykiety: etykiety.length,
+    podzialka: podzialka.length,
+    nakladanie: pary(etykiety) + pary(podzialka),
+    rycinyPoza: ryciny.filter((f) => { const r = f.getBoundingClientRect(); return r.right > W + 1 || r.left < -1; }).length,
+    ryciny: ryciny.length,
   };
 })()`;
 
@@ -920,6 +957,28 @@ async function main() {
     }
     await page.viewport(1440, 900, false);
 
+    // Start: pierwsza strona od 360 do 1440 px (teren z mapy likwidacji z danych stałych)
+    report.start = {};
+    serveLiq = true;
+    for (const [key, w, h, mobile] of START_VIEWPORTS) {
+      await page.viewport(w, h, mobile);
+      const [e0, c0] = [page.errors.length, page.consoleErrors.length];
+      await page.go(`${BASE}robots.txt`, 300);
+      await page.ev(`(() => { localStorage.clear(); const s = ${JSON.stringify(RETURNING)}; for (const k in s) localStorage.setItem(k, s[k]); return true; })()`);
+      await page.go(`${BASE}#start`, 500);
+      await sleep(3000);
+      // Przewinięcie całej strony: rozdziały (Czwórka, teren) ładują się, gdy zbliżają się do ekranu
+      await page.ev(`(async () => { for (let y = 0; y < document.documentElement.scrollHeight; y += 400) { scrollTo(0, y); await new Promise((r) => setTimeout(r, 120)); } scrollTo(0, 0); return true; })()`);
+      await sleep(3000);
+      const x = await page.ev(START_PROBE);
+      report.start[key] = { ...x, nan: await probe(page, nanText), errors: page.errors.slice(e0), consoleErrors: page.consoleErrors.slice(c0) };
+      await page.ev(`(() => { const f = document.querySelector('[data-view-root] figure canvas[role="img"]')?.closest('figure'); f?.scrollIntoView({ block: 'center' }); return true; })()`);
+      await sleep(600);
+      await shot(page, `${w}-start-teren`);
+    }
+    serveLiq = false;
+    await page.viewport(1440, 900, false);
+
     // Pusty stan: każdy widok nowego wyglądu (src/nowy/widoki.ts) bez API giełdy, danych skanera, strumienia i danych
     // z tej samej strony (lekcje, powtórki) pokazuje „—” z powodem: żadnej cyfry poza elementami [data-etykieta]
     report.pustyStan = {};
@@ -1073,6 +1132,12 @@ async function main() {
     );
   };
   r.summary.nowy = NOWY_VIEWPORTS.every(([key]) => nowyOk(key));
+  // Start: bez przewijania w bok, teren narysowany, etykiety i podziałka bez nakładania, ryciny w ekranie, bez błędów i NaN
+  const startOk = (key) => {
+    const x = r.start?.[key];
+    return !!x && x.overflowX <= 0 && x.teren === true && x.nakladanie === 0 && x.rycinyPoza === 0 && x.nan?.length === 0 && x.errors.length === 0 && x.consoleErrors.length === 0;
+  };
+  r.summary.start = START_VIEWPORTS.every(([key]) => startOk(key));
   r.summary.pustyStan = Object.values(r.pustyStan ?? {}).every((x) => x.dlugosc > 0 && x.liczby.length === 0 && x.paski.length === 0);
   const prz = r.przeladowanie;
   r.summary.przeladowanie = !!prz?.plik && prz.loads === 1 && prz.marker === true && prz.alert === true && prz.loadsLater === 1;
@@ -1132,6 +1197,14 @@ async function main() {
       return `${key}: pasek dnia ${x.pasekDnia ? 'tak' : 'NIE'}, nawigacje ${x.nawigacje} (${x.szyna ? 'szyna' : 'dolny pasek'}), w bok strona ${x.overflowX} px / nagłówek ${x.naglowekX} px, cena ${x.cena ? 'w całości' : 'UCIĘTA'}${x.cenaOdkryta ? '' : ' i ZASŁONIĘTA'}, nakładanie ${x.nakladanie?.length ? x.nakladanie.join(' | ') : 'brak'}, font marki ${x.font}, font mono widoku ${x.fontWidoku}, paleta ⌘K ${x.paleta ? 'tak' : 'NIE'}, panel ceny ${x.panel != null ? `${(x.panel * 100).toFixed(1)}%` : '—'}, błędy ${errs.length}${errs.length ? ` (${errs.join(' | ')})` : ''}, NaN ${x.nan?.length ?? '—'} — ${ok(nowyOk(key))}`;
     };
     lines.push(`Powłoka: ${NOWY_VIEWPORTS.map(([key]) => one(key)).join('; ')}`);
+  }
+  if (r.start) {
+    lines.push(`Start (mapa likwidacji z danych stałych): ${START_VIEWPORTS.map(([key]) => {
+      const x = r.start[key];
+      if (!x) return `${key}: —`;
+      const errs = [...x.errors, ...x.consoleErrors].map((e) => e.split('\n')[0]);
+      return `${key}: w bok ${x.overflowX} px, teren ${x.teren ? 'tak' : 'NIE'}, etykiety ${x.etykiety}, podziałka ${x.podzialka}, nakładanie ${x.nakladanie}, ryciny poza ekranem ${x.rycinyPoza}/${x.ryciny}, błędy ${errs.length}${errs.length ? ` (${errs.join(' | ')})` : ''}, NaN ${x.nan?.length ?? '—'} — ${ok(startOk(key))}`;
+    }).join('; ')}`);
   }
   if (r.pustyStan) {
     const ids = Object.keys(r.pustyStan);
