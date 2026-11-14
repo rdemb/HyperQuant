@@ -37,7 +37,10 @@ else {
   if (!skrypt || !existsSync(join(DIST, skrypt))) bledy.push('brak skryptu wejściowego w dist/index.html');
   else {
     if (skrypt !== manifest[wejscie[0]].file) bledy.push(`skrypt z index.html (${skrypt}) to nie plik wejścia z manifestu (${manifest[wejscie[0]].file})`);
-    if (!readFileSync(join(DIST, skrypt), 'utf8').includes('sw.js?v=')) bledy.push('rejestracja service workera (usePwa) poza plikiem wejściowym: wersja SW rozjedzie się z wdrożeniem');
+    const wejscieJs = readFileSync(join(DIST, skrypt), 'utf8');
+    if (!wejscieJs.includes('sw.js?v=')) bledy.push('rejestracja service workera (usePwa) poza plikiem wejściowym: wersja SW rozjedzie się z wdrożeniem');
+    // Moduł nowego wyglądu wklejony statycznie do wejścia (bez osobnego wpisu w manifeście): po znaczniku powłoki
+    if (wejscieJs.includes('data-nowa-powloka')) bledy.push('plik wejściowy zawiera kod nowej powłoki (data-nowa-powloka)');
   }
 }
 
