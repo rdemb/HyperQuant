@@ -4,6 +4,12 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Szybszy pierwszy ekran: fonty w HTML (2026-11-14)
+<!-- co-nowego: ukryj -->
+
+#### Zmienione
+- **Fonty bez osobnego arkusza blokującego** (wtyczka `hq-inline-fonts` w `vite.config.ts`): przy buildzie deklaracje `@font-face` z `public/fonts/fonts.css` trafiają do <style> w `index.html`, a fonty pierwszego ekranu (Bricolage Grotesque, Plus Jakarta Sans 400, łacina) mają preload. Lokalny pomiar Lighthouse (telefon, Start): FCP 3,1 → 2,7 s, LCP 5,1 → 4,1 s. `fonts.css` zostaje dla stron statycznych.
+
 ### Rynki jako karty instrumentów (2026-11-14)
 <!-- co-nowego: grupa=rynki | pl=Rynki: Bitcoin i złoto jako duże karty z ceną, obrotem, otwartymi pozycjami i fundingiem | en=Markets: Bitcoin and gold as large cards with price, volume, open interest and funding -->
 
