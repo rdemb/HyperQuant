@@ -4,6 +4,18 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Rynki: wszystkie rynki Hyperliquid (2026-11-14)
+<!-- co-nowego: grupa=rynki | pl=Rynki: wszystkie rynki Hyperliquid z giełdy głównej i giełd HIP-3, z wyszukiwarką, filtrem giełdy i klasy | en=Markets: every Hyperliquid market from the main exchange and HIP-3 exchanges, with search, exchange and class filters -->
+
+#### Dodane
+- **Wszystkie rynki perpetual Hyperliquid na stronie „Rynki”**: lista giełd z `perpDexs` (jedno zapytanie przed pierwszą rundą), rynki z `universe` każdej giełdy bez wycofanych (`parsePerpDexs`, `parseDexUniverse`, `allMarkets` w `utils/marketsTable`); rejestr HyperQuant pierwszy (klasa, skaner, wykres), rynek giełdy głównej spoza rejestru to krypto, rynek HIP-3 spoza rejestru „bez klasy” (giełda klasy nie podaje, nie zgadujemy). Waga zapytań liczona jak dotąd (dziś ok. 6 × 20 na minutę).
+- **Wyszukiwarka, filtr giełdy i klasy, sortowanie** po otwartych pozycjach, obrocie i fundingu (`filterMarkets`, `marketListModel`).
+- **Lista rysowana oknem** (`views/markets/MarketList`): przy setkach rynków w dokumencie są tylko wiersze w pobliżu ekranu; od 768 px tabela, na telefonie karty (cena, obrót, funding, odczyt LIVE, Wall Street dla akcji i indeksów).
+- Wykres tylko dla rynków z rejestru (inne „—” z powodem).
+
+#### Zmienione
+- Tabela w grupach (`marketTableModel`, `MarketsTable`, `MarketRow`, `LiveCell`) zastąpiona płaską listą z filtrami. `ui:check`: dane stałe odpowiadają na `perpDexs`.
+
 ### Przed sesją i Po sesji: czytelniejszy układ (2026-11-14)
 <!-- co-nowego: grupa=blog | pl=Przed sesją i Po sesji: wyraźne nagłówki sekcji, panele w dwóch kolumnach bez pustych miejsc, liczby bez ucinania | en=Pre- and post-session: clear section headings, panels in two columns without gaps, numbers never cut off -->
 
