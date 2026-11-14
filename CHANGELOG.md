@@ -4,6 +4,13 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Blog, Wyniki i Co nowego w nowym wyglądzie (2026-11-14)
+<!-- co-nowego: grupa=blog | pl=Blog, Wyniki i Co nowego w tym samym grafitowym wyglądzie co aplikacja, z pełnym menu | en=Blog, Results and What's new in the same graphite look as the app, with the full menu -->
+
+#### Zmienione
+- **Strony statyczne** (blog, wyniki prognoz, co nowego, wykresy, lekcje): tokeny palety „Chronograf” (grafit i lume) zamiast granatu i turkusu (`scripts/blog/blog.css`); wykresy we wpisach na grafitowym tle jak w aplikacji (linia ceny bez zmian); obrazki podglądu (OG) grafitowe z akcentem lume; kolor paska przeglądarki grafitowy.
+- **Nagłówek stron**: znak „Chronograf H” przy nazwie, menu jak w aplikacji (Przed sesją, W sesji, Po sesji, Rynki, Lekcje, Blog, Wyniki, Co nowego), szerszy pasek bez łamania nazw; Co nowego podświetlone na swojej stronie.
+
 ### Rynki: BTC i złoto (2026-11-14)
 <!-- co-nowego: grupa=rynki | pl=Desk skupiony na BTC: na stronie Rynki i w wyborze rynku są BTC i złoto (xyz:GOLD) | en=A desk focused on BTC: the Markets page and the market picker show BTC and gold (xyz:GOLD) -->
 

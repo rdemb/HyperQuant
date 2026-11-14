@@ -8,8 +8,8 @@ import { fmtPrice, ladderLayout } from './render.mjs';
 const FONT_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fonts');
 const FONT_FILES = ['BricolageGrotesque-SemiBold.ttf', 'PlusJakartaSans-Medium.ttf'].map((f) => path.join(FONT_DIR, f));
 
-// Tokeny (src/index.css @theme)
-const C = { page: '#070a11', surface: '#0b1019', lineStrong: '#283447', ink1: '#eef2f7', ink2: '#a9b4c4', ink3: '#7a889c', accent: '#3fc6dd', level: '#e0a045' };
+// Tokeny (src/index.css @theme, paleta „Chronograf”: grafit i lume)
+const C = { page: '#0c0d0f', surface: '#131518', lineStrong: '#343a42', ink1: '#edeef0', ink2: '#a9aeb6', ink3: '#8c929a', accent: '#cfea5b', level: '#e0a045' };
 const W = 1200;
 const H = 630;
 const X0 = 64;

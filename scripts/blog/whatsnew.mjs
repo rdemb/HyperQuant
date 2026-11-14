@@ -285,7 +285,7 @@ ${approxUntil ? `<p>${esc(t.approx(day(lang, approxUntil)))}</p>
       },
       main,
       lang,
-      current: null,
+      current: 'news',
       alternates,
       ...(disclaimer ? { disclaimer } : {}),
     }),
