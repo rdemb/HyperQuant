@@ -21,12 +21,12 @@ export const C = {
   sellInk: '#f68771',
   vwap: '#e6ebf2',
   oi: '#9085e9',
-  profileVa: '#34425a',
-  profileOut: '#1f2b3d',
+  profileVa: '#3a3f48',
+  profileOut: '#24272d',
   fpNeutral: '#1c2534',
   // Bid: sprzedaż agresorów (żar), ask: kupno agresorów (lazur)
-  fpBidRamp: ['#1e2a3a', '#4a333b', '#733939', '#9e3b34', '#ca3829'],
-  fpAskRamp: ['#1e2a3a', '#253e5f', '#2a5387', '#2f69b1', '#3280dd'],
+  fpBidRamp: ['#22262c', '#4a333b', '#733939', '#9e3b34', '#ca3829'],
+  fpAskRamp: ['#22262c', '#253e5f', '#2a5387', '#2f69b1', '#3280dd'],
   imbBuy: '#a2cfff',
   imbSell: '#ffa28a',
 };
