@@ -1,5 +1,6 @@
 export { Panel } from './Panel';
 export { Stat } from './Stat';
+export { SectionHeading } from './SectionHeading';
 export { Badge } from './Badge';
 export type { BadgeTone } from './Badge';
 export { sourceTag } from './sourceTag';
