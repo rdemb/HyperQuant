@@ -10,6 +10,12 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 #### Zmienione
 - **Fonty bez osobnego arkusza blokującego** (wtyczka `hq-inline-fonts` w `vite.config.ts`): przy buildzie deklaracje `@font-face` z `public/fonts/fonts.css` trafiają do <style> w `index.html`, a fonty pierwszego ekranu (Bricolage Grotesque, Plus Jakarta Sans 400, łacina) mają preload. Lokalny pomiar Lighthouse (telefon, Start): FCP 3,1 → 2,7 s, LCP 5,1 → 4,1 s. `fonts.css` zostaje dla stron statycznych.
 
+### Rynki jako karty instrumentów (2026-11-14)
+<!-- co-nowego: grupa=rynki | pl=Rynki: Bitcoin i złoto jako duże karty z ceną, obrotem, otwartymi pozycjami i fundingiem | en=Markets: Bitcoin and gold as large cards with price, volume, open interest and funding -->
+
+#### Zmienione
+- **Strona Rynki** (`views/markets/MarketList`): zamiast tabeli z dwoma wierszami dwie karty instrumentów (Bitcoin, złoto): nazwa, giełda i klasa, cena z odczytem LIVE (albo „—” z powodem), obrót 24 h, otwarte pozycje, funding godzinowy i roczny, przycisk wykresu; obok siebie od 768 px, na telefonie jedna pod drugą.
+
 ### Blog, Wyniki i Co nowego w nowym wyglądzie (2026-11-14)
 <!-- co-nowego: grupa=blog | pl=Blog, Wyniki i Co nowego w tym samym grafitowym wyglądzie co aplikacja, z pełnym menu | en=Blog, Results and What's new in the same graphite look as the app, with the full menu -->
 

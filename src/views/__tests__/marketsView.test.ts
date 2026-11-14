@@ -22,9 +22,9 @@ describe('widok „Rynki”: bez kierunku ceny i ocen', () => {
     }
   });
 
-  it('nagłówki kolumn przez tr (PL i EN)', () => {
+  it('etykiety kart rynków przez tr (PL i EN)', () => {
     const table = read('../markets/MarketList.tsx');
-    for (const pair of ["tr('Rynek', 'Market')", "tr('Cena', 'Price')", "tr('Obrót 24 h', '24h volume')", "tr('Otwarte poz.', 'Open int.')", "tr('Funding 1 h', 'Funding 1h')", "tr('Wykres', 'Chart')"])
+    for (const pair of ["tr('Obrót 24 h', '24h volume')", "tr('Otwarte poz.', 'Open int.')", "tr('Funding 1 h', 'Funding 1h')", "tr('Wykres', 'Chart')", "tr('Złoto', 'Gold')"])
       expect(table).toContain(pair);
   });
 });
@@ -38,8 +38,7 @@ describe('widok „Rynki”: dane osobno, wygląd osobno', () => {
       for (const m of src.matchAll(/^import (.+) from '(\.\.\/)+(utils|state|charts)\/[^']+';$/gm)) expect(m[1], `${f}: ${m[0]}`).toMatch(/^type /);
     }
     const view = views[0][1];
-    // Jedyny hook danych widoku; useSyncExternalStore to szerokość ekranu (karty albo tabela), nie dane
-    expect(view.match(/\buse(?!SyncExternalStore)[A-Z]\w*\(/g)).toEqual(['useMarketsPage(']);
+    expect(view.match(/\buse[A-Z]\w*\(/g)).toEqual(['useMarketsPage(']);
     for (const m of view.matchAll(/^import (.+) from '\.\.\/utils\/[^']+';$/gm)) expect(m[1], m[0]).toMatch(/^type /);
   });
 
