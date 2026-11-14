@@ -309,8 +309,8 @@ export function postBody(post) {
 
 // ───────────────────────── Strony ─────────────────────────
 
-const FONTS =
-  'https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Outfit:wght@500;600;700&family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap';
+// Fonty u nas (OFL): public/fonts/fonts.css w korzeniu strony, ten sam plik co w aplikacji (scripts/fonts/kopiuj-fonty.mjs)
+const FONTS_PATH = 'fonts/fonts.css';
 
 /**
  * Pozycje nawigacji: klucz, etykieta i ścieżka od korzenia desku (wersja angielska prowadzi do stron EN). Jak pasek
@@ -351,12 +351,12 @@ const FOOTER = {
 };
 /**
  * Polityka treści stron z tego szablonu (druga linia obrony, gdyby treść wpisu coś przemyciła): skrypty tylko z plików
- * strony (blog/blog.js; dane strukturalne ld+json nie są wykonywane), style z plików i Google Fonts. `style-src-attr`:
+ * strony (blog/blog.js; dane strukturalne ld+json nie są wykonywane), style i fonty z plików strony. `style-src-attr`:
  * diagramy (drabinka poziomów, słupki likwidacji, przepływów i scenariuszy) mają pozycje i szerokości w atrybutach style
  * generatora; treść wpisu atrybutów nie ustawia (surowy HTML jest tekstem).
  */
 export const CSP =
-  "default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; style-src-attr 'unsafe-inline'; font-src https://fonts.gstatic.com; img-src 'self' data:; base-uri 'none'; form-action 'none'";
+  "default-src 'self'; script-src 'self'; style-src 'self'; style-src-attr 'unsafe-inline'; font-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'";
 const BLOG_DISCLAIMER = 'Prawdopodobieństwa i scenariusze, nie porada inwestycyjna ani wezwanie do transakcji. Handel kontraktami z dźwignią wiąże się z wysokim ryzykiem utraty środków.';
 
 /**
@@ -435,9 +435,7 @@ export function layout(
 <meta name="twitter:description" content="${esc(description)}">
 <meta name="twitter:image" content="${esc(image)}">
 <meta name="twitter:image:alt" content="${esc(imageAlt)}">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="${FONTS}">
+<link rel="stylesheet" href="${root}${FONTS_PATH}">
 <link rel="stylesheet" href="${root}blog/blog.css?v=${site.cssVersion}">${script ? `\n<script src="${root}blog/blog.js?v=${site.jsVersion}" defer></script>` : ''}
 <script type="application/ld+json">${JSON.stringify(jsonLd).replace(/</g, '\\u003c')}</script>
 </head>

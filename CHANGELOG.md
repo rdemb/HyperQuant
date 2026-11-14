@@ -4,6 +4,16 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Fonty z naszego serwera, bez Google Fonts (2026-11-14)
+<!-- co-nowego: grupa=blog | pl=Fonty aplikacji, bloga i stron wyników z naszego serwera: strona nie pobiera już fontów z Google | en=Fonts of the app, blog and results pages served by us: the site no longer loads fonts from Google -->
+
+#### Zmienione
+- **Fonty u nas** (`public/fonts/`, SIL Open Font License 1.1, licencje obok): Outfit, Plus Jakarta Sans i IBM Plex Mono w tych samych odmianach co dotąd, tylko podzbiory latin i latin-ext (polskie litery, „−”, spacja niełamiąca, €), tylko woff2, pliki bez zmian. Jeden `fonts/fonts.css` dla aplikacji (`index.html`) i stron statycznych (blog, wyniki, co nowego, Wykresy, Lekcje). Generuje go `node scripts/fonts/kopiuj-fonty.mjs` z paczek `@fontsource` (wersje przypięte); test pilnuje zgodności plików, lokalnych adresów i zakresów znaków. Wygląd bez zmian; pobieranie fontów nie przekazuje już adresu IP odwiedzającego do Google. Service worker trzyma fonty w cache (także offline), jak pliki z `assets/`.
+- **Polityka treści stron statycznych:** `style-src 'self'` i `font-src 'self'` (bez Google).
+
+#### Naprawione
+- **Karta otwarta przed wdrożeniem:** pierwszy leniwy widok po wdrożeniu nowej wersji (stare pliki znikają ze strony) dawał ekran błędu. Teraz zdarzenie `vite:preloadError` daje jedno przeładowanie strony (znacznik w pamięci sesji chroni przed pętlą przez 60 s).
+
 ### Strona „Rynki”: etykieta Wall Street z kalendarzem NYSE (2026-11-13)
 <!-- co-nowego: grupa=rynki | pl=Na stronie „Rynki” etykieta, czy Wall Street jest otwarta, z kalendarzem świąt NYSE | en=On the Markets page, a label showing whether Wall Street is open, with the NYSE holiday calendar -->
 
