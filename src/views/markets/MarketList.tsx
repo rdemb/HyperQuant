@@ -1,12 +1,14 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React from 'react';
+import { ArrowUpRight } from 'lucide-react';
 import { tr } from '../../i18n';
 import { Badge } from '../../ui';
 import type { MarketRowModel } from '../../utils/marketsTable';
 import type { MarketClass } from '../../utils/marketRegistry';
 
 /**
- * Lista rynków (setki wierszy) rysowana oknem: w dokumencie są tylko wiersze w pobliżu ekranu (przewijanie strony),
- * reszta to wysokość kontenera. Komputer i tablet (od 768 px): tabela; telefon: karty. Same teksty z modelu wiersza.
+ * Rynki aplikacji (BTC i złoto) jako karty instrumentów: nazwa, giełda i klasa, cena z odczytem LIVE (albo „—” z powodem),
+ * obrót 24 h, otwarte pozycje, funding godzinowy i roczny, przycisk wykresu. Same teksty z modelu wiersza
+ * (`utils/marketsTable.rowModel`); opis rynku, bez kierunku ceny.
  */
 
 export const CLASS_LABEL: Record<MarketClass, string> = {
@@ -18,152 +20,72 @@ export const CLASS_LABEL: Record<MarketClass, string> = {
   other: tr('Inne', 'Other'),
 };
 
-const ROW_H = { table: 56, card: 76 } as const;
-const OVERSCAN = 8;
+/** Pełna nazwa instrumentu (karty); inne rynki — nazwa z rejestru. */
+const FULL: Record<string, string> = { BTC: 'Bitcoin', 'xyz:GOLD': tr('Złoto', 'Gold') };
+/** Symbol kontraktu w karcie (BTC jak w nagłówku aplikacji: BTC-PERP); inne rynki — nazwa z giełdy. */
+const TICKER: Record<string, string> = { BTC: 'BTC-PERP' };
 
-/** Zakres widocznych wierszy listy o stałej wysokości wiersza przy przewijaniu strony (okno). */
-function useWindowRange(count: number, rowH: number, ref: React.RefObject<HTMLElement | null>): [number, number] {
-  const [range, setRange] = useState<[number, number]>([0, Math.min(count, 24)]);
-  useEffect(() => {
-    const calc = () => {
-      const el = ref.current;
-      if (!el) return;
-      const top = el.getBoundingClientRect().top;
-      const start = Math.max(0, Math.floor(-top / rowH) - OVERSCAN);
-      const end = Math.min(count, Math.ceil((window.innerHeight - top) / rowH) + OVERSCAN);
-      setRange((r) => (r[0] === start && r[1] === end ? r : [start, end]));
-    };
-    calc();
-    window.addEventListener('scroll', calc, { passive: true });
-    window.addEventListener('resize', calc);
-    return () => {
-      window.removeEventListener('scroll', calc);
-      window.removeEventListener('resize', calc);
-    };
-  }, [count, rowH, ref]);
-  return range;
-}
+const Stat: React.FC<{ label: string; value: string; sub?: string | null }> = ({ label, value, sub }) => (
+  <div className="min-w-0">
+    <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-ink-3">{label}</dt>
+    <dd className="mt-1 font-mono text-lg tabular-nums text-ink-1">{value}</dd>
+    {sub && <dd className="font-sans text-[11px] text-ink-3">{sub}</dd>}
+  </div>
+);
 
-const Live: React.FC<{ row: MarketRowModel; align?: 'end' | 'start' }> = ({ row, align = 'end' }) => (
-  <span className={`flex items-center gap-1 font-sans text-[10.5px] text-ink-3 ${align === 'end' ? 'justify-end' : ''}`}>
-    {row.readAt !== null ? (
-      <>
-        <Badge tone="live" size="sm" title={tr('Realne dane Hyperliquid; godzina odczytu w czasie lokalnym', 'Real Hyperliquid data; reading time in local time')}>
-          LIVE
-        </Badge>
-        <span>{row.readAt}</span>
-      </>
-    ) : (
-      <span className="truncate" title={row.why ?? undefined}>
-        {row.why}
+const MarketCard: React.FC<{ row: MarketRowModel }> = ({ row }) => (
+  <article data-market-row={row.coin} aria-labelledby={`rynek-${row.coin}`} className="flex flex-col gap-5 rounded-2xl border border-line bg-surface-1 p-5 sm:p-6">
+    <header className="flex items-start justify-between gap-3">
+      <div className="min-w-0">
+        <h3 id={`rynek-${row.coin}`} className="font-display text-[26px] font-bold leading-none tracking-tight [font-stretch:90%] text-ink-1">
+          {FULL[row.coin] ?? row.name}
+        </h3>
+        <p className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-ink-3">
+          <span className="font-mono">{TICKER[row.coin] ?? row.coin}</span>
+          <span className="rounded border border-line px-1 leading-4" title={row.exchangeTitle}>
+            {row.exchange}
+          </span>
+          {row.cls !== null && <span>{CLASS_LABEL[row.cls]}</span>}
+        </p>
+      </div>
+      <span className="flex shrink-0 items-center gap-1.5 text-[11px] text-ink-3">
+        {row.readAt !== null ? (
+          <>
+            <Badge tone="live" size="sm" title={tr('Realne dane Hyperliquid; godzina odczytu w czasie lokalnym', 'Real Hyperliquid data; reading time in local time')}>
+              LIVE
+            </Badge>
+            <span className="font-mono tabular-nums">{row.readAt}</span>
+          </>
+        ) : (
+          <span className="max-w-[180px] text-right">{row.why}</span>
+        )}
       </span>
+    </header>
+    <p className={`font-mono text-[40px] leading-none tabular-nums tracking-tight ${row.why === null ? 'text-ink-1' : 'text-ink-3'}`} aria-label={tr(`Cena: ${row.price}`, `Price: ${row.price}`)}>
+      {row.price}
+    </p>
+    <dl className="grid grid-cols-3 gap-4 border-t border-line pt-4">
+      <Stat label={tr('Obrót 24 h', '24h volume')} value={row.volume} />
+      <Stat label={tr('Otwarte poz.', 'Open int.')} value={row.openInterest} />
+      <Stat label={tr('Funding 1 h', 'Funding 1h')} value={row.fundingHour} sub={row.fundingYear !== null ? tr(`${row.fundingYear} rocznie`, `${row.fundingYear} per year`) : null} />
+    </dl>
+    {row.chartHref !== null ? (
+      <a href={row.chartHref} className="inline-flex h-11 items-center justify-center gap-2 self-start rounded-full border border-line-strong px-5 text-sm font-semibold text-ink-1 transition-colors duration-150 hover:bg-surface-2">
+        {tr('Wykres', 'Chart')}
+        <ArrowUpRight aria-hidden="true" className="h-4 w-4" />
+      </a>
+    ) : (
+      <p className="text-xs text-ink-3">{row.chartWhy}</p>
     )}
-  </span>
+  </article>
 );
 
-const Name: React.FC<{ row: MarketRowModel }> = ({ row }) => (
-  <span className="flex min-w-0 items-center gap-1.5">
-    <span className="truncate font-semibold text-ink-1">{row.name}</span>
-    <span className="shrink-0 rounded border border-line px-1 text-[10px] leading-4 text-ink-3" title={row.exchangeTitle}>
-      {row.exchange}
-    </span>
-    {row.cls !== null && row.cls !== 'crypto' && <span className="hidden sm:inline shrink-0 text-[10px] text-ink-3">{CLASS_LABEL[row.cls]}</span>}
-  </span>
-);
-
-const Chart: React.FC<{ row: MarketRowModel }> = ({ row }) =>
-  row.chartHref !== null ? (
-    <a href={row.chartHref} className="inline-flex h-9 items-center rounded-md px-2 text-xs text-ink-2 underline decoration-line-strong underline-offset-2 hover:bg-surface-2 hover:text-ink-1">
-      {tr('Wykres', 'Chart')}
-    </a>
-  ) : (
-    <span className="text-ink-3" title={row.chartWhy ?? undefined}>
-      —
-    </span>
-  );
-
-const GRID = 'grid grid-cols-[minmax(150px,1.6fr)_minmax(96px,1fr)_minmax(84px,0.9fr)_minmax(84px,0.9fr)_minmax(92px,1fr)_72px] items-center gap-x-3 px-4';
-const NUM = 'text-right font-mono tabular-nums text-ink-1';
-
-const TableRow: React.FC<{ row: MarketRowModel; index: number }> = ({ row, index }) => (
-  <div role="row" aria-rowindex={index + 2} data-market-row={row.coin} className={`${GRID} absolute inset-x-0 border-t border-line hover:bg-surface-2/50`} style={{ top: index * ROW_H.table, height: ROW_H.table }}>
-    <div role="rowheader" className="min-w-0">
-      <Name row={row} />
-    </div>
-    <div role="cell" className={NUM}>
-      <span className={row.why === null ? undefined : 'text-ink-3'}>{row.price}</span>
-      <Live row={row} />
-    </div>
-    <div role="cell" className={NUM}>{row.volume}</div>
-    <div role="cell" className={NUM}>{row.openInterest}</div>
-    <div role="cell" className={NUM}>
-      {row.fundingHour}
-      {row.fundingYear !== null && <span className="block font-sans text-[10.5px] text-ink-3">{tr(`${row.fundingYear} rocznie`, `${row.fundingYear} per year`)}</span>}
-    </div>
-    <div role="cell" className="text-right">
-      <Chart row={row} />
-    </div>
+export const MarketList: React.FC<{ rows: MarketRowModel[] }> = ({ rows }) => (
+  <div role="list" aria-label={tr('Rynki: BTC i złoto', 'Markets: BTC and gold')} className="grid grid-cols-1 gap-4 md:grid-cols-2">
+    {rows.map((r) => (
+      <div role="listitem" key={r.coin} className="min-w-0">
+        <MarketCard row={r} />
+      </div>
+    ))}
   </div>
 );
-
-const CardRow: React.FC<{ row: MarketRowModel; index: number }> = ({ row, index }) => (
-  <div role="row" aria-rowindex={index + 2} data-market-row={row.coin} className="absolute inset-x-0 flex flex-col justify-center gap-1 border-t border-line px-4" style={{ top: index * ROW_H.card, height: ROW_H.card }}>
-    <div className="flex items-center justify-between gap-3">
-      <div role="rowheader" className="min-w-0">
-        <Name row={row} />
-      </div>
-      <div role="cell" className={`${NUM} shrink-0 text-base`}>
-        {row.price}
-      </div>
-    </div>
-    <div className="flex items-center justify-between gap-3 text-xs">
-      <div className="flex min-w-0 items-center gap-3 text-ink-2">
-        <span role="cell" className="font-mono tabular-nums">
-          <span className="font-sans text-ink-3">{tr('Obrót', 'Vol')} </span>
-          {row.volume}
-        </span>
-        <span role="cell" className="font-mono tabular-nums">
-          <span className="font-sans text-ink-3">F </span>
-          {row.fundingHour}
-        </span>
-      </div>
-      <Live row={row} />
-    </div>
-  </div>
-);
-
-export const MarketList: React.FC<{ rows: MarketRowModel[]; cards: boolean }> = ({ rows, cards }) => {
-  const ref = useRef<HTMLDivElement>(null);
-  const rowH = cards ? ROW_H.card : ROW_H.table;
-  const [start, end] = useWindowRange(rows.length, rowH, ref);
-  const Row = cards ? CardRow : TableRow;
-  return (
-    <div role="table" aria-rowcount={rows.length + 1} aria-label={tr('Rynki: BTC i złoto', 'Markets: BTC and gold')}>
-      {!cards && (
-        <div role="row" aria-rowindex={1} className={`${GRID} py-2 text-[11px] font-medium uppercase tracking-[0.06em] text-ink-3`}>
-          <span role="columnheader">{tr('Rynek', 'Market')}</span>
-          <span role="columnheader" className="text-right">
-            {tr('Cena', 'Price')}
-          </span>
-          <span role="columnheader" className="text-right">
-            {tr('Obrót 24 h', '24h volume')}
-          </span>
-          <span role="columnheader" className="text-right">
-            {tr('Otwarte poz.', 'Open int.')}
-          </span>
-          <span role="columnheader" className="text-right">
-            {tr('Funding 1 h', 'Funding 1h')}
-          </span>
-          <span role="columnheader" className="text-right">
-            {tr('Wykres', 'Chart')}
-          </span>
-        </div>
-      )}
-      <div ref={ref} role="rowgroup" className="relative" style={{ height: rows.length * rowH }}>
-        {rows.slice(start, end).map((r, i) => (
-          <Row key={r.coin} row={r} index={start + i} />
-        ))}
-      </div>
-    </div>
-  );
-};
