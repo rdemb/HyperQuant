@@ -49,14 +49,18 @@ export function fmtPrice(v: number | null | undefined, digits = 1): string {
   return isNum(v) ? fmtFixed(v, digits) : DASH;
 }
 
-/** Zwięzły zapis kwot: 1 284 / 12,9K / 4,2M / 3,1B (po angielsku 12.9K). */
+/** Jednostki zapisu zwięzłego: po polsku słowem po spacji niełamiącej (22,6 mln), po angielsku literą (22.6M). */
+const COMPACT_UNITS: Record<'pl' | 'en', [string, string, string]> = { pl: ['\u00a0mld', '\u00a0mln', '\u00a0tys.'], en: ['B', 'M', 'K'] };
+
+/** Zwięzły zapis kwot: 1 284 / 12,9 tys. / 4,2 mln / 3,1 mld (po angielsku 12.9K / 4.2M / 3.1B). */
 export function fmtCompact(v: number | null | undefined, prefix = ''): string {
   if (!isNum(v)) return DASH;
   const a = Math.abs(v);
   const sign = v < 0 ? '−' : '';
-  if (a >= 1e9) return `${sign}${prefix}${fmtFixed(a / 1e9, 2)}B`;
-  if (a >= 1e6) return `${sign}${prefix}${fmtFixed(a / 1e6, 1)}M`;
-  if (a >= 1e3) return `${sign}${prefix}${fmtFixed(a / 1e3, 1)}K`;
+  const [b, m, k] = COMPACT_UNITS[lang === 'en' ? 'en' : 'pl'];
+  if (a >= 1e9) return `${sign}${prefix}${fmtFixed(a / 1e9, 2)}${b}`;
+  if (a >= 1e6) return `${sign}${prefix}${fmtFixed(a / 1e6, 1)}${m}`;
+  if (a >= 1e3) return `${sign}${prefix}${fmtFixed(a / 1e3, 1)}${k}`;
   return `${sign}${prefix}${a.toFixed(0)}`;
 }
 

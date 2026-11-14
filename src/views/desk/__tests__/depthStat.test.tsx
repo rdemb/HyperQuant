@@ -31,7 +31,7 @@ describe('głębokość arkusza L2', () => {
   it('kafel z arkuszem: LIVE, obie strony; pusta strona to prawdziwe $0', () => {
     const html = renderToStaticMarkup(<DepthStat depth={{ bid: 1_200_000, ask: 0, bidShare: 1 }} />);
     expect(html).toMatch(/>LIVE</);
-    expect(html).toContain('$1,2M');
+    expect(html).toContain('$1,2 mln');
     expect(html).toContain('$0');
     expect(html).toContain('BID 100%');
   });

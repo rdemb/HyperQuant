@@ -53,7 +53,7 @@ const K = {
   sellRing: rgba(C.sellInk, 0.7),
 } as const;
 
-export const MONO = '"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace';
+export const MONO = '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace';
 
 export interface Layers {
   heat: boolean;

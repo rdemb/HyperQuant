@@ -3,12 +3,23 @@ import React from 'react';
 export type BadgeTone = 'live' | 'model' | 'sim' | 'stale' | 'neutral' | 'warn';
 
 const TONES: Record<BadgeTone, string> = {
-  live: 'text-buy-ink border-buy/40 bg-buy/10',
-  model: 'text-accent border-accent/40 bg-accent/10',
-  sim: 'text-zone border-zone/50 bg-zone/10',
+  live: 'text-ink-1 border-line-strong bg-surface-2',
+  model: 'text-ink-1 border-line-strong bg-surface-2',
+  sim: 'text-sim border-dashed border-sim/70 bg-sim/10',
   stale: 'text-warn border-warn/40 bg-warn/10',
   warn: 'text-warn border-warn/40 bg-warn/10',
   neutral: 'text-ink-2 border-line-strong bg-surface-2',
+};
+
+/**
+ * Znak pochodzenia czytelny bez koloru: ● LIVE (pełny, „lume”), ◐ MODEL (połowa), ○ SIM (przerywany), ◌ STALE (pusty).
+ * Kształt niesie znaczenie, kolor tylko je wzmacnia (WCAG 1.4.1).
+ */
+const MARKS: Partial<Record<BadgeTone, string>> = {
+  live: 'bg-lume ring-1 ring-ink-1/60',
+  model: 'border-[1.5px] border-ink-1 bg-[linear-gradient(90deg,var(--color-ink-1)_50%,transparent_50%)]',
+  sim: 'border-[1.5px] border-dashed border-sim',
+  stale: 'border-[1.5px] border-warn',
 };
 
 /** Znacznik pochodzenia/stanu danych: LIVE / MODEL / SIM / STALE. `size="sm"` — mniejszy (nagłówek układu na telefonie). */
@@ -21,9 +32,11 @@ export const Badge: React.FC<{ tone: BadgeTone; children: React.ReactNode; title
 }) => (
   <span
     data-testid={testId}
+    data-tone={tone}
     title={title}
     className={`inline-flex items-center gap-1 rounded border font-semibold tracking-wide uppercase whitespace-nowrap ${size === 'sm' ? 'px-1 py-px text-[9px]' : 'px-1.5 py-0.5 text-[10px]'} ${TONES[tone]}`}
   >
+    {MARKS[tone] && <span aria-hidden="true" className={`shrink-0 rounded-full ${size === 'sm' ? 'size-1.5' : 'size-2'} ${MARKS[tone]}`} />}
     {children}
   </span>
 );

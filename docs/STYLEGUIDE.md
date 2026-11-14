@@ -9,23 +9,31 @@ Applies to every new and reworked component. Code and identifiers in English, **
 4. **Mobile first for content, desktop for density.** Every view works from 360 px (16 px gutter, no horizontal page scroll; wide tables scroll inside their frame).
 
 ## 2. Tokens (defined in `src/index.css` via `@theme`; use the Tailwind classes)
-| Role | Token / class | Value |
-|---|---|---|
-| Page background | `bg-page` | `#070A11` |
-| Panel | `bg-surface-1` | `#0B1019` |
-| Raised panel | `bg-surface-2` | `#101826` |
-| Hover / field | `bg-surface-3` | `#16202F` |
-| Line (hairline) | `border-line` | `#1B2533` |
-| Strong line | `border-line-strong` | `#283447` |
-| Primary text | `text-ink-1` | `#EEF2F7` |
-| Secondary text | `text-ink-2` | `#A9B4C4` |
-| Muted text (min. 4.5:1) | `text-ink-3` | `#7A889C` |
-| Brand accent (HL) | `text-accent` / `bg-accent` | `#3FC6DD` |
-| Buy (mark/bar) | `bg-buy` / `text-buy-ink` | `#3280DD` / `#82BCFC` |
-| Sell (mark/bar) | `bg-sell` / `text-sell-ink` | `#CA3829` / `#F68771` |
-| HTF levels (PDH/PDL) | `level` | `#E0A045` |
-| OB zones | `zone` | `#9085E9` |
-| Status | `good` / `warn` / `critical` | `#0CA30C` / `#FAB219` / `#D03B3B` (always with an icon + label) |
+Two themes, one set of class names: the values are CSS variables redefined under `[data-theme='dark']` and `[data-theme='light']` (`src/theme.ts`: saved choice `hq.theme`, otherwise the system setting; set before the first paint by the inline script in `index.html`). Chart areas (the Pro chart, the In-session workspace, lesson figures) carry `data-theme="dark"` and stay dark in the light theme.
+
+| Role | Token / class | Dark | Light |
+|---|---|---|---|
+| Page background | `bg-page` | `#0C0D0F` | `#F1EFE9` |
+| Panel | `bg-surface-1` | `#131518` | `#FAF9F5` |
+| Raised panel | `bg-surface-2` | `#1A1D21` | `#FFFFFF` |
+| Hover / field | `bg-surface-3` | `#22262B` | `#ECE9E2` |
+| Line (hairline) | `border-line` | `#24282E` | `#DAD6CC` |
+| Strong line | `border-line-strong` | `#343A42` | `#BEB9AD` |
+| Primary text | `text-ink-1` | `#EDEEF0` | `#111315` |
+| Secondary text | `text-ink-2` | `#A9AEB6` | `#474C54` |
+| Muted text (min. 4.5:1) | `text-ink-3` | `#8C929A` | `#60666F` |
+| Accent (text, outline, focus) | `text-accent` / `bg-accent` | `#CFEA5B` | `#3A4500` |
+| "Now" mark, LIVE dot | `bg-lume` | `#CFEA5B` | `#C8E64A` |
+| Buy (mark/bar) | `bg-buy` / `text-buy-ink` | `#3280DD` / `#82BCFC` | `#3280DD` / `#1D5FB0` |
+| Sell (mark/bar) | `bg-sell` / `text-sell-ink` | `#CA3829` / `#F68771` | `#CA3829` / `#A93225` |
+| HTF levels (PDH/PDL) | `level` | `#E0A045` | `#8A5A00` |
+| OB zones | `zone` | `#9085E9` | `#5B4FC9` |
+| Status | `good` / `warn` / `critical` | `#0CA30C` / `#FAB219` / `#EF6158` | `#1D6B1D` / `#8A5A00` / `#B42318` (always with an icon + label) |
+| Simulation | `sim` | `#E9B04F` | `#7A4F00` |
+
+Every text token passes 4.5:1 on every surface of its theme (`sim` also on its own 10% tint). Lume is never text on paper: in the light theme it is a fill under dark ink.
+
+**Provenance marks** (`Badge`, `data-tone`): ● `LIVE` filled lume dot — fetched now; ◐ `MODEL` half-filled — computed by a named method; ○ `SIM` dashed ring and dashed `sim` border — simulation, always visible; ◌ `STALE` warn ring — older than the source's limit. The mark is a second channel next to the word, never instead of it.
 
 The buy/sell pair (azure and ember, palette „Głębia”, one for the whole app) passed the palette validator (CVD ΔE 26.8 deutan, contrast ≥ 3:1). **Always add a second channel**: a `+/−` sign, a ▲▼ arrow or position (bid below the price, ask above).
 
@@ -33,9 +41,11 @@ Categorical series on charts (fixed order, never cycled): `series-1…8` = `#398
 Exception: flow panels (buy/sell direction in the background) do not use the series colours; participant cohorts have their own tokens (identity, not direction): `cohort-mm` `#059583` market makers, `cohort-informed` `#B18E15` informed, `cohort-whale` `#A878DB` whales, `cohort-rest` `#7A889C` everyone else (checked with the palette validator on `#05101E`: CVD ΔE 11.9, contrast ≥ 3:1). The same three colours mark the exchanges on the canvas (Hyperliquid, Binance, Bybit).
 
 ## 3. Typography
-- `font-display` (Outfit 600/700): section headings and the app name only. **Never on numbers.**
+- `font-display` (Bricolage Grotesque, variable: weight 200–800, width 75–100%): section headings and the app name only. **Never on numbers.** `.display` = width 80%, tracking −0.022em (Start headline); `.hollow` = outlined letters (stroke under a page-coloured fill, so overlapping contours stay hidden).
 - `font-sans` (Plus Jakarta Sans): UI and hero numbers (proportional figures).
-- `font-mono` (IBM Plex Mono) + `tabular-nums`: number columns, tables, axes, the tape.
+- `font-mono` (JetBrains Mono) + `tabular-nums`: number columns, tables, axes, the tape, clocks.
+- All three are OFL, self-hosted from `public/fonts` (`scripts/fonts/kopiuj-fonty.mjs`), latin + latin-ext only.
+- Numbers follow the interface language: pl `75 791`, `22,6 mln`, `−0,04%` (no-break space between thousands and before the unit word); en `75,791`, `22.6M`, `−0.04%`. Always the `−` minus sign.
 - Scale: 11 / 12 / 13 / 14 / 16 / 20 / 28 / 44 px. "Eyebrow" labels: 11 px, uppercase, tracking 0.08em, `text-ink-3`.
 
 ## 4. Charts
@@ -94,4 +104,4 @@ Bid × Ask footprint cells are tiles from graphite `#1E2A3A` at low volume to th
 `Panel` (header + eyebrow + actions + content), `Stat` (label, value, delta, sparkline), `Badge` (LIVE/MODEL/SIM/STALE), `Segmented`, `AnimatedNumber`, `Sparkline`, `EmptyState`. Use them instead of custom cards. Buttons: real `<button>` elements, touch target ≥ 44 px on mobile, `aria-label` on icons.
 
 ## 7. Accessibility
-Text contrast ≥ 4.5:1 (checked for the ink tokens on every surface). Visible keyboard focus (`focus-visible:ring-2 ring-accent`). Colour is never the only carrier of meaning.
+Text contrast ≥ 4.5:1 (checked for every text token on every surface, in both themes). Visible keyboard focus (`focus-visible:ring-2 ring-accent`). Colour is never the only carrier of meaning.

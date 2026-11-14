@@ -58,7 +58,7 @@ function textWidth(text: string, font: string): number {
   return measureCtx.measureText(text).width;
 }
 const FONT_COIN = '600 12px "Plus Jakarta Sans", sans-serif';
-const FONT_CHG = '400 11px "IBM Plex Mono", monospace';
+const FONT_CHG = '400 11px "JetBrains Mono", monospace';
 
 interface Tile {
   id: string;

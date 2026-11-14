@@ -40,8 +40,8 @@ describe('fonty u nas (public/fonts)', () => {
   it('każda odmiana każdej rodziny ma latin i latin-ext: „−0,04%”, spacja niełamiąca, € i polskie litery', () => {
     for (const f of FONTS) {
       for (const face of f.faces) {
-        // Font zmienny: jedna odmiana z zakresem wag (np. „200 800”) zamiast pojedynczej wagi
-        const [w, style = 'normal'] = f.variable ? ['200 800'] : face.split('-');
+        // Font zmienny: jeden plik na podzbiór z zakresem grubości (np. „200 800”), statyczny: osobny plik na odmianę
+        const [w, style = 'normal'] = f.weights ? [f.weights] : face.split('-');
         const own = faces.filter((x) => x.body.includes(`font-family: '${f.family}'`) && x.body.includes(`font-weight: ${w};`) && x.body.includes(`font-style: ${style};`));
         const ranges = own.map((x) => x.body.match(/unicode-range: ([^;]+);/)?.[1] ?? '');
         expect(own.length, `${f.family} ${face}`).toBe(2);
