@@ -5,7 +5,8 @@ export type Akcja =
   | { typ: 'widok'; id: ViewId }
   | { typ: 'rynek'; coin: string }
   | { typ: 'link'; href: string }
-  | { typ: 'jezyk'; lang: 'pl' | 'en' };
+  | { typ: 'jezyk'; lang: 'pl' | 'en' }
+  | { typ: 'przelacznik'; co: 'strumien' | 'synchronizuj' | 'dzwiek' };
 
 export type Polecenie = { id: string; grupa: string; etykieta: string; slowa?: string; akcja: Akcja };
 

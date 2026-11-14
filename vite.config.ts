@@ -52,7 +52,7 @@ export default defineConfig(() => {
     },
     build: {
       chunkSizeWarningLimit: 1500,
-      // Manifest pakietu (dist/.vite/manifest.json) dla kontroli granic: scripts/build/granice-pakietu.mjs
+      // Manifest pakietu (dist/.vite/manifest.json) dla kontroli granic: scripts/ui/granice-pakietu.mjs
       manifest: true,
     },
     server: {

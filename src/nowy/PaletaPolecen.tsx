@@ -17,7 +17,8 @@ export const PaletaPolecen: React.FC<{
   onAkcja: (a: Akcja) => void;
   widoki: NavItem[];
   zewnetrzne: { href: string; label: string }[];
-}> = ({ open, onClose, onAkcja, widoki, zewnetrzne }) => {
+  przelaczniki: { co: 'strumien' | 'synchronizuj' | 'dzwiek'; etykieta: string }[];
+}> = ({ open, onClose, onAkcja, widoki, zewnetrzne, przelaczniki }) => {
   const { markets } = useMarkets();
   const [q, setQ] = useState('');
   const [aktywny, setAktywny] = useState(0);
@@ -35,11 +36,12 @@ export const PaletaPolecen: React.FC<{
         akcja: { typ: 'rynek', coin: m.coin } as Akcja,
       })),
       ...zewnetrzne.map((l) => ({ id: `l-${l.href}`, grupa: tr('Strony', 'Pages'), etykieta: l.label, akcja: { typ: 'link', href: l.href } as Akcja })),
+      ...przelaczniki.map((x) => ({ id: `p-${x.co}`, grupa: tr('Dane', 'Data'), etykieta: x.etykieta, akcja: { typ: 'przelacznik', co: x.co } as Akcja })),
       lang === 'pl'
         ? { id: 'j-en', grupa: tr('Język', 'Language'), etykieta: 'English', slowa: 'EN language jezyk', akcja: { typ: 'jezyk', lang: 'en' } as Akcja }
         : { id: 'j-pl', grupa: tr('Język', 'Language'), etykieta: 'Polski', slowa: 'PL language jezyk', akcja: { typ: 'jezyk', lang: 'pl' } as Akcja },
     ],
-    [widoki, markets, zewnetrzne]
+    [widoki, markets, zewnetrzne, przelaczniki]
   );
   const wyniki = useMemo(() => filtruj(lista, q), [lista, q]);
 
@@ -63,6 +65,9 @@ export const PaletaPolecen: React.FC<{
     if (e.key === 'Escape') {
       e.preventDefault();
       onClose();
+    } else if (e.key === 'Tab') {
+      // aria-modal: fokus nie wychodzi do tła (jedyny element z fokusem to pole wyszukiwania)
+      e.preventDefault();
     } else if (e.key === 'ArrowDown') {
       e.preventDefault();
       setAktywny((i) => (wyniki.length ? (i + 1) % wyniki.length : 0));
@@ -113,7 +118,7 @@ export const PaletaPolecen: React.FC<{
                 placeholder={tr('Widok, rynek (ETH, HYPE), strona…', 'View, market (ETH, HYPE), page…')}
                 className="w-full bg-transparent text-sm text-hq-ink-1 placeholder:text-hq-ink-3 outline-none"
               />
-              <kbd className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-hq-elevated text-hq-ink-2">Esc</kbd>
+              <kbd className="font-hq-mono text-[10px] px-1.5 py-0.5 rounded bg-hq-elevated text-hq-ink-2">Esc</kbd>
             </div>
             <ul id={listaId} role="listbox" className="max-h-80 overflow-y-auto p-2 space-y-0.5">
               {wyniki.length === 0 ? (

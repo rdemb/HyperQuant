@@ -106,13 +106,9 @@
     font-variant-numeric: tabular-nums;
   }
 
-  /* Nowy wygląd: atrybut ustawiony w main.tsx przed pierwszym renderem (bez mignięcia starego wyglądu). Nagłówki
-     i liczby nowymi fontami także w obecnych widokach osadzonych w nowej powłoce; kolory wykresów bez zmian. */
-  html[data-ui='nowy'] {
-    --font-display: var(--font-hq-display);
-    --font-mono: var(--font-hq-mono);
-  }
-
+  /* Nowy wygląd: atrybut ustawiony w main.tsx przed pierwszym renderem (bez mignięcia starego wyglądu). Tylko tło
+     i kolor tekstu; fonty nowego wyglądu (font-hq-display, font-hq-mono) mają wyłącznie komponenty src/nowy, więc
+     wykresy, DOM, taśma i obecne widoki zostają przy swoich fontach. */
   html[data-ui='nowy'] body {
     background-color: var(--color-hq-obsidian);
     color: var(--color-hq-ink-1);
