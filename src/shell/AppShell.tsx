@@ -14,6 +14,8 @@ import {
   Pause,
   Play,
   RefreshCw,
+  Search,
+  SlidersHorizontal,
   Sun,
   Sunrise,
   Sunset,
@@ -32,6 +34,10 @@ import { ConnectingState } from './ConnectingState';
 import { Lang, lang, setLang, tr } from '../i18n';
 import { type Theme, setTheme, useTheme } from '../theme';
 import { levelStatusLabel } from '../utils/shaakuniEngine';
+import { NOWE_WIDOKI } from '../nowy/widoki';
+import { PasekDnia } from './PasekDnia';
+import { dayPhase, useNow } from './dzien';
+import type { Akcja } from './polecenia';
 import { sessionNameAt } from '../utils/sessionNames';
 
 // Widoki ładowane leniwie (mniejszy pierwszy bundle; wykresy faz w osobnym pakiecie)
@@ -69,9 +75,6 @@ export const AGENTS: NavItem = { id: 'agents', label: tr('Agenci AI', 'AI agents
 
 /** Rynki (tabela rynków z rejestru): na desktopie w pasku zaraz po fazach dnia, na telefonie w menu „Więcej”. */
 export const MARKETS: NavItem = { id: 'markets', label: tr('Rynki', 'Markets'), icon: <Table2 className="w-4 h-4" /> };
-
-/** Stopka: Lekcje i Źródła (Blog i Agenci AI za nimi). */
-const FOOTER = MORE.filter((n) => n.id !== 'research');
 
 export const STATUS_TONE: Record<string, BadgeTone> = { LIVE: 'live', STALE: 'stale', SYNTH: 'stale', PAUSED: 'neutral' };
 export const STATUS_TITLE: Record<string, string> = {
@@ -140,7 +143,7 @@ const Change: React.FC<{ pct: number | null; span: string }> = ({ pct, span }) =
  * Cena z rozwinięciem: kliknięcie (dotknięcie) pokazuje wszystkie liczby rynku — także te, które na węższym ekranie nie
  * mieszczą się w nagłówku (basis, PDH, PDL z ich stanem, sesja).
  */
-export const PriceButton: React.FC<{ small?: boolean }> = ({ small = false }) => {
+export const PriceButton: React.FC = () => {
   const k = useTicker();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -164,10 +167,10 @@ export const PriceButton: React.FC<{ small?: boolean }> = ({ small = false }) =>
         aria-controls={open ? id : undefined}
         title={tr('BTC-PERP: liczby rynku (funding, OI, basis, PDH, PDL, sesja)', 'BTC-PERP: market numbers (funding, OI, basis, PDH, PDL, session)')}
         onClick={() => setOpen((o) => !o)}
-        className={`flex items-baseline gap-2 min-w-0 rounded-lg px-1.5 -mx-1.5 ${small ? 'min-h-11 items-center' : 'py-1'} hover:bg-surface-2 transition-colors duration-150 text-xs`}
+        className="flex items-baseline gap-2 min-w-0 min-h-10 py-2 rounded-lg px-1.5 -mx-1.5 hover:bg-surface-2 transition-colors duration-150 text-xs"
       >
-        <span className={`text-ink-2 font-medium ${small ? 'hidden min-[400px]:inline' : ''}`}>BTC-PERP</span>
-        <AnimatedNumber value={k.price} format={(v) => fmtPrice(v)} className={`${small ? 'text-base' : 'text-lg'} font-semibold text-ink-1`} />
+        <span className="hidden min-[420px]:inline text-ink-2 font-medium">BTC-PERP</span>
+        <AnimatedNumber value={k.price} format={(v) => fmtPrice(v)} className="text-base sm:text-lg font-semibold text-ink-1" />
         <Change pct={k.changePct} span={k.windowLabel} />
       </button>
       {open && (
@@ -201,16 +204,15 @@ const TickerInline: React.FC = () => {
   const ref = useRef<HTMLDivElement>(null);
   useWholeItems(ref);
   return (
-    <div ref={ref} data-header-ticker className="flex items-center gap-x-4 min-w-0 overflow-hidden whitespace-nowrap text-xs">
+    <div ref={ref} data-header-ticker className="flex items-center gap-x-5 min-w-0 overflow-hidden whitespace-nowrap text-xs">
       <PriceButton />
       <span className={`flex items-baseline gap-x-4 ${k.fresh ? '' : 'opacity-50'}`} title={k.fresh ? undefined : STALE_TITLE}>
-        <Item label="Funding" value={k.funding} title="Funding HL" />
-        <Item label="OI" value={k.oi} />
-        <Item label="Basis" value={k.basis} className="hidden min-[1680px]:flex" />
+        <Item label="Funding" value={k.funding} title="Funding HL" className="hidden md:flex" />
+        <Item label="OI" value={k.oi} className="hidden md:flex" />
+        <Item label="Basis" value={k.basis} className="hidden md:flex" />
       </span>
-      <Item label="PDH" value={k.pdh} title={k.pdhStatus} className="hidden min-[1400px]:flex" />
-      <Item label="PDL" value={k.pdl} title={k.pdlStatus} className="hidden min-[1400px]:flex" />
-      <Item label={tr('Sesja', 'Session')} value={k.session} className="hidden min-[1560px]:flex" />
+      <Item label="PDH" value={k.pdh} title={k.pdhStatus} className="hidden md:flex" />
+      <Item label="PDL" value={k.pdl} title={k.pdlStatus} className="hidden md:flex" />
     </div>
   );
 };
@@ -240,24 +242,6 @@ function useWholeItems(ref: React.RefObject<HTMLElement | null>) {
     return () => ro.disconnect();
   }, [ref]);
 }
-
-/** Pasek ceny i kontekstu w osobnym rzędzie (tablet, 640–1023 px). */
-const TickerStrip: React.FC = () => {
-  const k = useTicker();
-  return (
-    <div className="flex items-center gap-x-5 gap-y-1 overflow-x-auto hq-scroll-cue [--cue-bg:color-mix(in_oklab,var(--color-surface-1)_60%,var(--color-page))] whitespace-nowrap px-4 lg:px-6 py-2 border-b border-line bg-surface-1/60 text-xs">
-      <PriceButton />
-      <span className={`flex items-baseline gap-x-5 ${k.fresh ? '' : 'opacity-50'}`} title={k.fresh ? undefined : STALE_TITLE}>
-        <Item label="Funding HL" value={k.funding} />
-        <Item label="OI" value={k.oi} />
-        <Item label="Basis" value={k.basis} />
-      </span>
-      <Item label="PDH" value={`${k.pdh}${k.pdhStatus ? ` · ${k.pdhStatus}` : ''}`} />
-      <Item label="PDL" value={`${k.pdl}${k.pdlStatus ? ` · ${k.pdlStatus}` : ''}`} />
-      <Item label={tr('Sesja', 'Session')} value={k.session} />
-    </div>
-  );
-};
 
 /** Powtórka w W sesji (#charts?replay=history|lessons…) pokazuje przeszłość — wtedy bez paska ceny na żywo (jak parseReplayLink). */
 export const inReplay = () => {
@@ -335,34 +319,6 @@ export const ViewLink: React.FC<{ id: ViewId; go: (v: ViewId) => void; current?:
   </a>
 );
 
-const MENU_ITEM = 'w-full min-h-11 flex items-center gap-2.5 px-3 rounded-lg text-sm text-ink-1 hover:bg-surface-3';
-const MENU_PANEL = 'w-56 bg-surface-2 border border-line-strong rounded-xl p-1.5 shadow-2xl';
-const MENU_MOTION = {
-  initial: { opacity: 0 },
-  animate: { opacity: 1, transition: { duration: 0.16 } },
-  exit: { opacity: 0, transition: { duration: 0.1 } },
-};
-
-// Węższe pozycje poniżej 1440 px: z Rynkami pasek mieści się także po angielsku, z widokiem z menu i najszerszym
-// stanem danych (PAUSED); od 1440 px odstępy jak wcześniej i Agenci AI w pasku
-const navLink = (active: boolean) =>
-  `relative px-1.5 xl:px-2 min-[1440px]:px-2.5 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors duration-150 ${active ? 'text-ink-1' : 'text-ink-3 hover:text-ink-1'}`;
-
-/** Znak HyperQuant: tarcza ze wskazówką i kropką „lume” (czas sesji jako oś produktu). */
-const LogoMark = () => (
-  <svg width="24" height="24" viewBox="0 0 30 30" aria-hidden="true" className="shrink-0 text-ink-1">
-    <circle cx="15" cy="15" r="13" fill="none" stroke="currentColor" strokeWidth="2" />
-    <path d="M15 2.5v3M27.5 15h-3M15 27.5v-3M2.5 15h3" stroke="currentColor" strokeWidth="2" />
-    <path d="M15 15l4.5 9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-    <circle cx="19.5" cy="24" r="2.6" fill="var(--color-lume)" stroke="currentColor" strokeWidth="1.5" />
-  </svg>
-);
-
-/** Tło aktywnej pozycji paska (przesuwa się między pozycjami). */
-const ActivePill = () => (
-  <motion.span layoutId="nav-active" className="absolute inset-0 rounded-lg bg-surface-2 border border-line" transition={{ type: 'spring', stiffness: 260, damping: 26 }} />
-);
-
 /**
  * Bieżący widok aplikacji (leniwie ładowany) albo stan „łączenie” do pierwszych świec. Wspólny dla obu powłok (stara
  * i nowy wygląd za przełącznikiem `?ui=`), żeby lista widoków i warunki danych były w jednym miejscu.
@@ -394,37 +350,243 @@ export const ViewOutlet: React.FC<{ startedAt: number }> = ({ startedAt }) => {
   );
 };
 
-/** Powłoka aplikacji: nawigacja (górna na desktopie, dolna na telefonie), status danych, przejścia widoków, stopka. */
+const MENU_ITEM = 'w-full min-h-11 flex items-center gap-2.5 px-3 rounded-lg text-sm text-ink-1 hover:bg-surface-3';
+const MENU_PANEL = 'w-64 max-h-[75dvh] overflow-y-auto bg-surface-2 border border-line-strong rounded-xl p-1.5 shadow-2xl';
+const MENU_MOTION = {
+  initial: { opacity: 0, y: 4 },
+  animate: { opacity: 1, y: 0, transition: { duration: 0.16, ease: [0.22, 1, 0.36, 1] as const } },
+  exit: { opacity: 0, transition: { duration: 0.1 } },
+};
+
+/** Znak HyperQuant: tarcza ze wskazówką i kropką „lume” (czas sesji jako oś produktu). */
+const LogoMark: React.FC<{ size?: number }> = ({ size = 24 }) => (
+  <svg width={size} height={size} viewBox="0 0 30 30" aria-hidden="true" className="shrink-0 text-ink-1">
+    <circle cx="15" cy="15" r="13" fill="none" stroke="currentColor" strokeWidth="2" />
+    <path d="M15 2.5v3M27.5 15h-3M15 27.5v-3M2.5 15h3" stroke="currentColor" strokeWidth="2" />
+    <path d="M15 15l4.5 9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    <circle cx="19.5" cy="24" r="2.6" fill="var(--color-lume)" stroke="currentColor" strokeWidth="1.5" />
+  </svg>
+);
+
+/** Strona statyczna serwisu w nawigacji (Blog, Wyniki, Co nowego): zwykły link, nie widok aplikacji. */
+export type PageLink = { href: string; label: string; icon: React.ReactNode };
+
+/**
+ * Nawigacja aplikacji jako dane (jedno źródło dla szyny, dolnego paska, menu „Więcej” i palety ⌘K):
+ * dzień tradera (trzy fazy), rynki i wiedza, strony serwisu. Kolejność grup i pozycji jest kolejnością na ekranie.
+ */
+export const NAV_DZIEN: NavItem[] = PHASES;
+export const NAV_WIEDZA: NavItem[] = [MARKETS, ...MORE, AGENTS];
+export const NAV_STRONY: PageLink[] = [
+  { href: './blog/', label: BLOG_LABEL, icon: <Newspaper className="w-4 h-4" /> },
+  { href: tr('./wyniki/', './en/results/'), label: RESULTS_LABEL, icon: <ListChecks className="w-4 h-4" /> },
+  { href: tr('./co-nowego/', './en/whats-new/'), label: NEWS_LABEL, icon: <History className="w-4 h-4" /> },
+];
+/** Dolny pasek telefonu: trzy fazy i Rynki; reszta w „Więcej”. */
+export const NAV_TELEFON: NavItem[] = [...PHASES, MARKETS];
+export const NAV_TELEFON_WIECEJ: NavItem[] = NAV_WIEDZA.filter((n) => !NAV_TELEFON.includes(n));
+
+// Paleta poleceń ładowana przy pierwszym otwarciu (⌘K, przycisk „Szukaj”): pierwszy pakiet bez niej
+const PaletaPolecen = lazy(() => import('./PaletaPolecen').then((m) => ({ default: m.PaletaPolecen })));
+
+/**
+ * Szyna boczna (komputer, od 1024 px): marka, dzień tradera ze znakiem „teraz” przy fazie bieżącej sesji, rynki
+ * i wiedza, strony serwisu. 1024–1439 px: same ikony (nazwa w podpowiedzi i dla czytnika ekranu), od 1440 px z nazwami.
+ */
+const Szyna: React.FC<{ go: (v: ViewId) => void }> = ({ go }) => {
+  const { view } = useDesk();
+  const { phase } = dayPhase(useNow(60_000));
+  const pozycja = (aktywna: boolean) =>
+    `group relative flex items-center gap-3 h-10 px-3 rounded-lg text-sm font-medium transition-colors duration-150 ${
+      aktywna ? 'text-ink-1' : 'text-ink-3 hover:text-ink-1 hover:bg-surface-2/70'
+    }`;
+  const grupa = (tytul: string, items: NavItem[]) => (
+    <div>
+      <p className="hidden min-[1440px]:block px-3 mb-1.5 font-mono text-[10px] font-semibold tracking-[0.14em] uppercase text-ink-3">{tytul}</p>
+      <ul className="space-y-0.5">
+        {items.map((n) => {
+          const aktywna = view === n.id;
+          const teraz = n.id === phase;
+          return (
+            <li key={n.id}>
+              <ViewLink id={n.id} go={go} current={aktywna} className={pozycja(aktywna)}>
+                {aktywna && (
+                  <motion.span layoutId="szyna-aktywna" className="absolute inset-0 rounded-lg bg-surface-2 shadow-[inset_0_0_0_1px_var(--color-line-strong)]" transition={{ type: 'spring', stiffness: 380, damping: 34 }} />
+                )}
+                {aktywna && <span aria-hidden="true" className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-lume" />}
+                <span className="relative shrink-0" title={n.label}>
+                  {n.icon}
+                  {teraz && <span aria-hidden="true" className="absolute -right-1 -top-1 w-1.5 h-1.5 rounded-full bg-lume shadow-[0_0_6px_var(--color-lume)]" />}
+                </span>
+                <span className="sr-only min-[1440px]:not-sr-only min-[1440px]:relative min-[1440px]:flex-1 truncate">{n.label}</span>
+                {teraz && <span className="relative hidden min-[1440px]:inline font-mono text-[9px] font-semibold uppercase tracking-wider text-ink-3">{tr('teraz', 'now')}</span>}
+                {teraz && <span className="sr-only min-[1440px]:hidden"> · {tr('teraz', 'now')}</span>}
+              </ViewLink>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+  return (
+    <aside data-szyna aria-label={tr('Nawigacja', 'Navigation')} className="hidden lg:flex sticky top-0 h-dvh w-[72px] min-[1440px]:w-60 shrink-0 flex-col gap-6 border-r border-line bg-surface-1/60 px-3 py-4 overflow-y-auto overflow-x-hidden">
+      <ViewLink id="start" go={go} current={view === 'start'} className="flex items-center gap-2.5 h-10 px-1.5 rounded-lg hover:bg-surface-2/70 transition-colors duration-150">
+        <LogoMark size={28} />
+        <span className="sr-only min-[1440px]:not-sr-only">
+          <span data-marka className="block font-display text-[17px] font-bold leading-none tracking-tight [font-stretch:85%] text-ink-1">
+            HyperQuant
+          </span>
+          <span className="block mt-1 font-mono text-[10px] leading-none text-ink-3">BTC · Hyperliquid</span>
+        </span>
+      </ViewLink>
+      <nav aria-label={tr('Główna', 'Main')} className="flex flex-col gap-6">
+        {grupa(tr('Dzień tradera', 'Trading day'), NAV_DZIEN)}
+        {grupa(tr('Rynki i wiedza', 'Markets and knowledge'), NAV_WIEDZA)}
+      </nav>
+      <div className="mt-auto">
+        <p className="hidden min-[1440px]:block px-3 mb-1.5 font-mono text-[10px] font-semibold tracking-[0.14em] uppercase text-ink-3">{tr('Publikacje', 'Publications')}</p>
+        <ul className="space-y-0.5">
+          {NAV_STRONY.map((l) => (
+            <li key={l.href}>
+              <a href={l.href} className="flex items-center gap-3 h-9 px-3 rounded-lg text-[13px] text-ink-3 hover:text-ink-1 hover:bg-surface-2/70 transition-colors duration-150">
+                <span className="shrink-0" title={l.label}>
+                  {l.icon}
+                </span>
+                <span className="sr-only min-[1440px]:not-sr-only truncate">{l.label}</span>
+              </a>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </aside>
+  );
+};
+
+const THEMES: { value: Theme; label: string; icon: React.ReactNode }[] = [
+  { value: 'dark', label: tr('Ciemny', 'Dark'), icon: <Moon className="w-4 h-4" aria-hidden="true" /> },
+  { value: 'light', label: tr('Jasny', 'Light'), icon: <Sun className="w-4 h-4" aria-hidden="true" /> },
+];
+
+/** Ustawienia (menu nagłówka i „Więcej” na telefonie): język, motyw, strumień, synchronizacja, dźwięk taśmy. */
+const ShellToggles: React.FC<{ onDone: () => void }> = ({ onDone }) => {
+  const { feed, audioEnabled, setAudioEnabled } = useDesk();
+  const theme = useTheme();
+  const seg = (on: boolean) =>
+    `flex-1 min-h-11 inline-flex items-center justify-center gap-2 rounded-lg text-sm font-medium ${on ? 'bg-surface-3 text-ink-1 shadow-[inset_0_0_0_1px_var(--color-line-strong)]' : 'text-ink-3 hover:text-ink-1 hover:bg-surface-3'}`;
+  return (
+    <>
+      <div role="group" aria-label={tr('Język', 'Language')} className="flex gap-1 px-1.5 py-1">
+        {LANGS.map((l) => (
+          <button key={l.value} type="button" data-more-item="" aria-pressed={lang === l.value} title={l.title} onClick={() => setLang(l.value)} className={seg(lang === l.value)}>
+            {l.value === 'pl' ? 'PL · Polski' : 'EN · English'}
+          </button>
+        ))}
+      </div>
+      <div role="group" aria-label={tr('Motyw', 'Theme')} className="flex gap-1 px-1.5 py-1">
+        {THEMES.map((th) => (
+          <button key={th.value} type="button" aria-pressed={theme === th.value} onClick={() => setTheme(th.value)} className={seg(theme === th.value)}>
+            {th.icon}
+            {th.label}
+          </button>
+        ))}
+      </div>
+      <div role="separator" className="my-1 border-t border-line" />
+      <button type="button" onClick={() => feed.setIsStreaming(!feed.isStreaming)} className={MENU_ITEM}>
+        {feed.isStreaming ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+        {feed.isStreaming ? tr('Wstrzymaj strumień', 'Pause stream') : tr('Wznów strumień', 'Resume stream')}
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          feed.syncNow();
+          onDone();
+        }}
+        className={MENU_ITEM}
+      >
+        <RefreshCw className="w-4 h-4" />
+        {tr('Synchronizuj teraz', 'Sync now')}
+      </button>
+      <button type="button" aria-pressed={audioEnabled} onClick={() => setAudioEnabled(!audioEnabled)} className={MENU_ITEM}>
+        {audioEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+        {audioEnabled ? tr('Wycisz dźwięk taśmy', 'Mute tape sound') : tr('Włącz dźwięk taśmy', 'Unmute tape sound')}
+      </button>
+      <div className="px-1.5 pt-1">
+        <InstallButton />
+      </div>
+    </>
+  );
+};
+
+const IconBtn = React.forwardRef<HTMLButtonElement, { label: string; onClick: () => void; children: React.ReactNode; className?: string; expanded?: boolean; controls?: string }>(
+  ({ label, onClick, children, className = 'inline-flex', expanded, controls }, ref) => (
+    <button
+      ref={ref}
+      type="button"
+      aria-label={label}
+      title={label}
+      aria-expanded={expanded}
+      aria-controls={expanded ? controls : undefined}
+      onClick={onClick}
+      className={`items-center justify-center w-10 h-10 rounded-lg text-ink-2 hover:text-ink-1 hover:bg-surface-2 border border-transparent hover:border-line transition-colors duration-150 ${className}`}
+    >
+      {children}
+    </button>
+  )
+);
+IconBtn.displayName = 'IconBtn';
+
+/**
+ * Powłoka aplikacji (jedna nawigacja): szyna po lewej na komputerze, dolny pasek na telefonie i tablecie. Nagłówek:
+ * cena i liczby rynku, wyszukiwanie ⌘K, stan danych, ustawienia; pod nim pasek dnia (doba z sesjami i „teraz”).
+ */
 export const AppShell: React.FC = () => {
-  const { view, setView, feed, audioEnabled, setAudioEnabled } = useDesk();
+  const { view, setView, feed } = useDesk();
   const reduce = useReducedMotion();
-  const [topMore, setTopMore] = useState(false);
-  const [phoneMore, setPhoneMore] = useState(false);
+  const [ustawienia, setUstawienia] = useState(false);
+  const [wiecej, setWiecej] = useState(false);
+  const [paleta, setPaleta] = useState(false);
+  const [paletaGotowa, setPaletaGotowa] = useState(false);
   const [startedAt] = useState(() => Date.now());
-  const topMoreRef = useRef<HTMLDivElement>(null);
-  const topMoreBtn = useRef<HTMLButtonElement>(null);
-  const phoneMoreRef = useRef<HTMLDivElement>(null);
-  const phoneMoreBtn = useRef<HTMLButtonElement>(null);
-  const topMoreId = useId();
-  const phoneMoreId = useId();
+  const ustawieniaRef = useRef<HTMLDivElement>(null);
+  const ustawieniaBtn = useRef<HTMLButtonElement>(null);
+  const wiecejRef = useRef<HTMLDivElement>(null);
+  const wiecejBtn = useRef<HTMLButtonElement>(null);
+  const ustawieniaId = useId();
+  const wiecejId = useId();
   const transition = reduce ? { initial: { opacity: 0 }, animate: { opacity: 1 }, exit: { opacity: 0 } } : VIEW_TRANSITION;
-  const replay = useSyncExternalStore(subscribeHash, inReplay);
-  const moreView = MORE.find((n) => n.id === view);
-  /** Przejście do widoku z paska albo menu (menu się zamyka). */
+  const replay = useSyncExternalStore(subscribeHash, inReplay) && view === 'charts';
+  const NowyWidok = NOWE_WIDOKI[view];
+
   const go = useCallback(
     (v: ViewId) => {
       setView(v);
-      setTopMore(false);
-      setPhoneMore(false);
+      setUstawienia(false);
+      setWiecej(false);
     },
     [setView]
   );
+  useMenuDismiss(ustawienia, setUstawienia, ustawieniaRef, ustawieniaBtn);
+  useMenuDismiss(wiecej, setWiecej, wiecejRef, wiecejBtn);
 
-  useMenuDismiss(topMore, setTopMore, topMoreRef, topMoreBtn);
-  useMenuDismiss(phoneMore, setPhoneMore, phoneMoreRef, phoneMoreBtn);
+  const otworzPalete = useCallback(() => {
+    setPaletaGotowa(true);
+    setPaleta(true);
+  }, []);
+  // ⌘K / Ctrl+K: paleta poleceń (widoki, wykres dowolnego rynku, strony, język)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setPaletaGotowa(true);
+        setPaleta((o) => !o);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
-  // Wysokość przypiętego nagłówka (pasek, ceny, bezpieczna strefa) jako zmienna CSS: elementy przypinane w widokach
-  // (pasek Pulse na telefonie) stają pod nim, nie pod nim schowane
+  // Wysokość przypiętego nagłówka (rząd, pasek dnia, bezpieczna strefa) jako zmienna CSS: elementy przypinane w widokach
+  // stają pod nim, nie pod nim schowane
   const headerRef = useRef<HTMLElement>(null);
   useEffect(() => {
     const el = headerRef.current;
@@ -440,366 +602,168 @@ export const AppShell: React.FC = () => {
     };
   }, []);
 
+  const wykonaj = useCallback(
+    (a: Akcja) => {
+      if (a.typ === 'widok') go(a.id);
+      else if (a.typ === 'rynek') window.location.hash = `#charts?m=${encodeURIComponent(a.coin)}`;
+      else if (a.typ === 'link') window.location.href = a.href;
+      else if (a.typ === 'jezyk') setLang(a.lang);
+      else if (a.co === 'strumien') feed.setIsStreaming(!feed.isStreaming);
+      else if (a.co === 'synchronizuj') feed.syncNow();
+    },
+    [go, feed]
+  );
+
   return (
-    <div className="min-h-dvh bg-page text-ink-1 flex flex-col">
-      <header ref={headerRef} data-app-header className="pt-safe sticky top-0 z-30 bg-page/95 backdrop-blur border-b border-line">
-        <div className="flex items-center justify-between gap-3 xl:gap-4 px-4 lg:px-6 h-14">
-          <ViewLink id="start" go={go} current={view === 'start'} className="flex items-center gap-2 shrink-0">
-            <LogoMark />
-            <span className="font-display text-lg font-bold tracking-tight [font-stretch:85%]">HyperQuant</span>
-            <span className="hidden sm:inline lg:hidden 2xl:inline text-[11px] text-ink-3">BTC · Hyperliquid</span>
-          </ViewLink>
-
-          {/* Telefon: jeden rząd — logo, cena i zmiana (pozostałe liczby rynku po dotknięciu ceny) */}
-          {!(replay && view === 'charts') && (
-            <div className="sm:hidden flex-1 min-w-0 flex justify-end">
-              <PriceButton small />
-            </div>
-          )}
-
-          <nav aria-label={tr('Główna', 'Main')} className="hidden lg:flex items-center gap-0.5 xl:gap-1">
-            {PHASES.map((n) => (
-              <ViewLink key={n.id} id={n.id} go={go} current={view === n.id} className={navLink(view === n.id)}>
-                {view === n.id && <ActivePill />}
-                <span className="relative">{n.label}</span>
-              </ViewLink>
-            ))}
-            <ViewLink id={MARKETS.id} go={go} current={view === MARKETS.id} className={navLink(view === MARKETS.id)}>
-              {view === MARKETS.id && <ActivePill />}
-              <span className="relative">{MARKETS.label}</span>
+    <div data-app-shell className="min-h-dvh flex bg-page text-ink-1">
+      <Szyna go={go} />
+      <div className="flex-1 min-w-0 flex flex-col">
+        <header ref={headerRef} data-app-header className="pt-safe sticky top-0 z-30 bg-page/90 backdrop-blur-xl border-b border-line">
+          <div className="flex items-center gap-2 sm:gap-3 px-4 lg:px-6 h-14">
+            {/* Telefon i tablet: znak marki (od 1024 px marka jest w szynie) */}
+            <ViewLink id="start" go={go} current={view === 'start'} className="lg:hidden shrink-0 inline-flex items-center justify-center w-10 h-10 -ml-1.5 rounded-lg hover:bg-surface-2">
+              <LogoMark />
+              <span data-marka className="sr-only font-display">
+                HyperQuant
+              </span>
             </ViewLink>
-            {/* Blog to osobne statyczne strony (SEO, podgląd linków), nie widok aplikacji */}
-            <a href="./blog/" className={navLink(false)}>
-              {BLOG_LABEL}
-            </a>
-            {/* Wyniki i Co nowego w pasku od xl (1280 px); węższy ekran: menu „Więcej”, żeby nie ucinać ceny w nagłówku */}
-            <a href={tr('./wyniki/', './en/results/')} className={`${navLink(false)} hidden xl:inline`}>
-              {RESULTS_LABEL}
-            </a>
-            <a href={tr('./co-nowego/', './en/whats-new/')} className={`${navLink(false)} hidden xl:inline`}>
-              {NEWS_LABEL}
-            </a>
-            {/* Agenci AI w pasku od 1440 px; węższy ekran: menu „Więcej” (miejsce na Rynki bez ucinania ceny w nagłówku) */}
-            <ViewLink id={AGENTS.id} go={go} current={view === AGENTS.id} className={`${navLink(view === AGENTS.id)} hidden min-[1440px]:inline`}>
-              {view === AGENTS.id && <ActivePill />}
-              <span className="relative">{AGENTS.label}</span>
-            </ViewLink>
-            <div ref={topMoreRef} className="relative">
+            {/* Cena i liczby rynku; w powtórce W sesji bez ceny na żywo */}
+            <div className="flex-1 min-w-0">{!replay && <TickerInline />}</div>
+            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
               <button
-                ref={topMoreBtn}
                 type="button"
-                aria-expanded={topMore}
-                // Menu jest w dokumencie tylko otwarte
-                aria-controls={topMore ? topMoreId : undefined}
-                onClick={() => setTopMore((o) => !o)}
-                className={`${navLink(!!moreView)} inline-flex items-center gap-1.5`}
+                onClick={otworzPalete}
+                aria-label={tr('Otwórz paletę poleceń', 'Open command palette')}
+                className="inline-flex items-center gap-2 h-10 px-2.5 rounded-lg border border-line bg-surface-1 text-xs text-ink-2 hover:text-ink-1 hover:border-line-strong transition-colors duration-150"
               >
-                {moreView && <ActivePill />}
-                {/* Widok z menu na ekranie: jego nazwa przy „Więcej”; poniżej 1440 px sama nazwa (miejsce na Agentów AI), „Więcej ·” dla czytnika ekranu */}
-                <span className="relative">
-                  {moreView ? (
-                    <>
-                      <span className="sr-only min-[1440px]:not-sr-only">{tr('Więcej', 'More')} · </span>
-                      {moreView.label}
-                    </>
-                  ) : view === AGENTS.id ? (
-                    // Agenci AI poniżej 1440 px są w menu: nazwa widoku przy „Więcej”, od 1440 px sama „Więcej” (Agenci w pasku)
-                    <>
-                      <span className="min-[1440px]:hidden">
-                        <span className="sr-only">{tr('Więcej', 'More')} · </span>
-                        {AGENTS.label}
-                      </span>
-                      <span className="hidden min-[1440px]:inline">{tr('Więcej', 'More')}</span>
-                    </>
-                  ) : (
-                    tr('Więcej', 'More')
-                  )}
-                </span>
-                <MoreHorizontal className="relative w-4 h-4" aria-hidden="true" />
+                <Search className="w-4 h-4" aria-hidden="true" />
+                <span className="hidden xl:inline">{tr('Szukaj rynku lub widoku', 'Search market or view')}</span>
+                <kbd className="hidden md:inline font-mono text-[10px] px-1.5 py-0.5 rounded bg-surface-2 text-ink-2">⌘K</kbd>
               </button>
-              <AnimatePresence>
-                {topMore && (
-                  <motion.div id={topMoreId} {...MENU_MOTION} className={`absolute top-full right-0 mt-2 z-40 ${MENU_PANEL}`}>
-                    {MORE.map((n) => (
-                      <ViewLink key={n.id} id={n.id} go={go} current={view === n.id} more className={MENU_ITEM}>
-                        {n.icon}
-                        {n.label}
-                      </ViewLink>
-                    ))}
-                    {/* Poniżej xl Wyniki i Co nowego są tutaj zamiast w pasku */}
-                    <a href={tr('./wyniki/', './en/results/')} className={`${MENU_ITEM} xl:hidden`}>
-                      <ListChecks className="w-4 h-4" />
-                      {RESULTS_LABEL}
-                    </a>
-                    <a href={tr('./co-nowego/', './en/whats-new/')} className={`${MENU_ITEM} xl:hidden`}>
-                      <History className="w-4 h-4" />
-                      {NEWS_LABEL}
-                    </a>
-                    {/* Poniżej 1440 px Agenci AI są tutaj zamiast w pasku */}
-                    <ViewLink id={AGENTS.id} go={go} current={view === AGENTS.id} more className={`${MENU_ITEM} min-[1440px]:hidden`}>
-                      {AGENTS.icon}
-                      {AGENTS.label}
-                    </ViewLink>
-                    {/* Rzadko używane przełączniki nagłówka: język, synchronizacja, dźwięk taśmy (nagłówek ma miejsce na liczby rynku) */}
-                    <div role="separator" className="my-1 border-t border-line" />
-                    <ShellToggles audioEnabled={audioEnabled} setAudioEnabled={setAudioEnabled} onSync={feed.syncNow} onDone={() => setTopMore(false)} />
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-          </nav>
-
-          {/* Liczby rynku w tym samym rzędzie co menu (komputer); w powtórce bez ceny na żywo */}
-          {!(replay && view === 'charts') && (
-            <div className="hidden lg:flex flex-1 min-w-0 justify-end">
-              <TickerInline />
-            </div>
-          )}
-
-          <div className="flex items-center gap-2 shrink-0">
-            <div className="hidden sm:block lg:hidden">
-              <Segmented<Lang> ariaLabel={tr('Język', 'Language')} size="xs" value={lang} onChange={setLang} options={LANGS} />
-            </div>
-            <Badge tone={STATUS_TONE[feed.dataStatus]} title={STATUS_TITLE[feed.dataStatus]} testId="data-status">
-              {feed.dataStatus}
-            </Badge>
-            {/* Wykresy faz dnia i Lekcje mają własne interwały — globalny przełącznik dotyczy pozostałych widoków */}
-            {!OWN_INTERVALS.includes(view) && (
-              <div className="hidden md:block lg:hidden xl:block">
-                <Segmented<number> ariaLabel={tr('Interwał', 'Timeframe')} value={feed.timeframeSec} onChange={feed.setTimeframeSec} options={TIMEFRAMES} />
+              <Badge tone={STATUS_TONE[feed.dataStatus]} title={STATUS_TITLE[feed.dataStatus]} testId="data-status">
+                {feed.dataStatus}
+              </Badge>
+              {/* Globalny interwał tylko w widokach bez własnego (wykresy faz dnia, Lekcje, Rynki i Agenci mają swój albo żaden) */}
+              {!OWN_INTERVALS.includes(view) && (
+                <div className="hidden 2xl:block">
+                  <Segmented<number> ariaLabel={tr('Interwał', 'Timeframe')} size="xs" value={feed.timeframeSec} onChange={feed.setTimeframeSec} options={TIMEFRAMES} />
+                </div>
+              )}
+              <div ref={ustawieniaRef} className="relative hidden sm:block">
+                <IconBtn ref={ustawieniaBtn} label={tr('Ustawienia', 'Settings')} onClick={() => setUstawienia((o) => !o)} expanded={ustawienia} controls={ustawieniaId}>
+                  <SlidersHorizontal className="w-4 h-4" />
+                </IconBtn>
+                <AnimatePresence>
+                  {ustawienia && (
+                    <motion.div id={ustawieniaId} {...MENU_MOTION} className={`absolute top-full right-0 mt-2 z-40 ${MENU_PANEL}`}>
+                      <ShellToggles onDone={() => setUstawienia(false)} />
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
-            )}
-            <IconBtn label={feed.isStreaming ? tr('Wstrzymaj strumień', 'Pause stream') : tr('Wznów strumień', 'Resume stream')} onClick={() => feed.setIsStreaming(!feed.isStreaming)} className="hidden sm:inline-flex">
-              {feed.isStreaming ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-            </IconBtn>
-            <IconBtn label={tr('Synchronizuj teraz', 'Sync now')} onClick={feed.syncNow} className="hidden sm:inline-flex lg:hidden">
-              <RefreshCw className="w-4 h-4" />
-            </IconBtn>
-            <IconBtn label={audioEnabled ? tr('Wycisz dźwięk taśmy', 'Mute tape sound') : tr('Włącz dźwięk taśmy', 'Unmute tape sound')} onClick={() => setAudioEnabled(!audioEnabled)} className="hidden sm:inline-flex lg:hidden">
-              {audioEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
-            </IconBtn>
-            <div className="hidden sm:contents">
-              <InstallButton compact />
             </div>
           </div>
-        </div>
-        {!(replay && view === 'charts') && (
-          <div className="hidden sm:block lg:hidden">
-            <TickerStrip />
+          <PasekDnia />
+        </header>
+
+        <main className="flex-1 w-full max-w-[1920px] mx-auto px-4 lg:px-6 pt-4 pb-6">
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div key={view} data-view-root {...transition}>
+              {NowyWidok ? (
+                <Suspense fallback={<ViewFallback />}>
+                  <NowyWidok />
+                </Suspense>
+              ) : (
+                <ViewOutlet startedAt={startedAt} />
+              )}
+            </motion.div>
+          </AnimatePresence>
+        </main>
+
+        {/* Stopka: zastrzeżenie, źródło danych, silnik wykresów (link wymagany licencją Lightweight Charts™), strefa czasu */}
+        <footer className="w-full max-w-[1920px] mx-auto px-4 lg:px-6 pb-28 lg:pb-6">
+          <div className="flex flex-col gap-1 pt-3 border-t border-line text-xs text-ink-3">
+            <p className="font-medium text-ink-2">{tr('Opis rynku, nie porada inwestycyjna.', 'Market description, not investment advice.')}</p>
+            <p className="flex flex-wrap items-center gap-x-1.5 min-h-11">
+              {tr('Dane', 'Data')}: Hyperliquid · {tr('Wykresy', 'Charts')}:{' '}
+              <a href="https://www.tradingview.com/" target="_blank" rel="noopener noreferrer" className="underline decoration-line-strong hover:text-ink-1">
+                TradingView Lightweight Charts™
+              </a>
+              <span>
+                · {tr('czas lokalny', 'local time')} {Intl.DateTimeFormat().resolvedOptions().timeZone}
+              </span>
+            </p>
           </div>
-        )}
-        {!OWN_INTERVALS.includes(view) && (
-          <div className="md:hidden lg:block xl:hidden px-4 py-2 border-b border-line overflow-x-auto">
-            <Segmented<number> ariaLabel={tr('Interwał', 'Timeframe')} value={feed.timeframeSec} onChange={feed.setTimeframeSec} options={TIMEFRAMES} />
-          </div>
-        )}
-      </header>
+        </footer>
+      </div>
 
-      <main className="flex-1 w-full max-w-[1920px] mx-auto px-4 lg:px-6 pt-4 pb-6">
-        <AnimatePresence mode="wait" initial={false}>
-          <motion.div key={view} data-view-root {...transition}>
-            <ViewOutlet startedAt={startedAt} />
-          </motion.div>
-        </AnimatePresence>
-      </main>
-
-      {/* Stopka: Lekcje, Źródła, Blog i Agenci AI; na telefonie nad dolnym paskiem */}
-      <footer className="w-full max-w-[1920px] mx-auto px-4 lg:px-6 pb-28 lg:pb-6">
-        <nav aria-label={tr('Stopka', 'Footer')} className="flex flex-wrap items-center gap-x-5 pt-2 border-t border-line text-xs text-ink-3">
-          {FOOTER.map((n) => (
-            <ViewLink key={n.id} id={n.id} go={go} current={view === n.id} className="inline-flex items-center min-h-11 hover:text-ink-1 transition-colors duration-150">
-              {n.label}
-            </ViewLink>
-          ))}
-          <a href="./blog/" className="inline-flex items-center min-h-11 hover:text-ink-1 transition-colors duration-150">
-            {BLOG_LABEL}
-          </a>
-          {/* Statyczna strona rozliczenia dziennika prognoz (scripts/blog/results.mjs) */}
-          <a href={tr('./wyniki/', './en/results/')} className="inline-flex items-center min-h-11 hover:text-ink-1 transition-colors duration-150">
-            {tr('Wyniki prognoz', 'Forecast results')}
-          </a>
-          {/* Statyczna strona historii zmian z CHANGELOG.md (scripts/blog/whatsnew.mjs) */}
-          <a href={tr('./co-nowego/', './en/whats-new/')} className="inline-flex items-center min-h-11 hover:text-ink-1 transition-colors duration-150">
-            {tr('Co nowego', "What's new")}
-          </a>
-          <ViewLink id={AGENTS.id} go={go} current={view === AGENTS.id} className="inline-flex items-center min-h-11 hover:text-ink-1 transition-colors duration-150">
-            {AGENTS.label}
-          </ViewLink>
-          {/* Źródło danych, silnik wykresów (link wymagany licencją Lightweight Charts™) i strefa czasu wykresów */}
-          <span className="inline-flex flex-wrap items-center gap-x-1.5 min-h-11 sm:ml-auto">
-            {tr('Dane', 'Data')}: Hyperliquid · {tr('Wykresy', 'Charts')}:{' '}
-            <a href="https://www.tradingview.com/" target="_blank" rel="noopener noreferrer" className="underline decoration-line-strong hover:text-ink-1">
-              TradingView Lightweight Charts™
-            </a>
-            <span>· {tr('czas lokalny', 'local time')} {Intl.DateTimeFormat().resolvedOptions().timeZone}</span>
-          </span>
-        </nav>
-        {/* Zastrzeżenie na każdym ekranie: desk opisuje rynek, nie doradza */}
-        <p className="pb-2 text-xs text-ink-3">{tr('Opis rynku, nie porada inwestycyjna.', 'Market description, not investment advice.')}</p>
-      </footer>
-
-      {/* Dolna nawigacja (telefon): trzy fazy dnia i „Więcej” */}
-      <nav data-app-nav aria-label={tr('Główna (telefon)', 'Main (phone)')} className="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-surface-1/95 backdrop-blur border-t border-line pb-safe">
-        <div ref={phoneMoreRef}>
-          <div className="grid grid-cols-4">
-            {PHASES.map((n) => (
-              <TabBtn key={n.id} active={view === n.id} label={n.label} icon={n.icon} onClick={() => go(n.id)} />
+      {/* Telefon i tablet: dolny pasek (trzy fazy, Rynki, „Więcej”) */}
+      <nav data-app-nav aria-label={tr('Główna (telefon)', 'Main (phone)')} className="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-surface-1/95 backdrop-blur-xl border-t border-line pb-safe">
+        <div ref={wiecejRef}>
+          <div className="grid grid-cols-5">
+            {NAV_TELEFON.map((n) => (
+              <button
+                key={n.id}
+                type="button"
+                onClick={() => go(n.id)}
+                aria-current={view === n.id ? 'page' : undefined}
+                className={`relative min-h-14 flex flex-col items-center justify-center gap-1 text-[11px] font-medium transition-colors duration-150 ${view === n.id ? 'text-ink-1' : 'text-ink-3'}`}
+              >
+                {view === n.id && <motion.span layoutId="dolny-aktywny" className="absolute top-0 inset-x-5 h-0.5 rounded-full bg-lume" transition={{ type: 'spring', stiffness: 420, damping: 36 }} />}
+                {n.icon}
+                <span className="max-w-full px-1 truncate">{n.label}</span>
+              </button>
             ))}
-            <TabBtn
-              btnRef={phoneMoreBtn}
-              // Na telefonie Rynki i Agenci AI są w menu „Więcej”
-              active={!!moreView || view === AGENTS.id || view === MARKETS.id}
-              label={tr('Więcej', 'More')}
-              icon={<MoreHorizontal className="w-4 h-4" />}
-              onClick={() => setPhoneMore((o) => !o)}
-              expanded={phoneMore}
-              controls={phoneMoreId}
-            />
+            <button
+              ref={wiecejBtn}
+              type="button"
+              onClick={() => setWiecej((o) => !o)}
+              aria-expanded={wiecej}
+              aria-controls={wiecej ? wiecejId : undefined}
+              className={`min-h-14 flex flex-col items-center justify-center gap-1 text-[11px] font-medium ${NAV_TELEFON_WIECEJ.some((n) => n.id === view) ? 'text-ink-1' : 'text-ink-3'}`}
+            >
+              <MoreHorizontal className="w-4 h-4" aria-hidden="true" />
+              {tr('Więcej', 'More')}
+            </button>
           </div>
           <AnimatePresence>
-            {phoneMore && (
-              <motion.div id={phoneMoreId} {...MENU_MOTION} className={`absolute bottom-full right-3 mb-2 ${MENU_PANEL}`}>
-                <ViewLink id={MARKETS.id} go={go} current={view === MARKETS.id} more className={MENU_ITEM}>
-                  {MARKETS.icon}
-                  {MARKETS.label}
-                </ViewLink>
-                {MORE.map((n) => (
+            {wiecej && (
+              <motion.div id={wiecejId} {...MENU_MOTION} className={`absolute bottom-full right-3 mb-2 ${MENU_PANEL}`}>
+                {NAV_TELEFON_WIECEJ.map((n) => (
                   <ViewLink key={n.id} id={n.id} go={go} current={view === n.id} more className={MENU_ITEM}>
                     {n.icon}
                     {n.label}
                   </ViewLink>
                 ))}
-                <a href="./blog/" className={MENU_ITEM}>
-                  <Newspaper className="w-4 h-4" />
-                  {BLOG_LABEL}
-                </a>
-                <a href={tr('./wyniki/', './en/results/')} className={MENU_ITEM}>
-                  <ListChecks className="w-4 h-4" />
-                  {RESULTS_LABEL}
-                </a>
-                <a href={tr('./co-nowego/', './en/whats-new/')} className={MENU_ITEM}>
-                  <History className="w-4 h-4" />
-                  {NEWS_LABEL}
-                </a>
-                <ViewLink id={AGENTS.id} go={go} current={view === AGENTS.id} more className={MENU_ITEM}>
-                  {AGENTS.icon}
-                  {AGENTS.label}
-                </ViewLink>
-                {/* Telefon: przełączniki z nagłówka (nagłówek ma jeden rząd: logo, cena, zmiana) */}
+                {NAV_STRONY.map((l) => (
+                  <a key={l.href} href={l.href} className={MENU_ITEM}>
+                    {l.icon}
+                    {l.label}
+                  </a>
+                ))}
                 <div role="separator" className="my-1 border-t border-line" />
-                <button type="button" onClick={() => feed.setIsStreaming(!feed.isStreaming)} className={MENU_ITEM}>
-                  {feed.isStreaming ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-                  {feed.isStreaming ? tr('Wstrzymaj strumień', 'Pause stream') : tr('Wznów strumień', 'Resume stream')}
-                </button>
-                <ShellToggles audioEnabled={audioEnabled} setAudioEnabled={setAudioEnabled} onSync={feed.syncNow} onDone={() => setPhoneMore(false)} />
-                <div className="sm:hidden px-1.5">
-                  <InstallButton />
-                </div>
+                <ShellToggles onDone={() => setWiecej(false)} />
               </motion.div>
             )}
           </AnimatePresence>
         </div>
       </nav>
+
+      {paletaGotowa && (
+        <Suspense fallback={null}>
+          <PaletaPolecen
+            open={paleta}
+            onClose={() => setPaleta(false)}
+            onAkcja={wykonaj}
+            widoki={[{ id: 'start', label: 'Start', icon: null }, ...NAV_DZIEN, ...NAV_WIEDZA]}
+            zewnetrzne={NAV_STRONY}
+            przelaczniki={[
+              { co: 'strumien', etykieta: feed.isStreaming ? tr('Wstrzymaj strumień', 'Pause stream') : tr('Wznów strumień', 'Resume stream') },
+              { co: 'synchronizuj', etykieta: tr('Synchronizuj teraz', 'Sync now') },
+            ]}
+          />
+        </Suspense>
+      )}
     </div>
   );
 };
-
-const THEMES: { value: Theme; label: string; icon: React.ReactNode }[] = [
-  { value: 'dark', label: tr('Ciemny', 'Dark'), icon: <Moon className="w-4 h-4" aria-hidden="true" /> },
-  { value: 'light', label: tr('Jasny', 'Light'), icon: <Sun className="w-4 h-4" aria-hidden="true" /> },
-];
-
-/** Pozycje menu „Więcej”: język (PL / EN), motyw, synchronizacja teraz i dźwięk taśmy. */
-const ShellToggles: React.FC<{ audioEnabled: boolean; setAudioEnabled: (v: boolean) => void; onSync: () => void; onDone: () => void }> = ({
-  audioEnabled,
-  setAudioEnabled,
-  onSync,
-  onDone,
-}) => {
-  const theme = useTheme();
-  return (
-  <>
-    <div role="group" aria-label={tr('Język', 'Language')} className="flex gap-1 px-1.5 py-1">
-      {LANGS.map((l) => (
-        <button
-          key={l.value}
-          type="button"
-          aria-pressed={lang === l.value}
-          title={l.title}
-          onClick={() => setLang(l.value)}
-          className={`flex-1 min-h-11 rounded-lg text-sm font-medium ${lang === l.value ? 'bg-surface-3 text-ink-1 shadow-[inset_0_0_0_1px_var(--color-line-strong)]' : 'text-ink-3 hover:text-ink-1 hover:bg-surface-3'}`}
-        >
-          {l.value === 'pl' ? 'PL · Polski' : 'EN · English'}
-        </button>
-      ))}
-    </div>
-    <div role="group" aria-label={tr('Motyw', 'Theme')} className="flex gap-1 px-1.5 py-1">
-      {THEMES.map((th) => (
-        <button
-          key={th.value}
-          type="button"
-          aria-pressed={theme === th.value}
-          onClick={() => setTheme(th.value)}
-          className={`flex-1 min-h-11 inline-flex items-center justify-center gap-2 rounded-lg text-sm font-medium ${theme === th.value ? 'bg-surface-3 text-ink-1 shadow-[inset_0_0_0_1px_var(--color-line-strong)]' : 'text-ink-3 hover:text-ink-1 hover:bg-surface-3'}`}
-        >
-          {th.icon}
-          {th.label}
-        </button>
-      ))}
-    </div>
-    <button
-      type="button"
-      onClick={() => {
-        onSync();
-        onDone();
-      }}
-      className={MENU_ITEM}
-    >
-      <RefreshCw className="w-4 h-4" />
-      {tr('Synchronizuj teraz', 'Sync now')}
-    </button>
-    <button type="button" aria-pressed={audioEnabled} onClick={() => setAudioEnabled(!audioEnabled)} className={MENU_ITEM}>
-      {audioEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
-      {audioEnabled ? tr('Wycisz dźwięk taśmy', 'Mute tape sound') : tr('Włącz dźwięk taśmy', 'Unmute tape sound')}
-    </button>
-  </>
-  );
-};
-
-// `className` niesie też sposób wyświetlania (domyślnie inline-flex): stałe inline-flex w klasie bazowej wygrywało z „hidden sm:inline-flex”,
-// więc na telefonie przyciski miały być ukryte, a były widoczne i z przyciskiem instalacji nagłówek wychodził poza ekran
-const IconBtn: React.FC<{ label: string; onClick: () => void; children: React.ReactNode; className?: string }> = ({ label, onClick, children, className = 'inline-flex' }) => (
-  <button
-    type="button"
-    aria-label={label}
-    title={label}
-    onClick={onClick}
-    className={`items-center justify-center w-9 h-9 rounded-lg text-ink-2 hover:text-ink-1 hover:bg-surface-2 border border-transparent hover:border-line transition-colors duration-150 ${className}`}
-  >
-    {children}
-  </button>
-);
-
-/** Przycisk dolnego paska telefonu; z `expanded` — przycisk menu (bez aria-current, z aria-expanded, aria-controls tylko otwarte). */
-const TabBtn: React.FC<{
-  active: boolean;
-  label: string;
-  icon: React.ReactNode;
-  onClick: () => void;
-  expanded?: boolean;
-  controls?: string;
-  btnRef?: React.Ref<HTMLButtonElement>;
-}> = ({ active, label, icon, onClick, expanded, controls, btnRef }) => (
-  <button
-    ref={btnRef}
-    type="button"
-    onClick={onClick}
-    aria-current={active && expanded === undefined ? 'page' : undefined}
-    aria-expanded={expanded}
-    aria-controls={expanded ? controls : undefined}
-    className={`min-h-14 flex flex-col items-center justify-center gap-1 text-[11px] font-medium ${active ? 'text-accent' : 'text-ink-3'}`}
-  >
-    {icon}
-    {label}
-  </button>
-);

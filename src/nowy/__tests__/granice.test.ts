@@ -17,17 +17,20 @@ const wszystkie = pliki(SRC);
 const nowe = wszystkie.filter((p) => p.startsWith(NOWY));
 
 describe('granice nowego wyglądu (src/nowy)', () => {
-  it('poza App.tsx nic nie importuje src/nowy; App.tsx tylko leniwie (import())', () => {
+  it('src/nowy importuje tylko powłoka (rejestr widoków), a rejestr ładuje widoki wyłącznie leniwie (import())', () => {
     const zle = wszystkie
-      .filter((p) => !p.startsWith(NOWY))
+      .filter((p) => !p.startsWith(NOWY) && relative(SRC, p).replace(/\\/g, '/') !== 'shell/AppShell.tsx')
       .flatMap((p) => {
         const s = readFileSync(p, 'utf8');
         const statyczne = [...s.matchAll(/^\s*(?:import|export)\b[^;]*?from\s+['"]([^'"]+)['"]/gm)].map((m) => m[1]);
         return statyczne.filter((x) => /(^|\/)nowy(\/|$)/.test(x)).map((x) => `${relative('.', p)} → ${x}`);
       });
     expect(zle).toEqual([]);
-    const app = readFileSync(join(SRC, 'App.tsx'), 'utf8');
-    expect(app).toMatch(/import\('\.\/nowy\/NowaPowloka'\)/);
+    const shell = readFileSync(join(SRC, 'shell', 'AppShell.tsx'), 'utf8');
+    expect([...shell.matchAll(/from\s+'(\.\.\/nowy\/[^']+)'/g)].map((m) => m[1])).toEqual(['../nowy/widoki']);
+    // Rejestr bez statycznych importów widoków (tylko typy); widoki wyłącznie przez import()
+    const rejestr = readFileSync(join(NOWY, 'widoki.ts'), 'utf8');
+    expect(rejestr).not.toMatch(/^\s*import\s+(?!type\b)[^;]*from\s+'\.\//m);
   });
 
   it('w src/nowy nie ma własnych zapytań do sieci: dane tylko z hooków aplikacji', () => {

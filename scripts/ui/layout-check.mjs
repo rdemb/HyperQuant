@@ -253,19 +253,22 @@ const headerCut = `(() => {
   return { shown: shown.map((e) => (e.textContent || '').trim().slice(0, 16)), cut: shown.filter((e) => e.getBoundingClientRect().right > right).map((e) => (e.textContent || '').trim().slice(0, 16)) };
 })()`;
 
-// ───────────────────────── nowy wygląd (?ui=nowy) ─────────────────────────
+// ───────────────────────── powłoka (jedna nawigacja) ─────────────────────────
 /**
- * Nowa powłoka (przełącznik hq.ui.v1): 1440 × 900, 1024 × 768 i 390 × 844. Atrybut data-ui, dokładnie jedna nawigacja
- * (szyna na komputerze, dolny pasek na telefonie), bez przewijania strony i nagłówka w bok, cena w całości na ekranie,
- * nagłówki fontem nowego wyglądu (Bricolage Grotesque), paleta ⌘K otwiera się i zamyka Escape, bez błędów i NaN. Osobno od progów
- * starej powłoki (punkt odniesienia bez zmian); udział panelu ceny zapisany do porównań kolejnych etapów.
+ * Powłoka od 360 do 1920 px: dokładnie jedna nawigacja (szyna od 1024 px, dolny pasek poniżej), bez przewijania strony
+ * i nagłówka w bok, cena w całości i niczym niezasłonięta, kontrolki i liczby rynku w nagłówku bez nakładania, pasek
+ * dnia widoczny, marka fontem Bricolage Grotesque, liczby JetBrains Mono, paleta ⌘K otwiera się i zamyka Escape, bez
+ * błędów i NaN; udział panelu ceny zapisany do porównań kolejnych etapów.
  */
 const NOWY_VIEWPORTS = [
+  ['1920', 1920, 1080, false],
   ['1440', 1440, 900, false],
-  // 1280: najciaśniejszy nagłówek (od xl liczby rynku, wybór wykresu i język)
+  // 1280: najciaśniejszy nagłówek z szyną z samymi ikonami
   ['1280', 1280, 800, false],
   ['1024', 1024, 768, false],
+  ['768', 768, 1024, true],
   ['390', 390, 844, true],
+  ['360', 360, 780, true],
 ];
 const NOWY_PROBE = `(() => {
   const vis = (e) => { if (!e) return false; const s = getComputedStyle(e); const r = e.getBoundingClientRect(); return s.display !== 'none' && s.visibility !== 'hidden' && r.width > 0 && r.height > 0; };
@@ -276,7 +279,7 @@ const NOWY_PROBE = `(() => {
   const marka = document.querySelector('[data-marka]');
   const wykres = [...document.querySelectorAll('[data-view-root] .font-mono')].find(vis);
   return {
-    ui: document.documentElement.dataset.ui ?? null,
+    pasekDnia: vis(document.querySelector('[data-pasek-dnia]')),
     nawigacje: [...document.querySelectorAll('[data-szyna], [data-app-nav]')].filter(vis).length,
     szyna: vis(document.querySelector('[data-szyna]')),
     overflowX: document.documentElement.scrollWidth - innerWidth,
@@ -286,7 +289,7 @@ const NOWY_PROBE = `(() => {
     cenaOdkryta: cr ? [[cr.left + cr.width / 2, cr.top + cr.height / 2], [cr.right - 2, cr.top + cr.height / 2]].every(([x, y]) => { const el = document.elementFromPoint(x, y); return !!el && cena.contains(el); }) : false,
     // Widoczne kontrolki nagłówka, które na siebie nachodzą (pary)
     nakladanie: (() => {
-      const els = [...(row?.querySelectorAll('a, button, label, select, [role="group"], [data-testid]') ?? [])].filter((e) => vis(e) && !e.closest('[role="group"] button, label select') && !e.parentElement?.closest('a, button, label, [role="group"]'));
+      const els = [...(row?.querySelectorAll('a, button, label, select, [role="group"], [data-testid], [data-ticker-item]') ?? [])].filter((e) => vis(e) && !e.closest('[role="group"] button, label select') && !e.parentElement?.closest('a, button, label, [role="group"], [data-ticker-item]'));
       const out = [];
       for (let i = 0; i < els.length; i++) for (let j = i + 1; j < els.length; j++) {
         const a = els[i].getBoundingClientRect(), b = els[j].getBoundingClientRect();
@@ -883,10 +886,8 @@ async function main() {
           consoleErrors: page.consoleErrors.slice(c0),
         };
         if (mobile) {
-          await page.ev(`document.querySelector('[data-app-nav] button[aria-expanded]')?.click()`);
-          await sleep(400);
-          report.rynkiView[key].phoneMenu = await page.ev(`!!document.querySelector('[data-app-nav] a[href="#markets"]')`);
-          await page.key('Escape');
+          // Rynki na telefonie: pozycja dolnego paska (widoczna bez otwierania menu)
+          report.rynkiView[key].phoneMenu = await page.ev(`[...document.querySelectorAll('[data-app-nav] button, [data-app-nav] a')].some((e) => /^(Rynki|Markets)$/.test((e.textContent || '').trim()) && e.getBoundingClientRect().height > 0)`);
         }
         await shot(page, `${w}-rynki`);
       }
@@ -894,15 +895,15 @@ async function main() {
       await page.viewport(1440, 900, false);
     }
 
-    // Nowy wygląd za przełącznikiem (hq.ui.v1 = nowy): jedna nawigacja, nagłówek bez przewijania w bok, fonty, paleta ⌘K
+    // Powłoka: jedna nawigacja, nagłówek bez przewijania w bok i bez nakładania, pasek dnia, fonty, paleta ⌘K
     report.nowy = {};
     for (const [key, w, h, mobile] of NOWY_VIEWPORTS) {
       await page.viewport(w, h, mobile);
       const [e0, c0] = [page.errors.length, page.consoleErrors.length];
       await page.go(`${BASE}robots.txt`, 300);
-      await page.ev(`(() => { localStorage.clear(); const s = ${JSON.stringify({ ...RETURNING, 'hq.ui.v1': 'nowy' })}; for (const k in s) localStorage.setItem(k, s[k]); return true; })()`);
+      await page.ev(`(() => { localStorage.clear(); const s = ${JSON.stringify(RETURNING)}; for (const k in s) localStorage.setItem(k, s[k]); return true; })()`);
       await page.go(`${BASE}#charts`, 500);
-      await page.waitFor(`!!document.querySelector('[data-nowa-powloka]') && !!document.querySelector('.tv-lightweight-charts canvas')`, 30000);
+      await page.waitFor(`!!document.querySelector('[data-app-shell]') && !!document.querySelector('.tv-lightweight-charts canvas')`, 30000);
       await sleep(4000);
       await page.ev(PROBE);
       await page.mouseAway();
@@ -929,7 +930,7 @@ async function main() {
       const { identifier: gniazdo } = await page.send('Page.addScriptToEvaluateOnNewDocument', { source: MARTWE_GNIAZDO });
       for (const id of widoki) {
         await page.go(`${BASE}robots.txt`, 300);
-        await page.ev(`(() => { localStorage.clear(); const s = ${JSON.stringify({ ...RETURNING, 'hq.ui.v1': 'nowy' })}; for (const k in s) localStorage.setItem(k, s[k]); return true; })()`);
+        await page.ev(`(() => { localStorage.clear(); const s = ${JSON.stringify(RETURNING)}; for (const k in s) localStorage.setItem(k, s[k]); return true; })()`);
         await page.go(`${BASE}#${id}`, 500);
         await sleep(6000);
         const pom = (await page.ev(POMIAR_PUSTEGO)) ?? { tekst: '', paski: [], dlugieEtykiety: [] };
@@ -1055,9 +1056,9 @@ async function main() {
     const x = r.nowy?.[key];
     return (
       !!x &&
-      x.ui === 'nowy' &&
       x.nawigacje === 1 &&
-      x.szyna === (key !== '390') &&
+      x.szyna === Number(key) >= 1024 &&
+      x.pasekDnia === true &&
       x.overflowX <= 0 &&
       (x.naglowekX ?? 1) <= 0 &&
       x.cena === true &&
@@ -1118,7 +1119,7 @@ async function main() {
       const x = r.rynkiView[key];
       if (!x) return '—';
       const errs = [...x.errors, ...x.consoleErrors].map((e) => e.split('\n')[0]);
-      const head = key === '390' ? `„Rynki” w menu telefonu: ${x.phoneMenu ? 'tak' : 'nie'}` : `nagłówek: ${x.header ? `widoczne ${x.header.shown.join(' | ')}, ucięte ${x.header.cut.length ? x.header.cut.join(' | ') : 'brak'}` : '—'}`;
+      const head = key === '390' ? `„Rynki” w dolnym pasku telefonu: ${x.phoneMenu ? 'tak' : 'nie'}` : `nagłówek: ${x.header ? `widoczne ${x.header.shown.join(' | ')}, ucięte ${x.header.cut.length ? x.header.cut.join(' | ') : 'brak'}` : '—'}`;
       return `${key}: wiersze ${x.rows}/${x.want} w ${x.ms} ms, przewijanie strony w bok ${x.overflowX} px, ${head}, Wall Street xyz:NVDA „${x.wallStreet ?? '—'}”, błędy ${errs.length}${errs.length ? ` (${errs.join(' | ')})` : ''}, NaN ${x.nan?.length ?? '—'} — ${ok(rynkiOk(key))}`;
     };
     lines.push(`Rynki (#markets, dane stałe, limit ${RYNKI_MAX_MS} ms): ${RYNKI_VIEWPORTS.map(([key]) => one(key)).join('; ')}`);
@@ -1128,9 +1129,9 @@ async function main() {
       const x = r.nowy[key];
       if (!x) return '—';
       const errs = [...x.errors, ...x.consoleErrors].map((e) => e.split('\n')[0]);
-      return `${key}: data-ui ${x.ui}, nawigacje ${x.nawigacje} (${x.szyna ? 'szyna' : 'dolny pasek'}), w bok strona ${x.overflowX} px / nagłówek ${x.naglowekX} px, cena ${x.cena ? 'w całości' : 'UCIĘTA'}${x.cenaOdkryta ? '' : ' i ZASŁONIĘTA'}, nakładanie ${x.nakladanie?.length ? x.nakladanie.join(' | ') : 'brak'}, font marki ${x.font}, font mono widoku ${x.fontWidoku}, paleta ⌘K ${x.paleta ? 'tak' : 'NIE'}, panel ceny ${x.panel != null ? `${(x.panel * 100).toFixed(1)}%` : '—'}, błędy ${errs.length}${errs.length ? ` (${errs.join(' | ')})` : ''}, NaN ${x.nan?.length ?? '—'} — ${ok(nowyOk(key))}`;
+      return `${key}: pasek dnia ${x.pasekDnia ? 'tak' : 'NIE'}, nawigacje ${x.nawigacje} (${x.szyna ? 'szyna' : 'dolny pasek'}), w bok strona ${x.overflowX} px / nagłówek ${x.naglowekX} px, cena ${x.cena ? 'w całości' : 'UCIĘTA'}${x.cenaOdkryta ? '' : ' i ZASŁONIĘTA'}, nakładanie ${x.nakladanie?.length ? x.nakladanie.join(' | ') : 'brak'}, font marki ${x.font}, font mono widoku ${x.fontWidoku}, paleta ⌘K ${x.paleta ? 'tak' : 'NIE'}, panel ceny ${x.panel != null ? `${(x.panel * 100).toFixed(1)}%` : '—'}, błędy ${errs.length}${errs.length ? ` (${errs.join(' | ')})` : ''}, NaN ${x.nan?.length ?? '—'} — ${ok(nowyOk(key))}`;
     };
-    lines.push(`Nowy wygląd (?ui=nowy): ${NOWY_VIEWPORTS.map(([key]) => one(key)).join('; ')}`);
+    lines.push(`Powłoka: ${NOWY_VIEWPORTS.map(([key]) => one(key)).join('; ')}`);
   }
   if (r.pustyStan) {
     const ids = Object.keys(r.pustyStan);
