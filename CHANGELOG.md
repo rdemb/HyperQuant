@@ -4,6 +4,16 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Start na telefonie (2026-11-14)
+<!-- co-nowego: grupa=blog | pl=Start na telefonie: pokaz przepływu mieści się w ekranie, czytelna oś terenu płynności | en=Start on phones: the order-flow showcase fits the screen, a readable liquidity-terrain axis -->
+
+#### Naprawione
+- **Pokaz przepływu i lista kroków na Starcie** wychodziły za prawą krawędź telefonu (siatka rozdziału bez `min-w-0`); scena pokazu (800 × 600) skaluje się teraz do szerokości karty zamiast przewijać się w bok (`start/FlowReel.tsx`).
+- **Oś terenu płynności** (`start/LiquidityTerrain.tsx`): krok podziałki ceny dobierany do szerokości (etykiety co najmniej 72 px od siebie) zamiast stałych 2000 USD; nachodzące etykiety skupisk znikają (zostaje pierwsza).
+
+#### Dodane
+- **`ui:check`, przebieg „Start”** (1440, 1024, 390, 360 px) z mapą likwidacji z danych stałych (`liqMapFixture`, podawana tylko w tym przebiegu): bez przewijania w bok, teren narysowany, etykiety i podziałka bez nakładania, ryciny w ekranie, bez błędów i NaN.
+
 ### W sesji: więcej miejsca na wykres (2026-11-14)
 <!-- co-nowego: grupa=wykres | pl=W sesji wykres dostaje więcej miejsca: węższa nawigacja, kolumna DOM od 1440 px, liczby nad wykresem bez ucinania | en=In session the chart gets more room: a slimmer navigation, the DOM column from 1440 px, numbers above the chart never cut off -->
 

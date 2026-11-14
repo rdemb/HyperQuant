@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useReducedMotion } from 'motion/react';
 import { tr } from '../../i18n';
 
@@ -26,6 +26,18 @@ export const FlowReel: React.FC = () => {
   const reduce = useReducedMotion();
   const anim = (name: string, delay: number, ease = 'var(--ease-out)') => (reduce ? undefined : `${name} ${CYCLE}s ${ease} ${delay.toFixed(2)}s infinite both`);
 
+  // Scena 800 × 600 skalowana do szerokości karty (telefon: cała scena widoczna, bez przewijania w bok)
+  const boxRef = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(1);
+  useEffect(() => {
+    const box = boxRef.current;
+    if (!box || typeof ResizeObserver === 'undefined') return;
+    const fit = () => setScale(Math.min(1, box.clientWidth / 800));
+    const ro = new ResizeObserver(fit);
+    ro.observe(box);
+    fit();
+    return () => ro.disconnect();
+  }, []);
   const { heat, cells } = useMemo(() => {
     const r = rng(20261114);
     const heat = Array.from({ length: ROWS }, (_, row) => {
@@ -56,8 +68,8 @@ export const FlowReel: React.FC = () => {
             {t('SIM · animacja poglądowa, bez danych rynkowych', 'SIM · illustrative animation, no market data')}
           </span>
         </div>
-        <div className="overflow-x-auto">
-          <div role="img" aria-label={t('Animacja poglądowa: komórki footprintu wypełniają się świeca po świecy, pojawiają się bąble dużych zleceń agresorów, jasna ściana w księdze zostaje częściowo zjedzona.', 'Illustrative animation: footprint cells fill candle by candle, large aggressor orders appear as bubbles, a bright book wall is partly eaten.')} className="relative h-[600px] w-[800px]">
+        <div ref={boxRef} className="overflow-hidden" style={{ height: 600 * scale }}>
+          <div style={{ transform: `scale(${scale})`, transformOrigin: '0 0' }} role="img" aria-label={t('Animacja poglądowa: komórki footprintu wypełniają się świeca po świecy, pojawiają się bąble dużych zleceń agresorów, jasna ściana w księdze zostaje częściowo zjedzona.', 'Illustrative animation: footprint cells fill candle by candle, large aggressor orders appear as bubbles, a bright book wall is partly eaten.')} className="relative h-[600px] w-[800px]">
             {heat.map((h) => (
               <span key={h.row} className="absolute right-0 rounded-[2px]" style={{ left: h.x0, top: h.row * RH + 4, height: RH - 8, background: h.color, opacity: h.op }} />
             ))}
