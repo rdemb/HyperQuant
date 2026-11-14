@@ -43,7 +43,9 @@
     "vite": "^8.3.6"
   },
   "devDependencies": {
+    "@fontsource-variable/bricolage-grotesque": "5.3.0",
     "@fontsource/ibm-plex-mono": "5.3.0",
+    "@fontsource/jetbrains-mono": "5.3.0",
     "@fontsource/outfit": "5.3.0",
     "@fontsource/plus-jakarta-sans": "5.3.0",
     "@resvg/resvg-js": "^2.6.2",

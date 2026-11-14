@@ -30,7 +30,7 @@ describe('fonty u nas (public/fonts)', () => {
   it('tylko lokalne woff2, każdy plik istnieje; licencja OFL każdej rodziny obok', () => {
     expect(css).not.toMatch(/https?:/);
     for (const f of faces) {
-      const file = f.body.match(/src: url\(\.\/([\w-]+\.woff2)\) format\('woff2'\);/)?.[1];
+      const file = f.body.match(/src: url\(\.\/([\w-]+\.woff2)\) format\('woff2(?:-variations)?'\);/)?.[1];
       expect(file, f.name).toBeTruthy();
       expect(existsSync(join(OUT, file)), file).toBe(true);
     }
@@ -40,7 +40,8 @@ describe('fonty u nas (public/fonts)', () => {
   it('każda odmiana każdej rodziny ma latin i latin-ext: „−0,04%”, spacja niełamiąca, € i polskie litery', () => {
     for (const f of FONTS) {
       for (const face of f.faces) {
-        const [w, style = 'normal'] = face.split('-');
+        // Font zmienny: jedna odmiana z zakresem wag (np. „200 800”) zamiast pojedynczej wagi
+        const [w, style = 'normal'] = f.variable ? ['200 800'] : face.split('-');
         const own = faces.filter((x) => x.body.includes(`font-family: '${f.family}'`) && x.body.includes(`font-weight: ${w};`) && x.body.includes(`font-style: ${style};`));
         const ranges = own.map((x) => x.body.match(/unicode-range: ([^;]+);/)?.[1] ?? '');
         expect(own.length, `${f.family} ${face}`).toBe(2);

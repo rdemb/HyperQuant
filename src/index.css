@@ -65,6 +65,21 @@
   --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
 
+  /* Nowy wygląd (za przełącznikiem ?ui=nowy, src/nowy/): tylko ciemny motyw; wykresy zostają na tokenach „Głębi” */
+  --color-hq-obsidian: #05070c;
+  --color-hq-surface: #0a0f1a;
+  --color-hq-elevated: #101726;
+  --color-hq-line: #1b2436;
+  --color-hq-line-strong: #2a3650;
+  --color-hq-ink-1: #eef2f8;
+  --color-hq-ink-2: #a5b1c2;
+  --color-hq-ink-3: #7d8aa0;
+  --color-hq-cyan: #22d3ee;
+  --color-hq-indigo: #818cf8;
+  --color-hq-amber: #fbbf24;
+  --font-hq-display: 'Bricolage Grotesque Variable', 'Outfit', sans-serif;
+  --font-hq-mono: 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, monospace;
+
   --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-in-quint: cubic-bezier(0.64, 0, 0.78, 0);
   --ease-in-out-quint: cubic-bezier(0.83, 0, 0.17, 1);
@@ -89,6 +104,14 @@
   .font-mono, .tabular-nums {
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
+  }
+
+  /* Nowy wygląd: atrybut ustawiony w main.tsx przed pierwszym renderem (bez mignięcia starego wyglądu). Tylko tło
+     i kolor tekstu; fonty nowego wyglądu (font-hq-display, font-hq-mono) mają wyłącznie komponenty src/nowy, więc
+     wykresy, DOM, taśma i obecne widoki zostają przy swoich fontach. */
+  html[data-ui='nowy'] body {
+    background-color: var(--color-hq-obsidian);
+    color: var(--color-hq-ink-1);
   }
 
   /* Widoczny fokus klawiatury w całej aplikacji */

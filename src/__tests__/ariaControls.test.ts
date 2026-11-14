@@ -14,7 +14,8 @@ function sources(dir: string): string[] {
 }
 
 /** Elementy, których cel `aria-controls` jest zawsze w dokumencie (tylko ukryty), więc atrybut może być stały. */
-const ALWAYS_RENDERED = ['SessionReview.tsx:hintId', 'IndicatorsDialog.tsx:hintId'];
+// PaletaPolecen: pole wyszukiwania (combobox) istnieje tylko przy otwartej palecie, razem z listą wyników
+const ALWAYS_RENDERED = ['SessionReview.tsx:hintId', 'IndicatorsDialog.tsx:hintId', 'PaletaPolecen.tsx:listaId'];
 
 describe('aria-controls tylko na istniejący element', () => {
   it('menu i rozwijane bloki: aria-controls tylko, gdy są otwarte (zamknięte nie są w dokumencie)', () => {
