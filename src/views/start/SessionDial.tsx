@@ -1,6 +1,8 @@
 import React from 'react';
-import { DAY } from '../../charts/pro/core/time';
-import { SESSION_LABEL, type Session, sessionAt, sessionOpens, utcDayStart } from '../../charts/pro/core/sessions';
+import { SESSION_LABEL } from '../../charts/pro/core/sessions';
+import { daySessions, fmtSpan, localHour, sessionClock } from '../../shell/dzien';
+
+export { daySessions, fmtSpan, localHour, sessionClock };
 import { tr } from '../../i18n';
 
 /**
@@ -9,36 +11,6 @@ import { tr } from '../../i18n';
  * wypełniona do „teraz”, nadchodząca obrysem; wskazówka z kropką „lume”. Opis czasu, nie rynku.
  */
 const C = 410;
-
-/** Godzina lokalna (0–24) chwili w strefie przeglądarki */
-export const localHour = (ms: number): number => {
-  const d = new Date(ms);
-  return d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600;
-};
-
-/** Sesje doby UTC zawierającej `t` */
-export function daySessions(t: number): Session[] {
-  const day = utcDayStart(t);
-  const [asia, london, ny] = sessionOpens(day);
-  return [
-    { id: 'asia', start: asia, end: london },
-    { id: 'london', start: london, end: ny },
-    { id: 'ny', start: ny, end: day + DAY },
-  ];
-}
-
-/** Bieżąca i następna sesja z czasem trwania i odliczaniem */
-export function sessionClock(now: number): { current: Session; next: Session; elapsed: number; untilNext: number } {
-  const current = sessionAt(now);
-  const next = sessionAt(current.end);
-  return { current, next, elapsed: now - current.start, untilNext: next.start - now };
-}
-
-/** 1 h 26 min · 42 min */
-export function fmtSpan(ms: number): string {
-  const m = Math.max(0, Math.floor(ms / 60_000));
-  return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')} min`;
-}
 
 const P = (r: number, h: number): [number, number] => {
   const a = (h / 24) * Math.PI * 2;

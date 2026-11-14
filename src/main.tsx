@@ -7,7 +7,6 @@ import { lang, tr } from './i18n';
 import { UpdateBanner } from './shell/UpdateBanner';
 import { registerServiceWorker } from './shell/usePwa';
 import { sluchajBledowLadowania } from './shell/preloadError';
-import { ustawInterfejs } from './shell/interfejs';
 import './index.css';
 
 // Osłona reconcilera React 19 przed zmianami DOM z zewnątrz (tłumacz Google, rozszerzenia).
@@ -84,14 +83,12 @@ class RootErrorBoundary extends React.Component<{ children: React.ReactNode }, {
 }
 
 document.documentElement.lang = lang;
-// Wygląd (stary albo nowy za przełącznikiem ?ui=nowy): atrybut data-ui przed pierwszym renderem
-const ui = ustawInterfejs();
 // Nieaktualny leniwy moduł po wdrożeniu: jedno przeładowanie zamiast ekranu błędu
 sluchajBledowLadowania();
 
 createRoot(document.getElementById('root')!).render(
   <RootErrorBoundary>
-    <App ui={ui} />
+    <App />
     <UpdateBanner />
   </RootErrorBoundary>
 );
