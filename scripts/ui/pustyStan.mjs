@@ -13,13 +13,32 @@ export function cyfryPozaEtykietami(tekst) {
   return [...new Set(out)].slice(0, 10);
 }
 
-/** Tekst widoku bez etykiet (do uruchomienia w stronie): klon [data-view-root] bez [data-etykieta], skryptów i stylów. */
-export const TEKST_BEZ_ETYKIET = `(() => {
+/**
+ * Pomiar pustego stanu w stronie (wynik: { tekst, paski, dlugieEtykiety } albo null bez [data-view-root]):
+ * - tekst: klon [data-view-root] bez [data-etykieta], skryptów i stylów, razem z wartościami atrybutów, które niosą
+ *   liczby poza treścią (aria-valuenow, aria-valuetext, aria-label, title, value);
+ * - paski: elementy poza [data-etykieta] z wymiarem w procentach > 0 w stylu inline (wartość narysowana szerokością);
+ * - dlugieEtykiety: elementy [data-etykieta] dłuższe niż 40 znaków z cyframi (do raportu dla recenzenta).
+ */
+export const POMIAR_PUSTEGO = `(() => {
   const r = document.querySelector('[data-view-root]');
   if (!r) return null;
+  const etykieta = (e) => !!e.closest('[data-etykieta]');
+  const paski = [...r.querySelectorAll('[style]')]
+    .filter((e) => !etykieta(e))
+    .map((e) => e.getAttribute('style') || '')
+    .filter((st) => /(?:^|;|\\s)(?:width|height|inline-size|block-size)\\s*:\\s*(?:calc\\()?\\s*0*[1-9][\\d.]*\\s*%/.test(st) || /(?:^|;|\\s)(?:width|height)\\s*:\\s*0*\\.\\d*[1-9]\\d*\\s*%/.test(st))
+    .slice(0, 10);
+  const dlugieEtykiety = [...r.querySelectorAll('[data-etykieta]')]
+    .map((e) => (e.textContent || '').replace(/\\s+/g, ' ').trim())
+    .filter((t) => t.length > 40 && /\\d/.test(t))
+    .map((t) => t.slice(0, 80));
   const c = r.cloneNode(true);
   c.querySelectorAll('[data-etykieta], script, style').forEach((e) => e.remove());
-  return c.textContent || '';
+  const atrybuty = [...c.querySelectorAll('[aria-valuenow], [aria-valuetext], [aria-label], [title], [value]')]
+    .map((e) => ['aria-valuenow', 'aria-valuetext', 'aria-label', 'title', 'value'].map((a) => e.getAttribute(a) || '').join(' '))
+    .join(' ');
+  return { tekst: (c.textContent || '') + ' ' + atrybuty, paski, dlugieEtykiety };
 })()`;
 
 /**
