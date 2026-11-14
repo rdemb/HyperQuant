@@ -17,7 +17,7 @@ import path from 'node:path';
 import { launch, sleep } from './cdp.mjs';
 import { INIT, PROBE, fixtureInit } from './probe.mjs';
 import { DATA_BASE_URL, FIXED_NOW, createFixtures, registry } from './fixtures.mjs';
-import { liczbyPozaEtykietami, noweWidoki } from './pustyStan.mjs';
+import { MARTWE_GNIAZDO, PLIKI_APLIKACJI, TEKST_BEZ_ETYKIET, cyfryPozaEtykietami, noweWidoki } from './pustyStan.mjs';
 import { compareBaseline, margin, metricsOf } from './baseline.mjs';
 
 const args = process.argv.slice(2);
@@ -64,7 +64,7 @@ function fixtureIntercept(fx) {
     if (/^(data|blob):/.test(req.url)) return 'continue';
     const u = new URL(req.url);
     if (u.origin === origin && blokuj && u.pathname.endsWith(blokuj)) return 'fail';
-    if (bezDanych && u.origin !== origin) return 'fail';
+    if (bezDanych && (u.origin !== origin || !PLIKI_APLIKACJI.test(u.pathname))) return 'fail';
     if (u.origin === origin) return u.pathname.includes('/data/feeds/') ? { status: 404, body: '', type: 'text/plain' } : 'continue';
     // Dane skanera: tylko rejestr rynków i tylko w przebiegu rynków (wcześniej strona ma 4 rynki domyślne, jak bez pliku)
     if (u.origin === data.origin) return serveRegistry && u.pathname === `${data.pathname}/markets.json` ? { body: JSON.stringify(registry()) } : 'fail';
@@ -919,22 +919,25 @@ async function main() {
     }
     await page.viewport(1440, 900, false);
 
-    // Pusty stan: każdy widok nowego wyglądu (src/nowy/widoki.ts) bez API giełdy i danych skanera pokazuje „—”
-    // z powodem, nie wartości (bez liczb dziesiętnych, liczb od 100, procentów spoza etykiet i stałych makiety)
+    // Pusty stan: każdy widok nowego wyglądu (src/nowy/widoki.ts) bez API giełdy, danych skanera, strumienia i danych
+    // z tej samej strony (lekcje, powtórki) pokazuje „—” z powodem: żadnej cyfry poza elementami [data-etykieta]
     report.pustyStan = {};
     {
       const widoki = noweWidoki(fs.readFileSync(path.resolve('src/nowy/widoki.ts'), 'utf8'));
       bezDanych = true;
+      // Po atrapie strumienia z danych stałych (fixtureInit): gniazdo bez danych
+      const { identifier: gniazdo } = await page.send('Page.addScriptToEvaluateOnNewDocument', { source: MARTWE_GNIAZDO });
       for (const id of widoki) {
         await page.go(`${BASE}robots.txt`, 300);
         await page.ev(`(() => { localStorage.clear(); const s = ${JSON.stringify({ ...RETURNING, 'hq.ui.v1': 'nowy' })}; for (const k in s) localStorage.setItem(k, s[k]); return true; })()`);
         await page.go(`${BASE}#${id}`, 500);
         await sleep(6000);
-        const tekst = await page.ev(`document.querySelector('[data-view-root]')?.innerText ?? ''`);
-        report.pustyStan[id] = { dlugosc: tekst.trim().length, liczby: liczbyPozaEtykietami(tekst) };
+        const tekst = (await page.ev(TEKST_BEZ_ETYKIET)) ?? '';
+        report.pustyStan[id] = { dlugosc: tekst.trim().length, liczby: cyfryPozaEtykietami(tekst) };
         await shot(page, `1440-pusty-${id}`);
       }
       bezDanych = false;
+      await page.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: gniazdo });
       page.errors.splice(0);
       page.consoleErrors.splice(0);
     }
@@ -1131,7 +1134,7 @@ async function main() {
   }
   if (r.pustyStan) {
     const ids = Object.keys(r.pustyStan);
-    lines.push(`Pusty stan (nowy wygląd, bez API i danych skanera): ${ids.length === 0 ? 'brak widoków w src/nowy/widoki.ts' : ids.map((id) => `#${id} ${r.pustyStan[id].liczby.length ? `wartości: ${r.pustyStan[id].liczby.join(' | ')}` : r.pustyStan[id].dlugosc > 0 ? 'tylko „—” i etykiety' : 'PUSTY'}`).join('; ')} — ${ok(r.summary.pustyStan)}`);
+    lines.push(`Pusty stan (nowy wygląd, bez API i danych skanera): ${ids.length === 0 ? 'brak widoków w src/nowy/widoki.ts' : ids.map((id) => `#${id} ${r.pustyStan[id].liczby.length ? `cyfry poza etykietami: ${r.pustyStan[id].liczby.join(' | ')}` : r.pustyStan[id].dlugosc > 0 ? 'bez cyfr poza [data-etykieta]' : 'PUSTY'}`).join('; ')} — ${ok(r.summary.pustyStan)}`);
   }
   if (r.przeladowanie) {
     const x = r.przeladowanie;

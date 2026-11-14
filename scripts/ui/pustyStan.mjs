@@ -1,41 +1,65 @@
 /**
- * Uczciwość liczb w pustym stanie: widok bez danych pokazuje „—” z powodem, nie wartości. Czysta funkcja dla testu
- * wszystkich widoków nowego wyglądu w `ui:check` (przebieg „Pusty stan”, bez API giełdy i danych skanera).
- *
- * Dozwolone są etykiety z liczbami (np. „Obrót 24 h”, „Paliwo ±1%”, „IB 60 min”, „7 dni”, „01”): krótkie liczby całkowite
- * przy jednostce czasu albo numer kroku. Niedozwolone: liczba dziesiętna, liczba od 100 (także z odstępem tysięcy),
- * procent poza etykietą, znane stałe makiety i NaN / Infinity.
+ * Uczciwość liczb w pustym stanie: widok nowego wyglądu bez danych pokazuje „—” z powodem, nie wartości.
+ * Zasada odwrócona (bez heurystyki i bez listy stałych makiety): elementy z liczbą, która jest etykietą, a nie wartością
+ * („Obrót 24 h”, „Paliwo ±1%”, numer kroku, zegar), mają atrybut `data-etykieta`. Test usuwa ich tekst, a w reszcie
+ * tekstu widoku nie może być żadnej cyfry ani NaN / Infinity. Używane przez `ui:check` (przebieg „Pusty stan”).
  */
-const ETYKIETY = [
-  /±\s?\d+(?:[.,]\d+)?\s?%/g, // zakres w nazwie miary, np. „Paliwo ±1%”
-  /\b\d{1,2}\s?(?:h|min|s|d|dni|dzień|godz\.?|godzin[ay]?|tyg\.?|m)\b/g, // okna czasu w etykietach
-  /\b\d{1,2}(?::\d{2})?\s?(?:UTC|CET|CEST|ET)\b/g, // godziny sesji w nazwach
-  /\b(?:0?[1-9])\b(?=\s*[·./)]|\s*$)/g, // numer kroku („01”, „2.”)
-];
 
-/** Znane stałe makiety (designHQ), które nie mogą trafić do aplikacji jako wartości. */
-export const STALE_MAKIETY = ['78/100', '22,6', '19,4', '0,68', '0,74', '0,142', '8,1 mln', '1,28', '64%', '41,8', '64,2', '0,86', '0,42'];
-
-/** Fragmenty tekstu, które wyglądają na wartość liczbową (lista do komunikatu testu); pusta = w porządku. */
-export function liczbyPozaEtykietami(tekst) {
+/** Fragmenty z cyfrą (z otoczeniem do komunikatu) albo NaN / Infinity; pusta lista = w porządku. */
+export function cyfryPozaEtykietami(tekst) {
   const out = [];
-  for (const s of STALE_MAKIETY) if (tekst.includes(s)) out.push(s);
   if (/\b(?:NaN|Infinity)\b/.test(tekst)) out.push('NaN/Infinity');
-  let t = tekst;
-  for (const re of ETYKIETY) t = t.replace(re, ' ');
-  for (const m of t.matchAll(/[−+-]?\d[\d   ]*(?:[.,]\d+)?\s?%?/g)) {
-    const v = m[0].trim();
-    const goly = v.replace(/[   ]/g, '');
-    const dziesietna = /[.,]\d/.test(goly);
-    const duza = /\d{3,}/.test(goly.replace(/[^\d]/g, ''));
-    const procent = goly.endsWith('%');
-    if (dziesietna || duza || procent) out.push(v);
-  }
-  return [...new Set(out)];
+  for (const m of tekst.matchAll(/.{0,14}\d.{0,14}/g)) out.push(m[0].replace(/\s+/g, ' ').trim());
+  return [...new Set(out)].slice(0, 10);
 }
 
-/** Klucze rejestru NOWE_WIDOKI z treści src/nowy/widoki.ts (widoki w nowym wyglądzie). */
+/** Tekst widoku bez etykiet (do uruchomienia w stronie): klon [data-view-root] bez [data-etykieta], skryptów i stylów. */
+export const TEKST_BEZ_ETYKIET = `(() => {
+  const r = document.querySelector('[data-view-root]');
+  if (!r) return null;
+  const c = r.cloneNode(true);
+  c.querySelectorAll('[data-etykieta], script, style').forEach((e) => e.remove());
+  return c.textContent || '';
+})()`;
+
+/**
+ * Klucze rejestru NOWE_WIDOKI z treści src/nowy/widoki.ts (widoki w nowym wyglądzie). Liczba `import(` w bloku musi się
+ * równać liczbie kluczy: inny zapis klucza nie może cicho wypaść z testu.
+ */
 export function noweWidoki(zrodlo) {
-  const blok = zrodlo.match(/NOWE_WIDOKI[^=]*=\s*\{([\s\S]*?)\};/)?.[1] ?? '';
-  return [...blok.matchAll(/^\s*([a-z]+)\s*:/gm)].map((m) => m[1]);
+  const blok = (zrodlo.match(/NOWE_WIDOKI[^=]*=\s*\{([\s\S]*?)\};/)?.[1] ?? '').replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+  const klucze = [...blok.matchAll(/^\s*['"]?([a-z]+)['"]?\s*:/gm)].map((m) => m[1]);
+  const importy = (blok.match(/import\(/g) ?? []).length;
+  if (importy !== klucze.length) throw new Error(`src/nowy/widoki.ts: ${importy} import() wobec ${klucze.length} odczytanych kluczy (${klucze.join(', ')})`);
+  return klucze;
 }
+
+/** Gniazdo bez danych (przebieg „Pusty stan”): połączenie od razu kończy się błędem, nic nie przychodzi. */
+export const MARTWE_GNIAZDO = `(() => {
+  class MartweGniazdo extends EventTarget {
+    constructor(url) {
+      super();
+      this.url = url;
+      this.readyState = 0;
+      setTimeout(() => {
+        this.readyState = 3;
+        const err = new Event('error');
+        this.onerror?.(err);
+        this.dispatchEvent(err);
+        const close = new CloseEvent('close', { code: 1006 });
+        this.onclose?.(close);
+        this.dispatchEvent(close);
+      }, 0);
+    }
+    send() {}
+    close() {}
+  }
+  MartweGniazdo.CONNECTING = 0;
+  MartweGniazdo.OPEN = 1;
+  MartweGniazdo.CLOSING = 2;
+  MartweGniazdo.CLOSED = 3;
+  window.WebSocket = MartweGniazdo;
+})();`;
+
+/** Pliki aplikacji z tej samej strony, które przechodzą w pustym stanie (reszta, np. lekcje i powtórki, to dane). */
+export const PLIKI_APLIKACJI = /^\/(?:$|index\.html$|assets\/|fonts\/|sw\.js|manifest|icons\/|favicon|robots\.txt)/;
