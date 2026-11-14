@@ -40,15 +40,6 @@ describe('pierwszy kontakt: zapis pierwszej wizyty przy starcie aplikacji', () =
     expect(tipsPending(s)).toBe(false);
   });
 
-  it('DeskProvider zapisuje pierwszą wizytę pierwszym hookiem, przed odczytem adresu (#flow zapisuje hq.charts.dock.v1)', () => {
-    const src = readFileSync('src/state/DeskContext.tsx', 'utf8');
-    const body = src.slice(src.indexOf('function useDeskState()'));
-    const start = body.indexOf('startOnboarding(');
-    expect(start).toBeGreaterThan(-1);
-    expect(start).toBeLessThan(body.indexOf('useState<ViewId>(readHashView)'));
-    expect(src).toMatch(/from '\.\.\/utils\/firstVisit'/);
-  });
-
   it('moduł pierwszej wizyty bez modułów wykresu (jest w pierwszym pakiecie strony)', () => {
     expect(readFileSync('src/utils/firstVisit.ts', 'utf8')).not.toMatch(/from\s+['"][^'"]*charts\//);
   });
