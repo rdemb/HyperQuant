@@ -4,6 +4,12 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Obrazki podglądu bloga w nowych fontach (2026-11-14)
+<!-- co-nowego: ukryj -->
+
+#### Zmienione
+- **Obrazki Open Graph / X** (`scripts/blog/og.mjs`): marka i tytuł w Bricolage Grotesque SemiBold zamiast Outfit, jak w aplikacji; reszta (Plus Jakarta Sans), układ i kolory bez zmian. Statyczny TTF z repozytorium autorów (OFL, `scripts/blog/fonts/OFL-BricolageGrotesque.txt`); Outfit usunięty. Szacunek szerokości znaku 0,56 em zostaje (Bricolage ≈ 0,51 em, zmierzone resvg), więc tytuły łamią się jak dotąd.
+
 ### Naprawa: pierwsza wizyta otwiera Start (2026-11-14)
 <!-- co-nowego: ukryj -->
 
