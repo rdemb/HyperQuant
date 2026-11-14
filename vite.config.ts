@@ -41,10 +41,36 @@ function openbotFilesPlugin(): Plugin {
   };
 }
 
+/**
+ * Fonty w pliku HTML zamiast osobnego, blokującego arkusza: przy buildzie deklaracje `@font-face` z
+ * `public/fonts/fonts.css` (adresy względem strony: `./fonts/…`) trafiają do <style> w <head>, a fonty pierwszego
+ * ekranu (tytuł: Bricolage Grotesque, tekst: Plus Jakarta Sans, łacina) mają preload. Pierwsze malowanie nie czeka na
+ * dodatkowe żądanie. Plik `fonts.css` zostaje dla stron statycznych (blog, wyniki). W `npm run dev` bez zmian.
+ */
+/** Link arkusza fontów w index.html (po przepisaniu adresów przez Vite: `/fonts/…` albo `./fonts/…`). */
+const FONTS_LINK = /<link href="\.?\/fonts\/fonts\.css" rel="stylesheet">/;
+const FONT_PRELOAD = ['bricolage-grotesque-latin-wdth-normal.woff2', 'plus-jakarta-sans-latin-400-normal.woff2'];
+function inlineFontsPlugin(): Plugin {
+  return {
+    name: 'hq-inline-fonts',
+    apply: 'build',
+    transformIndexHtml(html) {
+      if (!FONTS_LINK.test(html)) throw new Error('index.html: brak linku do fonts/fonts.css (zmieniony sposób ładowania fontów)');
+      const css = readRepo('public/fonts/fonts.css')
+        .toString('utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/url\(\.\//g, 'url(./fonts/')
+        .replace(/\s*\n\s*/g, '');
+      const preload = FONT_PRELOAD.map((f) => `<link rel="preload" href="./fonts/${f}" as="font" type="font/woff2" crossorigin>`).join('');
+      return html.replace(FONTS_LINK, `${preload}<style>${css}</style>`);
+    },
+  };
+}
+
 export default defineConfig(() => {
   return {
     base: './',
-    plugins: [react(), tailwindcss(), openbotFilesPlugin()],
+    plugins: [react(), tailwindcss(), openbotFilesPlugin(), inlineFontsPlugin()],
     resolve: {
       alias: {
         '@': path.resolve(import.meta.dirname, '.'),
