@@ -8,14 +8,14 @@ import { Frame, bucketFor, priceTickStep, priceToY, timeStep, timeToX } from './
 
 /** Kolory płótna = tokeny z src/index.css (canvas nie widzi klas Tailwind). */
 export const C = {
-  page: '#070a11',
-  bg: '#0b1019',
-  tip: '#16202f',
-  grid: '#1b2533',
-  divider: '#283447',
-  ink1: '#eef2f7',
-  ink2: '#a9b4c4',
-  ink3: '#7a889c',
+  page: '#0c0d0f',
+  bg: '#0f1114',
+  tip: '#1a1d21',
+  grid: '#1f2227',
+  divider: '#2b2f35',
+  ink1: '#edeef0',
+  ink2: '#a9aeb6',
+  ink3: '#8c929a',
   accent: '#3fc6dd',
   buy: '#3280dd',
   sell: '#ca3829',

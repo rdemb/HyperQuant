@@ -21,11 +21,12 @@ const CAT = { teal: '#059583', gold: '#B18E15', violet: '#A878DB', grey: '#7A889
 const POC = '#F1C45E';
 
 /**
- * Kolory płótna wykresu Pro: paleta „Głębia” (kupujący to lazur, sprzedający to żar, na tle „otchłani”). Te same wartości
- * są tokenami `of-*` w src/index.css (legenda i menu). Gotowe napisy z kryciem — bez budowania w pętli rysowania.
+ * Kolory płótna wykresu Pro: paleta „Głębia” (kupujący to lazur, sprzedający to żar) na grafitowym tle i neutralnych
+ * odcieniach Chronografu (te same co powłoka strony, od 14.11.2026; wcześniej granat „otchłani”). Te same wartości są
+ * tokenami `of-*` w src/index.css (legenda i menu). Gotowe napisy z kryciem — bez budowania w pętli rysowania.
  */
 const GLEBIA = {
-  bg: '#05101E',
+  bg: '#0F1114',
   axisText: '#c3ccd8',
   // Świece: korpusy i knoty
   buy: '#3280DD',
@@ -44,25 +45,25 @@ const GLEBIA = {
   zone: CAT.violet,
   // Footprint: kafle komórek od grafitu (mały wolumen) do nasyconego koloru strony; delta wiersza w tych samych kolorach.
   // Strona bidu to sprzedaż agresorów (żar), strona asku to kupno agresorów (lazur).
-  fpNeutral: '#2a3446',
-  fpBidRamp: ['#1E2A3A', '#4A333B', '#733939', '#9E3B34', '#CA3829'],
-  fpAskRamp: ['#1E2A3A', '#253E5F', '#2A5387', '#2F69B1', '#3280DD'],
-  fpDeltaPosRamp: ['#1E2A3A', '#253E5F', '#2A5387', '#2F69B1', '#3280DD'],
-  fpDeltaNegRamp: ['#1E2A3A', '#4A333B', '#733939', '#9E3B34', '#CA3829'],
-  fpText: '#0b1019',
+  fpNeutral: '#2b2f36',
+  fpBidRamp: ['#22262C', '#4A333B', '#733939', '#9E3B34', '#CA3829'],
+  fpAskRamp: ['#22262C', '#253E5F', '#2A5387', '#2F69B1', '#3280DD'],
+  fpDeltaPosRamp: ['#22262C', '#253E5F', '#2A5387', '#2F69B1', '#3280DD'],
+  fpDeltaNegRamp: ['#22262C', '#4A333B', '#733939', '#9E3B34', '#CA3829'],
+  fpText: '#0f1114',
   fpTextLight: '#eef2f7',
   fpTextProfile: '#c9d4df',
-  fpRowLine: '#1b2533',
+  fpRowLine: '#1f2227',
   // Nierównowagi: rozjaśnione kolory stron
   imbBuy: '#A2CFFF',
   imbSell: '#FFA28A',
   pocFrame: POC,
-  volBar: '#46576C',
+  volBar: '#4A4F57',
   deltaPosBar: '#3280DD',
   deltaNegBar: '#CA3829',
   // Profile wolumenu: obszar wartości grafitowy, reszta przygaszona, POC złoty, nagi POC szary
-  profileVa: '#34425a',
-  profileOut: '#1f2b3d',
+  profileVa: '#3a3f48',
+  profileOut: '#24272d',
   profilePoc: POC,
   nakedPoc: CAT.grey,
   domBid: '#3280DD',
@@ -74,7 +75,7 @@ const GLEBIA = {
   white: '#FFFFFF',
   inkOnLight: '#0B0B12',
   // Panel podniesiony (token surface-2 strony): tło etykiet ramki zrzutu
-  surface2: '#101826',
+  surface2: '#1a1d21',
   // Pasek pokrycia danych pod osią czasu: źródło w kolorze kategorii (taśma w turkusie Hyperliquid, znaczniki TWAP w akcencie
   // jak w taśmie, arkusz i arkusz dokładny w złocie, OI w szarości), wiersz „wszystkie” w tuszu
   coverTape: CAT.teal,
