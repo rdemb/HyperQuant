@@ -17,18 +17,18 @@ const STEP_MS = { '1m': MIN, '3m': 3 * MIN, '5m': 5 * MIN, '15m': 15 * MIN, '30m
 /** Rynki głównej giełdy perp. */
 export const COINS = ['BTC', 'ETH', 'SOL', 'HYPE'];
 /** Rynki giełd HIP-3 (nazwa z przedrostkiem giełdy, jak w API i w rejestrze). */
-export const HIP3 = { xyz: ['xyz:NVDA'] };
+export const HIP3 = { xyz: ['xyz:NVDA', 'xyz:GOLD'] };
 const ALL = [...COINS, ...Object.values(HIP3).flat()];
 /** Ceny odniesienia rynków bez nagrania BTC (rząd wielkości z października 2026). */
-const BASE = { ETH: 3900, SOL: 190, HYPE: 40, 'xyz:NVDA': 180 };
+const BASE = { ETH: 3900, SOL: 190, HYPE: 40, 'xyz:NVDA': 180, 'xyz:GOLD': 4000 };
 /** Rynki z kształtem nagranej doby BTC przeskalowanym do swojej ceny (`scaleMinutes`); pozostałe — fala syntetyczna. */
 const SCALED = ['HYPE', 'xyz:NVDA'];
 /** Liczba miejsc po przecinku ceny (jak tick Hyperliquid przy tych cenach). */
-const DIGITS = { BTC: 0, ETH: 1, SOL: 2, HYPE: 3, 'xyz:NVDA': 2 };
+const DIGITS = { BTC: 0, ETH: 1, SOL: 2, HYPE: 3, 'xyz:NVDA': 2, 'xyz:GOLD': 1 };
 /** Liczba miejsc po przecinku wielkości (`szDecimals`; HYPE i xyz:NVDA jak w rejestrze rynków). */
-const SZ = { BTC: 4, ETH: 3, SOL: 2, HYPE: 2, 'xyz:NVDA': 3 };
+const SZ = { BTC: 4, ETH: 3, SOL: 2, HYPE: 2, 'xyz:NVDA': 3, 'xyz:GOLD': 4 };
 /** Największa dźwignia (jak w rejestrze rynków dla HIP-3; główna giełda — jak dotąd w danych stałych). */
-const LEVERAGE = { 'xyz:NVDA': 10 };
+const LEVERAGE = { 'xyz:NVDA': 10, 'xyz:GOLD': 25 };
 
 /**
  * Adres danych skanera w buildzie pomiaru (`scripts/ui/build.mjs`): host bez sieci, z którego `layout-check.mjs` podaje
@@ -58,6 +58,8 @@ export function registry() {
     row('SOL', '', 5.2e8, 2, 20, 'none'),
     // Klasa rynku (pole etapu 1): akcja — etykieta Wall Street w widoku „Rynki”
     { ...row('xyz:NVDA', 'xyz', 1.4e8, SZ['xyz:NVDA'], LEVERAGE['xyz:NVDA'], 'none'), class: 'equity' },
+    // Złoto: rynek aplikacji obok BTC (strona Rynki pokazuje tylko te dwa)
+    { ...row('xyz:GOLD', 'xyz', 2.8e8, SZ['xyz:GOLD'], LEVERAGE['xyz:GOLD'], 'none'), class: 'commodity' },
   ];
   return { asOf: FIXED_NOW - 20 * MIN, rule: 'reg-v1', markets: markets.map((m, i) => ({ ...m, rank: i + 1 })) };
 }
@@ -223,9 +225,6 @@ export function createFixtures(root) {
     switch (body?.type) {
       case 'candleSnapshot':
         return candles(body.req ?? {});
-      case 'perpDexs':
-        // Giełda główna i giełdy HIP-3 danych stałych (tabela „Rynki” pyta o nie przed pierwszą rundą)
-        return [null, ...Object.keys(HIP3).map((name) => ({ name, fullName: name, deployer: '0x0', oracleUpdater: null }))];
       case 'metaAndAssetCtxs': {
         const list = body.dex ? (HIP3[body.dex] ?? []) : COINS;
         return [{ universe: list.map((name) => ({ name, szDecimals: SZ[name], maxLeverage: LEVERAGE[name] ?? 40 })) }, list.map(ctx)];

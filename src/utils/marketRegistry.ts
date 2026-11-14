@@ -383,6 +383,30 @@ export const DEFAULT_MARKETS: readonly ChartMarket[] = [
   { coin: 'HYPE', dex: '', szDecimals: 2, maxLeverage: 10, scanner: 'none' },
 ];
 
+/**
+ * Rynki do wyboru w aplikacji (decyzja Rafała 14.11.2026): desk BTC, złoto (`xyz:GOLD`, giełda HIP-3, najpłynniejsze
+ * złoto na Hyperliquid) jako kontekst makro. Rejestr zostaje ogólny (mechanizmy rynków, progi, skaner); zawężone są listy
+ * wyboru: strona Rynki, wybór rynku wykresu, przełączanie skrótem i paleta ⌘K. Parametry złota z API Hyperliquid (11.2026).
+ */
+export const APP_MARKETS: readonly ChartMarket[] = [
+  { coin: 'BTC', dex: '', szDecimals: 5, maxLeverage: 40, scanner: 'full', class: 'crypto' },
+  { coin: 'xyz:GOLD', dex: 'xyz', szDecimals: 4, maxLeverage: 25, scanner: 'none', class: 'commodity' },
+];
+
+/** Rynki aplikacji z listy (wpis rejestru z aktualnymi parametrami albo parametry domyślne), w kolejności `APP_MARKETS`. */
+export function appMarkets(list: readonly ChartMarket[]): ChartMarket[] {
+  return APP_MARKETS.map((d) => {
+    const m = list.find((x) => x.coin === d.coin);
+    return m ? { ...m, class: m.class ?? d.class } : d;
+  });
+}
+
+/** Lista rynków strony z rynkami aplikacji: brakujący (np. złoto spoza rejestru) dopisany na końcu, żeby jego wykres działał. */
+export function withAppMarkets(list: readonly ChartMarket[]): readonly ChartMarket[] {
+  const missing = APP_MARKETS.filter((d) => !list.some((m) => m.coin === d.coin));
+  return missing.length === 0 ? list : [...list, ...missing];
+}
+
 /** Rejestr albo 4 rynki domyślne: poprawny plik → jego rynki według miejsca, brakujący stały rynek dopisany na końcu. */
 export function marketsOrDefault(x: unknown): readonly ChartMarket[] {
   if (!isMarketRegistry(x)) return DEFAULT_MARKETS;

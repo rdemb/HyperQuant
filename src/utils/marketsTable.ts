@@ -37,8 +37,6 @@ export interface DexState {
   at: number | null;
   ctxs: ReadonlyMap<string, MarketCtx> | null;
   failedAt: number | null;
-  /** Rynki giełdy z ostatniej odpowiedzi (`universe` bez wycofanych); brak odczytu — null albo brak pola */
-  universe?: readonly ChartMarket[] | null;
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -79,58 +77,6 @@ export function parseDexCtxs(raw: unknown, dex: string): Map<string, MarketCtx> 
       openInterest: oi !== null && oi >= 0 ? oi : null,
       funding: num(c.funding),
     });
-  }
-  return out;
-}
-
-/**
- * Lista giełd z `perpDexs`: główna (`""`, w odpowiedzi `null`) i giełdy HIP-3 z nazwą. Zła odpowiedź → null.
- */
-export function parsePerpDexs(raw: unknown): string[] | null {
-  if (!Array.isArray(raw)) return null;
-  const out = [''];
-  for (const d of raw) if (isRecord(d) && typeof d.name === 'string' && /^[a-z0-9]{1,16}$/i.test(d.name) && !out.includes(d.name)) out.push(d.name);
-  return out;
-}
-
-/**
- * Rynki giełdy z `metaAndAssetCtxs` (`universe`): nazwa z przedrostkiem giełdy HIP-3, miejsca rozmiaru i dźwignia; rynki
- * wycofane (`isDelisted`) pominięte. Zła odpowiedź → null. Klasa rynku nie pochodzi z giełdy (API jej nie podaje).
- */
-export function parseDexUniverse(raw: unknown, dex: string): ChartMarket[] | null {
-  if (!Array.isArray(raw) || raw.length < 1) return null;
-  const meta = raw[0];
-  if (!isRecord(meta) || !Array.isArray(meta.universe)) return null;
-  const out: ChartMarket[] = [];
-  for (const u of meta.universe) {
-    if (!isRecord(u) || typeof u.name !== 'string' || u.isDelisted === true) continue;
-    const sz = num(u.szDecimals);
-    const lev = num(u.maxLeverage);
-    out.push({
-      coin: dex === '' || u.name.startsWith(`${dex}:`) ? u.name : `${dex}:${u.name}`,
-      dex,
-      szDecimals: sz !== null && sz >= 0 ? sz : 0,
-      maxLeverage: lev !== null && lev > 0 ? lev : 1,
-      scanner: 'none',
-    });
-  }
-  return out;
-}
-
-/**
- * Wszystkie rynki tabeli: najpierw rejestr (jego rynki mają klasę, skaner i wykres), potem pozostałe rynki z ostatnich
- * odczytów giełd (`universe`) w kolejności giełd i odpowiedzi; rynek giełdy głównej bez wpisu w rejestrze to krypto,
- * rynek HIP-3 spoza rejestru nie ma klasy (nie zgadujemy).
- */
-export function allMarkets(registry: readonly ChartMarket[], dexes: Readonly<Record<string, DexState>>): ChartMarket[] {
-  const seen = new Set(registry.map((m) => m.coin));
-  const out: ChartMarket[] = [...registry];
-  for (const s of Object.values(dexes)) {
-    for (const m of s.universe ?? []) {
-      if (seen.has(m.coin)) continue;
-      seen.add(m.coin);
-      out.push(m.dex === '' ? { ...m, class: 'crypto' } : m);
-    }
   }
   return out;
 }
@@ -288,37 +234,9 @@ export function rowModel(r: MarketRow, { fmtTime, scannerWhy, wallStreet, inRegi
   };
 }
 
-/** Filtry tabeli: tekst (nazwa, giełda), giełda (`null` = wszystkie) i klasa (`'none'` = bez klasy, `null` = wszystkie). */
-export interface MarketFilter {
-  q: string;
-  dex: string | null;
-  cls: MarketClass | 'none' | null;
-}
-
-const fold = (x: string) => x.normalize('NFD').replace(/\p{Mn}/gu, '').toLowerCase();
-
-/** Rynki spełniające filtr; każde słowo zapytania musi wystąpić w nazwie rynku albo nazwie giełdy. */
-export function filterMarkets(markets: readonly ChartMarket[], f: MarketFilter): ChartMarket[] {
-  const words = fold(f.q).split(/\s+/).filter(Boolean);
-  return markets.filter((m) => {
-    if (f.dex !== null && m.dex !== f.dex) return false;
-    if (f.cls !== null && (f.cls === 'none' ? m.class !== undefined : m.class !== f.cls)) return false;
-    if (words.length === 0) return true;
-    const text = fold(`${m.coin} ${m.dex || 'hyperliquid'}`);
-    return words.every((w) => text.includes(w));
-  });
-}
-
-/** Płaska lista wierszy: filtr, odczyty giełd, sortowanie i gotowe modele wierszy. */
-export function marketListModel(
-  markets: readonly ChartMarket[],
-  dexes: Readonly<Record<string, DexState>>,
-  now: number,
-  sort: SortKey,
-  filter: MarketFilter,
-  deps: RowModelDeps
-): MarketRowModel[] {
-  return sortRows(marketRows(filterMarkets(markets, filter), dexes, now), sort).map((r) => rowModel(r, deps));
+/** Płaska lista wierszy: odczyty giełd, sortowanie i gotowe modele wierszy. */
+export function marketListModel(markets: readonly ChartMarket[], dexes: Readonly<Record<string, DexState>>, now: number, sort: SortKey, deps: RowModelDeps): MarketRowModel[] {
+  return sortRows(marketRows(markets, dexes, now), sort).map((r) => rowModel(r, deps));
 }
 
 /**
