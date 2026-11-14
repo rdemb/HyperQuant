@@ -258,6 +258,8 @@ const headerCut = `(() => {
  */
 const NOWY_VIEWPORTS = [
   ['1440', 1440, 900, false],
+  // 1280: najciaśniejszy nagłówek (od xl liczby rynku, wybór wykresu i język)
+  ['1280', 1280, 800, false],
   ['1024', 1024, 768, false],
   ['390', 390, 844, true],
 ];

@@ -117,6 +117,8 @@ const Szyna: React.FC<{ go: (v: ViewId) => void }> = ({ go }) => {
       </nav>
       <div className="mt-auto rounded-lg border border-hq-line bg-hq-obsidian/60 p-3 space-y-1.5 text-[11px]">
         <span className="block font-hq-mono font-semibold text-hq-ink-1">Hyperliquid</span>
+        {/* Język w szynie przy 1024–1279 px (w nagłówku od 1280 px) */}
+        <Jezyk className="flex xl:hidden w-full justify-center" />
         <p className="leading-snug text-hq-ink-3">{tr('Opis rynku z danych giełdy, bez ocen kierunku ceny.', 'Market description from exchange data, no price direction calls.')}</p>
       </div>
     </aside>
@@ -287,7 +289,8 @@ export default function NowaPowloka() {
               </div>
             )}
             <div className="ml-auto flex items-center gap-2 shrink-0">
-              <WyborRynku className="hidden sm:inline-flex" />
+              {/* 1024–1279 px: wybór rynku w palecie ⌘K (miejsce na cenę i przełączniki) */}
+              <WyborRynku className="hidden sm:inline-flex lg:hidden xl:inline-flex" />
               <button
                 type="button"
                 onClick={() => setPaleta(true)}
@@ -323,7 +326,7 @@ export default function NowaPowloka() {
               >
                 {audioEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
               </Przycisk>
-              <Jezyk className="hidden lg:inline-flex" />
+              <Jezyk className="hidden xl:inline-flex" />
               <div className="hidden lg:contents">
                 <InstallButton compact />
               </div>
