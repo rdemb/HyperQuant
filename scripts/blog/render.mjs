@@ -313,25 +313,35 @@ export function postBody(post) {
 const FONTS_PATH = 'fonts/fonts.css';
 
 /**
- * Pozycje nawigacji: klucz, etykieta i ścieżka od korzenia desku (wersja angielska prowadzi do stron EN). Jak pasek
- * aplikacji: trzy fazy dnia (ekrany aplikacji), Lekcje i Blog; strona Wykresów jest w stopce.
+ * Pozycje nawigacji: klucz, etykieta i ścieżka od korzenia desku (wersja angielska prowadzi do stron EN). Jak nawigacja
+ * aplikacji: trzy fazy dnia i Rynki (ekrany aplikacji), Lekcje, potem publikacje (Blog, Wyniki, Co nowego); strona
+ * Wykresów jest w stopce.
  */
 const NAV = {
   pl: [
     ['before', 'Przed sesją', '#before'],
     ['charts', 'W sesji', '#charts'],
     ['after', 'Po sesji', '#after'],
+    ['markets', 'Rynki', '#markets'],
     ['lessons', 'Lekcje', 'lekcje/'],
     ['blog', 'Blog', 'blog/'],
+    ['results', 'Wyniki', 'wyniki/'],
+    ['news', 'Co nowego', 'co-nowego/'],
   ],
   en: [
     ['before', 'Pre-session', '#before'],
     ['charts', 'In session', '#charts'],
     ['after', 'Post-session', '#after'],
+    ['markets', 'Markets', '#markets'],
     ['lessons', 'Lessons', 'en/lessons/'],
     ['blog', 'Blog (PL)', 'blog/'],
+    ['results', 'Results', 'en/results/'],
+    ['news', "What's new", 'en/whats-new/'],
   ],
 };
+
+/** Znak HyperQuant „Chronograf H” (ten sam co ikona aplikacji, scripts/icons/ikona.mjs), kolory z tokenów bloga. */
+const LOGO = '<svg class="brand-mark" width="24" height="24" viewBox="40 40 432 432" aria-hidden="true"><g fill="none" stroke-linecap="round" stroke-width="30"><path d="M270.9 78.6A178 178 0 0 1 417.1 331.8" stroke="var(--line-strong)"/><path d="M402.2 357.6A178 178 0 0 1 201.9 425.6" stroke="var(--ink-3)"/><path d="M174.4 414.2A178 178 0 0 1 241.1 78.6" stroke="var(--ink-1)"/></g><g fill="var(--ink-1)"><rect x="183" y="150" width="14" height="212" rx="7"/><rect x="160" y="184" width="60" height="132" rx="14"/><rect x="315" y="138" width="14" height="196" rx="7"/><rect x="292" y="166" width="60" height="122" rx="14"/><rect x="214" y="238" width="84" height="26" rx="13"/></g><circle cx="187.9" cy="420.5" r="34" fill="var(--accent)" stroke="var(--page)" stroke-width="12"/></svg>';
 const OG_LOCALE = { pl: 'pl_PL', en: 'en_GB' };
 
 /** Czy link `href` (względem strony `url`) prowadzi do tego samego dokumentu (bez części #, która wskazuje aplikację). */
@@ -418,7 +428,7 @@ export function layout(
 <link rel="alternate" type="application/rss+xml" title="HyperQuant · Analizy BTC" href="${site.url}blog/feed.xml">
 <link rel="icon" type="image/svg+xml" href="${root}favicon.svg">
 <link rel="apple-touch-icon" href="${root}icons/apple-touch-icon.png">
-<meta name="theme-color" content="#070A11">
+<meta name="theme-color" content="#0C0D0F">
 <meta property="og:type" content="${type}">
 <meta property="og:locale" content="${OG_LOCALE[lang]}">${localeAlt}
 <meta property="og:site_name" content="HyperQuant">
@@ -441,7 +451,7 @@ export function layout(
 </head>
 <body>
 <header class="site-header"><div class="wrap">
-<a class="brand" href="${root}">HyperQuant<span>BTC · Hyperliquid</span></a>
+<a class="brand" href="${root}">${LOGO}HyperQuant<span>BTC · Hyperliquid</span></a>
 <nav aria-label="${lang === 'en' ? 'Main' : 'Główna'}">${nav}${rss}${langLink}</nav>
 </div></header>
 <main class="wrap">

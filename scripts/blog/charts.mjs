@@ -6,13 +6,13 @@ import { TIME_ZONE } from './posts.mjs';
 const MIN = 60_000;
 
 export const C = {
-  bg: '#0b1019',
-  grid: '#141c29',
-  line: '#1b2533',
-  lineStrong: '#283447',
-  ink1: '#eef2f7',
-  ink2: '#a9b4c4',
-  ink3: '#7a889c',
+  bg: '#0f1114',
+  grid: '#1a1d21',
+  line: '#1f2227',
+  lineStrong: '#2b2f35',
+  ink1: '#edeef0',
+  ink2: '#a9aeb6',
+  ink3: '#8c929a',
   accent: '#3fc6dd',
   level: '#e0a045',
   buy: '#3280dd',
