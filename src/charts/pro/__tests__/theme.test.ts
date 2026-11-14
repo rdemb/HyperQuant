@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { LIQ_RAMP, PRO } from '../chart/theme';
 
-const EMBER = ['#1E2A3A', '#4A333B', '#733939', '#9E3B34', '#CA3829'];
-const AZURE = ['#1E2A3A', '#253E5F', '#2A5387', '#2F69B1', '#3280DD'];
+const EMBER = ['#22262C', '#4A333B', '#733939', '#9E3B34', '#CA3829'];
+const AZURE = ['#22262C', '#253E5F', '#2A5387', '#2F69B1', '#3280DD'];
 
 describe('paleta Głębia', () => {
   it('ma jedną paletę Głębia', () => {
-    expect(PRO.bg).toBe('#05101E');
+    // Tło grafitowe jak powłoka strony (od 14.11.2026, wcześniej granat #05101E); kolory danych Głębi bez zmian
+    expect(PRO.bg).toBe('#0F1114');
     expect(PRO.buy).toBe('#3280DD');
     expect(PRO.sell).toBe('#CA3829');
     expect(PRO.pocFrame).toBe('#F1C45E');
