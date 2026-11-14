@@ -17,6 +17,12 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 - **Pasek dnia** (`src/shell/PasekDnia.tsx`) pod nagłówkiem w każdym widoku: doba 00–24 czasu lokalnego z sesjami Azji, Londynu i Nowego Jorku (te same granice co wykres), „teraz” znakiem lume, bieżąca sesja z czasem trwania i odliczanie do następnej. Funkcje doby we wspólnym `src/shell/dzien.ts` (Start, tarcza, szyna i pasek).
 - **`ui:check`, przebieg „Powłoka”**: 1920, 1440, 1280, 1024, 768, 390 i 360 px, jedna nawigacja, pasek dnia, bez przewijania w bok, cena odkryta, kontrolki i liczby rynku nagłówka bez nakładania. `granice-pakietu`: pierwszy pakiet bez widoków i palety ⌘K.
 
+### Obrazki podglądu bloga w nowych fontach (2026-11-14)
+<!-- co-nowego: ukryj -->
+
+#### Zmienione
+- **Obrazki Open Graph / X** (`scripts/blog/og.mjs`): marka i tytuł w Bricolage Grotesque SemiBold zamiast Outfit, jak w aplikacji; reszta (Plus Jakarta Sans), układ i kolory bez zmian. Statyczny TTF z repozytorium autorów (OFL, `scripts/blog/fonts/OFL-BricolageGrotesque.txt`); Outfit usunięty. Szacunek szerokości znaku 0,56 em zostaje (Bricolage ≈ 0,51 em, zmierzone resvg), więc tytuły łamią się jak dotąd.
+
 ### Naprawa: pierwsza wizyta otwiera Start (2026-11-14)
 <!-- co-nowego: ukryj -->
 
