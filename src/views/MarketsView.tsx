@@ -1,4 +1,4 @@
-import React, { useSyncExternalStore } from 'react';
+import React from 'react';
 import { tr } from '../i18n';
 import { useMarketsPage } from '../state/useMarketsTable';
 import { Badge, SectionHeading } from '../ui';
@@ -11,17 +11,8 @@ import { MarketList } from './markets/MarketList';
  * sama prezentacja.
  */
 
-const PHONE = '(max-width: 767px)';
-const subscribePhone = (fn: () => void) => {
-  const mq = window.matchMedia(PHONE);
-  mq.addEventListener('change', fn);
-  return () => mq.removeEventListener('change', fn);
-};
-const isPhone = () => window.matchMedia(PHONE).matches;
-
 const MarketsView: React.FC = () => {
   const page = useMarketsPage();
-  const phone = useSyncExternalStore(subscribePhone, isPhone, () => false);
   return (
     <div className="flex flex-col gap-4" data-markets-view>
       <SectionHeading
@@ -39,9 +30,9 @@ const MarketsView: React.FC = () => {
         }
       />
 
-      <section aria-labelledby="rynki-tytul" className="rounded-xl border border-line bg-surface-1 pt-2">
-        <MarketList rows={page.rows} cards={phone} />
-        <div className="mt-1 flex flex-col gap-1 border-t border-line px-4 py-3 text-[11px] leading-relaxed text-ink-3">
+      <section aria-labelledby="rynki-tytul" className="flex flex-col gap-4">
+        <MarketList rows={page.rows} />
+        <div className="flex flex-col gap-1 border-t border-line pt-3 text-[11px] leading-relaxed text-ink-3">
           <p>
             {tr(
               `Źródło: Hyperliquid (metaAndAssetCtxs), jedno zapytanie na giełdę co ${page.refreshSec} s z Twojej przeglądarki; serwer HyperQuant nic nie pobiera. Otwarte pozycje = liczba kontraktów × cena mark. Funding roczny przeliczony ze stawki godzinowej (× 24 × 365). Odczyt starszy niż 3 min albo rynek bez odpowiedzi giełdy: „—” z powodem.`,
